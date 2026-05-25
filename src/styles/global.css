@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --color-ink: #0a0a0a;
+  --color-ink-soft: #404040;
+  --color-ink-muted: #737373;
+  --color-line: #e5e5e5;
+  --color-surface: #fafafa;
+  --color-accent: #6366f1;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background-color: #0a0a0a;
+  color: #ffffff;
+}
+
+.dark ::selection {
+  background-color: #fafafa;
+  color: #0a0a0a;
+}

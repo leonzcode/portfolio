@@ -1,0 +1,79 @@
+---
+import type { Project } from "../data/projects";
+
+interface Props extends Project {}
+
+const { title, description, href, image, tag, detailHref } = Astro.props;
+const linkHref = detailHref ?? href;
+const isInternalDetail = !!detailHref;
+const isExternal = !isInternalDetail && linkHref.startsWith("http");
+const isPlaceholder = linkHref === "#";
+---
+
+<article class="group">
+  <a
+    href={linkHref}
+    target={isExternal ? "_blank" : undefined}
+    rel={isExternal ? "noopener noreferrer" : undefined}
+    aria-disabled={isPlaceholder}
+    class:list={[
+      "block",
+      isPlaceholder && "pointer-events-none opacity-60",
+    ]}
+  >
+    <div
+      class="aspect-[16/10] mb-3 overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800"
+    >
+      {
+        image ? (
+          <img
+            src={image}
+            alt={title}
+            class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          />
+        ) : (
+          <div class="w-full h-full flex items-center justify-center">
+            <span class="font-mono text-[11px] tracking-wider uppercase text-neutral-400 dark:text-neutral-600">
+              {tag ?? "Project"}
+            </span>
+          </div>
+        )
+      }
+    </div>
+    <div class="flex items-baseline justify-between gap-3">
+      <h3 class="font-semibold text-[16px] text-neutral-900 dark:text-neutral-100 group-hover:underline underline-offset-4 decoration-1">
+        {title}
+      </h3>
+      {
+        !isPlaceholder && (
+          <svg
+            class="shrink-0 w-3.5 h-3.5 text-neutral-400 dark:text-neutral-600 group-hover:text-neutral-700 dark:group-hover:text-neutral-300 transition-all group-hover:translate-x-0.5"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            {isExternal ? (
+              <>
+                <path d="M7 17 17 7" />
+                <path d="M7 7h10v10" />
+              </>
+            ) : (
+              <>
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </>
+            )}
+          </svg>
+        )
+      }
+    </div>
+    <p class="mt-2 text-[14.5px] leading-relaxed text-neutral-600 dark:text-neutral-400">
+      {description}
+    </p>
+  </a>
+</article>

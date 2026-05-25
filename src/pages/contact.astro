@@ -1,0 +1,85 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Contact · Leon Zhao">
+  <section>
+    <h1
+      class="text-[32px] sm:text-[36px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-50 mb-2 leading-tight"
+    >
+      Contact
+    </h1>
+    <p class="text-[14.5px] text-neutral-500 dark:text-neutral-500 mb-10">
+      Reach out about research, collaborations, or feedback.
+    </p>
+
+    <form
+      method="POST"
+      action="#"
+      class="space-y-5"
+      aria-label="Contact form"
+    >
+      <div>
+        <label
+          for="name"
+          class="block text-[13px] font-medium mb-1.5 text-neutral-800 dark:text-neutral-200"
+        >
+          Name
+        </label>
+        <input
+          id="name"
+          name="name"
+          type="text"
+          required
+          autocomplete="name"
+          class="w-full px-3 py-2 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[14px] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 focus:outline-none focus:border-neutral-900 dark:focus:border-neutral-300 transition-colors"
+        />
+      </div>
+
+      <div>
+        <label
+          for="email"
+          class="block text-[13px] font-medium mb-1.5 text-neutral-800 dark:text-neutral-200"
+        >
+          Email
+        </label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          required
+          autocomplete="email"
+          class="w-full px-3 py-2 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[14px] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 focus:outline-none focus:border-neutral-900 dark:focus:border-neutral-300 transition-colors"
+        />
+      </div>
+
+      <div>
+        <label
+          for="message"
+          class="block text-[13px] font-medium mb-1.5 text-neutral-800 dark:text-neutral-200"
+        >
+          Message
+        </label>
+        <textarea
+          id="message"
+          name="message"
+          rows="6"
+          required
+          class="w-full px-3 py-2 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[14px] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 focus:outline-none focus:border-neutral-900 dark:focus:border-neutral-300 transition-colors resize-y"
+        ></textarea>
+      </div>
+
+      <button
+        type="submit"
+        class="inline-flex items-center px-4 py-2 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[13px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
+      >
+        Send message
+      </button>
+    </form>
+
+    <p class="mt-8 text-[12px] text-neutral-500 dark:text-neutral-500 leading-relaxed">
+      Form backend not yet wired. Before going live, connect to Formspree,
+      Web3Forms, or a Cloudflare Pages Function.
+    </p>
+  </section>
+</BaseLayout>

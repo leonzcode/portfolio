@@ -1,0 +1,66 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const credentials = [
+  "3rd Place, Engineering — Golden Gate STEM Fair (ISEF-affiliated regional)",
+  "Diamond Challenge Finalist & Delaware Waste/Recycling Innovation Award (LitterBot)",
+  "COSMOS @ UC San Diego — Machine Learning Cluster",
+  "USACO Gold Division",
+  "AI Club Co-Founder & Vice President",
+];
+---
+
+<BaseLayout title="Leon Zhao">
+  <section>
+    <h1
+      class="text-[32px] sm:text-[36px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-50 mb-2 leading-tight"
+    >
+      Leon Zhao
+    </h1>
+    <p class="text-[14px] text-neutral-500 dark:text-neutral-500 mb-8">
+      11th grader
+    </p>
+
+    <div class="space-y-5 text-[16px] leading-[1.7] text-neutral-700 dark:text-neutral-300">
+      <p>
+        I build physics-informed machine learning models for environmental and
+        natural-hazard problems. My current focus is a satellite-driven avalanche
+        forecaster that estimates risk from snowpack, weather, and terrain data
+        at 2–5 km resolution — it won 3rd Place in Engineering at the
+        ISEF-affiliated Golden Gate STEM Fair. I'm a longtime snowboarder, and
+        the project started as a way to bring data science to mountains I
+        actually ride.
+      </p>
+      <p>
+        Outside the avalanche work, I led AI/software on
+        <strong class="font-semibold text-neutral-900 dark:text-neutral-100">LitterBot</strong>,
+        an autonomous waste-sorting robot that became a Diamond Challenge
+        Finalist. I co-founded my school's AI Club and run a free global summer
+        program teaching Python, NumPy, scikit-learn, and neural networks.
+      </p>
+    </div>
+
+    <a
+      href="/ai"
+      class="inline-flex items-center mt-8 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
+    >
+      See projects
+    </a>
+
+    <h2
+      class="font-semibold text-[18px] text-neutral-900 dark:text-neutral-100 mt-14 mb-5 tracking-tight"
+    >
+      Headline credentials
+    </h2>
+    <ul class="space-y-2.5 text-[15px] text-neutral-700 dark:text-neutral-300">
+      {
+        credentials.map((c) => (
+          <li class="flex gap-2.5 leading-relaxed">
+            <span class="text-neutral-400 dark:text-neutral-600 shrink-0 select-none">—</span>
+            <span>{c}</span>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</BaseLayout>

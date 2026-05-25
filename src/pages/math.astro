@@ -1,0 +1,19 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import ProjectGrid from "../components/ProjectGrid.astro";
+import { mathProjects } from "../data/projects";
+---
+
+<BaseLayout title="Math · Leon Zhao" wide={true}>
+  <section>
+    <h1
+      class="text-[32px] sm:text-[36px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-50 mb-2 leading-tight"
+    >
+      Math
+    </h1>
+    <p class="text-[14.5px] text-neutral-500 dark:text-neutral-500 mb-10">
+      Mathematics projects and writeups — content coming soon.
+    </p>
+    <ProjectGrid projects={mathProjects} />
+  </section>
+</BaseLayout>

@@ -1,0 +1,20 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import ProjectGrid from "../components/ProjectGrid.astro";
+import { aiProjects } from "../data/projects";
+---
+
+<BaseLayout title="AI · Leon Zhao" wide={true}>
+  <section>
+    <h1
+      class="text-[32px] sm:text-[36px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-50 mb-2 leading-tight"
+    >
+      AI
+    </h1>
+    <p class="text-[14.5px] text-neutral-500 dark:text-neutral-500 mb-10">
+      Machine learning and applied AI projects — environmental forecasting,
+      computer vision, and language-model interfaces.
+    </p>
+    <ProjectGrid projects={aiProjects} />
+  </section>
+</BaseLayout>

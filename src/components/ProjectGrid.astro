@@ -1,0 +1,63 @@
+---
+import type { Project } from "../data/projects";
+import ProjectCard from "./ProjectCard.astro";
+
+interface Props {
+  projects: Project[];
+  initialCount?: number;
+}
+
+const { projects, initialCount = 2 } = Astro.props;
+const visible = projects.slice(0, initialCount);
+const hidden = projects.slice(initialCount);
+const total = projects.length;
+const hasMore = hidden.length > 0;
+---
+
+<div data-project-section>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+    {visible.map((p) => <ProjectCard {...p} />)}
+    {
+      hidden.map((p) => (
+        <div data-hidden-card class="hidden">
+          <ProjectCard {...p} />
+        </div>
+      ))
+    }
+  </div>
+
+  {
+    hasMore && (
+      <div class="mt-10 flex">
+        <button
+          type="button"
+          data-toggle
+          aria-expanded="false"
+          class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
+        >
+          <span data-label-collapsed>View all {total}</span>
+          <span data-label-expanded class="hidden">Show less</span>
+        </button>
+      </div>
+    )
+  }
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>("[data-project-section]").forEach((section) => {
+    const btn = section.querySelector<HTMLButtonElement>("[data-toggle]");
+    if (!btn) return;
+    const collapsedLabel = btn.querySelector<HTMLElement>("[data-label-collapsed]");
+    const expandedLabel = btn.querySelector<HTMLElement>("[data-label-expanded]");
+    const hiddenCards = section.querySelectorAll<HTMLElement>("[data-hidden-card]");
+
+    btn.addEventListener("click", () => {
+      const isExpanded = btn.getAttribute("aria-expanded") === "true";
+      const next = !isExpanded;
+      btn.setAttribute("aria-expanded", String(next));
+      hiddenCards.forEach((el) => el.classList.toggle("hidden", !next));
+      collapsedLabel?.classList.toggle("hidden", next);
+      expandedLabel?.classList.toggle("hidden", !next);
+    });
+  });
+</script>
