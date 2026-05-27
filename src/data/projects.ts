@@ -95,12 +95,53 @@ export const gameProjects: Project[] = Array.from({ length: 18 }, (_, i) => ({
   href: "#",
 }));
 
-export const mathProjects: Project[] = Array.from({ length: 3 }, (_, i) => ({
-  slug: `math-${i + 1}`,
-  title: `Math Project ${i + 1}`,
-  description: "Project details coming soon.",
-  href: "#",
-}));
+export const mathProjects: Project[] = [
+  {
+    slug: "polar",
+    title: "Polar Graphing Calculator",
+    description:
+      "Interactive polar coordinate grapher. Plot multiple curves like r = 2 + 3·sin(θ) or r = 4·cos(2θ) and watch them render on a polar axis with π-labelled gridlines.",
+    href: "https://leoniscooler.github.io/polar/",
+    image: "/cards/card_polar.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "euler",
+    title: "Euler's Method Solver",
+    description:
+      "Numerical solver that approximates first-order ODEs using Euler's method. Adjust step size to see how accuracy changes with step count.",
+    href: "https://leoniscooler.github.io/euler/",
+    image: "/cards/card_euler.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "calculus",
+    title: "Calculus Solver",
+    description:
+      "Single-page calculus tool covering derivatives, integrals, and limits — enter a function and get the symbolic result plus an auto-generated graph.",
+    href: "https://leoniscooler.github.io/calculus/",
+    image: "/cards/card_calculus.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "polynomial",
+    title: "Polynomial Solver",
+    description:
+      "Roots-and-factorisation helper for polynomial equations. Useful for cross-checking algebra homework before submitting it.",
+    href: "https://leoniscooler.github.io/polynomial/",
+    image: "/cards/card_polynomial.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "unit-circle",
+    title: "Unit Circle",
+    description:
+      "Interactive unit circle reference. Click around the circle to see exact sine, cosine, and tangent values at the standard angles.",
+    href: "https://leoniscooler.github.io/unit-circle/",
+    image: "/cards/card_unit-circle.png",
+    tag: "Live demo",
+  },
+];
 
 export const physicsProjects: Project[] = Array.from({ length: 2 }, (_, i) => ({
   slug: `physics-${i + 1}`,
