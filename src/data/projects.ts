@@ -44,6 +44,21 @@ export const aiProjects: Project[] = [
     tech: ["Python", "TensorFlow / Keras", "CNN with transfer learning", "Streamlit"],
   },
   {
+    slug: "aihiring",
+    title: "Bias in AI Hiring Systems",
+    description:
+      "Long-form research investigation into how AI résumé screeners disadvantage marginalized applicants. Built as an interactive scrollytelling site rather than a static PDF.",
+    href: "https://leoniscooler.github.io/aihiring/",
+    image: "/cards/card_aihiring.png",
+    tag: "Research",
+    story: [
+      "A research paper I wrote for Humanities 11, reworked as an interactive web piece. Walks through how AI hiring systems disproportionately reject applicants from marginalized communities, why those biases emerge from training data, and what mitigations actually work.",
+      "The argument leans on two real studies: the Bertrand & Mullainathan 2004 labor-market audit (the original \"Jamal vs. Greg\" résumé experiment) and a 2025 Brookings analysis showing that 98.4% of Fortune 500 companies now use AI somewhere in hiring. The site visualizes the underlying audit data alongside the prose so readers can see the bias gap, not just read about it.",
+      "Sections: The Issue · Effects · Causes · My Research · Solutions · Works Cited.",
+    ],
+    tech: ["HTML/CSS/JS scrollytelling", "Custom data visualizations", "GitHub Pages"],
+  },
+  {
     slug: "wordle",
     title: "Wordle Solver",
     description:
