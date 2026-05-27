@@ -37,11 +37,17 @@ portfolio/
     pages/
       index.astro                About (landing)
       ai.astro                   AI grid (5 cards, links internally to /ai/[slug])
-      games.astro                Games grid (18, mostly placeholders)
-      math.astro                 Math grid (3 placeholders)
-      physics.astro              Physics grid (2 placeholders)
-      contact.astro              form (backend not wired yet)
+      games.astro                Games grid (16 real, migrated from Adobe /game 2026-05-27)
+      math.astro                 Math grid (5 real, migrated from Adobe /math 2026-05-27)
+      physics.astro              Physics grid (3 real, migrated from Adobe /stem 2026-05-27)
+      contact.astro              form, POSTs to /api/contact (Resend backend, wired 2026-05-27)
       ai/[slug].astro            dynamic route, one detail page per AI project
+  functions/
+    api/
+      contact.js                 Cloudflare Pages Function: validates input, drops bots via
+                                 honeypot, sends mail via Resend REST API. Reads
+                                 RESEND_API_KEY, CONTACT_TO_EMAIL, CONTACT_FROM_EMAIL env
+                                 vars (configured in Pages dashboard, see DEPLOYMENT.md §Contact form).
   .github/workflows/deploy.yml   push to main → GitHub Actions → wrangler pages deploy
 ```
 
@@ -54,7 +60,7 @@ portfolio/
 - **No comments / no public threads**: contact form only. Admissions audience = no risk surface.
 - **About voice**: first-person ("I build..."). **Privacy filter**: no school name, no city, no SAT score, no "Top 10%", no email on About, no resume PDF link, no job-seeking language. Public site shows: name, grade, achievements/programs, snowboarding hook. `Golden Gate STEM Fair` is allowed despite mild Bay Area location leak — award is meaningful enough to keep.
 - **Site mark**: `public/logo.png` (mascot, not a portrait). Used in `Header.astro`.
-- **Project counts**: 5 AI, 18 Games, 3 Math, 2 Physics.
+- **Project counts**: 6 AI, 16 Games, 5 Math, 3 Physics. All migrated from the original Adobe Portfolio site on 2026-05-27; tabs are now content-complete with real cards, descriptions, and demo links (no placeholders remaining).
 - **AI project detail pages**: each AI project gets its own detail page (`/ai/[slug]`). Visitor lands there first, reads story + sees screenshots, then clicks "Launch demo" to open the actual app in a new tab. Keeps visitor on Leon's brand. Games/Math/Physics cards link out directly (too many for detail pages).
 - **Show-more pattern** on every project list page: first 2 cards shown by default, "View all N" black-pill button reveals the rest, "Show less" collapses. Pages with ≤2 projects skip the button. Implemented as reusable `<ProjectGrid>`.
 - **Grid: always 3-col** (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`). No state-based column switching — uniform card rhythm matches science/research-portfolio convention. Considered (and rejected 2026-05-25) a 2-col-collapsed → 3-col-expanded switch; the resize-on-click read as a layout shift.
@@ -67,11 +73,12 @@ portfolio/
 |---|---|---|
 | Avalanche Risk Forecasting | `https://apps.leonzhao.dev/avalanche/` | Hetzner CCX13 via Caddy |
 | AI Art Detection | `https://apps.leonzhao.dev/ai-art/` | Hetzner CCX13 via Caddy |
+| Bias in AI Hiring Systems | `https://leoniscooler.github.io/aihiring/` | GitHub Pages (research scrollytelling) |
 | Wordle Solver | `https://leoniscooler.github.io/wordlesolver/` | GitHub Pages |
 | Docs | `https://leoniscooler.github.io/docs/` | GitHub Pages |
 | ChatGPT Interface | `https://leoniscooler.github.io/chatgpt/` | GitHub Pages |
 
-The first two were swapped from Streamlit Cloud (`avalancheprediction.streamlit.app`, `aiartdetection.streamlit.app`) to `apps.leonzhao.dev` on 2026-05-26 when the Hetzner stack went live. The Streamlit Cloud demos still resolve but are no longer linked.
+The first two were swapped from Streamlit Cloud (`avalancheprediction.streamlit.app`, `aiartdetection.streamlit.app`) to `apps.leonzhao.dev` on 2026-05-26 when the Hetzner stack went live. `aihiring` was added on 2026-05-27 as part of the Adobe-to-apex migration. The Streamlit Cloud demos still resolve but are no longer linked. The Launch demo button auto-decides target: hostname ending `leonzhao.dev` → same-tab (those apps have breadcrumb navigation home); off-domain → new tab (preserves the portfolio tab).
 
 ## Always do first
 - **Invoke the `frontend-design` skill** before writing any front-end code, every session, no exceptions. The skill is the source of truth for craft level; following it is what keeps this site out of generic-AI-aesthetic territory.
