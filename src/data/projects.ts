@@ -103,12 +103,142 @@ aiProjects.forEach((p) => {
   p.detailHref = `/ai/${p.slug}`;
 });
 
-export const gameProjects: Project[] = Array.from({ length: 18 }, (_, i) => ({
-  slug: `game-${i + 1}`,
-  title: `Game Project ${i + 1}`,
-  description: "Project details coming soon.",
-  href: "#",
-}));
+export const gameProjects: Project[] = [
+  {
+    slug: "basket",
+    title: "Sports Un-random",
+    description:
+      "Browser basketball mini-game — flick to shoot, time your release for the score before the clock runs out.",
+    href: "https://leoniscooler.github.io/basket/",
+    image: "/cards/card_basket.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "blackjoy",
+    title: "Black Joy",
+    description: "Themed card-game variant on the blackjack rule set.",
+    href: "https://leoniscooler.github.io/blackjoy/",
+    image: "/cards/card_blackjoy.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "ski",
+    title: "Leonski",
+    description:
+      "Endless ski-down game. Dodge trees, build speed, see how long you can stay alive.",
+    href: "https://leoniscooler.github.io/ski/",
+    image: "/cards/card_ski.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "coconut",
+    title: "Coconut Simulator",
+    description: "Idle clicker — every tap shakes more coconuts from the tree.",
+    href: "https://leoniscooler.github.io/coconut/",
+    image: "/cards/card_coconut.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "car",
+    title: "Neon Velocity",
+    description: "Top-down arcade racer with a neon aesthetic. Steer the corners, don't crash.",
+    href: "https://leoniscooler.github.io/car/",
+    image: "/cards/card_car.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "clash",
+    title: "Clash Royale",
+    description:
+      "Tower-defense card game in the Clash Royale mold — deploy troops, defend your tower, take down the opponent's.",
+    href: "https://leoniscooler.github.io/clash/",
+    image: "/cards/card_clash.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "imposter",
+    title: "Imposter Game",
+    description: "Among Us-style social deduction game playable in a single browser session.",
+    href: "https://leoniscooler.github.io/imposter/",
+    image: "/cards/card_imposter.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "slope",
+    title: "Slope",
+    description:
+      "Steer a rolling ball down a procedurally-extending 3D slope. Avoid obstacles, accumulate speed.",
+    href: "https://leoniscooler.github.io/slope/",
+    image: "/cards/card_slope.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "platformer",
+    title: "Leon's Platformer",
+    description:
+      "Side-scrolling 2D platformer with jump, double-jump, and hand-designed levels.",
+    href: "https://leoniscooler.github.io/platformer/",
+    image: "/cards/card_platformer.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "wordle-game",
+    title: "Leon's Wordle",
+    description:
+      "Browser Wordle clone — guess the five-letter word in six tries. (Different from the AI Wordle Solver under AI projects.)",
+    href: "https://leoniscooler.github.io/wordle/",
+    image: "/cards/card_wordle-game.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "blackjack",
+    title: "Blackjack Game",
+    description: "Single-player blackjack against a simulated dealer — hit, stand, double down.",
+    href: "https://leoniscooler.github.io/blackjack/",
+    image: "/cards/card_blackjack.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "tennis",
+    title: "Tennis",
+    description: "Two-player tennis on one keyboard. Left and right paddles bounce the ball back and forth.",
+    href: "https://leoniscooler.github.io/tennis/",
+    image: "/cards/card_tennis.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "leon-2048",
+    title: "LEON 2048",
+    description: "2048 number-merging puzzle reskinned with my own tile art.",
+    href: "https://leoniscooler.github.io/LEON/",
+    image: "/cards/card_leon-2048.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "tetris",
+    title: "Tetris",
+    description: "Browser Tetris — falling tetrominoes, line clears, speed ramps up as you progress.",
+    href: "https://leoniscooler.github.io/Tetris/",
+    image: "/cards/card_tetris.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "pong",
+    title: "Pong",
+    description: "Classic Pong. Two paddles, one ball, first to ten.",
+    href: "https://leoniscooler.github.io/pong/",
+    image: "/cards/card_pong.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "snake",
+    title: "Snake",
+    description: "Classic Snake — eat food, grow longer, avoid your own tail.",
+    href: "https://leoniscooler.github.io/snake/",
+    image: "/cards/card_snake.png",
+    tag: "Live demo",
+  },
+];
 
 export const mathProjects: Project[] = [
   {
