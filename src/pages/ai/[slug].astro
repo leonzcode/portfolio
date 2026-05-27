@@ -13,6 +13,19 @@ const { project } = Astro.props;
 const story = project.story ?? [project.description];
 const tech = project.tech ?? [];
 const screenshots = project.screenshots ?? [];
+
+// Same-tab nav when we control the destination (apps.leonzhao.dev — has a
+// breadcrumb back to the portfolio). New-tab when the destination is off
+// our infra (GitHub Pages projects can't be edited to add a back-link, so
+// preserving the portfolio tab is the visitor's only way home).
+let isExternalDemo = false;
+if (project.href && project.href.startsWith("http")) {
+  try {
+    isExternalDemo = !new URL(project.href).hostname.endsWith("leonzhao.dev");
+  } catch {
+    isExternalDemo = true; // unparseable URLs default to new-tab (safer)
+  }
+}
 ---
 
 <BaseLayout
@@ -56,6 +69,8 @@ const screenshots = project.screenshots ?? [];
         project.href && project.href !== "#" && (
           <a
             href={project.href}
+            target={isExternalDemo ? "_blank" : undefined}
+            rel={isExternalDemo ? "noopener noreferrer" : undefined}
             class="inline-flex items-center gap-2 mt-6 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
           >
             Launch demo
