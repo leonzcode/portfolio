@@ -84,18 +84,6 @@ export const aiProjects: Project[] = [
     ],
     tech: ["Static site generator", "GitHub Pages"],
   },
-  {
-    slug: "chatgpt",
-    title: "ChatGPT Interface",
-    description: "Lightweight ChatGPT-style chat UI built on the OpenAI API.",
-    href: "https://leoniscooler.github.io/chatgpt/",
-    image: "/cards/card_chatGPT.png",
-    tag: "Live demo",
-    story: [
-      "A minimal ChatGPT-style chat interface I built to learn how the OpenAI Chat Completions API actually works — message threading, streaming responses, system prompts, and the rest. Hosted on GitHub Pages with the API key supplied client-side (browser-only, no server).",
-    ],
-    tech: ["JavaScript", "OpenAI Chat Completions API", "GitHub Pages"],
-  },
 ];
 
 // Mark AI projects as having detail pages
