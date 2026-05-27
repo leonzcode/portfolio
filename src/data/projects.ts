@@ -17,7 +17,7 @@ export const aiProjects: Project[] = [
     title: "Avalanche Risk Forecasting",
     description:
       "Physics-informed ML model that forecasts avalanche risk at 2–5 km resolution from satellite, snowpack, and weather data. 3rd Place, Engineering — Golden Gate STEM Fair.",
-    href: "https://avalancheprediction.streamlit.app/",
+    href: "https://apps.leonzhao.dev/avalanche/",
     image: "/cards/card_avalanche.png",
     tag: "Live demo",
     story: [
@@ -33,7 +33,7 @@ export const aiProjects: Project[] = [
     title: "AI Art Detection",
     description:
       "CNN classifier that distinguishes AI-generated images from human-made art; improved accuracy from 66% to 98% through model iterations during COSMOS @ UC San Diego.",
-    href: "https://aiartdetection.streamlit.app/",
+    href: "https://apps.leonzhao.dev/ai-art/",
     image: "/cards/card_art_detector.png",
     tag: "Live demo",
     story: [
