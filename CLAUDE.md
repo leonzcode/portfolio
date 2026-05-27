@@ -63,15 +63,15 @@ portfolio/
 - **AI card images** live in `public/cards/`. Each AI project's `image` field in `src/data/projects.ts` references `/cards/...`. The detail-page template falls back to this image as its hero when no `screenshots[]` array is provided — so one PNG serves both the card thumbnail and the detail-page hero.
 
 ## Demo URL mapping for AI projects (in `src/data/projects.ts`)
-| Project | Current demo URL | Eventual (after mlhub on Hetzner) |
+| Project | Live demo URL | Hosted on |
 |---|---|---|
-| Avalanche Risk Forecasting | `https://avalancheprediction.streamlit.app/` | `https://apps.leonzhao.dev/avalanche` |
-| AI Art Detection | `https://aiartdetection.streamlit.app/` | `https://apps.leonzhao.dev/ai-art` |
-| Wordle Solver | `https://leoniscooler.github.io/wordlesolver/` | (unchanged — GitHub Pages stays) |
-| Docs | `https://leoniscooler.github.io/docs/` | (unchanged) |
-| ChatGPT Interface | `https://leoniscooler.github.io/chatgpt/` | (unchanged) |
+| Avalanche Risk Forecasting | `https://apps.leonzhao.dev/avalanche/` | Hetzner CCX13 via Caddy |
+| AI Art Detection | `https://apps.leonzhao.dev/ai-art/` | Hetzner CCX13 via Caddy |
+| Wordle Solver | `https://leoniscooler.github.io/wordlesolver/` | GitHub Pages |
+| Docs | `https://leoniscooler.github.io/docs/` | GitHub Pages |
+| ChatGPT Interface | `https://leoniscooler.github.io/chatgpt/` | GitHub Pages |
 
-Switch the first two when `mlhub` goes live on Hetzner — one-line edit per project.
+The first two were swapped from Streamlit Cloud (`avalancheprediction.streamlit.app`, `aiartdetection.streamlit.app`) to `apps.leonzhao.dev` on 2026-05-26 when the Hetzner stack went live. The Streamlit Cloud demos still resolve but are no longer linked.
 
 ## Always do first
 - **Invoke the `frontend-design` skill** before writing any front-end code, every session, no exceptions. The skill is the source of truth for craft level; following it is what keeps this site out of generic-AI-aesthetic territory.

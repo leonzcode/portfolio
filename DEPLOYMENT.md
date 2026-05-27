@@ -2,11 +2,13 @@
 
 > **Path conventions in this doc:** bare paths like `src/pages/index.astro` are relative to this repo root. Run the commands shown below from the repo root unless noted. The author's local workspace path is `D:\leon-web\portfolio` — substitute your own clone path.
 
-## Status (2026-05-25)
+## Status (2026-05-26)
 
 The portfolio is **live at `homepage.leonzhao.dev`**, deployed via **GitHub Actions** running `cloudflare/wrangler-action@v3` — NOT via Cloudflare's native dashboard Git integration. Reason documented in the "Why GitHub Actions" section below.
 
 Pages project: `portfolio` on the `Zoomaxed@gmail.com` Cloudflare account (the same account that owns `leonzhao.dev` DNS). Account ID: `3c5a3974fc58f2e9bc4f1d1151a85708`. Internal URL: `portfolio-4qb.pages.dev`.
+
+**Update 2026-05-26**: AI project "Launch demo" links in `src/data/projects.ts` swapped from Streamlit Cloud (`*.streamlit.app`) to the Hetzner-hosted `apps.leonzhao.dev/{avalanche,ai-art}/` URLs after the mlhub stack went live. One-line edit per project; auto-deployed via the workflow described below.
 
 ---
 
