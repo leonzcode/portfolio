@@ -194,6 +194,39 @@ Free tier covers everything:
 
 ---
 
+## Contact form (Cloudflare Pages Function + Resend)
+
+The `/contact` page POSTs to `/api/contact`, which is served by `functions/api/contact.js`. Cloudflare Pages auto-deploys anything under `functions/` alongside the Astro build — no extra config needed. The function validates input, drops bots via a hidden honeypot field, and sends the message through Resend.
+
+**One-time setup** (do this before the form will actually deliver):
+
+1. **Sign up at https://resend.com** and create an API key (Dashboard → API Keys → Create API Key, read-write).
+2. **Verify the sending domain.** In Resend → Domains → Add Domain → enter `leonzhao.dev`. Resend will show three DNS records to add:
+   - 1× MX (for return-path)
+   - 1× TXT (SPF)
+   - 1× TXT (DKIM)
+   Add these in Cloudflare (DNS tab on `leonzhao.dev`). Status flips to "Verified" within a few minutes. Without this step, Resend rejects sends from `@leonzhao.dev` with a 403.
+3. **Add three Cloudflare Pages environment variables.** Dashboard → Pages → `portfolio` → Settings → Environment variables → **Production** (and optionally Preview):
+
+   | Name | Value | Required? |
+   |---|---|---|
+   | `RESEND_API_KEY` | the key from step 1 (starts with `re_`) | yes |
+   | `CONTACT_TO_EMAIL` | where Leon wants the messages delivered (his real inbox) | yes |
+   | `CONTACT_FROM_EMAIL` | defaults to `contact@leonzhao.dev`. Override if you want a different verified address. | no |
+
+   After saving, **redeploy** — env var changes don't apply to existing deployments. Trigger a redeploy via Pages dashboard → Deployments → latest → Retry deployment, OR push any commit to `main`.
+
+4. **Test from `/contact`** by sending a real message. Check `CONTACT_TO_EMAIL` inbox.
+
+**Troubleshooting**:
+- Function logs in Cloudflare dashboard → Pages → `portfolio` → Functions → Real-time logs. Useful for seeing the `console.error` lines from `contact.js`.
+- "Server misconfigured" response → env vars not set or deployment not refreshed.
+- "Couldn't send the message" → Resend rejected it; check Real-time logs for the actual status code and body. Common causes: unverified sender domain (most likely first time), exhausted free tier (100 emails/day), suspended account.
+
+**Local dev**: Pages Functions don't run with `astro dev`. To test the function locally, use `npx wrangler pages dev dist` (after `npm run build`), and put the env vars in a local `.dev.vars` file. The form will hit a real Resend endpoint though, so it'll consume a Resend send-quota slot.
+
+---
+
 ## End-state plan
 
 `homepage.leonzhao.dev` is a temporary staging subdomain. The intended permanent URL is the apex `leonzhao.dev` itself, once Leon retires the Adobe Portfolio site currently hosted there. At that point: update the two apex A records (currently pointing at Fastly/Adobe at `151.101.x.x`) to point at the Pages project, and drop or redirect the `homepage` subdomain.
