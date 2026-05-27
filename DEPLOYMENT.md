@@ -4,7 +4,7 @@
 
 ## Status (2026-05-26)
 
-The portfolio is **live at `homepage.leonzhao.dev`**, deployed via **GitHub Actions** running `cloudflare/wrangler-action@v3` — NOT via Cloudflare's native dashboard Git integration. Reason documented in the "Why GitHub Actions" section below.
+The portfolio is **live at the apex `leonzhao.dev`**, deployed via **GitHub Actions** running `cloudflare/wrangler-action@v3` — NOT via Cloudflare's native dashboard Git integration. Reason documented in the "Why GitHub Actions" section below. (Originally launched on a temporary `homepage.leonzhao.dev` subdomain in May 2026; moved to apex once the Adobe Portfolio that previously occupied the apex was retired.)
 
 Pages project: `portfolio` on the `Zoomaxed@gmail.com` Cloudflare account (the same account that owns `leonzhao.dev` DNS). Account ID: `3c5a3974fc58f2e9bc4f1d1151a85708`. Internal URL: `portfolio-4qb.pages.dev`.
 
@@ -97,7 +97,7 @@ Watch the run at https://github.com/leoniscooler/portfolio/actions. Should compl
 
 ### 5. Add the custom domain
 
-In Cloudflare dashboard (Zoomaxed account) → Workers & Pages → `portfolio` → **Custom domains** → **Set up a custom domain** → `homepage.leonzhao.dev`. Cloudflare auto-creates a CNAME (orange cloud, proxied) since DNS lives in the same account. Status goes Active within 1–5 min.
+In Cloudflare dashboard (Zoomaxed account) → Workers & Pages → `portfolio` → **Custom domains** → **Set up a custom domain** → `leonzhao.dev` (and optionally `www.leonzhao.dev` as a second domain). Cloudflare auto-creates the apex records (orange cloud, proxied) since DNS lives in the same account. Status goes Active within 1–5 min. If a previous Adobe/Fastly A record exists on the apex, Cloudflare will prompt you to replace it during this step — accept.
 
 ---
 
@@ -177,7 +177,7 @@ Once a Pages project is created via `wrangler pages deploy` (direct upload), Clo
 
 ## What happens on every future push
 
-Push to `main` → GitHub Actions kicks off `deploy.yml` → `npm ci && npm run build` → `wrangler pages deploy dist` → new Pages deployment registered → `homepage.leonzhao.dev` updates within ~60–90s.
+Push to `main` → GitHub Actions kicks off `deploy.yml` → `npm ci && npm run build` → `wrangler pages deploy dist` → new Pages deployment registered → `leonzhao.dev` updates within ~60–90s.
 
 Roll back any deploy from the Cloudflare dashboard → `portfolio` → Deployments → click an older deployment → Manage deployment → Rollback.
 
@@ -227,6 +227,6 @@ The `/contact` page POSTs to `/api/contact`, which is served by `functions/api/c
 
 ---
 
-## End-state plan
+## Apex migration history (completed)
 
-`homepage.leonzhao.dev` is a temporary staging subdomain. The intended permanent URL is the apex `leonzhao.dev` itself, once Leon retires the Adobe Portfolio site currently hosted there. At that point: update the two apex A records (currently pointing at Fastly/Adobe at `151.101.x.x`) to point at the Pages project, and drop or redirect the `homepage` subdomain.
+The portfolio originally launched on a temporary `homepage.leonzhao.dev` subdomain because the apex `leonzhao.dev` was occupied by an Adobe Portfolio site (with apex A records pointing at Fastly/Adobe at `151.101.x.x`). Once the new site was content-complete (May 2026), the apex was reclaimed: Adobe Portfolio was retired, the Fastly A records were replaced with Cloudflare Pages routing for this project, and the `homepage.leonzhao.dev` subdomain was removed. The Streamlit apps' breadcrumbs and Astro's `site` config in `astro.config.mjs` were updated in the same wave to reference the apex.

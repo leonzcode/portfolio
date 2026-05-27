@@ -7,7 +7,7 @@ Operational guide for working inside this repo.
 Strategic context (why this exists, how it fits with `mlhub/`) lives in `D:\leon-web\deployment.md` (workspace-only — not in this repo). Full deploy procedures (Cloudflare Pages via GitHub Actions, lessons learned) live in `DEPLOYMENT.md` (same directory as this file).
 
 ## What this repo is
-Leon Zhao's portfolio site at `homepage.leonzhao.dev` (and eventually the apex `leonzhao.dev` once Adobe Portfolio is retired). Static Astro 5 + Tailwind 4 site deployed to Cloudflare Pages on push to `main`. Audience: college admissions officers — every design and content decision should serve that audience.
+Leon Zhao's portfolio site at `leonzhao.dev` (apex). Static Astro 5 + Tailwind 4 site deployed to Cloudflare Pages on push to `main`. Audience: college admissions officers — every design and content decision should serve that audience.
 
 ## Repo structure
 ```
