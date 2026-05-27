@@ -158,9 +158,32 @@ export const mathProjects: Project[] = [
   },
 ];
 
-export const physicsProjects: Project[] = Array.from({ length: 2 }, (_, i) => ({
-  slug: `physics-${i + 1}`,
-  title: `Physics Project ${i + 1}`,
-  description: "Project details coming soon.",
-  href: "#",
-}));
+export const physicsProjects: Project[] = [
+  {
+    slug: "doppler",
+    title: "Doppler Effect Simulator",
+    description:
+      "Interactive simulation of the Doppler effect — adjust source velocity and observer position to see how perceived frequency shifts as the source approaches or recedes.",
+    href: "https://leoniscooler.github.io/doppler/",
+    image: "/cards/card_doppler.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "circuit",
+    title: "Circuit Builder",
+    description:
+      "Drag-and-drop circuit playground. Wire up resistors, capacitors, and voltage sources, then watch current and voltage values update as you change the topology.",
+    href: "https://leoniscooler.github.io/circuit/",
+    image: "/cards/card_circuit.png",
+    tag: "Live demo",
+  },
+  {
+    slug: "kinetic-theory",
+    title: "Kinetic Theory Simulator",
+    description:
+      "2D gas-particle simulator demonstrating kinetic theory: change temperature or particle count and see velocity distributions, mean kinetic energy, and collision behavior shift in real time.",
+    href: "https://leoniscooler.github.io/kinetic-theory/",
+    image: "/cards/card_kinetic-theory.png",
+    tag: "Live demo",
+  },
+];
