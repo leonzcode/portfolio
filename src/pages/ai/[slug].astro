@@ -13,6 +13,7 @@ const { project } = Astro.props;
 const story = project.story ?? [project.description];
 const tech = project.tech ?? [];
 const screenshots = project.screenshots ?? [];
+let playableHref: string | undefined;
 
 // Same-tab nav when we control the destination (apps.leonzhao.dev — has a
 // breadcrumb back to the portfolio). New-tab when the destination is off
@@ -21,11 +22,18 @@ const screenshots = project.screenshots ?? [];
 let isExternalDemo = false;
 if (project.href && project.href.startsWith("http")) {
   try {
-    isExternalDemo = !new URL(project.href).hostname.endsWith("leonzhao.dev");
+    const host = new URL(project.href).hostname;
+    const isOnLeonzhaoDomain = host.endsWith("leonzhao.dev");
+    isExternalDemo = !isOnLeonzhaoDomain;
+    if (isOnLeonzhaoDomain) {
+      playableHref = project.href;
+    }
   } catch {
     isExternalDemo = true; // unparseable URLs default to new-tab (safer)
   }
 }
+const hasEmbeddedPlayable = !!playableHref;
+const hasExternalSource = !!project.href && !!playableHref;
 ---
 
 <BaseLayout
@@ -66,7 +74,7 @@ if (project.href && project.href.startsWith("http")) {
         {project.description}
       </p>
       {
-        project.href && project.href !== "#" && (
+        project.href && project.href !== "#" && !hasEmbeddedPlayable && (
           <a
             href={project.href}
             target={isExternalDemo ? "_blank" : undefined}
@@ -91,10 +99,47 @@ if (project.href && project.href.startsWith("http")) {
           </a>
         )
       }
+      {
+        hasExternalSource && (
+          <a
+            href={project.href}
+            class="inline-flex items-center gap-2 mt-6 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
+          >
+            Open full app
+            <svg
+              class="w-3.5 h-3.5"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14" />
+              <path d="m12 5 7 7-7 7" />
+            </svg>
+          </a>
+        )
+      }
     </header>
 
     {
-      screenshots.length > 0 ? (
+      hasEmbeddedPlayable && (
+        <div class="w-full h-[78vh] min-h-[560px] rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 mb-12">
+          <iframe
+            src={playableHref}
+            title={`${project.title} embedded app`}
+            class="w-full h-full"
+            loading="lazy"
+          ></iframe>
+        </div>
+      )
+    }
+
+    {
+      !hasEmbeddedPlayable && screenshots.length > 0 ? (
         <div class="space-y-4 mb-12">
           {screenshots.map((src) => (
             <img
@@ -104,19 +149,19 @@ if (project.href && project.href.startsWith("http")) {
             />
           ))}
         </div>
-      ) : project.image ? (
+      ) : !hasEmbeddedPlayable && project.image ? (
         <img
           src={project.image}
           alt={project.title}
           class="w-full mb-12 rounded-md border border-neutral-200 dark:border-neutral-800"
         />
-      ) : (
+      ) : !hasEmbeddedPlayable ? (
         <div class="aspect-[16/9] mb-12 rounded-md bg-neutral-100 dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800 flex items-center justify-center">
           <span class="font-mono text-[12px] tracking-wider uppercase text-neutral-400 dark:text-neutral-600">
             Screenshot placeholder
           </span>
         </div>
-      )
+      ) : null
     }
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-10 lg:gap-14">

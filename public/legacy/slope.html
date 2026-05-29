@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slope</title>
+<style>
+  body { 
+    margin: 0; 
+    overflow: hidden; 
+    background: linear-gradient(to bottom, #0f0c29, #302b63, #24243e);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  #overlay {
+    position: fixed;
+    top: 20px; 
+    left: 20px;
+    color: white; 
+    font-size: 24px; 
+    z-index: 10;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.5);
+    padding: 10px 20px;
+    border-radius: 10px;
+  }
+  
+  #speed {
+    position: fixed;
+    top: 20px; 
+    right: 20px;
+    color: white; 
+    font-size: 18px; 
+    z-index: 10;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.5);
+    padding: 10px 20px;
+    border-radius: 10px;
+  }
+  
+  #instructions {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 15px;
+    border-radius: 10px;
+    z-index: 10;
+    max-width: 500px;
+  }
+  
+  #gameOverMenu {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 40px;
+    border-radius: 15px;
+    text-align: center;
+    z-index: 100;
+    width: 400px;
+    box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
+    display: none;
+    border: 2px solid #ff4757;
+  }
+  
+  #gameOverMenu h2 {
+    color: #ff4757;
+    font-size: 36px;
+    margin-bottom: 20px;
+    text-shadow: 0 0 10px rgba(255, 71, 87, 0.7);
+  }
+  
+  #gameOverMenu p {
+    font-size: 20px;
+    margin: 15px 0;
+  }
+  
+  #currentScore {
+    color: #2ed573;
+    font-weight: bold;
+    font-size: 24px;
+  }
+  
+  #highScore {
+    color: #ffa502;
+    font-weight: bold;
+    font-size: 24px;
+  }
+  
+  #restartButton {
+    background: linear-gradient(to right, #ff4757, #ff6348);
+    color: white;
+    border: none;
+    padding: 15px 30px;
+    font-size: 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 20px;
+    transition: all 0.3s ease;
+    font-weight: bold;
+  }
+  
+  #restartButton:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 15px rgba(255, 71, 87, 0.7);
+  }
+  
+  .score-display {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 10px;
+    border-radius: 8px;
+    margin: 10px 0;
+  }
+</style>
+</head>
+<body>
+<div id="overlay">Score: 0</div>
+<div id="speed">Speed: 0</div>
+<div id="instructions">Use LEFT/RIGHT arrow keys or A/D to move • Avoid falling off the path • Watch out for moving platforms!</div>
+
+<div id="gameOverMenu">
+  <h2>GAME OVER</h2>
+  <div class="score-display">
+    <p>Your Score: <span id="currentScore">0</span></p>
+  </div>
+  <div class="score-display">
+    <p>High Score: <span id="highScore">0</span></p>
+  </div>
+  <button id="restartButton">PLAY AGAIN</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+let scene = new THREE.Scene();
+let camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+let renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+// Game state
+let gameActive = true;
+let highScore = localStorage.getItem('slopeHighScore') || 0;
+let isFalling = false;
+let gameOverTriggered = false;
+let platformsShouldMove = true;
+
+// Enhanced lighting
+let ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+scene.add(ambientLight);
+
+let directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+directionalLight.position.set(5, 10, 5);
+directionalLight.castShadow = true;
+directionalLight.shadow.mapSize.width = 2048;
+directionalLight.shadow.mapSize.height = 2048;
+scene.add(directionalLight);
+
+// Add some colorful point lights
+let pointLight1 = new THREE.PointLight(0xff00ff, 1, 50);
+pointLight1.position.set(5, 5, -20);
+scene.add(pointLight1);
+
+let pointLight2 = new THREE.PointLight(0x00ffff, 1, 50);
+pointLight2.position.set(-5, 5, -30);
+scene.add(pointLight2);
+
+// Ball with enhanced material
+let ballGeo = new THREE.SphereGeometry(0.5, 32, 32);
+let ballMat = new THREE.MeshStandardMaterial({ 
+  color: 0x00ff00,
+  metalness: 0.7,
+  roughness: 0.2,
+  emissive: 0x003300
+});
+let ball = new THREE.Mesh(ballGeo, ballMat);
+ball.castShadow = true;
+scene.add(ball);
+
+// Floor segments with vibrant colors
+let floors = [];
+let floorColors = [
+  0xff6b6b, 0x4ecdc4, 0x45b7d1, 0x96ceb4, 0xfeca57,
+  0xff9ff3, 0x54a0ff, 0x5f27cd, 0x00d2d3, 0xff9f43
+];
+
+// Moving platform properties
+let movingPlatformColors = [0xff0000, 0xffff00, 0xff00ff]; // Red, Yellow, Magenta for visibility
+let movingPlatformSpeeds = [0.03, 0.05, 0.07]; // Different speeds for variety
+
+function createFloor(z) {
+  let geo = new THREE.BoxGeometry(5, 0.5, 10);
+  let isMoving = Math.random() < 0.2; // 20% chance to be a moving platform
+  
+  let colorIndex;
+  let mat;
+  
+  if (isMoving) {
+    // Moving platform - use special colors
+    colorIndex = Math.floor(Math.random() * movingPlatformColors.length);
+    mat = new THREE.MeshStandardMaterial({ 
+      color: movingPlatformColors[colorIndex],
+      metalness: 0.5,
+      roughness: 0.3,
+      emissive: movingPlatformColors[colorIndex],
+      emissiveIntensity: 0.2
+    });
+  } else {
+    // Regular platform
+    colorIndex = Math.floor(Math.random() * floorColors.length);
+    mat = new THREE.MeshStandardMaterial({ 
+      color: floorColors[colorIndex],
+      metalness: 0.3,
+      roughness: 0.7
+    });
+  }
+  
+  let floor = new THREE.Mesh(geo, mat);
+  floor.position.z = z;
+  floor.position.x = (Math.random() - 0.5) * 4;
+  floor.receiveShadow = true;
+  
+  // Add moving platform properties
+  if (isMoving) {
+    floor.isMoving = true;
+    floor.moveSpeed = movingPlatformSpeeds[Math.floor(Math.random() * movingPlatformSpeeds.length)];
+    floor.moveDirection = Math.random() < 0.5 ? 1 : -1; // Random initial direction
+    floor.moveRange = 3; // How far it can move left/right
+    floor.originalX = floor.position.x;
+  }
+  
+  scene.add(floor);
+  floors.push(floor);
+}
+
+// Create initial floors
+for (let i = 0; i < 20; i++) createFloor(i * -10);
+
+// Background particles
+let particles = [];
+let particleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+for (let i = 0; i < 100; i++) {
+  let particleMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.5
+  });
+  let particle = new THREE.Mesh(particleGeometry, particleMaterial);
+  particle.position.set(
+    (Math.random() - 0.5) * 100,
+    (Math.random() - 0.5) * 100,
+    (Math.random() - 0.5) * 100 - 50
+  );
+  scene.add(particle);
+  particles.push(particle);
+}
+
+// Camera
+camera.position.set(0, 3, 5);
+camera.lookAt(0, 0, -10);
+
+let speed = 0.2;
+let xVel = 0;
+let score = 0;
+let keys = {};
+document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+// DOM elements
+const gameOverMenu = document.getElementById('gameOverMenu');
+const currentScoreElement = document.getElementById('currentScore');
+const highScoreElement = document.getElementById('highScore');
+const restartButton = document.getElementById('restartButton');
+
+// Initialize ball position to touch the first platform
+function initBallPosition() {
+  ball.position.set(0, 0.75, 0); // 0.5 (ball radius) + 0.25 (half platform height)
+  ball.rotation.set(0, 0, 0);
+}
+
+function resetGame() {
+  gameActive = true;
+  isFalling = false;
+  gameOverTriggered = false;
+  platformsShouldMove = true;
+  initBallPosition();
+  speed = 0.2;
+  score = 0;
+  xVel = 0;
+  gameOverMenu.style.display = 'none';
+  
+  // Reset all floors to starting positions
+  floors.forEach((floor, index) => {
+    floor.position.z = index * -10;
+    floor.position.x = (Math.random() - 0.5) * 4;
+    
+    // Reset moving platform properties
+    if (floor.isMoving) {
+      floor.originalX = floor.position.x;
+      floor.moveDirection = Math.random() < 0.5 ? 1 : -1;
+    }
+  });
+}
+
+function showGameOver() {
+  gameActive = false;
+  gameOverTriggered = true;
+  
+  // Update high score if needed
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('slopeHighScore', highScore);
+  }
+  
+  // Update menu with scores
+  currentScoreElement.textContent = Math.floor(score);
+  highScoreElement.textContent = Math.floor(highScore);
+  
+  // Show game over menu after a short delay to see the falling animation
+  setTimeout(() => {
+    gameOverMenu.style.display = 'block';
+  }, 1000);
+}
+
+// Check if ball is off screen (below camera view)
+function isBallOffScreen() {
+  // Convert ball position to screen coordinates
+  const vector = new THREE.Vector3();
+  vector.setFromMatrixPosition(ball.matrixWorld);
+  vector.project(camera);
+  
+  // Check if ball is below the screen (y coordinate > 1 means below screen in normalized device coordinates)
+  return vector.y > 1.2 || ball.position.y < -10;
+}
+
+// Update moving platforms
+function updateMovingPlatforms() {
+  floors.forEach(floor => {
+    if (floor.isMoving && platformsShouldMove) {
+      // Update platform position
+      floor.position.x += floor.moveSpeed * floor.moveDirection;
+      
+      // Reverse direction if hitting movement boundaries
+      if (Math.abs(floor.position.x - floor.originalX) > floor.moveRange) {
+        floor.moveDirection *= -1;
+      }
+    }
+  });
+}
+
+// Initialize ball position
+initBallPosition();
+
+// Set up restart button
+restartButton.addEventListener('click', resetGame);
+
+function animate() {
+  requestAnimationFrame(animate);
+  
+  // Update moving platforms
+  updateMovingPlatforms();
+  
+  // Move floors backward only if platforms should move
+  if (platformsShouldMove) {
+    floors.forEach(f => {
+      f.position.z += speed;
+      if (f.position.z > 10) {
+        f.position.z -= 200;
+        f.position.x = (Math.random() - 0.5) * 4;
+        
+        // Reset moving platform properties when recycling
+        if (f.isMoving) {
+          f.originalX = f.position.x;
+          f.moveDirection = Math.random() < 0.5 ? 1 : -1;
+        } else {
+          // Regular platform - change color
+          let colorIndex = Math.floor(Math.random() * floorColors.length);
+          f.material.color.setHex(floorColors[colorIndex]);
+        }
+      }
+    });
+
+    // Animate particles
+    particles.forEach(p => {
+      p.position.z += speed * 0.5;
+      if (p.position.z > 50) {
+        p.position.z -= 100;
+      }
+    });
+  }
+
+  if (!gameActive && gameOverTriggered) {
+    // Continue falling animation after game over
+    ball.position.y -= 0.2;
+    ball.rotation.x += 0.08;
+    ball.rotation.z += 0.08;
+    
+    // Check if ball is off screen and stop platforms
+    if (isBallOffScreen() && platformsShouldMove) {
+      platformsShouldMove = false;
+    }
+    
+    renderer.render(scene, camera);
+    return;
+  }
+  
+  if (!gameActive) {
+    renderer.render(scene, camera);
+    return;
+  }
+  
+  // Move ball left/right
+  if (keys['ArrowLeft'] || keys['a']) xVel -= 0.01;
+  if (keys['ArrowRight'] || keys['d']) xVel += 0.01;
+  xVel *= 0.95;
+  ball.position.x += xVel;
+
+  // Speed up
+  if (platformsShouldMove) {
+    speed += 0.0001;
+  }
+
+  // Collision detection
+  let onFloor = false;
+  let currentFloor = null;
+  
+  // Find the floor the ball should be on
+  for (let i = 0; i < floors.length; i++) {
+    let f = floors[i];
+    if (Math.abs(ball.position.z - f.position.z) < 5) {
+      currentFloor = f;
+      break;
+    }
+  }
+  
+  // Check if ball is on the current floor
+  if (currentFloor && 
+      Math.abs(ball.position.x - currentFloor.position.x) < 2.5) {
+    onFloor = true;
+    // Position ball exactly on the floor surface
+    ball.position.y = 0.75; // 0.5 (ball radius) + 0.25 (half platform height)
+    isFalling = false;
+  } else {
+    // Ball is falling off the platform
+    if (!isFalling) {
+      // First frame of falling - trigger game over immediately
+      isFalling = true;
+      showGameOver();
+    }
+    
+    // Continue falling animation
+    ball.position.y -= 0.2;
+    ball.rotation.x += 0.08;
+    ball.rotation.z += 0.08;
+  }
+
+  // Reset rotation when on floor
+  if (onFloor) {
+    ball.rotation.x *= 0.9;
+    ball.rotation.z *= 0.9;
+  }
+
+  // Camera follow with smooth movement
+  camera.position.x += (ball.position.x * 0.8 - camera.position.x) * 0.1;
+  camera.position.z += (ball.position.z + 5 - camera.position.z) * 0.1;
+  camera.lookAt(ball.position.x, 0, ball.position.z - 10);
+
+  // Animate lights for dynamic effect
+  pointLight1.position.z = ball.position.z - 20;
+  pointLight2.position.z = ball.position.z - 30;
+
+  // Score update (only when game is active)
+  if (gameActive && !isFalling) {
+    score += speed * 10;
+    document.getElementById('overlay').textContent = 'Score: ' + Math.floor(score);
+    document.getElementById('speed').textContent = 'Speed: ' + speed.toFixed(2);
+  }
+
+  // Ball color changes with speed
+  let speedFactor = Math.min(speed / 0.5, 1);
+  ball.material.color.setRGB(
+    1 - speedFactor, 
+    speedFactor, 
+    0.5
+  );
+
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// Initialize high score display
+highScoreElement.textContent = Math.floor(highScore);
+</script>
+</body>
+</html>

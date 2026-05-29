@@ -3,6 +3,7 @@ export interface Project {
   title: string;
   description: string;
   href: string;
+  localHref?: string;
   image?: string;
   tag?: string;
   story?: string[];
@@ -316,4 +317,40 @@ export const physicsProjects: Project[] = [
 
 physicsProjects.forEach((p) => {
   p.detailHref = `/physics/${p.slug}`;
+});
+
+const localProjectPaths: Record<string, string> = {
+  basket: "/legacy/basket-random/index.html",
+  blackjoy: "/legacy/doubledutch3d.html",
+  ski: "/legacy/ski.html",
+  coconut: "/legacy/coconut.html",
+  car: "/legacy/car.html",
+  clash: "/legacy/clash.html",
+  imposter: "/legacy/imposter.html",
+  slope: "/legacy/slope.html",
+  platformer: "/legacy/platformer.html",
+  "wordle-game": "/legacy/wordle.html",
+  blackjack: "/legacy/doubledutch.html",
+  tennis: "/legacy/tennis.html",
+  "leon-2048": "/legacy/2048.html",
+  tetris: "/legacy/tetris.html",
+  pong: "/legacy/pong.html",
+  snake: "/legacy/snake.html",
+  polar: "/legacy/polar.html",
+  euler: "/legacy/euler.html",
+  calculus: "/legacy/derivative.html",
+  polynomial: "/legacy/calculator.html",
+  "unit-circle": "/legacy/unitcircle.html",
+  doppler: "/legacy/doppler.html",
+  circuit: "/legacy/circuit.html",
+  "kinetic-theory": "/legacy/particle.html",
+};
+
+[gameProjects, mathProjects, physicsProjects].forEach((group) => {
+  group.forEach((project) => {
+    const localHref = localProjectPaths[project.slug];
+    if (localHref) {
+      project.localHref = localHref;
+    }
+  });
 });

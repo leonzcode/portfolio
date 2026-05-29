@@ -1,0 +1,969 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Leon’s Wordle</title>
+  <style>
+    :root{
+      --bg:#121213; --tile:#121213; --text:#e6eef8; --muted:#818384;
+      --green:#6aaa64; --yellow:#c9b458; --gray:#3a3a3c; --accent:#818384;
+      --tile-size:62px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{margin:0; background:var(--bg); color:var(--text);
+      display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px;}
+    .app{ width: min(620px, 100vw); text-align:center; position:relative; padding-top:10px; }
+    h1{margin:0 0 2px 0; font-size:40px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; padding-bottom:12px; border-bottom:1px solid #3a3a3c;}
+    p.lead{color:var(--muted); margin:8px 0 16px 0; font-size:13px; line-height:1.5;}
+    .board{display:grid; grid-template-rows: repeat(6, var(--tile-size)); gap:5px; justify-content:center; margin:24px auto;}
+    .row{ display:grid; grid-template-columns: repeat(5, var(--tile-size)); gap:5px; }
+    .tile{ width:var(--tile-size); height:var(--tile-size); background:rgb(58,58,60);
+      display:flex; align-items:center; justify-content:center; font-weight:700; font-size:32px;
+      border-radius:4px; user-select:none; color:var(--text); text-transform:uppercase;
+      transition: transform .08s ease, background .2s ease; border:2px solid #3a3a3c; }
+    .tile.pop{ transform: scale(1.05); }
+    .tile.filled{ border:2px solid #565758; }
+    .tile.absent{ background:rgb(58,58,60); color:white; border:none; }
+    .tile.present{ background:var(--yellow); color:white; border:none; }
+    .tile.correct{ background:var(--green); color:white; border:none; }
+    .keyboard{ margin-top:14px; display:flex; flex-direction:column; gap:8px; align-items:center; user-select:none; }
+    .kb-row{ display:flex; gap:4px; justify-content:center; }
+    .key{ padding:12px 8px; min-width:40px; border-radius:4px; background:rgb(129,131,132); color:white;
+      font-weight:600; cursor:pointer; text-transform:uppercase; transition: background .15s ease; font-size:13px; }
+    .key:hover:not(.absent):not(.present):not(.correct){ background:rgb(143,145,146); }
+    .key.wide{ min-width:65px; }
+    .key.absent{ background: rgb(58,58,60); color: white; }
+    .key.present{ background: var(--yellow); color: white; }
+    .key.correct{ background: var(--green); color: white; }
+    .status{ margin-top:16px; min-height:28px; color:var(--text); font-weight:600; font-size:16px; }
+    .controls{ margin-top:18px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+    button.btn{ background:rgb(129,131,132); color:white; border:none; padding:10px 16px; border-radius:4px; cursor:pointer; font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:0.5px; transition: background .2s ease; }
+    button.btn:hover{ background:rgb(143,145,146); }
+    button.btn:active{ transform: scale(0.98); }
+    .small{ font-size:12px; color:var(--muted); margin-top:10px; line-height:1.4;}
+    #timer { position: absolute; top:10px; right:10px; font-weight:700; color: var(--muted); font-size:14px; user-select:none; }
+    #settingsBtn {
+      position: absolute;
+      top:12px;
+      right:12px;
+      width:32px;
+      height:32px;
+      cursor:pointer;
+      transition: transform 0.3s ease;
+      color: var(--muted);
+      user-select:none;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:20px;
+      border-radius: 4px;
+      background: transparent;
+      border: 1px solid transparent;
+    }
+    #settingsBtn:hover {
+      color: var(--text);
+      border-color: #565758;
+    }
+    #settingsBtn.rotated {
+      transform: rotate(90deg);
+      color: var(--text);
+    }
+    /* Sliding panel */
+    #settingsPanel {
+      position: fixed;
+      top: 0; right: -320px;
+      width: 320px;
+      height: 100vh;
+      background: var(--bg);
+      box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+      backdrop-filter: blur(10px);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      transition: right 0.3s ease;
+      z-index: 1000;
+      color: var(--text);
+    }
+    #settingsPanel.active {
+      right: 0;
+    }
+    #settingsPanel header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    #settingsPanel header h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+    #settingsPanel .closeBtn {
+      background: none;
+      border: none;
+      font-size: 28px;
+      color: var(--muted);
+      cursor: pointer;
+      line-height: 1;
+      padding: 0;
+      user-select:none;
+      transition: color 0.2s ease;
+    }
+    #settingsPanel .closeBtn:hover {
+      color: var(--accent);
+    }
+    #settingsPanel label {
+      display: block;
+      margin: 10px 0 5px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #settingsPanel select, #settingsPanel input[type="checkbox"] {
+      margin-top: 5px;
+    }
+    #settingsPanel select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #565758;
+      background: rgb(58,58,60);
+      color: var(--text);
+      font-size: 14px;
+      outline-offset: 2px;
+      cursor: pointer;
+    }
+    #settingsPanel .checkbox-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      user-select:none;
+    }
+    #settingsPanel .theme-preview {
+      margin-top: 10px;
+      border-radius: 4px;
+      border: 1px solid #565758;
+      padding: 10px;
+      background: rgb(58,58,60);
+      color: var(--text);
+      user-select:none;
+    }
+    /* Preview grid style */
+    .preview-board {
+      display: grid;
+      grid-template-rows: repeat(2, 30px);
+      gap: 4px;
+      justify-content: center;
+      margin-top: 8px;
+    }
+    .preview-row {
+      display: grid;
+      grid-template-columns: repeat(5, 30px);
+      gap: 4px;
+    }
+    .preview-tile {
+      width: 30px; height: 30px;
+      border-radius: 4px;
+      background: rgb(58,58,60);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--text);
+      text-transform: uppercase;
+      border: 2px solid #3a3a3c;
+    }
+    .preview-tile.correct { background: var(--green); color: white; border: none; }
+    .preview-tile.present { background: var(--yellow); color: white; border: none; }
+    .preview-tile.absent { background: rgb(58,58,60); color: white; border: none; }
+
+    /* Animations */
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    .anim-flip {
+      transition: transform 0.5s ease;
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
+    }
+    .anim-bounce {
+      animation: bounce 0.6s ease forwards;
+    }
+    .anim-pulse {
+      animation: pulse 0.6s ease forwards;
+    }
+    .anim-slide {
+      animation: slidein 0.4s ease forwards;
+    }
+    @keyframes slidein {
+      from { transform: translateY(30px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* Themes */
+    /* Classic (default) */
+    .theme-classic {
+      --bg:#0b1220; --tile:#111827; --text:#e6eef8; --muted:#9aa7bf;
+      --green:#6aaa64; --yellow:#c9b458; --gray:#3a3a3c; --accent:#2563eb;
+    }
+    /* Light */
+    .theme-light {
+      --bg:#ffffff; --tile:#ffffff; --text:#000000; --muted:#787c7e;
+      --green:#6aaa64; --yellow:#c9b458; --gray:#d3d6da; --accent:#787c7e;
+    }
+    .theme-light .tile { background:rgb(211,214,218); border-color:#9ca3af; }
+    .theme-light .tile.filled { border-color:#d1d5db; }
+    .theme-light .key { background:rgb(211,214,218); color:black; }
+    .theme-light .key:hover:not(.absent):not(.present):not(.correct){ background:rgb(179,184,192); }
+    .theme-light h1 { border-color:#d1d5db; }
+    .theme-light .tile.absent { background:rgb(211,214,218); }
+    /* Neon */
+    .theme-neon {
+      --bg:#040c0f; --tile:#001f2d; --text:#39ff14; --muted:#0a662d;
+      --green:#0aff6e; --yellow:#ffe600; --gray:#444444; --accent:#39ff14;
+    }
+    /* Sunset */
+    .theme-sunset {
+      --bg: linear-gradient(180deg, #ff512f, #dd2476);
+      --tile:#ff7e5f; --text:#fff1e6; --muted:#ffe3dc;
+      --green:#d64161; --yellow:#f4b393; --gray:#6e3e49; --accent:#f4b393;
+    }
+    /* Mint */
+    .theme-mint {
+      --bg:#e6fff8; --tile:#d4f0e4; --text:#075d54; --muted:#43a39e;
+      --green:#43a39e; --yellow:#96c5b0; --gray:#a2a8a1; --accent:#075d54;
+    }
+    /* Retro */
+    .theme-retro {
+      --bg:#f5f0e6; --tile:#e7d7c1; --text:#483c32; --muted:#7a6e5d;
+      --green:#8f9b6e; --yellow:#ccb974; --gray:#b5a66e; --accent:#483c32;
+      font-family: 'Courier New', Courier, monospace;
+    }
+
+    /* Overlay for clicking outside panel */
+    #settingsOverlay {
+      position: fixed;
+      top:0; left:0; right:0; bottom:0;
+      background: rgba(0,0,0,0.25);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease;
+      z-index: 999;
+    }
+    #settingsOverlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    @media (max-width:520px){
+      :root{ --tile-size:54px }
+      h1{ font-size:32px; }
+      .key{ padding:10px 6px; min-width:35px; font-size:11px; }
+      .controls{justify-content:center}
+      #settingsPanel {
+        width: 100vw;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app theme-classic" role="application" aria-label="Wordle" tabindex="0">
+    <h1>WORDLE</h1>
+    <p class="lead">Guess the word in 6 tries. Each guess must be a valid 5-letter word.</p>
+
+    <div id="timer" style="display:none;">00:00</div>
+    <div id="settingsBtn" title="Settings (Themes, Animations, Timer)">&#9881;</div>
+
+    <div id="board" class="board" aria-live="polite" role="grid"></div>
+    <div id="status" class="status" aria-atomic="true">Loading word lists...</div>
+    <div id="keyboard" class="keyboard" role="application" aria-label="On-screen keyboard"></div>
+
+    <div class="controls">
+      <button id="newBtn" class="btn">New Game</button>
+      <button id="shareBtn" class="btn" title="Copy result to clipboard">Share</button>
+      <button id="customBtn" class="btn" title="Create a custom Wordle link">Custom Word</button>
+      <button id="statsBtn" class="btn" title="View your statistics">Stats</button>
+    </div>
+    <p class="small">If fetching the full lists fails (offline), the game will still run with a small fallback list.</p>
+  </div>
+
+  <!-- Settings Overlay -->
+  <div id="settingsOverlay"></div>
+
+  <!-- Settings Panel -->
+  <aside id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" tabindex="-1">
+    <header>
+      <h2 id="settingsTitle">Settings</h2>
+      <button class="closeBtn" aria-label="Close settings panel">&times;</button>
+    </header>
+
+    <label for="themeSelect">Theme</label>
+    <select id="themeSelect" aria-describedby="themePreviewDesc">
+      <option value="classic">Classic</option>
+      <option value="light">Light</option>
+      <option value="neon">Neon</option>
+      <option value="sunset">Sunset</option>
+      <option value="mint">Mint</option>
+      <option value="retro">Retro</option>
+    </select>
+    <div class="theme-preview" id="themePreview" aria-live="polite" aria-describedby="themePreviewDesc">
+      <div class="preview-board" aria-hidden="true">
+        <div class="preview-row">
+          <div class="preview-tile correct">W</div>
+          <div class="preview-tile absent">O</div>
+          <div class="preview-tile present">R</div>
+          <div class="preview-tile absent">D</div>
+          <div class="preview-tile absent">S</div>
+        </div>
+        <div class="preview-row">
+          <div class="preview-tile absent">A</div>
+          <div class="preview-tile present">N</div>
+          <div class="preview-tile absent">G</div>
+          <div class="preview-tile absent">L</div>
+          <div class="preview-tile absent">E</div>
+        </div>
+      </div>
+    </div>
+
+    <label for="animSelect">Tile Animation</label>
+    <select id="animSelect">
+      <option value="flip">Flip</option>
+      <option value="bounce">Bounce</option>
+      <option value="pulse">Pulse</option>
+      <option value="slide">Slide</option>
+    </select>
+
+    <label class="checkbox-container" for="timerToggle">
+      <input type="checkbox" id="timerToggle" />
+      Show Solve Timer
+    </label>
+
+    <label class="checkbox-container" for="hardModeToggle">
+      <input type="checkbox" id="hardModeToggle" />
+      Enable Hard Mode (Use all hints)
+    </label>
+  </aside>
+
+  <!-- Stats Modal -->
+  <div id="statsModal" role="dialog" aria-modal="true" aria-labelledby="statsTitle" tabindex="-1" style="display:none;">
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:10000;">
+      <div style="background: var(--bg); color: var(--text); padding: 20px; border-radius: 10px; width: 320px; max-width: 90vw; max-height: 80vh; overflow-y: auto; position: relative;">
+        <h2 id="statsTitle" style="margin-top:0;">Statistics</h2>
+        <button id="closeStatsBtn" aria-label="Close statistics" style="position:absolute; top:10px; right:10px; background:none; border:none; font-size:24px; color:var(--muted); cursor:pointer;">&times;</button>
+        <div style="font-weight:700; margin-bottom:12px;">
+          Games Played: <span id="statPlayed">0</span><br>
+          Wins: <span id="statWins">0</span><br>
+          Losses: <span id="statLosses">0</span><br>
+          Win %: <span id="statWinPercent">0%</span><br>
+          Loss %: <span id="statLossPercent">0%</span>
+        </div>
+        <div style="margin-bottom: 12px;">
+          Last Solve Time: <span id="statLastTime">-</span><br>
+          Best Solve Time: <span id="statBestTime">-</span><br>
+          Average Solve Time: <span id="statAvgTime">-</span>
+        </div>
+        <div>
+          <strong>Guess Distribution</strong>
+          <div id="distBars"></div>
+        </div>
+        <div style="margin-top: 12px; font-weight: 700;">
+          <span id="favWord">Favorite Word: -</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const ROWS = 6, COLS = 5;
+const boardEl = document.getElementById('board');
+const keyboardEl = document.getElementById('keyboard');
+const statusEl = document.getElementById('status');
+const newBtn = document.getElementById('newBtn');
+const shareBtn = document.getElementById('shareBtn');
+const customBtn = document.getElementById('customBtn');
+const statsBtn = document.getElementById('statsBtn');
+const statsModal = document.getElementById('statsModal');
+const closeStatsBtn = document.getElementById('closeStatsBtn');
+const timerEl = document.getElementById('timer');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsPanel = document.getElementById('settingsPanel');
+const settingsOverlay = document.getElementById('settingsOverlay');
+const themeSelect = document.getElementById('themeSelect');
+const animSelect = document.getElementById('animSelect');
+const timerToggle = document.getElementById('timerToggle');
+const hardModeToggle = document.getElementById('hardModeToggle');
+const favWordEl = document.getElementById('favWord');
+
+let grid = [];
+let curRow = 0, curCol = 0;
+let solution = "";
+let finished = false;
+let keyStates = {};
+let SOLUTIONS = [];
+let VALID = new Set();
+
+const FALLBACK_SOLUTIONS = ["apple","baker","cigar","delta","eagle","flame","grace","hotel","image","jelly"];
+const FALLBACK_VALID = new Set([...FALLBACK_SOLUTIONS, "about","other","which","their","there","could","would","these","think","place","under","right","first","still"]);
+
+const GIST_ANSWERS_RAW = "https://gist.githubusercontent.com/cfreshman/a03ef2cba789d8cf00c08f767e0fad7b/raw/wordle-answers-alphabetical.txt";
+const GIST_ALLOWED_RAW  = "https://gist.githubusercontent.com/cfreshman/cdcdf777450c5b5301e439061d29694c/raw/wordle-allowed-guesses.txt";
+
+let gameStartTime = null; // For timer
+let timerInterval = null;
+
+let animationClass = "flip";
+
+let stats = {
+  played: 0,
+  wins: 0,
+  losses: 0,
+  guessDistribution: [0,0,0,0,0,0],
+  times: [], // store solve times in seconds
+  lastSolveTime: null,
+  bestSolveTime: null,
+  favoriteWords: {}, // word -> count
+};
+
+function saveStats(){
+  localStorage.setItem("leon_wordle_stats", JSON.stringify(stats));
+}
+
+function loadStats(){
+  const data = localStorage.getItem("leon_wordle_stats");
+  if(data){
+    try {
+      stats = JSON.parse(data);
+      if(!stats.guessDistribution) stats.guessDistribution = [0,0,0,0,0,0];
+      if(!stats.times) stats.times = [];
+      if(!stats.favoriteWords) stats.favoriteWords = {};
+    } catch(e) { /* ignore */ }
+  }
+}
+
+function formatTime(secs){
+  if(secs == null) return "-";
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m.toString().padStart(2,"0")}:${s.toString().padStart(2,"0")}`;
+}
+
+function updateTimerDisplay(){
+  if(!gameStartTime) {
+    timerEl.textContent = "00:00";
+    return;
+  }
+  if(!settings.timerEnabled) {
+    timerEl.textContent = "";
+    return;
+  }
+  const elapsed = Math.floor((Date.now() - gameStartTime)/1000);
+  timerEl.textContent = formatTime(elapsed);
+}
+
+function startTimer(){
+  if(timerInterval) clearInterval(timerInterval);
+  gameStartTime = Date.now();
+  if(settings.timerEnabled){
+    updateTimerDisplay();
+    timerInterval = setInterval(updateTimerDisplay, 1000);
+  } else {
+    timerEl.textContent = "";
+  }
+}
+
+function stopTimer(){
+  if(timerInterval){
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function buildBoard(){
+  boardEl.innerHTML = "";
+  grid = [];
+  for(let r=0;r<ROWS;r++){
+    const row = document.createElement('div'); row.className='row';
+    let rowArr = [];
+    for(let c=0;c<COLS;c++){
+      const tile = document.createElement('div'); tile.className='tile';
+      tile.dataset.row=r; tile.dataset.col=c; tile.setAttribute('role','gridcell');
+      row.appendChild(tile); rowArr.push(tile);
+    }
+    boardEl.appendChild(row); grid.push(rowArr);
+  }
+}
+
+const KEYBOARD_ROWS = ["qwertyuiop","asdfghjkl","zxcvbnm"];
+function buildKeyboard(){
+  keyboardEl.innerHTML = "";
+  KEYBOARD_ROWS.forEach((row, idx)=>{
+    const r = document.createElement('div'); r.className='kb-row';
+    if(idx===2){
+      const enter = document.createElement('div'); enter.className='key wide'; enter.textContent='Enter';
+      enter.dataset.key='Enter'; enter.onclick = ()=>handleKey('Enter'); r.appendChild(enter);
+    }
+    for(const ch of row){
+      const key = document.createElement('div'); key.className='key'; key.textContent=ch; key.dataset.key=ch;
+      key.onclick = ()=>handleKey(ch); r.appendChild(key);
+    }
+    if(idx===2){
+      const bk = document.createElement('div'); bk.className='key wide'; bk.textContent='Back'; bk.dataset.key='Backspace';
+      bk.onclick = ()=>handleKey('Backspace'); r.appendChild(bk);
+    }
+    keyboardEl.appendChild(r);
+  });
+}
+
+async function loadLists(){
+  statusEl.textContent = "Fetching Wordle lists...";
+  try{
+    const [ansResp, allowedResp] = await Promise.all([
+      fetch(GIST_ANSWERS_RAW),
+      fetch(GIST_ALLOWED_RAW)
+    ]);
+
+    if(!ansResp.ok || !allowedResp.ok) throw new Error("Fetch failed");
+
+    const [ansText, allowedText] = await Promise.all([ansResp.text(), allowedResp.text()]);
+
+    SOLUTIONS = ansText.split(/\r?\n/).map(s=>s.trim().toLowerCase()).filter(s=>s.length===5);
+    const allowed = allowedText.split(/\r?\n/).map(s=>s.trim().toLowerCase()).filter(s=>s.length===5);
+
+    VALID = new Set(allowed);
+    SOLUTIONS.forEach(w=>VALID.add(w));
+
+    statusEl.textContent = `Loaded ${SOLUTIONS.length} solutions and ${VALID.size} allowed guesses.`;
+    console.log("Loaded lists: solutions:", SOLUTIONS.length, "allowed:", VALID.size);
+  }catch(err){
+    console.warn("Failed to fetch lists, using fallback. Error:", err);
+    statusEl.textContent = "Offline or blocked — using fallback small word list.";
+    SOLUTIONS = FALLBACK_SOLUTIONS.slice();
+    VALID = new Set(FALLBACK_VALID);
+  }
+}
+
+function getCustomWordFromHash(){
+  const hash = window.location.hash.slice(1);
+  if(!hash.startsWith("custom=")) return null;
+  const code = hash.slice(7);
+  try {
+    const word = atob(code).toLowerCase();
+    if(word.length !== 5) return null;
+    if(!/^[a-z]{5}$/.test(word)) return null; // Only letters allowed
+    return word;
+  } catch(e) {
+    return null;
+  }
+}
+
+function pickSolution(){
+  const custom = getCustomWordFromHash();
+  if(custom){
+    solution = custom;
+    if(!VALID.has(solution)){
+      VALID.add(solution);  // Add custom word to VALID guesses so you can guess it!
+      // No status update for custom word to prevent cheating
+    } else {
+      // No status update for custom word to prevent cheating
+    }
+  } else {
+    solution = SOLUTIONS[Math.floor(Math.random()*SOLUTIONS.length)];
+    statusEl.textContent = "Good luck — guess the 5-letter word!";
+  }
+  console.log("solution:", solution);
+}
+
+function startNewGame(){
+  buildBoard();
+  buildKeyboard();
+  curRow = 0; curCol = 0; finished = false; keyStates = {};
+  updateKeyboardUI();
+  pickSolution();
+  startTimer();
+  statusEl.textContent = "";
+}
+
+function putLetter(ch){
+  if(finished) return;
+  if(curCol >= COLS) return;
+  grid[curRow][curCol].textContent = ch.toUpperCase();
+  grid[curRow][curCol].classList.add('filled');
+  curCol++;
+}
+
+function popLetter(){
+  if(finished) return;
+  if(curCol <= 0) return;
+  curCol--;
+  grid[curRow][curCol].textContent = "";
+  grid[curRow][curCol].classList.remove('filled');
+}
+
+function getGuess(){
+  let s="";
+  for(let c=0;c<COLS;c++) s += (grid[curRow][c].textContent || "").toLowerCase();
+  return s;
+}
+
+function revealGuess(guess){
+  const solArr = solution.split('');
+  const state = Array(COLS).fill('absent');
+
+  for(let i=0;i<COLS;i++){
+    if(guess[i] === solArr[i]){
+      state[i] = 'correct';
+      solArr[i] = null;
+    }
+  }
+
+  const counts = {};
+  for(const ch of solArr){
+    if(!ch) continue;
+    counts[ch] = (counts[ch]||0)+1;
+  }
+
+  for(let i=0;i<COLS;i++){
+    if(state[i] === 'correct') continue;
+    const g = guess[i];
+    if(counts[g] > 0){
+      state[i] = 'present';
+      counts[g]--;
+    } else {
+      state[i] = 'absent';
+    }
+  }
+
+  for(let i=0;i<COLS;i++){
+    const tile = grid[curRow][i];
+    ((tile, cls, ch, idx)=> {
+      setTimeout(() => {
+        tile.classList.add('pop');
+        tile.classList.add(cls);
+
+        const prev = keyStates[ch] || '';
+        if(prev === 'correct'){
+        } else if(prev === 'present'){
+          if(cls === 'correct') keyStates[ch] = 'correct';
+        } else {
+          keyStates[ch] = cls;
+        }
+        updateKeyboardUI();
+      }, idx*240);
+      setTimeout(() => tile.classList.remove('pop'), idx*240 + 420);
+    })(tile, state[i], guess[i], i);
+  }
+  return state;
+}
+
+function updateKeyboardUI(){
+  const keys = keyboardEl.querySelectorAll('.key');
+  keys.forEach(k=>{
+    const ch = (k.dataset.key || '').toLowerCase();
+    k.classList.remove('absent','present','correct');
+    if(ch && keyStates[ch]) k.classList.add(keyStates[ch]);
+  });
+}
+
+function showMessage(msg, timeout=2200){
+  statusEl.textContent = msg;
+  if(timeout>0) setTimeout(()=>{ if(statusEl.textContent===msg) statusEl.textContent = ""; }, timeout);
+}
+
+function handleKey(key){
+  if(finished) return;
+  if(key === 'Enter'){
+    if(curCol < COLS){ showMessage("Not enough letters"); return; }
+    const guess = getGuess();
+    if(!VALID.has(guess)){ showMessage("Not in word list"); return; }
+    const result = revealGuess(guess);
+    setTimeout(()=>{
+      if(result.every(r=>r==='correct')){
+        finished=true;
+        stopTimer();
+        const solveSecs = Math.floor((Date.now() - gameStartTime)/1000);
+        updateStats(true, curRow+1, guess, solveSecs);
+        statusEl.textContent = `You win! The word was "${solution.toUpperCase()}". Time: ${formatTime(solveSecs)}`;
+        timerEl.textContent = formatTime(solveSecs);
+      } else {
+        curRow++; curCol=0;
+        if(curRow>=ROWS){
+          finished=true;
+          stopTimer();
+          updateStats(false, null, null, null);
+          statusEl.textContent = `Out of tries — the word was "${solution.toUpperCase()}".`;
+          timerEl.textContent = "";
+        }
+      }
+    }, COLS*240 + 140);
+  } else if(key === 'Backspace' || key === 'Back'){
+    popLetter();
+  } else {
+    const letter = (key||'').toLowerCase();
+    if(letter.length===1 && letter>='a' && letter<='z') putLetter(letter);
+  }
+}
+
+function makeShareText(){
+  let rowsText = [];
+  const tiles = boardEl.querySelectorAll('.tile');
+  for(let r=0;r<ROWS;r++){
+    let rowState = ""; let rowHasAny=false;
+    for(let c=0;c<COLS;c++){
+      const t = tiles[r*COLS + c]; const ch = (t.textContent||"").trim();
+      if(!ch){ rowState += '⬜'; continue; }
+      rowHasAny = true;
+      if(t.classList.contains('correct')) rowState += '🟩';
+      else if(t.classList.contains('present')) rowState += '🟨';
+      else if(t.classList.contains('absent')) rowState += '⬛';
+      else rowState += '⬜';
+    }
+    if(rowHasAny) rowsText.push(rowState);
+  }
+  const title = `Leon’s Wordle — ${finished ? (statusEl.textContent.startsWith('You win') ? 'Solved' : 'Failed') : 'Play'}`;
+  return `${title}\n${rowsText.join('\n')}\n(Guess the word!)`;
+}
+
+shareBtn.onclick = async ()=>{
+  try{
+    await navigator.clipboard.writeText(makeShareText());
+    showMessage("Result copied to clipboard!");
+  }catch(e){
+    showMessage("Copy failed — try manually.");
+  }
+};
+
+customBtn.onclick = ()=>{
+  if(!settings.customWordEnabled) {
+    alert("Custom word mode is disabled in settings.");
+    return;
+  }
+  const input = prompt("Enter your custom 5-letter word (any letters):");
+  if(!input) return;
+  const word = input.toLowerCase().trim();
+  if(word.length !== 5){
+    alert("Word must be exactly 5 letters.");
+    return;
+  }
+  if(!/^[a-z]{5}$/.test(word)){
+    alert("Word must only contain letters a-z.");
+    return;
+  }
+  const encoded = btoa(word); // encode in base64
+  const url = `${window.location.origin}${window.location.pathname}#custom=${encoded}`;
+  prompt("Share this link with others to play your custom Wordle:", url);
+};
+
+window.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter' || e.key === 'Backspace'){
+    handleKey(e.key);
+    e.preventDefault();
+    return;
+  }
+  const k = e.key.toLowerCase();
+  if(k.length===1 && k>='a' && k<='z') handleKey(k);
+});
+
+function updateStats(win, guessCount, guessWord, solveSecs){
+  stats.played++;
+  if(win){
+    stats.wins++;
+    if(guessCount >=1 && guessCount <=6) stats.guessDistribution[guessCount-1]++;
+    if(solveSecs != null){
+      stats.times.push(solveSecs);
+      stats.lastSolveTime = solveSecs;
+      if(stats.bestSolveTime == null || solveSecs < stats.bestSolveTime) stats.bestSolveTime = solveSecs;
+    }
+    if(guessWord){
+      stats.favoriteWords[guessWord] = (stats.favoriteWords[guessWord]||0) + 1;
+    }
+  } else {
+    stats.losses++;
+  }
+  saveStats();
+}
+
+function showStats(){
+  if(stats.played === 0){
+    alert("No statistics yet. Play some games!");
+    return;
+  }
+  document.getElementById("statPlayed").textContent = stats.played;
+  document.getElementById("statWins").textContent = stats.wins;
+  document.getElementById("statLosses").textContent = stats.losses;
+  const winPercent = stats.played > 0 ? Math.round((stats.wins / stats.played)*100) : 0;
+  const lossPercent = stats.played > 0 ? Math.round((stats.losses / stats.played)*100) : 0;
+  document.getElementById("statWinPercent").textContent = winPercent + "%";
+  document.getElementById("statLossPercent").textContent = lossPercent + "%";
+  document.getElementById("statLastTime").textContent = formatTime(stats.lastSolveTime);
+  document.getElementById("statBestTime").textContent = formatTime(stats.bestSolveTime);
+  const avg = stats.times.length > 0 ? Math.round(stats.times.reduce((a,b)=>a+b,0)/stats.times.length) : null;
+  document.getElementById("statAvgTime").textContent = formatTime(avg);
+
+  // Guess distribution bars
+  const distBars = document.getElementById("distBars");
+  distBars.innerHTML = "";
+  const maxCount = Math.max(...stats.guessDistribution, 1);
+  for(let i=0; i<6; i++){
+    const barCount = stats.guessDistribution[i];
+    const barWidth = (barCount/maxCount)*100;
+    const rowDiv = document.createElement("div");
+    rowDiv.style.display = "flex";
+    rowDiv.style.alignItems = "center";
+    rowDiv.style.marginBottom = "6px";
+    const label = document.createElement("span");
+    label.textContent = (i+1) + ": ";
+    label.style.minWidth = "20px";
+    const bar = document.createElement("div");
+    bar.style.height = "18px";
+    bar.style.background = "var(--green)";
+    bar.style.width = barWidth + "%";
+    bar.style.borderRadius = "4px";
+    bar.style.transition = "width 0.5s ease";
+    const countSpan = document.createElement("span");
+    countSpan.textContent = " " + barCount;
+    countSpan.style.marginLeft = "6px";
+    rowDiv.appendChild(label);
+    rowDiv.appendChild(bar);
+    rowDiv.appendChild(countSpan);
+    distBars.appendChild(rowDiv);
+  }
+
+  // Favorite word (most guessed)
+  let favWord = "-";
+  let maxCountWord = 0;
+  for(const [w, c] of Object.entries(stats.favoriteWords)){
+    if(c > maxCountWord) {
+      maxCountWord = c;
+      favWord = w.toUpperCase();
+    }
+  }
+  favWordEl.textContent = `Favorite Word: ${favWord}`;
+
+  statsModal.style.display = "block";
+  statsModal.focus();
+}
+
+closeStatsBtn.onclick = () => {
+  statsModal.style.display = "none";
+};
+statsModal.onclick = (e) => {
+  if(e.target === statsModal) statsModal.style.display = "none";
+};
+
+statsBtn.onclick = () => showStats();
+
+newBtn.onclick = () => {
+  if(confirm("Start a new game? Your current game progress will be lost.")){
+    window.location.hash = ""; // Clear custom word from URL
+    startNewGame();
+  }
+};
+
+// Settings panel handling
+
+let settings = {
+  theme: "classic",
+  animation: "flip",
+  timerEnabled: true,
+  customWordEnabled: true,
+  hardMode: false,
+};
+
+function applyTheme(themeName){
+  document.querySelector(".app").className = `app theme-${themeName}`;
+}
+
+function applyAnimation(animName){
+  animationClass = animName;
+}
+
+function saveSettings(){
+  localStorage.setItem("leon_wordle_settings", JSON.stringify(settings));
+}
+
+function loadSettings(){
+  const data = localStorage.getItem("leon_wordle_settings");
+  if(data){
+    try {
+      settings = JSON.parse(data);
+    } catch(e) {}
+  }
+}
+
+function updateSettingsUI(){
+  themeSelect.value = settings.theme;
+  animSelect.value = settings.animation;
+  timerToggle.checked = settings.timerEnabled;
+  hardModeToggle.checked = settings.hardMode;
+}
+
+function toggleSettingsPanel(open){
+  if(open){
+    settingsPanel.classList.add("active");
+    settingsOverlay.classList.add("active");
+    settingsBtn.classList.add("rotated");
+    settingsPanel.focus();
+  } else {
+    settingsPanel.classList.remove("active");
+    settingsOverlay.classList.remove("active");
+    settingsBtn.classList.remove("rotated");
+  }
+}
+
+settingsBtn.onclick = () => {
+  toggleSettingsPanel(!settingsPanel.classList.contains("active"));
+};
+settingsOverlay.onclick = () => toggleSettingsPanel(false);
+settingsPanel.querySelector(".closeBtn").onclick = () => toggleSettingsPanel(false);
+
+themeSelect.onchange = () => {
+  settings.theme = themeSelect.value;
+  applyTheme(settings.theme);
+  saveSettings();
+};
+animSelect.onchange = () => {
+  settings.animation = animSelect.value;
+  applyAnimation(settings.animation);
+  saveSettings();
+};
+timerToggle.onchange = () => {
+  settings.timerEnabled = timerToggle.checked;
+  saveSettings();
+  if(settings.timerEnabled) {
+    if(!finished) startTimer();
+  } else {
+    stopTimer();
+    timerEl.textContent = "";
+  }
+};
+hardModeToggle.onchange = () => {
+  settings.hardMode = hardModeToggle.checked;
+  saveSettings();
+  // For now, no enforcement in code, could be added later
+};
+
+loadStats();
+loadSettings();
+updateSettingsUI();
+applyTheme(settings.theme);
+applyAnimation(settings.animation);
+
+window.addEventListener('hashchange', () => {
+  startNewGame();
+});
+
+loadLists().then(startNewGame);
+</script>
+</body>
+</html>

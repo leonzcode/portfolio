@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Doppler Effect Simulation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f0f2f5;
+    color: #222;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px 10px 40px;
+  }
+  h1 { font-size: 1.55rem; margin-bottom: 6px; letter-spacing: .02em; }
+  .subtitle { font-size: .92rem; color: #555; margin-bottom: 14px; }
+
+  /* ---- Canvas ---- */
+  #simCanvas {
+    border: 1.5px solid #b0b8c4;
+    border-radius: 6px;
+    background: #fff;
+    display: block;
+    cursor: grab;
+  }
+  #simCanvas.dragging { cursor: grabbing; }
+  .zoom-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: .8rem;
+    color: #666;
+  }
+  .zoom-bar button {
+    padding: 3px 10px;
+    font-size: .8rem;
+    border: 1px solid #b0b8c4;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    color: #444;
+  }
+  .zoom-bar button:hover { background: #eef1f6; }
+
+  /* ---- Controls ---- */
+  .controls-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 14px;
+    max-width: 920px;
+    width: 100%;
+  }
+  .panel {
+    background: #fff;
+    border: 1px solid #d3d9e3;
+    border-radius: 8px;
+    padding: 12px 16px 14px;
+    flex: 1 1 200px;
+    min-width: 200px;
+    max-width: 310px;
+  }
+  .panel-header {
+    font-size: .78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #7a8599;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .panel-header .icon {
+    font-size: 1rem;
+    line-height: 1;
+  }
+  .ctrl-group {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 10px;
+  }
+  .ctrl-group:last-child { margin-bottom: 0; }
+  .ctrl-group label {
+    font-size: .82rem;
+    font-weight: 600;
+    margin-bottom: 3px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .ctrl-group label .val {
+    font-weight: 400;
+    font-size: .76rem;
+    color: #666;
+  }
+  .ctrl-group input[type=range] {
+    width: 100%;
+    margin: 0;
+    accent-color: #4a7cff;
+  }
+  .ctrl-group input[type=range].red   { accent-color: #d63030; }
+  .ctrl-group input[type=range].green { accent-color: #2e7d32; }
+
+  /* Action buttons */
+  .btn-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+    justify-content: center;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .btn-row button {
+    padding: 8px 16px;
+    font-size: .85rem;
+    border: 1.5px solid #4a7cff;
+    border-radius: 6px;
+    background: #4a7cff;
+    color: #fff;
+    cursor: pointer;
+    transition: background .15s;
+    width: 100%;
+    text-align: center;
+  }
+  .btn-row button:hover { background: #3565e0; }
+  .btn-row button.secondary { background: #fff; color: #4a7cff; }
+  .btn-row button.secondary:hover { background: #e8eeff; }
+
+  .chk-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    justify-content: flex-start;
+  }
+  .chk-row label { font-size: .8rem; cursor: pointer; user-select: none; }
+  .chk-row input { margin-right: 3px; }
+
+  /* ---- Audio controls ---- */
+  .audio-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    align-items: flex-end;
+  }
+  .audio-panel.off { opacity: 0.45; }
+  .audio-panel label { font-size: .82rem; font-weight: 600; display: flex; flex-direction: column; gap: 2px; }
+  .audio-panel label.inline { flex-direction: row; align-items: center; gap: 6px; }
+  .audio-panel select {
+    font-size: .82rem;
+    padding: 4px 8px;
+    border-radius: 5px;
+    border: 1px solid #b0b8c4;
+  }
+  .audio-panel input[type=range] { width: 100%; accent-color: #4a7cff; }
+  .audio-panel .val { font-size: .74rem; color: #666; font-weight: 400; }
+  .audio-hint {
+    font-size: .76rem;
+    color: #888;
+    text-align: center;
+    margin-top: 2px;
+  }
+  /* Click-to-start overlay */
+  #audioOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    cursor: pointer;
+  }
+  #audioOverlay .msg {
+    background: #fff;
+    padding: 28px 48px;
+    border-radius: 12px;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #333;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+    text-align: center;
+    line-height: 1.5;
+  }
+  #audioOverlay .msg span { font-size: .85rem; color: #777; font-weight: 400; }
+
+  /* ---- Readouts ---- */
+  .readouts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 28px;
+    justify-content: center;
+    margin-top: 10px;
+    max-width: 900px;
+  }
+  .readout {
+    background: #fff;
+    border: 1px solid #cdd3dc;
+    border-radius: 5px;
+    padding: 6px 14px;
+    font-size: .84rem;
+    min-width: 155px;
+    text-align: center;
+  }
+  .readout .rval { font-weight: 700; font-size: 1.05rem; }
+
+  /* ---- Educational text ---- */
+  .edu {
+    max-width: 740px;
+    margin-top: 18px;
+    background: #fff;
+    border: 1px solid #d3d9e3;
+    border-radius: 6px;
+    padding: 14px 20px;
+    font-size: .88rem;
+    line-height: 1.6;
+  }
+  .edu p { margin-bottom: 6px; }
+  .edu p:last-child { margin-bottom: 0; }
+  .edu strong { color: #4a7cff; }
+</style>
+</head>
+<body>
+
+<h1>Doppler Effect &amp; Sonic Boom Simulation</h1>
+<p class="subtitle">Watch how wavefronts bunch up ahead of a moving source and spread out behind it.</p>
+
+<canvas id="simCanvas" width="900" height="420"></canvas>
+<div class="zoom-bar">
+  <button id="btnZoomIn" title="Zoom in">+</button>
+  <button id="btnZoomOut" title="Zoom out">&minus;</button>
+  <button id="btnZoomReset" title="Reset view">Reset View</button>
+  <span id="zoomLevel">100%</span>
+  <span style="color:#aaa">| Scroll to zoom, drag to pan</span>
+</div>
+
+<!-- Controls -->
+<div class="controls-wrapper">
+
+  <!-- Source & Wave panel -->
+  <div class="panel">
+    <div class="panel-header">Source &amp; Wave</div>
+    <div class="ctrl-group">
+      <label>Source Speed (v<sub>s</sub>) <span class="val" id="valSrcSpeed">206 m/s (Mach 0.60)</span></label>
+      <input type="range" id="sliderSrcSpeed" min="0" max="900" value="206" step="1">
+    </div>
+    <div class="ctrl-group">
+      <label>Speed of Sound (v) <span class="val" id="valWaveSpeed">343 m/s</span></label>
+      <input type="range" id="sliderWaveSpeed" min="50" max="700" value="343" step="1">
+    </div>
+    <div class="ctrl-group">
+      <label>Frequency (f) <span class="val" id="valFreq">440 Hz</span></label>
+      <input type="range" id="sliderFreq" min="150" max="800" value="440" step="1">
+    </div>
+  </div>
+
+  <!-- Observer panel -->
+  <div class="panel">
+    <div class="panel-header">Observer</div>
+    <div class="ctrl-group">
+      <label style="color:#2563eb">Observer Speed <span class="val" id="valObsSpeed">0 m/s</span></label>
+      <input type="range" id="sliderObsSpeed" min="-400" max="400" value="0" step="1">
+    </div>
+  </div>
+
+  <!-- Audio panel -->
+  <div class="panel">
+    <div class="panel-header">Audio</div>
+    <div class="audio-panel" id="audioPanel">
+      <label class="inline"><input type="checkbox" id="chkSound" checked> Sound On</label>
+      <label>Volume <span class="val" id="valVolume">40%</span>
+        <input type="range" id="sliderVolume" min="0" max="100" value="40" step="1">
+      </label>
+      <label>Listen as
+        <select id="selListener">
+          <option value="observer" selected>Observer</option>
+          <option value="source">Source (emitted)</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <!-- Playback & Display panel -->
+  <div class="panel btn-panel">
+    <div class="panel-header">Playback</div>
+    <div class="btn-row">
+      <button id="btnPlayPause">Pause</button>
+    </div>
+    <div class="btn-row">
+      <button id="btnReset" class="secondary">Reset</button>
+    </div>
+    <div class="btn-row">
+      <button id="btnSlowMo" class="secondary">Slow-Mo: Off</button>
+    </div>
+    <div class="panel-header" style="margin-top:8px">Display</div>
+    <div class="chk-row">
+      <label><input type="checkbox" id="chkWavefronts" checked> Wavefronts</label>
+      <label><input type="checkbox" id="chkLabels" checked> Labels</label>
+      <label><input type="checkbox" id="chkReadouts" checked> Readouts</label>
+      <label><input type="checkbox" id="chkMachCone" checked> Mach Cone</label>
+      <label><input type="checkbox" id="chkPath" checked> Path</label>
+    </div>
+  </div>
+
+</div>
+<p class="audio-hint" id="audioHint" style="display:none">Enable Sound and click anywhere to start audio (browser requires a user gesture).</p>
+
+<!-- Click-to-start overlay -->
+<div id="audioOverlay">
+  <div class="msg">Click anywhere to start the simulation with audio<br><span>Browsers require a user gesture to play sound</span></div>
+</div>
+
+<!-- Readouts -->
+<div class="readouts" id="readoutsPanel">
+  <div class="readout">Emitted f<br><span class="rval" id="roEmit">440 Hz</span></div>
+  <div class="readout" style="color:#2563eb">Perceived f<br><span class="rval" id="roPerceived">—</span></div>
+  <div class="readout">Mach #<br><span class="rval" id="roMach">0.60</span></div>
+</div>
+
+<!-- Educational notes -->
+<div class="edu">
+  <p><strong>Why does a siren sound higher as it comes toward you, then lower as it drives away?</strong></p>
+  <p>When a sound source is moving toward you, it's getting closer with every new sound wave it sends out. This squishes the waves together so they hit your ear more often, and more waves per second means a <strong>higher pitch</strong>.</p>
+  <p>Once the source passes you and starts moving away, the opposite happens. Now each wave has to travel farther to reach you, so the waves spread out more. Fewer waves hit your ear per second, and you hear a <strong>lower pitch</strong>.</p>
+  <p>This is the <strong>Doppler effect</strong>. The faster the source moves relative to the speed of sound, the larger the change in pitch. If the source moves at <strong>Mach 1</strong> (meaning it is going exactly the speed of sound), all the waves stack up on top of each other in front of it. Go even faster than that and a <strong>shock-wave cone</strong> forms behind the source creating a <strong>sonic boom</strong>. This is what you hear when a jet breaks the sound barrier.</p>
+</div>
+<p style="text-align:center;color:#888;font-size:0.75em;margin-top:6px;">leoniscool.com</p>
+
+<script>
+// ===========================================================
+//  CONFIG & STATE
+// ===========================================================
+const canvas = document.getElementById('simCanvas');
+const ctx    = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// --- Scale: pixels per meter ---
+// PPM chosen so visual speed matches original (343 m/s wave → ~200 px/s on screen)
+const PPM = 200 / 343;                // ≈ 0.583 px/m
+const W_M = W / PPM;                  // world width in metres  (≈ 1544 m)
+const H_M = H / PPM;                  // world height in metres (≈ 720 m)
+
+function toPixX(m) { return m * PPM; }
+function toPixY(m) { return m * PPM; }
+function toPixR(m) { return m * PPM; }  // radius / length
+
+// All positions & speeds are now in METRES / METRES-PER-SECOND
+const sourceY = H_M * 0.48;            // ≈ 4.03 m
+const observerXStart = W_M * 0.82;      // ≈ 14.76 m
+let observerX = observerXStart;
+const observerY = sourceY;
+const sourceXStart = W_M * 0.065;     // ≈ same proportional start as before
+
+// Pulse object: { ox, oy, birthTime }  (ox/oy in metres)
+let pulses = [];
+
+// Simulation state
+let simTime      = 0;
+let emitTimer    = 0;
+let sourceX      = sourceXStart;        // metres
+let playing      = true;
+let slowMo       = false;
+
+// Zoom & pan state (camera)
+let camZoom = 1;        // 1 = default
+let camPanX = 0;        // pan offset in screen pixels
+let camPanY = 0;
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragPanStartX = 0;
+let dragPanStartY = 0;
+
+// Parameters (updated from sliders) – real-world m/s
+let sourceSpeed  = 206;                // m/s (≈ Mach 0.60)
+let waveSpeed    = 343;                // m/s (speed of sound in air at 20°C)
+let emitFreq     = toneToVisualRate(440);  // pulses per second (scales with frequency)
+
+// Map audio frequency (150-800 Hz) to a visible emission rate (1.5-6 pulses/sec)
+function toneToVisualRate(f) {
+  return 1.5 + (f - 150) * (6 - 1.5) / (800 - 150);
+}
+let obsSpeed     = 0;                  // m/s (positive = rightward)
+
+// Observer hit tracking for perceived frequency
+let obsHits = [];         // timestamps when a wavefront crosses observer
+let perceivedObs = null;
+
+// ===========================================================
+//  AUDIO  (Web Audio API)
+// ===========================================================
+let audioCtx       = null;
+let oscFront       = null;   // oscillator for front observer
+let oscRear        = null;   // oscillator for rear observer
+let gainFront      = null;
+let gainRear       = null;
+let panFront       = null;
+let panRear        = null;
+let masterGain     = null;
+let audioReady     = false;
+let soundEnabled   = true;
+let baseTone       = 440;    // Hz
+let volumePct      = 40;     // 0-100
+let listenerMode   = 'both'; // 'both' | 'front' | 'rear' | 'source'
+
+function initAudio() {
+  if (audioReady) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0;
+    masterGain.connect(audioCtx.destination);
+
+    // Observer oscillator → gain → master
+    oscFront  = audioCtx.createOscillator();
+    gainFront = audioCtx.createGain();
+    oscFront.type = 'sine';
+    oscFront.frequency.value = baseTone;
+    gainFront.gain.value = 0;
+    oscFront.connect(gainFront).connect(masterGain);
+    oscFront.start();
+
+    audioReady = true;
+    document.getElementById('audioHint').style.display = 'none';
+  } catch (e) {
+    console.warn('Web Audio not available', e);
+  }
+}
+
+function updateAudio() {
+  if (!audioReady) return;
+  const t = audioCtx.currentTime;
+
+  // Master volume
+  const vol = soundEnabled && playing ? (volumePct / 100) * 5.0 : 0;
+  masterGain.gain.setTargetAtTime(vol, t, 0.05);
+
+  if (!soundEnabled || !playing) return;
+
+  const mach = sourceSpeed / waveSpeed;
+
+  // --- Compute Doppler-shifted frequency for single observer ---
+  // Determine if observer is ahead or behind source
+  const obsAhead = observerX > sourceX;
+  // v_o toward source: if observer ahead, moving left = toward; if behind, moving right = toward
+  const voToward = obsAhead ? -obsSpeed : obsSpeed;
+  // v_s toward observer
+  const vsDenom = obsAhead ? (waveSpeed - sourceSpeed) : (waveSpeed + sourceSpeed);
+
+  let fObs;
+  if (listenerMode === 'source') {
+    fObs = baseTone;
+  } else if (Math.abs(vsDenom) < 0.01) {
+    fObs = baseTone * 6; // near-shock
+  } else if (vsDenom > 0) {
+    fObs = baseTone * (waveSpeed + voToward) / vsDenom;
+  } else {
+    // Supersonic and observer is ahead
+    fObs = baseTone * 6;
+  }
+  fObs = Math.min(Math.max(fObs, 60), 4000);
+
+  // Distance-based attenuation
+  const dObs = Math.abs(sourceX - observerX);
+  const refDist = 1.0;
+  const attObs = Math.min(1, refDist / Math.max(dObs, 0.3));
+
+  oscFront.frequency.setTargetAtTime(fObs, t, 0.03);
+
+  let gF = 0;
+  if (listenerMode === 'source') {
+    oscFront.frequency.setTargetAtTime(baseTone, t, 0.03);
+    gF = 1;
+  } else {
+    gF = attObs;
+    // Supersonic: silence if source hasn't passed observer yet
+    if (mach >= 1 && obsAhead && sourceX < observerX) gF = 0;
+  }
+
+  gainFront.gain.setTargetAtTime(gF, t, 0.04);
+}
+
+// Resume AudioContext on any user gesture (browser autoplay policy)
+let hadGesture = false;
+function ensureAudio() {
+  hadGesture = true;
+  if (!audioReady && soundEnabled) initAudio();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+// The overlay captures the very first interaction
+const audioOverlay = document.getElementById('audioOverlay');
+audioOverlay.addEventListener('click', () => {
+  ensureAudio();
+  audioOverlay.style.display = 'none';
+});
+
+['click','mousedown','touchstart','keydown','pointerdown'].forEach(evt =>
+  document.addEventListener(evt, ensureAudio, { once: false })
+);
+
+// Suspend audio when tab is hidden, resume when visible
+document.addEventListener('visibilitychange', () => {
+  if (!audioCtx) return;
+  if (document.hidden) {
+    audioCtx.suspend();
+  } else if (soundEnabled && hadGesture) {
+    audioCtx.resume();
+  }
+});
+
+// ===========================================================
+//  UI ELEMENTS
+// ===========================================================
+const sliderSrcSpeed = document.getElementById('sliderSrcSpeed');
+const sliderWaveSpeed = document.getElementById('sliderWaveSpeed');
+const sliderObsSpeed = document.getElementById('sliderObsSpeed');
+const valSrcSpeed    = document.getElementById('valSrcSpeed');
+const valWaveSpeed   = document.getElementById('valWaveSpeed');
+const valObsSpeed    = document.getElementById('valObsSpeed');
+const btnPlayPause   = document.getElementById('btnPlayPause');
+const btnReset       = document.getElementById('btnReset');
+const btnSlowMo      = document.getElementById('btnSlowMo');
+const chkWavefronts  = document.getElementById('chkWavefronts');
+const chkLabels      = document.getElementById('chkLabels');
+const chkReadouts    = document.getElementById('chkReadouts');
+const chkMachCone    = document.getElementById('chkMachCone');
+const chkPath        = document.getElementById('chkPath');
+const readoutsPanel  = document.getElementById('readoutsPanel');
+const roEmit      = document.getElementById('roEmit');
+const roPerceived = document.getElementById('roPerceived');
+const roMach      = document.getElementById('roMach');
+
+// Audio UI elements
+const chkSound    = document.getElementById('chkSound');
+const sliderTone  = document.getElementById('sliderFreq');  // Frequency slider now controls baseTone
+const sliderVol   = document.getElementById('sliderVolume');
+const valTone     = document.getElementById('valFreq');
+const valVol      = document.getElementById('valVolume');
+const selListener = document.getElementById('selListener');
+const audioPanel  = document.getElementById('audioPanel');
+
+chkSound.addEventListener('change', () => {
+  soundEnabled = chkSound.checked;
+  if (soundEnabled) ensureAudio();
+  audioPanel.classList.toggle('off', !soundEnabled);
+});
+// Try to init audio immediately (works in some browsers without gesture)
+try { initAudio(); } catch(e) {}
+
+sliderTone.addEventListener('input', () => {
+  baseTone = +sliderTone.value;
+  emitFreq = toneToVisualRate(baseTone);
+  valTone.textContent = baseTone + ' Hz';
+  roEmit.textContent = baseTone + ' Hz';
+});
+sliderVol.addEventListener('input', () => {
+  volumePct = +sliderVol.value;
+  valVol.textContent = volumePct + '%';
+});
+selListener.addEventListener('change', () => {
+  listenerMode = selListener.value;
+});
+
+// Helper to format speed with Mach number
+function fmtSpeed(v) {
+  const m = v / waveSpeed;
+  return v + ' m/s (Mach ' + m.toFixed(2) + ')';
+}
+function fmtObsSpeed(v) {
+  return v + ' m/s';
+}
+
+// Slider listeners
+sliderSrcSpeed.addEventListener('input', () => {
+  sourceSpeed = +sliderSrcSpeed.value;
+  valSrcSpeed.textContent = fmtSpeed(sourceSpeed);
+});
+sliderWaveSpeed.addEventListener('input', () => {
+  waveSpeed = +sliderWaveSpeed.value;
+  valWaveSpeed.textContent = waveSpeed + ' m/s';
+  valSrcSpeed.textContent = fmtSpeed(sourceSpeed);
+});
+sliderObsSpeed.addEventListener('input', () => {
+  obsSpeed = +sliderObsSpeed.value;
+  valObsSpeed.textContent = fmtObsSpeed(obsSpeed);
+});
+
+btnPlayPause.addEventListener('click', () => {
+  playing = !playing;
+  btnPlayPause.textContent = playing ? 'Pause' : 'Play';
+});
+btnReset.addEventListener('click', resetSim);
+btnSlowMo.addEventListener('click', () => {
+  slowMo = !slowMo;
+  btnSlowMo.textContent = 'Slow-Mo: ' + (slowMo ? 'On' : 'Off');
+});
+chkReadouts.addEventListener('change', () => {
+  readoutsPanel.style.display = chkReadouts.checked ? '' : 'none';
+});
+
+// ===========================================================
+//  RESET
+// ===========================================================
+function resetSim() {
+  pulses = [];
+  simTime = 0;
+  emitTimer = 0;
+  sourceX = sourceXStart;
+  observerX = observerXStart;
+  obsHits = [];
+  perceivedObs = null;
+  playing = true;
+  btnPlayPause.textContent = 'Pause';
+  // Reset camera
+  camZoom = 1; camPanX = 0; camPanY = 0;
+  document.getElementById('zoomLevel').textContent = '100%';
+}
+
+// ===========================================================
+//  ZOOM & PAN
+// ===========================================================
+const zoomLevelEl = document.getElementById('zoomLevel');
+const MIN_ZOOM = 0.15, MAX_ZOOM = 10;
+
+function setZoom(newZoom, pivotX, pivotY) {
+  // pivotX/pivotY are in canvas pixel coords (mouse position)
+  newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newZoom));
+  if (pivotX !== undefined) {
+    // Keep the point under the cursor fixed
+    const wx = (pivotX - camPanX - W / 2) / camZoom + W / 2;
+    const wy = (pivotY - camPanY - H / 2) / camZoom + H / 2;
+    camPanX = pivotX - (wx - W / 2) * newZoom - W / 2;
+    camPanY = pivotY - (wy - H / 2) * newZoom - H / 2;
+  }
+  camZoom = newZoom;
+  zoomLevelEl.textContent = Math.round(camZoom * 100) + '%';
+}
+
+// Mouse wheel zoom
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (W / rect.width);
+  const my = (e.clientY - rect.top) * (H / rect.height);
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  setZoom(camZoom * factor, mx, my);
+}, { passive: false });
+
+// Mouse drag pan
+// --- Draggable entities ---
+let dragTarget = null;  // null | 'source' | 'front' | 'rear'
+const GRAB_RADIUS = 18; // pixels on screen to grab an entity
+
+function screenToWorld(sx, sy) {
+  // Invert the camera transform: screen px → world px → metres
+  const wx = (sx - camPanX - W / 2) / camZoom + W / 2;
+  const wy = (sy - camPanY - H / 2) / camZoom + H / 2;
+  return { mx: wx / PPM, my: wy / PPM };
+}
+
+function worldToScreen(mx, my) {
+  const px = mx * PPM;
+  const py = my * PPM;
+  const sx = (px - W / 2) * camZoom + W / 2 + camPanX;
+  const sy = (py - H / 2) * camZoom + H / 2 + camPanY;
+  return { sx, sy };
+}
+
+function hitTest(screenX, screenY) {
+  // Check source
+  const src = worldToScreen(sourceX, sourceY);
+  if (Math.hypot(screenX - src.sx, screenY - src.sy) < GRAB_RADIUS) return 'source';
+  // Check observer
+  const ob = worldToScreen(observerX, observerY);
+  if (Math.hypot(screenX - ob.sx, screenY - ob.sy) < GRAB_RADIUS) return 'observer';
+  return null;
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (W / rect.width);
+  const my = (e.clientY - rect.top) * (H / rect.height);
+
+  // Check if clicking on a draggable entity
+  const hit = hitTest(mx, my);
+  if (hit) {
+    dragTarget = hit;
+    canvas.style.cursor = 'move';
+    return;
+  }
+
+  // Otherwise start panning
+  isDragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  dragPanStartX = camPanX;
+  dragPanStartY = camPanY;
+  canvas.classList.add('dragging');
+});
+window.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const sx = (e.clientX - rect.left) * (W / rect.width);
+  const sy = (e.clientY - rect.top) * (H / rect.height);
+
+  if (dragTarget) {
+    const world = screenToWorld(sx, sy);
+    if (dragTarget === 'source') {
+      sourceX = world.mx;
+    } else if (dragTarget === 'observer') {
+      observerX = world.mx;
+    }
+    return;
+  }
+
+  if (isDragging) {
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    camPanX = dragPanStartX + (e.clientX - dragStartX) * scaleX;
+    camPanY = dragPanStartY + (e.clientY - dragStartY) * scaleY;
+    return;
+  }
+
+  // Hover cursor hint
+  const hit = hitTest(sx, sy);
+  if (hit) {
+    canvas.style.cursor = 'move';
+  } else {
+    canvas.style.cursor = 'grab';
+  }
+});
+window.addEventListener('mouseup', () => {
+  if (dragTarget) {
+    dragTarget = null;
+    canvas.style.cursor = 'grab';
+    return;
+  }
+  isDragging = false;
+  canvas.classList.remove('dragging');
+});
+
+// Touch support for pan
+let touchId = null, touchStartX, touchStartY, touchPanStartX, touchPanStartY;
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    touchId = t.identifier;
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    touchPanStartX = camPanX;
+    touchPanStartY = camPanY;
+  }
+}, { passive: true });
+canvas.addEventListener('touchmove', (e) => {
+  if (touchId === null) return;
+  for (const t of e.changedTouches) {
+    if (t.identifier === touchId) {
+      const rect = canvas.getBoundingClientRect();
+      camPanX = touchPanStartX + (t.clientX - touchStartX) * (W / rect.width);
+      camPanY = touchPanStartY + (t.clientY - touchStartY) * (H / rect.height);
+      e.preventDefault();
+    }
+  }
+}, { passive: false });
+canvas.addEventListener('touchend', () => { touchId = null; });
+
+// Zoom buttons
+document.getElementById('btnZoomIn').addEventListener('click', () => {
+  setZoom(camZoom * 1.3, W / 2, H / 2);
+});
+document.getElementById('btnZoomOut').addEventListener('click', () => {
+  setZoom(camZoom / 1.3, W / 2, H / 2);
+});
+document.getElementById('btnZoomReset').addEventListener('click', () => {
+  camZoom = 1; camPanX = 0; camPanY = 0;
+  zoomLevelEl.textContent = '100%';
+});
+
+// ===========================================================
+//  UPDATE  (physics)
+// ===========================================================
+function update(dt) {
+  if (!playing) return;
+
+  simTime += dt;
+
+  // Move source
+  sourceX += sourceSpeed * dt;
+
+  // Move observer
+  observerX += obsSpeed * dt;
+
+  // Clamp observer to world bounds
+  observerX = Math.max(0, Math.min(W_M, observerX));
+
+  // Wrap source when it exits the VISIBLE viewport (accounts for zoom/pan)
+  // Convert canvas right edge (W) to world-pixel coords, then to metres
+  // Screen-to-world: wx = (sx - camPanX - W/2) / camZoom + W/2
+  const visibleRightPx  = (W - camPanX - W / 2) / camZoom + W / 2;
+  const visibleLeftPx   = (0 - camPanX - W / 2) / camZoom + W / 2;
+  const visibleRightM   = visibleRightPx / PPM;
+  const visibleLeftM    = visibleLeftPx  / PPM;
+  const margin = (visibleRightM - visibleLeftM) * 0.05; // small margin
+
+  if (sourceX > visibleRightM + margin) {
+    sourceX = visibleLeftM - margin;
+    observerX = observerXStart;
+    obsHits = [];
+    perceivedObs = null;
+    pulses = [];
+  }
+
+  // Emission timer
+  const emitInterval = 1 / emitFreq;
+  emitTimer += dt;
+  while (emitTimer >= emitInterval) {
+    emitTimer -= emitInterval;
+    pulses.push({ ox: sourceX, oy: sourceY, birthTime: simTime });
+  }
+
+  // Expand radii & cull off-screen pulses (metres)
+  const maxRadius = Math.max(W_M, H_M) * 1.6;
+  pulses = pulses.filter(p => {
+    const r = waveSpeed * (simTime - p.birthTime);
+    return r < maxRadius;
+  });
+
+  // –– Observer hit detection ––
+  // For each pulse, check if expanding circle crosses observer position
+  for (const p of pulses) {
+    const r = waveSpeed * (simTime - p.birthTime);
+    const rPrev = waveSpeed * (simTime - dt - p.birthTime);
+    if (rPrev < 0) continue;
+
+    // Observer
+    const dObs = Math.hypot(p.ox - observerX, p.oy - observerY);
+    if (rPrev < dObs && r >= dObs) {
+      if (!p._hitObs) { p._hitObs = true; obsHits.push(simTime); }
+    }
+  }
+
+  // Trim old hits (keep last 12)
+  if (obsHits.length > 12) obsHits = obsHits.slice(-12);
+
+  // Compute perceived frequency from average inter-arrival time (last N)
+  perceivedObs = computePerceivedFreq(obsHits);
+}
+
+function computePerceivedFreq(hits) {
+  if (hits.length < 2) return null;
+  const recent = hits.slice(-6);
+  let sum = 0;
+  for (let i = 1; i < recent.length; i++) sum += recent[i] - recent[i - 1];
+  const avgInterval = sum / (recent.length - 1);
+  return avgInterval > 0 ? 1 / avgInterval : null;
+}
+
+// ===========================================================
+//  DRAW
+// ===========================================================
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background (always full canvas)
+  ctx.fillStyle = '#fdfdff';
+  ctx.fillRect(0, 0, W, H);
+
+  // --- Apply camera transform ---
+  ctx.save();
+  ctx.translate(camPanX, camPanY);
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(camZoom, camZoom);
+  ctx.translate(-W / 2, -H / 2);
+
+  // Pixel positions (cached per frame)
+  const srcPxX = toPixX(sourceX);
+  const srcPxY = toPixY(sourceY);
+  const obsPxX = toPixX(observerX);
+  const obsPxY = toPixY(observerY);
+
+  // Ground line
+  ctx.strokeStyle = '#c8cdd5';
+  ctx.lineWidth = 1 / camZoom;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(-2000, srcPxY);
+  ctx.lineTo(W + 2000, srcPxY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Source path trace
+  if (chkPath.checked) {
+    ctx.strokeStyle = 'rgba(200,200,210,0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    ctx.moveTo(toPixX(sourceXStart), srcPxY);
+    ctx.lineTo(Math.min(srcPxX, W), srcPxY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // --- Wavefronts ---
+  if (chkWavefronts.checked) {
+    for (const p of pulses) {
+      const r = waveSpeed * (simTime - p.birthTime);  // metres
+      if (r < 0.01) continue;
+      const rPx = toPixR(r);
+      const alpha = Math.max(0.06, 1 - r / (Math.max(W_M, H_M) * 0.9));
+      ctx.strokeStyle = `rgba(60,120,240,${alpha.toFixed(3)})`;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(toPixX(p.ox), toPixY(p.oy), rPx, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // --- Mach cone ---
+  const mach = sourceSpeed / waveSpeed;
+  if (chkMachCone.checked && mach >= 1 && sourceSpeed > 0) {
+    const sinA = waveSpeed / sourceSpeed;
+    const angle = Math.asin(Math.min(sinA, 1));
+    const coneLenPx = W * 1.5;  // long enough in pixels
+
+    ctx.save();
+    ctx.translate(srcPxX, srcPxY);
+    ctx.strokeStyle = 'rgba(220,50,50,0.55)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 5]);
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-coneLenPx * Math.cos(angle),  coneLenPx * Math.sin(angle));
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-coneLenPx * Math.cos(angle), -coneLenPx * Math.sin(angle));
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    if (chkLabels.checked) {
+      ctx.fillStyle = 'rgba(200,40,40,0.8)';
+      ctx.font = 'bold 12px Segoe UI, sans-serif';
+      ctx.fillText('Mach cone (shock front)', srcPxX - 160, srcPxY - 50);
+    }
+  }
+
+  // --- Observer ---
+  drawObserver(obsPxX, obsPxY, '#2563eb', 'Observer');
+
+  // --- Source ---
+  drawSource(srcPxX, srcPxY);
+
+  // Labels
+  if (chkLabels.checked) {
+    ctx.fillStyle = '#c23';
+    ctx.font = 'bold 12px Segoe UI, sans-serif';
+    ctx.fillText('Source', srcPxX + 12, srcPxY - 16);
+
+    if (sourceSpeed > 0) {
+      ctx.fillStyle = 'rgba(180,60,60,0.4)';
+      ctx.font = '20px sans-serif';
+      ctx.fillText('→', srcPxX + 14, srcPxY + 6);
+    }
+  }
+
+  // --- End camera transform ---
+  ctx.restore();
+
+  // --- HUD (screen-space, unaffected by zoom/pan) ---
+  if (chkLabels.checked) {
+    const mach2 = sourceSpeed / waveSpeed;
+    ctx.fillStyle = '#555';
+    ctx.font = '12px Segoe UI, sans-serif';
+    ctx.fillText('Mach ' + mach2.toFixed(2), 12, 22);
+  }
+
+  updateReadouts();
+}
+
+function drawSource(x, y) {
+  // Small red circle with speaker icon vibe
+  ctx.beginPath();
+  ctx.arc(x, y, 9, 0, Math.PI * 2);
+  ctx.fillStyle = '#e03030';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#a01818';
+  ctx.stroke();
+
+  // Inner highlight
+  ctx.beginPath();
+  ctx.arc(x - 2, y - 2, 3, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fill();
+
+  // Small "sound waves" emanating icon (static decorative arcs)
+  ctx.strokeStyle = 'rgba(224,48,48,0.35)';
+  ctx.lineWidth = 1.2;
+  for (let i = 1; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.arc(x + 6, y, 5 + i * 5, -0.6, 0.6);
+    ctx.stroke();
+  }
+}
+
+function drawObserver(x, y, color, label) {
+  // Small person / pin icon  (x, y already in pixels)
+  ctx.beginPath();
+  ctx.arc(x, y - 10, 6, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y - 4);
+  ctx.lineTo(x, y + 10);
+  ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 6, y + 2);
+  ctx.lineTo(x + 6, y + 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x, y + 10);
+  ctx.lineTo(x - 5, y + 18);
+  ctx.moveTo(x, y + 10);
+  ctx.lineTo(x + 5, y + 18);
+  ctx.stroke();
+
+  if (chkLabels.checked) {
+    ctx.fillStyle = color;
+    ctx.font = '11px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x, y - 20);
+    ctx.textAlign = 'left';
+  }
+
+  // Pulse flash when wavefront arrives
+  const hitList = obsHits;
+  if (hitList.length > 0) {
+    const last = hitList[hitList.length - 1];
+    const age = simTime - last;
+    if (age < 0.12) {
+      const a = 1 - age / 0.12;
+      ctx.beginPath();
+      ctx.arc(x, y, 18 + age * 80, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(37,99,235,${(a * 0.5).toFixed(2)})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+}
+
+function updateReadouts() {
+  if (!chkReadouts.checked) return;
+  const mach = sourceSpeed / waveSpeed;
+  roEmit.textContent = baseTone + ' Hz';
+  roMach.textContent = mach.toFixed(2);
+
+  // Theoretical Doppler for single observer
+  const obsAheadR = observerX > sourceX; // is observer ahead of source?
+  const voTowardR = obsAheadR ? -obsSpeed : obsSpeed;
+  const vsDenomR  = obsAheadR ? (waveSpeed - sourceSpeed) : (waveSpeed + sourceSpeed);
+
+  if (Math.abs(vsDenomR) < 0.01) {
+    roPerceived.textContent = '∞ (shock)';
+  } else if (vsDenomR > 0) {
+    const fP = baseTone * (waveSpeed + voTowardR) / vsDenomR;
+    roPerceived.textContent = fP.toFixed(1) + ' Hz';
+  } else {
+    roPerceived.textContent = '∞ (shock)';
+  }
+
+  // Show measured value in parentheses when available
+  if (perceivedObs !== null) {
+    roPerceived.textContent += ' (' + perceivedObs.toFixed(1) + ' meas.)';
+  }
+
+  // Show speed of sound reference
+  roMach.title = 'v_s / v = ' + sourceSpeed.toFixed(0) + ' / ' + waveSpeed.toFixed(0) + ' m/s';
+}
+
+// ===========================================================
+//  MAIN LOOP
+// ===========================================================
+let lastTime = null;
+
+function loop(ts) {
+  if (lastTime === null) lastTime = ts;
+  let rawDt = (ts - lastTime) / 1000;
+  lastTime = ts;
+
+  // Clamp dt to avoid huge jumps after tab switch
+  rawDt = Math.min(rawDt, 0.1);
+
+  const dt = slowMo ? rawDt * 0.25 : rawDt;
+
+  update(dt);
+  draw();
+  // Continuously try to keep audio alive when sound is enabled
+  if (hadGesture && soundEnabled && !audioReady) ensureAudio();
+  if (hadGesture && audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  updateAudio();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Unit Circle</title>
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --text-color: #1e293b;
+            --card-bg: #ffffff;
+            --border-color: #e2e8f0;
+            --primary: #3b82f6;
+            --primary-light: #dbeafe;
+            --secondary: #10b981;
+            --accent: #8b5cf6;
+            --radius: 12px;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --transition: all 0.3s ease;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #0f172a;
+            --text-color: #f1f5f9;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --primary: #60a5fa;
+            --primary-light: #1e3a8a;
+            --secondary: #34d399;
+            --accent: #a78bfa;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            transition: var(--transition);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            padding: 0 10px;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .theme-toggle {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 50px;
+            padding: 8px;
+            display: flex;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: var(--shadow);
+        }
+
+        .theme-toggle svg {
+            width: 20px;
+            height: 20px;
+            fill: var(--text-color);
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+        }
+
+        .visualization-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1/1;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        .circle-bg {
+            fill: none;
+            stroke: var(--border-color);
+            stroke-width: 2;
+        }
+
+        .radius-line {
+            stroke: var(--primary);
+            stroke-width: 3;
+        }
+
+        .projection-line {
+            stroke: var(--text-color);
+            stroke-width: 2;
+            stroke-dasharray: 6 5;
+            opacity: 0.5;
+        }
+
+        .point {
+            fill: var(--secondary);
+            stroke: var(--card-bg);
+            stroke-width: 2;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+        }
+
+        .angle-label {
+            fill: var(--text-color);
+            font-size: 12px;
+            font-weight: 500;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            opacity: 0.8;
+        }
+
+        .angle-marker {
+            fill: var(--text-color);
+            opacity: 0.3;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+
+        .angle-marker:hover {
+            opacity: 0.6;
+        }
+
+        .angle-marker.highlighted {
+            fill: var(--accent);
+            opacity: 0.8;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 24px; /* Increased gap for better spacing */
+        }
+
+        .slider-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px; /* Increased gap */
+            margin-bottom: 8px; /* Added margin for more separation */
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--border-color);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease;
+        }
+
+        input[type="range"]::-moz-range-thumb:hover {
+            transform: scale(1.1);
+        }
+
+        .slider-ticks {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            padding: 0 10px;
+        }
+
+        .slider-tick {
+            width: 1px;
+            height: 6px;
+            background-color: var(--border-color);
+            position: relative;
+        }
+
+        .slider-tick-label {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: var(--text-color);
+            opacity: 0.7;
+            white-space: nowrap;
+        }
+
+        .readouts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px; /* Increased gap */
+            margin-top: 8px; /* Added margin for more separation */
+        }
+
+        .readout-card {
+            background: var(--primary-light);
+            border-radius: 8px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px; /* Increased gap */
+        }
+
+        .readout-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.7;
+        }
+
+        .readout-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .function-values {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .function-value {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .function-label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.7;
+        }
+
+        .function-result {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        @media (max-width: 480px) {
+            .readouts {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+            
+            .function-values {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                gap: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Unit Circle</h1>
+        <div class="theme-toggle" id="themeToggle">
+            <svg viewBox="0 0 24 24">
+                <path d="M12,18C8.7,18,6,15.3,6,12C6,8.7,8.7,6,12,6C15.3,6,18,8.7,18,12C18,15.3,15.3,18,12,18zM12,8C9.8,8,8,9.8,8,12C8,14.2,9.8,16,12,16C14.2,16,16,14.2,16,12C16,9.8,14.2,8,12,8z"/>
+                <path d="M12,4C12.6,4,13,3.6,13,3V1C13,0.4,12.6,0,12,0S11,0.4,11,1V3C11,3.6,11.4,4,12,4z"/>
+                <path d="M12,20c-0.6,0-1,0.4-1,1v2c0,0.6,0.4,1,1,1s1-0.4,1-1v-2C13,20.4,12.6,20,12,20z"/>
+                <path d="M5.6,6.6C5.2,6.2,4.5,6.2,4.1,6.6L2.7,8C2.3,8.4,2.3,9.1,2.7,9.5C3.1,9.9,3.8,9.9,4.2,9.5l1.4-1.4C6,8.4,6,7.7,5.6,7.3C5.6,7.3,5.6,6.6,5.6,6.6z"/>
+                <path d="M19.8,16.4c0.4-0.4,0.4-1,0-1.4s-1-0.4-1.4,0l-1.4,1.4c-0.4,0.4-0.4,1,0,1.4c0.4,0.4,1,0.4,1.4,0L19.8,16.4z"/>
+                <path d="M3,13H1c-0.6,0-1,0.4-1,1s0.4,1,1,1h2c0.6,0,1-0.4,1-1S3.6,13,3,13z"/>
+                <path d="M23,11h-2c-0.6,0-1,0.4-1,1s0.4,1,1,1h2c0.6,0,1-0.4,1-1S23.6,11,23,11z"/>
+                <path d="M5.6,17.4c-0.4,0.4-0.4,1,0,1.4C5.8,19,6.1,19.1,6.4,19.1s0.6-0.1,0.8-0.4l1.4-1.4c0.4-0.4,0.4-1,0-1.4s-1-0.4-1.4,0L5.6,17.4z"/>
+                <path d="M19.8,7.6c0.4,0.4,1,0.4,1.4,0c0.4-0.4,0.4-1,0-1.4l-1.4-1.4c-0.4-0.4-1-0.4-1.4,0s-0.4,1,0,1.4L19.8,7.6z"/>
+            </svg>
+        </div>
+    </header>
+
+    <div class="card">
+        <div class="visualization-container">
+            <svg id="svg" viewBox="0 0 500 500">
+                <!-- Circle background -->
+                <circle cx="250" cy="250" r="200" class="circle-bg"/>
+                
+                <!-- Axes -->
+                <line x1="50" y1="250" x2="450" y2="250" class="projection-line"/>
+                <line x1="250" y1="50" x2="250" y2="450" class="projection-line"/>
+                
+                <!-- Angle markers and labels -->
+                <g id="angleMarkers"></g>
+                
+                <!-- Radius line -->
+                <line x1="250" y1="250" x2="450" y2="250" class="radius-line"/>
+                
+                <!-- Projection lines -->
+                <line id="projLine" x1="250" y1="250" x2="450" y2="250" class="projection-line"/>
+                <line id="verticalLine" x1="450" y1="250" x2="450" y2="250" class="projection-line"/>
+                
+                <!-- Point -->
+                <circle id="point" class="point" cx="450" cy="250" r="8"/>
+            </svg>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="controls">
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Angle</span>
+                    <span id="angleDisplay">0° (0)</span>
+                </div>
+                <input id="angleSlider" type="range" min="0" max="360" step="0.1" value="0">
+                <div class="slider-ticks" id="sliderTicks"></div>
+            </div>
+            
+            <div class="readouts">
+                <div class="readout-card">
+                    <div class="readout-title">Coordinates</div>
+                    <div id="coordDisplay" class="readout-value">(1, 0)</div>
+                </div>
+                
+                <div class="readout-card">
+                    <div class="function-values">
+                        <div class="function-value">
+                            <div class="function-label">sin</div>
+                            <div id="sinVal" class="function-result">0</div>
+                        </div>
+                        <div class="function-value">
+                            <div class="function-label">cos</div>
+                            <div id="cosVal" class="function-result">1</div>
+                        </div>
+                        <div class="function-value">
+                            <div class="function-label">tan</div>
+                            <div id="tanVal" class="function-result">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const svg = document.getElementById('svg');
+const point = document.getElementById('point');
+const radiusLine = svg.querySelector('.radius-line');
+const projLine = document.getElementById('projLine');
+const verticalLine = document.getElementById('verticalLine');
+const angleMarkers = document.getElementById('angleMarkers');
+const sliderTicks = document.getElementById('sliderTicks');
+
+const angleSlider = document.getElementById('angleSlider');
+const angleDisplay = document.getElementById('angleDisplay');
+const coordDisplay = document.getElementById('coordDisplay');
+const sinVal = document.getElementById('sinVal');
+const cosVal = document.getElementById('cosVal');
+const tanVal = document.getElementById('tanVal');
+const themeToggle = document.getElementById('themeToggle');
+
+const center = { x:250, y:250 };
+const radius = 200;
+let angle = 0;
+let currentTheme = 'light';
+let angleData = [];
+
+// Create angle markers and labels
+function createAngleMarkers() {
+    const angles = [
+        { angle: 0, label: "0", x: 450, y: 250 },
+        { angle: Math.PI/6, label: "π/6", x: 250+radius*Math.cos(-Math.PI/6), y: 250+radius*Math.sin(-Math.PI/6) },
+        { angle: Math.PI/4, label: "π/4", x: 250+radius*Math.cos(-Math.PI/4), y: 250+radius*Math.sin(-Math.PI/4) },
+        { angle: Math.PI/3, label: "π/3", x: 250+radius*Math.cos(-Math.PI/3), y: 250+radius*Math.sin(-Math.PI/3) },
+        { angle: Math.PI/2, label: "π/2", x: 250, y: 50 },
+        { angle: 2*Math.PI/3, label: "2π/3", x: 250+radius*Math.cos(-2*Math.PI/3), y: 250+radius*Math.sin(-2*Math.PI/3) },
+        { angle: 3*Math.PI/4, label: "3π/4", x: 250+radius*Math.cos(-3*Math.PI/4), y: 250+radius*Math.sin(-3*Math.PI/4) },
+        { angle: 5*Math.PI/6, label: "5π/6", x: 250+radius*Math.cos(-5*Math.PI/6), y: 250+radius*Math.sin(-5*Math.PI/6) },
+        { angle: Math.PI, label: "π", x: 50, y: 250 },
+        { angle: 7*Math.PI/6, label: "7π/6", x: 250+radius*Math.cos(-7*Math.PI/6), y: 250+radius*Math.sin(-7*Math.PI/6) },
+        { angle: 5*Math.PI/4, label: "5π/4", x: 250+radius*Math.cos(-5*Math.PI/4), y: 250+radius*Math.sin(-5*Math.PI/4) },
+        { angle: 4*Math.PI/3, label: "4π/3", x: 250+radius*Math.cos(-4*Math.PI/3), y: 250+radius*Math.sin(-4*Math.PI/3) },
+        { angle: 3*Math.PI/2, label: "3π/2", x: 250, y: 450 },
+        { angle: 5*Math.PI/3, label: "5π/3", x: 250+radius*Math.cos(-5*Math.PI/3), y: 250+radius*Math.sin(-5*Math.PI/3) },
+        { angle: 7*Math.PI/4, label: "7π/4", x: 250+radius*Math.cos(-7*Math.PI/4), y: 250+radius*Math.sin(-7*Math.PI/4) },
+        { angle: 11*Math.PI/6, label: "11π/6", x: 250+radius*Math.cos(-11*Math.PI/6), y: 250+radius*Math.sin(-11*Math.PI/6) }
+    ];
+
+    // Store angle data for snapping
+    angleData = angles;
+
+    angles.forEach(a => {
+        // Create marker
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        marker.setAttribute("cx", a.x);
+        marker.setAttribute("cy", a.y);
+        marker.setAttribute("r", 8); // Larger clickable area
+        marker.setAttribute("class", "angle-marker");
+        marker.setAttribute("data-angle", a.angle);
+        angleMarkers.appendChild(marker);
+        
+        // Create label
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", a.x);
+        label.setAttribute("y", a.y);
+        
+        // Adjust label position to avoid overlap with point
+        if (a.angle === 0) {
+            label.setAttribute("y", a.y + 20);
+        } else if (a.angle === Math.PI/2) {
+            label.setAttribute("x", a.x - 20);
+        } else if (a.angle === Math.PI) {
+            label.setAttribute("y", a.y + 20);
+        } else if (a.angle === 3*Math.PI/2) {
+            label.setAttribute("x", a.x + 20);
+        } else if (a.angle > 0 && a.angle < Math.PI/2) {
+            label.setAttribute("x", a.x + 10);
+            label.setAttribute("y", a.y - 10);
+        } else if (a.angle > Math.PI/2 && a.angle < Math.PI) {
+            label.setAttribute("x", a.x - 10);
+            label.setAttribute("y", a.y - 10);
+        } else if (a.angle > Math.PI && a.angle < 3*Math.PI/2) {
+            label.setAttribute("x", a.x - 10);
+            label.setAttribute("y", a.y + 20);
+        } else {
+            label.setAttribute("x", a.x + 10);
+            label.setAttribute("y", a.y + 20);
+        }
+        
+        label.setAttribute("class", "angle-label");
+        label.textContent = a.label;
+        angleMarkers.appendChild(label);
+    });
+}
+
+// Create slider ticks
+function createSliderTicks() {
+    const ticks = [
+        { angle: 0, label: "0" },
+        { angle: Math.PI/6, label: "π/6" },
+        { angle: Math.PI/4, label: "π/4" },
+        { angle: Math.PI/3, label: "π/3" },
+        { angle: Math.PI/2, label: "π/2" },
+        { angle: 2*Math.PI/3, label: "2π/3" },
+        { angle: 3*Math.PI/4, label: "3π/4" },
+        { angle: 5*Math.PI/6, label: "5π/6" },
+        { angle: Math.PI, label: "π" },
+        { angle: 7*Math.PI/6, label: "7π/6" },
+        { angle: 5*Math.PI/4, label: "5π/4" },
+        { angle: 4*Math.PI/3, label: "4π/3" },
+        { angle: 3*Math.PI/2, label: "3π/2" },
+        { angle: 5*Math.PI/3, label: "5π/3" },
+        { angle: 7*Math.PI/4, label: "7π/4" },
+        { angle: 11*Math.PI/6, label: "11π/6" },
+        { angle: 2*Math.PI, label: "2π" }
+    ];
+
+    ticks.forEach(tick => {
+        const tickElement = document.createElement('div');
+        tickElement.className = 'slider-tick';
+        
+        const labelElement = document.createElement('div');
+        labelElement.className = 'slider-tick-label';
+        labelElement.textContent = tick.label;
+        
+        tickElement.appendChild(labelElement);
+        sliderTicks.appendChild(tickElement);
+    });
+}
+
+function round(v, n=4) {
+    return Math.round(v * 10**n) / 10**n;
+}
+
+function angleToPoint(a) {
+    return {
+        x: center.x + radius * Math.cos(-a), // clockwise
+        y: center.y + radius * Math.sin(-a)
+    };
+}
+
+// convert radians to "nice" fractions of pi
+function radToPiFrac(rad) {
+    const pi = Math.PI;
+    const tol = 0.01;
+    const fracs = [
+        [0, '0'], [pi/6, 'π/6'], [pi/4, 'π/4'], [pi/3, 'π/3'], [pi/2, 'π/2'],
+        [2*pi/3, '2π/3'], [3*pi/4, '3π/4'], [5*pi/6, '5π/6'], [pi, 'π'],
+        [7*pi/6, '7π/6'], [5*pi/4, '5π/4'], [4*pi/3, '4π/3'], [3*pi/2, '3π/2'],
+        [5*pi/3, '5π/3'], [7*pi/4, '7π/4'], [11*pi/6, '11π/6'], [2*pi, '2π']
+    ];
+    for (let [v, s] of fracs) {
+        if (Math.abs(rad - v) < tol) return s;
+    }
+    return round(rad, 3);
+}
+
+function updateAll() {
+    const rad = angle;
+    const deg = rad * 180 / Math.PI;
+    const p = angleToPoint(rad);
+    point.setAttribute('cx', p.x);
+    point.setAttribute('cy', p.y);
+
+    radiusLine.setAttribute('x2', p.x);
+    radiusLine.setAttribute('y2', p.y);
+
+    projLine.setAttribute('x2', p.x);
+    projLine.setAttribute('y2', center.y);
+
+    verticalLine.setAttribute('x1', p.x);
+    verticalLine.setAttribute('y1', center.y);
+    verticalLine.setAttribute('x2', p.x);
+    verticalLine.setAttribute('y2', p.y);
+
+    angleSlider.value = deg;
+    angleDisplay.textContent = `${round(deg)}° (${radToPiFrac(rad)})`;
+
+    const cx = Math.cos(rad);
+    const sy = Math.sin(rad);
+    coordDisplay.textContent = `(${round(cx)}, ${round(sy)})`;
+    sinVal.textContent = round(sy);
+    cosVal.textContent = round(cx);
+    if (Math.abs(cx) < 1e-7) tanVal.textContent = '∞';
+    else tanVal.textContent = round(sy / cx);
+
+    // Highlight the closest angle marker
+    highlightClosestMarker(rad);
+}
+
+function highlightClosestMarker(currentAngle) {
+    // Remove all highlights
+    document.querySelectorAll('.angle-marker').forEach(marker => {
+        marker.classList.remove('highlighted');
+    });
+    
+    // Find the closest marker
+    let closestMarker = null;
+    let minDiff = Infinity;
+    
+    angleData.forEach(data => {
+        const diff = Math.abs(data.angle - currentAngle);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestMarker = data;
+        }
+    });
+    
+    // Highlight if close enough (within 0.1 radians)
+    if (minDiff < 0.1) {
+        const marker = document.querySelector(`.angle-marker[data-angle="${closestMarker.angle}"]`);
+        if (marker) {
+            marker.classList.add('highlighted');
+        }
+    }
+}
+
+// Theme toggle
+themeToggle.addEventListener('click', () => {
+    currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', currentTheme);
+});
+
+// Angle slider
+angleSlider.addEventListener('input', () => {
+    angle = angleSlider.value * Math.PI / 180;
+    updateAll();
+});
+
+// Click on angle markers
+svg.addEventListener('click', (ev) => {
+    const target = ev.target;
+    if (target.classList.contains('angle-marker')) {
+        const markerAngle = parseFloat(target.getAttribute('data-angle'));
+        angle = markerAngle;
+        updateAll();
+    }
+});
+
+// Drag point
+let isDragging = false;
+function getSVGPoint(clientX, clientY) {
+    const rect = svg.getBoundingClientRect();
+    return {
+        x: (clientX - rect.left) * 500 / rect.width,
+        y: (clientY - rect.top) * 500 / rect.height
+    };
+}
+
+svg.addEventListener('pointerdown', ev => {
+    isDragging = true;
+    const pt = getSVGPoint(ev.clientX, ev.clientY);
+    angle = -Math.atan2(pt.y - center.y, pt.x - center.x);
+    updateAll();
+});
+
+svg.addEventListener('pointermove', ev => {
+    if (!isDragging) return;
+    const pt = getSVGPoint(ev.clientX, ev.clientY);
+    angle = -Math.atan2(pt.y - center.y, pt.x - center.x);
+    updateAll();
+});
+
+svg.addEventListener('pointerup', () => {
+    isDragging = false;
+    
+    // Snap to nearest angle marker if close
+    let closestAngle = null;
+    let minDiff = Infinity;
+    
+    angleData.forEach(data => {
+        const diff = Math.abs(data.angle - angle);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestAngle = data.angle;
+        }
+    });
+    
+    // Snap if close enough (within 0.1 radians)
+    if (minDiff < 0.1) {
+        angle = closestAngle;
+        updateAll();
+    }
+});
+
+// Initialize
+createAngleMarkers();
+createSliderTicks();
+updateAll();
+</script>
+</body>
+</html>

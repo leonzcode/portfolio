@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Double Dutch — Rhythm &amp; Rope Simulator</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a1a;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;user-select:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// ═══════════════════════════════════════════════════════════
+//  DOUBLE DUTCH — Rhythm & Rope Simulator
+//  A game that teaches Double Dutch jumping through play,
+//  honoring a tradition of rhythm, community & Black culture
+// ═══════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('c');
+const C = canvas.getContext('2d');
+const W = 1200, H = 720;
+canvas.width = W; canvas.height = H;
+
+function resize() {
+  const s = Math.min(innerWidth / W, innerHeight / H, 1.5);
+  canvas.style.width  = ((W * s)|0) + 'px';
+  canvas.style.height = ((H * s)|0) + 'px';
+}
+addEventListener('resize', resize); resize();
+
+/* ── tiny helpers ── */
+const lerp  = (a,b,t) => a+(b-a)*t;
+const clamp = (v,lo,hi) => Math.max(lo, Math.min(hi, v));
+const ease  = t => t<.5?2*t*t:1-(-2*t+2)**2/2;
+const rand  = (a,b) => a+Math.random()*(b-a);
+const TAU   = Math.PI*2;
+const PI    = Math.PI;
+const sin   = Math.sin, cos = Math.cos, abs = Math.abs, floor = Math.floor;
+
+/* ═══════════════════════════════════
+   CONSTANTS
+   ═══════════════════════════════════ */
+const GND        = 558;          // ground‑line y
+const ROPE_R     = 128;          // rope swing radius
+const HAND_Y     = GND - ROPE_R; // ~430  turner‑wrist height
+const TL_X       = 245;          // left turner x
+const TR_X       = 955;          // right turner x
+const CX         = (TL_X+TR_X)/2;// 600  centre
+const SEGS       = 48;           // rope sample points
+const GRAV       = 0.60;
+const JUMP_V     = -8.2;
+
+const DIFFS = [
+  { key:'practice', label:'Practice', bpm:55,  win:.24 },
+  { key:'easy',     label:'Easy',     bpm:75,  win:.19 },
+  { key:'medium',   label:'Medium',   bpm:100, win:.14 },
+  { key:'hard',     label:'Hard',     bpm:130, win:.09 },
+  { key:'expert',   label:'Expert',   bpm:160, win:.06 }
+];
+
+/* ═══════════════════════════════════
+   AUDIO  (Web Audio synthesis)
+   ═══════════════════════════════════ */
+let actx = null;
+function initAudio(){ if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); }
+
+function sfx(type, vol){
+  if(!actx) return;
+  vol = vol ?? 1;
+  const t = actx.currentTime;
+  const g = actx.createGain();
+  g.gain.value = vol * 0.3;
+  g.connect(actx.destination);
+
+  if(type==='slap'){
+    const sr=actx.sampleRate, n=(sr*.07)|0, buf=actx.createBuffer(1,n,sr), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/(sr*.012));
+    const s=actx.createBufferSource(); s.buffer=buf;
+    const f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=280;
+    s.connect(f); f.connect(g); s.start();
+    const o=actx.createOscillator(); o.frequency.value=58;
+    const g2=actx.createGain(); g2.gain.setValueAtTime(vol*.15,t); g2.gain.exponentialRampToValueAtTime(.001,t+.08);
+    o.connect(g2); g2.connect(actx.destination); o.start(t); o.stop(t+.08);
+  } else if(type==='jump'){
+    const o=actx.createOscillator(); o.type='triangle'; o.frequency.value=200;
+    g.gain.setValueAtTime(vol*.08,t); g.gain.exponentialRampToValueAtTime(.001,t+.06);
+    o.connect(g); o.start(t); o.stop(t+.06);
+  } else if(type==='land'){
+    const sr=actx.sampleRate, n=(sr*.05)|0, buf=actx.createBuffer(1,n,sr), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/(sr*.01));
+    const s=actx.createBufferSource(); s.buffer=buf;
+    const f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=200;
+    s.connect(f); f.connect(g); s.start();
+  } else if(type==='perfect'){
+    [523,659].forEach(function(fr,i){
+      const o=actx.createOscillator(); o.frequency.value=fr;
+      const gg=actx.createGain(); gg.gain.setValueAtTime(.12,t+i*.04); gg.gain.exponentialRampToValueAtTime(.001,t+i*.04+.12);
+      o.connect(gg); gg.connect(actx.destination); o.start(t+i*.04); o.stop(t+i*.04+.12);
+    });
+  } else if(type==='good'){
+    const o=actx.createOscillator(); o.type='triangle'; o.frequency.value=440;
+    g.gain.setValueAtTime(.1,t); g.gain.exponentialRampToValueAtTime(.001,t+.08);
+    o.connect(g); o.start(t); o.stop(t+.08);
+  } else if(type==='miss'){
+    const o=actx.createOscillator(); o.type='sawtooth'; o.frequency.value=140;
+    g.gain.setValueAtTime(.12,t); g.gain.exponentialRampToValueAtTime(.001,t+.15);
+    o.connect(g); o.start(t); o.stop(t+.15);
+  } else if(type==='tangle'){
+    const sr=actx.sampleRate, n=(sr*.35)|0, buf=actx.createBuffer(1,n,sr), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/(sr*.06));
+    const s=actx.createBufferSource(); s.buffer=buf;
+    const f=actx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=350;
+    s.connect(f); f.connect(g); s.start();
+    const o=actx.createOscillator(); o.frequency.value=70;
+    const g3=actx.createGain(); g3.gain.setValueAtTime(.13,t); g3.gain.exponentialRampToValueAtTime(.001,t+.4);
+    o.connect(g3); g3.connect(actx.destination); o.start(t); o.stop(t+.4);
+  } else if(type==='entry'){
+    [330,440,554].forEach(function(fr,i){
+      const o=actx.createOscillator(); o.frequency.value=fr;
+      const gg=actx.createGain(); gg.gain.setValueAtTime(.1, t+i*.07); gg.gain.exponentialRampToValueAtTime(.001,t+i*.07+.1);
+      o.connect(gg); gg.connect(actx.destination); o.start(t+i*.07); o.stop(t+i*.07+.1);
+    });
+  }
+}
+
+/* ═══════════════════════════════════
+   PARTICLES
+   ═══════════════════════════════════ */
+const parts = [];
+function emit(x,y,n,cfg){
+  for(let i=0;i<n;i++) parts.push({
+    x:x, y:y,
+    vx:rand(cfg.vx||-0.8, cfg.VX||0.8),
+    vy:rand(cfg.vy||-2.5, cfg.VY||-0.3),
+    life:1, decay:rand(cfg.d||.02, cfg.D||.04),
+    r:rand(cfg.r||2, cfg.R||4),
+    col:cfg.cols[((Math.random()*cfg.cols.length)|0)],
+    g:cfg.g||.07
+  });
+}
+function tickParts(){
+  for(let i=parts.length-1;i>=0;i--){
+    const p=parts[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.life-=p.decay;
+    if(p.life<=0) parts.splice(i,1);
+  }
+}
+function drawParts(){
+  for(const p of parts){
+    C.globalAlpha=p.life*.8;
+    C.fillStyle=p.col;
+    C.beginPath(); C.arc(p.x,p.y,p.r*p.life,0,TAU); C.fill();
+  }
+  C.globalAlpha=1;
+}
+const DUST   = {vx:-1.5,VX:1.5,vy:-2.5,VY:-0.5,d:.02,D:.04,r:2,R:5, cols:['#c8b89a','#a89070','#d4c4a8','#8a7a60'],g:.08};
+const SPARK  = {vx:-3,VX:3,vy:-4,VY:-1,d:.03,D:.06,r:1.5,R:3.5, cols:['#FFD700','#FFA500','#FF6347','#fff'],g:.1};
+const TPART  = {vx:-2,VX:2,vy:-3,VY:0,d:.01,D:.025,r:2,R:6, cols:['#e74c3c','#c0392b','#3498db','#2980b9','#fff'],g:.05};
+
+/* ═══════════════════════════════════
+   GAME STATE
+   ═══════════════════════════════════ */
+let state  = 'menu';   // menu│jumping│tangled│score
+let dIdx   = 1;        // difficulty index (default: easy)
+let diff   = DIFFS[dIdx];
+let rSpeed = 0;        // current rope rad/s
+
+// rope
+let rAngle = 0;
+
+// jumper
+let jx = CX, jy = GND, jvy = 0, airborne = false;
+var MOVE_SPEED = 280;  // pixels per second for arrow‑key movement
+let insideRopes = false;  // true once player walks between turners
+
+// scoring
+let score=0, combo=0, maxCombo=0, flow=0;
+let totalJ=0, perfC=0, goodC=0, okC=0;
+
+// rhythm
+let jumpedBeat = false, tSinceBeat = 9, beatFlash = 0, beatPulse = 0;
+let curBeat = 0;
+
+// judgment display
+let jdg = '', jdgT = 0, jdgY = 0;
+
+// tangle
+let tangled = false, tangleProg = 0, tangleWho = 1;
+let tangleType = 'step';
+let tangleWait = 0;
+let shake = 0;
+
+// grace period — free beats after entry where misses don't tangle
+let graceBeats = 0;   // counts down; while >0, misses are forgiven
+var GRACE_COUNT = 4;  // number of free beats after entering
+
+// animation helpers
+let sq = 1, st = 1, lean = 0, armA = 0;
+
+// timing
+let gTime = 0, totalTime = 0;
+
+// menu
+let menuRA = 0, menuBounce = 0;
+
+/* ── input ── */
+const keys = {};
+const jp = {};  // just‑pressed (one frame)
+window.addEventListener('keydown', function(e){
+  if(!keys[e.code]) jp[e.code]=true;
+  keys[e.code]=true;
+  initAudio();
+  e.preventDefault();
+});
+window.addEventListener('keyup', function(e){ keys[e.code]=false; });
+canvas.addEventListener('touchstart', function(e){ e.preventDefault(); initAudio(); jp['Space']=true; keys['Space']=true; });
+canvas.addEventListener('touchend',   function(e){ e.preventDefault(); keys['Space']=false; });
+function pressed(c){ return jp[c]===true; }
+
+/* ═══════════════════════════════════
+   ROPE COMPUTATION
+   ═══════════════════════════════════ */
+var WRIST_R = 16;  // wrist circle radius — matches drawTurner
+function ropePoints(angle){
+  var pts=[];
+  // Wrist vertical displacement at the endpoints (hands gripping rope)
+  var handDy = WRIST_R * sin(angle);
+  for(var i=0;i<=SEGS;i++){
+    var t=i/SEGS;
+    var x=lerp(TL_X, TR_X, t);
+    var env=sin(PI*t);
+    // Blend: at endpoints (env≈0) rope follows the small wrist circle,
+    // in the middle (env≈1) it follows the full swing arc.
+    var yDisp = ROPE_R*sin(angle)*env + handDy*(1-env);
+    var y = HAND_Y + yDisp + 6*env;   // 6px natural sag in middle
+    var onGnd = y > GND-2;
+    if(y>GND) y=GND;
+    var z = ROPE_R*cos(angle)*env + WRIST_R*cos(angle)*(1-env);
+    pts.push({x:x, y:y, z:z, t:t, onGnd:onGnd, env:env});
+  }
+  return pts;
+}
+
+function deformedRope(angle, ct, prog, fx, fy){
+  var pts = ropePoints(angle);
+  for(var k=0;k<pts.length;k++){
+    var p = pts[k];
+    var d = abs(p.t - ct);
+    var pull = 0.28*prog;
+    if(d < pull){
+      var inf = Math.pow((1-d/pull)*prog, 1.5);
+      p.y = lerp(p.y, fy, inf);
+      p.x = lerp(p.x, fx, inf*0.12);
+      if(d < 0.13*prog){
+        var w = sin((p.t-ct)*75*prog)*14*prog;
+        p.y += w; p.x += w*0.25;
+      }
+    }
+    p.z *= (1 - prog*0.85);
+  }
+  return pts;
+}
+
+function ropeCtrY(angle){
+  return HAND_Y + ROPE_R*sin(angle) + 6;
+}
+
+/* ── draw rope ── */
+function drawRope(pts, dark, light){
+  // ground shadow
+  C.globalAlpha=0.12; C.strokeStyle='#000'; C.lineWidth=4; C.lineCap='round';
+  C.beginPath();
+  for(var i=0;i<pts.length;i++){
+    if(i===0) C.moveTo(pts[i].x, GND+3);
+    else C.lineTo(pts[i].x, GND+3);
+  }
+  C.stroke(); C.globalAlpha=1;
+
+  // rope body
+  for(var i=0;i<pts.length-1;i++){
+    var a=pts[i], b=pts[i+1];
+    var avgZ=(a.z+b.z)/2;
+    var df=clamp((avgZ/ROPE_R+1)/2, 0, 1);
+    C.beginPath(); C.moveTo(a.x,a.y); C.lineTo(b.x,b.y);
+    C.lineWidth = lerp(3, 7.5, df);
+    C.globalAlpha = lerp(0.45, 1, df);
+    C.strokeStyle = df>0.5 ? light : dark;
+    C.lineCap='round'; C.stroke();
+  }
+  C.globalAlpha=1;
+
+  // ground‑contact glow
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];
+    if(p.onGnd && p.y>=GND-3){
+      C.beginPath(); C.arc(p.x,GND,3.5,0,TAU);
+      C.fillStyle='rgba(255,255,200,.1)'; C.fill();
+    }
+  }
+}
+
+/* ═══════════════════════════════════
+   CHARACTER RENDERING
+   ═══════════════════════════════════ */
+function drawJumper(px, py, psq, pst, plean, parm, tanProg){
+  C.save(); C.translate(px,py); C.rotate(plean); C.scale(psq,pst);
+
+  var skin='#A0704C', skinShade='#8E6342';
+  var shirt='#E8C616', shirt2='#D4B414';
+  var pants='#2C3E50', shoe='#333', hair='#1E1008';
+
+  // shadow
+  var sR = airborne ? 12+(py-(GND-60))*0.12 : 18;
+  if(sR<4) sR=4;
+  C.fillStyle='rgba(0,0,0,.18)';
+  C.beginPath(); C.ellipse(0,2,sR,3.5,0,0,TAU); C.fill();
+
+  // legs
+  var ls = airborne?5:9, kb = airborne?-4:0;
+  C.strokeStyle=pants; C.lineWidth=10; C.lineCap='round';
+  C.beginPath(); C.moveTo(-ls,-55); C.quadraticCurveTo(-ls+kb,-28,-ls,-6); C.stroke();
+  C.beginPath(); C.moveTo( ls,-55); C.quadraticCurveTo( ls-kb,-28, ls,-6); C.stroke();
+
+  // shoes
+  C.fillStyle=shoe;
+  C.fillRect(-ls-7,-7,14,7); C.fillRect(ls-7,-7,14,7);
+  C.fillStyle='#eee';
+  C.fillRect(-ls-7,-2,14,2); C.fillRect(ls-7,-2,14,2);
+
+  // torso
+  var tTop=-95;
+  C.fillStyle=shirt;
+  C.beginPath(); C.moveTo(-17,-55); C.lineTo(-14,tTop);
+  C.quadraticCurveTo(0,tTop-4,14,tTop); C.lineTo(17,-55); C.closePath(); C.fill();
+  C.fillStyle=shirt2;
+  C.beginPath(); C.moveTo(-7,tTop); C.lineTo(0,tTop+7); C.lineTo(7,tTop); C.closePath(); C.fill();
+
+  // arms
+  var shY=tTop+8, sw=sin(parm)*8;
+  C.strokeStyle=skin; C.lineWidth=7; C.lineCap='round';
+  C.beginPath(); C.moveTo(-16,shY); C.quadraticCurveTo(-26,shY+20+sw,-20,shY+38+sw); C.stroke();
+  C.beginPath(); C.moveTo( 16,shY); C.quadraticCurveTo( 26,shY+20-sw, 20,shY+38-sw); C.stroke();
+  C.fillStyle=skin;
+  C.beginPath(); C.arc(-20,shY+38+sw,4,0,TAU); C.fill();
+  C.beginPath(); C.arc( 20,shY+38-sw,4,0,TAU); C.fill();
+
+  // neck + head
+  C.fillStyle=skin; C.fillRect(-4,tTop-8,8,10);
+  var hY=tTop-24;
+  C.beginPath(); C.arc(0,hY,17,0,TAU); C.fill();
+  // ear
+  C.fillStyle=skinShade;
+  C.beginPath(); C.ellipse(-16,hY+1,4,5,0,0,TAU); C.fill();
+  C.beginPath(); C.ellipse( 16,hY+1,4,5,0,0,TAU); C.fill();
+
+  // hair (short, sits on top of head)
+  C.fillStyle=hair;
+  C.beginPath(); C.ellipse(0,hY-12,16,10,0,PI,0); C.fill();
+
+  // eyebrows
+  C.strokeStyle=hair; C.lineWidth=2; C.lineCap='round';
+  C.beginPath(); C.moveTo(-9,hY-7); C.lineTo(-3,hY-8); C.stroke();
+  C.beginPath(); C.moveTo( 3,hY-8); C.lineTo( 9,hY-7); C.stroke();
+
+  // eyes
+  C.fillStyle='#fff';
+  C.beginPath(); C.ellipse(-6,hY-2,4.5,3.5,0,0,TAU); C.fill();
+  C.beginPath(); C.ellipse( 6,hY-2,4.5,3.5,0,0,TAU); C.fill();
+  C.fillStyle='#3E2B1A';
+  C.beginPath(); C.arc(-5,hY-1.5,2.2,0,TAU); C.fill();
+  C.beginPath(); C.arc( 7,hY-1.5,2.2,0,TAU); C.fill();
+  // eye highlights
+  C.fillStyle='#fff';
+  C.beginPath(); C.arc(-4.2,hY-2.3,0.8,0,TAU); C.fill();
+  C.beginPath(); C.arc( 7.8,hY-2.3,0.8,0,TAU); C.fill();
+
+  // nose (small)
+  C.strokeStyle=skinShade; C.lineWidth=1.2; C.lineCap='round';
+  C.beginPath(); C.moveTo(-1,hY+1); C.quadraticCurveTo(0,hY+4,1,hY+1); C.stroke();
+
+  // mouth
+  C.strokeStyle='#B87060'; C.lineWidth=1.6; C.lineCap='round'; C.beginPath();
+  if(tanProg>0.1) C.arc(0,hY+7,4,0.2,PI-0.2);
+  else if(combo>8){ C.arc(0,hY+5,5,0.15,PI-0.15); }
+  else C.arc(0,hY+6,3,0.2,PI-0.2);
+  C.stroke();
+
+  C.restore();
+}
+
+function drawTurner(x, side, a1, a2){
+  C.save();
+  var f = side==='L'?1:-1;
+  C.translate(x,GND);
+
+  // Left turner: boy with warm brown skin
+  // Right turner: girl with rich deep-brown skin
+  var isGirl = (side==='R');
+  var skin     = side==='L' ? '#B07848' : '#8B6240';
+  var skinShd  = side==='L' ? '#9A6840' : '#7A5535';
+  var sCol     = side==='L' ? '#2ECC71' : '#C471ED';
+  var pants    = side==='L' ? '#34495E' : '#2C3E50';
+  var shoe     = '#333';
+  var hair     = side==='L' ? '#3B2317' : '#1C1008';
+  var lipCol   = side==='L' ? '#A0675A' : '#C07068';
+
+  C.fillStyle='rgba(0,0,0,.14)'; C.beginPath(); C.ellipse(0,2,15,3.5,0,0,TAU); C.fill();
+
+  // legs
+  if(isGirl){
+    // girl wears leggings — slightly slimmer
+    C.strokeStyle='#2D2D44'; C.lineWidth=9; C.lineCap='round';
+  } else {
+    C.strokeStyle=pants; C.lineWidth=10; C.lineCap='round';
+  }
+  C.beginPath(); C.moveTo(-8,-55); C.lineTo(-8,-6); C.stroke();
+  C.beginPath(); C.moveTo( 8,-55); C.lineTo( 8,-6); C.stroke();
+  C.fillStyle=shoe; C.fillRect(-14,-7,12,7); C.fillRect(2,-7,12,7);
+
+  // torso / shirt
+  C.fillStyle=sCol;
+  C.beginPath(); C.moveTo(-16,-55); C.lineTo(-13,-100);
+  C.quadraticCurveTo(0,-103,13,-100); C.lineTo(16,-55); C.closePath(); C.fill();
+
+  // ── Hands: must touch the rope ends and follow their rotation ──
+  // The rope attaches at this turner's x, at y = HAND_Y in world space.
+  // In the turner's local coords (origin = (x, GND)), that's y = HAND_Y - GND = -ROPE_R = -128.
+  // Each hand drives one rope in a small wrist circle whose vertical component
+  // matches the rope's phase so the hand stays glued to the rope endpoint.
+  var handBaseY = -(GND - HAND_Y);  // -128 in local coords
+  var wristR = 16;                   // radius of the wrist circle
+
+  // hand1 drives rope1 (angle a1), hand2 drives rope2 (angle a2)
+  // vertical tracks rope: wristR * sin(angle)
+  // horizontal tracks depth illusion: wristR * cos(angle) scaled down
+  var h1y = handBaseY + wristR * sin(a1);
+  var h1x = f * 14 + f * wristR * 0.25 * cos(a1);
+  var h2y = handBaseY + wristR * sin(a2);
+  var h2x = f * 8 + f * wristR * 0.25 * cos(a2);
+
+  // arms — connect shoulders to the wrist-circle hand positions
+  var shoulderOutX = f * 14, shoulderOutY = -92;
+  var shoulderInX  = -f * 2,  shoulderInY  = -92;
+
+  C.strokeStyle=skin; C.lineWidth=7; C.lineCap='round';
+  // outer arm → hand1
+  var elbowOut1X = lerp(shoulderOutX, h1x, 0.55) + f*6;
+  var elbowOut1Y = lerp(shoulderOutY, h1y, 0.5) + 8;
+  C.beginPath(); C.moveTo(shoulderOutX, shoulderOutY);
+  C.quadraticCurveTo(elbowOut1X, elbowOut1Y, h1x, h1y); C.stroke();
+  // inner arm → hand2
+  var elbowOut2X = lerp(shoulderInX, h2x, 0.55) + f*4;
+  var elbowOut2Y = lerp(shoulderInY, h2y, 0.5) + 8;
+  C.beginPath(); C.moveTo(shoulderInX, shoulderInY);
+  C.quadraticCurveTo(elbowOut2X, elbowOut2Y, h2x, h2y); C.stroke();
+
+  // hands (fists gripping the rope)
+  C.fillStyle=skin;
+  C.beginPath(); C.arc(h1x, h1y, 5, 0, TAU); C.fill();
+  C.beginPath(); C.arc(h2x, h2y, 5, 0, TAU); C.fill();
+  // knuckle highlight
+  C.fillStyle=skinShd;
+  C.beginPath(); C.arc(h1x + f*2, h1y - 1, 2.5, 0, TAU); C.fill();
+  C.beginPath(); C.arc(h2x + f*2, h2y - 1, 2.5, 0, TAU); C.fill();
+
+  // neck + head
+  C.fillStyle=skin; C.fillRect(-4,-108,8,10);
+  var hY=-124;
+  C.beginPath(); C.arc(0,hY,15,0,TAU); C.fill();
+
+  // ears
+  C.fillStyle=skinShd;
+  C.beginPath(); C.ellipse(-14,hY+1,3.5,4.5,0,0,TAU); C.fill();
+  C.beginPath(); C.ellipse( 14,hY+1,3.5,4.5,0,0,TAU); C.fill();
+
+  if(isGirl){
+    // girl's hair — long, flows down past shoulders with volume
+    C.fillStyle=hair;
+    // top volume
+    C.beginPath(); C.ellipse(0,hY-8,17,13,0,PI,0); C.fill();
+    // sides flowing down
+    C.beginPath();
+    C.moveTo(-17,hY-2);
+    C.quadraticCurveTo(-20,hY+10,-18,hY+30);
+    C.quadraticCurveTo(-15,hY+38,-12,hY+38);
+    C.lineTo(-12,hY-2);
+    C.closePath(); C.fill();
+    C.beginPath();
+    C.moveTo(17,hY-2);
+    C.quadraticCurveTo(20,hY+10,18,hY+30);
+    C.quadraticCurveTo(15,hY+38,12,hY+38);
+    C.lineTo(12,hY-2);
+    C.closePath(); C.fill();
+    // small hair accessory / bead
+    C.fillStyle='#FFD700';
+    C.beginPath(); C.arc(-14,hY+18,2,0,TAU); C.fill();
+    C.beginPath(); C.arc( 14,hY+18,2,0,TAU); C.fill();
+
+    // earrings
+    C.fillStyle='#FFD700';
+    C.beginPath(); C.arc(-14,hY+7,1.8,0,TAU); C.fill();
+    C.beginPath(); C.arc( 14,hY+7,1.8,0,TAU); C.fill();
+  } else {
+    // boy's hair — short, close-cropped
+    C.fillStyle=hair;
+    C.beginPath(); C.ellipse(0,hY-10,14,9,0,PI,0); C.fill();
+  }
+
+  // eyebrow
+  C.strokeStyle=hair; C.lineWidth=1.8; C.lineCap='round';
+  C.beginPath(); C.moveTo(f*1,hY-6); C.lineTo(f*8,hY-7); C.stroke();
+
+  // eye
+  C.fillStyle='#fff'; C.beginPath(); C.ellipse(f*4,hY-2,3.5,3,0,0,TAU); C.fill();
+  C.fillStyle='#2A1A0E'; C.beginPath(); C.arc(f*5,hY-1.5,1.8,0,TAU); C.fill();
+  // highlight
+  C.fillStyle='#fff'; C.beginPath(); C.arc(f*5.6,hY-2.3,0.6,0,TAU); C.fill();
+
+  if(isGirl){
+    // eyelash accent
+    C.strokeStyle=hair; C.lineWidth=1; C.lineCap='round';
+    C.beginPath(); C.moveTo(f*1.5,hY-4); C.lineTo(f*7.5,hY-5); C.stroke();
+  }
+
+  // nose — slightly broader, natural
+  C.strokeStyle=skinShd; C.lineWidth=1.2; C.lineCap='round';
+  C.beginPath(); C.moveTo(f*1.5,hY+0); C.quadraticCurveTo(f*3.5,hY+3.5,f*1.5,hY+2.5); C.stroke();
+
+  // lips — full, warm
+  C.fillStyle=lipCol;
+  C.beginPath();
+  C.moveTo(f*-1,hY+5.5);
+  C.quadraticCurveTo(f*2,hY+4,f*5,hY+5.5);
+  C.quadraticCurveTo(f*2,hY+8,f*-1,hY+5.5);
+  C.fill();
+
+  C.restore();
+}
+
+/* ═══════════════════════════════════
+   BACKGROUND
+   ═══════════════════════════════════ */
+var bldgs=[];
+(function(){
+  for(var bx=20; bx<W; bx += 45+Math.random()*35){
+    bldgs.push({x:bx, h:180+Math.random()*190, w:40+Math.random()*32});
+  }
+})();
+
+function drawBG(){
+  // sky
+  var sg=C.createLinearGradient(0,0,0,GND);
+  sg.addColorStop(0,'#111830'); sg.addColorStop(0.22,'#25345e');
+  sg.addColorStop(0.52,'#b45a2e'); sg.addColorStop(0.78,'#dca04e');
+  sg.addColorStop(1,'#edc478');
+  C.fillStyle=sg; C.fillRect(0,0,W,GND);
+
+  // buildings
+  C.fillStyle='#151525';
+  for(var i=0;i<bldgs.length;i++){
+    var b=bldgs[i];
+    C.fillRect(b.x,GND-b.h,b.w,b.h);
+    C.fillStyle='rgba(255,195,90,.13)';
+    for(var wy=GND-b.h+14; wy<GND-18; wy+=24){
+      for(var wx=b.x+7; wx<b.x+b.w-7; wx+=13){
+        if(((wx*7+wy*3)&7)>2) C.fillRect(wx,wy,5,7);
+      }
+    }
+    C.fillStyle='#151525';
+  }
+
+  // trees
+  C.fillStyle='#0f1a14';
+  for(var tx=0;tx<W;tx+=33){
+    var th=35+((tx*7)%40);
+    C.beginPath(); C.moveTo(tx,GND); C.lineTo(tx+11,GND-th); C.lineTo(tx+22,GND); C.fill();
+  }
+
+  // fence
+  C.strokeStyle='rgba(120,120,120,.2)'; C.lineWidth=1;
+  var fTop=GND-155;
+  C.beginPath(); C.moveTo(0,fTop); C.lineTo(W,fTop); C.stroke();
+  for(var fx=45;fx<W;fx+=95){ C.beginPath(); C.moveTo(fx,fTop); C.lineTo(fx,GND); C.stroke(); }
+  C.strokeStyle='rgba(120,120,120,.07)'; C.lineWidth=0.5;
+  for(var fy=fTop;fy<GND;fy+=11)
+    for(var fx2=0;fx2<W;fx2+=11){
+      C.beginPath(); C.moveTo(fx2,fy); C.lineTo(fx2+5.5,fy+5.5); C.lineTo(fx2+11,fy); C.stroke();
+    }
+
+  // ground
+  var gg=C.createLinearGradient(0,GND,0,H);
+  gg.addColorStop(0,'#484848'); gg.addColorStop(0.3,'#383838'); gg.addColorStop(1,'#282828');
+  C.fillStyle=gg; C.fillRect(0,GND,W,H-GND);
+
+  C.strokeStyle='rgba(255,255,255,.07)'; C.lineWidth=1;
+  C.beginPath(); C.moveTo(0,GND); C.lineTo(W,GND); C.stroke();
+
+  C.strokeStyle='rgba(255,255,255,.05)'; C.lineWidth=2;
+  C.beginPath(); C.arc(CX,GND+38,75,0,TAU); C.stroke();
+
+  C.strokeStyle='rgba(0,0,0,.07)'; C.lineWidth=1;
+  C.beginPath(); C.moveTo(300,GND+20); C.lineTo(390,GND+65); C.stroke();
+  C.beginPath(); C.moveTo(700,GND+15); C.lineTo(780,GND+55); C.stroke();
+  C.beginPath(); C.moveTo(500,GND+40); C.lineTo(560,GND+80); C.stroke();
+}
+
+/* ═══════════════════════════════════
+   UI / HUD
+   ═══════════════════════════════════ */
+function rr(x,y,w,h,r){
+  C.beginPath(); C.moveTo(x+r,y);
+  C.lineTo(x+w-r,y); C.quadraticCurveTo(x+w,y,x+w,y+r);
+  C.lineTo(x+w,y+h-r); C.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  C.lineTo(x+r,y+h); C.quadraticCurveTo(x,y+h,x,y+h-r);
+  C.lineTo(x,y+r); C.quadraticCurveTo(x,y,x+r,y); C.closePath();
+}
+
+function scoreVal(j){
+  var m = Math.max(1, floor(combo/5));
+  return j==='PERFECT'?100*m : j==='GOOD'?50*m : 0;
+}
+
+function drawHUD(){
+  // score panel
+  C.fillStyle='rgba(0,0,0,.48)'; rr(14,10,175,82,10); C.fill();
+  C.fillStyle='#aaa'; C.font='13px "Segoe UI"'; C.textAlign='left'; C.fillText('SCORE',26,27);
+  C.fillStyle='#FFD700'; C.font='bold 28px "Segoe UI"'; C.fillText(score.toLocaleString(),26,55);
+  if(combo>1){
+    C.fillStyle=combo>10?'#FFD700':combo>5?'#FFA500':'#fff';
+    C.font='bold 18px "Segoe UI"'; C.fillText(combo+'x COMBO',26,80);
+  }
+
+  // flow bar
+  C.fillStyle='rgba(0,0,0,.42)'; rr(W-192,10,178,55,10); C.fill();
+  C.fillStyle='#aaa'; C.font='12px "Segoe UI"'; C.textAlign='right'; C.fillText('FLOW',W-26,27);
+  C.fillStyle='rgba(255,255,255,.13)'; rr(W-182,35,155,16,6); C.fill();
+  var fw=155*(flow/100);
+  if(fw>1){
+    var fg=C.createLinearGradient(W-182,0,W-27,0);
+    fg.addColorStop(0,'#2ECC71'); fg.addColorStop(0.5,'#F1C40F'); fg.addColorStop(1,'#E74C3C');
+    C.fillStyle=fg; rr(W-182,35,fw,16,6); C.fill();
+  }
+
+  // difficulty label
+  C.fillStyle='rgba(0,0,0,.32)'; rr(CX-52,10,104,22,6); C.fill();
+  C.fillStyle='#999'; C.font='11px "Segoe UI"'; C.textAlign='center';
+  C.fillText(diff.label.toUpperCase()+' \u00B7 '+diff.bpm+' BPM',CX,26);
+
+  if(state==='jumping'){
+    var m2=floor(gTime/60), s2=floor(gTime%60);
+    C.fillStyle='rgba(255,255,255,.35)'; C.font='13px "Segoe UI"'; C.textAlign='right';
+    C.fillText(m2+':'+(s2<10?'0':'')+s2, W-18, H-18);
+  }
+  C.textAlign='left';
+}
+
+function drawJudgment(){
+  if(jdgT<=0||!jdg) return;
+  var a2=Math.min(1,jdgT*2.5), rise=(1-jdgT)*28;
+  C.save(); C.globalAlpha=a2; C.textAlign='center';
+  var col,sz;
+  if(jdg==='PERFECT'){ col='#FFD700';sz=30; }
+  else if(jdg==='GOOD'){ col='#2ECC71';sz=26; }
+  else { col='#E74C3C';sz=24; }
+  C.font='bold '+sz+'px "Segoe UI"'; C.shadowColor=col; C.shadowBlur=12;
+  C.fillStyle=col; C.fillText(jdg, jx, jdgY-rise);
+  if(jdg==='PERFECT'){
+    C.font='bold 15px "Segoe UI"'; C.fillStyle='rgba(255,215,0,.7)';
+    C.fillText('+'+scoreVal('PERFECT'), jx, jdgY-rise+22);
+  }
+  C.shadowBlur=0; C.restore(); C.textAlign='left';
+}
+
+/* ═══════════════════════════════════
+   MENU SCREEN
+   ═══════════════════════════════════ */
+function drawMenu(){
+  drawBG();
+  menuRA+=0.018;
+  drawRope(ropePoints(menuRA+PI),'#1a6898','#3498db');
+  drawTurner(TL_X,'L',menuRA,menuRA+PI);
+  drawTurner(TR_X,'R',menuRA,menuRA+PI);
+  drawRope(ropePoints(menuRA),'#a83028','#e74c3c');
+
+  C.fillStyle='rgba(0,0,0,.52)'; C.fillRect(0,0,W,H);
+
+  menuBounce+=0.028;
+  var tY=158+sin(menuBounce)*5;
+  C.save(); C.textAlign='center';
+
+  C.fillStyle='rgba(0,0,0,.5)'; C.font='bold 70px "Segoe UI"';
+  C.fillText('DOUBLE DUTCH',CX+3,tY+3);
+  C.fillStyle='#FFD700'; C.shadowColor='#FFD700'; C.shadowBlur=22;
+  C.fillText('DOUBLE DUTCH',CX,tY); C.shadowBlur=0;
+
+  C.fillStyle='rgba(255,255,255,.65)'; C.font='20px "Segoe UI"';
+  C.fillText('Rhythm & Rope Simulator',CX,tY+38);
+  C.fillStyle='rgba(255,255,255,.35)'; C.font='italic 13px "Segoe UI"';
+  C.fillText('Honoring a tradition of rhythm, community, and Black culture',CX,tY+62);
+
+  var sY=330;
+  C.fillStyle='rgba(255,255,255,.45)'; C.font='14px "Segoe UI"';
+  C.fillText('\u25B2  \u25BC  SELECT DIFFICULTY',CX,sY-18);
+
+  for(var i=0;i<DIFFS.length;i++){
+    var d=DIFFS[i], dx=CX+(i-dIdx)*128, sel=(i===dIdx);
+    var al=sel?1:0.3, sc=sel?1.12:0.82;
+    C.globalAlpha=al;
+    C.fillStyle=sel?'#FFD700':'#888'; C.font=(sel?'bold ':'')+(18*sc|0)+'px "Segoe UI"';
+    C.fillText(d.label,dx,sY+8);
+    C.fillStyle=sel?'#fff':'#666'; C.font=(13*sc|0)+'px "Segoe UI"';
+    C.fillText(d.bpm+' BPM',dx,sY+27);
+  }
+  C.globalAlpha=1;
+
+  C.globalAlpha=0.5+sin(Date.now()/380)*0.3;
+  C.fillStyle='#fff'; C.font='bold 24px "Segoe UI"';
+  C.fillText('PRESS  SPACE  TO  START',CX,450);
+  C.globalAlpha=1;
+
+  C.fillStyle='rgba(255,255,255,.32)'; C.font='14px "Segoe UI"';
+  C.fillText('\u2190 \u2192  Move   |   SPACE  Jump   |   \u2191 \u2193  Difficulty',CX,510);
+  C.fillText('Walk into the ropes with arrow keys, then jump to the beat!',CX,533);
+  C.fillText('ESC to end a round early',CX,556);
+
+  C.restore();
+}
+
+/* ═══════════════════════════════════
+   SCORE SCREEN
+   ═══════════════════════════════════ */
+function drawScoreScreen(){
+  drawBG();
+  C.fillStyle='rgba(0,0,0,.68)'; C.fillRect(0,0,W,H);
+  C.save(); C.textAlign='center';
+
+  C.fillStyle='#FFD700'; C.font='bold 48px "Segoe UI"';
+  C.fillText('ROUND OVER',CX,115);
+
+  var rows=[
+    ['Score',score.toLocaleString()],['Max Combo',maxCombo+'x'],
+    ['Total Jumps',''+totalJ],['Perfect',''+perfC],
+    ['Good',''+goodC],['Failed',''+okC],
+    ['Time',fmtTime(totalTime)]
+  ];
+  var sy=170;
+  C.font='17px "Segoe UI"';
+  for(var i=0;i<rows.length;i++){
+    C.fillStyle='rgba(255,255,255,.45)'; C.textAlign='right'; C.fillText(rows[i][0],CX-18,sy);
+    C.fillStyle='#fff'; C.textAlign='left'; C.fillText(rows[i][1],CX+18,sy);
+    sy+=33;
+  }
+
+  var tot=perfC+goodC+okC;
+  var acc=tot>0?(perfC*3+goodC*2)/(tot*3):0;
+  var gr,gc;
+  if(acc>0.9){gr='S';gc='#FFD700';}else if(acc>0.75){gr='A';gc='#2ECC71';}
+  else if(acc>0.6){gr='B';gc='#3498DB';}else if(acc>0.4){gr='C';gc='#F1C40F';}
+  else{gr='D';gc='#E74C3C';}
+
+  C.textAlign='center'; C.fillStyle=gc; C.shadowColor=gc; C.shadowBlur=22;
+  C.font='bold 78px "Segoe UI"'; C.fillText(gr,CX,sy+55); C.shadowBlur=0;
+
+  C.globalAlpha=0.5+sin(Date.now()/380)*0.3;
+  C.fillStyle='#fff'; C.font='19px "Segoe UI"';
+  C.fillText('PRESS SPACE TO RETURN',CX,H-55);
+  C.globalAlpha=1; C.restore();
+}
+function fmtTime(t){ var m=floor(t/60),s=floor(t%60); return m+':'+(s<10?'0':'')+s; }
+
+/* ═══════════════════════════════════
+   RESET / START
+   ═══════════════════════════════════ */
+function reset(){
+  rAngle=0; rSpeed=0;
+  jx=TL_X-75; jy=GND; jvy=0; airborne=false;
+  insideRopes=false;
+  score=0; combo=0; maxCombo=0; flow=0;
+  totalJ=0; perfC=0; goodC=0; okC=0;
+  tangled=false; tangleProg=0; tangleWait=0; shake=0;
+  jdg=''; jdgT=0;
+  jumpedBeat=false; tSinceBeat=9; beatFlash=0; beatPulse=0;
+  graceBeats=GRACE_COUNT;
+  sq=1; st=1; lean=0; armA=0;
+  gTime=0; totalTime=0;
+  parts.length=0;
+}
+
+function startGame(){
+  diff=DIFFS[dIdx];
+  reset();
+  state='jumping';
+  gTime=0;
+}
+
+/* ═══════════════════════════════════
+   BEAT‑CROSSING DETECTOR
+   ═══════════════════════════════════ */
+function crossedAngle(prev, curr, target){
+  if(prev<=target && curr>target) return true;
+  if(prev>curr){            // wrapped around TAU
+    if(prev<=target+TAU && curr+TAU>target+TAU) return true;
+    // also check if target is near 0 and we wrapped
+    if(target<=curr) return true;
+  }
+  return false;
+}
+
+/* ═══════════════════════════════════
+   UPDATE
+   ═══════════════════════════════════ */
+function update(dt){
+  if(dt>0.1) dt=0.1;
+
+  /* ── MENU ── */
+  if(state==='menu'){
+    if(pressed('ArrowUp'))    dIdx=Math.max(0,dIdx-1);
+    if(pressed('ArrowDown'))  dIdx=Math.min(DIFFS.length-1,dIdx+1);
+    if(pressed('Space')) startGame();
+    return;
+  }
+
+  /* ── SCORE ── */
+  if(state==='score'){
+    if(pressed('Space')) state='menu';
+    return;
+  }
+
+  /* ── TANGLED ── */
+  if(state==='tangled'){
+    gTime+=dt; totalTime=gTime;
+    tangleProg=Math.min(1, tangleProg+dt*1.2);
+    rSpeed=lerp(rSpeed,0,0.06); rAngle+=rSpeed*dt;
+    lean=lerp(lean, tangleType==='clip'?-0.1:0.11, 0.03);
+    sq=lerp(sq,1.08,0.02); st=lerp(st,0.92,0.02);
+    shake*=0.91;
+    if(pressed('Space')){ state='score'; tangleWait=0; return; }
+    if(tangleProg>=1){
+      tangleWait+=dt;
+      if(tangleWait>1.6){ state='score'; tangleWait=0; }
+    }
+    return;
+  }
+
+  /* ── JUMPING (main gameplay) ── */
+  gTime+=dt; totalTime=gTime;
+
+  var tgt2 = PI*diff.bpm/60;
+  rSpeed = lerp(rSpeed, tgt2, 0.06);
+  var prevA = rAngle;
+  rAngle += rSpeed*dt;
+
+  // ── arrow‑key movement ──
+  var ropeLeft  = TL_X + 40;   // inner edge of rope zone
+  var ropeRight = TR_X - 40;
+  if(keys['ArrowLeft'])  jx -= MOVE_SPEED*dt;
+  if(keys['ArrowRight']) jx += MOVE_SPEED*dt;
+  jx = clamp(jx, TL_X - 100, TR_X + 100);  // allow standing outside
+
+  // detect if inside the rope zone
+  var wasInside = insideRopes;
+  insideRopes = (jx > ropeLeft && jx < ropeRight);
+  if(insideRopes && !wasInside){
+    // just entered the ropes!
+    graceBeats = GRACE_COUNT;
+    sfx('entry');
+  }
+
+  // normalize angles for beat detection
+  var normA = function(a){ return ((a%TAU)+TAU)%TAU; };
+  var pn = normA(prevA), cn = normA(rAngle);
+
+  // detect when each rope hits the ground:
+  // rope 1 ground contact at angle = PI/2  (sin(PI/2)=1 → max downward)
+  // rope 2 ground contact at angle = 3PI/2 (rope2 = rAngle+PI, so sin(3PI/2+PI)=sin(5PI/2)=1)
+  var newBeat = false;
+  var rope1Down = false, rope2Down = false;
+  if(crossedAngle(pn,cn,PI*0.5)){ newBeat=true; curBeat=1; rope1Down=true; }
+  if(crossedAngle(pn,cn,PI*1.5)){ newBeat=true; curBeat=2; rope2Down=true; }
+
+  if(newBeat){
+    beatFlash=1; beatPulse=1;
+    // rope slap sound only when a rope touches the ground
+    if(rope1Down || rope2Down){
+      sfx('slap',0.85);
+      emit(CX+rand(-18,18), GND, 5, DUST);
+    }
+
+    // only penalise if the player is inside the rope zone
+    if(insideRopes){
+      if(graceBeats>0){
+        graceBeats--;
+      } else if(!jumpedBeat && !airborne && jy>=GND-4){
+        handleMiss();
+      }
+    }
+    jumpedBeat=false;
+    tSinceBeat=0;
+  }
+  tSinceBeat+=dt;
+
+  // jump input — HOLD space to keep bouncing (auto-jump on landing)
+  if(!tangled && (pressed('Space') || (keys['Space'] && !airborne))){
+    if(!airborne){
+      jvy=JUMP_V; airborne=true;
+      sq=0.78; st=1.28; armA=-0.5;
+      sfx('jump');
+      // only count as a scored jump if inside the ropes
+      if(insideRopes){
+        totalJ++;
+        jumpedBeat=true;
+        judgeJump();
+      }
+    }
+  }
+
+  // jumper physics
+  if(airborne){
+    jvy+=GRAV; jy+=jvy;
+    if(jy>=GND){
+      jy=GND; jvy=0; airborne=false;
+      sq=1.18; st=0.86;
+      sfx('land');
+      emit(jx,GND,3,{vx:-1,VX:1,vy:-1.5,VY:-0.3,d:0.02,D:0.04,r:1,R:3,cols:DUST.cols,g:0.08});
+    }
+  }
+
+  // ESC to quit
+  if(pressed('Escape')){ state='score'; }
+
+  // animation
+  sq=lerp(sq,1,0.12); st=lerp(st,1,0.12);
+  if(airborne) armA=lerp(armA,-0.3,0.1);
+  else armA=lerp(armA,sin(rAngle*2)*0.15,0.08);
+  lean=lerp(lean,0,0.05);
+  flow=Math.max(0,flow-dt*2.5);
+
+  beatFlash*=0.88; shake*=0.88;
+  jdgT-=dt*1.3;
+}
+
+function judgeJump(){
+  var beatInt = PI/rSpeed;
+  var aInBeat = ((rAngle%PI)+PI)%PI;
+  var distNext = PI/2 - abs(aInBeat - PI/2);
+  var tDist = distNext/rSpeed;
+  var minD = Math.min(tSinceBeat, abs(beatInt-tSinceBeat), tDist);
+
+  var w = diff.win;
+  var j;
+  if(minD < w*0.35){
+    j='PERFECT'; perfC++; sfx('perfect'); emit(jx,jy-60,8,SPARK);
+  } else if(minD < w*0.65){
+    j='GOOD'; goodC++; sfx('good');
+  } else {
+    j='FAILED'; okC++; sfx('miss'); combo=0; flow=Math.max(0,flow-10);
+    jdg=j; jdgT=0.8; jdgY=jy-80;
+    startTangle(curBeat||1);
+    return;
+  }
+  combo++; if(combo>maxCombo) maxCombo=combo;
+  score += scoreVal(j);
+  flow = Math.min(100, flow+(j==='PERFECT'?8:j==='GOOD'?5:2));
+  jdg=j; jdgT=0.8; jdgY=jy-80;
+}
+
+function handleMiss(){
+  if(tangled) return;
+  okC++; combo=0; flow=Math.max(0,flow-18);
+  jdg='FAILED'; jdgT=1; jdgY=jy-80; sfx('miss');
+  // any miss outside of grade period = instant tangle
+  startTangle(curBeat||1);
+}
+
+function startTangle(who){
+  if(tangled) return;
+  tangled=true; tangleProg=0; tangleWho=who; tangleWait=0;
+  shake=22; lean=rand(-0.14,0.14);
+  tangleType=['step','clip','shin'][(Math.random()*3)|0];
+  sfx('tangle'); emit(jx,GND,14,TPART);
+  combo=0; flow=0;
+  state='tangled';
+}
+
+/* ═══════════════════════════════════
+   DRAW
+   ═══════════════════════════════════ */
+function draw(){
+  C.clearRect(0,0,W,H);
+
+  var shaking = shake>0.4;
+  if(shaking){ C.save(); C.translate(rand(-shake,shake),rand(-shake,shake)); }
+
+  if(state==='menu') drawMenu();
+  else if(state==='score') drawScoreScreen();
+  else drawScene();
+
+  if(shaking) C.restore();
+
+  // prompt: walk in or jump
+  if(state==='jumping' && !tangled){
+    if(!insideRopes){
+      // player is outside the ropes
+      C.save(); C.textAlign='center';
+      C.globalAlpha=0.65+sin(Date.now()/260)*0.25;
+      C.fillStyle='rgba(0,0,0,.5)'; rr(CX-185,155,370,52,12); C.fill();
+      C.globalAlpha=0.9;
+      C.fillStyle='#FFD700'; C.font='bold 20px "Segoe UI"';
+      C.fillText('\u2192  Walk into the ropes with arrow keys!',CX,188);
+      C.restore();
+    } else if(gTime<5){
+      // just entered — remind to jump
+      var promptA = gTime<3 ? 1 : Math.max(0,1-(gTime-3)/2);
+      if(promptA>0){
+        C.save(); C.textAlign='center';
+        C.globalAlpha=promptA*(0.6+sin(Date.now()/200)*0.25);
+        C.fillStyle='rgba(0,0,0,.5)'; rr(CX-170,160,340,52,12); C.fill();
+        C.globalAlpha=promptA;
+        C.fillStyle='#fff'; C.font='bold 22px "Segoe UI"';
+        C.fillText('\u2B06  HOLD SPACE TO JUMP  \u2B06',CX,192);
+        C.restore();
+      }
+    }
+    // grace period indicator
+    if(insideRopes && graceBeats>0){
+      C.save(); C.textAlign='center';
+      C.globalAlpha=0.6;
+      C.fillStyle='#2ECC71'; C.font='bold 14px "Segoe UI"';
+      C.fillText('SAFE \u2014 '+graceBeats+' free beats left',CX,230);
+      C.restore();
+    }
+  }
+}
+
+function drawScene(){
+  drawBG();
+
+  var a1=rAngle, a2=rAngle+PI;
+  var z1=cos(a1), z2=cos(a2);
+
+  // compute rope shapes (with tangle deformation)
+  var p1, p2;
+  if(tangled && tangleWho===1){
+    p1=deformedRope(a1,0.5,tangleProg,jx,GND);
+    p2= tangleProg>0.45? deformedRope(a2,0.5,(tangleProg-0.45)*0.55,jx,GND-22) : ropePoints(a2);
+  } else if(tangled && tangleWho===2){
+    p2=deformedRope(a2,0.5,tangleProg,jx,GND);
+    p1= tangleProg>0.45? deformedRope(a1,0.5,(tangleProg-0.45)*0.55,jx,GND-22) : ropePoints(a1);
+  } else {
+    p1=ropePoints(a1); p2=ropePoints(a2);
+  }
+
+  // layer order: back ropes → turners → jumper → front ropes
+  if(z1<=0) drawRope(p1,'#a83028','#e74c3c');
+  if(z2<=0) drawRope(p2,'#1a6898','#3498db');
+
+  drawTurner(TL_X,'L',a1,a2);
+  drawTurner(TR_X,'R',a1,a2);
+  drawJumper(jx,jy,sq,st,lean,armA,tangleProg);
+
+  if(z1>0) drawRope(p1,'#a83028','#e74c3c');
+  if(z2>0) drawRope(p2,'#1a6898','#3498db');
+
+  drawParts();
+  drawJudgment();
+  drawHUD();
+
+  // tangle overlay
+  if(tangled && tangleProg>0.5){
+    C.fillStyle='rgba(0,0,0,'+(tangleProg-0.5)*0.28+')';
+    C.fillRect(0,0,W,H);
+    if(tangleProg>0.78){
+      C.save(); C.textAlign='center';
+      C.globalAlpha=(tangleProg-0.78)*4.5;
+      C.fillStyle='#E74C3C'; C.font='bold 50px "Segoe UI"';
+      C.shadowColor='#E74C3C'; C.shadowBlur=20;
+      C.fillText('TANGLED!',CX,295); C.shadowBlur=0;
+      C.fillStyle='rgba(255,255,255,.55)'; C.font='17px "Segoe UI"';
+      var msg = tangleType==='step'?'Stepped on the rope!'
+              : tangleType==='clip'?'Toe clipped the rope!'
+              : 'Rope caught the shin!';
+      C.fillText(msg,CX,335);
+      C.restore();
+    }
+  }
+}
+
+/* ═══════════════════════════════════
+   MAIN LOOP
+   ═══════════════════════════════════ */
+var last = 0;
+function loop(ts){
+  var dt = Math.min((ts-last)/1000, 0.05);
+  last = ts;
+
+  update(dt);
+  tickParts();
+  draw();
+
+  for(var k in jp) delete jp[k];   // clear per‑frame input
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>

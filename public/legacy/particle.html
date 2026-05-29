@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Kinetic Theory Simulator</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #f4f6f8;
+    color:#111;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+  }
+  .wrapper {
+    margin: 20px;
+    max-width: 1400px;
+    width: 100%;
+  }
+  .app { display:flex; gap:16px; align-items:flex-start; justify-content:center; }
+  canvas { background: #ffffff; border: 2px solid #333; }
+  .controls { width:360px; }
+  .control { margin:8px 0; }
+  label { display:block; font-weight:600; margin-bottom:4px; }
+  input[type=range] { width:100%; }
+  .small { font-size:0.9rem; color:#444; }
+  .stats { margin-top:10px; padding:10px; background:#fff; border:1px solid #ddd; border-radius:6px;}
+  button { margin-right:8px; padding:6px 10px; border-radius:6px; border:1px solid #bbb; background:#fafafa; cursor:pointer;}
+  .hist { margin-top:12px; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+<h1 style="text-align:center;">Kinetic Theory Simulator</h1>
+<p class="small" style="text-align:center;">Move sliders, press Play, and watch particles move. Customize particle size, box, histogram, and trails.</p>
+<div class="app">
+  <div>
+    <canvas id="box" width="720" height="480"></canvas>
+    <div id="histCanvasHolder" class="hist">
+      <canvas id="hist" width="720" height="140" style="border:1px solid #ccc; background:#fff;"></canvas>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="control">
+      <label>Particle count: <span id="countLabel">100</span></label>
+      <input id="count" type="range" min="10" max="500" value="100" />
+    </div>
+
+    <div class="control">
+      <label>Temperature (relative): <span id="tempLabel">1.00</span></label>
+      <input id="temperature" type="range" min="0.2" max="4" step="0.01" value="1" />
+    </div>
+
+    <div class="control">
+      <label>Particle mass (relative): <span id="massLabel">1.00</span></label>
+      <input id="mass" type="range" min="0.2" max="4" step="0.01" value="1" />
+    </div>
+
+    <div class="control">
+      <label>Particle radius: <span id="radiusLabel">5</span></label>
+      <input id="radius" type="range" min="2" max="10" value="5" />
+    </div>
+
+    <div class="control">
+      <label>Box width: <span id="boxWidthLabel">720</span></label>
+      <input id="boxWidth" type="range" min="300" max="1200" value="720" />
+    </div>
+
+    <div class="control">
+      <label>Box height: <span id="boxHeightLabel">480</span></label>
+      <input id="boxHeight" type="range" min="200" max="800" value="480" />
+    </div>
+
+    <div class="control">
+      <label>Show velocity vectors</label>
+      <input id="showVec" type="checkbox" />
+    </div>
+
+    <div class="control">
+      <label>Show trails</label>
+      <input id="showTrails" type="checkbox" />
+    </div>
+
+    <div class="control">
+      <label>Trail length: <span id="trailLengthLabel">0.1</span></label>
+      <input id="trailLength" type="range" min="0.01" max="1" step="0.01" value="0.1" />
+    </div>
+
+    <div class="control">
+      <label>Histogram bins: <span id="binsLabel">30</span></label>
+      <input id="bins" type="range" min="5" max="100" value="30" />
+    </div>
+
+    <div class="control">
+      <button id="playPause">Pause</button>
+      <button id="randomize">Randomize Speeds</button>
+      <button id="leakToggle">Toggle Leak</button>
+    </div>
+
+    <div class="stats">
+      <div>Average speed: <span id="avgSpeed">0</span></div>
+      <div>Average kinetic energy: <span id="avgKE">0</span></div>
+      <div>Pressure (arb units): <span id="pressure">0</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+/* --- Particle Simulation Code with Custom Features --- */
+const canvas = document.getElementById('box');
+const ctx = canvas.getContext('2d');
+const histCanvas = document.getElementById('hist');
+const hctx = histCanvas.getContext('2d');
+
+const countSlider = document.getElementById('count');
+const tempSlider = document.getElementById('temperature');
+const massSlider = document.getElementById('mass');
+const radiusSlider = document.getElementById('radius');
+const boxWidthSlider = document.getElementById('boxWidth');
+const boxHeightSlider = document.getElementById('boxHeight');
+const binsSlider = document.getElementById('bins');
+const showVec = document.getElementById('showVec');
+const showTrails = document.getElementById('showTrails');
+const trailLengthSlider = document.getElementById('trailLength');
+
+const countLabel = document.getElementById('countLabel');
+const tempLabel = document.getElementById('tempLabel');
+const massLabel = document.getElementById('massLabel');
+const radiusLabel = document.getElementById('radiusLabel');
+const boxWidthLabel = document.getElementById('boxWidthLabel');
+const boxHeightLabel = document.getElementById('boxHeightLabel');
+const binsLabel = document.getElementById('binsLabel');
+const trailLengthLabel = document.getElementById('trailLengthLabel');
+
+const avgSpeedEl = document.getElementById('avgSpeed');
+const avgKEEl = document.getElementById('avgKE');
+const pressureEl = document.getElementById('pressure');
+
+const playPauseBtn = document.getElementById('playPause');
+const randomizeBtn = document.getElementById('randomize');
+const leakToggleBtn = document.getElementById('leakToggle');
+
+let particleCount = Number(countSlider.value);
+let temperature = Number(tempSlider.value);
+let massRel = Number(massSlider.value);
+let radius = Number(radiusSlider.value);
+let showVectors = showVec.checked;
+let showTrail = showTrails.checked;
+let trailLength = Number(trailLengthSlider.value);
+let histogramBins = Number(binsSlider.value);
+let running = true;
+let hasLeak = false;
+
+function getW(){return canvas.width;}
+function getH(){return canvas.height;}
+
+class Particle {
+  constructor(x,y,vx,vy,radius,color,mass){
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.r = radius;
+    this.color = color;
+    this.mass = mass;
+    this.alive = true;
+  }
+  speed(){ return Math.hypot(this.vx,this.vy); }
+  KE(){ return 0.5*this.mass*(this.vx*this.vx + this.vy*this.vy); }
+}
+
+let particles = [];
+
+function randomColor(){
+  const hues = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b'];
+  return hues[Math.floor(Math.random()*hues.length)];
+}
+
+function sampleSpeedFromTemp(T){
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  return 30 * Math.sqrt(T) * Math.abs(z);
+}
+
+function initParticles(n){
+  particles=[];
+  for(let i=0;i<n;i++){
+    const r = radius;
+    const x = r + Math.random()*(getW()-2*r);
+    const y = r + Math.random()*(getH()-2*r);
+    const speed = sampleSpeedFromTemp(temperature);
+    const angle = Math.random()*Math.PI*2;
+    const color = randomColor();
+    particles.push(new Particle(x,y,speed*Math.cos(angle),speed*Math.sin(angle),r,color,massRel));
+  }
+}
+
+function handleControls(){
+  particleCount = Number(countSlider.value);
+  temperature = Number(tempSlider.value);
+  massRel = Number(massSlider.value);
+  radius = Number(radiusSlider.value);
+  showVectors = showVec.checked;
+  showTrail = showTrails.checked;
+  trailLength = Number(1 - trailLengthSlider.value);
+  histogramBins = Number(binsSlider.value);
+
+  countLabel.textContent = particleCount;
+  tempLabel.textContent = temperature.toFixed(2);
+  massLabel.textContent = massRel.toFixed(2);
+  radiusLabel.textContent = radius;
+  boxWidthLabel.textContent = canvas.width;
+  boxHeightLabel.textContent = canvas.height;
+  binsLabel.textContent = histogramBins;
+  trailLengthLabel.textContent = trailLength.toFixed(2);
+}
+
+countSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount);});
+tempSlider.addEventListener('input',()=>{
+  handleControls();
+  const avgBefore = getAverageSpeed();
+  const targetAvg = 20*Math.sqrt(temperature);
+  const scale = targetAvg/Math.max(1e-6,avgBefore);
+  particles.forEach(p=>{p.vx*=scale;p.vy*=scale;});
+});
+massSlider.addEventListener('input',()=>{handleControls(); particles.forEach(p=>p.mass=massRel);});
+radiusSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount);});
+boxWidthSlider.addEventListener('input',()=>{canvas.width=Number(boxWidthSlider.value); histCanvas.width=canvas.width; handleControls();});
+boxHeightSlider.addEventListener('input',()=>{canvas.height=Number(boxHeightSlider.value); handleControls();});
+binsSlider.addEventListener('input',()=>{handleControls();});
+trailLengthSlider.addEventListener('input',()=>{handleControls();});
+
+showVec.addEventListener('change',()=>{showVectors=showVec.checked;});
+showTrails.addEventListener('change',()=>{showTrail=showTrails.checked;});
+
+playPauseBtn.addEventListener('click',()=>{running=!running; playPauseBtn.textContent=running?'Pause':'Play';});
+randomizeBtn.addEventListener('click',()=>{particles.forEach(p=>{const s=sampleSpeedFromTemp(temperature); const a=Math.random()*Math.PI*2; p.vx=s*Math.cos(a); p.vy=s*Math.sin(a);});});
+leakToggleBtn.addEventListener('click',()=>{hasLeak=!hasLeak; leakToggleBtn.textContent=hasLeak?'Leak: ON':'Leak: OFF';});
+
+function getAverageSpeed(){
+  if(particles.length===0)return 0;
+  let s=0,n=0;
+  particles.forEach(p=>{if(p.alive){s+=p.speed();n++;}});
+  return n?s/n:0;
+}
+
+function checkCollisions(){
+  for(let i=0;i<particles.length;i++){
+    const p1=particles[i]; if(!p1.alive)continue;
+    for(let j=i+1;j<particles.length;j++){
+      const p2=particles[j]; if(!p2.alive)continue;
+      const dx=p2.x-p1.x; const dy=p2.y-p1.y;
+      const dist=Math.hypot(dx,dy);
+      if(dist<p1.r+p2.r) resolveCollision(p1,p2);
+    }
+  }
+}
+
+function resolveCollision(p1,p2){
+  const nx=(p2.x-p1.x)/Math.hypot(p2.x-p1.x,p2.y-p1.y);
+  const ny=(p2.y-p1.y)/Math.hypot(p2.x-p1.x,p2.y-p1.y);
+  const tx=-ny; const ty=nx;
+  const dpTan1=p1.vx*tx+p1.vy*ty;
+  const dpTan2=p2.vx*tx+p2.vy*ty;
+  const dpNorm1=p1.vx*nx+p1.vy*ny;
+  const dpNorm2=p2.vx*nx+p2.vy*ny;
+  const m1=p1.mass; const m2=p2.mass;
+  const v1=((dpNorm1*(m1-m2))+(2*m2*dpNorm2))/(m1+m2);
+  const v2=((dpNorm2*(m2-m1))+(2*m1*dpNorm1))/(m1+m2);
+  p1.vx=tx*dpTan1+nx*v1; p1.vy=ty*dpTan1+ny*v1;
+  p2.vx=tx*dpTan2+nx*v2; p2.vy=ty*dpTan2+ny*v2;
+  const overlap=(p1.r+p2.r)-Math.hypot(p2.x-p1.x,p2.y-p1.y);
+  p1.x-=overlap*nx*0.5; p1.y-=overlap*ny*0.5; p2.x+=overlap*nx*0.5; p2.y+=overlap*ny*0.5;
+}
+
+let wallHitMomentum=0;
+let lastPressureUpdate=0;
+
+function update(dt){
+  for(const p of particles){
+    if(!p.alive)continue;
+    p.x+=p.vx*dt;
+    p.y+=p.vy*dt;
+    if(!hasLeak){
+      if(p.x-p.r<0){p.x=p.r; wallHitMomentum+=2*Math.abs(p.vx)*p.mass; p.vx=Math.abs(p.vx);}
+      if(p.x+p.r>getW()){p.x=getW()-p.r; wallHitMomentum+=2*Math.abs(p.vx)*p.mass; p.vx=-Math.abs(p.vx);}
+      if(p.y-p.r<0){p.y=p.r; wallHitMomentum+=2*Math.abs(p.vy)*p.mass; p.vy=Math.abs(p.vy);}
+      if(p.y+p.r>getH()){p.y=getH()-p.r; wallHitMomentum+=2*Math.abs(p.vy)*p.mass; p.vy=-Math.abs(p.vy);}
+    }
+  }
+  checkCollisions();
+}
+
+function step(){
+  if(running){
+    const now=performance.now();
+    const dtMs=Math.min(40,now-(step.last||now));
+    step.last=now;
+    const dt=dtMs/1000;
+    update(dt);
+    if(now-lastPressureUpdate>100){
+      const perimeter=2*(getW()+getH());
+      const pressure=wallHitMomentum/(perimeter*dt);
+      pressureEl.textContent=pressure.toFixed(2);
+      wallHitMomentum=0;
+      lastPressureUpdate=now;
+    }
+    draw(dt);
+  }else draw(0);
+  requestAnimationFrame(step);
+}
+
+function draw(dt){
+  if(showTrail)ctx.fillStyle=`rgba(255,255,255,${trailLength})`;
+  else ctx.fillStyle='#fff';
+  ctx.fillRect(0,0,getW(),getH());
+
+  for(const p of particles){
+    if(!p.alive)continue;
+    ctx.beginPath();
+    ctx.fillStyle=p.color;
+    ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fill();
+    if(showVectors){
+      ctx.beginPath();
+      ctx.moveTo(p.x,p.y);
+      ctx.lineTo(p.x+p.vx*0.08,p.y+p.vy*0.08);
+      ctx.strokeStyle='rgba(0,0,0,0.4)';
+      ctx.stroke();
+    }
+  }
+
+  const speeds=particles.filter(p=>p.alive).map(p=>p.speed());
+  const avgSpeed=speeds.reduce((a,b)=>a+b,0)/Math.max(1,speeds.length);
+  const avgKE=particles.filter(p=>p.alive).reduce((a,b)=>a+b.KE(),0)/Math.max(1,particles.filter(p=>p.alive).length);
+  avgSpeedEl.textContent=avgSpeed.toFixed(2);
+  avgKEEl.textContent=avgKE.toFixed(2);
+  drawHistogram(speeds);
+}
+
+function drawHistogram(speeds){
+  const Hh=histCanvas.height; const Ww=histCanvas.width;
+  hctx.clearRect(0,0,Ww,Hh);
+  if(speeds.length===0)return;
+  const bins=histogramBins;
+  const maxS=Math.max(1,...speeds);
+  const bcounts=new Array(bins).fill(0);
+  for(const s of speeds){
+    const idx=Math.min(bins-1,Math.floor((s/maxS)*bins));
+    bcounts[idx]++;
+  }
+  const maxCount=Math.max(...bcounts,1);
+  const pad=6;
+  const barW=(Ww-pad*2)/bins;
+  for(let i=0;i<bins;i++){
+    const h=(bcounts[i]/maxCount)*(Hh-20);
+    hctx.fillStyle='#4c8bf5';
+    hctx.fillRect(pad+i*barW,Hh-h-10,barW-2,h);
+  }
+  hctx.fillStyle='#000';
+  hctx.font='12px Arial';
+  hctx.fillText('Speed distribution',8,12);
+  hctx.fillText('0',5,Hh-2);
+  hctx.fillText(`${maxS.toFixed(1)}`,Ww-30,Hh-2);
+}
+
+handleControls();
+initParticles(particleCount);
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

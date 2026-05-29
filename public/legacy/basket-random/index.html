@@ -1,0 +1,3345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sports Un-random</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1a1a2e;
+  display: flex; justify-content: center; align-items: center;
+  height: 100vh; overflow: hidden; font-family: monospace;
+  image-rendering: pixelated;
+}
+canvas { 
+  image-rendering: pixelated; 
+  image-rendering: crisp-edges;
+  border: 4px solid #333;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// ============================================================
+// SPORTS UN-RANDOM - Pixel Art Sports Game
+// ============================================================
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 800, H = 500;
+canvas.width = W; canvas.height = H;
+
+// Scale canvas to fit screen
+function resizeCanvas() {
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H) * 0.95;
+  canvas.style.width = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ============================================================
+// CONSTANTS & CONFIG
+// ============================================================
+const GRAVITY = 0.45;
+
+// ============================================================
+// SOUND EFFECTS (Web Audio API - retro arcade style)
+// ============================================================
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+// Ensure audio starts on first user interaction
+['click','keydown','touchstart'].forEach(evt => {
+  window.addEventListener(evt, initAudio, { once: false });
+});
+
+function playTone(freq, duration, type, volume, ramp) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'square';
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  if (ramp) osc.frequency.linearRampToValueAtTime(ramp, audioCtx.currentTime + duration);
+  gain.gain.setValueAtTime(volume || 0.12, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function playNoise(duration, volume) {
+  if (!audioCtx) return;
+  const bufSize = audioCtx.sampleRate * duration;
+  const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * 0.5;
+  const src = audioCtx.createBufferSource();
+  const gain = audioCtx.createGain();
+  src.buffer = buf;
+  gain.gain.setValueAtTime(volume || 0.06, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  src.connect(gain);
+  gain.connect(audioCtx.destination);
+  src.start();
+}
+
+// Pre-load MP3 audio files
+const AUDIO_FILES = {
+  pluh: new Audio('sounds/pluh.mp3'),
+  bassDrop: new Audio('sounds/bass-drop.mp3'),
+  countdown321: new Audio('sounds/countdown.mp3'),
+  basketballBounce: new Audio('sounds/basketball-bounce.mp3'),
+  tacoBellBong: new Audio('sounds/taco-bell-bong.mp3'),
+};
+Object.values(AUDIO_FILES).forEach(a => a.load());
+
+function playSFX(audio, volume) {
+  const snd = audio.cloneNode();
+  snd.volume = volume !== undefined ? volume : 1.0;
+  snd.play().catch(() => {});
+}
+
+const SFX = {
+  jump() { playTone(250, 0.12, 'square', 0.08, 500); },
+  shoot() { playTone(400, 0.15, 'sawtooth', 0.1, 800); },
+  bounce() { playTone(180, 0.08, 'triangle', 0.07, 90); },
+  grab() { playTone(600, 0.06, 'square', 0.07, 800); },
+  steal() {
+    playTone(300, 0.08, 'square', 0.1, 150);
+    setTimeout(() => playTone(500, 0.08, 'square', 0.1, 250), 60);
+  },
+  score() { playSFX(AUDIO_FILES.bassDrop, 0.8); },
+  hoopEntry() { playSFX(AUDIO_FILES.basketballBounce, 0.7); },
+  win() { playSFX(AUDIO_FILES.tacoBellBong, 0.9); },
+  menuSelect() { playTone(440, 0.08, 'square', 0.08); },
+  menuConfirm() { playTone(600, 0.1, 'square', 0.1, 900); },
+  whistle() {
+    playTone(900, 0.25, 'sine', 0.1, 1200);
+    setTimeout(() => playTone(1200, 0.35, 'sine', 0.12), 200);
+  },
+  rimHit() { playTone(220, 0.1, 'triangle', 0.06, 110); },
+  headBonk() { playTone(150, 0.1, 'square', 0.08, 80); playNoise(0.06, 0.04); },
+  wallBounce() { playNoise(0.04, 0.03); },
+  charge() { playTone(200, 0.04, 'sine', 0.04, 600); },
+  countdown() { playSFX(AUDIO_FILES.countdown321, 0.9); },
+  countdownGo() { /* included in countdown MP3 */ },
+};
+const GROUND_Y = H - 60;
+const WINNING_SCORE = 5;
+const COURT_FLOOR_H = 60;
+
+const COURTS = [
+  { name: 'GYM', bg: '#4a2810', floor: '#c8956c', wall: '#8b6914', accent: '#ffd700', lines: '#fff' },
+  { name: 'BEACH', bg: '#87ceeb', floor: '#f4d03f', wall: '#e67e22', accent: '#e74c3c', lines: '#fff5e0' },
+  { name: 'CITY', bg: '#2c3e50', floor: '#7f8c8d', wall: '#34495e', accent: '#e74c3c', lines: '#ecf0f1' },
+  { name: 'SNOW', bg: '#d5e8f0', floor: '#ecf0f1', wall: '#bdc3c7', accent: '#3498db', lines: '#2c3e50' }
+];
+
+const BODY_TYPES = [
+  { name: 'Standard', headR: 14, armLen: 34, legLen: 28, bodyH: 28, bodyW: 14 }
+];
+
+const BALL_TYPES = [
+  { name: 'Normal', radius: 12, mass: 1, bounce: 0.65, color: '#e67e22', stripe: '#d35400', points: 1 },
+  { name: 'Heavy', radius: 14, mass: 1.8, bounce: 0.4, color: '#7f8c8d', stripe: '#5d6d7e', points: 1 },
+  { name: 'Light', radius: 10, mass: 0.5, bounce: 0.55, color: '#f9e79f', stripe: '#f7dc6f', points: 1 },
+  { name: 'RAINBOW', radius: 13, mass: 1, bounce: 0.7, color: 'rainbow', stripe: '', points: 2 }
+];
+
+const HOOP_SHAPES = [
+  { name: 'Standard', rimW: 50, rimH: 6, backH: 60, backW: 8 },
+  { name: 'Wide', rimW: 65, rimH: 6, backH: 55, backW: 8 },
+  { name: 'Narrow', rimW: 38, rimH: 6, backH: 65, backW: 8 },
+  { name: 'Tall', rimW: 50, rimH: 6, backH: 80, backW: 10 }
+];
+
+const GOAL_SHAPES = [
+  { name: 'Standard', goalW: 12, goalH: 100 },
+  { name: 'Wide', goalW: 12, goalH: 130 },
+  { name: 'Narrow', goalW: 12, goalH: 75 },
+  { name: 'Tall', goalW: 14, goalH: 150 }
+];
+
+const SOCCER_BALL_TYPES = [
+  { name: 'Normal', radius: 12, mass: 1, bounce: 0.7, color: '#ecf0f1', stripe: '#bdc3c7', points: 1 },
+  { name: 'Heavy', radius: 14, mass: 1.8, bounce: 0.45, color: '#7f8c8d', stripe: '#5d6d7e', points: 1 },
+  { name: 'Light', radius: 10, mass: 0.5, bounce: 0.8, color: '#f9e79f', stripe: '#f7dc6f', points: 1 },
+  { name: 'RAINBOW', radius: 13, mass: 1, bounce: 0.75, color: 'rainbow', stripe: '', points: 2 }
+];
+
+const VOLLEY_BALL_TYPES = [
+  { name: 'Normal', radius: 39, mass: 0.7, bounce: 0.72, color: '#f5f5dc', stripe: '#d4af37', points: 1 },
+  { name: 'Heavy', radius: 42, mass: 1.3, bounce: 0.5, color: '#7f8c8d', stripe: '#5d6d7e', points: 1 },
+  { name: 'Light', radius: 33, mass: 0.4, bounce: 0.82, color: '#fff8dc', stripe: '#f0e68c', points: 1 },
+  { name: 'RAINBOW', radius: 39, mass: 0.7, bounce: 0.75, color: 'rainbow', stripe: '', points: 2 }
+];
+
+const NET_SHAPES = [
+  { name: 'Standard', netH: 160, netW: 6 },
+  { name: 'Tall', netH: 200, netW: 6 },
+  { name: 'Short', netH: 120, netW: 6 },
+  { name: 'Wide', netH: 160, netW: 10 }
+];
+
+const HANDBALL_BALL_TYPES = [
+  { name: 'Normal', radius: 11, mass: 0.9, bounce: 0.6, color: '#d4a017', stripe: '#b8860b', points: 1 },
+  { name: 'Heavy', radius: 13, mass: 1.6, bounce: 0.4, color: '#7f8c8d', stripe: '#5d6d7e', points: 1 },
+  { name: 'Light', radius: 9, mass: 0.45, bounce: 0.65, color: '#f9e79f', stripe: '#f7dc6f', points: 1 },
+  { name: 'RAINBOW', radius: 11, mass: 0.9, bounce: 0.65, color: 'rainbow', stripe: '', points: 2 }
+];
+
+const HANDBALL_GOAL_SHAPES = [
+  { name: 'Standard', goalW: 12, goalH: 80 },
+  { name: 'Wide', goalW: 12, goalH: 105 },
+  { name: 'Narrow', goalW: 12, goalH: 60 },
+  { name: 'Tall', goalW: 14, goalH: 120 }
+];
+
+const SUMO_MAPS = [
+  // Map 0: Classic ring (always first round)
+  { name: 'Classic Ring', type: 'ring', radius: 150, platforms: [] },
+  // Map 1: Two Towers
+  { name: 'Two Towers', type: 'platform', platforms: [
+    { x: 200, y: 340, w: 120, h: 16 },
+    { x: 480, y: 340, w: 120, h: 16 },
+    { x: 340, y: 280, w: 120, h: 16 },
+  ], spawns: [{ x: 250, y: 330 }, { x: 540, y: 330 }] },
+  // Map 2: Staircase
+  { name: 'Staircase', type: 'platform', platforms: [
+    { x: 80, y: 380, w: 140, h: 16 },
+    { x: 260, y: 330, w: 120, h: 16 },
+    { x: 420, y: 280, w: 120, h: 16 },
+    { x: 580, y: 230, w: 140, h: 16 },
+  ], spawns: [{ x: 140, y: 370 }, { x: 650, y: 220 }] },
+  // Map 3: Sky Islands
+  { name: 'Sky Islands', type: 'platform', platforms: [
+    { x: 100, y: 350, w: 90, h: 16 },
+    { x: 300, y: 300, w: 90, h: 16 },
+    { x: 500, y: 350, w: 90, h: 16 },
+    { x: 200, y: 240, w: 80, h: 16 },
+    { x: 400, y: 200, w: 100, h: 16 },
+    { x: 600, y: 260, w: 80, h: 16 },
+  ], spawns: [{ x: 140, y: 340 }, { x: 540, y: 340 }] },
+  // Map 4: The Bridge
+  { name: 'The Bridge', type: 'platform', platforms: [
+    { x: 250, y: 310, w: 300, h: 14 },
+    { x: 80, y: 370, w: 100, h: 16 },
+    { x: 620, y: 370, w: 100, h: 16 },
+  ], spawns: [{ x: 310, y: 300 }, { x: 490, y: 300 }] },
+  // Map 5: Pyramid
+  { name: 'Pyramid', type: 'platform', platforms: [
+    { x: 150, y: 380, w: 500, h: 16 },
+    { x: 230, y: 320, w: 340, h: 16 },
+    { x: 320, y: 260, w: 160, h: 16 },
+  ], spawns: [{ x: 220, y: 370 }, { x: 580, y: 370 }] },
+  // Map 6: Pillars
+  { name: 'Pillars', type: 'platform', platforms: [
+    { x: 120, y: 360, w: 60, h: 16 },
+    { x: 260, y: 310, w: 60, h: 16 },
+    { x: 400, y: 280, w: 60, h: 16 },
+    { x: 540, y: 310, w: 60, h: 16 },
+    { x: 680, y: 360, w: 60, h: 16 },
+  ], spawns: [{ x: 145, y: 350 }, { x: 705, y: 350 }] },
+  // Map 7: Zigzag
+  { name: 'Zigzag', type: 'platform', platforms: [
+    { x: 60, y: 360, w: 110, h: 16 },
+    { x: 230, y: 300, w: 110, h: 16 },
+    { x: 400, y: 360, w: 110, h: 16 },
+    { x: 570, y: 300, w: 110, h: 16 },
+    { x: 700, y: 360, w: 80, h: 16 },
+  ], spawns: [{ x: 110, y: 350 }, { x: 620, y: 290 }] },
+  // Map 9: Twin Peaks - two high platforms with low center
+  { name: 'Twin Peaks', type: 'platform', platforms: [
+    { x: 80, y: 280, w: 130, h: 16 },
+    { x: 590, y: 280, w: 130, h: 16 },
+    { x: 300, y: 370, w: 200, h: 16 },
+  ], spawns: [{ x: 140, y: 270 }, { x: 650, y: 270 }] },
+  // Map 10: Shelf - long flat platform with tiny ones above
+  { name: 'The Shelf', type: 'platform', platforms: [
+    { x: 100, y: 380, w: 600, h: 16 },
+    { x: 180, y: 300, w: 70, h: 14 },
+    { x: 370, y: 260, w: 70, h: 14 },
+    { x: 560, y: 300, w: 70, h: 14 },
+  ], spawns: [{ x: 200, y: 370 }, { x: 600, y: 370 }] },
+  // Map 11: Tiny Ring
+  { name: 'Tiny Ring', type: 'ring', radius: 80, platforms: [] },
+  // Map 12: Clouds - many small scattered platforms
+  { name: 'Clouds', type: 'platform', platforms: [
+    { x: 60, y: 340, w: 70, h: 14 },
+    { x: 190, y: 290, w: 70, h: 14 },
+    { x: 320, y: 350, w: 70, h: 14 },
+    { x: 440, y: 270, w: 70, h: 14 },
+    { x: 560, y: 330, w: 70, h: 14 },
+    { x: 680, y: 280, w: 70, h: 14 },
+    { x: 370, y: 210, w: 80, h: 14 },
+  ], spawns: [{ x: 90, y: 330 }, { x: 590, y: 320 }] },
+  // Map 12: Seesaw - two ends with a single center column
+  { name: 'Seesaw', type: 'platform', platforms: [
+    { x: 50, y: 350, w: 160, h: 16 },
+    { x: 350, y: 290, w: 100, h: 16 },
+    { x: 590, y: 350, w: 160, h: 16 },
+  ], spawns: [{ x: 130, y: 340 }, { x: 670, y: 340 }] },
+];
+
+// ============================================================
+// GAME STATE
+// ============================================================
+let gameState = 'menu'; // 'menu', 'playing', 'scored', 'gameover'
+let gameMode = 0; // 0 = not selected, 1 = vs CPU, 2 = vs Player
+let sportMode = 'basketball'; // 'basketball', 'soccer', 'volleyball', 'handball', or 'sumo'
+let menuScreen = 'sport'; // 'sport' or 'mode'
+let sportSelection = 0;
+let netShape = null;
+let scores = [0, 0];
+let court, bodyType1, bodyType2, ballType, hoopShape, goalShape, volleyNet, sumoRing;
+let sumoMap = null;  // Current sumo map (from SUMO_MAPS)
+let sumoRound = 0;   // Sumo round counter (0 = first round = classic)
+let sumoMapOrder = []; // Pre-shuffled map order for current game
+let players = []; // 4 players: [0,1] = team1, [2,3] = team2
+let ball = null;
+let particles = [];
+let scoreTimer = 0;
+let roundStartTimer = 0;
+let flashTimer = 0;
+let lastScorer = -1;
+let menuSelection = 0;
+let gameTime = 0;
+let shakeX = 0, shakeY = 0;
+let shakeTimer = 0;
+let shakeMaxTimer = 0;
+let modifierTextTimer = 0;
+
+// Input
+const keys = {};
+const mouse = { x: 0, y: 0, clicked: false, down: false };
+window.addEventListener('keydown', e => { keys[e.code] = true; e.preventDefault(); });
+window.addEventListener('keyup', e => { keys[e.code] = false; e.preventDefault(); });
+
+// Mouse input - convert to canvas coordinates
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = (e.clientX - rect.left) / rect.width * W;
+  mouse.y = (e.clientY - rect.top) / rect.height * H;
+});
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.clicked = true;
+});
+canvas.addEventListener('mouseup', e => {
+  mouse.down = false;
+});
+
+function isMouseInRect(x, y, w, h) {
+  return mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h;
+}
+
+// ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+function rand(a, b) { return Math.random() * (b - a) + a; }
+function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+function pick(arr) { return arr[randInt(0, arr.length - 1)]; }
+function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+function dist(x1, y1, x2, y2) { return Math.sqrt((x2-x1)**2 + (y2-y1)**2); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function drawPixelRect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+}
+
+function drawPixelCircle(cx, cy, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(Math.round(cx), Math.round(cy), Math.round(r), 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function rainbowColor(t) {
+  const r = Math.sin(t * 0.03) * 127 + 128;
+  const g = Math.sin(t * 0.03 + 2.094) * 127 + 128;
+  const b = Math.sin(t * 0.03 + 4.189) * 127 + 128;
+  return `rgb(${r|0},${g|0},${b|0})`;
+}
+
+// ============================================================
+// PARTICLE SYSTEM
+// ============================================================
+function spawnParticles(x, y, count, color, speed) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: rand(-speed, speed),
+      vy: rand(-speed, 0),
+      life: rand(20, 50),
+      maxLife: 50,
+      size: rand(2, 5),
+      color: color === 'rainbow' ? rainbowColor(rand(0, 200)) : color
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    drawPixelRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size, p.color);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ============================================================
+// PLAYER CLASS - Floppy Ragdoll Basketball Player
+// ============================================================
+function createPlayer(x, team, idx, bt) {
+  return {
+    x, y: GROUND_Y,
+    vx: 0, vy: 0,
+    team, idx,
+    bodyType: bt || BODY_TYPES[0],
+    lean: 0,
+    leanSpeed: rand(0.035, 0.06),
+    leanPhase: rand(0, Math.PI * 2),
+    leanAmplitude: rand(0.6, 0.95),
+    armAngle: 0,
+    armTarget: 0,
+    onGround: true,
+    jumpCooldown: 0,
+    hasBall: false,
+    holdTimer: 0,
+    shootCharge: 0,     // how long shoot button held (0-60)
+    isCharging: false,   // currently holding shoot
+    spinAngle: 0,
+    faceDir: team === 0 ? 1 : -1,
+    bobPhase: rand(0, Math.PI * 2),
+    walkCycle: 0,        // walk animation phase
+    stillTimer: 0,       // frames standing still with ball
+    _kickCooldown: 0,    // soccer kick cooldown
+    _kickAnim: 0,        // kick animation timer (counts down from 12)
+    _kickDir: 1,         // direction of kick
+    _punchAnim: 0,       // punch animation timer (counts down from 15)
+    _punchDir: 1,        // direction of punch
+    _punchCooldown: 0,   // punch cooldown
+    _punchCharge: 0,     // how long punch button held (0-60 frames, ~1 sec max)
+    _punchPower: 0,      // stored power when punch is released (0-1)
+    colors: team === 0 
+      ? { jersey: '#e74c3c', shorts: '#c0392b', skin: '#f5cba7', hair: '#5d4e37' }
+      : { jersey: '#3498db', shorts: '#2980b9', skin: '#f5cba7', hair: '#2c3e50' }
+  };
+}
+
+function updatePlayer(p, input, dt) {
+  // input = { left, right, jump, shoot }
+  
+  // Constant swaying
+  p.leanPhase += p.leanSpeed * 2.2;
+  const baseLean = Math.sin(p.leanPhase) * p.leanAmplitude;
+  p.lean = lerp(p.lean, baseLean + p.spinAngle * 0.3, 0.14);
+  
+  // Spin decay
+  p.spinAngle *= 0.95;
+  
+  // Bob animation
+  p.bobPhase += 0.06;
+  
+  // Walk cycle - driven by actual horizontal movement
+  const speed = Math.abs(p.vx);
+  if (p.onGround && speed > 0.5) {
+    p.walkCycle += speed * 0.12;
+  } else if (p.onGround) {
+    // Gently return to standing
+    p.walkCycle = lerp(p.walkCycle, 0, 0.1);
+  }
+  
+  // Horizontal movement
+  const moveSpeed = p.onGround ? 2.5 : 1.2;
+  if (input.left) {
+    p.vx -= moveSpeed * 0.3;
+    p.faceDir = -1;
+  }
+  if (input.right) {
+    p.vx += moveSpeed * 0.3;
+    p.faceDir = 1;
+  }
+  
+  // Face direction from lean if not moving
+  if (!input.left && !input.right && Math.abs(p.lean) > 0.15) {
+    p.faceDir = p.lean > 0 ? 1 : -1;
+  }
+  
+  // Arm targeting
+  if (p.isCharging) {
+    // Arms go up progressively while charging
+    const chargeRatio = Math.min(p.shootCharge / 60, 1);
+    p.armTarget = -1.0 - chargeRatio * 1.5; // -1.0 to -2.5
+  } else if (!p.onGround || p.hasBall) {
+    p.armTarget = -1.8; // Arms up
+  } else {
+    // Natural arm swing while walking
+    const armSwing = Math.sin(p.walkCycle) * Math.min(speed * 0.15, 0.5);
+    p.armTarget = 0.3 + armSwing;
+  }
+  p.armAngle = lerp(p.armAngle, p.armTarget, 0.18);
+  
+  // Jump
+  if (input.jump && p.onGround && p.jumpCooldown <= 0) {
+    const jumpForce = 9.5;
+    p.vy = -jumpForce;
+    // Jump in the direction the player is moving; straight up if idle
+    if (input.left) {
+      p.vx -= 3;
+    } else if (input.right) {
+      p.vx += 3;
+    }
+    p.onGround = false;
+    p.jumpCooldown = 8;
+    spawnParticles(p.x, GROUND_Y, 4, '#aaa', 2);
+    SFX.jump();
+  }
+  
+  // Hold ball logic (basketball only)
+  if ((sportMode === 'basketball' || sportMode === 'handball') && p.hasBall && ball) {
+    p.holdTimer++;
+    const handPos = getHandPos(p);
+    ball.x = handPos.x;
+    ball.y = handPos.y;
+    ball.vx = 0;
+    ball.vy = 0;
+    
+    // Track standing still with ball
+    if (Math.abs(p.vx) < 0.5 && p.onGround) {
+      p.stillTimer++;
+    } else {
+      p.stillTimer = 0;
+    }
+    
+    // Charge-based shooting: hold shoot to charge, release to fire
+    if (input.shoot) {
+      p.isCharging = true;
+      p.shootCharge = Math.min(p.shootCharge + 1, 60); // Max charge ~1 second
+    } else if (p.isCharging && p.shootCharge > 0) {
+      // Button released after charging - shoot!
+      releaseBall(p);
+      p.isCharging = false;
+      p.shootCharge = 0;
+    }
+  } else if (sportMode === 'soccer') {
+    // Soccer kick: no holding, kick button applies force to nearby ball
+    p.hasBall = false;
+    p.isCharging = false;
+    p.shootCharge = 0;
+    p.stillTimer = 0;
+    if (input.shoot && p._kickCooldown <= 0) {
+      // Always play kick animation
+      const targetGoal = (p.team === 0 && hoops[1]) ? hoops[1] : (hoops[0] || null);
+      const dir = targetGoal ? (targetGoal.x > p.x ? 1 : -1) : p.faceDir;
+      p._kickCooldown = 20;
+      p._kickAnim = 18;
+      p._kickDir = dir;
+      // Check if ball is near player (full body range) to actually kick it
+      if (ball && !ball.holder) {
+        const bodyX = p.x;
+        const bodyTopY = p.y - p.bodyType.legLen - p.bodyType.bodyH;
+        const bodyCY = (bodyTopY + p.y) / 2;
+        const dBall = dist(ball.x, ball.y, bodyX, bodyCY);
+        if (dBall < ball.radius + 40) {
+          // Kick toward opponent's goal
+          const kickPower = 16 + Math.abs(p.vx) * 2;
+          const kickAngle = -20 * Math.PI / 180;
+          ball.vx = Math.cos(kickAngle) * kickPower * dir;
+          ball.vy = Math.sin(kickAngle) * kickPower;
+          ball.grabCooldown = 10;
+          ball.trail = [];
+          spawnParticles(ball.x, ball.y, 6, '#27ae60', 3);
+          SFX.shoot();
+        }
+      }
+    }
+    if (p._kickCooldown > 0) p._kickCooldown--;
+    if (p._kickAnim > 0) p._kickAnim--;
+  } else if (sportMode === 'volleyball') {
+    // Volleyball: no holding ball, hit it with hands when pressing shoot
+    p.hasBall = false;
+    p.isCharging = false;
+    p.shootCharge = 0;
+    p.stillTimer = 0;
+    if (ball && !ball.holder && input.shoot && p._kickCooldown <= 0) {
+      // Check if ball is near player's hands
+      const handPos = getHandPos(p);
+      const dHand = dist(ball.x, ball.y, handPos.x, handPos.y);
+      if (dHand < ball.radius + 24) {
+        // Track rally touches per team
+        if (ball._lastHitTeam !== p.team) {
+          ball._cpuRallyTouches = 0; // reset when switching teams
+        }
+        ball._lastHitTeam = p.team;
+        ball._cpuRallyTouches++;
+        
+        const dir = p.team === 0 ? 1 : -1;
+        const isCPU = (gameMode === 1 && p.team === 1);
+        const earlyTouch = ball._cpuRallyTouches <= 2;
+        
+        // CPU gets an aimed shot 75% of the time on first 2 touches
+        if (isCPU && earlyTouch && Math.random() < 0.75) {
+          // Aimed return: calculate velocity to arc over net and land on opponent's side
+          const netX = volleyNet ? volleyNet.x : W / 2;
+          const netTopY = volleyNet ? volleyNet.y : GROUND_Y - 160;
+          // Target: land in the middle-back of opponent's court
+          const targetX = p.team === 1 ? W * 0.25 + rand(-40, 40) : W * 0.75 + rand(-40, 40);
+          const targetY = GROUND_Y - 5;
+          const dx = targetX - ball.x;
+          const dy = targetY - ball.y;
+          // Desired flight time (~40-55 frames)
+          const flightT = rand(40, 55);
+          // Solve for vx, vy given gravity: x = vx*t, y = vy*t + 0.5*g*t^2
+          const aimedVx = dx / flightT;
+          const aimedVy = (dy - 0.5 * GRAVITY * ball.mass * flightT * flightT) / flightT;
+          // Ensure it clears the net: check height at net crossing time
+          const tNet = (netX - ball.x) / (aimedVx || 0.01);
+          const yAtNet = ball.y + aimedVy * tNet + 0.5 * GRAVITY * ball.mass * tNet * tNet;
+          // If it won't clear, add more upward velocity
+          const clearance = netTopY - 15;
+          const extraUp = yAtNet > clearance ? (yAtNet - clearance) / (tNet || 1) * 1.3 : 0;
+          
+          ball.vx = aimedVx;
+          ball.vy = aimedVy - extraUp;
+        } else {
+          // Normal hit: upward and toward opponent
+          const hitPower = 10 + Math.abs(p.vx) * 1.5;
+          const hitAngle = -55 * Math.PI / 180;
+          ball.vx = Math.cos(hitAngle) * hitPower * dir * 0.7 + p.vx * 0.5;
+          ball.vy = Math.sin(hitAngle) * hitPower;
+        }
+        ball.grabCooldown = 8;
+        ball.trail = [];
+        p._kickCooldown = 12;
+        p._kickAnim = 10;
+        p._kickDir = dir;
+        spawnParticles(handPos.x, handPos.y, 6, '#f5f5dc', 3);
+        SFX.shoot();
+      }
+    }
+    if (p._kickCooldown > 0) p._kickCooldown--;
+    if (p._kickAnim > 0) p._kickAnim--;
+  } else if (sportMode === 'sumo') {
+    // Sumo mode
+    p.hasBall = false;
+    p.isCharging = false;
+    p.shootCharge = 0;
+    p.stillTimer = 0;
+    // Punch charge: hold down to charge, release to punch
+    if (input.shoot && p._punchCooldown <= 0 && p._punchAnim <= 0) {
+      // Charging up
+      p._punchCharge = Math.min(p._punchCharge + 1, 60);
+    } else if (!input.shoot && p._punchCharge > 0 && p._punchCooldown <= 0) {
+      // Released! Fire the punch
+      const chargeRatio = Math.min(p._punchCharge / 60, 1); // 0-1
+      p._punchPower = chargeRatio;
+      p._punchAnim = 15;
+      // Always punch toward the opponent
+      const opp = players.find(o => o.team !== p.team);
+      if (opp) {
+        p._punchDir = opp.x >= p.x ? 1 : -1;
+      } else {
+        p._punchDir = p.faceDir;
+      }
+      p.faceDir = p._punchDir;
+      p._punchCooldown = 30;
+      // Forward push scales with charge
+      p.vx += p._punchDir * (1.5 + chargeRatio * 3);
+      const particleCount = 3 + Math.floor(chargeRatio * 8);
+      spawnParticles(p.x + p.faceDir * 20, p.y - 25, particleCount, chargeRatio > 0.6 ? '#ff0' : '#ff4444', 3 + chargeRatio * 2);
+      if (chargeRatio > 0.8) spawnParticles(p.x + p.faceDir * 20, p.y - 25, 5, 'rainbow', 3);
+      SFX.shoot();
+      p._punchCharge = 0;
+    }
+    if (p._punchCooldown > 0) p._punchCooldown--;
+    if (p._punchAnim > 0) p._punchAnim--;
+    if (p._kickCooldown > 0) p._kickCooldown--;
+    if (p._kickAnim > 0) p._kickAnim--;
+  } else {
+    p.isCharging = false;
+    p.shootCharge = 0;
+    p.stillTimer = 0;
+  }
+  
+  // Physics
+  p.vy += GRAVITY;
+  p.x += p.vx;
+  p.y += p.vy;
+  p.vx *= 0.88;
+  
+  // Ground collision
+  if (p.y >= GROUND_Y) {
+    // On platform sumo maps, hitting the floor means you lost (don't stop at ground)
+    if (sportMode === 'sumo' && sumoMap && sumoMap.type === 'platform') {
+      // Let them fall — scoring handles this
+      // But cap at GROUND_Y so they don't fall forever
+      if (p.y >= GROUND_Y) {
+        p.y = GROUND_Y;
+        p.vy = 0;
+        p.onGround = true;
+        p.vx *= 0.85;
+      }
+    } else {
+      p.y = GROUND_Y;
+      p.vy = 0;
+      p.onGround = true;
+      p.vx *= 0.85;
+      if (Math.abs(p.spinAngle) > 0.3) {
+        p.spinAngle *= -0.5;
+      }
+    }
+  }
+  
+  // Platform collision (sumo platform maps)
+  if (sportMode === 'sumo' && sumoMap && sumoMap.type === 'platform') {
+    for (const plat of sumoMap.platforms) {
+      const px = plat.x;
+      const pw = plat.w;
+      const py = plat.y;
+      // Check if player is landing on top of platform (falling down onto it)
+      if (p.vy >= 0 && p.x > px - 5 && p.x < px + pw + 5) {
+        const prevFootY = p.y - p.vy; // where foot was last frame
+        if (prevFootY <= py + 4 && p.y >= py - 1) {
+          p.y = py;
+          p.vy = 0;
+          p.onGround = true;
+          p.vx *= 0.85;
+          break;
+        }
+      }
+    }
+  }
+  
+  // Wall bounds
+  if (p.x < 30) { p.x = 30; p.vx = Math.abs(p.vx) * 0.5; }
+  if (p.x > W - 30) { p.x = W - 30; p.vx = -Math.abs(p.vx) * 0.5; }
+  
+  // Volleyball: restrict to own side of net
+  if (sportMode === 'volleyball' && volleyNet) {
+    const netX = volleyNet.x;
+    if (p.team === 0 && p.x > netX - 20) {
+      p.x = netX - 20;
+      p.vx = -Math.abs(p.vx) * 0.3;
+    }
+    if (p.team === 1 && p.x < netX + 20) {
+      p.x = netX + 20;
+      p.vx = Math.abs(p.vx) * 0.3;
+    }
+  }
+  
+  if (p.jumpCooldown > 0) p.jumpCooldown--;
+}
+
+function getHandPos(p) {
+  const bt = p.bodyType;
+  const shoulderY = p.y - bt.legLen - bt.bodyH;
+  const armEndX = p.x + Math.sin(p.armAngle + p.lean) * bt.armLen * p.faceDir;
+  const armEndY = shoulderY + Math.cos(p.armAngle + p.lean) * bt.armLen;
+  return { x: armEndX, y: armEndY };
+}
+
+function releaseBall(p) {
+  if (!ball || !p.hasBall) return;
+  p.hasBall = false;
+  p.holdTimer = 0;
+  
+  // Charge ratio: 0 (tap) to 1 (full charge ~1 sec)
+  const chargeRatio = clamp(p.shootCharge / 60, 0.1, 1);
+  
+  // Determine which hoop this player's team attacks
+  const targetHoop = p.team === 0 ? hoops[1] : hoops[0];
+  const dir = targetHoop.x > p.x ? 1 : -1;
+  
+  if (sportMode === 'soccer') {
+    // Soccer: kick at 25 degrees upward, more horizontal
+    const angle = -25 * Math.PI / 180;
+    const shootPower = 7 + chargeRatio * 14;
+    ball.vx = Math.cos(angle) * shootPower * dir;
+    ball.vy = Math.sin(angle) * shootPower;
+  } else if (sportMode === 'handball') {
+    // Handball: throw at 20 degrees upward, fast and aimed at goal
+    const angle = -20 * Math.PI / 180;
+    const shootPower = 8 + chargeRatio * 14;
+    ball.vx = Math.cos(angle) * shootPower * dir;
+    ball.vy = Math.sin(angle) * shootPower;
+  } else {
+    // Basketball: shoot at 55 degrees upward
+    const angle = -55 * Math.PI / 180;
+    const shootPower = 6 + chargeRatio * 12;
+    ball.vx = Math.cos(angle) * shootPower * dir;
+    ball.vy = Math.sin(angle) * shootPower;
+  }
+  ball.holder = null;
+  ball.grabCooldown = 15;
+  
+  // Particles based on charge
+  const handPos = getHandPos(p);
+  if (chargeRatio > 0.5) {
+    spawnParticles(handPos.x, handPos.y, Math.floor(chargeRatio * 8), '#f39c12', 3);
+  }
+  SFX.shoot();
+}
+
+function drawPlayer(p) {
+  const bt = p.bodyType;
+  const baseX = Math.round(p.x);
+  const baseY = Math.round(p.y);
+  const leanOff = Math.sin(p.lean) * 8;
+  const speed = Math.abs(p.vx);
+  const isMoving = p.onGround && speed > 0.5;
+  const isAirborne = !p.onGround;
+  
+  // Walk cycle for legs
+  const walkSin = Math.sin(p.walkCycle);
+  const walkCos = Math.cos(p.walkCycle);
+  
+  // Hip position
+  const hipY = baseY - bt.legLen * 0.1;
+  const hipBob = isMoving ? Math.abs(Math.sin(p.walkCycle * 2)) * 2 : 0;
+  const bodyBob = isAirborne ? 0 : hipBob;
+  
+  // --- LEGS ---
+  ctx.strokeStyle = p.colors.skin;
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  
+  if (p._kickAnim > 0 && (sportMode === 'soccer' || sportMode === 'volleyball')) {
+    // Realistic kick animation with 4 phases:
+    // Phase 1 (0-0.2): Plant foot steps forward, body leans back, kicking leg winds up behind
+    // Phase 2 (0.2-0.45): Knee drives forward (chambered), thigh leads
+    // Phase 3 (0.45-0.7): Lower leg snaps forward (the strike), foot extends
+    // Phase 4 (0.7-1.0): Follow-through, leg rises, body recenters
+    const kickProgress = 1 - (p._kickAnim / 18); // 0 to 1
+    const kDir = p._kickDir;
+    
+    // Body lean: lean back during wind-up, forward during strike
+    let bodyLean = 0;
+    if (kickProgress < 0.2) {
+      bodyLean = -0.12 * (kickProgress / 0.2); // lean back
+    } else if (kickProgress < 0.45) {
+      bodyLean = -0.12 + 0.2 * ((kickProgress - 0.2) / 0.25); // lean forward
+    } else if (kickProgress < 0.7) {
+      bodyLean = 0.08 + 0.06 * ((kickProgress - 0.45) / 0.25); // more forward
+    } else {
+      bodyLean = 0.14 * (1 - (kickProgress - 0.7) / 0.3); // return
+    }
+    
+    // Thigh angle of kicking leg (from hip, 0 = straight down, positive = forward/up)
+    let thighAngle, kneeAngle;
+    if (kickProgress < 0.2) {
+      // Wind-up: thigh goes backward
+      const t = kickProgress / 0.2;
+      thighAngle = -0.5 * t; // swing back (less far so foot stays above ground)
+      kneeAngle = 1.0 + 0.3 * t; // knee bent behind
+    } else if (kickProgress < 0.45) {
+      // Knee drive: thigh swings forward and UP, knee stays bent (chambered)
+      const t = (kickProgress - 0.2) / 0.25;
+      thighAngle = -0.5 + 2.0 * t; // -0.5 to 1.5 (higher swing)
+      kneeAngle = 1.3 - 0.3 * t; // stays bent
+    } else if (kickProgress < 0.7) {
+      // Strike: lower leg snaps straight, thigh continues upward
+      const t = (kickProgress - 0.45) / 0.25;
+      thighAngle = 1.5 + 0.2 * t; // 1.5 to 1.7 (leg goes high)
+      kneeAngle = 1.0 - 0.9 * t; // 1.0 to ~0.1 (nearly straight)
+    } else {
+      // Follow-through: leg stays up then comes down
+      const t = (kickProgress - 0.7) / 0.3;
+      thighAngle = 1.7 - 1.2 * t; // comes back down
+      kneeAngle = 0.1 + 0.5 * t; // bends slightly again
+    }
+    
+    // Compute kicking leg positions using thigh + shin segments
+    const thighLen = bt.legLen * 0.48;
+    const shinLen = bt.legLen * 0.52;
+    const hipX = baseX + kDir * 2 + leanOff * 0.5;
+    const hipKickY = hipY - bodyBob;
+    
+    // Thigh end (knee)
+    let kickKneeX = hipX + kDir * Math.sin(thighAngle) * thighLen;
+    let kickKneeY = hipKickY + Math.cos(thighAngle) * thighLen;
+    // Clamp knee above ground
+    kickKneeY = Math.min(kickKneeY, baseY - 4);
+    
+    // Shin angle relative to thigh
+    const shinAbsAngle = thighAngle - kneeAngle;
+    let kickFootX = kickKneeX + kDir * Math.sin(shinAbsAngle) * shinLen;
+    let kickFootY = kickKneeY + Math.cos(shinAbsAngle) * shinLen;
+    // Clamp foot above ground
+    kickFootY = Math.min(kickFootY, baseY - 2);
+    
+    // Draw kicking leg (thigh then shin, with a knee joint)
+    ctx.beginPath();
+    ctx.moveTo(hipX, hipKickY);
+    ctx.lineTo(kickKneeX, kickKneeY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(kickKneeX, kickKneeY);
+    ctx.lineTo(kickFootX, kickFootY);
+    ctx.stroke();
+    
+    // Knee joint dot
+    drawPixelCircle(kickKneeX, kickKneeY, 3, p.colors.skin);
+    
+    // Shoe for kicking foot (angled in kick direction)
+    const shoeW = 10, shoeH = 4;
+    ctx.save();
+    ctx.translate(kickFootX, kickFootY);
+    ctx.rotate(kDir * (thighAngle - kneeAngle * 0.5) * 0.5);
+    ctx.fillStyle = p.colors.jersey;
+    ctx.fillRect(-shoeW * 0.3, -shoeH / 2, shoeW, shoeH);
+    ctx.restore();
+    
+    // Planted (support) leg: slightly bent, foot forward for balance
+    const plantDir = -kDir;
+    const plantHipX = baseX + plantDir * 2 + leanOff * 0.5;
+    // Support leg bends slightly and leans forward during strike
+    let plantBend = 0.15;
+    if (kickProgress > 0.2 && kickProgress < 0.7) {
+      plantBend = 0.25; // deeper bend during power phase
+    }
+    const plantKneeX = plantHipX + kDir * 2;
+    const plantKneeY = hipKickY + bt.legLen * 0.45 + plantBend * 4;
+    const plantFootX = plantHipX + kDir * 5 + bodyLean * kDir * 12;
+    const plantFootY = baseY;
+    
+    ctx.beginPath();
+    ctx.moveTo(plantHipX, hipKickY);
+    ctx.quadraticCurveTo(plantKneeX, plantKneeY, plantFootX, plantFootY);
+    ctx.stroke();
+    
+    drawPixelRect(plantFootX - 4, plantFootY - 3, 8, 5, p.colors.jersey);
+  } else if (isMoving) {
+    // Walking animation - legs alternate like real walking
+    const stride = Math.min(speed * 2.5, 14);
+    const liftHeight = Math.min(speed * 1.5, 8);
+    
+    // Left leg
+    const lFootX = baseX + walkSin * stride * p.faceDir + leanOff * 0.3;
+    const lFootY = baseY - Math.max(0, Math.sin(p.walkCycle)) * liftHeight;
+    const lKneeX = baseX - 2 + walkSin * stride * 0.4 * p.faceDir + leanOff * 0.3;
+    const lKneeY = hipY + bt.legLen * 0.45 - Math.max(0, Math.sin(p.walkCycle)) * liftHeight * 0.3;
+    
+    ctx.beginPath();
+    ctx.moveTo(baseX - 3 + leanOff * 0.5, hipY - bodyBob);
+    ctx.quadraticCurveTo(lKneeX, lKneeY, lFootX, lFootY);
+    ctx.stroke();
+    
+    // Right leg (opposite phase)
+    const rFootX = baseX - walkSin * stride * p.faceDir + leanOff * 0.3;
+    const rFootY = baseY - Math.max(0, -Math.sin(p.walkCycle)) * liftHeight;
+    const rKneeX = baseX + 2 - walkSin * stride * 0.4 * p.faceDir + leanOff * 0.3;
+    const rKneeY = hipY + bt.legLen * 0.45 - Math.max(0, -Math.sin(p.walkCycle)) * liftHeight * 0.3;
+    
+    ctx.beginPath();
+    ctx.moveTo(baseX + 3 + leanOff * 0.5, hipY - bodyBob);
+    ctx.quadraticCurveTo(rKneeX, rKneeY, rFootX, rFootY);
+    ctx.stroke();
+    
+    // Shoes
+    drawPixelRect(lFootX - 4, lFootY - 2, 8, 5, p.colors.jersey);
+    drawPixelRect(rFootX - 4, rFootY - 2, 8, 5, p.colors.jersey);
+  } else if (isAirborne) {
+    // Airborne - legs tucked / dangling
+    const tuck = clamp(-p.vy * 0.08, -0.4, 0.3);
+    const spread = 6;
+    
+    // Left leg - slight tuck
+    ctx.beginPath();
+    ctx.moveTo(baseX - 3 + leanOff * 0.5, hipY);
+    ctx.quadraticCurveTo(
+      baseX - 5 + leanOff * 0.3,
+      hipY + bt.legLen * 0.4 + tuck * 10,
+      baseX - spread + leanOff * 0.3,
+      baseY + tuck * 12
+    );
+    ctx.stroke();
+    
+    // Right leg
+    ctx.beginPath();
+    ctx.moveTo(baseX + 3 + leanOff * 0.5, hipY);
+    ctx.quadraticCurveTo(
+      baseX + 5 + leanOff * 0.3,
+      hipY + bt.legLen * 0.4 + tuck * 10,
+      baseX + spread + leanOff * 0.3,
+      baseY + tuck * 12
+    );
+    ctx.stroke();
+    
+    // Shoes
+    drawPixelRect(baseX - spread - 4 + leanOff * 0.3, baseY + tuck * 12 - 2, 8, 5, p.colors.jersey);
+    drawPixelRect(baseX + spread - 4 + leanOff * 0.3, baseY + tuck * 12 - 2, 8, 5, p.colors.jersey);
+  } else {
+    // Standing idle - gentle sway
+    const idleSway = Math.sin(p.bobPhase * 0.8) * 1.5;
+    const legSpread = 7;
+    
+    ctx.beginPath();
+    ctx.moveTo(baseX - 3 + leanOff * 0.5, hipY);
+    ctx.quadraticCurveTo(baseX - 4 + leanOff * 0.3 + idleSway, hipY + bt.legLen * 0.5, baseX - legSpread + leanOff * 0.3, baseY);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(baseX + 3 + leanOff * 0.5, hipY);
+    ctx.quadraticCurveTo(baseX + 4 + leanOff * 0.3 - idleSway, hipY + bt.legLen * 0.5, baseX + legSpread + leanOff * 0.3, baseY);
+    ctx.stroke();
+    
+    drawPixelRect(baseX - legSpread - 4 + leanOff * 0.3, baseY - 3, 8, 5, p.colors.jersey);
+    drawPixelRect(baseX + legSpread - 4 + leanOff * 0.3, baseY - 3, 8, 5, p.colors.jersey);
+  }
+  
+  // --- BODY ---
+  const bodyTopY = baseY - bt.legLen - bt.bodyH + bodyBob;
+  const bodyX = baseX + leanOff;
+  
+  // Shorts
+  ctx.fillStyle = p.colors.shorts;
+  ctx.beginPath();
+  ctx.moveTo(bodyX - bt.bodyW/2 - 1, hipY - bodyBob);
+  ctx.lineTo(bodyX + bt.bodyW/2 + 1, hipY - bodyBob);
+  ctx.lineTo(bodyX + bt.bodyW/2, hipY - bt.bodyH * 0.35 - bodyBob);
+  ctx.lineTo(bodyX - bt.bodyW/2, hipY - bt.bodyH * 0.35 - bodyBob);
+  ctx.fill();
+  
+  // Jersey
+  ctx.fillStyle = p.colors.jersey;
+  ctx.beginPath();
+  ctx.moveTo(bodyX - bt.bodyW/2, hipY - bt.bodyH * 0.3 - bodyBob);
+  ctx.lineTo(bodyX + bt.bodyW/2, hipY - bt.bodyH * 0.3 - bodyBob);
+  ctx.lineTo(bodyX + bt.bodyW/2 + leanOff * 0.15, bodyTopY);
+  ctx.lineTo(bodyX - bt.bodyW/2 + leanOff * 0.15, bodyTopY);
+  ctx.fill();
+  
+  // Number on jersey
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(String(p.idx + 1), bodyX, hipY - bt.bodyH * 0.45 - bodyBob);
+  
+  // --- ARMS ---
+  const shoulderY = bodyTopY + 4;
+  const shoulderX = bodyX;
+  
+  ctx.strokeStyle = p.colors.skin;
+  ctx.lineWidth = 4;
+  
+  if (p._punchAnim > 0 && sportMode === 'sumo') {
+    // PUNCH ANIMATION - scales with _punchPower
+    const pw = p._punchPower; // 0-1 charge ratio
+    const punchProgress = 1 - (p._punchAnim / 15); // 0 to 1
+    const pDir = p._punchDir;
+    
+    // Punching arm: winds back then thrusts forward (reach scales with power)
+    const maxReach = 24 + pw * 16; // 24 (tap) to 40 (full)
+    let punchReach;
+    if (punchProgress < 0.2) {
+      punchReach = (-6 - pw * 6) * (punchProgress / 0.2);
+    } else if (punchProgress < 0.5) {
+      punchReach = (-6 - pw * 6) + (maxReach + 6 + pw * 6) * ((punchProgress - 0.2) / 0.3);
+    } else {
+      punchReach = maxReach * (1 - (punchProgress - 0.5) / 0.5);
+    }
+    
+    const fistX = shoulderX + pDir * punchReach;
+    const fistY = shoulderY + 2;
+    const elbowX = shoulderX + pDir * punchReach * 0.4;
+    const elbowY = shoulderY + 6;
+    
+    // Punching arm
+    ctx.beginPath();
+    ctx.moveTo(shoulderX + pDir * 4, shoulderY);
+    ctx.lineTo(elbowX, elbowY);
+    ctx.lineTo(fistX, fistY);
+    ctx.stroke();
+    
+    // Fist (size scales with power)
+    const fistR = 5 + pw * 3;
+    drawPixelCircle(fistX, fistY, fistR, p.colors.skin);
+    // Fist outline for impact feel
+    if (punchProgress > 0.2 && punchProgress < 0.6) {
+      const impactColor = pw > 0.6 ? '#ff0' : '#ff4444';
+      ctx.strokeStyle = impactColor;
+      ctx.lineWidth = 2 + pw * 2;
+      ctx.beginPath();
+      ctx.arc(fistX, fistY, fistR + 3 + pw * 5, 0, Math.PI * 2);
+      ctx.stroke();
+      // Impact lines at peak punch (more lines for bigger punch)
+      if (punchProgress > 0.3 && punchProgress < 0.5) {
+        ctx.strokeStyle = pw > 0.7 ? 'rainbow' === 'rainbow' ? rainbowColor(gameTime) : '#ff0' : '#ff0';
+        ctx.lineWidth = 2 + pw;
+        const lineCount = 3 + Math.floor(pw * 4);
+        for (let li = 0; li < lineCount; li++) {
+          const la = (li / lineCount) * Math.PI * 2;
+          const startR = 10 + pw * 4;
+          const endR = 16 + punchProgress * 10 + pw * 12;
+          ctx.beginPath();
+          ctx.moveTo(fistX + Math.cos(la + pDir * 0.5) * startR, fistY + Math.sin(la) * startR);
+          ctx.lineTo(fistX + Math.cos(la + pDir * 0.5) * endR, fistY + Math.sin(la) * endR);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.strokeStyle = p.colors.skin;
+    ctx.lineWidth = 4;
+    
+    // Other arm stays in normal position
+    const otherSwing = p.armAngle + p.lean;
+    const oHandX = shoulderX + Math.sin(otherSwing) * bt.armLen * 0.7 - pDir * 2;
+    const oHandY = shoulderY + Math.cos(otherSwing) * bt.armLen;
+    const oElbowX = shoulderX - pDir * 3 + Math.sin(otherSwing) * bt.armLen * 0.25;
+    const oElbowY = shoulderY + Math.cos(otherSwing) * bt.armLen * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(shoulderX - pDir * 4, shoulderY);
+    ctx.lineTo(oElbowX, oElbowY);
+    ctx.lineTo(oHandX, oHandY);
+    ctx.stroke();
+    drawPixelCircle(oHandX, oHandY, 4, p.colors.skin);
+  } else {
+  // Normal arm rendering
+  // Arm swing: opposite to legs when walking, or based on armAngle
+  let armSwingL, armSwingR;
+  if (isMoving && !p.hasBall && !p.isCharging) {
+    // Natural opposite arm swing while walking
+    armSwingL = p.armAngle + p.lean - walkSin * Math.min(speed * 0.1, 0.4);
+    armSwingR = p.armAngle + p.lean + walkSin * Math.min(speed * 0.1, 0.4);
+  } else {
+    armSwingL = p.armAngle + p.lean + Math.sin(p.bobPhase * 0.7) * 0.08;
+    armSwingR = p.armAngle + p.lean - Math.sin(p.bobPhase * 0.7) * 0.08;
+  }
+  
+  const lHandX = shoulderX + Math.sin(armSwingL) * bt.armLen * 0.7;
+  const lHandY = shoulderY + Math.cos(armSwingL) * bt.armLen;
+  const rHandX = shoulderX + Math.sin(armSwingR) * bt.armLen * 0.7;
+  const rHandY = shoulderY + Math.cos(armSwingR) * bt.armLen;
+  
+  // Left arm with elbow
+  const lElbowX = shoulderX - 3 + Math.sin(armSwingL) * bt.armLen * 0.25;
+  const lElbowY = shoulderY + Math.cos(armSwingL) * bt.armLen * 0.45;
+  ctx.beginPath();
+  ctx.moveTo(shoulderX - 4, shoulderY);
+  ctx.lineTo(lElbowX, lElbowY);
+  ctx.lineTo(lHandX - 2, lHandY);
+  ctx.stroke();
+  
+  // Right arm with elbow
+  const rElbowX = shoulderX + 3 + Math.sin(armSwingR) * bt.armLen * 0.25;
+  const rElbowY = shoulderY + Math.cos(armSwingR) * bt.armLen * 0.45;
+  ctx.beginPath();
+  ctx.moveTo(shoulderX + 4, shoulderY);
+  ctx.lineTo(rElbowX, rElbowY);
+  ctx.lineTo(rHandX + 2, rHandY);
+  ctx.stroke();
+  
+  // Hands
+  drawPixelCircle(lHandX - 2, lHandY, 4, p.colors.skin);
+  drawPixelCircle(rHandX + 2, rHandY, 4, p.colors.skin);
+  
+  // Charge indicator on hands when charging
+  if (p.isCharging && p.shootCharge > 5) {
+    const cr = clamp(p.shootCharge / 60, 0, 1);
+    const glow = Math.sin(gameTime * 0.3) * 0.3 + 0.7;
+    ctx.globalAlpha = cr * glow;
+    const chargeColor = cr > 0.7 ? '#e74c3c' : (cr > 0.4 ? '#f39c12' : '#f1c40f');
+    drawPixelCircle((lHandX + rHandX) / 2, (lHandY + rHandY) / 2, 5 + cr * 6, chargeColor);
+    ctx.globalAlpha = 1;
+  }
+  } // end normal arm rendering
+  
+  // Sumo punch charge indicator
+  if (sportMode === 'sumo' && p._punchCharge > 0 && p._punchAnim <= 0) {
+    const cr = p._punchCharge / 60; // 0-1
+    const pulse = Math.sin(gameTime * 0.3 + cr * 5) * 0.3 + 0.7;
+    ctx.globalAlpha = (0.3 + cr * 0.5) * pulse;
+    const chargeColor = cr > 0.8 ? rainbowColor(gameTime) : (cr > 0.5 ? '#ff0' : (cr > 0.25 ? '#f39c12' : '#ff4444'));
+    const glowR = 15 + cr * 20;
+    drawPixelCircle(bodyX, bodyTopY - 5, glowR, chargeColor);
+    ctx.globalAlpha = 1;
+    
+    // Charge bar above head
+    const barW = 30;
+    const barH = 4;
+    const barX = bodyX - barW / 2;
+    const barY = bodyTopY - bt.headR * 2 - 14;
+    drawPixelRect(barX - 1, barY - 1, barW + 2, barH + 2, '#000');
+    drawPixelRect(barX, barY, barW, barH, '#333');
+    const fillColor = cr > 0.8 ? '#ff0' : (cr > 0.5 ? '#f39c12' : '#e74c3c');
+    drawPixelRect(barX, barY, Math.floor(barW * cr), barH, fillColor);
+    
+    // Shaking effect when high charge
+    if (cr > 0.5) {
+      const shake = cr * 2;
+      ctx.save();
+      ctx.translate(rand(-shake, shake), rand(-shake, shake));
+    }
+  }
+  
+  // --- HEAD ---
+  const headX = bodyX + leanOff * 0.3;
+  const headY = bodyTopY - bt.headR + 2;
+  
+  drawPixelCircle(headX, headY - 2, bt.headR + 2, p.colors.hair);
+  drawPixelCircle(headX, headY, bt.headR, p.colors.skin);
+  
+  // Eyes
+  const eyeOff = p.faceDir * 3;
+  drawPixelRect(headX + eyeOff - 3, headY - 3, 3, 3, '#333');
+  drawPixelRect(headX + eyeOff + 2, headY - 3, 3, 3, '#333');
+  
+  // Mouth
+  if (p.isCharging || (sportMode === 'sumo' && p._punchCharge > 15)) {
+    // Gritting teeth while charging
+    drawPixelRect(headX + eyeOff - 2, headY + 3, 5, 3, '#fff');
+    drawPixelRect(headX + eyeOff - 2, headY + 4, 5, 1, '#333');
+  } else if (Math.abs(p.vy) > 3 || p.hasBall) {
+    drawPixelRect(headX + eyeOff - 2, headY + 3, 5, 4, '#c0392b');
+  } else {
+    drawPixelRect(headX + eyeOff - 2, headY + 4, 5, 2, '#c0392b');
+  }
+  
+  // Sweatband
+  drawPixelRect(headX - bt.headR, headY - 4, bt.headR * 2, 3, p.colors.jersey);
+  
+  // Close charge shake context if active
+  if (sportMode === 'sumo' && p._punchCharge > 30 && p._punchAnim <= 0) {
+    ctx.restore();
+  }
+}
+
+// ============================================================
+// BALL
+// ============================================================
+function createBall() {
+  const bt = ballType || BALL_TYPES[0];
+  // Volleyball: start ball on a random side, higher up for a serve feel
+  const startX = sportMode === 'volleyball' ? (Math.random() < 0.5 ? W * 0.25 : W * 0.75) : W / 2;
+  const startY = sportMode === 'volleyball' ? 60 : 100;
+  return {
+    x: startX, y: startY,
+    vx: rand(-2, 2), vy: 0,
+    radius: bt.radius,
+    mass: bt.mass,
+    bounce: bt.bounce,
+    color: bt.color,
+    stripe: bt.stripe,
+    points: bt.points,
+    type: bt,
+    rotation: 0,
+    holder: null,
+    grabCooldown: 0,
+    trail: [],
+    stealTimer: 0,
+    _cpuRallyTouches: 0,   // how many times CPU team has hit this rally
+    _lastHitTeam: -1       // which team last hit the ball
+  };
+}
+
+function updateBall() {
+  if (!ball) return;
+  if (ball.grabCooldown > 0) ball.grabCooldown--;
+  
+  // If held, skip physics but clear trail
+  if (ball.holder !== null) {
+    ball.trail = [];
+    return;
+  }
+  
+  ball.vy += GRAVITY * ball.mass;
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+  ball.rotation += ball.vx * 0.05;
+  
+  // Trail
+  ball.trail.push({ x: ball.x, y: ball.y });
+  if (ball.trail.length > 8) ball.trail.shift();
+  
+  // Ground bounce
+  if (ball.y + ball.radius > GROUND_Y) {
+    if (sportMode === 'volleyball') {
+      // In volleyball, ball touching ground = score, just stop it
+      ball.y = GROUND_Y - ball.radius;
+      ball.vy = 0;
+      ball.vx *= 0.3;
+      spawnParticles(ball.x, GROUND_Y, 6, '#f5f5dc', 2);
+      SFX.bounce();
+    } else {
+      ball.y = GROUND_Y - ball.radius;
+      ball.vy = -Math.abs(ball.vy) * ball.bounce;
+      ball.vx *= 0.9;
+      if (Math.abs(ball.vy) > 2) {
+        spawnParticles(ball.x, GROUND_Y, 3, '#aaa', 1.5);
+        SFX.bounce();
+      }
+    }
+  }
+  
+  // Wall bounce
+  if (sportMode === 'soccer' || sportMode === 'handball') {
+    // Soccer/Handball: walls only bounce above the goal opening
+    const gs = goalShape || (sportMode === 'handball' ? HANDBALL_GOAL_SHAPES[0] : GOAL_SHAPES[0]);
+    const goalTop = GROUND_Y - gs.goalH;
+    if (ball.x - ball.radius < 5) {
+      if (ball.y < goalTop || ball.y + ball.radius > GROUND_Y) {
+        ball.x = 5 + ball.radius;
+        ball.vx = Math.abs(ball.vx) * ball.bounce;
+        SFX.wallBounce();
+      }
+    }
+    if (ball.x + ball.radius > W - 5) {
+      if (ball.y < goalTop || ball.y + ball.radius > GROUND_Y) {
+        ball.x = W - 5 - ball.radius;
+        ball.vx = -Math.abs(ball.vx) * ball.bounce;
+        SFX.wallBounce();
+      }
+    }
+  } else {
+    if (ball.x - ball.radius < 5) {
+      ball.x = 5 + ball.radius;
+      ball.vx = Math.abs(ball.vx) * ball.bounce;
+      SFX.wallBounce();
+    }
+    if (ball.x + ball.radius > W - 5) {
+      ball.x = W - 5 - ball.radius;
+      ball.vx = -Math.abs(ball.vx) * ball.bounce;
+      SFX.wallBounce();
+    }
+  }
+  
+  // Ceiling
+  if (ball.y - ball.radius < 0) {
+    ball.y = ball.radius;
+    ball.vy = Math.abs(ball.vy) * 0.5;
+  }
+  
+  // Air resistance
+  ball.vx *= 0.998;
+  
+  // Check ball-player hand collision - very sensitive grab (basketball only)
+  if (ball.grabCooldown <= 0 && (sportMode === 'basketball' || sportMode === 'handball')) {
+    for (const p of players) {
+      if (p.hasBall) continue;
+      const handPos = getHandPos(p);
+      const d = dist(ball.x, ball.y, handPos.x, handPos.y);
+      // Generous grab radius - any hand touch grabs the ball
+      if (d < ball.radius + 14) {
+        if (ball.holder && ball.holder !== p) {
+          // Steal from anyone (opponent or teammate)
+          ball.holder.hasBall = false;
+          ball.holder.holdTimer = 0;
+          ball.holder.isCharging = false;
+          ball.holder.shootCharge = 0;
+          ball.holder = null;
+          // Grab it instantly
+          p.hasBall = true;
+          p.holdTimer = 0;
+          ball.holder = p;
+          ball.vx *= 0.1;
+          ball.vy *= 0.1;
+          ball.grabCooldown = 15;
+          ball.trail = [];
+          spawnParticles(handPos.x, handPos.y, 6, '#ff0', 2);
+          SFX.steal();
+          break;
+        } else if (!ball.holder) {
+          // Free ball - instant grab
+          p.hasBall = true;
+          p.holdTimer = 0;
+          ball.holder = p;
+          ball.vx *= 0.1;
+          ball.vy *= 0.1;
+          ball.grabCooldown = 5;
+          ball.trail = [];
+          spawnParticles(handPos.x, handPos.y, 4, '#fff', 1.5);
+          SFX.grab();
+          break;
+        }
+      }
+    }
+  }
+  
+  // Player body collision
+  for (const p of players) {
+    const bt = p.bodyType;
+    const bodyX = p.x + Math.sin(p.lean) * 8;
+    const bodyTopY = p.y - bt.legLen - bt.bodyH;
+    const headY = bodyTopY - bt.headR + 2;
+    
+    // Head collision
+    const dHead = dist(ball.x, ball.y, bodyX + Math.sin(p.lean) * 8 * 0.3, headY);
+    if (dHead < ball.radius + bt.headR) {
+      const angle = Math.atan2(ball.y - headY, ball.x - bodyX);
+      ball.vx += Math.cos(angle) * 4;
+      ball.vy += Math.sin(angle) * 4 - 2;
+      ball.grabCooldown = 10;
+      p.spinAngle += rand(-0.8, 0.8);
+      spawnParticles(ball.x, ball.y, 2, '#ff0', 2);
+      SFX.headBonk();
+    }
+    
+    // Body collision
+    const bodyCY = (bodyTopY + p.y - bt.legLen) / 2;
+    const dBody = dist(ball.x, ball.y, bodyX, bodyCY);
+    if (dBody < ball.radius + bt.bodyW) {
+      const angle = Math.atan2(ball.y - bodyCY, ball.x - bodyX);
+      ball.vx += Math.cos(angle) * 3;
+      ball.vy += Math.sin(angle) * 3;
+      ball.grabCooldown = 8;
+      p.spinAngle += rand(-0.4, 0.4);
+    }
+  }
+}
+
+function drawBall() {
+  if (!ball) return;
+  
+  // Trail
+  ball.trail.forEach((t, i) => {
+    const alpha = i / ball.trail.length * 0.3;
+    ctx.globalAlpha = alpha;
+    const c = ball.color === 'rainbow' ? rainbowColor(gameTime + i * 15) : ball.color;
+    drawPixelCircle(t.x, t.y, ball.radius * 0.6, c);
+  });
+  ctx.globalAlpha = 1;
+  
+  // Ball shadow
+  ctx.globalAlpha = 0.2;
+  const shadowScale = 1 - (GROUND_Y - ball.y) / H * 0.5;
+  drawPixelCircle(ball.x, GROUND_Y + 2, ball.radius * shadowScale, '#000');
+  ctx.globalAlpha = 1;
+  
+  // Main ball
+  ctx.save();
+  ctx.translate(ball.x, ball.y);
+  ctx.rotate(ball.rotation);
+  
+  const mainColor = ball.color === 'rainbow' ? rainbowColor(gameTime) : ball.color;
+  drawPixelCircle(0, 0, ball.radius, mainColor);
+  
+  if (ball.color !== 'rainbow') {
+    if (sportMode === 'volleyball') {
+      // Volleyball pattern - curved stripes
+      ctx.strokeStyle = ball.stripe || '#d4af37';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, ball.radius * 0.85, 0.3, 2.8);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, ball.radius * 0.85, 3.4, 5.9);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, ball.radius * 0.4, 1.2, 4.8);
+      ctx.stroke();
+    } else if (sportMode === 'soccer') {
+      // Soccer ball pattern - pentagons
+      ctx.fillStyle = ball.stripe || '#333';
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        drawPixelCircle(Math.cos(a) * ball.radius * 0.55, Math.sin(a) * ball.radius * 0.55, ball.radius * 0.22, ball.stripe || '#333');
+      }
+      drawPixelCircle(0, 0, ball.radius * 0.25, ball.stripe || '#333');
+    } else if (sportMode === 'handball') {
+      // Handball pattern - horizontal stripe with side seam
+      ctx.strokeStyle = ball.stripe || '#b8860b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-ball.radius, 0);
+      ctx.lineTo(ball.radius, 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, ball.radius * 0.7, -0.8, 0.8);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, ball.radius * 0.7, Math.PI - 0.8, Math.PI + 0.8);
+      ctx.stroke();
+    } else {
+      // Basketball stripes
+      ctx.strokeStyle = ball.stripe;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-ball.radius, 0);
+      ctx.lineTo(ball.radius, 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, ball.radius * 0.7, -0.5, 0.5);
+      ctx.stroke();
+    }
+  } else {
+    // Rainbow sparkle
+    for (let i = 0; i < 4; i++) {
+      const a = (gameTime * 0.1 + i * 1.57);
+      drawPixelCircle(Math.cos(a) * ball.radius * 0.5, Math.sin(a) * ball.radius * 0.5, 2, '#fff');
+    }
+  }
+  
+  // Highlight
+  drawPixelCircle(-ball.radius * 0.3, -ball.radius * 0.3, ball.radius * 0.25, 'rgba(255,255,255,0.4)');
+  
+  ctx.restore();
+}
+
+// ============================================================
+// HOOPS
+// ============================================================
+let hoops = [];
+
+function createHoops() {
+  if (sportMode === 'sumo') {
+    hoops = []; // No hoops in sumo
+    volleyNet = null;
+  } else if (sportMode === 'volleyball') {
+    const ns = netShape || NET_SHAPES[0];
+    volleyNet = { x: W / 2, y: GROUND_Y - ns.netH, netH: ns.netH, netW: ns.netW };
+    hoops = []; // No hoops in volleyball
+  } else if (sportMode === 'soccer') {
+    const gs = goalShape || GOAL_SHAPES[0];
+    hoops = [
+      { x: 5, y: GROUND_Y - gs.goalH, team: 1, goalW: gs.goalW, goalH: gs.goalH, isSoccer: true },
+      { x: W - 5 - gs.goalW, y: GROUND_Y - gs.goalH, team: 0, goalW: gs.goalW, goalH: gs.goalH, isSoccer: true }
+    ];
+  } else if (sportMode === 'handball') {
+    const gs = goalShape || HANDBALL_GOAL_SHAPES[0];
+    hoops = [
+      { x: 5, y: GROUND_Y - gs.goalH, team: 1, goalW: gs.goalW, goalH: gs.goalH, isSoccer: true },
+      { x: W - 5 - gs.goalW, y: GROUND_Y - gs.goalH, team: 0, goalW: gs.goalW, goalH: gs.goalH, isSoccer: true }
+    ];
+  } else {
+    const hs = hoopShape || HOOP_SHAPES[0];
+    hoops = [
+      { x: 65, y: GROUND_Y - 160, team: 1, ...hs },
+      { x: W - 65, y: GROUND_Y - 160, team: 0, ...hs }
+    ];
+  }
+}
+
+function checkHoopScore() {
+  if (!ball || ball.holder !== null) return -1;
+  
+  // Volleyball: score when ball hits the ground
+  if (sportMode === 'volleyball') {
+    // Ball is on the ground (updateBall sets y = GROUND_Y - radius and vy = 0)
+    if (ball.y + ball.radius >= GROUND_Y - 1 && ball.y >= GROUND_Y - ball.radius - 1) {
+      // Ball hit the ground - who scores?
+      if (ball.x < W / 2) {
+        // Ball landed on team 0's side → team 1 scores
+        return 1;
+      } else {
+        // Ball landed on team 1's side → team 0 scores
+        return 0;
+      }
+    }
+    
+    // Net collision
+    if (volleyNet) {
+      const netLeft = volleyNet.x - volleyNet.netW / 2;
+      const netRight = volleyNet.x + volleyNet.netW / 2;
+      const netTop = volleyNet.y;
+      
+      // Ball hits net from either side
+      if (ball.x + ball.radius > netLeft && ball.x - ball.radius < netRight &&
+          ball.y + ball.radius > netTop && ball.y - ball.radius < GROUND_Y) {
+        // Bounce ball back
+        if (ball.vx > 0) {
+          ball.x = netLeft - ball.radius;
+          ball.vx = -Math.abs(ball.vx) * ball.bounce;
+        } else {
+          ball.x = netRight + ball.radius;
+          ball.vx = Math.abs(ball.vx) * ball.bounce;
+        }
+        SFX.rimHit();
+      }
+      
+      // Ball hits top of net
+      if (ball.x + ball.radius > netLeft - 5 && ball.x - ball.radius < netRight + 5 &&
+          ball.y + ball.radius > netTop - 3 && ball.y + ball.radius < netTop + 8 &&
+          ball.vy > 0) {
+        ball.vy = -Math.abs(ball.vy) * ball.bounce * 0.7;
+        ball.y = netTop - 3 - ball.radius;
+        SFX.rimHit();
+      }
+    }
+    
+    return -1;
+  }
+  
+  for (const hoop of hoops) {
+    if (hoop.isSoccer) {
+      // Soccer goal check: ball enters the goal area
+      const isLeft = hoop.x < W / 2;
+      const goalX = isLeft ? hoop.x : hoop.x;
+      const goalTop = hoop.y;
+      const goalBottom = GROUND_Y;
+      
+      // Ball crosses into goal
+      if (ball.y + ball.radius > goalTop + 5 && ball.y - ball.radius < goalBottom) {
+        if (isLeft && ball.x - ball.radius < goalX + hoop.goalW && ball.vx < 0) {
+          return hoop.team;
+        }
+        if (!isLeft && ball.x + ball.radius > goalX && ball.vx > 0) {
+          return hoop.team;
+        }
+      }
+      
+      // Crossbar collision (top of goal)
+      if (ball.y + ball.radius > goalTop - 3 && ball.y - ball.radius < goalTop + 5) {
+        if (isLeft && ball.x < goalX + hoop.goalW + 30 && ball.x > goalX - 5) {
+          ball.vy = Math.abs(ball.vy) * ball.bounce;
+          ball.y = goalTop + 5 + ball.radius;
+          SFX.rimHit();
+        }
+        if (!isLeft && ball.x > goalX - 30 && ball.x < goalX + hoop.goalW + 5) {
+          ball.vy = Math.abs(ball.vy) * ball.bounce;
+          ball.y = goalTop + 5 + ball.radius;
+          SFX.rimHit();
+        }
+      }
+      
+      // Post collision (front post)
+      const postX = isLeft ? goalX + hoop.goalW : goalX;
+      const dPost = dist(ball.x, ball.y, postX, clamp(ball.y, goalTop, goalBottom));
+      if (dPost < ball.radius + 3) {
+        if (isLeft) {
+          ball.vx = Math.abs(ball.vx) * ball.bounce;
+          ball.x = postX + ball.radius + 3;
+        } else {
+          ball.vx = -Math.abs(ball.vx) * ball.bounce;
+          ball.x = postX - ball.radius - 3;
+        }
+        SFX.rimHit();
+      }
+    } else {
+      // Basketball hoop check
+      const rimLeftX = hoop.x - hoop.rimW / 2;
+      const rimRightX = hoop.x + hoop.rimW / 2;
+      const rimY = hoop.y;
+      
+      if (ball.vy > 0 && 
+          ball.x > rimLeftX + 5 && ball.x < rimRightX - 5 &&
+          ball.y > rimY - 5 && ball.y < rimY + 15 &&
+          ball.y - ball.vy <= rimY + 5) {
+        return hoop.team;
+      }
+      
+      const dL = dist(ball.x, ball.y, rimLeftX, rimY);
+      if (dL < ball.radius + 3) {
+        const angle = Math.atan2(ball.y - rimY, ball.x - rimLeftX);
+        ball.vx += Math.cos(angle) * 2;
+        ball.vy += Math.sin(angle) * 2;
+        SFX.rimHit();
+      }
+      
+      const dR = dist(ball.x, ball.y, rimRightX, rimY);
+      if (dR < ball.radius + 3) {
+        const angle = Math.atan2(ball.y - rimY, ball.x - rimRightX);
+        ball.vx += Math.cos(angle) * 2;
+        ball.vy += Math.sin(angle) * 2;
+      }
+      
+      const isLeftHoop = hoop.x < W / 2;
+      const backX = isLeftHoop ? hoop.x - hoop.rimW / 2 - hoop.backW : hoop.x + hoop.rimW / 2;
+      const backTop = hoop.y - hoop.backH;
+      
+      if (ball.x + ball.radius > backX && ball.x - ball.radius < backX + hoop.backW &&
+          ball.y > backTop && ball.y < hoop.y + 10) {
+        if (isLeftHoop) {
+          ball.vx = Math.abs(ball.vx) * ball.bounce;
+          ball.x = backX + hoop.backW + ball.radius;
+        } else {
+          ball.vx = -Math.abs(ball.vx) * ball.bounce;
+          ball.x = backX - ball.radius;
+        }
+      }
+    }
+  }
+  return -1;
+}
+
+function drawHoop(hoop) {
+  if (hoop.isSoccer) {
+    drawGoal(hoop);
+    return;
+  }
+  const isLeft = hoop.x < W / 2;
+  const rimLeftX = hoop.x - hoop.rimW / 2;
+  const rimRightX = hoop.x + hoop.rimW / 2;
+  
+  // Pole
+  const poleX = isLeft ? rimLeftX - hoop.backW - 3 : rimRightX + hoop.backW + 3;
+  drawPixelRect(poleX - 3, hoop.y - hoop.backH, 6, hoop.backH + (GROUND_Y - hoop.y), '#888');
+  
+  // Backboard
+  const backX = isLeft ? rimLeftX - hoop.backW : rimRightX;
+  drawPixelRect(backX, hoop.y - hoop.backH, hoop.backW, hoop.backH, '#fff');
+  drawPixelRect(backX + 1, hoop.y - hoop.backH + 1, hoop.backW - 2, hoop.backH - 2, '#ddd');
+  
+  // Backboard target square
+  const sqSize = Math.min(hoop.backW - 2, 20);
+  drawPixelRect(backX + (hoop.backW - sqSize) / 2, hoop.y - sqSize - 5, sqSize, sqSize, court.accent);
+  
+  // Rim
+  drawPixelRect(rimLeftX, hoop.y - 2, hoop.rimW, 4, '#e74c3c');
+  drawPixelCircle(rimLeftX, hoop.y, 4, '#c0392b');
+  drawPixelCircle(rimRightX, hoop.y, 4, '#c0392b');
+  
+  // Net (simple pixel lines)
+  const netSegments = 5;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= netSegments; i++) {
+    const t = i / netSegments;
+    const nx = rimLeftX + t * hoop.rimW;
+    const wobble = Math.sin(gameTime * 0.05 + i) * 2;
+    ctx.beginPath();
+    ctx.moveTo(nx, hoop.y + 2);
+    ctx.lineTo(nx + wobble, hoop.y + 22);
+    ctx.lineTo(hoop.x + wobble * 0.5, hoop.y + 35);
+    ctx.stroke();
+  }
+}
+
+function drawGoal(goal) {
+  const isLeft = goal.x < W / 2;
+  const goalTop = goal.y;
+  const goalBottom = GROUND_Y;
+  const goalH = goalBottom - goalTop;
+  
+  if (isLeft) {
+    // Left goal: back wall at x=0, opening faces right
+    // Back net (behind goal)
+    drawPixelRect(0, goalTop, goal.goalW, goalH, 'rgba(255,255,255,0.15)');
+    
+    // Net mesh pattern
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    for (let ny = goalTop; ny < goalBottom; ny += 10) {
+      ctx.beginPath();
+      ctx.moveTo(0, ny);
+      ctx.lineTo(goal.goalW + 5, ny);
+      ctx.stroke();
+    }
+    for (let nx = 0; nx < goal.goalW + 5; nx += 10) {
+      ctx.beginPath();
+      ctx.moveTo(nx, goalTop);
+      ctx.lineTo(nx, goalBottom);
+      ctx.stroke();
+    }
+    
+    // Crossbar (top)
+    drawPixelRect(0, goalTop - 4, goal.goalW + 8, 6, '#fff');
+    drawPixelRect(0, goalTop - 3, goal.goalW + 8, 4, '#ddd');
+    
+    // Front post (right side)
+    drawPixelRect(goal.goalW + 2, goalTop - 4, 6, goalH + 4, '#fff');
+    drawPixelRect(goal.goalW + 3, goalTop - 3, 4, goalH + 3, '#ddd');
+    
+    // Back post (at wall)
+    drawPixelRect(0, goalTop - 4, 6, goalH + 4, '#fff');
+  } else {
+    // Right goal: back wall at W, opening faces left
+    const gx = goal.x;
+    
+    // Back net
+    drawPixelRect(gx, goalTop, goal.goalW + 5, goalH, 'rgba(255,255,255,0.15)');
+    
+    // Net mesh
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    for (let ny = goalTop; ny < goalBottom; ny += 10) {
+      ctx.beginPath();
+      ctx.moveTo(gx - 5, ny);
+      ctx.lineTo(W, ny);
+      ctx.stroke();
+    }
+    for (let nx = gx - 5; nx <= W; nx += 10) {
+      ctx.beginPath();
+      ctx.moveTo(nx, goalTop);
+      ctx.lineTo(nx, goalBottom);
+      ctx.stroke();
+    }
+    
+    // Crossbar
+    drawPixelRect(gx - 8, goalTop - 4, goal.goalW + 8, 6, '#fff');
+    drawPixelRect(gx - 8, goalTop - 3, goal.goalW + 8, 4, '#ddd');
+    
+    // Front post (left side)
+    drawPixelRect(gx - 8, goalTop - 4, 6, goalH + 4, '#fff');
+    drawPixelRect(gx - 7, goalTop - 3, 4, goalH + 3, '#ddd');
+    
+    // Back post (at wall)
+    drawPixelRect(W - 6, goalTop - 4, 6, goalH + 4, '#fff');
+  }
+}
+
+// ============================================================
+// DRAW SUMO RING
+// ============================================================
+function drawSumoRing() {
+  if (!sumoMap) return;
+  
+  if (sumoMap.type === 'ring') {
+    // Classic ring drawing
+    const cx = W / 2;
+    const gy = GROUND_Y;
+    const r = sumoMap.radius;
+    
+    // Ring shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath();
+    ctx.ellipse(cx, gy + 4, r + 10, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Dohyo (raised platform)
+    ctx.fillStyle = '#d4a574';
+    ctx.beginPath();
+    ctx.ellipse(cx, gy, r + 12, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Inner clay
+    ctx.fillStyle = '#c8956e';
+    ctx.beginPath();
+    ctx.ellipse(cx, gy, r + 5, 13, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tawara (straw bale border)
+    ctx.strokeStyle = '#f5e6c8';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(cx, gy - 2, r, 10, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Inner line
+    ctx.strokeStyle = '#e8d5b0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, gy - 2, r - 4, 8, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Shikiri-sen (starting lines)
+    const lineW = 20;
+    const lineGap = 40;
+    drawPixelRect(cx - lineGap - lineW/2, gy - 3, lineW, 4, '#fff');
+    drawPixelRect(cx + lineGap - lineW/2, gy - 3, lineW, 4, '#fff');
+    
+    // Decorative corner marks
+    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 2) {
+      const mx = cx + Math.cos(angle) * (r + 2);
+      const my = gy - 2 + Math.sin(angle) * 6;
+      drawPixelRect(mx - 3, my - 2, 6, 4, '#d4a574');
+    }
+  } else if (sumoMap.type === 'platform') {
+    // Draw danger zone (floor = lava/death zone)
+    // Hazard stripes at GROUND_Y
+    const stripeW = 20;
+    for (let sx = 0; sx < W; sx += stripeW * 2) {
+      drawPixelRect(sx, GROUND_Y - 4, stripeW, 4, '#e74c3c');
+      drawPixelRect(sx + stripeW, GROUND_Y - 4, stripeW, 4, '#f39c12');
+    }
+    drawPixelRect(0, GROUND_Y, W, 2, '#ff0000');
+    
+    // "DANGER" text at bottom
+    ctx.globalAlpha = 0.3 + Math.sin(gameTime * 0.08) * 0.15;
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('D A N G E R', W / 2, GROUND_Y + 20);
+    ctx.globalAlpha = 1;
+    
+    // Draw platforms
+    for (const plat of sumoMap.platforms) {
+      // Platform shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      drawPixelRect(plat.x + 3, plat.y + plat.h, plat.w, 5, 'rgba(0,0,0,0.15)');
+      
+      // Main platform body
+      drawPixelRect(plat.x, plat.y, plat.w, plat.h, '#8b7355');
+      
+      // Top surface (lighter)
+      drawPixelRect(plat.x, plat.y, plat.w, 4, '#b8956e');
+      
+      // Top highlight
+      drawPixelRect(plat.x + 2, plat.y, plat.w - 4, 2, '#d4a574');
+      
+      // Edge details
+      drawPixelRect(plat.x, plat.y, 3, plat.h, '#7a6448');
+      drawPixelRect(plat.x + plat.w - 3, plat.y, 3, plat.h, '#7a6448');
+      
+      // Bottom edge
+      drawPixelRect(plat.x, plat.y + plat.h - 2, plat.w, 2, '#6b5640');
+      
+      // Rivets/bolts decoration
+      const rivetSpacing = Math.max(30, plat.w / 5);
+      for (let rx = plat.x + 8; rx < plat.x + plat.w - 5; rx += rivetSpacing) {
+        drawPixelRect(rx, plat.y + 5, 3, 3, '#a08060');
+        drawPixelRect(rx, plat.y + plat.h - 7, 3, 3, '#a08060');
+      }
+    }
+  }
+}
+
+function drawVolleyNet() {
+  if (!volleyNet) return;
+  const nx = volleyNet.x;
+  const netTop = volleyNet.y;
+  const netBottom = GROUND_Y;
+  const halfW = volleyNet.netW / 2;
+  
+  // Pole
+  drawPixelRect(nx - 3, netTop - 10, 6, netBottom - netTop + 10, '#888');
+  drawPixelRect(nx - 2, netTop - 10, 4, netBottom - netTop + 10, '#aaa');
+  
+  // Pole cap
+  drawPixelCircle(nx, netTop - 10, 5, '#ccc');
+  
+  // Net mesh
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1;
+  
+  // Horizontal net lines
+  const netExtend = 35;
+  for (let ny = netTop; ny < netBottom; ny += 8) {
+    ctx.beginPath();
+    ctx.moveTo(nx - netExtend, ny);
+    ctx.lineTo(nx + netExtend, ny);
+    ctx.stroke();
+  }
+  
+  // Vertical net lines
+  for (let vx = nx - netExtend; vx <= nx + netExtend; vx += 8) {
+    ctx.beginPath();
+    ctx.moveTo(vx, netTop);
+    ctx.lineTo(vx, netBottom);
+    ctx.stroke();
+  }
+  
+  // Top rope (white band)
+  drawPixelRect(nx - netExtend - 2, netTop - 2, netExtend * 2 + 4, 4, '#fff');
+  drawPixelRect(nx - netExtend - 1, netTop - 1, netExtend * 2 + 2, 2, '#eee');
+}
+
+// ============================================================
+// PLAYER vs PLAYER COLLISION
+// ============================================================
+function playerCollisions() {
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      const a = players[i], b = players[j];
+      const d = dist(a.x, a.y - 30, b.x, b.y - 30);
+      if (d < (sportMode === 'sumo' ? 35 : 28)) {
+        const angle = Math.atan2((a.y - 30) - (b.y - 30), a.x - b.x);
+        const basePush = sportMode === 'sumo' ? 1.2 : 0.3;
+        const collideR = sportMode === 'sumo' ? 35 : 28;
+        const push = (collideR - d) * basePush;
+        
+        // In sumo, factor in velocity for momentum-based pushing
+        let pushMultA = 1, pushMultB = 1;
+        if (sportMode === 'sumo') {
+          const speedA = Math.abs(a.vx) + Math.abs(a.vy) * 0.5;
+          const speedB = Math.abs(b.vx) + Math.abs(b.vy) * 0.5;
+          pushMultA = 1 + speedB * 0.15; // getting hit by faster opponent = bigger push
+          pushMultB = 1 + speedA * 0.15;
+          
+          // Punch extra knockback (scales with charge)
+          if (a._punchAnim > 8) {
+            // A is punching - knockback scales with charge power
+            const punchPower = 10 + a._punchPower * 30; // 10 (tap) to 40 (full charge)
+            const launchVy = 3 + a._punchPower * 10;  // 3 to 13
+            b.vx += a._punchDir * punchPower;
+            b.vy -= launchVy;
+            b.spinAngle += a._punchDir * (0.4 + a._punchPower * 1.2);
+            const pCount = 6 + Math.floor(a._punchPower * 12);
+            spawnParticles((a.x + b.x) / 2, (a.y + b.y) / 2 - 30, pCount, a._punchPower > 0.6 ? '#ff0' : '#ff4444', 3 + a._punchPower * 3);
+            if (a._punchPower > 0.8) spawnParticles((a.x + b.x) / 2, (a.y + b.y) / 2 - 30, 10, 'rainbow', 4);
+            a._punchAnim = 8; // consume the punch hit window
+            SFX.headBonk();
+          } else if (b._punchAnim > 8) {
+            // B is punching - knockback scales with charge power
+            const punchPower = 10 + b._punchPower * 30;
+            const launchVy = 3 + b._punchPower * 10;
+            a.vx += b._punchDir * punchPower;
+            a.vy -= launchVy;
+            a.spinAngle += b._punchDir * (0.4 + b._punchPower * 1.2);
+            const pCount = 6 + Math.floor(b._punchPower * 12);
+            spawnParticles((a.x + b.x) / 2, (a.y + b.y) / 2 - 30, pCount, b._punchPower > 0.6 ? '#ff0' : '#ff4444', 3 + b._punchPower * 3);
+            if (b._punchPower > 0.8) spawnParticles((a.x + b.x) / 2, (a.y + b.y) / 2 - 30, 10, 'rainbow', 4);
+            b._punchAnim = 8; // consume the punch hit window
+            SFX.headBonk();
+          } else {
+            spawnParticles((a.x + b.x) / 2, (a.y + b.y) / 2 - 30, 3, '#ff0', 2);
+            if (speedA + speedB > 5) SFX.headBonk();
+          }
+        }
+        
+        a.vx += Math.cos(angle) * push * pushMultA;
+        a.vy += Math.sin(angle) * push * 0.3 * pushMultA;
+        b.vx -= Math.cos(angle) * push * pushMultB;
+        b.vy -= Math.sin(angle) * push * 0.3 * pushMultB;
+        a.spinAngle += rand(-0.3, 0.3);
+        b.spinAngle += rand(-0.3, 0.3);
+        
+        // Body-contact steal: if one player touches a ball holder
+        // while pressing shoot, or the holder has been still 1+ second
+        if (ball && ball.grabCooldown <= 0 && (sportMode === 'basketball' || sportMode === 'handball')) {
+          if (b.hasBall && (a.isCharging || b.stillTimer >= 60)) {
+            // a steals from b
+            b.hasBall = false;
+            b.holdTimer = 0;
+            b.isCharging = false;
+            b.shootCharge = 0;
+            b.stillTimer = 0;
+            a.hasBall = true;
+            a.holdTimer = 0;
+            ball.holder = a;
+            ball.grabCooldown = 20;
+            ball.trail = [];
+            spawnParticles(a.x, a.y - 30, 6, '#ff0', 2);
+            SFX.steal();
+          } else if (a.hasBall && (b.isCharging || a.stillTimer >= 60)) {
+            // b steals from a
+            a.hasBall = false;
+            a.holdTimer = 0;
+            a.isCharging = false;
+            a.shootCharge = 0;
+            a.stillTimer = 0;
+            b.hasBall = true;
+            b.holdTimer = 0;
+            ball.holder = b;
+            ball.grabCooldown = 20;
+            ball.trail = [];
+            spawnParticles(b.x, b.y - 30, 6, '#ff0', 2);
+            SFX.steal();
+          }
+        }
+      }
+    }
+  }
+}
+
+// ============================================================
+// CPU AI
+// ============================================================
+function updateCPU(p) {
+  // CPU AI returns an input object: { left, right, jump, shoot }
+  const input = { left: false, right: false, jump: false, shoot: false };
+  
+  const attackHoop = hoops[0] || null; // Left hoop, where team 1 scores
+  const defHoop = hoops[1] || null; // Right hoop, defend this
+  
+  // Sumo CPU AI
+  if (sportMode === 'sumo') {
+    const opponent = players[0]; // CPU is always players[1], opponent is players[0]
+    const cx = W / 2;
+    const dx = opponent.x - p.x;
+    const distToOpp = Math.abs(dx);
+    
+    // CPU charge-punch system: hold shoot to charge, release to punch
+    if (!p._cpuPunchTarget) p._cpuPunchTarget = 0; // target charge frames
+    if (!p._cpuPunchHolding) p._cpuPunchHolding = false;
+    
+    let wantsPunch = false; // will be set by AI below
+    
+    if (sumoMap && sumoMap.type === 'platform') {
+      // PLATFORM MAP AI
+      // Find which platform CPU is on or nearest to
+      let myPlat = null;
+      let nearestPlat = null;
+      let nearestDist = Infinity;
+      for (const plat of sumoMap.platforms) {
+        // Check if standing on this platform
+        if (p.onGround && p.x >= plat.x && p.x <= plat.x + plat.w && Math.abs(p.y - plat.y) < 5) {
+          myPlat = plat;
+        }
+        const pdx = (plat.x + plat.w / 2) - p.x;
+        const pdy = plat.y - p.y;
+        const pd = Math.sqrt(pdx * pdx + pdy * pdy);
+        if (pd < nearestDist) {
+          nearestDist = pd;
+          nearestPlat = plat;
+        }
+      }
+      
+      if (distToOpp < 55) {
+        // Close to opponent - ATTACK! Punch them off
+        if (opponent.x < p.x) input.left = true;
+        else input.right = true;
+        if (Math.random() < 0.18) wantsPunch = true;
+        if (p.onGround && Math.random() < 0.1) input.jump = true;
+      } else if (distToOpp < 130) {
+        // Approach opponent
+        if (dx < 0) input.left = true;
+        else input.right = true;
+        if (distToOpp < 80 && Math.random() < 0.08) wantsPunch = true;
+        // Jump to reach opponent on higher platform
+        if (opponent.y < p.y - 20 && p.onGround && Math.random() < 0.15) {
+          input.jump = true;
+        }
+      } else {
+        // Far - navigate toward opponent
+        if (dx < 0) input.left = true;
+        else input.right = true;
+        // Jump if need to reach higher or cross gaps
+        if (p.onGround && Math.random() < 0.08) input.jump = true;
+      }
+      
+      // SAFETY: If falling (not on ground and going down), try to land on a platform
+      if (!p.onGround && p.vy > 1) {
+        // Look for platform below
+        let bestBelow = null;
+        let bestDx = Infinity;
+        for (const plat of sumoMap.platforms) {
+          if (plat.y > p.y && plat.y < p.y + 150) {
+            const pcx = plat.x + plat.w / 2;
+            const adx = Math.abs(pcx - p.x);
+            if (adx < bestDx) {
+              bestDx = adx;
+              bestBelow = plat;
+            }
+          }
+        }
+        if (bestBelow) {
+          const pcx = bestBelow.x + bestBelow.w / 2;
+          if (p.x < pcx - 10) { input.right = true; input.left = false; }
+          else if (p.x > pcx + 10) { input.left = true; input.right = false; }
+        }
+      }
+      
+      // If on a platform edge, try not to walk off
+      if (myPlat && p.onGround) {
+        if (p.x < myPlat.x + 12 && p.vx < 0 && distToOpp > 60) {
+          input.left = false; input.right = true;
+        }
+        if (p.x > myPlat.x + myPlat.w - 12 && p.vx > 0 && distToOpp > 60) {
+          input.right = false; input.left = true;
+        }
+      }
+    } else {
+      // RING MAP AI (original)
+      const ringR = sumoMap ? (sumoMap.radius || 150) : 150;
+      const myDistFromCenter = Math.abs(p.x - cx);
+    
+      if (distToOpp < 50) {
+        if (p.onGround && Math.random() < 0.12) input.jump = true;
+        if (opponent.x < cx) input.left = true;
+        else input.right = true;
+        if (Math.random() < 0.15) wantsPunch = true;
+      } else if (distToOpp < 120) {
+        if (dx < 0) input.left = true;
+        else input.right = true;
+        if (distToOpp < 80 && Math.random() < 0.08) wantsPunch = true;
+      } else {
+        if (myDistFromCenter > ringR * 0.6) {
+          if (p.x < cx) input.right = true;
+          else input.left = true;
+        } else {
+          if (dx < 0) input.left = true;
+          else input.right = true;
+        }
+      }
+      
+      if (myDistFromCenter > ringR - 30) {
+        if (p.x < cx) { input.right = true; input.left = false; }
+        else { input.left = true; input.right = false; }
+        if (p.onGround) input.jump = true;
+      }
+    }
+    
+    // CPU charge-and-release punch logic
+    if (wantsPunch && !p._cpuPunchHolding && p._punchCooldown <= 0 && p._punchAnim <= 0) {
+      // Start charging - pick a random target duration (quick jab to full charge)
+      p._cpuPunchHolding = true;
+      p._cpuPunchTarget = 8 + Math.floor(Math.random() * 45); // 8-52 frames
+    }
+    
+    if (p._cpuPunchHolding) {
+      input.shoot = true; // Hold down
+      if (p._punchCharge >= p._cpuPunchTarget || p._punchCooldown > 0) {
+        // Release!
+        input.shoot = false;
+        p._cpuPunchHolding = false;
+        p._cpuPunchTarget = 0;
+      }
+    }
+    
+    return input;
+  }
+  
+  if (!ball) return input;
+  
+  const distToBall = dist(p.x, p.y, ball.x, ball.y);
+  const distToHoop = attackHoop ? dist(p.x, p.y, attackHoop.x, attackHoop.y) : 999;
+  
+  if (p.hasBall && (sportMode === 'basketball' || sportMode === 'handball')) {
+    // Has ball - move toward attack hoop/goal
+    const approachDist = sportMode === 'handball' ? 120 : 60;
+    const shootDist = sportMode === 'handball' ? 300 : 250;
+    if (p.x > attackHoop.x + approachDist) {
+      input.left = true;
+    } else if (p.x < attackHoop.x - 20) {
+      input.right = true;
+    }
+    // Jump when close-ish
+    if (distToHoop < shootDist && p.onGround && Math.random() < (sportMode === 'handball' ? 0.06 : 0.1)) {
+      input.jump = true;
+    }
+    // CPU charge-and-release shooting: hold shoot for variable time then release
+    if (distToHoop < shootDist) {
+      if (!p.isCharging && !p._cpuCharging) {
+        // Start charging
+        p._cpuCharging = true;
+        p._cpuChargeTarget = randInt(15, 45); // Random charge duration
+        p._cpuChargeCount = 0;
+      }
+      if (p._cpuCharging) {
+        p._cpuChargeCount = (p._cpuChargeCount || 0) + 1;
+        if (p._cpuChargeCount < p._cpuChargeTarget) {
+          input.shoot = true; // Hold shoot
+        } else {
+          input.shoot = false; // Release to shoot
+          p._cpuCharging = false;
+        }
+      }
+    }
+  } else if (sportMode === 'soccer') {
+    // Soccer CPU: chase ball and kick it toward goal
+    if (ball.x < p.x - 10) input.left = true;
+    if (ball.x > p.x + 10) input.right = true;
+    
+    // Jump to intercept airborne ball
+    if (ball.y < GROUND_Y - 60 && distToBall < 120 && p.onGround && Math.random() < 0.12) {
+      input.jump = true;
+    }
+    
+    // Kick when near ball and ball is roughly toward attack goal
+    const footY = p.y;
+    const footX = p.x + p.faceDir * 12;
+    const dFoot = dist(ball.x, ball.y, footX, footY);
+    if (dFoot < ball.radius + 35 && Math.random() < 0.25) {
+      input.shoot = true;
+    }
+  } else if (sportMode === 'volleyball') {
+    // Volleyball CPU: predict ball landing, position accurately, hit reliably
+    const netX = volleyNet ? volleyNet.x : W / 2;
+    const ownSideMin = p.team === 1 ? netX + 25 : 30;
+    const ownSideMax = p.team === 1 ? W - 30 : netX - 25;
+    
+    // Predict where the ball will be in ~15 frames (simple trajectory prediction)
+    let predX = ball.x + ball.vx * 12;
+    let predY = ball.y + ball.vy * 12 + GRAVITY * 12 * 12 * 0.5;
+    predX = clamp(predX, 5, W - 5);
+    
+    const ballOnOurSide = (p.team === 0 && ball.x < netX) || (p.team === 1 && ball.x > netX);
+    const ballComingToUs = (p.team === 0 && ball.vx < -0.5) || (p.team === 1 && ball.vx > 0.5);
+    const predOnOurSide = (p.team === 0 && predX < netX) || (p.team === 1 && predX > netX);
+    
+    // Ball is falling toward ground - urgent
+    const ballUrgent = ball.vy > 2 && ball.y > GROUND_Y - 180;
+    
+    if (ballOnOurSide || ballComingToUs || predOnOurSide) {
+      // Use predicted position for movement, clamped to our side
+      const moveTarget = clamp(predOnOurSide || ballOnOurSide ? predX : ball.x, ownSideMin, ownSideMax);
+      const deadzone = ballUrgent ? 3 : 6;
+      if (moveTarget < p.x - deadzone) input.left = true;
+      if (moveTarget > p.x + deadzone) input.right = true;
+      
+      // Jump more aggressively to intercept
+      const handPos = getHandPos(p);
+      const dHand = dist(ball.x, ball.y, handPos.x, handPos.y);
+      
+      if (p.onGround) {
+        // Jump when ball is above us and within range
+        if (ball.y < GROUND_Y - 30 && distToBall < 160) {
+          input.jump = true;
+        }
+        // Always jump if ball is urgent and close horizontally
+        if (ballUrgent && Math.abs(ball.x - p.x) < 80) {
+          input.jump = true;
+        }
+      }
+      
+      // Hit when ball is near hands - very high accuracy
+      if (dHand < ball.radius + 32) {
+        input.shoot = true;
+      }
+    } else {
+      // Ball is on opponent's side - position smartly on our side
+      // Stay slightly toward where ball will cross
+      const readyX = clamp(predX, ownSideMin, ownSideMax);
+      const centerX = (ownSideMin + ownSideMax) / 2;
+      const targetX = lerp(centerX, readyX, 0.6);
+      if (targetX < p.x - 10) input.left = true;
+      if (targetX > p.x + 10) input.right = true;
+    }
+    
+    // Emergency: ball very close to ground on our side - last-ditch effort
+    if (ballOnOurSide && ball.y > GROUND_Y - 60 && distToBall < 120) {
+      if (p.onGround) input.jump = true;
+      const handPos = getHandPos(p);
+      const dHand = dist(ball.x, ball.y, handPos.x, handPos.y);
+      if (dHand < ball.radius + 40) input.shoot = true;
+    }
+  } else {
+    // Chase the ball aggressively
+    const ballIsHeldByTeammate = ball.holder && ball.holder.team === p.team && ball.holder !== p;
+    
+    if (ballIsHeldByTeammate) {
+      // Teammate has ball - position near hoop to help
+      if (attackHoop) {
+        if (p.x > attackHoop.x + 120) input.left = true;
+        if (p.x < attackHoop.x + 30) input.right = true;
+      }
+    } else {
+      // Chase the ball - always move toward it
+      if (ball.x < p.x - 10) input.left = true;
+      if (ball.x > p.x + 10) input.right = true;
+      
+      // Jump to get ball - more aggressive
+      if (distToBall < 120 && p.onGround && Math.random() < 0.18) {
+        input.jump = true;
+      }
+      // Jump if ball is in the air
+      if (ball.y < GROUND_Y - 50 && distToBall < 150 && p.onGround && Math.random() < 0.15) {
+        input.jump = true;
+      }
+      // If very close, jump to grab
+      if (distToBall < 60 && p.onGround) {
+        input.jump = Math.random() < 0.2;
+      }
+    }
+    
+    // Defensive jump if ball is near our hoop
+    if (defHoop && dist(ball.x, ball.y, defHoop.x, defHoop.y) < 120 && p.onGround) {
+      input.jump = Math.random() < 0.12;
+    }
+  }
+  
+  return input;
+}
+
+// ============================================================
+// COURT DRAWING
+// ============================================================
+function drawCourt() {
+  const c = court;
+  
+  // Sky / Background
+  drawPixelRect(0, 0, W, H, c.bg);
+  
+  // Watermark subtext
+  ctx.save();
+  ctx.font = '10px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('leoniscool.com', W / 2, H / 2);
+  ctx.restore();
+  
+  // Background details based on court type
+  if (c.name === 'GYM') {
+    // Bleachers
+    for (let i = 0; i < 5; i++) {
+      drawPixelRect(0, 30 + i * 25, W, 20, i % 2 === 0 ? '#5a3810' : '#6a4820');
+    }
+    // Windows
+    for (let i = 0; i < 4; i++) {
+      drawPixelRect(100 + i * 180, 20, 60, 40, '#87ceeb');
+      drawPixelRect(100 + i * 180 + 2, 22, 56, 36, '#a8d8f0');
+      drawPixelRect(128 + i * 180, 20, 4, 40, c.wall);
+      drawPixelRect(100 + i * 180, 38, 60, 4, c.wall);
+    }
+  } else if (c.name === 'BEACH') {
+    // Ocean
+    drawPixelRect(0, 0, W, 120, '#2980b9');
+    for (let i = 0; i < 6; i++) {
+      const waveY = 100 + Math.sin(gameTime * 0.03 + i * 2) * 5;
+      drawPixelRect(i * 140, waveY, 130, 4, '#3498db');
+    }
+    // Sun
+    drawPixelCircle(650, 60, 30, '#f9e79f');
+    drawPixelCircle(650, 60, 25, '#f7dc6f');
+    // Palm tree
+    drawPixelRect(120, 100, 8, GROUND_Y - 100, '#8B4513');
+    for (let i = 0; i < 5; i++) {
+      const a = -0.8 + i * 0.4;
+      ctx.strokeStyle = '#27ae60';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(124, 105);
+      ctx.quadraticCurveTo(124 + Math.cos(a) * 40, 85, 124 + Math.cos(a) * 60, 95 + Math.sin(a + 1) * 15);
+      ctx.stroke();
+    }
+  } else if (c.name === 'CITY') {
+    // Buildings (deterministic - no shaking)
+    const bColors = ['#1a252f', '#1e3040', '#253545', '#2c3e50'];
+    const bWidths = [80, 60, 90, 50, 70, 85, 65];
+    const bHeights = [160, 120, 190, 100, 140, 175, 130];
+    let bx = 0;
+    for (let i = 0; i < 7; i++) {
+      const bh = bHeights[i];
+      const bc = bColors[i % bColors.length];
+      drawPixelRect(bx, GROUND_Y - bh - COURT_FLOOR_H, bWidths[i], bh, bc);
+      // Windows (deterministic pattern - no Math.random)
+      let winIdx = 0;
+      for (let wy = GROUND_Y - bh - COURT_FLOOR_H + 10; wy < GROUND_Y - COURT_FLOOR_H - 10; wy += 15) {
+        for (let wx = bx + 6; wx < bx + bWidths[i] - 10; wx += 14) {
+          const lit = ((winIdx * 7 + i * 13) % 10) > 2;
+          drawPixelRect(wx, wy, 8, 8, lit ? '#f39c12' : '#2c3e50');
+          winIdx++;
+        }
+      }
+      bx += bWidths[i] + 5;
+    }
+    // Moon
+    drawPixelCircle(680, 50, 20, '#ecf0f1');
+    drawPixelCircle(686, 46, 18, c.bg);
+  } else if (c.name === 'SNOW') {
+    // Mountains
+    ctx.fillStyle = '#bdc3c7';
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y - COURT_FLOOR_H);
+    ctx.lineTo(150, 60);
+    ctx.lineTo(300, GROUND_Y - COURT_FLOOR_H);
+    ctx.fill();
+    ctx.fillStyle = '#ecf0f1';
+    ctx.beginPath();
+    ctx.moveTo(120, 90);
+    ctx.lineTo(150, 60);
+    ctx.lineTo(180, 90);
+    ctx.fill();
+    
+    ctx.fillStyle = '#95a5a6';
+    ctx.beginPath();
+    ctx.moveTo(400, GROUND_Y - COURT_FLOOR_H);
+    ctx.lineTo(550, 40);
+    ctx.lineTo(700, GROUND_Y - COURT_FLOOR_H);
+    ctx.fill();
+    ctx.fillStyle = '#ecf0f1';
+    ctx.beginPath();
+    ctx.moveTo(520, 70);
+    ctx.lineTo(550, 40);
+    ctx.lineTo(580, 70);
+    ctx.fill();
+    
+    // Snowflakes
+    for (let i = 0; i < 15; i++) {
+      const sx = (i * 57 + gameTime * 0.5) % W;
+      const sy = (i * 37 + gameTime * 0.3) % (GROUND_Y - COURT_FLOOR_H);
+      drawPixelRect(sx, sy, 3, 3, '#fff');
+    }
+  }
+  
+  // Floor
+  drawPixelRect(0, GROUND_Y, W, COURT_FLOOR_H, c.floor);
+  
+  // Floor lines
+  ctx.strokeStyle = c.lines;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([10, 10]);
+  ctx.beginPath();
+  ctx.moveTo(W/2, GROUND_Y);
+  ctx.lineTo(W/2, GROUND_Y + COURT_FLOOR_H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // Center circle
+  ctx.strokeStyle = c.lines;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(W/2, GROUND_Y + 5, 40, 0, Math.PI);
+  ctx.stroke();
+  
+  // Floor texture
+  ctx.globalAlpha = 0.1;
+  for (let i = 0; i < W; i += 20) {
+    drawPixelRect(i, GROUND_Y, 1, COURT_FLOOR_H, '#000');
+  }
+  ctx.globalAlpha = 1;
+  
+  // Side walls (thin) - in soccer/handball mode, only draw above goal area
+  if (sportMode === 'soccer' || sportMode === 'handball') {
+    const gs = goalShape || (sportMode === 'handball' ? HANDBALL_GOAL_SHAPES[0] : GOAL_SHAPES[0]);
+    const goalTop = GROUND_Y - gs.goalH;
+    drawPixelRect(0, 0, 5, goalTop, c.wall);
+    drawPixelRect(W - 5, 0, 5, goalTop, c.wall);
+  } else {
+    drawPixelRect(0, 0, 5, H, c.wall);
+    drawPixelRect(W - 5, 0, 5, H, c.wall);
+  }
+}
+
+// ============================================================
+// UI DRAWING
+// ============================================================
+function drawScoreboard() {
+  // Score panel
+  drawPixelRect(W/2 - 90, 5, 180, 35, 'rgba(0,0,0,0.7)');
+  drawPixelRect(W/2 - 88, 7, 176, 31, 'rgba(0,0,0,0.5)');
+  
+  ctx.font = 'bold 20px monospace';
+  ctx.textAlign = 'center';
+  
+  // P1 Score
+  ctx.fillStyle = '#e74c3c';
+  ctx.fillText(scores[0], W/2 - 40, 28);
+  
+  // Dash
+  ctx.fillStyle = '#fff';
+  ctx.fillText('-', W/2, 28);
+  
+  // P2 Score
+  ctx.fillStyle = '#3498db';
+  ctx.fillText(scores[1], W/2 + 40, 28);
+  
+  // Team labels
+  ctx.font = '9px monospace';
+  ctx.fillStyle = '#e74c3c';
+  ctx.fillText('P1 WASD', W/2 - 40, 38);
+  ctx.fillStyle = '#3498db';
+  if (gameMode === 1) {
+    ctx.fillText('CPU', W/2 + 40, 38);
+  } else {
+    ctx.fillText('P2 ←↑→', W/2 + 40, 38);
+  }
+  
+  // Ball type indicator
+  if (ballType && ballType.points === 2) {
+    ctx.fillStyle = rainbowColor(gameTime);
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText('★ 2x POINTS ★', W/2, 52);
+  }
+}
+
+function drawMenuBackground() {
+  drawPixelRect(0, 0, W, H, '#1a1a2e');
+  for (let i = 0; i < 50; i++) {
+    const sx = (i * 73) % W;
+    const sy = (i * 47) % H;
+    const bright = Math.sin(gameTime * 0.05 + i) * 0.5 + 0.5;
+    ctx.globalAlpha = bright;
+    drawPixelRect(sx, sy, 2, 2, '#fff');
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center';
+}
+
+function drawMenuButton(label, x, y, w, h, selected, hovered, baseColor, darkColor) {
+  if (selected || hovered) {
+    const pulse = Math.sin(gameTime * 0.1) * 5;
+    drawPixelRect(x - 5 + pulse, y - 3, w + 10 - pulse * 2, h + 6, baseColor);
+    drawPixelRect(x - 2 + pulse, y, w + 4 - pulse * 2, h, darkColor);
+    ctx.fillStyle = '#fff';
+  } else {
+    drawPixelRect(x, y, w, h, 'rgba(255,255,255,0.1)');
+    ctx.fillStyle = '#888';
+  }
+}
+
+function drawMenu() {
+  drawMenuBackground();
+  
+  if (menuScreen === 'sport') {
+    // Sport selection screen
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 44px monospace';
+    ctx.fillText('CHOOSE YOUR', W/2 + 3, 113);
+    ctx.fillText('SPORT', W/2 + 3, 163);
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 44px monospace';
+    ctx.fillText('CHOOSE YOUR', W/2, 110);
+    ctx.fillStyle = '#f39c12';
+    ctx.fillText('SPORT', W/2, 160);
+    
+    const sportOptions = [
+      { label: '\uD83C\uDFC0  BASKETBALL', color: '#e67e22', dark: '#d35400', desc: 'Shoot hoops! Throw the ball into the basket!' },
+      { label: '\u26BD  SOCCER', color: '#27ae60', dark: '#1e8449', desc: 'Score goals! Kick the ball into the net!' },
+      { label: '\uD83C\uDFD0  VOLLEYBALL', color: '#e74c3c', dark: '#c0392b', desc: 'Spike it! Hit the ball over the net!' },
+      { label: '\uD83E\uDD3E  HANDBALL', color: '#9b59b6', dark: '#7d3c98', desc: 'Grab and throw! Hurl the ball into the goal!' },
+      { label: '\uD83E\uDD4B  SUMO', color: '#d4a017', dark: '#b8860b', desc: 'Push your opponent out of the ring!' }
+    ];
+    const startY = 185;
+    
+    for (let i = 0; i < sportOptions.length; i++) {
+      const opt = sportOptions[i];
+      const y = startY + i * 42;
+      const btnX = W/2 - 155;
+      const btnW = 310;
+      const btnH = 32;
+      const hovered = isMouseInRect(btnX, y, btnW, btnH);
+      if (hovered) sportSelection = i;
+      const selected = sportSelection === i;
+      
+      drawMenuButton(opt.label, btnX, y, btnW, btnH, selected, hovered, opt.color, opt.dark);
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(opt.label, W/2, y + 22);
+      
+      if (hovered && mouse.clicked) {
+        sportMode = ['basketball', 'soccer', 'volleyball', 'handball', 'sumo'][i];
+        menuScreen = 'mode';
+        menuSelection = 0;
+        mouse.clicked = false;
+        SFX.menuConfirm();
+      }
+    }
+    
+    ctx.fillStyle = '#666';
+    ctx.font = '12px monospace';
+    ctx.fillText('\u2191/\u2193 Select  \u2022  ENTER or Click', W/2, 400);
+    
+    ctx.fillStyle = '#555';
+    ctx.font = '11px monospace';
+    ctx.fillText(sportOptions[sportSelection].desc, W/2, 440);
+    
+    ctx.fillStyle = '#444';
+    ctx.font = '10px monospace';
+    ctx.fillText('Floppy ragdoll sports chaos!', W/2, 470);
+    
+  } else {
+    // Mode selection screen
+    const titleWord1 = sportMode === 'soccer' ? 'SOCCER' : (sportMode === 'volleyball' ? 'VOLLEY' : (sportMode === 'handball' ? 'HAND' : (sportMode === 'sumo' ? 'SUMO' : 'BASKET')));
+    const titleColor = sportMode === 'soccer' ? '#27ae60' : (sportMode === 'volleyball' ? '#e74c3c' : (sportMode === 'handball' ? '#9b59b6' : (sportMode === 'sumo' ? '#d4a017' : '#e74c3c')));
+    const btnColor = sportMode === 'soccer' ? '#27ae60' : (sportMode === 'volleyball' ? '#e74c3c' : (sportMode === 'handball' ? '#9b59b6' : (sportMode === 'sumo' ? '#d4a017' : '#e74c3c')));
+    const btnDark = sportMode === 'soccer' ? '#1e8449' : (sportMode === 'volleyball' ? '#c0392b' : (sportMode === 'handball' ? '#7d3c98' : (sportMode === 'sumo' ? '#b8860b' : '#c0392b')));
+    
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 48px monospace';
+    ctx.fillText(titleWord1, W/2 + 3, 123);
+    ctx.fillText('UN-RANDOM', W/2 + 3, 173);
+    ctx.fillStyle = titleColor;
+    ctx.font = 'bold 48px monospace';
+    ctx.fillText(titleWord1, W/2, 120);
+    ctx.fillStyle = '#f39c12';
+    ctx.fillText('UN-RANDOM', W/2, 170);
+    
+    // Bouncing ball
+    const ballY = 75 + Math.abs(Math.sin(gameTime * 0.06)) * 20;
+    if (sportMode === 'soccer') {
+      drawPixelCircle(W/2, ballY, 15, '#ecf0f1');
+      drawPixelCircle(W/2 - 5, ballY - 5, 4, '#333');
+      drawPixelCircle(W/2 + 6, ballY - 2, 4, '#333');
+      drawPixelCircle(W/2, ballY + 6, 4, '#333');
+    } else if (sportMode === 'volleyball') {
+      drawPixelCircle(W/2, ballY, 15, '#f5f5dc');
+      ctx.strokeStyle = '#d4af37';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(W/2, ballY, 12, 0.3, 2.8);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(W/2, ballY, 12, 3.4, 5.9);
+      ctx.stroke();
+    } else if (sportMode === 'handball') {
+      drawPixelCircle(W/2, ballY, 14, '#d4a017');
+      ctx.strokeStyle = '#b8860b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(W/2 - 14, ballY);
+      ctx.lineTo(W/2 + 14, ballY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(W/2, ballY, 10, -0.8, 0.8);
+      ctx.stroke();
+    } else if (sportMode === 'sumo') {
+      // Sumo: bouncing fist icon
+      const fistY = ballY;
+      drawPixelCircle(W/2, fistY, 14, '#f5cba7');
+      drawPixelCircle(W/2, fistY, 10, '#d4a574');
+      drawPixelRect(W/2 - 6, fistY - 3, 12, 8, '#f5cba7');
+      drawPixelRect(W/2 - 4, fistY + 3, 8, 4, '#d4a574');
+    } else {
+      drawPixelCircle(W/2, ballY, 15, '#e67e22');
+      drawPixelRect(W/2 - 15, ballY - 1, 30, 2, '#d35400');
+    }
+    drawPixelCircle(W/2 - 4, ballY - 4, 3, 'rgba(255,255,255,0.4)');
+    
+    // Mode options
+    const options = ['1 PLAYER vs CPU', '2 PLAYERS LOCAL'];
+    const startY = 230;
+    
+    for (let i = 0; i < options.length; i++) {
+      const y = startY + i * 60;
+      const btnX = W/2 - 145;
+      const btnW = 290;
+      const btnH = 34;
+      const hovered = isMouseInRect(btnX, y - 2, btnW, btnH);
+      if (hovered) menuSelection = i;
+      const selected = menuSelection === i;
+      
+      drawMenuButton(options[i], btnX, y - 2, btnW, btnH, selected, hovered, btnColor, btnDark);
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText(options[i], W/2, y + 20);
+      
+      if (hovered && mouse.clicked) {
+        startGame(i === 0 ? 1 : 2);
+        mouse.clicked = false;
+      }
+    }
+    
+    // Back button
+    const backY = 360;
+    const backBtnX = W/2 - 60;
+    const backBtnW = 120;
+    const backBtnH = 28;
+    const backHovered = isMouseInRect(backBtnX, backY - 2, backBtnW, backBtnH);
+    if (backHovered) menuSelection = 2;
+    const backSelected = menuSelection === 2;
+    
+    if (backSelected || backHovered) {
+      const pulse = Math.sin(gameTime * 0.1) * 3;
+      drawPixelRect(backBtnX - 3 + pulse, backY - 4, backBtnW + 6 - pulse * 2, backBtnH + 4, '#888');
+      drawPixelRect(backBtnX - 1 + pulse, backY - 2, backBtnW + 2 - pulse * 2, backBtnH, '#555');
+      ctx.fillStyle = '#fff';
+    } else {
+      drawPixelRect(backBtnX, backY - 2, backBtnW, backBtnH, 'rgba(255,255,255,0.05)');
+      ctx.fillStyle = '#666';
+    }
+    ctx.font = '14px monospace';
+    ctx.fillText('\u2190 BACK', W/2, backY + 16);
+    if (backHovered && mouse.clicked) {
+      menuScreen = 'sport';
+      sportSelection = 0;
+      mouse.clicked = false;
+      SFX.menuSelect();
+    }
+    
+    ctx.fillStyle = '#666';
+    ctx.font = '12px monospace';
+    ctx.fillText('\u2191/\u2193 Select  \u2022  ENTER or Click  \u2022  ESC Back', W/2, 410);
+    
+    ctx.fillStyle = '#888';
+    ctx.font = '11px monospace';
+    const shootWord = sportMode === 'soccer' ? 'Kick' : (sportMode === 'volleyball' ? 'Hit' : (sportMode === 'handball' ? 'Throw' : (sportMode === 'sumo' ? 'Punch' : 'Shoot')));
+    ctx.fillText('P1: WASD Move/Jump  S=' + shootWord, W/2, 435);
+    ctx.fillText('P2: Arrows Move/Jump  \u2193=' + shootWord, W/2, 455);
+    
+    ctx.fillStyle = '#444';
+    ctx.font = '10px monospace';
+    const sportLabel = sportMode === 'soccer' ? 'soccer' : (sportMode === 'volleyball' ? 'volleyball' : (sportMode === 'handball' ? 'handball' : (sportMode === 'sumo' ? 'sumo' : 'basketball')));
+    ctx.fillText('First to 5 wins!  Floppy ragdoll ' + sportLabel + ' chaos!', W/2, 478);
+  }
+}
+
+function drawScoredScreen() {
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, W, H);
+  
+  const team = lastScorer;
+  const pts = ballType ? ballType.points : 1;
+  
+  ctx.textAlign = 'center';
+  
+  // Scored text
+  ctx.fillStyle = team === 0 ? '#e74c3c' : '#3498db';
+  ctx.font = 'bold 40px monospace';
+  const label = team === 0 ? 'PLAYER 1' : (gameMode === 1 ? 'CPU' : 'PLAYER 2');
+  if (sportMode === 'sumo') {
+    ctx.fillText(label + ' WINS POINT!', W/2, H/2 - 20);
+    ctx.fillStyle = '#f39c12';
+    ctx.font = 'bold 24px monospace';
+    const outMsg = (sumoMap && sumoMap.type === 'platform') ? 'FELL OFF!' : 'RING OUT!';
+    ctx.fillText(outMsg, W/2, H/2 + 20);
+  } else {
+    ctx.fillText(label + ' SCORES!', W/2, H/2 - 20);
+    if (pts === 2) {
+      ctx.fillStyle = rainbowColor(gameTime);
+      ctx.font = 'bold 24px monospace';
+      ctx.fillText('★ DOUBLE POINTS! ★', W/2, H/2 + 20);
+    }
+  }
+  
+  ctx.fillStyle = '#fff';
+  ctx.font = '16px monospace';
+  ctx.fillText(scores[0] + ' - ' + scores[1], W/2, H/2 + 55);
+}
+
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, 0, W, H);
+  
+  ctx.textAlign = 'center';
+  
+  const winner = scores[0] >= WINNING_SCORE ? 0 : 1;
+  
+  // Confetti
+  for (let i = 0; i < 30; i++) {
+    const cx = (i * 53 + gameTime * 2) % W;
+    const cy = (i * 37 + gameTime * 1.5) % H;
+    const colors = ['#e74c3c', '#3498db', '#f39c12', '#2ecc71', '#9b59b6', '#fff'];
+    drawPixelRect(cx, cy, 6, 6, colors[i % colors.length]);
+  }
+  
+  ctx.fillStyle = winner === 0 ? '#e74c3c' : '#3498db';
+  ctx.font = 'bold 44px monospace';
+  const winLabel = winner === 0 ? 'PLAYER 1' : (gameMode === 1 ? 'CPU' : 'PLAYER 2');
+  ctx.fillText(winLabel + ' WINS!', W/2, H/2 - 30);
+  
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 28px monospace';
+  ctx.fillText(scores[0] + ' - ' + scores[1], W/2, H/2 + 20);
+  
+  ctx.fillStyle = '#aaa';
+  ctx.font = '16px monospace';
+  ctx.fillText('Press ENTER to play again', W/2, H/2 + 70);
+  ctx.fillText('Press ESC for menu', W/2, H/2 + 95);
+}
+
+// ============================================================
+// ROUND MANAGEMENT
+// ============================================================
+function randomizeRound() {
+  court = pick(COURTS);
+  bodyType1 = pick(BODY_TYPES);
+  bodyType2 = pick(BODY_TYPES);
+  if (sportMode === 'volleyball') {
+    ballType = pick(VOLLEY_BALL_TYPES);
+    netShape = pick(NET_SHAPES);
+    hoopShape = null;
+    goalShape = null;
+  } else if (sportMode === 'soccer') {
+    ballType = pick(SOCCER_BALL_TYPES);
+    goalShape = pick(GOAL_SHAPES);
+    hoopShape = null;
+    netShape = null;
+  } else if (sportMode === 'handball') {
+    ballType = pick(HANDBALL_BALL_TYPES);
+    goalShape = pick(HANDBALL_GOAL_SHAPES);
+    hoopShape = null;
+    netShape = null;
+  } else if (sportMode === 'sumo') {
+    ballType = null;
+    hoopShape = null;
+    goalShape = null;
+    netShape = null;
+    // Use pre-shuffled map order (round 0 = Classic Ring, rest shuffled)
+    sumoMap = sumoMapOrder[sumoRound] || SUMO_MAPS[0];
+    sumoRing = sumoMap; // backwards compat for CPU AI references
+    sumoRound++;
+  } else {
+    ballType = pick(BALL_TYPES);
+    hoopShape = pick(HOOP_SHAPES);
+    goalShape = null;
+    netShape = null;
+  }
+  
+  // Create players - sumo is 1v1, others are 2v2
+  if (sportMode === 'sumo') {
+    // Spawn players at map-defined spawn points or default ring positions
+    let spawn1x, spawn2x, spawn1y, spawn2y;
+    if (sumoMap && sumoMap.spawns) {
+      spawn1x = sumoMap.spawns[0].x;
+      spawn1y = sumoMap.spawns[0].y;
+      spawn2x = sumoMap.spawns[1].x;
+      spawn2y = sumoMap.spawns[1].y;
+    } else {
+      spawn1x = W / 2 - 40;
+      spawn1y = GROUND_Y;
+      spawn2x = W / 2 + 40;
+      spawn2y = GROUND_Y;
+    }
+    players = [
+      createPlayer(spawn1x, 0, 0, bodyType1),
+      createPlayer(spawn2x, 1, 1, bodyType2),
+    ];
+    players[0].y = spawn1y;
+    players[1].y = spawn2y;
+  } else if (sportMode === 'volleyball') {
+    players = [
+      createPlayer(W * 0.15, 0, 0, bodyType1),
+      createPlayer(W * 0.35, 0, 1, bodyType1),
+      createPlayer(W * 0.65, 1, 2, bodyType2),
+      createPlayer(W * 0.85, 1, 3, bodyType2),
+    ];
+  } else {
+    players = [
+      createPlayer(W * 0.30, 0, 0, bodyType1),
+      createPlayer(W * 0.45, 0, 1, bodyType1),
+      createPlayer(W * 0.55, 1, 2, bodyType2),
+      createPlayer(W * 0.70, 1, 3, bodyType2),
+    ];
+  }
+  
+  // Randomize colors slightly per round
+  const jerseyColors1 = ['#e74c3c', '#d35400', '#c0392b', '#e91e63'];
+  const jerseyColors2 = ['#3498db', '#2980b9', '#1abc9c', '#9b59b6'];
+  const j1 = pick(jerseyColors1);
+  const j2 = pick(jerseyColors2);
+  const skinTones = ['#f5cba7', '#d4a574', '#8d5524', '#c68642', '#f1c27d'];
+  const s1 = pick(skinTones), s2 = pick(skinTones);
+  
+  for (const p of players) {
+    if (p.team === 0) {
+      p.colors.jersey = j1; p.colors.shorts = j1; p.colors.skin = s1;
+    } else {
+      p.colors.jersey = j2; p.colors.shorts = j2; p.colors.skin = s2;
+    }
+  }
+  
+  if (sportMode === 'sumo') {
+    // Sumo wrestlers get special mawashi (loincloth) colors
+    for (const p of players) {
+      p.colors.shorts = p.team === 0 ? '#8b0000' : '#00008b';
+    }
+  }
+  
+  if (sportMode === 'sumo') {
+    ball = null;
+  } else {
+    ball = createBall();
+  }
+  createHoops();
+  particles = [];
+  roundStartTimer = 90;
+  modifierTextTimer = 60;
+  // Reset shake so it doesn't carry into the new round
+  shakeX = 0;
+  shakeY = 0;
+  shakeTimer = 0;
+}
+
+function startGame(mode) {
+  gameMode = mode;
+  scores = [0, 0];
+  sumoRound = 0;
+  // Build shuffled sumo map order: Classic Ring first, then all others shuffled
+  if (sportMode === 'sumo') {
+    const others = SUMO_MAPS.slice(1); // all maps except Classic Ring
+    // Fisher-Yates shuffle
+    for (let i = others.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [others[i], others[j]] = [others[j], others[i]];
+    }
+    // Ensure no two ring (non-platform) maps are back-to-back
+    for (let i = 1; i < others.length; i++) {
+      if (others[i].type === 'ring' && others[i - 1].type === 'ring') {
+        // Find the nearest platform map after i to swap with
+        let swapped = false;
+        for (let k = i + 1; k < others.length; k++) {
+          if (others[k].type !== 'ring') {
+            [others[i], others[k]] = [others[k], others[i]];
+            swapped = true;
+            break;
+          }
+        }
+        // If none found after, look before
+        if (!swapped) {
+          for (let k = i - 2; k >= 0; k--) {
+            if (others[k].type !== 'ring') {
+              [others[i], others[k]] = [others[k], others[i]];
+              break;
+            }
+          }
+        }
+      }
+    }
+    // Also check first non-classic map vs Classic Ring (index 0 is ring)
+    if (others.length > 0 && others[0].type === 'ring') {
+      for (let k = 1; k < others.length; k++) {
+        if (others[k].type !== 'ring') {
+          [others[0], others[k]] = [others[k], others[0]];
+          break;
+        }
+      }
+    }
+    sumoMapOrder = [SUMO_MAPS[0], ...others];
+  }
+  randomizeRound();
+  gameState = 'playing';
+}
+
+// ============================================================
+// MAIN UPDATE
+// ============================================================
+function update() {
+  gameTime++;
+  
+  if (gameState === 'menu') {
+    if (menuScreen === 'sport') {
+      // Sport selection navigation
+      if (keys['ArrowUp'] || keys['KeyW']) {
+        if (!keys._menuUp) { sportSelection = (sportSelection + 4) % 5; keys._menuUp = true; SFX.menuSelect(); }
+      } else { keys._menuUp = false; }
+      
+      if (keys['ArrowDown'] || keys['KeyS']) {
+        if (!keys._menuDown) { sportSelection = (sportSelection + 1) % 5; keys._menuDown = true; SFX.menuSelect(); }
+      } else { keys._menuDown = false; }
+      
+      if (keys['Enter'] || keys['Space']) {
+        if (!keys._menuSelect) {
+          sportMode = ['basketball', 'soccer', 'volleyball', 'handball', 'sumo'][sportSelection];
+          menuScreen = 'mode';
+          menuSelection = 0;
+          keys._menuSelect = true;
+          SFX.menuConfirm();
+        }
+      } else { keys._menuSelect = false; }
+    } else {
+      // Mode selection navigation (3 options: 1P, 2P, Back)
+      if (keys['ArrowUp'] || keys['KeyW']) {
+        if (!keys._menuUp) { menuSelection = (menuSelection + 2) % 3; keys._menuUp = true; SFX.menuSelect(); }
+      } else { keys._menuUp = false; }
+      
+      if (keys['ArrowDown'] || keys['KeyS']) {
+        if (!keys._menuDown) { menuSelection = (menuSelection + 1) % 3; keys._menuDown = true; SFX.menuSelect(); }
+      } else { keys._menuDown = false; }
+      
+      if (keys['Escape']) {
+        if (!keys._menuBack) { menuScreen = 'sport'; sportSelection = 0; keys._menuBack = true; SFX.menuSelect(); }
+      } else { keys._menuBack = false; }
+      
+      if (keys['Enter'] || keys['Space']) {
+        if (!keys._menuSelect) {
+          if (menuSelection === 2) {
+            menuScreen = 'sport'; sportSelection = 0; SFX.menuSelect();
+          } else {
+            startGame(menuSelection === 0 ? 1 : 2);
+            SFX.menuConfirm();
+          }
+          keys._menuSelect = true;
+        }
+      } else { keys._menuSelect = false; }
+    }
+    
+    return;
+  }
+  
+  if (gameState === 'gameover') {
+    if (keys['Enter'] || keys['Space']) {
+      if (!keys._restart) {
+        startGame(gameMode);
+        keys._restart = true;
+      }
+    } else { keys._restart = false; }
+    
+    if (keys['Escape']) {
+      gameState = 'menu';
+      menuScreen = 'sport';
+      shakeX = 0; shakeY = 0; shakeTimer = 0;
+    }
+    return;
+  }
+  
+  if (gameState === 'scored') {
+    scoreTimer--;
+    if (scoreTimer <= 0) {
+      if (scores[0] >= WINNING_SCORE || scores[1] >= WINNING_SCORE) {
+        gameState = 'gameover';
+        shakeX = 0; shakeY = 0; shakeTimer = 0;
+        SFX.win();
+      } else {
+        randomizeRound();
+        gameState = 'playing';
+      }
+    }
+    updateParticles();
+    return;
+  }
+  
+  // Playing state
+  if (roundStartTimer > 0) {
+    roundStartTimer--;
+    // Countdown beeps
+    if (roundStartTimer === 89) SFX.countdown(); // Play full 3-2-1-GO mp3 once
+    // Still update sway during countdown
+    players.forEach(p => {
+      p.leanPhase += p.leanSpeed * 1.8;
+      p.lean = Math.sin(p.leanPhase) * p.leanAmplitude;
+      p.bobPhase += 0.06;
+    });
+    return;
+  }
+  
+  // Player 1 input (WASD + S to shoot; also arrow keys in vs CPU mode)
+  const p1Input = {
+    left: !!keys['KeyA'] || (gameMode === 1 && !!keys['ArrowLeft']),
+    right: !!keys['KeyD'] || (gameMode === 1 && !!keys['ArrowRight']),
+    jump: !!keys['KeyW'] || (gameMode === 1 && !!keys['ArrowUp']),
+    shoot: !!keys['KeyS'] || (gameMode === 1 && !!keys['ArrowDown'])
+  };
+  
+  // Player 2 input (Arrow keys + Down to shoot)
+  const p2Input = {
+    left: !!keys['ArrowLeft'],
+    right: !!keys['ArrowRight'],
+    jump: !!keys['ArrowUp'],
+    shoot: !!keys['ArrowDown']
+  };
+  
+  // Update team 1 players (both respond to WASD)
+  updatePlayer(players[0], p1Input, 1);
+  if (sportMode !== 'sumo') updatePlayer(players[1], p1Input, 1);
+  
+  // Update team 2 players
+  if (sportMode === 'sumo') {
+    if (gameMode === 1) {
+      updatePlayer(players[1], updateCPU(players[1]), 1);
+    } else {
+      updatePlayer(players[1], p2Input, 1);
+    }
+  } else {
+    if (gameMode === 1) {
+      // CPU control - each player gets its own AI input
+      updatePlayer(players[2], updateCPU(players[2]), 1);
+      updatePlayer(players[3], updateCPU(players[3]), 1);
+    } else {
+      updatePlayer(players[2], p2Input, 1);
+      updatePlayer(players[3], p2Input, 1);
+    }
+  }
+  
+  // Player collisions
+  playerCollisions();
+  
+  // Ball physics (skip for sumo)
+  if (sportMode !== 'sumo') {
+    updateBall();
+  }
+  
+  // Sumo scoring
+  if (sportMode === 'sumo' && sumoMap && roundStartTimer <= 0) {
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
+      let isOut = false;
+      
+      if (sumoMap.type === 'ring') {
+        // Ring-out: check if player is outside ring boundary
+        const cx = W / 2;
+        const ringR = sumoMap.radius;
+        const dx = p.x - cx;
+        const adist = Math.abs(dx);
+        if (adist > ringR + 15) isOut = true;
+      } else if (sumoMap.type === 'platform') {
+        // Platform: touching the floor = out
+        if (p.y >= GROUND_Y) isOut = true;
+      }
+      
+      if (isOut) {
+        const scorer = p.team === 0 ? 1 : 0;
+        scores[scorer] += 1;
+        lastScorer = scorer;
+        gameState = 'scored';
+        scoreTimer = 60;
+        flashTimer = 30;
+        shakeX = 8;
+        shakeY = 8;
+        shakeTimer = 18;
+        shakeMaxTimer = 18;
+        spawnParticles(p.x, p.y - 20, 30, scorer === 0 ? '#e74c3c' : '#3498db', 5);
+        spawnParticles(p.x, p.y - 20, 15, '#f39c12', 4);
+        SFX.hoopEntry();
+        SFX.score();
+        break;
+      }
+    }
+  }
+  
+  // Check scoring (non-sumo)
+  if (sportMode !== 'sumo') {
+    const scorer = checkHoopScore();
+    if (scorer >= 0) {
+      const pts = ball ? ball.points : 1;
+      scores[scorer] += pts;
+      lastScorer = scorer;
+      gameState = 'scored';
+      scoreTimer = 60;
+      flashTimer = 30;
+      shakeX = 8;
+      shakeY = 8;
+      shakeTimer = 18; // 0.3 second at 60fps
+      shakeMaxTimer = 18; // Store initial value for inverse-square falloff
+      
+      // Score particles
+      if (sportMode === 'volleyball') {
+        // Particles at ball position
+        spawnParticles(ball.x, ball.y, 30, scorer === 0 ? '#e74c3c' : '#3498db', 5);
+        if (pts === 2) {
+          spawnParticles(ball.x, ball.y, 20, 'rainbow', 6);
+        }
+      } else {
+        const hoop = hoops[scorer === 0 ? 1 : 0]; // The hoop they scored in
+        spawnParticles(hoop.x, hoop.y, 30, scorer === 0 ? '#e74c3c' : '#3498db', 5);
+        if (pts === 2) {
+          spawnParticles(hoop.x, hoop.y, 20, 'rainbow', 6);
+        }
+      }
+      SFX.hoopEntry();
+      SFX.score();
+    }
+  }
+  
+  // Screen shake decay - inverse square law falloff
+  if (shakeTimer > 0) {
+    shakeTimer--;
+    // Inverse square: intensity = initial / (1 + elapsed)^2
+    const elapsed = shakeMaxTimer - shakeTimer;
+    const falloff = 1 / ((1 + elapsed * 0.15) * (1 + elapsed * 0.15));
+    shakeX = 8 * falloff;
+    shakeY = 8 * falloff;
+  } else {
+    shakeX = 0;
+    shakeY = 0;
+  }
+  
+  // Flash timer
+  if (flashTimer > 0) flashTimer--;
+  
+  updateParticles();
+}
+
+// ============================================================
+// MAIN DRAW
+// ============================================================
+function draw() {
+  ctx.save();
+  
+  // Screen shake
+  if (shakeX > 0.5 || shakeY > 0.5) {
+    ctx.translate(rand(-shakeX, shakeX), rand(-shakeY, shakeY));
+  }
+  
+  if (gameState === 'menu') {
+    drawMenu();
+    mouse.clicked = false;
+    ctx.restore();
+    return;
+  }
+  
+  // Draw court
+  drawCourt();
+  
+  // Draw hoops (behind players)
+  hoops.forEach(drawHoop);
+  
+  // Draw volleyball net
+  if (sportMode === 'volleyball') drawVolleyNet();
+  
+  // Draw sumo ring
+  if (sportMode === 'sumo') drawSumoRing();
+  
+  // Draw players sorted by y position
+  const sorted = [...players].sort((a, b) => a.y - b.y);
+  sorted.forEach(drawPlayer);
+  
+  // Draw ball (skip for sumo)
+  if (sportMode !== 'sumo') drawBall();
+  
+  // Particles
+  drawParticles();
+  
+  // Scoreboard
+  drawScoreboard();
+  
+  // Round start countdown
+  if (roundStartTimer > 0 && gameState === 'playing') {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(0, 0, W, H);
+    
+    // Show round info
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px monospace';
+    if (sportMode === 'sumo') {
+      ctx.fillText('Court: ' + court.name + '  |  Map: ' + (sumoMap ? sumoMap.name : 'Standard'), W/2, H/2 - 60);
+      const sumoHint = (sumoMap && sumoMap.type === 'platform') ? 'Don\'t get knocked to the floor!' : 'Push your opponent out!';
+      ctx.fillText(sumoHint, W/2, H/2 - 35);
+    } else {
+      ctx.fillText('Court: ' + court.name + '  |  Ball: ' + ballType.name, W/2, H/2 - 60);
+      const shapeLabel = sportMode === 'volleyball' ? 'Net: ' + (netShape ? netShape.name : 'Standard') : ((sportMode === 'soccer' || sportMode === 'handball') ? 'Goal: ' + (goalShape ? goalShape.name : 'Standard') : 'Hoop: ' + (hoopShape ? hoopShape.name : 'Standard'));
+      ctx.fillText(shapeLabel, W/2, H/2 - 35);
+    }
+    
+    const countNum = Math.ceil(roundStartTimer / 30);
+    ctx.fillStyle = '#f39c12';
+    ctx.font = 'bold 60px monospace';
+    ctx.fillText(countNum > 0 ? String(countNum) : 'GO!', W/2, H/2 + 30);
+  }
+  
+  // Modifier text after round starts (1 second)
+  if (modifierTextTimer > 0 && roundStartTimer <= 0 && gameState === 'playing') {
+    modifierTextTimer--;
+    const alpha = Math.min(1, modifierTextTimer / 20);
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px monospace';
+    if (sportMode === 'sumo') {
+      ctx.fillText(court.name + '  •  ' + (sumoMap ? sumoMap.name : 'Standard'), W/2, 70);
+    } else {
+      const shapeName = sportMode === 'volleyball' ? (netShape ? netShape.name : 'Standard') + ' Net' : ((sportMode === 'soccer' || sportMode === 'handball') ? (goalShape ? goalShape.name : 'Standard') + ' Goal' : (hoopShape ? hoopShape.name : 'Standard') + ' Hoop');
+      ctx.fillText(court.name + '  •  ' + ballType.name + ' Ball  •  ' + shapeName, W/2, 70);
+      if (ballType && ballType.points === 2) {
+        ctx.fillStyle = rainbowColor(gameTime);
+        ctx.fillText('★ RAINBOW 2x POINTS ★', W/2, 95);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  
+  // Score flash
+  if (flashTimer > 0) {
+    ctx.globalAlpha = flashTimer / 30 * 0.3;
+    ctx.fillStyle = lastScorer === 0 ? '#e74c3c' : '#3498db';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+  
+  // Scored overlay
+  if (gameState === 'scored') {
+    drawScoredScreen();
+  }
+  
+  // Game over overlay
+  if (gameState === 'gameover') {
+    drawGameOver();
+  }
+  
+  // Home button (top-left) during gameplay
+  if (gameState !== 'menu') {
+    const hbX = 8, hbY = 8, hbW = 50, hbH = 24;
+    const hbHover = isMouseInRect(hbX, hbY, hbW, hbH);
+    drawPixelRect(hbX, hbY, hbW, hbH, hbHover ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.5)');
+    drawPixelRect(hbX + 1, hbY + 1, hbW - 2, hbH - 2, hbHover ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.3)');
+    ctx.fillStyle = hbHover ? '#fff' : '#aaa';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('HOME', hbX + hbW / 2, hbY + 16);
+    
+    if (hbHover && mouse.clicked) {
+      gameState = 'menu';
+      menuScreen = 'sport';
+      shakeX = 0; shakeY = 0; shakeTimer = 0;
+      mouse.clicked = false;
+    }
+  }
+  
+  // Clear mouse click at end of frame
+  mouse.clicked = false;
+  
+  ctx.restore();
+}
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>

@@ -1,0 +1,2750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polar Graphing Calculator</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f6f8;--card:#fff;--border:#e2e4e8;--text:#1a1a2e;--text2:#6b7280;
+  --accent:#2d70b3;--danger:#c74440;--radius:8px;--shadow:0 1px 3px rgba(0,0,0,.08);
+  --panel-w:340px;--topbar-h:48px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+}
+html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+
+/* ── App Layout ── */
+.app{display:flex;flex-direction:column;height:100vh}
+.top-bar{height:var(--topbar-h);background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0;z-index:10}
+.top-bar .logo{font-weight:600;font-size:15px;color:var(--accent);white-space:nowrap}
+.top-bar .mode-badge{font-size:11px;background:#e8f0fe;color:var(--accent);padding:2px 8px;border-radius:10px;font-weight:500}
+.top-bar .spacer{flex:1}
+.top-bar .tb-btn{background:none;border:none;cursor:pointer;padding:6px;border-radius:6px;color:var(--text2);display:flex;align-items:center}
+.top-bar .tb-btn:hover{background:#f0f0f3;color:var(--text)}
+.top-bar .tb-btn svg{width:18px;height:18px}
+
+.main-content{display:flex;flex:1;overflow:hidden;position:relative}
+
+/* ── Left Panel ── */
+.left-panel{width:var(--panel-w);background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:5;overflow:hidden}
+.expr-header{padding:10px 14px 6px;display:flex;align-items:center;justify-content:space-between}
+.expr-header span{font-size:12px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.5px}
+.expr-list{flex:1;overflow-y:auto;padding:4px 10px 80px}
+.expr-list::-webkit-scrollbar{width:5px}
+.expr-list::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+
+/* ── Expression Row ── */
+.expr-row{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;transition:box-shadow .15s,border-color .15s;position:relative}
+.expr-row:hover{box-shadow:var(--shadow)}
+.expr-row.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(45,112,179,.15)}
+.expr-row.has-error{border-color:var(--danger)}
+.expr-row.hidden-expr{opacity:.45}
+.expr-main{display:flex;align-items:center;gap:8px;padding:8px 10px}
+.color-dot{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;flex-shrink:0;transition:transform .1s}
+.color-dot:hover{transform:scale(1.15)}
+.expr-input-wrap{flex:1;position:relative;min-width:0;overflow:hidden}
+.expr-input{width:100%;border:none;outline:none;font-family:'Courier New',Consolas,monospace;font-size:14px;padding:4px 0;background:transparent;color:transparent;caret-color:var(--text);min-width:0;position:relative;z-index:1}
+.expr-input::placeholder{color:#bbb}
+.expr-input:placeholder-shown{color:transparent}
+.expr-input:placeholder-shown::placeholder{color:#bbb}
+.expr-display{position:absolute;top:0;left:0;right:0;font-family:'Courier New',Consolas,monospace;font-size:14px;padding:4px 0;color:var(--text);pointer-events:none;white-space:nowrap;overflow:hidden}
+.expr-input:placeholder-shown + .expr-display{display:none}
+.expr-btn{background:none;border:none;cursor:pointer;padding:3px;border-radius:4px;color:var(--text2);display:flex;align-items:center;flex-shrink:0}
+.expr-btn:hover{background:#f0f0f3;color:var(--text)}
+.expr-btn svg{width:16px;height:16px}
+.expr-error{font-size:11px;color:var(--danger);padding:0 10px 6px 36px;display:none}
+.expr-row.has-error .expr-error{display:block}
+.expr-extra{padding:4px 10px 8px 36px;display:none}
+.expr-row.show-extra .expr-extra{display:block}
+
+/* ── Slider ── */
+.slider-row{display:flex;align-items:center;gap:8px;padding:2px 0}
+.slider-row label{font-size:12px;color:var(--text2);min-width:14px;font-family:'Courier New',monospace}
+.slider-row input[type=range]{flex:1;height:4px;-webkit-appearance:none;background:#ddd;border-radius:2px;outline:none}
+.slider-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.2)}
+.slider-val{font-size:11px;color:var(--text2);min-width:36px;text-align:right;font-family:'Courier New',monospace}
+
+/* ── Trace ── */
+.trace-row{display:flex;align-items:center;gap:8px;padding:4px 0}
+.trace-row label{font-size:11px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.4px}
+.trace-row input[type=range]{flex:1;height:4px;-webkit-appearance:none;background:#ddd;border-radius:2px;outline:none}
+.trace-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fa7e19;cursor:pointer;border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.2)}
+.trace-info{font-size:11px;color:var(--text2);font-family:'Courier New',monospace;padding:2px 0}
+.trace-play{background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:2px 8px;font-size:11px;color:var(--text2)}
+.trace-play:hover{background:#f5f5f5}
+
+/* ── Add Row Hover Button ── */
+.add-row-zone{position:relative;height:24px;overflow:visible;margin-top:0}
+.add-row-btn{position:absolute;top:2px;left:50%;transform:translateX(-50%) scale(0);width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;border:2px solid #fff;box-shadow:0 2px 8px rgba(45,112,179,.25);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .15s ease,opacity .15s ease;opacity:0;z-index:3;font-size:18px;line-height:1;padding:0}
+.add-row-btn svg{width:16px;height:16px}
+.add-row-zone:hover .add-row-btn,.add-row-zone.show .add-row-btn{transform:translateX(-50%) scale(1);opacity:1}
+
+/* ── Bottom add (hidden by default, shown when list empty) ── */
+.add-expr-btn{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px}
+.add-expr-btn button{flex:1;padding:8px;border:1px dashed var(--border);border-radius:var(--radius);background:transparent;cursor:pointer;font-size:13px;color:var(--text2);transition:all .15s}
+.add-expr-btn button:hover{border-color:var(--accent);color:var(--accent);background:#f0f7ff}
+
+/* ── Color Picker ── */
+.color-picker{position:absolute;top:100%;left:10px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:8px;display:none;gap:6px;flex-wrap:wrap;width:160px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:20}
+.color-picker.open{display:flex}
+.color-picker .cp-swatch{width:24px;height:24px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .1s}
+.color-picker .cp-swatch:hover{transform:scale(1.2)}
+.color-picker .cp-swatch.selected{border-color:var(--text)}
+
+/* ── Graph Area ── */
+.graph-container{flex:1;position:relative;overflow:hidden;background:#fafbfc}
+#graph-canvas{position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair}
+
+/* ── Floating Controls ── */
+.float-controls{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:4px;z-index:6}
+.float-btn{width:36px;height:36px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2);box-shadow:var(--shadow);transition:all .12s}
+.float-btn:hover{background:#f5f5f5;color:var(--text)}
+.float-btn svg{width:18px;height:18px}
+.float-sep{height:1px;background:var(--border);margin:2px 4px}
+
+/* ── Coord Display ── */
+.coord-display{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-family:'Courier New',monospace;font-size:12px;color:var(--text2);pointer-events:none;z-index:6;backdrop-filter:blur(4px);line-height:1.5;display:none}
+.coord-display.visible{display:block}
+
+/* ── Hover Tooltip ── */
+.hover-tooltip{position:absolute;background:rgba(30,30,50,.88);color:#fff;font-family:'Courier New',monospace;font-size:11px;padding:5px 9px;border-radius:5px;pointer-events:none;z-index:8;white-space:nowrap;display:none;line-height:1.4}
+.hover-tooltip.visible{display:block}
+
+/* ── Settings Panel ── */
+.settings-panel{position:absolute;top:calc(var(--topbar-h) + 4px);right:12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;width:240px;box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:20;display:none}
+.settings-panel.open{display:block}
+.settings-panel h3{font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0}
+.setting-row:last-child{border-bottom:none}
+.setting-row label{font-size:12px;color:var(--text2)}
+.toggle{position:relative;width:36px;height:20px;background:#ccc;border-radius:10px;cursor:pointer;transition:background .2s}
+.toggle.on{background:var(--accent)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.toggle.on::after{left:18px}
+.setting-select{font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--text)}
+
+/* ── Mobile Toggle ── */
+.mobile-toggle{display:none;position:absolute;top:calc(var(--topbar-h) + 8px);left:8px;z-index:7;width:36px;height:36px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;align-items:center;justify-content:center;box-shadow:var(--shadow);color:var(--text2)}
+.mobile-toggle svg{width:18px;height:18px}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .left-panel{position:absolute;top:var(--topbar-h);left:0;bottom:0;z-index:8;transform:translateX(-100%);transition:transform .25s ease;box-shadow:4px 0 16px rgba(0,0,0,.08)}
+  .left-panel.open{transform:translateX(0)}
+  .mobile-toggle{display:flex}
+  :root{--panel-w:300px}
+}
+@media(max-width:480px){
+  :root{--panel-w:100vw}
+  .top-bar .logo{font-size:13px}
+}
+
+/* ═══════════════════════════════════════════
+   SAVED GRAPHS LIBRARY
+   ═══════════════════════════════════════════ */
+.lib-overlay{position:fixed;inset:0;z-index:200;background:#f5f6f8;display:none;flex-direction:column;overflow:hidden}
+.lib-overlay.open{display:flex}
+
+/* Library top bar */
+.lib-topbar{height:56px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:14px;flex-shrink:0}
+.lib-topbar .lib-back{background:none;border:none;cursor:pointer;padding:6px;border-radius:6px;color:var(--text2);display:flex;align-items:center}
+.lib-topbar .lib-back:hover{background:#f0f0f3;color:var(--text)}
+.lib-topbar .lib-back svg{width:20px;height:20px}
+.lib-topbar .lib-title{font-size:16px;font-weight:600;color:var(--text)}
+.lib-topbar .lib-spacer{flex:1}
+.lib-newbtn{padding:8px 18px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .15s}
+.lib-newbtn:hover{background:#245fa0}
+.lib-newbtn svg{width:16px;height:16px}
+
+/* Library toolbar */
+.lib-toolbar{padding:12px 24px;display:flex;align-items:center;gap:12px;background:#fff;border-bottom:1px solid #eee;flex-shrink:0;flex-wrap:wrap}
+.lib-search{flex:1;min-width:180px;max-width:400px;padding:8px 14px 8px 36px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:#f9fafb url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") 12px center no-repeat;transition:border-color .15s}
+.lib-search:focus{border-color:var(--accent);background-color:#fff}
+.lib-search::placeholder{color:#aaa}
+.lib-view-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.lib-view-toggle button{background:#fff;border:none;padding:6px 10px;cursor:pointer;color:var(--text2);display:flex;align-items:center}
+.lib-view-toggle button.active{background:#e8f0fe;color:var(--accent)}
+.lib-view-toggle button:hover:not(.active){background:#f5f5f5}
+.lib-view-toggle button svg{width:16px;height:16px}
+.lib-filter{padding:6px 12px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff;color:var(--text);cursor:pointer;outline:none}
+.lib-sort{padding:6px 12px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:#fff;color:var(--text);cursor:pointer;outline:none}
+
+/* Breadcrumb */
+.lib-breadcrumb{padding:8px 24px 0;font-size:12px;color:var(--text2);display:none;align-items:center;gap:4px}
+.lib-breadcrumb.visible{display:flex}
+.lib-breadcrumb a{color:var(--accent);cursor:pointer;text-decoration:none}
+.lib-breadcrumb a:hover{text-decoration:underline}
+.lib-breadcrumb span{color:var(--text2)}
+
+/* Library content */
+.lib-content{flex:1;overflow-y:auto;padding:16px 24px 60px}
+.lib-content::-webkit-scrollbar{width:6px}
+.lib-content::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+.lib-empty{text-align:center;padding:80px 20px;color:var(--text2)}
+.lib-empty svg{width:48px;height:48px;color:#ccc;margin-bottom:12px}
+.lib-empty p{font-size:14px;margin-bottom:4px}
+.lib-empty small{font-size:12px;color:#aaa}
+
+/* Grid layout */
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.lib-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;cursor:pointer;overflow:hidden;transition:box-shadow .15s,border-color .15s;position:relative}
+.lib-card:hover{border-color:#ccc;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.lib-card.selected{border-color:var(--accent);box-shadow:0 0 0 2px rgba(45,112,179,.15)}
+.lib-card-thumb{height:120px;background:#f0f2f5;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.lib-card-thumb canvas{width:100%;height:100%;object-fit:cover}
+.lib-card-thumb .folder-icon{color:#f59e0b;display:flex}
+.lib-card-thumb .folder-icon svg{width:48px;height:48px}
+.lib-card-check{position:absolute;top:8px;left:8px;width:20px;height:20px;border:2px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;display:none;align-items:center;justify-content:center;z-index:2}
+.lib-card:hover .lib-card-check,.lib-card.selected .lib-card-check{display:flex}
+.lib-card.selected .lib-card-check{border-color:var(--accent);background:var(--accent)}
+.lib-card.selected .lib-card-check::after{content:'';width:6px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);margin-top:-2px}
+.lib-card-body{padding:10px 12px}
+.lib-card-title{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-card-meta{font-size:11px;color:var(--text2);margin-top:3px;display:flex;align-items:center;gap:6px}
+.lib-card-type{background:#f0f2f5;padding:1px 6px;border-radius:3px;font-size:10px}
+.lib-card-menu{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.9);border:none;width:26px;height:26px;border-radius:6px;cursor:pointer;display:none;align-items:center;justify-content:center;color:var(--text2);font-size:16px;z-index:2}
+.lib-card:hover .lib-card-menu{display:flex}
+.lib-card-menu:hover{background:#e8e8ec}
+
+/* List layout */
+.lib-list{display:flex;flex-direction:column;gap:1px}
+.lib-list-header{display:grid;grid-template-columns:36px 1fr 110px 90px 36px;gap:8px;padding:6px 12px;font-size:11px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #eee}
+.lib-list-header span{cursor:pointer}
+.lib-list-header span:hover{color:var(--text)}
+.lib-row{display:grid;grid-template-columns:36px 1fr 110px 90px 36px;gap:8px;padding:10px 12px;align-items:center;background:#fff;border-bottom:1px solid #f3f3f5;cursor:pointer;transition:background .1s}
+.lib-row:hover{background:#f9fafb}
+.lib-row.selected{background:#eef4fc}
+.lib-row-check{width:18px;height:18px;border:2px solid #ccc;border-radius:3px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.lib-row.selected .lib-row-check{border-color:var(--accent);background:var(--accent)}
+.lib-row.selected .lib-row-check::after{content:'';width:5px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);margin-top:-2px}
+.lib-row-title{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:8px}
+.lib-row-title .folder-icon-sm{color:#f59e0b;display:flex}
+.lib-row-title .folder-icon-sm svg{width:18px;height:18px}
+.lib-row-date{font-size:12px;color:var(--text2)}
+.lib-row-type{font-size:11px;color:var(--text2)}
+.lib-row-menu{background:none;border:none;cursor:pointer;color:var(--text2);padding:2px;border-radius:4px;display:flex;align-items:center;justify-content:center}
+.lib-row-menu:hover{background:#eee;color:var(--text)}
+
+/* Context menu */
+.lib-ctx{position:fixed;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px 0;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:250;min-width:160px;display:none}
+.lib-ctx.open{display:block}
+.lib-ctx button{display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;background:none;border:none;font-size:13px;color:var(--text);cursor:pointer;text-align:left}
+.lib-ctx button:hover{background:#f5f5f7}
+.lib-ctx button.danger{color:var(--danger)}
+.lib-ctx .ctx-sep{height:1px;background:#eee;margin:4px 0}
+
+/* Bulk action bar */
+.lib-bulk{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;color:#fff;padding:10px 20px;border-radius:10px;display:none;align-items:center;gap:14px;box-shadow:0 4px 20px rgba(0,0,0,.2);z-index:210;font-size:13px}
+.lib-bulk.visible{display:flex}
+.lib-bulk span{opacity:.7}
+.lib-bulk button{background:rgba(255,255,255,.15);border:none;padding:6px 14px;border-radius:6px;color:#fff;cursor:pointer;font-size:12px;font-weight:500}
+.lib-bulk button:hover{background:rgba(255,255,255,.25)}
+.lib-bulk button.danger{background:rgba(199,68,64,.8)}
+.lib-bulk button.danger:hover{background:rgba(199,68,64,1)}
+
+/* Rename modal */
+.lib-rename-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:260;display:none;align-items:center;justify-content:center}
+.lib-rename-modal.open{display:flex}
+.lib-rename-box{background:#fff;border-radius:12px;padding:24px;width:360px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.lib-rename-box h3{font-size:15px;font-weight:600;margin-bottom:12px}
+.lib-rename-box input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;outline:none}
+.lib-rename-box input:focus{border-color:var(--accent)}
+.lib-rename-box .rename-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.lib-rename-box .rename-actions button{padding:8px 18px;border-radius:6px;font-size:13px;cursor:pointer;border:none}
+.lib-rename-box .rename-cancel{background:#f0f0f3;color:var(--text)}
+.lib-rename-box .rename-save{background:var(--accent);color:#fff}
+
+/* Title input in top bar */
+.tb-title-input{border:none;outline:none;font-size:13px;font-weight:500;color:var(--text);background:transparent;padding:4px 8px;border-radius:4px;max-width:200px;min-width:80px}
+.tb-title-input:hover{background:#f0f0f3}
+.tb-title-input:focus{background:#fff;box-shadow:0 0 0 2px rgba(45,112,179,.15)}
+
+@media(max-width:768px){
+  .lib-topbar{padding:0 12px}
+  .lib-toolbar{padding:8px 12px}
+  .lib-content{padding:12px}
+  .lib-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+  .lib-card-thumb{height:90px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Top Bar ── -->
+  <div class="top-bar">
+    <div class="logo">Polar Graphing Calculator</div>
+    <button class="tb-btn" id="btn-open" title="Open Graph (Ctrl+O)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+    <div class="mode-badge">Polar Mode</div>
+    <div class="spacer"></div>
+    <input class="tb-title-input" id="graph-title" type="text" value="Untitled Graph" title="Graph name" spellcheck="false">
+    <div class="spacer"></div>
+    <button class="tb-btn" id="btn-save" title="Save Graph (Ctrl+S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></button>
+    <button class="tb-btn" id="btn-undo" title="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h10a5 5 0 0 1 0 10H9"/><path d="M3 10l4-4m-4 4 4 4"/></svg></button>
+    <button class="tb-btn" id="btn-redo" title="Redo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10H11a5 5 0 0 0 0 10h4"/><path d="M21 10l-4-4m4 4-4 4"/></svg></button>
+    <button class="tb-btn" id="btn-export" title="Export PNG"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v10m0 0-3-3m3 3 3-3"/><path d="M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg></button>
+    <button class="tb-btn" id="btn-help" title="Help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5" fill="currentColor"/></svg></button>
+    <button class="tb-btn" id="btn-settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1.08 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1.08z"/></svg></button>
+  </div>
+
+  <!-- ── Settings Panel ── -->
+  <div class="settings-panel" id="settings-panel">
+    <h3>Display Settings</h3>
+    <div class="setting-row"><label>Polar Grid</label><div class="toggle on" data-key="polarGrid"></div></div>
+    <div class="setting-row"><label>Cartesian Axes</label><div class="toggle on" data-key="axes"></div></div>
+    <div class="setting-row"><label>Angle Labels</label><div class="toggle on" data-key="angleLabels"></div></div>
+    <div class="setting-row"><label>Radius Labels</label><div class="toggle on" data-key="radiusLabels"></div></div>
+    <div class="setting-row"><label>Angle Unit</label>
+      <select class="setting-select" data-key="angleUnit"><option value="rad">Radians</option><option value="deg">Degrees</option></select>
+    </div>
+    <div class="setting-row"><label>θ Range</label>
+      <select class="setting-select" data-key="thetaRange"><option value="2pi">0 → 2π</option><option value="4pi" selected>0 → 4π</option><option value="neg">−π → π</option><option value="8pi">0 → 8π</option></select>
+    </div>
+  </div>
+
+  <!-- ── Main Content ── -->
+  <div class="main-content">
+
+    <!-- ── Left Panel ── -->
+    <div class="left-panel" id="left-panel">
+      <div class="expr-header"><span>Expressions</span></div>
+      <div class="expr-list" id="expr-list"></div>
+      <div class="add-expr-btn">
+        <button id="btn-add-expr">+ Add Expression</button>
+      </div>
+    </div>
+
+    <!-- ── Graph ── -->
+    <div class="graph-container" id="graph-container">
+      <canvas id="graph-canvas"></canvas>
+
+      <!-- Floating Controls -->
+      <div class="float-controls">
+        <button class="float-btn" id="fc-zoomin" title="Zoom In"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+        <button class="float-btn" id="fc-zoomout" title="Zoom Out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+        <div class="float-sep"></div>
+        <button class="float-btn" id="fc-home" title="Reset View"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></button>
+        <button class="float-btn" id="fc-grid" title="Toggle Grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg></button>
+      </div>
+
+      <!-- Mobile Toggle -->
+      <button class="mobile-toggle" id="mobile-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+
+      <!-- Coordinate Display -->
+      <div class="coord-display" id="coord-display"></div>
+
+      <!-- Hover Tooltip -->
+      <div class="hover-tooltip" id="hover-tooltip"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Help Modal ── -->
+<div id="help-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;padding:28px;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:18px;font-weight:600">Polar Graphing Calculator — Help</h2>
+      <button id="help-close" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888">&times;</button>
+    </div>
+    <div style="font-size:13px;color:#444;line-height:1.7">
+      <p><b>Polar Equations:</b> <code>r = 2 + 3sin(x)</code>, <code>r = 4cos(2x)</code></p>
+      <p><b>Angle Lines:</b> <code>x = pi/4</code></p>
+      <p><b>Points:</b> <code>(3, pi/6)</code> — format is (r, θ)</p>
+      <p><b>Sliders:</b> Type <code>r = a*sin(b*x)</code> — unknown letters become sliders.</p>
+      <p><b>Constants:</b> <code>pi</code> (π), <code>e</code> (Euler's number)</p>
+      <p><b>Functions:</b> sin, cos, tan, sec, csc, cot, asin, acos, atan, sqrt, abs, log (base-10), ln</p>
+      <p><b>Implicit multiply:</b> <code>2sin(x)</code> = <code>2*sin(x)</code>, <code>3x</code> = <code>3*x</code></p>
+      <p><b>Trace:</b> Click the ▸ arrow on an expression to trace the curve with a θ slider.</p>
+      <p><b>Navigate:</b> Drag to pan, scroll to zoom. Hover curves for coordinates.</p>
+      <p><b>Tip:</b> Type <code>x</code> for the angle variable — it displays as <code>θ</code>. Negative r values plot correctly.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Saved Graphs Library ── -->
+<div class="lib-overlay" id="lib-overlay">
+  <div class="lib-topbar">
+    <button class="lib-back" id="lib-close" title="Back to editor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m0 0 7 7m-7-7 7-7"/></svg></button>
+    <div class="lib-title">Saved Graphs</div>
+    <div class="lib-spacer" style="flex:1"></div>
+    <button class="lib-newbtn" id="lib-new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New Graph</button>
+    <button class="lib-newbtn" id="lib-new-folder" style="background:#f59e0b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> New Folder</button>
+  </div>
+  <div class="lib-toolbar">
+    <input class="lib-search" id="lib-search" type="text" placeholder="Search graphs…">
+    <div class="lib-view-toggle">
+      <button id="lib-view-grid" class="active" title="Grid view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+      <button id="lib-view-list" title="List view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>
+    </div>
+    <select class="lib-filter" id="lib-filter"><option value="all">All types</option><option value="polar">Polar</option></select>
+    <select class="lib-sort" id="lib-sort"><option value="date">Sort: Date</option><option value="name">Sort: Name</option></select>
+  </div>
+  <div class="lib-breadcrumb" id="lib-breadcrumb"><a id="lib-bc-root">My Graphs</a></div>
+  <div class="lib-content" id="lib-content"></div>
+</div>
+
+<!-- Bulk action bar -->
+<div class="lib-bulk" id="lib-bulk">
+  <span id="lib-bulk-count">0 selected</span>
+  <button id="lib-bulk-move">Move to folder</button>
+  <button id="lib-bulk-delete" class="danger">Delete</button>
+  <button id="lib-bulk-cancel">Cancel</button>
+</div>
+
+<!-- Context menu -->
+<div class="lib-ctx" id="lib-ctx">
+  <button data-action="open">Open</button>
+  <button data-action="rename">Rename</button>
+  <button data-action="duplicate">Duplicate</button>
+  <div class="ctx-sep"></div>
+  <button data-action="move">Move to folder…</button>
+  <div class="ctx-sep"></div>
+  <button data-action="delete" class="danger">Delete</button>
+</div>
+
+<!-- Rename modal -->
+<div class="lib-rename-modal" id="lib-rename-modal">
+  <div class="lib-rename-box">
+    <h3 id="rename-heading">Rename</h3>
+    <input id="rename-input" type="text" spellcheck="false">
+    <div class="rename-actions">
+      <button class="rename-cancel" id="rename-cancel">Cancel</button>
+      <button class="rename-save" id="rename-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Folder picker modal -->
+<div class="lib-rename-modal" id="lib-folder-picker">
+  <div class="lib-rename-box">
+    <h3>Move to folder</h3>
+    <div id="folder-picker-list" style="max-height:200px;overflow-y:auto;margin:8px 0"></div>
+    <div class="rename-actions">
+      <button class="rename-cancel" id="fp-cancel">Cancel</button>
+      <button class="rename-save" id="fp-root">Root (no folder)</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   POLAR GRAPHING CALCULATOR — Full Implementation
+   ================================================================ */
+(function(){
+'use strict';
+
+// ── Constants ──
+const EXPR_COLORS = ['#2d70b3','#c74440','#388c46','#6042a6','#fa7e19','#000000','#c4721a','#e07faa','#1a9988','#b5210d'];
+const FUNCTIONS = new Set(['sin','cos','tan','sec','csc','cot','asin','acos','atan','atan2','sinh','cosh','tanh','sqrt','abs','log','ln','floor','ceil','round','sign','max','min']);
+const KNOWN_IDS = new Set(['pi','e','tau','theta','r','x','y','exp','hex','max','min','index']);
+const ANGLE_LABELS_RAD = [
+  [0,'0'],[Math.PI/6,'π/6'],[Math.PI/4,'π/4'],[Math.PI/3,'π/3'],[Math.PI/2,'π/2'],
+  [2*Math.PI/3,'2π/3'],[3*Math.PI/4,'3π/4'],[5*Math.PI/6,'5π/6'],[Math.PI,'π'],
+  [7*Math.PI/6,'7π/6'],[5*Math.PI/4,'5π/4'],[4*Math.PI/3,'4π/3'],[3*Math.PI/2,'3π/2'],
+  [5*Math.PI/3,'5π/3'],[7*Math.PI/4,'7π/4'],[11*Math.PI/6,'11π/6']
+];
+const ANGLE_LABELS_DEG = [
+  [0,'0°'],[30,'30°'],[45,'45°'],[60,'60°'],[90,'90°'],
+  [120,'120°'],[135,'135°'],[150,'150°'],[180,'180°'],
+  [210,'210°'],[240,'240°'],[270,'270°'],[300,'300°'],[315,'315°'],[330,'330°']
+];
+
+// ── State ──
+const state = {
+  expressions: [],
+  nextId: 1,
+  nextColorIdx: 0,
+  view: { cx: 0, cy: 0, scale: 60 },
+  settings: { polarGrid: true, axes: true, angleLabels: true, radiusLabels: true, angleUnit: 'rad', thetaRange: '4pi' },
+  mouse: { x: 0, y: 0, down: false, startX: 0, startY: 0, startCx: 0, startCy: 0, inCanvas: false },
+  hover: null,
+  hoverPoi: null,
+  poi: [],
+  dirty: true,
+  history: [],
+  historyIdx: -1,
+  animating: null // {exprId, raf}
+};
+
+// ── DOM refs ──
+const canvas = document.getElementById('graph-canvas');
+const ctx = canvas.getContext('2d');
+const exprListEl = document.getElementById('expr-list');
+const coordDisplay = document.getElementById('coord-display');
+const hoverTooltip = document.getElementById('hover-tooltip');
+const settingsPanel = document.getElementById('settings-panel');
+const helpModal = document.getElementById('help-modal');
+const leftPanel = document.getElementById('left-panel');
+const graphContainer = document.getElementById('graph-container');
+
+// ═══════════════════════════════════════════════════
+//  MATH ENGINE — Tokenizer / Parser / Evaluator
+// ═══════════════════════════════════════════════════
+
+function tokenize(input) {
+  input = input.replace(/θ/g, 'x');
+  const tokens = [];
+  let i = 0;
+  while (i < input.length) {
+    if (/\s/.test(input[i])) { i++; continue; }
+    // Number
+    if (/[0-9]/.test(input[i]) || (input[i]==='.' && i+1<input.length && /[0-9]/.test(input[i+1]))) {
+      let num = '';
+      while (i < input.length && /[0-9.]/.test(input[i])) num += input[i++];
+      tokens.push({ type:'num', value: parseFloat(num) });
+      continue;
+    }
+    // Identifier
+    if (/[a-zA-Zθπ_]/.test(input[i])) {
+      let id = '';
+      while (i < input.length && /[a-zA-Zθπ_0-9]/.test(input[i])) id += input[i++];
+      // Normalize
+      if (id === 'θ' || id === 'x') id = 'theta';
+      if (id === 'π') id = 'pi';
+      // Split trailing 'x' into separate tokens: e.g. "ax" → "a", "theta"
+      // but not for known function/constant names like "max", "exp", "hex"
+      if (id !== 'theta' && id !== 'pi' && id.length > 1 && id.endsWith('x') && !FUNCTIONS.has(id) && !KNOWN_IDS.has(id)) {
+        const prefix = id.slice(0, -1);
+        // Push the prefix part
+        if (FUNCTIONS.has(prefix) || KNOWN_IDS.has(prefix)) {
+          tokens.push({ type:'id', value: prefix });
+        } else if (prefix === 'θ' || prefix === 'x') {
+          tokens.push({ type:'id', value: 'theta' });
+        } else if (prefix === 'π') {
+          tokens.push({ type:'id', value: 'pi' });
+        } else {
+          tokens.push({ type:'id', value: prefix });
+        }
+        // Push theta for the trailing x
+        tokens.push({ type:'id', value: 'theta' });
+        continue;
+      }
+      tokens.push({ type:'id', value: id });
+      continue;
+    }
+    switch (input[i]) {
+      case '+': tokens.push({type:'op',value:'+'}); break;
+      case '-': tokens.push({type:'op',value:'-'}); break;
+      case '*': tokens.push({type:'op',value:'*'}); break;
+      case '/': tokens.push({type:'op',value:'/'}); break;
+      case '^': tokens.push({type:'op',value:'^'}); break;
+      case '(': tokens.push({type:'lp'}); break;
+      case ')': tokens.push({type:'rp'}); break;
+      case '=': tokens.push({type:'eq'}); break;
+      case ',': tokens.push({type:'comma'}); break;
+      case '<': if(input[i+1]==='='){tokens.push({type:'leq'});i++}else tokens.push({type:'lt'}); break;
+      case '>': if(input[i+1]==='='){tokens.push({type:'geq'});i++}else tokens.push({type:'gt'}); break;
+      case '|': tokens.push({type:'pipe'}); break;
+      default: tokens.push({type:'unk',value:input[i]});
+    }
+    i++;
+  }
+  return tokens;
+}
+
+function insertImplicitMul(tokens) {
+  const out = [];
+  for (let i = 0; i < tokens.length; i++) {
+    out.push(tokens[i]);
+    if (i + 1 >= tokens.length) continue;
+    const a = tokens[i], b = tokens[i+1];
+    const mul = (
+      (a.type==='num' && (b.type==='id' || b.type==='lp')) ||
+      (a.type==='rp' && (b.type==='id' || b.type==='lp' || b.type==='num')) ||
+      (a.type==='id' && !FUNCTIONS.has(a.value) && (b.type==='lp' || b.type==='num')) ||
+      (a.type==='id' && !FUNCTIONS.has(a.value) && b.type==='id') ||
+      (a.type==='num' && b.type==='num' && false) // don't join numbers
+    );
+    if (mul) out.push({type:'op',value:'*'});
+  }
+  return out;
+}
+
+// Recursive-descent parser
+function parse(tokens) {
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const consume = () => tokens[pos++];
+
+  function expr() {
+    let left = term();
+    while (peek() && peek().type==='op' && (peek().value==='+' || peek().value==='-')) {
+      const op = consume().value;
+      left = {t:'bin', op, l:left, r:term()};
+    }
+    return left;
+  }
+  function term() {
+    let left = power();
+    while (peek() && peek().type==='op' && (peek().value==='*' || peek().value==='/')) {
+      const op = consume().value;
+      left = {t:'bin', op, l:left, r:power()};
+    }
+    return left;
+  }
+  function power() {
+    let base = unary();
+    if (peek() && peek().type==='op' && peek().value==='^') {
+      consume();
+      base = {t:'bin', op:'^', l:base, r:unary()};
+    }
+    return base;
+  }
+  function unary() {
+    if (peek() && peek().type==='op' && peek().value==='-') {
+      consume();
+      return {t:'un', op:'-', a:unary()};
+    }
+    if (peek() && peek().type==='op' && peek().value==='+') { consume(); return unary(); }
+    return primary();
+  }
+  function primary() {
+    const tok = peek();
+    if (!tok) throw new Error('Unexpected end of expression');
+    if (tok.type==='num') { consume(); return {t:'num', v:tok.value}; }
+    if (tok.type==='id') {
+      consume();
+      if (peek() && peek().type==='lp' && FUNCTIONS.has(tok.value)) {
+        consume(); // (
+        const arg = expr();
+        if (!peek() || peek().type!=='rp') throw new Error('Expected )');
+        consume();
+        return {t:'fn', name:tok.value, a:arg};
+      }
+      return {t:'var', name:tok.value};
+    }
+    if (tok.type==='lp') {
+      consume();
+      const e = expr();
+      if (!peek() || peek().type!=='rp') throw new Error('Expected )');
+      consume();
+      return e;
+    }
+    if (tok.type==='pipe') {
+      consume();
+      const e = expr();
+      if (!peek() || peek().type!=='pipe') throw new Error('Expected |');
+      consume();
+      return {t:'fn', name:'abs', a:e};
+    }
+    throw new Error('Unexpected: ' + (tok.value||tok.type));
+  }
+
+  const result = expr();
+  if (pos < tokens.length) throw new Error('Unexpected: ' + (tokens[pos].value||tokens[pos].type));
+  return result;
+}
+
+function evaluate(ast, vars) {
+  switch (ast.t) {
+    case 'num': return ast.v;
+    case 'var':
+      if (ast.name==='pi') return Math.PI;
+      if (ast.name==='e') return Math.E;
+      if (ast.name==='theta') return vars.theta !== undefined ? vars.theta : 0;
+      if (vars[ast.name] !== undefined) return vars[ast.name];
+      throw new Error('Unknown: ' + ast.name);
+    case 'bin': {
+      const l = evaluate(ast.l, vars), r = evaluate(ast.r, vars);
+      switch (ast.op) {
+        case '+': return l+r; case '-': return l-r;
+        case '*': return l*r; case '/': return l/r;
+        case '^': return Math.pow(l,r);
+      }
+    } break;
+    case 'un': return -evaluate(ast.a, vars);
+    case 'fn': {
+      const a = evaluate(ast.a, vars);
+      switch (ast.name) {
+        case 'sin': return Math.sin(a); case 'cos': return Math.cos(a);
+        case 'tan': return Math.tan(a); case 'sec': return 1/Math.cos(a);
+        case 'csc': return 1/Math.sin(a); case 'cot': return Math.cos(a)/Math.sin(a);
+        case 'asin': return Math.asin(a); case 'acos': return Math.acos(a);
+        case 'atan': return Math.atan(a); case 'sqrt': return Math.sqrt(a);
+        case 'abs': return Math.abs(a); case 'log': return Math.log10(a);
+        case 'ln': return Math.log(a); case 'floor': return Math.floor(a);
+        case 'ceil': return Math.ceil(a); case 'round': return Math.round(a);
+        case 'sign': return Math.sign(a);
+        case 'sinh': return Math.sinh(a); case 'cosh': return Math.cosh(a);
+        case 'tanh': return Math.tanh(a);
+        default: throw new Error('Unknown fn: ' + ast.name);
+      }
+    }
+  }
+}
+
+function findVarsInAst(ast) {
+  const vars = new Set();
+  const reserved = new Set(['pi','e','tau','theta','r','x','y']);
+  (function walk(n) {
+    if (!n) return;
+    if (n.t==='var' && !reserved.has(n.name) && !FUNCTIONS.has(n.name)) vars.add(n.name);
+    if (n.l) walk(n.l); if (n.r) walk(n.r); if (n.a) walk(n.a);
+  })(ast);
+  return vars;
+}
+
+function tryParse(text) {
+  try {
+    const tokens = insertImplicitMul(tokenize(text));
+    const ast = parse(tokens);
+    return { ast, error: null };
+  } catch(e) {
+    return { ast: null, error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  EXPRESSION ANALYSIS & MANAGEMENT
+// ═══════════════════════════════════════════════════
+
+function analyzeInput(raw) {
+  const text = raw.trim();
+  if (!text) return { kind:'empty' };
+
+  // Point: (expr, expr)
+  if (text.startsWith('(') && text.endsWith(')')) {
+    const inner = text.slice(1, -1);
+    // find the splitting comma (respecting parens)
+    let depth = 0, splitIdx = -1;
+    for (let i = 0; i < inner.length; i++) {
+      if (inner[i]==='(') depth++;
+      else if (inner[i]===')') depth--;
+      else if (inner[i]===',' && depth===0) { splitIdx = i; break; }
+    }
+    if (splitIdx > 0) {
+      const rPart = inner.slice(0, splitIdx).trim();
+      const tPart = inner.slice(splitIdx+1).trim();
+      const rP = tryParse(rPart), tP = tryParse(tPart);
+      if (rP.ast && tP.ast) return { kind:'point', rAst:rP.ast, thetaAst:tP.ast };
+    }
+  }
+
+  // Equation with =
+  const eqIdx = text.indexOf('=');
+  if (eqIdx > 0) {
+    const lhs = text.slice(0, eqIdx).trim().toLowerCase();
+    const rhs = text.slice(eqIdx+1).trim();
+    if (lhs === 'r') {
+      const p = tryParse(rhs);
+      return p.ast ? { kind:'polar', ast:p.ast, unknowns:findVarsInAst(p.ast) } : { kind:'error', msg:p.error };
+    }
+    if (lhs === 'theta' || lhs === 'θ' || lhs === 'x') {
+      const p = tryParse(rhs);
+      return p.ast ? { kind:'angle', ast:p.ast } : { kind:'error', msg:p.error };
+    }
+    // Slider: single letter = number-expr
+    if (/^[a-z]$/.test(lhs) && lhs !== 'r' && lhs !== 'x') {
+      const p = tryParse(rhs);
+      return p.ast ? { kind:'slider', name:lhs, ast:p.ast } : { kind:'error', msg:p.error };
+    }
+  }
+
+  // Implicit polar: just an expression → r = expr
+  const p = tryParse(text);
+  if (p.ast) return { kind:'polar', ast:p.ast, unknowns:findVarsInAst(p.ast) };
+  return { kind:'error', msg:p.error };
+}
+
+function getSliderValues() {
+  const vals = {};
+  for (const e of state.expressions) {
+    if (e.analysis && e.analysis.kind==='slider') {
+      vals[e.analysis.name] = e.sliderValue !== undefined ? e.sliderValue : 1;
+    }
+  }
+  return vals;
+}
+
+function getThetaRange() {
+  switch (state.settings.thetaRange) {
+    case '2pi': return [0, 2*Math.PI];
+    case '4pi': return [0, 4*Math.PI];
+    case 'neg': return [-Math.PI, Math.PI];
+    case '8pi': return [0, 8*Math.PI];
+    default: return [0, 4*Math.PI];
+  }
+}
+
+function nextColor() {
+  const c = EXPR_COLORS[state.nextColorIdx % EXPR_COLORS.length];
+  state.nextColorIdx++;
+  return c;
+}
+
+function addExpression(text, doRender) {
+  const expr = {
+    id: state.nextId++,
+    text: text || '',
+    color: nextColor(),
+    visible: true,
+    analysis: null,
+    sliderValue: undefined,
+    sliderMin: -10,
+    sliderMax: 10,
+    sliderStep: 0.1,
+    showTrace: false,
+    traceTheta: 0,
+    renderedPts: null,
+    error: null
+  };
+  reanalyze(expr);
+  state.expressions.push(expr);
+  // If the expression has text, commit sliders immediately (it's a finished expression)
+  if (text) commitSliders(expr);
+  if (doRender !== false) { renderUI(); markDirty(); saveHistory(); }
+  return expr;
+}
+
+function removeExpression(id) {
+  state.expressions = state.expressions.filter(e => e.id !== id);
+  renderUI(); markDirty(); saveHistory();
+}
+
+function reanalyze(expr) {
+  const a = analyzeInput(expr.text);
+  expr.analysis = a;
+  expr.error = a.kind === 'error' ? a.msg : null;
+  // Set default slider value for slider expressions
+  if (a.kind === 'slider' && expr.sliderValue === undefined) {
+    try { expr.sliderValue = evaluate(a.ast, {}); } catch(e) { expr.sliderValue = 1; }
+  }
+}
+
+// Create sliders for unknown variables — called only on commit (Enter / blur)
+function commitSliders(expr) {
+  if (!expr.analysis) return false;
+  const a = expr.analysis;
+  if (a.kind !== 'polar' || !a.unknowns || a.unknowns.size === 0) return false;
+  const existing = new Set(
+    state.expressions
+      .filter(e => e.analysis && e.analysis.kind === 'slider')
+      .map(e => e.analysis.name)
+  );
+  let added = false;
+  for (const v of a.unknowns) {
+    if (existing.has(v)) continue;
+    const se = {
+      id: state.nextId++, text: v + ' = 1', color: nextColor(),
+      visible: true, analysis: { kind:'slider', name:v, ast:{t:'num',v:1} },
+      sliderValue: 1, sliderMin: -10, sliderMax: 10, sliderStep: 0.1,
+      showTrace: false, traceTheta: 0, renderedPts: null, error: null
+    };
+    state.expressions.push(se);
+    existing.add(v);
+    added = true;
+  }
+  return added;
+}
+
+function saveHistory() {
+  const snap = JSON.stringify(state.expressions.map(e => ({ text:e.text, color:e.color, visible:e.visible, sliderValue:e.sliderValue })));
+  if (state.historyIdx >= 0 && state.history[state.historyIdx] === snap) return;
+  state.history = state.history.slice(0, state.historyIdx + 1);
+  state.history.push(snap);
+  state.historyIdx = state.history.length - 1;
+  if (state.history.length > 100) { state.history.shift(); state.historyIdx--; }
+}
+
+function undo() {
+  if (state.historyIdx <= 0) return;
+  state.historyIdx--;
+  restoreHistory();
+}
+function redo() {
+  if (state.historyIdx >= state.history.length - 1) return;
+  state.historyIdx++;
+  restoreHistory();
+}
+function restoreHistory() {
+  const data = JSON.parse(state.history[state.historyIdx]);
+  state.expressions = [];
+  state.nextId = 1;
+  state.nextColorIdx = 0;
+  for (const d of data) {
+    const expr = {
+      id: state.nextId++, text: d.text, color: d.color, visible: d.visible,
+      analysis: null, sliderValue: d.sliderValue, sliderMin:-10, sliderMax:10, sliderStep:0.1,
+      showTrace: false, traceTheta: 0, renderedPts: null, error: null
+    };
+    state.nextColorIdx++;
+    const a = analyzeInput(expr.text);
+    expr.analysis = a;
+    expr.error = a.kind==='error' ? a.msg : null;
+    state.expressions.push(expr);
+  }
+  renderUI(); markDirty();
+}
+
+// ═══════════════════════════════════════════════════
+//  CANVAS RENDERING
+// ═══════════════════════════════════════════════════
+
+let canvasW = 0, canvasH = 0, dpr = 1;
+
+function setupCanvas() {
+  dpr = window.devicePixelRatio || 1;
+  const rect = graphContainer.getBoundingClientRect();
+  canvasW = rect.width;
+  canvasH = rect.height;
+  canvas.width = canvasW * dpr;
+  canvas.height = canvasH * dpr;
+  canvas.style.width = canvasW + 'px';
+  canvas.style.height = canvasH + 'px';
+  markDirty();
+}
+
+function mathToScreen(mx, my) {
+  return [
+    (mx - state.view.cx) * state.view.scale + canvasW / 2,
+    -(my - state.view.cy) * state.view.scale + canvasH / 2
+  ];
+}
+function screenToMath(sx, sy) {
+  return [
+    (sx - canvasW / 2) / state.view.scale + state.view.cx,
+    -(sy - canvasH / 2) / state.view.scale + state.view.cy
+  ];
+}
+
+function markDirty() { state.dirty = true; }
+
+function render() {
+  if (!state.dirty) return;
+  state.dirty = false;
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, canvasW, canvasH);
+
+  // Background
+  ctx.fillStyle = '#fafbfc';
+  ctx.fillRect(0, 0, canvasW, canvasH);
+
+  if (state.settings.polarGrid) drawPolarGrid();
+  if (state.settings.axes) drawAxes();
+
+  // Draw expressions
+  const sliderVals = getSliderValues();
+  for (const expr of state.expressions) {
+    if (!expr.visible || !expr.analysis) continue;
+    const a = expr.analysis;
+    if (a.kind === 'polar') drawCurve(expr, sliderVals);
+    else if (a.kind === 'angle') drawAngleLine(expr, sliderVals);
+    else if (a.kind === 'point') drawPoint(expr, sliderVals);
+  }
+
+  // Detect & draw points of interest (intersections, intercepts)
+  detectPointsOfInterest(sliderVals);
+  drawPointsOfInterest();
+
+  // Draw trace points
+  for (const expr of state.expressions) {
+    if (expr.showTrace && expr.visible && expr.analysis && expr.analysis.kind === 'polar') {
+      drawTracePoint(expr, sliderVals);
+    }
+  }
+
+  // Draw hover
+  drawHover();
+
+  ctx.restore();
+}
+
+function drawPolarGrid() {
+  const [minMx, minMy] = screenToMath(0, canvasH);
+  const [maxMx, maxMy] = screenToMath(canvasW, 0);
+  const corners = [
+    Math.hypot(minMx, minMy), Math.hypot(maxMx, maxMy),
+    Math.hypot(minMx, maxMy), Math.hypot(maxMx, minMy)
+  ];
+  const maxR = Math.max(...corners);
+
+  // Choose circle spacing
+  const pxPerUnit = state.view.scale;
+  let spacing;
+  if (pxPerUnit > 250) spacing = 0.25;
+  else if (pxPerUnit > 120) spacing = 0.5;
+  else if (pxPerUnit > 30) spacing = 1;
+  else if (pxPerUnit > 12) spacing = 2;
+  else if (pxPerUnit > 5) spacing = 5;
+  else spacing = 10;
+
+  const [ox, oy] = mathToScreen(0, 0);
+
+  // Concentric circles
+  ctx.lineWidth = 0.6;
+  for (let r = spacing; r <= maxR + spacing; r += spacing) {
+    const rad = r * state.view.scale;
+    const isMajor = Math.abs(r - Math.round(r)) < 0.01 && spacing <= 1 ||
+                    Math.abs(r % 5) < 0.01 && spacing > 1;
+    ctx.strokeStyle = isMajor ? '#d0d0d5' : '#e8e8ec';
+    ctx.beginPath();
+    ctx.arc(ox, oy, rad, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // Radius labels
+    if (state.settings.radiusLabels && isMajor && rad > 20) {
+      ctx.fillStyle = '#aaa';
+      ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+      const label = Number.isInteger(r) ? r.toString() : r.toFixed(1);
+      ctx.fillText(label, ox + rad + 3, oy - 4);
+    }
+  }
+
+  // Radial lines
+  const angleStep = Math.PI / 6;
+  ctx.lineWidth = 0.5;
+  ctx.strokeStyle = '#e4e4e8';
+  for (let a = 0; a < 2 * Math.PI - 0.001; a += angleStep) {
+    const far = maxR + 10;
+    const [ex, ey] = mathToScreen(far * Math.cos(a), far * Math.sin(a));
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+  }
+
+  // Angle labels
+  if (state.settings.angleLabels) {
+    const isRad = state.settings.angleUnit === 'rad';
+    const labels = isRad ? ANGLE_LABELS_RAD : ANGLE_LABELS_DEG;
+    const labelR = Math.min(maxR, Math.max(3, 180 / state.view.scale));
+    ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+    ctx.fillStyle = '#999';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const [rawAngle, txt] of labels) {
+      const ang = isRad ? rawAngle : rawAngle * Math.PI / 180;
+      const [lx, ly] = mathToScreen(labelR * Math.cos(ang), labelR * Math.sin(ang));
+      // Don't draw if too close to edge
+      if (lx < 30 || lx > canvasW - 30 || ly < 15 || ly > canvasH - 15) continue;
+      ctx.fillText(txt, lx, ly);
+    }
+    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+  }
+}
+
+function drawAxes() {
+  const [ox, oy] = mathToScreen(0, 0);
+  ctx.strokeStyle = '#b0b0b8';
+  ctx.lineWidth = 1;
+
+  // Horizontal axis
+  ctx.beginPath();
+  ctx.moveTo(0, oy);
+  ctx.lineTo(canvasW, oy);
+  ctx.stroke();
+
+  // Vertical axis
+  ctx.beginPath();
+  ctx.moveTo(ox, 0);
+  ctx.lineTo(ox, canvasH);
+  ctx.stroke();
+
+  // Origin dot
+  ctx.fillStyle = '#888';
+  ctx.beginPath();
+  ctx.arc(ox, oy, 3, 0, 2 * Math.PI);
+  ctx.fill();
+
+  // Axis tick marks and labels
+  const pxPerUnit = state.view.scale;
+  let step;
+  if (pxPerUnit > 250) step = 0.25;
+  else if (pxPerUnit > 120) step = 0.5;
+  else if (pxPerUnit > 30) step = 1;
+  else if (pxPerUnit > 12) step = 2;
+  else if (pxPerUnit > 5) step = 5;
+  else step = 10;
+
+  const [minX] = screenToMath(0, 0);
+  const [maxX] = screenToMath(canvasW, 0);
+  const [, maxY] = screenToMath(0, 0);
+  const [, minY] = screenToMath(0, canvasH);
+
+  ctx.fillStyle = '#888';
+  ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = 'center';
+
+  // X axis ticks
+  for (let v = Math.ceil(minX / step) * step; v <= maxX; v += step) {
+    if (Math.abs(v) < step * 0.01) continue;
+    const [sx, sy] = mathToScreen(v, 0);
+    ctx.beginPath(); ctx.moveTo(sx, sy - 3); ctx.lineTo(sx, sy + 3); ctx.stroke();
+    const label = Number.isInteger(v) ? v.toString() : v.toFixed(1);
+    ctx.fillText(label, sx, sy + 14);
+  }
+
+  // Y axis ticks
+  ctx.textAlign = 'right';
+  for (let v = Math.ceil(minY / step) * step; v <= maxY; v += step) {
+    if (Math.abs(v) < step * 0.01) continue;
+    const [sx, sy] = mathToScreen(0, v);
+    ctx.beginPath(); ctx.moveTo(sx - 3, sy); ctx.lineTo(sx + 3, sy); ctx.stroke();
+    const label = Number.isInteger(v) ? v.toString() : v.toFixed(1);
+    ctx.fillText(label, sx - 6, sy + 4);
+  }
+  ctx.textAlign = 'start';
+}
+
+function drawCurve(expr, sliderVals) {
+  const ast = expr.analysis.ast;
+  const [tMin, tMax] = getThetaRange();
+  const steps = 4000;
+  const dt = (tMax - tMin) / steps;
+  const vars = { ...sliderVals };
+
+  ctx.strokeStyle = expr.color;
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+
+  let started = false;
+  let lastSx = 0, lastSy = 0;
+  const pts = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const theta = tMin + i * dt;
+    vars.theta = theta;
+    try {
+      const r = evaluate(ast, vars);
+      if (!isFinite(r)) { started = false; continue; }
+      const x = r * Math.cos(theta);
+      const y = r * Math.sin(theta);
+      const [sx, sy] = mathToScreen(x, y);
+      pts.push({ x, y, r, theta, sx, sy });
+
+      if (!started) {
+        ctx.moveTo(sx, sy);
+        started = true;
+      } else {
+        const dist = Math.hypot(sx - lastSx, sy - lastSy);
+        if (dist > 600) {
+          ctx.moveTo(sx, sy);
+        } else {
+          ctx.lineTo(sx, sy);
+        }
+      }
+      lastSx = sx; lastSy = sy;
+    } catch(e) { started = false; }
+  }
+  ctx.stroke();
+  expr.renderedPts = pts;
+}
+
+function drawAngleLine(expr, sliderVals) {
+  try {
+    const theta = evaluate(expr.analysis.ast, sliderVals);
+    if (!isFinite(theta)) return;
+    const far = 10000 / state.view.scale;
+    const [x1, y1] = mathToScreen(far * Math.cos(theta), far * Math.sin(theta));
+    const [x2, y2] = mathToScreen(-far * Math.cos(theta), -far * Math.sin(theta));
+
+    ctx.strokeStyle = expr.color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } catch(e) {}
+}
+
+function drawPoint(expr, sliderVals) {
+  try {
+    const r = evaluate(expr.analysis.rAst, sliderVals);
+    const theta = evaluate(expr.analysis.thetaAst, sliderVals);
+    if (!isFinite(r) || !isFinite(theta)) return;
+    const x = r * Math.cos(theta);
+    const y = r * Math.sin(theta);
+    const [sx, sy] = mathToScreen(x, y);
+
+    ctx.fillStyle = expr.color;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = expr.color;
+    ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+    const rLabel = r.toFixed(2);
+    const tLabel = formatAngle(theta);
+    ctx.fillText('(' + rLabel + ', ' + tLabel + ')', sx + 9, sy - 9);
+  } catch(e) {}
+}
+
+function drawTracePoint(expr, sliderVals) {
+  const ast = expr.analysis.ast;
+  const theta = expr.traceTheta;
+  const vars = { ...sliderVals, theta };
+  try {
+    const r = evaluate(ast, vars);
+    if (!isFinite(r)) return;
+    const x = r * Math.cos(theta);
+    const y = r * Math.sin(theta);
+    const [sx, sy] = mathToScreen(x, y);
+    const [ox, oy] = mathToScreen(0, 0);
+
+    // Ray from origin
+    ctx.strokeStyle = expr.color + '60';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(sx, sy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Point
+    ctx.fillStyle = expr.color;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 6, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 11px ' + getComputedStyle(document.body).fontFamily;
+    const label = 'r=' + r.toFixed(3) + '  θ=' + formatAngle(theta);
+    ctx.fillText(label, sx + 10, sy - 10);
+  } catch(e) {}
+}
+
+function drawHover() {
+  if (!state.hover) return;
+  const { point, expr } = state.hover;
+  const [sx, sy] = mathToScreen(point.x, point.y);
+
+  // Highlight ring
+  ctx.strokeStyle = expr.color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 8, 0, 2 * Math.PI);
+  ctx.stroke();
+
+  ctx.fillStyle = expr.color;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 4, 0, 2 * Math.PI);
+  ctx.fill();
+}
+
+// ═══════════════════════════════════════════════════
+//  POINTS OF INTEREST — Intersections & Intercepts
+// ═══════════════════════════════════════════════════
+
+function detectPointsOfInterest(sliderVals) {
+  const pois = [];
+  const [vMinX, vMaxY] = screenToMath(0, 0);
+  const [vMaxX, vMinY] = screenToMath(canvasW, canvasH);
+  const margin = 0.5 / state.view.scale; // small margin
+  const inView = (x, y) => x >= vMinX - margin && x <= vMaxX + margin && y >= vMinY - margin && y <= vMaxY + margin;
+
+  // Gather visible polar curves with their sampled Cartesian polylines
+  const curves = [];
+  for (const expr of state.expressions) {
+    if (!expr.visible || !expr.analysis || expr.analysis.kind !== 'polar') continue;
+    if (!expr.renderedPts || expr.renderedPts.length < 2) continue;
+    curves.push(expr);
+  }
+
+  // --- Stage 1: Axis intercepts for each curve ---
+  for (const expr of curves) {
+    const pts = expr.renderedPts;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i], p1 = pts[i + 1];
+      // Skip if segment is too long (discontinuity)
+      if (Math.hypot(p1.x - p0.x, p1.y - p0.y) > 5) continue;
+
+      // X-axis intercept: y sign change
+      if (p0.y * p1.y < 0 || (Math.abs(p0.y) < 1e-10 && Math.abs(p0.x) > 1e-10)) {
+        if (p0.y * p1.y < 0) {
+          const t = Math.abs(p0.y) / (Math.abs(p0.y) + Math.abs(p1.y));
+          const ix = p0.x + t * (p1.x - p0.x);
+          const iy = 0;
+          if (inView(ix, iy) && Math.abs(ix) > 1e-10) {
+            pois.push({ x: ix, y: iy, kind: 'x-intercept', exprs: [expr], label: 'x-intercept' });
+          }
+        }
+      }
+
+      // Y-axis intercept: x sign change
+      if (p0.x * p1.x < 0 || (Math.abs(p0.x) < 1e-10 && Math.abs(p0.y) > 1e-10)) {
+        if (p0.x * p1.x < 0) {
+          const t = Math.abs(p0.x) / (Math.abs(p0.x) + Math.abs(p1.x));
+          const ix = 0;
+          const iy = p0.y + t * (p1.y - p0.y);
+          if (inView(ix, iy) && Math.abs(iy) > 1e-10) {
+            pois.push({ x: ix, y: iy, kind: 'y-intercept', exprs: [expr], label: 'y-intercept' });
+          }
+        }
+      }
+
+      // Origin: r crosses zero
+      if (p0.r * p1.r < 0 || Math.abs(p0.r) < 1e-10) {
+        if (inView(0, 0)) {
+          pois.push({ x: 0, y: 0, kind: 'origin', exprs: [expr], label: 'origin' });
+        }
+      }
+    }
+  }
+
+  // --- Stage 2: Curve-curve intersections ---
+  for (let a = 0; a < curves.length; a++) {
+    for (let b = a + 1; b < curves.length; b++) {
+      const ptsA = curves[a].renderedPts;
+      const ptsB = curves[b].renderedPts;
+      // Use spatial bucketing for performance
+      const bucketSize = 10 / state.view.scale; // ~10 pixels
+      const bucketsB = new Map();
+      for (let j = 0; j < ptsB.length - 1; j++) {
+        const bx = Math.floor(ptsB[j].x / bucketSize);
+        const by = Math.floor(ptsB[j].y / bucketSize);
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            const key = (bx + dx) + ',' + (by + dy);
+            if (!bucketsB.has(key)) bucketsB.set(key, []);
+            bucketsB.get(key).push(j);
+          }
+        }
+      }
+
+      for (let i = 0; i < ptsA.length - 1; i++) {
+        const a0 = ptsA[i], a1 = ptsA[i + 1];
+        if (Math.hypot(a1.x - a0.x, a1.y - a0.y) > 5) continue;
+        const bx = Math.floor(a0.x / bucketSize);
+        const by = Math.floor(a0.y / bucketSize);
+        const key = bx + ',' + by;
+        const candidates = bucketsB.get(key);
+        if (!candidates) continue;
+
+        for (const j of candidates) {
+          if (j >= ptsB.length - 1) continue;
+          const b0 = ptsB[j], b1 = ptsB[j + 1];
+          if (Math.hypot(b1.x - b0.x, b1.y - b0.y) > 5) continue;
+          const pt = segSegIntersect(a0.x, a0.y, a1.x, a1.y, b0.x, b0.y, b1.x, b1.y);
+          if (pt && inView(pt.x, pt.y)) {
+            pois.push({ x: pt.x, y: pt.y, kind: 'intersection', exprs: [curves[a], curves[b]], label: 'intersection' });
+          }
+        }
+      }
+    }
+  }
+
+  // --- Stage 3: Merge nearby duplicates ---
+  const merged = [];
+  const MERGE_DIST = 6 / state.view.scale; // ~6px
+  for (const p of pois) {
+    let found = false;
+    for (const m of merged) {
+      if (Math.hypot(p.x - m.x, p.y - m.y) < MERGE_DIST) {
+        // Merge: upgrade kind if needed
+        if (p.kind === 'intersection' && m.kind !== 'intersection') {
+          m.kind = 'intersection';
+          m.label = 'intersection';
+        }
+        // Merge expression references
+        for (const e of p.exprs) {
+          if (!m.exprs.includes(e)) m.exprs.push(e);
+        }
+        found = true;
+        break;
+      }
+    }
+    if (!found) merged.push({ ...p, exprs: [...p.exprs] });
+  }
+  state.poi = merged;
+}
+
+function segSegIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const denom = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+  if (Math.abs(denom) < 1e-14) return null;
+  const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / denom;
+  const u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / denom;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return { x: ax + t * (bx - ax), y: ay + t * (by - ay) };
+}
+
+function drawPointsOfInterest() {
+  const font = getComputedStyle(document.body).fontFamily;
+  for (const p of state.poi) {
+    const [sx, sy] = mathToScreen(p.x, p.y);
+    // Skip if off-screen
+    if (sx < -20 || sx > canvasW + 20 || sy < -20 || sy > canvasH + 20) continue;
+
+    // Determine color based on kind
+    let color;
+    if (p.kind === 'intersection') {
+      color = '#333';
+    } else if (p.kind === 'x-intercept') {
+      color = p.exprs[0] ? p.exprs[0].color : '#888';
+    } else if (p.kind === 'y-intercept') {
+      color = p.exprs[0] ? p.exprs[0].color : '#888';
+    } else {
+      color = '#888';
+    }
+
+    const isHovered = state.hoverPoi === p;
+    const radius = isHovered ? 5.5 : 4;
+
+    // Outer ring
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius + 1, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // Filled dot
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, 0, 2 * Math.PI);
+    ctx.fill();
+
+    // Subtle ring
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // If hovered, draw larger highlight ring
+    if (isHovered) {
+      ctx.strokeStyle = color + '40';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 12, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+  }
+}
+
+function formatAngle(rad) {
+  if (state.settings.angleUnit === 'deg') {
+    return (rad * 180 / Math.PI).toFixed(1) + '°';
+  }
+  // Try to express as fraction of pi
+  const ratio = rad / Math.PI;
+  if (Math.abs(ratio - Math.round(ratio)) < 0.005) {
+    const n = Math.round(ratio);
+    if (n === 0) return '0';
+    if (n === 1) return 'π';
+    if (n === -1) return '-π';
+    return n + 'π';
+  }
+  return rad.toFixed(3);
+}
+
+// ═══════════════════════════════════════════════════
+//  INTERACTION
+// ═══════════════════════════════════════════════════
+
+canvas.addEventListener('mousedown', e => {
+  const rect = canvas.getBoundingClientRect();
+  state.mouse.down = true;
+  state.mouse.startX = e.clientX - rect.left;
+  state.mouse.startY = e.clientY - rect.top;
+  state.mouse.startCx = state.view.cx;
+  state.mouse.startCy = state.view.cy;
+  canvas.style.cursor = 'grabbing';
+});
+
+window.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  state.mouse.x = sx;
+  state.mouse.y = sy;
+  state.mouse.inCanvas = sx >= 0 && sy >= 0 && sx <= canvasW && sy <= canvasH;
+
+  if (state.mouse.down) {
+    const dx = (sx - state.mouse.startX) / state.view.scale;
+    const dy = -(sy - state.mouse.startY) / state.view.scale;
+    state.view.cx = state.mouse.startCx - dx;
+    state.view.cy = state.mouse.startCy - dy;
+    markDirty();
+  }
+
+  if (state.mouse.inCanvas) {
+    updateCoordDisplay(sx, sy);
+    updateHover(sx, sy);
+  } else {
+    coordDisplay.classList.remove('visible');
+    hoverTooltip.classList.remove('visible');
+    if (state.hover) { state.hover = null; markDirty(); }
+    if (state.hoverPoi) { state.hoverPoi = null; markDirty(); }
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  state.mouse.down = false;
+  canvas.style.cursor = 'crosshair';
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  const [mx, my] = screenToMath(sx, sy);
+
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  state.view.scale *= factor;
+  state.view.scale = Math.max(2, Math.min(2000, state.view.scale));
+
+  // Zoom toward mouse
+  const [newMx, newMy] = screenToMath(sx, sy);
+  state.view.cx -= newMx - mx;
+  state.view.cy -= newMy - my;
+  markDirty();
+}, { passive: false });
+
+// Touch support
+let touchDist = 0, touchMid = null;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    state.mouse.down = true;
+    state.mouse.startX = t.clientX - rect.left;
+    state.mouse.startY = t.clientY - rect.top;
+    state.mouse.startCx = state.view.cx;
+    state.mouse.startCy = state.view.cy;
+  }
+  if (e.touches.length === 2) {
+    const [a, b] = [e.touches[0], e.touches[1]];
+    touchDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    touchMid = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+  }
+  e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  if (e.touches.length === 1 && state.mouse.down) {
+    const t = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const sx = t.clientX - rect.left;
+    const sy = t.clientY - rect.top;
+    const dx = (sx - state.mouse.startX) / state.view.scale;
+    const dy = -(sy - state.mouse.startY) / state.view.scale;
+    state.view.cx = state.mouse.startCx - dx;
+    state.view.cy = state.mouse.startCy - dy;
+    markDirty();
+  }
+  if (e.touches.length === 2) {
+    const [a, b] = [e.touches[0], e.touches[1]];
+    const newDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const newMid = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+    const rect = canvas.getBoundingClientRect();
+    const sx = newMid.x - rect.left;
+    const sy = newMid.y - rect.top;
+    const [mx, my] = screenToMath(sx, sy);
+
+    state.view.scale *= newDist / touchDist;
+    state.view.scale = Math.max(2, Math.min(2000, state.view.scale));
+
+    const [newMx, newMy] = screenToMath(sx, sy);
+    state.view.cx -= newMx - mx;
+    state.view.cy -= newMy - my;
+
+    touchDist = newDist;
+    touchMid = newMid;
+    markDirty();
+  }
+  e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  if (e.touches.length === 0) state.mouse.down = false;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  coordDisplay.classList.remove('visible');
+  hoverTooltip.classList.remove('visible');
+  if (state.hover) { state.hover = null; markDirty(); }
+  if (state.hoverPoi) { state.hoverPoi = null; markDirty(); }
+});
+
+function updateCoordDisplay(sx, sy) {
+  const [mx, my] = screenToMath(sx, sy);
+  const r = Math.hypot(mx, my);
+  let theta = Math.atan2(my, mx);
+  if (theta < 0) theta += 2 * Math.PI;
+
+  let html = '';
+  if (state.settings.angleUnit === 'deg') {
+    html = `r = ${r.toFixed(3)}, θ = ${(theta*180/Math.PI).toFixed(1)}°`;
+  } else {
+    html = `r = ${r.toFixed(3)}, θ = ${theta.toFixed(4)}`;
+  }
+  html += `<br>x = ${mx.toFixed(3)}, y = ${my.toFixed(3)}`;
+  coordDisplay.innerHTML = html;
+  coordDisplay.classList.add('visible');
+}
+
+function updateHover(sx, sy) {
+  const [mx, my] = screenToMath(sx, sy);
+
+  // --- Check POI first (they take priority) ---
+  let bestPoi = null, bestPoiDist = Infinity;
+  for (const p of state.poi) {
+    const d = Math.hypot(p.x - mx, p.y - my);
+    if (d < bestPoiDist) { bestPoiDist = d; bestPoi = p; }
+  }
+  const poiScreenDist = bestPoiDist * state.view.scale;
+  if (bestPoi && poiScreenDist < 18) {
+    // Hovering a point of interest
+    if (state.hoverPoi !== bestPoi || state.hover) {
+      state.hoverPoi = bestPoi;
+      state.hover = null;
+      markDirty();
+    }
+    const [hsx, hsy] = mathToScreen(bestPoi.x, bestPoi.y);
+    let text = `(${niceNum(bestPoi.x)}, ${niceNum(bestPoi.y)})`;
+    // Polar form
+    const pr = Math.hypot(bestPoi.x, bestPoi.y);
+    let pt = Math.atan2(bestPoi.y, bestPoi.x);
+    if (pt < 0) pt += 2 * Math.PI;
+    text += `\nr = ${niceNum(pr)}, θ = ${formatAngle(pt)}`;
+    // Kind label
+    if (bestPoi.kind === 'intersection') {
+      text += `\nintersection`;
+    } else if (bestPoi.kind === 'x-intercept') {
+      text += `\nx-axis intercept`;
+    } else if (bestPoi.kind === 'y-intercept') {
+      text += `\ny-axis intercept`;
+    } else if (bestPoi.kind === 'origin') {
+      text += `\norigin`;
+    }
+    hoverTooltip.textContent = text;
+    hoverTooltip.style.whiteSpace = 'pre';
+    hoverTooltip.style.left = (hsx + 14) + 'px';
+    hoverTooltip.style.top = (hsy - 36) + 'px';
+    hoverTooltip.classList.add('visible');
+    return;
+  }
+
+  // Clear POI hover
+  if (state.hoverPoi) { state.hoverPoi = null; markDirty(); }
+
+  // --- Check curve hover ---
+  let best = null, bestDist = Infinity;
+
+  for (const expr of state.expressions) {
+    if (!expr.visible || !expr.renderedPts || expr.renderedPts.length === 0) continue;
+    // Sample every 4th point for performance
+    for (let i = 0; i < expr.renderedPts.length; i += 4) {
+      const pt = expr.renderedPts[i];
+      const d = Math.hypot(pt.x - mx, pt.y - my);
+      if (d < bestDist) { bestDist = d; best = { expr, point: pt }; }
+    }
+    // Refine around best
+    if (best && best.expr === expr) {
+      const idx = expr.renderedPts.indexOf(best.point);
+      const lo = Math.max(0, idx - 4), hi = Math.min(expr.renderedPts.length - 1, idx + 4);
+      for (let i = lo; i <= hi; i++) {
+        const pt = expr.renderedPts[i];
+        const d = Math.hypot(pt.x - mx, pt.y - my);
+        if (d < bestDist) { bestDist = d; best = { expr, point: pt }; }
+      }
+    }
+  }
+
+  const screenDist = bestDist * state.view.scale;
+  if (best && screenDist < 20) {
+    state.hover = best;
+    const [hsx, hsy] = mathToScreen(best.point.x, best.point.y);
+    let thetaDisp = best.point.theta;
+    if (thetaDisp < 0) thetaDisp += 2 * Math.PI;
+    let text = `r = ${best.point.r.toFixed(3)}, θ = ${formatAngle(best.point.theta)}`;
+    text += `\nx = ${best.point.x.toFixed(3)}, y = ${best.point.y.toFixed(3)}`;
+    hoverTooltip.textContent = text;
+    hoverTooltip.style.whiteSpace = 'pre';
+    hoverTooltip.style.left = (hsx + 14) + 'px';
+    hoverTooltip.style.top = (hsy - 30) + 'px';
+    hoverTooltip.classList.add('visible');
+    markDirty();
+  } else {
+    if (state.hover) { state.hover = null; markDirty(); }
+    hoverTooltip.classList.remove('visible');
+  }
+}
+
+function niceNum(v) {
+  if (Math.abs(v) < 1e-10) return '0';
+  if (Math.abs(v - Math.round(v)) < 1e-8) return Math.round(v).toString();
+  return v.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+// ═══════════════════════════════════════════════════
+//  UI RENDERING
+// ═══════════════════════════════════════════════════
+
+// Prettify expression text: replace x with θ, pi with π
+function prettifyExpr(text) {
+  // Token-based replacement to handle ax→aθ but not max→maθ
+  return text.replace(/[a-zA-Zθπ_][a-zA-Zθπ_0-9]*/g, function(word) {
+    // Known functions and identifiers stay unchanged
+    if (FUNCTIONS.has(word) || KNOWN_IDS.has(word)) {
+      if (word === 'theta') return 'θ';
+      if (word === 'pi') return 'π';
+      return word;
+    }
+    // If word ends with 'x', split: prefix stays, trailing x becomes θ
+    if (word.endsWith('x') && word.length > 1) {
+      const prefix = word.slice(0, -1);
+      if (prefix === 'pi') return 'π' + 'θ';
+      return prefix + 'θ';
+    }
+    if (word === 'x') return 'θ';
+    if (word === 'pi') return 'π';
+    if (word === 'theta') return 'θ';
+    return word;
+  });
+}
+
+function renderUI() {
+  exprListEl.innerHTML = '';
+  for (const expr of state.expressions) {
+    exprListEl.appendChild(createExprRow(expr));
+  }
+  // Add hover zone with + button after last expression row
+  const addZone = document.createElement('div');
+  addZone.className = 'add-row-zone';
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-row-btn';
+  addBtn.title = 'Add expression';
+  addBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg>';
+  addBtn.addEventListener('click', () => {
+    addExpression('');
+    setTimeout(() => {
+      const inputs = exprListEl.querySelectorAll('.expr-input');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    }, 20);
+  });
+  addZone.appendChild(addBtn);
+  exprListEl.appendChild(addZone);
+
+  // Wire hover on last expr-row to also show the + button
+  const rows = exprListEl.querySelectorAll('.expr-row');
+  if (rows.length > 0) {
+    const lastRow = rows[rows.length - 1];
+    lastRow.addEventListener('mouseenter', () => addZone.classList.add('show'));
+    lastRow.addEventListener('mouseleave', (e) => {
+      // Keep showing if moving into the add zone
+      const related = e.relatedTarget;
+      if (related && (addZone.contains(related) || related === addZone)) return;
+      addZone.classList.remove('show');
+    });
+    addZone.addEventListener('mouseleave', (e) => {
+      const related = e.relatedTarget;
+      if (related && (lastRow.contains(related) || related === lastRow)) return;
+      addZone.classList.remove('show');
+    });
+  }
+}
+
+function createExprRow(expr) {
+  const row = document.createElement('div');
+  row.className = 'expr-row' + (expr.error ? ' has-error' : '') + (!expr.visible ? ' hidden-expr' : '') + (expr.showTrace ? ' show-extra' : '');
+  row.dataset.id = expr.id;
+
+  // Main row
+  const main = document.createElement('div');
+  main.className = 'expr-main';
+
+  // Color dot
+  const dot = document.createElement('div');
+  dot.className = 'color-dot';
+  dot.style.background = expr.color;
+  dot.style.borderColor = expr.color;
+  dot.title = 'Change color';
+  dot.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleColorPicker(row, expr);
+  });
+
+  // Input wrapper with display overlay
+  const inputWrap = document.createElement('div');
+  inputWrap.className = 'expr-input-wrap';
+
+  const input = document.createElement('input');
+  input.className = 'expr-input';
+  input.type = 'text';
+  input.value = expr.text;
+  input.placeholder = expr.analysis && expr.analysis.kind === 'slider' ? expr.analysis.name + ' = value' : 'r = f(x)  or  (r, x)';
+  input.spellcheck = false;
+
+  const displayEl = document.createElement('div');
+  displayEl.className = 'expr-display';
+  function updateDisplay() {
+    // Show the text with x → θ replacement (only standalone x, not inside words)
+    displayEl.textContent = prettifyExpr(input.value);
+  }
+  updateDisplay();
+
+  input.addEventListener('input', () => {
+    expr.text = input.value;
+    updateDisplay();
+    reanalyze(expr);
+    row.classList.toggle('has-error', !!expr.error);
+    if (errDiv) errDiv.textContent = expr.error || '';
+    markDirty();
+  });
+  input.addEventListener('focus', () => {
+    document.querySelectorAll('.expr-row').forEach(r => r.classList.remove('active'));
+    row.classList.add('active');
+  });
+  input.addEventListener('blur', () => {
+    // Commit: create sliders for any new unknown variables
+    if (commitSliders(expr)) renderUI();
+    saveHistory();
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'x' || e.key === 'X') {
+      e.preventDefault();
+      const s = input.selectionStart, ed = input.selectionEnd;
+      input.value = input.value.slice(0, s) + 'θ' + input.value.slice(ed);
+      input.selectionStart = input.selectionEnd = s + 1;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Commit sliders before adding new row
+      if (commitSliders(expr)) renderUI();
+      saveHistory();
+      addExpression('');
+      setTimeout(() => {
+        const inputs = exprListEl.querySelectorAll('.expr-input');
+        if (inputs.length) inputs[inputs.length - 1].focus();
+      }, 20);
+    }
+  });
+
+  inputWrap.appendChild(input);
+  inputWrap.appendChild(displayEl);
+
+  // Trace toggle (expand arrow)
+  const traceBtn = document.createElement('button');
+  traceBtn.className = 'expr-btn';
+  traceBtn.title = 'Trace curve';
+  traceBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l4 4 4-4"/></svg>';
+  if (expr.analysis && expr.analysis.kind === 'polar') {
+    traceBtn.addEventListener('click', () => {
+      expr.showTrace = !expr.showTrace;
+      row.classList.toggle('show-extra', expr.showTrace);
+      markDirty();
+      renderUI();
+    });
+  } else {
+    traceBtn.style.visibility = 'hidden';
+  }
+
+  // Visibility toggle
+  const visBtn = document.createElement('button');
+  visBtn.className = 'expr-btn';
+  visBtn.title = expr.visible ? 'Hide' : 'Show';
+  visBtn.innerHTML = expr.visible
+    ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="8" rx="6" ry="3.5"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>'
+    : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="2" x2="14" y2="14"/><ellipse cx="8" cy="8" rx="6" ry="3.5"/></svg>';
+  visBtn.addEventListener('click', () => {
+    expr.visible = !expr.visible;
+    markDirty(); renderUI(); saveHistory();
+  });
+
+  // Delete
+  const delBtn = document.createElement('button');
+  delBtn.className = 'expr-btn';
+  delBtn.title = 'Delete';
+  delBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>';
+  delBtn.addEventListener('click', () => removeExpression(expr.id));
+
+  main.appendChild(dot);
+  main.appendChild(inputWrap);
+  main.appendChild(traceBtn);
+  main.appendChild(visBtn);
+  main.appendChild(delBtn);
+  row.appendChild(main);
+
+  // Error message
+  const errDiv = document.createElement('div');
+  errDiv.className = 'expr-error';
+  errDiv.textContent = expr.error || '';
+  row.appendChild(errDiv);
+
+  // Color picker (hidden)
+  const picker = document.createElement('div');
+  picker.className = 'color-picker';
+  for (const c of EXPR_COLORS) {
+    const swatch = document.createElement('div');
+    swatch.className = 'cp-swatch' + (c === expr.color ? ' selected' : '');
+    swatch.style.background = c;
+    swatch.addEventListener('click', e => {
+      e.stopPropagation();
+      expr.color = c;
+      dot.style.background = c;
+      dot.style.borderColor = c;
+      picker.classList.remove('open');
+      markDirty(); saveHistory();
+    });
+    picker.appendChild(swatch);
+  }
+  row.appendChild(picker);
+
+  // Extra section (trace + sliders)
+  const extra = document.createElement('div');
+  extra.className = 'expr-extra';
+
+  // Slider controls for this expression's own slider
+  if (expr.analysis && expr.analysis.kind === 'slider') {
+    const sr = document.createElement('div');
+    sr.className = 'slider-row';
+    const lbl = document.createElement('label');
+    lbl.textContent = expr.analysis.name;
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = expr.sliderMin;
+    range.max = expr.sliderMax;
+    range.step = expr.sliderStep;
+    range.value = expr.sliderValue !== undefined ? expr.sliderValue : 1;
+    const valSpan = document.createElement('span');
+    valSpan.className = 'slider-val';
+    valSpan.textContent = parseFloat(range.value).toFixed(2);
+    range.addEventListener('input', () => {
+      expr.sliderValue = parseFloat(range.value);
+      valSpan.textContent = expr.sliderValue.toFixed(2);
+      markDirty();
+    });
+    range.addEventListener('change', () => saveHistory());
+    sr.appendChild(lbl);
+    sr.appendChild(range);
+    sr.appendChild(valSpan);
+    main.parentNode.insertBefore(sr, errDiv); // put slider in main area for slider exprs
+  }
+
+  // Trace controls
+  if (expr.analysis && expr.analysis.kind === 'polar') {
+    const [tMin, tMax] = getThetaRange();
+    const tr = document.createElement('div');
+    tr.className = 'trace-row';
+    const tLbl = document.createElement('label');
+    tLbl.textContent = 'TRACE θ';
+
+    const playBtn = document.createElement('button');
+    playBtn.className = 'trace-play';
+    playBtn.textContent = '▶';
+    playBtn.addEventListener('click', () => {
+      if (state.animating && state.animating.exprId === expr.id) {
+        cancelAnimationFrame(state.animating.raf);
+        state.animating = null;
+        playBtn.textContent = '▶';
+        return;
+      }
+      playBtn.textContent = '⏸';
+      const speed = (tMax - tMin) / 300; // complete in ~5s at 60fps
+      function step() {
+        expr.traceTheta += speed;
+        if (expr.traceTheta > tMax) expr.traceTheta = tMin;
+        tRange.value = expr.traceTheta;
+        tInfo.textContent = 'θ = ' + formatAngle(expr.traceTheta);
+        markDirty();
+        state.animating = { exprId: expr.id, raf: requestAnimationFrame(step) };
+      }
+      state.animating = { exprId: expr.id, raf: requestAnimationFrame(step) };
+    });
+
+    const tRange = document.createElement('input');
+    tRange.type = 'range';
+    tRange.min = tMin;
+    tRange.max = tMax;
+    tRange.step = 0.01;
+    tRange.value = expr.traceTheta;
+    tRange.addEventListener('input', () => {
+      expr.traceTheta = parseFloat(tRange.value);
+      tInfo.textContent = 'θ = ' + formatAngle(expr.traceTheta);
+      markDirty();
+    });
+
+    tr.appendChild(tLbl);
+    tr.appendChild(tRange);
+    tr.appendChild(playBtn);
+    extra.appendChild(tr);
+
+    const tInfo = document.createElement('div');
+    tInfo.className = 'trace-info';
+    tInfo.textContent = 'θ = ' + formatAngle(expr.traceTheta);
+    extra.appendChild(tInfo);
+  }
+
+  row.appendChild(extra);
+  return row;
+}
+
+function toggleColorPicker(row, expr) {
+  const picker = row.querySelector('.color-picker');
+  // Close all others
+  document.querySelectorAll('.color-picker.open').forEach(p => { if (p !== picker) p.classList.remove('open'); });
+  picker.classList.toggle('open');
+}
+
+// Close color pickers on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('.color-dot') && !e.target.closest('.color-picker')) {
+    document.querySelectorAll('.color-picker.open').forEach(p => p.classList.remove('open'));
+  }
+});
+
+// ═══════════════════════════════════════════════════
+//  TOOLBAR & CONTROLS
+// ═══════════════════════════════════════════════════
+
+document.getElementById('btn-add-expr').addEventListener('click', () => {
+  addExpression('');
+  setTimeout(() => {
+    const inputs = exprListEl.querySelectorAll('.expr-input');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }, 20);
+});
+
+document.getElementById('btn-undo').addEventListener('click', undo);
+document.getElementById('btn-redo').addEventListener('click', redo);
+
+document.getElementById('btn-settings').addEventListener('click', e => {
+  e.stopPropagation();
+  settingsPanel.classList.toggle('open');
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#settings-panel') && !e.target.closest('#btn-settings')) {
+    settingsPanel.classList.remove('open');
+  }
+});
+
+// Settings toggles
+settingsPanel.querySelectorAll('.toggle').forEach(tog => {
+  tog.addEventListener('click', () => {
+    const key = tog.dataset.key;
+    tog.classList.toggle('on');
+    state.settings[key] = tog.classList.contains('on');
+    markDirty();
+  });
+});
+settingsPanel.querySelectorAll('.setting-select').forEach(sel => {
+  sel.addEventListener('change', () => {
+    state.settings[sel.dataset.key] = sel.value;
+    markDirty();
+    // Re-render UI for trace range changes
+    if (sel.dataset.key === 'thetaRange') renderUI();
+  });
+});
+
+// Floating controls
+document.getElementById('fc-zoomin').addEventListener('click', () => {
+  state.view.scale *= 1.3;
+  state.view.scale = Math.min(2000, state.view.scale);
+  markDirty();
+});
+document.getElementById('fc-zoomout').addEventListener('click', () => {
+  state.view.scale *= 0.75;
+  state.view.scale = Math.max(2, state.view.scale);
+  markDirty();
+});
+document.getElementById('fc-home').addEventListener('click', () => {
+  state.view.cx = 0; state.view.cy = 0; state.view.scale = 60;
+  markDirty();
+});
+document.getElementById('fc-grid').addEventListener('click', () => {
+  state.settings.polarGrid = !state.settings.polarGrid;
+  // Also update settings panel toggle
+  const tog = settingsPanel.querySelector('[data-key="polarGrid"]');
+  if (tog) tog.classList.toggle('on', state.settings.polarGrid);
+  markDirty();
+});
+
+// Mobile panel toggle
+document.getElementById('mobile-toggle').addEventListener('click', () => {
+  leftPanel.classList.toggle('open');
+});
+
+// Help modal
+document.getElementById('btn-help').addEventListener('click', () => {
+  helpModal.style.display = 'flex';
+});
+document.getElementById('help-close').addEventListener('click', () => {
+  helpModal.style.display = 'none';
+});
+helpModal.addEventListener('click', e => {
+  if (e.target === helpModal) helpModal.style.display = 'none';
+});
+
+// Export as PNG
+document.getElementById('btn-export').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'polar-graph.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+    e.preventDefault();
+    openLibrary();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveCurrentGraph();
+  }
+  if (e.key === 'Escape' && libOverlay.classList.contains('open')) {
+    closeLibrary();
+  }
+});
+
+// ═══════════════════════════════════════════════════
+//  INITIALIZATION & RENDER LOOP
+// ═══════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════
+//  SAVED GRAPHS LIBRARY — Storage & UI
+// ═══════════════════════════════════════════════════
+
+const STORAGE_KEY = 'polarCalc_graphs';
+const FOLDER_KEY = 'polarCalc_folders';
+let currentGraphId = null;
+
+function loadLibrary() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveLibrary(lib) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(lib));
+}
+function loadFolders() {
+  try { return JSON.parse(localStorage.getItem(FOLDER_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveFolders(folders) {
+  localStorage.setItem(FOLDER_KEY, JSON.stringify(folders));
+}
+
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function serializeCurrentGraph() {
+  return {
+    expressions: state.expressions.map(e => ({ text:e.text, color:e.color, visible:e.visible, sliderValue:e.sliderValue })),
+    settings: { ...state.settings },
+    view: { ...state.view }
+  };
+}
+
+function deserializeGraph(data) {
+  state.expressions = [];
+  state.nextId = 1;
+  state.nextColorIdx = 0;
+  state.history = [];
+  state.historyIdx = -1;
+  for (const d of data.expressions) {
+    const expr = {
+      id: state.nextId++, text: d.text, color: d.color || nextColor(), visible: d.visible !== false,
+      analysis: null, sliderValue: d.sliderValue, sliderMin:-10, sliderMax:10, sliderStep:0.1,
+      showTrace: false, traceTheta: 0, renderedPts: null, error: null
+    };
+    state.nextColorIdx++;
+    const a = analyzeInput(expr.text);
+    expr.analysis = a;
+    expr.error = a.kind === 'error' ? a.msg : null;
+    if (a.kind === 'slider' && expr.sliderValue === undefined) {
+      try { expr.sliderValue = evaluate(a.ast, {}); } catch(e) { expr.sliderValue = 1; }
+    }
+    state.expressions.push(expr);
+  }
+  if (data.settings) Object.assign(state.settings, data.settings);
+  if (data.view) Object.assign(state.view, data.view);
+  renderUI();
+  markDirty();
+  saveHistory();
+  // Sync settings UI
+  syncSettingsUI();
+}
+
+function syncSettingsUI() {
+  settingsPanel.querySelectorAll('.toggle').forEach(tog => {
+    tog.classList.toggle('on', !!state.settings[tog.dataset.key]);
+  });
+  settingsPanel.querySelectorAll('.setting-select').forEach(sel => {
+    if (state.settings[sel.dataset.key] !== undefined) sel.value = state.settings[sel.dataset.key];
+  });
+}
+
+function saveCurrentGraph() {
+  const titleEl = document.getElementById('graph-title');
+  const title = titleEl.value.trim() || 'Untitled Graph';
+  const lib = loadLibrary();
+  const data = serializeCurrentGraph();
+  const thumb = generateThumbnail();
+
+  if (currentGraphId) {
+    const idx = lib.findIndex(g => g.id === currentGraphId);
+    if (idx >= 0) {
+      lib[idx].title = title;
+      lib[idx].data = data;
+      lib[idx].thumb = thumb;
+      lib[idx].updated = Date.now();
+    }
+  } else {
+    const entry = {
+      id: generateId(),
+      type: 'graph',
+      title: title,
+      data: data,
+      thumb: thumb,
+      folder: libState.currentFolder,
+      calcType: 'polar',
+      created: Date.now(),
+      updated: Date.now()
+    };
+    lib.unshift(entry);
+    currentGraphId = entry.id;
+  }
+  saveLibrary(lib);
+  showSaveFlash();
+}
+
+function generateThumbnail() {
+  try {
+    const tc = document.createElement('canvas');
+    tc.width = 320; tc.height = 180;
+    const tctx = tc.getContext('2d');
+    tctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, 320, 180);
+    return tc.toDataURL('image/png', 0.6);
+  } catch(e) { return ''; }
+}
+
+function showSaveFlash() {
+  const el = document.createElement('div');
+  el.textContent = 'Saved!';
+  el.style.cssText = 'position:fixed;top:60px;right:20px;background:#388c46;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:500;z-index:300;animation:fadeout 1.5s forwards;pointer-events:none';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1600);
+}
+// Add fadeout keyframes
+if (!document.getElementById('lib-anim-style')) {
+  const s = document.createElement('style');
+  s.id = 'lib-anim-style';
+  s.textContent = '@keyframes fadeout{0%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}';
+  document.head.appendChild(s);
+}
+
+function openGraphById(id) {
+  const lib = loadLibrary();
+  const g = lib.find(e => e.id === id);
+  if (!g || g.type !== 'graph') return;
+  currentGraphId = g.id;
+  document.getElementById('graph-title').value = g.title;
+  deserializeGraph(g.data);
+  closeLibrary();
+}
+
+function newGraph() {
+  currentGraphId = null;
+  document.getElementById('graph-title').value = 'Untitled Graph';
+  state.expressions = [];
+  state.nextId = 1;
+  state.nextColorIdx = 0;
+  state.view = { cx: 0, cy: 0, scale: 60 };
+  state.settings = { polarGrid: true, axes: true, angleLabels: true, radiusLabels: true, angleUnit: 'rad', thetaRange: '4pi' };
+  state.history = []; state.historyIdx = -1;
+  addExpression('r = 2 + 3sin(θ)', false);
+  addExpression('r = 4cos(2θ)', false);
+  renderUI();
+  markDirty();
+  saveHistory();
+  syncSettingsUI();
+  closeLibrary();
+}
+
+// ── Library UI state
+const libState = {
+  viewMode: 'grid',
+  sortBy: 'date',
+  filterType: 'all',
+  search: '',
+  selected: new Set(),
+  currentFolder: null,
+  ctxTarget: null
+};
+
+const libOverlay = document.getElementById('lib-overlay');
+const libContent = document.getElementById('lib-content');
+const libBulk = document.getElementById('lib-bulk');
+const libCtx = document.getElementById('lib-ctx');
+const libRenameModal = document.getElementById('lib-rename-modal');
+const libFolderPicker = document.getElementById('lib-folder-picker');
+
+function openLibrary() {
+  libOverlay.classList.add('open');
+  libState.selected.clear();
+  renderLibrary();
+  document.getElementById('lib-search').focus();
+}
+function closeLibrary() {
+  libOverlay.classList.remove('open');
+  closeCtx();
+  libBulk.classList.remove('visible');
+}
+
+function renderLibrary() {
+  const lib = loadLibrary();
+  const folders = loadFolders();
+  const bc = document.getElementById('lib-breadcrumb');
+
+  // Breadcrumb
+  if (libState.currentFolder) {
+    const folder = folders.find(f => f.id === libState.currentFolder);
+    bc.classList.add('visible');
+    bc.innerHTML = '<a id="lib-bc-root">My Graphs</a> <span>›</span> <span>' + (folder ? escHtml(folder.name) : 'Folder') + '</span>';
+    document.getElementById('lib-bc-root').addEventListener('click', () => { libState.currentFolder = null; renderLibrary(); });
+  } else {
+    bc.classList.remove('visible');
+  }
+
+  // Filter items
+  let items = [];
+  // Folders first (only at root)
+  if (!libState.currentFolder) {
+    for (const f of folders) {
+      if (libState.search && !f.name.toLowerCase().includes(libState.search.toLowerCase())) continue;
+      items.push({ ...f, _kind: 'folder' });
+    }
+  }
+  // Graphs
+  for (const g of lib) {
+    if (g.type !== 'graph') continue;
+    const inFolder = libState.currentFolder ? g.folder === libState.currentFolder : (!g.folder);
+    if (!inFolder && !libState.search) continue;
+    if (libState.filterType !== 'all' && g.calcType !== libState.filterType) continue;
+    if (libState.search && !g.title.toLowerCase().includes(libState.search.toLowerCase())) continue;
+    items.push({ ...g, _kind: 'graph' });
+  }
+
+  // Sort graphs
+  const graphItems = items.filter(i => i._kind === 'graph');
+  const folderItems = items.filter(i => i._kind === 'folder');
+  if (libState.sortBy === 'date') {
+    graphItems.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  } else {
+    graphItems.sort((a, b) => a.title.localeCompare(b.title));
+  }
+  folderItems.sort((a, b) => a.name.localeCompare(b.name));
+  items = [...folderItems, ...graphItems];
+
+  if (items.length === 0) {
+    libContent.innerHTML = '<div class="lib-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><p>No saved graphs yet</p><small>Click "New Graph" or save your current work</small></div>';
+    updateBulkBar();
+    return;
+  }
+
+  if (libState.viewMode === 'grid') {
+    renderGridView(items);
+  } else {
+    renderListView(items);
+  }
+  updateBulkBar();
+}
+
+function renderGridView(items) {
+  const grid = document.createElement('div');
+  grid.className = 'lib-grid';
+  for (const item of items) {
+    const card = document.createElement('div');
+    card.className = 'lib-card' + (libState.selected.has(item.id) ? ' selected' : '');
+    card.dataset.id = item.id;
+    card.dataset.kind = item._kind;
+
+    const thumb = document.createElement('div');
+    thumb.className = 'lib-card-thumb';
+    if (item._kind === 'folder') {
+      thumb.innerHTML = '<div class="folder-icon"><svg viewBox="0 0 24 24" fill="#fbbf24" stroke="#f59e0b" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>';
+    } else if (item.thumb) {
+      const img = document.createElement('img');
+      img.src = item.thumb;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+      thumb.appendChild(img);
+    } else {
+      thumb.style.background = '#e8ecf0';
+    }
+
+    const check = document.createElement('div');
+    check.className = 'lib-card-check';
+    check.addEventListener('click', e => { e.stopPropagation(); toggleSelect(item.id); });
+    thumb.appendChild(check);
+
+    const menu = document.createElement('button');
+    menu.className = 'lib-card-menu';
+    menu.textContent = '⋯';
+    menu.addEventListener('click', e => { e.stopPropagation(); showCtx(e, item); });
+    thumb.appendChild(menu);
+
+    const body = document.createElement('div');
+    body.className = 'lib-card-body';
+    const title = document.createElement('div');
+    title.className = 'lib-card-title';
+    title.textContent = item._kind === 'folder' ? item.name : item.title;
+    const meta = document.createElement('div');
+    meta.className = 'lib-card-meta';
+    if (item._kind === 'graph') {
+      meta.innerHTML = '<span>' + timeAgo(item.updated) + '</span><span class="lib-card-type">' + (item.calcType || 'polar') + '</span>';
+    } else {
+      const lib = loadLibrary();
+      const count = lib.filter(g => g.folder === item.id).length;
+      meta.textContent = count + ' graph' + (count !== 1 ? 's' : '');
+    }
+    body.appendChild(title);
+    body.appendChild(meta);
+
+    card.appendChild(thumb);
+    card.appendChild(body);
+    card.addEventListener('click', () => {
+      if (item._kind === 'folder') {
+        libState.currentFolder = item.id;
+        renderLibrary();
+      } else {
+        openGraphById(item.id);
+      }
+    });
+    grid.appendChild(card);
+  }
+  libContent.innerHTML = '';
+  libContent.appendChild(grid);
+}
+
+function renderListView(items) {
+  const list = document.createElement('div');
+  list.className = 'lib-list';
+  // Header
+  const header = document.createElement('div');
+  header.className = 'lib-list-header';
+  header.innerHTML = '<span></span><span id="lh-name">Name ↕</span><span id="lh-date">Last edited ↕</span><span>Type</span><span></span>';
+  list.appendChild(header);
+
+  for (const item of items) {
+    const row = document.createElement('div');
+    row.className = 'lib-row' + (libState.selected.has(item.id) ? ' selected' : '');
+    row.dataset.id = item.id;
+    row.dataset.kind = item._kind;
+
+    const check = document.createElement('div');
+    check.className = 'lib-row-check';
+    check.addEventListener('click', e => { e.stopPropagation(); toggleSelect(item.id); });
+
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'lib-row-title';
+    if (item._kind === 'folder') {
+      titleDiv.innerHTML = '<span class="folder-icon-sm"><svg viewBox="0 0 24 24" fill="#fbbf24" stroke="#f59e0b" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>';
+      titleDiv.appendChild(document.createTextNode(item.name));
+    } else {
+      titleDiv.textContent = item.title;
+    }
+
+    const dateDiv = document.createElement('div');
+    dateDiv.className = 'lib-row-date';
+    dateDiv.textContent = item._kind === 'graph' ? timeAgo(item.updated) : '';
+
+    const typeDiv = document.createElement('div');
+    typeDiv.className = 'lib-row-type';
+    typeDiv.textContent = item._kind === 'graph' ? (item.calcType || 'polar') : 'folder';
+
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'lib-row-menu';
+    menuBtn.textContent = '⋮';
+    menuBtn.addEventListener('click', e => { e.stopPropagation(); showCtx(e, item); });
+
+    row.appendChild(check);
+    row.appendChild(titleDiv);
+    row.appendChild(dateDiv);
+    row.appendChild(typeDiv);
+    row.appendChild(menuBtn);
+    row.addEventListener('click', () => {
+      if (item._kind === 'folder') {
+        libState.currentFolder = item.id;
+        renderLibrary();
+      } else {
+        openGraphById(item.id);
+      }
+    });
+    list.appendChild(row);
+  }
+  libContent.innerHTML = '';
+  libContent.appendChild(list);
+
+  // Sort header clicks
+  setTimeout(() => {
+    const hn = document.getElementById('lh-name');
+    const hd = document.getElementById('lh-date');
+    if (hn) hn.addEventListener('click', () => { libState.sortBy = 'name'; document.getElementById('lib-sort').value = 'name'; renderLibrary(); });
+    if (hd) hd.addEventListener('click', () => { libState.sortBy = 'date'; document.getElementById('lib-sort').value = 'date'; renderLibrary(); });
+  }, 0);
+}
+
+function toggleSelect(id) {
+  if (libState.selected.has(id)) libState.selected.delete(id);
+  else libState.selected.add(id);
+  renderLibrary();
+}
+
+function updateBulkBar() {
+  const n = libState.selected.size;
+  if (n > 0) {
+    libBulk.classList.add('visible');
+    document.getElementById('lib-bulk-count').textContent = n + ' selected';
+  } else {
+    libBulk.classList.remove('visible');
+  }
+}
+
+function showCtx(e, item) {
+  e.preventDefault();
+  libState.ctxTarget = item;
+  libCtx.classList.add('open');
+  const x = Math.min(e.clientX, window.innerWidth - 180);
+  const y = Math.min(e.clientY, window.innerHeight - 200);
+  libCtx.style.left = x + 'px';
+  libCtx.style.top = y + 'px';
+}
+function closeCtx() { libCtx.classList.remove('open'); libState.ctxTarget = null; }
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return days + 'd ago';
+  return new Date(ts).toLocaleDateString();
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Library event wiring
+document.getElementById('lib-close').addEventListener('click', closeLibrary);
+document.getElementById('btn-open').addEventListener('click', openLibrary);
+document.getElementById('btn-save').addEventListener('click', saveCurrentGraph);
+document.getElementById('lib-new').addEventListener('click', newGraph);
+
+document.getElementById('lib-new-folder').addEventListener('click', () => {
+  const name = prompt('Folder name:');
+  if (!name || !name.trim()) return;
+  const folders = loadFolders();
+  folders.push({ id: generateId(), name: name.trim() });
+  saveFolders(folders);
+  renderLibrary();
+});
+
+// View toggles
+document.getElementById('lib-view-grid').addEventListener('click', () => {
+  libState.viewMode = 'grid';
+  document.getElementById('lib-view-grid').classList.add('active');
+  document.getElementById('lib-view-list').classList.remove('active');
+  renderLibrary();
+});
+document.getElementById('lib-view-list').addEventListener('click', () => {
+  libState.viewMode = 'list';
+  document.getElementById('lib-view-list').classList.add('active');
+  document.getElementById('lib-view-grid').classList.remove('active');
+  renderLibrary();
+});
+
+// Search
+document.getElementById('lib-search').addEventListener('input', e => {
+  libState.search = e.target.value;
+  renderLibrary();
+});
+
+// Filter & sort
+document.getElementById('lib-filter').addEventListener('change', e => {
+  libState.filterType = e.target.value;
+  renderLibrary();
+});
+document.getElementById('lib-sort').addEventListener('change', e => {
+  libState.sortBy = e.target.value;
+  renderLibrary();
+});
+
+// Context menu actions
+libCtx.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const item = libState.ctxTarget;
+  closeCtx();
+  if (!item) return;
+
+  if (action === 'open') {
+    if (item._kind === 'folder') {
+      libState.currentFolder = item.id;
+      renderLibrary();
+    } else {
+      openGraphById(item.id);
+    }
+  } else if (action === 'rename') {
+    showRename(item);
+  } else if (action === 'duplicate') {
+    if (item._kind === 'graph') {
+      const lib = loadLibrary();
+      const orig = lib.find(g => g.id === item.id);
+      if (orig) {
+        const dup = { ...JSON.parse(JSON.stringify(orig)), id: generateId(), title: orig.title + ' (copy)', created: Date.now(), updated: Date.now() };
+        lib.unshift(dup);
+        saveLibrary(lib);
+        renderLibrary();
+      }
+    }
+  } else if (action === 'move') {
+    showFolderPicker([item.id]);
+  } else if (action === 'delete') {
+    if (confirm('Delete "' + (item.name || item.title) + '"?')) {
+      if (item._kind === 'folder') {
+        const folders = loadFolders().filter(f => f.id !== item.id);
+        saveFolders(folders);
+        // Unparent graphs in that folder
+        const lib = loadLibrary().map(g => g.folder === item.id ? { ...g, folder: null } : g);
+        saveLibrary(lib);
+      } else {
+        saveLibrary(loadLibrary().filter(g => g.id !== item.id));
+      }
+      if (currentGraphId === item.id) currentGraphId = null;
+      renderLibrary();
+    }
+  }
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('.lib-ctx') && !e.target.closest('.lib-card-menu') && !e.target.closest('.lib-row-menu')) closeCtx();
+});
+
+// Rename
+function showRename(item) {
+  const isFolder = item._kind === 'folder';
+  document.getElementById('rename-heading').textContent = isFolder ? 'Rename folder' : 'Rename graph';
+  document.getElementById('rename-input').value = isFolder ? item.name : item.title;
+  libRenameModal.classList.add('open');
+  libRenameModal._item = item;
+  setTimeout(() => document.getElementById('rename-input').select(), 50);
+}
+document.getElementById('rename-cancel').addEventListener('click', () => libRenameModal.classList.remove('open'));
+document.getElementById('rename-save').addEventListener('click', () => {
+  const item = libRenameModal._item;
+  const newName = document.getElementById('rename-input').value.trim();
+  if (!newName) return;
+  if (item._kind === 'folder') {
+    const folders = loadFolders();
+    const f = folders.find(f => f.id === item.id);
+    if (f) { f.name = newName; saveFolders(folders); }
+  } else {
+    const lib = loadLibrary();
+    const g = lib.find(g => g.id === item.id);
+    if (g) { g.title = newName; saveLibrary(lib); }
+    if (currentGraphId === item.id) document.getElementById('graph-title').value = newName;
+  }
+  libRenameModal.classList.remove('open');
+  renderLibrary();
+});
+libRenameModal.addEventListener('click', e => { if (e.target === libRenameModal) libRenameModal.classList.remove('open'); });
+
+// Folder picker
+function showFolderPicker(ids) {
+  libFolderPicker._targets = ids;
+  const folders = loadFolders();
+  const cont = document.getElementById('folder-picker-list');
+  cont.innerHTML = '';
+  for (const f of folders) {
+    const btn = document.createElement('button');
+    btn.textContent = f.name;
+    btn.style.cssText = 'display:block;width:100%;padding:8px 12px;border:1px solid #eee;border-radius:6px;background:#fff;cursor:pointer;text-align:left;margin-bottom:4px;font-size:13px';
+    btn.addEventListener('click', () => { moveToFolder(ids, f.id); });
+    cont.appendChild(btn);
+  }
+  if (folders.length === 0) cont.innerHTML = '<p style="color:#999;font-size:13px;padding:12px">No folders. Create one first.</p>';
+  libFolderPicker.classList.add('open');
+}
+function moveToFolder(ids, folderId) {
+  const lib = loadLibrary().map(g => ids.includes(g.id) ? { ...g, folder: folderId } : g);
+  saveLibrary(lib);
+  libFolderPicker.classList.remove('open');
+  libState.selected.clear();
+  renderLibrary();
+}
+document.getElementById('fp-cancel').addEventListener('click', () => libFolderPicker.classList.remove('open'));
+document.getElementById('fp-root').addEventListener('click', () => {
+  const ids = libFolderPicker._targets || [];
+  const lib = loadLibrary().map(g => ids.includes(g.id) ? { ...g, folder: null } : g);
+  saveLibrary(lib);
+  libFolderPicker.classList.remove('open');
+  libState.selected.clear();
+  renderLibrary();
+});
+libFolderPicker.addEventListener('click', e => { if (e.target === libFolderPicker) libFolderPicker.classList.remove('open'); });
+
+// Bulk actions
+document.getElementById('lib-bulk-cancel').addEventListener('click', () => {
+  libState.selected.clear();
+  renderLibrary();
+});
+document.getElementById('lib-bulk-delete').addEventListener('click', () => {
+  if (!confirm('Delete ' + libState.selected.size + ' item(s)?')) return;
+  let lib = loadLibrary();
+  let folders = loadFolders();
+  for (const id of libState.selected) {
+    lib = lib.filter(g => g.id !== id);
+    folders = folders.filter(f => f.id !== id);
+    if (currentGraphId === id) currentGraphId = null;
+  }
+  saveLibrary(lib); saveFolders(folders);
+  libState.selected.clear();
+  renderLibrary();
+});
+document.getElementById('lib-bulk-move').addEventListener('click', () => {
+  showFolderPicker([...libState.selected]);
+});
+
+// Auto-save on title change
+document.getElementById('graph-title').addEventListener('change', () => {
+  if (currentGraphId) saveCurrentGraph();
+});
+
+function init() {
+  setupCanvas();
+  window.addEventListener('resize', () => { setupCanvas(); });
+
+  // Default expressions
+  addExpression('r = 2 + 3sin(θ)', false);
+  addExpression('r = 4cos(2θ)', false);
+  renderUI();
+  saveHistory();
+
+  // Render loop
+  (function loop() {
+    render();
+    requestAnimationFrame(loop);
+  })();
+}
+
+init();
+})();
+</script>
+</body>
+</html>

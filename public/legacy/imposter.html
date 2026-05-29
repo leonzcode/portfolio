@@ -1,0 +1,2996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+  <title>Imposter Game</title>
+
+ <style>
+    /* ... (All previous styles remain exactly the same) ... */
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; background: #f4f4f8; display: flex; justify-content: center; align-items: center; min-height: 100vh; color: #222; padding: 12px; }
+    .container { width: 100%; max-width: 800px; min-width: 280px; padding: 16px 12px 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    h1 { text-align: center; margin: 0 0 8px; font-size: clamp(24px, 5vw, 32px); font-weight: 800; line-height: 1.2; padding: 0 8px; width: 100%; position: relative; }
+    
+    /* ... (Info Button, Instructions, Modal Styles remain the same) ... */
+    .info-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #4f46e5, #6366f1); color: white; border: none; font-size: 20px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3); transition: all 0.2s; }
+    .info-btn:hover { transform: translateY(-50%) scale(1.1); box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4); }
+    .info-btn:active { transform: translateY(-50%) scale(0.95); }
+    @media (max-width: 480px) { .info-btn { width: 32px; height: 32px; font-size: 18px; right: 4px; } }
+    p.instructions { margin: 0 0 20px; text-align: center; font-size: clamp(14px, 3.5vw, 16px); color: #555; line-height: 1.4; padding: 0 8px; max-width: 600px; width: 100%; }
+
+    /* Modal Overlay & Content */
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; }
+    .modal-overlay.active { opacity: 1; visibility: visible; }
+    .modal { background: white; border-radius: 20px; max-width: 700px; width: 100%; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); transform: translateY(20px); transition: transform 0.3s; }
+    .modal-overlay.active .modal { transform: translateY(0); }
+    .modal-header { padding: 24px 24px 16px; border-bottom: 2px solid #eef2ff; display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h2 { margin: 0; font-size: 24px; color: #4f46e5; font-weight: 800; }
+    .close-btn { background: none; border: none; font-size: 28px; color: #666; cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+    .close-btn:hover { background: #f3f4f6; color: #dc2626; }
+    .modal-content { padding: 24px; overflow-y: auto; flex: 1; }
+    .modal-section { margin-bottom: 28px; }
+    .modal-section h3 { margin: 0 0 16px; font-size: 20px; color: #333; font-weight: 700; padding-bottom: 8px; border-bottom: 2px solid #eef2ff; }
+    .modal-section p { margin: 0 0 16px; line-height: 1.6; color: #444; }
+    .modal-section ul, .modal-section ol { margin: 0 0 16px; padding-left: 24px; }
+    .modal-section li { margin-bottom: 10px; line-height: 1.5; color: #444; }
+
+    /* Form Styles */
+    .form-group { margin-bottom: 20px; }
+    .form-label { display: block; font-weight: 700; color: #374151; margin-bottom: 8px; font-size: 14px; }
+    .form-input, .form-textarea { width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 15px; font-family: inherit; transition: border-color 0.2s; }
+    .form-input:focus, .form-textarea:focus { outline: none; border-color: #4f46e5; }
+    .form-textarea { min-height: 80px; resize: vertical; }
+    .form-hint { font-size: 12px; color: #6b7280; margin-top: 6px; }
+
+    /* Category Blocks */
+    .category-block { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; position: relative; }
+    .category-block:hover { border-color: #d1d5db; }
+    .remove-category-btn { position: absolute; top: 10px; right: 10px; background: #fee2e2; color: #dc2626; border: none; width: 28px; height: 28px; border-radius: 50%; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .remove-category-btn:hover { background: #fecaca; transform: scale(1.1); }
+    .add-category-btn { width: 100%; padding: 12px; background: #eef2ff; color: #4f46e5; border: 2px dashed #c7d2fe; border-radius: 12px; font-weight: 700; cursor: pointer; margin-bottom: 20px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .add-category-btn:hover { background: #e0e7ff; border-color: #818cf8; }
+
+    /* Modal Footer */
+    .modal-footer { padding: 16px 24px 24px; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #e5e7eb; flex-wrap: wrap; }
+    .btn-secondary { padding: 12px 20px; background: #f3f4f6; color: #4b5563; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .btn-secondary:hover { background: #e5e7eb; }
+    .btn-primary { padding: 12px 20px; background: #4f46e5; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .btn-primary:hover { background: #4338ca; }
+    
+    /* GITHUB BUTTON STYLE */
+    .btn-github {
+      padding: 12px 20px;
+      background: #24292e;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: auto; /* Pushes other buttons to the right */
+    }
+    .btn-github:hover { background: #1b1f23; }
+    
+    @media (max-width: 550px) {
+      .modal-footer { justify-content: center; }
+      .btn-github { margin-right: 0; width: 100%; justify-content: center; margin-bottom: 8px; }
+      .btn-secondary, .btn-primary { flex: 1; }
+    }
+
+    /* ... (Role Grid, Cards, Slider, and Toggle styles remain the same) ... */
+    .role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+    @media (max-width: 700px) { .role-grid { grid-template-columns: 1fr; } }
+    .role-card { background: #f9fafb; border-radius: 12px; padding: 20px; border-left: 4px solid #4f46e5; }
+    .role-card.civilian { border-left-color: #3b82f6; } .civilian .role-icon { background: #3b82f6; }
+    .role-card.imposter { border-left-color: #dc2626; } .imposter .role-icon { background: #dc2626; }
+    .role-card.detective { border-left-color: #10b981; } .detective .role-icon { background: #10b981; }
+    .role-card.jester { border-left-color: #f59e0b; } .jester .role-icon { background: #f59e0b; }
+    .role-card.assassin { border-left-color: #8b5cf6; } .assassin .role-icon { background: #8b5cf6; }
+    .role-card.king { border-left-color: #eab308; } .king .role-icon { background: linear-gradient(135deg, #eab308, #ca8a04); }
+    .role-card.clueless { border-left-color: #06b6d4; } .clueless .role-icon { background: #06b6d4; }
+    
+    .role-card h4 { margin: 0 0 12px; font-size: 18px; font-weight: 700; color: #111; display: flex; align-items: center; gap: 8px; }
+    .role-card .role-icon { width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; color: white; }
+    .role-card p { margin: 0 0 12px; font-size: 15px; line-height: 1.5; color: #444; }
+    .role-card .goal { font-weight: 600; color: #111; background: #eef2ff; padding: 8px 12px; border-radius: 8px; font-size: 14px; margin-top: 8px; }
+
+    .subject-section { width: 100%; max-width: 500px; margin-bottom: 16px; background: #fff; padding: 24px 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .subject-section h2 { margin: 0 0 16px; text-align: center; font-size: clamp(18px, 4vw, 20px); color: #333; font-weight: 700; }
+    .subject-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; width: 100%; }
+    @media (max-width: 500px) { .subject-options { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } }
+    .subject-option { padding: 14px 10px; border: 2px solid #e5e7eb; border-radius: 12px; background: #f9fafb; text-align: center; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; color: #4b5563; width: 100%; position: relative; }
+    .subject-option:hover { background: #f3f4f6; transform: translateY(-2px); border-color: #d1d5db; }
+    .subject-option.selected { background: #e0e7ff; border-color: #4f46e5; color: #4f46e5; box-shadow: 0 4px 8px rgba(79, 70, 229, 0.1); }
+    .subject-option.add-new { border: 2px dashed #4f46e5; color: #4f46e5; background: #eef2ff; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .subject-option.add-new:hover { background: #e0e7ff; }
+    .delete-subject-btn { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; background: #ef4444; color: white; border-radius: 50%; border: 2px solid white; font-size: 14px; font-weight: bold; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2); opacity: 0; transition: opacity 0.2s, transform 0.2s; }
+    .subject-option:hover .delete-subject-btn { opacity: 1; }
+    @media (hover: none) { .delete-subject-btn { opacity: 1; } }
+
+    .custom-subject-container { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb; width: 100%; }
+    .custom-subject-input { display: flex; gap: 10px; align-items: center; width: 100%; }
+    @media (max-width: 480px) { .custom-subject-input { flex-direction: column; } }
+    .custom-subject-input input { flex: 1; padding: 12px; font-size: 15px; border: 2px solid #ddd; border-radius: 10px; transition: border-color 0.2s; min-width: 0; }
+    .custom-subject-input input:focus { outline: none; border-color: #4f46e5; }
+    .custom-subject-btn { padding: 12px 20px; border: none; border-radius: 999px; background: linear-gradient(135deg, #10b981, #34d399); color: white; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: transform 0.12s ease, box-shadow 0.2s; box-shadow: 0 4px 8px rgba(16, 185, 129, 0.25); }
+    @media (max-width: 480px) { .custom-subject-btn { width: 100%; } }
+    .custom-subject-btn:hover { box-shadow: 0 6px 12px rgba(16, 185, 129, 0.3); }
+    .custom-subject-btn:active { transform: scale(0.96); }
+
+    .selected-subject-display { text-align: center; margin: 20px 0; padding: 16px; background: linear-gradient(135deg, #e0e7ff, #f3f4f6); border-radius: 14px; border: 2px solid #4f46e5; width: 100%; }
+    .selected-subject-display h3 { margin: 0 0 8px; font-size: 16px; color: #6b7280; font-weight: 600; }
+    .selected-subject-display .subject-name { font-size: clamp(20px, 4vw, 22px); font-weight: 800; color: #4f46e5; margin: 0; word-break: break-word; }
+    .change-subject-btn { display: block; margin: 8px auto 0; padding: 8px 16px; border: none; border-radius: 999px; background: #f3f4f6; color: #6b7280; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: fit-content; }
+    .change-subject-btn:hover { background: #e5e7eb; color: #4b5563; }
+
+    .player-names-inline { width: 100%; }
+    .player-names-panel { width: 100%; margin-top: 12px; padding-top: 12px; border-top: 1px solid #eef2ff; }
+    .player-names-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .player-names-header h3 { margin: 0; font-size: 14px; color: #4f46e5; font-weight: 700; }
+    .player-names-buttons { display: flex; gap: 8px; }
+    .reset-names-btn { padding: 8px 16px; border: none; border-radius: 999px; background: #fee2e2; color: #dc2626; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .reset-names-btn:hover { background: #fecaca; transform: translateY(-1px); }
+    .player-names-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; width: 100%; }
+    @media (max-width: 500px) { .player-names-list { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } }
+    .player-name-input-container { display: flex; flex-direction: column; gap: 6px; position: relative; }
+    .player-name-label { font-size: 13px; color: #6b7280; font-weight: 600; text-align: center; }
+    .player-name-input { padding: 12px; font-size: 15px; border: 2px solid #ddd; border-radius: 10px; text-align: center; transition: border-color 0.2s; width: 100%; }
+    .player-name-input:focus { outline: none; border-color: #4f46e5; }
+    
+    .player-count-controls { display: flex; flex-direction: column; gap: 12px; align-items: center; margin-bottom: 20px; padding: 16px; background: #f9fafb; border-radius: 12px; border: 2px solid #e5e7eb; width: 100%; }
+    .player-count-label { font-size: 14px; font-weight: 600; color: #4b5563; text-align: center; }
+    .count-buttons { display: flex; gap: 20px; align-items: center; justify-content: center; width: 100%; }
+    .count-btn { width: 48px; height: 48px; border-radius: 50%; border: none; background: #e0e7ff; color: #4f46e5; font-size: 28px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; box-shadow: 0 2px 6px rgba(79, 70, 229, 0.2); }
+    .count-btn:hover { background: #c7d2fe; transform: scale(1.1); box-shadow: 0 4px 8px rgba(79, 70, 229, 0.3); }
+    .count-btn:active { transform: scale(0.95); }
+    .count-btn.remove { background: #fee2e2; color: #dc2626; box-shadow: 0 2px 6px rgba(220, 38, 38, 0.2); }
+    .count-btn.remove:hover { background: #fecaca; box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3); }
+    .player-count { font-size: 24px; font-weight: 800; color: #4f46e5; min-width: 50px; text-align: center; }
+    .toggle-player-names { margin: 0; padding: 10px 16px; border: none; border-radius: 8px; background: #eef2ff; color: #4f46e5; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%; display: flex; align-items: center; gap: 8px; justify-content: center; }
+    .toggle-player-names:hover { background: #e0e7ff; }
+    .toggle-player-names .toggle-icon { font-size: 10px; transition: transform 0.2s; }
+    .toggle-player-names.open .toggle-icon { transform: rotate(90deg); }
+
+    .controls { display: flex; flex-direction: column; gap: 16px; align-items: center; justify-content: center; margin-bottom: 20px; background: #fff; padding: 24px 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 100%; max-width: 500px; }
+    .controls-title { margin: 0 0 4px; text-align: center; font-size: clamp(18px, 4vw, 20px); color: #333; font-weight: 700; }
+    .settings-group { width: 100%; }
+    .settings-divider { width: 100%; height: 1px; background: #e5e7eb; margin: 4px 0; }
+    .slider-pair { display: flex; flex-direction: column; flex: 1; min-width: 140px; gap: 4px; }
+    .sliders-row { display: flex; flex-wrap: wrap; gap: 20px; width: 100%; justify-content: space-around; }
+    .slider-container { display: flex; flex-direction: column; flex: 1; min-width: 140px; }
+    .slider-label { font-size: 14px; color: #444; margin-bottom: 6px; font-weight: 600; text-align: center; display: flex; justify-content: space-between; align-items: center; }
+    .slider-label span { font-weight: 800; color: #4f46e5; font-size: 16px; min-width: 24px; text-align: right; }
+    .slider-wrapper { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .slider { flex: 1; height: 6px; -webkit-appearance: none; appearance: none; background: #e5e7eb; border-radius: 3px; outline: none; cursor: pointer; }
+    .slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #4f46e5; cursor: pointer; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.2); transition: all 0.2s; }
+    .slider::-webkit-slider-thumb:hover { transform: scale(1.1); box-shadow: 0 3px 8px rgba(0,0,0,0.3); }
+    .slider-minmax { display: flex; justify-content: space-between; font-size: 12px; color: #6b7280; margin-top: 2px; }
+    .slider-minmax span { font-weight: 600; }
+
+    .roles-section { width: 100%; background: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .roles-section h3 { margin: 0 0 4px; font-size: 14px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+    .role-toggle { display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
+    .role-toggle.full-width { width: 100%; background: #eef2ff; border-radius: 8px; padding: 10px; border: 1px solid #e0e7ff; }
+    .role-toggle.full-width label { width: 100%; display: flex; justify-content: center; gap: 10px; color: #4f46e5; font-weight: 700; }
+    .roles-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
+    .role-pill { flex: 1 1 100px; max-width: 140px; background: white; border: 1px solid #ddd; border-radius: 8px; padding: 8px 6px; display: flex; justify-content: center; align-items: center; transition: all 0.2s; }
+    .role-pill label { cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #444; font-weight: 600; margin: 0; width: 100%; justify-content: center; }
+    .role-pill input[type="checkbox"] { margin: 0; width: 16px; height: 16px; cursor: pointer; }
+    .role-pill:hover { background: #f3f4f6; }
+    .role-pill.disabled { opacity: 0.5; pointer-events: none; background: #f3f4f6; }
+
+    .btn { padding: 14px 24px; border: none; border-radius: 999px; background: linear-gradient(135deg, #4f46e5, #6366f1); color: white; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; max-width: 300px; text-align: center; transition: transform 0.12s ease, box-shadow 0.2s; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25); margin-top: 4px; }
+    .btn:hover { box-shadow: 0 6px 16px rgba(79, 70, 229, 0.3); }
+    .btn:active { transform: scale(0.96); }
+    .btn:disabled { background: linear-gradient(135deg, #9ca3af, #d1d5db); cursor: not-allowed; box-shadow: none; transform: none; }
+    
+    .error { text-align: center; color: #dc2626; min-height: 20px; font-size: 14px; font-weight: 500; margin: 8px 0 16px; width: 100%; padding: 0 12px; max-width: 500px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; width: 100%; max-width: 1000px; justify-items: center; }
+    @media (max-width: 600px) { .cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; } }
+    @media (max-width: 400px) { .cards { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; } }
+    @media (max-width: 350px) { .cards { grid-template-columns: 1fr; max-width: 280px; } }
+    .card { background: #fff; border-radius: 14px; padding: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 8px; user-select: none; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; width: 100%; max-width: 200px; }
+    @media (max-width: 600px) { .card { max-width: 180px; } }
+    @media (max-width: 400px) { .card { max-width: 160px; padding: 12px; } }
+    @media (max-width: 350px) { .card { max-width: 100%; } }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(0,0,0,0.12); }
+    .card-header { display: flex; justify-content: space-between; align-items: center; font-size: clamp(14px, 3vw, 16px); font-weight: 700; }
+    .status-label { font-size: 11px; text-transform: uppercase; color: #777; font-weight: 600; letter-spacing: 0.5px; transition: color 0.15s; }
+    
+    .word-box { padding: 16px 10px; border-radius: 12px; border: 1px dashed #bbb; text-align: center; font-size: clamp(16px, 4vw, 20px); font-weight: 800; opacity: 0; transform: scale(0.9); transition: opacity 0.25s, transform 0.25s; min-height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; word-break: break-word; overflow-wrap: break-word; width: 100%; }
+    @media (max-width: 400px) { .word-box { min-height: 54px; padding: 12px 8px; } }
+    .word-hidden { color: #777; }
+    .word-revealed { color: #111; opacity: 1; transform: scale(1); }
+    .word-locked { color: #999; font-style: italic; opacity: 1; transform: scale(1); font-size: 18px; }
+    
+    .detective-role { color: #10b981; font-size: 14px; font-weight: 700; margin-top: 4px; text-align: center; line-height: 1.3; }
+    .jester-role { color: #f59e0b; font-size: 14px; font-weight: 700; margin-top: 4px; text-align: center; line-height: 1.3; }
+    .assassin-role { color: #8b5cf6; font-size: 14px; font-weight: 700; margin-top: 4px; text-align: center; line-height: 1.3; }
+    .king-role { color: #d97706; font-size: 14px; font-weight: 700; margin-top: 4px; text-align: center; line-height: 1.3; }
+    
+    .category-box { padding: 10px 12px; border-radius: 10px; background: #eef2ff; text-align: center; font-size: clamp(14px, 3.5vw, 16px); font-weight: 600; opacity: 0; transform: translateY(-10px); transition: opacity 0.25s, transform 0.25s; min-height: 44px; display: flex; align-items: center; justify-content: center; word-break: break-word; width: 100%; }
+    @media (max-width: 400px) { .category-box { min-height: 40px; padding: 8px 10px; } }
+    .category-shown { opacity: 1; transform: translateY(0); }
+    
+    .card-btn { padding: 12px 14px; border-radius: 999px; border: none; background: #e5e7eb; font-size: 15px; font-weight: 700; cursor: pointer; width: 100%; transition: all 0.2s; color: #333; margin-top: 4px; }
+    .card-btn:active { transform: scale(0.96); }
+    .card-btn.locked { background: #d1d5db; color: #6b7280; cursor: default; transform: none; opacity: 0.8; }
+    
+    .detective-hint, .assassin-hint, .jester-hint, .king-hint, .imposter-hint { font-size: 13px; font-weight: 600; margin-top: 6px; text-align: center; padding: 8px; border-radius: 8px; border: 1px solid; line-height: 1.4; opacity: 0; transform: translateY(10px); transition: opacity 0.25s, transform 0.25s; }
+    .detective-hint { color: #10b981; background: #f0fdf4; border-color: #bbf7d0; }
+    .assassin-hint { color: #8b5cf6; background: #f5f3ff; border-color: #ddd6fe; }
+    .jester-hint { color: #f59e0b; background: #fef3c7; border-color: #fde68a; }
+    .king-hint { color: #d97706; background: #fefce8; border-color: #fde047; }
+    .imposter-hint { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
+    .detective-hint.show, .assassin-hint.show, .jester-hint.show, .king-hint.show, .imposter-hint.show { opacity: 1; transform: translateY(0); }
+    
+    .status-section { margin-top: 28px; width: 100%; max-width: 500px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .reveal-tracker { text-align: center; margin-bottom: 20px; font-size: clamp(16px, 4vw, 20px); font-weight: 800; color: #4f46e5; min-height: 32px; padding: 16px; background: #fff; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; }
+    .first-player { text-align: center; padding: 20px 16px; background: linear-gradient(135deg, #4f46e5, #8b5cf6); color: white; border-radius: 18px; font-size: clamp(18px, 5vw, 24px); font-weight: 900; opacity: 0; transform: translateY(20px); transition: opacity 0.5s, transform 0.5s; box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4); width: 100%; line-height: 1.3; margin-bottom: 16px; }
+    .first-player.show { opacity: 1; transform: translateY(0); }
+    .reveal-roles-btn { padding: 14px 24px; border: none; border-radius: 999px; background: linear-gradient(135deg, #f59e0b, #fbbf24); color: white; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; max-width: 300px; text-align: center; transition: transform 0.12s ease, box-shadow 0.2s; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25); margin-bottom: 16px; }
+    .reveal-roles-btn:hover { box-shadow: 0 6px 16px rgba(245, 158, 11, 0.3); }
+    .reveal-roles-btn:active { transform: scale(0.96); }
+    .reveal-roles-btn:disabled { background: linear-gradient(135deg, #9ca3af, #d1d5db); cursor: not-allowed; box-shadow: none; transform: none; }
+    
+    .king-announcement { text-align: center; padding: 20px 16px; background: linear-gradient(135deg, #eab308, #ca8a04); color: white; border-radius: 18px; font-size: clamp(16px, 4vw, 20px); font-weight: 700; opacity: 0; transform: translateY(20px); transition: opacity 0.5s, transform 0.5s; box-shadow: 0 6px 20px rgba(234, 179, 8, 0.4); width: 100%; line-height: 1.4; margin-bottom: 16px; }
+    .king-announcement.show { opacity: 1; transform: translateY(0); }
+    
+    .roles-reveal-box { text-align: center; padding: 0; background: #fff; color: #222; border-radius: 16px; font-size: clamp(16px, 4vw, 18px); font-weight: 600; opacity: 0; transform: translateY(20px); transition: opacity 0.5s, transform 0.5s; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; line-height: 1.4; margin-bottom: 16px; max-height: 0; overflow: hidden; border: 2px solid #4f46e5; }
+    /* FIXED SCROLLING HERE */
+    .roles-reveal-box.show { opacity: 1; transform: translateY(0); max-height: 600px; overflow-y: auto; transition: opacity 0.5s, transform 0.5s, max-height 0.5s; }
+    .roles-reveal-header { padding: 20px 16px; background: linear-gradient(135deg, #4f46e5, #6366f1); color: white; border-radius: 14px 14px 0 0; margin: 0; }
+    .roles-reveal-header h3 { margin: 0; font-size: clamp(18px, 4vw, 22px); font-weight: 800; }
+    .roles-reveal-content { padding: 20px; }
+    .role-list { text-align: left; margin: 0; padding: 0; list-style: none; }
+    .role-list li { margin-bottom: 12px; padding: 14px 16px; background: #f9fafb; border-radius: 12px; font-size: 15px; display: flex; justify-content: space-between; align-items: center; transition: transform 0.2s, box-shadow 0.2s; border-left: 4px solid #4f46e5; }
+    .role-list li:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    .role-list .player-number { font-weight: 800; margin-right: 10px; color: #4f46e5; font-size: 16px; min-width: 80px; }
+    .role-list .role-name { font-weight: 600; padding: 6px 12px; border-radius: 8px; background: #eef2ff; color: #4f46e5; font-size: 14px; flex: 1; text-align: center; }
+    .role-list .civilian-role { background: #e0e7ff; color: #3b82f6; border-left-color: #3b82f6; }
+    .role-list .imposter-role { background: #fee2e2; color: #dc2626; border-left-color: #dc2626; }
+    .role-list .detective-role { background: #d1fae5; color: #10b981; border-left-color: #10b981; }
+    .role-list .jester-role { background: #fef3c7; color: #f59e0b; border-left-color: #f59e0b; }
+    .role-list .assassin-role { background: #f5f3ff; color: #8b5cf6; border-left-color: #8b5cf6; }
+    .role-list .king-role { background: #fefce8; color: #d97706; border-left-color: #eab308; }
+    .role-list .clueless-role { background: #ecfeff; color: #0891b2; border-left-color: #0891b2; }
+    .assassin-target { font-size: 12px; color: #8b5cf6; font-weight: 600; margin-top: 4px; background: rgba(139, 92, 246, 0.1); padding: 4px 8px; border-radius: 6px; display: inline-block; }
+    .king-badge { font-size: 12px; color: #d97706; font-weight: 600; margin-top: 4px; background: rgba(234, 179, 8, 0.1); padding: 4px 8px; border-radius: 6px; display: inline-block; }
+    .clueless-word-display { font-size: 12px; color: #0891b2; font-weight: 600; margin-top: 4px; background: rgba(6, 182, 212, 0.1); padding: 4px 8px; border-radius: 6px; display: inline-block; }
+    .footer-note { margin-top: 24px; text-align: center; font-size: 13px; color: #666; padding: 0 12px; line-height: 1.5; max-width: 500px; width: 100%; }
+  /* Extended Slider Styles */
+  .extended-slider-container {
+    animation: slideDown 0.3s ease-out;
+  }
+  @keyframes slideDown {
+    from { opacity: 0; max-height: 0; transform: translateY(-10px); }
+    to { opacity: 1; max-height: 100px; transform: translateY(0); }
+  }
+  .extended-slider::-webkit-slider-thumb {
+    background: #f59e0b !important;
+  }
+  .extended-slider-container .slider-label span {
+    color: #f59e0b !important;
+  }
+
+  /* AI Button Style */
+.subject-option.ai-generate {
+  border: 2px dashed #f43f5e;
+  color: #f43f5e;
+  background: #fff1f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.subject-option.ai-generate:hover {
+  background: #ffe4e6;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(244, 63, 94, 0.2);
+}
+  </style>
+</head>
+
+<body>
+<div class="container">
+
+  <h1>
+    Imposter Game
+    <button class="info-btn" id="infoBtn">i</button>
+  </h1>
+  <p class="instructions">
+    Everyone gets a word + category. Imposters only see the category.
+  </p>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>How to Play Imposter Game</h2>
+        <button class="close-btn" id="closeModalBtn">&times;</button>
+      </div>
+      <div class="modal-content">
+        
+        <div class="modal-section">
+          <h3>Rules</h3>
+          <ol>
+            <li><strong>Setup:</strong> Choose a subject, number of players, and imposters</li>
+            <li><strong>Secret Word:</strong> All players get a secret word from the chosen subject</li>
+            <li><strong>Category:</strong> Everyone also sees the category of the secret word</li>
+            <li><strong>Imposters:</strong> Some players are imposters - they DON'T know the secret word!</li>
+            <li><strong>Discussion:</strong> Players discuss to figure out who the imposters are by saying a word related to the secret word they got</li>
+            <li><strong>Voting:</strong> Vote to eliminate suspected imposters</li>
+            <li><strong>Winning:</strong> Civilians win if all imposters are eliminated. Imposters win if they survive. Jester wins if he/she gets voted out. Assassin wins if their target gets voted out. King gets 2 votes.</li>
+          </ol>
+        </div>
+        
+        <div class="modal-section">
+          <h3>Cards</h3>
+          <div class="role-grid">
+            <div class="role-card civilian"><h4><span class="role-icon">C</span>Civilian</h4><p>You know the secret word. Goal: Eliminate imposters.</p><div class="goal">Goal: Eliminate imposters</div></div>
+            <div class="role-card imposter"><h4><span class="role-icon">I</span>Imposter</h4><p>You DON'T know the secret word! Pretend you know it.</p><div class="goal">Goal: Don't get eliminated</div></div>
+            <div class="role-card detective"><h4><span class="role-icon">D</span>Detective</h4><p>You can peek at one random player's role.</p><div class="goal">Goal: Help civilians</div></div>
+            <div class="role-card jester"><h4><span class="role-icon">J</span>Jester</h4><p>You want to get voted out.</p><div class="goal">Goal: Get voted out</div></div>
+            <div class="role-card assassin"><h4><span class="role-icon">A</span>Assassin</h4><p>Eliminate your target.</p><div class="goal">Goal: Get target voted out</div></div>
+            <div class="role-card king"><h4><span class="role-icon">K</span>King</h4><p>You get 2 votes.</p><div class="goal">Goal: Use extra vote wisely</div></div>
+            <div class="role-card clueless"><h4><span class="role-icon">?</span>Clueless</h4><p>You get the wrong word.</p><div class="goal">Goal: Figure out you are clueless</div></div>
+          </div>
+        </div>
+
+        leoniscool.com
+
+      </div>
+    </div>
+  </div>
+  
+  <div class="modal-overlay" id="aiModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>✨ AI Subject Generator</h2>
+      <button class="close-btn" id="closeAiModalBtn">&times;</button>
+    </div>
+    <div class="modal-content">
+      <p style="text-align:center; color:#666; margin-bottom: 20px;">
+        Enter a topic and AI will create a category and word list for you instantly.
+      </p>
+      
+      <div class="form-group">
+        <label class="form-label" for="aiTopicInput">Topic / Theme</label>
+        <input type="text" id="aiTopicInput" class="form-input" placeholder="e.g. Harry Potter, 90s Rappers, obscure cheeses...">
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelAiBtn">Cancel</button>
+        <button class="btn-primary" id="generateAiBtn" style="background: linear-gradient(135deg, #f43f5e, #e11d48);">
+          <span>⚡</span> Generate
+        </button>
+      </div>
+      
+      <div id="aiStatus" style="text-align:center; margin-top:10px; color:#666; font-size:14px; min-height:20px;"></div>
+    </div>
+  </div>
+</div>
+
+  <div class="modal-overlay" id="createSubjectOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Create Custom Subject</h2>
+        <button class="close-btn" id="closeCreateSubjectBtn">&times;</button>
+      </div>
+      <div class="modal-content">
+        <div class="form-group">
+          <label class="form-label" for="newSubjectName">Subject Name</label>
+          <input type="text" id="newSubjectName" class="form-input" placeholder="e.g. My Custom Game">
+        </div>
+        
+        <div id="categoriesContainer">
+          </div>
+
+        <button class="add-category-btn" id="addCategoryBtn">
+          <span>+</span> Add Category
+        </button>
+
+        <div class="modal-footer">
+          <button class="btn-github" id="submitGithubBtn">
+            <svg height="20" width="20" viewBox="0 0 16 16" fill="white" style="display: block;">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+            </svg>
+            Submit to GitHub
+          </button>
+          <button class="btn-secondary" id="cancelCreateSubjectBtn">Cancel</button>
+          <button class="btn-primary" id="saveSubjectBtn">Save Subject</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ STEP 1: SUBJECT ═══ -->
+  <div class="subject-section" id="subjectSection">
+    <h2>1. Choose a Subject</h2>
+    
+    <div id="subjectDisplay" class="selected-subject-display" style="display: none;">
+      <h3>Selected Subject:</h3>
+      <div class="subject-name" id="selectedSubjectName"></div>
+      <button class="change-subject-btn" id="changeSubjectBtn">Change Subject</button>
+    </div>
+    
+    <div id="subjectSelection">
+      <div class="subject-options" id="subjectOptions">
+        </div>
+      
+      <div class="custom-subject-container">
+        <div class="custom-subject-input">
+          <input type="text" id="customSubjectInput" placeholder="Quick single word/phrase...">
+          <button class="custom-subject-btn" id="customSubjectBtn">Use Once</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ STEP 2: SETTINGS ═══ -->
+  <div class="controls">
+    <h2 class="controls-title">2. Game Settings</h2>
+
+    <!-- Player & Imposter Sliders -->
+    <div class="settings-group">
+      <div class="sliders-row">
+        <div class="slider-pair">
+          <div class="slider-container">
+            <div class="slider-label">
+              Players
+              <span id="playersValue">3</span>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="playerSlider" class="slider" min="1" max="20" value="3">
+            </div>
+            <div class="slider-minmax">
+              <span>1</span>
+              <span>20</span>
+            </div>
+          </div>
+
+          <div class="slider-container extended-slider-container" id="extendedSliderContainer" style="display: none;">
+            <div class="slider-label">
+              Extended Players
+              <span id="extendedPlayersValue">21</span>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="extendedPlayerSlider" class="slider extended-slider" min="0" max="100" value="0">
+            </div>
+            <div class="slider-minmax">
+              <span>21</span>
+              <span>1,000,000</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="slider-pair">
+          <div class="slider-container">
+            <div class="slider-label">
+              Imposters
+              <span id="impostersValue">1</span>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="imposterSlider" class="slider" min="1" max="20" value="1">
+            </div>
+            <div class="slider-minmax">
+              <span>1</span>
+              <span>20</span>
+            </div>
+          </div>
+
+          <div class="slider-container extended-slider-container" id="extendedImposterSliderContainer" style="display: none;">
+            <div class="slider-label">
+              Extended Imposters
+              <span id="extendedImpostersValue">21</span>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="extendedImposterSlider" class="slider extended-slider" min="0" max="100" value="0">
+            </div>
+            <div class="slider-minmax">
+              <span>21</span>
+              <span>1,000,000</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="settings-divider"></div>
+
+    <!-- Roles Section -->
+    <div class="roles-section">
+      <h3>Special Roles</h3>
+      
+      <div class="role-toggle randomize-toggle full-width">
+        <label>
+          <input id="randomizeToggle" type="checkbox">
+          Randomize Roles
+        </label>
+      </div>
+
+      <div class="roles-grid">
+        <div class="role-pill detective-toggle" id="detectiveContainer">
+          <label>
+            <input id="detectiveToggle" type="checkbox">
+            Detective
+          </label>
+        </div>
+
+        <div class="role-pill jester-toggle" id="jesterContainer">
+          <label>
+            <input id="jesterToggle" type="checkbox">
+            Jester
+          </label>
+        </div>
+
+        <div class="role-pill assassin-toggle" id="assassinContainer">
+          <label>
+            <input id="assassinToggle" type="checkbox">
+            Assassin
+          </label>
+        </div>
+
+        <div class="role-pill king-toggle" id="kingContainer">
+          <label>
+            <input id="kingToggle" type="checkbox">
+            King
+          </label>
+        </div>
+
+        <div class="role-pill clueless-toggle" id="cluelessContainer">
+          <label>
+            <input id="cluelessToggle" type="checkbox">
+            Clueless
+          </label>
+        </div>
+      </div>
+
+      <div class="role-toggle imposter-hints-toggle full-width" style="margin-top: 8px;">
+        <label>
+          <input id="imposterHintsToggle" type="checkbox">
+          Imposter Hints
+        </label>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="settings-divider"></div>
+
+    <!-- Player Names (collapsible) -->
+    <div class="player-names-inline">
+      <button class="toggle-player-names" id="showPlayerNamesBtn">
+        <span class="toggle-icon">▶</span> Customize Player Names
+      </button>
+      <div class="player-names-panel" id="playerNamesSection" style="display: none;">
+        <div class="player-names-header">
+          <h3>Players (Click to Edit)</h3>
+          <div class="player-names-buttons">
+            <button class="reset-names-btn" id="resetNamesBtn">Reset</button>
+          </div>
+        </div>
+        <div class="player-names-list" id="playerNamesList"></div>
+        <div class="player-count-controls">
+          <div class="player-count-label">Number of Players</div>
+          <div class="count-buttons">
+            <button class="count-btn remove" id="removePlayerBtn">−</button>
+            <div class="player-count" id="playerCountDisplay">3</div>
+            <button class="count-btn" id="addPlayerBtn">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deal Button -->
+    <button id="generateBtn" class="btn" disabled>Deal Cards</button>
+  </div>
+
+  <div id="error" class="error"></div>
+  
+  <div id="cardsContainer" class="cards"></div>
+  
+  <div class="status-section">
+    <div id="revealTracker" class="reveal-tracker"></div>
+    <div id="kingAnnouncement" class="king-announcement"></div>
+    <div id="firstPlayer" class="first-player"></div>
+    <button id="revealRolesBtn" class="reveal-roles-btn" style="display: none;">Reveal All Roles</button>
+    <div id="rolesRevealBox" class="roles-reveal-box"></div>
+  </div>
+
+  <div class="footer-note">
+    Close your card before passing the device. &middot; leoniscool.com
+  </div>
+
+</div>
+
+<script>
+// AI Modal Elements
+const aiModalOverlay = document.getElementById("aiModalOverlay");
+const closeAiModalBtn = document.getElementById("closeAiModalBtn");
+const cancelAiBtn = document.getElementById("cancelAiBtn");
+const generateAiBtn = document.getElementById("generateAiBtn");
+const aiTopicInput = document.getElementById("aiTopicInput");
+const aiStatus = document.getElementById("aiStatus");
+
+/* ====== GAME STATE ===== */
+let currentSubject = "";
+let actualCustomSubject = ""; // Stores the actual custom word
+let customItems = [];
+let totalCards = 0;
+let revealedCards = 0;
+let lockedCards = 0;
+let playerNumbers = [];
+let words = []; // Store words globally for detective peek
+let secretItem = ""; // Store secret item globally for detective
+let secretCategory = ""; // Store secret category globally for detective
+let assassinTarget = null; // Store assassin's target
+let playerNames = []; // Store custom player names
+let kingPlayer = null; // Store which player is king (index)
+let cluelessWord = ""; // Store the wrong word given to the clueless player
+
+// NEW: State for detective interaction
+let isDetectiveChoosing = false;
+let activeDetectiveCardElement = null;
+let activeDetectiveHintElement = null;
+
+// NEW: Saved Custom Subjects
+let savedCustomSubjects = {};
+
+/* ===== ELEMENTS ===== */
+const cardsContainer = document.getElementById("cardsContainer");
+const generateBtn = document.getElementById("generateBtn");
+const errorBox = document.getElementById("error");
+const revealTracker = document.getElementById("revealTracker");
+const firstPlayerBox = document.getElementById("firstPlayer");
+const revealRolesBtn = document.getElementById("revealRolesBtn");
+const rolesRevealBox = document.getElementById("rolesRevealBox");
+const subjectSection = document.getElementById("subjectSection");
+const subjectOptions = document.getElementById("subjectOptions");
+const subjectDisplay = document.getElementById("subjectDisplay");
+const subjectSelection = document.getElementById("subjectSelection");
+const selectedSubjectName = document.getElementById("selectedSubjectName");
+const changeSubjectBtn = document.getElementById("changeSubjectBtn");
+const customSubjectInput = document.getElementById("customSubjectInput");
+const customSubjectBtn = document.getElementById("customSubjectBtn");
+const kingAnnouncement = document.getElementById("kingAnnouncement");
+
+// Slider elements
+const playerSlider = document.getElementById("playerSlider");
+const imposterSlider = document.getElementById("imposterSlider");
+const playersValue = document.getElementById("playersValue");
+const impostersValue = document.getElementById("impostersValue");
+
+// Extended slider elements
+const extendedSliderContainer = document.getElementById("extendedSliderContainer");
+const extendedPlayerSlider = document.getElementById("extendedPlayerSlider");
+const extendedPlayersValue = document.getElementById("extendedPlayersValue");
+let useExtendedSlider = false;
+
+const extendedImposterSliderContainer = document.getElementById("extendedImposterSliderContainer");
+const extendedImposterSlider = document.getElementById("extendedImposterSlider");
+const extendedImpostersValue = document.getElementById("extendedImpostersValue");
+let useExtendedImposterSlider = false;
+
+/* ===== IMPOSTER HINT GENERATOR ===== */
+const wordTraits = {
+  // ── Clash Royale: Troops ──
+  "Archers":"Ranged","Archer Queen":"Champion","Baby Dragon":"Flying","Balloon":"Floating","Bandit":"Dashing",
+  "Barbarians":"Swarm","Bats":"Nocturnal","Battle Healer":"Healing","Battle Ram":"Charging","Berserker":"Raging",
+  "Bomber":"Explosive","Boss Bandit":"Dashing","Bowler":"Rolling","Bush Goblins":"Hidden","Cannon Cart":"Rolling",
+  "Cursed Hog":"Jumping","Dark Prince":"Shielded","Dart Goblin":"Fast","Electro Dragon":"Chaining",
+  "Electro Giant":"Zapping","Electro Spirit":"Stunning","Electro Wizard":"Zapping","Elite Barbarians":"Fast",
+  "Elixir Blob":"Splitting","Elixir Golem":"Splitting","Elixir Golemite":"Tiny","Executioner":"Spinning",
+  "Firecracker":"Explosive","Fire Spirit":"Burning","Fisherman":"Hooking","Flying Machine":"Hovering",
+  "Furnace":"Spawning","Giant":"Tanky","Giant Skeleton":"Explosive","Goblin Brawler":"Melee",
+  "Goblin Gang":"Swarm","Goblin Demolisher":"Smashing","Goblin Giant":"Carrying","Goblin Machine":"Spawning",
+  "Goblins":"Swarm","Goblinstein":"Undead","Golden Knight":"Dashing","Golem":"Tanky","Golemite":"Splitting",
+  "Guardienne":"Shielded","Guards":"Shielded","Hog Rider":"Jumping","Hunter":"Shotgun","Heal Spirit":"Healing",
+  "Ice Golem":"Freezing","Ice Spirit":"Freezing","Ice Wizard":"Slowing","Inferno Dragon":"Melting",
+  "Knight":"Melee","Lava Hound":"Flying","Lava Pup":"Tiny","Little Prince":"Ranged","Lumberjack":"Raging",
+  "Magic Archer":"Piercing","Mega Knight":"Jumping","Mega Minion":"Flying","Mighty Miner":"Underground",
+  "Miner":"Underground","Mini P.E.K.K.A.":"Charging","Minion Horde":"Swarm","Minions":"Flying",
+  "Monk":"Deflecting","Mother Witch":"Cursing","Monster":"Tanky","Musketeer":"Ranged","Night Witch":"Spawning",
+  "P.E.K.K.A.":"Tanky","Phoenix":"Reviving","Prince":"Charging","Princess":"Ranged","Ram Rider":"Charging",
+  "Rascal Boy":"Tanky","Rascal Girl":"Ranged","Royal Ghost":"Invisible","Royal Giant":"Ranged",
+  "Royal Hogs":"Swarm","Royal Recruits":"Shielded","Rune Giant":"Magical","Skeleton Army":"Swarm",
+  "Skeleton Barrel":"Flying","Skeleton Dragons":"Flying","Skeleton King":"Summoning","Skeletons":"Cheap",
+  "Sparky":"Charging","Spear Goblins":"Ranged","Spirit Empress":"Summoning","Suspicious Bush":"Hidden",
+  "Three Musketeers":"Expensive","Valkyrie":"Spinning","Wall Breakers":"Explosive","Witch":"Spawning",
+  "Wizard":"Splash","Zappies":"Stunning",
+  // ── Clash Royale: Buildings ──
+  "Bomb Tower":"Explosive","Cannon":"Defensive","Inferno Tower":"Melting","Mortar":"Lobbing","Tesla":"Hidden",
+  "X-Bow":"Sieging","Barbarian Hut":"Spawning","Elixir Collector":"Generating","Goblin Cage":"Spawning",
+  "Goblin Drill":"Underground","Goblin Hut":"Spawning","Tombstone":"Spawning",
+  // ── Clash Royale: Spells ──
+  "Arrows":"Piercing","Barbarian Barrel":"Rolling","Earthquake":"Shaking","Fireball":"Burning","Freeze":"Freezing",
+  "Giant Snowball":"Knockback","Goblin Curse":"Cursing","Lightning":"Striking","Poison":"Damaging","Rage":"Boosting",
+  "Rocket":"Explosive","Royal Delivery":"Dropping","The Log":"Rolling","Tornado":"Pulling","Vines":"Trapping",
+  "Void":"Absorbing","Zap":"Stunning",
+
+  // ── Physics ──
+  "Displacement":"Distance","Velocity":"Speed","Acceleration":"Increasing","Free Fall":"Dropping",
+  "Projectile Motion":"Parabolic","Kinematic Equations":"Motion","Constant Acceleration":"Uniform",
+  "Position-Time Graph":"Slope","Velocity-Time Graph":"Area",
+  "Newton's First Law":"Inertia","Newton's Second Law":"Acceleration","Newton's Third Law":"Reaction",
+  "Force":"Push","Mass":"Heavy","Weight":"Gravitational","Friction":"Resistance","Normal Force":"Perpendicular",
+  "Tension":"Pulling","Net Force":"Sum","Inertia":"Resistance","Equilibrium":"Balanced",
+  "Free Body Diagram":"Arrows","Air Resistance":"Drag","F=ma":"Fundamental",
+  "Kinetic Energy":"Moving","Potential Energy":"Stored","Conservation of Energy":"Preserved","Work":"Transfer",
+  "Power":"Rate","Mechanical Energy":"Motion","Thermal Energy":"Heat","Energy Transfer":"Flow",
+  "Work-Energy Theorem":"Relationship","Efficiency":"Ratio","Gravitational Energy":"Height",
+  "Spring Energy":"Elastic","Elastic Energy":"Stretchy","Hooke's Law":"Spring","Simple Machines":"Leverage",
+  "Energy Loss":"Dissipation",
+  "Linear Momentum":"Moving","Impulse":"Sudden","Conservation of Momentum":"Preserved",
+  "Elastic Collision":"Bouncing","Inelastic Collision":"Sticking","Center of Mass":"Balanced",
+  "Momentum Transfer":"Exchange","Recoil":"Backward","Explosion":"Outward","Momentum Vector":"Directional",
+  "Elastic Bounce":"Springy","Inelastic Bounce":"Sticky","Perfectly Inelastic":"Merged",
+  "Angular Momentum":"Spinning",
+  "Centripetal Force":"Inward","Centripetal Acceleration":"Circular","mv^2/r":"Circular","v^2/r":"Radial",
+  "Density":"Compact","Pressure":"Squeezing","Buoyancy":"Floating","Archimedes' Principle":"Displacement",
+  "Bernoulli's Principle":"Airflow","Continuity Equation":"Flowing","Fluid Flow":"Streaming",
+  "Laminar Flow":"Smooth","Viscosity":"Thick","Hydraulic Lift":"Leverage","Pascal's Law":"Pressure",
+  "Hydrostatic Pressure":"Depth","Streamlines":"Parallel","Flow Rate":"Volume","Turbulent Flow":"Chaotic",
+  "Angular Acceleration":"Spinning","Rotational Kinetic Energy":"Spinning","Rotational Kinematics":"Spinning",
+  "Periodic Motion":"Repeating","Frequency":"Cycles","Amplitude":"Height","Phase":"Timing",
+  "Restoring Force":"Returning","Spring Oscillation":"Bouncy","Pendulum Oscillation":"Swinging",
+  "Resonance":"Amplifying",
+  "Temperature":"Hotness","Heat Transfer":"Flowing","Conduction":"Touching","Convection":"Rising",
+  "Radiation":"Emitting","Internal Energy":"Molecular","Specific Heat":"Capacity",
+  "Thermal Equilibrium":"Balanced",
+  "Charge":"Electric","Electric Field":"Invisible","Voltage":"Potential","Current":"Flowing",
+  "Resistance":"Opposing","Ohm's Law":"Proportional","Series Circuit":"Sequential",
+  "Parallel Circuit":"Branching","Circuit Diagram":"Schematic",
+  "Gravitational Constant":"Universal","Gravitational Force":"Attractive","mg":"Weighted",
+  "Kepler's 3rd law":"Orbital",
+  // ── Physics: Electricity (AP2) ──
+  "Capacitor":"Storing","Capacitance":"Capacity","Kirchhoff's Laws":"Conservation",
+  "Coulomb's Law":"Inverse-square","Electric Potential":"Voltage","Electric Flux":"Field",
+  "Gauss's Law":"Enclosed","Conductor":"Metallic","Insulator":"Blocking",
+  "Dielectric":"Polarizing","RC Circuit":"Decay","EMF":"Source","Internal Resistance":"Battery",
+  // ── Physics: Waves (AP1) ──
+  "Wavelength":"Length","Wave Speed":"Traveling","Transverse Wave":"Perpendicular",
+  "Longitudinal Wave":"Parallel","Standing Wave":"Stationary","Superposition":"Overlapping",
+  "Interference":"Combining","Constructive Interference":"Amplifying",
+  "Destructive Interference":"Canceling","Beats":"Pulsing","Doppler Effect":"Shifting",
+  "Sound Waves":"Acoustic","Harmonics":"Overtones","Fundamental Frequency":"Lowest",
+  "Node":"Stationary","Antinode":"Maximum",
+  // ── Physics: Magnetism (AP2) ──
+  "Magnetic Field":"Invisible","Magnetic Force":"Perpendicular","Right-Hand Rule":"Directional",
+  "Solenoid":"Coiled","Electromagnet":"Switchable","Magnetic Flux":"Threading",
+  "Ferromagnetic":"Attracted","Paramagnetic":"Weakly","Diamagnetic":"Repelled",
+  "Lorentz Force":"Combined",
+  // ── Physics: Electromagnetic Induction (AP2) ──
+  "Faraday's Law":"Inducing","Lenz's Law":"Opposing","Induced EMF":"Generated",
+  "Generator":"Converting","Transformer":"Stepping","Eddy Current":"Circular",
+  "Self-Inductance":"Resisting","Mutual Inductance":"Coupled",
+  // ── Physics: Optics (AP2) ──
+  "Reflection":"Bouncing","Refraction":"Bending","Snell's Law":"Angles",
+  "Total Internal Reflection":"Trapped","Lens":"Focusing","Concave Mirror":"Converging",
+  "Convex Mirror":"Diverging","Concave Lens":"Spreading","Convex Lens":"Converging",
+  "Focal Point":"Converging","Real Image":"Inverted","Virtual Image":"Upright",
+  "Ray Diagram":"Tracing","Diffraction":"Spreading","Double-Slit Experiment":"Interference",
+  "Thin Film Interference":"Rainbow",
+  // ── Physics: Modern Physics (AP2) ──
+  "Photoelectric Effect":"Ejecting","Photon":"Particle","Wave-Particle Duality":"Both",
+  "De Broglie Wavelength":"Matter","Atomic Model":"Orbital","Energy Levels":"Quantized",
+  "Emission Spectrum":"Lines","Absorption Spectrum":"Dark","Nuclear Decay":"Unstable",
+  "Half-Life":"Halving","Mass-Energy Equivalence":"E=mc\u00b2","Radioactivity":"Emitting",
+  "Alpha Decay":"Helium","Beta Decay":"Electron","Gamma Ray":"Energetic",
+
+  // ── Math ──
+  "Variable":"Unknown","Expression":"Combined","Equation":"Balanced","Inequality":"Unequal",
+  "Linear Equation":"Straight","Quadratic Equation":"Parabolic","Polynomial":"Multi-term",
+  "Factoring":"Splitting","Completing the Square":"Quadratic","Exponential Function":"Growing",
+  "Logarithmic Function":"Inverse","Rational Expression":"Fractional","System of Equations":"Simultaneous",
+  "Matrix":"Grid","Vector":"Directional","Function":"Mapping","Domain":"Input","Range":"Output",
+  "Point":"Location","Line":"Straight","Plane":"Flat","Angle":"Degrees","Congruent":"Equal",
+  "Similarity":"Proportional","Triangle":"Three-sided","Pythagorean Theorem":"Right-angled",
+  "Circle":"Round","Radius":"Half","Diameter":"Across","Chord":"Segment","Arc":"Curved",
+  "Central Angle":"Center","Inscribed Angle":"Inside","Area":"Surface","Perimeter":"Outline",
+  "Volume":"Capacity","Surface Area":"Outside",
+  "Sine":"Opposite","Cosine":"Adjacent","Tangent":"Ratio","Unit Circle":"Circular","Radians":"Angular",
+  "Degrees":"Rotating","Pythagorean Identity":"Trig","Law of Sines":"Triangles","Law of Cosines":"Triangles",
+  "Trigonometric Graphs":"Wavy","Period":"Repeating","Phase Shift":"Horizontal",
+  "Inverse Trig Function":"Backward",
+  "Sequence":"Ordered","Series":"Summed","Arithmetic Sequence":"Adding","Geometric Sequence":"Multiplying",
+  "Binomial Theorem":"Expanding","Polynomial Division":"Dividing","Rational Function":"Fractional",
+  "Asymptote":"Approaching","Complex Number":"Imaginary","Imaginary Unit":"Squared",
+  "Mean":"Average","Median":"Middle","Mode":"Frequent","Standard Deviation":"Spread",
+  "Variance":"Scattered","Probability":"Chance","Combination":"Choosing","Permutation":"Ordering",
+  "Normal Distribution":"Bell-shaped","Outlier":"Extreme","Correlation":"Related",
+
+  // ── Calculus ──
+  "Limit":"Approaching","Continuity":"Unbroken","One-Sided Limit":"Directional","Infinite Limit":"Unbounded",
+  "Limit Laws":"Rules","Indeterminate Form":"Undefined","Removable Discontinuity":"Hole",
+  "Jump Discontinuity":"Gap","Vertical Asymptote":"Infinity","Horizontal Asymptote":"Leveling",
+  "Squeeze Theorem":"Sandwiched","L'Hôpital's Rule":"Ratio",
+  "Derivative":"Slope","Differentiability":"Smooth","Tangent Line":"Touching",
+  "Instantaneous Rate":"Momentary","Power Rule":"Exponent","Sum Rule":"Adding",
+  "Difference Rule":"Subtracting","Product Rule":"Multiplying","Quotient Rule":"Dividing",
+  "Chain Rule":"Nested","Implicit Differentiation":"Hidden","Higher Derivative":"Repeated",
+  "Second Derivative":"Concavity","Third Derivative":"Jerk","Inverse Function":"Reversed",
+  "Logarithmic Differentiation":"Logarithmic","Exponential Derivative":"Growing","Trig Derivative":"Cyclic",
+  "Critical Point":"Flat","Local Maximum":"Peak","Local Minimum":"Valley",
+  "First Derivative Test":"Slope","Second Derivative Test":"Concavity","Inflection Point":"Curving",
+  "Concave Up":"Smiling","Concave Down":"Frowning","Optimization":"Best","Related Rates":"Connected",
+  "Velocity Function":"Speed","Acceleration Function":"Changing","Motion on a Line":"Moving",
+  "Mean Value Theorem":"Average",
+  "Antiderivative":"Reverse","Indefinite Integral":"General","Definite Integral":"Bounded",
+  "Constant of Integration":"Added","Net Change":"Total","Area Under Curve":"Shaded",
+  "Riemann Sum":"Rectangles","Trapezoidal Rule":"Trapezoids","Accumulation Function":"Growing",
+  "Average Value":"Mean","U-Substitution":"Replacing",
+  "Differential Equation":"Relationship","Separation of Variables":"Splitting","Initial Condition":"Starting",
+  "Rate of Change":"Speed","Motion with Acceleration":"Speeding","Distance and Displacement":"Traveled",
+  "Growth and Decay":"Exponential",
+  "Fundamental Theorem of Calculus":"Connecting","Rolle's Theorem":"Zero",
+  // ── Calculus BC: Integration Techniques ──
+  "Integration by Parts":"Product","Partial Fractions":"Decomposing","Improper Integral":"Infinite",
+  "Trigonometric Substitution":"Trig","Arc Length":"Curve","Logistic Growth":"S-shaped",
+  "Euler's Method":"Stepping",
+  // ── Calculus BC: Parametric, Polar, Vector ──
+  "Parametric Equations":"Parameter","Polar Coordinates":"Angle","Polar Curves":"Circular",
+  "Vector-Valued Function":"Multidimensional","Parametric Derivative":"Chain",
+  "Polar Area":"Sector","Rose Curve":"Petals","Cardioid":"Heart",
+  "Lima\u00e7on":"Loop","Spiral":"Winding",
+  // ── Calculus BC: Sequences & Series ──
+  "Infinite Series":"Summing","Convergence":"Approaching","Divergence":"Unbounded",
+  "Geometric Series":"Ratio","p-Series":"Power","Harmonic Series":"Divergent",
+  "Alternating Series":"Sign","Ratio Test":"Comparing","Root Test":"Radical",
+  "Integral Test":"Area","Comparison Test":"Bounding","Limit Comparison Test":"Ratio",
+  "Absolute Convergence":"Strong","Conditional Convergence":"Weak","Power Series":"Polynomial",
+  "Radius of Convergence":"Boundary","Interval of Convergence":"Range",
+  "Taylor Series":"Expansion","Maclaurin Series":"Origin","Taylor Polynomial":"Approximation",
+  "Lagrange Error Bound":"Maximum",
+
+  // ── Computer Science ──
+  "Constant":"Fixed","Data Type":"Classification","Integer":"Whole","Float":"Decimal",
+  "Boolean":"Binary","String":"Text","Statement":"Instruction","Comment":"Annotation","Indentation":"Spacing",
+  "If Statement":"Conditional","Else Statement":"Alternative","Else If":"Branching",
+  "Comparison Operator":"Comparing","Logical Operator":"Boolean","For Loop":"Counted",
+  "While Loop":"Conditional","Break":"Stopping","Continue":"Skipping","Iteration":"Repeating",
+  "Recursion":"Self-calling",
+  "Parameter":"Input","Argument":"Passed","Return Value":"Output","Scope":"Visibility",
+  "Local Variable":"Private","Global Variable":"Shared","Function Call":"Invoking",
+  "Function Definition":"Declaring",
+  "Array":"Indexed","List":"Ordered","Tuple":"Immutable","Dictionary":"Keyed","Object":"Structured",
+  "Stack":"LIFO","Queue":"FIFO","Set":"Unique","Linked List":"Chained","Tree":"Hierarchical",
+  "Binary Tree":"Branching","Graph":"Connected","Hash Table":"Mapped","Pointer":"Reference","Node":"Element",
+  "Searching":"Finding","Linear Search":"Sequential","Binary Search":"Halving","Sorting":"Ordering",
+  "Bubble Sort":"Swapping","Selection Sort":"Minimum","Insertion Sort":"Placing","Merge Sort":"Dividing",
+  "Quick Sort":"Pivoting","Time Complexity":"Speed","Space Complexity":"Memory",
+  "Big O Notation":"Scaling","Divide and Conquer":"Splitting",
+  "Machine Learning":"Adaptive","Neural Network":"Layered","Training":"Learning","Testing":"Validating",
+  "Dataset":"Collection","Supervised Learning":"Labeled","Unsupervised Learning":"Unlabeled",
+  "Classification":"Categorizing","Regression":"Predicting","Accuracy":"Correctness",
+  "Precision":"Exactness","Recall":"Sensitivity","Overfitting":"Memorizing","Underfitting":"Simplistic",
+  "Python":"Interpreted","Java":"Compiled","JavaScript":"Browser","C":"Low-level","C++":"Object-oriented",
+  "C#":"Microsoft","Scratch":"Visual","SQL":"Database","HTML":"Markup","CSS":"Styling",
+
+  // ── Animals ──
+  "Lion":"Mane","Elephant":"Trunk","Dolphin":"Intelligent","Kangaroo":"Pouch","Panda":"Bamboo",
+  "Giraffe":"Tall","Tiger":"Striped","Wolf":"Pack","Bear":"Hibernating","Monkey":"Climbing",
+  "Eagle":"Soaring","Penguin":"Flightless","Peacock":"Colorful","Owl":"Nocturnal",
+  "Hummingbird":"Hovering","Parrot":"Talking","Flamingo":"Pink","Swan":"Graceful",
+  "Woodpecker":"Pecking","Kingfisher":"Diving",
+  "Crocodile":"Armored","Komodo Dragon":"Venomous","Chameleon":"Camouflaging","Iguana":"Basking",
+  "Gecko":"Climbing","Turtle":"Shelled","Snake":"Slithering","Alligator":"Ambushing",
+  "Monitor Lizard":"Carnivorous","Tortoise":"Slow",
+  "Shark":"Predatory","Octopus":"Tentacled","Jellyfish":"Stinging","Starfish":"Regenerating",
+  "Seahorse":"Upright","Whale":"Massive","Squid":"Ink","Crab":"Sideways","Lobster":"Clawed",
+  "Butterfly":"Metamorphic","Dragonfly":"Hovering","Ladybug":"Spotted","Ant":"Colonial",
+  "Bee":"Pollinating","Spider":"Webbing","Beetle":"Armored","Grasshopper":"Jumping",
+  "Mantis":"Praying","Firefly":"Glowing",
+
+  // ── Fruits ──
+  "Orange":"Citrusy","Lemon":"Sour","Lime":"Tart","Grapefruit":"Bitter","Tangerine":"Sweet",
+  "Clementine":"Seedless","Kumquat":"Tiny","Pomelo":"Large","Yuzu":"Aromatic","Ugli Fruit":"Wrinkly",
+  "Mango":"Tropical","Pineapple":"Spiky","Coconut":"Hairy","Papaya":"Soft","Dragon Fruit":"Exotic",
+  "Passion Fruit":"Seedy","Guava":"Fragrant","Lychee":"Translucent","Rambutan":"Hairy","Durian":"Smelly",
+  "Strawberry":"Red","Blueberry":"Tiny","Raspberry":"Bumpy","Blackberry":"Dark","Cranberry":"Tart",
+  "Gooseberry":"Tart","Elderberry":"Clustered","Boysenberry":"Hybrid","Mulberry":"Purple",
+  "Acai Berry":"Superfood",
+  "Peach":"Fuzzy","Plum":"Purple","Cherry":"Red","Apricot":"Velvety","Nectarine":"Smooth",
+  "Date":"Wrinkly","Olive":"Oily",
+  "Watermelon":"Juicy","Cantaloupe":"Netted","Honeydew":"Smooth","Galia":"Aromatic",
+  "Canary":"Yellow","Santa Claus":"Oblong","Crenshaw":"Sweet","Sharlyn":"Fragrant",
+  "Casaba":"Mild","Sprite":"Crisp",
+
+  // ── Countries ──
+  "France":"Paris","Germany":"Berlin","Italy":"Rome","Spain":"Madrid","United Kingdom":"London",
+  "Greece":"Athens","Netherlands":"Amsterdam","Sweden":"Stockholm","Switzerland":"Neutral","Norway":"Fjords",
+  "Japan":"Tokyo","China":"Beijing","India":"Delhi","South Korea":"Seoul","Thailand":"Bangkok",
+  "Vietnam":"Hanoi","Indonesia":"Jakarta","Philippines":"Manila","Malaysia":"Kuala Lumpur",
+  "Singapore":"Island",
+  "United States":"Washington","Canada":"Ottawa","Brazil":"Carnival","Mexico":"Tacos",
+  "Argentina":"Buenos Aires","Chile":"Narrow","Peru":"Machu Picchu","Colombia":"Coffee",
+  "Cuba":"Island","Jamaica":"Reggae",
+  "Egypt":"Pyramids","South Africa":"Diverse","Kenya":"Safari","Morocco":"Sahara","Nigeria":"Lagos",
+  "Ghana":"Gold","Tanzania":"Serengeti","Ethiopia":"Ancient","Uganda":"Landlocked","Rwanda":"Hilly",
+  "Australia":"Outback","New Zealand":"Kiwi","Fiji":"Tropical","Papua New Guinea":"Diverse",
+  "Samoa":"Polynesian","Tonga":"Monarchy","Vanuatu":"Volcanic","Solomon Islands":"Melanesian",
+  "Kiribati":"Atoll","Micronesia":"Scattered",
+
+  // ── Sports ──
+  "Basketball":"Court","Soccer":"Goal","Football":"Touchdown","Baseball":"Diamond","Tennis":"Racket",
+  "Volleyball":"Net","Golf":"Hole","Rugby":"Tackle","Cricket":"Wicket","Handball":"Throwing",
+  "Swimming":"Lanes","Surfing":"Waves","Water Polo":"Treading","Diving":"Plunging","Rowing":"Oars",
+  "Sailing":"Wind","Canoeing":"Paddle","Kayaking":"Seated","Water Skiing":"Towing",
+  "Synchronized Swimming":"Routine",
+  "Skiing":"Downhill","Snowboarding":"Sideways","Ice Hockey":"Puck","Figure Skating":"Graceful",
+  "Bobsleigh":"Sled","Curling":"Sweeping","Biathlon":"Combined","Luge":"Supine",
+  "Speed Skating":"Fast","Freestyle Skiing":"Aerial",
+  "Boxing":"Gloves","Wrestling":"Grappling","Martial Arts":"Discipline","Fencing":"Sword",
+  "Judo":"Throwing","Taekwondo":"Kicking","Karate":"Striking","MMA":"Mixed","Kendo":"Bamboo","Sumo":"Heavy",
+  "Gymnastics":"Flexible","Athletics":"Track","Cycling":"Pedaling","Archery":"Bullseye",
+  "Weightlifting":"Heavy","Triathlon":"Triple","Equestrian":"Horseback","Shooting":"Aiming",
+  "Badminton":"Shuttlecock","Table Tennis":"Ping-pong",
+
+  // ── Names ──
+  "Leon":"Cool","Matteo":"Italian","Illay":"Unique","Carver":"Strong","Ethan":"Classic",
+  "Naoki":"Japanese","Thomas":"Traditional","Sean":"Irish","Luke":"Biblical","Nico":"Short",
+
+  // ── Minecraft ──
+  "Villager":"Trading","Cow":"Leather","Pig":"Porkchop","Chicken":"Feathers","Sheep":"Wool",
+  "Horse":"Rideable","Cat":"Taming","Fox":"Sneaky","Bee":"Honey","Rabbit":"Fast","Llama":"Spitting",
+  "Zombie":"Undead","Skeleton":"Bony","Creeper":"Exploding","Enderman":"Teleporting","Slime":"Bouncy",
+  "Phantom":"Flying","Pillager":"Crossbow","Blaze":"Fiery","Ghast":"Crying","Piglin":"Bartering",
+  "Hoglin":"Hostile","Guardian":"Underwater","Evoker":"Summoning","Vex":"Flying","Warden":"Blind",
+  "Ender Dragon":"Boss","Wither":"Destructive",
+  "Stone":"Gray","Dirt":"Brown","Sand":"Falling","Gravel":"Falling","Wood":"Organic",
+  "Leaves":"Decaying","Glass":"Transparent","Obsidian":"Hard","Clay":"Soft","Bricks":"Red",
+  "Netherrack":"Nether","End Stone":"Yellow","Basalt":"Volcanic","Deepslate":"Deep","Bedrock":"Unbreakable",
+  "Coal":"Fuel","Iron":"Common","Gold":"Shiny","Diamond":"Rare","Emerald":"Green",
+  "Redstone":"Electrical","Lapis":"Blue","Copper":"Oxidizing","Nether Quartz":"White","Ancient Debris":"Netherite",
+  "Sword":"Melee","Axe":"Chopping","Pickaxe":"Mining","Shovel":"Digging","Bow":"Ranged",
+  "Shield":"Blocking","Trident":"Throwing","Fishing Rod":"Catching","Compss":"Navigation",
+  "Clock":"Time","Shears":"Cutting","Map":"Exploration",
+  "Bread":"Wheat","Steak":"Cooked","Cooked Porkchop":"Pig","Cooked Chicken":"Poultry",
+  "Baked Potato":"Underground","Carrot":"Orange","Apple":"Dropped","Melon":"Sliced",
+  "Chorus Fruit":"Teleporting","Golden Apple":"Enchanted","Pumpkin Pie":"Crafted","Honey Bottle":"Sweet",
+  "Village":"Populated","Temple":"Trapped","Stronghold":"Portal","Mineshaft":"Abandoned",
+  "Ocean Monument":"Underwater","Ruined Portal":"Broken","Nether Fortress":"Blazing",
+  "Bastion":"Piglin","End City":"Floating","Ancient City":"Dark",
+  "Plains":"Flat","Forest":"Trees","Taiga":"Spruce","Jungle":"Dense","Desert":"Sandy",
+  "Savanna":"Dry","Swamp":"Murky","Mountains":"Elevated","Snowy Biome":"Cold",
+  "Ocean":"Vast","Badlands":"Terracotta","Mushroom Biome":"Mycelium","Nether":"Fiery","End":"Void",
+  "Hoe":"Farming","Armor":"Protection","Helmet":"Head","Chestplate":"Torso","Leggings":"Legs",
+  "Boots":"Feet","Crossbow":"Charged",
+  "Enchanting Table":"Magical","Potion of Healing":"Restoring","Potion of Strength":"Powerful",
+  "Potion of Swiftness":"Fast","Potion of Fire Resistance":"Fireproof",
+  "Potion of Regeneration":"Healing","Potion of Invisibility":"Transparent",
+  "Potion of Slow Falling":"Gentle",
+
+  // ── Geometry Dash ──
+  "Stereo Madness":"Easy","Back on Track":"Easy","Polargeist":"Easy","Dry Out":"Normal",
+  "Base After Base":"Normal","Can't Let Go":"Normal","Jumper":"Hard","Time Machine":"Hard",
+  "Cycles":"Hard","xStep":"Insane","Clutterfunk":"Insane","Theory of Everything":"Insane",
+  "Electroman Adventures":"Insane","Geometrical Dominator":"Harder","Hexagon Force":"Insane",
+  "Blast Processing":"Harder","Electrodynamix":"Insane","Clubstep":"Demon",
+  "Theory of Everything 2":"Demon","Deadlocked":"Demon","ORBIT":"Demon","LIMBO":"Demon",
+  "Bloodbath":"Extreme","Top 10":"Extreme","Bloodshower":"Extreme",
+  "Purpular Rectanglisi (mer green)":"Meme","Sonic Wave":"Extreme","Change of Scene":"Creative",
+  "Absolute Garbage":"Joke","HOW":"Impossible","WHAT":"Impossible","Grass":"Meme",
+  "Nagatabi":"Japanese","Sunrise":"Dawn","Night City":"Cyberpunk",
+  "Cube":"Default","Robot":"Jumping","Ship":"Flying","Ball":"Rolling","Wave":"Diagonal",
+  "UFO":"Tapping","Swing Copter":"Alternating",
+  "Ekirby8 Tower":"Tall","Clubstep Monster":"Scary","Triple Spike":"Deadly",
+
+  // ── Objects ──
+  "Chair":"Sitting","Table":"Flat","Sofa":"Cushioned","Bed":"Sleeping","Lamp":"Glowing",
+  "Mirror":"Reflective","Pillow":"Soft","Blanket":"Warm","Curtain":"Hanging","Candle":"Wax",
+  "TV":"Screen","Remote":"Wireless","Shelf":"Storage","Plate":"Flat","Cup":"Hollow",
+  "Fork":"Pronged","Knife":"Sharp","Spoon":"Curved","Pan":"Cooking","Pot":"Deep",
+  "Bottle":"Container","Microwave":"Heating","Fridge":"Cold","Toaster":"Toasting",
+  "Phone":"Calling","Laptop":"Portable","Tablet":"Touchscreen","Headphones":"Audio",
+  "Charger":"Electrical","Mouse":"Clicking","Keyboard":"Typing","Camera":"Capturing",
+  "Smartwatch":"Wearable","Speaker":"Loud","Notebook":"Writing","Pencil":"Graphite",
+  "Pen":"Ink","Eraser":"Removing","Ruler":"Measuring","Backpack":"Carrying",
+  "Calculator":"Computing","Binder":"Organizing","Shirt":"Clothing","Pants":"Legs",
+  "Jacket":"Outerwear","Hat":"Head","Socks":"Feet","Shoes":"Walking","Gloves":"Hands",
+  "Belt":"Waist","Hammer":"Pounding","Screwdriver":"Turning","Wrench":"Tightening",
+  "Pliers":"Gripping","Drill":"Boring","Saw":"Cutting","Tape Measure":"Measuring",
+  "Car":"Driving","Bike":"Pedaling","Bus":"Public","Train":"Rails","Scooter":"Kicking",
+  "Motorcycle":"Revving","Airplane":"Flying","Boat":"Floating","Wallet":"Leather",
+  "Keys":"Unlocking","Water Bottle":"Hydrating","Trash Can":"Waste","Umbrella":"Rain",
+  "Broom":"Sweeping","Mop":"Wet","Vacuum":"Suction","Toothbrush":"Bristled",
+  "Toothpaste":"Minty","Soap":"Lathering","Shampoo":"Foaming","Comb":"Detangling",
+  "Hairdryer":"Blowing","Sunglasses":"Tinted","Watch":"Timekeeping","Stapler":"Fastening",
+  "Paperclip":"Bending","Highlighter":"Bright","Glue":"Sticky","Scissors":"Cutting",
+
+  // ── School Food ──
+  "Pizza":"Cheesy","Chicken Waffles":"Crispy","Salad":"Leafy","Pasta":"Noodles",
+  "Burrito":"Wrapped","Quesadilla":"Melted","Rice Bowl":"Steamy","Grilled Cheese":"Toasted",
+  "Hamburger":"Beefy","Apple Sauce":"Smooth","Craisins":"Dried","Milk":"White",
+  "Carrots":"Crunchy","Granola Bar":"Oaty","Yogurt":"Creamy","Pancake":"Fluffy",
+  "Muffin":"Baked","Bagel":"Chewy",
+
+  // ── Engineering ──
+  "Bridge":"Spanning","Overloading":"Excessive","Compression":"Squeezing","Beam":"Horizontal",
+  "Civil Engineer":"Professional","Suspension Bridge":"Hanging","Triangles":"Structural",
+  "Truss Bridge":"Framework","Arch Bridge":"Curved",
+  "Wing":"Aerodynamic","Drag":"Resisting","Gravity":"Pulling","Thrust":"Propelling",
+  "Lift":"Rising","Sonic Boom":"Supersonic","Nose":"Front","Touchdown":"Landing",
+  "Atmosphere":"Gaseous",
+  "Mixture":"Combined","DNA":"Genetic","Solution":"Dissolved","Heat":"Thermal",
+  "Periodic Table":"Elements","Gas":"Expanding","Liquid":"Flowing","Metal":"Conductive",
+  "Nonmetal":"Insulating","Reaction":"Chemical","Pipette":"Precise",
+  "Gears":"Rotating","Frictionless Surface":"Ideal","Welding":"Joining","AI":"Intelligent",
+  "Bearing":"Rotating","Counterweight":"Balancing","CAD":"Digital","3D Printing":"Additive",
+
+  // ── Questions ──
+  "Most likely to become rich":"Wealthy","Most likely to become famous":"Celebrity",
+  "Most likely to start a business":"Entrepreneur","Most likely to win a Nobel Prize":"Genius",
+  "Most likely to drop out of school":"Rebellious","Most likely to go to jail":"Troublesome",
+  "Most likely to become a comedian":"Funny","Most likely to become a teacher":"Educational",
+  "Most likely to travel the world":"Adventurous","Most likely to live alone forever":"Solitary",
+  "Most likely to have 10 pets":"Animal-lover","Most likely to win the lottery":"Lucky",
+  "Most likely to become a millionaire before 30":"Ambitious",
+  "Most likely to start a YouTube channel":"Creative","Most likely to become a pro athlete":"Athletic",
+  "Most likely to become a doctor":"Medical","Most likely to become president":"Leader",
+  "Most likely to join the military":"Disciplined","Most likely to become a lawyer":"Argumentative",
+  "Most likely to date a celebrity":"Charming","Most likely to forget their own birthday":"Forgetful",
+  "Most likely to forget where they live":"Absent-minded","Most likely to cry during a movie":"Emotional",
+  "Most likely to start a fight":"Aggressive","Most likely to fall asleep in class":"Sleepy",
+  "Most likely to get lost in their own neighborhood":"Directionally-challenged",
+  "Most likely to laugh at their own joke":"Goofy",
+  "Most likely to survive a zombie apocalypse":"Resourceful",
+  "Most likely to die first in a horror movie":"Clumsy","Most likely to crash their car":"Reckless",
+  "Most likely to be late to their own wedding":"Tardy","Most likely to have 10 kids":"Parental",
+  "Most likely to become a billionaire":"Wealthy","Most likely to donate millions to charity":"Generous",
+  "Most likely to go skydiving":"Fearless","Most likely to get a weird tattoo":"Impulsive",
+  "Most likely to eat something off the floor":"Shameless",
+  "Most likely to forget their homework":"Distracted","Most likely to get expelled":"Rebellious",
+  "Most likely to get the highest GPA":"Studious","Most likely to be class clown":"Hilarious",
+  "Most likely to skip school":"Truant","Most likely to live in another country":"Nomadic",
+  "Most likely to become a model":"Photogenic","Most likely to become an influencer":"Trendy",
+  "Most likely to invent something":"Inventive","Most likely to win a game show":"Competitive",
+  "Most likely to run a marathon":"Enduring","Most likely to become a scientist":"Curious",
+  "Most likely to go bald early":"Genetic","Most likely to get plastic surgery":"Vain",
+  "Most likely to own a yacht":"Luxurious","Most likely to own a private jet":"Wealthy",
+  "Most likely to own a mansion":"Extravagant","Most likely to go bankrupt":"Reckless",
+  "Most likely to disappear and never return":"Mysterious",
+  "Most likely to be the teacher's pet":"Obedient",
+
+  // ── The Great Gatsby ──
+  "Jay Gatsby":"Mysterious","Nick Carraway":"Narrator","Daisy Buchanan":"Beautiful",
+  "Tom Buchanan":"Wealthy","Jordan Baker":"Athletic","Myrtle Wilson":"Ambitious",
+  "George Wilson":"Desperate","Meyer Wolfsheim":"Criminal","Owl Eyes":"Observant",
+  "Dan Cody":"Mentor","Klipspringer":"Freeloader","Henry Gatz":"Father",
+  "Green Light":"Hope","Valley of Ashes":"Poverty","Eyes of Doctor T.J. Eckleburg":"Watching",
+  "The Gold Hat":"Aspiration","Yellow Car":"Destructive","Daisy's Dock":"Longing",
+  "Gatsby's Library":"Unread","The Billboard":"Watchful",
+  "American Dream":"Aspiration","Old Money":"Inherited","New Money":"Earned",
+  "Class Division":"Stratified","Disillusionment":"Shattered","Moral Decay":"Corrupted",
+  "Obsession":"Fixation","Idealism":"Romanticized","Carelessness":"Reckless","Excess":"Lavish",
+  "West Egg":"Nouveau","East Egg":"Aristocracy","New York City":"Urban",
+  "Plaza Hotel":"Confrontation","Gatsby's Mansion":"Extravagant","Buchanan Estate":"Opulent",
+  "Wilson's Garage":"Desolate","Long Island":"Suburban",
+  "Gatsby's Parties":"Lavish","Hit and Run":"Tragic","Gatsby's Death":"Lonely",
+  "Nick Meets Gatsby":"Revelatory","Tom's Affair":"Scandalous","Daisy's Choice":"Heartbreaking",
+  "Reunion at Nick's":"Awkward","Confrontation at Plaza":"Explosive",
+
+  // ── Movies ──
+  "Die Hard":"Christmas","Mad Max":"Apocalyptic","John Wick":"Revenge",
+  "The Dark Knight":"Batman","Gladiator":"Roman","Mission Impossible":"Espionage",
+  "Top Gun":"Aviation","The Matrix":"Simulated","Terminator":"Cyborg","Indiana Jones":"Archaeology",
+  "Star Wars":"Galactic","Interstellar":"Space","Blade Runner":"Dystopian",
+  "Alien":"Extraterrestrial","The Martian":"Survival","Inception":"Dreams",
+  "Avatar":"Pandora","E.T.":"Alien","Back to the Future":"Time-travel","Jurassic Park":"Dinosaurs",
+  "Superbad":"Teenage","The Hangover":"Vegas","Anchorman":"News",
+  "Mean Girls":"High-school","Bridesmaids":"Wedding","Ferris Bueller's Day Off":"Truant",
+  "Groundhog Day":"Repeating","Dumb and Dumber":"Idiotic","Shrek":"Ogre","Elf":"Christmas",
+  "The Shawshank Redemption":"Prison","Forrest Gump":"Running","The Godfather":"Mafia",
+  "Schindler's List":"Holocaust","Fight Club":"Underground","Good Will Hunting":"Genius",
+  "A Beautiful Mind":"Mathematical","The Pursuit of Happyness":"Inspiring",
+  "12 Angry Men":"Jury","Whiplash":"Drumming",
+  "The Shining":"Hotel","Get Out":"Racial","A Quiet Place":"Silent",
+  "Scream":"Slasher","The Exorcist":"Possession","Psycho":"Motel",
+  "Halloween":"Masked","It":"Clown","Jaws":"Shark","The Conjuring":"Paranormal",
+  "Toy Story":"Toys","Finding Nemo":"Fish","The Lion King":"Savanna",
+  "Spirited Away":"Bathhouse","Up":"Balloons","Frozen":"Ice",
+  "Coco":"Afterlife","Inside Out":"Emotions","Ratatouille":"Cooking","WALL-E":"Robot",
+
+  // ── Technology ──
+  "Adobe":"Creative","Google":"Search","Microsoft":"Windows","Amazon":"Shopping",
+  "Tesla":"Electric","Meta":"Social","Netflix":"Streaming","Samsung":"Korean",
+  "Intel":"Chips","NVIDIA":"Graphics",
+  "CPU":"Processing","GPU":"Rendering","RAM":"Memory","SSD":"Storage",
+  "Motherboard":"Central","Monitor":"Display","Router":"Networking","Server":"Hosting",
+  "Smartphone":"Mobile",
+  "Operating System":"Platform","Web Browser":"Surfing","Algorithm":"Logical",
+  "API":"Interface","Cloud Computing":"Remote","Database":"Organized",
+  "Firewall":"Protective","Encryption":"Scrambled","Compiler":"Translating",
+  "Virtual Machine":"Emulated",
+  "WiFi":"Wireless","Bluetooth":"Paired","HTTP":"Protocol","IP Address":"Identifier",
+  "DNS":"Resolving","URL":"Address","Social Media":"Connecting","Streaming":"Continuous",
+  "Cybersecurity":"Protection","VPN":"Tunneling",
+  "Artificial Intelligence":"Smart","Blockchain":"Decentralized",
+  "Quantum Computing":"Superposition","Augmented Reality":"Overlay",
+  "Virtual Reality":"Immersive","Internet of Things":"Connected","5G":"Fast",
+  "Autonomous Vehicle":"Driverless","Drone":"Unmanned","Robotics":"Automated"
+};
+
+function generateImposterHint(secretWord, category, categoryItems) {
+  // Look up trait from the hardcoded dictionary
+  if (wordTraits[secretWord]) {
+    return `<strong>Hint:</strong> ${wordTraits[secretWord]}`;
+  }
+  // Fallback: use the category name
+  return `<strong>Hint:</strong> ${category}`;
+}
+
+/* ===== LOG SCALE HELPER ===== */
+// Maps extended slider position (0-100) → player count (21 – 1,000,000)
+// Uses a squared-then-log curve so it starts extra slow and ramps up steeply
+function extendedSliderToCount(pos) {
+  const curved = Math.pow(pos / 100, 2); // square the position for slow start
+  const minVal = Math.log(21);
+  const maxVal = Math.log(1000000);
+  return Math.round(Math.exp(minVal + (maxVal - minVal) * curved));
+}
+
+// Inverse: player count → slider position (for restoring state)
+function countToExtendedSlider(count) {
+  const minVal = Math.log(21);
+  const maxVal = Math.log(1000000);
+  const curved = (Math.log(count) - minVal) / (maxVal - minVal);
+  return Math.round(Math.sqrt(curved) * 100); // inverse of square
+}
+
+// Format large numbers with commas
+function formatNumber(n) {
+  return n.toLocaleString();
+}
+
+/* Returns the effective player count from either slider */
+function getPlayerCount() {
+  if (useExtendedSlider) {
+    return extendedSliderToCount(parseInt(extendedPlayerSlider.value, 10));
+  }
+  return parseInt(playerSlider.value, 10);
+}
+
+/* Returns the effective imposter count from either slider */
+function getImposterCount() {
+  if (useExtendedImposterSlider) {
+    return extendedSliderToCount(parseInt(extendedImposterSlider.value, 10));
+  }
+  return parseInt(imposterSlider.value, 10);
+}
+
+// Player names elements
+const playerNamesSection = document.getElementById("playerNamesSection");
+const playerNamesList = document.getElementById("playerNamesList");
+const resetNamesBtn = document.getElementById("resetNamesBtn");
+const showPlayerNamesBtn = document.getElementById("showPlayerNamesBtn");
+
+// Add/Remove player elements
+const addPlayerBtn = document.getElementById("addPlayerBtn");
+const removePlayerBtn = document.getElementById("removePlayerBtn");
+const playerCountDisplay = document.getElementById("playerCountDisplay");
+
+// Role toggle elements
+const randomizeToggle = document.getElementById("randomizeToggle");
+const detectiveToggle = document.getElementById("detectiveToggle");
+const jesterToggle = document.getElementById("jesterToggle");
+const assassinToggle = document.getElementById("assassinToggle");
+const kingToggle = document.getElementById("kingToggle");
+const cluelessToggle = document.getElementById("cluelessToggle");
+
+// Containers for visual disabling
+const detectiveContainer = document.getElementById("detectiveContainer");
+const jesterContainer = document.getElementById("jesterContainer");
+const assassinContainer = document.getElementById("assassinContainer");
+const kingContainer = document.getElementById("kingContainer");
+const cluelessContainer = document.getElementById("cluelessContainer");
+const imposterHintsToggle = document.getElementById("imposterHintsToggle");
+
+// Modal elements
+const infoBtn = document.getElementById("infoBtn");
+const modalOverlay = document.getElementById("modalOverlay");
+const closeModalBtn = document.getElementById("closeModalBtn");
+
+// Create Subject Modal Elements
+const createSubjectOverlay = document.getElementById("createSubjectOverlay");
+const closeCreateSubjectBtn = document.getElementById("closeCreateSubjectBtn");
+const cancelCreateSubjectBtn = document.getElementById("cancelCreateSubjectBtn");
+const saveSubjectBtn = document.getElementById("saveSubjectBtn");
+const submitGithubBtn = document.getElementById("submitGithubBtn"); // New GitHub Button
+const newSubjectNameInput = document.getElementById("newSubjectName");
+const categoriesContainer = document.getElementById("categoriesContainer");
+const addCategoryBtn = document.getElementById("addCategoryBtn");
+
+/* ===== AI GENERATOR FUNCTIONS ===== */
+function openAiModal() {
+  aiTopicInput.value = "";
+  aiStatus.textContent = "";
+  generateAiBtn.disabled = false;
+  generateAiBtn.innerHTML = "<span>⚡</span> Generate";
+  aiModalOverlay.classList.add('active');
+  aiTopicInput.focus();
+}
+
+function closeAiModal() {
+  aiModalOverlay.classList.remove('active');
+}
+
+async function fetchAiResponse(messages, onComplete) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+  
+  try {
+    const response = await fetch('https://text.pollinations.ai/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        model: 'openai', 
+        messages: messages, 
+        stream: false, 
+        temperature: 0.3,
+        max_tokens: 300
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const data = await response.json();
+    const text = data.choices[0].message.content;
+    if(onComplete) onComplete(text);
+  } catch (e) {
+    clearTimeout(timeoutId);
+    console.error(e);
+    if(onComplete) onComplete(null); // Pass null so caller can retry
+  }
+}
+
+function safeJsonParse(str) {
+  if (!str) return null;
+  try {
+    let clean = str.replace(/```json/g, "").replace(/```/g, "").trim();
+    // Try to extract JSON object or array from the text
+    const objMatch = clean.match(/\{[\s\S]*\}/);
+    const arrMatch = clean.match(/\[[\s\S]*\]/);
+    if (objMatch) return JSON.parse(objMatch[0]);
+    if (arrMatch) return JSON.parse(arrMatch[0]);
+    return JSON.parse(clean);
+  } catch (e) {
+    try {
+      let clean = str.replace(/```json/g, "").replace(/```/g, "").trim();
+      if(!clean.endsWith(']') && !clean.endsWith('}')) {
+        // Try closing as array
+        if (clean.includes('[')) clean += ']';
+        else if (clean.includes('{')) clean += ']}';
+      }
+      return JSON.parse(clean); 
+    } catch(e2) { return null; }
+  }
+}
+
+function generateAiSubject() {
+  const topic = aiTopicInput.value.trim();
+  if (!topic) {
+    aiStatus.textContent = "Please enter a topic.";
+    return;
+  }
+
+  generateAiBtn.disabled = true;
+  generateAiBtn.innerHTML = "<span>⏳</span> Thinking...";
+  aiStatus.textContent = "Generating...";
+
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  function tryGenerate() {
+    attempts++;
+    if (attempts > 1) {
+      aiStatus.textContent = `Retry ${attempts}/${maxAttempts}...`;
+    }
+
+    const prompt = `Topic:"${topic}". Return JSON: {"t":"Title","w":[{"w":"Word","h":"Hint"},...]} with 8 items. Each hint is one word describing a trait. No markdown, no explanation, JSON only.`;
+
+    const messages = [
+      { role: "system", content: "JSON only. No text outside JSON." },
+      { role: "user", content: prompt }
+    ];
+
+    fetchAiResponse(messages, (rawText) => {
+      let data = safeJsonParse(rawText);
+      
+      // Normalize short keys to full keys
+      if (data && data.t && !data.title) {
+        data.title = data.t;
+        data.words = (data.w || []).map(item => ({
+          word: item.w || item.word,
+          hint: item.h || item.hint
+        }));
+      }
+      
+      // Validate
+      if (data && data.title && Array.isArray(data.words) && data.words.length >= 3 &&
+          data.words.every(w => w.word && w.hint)) {
+        // Success
+        const subjectName = data.title;
+        const wordList = data.words.map(w => w.word);
+
+        data.words.forEach(w => {
+          if (w.word && w.hint) wordTraits[w.word] = w.hint;
+        });
+
+        const newSubjectData = {};
+        newSubjectData[subjectName] = wordList;
+        savedCustomSubjects[subjectName] = newSubjectData;
+        localStorage.setItem("savedCustomSubjects", JSON.stringify(savedCustomSubjects));
+
+        localStorage.setItem("aiWordTraits", JSON.stringify(
+          Object.assign(JSON.parse(localStorage.getItem("aiWordTraits") || "{}"), 
+            Object.fromEntries(data.words.map(w => [w.word, w.hint])))
+        ));
+
+        closeAiModal();
+        initializeSubjectOptions();
+        selectSubject(subjectName);
+      } else if (attempts < maxAttempts) {
+        // Retry
+        tryGenerate();
+      } else {
+        // All retries failed – fall back to generating without hints
+        aiStatus.textContent = "Generating simple list...";
+        const fallbackPrompt = `List 8 things related to "${topic}" as a JSON array: ["Title","word1","word2",...]. No markdown.`;
+        const fallbackMessages = [
+          { role: "system", content: "JSON array only." },
+          { role: "user", content: fallbackPrompt }
+        ];
+        fetchAiResponse(fallbackMessages, (fallbackText) => {
+          const arr = safeJsonParse(fallbackText);
+          if (Array.isArray(arr) && arr.length >= 3) {
+            const subjectName = arr[0];
+            const wordList = arr.slice(1);
+            const newSubjectData = {};
+            newSubjectData[subjectName] = wordList;
+            savedCustomSubjects[subjectName] = newSubjectData;
+            localStorage.setItem("savedCustomSubjects", JSON.stringify(savedCustomSubjects));
+            closeAiModal();
+            initializeSubjectOptions();
+            selectSubject(subjectName);
+          } else {
+            aiStatus.textContent = "Failed. Try a different topic.";
+            generateAiBtn.disabled = false;
+            generateAiBtn.innerHTML = "<span>⚡</span> Generate";
+          }
+        });
+      }
+    });
+  }
+
+  tryGenerate();
+}
+
+/* ===== DEFAULT SUBJECTS ===== */
+const defaultSubjects = {
+  "Clash Royale": {
+    troops: ["Archers","Archer Queen","Baby Dragon","Balloon","Bandit","Barbarians","Bats","Battle Healer","Battle Ram",
+      "Berserker","Bomber","Boss Bandit","Bowler","Bush Goblins","Cannon Cart","Cursed Hog","Dark Prince","Dart Goblin",
+      "Electro Dragon","Electro Giant","Electro Spirit","Electro Wizard","Elite Barbarians","Elixir Blob","Elixir Golem",
+      "Elixir Golemite","Executioner","Firecracker","Fire Spirit","Fisherman","Flying Machine","Furnace","Giant",
+      "Giant Skeleton","Goblin Brawler","Goblin Gang","Goblin Demolisher","Goblin Giant","Goblin Machine","Goblins",
+      "Goblinstein","Golden Knight","Golem","Golemite","Guardienne","Guards","Hog Rider","Hunter","Heal Spirit",
+      "Ice Golem","Ice Spirit","Ice Wizard","Inferno Dragon","Knight","Lava Hound","Lava Pup","Little Prince","Lumberjack",
+      "Magic Archer","Mega Knight","Mega Minion","Mighty Miner","Miner","Mini P.E.K.K.A.","Minion Horde","Minions",
+      "Monk","Mother Witch","Monster","Musketeer","Night Witch","P.E.K.K.A.","Phoenix","Prince","Princess","Ram Rider",
+      "Rascal Boy","Rascal Girl","Royal Ghost","Royal Giant","Royal Hogs","Royal Recruits","Rune Giant","Skeleton Army",
+      "Skeleton Barrel","Skeleton Dragons","Skeleton King","Skeletons","Sparky","Spear Goblins","Spirit Empress",
+      "Suspicious Bush","Three Musketeers","Valkyrie","Wall Breakers","Witch","Wizard","Zappies"
+    ],
+    
+    buildings: ["Bomb Tower","Cannon","Inferno Tower","Mortar","Tesla","X-Bow","Barbarian Hut","Elixir Collector",
+      "Goblin Cage","Goblin Drill","Goblin Hut","Tombstone"
+    ],
+    
+    spells: ["Arrows","Barbarian Barrel","Earthquake","Fireball","Freeze","Giant Snowball","Goblin Curse","Lightning",
+      "Poison","Rage","Rocket","Royal Delivery","The Log","Tornado","Vines","Void","Zap"
+    ]
+  },
+  
+  "Physics": {
+    kinematics: ["Displacement","Velocity","Acceleration","Free Fall","Projectile Motion","Kinematic Equations","Constant Acceleration","Position-Time Graph","Velocity-Time Graph"],
+    forces: ["Newton's First Law","Newton's Second Law","Newton's Third Law","Force","Mass","Weight","Friction","Normal Force","Tension","Net Force","Inertia","Equilibrium","Free Body Diagram","Air Resistance", "F=ma"],
+    energy: ["Kinetic Energy","Potential Energy","Conservation of Energy","Work","Power","Mechanical Energy","Thermal Energy","Energy Transfer","Work-Energy Theorem","Efficiency","Gravitational Energy","Spring Energy","Elastic Energy","Hooke's Law","Simple Machines","Energy Loss"],
+    momentum: ["Linear Momentum","Impulse","Conservation of Momentum","Elastic Collision","Inelastic Collision","Center of Mass","Momentum Transfer","Recoil","Explosion","Momentum Vector","Elastic Bounce","Inelastic Bounce","Perfectly Inelastic","Angular Momentum"],
+    circular: ["Centripetal Force","Centripetal Acceleration","mv^2/r", "v^2/r"],
+    fluids: ["Density","Pressure","Buoyancy","Archimedes' Principle","Bernoulli's Principle","Continuity Equation","Fluid Flow","Laminar Flow","Viscosity","Hydraulic Lift","Pascal's Law","Hydrostatic Pressure","Streamlines","Flow Rate","Turbulent Flow"],
+    rotation: ["Angular Acceleration","Angular Momentum","Inertia","Center of Mass", "Rotational Kinetic Energy", "Rotational Kinematics"],
+    shm: ["Periodic Motion","Frequency","Amplitude","Phase","Restoring Force","Spring Oscillation","Pendulum Oscillation","Resonance"],
+    thermo: ["Temperature","Heat Transfer","Conduction","Convection","Radiation","Internal Energy","Specific Heat","Thermal Equilibrium"],
+    electricity: ["Charge","Electric Field","Voltage","Current","Resistance","Ohm's Law","Power","Series Circuit","Parallel Circuit","Circuit Diagram","Capacitor","Capacitance","Kirchhoff's Laws","Coulomb's Law","Electric Potential","Electric Flux","Gauss's Law","Conductor","Insulator","Dielectric","RC Circuit","EMF","Internal Resistance"],
+    gravity: ["Gravitational Constant","Gravitational Force","mg","Kepler's 3rd law"],
+    waves: ["Wavelength","Wave Speed","Transverse Wave","Longitudinal Wave","Standing Wave","Superposition","Interference","Constructive Interference","Destructive Interference","Beats","Doppler Effect","Sound Waves","Harmonics","Fundamental Frequency","Node","Antinode"],
+    magnetism: ["Magnetic Field","Magnetic Force","Right-Hand Rule","Solenoid","Electromagnet","Magnetic Flux","Ferromagnetic","Paramagnetic","Diamagnetic","Lorentz Force"],
+    electromagneticInduction: ["Faraday's Law","Lenz's Law","Induced EMF","Generator","Transformer","Eddy Current","Self-Inductance","Mutual Inductance"],
+    optics: ["Reflection","Refraction","Snell's Law","Total Internal Reflection","Lens","Concave Mirror","Convex Mirror","Concave Lens","Convex Lens","Focal Point","Real Image","Virtual Image","Ray Diagram","Diffraction","Double-Slit Experiment","Thin Film Interference"],
+    modernPhysics: ["Photoelectric Effect","Photon","Wave-Particle Duality","De Broglie Wavelength","Atomic Model","Energy Levels","Emission Spectrum","Absorption Spectrum","Nuclear Decay","Half-Life","Mass-Energy Equivalence","Radioactivity","Alpha Decay","Beta Decay","Gamma Ray"]
+  },
+  
+  "Math": {
+    algebra: ["Variable","Expression","Equation","Inequality","Linear Equation","Quadratic Equation","Polynomial","Factoring","Completing the Square","Exponential Function","Logarithmic Function","Rational Expression","System of Equations","Matrix","Vector","Function","Domain","Range"],
+    geometry: ["Point","Line","Plane","Angle","Congruent","Similarity","Triangle","Pythagorean Theorem","Circle","Radius","Diameter","Chord","Arc","Central Angle","Inscribed Angle","Area","Perimeter","Volume","Surface Area"],
+    trigonometry: ["Sine","Cosine","Tangent","Unit Circle","Radians","Degrees","Pythagorean Identity","Law of Sines","Law of Cosines","Trigonometric Graphs","Amplitude","Period","Phase Shift","Inverse Trig Function"],
+    precalculus: ["Sequence","Series","Arithmetic Sequence","Geometric Sequence","Binomial Theorem","Polynomial Division","Rational Function","Asymptote","Complex Number","Imaginary Unit"],
+    statistics: ["Mean","Median","Mode","Range","Standard Deviation","Variance","Probability","Combination","Permutation","Normal Distribution","Outlier","Correlation"]
+  },
+
+  "Calculus": {
+    limits: ["Limit","Continuity","One-Sided Limit","Infinite Limit","Limit Laws","Indeterminate Form","Removable Discontinuity","Jump Discontinuity","Vertical Asymptote","Horizontal Asymptote","Squeeze Theorem","L'Hôpital's Rule"],
+    derivatives: ["Derivative","Differentiability","Tangent Line","Instantaneous Rate","Power Rule","Sum Rule","Difference Rule","Product Rule","Quotient Rule","Chain Rule","Implicit Differentiation","Higher Derivative","Second Derivative","Third Derivative","Inverse Function","Logarithmic Differentiation","Exponential Derivative","Trig Derivative"],
+    applicationsOfDerivatives: ["Critical Point","Local Maximum","Local Minimum","First Derivative Test","Second Derivative Test","Inflection Point","Concave Up","Concave Down","Optimization","Related Rates","Velocity Function","Acceleration Function","Motion on a Line","Mean Value Theorem"],
+    integrals: ["Antiderivative","Indefinite Integral","Definite Integral","Constant of Integration","Net Change","Area Under Curve","Riemann Sum","Trapezoidal Rule","Accumulation Function","Average Value","U-Substitution"],
+    applicationsOfIntegrals: ["Differential Equation","Separation of Variables","Initial Condition","Rate of Change","Motion with Acceleration","Distance and Displacement","Growth and Decay"],
+    theorems: ["Fundamental Theorem of Calculus","Mean Value Theorem","Rolle's Theorem"],
+    integrationTechniques: ["Integration by Parts","Partial Fractions","Improper Integral","Trigonometric Substitution","Arc Length","Logistic Growth","Euler's Method"],
+    parametricPolarVector: ["Parametric Equations","Polar Coordinates","Polar Curves","Vector-Valued Function","Parametric Derivative","Polar Area","Rose Curve","Cardioid","Limaçon","Spiral"],
+    sequencesAndSeries: ["Infinite Series","Convergence","Divergence","Geometric Series","p-Series","Harmonic Series","Alternating Series","Ratio Test","Root Test","Integral Test","Comparison Test","Limit Comparison Test","Absolute Convergence","Conditional Convergence","Power Series","Radius of Convergence","Interval of Convergence","Taylor Series","Maclaurin Series","Taylor Polynomial","Lagrange Error Bound"]
+  },
+  
+  "Computer Science": {
+    programmingBasics: ["Variable","Constant","Data Type","Integer","Float","Boolean","String","Expression","Statement","Comment","Indentation"],
+    basicCommands: ["If Statement","Else Statement","Else If","Comparison Operator","Logical Operator","For Loop","While Loop","Break","Continue","Iteration","Recursion"],
+    functions: ["Function","Parameter","Argument","Return Value","Scope","Local Variable","Global Variable","Function Call","Function Definition"],
+    dataStructures: ["Array","List","Tuple","Dictionary","Object","Stack","Queue","Set","Linked List","Tree","Binary Tree","Graph","Hash Table","Pointer","Node"],
+    algorithms: ["Searching","Linear Search","Binary Search","Sorting","Bubble Sort","Selection Sort","Insertion Sort","Merge Sort","Quick Sort","Time Complexity","Space Complexity","Big O Notation","Recursion","Divide and Conquer"],
+    ai: ["Machine Learning","Neural Network","Training","Testing","Dataset","Supervised Learning","Unsupervised Learning","Classification","Regression","Accuracy","Precision","Recall","Overfitting","Underfitting"],
+    languages: ["Python","Java","JavaScript","C","C++","C#","Scratch","SQL","HTML","CSS"]
+  },
+
+  "Animals": {
+    mammals: ["Lion","Elephant","Dolphin","Kangaroo","Panda","Giraffe","Tiger","Wolf","Bear","Monkey"],
+    birds: ["Eagle","Penguin","Peacock","Owl","Hummingbird","Parrot","Flamingo","Swan","Woodpecker","Kingfisher"],
+    reptiles: ["Crocodile","Komodo Dragon","Chameleon","Iguana","Gecko","Turtle","Snake","Alligator","Monitor Lizard","Tortoise"],
+    aquatic: ["Shark","Octopus","Jellyfish","Starfish","Seahorse","Whale","Dolphin","Squid","Crab","Lobster"],
+    insects: ["Butterfly","Dragonfly","Ladybug","Ant","Bee","Spider","Beetle","Grasshopper","Mantis","Firefly"]
+  },
+  
+  "Fruits": {
+    citrus: ["Orange","Lemon","Lime","Grapefruit","Tangerine","Clementine","Kumquat","Pomelo","Yuzu","Ugli Fruit"],
+    tropical: ["Mango","Pineapple","Coconut","Papaya","Dragon Fruit","Passion Fruit","Guava","Lychee","Rambutan","Durian"],
+    berries: ["Strawberry","Blueberry","Raspberry","Blackberry","Cranberry","Gooseberry","Elderberry","Boysenberry","Mulberry","Acai Berry"],
+    stone: ["Peach","Plum","Cherry","Apricot","Nectarine","Mango","Lychee","Date","Olive","Coconut"],
+    melons: ["Watermelon","Cantaloupe","Honeydew","Galia","Canary","Santa Claus","Crenshaw","Sharlyn","Casaba","Sprite"]
+  },
+  
+  "Countries": {
+    europe: ["France","Germany","Italy","Spain","United Kingdom","Greece","Netherlands","Sweden","Switzerland","Norway"],
+    asia: ["Japan","China","India","South Korea","Thailand","Vietnam","Indonesia","Philippines","Malaysia","Singapore"],
+    americas: ["United States","Canada","Brazil","Mexico","Argentina","Chile","Peru","Colombia","Cuba","Jamaica"],
+    africa: ["Egypt","South Africa","Kenya","Morocco","Nigeria","Ghana","Tanzania","Ethiopia","Uganda","Rwanda"],
+    oceania: ["Australia","New Zealand","Fiji","Papua New Guinea","Samoa","Tonga","Vanuatu","Solomon Islands","Kiribati","Micronesia"]
+  },
+  
+  "Sports": {
+    ball: ["Basketball","Soccer","Football","Baseball","Tennis","Volleyball","Golf","Rugby","Cricket","Handball"],
+    water: ["Swimming","Surfing","Water Polo","Diving","Rowing","Sailing","Canoeing","Kayaking","Water Skiing","Synchronized Swimming"],
+    winter: ["Skiing","Snowboarding","Ice Hockey","Figure Skating","Bobsleigh","Curling","Biathlon","Luge","Speed Skating","Freestyle Skiing"],
+    combat: ["Boxing","Wrestling","Martial Arts","Fencing","Judo","Taekwondo","Karate","MMA","Kendo","Sumo"],
+    individual: ["Gymnastics","Athletics","Cycling","Archery","Weightlifting","Triathlon","Equestrian","Shooting","Badminton","Table Tennis"]
+  },
+  
+   "Names": {
+    name: ["Leon","Matteo","Illay","Carver","Ethan","Naoki","Thomas","Sean","Luke", "Nico"]
+  },
+  
+  "Minecraft": {
+    mobs: ["Villager","Cow","Pig","Chicken","Sheep","Wolf","Horse","Cat","Fox","Bee","Rabbit","Parrot","Llama","Zombie","Skeleton","Creeper","Spider","Enderman","Slime","Witch","Phantom","Pillager","Blaze","Ghast","Piglin","Hoglin","Guardian","Evoker","Vex","Warden","Ender Dragon","Wither"],
+    blocks: ["Stone","Dirt","Sand","Gravel","Wood","Leaves","Glass","Obsidian","Clay","Bricks","Netherrack","End Stone","Basalt","Deepslate","Bedrock"],
+    resources: ["Coal","Iron","Gold","Diamond","Emerald","Redstone","Lapis","Copper","Nether Quartz","Ancient Debris"],
+    items: ["Sword","Axe","Pickaxe","Shovel","Bow","Shield","Trident","Fishing Rod","Compss","Clock","Shears","Map"],
+    food: ["Bread","Steak","Cooked Porkchop","Cooked Chicken","Baked Potato","Carrot","Apple","Melon","Chorus Fruit","Golden Apple","Pumpkin Pie","Honey Bottle"],
+    structures: ["Village","Temple","Stronghold","Mineshaft","Ocean Monument","Ruined Portal","Nether Fortress","Bastion","End City","Ancient City"],
+    biomes: ["Plains","Forest","Taiga","Jungle","Desert","Savanna","Swamp","Mountains","Snowy Biome","Ocean","Badlands","Mushroom Biome","Nether","End"],
+    toolsAndGear: ["Pickaxe","Sword","Axe","Hoe","Shovel","Armor","Helmet","Chestplate","Leggings","Boots","Shield","Crossbow"],
+    magicAndPotions: ["Enchanting Table","Potion of Healing","Potion of Strength","Potion of Swiftness","Potion of Fire Resistance","Potion of Regeneration","Potion of Invisibility","Potion of Slow Falling"]
+  },
+
+  "Geometry Dash": {
+    levels: ["Stereo Madness","Back on Track","Polargeist","Dry Out","Base After Base","Can't Let Go","Jumper","Time Machine","Cycles","xStep","Clutterfunk","Theory of Everything","Electroman Adventures","Geometrical Dominator","Hexagon Force","Blast Processing","Electrodynamix","Clubstep","Theory of Everything 2","Deadlocked","ORBIT","LIMBO","Bloodbath","Top 10","Bloodshower","Purpular Rectanglisi (mer green)","Sonic Wave","Change of Scene","Absolute Garbage","HOW","WHAT","Grass","Nagatabi","Sunrise","Night City"],
+    gamemodes: ["Cube","Robot","Ship","Ball","Wave","Spider","UFO","Swing Copter"],
+    structures: ["Ekirby8 Tower","Clubstep Monster","Triple Spike"]
+  },
+
+  "Objects": {
+    objects: ["Chair","Table","Sofa","Bed","Lamp","Mirror","Clock","Pillow","Blanket","Curtain","Candle","TV","Remote","Shelf","Plate","Cup","Fork","Knife","Spoon","Pan","Pot","Bottle","Microwave","Fridge","Toaster","Phone","Laptop","Tablet","Headphones","Charger","Mouse","Keyboard","Camera","Smartwatch","Speaker","Notebook","Pencil","Pen","Eraser","Ruler","Backpack","Calculator","Binder","Shirt","Pants","Jacket","Hat","Socks","Shoes","Gloves","Belt","Hammer","Screwdriver","Wrench","Pliers","Drill","Saw","Tape Measure","Car","Bike","Bus","Train","Scooter","Motorcycle","Airplane","Boat","Wallet","Keys","Water Bottle","Backpack","Trash Can","Umbrella","Broom","Mop","Vacuum","Toothbrush","Toothpaste","Soap","Shampoo","Comb","Hairdryer","Sunglasses","Watch","Notebook","Stapler","Paperclip","Highlighter","Glue","Scissors"]
+  },
+
+  "School Food": {
+    lunch: ["Pizza","Chicken Waffles","Salad","Pasta","Burrito","Quesadilla","Rice Bowl","Grilled Cheese","Hamburger"],
+    sides: ["Apple Sauce","Craisins", "Milk", "Carrots"],
+    brunch: ["Granola Bar", "Yogurt", "Pancake", "Muffin", "Burrito", "Bagel"]
+  },
+  
+    "Engineering": {
+    civilEngineering: [
+      "Bridge",
+      "Overloading",
+      "Tension",
+      "Compression",
+      "Beam",
+      "Civil Engineer",
+      "Suspension Bridge",
+      "Triangles",
+      "Truss Bridge",
+      "Arch Bridge"
+    ],
+
+    aerospaceEngineering: [
+      "Wing",
+      "Drag",
+      "Gravity",
+      "Thrust",
+      "Lift",
+      "Sonic Boom",
+      "Nose",
+      "Touchdown",
+      "Rocket",
+      "Atmosphere"
+    ],
+
+    bioChemicalEngineering: [
+      "Mixture",
+      "DNA",
+      "Solution",
+      "Heat",
+      "Periodic Table",
+      "Gas",
+      "Liquid",
+      "Metal",
+      "Nonmetal",
+      "Reaction",
+      "Pipette"
+    ],
+
+    randomEngineering: [
+      "Inertia",
+      "Gears",
+      "Frictionless Surface",
+      "Welding",
+      "AI",
+      "Bearing",
+      "Counterweight",
+      "CAD",
+      "3D Printing"
+    ]
+  },
+
+  "Questions": {
+    question: ["Most likely to become rich","Most likely to become famous","Most likely to start a business","Most likely to win a Nobel Prize","Most likely to drop out of school","Most likely to go to jail","Most likely to become a comedian","Most likely to become a teacher","Most likely to travel the world","Most likely to live alone forever","Most likely to have 10 pets","Most likely to win the lottery","Most likely to become a millionaire before 30","Most likely to start a YouTube channel","Most likely to become a pro athlete","Most likely to become a doctor","Most likely to become president","Most likely to join the military","Most likely to become a lawyer","Most likely to date a celebrity","Most likely to forget their own birthday","Most likely to forget where they live","Most likely to cry during a movie","Most likely to start a fight","Most likely to fall asleep in class","Most likely to get lost in their own neighborhood","Most likely to laugh at their own joke","Most likely to survive a zombie apocalypse","Most likely to die first in a horror movie","Most likely to crash their car","Most likely to be late to their own wedding","Most likely to have 10 kids","Most likely to become a billionaire","Most likely to donate millions to charity","Most likely to go skydiving","Most likely to get a weird tattoo","Most likely to eat something off the floor","Most likely to forget their homework","Most likely to get expelled","Most likely to get the highest GPA","Most likely to be class clown","Most likely to skip school","Most likely to live in another country","Most likely to become a model","Most likely to become an influencer","Most likely to invent something","Most likely to win a game show","Most likely to run a marathon","Most likely to become a scientist","Most likely to go bald early","Most likely to get plastic surgery","Most likely to own a yacht","Most likely to own a private jet","Most likely to own a mansion","Most likely to go bankrupt","Most likely to disappear and never return","Most likely to be the teacher's pet"]
+  },
+
+  "The Great Gatsby": {
+    characters: ["Jay Gatsby","Nick Carraway","Daisy Buchanan","Tom Buchanan","Jordan Baker","Myrtle Wilson","George Wilson","Meyer Wolfsheim","Owl Eyes","Dan Cody","Klipspringer","Henry Gatz"],
+    symbols: ["Green Light","Valley of Ashes","Eyes of Doctor T.J. Eckleburg","The Gold Hat","Yellow Car","Daisy's Dock","Gatsby's Library","The Billboard"],
+    themes: ["American Dream","Old Money","New Money","Class Division","Disillusionment","Moral Decay","Obsession","Idealism","Carelessness","Excess"],
+    locations: ["West Egg","East Egg","New York City","Plaza Hotel","Gatsby's Mansion","Buchanan Estate","Wilson's Garage","Long Island"],
+    events: ["Gatsby's Parties","Hit and Run","Gatsby's Death","Nick Meets Gatsby","Tom's Affair","Daisy's Choice","Reunion at Nick's","Confrontation at Plaza"]
+  },
+
+  "Movies": {
+    action: ["Die Hard","Mad Max","John Wick","The Dark Knight","Gladiator","Mission Impossible","Top Gun","The Matrix","Terminator","Indiana Jones"],
+    scifi: ["Star Wars","Interstellar","Blade Runner","Alien","The Martian","Inception","Avatar","E.T.","Back to the Future","Jurassic Park"],
+    comedy: ["Superbad","The Hangover","Anchorman","Mean Girls","Bridesmaids","Ferris Bueller's Day Off","Groundhog Day","Dumb and Dumber","Shrek","Elf"],
+    drama: ["The Shawshank Redemption","Forrest Gump","The Godfather","Schindler's List","Fight Club","Good Will Hunting","A Beautiful Mind","The Pursuit of Happyness","12 Angry Men","Whiplash"],
+    horror: ["The Shining","Get Out","A Quiet Place","Scream","The Exorcist","Psycho","Halloween","It","Jaws","The Conjuring"],
+    animated: ["Toy Story","Finding Nemo","The Lion King","Spirited Away","Up","Frozen","Coco","Inside Out","Ratatouille","WALL-E"]
+  },
+
+  "Technology": {
+    companies: ["Adobe","Google","Microsoft","Amazon","Tesla","Meta","Netflix","Samsung","Intel","NVIDIA"],
+    hardware: ["CPU","GPU","RAM","SSD","Motherboard","Monitor","Router","Server","Smartphone","Tablet"],
+    software: ["Operating System","Web Browser","Algorithm","API","Cloud Computing","Database","Firewall","Encryption","Compiler","Virtual Machine"],
+    internet: ["WiFi","Bluetooth","HTTP","IP Address","DNS","URL","Social Media","Streaming","Cybersecurity","VPN"],
+    emerging: ["Artificial Intelligence","Blockchain","Quantum Computing","Augmented Reality","Virtual Reality","Internet of Things","5G","Autonomous Vehicle","Drone","Robotics"]
+  }
+};
+
+/* ===== LOCAL STORAGE LOAD ===== */
+// Load slider values – restore extended slider if saved count > 20
+const savedCount = parseInt(localStorage.getItem("playerCount")) || 3;
+if (savedCount > 20) {
+  playerSlider.value = 20;
+  extendedPlayerSlider.value = countToExtendedSlider(savedCount);
+} else {
+  playerSlider.value = savedCount;
+}
+const savedImpCount = parseInt(localStorage.getItem("imposterCount")) || 1;
+if (savedImpCount > 20) {
+  imposterSlider.value = 20;
+  extendedImposterSlider.value = countToExtendedSlider(savedImpCount);
+} else {
+  imposterSlider.value = savedImpCount;
+}
+currentSubject = localStorage.getItem("currentSubject") || "";
+actualCustomSubject = localStorage.getItem("actualCustomSubject") || "";
+customItems = JSON.parse(localStorage.getItem("customItems")) || [];
+
+// Load AI-generated hints into wordTraits
+try {
+  const savedAiTraits = JSON.parse(localStorage.getItem("aiWordTraits") || "{}");
+  Object.assign(wordTraits, savedAiTraits);
+} catch(e) {}
+
+// Load toggle states
+detectiveToggle.checked = JSON.parse(localStorage.getItem("detectiveEnabled")) || false;
+jesterToggle.checked = JSON.parse(localStorage.getItem("jesterEnabled")) || false;
+assassinToggle.checked = JSON.parse(localStorage.getItem("assassinEnabled")) || false;
+kingToggle.checked = JSON.parse(localStorage.getItem("kingEnabled")) || false;
+cluelessToggle.checked = JSON.parse(localStorage.getItem("cluelessEnabled")) || false;
+imposterHintsToggle.checked = JSON.parse(localStorage.getItem("imposterHintsEnabled")) || false;
+
+// We do NOT save randomize state to local storage to force a fresh decision, or we can save it.
+// For now, let's default it to false to be safe, or user preference.
+randomizeToggle.checked = false;
+
+// Load player names from localStorage if they exist, otherwise use default
+const savedPlayerNames = JSON.parse(localStorage.getItem("playerNames"));
+if (savedPlayerNames && Array.isArray(savedPlayerNames) && savedPlayerNames.length > 0) {
+  playerNames = [...savedPlayerNames]; // Use saved names
+} else {
+  playerNames = []; // Start with empty array
+}
+
+// Load Custom Subjects
+const savedSubjectsJSON = localStorage.getItem("savedCustomSubjects");
+if (savedSubjectsJSON) {
+  try {
+    savedCustomSubjects = JSON.parse(savedSubjectsJSON);
+  } catch (e) {
+    savedCustomSubjects = {};
+  }
+}
+
+/* ===== MODAL FUNCTIONS ===== */
+function openModal() {
+  modalOverlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  modalOverlay.classList.remove('active');
+  document.body.style.overflow = 'auto';
+}
+
+// Modal event listeners
+infoBtn.addEventListener('click', openModal);
+closeModalBtn.addEventListener('click', closeModal);
+
+// Close modal when clicking outside
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) {
+    closeModal();
+  }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalOverlay.classList.contains('active')) {
+    closeModal();
+  }
+});
+
+/* ===== CREATE SUBJECT MODAL FUNCTIONS ===== */
+function openCreateSubjectModal() {
+  newSubjectNameInput.value = "";
+  // clear dynamic categories container
+  categoriesContainer.innerHTML = "";
+  // Add first category block by default
+  addCategoryBlock();
+  
+  createSubjectOverlay.classList.add('active');
+}
+
+function closeCreateSubjectModal() {
+  createSubjectOverlay.classList.remove('active');
+}
+
+function addCategoryBlock() {
+  const div = document.createElement("div");
+  div.className = "category-block";
+  
+  // Create Remove Button
+  const removeBtn = document.createElement("button");
+  removeBtn.className = "remove-category-btn";
+  removeBtn.innerHTML = "&times;";
+  removeBtn.title = "Remove Category";
+  removeBtn.onclick = function() {
+    // Only allow removal if more than 1 category remains
+    if (categoriesContainer.children.length > 1) {
+      div.remove();
+    } else {
+      alert("Subject must have at least one category.");
+    }
+  };
+  
+  // HTML Structure for Category Name + Words
+  div.innerHTML = `
+    <div class="form-group" style="margin-bottom: 12px;">
+      <label class="form-label">Category Name</label>
+      <input type="text" class="form-input cat-name-input" placeholder="e.g. Troops, Spells...">
+    </div>
+    <div class="form-group" style="margin-bottom: 0;">
+      <label class="form-label">Words List</label>
+      <textarea class="form-textarea words-textarea" placeholder="Enter words separated by commas or new lines."></textarea>
+      <div class="form-hint">At least 2 words required.</div>
+    </div>
+  `;
+  
+  div.appendChild(removeBtn);
+  categoriesContainer.appendChild(div);
+}
+
+function saveNewSubject() {
+  const name = newSubjectNameInput.value.trim();
+  
+  if (!name) {
+    alert("Please enter a subject name.");
+    return;
+  }
+  
+  const subjectData = {};
+  const categoryBlocks = categoriesContainer.querySelectorAll(".category-block");
+  let hasValidData = false;
+  
+  // Loop through each category block to build the data
+  for (let block of categoryBlocks) {
+    const catName = block.querySelector(".cat-name-input").value.trim();
+    const wordsRaw = block.querySelector(".words-textarea").value;
+    
+    // Validation
+    if (!catName) {
+      alert("All categories must have a name.");
+      return;
+    }
+    
+    // Words parsing
+    const words = wordsRaw.split(/[\n,]+/).map(w => w.trim()).filter(w => w.length > 0);
+    
+    if (words.length < 2) {
+      alert(`Category "${catName}" must have at least 2 words.`);
+      return;
+    }
+    
+    subjectData[catName] = words;
+    hasValidData = true;
+  }
+  
+  if (!hasValidData) return;
+  
+  if (defaultSubjects[name] || savedCustomSubjects[name]) {
+    if (!confirm(`Subject "${name}" already exists. Overwrite?`)) {
+      return;
+    }
+  }
+  
+  // Save structure: { "SubjectName": { "Cat1": [words], "Cat2": [words] } }
+  savedCustomSubjects[name] = subjectData;
+  
+  localStorage.setItem("savedCustomSubjects", JSON.stringify(savedCustomSubjects));
+  
+  closeCreateSubjectModal();
+  initializeSubjectOptions(); // Re-render list
+  
+  // Select the new subject automatically
+  selectSubject(name);
+}
+
+function submitToGithub() {
+  const name = newSubjectNameInput.value.trim();
+  
+  if (!name) {
+    alert("Please enter a subject name.");
+    return;
+  }
+  
+  // Reuse logic to build the subject data
+  const subjectData = {};
+  const categoryBlocks = categoriesContainer.querySelectorAll(".category-block");
+  let hasValidData = false;
+  
+  for (let block of categoryBlocks) {
+    const catName = block.querySelector(".cat-name-input").value.trim();
+    const wordsRaw = block.querySelector(".words-textarea").value;
+    
+    if (!catName || wordsRaw.trim().length === 0) {
+      alert("Please complete all category fields.");
+      return;
+    }
+    
+    const words = wordsRaw.split(/[\n,]+/).map(w => w.trim()).filter(w => w.length > 0);
+    if (words.length < 2) {
+      alert(`Category "${catName}" must have at least 2 words.`);
+      return;
+    }
+    subjectData[catName] = words;
+    hasValidData = true;
+  }
+  
+  if (!hasValidData) return;
+
+  // Format the JSON object for the body
+  // We want it to look like: "Subject Name": { "Category": ["A", "B"] },
+  const fullObject = {};
+  fullObject[name] = subjectData;
+  
+  // Pretty print JSON, remove outer braces for easy copy-pasting into existing object
+  let jsonString = JSON.stringify(fullObject, null, 2);
+  // Remove first and last curly braces to make it a property list
+  jsonString = jsonString.substring(1, jsonString.length - 1).trim();
+  // Add a trailing comma
+  jsonString += ",";
+
+  const issueTitle = `New Subject Proposal: ${name}`;
+  const issueBody = `Here is a new subject for the Imposter Game!\n\n\`\`\`javascript\n${jsonString}\n\`\`\`\n\n(leon is so cool)`;
+
+  // GitHub Issue URL
+  const url = `https://github.com/leoniscooler/imposter/issues/new?title=${encodeURIComponent(issueTitle)}&body=${encodeURIComponent(issueBody)}`;
+  
+  window.open(url, '_blank');
+}
+
+function deleteCustomSubject(e, subjectName) {
+  e.stopPropagation(); // Prevent selecting the subject when clicking delete
+  if (confirm(`Are you sure you want to delete "${subjectName}"?`)) {
+    delete savedCustomSubjects[subjectName];
+    localStorage.setItem("savedCustomSubjects", JSON.stringify(savedCustomSubjects));
+    
+    // If the deleted subject was selected, clear selection
+    if (currentSubject === subjectName) {
+      changeSubject();
+    }
+    
+    initializeSubjectOptions();
+  }
+}
+
+// Create Modal Listeners
+closeCreateSubjectBtn.addEventListener('click', closeCreateSubjectModal);
+cancelCreateSubjectBtn.addEventListener('click', closeCreateSubjectModal);
+saveSubjectBtn.addEventListener('click', saveNewSubject);
+submitGithubBtn.addEventListener('click', submitToGithub);
+addCategoryBtn.addEventListener('click', addCategoryBlock);
+
+createSubjectOverlay.addEventListener('click', (e) => {
+  if (e.target === createSubjectOverlay) closeCreateSubjectModal();
+});
+
+
+/* ===== UPDATE SLIDER DISPLAY ===== */
+function updateSliderDisplays() {
+  const baseVal = parseInt(playerSlider.value, 10);
+  
+  // Show/hide extended slider when base slider hits 20
+  if (baseVal >= 20) {
+    extendedSliderContainer.style.display = '';
+    useExtendedSlider = true;
+    const extCount = extendedSliderToCount(parseInt(extendedPlayerSlider.value, 10));
+    playersValue.textContent = '20+';
+    extendedPlayersValue.textContent = formatNumber(extCount);
+  } else {
+    extendedSliderContainer.style.display = 'none';
+    useExtendedSlider = false;
+    playersValue.textContent = baseVal;
+  }
+  
+  // Show/hide extended imposter slider when base slider hits 20
+  const impBaseVal = parseInt(imposterSlider.value, 10);
+  if (impBaseVal >= 20) {
+    extendedImposterSliderContainer.style.display = '';
+    useExtendedImposterSlider = true;
+    const extImpCount = extendedSliderToCount(parseInt(extendedImposterSlider.value, 10));
+    impostersValue.textContent = '20+';
+    extendedImpostersValue.textContent = formatNumber(extImpCount);
+  } else {
+    extendedImposterSliderContainer.style.display = 'none';
+    useExtendedImposterSlider = false;
+    impostersValue.textContent = impBaseVal;
+  }
+}
+
+// Initialize slider displays
+updateSliderDisplays();
+
+// Update slider displays when sliders change
+playerSlider.addEventListener('input', updateSliderDisplays);
+imposterSlider.addEventListener('input', updateSliderDisplays);
+extendedPlayerSlider.addEventListener('input', updateSliderDisplays);
+extendedImposterSlider.addEventListener('input', updateSliderDisplays);
+
+// Also update when sliders change via touch/mouse move
+playerSlider.addEventListener('change', updateSliderDisplays);
+imposterSlider.addEventListener('change', updateSliderDisplays);
+extendedPlayerSlider.addEventListener('change', updateSliderDisplays);
+extendedImposterSlider.addEventListener('change', updateSliderDisplays);
+
+/* ===== INITIALIZE SUBJECT OPTIONS ===== */
+function initializeSubjectOptions() {
+  subjectOptions.innerHTML = "";
+  
+  // 1. Add "Create New" Button (Manual)
+  const createBtn = document.createElement("div");
+  createBtn.className = "subject-option add-new";
+  createBtn.innerHTML = "<span>+</span> Create Manual";
+  createBtn.addEventListener("click", openCreateSubjectModal);
+  subjectOptions.appendChild(createBtn);
+
+  // 2. Add "AI Generate" Button (New!)
+  const aiBtn = document.createElement("div");
+  aiBtn.className = "subject-option ai-generate";
+  aiBtn.innerHTML = "<span>✨</span> AI Generate";
+  aiBtn.addEventListener("click", openAiModal);
+  subjectOptions.appendChild(aiBtn);
+  
+  // 3. Combine and Sort all subjects (Default + Saved)
+  const allKeys = [
+    ...Object.keys(defaultSubjects),
+    ...Object.keys(savedCustomSubjects)
+  ].sort();
+  
+  const uniqueKeys = [...new Set(allKeys)];
+  
+  uniqueKeys.forEach(subject => {
+    const isCustom = savedCustomSubjects.hasOwnProperty(subject);
+    
+    const option = document.createElement("div");
+    option.className = "subject-option";
+    option.textContent = subject;
+    option.dataset.subject = subject;
+    
+    if (subject === currentSubject) {
+      option.classList.add("selected");
+    }
+    
+    option.addEventListener("click", () => selectSubject(subject));
+    
+    if (isCustom) {
+      const deleteBtn = document.createElement("div");
+      deleteBtn.className = "delete-subject-btn";
+      deleteBtn.innerHTML = "&times;";
+      deleteBtn.title = "Delete Subject";
+      deleteBtn.addEventListener("click", (e) => deleteCustomSubject(e, subject));
+      option.appendChild(deleteBtn);
+    }
+    
+    subjectOptions.appendChild(option);
+  });
+}
+
+/* ===== SUBJECT MANAGEMENT ===== */
+function selectSubject(subject) {
+  // Remove selected class from all options
+  document.querySelectorAll('.subject-option').forEach(opt => {
+    opt.classList.remove('selected');
+  });
+  
+  // Add selected class to clicked option
+  const selectedOption = document.querySelector(`[data-subject="${subject}"]`);
+  if (selectedOption) {
+    selectedOption.classList.add('selected');
+  }
+  
+  currentSubject = subject;
+  actualCustomSubject = ""; // Clear single-use custom subject
+  
+  // Determine source (Default or Custom)
+  const sourceObject = defaultSubjects[subject] ? defaultSubjects : savedCustomSubjects;
+  
+  // Combine all items
+  customItems = [];
+  Object.values(sourceObject[subject]).forEach(categoryItems => {
+    customItems.push(...categoryItems);
+  });
+  
+  localStorage.setItem("currentSubject", currentSubject);
+  localStorage.setItem("actualCustomSubject", actualCustomSubject);
+  localStorage.setItem("customItems", JSON.stringify(customItems));
+  
+  showSelectedSubject();
+  enableGenerateButton();
+  errorBox.textContent = "";
+  
+  // Clear input
+  customSubjectInput.value = "";
+}
+
+function useCustomSubject() {
+  const subject = customSubjectInput.value.trim();
+  if (!subject) {
+    errorBox.textContent = "Please enter a custom subject";
+    return;
+  }
+  
+  // Remove selected class from all options
+  document.querySelectorAll('.subject-option').forEach(opt => {
+    opt.classList.remove('selected');
+  });
+  
+  // Store the actual custom word privately
+  actualCustomSubject = subject;
+  // Display "Custom" to users so they can't see what was entered
+  currentSubject = "Custom";
+  
+  // Use only the exact word/phrase entered - no modifications
+  customItems = [actualCustomSubject];
+  
+  localStorage.setItem("currentSubject", currentSubject);
+  localStorage.setItem("actualCustomSubject", actualCustomSubject);
+  localStorage.setItem("customItems", JSON.stringify(customItems));
+  
+  showSelectedSubject();
+  enableGenerateButton();
+  errorBox.textContent = "";
+  
+  // Clear input
+  customSubjectInput.value = "";
+}
+
+function showSelectedSubject() {
+  selectedSubjectName.textContent = currentSubject;
+  subjectDisplay.style.display = 'block';
+  subjectSelection.style.display = 'none';
+}
+
+function changeSubject() {
+  subjectDisplay.style.display = 'none';
+  subjectSelection.style.display = 'block';
+  generateBtn.disabled = true;
+  generateBtn.textContent = "Select Subject First";
+  
+  // Clear any existing cards
+  cardsContainer.innerHTML = "";
+  revealTracker.textContent = "";
+  firstPlayerBox.classList.remove('show');
+  firstPlayerBox.textContent = '';
+  revealRolesBtn.style.display = 'none';
+  rolesRevealBox.classList.remove('show');
+  rolesRevealBox.innerHTML = '';
+  kingAnnouncement.classList.remove('show');
+  kingAnnouncement.textContent = '';
+}
+
+function enableGenerateButton() {
+  generateBtn.disabled = false;
+  generateBtn.textContent = "Deal Cards";
+}
+
+/* ===== PLAYER NAMES MANAGEMENT ===== */
+function updatePlayerNamesList() {
+  const playerCount = getPlayerCount();
+  playerNamesList.innerHTML = "";
+  
+  // Ensure playerNames array has the right length
+  // Keep existing names for existing players, add default names for new players
+  for (let i = 0; i < playerCount; i++) {
+    if (i >= playerNames.length) {
+      playerNames.push(`Player ${i + 1}`);
+    }
+  }
+  
+  // Trim if player count decreased (only remove from end)
+  playerNames = playerNames.slice(0, playerCount);
+  
+  // Save to localStorage
+  localStorage.setItem("playerNames", JSON.stringify(playerNames));
+  
+  // Update player count display
+  playerCountDisplay.textContent = playerCount;
+  
+  // Create input for each player
+  for (let i = 0; i < playerCount; i++) {
+    const container = document.createElement("div");
+    container.className = "player-name-input-container";
+    
+    const label = document.createElement("div");
+    label.className = "player-name-label";
+    label.textContent = `Player ${i + 1}`;
+    
+    const input = document.createElement("input");
+    input.className = "player-name-input";
+    input.type = "text";
+    input.value = playerNames[i] || `Player ${i + 1}`;
+    input.placeholder = `Player ${i + 1}`;
+    input.dataset.index = i;
+    
+    // Update player name when input changes
+    input.addEventListener("input", (e) => {
+      const index = parseInt(e.target.dataset.index);
+      playerNames[index] = e.target.value.trim() || `Player ${index + 1}`;
+      localStorage.setItem("playerNames", JSON.stringify(playerNames));
+    });
+    
+    container.appendChild(label);
+    container.appendChild(input);
+    playerNamesList.appendChild(container);
+  }
+}
+
+function resetPlayerNames() {
+  const playerCount = getPlayerCount();
+  
+  // Reset to Player 1, Player 2, etc.
+  playerNames = [];
+  for (let i = 0; i < playerCount; i++) {
+    playerNames.push(`Player ${i + 1}`);
+  }
+  
+  // Save to localStorage and update UI
+  localStorage.setItem("playerNames", JSON.stringify(playerNames));
+  updatePlayerNamesList();
+}
+
+function addPlayer() {
+  let playerCount = getPlayerCount();
+  if (useExtendedSlider) {
+    // Bump extended slider by a small step
+    let pos = parseInt(extendedPlayerSlider.value, 10);
+    if (pos < 100) {
+      extendedPlayerSlider.value = pos + 1;
+      updateSliderDisplays();
+      playerCount = getPlayerCount();
+      playerNames.push(`Player ${playerCount}`);
+      localStorage.setItem("playerNames", JSON.stringify(playerNames));
+      if (playerNamesSection.style.display === 'block') updatePlayerNamesList();
+      localStorage.setItem("playerCount", playerCount);
+    }
+  } else {
+    if (playerCount < 20) {
+      playerCount++;
+      playerSlider.value = playerCount;
+      updateSliderDisplays();
+      playerNames.push(`Player ${playerCount}`);
+      localStorage.setItem("playerNames", JSON.stringify(playerNames));
+      if (playerNamesSection.style.display === 'block') updatePlayerNamesList();
+      localStorage.setItem("playerCount", playerCount);
+    }
+  }
+}
+
+function removePlayer() {
+  let playerCount = getPlayerCount();
+  if (playerCount > 1) {
+    if (useExtendedSlider) {
+      let pos = parseInt(extendedPlayerSlider.value, 10);
+      if (pos > 0) {
+        extendedPlayerSlider.value = pos - 1;
+      } else {
+        // Drop back to base slider
+        playerSlider.value = 19;
+      }
+      updateSliderDisplays();
+    } else {
+      playerCount--;
+      playerSlider.value = playerCount;
+      updateSliderDisplays();
+    }
+    playerNames.pop();
+    localStorage.setItem("playerNames", JSON.stringify(playerNames));
+    if (playerNamesSection.style.display === 'block') updatePlayerNamesList();
+    localStorage.setItem("playerCount", getPlayerCount());
+  }
+}
+
+function showPlayerNames() {
+  playerNamesSection.style.display = 'block';
+  showPlayerNamesBtn.classList.add('open');
+  updatePlayerNamesList();
+}
+
+function hidePlayerNames() {
+  playerNamesSection.style.display = 'none';
+  showPlayerNamesBtn.classList.remove('open');
+}
+
+function togglePlayerNames() {
+  if (playerNamesSection.style.display === 'none') {
+    showPlayerNames();
+  } else {
+    hidePlayerNames();
+  }
+}
+
+/* ===== UPDATE TRACKER ===== */
+function updateTracker() {
+  if (totalCards === 0) {
+    revealTracker.textContent = "";
+    return;
+  }
+  
+  revealTracker.textContent = `Revealed: ${revealedCards} / ${totalCards} cards`;
+  
+  if (lockedCards === totalCards && totalCards > 0) {
+    // Announce king player after all cards are locked
+    announceKingPlayer();
+    // Then select first player
+    setTimeout(() => {
+      selectFirstPlayer();
+    }, 500);
+  }
+}
+
+/* ===== ANNOUNCE KING PLAYER ===== */
+function announceKingPlayer() {
+  // Check the global flags (set during generation) instead of current toggle state
+  // because randomizer might have enabled it internally for this round
+  const isKingActive = words.some((_, i) => i === kingPlayer);
+  
+  if (kingPlayer !== null) {
+    const playerName = playerNames[kingPlayer] || `Player ${kingPlayer + 1}`;
+    
+    setTimeout(() => {
+      kingAnnouncement.textContent = `${playerName} is the King!\nThey get 2 votes!`;
+      kingAnnouncement.classList.add('show');
+      kingAnnouncement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 500);
+  }
+}
+
+/* ===== SELECT FIRST PLAYER ===== */
+function selectFirstPlayer() {
+  const randomPlayer = Math.floor(Math.random() * totalCards) + 1;
+  
+  setTimeout(() => {
+    // Use custom player name if available
+    const playerName = playerNames[randomPlayer - 1] || `Player ${randomPlayer}`;
+    let firstPlayerText = `${playerName} goes first!`;
+    
+    // Role announcement removed per user request.
+    
+    firstPlayerBox.textContent = firstPlayerText;
+    firstPlayerBox.classList.add('show');
+    revealRolesBtn.style.display = 'block';
+    firstPlayerBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 500);
+}
+
+/* ===== REVEAL ALL ROLES ===== */
+function revealAllRoles() {
+  const roleList = document.createElement('div');
+  roleList.className = 'roles-reveal-content';
+  
+  const header = document.createElement('div');
+  header.className = 'roles-reveal-header';
+  header.innerHTML = '<h3>All Roles Revealed</h3>';
+  
+  const listContainer = document.createElement('ul');
+  listContainer.className = 'role-list';
+  
+  words.forEach((word, i) => {
+    const playerNumber = i + 1;
+    const playerName = playerNames[i] || `Player ${playerNumber}`;
+    
+    let roleName = "";
+    let roleClass = "";
+    let specialNote = "";
+    let isKing = (i === kingPlayer);
+    
+    if (word === secretItem) {
+      roleName = "Civilian";
+      roleClass = "civilian-role";
+    } else if (word === "Imposter") {
+      roleName = "Imposter";
+      roleClass = "imposter-role";
+    } else if (word === "Detective") {
+      roleName = "Detective";
+      roleClass = "detective-role";
+    } else if (word === "Jester") {
+      roleName = "Jester";
+      roleClass = "jester-role";
+    } else if (word === "Clueless") {
+      roleName = "Clueless";
+      roleClass = "clueless-role";
+      // Show what word they had
+      specialNote = `<div class="clueless-word-display">Thought the word was: "${cluelessWord}"</div>`;
+    } else if (word === "Assassin") {
+      roleName = "Assassin";
+      roleClass = "assassin-role";
+      if (assassinTarget) {
+        const targetName = playerNames[assassinTarget - 1] || `Player ${assassinTarget}`;
+        specialNote = `<div class="assassin-target">Target: ${targetName}</div>`;
+      }
+    }
+    
+    if (isKing) {
+      if (roleClass) {
+        roleClass += " king-role";
+      } else {
+        roleClass = "king-role";
+      }
+    }
+    
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <span class="player-number">${playerName}</span>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: flex-end;">
+          <span class="role-name ${roleClass}">${roleName}${isKing ? ' (King)' : ''}</span>
+          ${specialNote}
+          ${isKing ? '<div class="king-badge">Has 2 votes!</div>' : ''}
+        </div>
+      </div>
+    `;
+    
+    listContainer.appendChild(li);
+  });
+  
+  roleList.appendChild(header);
+  roleList.appendChild(listContainer);
+  
+  rolesRevealBox.innerHTML = '';
+  rolesRevealBox.appendChild(roleList);
+  rolesRevealBox.classList.add('show');
+  revealRolesBtn.style.display = 'none';
+  rolesRevealBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/* ===== HELPER FUNCTIONS ===== */
+function getRandomItemFromArray(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/* ===== MAIN GAME FUNCTION ===== */
+function generateCards() {
+  if (!currentSubject || customItems.length === 0) {
+    errorBox.textContent = "Please select a subject first";
+    return;
+  }
+  
+  // Reset state
+  revealedCards = 0;
+  lockedCards = 0;
+  playerNumbers = [];
+  isDetectiveChoosing = false; 
+  activeDetectiveCardElement = null;
+  document.body.classList.remove('detective-mode');
+
+  firstPlayerBox.classList.remove('show');
+  firstPlayerBox.textContent = '';
+  revealRolesBtn.style.display = 'none';
+  rolesRevealBox.classList.remove('show');
+  rolesRevealBox.innerHTML = '';
+  kingAnnouncement.classList.remove('show');
+  kingAnnouncement.textContent = '';
+  errorBox.textContent = "";
+  kingPlayer = null;
+  cluelessWord = "";
+
+  const playerCount = getPlayerCount();
+  const imposterCount = getImposterCount();
+
+  if (playerCount < 1) {
+    errorBox.textContent = "There must be at least 1 player.";
+    return;
+  }
+
+  if (imposterCount < 1) {
+    errorBox.textContent = "At least 1 imposter.";
+    return;
+  }
+
+  if (imposterCount >= playerCount) {
+    errorBox.textContent = "Imposters must be less than total players.";
+    return;
+  }
+
+  // Save settings
+  localStorage.setItem("playerCount", playerCount);
+  localStorage.setItem("imposterCount", imposterCount);
+
+  // Logic setup (Word/Category selection)
+  secretItem = getRandomItemFromArray(customItems);
+  
+  // Determine Category Display
+  secretCategory = "Common";
+  let categoryItems = [];
+
+  // Check saved custom subjects first
+  if (savedCustomSubjects[currentSubject]) {
+    // The subject object looks like { "Category1": [words], "Category2": [words] }
+    // We need to find which category the secretItem belongs to
+    let found = false;
+    for (const [category, items] of Object.entries(savedCustomSubjects[currentSubject])) {
+      if (items.includes(secretItem)) {
+        secretCategory = category;
+        categoryItems = items;
+        found = true;
+        break;
+      }
+    }
+    // Fallback if random selection logic had a hiccup (shouldn't happen)
+    if (!found) {
+       const firstKey = Object.keys(savedCustomSubjects[currentSubject])[0];
+       secretCategory = firstKey || "Custom List";
+       categoryItems = savedCustomSubjects[currentSubject][firstKey] || customItems;
+    }
+  } 
+  // Then check default subjects
+  else if (defaultSubjects[currentSubject]) {
+    for (const [category, items] of Object.entries(defaultSubjects[currentSubject])) {
+      if (items.includes(secretItem)) {
+        secretCategory = category;
+        categoryItems = items;
+        break;
+      }
+    }
+  } 
+  // Single use custom word
+  else {
+    secretCategory = "Custom";
+    categoryItems = customItems;
+  }
+
+  // Determine active roles
+  let useDetective = detectiveToggle.checked;
+  let useJester = jesterToggle.checked;
+  let useAssassin = assassinToggle.checked;
+  let useClueless = cluelessToggle.checked;
+  let useKing = kingToggle.checked;
+
+  // RANDOMIZE LOGIC
+  if (randomizeToggle.checked) {
+      // 1. Reset all
+      useDetective = false;
+      useJester = false;
+      useAssassin = false;
+      useClueless = false;
+      useKing = false;
+
+      // 2. Calculate available slots for civilian roles
+      // We generally want to leave at least 1 "plain" civilian in play.
+      const civilianSlots = playerCount - imposterCount;
+      // If 3 players (1 imp), civilianSlots = 2. Max roles = 1.
+      // If 4 players (1 imp), civilianSlots = 3. Max roles = 2.
+      // If 5 players (1 imp), civilianSlots = 4. Max roles = 3.
+      
+      let maxSpecialRoles = Math.max(0, civilianSlots - 1);
+      
+      // Determine random count between 0 and maxSpecialRoles
+      // (If maxSpecialRoles is 0, count is 0)
+      let targetRoleCount = 0;
+      if (maxSpecialRoles > 0) {
+        // Random number between 0 and maxSpecialRoles inclusive
+        // Changed to allow 0 roles (0 to max)
+        targetRoleCount = Math.floor(Math.random() * (maxSpecialRoles + 1));
+      }
+
+      // 3. Define pool of roles that consume a slot
+      let rolePool = ['detective', 'jester', 'assassin'];
+      
+      // Only add clueless if valid (enough words)
+      if (categoryItems.length >= 2) {
+          rolePool.push('clueless');
+      }
+
+      // Shuffle role pool
+      for (let i = rolePool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [rolePool[i], rolePool[j]] = [rolePool[j], rolePool[i]];
+      }
+
+      // Enable the first N roles from the shuffled pool
+      for (let i = 0; i < targetRoleCount; i++) {
+         if (i < rolePool.length) {
+             const role = rolePool[i];
+             if (role === 'detective') useDetective = true;
+             if (role === 'jester') useJester = true;
+             if (role === 'assassin') useAssassin = true;
+             if (role === 'clueless') useClueless = true;
+         }
+      }
+
+      // 4. Handle King (doesn't take a slot, stackable)
+      // Give it a 50% chance to appear
+      useKing = Math.random() < 0.5;
+
+  } else {
+      // Manual mode validation
+      const civilianSlots = playerCount - imposterCount;
+      let specialRolesCount = 0;
+      if (useDetective) specialRolesCount++;
+      if (useJester) specialRolesCount++;
+      if (useAssassin) specialRolesCount++;
+      if (useClueless) specialRolesCount++;
+      
+      if (civilianSlots < specialRolesCount + 1) { 
+        errorBox.textContent = `Need at least ${specialRolesCount + 1} non-imposters for special roles.`;
+        return;
+      }
+      
+      if (useClueless && categoryItems.length < 2) {
+          errorBox.textContent = "Clueless role disabled: Not enough words in this category.";
+          return;
+      }
+  }
+
+  // --- ROLE ASSIGNMENT LOGIC ---
+  words = Array(playerCount).fill("Civilian");
+
+  // Imposters
+  let imposters = 0;
+  while (imposters < imposterCount) {
+    const idx = Math.floor(Math.random() * playerCount);
+    if (words[idx] === "Civilian") {
+      words[idx] = "Imposter";
+      imposters++;
+    }
+  }
+
+  // Detective
+  let detectiveIndex = null;
+  if (useDetective) {
+    let assigned = false;
+    while (!assigned) {
+      const idx = Math.floor(Math.random() * playerCount);
+      if (words[idx] === "Civilian") {
+        words[idx] = "Detective";
+        detectiveIndex = idx;
+        assigned = true;
+      }
+    }
+  }
+
+  // Jester
+  if (useJester) {
+    let assigned = false;
+    while (!assigned) {
+      const idx = Math.floor(Math.random() * playerCount);
+      if (words[idx] === "Civilian") {
+        words[idx] = "Jester";
+        assigned = true;
+      }
+    }
+  }
+
+  // Clueless
+  if (useClueless) {
+    let assigned = false;
+    while (!assigned) {
+      const idx = Math.floor(Math.random() * playerCount);
+      if (words[idx] === "Civilian") {
+        words[idx] = "Clueless";
+        assigned = true;
+        const potentialCluelessWords = categoryItems.filter(item => item !== secretItem);
+        cluelessWord = getRandomItemFromArray(potentialCluelessWords);
+      }
+    }
+  }
+
+  // Assassin
+  let assassinIndex = null;
+  assassinTarget = null;
+  if (useAssassin) {
+    let assigned = false;
+    while (!assigned) {
+      const idx = Math.floor(Math.random() * playerCount);
+      if (words[idx] === "Civilian") {
+        words[idx] = "Assassin";
+        assassinIndex = idx;
+        const possibleTargets = [];
+        for (let i = 0; i < playerCount; i++) {
+          if (i !== idx && words[i] !== "Imposter") {
+            possibleTargets.push(i);
+          }
+        }
+        if (possibleTargets.length > 0) {
+          const targetIdx = possibleTargets[Math.floor(Math.random() * possibleTargets.length)];
+          assassinTarget = targetIdx + 1;
+          assigned = true;
+        } else {
+          words[idx] = "Civilian"; 
+        }
+      }
+    }
+  }
+
+  // King
+  if (useKing) {
+    kingPlayer = Math.floor(Math.random() * playerCount);
+  }
+
+  // Fill Civilians
+  for (let i = 0; i < words.length; i++) {
+    if (words[i] === "Civilian") {
+      words[i] = secretItem;
+    }
+  }
+
+  // SHUFFLE
+  const indices = Array.from({length: playerCount}, (_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  const shuffledWords = indices.map(i => words[i]);
+  words = shuffledWords;
+
+  // Re-map Assassin Target & King
+  if (useAssassin && assassinIndex !== null && assassinTarget !== null) {
+    let newAssassinIndex = null;
+    for (let i = 0; i < indices.length; i++) {
+      if (indices[i] === assassinIndex) { newAssassinIndex = i; break; }
+    }
+    let newTargetIndex = null;
+    const originalTargetIndex = assassinTarget - 1;
+    for (let i = 0; i < indices.length; i++) {
+      if (indices[i] === originalTargetIndex) { newTargetIndex = i; break; }
+    }
+    
+    if (newAssassinIndex !== null && newTargetIndex !== null && newAssassinIndex === newTargetIndex) {
+      for (let i = 0; i < words.length; i++) {
+        if (i !== newAssassinIndex && words[i] !== "Imposter" && words[i] !== "Detective" && words[i] !== "Jester" && words[i] !== "Assassin" && words[i] !== "Clueless") {
+          [words[newAssassinIndex], words[i]] = [words[i], words[newAssassinIndex]];
+          assassinTarget = i + 1;
+          break;
+        }
+      }
+    } else if (newTargetIndex !== null) {
+      assassinTarget = newTargetIndex + 1;
+    }
+  }
+  
+  if (useKing && kingPlayer !== null) {
+    let newKingIndex = null;
+    for (let i = 0; i < indices.length; i++) {
+      if (indices[i] === kingPlayer) { newKingIndex = i; break; }
+    }
+    kingPlayer = newKingIndex;
+  }
+
+  // --- CARD GENERATION ---
+  cardsContainer.innerHTML = "";
+  totalCards = playerCount;
+  updateTracker();
+
+  words.forEach((word, i) => {
+    const playerNumber = i + 1;
+    const playerName = playerNames[i] || `Player ${playerNumber}`;
+    playerNumbers.push(playerNumber);
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.dataset.index = i; // Store index for detective logic
+
+    card.innerHTML = `
+      <div class="card-header">
+        <span>${playerName}</span>
+        <span class="status-label">Hidden</span>
+      </div>
+      <div class="word-box word-hidden"></div>
+      <div class="category-box"></div>
+      <button class="card-btn">Reveal</button>
+    `;
+
+    const wordBox = card.querySelector(".word-box");
+    const categoryBox = card.querySelector(".category-box");
+    const btn = card.querySelector(".card-btn");
+    const statusLabel = card.querySelector(".status-label");
+
+    let viewed = false;
+    let revealed = false;
+    let specialHint = null;
+
+    // --- DETECTIVE CLICK HANDLER (ON THE CARD ITSELF) ---
+    // This handles the click when the detective selects THIS card as a target
+    card.addEventListener('click', (e) => {
+      // Only trigger if detective is currently choosing, this card isn't the detective's, and it's not the button being clicked
+      if (isDetectiveChoosing && e.target !== btn && !card.classList.contains('detective-active-card')) {
+        
+        // 1. Identify role of this target
+        const targetWord = words[i];
+        let roleReveal = "Civilian";
+        
+        if (targetWord === "Imposter") roleReveal = "Imposter";
+        else if (targetWord === "Jester") roleReveal = "Jester";
+        else if (targetWord === "Assassin") roleReveal = "Assassin";
+        else if (targetWord === "Clueless") roleReveal = "Clueless";
+        else if (targetWord === "Detective") roleReveal = "Detective"; // Should be impossible if logic holds
+        else roleReveal = "Civilian"; // Or the secret word
+
+        // 2. Update the Detective's card hint
+        if (activeDetectiveHintElement) {
+          activeDetectiveHintElement.innerHTML = `
+            <strong>Your Mission:</strong><br>Find imposters!<br><br>
+            <strong>Investigation Result:</strong><br>
+            <span style="color:#10b981; font-size:1.1em">${playerName} is: ${roleReveal}</span>
+          `;
+          activeDetectiveHintElement.style.border = "2px solid #10b981";
+          activeDetectiveHintElement.style.background = "#fff";
+        }
+
+        // 3. Reset Detective Mode
+        isDetectiveChoosing = false;
+        document.body.classList.remove('detective-mode');
+        
+        // Remove highlighting from all cards
+        document.querySelectorAll('.card').forEach(c => {
+          c.classList.remove('detective-active-card');
+        });
+      }
+    });
+
+
+    // --- STANDARD BUTTON HANDLER ---
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation(); // Prevent triggering the card click event
+      if (viewed) return;
+
+      // Reveal Logic
+      if (btn.textContent === "Reveal") {
+        
+        // Render Role Text
+        if (word === "Imposter") {
+          wordBox.textContent = "Imposter";
+          // Add imposter hint if enabled
+          if (imposterHintsToggle.checked) {
+            const hintEl = document.createElement("div");
+            hintEl.className = "imposter-hint";
+            hintEl.innerHTML = generateImposterHint(secretItem, secretCategory, categoryItems);
+            card.appendChild(hintEl);
+            setTimeout(() => hintEl.classList.add('show'), 10);
+          }
+        } else if (word === "Detective") {
+          wordBox.textContent = secretItem;
+          const roleText = document.createElement("div");
+          roleText.className = "detective-role";
+          roleText.textContent = "Detective";
+          wordBox.appendChild(roleText);
+        } else if (word === "Jester") {
+          wordBox.textContent = secretItem;
+          const roleText = document.createElement("div");
+          roleText.className = "jester-role";
+          roleText.textContent = "Jester";
+          wordBox.appendChild(roleText);
+        } else if (word === "Assassin") {
+          wordBox.textContent = secretItem;
+          const roleText = document.createElement("div");
+          roleText.className = "assassin-role";
+          roleText.textContent = "Assassin";
+          wordBox.appendChild(roleText);
+        } else if (word === "Clueless") {
+          wordBox.textContent = cluelessWord;
+        } else {
+          wordBox.textContent = word; 
+        }
+        
+        if (kingPlayer === i) {
+          const kingText = document.createElement("div");
+          kingText.className = "king-role";
+          kingText.textContent = "King";
+          wordBox.appendChild(kingText);
+        }
+        
+        wordBox.classList.add("word-revealed");
+        categoryBox.textContent = "Category: " + secretCategory;
+        categoryBox.classList.add("category-shown");
+
+        // Hints
+        specialHint = document.createElement("div");
+        
+        if (word === "Detective") {
+          // --- DETECTIVE ACTIVATION LOGIC ---
+          isDetectiveChoosing = true;
+          activeDetectiveCardElement = card;
+          card.classList.add('detective-active-card');
+          document.body.classList.add('detective-mode');
+
+          specialHint.className = "detective-hint";
+          specialHint.innerHTML = `<strong>Your Mission:</strong><br>Find imposters!<br><br><strong>ACTION REQUIRED:</strong><br>Tap another player's card to investigate them!`;
+          
+          activeDetectiveHintElement = specialHint; // Store ref to update later
+
+        } else if (word === "Assassin" && assassinTarget) {
+          const targetName = playerNames[assassinTarget - 1] || `Player ${assassinTarget}`;
+          specialHint.className = "assassin-hint";
+          specialHint.innerHTML = `<strong>Your Mission:</strong><br>Get ${targetName} voted out!`;
+        } else if (word === "Jester") {
+          specialHint.className = "jester-hint";
+          specialHint.innerHTML = `<strong>Your Mission:</strong><br>Get voted out!`;
+        }
+        
+        if (kingPlayer === i) {
+          const kingHint = document.createElement("div");
+          kingHint.className = "king-hint";
+          kingHint.innerHTML = `<strong>You are the King!</strong><br>You get 2 votes!`;
+          card.appendChild(kingHint);
+          setTimeout(() => kingHint.classList.add('show'), 10);
+        }
+
+        if (specialHint.textContent) {
+          card.appendChild(specialHint);
+          setTimeout(() => specialHint.classList.add('show'), 10);
+        }
+
+        btn.textContent = "Close";
+        statusLabel.textContent = "Revealed";
+        
+        if (!revealed) {
+          revealed = true;
+          revealedCards++;
+          updateTracker();
+        }
+        return;
+      }
+
+      // Close Logic
+      if (btn.textContent === "Close") {
+        viewed = true;
+
+        // If detective closes card without choosing, cancel the mode
+        if (word === "Detective" && isDetectiveChoosing) {
+          isDetectiveChoosing = false;
+          document.body.classList.remove('detective-mode');
+          card.classList.remove('detective-active-card');
+        }
+
+        if (specialHint) specialHint.classList.remove('show');
+        const kingHint = card.querySelector('.king-hint');
+        if (kingHint) kingHint.classList.remove('show');
+        const imposterHint = card.querySelector('.imposter-hint');
+        if (imposterHint) imposterHint.classList.remove('show');
+
+        wordBox.classList.remove("word-revealed");
+        categoryBox.classList.remove("category-shown");
+
+        setTimeout(() => {
+          if (specialHint && specialHint.parentNode) specialHint.parentNode.removeChild(specialHint);
+          if (kingHint && kingHint.parentNode) kingHint.parentNode.removeChild(kingHint);
+          if (imposterHint && imposterHint.parentNode) imposterHint.parentNode.removeChild(imposterHint);
+          
+          while (wordBox.firstChild) wordBox.removeChild(wordBox.firstChild);
+          
+          wordBox.textContent = "Locked";
+          wordBox.className = "word-box word-locked";
+          btn.textContent = "Locked";
+          btn.classList.add("locked");
+          btn.disabled = true;
+          statusLabel.textContent = "Locked";
+          
+          lockedCards++;
+          updateTracker();
+        }, 250);
+      }
+    });
+
+    cardsContainer.appendChild(card);
+  });
+}
+
+/* ===== TOGGLE RANDOMIZE CHECKBOXES ===== */
+randomizeToggle.addEventListener('change', () => {
+  const isDisabled = randomizeToggle.checked;
+  
+  detectiveToggle.disabled = isDisabled;
+  jesterToggle.disabled = isDisabled;
+  assassinToggle.disabled = isDisabled;
+  kingToggle.disabled = isDisabled;
+  cluelessToggle.disabled = isDisabled;
+
+  // Visual Styling
+  const containers = [detectiveContainer, jesterContainer, assassinContainer, kingContainer, cluelessContainer];
+  containers.forEach(container => {
+    if (isDisabled) {
+      container.classList.add('disabled');
+    } else {
+      container.classList.remove('disabled');
+    }
+  });
+});
+
+/* ===== EVENT LISTENERS ===== */
+customSubjectBtn.addEventListener("click", useCustomSubject);
+customSubjectInput.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") {
+    useCustomSubject();
+  }
+});
+
+changeSubjectBtn.addEventListener("click", changeSubject);
+generateBtn.addEventListener("click", generateCards);
+revealRolesBtn.addEventListener("click", revealAllRoles);
+
+// Player names event listeners
+resetNamesBtn.addEventListener("click", resetPlayerNames);
+showPlayerNamesBtn.addEventListener("click", togglePlayerNames);
+
+// Add/Remove player buttons
+addPlayerBtn.addEventListener("click", addPlayer);
+removePlayerBtn.addEventListener("click", removePlayer);
+
+// Update player names when player slider changes
+function syncPlayerNamesFromSlider() {
+  const playerCount = getPlayerCount();
+  const previousCount = playerNames.length;
+  
+  if (playerCount > previousCount) {
+    for (let i = previousCount; i < playerCount; i++) {
+      playerNames.push(`Player ${i + 1}`);
+    }
+  } else if (playerCount < previousCount) {
+    playerNames = playerNames.slice(0, playerCount);
+  }
+  
+  localStorage.setItem("playerNames", JSON.stringify(playerNames));
+  playerCountDisplay.textContent = formatNumber(playerCount);
+  
+  if (playerNamesSection.style.display === 'block') {
+    updatePlayerNamesList();
+  }
+}
+playerSlider.addEventListener("input", syncPlayerNamesFromSlider);
+extendedPlayerSlider.addEventListener("input", syncPlayerNamesFromSlider);
+
+// Save toggle states
+detectiveToggle.addEventListener("change", () => {
+  localStorage.setItem("detectiveEnabled", detectiveToggle.checked);
+});
+
+jesterToggle.addEventListener("change", () => {
+  localStorage.setItem("jesterEnabled", jesterToggle.checked);
+});
+
+assassinToggle.addEventListener("change", () => {
+  localStorage.setItem("assassinEnabled", assassinToggle.checked);
+});
+
+kingToggle.addEventListener("change", () => {
+  localStorage.setItem("kingEnabled", kingToggle.checked);
+});
+
+cluelessToggle.addEventListener("change", () => {
+  localStorage.setItem("cluelessEnabled", cluelessToggle.checked);
+});
+
+imposterHintsToggle.addEventListener("change", () => {
+  localStorage.setItem("imposterHintsEnabled", imposterHintsToggle.checked);
+});
+
+/* ===== INITIALIZATION ===== */
+initializeSubjectOptions();
+
+// Initialize extended slider display on load
+updateSliderDisplays();
+
+// Initialize player names if not already loaded
+const initPlayerCount = getPlayerCount();
+if (playerNames.length === 0) {
+  for (let i = 0; i < initPlayerCount; i++) {
+    playerNames.push(`Player ${i + 1}`);
+  }
+  localStorage.setItem("playerNames", JSON.stringify(playerNames));
+}
+
+// Initialize player count display
+playerCountDisplay.textContent = formatNumber(initPlayerCount);
+
+if (currentSubject) {
+  showSelectedSubject();
+  enableGenerateButton();
+} else {
+  generateBtn.disabled = true;
+  generateBtn.textContent = "Select Subject First";
+}
+
+// Initialize the player names panel as collapsed
+playerNamesSection.style.display = 'none';
+
+// AI Modal Listeners
+closeAiModalBtn.addEventListener('click', closeAiModal);
+cancelAiBtn.addEventListener('click', closeAiModal);
+generateAiBtn.addEventListener('click', generateAiSubject);
+aiTopicInput.addEventListener('keypress', (e) => {
+  if (e.key === "Enter") generateAiSubject();
+});
+aiModalOverlay.addEventListener('click', (e) => {
+  if (e.target === aiModalOverlay) closeAiModal();
+});
+</script>
+</body>
+</html>

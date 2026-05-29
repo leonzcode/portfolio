@@ -10,6 +10,9 @@ export function getStaticPaths() {
 }
 
 const { project } = Astro.props;
+const playableHref = project.localHref ?? project.href;
+const hasPlayable = playableHref && playableHref !== "#";
+const hasExternalSource = !!project.href && !!project.localHref && project.href !== "#";
 ---
 
 <BaseLayout
@@ -50,14 +53,14 @@ const { project } = Astro.props;
         {project.description}
       </p>
       {
-        project.href && project.href !== "#" && (
+        hasExternalSource && (
           <a
             href={project.href}
             target="_blank"
             rel="noopener noreferrer"
             class="inline-flex items-center gap-2 mt-6 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
           >
-            Launch project
+            Open original version
             <svg
               class="w-3.5 h-3.5"
               xmlns="http://www.w3.org/2000/svg"
@@ -78,7 +81,16 @@ const { project } = Astro.props;
     </header>
 
     {
-      project.image ? (
+      hasPlayable ? (
+        <div class="w-full h-[75vh] min-h-[520px] rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+          <iframe
+            src={playableHref}
+            title={`${project.title} playable demo`}
+            class="w-full h-full"
+            loading="lazy"
+          ></iframe>
+        </div>
+      ) : project.image ? (
         <img
           src={project.image}
           alt={project.title}

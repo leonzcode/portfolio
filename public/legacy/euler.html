@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Euler's Method Solver</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #fdfbf7;
+            --grid-color: #e1e1e1;
+            --primary: #2c3e50;
+            --accent: #e74c3c;
+            --highlight: #f1c40f;
+            --border-color: #333;
+            --shadow: 4px 4px 0px rgba(0,0,0,0.8);
+        }
+
+        body {
+            font-family: 'Lora', serif;
+            background-color: var(--bg-color);
+            /* Graph paper effect */
+            background-image: 
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+            color: var(--primary);
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .main-wrapper {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border: 2px solid var(--border-color);
+            box-shadow: var(--shadow);
+            padding: 40px;
+            position: relative;
+        }
+
+        /* "Handmade" Header Style */
+        header {
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: -1px;
+            margin: 0;
+            font-size: 2rem;
+        }
+
+        .subtitle {
+            font-style: italic;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        /* Input Grid */
+        .controls-panel {
+            background-color: #f8f9fa;
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .input-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 25px;
+        }
+
+        .form-control {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: bold;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        input {
+            font-family: 'JetBrains Mono', monospace;
+            padding: 10px;
+            border: 1px solid #aaa;
+            background: #fff;
+            font-size: 1rem;
+            border-radius: 0; /* Removing generic rounded corners */
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background-color: #fffef0;
+            box-shadow: 2px 2px 0px rgba(0,0,0,0.1);
+        }
+
+        /* Buttons with character */
+        .btn-row {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        button {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: bold;
+            padding: 12px 20px;
+            cursor: pointer;
+            border: 2px solid var(--border-color);
+            background: white;
+            box-shadow: 2px 2px 0px var(--border-color);
+            transition: transform 0.1s, box-shadow 0.1s;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+        }
+
+        button:active {
+            transform: translate(2px, 2px);
+            box-shadow: 0px 0px 0px var(--border-color);
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-reset {
+            background-color: #fff;
+            color: var(--primary);
+        }
+
+        /* Error Box */
+        .error-box {
+            border: 2px solid var(--accent);
+            background-color: #fadbd8;
+            color: var(--accent);
+            padding: 15px;
+            margin-top: 20px;
+            font-weight: bold;
+            display: none;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Results Section */
+        .results-section {
+            display: none;
+            margin-top: 40px;
+            border-top: 2px dashed #ccc;
+            padding-top: 30px;
+        }
+
+        h3 {
+            font-family: 'JetBrains Mono', monospace;
+            border-left: 5px solid var(--highlight);
+            padding-left: 15px;
+            margin-bottom: 20px;
+        }
+
+        /* Handwritten-style Logic Box */
+        .logic-pad {
+            background-color: #fffde7; /* Yellow legal pad color */
+            border: 1px solid #e0e0e0;
+            padding: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+            color: #444;
+            white-space: pre-wrap;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
+            border-left: 4px solid #eebb00;
+        }
+
+        /* Table Design */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+            margin-top: 20px;
+        }
+        
+        th {
+            background-color: var(--primary);
+            color: white;
+            font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            padding: 12px;
+            border: 1px solid var(--primary);
+        }
+
+        td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        
+        tr:hover {
+            background-color: #e8f4fd;
+        }
+
+        .math-expr {
+            color: #666;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+        }
+
+        /* Chart Container */
+        .chart-container {
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: white;
+            margin-bottom: 30px;
+        }
+        
+        .helper-text {
+            font-size: 0.85rem;
+            color: #777;
+            text-align: right;
+            margin-bottom: 5px;
+            font-style: italic;
+        }
+
+        /* Footer */
+        .footer-credit {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #888;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+        }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+</head>
+<body>
+
+<div class="main-wrapper">
+    <header>
+        <h1>Euler's Method Solver</h1>
+        <div class="subtitle">In honer of Leonard Euler who has a great first name</div>
+    </header>
+
+    <div class="controls-panel">
+        <div class="input-group">
+            <div class="form-control">
+                <label>Differential Equation y' =</label>
+                <input type="text" id="equation" value="x + y" placeholder="e.g. x + y">
+            </div>
+            <div class="form-control">
+                <label>Step Size (h)</label>
+                <input type="number" id="stepSize" value="0.5" step="0.01">
+            </div>
+        </div>
+
+        <div style="margin-top: 20px;" class="input-group">
+            <div class="form-control">
+                <label>Initial x<sub>0</sub></label>
+                <input type="number" id="x0" value="0" step="any">
+            </div>
+            <div class="form-control">
+                <label>Initial y<sub>0</sub></label>
+                <input type="number" id="y0" value="1" step="any">
+            </div>
+            <div class="form-control">
+                <label>Target x</label>
+                <input type="number" id="targetX" value="3" step="any">
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn-primary" onclick="calculateEuler()">Run Simulation</button>
+            <button class="btn-reset" onclick="resetChartZoom()">Reset View</button>
+        </div>
+    </div>
+
+    <div id="errorMsg" class="error-box"></div>
+
+    <div id="results" class="results-section">
+        
+        <h3>01. Graphical Analysis</h3>
+        <div class="helper-text">// Drag to zoom. Double-click to reset.</div>
+        <div class="chart-container">
+            <canvas id="resultChart"></canvas>
+        </div>
+
+        <h3>02. Computation Log</h3>
+        <div class="logic-pad" id="mathSteps"></div>
+
+        <h3>03. Iteration Table</h3>
+        <div style="overflow-x: auto;">
+            <table id="dataTable">
+                <thead>
+                    <tr>
+                        <th>n</th>
+                        <th>x<sub>n</sub></th>
+                        <th>y<sub>n</sub></th>
+                        <th>Slope m</th>
+                        <th>Calculation Trace</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer-credit">
+        leoniscool.com
+    </div>
+</div>
+
+<script>
+    let myChart = null;
+
+    function calculateEuler() {
+        const eqStr = document.getElementById('equation').value;
+        const h = parseFloat(document.getElementById('stepSize').value);
+        let x = parseFloat(document.getElementById('x0').value);
+        let y = parseFloat(document.getElementById('y0').value);
+        const targetX = parseFloat(document.getElementById('targetX').value);
+        
+        const errorDiv = document.getElementById('errorMsg');
+        const resultsDiv = document.getElementById('results');
+        const tableBody = document.querySelector('#dataTable tbody');
+        const mathStepsDiv = document.getElementById('mathSteps');
+
+        // Reset
+        errorDiv.style.display = 'none';
+        tableBody.innerHTML = '';
+        mathStepsDiv.textContent = '';
+        resultsDiv.style.display = 'none';
+
+        // Validate
+        if (isNaN(h) || isNaN(x) || isNaN(y) || isNaN(targetX)) {
+            showError("Input Error: Ensure all fields contain valid numbers.");
+            return;
+        }
+        if (h <= 0) return showError("Input Error: Step size (h) must be positive.");
+        if (targetX <= x) return showError("Input Error: Target x must be greater than initial x.");
+
+        // Loop
+        const xData = [];
+        const yData = [];
+        let iter = 0;
+        let stepLog = "// First 3 Iterations Log:\n\n";
+
+        let f;
+        try {
+            f = math.compile(eqStr);
+            f.evaluate({x: x, y: y});
+        } catch (err) {
+            showError("Syntax Error: Please check your equation. Use 'x' and 'y'.");
+            return;
+        }
+
+        try {
+            const maxIterations = 2000;
+            
+            // Initial Row
+            let initialSlope = f.evaluate({x, y});
+            addRow(iter, x, y, initialSlope, "Initial Value");
+            xData.push(x);
+            yData.push(y);
+
+            while (x < targetX && iter < maxIterations) {
+                let oldX = x;
+                let oldY = y;
+                
+                let slope = f.evaluate({x: oldX, y: oldY});
+                let newY = oldY + h * slope;
+                let newX = oldX + h;
+                
+                // Logging
+                if (iter < 3) {
+                    stepLog += `[n=${iter}] (${oldX.toFixed(4)}, ${oldY.toFixed(4)})\n`;
+                    stepLog += `   Slope m = ${slope.toFixed(4)}\n`;
+                    stepLog += `   y_new   = ${oldY.toFixed(4)} + (${h} * ${slope.toFixed(4)}) = ${newY.toFixed(4)}\n\n`;
+                }
+
+                x = parseFloat(newX.toFixed(10));
+                y = newY;
+                iter++;
+
+                xData.push(x);
+                yData.push(y);
+
+                let currentSlope = (x < targetX) ? f.evaluate({x, y}) : "—";
+                let calcString = `${oldY.toFixed(3)} + ${h} · ${slope.toFixed(3)}`;
+                addRow(iter, x, y, currentSlope, calcString);
+            }
+
+            if (iter >= maxIterations) showError("Notice: Max iterations reached. Stopping to prevent crash.");
+
+            mathStepsDiv.textContent = stepLog;
+            resultsDiv.style.display = 'block';
+            drawChart(xData, yData);
+
+        } catch (err) {
+            showError("Runtime Error: " + err.message);
+        }
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorMsg');
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
+
+    function addRow(n, x, y, slope, calc) {
+        const tbody = document.querySelector('#dataTable tbody');
+        const row = tbody.insertRow();
+        const fmt = (num) => typeof num === 'number' ? num.toFixed(5) : num;
+        
+        row.innerHTML = `
+            <td><strong>${n}</strong></td>
+            <td>${fmt(x)}</td>
+            <td style="background:#fffde7"><strong>${fmt(y)}</strong></td>
+            <td>${fmt(slope)}</td>
+            <td class="math-expr">${calc}</td>
+        `;
+    }
+
+    function drawChart(xData, yData) {
+        const ctx = document.getElementById('resultChart').getContext('2d');
+        if (myChart) myChart.destroy();
+
+        // Chart styling to match "Notebook" theme
+        Chart.defaults.font.family = "'JetBrains Mono', monospace";
+        Chart.defaults.color = '#555';
+
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: xData,
+                datasets: [{
+                    label: 'Approximate y(x)',
+                    data: yData,
+                    borderColor: '#2c3e50',
+                    borderWidth: 2,
+                    backgroundColor: 'rgba(44, 62, 80, 0.05)',
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#e74c3c',
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    tension: 0, 
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    zoom: {
+                        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, drag: { enabled: true }, mode: 'xy' },
+                        pan: { enabled: true, mode: 'xy' }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(44, 62, 80, 0.9)',
+                        titleFont: { family: "'JetBrains Mono', monospace" },
+                        bodyFont: { family: "'JetBrains Mono', monospace" },
+                        padding: 10,
+                        cornerRadius: 0,
+                        displayColors: false
+                    },
+                    legend: {
+                        labels: {
+                            font: { family: "'JetBrains Mono', monospace" }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: '#eee', borderColor: '#333', tickColor: '#333' },
+                        title: { display: true, text: 'x', font: { weight: 'bold' } }
+                    },
+                    y: {
+                        grid: { color: '#eee', borderColor: '#333', tickColor: '#333' },
+                        title: { display: true, text: 'y', font: { weight: 'bold' } }
+                    }
+                }
+            }
+        });
+    }
+
+    function resetChartZoom() {
+        if (myChart) myChart.resetZoom();
+    }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,3365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculus Solver</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.12.0/math.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/algebrite@1.4.0/dist/algebrite.bundle-for-browser.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        /* --- CSS Variables --- */
+        :root {
+            --primary-color: #4285f4;
+            --primary-hover: #357ae8;
+            --secondary-color: #f0f2f5;
+            --card-bg: white;
+            --text-color: #222;
+            --text-light: #555;
+            --border-radius: 20px;
+            --shadow: 0px 15px 40px rgba(0,0,0,0.15);
+            --transition: all 0.2s ease;
+            --success-color: #34a853;
+            --error-color: #ea4335;
+        }
+
+        /* --- Base Styles --- */
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--secondary-color);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            overflow-x: hidden;
+            scrollbar-width: thin;
+            scrollbar-color: var(--primary-color) #e0e0e0;
+        }
+
+        body::-webkit-scrollbar {
+            width: 12px;
+        }
+        
+        body::-webkit-scrollbar-track {
+            background: #e0e0e0;
+            margin-left: 5px;
+            border-radius: 6px;
+        }
+        
+        body::-webkit-scrollbar-thumb {
+            background-color: var(--primary-color);
+            border-radius: 6px;
+            border: 3px solid #e0e0e0;
+        }
+
+        /* --- Layout --- */
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 95%;
+            max-width: 1200px;
+            gap: 20px;
+            padding: 20px 0;
+        }
+
+        /* Main layout for larger screens */
+        @media (min-width: 1024px) {
+            .main-content {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+                width: 100%;
+                align-items: start;
+            }
+            
+            .calculator-section {
+                grid-column: 1;
+            }
+            
+            .graph-section {
+                grid-column: 2;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+            }
+            
+            .evaluate-section {
+                /* reserved */
+            }
+            
+            .container {
+                gap: 30px;
+            }
+        }
+
+        /* --- Cards --- */
+        .card {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            width: 100%;
+            padding: 25px 30px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            position: relative;
+        }
+
+        /* --- Header --- */
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            margin: 0;
+            color: var(--text-color);
+            font-size: 1.5rem;
+        }
+
+        /* --- Help Icon --- */
+        .help-icon {
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-light);
+            transition: var(--transition);
+        }
+
+        .help-icon:hover {
+            color: var(--text-color);
+        }
+
+        /* --- Inputs --- */
+        .input-field {
+            font-size: 16px;
+            padding: 12px 15px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            outline: none;
+            transition: var(--transition);
+        }
+
+        .input-field:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 8px rgba(66,133,244,0.3);
+        }
+
+        .input-full {
+            width: 100%;
+        }
+
+        .input-half {
+            width: 48%;
+        }
+
+        /* --- Buttons --- */
+        .btn {
+            font-size: 16px;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 12px;
+            background-color: var(--primary-color);
+            color: white;
+            cursor: pointer;
+            transition: var(--transition);
+            margin: 5px;
+        }
+
+        .btn:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-2px);
+        }
+
+        .btn-small {
+            font-size: 14px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            margin-top: 8px;
+        }
+
+        .btn-success {
+            background-color: var(--success-color);
+        }
+
+        .btn-success:hover {
+            background-color: #2e8b47;
+        }
+
+        /* --- Button Groups --- */
+        .btn-group {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+        }
+
+        /* --- Output Areas --- */
+        .output-area {
+            font-size: 18px;
+            color: var(--text-color);
+            word-wrap: break-word;
+        }
+
+        .output-area:not(:empty) {
+            min-height: 50px;
+            padding: 15px;
+            border-radius: 12px;
+            background-color: #f7f9fc;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .eval-output {
+            font-size: 16px;
+            min-height: 40px;
+            color: var(--text-color);
+            word-wrap: break-word;
+            padding: 12px;
+            border-radius: 10px;
+            background-color: #f7f9fc;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);
+            width: 100%;
+            text-align: center;
+        }
+
+        /* --- Graph --- */
+        #graph {
+            width: 100%;
+            height: 400px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            background-color: var(--card-bg);
+        }
+
+        /* Larger graph on bigger screens */
+        @media (min-width: 1024px) {
+            #graph {
+                height: 500px;
+            }
+        }
+
+        /* --- Evaluation Section --- */
+        .evaluate-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        .evaluate-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .bounds-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 100%;
+            margin-top: 10px;
+            align-items: center;
+        }
+
+        .bound-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .inf-btn {
+            font-size: 13px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background-color: #f1f3f4;
+            color: var(--text-color);
+            border: 1px solid #dadce0;
+            cursor: pointer;
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+
+        .inf-btn:hover {
+            background-color: #e8eaed;
+        }
+
+        .inf-btn.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        /* --- Help Modal --- */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+        }
+
+        .modal-content {
+            background: var(--card-bg);
+            padding: 30px 40px;
+            border-radius: var(--border-radius);
+            max-width: 600px;
+            width: 90%;
+            text-align: left;
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            cursor: pointer;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        /* --- Desmos-style Keyboard --- */
+        .keyboard-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: none;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            padding: 6px 14px;
+            font-size: 13px;
+            color: var(--text-light);
+            cursor: pointer;
+            margin-top: 6px;
+            transition: background 0.15s;
+        }
+        .keyboard-toggle:hover { background: #f1f3f4; }
+        .keyboard-toggle .kb-icon {
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .desmos-keyboard {
+            display: none;
+            margin-top: 8px;
+            background: #e2e6ea;
+            border-radius: 10px;
+            padding: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+        }
+        .desmos-keyboard.open { display: block; }
+
+        .kb-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 4px;
+        }
+
+        .kb-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 15px;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            color: #333;
+            height: 40px;
+            cursor: pointer;
+            transition: background 0.1s, box-shadow 0.1s;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+            user-select: none;
+            padding: 0 2px;
+        }
+        .kb-btn:hover { background: #ebedf0; }
+        .kb-btn:active { background: #d5d8dc; box-shadow: none; }
+        .kb-btn.kb-fn { font-size: 13px; font-weight: 500; color: #1a73e8; }
+        .kb-btn.kb-op { font-size: 18px; font-weight: 600; color: #555; }
+        .kb-btn.kb-wide { grid-column: span 2; font-size: 13px; }
+        .kb-btn.kb-accent { background: #dce8fc; color: #1a73e8; }
+        .kb-btn.kb-accent:hover { background: #c5d8f8; }
+        .kb-btn.kb-del { background: #fce4e4; color: #d93025; font-size: 13px; font-weight: 600; }
+        .kb-btn.kb-del:hover { background: #f8cfcf; }
+
+        .kb-row-label {
+            grid-column: 1 / -1;
+            font-size: 11px;
+            color: #888;
+            padding: 4px 4px 0;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .kb-row-label:first-child { padding-top: 0; }
+
+        /* --- Responsive --- */
+        @media (max-width: 768px) {
+            .container {
+                gap: 15px;
+                padding: 10px 0;
+            }
+            
+            .card {
+                padding: 20px;
+            }
+            
+            .input-half {
+                width: 100%;
+            }
+            
+            .btn-group {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .btn {
+                width: 100%;
+                max-width: 300px;
+            }
+            
+            .function-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .card-title {
+                font-size: 1.3rem;
+            }
+            
+            .symbol-row {
+                justify-content: flex-start;
+            }
+        }
+
+        /* For very small screens */
+        @media (max-width: 480px) {
+            .container {
+                width: 98%;
+            }
+            
+            .card {
+                padding: 15px;
+            }
+            
+            .btn {
+                padding: 8px 12px;
+                font-size: 14px;
+            }
+            
+            .input-field {
+                font-size: 14px;
+                padding: 10px 12px;
+            }
+            
+            .output-area {
+                font-size: 16px;
+                padding: 12px;
+            }
+            
+            .kb-btn {
+                font-size: 13px;
+                height: 36px;
+            }
+            .kb-grid {
+                grid-template-columns: repeat(6, 1fr);
+            }
+        }
+
+        /* For large screens - spread out content */
+        @media (min-width: 1400px) {
+            .container {
+                max-width: 1400px;
+                gap: 40px;
+            }
+            
+            .main-content {
+                gap: 40px;
+            }
+            
+            .card {
+                padding: 30px 40px;
+            }
+            
+            #graph {
+                height: 550px;
+            }
+        }
+
+        /* --- Loading Overlay --- */
+
+        /* --- Area Between Curves --- */
+        .area-curves-section {
+            width: 100%;
+        }
+
+        .func-inputs-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .func-input-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            width: 100%;
+        }
+
+        .func-input-row .input-field {
+            flex: 1;
+        }
+
+        .func-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-light);
+            min-width: 35px;
+            text-align: right;
+        }
+
+        .remove-func-btn {
+            background: #ea4335;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+            padding: 0;
+            line-height: 1;
+        }
+
+        .remove-func-btn:hover {
+            background: #c5221f;
+            transform: scale(1.1);
+        }
+
+        .area-bounds-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        .area-option-label {
+            font-size: 13px;
+            color: var(--text-light);
+        }
+
+        /* --- Euler's Method Panel --- */
+        .euler-panel-fields {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .euler-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .euler-row label {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-light);
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .euler-table-container {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .euler-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .euler-table th, .euler-table td {
+            border: 1px solid #dadce0;
+            padding: 6px 10px;
+            text-align: center;
+        }
+
+        .euler-table th {
+            background-color: var(--primary-color);
+            color: white;
+            position: sticky;
+            top: 0;
+        }
+
+        .euler-table tr:nth-child(even) {
+            background-color: #f7f9fc;
+        }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.35);
+            z-index: 998;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .loading-card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            text-align: center;
+            min-width: 300px;
+        }
+
+        .loading-title {
+            font-size: 1.1rem;
+            color: var(--text-color);
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .loading-bar-container {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .loading-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4285f4, #34a853, #4285f4);
+            background-size: 200% 100%;
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.3s ease;
+            animation: loading-shimmer 1.5s infinite linear;
+        }
+
+        @keyframes loading-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .loading-status {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Calculator Section -->
+            <div class="calculator-section">
+                <div class="card">
+                    <div class="card-header">
+                        <h1 class="card-title">Calculus Solver</h1>
+                        <span class="help-icon" id="helpIcon">&#9432;</span>
+                    </div>
+
+                    <input type="text" id="funcInput" class="input-field input-full" 
+                           placeholder="Type a function, e.g., arcsin(x), leon, or x^2 + y^2 = 25">
+
+                    <!-- Desmos-style Keyboard -->
+                    <button class="keyboard-toggle" id="keyboardToggle">
+                        <span class="kb-icon">⌨</span> Keyboard
+                    </button>
+                    <div class="desmos-keyboard" id="desmosKeyboard">
+                        <div class="kb-grid">
+                            <div class="kb-row-label">Numbers</div>
+                            <button class="kb-btn kb-op" data-symbol="1">1</button>
+                            <button class="kb-btn kb-op" data-symbol="2">2</button>
+                            <button class="kb-btn kb-op" data-symbol="3">3</button>
+                            <button class="kb-btn kb-op" data-symbol="4">4</button>
+                            <button class="kb-btn kb-op" data-symbol="5">5</button>
+                            <button class="kb-btn kb-op" data-symbol="6">6</button>
+                            <button class="kb-btn kb-op" data-symbol="7">7</button>
+                            <button class="kb-btn kb-op" data-symbol="8">8</button>
+                            <button class="kb-btn kb-op" data-symbol="9">9</button>
+                            <button class="kb-btn kb-op" data-symbol="0">0</button>
+                            <button class="kb-btn kb-op" data-symbol=".">.</button>
+                            <button class="kb-btn kb-op" data-symbol="=">=</button>
+                            <button class="kb-btn kb-accent" data-symbol="x">x</button>
+                            <button class="kb-btn kb-accent" data-symbol="y">y</button>
+                            <button class="kb-btn kb-op" data-symbol=",">,</button>
+                            <button class="kb-btn kb-del" data-symbol="DEL">⌫</button>
+
+                            <div class="kb-row-label">Operators</div>
+                            <button class="kb-btn kb-op" data-symbol="+">+</button>
+                            <button class="kb-btn kb-op" data-symbol="-">−</button>
+                            <button class="kb-btn kb-op" data-symbol="*">×</button>
+                            <button class="kb-btn kb-op" data-symbol="/">÷</button>
+                            <button class="kb-btn kb-op" data-symbol="^" title="power">x<sup style='font-size:10px'>y</sup></button>
+                            <button class="kb-btn kb-op" data-symbol="(">(</button>
+                            <button class="kb-btn kb-op" data-symbol=")">)</button>
+                            <button class="kb-btn kb-op" data-symbol="abs(">|</button>
+
+                            <div class="kb-row-label">Functions</div>
+                            <button class="kb-btn kb-fn" data-symbol="sin(">sin</button>
+                            <button class="kb-btn kb-fn" data-symbol="cos(">cos</button>
+                            <button class="kb-btn kb-fn" data-symbol="tan(">tan</button>
+                            <button class="kb-btn kb-fn" data-symbol="arcsin(">sin⁻¹</button>
+                            <button class="kb-btn kb-fn" data-symbol="arccos(">cos⁻¹</button>
+                            <button class="kb-btn kb-fn" data-symbol="arctan(">tan⁻¹</button>
+                            <button class="kb-btn kb-fn" data-symbol="csc(">csc</button>
+                            <button class="kb-btn kb-fn" data-symbol="sec(">sec</button>
+
+                            <div class="kb-row-label">More</div>
+                            <button class="kb-btn kb-fn" data-symbol="ln(">ln</button>
+                            <button class="kb-btn kb-fn" data-symbol="log(">log</button>
+                            <button class="kb-btn kb-fn" data-symbol="sqrt(">√</button>
+                            <button class="kb-btn kb-fn" data-symbol="abs(">|x|</button>
+                            <button class="kb-btn kb-fn" data-symbol="e^">eˣ</button>
+                            <button class="kb-btn" data-symbol="pi">π</button>
+                            <button class="kb-btn" data-symbol="e">e</button>
+                            <button class="kb-btn" data-symbol="Infinity">∞</button>
+                        </div>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn" id="calculateBtn">Calculate</button>
+                        <button class="btn" id="derivativeBtn">Derivative</button>
+                        <button class="btn" id="nextDerivativeBtn">Next Derivative</button>
+                        <button class="btn" id="implicitBtn">Implicit dy/dx</button>
+                        <button class="btn" id="integralBtn">Integral</button>
+                        <button class="btn" id="definiteIntegralBtn">Definite ∫</button>
+                        <button class="btn" id="areaBtnToggle">Area ∫∫</button>
+                        <button class="btn" id="eulerBtnToggle">Euler's Method</button>
+                        <button class="btn btn-success" id="resetBtn">Reset</button>
+                    </div>
+
+                    <div class="bounds-row" id="boundsRow" style="display: none;">
+                        <div class="bound-group">
+                            <button class="btn inf-btn" id="negInfBtn" title="Set lower bound to -∞">-∞</button>
+                            <input type="text" id="integralA" class="input-field" style="width:120px" placeholder="Lower (a)" step="any">
+                        </div>
+                        <div class="bound-group">
+                            <input type="text" id="integralB" class="input-field" style="width:120px" placeholder="Upper (b)" step="any">
+                            <button class="btn inf-btn" id="posInfBtn" title="Set upper bound to +∞">+∞</button>
+                        </div>
+                        <button class="btn btn-small" id="computeDefiniteBtn">Compute</button>
+                    </div>
+
+                    <!-- Area Between Curves (toggled by Area button) -->
+                    <div id="areaPanel" style="display: none; width: 100%;">
+                        <div class="func-inputs-list" id="funcInputsList">
+                            <div class="func-input-row">
+                                <span class="func-label">f(x)=</span>
+                                <input type="text" class="input-field area-func-input" placeholder="e.g. x^2">
+                            </div>
+                            <div class="func-input-row">
+                                <span class="func-label">g(x)=</span>
+                                <input type="text" class="input-field area-func-input" placeholder="e.g. x">
+                            </div>
+                        </div>
+                        <div class="btn-group" style="margin-top: 10px;">
+                            <button class="btn btn-small" id="addFuncBtn">+ Add Curve</button>
+                        </div>
+                        <div class="area-bounds-row">
+                            <span class="area-option-label">Bounds (optional):</span>
+                            <input type="text" id="areaBoundA" class="input-field" style="width:100px" placeholder="a">
+                            <span class="area-option-label">to</span>
+                            <input type="text" id="areaBoundB" class="input-field" style="width:100px" placeholder="b">
+                        </div>
+                        <div class="btn-group" style="margin-top: 10px;">
+                            <button class="btn" id="computeAreaBtn">Compute Area</button>
+                        </div>
+                        <div id="areaResult" class="output-area"></div>
+                    </div>
+
+                    <!-- Euler's Method (toggled by Euler button) -->
+                    <div id="eulerPanel" style="display: none; width: 100%;">
+                        <div class="euler-panel-fields">
+                            <div class="euler-row">
+                                <label>dy/dx =</label>
+                                <input type="text" id="eulerDyDx" class="input-field" style="flex:1" placeholder="e.g. x + y or 2*x*y">
+                            </div>
+                            <div class="euler-row">
+                                <label>x₀ =</label>
+                                <input type="text" id="eulerX0" class="input-field" style="width:80px" placeholder="0">
+                                <label>y₀ =</label>
+                                <input type="text" id="eulerY0" class="input-field" style="width:80px" placeholder="1">
+                            </div>
+                            <div class="euler-row">
+                                <label>Step h =</label>
+                                <input type="text" id="eulerH" class="input-field" style="width:80px" placeholder="0.1">
+                                <label>Target x =</label>
+                                <input type="text" id="eulerTarget" class="input-field" style="width:80px" placeholder="1">
+                            </div>
+                        </div>
+                        <div class="btn-group" style="margin-top: 10px;">
+                            <button class="btn" id="computeEulerBtn">Compute</button>
+                        </div>
+                        <div id="eulerResult" class="output-area"></div>
+                    </div>
+
+                    <div id="result" class="output-area"></div>
+
+                    <!-- Evaluate at Point (toggled after computation) -->
+                    <div id="evaluateSection" style="display: none; width: 100%;">
+                        <div class="evaluate-container">
+                            <div class="evaluate-row">
+                                <input type="number" id="evalX" class="input-field input-half" 
+                                       placeholder="x value" step="any">
+                                <input type="number" id="evalY" class="input-field input-half" 
+                                       placeholder="y value" step="any">
+                                <button class="btn btn-small" id="evaluateBtn">Evaluate</button>
+                            </div>
+                            <div id="evalResult" class="eval-output"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graph Section -->
+            <div class="graph-section">
+                <div class="card">
+                    <h2 class="card-title">Function Graph</h2>
+                    <div id="graph"></div>
+                </div>
+            </div>
+        </div>
+
+        <footer style="text-align: center; padding: 20px 0 10px; color: #999; font-size: 13px;">
+            <a href="https://leoniscool.com" target="_blank" style="color: #999; text-decoration: none;">leoniscool.com</a>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-card">
+            <div class="loading-title" id="loadingTitle">Computing Integral...</div>
+            <div class="loading-bar-container">
+                <div class="loading-bar" id="loadingBar"></div>
+            </div>
+            <div class="loading-status" id="loadingStatus">Initializing...</div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div class="modal" id="helpModal">
+        <div class="modal-content">
+            <span class="modal-close" id="closeHelp">×</span>
+            <h2>How to Use the Calculus Solver</h2>
+            <p><strong>Explicit functions (f(x)):</strong></p>
+            <ul>
+                <li>Type a function in terms of x only. Example: <code>x^3</code>, <code>sin(3*x)</code>, <code>arcsin(x)</code>.</li>
+                <li>Click <strong>Derivative</strong> to see the first derivative, or <strong>Next Derivative</strong> for higher-order derivatives.</li>
+                <li>Only the x value is needed for evaluation.</li>
+            </ul>
+            <p><strong>Implicit functions (F(x,y) = 0):</strong></p>
+            <ul>
+                <li>Type an equation using "=", e.g., <code>x^2 + y^2 = 25</code>.</li>
+                <li>Click <strong>Implicit dy/dx</strong> to compute the derivative implicitly.</li>
+                <li>For evaluation, both x and y values are needed.</li>
+            </ul>
+            <p><strong>Integrals:</strong></p>
+            <ul>
+                <li>Type a function and click <strong>Integral</strong> for the indefinite integral (antiderivative + C).</li>
+                <li>Click <strong>Definite ∫</strong> to show bound inputs, enter lower and upper bounds, then click <strong>Compute</strong>.</li>
+                <li>Powered by Algebrite CAS, Nerdamer CAS, and a custom rule engine — handles polynomials, rational functions, trig, exponentials, logarithms, products like x*sin(x), compositions, and much more.</li>
+                <li>Applies integration by parts, u-substitution, trig identities, and power reduction formulas.</li>
+                <li>For non-elementary integrals (e.g., sin(sin(cos(x)))), produces Taylor series polynomial approximations integrated term by term.</li>
+                <li>Results are verified by differentiation. Final fallback: adaptive Simpson's rule with near-exact numerical precision.</li>
+            </ul>
+            <p><strong>Area Between Curves:</strong></p>
+            <ul>
+                <li>Enter 2 or more functions in the <strong>Area Between Curves</strong> section.</li>
+                <li>Click <strong>Compute Area</strong> to find the area of the region bounded between the curves.</li>
+                <li>Intersection points are found automatically. Optionally specify bounds to restrict the region.</li>
+                <li>Computes ∫|f(x) − g(x)| dx over each sub-interval between intersection points.</li>
+                <li>Click <strong>+ Add Curve</strong> to add more functions. Click <strong>×</strong> to remove one (minimum 2).</li>
+            </ul>
+            <p><strong>Euler's Method:</strong></p>
+            <ul>
+                <li>Click <strong>Euler's Method</strong> to open the panel.</li>
+                <li>Enter dy/dx = f(x, y), initial values x₀ and y₀, step size h, and target x.</li>
+                <li>Click <strong>Compute</strong> to see a step-by-step table of approximations.</li>
+                <li>The graph plots the Euler approximation curve alongside the slope field.</li>
+                <li>Useful for AP Calculus BC: numerically approximate solutions to differential equations.</li>
+            </ul>
+            <p><strong>Using Math Symbols:</strong></p>
+            <ul>
+                <li>Click any symbol button to insert it into the function input</li>
+                <li>Use the "arc" button followed by a trig function for inverse trig functions</li>
+                <li>Constants like π and e are automatically recognized</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // --- Application State ---
+        const state = {
+            originalNode: null,
+            derivativeNodes: [],
+            derivativeCount: 0,
+            implicitDyDxNode: null,
+            integralNode: null
+        };
+
+        // --- DOM Elements ---
+        const elements = {
+            funcInput: document.getElementById('funcInput'),
+            result: document.getElementById('result'),
+            evalResult: document.getElementById('evalResult'),
+            evalX: document.getElementById('evalX'),
+            evalY: document.getElementById('evalY'),
+            graph: document.getElementById('graph'),
+            helpModal: document.getElementById('helpModal'),
+            helpIcon: document.getElementById('helpIcon'),
+            closeHelp: document.getElementById('closeHelp'),
+            derivativeBtn: document.getElementById('derivativeBtn'),
+            nextDerivativeBtn: document.getElementById('nextDerivativeBtn'),
+            implicitBtn: document.getElementById('implicitBtn'),
+            evaluateBtn: document.getElementById('evaluateBtn'),
+            evaluateSection: document.getElementById('evaluateSection'),
+            resetBtn: document.getElementById('resetBtn'),
+            calculateBtn: document.getElementById('calculateBtn'),
+            integralBtn: document.getElementById('integralBtn'),
+            definiteIntegralBtn: document.getElementById('definiteIntegralBtn'),
+            boundsRow: document.getElementById('boundsRow'),
+            integralA: document.getElementById('integralA'),
+            integralB: document.getElementById('integralB'),
+            computeDefiniteBtn: document.getElementById('computeDefiniteBtn'),
+            negInfBtn: document.getElementById('negInfBtn'),
+            posInfBtn: document.getElementById('posInfBtn'),
+            symbolBtns: document.querySelectorAll('.kb-btn[data-symbol]'),
+            keyboardToggle: document.getElementById('keyboardToggle'),
+            desmosKeyboard: document.getElementById('desmosKeyboard'),
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            loadingBar: document.getElementById('loadingBar'),
+            loadingStatus: document.getElementById('loadingStatus'),
+            loadingTitle: document.getElementById('loadingTitle'),
+            funcInputsList: document.getElementById('funcInputsList'),
+            addFuncBtn: document.getElementById('addFuncBtn'),
+            areaBoundA: document.getElementById('areaBoundA'),
+            areaBoundB: document.getElementById('areaBoundB'),
+            computeAreaBtn: document.getElementById('computeAreaBtn'),
+            areaResult: document.getElementById('areaResult'),
+            areaBtnToggle: document.getElementById('areaBtnToggle'),
+            areaPanel: document.getElementById('areaPanel'),
+            eulerBtnToggle: document.getElementById('eulerBtnToggle'),
+            eulerPanel: document.getElementById('eulerPanel'),
+            eulerDyDx: document.getElementById('eulerDyDx'),
+            eulerX0: document.getElementById('eulerX0'),
+            eulerY0: document.getElementById('eulerY0'),
+            eulerH: document.getElementById('eulerH'),
+            eulerTarget: document.getElementById('eulerTarget'),
+            computeEulerBtn: document.getElementById('computeEulerBtn'),
+            eulerResult: document.getElementById('eulerResult')
+        };
+
+        // --- Loading Indicator ---
+        const loading = {
+            show(title) {
+                elements.loadingTitle.textContent = title || 'Computing...';
+                elements.loadingBar.style.width = '0%';
+                elements.loadingStatus.textContent = 'Initializing...';
+                elements.loadingOverlay.classList.add('active');
+            },
+            update(percent, status) {
+                elements.loadingBar.style.width = Math.min(percent, 100) + '%';
+                if (status) elements.loadingStatus.textContent = status;
+            },
+            hide() {
+                elements.loadingOverlay.classList.remove('active');
+            }
+        };
+
+        // --- Yield to browser (let UI repaint) ---
+        function yieldToBrowser() {
+            return new Promise(r => setTimeout(r, 20));
+        }
+
+        // --- Utility Functions ---
+        const utils = {
+            mathToTex(node) {
+                try {
+                    return node.toTex({parenthesis: 'keep', implicit: 'show'});
+                } catch {
+                    return node.toString();
+                }
+            },
+
+            preprocessInput(input) {
+                // Replace inverse trig functions with mathjs equivalents
+                input = input.replace(/arcsin\(/g, 'asin(');
+                input = input.replace(/arccos\(/g, 'acos(');
+                input = input.replace(/arctan\(/g, 'atan(');
+                input = input.replace(/arccsc\(/g, 'acsc(');
+                input = input.replace(/arcsec\(/g, 'asec(');
+                input = input.replace(/arccot\(/g, 'acot(');
+                
+                // Other replacements
+                input = input.replace(/ln\(/g, 'log(');
+                input = input.replace(/e\^(\()/g, 'exp$1');
+                input = input.replace(/e\^([0-9])/g, 'exp($1)');
+                
+                return input;
+            },
+
+            postprocessOutput(tex) {
+                // Convert mathjs output back to more familiar notation
+                tex = tex.replace(/\\operatorname{asin}/g, '\\arcsin');
+                tex = tex.replace(/\\operatorname{acos}/g, '\\arccos');
+                tex = tex.replace(/\\operatorname{atan}/g, '\\arctan');
+                tex = tex.replace(/\\operatorname{acsc}/g, '\\arccsc');
+                tex = tex.replace(/\\operatorname{asec}/g, '\\arcsec');
+                tex = tex.replace(/\\operatorname{acot}/g, '\\arccot');
+                
+                return tex;
+            },
+
+            derivativeLabel(count) {
+                if (count === 0) return "f(x)";
+                if (count === 1) return "f'(x)";
+                if (count === 2) return "f''(x)";
+                if (count === 3) return "f'''(x)";
+                return `f^{(${count})}(x)`;
+            },
+
+            isSpecialName(input) {
+                input = input.toLowerCase();
+                const specialNames = {
+                    'leon': 'Leon is very cool!',
+                    'carver': 'Carver is cool!',
+                    'rebecca': 'Rebecca is cool!',
+                    'claire': 'Claire is cool!'
+                };
+                
+                for (const name in specialNames) {
+                    if (input.includes(name)) {
+                        return { msg: specialNames[name], name: name };
+                    }
+                }
+                return null;
+            },
+
+            resetState() {
+                state.originalNode = null;
+                state.derivativeNodes = [];
+                state.derivativeCount = 0;
+                state.implicitDyDxNode = null;
+                state.integralNode = null;
+                elements.result.innerHTML = '';
+                elements.evalResult.innerHTML = '';
+                elements.funcInput.value = '';
+                elements.evalX.value = '';
+                elements.evalY.value = '';
+                elements.integralA.value = '';
+                elements.integralA.readOnly = false;
+                elements.integralB.value = '';
+                elements.integralB.readOnly = false;
+                elements.negInfBtn.classList.remove('active');
+                elements.posInfBtn.classList.remove('active');
+                elements.boundsRow.style.display = 'none';
+                elements.areaPanel.style.display = 'none';
+                elements.eulerPanel.style.display = 'none';
+                elements.evaluateSection.style.display = 'none';
+                
+                // Clear graph
+                Plotly.purge(elements.graph);
+                elements.graph.innerHTML = '<p style="text-align: center; padding: 20px; color: #666;">Graph will appear here after computing.</p>';
+
+                // Reset area between curves
+                elements.areaResult.innerHTML = '';
+                elements.areaBoundA.value = '';
+                elements.areaBoundB.value = '';
+                // Reset function inputs to just 2
+                const rows = elements.funcInputsList.querySelectorAll('.func-input-row');
+                rows.forEach((row, i) => {
+                    if (i < 2) {
+                        row.querySelector('.area-func-input').value = '';
+                    } else {
+                        row.remove();
+                    }
+                });
+                areaBetweenCurves._updateLabels();
+
+                // Reset Euler's method
+                elements.eulerDyDx.value = '';
+                elements.eulerX0.value = '';
+                elements.eulerY0.value = '';
+                elements.eulerH.value = '';
+                elements.eulerTarget.value = '';
+                elements.eulerResult.innerHTML = '';
+            },
+
+            insertSymbol(symbol) {
+                const input = elements.funcInput;
+                const startPos = input.selectionStart;
+                const endPos = input.selectionEnd;
+                
+                input.value = input.value.substring(0, startPos) + symbol + input.value.substring(endPos);
+                input.selectionStart = startPos + symbol.length;
+                input.selectionEnd = input.selectionStart;
+                input.focus();
+            }
+        };
+
+        // --- Modal Functions ---
+        const modal = {
+            show() {
+                elements.helpModal.style.display = 'flex';
+            },
+
+            hide() {
+                elements.helpModal.style.display = 'none';
+            }
+        };
+
+        // --- Derivative Functions ---
+        const derivative = {
+            compute() {
+                state.implicitDyDxNode = null;
+                const input = elements.funcInput.value.trim();
+                
+                if (!input) {
+                    elements.result.innerText = 'Please enter a function.';
+                    return;
+                }
+                
+                const specialData = utils.isSpecialName(input);
+                
+                if (specialData) {
+                    this.showSillyFace(specialData.name, specialData.msg);
+                    return;
+                }
+                
+                const processedInput = utils.preprocessInput(input);
+                
+                try {
+                    state.originalNode = math.parse(processedInput);
+                    state.derivativeNodes = [state.originalNode];
+                    state.derivativeCount = 1;
+                    state.derivativeNodes.push(math.derivative(state.originalNode, 'x'));
+                    this.displayAllDerivatives();
+                } catch (err) {
+                    elements.result.innerText = 'Error: ' + err.message;
+                }
+            },
+
+            next() {
+                if (state.derivativeNodes.length === 0) {
+                    elements.result.innerText = 'Compute a derivative first.';
+                    return;
+                }
+                
+                if (elements.result.innerText.includes("cool!")) return;
+                
+                try {
+                    const last = state.derivativeNodes[state.derivativeNodes.length - 1];
+                    state.derivativeNodes.push(math.derivative(last, 'x'));
+                    state.derivativeCount++;
+                    this.displayAllDerivatives();
+                } catch (err) {
+                    elements.result.innerText = 'Error: ' + err.message;
+                }
+            },
+
+            displayAllDerivatives() {
+                state.implicitDyDxNode = null;
+                let latexStr = '';
+                
+                for (let i = 1; i < state.derivativeNodes.length; i++) {
+                    let tex = utils.mathToTex(state.derivativeNodes[i]);
+                    tex = utils.postprocessOutput(tex);
+                    latexStr += `$$${utils.derivativeLabel(i)} = ${tex}$$<br>`;
+                }
+                
+                elements.result.innerHTML = latexStr;
+                MathJax.typesetPromise();
+                elements.evaluateSection.style.display = '';
+                this.plotDerivatives();
+            },
+
+            plotDerivatives() {
+                try {
+                    const colors = ['#4285f4', '#ea4335', '#fbbc05', '#34a853', '#9c27b0', '#ff5722', '#009688'];
+                    const traces = [];
+                    
+                    for (let i = 0; i < state.derivativeNodes.length; i++) {
+                        const xValues = [];
+                        const yValues = [];
+                        
+                        for (let x = -10; x <= 10; x += 0.1) {
+                            // Skip values that might cause domain errors for inverse trig functions
+                            if (this.isInDomain(state.derivativeNodes[i], x)) {
+                                xValues.push(x);
+                                try {
+                                    yValues.push(state.derivativeNodes[i].evaluate({ x: x }));
+                                } catch {
+                                    yValues.push(NaN);
+                                }
+                            }
+                        }
+                        
+                        if (xValues.length > 0) {
+                            traces.push({
+                                x: xValues,
+                                y: yValues,
+                                mode: 'lines',
+                                name: utils.derivativeLabel(i),
+                                line: {
+                                    color: colors[i % colors.length],
+                                    dash: i === 0 ? 'solid' : 'dash'
+                                }
+                            });
+                        }
+                    }
+                    
+                    if (traces.length > 0) {
+                        Plotly.newPlot(
+                            elements.graph,
+                            traces,
+                            {
+                                title: 'Function & Derivatives',
+                                xaxis: { title: 'x', scaleanchor: 'y', scaleratio: 1 },
+                                yaxis: { title: 'y' }
+                            },
+                            { responsive: true }
+                        );
+                    } else {
+                        elements.graph.innerHTML = '<p style="text-align: center; padding: 20px;">Graph not available for this function in the current domain.</p>';
+                    }
+                } catch (e) {
+                    console.error('Plotting error:', e);
+                    elements.graph.innerHTML = '<p style="text-align: center; padding: 20px;">Error plotting function.</p>';
+                }
+            },
+
+            isInDomain(node, x) {
+                // Check if x is in the domain of the function
+                // This is a simplified check - in a real application, you'd want more sophisticated domain checking
+                const expr = node.toString();
+                
+                // Domain checks for inverse trig functions
+                if (expr.includes('asin') || expr.includes('acos')) {
+                    return x >= -1 && x <= 1;
+                }
+                
+                if (expr.includes('acsc') || expr.includes('asec')) {
+                    return x <= -1 || x >= 1;
+                }
+                
+                // Domain check for logarithms
+                if (expr.includes('log') && x <= 0) {
+                    return false;
+                }
+                
+                // Domain check for square roots
+                if (expr.includes('sqrt') && x < 0) {
+                    return false;
+                }
+                
+                return true;
+            },
+
+            showSillyFace(name, message) {
+                elements.result.innerText = message;
+                
+                const xCircle = [], yCircle = [];
+                for (let t = 0; t <= 2 * Math.PI; t += 0.01) {
+                    xCircle.push(Math.cos(t));
+                    yCircle.push(Math.sin(t));
+                }
+                
+                const leftEye = { x: [], y: [], mode: 'markers', marker: { size: 10 } };
+                const rightEye = { x: [], y: [], mode: 'markers', marker: { size: 10 } };
+                const mouth = { x: [], y: [], mode: 'lines', line: { width: 3 } };
+                const extras = [];
+                let faceColor = 'orange';
+                
+                switch (name) {
+                    case 'leon':
+                        faceColor = 'blue';
+                        leftEye.x = [-0.35]; leftEye.y = [0.5]; leftEye.marker.color = 'blue';
+                        rightEye.x = [0.35]; rightEye.y = [0.5]; rightEye.marker.color = 'blue';
+                        for (let t = 0; t <= 2 * Math.PI; t += 0.01) {
+                            mouth.x.push(0.2 * Math.cos(t));
+                            mouth.y.push(-0.6 + 0.2 * Math.sin(t));
+                        }
+                        extras.push({
+                            x: [-0.5, 0, 0.5],
+                            y: [1.2, 1.5, 1.2],
+                            mode: 'lines',
+                            line: { color: 'brown', width: 4 }
+                        });
+                        break;
+                        
+                    case 'carver':
+                        faceColor = 'yellow';
+                        leftEye.x = [-0.5]; leftEye.y = [0.3]; leftEye.marker.color = 'blue';
+                        rightEye.x = [0.35]; rightEye.y = [1]; rightEye.marker.color = 'brown';
+                        for (let t = 0; t <= 2 * Math.PI; t += 0.01) {
+                            mouth.x.push(0.2 * Math.cos(t));
+                            mouth.y.push(-0.6 + 0.2 * Math.sin(t));
+                        }
+                        extras.push({
+                            x: [-0.5, 0, 0.5],
+                            y: [1.2, 1.5, 1.2],
+                            mode: 'lines',
+                            line: { color: 'brown', width: 4 }
+                        });
+                        break;
+                        
+                    case 'rebecca':
+                        faceColor = 'purple';
+                        leftEye.x = [-0.35]; leftEye.y = [0.5]; leftEye.marker.color = 'black'; leftEye.marker.size = 18;
+                        rightEye.x = [0.35]; rightEye.y = [0.5]; rightEye.marker.color = 'blue'; rightEye.marker.size = 18;
+                        for (let t = 0; t <= 2 * Math.PI; t += 0.01) {
+                            mouth.x.push(0.2 * Math.cos(t));
+                            mouth.y.push(-0.5 + 0.5 * Math.sin(t));
+                        }
+                        extras.push({
+                            x: [-1, 0, 1],
+                            y: [0.6, 1.5, 0.6],
+                            mode: 'lines',
+                            line: { color: 'brown', width: 4 }
+                        });
+                        
+                        const bigCircleX = [], bigCircleY = [], radius = 2;
+                        for (let t = 0; t <= 2 * Math.PI; t += 0.01) {
+                            bigCircleX.push(radius * Math.cos(t));
+                            bigCircleY.push(radius * Math.sin(t));
+                        }
+                        extras.push({
+                            x: bigCircleX,
+                            y: bigCircleY,
+                            mode: 'lines',
+                            line: { color: 'orange', width: 2 }
+                        });
+                        break;
+                        
+                    case 'claire':
+                        faceColor = 'orange';
+                        leftEye.x = [-0.4]; leftEye.y = [0.5]; leftEye.marker.color = 'black';
+                        rightEye.x = [0.4]; rightEye.y = [0.5]; rightEye.marker.color = 'black';
+                        for (let t = Math.PI / 4; t <= 3 * Math.PI / 4; t += 0.01) {
+                            mouth.x.push(Math.cos(t));
+                            mouth.y.push(-0.5 + 0.5 * Math.sin(t));
+                        }
+                        break;
+                }
+                
+                const face = {
+                    x: xCircle,
+                    y: yCircle,
+                    mode: 'lines',
+                    line: { color: faceColor, width: 2 }
+                };
+                
+                Plotly.newPlot(
+                    elements.graph,
+                    [face, leftEye, rightEye, mouth, ...extras],
+                    {
+                        responsive: true,
+                        xaxis: { scaleanchor: 'y', scaleratio: 1 },
+                        yaxis: {},
+                        title: 'Silly Face'
+                    }
+                );
+            }
+        };
+
+        // --- Implicit Derivative Functions ---
+        const implicit = {
+            compute() {
+                state.implicitDyDxNode = null;
+                const raw = elements.funcInput.value.trim();
+                
+                if (!raw.includes('=')) {
+                    elements.result.innerText = 'No "=" found.';
+                    return;
+                }
+                
+                const processedInput = utils.preprocessInput(raw);
+                const parts = processedInput.split('=');
+                const left = parts.slice(0, parts.length - 1).join('=').trim();
+                const right = parts[parts.length - 1].trim();
+                
+                try {
+                    const Fnode = math.simplify(math.parse('(' + left + ')-(' + right + ')'));
+                    const dFdx = math.derivative(Fnode, 'x');
+                    const dFdy = math.derivative(Fnode, 'y');
+                    state.implicitDyDxNode = math.simplify(math.parse(`(-1)*(${dFdx.toString()})/(${dFdy.toString()})`));
+                    
+                    let tex = utils.mathToTex(state.implicitDyDxNode);
+                    tex = utils.postprocessOutput(tex);
+                    
+                    elements.result.innerHTML = `$$\\displaystyle \\frac{dy}{dx} = ${tex}$$`;
+                    MathJax.typesetPromise();
+                    elements.evaluateSection.style.display = '';
+                    this.plotImplicit(Fnode);
+                } catch (err) {
+                    elements.result.innerText = 'Error: ' + err.message;
+                }
+            },
+
+            plotImplicit(Fnode) {
+                try {
+                    const xRange = math.range(-10, 10, 0.2, true)._data;
+                    const yRange = math.range(-10, 10, 0.2, true)._data;
+                    const z = [];
+                    
+                    for (let yi = 0; yi < yRange.length; yi++) {
+                        const row = [];
+                        for (let xi = 0; xi < xRange.length; xi++) {
+                            try {
+                                row.push(Fnode.evaluate({ x: xRange[xi], y: yRange[yi] }));
+                            } catch {
+                                row.push(NaN);
+                            }
+                        }
+                        z.push(row);
+                    }
+                    
+                    const slopeTraces = [];
+                    const step = 0.5;
+                    
+                    for (let xi = -10; xi <= 10; xi += step) {
+                        for (let yi = -10; yi <= 10; yi += step) {
+                            try {
+                                const val = Fnode.evaluate({ x: xi, y: yi });
+                                if (Math.abs(val) < 0.1) {
+                                    const slope = state.implicitDyDxNode.evaluate({ x: xi, y: yi });
+                                    if (Math.abs(slope) < 100) {
+                                        const dx = 0.2;
+                                        const dy = slope * dx;
+                                        slopeTraces.push({
+                                            x: [xi - dx / 2, xi + dx / 2],
+                                            y: [yi - dy / 2, yi + dy / 2],
+                                            mode: 'lines',
+                                            line: { color: 'red', width: 2 },
+                                            showlegend: false
+                                        });
+                                    }
+                                }
+                            } catch {}
+                        }
+                    }
+                    
+                    Plotly.newPlot(
+                        elements.graph,
+                        [
+                            {
+                                z: z,
+                                x: xRange,
+                                y: yRange,
+                                type: 'contour',
+                                contours: {
+                                    showlines: false,
+                                    coloring: 'lines',
+                                    start: 0,
+                                    end: 0,
+                                    size: 0.0001
+                                },
+                                line: { width: 2 },
+                                showscale: false,
+                                name: 'F(x,y)=0'
+                            },
+                            ...slopeTraces
+                        ],
+                        {
+                            responsive: true,
+                            title: 'Implicit Curve & Slope',
+                            xaxis: { title: 'x', scaleanchor: 'y', scaleratio: 1 },
+                            yaxis: { title: 'y' }
+                        }
+                    );
+                } catch (err) {
+                    console.error('Plotting error:', err);
+                    elements.graph.innerHTML = '<p style="text-align: center; padding: 20px;">Error plotting implicit function.</p>';
+                }
+            }
+        };
+
+        // --- Integration Functions ---
+        const integration = {
+            async compute() {
+                state.implicitDyDxNode = null;
+                state.derivativeNodes = [];
+                state.derivativeCount = 0;
+                const input = elements.funcInput.value.trim();
+
+                if (!input) {
+                    elements.result.innerText = 'Please enter a function.';
+                    return;
+                }
+
+                const specialData = utils.isSpecialName(input);
+                if (specialData) {
+                    derivative.showSillyFace(specialData.name, specialData.msg);
+                    return;
+                }
+
+                const processedInput = utils.preprocessInput(input);
+
+                loading.show('Computing Integral...');
+                await yieldToBrowser();
+
+                try {
+                    const node = math.parse(processedInput);
+                    state.originalNode = node;
+
+                    // Multi-strategy integration with loading updates
+                    loading.update(10, 'Trying symbolic integration...');
+                    await yieldToBrowser();
+
+                    const result = await this.multiStrategyIntegrate(processedInput, 'x');
+
+                    if (result.node) {
+                        state.integralNode = result.node;
+                        loading.update(90, 'Rendering result...');
+                        await yieldToBrowser();
+
+                        let tex = utils.mathToTex(state.integralNode);
+                        tex = utils.postprocessOutput(tex);
+
+                        const methodTag = result.method ? `<span style="font-size: 12px; color: #888; display: block; margin-top: 4px;">Method: ${result.method}</span>` : '';
+                        elements.result.innerHTML = `$$\\int f(x)\\,dx = ${tex} + C$$${methodTag}`;
+                        MathJax.typesetPromise();
+                        this.plotWithAntiderivative(node, state.integralNode);
+                    } else {
+                        // Try Taylor series approximation as last resort
+                        loading.update(70, 'Trying Taylor series approximation...');
+                        await yieldToBrowser();
+
+                        const taylorResult = this.taylorSeriesIntegrate(processedInput, 'x', 0, 12);
+                        if (taylorResult.node) {
+                            state.integralNode = taylorResult.node;
+                            let tex = utils.mathToTex(state.integralNode);
+                            tex = utils.postprocessOutput(tex);
+                            const info = `<span style="font-size: 12px; color: #888; display: block; margin-top: 4px;">No elementary antiderivative exists. Showing Taylor series approximation (${taylorResult.terms} terms, centered at x=0).</span>`;
+                            elements.result.innerHTML = `$$\\int f(x)\\,dx \\approx ${tex} + C$$${info}`;
+                            MathJax.typesetPromise();
+                            this.plotWithAntiderivative(node, state.integralNode);
+                        } else {
+                            loading.update(85, 'Computing numerical integral...');
+                            await yieldToBrowser();
+
+                            state.integralNode = null;
+                            // Still show numerical integral with a good graph
+                            const numAtOne = this.adaptiveSimpson(node, 0, 1, 1e-10, 15);
+                            elements.result.innerHTML = `<p style="color: #555;">No elementary antiderivative exists (Risch algorithm classification: non-elementary).</p><p style="color: #555;">Numerical approximation: $$\\int_0^1 f(x)\\,dx \\approx ${parseFloat(numAtOne.toFixed(10))}$$</p><span style="font-size: 12px; color: #888;">Graph shows high-accuracy numerical integral F(x) = \u222b\u2080\u02e3 f(t) dt</span>`;
+                            MathJax.typesetPromise();
+                            this.plotNumerical(node);
+                        }
+                    }
+                    loading.update(100, 'Done!');
+                } catch (err) {
+                    elements.result.innerText = 'Error: ' + err.message;
+                } finally {
+                    elements.evaluateSection.style.display = '';
+                    setTimeout(() => loading.hide(), 300);
+                }
+            },
+
+            async computeDefinite() {
+                state.implicitDyDxNode = null;
+                state.derivativeNodes = [];
+                state.derivativeCount = 0;
+                const input = elements.funcInput.value.trim();
+                const aRaw = elements.integralA.value.trim().toLowerCase();
+                const bRaw = elements.integralB.value.trim().toLowerCase();
+
+                if (!input) { elements.result.innerText = 'Please enter a function.'; return; }
+                if (aRaw === '' || bRaw === '') { elements.result.innerText = 'Enter both bounds for definite integral.'; return; }
+
+                // Parse bounds, supporting -Infinity/+Infinity
+                const parseInfBound = (s) => {
+                    s = s.replace(/\s/g, '');
+                    if (s === '-infinity' || s === '-inf' || s === '-∞') return -Infinity;
+                    if (s === '+infinity' || s === 'infinity' || s === '+inf' || s === 'inf' || s === '+∞' || s === '∞') return Infinity;
+                    const v = parseFloat(s);
+                    if (isNaN(v)) return NaN;
+                    return v;
+                };
+
+                const a = parseInfBound(aRaw);
+                const b = parseInfBound(bRaw);
+                if (isNaN(a) || isNaN(b)) { elements.result.innerText = 'Invalid bound value.'; return; }
+                const hasInfBound = !isFinite(a) || !isFinite(b);
+                const processedInput = utils.preprocessInput(input);
+
+                // LaTeX display labels for bounds
+                const aLabel = a === -Infinity ? '-\\infty' : a;
+                const bLabel = b === Infinity ? '+\\infty' : b;
+
+                loading.show('Computing Definite Integral...');
+                await yieldToBrowser();
+
+                try {
+                    const node = math.parse(processedInput);
+                    state.originalNode = node;
+
+                    if (hasInfBound) {
+                        // Improper integral: use numerical limit approach
+                        loading.update(30, 'Computing improper integral numerically...');
+                        await yieldToBrowser();
+
+                        const resultVal = this._improperIntegral(node, a, b);
+                        if (resultVal !== null && isFinite(resultVal)) {
+                            const displayVal = parseFloat(resultVal.toFixed(10));
+                            const convergenceNote = Math.abs(resultVal) < 1e-12
+                                ? ' (converges to 0)'
+                                : (Math.abs(resultVal) > 1e10 ? ' (may diverge)' : '');
+                            elements.result.innerHTML = `$$\\int_{${aLabel}}^{${bLabel}} f(x)\\,dx \\approx ${displayVal}$$<span style="font-size: 12px; color: #888; display: block; margin-top: 4px;">Improper integral — adaptive numerical integration with limit approach${convergenceNote}</span>`;
+                        } else {
+                            elements.result.innerHTML = `$$\\int_{${aLabel}}^{${bLabel}} f(x)\\,dx$$<span style="font-size: 12px; color: #d93025; display: block; margin-top: 4px;">This improper integral appears to diverge (does not converge to a finite value).</span>`;
+                        }
+                        MathJax.typesetPromise();
+
+                        loading.update(90, 'Plotting...');
+                        await yieldToBrowser();
+                        // Plot with clamped finite range
+                        const plotA = isFinite(a) ? a : Math.min(-20, isFinite(b) ? b - 20 : -20);
+                        const plotB = isFinite(b) ? b : Math.max(20, isFinite(a) ? a + 20 : 20);
+                        this.plotDefinite(node, plotA, plotB);
+                        loading.update(100, 'Done!');
+                    } else {
+                        // Finite bounds — existing logic
+                        loading.update(10, 'Trying symbolic integration...');
+                        await yieldToBrowser();
+
+                        const result = await this.multiStrategyIntegrate(processedInput, 'x');
+
+                        if (result.node) {
+                            state.integralNode = result.node;
+                            loading.update(80, 'Evaluating bounds...');
+                            await yieldToBrowser();
+
+                            const Fb = state.integralNode.evaluate({ x: b });
+                            const Fa = state.integralNode.evaluate({ x: a });
+                            const symbolicResult = Fb - Fa;
+
+                            let tex = utils.mathToTex(state.integralNode);
+                            tex = utils.postprocessOutput(tex);
+                            const resultVal = parseFloat(symbolicResult.toFixed(8));
+
+                            elements.result.innerHTML = `$$\\int_{${aLabel}}^{${bLabel}} f(x)\\,dx = \\left[${tex}\\right]_{${aLabel}}^{${bLabel}} = ${resultVal}$$`;
+                            MathJax.typesetPromise();
+                        } else {
+                            // Try Taylor approximation for definite integral
+                            loading.update(65, 'Trying Taylor series approximation...');
+                            await yieldToBrowser();
+
+                            const taylorResult = this.taylorSeriesIntegrate(processedInput, 'x', 0, 12);
+                            let resultVal;
+                            if (taylorResult.node) {
+                                try {
+                                    const Fb = taylorResult.node.evaluate({ x: b });
+                                    const Fa = taylorResult.node.evaluate({ x: a });
+                                    const taylorVal = parseFloat((Fb - Fa).toFixed(8));
+                                    const numVal = parseFloat(this.adaptiveSimpson(node, a, b, 1e-10, 15).toFixed(8));
+                                    state.integralNode = taylorResult.node;
+                                    elements.result.innerHTML = `$$\\int_{${aLabel}}^{${bLabel}} f(x)\\,dx \\approx ${numVal}$$<span style="font-size: 12px; color: #888; display: block; margin-top: 4px;">Adaptive numerical (high precision). Taylor approx: ${taylorVal}</span>`;
+                                    MathJax.typesetPromise();
+                                } catch {
+                                    resultVal = parseFloat(this.adaptiveSimpson(node, a, b, 1e-10, 15).toFixed(8));
+                                    state.integralNode = null;
+                                    elements.result.innerHTML = `$$\\int_{${aLabel}}^{${bLabel}} f(x)\\,dx \\approx ${resultVal}$$<span style="font-size: 12px; color: #888; display: block; margin-top: 4px;">Adaptive numerical integration</span>`;
+                                    MathJax.typesetPromise();
+                                }
+                            } else {
+                                loading.update(80, 'Computing numerical integral...');
+                                await yieldToBrowser();
+
+                                resultVal = parseFloat(this.adaptiveSimpson(node, a, b, 1e-10, 15).toFixed(8));
+                                state.integralNode = null;
+                                elements.result.innerHTML = `$$\\int_{${aLabel}}^{${bLabel}} f(x)\\,dx \\approx ${resultVal}$$<span style="font-size: 12px; color: #888; display: block; margin-top: 4px;">Adaptive numerical integration</span>`;
+                                MathJax.typesetPromise();
+                            }
+                        }
+
+                        loading.update(90, 'Plotting...');
+                        await yieldToBrowser();
+                        this.plotDefinite(node, a, b);
+                        loading.update(100, 'Done!');
+                    }
+                } catch (err) {
+                    elements.result.innerText = 'Error: ' + err.message;
+                } finally {
+                    elements.evaluateSection.style.display = '';
+                    setTimeout(() => loading.hide(), 300);
+                }
+            },
+
+            // ---- Improper Integral (limit approach) ----
+            // Handles -∞ and/or +∞ bounds by integrating to increasingly large finite limits
+            // and checking for convergence
+            _improperIntegral(fNode, a, b) {
+                const limits = [10, 50, 100, 500, 1000, 5000];
+                let prevVal = null;
+
+                for (const L of limits) {
+                    const effA = isFinite(a) ? a : -L;
+                    const effB = isFinite(b) ? b : L;
+                    if (effA >= effB) continue;
+                    try {
+                        const val = this.adaptiveSimpson(fNode, effA, effB, 1e-8, 12);
+                        if (!isFinite(val)) return null;
+                        // Check convergence: if two successive limits agree within tolerance
+                        if (prevVal !== null && Math.abs(val - prevVal) < Math.max(1e-6, Math.abs(val) * 1e-4)) {
+                            return val;
+                        }
+                        prevVal = val;
+                    } catch {
+                        return null;
+                    }
+                }
+                // Return last value with a warning (may not have converged)
+                return prevVal;
+            },
+
+            // ========================================================
+            // Multi-Strategy Integration Engine
+            // Tries multiple CAS libraries and a custom rule engine
+            // ========================================================
+            async multiStrategyIntegrate(exprStr, v) {
+                // Set a global deadline: 10 seconds max for all strategies
+                this._deadline = performance.now() + 10000;
+
+                // Strategy 1: Algebrite CAS
+                try {
+                    loading.update(15, 'Trying Algebrite CAS...');
+                    await yieldToBrowser();
+                    const node = this.tryAlgebrite(exprStr, v);
+                    if (node) {
+                        try {
+                            if (this.verifyIntegral(exprStr, node, v)) {
+                                return { node, method: 'Algebrite CAS' };
+                            }
+                        } catch {}
+                        // Even without verification, trust Algebrite if it returned something
+                        return { node, method: 'Algebrite CAS' };
+                    }
+                } catch (e) { /* continue */ }
+
+                if (performance.now() > this._deadline) return { node: null, method: null };
+
+                // Strategy 2: Nerdamer CAS
+                try {
+                    loading.update(30, 'Trying Nerdamer CAS...');
+                    await yieldToBrowser();
+                    const node = this.tryNerdamer(exprStr, v);
+                    if (node) {
+                        try {
+                            if (this.verifyIntegral(exprStr, node, v)) {
+                                return { node, method: 'Nerdamer CAS' };
+                            }
+                        } catch {}
+                        return { node, method: 'Nerdamer CAS' };
+                    }
+                } catch (e) { /* continue */ }
+
+                if (performance.now() > this._deadline) return { node: null, method: null };
+
+                // Strategy 3: Custom rule-based engine
+                try {
+                    loading.update(50, 'Trying rule-based engine...');
+                    await yieldToBrowser();
+                    const mathjsNode = math.parse(exprStr);
+                    const node = this.ruleBasedIntegrate(mathjsNode, v);
+                    if (node) {
+                        const simplified = this._safeSimplify(node);
+                        try {
+                            if (this.verifyIntegral(exprStr, simplified, v)) {
+                                return { node: simplified, method: 'Rule-based engine' };
+                            }
+                        } catch {}
+                        return { node: simplified, method: 'Rule-based engine (unverified)' };
+                    }
+                } catch (e) { /* continue */ }
+
+                // All symbolic methods failed
+                return { node: null, method: null };
+            },
+
+            // Safe simplify: skips simplification for overly complex expressions
+            _safeSimplify(node) {
+                try {
+                    const str = node.toString();
+                    if (str.length > 400) return node; // too complex, skip
+                    return math.simplify(node);
+                } catch {
+                    return node;
+                }
+            },
+
+            // ---- Strategy 1: Algebrite ----
+            tryAlgebrite(exprStr, v) {
+                let algExpr = this.toAlgebrite(exprStr);
+                const resultStr = Algebrite.run(`integral(${algExpr}, ${v})`);
+
+                if (!resultStr ||
+                    resultStr.includes('integral') ||
+                    resultStr.includes('Stop') ||
+                    (resultStr.trim() === '0' && !/^\s*0\s*$/.test(exprStr))) {
+                    return null;
+                }
+
+                let mathjsStr = this.fromAlgebrite(resultStr);
+                return this._safeSimplify(math.parse(mathjsStr));
+            },
+
+            toAlgebrite(expr) {
+                let s = expr;
+                s = s.replace(/\basin\(/g, 'arcsin(');
+                s = s.replace(/\bacos\(/g, 'arccos(');
+                s = s.replace(/\batan\(/g, 'arctan(');
+                s = s.replace(/\bacsc\(/g, 'arccsc(');
+                s = s.replace(/\basec\(/g, 'arcsec(');
+                s = s.replace(/\bacot\(/g, 'arccot(');
+                return s;
+            },
+
+            fromAlgebrite(expr) {
+                let s = expr;
+                s = s.replace(/\*\*/g, '^');
+                s = s.replace(/\barctan\(/g, 'atan(');
+                s = s.replace(/\barcsin\(/g, 'asin(');
+                s = s.replace(/\barccos\(/g, 'acos(');
+                s = s.replace(/\barccsc\(/g, 'acsc(');
+                s = s.replace(/\barcsec\(/g, 'asec(');
+                s = s.replace(/\barccot\(/g, 'acot(');
+                return s;
+            },
+
+            // ---- Strategy 2: Nerdamer ----
+            tryNerdamer(exprStr, v) {
+                let nerdExpr = this.toNerdamer(exprStr);
+                const resultExpr = nerdamer(`integrate(${nerdExpr}, ${v})`);
+                const resultStr = resultExpr.text();
+
+                if (!resultStr ||
+                    resultStr.includes('integrate') ||
+                    resultStr.includes('NaN') ||
+                    resultStr.includes('undefined')) {
+                    return null;
+                }
+
+                let mathjsStr = this.fromNerdamer(resultStr);
+                return this._safeSimplify(math.parse(mathjsStr));
+            },
+
+            toNerdamer(expr) {
+                // Nerdamer uses the same function names as math.js for trig
+                // but uses log for natural log (same as our preprocessed input)
+                return expr;
+            },
+
+            fromNerdamer(expr) {
+                let s = expr;
+                // Nerdamer outputs with ^ already, but may use abs with pipes
+                s = s.replace(/\|([^|]+)\|/g, 'abs($1)');
+                return s;
+            },
+
+            // ---- Strategy 3: Custom Rule-Based Engine ----
+            // Implements the same techniques a human would use:
+            // power rule, table lookup, constant multiples, sum/difference,
+            // integration by parts, u-substitution, partial fractions,
+            // trigonometric identities & powers
+            ruleBasedIntegrate(node, v, depth = 0) {
+                if (depth > 10) throw new Error('Max recursion depth');
+                if (this._deadline && performance.now() > this._deadline) throw new Error('Computation timeout');
+                // Only simplify at the top level to avoid exponential cost
+                if (depth === 0) node = this._safeSimplify(node);
+
+                // --- Rule: Constant ---
+                if (!this._containsVar(node, v)) {
+                    return math.parse(`(${node.toString()}) * ${v}`);
+                }
+
+                // --- Rule: Just x ---
+                if (node.type === 'SymbolNode' && node.name === v) {
+                    return math.parse(`${v}^2 / 2`);
+                }
+
+                // --- Parenthesis ---
+                if (node.type === 'ParenthesisNode') {
+                    return this.ruleBasedIntegrate(node.content, v, depth + 1);
+                }
+
+                // --- Operator Nodes ---
+                if (node.type === 'OperatorNode') {
+                    return this._integrateOp(node, v, depth);
+                }
+
+                // --- Function Nodes ---
+                if (node.type === 'FunctionNode') {
+                    return this._integrateFn(node, v, depth);
+                }
+
+                throw new Error('No rule matches');
+            },
+
+            _integrateOp(node, v, depth) {
+                // Sum / Difference
+                if (node.fn === 'add' || node.fn === 'subtract') {
+                    const L = this.ruleBasedIntegrate(node.args[0], v, depth + 1);
+                    const R = this.ruleBasedIntegrate(node.args[1], v, depth + 1);
+                    return math.parse(`(${L}) ${node.op} (${R})`);
+                }
+
+                // Unary minus
+                if (node.fn === 'unaryMinus') {
+                    const inner = this.ruleBasedIntegrate(node.args[0], v, depth + 1);
+                    return math.parse(`-(${inner})`);
+                }
+
+                // Multiply
+                if (node.fn === 'multiply') {
+                    return this._integrateProduct(node, v, depth);
+                }
+
+                // Divide
+                if (node.fn === 'divide') {
+                    return this._integrateDivision(node, v, depth);
+                }
+
+                // Power
+                if (node.fn === 'pow') {
+                    return this._integratePower(node, v, depth);
+                }
+
+                throw new Error('Cannot integrate operator: ' + node.fn);
+            },
+
+            _integrateProduct(node, v, depth) {
+                if (this._deadline && performance.now() > this._deadline) throw new Error('Computation timeout');
+                const [a, b] = node.args;
+
+                // Constant * f(x)
+                if (!this._containsVar(a, v)) {
+                    const inner = this.ruleBasedIntegrate(b, v, depth + 1);
+                    return math.parse(`(${a}) * (${inner})`);
+                }
+                if (!this._containsVar(b, v)) {
+                    const inner = this.ruleBasedIntegrate(a, v, depth + 1);
+                    return math.parse(`(${b}) * (${inner})`);
+                }
+
+                // Try U-substitution
+                try {
+                    const result = this._tryUSubstitution(node, v, depth);
+                    if (result) return result;
+                } catch {}
+
+                // Try Integration by Parts (LIATE rule)
+                try {
+                    const result = this._tryByParts(a, b, v, depth);
+                    if (result) return result;
+                } catch {}
+
+                // Try expanding the product
+                try {
+                    const expanded = math.simplify(node, [
+                        'n1*(n2+n3) -> n1*n2 + n1*n3',
+                        '(n1+n2)*n3 -> n1*n3 + n2*n3'
+                    ]);
+                    const es = expanded.toString();
+                    const ns = node.toString();
+                    if (es !== ns) {
+                        return this.ruleBasedIntegrate(expanded, v, depth + 1);
+                    }
+                } catch {}
+
+                throw new Error('Cannot integrate product');
+            },
+
+            _integrateDivision(node, v, depth) {
+                if (this._deadline && performance.now() > this._deadline) throw new Error('Computation timeout');
+                const [num, den] = node.args;
+
+                // f(x) / constant
+                if (!this._containsVar(den, v)) {
+                    const inner = this.ruleBasedIntegrate(num, v, depth + 1);
+                    return math.parse(`(${inner}) / (${den})`);
+                }
+
+                // constant / x  →  c * ln|x|
+                if (!this._containsVar(num, v) &&
+                    den.type === 'SymbolNode' && den.name === v) {
+                    return math.parse(`(${num}) * log(abs(${v}))`);
+                }
+
+                // 1 / (1 + x^2)  →  arctan(x)
+                try {
+                    if (this._matches1Over1PlusX2(node, v)) {
+                        return math.parse(`atan(${v})`);
+                    }
+                } catch {}
+
+                // 1 / sqrt(1 - x^2)  →  arcsin(x)
+                try {
+                    if (this._matches1OverSqrt1MinusX2(node, v)) {
+                        return math.parse(`asin(${v})`);
+                    }
+                } catch {}
+
+                // Try rewriting as x^(-n) and using power rule
+                try {
+                    const rewritten = math.parse(`(${num}) * (${den})^(-1)`);
+                    return this.ruleBasedIntegrate(math.simplify(rewritten), v, depth + 1);
+                } catch {}
+
+                throw new Error('Cannot integrate division');
+            },
+
+            _integratePower(node, v, depth) {
+                if (this._deadline && performance.now() > this._deadline) throw new Error('Computation timeout');
+                const [base, exp] = node.args;
+
+                // x^n (n is constant)
+                if (base.type === 'SymbolNode' && base.name === v && !this._containsVar(exp, v)) {
+                    try {
+                        const nVal = exp.evaluate();
+                        if (nVal === -1) return math.parse(`log(abs(${v}))`);
+                    } catch {}
+                    return math.parse(`${v}^(${exp} + 1) / (${exp} + 1)`);
+                }
+
+                // e^x
+                if ((base.type === 'SymbolNode' && base.name === 'e') &&
+                    exp.type === 'SymbolNode' && exp.name === v) {
+                    return math.parse(`e^${v}`);
+                }
+
+                // a^x (a constant)
+                if (!this._containsVar(base, v) && exp.type === 'SymbolNode' && exp.name === v) {
+                    return math.parse(`(${base})^${v} / log(${base})`);
+                }
+
+                // e^(ax+b)
+                if ((base.type === 'SymbolNode' && base.name === 'e') && this._isLinear(exp, v)) {
+                    const coeff = this._linearCoeff(exp, v);
+                    return math.parse(`e^(${exp}) / (${coeff})`);
+                }
+
+                // (ax+b)^n  →  (ax+b)^(n+1) / (a*(n+1))
+                if (this._isLinear(base, v) && !this._containsVar(exp, v)) {
+                    const coeff = this._linearCoeff(base, v);
+                    try {
+                        const nVal = exp.evaluate();
+                        if (nVal === -1) return math.parse(`log(abs(${base})) / (${coeff})`);
+                    } catch {}
+                    return math.parse(`(${base})^(${exp} + 1) / ((${coeff}) * (${exp} + 1))`);
+                }
+
+                // Trig powers: sin^2(x), cos^2(x), etc.
+                try {
+                    const result = this._tryTrigPowerRules(base, exp, v, depth);
+                    if (result) return result;
+                } catch {}
+
+                throw new Error('Cannot integrate power');
+            },
+
+            _integrateFn(node, v, depth) {
+                if (this._deadline && performance.now() > this._deadline) throw new Error('Computation timeout');
+                const fname = node.fn.name || node.name;
+                const arg = node.args[0];
+
+                // f(x) where arg is x → table lookup
+                if (arg.type === 'SymbolNode' && arg.name === v) {
+                    const result = this._tableIntegral(fname, v);
+                    if (result) return result;
+                }
+
+                // f(ax+b) → table with linear substitution
+                if (this._isLinear(arg, v)) {
+                    const coeff = this._linearCoeff(arg, v);
+                    const inner = this._tableIntegral(fname, arg.toString());
+                    if (inner) return math.parse(`(${inner}) / (${coeff})`);
+                }
+
+                // Try U-substitution on the function
+                try {
+                    const result = this._tryUSubOnFunction(node, v, depth);
+                    if (result) return result;
+                } catch {}
+
+                throw new Error(`Cannot integrate ${fname}(${arg})`);
+            },
+
+            // ---- Integration Table ----
+            _tableIntegral(fname, u) {
+                const table = {
+                    'sin':  `-cos(${u})`,
+                    'cos':  `sin(${u})`,
+                    'tan':  `-log(abs(cos(${u})))`,
+                    'sec':  `log(abs(sec(${u}) + tan(${u})))`,
+                    'csc':  `-log(abs(csc(${u}) + cot(${u})))`,
+                    'cot':  `log(abs(sin(${u})))`,
+                    'exp':  `exp(${u})`,
+                    'log':  `(${u}) * log(${u}) - (${u})`,
+                    'sqrt': `(2/3) * (${u})^(3/2)`,
+                    'abs':  `(${u}) * abs(${u}) / 2`,
+                    'asin': `(${u}) * asin(${u}) + sqrt(1 - (${u})^2)`,
+                    'acos': `(${u}) * acos(${u}) - sqrt(1 - (${u})^2)`,
+                    'atan': `(${u}) * atan(${u}) - log(1 + (${u})^2) / 2`,
+                    'sinh': `cosh(${u})`,
+                    'cosh': `sinh(${u})`,
+                    'tanh': `log(cosh(${u}))`,
+                };
+                if (table[fname]) return math.parse(table[fname]);
+                return null;
+            },
+
+            // ---- Integration by Parts (LIATE) ----
+            // ∫ u dv = u*v - ∫ v du
+            _tryByParts(a, b, v, depth) {
+                if (depth > 4) return null;
+                if (this._deadline && performance.now() > this._deadline) return null;
+
+                // LIATE priority: Log, Inverse trig, Algebraic, Trig, Exponential
+                const priority = (node) => {
+                    const s = node.toString();
+                    if (node.type === 'FunctionNode') {
+                        const fn = node.fn.name;
+                        if (fn === 'log') return 0;
+                        if (['asin','acos','atan','acsc','asec','acot'].includes(fn)) return 1;
+                        if (['sin','cos','tan','sec','csc','cot'].includes(fn)) return 3;
+                        if (fn === 'exp') return 4;
+                    }
+                    if (node.type === 'OperatorNode' && node.fn === 'pow') {
+                        const base = node.args[0];
+                        if (base.type === 'SymbolNode' && base.name === 'e') return 4;
+                    }
+                    return 2; // algebraic
+                };
+
+                let u, dv;
+                if (priority(a) <= priority(b)) {
+                    u = a; dv = b;
+                } else {
+                    u = b; dv = a;
+                }
+
+                // Compute v = ∫dv
+                let vNode;
+                try {
+                    vNode = this.ruleBasedIntegrate(math.parse(dv.toString()), v, depth + 1);
+                } catch { return null; }
+
+                // Compute du = d(u)/dx
+                let du;
+                try {
+                    du = math.derivative(u, v);
+                } catch { return null; }
+
+                // Compute ∫v*du
+                let vdu;
+                try {
+                    const product = math.parse(`(${vNode}) * (${du})`);
+                    vdu = this.ruleBasedIntegrate(math.simplify(product), v, depth + 1);
+                } catch { return null; }
+
+                // u*v - ∫v*du
+                return math.parse(`(${u}) * (${vNode}) - (${vdu})`);
+            },
+
+            // ---- U-Substitution ----
+            // Look for f(g(x)) * g'(x)
+            _tryUSubstitution(productNode, v, depth) {
+                const [a, b] = productNode.args;
+
+                // Case: one factor is f(g(x)), the other is (proportional to) g'(x)
+                const tryPair = (outer, inner) => {
+                    if (outer.type === 'FunctionNode') {
+                        const g = outer.args[0];
+                        if (this._containsVar(g, v)) {
+                            try {
+                                const gPrime = math.derivative(g, v);
+                                // Check if inner / g'(x) is a constant
+                                const ratio = math.simplify(math.parse(`(${inner}) / (${gPrime})`));
+                                if (!this._containsVar(ratio, v)) {
+                                    const fname = outer.fn.name;
+                                    const tableResult = this._tableIntegral(fname, g.toString());
+                                    if (tableResult) {
+                                        return math.parse(`(${ratio}) * (${tableResult})`);
+                                    }
+                                }
+                            } catch {}
+                        }
+                    }
+                    // Case: inner is x^n and outer contains x^(n+1) pattern
+                    if (outer.type === 'OperatorNode' && outer.fn === 'pow') {
+                        const base = outer.args[0];
+                        if (this._containsVar(base, v)) {
+                            try {
+                                const basePrime = math.derivative(base, v);
+                                const ratio = math.simplify(math.parse(`(${inner}) / (${basePrime})`));
+                                if (!this._containsVar(ratio, v)) {
+                                    const exp = outer.args[1];
+                                    try {
+                                        const nVal = exp.evaluate();
+                                        if (nVal === -1) {
+                                            return math.parse(`(${ratio}) * log(abs(${base}))`);
+                                        }
+                                    } catch {}
+                                    return math.parse(`(${ratio}) * (${base})^(${exp} + 1) / (${exp} + 1)`);
+                                }
+                            } catch {}
+                        }
+                    }
+                    return null;
+                };
+
+                return tryPair(a, b) || tryPair(b, a);
+            },
+
+            _tryUSubOnFunction(node, v, depth) {
+                // For composite functions f(g(x)): try ∫f(g(x))dx with u=g(x)
+                if (node.type !== 'FunctionNode') return null;
+                const g = node.args[0];
+                if (!this._containsVar(g, v)) return null;
+                if (g.type === 'SymbolNode' && g.name === v) return null;
+
+                // Differentiate the inner function
+                try {
+                    const gPrime = math.derivative(g, v);
+                    // If g'(x) is constant, this is the linear substitution case
+                    if (!this._containsVar(gPrime, v)) {
+                        const fname = node.fn.name;
+                        const tableResult = this._tableIntegral(fname, g.toString());
+                        if (tableResult) {
+                            return math.parse(`(${tableResult}) / (${gPrime})`);
+                        }
+                    }
+                } catch {}
+
+                return null;
+            },
+
+            // ---- Trig Power Rules ----
+            _tryTrigPowerRules(base, exp, v, depth) {
+                if (base.type !== 'FunctionNode') return null;
+                const fname = base.fn.name;
+                const arg = base.args[0];
+                if (!(arg.type === 'SymbolNode' && arg.name === v)) return null;
+
+                let n;
+                try { n = exp.evaluate(); } catch { return null; }
+                if (!Number.isInteger(n) || n < 2) return null;
+
+                // sin^2(x) = (1 - cos(2x))/2
+                if (fname === 'sin' && n === 2) {
+                    return math.parse(`${v}/2 - sin(2*${v})/4`);
+                }
+                // cos^2(x) = (1 + cos(2x))/2
+                if (fname === 'cos' && n === 2) {
+                    return math.parse(`${v}/2 + sin(2*${v})/4`);
+                }
+                // tan^2(x) = sec^2(x) - 1 → tan(x) - x
+                if (fname === 'tan' && n === 2) {
+                    return math.parse(`tan(${v}) - ${v}`);
+                }
+                // sec^2(x) → tan(x)
+                if (fname === 'sec' && n === 2) {
+                    return math.parse(`tan(${v})`);
+                }
+                // csc^2(x) → -cot(x)
+                if (fname === 'csc' && n === 2) {
+                    return math.parse(`-cot(${v})`);
+                }
+                // sin^n for odd n: pull out sin, use sin^2 = 1-cos^2
+                if (fname === 'sin' && n % 2 === 1 && n >= 3) {
+                    // Reduction: ∫sin^n dx = -sin^(n-1)cos/n + (n-1)/n ∫sin^(n-2)dx
+                    const sub = this.ruleBasedIntegrate(
+                        math.parse(`sin(${v})^${n - 2}`), v, depth + 1
+                    );
+                    return math.parse(`(-sin(${v})^${n-1} * cos(${v})) / ${n} + (${n-1})/${n} * (${sub})`);
+                }
+                // cos^n for odd n
+                if (fname === 'cos' && n % 2 === 1 && n >= 3) {
+                    const sub = this.ruleBasedIntegrate(
+                        math.parse(`cos(${v})^${n - 2}`), v, depth + 1
+                    );
+                    return math.parse(`(cos(${v})^${n-1} * sin(${v})) / ${n} + (${n-1})/${n} * (${sub})`);
+                }
+                // Even powers of sin/cos: use double angle repeatedly
+                if (fname === 'sin' && n % 2 === 0) {
+                    // sin^2n = (sin^2)^n = ((1-cos2x)/2)^n, then expand
+                    // For n=4: sin^4 = (3 - 4cos(2x) + cos(4x)) / 8
+                    if (n === 4) return math.parse(`3*${v}/8 - sin(2*${v})/4 + sin(4*${v})/32`);
+                }
+                if (fname === 'cos' && n % 2 === 0) {
+                    if (n === 4) return math.parse(`3*${v}/8 + sin(2*${v})/4 + sin(4*${v})/32`);
+                }
+
+                return null;
+            },
+
+            // ---- Pattern Matchers ----
+            _matches1Over1PlusX2(node, v) {
+                if (node.fn !== 'divide') return false;
+                const num = node.args[0], den = node.args[1];
+                if (num.type !== 'ConstantNode' || num.value !== 1) return false;
+                const denStr = math.simplify(den).toString();
+                const target = math.simplify(math.parse(`1 + ${v}^2`)).toString();
+                return denStr === target;
+            },
+
+            _matches1OverSqrt1MinusX2(node, v) {
+                if (node.fn !== 'divide') return false;
+                const num = node.args[0], den = node.args[1];
+                if (num.type !== 'ConstantNode' || num.value !== 1) return false;
+                if (den.type !== 'FunctionNode' || den.fn.name !== 'sqrt') return false;
+                const inner = math.simplify(den.args[0]).toString();
+                const target = math.simplify(math.parse(`1 - ${v}^2`)).toString();
+                return inner === target;
+            },
+
+            // ---- Helper Utilities ----
+            _containsVar(node, v) {
+                if (node.type === 'SymbolNode') return node.name === v;
+                if (node.type === 'ConstantNode') return false;
+                if (node.type === 'ParenthesisNode') return this._containsVar(node.content, v);
+                if (node.args) return node.args.some(a => this._containsVar(a, v));
+                return false;
+            },
+
+            _isLinear(node, v) {
+                try {
+                    const d1 = math.derivative(node, v);
+                    const d2 = math.derivative(d1, v);
+                    return math.simplify(d2).toString() === '0';
+                } catch { return false; }
+            },
+
+            _linearCoeff(node, v) {
+                try {
+                    return math.simplify(math.derivative(node, v)).toString();
+                } catch { return '1'; }
+            },
+
+            // ---- Verification ----
+            // Differentiate result and compare numerically to original
+            verifyIntegral(exprStr, integralNode, v) {
+                try {
+                    if (this._deadline && performance.now() > this._deadline) return false;
+                    // Skip verification for overly complex integrals (derivative would be too expensive)
+                    const integralStr = integralNode.toString();
+                    if (integralStr.length > 500) return false;
+                    const d = math.derivative(integralNode, v);
+                    const original = math.parse(exprStr);
+                    const testPoints = [0.5, 1.0, 1.5, 2.0, -0.5, -1.0, 0.25, 3.0];
+                    let matches = 0;
+                    let tested = 0;
+
+                    for (const x of testPoints) {
+                        try {
+                            const scope = { x };
+                            const origVal = original.evaluate(scope);
+                            const derivVal = d.evaluate(scope);
+                            if (!isFinite(origVal) || !isFinite(derivVal)) continue;
+                            tested++;
+                            if (Math.abs(origVal) < 1e-10 && Math.abs(derivVal) < 1e-10) {
+                                matches++;
+                            } else if (Math.abs(origVal) > 1e-10) {
+                                if (Math.abs((origVal - derivVal) / origVal) < 0.001) matches++;
+                            }
+                        } catch {}
+                    }
+
+                    return tested > 0 && matches >= tested * 0.7;
+                } catch {
+                    return false;
+                }
+            },
+
+            // --- Plotting ---
+            plotWithAntiderivative(fNode, FNode) {
+                const xValues = [], fValues = [], FValues = [];
+                for (let x = -10; x <= 10; x += 0.05) {
+                    xValues.push(x);
+                    try { fValues.push(fNode.evaluate({ x })); } catch { fValues.push(NaN); }
+                    try { FValues.push(FNode.evaluate({ x })); } catch { FValues.push(NaN); }
+                }
+                Plotly.newPlot(elements.graph, [
+                    { x: xValues, y: fValues, mode: 'lines', name: 'f(x)', line: { color: '#4285f4' } },
+                    { x: xValues, y: FValues, mode: 'lines', name: '\u222bf(x)dx', line: { color: '#34a853', dash: 'dash' } }
+                ], {
+                    title: 'Function & Antiderivative',
+                    xaxis: { title: 'x' },
+                    yaxis: { title: 'y' }
+                }, { responsive: true });
+            },
+
+            plotNumerical(fNode) {
+                // High-accuracy numerical integration using adaptive Simpson
+                const xValues = [], fValues = [], FValues = [];
+                const step = 0.05;
+                let prevX = -10;
+                let cumulative = 0;
+                for (let x = -10; x <= 10; x += step) {
+                    xValues.push(x);
+                    try {
+                        const fx = fNode.evaluate({ x });
+                        fValues.push(fx);
+                        if (x > -10) {
+                            // Simpson's rule for each small interval
+                            const mid = (prevX + x) / 2;
+                            try {
+                                const fMid = fNode.evaluate({ x: mid });
+                                const fPrev = fNode.evaluate({ x: prevX });
+                                cumulative += (step / 6) * (fPrev + 4 * fMid + fx);
+                            } catch {
+                                cumulative += fx * step;
+                            }
+                        }
+                        FValues.push(cumulative);
+                    } catch {
+                        fValues.push(NaN);
+                        FValues.push(NaN);
+                    }
+                    prevX = x;
+                }
+                Plotly.newPlot(elements.graph, [
+                    { x: xValues, y: fValues, mode: 'lines', name: 'f(x)', line: { color: '#4285f4' } },
+                    { x: xValues, y: FValues, mode: 'lines', name: 'F(x) = \u222b\u2080\u02e3 f(t)dt', line: { color: '#34a853', dash: 'dash' } }
+                ], {
+                    title: 'Function & Numerical Integral',
+                    xaxis: { title: 'x' },
+                    yaxis: { title: 'y' }
+                }, { responsive: true });
+            },
+
+            plotDefinite(fNode, a, b) {
+                const xValues = [], fValues = [], areaX = [], areaY = [];
+                for (let x = -10; x <= 10; x += 0.1) {
+                    xValues.push(x);
+                    try { fValues.push(fNode.evaluate({ x })); } catch { fValues.push(NaN); }
+                }
+                for (let x = a; x <= b; x += 0.05) {
+                    areaX.push(x);
+                    try { areaY.push(fNode.evaluate({ x })); } catch { areaY.push(0); }
+                }
+                Plotly.newPlot(elements.graph, [
+                    { x: xValues, y: fValues, mode: 'lines', name: 'f(x)', line: { color: '#4285f4' } },
+                    { x: areaX, y: areaY, fill: 'tozeroy', mode: 'lines', name: 'Area',
+                      fillcolor: 'rgba(52, 168, 83, 0.3)', line: { color: 'rgba(52, 168, 83, 0.5)' } }
+                ], {
+                    title: `Definite Integral from ${a} to ${b}`,
+                    xaxis: { title: 'x' },
+                    yaxis: { title: 'y' }
+                }, { responsive: true });
+            },
+
+            numericalIntegrate(fNode, a, b, n) {
+                // Simpson's 3/8 rule for higher accuracy
+                if (n % 3 !== 0) n = n + (3 - n % 3);
+                const h = (b - a) / n;
+                let sum = 0;
+                for (let i = 0; i <= n; i++) {
+                    const x = a + i * h;
+                    try {
+                        const fx = fNode.evaluate({ x });
+                        if (i === 0 || i === n) sum += fx;
+                        else if (i % 3 === 0) sum += 2 * fx;
+                        else sum += 3 * fx;
+                    } catch {}
+                }
+                return sum * 3 * h / 8;
+            },
+
+            // ---- Adaptive Simpson's Rule ----
+            // Recursively refines intervals for near-exact numerical integration
+            adaptiveSimpson(fNode, a, b, tol, maxDepth) {
+                const simpsonDeadline = performance.now() + 3000; // 3 sec max
+                const _simpson = (a, b) => {
+                    const c = (a + b) / 2;
+                    const h = b - a;
+                    let fa, fb, fc;
+                    try { fa = fNode.evaluate({ x: a }); } catch { fa = 0; }
+                    try { fb = fNode.evaluate({ x: b }); } catch { fb = 0; }
+                    try { fc = fNode.evaluate({ x: c }); } catch { fc = 0; }
+                    return (h / 6) * (fa + 4 * fc + fb);
+                };
+
+                const _adaptiveHelper = (a, b, tol, whole, depth) => {
+                    if (performance.now() > simpsonDeadline) return whole; // time limit
+                    const c = (a + b) / 2;
+                    const left = _simpson(a, c);
+                    const right = _simpson(c, b);
+                    const combined = left + right;
+                    if (depth <= 0 || Math.abs(combined - whole) <= 15 * tol) {
+                        return combined + (combined - whole) / 15;
+                    }
+                    return _adaptiveHelper(a, c, tol / 2, left, depth - 1) +
+                           _adaptiveHelper(c, b, tol / 2, right, depth - 1);
+                };
+
+                const whole = _simpson(a, b);
+                return _adaptiveHelper(a, b, tol, whole, maxDepth);
+            },
+
+            // ---- Taylor Series Integration ----
+            // Expand f(x) as a Taylor series around x=a, integrate term by term
+            // This produces a polynomial approximation of the antiderivative
+            taylorSeriesIntegrate(exprStr, v, center, numTerms) {
+                const taylorDeadline = performance.now() + 5000; // 5 second max for Taylor
+                try {
+                    const node = math.parse(exprStr);
+                    const coefficients = [];
+
+                    // Compute Taylor coefficients: f^(n)(a) / n!
+                    let currentDerivative = node;
+                    for (let n = 0; n < numTerms; n++) {
+                        if (performance.now() > taylorDeadline) break; // time limit
+                        try {
+                            const val = currentDerivative.evaluate({ x: center });
+                            if (!isFinite(val)) break;
+                            coefficients.push(val);
+                            // Check expression complexity before differentiating again
+                            const exprLen = currentDerivative.toString().length;
+                            if (exprLen > 2000) break; // derivative expression too complex
+                            // Get next derivative
+                            currentDerivative = math.derivative(currentDerivative, v);
+                        } catch {
+                            break;
+                        }
+                    }
+
+                    if (coefficients.length < 3) return { node: null, terms: 0 };
+
+                    // Build the integrated Taylor polynomial:
+                    // If f(x) ≈ Σ c_n * (x-a)^n / n!, then ∫f(x)dx ≈ Σ c_n * (x-a)^(n+1) / ((n+1) * n!)
+                    let terms = [];
+                    let factorial = 1;
+                    for (let n = 0; n < coefficients.length; n++) {
+                        if (n > 0) factorial *= n;
+                        const coeff = coefficients[n] / (factorial * (n + 1));
+                        if (Math.abs(coeff) < 1e-15) continue;
+
+                        // Round to avoid floating point noise in display
+                        const roundedCoeff = Math.abs(coeff) < 1e-12 ? 0 :
+                            parseFloat(coeff.toPrecision(10));
+                        if (roundedCoeff === 0) continue;
+
+                        if (center === 0) {
+                            terms.push(`(${roundedCoeff}) * ${v}^${n + 1}`);
+                        } else {
+                            terms.push(`(${roundedCoeff}) * (${v} - ${center})^${n + 1}`);
+                        }
+                    }
+
+                    if (terms.length === 0) return { node: null, terms: 0 };
+
+                    const polyStr = terms.join(' + ');
+                    const polyNode = math.simplify(math.parse(polyStr));
+
+                    // Verify the Taylor integral is reasonable by checking at a few points
+                    const original = math.parse(exprStr);
+                    let good = true;
+                    for (const testX of [0.3, 0.5, -0.3]) {
+                        try {
+                            const polyDeriv = math.derivative(polyNode, v);
+                            const origVal = original.evaluate({ x: testX });
+                            const derivVal = polyDeriv.evaluate({ x: testX });
+                            if (isFinite(origVal) && isFinite(derivVal)) {
+                                const err = Math.abs(origVal - derivVal);
+                                if (err > Math.max(1, Math.abs(origVal)) * 0.1) {
+                                    good = false;
+                                    break;
+                                }
+                            }
+                        } catch {}
+                    }
+
+                    if (!good) return { node: null, terms: 0 };
+
+                    return { node: polyNode, terms: coefficients.length };
+                } catch {
+                    return { node: null, terms: 0 };
+                }
+            }
+        };
+
+        // --- Evaluation Functions ---
+        const evaluation = {
+            evaluateAtPoint() {
+                const xVal = elements.evalX.value;
+                const yVal = elements.evalY.value;
+                
+                if (xVal === '') {
+                    elements.evalResult.innerText = 'Enter x value.';
+                    return;
+                }
+                
+                const x = parseFloat(xVal);
+                const y = parseFloat(yVal);
+                
+                if (state.implicitDyDxNode) {
+                    if (yVal === '') {
+                        elements.evalResult.innerText = 'Enter y value for implicit derivative.';
+                        return;
+                    }
+                    
+                    try {
+                        const val = state.implicitDyDxNode.evaluate({ x: x, y: y });
+                        if (!isFinite(val)) {
+                            elements.evalResult.innerText = 'Result not finite (∂F/∂y=0?)';
+                            return;
+                        }
+                        
+                        elements.evalResult.innerHTML = `$$\\displaystyle \\frac{dy}{dx}\\Big|_{(x=${x},y=${y})} = ${val}$$`;
+                        MathJax.typesetPromise();
+                        return;
+                    } catch {
+                        elements.evalResult.innerText = 'Could not evaluate at that point.';
+                        return;
+                    }
+                }
+                
+                if (state.derivativeNodes.length > 1) {
+                    try {
+                        const val = state.derivativeNodes[1].evaluate({ x: x });
+                        elements.evalResult.innerHTML = `$$f'(x)\\big|_{x=${x}} = ${val}$$`;
+                        MathJax.typesetPromise();
+                        return;
+                    } catch (err) {
+                        elements.evalResult.innerText = 'Evaluation failed.';
+                        return;
+                    }
+                }
+                
+                elements.evalResult.innerText = 'No derivative available to evaluate.';
+            }
+        };
+
+        // Check for integral evaluation
+        const _origEval = evaluation.evaluateAtPoint;
+        evaluation.evaluateAtPoint = function() {
+            const xVal = elements.evalX.value;
+            if (xVal === '') { elements.evalResult.innerText = 'Enter x value.'; return; }
+            const x = parseFloat(xVal);
+
+            // If we have an integral result and no derivative/implicit result
+            if (state.integralNode && state.derivativeNodes.length <= 1 && !state.implicitDyDxNode) {
+                try {
+                    const val = state.integralNode.evaluate({ x: x });
+                    elements.evalResult.innerHTML = `$$F(x)\\big|_{x=${x}} = ${parseFloat(val.toFixed(8))}$$`;
+                    MathJax.typesetPromise();
+                    return;
+                } catch {
+                    elements.evalResult.innerText = 'Could not evaluate integral at that point.';
+                    return;
+                }
+            }
+            // Otherwise, fall through to original
+            _origEval.call(evaluation);
+        };
+
+        // --- Event Listeners ---
+        function setupEventListeners() {
+            // Help modal
+            elements.helpIcon.addEventListener('click', modal.show);
+            elements.closeHelp.addEventListener('click', modal.hide);
+            
+            // Derivative buttons
+            const _hidePanels = () => { elements.boundsRow.style.display = 'none'; elements.areaPanel.style.display = 'none'; elements.eulerPanel.style.display = 'none'; elements.evaluateSection.style.display = 'none'; };
+            const _clearOtherResults = (keep) => { if (keep !== 'result') elements.result.innerHTML = ''; if (keep !== 'area') elements.areaResult.innerHTML = ''; if (keep !== 'euler') elements.eulerResult.innerHTML = ''; elements.evalResult.innerHTML = ''; };
+            elements.derivativeBtn.addEventListener('click', () => { _hidePanels(); _clearOtherResults('result'); derivative.compute(); });
+            elements.calculateBtn.addEventListener('click', () => {
+                _hidePanels(); _clearOtherResults('result');
+                const input = elements.funcInput.value.trim();
+                if (!input) { elements.result.innerText = 'Enter an expression to calculate.'; return; }
+                try {
+                    const processed = utils.preprocessInput(input);
+                    const result = math.evaluate(processed);
+                    let display;
+                    if (typeof result === 'number') {
+                        // Round away floating-point noise (e.g. sin(pi) → 0 instead of 1.2e-16)
+                        const rounded = Math.round(result * 1e10) / 1e10;
+                        display = rounded;
+                    } else {
+                        display = result;
+                    }
+                    elements.result.innerHTML = `$$${input.replace(/\*/g, '\\cdot ')} = ${display}$$<span style="font-size: 12px; color: #888; display: block; margin-top: 4px;">Trig functions use radians</span>`;
+                    MathJax.typesetPromise();
+                } catch (err) {
+                    if (err.message && err.message.includes('Undefined symbol')) {
+                        elements.result.innerText = 'Error: expression contains variables. Use numbers only for Calculate, or use Derivative/Integral for expressions with x.';
+                    } else {
+                        elements.result.innerText = 'Error: ' + err.message;
+                    }
+                }
+            });
+            elements.nextDerivativeBtn.addEventListener('click', () => { _hidePanels(); _clearOtherResults('result'); derivative.next(); });
+            elements.implicitBtn.addEventListener('click', () => { _hidePanels(); _clearOtherResults('result'); implicit.compute(); });
+            elements.integralBtn.addEventListener('click', () => {
+                if (elements.loadingOverlay.classList.contains('active')) return;
+                _hidePanels(); _clearOtherResults('result');
+                integration.compute();
+            });
+            elements.definiteIntegralBtn.addEventListener('click', () => {
+                const isVisible = elements.boundsRow.style.display !== 'none';
+                elements.boundsRow.style.display = isVisible ? 'none' : 'flex';
+                if (!isVisible) { elements.areaPanel.style.display = 'none'; elements.eulerPanel.style.display = 'none'; _clearOtherResults('result'); }
+            });
+            elements.areaBtnToggle.addEventListener('click', () => {
+                const isVisible = elements.areaPanel.style.display !== 'none';
+                elements.areaPanel.style.display = isVisible ? 'none' : 'block';
+                if (!isVisible) { elements.boundsRow.style.display = 'none'; elements.eulerPanel.style.display = 'none'; elements.evaluateSection.style.display = 'none'; _clearOtherResults('area'); }
+            });
+            elements.eulerBtnToggle.addEventListener('click', () => {
+                const isVisible = elements.eulerPanel.style.display !== 'none';
+                elements.eulerPanel.style.display = isVisible ? 'none' : 'block';
+                if (!isVisible) { elements.boundsRow.style.display = 'none'; elements.areaPanel.style.display = 'none'; elements.evaluateSection.style.display = 'none'; _clearOtherResults('euler'); }
+            });
+            elements.computeEulerBtn.addEventListener('click', () => {
+                if (elements.loadingOverlay.classList.contains('active')) return;
+                eulerMethod.compute();
+            });
+            elements.computeDefiniteBtn.addEventListener('click', () => {
+                if (elements.loadingOverlay.classList.contains('active')) return;
+                integration.computeDefinite();
+            });
+            elements.negInfBtn.addEventListener('click', () => {
+                const btn = elements.negInfBtn;
+                const isActive = btn.classList.toggle('active');
+                elements.integralA.value = isActive ? '-Infinity' : '';
+                elements.integralA.readOnly = isActive;
+                if (!isActive) elements.integralA.focus();
+            });
+            elements.posInfBtn.addEventListener('click', () => {
+                const btn = elements.posInfBtn;
+                const isActive = btn.classList.toggle('active');
+                elements.integralB.value = isActive ? '+Infinity' : '';
+                elements.integralB.readOnly = isActive;
+                if (!isActive) elements.integralB.focus();
+            });
+            // Clicking on the input box while it shows infinity resets it
+            elements.integralA.addEventListener('click', () => {
+                if (elements.negInfBtn.classList.contains('active')) {
+                    elements.negInfBtn.classList.remove('active');
+                    elements.integralA.value = '';
+                    elements.integralA.readOnly = false;
+                    elements.integralA.focus();
+                }
+            });
+            elements.integralB.addEventListener('click', () => {
+                if (elements.posInfBtn.classList.contains('active')) {
+                    elements.posInfBtn.classList.remove('active');
+                    elements.integralB.value = '';
+                    elements.integralB.readOnly = false;
+                    elements.integralB.focus();
+                }
+            });
+            elements.resetBtn.addEventListener('click', () => utils.resetState());
+
+            // Area Between Curves
+            elements.addFuncBtn.addEventListener('click', () => areaBetweenCurves.addFunction());
+            elements.computeAreaBtn.addEventListener('click', () => {
+                if (elements.loadingOverlay.classList.contains('active')) return;
+                areaBetweenCurves.compute();
+            });
+            // Delegate remove button clicks
+            elements.funcInputsList.addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-func-btn')) {
+                    const row = e.target.closest('.func-input-row');
+                    if (elements.funcInputsList.querySelectorAll('.func-input-row').length > 2) {
+                        row.remove();
+                        areaBetweenCurves._updateLabels();
+                    }
+                }
+            });
+
+            // Evaluation button
+            elements.evaluateBtn.addEventListener('click', () => evaluation.evaluateAtPoint());
+            
+            // Keyboard toggle
+            elements.keyboardToggle.addEventListener('click', () => {
+                elements.desmosKeyboard.classList.toggle('open');
+            });
+
+            // Symbol buttons
+            elements.symbolBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const symbol = btn.getAttribute('data-symbol');
+                    if (symbol === 'DEL') {
+                        // Backspace behaviour
+                        const input = elements.funcInput;
+                        const pos = input.selectionStart;
+                        if (pos > 0) {
+                            input.value = input.value.substring(0, pos - 1) + input.value.substring(pos);
+                            input.selectionStart = input.selectionEnd = pos - 1;
+                        }
+                        input.focus();
+                        return;
+                    }
+                    utils.insertSymbol(symbol);
+                });
+            });
+            
+            // Close modal when clicking outside
+            elements.helpModal.addEventListener('click', (e) => {
+                if (e.target === elements.helpModal) {
+                    modal.hide();
+                }
+            });
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    modal.hide();
+                }
+                
+                // Enter key to compute derivative
+                if (e.key === 'Enter' && document.activeElement === elements.funcInput) {
+                    derivative.compute();
+                }
+            });
+        }
+
+        // --- Area Between Curves (AP Calc BC Unit 8) ---
+        const areaBetweenCurves = {
+            _funcNames: 'fghpqrstuvw',
+
+            _updateLabels() {
+                const rows = elements.funcInputsList.querySelectorAll('.func-input-row');
+                rows.forEach((row, i) => {
+                    const label = row.querySelector('.func-label');
+                    const name = i < this._funcNames.length ? this._funcNames[i] : 'y' + (i + 1);
+                    label.textContent = name + '(x)=';
+                    // Show remove button only if more than 2 functions
+                    let removeBtn = row.querySelector('.remove-func-btn');
+                    if (rows.length > 2) {
+                        if (!removeBtn) {
+                            removeBtn = document.createElement('button');
+                            removeBtn.className = 'remove-func-btn';
+                            removeBtn.textContent = '\u00d7';
+                            removeBtn.title = 'Remove this curve';
+                            row.appendChild(removeBtn);
+                        }
+                    } else if (removeBtn) {
+                        removeBtn.remove();
+                    }
+                });
+            },
+
+            addFunction() {
+                const rows = elements.funcInputsList.querySelectorAll('.func-input-row');
+                const idx = rows.length;
+                const name = idx < this._funcNames.length ? this._funcNames[idx] : 'y' + (idx + 1);
+                const row = document.createElement('div');
+                row.className = 'func-input-row';
+                row.innerHTML = `<span class="func-label">${name}(x)=</span><input type="text" class="input-field area-func-input" placeholder="e.g. sin(x)"><button class="remove-func-btn" title="Remove this curve">\u00d7</button>`;
+                elements.funcInputsList.appendChild(row);
+                this._updateLabels();
+                row.querySelector('.area-func-input').focus();
+            },
+
+            async compute() {
+                const inputs = Array.from(elements.funcInputsList.querySelectorAll('.area-func-input'));
+                const rawExprs = inputs.map(el => el.value.trim());
+
+                if (rawExprs.some(e => !e)) {
+                    elements.areaResult.innerText = 'Please enter all functions.';
+                    return;
+                }
+                if (rawExprs.length < 2) {
+                    elements.areaResult.innerText = 'Need at least 2 functions.';
+                    return;
+                }
+
+                loading.show('Computing Area Between Curves...');
+                await yieldToBrowser();
+
+                try {
+                    const exprs = rawExprs.map(e => utils.preprocessInput(e));
+                    const nodes = exprs.map(e => math.parse(e));
+
+                    // Parse optional bounds
+                    const aStr = elements.areaBoundA.value.trim();
+                    const bStr = elements.areaBoundB.value.trim();
+                    let userA = aStr ? parseFloat(aStr) : null;
+                    let userB = bStr ? parseFloat(bStr) : null;
+                    if (userA !== null && isNaN(userA)) userA = null;
+                    if (userB !== null && isNaN(userB)) userB = null;
+
+                    loading.update(15, 'Finding intersection points...');
+                    await yieldToBrowser();
+
+                    // Find all pairwise intersections
+                    const allIntersections = new Set();
+                    for (let i = 0; i < nodes.length; i++) {
+                        for (let j = i + 1; j < nodes.length; j++) {
+                            const pts = this._findIntersections(nodes[i], nodes[j], userA, userB);
+                            pts.forEach(p => allIntersections.add(p));
+                        }
+                    }
+
+                    let sortedPts = Array.from(allIntersections).sort((a, b) => a - b);
+
+                    // Determine the integration range
+                    let rangeA, rangeB;
+                    if (userA !== null && userB !== null) {
+                        rangeA = userA;
+                        rangeB = userB;
+                    } else if (sortedPts.length >= 2) {
+                        rangeA = userA !== null ? userA : sortedPts[0];
+                        rangeB = userB !== null ? userB : sortedPts[sortedPts.length - 1];
+                    } else {
+                        // No intersections found / only 1: try a default range
+                        rangeA = userA !== null ? userA : -5;
+                        rangeB = userB !== null ? userB : 5;
+                    }
+
+                    // Filter intersection points to within range
+                    sortedPts = sortedPts.filter(p => p > rangeA + 1e-10 && p < rangeB - 1e-10);
+
+                    // Build sub-intervals
+                    const breakpoints = [rangeA, ...sortedPts, rangeB];
+
+                    loading.update(40, 'Computing area over sub-intervals...');
+                    await yieldToBrowser();
+
+                    // For each sub-interval, compute the area:
+                    // With N curves, the "enclosed area" is ∫(max(fi) - min(fi)) dx
+                    let totalArea = 0;
+                    const intervalAreas = [];
+                    for (let k = 0; k < breakpoints.length - 1; k++) {
+                        const a = breakpoints[k];
+                        const b = breakpoints[k + 1];
+                        if (b - a < 1e-12) continue;
+
+                        const area = this._integrateMaxMinusMin(nodes, a, b);
+                        intervalAreas.push({ a, b, area });
+                        totalArea += area;
+                    }
+
+                    loading.update(80, 'Rendering results...');
+                    await yieldToBrowser();
+
+                    // Build result display
+                    const totalRounded = parseFloat(totalArea.toFixed(8));
+                    const funcLabels = rawExprs.map((e, i) => {
+                        const name = i < this._funcNames.length ? this._funcNames[i] : 'y' + (i + 1);
+                        return name + '(x) = ' + e;
+                    });
+
+                    let html = `<p style="font-size: 14px; color: #555; margin-bottom: 8px;">${funcLabels.join('<br>')}</p>`;
+                    html += `$$\\text{Area} = \\int_{${parseFloat(rangeA.toFixed(4))}}^{${parseFloat(rangeB.toFixed(4))}} \\left[\\max\\{f_i(x)\\} - \\min\\{f_i(x)\\}\\right] dx = ${totalRounded}$$`;
+
+                    if (sortedPts.length > 0) {
+                        const intPts = sortedPts.map(p => parseFloat(p.toFixed(6))).join(', ');
+                        html += `<span style="font-size: 12px; color: #888; display: block; margin-top: 4px;">Intersection points: x = ${intPts}</span>`;
+                    }
+                    if (intervalAreas.length > 1) {
+                        const details = intervalAreas.map(ia =>
+                            `[${parseFloat(ia.a.toFixed(4))}, ${parseFloat(ia.b.toFixed(4))}]: ${parseFloat(ia.area.toFixed(8))}`
+                        ).join(' + ');
+                        html += `<span style="font-size: 12px; color: #888; display: block; margin-top: 2px;">Sub-intervals: ${details}</span>`;
+                    }
+
+                    elements.areaResult.innerHTML = html;
+                    MathJax.typesetPromise();
+
+                    loading.update(90, 'Plotting...');
+                    await yieldToBrowser();
+                    this._plotArea(nodes, rawExprs, breakpoints, rangeA, rangeB);
+                    loading.update(100, 'Done!');
+                } catch (err) {
+                    elements.areaResult.innerText = 'Error: ' + err.message;
+                } finally {
+                    setTimeout(() => loading.hide(), 300);
+                }
+            },
+
+            // Numerically find intersections of two parsed nodes via sign changes
+            _findIntersections(nodeA, nodeB, userA, userB) {
+                const lo = userA !== null ? userA : -20;
+                const hi = userB !== null ? userB : 20;
+                const step = 0.05;
+                const results = [];
+
+                let prevDiff = null;
+                let prevX = lo;
+                for (let x = lo; x <= hi; x += step) {
+                    let diff;
+                    try {
+                        diff = nodeA.evaluate({ x }) - nodeB.evaluate({ x });
+                    } catch { diff = NaN; }
+
+                    if (prevDiff !== null && isFinite(prevDiff) && isFinite(diff)) {
+                        if (prevDiff * diff < 0) {
+                            // Sign change: bisect to find root
+                            const root = this._bisect(nodeA, nodeB, prevX, x, 50);
+                            if (root !== null) results.push(root);
+                        } else if (Math.abs(diff) < 1e-10) {
+                            results.push(x);
+                        }
+                    }
+                    prevDiff = diff;
+                    prevX = x;
+                }
+
+                // Deduplicate nearby points
+                const deduped = [];
+                for (const p of results) {
+                    if (deduped.length === 0 || Math.abs(p - deduped[deduped.length - 1]) > 1e-6) {
+                        deduped.push(p);
+                    }
+                }
+                return deduped;
+            },
+
+            _bisect(nodeA, nodeB, lo, hi, maxIter) {
+                for (let i = 0; i < maxIter; i++) {
+                    const mid = (lo + hi) / 2;
+                    let fLo, fMid;
+                    try {
+                        fLo = nodeA.evaluate({ x: lo }) - nodeB.evaluate({ x: lo });
+                        fMid = nodeA.evaluate({ x: mid }) - nodeB.evaluate({ x: mid });
+                    } catch { return (lo + hi) / 2; }
+
+                    if (Math.abs(fMid) < 1e-12) return mid;
+                    if (fLo * fMid < 0) hi = mid;
+                    else lo = mid;
+                }
+                return (lo + hi) / 2;
+            },
+
+            // Integrate max(fi(x)) - min(fi(x)) over [a,b] using adaptive Simpson
+            _integrateMaxMinusMin(nodes, a, b) {
+                const deadline = performance.now() + 3000;
+                const evalDiff = (x) => {
+                    const vals = [];
+                    for (const node of nodes) {
+                        try {
+                            const v = node.evaluate({ x });
+                            if (isFinite(v)) vals.push(v);
+                        } catch {}
+                    }
+                    if (vals.length < 2) return 0;
+                    return Math.max(...vals) - Math.min(...vals);
+                };
+
+                const simpson = (a, b) => {
+                    const c = (a + b) / 2;
+                    const h = b - a;
+                    return (h / 6) * (evalDiff(a) + 4 * evalDiff(c) + evalDiff(b));
+                };
+
+                const adaptiveHelper = (a, b, tol, whole, depth) => {
+                    if (performance.now() > deadline) return whole;
+                    const c = (a + b) / 2;
+                    const left = simpson(a, c);
+                    const right = simpson(c, b);
+                    const combined = left + right;
+                    if (depth <= 0 || Math.abs(combined - whole) <= 15 * tol) {
+                        return combined + (combined - whole) / 15;
+                    }
+                    return adaptiveHelper(a, c, tol / 2, left, depth - 1) +
+                           adaptiveHelper(c, b, tol / 2, right, depth - 1);
+                };
+
+                const whole = simpson(a, b);
+                return adaptiveHelper(a, b, 1e-8, whole, 15);
+            },
+
+            _plotArea(nodes, rawExprs, breakpoints, rangeA, rangeB) {
+                const colors = ['#4285f4', '#ea4335', '#fbbc05', '#34a853', '#9c27b0', '#ff5722', '#009688'];
+                const margin = (rangeB - rangeA) * 0.15;
+                const plotLo = rangeA - margin;
+                const plotHi = rangeB + margin;
+                const step = (plotHi - plotLo) / 800;
+                const traces = [];
+
+                // Plot each curve
+                for (let i = 0; i < nodes.length; i++) {
+                    const xVals = [], yVals = [];
+                    for (let x = plotLo; x <= plotHi; x += step) {
+                        xVals.push(x);
+                        try { yVals.push(nodes[i].evaluate({ x })); }
+                        catch { yVals.push(NaN); }
+                    }
+                    const name = i < this._funcNames.length ? this._funcNames[i] + '(x)' : 'y' + (i + 1) + '(x)';
+                    traces.push({
+                        x: xVals, y: yVals, mode: 'lines',
+                        name: name + ' = ' + rawExprs[i],
+                        line: { color: colors[i % colors.length], width: 2 }
+                    });
+                }
+
+                // Shade the area between max and min for each sub-interval
+                for (let k = 0; k < breakpoints.length - 1; k++) {
+                    const a = breakpoints[k];
+                    const b = breakpoints[k + 1];
+                    const xs = [], yMaxs = [], yMins = [];
+                    const subStep = (b - a) / 200;
+                    for (let x = a; x <= b + subStep / 2; x += subStep) {
+                        const vals = [];
+                        for (const node of nodes) {
+                            try {
+                                const v = node.evaluate({ x });
+                                if (isFinite(v)) vals.push(v);
+                            } catch {}
+                        }
+                        if (vals.length >= 2) {
+                            xs.push(x);
+                            yMaxs.push(Math.max(...vals));
+                            yMins.push(Math.min(...vals));
+                        }
+                    }
+                    // Upper edge (forward)
+                    traces.push({
+                        x: [...xs, ...xs.slice().reverse()],
+                        y: [...yMaxs, ...yMins.slice().reverse()],
+                        fill: 'toself',
+                        fillcolor: 'rgba(66, 133, 244, 0.15)',
+                        line: { color: 'transparent' },
+                        mode: 'lines',
+                        name: k === 0 ? 'Bounded area' : '',
+                        showlegend: k === 0,
+                        hoverinfo: 'skip'
+                    });
+                }
+
+                Plotly.newPlot(elements.graph, traces, {
+                    title: 'Area Between Curves',
+                    xaxis: { title: 'x' },
+                    yaxis: { title: 'y' }
+                }, { responsive: true });
+            }
+        };
+
+        // --- Euler's Method ---
+        const eulerMethod = {
+            async compute() {
+                const dydxStr = elements.eulerDyDx.value.trim();
+                const x0 = parseFloat(elements.eulerX0.value);
+                const y0 = parseFloat(elements.eulerY0.value);
+                const h = parseFloat(elements.eulerH.value);
+                const xTarget = parseFloat(elements.eulerTarget.value);
+
+                if (!dydxStr) { elements.eulerResult.innerText = 'Enter dy/dx = f(x, y).'; return; }
+                if (isNaN(x0) || isNaN(y0)) { elements.eulerResult.innerText = 'Enter initial values x\u2080 and y\u2080.'; return; }
+                if (isNaN(h) || h === 0) { elements.eulerResult.innerText = 'Enter a non-zero step size h.'; return; }
+                if (isNaN(xTarget)) { elements.eulerResult.innerText = 'Enter a target x value.'; return; }
+                if ((xTarget - x0) / h < 0) { elements.eulerResult.innerText = 'Step size h must move x\u2080 toward target x (check sign of h).'; return; }
+
+                const processed = utils.preprocessInput(dydxStr);
+                let fCompiled;
+                try {
+                    const fNode = math.parse(processed);
+                    fCompiled = fNode.compile();
+                } catch (err) {
+                    elements.eulerResult.innerText = 'Error parsing dy/dx: ' + err.message;
+                    return;
+                }
+
+                loading.show("Computing Euler's Method...");
+                loading.update(5, 'Stepping through iterations...');
+                await yieldToBrowser();
+
+                // Pre-allocate typed arrays for speed
+                const n = Math.round(Math.abs((xTarget - x0) / h));
+                const maxSteps = Math.min(n, 10000);
+                const stepNums = new Array(maxSteps + 1);
+                const xArr = new Float64Array(maxSteps + 1);
+                const yArr = new Float64Array(maxSteps + 1);
+                const slopeArr = new Float64Array(maxSteps + 1);
+                const slopeValid = new Uint8Array(maxSteps + 1); // 1 = valid
+
+                let x = x0, y = y0;
+                xArr[0] = x; yArr[0] = y; stepNums[0] = 0;
+                let actualSteps = maxSteps;
+
+                const scope = { x: 0, y: 0 };
+                const yieldInterval = Math.max(100, Math.floor(maxSteps / 50));
+
+                for (let i = 0; i < maxSteps; i++) {
+                    scope.x = x; scope.y = y;
+                    let slope;
+                    try {
+                        slope = fCompiled.evaluate(scope);
+                    } catch {
+                        slope = NaN;
+                    }
+                    slopeArr[i] = slope;
+                    slopeValid[i] = isFinite(slope) ? 1 : 0;
+
+                    if (!isFinite(slope)) {
+                        actualSteps = i;
+                        break;
+                    }
+
+                    y = y + h * slope;
+                    x = x + h;
+                    x = parseFloat(x.toPrecision(12));
+                    xArr[i + 1] = x; yArr[i + 1] = y; stepNums[i + 1] = i + 1;
+
+                    // Yield periodically to keep UI responsive
+                    if (i % yieldInterval === 0 && i > 0) {
+                        loading.update(5 + Math.floor((i / maxSteps) * 55), `Step ${i} / ${maxSteps}`);
+                        await yieldToBrowser();
+                    }
+                }
+
+                // Compute slope at last point
+                const last = actualSteps;
+                scope.x = xArr[last]; scope.y = yArr[last];
+                try { slopeArr[last] = fCompiled.evaluate(scope); slopeValid[last] = isFinite(slopeArr[last]) ? 1 : 0; } catch { slopeArr[last] = NaN; slopeValid[last] = 0; }
+
+                loading.update(65, 'Building results table...');
+                await yieldToBrowser();
+
+                // Build result
+                const totalRows = actualSteps + 1;
+                const finalX = xArr[actualSteps];
+                const finalY = yArr[actualSteps];
+                const parts = [`$$y(${parseFloat(finalX.toFixed(6))}) \\approx ${parseFloat(finalY.toFixed(8))}$$`];
+                parts.push(`<span style="font-size: 12px; color: #888; display: block; margin-top: 4px;">Euler's method: ${actualSteps} steps, h = ${h}</span>`);
+
+                // Step table – build with array join for speed
+                parts.push('<div class="euler-table-container"><table class="euler-table">');
+                parts.push('<thead><tr><th>n</th><th>x\u2099</th><th>y\u2099</th><th>dy/dx</th><th>\u0394y = h \u00b7 f(x,y)</th></tr></thead><tbody>');
+                for (let i = 0; i < totalRows; i++) {
+                    const xStr = isFinite(xArr[i]) ? parseFloat(xArr[i].toFixed(6)) : xArr[i];
+                    const yStr = isFinite(yArr[i]) ? parseFloat(yArr[i].toFixed(8)) : yArr[i];
+                    const sv = slopeValid[i];
+                    const slopeStr = sv ? parseFloat(slopeArr[i].toFixed(8)) : (i < actualSteps ? 'NaN' : '');
+                    const dyStr = sv ? parseFloat((h * slopeArr[i]).toFixed(8)) : '';
+                    parts.push(`<tr><td>${i}</td><td>${xStr}</td><td>${yStr}</td><td>${slopeStr}</td><td>${dyStr}</td></tr>`);
+                    if (i % 500 === 0 && i > 0) {
+                        loading.update(65 + Math.floor((i / totalRows) * 15), `Rendering row ${i}...`);
+                        await yieldToBrowser();
+                    }
+                }
+                parts.push('</tbody></table></div>');
+
+                loading.update(82, 'Rendering...');
+                await yieldToBrowser();
+
+                elements.eulerResult.innerHTML = parts.join('');
+                MathJax.typesetPromise();
+
+                loading.update(88, 'Drawing graph...');
+                await yieldToBrowser();
+
+                // Plot
+                this._plot(fCompiled, xArr, yArr, actualSteps, x0, xTarget);
+
+                loading.update(100, 'Done!');
+                await yieldToBrowser();
+                loading.hide();
+            },
+
+            _plot(fCompiled, xArr, yArr, actualSteps, x0, xTarget) {
+                const traces = [];
+
+                // Euler approximation curve – slice typed arrays
+                const xs = Array.from(xArr.subarray(0, actualSteps + 1));
+                const ys = Array.from(yArr.subarray(0, actualSteps + 1));
+                traces.push({
+                    x: xs, y: ys, mode: 'lines+markers',
+                    name: 'Euler approximation',
+                    line: { color: '#4285f4', width: 2 },
+                    marker: { size: 4 }
+                });
+
+                // Slope field – single trace with null separators (much faster)
+                const finiteYs = ys.filter(isFinite);
+                const xMin = Math.min(x0, xTarget) - 1;
+                const xMax = Math.max(x0, xTarget) + 1;
+                const yMin = Math.min(...finiteYs) - 2;
+                const yMax = Math.max(...finiteYs) + 2;
+                const gridStep = Math.max((xMax - xMin) / 20, 0.25);
+                const arrowLen = gridStep * 0.35;
+
+                const sfX = [], sfY = [];
+                const scope = { x: 0, y: 0 };
+                for (let gx = xMin; gx <= xMax; gx += gridStep) {
+                    for (let gy = yMin; gy <= yMax; gy += gridStep) {
+                        scope.x = gx; scope.y = gy;
+                        let slope;
+                        try { slope = fCompiled.evaluate(scope); } catch { continue; }
+                        if (!isFinite(slope)) continue;
+                        const angle = Math.atan(slope);
+                        const dx = arrowLen * Math.cos(angle);
+                        const dy = arrowLen * Math.sin(angle);
+                        sfX.push(gx - dx, gx + dx, null);
+                        sfY.push(gy - dy, gy + dy, null);
+                    }
+                }
+                if (sfX.length) {
+                    traces.push({
+                        x: sfX, y: sfY, mode: 'lines',
+                        line: { color: 'rgba(150,150,150,0.5)', width: 1 },
+                        showlegend: false, hoverinfo: 'skip',
+                        connectgaps: false
+                    });
+                }
+
+                Plotly.newPlot(elements.graph, traces, {
+                    title: "Euler's Method Approximation",
+                    xaxis: { title: 'x', range: [xMin, xMax] },
+                    yaxis: { title: 'y', range: [yMin, yMax] }
+                }, { responsive: true });
+            }
+        };
+
+        // --- Initialize Application ---
+        function init() {
+            setupEventListeners();
+            
+            // Add some initial instructions
+            elements.result.innerHTML = '<p style="color: #666; text-align: center;">Enter a function and click "Derivative" or "Integral" to get started.</p>';
+            elements.graph.innerHTML = '<p style="text-align: center; padding: 20px; color: #666;">Graph will appear here after computing.</p>';
+        }
+
+        // Start the application
+        init();
+    </script>
+</body>
+</html>

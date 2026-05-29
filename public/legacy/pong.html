@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clayton's Pong with Tennis Ball and Dual Controls</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #222;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            background: #000;
+            display: block;
+            border: 2px solid white;
+        }
+        #score {
+            position: absolute;
+            top: 20px;
+            font-size: 24px;
+        }
+        #smash {
+            position: absolute;
+            font-size: 48px;
+            color: red;
+            top: 50%;
+            right: 50px;
+            transform: translateY(-50%);
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="score">Player 1: 0 | Bot: 0</div>
+<div id="smash">SMASH!</div>
+<canvas id="pongCanvas" width="800" height="400"></canvas>
+
+<script>
+const canvas = document.getElementById('pongCanvas');
+const ctx = canvas.getContext('2d');
+
+// Game variables
+const paddleWidth = 10, paddleHeight = 80, ballSize = 20;
+let paddleSpeed = 6, ballSpeed = 4;
+let player1Score = 0, botScore = 0;
+
+// Paddles and Ball
+let player1 = { x: 20, y: canvas.height / 2 - paddleHeight / 2 };
+let bot = { x: canvas.width - 30, y: canvas.height / 2 - paddleHeight / 2 };
+let ball = { x: canvas.width / 2, y: canvas.height / 2, dx: ballSpeed, dy: ballSpeed };
+
+// Controls
+let keys = {};
+
+// Event listeners for player controls
+window.addEventListener('keydown', (e) => keys[e.key] = true);
+window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+function drawRect(x, y, width, height, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, width, height);
+}
+
+function drawTennisBall() {
+    // Tennis ball color
+    ctx.fillStyle = "#CCFF00";  // Bright yellow-green
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ballSize / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw curved seam lines
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 2;
+
+    // Seam 1
+    ctx.beginPath();
+    ctx.arc(ball.x - 4, ball.y, ballSize / 2.5, Math.PI / 4, Math.PI * 1.25);
+    ctx.stroke();
+
+    // Seam 2
+    ctx.beginPath();
+    ctx.arc(ball.x + 4, ball.y, ballSize / 2.5, Math.PI * 1.25, Math.PI / 4 + Math.PI);
+    ctx.stroke();
+}
+
+function movePlayer() {
+    // Move with W/S or Arrow keys
+    if ((keys['w'] || keys['ArrowUp']) && player1.y > 0) {
+        player1.y -= paddleSpeed;
+    }
+    if ((keys['s'] || keys['ArrowDown']) && player1.y < canvas.height - paddleHeight) {
+        player1.y += paddleSpeed;
+    }
+}
+
+// Basic AI bot logic
+function moveBot() {
+    let botCenter = bot.y + paddleHeight / 2;
+
+    // Smooth bot tracking with slight delay
+    if (ball.y < botCenter - 10) {
+        bot.y -= paddleSpeed * 0.75;  // Bot moves slightly slower for fairness
+    } 
+    else if (ball.y > botCenter + 10) {
+        bot.y += paddleSpeed * 0.75;
+    }
+
+    // Prevent bot from going out of bounds
+    bot.y = Math.max(0, Math.min(canvas.height - paddleHeight, bot.y));
+}
+
+function resetBall() {
+    ball.x = canvas.width / 2;
+    ball.y = canvas.height / 2;
+    ball.dx = ballSpeed * (Math.random() > 0.5 ? 1 : -1);
+    ball.dy = ballSpeed * (Math.random() > 0.5 ? 1 : -1);
+}
+
+function updateBall() {
+    ball.x += ball.dx;
+    ball.y += ball.dy;
+
+    // Ball collision with top and bottom walls
+    if (ball.y - ballSize / 2 < 0 || ball.y + ballSize / 2 > canvas.height) {
+        ball.dy *= -1;
+    }
+
+    // Ball collision with player 1
+    if (
+        ball.x - ballSize / 2 < player1.x + paddleWidth &&
+        ball.y > player1.y &&
+        ball.y < player1.y + paddleHeight
+    ) {
+        ball.dx *= -1;
+    }
+
+    // Ball collision with bot
+    if (
+        ball.x + ballSize / 2 > bot.x &&
+        ball.y > bot.y &&
+        ball.y < bot.y + paddleHeight
+    ) {
+        if (Math.random() < 0.5) {
+            ball.dx *= -2; 
+            document.getElementById('smash').style.display = 'block';  // Show "SMASH!"
+            
+            // Hide "SMASH!" after 1 second
+            setTimeout(() => {
+                document.getElementById('smash').style.display = 'none';
+            }, 1000);
+        } else {
+            ball.dx *= -1;
+            document.getElementById('smash').style.display = 'none';  // Hide "SMASH!" when normal return happens
+        }
+    } else {
+        // Hide "SMASH!" when ball is not on bot's side
+        document.getElementById('smash').style.display = 'none';
+    }
+
+    // Scoring logic
+    if (ball.x < 0) {
+        botScore++;
+        resetBall();
+    }
+
+    if (ball.x > canvas.width) {
+        player1Score++;
+        resetBall();
+    }
+
+    // Update score display
+    document.getElementById('score').innerText = `Player 1: ${player1Score} | Bot: ${botScore}`;
+}
+
+function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw paddles, ball, and center line
+    drawRect(player1.x, player1.y, paddleWidth, paddleHeight, '#42f554');  // Player
+    drawRect(bot.x, bot.y, paddleWidth, paddleHeight, '#f54242');  // Bot
+    drawTennisBall();
+
+    // Move and update
+    movePlayer();
+    moveBot();
+    updateBall();
+
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+
+</body>
+</html>
