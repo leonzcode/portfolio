@@ -228,6 +228,10 @@ export const gameProjects: Project[] = [
   },
 ];
 
+gameProjects.forEach((p) => {
+  p.detailHref = `/games/${p.slug}`;
+});
+
 export const mathProjects: Project[] = [
   {
     slug: "polar",
@@ -276,6 +280,10 @@ export const mathProjects: Project[] = [
   },
 ];
 
+mathProjects.forEach((p) => {
+  p.detailHref = `/math/${p.slug}`;
+});
+
 export const physicsProjects: Project[] = [
   {
     slug: "doppler",
@@ -305,3 +313,7 @@ export const physicsProjects: Project[] = [
     tag: "Live demo",
   },
 ];
+
+physicsProjects.forEach((p) => {
+  p.detailHref = `/physics/${p.slug}`;
+});
