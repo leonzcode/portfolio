@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wordle Solver</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --bg: #121213;
+    --bg-secondary: #1a1a1b;
+    --bg-card: #1e1e1f;
+    --green: #538d4e;
+    --green-glow: #538d4e55;
+    --yellow: #b59f3b;
+    --yellow-glow: #b59f3b55;
+    --gray: #3a3a3c;
+    --gray-light: #565758;
+    --text: #ffffff;
+    --text-dim: #818384;
+    --border: #3a3a3c;
+    --accent: #538d4e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  header {
+    width: 100%;
+    text-align: center;
+    padding: 24px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+
+  header h1 {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, var(--green), #6aaa5e, var(--yellow));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  header p {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  .container {
+    max-width: 520px;
+    width: 100%;
+    padding: 24px 16px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+
+  /* Status / info bar */
+  .info-bar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .info-chip {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 13px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .info-chip .val {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* Board */
+  .board {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    perspective: 800px;
+  }
+
+  .row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .tile {
+    width: 62px;
+    height: 62px;
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: transform 0.3s, background 0.3s, border-color 0.3s;
+    position: relative;
+    background: transparent;
+  }
+
+  .tile.pop {
+    animation: popIn 0.15s ease-out;
+  }
+
+  .tile.flip {
+    animation: flipIn 0.5s ease forwards;
+  }
+
+  .tile.correct {
+    background: var(--green);
+    border-color: var(--green);
+    box-shadow: 0 0 12px var(--green-glow);
+  }
+
+  .tile.present {
+    background: var(--yellow);
+    border-color: var(--yellow);
+    box-shadow: 0 0 12px var(--yellow-glow);
+  }
+
+  .tile.absent {
+    background: var(--gray);
+    border-color: var(--gray);
+  }
+
+  @keyframes popIn {
+    0% { transform: scale(0.8); opacity: 0; }
+    60% { transform: scale(1.08); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes flipIn {
+    0% { transform: rotateX(0deg); }
+    45% { transform: rotateX(90deg); }
+    55% { transform: rotateX(90deg); }
+    100% { transform: rotateX(0deg); }
+  }
+
+  @keyframes bounceWin {
+    0%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-20px); }
+    60% { transform: translateY(-10px); }
+  }
+
+  .tile.win {
+    animation: bounceWin 0.6s ease;
+  }
+
+  /* Guess detail rows */
+  .guess-details {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .guess-detail {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+
+  .guess-detail.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .guess-num {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-dim);
+    min-width: 14px;
+  }
+
+  .guess-word {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    flex: 1;
+  }
+
+  .guess-emoji {
+    font-size: 16px;
+    letter-spacing: 2px;
+  }
+
+  .guess-info {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: right;
+    min-width: 80px;
+  }
+
+  /* Result banner */
+  .result-banner {
+    text-align: center;
+    padding: 16px 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    opacity: 0;
+    transform: scale(0.95);
+    transition: opacity 0.5s, transform 0.5s;
+    width: 100%;
+  }
+
+  .result-banner.show {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .result-banner h2 {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+
+  .result-banner .subtitle {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  .result-banner .answer-reveal {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: var(--green);
+    margin: 8px 0;
+  }
+
+  /* Button */
+  .btn {
+    background: var(--green);
+    color: white;
+    border: none;
+    padding: 12px 28px;
+    border-radius: 24px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: background 0.2s, transform 0.15s;
+  }
+
+  .btn:hover { background: #5a9a55; transform: scale(1.03); }
+  .btn:active { transform: scale(0.98); }
+
+  .btn:disabled {
+    background: var(--gray);
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Loading spinner */
+  .spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--gray);
+    border-top: 3px solid var(--green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 20px auto;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .status-text {
+    color: var(--text-dim);
+    font-size: 14px;
+    text-align: center;
+    min-height: 20px;
+  }
+
+  /* Keyboard visualization */
+  .keyboard {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .kb-row {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .key {
+    min-width: 32px;
+    height: 46px;
+    border-radius: 4px;
+    border: none;
+    background: var(--gray-light);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.3s, transform 0.2s;
+    cursor: default;
+  }
+
+  .key.correct { background: var(--green); }
+  .key.present { background: var(--yellow); }
+  .key.absent { background: #2c2c2e; color: #555; }
+
+  /* Share box */
+  .share-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: monospace;
+    font-size: 14px;
+    white-space: pre-line;
+    line-height: 1.5;
+    text-align: center;
+    width: 100%;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    position: relative;
+  }
+
+  .share-box:hover { border-color: var(--accent); }
+
+  .share-box .copied {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 11px;
+    color: var(--green);
+    font-family: 'Inter', sans-serif;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .share-box .copied.show { opacity: 1; }
+
+  /* Methodology section */
+  .methodology {
+    width: 100%;
+    margin-top: 12px;
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+
+  .methodology h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--green);
+  }
+
+  .methodology p {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  /* Thinking indicator */
+  .thinking-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    justify-content: center;
+  }
+
+  .thinking-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.2; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
+
+  .thinking-label {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-left: 6px;
+    font-weight: 500;
+  }
+
+  @media (max-width: 400px) {
+    .tile { width: 52px; height: 52px; font-size: 22px; }
+    header h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Wordle Solver</h1>
+  <p><span id="dateDisplay"></span></p>
+</header>
+
+<div class="container">
+  <div class="info-bar" id="infoBar">
+    <div class="info-chip">Puzzle <span class="val" id="puzzleNum">#???</span></div>
+    <div class="info-chip">Candidates <span class="val" id="candidatesCount">2,315</span></div>
+  </div>
+
+  <div id="statusArea">
+    <button class="btn" id="solveBtn" onclick="startSolve()">Solve Today's Wordle</button>
+  </div>
+
+  <p class="status-text" id="statusText"></p>
+
+  <div class="board" id="board"></div>
+
+  <div class="guess-details" id="guessDetails"></div>
+
+  <div class="keyboard" id="keyboard" style="display:none"></div>
+
+  <div class="result-banner" id="resultBanner">
+    <h2 id="resultTitle"></h2>
+    <div class="answer-reveal" id="answerReveal"></div>
+    <p class="subtitle" id="resultSubtitle"></p>
+  </div>
+
+  <div class="share-box" id="shareBox" style="display:none" onclick="copyShare()">
+    <span class="copied" id="copiedLabel">Copied!</span>
+    <div id="shareText"></div>
+  </div>
+
+  <div class="methodology" id="methodSection" style="display:none">
+    <h3>How it works</h3>
+    <p>
+      The solver tries to learn as much as possible from every guess to maximize 
+      Shannon entropy. For each step, it looks at all the words that are still 
+      possible and picks the guess that best splits them into groups based on 
+      the colors (green, yellow, gray). This cuts down the list of choices very 
+      quickly so the answer can usually be found in just a few moves.
+    </p>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  WORDLE SOLVER — Full Client-Side Implementation
+// ═══════════════════════════════════════════════
+
+// ── Word lists (loaded dynamically) ──
+let ANSWERS = [];
+let ALL_GUESSES = [];
+
+// ── State ──
+let solving = false;
+
+const WORDLE_EPOCH = new Date(2021, 5, 19); // June 19, 2021
+
+function today() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+}
+
+function puzzleNumber() {
+  const now = new Date();
+  const diff = Math.floor((now - WORDLE_EPOCH) / 86400000);
+  return diff;
+}
+
+document.getElementById('dateDisplay').textContent = today();
+document.getElementById('puzzleNum').textContent = `#${puzzleNumber()}`;
+
+// ── Fetch helpers ──
+function fetchWithTimeout(url, ms = 4000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+async function fetchText(url) {
+  const res = await fetchWithTimeout(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+
+async function getTodaysAnswer() {
+  const nytUrl = `https://www.nytimes.com/svc/wordle/v2/${today()}.json`;
+
+  // Race all sources in parallel — first valid response wins
+  const sources = [
+    nytUrl,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(nytUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(nytUrl)}`,
+  ];
+
+  const racePromises = sources.map(url =>
+    fetchWithTimeout(url, 5000)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => data.solution.toLowerCase())
+      .catch(() => null)
+  );
+
+  // Return first non-null result
+  const results = await Promise.all(racePromises);
+  return results.find(r => r !== null) || null;
+}
+
+async function loadWordLists() {
+  const answersSrc = "https://gist.githubusercontent.com/cfreshman/a03ef2cba789d8cf00c08f767e0fad7b/raw/wordle-answers-alphabetical.txt";
+  const allowedSrc = "https://gist.githubusercontent.com/cfreshman/40608e78e83eb4e1d60b285eb7e9732f/raw/wordle-allowed-guesses.txt";
+
+  // Fetch both lists in parallel
+  const [answersText, allowedText] = await Promise.all([
+    fetchText(answersSrc).catch(() => ''),
+    fetchText(allowedSrc).catch(() => ''),
+  ]);
+
+  const answers = answersText.trim().split(/\s+/).filter(w => w.length === 5 && /^[a-z]+$/.test(w));
+  const allowed = allowedText.trim().split(/\s+/).filter(w => w.length === 5 && /^[a-z]+$/.test(w));
+
+  if (answers.length === 0) throw new Error("Could not load word lists.");
+
+  ANSWERS = answers;
+  ALL_GUESSES = [...new Set([...answers, ...allowed])].sort();
+  document.getElementById('candidatesCount').textContent = ANSWERS.length.toLocaleString();
+}
+
+// ── Scoring ──
+function score(guess, answer) {
+  const result = [0, 0, 0, 0, 0];
+  const remaining = answer.split('');
+
+  for (let i = 0; i < 5; i++) {
+    if (guess[i] === answer[i]) {
+      result[i] = 2;
+      remaining[i] = null;
+    }
+  }
+  for (let i = 0; i < 5; i++) {
+    if (result[i] === 0) {
+      const idx = remaining.indexOf(guess[i]);
+      if (idx !== -1) {
+        result[i] = 1;
+        remaining[idx] = null;
+      }
+    }
+  }
+  return result;
+}
+
+function patternKey(pattern) {
+  return pattern.join('');
+}
+
+function patternEmoji(pattern) {
+  return pattern.map(p => ({0: '⬛', 1: '🟨', 2: '🟩'}[p])).join('');
+}
+
+// ── Entropy ──
+function entropy(guess, candidates) {
+  const buckets = new Map();
+  for (const w of candidates) {
+    const key = patternKey(score(guess, w));
+    buckets.set(key, (buckets.get(key) || 0) + 1);
+  }
+  const total = candidates.length;
+  let ent = 0;
+  for (const count of buckets.values()) {
+    const p = count / total;
+    ent -= p * Math.log2(p);
+  }
+  return ent;
+}
+
+function pickBest(candidates, allGuesses) {
+  if (candidates.length <= 2) return candidates[0];
+
+  const candidateSet = new Set(candidates);
+  const ops = allGuesses.length * candidates.length;
+  let search;
+
+  if (ops <= 3_000_000) {
+    search = allGuesses;
+  } else {
+    // Use candidates + known strong openers
+    const starters = [
+      "salet","reast","crate","trace","slate","crane","slant","carte",
+      "least","trice","leant","store","stare","snare","arise","roate",
+      "raise","irate","arose","alter","later","siren","resin","stern",
+      "tones","stone","noted","onset","senor","noser","pilaf","plaid",
+      "found","mound","could","glyph","nymph","chunk","clump","bunch",
+      "drink","brine","blown","clown","grout","shout","brave","crave",
+    ];
+    const set = new Set(candidates);
+    for (const w of starters) {
+      if (allGuesses.includes(w)) set.add(w);
+    }
+    search = [...set];
+  }
+
+  let bestWord = null;
+  let bestEnt = -1;
+
+  for (const word of search) {
+    const e = entropy(word, candidates) + (candidateSet.has(word) ? 0.0001 : 0);
+    if (e > bestEnt) {
+      bestEnt = e;
+      bestWord = word;
+    }
+  }
+  return bestWord;
+}
+
+// ── Solver (yields to UI between steps) ──
+function yieldToUI() {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+// ── UI rendering ──
+function createBoard() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  for (let r = 0; r < 6; r++) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.id = `row-${r}`;
+    for (let c = 0; c < 5; c++) {
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.id = `tile-${r}-${c}`;
+      row.appendChild(tile);
+    }
+    board.appendChild(row);
+  }
+}
+
+function initKeyboard() {
+  const kb = document.getElementById('keyboard');
+  kb.style.display = '';
+  kb.innerHTML = '';
+  const rows = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+  for (const row of rows) {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'kb-row';
+    for (const ch of row) {
+      const key = document.createElement('div');
+      key.className = 'key';
+      key.id = `key-${ch}`;
+      key.textContent = ch;
+      rowEl.appendChild(key);
+    }
+    kb.appendChild(rowEl);
+  }
+}
+
+const keyStates = {};
+
+function updateKeyboard(guess, pattern) {
+  for (let i = 0; i < 5; i++) {
+    const ch = guess[i];
+    const cls = ['absent', 'present', 'correct'][pattern[i]];
+    const rank = { 'absent': 0, 'present': 1, 'correct': 2 };
+    if (!keyStates[ch] || rank[cls] > rank[keyStates[ch]]) {
+      keyStates[ch] = cls;
+      const el = document.getElementById(`key-${ch}`);
+      if (el) {
+        el.className = 'key ' + cls;
+      }
+    }
+  }
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+async function animateGuess(rowIdx, word, pattern) {
+  const classes = ['absent', 'present', 'correct'];
+
+  // Pop letters in
+  for (let c = 0; c < 5; c++) {
+    const tile = document.getElementById(`tile-${rowIdx}-${c}`);
+    tile.textContent = word[c];
+    tile.classList.add('pop');
+    await sleep(60);
+  }
+
+  await sleep(200);
+
+  // Flip and reveal colors
+  for (let c = 0; c < 5; c++) {
+    const tile = document.getElementById(`tile-${rowIdx}-${c}`);
+    tile.classList.add('flip');
+
+    // Apply color at the midpoint of flip
+    setTimeout(() => {
+      tile.classList.add(classes[pattern[c]]);
+    }, 250);
+
+    await sleep(120);
+  }
+
+  updateKeyboard(word, pattern);
+  await sleep(300);
+}
+
+async function animateWin(rowIdx) {
+  for (let c = 0; c < 5; c++) {
+    const tile = document.getElementById(`tile-${rowIdx}-${c}`);
+    setTimeout(() => tile.classList.add('win'), c * 80);
+  }
+}
+
+function showThinking(rowIdx) {
+  const row = document.getElementById(`row-${rowIdx}`);
+  if (!row) return null;
+  const indicator = document.createElement('div');
+  indicator.className = 'thinking-row';
+  indicator.id = 'thinking-indicator';
+  indicator.innerHTML = `
+    <div class="thinking-dot"></div>
+    <div class="thinking-dot"></div>
+    <div class="thinking-dot"></div>
+    <span class="thinking-label">Computing best guess...</span>
+  `;
+  row.parentNode.insertBefore(indicator, row);
+  // Also set tiles to dim
+  for (let c = 0; c < 5; c++) {
+    const tile = document.getElementById(`tile-${rowIdx}-${c}`);
+    if (tile) tile.style.borderColor = 'var(--green)';
+  }
+  return indicator;
+}
+
+function hideThinking() {
+  const el = document.getElementById('thinking-indicator');
+  if (el) el.remove();
+}
+
+async function showGuessDetail(idx, guess) {
+  const container = document.getElementById('guessDetails');
+  const div = document.createElement('div');
+  div.className = 'guess-detail';
+
+  const solved = guess.word === guess.pattern.every((p,i) => p === 2) ? '' : '';
+  const after = guess.candidatesAfter !== undefined ? guess.candidatesAfter : (guess.pattern.every(p => p === 2) ? 1 : '?');
+  const before = guess.candidatesBefore;
+  const eliminated = before - after;
+  const pct = before > 0 ? Math.round((eliminated / before) * 100) : 0;
+
+  div.innerHTML = `
+    <span class="guess-num">${idx + 1}</span>
+    <span class="guess-word">${guess.word}</span>
+    <span class="guess-emoji">${patternEmoji(guess.pattern)}</span>
+    <span class="guess-info">${after === 1 && guess.pattern.every(p => p === 2) ? '✓ Solved' : `${after} left (−${pct}%)`}</span>
+  `;
+
+  container.appendChild(div);
+  await sleep(50);
+  div.classList.add('show');
+}
+
+function showResult(answer, numGuesses) {
+  const banner = document.getElementById('resultBanner');
+  const messages = {
+    1: '🤯 Genius!',
+    2: '🔥 Magnificent!',
+    3: '💪 Impressive!',
+    4: '👍 Great!',
+    5: '😅 Close one!',
+    6: '😰 Phew!',
+  };
+
+  document.getElementById('resultTitle').textContent = messages[numGuesses] || 'Solved!';
+  document.getElementById('answerReveal').textContent = answer;
+  document.getElementById('resultSubtitle').textContent = `Solved in ${numGuesses}/6 guesses`;
+  banner.classList.add('show');
+}
+
+function buildShareText(answer, guesses) {
+  const num = puzzleNumber();
+  let text = `AI Wordle Solver ${num} ${guesses.length}/6\n\n`;
+  for (const g of guesses) {
+    text += patternEmoji(g.pattern) + '\n';
+  }
+  text += `\nhttps://leoniscooler.github.io/wordlesolver/`;
+  return text.trim();
+}
+
+function copyShare() {
+  const text = document.getElementById('shareText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const label = document.getElementById('copiedLabel');
+    label.classList.add('show');
+    setTimeout(() => label.classList.remove('show'), 1500);
+  });
+}
+
+// ── Main flow ──
+async function startSolve() {
+  if (solving) return;
+  solving = true;
+
+  const btn = document.getElementById('solveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Solving...';
+
+  const status = document.getElementById('statusText');
+  status.innerHTML = '<div class="spinner"></div>';
+
+  try {
+    // Step 1 & 2: Load word lists + fetch answer in parallel
+    status.innerHTML = 'Loading...';
+    const [, answer_] = await Promise.all([loadWordLists(), getTodaysAnswer()]);
+    let answer = answer_;
+
+    if (!answer) {
+      // Fallback: Derive from word list using puzzle number
+      const idx = puzzleNumber() % ANSWERS.length;
+      answer = ANSWERS[idx];
+      status.innerHTML = 'Using computed answer (API unavailable)';
+      await sleep(500);
+    }
+
+    if (!ANSWERS.includes(answer)) ANSWERS.push(answer);
+    if (!ALL_GUESSES.includes(answer)) {
+      ALL_GUESSES.push(answer);
+      ALL_GUESSES.sort();
+    }
+
+    // Step 3: Setup board and solve interactively
+    createBoard();
+    initKeyboard();
+    document.getElementById('guessDetails').innerHTML = '';
+    status.innerHTML = '';
+
+    let candidates = [...ANSWERS];
+    const guesses = [];
+
+    // Optimal first guess
+    const firstChoices = ["salet", "slate", "crane", "trace", "crate", "stare"];
+    let current = firstChoices.find(w => ALL_GUESSES.includes(w)) || candidates[0];
+
+    for (let turn = 0; turn < 6; turn++) {
+      // Show thinking indicator before computing (skip for first pre-computed guess)
+      if (turn > 0) {
+        showThinking(turn);
+        status.innerHTML = `Thinking... (${candidates.length} candidates)`;
+        await yieldToUI();
+        await sleep(100);
+
+        // Compute next best guess (heavy work)
+        if (candidates.length === 1) {
+          current = candidates[0];
+        } else {
+          current = pickBest(candidates, ALL_GUESSES);
+        }
+        hideThinking();
+        // Reset tile borders
+        for (let c = 0; c < 5; c++) {
+          const tile = document.getElementById(`tile-${turn}-${c}`);
+          if (tile) tile.style.borderColor = '';
+        }
+        status.innerHTML = '';
+      }
+
+      const pattern = score(current, answer);
+      const prevCount = candidates.length;
+      const guessObj = { word: current, pattern, candidatesBefore: prevCount };
+
+      // Animate this guess
+      await animateGuess(turn, current, pattern);
+
+      const solved = pattern.every(p => p === 2);
+
+      if (!solved) {
+        candidates = candidates.filter(w => patternKey(score(current, w)) === patternKey(pattern));
+        guessObj.candidatesAfter = candidates.length;
+      } else {
+        guessObj.candidatesAfter = 1;
+      }
+
+      guesses.push(guessObj);
+      await showGuessDetail(turn, guessObj);
+
+      if (solved) {
+        await sleep(200);
+        await animateWin(turn);
+        break;
+      }
+
+      if (candidates.length === 0) break;
+    }
+
+    await sleep(400);
+
+    // Step 4: Show result
+    showResult(answer, guesses.length);
+
+    // Step 5: Share box
+    await sleep(300);
+    const shareBox = document.getElementById('shareBox');
+    const shareText = document.getElementById('shareText');
+    shareText.textContent = buildShareText(answer, guesses);
+    shareBox.style.display = '';
+
+    // Show methodology
+    document.getElementById('methodSection').style.display = '';
+
+    // Update button
+    btn.textContent = 'Solved ✓';
+
+  } catch (err) {
+    status.innerHTML = `Error: ${err.message}. Please refresh and try again.`;
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+    solving = false;
+  }
+}
+</script>
+
+</body>
+</html>

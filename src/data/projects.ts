@@ -49,7 +49,7 @@ export const aiProjects: Project[] = [
     title: "Bias in AI Hiring Systems",
     description:
       "Long-form research investigation into how AI résumé screeners disadvantage marginalized applicants. Built as an interactive scrollytelling site rather than a static PDF.",
-    href: "https://leoniscooler.github.io/aihiring/",
+    href: "https://leonzhao.dev/apps/aihiring/",
     image: "/cards/card_aihiring.png",
     tag: "Research",
     story: [
@@ -64,7 +64,7 @@ export const aiProjects: Project[] = [
     title: "Wordle Solver",
     description:
       "Algorithmic Wordle solver that ranks guesses by information gain. Pure browser-side JavaScript.",
-    href: "https://leoniscooler.github.io/wordlesolver/",
+    href: "https://leonzhao.dev/apps/wordle/",
     image: "/cards/card_wordle_solver.png",
     tag: "Live demo",
     story: [
@@ -72,18 +72,6 @@ export const aiProjects: Project[] = [
       "Implemented as pure browser JavaScript with no server. The full English word list ships as a static asset; the entropy calculation runs in the user's browser.",
     ],
     tech: ["JavaScript (vanilla)", "Information theory / entropy ranking", "GitHub Pages static hosting"],
-  },
-  {
-    slug: "docs",
-    title: "Docs",
-    description: "Static documentation hub for technical writeups across my projects.",
-    href: "https://leoniscooler.github.io/docs/",
-    image: "/cards/card_ai_enhanced_docs.png",
-    tag: "Live site",
-    story: [
-      "A static documentation site where I keep long-form technical writeups — methodology notes, code walkthroughs, experiment results — that don't fit neatly into a single project README.",
-    ],
-    tech: ["Static site generator", "GitHub Pages"],
   },
 ];
 
