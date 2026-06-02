@@ -8,27 +8,60 @@ interface Props {
 }
 
 const { projects, initialCount = 2 } = Astro.props;
-const visible = projects.slice(0, initialCount);
-const hidden = projects.slice(initialCount);
 const total = projects.length;
-const hasMore = hidden.length > 0;
+const hasMore = total > initialCount;
+
+const buildSearchIndex = (p: Project) =>
+  [p.title, p.description, p.tag, ...(p.tech ?? []), ...(p.story ?? [])]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 ---
 
-<div data-project-section>
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
-    {visible.map((p) => <ProjectCard {...p} />)}
+<div data-project-section data-initial-count={initialCount}>
+  <div class="mb-8">
+    <div class="relative max-w-md">
+      <svg
+        class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 dark:text-neutral-500"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+      <input
+        type="search"
+        data-search-input
+        placeholder="Search projects"
+        aria-label="Search projects"
+        class="w-full pl-9 pr-3 py-2 text-[14.5px] rounded-md bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-400 dark:focus:border-neutral-600 transition-colors"
+      />
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10" data-grid>
     {
-      hidden.map((p) => (
-        <div data-hidden-card class="hidden">
+      projects.map((p, i) => (
+        <div data-card data-search={buildSearchIndex(p)} data-index={i}>
           <ProjectCard {...p} />
         </div>
       ))
     }
   </div>
 
+  <p data-no-results class="hidden mt-8 text-[14.5px] text-neutral-500 dark:text-neutral-500">
+    No projects match your search.
+  </p>
+
   {
     hasMore && (
-      <div class="mt-10 flex">
+      <div class="mt-10 flex" data-toggle-wrap>
         <button
           type="button"
           data-toggle
@@ -45,19 +78,60 @@ const hasMore = hidden.length > 0;
 
 <script>
   document.querySelectorAll<HTMLElement>("[data-project-section]").forEach((section) => {
+    const initialCount = parseInt(section.dataset.initialCount ?? "2", 10);
+    const cards = Array.from(section.querySelectorAll<HTMLElement>("[data-card]"));
+    const input = section.querySelector<HTMLInputElement>("[data-search-input]");
     const btn = section.querySelector<HTMLButtonElement>("[data-toggle]");
-    if (!btn) return;
-    const collapsedLabel = btn.querySelector<HTMLElement>("[data-label-collapsed]");
-    const expandedLabel = btn.querySelector<HTMLElement>("[data-label-expanded]");
-    const hiddenCards = section.querySelectorAll<HTMLElement>("[data-hidden-card]");
+    const toggleWrap = section.querySelector<HTMLElement>("[data-toggle-wrap]");
+    const collapsedLabel = btn?.querySelector<HTMLElement>("[data-label-collapsed]");
+    const expandedLabel = btn?.querySelector<HTMLElement>("[data-label-expanded]");
+    const noResults = section.querySelector<HTMLElement>("[data-no-results]");
 
-    btn.addEventListener("click", () => {
-      const isExpanded = btn.getAttribute("aria-expanded") === "true";
-      const next = !isExpanded;
-      btn.setAttribute("aria-expanded", String(next));
-      hiddenCards.forEach((el) => el.classList.toggle("hidden", !next));
-      collapsedLabel?.classList.toggle("hidden", next);
-      expandedLabel?.classList.toggle("hidden", !next);
+    let expanded = false;
+
+    const apply = () => {
+      const q = (input?.value ?? "").trim().toLowerCase();
+      const searching = q.length > 0;
+      let shownInCollapsed = 0;
+      let totalMatches = 0;
+
+      cards.forEach((card) => {
+        const haystack = card.dataset.search ?? "";
+        const matches = !searching || haystack.includes(q);
+        if (!matches) {
+          card.classList.add("hidden");
+          return;
+        }
+        totalMatches++;
+        if (searching || expanded) {
+          card.classList.remove("hidden");
+        } else {
+          if (shownInCollapsed < initialCount) {
+            card.classList.remove("hidden");
+            shownInCollapsed++;
+          } else {
+            card.classList.add("hidden");
+          }
+        }
+      });
+
+      noResults?.classList.toggle("hidden", totalMatches > 0);
+      if (toggleWrap) toggleWrap.classList.toggle("hidden", searching || totalMatches <= initialCount);
+
+      if (btn) {
+        btn.setAttribute("aria-expanded", String(expanded));
+        collapsedLabel?.classList.toggle("hidden", expanded);
+        expandedLabel?.classList.toggle("hidden", !expanded);
+      }
+    };
+
+    btn?.addEventListener("click", () => {
+      expanded = !expanded;
+      apply();
     });
+
+    input?.addEventListener("input", apply);
+
+    apply();
   });
 </script>

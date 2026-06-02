@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Blackjack Game</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f8f9fa;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      color: darkgreen;
+      margin-top: 20px;
+    }
+    .game-area {
+      display: flex;
+      justify-content: space-around;
+      margin: 20px;
+      flex-wrap: wrap;
+    }
+    .cards-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 180px;
+      margin-bottom: 10px;
+    }
+    .card-area {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin: 10px;
+    }
+    .card {
+      width: 60px;
+      height: 100px;
+      border: 2px solid black;
+      border-radius: 8px;
+      background-color: white;
+      margin: 5px;
+      font-size: 24px;
+      font-weight: bold;
+      line-height: 100px;
+      user-select: none;
+      position: relative;
+      transform-style: preserve-3d;
+      transition: all 0.5s ease;
+    }
+    .card.dealing {
+      animation: dealCard 0.5s ease-out;
+    }
+    .card.flipping {
+      animation: flipCard 0.5s ease-out;
+    }
+    @keyframes dealCard {
+      0% { transform: translateY(-100px) rotateY(0deg); opacity: 0; }
+      100% { transform: translateY(0) rotateY(0deg); opacity: 1; }
+    }
+    @keyframes flipCard {
+      0% { transform: rotateY(0deg); }
+      50% { transform: rotateY(90deg); }
+      100% { transform: rotateY(0deg); }
+    }
+    .red {
+      color: red;
+    }
+    .info-row {
+      text-align: center;
+      font-size: 20px;
+      margin: 10px 0;
+    }
+    .chips-row {
+      display: flex;
+      justify-content: center;
+      margin: 10px 0;
+      flex-wrap: wrap;
+    }
+    .chip {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      margin: 0 10px 10px 10px;
+      line-height: 60px;
+      color: white;
+      font-weight: bold;
+      font-size: 18px;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.1s ease;
+    }
+    .chip:hover {
+      transform: scale(1.1);
+    }
+    .red-chip { background-color: red; }
+    .green-chip { background-color: green; }
+    .blue-chip { background-color: blue; }
+    .black-chip { background-color: black; }
+    .gold-chip {
+      background-color: gold;
+      color: black;
+    }
+    #controls button {
+      margin: 10px 10px 5px 10px;
+      padding: 10px 20px;
+      font-size: 18px;
+      cursor: pointer;
+    }
+    #money-info {
+      font-size: 18px;
+      margin-bottom: 10px;
+      user-select: none;
+    }
+    #message {
+      color: darkred;
+      font-size: 16px;
+      margin-bottom: 5px;
+      min-height: 22px;
+      user-select: none;
+    }
+    #result {
+      font-size: 24px;
+      margin-top: 15px;
+      min-height: 30px;
+      user-select: none;
+    }
+    #stats-btn {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      padding: 8px 15px;
+      font-size: 16px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      z-index: 1000;
+      user-select: none;
+    }
+    #stats-btn:hover {
+      background-color: #0056b3;
+    }
+    #stats-modal {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0; top: 0;
+      width: 100%; height: 100%;
+      background-color: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+    }
+    #stats-content {
+      background-color: white;
+      padding: 20px 30px;
+      border-radius: 10px;
+      max-width: 300px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.3);
+      text-align: left;
+    }
+    #stats-content h2 {
+      margin-top: 0;
+      color: darkgreen;
+      text-align: center;
+    }
+    #close-stats {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      padding: 6px 12px;
+      cursor: pointer;
+      display: block;
+      margin: 15px auto 0 auto;
+      user-select: none;
+    }
+    #close-stats:hover {
+      background-color: #a71d2a;
+    }
+  </style>
+</head>
+<body>
+
+  <button id="stats-btn" onclick="openStats()">Statistics</button>
+
+  <h1>Blackjack</h1>
+  <p id="message">Please bet money by clicking on chips before playing.</p>
+  <p id="message">Try and beat the dealer: Leon</p>
+
+  <div class="game-area">
+    <div class="cards-container">
+      <h2>Your Cards</h2>
+      <div id="your-cards" class="card-area"></div>
+      <div id="your-sum" class="info-row"></div>
+    </div>
+
+    <div class="cards-container">
+      <h2>Leon's Cards</h2>
+      <div id="opponent-cards" class="card-area"></div>
+      <div id="opponent-sum" class="info-row">Leon's Sum: ?</div>
+    </div>
+  </div>
+
+  <div id="money-info">
+    Your Total Money: $<span id="total-money">500</span> &nbsp; | &nbsp; Pot: $<span id="pot-money">0</span>
+  </div>
+
+  <div class="chips-row">
+    <div class="chip red-chip" onclick="bet(5)">$5</div>
+    <div class="chip green-chip" onclick="bet(25)">$25</div>
+    <div class="chip blue-chip" onclick="bet(50)">$50</div>
+    <div class="chip black-chip" onclick="bet(100)">$100</div>
+    <div class="chip gold-chip" onclick="allIn()">ALL IN</div>
+  </div>
+
+  <div id="controls">
+    <button id="play-btn" onclick="startGame()" disabled>Play</button>
+    <button onclick="hit()" disabled id="hit-btn">Hit</button>
+    <button onclick="stay()" disabled id="stay-btn">Stay</button>
+    <button onclick="resetGame()">Play Again</button>
+  </div>
+
+  <div id="result"></div>
+
+  <div id="stats-modal" onclick="closeStats(event)">
+    <div id="stats-content" onclick="event.stopPropagation()">
+      <h2>Game Statistics</h2>
+      <p>Highest Money: $<span id="stat-highest">500</span></p>
+      <p>Lowest Money: $<span id="stat-lowest">500</span></p>
+      <p>Wins: <span id="stat-wins">0</span></p>
+      <p>Losses: <span id="stat-losses">0</span></p>
+      <p>Win/Loss Ratio: <span id="stat-ratio">0</span></p>
+      <p>All-Ins Attempted: <span id="stat-allins">0</span></p>
+      <p>All-Ins Won: <span id="stat-allins-won">0</span></p>
+      <button id="close-stats" onclick="closeStats()">Close</button>
+    </div>
+  </div>
+
+<script>
+  const suits = ["♥", "♦", "♠", "♣"];
+  const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+
+  let deck = [];
+  let yourCards = [];
+  let opponentCards = [];
+  let yourTotalMoney = 500;
+  let pot = 0;
+  let gameStarted = false;
+  let bettingLocked = false;
+  let yourTurnOver = false;
+
+  let highestMoney = yourTotalMoney;
+  let lowestMoney = yourTotalMoney;
+  let wins = 0;
+  let losses = 0;
+  let allInsAttempted = 0;
+  let allInsWon = 0;
+
+  function showPlaceholderCards() {
+    const yourDiv = document.getElementById("your-cards");
+    yourDiv.innerHTML = "";
+    for (let i = 0; i < 2; i++) {
+      const cardDiv = document.createElement("div");
+      cardDiv.classList.add("card");
+      cardDiv.textContent = "?";
+      yourDiv.appendChild(cardDiv);
+    }
+    document.getElementById("your-sum").textContent = "";
+
+    const oppDiv = document.getElementById("opponent-cards");
+    oppDiv.innerHTML = "";
+    for (let i = 0; i < 2; i++) {
+      const cardDiv = document.createElement("div");
+      cardDiv.classList.add("card");
+      cardDiv.textContent = "?";
+      oppDiv.appendChild(cardDiv);
+    }
+    document.getElementById("opponent-sum").textContent = "Leon's Sum: ?";
+  }
+
+  showPlaceholderCards();
+
+  function shuffleDeck() {
+    deck = [];
+    for (let suit of suits) {
+      for (let val of values) {
+        deck.push({ value: val, suit: suit });
+      }
+    }
+    deck.sort(() => Math.random() - 0.5);
+  }
+
+  function getCardValue(card) {
+    if (card.value === "A") return 11;
+    if (["J", "Q", "K"].includes(card.value)) return 10;
+    return parseInt(card.value);
+  }
+
+  function calculateTotal(cards) {
+    let total = 0;
+    let aces = 0;
+    for (let card of cards) {
+      let val = getCardValue(card);
+      total += val;
+      if (card.value === "A") aces++;
+    }
+    while (total > 21 && aces > 0) {
+      total -= 10;
+      aces--;
+    }
+    return total;
+  }
+
+  function createCardElement(card, hidden = false) {
+    const div = document.createElement("div");
+    div.classList.add("card");
+    if (!hidden) {
+      if (card.suit === "♥" || card.suit === "♦") div.classList.add("red");
+      div.textContent = card.value + card.suit;
+    } else {
+      div.textContent = "?";
+    }
+    return div;
+  }
+
+  function updateOpponentCards(hidden = true, revealAll = false) {
+    const oppDiv = document.getElementById("opponent-cards");
+    oppDiv.innerHTML = "";
+
+    if (hidden && !revealAll) {
+      if (opponentCards.length > 0) {
+        const cardDiv = createCardElement(opponentCards[0]);
+        cardDiv.classList.add("dealing");
+        oppDiv.appendChild(cardDiv);
+
+        for (let i = 1; i < opponentCards.length; i++) {
+          const hiddenCard = document.createElement("div");
+          hiddenCard.classList.add("card");
+          hiddenCard.textContent = "?";
+          oppDiv.appendChild(hiddenCard);
+        }
+      }
+      document.getElementById("opponent-sum").textContent = "Leon's Sum: ?";
+    } else {
+      opponentCards.forEach((card, index) => {
+        const cardDiv = createCardElement(card);
+        if (index > 0) {
+          cardDiv.classList.add("flipping");
+        }
+        oppDiv.appendChild(cardDiv);
+      });
+      document.getElementById("opponent-sum").textContent = "Leon's Sum: " + calculateTotal(opponentCards);
+    }
+  }
+
+  function updateYourCards() {
+    const yourDiv = document.getElementById("your-cards");
+    yourDiv.innerHTML = "";
+    yourCards.forEach((card, index) => {
+      const cardDiv = createCardElement(card);
+      if (index >= yourCards.length - 1) {
+        cardDiv.classList.add("dealing");
+      }
+      yourDiv.appendChild(cardDiv);
+    });
+    document.getElementById("your-sum").textContent = "Your Sum: " + calculateTotal(yourCards);
+  }
+
+  function dealCard(toWhom) {
+    const card = deck.pop();
+    if (toWhom === "you") {
+      yourCards.push(card);
+      updateYourCards();
+    } else {
+      opponentCards.push(card);
+      updateOpponentCards(true, false);
+    }
+    return card;
+  }
+
+  function bet(amount) {
+    if (bettingLocked) return;
+    if (yourTotalMoney >= amount) {
+      pot += amount;
+      yourTotalMoney -= amount;
+      document.getElementById("total-money").textContent = yourTotalMoney;
+      document.getElementById("pot-money").textContent = pot;
+      document.getElementById("message").textContent = `You bet $${amount}. Add more or press Play.`;
+      document.getElementById("play-btn").disabled = false;
+    } else {
+      document.getElementById("message").textContent = `Not enough money!`;
+    }
+  }
+
+  function allIn() {
+    if (bettingLocked || yourTotalMoney <= 0) return;
+    allInsAttempted++;
+    bet(yourTotalMoney);
+    document.getElementById("message").textContent = `You went ALL IN with $${pot}!`;
+  }
+
+  function startGame() {
+    if (pot === 0) {
+      document.getElementById("message").textContent = "❗ Please place a bet before playing.";
+      return;
+    }
+    bettingLocked = true;
+    gameStarted = true;
+    yourTurnOver = false;
+    document.getElementById("play-btn").disabled = true;
+    document.getElementById("hit-btn").disabled = false;
+    document.getElementById("stay-btn").disabled = false;
+    document.getElementById("message").textContent = `Game started. Good luck!`;
+    document.getElementById("result").textContent = "";
+
+    shuffleDeck();
+    yourCards = [];
+    opponentCards = [];
+
+    setTimeout(() => {
+      yourCards.push(deck.pop());
+      updateYourCards();
+
+      setTimeout(() => {
+        opponentCards.push(deck.pop());
+        updateOpponentCards(true, false);
+
+        setTimeout(() => {
+          yourCards.push(deck.pop());
+          updateYourCards();
+
+          setTimeout(() => {
+            opponentCards.push(deck.pop());
+            updateOpponentCards(true, false);
+
+            document.getElementById("your-sum").textContent = "Your Sum: " + calculateTotal(yourCards);
+            document.getElementById("opponent-sum").textContent = "Leon's Sum: ?";
+          }, 300);
+        }, 300);
+      }, 300);
+    }, 300);
+  }
+
+  function hit() {
+    if (yourTurnOver || !gameStarted) return;
+    const card = dealCard("you");
+    const total = calculateTotal(yourCards);
+    if (total > 21) {
+      yourTurnOver = true;
+      setTimeout(() => {
+        endGame("You Bust! You Lose.");
+      }, 500);
+      losses++;
+      updateStats();
+    }
+  }
+
+  function stay() {
+    if (!gameStarted || yourTurnOver) return;
+    yourTurnOver = true;
+    document.getElementById("hit-btn").disabled = true;
+    document.getElementById("stay-btn").disabled = true;
+
+    setTimeout(() => {
+      updateOpponentCards(false, true);
+      setTimeout(() => {
+        playOpponentTurn();
+      }, 500);
+    }, 300);
+  }
+
+  function playOpponentTurn() {
+    function playNext() {
+      const total = calculateTotal(opponentCards);
+      if (total < 17) {
+        setTimeout(() => {
+          dealCard("opponent");
+          updateOpponentCards(false, true);
+          setTimeout(playNext, 1000);
+        }, 300);
+      } else {
+        setTimeout(checkWinner, 500);
+      }
+    }
+    playNext();
+  }
+
+  function checkWinner() {
+    const yourTotal = calculateTotal(yourCards);
+    const opponentTotal = calculateTotal(opponentCards);
+    let result = "";
+    if (opponentTotal > 21 || yourTotal > opponentTotal) {
+      result = "You Win!";
+      yourTotalMoney += pot * 2;
+      wins++;
+      if (pot >= yourTotalMoney + pot * 2) {
+        allInsWon++;
+      }
+    } else if (yourTotal < opponentTotal) {
+      result = "You Lose!";
+      losses++;
+    } else {
+      result = "It's a Tie!";
+      yourTotalMoney += pot;
+    }
+    pot = 0;
+    document.getElementById("result").textContent = result;
+    document.getElementById("total-money").textContent = yourTotalMoney;
+    document.getElementById("pot-money").textContent = pot;
+
+    updateOpponentCards(false, true);
+    updateStats();
+  }
+
+  function endGame(message) {
+    document.getElementById("result").textContent = message;
+    document.getElementById("hit-btn").disabled = true;
+    document.getElementById("stay-btn").disabled = true;
+    pot = 0;
+    document.getElementById("pot-money").textContent = pot;
+
+    updateOpponentCards(false, true);
+  }
+
+  function resetGame() {
+    pot = 0;
+    bettingLocked = false;
+    yourTurnOver = false;
+    gameStarted = false;
+    yourCards = [];
+    opponentCards = [];
+    document.getElementById("your-cards").innerHTML = "";
+    document.getElementById("opponent-cards").innerHTML = "";
+    document.getElementById("your-sum").textContent = "";
+    document.getElementById("opponent-sum").textContent = "Leon's Sum: ?";
+    document.getElementById("total-money").textContent = yourTotalMoney;
+    document.getElementById("pot-money").textContent = pot;
+    document.getElementById("message").textContent = "Please bet money by clicking on chips before playing.";
+    document.getElementById("result").textContent = "";
+    document.getElementById("hit-btn").disabled = true;
+    document.getElementById("stay-btn").disabled = true;
+    document.getElementById("play-btn").disabled = true;
+
+    if (yourTotalMoney <= 0) {
+      document.getElementById("message").textContent = "Game Over! You're out of money.";
+      document.querySelector(".gold-chip").style.display = "none";
+    } else {
+      document.querySelector(".gold-chip").style.display = "block";
+    }
+
+    showPlaceholderCards();
+  }
+
+  function updateStats() {
+    if (yourTotalMoney > highestMoney) highestMoney = yourTotalMoney;
+    if (yourTotalMoney < lowestMoney) lowestMoney = yourTotalMoney;
+    document.getElementById("stat-highest").textContent = highestMoney;
+    document.getElementById("stat-lowest").textContent = lowestMoney;
+    document.getElementById("stat-wins").textContent = wins;
+    document.getElementById("stat-losses").textContent = losses;
+    const ratio = losses === 0 ? wins : (wins / losses).toFixed(2);
+    document.getElementById("stat-ratio").textContent = ratio;
+    document.getElementById("stat-allins").textContent = allInsAttempted;
+    document.getElementById("stat-allins-won").textContent = allInsWon;
+  }
+
+  function openStats() {
+    updateStats();
+    document.getElementById("stats-modal").style.display = "flex";
+  }
+  function closeStats(event) {
+    if (event) event.stopPropagation();
+    document.getElementById("stats-modal").style.display = "none";
+  }
+</script>
+<h1> place a bet to start playing </h1>
+</body>
+</html>

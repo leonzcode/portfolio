@@ -47,14 +47,13 @@ export const aiProjects: Project[] = [
     slug: "aihiring",
     title: "Bias in AI Hiring Systems",
     description:
-      "Long-form research investigation into how AI résumé screeners disadvantage marginalized applicants. Built as an interactive scrollytelling site rather than a static PDF.",
+      "The effects of bias and discrimination within new AI hiring systems on marginalized communities.",
     href: "https://leonzhao.dev/apps/aihiring/",
     image: "/cards/card_aihiring.png",
     tag: "Research",
     story: [
-      "A research paper I wrote for Humanities 11, reworked as an interactive web piece. Walks through how AI hiring systems disproportionately reject applicants from marginalized communities, why those biases emerge from training data, and what mitigations actually work.",
-      "The argument leans on two real studies: the Bertrand & Mullainathan 2004 labor-market audit (the original \"Jamal vs. Greg\" résumé experiment) and a 2025 Brookings analysis showing that 98.4% of Fortune 500 companies now use AI somewhere in hiring. The site visualizes the underlying audit data alongside the prose so readers can see the bias gap, not just read about it.",
-      "Sections: The Issue · Effects · Causes · My Research · Solutions · Works Cited.",
+      "This research paper raises awareness about how people of color are being discriminated against by AI hiring systems. It talks about the effects, causes, and solutions to the issue. Research also includes an overview of different machine learning algorithms, such as Gradient Boosting, HistGBM, and neural networks, used to replicate AI hiring models to simulate bias.",
+      "The argument leans on two real studies: the Bertrand & Mullainathan 2004 labor-market audit (the original \"Jamal vs. Greg\" résumé experiment) and a 2025 Brookings analysis showing that 98.4% of Fortune 500 companies now use AI somewhere in hiring.",
     ],
     tech: ["HTML/CSS/JS scrollytelling", "Custom data visualizations", "GitHub Pages"],
   },
@@ -62,14 +61,11 @@ export const aiProjects: Project[] = [
     slug: "wordle",
     title: "Wordle Solver",
     description:
-      "Algorithmic Wordle solver that ranks guesses by information gain. Pure browser-side JavaScript.",
+      "Daily wordle solver using Shannon entropy models.",
     href: "https://leonzhao.dev/apps/wordle/",
     image: "/cards/card_wordle_solver.png",
     tag: "Live demo",
-    story: [
-      "A Wordle helper that ranks every possible guess by expected information gain — the same entropy-based approach 3Blue1Brown popularised for Wordle. Type in your feedback so far (greens, yellows, grays) and the solver returns the guess that minimises remaining possibilities in the worst case.",
-      "Implemented as pure browser JavaScript with no server. The full English word list ships as a static asset; the entropy calculation runs in the user's browser.",
-    ],
+    story: [],
     tech: ["JavaScript (vanilla)", "Information theory / entropy ranking", "GitHub Pages static hosting"],
   },
 ];
@@ -84,7 +80,7 @@ export const gameProjects: Project[] = [
     slug: "basket",
     title: "Sports Un-random",
     description:
-      "Browser basketball mini-game — flick to shoot, time your release for the score before the clock runs out.",
+      "Browser minigames inspired by sports random. Use left, right, and up keys to move and down key to shoot",
     href: "https://leoniscooler.github.io/basket/",
     image: "/cards/card_basket.png",
     tag: "Live demo",
@@ -92,7 +88,7 @@ export const gameProjects: Project[] = [
   {
     slug: "blackjoy",
     title: "Black Joy",
-    description: "Themed card-game variant on the blackjack rule set.",
+    description: "Interactive simulation to celebrate black culture and resistance against Jim Crow Laws",
     href: "https://leoniscooler.github.io/blackjoy/",
     image: "/cards/card_blackjoy.png",
     tag: "Live demo",
@@ -277,7 +273,7 @@ export const physicsProjects: Project[] = [
     slug: "doppler",
     title: "Doppler Effect Simulator",
     description:
-      "Interactive simulation of the Doppler effect — adjust source velocity and observer position to see how perceived frequency shifts as the source approaches or recedes.",
+      "Interactive simulator using the doppler formula and distance-based amplitudde attenuatoin to simlate the doppler effect",
     href: "https://leoniscooler.github.io/doppler/",
     image: "/cards/card_doppler.png",
     tag: "Live demo",
@@ -286,7 +282,7 @@ export const physicsProjects: Project[] = [
     slug: "circuit",
     title: "Circuit Builder",
     description:
-      "Drag-and-drop circuit playground. Wire up resistors, capacitors, and voltage sources, then watch current and voltage values update as you change the topology.",
+      "Interactive lab that allows users to simulate circuit building and explore Ohm's law and Kirkoff's rules",
     href: "https://leoniscooler.github.io/circuit/",
     image: "/cards/card_circuit.png",
     tag: "Live demo",
@@ -295,7 +291,7 @@ export const physicsProjects: Project[] = [
     slug: "kinetic-theory",
     title: "Kinetic Theory Simulator",
     description:
-      "2D gas-particle simulator demonstrating kinetic theory: change temperature or particle count and see velocity distributions, mean kinetic energy, and collision behavior shift in real time.",
+      "2D gas-particle simulator of kinetic theory using thermodynamic equations and energy balance",
     href: "https://leoniscooler.github.io/kinetic-theory/",
     image: "/cards/card_kinetic-theory.png",
     tag: "Live demo",
@@ -317,7 +313,7 @@ const localProjectPaths: Record<string, string> = {
   slope: "/legacy/slope.html",
   platformer: "/legacy/platformer.html",
   "wordle-game": "/legacy/wordle.html",
-  blackjack: "/legacy/doubledutch.html",
+  blackjack: "/legacy/blackjack.html",
   tennis: "/legacy/tennis.html",
   "leon-2048": "/legacy/2048.html",
   tetris: "/legacy/tetris.html",
