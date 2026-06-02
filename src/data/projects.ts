@@ -33,14 +33,13 @@ export const aiProjects: Project[] = [
     slug: "ai-art",
     title: "AI Art Detection",
     description:
-      "CNN classifier that distinguishes AI-generated images from human-made art; improved accuracy from 66% to 98% through model iterations during COSMOS @ UC San Diego.",
+      "CNN classifier that distinguishes AI-generated images from human-made art, built during COSMOS @ UC San Diego.",
     href: "https://apps.leonzhao.dev/ai-art/",
     image: "/cards/card_art_detector.png",
     tag: "Live demo",
     story: [
-      "Final project from the COSMOS Machine Learning Cluster at UC San Diego. The model classifies whether a given image is AI-generated or human-made — a fast-moving target since the generative landscape shifts every few months.",
-      "Starting baseline was 66% accuracy (logistic regression on image statistics). After iterating through KNN, MLPs, and finally a fine-tuned CNN with augmentation, the final model reached 98% accuracy on the held-out test set.",
-      "The bigger lesson was about the model-iteration loop itself: each architecture revealed a different failure mode (color statistics fooled the early models; texture features fooled later ones), and the final accuracy came from understanding those failures, not from picking a fancier model.",
+      "Final project for COSMOS Machine Learning Cluster at UC San Diego. The model can classify if an image is AI generated or human made by identifying poor and rich contrasts within the image pixels.",
+      "The model was trained using different algorithms, like logistic regression, decision trees, and neural networks. The final model was the MLP neural network that was adjusted with CNN augmentation. Each layer of the neural network was trained on a specific subject, such as color statistics, pixel gradients, and texture variants. The final model achieved a 98% accuracy on held out testing data.",
     ],
     tech: ["Python", "TensorFlow / Keras", "CNN with transfer learning", "Streamlit"],
   },
@@ -226,7 +225,7 @@ export const mathProjects: Project[] = [
     slug: "polar",
     title: "Polar Graphing Calculator",
     description:
-      "Interactive polar coordinate grapher. Plot multiple curves like r = 2 + 3·sin(θ) or r = 4·cos(2θ) and watch them render on a polar axis with π-labelled gridlines.",
+      "Polar coordinate graphing calculator",
     href: "https://leoniscooler.github.io/polar/",
     image: "/cards/card_polar.png",
     tag: "Live demo",
@@ -235,7 +234,7 @@ export const mathProjects: Project[] = [
     slug: "euler",
     title: "Euler's Method Solver",
     description:
-      "Numerical solver that approximates first-order ODEs using Euler's method. Adjust step size to see how accuracy changes with step count.",
+      "Approximations of first order ODEs using Euler's method",
     href: "https://leoniscooler.github.io/euler/",
     image: "/cards/card_euler.png",
     tag: "Live demo",
@@ -244,7 +243,7 @@ export const mathProjects: Project[] = [
     slug: "calculus",
     title: "Calculus Solver",
     description:
-      "Single-page calculus tool covering derivatives, integrals, and limits — enter a function and get the symbolic result plus an auto-generated graph.",
+      "Calculator for derivatives, integrals, and areas using the disk and washer methods",
     href: "https://leoniscooler.github.io/calculus/",
     image: "/cards/card_calculus.png",
     tag: "Live demo",
@@ -253,7 +252,7 @@ export const mathProjects: Project[] = [
     slug: "polynomial",
     title: "Polynomial Solver",
     description:
-      "Roots-and-factorisation helper for polynomial equations. Useful for cross-checking algebra homework before submitting it.",
+      "Approximates roots of quintic polynomials using Durand–Kerner and Newton's methods",
     href: "https://leoniscooler.github.io/polynomial/",
     image: "/cards/card_polynomial.png",
     tag: "Live demo",
@@ -262,7 +261,7 @@ export const mathProjects: Project[] = [
     slug: "unit-circle",
     title: "Unit Circle",
     description:
-      "Interactive unit circle reference. Click around the circle to see exact sine, cosine, and tangent values at the standard angles.",
+      "Interactive unit circle simulation",
     href: "https://leoniscooler.github.io/unit-circle/",
     image: "/cards/card_unit-circle.png",
     tag: "Live demo",
@@ -327,7 +326,7 @@ const localProjectPaths: Record<string, string> = {
   polar: "/legacy/polar.html",
   euler: "/legacy/euler.html",
   calculus: "/legacy/derivative.html",
-  polynomial: "/legacy/calculator.html",
+  polynomial: "/legacy/polynomial.html",
   "unit-circle": "/legacy/unitcircle.html",
   doppler: "/legacy/doppler.html",
   circuit: "/legacy/circuit.html",

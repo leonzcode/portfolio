@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polynomial Solver</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            background-color: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 25px;
+            font-weight: 600;
+        }
+        .input-section {
+            margin-bottom: 25px;
+        }
+        .degree-selector {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .degree-selector label {
+            font-weight: 500;
+        }
+        .equation-display {
+            font-size: 1.2em;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f1f8fe;
+            border-radius: 8px;
+            text-align: center;
+            min-height: 40px;
+        }
+        .coefficients {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .coeff-input {
+            display: flex;
+            flex-direction: column;
+        }
+        .coeff-input label {
+            margin-bottom: 5px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        input, select {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        input:focus, select:focus {
+            border-color: #4CAF50;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            transition: background-color 0.3s;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #3d8b40;
+        }
+        .result {
+            margin-top: 25px;
+            padding: 20px;
+            background-color: #edf7ed;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            border-left: 4px solid #4CAF50;
+        }
+        .hidden {
+            display: none;
+        }
+        .sup {
+            vertical-align: super;
+            font-size: 0.7em;
+        }
+        .math {
+            font-family: 'Times New Roman', Times, serif;
+            font-style: italic;
+        }
+        .loading {
+            text-align: center;
+            padding: 15px;
+        }
+        .loading:after {
+            content: '...';
+            animation: dots 1.5s steps(5, end) infinite;
+        }
+        .root-list {
+            margin-top: 10px;
+        }
+        .root-item {
+            margin-bottom: 5px;
+        }
+        .real-root {
+            color: #2c3e50;
+            font-weight: 500;
+        }
+        .complex-root {
+            color: #7f8c8d;
+        }
+        .desmos-link {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f0f7ff;
+            border-radius: 8px;
+            border-left: 4px solid #4285f4;
+        }
+        .desmos-link a {
+            color: #4285f4;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .desmos-link a:hover {
+            text-decoration: underline;
+        }
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Polynomial Solver</h1>
+
+        <div class="input-section">
+            <div class="degree-selector">
+                <label for="degree">Polynomial Degree:</label>
+                <select id="degree" onchange="updateCoefficientInputs()">
+                    <option value="1">Linear (1st degree)</option>
+                    <option value="2" selected>Quadratic (2nd degree)</option>
+                    <option value="3">Cubic (3rd degree)</option>
+                    <option value="4">Quartic (4th degree)</option>
+                    <option value="5">Quintic (5th degree)</option>
+                </select>
+            </div>
+
+            <div class="equation-display" id="equationDisplay">
+                <span class="math">0 = 0</span>
+            </div>
+
+            <div class="coefficients" id="coefficientsContainer">
+                <!-- Coefficients will be generated here -->
+            </div>
+
+            <button onclick="solvePolynomial()">Solve Equation</button>
+        </div>
+
+        <div id="loading" class="loading hidden"></div>
+        <div id="result" class="result hidden"></div>
+        <div id="desmosLink" class="desmos-link hidden">
+            <strong>Find Roots on Desmos:</strong> <a id="desmosAnchor" target="_blank">Open in Desmos</a>
+            <p style="margin-top: 8px; font-size: 0.9em;">Click the link above to double check your answers.</p>
+        </div>
+    </div>
+
+    <script>
+        // Initialize coefficient inputs
+        function updateCoefficientInputs() {
+            const degree = parseInt(document.getElementById('degree').value);
+            const container = document.getElementById('coefficientsContainer');
+            container.innerHTML = '';
+
+            // Create inputs for each coefficient
+            for (let i = degree; i >= 0; i--) {
+                const coeffDiv = document.createElement('div');
+                coeffDiv.className = 'coeff-input';
+
+                const label = document.createElement('label');
+                if (i === 0) {
+                    label.innerHTML = 'Constant term <span class="math">a<sub>0</sub></span>';
+                } else if (i === 1) {
+                    label.innerHTML = `<span class="math">a<sub>1</sub>x</span> coefficient`;
+                } else {
+                    label.innerHTML = `<span class="math">a<sub>${i}</sub>x<sup>${i}</sup></span> coefficient`;
+                }
+
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.id = `a${i}`;
+                input.step = 'any';
+                input.value = i === degree ? '1' : '0';
+                input.oninput = updateEquationDisplay;
+                input.placeholder = 'Enter value';
+
+                coeffDiv.appendChild(label);
+                coeffDiv.appendChild(input);
+                container.appendChild(coeffDiv);
+            }
+
+            updateEquationDisplay();
+        }
+
+        // Update the equation display as coefficients change
+        function updateEquationDisplay() {
+            const degree = parseInt(document.getElementById('degree').value);
+            let equationParts = [];
+
+            for (let i = degree; i >= 0; i--) {
+                const coeffInput = document.getElementById(`a${i}`);
+                if (!coeffInput) continue;
+
+                const coeff = parseFloat(coeffInput.value) || 0;
+                if (coeff === 0 && i !== 0) continue;
+
+                let term = '';
+
+                // Handle coefficient
+                if (i === degree || coeff < 0) {
+                    term += coeff;
+                } else {
+                    term += `+ ${coeff}`;
+                }
+
+                // Handle variable part
+                if (i > 0) {
+                    term = term.replace(/^1 /, '').replace(/^\+ 1 /, '+ ').replace(/^-1 /, '- ');
+                    term += '<span class="math">x</span>';
+                    if (i > 1) {
+                        term += `<sup class="sup">${i}</sup>`;
+                    }
+                }
+
+                // Clean up + signs
+                term = term.replace(/\+\s-/, '- ');
+
+                equationParts.push(term);
+            }
+
+            let equation = equationParts.join(' ');
+            if (equation === '') equation = '0';
+
+            document.getElementById('equationDisplay').innerHTML =
+                `<span class="math">0 = ${equation}</span>`;
+        }
+
+        // Solve the polynomial equation
+        function solvePolynomial() {
+            const degree = parseInt(document.getElementById('degree').value);
+            const coefficients = [];
+
+            // Show loading indicator
+            document.getElementById('result').classList.add('hidden');
+            document.getElementById('desmosLink').classList.add('hidden');
+            document.getElementById('loading').classList.remove('hidden');
+
+            // Use setTimeout to allow UI to update before heavy computation
+            setTimeout(() => {
+                try {
+                    // Collect coefficients
+                    for (let i = degree; i >= 0; i--) {
+                        const coeffInput = document.getElementById(`a${i}`);
+                        const coeff = parseFloat(coeffInput.value) || 0;
+                        coefficients.push(coeff);
+                    }
+
+                    // Remove leading zeros to get actual degree
+                    while (coefficients.length > 1 && coefficients[0] === 0) {
+                        coefficients.shift();
+                    }
+                    const actualDegree = coefficients.length - 1;
+
+                    if (actualDegree < 1) {
+                        showResult("Invalid equation. Please provide non-zero coefficients for at least one term.");
+                        return;
+                    }
+
+                    let result = `<strong>Solving equation of degree ${actualDegree}:</strong>\n\n`;
+                    result += `Polynomial: <span class="math">P(x) = ${formatPolynomial(coefficients)}</span>\n\n`;
+
+                    // Special cases for low-degree polynomials
+                    if (actualDegree === 1) {
+                        // Linear equation: ax + b = 0
+                        const a = coefficients[0];
+                        const b = coefficients[1];
+                        const x = -b / a;
+                        result += `<strong>Solution:</strong>\n`;
+                        result += `<div class="root-list"><div class="root-item real-root"><span class="math">x = ${formatNumber(x)}</span></div></div>`;
+                    }
+                    else if (actualDegree === 2) {
+                        // Quadratic equation: ax² + bx + c = 0
+                        const [a, b, c] = coefficients;
+                        const discriminant = b * b - 4 * a * c;
+
+                        result += `<strong>Discriminant (Δ):</strong> <span class="math">Δ = ${formatNumber(discriminant)}</span>\n\n`;
+
+                        if (discriminant > 0) {
+                            const sqrtDisc = Math.sqrt(discriminant);
+                            const x1 = (-b + sqrtDisc) / (2 * a);
+                            const x2 = (-b - sqrtDisc) / (2 * a);
+                            result += `<strong>Two real solutions:</strong>\n`;
+                            result += `<div class="root-list">`;
+                            result += `<div class="root-item real-root"><span class="math">x<sub>1</sub> = ${formatNumber(x1)}</span></div>`;
+                            result += `<div class="root-item real-root"><span class="math">x<sub>2</sub> = ${formatNumber(x2)}</span></div>`;
+                            result += `</div>`;
+                        }
+                        else if (discriminant === 0) {
+                            const x = -b / (2 * a);
+                            result += `<strong>One real solution (double root):</strong>\n`;
+                            result += `<div class="root-list"><div class="root-item real-root"><span class="math">x = ${formatNumber(x)}</span></div></div>`;
+                        }
+                        else {
+                            const realPart = -b / (2 * a);
+                            const imagPart = Math.sqrt(-discriminant) / (2 * a);
+                            result += `<strong>Two complex solutions:</strong>\n`;
+                            result += `<div class="root-list">`;
+                            result += `<div class="root-item complex-root"><span class="math">x<sub>1</sub> = ${formatComplex(realPart, imagPart)}</span></div>`;
+                            result += `<div class="root-item complex-root"><span class="math">x<sub>2</sub> = ${formatComplex(realPart, -imagPart)}</span></div>`;
+                            result += `</div>`;
+                        }
+                    }
+                    else {
+                        // For degree 3+, use numerical methods
+                        result += `<strong>Finding all roots (real and complex)...</strong>\n\n`;
+
+                        // Find all roots using improved method
+                        const roots = findAllRoots(coefficients);
+
+                        // Separate real and complex roots
+                        const realRoots = roots.filter(root => Math.abs(root.imag) < 1e-10);
+                        const complexRoots = roots.filter(root => Math.abs(root.imag) >= 1e-10);
+
+                        // Display real roots
+                        if (realRoots.length > 0) {
+                            result += `<strong>Real Roots (x-intercepts):</strong>\n<div class="root-list">`;
+                            realRoots.forEach((root, i) => {
+                                result += `<div class="root-item real-root"><span class="math">x<sub>${i+1}</sub> = ${formatNumber(root.real)}</span></div>`;
+                            });
+                            result += `</div>\n`;
+                        } else {
+                            result += `<em>No real roots (x-intercepts) found.</em>\n`;
+                        }
+
+                        // Display complex roots
+                        if (complexRoots.length > 0) {
+                            result += `<strong>Complex Roots:</strong>\n<div class="root-list">`;
+                            complexRoots.forEach((root, i) => {
+                                result += `<div class="root-item complex-root"><span class="math">x<sub>${i+1+realRoots.length}</sub> = ${formatComplex(root.real, root.imag)}</span></div>`;
+                            });
+                            result += `</div>\n`;
+                        }
+                    }
+
+                    showResult(result);
+                    generateDesmosLink(coefficients, actualDegree);
+                } catch (error) {
+                    showResult(`An error occurred: ${error.message}`);
+                } finally {
+                    document.getElementById('loading').classList.add('hidden');
+                }
+            }, 50);
+        }
+
+        // Generate Desmos link with the polynomial
+        function generateDesmosLink(coefficients, degree) {
+            // Build the polynomial expression for Desmos
+            let expression = '';
+            for (let i = 0; i < coefficients.length; i++) {
+                const power = degree - i;
+                const coeff = coefficients[i];
+
+                if (coeff === 0) continue;
+
+                // Handle sign
+                if (i > 0 && coeff > 0) {
+                    expression += '+';
+                }
+
+                // Handle coefficient
+                if (coeff !== 1 || power === 0) {
+                    expression += coeff;
+                }
+
+                // Handle variable
+                if (power > 0) {
+                    expression += 'x';
+                    if (power > 1) {
+                        expression += `^${power}`;
+                    }
+                }
+            }
+
+            if (expression === '') expression = '0';
+
+            // Create Desmos URL with the equation
+            const desmosUrl = `https://www.desmos.com/calculator?lang=en&expr=${encodeURIComponent(expression)}`;
+
+            // Show the link
+            const desmosLink = document.getElementById('desmosLink');
+            const desmosAnchor = document.getElementById('desmosAnchor');
+            desmosAnchor.href = desmosUrl;
+            desmosLink.classList.remove('hidden');
+        }
+
+        // Improved root-finding algorithm
+        function findAllRoots(coefficients, maxIterations = 200, tolerance = 1e-10) {
+            const n = coefficients.length - 1;
+            if (n < 1) return [];
+
+            // Remove leading zeros
+            while (coefficients.length > 1 && coefficients[0] === 0) {
+                coefficients.shift();
+            }
+            const actualDegree = coefficients.length - 1;
+
+            // Use Durand-Kerner method
+            return findRootsDurandKerner(coefficients, maxIterations, tolerance);
+        }
+
+        // Durand-Kerner method
+        function findRootsDurandKerner(coefficients, maxIterations = 200, tolerance = 1e-10) {
+            const n = coefficients.length - 1;
+            if (n < 1) return [];
+
+            // Initial guesses for roots
+            let roots = [];
+            const angleIncrement = (2 * Math.PI) / n;
+            const radius = Math.max(1, coefficients.reduce((max, c, i) => Math.max(max, Math.abs(c)), 0) / Math.abs(coefficients[0]));
+
+            for (let i = 0; i < n; i++) {
+                const angle = i * angleIncrement;
+                const real = radius * Math.cos(angle);
+                const imag = radius * Math.sin(angle);
+                roots.push({ real, imag });
+            }
+
+            // Iterative improvement
+            for (let iter = 0; iter < maxIterations; iter++) {
+                let maxDiff = 0;
+                const newRoots = [];
+
+                for (let k = 0; k < n; k++) {
+                    const currentRoot = roots[k];
+                    let numerator = evaluatePolynomial(coefficients, currentRoot);
+                    let denominator = { real: 1, imag: 0 };
+
+                    for (let j = 0; j < n; j++) {
+                        if (j !== k) {
+                            const diff = {
+                                real: currentRoot.real - roots[j].real,
+                                imag: currentRoot.imag - roots[j].imag
+                            };
+                            denominator = complexMultiply(denominator, diff);
+                        }
+                    }
+
+                    const delta = complexDivide(numerator, denominator);
+                    const newRoot = {
+                        real: currentRoot.real - delta.real,
+                        imag: currentRoot.imag - delta.imag
+                    };
+
+                    newRoots.push(newRoot);
+
+                    const diff = Math.sqrt(delta.real * delta.real + delta.imag * delta.imag);
+                    if (diff > maxDiff) maxDiff = diff;
+                }
+
+                roots = newRoots;
+                if (maxDiff < tolerance) break;
+            }
+
+            // Polish roots using Newton's method
+            for (let i = 0; i < roots.length; i++) {
+                for (let iter = 0; iter < 10; iter++) {
+                    const value = evaluatePolynomial(coefficients, roots[i]);
+                    const derivative = evaluatePolynomialDerivative(coefficients, roots[i]);
+
+                    const delta = complexDivide(value, derivative);
+                    roots[i].real -= delta.real;
+                    roots[i].imag -= delta.imag;
+
+                    if (Math.sqrt(delta.real * delta.real + delta.imag * delta.imag) < tolerance) {
+                        break;
+                    }
+                }
+            }
+
+            return roots;
+        }
+
+        // Evaluate polynomial derivative at complex point
+        function evaluatePolynomialDerivative(coefficients, point) {
+            const n = coefficients.length - 1;
+            let result = { real: 0, imag: 0 };
+
+            for (let i = 0; i < n; i++) {
+                const power = n - i;
+                if (coefficients[i] === 0) continue;
+
+                const term = complexMultiply(
+                    { real: power, imag: 0 },
+                    complexPow(point, power - 1)
+                );
+                const scaledTerm = {
+                    real: term.real * coefficients[i],
+                    imag: term.imag * coefficients[i]
+                };
+
+                result = {
+                    real: result.real + scaledTerm.real,
+                    imag: result.imag + scaledTerm.imag
+                };
+            }
+
+            return result;
+        }
+
+        // Format polynomial for display
+        function formatPolynomial(coefficients) {
+            let terms = [];
+            for (let i = 0; i < coefficients.length; i++) {
+                const power = coefficients.length - 1 - i;
+                const coeff = coefficients[i];
+
+                if (coeff === 0) continue;
+
+                let term = '';
+                // Handle coefficient
+                if (coeff !== 1 || power === 0) {
+                    term += coeff;
+                }
+
+                // Handle variable
+                if (power > 0) {
+                    term += 'x';
+                    if (power > 1) {
+                        term += `<sup>${power}</sup>`;
+                    }
+                }
+
+                terms.push(term);
+            }
+
+            // Join terms with + signs, but handle negatives properly
+            let poly = terms.join(' + ');
+            poly = poly.replace(/\+\s-/g, '- ');
+            return poly || '0';
+        }
+
+        // Complex number operations
+        function complexMultiply(a, b) {
+            return {
+                real: a.real * b.real - a.imag * b.imag,
+                imag: a.real * b.imag + a.imag * b.real
+            };
+        }
+
+        function complexDivide(a, b) {
+            const denominator = b.real * b.real + b.imag * b.imag;
+            return {
+                real: (a.real * b.real + a.imag * b.imag) / denominator,
+                imag: (a.imag * b.real - a.real * b.imag) / denominator
+            };
+        }
+
+        function evaluatePolynomial(coefficients, point) {
+            let result = { real: 0, imag: 0 };
+
+            for (let i = 0; i < coefficients.length; i++) {
+                const power = coefficients.length - 1 - i;
+                if (coefficients[i] === 0) continue;
+
+                const term = complexPow(point, power);
+                const scaledTerm = {
+                    real: term.real * coefficients[i],
+                    imag: term.imag * coefficients[i]
+                };
+
+                result = {
+                    real: result.real + scaledTerm.real,
+                    imag: result.imag + scaledTerm.imag
+                };
+            }
+
+            return result;
+        }
+
+        function complexPow(z, power) {
+            if (power === 0) return { real: 1, imag: 0 };
+
+            // Use De Moivre's formula for more accurate results with higher powers
+            const r = Math.sqrt(z.real * z.real + z.imag * z.imag);
+            const theta = Math.atan2(z.imag, z.real);
+
+            const rPow = Math.pow(r, power);
+            const real = rPow * Math.cos(power * theta);
+            const imag = rPow * Math.sin(power * theta);
+
+            return { real, imag };
+        }
+
+        // Formatting functions
+        function formatNumber(x) {
+            if (Math.abs(x) < 1e-10) return '0';
+            if (Math.abs(x) < 1e-6 || Math.abs(x) > 1e6) {
+                return x.toExponential(4).replace('e', ' × 10<sup>') + '</sup>';
+            }
+            const str = x.toFixed(6).replace(/\.?0+$/, '');
+            return str === '-0' ? '0' : str;
+        }
+
+        function formatComplex(real, imag) {
+            const realStr = formatNumber(real);
+            const imagStr = formatNumber(Math.abs(imag));
+            const sign = imag >= 0 ? '+' : '-';
+            return `${realStr} ${sign} ${imagStr}<i>i</i>`;
+        }
+
+        function showResult(message) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = message;
+            resultDiv.classList.remove('hidden');
+        }
+
+        // Initialize on load
+        window.onload = updateCoefficientInputs;
+    </script>
+</body>
+</html>
