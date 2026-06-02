@@ -1,5 +1,48 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+
+interface FilmVideo {
+  id: string;
+  title: string;
+  description?: string;
+  /** "1" | "2" | "3" = frame at ~25/50/75% through video; "max" = official maxresdefault */
+  thumbFrame?: "1" | "2" | "3" | "max";
+}
+
+const videos: FilmVideo[] = [
+  {
+    id: "onrw-sMbfig",
+    title: "I made an AI image detector",
+    description: "Short film walking through how I built an AI vs. human image classifier.",
+  },
+  {
+    id: "dKQ-MyMoOFw",
+    title: "Chinese AR Museum",
+    description: "Short film exploring an AR-augmented museum experience.",
+  },
+  {
+    id: "37L_2FuWDPA",
+    title: "Depression PSA",
+    description: "Public service announcement on mental health.",
+  },
+  {
+    id: "YHpfBjYjG5o",
+    title: "Litterbot, 2026 Diamond Challenge Round One",
+    description: "DSWA Innovation Topical Prize winning team. Round one pitch.",
+  },
+  {
+    id: "8LC43hSfHzU",
+    title: "Litterbot, 2026 Diamond Challenge Round Two",
+    description: "DSWA Innovation Topical Prize winning team. Round two pitch.",
+  },
+];
+
+const thumbUrl = (v: FilmVideo) => {
+  const frame = v.thumbFrame ?? "2";
+  return frame === "max"
+    ? `https://i.ytimg.com/vi/${v.id}/maxresdefault.jpg`
+    : `https://i.ytimg.com/vi/${v.id}/${frame}.jpg`;
+};
 ---
 
 <BaseLayout title="Film · Leon Zhao" wide={true}>
@@ -10,7 +53,98 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       Film
     </h1>
     <p class="text-[14.5px] text-neutral-500 dark:text-neutral-500 mb-10">
-      Coming soon.
+      Short films, pitch videos, and PSAs I've directed or produced.
     </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+      {
+        videos.map((v) => (
+          <article class="flex flex-col">
+            <div
+              class="relative w-full overflow-hidden rounded-md bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800"
+              style="aspect-ratio: 16 / 9;"
+            >
+              {v.thumbFrame ? (
+                <button
+                  type="button"
+                  data-yt-facade
+                  data-video-id={v.id}
+                  aria-label={`Play video: ${v.title}`}
+                  class="group absolute inset-0 w-full h-full p-0 m-0 border-0 cursor-pointer bg-transparent"
+                >
+                  <img
+                    src={thumbUrl(v)}
+                    data-fallback={`https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`}
+                    alt=""
+                    loading="lazy"
+                    class="absolute inset-0 w-full h-full object-cover"
+                    onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute('data-fallback');}"
+                  />
+                  <span class="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors" />
+                  <span class="absolute inset-0 flex items-center justify-center">
+                    <span class="flex items-center justify-center w-14 h-14 rounded-full bg-black/70 group-hover:bg-red-600 transition-colors shadow-lg">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="white"
+                        class="w-6 h-6 translate-x-0.5"
+                        aria-hidden="true"
+                      >
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </span>
+                  </span>
+                </button>
+              ) : (
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${v.id}`}
+                  title={v.title}
+                  loading="lazy"
+                  allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerpolicy="strict-origin-when-cross-origin"
+                  allowfullscreen
+                  frameborder="0"
+                  class="absolute inset-0 w-full h-full"
+                />
+              )}
+            </div>
+            <h2 class="mt-4 text-[16px] font-medium text-neutral-900 dark:text-neutral-50 leading-snug">
+              <a
+                href={`https://www.youtube.com/watch?v=${v.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+              >
+                {v.title}
+              </a>
+            </h2>
+            {v.description && (
+              <p class="mt-1.5 text-[14.5px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                {v.description}
+              </p>
+            )}
+          </article>
+        ))
+      }
+    </div>
   </section>
 </BaseLayout>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>("[data-yt-facade]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.videoId;
+      if (!id) return;
+      const iframe = document.createElement("iframe");
+      iframe.src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
+      iframe.title = btn.getAttribute("aria-label") ?? "YouTube video";
+      iframe.allow =
+        "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+      iframe.referrerPolicy = "strict-origin-when-cross-origin";
+      iframe.allowFullscreen = true;
+      iframe.setAttribute("frameborder", "0");
+      iframe.className = "absolute inset-0 w-full h-full";
+      btn.replaceWith(iframe);
+    });
+  });
+</script>
