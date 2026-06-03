@@ -15,7 +15,7 @@ Pages project: `portfolio` on the `Zoomaxed@gmail.com` Cloudflare account (the s
 ## Prerequisites (one-time)
 
 - Cloudflare account that owns `leonzhao.dev` DNS (currently `Zoomaxed@gmail.com`).
-- GitHub repo `leoniscooler/portfolio` (public or private, both work).
+- GitHub repo `leonzcode/portfolio` (public or private, both work).
 - Node.js + npm on the local machine for the initial `wrangler` calls.
 
 ---
@@ -75,7 +75,7 @@ jobs:
 
 ### 3. Add two GitHub repo secrets
 
-https://github.com/leoniscooler/portfolio/settings/secrets/actions → **New repository secret**:
+https://github.com/leonzcode/portfolio/settings/secrets/actions → **New repository secret**:
 
 - `CLOUDFLARE_API_TOKEN` — create at https://dash.cloudflare.com/profile/api-tokens (must be signed into the Zoomaxed account first):
   - Create Token → **Custom token**
@@ -93,7 +93,7 @@ git commit -m "Add GitHub Actions workflow for Cloudflare Pages auto-deploy"
 git push origin main
 ```
 
-Watch the run at https://github.com/leoniscooler/portfolio/actions. Should complete in ~60–90s.
+Watch the run at https://github.com/leonzcode/portfolio/actions. Should complete in ~60–90s.
 
 ### 5. Add the custom domain
 
@@ -119,7 +119,7 @@ Paste verbatim. Do NOT replace `:account` — Cloudflare resolves it from the se
 
 ### Failure 2: OAuth handshake bounced back
 
-After clicking "Connect GitHub" on the new (Zoomaxed) account, the OAuth flow short-circuited — GitHub silently skipped the consent screen because the Cloudflare Workers and Pages GitHub App was already installed for the same GitHub user (`leoniscooler`) from a previous Cloudflare account. The OAuth callback never reached Cloudflare, so the dashboard kept showing "Connect GitHub."
+After clicking "Connect GitHub" on the new (Zoomaxed) account, the OAuth flow short-circuited — GitHub silently skipped the consent screen because the Cloudflare Workers and Pages GitHub App was already installed for the same GitHub user (`leonzcode`) from a previous Cloudflare account. The OAuth callback never reached Cloudflare, so the dashboard kept showing "Connect GitHub."
 
 We tried the full reset and it still failed:
 

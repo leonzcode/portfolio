@@ -49,7 +49,7 @@ portfolio/
   public/
     legacy/                      self-hosted Games/Math/Physics programs (Leon 2026-05-28):
                                  ~23 .html files + basket-random/ folder. Served from Cloudflare
-                                 at /legacy/*.html instead of loading from leoniscooler.github.io.
+                                 at /legacy/*.html instead of loading from leonzcode.github.io.
   functions/
     api/
       contact.js                 Cloudflare Pages Function: validates input, drops bots via
@@ -85,9 +85,9 @@ portfolio/
 |---|---|---|---|
 | Avalanche Risk Forecasting | `https://apps.leonzhao.dev/avalanche/` | Hetzner CCX13 via Caddy | embedded iframe + "Open full app" |
 | AI Art Detection | `https://apps.leonzhao.dev/ai-art/` | Hetzner CCX13 via Caddy | embedded iframe + "Open full app" |
-| Bias in AI Hiring Systems | `https://leoniscooler.github.io/aihiring/` | GitHub Pages (research scrollytelling) | new-tab launch (not iframed) |
-| Wordle Solver | `https://leoniscooler.github.io/wordlesolver/` | GitHub Pages | new-tab launch (not iframed) |
-| Docs | `https://leoniscooler.github.io/docs/` | GitHub Pages | new-tab launch (not iframed) |
+| Bias in AI Hiring Systems | `https://leonzcode.github.io/aihiring/` | GitHub Pages (research scrollytelling) | new-tab launch (not iframed) |
+| Wordle Solver | `https://leonzcode.github.io/wordlesolver/` | GitHub Pages | new-tab launch (not iframed) |
+| Docs | `https://leonzcode.github.io/docs/` | GitHub Pages | new-tab launch (not iframed) |
 
 The first two were swapped from Streamlit Cloud (`avalancheprediction.streamlit.app`, `aiartdetection.streamlit.app`) to `apps.leonzhao.dev` on 2026-05-26 when the Hetzner stack went live. `aihiring` was added on 2026-05-27 as part of the Adobe-to-apex migration. `chatgpt` was removed from the AI tab by Leon on 2026-05-28. As of 2026-05-28, `*.leonzhao.dev` demos are embedded inline via iframe on the detail page (the model still runs on Hetzner — the iframe is just a window into it); off-domain (`*.github.io`) demos are not iframed and open in a new tab.
 
