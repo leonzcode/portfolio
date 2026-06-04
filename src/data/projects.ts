@@ -48,15 +48,14 @@ export const aiProjects: Project[] = [
     slug: "trash",
     title: "Trash Classifier",
     description:
-      "EfficientNetV2 CNN that sorts a photo of waste into 9 recycling categories and tells you which bin it belongs in.",
+      "EfficientNetV2 CNN that sorts a photo of waste into 9 recycling categories and tells you which bin it belongs in, built in Litterbot design, achieved DSWA innovation award at Diamond Challenge finalists.",
     href: "https://apps.leonzhao.dev/trash/",
     image: "/cards/card_trash.png",
     tag: "Live demo",
     story: [
       "Image classifier that takes a photo of a single piece of waste and predicts which of 9 categories it belongs to: cardboard, food organics, glass, metal, miscellaneous trash, paper, plastic, textile trash, or vegetation.",
       "Built on EfficientNetV2-B0 with transfer learning. The backbone was pretrained on ImageNet, then fine-tuned on the RealWaste dataset (about 4,800 photos taken under realistic landfill lighting, not studio shots). Heavy on-the-fly augmentation (rotation, shifts, brightness jitter, horizontal flips) plus class-weighted loss handled the dataset imbalance. The fine-tuned model reaches about 87.6% validation accuracy.",
-      "For deployment I converted the trained Keras model to TFLite. The serving runtime (ai-edge-litert) is roughly 10 MB instead of full TensorFlow's hundreds of MB, so the container stays small and cold-start is fast. Inference is a single forward pass on a 224×224 image; the UI shows the top-3 predicted categories plus a recommended bin (recycling, compost, landfill, or donate/special).",
-      "The motivation was contamination. Single-stream recycling fails when people guess wrong about what's actually recyclable, so a model that can look at an item and tell you the correct bin is a small step toward higher-quality recovered material.",
+      "The image classifier was built for Litterbot, a robot that autonomously navigates, picks up, and sorts pieces of trash. The proposed design gives Litterbot cameras that use a YOLO algorithm to scan its surroundings and identify pieces of trash. Litterbot then moves to the trash and uses a separate EfficientNetV2-B0 CNN to classify what type of trash it is. Litterbot qualified for the Diamond Challenge Finalists Limitless World Summit, where it won the Delaware Solid Waste Authority (DSWA) Waste and Recycling Innovation award.",
     ],
     tech: [
       "Python",
@@ -298,7 +297,7 @@ export const physicsProjects: Project[] = [
     slug: "doppler",
     title: "Doppler Effect Simulator",
     description:
-      "Interactive simulator using the doppler formula and distance-based amplitudde attenuatoin to simlate the doppler effect",
+      "Interactive simulator using the Doppler formula and distance-based amplitude attenuation to simulate the Doppler effect",
     href: "https://leonzcode.github.io/doppler/",
     image: "/cards/card_doppler.png",
     tag: "Live demo",
@@ -307,7 +306,7 @@ export const physicsProjects: Project[] = [
     slug: "circuit",
     title: "Circuit Builder",
     description:
-      "Interactive lab that allows users to simulate circuit building and explore Ohm's law and Kirkoff's rules",
+      "Interactive lab that allows users to simulate circuit building and explore Ohm's law and Kirchhoff's rules",
     href: "https://leonzcode.github.io/circuit/",
     image: "/cards/card_circuit.png",
     tag: "Live demo",
