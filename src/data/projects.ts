@@ -10,6 +10,7 @@ export interface Project {
   tech?: string[];
   screenshots?: string[];
   detailHref?: string;
+  hideOpenFullApp?: boolean;
 }
 
 export const aiProjects: Project[] = [
@@ -44,6 +45,21 @@ export const aiProjects: Project[] = [
     tech: ["Python", "TensorFlow / Keras", "CNN with transfer learning", "Streamlit"],
   },
   {
+    slug: "trash",
+    title: "Trash Classifier",
+    description:
+      "EfficientNetV2 CNN that sorts a photo of waste into 9 recycling categories and tells you which bin it belongs in.",
+    href: "https://apps.leonzhao.dev/trash/",
+    image: "/cards/card_trash.png",
+    tag: "Live demo",
+    story: [
+      "Image classifier that takes a photo of a single piece of waste and predicts which of 9 categories it belongs to: cardboard, food organics, glass, metal, miscellaneous trash, paper, plastic, textile trash, or vegetation.",
+      "Built on EfficientNetV2-B0 with transfer learning. The backbone was pretrained on ImageNet, then fine-tuned on the RealWaste dataset (about 4,800 photos taken under realistic landfill lighting, not studio shots). Heavy on-the-fly augmentation (rotation, shifts, brightness jitter, horizontal flips) plus class-weighted loss handled the dataset imbalance.",
+      "The motivation was contamination. Single-stream recycling fails when people guess wrong about what's actually recyclable, so a model that can look at an item and tell you the correct bin is a small step toward higher-quality recovered material.",
+    ],
+    tech: ["Python", "TensorFlow / Keras", "EfficientNetV2-B0 transfer learning", "RealWaste dataset (Kaggle)", "Streamlit"],
+  },
+  {
     slug: "aihiring",
     title: "Bias in AI Hiring Systems",
     description:
@@ -56,6 +72,7 @@ export const aiProjects: Project[] = [
       "The argument leans on two real studies: the Bertrand & Mullainathan 2004 labor-market audit (the original \"Jamal vs. Greg\" résumé experiment) and a 2025 Brookings analysis showing that 98.4% of Fortune 500 companies now use AI somewhere in hiring.",
     ],
     tech: ["HTML/CSS/JS scrollytelling", "Custom data visualizations", "GitHub Pages"],
+    hideOpenFullApp: true,
   },
   {
     slug: "wordle",
@@ -67,6 +84,7 @@ export const aiProjects: Project[] = [
     tag: "Live demo",
     story: [],
     tech: ["JavaScript (vanilla)", "Information theory / entropy ranking", "GitHub Pages static hosting"],
+    hideOpenFullApp: true,
   },
 ];
 

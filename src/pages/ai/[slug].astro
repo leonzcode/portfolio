@@ -33,7 +33,7 @@ if (project.href && project.href.startsWith("http")) {
   }
 }
 const hasEmbeddedPlayable = !!playableHref;
-const hasExternalSource = !!project.href && !!playableHref;
+const hasExternalSource = !!project.href && !!playableHref && !project.hideOpenFullApp;
 ---
 
 <BaseLayout
