@@ -54,10 +54,17 @@ export const aiProjects: Project[] = [
     tag: "Live demo",
     story: [
       "Image classifier that takes a photo of a single piece of waste and predicts which of 9 categories it belongs to: cardboard, food organics, glass, metal, miscellaneous trash, paper, plastic, textile trash, or vegetation.",
-      "Built on EfficientNetV2-B0 with transfer learning. The backbone was pretrained on ImageNet, then fine-tuned on the RealWaste dataset (about 4,800 photos taken under realistic landfill lighting, not studio shots). Heavy on-the-fly augmentation (rotation, shifts, brightness jitter, horizontal flips) plus class-weighted loss handled the dataset imbalance.",
+      "Built on EfficientNetV2-B0 with transfer learning. The backbone was pretrained on ImageNet, then fine-tuned on the RealWaste dataset (about 4,800 photos taken under realistic landfill lighting, not studio shots). Heavy on-the-fly augmentation (rotation, shifts, brightness jitter, horizontal flips) plus class-weighted loss handled the dataset imbalance. The fine-tuned model reaches about 87.6% validation accuracy.",
+      "For deployment I converted the trained Keras model to TFLite. The serving runtime (ai-edge-litert) is roughly 10 MB instead of full TensorFlow's hundreds of MB, so the container stays small and cold-start is fast. Inference is a single forward pass on a 224×224 image; the UI shows the top-3 predicted categories plus a recommended bin (recycling, compost, landfill, or donate/special).",
       "The motivation was contamination. Single-stream recycling fails when people guess wrong about what's actually recyclable, so a model that can look at an item and tell you the correct bin is a small step toward higher-quality recovered material.",
     ],
-    tech: ["Python", "TensorFlow / Keras", "EfficientNetV2-B0 transfer learning", "RealWaste dataset (Kaggle)", "Streamlit"],
+    tech: [
+      "Python",
+      "EfficientNetV2-B0 transfer learning (Keras, fine-tuned)",
+      "RealWaste dataset (Kaggle, ~4.8k images, 9 classes)",
+      "TFLite inference via ai-edge-litert",
+      "Streamlit",
+    ],
   },
   {
     slug: "aihiring",
