@@ -18,26 +18,36 @@ portfolio/
   .gitignore                     excludes node_modules/, dist/, .astro/
   public/
     logo.png                     site mark (mascot, not a portrait)
-    cards/                       AI project card thumbnails — also used as detail-page heroes
+    cards/                       project card thumbnails — also used as detail-page heroes
       card_avalanche.png
       card_art_detector.png
+      card_litterbot.png             (LitterBot AI classifier, added June 2026)
       card_aihiring.png
       card_wordle_solver.png
-      card_ai_enhanced_docs.png
-      (card_chatGPT.png removed by Leon 2026-05-28; plus games/math/physics card_*.png)
+      (card_ai_enhanced_docs.png + card_chatGPT.png: docs & chatgpt projects removed;
+       plus games/math/physics card_*.png)
+    legacy/                      self-hosted Games/Math/Physics programs (Leon 2026-05-28):
+                                 ~23 .html files + basket-random/ folder. Served from Cloudflare
+                                 at /legacy/*.html instead of loading from github.io.
+    apps/                        self-hosted AI projects (Leon June 2026): aihiring/ + wordle/.
+                                 Served at leonzhao.dev/apps/<slug>/ and iframed on their detail
+                                 pages. (avalanche/ai-art/litterbot stay on Hetzner, not here.)
   src/
     styles/global.css            @import "tailwindcss" + dark variant + theme vars
     layouts/BaseLayout.astro     html shell, font load, no-flash theme script, header/footer
     components/
-      Header.astro               logo + 6-item nav + ThemeToggle
-      Footer.astro
+      Header.astro               logo + 7-item nav + ThemeToggle
+                                 (About · AI · Film · Math · Physics · Games · Contact)
+      Footer.astro               © line + GitHub/Instagram/YouTube icon links (GitHub → leonzcode)
       ThemeToggle.astro          sun/moon, localStorage persists, pre-paint script in BaseLayout
       ProjectCard.astro          image/placeholder + title + description + arrow
       ProjectGrid.astro          reusable show-more pattern (first 2 cards + "View all N")
-    data/projects.ts             single source of truth for all project data
+    data/projects.ts             single source of truth for AI/Games/Math/Physics project data
+                                 (Film is NOT here — its video list is inline in film.astro)
     pages/
       index.astro                About (landing)
-      ai.astro                   AI grid (5 cards; chatgpt removed by Leon 2026-05-28)
+      ai.astro                   AI grid (5 cards: avalanche, ai-art, litterbot, aihiring, wordle)
+      film.astro                 Film grid — YouTube video gallery (Leon, June 2026); data inline
       games.astro                Games grid (16 real, migrated from Adobe /game 2026-05-27)
       math.astro                 Math grid (5 real, migrated from Adobe /math 2026-05-27)
       physics.astro              Physics grid (3 real, migrated from Adobe /stem 2026-05-27)
@@ -46,10 +56,6 @@ portfolio/
       games/[slug].astro         Games detail page — embeds /legacy/*.html via iframe (Leon 2026-05-28)
       math/[slug].astro          Math detail page — embeds /legacy/*.html via iframe (Leon 2026-05-28)
       physics/[slug].astro       Physics detail page — embeds /legacy/*.html via iframe (Leon 2026-05-28)
-  public/
-    legacy/                      self-hosted Games/Math/Physics programs (Leon 2026-05-28):
-                                 ~23 .html files + basket-random/ folder. Served from Cloudflare
-                                 at /legacy/*.html instead of loading from leonzcode.github.io.
   functions/
     api/
       contact.js                 Cloudflare Pages Function: validates input, drops bots via
@@ -63,16 +69,18 @@ portfolio/
 - **Visual reference**: `https://gungho0619.vercel.app/` — clean, sans-serif, left-aligned, project-card grid. Match restraint, not maximalism.
 - **Framework**: Astro 5 + Tailwind CSS 4 (via `@tailwindcss/vite`).
 - **Theme**: Default **light**, switchable to dark via toggle at top-right of every page. Pre-paint inline script in `BaseLayout` prevents flash.
-- **Tab order**: About → AI → Games → Math → Physics → Contact. Six items, tested to fit at 390px viewport.
-- **Per-tab pages**: each category gets its own page. Landing = About summary.
+- **Tab order**: About → AI → Film → Math → Physics → Games → Contact. Seven items (Leon added **Film** and moved Games to the end, June 2026). Originally six (About → AI → Games → Math → Physics → Contact).
+- **Per-tab pages**: each category gets its own page. Landing = About summary. **Film** (`film.astro`, Leon June 2026) is a YouTube video gallery, not a project-card grid — its video list (id + title + description) is inline in `film.astro`, NOT in `projects.ts`.
 - **No comments / no public threads**: contact form only. Admissions audience = no risk surface.
 - **About voice**: first-person ("I build..."). **Privacy filter**: no school name, no city, no SAT score, no "Top 10%", no email on About, no resume PDF link, no job-seeking language. Public site shows: name, grade, achievements/programs, snowboarding hook. `Golden Gate STEM Fair` is allowed despite mild Bay Area location leak — award is meaningful enough to keep.
 - **Site mark**: `public/logo.png` (mascot, not a portrait). Used in `Header.astro`.
-- **Project counts**: 5 AI, 16 Games, 5 Math, 3 Physics. Migrated from the original Adobe Portfolio site on 2026-05-27; `chatgpt` removed from AI by Leon 2026-05-28. Tabs are content-complete (no placeholders).
+- **Project counts**: 5 AI, 16 Games, 5 Math, 3 Physics, plus the Film video gallery. AI projects: `avalanche`, `ai-art`, `litterbot`, `aihiring`, `wordle`. (`chatgpt` removed 2026-05-28; `docs` removed June 2026; `litterbot` added June 2026.) Tabs are content-complete (no placeholders).
+- **GitHub handle is `leonzcode`** (Leon rebranded from `leoniscooler`, June 2026). All Games/Math/Physics demo URLs are `https://leonzcode.github.io/<slug>/`; the old `leoniscooler.github.io` URLs now 404. Footer GitHub icon links to `github.com/leonzcode`.
 - **Detail pages for ALL categories + iframe embedding** (Leon 2026-05-28, supersedes the original AI-only decision below): every project across AI/Games/Math/Physics has a detail page (`/<category>/[slug].astro`). Cards link internally to it; the detail page **embeds the playable app/program in an `<iframe>`** so visitors can use it inline, plus an "Open full app" button (same-tab) for standalone view.
   - The iframe source is `playableHref = project.localHref ?? project.href`.
-  - **AI apps** (avalanche, ai-art): iframe points at the Hetzner app `apps.leonzhao.dev/<app>/`. Only `*.leonzhao.dev` URLs are iframed; off-domain AI projects (aihiring, wordle, docs on github.io) are NOT iframed and open in a new tab instead.
+  - **AI apps**: `avalanche`, `ai-art`, `litterbot` iframe the Hetzner Streamlit apps at `apps.leonzhao.dev/<app>/`. `aihiring` and `wordle` are now **self-hosted as static files on Cloudflare** under `public/apps/<slug>/`, served at `leonzhao.dev/apps/<slug>/` — these are also iframed (their URLs end in `leonzhao.dev`). So as of June 2026 **all 5 AI projects are embedded**; none open in a new tab anymore. (`docs` and `chatgpt`, the old github.io off-domain ones, were removed.)
   - **Games/Math/Physics**: iframe points at the self-hosted local copy `/legacy/*.html`. The `localProjectPaths` map at the bottom of `projects.ts` assigns each slug its `localHref`.
+  - **Iframe vs new-tab rule**: a destination whose hostname ends in `leonzhao.dev` is iframed (we control it / it has a way back); anything off-domain opens in a new tab. With aihiring+wordle moved onto `leonzhao.dev/apps/`, there are currently no off-domain AI demos left.
 - **Original AI-only detail-page decision (2026-05-25, now superseded)**: kept for history — the initial design gave detail pages only to AI projects (story + screenshots + "Launch demo"), with Games/Math/Physics linking straight out, because there were "too many" of the latter for detail pages. Leon replaced this on 2026-05-28 with the embed-everything approach above.
 - **Show-more pattern** on every project list page: first 2 cards shown by default, "View all N" black-pill button reveals the rest, "Show less" collapses. Pages with ≤2 projects skip the button. Implemented as reusable `<ProjectGrid>`.
 - **Grid: always 3-col** (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`). No state-based column switching — uniform card rhythm matches science/research-portfolio convention. Considered (and rejected 2026-05-25) a 2-col-collapsed → 3-col-expanded switch; the resize-on-click read as a layout shift.
@@ -83,13 +91,13 @@ portfolio/
 ## Demo URL mapping for AI projects (in `src/data/projects.ts`)
 | Project | Demo URL | Hosted on | On detail page |
 |---|---|---|---|
-| Avalanche Risk Forecasting | `https://apps.leonzhao.dev/avalanche/` | Hetzner CCX13 via Caddy | embedded iframe + "Open full app" |
-| AI Art Detection | `https://apps.leonzhao.dev/ai-art/` | Hetzner CCX13 via Caddy | embedded iframe + "Open full app" |
-| Bias in AI Hiring Systems | `https://leonzcode.github.io/aihiring/` | GitHub Pages (research scrollytelling) | new-tab launch (not iframed) |
-| Wordle Solver | `https://leonzcode.github.io/wordlesolver/` | GitHub Pages | new-tab launch (not iframed) |
-| Docs | `https://leonzcode.github.io/docs/` | GitHub Pages | new-tab launch (not iframed) |
+| Avalanche Risk Forecasting | `https://apps.leonzhao.dev/avalanche/` | Hetzner CCX13 via Caddy (Streamlit) | embedded iframe + "Open full app" |
+| AI Art Detection | `https://apps.leonzhao.dev/ai-art/` | Hetzner CCX13 via Caddy (Streamlit) | embedded iframe + "Open full app" |
+| LitterBot AI | `https://apps.leonzhao.dev/litterbot/` | Hetzner CCX13 via Caddy (Streamlit, YOLOv8+TFLite) | embedded iframe + "Open full app" |
+| Bias in AI Hiring Systems | `https://leonzhao.dev/apps/aihiring/` | Cloudflare static (self-hosted in `public/apps/aihiring/`) | embedded iframe + "Open full app" |
+| Wordle Solver | `https://leonzhao.dev/apps/wordle/` | Cloudflare static (self-hosted in `public/apps/wordle/`) | embedded iframe + "Open full app" |
 
-The first two were swapped from Streamlit Cloud (`avalancheprediction.streamlit.app`, `aiartdetection.streamlit.app`) to `apps.leonzhao.dev` on 2026-05-26 when the Hetzner stack went live. `aihiring` was added on 2026-05-27 as part of the Adobe-to-apex migration. `chatgpt` was removed from the AI tab by Leon on 2026-05-28. As of 2026-05-28, `*.leonzhao.dev` demos are embedded inline via iframe on the detail page (the model still runs on Hetzner — the iframe is just a window into it); off-domain (`*.github.io`) demos are not iframed and open in a new tab.
+Evolution: avalanche + ai-art moved from Streamlit Cloud → Hetzner on 2026-05-26. `aihiring` added 2026-05-27. `chatgpt` removed 2026-05-28. **June 2026 (Leon):** added `litterbot` (Hetzner); moved `aihiring` and `wordle` off `github.io` to self-hosted static files under `public/apps/` (served from Cloudflare at `leonzhao.dev/apps/...`); removed `docs`; rebranded GitHub handle to `leonzcode`. Net effect: all 5 AI demos now live on a `leonzhao.dev` domain and are all iframe-embedded on their detail pages — there are no off-domain (new-tab) AI demos left.
 
 ## Always do first
 - **Invoke the `frontend-design` skill** before writing any front-end code, every session, no exceptions. The skill is the source of truth for craft level; following it is what keeps this site out of generic-AI-aesthetic territory.

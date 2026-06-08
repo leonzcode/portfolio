@@ -45,12 +45,12 @@ export const aiProjects: Project[] = [
     tech: ["Python", "TensorFlow / Keras", "CNN with transfer learning", "Streamlit"],
   },
   {
-    slug: "trash",
-    title: "Trash Classifier",
+    slug: "litterbot",
+    title: "LitterBot AI",
     description:
       "EfficientNetV2 CNN that sorts a photo of waste into 9 recycling categories and tells you which bin it belongs in, built in Litterbot design, achieved DSWA innovation award at Diamond Challenge finalists.",
-    href: "https://apps.leonzhao.dev/trash/",
-    image: "/cards/card_trash.png",
+    href: "https://apps.leonzhao.dev/litterbot/",
+    image: "/cards/card_litterbot.png",
     tag: "Live demo",
     story: [
       "Image classifier that takes a photo of a single piece of waste and predicts which of 9 categories it belongs to: cardboard, food organics, glass, metal, miscellaneous trash, paper, plastic, textile trash, or vegetation.",
