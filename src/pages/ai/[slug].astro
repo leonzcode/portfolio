@@ -74,53 +74,83 @@ const hasExternalSource = !!project.href && !!playableHref && !project.hideOpenF
         {project.description}
       </p>
       {
-        project.href && project.href !== "#" && !hasEmbeddedPlayable && (
-          <a
-            href={project.href}
-            target={isExternalDemo ? "_blank" : undefined}
-            rel={isExternalDemo ? "noopener noreferrer" : undefined}
-            class="inline-flex items-center gap-2 mt-6 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
-          >
-            Launch demo
-            <svg
-              class="w-3.5 h-3.5"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M7 17 17 7" />
-              <path d="M7 7h10v10" />
-            </svg>
-          </a>
-        )
-      }
-      {
-        hasExternalSource && (
-          <a
-            href={project.href}
-            class="inline-flex items-center gap-2 mt-6 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
-          >
-            Open full app
-            <svg
-              class="w-3.5 h-3.5"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M5 12h14" />
-              <path d="m12 5 7 7-7 7" />
-            </svg>
-          </a>
+        ((project.href && project.href !== "#" && !hasEmbeddedPlayable) ||
+          hasExternalSource ||
+          project.repo) && (
+          <div class="flex flex-wrap items-center gap-3 mt-6">
+            {project.href && project.href !== "#" && !hasEmbeddedPlayable && (
+              <a
+                href={project.href}
+                target={isExternalDemo ? "_blank" : undefined}
+                rel={isExternalDemo ? "noopener noreferrer" : undefined}
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
+              >
+                Launch demo
+                <svg
+                  class="w-3.5 h-3.5"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M7 17 17 7" />
+                  <path d="M7 7h10v10" />
+                </svg>
+              </a>
+            )}
+            {hasExternalSource && (
+              <a
+                href={project.href}
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
+              >
+                Open full screen
+                <svg
+                  class="w-3.5 h-3.5"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                  <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                  <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                  <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                </svg>
+              </a>
+            )}
+            {project.repo && (
+              <a
+                href={project.repo}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-md border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100 text-[14px] font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors"
+              >
+                View code
+                <svg
+                  class="w-3.5 h-3.5"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M7 17 17 7" />
+                  <path d="M7 7h10v10" />
+                </svg>
+              </a>
+            )}
+          </div>
         )
       }
     </header>
@@ -191,5 +221,22 @@ const hasExternalSource = !!project.href && !!playableHref && !project.hideOpenF
         }
       </aside>
     </div>
+
+    {
+      project.repo && (
+        <p class="mt-12 pt-6 border-t border-neutral-200 dark:border-neutral-800 text-[14.5px] leading-relaxed text-neutral-600 dark:text-neutral-400">
+          The source code, training notes, and model files are available in the{" "}
+          <a
+            href={project.repo}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium text-neutral-900 dark:text-neutral-100 underline underline-offset-2 decoration-neutral-300 dark:decoration-neutral-700 hover:decoration-neutral-900 dark:hover:decoration-neutral-100 transition-colors"
+          >
+            GitHub repo
+          </a>
+          .
+        </p>
+      )
+    }
   </article>
 </BaseLayout>
