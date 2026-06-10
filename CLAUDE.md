@@ -2,9 +2,9 @@
 
 Operational guide for working inside this repo.
 
-> **Path conventions in this doc:** bare paths like `src/pages/index.astro` are relative to this repo root — run commands from the repo root unless noted. Paths starting `D:\leon-web\...` refer to **workspace-only files** that don't live in this repo (cross-repo overview docs, scratch scripts, source images, the resume PDF). Those exist only on the author's local machine.
+> **Path conventions in this doc:** bare paths like `src/pages/index.astro` are relative to this repo root — run commands from the repo root unless noted. Paths starting `D:\code\personal\...` refer to **workspace-only files** that don't live in this repo (cross-repo overview docs, scratch scripts, source images). Those exist only on the author's local machine.
 
-Strategic context (why this exists, how it fits with `mlhub/`) lives in `D:\leon-web\deployment.md` (workspace-only — not in this repo). Full deploy procedures (Cloudflare Pages via GitHub Actions, lessons learned) live in `DEPLOYMENT.md` (same directory as this file).
+Strategic context (why this exists, how it fits with `mlhub/`) lives in `D:\code\personal\deployment.md` (workspace-only — not in this repo). Full deploy procedures (Cloudflare Pages via GitHub Actions, lessons learned) live in `DEPLOYMENT.md` (same directory as this file).
 
 ## What this repo is
 Leon Zhao's portfolio site at `leonzhao.dev` (apex). Static Astro 5 + Tailwind 4 site deployed to Cloudflare Pages on push to `main`. Audience: college admissions officers — every design and content decision should serve that audience.
@@ -126,29 +126,28 @@ GitHub Actions does the same on push to `main`. Don't commit `dist/` or `node_mo
 
 ## Screenshot workflow
 Captures use globally-installed Puppeteer:
-- Puppeteer: `puppeteer@25.0.4` at `C:\Users\wenjunzh\AppData\Roaming\npm\node_modules`
-- Bundled Chrome: `C:\Users\wenjunzh\.cache\puppeteer\chrome\win64-148.0.7778.167`
-- Reference script: `D:\leon-web\temp\puppeteer-smoke.cjs` (workspace-only — not in this repo)
+- Puppeteer: install globally with `npm i -g puppeteer` (not yet installed on this machine). Global root: `C:\Users\Leon\AppData\Roaming\npm\node_modules`
+- Bundled Chrome: auto-downloaded by the install into `C:\Users\Leon\.cache\puppeteer\chrome\win64-<version>`
+- Working script: `D:\code\personal\notes\screenshot.cjs` (workspace-only — not in this repo)
 
 **Critical gotcha — CommonJS only.** Screenshot scripts must be `.cjs`, not `.mjs`. ES module `import` ignores `NODE_PATH`, so globally-installed packages can't be loaded from ESM. CommonJS `require()` honors `NODE_PATH`. Run pattern (PowerShell):
 
 ```powershell
-$env:NODE_PATH = "C:\Users\wenjunzh\AppData\Roaming\npm\node_modules"
-node screenshot.cjs http://localhost:4321 hero
+$env:NODE_PATH = "C:\Users\Leon\AppData\Roaming\npm\node_modules"
+node D:\code\personal\notes\screenshot.cjs http://localhost:4321 hero
 ```
 
 - Read the port from the dev server's console output — Astro defaults to 4321, NOT 3000. Don't hardcode the wrong port.
-- Screenshots auto-numbered into `D:\leon-web\temp\screenshot-N.png` (workspace-only, not committed).
+- Screenshots auto-numbered into `D:\code\personal\notes\temp\screenshot-N.png` (workspace-only, not committed; the script creates the folder on first use).
 - Optional label suffix: `node screenshot.cjs http://localhost:4321 hero` → `screenshot-N-hero.png`.
-- After capture, read the PNG from `D:\leon-web\temp\` with the Read tool — Claude sees and analyzes the image directly.
+- After capture, read the PNG from `D:\code\personal\notes\temp\` with the Read tool — Claude sees and analyzes the image directly.
 - When comparing to a reference, be specific: "heading is 32px but reference shows ~24px", "card gap is 16px but should be 24px". Check: spacing/padding, font size/weight/line-height, colors (exact hex), alignment, border-radius, shadows, image sizing.
 
 ## Workspace-only files (NOT committed to this repo)
-- Resume PDF at `D:\leon-web\Leon_Zhao_Resume.pdf` — do not copy into `public/` or expose on the public site.
-- `D:\leon-web\deployment.md` — workspace-only cross-repo overview.
-- `D:\leon-web\temp\*` — scratch, screenshots, smoke tests.
-- `D:\leon-web\images\` — source for card images. Copy into `public/cards/` instead of referencing from outside the repo.
-- `D:\leon-web\.venv\` — workspace-level Python venv (for `mlhub/` testing — irrelevant here).
+- Leon's resume PDF — kept outside the workspace entirely; do not copy into `public/` or expose on the public site.
+- `D:\code\personal\deployment.md` — workspace-only cross-repo overview.
+- `D:\code\personal\notes\` — scratch: `screenshot.cjs`, screenshots in `notes\temp\`.
+- `D:\code\personal\images\` — source for card images. Copy into `public/cards/` instead of referencing from outside the repo.
 
 This repo stays lean: only files needed for the Astro build/deploy.
 

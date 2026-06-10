@@ -1,6 +1,6 @@
 # Astro → GitHub → Cloudflare Pages Workflow
 
-> **Path conventions in this doc:** bare paths like `src/pages/index.astro` are relative to this repo root. Run the commands shown below from the repo root unless noted. The author's local workspace path is `D:\leon-web\portfolio` — substitute your own clone path.
+> **Path conventions in this doc:** bare paths like `src/pages/index.astro` are relative to this repo root. Run the commands shown below from the repo root unless noted. The author's local workspace path is `D:\code\personal\portfolio` — substitute your own clone path.
 
 ## Status (2026-05-26)
 
