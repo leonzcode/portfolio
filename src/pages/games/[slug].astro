@@ -12,6 +12,8 @@ export function getStaticPaths() {
 const { project } = Astro.props;
 const playableHref = project.localHref ?? project.href;
 const hasPlayable = playableHref && playableHref !== "#";
+const story = project.story ?? [];
+const tech = project.tech ?? [];
 ---
 
 <BaseLayout
@@ -102,6 +104,38 @@ const hasPlayable = playableHref && playableHref !== "#";
           <span class="font-mono text-[12px] tracking-wider uppercase text-neutral-400 dark:text-neutral-600">
             Screenshot placeholder
           </span>
+        </div>
+      )
+    }
+
+    {
+      (story.length > 0 || tech.length > 0) && (
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-10 lg:gap-14 mt-12">
+          <div class="lg:col-span-2 space-y-5 text-[16px] leading-[1.7] text-neutral-700 dark:text-neutral-300">
+            {story.map((para) => (
+              <p>{para}</p>
+            ))}
+          </div>
+
+          <aside class="lg:col-span-1">
+            {tech.length > 0 && (
+              <>
+                <h2 class="font-semibold text-[14px] tracking-wide uppercase text-neutral-500 dark:text-neutral-500 mb-4">
+                  Tech
+                </h2>
+                <ul class="space-y-2 text-[14.5px] text-neutral-700 dark:text-neutral-300">
+                  {tech.map((t) => (
+                    <li class="flex gap-2.5 leading-relaxed">
+                      <span class="text-neutral-400 dark:text-neutral-600 shrink-0 select-none">
+                        —
+                      </span>
+                      <span>{t}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </aside>
         </div>
       )
     }

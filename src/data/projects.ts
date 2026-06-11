@@ -298,11 +298,12 @@ export const scienceProjects: Project[] = [
     slug: "ski-resort",
     title: "Ski Resort Trail Map",
     description:
-      "Interactive ski resort map recreating OpenSkiMap: search any ski area worldwide, view lifts and runs with difficulty colors, terrain contours, satellite imagery, and live mountain weather.",
+      "Interactive 3D ski resort map recreating OpenSkiMap: search any ski area worldwide, view lifts and runs with difficulty colors, 3D terrain with contours, satellite imagery, and live mountain weather.",
     href: "/legacy/skiresort.html",
+    image: "/cards/card_ski-resort.png",
     tag: "Live demo",
     story: [
-      "A from-scratch recreation of OpenSkiMap.org in a single HTML file. MapLibre GL JS renders the basemap, elevation comes from public Terrarium DEM tiles, and contour lines are generated client-side with maplibre-contour, the same library stack the real site uses.",
+      "A from-scratch recreation of OpenSkiMap.org in a single HTML file. MapLibre GL JS draws the mountain in tilted 3D terrain (with a 2D toggle), elevation comes from public Terrarium DEM tiles, and contour lines are generated client-side with maplibre-contour, the same library stack the real site uses.",
       "Search any ski area in the world with autocomplete backed by OpenSkiMap's ski-area dataset and OpenStreetMap's Nominatim geocoder. Selecting a resort pulls its lifts and pistes live from the Overpass API and draws them in the standard difficulty colors (green, blue, red, black, with purple lifts), over a terrain or satellite base layer.",
       "A weather panel fetches the Open-Meteo forecast for the selected mountain: snow, wind, and sun conditions by date and time, plus an avalanche indicator. Like the avalanche forecasting project, this one started with snowboarding: I wanted to understand the trail maps I ride with, then rebuild them.",
     ],
@@ -310,7 +311,7 @@ export const scienceProjects: Project[] = [
       "MapLibre GL JS + maplibre-contour",
       "OpenStreetMap + Overpass API (lifts and pistes)",
       "OpenSkiMap ski-area dataset + Nominatim search",
-      "Terrarium DEM terrain tiles (elevation + contours)",
+      "Terrarium DEM terrain tiles (3D terrain, elevation, contours)",
       "Open-Meteo weather API",
       "Vanilla JS, single-file HTML",
     ],

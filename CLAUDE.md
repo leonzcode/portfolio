@@ -25,11 +25,12 @@ portfolio/
       card_aihiring.png
       card_wordle_solver.png
       (card_ai_enhanced_docs.png + card_chatGPT.png: docs & chatgpt projects removed;
-       plus games/math/science card_*.png; ski-resort has no card yet, placeholder shows)
+       plus games/math/science card_*.png incl. card_ski-resort.png)
     legacy/                      self-hosted Games/Math/Science programs (Leon 2026-05-28):
                                  ~24 .html files + basket-random/ folder. Served from Cloudflare
                                  at /legacy/*.html instead of loading from github.io.
-                                 skiresort.html added 2026-06-11 (OpenSkiMap recreation).
+                                 skiresort.html added 2026-06-11 (OpenSkiMap recreation,
+                                 3D terrain; v35 from Leon's iteration series).
     _redirects                   Cloudflare Pages redirects: /physics/* → /science/* 301
                                  (Physics tab renamed Science 2026-06-11)
     apps/                        self-hosted AI projects (Leon June 2026): aihiring/ + wordle/.
