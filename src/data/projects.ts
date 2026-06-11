@@ -11,7 +11,6 @@ export interface Project {
   tech?: string[];
   screenshots?: string[];
   detailHref?: string;
-  hideOpenFullApp?: boolean;
 }
 
 export const aiProjects: Project[] = [
@@ -82,7 +81,6 @@ export const aiProjects: Project[] = [
       "The argument leans on two real studies: the Bertrand & Mullainathan 2004 labor-market audit (the original \"Jamal vs. Greg\" résumé experiment) and a 2025 Brookings analysis showing that 98.4% of Fortune 500 companies now use AI somewhere in hiring.",
     ],
     tech: ["HTML/CSS/JS scrollytelling", "Custom data visualizations", "GitHub Pages"],
-    hideOpenFullApp: true,
   },
   {
     slug: "wordle",
@@ -94,7 +92,6 @@ export const aiProjects: Project[] = [
     tag: "Live demo",
     story: [],
     tech: ["JavaScript (vanilla)", "Information theory / entropy ranking", "GitHub Pages static hosting"],
-    hideOpenFullApp: true,
   },
 ];
 
@@ -296,7 +293,28 @@ mathProjects.forEach((p) => {
   p.detailHref = `/math/${p.slug}`;
 });
 
-export const physicsProjects: Project[] = [
+export const scienceProjects: Project[] = [
+  {
+    slug: "ski-resort",
+    title: "Ski Resort Trail Map",
+    description:
+      "Interactive ski resort map recreating OpenSkiMap: search any ski area worldwide, view lifts and runs with difficulty colors, terrain contours, satellite imagery, and live mountain weather.",
+    href: "/legacy/skiresort.html",
+    tag: "Live demo",
+    story: [
+      "A from-scratch recreation of OpenSkiMap.org in a single HTML file. MapLibre GL JS renders the basemap, elevation comes from public Terrarium DEM tiles, and contour lines are generated client-side with maplibre-contour, the same library stack the real site uses.",
+      "Search any ski area in the world with autocomplete backed by OpenSkiMap's ski-area dataset and OpenStreetMap's Nominatim geocoder. Selecting a resort pulls its lifts and pistes live from the Overpass API and draws them in the standard difficulty colors (green, blue, red, black, with purple lifts), over a terrain or satellite base layer.",
+      "A weather panel fetches the Open-Meteo forecast for the selected mountain: snow, wind, and sun conditions by date and time, plus an avalanche indicator. Like the avalanche forecasting project, this one started with snowboarding: I wanted to understand the trail maps I ride with, then rebuild them.",
+    ],
+    tech: [
+      "MapLibre GL JS + maplibre-contour",
+      "OpenStreetMap + Overpass API (lifts and pistes)",
+      "OpenSkiMap ski-area dataset + Nominatim search",
+      "Terrarium DEM terrain tiles (elevation + contours)",
+      "Open-Meteo weather API",
+      "Vanilla JS, single-file HTML",
+    ],
+  },
   {
     slug: "doppler",
     title: "Doppler Effect Simulator",
@@ -326,8 +344,8 @@ export const physicsProjects: Project[] = [
   },
 ];
 
-physicsProjects.forEach((p) => {
-  p.detailHref = `/physics/${p.slug}`;
+scienceProjects.forEach((p) => {
+  p.detailHref = `/science/${p.slug}`;
 });
 
 const localProjectPaths: Record<string, string> = {
@@ -357,7 +375,7 @@ const localProjectPaths: Record<string, string> = {
   "kinetic-theory": "/legacy/particle.html",
 };
 
-[gameProjects, mathProjects, physicsProjects].forEach((group) => {
+[gameProjects, mathProjects, scienceProjects].forEach((group) => {
   group.forEach((project) => {
     const localHref = localProjectPaths[project.slug];
     if (localHref) {

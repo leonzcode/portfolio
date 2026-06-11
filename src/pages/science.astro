@@ -1,19 +1,19 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import ProjectGrid from "../components/ProjectGrid.astro";
-import { physicsProjects } from "../data/projects";
+import { scienceProjects } from "../data/projects";
 ---
 
-<BaseLayout title="Physics · Leon Zhao" wide={true}>
+<BaseLayout title="Science · Leon Zhao" wide={true}>
   <section>
     <h1
       class="text-[32px] sm:text-[36px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-50 mb-2 leading-tight"
     >
-      Physics
+      Science
     </h1>
     <p class="text-[14.5px] text-neutral-500 dark:text-neutral-500 mb-10">
-      Interactive physics simulators built alongside coursework in Physics 1 and 2.
+      Interactive science simulators, from ski resort terrain mapping to physics programs built alongside coursework in Physics 1 and 2.
     </p>
-    <ProjectGrid projects={physicsProjects} />
+    <ProjectGrid projects={scienceProjects} />
   </section>
 </BaseLayout>

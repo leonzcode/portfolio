@@ -12,7 +12,6 @@ export function getStaticPaths() {
 const { project } = Astro.props;
 const playableHref = project.localHref ?? project.href;
 const hasPlayable = playableHref && playableHref !== "#";
-const hasExternalSource = !!project.href && !!project.localHref && project.href !== "#";
 ---
 
 <BaseLayout
@@ -52,6 +51,34 @@ const hasExternalSource = !!project.href && !!project.localHref && project.href 
       >
         {project.description}
       </p>
+      {
+        hasPlayable && (
+          <div class="flex flex-wrap items-center gap-3 mt-6">
+            <a
+              href={playableHref}
+              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
+            >
+              Open full screen
+              <svg
+                class="w-3.5 h-3.5"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+              </svg>
+            </a>
+          </div>
+        )
+      }
     </header>
 
     {

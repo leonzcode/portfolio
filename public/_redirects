@@ -1,0 +1,3 @@
+# Physics section renamed to Science (June 2026)
+/physics /science 301
+/physics/* /science/:splat 301

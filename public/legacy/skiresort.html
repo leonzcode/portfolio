@@ -1,0 +1,2120 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>OpenSkiMap — recreation</title>
+
+<!-- Same core library OpenSkiMap uses: MapLibre GL JS -->
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.15.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
+<!-- maplibre-contour: generates contour lines client-side from the same DEM tiles (OpenSkiMap dependency) -->
+<script src="https://cdn.jsdelivr.net/npm/maplibre-contour@0.1.0/dist/index.min.js"></script>
+
+<style>
+  :root{
+    /* OpenSkiMap-ish palette: piste difficulty colors mirror OSM/skimap conventions */
+    --green:#1f9d3b; --blue:#1565c0; --red:#d32f2f; --black:#111;
+    --lift:#7a3ea1; --panel:#ffffff; --ink:#1a1a1a; --muted:#5b6770;
+    --shadow:0 2px 12px rgba(0,0,0,.18);
+    --radius:8px;
+    --font:'Roboto','Helvetica Neue',Arial,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:var(--font);color:var(--ink);}
+  #map{position:absolute;inset:0;}
+
+  /* ---- top search bar (MUI Paper-like) ---- */
+  .topbar{
+    position:absolute;top:12px;left:12px;right:12px;z-index:5;
+    display:flex;gap:10px;align-items:flex-start;pointer-events:none;
+  }
+  .search{
+    pointer-events:auto;background:var(--panel);border-radius:var(--radius);
+    box-shadow:var(--shadow);display:flex;align-items:center;gap:8px;
+    padding:0 6px 0 12px;height:48px;width:min(380px,calc(100% - 120px));
+    position:relative;
+  }
+  .search input{border:0;outline:0;font:inherit;font-size:15px;flex:1;height:100%;background:transparent;}
+  .search .ic{color:var(--muted);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .search .spin{width:16px;height:16px;border:2px solid #e0e0e0;border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;display:none;margin-right:6px}
+  .search.loading .spin{display:block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---- autocomplete dropdown (Google-style suggestion list) ---- */
+  .ac{
+    position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:20;
+    background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);
+    overflow:hidden;display:none;max-height:min(60vh,420px);overflow-y:auto;
+  }
+  .ac.show{display:block}
+  .ac-item{
+    display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;
+    border-bottom:1px solid #f1f3f4;
+  }
+  .ac-item:last-child{border-bottom:0}
+  .ac-item:hover,.ac-item.sel{background:#eef4fc}
+  .ac-item .pin{font-size:16px;flex-shrink:0;opacity:.8}
+  .ac-item .txt{min-width:0}
+  .ac-item .name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ac-item .name mark{background:transparent;color:var(--blue);font-weight:700}
+  .ac-item .ctx{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ac-empty{padding:12px 14px;color:var(--muted);font-size:13px}
+
+  /* ---- right control stack (MUI Fab-like round buttons) ---- */
+  .controls{position:absolute;top:72px;right:12px;z-index:5;display:flex;flex-direction:column;gap:8px;}
+  .fab{
+    width:42px;height:42px;border-radius:var(--radius);border:0;cursor:pointer;
+    background:var(--panel);box-shadow:var(--shadow);color:#333;font-size:18px;
+    display:flex;align-items:center;justify-content:center;user-select:none;
+  }
+  .fab.active{color:var(--blue);box-shadow:0 0 0 2px var(--blue) inset, var(--shadow);}
+  .fab small{font-size:10px;font-weight:700}
+
+  /* ---- bottom style switcher ---- */
+  .styles{
+    position:absolute;left:12px;bottom:24px;z-index:5;display:flex;gap:8px;
+    background:var(--panel);padding:6px;border-radius:var(--radius);box-shadow:var(--shadow);
+  }
+  .styles button{
+    border:0;background:#f1f3f4;border-radius:6px;padding:8px 12px;cursor:pointer;
+    font:inherit;font-size:13px;font-weight:600;color:#444;
+  }
+  .styles button.active{background:var(--blue);color:#fff;}
+  .styles button.wind-toggle.active{background:#0d8a9c;color:#fff;}
+  /* wind arrows draw on a transparent canvas above the map but below the UI */
+  #windCanvas{position:absolute;inset:0;z-index:4;pointer-events:none;display:none;}
+  #windCanvas.on{display:block;}
+  .wind-bar{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:9;
+    display:none;flex-direction:column;align-items:stretch;gap:8px;background:var(--panel);color:var(--ink);
+    padding:11px 16px;border-radius:16px;box-shadow:var(--shadow);font-size:14px;white-space:nowrap;}
+  .wind-bar.on{display:flex;}
+  .wind-bar .wb-row{display:flex;align-items:center;gap:12px;justify-content:center;}
+  .wind-bar .wb-arrow{width:28px;height:28px;flex-shrink:0;}
+  .wind-bar .wb-arrow svg{width:100%;height:100%;display:block;}
+  .wind-bar .wb-main b{font-size:17px;font-weight:700;}
+  .wind-bar .wb-gust{opacity:.55;font-size:12.5px;padding-left:10px;border-left:1px solid #e2e6ea;}
+  .wind-bar .wb-time{display:flex;align-items:center;gap:10px;padding-top:8px;border-top:1px solid #eef1f4;}
+  .wind-bar .wb-time input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px solid #d6dbe0;border-radius:6px;color:var(--ink);background:#fff;}
+  .wind-bar .wb-time input[type=range]{flex:1;min-width:90px;}
+  .wind-bar .wb-hourlbl{font-size:12px;font-weight:600;min-width:96px;text-align:right;color:var(--ink);}
+  .wind-bar .wb-hourlbl em{font-style:normal;opacity:.5;font-weight:500;}
+  @media (max-width:560px){ .wind-bar{font-size:13px;padding:9px 12px;width:min(340px,calc(100% - 24px))} }
+  .avy-info{position:absolute;right:12px;bottom:24px;z-index:9;width:min(310px,calc(100% - 24px));
+    background:var(--panel);border-radius:10px;box-shadow:var(--shadow);overflow:hidden;font-size:12px}
+  .avy-legend{padding:10px 12px;line-height:1.7}
+  .avy-legend b{display:block;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .avy-legend i{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:7px;vertical-align:middle;border:1px solid rgba(0,0,0,.15)}
+  .avy-warn{background:#fff4f2;border-top:1px solid #f3cfc8;color:#8a2418;padding:10px 12px;line-height:1.5}
+  .avy-warn b{color:#a3170b}
+  .avy-warn a{color:#a3170b}
+  .sun-info{position:absolute;right:12px;bottom:24px;z-index:9;width:min(300px,calc(100% - 24px));
+    background:var(--panel);border-radius:10px;box-shadow:var(--shadow);overflow:hidden;font-size:12px}
+  .sun-controls{padding:11px 13px;display:flex;flex-direction:column;gap:8px}
+  .sun-controls b{font-size:13px}
+  .sun-controls label{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--muted)}
+  .sun-controls input,.sun-controls select{font:inherit;font-size:12px;padding:3px 6px;border:1px solid #d6dbe0;border-radius:6px;color:var(--ink);background:#fff}
+  .sun-controls input[type=date]::-webkit-datetime-edit{color:var(--ink)}
+  .sun-controls input[type=range]{flex:1;padding:0}
+  #sunHourWrap{display:flex;align-items:center;gap:8px}
+  #sunHourLabel{font-weight:600;color:var(--ink);min-width:42px;text-align:right}
+  .sun-legend{display:flex;align-items:center;gap:6px;padding:8px 13px;border-top:1px solid #eef1f4;color:var(--muted)}
+  .sun-legend span{width:20px;height:12px;border-radius:3px;display:inline-block}
+  .sun-note{padding:9px 13px;border-top:1px solid #eef1f4;color:var(--muted);line-height:1.45}
+  .corn-info{position:absolute;right:12px;bottom:24px;z-index:9;width:min(320px,calc(100% - 24px));
+    background:var(--panel);border-radius:10px;box-shadow:var(--shadow);overflow:hidden;font-size:12px}
+  .corn-head{display:flex;justify-content:space-between;align-items:center;padding:10px 13px}
+  .corn-head b{font-size:13px}
+  .corn-load{font-size:11px;color:var(--muted)}
+  .corn-controls{padding:6px 13px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid #eef1f4}
+  .corn-controls label{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--muted)}
+  .corn-controls input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px solid #d6dbe0;border-radius:6px;color:var(--ink);background:#fff}
+  .corn-timeline{display:flex;align-items:center;gap:9px}
+  .corn-timeline input[type=range]{flex:1}
+  .corn-play{width:30px;height:30px;flex-shrink:0;border:0;border-radius:50%;background:var(--blue);color:#fff;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center}
+  #cornHourLabel{font-weight:700;color:var(--ink);min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+  .corn-key{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;padding:10px 13px;color:#33414d}
+  .corn-key div{display:flex;align-items:center}
+  .corn-key i{display:inline-block;width:13px;height:13px;border-radius:3px;margin-right:6px;border:1px solid rgba(0,0,0,.15)}
+  .corn-note{padding:9px 13px;border-top:1px solid #eef1f4;color:var(--muted);line-height:1.45}
+
+  /* ---- detail panel (slides in, like OpenSkiMap's InfoData sidebar) ---- */
+  .panel{
+    position:absolute;top:0;right:0;bottom:0;width:min(360px,90vw);z-index:8;
+    background:var(--panel);box-shadow:-2px 0 16px rgba(0,0,0,.2);
+    transform:translateX(105%);transition:transform .28s cubic-bezier(.4,0,.2,1);
+    display:flex;flex-direction:column;
+  }
+  .panel.open{transform:none}
+  .panel header{padding:18px 18px 10px;border-bottom:1px solid #eceff1;position:relative}
+  .panel header h2{margin:0 0 4px;font-size:20px}
+  .panel header .sub{color:var(--muted);font-size:13px}
+  .panel .close{position:absolute;top:12px;right:12px;border:0;background:#f1f3f4;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:16px}
+  .panel .body{padding:16px 18px;overflow:auto}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:#f1f3f4;border-radius:14px;padding:4px 10px;font-size:12px;font-weight:600;margin:0 6px 8px 0}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .stat{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid #f1f3f4;font-size:14px}
+  .stat span:first-child{color:var(--muted);white-space:nowrap}
+  .stat span:last-child{text-align:right}
+  .stat a{color:var(--blue);text-decoration:none}
+  .note{margin-top:14px;padding:10px 12px;background:#f7f9fb;border-left:3px solid #c3d2e0;border-radius:4px;font-size:12px;line-height:1.5;color:var(--muted)}
+  .legend{position:absolute;left:12px;bottom:74px;z-index:5;background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);padding:10px 12px;font-size:12px;line-height:1.7}
+  .legend b{display:block;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .legend i{display:inline-block;width:18px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+  .maplibregl-ctrl-attrib{font-size:10px}
+  @media (max-width:560px){ .legend{display:none} }
+</style>
+
+<div id="map"></div>
+
+<div class="topbar">
+  <div class="search" id="searchBox">
+    <span class="ic" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7"></circle>
+        <line x1="16.5" y1="16.5" x2="21" y2="21"></line>
+      </svg>
+    </span>
+    <input id="q" placeholder="Search ski areas…" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+    <span class="spin"></span>
+    <div class="ac" id="ac" role="listbox"></div>
+  </div>
+</div>
+
+<div class="controls">
+  <button class="fab" id="zin" title="Zoom in">+</button>
+  <button class="fab" id="zout" title="Zoom out">−</button>
+  <button class="fab" id="threeD" title="Switch to 2D (flat) view"><small>2D</small></button>
+  <button class="fab" id="compass" title="Reset bearing">⌖</button>
+</div>
+
+<div class="styles">
+  <button data-style="terrain" class="active">Terrain</button>
+  <button data-style="satellite">Satellite</button>
+  <button data-style="avalanche">Avalanche</button>
+  <button data-style="sun">Sun</button>
+  <button data-style="corn">Snow</button>
+  <button id="windBtn" class="wind-toggle">Wind</button>
+</div>
+
+<!-- animated wind-arrow overlay (canvas sits above the map, below UI) -->
+<canvas id="windCanvas"></canvas>
+<div id="windBar" class="wind-bar"></div>
+
+<div class="legend">
+  <b>Run difficulty</b>
+  <div><i style="background:var(--green)"></i>Easy</div>
+  <div><i style="background:var(--blue)"></i>Intermediate</div>
+  <div><i style="background:var(--red)"></i>Advanced</div>
+  <div><i style="background:var(--black)"></i>Expert</div>
+  <div><i style="background:var(--lift)"></i>Lift</div>
+  <div><i style="background:#b5651d;width:10px;height:10px;border-radius:50%"></i>Lodge / dining</div>
+</div>
+
+<div class="panel" id="panel">
+  <header>
+    <button class="close" id="closePanel">✕</button>
+    <h2 id="pTitle">Ski area</h2>
+    <div class="sub" id="pSub"></div>
+  </header>
+  <div class="body" id="pBody"></div>
+</div>
+
+<script>
+/* =========================================================================
+   ARCHITECTURE — mirrors the real OpenSkiMap.org:
+   - Renderer: MapLibre GL JS (vector tiles + WebGL).
+   - 3D mountains: NOT hand-built meshes. The terrain is a raster-DEM source
+     (elevation encoded in RGB tiles). MapLibre's `setTerrain` extrudes the
+     basemap over that DEM, so every mountain's true shape comes from real
+     elevation data. Hillshade adds relief shading.
+   - Contours: maplibre-contour reads the SAME DEM tiles and generates
+     contour lines on the fly (OpenSkiMap uses the maplibre-contour dep).
+   - Ski data: OpenSkiMap serves OSM-derived vector tiles of runs & lifts.
+     Public demo tiles for those aren't open without a key, so here we load
+     real OSM piste/aerialway geometry via the Overpass API into GeoJSON and
+     style it with the same difficulty color convention.
+   - Data sources: terrain DEM = AWS Terrarium tiles; basemap/satellite =
+     open raster tiles; ski features = OpenStreetMap (Overpass).
+   ========================================================================= */
+
+const DEM = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+
+// Fail loudly & visibly if the map library itself didn't load
+if (typeof maplibregl === "undefined") {
+  document.getElementById("map").innerHTML =
+    '<div style="padding:24px;font:16px sans-serif">MapLibre GL JS failed to load. Check your network connection and reload.</div>';
+  throw new Error("maplibregl not loaded");
+}
+
+// maplibre-contour: turn DEM tiles into a contour tile source (client-side).
+// Optional — guarded so the basemap still works if it fails to load.
+let demSource = null, contoursEnabled = false;
+try {
+  if (typeof mlcontour !== "undefined") {
+    demSource = new mlcontour.DemSource({
+      url: DEM, encoding: "terrarium", maxzoom: 13, worker: true,
+    });
+    demSource.setupMaplibre(maplibregl);
+    contoursEnabled = true;
+  }
+} catch (e) { console.warn("contour setup failed; continuing without contours", e); }
+
+// ===================== AVALANCHE SLOPE-ANGLE TILES =====================
+// Faithful to OpenSkiMap / CalTopo / onX slope-angle avalanche maps: compute
+// the REAL slope angle (degrees) per pixel from the SRTM-derived terrarium DEM,
+// then color ONLY the avalanche-relevant band with discrete thresholds and
+// leave gentle terrain transparent. Method:
+//   1. Fetch the terrarium DEM tile (+1px neighbors via the next-zoom math).
+//   2. Decode elevation: h = R*256 + G + B/256 - 32768  (terrarium encoding).
+//   3. slope = atan( sqrt(dz/dx^2 + dz/dy^2) ) using a 3x3 gradient, where the
+//      pixel ground size depends on latitude & zoom (web-mercator).
+//   4. Map slope° -> color via the standard avalanche palette.
+// This is a TERRAIN indicator (slope only), NOT a live avalanche forecast.
+
+// Standard avalanche slope-angle palette (matches OpenSkiMap's convention):
+//   <27° transparent · 27-29 yellow · 30-31 gold · 32-34 orange ·
+//   35-45 red (peak slab-release zone) · 46-50 dark red · >50 purple
+function slopeColorFixed(deg){
+  if(deg < 27)  return [0,0,0,0];                 // safe: transparent
+  if(deg < 30)  return [245,224,66,110];          // 27-29 yellow
+  if(deg < 32)  return [245,176,24,140];          // 30-31 gold
+  if(deg < 35)  return [240,120,20,160];          // 32-34 orange
+  if(deg < 46)  return [214,40,20,175];           // 35-45 RED (peak danger)
+  if(deg < 51)  return [150,20,30,185];           // 46-50 dark red
+  return [120,40,140,190];                        // >50 purple (extreme/cliffs)
+}
+
+const TILE=256;
+function decodeTerrarium(r,g,b){ return (r*256 + g + b/256) - 32768; }
+
+async function slopeTile(url){
+  // url like slope://{z}/{x}/{y}
+  const m=url.replace("slope://","").split("/");
+  const z=+m[0], x=+m[1], y=+m[2];
+  const src=DEM.replace("{z}",z).replace("{x}",x).replace("{y}",y);
+  const resp=await fetch(src);
+  if(!resp.ok) throw new Error("dem "+resp.status);
+  const blob=await resp.blob();
+  const bmp=await createImageBitmap(blob);
+  const c=document.createElement("canvas"); c.width=TILE; c.height=TILE;
+  const ctx=c.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(bmp,0,0,TILE,TILE);
+  const img=ctx.getImageData(0,0,TILE,TILE), d=img.data;
+
+  // elevation array
+  const H=new Float32Array(TILE*TILE);
+  for(let i=0;i<TILE*TILE;i++){ H[i]=decodeTerrarium(d[i*4],d[i*4+1],d[i*4+2]); }
+
+  // ground resolution (m/px) for this tile at its center latitude (web mercator)
+  const n=Math.PI - 2*Math.PI*y/Math.pow(2,z);
+  const latRad=Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));
+  const metersPerPx = (Math.cos(latRad)*2*Math.PI*6378137) / (TILE*Math.pow(2,z));
+
+  const out=ctx.createImageData(TILE,TILE), o=out.data;
+  for(let yy=0;yy<TILE;yy++){
+    for(let xx=0;xx<TILE;xx++){
+      const xl=Math.max(0,xx-1), xr=Math.min(TILE-1,xx+1);
+      const yt=Math.max(0,yy-1), yb=Math.min(TILE-1,yy+1);
+      const dzdx=(H[yy*TILE+xr]-H[yy*TILE+xl])/((xr-xl)*metersPerPx);
+      const dzdy=(H[yb*TILE+xx]-H[yt*TILE+xx])/((yb-yt)*metersPerPx);
+      const slopeDeg=Math.atan(Math.sqrt(dzdx*dzdx+dzdy*dzdy))*180/Math.PI;
+      const col=slopeColorFixed(slopeDeg);
+      const i=(yy*TILE+xx)*4;
+      o[i]=col[0]; o[i+1]=col[1]; o[i+2]=col[2]; o[i+3]=col[3];
+    }
+  }
+  ctx.putImageData(out,0,0);
+  const outBlob=await new Promise(res=>c.toBlob(res,"image/png"));
+  const buf=await outBlob.arrayBuffer();
+  return { data:buf };
+}
+
+// register the custom protocol (MapLibre 5 addProtocol returns a promise)
+if(maplibregl.addProtocol){
+  maplibregl.addProtocol("slope", (params)=> slopeTile(params.url));
+}
+
+// ===================== SUN EXPOSURE TILES =====================
+// Faithful to OpenSkiMap / CalTopo sun-exposure overlay: compute slope + aspect
+// from the DEM, compute the sun's position (azimuth + altitude) for the chosen
+// date/time, then color each pixel by how DIRECTLY the sun hits that slope
+// (Lambertian: cos of angle between sun direction and surface normal).
+// Palette: blue = fully shaded, yellow = ~50%, red = max direct sun that day.
+// Defaults to TODAY (the user's local date) and a daily average.
+const sunState = {
+  date: new Date(),          // today, in the user's local timezone
+  mode: "average",           // "average" over daylight, or a specific hour
+  hour: 12                   // local hour used when mode === "instant"
+};
+let sunVersion = 0;          // bump to force tile re-fetch when date/time changes
+
+// --- solar position (NOAA-style approximation) -> {azimuth, altitude} degrees
+function solarPosition(date, lat, lon){
+  const rad=Math.PI/180, deg=180/Math.PI;
+  // day of year + fractional hour in UTC
+  const start=new Date(Date.UTC(date.getUTCFullYear(),0,0));
+  const diff=date-start;
+  const dayMs=24*60*60*1000;
+  const doy=Math.floor(diff/dayMs);
+  const utcHours=date.getUTCHours()+date.getUTCMinutes()/60+date.getUTCSeconds()/3600;
+  // fractional year (radians)
+  const gamma=2*Math.PI/365*(doy-1+(utcHours-12)/24);
+  // equation of time (minutes) and solar declination (radians)
+  const eqtime=229.18*(0.000075+0.001868*Math.cos(gamma)-0.032077*Math.sin(gamma)
+    -0.014615*Math.cos(2*gamma)-0.040849*Math.sin(2*gamma));
+  const decl=0.006918-0.399912*Math.cos(gamma)+0.070257*Math.sin(gamma)
+    -0.006758*Math.cos(2*gamma)+0.000907*Math.sin(2*gamma)
+    -0.002697*Math.cos(3*gamma)+0.00148*Math.sin(3*gamma);
+  // true solar time (minutes)
+  const timeOffset=eqtime+4*lon;             // lon in degrees, +east
+  const tst=(utcHours*60+timeOffset)%1440;
+  const ha=(tst/4-180)*rad;                  // hour angle (radians)
+  const la=lat*rad;
+  // solar zenith
+  const cosZen=Math.sin(la)*Math.sin(decl)+Math.cos(la)*Math.cos(decl)*Math.cos(ha);
+  const zen=Math.acos(Math.max(-1,Math.min(1,cosZen)));
+  const altitude=90-zen*deg;
+  // azimuth (clockwise from north)
+  let az=Math.atan2(Math.sin(ha), Math.cos(ha)*Math.sin(la)-Math.tan(decl)*Math.cos(la));
+  az=(az*deg+180)%360;
+  return { azimuth:az, altitude };
+}
+
+// illumination of a slope given sun az/alt and the slope's normal direction.
+// returns 0..1 (0 = shaded / sun below horizon, 1 = sun perpendicular to slope)
+function illumination(slopeRad, aspectRad, sunAzDeg, sunAltDeg){
+  if(sunAltDeg<=0) return 0;                 // sun below horizon -> shade
+  const rad=Math.PI/180;
+  const sunAlt=sunAltDeg*rad, sunAz=sunAzDeg*rad;
+  // surface normal vs sun vector (standard hillshade illumination formula)
+  const cosInc = Math.cos(slopeRad)*Math.sin(sunAlt) +
+                 Math.sin(slopeRad)*Math.cos(sunAlt)*Math.cos(sunAz-aspectRad);
+  return Math.max(0, cosInc);
+}
+
+// blue(shade) -> yellow(50%) -> red(max) ramp, t in 0..1
+function sunColor(t){
+  // 0 = blue, 0.5 = yellow, 1 = red ; semi-transparent
+  let r,g,b;
+  if(t<0.5){ const u=t/0.5; r=Math.round(40+u*(245-40)); g=Math.round(90+u*(220-90)); b=Math.round(200+u*(70-200)); }
+  else { const u=(t-0.5)/0.5; r=Math.round(245+u*(220-245)); g=Math.round(220+u*(40-220)); b=Math.round(70+u*(30-70)); }
+  return [r,g,b,150];
+}
+
+// sample sun altitude/azimuth for the chosen mode (instant hour, or daily avg).
+// Accepts an optional state object (defaults to sunState) so the snow overlay
+// can compute its sun term for its OWN selected date.
+function sunSamples(lat, lon, state){
+  const st = state || sunState;
+  const d=st.date;
+  const samples=[];
+  if(st.mode==="instant"){
+    const dt=new Date(d.getFullYear(),d.getMonth(),d.getDate(),st.hour,0,0);
+    samples.push(solarPosition(dt,lat,lon));
+  }else{
+    // daily average: sample every 30 min across daylight
+    for(let h=4;h<=20;h+=0.5){
+      const dt=new Date(d.getFullYear(),d.getMonth(),d.getDate(),Math.floor(h),(h%1)*60,0);
+      samples.push(solarPosition(dt,lat,lon));
+    }
+  }
+  return samples;
+}
+
+async function sunTile(url){
+  const clean=url.replace("sun://","").split("?")[0];
+  const m=clean.split("/");
+  const z=+m[0], x=+m[1], y=+m[2];
+  const src=DEM.replace("{z}",z).replace("{x}",x).replace("{y}",y);
+  const resp=await fetch(src);
+  if(!resp.ok) throw new Error("dem "+resp.status);
+  const blob=await resp.blob();
+  const bmp=await createImageBitmap(blob);
+  const c=document.createElement("canvas"); c.width=TILE; c.height=TILE;
+  const ctx=c.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(bmp,0,0,TILE,TILE);
+  const d=ctx.getImageData(0,0,TILE,TILE).data;
+
+  const H=new Float32Array(TILE*TILE);
+  for(let i=0;i<TILE*TILE;i++){ H[i]=decodeTerrarium(d[i*4],d[i*4+1],d[i*4+2]); }
+
+  // tile center lat/lon (for the sun position) + ground resolution
+  const n0=Math.PI - 2*Math.PI*y/Math.pow(2,z);
+  const latRad=Math.atan(0.5*(Math.exp(n0)-Math.exp(-n0)));
+  const latC=latRad*180/Math.PI;
+  const lonC=x/Math.pow(2,z)*360-180;
+  const metersPerPx=(Math.cos(latRad)*2*Math.PI*6378137)/(TILE*Math.pow(2,z));
+
+  const samples=sunSamples(latC,lonC).filter(s=>s.altitude>0);
+
+  const out=ctx.createImageData(TILE,TILE), o=out.data;
+  for(let yy=0;yy<TILE;yy++){
+    for(let xx=0;xx<TILE;xx++){
+      const xl=Math.max(0,xx-1), xr=Math.min(TILE-1,xx+1);
+      const yt=Math.max(0,yy-1), yb=Math.min(TILE-1,yy+1);
+      const dzdx=(H[yy*TILE+xr]-H[yy*TILE+xl])/((xr-xl)*metersPerPx);
+      const dzdy=(H[yb*TILE+xx]-H[yt*TILE+xx])/((yb-yt)*metersPerPx);
+      const slopeRad=Math.atan(Math.sqrt(dzdx*dzdx+dzdy*dzdy));
+      // aspect: compass direction the slope faces (downhill), clockwise from N
+      let aspectRad=Math.atan2(dzdy, -dzdx);
+      let illum=0;
+      if(samples.length){
+        for(const s of samples) illum+=illumination(slopeRad,aspectRad,s.azimuth,s.altitude);
+        illum/=samples.length;            // average across the day (or single instant)
+      }
+      const i=(yy*TILE+xx)*4;
+      const col=sunColor(illum);
+      o[i]=col[0]; o[i+1]=col[1]; o[i+2]=col[2]; o[i+3]=col[3];
+    }
+  }
+  ctx.putImageData(out,0,0);
+  const outBlob=await new Promise(res=>c.toBlob(res,"image/png"));
+  const buf=await outBlob.arrayBuffer();
+  return { data:buf };
+}
+
+if(maplibregl.addProtocol){
+  maplibregl.addProtocol("sun", (params)=> sunTile(params.url));
+}
+// =======================================================================
+
+// ===================== CORN CLOCK (surface timeline + cast shadows) =====================
+// UNIQUE: animates the SNOW SURFACE STATE through the day for a chosen hour,
+// with TRUE terrain-cast shadows (ray-marched against the DEM) — so a couloir
+// shaded by a neighbouring ridge reads as still-frozen even if its aspect faces
+// the sun. No consumer ski map does this. The "corn cycle" logic:
+//   * a slope that hasn't been hit by direct sun yet today  -> FROZEN / firm
+//   * recently/lightly sunned (warming up)                   -> SOFTENING (corn) ← prime
+//   * long-baked, high cumulative sun + strong current sun   -> WET / slushy
+//   * sunned earlier but now back in shadow                  -> REFREEZING
+// Inputs are real solar geometry; surface labels are a physically-motivated
+// MODEL of the diurnal melt-freeze cycle, not a measurement.
+const cornState = {
+  date: new Date(),     // day to model (defaults to today)
+  hour: 10              // current hour-of-day (0..24, can be fractional)
+};
+let cornVersion = 0;
+
+// Ray-march from a pixel toward the sun across the tile's DEM. Returns true if
+// terrain blocks the sun (pixel is in cast shadow). az/alt in degrees.
+function inCastShadow(H, xx, yy, sunAzDeg, sunAltDeg, metersPerPx){
+  if(sunAltDeg<=0) return true;                 // night
+  const rad=Math.PI/180;
+  // step direction in pixel space. Azimuth is clockwise from North; map +x=East,
+  // +y=South (image space). dx toward sun = sin(az), dy(north)= cos(az) -> image y is -north.
+  const dxp=Math.sin(sunAzDeg*rad);
+  const dyp=-Math.cos(sunAzDeg*rad);
+  const tanAlt=Math.tan(sunAltDeg*rad);
+  const h0=H[yy*TILE+xx];
+  let px=xx+0.5, py=yy+0.5, dist=0;
+  const STEP=1.0;                               // one pixel per step
+  for(let s=0;s<70;s++){                        // cap march length (perf)
+    px+=dxp*STEP; py+=dyp*STEP; dist+=STEP*metersPerPx;
+    const ix=px|0, iy=py|0;
+    if(ix<0||iy<0||ix>=TILE||iy>=TILE) break;   // left tile: assume lit beyond
+    const terr=H[iy*TILE+ix];
+    const rayH=h0 + dist*tanAlt;                // height of the sun ray at this distance
+    if(terr > rayH + 1) return true;            // terrain pokes above ray -> shadow
+  }
+  return false;
+}
+
+// surface-state color by cumulative + current sun. Returns RGBA.
+//   frozen (blue) -> corn/softening (green, the prime window) -> wet (orange/red)
+//   back-in-shadow-after-baking (purple, refreezing)
+function cornColor(state){
+  switch(state){
+    case "frozen":     return [70,120,200,150];   // firm / still frozen
+    case "softening":  return [60,190,120,165];   // CORN — prime
+    case "prime":      return [40,210,90,180];     // peak corn window
+    case "wet":        return [240,140,40,165];    // getting wet
+    case "slush":      return [225,60,40,170];     // blown out / slush
+    case "refreeze":   return [150,90,200,160];    // re-shading, refreezing
+    default:           return [0,0,0,0];
+  }
+}
+
+async function cornTile(url){
+  const clean=url.replace("corn://","").split("?")[0];
+  const m=clean.split("/");
+  const z=+m[0], x=+m[1], y=+m[2];
+  const src=DEM.replace("{z}",z).replace("{x}",x).replace("{y}",y);
+  const resp=await fetch(src);
+  if(!resp.ok) throw new Error("dem "+resp.status);
+  const bmp=await createImageBitmap(await resp.blob());
+  const c=document.createElement("canvas"); c.width=TILE; c.height=TILE;
+  const ctx=c.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(bmp,0,0,TILE,TILE);
+  const d=ctx.getImageData(0,0,TILE,TILE).data;
+
+  const H=new Float32Array(TILE*TILE);
+  for(let i=0;i<TILE*TILE;i++){ H[i]=decodeTerrarium(d[i*4],d[i*4+1],d[i*4+2]); }
+
+  const n0=Math.PI - 2*Math.PI*y/Math.pow(2,z);
+  const latRad=Math.atan(0.5*(Math.exp(n0)-Math.exp(-n0)));
+  const latC=latRad*180/Math.PI;
+  const lonC=x/Math.pow(2,z)*360-180;
+  const metersPerPx=(Math.cos(latRad)*2*Math.PI*6378137)/(TILE*Math.pow(2,z));
+
+  const day=cornState.date, hr=cornState.hour;
+  // sun position at the CURRENT hour
+  const dtNow=new Date(day.getFullYear(),day.getMonth(),day.getDate(),Math.floor(hr),(hr%1)*60,0);
+  const sunNow=solarPosition(dtNow,latC,lonC);
+
+  // Precompute, for each hour from sunrise to NOW, the sun az/alt — used to build
+  // each pixel's cumulative direct-sun exposure so far today (the "baking" term).
+  const hourly=[];
+  for(let h=4; h<=hr+0.001; h+=0.5){
+    const dt=new Date(day.getFullYear(),day.getMonth(),day.getDate(),Math.floor(h),(h%1)*60,0);
+    const sp=solarPosition(dt,latC,lonC);
+    if(sp.altitude>0) hourly.push(sp);
+  }
+
+  const out=ctx.createImageData(TILE,TILE), o=out.data;
+  for(let yy=0;yy<TILE;yy++){
+    for(let xx=0;xx<TILE;xx++){
+      const xl=xx>0?xx-1:0, xr=xx<TILE-1?xx+1:TILE-1;
+      const yt=yy>0?yy-1:0, yb=yy<TILE-1?yy+1:TILE-1;
+      const dzdx=(H[yy*TILE+xr]-H[yy*TILE+xl])/((xr-xl)*metersPerPx);
+      const dzdy=(H[yb*TILE+xx]-H[yt*TILE+xx])/((yb-yt)*metersPerPx);
+      const slopeRad=Math.atan(Math.sqrt(dzdx*dzdx+dzdy*dzdy));
+      const aspectRad=Math.atan2(dzdy,-dzdx);
+
+      // cumulative direct-sun energy received so far today (only when not in
+      // cast shadow at that hour). This is the diurnal "baking" the surface got.
+      let cumulative=0;
+      for(const sp of hourly){
+        const face=illumination(slopeRad,aspectRad,sp.azimuth,sp.altitude);
+        if(face<=0) continue;
+        if(inCastShadow(H,xx,yy,sp.azimuth,sp.altitude,metersPerPx)) continue;
+        cumulative += face*0.5;                  // *0.5 hr per sample
+      }
+      // current direct sun at this hour (with cast shadow)
+      let nowSun=illumination(slopeRad,aspectRad,sunNow.azimuth,sunNow.altitude);
+      if(nowSun>0 && inCastShadow(H,xx,yy,sunNow.azimuth,sunNow.altitude,metersPerPx)) nowSun=0;
+
+      // ---- diurnal surface-state model ----
+      // cumulative ~ how much it's been worked; nowSun ~ is it baking right now.
+      let state;
+      if(cumulative < 0.15){
+        state = "frozen";                        // barely touched -> still firm
+      } else if(nowSun<=0){
+        state = cumulative>1.4 ? "refreeze" : "frozen"; // shaded now: refreezing if it had baked
+      } else if(cumulative < 0.8){
+        state = "softening";                     // warming up -> corn forming
+      } else if(cumulative < 1.7){
+        state = nowSun>0.5 ? "prime" : "softening";  // prime corn window
+      } else if(cumulative < 2.8){
+        state = "wet";                           // well-baked, getting wet
+      } else {
+        state = "slush";                         // blown out
+      }
+      const col=cornColor(state);
+      const i=(yy*TILE+xx)*4;
+      o[i]=col[0]; o[i+1]=col[1]; o[i+2]=col[2]; o[i+3]=col[3];
+    }
+  }
+  ctx.putImageData(out,0,0);
+  const buf=await (await new Promise(res=>c.toBlob(res,"image/png"))).arrayBuffer();
+  return { data:buf };
+}
+
+if(maplibregl.addProtocol){
+  maplibregl.addProtocol("corn", (params)=> cornTile(params.url));
+}
+// =======================================================================================
+
+const COLORS = { green:"#1f9d3b", blue:"#1565c0", red:"#d32f2f", black:"#111111", lift:"#7a3ea1" };
+
+// difficulty -> color, following OSM piste:difficulty conventions
+const difficultyColor = [
+  "match", ["get","difficulty"],
+  "easy", COLORS.green,
+  "intermediate", COLORS.blue,
+  "advanced", COLORS.red,
+  "expert", COLORS.black,
+  "freeride", COLORS.black,
+  COLORS.blue
+];
+
+function baseStyle(kind){
+  // DEM/hillshade use the standard terrarium tiles directly so 3D terrain and
+  // relief shading work whether or not the contour library is present.
+  const sources = {
+    dem: { type:"raster-dem", tiles:[DEM], encoding:"terrarium", tileSize:256, maxzoom:12 },
+    hillshade: { type:"raster-dem", tiles:[DEM], encoding:"terrarium", tileSize:256, maxzoom:12 },
+    osm: { type:"raster", tiles:["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png","https://b.tile.openstreetmap.org/{z}/{x}/{y}.png","https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256, attribution:"© OpenStreetMap contributors", maxzoom:19 },
+    sat: { type:"raster", tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], tileSize:256, attribution:"Imagery © Esri", maxzoom:19 }
+  };
+
+  if (contoursEnabled) {
+    sources.contours = {
+      type:"vector",
+      tiles:[ demSource.contourProtocolUrl({ thresholds:{11:[200,1000],12:[100,500],13:[100,500],14:[50,200],15:[20,100]}, elevationKey:"ele", levelKey:"level", contourLayer:"contours" }) ],
+      maxzoom:15
+    };
+  }
+
+  const layers = [
+    { id:"bg", type:"background", paint:{ "background-color":"#dfe6e4" } },
+    kind==="satellite"
+      ? { id:"base", type:"raster", source:"sat", paint:{ "raster-opacity":1 } }
+      : { id:"base", type:"raster", source:"osm", paint:{ "raster-opacity":0.9 } },
+    { id:"hillshade", type:"hillshade", source:"hillshade",
+      paint:{ "hillshade-exaggeration":0.55, "hillshade-shadow-color":"#3a4a40", "hillshade-highlight-color":"#ffffff" } }
+  ];
+
+  // Avalanche slope-angle overlay: real per-pixel slope° computed from the DEM
+  // (see slopeTile), colored with the standard avalanche threshold palette and
+  // transparent below ~27°. Faithful to OpenSkiMap's slope-angle layer.
+  // TERRAIN indicator only — NOT a live avalanche forecast.
+  if(kind==="avalanche"){
+    sources.slopeangle = { type:"raster", tiles:["slope://{z}/{x}/{y}"], tileSize:256, maxzoom:13 };
+    layers.push(
+      { id:"avalanche-slope", type:"raster", source:"slopeangle",
+        paint:{ "raster-opacity":0.85, "raster-resampling":"nearest" } }
+    );
+  }
+
+  // Sun-exposure overlay: per-pixel solar illumination for the chosen date/time
+  // (see sunTile). Defaults to today + daily average. Blue=shade -> red=max sun.
+  if(kind==="sun"){
+    sources.sunexp = { type:"raster", tiles:["sun://{z}/{x}/{y}?v="+sunVersion], tileSize:256, maxzoom:13 };
+    layers.push(
+      { id:"sun-exposure", type:"raster", source:"sunexp",
+        paint:{ "raster-opacity":0.8, "raster-resampling":"nearest" } }
+    );
+  }
+
+  // Corn clock: surface-state timeline with true cast shadows (see cornTile).
+  if(kind==="corn"){
+    sources.corn = { type:"raster", tiles:["corn://{z}/{x}/{y}?v="+cornVersion], tileSize:256, maxzoom:13 };
+    layers.push(
+      { id:"corn-surface", type:"raster", source:"corn",
+        paint:{ "raster-opacity":0.82, "raster-resampling":"nearest" } }
+    );
+  }
+
+  if (contoursEnabled) {
+    layers.push(
+      { id:"contours", type:"line", source:"contours", "source-layer":"contours",
+        paint:{ "line-color":"rgba(120,90,40,0.45)", "line-width":["match",["get","level"],1,1.3,0.6] } },
+      { id:"contour-text", type:"symbol", source:"contours", "source-layer":"contours",
+        filter:[">",["get","level"],0],
+        layout:{ "symbol-placement":"line","text-field":["concat",["number-format",["get","ele"],{}]," m"],"text-size":10,"text-font":["Open Sans Regular"] },
+        paint:{ "text-color":"#6b5320","text-halo-color":"#fff","text-halo-width":1 } }
+    );
+  }
+
+  return { version:8, glyphs:"https://fonts.openmaptiles.org/{fontstack}/{range}.pbf", sources, layers };
+}
+
+const map = new maplibregl.Map({
+  container:"map",
+  style: baseStyle("terrain"),
+  center:[-122.951,50.106],   // Whistler Blackcomb
+  zoom:12.4, pitch:62, bearing:150, hash:true, maxPitch:80,
+  renderWorldCopies:false,    // don't render/animate world wraps
+  fadeDuration:0,             // labels appear instantly instead of cross-fading
+  antialias:false,            // cheaper raster compositing while panning
+  maxTileCacheSize:512,       // keep more tiles cached so revisiting is instant
+  refreshExpiredTiles:false,  // don't re-request tiles mid-session
+  trackResize:true
+});
+map.addControl(new maplibregl.AttributionControl({compact:true}));
+
+let is3D = true;
+function applyTerrain(){
+  // IMPORTANT: never fully remove the terrain mesh. Calling setTerrain(null)
+  // tears down and rebuilds the GL render tree / tile pyramid, which can leave
+  // a blank white frame until the user pans. Instead we keep the DEM terrain
+  // attached at all times and just drop exaggeration to 0 for "2D" — the map
+  // renders flat but the render tree stays intact, so no white screen.
+  map.setTerrain({ source:"dem", exaggeration: is3D ? 1.25 : 0 });
+  if(map.triggerRepaint) map.triggerRepaint();
+}
+
+// ---- ski runs & lifts from OpenStreetMap (Overpass) -> GeoJSON ----
+// Smoothness strategy:
+//  * Only fetch at zoom >= 11 (no point loading pistes when zoomed way out).
+//  * Split the world into a coarse grid; fetch each cell at most once.
+//  * Store features PER CELL so we can prune cells that drift far from view —
+//    keeps the live GeoJSON small so every setData re-parse stays cheap and
+//    distant chunks unload instead of bloating each frame.
+//  * Only re-setData a source when its data actually changed (dirty flags).
+//  * Fetch promptly after a gesture (debounced moveend), not on full idle.
+const GRID = 0.25;                       // ~degrees per cache cell
+const KEEP_CELLS = 36;                   // max cells kept loaded (prune beyond)
+const fetchedCells = new Set();          // cells we've requested (incl. pruned)
+const cellData = new Map();              // cellKey -> {runs:[], lifts:[], amenities:[]}
+const allRuns = { type:"FeatureCollection", features:[] };
+const allLifts = { type:"FeatureCollection", features:[] };
+const allAmenities = { type:"FeatureCollection", features:[] };
+let dataInited = false;
+let dirtyRuns=false, dirtyLifts=false, dirtyAmenities=false, resortsDirty=false;
+
+function cellCenter(key){
+  const [x,y]=key.split(":").map(Number);
+  return [ (x+0.5)*GRID, (y+0.5)*GRID ];
+}
+
+function cellsInView(override){
+  // override = {lon,lat} loads cells around a target (e.g. a search destination)
+  // before the fly animation gets there; otherwise use the live viewport.
+  let west,east,south,north;
+  if(override){
+    const pad=0.18;   // ~ a couple of cells around the target point
+    west=override.lon-pad; east=override.lon+pad;
+    south=override.lat-pad; north=override.lat+pad;
+  }else{
+    const b=map.getBounds();
+    west=b.getWest(); east=b.getEast(); south=b.getSouth(); north=b.getNorth();
+  }
+  const x0=Math.floor(west/GRID), x1=Math.floor(east/GRID);
+  const y0=Math.floor(south/GRID), y1=Math.floor(north/GRID);
+  const cells=[];
+  // cap the number of NEW cells per pass so a zoomed-out view never floods
+  // Overpass; loaded cells persist, so panning fills coverage incrementally.
+  if((x1-x0+1)*(y1-y0+1) > 30) return cells;
+  for(let x=x0;x<=x1;x++) for(let y=y0;y<=y1;y++){
+    const k=x+":"+y;
+    if(!fetchedCells.has(k)) cells.push({k,x,y});
+  }
+  return cells;
+}
+
+// Drop cells whose center is far from the current view center, so the live
+// collections stay small. Distant chunks unload (and can be re-fetched later).
+function pruneFarCells(override){
+  if(cellData.size<=KEEP_CELLS) return;
+  const c = override ? {lng:override.lon,lat:override.lat} : map.getCenter();
+  const scored=[...cellData.keys()].map(k=>{
+    const [lon,lat]=cellCenter(k);
+    const d=(lon-c.lng)**2+(lat-c.lat)**2;
+    return {k,d};
+  }).sort((a,b)=>a.d-b.d);
+  for(let i=KEEP_CELLS;i<scored.length;i++){
+    const k=scored[i].k;
+    const cd=cellData.get(k);
+    if(cd){
+      if(cd.runs.length) dirtyRuns=true;
+      if(cd.lifts.length) dirtyLifts=true;
+      if(cd.amenities.length) dirtyAmenities=true;
+    }
+    cellData.delete(k);
+    fetchedCells.delete(k);              // allow re-fetch if we return
+  }
+}
+
+// rebuild the flat collections from the per-cell store (only when dirty)
+function rebuildCollections(){
+  if(dirtyRuns){ allRuns.features=[]; for(const cd of cellData.values()) if(cd.runs.length) allRuns.features.push(...cd.runs); }
+  if(dirtyLifts){ allLifts.features=[]; for(const cd of cellData.values()) if(cd.lifts.length) allLifts.features.push(...cd.lifts); }
+  if(dirtyAmenities){ allAmenities.features=[]; for(const cd of cellData.values()) if(cd.amenities.length) allAmenities.features.push(...cd.amenities); }
+}
+
+// rough centroid of a way's geometry (lodges are often building polygons)
+function wayCentroid(geom){
+  let sx=0,sy=0,n=0;
+  for(const p of geom){ sx+=p.lon; sy+=p.lat; n++; }
+  return n?[sx/n,sy/n]:null;
+}
+
+async function loadSkiData(override){
+  if(!override && map.getZoom() < 8){ return; }   // broad view: skip (unless targeting)
+  pruneFarCells(override);
+  const cells = cellsInView(override);
+  if(!cells.length){ commitData(); return; }   // nothing new, but commit any prune
+  cells.forEach(c=>{ fetchedCells.add(c.k); cellData.set(c.k,{runs:[],lifts:[],amenities:[]}); });
+
+  // one combined bbox for all new cells in view
+  const xs=cells.map(c=>c.x), ys=cells.map(c=>c.y);
+  const w=Math.min(...xs)*GRID, e=(Math.max(...xs)+1)*GRID;
+  const s=Math.min(...ys)*GRID, n=(Math.max(...ys)+1)*GRID;
+  const bbox=`${s},${w},${n},${e}`;
+  // runs + lifts (ways) and lodge/dining (nodes & ways)
+  const ql=`[out:json][timeout:25];(`+
+    `way["piste:type"="downhill"](${bbox});`+
+    `way["aerialway"](${bbox});`+
+    `nwr["amenity"~"restaurant|cafe|bar|fast_food|biergarten"](${bbox});`+
+    `nwr["tourism"="alpine_hut"](${bbox});`+
+    `nwr["amenity"="shelter"]["shelter_type"="ski_lodge"](${bbox});`+
+    `nwr["building"="ski_lodge"](${bbox});`+
+    `);out geom;`;
+
+  // Each call fetches its OWN cells; we don't abort other in-flight fetches
+  // (that previously left their cells claimed-but-empty and nothing rendered).
+  let data;
+  try{
+    const r=await fetch("https://overpass-api.de/api/interpreter",
+      {method:"POST",body:"data="+encodeURIComponent(ql)});
+    if(!r.ok) throw new Error("overpass "+r.status);
+    data=await r.json();
+  }catch(e){
+    // release these cells so a later pass can retry them
+    cells.forEach(c=>{ fetchedCells.delete(c.k); cellData.delete(c.k); });
+    return;
+  }
+
+  // assign each feature to the cell containing it (so pruning is per-cell)
+  function cellKeyForPoint(lon,lat){ return Math.floor(lon/GRID)+":"+Math.floor(lat/GRID); }
+  function bucket(key){ return cellData.get(key) || cellData.get(cells[0].k); }
+
+  for(const el of data.elements||[]){
+    const t=el.tags||{};
+    if(t.amenity||t.tourism||t.building==="ski_lodge"){
+      if(!t.name) continue;
+      let pt=null;
+      if(el.type==="node" && el.lon!=null) pt=[el.lon,el.lat];
+      else if(el.geometry) pt=wayCentroid(el.geometry);
+      if(!pt) continue;
+      const kind = t.tourism==="alpine_hut" ? "hut"
+        : (t.building==="ski_lodge"||t.shelter_type==="ski_lodge") ? "lodge"
+        : (t.amenity||"dining");
+      const diets=Object.keys(t).filter(k=>k.startsWith("diet:")&&/yes|only/.test(t[k]))
+        .map(k=>k.slice(5).replace(/_/g," "));
+      const cd=bucket(cellKeyForPoint(pt[0],pt[1])); if(!cd) continue;
+      cd.amenities.push({type:"Feature",geometry:{type:"Point",coordinates:pt},
+        properties:{name:t.name,kind,
+          cuisine:t.cuisine||"", hours:t.opening_hours||"",
+          phone:t.phone||t["contact:phone"]||"", website:t.website||t["contact:website"]||"",
+          outdoor:t.outdoor_seating||"", takeaway:t.takeaway||"", wheelchair:t.wheelchair||"",
+          internet:t.internet_access||"", capacity:t.capacity||"", ele:t.ele||"",
+          diet:diets.join(", ")}});
+      dirtyAmenities=true; continue;
+    }
+    if(!el.geometry) continue;
+    const coords=el.geometry.map(p=>[p.lon,p.lat]);
+    const mid=coords[Math.floor(coords.length/2)];
+    const cd=bucket(cellKeyForPoint(mid[0],mid[1])); if(!cd) continue;
+    if(t.aerialway){
+      cd.lifts.push({type:"Feature",geometry:{type:"LineString",coordinates:coords},
+        properties:{name:t.name||"Lift",kind:t.aerialway,
+          occupancy:t["aerialway:occupancy"]||"", capacity:t["aerialway:capacity"]||"",
+          duration:t["aerialway:duration"]||"", heating:t["aerialway:heating"]||"",
+          bubble:t["aerialway:bubble"]||"", ref:t.ref||""}});
+      dirtyLifts=true;
+    }else if(t["piste:type"]==="downhill"){
+      cd.runs.push({type:"Feature",geometry:{type:"LineString",coordinates:coords},
+        properties:{name:t.name||t.ref||"Run",difficulty:t["piste:difficulty"]||"intermediate",
+          ref:t.ref||"", grooming:t["piste:grooming"]||"", gladed:t["piste:gladed"]||"",
+          lit:t.lit||"", oneway:t.oneway||"", patrolled:t.patrolled||""}});
+      dirtyRuns=true;
+    }
+  }
+  commitData();
+}
+
+function resortLabelFC(){
+  return { type:"FeatureCollection", features: SKI_RESORTS.map(r=>({
+    type:"Feature", geometry:{type:"Point",coordinates:[r.lon,r.lat]},
+    properties:{name:r.name}
+  })) };
+}
+
+// Create all ski-feature sources + layers ONCE, immediately, with empty data.
+// They sit on top of (and independent of) the basemap/terrain, so the instant
+// Overpass data arrives it paints — no waiting for tiles, no zoom nudge needed.
+function ensureLayers(){
+  if(dataInited) return;
+  // generateId lets us use feature-state for hover highlighting
+  map.addSource("runs",{type:"geojson",data:allRuns,generateId:true});
+  // wide INVISIBLE hit target under the visible line (easy to click/hover)
+  map.addLayer({id:"runs-hit",type:"line",source:"runs",
+    layout:{"line-cap":"round","line-join":"round"},
+    paint:{"line-color":"#000","line-opacity":0.01,
+           "line-width":["interpolate",["linear"],["zoom"],11,14,15,22]}});
+  // visible line; thickens + brightens on hover
+  map.addLayer({id:"runs-line",type:"line",source:"runs",
+    layout:{"line-cap":"round","line-join":"round"},
+    paint:{"line-color":difficultyColor,
+           "line-width":["interpolate",["linear"],["zoom"],
+              11,["case",["boolean",["feature-state","hover"],false],5,2],
+              15,["case",["boolean",["feature-state","hover"],false],8,4]],
+           "line-opacity":["case",["boolean",["feature-state","hover"],false],1,0.95]}});
+
+  map.addSource("lifts",{type:"geojson",data:allLifts,generateId:true});
+  map.addLayer({id:"lifts-hit",type:"line",source:"lifts",
+    layout:{"line-cap":"round"},
+    paint:{"line-color":"#000","line-opacity":0.01,
+           "line-width":["interpolate",["linear"],["zoom"],11,14,15,22]}});
+  map.addLayer({id:"lifts-line",type:"line",source:"lifts",
+    layout:{"line-cap":"round"},
+    paint:{"line-color":COLORS.lift,
+           "line-width":["case",["boolean",["feature-state","hover"],false],5,2],
+           "line-dasharray":[2,1.5],
+           "line-opacity":["case",["boolean",["feature-state","hover"],false],1,0.9]}});
+
+  map.addSource("amenities",{type:"geojson",data:allAmenities,generateId:true});
+  map.addLayer({id:"amenities-hit",type:"circle",source:"amenities",
+    paint:{"circle-radius":14,"circle-color":"#000","circle-opacity":0.01}});
+
+  // ---- LABELS ----
+  map.addLayer({id:"runs-label",type:"symbol",source:"runs",
+    layout:{"symbol-placement":"point","text-field":["get","name"],
+      "text-font":["Open Sans Bold"],"text-size":12,
+      "text-rotation-alignment":"viewport","text-pitch-alignment":"viewport",
+      "text-allow-overlap":false,"text-padding":4,"symbol-avoid-edges":false},
+    paint:{"text-color":"#15243a","text-halo-color":"#ffffff","text-halo-width":2.6,"text-halo-blur":0.5}});
+
+  map.addLayer({id:"lifts-label",type:"symbol",source:"lifts",
+    layout:{"symbol-placement":"point","text-field":["get","name"],
+      "text-font":["Open Sans Bold"],"text-size":12,
+      "text-rotation-alignment":"viewport","text-pitch-alignment":"viewport",
+      "text-allow-overlap":false,"text-padding":4},
+    paint:{"text-color":COLORS.lift,"text-halo-color":"#ffffff","text-halo-width":2.6,"text-halo-blur":0.5}});
+
+  // Lodge / dining: visible dot grows + brightens on hover.
+  map.addLayer({id:"amenities-dot",type:"circle",source:"amenities",
+    paint:{"circle-radius":["case",["boolean",["feature-state","hover"],false],7,4],
+           "circle-color":["case",["boolean",["feature-state","hover"],false],"#e8821e","#b5651d"],
+           "circle-stroke-color":"#fff","circle-stroke-width":1.5}});
+  map.addLayer({id:"amenities-label",type:"symbol",source:"amenities",
+    layout:{"text-field":["get","name"],"text-font":["Open Sans Semibold"],
+      "text-size":11,"text-offset":[0,0.9],"text-anchor":"top","text-optional":true},
+    paint:{"text-color":"#7a4410","text-halo-color":"#ffffff","text-halo-width":1.6}});
+
+  // Resort names: from the gazetteer, floating above each mountain.
+  map.addSource("resorts",{type:"geojson",data:resortLabelFC()});
+  map.addLayer({id:"resorts-label",type:"symbol",source:"resorts",
+    layout:{"text-field":["get","name"],"text-font":["Open Sans Bold"],
+      "text-size":["interpolate",["linear"],["zoom"],6,11,12,16],
+      "text-anchor":"bottom","text-offset":[0,-0.4],
+      "text-allow-overlap":false,"text-padding":6},
+    paint:{"text-color":"#0d3b66","text-halo-color":"#ffffff","text-halo-width":2.2}});
+
+  dataInited=true;
+  dirtyRuns=dirtyLifts=dirtyAmenities=false;
+}
+
+function commitData(){
+  if(!dataInited) ensureLayers();    // create layers up front if not yet done
+  // rebuild flat collections from the per-cell store, then push ONLY the
+  // sources that actually changed — avoids needless re-parsing every move.
+  rebuildCollections();
+  if(dirtyRuns && map.getSource("runs")){ map.getSource("runs").setData(allRuns); dirtyRuns=false; }
+  if(dirtyLifts && map.getSource("lifts")){ map.getSource("lifts").setData(allLifts); dirtyLifts=false; }
+  if(dirtyAmenities && map.getSource("amenities")){ map.getSource("amenities").setData(allAmenities); dirtyAmenities=false; }
+  if(resortsDirty && map.getSource("resorts")){ map.getSource("resorts").setData(resortLabelFC()); resortsDirty=false; }
+  if(map.triggerRepaint) map.triggerRepaint();   // paint new features now, no zoom nudge needed
+}
+
+// Prioritize ski features: start fetching runs/lifts/lodges as soon as the
+// style is parsed (fires before "load", which waits for the first full render),
+// so the Overpass request is already in flight while basemap/terrain tiles
+// download in parallel — features appear as early as possible.
+let firstStyleDone=false;
+map.on("style.load",()=>{
+  if(firstStyleDone) return;          // style switches handle their own re-add
+  firstStyleDone=true;
+  ensureLayers();                     // create empty ski layers NOW, on top of everything
+  applyTerrain();                     // terrain can finish loading afterwards
+  loadSkiData();                      // fetch features; they paint the instant they arrive
+});
+// Trigger loading right after a gesture settles. moveend fires promptly when
+// panning/zoom/rotation stops (idle waits for ALL tiles+fades and can stall),
+// and the debounce coalesces rapid successive gestures so we never fetch
+// mid-drag — keeping the actual movement GPU-smooth.
+let moveTimer;
+function scheduleLoad(){ clearTimeout(moveTimer); moveTimer=setTimeout(loadSkiData,180); }
+map.on("moveend", scheduleLoad);
+map.on("zoomend", scheduleLoad);
+map.on("rotateend", scheduleLoad);
+
+// ---- interactions / panel ----
+const panel=document.getElementById("panel");
+function openPanel(title,sub,html){
+  document.getElementById("pTitle").textContent=title;
+  document.getElementById("pSub").textContent=sub;
+  document.getElementById("pBody").innerHTML=html;
+  panel.classList.add("open");
+}
+document.getElementById("closePanel").onclick=()=>panel.classList.remove("open");
+
+map.on("click","runs-hit",e=>{
+  const p=e.features[0].properties;
+  const coords=e.features[0].geometry.coordinates;
+  const len=lineLengthKm(coords);
+  const swatch={easy:COLORS.green,intermediate:COLORS.blue,advanced:COLORS.red,expert:COLORS.black}[p.difficulty]||COLORS.blue;
+  const prof=analyzeProfile(coords);
+  const diffLabel={easy:"Easy (beginner)",intermediate:"Intermediate",advanced:"Advanced (expert)",expert:"Expert / freeride"}[p.difficulty]||p.difficulty;
+  let html=`<span class="chip"><span class="dot" style="background:${swatch}"></span>${p.difficulty}</span>`;
+  html+=row("Difficulty",diffLabel);
+  html+=row("Length",len.toFixed(2)+" km");
+  if(prof){
+    html+=row("Top elevation",prof.top+" m");
+    html+=row("Bottom elevation",prof.bottom+" m");
+    html+=row("Vertical drop",prof.drop+" m");
+    html+=row("Avg. slope angle",prof.avgAngle.toFixed(1)+"°");
+    html+=row("Max slope angle",prof.maxAngle.toFixed(1)+"°");
+    html+=row("Avg. gradient",Math.round(prof.gradient)+"%");
+  }else{
+    html+=`<div class="note">Slope stats need 3D terrain on and tiles loaded — toggle 3D and retry.</div>`;
+  }
+  html+=row("Piste ref",p.ref);
+  html+=row("Grooming",cap(p.grooming));
+  html+=row("Gladed / trees",yn(p.gladed));
+  html+=row("Night skiing",yn(p.lit));
+  html+=row("Ski patrol",yn(p.patrolled));
+  html+=row("One-way",yn(p.oneway));
+  html+=row("Source","OpenStreetMap + terrain DEM");
+  openPanel(p.name,"Downhill run",html);
+});
+map.on("click","lifts-hit",e=>{
+  const p=e.features[0].properties;
+  const coords=e.features[0].geometry.coordinates;
+  const len=lineLengthKm(coords);
+  const prof=analyzeProfile(coords);
+  const typeLabel=cap(p.kind);
+  let html=`<span class="chip"><span class="dot" style="background:${COLORS.lift}"></span>lift</span>`;
+  html+=row("Type",typeLabel);
+  html+=row("Length",(len*1000).toFixed(0)+" m");
+  if(prof){
+    html+=row("Base elevation",prof.bottom+" m");
+    html+=row("Top elevation",prof.top+" m");
+    html+=row("Vertical rise",prof.drop+" m");
+  }
+  html+=row("Capacity / chair",p.occupancy?p.occupancy+" people":"");
+  html+=row("Hourly capacity",p.capacity?p.capacity+" /hr":"");
+  html+=row("Ride time",p.duration?p.duration+" min":"");
+  html+=row("Heated seats",yn(p.heating));
+  html+=row("Bubble cover",yn(p.bubble));
+  html+=row("Lift ref",p.ref);
+  html+=row("Source","OpenStreetMap + terrain DEM");
+  openPanel(p.name,"Aerialway · "+(typeLabel||"lift"),html);
+});
+map.on("click","amenities-hit",e=>{
+  const p=e.features[0].properties;
+  const label={hut:"Mountain hut",lodge:"Ski lodge",restaurant:"Restaurant",
+    cafe:"Café",bar:"Bar",fast_food:"Fast food",biergarten:"Beer garden"}[p.kind]||"Dining";
+  const cuisine=p.cuisine?p.cuisine.split(/[;,]/).map(s=>cap(s.trim())).join(", "):"";
+  let html=`<span class="chip"><span class="dot" style="background:#b5651d"></span>${label}</span>`;
+  html+=row("Category",label);
+  html+=row("Cuisine",cuisine);
+  html+=row("Dietary options",p.diet?p.diet.split(", ").map(cap).join(", "):"");
+  html+=row("Takeaway",yn(p.takeaway));
+  html+=row("Outdoor seating",yn(p.outdoor));
+  html+=row("Seats",p.capacity);
+  html+=row("Opening hours",p.hours);
+  html+=row("Wheelchair",cap(p.wheelchair));
+  html+=row("Wi-Fi",p.internet&&p.internet!=="no"?"Yes":"");
+  html+=row("Elevation",p.ele?Math.round(+p.ele)+" m":"");
+  if(p.phone) html+=row("Phone",p.phone);
+  if(p.website) html+=`<div class="stat"><span>Website</span><span><a href="${p.website}" target="_blank" rel="noopener">visit ↗</a></span></div>`;
+  html+=row("Source","OpenStreetMap");
+  // Honest note: things OSM doesn't carry
+  html+=`<div class="note">Food quality ratings and live snow/weather aren't in the open data, so they're not shown. Details above reflect only what's tagged in OpenStreetMap — some venues list little.</div>`;
+  openPanel(p.name,label,html);
+});
+// ---- hover highlighting via feature-state (bound to the wide hit layers) ----
+function setupHover(hitLayer, sourceId){
+  let hoveredId=null;
+  const clear=()=>{
+    if(hoveredId!==null){ map.setFeatureState({source:sourceId,id:hoveredId},{hover:false}); }
+    hoveredId=null;
+  };
+  map.on("mousemove",hitLayer,e=>{
+    map.getCanvas().style.cursor="pointer";
+    if(!e.features.length) return;
+    const id=e.features[0].id;
+    if(id===hoveredId) return;
+    if(hoveredId!==null) map.setFeatureState({source:sourceId,id:hoveredId},{hover:false});
+    hoveredId=id;
+    map.setFeatureState({source:sourceId,id:hoveredId},{hover:true});
+  });
+  map.on("mouseleave",hitLayer,()=>{ map.getCanvas().style.cursor=""; clear(); });
+}
+setupHover("runs-hit","runs");
+setupHover("lifts-hit","lifts");
+setupHover("amenities-hit","amenities");
+function lineLengthKm(coords){
+  let d=0;for(let i=1;i<coords.length;i++){d+=hav(coords[i-1],coords[i]);}return d;
+}
+function hav(a,b){const R=6371,dLat=(b[1]-a[1])*Math.PI/180,dLon=(b[0]-a[0])*Math.PI/180,
+  s=Math.sin(dLat/2)**2+Math.cos(a[1]*Math.PI/180)*Math.cos(b[1]*Math.PI/180)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));}
+
+// --- analyze a line over the terrain DEM: elevations, vertical drop, slope ---
+// Uses MapLibre's queryTerrainElevation (real DEM data) sampled along the line.
+function analyzeProfile(coords){
+  if(!map.queryTerrainElevation) return null;
+  const eles=coords.map(c=>{ const e=map.queryTerrainElevation(c); return (e==null?NaN:e); });
+  if(eles.every(e=>isNaN(e))) return null;       // terrain off or tiles not loaded
+  let top=-Infinity,bot=Infinity, maxSeg=0, totalRun=0, totalRise=0;
+  for(let i=0;i<coords.length;i++){
+    const e=eles[i]; if(isNaN(e))continue;
+    if(e>top)top=e; if(e<bot)bot=e;
+    if(i>0 && !isNaN(eles[i-1])){
+      const horiz=hav(coords[i-1],coords[i])*1000;     // m
+      const dz=Math.abs(eles[i-1]-e);                   // m
+      if(horiz>1){
+        const seg=Math.atan2(dz,horiz)*180/Math.PI;     // segment slope angle
+        if(seg>maxSeg)maxSeg=seg;
+        totalRun+=horiz; totalRise+=dz;
+      }
+    }
+  }
+  if(top===-Infinity) return null;
+  const avg=totalRun>0?Math.atan2(totalRise,totalRun)*180/Math.PI:0;
+  return { top:Math.round(top), bottom:Math.round(bot), drop:Math.round(top-bot),
+           avgAngle:avg, maxAngle:maxSeg, gradient:totalRun>0?(totalRise/totalRun*100):0 };
+}
+function row(label,val){ return val?`<div class="stat"><span>${label}</span><span>${val}</span></div>`:""; }
+function yn(v){ return v==="yes"?"Yes":v==="no"?"No":""; }
+function cap(s){ return s?s.charAt(0).toUpperCase()+s.slice(1).replace(/_/g," "):""; }
+
+// ---- controls ----
+document.getElementById("zin").onclick=()=>map.zoomIn();
+document.getElementById("zout").onclick=()=>map.zoomOut();
+document.getElementById("compass").onclick=()=>map.easeTo({bearing:0,pitch:is3D?60:0});
+const tdBtn=document.getElementById("threeD"); tdBtn.classList.add("active");
+let tdAnimating=false;
+// The button shows the mode it will switch TO: "2D" while in 3D, "3D" while flat.
+function updateTdLabel(){
+  tdBtn.querySelector("small").textContent = is3D ? "2D" : "3D";
+  tdBtn.title = is3D ? "Switch to 2D (flat) view" : "Switch to 3D terrain";
+}
+updateTdLabel();                          // sync label with the initial (3D) state
+tdBtn.onclick=()=>{
+  if(tdAnimating) return;                 // ignore rapid re-clicks mid-transition
+  is3D=!is3D; tdBtn.classList.toggle("active",is3D);
+  updateTdLabel();
+  tdAnimating=true;
+
+  const center=map.getCenter();           // anchor so the camera can't drift off-mesh
+  // Terrain stays attached the whole time (exaggeration just changes), so this
+  // is purely a camera pitch animation — no mesh teardown, no white frame.
+  applyTerrain();                         // set exaggeration for the new mode
+  map.easeTo({ center, pitch: is3D?62:0, duration:600 });
+  map.once("moveend", ()=>{
+    map.resize();                         // final recalc safety net
+    map.triggerRepaint();
+    tdAnimating=false;
+  });
+  // fallback in case moveend doesn't fire (e.g. no pitch change)
+  setTimeout(()=>{ if(tdAnimating){ map.triggerRepaint(); tdAnimating=false; } }, 900);
+};
+
+document.querySelectorAll(".styles button[data-style]").forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll(".styles button[data-style]").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    const center=map.getCenter(),zoom=map.getZoom(),pitch=map.getPitch(),bearing=map.getBearing();
+    map.setStyle(baseStyle(btn.dataset.style));
+    map.once("style.load",()=>{
+      map.jumpTo({center,zoom,pitch,bearing});
+      applyTerrain();
+      dataInited=false;                 // sources were wiped by setStyle
+      resortsDirty=true;
+      ensureLayers();                   // re-create empty ski layers
+      dirtyRuns=dirtyLifts=dirtyAmenities=true;  // force re-push of cached data
+      commitData();                     // re-add cached data instantly
+      loadSkiData();                    // then top up anything new in view
+    });
+    setAvalancheUI(btn.dataset.style==="avalanche");
+    setSunUI(btn.dataset.style==="sun");
+    setCornUI(btn.dataset.style==="corn");
+  };
+});
+
+// ====================== WIND OVERLAY (animated arrows) ======================
+// Real wind from Open-Meteo for the viewed area, drawn as flowing arrow
+// particles across the map (like a weather-station wind map) + a bottom bar
+// showing direction, speed and gusts. Wind data is a single point for the
+// viewport (one model cell), not a per-pixel field — honest about that.
+let windOn=false;
+let windData=null;                 // {speed, dir, gust, fromLabel, toBearing}
+let windRAF=null, windParticles=[], windCtx=null, windCanvas=null;
+let windMoving=false, windLast=0;
+let windFetchTimer=null;
+let windHourly=null;               // {time:[], speed:[], dir:[], gust:[]} for the area
+// selected forecast time (defaults to now); range ~7 days back to 16 days fwd
+const windDateState = { date:new Date() };
+const WIND_PAST=7, WIND_FWD=16;
+
+const windBtn=document.getElementById("windBtn");
+windCanvas=document.getElementById("windCanvas");
+
+// compass label from a "blowing FROM" bearing (met convention)
+function compass16(deg){
+  const dirs=["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  return dirs[Math.round(deg/22.5)%16];
+}
+// speed (km/h) -> arrow/particle color (calm green -> strong red/magenta)
+function windColor(kmh){
+  if(kmh<10) return "rgba(120,210,160,ALPHA)";
+  if(kmh<20) return "rgba(150,220,120,ALPHA)";
+  if(kmh<35) return "rgba(240,210,90,ALPHA)";
+  if(kmh<50) return "rgba(245,150,60,ALPHA)";
+  if(kmh<70) return "rgba(240,90,60,ALPHA)";
+  return "rgba(225,60,140,ALPHA)";
+}
+
+async function fetchWind(){
+  const c=map.getCenter();
+  const url="https://api.open-meteo.com/v1/forecast?latitude="+c.lat.toFixed(3)+
+    "&longitude="+c.lng.toFixed(3)+
+    "&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m"+
+    "&past_days="+WIND_PAST+"&forecast_days="+WIND_FWD+"&timezone=auto";
+  try{
+    const r=await fetch(url); if(!r.ok) throw 0;
+    const j=await r.json(); const hh=j.hourly;
+    windHourly={ time:hh.time, speed:hh.wind_speed_10m, dir:hh.wind_direction_10m, gust:hh.wind_gusts_10m };
+    selectWindHour();                  // pick the value for the chosen date/time
+    seedParticles();
+  }catch(e){ /* offline: keep previous data */ }
+}
+
+// Choose the hourly wind for windDateState.date (nearest available hour) and
+// update windData + the bar. Works for past, present, and future within range.
+function selectWindHour(){
+  if(!windHourly) return;
+  const d=windDateState.date;
+  // build the API's local "YYYY-MM-DDTHH:00" key for the selected hour
+  const key=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+
+    String(d.getDate()).padStart(2,"0")+"T"+String(d.getHours()).padStart(2,"0")+":00";
+  let idx=windHourly.time.indexOf(key);
+  if(idx<0){
+    // nearest hour by timestamp if exact key not present
+    const target=d.getTime(); let best=0, bd=Infinity;
+    for(let i=0;i<windHourly.time.length;i++){
+      const t=new Date(windHourly.time[i]).getTime();
+      const diff=Math.abs(t-target); if(diff<bd){ bd=diff; best=i; }
+    }
+    idx=best;
+  }
+  const fromDeg=windHourly.dir[idx];
+  windData={
+    speed:windHourly.speed[idx], gust:windHourly.gust[idx], fromDeg,
+    fromLabel:compass16(fromDeg), toBearing:(fromDeg+180)%360
+  };
+  renderWindBar();
+}
+
+function renderWindBar(){
+  const bar=document.getElementById("windBar");
+  if(!windData){ bar.innerHTML=""; return; }
+  const kmh=windData.speed, g=windData.gust, lbl=windData.fromLabel;
+  const rot=windData.toBearing;
+  const col=windColor(kmh).replace("ALPHA","1");
+  const d=windDateState.date;
+  const fmt=x=>x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");
+  const now=new Date();
+  const minD=new Date(now); minD.setDate(now.getDate()-WIND_PAST);
+  const maxD=new Date(now); maxD.setDate(now.getDate()+WIND_FWD-1);
+  const hh=d.getHours();
+  // friendly relative label (now / +Nh / future day)
+  const dayDiff=Math.round((new Date(fmt(d))-new Date(fmt(now)))/86400000);
+  let when = dayDiff===0 ? "today" : dayDiff===1 ? "tomorrow" : dayDiff===-1 ? "yesterday"
+           : (dayDiff>0?"+"+dayDiff+"d":dayDiff+"d");
+  bar.innerHTML=
+    `<div class="wb-row">
+       <span class="wb-arrow"><svg viewBox="0 0 24 24" style="transform:rotate(${rot}deg)">
+         <path d="M12 3 L12 21 M12 3 L6.5 10.5 M12 3 L17.5 10.5" fill="none" stroke="${col}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+       </svg></span>
+       <span class="wb-main"><b>${Math.round(kmh)}</b> km/h ${lbl}</span>
+       <span class="wb-gust">gusts ${Math.round(g)}</span>
+     </div>
+     <div class="wb-time">
+       <input type="date" id="wbDate" value="${fmt(d)}" min="${fmt(minD)}" max="${fmt(maxD)}">
+       <input type="range" id="wbHour" min="0" max="23" step="1" value="${hh}">
+       <span class="wb-hourlbl">${String(hh).padStart(2,"0")}:00 <em>${when}</em></span>
+     </div>`;
+  // wire controls
+  document.getElementById("wbDate").onchange=(e)=>{
+    if(!e.target.value) return;
+    const [Y,M,D]=e.target.value.split("-").map(Number);
+    const nd=new Date(windDateState.date); nd.setFullYear(Y,M-1,D); windDateState.date=nd;
+    selectWindHour();
+  };
+  document.getElementById("wbHour").oninput=(e)=>{
+    const nd=new Date(windDateState.date); nd.setHours(+e.target.value,0,0,0); windDateState.date=nd;
+    selectWindHour();
+  };
+}
+
+// ---- particle field ----
+function sizeWindCanvas(){
+  const r=map.getCanvas().getBoundingClientRect();
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  windCanvas.width=r.width*dpr; windCanvas.height=r.height*dpr;
+  windCanvas.style.width=r.width+"px"; windCanvas.style.height=r.height+"px";
+  windCtx=windCanvas.getContext("2d");
+  windCtx.setTransform(dpr,0,0,dpr,0,0);
+}
+// ---- PHYSICS: terrain-following orographic flow field ----
+// Particles advect through a real velocity field derived from the terrain using
+// established orographic-flow rules (no per-frame terrain queries, so it's fast):
+//   * ridge speed-up: flow compresses & accelerates climbing toward crests
+//     (streamline compression / Bernoulli)            -> faster + lifts over
+//   * deflection: oblique flow is steered by the cross-wind slope, flowing
+//     around barriers and channelling toward gaps/valleys (mass conservation)
+//   * lee sheltering: flow slows on the downwind side of ridges
+// The base wind (speed+direction) is real (Open-Meteo); the terrain modulation
+// is a physically-motivated diagnostic field, not a full Navier-Stokes solve.
+let windGrid=null;          // {n, west,south,dLng,dLat, ele:Float32Array}
+const WGRID=32;             // grid resolution (NxN terrain samples) — 1024 pts,
+                            // plenty for smooth flow, ~2x faster to build than 48
+
+// Sample terrain onto a fixed grid ONCE when the view settles. This is the only
+// place we touch queryTerrainElevation, so per-frame cost stays tiny.
+function buildWindGrid(){
+  if(!map.queryTerrainElevation){ windGrid=null; return; }
+  const b=map.getBounds();
+  const west=b.getWest(), south=b.getSouth();
+  const dLng=(b.getEast()-west)/(WGRID-1), dLat=(b.getNorth()-south)/(WGRID-1);
+  const ele=new Float32Array(WGRID*WGRID);
+  for(let j=0;j<WGRID;j++){
+    for(let i=0;i<WGRID;i++){
+      const lng=west+i*dLng, lat=south+j*dLat;
+      ele[j*WGRID+i]=map.queryTerrainElevation([lng,lat])||0;
+    }
+  }
+  windGrid={ n:WGRID, west, south, dLng, dLat, ele };
+}
+
+// bilinear elevation lookup from the cached grid
+function gridEle(lng,lat){
+  const g=windGrid; if(!g) return 0;
+  let fx=(lng-g.west)/g.dLng, fy=(lat-g.south)/g.dLat;
+  if(fx<0)fx=0; if(fy<0)fy=0; if(fx>g.n-1.001)fx=g.n-1.001; if(fy>g.n-1.001)fy=g.n-1.001;
+  const x0=fx|0, y0=fy|0, tx=fx-x0, ty=fy-y0;
+  const e=g.ele;
+  const a=e[y0*g.n+x0], bb=e[y0*g.n+x0+1], c=e[(y0+1)*g.n+x0], d=e[(y0+1)*g.n+x0+1];
+  return a*(1-tx)*(1-ty)+bb*tx*(1-ty)+c*(1-tx)*ty+d*tx*ty;
+}
+
+// THE PHYSICS: velocity (east,north components in m/s-ish units + speed factor)
+// at a point, given the base wind. Returns {vx,vy,speedFactor}.
+function windAt(lng,lat, baseBx,baseBy, baseSpd){
+  const g=windGrid;
+  if(!g) return {vx:baseBx,vy:baseBy,factor:1};
+  // local terrain gradient (m per metre), central difference on the grid
+  const mPerDegLat=111320, mPerDegLng=111320*Math.cos(lat*Math.PI/180);
+  const dE=g.dLng*0.6, dN=g.dLat*0.6;
+  const hE=(gridEle(lng+dE,lat)-gridEle(lng-dE,lat))/(2*dE*mPerDegLng); // dz/dx (east)
+  const hN=(gridEle(lng,lat+dN)-gridEle(lng,lat-dN))/(2*dN*mPerDegLat); // dz/dy (north)
+  // slope component ALONG the wind (climbing if positive) and ACROSS it
+  const along = hE*baseBx + hN*baseBy;        // upslope in wind dir -> ridge speed-up
+  const cross = hE*(-baseBy) + hN*(baseBx);   // slope to the left of the wind
+  // 1) DEFLECTION: steer toward lower ground across the flow (around barriers,
+  //    into gaps). cross>0 means higher on the left -> turn right (toward low).
+  const turn = -cross*4.0;                    // radians-ish, scaled & soft-capped
+  const tt = Math.max(-0.6, Math.min(0.6, turn));
+  const cs=Math.cos(tt), sn=Math.sin(tt);
+  let vx = baseBx*cs - baseBy*sn;
+  let vy = baseBx*sn + baseBy*cs;
+  // 2) RIDGE SPEED-UP vs LEE SHELTERING: accelerate climbing to a crest, slow on
+  //    the lee. along>0 (going uphill) -> speed up; along<0 (downhill/lee)-> slow.
+  let factor = 1 + Math.max(-0.6, Math.min(0.8, along*9.0));
+  return {vx, vy, factor};
+}
+
+function seedParticles(){
+  const b=map.getBounds();
+  const spd=windData?windData.speed:10;
+  const n=Math.min(150, 55+Math.round(spd*2));
+  windParticles=[];
+  for(let i=0;i<n;i++) windParticles.push(newParticle(b));
+}
+function newParticle(b){
+  return {
+    lng: b.getWest()+Math.random()*(b.getEast()-b.getWest()),
+    lat: b.getSouth()+Math.random()*(b.getNorth()-b.getSouth()),
+    trail: [],                                  // recent lng/lat for the curved tail
+    life: Math.random()*120+90, age: Math.random()*120
+  };
+}
+function metresToDeg(m, lat){
+  return { dLat:m/111320, dLng:m/(111320*Math.cos(lat*Math.PI/180)) };
+}
+
+function drawCurvedArrow(ctx, pts, color, alpha, headLen){
+  if(pts.length<2) return;
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  for(let pass=0; pass<2; pass++){
+    ctx.globalAlpha = pass===0 ? alpha*0.5 : alpha;
+    ctx.strokeStyle = pass===0 ? "rgba(0,0,0,1)" : color;
+    ctx.lineWidth = pass===0 ? 6 : 3;
+    ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+    ctx.stroke();
+  }
+  const a=pts[pts.length-2], hpt=pts[pts.length-1];
+  const ang=Math.atan2(hpt[1]-a[1], hpt[0]-a[0]);
+  const spread=0.5;
+  const w1=[hpt[0]-Math.cos(ang-spread)*headLen, hpt[1]-Math.sin(ang-spread)*headLen];
+  const w2=[hpt[0]-Math.cos(ang+spread)*headLen, hpt[1]-Math.sin(ang+spread)*headLen];
+  for(let pass=0; pass<2; pass++){
+    ctx.globalAlpha = pass===0 ? alpha*0.5 : alpha;
+    ctx.strokeStyle = pass===0 ? "rgba(0,0,0,1)" : color;
+    ctx.lineWidth = pass===0 ? 6 : 3;
+    ctx.beginPath();
+    ctx.moveTo(w1[0],w1[1]); ctx.lineTo(hpt[0],hpt[1]); ctx.lineTo(w2[0],w2[1]); ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawWind(ts){
+  if(!windOn) return;
+  windRAF=requestAnimationFrame(drawWind);
+  // ~33fps throttle — wind motion doesn't need 60fps, halves the work
+  if(ts && windLast && ts-windLast < 30){ return; }
+  windLast=ts||0;
+  // skip entirely while the user is actively panning/zooming/rotating, so the
+  // overlay never competes with MapLibre's own rendering (kills the pan lag)
+  if(windMoving) return;
+
+  const r=windCanvas.getBoundingClientRect();
+  const w=r.width, h=r.height;
+  windCtx.clearRect(0,0,w,h);
+  if(windData){
+    const b=map.getBounds();
+    const bearingRad=windData.toBearing*Math.PI/180;
+    const baseBx=Math.sin(bearingRad), baseBy=Math.cos(bearingRad);  // east, north
+    const spd=windData.speed;                                        // km/h
+    const advM=Math.max(45, spd*2.2);          // base metres/frame advection
+    const headLen=Math.min(13, 8+spd*0.08);
+    const fill=windColor(spd).replace("ALPHA","1");
+    const TRAIL=5;                             // trail length (fewer pts = faster)
+    const proj=map.project.bind(map);
+
+    for(const p of windParticles){
+      p.age++;
+      const fl=windAt(p.lng,p.lat, baseBx,baseBy, spd);
+      const step=advM*fl.factor;               // speed-up over ridges, slow in lee
+      const md=metresToDeg(step, p.lat);
+      p.trail.push([p.lng,p.lat]);
+      if(p.trail.length>TRAIL) p.trail.shift();
+      p.lng += fl.vx*md.dLng;
+      p.lat += fl.vy*md.dLat;
+
+      // project only the trail points we draw (camera handles 2D/3D/rotate)
+      const pts=[];
+      for(let k=0;k<p.trail.length;k++){ const s=proj(p.trail[k]); pts.push([s.x,s.y]); }
+      const sHead=proj([p.lng,p.lat]); pts.push([sHead.x,sHead.y]);
+
+      const tt=p.age/p.life;
+      const alpha=Math.max(0, Math.sin(Math.PI*tt))*0.95;
+      const head=pts[pts.length-1];
+      const onScreen = head[0]>-60 && head[0]<w+60 && head[1]>-60 && head[1]<h+60;
+      if(onScreen && pts.length>=2) drawCurvedArrow(windCtx, pts, fill, alpha, headLen);
+
+      if(p.age>p.life || p.lng<b.getWest()-0.05 || p.lng>b.getEast()+0.05 ||
+         p.lat<b.getSouth()-0.05 || p.lat>b.getNorth()+0.05){
+        Object.assign(p, newParticle(b));
+      }
+    }
+  }
+}
+
+window.addEventListener("resize", ()=>{ if(windOn){ sizeWindCanvas(); buildWindGrid(); seedParticles(); } });
+// Pause the wind overlay during active gestures (clears it so it doesn't lag the
+// pan), then rebuild the terrain grid + resume once the view settles.
+map.on("movestart", ()=>{ if(windOn){ windMoving=true; if(windCtx){ const r=windCanvas.getBoundingClientRect(); windCtx.clearRect(0,0,r.width,r.height);} } });
+map.on("moveend", ()=>{
+  if(!windOn) return;
+  windMoving=false;
+  buildWindGrid();
+  clearTimeout(windFetchTimer); windFetchTimer=setTimeout(fetchWind,500);
+});
+
+windBtn.onclick=()=>{
+  windOn=!windOn;
+  windBtn.classList.toggle("active",windOn);
+  windCanvas.classList.toggle("on",windOn);
+  document.getElementById("windBar").classList.toggle("on",windOn);
+  if(windOn){
+    windMoving=false; windLast=0;
+    sizeWindCanvas();
+    buildWindGrid();
+    seedParticles();
+    fetchWind();
+    if(!windRAF) windRAF=requestAnimationFrame(drawWind);
+  }else{
+    if(windRAF){ cancelAnimationFrame(windRAF); windRAF=null; }
+    if(windCtx){ const r=windCanvas.getBoundingClientRect(); windCtx.clearRect(0,0,r.width,r.height); }
+  }
+};
+// ===========================================================================
+
+// Sun-exposure mode: date defaults to TODAY (user's local date) + daily average.
+// Controls let the user change the day and pick a specific time of day.
+function setSunUI(on){
+  let box=document.getElementById("sunInfo");
+  if(!on){ if(box) box.remove(); return; }
+  if(box) return;
+  const today=sunState.date;
+  const iso=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+  box=document.createElement("div");
+  box.id="sunInfo"; box.className="sun-info";
+  box.innerHTML=
+    `<div class="sun-controls">
+       <b>☀️ Sun exposure</b>
+       <label>Date <input type="date" id="sunDate" value="${iso}"></label>
+       <label>Time
+         <select id="sunMode">
+           <option value="average" selected>Daily average</option>
+           <option value="instant">Specific time…</option>
+         </select>
+       </label>
+       <div id="sunHourWrap" style="display:none">
+         <input type="range" id="sunHour" min="5" max="20" step="0.5" value="12">
+         <span id="sunHourLabel">12:00</span>
+       </div>
+     </div>
+     <div class="sun-legend">
+       <span style="background:rgb(40,90,200)"></span>shade
+       <span style="background:rgb(245,220,70)"></span>50%
+       <span style="background:rgb(220,40,30)"></span>max sun
+     </div>
+     <div class="sun-note">Solar position computed for the map's location and the
+       selected date (defaulting to today). Models direct sunlight on each slope;
+       does not account for shadows cast by nearby peaks or trees.</div>`;
+  document.body.appendChild(box);
+
+  const refresh=()=>{ sunVersion++; if(map.getSource("sunexp")) map.getSource("sunexp").setTiles(["sun://{z}/{x}/{y}?v="+sunVersion]); };
+  document.getElementById("sunDate").onchange=(e)=>{
+    const [Y,M,D]=e.target.value.split("-").map(Number);
+    sunState.date=new Date(Y,M-1,D,12,0,0); refresh();
+  };
+  document.getElementById("sunMode").onchange=(e)=>{
+    sunState.mode=e.target.value;
+    document.getElementById("sunHourWrap").style.display = sunState.mode==="instant"?"block":"none";
+    refresh();
+  };
+  const hour=document.getElementById("sunHour");
+  hour.oninput=(e)=>{
+    sunState.hour=+e.target.value;
+    const h=Math.floor(sunState.hour), mm=(sunState.hour%1)*60;
+    document.getElementById("sunHourLabel").textContent=String(h).padStart(2,"0")+":"+String(mm).padStart(2,"0");
+    if(sunState.mode==="instant") refresh();
+  };
+}
+
+// ---- CORN CLOCK: play/scrub timeline of surface state through the day ----
+let cornPlayTimer=null;
+function setCornUI(on){
+  let box=document.getElementById("cornInfo");
+  if(!on){ if(box) box.remove(); if(cornPlayTimer){clearInterval(cornPlayTimer);cornPlayTimer=null;} return; }
+  if(box) return;
+  const fmtHr=h=>String(Math.floor(h)).padStart(2,"0")+":"+String(Math.round((h%1)*60)).padStart(2,"0");
+  const today=cornState.date;
+  const iso=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+  box=document.createElement("div");
+  box.id="cornInfo"; box.className="corn-info";
+  box.innerHTML=
+    `<div class="corn-head"><b>Snow</b><span id="cornLoad" class="corn-load"></span></div>
+     <div class="corn-controls">
+       <label>Date <input type="date" id="cornDate" value="${iso}"></label>
+       <div class="corn-timeline">
+         <button id="cornPlay" class="corn-play" title="Play through the day">▶</button>
+         <input type="range" id="cornHour" min="5" max="19" step="0.5" value="${cornState.hour}">
+         <span id="cornHourLabel">${fmtHr(cornState.hour)}</span>
+       </div>
+     </div>
+     <div class="corn-key">
+       <div><i style="background:rgb(70,120,200)"></i>Frozen / firm</div>
+       <div><i style="background:rgb(60,190,120)"></i>Softening (corn)</div>
+       <div><i style="background:rgb(40,210,90)"></i>Prime corn</div>
+       <div><i style="background:rgb(240,140,40)"></i>Getting wet</div>
+       <div><i style="background:rgb(225,60,40)"></i>Slush / blown out</div>
+       <div><i style="background:rgb(150,90,200)"></i>Re-shaded / refreezing</div>
+     </div>
+     <div class="corn-note">Animates the snow <b>surface state</b> through the day, with
+       <b>true terrain-cast shadows</b> ray-traced against the elevation model — a couloir
+       shaded by a neighbouring ridge reads as frozen even if it faces the sun. Scrub or
+       press play to watch which aspects soften and when, to time good corn.
+       A physically-motivated <b>model</b> of the melt–freeze cycle, not a measurement;
+       it assumes a clear spring day and doesn't know the actual snowpack or weather.</div>`;
+  document.body.appendChild(box);
+
+  const refreshCorn=()=>{ cornVersion++; if(map.getSource("corn")) map.getSource("corn").setTiles(["corn://{z}/{x}/{y}?v="+cornVersion]); };
+  const setHour=(h)=>{
+    cornState.hour=h;
+    document.getElementById("cornHourLabel").textContent=fmtHr(h);
+    document.getElementById("cornHour").value=h;
+    refreshCorn();
+  };
+  let scrubTimer;
+  document.getElementById("cornHour").oninput=(e)=>{
+    const h=+e.target.value;
+    cornState.hour=h;
+    document.getElementById("cornHourLabel").textContent=fmtHr(h);
+    clearTimeout(scrubTimer); scrubTimer=setTimeout(refreshCorn,140);  // debounce heavy tiles
+  };
+  document.getElementById("cornDate").onchange=(e)=>{
+    if(!e.target.value) return;
+    const [Y,M,D]=e.target.value.split("-").map(Number);
+    cornState.date=new Date(Y,M-1,D,12,0,0); refreshCorn();
+  };
+  const playBtn=document.getElementById("cornPlay");
+  playBtn.onclick=()=>{
+    if(cornPlayTimer){
+      clearInterval(cornPlayTimer); cornPlayTimer=null; playBtn.textContent="▶"; return;
+    }
+    playBtn.textContent="⏸";
+    if(cornState.hour>=19) setHour(5);
+    cornPlayTimer=setInterval(()=>{
+      let h=cornState.hour+0.5;
+      if(h>19){ h=19; setHour(h); clearInterval(cornPlayTimer); cornPlayTimer=null; playBtn.textContent="▶"; return; }
+      setHour(h);
+    }, 700);   // ~0.7s per half-hour step (tiles need time to compute)
+  };
+}
+
+// Avalanche mode: show a slope-angle legend + a prominent safety disclaimer so
+// the terrain shading is never mistaken for a real avalanche danger forecast.
+function setAvalancheUI(on){
+  let box=document.getElementById("avyInfo");
+  if(!on){ if(box) box.remove(); return; }
+  if(box) return;
+  box=document.createElement("div");
+  box.id="avyInfo"; box.className="avy-info";
+  box.innerHTML=
+    `<div class="avy-legend">
+       <b>Slope angle (avalanche)</b>
+       <div><i style="background:rgba(0,0,0,0);border-style:dashed"></i>&lt;27° — generally safe</div>
+       <div><i style="background:rgb(245,224,66)"></i>27–29° — approaching</div>
+       <div><i style="background:rgb(245,176,24)"></i>30–31° — caution</div>
+       <div><i style="background:rgb(240,120,20)"></i>32–34° — elevated</div>
+       <div><i style="background:rgb(214,40,20)"></i>35–45° — peak slab-release zone</div>
+       <div><i style="background:rgb(150,20,30)"></i>46–50° — very steep</div>
+       <div><i style="background:rgb(120,40,140)"></i>&gt;50° — extreme / cliffs</div>
+     </div>
+     <div class="avy-warn">⚠️ <b>Terrain indicator only — NOT a live avalanche forecast.</b>
+       Slope angle is computed from elevation data (the single biggest static factor;
+       slab avalanches release mostly on 30–45° slopes). It does not reflect snowpack,
+       weather, or current danger. Check your local avalanche center
+       (avalanche.org / avalanches.org) before any backcountry travel.</div>`;
+  document.body.appendChild(box);
+}
+
+// ====================== AUTOCOMPLETE SEARCH ======================
+// Live dropdown of ranked suggestions. Primary source is a built-in list of
+// the world's major ski resorts (instant, offline, searchable BY NAME).
+// Live Nominatim results are merged in for the long tail. Tolerates typos
+// (edit distance) and shortenings (subsequence / per-word prefix matching).
+
+// --- built-in ski resort gazetteer: [name, lon, lat, region] ---
+// This is a fast, offline seed list. On load we also fetch OpenSkiMap's full
+// ski-areas dataset (~thousands of resorts incl. Kirkwood etc.) and merge it in.
+let SKI_RESORTS = [
+ ["Whistler Blackcomb",-122.9486,50.1163,"British Columbia, Canada"],
+ ["Vail",-106.3742,39.6061,"Colorado, USA"],
+ ["Aspen Snowmass",-106.9498,39.2084,"Colorado, USA"],
+ ["Breckenridge",-106.0667,39.4783,"Colorado, USA"],
+ ["Park City",-111.5080,40.6514,"Utah, USA"],
+ ["Deer Valley",-111.4783,40.6374,"Utah, USA"],
+ ["Snowbird",-111.6556,40.5810,"Utah, USA"],
+ ["Alta",-111.6377,40.5884,"Utah, USA"],
+ ["Mammoth Mountain",-119.0326,37.6308,"California, USA"],
+ ["Palisades Tahoe",-120.2358,39.1969,"California, USA"],
+ ["Heavenly",-119.9402,38.9352,"California/Nevada, USA"],
+ ["Jackson Hole",-110.8270,43.5875,"Wyoming, USA"],
+ ["Big Sky",-111.4015,45.2856,"Montana, USA"],
+ ["Steamboat",-106.8064,40.4571,"Colorado, USA"],
+ ["Telluride",-107.8478,37.9358,"Colorado, USA"],
+ ["Keystone",-105.9437,39.6084,"Colorado, USA"],
+ ["Copper Mountain",-106.1497,39.5022,"Colorado, USA"],
+ ["Winter Park",-105.7625,39.8868,"Colorado, USA"],
+ ["Sun Valley",-114.3517,43.6710,"Idaho, USA"],
+ ["Killington",-72.8201,43.6045,"Vermont, USA"],
+ ["Stowe",-72.7814,44.5303,"Vermont, USA"],
+ ["Sugarloaf",-70.3134,45.0314,"Maine, USA"],
+ ["Lake Louise",-116.1622,51.4419,"Alberta, Canada"],
+ ["Banff Sunshine",-115.7766,51.0784,"Alberta, Canada"],
+ ["Revelstoke",-118.1637,50.9583,"British Columbia, Canada"],
+ ["Tremblant",-74.5849,46.2092,"Quebec, Canada"],
+ ["Chamonix",6.8694,45.9237,"France"],
+ ["Val d'Isère",6.9800,45.4489,"France"],
+ ["Tignes",6.9056,45.4685,"France"],
+ ["Les Trois Vallées",6.5772,45.4154,"France"],
+ ["Courchevel",6.6347,45.4154,"France"],
+ ["Méribel",6.5658,45.3960,"France"],
+ ["Val Thorens",6.5800,45.2978,"France"],
+ ["Alpe d'Huez",6.0703,45.0903,"France"],
+ ["Les Deux Alpes",6.1244,45.0102,"France"],
+ ["La Plagne",6.6783,45.5072,"France"],
+ ["Les Arcs",6.8289,45.5722,"France"],
+ ["Avoriaz",6.7717,46.1925,"France"],
+ ["Morzine",6.7089,46.1792,"France"],
+ ["La Grave",6.3072,45.0464,"France"],
+ ["Zermatt",7.7491,46.0207,"Switzerland"],
+ ["Verbier",7.2286,46.0961,"Switzerland"],
+ ["St. Moritz",9.8377,46.4908,"Switzerland"],
+ ["Davos",9.8200,46.7956,"Switzerland"],
+ ["Laax",9.2589,46.8094,"Switzerland"],
+ ["Saas-Fee",7.9279,46.1089,"Switzerland"],
+ ["Grindelwald",8.0413,46.6242,"Switzerland"],
+ ["Andermatt",8.5942,46.6367,"Switzerland"],
+ ["Engelberg",8.4011,46.8203,"Switzerland"],
+ ["St. Anton",10.2644,47.1296,"Austria"],
+ ["Kitzbühel",12.3916,47.4464,"Austria"],
+ ["Ischgl",10.2914,47.0114,"Austria"],
+ ["Sölden",11.0072,46.9646,"Austria"],
+ ["Mayrhofen",11.8682,47.1681,"Austria"],
+ ["Saalbach",12.6386,47.3897,"Austria"],
+ ["Flachau",13.3917,47.3458,"Austria"],
+ ["Obergurgl",11.0269,46.8678,"Austria"],
+ ["Cortina d'Ampezzo",12.1357,46.5405,"Italy"],
+ ["Val Gardena",11.6749,46.5577,"Italy"],
+ ["Cervinia",7.6294,45.9344,"Italy"],
+ ["Sestriere",6.8783,44.9576,"Italy"],
+ ["Madonna di Campiglio",10.8267,46.2294,"Italy"],
+ ["Bormio",10.3667,46.4678,"Italy"],
+ ["Garmisch-Partenkirchen",11.0550,47.4917,"Germany"],
+ ["Baqueira Beret",0.9333,42.7,"Spain"],
+ ["Sierra Nevada",-3.3986,37.0961,"Spain"],
+ ["Åre",13.0796,63.3984,"Sweden"],
+ ["Hemsedal",8.5594,60.8639,"Norway"],
+ ["Trysil",12.2783,61.3033,"Norway"],
+ ["Levi",24.8094,67.8047,"Finland"],
+ ["Bansko",23.4886,41.8400,"Bulgaria"],
+ ["Jasná",19.5856,48.9694,"Slovakia"],
+ ["Niseko",140.6874,42.8048,"Japan"],
+ ["Hakuba",137.8622,36.6983,"Japan"],
+ ["Rusutsu",140.9047,42.7414,"Japan"],
+ ["Furano",142.4694,43.3222,"Japan"],
+ ["Zao Onsen",140.3992,38.1606,"Japan"],
+ ["Yongpyong",128.6814,37.6447,"South Korea"],
+ ["Gulmarg",74.3803,34.0489,"India"],
+ ["Perisher",148.4083,-36.4053,"Australia"],
+ ["Thredbo",148.3036,-36.5044,"Australia"],
+ ["Mt Buller",146.4392,-37.1467,"Australia"],
+ ["Coronet Peak",168.7356,-44.9197,"New Zealand"],
+ ["The Remarkables",168.8089,-45.0556,"New Zealand"],
+ ["Cardrona",168.9486,-44.8736,"New Zealand"],
+ ["Whakapapa",175.5575,-39.2536,"New Zealand"],
+ ["Valle Nevado",-70.2500,-33.3567,"Chile"],
+ ["Portillo",-70.1289,-32.8350,"Chile"],
+ ["Cerro Catedral",-71.4419,-41.1672,"Argentina"],
+ ["Las Leñas",-70.0578,-35.1497,"Argentina"],
+ ["Beaver Creek",-106.5165,39.6042,"Colorado, USA"],
+ ["Crested Butte",-106.9658,38.8997,"Colorado, USA"],
+ ["Arapahoe Basin",-105.8719,39.6425,"Colorado, USA"],
+ ["Taos",-105.4547,36.5953,"New Mexico, USA"],
+ ["Crystal Mountain",-121.4744,46.9356,"Washington, USA"],
+ ["Mt Bachelor",-121.6886,43.9794,"Oregon, USA"],
+ ["Schweitzer",-116.6228,48.3672,"Idaho, USA"],
+ ["Stratton",-72.9081,43.1136,"Vermont, USA"],
+ ["Okemo",-72.7173,43.4017,"Vermont, USA"],
+ ["Snowshoe",-79.9967,38.4122,"West Virginia, USA"],
+ ["Kicking Horse",-117.0472,51.2978,"British Columbia, Canada"],
+ ["Sun Peaks",-119.8839,50.8839,"British Columbia, Canada"],
+ ["Big White",-118.9322,49.7211,"British Columbia, Canada"],
+ ["Kirkwood",-120.0654,38.6847,"Lake Tahoe, California, USA"],
+ ["Northstar",-120.1210,39.2746,"Lake Tahoe, California, USA"],
+ ["Sugar Bowl",-120.3331,39.3019,"Lake Tahoe, California, USA"],
+ ["Squaw Valley",-120.2358,39.1969,"Lake Tahoe, California, USA"],
+ ["Mt Rose",-119.8852,39.3289,"Lake Tahoe, Nevada, USA"],
+ ["Diamond Peak",-119.9143,39.2540,"Lake Tahoe, Nevada, USA"],
+ ["Sierra-at-Tahoe",-120.0808,38.7997,"Lake Tahoe, California, USA"],
+ ["Loveland",-105.8979,39.6800,"Colorado, USA"],
+ ["Eldora",-105.5827,39.9372,"Colorado, USA"],
+ ["Purgatory",-107.8139,37.6300,"Colorado, USA"],
+ ["Wolf Creek",-106.7937,37.4722,"Colorado, USA"],
+ ["Brighton",-111.5836,40.5977,"Utah, USA"],
+ ["Solitude",-111.5919,40.6199,"Utah, USA"],
+ ["Snowbasin",-111.8569,41.2160,"Utah, USA"],
+ ["Powder Mountain",-111.7800,41.3789,"Utah, USA"],
+ ["Mount Snow",-72.9204,42.9602,"Vermont, USA"],
+ ["Sugarbush",-72.8939,44.1358,"Vermont, USA"],
+ ["Jay Peak",-72.5067,44.9244,"Vermont, USA"],
+ ["Sunday River",-70.8567,44.4733,"Maine, USA"],
+ ["Loon Mountain",-71.6217,44.0564,"New Hampshire, USA"],
+ ["Bretton Woods",-71.4690,44.2581,"New Hampshire, USA"],
+ ["Cannon Mountain",-71.6981,44.1567,"New Hampshire, USA"],
+ ["Hunter Mountain",-74.2107,42.2034,"New York, USA"],
+ ["Whiteface",-73.9026,44.3658,"New York, USA"],
+ ["Mont-Sainte-Anne",-70.9047,47.0750,"Quebec, Canada"],
+ ["Marmot Basin",-118.0844,52.7000,"Alberta, Canada"],
+ ["Fernie",-115.0844,49.4628,"British Columbia, Canada"],
+ ["Whitewater",-117.1486,49.4406,"British Columbia, Canada"],
+ ["Bridger Bowl",-110.9036,45.8186,"Montana, USA"],
+ ["Brundage",-116.1503,45.0019,"Idaho, USA"],
+ ["Bogus Basin",-116.1019,43.7639,"Idaho, USA"],
+ ["Mt Hood Meadows",-121.6650,45.3306,"Oregon, USA"],
+ ["Timberline",-121.7110,45.3306,"Oregon, USA"],
+ ["Stevens Pass",-121.0889,47.7448,"Washington, USA"],
+ ["Mission Ridge",-120.3989,47.2922,"Washington, USA"],
+ ["Bear Mountain",-116.8606,34.2336,"California, USA"],
+ ["Mammoth",-119.0326,37.6308,"California, USA"],
+ ["June Mountain",-119.0839,37.7706,"California, USA"],
+ ["Grandvalira",1.6586,42.5424,"Andorra"],
+ ["Soldeu",1.6672,42.5767,"Andorra"],
+ ["Cerro Castor",-68.0119,-54.7197,"Argentina"],
+ ["La Parva",-70.2889,-33.3289,"Chile"],
+ ["El Colorado",-70.2914,-33.3508,"Chile"],
+ ["Pas de la Casa",1.7339,42.5428,"Andorra"]
+].map(r=>({name:r[0],lon:r[1],lat:r[2],region:r[3],ski:true,local:true}));
+
+// Pull the full global ski-area list from OpenSkiMap (daily-updated GeoJSON).
+// Every ski area has properties.name + a geometry; we reduce each to a
+// searchable {name, lon, lat, region} record and merge with the seed list,
+// skipping near-duplicate names so the curated entries win.
+const SKI_AREAS_URLS = [
+  "https://tiles.openskimap.org/geojson/ski_areas.geojson",
+  "https://tiles.skimap.org/geojson/ski_areas.geojson"   // legacy mirror
+];
+function geomCentroid(g){
+  if(!g) return null;
+  if(g.type==="Point") return g.coordinates;
+  // average all coordinate pairs (good enough to fly to)
+  let sx=0,sy=0,n=0;
+  (function walk(a){ if(typeof a[0]==="number"){ sx+=a[0]; sy+=a[1]; n++; } else a.forEach(walk); })(g.coordinates);
+  return n?[sx/n,sy/n]:null;
+}
+async function loadAllSkiAreas(){
+  let fc=null;
+  for(const url of SKI_AREAS_URLS){
+    try{ const r=await fetch(url); if(r.ok){ fc=await r.json(); break; } }catch(e){ /* try next */ }
+  }
+  if(!fc||!fc.features) return;                 // offline/blocked: keep seed list
+  const haveNames=new Set(SKI_RESORTS.map(c=>norm(c.name)));
+  const extra=[];
+  for(const f of fc.features){
+    const p=f.properties||{};
+    // names can live under several keys depending on dataset version
+    const name = p.name || p.title ||
+      (Array.isArray(p.names)&&p.names[0]) ||
+      (p.tags&&p.tags.name) || null;
+    if(!name) continue;
+    const key=norm(name);
+    if(haveNames.has(key)) continue;            // curated entry already covers it
+    const c=geomCentroid(f.geometry); if(!c) continue;
+
+    // region label: try the localized location object, then flat fields
+    let region="";
+    const loc=p.location||{};
+    const en=(loc.localized&&(loc.localized.en||loc.localized["en-US"]))||loc;
+    const parts=[en.locality||loc.locality, en.region||loc.region, en.country||loc.country]
+      .filter(Boolean);
+    region=parts.join(", ") || p.region || p.country || "Ski area";
+
+    haveNames.add(key);
+    extra.push({name,lon:c[0],lat:c[1],region,ski:true,local:true});
+  }
+  if(extra.length){
+    SKI_RESORTS = SKI_RESORTS.concat(extra);
+    resortsDirty=true;
+    if(dataInited && map.getSource("resorts")){ map.getSource("resorts").setData(resortLabelFC()); resortsDirty=false; }
+    // refresh current suggestions if the user is mid-search
+    if(q.value.trim()) renderSuggestions(localMatches(q.value.trim()).slice(0,7), q.value.trim());
+  }
+}
+
+const q = document.getElementById("q");
+const ac = document.getElementById("ac");
+const searchBox = document.getElementById("searchBox");
+
+// common ski-area abbreviations / nicknames -> canonical query
+const ALIASES = {
+  "wb":"whistler blackcomb","jh":"jackson hole","cham":"chamonix",
+  "kitz":"kitzbühel","breck":"breckenridge","abasin":"arapahoe basin",
+  "a-basin":"arapahoe basin","val d isere":"val d'isère","valdisere":"val d'isère",
+  "st anton":"st. anton","stanton":"st. anton","mammoth":"mammoth mountain",
+  "snowbird utah":"snowbird","the 3 valleys":"les trois vallées","3 vallees":"les trois vallées"
+};
+
+// strip accents so "soelden"/"solden" match "Sölden", "are" matches "Åre"
+function norm(s){ return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/['’.]/g,"").trim(); }
+
+// Levenshtein edit distance (capped) for typo tolerance
+function editDistance(a,b){
+  a=norm(a); b=norm(b);
+  const m=a.length,n=b.length;
+  if(Math.abs(m-n)>4) return 99;
+  let prev=Array.from({length:n+1},(_,i)=>i), cur=new Array(n+1);
+  for(let i=1;i<=m;i++){
+    cur[0]=i;
+    for(let j=1;j<=n;j++){
+      const cost=a[i-1]===b[j-1]?0:1;
+      cur[j]=Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost);
+    }
+    [prev,cur]=[cur,prev];
+  }
+  return prev[n];
+}
+// does query appear as an ordered subsequence of text? (handles shortenings)
+function isSubsequence(qq,t){
+  qq=norm(qq).replace(/\s/g,""); t=norm(t);
+  let i=0; for(let j=0;j<t.length&&i<qq.length;j++){ if(t[j]===qq[i]) i++; }
+  return i===qq.length;
+}
+
+// Unified candidate shape: {name, region, lon, lat, ski, local}.
+// score a candidate against the user's raw query (higher = better)
+function score(query, c){
+  const qy=norm(query);
+  const nm=norm(c.name);
+  const full=norm(c.name+" "+(c.region||""));
+  let s = c.local ? 22 : (c.importance||0)*10;   // bias built-in resorts up
+
+  if(nm===qy) s+=120;
+  else if(nm.startsWith(qy)) s+=80;
+  else if(nm.includes(qy)) s+=50;
+  else if(full.includes(qy)) s+=28;
+
+  const qwords=qy.split(/\s+/).filter(Boolean);
+  const nwords=full.split(/\s+/);
+  let wordHits=0;
+  for(const qw of qwords){
+    if(nwords.some(w=>w.startsWith(qw))) wordHits++;
+    else if(nwords.some(w=>editDistance(qw,w)<=1)) wordHits+=0.6;
+  }
+  s += (wordHits/Math.max(qwords.length,1))*45;
+
+  if(isSubsequence(qy,nm)) s+=16;
+
+  const d=editDistance(qy, nm.slice(0,qy.length+3));
+  if(d<=2) s+=32-(d*9);
+
+  if(c.ski) s+=18;
+  return s;
+}
+
+// instant, offline matches from the resort gazetteer.
+// Cheap prefilter first (substring or shared prefix), then expensive scoring
+// only on survivors — keeps it fast even with ~12k ski areas loaded.
+function localMatches(raw){
+  const qy=norm(ALIASES[norm(raw)]||raw);
+  if(!qy) return [];
+  const q0=qy.slice(0,2);
+  const pre=[];
+  for(const c of SKI_RESORTS){
+    const nm=c._n||(c._n=norm(c.name));
+    if(nm.includes(qy) || nm.startsWith(q0) || nm.split(" ").some(w=>w.startsWith(q0)))
+      pre.push(c);
+  }
+  // if the prefilter is too aggressive (typo in 1st 2 chars), fall back to all
+  const pool = pre.length ? pre : SKI_RESORTS;
+  return pool
+    .map(c=>({c,sc:score(qy,c)}))
+    .filter(x=>x.sc>=48)            // keep only strong matches (cuts noise)
+    .sort((a,b)=>b.sc-a.sc)
+    .slice(0,7)
+    .map(x=>x.c);
+}
+
+let acItems=[], selIdx=-1, seq=0, debTimer=null, lastQ="";
+
+// normalize a Nominatim record into our unified candidate shape
+function fromNominatim(p){
+  const name=(p.namedetails&&p.namedetails.name)||p.display_name.split(",")[0];
+  const region=p.display_name.split(",").slice(1,4).join(",").trim();
+  const t=(p.type||"")+" "+(p.class||"")+" "+p.display_name.toLowerCase();
+  return { name, region, lon:+p.lon, lat:+p.lat,
+           ski:/ski|piste|resort|aerialway/.test(t), local:false,
+           importance:p.importance||0 };
+}
+
+async function fetchSuggestions(raw){
+  const myseq=++seq;
+
+  // 1) INSTANT: built-in resort gazetteer (no network) — show immediately
+  let merged = localMatches(raw);
+  renderSuggestions(merged.slice(0,7), raw);
+
+  // 2) LIVE: Nominatim for the long tail; merged in when it returns
+  searchBox.classList.add("loading");
+  const expanded = ALIASES[norm(raw)] || raw;
+  const url="https://nominatim.openstreetmap.org/search"+
+    "?format=json&namedetails=1&dedupe=1&limit=12&q="+encodeURIComponent(expanded);
+  let remote=[];
+  try{
+    const r=await fetch(url,{headers:{"Accept":"application/json"}});
+    remote=(await r.json()).map(fromNominatim);
+  }catch(e){ /* offline / CORS: local results already shown */ }
+  if(myseq!==seq) return;                       // superseded by a newer keystroke
+  searchBox.classList.remove("loading");
+
+  // combine, drop remote dupes of a local resort (by proximity + name), rank
+  const out=[...merged];
+  const haveNames=new Set(merged.map(c=>norm(c.name)));
+  for(const c of remote){
+    const dupeName=haveNames.has(norm(c.name));
+    const dupeNear=merged.some(m=>Math.abs(m.lat-c.lat)<0.15&&Math.abs(m.lon-c.lon)<0.15);
+    if(!dupeName&&!dupeNear){ out.push(c); haveNames.add(norm(c.name)); }
+  }
+  const ranked=out.map(c=>({c,sc:score(raw,c)})).sort((a,b)=>b.sc-a.sc).slice(0,7).map(x=>x.c);
+  renderSuggestions(ranked, raw);
+}
+
+function highlight(name, raw){
+  const i=norm(name).indexOf(norm(raw));
+  if(i<0||!raw.trim()) return escapeHtml(name);
+  return escapeHtml(name.slice(0,i))+"<mark>"+escapeHtml(name.slice(i,i+raw.trim().length))+"</mark>"+escapeHtml(name.slice(i+raw.trim().length));
+}
+function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+function pinFor(c){ return c.ski ? "⛷️" : "📍"; }
+
+function renderSuggestions(list, raw){
+  acItems=list; selIdx=-1;
+  if(!list.length){
+    ac.innerHTML='<div class="ac-empty">No matches. Try a different spelling or a nearby town.</div>';
+    ac.classList.add("show"); q.setAttribute("aria-expanded","true");
+    return;
+  }
+  ac.innerHTML=list.map((c,i)=>{
+    return `<div class="ac-item" role="option" data-i="${i}">
+      <span class="pin">${pinFor(c)}</span>
+      <span class="txt">
+        <div class="name">${highlight(c.name,raw)}</div>
+        <div class="ctx">${escapeHtml(c.region||"")}</div>
+      </span></div>`;
+  }).join("");
+  ac.classList.add("show"); q.setAttribute("aria-expanded","true");
+  ac.querySelectorAll(".ac-item").forEach(el=>{
+    el.addEventListener("mousedown",ev=>{ ev.preventDefault(); choose(+el.dataset.i); });
+  });
+}
+
+function choose(i){
+  const c=acItems[i]; if(!c) return;
+  q.value=c.name;
+  closeAc();
+  map.flyTo({center:[c.lon,c.lat],zoom:13.2,pitch:is3D?62:0,bearing:map.getBearing(),speed:1.3,curve:1.5});
+  // Start loading the DESTINATION's features right now, so they're already on
+  // the map (or arriving) by the time the fly animation lands — no need to pan.
+  loadSkiData({lon:c.lon,lat:c.lat});
+}
+function closeAc(){ ac.classList.remove("show"); q.setAttribute("aria-expanded","false"); selIdx=-1; }
+function setSel(n){
+  const els=ac.querySelectorAll(".ac-item");
+  if(!els.length) return;
+  selIdx=(n+els.length)%els.length;
+  els.forEach((e,i)=>e.classList.toggle("sel",i===selIdx));
+  els[selIdx].scrollIntoView({block:"nearest"});
+}
+
+q.addEventListener("input",()=>{
+  const v=q.value.trim();
+  q.placeholder="Search ski areas…";
+  clearTimeout(debTimer);
+  if(v.length<1){ closeAc(); searchBox.classList.remove("loading"); return; }
+  if(v===lastQ) return; lastQ=v;
+  // instant offline render of resort matches on every keystroke...
+  renderSuggestions(localMatches(v).slice(0,7), v);
+  // ...then a debounced live fetch to enrich with the long tail
+  if(v.length>=2) debTimer=setTimeout(()=>fetchSuggestions(v),220);
+});
+q.addEventListener("keydown",e=>{
+  if(!ac.classList.contains("show")){
+    if(e.key==="Enter"&&q.value.trim()){ fetchSuggestions(q.value.trim()); }
+    return;
+  }
+  if(e.key==="ArrowDown"){ e.preventDefault(); setSel(selIdx+1); }
+  else if(e.key==="ArrowUp"){ e.preventDefault(); setSel(selIdx-1); }
+  else if(e.key==="Enter"){ e.preventDefault(); choose(selIdx>=0?selIdx:0); }
+  else if(e.key==="Escape"){ closeAc(); }
+});
+q.addEventListener("focus",()=>{ if(acItems.length&&q.value.trim()) ac.classList.add("show"); });
+document.addEventListener("click",e=>{ if(!searchBox.contains(e.target)) closeAc(); });
+document.querySelector(".search .ic").style.cursor="pointer";
+document.querySelector(".search .ic").addEventListener("click",()=>{ if(q.value.trim()) fetchSuggestions(q.value.trim()); });
+
+// Load the full OpenSkiMap ski-area gazetteer in the background (after all
+// search helpers are defined). Until it arrives, the seed list serves results.
+loadAllSkiAreas();
+</script>
