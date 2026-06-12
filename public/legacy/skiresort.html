@@ -86,16 +86,22 @@
   /* wind arrows draw on a transparent canvas above the map but below the UI */
   #windCanvas{position:absolute;inset:0;z-index:4;pointer-events:none;display:none;}
   #windCanvas.on{display:block;}
-  .wind-bar{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:9;
+  /* The wind bar lives in its own lane ABOVE the bottom style switcher (which
+     tops out around 73px) so it can never sit on the option buttons. Its
+     z-index also stays BELOW .styles as a second guarantee: if anything ever
+     overlaps, the option buttons still win the clicks. */
+  .wind-bar{position:absolute;left:50%;bottom:80px;transform:translateX(-50%);z-index:4;
     display:none;flex-direction:column;align-items:stretch;gap:8px;background:var(--panel);color:var(--ink);
-    padding:11px 16px;border-radius:16px;box-shadow:var(--shadow);font-size:14px;white-space:nowrap;}
+    padding:11px 16px;border-radius:16px;box-shadow:var(--shadow);font-size:14px;
+    max-width:calc(100vw - 24px);}
   .wind-bar.on{display:flex;}
-  .wind-bar .wb-row{display:flex;align-items:center;gap:12px;justify-content:center;}
+  .wind-bar .wb-row{display:flex;align-items:center;gap:12px;justify-content:center;flex-wrap:wrap;}
+  .wind-bar .wb-main,.wind-bar .wb-gust,.wind-bar .wb-hourlbl{white-space:nowrap;}
   .wind-bar .wb-arrow{width:28px;height:28px;flex-shrink:0;}
   .wind-bar .wb-arrow svg{width:100%;height:100%;display:block;}
   .wind-bar .wb-main b{font-size:17px;font-weight:700;}
   .wind-bar .wb-gust{opacity:.55;font-size:12.5px;padding-left:10px;border-left:1px solid #e2e6ea;}
-  .wind-bar .wb-time{display:flex;align-items:center;gap:10px;padding-top:8px;border-top:1px solid #eef1f4;}
+  .wind-bar .wb-time{display:flex;align-items:center;gap:10px;padding-top:8px;border-top:1px solid #eef1f4;flex-wrap:wrap;}
   .wind-bar .wb-time input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px solid #d6dbe0;border-radius:6px;color:var(--ink);background:#fff;}
   .wind-bar .wb-time input[type=range]{flex:1;min-width:90px;}
   .wind-bar .wb-hourlbl{font-size:12px;font-weight:600;min-width:96px;text-align:right;color:var(--ink);}
@@ -179,7 +185,7 @@
     /* overlay info panels span the width and sit above the styles row */
     .avy-info,.sun-info,.corn-info{ left:var(--edge);right:var(--edge);width:auto;bottom:68px; }
     /* wind bar: full-width-ish, above the styles row so they never overlap */
-    .wind-bar{ left:var(--edge);right:var(--edge);transform:none;width:auto;bottom:68px;font-size:13px;padding:9px 12px; }
+    .wind-bar{ left:var(--edge);right:var(--edge);transform:none;width:auto;max-width:none;bottom:64px;font-size:13px;padding:9px 12px; }
   }
 
   /* Very narrow (small phones): tighten further */
@@ -195,7 +201,8 @@
     .legend{ display:none; }
     .controls{ top:60px; }
     .styles{ bottom:8px; }
-    .avy-info,.sun-info,.corn-info,.wind-bar{ bottom:54px; }
+    .avy-info,.sun-info,.corn-info{ bottom:54px; }
+    .wind-bar{ bottom:64px; }  /* styles row tops out ~57px when bottom:8px */
     .avy-info,.sun-info,.corn-info{ max-height:calc(100vh - 120px);overflow-y:auto; }
   }
 
@@ -204,11 +211,6 @@
     .avy-info,.sun-info,.corn-info{ width:340px; }
   }
 
-  /* When an overlay panel is open on the right, nudge the wind bar left so they
-     don't stack (only matters on mid-width screens) */
-  @media (min-width:641px) and (max-width:1000px){
-    .wind-bar{ left:auto;right:12px;transform:none; }
-  }
   /* ============================================================================ */
 </style>
 
