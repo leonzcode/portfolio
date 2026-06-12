@@ -41,7 +41,7 @@ portfolio/
     layouts/BaseLayout.astro     html shell, font load, no-flash theme script, header/footer
     components/
       Header.astro               logo + 7-item nav + ThemeToggle
-                                 (About · AI · Film · Math · Science · Games · Contact)
+                                 (About · AI · Science · Math · Film · Games · Contact)
       Footer.astro               © line + GitHub/Instagram/YouTube icon links (GitHub → leonzcode)
       ThemeToggle.astro          sun/moon, localStorage persists, pre-paint script in BaseLayout
       ProjectCard.astro          image/placeholder + title + description + arrow
@@ -75,7 +75,7 @@ portfolio/
 - **Visual reference**: `https://gungho0619.vercel.app/` — clean, sans-serif, left-aligned, project-card grid. Match restraint, not maximalism.
 - **Framework**: Astro 5 + Tailwind CSS 4 (via `@tailwindcss/vite`).
 - **Theme**: Default **light**, switchable to dark via toggle at top-right of every page. Pre-paint inline script in `BaseLayout` prevents flash.
-- **Tab order**: About → AI → Film → Math → Science → Games → Contact. Seven items (Leon added **Film** and moved Games to the end, June 2026; **Physics renamed Science** 2026-06-11, route `/physics` → `/science` with 301s in `public/_redirects`). Originally six (About → AI → Games → Math → Physics → Contact).
+- **Tab order**: About → AI → Science → Math → Film → Games → Contact. Seven items (reordered by Leon 2026-06-11, same day **Physics was renamed Science** with route `/physics` → `/science` + 301s in `public/_redirects`; Film added and Games moved to the end June 2026). Originally six (About → AI → Games → Math → Physics → Contact).
 - **Per-tab pages**: each category gets its own page. Landing = About summary. **Film** (`film.astro`, Leon June 2026) is a YouTube video gallery, not a project-card grid — its video list (id + title + description) is inline in `film.astro`, NOT in `projects.ts`.
 - **No comments / no public threads**: contact form only. Admissions audience = no risk surface.
 - **About voice**: first-person ("I build..."). **Privacy filter**: no school name, no city, no SAT score, no "Top 10%", no email on About, no resume PDF link, no job-seeking language. Public site shows: name, grade, achievements/programs, snowboarding hook. `Golden Gate STEM Fair` is allowed despite mild Bay Area location leak — award is meaningful enough to keep.
