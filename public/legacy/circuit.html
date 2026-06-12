@@ -1436,15 +1436,34 @@
       canvas.appendChild(tempLine);
       connectionState.tempLine = tempLine;
 
-      // For both mouse and touch
-      const moveEvent = isTouchDevice ? "touchmove" : "mousemove";
-      const upEvent = isTouchDevice ? "touchend" : "mouseup";
-      
-      document.addEventListener(moveEvent, onConnectionMove);
-      document.addEventListener(upEvent, onConnectionUp);
+      // Listen for BOTH mouse and touch. Picking one set of events based on
+      // up-front touch detection breaks hybrid devices: a touch-capable
+      // laptop driven with a mouse would start the wire on mousedown but
+      // never receive the touchmove/touchend it was waiting for.
+      document.addEventListener("mousemove", onConnectionMove);
+      document.addEventListener("mouseup", onConnectionUp);
+      document.addEventListener("touchmove", onConnectionMove, { passive: false });
+      document.addEventListener("touchend", onConnectionUp);
 
       statusEl.innerHTML = 'Status: <strong>Drag to another component to connect.</strong>';
       e.preventDefault();
+    }
+
+    // Nearest other-component terminal within snap range of the pointer.
+    // Used for the live highlight AND the drop itself, so a wire connects
+    // even if the release isn't pixel-perfect on the 16px dot, and without
+    // relying on mouseenter (which never fires during touch drags).
+    function findDropPoint(clientX, clientY) {
+      const SNAP = 28; // px
+      let best = null, bestDist = Infinity;
+      document.querySelectorAll(".connection-point").forEach(p => {
+        if (connectionState.activePoint &&
+            p.dataset.componentId === connectionState.activePoint.comp.dataset.id) return;
+        const r = p.getBoundingClientRect();
+        const d = Math.hypot(clientX - (r.left + r.width / 2), clientY - (r.top + r.height / 2));
+        if (d < bestDist) { bestDist = d; best = p; }
+      });
+      return bestDist <= SNAP ? best : null;
     }
 
     function onConnectionMove(e) {
@@ -1454,13 +1473,23 @@
       const pointRect = connectionState.activePoint.point.getBoundingClientRect();
 
       let clientX, clientY;
-      
-      if (isTouchDevice && e.touches) {
+
+      if (e.touches && e.touches.length) {
         clientX = e.touches[0].clientX;
         clientY = e.touches[0].clientY;
+        if (e.cancelable) e.preventDefault(); // keep the canvas from panning mid-wire
       } else {
         clientX = e.clientX;
         clientY = e.clientY;
+      }
+
+      // Drive the green target highlight from pointer position (works for
+      // mouse and touch alike).
+      const target = findDropPoint(clientX, clientY);
+      if (hoveredPoint !== target) {
+        if (hoveredPoint) hoveredPoint.classList.remove("valid-target");
+        hoveredPoint = target;
+        if (target) target.classList.add("valid-target");
       }
 
       const startX = pointRect.left + pointRect.width / 2 - canvasRect.left;
@@ -1482,19 +1511,37 @@
     function onConnectionUp(e) {
       if (!connectionState.isConnecting) return;
 
-      if (hoveredPoint && connectionState.activePoint) {
-        const targetComp = document.querySelector(`[data-id="${hoveredPoint.dataset.componentId}"]`);
+      let clientX, clientY;
+      if (e.changedTouches && e.changedTouches.length) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+
+      // Resolve the drop target from the release position itself rather than
+      // from hover state, so touch drags (no mouseenter) connect too.
+      const dropPoint = findDropPoint(clientX, clientY) || hoveredPoint;
+
+      let connected = false;
+      if (dropPoint && connectionState.activePoint) {
+        const targetComp = document.querySelector(`[data-id="${dropPoint.dataset.componentId}"]`);
         if (targetComp && connectionState.activePoint.comp !== targetComp) {
           createConnection(
             connectionState.activePoint.comp,
             connectionState.activePoint.point,
             targetComp,
-            hoveredPoint
+            dropPoint
           );
+          connected = true;
         }
       }
 
       finishConnection();
+      statusEl.innerHTML = connected
+        ? 'Status: <strong>Connection completed.</strong>'
+        : 'Status: <strong>Connection cancelled — release on another component\'s terminal.</strong>';
     }
 
     function finishConnection() {
@@ -1520,8 +1567,6 @@
       document.removeEventListener("mouseup", onConnectionUp);
       document.removeEventListener("touchmove", onConnectionMove);
       document.removeEventListener("touchend", onConnectionUp);
-
-      statusEl.innerHTML = 'Status: <strong>Connection completed.</strong>';
     }
 
     function createConnection(comp1, point1, comp2, point2) {
