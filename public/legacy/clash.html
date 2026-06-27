@@ -2488,8 +2488,34 @@ class Game {
                 // BOT LOGIC FOR DEPLOYMENT
                 if (stats.type === 'spell' && k === 'goblinbarrel') {
                      let p = new Projectile(270, 100, null, 'goblinbarrel', 'red');
-                     p.targetPos = {x: deployX, y: 700}; 
-                     p.speed = 400; 
+                     p.targetPos = {x: deployX, y: 700};
+                     p.speed = 400;
+                     this.projectiles.push(p);
+                } else if (stats.type === 'spell') {
+                     // Damage/utility spell: launch a visible projectile from the red
+                     // king tower at the player's biggest unit cluster (or their king
+                     // tower). Without this branch a bot spell fell through to the
+                     // troop loop below, which spent elixir but spawned nothing
+                     // because spells have no `count`.
+                     let redKing = this.entities.find(e => e.team === 'red' && e.isKing);
+                     let startX = redKing ? redKing.x : CONSTANTS.CENTER_X;
+                     let startY = redKing ? redKing.y : 135;
+                     let targets = this.entities.filter(e => e.team === 'blue' && !e.isBuilding && e.type !== 'effect' && e.hp > 0);
+                     let tx, ty;
+                     if (targets.length > 0) {
+                          tx = targets.reduce((s, e) => s + e.x, 0) / targets.length;
+                          ty = targets.reduce((s, e) => s + e.y, 0) / targets.length;
+                     } else {
+                          let blueKing = this.entities.find(e => e.team === 'blue' && e.isKing);
+                          tx = blueKing ? blueKing.x : deployX;
+                          ty = blueKing ? blueKing.y : 700;
+                     }
+                     let p = new Projectile(startX, startY, null, k, 'red');
+                     p.targetPos = {x: tx, y: ty};
+                     p.damage = stats.dmg;
+                     p.radius = stats.radius;
+                     p.stunDuration = stats.stunDuration || 0;
+                     p.speed = (k === 'rocket') ? 250 : 350;
                      this.projectiles.push(p);
                 } else if (stats.type === 'building') {
                     // Bot building placement 
@@ -2970,10 +2996,11 @@ class Entity {
                 this.x = this.throwDestX;
                 this.y = this.throwDestY;
                 // Fall damage: 50% of current HP
-                this.hp -= this.hp * 0.5;
+                let fallDmg = this.hp * 0.5;
+                this.hp -= fallDmg;
                 // Slow on landing (same as Ice Wizard)
                 this.slowTimer = 2.0;
-                if (game) game.createDamageNumber(this.x, this.y, this.hp * 0.5);
+                if (game) game.createDamageNumber(this.x, this.y, fallDmg);
             } else {
                 this.x = this.throwStartX + (this.throwDestX - this.throwStartX) * this.throwProgress;
                 this.y = this.throwStartY + (this.throwDestY - this.throwStartY) * this.throwProgress;

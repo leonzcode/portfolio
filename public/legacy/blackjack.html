@@ -258,6 +258,7 @@
   let losses = 0;
   let allInsAttempted = 0;
   let allInsWon = 0;
+  let wasAllIn = false; // true if the current round was entered via the ALL IN button
 
   function showPlaceholderCards() {
     const yourDiv = document.getElementById("your-cards");
@@ -398,6 +399,7 @@
   function allIn() {
     if (bettingLocked || yourTotalMoney <= 0) return;
     allInsAttempted++;
+    wasAllIn = true;
     bet(yourTotalMoney);
     document.getElementById("message").textContent = `You went ALL IN with $${pot}!`;
   }
@@ -496,7 +498,7 @@
       result = "You Win!";
       yourTotalMoney += pot * 2;
       wins++;
-      if (pot >= yourTotalMoney + pot * 2) {
+      if (wasAllIn) {
         allInsWon++;
       }
     } else if (yourTotal < opponentTotal) {
@@ -527,6 +529,7 @@
 
   function resetGame() {
     pot = 0;
+    wasAllIn = false;
     bettingLocked = false;
     yourTurnOver = false;
     gameStarted = false;

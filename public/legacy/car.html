@@ -1708,8 +1708,9 @@
                                       nextSegment.screen.x + lw2, cy2, nextSegment.screen.x - lw2, cy2);
             }
 
-            // Draw finish line (checkered pattern)
-            if (absIdx >= finishLineSegment - 3 && absIdx <= finishLineSegment + 3) {
+            // Draw finish line (checkered pattern). Infinite mode has no finish
+            // line (finishLineSegment === 0), so guard like the crossing logic does.
+            if (finishLineSegment > 0 && absIdx >= finishLineSegment - 3 && absIdx <= finishLineSegment + 3) {
                 let numSquares = 10;
                 for (let sq = 0; sq < numSquares; sq++) {
                     let t1 = sq / numSquares;

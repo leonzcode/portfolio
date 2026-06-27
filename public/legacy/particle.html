@@ -217,7 +217,7 @@ function handleControls(){
   boxWidthLabel.textContent = canvas.width;
   boxHeightLabel.textContent = canvas.height;
   binsLabel.textContent = histogramBins;
-  trailLengthLabel.textContent = trailLength.toFixed(2);
+  trailLengthLabel.textContent = Number(trailLengthSlider.value).toFixed(2);
 }
 
 countSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount);});

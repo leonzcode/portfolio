@@ -497,6 +497,7 @@ let ALL_GUESSES = [];
 
 // ── State ──
 let solving = false;
+let livePuzzle = null; // {solution, num, date} from the live API, when reachable
 
 const WORDLE_EPOCH = new Date(2021, 5, 19); // June 19, 2021
 
@@ -527,29 +528,54 @@ async function fetchText(url) {
   return res.text();
 }
 
-async function getTodaysAnswer() {
-  const nytUrl = `https://www.nytimes.com/svc/wordle/v2/${today()}.json`;
+// Normalize a raw NYT puzzle object (or our /api/wordle passthrough) into the
+// shape the solver uses. Throws if there's no valid 5-letter solution so that
+// Promise.any below treats this source as a failure.
+function parseWordleData(data) {
+  const sol = data && data.solution;
+  if (typeof sol !== 'string' || !/^[a-zA-Z]{5}$/.test(sol)) {
+    throw new Error('no solution');
+  }
+  return {
+    solution: sol.toLowerCase(),
+    num: typeof data.days_since_launch === 'number' ? data.days_since_launch : null,
+    date: data.print_date || null,
+  };
+}
 
-  // Race all sources in parallel — first valid response wins
+async function getTodaysAnswer() {
+  const date = today();
+  const nytUrl = `https://www.nytimes.com/svc/wordle/v2/${date}.json`;
+
+  // Primary source is our own same-origin Cloudflare Pages Function
+  // (functions/api/wordle.js), which fetches the NYT puzzle server-side — no
+  // CORS, no dependency on third-party proxies. The rest are browser-side
+  // fallbacks for local dev (where the Function isn't running) or if it's
+  // ever unreachable. NYT sends no CORS headers, so the direct attempt only
+  // succeeds via a browser extension; the public proxies are best-effort.
   const sources = [
+    `/api/wordle?date=${date}`,
     nytUrl,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(nytUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(nytUrl)}`,
+    `https://corsproxy.io/?url=${encodeURIComponent(nytUrl)}`,
   ];
 
-  const racePromises = sources.map(url =>
-    fetchWithTimeout(url, 5000)
+  const attempts = sources.map(url =>
+    fetchWithTimeout(url, 6000)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then(data => data.solution.toLowerCase())
-      .catch(() => null)
+      .then(parseWordleData)
   );
 
-  // Return first non-null result
-  const results = await Promise.all(racePromises);
-  return results.find(r => r !== null) || null;
+  // First source to return a valid solution wins. If every source fails,
+  // Promise.any rejects with an AggregateError — we surface that as null.
+  try {
+    return await Promise.any(attempts);
+  } catch {
+    return null;
+  }
 }
 
 async function loadWordLists() {
@@ -789,7 +815,6 @@ async function showGuessDetail(idx, guess) {
   const div = document.createElement('div');
   div.className = 'guess-detail';
 
-  const solved = guess.word === guess.pattern.every((p,i) => p === 2) ? '' : '';
   const after = guess.candidatesAfter !== undefined ? guess.candidatesAfter : (guess.pattern.every(p => p === 2) ? 1 : '?');
   const before = guess.candidatesBefore;
   const eliminated = before - after;
@@ -807,7 +832,7 @@ async function showGuessDetail(idx, guess) {
   div.classList.add('show');
 }
 
-function showResult(answer, numGuesses) {
+function showResult(answer, numGuesses, isLive) {
   const banner = document.getElementById('resultBanner');
   const messages = {
     1: '🤯 Genius!',
@@ -818,19 +843,24 @@ function showResult(answer, numGuesses) {
     6: '😰 Phew!',
   };
 
-  document.getElementById('resultTitle').textContent = messages[numGuesses] || 'Solved!';
+  document.getElementById('resultTitle').textContent = isLive ? (messages[numGuesses] || 'Solved!') : 'Sample solve';
   document.getElementById('answerReveal').textContent = answer;
-  document.getElementById('resultSubtitle').textContent = `Solved in ${numGuesses}/6 guesses`;
+  document.getElementById('resultSubtitle').textContent = isLive
+    ? `Solved in ${numGuesses}/6 guesses`
+    : `Solved a sample word in ${numGuesses}/6. Couldn't reach today's Wordle, so this isn't the live answer. Refresh to try again.`;
   banner.classList.add('show');
 }
 
-function buildShareText(answer, guesses) {
-  const num = puzzleNumber();
-  let text = `AI Wordle Solver ${num} ${guesses.length}/6\n\n`;
+function buildShareText(answer, guesses, isLive) {
+  const num = (isLive && livePuzzle && livePuzzle.num != null) ? livePuzzle.num : null;
+  const header = num != null
+    ? `AI Wordle Solver ${num} ${guesses.length}/6`
+    : `AI Wordle Solver (sample) ${guesses.length}/6`;
+  let text = header + '\n\n';
   for (const g of guesses) {
     text += patternEmoji(g.pattern) + '\n';
   }
-  text += `\nhttps://leonzcode.github.io/wordlesolver/`;
+  text += `\nhttps://leonzhao.dev/apps/wordle/`;
   return text.trim();
 }
 
@@ -858,15 +888,25 @@ async function startSolve() {
   try {
     // Step 1 & 2: Load word lists + fetch answer in parallel
     status.innerHTML = 'Loading...';
-    const [, answer_] = await Promise.all([loadWordLists(), getTodaysAnswer()]);
-    let answer = answer_;
+    const [, todays] = await Promise.all([loadWordLists(), getTodaysAnswer()]);
 
-    if (!answer) {
-      // Fallback: Derive from word list using puzzle number
-      const idx = puzzleNumber() % ANSWERS.length;
-      answer = ANSWERS[idx];
-      status.innerHTML = 'Using computed answer (API unavailable)';
-      await sleep(500);
+    let answer;
+    let isLive;
+    if (todays && todays.solution) {
+      answer = todays.solution;
+      isLive = true;
+      livePuzzle = todays;
+      if (todays.num != null) {
+        document.getElementById('puzzleNum').textContent = `#${todays.num}`;
+      }
+    } else {
+      // Couldn't reach today's puzzle. Run a sample solve on a random valid
+      // word and label it clearly — never present a guessed word as the real
+      // answer. (The old fallback indexed an alphabetical list by puzzle
+      // number, which had nothing to do with the actual daily answer.)
+      isLive = false;
+      answer = ANSWERS[Math.floor(Math.random() * ANSWERS.length)];
+      document.getElementById('puzzleNum').textContent = '#—';
     }
 
     if (!ANSWERS.includes(answer)) ANSWERS.push(answer);
@@ -942,13 +982,13 @@ async function startSolve() {
     await sleep(400);
 
     // Step 4: Show result
-    showResult(answer, guesses.length);
+    showResult(answer, guesses.length, isLive);
 
     // Step 5: Share box
     await sleep(300);
     const shareBox = document.getElementById('shareBox');
     const shareText = document.getElementById('shareText');
-    shareText.textContent = buildShareText(answer, guesses);
+    shareText.textContent = buildShareText(answer, guesses, isLive);
     shareBox.style.display = '';
 
     // Show methodology

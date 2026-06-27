@@ -64,11 +64,16 @@
     let score;
     let game;
 
+    function randomFood() {
+      const cols = canvas.width / box, rows = canvas.height / box;
+      return { x: Math.floor(Math.random() * cols) * box, y: Math.floor(Math.random() * rows) * box };
+    }
+
     function resetGame() {
       snake = [{ x: 0, y: 10 * box }]; // Start at leftmost side, middle of canvas
       direction = "RIGHT";
       score = 0;
-      food = { x: Math.floor(Math.random() * 19) * box, y: Math.floor(Math.random() * 19) * box };
+      food = randomFood();
       gameOverOverlay.style.display = "none";
     }
 
@@ -112,10 +117,15 @@
       if (direction === "RIGHT") head.x += box;
       if (direction === "DOWN") head.y += box;
 
+      // The tail cell is vacated this tick unless we eat, so it must not count
+      // as a self-collision — otherwise a tight turn into it ends the game.
+      const willEat = head.x === food.x && head.y === food.y;
+      const body = willEat ? snake : snake.slice(0, snake.length - 1);
+
       if (
         head.x < 0 || head.y < 0 ||
         head.x >= canvas.width || head.y >= canvas.height ||
-        collision(head, snake)
+        collision(head, body)
       ) {
         // Game Over
         clearInterval(game);
@@ -124,9 +134,9 @@
         return;
       }
 
-      if (head.x === food.x && head.y === food.y) {
+      if (willEat) {
         score++;
-        food = { x: Math.floor(Math.random() * 19) * box, y: Math.floor(Math.random() * 19) * box };
+        food = randomFood();
       } else {
         snake.pop();
       }
