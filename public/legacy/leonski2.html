@@ -3527,13 +3527,14 @@ function updateSpray(dt){
 }
 
 function flyUpdate(dt){
-  const fwx=Math.sin(fly.yaw), fwz=Math.cos(fly.yaw);   // horizontal forward (decoupled from look pitch)
-  const rx=Math.cos(fly.yaw), rz=-Math.sin(fly.yaw);    // horizontal right
+  const cpF=Math.cos(fly.pitch);
+  const fwx=Math.sin(fly.yaw)*cpF, fwy=Math.sin(fly.pitch), fwz=Math.cos(fly.yaw)*cpF;   // forward follows the look direction (incl. pitch → dive when looking down)
+  const rx=Math.cos(fly.yaw), rz=-Math.sin(fly.yaw);    // horizontal right (strafe stays level)
   let mx=0,my=0,mz=0,moving=false;
-  if(keys.fwd){ mx+=fwx; mz+=fwz; moving=true; }
-  if(keys.back){ mx-=fwx; mz-=fwz; moving=true; }
-  if(keys.left){ mx-=rx; mz-=rz; moving=true; }         // A → move left
-  if(keys.right){ mx+=rx; mz+=rz; moving=true; }        // D → move right
+  if(keys.fwd){ mx+=fwx; my+=fwy; mz+=fwz; moving=true; }
+  if(keys.back){ mx-=fwx; my-=fwy; mz-=fwz; moving=true; }
+  if(keys.left){ mx-=rx; mz-=rz; moving=true; }         // A → move left (level)
+  if(keys.right){ mx+=rx; mz+=rz; moving=true; }        // D → move right (level)
   if(keys.up){ my+=1; moving=true; }                    // Space → up
   if(keys.down){ my-=1; moving=true; }                  // Shift → down
   const maxS = keys.boost ? MAX_SPD*2.5 : MAX_SPD;                     // hold Ctrl → fly much faster
@@ -4255,10 +4256,11 @@ addEventListener('wheel', e=>{
 let _drag=false,_mx=0,_my=0;
 $('#scene').addEventListener('pointerdown',e=>{ if(mode==='fly'||mode==='ski'){ _drag=true; _mx=e.clientX; _my=e.clientY; } });
 addEventListener('pointermove',e=>{ _mNDC.x=(e.clientX/innerWidth)*2-1; _mNDC.y=-(e.clientY/innerHeight)*2+1; _mouseSeen=true;
-  if(!_drag) return;
-  const dx=e.clientX-_mx, dy=e.clientY-_my; _mx=e.clientX; _my=e.clientY;
-  if(mode==='fly'){ fly.yaw += dx*0.003; fly.pitch=clamp(fly.pitch-dy*0.003,-1.45,1.45); }
-  else if(mode==='ski'){ ski.panYaw=clamp(ski.panYaw+dx*0.006,-2.4,2.4); ski.panPitch=clamp(ski.panPitch-dy*0.004,-0.4,1.2); }   // pan around the skier / chair
+  const dx=e.clientX-_mx, dy=e.clientY-_my; _mx=e.clientX; _my=e.clientY;   // track the cursor every move (so free-look has a delta)
+  const overScene = e.target && e.target.id==='scene';
+  if(mode==='fly'){                                                         // FREE-LOOK: pan by moving the cursor over the 3D view — no click needed
+    if((_drag || overScene) && Math.abs(dx)<220 && Math.abs(dy)<220){ fly.yaw += dx*0.003; fly.pitch=clamp(fly.pitch-dy*0.003,-1.45,1.45); }
+  } else if(mode==='ski' && _drag){ ski.panYaw=clamp(ski.panYaw+dx*0.006,-2.4,2.4); ski.panPitch=clamp(ski.panPitch-dy*0.004,-0.4,1.2); }   // ski still drags to pan
 });
 addEventListener('pointerup',()=>_drag=false);
 
