@@ -2758,8 +2758,8 @@ const SND = (()=>{
   let started=false, muted=false, musicOn=true, vol=0.7, sfxVol=0.5, musVol=0.5;   // vol = master; sfxVol/musVol = independent sub-mixers   // real full-mix tracks → higher music gain (still scaled by MASTER + evened by the compressor below)
   const MASTER=0.2;   // master headroom (SFX slider 50% ≈ the old 25%): the slider value is scaled by this, so 50% ("normal") ≈ the old 5% loudness
   let scene='menu', musicEl=null, musicSrc=null, curTrack=null, _lastGame=-1;
-  const MENU_TRACK='A Grand Mountain Adventure.mp3';                     // title-screen song
-  const GAME_TRACKS=['Back on Track.mp3','Caucasus Is Melting.mp3','Distance Challenge.mp3','Electronic Alpen Party.mp3','Gate Challenge.mp3','Go Get Lost.mp3','Grand Mountain Radio 105.5.mp3','Grand Mountain Radio 107.1.mp3','Icedrops.mp3'];   // gameplay cycle
+  const MENU_TRACK='grand-mountain-adventure.mp3';                       // title-screen song (URL-safe filenames so static hosts serve them)
+  const GAME_TRACKS=['back-on-track.mp3','caucasus-is-melting.mp3','distance-challenge.mp3','electronic-alpen-party.mp3','gate-challenge.mp3','go-get-lost.mp3','grand-mountain-radio-105-5.mp3','grand-mountain-radio-107-1.mp3','icedrops.mp3'];   // gameplay cycle
   const MUSIC_LEVEL=0.11;  // music headroom (music slider 50% ≈ the old 10%): element volume = master × musVol × this
   function applyMusicVol(){ if(musicEl) musicEl.volume = (musicOn && !muted) ? Math.max(0, Math.min(1, vol*musVol*MUSIC_LEVEL)) : 0; }
   function sfxTarget(){ return (muted?0:vol*sfxVol)*MASTER; }   // SFX bus level = master × sfxVol × headroom
