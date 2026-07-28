@@ -128,6 +128,20 @@ export const gameProjects: Project[] = [
     tag: "Live demo",
   },
   {
+    slug: "leonski2",
+    title: "Leonski 2",
+    description:
+      "3D ski game that rebuilds any real resort from map data. Carve, jump, and ride the lifts down real mountains.",
+    href: "/legacy/leonski2.html",
+    image: "/cards/card_leonski2.png",
+    tag: "Live demo",
+    story: [
+      "A full 3D skiing sandbox that reconstructs real ski resorts on the fly. Search any mountain in the world and it pulls the pistes and lifts from OpenStreetMap, elevation from public terrain DEM tiles, and satellite imagery, then builds a playable snow-covered mountain in your browser with Three.js.",
+      "Ski it in third person with carving, jumps, butters, grabs, and spins, or switch to a free-fly camera to explore. Ride the chairlifts, gondolas, T-bars, and magic carpets back up, then bomb down again. No installs, no accounts, everything reconstructed live from open data.",
+    ],
+    tech: ["Three.js (WebGL)", "OpenStreetMap Overpass API", "AWS Terrain DEM tiles", "Esri satellite imagery", "Single-file, zero build step"],
+  },
+  {
     slug: "coconut",
     title: "Coconut Simulator",
     description: "Idle clicker — every tap shakes more coconuts from the tree.",
@@ -353,6 +367,7 @@ const localProjectPaths: Record<string, string> = {
   basket: "/legacy/basket-random/index.html",
   blackjoy: "/legacy/doubledutch3d.html",
   ski: "/legacy/ski.html",
+  leonski2: "/legacy/leonski2.html",
   coconut: "/legacy/coconut.html",
   car: "/legacy/car.html",
   clash: "/legacy/clash.html",
