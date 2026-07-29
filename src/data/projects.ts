@@ -175,6 +175,15 @@ export const gameProjects: Project[] = [
     tag: "Live demo",
   },
   {
+    slug: "castlefall",
+    title: "Castlefall",
+    description:
+      "Party word game of hidden teams. Everyone sees the same word list, and each team is secretly given one of the words. Pass one device around the table, then talk your way to your teammates.",
+    href: "/legacy/castlefall.html",
+    image: "/cards/card_castlefall.png",
+    tag: "Live demo",
+  },
+  {
     slug: "slope",
     title: "Slope",
     description:
@@ -372,6 +381,7 @@ const localProjectPaths: Record<string, string> = {
   car: "/legacy/car.html",
   clash: "/legacy/clash.html",
   imposter: "/legacy/imposter.html",
+  castlefall: "/legacy/castlefall.html",
   slope: "/legacy/slope.html",
   platformer: "/legacy/platformer.html",
   "wordle-game": "/legacy/wordle.html",
