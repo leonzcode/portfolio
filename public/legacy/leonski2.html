@@ -512,6 +512,7 @@ import * as THREE from 'three';
 const C = 40075016.686;            // earth circumference (m) at equator
 const TILE = 256;
 const G = 512;                     // terrain mesh segments per side
+const TERRAIN_CHUNKS = 16;         // terrain is cut into TERRAIN_CHUNKS² tiles so it can be frustum-culled (must divide G)
 const clamp = (v,a,b)=>v<a?a:v>b?b:v;
 const lerp = (a,b,t)=>a+(b-a)*t;
 const $ = s=>document.querySelector(s);
@@ -969,8 +970,14 @@ const CLOSED_RED=0x8b0000;  // closed/disused & resort-boundary red (darker than
 
 /* ===================== graphics settings + adaptive quality ===================== */
 const _dpr=Math.min(devicePixelRatio||1, 2);
-const GFX={ auto:false, aa:true, fpsCap:60, pixelScale:_dpr, pixelMax:_dpr, fps:60 };   // default = High (full device pixel ratio); no auto-scaling
-function applyGfx(){ if(!renderer) return; renderer.setPixelRatio(Math.min(devicePixelRatio||1, GFX.pixelScale)); renderer.setSize(innerWidth,innerHeight,false); }
+// detail = how much close-range snow relief the terrain shader draws (0 = none, 1 = full). It is the one
+// genuinely expensive part of that shader, so the quality buttons turn it down along with the render scale.
+// MSAA is skipped on high-DPI screens: rendering at 2× device pixels already supersamples every edge, so 4×MSAA
+// on top of that shades the scene at an effective 8× and buys almost nothing you can see. On a 1× display there
+// is nothing else doing the job, so it stays on. (Set at context creation — the renderer can't change it later.)
+const GFX={ auto:false, aa:_dpr<1.5, fpsCap:60, pixelScale:_dpr, pixelMax:_dpr, fps:60, detail:1 };   // default = High (full device pixel ratio); no auto-scaling
+function applyGfx(){ if(!renderer) return; renderer.setPixelRatio(Math.min(devicePixelRatio||1, GFX.pixelScale)); renderer.setSize(innerWidth,innerHeight,false);
+  if(terrainMat && terrainMat.uniforms.snowDetail) terrainMat.uniforms.snowDetail.value=GFX.detail; }
 let gfxInfoEl=null;
 function updateGfxInfo(){ if(gfxInfoEl) gfxInfoEl.textContent = GFX.fps+' fps · '+Math.min(devicePixelRatio||1,GFX.pixelScale).toFixed(2)+'× res'; }
 
@@ -1032,6 +1039,7 @@ function applyLayerVis(){ for(const k in LAYERS){ const on=SET.vis[k]!==false; f
 /* ---- spatial-tile culling: trees/rocks are split into a grid of tiles; each frame we hide the tiles
    that fall outside the camera frustum or beyond the render distance, so only what you can see renders. ---- */
 const cullTiles=[];
+let _cullCap=null;                                                          // when set, scene.add() also collects into this (see buildLiftGeom)
 const _cullFrustum=new THREE.Frustum(), _cullMat=new THREE.Matrix4(), _cullSph=new THREE.Sphere();
 function tileNT(W){ return clamp(Math.round(W/400),4,16); }                 // ~400 m tiles, 4..16 per side
 function tileIndex(x,z,W,NT){ const ti=clamp(Math.floor((x/W+0.5)*NT),0,NT-1), tj=clamp(Math.floor((z/W+0.5)*NT),0,NT-1); return tj*NT+ti; }
@@ -1049,13 +1057,33 @@ function updateCulling(){
   const maxD = (mode==='overview') ? Infinity : SET.renderDist*1.12;       // don't distance-cull the intro fly-around
   for(let i=0;i<cullTiles.length;i++){ const t=cullTiles[i];
     let vis = SET.vis[t.layer]!==false;                                    // honours the Show toggles
+    let near=0;
     if(vis){
       const dx=t.x-cx, dy=t.y-cy, dz=t.z-cz, dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
-      if(dist-t.r > maxD) vis=false;                                       // whole tile beyond the render distance
+      near=dist-t.r;                                                       // distance to the tile's NEAREST point
+      if(near > maxD) vis=false;                                           // whole tile beyond the render distance
       else { _cullSph.center.set(t.x,t.y,t.z); _cullSph.radius=t.r; vis=_cullFrustum.intersectsSphere(_cullSph); }   // outside the view frustum
     }
-    if(t.group.visible!==vis) t.group.visible=vis;
+    // One sphere test drives a whole lift. Read the CURRENT visibility rather than caching what we last wrote:
+    // applyLayerVis() sets these meshes directly when the Lifts toggle changes, so a cached flag desyncs and a
+    // lift that should be culled stays on screen (or a hidden one never comes back).
+    if(t.objs){ const cur=t.objs.length?t.objs[0].visible:vis;
+      if(cur!==vis) for(let m=0;m<t.objs.length;m++) t.objs[m].visible=vis; }
+    else if(t.group.visible!==vis) t.group.visible=vis;
+    if(vis && t.lod) setTileLOD(t.lod, near);
   }
+}
+/* A pine is trunk(20 tris) + lower cone(18) + upper cone(18) + snow cap(18) = 74, and ~7,000 of them are on
+   screen at once. Past a few hundred metres most of that detail is under a pixel, so shed it a layer at a time,
+   cheapest-looking-loss first: the snow cap goes, then the trunk (a thin brown stick contributes almost nothing
+   to a distant forest), then the upper cone. Nothing is rebuilt — this only flips .visible on meshes that
+   already exist, so it costs nothing and reverses instantly as you fly back in. */
+const TREE_LOD={ cap:520, trunk:1200, hi:2400 };
+function setTileLOD(L, near){
+  if(L.cap   && L.cap.visible   !== (near<TREE_LOD.cap))   L.cap.visible   = near<TREE_LOD.cap;
+  if(L.trunk && L.trunk.visible !== (near<TREE_LOD.trunk)) L.trunk.visible = near<TREE_LOD.trunk;
+  if(L.folHi && L.folHi.visible !== (near<TREE_LOD.hi))    L.folHi.visible = near<TREE_LOD.hi;
+  if(L.crown && L.crown.visible !== (near<TREE_LOD.hi))    L.crown.visible = near<TREE_LOD.hi;
 }
 
 function initRenderer(){
@@ -1070,10 +1098,12 @@ function initRenderer(){
   scene=new THREE.Scene();
   // capture scene.add() calls into the active layer bucket (for the visibility toggles)
   const _sceneAdd=scene.add.bind(scene);
-  scene.add=function(){ if(_layerCap){ for(let i=0;i<arguments.length;i++) _layerCap.push(arguments[i]); } return _sceneAdd.apply(scene,arguments); };
+  scene.add=function(){ if(_layerCap){ for(let i=0;i<arguments.length;i++) _layerCap.push(arguments[i]); }
+    if(_cullCap){ for(let i=0;i<arguments.length;i++) _cullCap.push(arguments[i]); }
+    return _sceneAdd.apply(scene,arguments); };
   camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,1,60000);
   addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight);
-    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
+    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); miniDirty(); });
 }
 
 /* ---- Grand Mountain (skitest) palette + sun direction for the stylised snow / sky / props ---- */
@@ -1155,13 +1185,21 @@ function buildScene(W){
     const j0=clamp(Math.floor((mnz/W+0.5)*G),0,G), j1=clamp(Math.ceil((mxz/W+0.5)*G),0,G);
     for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){ const k=j*N+i; if(carveY<pos[k*3+1]) pos[k*3+1]=carveY; }
   }
-  const idx=[]; for(let j=0;j<G;j++) for(let i=0;i<G;i++){
-    const a=j*N+i,b=a+1,c=a+N,d=c+1; idx.push(a,c,b, b,c,d);
+  // Normals are computed once over the whole sheet (so chunk seams share identical normals and can't crease),
+  // then the sheet is cut into CHUNKS: every chunk reuses the SAME position/uv/normal attributes — one VBO on the
+  // GPU — and owns only a small index buffer. That makes each chunk independently frustum-cullable, which is the
+  // entire point: as one 512×512 mesh this was 524,288 triangles submitted every frame no matter where you looked.
+  const full=new THREE.BufferGeometry();
+  full.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  full.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+  {
+    const fi=new Uint32Array(G*G*6); let o=0;
+    for(let j=0;j<G;j++) for(let i=0;i<G;i++){ const a=j*N+i,b=a+1,c=a+N,d=c+1;
+      fi[o++]=a; fi[o++]=c; fi[o++]=b; fi[o++]=b; fi[o++]=c; fi[o++]=d; }
+    full.setIndex(new THREE.BufferAttribute(fi,1));
   }
-  const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
-  geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));
-  geo.setIndex(idx); geo.computeVertexNormals();
+  full.computeVertexNormals();
+  const _tPos=full.getAttribute('position'), _tUv=full.getAttribute('uv'), _tNrm=full.getAttribute('normal');
   // soft forest-canopy shadows for the terrain: a low-res cover map, sampled toward the sun so snow behind trees
   // reads shaded. One texture lookup in the shader — no per-tree geometry, so it costs almost nothing.
   const _fN=world.FG, _fData=new Uint8Array(_fN*_fN);
@@ -1178,32 +1216,127 @@ function buildScene(W){
       sunDir:{value:SUN_DIR.clone()}, sunCol:{value:new THREE.Color(0xfff3df)},
       snowSun:{value:PAL.snowSun.clone()}, snowShad:{value:PAL.snowShad.clone()}, skyCol:{value:PAL.skyHorizon.clone()},
       fogColor:{value:new THREE.Color(PAL.skyHaze.getHex())}, fogNear:{value:W*0.35}, fogFar:{value:W*1.6},
-      forestTex:{value:forestTex}, shadowUVOff:{value:_shadowUV}, wsize:{value:W}, snowCover:{value:SET.snowDepth}
+      forestTex:{value:forestTex}, shadowUVOff:{value:_shadowUV}, wsize:{value:W}, snowCover:{value:SET.snowDepth},
+      snowDetail:{value:GFX.detail}
     },
+    extensions:{derivatives:true},                                       // fwidth() — core in WebGL2, an extension on WebGL1
     vertexShader:`
       varying vec3 vN; varying vec3 vW; varying float vFog;
-      void main(){ vN=normalize(normalMatrix*normal); vW=position;
+      void main(){
+        vec4 wp = modelMatrix*vec4(position,1.0);
+        vW = wp.xyz;                                                     // WORLD position (sunDir and cameraPosition are both world-space)
+        vN = normalize(mat3(modelMatrix)*normal);                        // WORLD normal. This was normalMatrix — i.e. VIEW space — which
+                                                                         // quietly swung the sun around with the camera: the same slope
+                                                                         // changed brightness by ~15% of full range as you turned, and
+                                                                         // disagreed with the trees and buildings, which the real
+                                                                         // DirectionalLight lights in world space. Measured, then fixed.
         vec4 mv=modelViewMatrix*vec4(position,1.0); vFog=-mv.z; gl_Position=projectionMatrix*mv; }`,
     fragmentShader:`
       varying vec3 vN; varying vec3 vW; varying float vFog;
       uniform vec3 sunDir,sunCol,snowSun,snowShad,skyCol,fogColor; uniform float fogNear,fogFar;
       uniform sampler2D forestTex; uniform vec2 shadowUVOff; uniform float wsize; uniform float snowCover;
+      uniform float snowDetail;                                          // quality dial: scales every close-range layer at once
+
+      // value noise returning (height, d/dx, d/dy) — the analytic gradient is what lets us bend the normal
+      // without paying for extra samples, which is the whole trick that makes this affordable per fragment.
+      float h21(vec2 p){ p=fract(p*vec2(127.31,311.7)); p+=dot(p,p+34.23); return fract(p.x*p.y); }
+      vec3 noised(vec2 x){
+        vec2 p=floor(x), w=fract(x);
+        // QUINTIC, not the usual cubic smoothstep. We use the gradient to bend the normal, and cubic
+        // interpolation is only C0 in its derivative — so every noise cell boundary shows up as a crease and
+        // the surface reads as a grid of rectangles. Quintic is C1 there and the lattice disappears.
+        vec2 u  = w*w*w*(w*(w*6.0-15.0)+10.0);
+        vec2 du = 30.0*w*w*(w*(w-2.0)+1.0);
+        float a=h21(p), b=h21(p+vec2(1.0,0.0)), c=h21(p+vec2(0.0,1.0)), d=h21(p+vec2(1.0,1.0));
+        float k1=b-a, k2=c-a, k3=a-b-c+d;
+        return vec3(a+k1*u.x+k2*u.y+k3*u.x*u.y, du.x*(k1+k3*u.y), du.y*(k2+k3*u.x));
+      }
+      // one octave of wind-blown relief, stretched along the prevailing wind. fx/fy are cycles per metre
+      // along/across it; returns (height, gradient.x, gradient.z) with the gradient rotated back to world axes.
+      vec3 windOct(vec2 P, float fx, float fy, float amp, float c, float s){
+        vec2 q = vec2(P.x*c - P.y*s, P.x*s + P.y*c);
+        vec3 n = noised(vec2(q.x*fx, q.y*fy));
+        vec2 dq = vec2(n.y*fx, n.z*fy)*amp;
+        return vec3(n.x, dq.x*c + dq.y*s, -dq.x*s + dq.y*c);
+      }
+      // A single octave of value noise always shows its lattice — as rows of evenly spaced blobs, whatever the
+      // interpolant. Two octaves at an irrational-ish frequency ratio, the second turned 90°, hide it.
+      vec3 windFbm(vec2 P, float fx, float fy, float amp, float c, float s){
+        vec3 a = windOct(P, fx,      fy,      amp,      c,  s);
+        vec3 b = windOct(P, fx*2.17, fy*2.17, amp*0.42, s, -c);
+        return vec3(a.x*0.7 + b.x*0.3, a.y+b.y, a.z+b.z);
+      }
+
       void main(){
-        vec3 N = vN;                                              // tracks are now real carved geometry, not painted here
-        vec2 P = vW.xz, gxz = vec2(0.0);
+        vec3 gN = normalize(vN);                                  // true terrain normal (tracks are carved geometry, not painted here)
+        vec2 P  = vW.xz;
+        vec3 V  = normalize(cameraPosition - vW);
+
+        // ---- broad drifts: the big soft shapes across a hillside. Five cosines, essentially free. ----
+        vec2 gBroad = vec2(0.0);
         vec2 k1=vec2(0.031,0.049), k2=vec2(-0.079,0.058), k3=vec2(0.137,0.108), k4=vec2(0.091,-0.187), k5=vec2(0.44,0.33);
-        gxz += 0.62*k1*cos(dot(k1,P));
-        gxz += 0.40*k2*cos(dot(k2,P)+1.7);
-        gxz += 0.20*k3*cos(dot(k3,P)+3.1);
-        gxz += 0.12*k4*cos(dot(k4,P)+0.6);
-        gxz += 0.03*k5*cos(dot(k5,P)+2.2);
-        N = normalize(N + vec3(-gxz.x, 0.0, -gxz.y));
-        float ndl = max(dot(N, sunDir), 0.0);
-        float amb = 0.54 + 0.42*clamp(N.y,0.0,1.0);
-        vec3 base = mix(snowShad, snowSun, smoothstep(0.24,0.90,ndl));   // deeper, wider tonal range → punchier slope shadows
-        base = mix(base, skyCol, (1.0-clamp(N.y,0.0,1.0))*0.20);
+        gBroad += 0.62*k1*cos(dot(k1,P));
+        gBroad += 0.40*k2*cos(dot(k2,P)+1.7);
+        gBroad += 0.20*k3*cos(dot(k3,P)+3.1);
+        gBroad += 0.12*k4*cos(dot(k4,P)+0.6);
+        gBroad += 0.03*k5*cos(dot(k5,P)+2.2);
+
+        // ---- close-range relief. Each layer is gated on the PIXEL FOOTPRINT, not raw distance: a layer
+        //      switches off exactly when its features drop below a pixel, so it fades out at the horizon, at
+        //      grazing angles and at low render scale alike. That is what keeps fine snow from turning into
+        //      shimmer, and it means distant fragments — most of the screen when flying — skip the work.
+        float px = max(fwidth(P.x), fwidth(P.y)) + 1e-5;         // world metres covered by this pixel
+        // Two crossing wind directions, not one. A single stretched octave combs the whole slope the same way
+        // and the surface starts reading as brushed fabric rather than snow; crossing them breaks that up.
+        float WC1= 0.94, WS1= 0.34, WC2= 0.57, WS2=-0.82;
+        vec2 gFine = vec2(0.0);
+        float d1 = clamp(1.0 - px*1.0, 0.0, 1.0)*snowDetail;     // sastrugi — metre-scale ridges combed by the wind
+        if(d1 > 0.01){ gFine += windFbm(P, 0.052, 0.132, 0.52*d1, WC1, WS1).yz; }
+        float d2 = clamp(1.0 - px*6.0, 0.0, 1.0)*snowDetail;     // wind ripples — knee-high corrugation, crossing the ridges
+        if(d2 > 0.01){ gFine += windFbm(P, 0.16,  0.30,  0.26*d2, WC2, WS2).yz; }
+        vec3 Nb = normalize(gN + vec3(-gBroad.x, 0.0, -gBroad.y));   // terrain + the big drifts
+        vec3 N  = normalize(Nb  + vec3(-gFine.x,  0.0, -gFine.y));   // + the close-range relief
+
+        // ---- light. Snow is strongly forward-scattering: light sinks in, bounces between the grains and
+        //      leaves again, so the terminator is soft and shadowed snow never goes black. A wrapped diffuse
+        //      is the cheap stand-in for that, and it is most of why this reads as snow and not white plastic.
+        // Tone comes from the BROAD normal only. Running the fine relief through this ramp is what made the
+        // snow break out in blue blotches: the ramp is steep, so a few degrees of wobble swung the whole hue.
+        float ndlB  = dot(Nb, sunDir);
+        float wrapd = clamp((ndlB + 0.32)/1.32, 0.0, 1.0);
+        float sky   = clamp(Nb.y, 0.0, 1.0);
+        float amb   = 0.54 + 0.42*sky;
+        vec3 base = mix(snowShad, snowSun, smoothstep(0.10, 0.94, wrapd));
+        base = mix(base, skyCol, (1.0-sky)*0.14);                        // faces turned from the sun pick up sky bounce
         base *= amb;
-        base += sunCol*pow(ndl,4.0)*0.09;
+        base += sunCol*pow(max(ndlB,0.0),4.0)*0.09;                      // warm kiss on the lit faces
+
+        // The fine relief then modulates BRIGHTNESS alone, with the contrast clamped: crests catch the sun and
+        // troughs drop into their own shade, which is what makes the surface read as three-dimensional instead
+        // of a flat sheet with a pattern painted on it — but no amount of detail can drag the colour off the
+        // snow ramp. Separating the two is the difference between snow and mottled blue plastic.
+        float ndlF = dot(N, sunDir);
+        base *= clamp(1.0 + (ndlF - ndlB)*1.05, 0.79, 1.18);
+
+        // wind-scoured steeps go harder, cooler and slightly darker than the powder sitting on the flats
+        base *= mix(vec3(1.0), vec3(0.955,0.972,1.005), 1.0-smoothstep(0.55, 0.90, gN.y));
+
+        // ---- specular: a broad sheen off the pack, plus sparse crystal glints in the last few metres ----
+        vec3 H = normalize(V + sunDir);
+        float lit  = smoothstep(0.0, 0.18, ndlB);
+        float spec = pow(max(dot(N,H),0.0), 46.0)*0.13;
+        float dS = clamp(1.0 - px*30.0, 0.0, 1.0)*snowDetail;
+        if(dS > 0.01){
+          vec3 gl = noised(P*22.0);
+          vec3 Ns = normalize(N + vec3(gl.y, 0.0, gl.z)*2.4);            // each grain facets a different way
+          spec += pow(max(dot(Ns,H),0.0), 300.0)*step(0.55, gl.x)*dS*2.2;  // only some of them catch the sun
+        }
+        base += sunCol*spec*lit;
+
+        // looking along the surface, snow brightens and washes out. Toward bright WHITE, not toward the sky:
+        // grazing snow forward-scatters, it doesn't turn blue, and mixing to skyCol made the whole slope go grey.
+        base = mix(base, snowSun*1.06, pow(1.0 - max(dot(N,V),0.0), 5.0)*0.10);
+
         vec2 uvT = vW.xz/wsize + 0.5;                                    // soft canopy shadow: darken snow that has trees between it and the sun
         base *= (1.0 - smoothstep(0.14,0.6, texture2D(forestTex, uvT + shadowUVOff).r)*0.30);
         float bare = 1.0 - smoothstep(0.0, 0.30, snowCover);            // low snow-cover ("all rock") → tint the whole surface to bare rock, no snow
@@ -1214,7 +1347,30 @@ function buildScene(W){
         gl_FragColor = vec4(col,1.0);
       }`
   });
-  terrainMesh=new THREE.Mesh(geo,terrainMat);
+  terrainMesh=new THREE.Group(); terrainMesh.name='terrain';
+  {
+    const CQ=G/TERRAIN_CHUNKS;                                   // quads per chunk side
+    for(let cj=0;cj<TERRAIN_CHUNKS;cj++) for(let ci=0;ci<TERRAIN_CHUNKS;ci++){
+      const i0=ci*CQ, j0=cj*CQ;
+      const ind=new Uint32Array(CQ*CQ*6); let o=0;
+      for(let j=j0;j<j0+CQ;j++) for(let i=i0;i<i0+CQ;i++){ const a=j*N+i,b=a+1,c=a+N,d=c+1;
+        ind[o++]=a; ind[o++]=c; ind[o++]=b; ind[o++]=b; ind[o++]=c; ind[o++]=d; }
+      let ymin=Infinity, ymax=-Infinity;                         // real height extent → a tight sphere, so culling is accurate
+      for(let j=j0;j<=j0+CQ;j++) for(let i=i0;i<=i0+CQ;i++){ const y=pos[(j*N+i)*3+1]; if(y<ymin)ymin=y; if(y>ymax)ymax=y; }
+      const cg=new THREE.BufferGeometry();
+      cg.setAttribute('position',_tPos); cg.setAttribute('uv',_tUv); cg.setAttribute('normal',_tNrm);
+      cg.setIndex(new THREE.BufferAttribute(ind,1));
+      const x0=(i0/G-0.5)*W, x1=((i0+CQ)/G-0.5)*W, z0=(j0/G-0.5)*W, z1=((j0+CQ)/G-0.5)*W;
+      // set by hand: computeBoundingSphere() would measure the WHOLE shared position buffer, not this chunk's slice
+      cg.boundingSphere=new THREE.Sphere(new THREE.Vector3((x0+x1)*0.5,(ymin+ymax)*0.5,(z0+z1)*0.5),
+        Math.hypot((x1-x0)*0.5,(ymax-ymin)*0.5,(z1-z0)*0.5));
+      cg.boundingBox=new THREE.Box3(new THREE.Vector3(x0,ymin,z0), new THREE.Vector3(x1,ymax,z1));
+      const cm=new THREE.Mesh(cg,terrainMat);
+      cm.matrixAutoUpdate=false; cm.updateMatrix();              // static: never recompose its matrix
+      terrainMesh.add(cm);
+    }
+    terrainMesh.matrixAutoUpdate=false; terrainMesh.updateMatrix();
+  }
   scene.add(terrainMesh); initTracks();                          // fresh carved-trench mesh for the new resort
   skierShadow=new THREE.Mesh(new THREE.PlaneGeometry(1,1),        // soft fake contact shadow that follows the skier (grounds them, no shadow-map cost)
     new THREE.MeshBasicMaterial({map:skierShadowTex(), transparent:true, depthWrite:false, opacity:0.6, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3}));
@@ -1227,8 +1383,16 @@ function buildScene(W){
 
   buildInfraScenery();   // lakes / parking / roads / buildings — usually empty here (data arrives after the load); go() fills it in deferred
   layerCapture('runs', ()=>{
-    // pistes — a flat difficulty-coloured band painted on the snow
-    for(const p of world.pistes) addTrail(p.pts, DIFF_COLOR[p.diff]??DIFF_COLOR.intermediate);
+    // pistes — a flat difficulty-coloured band painted on the snow; every run bakes into ONE mesh
+    { const acc={pos:[],col:[]};
+      for(const p of world.pistes) addTrail(p.pts, DIFF_COLOR[p.diff]??DIFF_COLOR.intermediate, acc);
+      if(acc.pos.length){
+        const g=new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(acc.pos,3));
+        g.setAttribute('color',    new THREE.Float32BufferAttribute(acc.col,3));
+        scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({vertexColors:true, fog:false, side:THREE.DoubleSide,
+          polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4})));
+      } }
     // closed / disused runs — dark-red line with cross-hatch ticks
     for(const c of (world.closed||[])) addClosed(c.pts);
     // resort boundary — dark-red outline
@@ -1399,7 +1563,10 @@ function addRibbon(pts,half,color,opacity,lift){
     depthWrite:false,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-4})));
 }
 // a flat colored band painted ONTO the snow (no 3D tube): hugs the slope, floated a hair above to avoid z-fighting
-function addSurfaceRibbon(pts, half, color, lift, opacity){
+// `acc` (optional): instead of making its own mesh, bake the strip into a shared vertex-coloured buffer.
+// The pistes use it — as one mesh each they were 49 draw calls for 7k triangles, the worst calls-per-triangle
+// ratio in the scene. MeshBasicMaterial ignores normals, so nothing is lost by dropping them.
+function addSurfaceRibbon(pts, half, color, lift, opacity, acc){
   const s=sampleStrip(pts); if(s.length<2) return;
   const v=[], idx=[];
   for(let k=0;k<s.length;k++){
@@ -1410,6 +1577,10 @@ function addSurfaceRibbon(pts, half, color, lift, opacity){
     v.push(lx, world.heightAt(lx,lz)+lift, lz);                // sample each edge so the band lies flat on the cross-slope
     v.push(rx, world.heightAt(rx,rz)+lift, rz);
     if(k<s.length-1){ const o=k*2; idx.push(o,o+1,o+2, o+1,o+3,o+2); }
+  }
+  if(acc){ const c=new THREE.Color(color);
+    for(let t=0;t<idx.length;t++){ const q=idx[t]*3; acc.pos.push(v[q],v[q+1],v[q+2]); acc.col.push(c.r,c.g,c.b); }
+    return;
   }
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(v),3));
@@ -1459,7 +1630,7 @@ function addParkingStalls(pts){
   const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(v,3)); g.computeVertexNormals();
   scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({color:0xdfe3e6,fog:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-6,polygonOffsetUnits:-6})));
 }
-function addTrail(pts,color){ addSurfaceRibbon(pts, TRAIL_R, color, 0.5); }   // runs: difficulty-colored band on the snow
+function addTrail(pts,color,acc){ addSurfaceRibbon(pts, TRAIL_R, color, 0.5, null, acc); }   // runs: difficulty-colored band on the snow
 const ROAD_HALF={motorway:6,trunk:5.5,primary:5,secondary:4.5,tertiary:4,unclassified:3.5,residential:3.5,service:2.6};
 function amenityCss(kind){
   return kind==='hotel' ? '#6a4caf' : (kind==='lodge'||kind==='hut') ? '#8a5a2b' : '#c8821e';
@@ -1573,15 +1744,34 @@ function emitBuilding(b, pos, col){
   const rise=clamp(Math.min(mxx-mnx,mxz-mnz)*0.35,2.5,9), ax=cx,ay=roofY+rise,az=cz;   // hip roof to the centroid → a real sloped roof
   for(let e=0;e<n;e++){ const a=pts[e], d=pts[(e+1)%n]; pushTri(pos,col, a.x,roofY,a.z, d.x,roofY,d.z, ax,ay,az, roof); }
 }
+// Every building baked into ONE mesh was great for draw calls and terrible for culling: a single geometry
+// spanning the whole map can never leave the frustum, so all 60k of its triangles were drawn even when the
+// village was behind you. Bin by spatial tile instead — still ~1 draw per populated tile, but now cullable.
 function addBuildings(){
-  const pos=[], col=[];
-  for(const b of (world.buildings||[])) emitBuilding(b, pos, col);
-  if(!pos.length) return;
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
-  g.computeVertexNormals();
-  scene.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({vertexColors:true, roughness:.9, side:THREE.DoubleSide})));
+  const B=world.buildings||[]; if(!B.length) return;
+  const W=world.worldSize, NT=tileNT(W), bins=new Map();
+  for(const b of B){
+    const p=b.pts; if(!p||!p.length) continue;
+    let sx=0, sz=0; for(const q of p){ sx+=q.x; sz+=q.z; }
+    const k=tileIndex(sx/p.length, sz/p.length, W, NT);
+    let e=bins.get(k); if(!e){ e={pos:[],col:[]}; bins.set(k,e); }
+    emitBuilding(b, e.pos, e.col);
+  }
+  const mat=new THREE.MeshStandardMaterial({vertexColors:true, roughness:.9, side:THREE.DoubleSide});
+  for(const e of bins.values()){
+    if(!e.pos.length) continue;
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(e.pos,3));
+    g.setAttribute('color',    new THREE.Float32BufferAttribute(e.col,3));
+    g.computeVertexNormals();
+    const m=new THREE.Mesh(g, mat); scene.add(m);
+    // exact bounds from the emitted vertices — a building whose centroid sits in this tile may lean well past its edge
+    let mnx=Infinity,mxx=-Infinity,mny=Infinity,mxy=-Infinity,mnz=Infinity,mxz=-Infinity;
+    for(let i=0;i<e.pos.length;i+=3){ const x=e.pos[i], y=e.pos[i+1], z=e.pos[i+2];
+      if(x<mnx)mnx=x; if(x>mxx)mxx=x; if(y<mny)mny=y; if(y>mxy)mxy=y; if(z<mnz)mnz=z; if(z>mxz)mxz=z; }
+    cullTiles.push({group:m, layer:'buildings', x:(mnx+mxx)*0.5, y:(mny+mxy)*0.5, z:(mnz+mxz)*0.5,
+                    r:Math.hypot((mxx-mnx)*0.5,(mxy-mny)*0.5,(mxz-mnz)*0.5)+1});
+  }
 }
 function pointInPoly(x,z,pts){ let inside=false;
   for(let i=0,j=pts.length-1;i<pts.length;j=i++){ const xi=pts[i].x,zi=pts[i].z,xj=pts[j].x,zj=pts[j].z;
@@ -1733,6 +1923,7 @@ function addTrees(){
 
   for(const [k,e] of bins){
     const grp=new THREE.Group();
+    let alive=null, deadCrown=null;                    // kept so the tile can drop detail parts with distance
     if(e.alive.length){ const NA=e.alive.length;
       const trunk=new THREE.InstancedMesh(gTrunk,mTrunk,NA);
       const folLo=new THREE.InstancedMesh(gFolLo,mFol,NA), folHi=new THREE.InstancedMesh(gFolHi,mFol,NA);
@@ -1752,7 +1943,7 @@ function addTrees(){
       trunk.instanceMatrix.needsUpdate=folLo.instanceMatrix.needsUpdate=folHi.instanceMatrix.needsUpdate=cap.instanceMatrix.needsUpdate=true;
       folLo.instanceColor.needsUpdate=folHi.instanceColor.needsUpdate=true;
       trunk.frustumCulled=folLo.frustumCulled=folHi.frustumCulled=cap.frustumCulled=false;   // the tile Group's visibility (updateCulling) is the cull
-      grp.add(trunk,folLo,folHi,cap);
+      grp.add(trunk,folLo,folHi,cap); alive={trunk,folHi,cap};
     }
     if(e.dead.length){ const ND=e.dead.length;
       const snag=new THREE.InstancedMesh(gSnag,mSnag,ND), crown=new THREE.InstancedMesh(gCrown,mCrown,ND);
@@ -1762,10 +1953,14 @@ function addTrees(){
         M.compose(p.set(x, y+15*sc, z), q, s.set(sc,sc,sc)); crown.setMatrixAt(a,M);
       }
       snag.instanceMatrix.needsUpdate=crown.instanceMatrix.needsUpdate=true;
-      snag.frustumCulled=crown.frustumCulled=false; grp.add(snag,crown);
+      snag.frustumCulled=crown.frustumCulled=false; grp.add(snag,crown); deadCrown=crown;
     }
     if(grp.children.length){ scene.add(grp);
-      const sph=tileSphere(k%NT, (k/NT)|0, W, NT, 26); cullTiles.push({group:grp, layer:'trees', x:sph.x, y:sph.y, z:sph.z, r:sph.r}); }
+      const sph=tileSphere(k%NT, (k/NT)|0, W, NT, 26);
+      // lod = the parts updateCulling drops as the tile recedes (see TREE_LOD). A whole tile switches at once,
+      // gated on its NEAREST point, so trees close to you never lose detail just because their tile is large.
+      cullTiles.push({group:grp, layer:'trees', x:sph.x, y:sph.y, z:sph.z, r:sph.r,
+                      lod:{trunk:alive?alive.trunk:null, folHi:alive?alive.folHi:null, cap:alive?alive.cap:null, crown:deadCrown}}); }
   }
 }
 // shake tree r's crown by tilt angle `ang` (pivoting about its base so the top sways most); ang=0 restores it upright
@@ -2252,7 +2447,100 @@ function finishMerge(P, roughness, metalness){
   g.setAttribute('color',    new THREE.Float32BufferAttribute(P.col,3));
   return new THREE.Mesh(g, new THREE.MeshStandardMaterial({vertexColors:true, roughness:roughness??0.8, metalness:metalness??0.2}));
 }
+/* A chairlift chair is ~13 little boxes. Built one-InstancedMesh-per-box that was 13 draw calls PER LIFT and
+   13 setMatrixAt() per chair per frame — across a resort, ~194 draw calls (a third of the whole frame) for 5%
+   of its triangles. Bake every opaque part into ONE vertex-coloured geometry instead: same triangles, one draw.
+   Two kinds of part have to stay separate: the hanger pole (first person zero-scales it on the chair you're
+   riding) and anything transparent (it needs its own blended pass, and merging would flatten the opacity). */
+const _mgI=new THREE.Matrix4();
+function packCarrierParts(parts, poleIdx){
+  const P={pos:[],nrm:[],col:[]}, out=[]; let rs=0, ms=0, n=0, newPole=-1;
+  parts.forEach(([g,m],i)=>{
+    if(i===poleIdx){ newPole=out.length; out.push([g,m]); return; }
+    if(m.transparent){ out.push([g,m]); return; }
+    mergeInto(P, g, _mgI, m.color);                    // NB: mergeInto disposes g, and these parts are built fresh per lift
+    rs+=(m.roughness??0.8); ms+=(m.metalness??0); n++; // materials are NOT disposed: several parts share one, and a kept part may still use it
+  });
+  if(n){
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P.pos,3));
+    g.setAttribute('normal',   new THREE.Float32BufferAttribute(P.nrm,3));
+    g.setAttribute('color',    new THREE.Float32BufferAttribute(P.col,3));
+    out.push([g, new THREE.MeshStandardMaterial({vertexColors:true, roughness:rs/n, metalness:ms/n})]);
+  }
+  return {parts:out, poleIdx:newPole};
+}
+/* Every mesh a lift builds — towers, cable, terminals, bullwheels, chairs, sheaves — sets frustumCulled=false,
+   and for good reason: the chairs circulate, so an InstancedMesh's cached bounds would go stale and pop them out
+   of existence mid-ride. The cost was that the whole lift system (145 draw calls, 171k triangles at Kirkwood)
+   stayed on screen permanently, including lifts behind you and across the valley.
+   So: collect everything a lift adds, and give the set ONE sphere covering the corridor the lift occupies. That
+   sphere is static and encloses every position a chair can ever reach, so it is correct however they move — and
+   because you are inside it whenever you are riding, the lift you're on can never cull itself away. */
 function buildLiftGeom(L){
+  const prev=_cullCap; _cullCap=[];
+  try{ return buildLiftGeom_(L); }
+  finally{ const got=_cullCap; _cullCap=prev; registerLiftCull(L, got); }
+}
+/* A lift terminal is built from a scatter of tiny props — signs, boxes, rails, lamps — one Mesh and one material
+   each, many of them 2 to 12 triangles. Across a resort that was 79 draw calls carrying almost no geometry.
+   Bake the small static opaque ones into a single vertex-coloured mesh per lift.
+   The filter is deliberately narrow, because plenty of what a lift adds must NOT be merged: anything that moves
+   (sheave wheels spin, carpet rollers turn, chairs circulate), anything textured or transparent, and the big
+   merged tower lines and cable tubes, which are already one draw each and would only lose their vertex colours. */
+function mergeLiftProps(objs){
+  const moving=new Set();
+  for(const s of liftSheaves) if(s.wheel) moving.add(s.wheel);
+  for(const b of beltRigs){ for(const rl of (b.rollers||[])) moving.add(rl); }
+  for(const r of wheelRigs) if(r.im) moving.add(r.im);
+  const ok=o=>{
+    if(!o.isMesh || o.isInstancedMesh || !o.geometry || moving.has(o)) return false;
+    const m=o.material;
+    if(!m || Array.isArray(m) || m.transparent || m.map || m.vertexColors || m.side!==THREE.FrontSide) return false;
+    const g=o.geometry, tri=(g.index?g.index.count:(g.attributes.position?g.attributes.position.count:0))/3;
+    return tri>0 && tri<=400;                                // leave the cable tubes and tower merges alone
+  };
+  const seen=new Set(), src=[];                              // select first: mergeInto() disposes what it consumes,
+  for(const root of objs){                                   // so nothing may be eaten until the merge is going ahead
+    if(root.updateMatrixWorld) root.updateMatrixWorld(true);  // a terminal is a positioned Group, so we need WORLD matrices
+    root.traverse(o=>{ if(ok(o) && !seen.has(o)){ seen.add(o); src.push(o); } });   // never consume the same mesh twice
+  }
+  if(src.length<2) return null;                              // one prop is already one draw call; nothing to win
+  const P={pos:[],nrm:[],col:[]}; let rs=0, ms=0, n=0;
+  for(const o of src){
+    const m=o.material;
+    mergeInto(P, o.geometry, o.matrixWorld, m.color);
+    rs+=(m.roughness!=null?m.roughness:0.8); ms+=(m.metalness!=null?m.metalness:0); n++;
+    if(o.parent) o.parent.remove(o);
+  }
+  const removed=src.slice();
+  for(const root of objs)                                    // a container emptied by that is now dead weight
+    if(root.isGroup && root.children.length===0){ if(root.parent) root.parent.remove(root); removed.push(root); }
+  const arr=LAYERS.lifts;                                    // they were captured by layerCapture('lifts')
+  if(arr){ const dead=new Set(removed); for(let i=arr.length-1;i>=0;i--) if(dead.has(arr[i])) arr.splice(i,1); }
+  const mesh=finishMerge(P, rs/n, ms/n);
+  if(mesh){ scene.add(mesh); }
+  return {mesh, removed};
+}
+function registerLiftCull(L, objs){
+  if(!objs || !objs.length) return;
+  const T=L&&L.towers; if(!T || !T.length) return;
+  try{ const r=mergeLiftProps(objs);
+    if(r){ const dead=new Set(r.removed);
+      objs=objs.filter(o=>!dead.has(o));
+      if(r.mesh) objs.push(r.mesh); }
+  }catch(e){ console.warn('lift prop merge failed', e); }
+  const bY=L.baseY||[], tY=L.topY||[];
+  let mnx=Infinity,mxx=-Infinity,mnz=Infinity,mxz=-Infinity,mny=Infinity,mxy=-Infinity;
+  for(let i=0;i<T.length;i++){ const p=T[i];
+    if(p.x<mnx)mnx=p.x; if(p.x>mxx)mxx=p.x; if(p.z<mnz)mnz=p.z; if(p.z>mxz)mxz=p.z;
+    const b=(bY[i]!=null?bY[i]:0), t=(tY[i]!=null?tY[i]:b);
+    if(b<mny)mny=b; if(t>mxy)mxy=t; }
+  if(!isFinite(mnx)) return;
+  const r=Math.hypot((mxx-mnx)*0.5,(mxy-mny)*0.5,(mxz-mnz)*0.5)+80;   // pad for terminals, unload ramps and chairs hanging below the cable
+  cullTiles.push({objs, layer:'lifts', vis:true, x:(mnx+mxx)*0.5, y:(mny+mxy)*0.5, z:(mnz+mxz)*0.5, r});
+}
+function buildLiftGeom_(L){
   const {towers, baseY, topY}=L, n=towers.length;
   const tag=(L.info&&L.info.tag||'').toLowerCase();
   if(tag==='magic_carpet'){ buildMagicCarpet(L); return; }   // ground belt: NO pylons, NO cable
@@ -2325,7 +2613,9 @@ function buildLiftGeom(L){
     }
     { const mm=finishMerge(merge, 0.8, 0.25); if(mm){ mm.frustumCulled=false; scene.add(mm); } }   // whole tower line + heads = ONE mesh
     if(wheelData.length){                                                       // every sheave wheel in ONE InstancedMesh; spins as a batch (cheap)
-      const im=new THREE.InstancedMesh(new THREE.CylinderGeometry(WR,WR,0.5,10), sheaveMat, wheelData.length); im.frustumCulled=false;
+      // 6 sides, not 10: these are 0.63 m sheaves on a pylon head, and there are ~1,250 of them across a resort —
+      // 50k triangles at 10 sides, 30k at 6, for a wheel that is a couple of pixels wide from anywhere you stand.
+      const im=new THREE.InstancedMesh(new THREE.CylinderGeometry(WR,WR,0.5,6), sheaveMat, wheelData.length); im.frustumCulled=false;
       const M=new THREE.Matrix4(), one=new THREE.Vector3(1,1,1);
       for(let w=0;w<wheelData.length;w++){ M.compose(wheelData[w].pos, wheelData[w].baseQ, one); im.setMatrixAt(w,M); }
       im.instanceMatrix.needsUpdate=true; scene.add(im);
@@ -2447,8 +2737,9 @@ function buildCarriers(curve, info, speed, len, sys){    // curve = the closed u
 
   const spacing=gondola?120:80;                      // along the FULL loop (≈2× one-way)
   const N=clamp(Math.round(len/spacing),3,60);
-  const meshes=parts.map(([g,m])=>{ const im=new THREE.InstancedMesh(g,m,N); im.frustumCulled=false; scene.add(im); return im; });
-  const rig={sp,stan,SN,len,speed,N,meshes,u:0,sys,poleIdx:(gondola?0:1)}; liftRigs.push(rig); return rig;   // poleIdx = the central hanger tube (hidden for the ridden chair in first person)
+  const packed=packCarrierParts(parts, gondola?0:1);  // ~13 parts → 2 (pole + one merged body); 3 if it has glass
+  const meshes=packed.parts.map(([g,m])=>{ const im=new THREE.InstancedMesh(g,m,N); im.frustumCulled=false; scene.add(im); return im; });
+  const rig={sp,stan,SN,len,speed,N,meshes,u:0,sys,poleIdx:packed.poleIdx}; liftRigs.push(rig); return rig;   // poleIdx = the central hanger tube (hidden for the ridden chair in first person)
 }
 const _cm=new THREE.Matrix4(), _cq=new THREE.Quaternion(), _cs=new THREE.Vector3(1,1,1), _cp=new THREE.Vector3(), _cup=new THREE.Vector3(0,1,0), _spin=new THREE.Quaternion();
 // live view of the game's rig lists (getters, because buildScene REASSIGNS these arrays rather than emptying them)
@@ -3615,6 +3906,16 @@ function drawMinimap(){
   miniCtx.restore();
 }
 let hudT=0;
+// Element lookups and the last value written are cached: reading .clientWidth forces the browser to flush layout
+// synchronously, and this used to do that (plus five querySelectors and five textContent writes) ~16× a second
+// whether or not anything had changed. Now the layout read happens only when the minimap actually resizes.
+const _hud={}, _hudVal={};
+const hudEl=id=>_hud[id]||(_hud[id]=$(id));
+const hudSet=(id,v)=>{ if(_hudVal[id]!==v){ _hudVal[id]=v; const e=hudEl(id); if(e) e.textContent=v; } };
+let _miniW=0, _miniH=0, _miniDirtyT=0;
+function measureMini(){ const m=$('#minimap'); _miniW=(m&&m.clientWidth)||210; _miniH=(m&&m.clientHeight)||210; }
+// expanding/collapsing the minimap is a CSS transition, so keep re-measuring while it animates
+function miniDirty(){ _miniDirtyT=0.7; _miniW=0; }
 function updateHUD(dt){
   hudT+=dt; if(hudT<0.06) return; hudT=0;
   // read position/speed from whichever mode is active
@@ -3624,15 +3925,15 @@ function updateHUD(dt){
     : {x:fly.x, y:fly.y, z:fly.z, spd:fly.spd, yaw:fly.yaw, moving:fly._moving, ground:false};
   const gx=clamp(E.x,-world.worldSize*0.49,world.worldSize*0.49), gz=clamp(E.z,-world.worldSize*0.49,world.worldSize*0.49);
   const alt=world.minH+E.y, ground=world.minH+world.heightAt(gx,gz);
-  $('#alt').textContent=Math.round(alt);
-  $('#agl').textContent=Math.max(0,Math.round(alt-ground))+' m';
-  $('#spd').textContent=E.moving?Math.round(E.spd*3.6):0;
-  $('#relief').textContent=Math.round(world.maxH-world.minH)+' m';
-  $('#extent').textContent=(world.worldSize/1000).toFixed(1)+' km';
+  hudSet('#alt', Math.round(alt));
+  hudSet('#agl', Math.max(0,Math.round(alt-ground))+' m');
+  hudSet('#spd', E.moving?Math.round(E.spd*3.6):0);
+  hudSet('#relief', Math.round(world.maxH-world.minH)+' m');
+  hudSet('#extent', (world.worldSize/1000).toFixed(1)+' km');
   const baseX=(E.x/world.worldSize+0.5)*MINI_RES, baseZ=(E.z/world.worldSize+0.5)*MINI_RES;
   const cx=baseX*miniZoom+miniPanX, cz=baseZ*miniZoom+miniPanY;     // apply the minimap's pan/zoom
-  const mEl=$('#minimap'), mw=mEl.clientWidth||210, mh=mEl.clientHeight||210;
-  meDot.style.transform=`translate(${cx*mw/MINI_RES}px,${cz*mh/MINI_RES}px) rotate(${Math.PI-E.yaw}rad)`;   // +π so the arrow points along travel, not opposite
+  if(_miniDirtyT>0 || !_miniW){ _miniDirtyT-=0.06; measureMini(); }
+  meDot.style.transform=`translate(${cx*_miniW/MINI_RES}px,${cz*_miniH/MINI_RES}px) rotate(${Math.PI-E.yaw}rad)`;   // +π so the arrow points along travel, not opposite
 }
 
 /* ===================== LABELS + STATS (lifts & runs) ===================== */
@@ -3949,8 +4250,8 @@ $('#liftPanelClose').onclick=closeLiftPanel;
 
 /* ===================== INTERACTIVE MINIMAP (expand · zoom · pan · click) ===================== */
 const miniEl=$('#mini'), miniCanvas=$('#minimap');
-function expandMini(){ miniEl.classList.add('expanded'); }
-function collapseMini(){ miniEl.classList.remove('expanded'); miniZoom=1; miniPanX=0; miniPanY=0; drawMinimap(); }
+function expandMini(){ miniEl.classList.add('expanded'); miniDirty(); }
+function collapseMini(){ miniEl.classList.remove('expanded'); miniZoom=1; miniPanX=0; miniPanY=0; drawMinimap(); miniDirty(); }
 function clampMiniPan(){ const span=MINI_RES*miniZoom;
   miniPanX=clamp(miniPanX, MINI_RES-span, 0); miniPanY=clamp(miniPanY, MINI_RES-span, 0); }
 miniEl.addEventListener('click',()=>{ if(!miniEl.classList.contains('expanded')) expandMini(); });
@@ -4017,7 +4318,11 @@ function distToSeg(px,pz,ax,az,bx,bz){
 let last=0, gfxF=0, gfxT=0;
 function frame(t){
   raf=requestAnimationFrame(frame);
-  if(GFX.fpsCap && last && t-last < 1000/GFX.fpsCap - 1) return;         // frame-rate cap
+  // Frame-rate cap. The tolerance is a QUARTER of the target interval, not a flat 1 ms: at 60 fps on a 60 Hz
+  // display the gap between rAF callbacks is ~16.67 ms but it jitters, and a 1 ms margin meant any frame that
+  // arrived even slightly early was thrown away entirely — a dropped frame, i.e. a visible hitch, for nothing.
+  // A quarter-interval margin absorbs that jitter and still halves 120 Hz down to 60 as intended.
+  if(GFX.fpsCap && last && t-last < (1000/GFX.fpsCap)*0.75) return;       // frame-rate cap
   const dt=last?Math.min((t-last)/1000,0.06):0.016; last=t;
   if(mode!=='idle' && (liftRigs.length||beltRigs.length||liftSheaves.length)) updateLifts(dt);   // advance chairs/gondolas/belts/sheaves FIRST, so a ridden chair's rider reads the SAME position this frame (no lag/catch-up when speeding up)
   if(mode==='overview') orbit(dt);
@@ -4050,8 +4355,8 @@ function frame(t){
 
   const mk=label=>{ const b=document.createElement('div'); b.className='gfxBtn'; b.textContent=label; return b; };
   const paint=(wrap,active)=>{ for(const c of wrap.children) c.classList.toggle('on', c===active); };
-  const quals=[['High',()=>{GFX.pixelScale=GFX.pixelMax;applyGfx();}],
-               ['Med',()=>{GFX.pixelScale=Math.min(GFX.pixelMax,1.0);applyGfx();}], ['Low',()=>{GFX.pixelScale=0.65;applyGfx();}]];
+  const quals=[['High',()=>{GFX.pixelScale=GFX.pixelMax;GFX.detail=1;applyGfx();}],
+               ['Med',()=>{GFX.pixelScale=Math.min(GFX.pixelMax,1.0);GFX.detail=0.6;applyGfx();}], ['Low',()=>{GFX.pixelScale=0.65;GFX.detail=0.25;applyGfx();}]];
   quals.forEach(([lbl,fn])=>{ const b=mk(lbl); b.onclick=()=>{ fn(); paint(qWrap,b); updateGfxInfo(); }; qWrap.appendChild(b); });
   paint(qWrap, qWrap.children[0]);
   [['30',30],['60',60],['120',120],['Off',0]].forEach(([lbl,v])=>{ const b=mk(lbl); b.onclick=()=>{ GFX.fpsCap=v; paint(fWrap,b); updateGfxInfo(); }; fWrap.appendChild(b); });
@@ -4443,7 +4748,10 @@ function buildDioramaLift(dScene, hFn, x0,z0,x1,z1, out){
   const terrMat=new THREE.ShaderMaterial({ fog:true,
     uniforms:{ sunDir:{value:SUN_DIR.clone()}, sunCol:{value:new THREE.Color(0xfff3df)}, snowSun:{value:PAL.snowSun.clone()}, snowShad:{value:PAL.snowShad.clone()}, skyCol:{value:PAL.skyHorizon.clone()}, fogColor:{value:new THREE.Color(PAL.skyHaze.getHex())}, fogNear:{value:FOGN}, fogFar:{value:FOGF} },
     vertexShader:`varying vec3 vN; varying vec3 vW; varying float vFog;
-      void main(){ vN=normalize(normalMatrix*normal); vW=position; vec4 mv=modelViewMatrix*vec4(position,1.0); vFog=-mv.z; gl_Position=projectionMatrix*mv; }`,
+      // WORLD normal, not normalMatrix (which is view space). This screen orbits continuously, so a view-space
+      // normal dragged the sun around the mountain the whole time it was on show.
+      void main(){ vN=normalize(mat3(modelMatrix)*normal); vW=(modelMatrix*vec4(position,1.0)).xyz;
+        vec4 mv=modelViewMatrix*vec4(position,1.0); vFog=-mv.z; gl_Position=projectionMatrix*mv; }`,
     fragmentShader:`varying vec3 vN; varying vec3 vW; varying float vFog;
       uniform vec3 sunDir,sunCol,snowSun,snowShad,skyCol,fogColor; uniform float fogNear,fogFar;
       void main(){ vec3 N=vN; vec2 P=vW.xz, g=vec2(0.0);
