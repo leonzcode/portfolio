@@ -961,7 +961,9 @@ const TREE_CELL=10; let treeHash=new Map(); const treeRustlers=[]; let treeRustl
 let _liftClkT=0, roadTest=null;   // lift-wheel SFX clock + on-road surface tester (rebuilt when infra loads)
 let skierShadow=null, _blobTex=null;   // soft contact shadow under the skier (fake, cheap)
 const _rayc=new THREE.Raycaster(), _mNDC=new THREE.Vector2(), _liftPt=new THREE.Vector3(); let _mouseSeen=false, _hoverGrace=0;   // mouse-hover lift picking (fly mode)
-const _rustQ=new THREE.Quaternion(), _rustAx=new THREE.Vector3(), _rustP=new THREE.Vector3(), _rustS=new THREE.Vector3(), _rustM=new THREE.Matrix4();
+const _rustQ=new THREE.Quaternion(), _rustBase=new THREE.Quaternion(), _rustAx=new THREE.Vector3(), _rustP=new THREE.Vector3(), _rustS=new THREE.Vector3(), _rustM=new THREE.Matrix4();
+// deterministic per-tree variation straight from world position — stable across rebuilds, and no per-tree storage
+const treeHash2=(x,z)=>{ const s=Math.sin(x*12.9898+z*78.233)*43758.5453; return s-Math.floor(s); };
 const DIFF_COLOR={novice:0x1f9d3b,easy:0x1f9d3b,intermediate:0x1565c0,advanced:0xd32f2f,expert:0x111111,freeride:0x111111,park:0xff8c1a};
 const DIFF_CSS={novice:'#1f9d3b',easy:'#1f9d3b',intermediate:'#1565c0',advanced:'#d32f2f',expert:'#111111',freeride:'#111111',park:'#ff8c1a'};
 const LIFT_H=17;            // ski-lift pylon height (m) — back to the original 15, just slightly taller
@@ -1912,7 +1914,7 @@ function addTrees(){
   const gCap=new THREE.ConeGeometry(1.35,3,6), mCap=new THREE.MeshStandardMaterial({color:0xf3f8ff, flatShading:true, roughness:.85});
   const gSnag=new THREE.CylinderGeometry(0.22,0.5,15,5), mSnag=new THREE.MeshStandardMaterial({color:0x2c2622, flatShading:true, roughness:1.0});
   const gCrown=new THREE.ConeGeometry(1.6,6,5), mCrown=new THREE.MeshStandardMaterial({color:0x35302a, flatShading:true, roughness:1.0});
-  const cLush=new THREE.Color(PAL.pine), cDry=new THREE.Color(0x6f7a3f), cc=new THREE.Color();
+  const cLush=new THREE.Color(PAL.pine), cDry=new THREE.Color(0x6f7a3f), cSnowFol=new THREE.Color(0xcfe0d8), cc=new THREE.Color();
   const M=new THREE.Matrix4(), q=new THREE.Quaternion(), s=new THREE.Vector3(), p=new THREE.Vector3();
 
   // bin every tree into a spatial tile; biome split (green→living conifer, burn-scar green≈0→bare snag) happens per tile
@@ -1932,13 +1934,23 @@ function addTrees(){
       const cap=new THREE.InstancedMesh(gCap,mCap,NA);
       for(let a=0;a<NA;a++){ const t=e.alive[a];
         const x=P[t*5], y=P[t*5+1], z=P[t*5+2], sc=P[t*5+3], h=P[t*5+4];
-        M.compose(p.set(x, y+3.5*sc, z), q, s.set(sc,sc,sc)); trunk.setMatrixAt(a,M);
-        M.compose(p.set(x, y+10*sc, z), q, s.set(sc,sc,sc)); folLo.setMatrixAt(a,M);
-        M.compose(p.set(x, y+15.5*sc, z), q, s.set(sc,sc,sc)); folHi.setMatrixAt(a,M);
-        M.compose(p.set(x, y+19*sc, z), q, s.set(sc,sc,sc)); cap.setMatrixAt(a,M);
-        cc.copy(cDry).lerp(cLush, clamp((h-0.05)/0.8,0,1)); folLo.setColorAt(a,cc); folHi.setColorAt(a,cc);
+        // Every tree used to be built with the SAME identity quaternion, so all 7,000 six-sided cones faced
+        // exactly the same way and a hillside read as one stamped shape repeated. A per-tree yaw and an
+        // independent height stretch cost nothing at all — the matrices are composed either way — and they are
+        // the single biggest thing separating "a forest" from "a texture of trees".
+        const r1=treeHash2(x*0.71, z*0.53), r2=treeHash2(x*1.93+11.7, z*1.31+5.3);
+        const yaw=r1*6.2831853, vy=sc*(0.82+r2*0.40);            // vy = the tree's own vertical scale
+        q.setFromAxisAngle(_UPv, yaw); s.set(sc, vy, sc);
+        M.compose(p.set(x, y+3.5*vy, z), q, s);  trunk.setMatrixAt(a,M);
+        M.compose(p.set(x, y+10*vy,  z), q, s);  folLo.setMatrixAt(a,M);
+        M.compose(p.set(x, y+15.5*vy,z), q, s);  folHi.setMatrixAt(a,M);
+        M.compose(p.set(x, y+19*vy,  z), q, s);  cap.setMatrixAt(a,M);
+        cc.copy(cDry).lerp(cLush, clamp((h-0.05)/0.8,0,1));
+        cc.multiplyScalar(0.86+0.26*r1);                          // tonal jitter so a stand isn't one flat green
+        cc.lerp(cSnowFol, clamp((r2-0.66)/0.34,0,1)*0.45);        // some trees are carrying a load of snow
+        folLo.setColorAt(a,cc); folHi.setColorAt(a,cc);
         { const rk=Math.floor(x/TREE_CELL)+','+Math.floor(z/TREE_CELL); let cl2=treeHash.get(rk); if(!cl2){ cl2=[]; treeHash.set(rk,cl2); }
-          cl2.push({x, z, y, sc, lo:folLo, hi:folHi, cap, a}); }   // register this tree's crown for touch-rustle
+          cl2.push({x, z, y, sc, vy, yaw, lo:folLo, hi:folHi, cap, a}); }   // register this tree's crown for touch-rustle
       }
       trunk.instanceMatrix.needsUpdate=folLo.instanceMatrix.needsUpdate=folHi.instanceMatrix.needsUpdate=cap.instanceMatrix.needsUpdate=true;
       folLo.instanceColor.needsUpdate=folHi.instanceColor.needsUpdate=true;
@@ -1949,8 +1961,11 @@ function addTrees(){
       const snag=new THREE.InstancedMesh(gSnag,mSnag,ND), crown=new THREE.InstancedMesh(gCrown,mCrown,ND);
       for(let a=0;a<ND;a++){ const t=e.dead[a];
         const x=P[t*5], y=P[t*5+1], z=P[t*5+2], sc=P[t*5+3];
-        M.compose(p.set(x, y+7.5*sc, z), q, s.set(sc,sc,sc)); snag.setMatrixAt(a,M);
-        M.compose(p.set(x, y+15*sc, z), q, s.set(sc,sc,sc)); crown.setMatrixAt(a,M);
+        const r1=treeHash2(x*0.71, z*0.53), r2=treeHash2(x*1.93+11.7, z*1.31+5.3);
+        const vy=sc*(0.80+r2*0.45);                               // dead snags vary more in height than live trees
+        q.setFromAxisAngle(_UPv, r1*6.2831853); s.set(sc, vy, sc);
+        M.compose(p.set(x, y+7.5*vy, z), q, s); snag.setMatrixAt(a,M);
+        M.compose(p.set(x, y+15*vy,  z), q, s); crown.setMatrixAt(a,M);
       }
       snag.instanceMatrix.needsUpdate=crown.instanceMatrix.needsUpdate=true;
       snag.frustumCulled=crown.frustumCulled=false; grp.add(snag,crown); deadCrown=crown;
@@ -1965,12 +1980,15 @@ function addTrees(){
 }
 // shake tree r's crown by tilt angle `ang` (pivoting about its base so the top sways most); ang=0 restores it upright
 function setTreeTilt(r, ang){
-  const sdx=r.sdx, sdz=r.sdz, sc=r.sc;
+  const sdx=r.sdx, sdz=r.sdz, sc=r.sc, vy=r.vy||sc;
+  // The sway is applied ON TOP of the tree's own yaw and height, not instead of them — recomposing from a bare
+  // identity would snap a rustled tree round to face the same way as every other one and reset its height.
   _rustQ.setFromAxisAngle(_rustAx.set(sdz,0,-sdx).normalize(), ang);
+  _rustQ.multiply(_rustBase.setFromAxisAngle(_UPv, r.yaw||0));
   const put=(mesh,hoff)=>{ if(!mesh) return; const disp=ang*hoff;
-    _rustP.set(r.x+sdx*disp, r.y+hoff, r.z+sdz*disp); _rustS.set(sc,sc,sc); _rustM.compose(_rustP,_rustQ,_rustS);
+    _rustP.set(r.x+sdx*disp, r.y+hoff, r.z+sdz*disp); _rustS.set(sc,vy,sc); _rustM.compose(_rustP,_rustQ,_rustS);
     mesh.setMatrixAt(r.a,_rustM); mesh.instanceMatrix.needsUpdate=true; };
-  put(r.lo,10*sc); put(r.hi,15.5*sc); put(r.cap,19*sc);
+  put(r.lo,10*vy); put(r.hi,15.5*vy); put(r.cap,19*vy);
 }
 // while skiing, brushing a tree kicks off a quick decaying sway of its crown (+ a soft rustle SFX). Only the
 // ~9 hash cells around the skier are scanned per frame, so this stays cheap regardless of the total tree count.
@@ -2004,7 +2022,8 @@ function rockExpose(r){ const s=SET.snowDepth; if(s>=0.999) return 0;
 function addRockOutcrops(){
   const rock=world.rock, RG=world.RG, W=world.worldSize, heightAt=world.heightAt; if(!rock||!RG) return;
   const NT=tileNT(W), bins=new Map();
-  const cR=new THREE.Color(PAL.rock), cL=new THREE.Color(PAL.rockLit), cS=new THREE.Color(PAL.snowSun), tc=new THREE.Color();
+  const cD=new THREE.Color(0x45443f), cR=new THREE.Color(PAL.rock), cL=new THREE.Color(PAL.rockLit),
+        cS=new THREE.Color(PAL.snowSun), tc=new THREE.Color();
   const hash=(x,z)=>{ const s=Math.sin(x*0.53+z*0.31)*43758.5453; return s-Math.floor(s); };   // deterministic per-position jaggedness
   const gx=f=>(f/(RG-1)-0.5)*W;
   const rkAt=(i,j)=> rockExpose(rock[Math.min(j,RG-1)*RG+Math.min(i,RG-1)]);   // raw gradient → snow-cover-thresholded exposure
@@ -2015,12 +2034,28 @@ function addRockOutcrops(){
     let x=gx(fi), z=gx(fj); const rk=rkLerp(fi,fj);
     x += (hash(x*1.7+3.1, z*1.3)-0.5)*jit;                                      // deterministic in world space → neighbouring facets still share edge vertices (no cracks)
     z += (hash(x*1.1, z*1.9+7.7)-0.5)*jit;
-    const prot = rk>0.02 ? rk*(1.5 + hash(x,z)*6.6) : 0;                        // tapers to 0 at the rock edge; up to ~8 m of jagged relief at the core
+    // Two octaves, not one. A single hash gives evenly spiky noise that reads as gravel; a broad swell with a
+    // finer crag riding on top gives buttresses and ledges — the shapes that make it look like a rock face.
+    const prot = rk>0.02 ? rk*(1.2 + hash(x*0.35, z*0.35)*5.4 + hash(x*1.6, z*1.6)*2.2) : 0;
     return { x, y:heightAt(x,z)+prot, z, rk }; }
+  const snowCov=clamp(SET.snowDepth*1.15, 0, 1);
   function tri(a,b,c){ const k=tileIndex((a.x+b.x+c.x)/3,(a.z+b.z+c.z)/3,W,NT); let e=bins.get(k); if(!e){e={pos:[],col:[]};bins.set(k,e);}
     e.pos.push(a.x,a.y,a.z, b.x,b.y,b.z, c.x,c.y,c.z);
-    for(const v of [a,b,c]){ tc.copy(cR).lerp(cL, hash(v.x*2.1,v.z*1.3)*0.85);   // grey rock, varied
-      tc.lerp(cS, clamp((v.rk-0.78)*2.2,0,1)*0.35); e.col.push(tc.r,tc.g,tc.b); } }   // a little snow clinging to the very-rocky tops
+    // Face normal, so the shading can follow the geometry rather than just the position: snow settles on
+    // whatever faces the sky and steep faces stay bare, which is the single strongest cue that this is rock
+    // and not a brown patch painted on the hillside.
+    const ux=b.x-a.x, uy=b.y-a.y, uz=b.z-a.z, vx=c.x-a.x, vy=c.y-a.y, vz=c.z-a.z;
+    const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const up=Math.abs(ny)/(Math.hypot(nx,ny,nz)||1);
+    const mx=(a.x+b.x+c.x)/3, my=(a.y+b.y+c.y)/3, mz=(a.z+b.z+c.z)/3;
+    const h1=hash(mx*2.1, mz*1.3);
+    const band=0.5+0.5*Math.sin(my*0.6 + hash(mx*0.12, mz*0.12)*6.0);            // bedding planes: horizontal strata
+    tc.copy(cD).lerp(cR, 0.30+0.70*band);                                        // dark crevice tone → mid rock
+    tc.lerp(cL, h1*h1*0.75*up);                                                  // sunward-facing faces weather lighter
+    const ledge=clamp((up-0.52)/0.34,0,1)*snowCov*(0.45+0.55*h1);                // flat ledges hold snow, steep walls do not
+    tc.lerp(cS, ledge*0.88);
+    const r=tc.r, g=tc.g, bl=tc.b;
+    e.col.push(r,g,bl, r,g,bl, r,g,bl); }                                        // flat facet: one colour for all three corners
   for(let j=0;j<RG-1;j++) for(let i=0;i<RG-1;i++){
     if((rkAt(i,j)+rkAt(i+1,j)+rkAt(i,j+1)+rkAt(i+1,j+1)) < 0.8) continue;       // avg rock < 0.2 → no outcrop (1.3× more sensitive)
     for(let sj=0;sj<SUB;sj++) for(let si=0;si<SUB;si++){                        // fine facets inside the cell → many small rocks instead of one big quad
@@ -2029,12 +2064,48 @@ function addRockOutcrops(){
     }
   }
   if(!bins.size) return;
-  const mat=new THREE.MeshStandardMaterial({vertexColors:true, flatShading:true, roughness:0.96, metalness:0, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1});
+  // Lit by the same two-tone the snow uses, sharing the terrain's uniform objects. As a MeshStandardMaterial on
+  // the scene lights, rock went pure black at night while the snow beside it stayed moonlit — the two were on
+  // different lighting models. This also means a weather change retunes the rock for free.
+  const u=terrainMat?terrainMat.uniforms:null;
+  const mat=new THREE.ShaderMaterial({
+    extensions:{derivatives:true}, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1,
+    uniforms: u ? {sunDir:u.sunDir, sunCol:u.sunCol, snowSun:u.snowSun, snowShad:u.snowShad, skyCol:u.skyCol,
+                   fogColor:u.fogColor, fogNear:u.fogNear, fogFar:u.fogFar}
+                : {sunDir:{value:SUN_DIR.clone()}, sunCol:{value:new THREE.Color(0xfff3df)},
+                   snowSun:{value:PAL.snowSun.clone()}, snowShad:{value:PAL.snowShad.clone()},
+                   skyCol:{value:PAL.skyHorizon.clone()}, fogColor:{value:new THREE.Color(PAL.skyHaze.getHex())},
+                   fogNear:{value:1200}, fogFar:{value:4000}},
+    vertexShader:`
+      attribute vec3 color;
+      varying vec3 vC; varying vec3 vW; varying float vFog;
+      void main(){ vC=color; vW=(modelMatrix*vec4(position,1.0)).xyz;
+        vec4 mv=modelViewMatrix*vec4(position,1.0); vFog=-mv.z; gl_Position=projectionMatrix*mv; }`,
+    fragmentShader:`
+      uniform vec3 sunDir,sunCol,snowSun,snowShad,skyCol,fogColor; uniform float fogNear,fogFar;
+      varying vec3 vC; varying vec3 vW; varying float vFog;
+      void main(){
+        vec3 N = normalize(cross(dFdx(vW), dFdy(vW)));   // flat facets, as before — no normal attribute needed
+        if(N.y < 0.0) N = -N;
+        float ndl = max(dot(N, sunDir), 0.0);
+        float sky = clamp(N.y, 0.0, 1.0);
+        // No wrapped diffuse here: rock is opaque, so its terminator should be hard where snow's is soft.
+        // The shadow tone is pulled back toward its own luminance first — snowShad is sky-blue, which is right
+        // for snow bouncing the sky and quite wrong for stone, which just goes darker and slightly cool.
+        vec3 shad = mix(snowShad, vec3(dot(snowShad, vec3(0.30,0.59,0.11))), 0.45);
+        vec3 L = mix(shad, snowSun, smoothstep(0.02, 0.72, ndl));
+        vec3 base = vC * L * (0.68 + 0.32*sky);
+        base = mix(base, base*skyCol*1.25, (1.0-sky)*0.16);      // cool sky bounce into the vertical faces
+        base += sunCol * pow(ndl, 10.0) * 0.045;                 // faint sheen where a face squares up to the sun
+        gl_FragColor = vec4(mix(base, fogColor, smoothstep(fogNear, fogFar, vFog)), 1.0);
+      }`
+  });
   for(const [k,e] of bins){ if(!e.pos.length) continue;
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(e.pos,3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(e.col,3));
-    geo.computeVertexNormals();
+    // no computeVertexNormals(): the shader takes its face normal from screen-space derivatives, so a normal
+    // attribute would be tens of thousands of vertices of data uploaded to the GPU and never read
     const mesh=new THREE.Mesh(geo, mat); mesh.frustumCulled=false; scene.add(mesh);   // tile visibility handled by updateCulling()
     const sph=tileSphere(k%NT, (k/NT)|0, W, NT, 10); cullTiles.push({group:mesh, layer:'rocks', x:sph.x, y:sph.y, z:sph.z, r:sph.r});
   }
@@ -3740,56 +3811,170 @@ function togglePOV(){ pov=pov?0:1; applyPOV();
 
 /* ---- ski tracks: two carved trenches (real geometry with depth + self-shadow), one per ski.
    Tracks PERSIST for the whole session (across ski↔fly) — the buffer grows as you ski; only "Clear Tracks" or a new mountain wipes them. ---- */
-const TRK_SV=24, TRK_BASE=2000, TRK_HARDCAP=40000;     // verts/segment = 2 skis × 2 walls × 2 tris × 3; base ring grows on demand up to a memory ceiling
-let TRK_CAP=TRK_BASE, trkPos=null, trkGeo=null, trkMesh=null, trkPrev=null, trkHead=0;
+/* ===================== SKI TRACKS =====================
+   One continuous cross-section swept along the path, not two isolated V-cuts. Nine points across:
+
+        crest                                                       crest
+          0                        4 (middle ridge)                   8
+           \    1 ____ 3          /  \          5 ____ 7            /
+            \__/  \  /  \________/    \________/  \  /  \__________/
+                   \/ 2                              \/ 6
+              left groove                        right groove
+
+   The crests matter: a carving ski does not just cut a slot, it throws the displaced snow up on either side,
+   and the ridge between the skis is what actually reads as "someone came through here". Depth, berm height and
+   overall width all scale with speed and edge angle, so a hard carve leaves a deep wide trench and a straight
+   glide leaves a faint scratch. */
+/* Storage is a chain of fixed-size BLOCKS, not one growing ring buffer, and that buys two separate things:
+   - The trail can be frustum-culled. As one mesh with frustumCulled=false, every segment ever laid was
+     submitted every frame forever — measured at 80,000 triangles after 5,000 segments, all of it still drawn
+     while looking the other way.
+   - Adding a segment only re-uploads ITS block (~150 KB) instead of the entire trail. The single-buffer
+     version marked the whole position attribute dirty on every segment, which at the old 20,000-segment
+     ceiling meant pushing 11 MB to the GPU several times a second. */
+const TRK_SV=48, TRK_BLK=192, TRK_MAXBLK=64;           // 8 quads × 2 tris × 3 verts · 192 segs/block · ~5 km of trail kept
+// Offsets are set by the skis themselves: the model sits at ±0.11 local × SKIER_SCALE 3.3 = ±0.36 m, and the
+// ski is about 0.23 m wide at that scale, so a groove half-width of 0.12 is exactly one ski.
+const TRK_OFF=[-0.58,-0.48,-0.36,-0.24, 0, 0.24, 0.36, 0.48, 0.58];   // cross-section offsets across the track (m)
+const TRK_SHD=[ 1.00, 0.70, 0.24, 0.70, 0.88, 0.70, 0.24, 0.70, 1.00];  // 0 = groove floor (in its own shade) · 1 = berm crest
+const _trkY=new Float32Array(9), _trkPX=new Float32Array(9), _trkPZ=new Float32Array(9), _trkPY=new Float32Array(9),
+      _trkQX=new Float32Array(9), _trkQZ=new Float32Array(9), _trkQY=new Float32Array(9);
+let trkBlocks=[], trkMat=null, trkGroup=null, trkPrev=null, trkHead=0;
 function initTracks(){                                   // (re)create the trench mesh for the current resort and add it to the scene
-  TRK_CAP=TRK_BASE;
-  trkPos=new Float32Array(TRK_CAP*TRK_SV*3);
-  trkGeo=new THREE.BufferGeometry();
-  trkGeo.setAttribute('position', new THREE.BufferAttribute(trkPos,3).setUsage(THREE.DynamicDrawUsage));
-  trkGeo.setDrawRange(0,0);
-  trkMesh=new THREE.Mesh(trkGeo, new THREE.MeshStandardMaterial({color:0xf2f7fd, flatShading:true, roughness:0.72, metalness:0, side:THREE.DoubleSide, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2}));   // brighter + a touch shinier → reads as a fresh sprayed-snow trail
-  trkMesh.frustumCulled=false; scene.add(trkMesh);
-  trkHead=0; trkPrev=null;
+  trkBlocks=[]; trkHead=0; trkPrev=null;
+  trkGroup=new THREE.Group(); trkGroup.name='tracks';
+  trkGroup.matrixAutoUpdate=false; trkGroup.updateMatrix();
+  scene.add(trkGroup);
+  // Shares the terrain's uniform OBJECTS, so a weather change or a render-distance change retunes the tracks
+  // for free and they can never drift out of step with the snow they are cut into.
+  const u=terrainMat?terrainMat.uniforms:null;
+  const mat=new THREE.ShaderMaterial({
+    side:THREE.DoubleSide, extensions:{derivatives:true},
+    polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+    uniforms: u ? {sunDir:u.sunDir, sunCol:u.sunCol, snowSun:u.snowSun, snowShad:u.snowShad, skyCol:u.skyCol,
+                   fogColor:u.fogColor, fogNear:u.fogNear, fogFar:u.fogFar}
+                : {sunDir:{value:SUN_DIR.clone()}, sunCol:{value:new THREE.Color(0xfff3df)},
+                   snowSun:{value:PAL.snowSun.clone()}, snowShad:{value:PAL.snowShad.clone()},
+                   skyCol:{value:PAL.skyHorizon.clone()}, fogColor:{value:new THREE.Color(PAL.skyHaze.getHex())},
+                   fogNear:{value:1200}, fogFar:{value:4000}},
+    vertexShader:`
+      attribute float shade;
+      varying float vShade; varying vec3 vW; varying float vFog;
+      void main(){ vShade=shade; vW=(modelMatrix*vec4(position,1.0)).xyz;
+        vec4 mv=modelViewMatrix*vec4(position,1.0); vFog=-mv.z; gl_Position=projectionMatrix*mv; }`,
+    fragmentShader:`
+      uniform vec3 sunDir,sunCol,snowSun,snowShad,skyCol,fogColor; uniform float fogNear,fogFar;
+      varying float vShade; varying vec3 vW; varying float vFog;
+      void main(){
+        // Flat face normal straight from the surface derivatives: the walls and berms ARE flat facets, so this
+        // is exact, costs no normal attribute (which would double the per-frame buffer upload), and keeps the
+        // faceted look the rest of the game has. Forced upward because the mesh is double-sided.
+        vec3 N = normalize(cross(dFdx(vW), dFdy(vW)));
+        if(N.y < 0.0) N = -N;
+        vec3 V = normalize(cameraPosition - vW);
+        float ndl   = dot(N, sunDir);
+        float wrapd = clamp((ndl + 0.32)/1.32, 0.0, 1.0);   // same wrapped diffuse as the snow it is cut into
+        float sky   = clamp(N.y, 0.0, 1.0);
+        vec3 base = mix(snowShad, snowSun, smoothstep(0.10, 0.94, wrapd));
+        base = mix(base, skyCol, (1.0-sky)*0.14);
+        base *= 0.54 + 0.42*sky;
+        // Broken snow is brighter and more crystalline than the pack it came out of, and a groove floor sits in
+        // its own shadow. vShade carries that: 0 on the floor, 1 on a crest.
+        base *= mix(0.70, 1.17, vShade);
+        base += sunCol * pow(max(dot(N, normalize(V+sunDir)), 0.0), 34.0)
+                       * (0.09 + 0.26*vShade) * smoothstep(0.0, 0.20, ndl);   // fresh cut glitters along the crests
+        float f = smoothstep(fogNear, fogFar, vFog);
+        gl_FragColor = vec4(mix(base, fogColor, f), 1.0);
+      }`
+  });
+  trkMat=mat;
 }
-function growTracks(){                                   // buffer full → double it (keeping every existing segment) until the hard cap
-  const next=Math.min(TRK_CAP*2, TRK_HARDCAP);
-  if(next<=TRK_CAP){ const half=(TRK_CAP>>1)*TRK_SV*3; trkPos.copyWithin(0,half); trkHead=TRK_CAP>>1; return; }   // at the ceiling → drop oldest half (very long session)
-  const np=new Float32Array(next*TRK_SV*3); np.set(trkPos); trkPos=np; TRK_CAP=next;
-  trkGeo.setAttribute('position', new THREE.BufferAttribute(trkPos,3).setUsage(THREE.DynamicDrawUsage));
-}
-function clearTracks(){ if(!trkGeo) return; trkHead=0; trkPrev=null; trkGeo.setDrawRange(0,0);
-  if(TRK_CAP>TRK_BASE){ TRK_CAP=TRK_BASE; trkPos=new Float32Array(TRK_CAP*TRK_SV*3);   // shrink back to base to free memory
-    trkGeo.setAttribute('position', new THREE.BufferAttribute(trkPos,3).setUsage(THREE.DynamicDrawUsage)); } }
-function trkTri(o,ax,ay,az,bx,by,bz,cx,cy,cz){ const p=trkPos; p[o++]=ax;p[o++]=ay;p[o++]=az; p[o++]=bx;p[o++]=by;p[o++]=bz; p[o++]=cx;p[o++]=cy;p[o++]=cz; return o; }
-function addTrackSeg(ax,az,bx,bz){
-  const dx=bx-ax, dz=bz-az, L=Math.hypot(dx,dz)||1, rx=dz/L, rz=-dx/L;    // right vector (perp to travel)
-  const gauge=0.36, hw=0.26, depth=0.26, H=world.heightAt;                // wider grooves that merge into one bright sprayed-snow band (Grand-Mountain-style trail), still dug ~0.26 m deep
-  let o=trkHead*TRK_SV*3;
-  for(const g of [-gauge, gauge]){
-    const acx=ax+rx*g, acz=az+rz*g, bcx=bx+rx*g, bcz=bz+rz*g;             // groove centreline
-    const aLx=acx-rx*hw, aLz=acz-rz*hw, aRx=acx+rx*hw, aRz=acz+rz*hw;
-    const bLx=bcx-rx*hw, bLz=bcz-rz*hw, bRx=bcx+rx*hw, bRz=bcz+rz*hw;
-    const aLy=H(aLx,aLz)+0.02, aBy=H(acx,acz)-depth, aRy=H(aRx,aRz)+0.02;  // edges at the surface, bottom dipped below
-    const bLy=H(bLx,bLz)+0.02, bBy=H(bcx,bcz)-depth, bRy=H(bRx,bRz)+0.02;
-    o=trkTri(o, aLx,aLy,aLz, acx,aBy,acz, bcx,bBy,bcz);                    // left wall (2 tris)
-    o=trkTri(o, aLx,aLy,aLz, bcx,bBy,bcz, bLx,bLy,bLz);
-    o=trkTri(o, acx,aBy,acz, aRx,aRy,aRz, bRx,bRy,bRz);                    // right wall (2 tris)
-    o=trkTri(o, acx,aBy,acz, bRx,bRy,bRz, bcx,bBy,bcz);
+// a fresh block: its own small buffers, so writing a segment dirties ~150 KB rather than the whole trail
+function trkPushBlock(){
+  const pos=new Float32Array(TRK_BLK*TRK_SV*3), shd=new Float32Array(TRK_BLK*TRK_SV);
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('shade',    new THREE.BufferAttribute(shd,1).setUsage(THREE.DynamicDrawUsage));
+  geo.setDrawRange(0,0);
+  geo.boundingSphere=new THREE.Sphere(new THREE.Vector3(),0);   // grown as segments land in this block
+  const mesh=new THREE.Mesh(geo, trkMat);
+  mesh.matrixAutoUpdate=false; mesh.updateMatrix();
+  trkGroup.add(mesh);
+  const b={pos,shd,geo,mesh,n:0, mnx:Infinity,mxx:-Infinity, mny:Infinity,mxy:-Infinity, mnz:Infinity,mxz:-Infinity};
+  trkBlocks.push(b);
+  while(trkBlocks.length>TRK_MAXBLK){                     // very long session → retire the oldest stretch of trail
+    const o=trkBlocks.shift(); trkGroup.remove(o.mesh); o.geo.dispose();
   }
-  trkHead++;
-  if(trkHead>=TRK_CAP) growTracks();                    // full → grow (tracks persist), or drop oldest half only at the hard ceiling
-  trkGeo.attributes.position.needsUpdate=true;
-  trkGeo.setDrawRange(0, trkHead*TRK_SV);
+  return b;
+}
+function clearTracks(){
+  if(!trkGroup) return;
+  for(const b of trkBlocks){ trkGroup.remove(b.mesh); b.geo.dispose(); }
+  trkBlocks.length=0; trkHead=0; trkPrev=null;
+}
+// one triangle: three cross-section indices, each taken from the A-end (p) or B-end (q) ring
+function trkTri(p,h,o,s, i,ia, j,ja, k,ka){
+  const AX=ia?_trkQX:_trkPX, AY=ia?_trkQY:_trkPY, AZ=ia?_trkQZ:_trkPZ;
+  const BX=ja?_trkQX:_trkPX, BY=ja?_trkQY:_trkPY, BZ=ja?_trkQZ:_trkPZ;
+  const CX=ka?_trkQX:_trkPX, CY=ka?_trkQY:_trkPY, CZ=ka?_trkQZ:_trkPZ;
+  p[o++]=AX[i]; p[o++]=AY[i]; p[o++]=AZ[i]; h[s++]=TRK_SHD[i];
+  p[o++]=BX[j]; p[o++]=BY[j]; p[o++]=BZ[j]; h[s++]=TRK_SHD[j];
+  p[o++]=CX[k]; p[o++]=CY[k]; p[o++]=CZ[k]; h[s++]=TRK_SHD[k];
+  return o;
+}
+function addTrackSeg(ax,az,bx,bz,spd,edge){
+  const dx=bx-ax, dz=bz-az, L=Math.hypot(dx,dz)||1, rx=dz/L, rz=-dx/L;    // right vector (perp to travel)
+  // Start from the PREVIOUS segment's cross-section direction. Building each segment off its own perpendicular
+  // left a wedge-shaped gap on the outside of every turn — the faster the turn, the wider the gap.
+  const prx=(trkPrev && trkPrev.rx!=null)?trkPrev.rx:rx, prz=(trkPrev && trkPrev.rz!=null)?trkPrev.rz:rz;
+  const carve=clamp(Math.abs(edge||0)/(PHYS.EDGE_MAX||1), 0, 1);
+  const fast =clamp((spd-2)/22, 0, 1);
+  // Snow is not extruded plastic: jitter each segment a little so the trench breathes along its length instead
+  // of reading as one perfectly uniform moulding.
+  const j=Math.sin(trkHead*12.9898)*43758.5453, jit=0.86+0.28*(j-Math.floor(j));
+  const depth=(0.045 + 0.085*carve + 0.025*fast)*jit;    // a hard carve digs in; a straight glide barely scratches
+  const berm =(0.015 + 0.045*carve)*jit;
+  const wide = 0.95 + 0.12*carve;
+  const H=world.heightAt;
+  _trkY[0]=berm;  _trkY[1]=0.012; _trkY[2]=-depth; _trkY[3]=0.012; _trkY[4]=berm*0.45;
+  _trkY[5]=0.012; _trkY[6]=-depth; _trkY[7]=0.012; _trkY[8]=berm;
+  for(let k=0;k<9;k++){
+    const w=TRK_OFF[k]*wide;
+    const px=ax+prx*w, pz=az+prz*w, qx=bx+rx*w, qz=bz+rz*w;
+    _trkPX[k]=px; _trkPZ[k]=pz; _trkPY[k]=H(px,pz)+_trkY[k];
+    _trkQX[k]=qx; _trkQZ[k]=qz; _trkQY[k]=H(qx,qz)+_trkY[k];
+  }
+  let blk=trkBlocks[trkBlocks.length-1];
+  if(!blk || blk.n>=TRK_BLK) blk=trkPushBlock();
+  let o=blk.n*TRK_SV*3, s=blk.n*TRK_SV;
+  const P=blk.pos, S=blk.shd;
+  for(let k=0;k<8;k++){                                   // 8 quads across the section, each 2 triangles
+    o=trkTri(P,S,o,s, k,0, k,1, k+1,1); s+=3;
+    o=trkTri(P,S,o,s, k,0, k+1,1, k+1,0); s+=3;
+  }
+  for(let k=0;k<9;k++){                                   // grow this block's bounds so it can be culled
+    const X1=_trkPX[k], Y1=_trkPY[k], Z1=_trkPZ[k], X2=_trkQX[k], Y2=_trkQY[k], Z2=_trkQZ[k];
+    if(X1<blk.mnx)blk.mnx=X1; if(X1>blk.mxx)blk.mxx=X1; if(X2<blk.mnx)blk.mnx=X2; if(X2>blk.mxx)blk.mxx=X2;
+    if(Y1<blk.mny)blk.mny=Y1; if(Y1>blk.mxy)blk.mxy=Y1; if(Y2<blk.mny)blk.mny=Y2; if(Y2>blk.mxy)blk.mxy=Y2;
+    if(Z1<blk.mnz)blk.mnz=Z1; if(Z1>blk.mxz)blk.mxz=Z1; if(Z2<blk.mnz)blk.mnz=Z2; if(Z2>blk.mxz)blk.mxz=Z2;
+  }
+  blk.n++; trkHead++;
+  const bs=blk.geo.boundingSphere, cx=(blk.mnx+blk.mxx)*0.5, cy=(blk.mny+blk.mxy)*0.5, cz=(blk.mnz+blk.mxz)*0.5;
+  bs.center.set(cx,cy,cz);
+  bs.radius=Math.hypot(blk.mxx-cx, blk.mxy-cy, blk.mxz-cz);
+  blk.geo.attributes.position.needsUpdate=true;           // only THIS block re-uploads
+  blk.geo.attributes.shade.needsUpdate=true;
+  blk.geo.setDrawRange(0, blk.n*TRK_SV);
+  if(trkPrev){ trkPrev.rx=rx; trkPrev.rz=rz; }
 }
 function stampTracks(){
-  if(!trkGeo || !world) return;
+  if(!trkGroup || !world) return;
   const spd=Math.hypot(ski.vx,ski.vz), cx=ski.x, cz=ski.z;
   if(ski.air || ski.ride){ trkPrev=null; return; }
   if(spd<2.0){ trkPrev=null; return; }
-  if(!trkPrev){ trkPrev={x:cx,z:cz}; return; }
+  if(!trkPrev){ trkPrev={x:cx,z:cz,rx:null,rz:null}; return; }
   if(Math.hypot(cx-trkPrev.x, cz-trkPrev.z) < 0.4) return;
-  addTrackSeg(trkPrev.x, trkPrev.z, cx, cz);
+  addTrackSeg(trkPrev.x, trkPrev.z, cx, cz, spd, ski.edge);
   trkPrev.x=cx; trkPrev.z=cz;
 }
 /* ---- snow spray (one pooled Points buffer; recycle the oldest particle) ---- */
