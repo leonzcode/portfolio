@@ -408,8 +408,26 @@
     },
 
     _renderConnecting: function () {
+      var self = this;
       var body = this._lobbyShell('Connecting');
       body.appendChild(el('p', 'mp-hint', 'Reaching the server…'));
+      this.errorEl = el('p', 'mp-error');
+      this.errorEl.hidden = true;
+      body.appendChild(this.errorEl);
+
+      // Never sit on "connecting" forever: if the socket hasn't opened by now,
+      // say so and offer a way back rather than leaving a dead screen.
+      clearTimeout(this._connectTimer);
+      this._connectTimer = setTimeout(function () {
+        if (self.active || self._queued) return;
+        if (self.ws && self.ws.readyState === 1) return;
+        self._showError('Could not reach the game server. It may be restarting — try again in a minute.');
+        var back = el('button', 'mp-btn mp-btn-quiet', 'Back');
+        back.type = 'button';
+        back.style.marginTop = '12px';
+        back.addEventListener('click', function () { self._renderLobby(); });
+        body.appendChild(back);
+      }, 9000);
     },
 
     // The signature screen: the lift line.
@@ -493,9 +511,14 @@
     },
 
     _showError: function (message) {
-      if (!this.errorEl) return;
-      this.errorEl.textContent = message;
-      this.errorEl.hidden = false;
+      // The error slot belongs to whichever lobby screen is mounted. If we've
+      // moved on since, fall back to a toast so the message isn't swallowed.
+      if (this.errorEl && this.errorEl.isConnected) {
+        this.errorEl.textContent = message;
+        this.errorEl.hidden = false;
+      } else {
+        this.toast(message, 4000);
+      }
     },
 
     // --- socket -----------------------------------------------------------
