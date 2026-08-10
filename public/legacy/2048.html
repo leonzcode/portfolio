@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>LEON Merge</title>
-<link rel="stylesheet" href="/legacy/mp/mp.css">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
@@ -685,9 +684,5 @@ ovMenu.addEventListener('click',backToMenu);
 /* ── Resize ── */
 window.addEventListener('resize',()=>{players.forEach(p=>p.resize());});
 </script>
-
-<!-- Online play. Must load after the game so the adapter can see its globals. -->
-<script src="/legacy/mp/mp.js"></script>
-<script src="/legacy/mp/games/leon-2048.js"></script>
 </body>
 </html>

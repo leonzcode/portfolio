@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Untitled Doccument</title>
   <link rel="icon" href="https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico">
-  <link rel="stylesheet" href="/legacy/mp/mp.css">
   <style>
     * { box-sizing: border-box; }
     html, body {
@@ -759,9 +758,7 @@
         }
       }
 
-      // getPlayers is exposed for the online adapter (mp/games/tetris.js), which
-      // drives board 2 from the network instead of from a second keyboard.
-      return { init, reset, stop, togglePause, handleKey, getPlayers: () => players };
+      return { init, reset, stop, togglePause, handleKey };
     })();
 
     // ============ MODE SWITCHING ============
@@ -831,9 +828,5 @@
       if (fakeEvent.key) SinglePlayerGame.handleKey(fakeEvent);
     }, { passive: false });
   </script>
-
-  <!-- Online play. Must load after the game so the adapter can see its globals. -->
-  <script src="/legacy/mp/mp.js"></script>
-  <script src="/legacy/mp/games/tetris.js"></script>
 </body>
 </html>

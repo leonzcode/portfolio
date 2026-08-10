@@ -6,7 +6,6 @@
         content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 
   <title>Imposter Game</title>
-<link rel="stylesheet" href="/legacy/mp/mp.css">
 
  <style>
     /* ... (All previous styles remain exactly the same) ... */
@@ -2993,13 +2992,5 @@ aiModalOverlay.addEventListener('click', (e) => {
   if (e.target === aiModalOverlay) closeAiModal();
 });
 </script>
-
-<!-- Online play. Must load after the game so the adapter can see its globals. -->
-<script src="/legacy/mp/mp.js"></script>
-<script src="/legacy/mp/games/room.js"
-        data-game="imposter" data-title="Imposter" data-mode="arena"
-        data-label="Join the crew"
-        data-note="Gather everyone in one room, then run the round together."
-        data-emotes="Where?|That was me|Sus|Emergency meeting"></script>
 </body>
 </html>
