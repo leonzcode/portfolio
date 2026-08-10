@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Slope</title>
+<link rel="stylesheet" href="/legacy/mp/mp.css">
 <style>
   body { 
     margin: 0; 
@@ -503,5 +504,9 @@ window.addEventListener('resize', () => {
 // Initialize high score display
 highScoreElement.textContent = Math.floor(highScore);
 </script>
+
+<!-- Online play. Must load after the game so the adapter can see its globals. -->
+<script src="/legacy/mp/mp.js"></script>
+<script src="/legacy/mp/games/slope.js"></script>
 </body>
 </html>

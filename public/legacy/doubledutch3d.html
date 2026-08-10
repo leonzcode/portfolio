@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Black Joy</title>
+<link rel="stylesheet" href="/legacy/mp/mp.css">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#000;overflow:hidden;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;user-select:none}
@@ -5990,5 +5991,13 @@ renderer.domElement.addEventListener('click', () => {
 requestAnimationFrame(gameLoop);
 
 </script>
+
+<!-- Online play. Must load after the game so the adapter can see its globals. -->
+<script src="/legacy/mp/mp.js"></script>
+<script src="/legacy/mp/games/room.js"
+        data-game="blackjoy" data-title="Black Joy" data-mode="arena"
+        data-label="Share the block"
+        data-note="Explore alongside everyone else who is online."
+        data-emotes="Over here|Nice|Look at this|Come see"></script>
 </body>
 </html>

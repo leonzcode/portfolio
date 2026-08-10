@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800;900&family=Roboto:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/legacy/mp/mp.css">
 <!-- warm the reconstruction hosts so the first DEM / satellite / Overpass request skips DNS + TLS setup -->
 <link rel="preconnect" href="https://s3.amazonaws.com" crossorigin>
 <link rel="preconnect" href="https://services.arcgisonline.com" crossorigin>
@@ -502,6 +503,21 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
+
+// Published for the online adapter (mp/games/leonski2.js). That runs as a
+// classic script and so cannot see module scope. These are getters, not a
+// snapshot: renderer, scene, camera and skier are all replaced when you fly to
+// a different mountain, and they don't exist at all until one is loaded.
+// Declared here at the top so the adapter still gets a handle even if
+// reconstruction fails further down.
+window.__leonski2 = {
+  THREE,
+  get renderer(){ try { return renderer; } catch(e){ return null; } },
+  get scene(){ try { return scene; } catch(e){ return null; } },
+  get camera(){ try { return camera; } catch(e){ return null; } },
+  get skier(){ try { return skier; } catch(e){ return null; } },
+  get ski(){ try { return ski; } catch(e){ return null; } },
+};
 
 /* ====================================================================
    FALLINE — reconstruct a real ski resort and fly over it (creative mode).
@@ -5158,5 +5174,10 @@ function buildDioramaLift(dScene, hFn, x0,z0,x1,z1, out){
   loop(0);
 })();
 </script>
+
+<!-- Online play. Must load after the game so the adapter can see its globals. -->
+<script src="/legacy/mp/mp.js"></script>
+<script src="/legacy/mp/three-avatars.js"></script>
+<script src="/legacy/mp/games/leonski2.js"></script>
 </body>
 </html>

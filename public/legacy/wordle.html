@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Leon’s Wordle</title>
+  <link rel="stylesheet" href="/legacy/mp/mp.css">
   <style>
     :root{
       --bg:#121213; --tile:#121213; --text:#e6eef8; --muted:#818384;
@@ -965,5 +966,9 @@ window.addEventListener('hashchange', () => {
 
 loadLists().then(startNewGame);
 </script>
+
+<!-- Online play. Must load after the game so the adapter can see its globals. -->
+<script src="/legacy/mp/mp.js"></script>
+<script src="/legacy/mp/games/wordle-game.js"></script>
 </body>
 </html>

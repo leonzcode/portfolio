@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Leon’s Platformer</title>
+<link rel="stylesheet" href="/legacy/mp/mp.css">
 <style>
   body { margin:0; overflow:hidden; background:linear-gradient(to bottom,#87CEEB,#E0F7FA); font-family:'Arial Rounded MT Bold','Arial',sans-serif;}
   canvas{display:block;}
@@ -295,6 +296,11 @@ let totalJumps = 0;
 let mountains = [];
 let clouds = [];
 let backgroundEnabled = true;
+
+// Every source of randomness that shapes the course goes through platRand, so
+// online play can swap in a seeded generator and put both players on the exact
+// same run. Scenery and particles keep using Math.random -- they don't matter.
+let platRand = Math.random;
 
 // Character color
 let playerColor = "#FF5252";
@@ -846,15 +852,15 @@ function createInitialPlatforms(){
   let lastX=platforms[0].x+platforms[0].width;
   let lastY=platforms[0].y;
   for(let i=0;i<8;i++){
-    let nextY=lastY+(Math.random()*100-50);
+    let nextY=lastY+(platRand()*100-50);
     nextY=Math.max(canvas.height-300,Math.min(canvas.height-80,nextY));
-    let width=platformMinWidth+Math.random()*(platformMaxWidth-platformMinWidth);
-    let type=Math.random()<0.3?"falling":"normal"; 
+    let width=platformMinWidth+platRand()*(platformMaxWidth-platformMinWidth);
+    let type=platRand()<0.3?"falling":"normal";
     let color=type==="falling"?"#FF3B3B":"#4CAF50";
     let spikePositions=[];
-    if(Math.random()<0.3){ 
-      let clusterSize=Math.floor(4+Math.random()*2); 
-      let startX=Math.random()*(width-10*clusterSize);
+    if(platRand()<0.3){
+      let clusterSize=Math.floor(4+platRand()*2);
+      let startX=platRand()*(width-10*clusterSize);
       for(let s=0;s<clusterSize;s++){ spikePositions.push(startX+s*10); }
     }
     platforms.push({x:lastX+platformGap,y:nextY,width:width,height:20,color:color,type:type,isFalling:false,spikePositions:spikePositions});
@@ -938,15 +944,15 @@ platformMinWidth = Math.max(60, 120 - difficulty*5);
 
   if(platforms.length < 10){
     let lastPlat = platforms[platforms.length-1];
-    let nextY = lastPlat.y + (Math.random()*100-50); 
+    let nextY = lastPlat.y + (platRand()*100-50);
     nextY = Math.max(canvas.height-300, Math.min(canvas.height-80, nextY));
-    let width = platformMinWidth + Math.random()*(platformMaxWidth-platformMinWidth);
-    let type = Math.random()<0.3?"falling":"normal"; 
+    let width = platformMinWidth + platRand()*(platformMaxWidth-platformMinWidth);
+    let type = platRand()<0.3?"falling":"normal";
     let color = type==="falling"?"#FF3B3B":"#4CAF50";
     let spikePositions = [];
-    if(Math.random()<0.3){ 
-      let clusterSize = Math.floor(4+Math.random()*2); 
-      let startX = Math.random()*(width-10*clusterSize); 
+    if(platRand()<0.3){
+      let clusterSize = Math.floor(4+platRand()*2);
+      let startX = platRand()*(width-10*clusterSize);
       for(let s=0;s<clusterSize;s++){ spikePositions.push(startX+s*10); } 
     }
     platforms.push({x:lastPlat.x+platformGap, y:nextY, width:width, height:20, color:color, type:type, isFalling:false, spikePositions:spikePositions});
@@ -983,5 +989,9 @@ function endGame(){
 
 window.onload = initGame;
 </script>
+
+<!-- Online play. Must load after the game so the adapter can see its globals. -->
+<script src="/legacy/mp/mp.js"></script>
+<script src="/legacy/mp/games/platformer.js"></script>
 </body>
 </html>

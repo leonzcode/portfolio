@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sports Un-random</title>
+<link rel="stylesheet" href="/legacy/mp/mp.css">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -3341,5 +3342,13 @@ function gameLoop() {
 
 gameLoop();
 </script>
+
+<!-- Online play. Must load after the game so the adapter can see its globals. -->
+<script src="/legacy/mp/mp.js"></script>
+<script src="/legacy/mp/games/room.js"
+        data-game="basket" data-title="Sports Un-random" data-mode="versus"
+        data-label="Head to head"
+        data-note="Get matched, then play your round and compare scores."
+        data-emotes="Nice shot|So close|Your turn|gg"></script>
 </body>
 </html>

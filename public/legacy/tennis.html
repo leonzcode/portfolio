@@ -7,6 +7,7 @@
   <!-- We only include this to explicitly loosen the CSP of various packager environments. It does not provide any security. -->
   <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:">
   <title>Clayton&apos;s Tennis</title>
+<link rel="stylesheet" href="/legacy/mp/mp.css">
   <style>
     body {
       color: #ffffff;
@@ -441,5 +442,13 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
     };
     run().catch(handleError);
   </script>
+
+<!-- Online play. Must load after the game so the adapter can see its globals. -->
+<script src="/legacy/mp/mp.js"></script>
+<script src="/legacy/mp/games/room.js"
+        data-game="tennis" data-title="Tennis" data-mode="versus"
+        data-label="Head to head"
+        data-note="Get matched with someone, then rally and compare scores."
+        data-emotes="Nice shot|Out|My serve|gg"></script>
 </body>
 </html>

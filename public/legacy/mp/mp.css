@@ -1,0 +1,909 @@
+/* ===========================================================================
+   Online play — shared UI for the leonzhao.dev arcade.
+
+   The visual language is borrowed from ski-resort signage, which is the one
+   thing this arcade genuinely has in common with its author: trail markers for
+   players, a boundary-pole amber for actions, and a chairlift for the
+   matchmaking queue. Every rule is scoped under .mp-root and every property is
+   written out in full, because this overlay drops into eighteen games with
+   eighteen unrelated stylesheets and can't assume anything it didn't set.
+   =========================================================================== */
+
+.mp-root {
+  --mp-night: #0b1220;
+  --mp-rock: #161f2e;
+  --mp-ridge: #1f2b3d;
+  --mp-line: rgba(147, 166, 191, 0.16);
+  --mp-snow: #eef4fb;
+  --mp-mist: #93a6bf;
+  --mp-dim: #64768f;
+  --mp-gold: #f2b441;
+  --mp-gold-ink: #2a1e05;
+  --mp-green: #3fb950;
+  --mp-blue: #4c9ae8;
+  --mp-red: #e5484d;
+
+  --mp-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mp-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  font-family: var(--mp-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--mp-snow);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mp-root *,
+.mp-root *::before,
+.mp-root *::after {
+  box-sizing: border-box;
+}
+
+.mp-root button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* --- shared surfaces ----------------------------------------------------- */
+
+.mp-panel {
+  background: var(--mp-night);
+  border: 1px solid var(--mp-line);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(2, 6, 14, 0.55), 0 2px 8px rgba(2, 6, 14, 0.4);
+}
+
+/* Trail-sign eyebrow: small caps, wide tracking, like a piste marker. */
+.mp-eyebrow {
+  margin: 0;
+  font-family: var(--mp-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mp-dim);
+}
+
+/* =====================================================================
+   1. Launcher — the resting state. A boundary marker at the edge of the
+   game, showing how many people are out there right now.
+   ===================================================================== */
+
+.mp-launch {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px 9px 11px;
+  margin: 0;
+  background: var(--mp-night);
+  border: 1px solid var(--mp-line);
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(2, 6, 14, 0.45);
+  color: var(--mp-snow);
+  font-family: var(--mp-sans);
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: auto;
+  transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
+}
+
+.mp-launch:hover {
+  background: var(--mp-rock);
+  border-color: rgba(242, 180, 65, 0.5);
+  transform: translateY(-1px);
+}
+
+.mp-launch:focus-visible {
+  outline: 2px solid var(--mp-gold);
+  outline-offset: 2px;
+}
+
+.mp-launch[hidden] {
+  display: none;
+}
+
+/* The live dot. Green when others are on, amber-hollow when you'd be first. */
+.mp-pip {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--mp-green);
+}
+
+.mp-pip::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--mp-green);
+  opacity: 0.5;
+  animation: mp-ping 2.4s ease-out infinite;
+}
+
+.mp-pip[data-empty="1"] {
+  background: transparent;
+  border: 1.5px solid var(--mp-dim);
+}
+
+.mp-pip[data-empty="1"]::after {
+  display: none;
+}
+
+@keyframes mp-ping {
+  0% { transform: scale(0.7); opacity: 0.7; }
+  70% { transform: scale(1.5); opacity: 0; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+.mp-launch-count {
+  font-family: var(--mp-mono);
+  font-size: 12px;
+  color: var(--mp-mist);
+  font-variant-numeric: tabular-nums;
+}
+
+/* =====================================================================
+   2. Lobby — the full-screen decision point.
+   ===================================================================== */
+
+.mp-scrim {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(4, 8, 16, 0.74);
+  -webkit-backdrop-filter: blur(7px) saturate(115%);
+  backdrop-filter: blur(7px) saturate(115%);
+  pointer-events: auto;
+  overflow-y: auto;
+  animation: mp-fade 0.22s ease both;
+}
+
+.mp-scrim[hidden] {
+  display: none;
+}
+
+@keyframes mp-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mp-lobby {
+  width: 100%;
+  max-width: 430px;
+  padding: 26px 26px 22px;
+  animation: mp-rise 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes mp-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.mp-lobby-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.mp-lobby h2 {
+  margin: 3px 0 0;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--mp-snow);
+}
+
+.mp-close {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--mp-line);
+  border-radius: 8px;
+  color: var(--mp-mist);
+  font-size: 15px;
+  line-height: 1;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.mp-close:hover {
+  color: var(--mp-snow);
+  border-color: var(--mp-mist);
+}
+
+.mp-close:focus-visible {
+  outline: 2px solid var(--mp-gold);
+  outline-offset: 2px;
+}
+
+/* --- fields --- */
+
+.mp-field {
+  margin-bottom: 18px;
+}
+
+.mp-field label {
+  display: block;
+  margin-bottom: 7px;
+}
+
+.mp-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--mp-rock);
+  border: 1px solid var(--mp-line);
+  border-radius: 9px;
+  color: var(--mp-snow);
+  font-family: var(--mp-sans);
+  font-size: 14px;
+  transition: border-color 0.15s ease;
+}
+
+.mp-input::placeholder {
+  color: var(--mp-dim);
+}
+
+.mp-input:focus {
+  outline: none;
+  border-color: var(--mp-gold);
+}
+
+/* --- mode choice: two trail signs --- */
+
+.mp-modes {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.mp-mode {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 14px 15px;
+  text-align: left;
+  background: var(--mp-rock);
+  border: 1px solid var(--mp-line);
+  border-radius: 11px;
+  color: var(--mp-snow);
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.mp-mode:hover {
+  background: var(--mp-ridge);
+  border-color: rgba(242, 180, 65, 0.45);
+  transform: translateX(2px);
+}
+
+.mp-mode:focus-visible {
+  outline: 2px solid var(--mp-gold);
+  outline-offset: 2px;
+}
+
+/* Green circle = open slope. Black diamond = head to head. Same grammar the
+   mountain uses, so the difficulty read is instant. */
+.mp-marker {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+
+.mp-marker-circle {
+  border-radius: 50%;
+  background: var(--mp-green);
+}
+
+.mp-marker-diamond {
+  background: var(--mp-snow);
+  transform: rotate(45deg) scale(0.82);
+  border-radius: 2px;
+}
+
+.mp-mode-text strong {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.mp-mode-text span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--mp-mist);
+}
+
+/* --- buttons --- */
+
+.mp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 16px;
+  background: var(--mp-gold);
+  border: 1px solid var(--mp-gold);
+  border-radius: 9px;
+  color: var(--mp-gold-ink);
+  font-family: var(--mp-sans);
+  font-size: 14px;
+  font-weight: 600;
+  transition: filter 0.15s ease;
+}
+
+.mp-btn:hover {
+  filter: brightness(1.08);
+}
+
+.mp-btn:focus-visible {
+  outline: 2px solid var(--mp-snow);
+  outline-offset: 2px;
+}
+
+.mp-btn-quiet {
+  background: transparent;
+  border-color: var(--mp-line);
+  color: var(--mp-mist);
+  font-weight: 500;
+}
+
+.mp-btn-quiet:hover {
+  color: var(--mp-snow);
+  border-color: var(--mp-mist);
+  filter: none;
+}
+
+.mp-row {
+  display: flex;
+  gap: 9px;
+}
+
+.mp-hint {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--mp-dim);
+  text-align: center;
+}
+
+.mp-hint code {
+  font-family: var(--mp-mono);
+  color: var(--mp-mist);
+}
+
+.mp-error {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  background: rgba(229, 72, 77, 0.1);
+  border: 1px solid rgba(229, 72, 77, 0.3);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #ffb4b6;
+}
+
+.mp-error[hidden] {
+  display: none;
+}
+
+/* =====================================================================
+   3. The lift line — the signature. Waiting for a match is the one moment
+   with nothing to look at, so it gets the chairlift: your chair is amber,
+   everyone else's rides along ahead of you.
+   ===================================================================== */
+
+.mp-lift {
+  position: relative;
+  height: 96px;
+  margin: 4px 0 20px;
+  overflow: hidden;
+}
+
+/* The haul rope. */
+.mp-lift::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 26px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(147, 166, 191, 0.4) 12%,
+    rgba(147, 166, 191, 0.4) 88%,
+    transparent
+  );
+}
+
+/* Tower silhouettes, so the cable reads as a lift and not a progress bar. */
+.mp-lift::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 26px;
+  bottom: 0;
+  background-image:
+    linear-gradient(var(--mp-ridge), var(--mp-ridge)),
+    linear-gradient(var(--mp-ridge), var(--mp-ridge));
+  background-size: 2px 34px, 2px 34px;
+  background-position: 18% 0, 78% 0;
+  background-repeat: no-repeat, no-repeat;
+  opacity: 0.9;
+}
+
+.mp-chair {
+  position: absolute;
+  top: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: mp-ride 9s linear infinite;
+}
+
+/* Hanger arm from the rope down to the seat. */
+.mp-chair i {
+  width: 1px;
+  height: 13px;
+  background: rgba(147, 166, 191, 0.5);
+}
+
+.mp-chair b {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  border-radius: 4px 4px 7px 7px;
+  background: var(--mp-ridge);
+  border: 1px solid var(--mp-line);
+  font-family: var(--mp-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mp-mist);
+}
+
+.mp-chair[data-you="1"] b {
+  background: var(--mp-gold);
+  border-color: var(--mp-gold);
+  color: var(--mp-gold-ink);
+}
+
+@keyframes mp-ride {
+  from { transform: translateX(-40px); }
+  to { transform: translateX(calc(100% + 430px)); }
+}
+
+.mp-lift-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  text-align: center;
+}
+
+.mp-lift-status strong {
+  display: block;
+  font-family: var(--mp-mono);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--mp-snow);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-lift-status span {
+  display: block;
+  margin-top: 1px;
+  font-size: 12.5px;
+  color: var(--mp-mist);
+}
+
+/* =====================================================================
+   4. In-game rail — player list, chat, and the leave door.
+   ===================================================================== */
+
+.mp-rail {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  bottom: 14px;
+  width: 264px;
+  max-height: calc(100% - 28px);
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  animation: mp-slide 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mp-rail[hidden] {
+  display: none;
+}
+
+@keyframes mp-slide {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+.mp-rail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--mp-line);
+}
+
+.mp-room-code {
+  font-family: var(--mp-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--mp-gold);
+}
+
+.mp-ping {
+  margin-left: auto;
+  font-family: var(--mp-mono);
+  font-size: 11px;
+  color: var(--mp-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-icon-btn {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--mp-line);
+  border-radius: 6px;
+  color: var(--mp-mist);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.mp-icon-btn:hover {
+  color: var(--mp-snow);
+  border-color: var(--mp-mist);
+}
+
+.mp-icon-btn:focus-visible {
+  outline: 2px solid var(--mp-gold);
+  outline-offset: 1px;
+}
+
+/* --- player list --- */
+
+.mp-players {
+  margin: 0;
+  padding: 8px 6px;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--mp-line);
+}
+
+.mp-players li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 7px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.mp-players li[data-you="1"] {
+  background: rgba(242, 180, 65, 0.09);
+}
+
+.mp-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+}
+
+.mp-players .mp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-players .mp-score {
+  margin-left: auto;
+  font-family: var(--mp-mono);
+  font-size: 12px;
+  color: var(--mp-mist);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-players li[data-out="1"] {
+  opacity: 0.45;
+}
+
+/* --- chat --- */
+
+.mp-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.mp-log p {
+  margin: 0;
+}
+
+.mp-log .mp-from {
+  font-weight: 600;
+}
+
+.mp-log .mp-sys {
+  color: var(--mp-dim);
+  font-size: 12px;
+}
+
+.mp-say {
+  display: flex;
+  gap: 7px;
+  padding: 9px;
+  border-top: 1px solid var(--mp-line);
+}
+
+.mp-say .mp-input {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+/* Quick reactions, so a player mid-run can answer without letting go of the
+   keys. Contents are set per game by the adapter. */
+.mp-emotes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 9px 9px;
+}
+
+.mp-emote {
+  padding: 4px 9px;
+  background: var(--mp-rock);
+  border: 1px solid var(--mp-line);
+  border-radius: 999px;
+  color: var(--mp-mist);
+  font-family: var(--mp-sans);
+  font-size: 12px;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+
+.mp-emote:hover {
+  color: var(--mp-snow);
+  border-color: var(--mp-mist);
+}
+
+.mp-emote:focus-visible {
+  outline: 2px solid var(--mp-gold);
+  outline-offset: 1px;
+}
+
+/* Floating speech, anchored to a player in the world. */
+.mp-bubble {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  max-width: 190px;
+  padding: 5px 10px;
+  background: var(--mp-night);
+  border: 1px solid var(--mp-line);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--mp-snow);
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: 0 6px 18px rgba(2, 6, 14, 0.5);
+}
+
+/* =====================================================================
+   5. Opponent view — the versus games' shared frame for "watch them play".
+   ===================================================================== */
+
+.mp-versus {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 200px;
+  padding: 11px;
+  pointer-events: auto;
+}
+
+.mp-versus[hidden] {
+  display: none;
+}
+
+.mp-versus-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+
+.mp-versus-head .mp-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-versus canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #0d1522;
+  border: 1px solid var(--mp-line);
+  border-radius: 7px;
+}
+
+.mp-versus-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  font-family: var(--mp-mono);
+  font-size: 11.5px;
+  color: var(--mp-mist);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-versus-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--mp-dim);
+  text-align: center;
+}
+
+/* =====================================================================
+   6. Result banner
+   ===================================================================== */
+
+.mp-result {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 260px;
+  padding: 24px 28px;
+  text-align: center;
+  pointer-events: auto;
+  animation: mp-rise 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mp-result[hidden] {
+  display: none;
+}
+
+.mp-result h3 {
+  margin: 6px 0 4px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.mp-result p {
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  color: var(--mp-mist);
+}
+
+.mp-result[data-win="1"] h3 { color: var(--mp-gold); }
+.mp-result[data-win="0"] h3 { color: var(--mp-snow); }
+
+/* Countdown before a match starts. */
+.mp-count {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--mp-mono);
+  font-size: 76px;
+  font-weight: 500;
+  color: var(--mp-snow);
+  text-shadow: 0 4px 30px rgba(2, 6, 14, 0.9);
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-count[hidden] {
+  display: none;
+}
+
+.mp-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  padding: 9px 16px;
+  background: var(--mp-night);
+  border: 1px solid var(--mp-line);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--mp-snow);
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(2, 6, 14, 0.5);
+  animation: mp-fade 0.2s ease both;
+}
+
+.mp-toast[hidden] {
+  display: none;
+}
+
+/* =====================================================================
+   7. Small screens and reduced motion
+   ===================================================================== */
+
+@media (max-width: 720px) {
+  .mp-rail {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    max-height: 46vh;
+  }
+
+  .mp-versus {
+    width: 128px;
+    top: 8px;
+    left: 8px;
+    padding: 8px;
+  }
+
+  .mp-launch {
+    top: 8px;
+    right: 8px;
+    padding: 7px 12px 7px 9px;
+    font-size: 12.5px;
+  }
+
+  .mp-count {
+    font-size: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-root *,
+  .mp-root *::before,
+  .mp-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* With the ride stopped, the chairs still have to hang somewhere sensible,
+     so they space out along the rope instead of stacking at the origin.
+     JS sets --mp-i to the chair's index. */
+  .mp-chair {
+    animation: none !important;
+    transform: none !important;
+    left: calc(8% + var(--mp-i, 0) * 58px) !important;
+  }
+}
