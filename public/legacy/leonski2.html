@@ -1515,6 +1515,9 @@ function buildNPCs(){
 function updateNPCs(dt){
   if(!npcMeshes || !npcs.length) return;
   const M=npcMeshes;
+  const ncx=camera.position.x, ncz=camera.position.z;
+  _npcTick=(_npcTick+1)|0;
+  let touched=false;                                     // did any figure actually move this frame?
   for(let i=0;i<npcs.length;i++){
     const n=npcs[i]; n.dist += n.speed*dt;
     if(n.dist >= n.path.total){                                     // reached the end of the current path → switch tasks
@@ -1527,12 +1530,23 @@ function updateNPCs(dt){
     let lo=0, hi=cum.length-1;
     while(lo<hi-1){ const mid=(lo+hi)>>1; if(cum[mid]<=n.dist) lo=mid; else hi=mid; }
     const seg=cum[lo+1]-cum[lo]||1, f=(n.dist-cum[lo])/seg, a=pts[lo], b=pts[lo+1];
-    const x=a.x+(b.x-a.x)*f, z=a.z+(b.z-a.z)*f, y=groundY(x,z)+(n.state==='lift'?NPC_RIDE_H:0);
+    const x=a.x+(b.x-a.x)*f, z=a.z+(b.z-a.z)*f;
+    // `dist` above always advances, so a skier is never in the wrong place —
+    // this only decides how often the matrix is rewritten. A figure 900 m off
+    // is a couple of pixels, and each rewrite costs a terrain height sample.
+    const ddx=x-ncx, ddz=z-ncz, d2=ddx*ddx+ddz*ddz;
+    const every = d2<90000 ? 1 : d2<810000 ? 3 : 8;      // 300 m / 900 m
+    if(_npcTick % every) continue;
+    const y=groundY(x,z)+(n.state==='lift'?NPC_RIDE_H:0);
     _npcQ.setFromAxisAngle(_UP, Math.atan2(b.x-a.x, b.z-a.z));
     _npcP.set(x, y, z); _npcM.compose(_npcP, _npcQ, _npcSc);
     if(n.board){ M.brdFig.setMatrixAt(n.mi,_npcM); M.brdEq.setMatrixAt(n.mi,_npcM); }
     else { M.skiFig.setMatrixAt(n.mi,_npcM); M.skiEq.setMatrixAt(n.mi,_npcM); }
+    touched=true;
   }
+  // An instanceMatrix upload is the whole buffer, so only pay for it when
+  // something in it actually changed.
+  if(!touched) return;
   M.skiFig.instanceMatrix.needsUpdate=true; M.skiEq.instanceMatrix.needsUpdate=true;
   M.brdFig.instanceMatrix.needsUpdate=true; M.brdEq.instanceMatrix.needsUpdate=true;
 }
@@ -2828,6 +2842,7 @@ function buildCarriers(curve, info, speed, len, sys){    // curve = the closed u
   const rig={sp,stan,SN,len,speed,N,meshes,u:0,sys,poleIdx:packed.poleIdx}; liftRigs.push(rig); return rig;   // poleIdx = the central hanger tube (hidden for the ridden chair in first person)
 }
 const _cm=new THREE.Matrix4(), _cq=new THREE.Quaternion(), _cs=new THREE.Vector3(1,1,1), _cp=new THREE.Vector3(), _cup=new THREE.Vector3(0,1,0), _spin=new THREE.Quaternion();
+let _liftTick=0, _npcTick=0;   // frame counters driving the distance-based update cadence in updateLifts / updateNPCs
 // live view of the game's rig lists (getters, because buildScene REASSIGNS these arrays rather than emptying them)
 const _G={ get liftRigs(){return liftRigs;}, get beltRigs(){return beltRigs;},
            get liftSheaves(){return liftSheaves;}, get wheelRigs(){return wheelRigs;} };
@@ -2836,12 +2851,29 @@ const _G={ get liftRigs(){return liftRigs;}, get beltRigs(){return beltRigs;},
 function updateLifts(dt, set){
   const liftRigs=set?set.liftRigs:_G.liftRigs, beltRigs=set?set.beltRigs:_G.beltRigs,
         liftSheaves=set?set.liftSheaves:_G.liftSheaves, wheelRigs=set?set.wheelRigs:_G.wheelRigs;
+  _liftTick=(_liftTick+1)|0;
   for(const r of liftRigs){
     const {sp,stan,SN,len,speed,N,meshes}=r;
     if(r.sys) r.sys.boost += (r.sys.target-r.sys.boost)*(1-Math.exp(-3*dt));   // ease the whole-lift speed-up
     const boost=r.sys?r.sys.boost:1;
     r.u=(r.u + (speed*boost/len)*dt)%1;              // whole train advances one direction around the loop (speeds up with boost)
-    const fpHideC = (pov===1 && ski.ride && ski.ride.rig===r) ? ski.ride.riderChair : -1;   // in first person, drop the ridden chair's central hanger pole
+
+    // Rewriting every chair matrix means re-uploading the whole instanceMatrix
+    // buffer for every part of every chair, on every lift, every frame — the
+    // single biggest source of per-frame GPU traffic here. A lift 3 km off is
+    // a few pixels tall and nobody can see its chairs stepping, so distant
+    // rigs are updated every Nth frame instead. `r.u` still advances every
+    // frame, so position stays exact; only the redraw cadence drops.
+    // The lift you are actually riding always updates at full rate.
+    const ridden = !!(ski.ride && ski.ride.rig===r);
+    if(!ridden){
+      if(!r._mid){ const m=((SN>>1)|0)*3; r._mid=new THREE.Vector3(sp[m],sp[m+1],sp[m+2]); }
+      const d=r._mid.distanceTo(camera.position);
+      const every = d<350?1 : d<900?2 : d<2200?4 : d<5000?8 : 16;
+      if(_liftTick % every) continue;                // keep last frame's matrices
+    }
+
+    const fpHideC = (pov===1 && ridden) ? ski.ride.riderChair : -1;   // in first person, drop the ridden chair's central hanger pole
     for(let c=0;c<N;c++){
       let t=r.u + c/N; if(t>=1) t-=1;
       const f=t*SN, i=f|0, fr=f-i, i2=(i+1)%SN;
@@ -2871,7 +2903,14 @@ function updateLifts(dt, set){
   for(const s of liftSheaves){ const boost=s.sys?s.sys.boost:1; _spin.setFromAxisAngle(s.axis, s.spin*boost*dt); s.wheel.quaternion.premultiply(_spin); }   // T-bar/tow single sheaves spin with the (boosted) cable
   for(const r of wheelRigs){                          // chairlift sheave trains — spin the whole InstancedMesh as a batch (1 draw call per lift)
     const boost=r.sys?r.sys.boost:1; r.angle += r.spin*boost*dt;
-    const W=r.wheels; for(let i=0;i<W.length;i++){ _spin.setFromAxisAngle(W[i].axis, r.angle); _cq.copy(_spin).multiply(W[i].baseQ); _cm.compose(W[i].pos, _cq, _cs); r.im.setMatrixAt(i,_cm); }
+    // Same reasoning as the chairs: a spinning sheave on a far pylon is
+    // sub-pixel. The angle keeps integrating; only the rewrite is decimated.
+    const W=r.wheels;
+    if(!W.length) continue;
+    const d=W[0].pos.distanceTo(camera.position);
+    const every = d<350?1 : d<900?2 : d<2200?4 : 8;
+    if(_liftTick % every) continue;
+    for(let i=0;i<W.length;i++){ _spin.setFromAxisAngle(W[i].axis, r.angle); _cq.copy(_spin).multiply(W[i].baseQ); _cm.compose(W[i].pos, _cq, _cs); r.im.setMatrixAt(i,_cm); }
     r.im.instanceMatrix.needsUpdate=true;
   }
 }
@@ -3647,12 +3686,25 @@ function skiUpdate(dt){
     if(spd>5 && eng>0.22){                                           // carving hard → a modest powder plume off the outside edge (less than before)
       const side=-Math.sign(ski.steer||1);
       emitSpray(1+((spd*eng*0.10)|0), ski.x+rx*side*1.6, gy+0.5, ski.z+rz*side*1.6, ski.vx, ski.vz);
-      if(fpv) emitSpray(1+((spd*eng*0.06)|0), ski.x+rx*side*1.8+hx*3.6, gy+0.4, ski.z+rz*side*1.8+hz*3.6, ski.vx, ski.vz);   // always a little plume ahead in first person (visible, not overwhelming)
+      // First person: the wall of powder off the edge is the whole reason to
+      // ride in first person, so throw it from where it really comes from —
+      // the edge, just behind the boot — with enough lift to climb past the
+      // goggles. Emitting it ahead of the skier (what this used to do) put
+      // snow in the frame but from nowhere; this sweeps up and past the head
+      // the way it does when you actually lay a turn over.
+      if(fpv && spd>7){
+        const back=-1.1, lift=8.5+spd*0.16;
+        emitSpray(2+((spd*eng*0.16)|0),
+                  ski.x+rx*side*1.5+hx*back, gy+0.45, ski.z+rz*side*1.5+hz*back,
+                  ski.vx, ski.vz, 1.35, lift);
+      }
     }
     // braking → snow thrown off the front of the skis
     if((keys.back||keys.down) && spd>3){
       emitSpray(2+((spd*0.10)|0), ski.x+hx*3, gy+0.5, ski.z+hz*3, ski.vx, ski.vz);
-      if(fpv) emitSpray(1+((spd*0.04)|0), ski.x+hx*5.0, gy+0.4, ski.z+hz*5.0, ski.vx, ski.vz);   // always a little low fan ahead in first person
+      // A hockey stop throws a sheet up in front of you. In first person it
+      // should rise into view rather than sit on the deck ahead.
+      if(fpv) emitSpray(2+((spd*0.09)|0), ski.x+hx*2.2, gy+0.45, ski.z+hz*2.2, ski.vx, ski.vz, 1.5, 9.5+spd*0.12);
     }
   }
 }
@@ -4037,7 +4089,13 @@ function sprayPuffTex(){
 function initSpray(){
   if(spray) return;
   const N=1800, pos=new Float32Array(N*3).fill(1e6), vel=new Float32Array(N*3),
-        life=new Float32Array(N), life0=new Float32Array(N), psize=new Float32Array(N), palpha=new Float32Array(N);
+        life=new Float32Array(N), life0=new Float32Array(N), psize=new Float32Array(N), palpha=new Float32Array(N),
+        // Once a puff settles it slides down the local fall line. Sampling that
+        // gradient costs three heightAt lookups, and re-sampling it every frame
+        // for every settled particle was the most expensive thing in here — the
+        // slope under a puff that has drifted a metre is the same slope. Sample
+        // it once on landing and keep it.
+        settled=new Uint8Array(N), slopeX=new Float32Array(N), slopeZ=new Float32Array(N);
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos,3).setUsage(THREE.DynamicDrawUsage));
   geo.setAttribute('psize',    new THREE.BufferAttribute(psize,1).setUsage(THREE.DynamicDrawUsage));
@@ -4070,26 +4128,48 @@ function initSpray(){
         gl_FragColor=vec4(mix(lit, shad, vUp*0.35), t.a*vA);
       }`
   });
-  const pts=new THREE.Points(geo,mat); pts.frustumCulled=false; scene.add(pts);
-  spray={pts,pos,vel,life,life0,psize,palpha,head:0,N,mat};
+  const pts=new THREE.Points(geo,mat); pts.frustumCulled=false; pts.visible=false; scene.add(pts);
+  // `alive` lets an idle frame skip the whole thing: standing still, in the air,
+  // on a lift or flying, there is no powder and no reason to walk 1800 slots or
+  // push 36 KB of unchanged buffers at the GPU.
+  spray={pts,pos,vel,life,life0,psize,palpha,settled,slopeX,slopeZ,head:0,N,mat,alive:0,dirty:false};
 }
-function emitSpray(n,x,y,z,bvx,bvz,power){
+/* upBias adds vertical launch speed (m/s) on top of the normal puff. First
+   person needs it: the eye rides ~4 m above the snow because the skier is drawn
+   oversized for the diorama camera, so a plume thrown off the edge at knee
+   height never reaches the frame. v = sqrt(2gh) says ~9 m/s clears 4 m, which
+   is what puts the powder across the goggles instead of under them. */
+function emitSpray(n,x,y,z,bvx,bvz,power,upBias){
   if(!spray) return;
-  const pw=power||1;
+  const pw=power||1, up=upBias||0;
   for(let i=0;i<n;i++){ const hd=spray.head; spray.head=(spray.head+1)%spray.N;
+    if(spray.life[hd]<=0) spray.alive++;                       // recycling a spent slot doesn't add to the count
+    spray.settled[hd]=0;
     spray.pos[hd*3]=x+(Math.random()-0.5)*0.7; spray.pos[hd*3+1]=y; spray.pos[hd*3+2]=z+(Math.random()-0.5)*0.7;
-    spray.vel[hd*3]=bvx*0.12+(Math.random()-0.5)*7*pw; spray.vel[hd*3+1]=(2.6+Math.random()*5.5)*pw; spray.vel[hd*3+2]=bvz*0.12+(Math.random()-0.5)*7*pw;   // softer, more lateral puff → powder, not a jet
+    spray.vel[hd*3]=bvx*0.12+(Math.random()-0.5)*7*pw; spray.vel[hd*3+1]=(2.6+Math.random()*5.5)*pw+up*(0.75+Math.random()*0.5); spray.vel[hd*3+2]=bvz*0.12+(Math.random()-0.5)*7*pw;   // softer, more lateral puff → powder, not a jet
     const L=(0.7+Math.random()*0.8)*(0.8+0.5*pw);                                // hangs ~2× longer so the plume lingers like powder
     spray.life[hd]=L; spray.life0[hd]=L;
     spray.psize[hd]=(0.30+Math.random()*0.45)*pw; spray.palpha[hd]=0;
   }
 }
 function updateSpray(dt){
-  if(!spray) return; const {pos,vel,life,life0,psize,palpha,N}=spray;
+  if(!spray) return;
+  const {pos,vel,life,life0,psize,palpha,settled,slopeX,slopeZ,N}=spray;
+  const a=spray.pts.geometry.attributes;
+
+  if(spray.alive<=0){                       // no powder in the air
+    if(spray.dirty){                        // push the last frame's fade-out, then go quiet
+      a.position.needsUpdate=true; a.psize.needsUpdate=true; a.palpha.needsUpdate=true;
+      spray.dirty=false; spray.pts.visible=false;
+    }
+    return;
+  }
+  spray.pts.visible=true;
+
   const H=world?world.heightAt:null;
   for(let i=0;i<N;i++){ if(life[i]<=0) continue;
     life[i]-=dt;
-    if(life[i]<=0){ pos[i*3+1]=1e6; palpha[i]=0; continue; }
+    if(life[i]<=0){ pos[i*3+1]=1e6; palpha[i]=0; settled[i]=0; spray.alive--; continue; }
     const i3=i*3;
     vel[i3+1]-=10*dt; vel[i3]*=(1-0.7*dt); vel[i3+2]*=(1-0.7*dt);   // lighter fall + gentle air drag → the plume hangs & drifts like powder
     pos[i3]+=vel[i3]*dt; pos[i3+1]+=vel[i3+1]*dt; pos[i3+2]+=vel[i3+2]*dt;
@@ -4097,8 +4177,12 @@ function updateSpray(dt){
       const px=pos[i3], pz=pos[i3+2], gy=H(px,pz);
       if(pos[i3+1] < gy+0.16){                                     // landed → settle on the surface and slough
         pos[i3+1]=gy+0.13; vel[i3+1]=0;
-        const e=1.6, dhx=(H(px+e,pz)-gy)/e, dhz=(H(px,pz+e)-gy)/e; // downhill from the height field (2 extra lookups)
-        vel[i3]  += -dhx*20*dt; vel[i3+2] += -dhz*20*dt;
+        if(!settled[i]){                                           // sample the fall line once, on touchdown
+          const e=1.6;
+          slopeX[i]=(H(px+e,pz)-gy)/e; slopeZ[i]=(H(px,pz+e)-gy)/e;
+          settled[i]=1;
+        }
+        vel[i3]  += -slopeX[i]*20*dt; vel[i3+2] += -slopeZ[i]*20*dt;
         vel[i3]  *= (1-3.0*dt); vel[i3+2] *= (1-3.0*dt);           // snow-on-snow friction brings the slide to rest
       }
     }
@@ -4106,8 +4190,8 @@ function updateSpray(dt){
     psize[i]  = psize[i] + (1.0+1.5*t)*dt;                          // the cloud expands as it disperses
     palpha[i] = (t<0.12 ? t/0.12 : 1.0) * (1-t)*(1-t) * 0.60;       // quick fade in, long fade out
   }
-  const a=spray.pts.geometry.attributes;
   a.position.needsUpdate=true; a.psize.needsUpdate=true; a.palpha.needsUpdate=true;
+  spray.dirty=true;
 }
 
 function flyUpdate(dt){
