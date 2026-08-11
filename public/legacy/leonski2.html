@@ -1299,11 +1299,10 @@ function buildScene(W){
         if(d1 > 0.01){ gFine += windFbm(P, 0.052, 0.132, 0.52*d1, WC1, WS1).yz; }
         float d2 = clamp(1.0 - px*6.0, 0.0, 1.0)*snowDetail;     // wind ripples — knee-high corrugation, crossing the ridges
         if(d2 > 0.01){ gFine += windFbm(P, 0.16,  0.30,  0.26*d2, WC2, WS2).yz; }
-        // Loose powder clumps, only the last stretch in front of you. This is what first person is looking at
-        // most of the time, and without it the snow under your skis is the one part of the surface with no
-        // detail at all. Gated hard so it costs nothing for the rest of the screen.
-        float d3 = clamp(1.0 - px*18.0, 0.0, 1.0)*snowDetail;
-        if(d3 > 0.01){ gFine += windFbm(P, 1.30,  1.55,  0.11*d3, WC1, WS1).yz; }
+        // A third close-range layer (loose powder clumps, gated to about the last 5 cm/pixel) used to sit here.
+        // It only ever showed in the last stretch in front of the camera, but that stretch is most of the screen
+        // in first person, so it was paying for a whole extra fbm on the majority of fragments. Removed for
+        // frame rate; the sastrugi and wind ripples above still carry the surface at every useful distance.
         vec3 Nb = normalize(gN + vec3(-gBroad.x, 0.0, -gBroad.y));   // terrain + the big drifts
         vec3 N  = normalize(Nb  + vec3(-gFine.x,  0.0, -gFine.y));   // + the close-range relief
 
@@ -1331,16 +1330,13 @@ function buildScene(W){
         // wind-scoured steeps go harder, cooler and slightly darker than the powder sitting on the flats
         base *= mix(vec3(1.0), vec3(0.955,0.972,1.005), 1.0-smoothstep(0.55, 0.90, gN.y));
 
-        // ---- specular: a broad sheen off the pack, plus sparse crystal glints in the last few metres ----
+        // ---- specular: a broad sheen off the pack ----
+        // The sparse per-grain crystal glints that used to ride on top of this are gone with the powder clumps,
+        // for the same reason: a noise fetch plus a second 300-exponent power, on near fragments only, which is
+        // exactly where the frame budget is tightest in first person.
         vec3 H = normalize(V + sunDir);
         float lit  = smoothstep(0.0, 0.18, ndlB);
         float spec = pow(max(dot(N,H),0.0), 46.0)*0.13;
-        float dS = clamp(1.0 - px*30.0, 0.0, 1.0)*snowDetail;
-        if(dS > 0.01){
-          vec3 gl = noised(P*22.0);
-          vec3 Ns = normalize(N + vec3(gl.y, 0.0, gl.z)*2.4);            // each grain facets a different way
-          spec += pow(max(dot(Ns,H),0.0), 300.0)*step(0.55, gl.x)*dS*2.2;  // only some of them catch the sun
-        }
         base += sunCol*spec*lit;
 
         // looking along the surface, snow brightens and washes out. Toward bright WHITE, not toward the sky:
