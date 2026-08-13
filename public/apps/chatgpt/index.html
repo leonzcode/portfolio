@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChatGPT · Leon Zhao</title>
+<style>
+  :root{
+    --bg:#212121; --panel:#2f2f2f; --line:#3a3a3a;
+    --text:#ececec; --muted:#9a9a9a;
+    --user:#2f6fed; --send:#ececec; --send-ink:#1a1a1a;
+    --accent:#10a37f;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    display:flex; flex-direction:column; height:100dvh;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{
+    flex:0 0 auto; display:flex; align-items:center; gap:10px;
+    padding:12px 18px; border-bottom:1px solid var(--line);
+  }
+  header .dot{ width:22px; height:22px; border-radius:50%; background:var(--accent); flex:0 0 auto; }
+  header h1{ font-size:15px; font-weight:600; margin:0; letter-spacing:.2px; }
+  header .sub{ font-size:12px; color:var(--muted); margin-left:2px; }
+  header .spacer{ flex:1; }
+  header button{
+    font:inherit; font-size:12.5px; color:var(--muted);
+    background:transparent; border:1px solid var(--line); border-radius:7px;
+    padding:6px 11px; cursor:pointer; transition:.15s;
+  }
+  header button:hover{ color:var(--text); border-color:#555; }
+
+  #scroll{ flex:1 1 auto; overflow-y:auto; }
+  #thread{ max-width:760px; margin:0 auto; padding:26px 18px 12px; }
+
+  .empty{
+    text-align:center; color:var(--muted); margin-top:16vh; padding:0 20px;
+  }
+  .empty .big{ font-size:26px; font-weight:600; color:var(--text); margin-bottom:22px; }
+  .chips{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
+  .chip{
+    font:inherit; font-size:13.5px; color:var(--text); text-align:left;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:12px 14px; cursor:pointer; max-width:230px; transition:.15s;
+  }
+  .chip:hover{ border-color:#555; background:#343434; }
+
+  .msg{ display:flex; gap:13px; padding:14px 0; }
+  .msg .avatar{
+    flex:0 0 auto; width:28px; height:28px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:700;
+  }
+  .msg.user .avatar{ background:var(--user); color:#fff; }
+  .msg.bot .avatar{ background:var(--accent); color:#062b21; }
+  .msg .body{ flex:1 1 auto; min-width:0; padding-top:3px; }
+  .msg .who{ font-size:12.5px; font-weight:700; color:var(--muted); margin-bottom:3px; }
+  .msg .content{ font-size:15px; line-height:1.65; white-space:pre-wrap; word-wrap:break-word; }
+  .msg .content code{
+    background:#1a1a1a; border:1px solid var(--line); border-radius:4px;
+    padding:1px 5px; font-family:"Cascadia Code", Consolas, monospace; font-size:13.5px;
+  }
+  .msg .content pre{
+    background:#1a1a1a; border:1px solid var(--line); border-radius:8px;
+    padding:12px 14px; overflow-x:auto; margin:10px 0;
+  }
+  .msg .content pre code{ background:none; border:none; padding:0; }
+  .cursor::after{ content:"▋"; color:var(--accent); animation:blink 1s steps(2) infinite; }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  .errline{ color:#ff8f8f; font-size:14px; padding:6px 0 0 41px; }
+
+  footer{ flex:0 0 auto; padding:10px 18px 16px; }
+  .composer{
+    max-width:760px; margin:0 auto;
+    display:flex; align-items:flex-end; gap:8px;
+    background:var(--panel); border:1px solid var(--line); border-radius:26px;
+    padding:8px 8px 8px 18px;
+  }
+  .composer textarea{
+    flex:1 1 auto; resize:none; border:none; outline:none; background:transparent;
+    color:var(--text); font:inherit; font-size:15px; line-height:1.5;
+    max-height:180px; padding:7px 0;
+  }
+  .composer textarea::placeholder{ color:var(--muted); }
+  #send{
+    flex:0 0 auto; width:34px; height:34px; border-radius:50%; border:none; cursor:pointer;
+    background:var(--send); color:var(--send-ink);
+    display:flex; align-items:center; justify-content:center; transition:.15s;
+  }
+  #send:disabled{ opacity:.35; cursor:not-allowed; }
+  #send svg{ width:18px; height:18px; }
+  .foot{ text-align:center; color:var(--muted); font-size:11.5px; margin-top:9px; }
+
+  ::-webkit-scrollbar{ width:10px; }
+  ::-webkit-scrollbar-thumb{ background:#454545; border-radius:6px; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="dot"></div>
+    <h1>ChatGPT</h1>
+    <span class="sub" id="modelLabel">mini</span>
+    <div class="spacer"></div>
+    <button id="clearBtn" title="Start a new chat">New chat</button>
+  </header>
+
+  <div id="scroll">
+    <div id="thread">
+      <div class="empty" id="empty">
+        <div class="big">What can I help with?</div>
+        <div class="chips">
+          <button class="chip">Explain the chain rule with an example</button>
+          <button class="chip">Give me 3 project ideas that use a neural network</button>
+          <button class="chip">Write a haiku about snowboarding</button>
+          <button class="chip">What's the difference between TCP and UDP?</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="composer">
+      <textarea id="input" rows="1" placeholder="Ask anything" autofocus></textarea>
+      <button id="send" title="Send" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </div>
+    <div class="foot">A live demo wired to OpenAI. ChatGPT can make mistakes. Check important info.</div>
+  </footer>
+
+<script>
+(() => {
+  const thread = document.getElementById("thread");
+  const scroll = document.getElementById("scroll");
+  const empty = document.getElementById("empty");
+  const input = document.getElementById("input");
+  const send = document.getElementById("send");
+  const clearBtn = document.getElementById("clearBtn");
+
+  // conversation history sent to the server each turn
+  const history = [];
+  let busy = false;
+
+  // grow the textarea with content, up to the CSS max-height
+  function autosize(){
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 180) + "px";
+  }
+  input.addEventListener("input", autosize);
+
+  function atBottom(){ return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80; }
+  function toBottom(){ scroll.scrollTop = scroll.scrollHeight; }
+
+  // very small, safe formatter: escape everything, then re-apply ``` code
+  // blocks, `inline code`, and **bold**. No raw HTML from the model is trusted.
+  function esc(s){ return s.replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c])); }
+  function format(text){
+    const parts = text.split(/```/);
+    let out = "";
+    parts.forEach((chunk, i) => {
+      if (i % 2 === 1) {
+        const body = chunk.replace(/^[a-zA-Z0-9]*\n/, "");
+        out += "<pre><code>" + esc(body) + "</code></pre>";
+      } else {
+        let t = esc(chunk);
+        t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
+        t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        out += t;
+      }
+    });
+    return out;
+  }
+
+  function addMessage(role, text){
+    empty.remove?.();
+    if (empty.parentNode) empty.parentNode.removeChild(empty);
+    const msg = document.createElement("div");
+    msg.className = "msg " + (role === "user" ? "user" : "bot");
+    msg.innerHTML =
+      '<div class="avatar">' + (role === "user" ? "You" : "AI") + '</div>' +
+      '<div class="body"><div class="who">' + (role === "user" ? "You" : "ChatGPT") +
+      '</div><div class="content"></div></div>';
+    const content = msg.querySelector(".content");
+    content.textContent = text || "";
+    thread.appendChild(msg);
+    toBottom();
+    return content;
+  }
+
+  function setBusy(b){
+    busy = b;
+    send.disabled = b;
+    input.disabled = b;
+  }
+
+  async function ask(text){
+    if (busy) return;
+    const clean = text.trim();
+    if (!clean) return;
+
+    addMessage("user", clean);
+    history.push({ role: "user", content: clean });
+    input.value = "";
+    autosize();
+
+    const target = addMessage("assistant", "");
+    target.classList.add("cursor");
+    setBusy(true);
+
+    let acc = "";
+    const fail = (m) => {
+      target.classList.remove("cursor");
+      if (!acc) {
+        target.parentNode.parentNode.remove();
+        const e = document.createElement("div");
+        e.className = "errline";
+        e.textContent = m;
+        thread.appendChild(e);
+        toBottom();
+      }
+    };
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history }),
+      });
+
+      if (!res.ok || !res.body) {
+        let msg = "Something went wrong. Please try again.";
+        try { const j = await res.json(); if (j.error) msg = j.error; } catch {}
+        fail(msg);
+        setBusy(false);
+        return;
+      }
+
+      // Parse OpenAI's SSE stream: lines of `data: {json}` and a final `[DONE]`.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) {
+          const t = line.trim();
+          if (!t.startsWith("data:")) continue;
+          const data = t.slice(5).trim();
+          if (data === "[DONE]") continue;
+          try {
+            const token = JSON.parse(data).choices?.[0]?.delta?.content;
+            if (token) {
+              acc += token;
+              const stick = atBottom();
+              target.innerHTML = format(acc);
+              if (stick) toBottom();
+            }
+          } catch {}
+        }
+      }
+
+      target.classList.remove("cursor");
+      if (acc) history.push({ role: "assistant", content: acc });
+      else fail("No response. Try again?");
+    } catch {
+      fail("Network error. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+      input.focus();
+    }
+  }
+
+  send.addEventListener("click", () => ask(input.value));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(input.value); }
+  });
+  document.querySelectorAll(".chip").forEach((c) =>
+    c.addEventListener("click", () => ask(c.textContent))
+  );
+  clearBtn.addEventListener("click", () => {
+    history.length = 0;
+    thread.innerHTML = "";
+    thread.appendChild(empty);
+    input.value = "";
+    autosize();
+    input.focus();
+  });
+})();
+</script>
+</body>
+</html>
