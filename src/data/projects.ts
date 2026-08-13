@@ -111,6 +111,15 @@ export const gameProjects: Project[] = [
     tag: "Live demo",
   },
   {
+    slug: "leon-slope",
+    title: "Leon Slope",
+    description:
+      "The original take: roll a ball down a colorful 3D slope, dodge the moving platforms, keep your speed.",
+    href: "/legacy/leonslope.html",
+    image: "/cards/card_leonslope.png",
+    tag: "Live demo",
+  },
+  {
     slug: "basket",
     title: "Sports Un-random",
     description:
@@ -383,6 +392,7 @@ const localProjectPaths: Record<string, string> = {
   imposter: "/legacy/imposter.html",
   castlefall: "/legacy/castlefall.html",
   slope: "/legacy/slope.html",
+  "leon-slope": "/legacy/leonslope.html",
   platformer: "/legacy/platformer.html",
   "wordle-game": "/legacy/wordle.html",
   blackjack: "/legacy/blackjack.html",
