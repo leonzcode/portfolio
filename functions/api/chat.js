@@ -8,10 +8,11 @@
 // redeploy):
 //
 //   OPENAI_API_KEY     — primary key
-//   OPENAI_API_KEY_2   — optional 2nd key. Used automatically when an earlier
+//   OPENAI_API_KEY_2   — optional 2nd key. Tried automatically when an earlier
 //   OPENAI_API_KEY_3   — optional 3rd key. key returns 401/403/429 (invalid,
-//                        out of quota, or rate-limited) — i.e. it transparently
-//                        rolls to the next key "when the other one runs out".
+//   OPENAI_API_KEY_4   — optional 4th key. out of quota, or rate-limited), so it
+//                        transparently rolls to the next key "when the other
+//                        one runs out".
 //   OPENAI_MODEL       — optional model id. Defaults to "gpt-4o-mini".
 //
 // Responses stream back to the client as Server-Sent Events (OpenAI's own SSE
@@ -72,7 +73,12 @@ export async function onRequestPost({ request, env }) {
 
   // Ordered key chain: each is tried in turn when the previous is rejected for
   // an auth/quota/rate reason. Add as many as you have (env vars below).
-  const keys = [env.OPENAI_API_KEY, env.OPENAI_API_KEY_2, env.OPENAI_API_KEY_3].filter(Boolean);
+  const keys = [
+    env.OPENAI_API_KEY,
+    env.OPENAI_API_KEY_2,
+    env.OPENAI_API_KEY_3,
+    env.OPENAI_API_KEY_4,
+  ].filter(Boolean);
   if (!keys.length) {
     console.error("chat.js: no OPENAI_API_KEY configured");
     return json({ error: "The chat backend isn't configured yet." }, 503);
