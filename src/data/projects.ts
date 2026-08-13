@@ -93,20 +93,6 @@ export const aiProjects: Project[] = [
     story: [],
     tech: ["JavaScript (vanilla)", "Information theory / entropy ranking", "GitHub Pages static hosting"],
   },
-  {
-    slug: "chatgpt",
-    title: "ChatGPT Clone",
-    description:
-      "A working ChatGPT-style chat that streams answers from a live language model.",
-    href: "https://leonzhao.dev/apps/chatgpt/",
-    image: "/cards/card_chatgpt.png",
-    tag: "Live demo",
-    story: [
-      "A from-scratch chat interface in the ChatGPT mold: streaming replies token by token, a conversation that remembers what came before, code and math formatting, and starter prompts on an empty screen.",
-      "The model runs through OpenAI. The browser never sees an API key. A small Cloudflare Pages Function proxies each request, attaches the key server-side, and streams the model's response straight back, so the credentials stay off the client and out of the repo. It rolls to a backup key automatically if the first one runs out of quota.",
-    ],
-    tech: ["OpenAI Chat Completions API", "Cloudflare Pages Function proxy (streaming SSE)", "Vanilla JS, single file", "Server-side key handling with automatic fallback"],
-  },
 ];
 
 // Mark AI projects as having detail pages
@@ -280,22 +266,6 @@ export const gameProjects: Project[] = [
     href: "https://leonzcode.github.io/snake/",
     image: "/cards/card_snake.png",
     tag: "Live demo",
-  },
-  {
-    // Also listed under AI. This is a separate object on purpose: each array's
-    // forEach stamps its own detailHref, so a shared reference would clobber it.
-    slug: "chatgpt",
-    title: "ChatGPT Clone",
-    description:
-      "A working ChatGPT-style chat that streams answers from a live language model.",
-    href: "https://leonzhao.dev/apps/chatgpt/",
-    image: "/cards/card_chatgpt.png",
-    tag: "Live demo",
-    story: [
-      "A from-scratch chat interface in the ChatGPT mold: streaming replies token by token, a conversation that remembers what came before, code and math formatting, and starter prompts on an empty screen.",
-      "The model runs through OpenAI. The browser never sees an API key. A small Cloudflare Pages Function proxies each request, attaches the key server-side, and streams the model's response straight back, so the credentials stay off the client and out of the repo. It rolls to a backup key automatically if the first one runs out of quota.",
-    ],
-    tech: ["OpenAI Chat Completions API", "Cloudflare Pages Function proxy (streaming SSE)", "Vanilla JS, single file", "Server-side key handling with automatic fallback"],
   },
 ];
 

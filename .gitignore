@@ -6,11 +6,5 @@ dist/
 .env.*
 !.env.example
 
-# Cloudflare Wrangler local secrets — real API keys go here for `wrangler pages
-# dev`, and must NEVER be committed. The .example is a safe placeholder template.
-.dev.vars
-.dev.vars.*
-!.dev.vars.example
-
 .DS_Store
 Thumbs.db
