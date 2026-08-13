@@ -105,7 +105,7 @@ export const gameProjects: Project[] = [
     slug: "slope",
     title: "Slope",
     description:
-      "Neon endless roller. Ride the ramps, dodge the red, and race a friend in split screen.",
+      "A ball rolling down an endless neon slope, faster and faster. Play solo or race a friend in split screen.",
     href: "https://leonzcode.github.io/slope/",
     image: "/cards/card_slope.png",
     tag: "Live demo",
@@ -114,7 +114,7 @@ export const gameProjects: Project[] = [
     slug: "leon-slope",
     title: "Leon Slope",
     description:
-      "The original take: roll a ball down a colorful 3D slope, dodge the moving platforms, keep your speed.",
+      "My first crack at Slope, weaving a ball past shifting platforms down a colorful 3D course.",
     href: "/legacy/leonslope.html",
     image: "/cards/card_leonslope.png",
     tag: "Live demo",
@@ -123,7 +123,7 @@ export const gameProjects: Project[] = [
     slug: "basket",
     title: "Sports Un-random",
     description:
-      "Browser minigames inspired by sports random. Use left, right, and up keys to move and down key to shoot",
+      "Goofy physics sports minigames in the spirit of the Random series.",
     href: "https://leonzcode.github.io/basket/",
     image: "/cards/card_basket.png",
     tag: "Live demo",
@@ -131,7 +131,7 @@ export const gameProjects: Project[] = [
   {
     slug: "blackjoy",
     title: "Black Joy",
-    description: "Interactive simulation to celebrate black culture and resistance against Jim Crow Laws",
+    description: "A 3D double dutch game about rhythm, community, and Black joy.",
     href: "https://leonzcode.github.io/blackjoy/",
     image: "/cards/card_blackjoy.png",
     tag: "Live demo",
@@ -140,7 +140,7 @@ export const gameProjects: Project[] = [
     slug: "ski",
     title: "Leonski",
     description:
-      "Endless ski-down game. Dodge trees, build speed, see how long you can stay alive.",
+      "Ski downhill forever and see how long you last before you wipe out.",
     href: "https://leonzcode.github.io/ski/",
     image: "/cards/card_ski.png",
     tag: "Live demo",
@@ -149,7 +149,7 @@ export const gameProjects: Project[] = [
     slug: "leonski2",
     title: "Leonski 2",
     description:
-      "3D ski game that rebuilds any real resort from map data. Carve, jump, and ride the lifts down real mountains.",
+      "A skiing sandbox that rebuilds real mountains from map data, so you can ride any resort in the world.",
     href: "/legacy/leonski2.html",
     image: "/cards/card_leonski2.png",
     tag: "Live demo",
@@ -162,7 +162,7 @@ export const gameProjects: Project[] = [
   {
     slug: "coconut",
     title: "Coconut Simulator",
-    description: "Idle clicker — every tap shakes more coconuts from the tree.",
+    description: "An idle clicker about shaking coconuts loose from a tree.",
     href: "https://leonzcode.github.io/coconut/",
     image: "/cards/card_coconut.png",
     tag: "Live demo",
@@ -170,7 +170,7 @@ export const gameProjects: Project[] = [
   {
     slug: "car",
     title: "Neon Velocity",
-    description: "Top-down arcade racer with a neon aesthetic. Steer the corners, don't crash.",
+    description: "A neon top-down racer around tight corners.",
     href: "https://leonzcode.github.io/car/",
     image: "/cards/card_car.png",
     tag: "Live demo",
@@ -179,7 +179,7 @@ export const gameProjects: Project[] = [
     slug: "clash",
     title: "Clash Royale",
     description:
-      "Tower-defense card game in the Clash Royale mold — deploy troops, defend your tower, take down the opponent's.",
+      "A browser take on Clash Royale, dropping troops to topple the other side's towers.",
     href: "https://leonzcode.github.io/clash/",
     image: "/cards/card_clash.png",
     tag: "Live demo",
@@ -187,7 +187,7 @@ export const gameProjects: Project[] = [
   {
     slug: "imposter",
     title: "Imposter Game",
-    description: "Among Us-style social deduction game playable in a single browser session.",
+    description: "Among Us style social deduction for a group huddled around one screen.",
     href: "https://leonzcode.github.io/imposter/",
     image: "/cards/card_imposter.png",
     tag: "Live demo",
@@ -196,7 +196,7 @@ export const gameProjects: Project[] = [
     slug: "castlefall",
     title: "Castlefall",
     description:
-      "Party word game of hidden teams. Everyone sees the same word list, and each team is secretly given one of the words. Pass one device around the table, then talk your way to your teammates.",
+      "A hidden-teams party word game you pass around a single phone.",
     href: "/legacy/castlefall.html",
     image: "/cards/card_castlefall.png",
     tag: "Live demo",
@@ -205,7 +205,7 @@ export const gameProjects: Project[] = [
     slug: "platformer",
     title: "Leon's Platformer",
     description:
-      "Side-scrolling 2D platformer with jump, double-jump, and hand-designed levels.",
+      "A 2D platformer with levels I laid out by hand.",
     href: "https://leonzcode.github.io/platformer/",
     image: "/cards/card_platformer.png",
     tag: "Live demo",
@@ -214,7 +214,7 @@ export const gameProjects: Project[] = [
     slug: "wordle-game",
     title: "Leon's Wordle",
     description:
-      "Browser Wordle clone — guess the five-letter word in six tries. (Different from the AI Wordle Solver under AI projects.)",
+      "My own Wordle, hunting down the hidden five-letter word.",
     href: "https://leonzcode.github.io/wordle/",
     image: "/cards/card_wordle-game.png",
     tag: "Live demo",
@@ -222,7 +222,7 @@ export const gameProjects: Project[] = [
   {
     slug: "blackjack",
     title: "Blackjack Game",
-    description: "Single-player blackjack against a simulated dealer — hit, stand, double down.",
+    description: "A hand of blackjack against a computer dealer.",
     href: "https://leonzcode.github.io/blackjack/",
     image: "/cards/card_blackjack.png",
     tag: "Live demo",
@@ -230,7 +230,7 @@ export const gameProjects: Project[] = [
   {
     slug: "tennis",
     title: "Tennis",
-    description: "Two-player tennis on one keyboard. Left and right paddles bounce the ball back and forth.",
+    description: "Two-player tennis sharing one keyboard.",
     href: "https://leonzcode.github.io/tennis/",
     image: "/cards/card_tennis.png",
     tag: "Live demo",
@@ -238,7 +238,7 @@ export const gameProjects: Project[] = [
   {
     slug: "leon-2048",
     title: "LEON 2048",
-    description: "2048 number-merging puzzle reskinned with my own tile art.",
+    description: "The 2048 sliding puzzle, reskinned with my own tiles.",
     href: "https://leonzcode.github.io/LEON/",
     image: "/cards/card_leon-2048.png",
     tag: "Live demo",
@@ -246,7 +246,7 @@ export const gameProjects: Project[] = [
   {
     slug: "tetris",
     title: "Tetris",
-    description: "Browser Tetris — falling tetrominoes, line clears, speed ramps up as you progress.",
+    description: "Browser Tetris that speeds up the longer you survive.",
     href: "https://leonzcode.github.io/Tetris/",
     image: "/cards/card_tetris.png",
     tag: "Live demo",
@@ -254,7 +254,7 @@ export const gameProjects: Project[] = [
   {
     slug: "pong",
     title: "Pong",
-    description: "Classic Pong. Two paddles, one ball, first to ten.",
+    description: "Old-school Pong, two paddles and a ball.",
     href: "https://leonzcode.github.io/pong/",
     image: "/cards/card_pong.png",
     tag: "Live demo",
@@ -262,7 +262,7 @@ export const gameProjects: Project[] = [
   {
     slug: "snake",
     title: "Snake",
-    description: "Classic Snake — eat food, grow longer, avoid your own tail.",
+    description: "Classic Snake, growing longer without tangling into yourself.",
     href: "https://leonzcode.github.io/snake/",
     image: "/cards/card_snake.png",
     tag: "Live demo",
