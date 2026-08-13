@@ -2,6 +2,9 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import ProjectGrid from "../components/ProjectGrid.astro";
 import { gameProjects } from "../data/projects";
+
+const inputClasses =
+  "w-full px-3 py-2 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[14px] text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 focus:outline-none focus:border-neutral-900 dark:focus:border-neutral-300 transition-colors";
 ---
 
 <BaseLayout title="Games · Leon Zhao" wide={true}>
@@ -14,6 +17,146 @@ import { gameProjects } from "../data/projects";
     <p class="text-[14.5px] text-neutral-500 dark:text-neutral-500 mb-10">
       Browser games built as side projects — arcade, puzzles, and classics.
     </p>
+
+    <!-- Suggest a game: a quiet panel above the grid that emails Leon. -->
+    <div
+      class="mb-12 max-w-2xl rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/40 p-5 sm:p-6"
+    >
+      <h2 class="text-[18px] font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+        Suggest a game
+      </h2>
+      <p class="text-[14px] text-neutral-500 dark:text-neutral-400 mb-4 leading-relaxed">
+        Is there a game you'd like to see here? Send it my way and I might build it.
+      </p>
+
+      <div
+        id="suggest-error"
+        role="alert"
+        hidden
+        class="mb-4 px-4 py-3 rounded-md border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200 text-[13.5px]"
+      >
+      </div>
+
+      <div
+        id="suggest-success"
+        role="status"
+        hidden
+        class="px-4 py-4 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 text-[14px] text-neutral-700 dark:text-neutral-300"
+      >
+        Thanks for the suggestion. I'll take a look.
+      </div>
+
+      <form id="suggest-form" method="POST" action="/api/suggest" class="space-y-3" novalidate>
+        <div>
+          <label for="suggest-message" class="sr-only">Your game suggestion</label>
+          <textarea
+            id="suggest-message"
+            name="message"
+            rows="3"
+            required
+            maxlength="2000"
+            placeholder="What game should I add?"
+            class={`${inputClasses} resize-y`}></textarea>
+        </div>
+
+        <div>
+          <label for="suggest-email" class="sr-only">Your email (optional)</label>
+          <input
+            id="suggest-email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            maxlength="200"
+            placeholder="Your email (optional, if you'd like a reply)"
+            class={inputClasses}
+          />
+        </div>
+
+        {/* Honeypot: invisible to humans, tempting to bots. Any value = dropped server-side. */}
+        <div aria-hidden="true" class="absolute left-[-9999px] w-px h-px overflow-hidden">
+          <label for="suggest-website">Website (leave empty)</label>
+          <input
+            id="suggest-website"
+            name="website"
+            type="text"
+            tabindex="-1"
+            autocomplete="off"
+          />
+        </div>
+
+        <button
+          id="suggest-submit"
+          type="submit"
+          class="inline-flex items-center px-4 py-2 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[13px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        >
+          <span data-label-idle>Send</span>
+          <span data-label-sending hidden>Sending…</span>
+        </button>
+      </form>
+    </div>
+
     <ProjectGrid projects={gameProjects} />
   </section>
+
+  <script is:inline>
+    (() => {
+      const form = document.getElementById("suggest-form");
+      const submit = document.getElementById("suggest-submit");
+      const errorBox = document.getElementById("suggest-error");
+      const successBox = document.getElementById("suggest-success");
+      if (!form || !submit || !errorBox || !successBox) return;
+
+      const idleLabel = submit.querySelector("[data-label-idle]");
+      const sendingLabel = submit.querySelector("[data-label-sending]");
+
+      function setSubmitting(submitting) {
+        submit.disabled = submitting;
+        idleLabel.hidden = submitting;
+        sendingLabel.hidden = !submitting;
+      }
+      function showError(msg) {
+        errorBox.textContent = msg;
+        errorBox.hidden = false;
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        errorBox.hidden = true;
+
+        const data = {
+          message: form.message.value.trim(),
+          email: form.email.value.trim(),
+          website: form.website.value, // honeypot
+        };
+
+        if (!data.message) {
+          showError("Write a game suggestion first.");
+          return;
+        }
+
+        setSubmitting(true);
+        try {
+          const res = await fetch("/api/suggest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          });
+          let payload = {};
+          try {
+            payload = await res.json();
+          } catch {}
+          if (res.ok && payload.ok) {
+            form.hidden = true;
+            successBox.hidden = false;
+          } else {
+            showError(payload.error || "Something went wrong. Please try again.");
+            setSubmitting(false);
+          }
+        } catch {
+          showError("Network error. Check your connection and try again.");
+          setSubmitting(false);
+        }
+      });
+    })();
+  </script>
 </BaseLayout>
