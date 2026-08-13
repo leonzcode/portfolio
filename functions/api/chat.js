@@ -7,12 +7,13 @@
 // (Settings → Environment variables → add as an encrypted "Secret", then
 // redeploy):
 //
-//   OPENAI_API_KEY     — primary key
-//   OPENAI_API_KEY_2   — optional 2nd key. Tried automatically when an earlier
-//   OPENAI_API_KEY_3   — optional 3rd key. key returns 401/403/429 (invalid,
-//   OPENAI_API_KEY_4   — optional 4th key. out of quota, or rate-limited), so it
-//                        transparently rolls to the next key "when the other
-//                        one runs out".
+//   OPENAI_API_KEY     — primary key.
+//   OPENAI_API_KEY_2,  — any number of fallback keys. They're picked up
+//   OPENAI_API_KEY_3,    automatically (no code change needed — just add the
+//   OPENAI_API_KEY_N…    env var) and tried in numeric order when an earlier
+//                        key returns 401/403/429 (invalid, out of quota, or
+//                        rate-limited), so it rolls to the next "when the
+//                        other one runs out".
 //   OPENAI_MODEL       — optional model id. Defaults to "gpt-4o-mini".
 //
 // Responses stream back to the client as Server-Sent Events (OpenAI's own SSE
@@ -47,6 +48,24 @@ function sanitizeMessages(raw) {
   return out;
 }
 
+// Collect OPENAI_API_KEY and any OPENAI_API_KEY_<n>, ordered: base first, then
+// by ascending number. Blanks and duplicates are dropped.
+function collectKeys(env) {
+  const numbered = [];
+  let base = null;
+  for (const [name, value] of Object.entries(env)) {
+    if (typeof value !== "string" || !value.trim()) continue;
+    if (name === "OPENAI_API_KEY") base = value.trim();
+    else {
+      const m = name.match(/^OPENAI_API_KEY_(\d+)$/);
+      if (m) numbered.push([Number(m[1]), value.trim()]);
+    }
+  }
+  numbered.sort((a, b) => a[0] - b[0]);
+  const ordered = [base, ...numbered.map((n) => n[1])].filter(Boolean);
+  return [...new Set(ordered)];
+}
+
 function callOpenAI(key, payload) {
   return fetch(OPENAI_URL, {
     method: "POST",
@@ -72,13 +91,10 @@ export async function onRequestPost({ request, env }) {
   }
 
   // Ordered key chain: each is tried in turn when the previous is rejected for
-  // an auth/quota/rate reason. Add as many as you have (env vars below).
-  const keys = [
-    env.OPENAI_API_KEY,
-    env.OPENAI_API_KEY_2,
-    env.OPENAI_API_KEY_3,
-    env.OPENAI_API_KEY_4,
-  ].filter(Boolean);
+  // an auth/quota/rate reason. We gather OPENAI_API_KEY plus every
+  // OPENAI_API_KEY_<n> present, in numeric order, so extra keys can be added as
+  // env vars without touching this file.
+  const keys = collectKeys(env);
   if (!keys.length) {
     console.error("chat.js: no OPENAI_API_KEY configured");
     return json({ error: "The chat backend isn't configured yet." }, 503);
