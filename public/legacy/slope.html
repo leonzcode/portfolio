@@ -2,506 +2,2692 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Slope</title>
 <style>
-  body { 
-    margin: 0; 
-    overflow: hidden; 
-    background: linear-gradient(to bottom, #0f0c29, #302b63, #24243e);
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  :root{
+    --neon:#00ff66;
+    --neon-dim:#00b347;
+    --danger:#ff2222;
+    --rival:#4fe4ff;
+    --coin:#ffcf3f;
+    --ink:#000000;
   }
-  
-  #overlay {
-    position: fixed;
-    top: 20px; 
-    left: 20px;
-    color: white; 
-    font-size: 24px; 
-    z-index: 10;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-    background: rgba(0, 0, 0, 0.5);
-    padding: 10px 20px;
-    border-radius: 10px;
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    overflow:hidden;
+    background:#000;
+    color:#fff;
+    font-family:Arial, Helvetica, "Helvetica Neue", sans-serif;
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:none;
   }
-  
-  #speed {
-    position: fixed;
-    top: 20px; 
-    right: 20px;
-    color: white; 
-    font-size: 18px; 
-    z-index: 10;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-    background: rgba(0, 0, 0, 0.5);
-    padding: 10px 20px;
-    border-radius: 10px;
+  canvas{ display:block; }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:fixed; top:0; left:0; right:0;
+    pointer-events:none;
+    z-index:10;
+    display:flex;
+    opacity:0; transition:opacity .25s ease;
   }
-  
-  #instructions {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: white;
-    text-align: center;
-    background: rgba(0, 0, 0, 0.7);
-    padding: 15px;
-    border-radius: 10px;
-    z-index: 10;
-    max-width: 500px;
+  #hud.on{ opacity:1; }
+  .hudpanel{ width:100%; padding:18px 22px; }
+  body.split .hudpanel{ width:50%; }
+  .hudpanel[hidden]{ display:none; }
+  .hscore{
+    font-size:44px; font-weight:700; line-height:1;
+    letter-spacing:0.5px;
+    text-shadow:0 2px 6px rgba(0,0,0,.95), 0 0 22px rgba(0,255,102,.22);
+    font-variant-numeric:tabular-nums;
   }
-  
-  #gameOverMenu {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.9);
-    color: white;
-    padding: 40px;
-    border-radius: 15px;
-    text-align: center;
-    z-index: 100;
-    width: 400px;
-    box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
-    display: none;
-    border: 2px solid #ff4757;
+  body.split .hscore{ font-size:34px; }
+  .hlabel{
+    margin-top:6px;
+    font-size:14px; font-weight:700; letter-spacing:2px;
+    color:rgba(255,255,255,.55);
   }
-  
-  #gameOverMenu h2 {
-    color: #ff4757;
-    font-size: 36px;
-    margin-bottom: 20px;
-    text-shadow: 0 0 10px rgba(255, 71, 87, 0.7);
+  .hudpanel.p2 .hlabel{ color:rgba(120,225,255,.7); }
+  .hudpanel.dead .hscore{ opacity:.4; }
+  .hudpanel.dead .hlabel{ color:var(--danger); }
+
+  /* the split-screen seam */
+  #divider{
+    position:fixed; top:0; bottom:0; left:50%;
+    width:2px; margin-left:-1px; z-index:11;
+    background:linear-gradient(to bottom, rgba(0,255,102,.05), rgba(0,255,102,.45), rgba(0,255,102,.05));
+    display:none; pointer-events:none;
   }
-  
-  #gameOverMenu p {
-    font-size: 20px;
-    margin: 15px 0;
+  body.split #divider{ display:block; }
+
+  /* ---------- Screens ---------- */
+  .screen{
+    position:fixed; inset:0; z-index:20;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:radial-gradient(120% 90% at 50% 40%, rgba(0,32,14,.55) 0%, rgba(0,0,0,.86) 55%, rgba(0,0,0,.96) 100%);
+    text-align:center;
+    padding:24px;
   }
-  
-  #currentScore {
-    color: #2ed573;
-    font-weight: bold;
-    font-size: 24px;
+  .screen[hidden]{ display:none; }
+
+  .wordmark{
+    font-size:clamp(58px,15vw,132px);
+    font-weight:700;
+    letter-spacing:.16em;
+    margin:0 0 6px -0.16em;   /* pull back the trailing letter-space so it optically centers */
+    line-height:1;
+    color:#fff;
+    text-shadow:
+      0 0 8px rgba(0,255,102,.95),
+      0 0 26px rgba(0,255,102,.75),
+      0 0 60px rgba(0,255,102,.45);
   }
-  
-  #highScore {
-    color: #ffa502;
-    font-weight: bold;
-    font-size: 24px;
+  .wordmark + .btn{ margin-top:34px; }
+
+  .btn{
+    font-family:inherit;
+    font-size:17px; font-weight:700; letter-spacing:.22em;
+    text-transform:uppercase;
+    color:#001a08;
+    background:var(--neon);
+    border:none;
+    padding:16px 52px 16px 56px;
+    cursor:pointer;
+    border-radius:2px;
+    box-shadow:0 0 0 rgba(0,255,102,.0), 0 0 24px rgba(0,255,102,.55);
+    transition:transform .12s ease, box-shadow .2s ease, background .2s ease;
+    pointer-events:auto;
   }
-  
-  #restartButton {
-    background: linear-gradient(to right, #ff4757, #ff6348);
-    color: white;
-    border: none;
-    padding: 15px 30px;
-    font-size: 18px;
-    border-radius: 8px;
-    cursor: pointer;
-    margin-top: 20px;
-    transition: all 0.3s ease;
-    font-weight: bold;
+  .btn:hover, .btn:focus-visible{
+    transform:translateY(-2px);
+    box-shadow:0 0 40px rgba(0,255,102,.9);
+    outline:none;
   }
-  
-  #restartButton:hover {
-    transform: scale(1.05);
-    box-shadow: 0 0 15px rgba(255, 71, 87, 0.7);
+  .btn:focus-visible{ outline:2px solid #fff; outline-offset:4px; }
+  .btn:active{ transform:translateY(0); }
+  .btn.ghost{
+    background:transparent; color:var(--neon);
+    box-shadow:inset 0 0 0 2px rgba(0,255,102,.6);
+    padding:15px 34px 15px 38px;
+    font-size:14px;
   }
-  
-  .score-display {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 10px;
-    border-radius: 8px;
-    margin: 10px 0;
+  .btn.ghost:hover{ background:rgba(0,255,102,.12); box-shadow:inset 0 0 0 2px var(--neon), 0 0 26px rgba(0,255,102,.4); }
+
+  .keys{
+    margin-top:34px;
+    font-size:12.5px; letter-spacing:.18em; font-weight:700;
+    color:rgba(255,255,255,.42);
+    line-height:2.1;
+    text-transform:uppercase;
+  }
+  .keys b{ color:rgba(255,255,255,.8); font-weight:700; }
+
+  /* Game over */
+  .go-title{
+    font-size:clamp(30px,7vw,52px); font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--danger); margin:0 0 26px -0.14em;
+    text-shadow:0 0 10px rgba(255,34,34,.9), 0 0 44px rgba(255,34,34,.5);
+  }
+  .stats{ display:flex; gap:56px; margin-bottom:38px; }
+  .stat{ min-width:120px; }
+  .stat .lbl{
+    font-size:11.5px; font-weight:700; letter-spacing:.28em;
+    color:rgba(255,255,255,.4); margin-bottom:8px;
+  }
+  .stat .val{
+    font-size:46px; font-weight:700; line-height:1;
+    font-variant-numeric:tabular-nums;
+  }
+  .stat.best .val{ color:var(--neon); text-shadow:0 0 20px rgba(0,255,102,.6); }
+  .newbest{
+    font-size:12px; font-weight:700; letter-spacing:.3em; color:var(--neon);
+    margin:-24px 0 26px; opacity:0; text-transform:uppercase;
+  }
+  .newbest.on{ opacity:1; animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{opacity:.45} 50%{opacity:1} }
+  .row{ display:flex; gap:14px; flex-wrap:wrap; justify-content:center; }
+  .stat.rival .val{ color:#4fe4ff; text-shadow:0 0 20px rgba(79,228,255,.55); }
+  .earned{
+    font-size:13px; font-weight:700; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--coin); margin:-18px 0 26px;
+  }
+
+  /* ---------- Garage ---------- */
+  #garage{
+    justify-content:flex-start; overflow-y:auto; padding:38px 24px 90px;
+    background:radial-gradient(120% 90% at 50% 20%, rgba(0,30,14,.96) 0%, rgba(0,0,0,.985) 60%);
+  }
+  .ghead{
+    display:flex; align-items:baseline; gap:18px; margin-bottom:6px;
+    flex-wrap:wrap; justify-content:center;
+  }
+  .ghead h2{
+    font-size:clamp(26px,5vw,40px); font-weight:700; letter-spacing:.16em;
+    text-transform:uppercase; margin:0;
+  }
+  .purse{
+    font-size:19px; font-weight:700; letter-spacing:.1em; color:var(--coin);
+    font-variant-numeric:tabular-nums;
+  }
+  .ghint{
+    font-size:12px; font-weight:700; letter-spacing:.2em; text-transform:uppercase;
+    color:rgba(255,255,255,.38); margin:0 0 26px;
+  }
+  .skins{
+    display:grid; gap:12px; width:100%; max-width:820px;
+    grid-template-columns:repeat(auto-fill, minmax(158px, 1fr));
+  }
+  .skin{
+    position:relative;
+    border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.02);
+    border-radius:3px; padding:14px 12px 12px;
+    cursor:pointer; font-family:inherit; color:#fff; text-align:center;
+    transition:border-color .16s ease, background .16s ease, transform .16s ease;
+    pointer-events:auto;
+  }
+  .skin:hover:not(.locked){ border-color:rgba(0,255,102,.55); background:rgba(0,255,102,.07); transform:translateY(-2px); }
+  .skin:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+  .skin canvas{ width:66px; height:66px; display:block; margin:0 auto 10px; }
+  .skin .sname{ font-size:12.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+  .skin .scost{
+    font-size:12px; font-weight:700; letter-spacing:.08em; margin-top:6px;
+    color:var(--coin); font-variant-numeric:tabular-nums;
+  }
+  .skin.owned .scost{ color:rgba(255,255,255,.35); }
+  .skin.equipped{ border-color:var(--neon); background:rgba(0,255,102,.12); }
+  .skin.equipped .scost{ color:var(--neon); }
+  .skin.locked{ opacity:.5; cursor:not-allowed; }
+  .skin .tier{
+    position:absolute; top:8px; right:9px;
+    font-size:9.5px; font-weight:700; letter-spacing:.12em;
+    color:rgba(255,255,255,.3);
+  }
+
+  /* corner controls */
+  #corner{
+    position:fixed; right:16px; bottom:14px; z-index:30;
+    display:flex; gap:10px; align-items:center;
+  }
+  .icobtn{
+    width:38px; height:38px; border-radius:3px; cursor:pointer;
+    background:rgba(0,0,0,.45);
+    border:1px solid rgba(0,255,102,.32);
+    color:rgba(0,255,102,.85);
+    display:flex; align-items:center; justify-content:center;
+    font-size:15px; font-family:inherit; font-weight:700;
+    transition:background .18s ease, color .18s ease, border-color .18s ease;
+  }
+  .icobtn:hover{ background:rgba(0,255,102,.16); color:#bfffd8; border-color:var(--neon); }
+  .icobtn:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
+  .icobtn.off{ color:rgba(255,255,255,.3); border-color:rgba(255,255,255,.18); }
+
+  #paused{
+    position:fixed; inset:0; z-index:25; display:none;
+    align-items:center; justify-content:center; flex-direction:column;
+    background:rgba(0,0,0,.72);
+  }
+  #paused.on{ display:flex; }
+  #paused .wordmark{ font-size:clamp(34px,8vw,62px); }
+
+  #loading{
+    position:fixed; inset:0; z-index:40; background:#000;
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; letter-spacing:.4em; font-weight:700;
+    color:rgba(0,255,102,.7);
+    transition:opacity .4s ease;
+  }
+  #loading.gone{ opacity:0; pointer-events:none; }
+
+  @media (max-width:560px){
+    .hscore{ font-size:34px; }
+    body.split .hscore{ font-size:24px; }
+    .hudpanel{ padding:12px 14px; }
+    .stats{ gap:34px; }
+    .stat .val{ font-size:36px; }
+    .keys{ font-size:11px; }
+    .skins{ grid-template-columns:repeat(auto-fill, minmax(122px, 1fr)); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .newbest.on{ animation:none; opacity:1; }
+    .btn{ transition:none; }
   }
 </style>
 </head>
 <body>
-<div id="overlay">Score: 0</div>
-<div id="speed">Speed: 0</div>
-<div id="instructions">Use LEFT/RIGHT arrow keys or A/D to move • Avoid falling off the path • Watch out for moving platforms!</div>
 
-<div id="gameOverMenu">
-  <h2>GAME OVER</h2>
-  <div class="score-display">
-    <p>Your Score: <span id="currentScore">0</span></p>
+<div id="hud">
+  <div class="hudpanel" id="hud1">
+    <div class="hscore" id="score1">0</div>
+    <div class="hlabel" id="label1">BEST 0</div>
   </div>
-  <div class="score-display">
-    <p>High Score: <span id="highScore">0</span></p>
+  <div class="hudpanel p2" id="hud2" hidden>
+    <div class="hscore" id="score2">0</div>
+    <div class="hlabel" id="label2">P2</div>
   </div>
-  <button id="restartButton">PLAY AGAIN</button>
+</div>
+<div id="divider"></div>
+
+<!-- Title screen -->
+<div class="screen" id="menu">
+  <h1 class="wordmark">SLOPE</h1>
+  <button class="btn" id="playBtn">1 Player</button>
+  <div class="row" style="margin-top:14px">
+    <button class="btn ghost" id="play2Btn">2 Players</button>
+    <button class="btn ghost" id="garageBtn">Garage</button>
+  </div>
+  <div class="keys" id="keysHint">
+    <b>&#8592;</b> <b>&#8594;</b> or <b>A</b> <b>D</b> to steer<br>
+    Dodge the red &nbsp;&middot;&nbsp; Stay on the track &nbsp;&middot;&nbsp; Ride the ramps<br>
+    <span style="opacity:.6">Two players share one keyboard: P1 <b>A</b> <b>D</b>, P2 <b>&#8592;</b> <b>&#8594;</b></span>
+  </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script>
-let scene = new THREE.Scene();
-let camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
-let renderer = new THREE.WebGLRenderer({ antialias: true });
+<!-- Game over screen -->
+<div class="screen" id="over" hidden>
+  <h2 class="go-title">Game Over</h2>
+  <div class="stats">
+    <div class="stat"><div class="lbl" id="lblA">Score</div><div class="val" id="finalScore">0</div></div>
+    <div class="stat best" id="statB"><div class="lbl" id="lblB">Best</div><div class="val" id="finalBest">0</div></div>
+  </div>
+  <div class="newbest" id="newBest">New record</div>
+  <div class="earned" id="earned"></div>
+  <div class="row">
+    <button class="btn" id="againBtn">Again</button>
+    <button class="btn ghost" id="garage2Btn">Garage</button>
+    <button class="btn ghost" id="menuBtn">Menu</button>
+  </div>
+</div>
+
+<!-- Garage: ball customisation, paid for with coins earned from your score -->
+<div class="screen" id="garage" hidden>
+  <div class="ghead">
+    <h2>Garage</h2>
+    <div class="purse" id="purse">0 coins</div>
+  </div>
+  <p class="ghint" id="ghint">Every 40 points you roll earns 1 coin</p>
+  <div class="skins" id="skinList"></div>
+  <div class="row" style="margin-top:30px">
+    <button class="btn" id="garageBack">Back</button>
+  </div>
+</div>
+
+<div id="paused">
+  <h2 class="wordmark">PAUSED</h2>
+  <div class="keys">Press <b>P</b> or <b>Esc</b> to resume</div>
+</div>
+
+<div id="corner">
+  <button class="icobtn" id="soundBtn" title="Sound" aria-label="Toggle sound">&#9835;</button>
+  <button class="icobtn" id="fsBtn" title="Fullscreen" aria-label="Toggle fullscreen">&#9974;</button>
+</div>
+
+<div id="loading">LOADING</div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================================
+   SLOPE  —  a recreation of the classic neon ball-roller.
+   Black runway, electric-green edges, red hazards, endless procedural descent.
+
+   Everything runs in "track space": s = distance along the runway,
+   u = lateral offset from centre, y = height above the runway plane.
+   A frame of nodes maps (s,u,y) into the curving, descending world.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- tuning -- */
+const R          = 1;        // ball radius; every other size is in ball radii
+const SEG        = 4;        // spacing between path nodes
+const THICK      = 2.4;      // visual thickness of the runway slabs
+const RAIL       = 0.5;      // width of the glowing edge strip
+const LINE_SP    = 3;        // cross line every N nodes
+
+const HW_START   = 8.4;      // half width of a full-width runway at the start
+const HW_END     = 5.8;      // ...and once the run is fully ramped up
+
+const SPD_START  = 38;       // units/second at the gate
+const SPD_END    = 138;      // terminal target speed
+const SPD_RAMP   = 7200;     // distance over which the target climbs
+const SPD_EASE   = 1.5;      // how hard actual speed chases the target
+const PITCH_GAIN = 1.35;     // steeper track => faster
+
+const LAT_ACC    = 108;      // steering acceleration
+const LAT_DRAG   = 3.3;      // lateral drag => terminal lateral ≈ 33
+const GRAV       = 132;
+
+const CAM_BACK   = 12.0;
+const CAM_UP     = 5.4;
+const LOOK_AHEAD = 27;
+const LOOK_UP    = 1.1;
+const FOV_BASE   = 68;
+const FOV_RUSH   = 20;
+
+const AHEAD      = 640;      // how far ahead the world is generated
+const BEHIND     = 150;      // how far behind chunks survive
+
+/* ------------------------------------------------------------- renderer -- */
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
+renderer.setClearColor(0x000000, 1);
 document.body.appendChild(renderer.domElement);
 
-// Game state
-let gameActive = true;
-let highScore = localStorage.getItem('slopeHighScore') || 0;
-let isFalling = false;
-let gameOverTriggered = false;
-let platformsShouldMove = true;
+const scene  = new THREE.Scene();
+scene.fog    = new THREE.FogExp2(0x000000, 0.0030);
 
-// Enhanced lighting
-let ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-scene.add(ambientLight);
+scene.add(new THREE.AmbientLight(0x223129, 1.0));
+const key = new THREE.DirectionalLight(0xcfeee0, 1.45);
+key.position.set(0.35, 1, 0.3);
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x00ff66, 0.22);
+rim.position.set(-0.6, 0.35, -1);
+scene.add(rim);
 
-let directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-directionalLight.position.set(5, 10, 5);
-directionalLight.castShadow = true;
-directionalLight.shadow.mapSize.width = 2048;
-directionalLight.shadow.mapSize.height = 2048;
-scene.add(directionalLight);
+/* post processing (bloom is what sells the neon). Split screen needs one
+   chain per viewport, otherwise the glow bleeds across the seam.            */
+let PP = null;
+try{
+  const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+    import('three/addons/postprocessing/EffectComposer.js'),
+    import('three/addons/postprocessing/RenderPass.js'),
+    import('three/addons/postprocessing/UnrealBloomPass.js'),
+    import('three/addons/postprocessing/OutputPass.js')
+  ]);
+  PP = { EffectComposer, RenderPass, UnrealBloomPass, OutputPass };
+}catch(e){ PP = null; }
 
-// Add some colorful point lights
-let pointLight1 = new THREE.PointLight(0xff00ff, 1, 50);
-pointLight1.position.set(5, 5, -20);
-scene.add(pointLight1);
+function makeComposer(cam){
+  if(!PP) return null;
+  const c = new PP.EffectComposer(renderer);
+  c.addPass(new PP.RenderPass(scene, cam));
+  c.addPass(new PP.UnrealBloomPass(new THREE.Vector2(1,1), 0.46, 0.38, 0.72));
+  c.addPass(new PP.OutputPass());
+  c.setPixelRatio(Math.min(devicePixelRatio, 1.35));
+  return c;
+}
 
-let pointLight2 = new THREE.PointLight(0x00ffff, 1, 50);
-pointLight2.position.set(-5, 5, -30);
-scene.add(pointLight2);
+/* ------------------------------------------------------------ materials -- */
+const C_NEON  = 0x00ff66;
+const C_RED   = 0xff2020;
 
-// Ball with enhanced material
-let ballGeo = new THREE.SphereGeometry(0.5, 32, 32);
-let ballMat = new THREE.MeshStandardMaterial({ 
-  color: 0x00ff00,
-  metalness: 0.7,
-  roughness: 0.2,
-  emissive: 0x003300
+const DS = THREE.DoubleSide;
+const matDeck  = new THREE.MeshStandardMaterial({ color:0x18211d, roughness:0.78, metalness:0.05, side:DS });
+const matSide  = new THREE.MeshStandardMaterial({ color:0x080d0b, roughness:0.92, metalness:0.0,  side:DS });
+const matGlow  = new THREE.MeshBasicMaterial({ color:C_NEON, toneMapped:false, side:DS });
+const matGlowD = new THREE.MeshBasicMaterial({ color:0x0f7d3c, toneMapped:false, side:DS });
+const matRed   = new THREE.MeshStandardMaterial({
+  color:C_RED, roughness:0.35, metalness:0.1,
+  emissive:C_RED, emissiveIntensity:0.8, toneMapped:false, side:DS
 });
-let ball = new THREE.Mesh(ballGeo, ballMat);
-ball.castShadow = true;
-scene.add(ball);
+const matRedEdge = new THREE.MeshBasicMaterial({ color:0xffb0b0, toneMapped:false, side:DS });
+const matSlab  = new THREE.MeshStandardMaterial({ color:0x0a1010, roughness:0.95, metalness:0.0, side:DS });
+const matWire  = new THREE.LineBasicMaterial({ color:0x0d7a3a, toneMapped:false, transparent:true, opacity:0.42 });
+const matWireR = new THREE.LineBasicMaterial({ color:0xffb3b3, toneMapped:false });
 
-// Floor segments with vibrant colors
-let floors = [];
-let floorColors = [
-  0xff6b6b, 0x4ecdc4, 0x45b7d1, 0x96ceb4, 0xfeca57,
-  0xff9ff3, 0x54a0ff, 0x5f27cd, 0x00d2d3, 0xff9f43
-];
-
-// Moving platform properties
-let movingPlatformColors = [0xff0000, 0xffff00, 0xff00ff]; // Red, Yellow, Magenta for visibility
-let movingPlatformSpeeds = [0.03, 0.05, 0.07]; // Different speeds for variety
-
-function createFloor(z) {
-  let geo = new THREE.BoxGeometry(5, 0.5, 10);
-  let isMoving = Math.random() < 0.2; // 20% chance to be a moving platform
-  
-  let colorIndex;
-  let mat;
-  
-  if (isMoving) {
-    // Moving platform - use special colors
-    colorIndex = Math.floor(Math.random() * movingPlatformColors.length);
-    mat = new THREE.MeshStandardMaterial({ 
-      color: movingPlatformColors[colorIndex],
-      metalness: 0.5,
-      roughness: 0.3,
-      emissive: movingPlatformColors[colorIndex],
-      emissiveIntensity: 0.2
-    });
-  } else {
-    // Regular platform
-    colorIndex = Math.floor(Math.random() * floorColors.length);
-    mat = new THREE.MeshStandardMaterial({ 
-      color: floorColors[colorIndex],
-      metalness: 0.3,
-      roughness: 0.7
-    });
+/* ------------------------------------------------------------- geometry -- */
+/* Tiny helper that accumulates triangles so a whole chunk becomes one mesh. */
+class Builder{
+  constructor(){ this.p = []; this.n = []; }
+  get empty(){ return this.p.length === 0; }
+  _tri(a,b,c,nx,ny,nz){
+    this.p.push(a[0],a[1],a[2], b[0],b[1],b[2], c[0],c[1],c[2]);
+    this.n.push(nx,ny,nz, nx,ny,nz, nx,ny,nz);
   }
-  
-  let floor = new THREE.Mesh(geo, mat);
-  floor.position.z = z;
-  floor.position.x = (Math.random() - 0.5) * 4;
-  floor.receiveShadow = true;
-  
-  // Add moving platform properties
-  if (isMoving) {
-    floor.isMoving = true;
-    floor.moveSpeed = movingPlatformSpeeds[Math.floor(Math.random() * movingPlatformSpeeds.length)];
-    floor.moveDirection = Math.random() < 0.5 ? 1 : -1; // Random initial direction
-    floor.moveRange = 3; // How far it can move left/right
-    floor.originalX = floor.position.x;
+  quad(a,b,c,d){
+    const ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2];
+    const vx=d[0]-a[0], vy=d[1]-a[1], vz=d[2]-a[2];
+    let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const l=Math.hypot(nx,ny,nz)||1; nx/=l; ny/=l; nz/=l;
+    this._tri(a,b,c,nx,ny,nz); this._tri(a,c,d,nx,ny,nz);
   }
-  
-  scene.add(floor);
-  floors.push(floor);
+  tri(a,b,c){
+    const ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2];
+    const vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2];
+    let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const l=Math.hypot(nx,ny,nz)||1;
+    this._tri(a,b,c,nx/l,ny/l,nz/l);
+  }
+  build(){
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p,3));
+    g.setAttribute('normal',   new THREE.Float32BufferAttribute(this.n,3));
+    g.computeBoundingSphere();
+    return g;
+  }
 }
 
-// Create initial floors
-for (let i = 0; i < 20; i++) createFloor(i * -10);
+/* --------------------------------------------------------------- path ----- */
+/* nodes[i] describes the runway frame at s = i * SEG                          */
+const nodes = [];
+let nodeTop  = -1;              // highest generated index
+let nodeLow  = 0;               // lowest index still kept (older ones are released)
+let pYaw = 0, pYawRate = 0, pPitch = 0.14;
+let tYawRate = 0, tPitch = 0.14;
 
-// Background particles
-let particles = [];
-let particleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
-for (let i = 0; i < 100; i++) {
-  let particleMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.5
-  });
-  let particle = new THREE.Mesh(particleGeometry, particleMaterial);
-  particle.position.set(
-    (Math.random() - 0.5) * 100,
-    (Math.random() - 0.5) * 100,
-    (Math.random() - 0.5) * 100 - 50
+function resetPath(){
+  nodes.length = 0; nodeTop = -1; nodeLow = 0;
+  pYaw = 0; pYawRate = 0; pPitch = 0.13;
+  tYawRate = 0; tPitch = 0.13;
+  nodes[0] = makeNode([0,0,0], 0, 0.13);
+  nodeTop = 0;
+}
+function makeNode(pos, yaw, pitch){
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const cy = Math.cos(yaw),   sy = Math.sin(yaw);
+  const fwd   = [ sy*cp, -sp, -cy*cp ];
+  const right = [ cy, 0, sy ];
+  // up = right x fwd
+  const up = [
+    right[1]*fwd[2] - right[2]*fwd[1],
+    right[2]*fwd[0] - right[0]*fwd[2],
+    right[0]*fwd[1] - right[1]*fwd[0]
+  ];
+  return { pos, fwd, right, up, yaw, pitch };
+}
+function extendNodes(toIndex){
+  while(nodeTop < toIndex){
+    const prev = nodes[nodeTop];
+    pYawRate += (tYawRate - pYawRate) * 0.07;
+    pPitch   += (tPitch   - pPitch)   * 0.05;
+    pYaw     += pYawRate * SEG;
+    const pos = [
+      prev.pos[0] + prev.fwd[0]*SEG,
+      prev.pos[1] + prev.fwd[1]*SEG,
+      prev.pos[2] + prev.fwd[2]*SEG
+    ];
+    nodeTop++;
+    nodes[nodeTop] = makeNode(pos, pYaw, pPitch);
+  }
+}
+/* world point for a track-space coordinate */
+function ptAt(node, u, y){
+  return [
+    node.pos[0] + node.right[0]*u + node.up[0]*y,
+    node.pos[1] + node.right[1]*u + node.up[1]*y,
+    node.pos[2] + node.right[2]*u + node.up[2]*y
+  ];
+}
+/* interpolated frame at an arbitrary arc length */
+const _frame = { pos:[0,0,0], right:[0,0,0], up:[0,0,0], fwd:[0,0,0], pitch:0 };
+function frameAt(s){
+  let i = Math.floor(s/SEG);
+  if(i < nodeLow) i = nodeLow;
+  if(i >= nodeTop) i = Math.max(nodeLow, nodeTop-1);
+  const t = Math.min(1, Math.max(0, s/SEG - i));
+  const a = nodes[i], b = nodes[i+1] || nodes[i];
+  for(let k=0;k<3;k++){
+    _frame.pos[k]   = a.pos[k]   + (b.pos[k]  -a.pos[k])  *t;
+    _frame.right[k] = a.right[k] + (b.right[k]-a.right[k])*t;
+    _frame.up[k]    = a.up[k]    + (b.up[k]   -a.up[k])   *t;
+    _frame.fwd[k]   = a.fwd[k]   + (b.fwd[k]  -a.fwd[k])  *t;
+  }
+  norm(_frame.right); norm(_frame.up); norm(_frame.fwd);
+  _frame.pitch = a.pitch + (b.pitch - a.pitch)*t;
+  return _frame;
+}
+function norm(v){ const l=Math.hypot(v[0],v[1],v[2])||1; v[0]/=l; v[1]/=l; v[2]/=l; }
+function worldAt(s,u,y,out){
+  const f = frameAt(s);
+  out.set(
+    f.pos[0] + f.right[0]*u + f.up[0]*y,
+    f.pos[1] + f.right[1]*u + f.up[1]*y,
+    f.pos[2] + f.right[2]*u + f.up[2]*y
   );
-  scene.add(particle);
-  particles.push(particle);
+  return out;
+}
+/* orientation matching the runway at s */
+const _m4 = new THREE.Matrix4();
+const _vr = new THREE.Vector3(), _vu = new THREE.Vector3(), _vf = new THREE.Vector3();
+function quatAt(s, q){
+  const f = frameAt(s);
+  _vr.fromArray(f.right); _vu.fromArray(f.up); _vf.fromArray(f.fwd);
+  _vf.negate();                                   // three's basis wants +Z back
+  _m4.makeBasis(_vr,_vu,_vf);
+  q.setFromRotationMatrix(_m4);
+  return q;
 }
 
-// Camera
-camera.position.set(0, 3, 5);
-camera.lookAt(0, 0, -10);
+/* ----------------------------------------------------------- world data --- */
+let pieces = [];      // { s0,s1, uL0,uL1, uR0,uR1, y }
+let hazards = [];     // { s0,s1,uL,uR,y0,y1, mesh, move? }
+let triggers = [];    // { s0,s1,uL,uR, kind, power, wall?, hot? }
+let chunks = [];      // { s0,s1, group, hazards[], pieces[], triggers[] }
+let genS = 0, curY = 0, curHW = HW_START;
 
-let speed = 0.2;
-let xVel = 0;
-let score = 0;
-let keys = {};
-document.addEventListener('keydown', e => keys[e.key] = true);
-document.addEventListener('keyup', e => keys[e.key] = false);
-
-// DOM elements
-const gameOverMenu = document.getElementById('gameOverMenu');
-const currentScoreElement = document.getElementById('currentScore');
-const highScoreElement = document.getElementById('highScore');
-const restartButton = document.getElementById('restartButton');
-
-// Initialize ball position to touch the first platform
-function initBallPosition() {
-  ball.position.set(0, 0.75, 0); // 0.5 (ball radius) + 0.25 (half platform height)
-  ball.rotation.set(0, 0, 0);
+function pieceT(p, s){ return Math.min(1, Math.max(0, (s - p.s0) / Math.max(1e-6, p.s1 - p.s0))); }
+function pieceU(p, s){
+  const t = pieceT(p, s);
+  return [ p.uL0 + (p.uL1-p.uL0)*t, p.uR0 + (p.uR1-p.uR0)*t ];
 }
-
-function resetGame() {
-  gameActive = true;
-  isFalling = false;
-  gameOverTriggered = false;
-  platformsShouldMove = true;
-  initBallPosition();
-  speed = 0.2;
-  score = 0;
-  xVel = 0;
-  gameOverMenu.style.display = 'none';
-  
-  // Reset all floors to starting positions
-  floors.forEach((floor, index) => {
-    floor.position.z = index * -10;
-    floor.position.x = (Math.random() - 0.5) * 4;
-    
-    // Reset moving platform properties
-    if (floor.isMoving) {
-      floor.originalX = floor.position.x;
-      floor.moveDirection = Math.random() < 0.5 ? 1 : -1;
+/* surface height at s — pieces may rise or fall, which is what makes ramps */
+function pieceY(p, s){ return p.y0 + (p.y1 - p.y0) * pieceT(p, s); }
+function supportAt(s,u){
+  for(let i=0;i<pieces.length;i++){
+    const p = pieces[i];
+    if(s >= p.s0 && s <= p.s1){
+      const uu = pieceU(p, s);
+      if(u >= uu[0] && u <= uu[1]) return p;
     }
-  });
-}
-
-function showGameOver() {
-  gameActive = false;
-  gameOverTriggered = true;
-  
-  // Update high score if needed
-  if (score > highScore) {
-    highScore = score;
-    localStorage.setItem('slopeHighScore', highScore);
   }
-  
-  // Update menu with scores
-  currentScoreElement.textContent = Math.floor(score);
-  highScoreElement.textContent = Math.floor(highScore);
-  
-  // Show game over menu after a short delay to see the falling animation
-  setTimeout(() => {
-    gameOverMenu.style.display = 'block';
-  }, 1000);
+  return null;
+}
+function lowestAhead(s){
+  let lo = Infinity;
+  for(let i=0;i<pieces.length;i++){
+    const p = pieces[i];
+    if(p.s1 > s - 20 && p.s0 < s + 220) lo = Math.min(lo, p.y0, p.y1);
+  }
+  return lo === Infinity ? curY : lo;
 }
 
-// Check if ball is off screen (below camera view)
-function isBallOffScreen() {
-  // Convert ball position to screen coordinates
-  const vector = new THREE.Vector3();
-  vector.setFromMatrixPosition(ball.matrixWorld);
-  vector.project(camera);
-  
-  // Check if ball is below the screen (y coordinate > 1 means below screen in normalized device coordinates)
-  return vector.y > 1.2 || ball.position.y < -10;
-}
+/* ====================================================================
+   BALL SKINS
+   The stock ball is the black-and-green striped one. Everything else is
+   bought with coins earned from the score; the louder it looks, the more
+   it costs.
+   ==================================================================== */
+const SKINS = [
+  { id:'stock',   name:'Stock',     cost:0,    tier:1, base:'#0a0e0c', accent:'#00ff66', style:'stripes', bands:4, metal:0.35, rough:0.26, glow:0.85 },
+  { id:'bone',    name:'Bone',      cost:25,   tier:1, base:'#12100c', accent:'#fff3d6', style:'stripes', bands:4, metal:0.30, rough:0.34, glow:0.70 },
+  { id:'ember',   name:'Ember',     cost:40,   tier:1, base:'#120805', accent:'#ff8a2b', style:'stripes', bands:4, metal:0.35, rough:0.26, glow:0.90 },
+  { id:'violet',  name:'Violet',    cost:50,   tier:1, base:'#0c0714', accent:'#b26bff', style:'stripes', bands:6, metal:0.40, rough:0.24, glow:0.95 },
 
-// Update moving platforms
-function updateMovingPlatforms() {
-  floors.forEach(floor => {
-    if (floor.isMoving && platformsShouldMove) {
-      // Update platform position
-      floor.position.x += floor.moveSpeed * floor.moveDirection;
-      
-      // Reverse direction if hitting movement boundaries
-      if (Math.abs(floor.position.x - floor.originalX) > floor.moveRange) {
-        floor.moveDirection *= -1;
+  { id:'chrome',  name:'Chrome',    cost:100,  tier:2, base:'#8f9aa2', accent:'#eaf6ff', style:'plain',   bands:0, metal:1.00, rough:0.08, glow:0.15 },
+  { id:'checker', name:'Checker',   cost:130,  tier:2, base:'#07100b', accent:'#00ff66', style:'checker', bands:8, metal:0.30, rough:0.30, glow:0.80 },
+  { id:'grid',    name:'Wireframe', cost:170,  tier:2, base:'#03070a', accent:'#25e8ff', style:'grid',    bands:9, metal:0.20, rough:0.40, glow:1.30 },
+  { id:'magma',   name:'Magma',     cost:225,  tier:2, base:'#1a0602', accent:'#ff4400', style:'crack',   bands:7, metal:0.15, rough:0.55, glow:1.20, fx:{ pulse:0.35 } },
+
+  { id:'comet',   name:'Comet',     cost:400,  tier:3, base:'#050a12', accent:'#8fe9ff', style:'grid',    bands:7, metal:0.45, rough:0.20, glow:1.35, fx:{ trail:'#8fe9ff' } },
+  { id:'inferno', name:'Inferno',   cost:600,  tier:3, base:'#170301', accent:'#ff6a00', style:'crack',   bands:9, metal:0.20, rough:0.42, glow:1.60, fx:{ trail:'#ff6a00', sparks:'#ffb03a', pulse:0.5 } },
+  { id:'voidcore',name:'Void Core', cost:800,  tier:3, base:'#000000', accent:'#c86bff', style:'eye',     bands:5, metal:0.85, rough:0.12, glow:1.70, fx:{ trail:'#c86bff', sparks:'#e0b0ff', halo:'#c86bff' } },
+  { id:'prism',   name:'Prism',     cost:1100, tier:3, base:'#05070a', accent:'#ffffff', style:'stripes', bands:6, metal:0.55, rough:0.16, glow:1.50, fx:{ rainbow:true, trail:'#ffffff', sparks:'#ffffff', halo:'#ffffff' } },
+
+  /* Tier IV carries real hardware — rings, spikes, orbiting satellites, an
+     accretion disc — not just a repaint. Priced by how much is bolted on. */
+  { id:'orbit',   name:'Orbit',     cost:2000,  tier:4, base:'#04080f', accent:'#5fd0ff', style:'grid',    bands:7, metal:0.5,  rough:0.2,  glow:1.35,
+    fx:{ trail:'#5fd0ff' }, rig:{ rings:2 } },
+  { id:'warhead', name:'Warhead',   cost:2800,  tier:4, base:'#140404', accent:'#ff3a2b', style:'crack',   bands:8, metal:0.6,  rough:0.3,  glow:1.45,
+    fx:{ sparks:'#ff8a5a', pulse:0.4 }, rig:{ spikes:14 } },
+  { id:'nucleus', name:'Nucleus',   cost:4000,  tier:4, base:'#020a08', accent:'#3dffb0', style:'eye',     bands:6, metal:0.7,  rough:0.16, glow:1.55,
+    fx:{ trail:'#3dffb0', halo:'#3dffb0' }, rig:{ orbs:3, shell:true } },
+  { id:'singular',name:'Singularity',cost:6500, tier:4, base:'#000000', accent:'#c060ff', style:'eye',     bands:4, metal:0.95, rough:0.06, glow:1.8,
+    fx:{ trail:'#c060ff', sparks:'#e2b0ff', halo:'#c060ff' }, rig:{ disc:true, rings:1 } },
+  { id:'nova',    name:'Supernova', cost:10000, tier:4, base:'#0a0400', accent:'#ffd24a', style:'crack',   bands:10, metal:0.55, rough:0.14, glow:1.35,
+    fx:{ rainbow:true, trail:'#ffd24a', sparks:'#fff0b0', pulse:0.25 },
+    rig:{ rings:2, spikes:10, orbs:3, disc:true, shell:true } }
+];
+const RIVAL = { base:'#03080d', accent:'#4fe4ff' };   // player two, always readable
+
+function paintBall(ctx, w, h, skin, emissiveOnly, accent, base){
+  const A = accent || skin.accent, Bc = base || skin.base;
+  ctx.fillStyle = emissiveOnly ? '#000000' : Bc;
+  ctx.fillRect(0,0,w,h);
+  ctx.fillStyle = A;
+  const n = skin.bands;
+  switch(skin.style){
+    case 'plain': break;
+    case 'checker': {
+      const cols = n, rows = 5;
+      for(let x=0;x<cols;x++) for(let y=0;y<rows;y++){
+        if((x+y) % 2) continue;
+        ctx.fillRect(x*w/cols, y*h/rows, w/cols, h/rows);
       }
-    }
-  });
-}
-
-// Initialize ball position
-initBallPosition();
-
-// Set up restart button
-restartButton.addEventListener('click', resetGame);
-
-function animate() {
-  requestAnimationFrame(animate);
-  
-  // Update moving platforms
-  updateMovingPlatforms();
-  
-  // Move floors backward only if platforms should move
-  if (platformsShouldMove) {
-    floors.forEach(f => {
-      f.position.z += speed;
-      if (f.position.z > 10) {
-        f.position.z -= 200;
-        f.position.x = (Math.random() - 0.5) * 4;
-        
-        // Reset moving platform properties when recycling
-        if (f.isMoving) {
-          f.originalX = f.position.x;
-          f.moveDirection = Math.random() < 0.5 ? 1 : -1;
-        } else {
-          // Regular platform - change color
-          let colorIndex = Math.floor(Math.random() * floorColors.length);
-          f.material.color.setHex(floorColors[colorIndex]);
-        }
-      }
-    });
-
-    // Animate particles
-    particles.forEach(p => {
-      p.position.z += speed * 0.5;
-      if (p.position.z > 50) {
-        p.position.z -= 100;
-      }
-    });
-  }
-
-  if (!gameActive && gameOverTriggered) {
-    // Continue falling animation after game over
-    ball.position.y -= 0.2;
-    ball.rotation.x += 0.08;
-    ball.rotation.z += 0.08;
-    
-    // Check if ball is off screen and stop platforms
-    if (isBallOffScreen() && platformsShouldMove) {
-      platformsShouldMove = false;
-    }
-    
-    renderer.render(scene, camera);
-    return;
-  }
-  
-  if (!gameActive) {
-    renderer.render(scene, camera);
-    return;
-  }
-  
-  // Move ball left/right
-  if (keys['ArrowLeft'] || keys['a']) xVel -= 0.01;
-  if (keys['ArrowRight'] || keys['d']) xVel += 0.01;
-  xVel *= 0.95;
-  ball.position.x += xVel;
-
-  // Speed up
-  if (platformsShouldMove) {
-    speed += 0.0001;
-  }
-
-  // Collision detection
-  let onFloor = false;
-  let currentFloor = null;
-  
-  // Find the floor the ball should be on
-  for (let i = 0; i < floors.length; i++) {
-    let f = floors[i];
-    if (Math.abs(ball.position.z - f.position.z) < 5) {
-      currentFloor = f;
       break;
     }
-  }
-  
-  // Check if ball is on the current floor
-  if (currentFloor && 
-      Math.abs(ball.position.x - currentFloor.position.x) < 2.5) {
-    onFloor = true;
-    // Position ball exactly on the floor surface
-    ball.position.y = 0.75; // 0.5 (ball radius) + 0.25 (half platform height)
-    isFalling = false;
-  } else {
-    // Ball is falling off the platform
-    if (!isFalling) {
-      // First frame of falling - trigger game over immediately
-      isFalling = true;
-      showGameOver();
+    case 'grid': {
+      const t = w*0.008;
+      for(let i=0;i<n;i++) ctx.fillRect((i/n)*w, 0, t, h);
+      for(let i=1;i<5;i++)  ctx.fillRect(0, (i/5)*h, w, t*2);
+      break;
     }
-    
-    // Continue falling animation
-    ball.position.y -= 0.2;
-    ball.rotation.x += 0.08;
-    ball.rotation.z += 0.08;
+    case 'crack': {
+      // jagged fissures, so it reads like something molten under a crust
+      ctx.strokeStyle = A; ctx.lineWidth = w*0.012; ctx.lineCap = 'round';
+      for(let i=0;i<n;i++){
+        const x0 = (i/n)*w + w*0.03;
+        ctx.beginPath(); ctx.moveTo(x0, 0);
+        for(let y=0;y<=h;y+=h/7) ctx.lineTo(x0 + Math.sin(y*0.04 + i)*w*0.03, y);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'eye': {
+      for(let i=0;i<n;i++){
+        const cx = (i+0.5)*w/n;
+        ctx.beginPath(); ctx.ellipse(cx, h*0.5, w*0.028, h*0.20, 0, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.fillRect(0, h*0.485, w, h*0.03);
+      break;
+    }
+    default: {                      // stripes — the stock look
+      const wide = w*0.028;
+      for(let i=0;i<n;i++) ctx.fillRect((i/n)*w, 0, wide, h);
+      ctx.fillRect(0, h*0.46, w, h*0.026);
+    }
   }
-
-  // Reset rotation when on floor
-  if (onFloor) {
-    ball.rotation.x *= 0.9;
-    ball.rotation.z *= 0.9;
-  }
-
-  // Camera follow with smooth movement
-  camera.position.x += (ball.position.x * 0.8 - camera.position.x) * 0.1;
-  camera.position.z += (ball.position.z + 5 - camera.position.z) * 0.1;
-  camera.lookAt(ball.position.x, 0, ball.position.z - 10);
-
-  // Animate lights for dynamic effect
-  pointLight1.position.z = ball.position.z - 20;
-  pointLight2.position.z = ball.position.z - 30;
-
-  // Score update (only when game is active)
-  if (gameActive && !isFalling) {
-    score += speed * 10;
-    document.getElementById('overlay').textContent = 'Score: ' + Math.floor(score);
-    document.getElementById('speed').textContent = 'Speed: ' + speed.toFixed(2);
-  }
-
-  // Ball color changes with speed
-  let speedFactor = Math.min(speed / 0.5, 1);
-  ball.material.color.setRGB(
-    1 - speedFactor, 
-    speedFactor, 
-    0.5
-  );
-
-  renderer.render(scene, camera);
 }
-animate();
+function skinTexture(skin, emissiveOnly, accent, base){
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 512;
+  paintBall(c.getContext('2d'), c.width, c.height, skin, emissiveOnly, accent, base);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
 
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+const ballGeo  = new THREE.SphereGeometry(R, 48, 32);
+const shardGeo = new THREE.TetrahedronGeometry(R*0.42, 0);
+const SHARDS   = 46;
+const TRAIL    = 26;
+
+/* ------------------------------------------------------------ ball rigs --
+   Tier IV skins bolt real geometry onto the ball. Spikes are parented to the
+   ball so they spin with it; rings, orbs and discs live in a free group that
+   only follows its position.                                               */
+const rigGlow = (c, opacity) => new THREE.MeshBasicMaterial({
+  color:c, transparent:true, opacity, blending:THREE.AdditiveBlending,
+  depthWrite:false, toneMapped:false, side:DS
 });
 
-// Initialize high score display
-highScoreElement.textContent = Math.floor(highScore);
+function buildRig(p, skin, accent){
+  for(const o of p.rigParts){
+    if(o.parent) o.parent.remove(o);
+    o.geometry.dispose(); o.material.dispose();
+  }
+  p.rigParts.length = 0; p.rings.length = 0; p.orbs.length = 0;
+  p.disc = null; p.shell = null;
+
+  const rig = skin.rig;
+  p.rig.visible = !!rig;
+  if(!rig) return;
+  const c = new THREE.Color(accent);
+
+  for(let i=0;i<(rig.rings||0);i++){
+    const m = new THREE.Mesh(new THREE.TorusGeometry(R*(1.5 + i*0.28), 0.04, 8, 56), rigGlow(c, 0.55));
+    m.rotation.set(Math.PI/2 + i*0.55, i*0.9, 0);
+    p.rig.add(m); p.rigParts.push(m); p.rings.push(m);
+  }
+  if(rig.disc){
+    // a narrow band, near-horizontal: reads as an accretion ring rather than
+    // a filled disc smeared over the deck the ball is rolling on
+    const m = new THREE.Mesh(new THREE.RingGeometry(R*1.95, R*2.45, 64), rigGlow(c, 0.4));
+    m.rotation.set(-Math.PI/2 + 0.42, 0, 0);
+    p.rig.add(m); p.rigParts.push(m); p.disc = m;
+  }
+  if(rig.shell){
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(R*1.38, 1),
+      new THREE.MeshBasicMaterial({ color:c, wireframe:true, transparent:true, opacity:0.2,
+        blending:THREE.AdditiveBlending, depthWrite:false, toneMapped:false }));
+    p.rig.add(m); p.rigParts.push(m); p.shell = m;
+  }
+  for(let i=0;i<(rig.orbs||0);i++){
+    const m = new THREE.Mesh(new THREE.SphereGeometry(R*0.15, 10, 8), rigGlow(c, 0.75));
+    p.rig.add(m); p.rigParts.push(m);
+    p.orbs.push({ mesh:m, tilt:(i/(rig.orbs))*Math.PI*0.8, phase:(i/rig.orbs)*Math.PI*2, rad:R*(2.0 + i*0.22) });
+  }
+  if(rig.spikes){
+    const n = rig.spikes;
+    const g = new THREE.ConeGeometry(R*0.16, R*0.62, 6);
+    g.translate(0, R*0.31, 0);                      // base at the origin, tip out
+    const mesh = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({
+      color:0x14171a, emissive:c, emissiveIntensity:0.95, roughness:0.3, metalness:0.5
+    }), n);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+    const v = new THREE.Vector3(), one = new THREE.Vector3(1,1,1), up = new THREE.Vector3(0,1,0);
+    for(let i=0;i<n;i++){
+      const y  = 1 - (i/(n-1))*2;                   // fibonacci sphere, evenly spread
+      const rr = Math.sqrt(Math.max(0, 1 - y*y));
+      const th = i * 2.39996;
+      v.set(Math.cos(th)*rr, y, Math.sin(th)*rr);
+      q.setFromUnitVectors(up, v);
+      m4.compose(v.clone().multiplyScalar(R*0.94), q, one);
+      mesh.setMatrixAt(i, m4);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    p.ball.add(mesh);                               // spins with the ball
+    p.rigParts.push(mesh);
+  }
+}
+
+function applySkin(p, skin, rival){
+  const accent = rival ? RIVAL.accent : skin.accent;
+  const base   = rival ? RIVAL.base   : skin.base;
+  const m = p.ball.material;
+  m.map?.dispose(); m.emissiveMap?.dispose();
+  m.map         = skinTexture(skin, false, accent, base);
+  m.emissiveMap = skinTexture(skin, true,  accent, base);
+  m.metalness = skin.metal;
+  m.roughness = skin.rough;
+  m.emissiveIntensity = skin.glow;
+  m.needsUpdate = true;
+
+  const acc = new THREE.Color(accent);
+  p.light.color.copy(acc);
+  p.shardMesh.material.emissive.copy(acc);
+  p.skin = skin;
+  p.fx = skin.fx || {};
+  p.baseGlow = skin.glow;
+
+  p.trail.material.color.copy(new THREE.Color(p.fx.trail || accent));
+  p.trail.visible = !!p.fx.trail;
+  p.halo.material.color.copy(new THREE.Color(p.fx.halo || accent));
+  p.halo.visible = !!p.fx.halo;
+  p.sparkMesh.material.color.copy(new THREE.Color(p.fx.sparks || accent));
+  p.sparkMesh.visible = false;
+
+  buildRig(p, skin, accent);
+}
+
+/* --------------------------------------------------------------- stars ---- */
+let starField = null;
+{
+  const N = 900, arr = new Float32Array(N*3), col = new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    // shell around the camera; re-centred each frame so it never runs out
+    const th = Math.random()*Math.PI*2;
+    const ph = Math.acos(2*Math.random()-1);
+    const r  = 380 + Math.random()*520;
+    arr[i*3]   = r*Math.sin(ph)*Math.cos(th);
+    arr[i*3+1] = r*Math.cos(ph)*0.55;
+    arr[i*3+2] = r*Math.sin(ph)*Math.sin(th);
+    const green = Math.random() < 0.32;
+    col[i*3]   = green ? 0.15 : 0.75;
+    col[i*3+1] = green ? 0.95 : 0.85;
+    col[i*3+2] = green ? 0.45 : 0.95;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(arr,3));
+  g.setAttribute('color',    new THREE.BufferAttribute(col,3));
+  starField = new THREE.Points(g, new THREE.PointsMaterial({
+    size:2.0, sizeAttenuation:false, vertexColors:true, transparent:true, opacity:0.3, toneMapped:false
+  }));
+  starField.frustumCulled = false;
+  scene.add(starField);
+}
+
+/* ====================================================================
+   CHUNK GENERATION
+   Each chunk lays down runway pieces, hazards, triggers and decor over a
+   stretch of arc length, then hands the baton to the next one.
+   ==================================================================== */
+let rng = mulberry(Date.now() & 0xffffffff);
+function mulberry(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rnd  = (a,b) => a + rng()*(b-a);
+const rndi = (a,b) => Math.floor(rnd(a,b+1));
+const snap = s => Math.round(s/SEG)*SEG;
+
+/* Obstacle rows are spaced in distance, but what matters is the time between
+   them. Stretch the spacing as the run speeds up so a gate stays reachable —
+   the run still tightens, just not past what steering can physically cover. */
+function expectedSpeed(diff){ return (SPD_START + (SPD_END - SPD_START)*diff) * 1.2; }
+function paced(base, diff){
+  return snap(base * Math.pow(expectedSpeed(diff)/(SPD_START*1.2), 0.8));
+}
+/* how far the ball can slide sideways from rest in the given time */
+function lateralReach(t){
+  const vt = LAT_ACC/LAT_DRAG;
+  return vt * (t - (1 - Math.exp(-LAT_DRAG*t))/LAT_DRAG);
+}
+
+/* --- ramps -------------------------------------------------------------
+   A ramp is just a piece whose surface climbs. Riding it keeps the climb
+   rate in the ball's vertical speed, so the lip throws you. Everything a
+   ramp needs downstream — how long the flight is, how wide a void it can
+   clear — falls out of that one number.                                  */
+const RAMP_LIP = 0.75;                  // slope of the steep section at the lip
+
+function airTime(k, diff){
+  const vy = Math.min(k * expectedSpeed(diff), AIR_CAP);
+  return 2*vy / GRAV;
+}
+function airDist(k, diff){ return expectedSpeed(diff) * airTime(k, diff); }
+/* runway to set down on, with room to spare at either end */
+function airRun(k, diff){ return snap(Math.max(130, airDist(k, diff)*1.6 + 60)); }
+
+/* a two-stage wedge: a gentle approach, then a steep lip that does the work.
+   Returns the total rise so callers can line up whatever follows. */
+function rampUp(s, L, uL, uR, y, lip){
+  const a = snap(L*0.6), b = L - a;
+  const r1 = lip*0.35*a, r2 = lip*b;
+  addPiece(s,   s+a, uL, uR, uL, uR, y,      y+r1);
+  addPiece(s+a, s+L, uL, uR, uL, uR, y+r1,   y+r1+r2);
+  return r1 + r2;
+}
+
+let lastKind = '';
+function pickKind(diff){
+  const w = [
+    ['open',    18],
+    ['blocks',  16 + 8*diff],
+    ['narrow',  10 + 6*diff],
+    ['turn',    13],
+    ['slalom',   8 + 7*diff],
+    ['gap',      6 + 8*diff],
+    ['drop',     8],
+    ['split',    5 + 6*diff],
+    ['pillars',  6 + 6*diff],
+    ['moving',   4 + 9*diff],
+    ['tunnel',   7],
+    ['steep',    8],
+    ['shift',    9],
+    ['boost',    7],
+    ['kicker',    10],
+    ['gapjump',    8],
+    ['doubleramp', 7],
+    ['splitramp',  7],
+    ['rampover',   6]
+  ];
+  for(let attempt=0; attempt<12; attempt++){
+    let total = 0; for(const x of w) total += x[1];
+    let r = rng()*total;
+    for(const x of w){ r -= x[1]; if(r <= 0){
+      if(x[0] === lastKind && rng() < 0.8) break;   // avoid repeats
+      return x[0];
+    }}
+  }
+  return 'open';
+}
+
+/* --- small helpers the chunk builders share ------------------------------- */
+function addPiece(s0,s1,uL0,uR0,uL1,uR1,y0,y1){
+  const p = {
+    s0:snap(s0), s1:snap(s1),
+    uL0, uR0,
+    uL1:(uL1===undefined?uL0:uL1), uR1:(uR1===undefined?uR0:uR1),
+    y0, y1:(y1===undefined?y0:y1)
+  };
+  p.slope = (p.y1 - p.y0) / Math.max(1e-6, p.s1 - p.s0);
+  pieces.push(p); pendingPieces.push(p);
+  return p;
+}
+function addHazard(s0,s1,uL,uR,y,h,opts){
+  const hz = { s0,s1,uL,uR, y0:y, y1:y+h, ...(opts||{}) };
+  hazards.push(hz); pendingHazards.push(hz);
+  return hz;
+}
+function addTrigger(s0,s1,uL,uR,kind,power,opts){
+  const t = { s0,s1,uL,uR,kind,power:power||0, ...(opts||{}) };
+  triggers.push(t); pendingTriggers.push(t);
+  return t;
+}
+let pendingPieces = [], pendingHazards = [], pendingTriggers = [], pendingDecor = [];
+
+/* --- the chunk builders --------------------------------------------------- */
+function genChunk(){
+  const s0   = genS;
+  const diff = Math.min(1, s0 / 9000);
+  curHW = HW_START + (HW_END - HW_START)*diff;
+  const HW = curHW;
+
+  // path shape defaults for this chunk — the runway undulates so the descent reads
+  tYawRate = 0;
+  tPitch   = 0.06 + rng()*0.24 + 0.06*diff;
+
+  let kind;
+  if(s0 < 260)           kind = 'intro';
+  else if(HANDLE.force)  kind = HANDLE.force;
+  else if(s0 < 520)      kind = (rng()<0.5 ? 'open' : 'blocks');
+  else                   kind = pickKind(diff);
+  lastKind = kind;
+
+  let len = 0;
+
+  switch(kind){
+
+  /* opening gate: a short tunnel, exactly how the original starts ---------- */
+  case 'intro': {
+    len = 260;
+    addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
+    buildTunnel(s0+34, s0+112, -HW*0.62, HW*0.62, curY, 8.2, false);
+    addTrigger(s0+34, s0+112, -HW*0.62, HW*0.62, 'boost', 6, { wall:true });
+    addChevrons(s0+150, 4, 0, curY);
+    addTrigger(s0+150, s0+180, -HW, HW, 'boost', 4);
+    break;
+  }
+
+  /* wide open runway with a scattering of blocks --------------------------- */
+  case 'open': {
+    len = snap(rnd(110,170));
+    addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
+    const n = rndi(0, 2 + Math.round(diff*3));
+    for(let i=0;i<n;i++){
+      const u = rnd(-HW+2, HW-2);
+      const s = s0 + rnd(24, len-24);
+      addBlock(s, u, rnd(2.4,4.2), curY);
+    }
+    break;
+  }
+
+  /* rows of red blocks with a gate to thread ------------------------------- */
+  case 'blocks': {
+    const rows = rndi(3,5);
+    const spacing = paced(rnd(34, 48), diff);
+    len = snap(rows*spacing + 46);
+    addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
+    const slotW = 3.4;
+    const slots = Math.floor((HW*2)/slotW);
+    const openings = Math.max(1, 2 - Math.round(diff));
+    // the gate drifts by at most one slot per row, and only when there is
+    // actually time to make the move, so the field is always threadable
+    const canShift = lateralReach(spacing/expectedSpeed(diff)) > slotW*1.15;
+    let gate = rndi(0, slots-openings);
+    for(let r=0;r<rows;r++){
+      const s = s0 + 30 + r*spacing;
+      if(r > 0 && canShift) gate = Math.max(0, Math.min(slots-openings, gate + rndi(-1,1)));
+      const open = new Set();
+      for(let k=0;k<openings;k++) open.add(gate+k);
+      if(rng() < 0.3) open.add(rndi(0, slots-1));
+      for(let i=0;i<slots;i++){
+        if(open.has(i)) continue;
+        const uc = -HW + slotW*(i+0.5);
+        addHazardBox(s, s+3.2, uc-slotW*0.44, uc+slotW*0.44, curY, 2.3);
+      }
+    }
+    break;
+  }
+
+  /* the runway pinches down to a ribbon ------------------------------------ */
+  case 'narrow': {
+    const nw = 3.6 - 0.9*diff;
+    const a = snap(rnd(40,58)), b = snap(rnd(56,96)), c = snap(rnd(40,58));
+    len = a+b+c;
+    addPiece(s0,       s0+a,     -HW, HW, -nw, nw, curY);
+    addPiece(s0+a,     s0+a+b,   -nw, nw, -nw, nw, curY);
+    addPiece(s0+a+b,   s0+len,   -nw, nw, -HW, HW, curY);
+    if(rng() < 0.5){
+      addChevrons(s0+a+8, 3, 0, curY);
+      addTrigger(s0+a+6, s0+a+b, -nw, nw, 'boost', 4);
+    }
+    break;
+  }
+
+  /* a sweeping bend -------------------------------------------------------- */
+  case 'turn': {
+    len = snap(rnd(150,230));
+    tYawRate = (rng()<0.5 ? -1 : 1) * rnd(0.0026, 0.0062);
+    addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
+    const n = rndi(0,2);
+    for(let i=0;i<n;i++) addBlock(s0+rnd(40,len-30), rnd(-HW+2,HW-2), rnd(2.6,4.4), curY);
+    break;
+  }
+
+  /* long red walls, alternating sides -------------------------------------- */
+  case 'slalom': {
+    const bars = rndi(3,5);
+    const spacing = paced(rnd(48,64), diff);
+    len = snap(bars*spacing + 40);
+    addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
+    let side = rng()<0.5 ? -1 : 1;
+    // never ask for a crossing wider than the ball can actually travel in time
+    const reach = lateralReach(spacing/expectedSpeed(diff));
+    const cover = Math.min(0.52 + 0.10*diff, Math.max(0.3, reach/(HW*2)));
+    for(let i=0;i<bars;i++){
+      const s = s0 + 28 + i*spacing;
+      const w = HW*2*cover;
+      const uL = side < 0 ? -HW : HW - w;
+      addHazardBox(s, s+4.5, uL, uL+w, curY, 2.4);
+      side *= -1;
+    }
+    break;
+  }
+
+  /* a void in the runway; the far side sits lower so you fly it ------------ */
+  case 'gap': {
+    const run  = snap(rnd(50,80));
+    const hole = snap(rnd(14,26) + 8*diff);
+    const land = snap(rnd(120,170));
+    len = run + hole + land;
+    addPiece(s0, s0+run, -HW, HW, -HW, HW, curY);
+    addChevrons(s0+run-26, 3, 0, curY);
+    addTrigger(s0+run-30, s0+run, -HW, HW, 'boost', 5);
+    curY -= rnd(9,15);
+    addPiece(s0+run+hole, s0+len, -HW*1.1, HW*1.1, -HW, HW, curY);
+    break;
+  }
+
+  /* a clean step down ------------------------------------------------------ */
+  case 'drop': {
+    const a = snap(rnd(70,110)), b = snap(rnd(110,160));
+    len = a+b;
+    addPiece(s0, s0+a, -HW, HW, -HW, HW, curY);
+    curY -= rnd(5,10);
+    addPiece(s0+a, s0+len, -HW, HW, -HW, HW, curY);
+    if(rng()<0.5){
+      const n = rndi(1,3);
+      for(let i=0;i<n;i++) addBlock(s0+a+rnd(40,b-30), rnd(-HW+2,HW-2), rnd(2.6,4.2), curY);
+    }
+    break;
+  }
+
+  /* the runway splits into two lanes with a void between ------------------- */
+  case 'split': {
+    const a = snap(rnd(34,50)), b = snap(rnd(90,150)), c = snap(rnd(34,50));
+    len = a+b+c;
+    const inner = 2.2 + 1.6*diff;
+    addPiece(s0, s0+a, -HW, HW, -HW, HW, curY);
+    addPiece(s0+a, s0+a+b, -HW, -inner, -HW, -inner, curY);
+    addPiece(s0+a, s0+a+b,  inner, HW,   inner, HW,  curY);
+    addPiece(s0+a+b, s0+len, -HW, HW, -HW, HW, curY);
+    if(rng()<0.6){
+      const side = rng()<0.5 ? -1 : 1;
+      const uc = side * (HW+inner)/2;
+      addBlock(s0+a+rnd(24,b-24), uc, 3.0, curY);
+    }
+    break;
+  }
+
+  /* red pillars ------------------------------------------------------------ */
+  case 'pillars': {
+    len = snap(rnd(130,190));
+    addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
+    const n = rndi(4, 6 + Math.round(diff*4));
+    for(let i=0;i<n;i++){
+      const s = s0 + 26 + (i/n)*(len-52) + rnd(-8,8);
+      const u = rnd(-HW+1.6, HW-1.6);
+      addHazardBox(s, s+2.2, u-1.1, u+1.1, curY, 7.5, { pillar:true });
+    }
+    break;
+  }
+
+  /* a red wall that slides across the runway ------------------------------- */
+  case 'moving': {
+    const bars = rndi(2,3);
+    const spacing = paced(rnd(58,78), diff);
+    len = snap(bars*spacing + 46);
+    addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
+    for(let i=0;i<bars;i++){
+      const s = s0 + 34 + i*spacing;
+      const w = HW*0.85;
+      addHazardBox(s, s+4.0, -w/2, w/2, curY, 2.4, {
+        move:{ amp: HW - w/2, spd: rnd(0.7,1.25), phase: rng()*Math.PI*2 }
+      });
+    }
+    break;
+  }
+
+  /* speed tunnel down the middle, ramps either side to duck it ------------- */
+  case 'tunnel': {
+    const a = snap(rnd(34,50)), b = snap(rnd(110,165)), c = snap(rnd(34,50));
+    len = a+b+c;
+    const lane = 3.5;
+    const ramp = lane + 2.4;
+    addPiece(s0, s0+a, -HW, HW, -HW, HW, curY);
+    addPiece(s0+a, s0+a+b, -lane, lane, -lane, lane, curY);
+    addPiece(s0+a, s0+a+b, -HW, -ramp, -HW, -ramp, curY);
+    addPiece(s0+a, s0+a+b,  ramp, HW,   ramp, HW,  curY);
+    addPiece(s0+a+b, s0+len, -HW, HW, -HW, HW, curY);
+    buildTunnel(s0+a, s0+a+b, -lane, lane, curY, 8.2, true);
+    addTrigger(s0+a, s0+a+b, -lane, lane, 'boost', 26, { wall:true });
+    addChevrons(s0+a+10, 4, 0, curY);
+    break;
+  }
+
+  /* the floor tilts away — free speed, harder steering --------------------- */
+  case 'steep': {
+    len = snap(rnd(140,200));
+    tPitch = 0.34 + 0.12*diff;
+    addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
+    addChevrons(s0+26, 5, 0, curY);
+    const n = rndi(1,3);
+    for(let i=0;i<n;i++) addBlock(s0+rnd(60,len-30), rnd(-HW+2,HW-2), rnd(2.6,4.0), curY);
+    break;
+  }
+
+  /* the whole runway slides sideways --------------------------------------- */
+  case 'shift': {
+    len = snap(rnd(120,170));
+    const off = (rng()<0.5?-1:1) * rnd(HW*0.7, HW*1.5);
+    addPiece(s0, s0+len, -HW, HW, -HW+off, HW+off, curY);
+    addPiece(s0+len, s0+len+60, -HW+off, HW+off, -HW, HW, curY);
+    len += 60;
+    break;
+  }
+
+  /* a wedge across most of the runway, with flat lanes either side if you
+     would rather stay low. Red blocks past the lip reward taking the air. */
+  case 'kicker': {
+    const run = snap(rnd(56,84)), L = 20;
+    const land = airRun(RAMP_LIP, diff);
+    len = run + L + land;
+    addPiece(s0, s0+run, -HW, HW, -HW, HW, curY);
+    addChevrons(s0+run-26, 3, 0, curY);
+    const inner = HW*0.72;
+    rampUp(s0+run, L, -inner, inner, curY, RAMP_LIP);
+    addPiece(s0+run, s0+run+L, -HW, -inner, -HW, -inner, curY);
+    addPiece(s0+run, s0+run+L,  inner, HW,   inner, HW,  curY);
+    addPiece(s0+run+L, s0+len, -HW, HW, -HW, HW, curY);
+    // sit the blocks inside the flight window, whatever the current speed is
+    const flight = airDist(RAMP_LIP, diff);
+    const n = rndi(2,3);
+    for(let i=0;i<n;i++){
+      const at = s0+run+L + flight*(0.25 + 0.16*i);
+      addHazardBox(at, at+3.2, -HW*0.58, HW*0.58, curY, 2.4);
+    }
+    break;
+  }
+
+  /* ramp, void, and a landing pad sitting lower down */
+  case 'gapjump': {
+    const run = snap(rnd(50,74)), L = 20;
+    const flight = airDist(RAMP_LIP, diff);
+    const gap  = snap(Math.max(28, Math.min(flight*0.45, 110)));
+    const land = airRun(RAMP_LIP, diff);
+    len = run + L + gap + land;
+    addPiece(s0, s0+run, -HW, HW, -HW, HW, curY);
+    addChevrons(s0+run-26, 3, 0, curY);
+    addTrigger(s0+run-30, s0+run, -HW, HW, 'boost', 6);
+    rampUp(s0+run, L, -HW, HW, curY, RAMP_LIP);
+    curY -= rnd(7, 13);
+    addPiece(s0+run+L+gap, s0+len, -HW*1.2, HW*1.2, -HW, HW, curY);
+    break;
+  }
+
+  /* two lips back to back — land and immediately go up again */
+  case 'doubleramp': {
+    const run = snap(rnd(44,64)), L = 16;
+    const flight = airDist(RAMP_LIP*0.8, diff);
+    const mid  = snap(Math.max(90, flight*1.5 + 40));
+    const land = airRun(RAMP_LIP*0.8, diff);
+    len = run + L + mid + L + land;
+    addPiece(s0, s0+run, -HW, HW, -HW, HW, curY);
+    rampUp(s0+run, L, -HW, HW, curY, RAMP_LIP*0.8);
+    addPiece(s0+run+L, s0+run+L+mid, -HW, HW, -HW, HW, curY);
+    addChevrons(s0+run+L+mid-26, 3, 0, curY);
+    rampUp(s0+run+L+mid, L, -HW, HW, curY, RAMP_LIP*0.8);
+    addPiece(s0+run+L+mid+L, s0+len, -HW, HW, -HW, HW, curY);
+    break;
+  }
+
+  /* a ramp on one side only: fly it, or thread the hazards on the flat side */
+  case 'splitramp': {
+    const run = snap(rnd(46,70)), L = 18;
+    const land = airRun(RAMP_LIP, diff);
+    len = run + L + land;
+    const side = rng()<0.5 ? -1 : 1;
+    const edge = 0.1*HW;
+    const rL = side < 0 ? -HW : edge, rR = side < 0 ? -edge : HW;
+    addPiece(s0, s0+run, -HW, HW, -HW, HW, curY);
+    rampUp(s0+run, L, rL, rR, curY, RAMP_LIP);
+    addPiece(s0+run, s0+run+L, side < 0 ? -edge : -HW, side < 0 ? HW : edge,
+                                side < 0 ? -edge : -HW, side < 0 ? HW : edge, curY);
+    addPiece(s0+run+L, s0+len, -HW, HW, -HW, HW, curY);
+    const flight = airDist(RAMP_LIP, diff);
+    for(let i=0;i<3;i++){
+      const at = s0+run+L + flight*(0.2 + 0.18*i);
+      // hazards only under the ramp's own lane, so the flat line stays viable
+      addHazardBox(at, at+3.2, rL+0.6, rR-0.6, curY, 2.4);
+    }
+    break;
+  }
+
+  /* launch straight over a bed of red — there is no way through, only over */
+  case 'rampover': {
+    const run = snap(rnd(48,70)), L = 22;
+    const flight = airDist(RAMP_LIP, diff);
+    const land = airRun(RAMP_LIP, diff);
+    len = run + L + land;
+    addPiece(s0, s0+run, -HW, HW, -HW, HW, curY);
+    addChevrons(s0+run-30, 4, 0, curY);
+    addTrigger(s0+run-34, s0+run, -HW, HW, 'boost', 8);
+    rampUp(s0+run, L, -HW, HW, curY, RAMP_LIP);
+    addPiece(s0+run+L, s0+len, -HW, HW, -HW, HW, curY);
+    const bedS = s0+run+L + flight*0.18;
+    const bedE = s0+run+L + flight*0.62;
+    for(let at=bedS; at<bedE; at+=9) addHazardBox(at, at+4.5, -HW, HW, curY, 2.4);
+    break;
+  }
+
+  /* pure acceleration pads -------------------------------------------------- */
+  case 'boost': {
+    len = snap(rnd(110,150));
+    addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
+    addChevrons(s0+22, 6, 0, curY);
+    addTrigger(s0+22, s0+22+6*14, -HW*0.7, HW*0.7, 'boost', 11);
+    if(rng()<0.5) addBlock(s0+len-40, rnd(-HW+2,HW-2), 3.2, curY);
+    break;
+  }
+  }
+
+  genS = s0 + len;
+  finishChunk(s0, genS);
+}
+
+/* a single red block */
+function addBlock(s, u, w, y){
+  addHazardBox(s, s+3.2, u-w/2, u+w/2, y, 2.4);
+}
+
+/* geometry for one hazard box, in track space */
+let hzBuilder = null, hzEdgeBuilder = null;
+function addHazardBox(s0,s1,uL,uR,y,h,opts){
+  const hz = addHazard(s0,s1,uL,uR,y,h,opts);
+  if(hz.move){
+    // moving hazards need their own mesh so they can be repositioned
+    const g = new THREE.BoxGeometry(uR-uL, h, s1-s0);
+    const m = new THREE.Mesh(g, matRed);
+    hz.mesh = m; hz.dims = { w:uR-uL, h, l:s1-s0, uc:(uL+uR)/2, sc:(s0+s1)/2 };
+    pendingDecor.push(m);
+    m.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), matWireR));
+  }else{
+    boxInto(hzBuilder, hzEdgeBuilder, s0,s1,uL,uR,y,y+h);
+  }
+  return hz;
+}
+/* push a track-space box into the chunk builders, following the runway bend */
+function boxInto(b, edge, s0,s1,uL,uR,y0,y1){
+  const i0 = Math.round(s0/SEG), i1 = Math.max(i0+1, Math.round(s1/SEG));
+  extendNodes(i1+1);
+  const A = nodes[i0], B = nodes[i1];
+  const p = (n,u,y) => ptAt(n,u,y);
+  const a00=p(A,uL,y0), a10=p(A,uR,y0), a01=p(A,uL,y1), a11=p(A,uR,y1);
+  const b00=p(B,uL,y0), b10=p(B,uR,y0), b01=p(B,uL,y1), b11=p(B,uR,y1);
+  b.quad(a01,a11,b11,b01);   // top (normal up)
+  b.quad(a01,a11,a10,a00);   // front (toward camera)
+  b.quad(b11,b01,b00,b10);   // back
+  b.quad(a01,a00,b00,b01);   // left
+  b.quad(a11,b11,b10,a10);   // right
+  if(edge){
+    const T = 0.16;
+    edge.quad(p(A,uL,y1),p(B,uL,y1),p(B,uL+T,y1),p(A,uL+T,y1));
+    edge.quad(p(A,uR-T,y1),p(B,uR-T,y1),p(B,uR,y1),p(A,uR,y1));
+    edge.quad(a01,a11,p(A,uR,y1-T),p(A,uL,y1-T));
+    edge.quad(p(B,uL,y1-T),p(B,uR,y1-T),b11,b01);
+  }
+}
+
+/* a frame snapshot we can hold on to, for spans shorter than a node step */
+function frameCopy(s){
+  const f = frameAt(s);
+  return { pos:f.pos.slice(), right:f.right.slice(), up:f.up.slice() };
+}
+/* a flat strip on a wall's inner face, running along the track */
+function wallBand(b, s0, s1, u, y0, y1){
+  const i0 = Math.round(s0/SEG), i1 = Math.max(i0+1, Math.round(s1/SEG));
+  extendNodes(i1+1);
+  for(let i=i0;i<i1;i++){
+    const A = nodes[i], B = nodes[i+1];
+    b.quad(ptAt(A,u,y0), ptAt(A,u,y1), ptAt(B,u,y1), ptAt(B,u,y0));
+  }
+}
+/* a flat strip lying flat (roof underside or deck), running along the track */
+function roofBand(b, s0, s1, uL, uR, y){
+  const i0 = Math.round(s0/SEG), i1 = Math.max(i0+1, Math.round(s1/SEG));
+  extendNodes(i1+1);
+  for(let i=i0;i<i1;i++){
+    const A = nodes[i], B = nodes[i+1];
+    b.quad(ptAt(A,uL,y), ptAt(A,uR,y), ptAt(B,uR,y), ptAt(B,uL,y));
+  }
+}
+/* a bright neon hoop around the bore at arc length s */
+function tunnelRing(b, s, len, uL, uR, yb, yt){
+  const A = frameCopy(s), B = frameCopy(s+len);
+  const band = (u0,v0,u1,v1) =>
+    b.quad(ptAt(A,u0,v0), ptAt(A,u1,v1), ptAt(B,u1,v1), ptAt(B,u0,v0));
+  band(uL, yb, uL, yt);          // left jamb
+  band(uR, yb, uR, yt);          // right jamb
+  band(uL, yt, uR, yt);          // lintel
+}
+
+/* tunnel shell: two walls + a roof, lined and hooped with neon */
+function buildTunnel(s0,s1,uL,uR,y,h,ringed){
+  const t   = 0.55;
+  const top = y + h;
+  extendNodes(Math.round(s1/SEG)+2);
+
+  // dark shell
+  boxInto(tnBuilder, null, s0,s1, uL-t, uL, y, top+t);
+  boxInto(tnBuilder, null, s0,s1, uR, uR+t, y, top+t);
+  boxInto(tnBuilder, null, s0,s1, uL-t, uR+t, top, top+t);
+
+  // continuous neon lining: a stripe high on each wall and one down the roof
+  wallBand(tnEdgeBuilder, s0,s1, uL+0.03, top-0.48, top-0.16);
+  wallBand(tnEdgeBuilder, s0,s1, uR-0.03, top-0.48, top-0.16);
+  const uc = (uL+uR)/2;
+  roofBand(glowDimBuilder, s0,s1, uc-0.28, uc+0.28, top-0.05);
+
+  // hoops: always at the mouths, repeating inside for the speed tunnels
+  tunnelRing(tnEdgeBuilder, s0,     0.7, uL+0.04, uR-0.04, y+0.05, top-0.06);
+  tunnelRing(tnEdgeBuilder, s1-0.7, 0.7, uL+0.04, uR-0.04, y+0.05, top-0.06);
+  if(ringed){
+    for(let s=s0+22; s<s1-6; s+=22)
+      tunnelRing(tnEdgeBuilder, s, 0.6, uL+0.04, uR-0.04, y+0.05, top-0.06);
+  }
+}
+
+/* forward acceleration chevrons painted on the deck */
+function addChevrons(s, count, u, y){
+  const W = 2.3, L = 4.6, GAPZ = 9.5;
+  for(let k=0;k<count;k++){
+    const sa = s + k*GAPZ;
+    const i = Math.round(sa/SEG);
+    extendNodes(i+3);
+    const A = nodes[i], B = nodes[Math.min(nodeTop, i+Math.max(1,Math.round(L/SEG)))];
+    const yy = y + 0.09;
+    // arrow: two swept bars meeting at the tip, pointing down-track
+    glowBuilder.tri(ptAt(A,u-W,yy), ptAt(B,u,yy),   ptAt(A,u-W*0.35,yy));
+    glowBuilder.tri(ptAt(A,u+W,yy), ptAt(A,u+W*0.35,yy), ptAt(B,u,yy));
+  }
+}
+
+/* -------------------------------------------------- chunk mesh assembly --- */
+let deckBuilder, sideBuilder, glowBuilder, glowDimBuilder, tnBuilder, tnEdgeBuilder;
+function startChunk(){
+  deckBuilder = new Builder(); sideBuilder = new Builder();
+  glowBuilder = new Builder(); glowDimBuilder = new Builder();
+  hzBuilder = new Builder(); hzEdgeBuilder = new Builder();
+  tnBuilder = new Builder(); tnEdgeBuilder = new Builder();
+  pendingPieces = []; pendingHazards = []; pendingTriggers = []; pendingDecor = [];
+}
+function finishChunk(s0,s1){
+  // runway surfaces for every piece laid down this chunk
+  for(const p of pendingPieces) deckPiece(p);
+  decorate(s0,s1);
+
+  const group = new THREE.Group();
+  const push = (b, mat) => { if(!b.empty) group.add(new THREE.Mesh(b.build(), mat)); };
+  push(deckBuilder, matDeck);
+  push(sideBuilder, matSide);
+  push(glowBuilder, matGlow);
+  push(glowDimBuilder, matGlowD);
+  push(hzBuilder, matRed);
+  push(hzEdgeBuilder, matRedEdge);
+  push(tnBuilder, matDeck);
+  push(tnEdgeBuilder, matGlow);
+  for(const d of pendingDecor) group.add(d);
+  scene.add(group);
+
+  chunks.push({ s0, s1, group, pieces:pendingPieces, hazards:pendingHazards, triggers:pendingTriggers });
+}
+
+function deckPiece(p){
+  const i0 = Math.round(p.s0/SEG), i1 = Math.round(p.s1/SEG);
+  extendNodes(i1+2);
+  const ramp = Math.abs(p.slope) > 0.02;
+  for(let i=i0;i<i1;i++){
+    const A = nodes[i], B = nodes[i+1];
+    const sA = i*SEG, sB = (i+1)*SEG;
+    const [aL,aR] = pieceU(p, sA);
+    const [bL,bR] = pieceU(p, sB);
+    const ya = pieceY(p, sA), yb = pieceY(p, sB);
+
+    const taL=ptAt(A,aL,ya), taR=ptAt(A,aR,ya), tbL=ptAt(B,bL,yb), tbR=ptAt(B,bR,yb);
+    deckBuilder.quad(taL,taR,tbR,tbL);      // wound so the normal faces up
+
+    const laL=ptAt(A,aL,ya-THICK), laR=ptAt(A,aR,ya-THICK);
+    const lbL=ptAt(B,bL,yb-THICK), lbR=ptAt(B,bR,yb-THICK);
+    sideBuilder.quad(taL,laL,lbL,tbL);     // outer left
+    sideBuilder.quad(taR,tbR,lbR,laR);     // outer right
+    sideBuilder.quad(laL,laR,lbR,lbL);     // underside
+
+    // neon edge rails, slightly proud of the deck
+    const ga = ya + 0.07, gb = yb + 0.07;
+    glowBuilder.quad(ptAt(A,aL,ga), ptAt(B,bL,gb), ptAt(B,bL+RAIL,gb), ptAt(A,aL+RAIL,ga));
+    glowBuilder.quad(ptAt(A,aR-RAIL,ga), ptAt(B,bR-RAIL,gb), ptAt(B,bR,gb), ptAt(A,aR,ga));
+    // and a thin lip running down the outside face
+    glowDimBuilder.quad(ptAt(A,aL,ya), ptAt(A,aL,ya-0.42), ptAt(B,bL,yb-0.42), ptAt(B,bL,yb));
+    glowDimBuilder.quad(ptAt(A,aR,ya), ptAt(B,bR,yb), ptAt(B,bR,yb-0.42), ptAt(A,aR,ya-0.42));
+
+    // cross ties for scale and speed; ramps get them on every node so the
+    // rise reads as a ramp rather than a flat plate at a strange angle
+    if(i % LINE_SP === 0 || ramp){
+      const t = 0.8/SEG;
+      const cL = aL + (bL-aL)*t, cR = aR + (bR-aR)*t;
+      const cy = ya + (yb-ya)*t + 0.07;
+      const Cp = { pos:[
+        A.pos[0]+(B.pos[0]-A.pos[0])*t, A.pos[1]+(B.pos[1]-A.pos[1])*t, A.pos[2]+(B.pos[2]-A.pos[2])*t
+      ], right:A.right, up:A.up };
+      (ramp ? glowBuilder : glowDimBuilder).quad(
+        ptAt(A,aL+RAIL,ga), ptAt(Cp,cL+RAIL,cy), ptAt(Cp,cR-RAIL,cy), ptAt(A,aR-RAIL,ga)
+      );
+    }
+
+    // caps at the ends so pieces do not look hollow
+    if(i === i0)   deckBuilder.quad(taL,taR,laR,laL);
+    if(i === i1-1) deckBuilder.quad(tbR,tbL,lbL,lbR);
+  }
+}
+
+/* huge dark slabs drifting past — the "vast universe" backdrop */
+function decorate(s0,s1){
+  const n = rng()<0.6 ? 1 : 0;
+  for(let k=0;k<n;k++){
+    const s  = s0 + rnd(0, Math.max(20, s1-s0));
+    const side = rng()<0.5 ? -1 : 1;
+    const u  = side * rnd(105, 250);
+    const y  = curY - rnd(38, 130);
+    const w  = rnd(50, 150), l = rnd(140, 340), h = rnd(4, 12);
+    const g  = new THREE.BoxGeometry(w, h, l);
+    const m  = new THREE.Mesh(g, matSlab);
+    worldAt(s, u, y, m.position);
+    quatAt(s, m.quaternion);
+    pendingDecor.push(m);
+    m.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), matWire));
+  }
+}
+
+function dropChunk(c){
+  scene.remove(c.group);
+  c.group.traverse(o=>{
+    if(o.geometry) o.geometry.dispose();
+  });
+  pieces   = pieces.filter(p => c.pieces.indexOf(p) < 0);
+  hazards  = hazards.filter(h => c.hazards.indexOf(h) < 0);
+  triggers = triggers.filter(t => c.triggers.indexOf(t) < 0);
+}
+
+/* ====================================================================
+   PLAYERS
+   One or two, sharing the same generated runway. Each carries its own
+   physics, camera, viewport and render chain.
+   ==================================================================== */
+function radialTexture(){
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64,64,0, 64,64,64);
+  gr.addColorStop(0,    'rgba(255,255,255,0.95)');
+  gr.addColorStop(0.32, 'rgba(255,255,255,0.28)');
+  gr.addColorStop(1,    'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0,0,128,128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const haloTex  = radialTexture();
+const trailGeo = new THREE.SphereGeometry(R*0.34, 10, 8);
+const sparkGeo = new THREE.TetrahedronGeometry(R*0.10, 0);
+const SPARKS   = 18;
+
+const addFx = (geo, count) => {
+  const m = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, toneMapped:false
+  }), count);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.frustumCulled = false; m.visible = false;
+  scene.add(m);
+  return m;
+};
+
+function makePlayer(i){
+  const p = { i };
+
+  p.ball = new THREE.Mesh(ballGeo, new THREE.MeshStandardMaterial({ emissive:0xffffff }));
+  p.ball.renderOrder = 2;
+  scene.add(p.ball);
+  p.light = new THREE.PointLight(0x00ff77, 1.1, 24, 2);
+  scene.add(p.light);
+
+  p.shardMesh = new THREE.InstancedMesh(shardGeo, new THREE.MeshStandardMaterial({
+    color:0x0d1a12, emissive:C_NEON, emissiveIntensity:0.9, roughness:0.35, metalness:0.25
+  }), SHARDS);
+  p.shardMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  p.shardMesh.frustumCulled = false; p.shardMesh.visible = false;
+  scene.add(p.shardMesh);
+  p.shards = [];
+  for(let k=0;k<SHARDS;k++) p.shards.push({ p:new THREE.Vector3(), v:new THREE.Vector3(), q:new THREE.Quaternion(), w:new THREE.Vector3(), sc:1 });
+
+  p.trail = addFx(trailGeo, TRAIL);
+  p.trail.material.opacity = 0.42;
+  p.trailPts = []; for(let k=0;k<TRAIL;k++) p.trailPts.push(new THREE.Vector3());
+
+  p.sparkMesh = addFx(sparkGeo, SPARKS);
+  p.sparkMesh.material.opacity = 0.75;
+  p.sparks = [];
+  for(let k=0;k<SPARKS;k++) p.sparks.push({ p:new THREE.Vector3(), v:new THREE.Vector3(), life:0 });
+
+  p.halo = new THREE.Sprite(new THREE.SpriteMaterial({
+    map:haloTex, transparent:true, blending:THREE.AdditiveBlending,
+    depthWrite:false, opacity:0.32, toneMapped:false
+  }));
+  p.halo.scale.setScalar(R*2.6); p.halo.visible = false;
+  scene.add(p.halo);
+
+  // where you would come down: the only readable cue that you are airborne
+  p.mark = new THREE.Mesh(
+    new THREE.RingGeometry(R*1.05, R*1.5, 32),
+    new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false, toneMapped:false, side:DS })
+  );
+  p.mark.visible = false;
+  scene.add(p.mark);
+
+  p.rig = new THREE.Group();
+  p.rig.visible = false;
+  scene.add(p.rig);
+  p.rigParts = []; p.rings = []; p.orbs = []; p.disc = null; p.shell = null;
+
+  p.vel = new THREE.Vector3();
+  p.lastPos = new THREE.Vector3();
+  p.trailFrom = new THREE.Vector3();
+
+  p.camera  = new THREE.PerspectiveCamera(FOV_BASE, 1, 0.5, 3000);
+  p.camPos  = new THREE.Vector3();
+  p.camLook = new THREE.Vector3();
+  p.vp = { x:0, y:0, w:1, h:1 };
+  p.composer = null;
+  p.fx = {};
+  resetPlayer(p);
+  return p;
+}
+
+function resetPlayer(p){
+  p.s = 0; p.u = 0; p.y = 0;
+  p.vs = SPD_START; p.vu = 0; p.vy = 0;
+  p.grounded = true; p.wasGrounded = true; p.air = 0;
+  p.boost = 0; p.boostTimer = 0; p.score = 0;
+  p.alive = true; p.out = false; p.deathKind = ''; p.dyingT = 0;
+  p.camInit = false; p.shake = 0; p.watch = null; p.camY = 0;
+  if(p.mark) p.mark.visible = false;
+  p.camBack = CAM_BACK; p.camUp = CAM_UP; p.camAhead = LOOK_AHEAD; p.camLookUp = LOOK_UP;
+  p.touchId = null; p.touch = 0;
+  p.trailFill = 0; p.trailHead = 0;
+  if(p.trailFrom) p.trailFrom.set(0,0,0);
+  p.ball.visible = true; p.ball.quaternion.identity();
+  p.shardMesh.visible = false;
+  p.sparkMesh.visible = false;
+  for(const s of p.sparks) s.life = 0;
+}
+
+const MAX_P = 2;
+const players = [ makePlayer(0), makePlayer(1) ];
+let numPlayers = 1;
+const active = () => players.slice(0, numPlayers);
+
+/* ====================================================================
+   GAME STATE
+   ==================================================================== */
+const STATE = { MENU:0, PLAY:1, OVER:3, GARAGE:4 };
+let state = STATE.MENU;
+let paused = false;
+let roundLoser = null;        // in a shared run, whoever crashed first loses it
+let roundEndTimer = null;     // grace the survivor gets before the frame freezes
+const ROUND_END_DELAY = 0.8;  // seconds
+let best = +(localStorage.getItem('slopeBest') || 0);
+
+/* coins and the garage */
+const COINS_PER = 40;               // points needed for one coin
+let coins = +(localStorage.getItem('slopeCoins') || 0);
+let owned = new Set(['stock']);
+try{
+  for(const id of JSON.parse(localStorage.getItem('slopeOwned') || '[]')) owned.add(id);
+}catch(e){ /* corrupt store — fall back to just the stock ball */ }
+let equipped = localStorage.getItem('slopeSkin') || 'stock';
+if(!owned.has(equipped)) equipped = 'stock';
+const skinById = id => SKINS.find(s => s.id === id) || SKINS[0];
+function saveWallet(){
+  localStorage.setItem('slopeCoins', String(coins));
+  localStorage.setItem('slopeOwned', JSON.stringify([...owned]));
+  localStorage.setItem('slopeSkin', equipped);
+}
+
+const el = id => document.getElementById(id);
+const hud = el('hud');
+const hudPanels = [el('hud1'), el('hud2')];
+const scoreEls  = [el('score1'), el('score2')];
+const labelEls  = [el('label1'), el('label2')];
+const menuEl = el('menu'), overEl = el('over'), pausedEl = el('paused'), garageEl = el('garage');
+
+labelEls[0].textContent = 'BEST ' + best;
+
+function resetWorld(seed){
+  for(const c of chunks.slice()) dropChunk(c);
+  chunks.length = 0; pieces.length = 0; hazards.length = 0; triggers.length = 0;
+  for(let i=0;i<nodes.length;i++) nodes[i] = undefined;
+  rng = mulberry(seed >>> 0);
+  resetPath();
+  genS = 0; curY = 0; lastKind = '';
+  while(genS < AHEAD){ startChunk(); genChunk(); }
+
+  bumpTouching = false;
+  roundLoser = null;
+  roundEndTimer = null;
+  const skin = skinById(equipped);
+  players.forEach((p, i) => {
+    resetPlayer(p);
+    // both players wear the equipped skin, but P2 in the rival colourway so
+    // you can always tell the two balls apart on a shared screen
+    applySkin(p, skin, i > 0);
+    p.s = 6;
+    p.u = numPlayers > 1 ? (i === 0 ? -2.6 : 2.6) : 0;
+    const sp = supportAt(p.s, p.u);
+    if(sp) p.y = pieceY(sp, p.s);
+    p.ball.visible = i < numPlayers;
+    p.light.visible = i < numPlayers;
+    p.rig.visible = (i < numPlayers) && !!skin.rig;
+    scoreEls[i].textContent = '0';
+  });
+  syncHud();
+}
+
+/* viewports, camera aspect and render chains for the current player count */
+function layout(){
+  const W = innerWidth, H = innerHeight;
+  renderer.setSize(W, H);
+  document.body.classList.toggle('split', numPlayers > 1);
+  hudPanels[1].hidden = numPlayers < 2;
+  players.forEach((p, i) => {
+    const w = numPlayers > 1 ? Math.floor(W/2) : W;
+    p.vp = { x: numPlayers > 1 ? i*Math.floor(W/2) : 0, y:0, w, h:H };
+    p.camera.aspect = w / Math.max(1, H);
+    p.camera.updateProjectionMatrix();
+    if(i < numPlayers){
+      if(!p.composer) p.composer = makeComposer(p.camera);
+      if(p.composer) p.composer.setSize(w, H);
+    }
+  });
+}
+
+function startGame(n){
+  numPlayers = Math.max(1, Math.min(MAX_P, n || numPlayers));
+  resetWorld((Date.now() & 0xffffffff) >>> 0);
+  players.forEach(p => setView(p, false));
+  layout();
+  state = STATE.PLAY;
+  menuEl.hidden = true; overEl.hidden = true; garageEl.hidden = true;
+  hud.classList.add('on');
+  paused = false; pausedEl.classList.remove('on');
+  audio.start();
+}
+function toMenu(){
+  numPlayers = 1;
+  resetWorld(0xC0FFEE);
+  layout();
+  const p = players[0];
+  setView(p, true);
+  p.s = 330;                       // start past the opening gate for a clean vista
+  const sp = supportAt(p.s, 0); if(sp) p.y = pieceY(sp, p.s);
+  p.camInit = false;
+  state = STATE.MENU;
+  menuEl.hidden = false; overEl.hidden = true; garageEl.hidden = true;
+  hud.classList.remove('on');
+  audio.stop();
+}
+
+function die(p, kind){
+  if(!p.alive) return;
+  p.alive = false;
+  p.deathKind = kind;
+  p.dyingT = 0;
+  p.halo.visible = false;
+  p.rig.visible = false;
+
+  // A shared run is a race: crashing loses it outright, score is only the
+  // tiebreak. The survivor gets a couple of seconds to keep rolling, then the
+  // whole frame freezes wherever they happen to be.
+  if(numPlayers > 1 && roundLoser === null){
+    roundLoser = p;
+    roundEndTimer = ROUND_END_DELAY;
+  }
+  if(kind === 'hit'){
+    p.ball.visible = false;
+    p.shardMesh.visible = true;
+    const wp = new THREE.Vector3();
+    worldAt(p.s, p.u, p.y + R, wp);
+    const f = frameAt(p.s);
+    for(const sh of p.shards){
+      sh.p.copy(wp);
+      sh.p.x += (Math.random()-0.5)*R; sh.p.y += (Math.random()-0.5)*R; sh.p.z += (Math.random()-0.5)*R;
+      sh.v.set(
+        (Math.random()-0.5)*19 - f.fwd[0]*p.vs*0.10,
+        Math.random()*15 + 7   - f.fwd[1]*p.vs*0.10,
+        (Math.random()-0.5)*19 - f.fwd[2]*p.vs*0.10
+      );
+      sh.q.set(Math.random(),Math.random(),Math.random(),Math.random()).normalize();
+      sh.w.set((Math.random()-0.5)*14,(Math.random()-0.5)*14,(Math.random()-0.5)*14);
+      sh.sc = 0.55 + Math.random()*0.85;
+    }
+    p.shake = 1;
+    audio.crash();
+  }else{
+    audio.fall();
+  }
+}
+
+/* a player has finished their wipeout animation */
+function playerOut(p){
+  p.out = true;
+  hudPanels[p.i].classList.add('dead');
+  labelEls[p.i].textContent = 'Out — ' + Math.floor(p.score);
+  // a shared round ends on its own timer, not when the wipeout finishes
+  if(numPlayers === 1) finishRun();
+}
+
+/* Time is up on a shared round. Anyone still rolling simply stops where they
+   are — no wipeout, no tumble — and the result comes up on that frozen frame. */
+function freezeRound(){
+  roundEndTimer = null;
+  for(const p of active()){
+    if(p.out) continue;
+    p.alive = false;
+    p.out   = true;
+    hudPanels[p.i].classList.add('dead');
+    labelEls[p.i].textContent = (p === roundLoser ? 'Out — ' : 'Stopped — ') + Math.floor(p.score);
+  }
+  finishRun();
+}
+
+function finishRun(){
+  state = STATE.OVER;
+  hud.classList.remove('on');
+
+  const list = active();
+  const top  = Math.max(...list.map(q => Math.floor(q.score)));
+  const isBest = top > best;
+  if(isBest){ best = top; localStorage.setItem('slopeBest', String(best)); }
+
+  const gained = list.reduce((n, q) => n + Math.floor(Math.floor(q.score)/COINS_PER), 0);
+  coins += gained;
+  saveWallet();
+
+  if(numPlayers > 1){
+    const a = Math.floor(list[0].score), b = Math.floor(list[1].score);
+    el('lblA').textContent = 'Player 1';
+    el('lblB').textContent = 'Player 2';
+    el('statB').classList.add('rival');
+    el('finalScore').textContent = a;
+    el('finalBest').textContent  = b;
+    const win = roundLoser ? players[1 - roundLoser.i]
+              : (a === b ? null : (a > b ? list[0] : list[1]));
+    el('newBest').textContent = win ? 'Player ' + (win.i + 1) + ' wins' : 'Dead heat';
+    el('newBest').classList.add('on');
+  }else{
+    el('lblA').textContent = 'Score';
+    el('lblB').textContent = 'Best';
+    el('statB').classList.remove('rival');
+    el('finalScore').textContent = Math.floor(list[0].score);
+    el('finalBest').textContent  = best;
+    el('newBest').textContent = 'New record';
+    el('newBest').classList.toggle('on', isBest && top > 0);
+  }
+  el('earned').textContent = gained > 0 ? '+' + gained + ' coins  ·  ' + coins + ' total' : '';
+  labelEls[0].textContent = 'BEST ' + best;
+  overEl.hidden = false;
+  audio.stop();
+}
+
+function syncHud(){
+  players.forEach((p, i) => {
+    hudPanels[i].classList.remove('dead');
+    labelEls[i].textContent = numPlayers > 1 ? 'P' + (i+1) : 'BEST ' + best;
+  });
+}
+
+/* ------------------------------------------------------------- garage --- */
+function skinSwatch(skin){
+  const c = document.createElement('canvas');
+  c.width = c.height = 132;
+  const g = c.getContext('2d');
+  // paint the skin flat, then mask it to a sphere with a lit rim
+  const tile = document.createElement('canvas');
+  tile.width = 256; tile.height = 128;
+  paintBall(tile.getContext('2d'), 256, 128, skin, false);
+  g.save();
+  g.beginPath(); g.arc(66,66,60,0,Math.PI*2); g.clip();
+  g.drawImage(tile, 0, 0, 132, 132);
+  const sh = g.createRadialGradient(46,44,4, 66,66,66);
+  sh.addColorStop(0, 'rgba(255,255,255,0.42)');
+  sh.addColorStop(0.5, 'rgba(255,255,255,0)');
+  sh.addColorStop(1, 'rgba(0,0,0,0.62)');
+  g.fillStyle = sh; g.fillRect(0,0,132,132);
+  g.restore();
+  if(skin.fx && (skin.fx.halo || skin.fx.trail)){
+    g.strokeStyle = skin.accent; g.globalAlpha = 0.55; g.lineWidth = 2;
+    g.beginPath(); g.arc(66,66,63,0,Math.PI*2); g.stroke();
+    g.globalAlpha = 1;
+  }
+  // sketch whatever hardware the skin carries, outside the ball itself
+  const rig = skin.rig;
+  if(rig){
+    g.strokeStyle = skin.accent; g.fillStyle = skin.accent; g.lineWidth = 2.2;
+    if(rig.spikes){
+      g.globalAlpha = 0.95;
+      const n = Math.min(12, rig.spikes);
+      for(let i=0;i<n;i++){
+        const a = i/n*Math.PI*2;
+        g.beginPath();
+        g.moveTo(66+Math.cos(a)*64, 66+Math.sin(a)*64);
+        g.lineTo(66+Math.cos(a+0.14)*52, 66+Math.sin(a+0.14)*52);
+        g.lineTo(66+Math.cos(a-0.14)*52, 66+Math.sin(a-0.14)*52);
+        g.closePath(); g.fill();
+      }
+    }
+    if(rig.shell){
+      g.globalAlpha = 0.4;
+      g.beginPath(); g.arc(66,66,62,0,Math.PI*2); g.stroke();
+    }
+    if(rig.disc){
+      g.globalAlpha = 0.5;
+      g.beginPath(); g.ellipse(66,66,64,22,-0.2,0,Math.PI*2); g.stroke();
+    }
+    for(let i=0;i<(rig.rings||0) && i<3;i++){
+      g.globalAlpha = 0.9;
+      g.beginPath(); g.ellipse(66,66, 60-i*6, 20-i*5, -0.4+i*0.5, 0, Math.PI*2); g.stroke();
+    }
+    for(let i=0;i<(rig.orbs||0);i++){
+      g.globalAlpha = 1;
+      const a = i/rig.orbs*Math.PI*2 - 0.6;
+      g.beginPath(); g.arc(66+Math.cos(a)*60, 66+Math.sin(a)*24, 4.5, 0, Math.PI*2); g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+  return c;
+}
+function buildGarage(){
+  const list = el('skinList');
+  list.innerHTML = '';
+  el('purse').textContent = coins + (coins === 1 ? ' coin' : ' coins');
+  for(const skin of SKINS){
+    const have = owned.has(skin.id);
+    const btn = document.createElement('button');
+    btn.className = 'skin' + (have ? ' owned' : '') + (equipped === skin.id ? ' equipped' : '')
+                  + (!have && coins < skin.cost ? ' locked' : '');
+    btn.type = 'button';
+    btn.appendChild(skinSwatch(skin));
+    const nm = document.createElement('div'); nm.className = 'sname'; nm.textContent = skin.name;
+    const ct = document.createElement('div'); ct.className = 'scost';
+    ct.textContent = equipped === skin.id ? 'Equipped' : have ? 'Owned' : skin.cost + ' coins';
+    const tr = document.createElement('div'); tr.className = 'tier';
+    tr.textContent = ['', 'I', 'II', 'III', 'IV'][skin.tier];
+    btn.append(nm, ct, tr);
+    btn.addEventListener('click', () => {
+      if(owned.has(skin.id)){ equipped = skin.id; }
+      else if(coins >= skin.cost){ coins -= skin.cost; owned.add(skin.id); equipped = skin.id; }
+      else return;
+      saveWallet();
+      buildGarage();
+    });
+    list.appendChild(btn);
+  }
+}
+let garageFrom = STATE.MENU;
+function openGarage(){
+  garageFrom = state;
+  buildGarage();
+  state = STATE.GARAGE;
+  menuEl.hidden = true; overEl.hidden = true; garageEl.hidden = false;
+}
+function closeGarage(){
+  garageEl.hidden = true;
+  if(garageFrom === STATE.OVER){ state = STATE.OVER; overEl.hidden = false; }
+  else toMenu();
+}
+
+/* ====================================================================
+   INPUT
+   ==================================================================== */
+/* Solo takes both key sets; a shared screen splits them so two people can
+   sit at one keyboard. */
+const KEYS_SOLO = { left:['arrowleft','a'], right:['arrowright','d'] };
+const KEYS_SPLIT = [
+  { left:['a'],         right:['d'] },
+  { left:['arrowleft'], right:['arrowright'] }
+];
+const keys = Object.create(null);
+
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if(k === 'arrowleft' || k === 'arrowright' || k === ' ') e.preventDefault();
+  if(k === 'p' || k === 'escape'){
+    if(state === STATE.PLAY){ paused = !paused; pausedEl.classList.toggle('on', paused); paused ? audio.suspend() : audio.resume(); }
+  }
+  if(k === 'enter' || k === ' '){
+    if(state === STATE.MENU || state === STATE.OVER) startGame(numPlayers);
+  }
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+addEventListener('blur', () => { for(const k in keys) keys[k] = false; });
+
+function steerOf(p){
+  const map = numPlayers > 1 ? KEYS_SPLIT[p.i] : KEYS_SOLO;
+  let d = 0;
+  for(const k of map.left)  if(keys[k]) d -= 1;
+  for(const k of map.right) if(keys[k]) d += 1;
+  if(p.touch) d = p.touch;
+  return d < 0 ? -1 : d > 0 ? 1 : 0;
+}
+
+/* Touch: a pointer belongs to whichever viewport it started in, and steers by
+   which half of *that* viewport it sits in — so two thumbs work on a tablet. */
+function viewportOf(x){ return numPlayers > 1 && x >= innerWidth/2 ? 1 : 0; }
+function touchDirIn(i, x){
+  const w = innerWidth / numPlayers;
+  return x < i*w + w/2 ? -1 : 1;
+}
+const canvas = renderer.domElement;
+canvas.addEventListener('pointerdown', e => {
+  if(state !== STATE.PLAY) return;
+  const i = viewportOf(e.clientX);
+  const p = players[i];
+  if(p.touchId !== null) return;
+  p.touchId = e.pointerId;
+  p.touch = touchDirIn(i, e.clientX);
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  for(const p of active()) if(p.touchId === e.pointerId) p.touch = touchDirIn(p.i, e.clientX);
+});
+const dropPointer = e => {
+  for(const p of players) if(p.touchId === e.pointerId){ p.touchId = null; p.touch = 0; }
+};
+canvas.addEventListener('pointerup', dropPointer);
+canvas.addEventListener('pointercancel', dropPointer);
+
+if(matchMedia('(hover: none)').matches){
+  el('keysHint').innerHTML =
+    'Hold the <b>left</b> or <b>right</b> half of the screen to steer<br>' +
+    'Dodge the red &nbsp;&middot;&nbsp; Stay on the track &nbsp;&middot;&nbsp; Ride the ramps<br>' +
+    '<span style="opacity:.6">Two players: one thumb in each half of the split</span>';
+}
+
+el('playBtn').addEventListener('click', () => startGame(1));
+el('play2Btn').addEventListener('click', () => startGame(2));
+el('againBtn').addEventListener('click', () => startGame(numPlayers));
+el('menuBtn').addEventListener('click', toMenu);
+el('garageBtn').addEventListener('click', openGarage);
+el('garage2Btn').addEventListener('click', openGarage);
+el('garageBack').addEventListener('click', closeGarage);
+el('fsBtn').addEventListener('click', () => {
+  if(document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.();
+});
+
+/* ====================================================================
+   AUDIO  — synthesised, so the page stays self-contained
+   ==================================================================== */
+const audio = (() => {
+  let ctx = null, master = null, on = localStorage.getItem('slopeSound') !== '0';
+  let rumble = null, rumbleGain = null, rumbleFilt = null;
+  let musicTimer = null, musicStep = 0;
+
+  function ensure(){
+    if(ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = on ? 0.5 : 0;
+    master.connect(ctx.destination);
+  }
+  function noiseBuffer(sec){
+    const n = Math.floor(ctx.sampleRate*sec);
+    const b = ctx.createBuffer(1, n, ctx.sampleRate);
+    const d = b.getChannelData(0);
+    for(let i=0;i<n;i++) d[i] = Math.random()*2-1;
+    return b;
+  }
+  function start(){
+    ensure(); if(!ctx) return;
+    ctx.resume();
+    stopNodes();
+    rumble = ctx.createBufferSource();
+    rumble.buffer = noiseBuffer(2.5);
+    rumble.loop = true;
+    rumbleFilt = ctx.createBiquadFilter();
+    rumbleFilt.type = 'lowpass'; rumbleFilt.frequency.value = 220; rumbleFilt.Q.value = 3;
+    rumbleGain = ctx.createGain(); rumbleGain.gain.value = 0.0;
+    rumble.connect(rumbleFilt).connect(rumbleGain).connect(master);
+    rumble.start();
+    musicStep = 0;
+    clearInterval(musicTimer);
+    musicTimer = setInterval(tick, 150);            // 100 bpm, sixteenths
+  }
+  function stopNodes(){
+    if(rumble){ try{ rumble.stop(); }catch(e){} rumble.disconnect(); rumble = null; }
+    clearInterval(musicTimer); musicTimer = null;
+  }
+  function stop(){ stopNodes(); }
+  function suspend(){ if(ctx) ctx.suspend(); }
+  function resume(){ if(ctx) ctx.resume(); }
+
+  /* a spare four-on-the-floor bed so the run has a pulse */
+  const BASS = [0,0,3,0, 5,0,3,0, 7,0,5,0, 3,0,0,0];
+  function tick(){
+    if(!ctx || !on) return;
+    const t = ctx.currentTime;
+    const st = musicStep % 16;
+    if(st % 4 === 0) kick(t);
+    if(st % 8 === 4) hat(t, 0.06);
+    else if(st % 2 === 1) hat(t, 0.022);
+    const n = BASS[st];
+    if(n !== 0 || st === 0) bass(t, 55 * Math.pow(2, n/12));
+    if(st % 4 === 2) blip(t, 440 * Math.pow(2, BASS[(st+3)%16]/12));
+    musicStep++;
+  }
+  function kick(t){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(46,t+0.11);
+    g.gain.setValueAtTime(0.55,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.19);
+    o.connect(g).connect(master); o.start(t); o.stop(t+0.2);
+  }
+  function hat(t, v){
+    const s = ctx.createBufferSource(); s.buffer = noiseBuffer(0.05);
+    const f = ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value=7200;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(v,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.045);
+    s.connect(f).connect(g).connect(master); s.start(t); s.stop(t+0.06);
+  }
+  function bass(t, f){
+    const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+    o.type='sawtooth'; o.frequency.value=f;
+    lp.type='lowpass'; lp.frequency.setValueAtTime(700,t); lp.frequency.exponentialRampToValueAtTime(160,t+0.24);
+    g.gain.setValueAtTime(0.13,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.26);
+    o.connect(lp).connect(g).connect(master); o.start(t); o.stop(t+0.27);
+  }
+  function blip(t, f){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type='square'; o.frequency.value=f;
+    g.gain.setValueAtTime(0.035,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.1);
+    o.connect(g).connect(master); o.start(t); o.stop(t+0.11);
+  }
+  function crash(){
+    ensure(); if(!ctx || !on) return;
+    const t = ctx.currentTime;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuffer(0.7);
+    const f = ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.setValueAtTime(1800,t);
+    f.frequency.exponentialRampToValueAtTime(180,t+0.6); f.Q.value = 0.7;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.7,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.68);
+    s.connect(f).connect(g).connect(master); s.start(t); s.stop(t+0.7);
+  }
+  function fall(){
+    ensure(); if(!ctx || !on) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(520,t); o.frequency.exponentialRampToValueAtTime(60,t+1.0);
+    g.gain.setValueAtTime(0.22,t); g.gain.exponentialRampToValueAtTime(0.001,t+1.1);
+    o.connect(g).connect(master); o.start(t); o.stop(t+1.15);
+  }
+  function bump(){
+    ensure(); if(!ctx || !on) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type='triangle';
+    o.frequency.setValueAtTime(330,t); o.frequency.exponentialRampToValueAtTime(95,t+0.12);
+    g.gain.setValueAtTime(0.30,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.16);
+    o.connect(g).connect(master); o.start(t); o.stop(t+0.17);
+    const s = ctx.createBufferSource(); s.buffer = noiseBuffer(0.05);
+    const f = ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=2100; f.Q.value=1.2;
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.16,t); g2.gain.exponentialRampToValueAtTime(0.001,t+0.05);
+    s.connect(f).connect(g2).connect(master); s.start(t); s.stop(t+0.06);
+  }
+  function whoosh(){
+    ensure(); if(!ctx || !on) return;
+    const t = ctx.currentTime;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuffer(0.5);
+    const f = ctx.createBiquadFilter(); f.type='bandpass'; f.Q.value=2.2;
+    f.frequency.setValueAtTime(300,t); f.frequency.exponentialRampToValueAtTime(3400,t+0.35);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0,t); g.gain.linearRampToValueAtTime(0.28,t+0.1); g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+    s.connect(f).connect(g).connect(master); s.start(t); s.stop(t+0.52);
+  }
+  function speed(v){
+    if(!ctx || !rumbleGain) return;
+    const k = Math.min(1, Math.max(0, (v - 28) / 110));
+    rumbleGain.gain.value = 0.10 + k*0.30;
+    rumbleFilt.frequency.value = 180 + k*520;
+  }
+  function toggle(){
+    ensure();
+    on = !on;
+    localStorage.setItem('slopeSound', on ? '1' : '0');
+    if(master) master.gain.value = on ? 0.5 : 0;
+    return on;
+  }
+  return { start, stop, suspend, resume, crash, fall, whoosh, bump, speed, toggle, get on(){ return on; } };
+})();
+const soundBtn = el('soundBtn');
+soundBtn.classList.toggle('off', !audio.on);
+soundBtn.addEventListener('click', () => { soundBtn.classList.toggle('off', !audio.toggle()); });
+
+/* ====================================================================
+   SIMULATION
+   ==================================================================== */
+const AIR_CAP = 52;      // launch speed ceiling, so a ramp can't fling you off-world
+
+function stepPhysics(p, dt){
+  const diff = Math.min(1, p.s / SPD_RAMP);
+  const target = SPD_START + (SPD_END - SPD_START) * diff;
+  const f = frameAt(p.s);
+  const pitchBoost = 1 + Math.sin(f.pitch) * PITCH_GAIN;
+
+  p.vs += ((target * pitchBoost + p.boost) - p.vs) * SPD_EASE * dt;
+  if(p.vs > 215) p.vs = 215;         // keeps the fixed step ahead of collisions
+  p.boost *= Math.exp(-dt * 0.75);
+
+  // steering
+  let dir = steerOf(p);
+  if(HANDLE.auto){
+    const err = autoLane(p.s, p.u, p.y) - p.u - p.vu*0.32;   // lead by the current drift
+    dir = Math.abs(err) < 0.3 ? 0 : Math.sign(err);
+  }
+  p.vu += dir * LAT_ACC * dt;
+  p.vu -= p.vu * LAT_DRAG * dt;
+
+  p.s += p.vs * dt;
+  p.u += p.vu * dt;
+
+  // support / gravity. Riding a piece glues the ball to its surface and keeps
+  // the surface's climb rate in vy, so leaving a ramp lip launches you.
+  const sp = supportAt(p.s, p.u);
+  let landed = false;
+  if(sp){
+    const sy = pieceY(sp, p.s);
+    if(p.y <= sy + 0.02 && p.y > sy - 3.0){
+      p.y = sy;
+      p.vy = Math.min(sp.slope * p.vs, AIR_CAP);
+      p.grounded = true; p.air = 0; landed = true;
+    }
+  }
+  if(!landed){
+    p.grounded = false;
+    p.vy -= GRAV * Math.cos(f.pitch) * dt;
+    p.y  += p.vy * dt;
+    p.air += dt;
+  }
+  // leaving a lip with real climb in you is a launch, not a stumble
+  if(p.grounded) p.wasGrounded = true;
+  else if(p.wasGrounded){
+    p.wasGrounded = false;
+    if(p.vy > 14) audio.whoosh();
+  }
+
+  // off the edge / into the void
+  if(p.y < lowestAhead(p.s) - 16) die(p, 'fall');
+
+  // hazards
+  for(let i=0;i<hazards.length;i++){
+    const h = hazards[i];
+    if(p.s + R < h.s0 || p.s - R > h.s1) continue;
+    let uL = h.uL, uR = h.uR;
+    if(h.move) { uL += h.moveOff || 0; uR += h.moveOff || 0; }
+    if(p.u + R*0.82 < uL || p.u - R*0.82 > uR) continue;
+    if(p.y + R*1.9 < h.y0 || p.y > h.y1) continue;
+    die(p, 'hit');
+    break;
+  }
+
+  // triggers
+  for(let i=0;i<triggers.length;i++){
+    const t = triggers[i];
+    if(p.s < t.s0 || p.s > t.s1) continue;
+    // a tunnel shell is solid: nudge back anyone scraping along the inside
+    if(t.wall && p.u > t.uL - 0.7 && p.u < t.uR + 0.7){
+      const lo = t.uL + R*0.9, hi = t.uR - R*0.9;
+      if(p.u < lo){ p.u = lo; p.vu = Math.abs(p.vu)*0.25; }
+      else if(p.u > hi){ p.u = hi; p.vu = -Math.abs(p.vu)*0.25; }
+    }
+    if(p.u < t.uL || p.u > t.uR) continue;
+    if(t.kind === 'boost'){
+      if(!t.hot){ t.hot = true; audio.whoosh(); }
+      p.boost = Math.max(p.boost, t.power);
+      p.boostTimer = 0.35;
+    }
+  }
+  p.boostTimer = Math.max(0, p.boostTimer - dt);
+
+  p.score += p.vs * dt;
+}
+
+/* ------------------------------------------------------- ball-to-ball ---- */
+const BUMP_E    = 0.7;    // how much lateral speed a knock trades back
+const BUMP_KICK = 5.0;    // shove given to each ball on contact, in units/sec
+let bumpTouching = false;
+
+/* Both balls live in the same track frame, so the separation can be measured
+   straight from (s,u,y). Overlap is eased apart every step; the actual shove
+   lands once per contact so a long scrape does not build up force. */
+function resolveBump(){
+  if(numPlayers < 2){ bumpTouching = false; return; }
+  const a = players[0], b = players[1];
+  if(!a.alive || !b.alive){ bumpTouching = false; return; }
+
+  const ds = b.s - a.s, du = b.u - a.u, dy = b.y - a.y;
+  const d2 = ds*ds + du*du + dy*dy;
+  const MIN = 2*R;
+  if(d2 >= MIN*MIN){ bumpTouching = false; return; }
+
+  const d  = Math.max(1e-4, Math.sqrt(d2));
+  const nu = du/d;
+  // a dead-square hit has no sideways normal to work with, so pick a side
+  const sep = Math.abs(nu) < 0.25 ? (nu < 0 ? -1 : 1) : nu;
+
+  const push = (MIN - d) * 0.5;
+  a.u -= sep * push;
+  b.u += sep * push;
+
+  if(!bumpTouching){
+    bumpTouching = true;
+    const rel = (b.vu - a.vu) * nu;          // closing speed along the contact
+    if(rel < 0){
+      const j = -(1 + BUMP_E) * rel * 0.5;
+      a.vu -= j * nu;
+      b.vu += j * nu;
+    }
+    a.vu -= sep * BUMP_KICK * 0.5;
+    b.vu += sep * BUMP_KICK * 0.5;
+    a.shake = Math.max(a.shake, 0.28);
+    b.shake = Math.max(b.shake, 0.28);
+    audio.bump();
+  }
+}
+
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+function rollBall(p, dt){
+  const f = frameAt(p.s);
+  _qa.setFromAxisAngle(_vr.fromArray(f.right), -(p.vs*dt)/R);
+  _qb.setFromAxisAngle(_vf.fromArray(f.fwd),   -(p.vu*dt)/R);
+  p.ball.quaternion.premultiply(_qa).premultiply(_qb);
+}
+
+const _wp = new THREE.Vector3();
+function updateBall(p){
+  worldAt(p.s, p.u, p.y + R, _wp);
+  p.ball.position.copy(_wp);
+  p.light.position.copy(_wp);
+  if(p.halo.visible) p.halo.position.copy(_wp);
+}
+
+/* ---------------------------------------------------------- ball effects -- */
+const _fxm = new THREE.Matrix4(), _fxs = new THREE.Vector3(), _fxq = new THREE.Quaternion();
+const _hsl = { h:0, s:0, l:0 };
+
+function updateFx(p, dt, clock){
+  const fx = p.fx;
+  p.vel.subVectors(p.ball.position, p.lastPos).multiplyScalar(1/Math.max(1e-4, dt));
+  p.lastPos.copy(p.ball.position);
+
+  if(fx.pulse){
+    p.ball.material.emissiveIntensity = p.baseGlow * (1 + Math.sin(clock*6) * fx.pulse);
+  }
+  if(fx.rainbow){
+    const c = p.ball.material.emissive;
+    c.setHSL((clock*0.16) % 1, 0.85, 0.6);
+    p.light.color.copy(c);
+    p.trail.material.color.copy(c);
+    p.halo.material.color.copy(c);
+  }
+
+  if(p.trail.visible){
+    // Ring buffer of recent positions, laid down every TRAIL_STEP of travel
+    // rather than once per frame, so the tail is even at any frame rate.
+    const TRAIL_STEP = 0.9;
+    if(p.trailFill === 0) p.trailFrom.copy(p.ball.position);   // no streak from the origin
+    const dist = p.trailFrom.distanceTo(p.ball.position);
+    const n = Math.min(TRAIL, Math.floor(dist / TRAIL_STEP));
+    for(let k=1;k<=n;k++){
+      p.trailHead = (p.trailHead + 1) % TRAIL;
+      p.trailPts[p.trailHead].lerpVectors(p.trailFrom, p.ball.position, k/n);
+      if(p.trailFill < TRAIL) p.trailFill++;
+    }
+    if(n > 0) p.trailFrom.copy(p.ball.position);
+    for(let k=0;k<TRAIL;k++){
+      const age = k / TRAIL;
+      const idx = (p.trailHead - k + TRAIL*2) % TRAIL;
+      const on  = k < p.trailFill && p.alive;
+      _fxs.setScalar(on ? Math.pow(1 - age, 1.5) : 0);
+      _fxm.compose(p.trailPts[idx], _fxq, _fxs);
+      p.trail.setMatrixAt(k, _fxm);
+    }
+    p.trail.instanceMatrix.needsUpdate = true;
+  }
+
+  if(fx.sparks){
+    p.sparkMesh.visible = true;
+    for(let k=0;k<SPARKS;k++){
+      const s = p.sparks[k];
+      s.life -= dt;
+      if(s.life <= 0 && p.alive){
+        s.p.copy(p.ball.position);
+        // carry most of the ball's motion so sparks stream behind it instead
+        // of hanging in space and looming past the camera
+        s.v.copy(p.vel).multiplyScalar(0.62);
+        s.v.x += (Math.random()-0.5)*6; s.v.z += (Math.random()-0.5)*6;
+        s.v.y += Math.random()*5 + 2;
+        s.life = 0.22 + Math.random()*0.24;
+      }
+      if(s.life > 0){
+        s.v.y -= 22*dt;
+        s.p.addScaledVector(s.v, dt);
+        _fxs.setScalar(Math.min(1, s.life*3));
+      }else{
+        _fxs.setScalar(0);
+      }
+      _fxm.compose(s.p, _fxq, _fxs);
+      p.sparkMesh.setMatrixAt(k, _fxm);
+    }
+    p.sparkMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  if(p.halo.visible){
+    const air = Math.min(1, p.air*2);      // flares while you are off the deck
+    p.halo.scale.setScalar(R * (2.5 + air*1.1 + Math.sin(clock*3)*0.16));
+  }
+
+  // bolted-on hardware: follows the ball's position, keeps its own motion
+  if(p.rig.visible){
+    p.rig.position.copy(p.ball.position);
+    for(let k=0;k<p.rings.length;k++) p.rings[k].rotation.z += dt * (1.1 + k*0.55);
+    if(p.disc) p.disc.rotation.z += dt * 2.4;
+    if(p.shell){ p.shell.rotation.y -= dt*0.75; p.shell.rotation.x += dt*0.32; }
+    for(const o of p.orbs){
+      const a = clock*1.9 + o.phase;
+      const x = Math.cos(a)*o.rad, z = Math.sin(a)*o.rad;
+      o.mesh.position.set(x, z*Math.sin(o.tilt), z*Math.cos(o.tilt));
+    }
+  }
+
+  // Landing reticle: solve the ballistic arc for where the ball comes back
+  // down and draw a ring there, so a big launch is readable rather than a
+  // guess. Only while genuinely in flight.
+  p.mark.visible = false;
+  if(p.alive && !p.grounded){
+    const here = supportAt(p.s, p.u);
+    const h = here ? p.y - pieceY(here, p.s) : 99;
+    if(h > 1.5){
+      const refY = here ? pieceY(here, p.s) : p.y - h;
+      const disc = p.vy*p.vy + 2*GRAV*(p.y - refY);
+      if(disc > 0){
+        const tl = (p.vy + Math.sqrt(disc)) / GRAV;
+        const sL = p.s + p.vs*tl;
+        const uL = p.u + p.vu*tl;
+        const land = supportAt(sL, uL);
+        const yL = land ? pieceY(land, sL) : refY;
+        worldAt(sL, uL, yL + 0.14, p.mark.position);
+        quatAt(sL, p.mark.quaternion);
+        p.mark.rotateX(-Math.PI/2);
+        p.mark.scale.setScalar(1.15);
+        p.mark.material.opacity = land ? Math.min(0.8, (h-1.5)*0.3) : 0.85;
+        p.mark.material.color.copy(land ? p.light.color : new THREE.Color(C_RED));
+        p.mark.visible = true;
+      }
+    }
+  }
+}
+
+function updateMoving(t){
+  for(const h of hazards){
+    if(!h.move || !h.mesh) continue;
+    h.moveOff = Math.sin(t * h.move.spd + h.move.phase) * h.move.amp;
+    worldAt(h.dims.sc, h.dims.uc + h.moveOff, h.y0 + h.dims.h/2, h.mesh.position);
+    quatAt(h.dims.sc, h.mesh.quaternion);
+  }
+}
+
+/* the title screen pulls back for a wider vista */
+function setView(p, menu){
+  p.camBack   = menu ? 17   : CAM_BACK;
+  p.camUp     = menu ? 8.5  : CAM_UP;
+  p.camAhead  = menu ? 40   : LOOK_AHEAD;
+  p.camLookUp = menu ? 7.6  : LOOK_UP;   // aim high so the runway sits low, clear of the title
+}
+
+/* On a narrow screen, widen the vertical view so the runway stays as readable
+   as it is on desktop instead of shrinking to a sliver. */
+const REF_ASPECT = 1.0;
+function fovFor(vFov, aspect){
+  if(aspect >= REF_ASPECT) return vFov;
+  const hHalf = Math.atan(Math.tan(vFov*Math.PI/360) * REF_ASPECT);
+  return Math.min(105, Math.atan(Math.tan(hHalf)/aspect) * 360/Math.PI);
+}
+
+const _camT = new THREE.Vector3(), _camL = new THREE.Vector3();
+function updateCamera(p, dt){
+  const t = p.watch || p;              // a knocked-out player watches the survivor
+  const cam = p.camera;
+
+  // The camera height trails the ball's, so a launch actually lifts the ball
+  // up the frame instead of the whole world sliding down with it.
+  if(!p.camInit) p.camY = t.y;
+  const climb = t.grounded ? 14 : (t.vy > 0 ? 2.0 : 7);
+  p.camY += (t.y - p.camY) * (1 - Math.exp(-climb*dt));
+
+  const camS = Math.max(0.5, t.s - p.camBack);
+  worldAt(camS, t.u * 0.55, p.camY + p.camUp, _camT);
+  worldAt(t.s + p.camAhead, t.u * 0.34, p.camY + p.camLookUp, _camL);
+
+  if(!p.camInit){ p.camPos.copy(_camT); p.camLook.copy(_camL); p.camInit = true; }
+  // the aim lags the runway: on a crest you keep looking level for a beat and
+  // the track visibly drops away, which is what sells the descent
+  p.camPos.lerp(_camT, 1 - Math.exp(-13 * dt));
+  p.camLook.lerp(_camL, 1 - Math.exp(-4.6 * dt));
+
+  cam.position.copy(p.camPos);
+  if(p.shake > 0){
+    cam.position.x += (Math.random()-0.5) * p.shake * 1.4;
+    cam.position.y += (Math.random()-0.5) * p.shake * 1.4;
+    p.shake = Math.max(0, p.shake - dt*2.2);
+  }
+  cam.lookAt(p.camLook);
+
+  const rush = Math.min(1, Math.max(0, (t.vs - SPD_START) / (SPD_END - SPD_START)));
+  const want = fovFor(FOV_BASE + FOV_RUSH*rush + (t.boostTimer>0 ? 5 : 0), cam.aspect);
+  cam.fov += (want - cam.fov) * (1 - Math.exp(-6*dt));
+  cam.updateProjectionMatrix();
+}
+
+const _mtx = new THREE.Matrix4(), _scv = new THREE.Vector3();
+const _dq = new THREE.Quaternion(), _de = new THREE.Euler();
+function updateShards(p, dt){
+  for(let i=0;i<SHARDS;i++){
+    const s = p.shards[i];
+    s.v.y -= 44*dt;
+    s.p.addScaledVector(s.v, dt);
+    _de.set(s.w.x*dt, s.w.y*dt, s.w.z*dt);
+    s.q.premultiply(_dq.setFromEuler(_de));
+    _scv.setScalar(s.sc);
+    _mtx.compose(s.p, s.q, _scv);
+    p.shardMesh.setMatrixAt(i, _mtx);
+  }
+  p.shardMesh.instanceMatrix.needsUpdate = true;
+}
+
+/* Generate ahead of whoever is furthest, and keep the runway alive until the
+   player furthest back has passed it. */
+function streamWorld(){
+  let lead = -Infinity, tail = Infinity;
+  for(const p of active()){
+    if(p.out) continue;
+    if(p.s > lead) lead = p.s;
+    if(p.s < tail) tail = p.s;
+  }
+  if(lead === -Infinity){ lead = tail = players[0].s; }
+
+  while(genS < lead + AHEAD){ startChunk(); genChunk(); }
+  while(chunks.length && chunks[0].s1 < tail - BEHIND){
+    const c = chunks.shift();
+    dropChunk(c);
+    const upto = Math.floor((c.s1 - SEG*2)/SEG);
+    for(let i=nodeLow; i<upto; i++) nodes[i] = undefined;
+    if(upto > nodeLow) nodeLow = upto;
+  }
+}
+
+/* ====================================================================
+   LOOP
+   ==================================================================== */
+const FIXED = 1/120;
+let acc = 0, last = performance.now(), clock = 0;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt = (now - last)/1000; last = now;
+  if(dt > 0.1) dt = 0.1;
+  clock += dt;
+
+  if(state === STATE.MENU){
+    // the runway keeps rolling behind the title, with the ball on autopilot
+    const p = players[0], v = 26;
+    p.s += v*dt;
+    streamWorld();
+    p.u += (autoLane(p.s, p.u, p.y) - p.u) * (1 - Math.exp(-3.4*dt));
+    const sp = supportAt(p.s, p.u); if(sp) p.y = pieceY(sp, p.s);
+    updateBall(p);
+    rollBallSimple(p, v*dt);
+    updateFx(p, dt, clock);
+    updateMoving(clock);
+    updateCamera(p, dt);
+  }
+  else if(state === STATE.PLAY && !paused){
+    acc += dt;
+    let guard = 0;
+    while(acc >= FIXED && guard < 24){
+      for(const p of active()) if(p.alive) stepPhysics(p, FIXED);
+      resolveBump();
+      acc -= FIXED; guard++;
+    }
+    if(guard >= 24) acc = 0;
+
+    streamWorld();
+    updateMoving(clock);
+
+    let lead = 0;
+    for(const p of active()){
+      if(p.alive){
+        rollBall(p, dt);
+        updateBall(p);
+        lead = Math.max(lead, p.vs);
+        const sc = Math.floor(p.score);
+        if(scoreEls[p.i].textContent !== String(sc)) scoreEls[p.i].textContent = sc;
+      }else if(!p.out){
+        p.dyingT += dt;
+        if(p.deathKind === 'hit'){
+          updateShards(p, dt);
+          // hold at the impact and ease back a touch so the debris stays framed
+          p.camBack = CAM_BACK + Math.min(5, p.dyingT*9);
+        }else{
+          p.vy -= GRAV*dt;
+          p.y  += p.vy*dt;
+          p.s  += p.vs*dt*0.55;
+          p.u  += p.vu*dt;
+          rollBall(p, dt*0.6);
+          updateBall(p);
+        }
+        if(p.dyingT > (p.deathKind === 'hit' ? 1.15 : 1.1)) playerOut(p);
+      }
+      updateFx(p, dt, clock);
+      updateCamera(p, dt);
+    }
+    audio.speed(lead);
+
+    if(roundEndTimer !== null){
+      roundEndTimer -= dt;
+      if(roundEndTimer <= 0) freezeRound();
+    }
+  }
+  else{
+    for(const p of active()) updateCamera(p, dt);
+  }
+
+  if(starField) starField.position.copy(players[0].camera.position);
+  render();
+}
+
+/* Autopilot for the title screen: pick the lateral line that stays safest.
+   Threats are weighted by how soon they arrive, so it commits early. */
+function autoLane(s, u, y){
+  const LOOK = 100;
+  let bestU = u, bestScore = -Infinity;
+  for(let i=-9;i<=9;i++){
+    const cand = u + i*1.5;
+    let sc = -Math.abs(i)*0.4;
+    let gap = Infinity, haz = Infinity;
+
+    for(let d=6; d<=LOOK; d+=8){
+      if(!supportAt(s+d, cand)){ gap = d; break; }
+    }
+    for(let j=0;j<hazards.length;j++){
+      const h = hazards[j];
+      if(h.s1 < s || h.s0 > s+LOOK) continue;
+      if(h.y1 < y - 0.5) continue;                 // already sailing over it
+      const off = h.moveOff || 0;
+      if(cand > h.uL+off-1.5 && cand < h.uR+off+1.5) haz = Math.min(haz, h.s0 - s);
+    }
+    // count only the nearest threat of each kind, and rate a fall as strictly
+    // worse than a block — otherwise a full-width hazard bed reads as a reason
+    // to steer off the edge
+    if(gap < Infinity) sc -= 300 - gap*1.2;
+    if(haz < Infinity) sc -= 150 - haz*0.9;
+
+    if(sc > bestScore){ bestScore = sc; bestU = cand; }
+  }
+  return bestU;
+}
+
+function rollBallSimple(p, d){
+  const f = frameAt(p.s);
+  _qa.setFromAxisAngle(_vr.fromArray(f.right), -d/R);
+  p.ball.quaternion.premultiply(_qa);
+}
+
+/* One render per viewport. Each half owns its bloom chain so the glow can't
+   spill across the seam. */
+function render(){
+  const split = numPlayers > 1;
+  renderer.setScissorTest(split);
+  for(const p of active()){
+    const v = p.vp;
+    renderer.setViewport(v.x, v.y, v.w, v.h);
+    if(split) renderer.setScissor(v.x, v.y, v.w, v.h);
+    if(p.composer) p.composer.render();
+    else renderer.render(scene, p.camera);
+  }
+  renderer.setScissorTest(false);
+}
+
+addEventListener('resize', layout);
+
+/* A small handle, matching how the other games in this folder expose theirs. */
+const HANDLE = window.__slope = {
+  auto: false,
+  force: null,          // pin the generator to one chunk kind, for testing
+  get ball(){ return players[0]; },
+  get players(){ return active(); },
+  get state(){
+    if(state === STATE.PLAY && active().some(p => !p.alive && !p.out)) return 2;
+    return state;
+  },
+  get death(){ return players[0].deathKind; },
+  get coins(){ return coins; },
+  start: startGame,
+  /* fast-forward the run to a given distance, for testing later track shapes */
+  seek(s){
+    for(const p of active()){
+      while(p.s < s){ p.s += 40; streamWorld(); }
+      const sp = supportAt(p.s, p.u);
+      if(sp){ p.y = pieceY(sp, p.s); p.vy = 0; }
+      p.camInit = false;
+    }
+  }
+};
+
+/* ------------------------------------------------------------------ go --- */
+toMenu();
+requestAnimationFrame(frame);
+setTimeout(() => {
+  const l = el('loading');
+  l.classList.add('gone');
+  setTimeout(() => l.remove(), 500);
+}, 260);
 </script>
 </body>
 </html>

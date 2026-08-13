@@ -102,6 +102,15 @@ aiProjects.forEach((p) => {
 
 export const gameProjects: Project[] = [
   {
+    slug: "slope",
+    title: "Slope",
+    description:
+      "Neon endless roller. Ride the ramps, dodge the red, and race a friend in split screen.",
+    href: "https://leonzcode.github.io/slope/",
+    image: "/cards/card_slope.png",
+    tag: "Live demo",
+  },
+  {
     slug: "basket",
     title: "Sports Un-random",
     description:
@@ -181,15 +190,6 @@ export const gameProjects: Project[] = [
       "Party word game of hidden teams. Everyone sees the same word list, and each team is secretly given one of the words. Pass one device around the table, then talk your way to your teammates.",
     href: "/legacy/castlefall.html",
     image: "/cards/card_castlefall.png",
-    tag: "Live demo",
-  },
-  {
-    slug: "slope",
-    title: "Slope",
-    description:
-      "Steer a rolling ball down a procedurally-extending 3D slope. Avoid obstacles, accumulate speed.",
-    href: "https://leonzcode.github.io/slope/",
-    image: "/cards/card_slope.png",
     tag: "Live demo",
   },
   {
