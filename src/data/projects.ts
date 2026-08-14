@@ -103,7 +103,7 @@ aiProjects.forEach((p) => {
 export const gameProjects: Project[] = [
   {
     slug: "minecraft",
-    title: "Blockcraft",
+    title: "Leoncraft",
     description:
       "A voxel sandbox built from scratch in the browser: procedural worlds, hundreds of blocks, mobs, and a shared multiplayer server where you build alongside other people live.",
     href: "/legacy/minecraft.html",
