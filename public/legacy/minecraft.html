@@ -731,6 +731,25 @@ function mpSetOverride(x,y,z,b){
   m.set((x-cx*CH)+','+y+','+(z-cz*CH), b);
 }
 
+// ---- singleplayer save (localStorage): the world's seed + every player block edit,
+// so a solo world keeps its progress across reloads and site updates. The shared
+// multiplayer world is saved separately on the server, not here. ----
+let spSeed = seed;               // the singleplayer world's own seed
+let spEdits = {};                // "x,y,z" -> blockId (0 = air) : deviations from the terrain
+let spSaveTimer = null;
+const SP_KEY = 'leoncraft_sp_world';
+function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits })); }catch(e){} }
+function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
+function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
+function spReloadWorld(){         // load the saved singleplayer world into `seed` + overrides
+  mpOverrides.clear(); spEdits = {};
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; } } }catch(e){}
+  seed=spSeed; noise=makeNoise(seed);
+  for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
+}
+spReloadWorld();                 // so the menu preview and first session already show your saved world
+addEventListener('beforeunload', spSave);
+
 function terrainHeight(x,z){
   const cont = noise.n2(x*0.006, z*0.006);          // continents
   const hills = noise.n2(x*0.02, z*0.02)*0.6;
@@ -1616,8 +1635,17 @@ function startGame(){
 }
 function pause(){ state=PAUSE; pauseEl.hidden=false; document.getElementById('regenBtn').hidden = mp.active; document.exitPointerLock(); }
 function resume(){ state=PLAY; pauseEl.hidden=true; canvas.requestPointerLock(); }
+function startSingleplayer(){
+  mp.active=false;
+  spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
+  spSave();            // pin the seed so even a brand-new world reloads identically
+  for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
+  chunks.clear(); genQueue=[];
+  startGame();
+}
 function regen(){
-  seed=(Math.random()*1e9)|0; noise=makeNoise(seed);
+  spSeed=(Math.random()*1e9)|0; seed=spSeed; noise=makeNoise(seed);
+  spEdits={}; mpOverrides.clear(); spSave();   // brand-new solo world, persisted immediately
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
   startGame();
@@ -1630,7 +1658,7 @@ function toMenu(){
   try{ document.exitPointerLock(); }catch(e){}
 }
 
-document.getElementById('playBtn').addEventListener('click', startGame);
+document.getElementById('playBtn').addEventListener('click', startSingleplayer);
 document.getElementById('mpBtn').addEventListener('click', ()=>startMultiplayer());
 document.getElementById('resumeBtn').addEventListener('click', resume);
 document.getElementById('regenBtn').addEventListener('click', regen);
@@ -1718,7 +1746,10 @@ function mpConnect(){
   ws.onerror=()=>{ chatPush('Server unreachable. Is it online?', 'sys'); };
 }
 function mpSend(o){ if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} } }
-function mpSendBlock(x,y,z,b){ if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); } }
+function mpSendBlock(x,y,z,b){
+  if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); }
+  else spRecord(x,y,z,b);   // singleplayer: persist the edit locally
+}
 
 // build the world from the server's seed, then enter the game
 function mpStartWorld(serverSeed){
