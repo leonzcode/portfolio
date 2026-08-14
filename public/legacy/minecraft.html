@@ -1,0 +1,1848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Blockcraft</title>
+<style>
+  /* A voxel sandbox in the Minecraft spirit. All art is original pixel work
+     generated in code — no Mojang assets are used. */
+  :root{ --ui:#c6c6c6; --ui-d:#565656; --ui-l:#ffffff; }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; overflow:hidden; background:#000; }
+  body{
+    font-family: ui-monospace, "Consolas", "Courier New", monospace;
+    color:#fff; -webkit-user-select:none; user-select:none;
+    text-shadow:2px 2px 0 rgba(0,0,0,.5);
+  }
+  canvas#gl{ display:block; image-rendering:pixelated; }
+
+  /* crosshair */
+  #cross{
+    position:fixed; left:50%; top:50%; width:20px; height:20px;
+    margin:-10px 0 0 -10px; pointer-events:none; z-index:5;
+    mix-blend-mode:difference; opacity:.85;
+  }
+  #cross::before, #cross::after{
+    content:""; position:absolute; background:#fff;
+  }
+  #cross::before{ left:9px; top:1px; width:2px; height:18px; }
+  #cross::after{ top:9px; left:1px; height:2px; width:18px; }
+
+  /* hotbar */
+  #hotbar{
+    position:fixed; left:50%; bottom:14px; transform:translateX(-50%);
+    display:flex; gap:0; z-index:6; padding:3px;
+    background:rgba(0,0,0,.28);
+    border:2px solid rgba(0,0,0,.55);
+    image-rendering:pixelated;
+  }
+  .slot{
+    width:48px; height:48px; position:relative;
+    border:2px solid; border-color:#8b8b8b #373737 #373737 #8b8b8b;
+    background:#c6c6c6;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .slot canvas{ width:40px; height:40px; image-rendering:pixelated; }
+  .slot.sel{ outline:3px solid #fff; outline-offset:1px; z-index:2; }
+  .slot .cnt{
+    position:absolute; right:2px; bottom:0; font-size:14px; line-height:1;
+    color:#fff;
+  }
+
+  /* held-item name popup, above the hotbar */
+  #itemName{
+    position:fixed; left:50%; bottom:74px; transform:translateX(-50%);
+    z-index:6; pointer-events:none; white-space:nowrap;
+    font-size:16px; color:#fff; text-shadow:2px 2px 0 rgba(0,0,0,.6);
+    opacity:0;
+  }
+
+  /* chat log + input */
+  #chatLog{
+    position:fixed; left:8px; bottom:78px; z-index:7; width:min(50vw,440px);
+    pointer-events:none; display:flex; flex-direction:column; gap:1px;
+  }
+  #chatLog .cm{
+    font-size:14px; color:#fff; text-shadow:1px 1px 0 rgba(0,0,0,.8);
+    background:rgba(0,0,0,.28); padding:1px 5px; width:fit-content; max-width:100%;
+    word-break:break-word;
+  }
+  #chatLog .cm.sys{ color:#ffe08a; }
+  #chatBox{
+    position:fixed; left:0; right:0; bottom:52px; z-index:12;
+    display:flex; align-items:center; gap:6px; padding:6px 8px;
+    background:rgba(0,0,0,.55);
+  }
+  #chatBox .prompt{ color:#fff; font-size:16px; }
+  #chatInput{
+    flex:1; font-family:inherit; font-size:15px; color:#fff; text-shadow:none;
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25);
+    padding:6px 8px; outline:none;
+  }
+
+  /* generic screen overlays */
+  .screen{
+    position:fixed; inset:0; z-index:20; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px;
+    background:rgba(0,0,0,.62);
+  }
+  .screen[hidden]{ display:none; }
+  .title{
+    font-size:46px; letter-spacing:2px; font-weight:700;
+    color:#fff; text-shadow:3px 3px 0 #3a3a3a; margin-bottom:6px;
+  }
+  .subtitle{ font-size:13px; color:#c9c9c9; margin-top:-8px; }
+  .btn{
+    font-family:inherit; font-size:15px; color:#fff; text-shadow:2px 2px 0 rgba(0,0,0,.5);
+    width:320px; max-width:80vw; padding:11px 0; cursor:pointer;
+    background:#7a7a7a;
+    border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9;
+    image-rendering:pixelated;
+  }
+  .btn:hover{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
+  .btn:active{ border-color:#333 #a9a9a9 #a9a9a9 #333; }
+  .hint{ font-size:12.5px; color:#b9b9b9; text-align:center; line-height:1.9; max-width:460px; }
+  .hint b{ color:#fff; }
+
+  /* inventory / block picker */
+  #inv{ z-index:25; }
+  #invPanel{
+    background:#c6c6c6; border:3px solid; border-color:#fff #555 #555 #fff;
+    padding:14px; max-width:92vw;
+  }
+  .invhead{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+  #invPanel h2{ margin:0; font-size:15px; color:#3a3a3a; text-shadow:none; }
+  #invSearch{
+    font-family:inherit; font-size:13px; color:#1a1a1a; text-shadow:none; background:#fff;
+    border:2px solid; border-color:#555 #fff #fff #555; padding:5px 8px; width:190px; outline:none;
+  }
+  #invTabs{ display:flex; flex-wrap:wrap; gap:4px; margin-bottom:9px; }
+  .invtab{
+    font-family:inherit; font-size:12px; color:#2a2a2a; text-shadow:none; cursor:pointer;
+    background:#9a9a9a; border:2px solid; border-color:#c6c6c6 #555 #555 #c6c6c6; padding:4px 9px;
+  }
+  .invtab:hover{ background:#adadad; }
+  .invtab.active{ background:#c6c6c6; border-color:#fff #6a6a6a #6a6a6a #fff; color:#000; }
+  #invGrid{
+    display:grid; grid-template-columns:repeat(12, 40px); gap:2px;
+    max-height:58vh; overflow-y:auto; min-height:80px;
+  }
+  .icell{
+    width:40px; height:40px; background:#8b8b8b;
+    border:2px solid; border-color:#373737 #fff #fff #373737;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .icell:hover{ background:#a7a7a7; }
+  .icell canvas{ width:34px; height:34px; image-rendering:pixelated; }
+
+  /* debug (F3) */
+  #dbg{
+    position:fixed; left:6px; top:6px; z-index:8; font-size:12.5px; line-height:1.55;
+    color:#fff; pointer-events:none; white-space:pre;
+  }
+  #dbg[hidden]{ display:none; }
+
+  #hand{
+    position:fixed; right:0; bottom:0; z-index:4; pointer-events:none;
+    image-rendering:pixelated;
+  }
+  #loading{
+    position:fixed; inset:0; z-index:40; background:#0e0e12; color:#dfe;
+    display:flex; align-items:center; justify-content:center; font-size:14px; letter-spacing:2px;
+    transition:opacity .5s ease;
+  }
+  #loading.gone{ opacity:0; pointer-events:none; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="cross"></div>
+<canvas id="hand" width="0" height="0"></canvas>
+<div id="dbg" hidden></div>
+<div id="itemName"></div>
+<div id="chatLog"></div>
+<div id="chatBox" hidden><span class="prompt">&gt;</span><input id="chatInput" type="text" maxlength="240" autocomplete="off" spellcheck="false"></div>
+<div id="hotbar"></div>
+
+<!-- Start / pause -->
+<div class="screen" id="menu">
+  <div class="title">BLOCKCRAFT</div>
+  <div class="subtitle">a Minecraft-style sandbox &middot; original textures</div>
+  <button class="btn" id="playBtn">Singleplayer</button>
+  <button class="btn" id="mpBtn" style="margin-top:8px">Multiplayer (shared server)</button>
+  <div class="hint" id="menuHint">
+    <b>WASD</b> move &middot; <b>Mouse</b> look &middot; <b>Space</b> jump / fly up &middot; <b>Shift</b> down<br>
+    <b>Left-click</b> break &middot; <b>Right-click</b> place &middot; <b>Wheel</b> / <b>1-9</b> select<br>
+    <b>E</b> blocks &middot; <b>F</b> toggle fly &middot; <b>F5</b> camera view &middot; <b>F3</b> debug &middot; <b>Esc</b> pause<br>
+    Creative mode &middot; double-tap <b>Space</b> to fly
+  </div>
+</div>
+
+<div class="screen" id="pause" hidden>
+  <div class="title" style="font-size:32px;">PAUSED</div>
+  <button class="btn" id="resumeBtn">Back to game</button>
+  <button class="btn" id="regenBtn">New world</button>
+  <div class="hint">Press <b>Esc</b> to resume</div>
+</div>
+
+<!-- Inventory / block picker -->
+<div class="screen" id="inv" hidden>
+  <div id="invPanel">
+    <div class="invhead">
+      <h2>Select Block</h2>
+      <input id="invSearch" type="text" placeholder="Search blocks..." autocomplete="off" spellcheck="false">
+    </div>
+    <div id="invTabs"></div>
+    <div id="invGrid"></div>
+  </div>
+</div>
+
+<div id="loading">GENERATING WORLD…</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three-0.163.0.module.js" } }
+</script>
+<script type="module">
+/* If anything below throws during startup, show it on the loading overlay
+   instead of leaving "GENERATING WORLD" up forever with no explanation. */
+const __loading = document.getElementById('loading');
+function __fatal(msg){
+  if(__loading){
+    __loading.textContent = 'Could not start: ' + msg;
+    __loading.style.color = '#ff8f8f';
+    __loading.classList.remove('gone');
+  }
+}
+addEventListener('error', e => __fatal(e.message || 'script error'));
+addEventListener('unhandledrejection', e => __fatal((e.reason && e.reason.message) || 'load error'));
+
+/* Load Three.js: try the vendored copy next to this file, and if that path
+   isn't reachable (served from a different root, missing file, etc.) fall
+   back to the CDN so the game still boots. */
+let THREE;
+try {
+  THREE = await import('three');
+} catch (_e) {
+  try {
+    THREE = await import('https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js');
+  } catch (e2) {
+    __fatal('3D library failed to load. Check your connection and reload.');
+    throw e2;
+  }
+}
+
+/* ============================================================================
+   BLOCKCRAFT — a first-person voxel sandbox in the Minecraft style.
+   Every texture here is generated procedurally in code (original pixel art);
+   no Mojang/Minecraft assets are downloaded or embedded.
+   ========================================================================== */
+
+/* ------------------------------------------------------------- constants -- */
+const CH = 16;            // chunk width/depth
+const WH = 72;            // world height (blocks)
+const SEA = 30;           // sea level
+const TILE = 16;          // texture tile pixels
+const REACH = 6;          // block interaction distance
+
+/* ------------------------------------------------------------ block table -- */
+// tiles: single index = all faces; [top,side,bottom] = per-orientation.
+// flags: solid (collides), opaque (culls neighbours & no transparency), liquid.
+let TN = 0; const tile = () => TN++;   // tile-atlas slot allocator
+const BLOCKS = {};
+let BN = 1;                             // 0 = air
+function def(name, opts){
+  const id = BN++;
+  BLOCKS[id] = Object.assign({ id, name, solid:true, opaque:true }, opts);
+  BLOCKS[name] = BLOCKS[id];
+  return id;
+}
+// tile ids are assigned as textures are painted (see buildAtlas); here we just
+// reserve names and face layout, filled in below after the atlas exists.
+
+/* ------------------------------------------------------------- the atlas -- */
+// Atlas is a grid of TILE×TILE cells. We paint each named texture and remember
+// its cell index, then blocks reference those indices.
+const ATLAS_COLS = 16, ATLAS_ROWS = 16;
+const atlasCanvas = document.createElement('canvas');
+atlasCanvas.width = ATLAS_COLS * TILE;
+atlasCanvas.height = ATLAS_ROWS * TILE;
+const actx = atlasCanvas.getContext('2d');
+const tileIndex = {};    // name -> cell index
+let cell = 0;
+
+// seeded per-texture noise so a given texture is stable
+function rng(seed){ let s = seed>>>0; return () => { s = (s*1664525 + 1013904223)>>>0; return s/4294967296; }; }
+function shade(hex, f){
+  const r = (hex>>16)&255, g=(hex>>8)&255, b=hex&255;
+  const cl = v => Math.max(0, Math.min(255, Math.round(v)));
+  return `rgb(${cl(r*f)},${cl(g*f)},${cl(b*f)})`;
+}
+// paint one TILE×TILE texture via a per-pixel callback, return its cell index
+function paint(name, fn){
+  const idx = cell++;
+  const ox = (idx % ATLAS_COLS) * TILE, oy = ((idx/ATLAS_COLS)|0) * TILE;
+  const img = actx.createImageData(TILE, TILE);
+  for (let y=0;y<TILE;y++) for (let x=0;x<TILE;x++){
+    const c = fn(x, y);              // returns [r,g,b] or [r,g,b,a]
+    const i = (y*TILE + x)*4;
+    img.data[i]=c[0]; img.data[i+1]=c[1]; img.data[i+2]=c[2]; img.data[i+3]=c[3]===undefined?255:c[3];
+  }
+  actx.putImageData(img, ox, oy);
+  tileIndex[name] = idx;
+  return idx;
+}
+// helpers to build [r,g,b] with variation
+function vary(base, amt, r){
+  const d = (r()*2-1)*amt;
+  return [base[0]+d, base[1]+d, base[2]+d].map(v=>Math.max(0,Math.min(255,v|0)));
+}
+const rgb = h => [(h>>16)&255,(h>>8)&255,h&255];
+
+/* --- texture generators (original pixel art) ----------------------------- */
+function speckle(hexBase, amt, seed){
+  const base = rgb(hexBase); const r = rng(seed);
+  return (x,y)=> vary(base, amt, r);
+}
+function grassTop(seed){
+  const r = rng(seed); const a=rgb(0x5b8a2b), b=rgb(0x6fa838);
+  return (x,y)=>{ const t=r(); const c=t<0.5?a:b; return vary(c, 14, ()=>r()); };
+}
+function grassSide(seed){
+  const dirt=rgb(0x866043), r=rng(seed), g=rgb(0x5b8a2b);
+  return (x,y)=>{
+    const lip = 3 + Math.floor((r()*2)); // ragged grass lip
+    if (y < lip || (y<lip+2 && r()<0.4)) return vary(g,14,r);
+    return vary(dirt, 16, r);
+  };
+}
+function logSide(seed, ringHex, barkHex){
+  const bark=rgb(barkHex), ring=rgb(ringHex), r=rng(seed);
+  return (x,y)=>{ const v = (x%4===0)?ring:bark; return vary(v, 12, r); };
+}
+function logTop(seed, ringHex, barkHex){
+  const bark=rgb(barkHex), ring=rgb(ringHex), r=rng(seed);
+  return (x,y)=>{ const dx=x-7.5, dy=y-7.5; const d=Math.sqrt(dx*dx+dy*dy);
+    const band = (Math.floor(d)%2===0); return vary(band?ring:bark, 10, r); };
+}
+function planks(seed, hex){
+  const base=rgb(hex), r=rng(seed);
+  return (x,y)=>{ let c=vary(base,12,r);
+    if (y%4===3) c=vary(base,-6+ -14,r);        // plank gap
+    if (x===0) c=c.map(v=>v*0.9|0);
+    return c; };
+}
+function leaves(seed, hex){
+  const base=rgb(hex), r=rng(seed);
+  return (x,y)=>{ const t=r(); if (t<0.12) return [0,0,0,0];      // gaps (cutout)
+    return vary(base, 22, r); };
+}
+function oreTex(seed, oreHex){
+  const stone=rgb(0x808080), ore=rgb(oreHex), r=rng(seed);
+  const blobs=[]; for(let i=0;i<5;i++) blobs.push([2+((r()*12)|0),2+((r()*12)|0)]);
+  return (x,y)=>{ for(const [bx,by] of blobs){ if(Math.abs(x-bx)+Math.abs(y-by)<=1) return vary(ore, 26, r); } return vary(stone,14,r); };
+}
+function bricks(seed){
+  const b=rgb(0x9a5a44), m=rgb(0xb0b0b0), r=rng(seed);
+  return (x,y)=>{ const row=(y/4)|0; const off=(row%2)?2:0; const bx=(x+off)%8;
+    if (y%4===3 || bx===0) return vary(m,8,r); return vary(b,12,r); };
+}
+function glassTex(seed){
+  const r=rng(seed);
+  return (x,y)=>{ const edge = x===0||y===0||x===15||y===15;
+    if (edge) return [200,220,230,235];
+    if (r()<0.06) return [255,255,255,150];
+    return [180,205,220,55]; };
+}
+function waterTex(seed){
+  const r=rng(seed), a=rgb(0x2f5bd0), b=rgb(0x3a6fe0);
+  return (x,y)=> { const c = ((x+y)%5<2)?a:b; const v=vary(c,10,r); return [v[0],v[1],v[2],190]; };
+}
+function flatSpeckle(hex, amt, seed){ return speckle(hex, amt, seed); }
+// improved plank texture: horizontal boards with offset vertical joins
+function planksTex(seed, hex){
+  const base=rgb(hex), r=rng(seed);
+  return (x,y)=>{
+    let c=vary(base,9,r);
+    if(y%4===0) c=c.map(v=>v*0.68|0);                 // seam between boards
+    const row=(y/4)|0, off=(row%2)?8:0;
+    if((x+off)%16===0) c=c.map(v=>v*0.82|0);          // vertical plank join
+    if(r()<0.14) c=c.map(v=>v*0.93|0);                // grain
+    return c;
+  };
+}
+function woodSide(seed, barkHex, darkHex){
+  const bark=rgb(barkHex), dk=rgb(darkHex), r=rng(seed);
+  return (x,y)=>{ let c=vary(bark,9,r);
+    if(x%4===0) c=vary(dk,7,r);                        // vertical bark grooves
+    if(r()<0.12) c=vary(dk,9,r);                       // flecks
+    return c; };
+}
+function woodTop(seed, ringHex, coreHex){
+  const ring=rgb(ringHex), core=rgb(coreHex), r=rng(seed);
+  return (x,y)=>{ const dx=x-7.5,dy=y-7.5,d=Math.sqrt(dx*dx+dy*dy);
+    return vary((Math.floor(d*1.1)%2===0)?ring:core, 8, r); };
+}
+function woolTex(seed, hex){
+  const base=rgb(hex), r=rng(seed);
+  // low-res tuft grid (8x8 cells of 2px) gives the soft knitted-wool fuzz
+  const tuft=[]; for(let i=0;i<64;i++) tuft.push((r()*2-1)*0.10);
+  return (x,y)=>{
+    let f = 1 + tuft[(y>>1)*8 + (x>>1)];      // fuzzy tufts
+    if(((x+y)&3)===0) f *= 0.92;              // faint diagonal weave threads
+    if(((x-y+32)&3)===1) f *= 1.05;
+    if(r()<0.05) f *= 0.84;                   // occasional darker knot
+    return base.map(v=>Math.max(0,Math.min(255, v*f))|0);
+  };
+}
+function pretty(name){ return name.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase()); }
+
+/* paint every texture; the cell order does not matter, names do */
+paint('grass_top', grassTop(1));
+paint('grass_side', grassSide(2));
+paint('dirt', speckle(0x866043, 16, 3));
+paint('stone', speckle(0x808080, 14, 4));
+paint('cobble', (()=>{ const r=rng(5), base=rgb(0x828282); return (x,y)=>{ const n=(Math.floor(x/4)+Math.floor(y/4))%2; const c=n?base.map(v=>v*0.85|0):base; return vary(c, 20, r); };})());
+paint('bedrock', (()=>{ const r=rng(6); return (x,y)=>{ const v=(r()<0.5)?0x2a2a2a:0x4a4a4a; return vary(rgb(v), 20, r); };})());
+paint('sand', speckle(0xdcd29a, 12, 7));
+paint('gravel', (()=>{ const r=rng(8), a=rgb(0x8a827c), b=rgb(0x6f6862); return (x,y)=> vary(r()<0.5?a:b, 18, r); })());
+paint('oak_leaves', leaves(12, 0x3f7d2f));
+// all wood types: log side/top + planks, each an original texture in the type's colours
+const WOODS = [
+  { id:'oak',      side:0x6b5330, dark:0x4f3d1e, ring:0xa9814e, core:0x86603f, plank:0xb08a53 },
+  { id:'spruce',   side:0x3e2e18, dark:0x281c0e, ring:0x76573a, core:0x4a3720, plank:0x6a4e30 },
+  { id:'birch',    side:0xd3d4cc, dark:0x9a9a84, ring:0xc8b98a, core:0xb6a678, plank:0xd7cb9e },
+  { id:'jungle',   side:0x574119, dark:0x3a2c10, ring:0x9a6a34, core:0x7a5228, plank:0xa9784f },
+  { id:'acacia',   side:0x69645a, dark:0x453f36, ring:0xa85a2e, core:0x8a4a26, plank:0xb15b30 },
+  { id:'dark_oak', side:0x3a2a13, dark:0x241a0a, ring:0x4a3418, core:0x352612, plank:0x43301a },
+];
+WOODS.forEach((w,i)=>{
+  paint(w.id+'_log_side', woodSide(600+i*11, w.side, w.dark));
+  paint(w.id+'_log_top',  woodTop(640+i*11, w.ring, w.core));
+  paint(w.id+'_planks',   planksTex(680+i*11, w.plank));
+});
+// all 16 dye colours of wool
+const WOOLS = [
+  ['white',0xe9ecec],['orange',0xf07613],['magenta',0xbd44b3],['light_blue',0x3aafd9],
+  ['yellow',0xf8c627],['lime',0x70b919],['pink',0xed8dac],['gray',0x3e4447],
+  ['light_gray',0x8e8e86],['cyan',0x158991],['purple',0x792aac],['blue',0x35399d],
+  ['brown',0x724728],['green',0x546d1b],['red',0xa12722],['black',0x1a1c20],
+];
+WOOLS.forEach(([n,hex],i)=> paint(n+'_wool', woolTex(720+i*7, hex)));
+paint('coal_ore', oreTex(13, 0x222222));
+paint('iron_ore', oreTex(14, 0xd8a883));
+paint('gold_ore', oreTex(15, 0xf3d24b));
+paint('diamond_ore', oreTex(16, 0x5ff2e0));
+paint('redstone_ore', oreTex(17, 0xd81414));
+paint('glass', glassTex(18));
+paint('water', waterTex(19));
+paint('sandstone', (()=>{ const r=rng(20), base=rgb(0xd8ce97); return (x,y)=>{ let c=vary(base,8,r); if(y%5===0) c=c.map(v=>v*0.9|0); return c; };})());
+paint('bricks', bricks(21));
+paint('snow', speckle(0xf4f8fb, 6, 22));
+paint('ice', (()=>{ const r=rng(23); return (x,y)=>{ const v=vary(rgb(0x8fb8ea),12,r); return [v[0],v[1],v[2],220]; };})());
+paint('obsidian', (()=>{ const r=rng(24); return (x,y)=>{ const v=vary(rgb(0x180d28),16,r); if(r()<0.08) return vary(rgb(0x5a3c8a),20,r); return v; };})());
+paint('netherrack', (()=>{ const r=rng(25), base=rgb(0x6e2b2b); return (x,y)=> vary(base, 24, r); })());
+paint('glowstone', (()=>{ const r=rng(26), base=rgb(0xd6b24a); return (x,y)=>{ if(r()<0.3) return vary(rgb(0xfff2b0),20,r); return vary(base,18,r); };})());
+paint('pumpkin_side',(()=>{ const r=rng(29), base=rgb(0xd07f1e); return (x,y)=>{ if(x%4===0) return base.map(v=>v*0.85|0); return vary(base,10,r); };})());
+paint('pumpkin_top', speckle(0xb26a18, 10, 30));
+paint('melon_side', (()=>{ const r=rng(31), a=rgb(0x2f6b1e), b=rgb(0x4f8a2e); return (x,y)=> vary((x%4<2)?a:b, 12, r); })());
+paint('crafting_top', (()=>{ const r=rng(32), base=rgb(0xa2814f); return (x,y)=>{ if(x<8&&y<8) return vary(rgb(0x8a6a3f),10,r); return vary(base,10,r); };})());
+paint('furnace_front', (()=>{ const r=rng(33), base=rgb(0x707070); return (x,y)=>{ if(x>=4&&x<=11&&y>=6&&y<=12) return vary(rgb(0x222222),12,r); return vary(base,12,r); };})());
+paint('bookshelf', (()=>{ const r=rng(34); return (x,y)=>{ const wood=vary(rgb(0xa2814f),8,r); if(y<2||y>13||(y>7&&y<9)) return wood;
+  const cols=[0xb23b3b,0x3b6bb2,0x3bb257,0xd2b24a]; return vary(rgb(cols[(x/4|0)%4]),14,r); };})());
+
+/* ---- pass 1: a big set of extra 1.8 full-cube blocks (original textures) -- */
+let _es=1000; const es=()=>_es++;
+function twoTone(seed, aHex, bHex, cHex, amt){ const r=rng(seed), a=rgb(aHex), b=rgb(bHex), c=cHex!==undefined?rgb(cHex):null;
+  return (x,y)=>{ const t=r(); const col = t<0.55?a : (c && t>0.85 ? c : b); return vary(col, amt||10, r); }; }
+function stoneBrickTex(seed, moss, crack){ const r=rng(seed), b=rgb(0x7c7c7c), m=rgb(0x676767);
+  return (x,y)=>{ const row=(y/8)|0, off=(row%2)?8:0, bx=(x+off)%16;
+    let c=(y%8===0||bx===0)?vary(m,6,r):vary(b,9,r);
+    if(moss && r()<0.16) c=vary(rgb(0x5a7a3a),12,r);
+    if(crack && r()<0.10) c=vary(rgb(0x4c4c4c),8,r);
+    return c; }; }
+function chiseledStone(seed){ const r=rng(seed), b=rgb(0x7c7c7c), m=rgb(0x5c5c5c);
+  return (x,y)=>{ if(x===0||x===15||y===0||y===15) return vary(m,5,r);
+    if(x===2||x===13) return vary(m,5,r);
+    if(y===2) return vary(m,5,r);
+    return vary(b,7,r); }; }
+function mossyCobbleTex(seed){ const r=rng(seed), base=rgb(0x828282);
+  return (x,y)=>{ const n=(Math.floor(x/4)+Math.floor(y/4))%2; let c=vary(n?base.map(v=>v*0.85|0):base,20,r);
+    if(r()<0.22) c=vary(rgb(0x51742f),14,r); return c; }; }
+function brickPat(seed, brickHex, mortarHex){ const r=rng(seed), b=rgb(brickHex), m=rgb(mortarHex);
+  return (x,y)=>{ const row=(y/4)|0, off=(row%2)?4:0, bx=(x+off)%8;
+    if(y%4===3||bx===0) return vary(m,6,r); return vary(b,9,r); }; }
+function soulSandTex(seed){ const r=rng(seed), base=rgb(0x554038);
+  return (x,y)=>{ if((Math.abs(x-4)<2&&Math.abs(y-5)<2)||(Math.abs(x-11)<2&&Math.abs(y-10)<2)) return vary(rgb(0x2f2420),8,r);
+    return vary(base,10,r); }; }
+function seaLanternTex(seed){ const r=rng(seed);
+  return (x,y)=>{ const cx=x&3,cy=y&3, core=(cx>0&&cx<3&&cy>0&&cy<3);
+    return vary(rgb(core?0xf2fbff:0xa7d3cd),8,r); }; }
+function prismarineTex(seed, hex){ const r=rng(seed), a=rgb(hex), b=rgb(hex).map(v=>v*0.86|0);
+  return (x,y)=>{ const q=((x>>2)+(y>>2))&1; return vary(q?a:b, 8, r); }; }
+function slimeTex(seed){ const r=rng(seed), base=rgb(0x77c05e);
+  return (x,y)=>{ const edge=x===0||y===0||x===15||y===15; let c=vary(base, edge?4:11, r);
+    if(x>3&&x<12&&y>3&&y<12 && r()<0.5) c=vary(rgb(0x8ad673),9,r);
+    return [c[0],c[1],c[2], 205]; }; }
+function spongeTex(seed){ const r=rng(seed), base=rgb(0xc6bf4c);
+  return (x,y)=>{ if(r()<0.15) return vary(rgb(0x8e8836),12,r); return vary(base,14,r); }; }
+function mineralBlock(seed, hex){ const r=rng(seed), base=rgb(hex);
+  return (x,y)=>{ let c=vary(base,6,r); if(x===0||y===0) c=c.map(v=>Math.min(255,v*1.15)|0);
+    if(x===15||y===15) c=c.map(v=>v*0.85|0); return c; }; }
+function stainedGlass(seed, hex){ const r=rng(seed), base=rgb(hex);
+  return (x,y)=>{ const edge=x===0||y===0||x===15||y===15; const v=vary(base, edge?4:8, r);
+    return [v[0],v[1],v[2], edge?235:110]; }; }
+function stainedClayTex(seed, hex){ const r=rng(seed), base=rgb(hex);
+  return (x,y)=>{ let c=vary(base,9,r); if(r()<0.16) c=vary(base,-8,r);
+    if((x===2||x===12)&&y>1&&y<14) c=c.map(v=>v*0.93|0); return c; }; }
+function pillarSideTex(seed, hex){ const r=rng(seed), base=rgb(hex);
+  return (x,y)=>{ let c=vary(base,6,r); if(y===0||y===15) c=c.map(v=>v*0.8|0); return c; }; }
+function jackFaceTex(seed){ const r=rng(seed), base=rgb(0xd07f1e);
+  return (x,y)=>{ const eye=(( x>2&&x<6)||(x>9&&x<13))&&y>4&&y<8;
+    const mouth=(y>9&&y<13)&&(x>2&&x<13)&&((x+y)&1)===0;
+    if(eye||mouth) return vary(rgb(0xffd24a),16,r);
+    if(x%4===0) return base.map(v=>v*0.85|0); return vary(base,10,r); }; }
+function spawnEggTex(seed, baseHex, spotHex){
+  const r=rng(seed), base=rgb(baseHex), spot=rgb(spotHex);
+  return (x,y)=>{ const dx=(x-7.5)/5.6, dy=(y-8.2)/6.8;
+    if(dx*dx+dy*dy>1) return [0,0,0,0];                 // egg silhouette, transparent outside
+    const s=(((x*3+y*5)%7)<2)||((((x+2)*2+y*3)%9)<2);   // speckles
+    const v=vary(s?spot:base, 8, r);
+    // little highlight
+    if(x>=5&&x<=6&&y>=4&&y<=5) return [255,255,255,220];
+    return v; }; }
+
+// stained-clay / stained-glass dye palettes (16 each)
+const DYES = [['white',0xd6cfc9,0xffffff],['orange',0xa15325,0xd87f33],['magenta',0x95586c,0xb24cd8],
+  ['light_blue',0x706d8a,0x6699d8],['yellow',0xba8523,0xe5e533],['lime',0x677534,0x7fcc19],
+  ['pink',0xa24d4d,0xf27fa5],['gray',0x3a2a24,0x4c4c4c],['light_gray',0x876b61,0x999999],
+  ['cyan',0x555a5b,0x4c7f99],['purple',0x764656,0x7f3fb2],['blue',0x4a3c5b,0x334cb2],
+  ['brown',0x4d3323,0x664c33],['green',0x4c522a,0x667f33],['red',0x8f3d2f,0x993333],['black',0x241610,0x191919]];
+
+const EXTRA = [
+  { name:'granite',           tex: twoTone(es(),0x9a6152,0xb08a6a,0x7c4c40,12) },
+  { name:'polished_granite',  tex: twoTone(es(),0x9a6558,0xa8776a,undefined,7) },
+  { name:'diorite',           tex: twoTone(es(),0xd0d0d0,0xa9a9a9,0xbdbdbd,9) },
+  { name:'polished_diorite',  tex: twoTone(es(),0xd2d2d2,0xc2c2c2,undefined,6) },
+  { name:'andesite',          tex: twoTone(es(),0x8a8c8d,0x9a9c9d,0x77797a,8) },
+  { name:'polished_andesite', tex: twoTone(es(),0x969899,0x8a8c8d,undefined,5) },
+  { name:'stone_bricks',          tex: stoneBrickTex(es(),false,false) },
+  { name:'mossy_stone_bricks',    tex: stoneBrickTex(es(),true,false) },
+  { name:'cracked_stone_bricks',  tex: stoneBrickTex(es(),false,true) },
+  { name:'chiseled_stone_bricks', tex: chiseledStone(es()) },
+  { name:'mossy_cobblestone',     tex: mossyCobbleTex(es()) },
+  { name:'red_sand',        tex: speckle(0xbe6721,10,es()) },
+  { name:'coarse_dirt',     tex: twoTone(es(),0x7a5638,0x6a4a2e,0x8a6848,16) },
+  { name:'podzol',          tex: twoTone(es(),0x6a4a2b,0x8a5a24,0x4a3418,16) },
+  { name:'mycelium',        tex: twoTone(es(),0x6e5f70,0x7a6a7c,0x5a4d5c,10) },
+  { name:'clay',            tex: speckle(0xa4a8b6,7,es()) },
+  { name:'hardened_clay',   tex: speckle(0x96593f,10,es()) },
+  { name:'soul_sand',       tex: soulSandTex(es()) },
+  { name:'end_stone',       tex: twoTone(es(),0xdadab0,0xcaca9a,undefined,7) },
+  { name:'nether_brick',    tex: brickPat(es(),0x2e1417,0x231013) },
+  { name:'red_sandstone',   top: speckle(0xa64f16,8,es()), side: pillarSideTex(es(),0xa9531a), bottom: speckle(0xa64f16,8,es()) },
+  { name:'chiseled_sandstone', top: speckle(0xd8ce97,8,es()), side: chiseledStone(es()), bottom: speckle(0xd8ce97,8,es()) },
+  { name:'quartz_block',    tex: speckle(0xebe8e2,5,es()) },
+  { name:'chiseled_quartz', top: speckle(0xe9e6df,5,es()), side: (()=>{ const r=rng(es()); return (x,y)=>{ if(x===0||x===15||y===0||y===15) return vary(rgb(0xd8d4cc),4,r); return vary(rgb(0xece9e2),5,r); }; })() },
+  { name:'quartz_pillar',   top: speckle(0xe9e6df,4,es()), side: pillarSideTex(es(),0xe9e6df) },
+  { name:'prismarine',        tex: prismarineTex(es(),0x639a8f) },
+  { name:'prismarine_bricks', tex: prismarineTex(es(),0x5f9e8f) },
+  { name:'dark_prismarine',   tex: prismarineTex(es(),0x33564a) },
+  { name:'sea_lantern',     tex: seaLanternTex(es()), light:15 },
+  { name:'slime_block',     tex: slimeTex(es()), opaque:false },
+  { name:'packed_ice',      tex: speckle(0x7fa8d8,7,es()) },
+  { name:'snow_block',      tex: speckle(0xf0f4f8,4,es()) },
+  { name:'sponge',          tex: spongeTex(es()) },
+  { name:'hay_block',       top: (()=>{ const r=rng(es()); return (x,y)=>{ const e=x===0||x===15||y===0||y===15; return vary(rgb(e?0x8a6f16:0xc6a71e),8,r); }; })(), side: pillarSideTex(es(),0xc6a71e) },
+  { name:'jack_o_lantern',  top: speckle(0xb26a18,10,es()), side: jackFaceTex(es()), light:15 },
+  // ores + mineral blocks
+  { name:'emerald_ore',  tex: oreTex(es(),0x17dd62) },
+  { name:'lapis_ore',    tex: oreTex(es(),0x2049b0) },
+  { name:'nether_quartz_ore', tex: (()=>{ const r=rng(es()), nr=rgb(0x6e2b2b), q=rgb(0xe4ddd6); const blobs=[]; for(let i=0;i<4;i++) blobs.push([2+((r()*12)|0),2+((r()*12)|0)]); return (x,y)=>{ for(const [bx,by] of blobs) if(Math.abs(x-bx)+Math.abs(y-by)<=1) return vary(q,10,r); return vary(nr,18,r); }; })() },
+  { name:'iron_block',    tex: mineralBlock(es(),0xdcdcdc) },
+  { name:'gold_block',    tex: mineralBlock(es(),0xf7e463) },
+  { name:'diamond_block', tex: mineralBlock(es(),0x6ff0e6) },
+  { name:'emerald_block', tex: mineralBlock(es(),0x44d47f) },
+  { name:'coal_block',    tex: mineralBlock(es(),0x2a2a2a) },
+  { name:'redstone_block',tex: mineralBlock(es(),0xcf1d0f) },
+  { name:'lapis_block',   tex: mineralBlock(es(),0x1f44a3) },
+  // leaves for each wood type
+  { name:'spruce_leaves', tex: leaves(es(),0x4a6b4a), opaque:false, cutout:true },
+  { name:'birch_leaves',  tex: leaves(es(),0x80a755), opaque:false, cutout:true },
+  { name:'jungle_leaves', tex: leaves(es(),0x30a80f), opaque:false, cutout:true },
+  { name:'acacia_leaves', tex: leaves(es(),0x6a7a2f), opaque:false, cutout:true },
+  { name:'dark_oak_leaves', tex: leaves(es(),0x3a5f20), opaque:false, cutout:true },
+  // spawn eggs (items, not real blocks) — right-click spawns the creature
+  { name:'leong_sahur_spawn_egg', tex: spawnEggTex(es(), 0x9a7a4a, 0x4a3320),
+    spawnEgg:true, mobType:'leong', opaque:false, solid:false, display:'Leong Leong Leong Sahur' },
+  { name:'tralaleon_spawn_egg', tex: spawnEggTex(es(), 0x5a86a8, 0x2f4f6a),
+    spawnEgg:true, mobType:'tralaleon', opaque:false, solid:false, display:'Tralaleon Tralala' },
+];
+// stained clay + stained glass, 16 colours each
+for(const [n,clay,glass] of DYES){
+  EXTRA.push({ name:n+'_stained_clay', tex: stainedClayTex(es(), clay) });
+  EXTRA.push({ name:n+'_stained_glass', tex: stainedGlass(es(), glass), opaque:false });
+}
+// paint every EXTRA texture into the atlas
+for(const e of EXTRA){
+  if(e.tex){ paint(e.name, e.tex); }
+  else {
+    paint(e.name+'_top', e.top);
+    if(e.side) paint(e.name+'_side', e.side);
+    if(e.bottom) paint(e.name+'_bottom', e.bottom);
+  }
+}
+
+/* upload the atlas as a texture */
+const atlasTex = new THREE.CanvasTexture(atlasCanvas);
+atlasTex.magFilter = THREE.NearestFilter;
+atlasTex.minFilter = THREE.NearestFilter;
+atlasTex.colorSpace = THREE.SRGBColorSpace;
+atlasTex.generateMipmaps = false;
+const T = name => tileIndex[name];   // shorthand
+
+/* ------------------------------------------------------ block definitions -- */
+const AIR = 0;
+const B = {};
+B.grass  = def('grass',  { tiles:[T('grass_top'), T('grass_side'), T('dirt')] });
+B.dirt   = def('dirt',   { tiles:T('dirt') });
+B.stone  = def('stone',  { tiles:T('stone') });
+B.cobble = def('cobblestone', { tiles:T('cobble') });
+B.bedrock= def('bedrock',{ tiles:T('bedrock') });
+B.sand   = def('sand',   { tiles:T('sand') });
+B.gravel = def('gravel', { tiles:T('gravel') });
+B.log    = def('oak_log',{ tiles:[T('oak_log_top'), T('oak_log_side'), T('oak_log_top')] });
+B.planks = def('oak_planks', { tiles:T('oak_planks') });
+B.leaves = def('oak_leaves', { tiles:T('oak_leaves'), opaque:false, cutout:true });
+B.coal   = def('coal_ore', { tiles:T('coal_ore') });
+B.iron   = def('iron_ore', { tiles:T('iron_ore') });
+B.gold   = def('gold_ore', { tiles:T('gold_ore') });
+B.diamond= def('diamond_ore', { tiles:T('diamond_ore') });
+B.redstone=def('redstone_ore', { tiles:T('redstone_ore') });
+B.glass  = def('glass',  { tiles:T('glass'), opaque:false });
+B.water  = def('water',  { tiles:T('water'), opaque:false, solid:false, liquid:true });
+B.sandstone=def('sandstone', { tiles:T('sandstone') });
+B.bricks = def('bricks', { tiles:T('bricks') });
+B.snow   = def('snow',   { tiles:T('snow') });
+B.ice    = def('ice',    { tiles:T('ice'), opaque:false });
+B.obsidian=def('obsidian', { tiles:T('obsidian') });
+B.netherrack=def('netherrack', { tiles:T('netherrack') });
+B.glowstone=def('glowstone', { tiles:T('glowstone'), light:14 });
+B.pumpkin= def('pumpkin',{ tiles:[T('pumpkin_top'), T('pumpkin_side'), T('pumpkin_top')] });
+B.melon  = def('melon',  { tiles:T('melon_side') });
+B.crafting=def('crafting_table', { tiles:[T('crafting_top'), T('oak_planks'), T('oak_planks')] });
+B.furnace= def('furnace',{ tiles:[T('stone'), T('furnace_front'), T('stone')] });
+B.bookshelf=def('bookshelf', { tiles:[T('oak_planks'), T('bookshelf'), T('oak_planks')] });
+
+// every wood type: logs + planks (oak already defined above)
+WOODS.forEach(w=>{
+  if(w.id!=='oak'){
+    B[w.id+'_log']    = def(w.id+'_log',    { tiles:[T(w.id+'_log_top'),T(w.id+'_log_side'),T(w.id+'_log_top')] });
+    B[w.id+'_planks'] = def(w.id+'_planks', { tiles:T(w.id+'_planks') });
+  }
+});
+// every wool colour
+WOOLS.forEach(([n])=> B[n+'_wool'] = def(n+'_wool', { tiles:T(n+'_wool') }));
+
+// define every EXTRA block (pass-1 expansion)
+for(const e of EXTRA){
+  const opts={};
+  if(e.opaque===false) opts.opaque=false;
+  if(e.cutout) opts.cutout=true;
+  if(e.light) opts.light=e.light;
+  if(e.solid===false) opts.solid=false;
+  if(e.spawnEgg) opts.spawnEgg=true;
+  if(e.mobType) opts.mobType=e.mobType;
+  if(e.display) opts.display=e.display;
+  if(e.tex){ opts.tiles=T(e.name); }
+  else {
+    const top=T(e.name+'_top');
+    const side=e.side!==undefined?T(e.name+'_side'):top;
+    const bottom=e.bottom!==undefined?T(e.name+'_bottom'):top;
+    opts.tiles=[top, side, bottom];
+  }
+  B[e.name]=def(e.name, opts);
+}
+
+// blocks affected by gravity (settle downward like real Minecraft)
+const GRAVITY = new Set([B.sand, B.gravel, B.red_sand]);
+
+// placeable palette = every real block, in definition order
+const PALETTE = [];
+for(const k of Object.keys(BLOCKS)){ const n=Number(k); if(Number.isInteger(n) && n>0 && !PALETTE.includes(n)) PALETTE.push(n); }
+
+/* helper: is a block see-through for meshing purposes */
+function isOpaque(id){ return id!==AIR && BLOCKS[id] && BLOCKS[id].opaque; }
+function faceTile(bl, face){ // face: 0 top,1 bottom,2..5 sides
+  const t = bl.tiles;
+  if (typeof t === 'number') return t;
+  if (face===0) return t[0]; if (face===1) return t[2]; return t[1];
+}
+
+/* ============================================================= NOISE ====== */
+function makeNoise(seed){
+  const p = new Uint8Array(512); const perm = [];
+  for(let i=0;i<256;i++) perm[i]=i;
+  let s = seed>>>0; const rand=()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
+  for(let i=255;i>0;i--){ const j=(rand()*(i+1))|0; [perm[i],perm[j]]=[perm[j],perm[i]]; }
+  for(let i=0;i<512;i++) p[i]=perm[i&255];
+  const fade=t=>t*t*t*(t*(t*6-15)+10);
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const grad=(h,x,y)=>{ const u=(h&1)?x:-x, v=(h&2)?y:-y; return u+v; };
+  function n2(x,y){
+    const X=Math.floor(x)&255, Y=Math.floor(y)&255;
+    x-=Math.floor(x); y-=Math.floor(y);
+    const u=fade(x), v=fade(y);
+    const A=p[X]+Y, Bb=p[X+1]+Y;
+    return lerp(lerp(grad(p[A],x,y), grad(p[Bb],x-1,y), u),
+               lerp(grad(p[A+1],x,y-1), grad(p[Bb+1],x-1,y-1), u), v);
+  }
+  function n3(x,y,z){ // cheap 3D from two 2D slices
+    return (n2(x,y+z*0.37) + n2(y+31.4, z - x*0.19))*0.5;
+  }
+  return { n2, n3 };
+}
+
+/* ============================================================ WORLD ======= */
+let seed = (Math.random()*1e9)|0;
+let noise = makeNoise(seed);
+const chunks = new Map();               // "cx,cz" -> Chunk
+const key = (cx,cz)=> cx+','+cz;
+
+// Multiplayer: edits from the shared server, indexed by chunk, applied as each
+// chunk generates so a joining player sees everyone's builds. Map cx,cz -> Map(lx,ly,lz -> blockId)
+const mpOverrides = new Map();
+function mpSetOverride(x,y,z,b){
+  const cx=Math.floor(x/CH), cz=Math.floor(z/CH), k=cx+','+cz;
+  let m=mpOverrides.get(k); if(!m){ m=new Map(); mpOverrides.set(k,m); }
+  m.set((x-cx*CH)+','+y+','+(z-cz*CH), b);
+}
+
+function terrainHeight(x,z){
+  const cont = noise.n2(x*0.006, z*0.006);          // continents
+  const hills = noise.n2(x*0.02, z*0.02)*0.6;
+  const rough = noise.n2(x*0.06, z*0.06)*0.25;
+  let h = SEA + 2 + (cont*22 + hills*10 + rough*5);
+  const mt = noise.n2(x*0.0035+100, z*0.0035-100);
+  if (mt>0.35) h += (mt-0.35)*70;                    // mountains
+  return Math.max(4, Math.min(WH-6, Math.round(h)));
+}
+function biomeAt(x,z){
+  const t = noise.n2(x*0.004+500, z*0.004+500);
+  if (t < -0.35) return 'desert';
+  if (t >  0.45) return 'snow';
+  return 'plains';
+}
+
+class Chunk{
+  constructor(cx,cz){
+    this.cx=cx; this.cz=cz;
+    this.data = new Uint8Array(CH*CH*WH);
+    this.mesh = null; this.tmesh = null;   // opaque + transparent meshes
+    this.dirty = true; this.generated = false;
+  }
+  idx(x,y,z){ return (y*CH + z)*CH + x; }
+  get(x,y,z){ if(y<0||y>=WH) return AIR; return this.data[this.idx(x,y,z)]; }
+  set(x,y,z,v){ this.data[this.idx(x,y,z)] = v; }
+  generate(){
+    const { cx, cz } = this;
+    for(let x=0;x<CH;x++) for(let z=0;z<CH;z++){
+      const wx = cx*CH + x, wz = cz*CH + z;
+      const h = terrainHeight(wx,wz);
+      const biome = biomeAt(wx,wz);
+      for(let y=0;y<=Math.max(h,SEA);y++){
+        let b = AIR;
+        if (y===0) b = B.bedrock;
+        else if (y < h-4) b = oreOrStone(wx,y,wz);
+        else if (y < h)   b = (biome==='desert')? B.sand : B.dirt;
+        else if (y === h){
+          if (biome==='desert') b = B.sand;
+          else if (biome==='snow') b = B.snow;
+          else b = (h<=SEA+1)? B.sand : B.grass;      // beaches
+        } else if (y<=SEA) b = AIR;                    // filled below
+        if (b!==AIR) this.set(x,y,z,b);
+      }
+      // water fill
+      if (h < SEA) for(let y=h+1;y<=SEA;y++) if(this.get(x,y,z)===AIR) this.set(x,y,z,B.water);
+      // surface snow layer on snow biome water edges handled by grass->snow above
+    }
+    // trees
+    const r = rng((cx*73856093 ^ cz*19349663)>>>0);
+    const nTrees = (biomeFor(cx,cz)==='desert')?0:(2 + (r()*4|0));
+    for(let i=0;i<nTrees;i++){
+      const x=2+(r()*(CH-4)|0), z=2+(r()*(CH-4)|0);
+      const wx=cx*CH+x, wz=cz*CH+z, h=terrainHeight(wx,wz);
+      if (h>SEA && this.get(x,h,z)===B.grass) this.tree(x,h+1,z,r);
+    }
+    this.generated = true;
+    // apply shared-world edits for this chunk (multiplayer)
+    const ov = mpOverrides.get(this.cx+','+this.cz);
+    if(ov) for(const [lk,b] of ov){ const p=lk.split(','); this.set(+p[0],+p[1],+p[2], b); }
+  }
+  tree(x,y,z,r){
+    const th = 4 + (r()*2|0);
+    for(let i=0;i<th;i++) if(y+i<WH) this.set(x,y+i,z,B.log);
+    const top=y+th;
+    for(let dy=-2;dy<=1;dy++) for(let dx=-2;dx<=2;dx++) for(let dz=-2;dz<=2;dz++){
+      const rad = (dy>=0)?1:2;
+      if (Math.abs(dx)+Math.abs(dz) > rad+1) continue;
+      const px=x+dx, py=top+dy, pz=z+dz;
+      if (px<0||px>=CH||pz<0||pz>=CH||py<0||py>=WH) continue;
+      if (this.get(px,py,pz)===AIR) this.set(px,py,pz,B.leaves);
+    }
+  }
+}
+function biomeFor(cx,cz){ return biomeAt(cx*CH+8, cz*CH+8); }
+function oreOrStone(x,y,z){
+  const n = noise.n3(x*0.09+seed*0.01, y*0.09, z*0.09);
+  if (y<14 && n>0.72) return B.diamond;
+  if (y<24 && n>0.66) return B.gold;
+  if (n>0.62) return B.redstone;
+  if (n>0.55) return B.iron;
+  if (n>0.48) return B.coal;
+  // caves
+  const c = noise.n3(x*0.055-99, y*0.09, z*0.055+99);
+  if (c>0.62 && y>2 && y<h_here(x,z)-2) return AIR;
+  return B.stone;
+}
+function h_here(x,z){ return terrainHeight(x,z); }
+
+/* world block access across chunks */
+function getBlock(wx,wy,wz){
+  if (wy<0||wy>=WH) return AIR;
+  const cx=Math.floor(wx/CH), cz=Math.floor(wz/CH);
+  const c = chunks.get(key(cx,cz));
+  if (!c || !c.generated) return AIR;
+  return c.get(wx-cx*CH, wy, wz-cz*CH);
+}
+function setBlock(wx,wy,wz,v){
+  if (wy<0||wy>=WH) return;
+  const cx=Math.floor(wx/CH), cz=Math.floor(wz/CH);
+  const c = chunks.get(key(cx,cz)); if(!c) return;
+  c.set(wx-cx*CH, wy, wz-cz*CH, v); c.dirty=true;
+  // dirty neighbours if on border
+  const lx=wx-cx*CH, lz=wz-cz*CH;
+  if(lx===0) markDirty(cx-1,cz); if(lx===CH-1) markDirty(cx+1,cz);
+  if(lz===0) markDirty(cx,cz-1); if(lz===CH-1) markDirty(cx,cz+1);
+}
+function markDirty(cx,cz){ const c=chunks.get(key(cx,cz)); if(c) c.dirty=true; }
+
+/* gravity: settle sand/gravel down a column until each rests on something */
+function settleColumn(x,z){
+  let changed=true, guard=0;
+  while(changed && guard++<WH){
+    changed=false;
+    for(let y=1;y<WH;y++){
+      const id=getBlock(x,y,z);
+      if(GRAVITY.has(id) && getBlock(x,y-1,z)===AIR){ setBlock(x,y,z,AIR); setBlock(x,y-1,z,id); changed=true; }
+    }
+  }
+}
+
+/* simple bounded flowing water — spreads down, then sideways up to MAXL steps */
+const waterLvl = new Map();
+let waterQ = [];
+const wkey=(x,y,z)=>x+','+y+','+z;
+function enqueueWater(x,y,z,lvl){ if(lvl!==undefined) waterLvl.set(wkey(x,y,z),lvl); waterQ.push([x,y,z]); }
+function touchWaterAround(x,y,z){
+  for(const [dx,dy,dz] of [[0,0,0],[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]])
+    if(getBlock(x+dx,y+dy,z+dz)===B.water) enqueueWater(x+dx,y+dy,z+dz);
+}
+let waterTimer=0;
+function tickWater(dt){
+  waterTimer+=dt; if(waterTimer<0.18) return; waterTimer=0;
+  const q=waterQ; waterQ=[]; let n=0; const MAXL=6;
+  for(const [x,y,z] of q){
+    if(n++>3000) break;
+    if(getBlock(x,y,z)!==B.water) continue;
+    const lvl=waterLvl.get(wkey(x,y,z)) ?? 0;
+    if(getBlock(x,y-1,z)===AIR){ setBlock(x,y-1,z,B.water); waterLvl.set(wkey(x,y-1,z),0); enqueueWater(x,y-1,z); continue; }
+    if(lvl<MAXL) for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]])
+      if(getBlock(x+dx,y,z+dz)===AIR){ setBlock(x+dx,y,z+dz,B.water); waterLvl.set(wkey(x+dx,y,z+dz),lvl+1); enqueueWater(x+dx,y,z+dz); }
+  }
+}
+
+/* ============================================================ RENDERER ==== */
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x9fd4ff, 40, 150);
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.08, 1000);
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+sun.position.set(0.5,1,0.3);
+scene.add(sun);
+const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+scene.add(ambient);
+const hemi = new THREE.HemisphereLight(0xbfe0ff, 0x506030, 0.5);
+scene.add(hemi);
+
+// materials share the atlas; vertex colors carry per-face shading
+const matOpaque = new THREE.MeshLambertMaterial({ map:atlasTex, vertexColors:true });
+const matCutout = new THREE.MeshLambertMaterial({ map:atlasTex, vertexColors:true, transparent:true, alphaTest:0.5, side:THREE.DoubleSide });
+const matTrans  = new THREE.MeshLambertMaterial({ map:atlasTex, vertexColors:true, transparent:true, opacity:0.85, depthWrite:false, side:THREE.DoubleSide });
+
+/* per-face UV rect in the atlas (with a tiny inset to stop bleeding) */
+const UEPS = 0.0009;
+function tileUV(t){
+  const col = t % ATLAS_COLS, row = (t/ATLAS_COLS)|0;
+  const u0 = col/ATLAS_COLS + UEPS, u1=(col+1)/ATLAS_COLS - UEPS;
+  const v1 = 1 - (row/ATLAS_ROWS) - UEPS, v0 = 1 - (row+1)/ATLAS_ROWS + UEPS;
+  return [u0,v0,u1,v1];
+}
+
+/* face definitions: normal + 4 corner offsets (CCW) + shade */
+const FACES = [
+  { n:[0,1,0],  c:[[0,1,0],[0,1,1],[1,1,1],[1,1,0]], s:1.00 },  // top
+  { n:[0,-1,0], c:[[0,0,1],[0,0,0],[1,0,0],[1,0,1]], s:0.50 },  // bottom
+  { n:[0,0,1],  c:[[0,0,1],[1,0,1],[1,1,1],[0,1,1]], s:0.80 },  // +z
+  { n:[0,0,-1], c:[[1,0,0],[0,0,0],[0,1,0],[1,1,0]], s:0.80 },  // -z
+  { n:[1,0,0],  c:[[1,0,1],[1,0,0],[1,1,0],[1,1,1]], s:0.62 },  // +x
+  { n:[-1,0,0], c:[[0,0,0],[0,0,1],[0,1,1],[0,1,0]], s:0.62 },  // -x
+];
+const faceOrder = [0,1,2,3,4,5];
+const FACE_TILE = [0,1,2,3,4,5].map(f => f===0?0 : f===1?1 : 2); // -> faceTile arg
+
+const AO_LEVELS = [0.48, 0.66, 0.83, 1.0];
+function aoFactor(wx,wy,wz, F, co){
+  const n=F.n;
+  const fx=wx+n[0], fy=wy+n[1], fz=wz+n[2];        // block in front of the face
+  const axes=[0,1,2].filter(a=>n[a]===0);           // the two in-plane axes
+  const t1=axes[0], t2=axes[1];
+  const s1=co[t1]*2-1, s2=co[t2]*2-1;
+  const d1=[0,0,0]; d1[t1]=s1;
+  const d2=[0,0,0]; d2[t2]=s2;
+  const o1 = isOpaque(getBlock(fx+d1[0],fy+d1[1],fz+d1[2]))?1:0;
+  const o2 = isOpaque(getBlock(fx+d2[0],fy+d2[1],fz+d2[2]))?1:0;
+  const oc = isOpaque(getBlock(fx+d1[0]+d2[0],fy+d1[1]+d2[1],fz+d1[2]+d2[2]))?1:0;
+  const ao = (o1&&o2)?0:(3-(o1+o2+oc));
+  return AO_LEVELS[ao];
+}
+function buildChunkMesh(c){
+  const op = { pos:[], uv:[], col:[], idx:[] };
+  const tr = { pos:[], uv:[], col:[], idx:[] };
+  const cut= { pos:[], uv:[], col:[], idx:[] };
+  const push = (buf, bx,by,bz, face, tile, shadeMul, ao)=>{
+    const F = FACES[face];
+    const [u0,v0,u1,v1] = tileUV(tile);
+    const uvc = [[u0,v0],[u1,v0],[u1,v1],[u0,v1]];
+    const base = buf.pos.length/3;
+    for(let i=0;i<4;i++){
+      const co=F.c[i];
+      const a = ao ? aoFactor(bx,by,bz,F,co) : 1;
+      const sh = shadeMul*a;
+      buf.pos.push(bx+co[0], by+co[1], bz+co[2]);
+      buf.uv.push(uvc[i][0], uvc[i][1]);
+      buf.col.push(sh, sh, sh);
+    }
+    buf.idx.push(base,base+1,base+2, base,base+2,base+3);
+  };
+  const ox=c.cx*CH, oz=c.cz*CH;
+  for(let y=0;y<WH;y++) for(let z=0;z<CH;z++) for(let x=0;x<CH;x++){
+    const id = c.data[(y*CH+z)*CH+x];
+    if (id===AIR) continue;
+    const bl = BLOCKS[id];
+    const wx=ox+x, wz=oz+z;
+    for(let f=0;f<6;f++){
+      const F=FACES[f];
+      const nx=wx+F.n[0], ny=y+F.n[1], nz=wz+F.n[2];
+      const nb = getBlock(nx,ny,nz);
+      // cull if neighbour opaque; for liquids/glass cull against same block
+      if (isOpaque(nb)) continue;
+      if (bl.liquid && nb===id) continue;
+      if (!bl.opaque && !bl.liquid && !bl.cutout && nb===id) continue; // glass vs glass
+      const faceArg = f===0?0 : f===1?1 : 2;
+      const tile = faceTile(bl, faceArg);
+      let buf = op, useAO = true;
+      if (bl.liquid) { buf = tr; useAO = false; }
+      else if (bl.cutout) buf = cut;
+      else if (!bl.opaque) { buf = tr; useAO = false; }
+      push(buf, wx, y, wz, f, tile, F.s, useAO);
+    }
+  }
+  const make = (buf, mat)=>{
+    if(!buf.pos.length) return null;
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(buf.pos,3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(buf.uv,2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(buf.col,3));
+    g.setIndex(buf.idx);
+    g.computeVertexNormals();
+    const m=new THREE.Mesh(g, mat); m.frustumCulled=true; return m;
+  };
+  if(c.mesh){ scene.remove(c.mesh); c.mesh.geometry.dispose(); }
+  if(c.tmesh){ scene.remove(c.tmesh); c.tmesh.geometry.dispose(); }
+  if(c.cmesh){ scene.remove(c.cmesh); c.cmesh.geometry.dispose(); }
+  c.mesh = make(op, matOpaque);   if(c.mesh) scene.add(c.mesh);
+  c.cmesh= make(cut, matCutout);  if(c.cmesh) scene.add(c.cmesh);
+  c.tmesh= make(tr, matTrans);    if(c.tmesh) scene.add(c.tmesh);
+  c.dirty=false;
+}
+
+/* =================================================== CHARACTER + VIEWMODEL */
+/* An ORIGINAL blocky character (my own design, not any Minecraft skin): shown
+   in third person, plus a first-person arm + held block like MC's viewmodel. */
+const S16 = 1/16;
+function charTex(hex, amt, seed, decorate){
+  const c=document.createElement('canvas'); c.width=c.height=16; const g=c.getContext('2d');
+  const r=rng(seed), base=rgb(hex), img=g.createImageData(16,16);
+  for(let i=0;i<256;i++){ const v=vary(base,amt,r); img.data[i*4]=v[0];img.data[i*4+1]=v[1];img.data[i*4+2]=v[2];img.data[i*4+3]=255; }
+  g.putImageData(img,0,0); if(decorate) decorate(g);
+  const t=new THREE.CanvasTexture(c); t.magFilter=t.minFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+const SKIN=0xd9a066, SHIRT=0x2ea3a3, PANTS=0x394a7a, HAIR=0x5a3a24;
+const mSkin =new THREE.MeshLambertMaterial({ map:charTex(SKIN,8,201) });
+const mShirt=new THREE.MeshLambertMaterial({ map:charTex(SHIRT,10,202) });
+const mPants=new THREE.MeshLambertMaterial({ map:charTex(PANTS,10,203) });
+const mHair =new THREE.MeshLambertMaterial({ map:charTex(HAIR,8,204) });
+const mFace =new THREE.MeshLambertMaterial({ map:charTex(SKIN,6,205, g=>{
+  g.fillStyle='#f6f6f6'; g.fillRect(3,7,3,3); g.fillRect(10,7,3,3);   // eye whites
+  g.fillStyle='#243a86'; g.fillRect(4,8,2,2); g.fillRect(11,8,2,2);   // pupils
+  g.fillStyle='#7a4a30'; g.fillRect(5,12,6,1);                        // mouth
+})});
+const headMats=[mSkin,mSkin,mHair,mSkin,mFace,mSkin];  // +x,-x,+y,-y,+z(front),-z
+function part(w,h,d,mat){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); }
+
+// a humanoid player model — used for the local third-person body and every
+// remote player in multiplayer
+function makeCharacterModel(){
+  const g=new THREE.Group();
+  const torso=part(8*S16,12*S16,4*S16,mShirt); torso.position.y=18*S16;
+  const hp=new THREE.Group(); hp.position.y=24*S16;
+  const head=part(8*S16,8*S16,8*S16,headMats); head.position.y=4*S16; hp.add(head);
+  const armL=part(4*S16,12*S16,4*S16,mSkin); armL.position.set(-6*S16,18*S16,0);
+  const armR=part(4*S16,12*S16,4*S16,mSkin); armR.position.set( 6*S16,18*S16,0);
+  const legL=part(4*S16,12*S16,4*S16,mPants); legL.position.set(-2*S16,6*S16,0);
+  const legR=part(4*S16,12*S16,4*S16,mPants); legR.position.set( 2*S16,6*S16,0);
+  g.add(torso,hp,armL,armR,legL,legR);
+  g.scale.setScalar(0.9);           // ~1.8 blocks tall to match the hitbox
+  g.userData={ headPivot:hp, legL, legR };
+  return g;
+}
+const body=makeCharacterModel();
+const headPivot=body.userData.headPivot;
+body.visible=false; scene.add(body);
+// floating name tag above a remote player's head
+function makeNametag(name){
+  const c=document.createElement('canvas'); c.width=256; c.height=64;
+  const g=c.getContext('2d'); g.font='bold 26px monospace'; g.textAlign='center'; g.textBaseline='middle';
+  const w=Math.min(240, g.measureText(name).width+18);
+  g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(128-w/2, 18, w, 30);
+  g.fillStyle='#fff'; g.fillText(name, 128, 34);
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter;
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({ map:t, transparent:true, depthTest:false }));
+  s.scale.set(1.7,0.42,1); s.position.y=2.15; s.renderOrder=999;
+  return s;
+}
+
+// first-person viewmodel rendered over the world in its own scene
+const vmScene=new THREE.Scene();
+const vmCam=new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 10);
+vmScene.add(new THREE.AmbientLight(0xffffff,0.8));
+const vmDir=new THREE.DirectionalLight(0xffffff,0.6); vmDir.position.set(0.4,1,0.7); vmScene.add(vmDir);
+const vmArm=part(4*S16,12*S16,4*S16,mSkin); vmScene.add(vmArm);
+let vmBlock=null, vmHeldId=-1;
+function buildHeldBlock(id){
+  if(vmBlock){ vmScene.remove(vmBlock); vmBlock.geometry.dispose(); vmBlock.material.dispose(); vmBlock=null; }
+  vmHeldId=id||0; if(!id) return;
+  const bl=BLOCKS[id]; const geo=new THREE.BoxGeometry(1,1,1);
+  const faceArg=[2,2,0,1,2,2]; const uv=geo.attributes.uv;   // box: +x,-x,+y,-y,+z,-z
+  for(let f=0;f<6;f++){ const [u0,v0,u1,v1]=tileUV(faceTile(bl,faceArg[f]));
+    const q=[[u0,v1],[u1,v1],[u0,v0],[u1,v0]];
+    for(let k=0;k<4;k++) uv.setXY(f*4+k, q[k][0], q[k][1]); }
+  uv.needsUpdate=true;
+  vmBlock=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map:atlasTex, transparent:!bl.opaque, alphaTest:bl.cutout?0.5:0, side:THREE.DoubleSide }));
+  vmScene.add(vmBlock);
+}
+let camMode=0;                 // 0 first-person, 1 third-back, 2 third-front
+let swing=0, bobT=0;
+function doSwing(){ swing=1; }
+function updateViewmodel(dt, moving){
+  if(hotbar[selSlot]!==vmHeldId) buildHeldBlock(hotbar[selSlot]);
+  swing=Math.max(0, swing-dt*3.4);
+  const bob=(moving?0.03:0.008)*Math.sin(bobT) - (player.crouch||0)*0.14;   // hand lowers when sneaking
+  const sw=Math.sin((1-swing)*Math.PI);
+  if(vmBlock){
+    vmBlock.visible=true; vmBlock.scale.setScalar(0.52);
+    vmBlock.position.set(0.62, -0.52+bob - sw*0.18, -1.05);
+    vmBlock.rotation.set(0.35+sw*0.5, -0.5, 0.05);
+    vmArm.visible=true;
+    vmArm.position.set(0.92, -0.82+bob - sw*0.14, -0.95);
+    vmArm.rotation.set(-0.7 - sw*0.6, -0.1, -0.35);
+  } else {
+    if(vmBlock) vmBlock.visible=false;
+    vmArm.visible=true;
+    vmArm.position.set(0.72, -0.62+bob, -0.9);
+    vmArm.rotation.set(-0.95 - sw*0.8, 0, -0.15);
+  }
+}
+function camDistClamped(eye, dir, want){
+  for(let t=0.4; t<want; t+=0.2){
+    const b=getBlock(Math.floor(eye.x+dir.x*t), Math.floor(eye.y+dir.y*t), Math.floor(eye.z+dir.z*t));
+    if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid) return Math.max(0.3, t-0.3);
+  }
+  return want;
+}
+
+/* ============================================================= ENTITIES === */
+/* "Leong Leong Leong Sahur" — an original blocky creature (my own design)
+   spawned by its egg, with simple wander + gravity AI. */
+/* --- "Tung Tung Tung Sahur" style: a tall wooden bat-creature with a carved
+       face, holding a little bat, on thin stick legs (original blocky design). */
+const batWood = new THREE.MeshLambertMaterial({ map:charTex(0xba9560,7,301, g=>{
+  g.fillStyle='rgba(110,86,52,0.55)'; for(let x=1;x<16;x+=3) g.fillRect(x,0,1,16); })});   // grain
+const batDark = new THREE.MeshLambertMaterial({ map:charTex(0x7a5f3a,6,302) });
+const batFace = new THREE.MeshLambertMaterial({ map:charTex(0xba9560,5,303, g=>{
+  g.fillStyle='rgba(110,86,52,0.55)'; for(let x=1;x<16;x+=3) g.fillRect(x,0,1,16);
+  g.fillStyle='#1c1408'; g.fillRect(3,5,3,3); g.fillRect(10,5,3,3);   // angry dark eyes
+  g.fillStyle='#100b05'; g.fillRect(3,6,2,1); g.fillRect(11,6,2,1);   // brows
+  g.fillStyle='#241a0c'; g.fillRect(4,11,8,2);                        // flat mouth
+})});
+const batHead=[batWood,batWood,batWood,batWood,batFace,batWood];       // face on +z
+function makeLeongModel(){
+  const g=new THREE.Group();
+  const clubTop=part(0.82,1.02,0.74, batHead); clubTop.position.y=1.72;  // fat end + face
+  const clubMid=part(0.6,0.5,0.5, batWood);    clubMid.position.y=1.05;
+  const clubLow=part(0.44,0.5,0.42, batWood);  clubLow.position.y=0.66;  // handle
+  const legL=part(0.16,0.62,0.16, batDark); legL.position.set(-0.12,0.31,0);
+  const legR=part(0.16,0.62,0.16, batDark); legR.position.set( 0.12,0.31,0);
+  const armL=part(0.14,0.52,0.14, batWood); armL.position.set(-0.5,1.5,0); armL.rotation.z=0.25;
+  const armR=part(0.14,0.5,0.14, batWood);  armR.position.set( 0.5,1.42,0.08); armR.rotation.set(-0.5,0,-0.3);
+  const heldBat=part(0.14,0.6,0.14, batWood); heldBat.position.set(0.66,1.2,0.4); heldBat.rotation.x=-0.6;
+  g.add(clubTop,clubMid,clubLow,legL,legR,armL,armR,heldBat);
+  g.userData={legL,legR};
+  return g;
+}
+/* --- "Tralalero Tralala" style: a blue shark with a toothy grin, a dorsal and
+       tail fin, and two legs in big sneakers (original blocky design). */
+const sharkTop  =new THREE.MeshLambertMaterial({ map:charTex(0x5a86a8,7,304) });
+const sharkBelly=new THREE.MeshLambertMaterial({ map:charTex(0xcdd9df,6,305) });
+const sharkFin  =new THREE.MeshLambertMaterial({ map:charTex(0x3f6f92,6,306) });
+const sharkFace =new THREE.MeshLambertMaterial({ map:charTex(0x5a86a8,5,307, g=>{
+  g.fillStyle='#111'; g.fillRect(2,3,3,3); g.fillRect(11,3,3,3);          // eyes
+  g.fillStyle='#f4f4f4'; g.fillRect(1,9,14,5);                           // big white grin
+  g.fillStyle='#5a86a8'; for(let i=2;i<15;i+=2) g.fillRect(i,9,1,5);     // teeth gaps
+})});
+const shoeMat   =new THREE.MeshLambertMaterial({ map:charTex(0xf2f2f2,4,308, g=>{
+  g.fillStyle='#3a6fb0'; g.fillRect(0,12,16,4);                          // blue sole
+  g.fillStyle='#cfe0f2'; g.fillRect(2,3,4,5);                            // side accent
+})});
+const sharkBodyMats=[sharkTop,sharkTop,sharkTop,sharkBelly,sharkTop,sharkTop];  // belly on -y
+const sharkSnoutMats=[sharkTop,sharkTop,sharkTop,sharkBelly,sharkFace,sharkTop]; // grin on +z
+function makeTralaleonModel(){
+  const g=new THREE.Group();
+  const body=part(0.62,0.64,1.3, sharkBodyMats);  body.position.set(0,0.92,0);
+  const snout=part(0.58,0.5,0.42, sharkSnoutMats); snout.position.set(0,0.86,0.82);
+  const dorsal=part(0.1,0.52,0.5, sharkFin); dorsal.position.set(0,1.4,-0.05); dorsal.rotation.x=0.22;
+  const tail=part(0.1,0.72,0.42, sharkFin);  tail.position.set(0,1.15,-0.86); tail.rotation.x=0.32;
+  const legL=part(0.18,0.5,0.18, sharkTop); legL.position.set(-0.19,0.46,0.12);
+  const legR=part(0.18,0.5,0.18, sharkTop); legR.position.set( 0.19,0.46,0.12);
+  const shoeL=part(0.3,0.2,0.52, shoeMat); shoeL.position.set(-0.19,0.13,0.24);
+  const shoeR=part(0.3,0.2,0.52, shoeMat); shoeR.position.set( 0.19,0.13,0.24);
+  g.add(body,snout,dorsal,tail,legL,legR,shoeL,shoeR);
+  g.userData={legL,legR};
+  return g;
+}
+const MOB_MODELS={ leong:makeLeongModel, tralaleon:makeTralaleonModel };
+const mobs=[];
+function spawnMob(x,y,z,type){
+  const build=MOB_MODELS[type]||makeLeongModel;
+  const model=build(); model.position.set(x,y,z); scene.add(model);
+  mobs.push({ x,y,z, vy:0, heading:Math.random()*Math.PI*2, wt:2, walkT:0, onGround:false, model, type:type||'leong' });
+  while(mobs.length>60){ const o=mobs.shift(); scene.remove(o.model); }
+}
+function mobBlocked(x,y,z){
+  const w=0.3, top=y+1.85;
+  for(let bx=Math.floor(x-w);bx<=Math.floor(x+w);bx++)
+   for(let bz=Math.floor(z-w);bz<=Math.floor(z+w);bz++)
+    for(let by=Math.floor(y);by<=Math.floor(top);by++){
+      const b=getBlock(bx,by,bz); if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid) return true;
+    }
+  return false;
+}
+function mobSurface(x,z){ for(let yy=WH-1;yy>0;yy--){ const b=getBlock(x,yy,z); if(b!==AIR&&BLOCKS[b]&&BLOCKS[b].solid) return yy+1; } return SEA+2; }
+function updateMobs(dt){
+  for(const m of mobs){
+    m.wt-=dt;
+    if(m.wt<=0){ m.heading = Math.random()<0.25 ? null : Math.random()*Math.PI*2; m.wt=2+Math.random()*3; }
+    m.vy-=26*dt; if(m.vy<-40) m.vy=-40;
+    if(m.heading!==null){
+      const sp=1.6, mvx=Math.cos(m.heading)*sp*dt, mvz=Math.sin(m.heading)*sp*dt;
+      let moved=false;
+      if(!mobBlocked(m.x+mvx, m.y, m.z)){ m.x+=mvx; moved=true; }
+      if(!mobBlocked(m.x, m.y, m.z+mvz)){ m.z+=mvz; moved=true; }
+      if(!moved){
+        // fully blocked: hop up a one-block step if there's headroom, else turn
+        const fx=m.x+Math.cos(m.heading)*0.5, fz=m.z+Math.sin(m.heading)*0.5;
+        if(m.onGround && !mobBlocked(fx, m.y+1.05, fz)) m.vy=7.6;
+        else m.heading=Math.random()*Math.PI*2;
+      }
+    }
+    m.y+=m.vy*dt;
+    if(mobBlocked(m.x,m.y,m.z)){ let g=0; while(mobBlocked(m.x,m.y,m.z)&&g++<60) m.y+=0.04; m.vy=0; m.onGround=true; }
+    else m.onGround=false;
+    if(m.y<-20){ m.y=mobSurface(Math.floor(m.x),Math.floor(m.z)); m.vy=0; }
+    m.model.position.set(m.x,m.y,m.z);
+    if(m.heading!==null){ m.model.rotation.y = Math.PI/2 - m.heading; m.walkT+=dt*7; }
+    const sw=Math.sin(m.walkT)*0.5;
+    m.model.userData.legL.rotation.x=sw; m.model.userData.legR.rotation.x=-sw;
+  }
+}
+
+/* ============================================================ STREAMING === */
+const VIEW = 6;   // chunk radius
+function ensureChunks(px,pz){
+  const ccx=Math.floor(px/CH), ccz=Math.floor(pz/CH);
+  // generate a ring one larger than view so meshing has neighbours
+  for(let dz=-VIEW-1; dz<=VIEW+1; dz++) for(let dx=-VIEW-1; dx<=VIEW+1; dx++){
+    const cx=ccx+dx, cz=ccz+dz, k=key(cx,cz);
+    if(!chunks.has(k)){ const c=new Chunk(cx,cz); chunks.set(k,c); genQueue.push(c); }
+  }
+  // drop far chunks
+  for(const [k,c] of chunks){
+    if (Math.abs(c.cx-ccx)>VIEW+3 || Math.abs(c.cz-ccz)>VIEW+3){
+      if(c.mesh){scene.remove(c.mesh);c.mesh.geometry.dispose();}
+      if(c.cmesh){scene.remove(c.cmesh);c.cmesh.geometry.dispose();}
+      if(c.tmesh){scene.remove(c.tmesh);c.tmesh.geometry.dispose();}
+      chunks.delete(k);
+    }
+  }
+}
+let genQueue = [];
+function processQueues(px,pz){
+  const ccx=Math.floor(px/CH), ccz=Math.floor(pz/CH);
+  // generate a few chunks per frame
+  let budget=3;
+  genQueue.sort((a,b)=> (Math.abs(a.cx-ccx)+Math.abs(a.cz-ccz)) - (Math.abs(b.cx-ccx)+Math.abs(b.cz-ccz)));
+  while(budget>0 && genQueue.length){ const c=genQueue.shift(); if(!c.generated) c.generate(); budget--; }
+  // mesh a few dirty chunks per frame, nearest first, only within view
+  let mbudget=3; let best=null;
+  const dirties=[];
+  for(const [,c] of chunks){
+    if(c.dirty && c.generated && Math.abs(c.cx-ccx)<=VIEW && Math.abs(c.cz-ccz)<=VIEW) dirties.push(c);
+  }
+  dirties.sort((a,b)=> (Math.abs(a.cx-ccx)+Math.abs(a.cz-ccz)) - (Math.abs(b.cx-ccx)+Math.abs(b.cz-ccz)));
+  for(const c of dirties){ if(mbudget<=0) break; buildChunkMesh(c); mbudget--; }
+}
+
+/* ============================================================ PLAYER ====== */
+const player = {
+  pos: new THREE.Vector3(8, 0, 8),
+  vel: new THREE.Vector3(),
+  yaw: 0, pitch: 0,
+  onGround:false, flying:true, sprint:false, sneak:false, crouch:0,
+  w:0.6, h:1.8, eye:1.62,
+};
+let creative = true;
+
+function spawnPlayer(){
+  const h = terrainHeight(8,8);
+  player.pos.set(8.5, h+3, 8.5);
+  player.vel.set(0,0,0);
+  player.flying = false;      // spawn walking; double-tap Space to toggle flight
+}
+
+const keys = Object.create(null);
+let pointerLocked = false;
+addEventListener('keydown', e=>{
+  const k=e.key.toLowerCase();
+  // typing in the search box: let it type, don't drive the game
+  if(document.activeElement && document.activeElement.tagName==='INPUT'){
+    if(k==='escape'){ document.activeElement.blur(); if(invOpen) toggleInv(); }
+    return;
+  }
+  keys[k]=true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  if(k==='e' && state===PLAY){ e.preventDefault(); toggleInv(); }
+  if(k==='t' && state===PLAY && !invOpen){ e.preventDefault(); openChat(); return; }
+  if(k==='f3'){ e.preventDefault(); dbg.hidden=!dbg.hidden; }
+  if(k==='f' && creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; }
+  if(k==='f5' && state===PLAY){ e.preventDefault(); camMode=(camMode+1)%3; }
+  if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
+  if(k==='escape'){ if(invOpen) toggleInv(); else if(state===PLAY) pause(); }
+});
+addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
+addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; });
+
+// double-tap space to toggle fly in creative
+let lastSpace=0;
+addEventListener('keydown', e=>{
+  if(e.code==='Space' && creative && state===PLAY){
+    const now=performance.now();
+    if(now-lastSpace<300){ player.flying=!player.flying; player.vel.y=0; }
+    lastSpace=now;
+  }
+});
+
+canvas.addEventListener('mousedown', e=>{
+  if(state!==PLAY) return;
+  if(!pointerLocked){ canvas.requestPointerLock(); return; }
+  if(e.button===0){ doSwing(); breakBlock(); }
+  else if(e.button===2){ doSwing(); placeBlock(); }
+  else if(e.button===1){ pickBlock(); e.preventDefault(); }
+});
+canvas.addEventListener('contextmenu', e=>e.preventDefault());
+canvas.addEventListener('wheel', e=>{
+  if(state!==PLAY) return;
+  selectSlot(selSlot + (e.deltaY>0?1:-1));
+}, {passive:true});
+
+document.addEventListener('pointerlockchange', ()=>{
+  pointerLocked = document.pointerLockElement===canvas;
+  if(!pointerLocked && state===PLAY && !invOpen) pause();
+});
+document.addEventListener('mousemove', e=>{
+  if(!pointerLocked) return;
+  const s=0.0022;
+  player.yaw   -= e.movementX*s;
+  player.pitch -= e.movementY*s;
+  const lim=Math.PI/2-0.01;
+  player.pitch=Math.max(-lim,Math.min(lim,player.pitch));
+});
+
+/* ---- physics + movement ---- */
+function collides(px,py,pz){
+  const w=player.w/2;
+  const x0=Math.floor(px-w), x1=Math.floor(px+w);
+  const y0=Math.floor(py), y1=Math.floor(py+player.h);
+  const z0=Math.floor(pz-w), z1=Math.floor(pz+w);
+  for(let y=y0;y<=y1;y++) for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++){
+    const b=getBlock(x,y,z);
+    if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid) return true;
+  }
+  return false;
+}
+function inLiquid(){
+  const b=getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y+player.eye-0.3), Math.floor(player.pos.z));
+  return b!==AIR && BLOCKS[b] && BLOCKS[b].liquid;
+}
+// is there solid ground directly under the player's footprint at (x,z)?
+function groundUnder(x,z){
+  const w=player.w/2, fy=Math.floor(player.pos.y-0.02);
+  for(let bx=Math.floor(x-w);bx<=Math.floor(x+w);bx++)
+   for(let bz=Math.floor(z-w);bz<=Math.floor(z+w);bz++){
+     const b=getBlock(bx,fy,bz); if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid) return true;
+   }
+  return false;
+}
+function updatePlayer(dt){
+  const fwd = new THREE.Vector3(-Math.sin(player.yaw),0,-Math.cos(player.yaw));
+  const right = new THREE.Vector3(Math.cos(player.yaw),0,-Math.sin(player.yaw));
+  player.sprint = !!keys['control'] || false;
+  const wish = new THREE.Vector3();
+  if(keys['w']) wish.add(fwd); if(keys['s']) wish.sub(fwd);
+  if(keys['d']) wish.add(right); if(keys['a']) wish.sub(right);
+  wish.y=0; if(wish.lengthSq()>0) wish.normalize();
+
+  const swimming = inLiquid();
+  player.sneak = false;
+  if(player.flying){
+    const speed = (keys['shift']?18:9);
+    player.vel.x = wish.x*speed; player.vel.z = wish.z*speed;
+    player.vel.y = 0;
+    if(keys[' ']) player.vel.y = speed; if(keys['shift']) player.vel.y = -speed;
+  } else {
+    const sneaking = keys['shift'] && player.onGround && !swimming;
+    player.sneak = sneaking;
+    const base = sneaking ? 1.35 : (keys['w'] && keys['control'] ? 6.4 : 4.3);
+    const accel = swimming? 3.0 : base;
+    const tvx = wish.x*accel, tvz = wish.z*accel;
+    // ice is slippery: velocity eases toward the target instead of snapping
+    const fb = getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y-0.1), Math.floor(player.pos.z));
+    const onIce = player.onGround && (fb===B.ice || fb===B.packed_ice);
+    if(onIce){
+      const g2 = 1 - Math.exp(-2.6*dt);
+      player.vel.x += (tvx - player.vel.x)*g2;
+      player.vel.z += (tvz - player.vel.z)*g2;
+    } else {
+      player.vel.x = tvx; player.vel.z = tvz;
+    }
+    const g = swimming? 9 : 26;
+    player.vel.y -= g*dt;
+    if(swimming){ player.vel.y = Math.max(player.vel.y,-2.2); if(keys[' ']) player.vel.y = 3.2; }
+    else if(keys[' '] && player.onGround){ player.vel.y = 8.4; player.onGround=false; }
+    if(player.vel.y<-40) player.vel.y=-40;
+  }
+
+  // integrate w/ per-axis collision (sliding)
+  const grounded = player.onGround;   // support state carried from last frame
+  const step = (axis,d)=>{
+    if(d===0) return;
+    const p=player.pos.clone(); p[axis]+=d;
+    if(collides(p.x,p.y,p.z)){
+      if(axis==='y'){ if(d<0) player.onGround=true; player.vel.y=0; }
+      else player.vel[axis]=0;
+      return;
+    }
+    // sneak edge protection: refuse a horizontal step that walks off a ledge
+    if((axis==='x'||axis==='z') && player.sneak && grounded && !groundUnder(p.x, p.z)) return;
+    player.pos[axis]=p[axis];
+  };
+  player.onGround=false;
+  step('x', player.vel.x*dt);
+  step('z', player.vel.z*dt);
+  step('y', player.vel.y*dt);
+  // check ground contact
+  if(!player.flying){
+    const fp=player.pos.clone(); fp.y-=0.05;
+    if(collides(fp.x,fp.y,fp.z)) player.onGround=true;
+  }
+  // sneak crouch easing: lowers the camera + squashes the body model
+  player.crouch += ((player.sneak?1:0) - player.crouch) * (1 - Math.exp(-16*dt));
+  player.eye = 1.62 - player.crouch*0.16;
+}
+
+/* ---- raycast (voxel DDA) for targeting ---- */
+let target=null; // {x,y,z, nx,ny,nz}
+function raycast(){
+  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye, player.pos.z);
+  const d=camDir();
+  let x=Math.floor(o.x), y=Math.floor(o.y), z=Math.floor(o.z);
+  const stepX=Math.sign(d.x), stepY=Math.sign(d.y), stepZ=Math.sign(d.z);
+  const tDX = stepX!==0? Math.abs(1/d.x):1e9;
+  const tDY = stepY!==0? Math.abs(1/d.y):1e9;
+  const tDZ = stepZ!==0? Math.abs(1/d.z):1e9;
+  let tMX = stepX>0? (x+1-o.x)/d.x : stepX<0? (x-o.x)/d.x : 1e9;
+  let tMY = stepY>0? (y+1-o.y)/d.y : stepY<0? (y-o.y)/d.y : 1e9;
+  let tMZ = stepZ>0? (z+1-o.z)/d.z : stepZ<0? (z-o.z)/d.z : 1e9;
+  tMX=Math.abs(tMX); tMY=Math.abs(tMY); tMZ=Math.abs(tMZ);
+  let nx=0,ny=0,nz=0, t=0;
+  for(let i=0;i<80;i++){
+    const b=getBlock(x,y,z);
+    if(b!==AIR && BLOCKS[b] && !BLOCKS[b].liquid){ target={x,y,z,nx,ny,nz}; return; }
+    if(tMX<tMY && tMX<tMZ){ x+=stepX; t=tMX; tMX+=tDX; nx=-stepX; ny=0; nz=0; }
+    else if(tMY<tMZ){ y+=stepY; t=tMY; tMY+=tDY; nx=0; ny=-stepY; nz=0; }
+    else { z+=stepZ; t=tMZ; tMZ+=tDZ; nx=0; ny=0; nz=-stepZ; }
+    if(t>REACH){ target=null; return; }
+  }
+  target=null;
+}
+function camDir(){
+  return new THREE.Vector3(
+    -Math.sin(player.yaw)*Math.cos(player.pitch),
+    Math.sin(player.pitch),
+    -Math.cos(player.yaw)*Math.cos(player.pitch)
+  );
+}
+function breakBlock(){
+  if(!target) return;
+  const {x,y,z}=target;
+  setBlock(x,y,z, AIR);
+  waterLvl.delete(wkey(x,y,z));
+  if(!mp.active){                // keep the shared world static + consistent
+    settleColumn(x,z);           // sand/gravel above may now fall
+    touchWaterAround(x,y,z);     // adjacent water may flow into the gap
+  }
+  mpSendBlock(x,y,z,0);
+}
+function placeBlock(){
+  if(!target) return;
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id = hotbar[selSlot]; if(!id) return;
+  const bl = BLOCKS[id];
+  if(bl.spawnEgg){ spawnMob(px+0.5, py, pz+0.5, bl.mobType); return; }   // egg spawns a creature
+  const cur=getBlock(px,py,pz);
+  // place into air, or into water (which removes the water)
+  if(cur!==AIR && !(BLOCKS[cur] && BLOCKS[cur].liquid)) return;
+  // a SOLID block may not be placed inside the player
+  if(bl.solid){
+    const w=player.w/2;
+    if(px+1>player.pos.x-w && px<player.pos.x+w &&
+       pz+1>player.pos.z-w && pz<player.pos.z+w &&
+       py+1>player.pos.y && py<player.pos.y+player.h) return;
+  }
+  setBlock(px,py,pz, id);
+  if(!mp.active){                // keep the shared world static + consistent
+    if(id===B.water) enqueueWater(px,py,pz,0);
+    if(GRAVITY.has(id)) settleColumn(px,pz);
+    touchWaterAround(px,py,pz);
+  }
+  mpSendBlock(px,py,pz,id);
+}
+function pickBlock(){ if(target){ const b=getBlock(target.x,target.y,target.z); if(b){ hotbar[selSlot]=b; renderHotbar(); showItemName(b); } } }
+
+/* block selection outline */
+const outline = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002,1.002,1.002)),
+  new THREE.LineBasicMaterial({ color:0x000000, transparent:true, opacity:0.4 })
+);
+outline.visible=false; scene.add(outline);
+
+/* ============================================================ HUD ========= */
+const hotbar = [B.grass,B.dirt,B.cobble,B.planks,B.log,B.glass,B.sand,B.stone,B.glowstone];
+let selSlot=0;
+const hotbarEl=document.getElementById('hotbar');
+function blockIconCanvas(id, size){
+  const cv=document.createElement('canvas'); cv.width=cv.height=size;
+  const g=cv.getContext('2d'); g.imageSmoothingEnabled=false;
+  const bl=BLOCKS[id]; if(!bl) return cv;
+  const t=faceTile(bl,2);           // side texture
+  const col=t%ATLAS_COLS, row=(t/ATLAS_COLS)|0;
+  g.drawImage(atlasCanvas, col*TILE, row*TILE, TILE, TILE, 0,0,size,size);
+  return cv;
+}
+function renderHotbar(){
+  hotbarEl.innerHTML='';
+  for(let i=0;i<9;i++){
+    const s=document.createElement('div'); s.className='slot'+(i===selSlot?' sel':'');
+    const id=hotbar[i];
+    if(id){ s.appendChild(blockIconCanvas(id,40)); }
+    hotbarEl.appendChild(s);
+  }
+}
+// held-item name pops up above the hotbar on select, then fades (like Minecraft)
+const itemNameEl=document.getElementById('itemName');
+let itemNameTimer=null;
+function showItemName(id){
+  if(!id){ itemNameEl.style.opacity='0'; return; }
+  itemNameEl.textContent = BLOCKS[id].display || pretty(BLOCKS[id].name);
+  itemNameEl.style.transition='none'; itemNameEl.style.opacity='1';
+  void itemNameEl.offsetWidth;                 // restart the fade
+  clearTimeout(itemNameTimer);
+  itemNameTimer=setTimeout(()=>{ itemNameEl.style.transition='opacity .55s ease'; itemNameEl.style.opacity='0'; }, 1400);
+}
+function selectSlot(i){ selSlot=((i%9)+9)%9; renderHotbar(); showItemName(hotbar[selSlot]); }
+const dbg=document.getElementById('dbg');
+
+/* inventory */
+const invEl=document.getElementById('inv'), invGrid=document.getElementById('invGrid');
+const invTabs=document.getElementById('invTabs'), invSearch=document.getElementById('invSearch');
+let invOpen=false, invCat='all', invQuery='';
+// creative-inventory categories, in the Minecraft spirit
+const CATS=[
+  {id:'all',label:'All'},{id:'building',label:'Building'},{id:'nature',label:'Nature'},
+  {id:'ores',label:'Ores & Metals'},{id:'color',label:'Wool & Color'},{id:'deco',label:'Decoration'},
+  {id:'misc',label:'Misc'},
+];
+function catOf(n){
+  if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')) return 'color';
+  if(n.endsWith('_ore')) return 'ores';
+  if(['iron_block','gold_block','diamond_block','emerald_block','coal_block','redstone_block','lapis_block'].includes(n)) return 'ores';
+  const nature=['grass','dirt','coarse_dirt','podzol','mycelium','sand','red_sand','gravel','clay','snow','snow_block','ice','packed_ice','water','soul_sand','netherrack','end_stone','melon','pumpkin','hay_block'];
+  if(nature.includes(n) || n.endsWith('_leaves') || n.endsWith('_log')) return 'nature';
+  const deco=['glass','bookshelf','crafting_table','furnace','glowstone','sea_lantern','sponge','slime_block','jack_o_lantern'];
+  if(deco.includes(n)) return 'deco';
+  if(['bedrock'].includes(n) || n.endsWith('_spawn_egg')) return 'misc';
+  return 'building';
+}
+function renderInvGrid(){
+  invGrid.innerHTML='';
+  const q=invQuery.trim().toLowerCase();
+  let shown=0;
+  for(const id of PALETTE){
+    if(!id) continue;
+    const name=BLOCKS[id].name, disp=pretty(name);
+    if(q){ if(!disp.toLowerCase().includes(q) && !name.includes(q)) continue; }
+    else if(invCat!=='all' && catOf(name)!==invCat) continue;
+    const c=document.createElement('div'); c.className='icell';
+    c.appendChild(blockIconCanvas(id,34)); c.title=disp;
+    c.addEventListener('click', ()=>{ hotbar[selSlot]=id; renderHotbar(); showItemName(id); toggleInv(); });
+    invGrid.appendChild(c); shown++;
+  }
+  if(!shown){ const e=document.createElement('div'); e.style.cssText='grid-column:1/-1;color:#555;font-size:12px;padding:10px;text-align:center'; e.textContent='No blocks match.'; invGrid.appendChild(e); }
+}
+function buildInv(){
+  invTabs.innerHTML='';
+  for(const cat of CATS){
+    const b=document.createElement('button'); b.className='invtab'+((cat.id===invCat && !invQuery)?' active':'');
+    b.textContent=cat.label;
+    b.addEventListener('click', ()=>{ invCat=cat.id; invQuery=''; invSearch.value=''; buildInv(); });
+    invTabs.appendChild(b);
+  }
+  renderInvGrid();
+}
+invSearch.addEventListener('input', ()=>{
+  invQuery=invSearch.value;
+  [...invTabs.children].forEach(b=>b.classList.remove('active'));
+  renderInvGrid();
+});
+function toggleInv(){
+  invOpen=!invOpen; invEl.hidden=!invOpen;
+  if(invOpen){ for(const kk in keys) keys[kk]=false; document.exitPointerLock(); }
+  else if(state===PLAY){ canvas.requestPointerLock(); }
+}
+
+/* ============================================================ DAY/NIGHT === */
+let tod = 0.25;   // locked to midday — always daytime for now
+function updateSky(dt){
+  const daylight = Math.max(0, Math.sin(tod*Math.PI*2 - Math.PI/2)*0.5+0.5); // 0 night .. 1 day
+  const dayCol=new THREE.Color(0x88ccff), nightCol=new THREE.Color(0x05060f), duskCol=new THREE.Color(0xff8a4d);
+  const sky=new THREE.Color().copy(nightCol).lerp(dayCol, daylight);
+  // dusk/dawn tint
+  const horizon = Math.pow(1-Math.abs(daylight-0.5)*2, 2);
+  if(daylight>0.05 && daylight<0.6) sky.lerp(duskCol, horizon*0.25);
+  scene.background = sky;
+  scene.fog.color = sky;
+  sun.intensity = 0.35 + daylight*0.9;
+  ambient.intensity = 0.25 + daylight*0.4;
+  hemi.intensity = 0.2 + daylight*0.4;
+  const ang = tod*Math.PI*2;
+  sun.position.set(Math.cos(ang), Math.sin(ang), 0.35).multiplyScalar(100);
+}
+
+/* ============================================================ STATE ======= */
+const MENU=0, PLAY=1, PAUSE=2;
+let state=MENU;
+const menuEl=document.getElementById('menu'), pauseEl=document.getElementById('pause');
+function startGame(){
+  spawnPlayer();
+  ensureChunks(player.pos.x, player.pos.z);
+  // generate the spawn area immediately so we don't fall through
+  let guard=0; while(genQueue.length && guard<400){ const c=genQueue.shift(); if(!c.generated)c.generate(); guard++; }
+  for(const [,c] of chunks) if(c.generated && Math.abs(c.cx-Math.floor(player.pos.x/CH))<=2 && Math.abs(c.cz-Math.floor(player.pos.z/CH))<=2) buildChunkMesh(c);
+  // drop player onto ground
+  const gh=terrainHeight(Math.floor(player.pos.x),Math.floor(player.pos.z));
+  player.pos.y = gh+2;
+  state=PLAY; menuEl.hidden=true; pauseEl.hidden=true; invEl.hidden=true; invOpen=false;
+  canvas.requestPointerLock();
+}
+function pause(){ state=PAUSE; pauseEl.hidden=false; document.exitPointerLock(); }
+function resume(){ state=PLAY; pauseEl.hidden=true; canvas.requestPointerLock(); }
+function regen(){
+  seed=(Math.random()*1e9)|0; noise=makeNoise(seed);
+  for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
+  chunks.clear(); genQueue=[];
+  startGame();
+}
+
+document.getElementById('playBtn').addEventListener('click', startGame);
+document.getElementById('mpBtn').addEventListener('click', ()=>startMultiplayer());
+document.getElementById('resumeBtn').addEventListener('click', resume);
+document.getElementById('regenBtn').addEventListener('click', regen);
+creative = true;   // locked to creative for now
+
+/* ========================================================= MULTIPLAYER === */
+/* One shared, persistent server world. The client connects over WebSocket,
+   receives the world seed + everyone's edits, then streams its own position,
+   block edits and chat, and renders the other players live. */
+const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0 };
+
+function mpUrl(){
+  const h = location.hostname || 'localhost';
+  if(h.endsWith('leonzhao.dev')) return 'wss://apps.leonzhao.dev/mc/ws';
+  // local dev: server runs on 8600 (override with ?mp=ws://host:port)
+  const q = new URLSearchParams(location.search).get('mp');
+  return q || ('ws://'+h+':8600/ws');
+}
+function mpApplyRemoteBlock(x,y,z,b){
+  mpSetOverride(x,y,z,b);
+  const cx=Math.floor(x/CH), cz=Math.floor(z/CH), c=chunks.get(key(cx,cz));
+  if(c && c.generated) setBlock(x,y,z,b);   // static in the shared world
+}
+function mpAddPlayer(p){
+  if(!p || p.id===mp.id || mp.players.has(p.id)) return;
+  const model=makeCharacterModel(); model.visible=true; scene.add(model);
+  const tag=makeNametag(p.name||('Player'+p.id)); model.add(tag);
+  mp.players.set(p.id, { id:p.id, name:p.name, model, tag,
+    x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0 });
+}
+function mpRemovePlayer(id){
+  const p=mp.players.get(id); if(!p) return;
+  scene.remove(p.model); mp.players.delete(id);
+}
+function mpClearPlayers(){ for(const [,p] of mp.players) scene.remove(p.model); mp.players.clear(); }
+function mpUpdatePlayers(dt){
+  for(const [,p] of mp.players){
+    const k=1-Math.exp(-12*dt);
+    p.x+=(p.tx-p.x)*k; p.y+=(p.ty-p.y)*k; p.z+=(p.tz-p.z)*k;
+    p.model.position.set(p.x, p.y, p.z);
+    p.model.rotation.y = p.yaw + Math.PI;
+    p.model.userData.headPivot.rotation.x = -p.pitch;
+  }
+}
+function mpHandle(m){
+  if(m.type==='init'){
+    mp.id=m.id; mp.name=m.name;
+    mpOverrides.clear();
+    for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
+    mpClearPlayers();
+    mpStartWorld(m.seed);
+    for(const pl of (m.players||[])) mpAddPlayer(pl);
+    chatPush('Joined the shared world as '+m.name+'  ('+((m.players||[]).length+1)+' online)', 'sys');
+  }
+  else if(m.type==='join'){ mpAddPlayer(m.player); }
+  else if(m.type==='leave'){ mpRemovePlayer(m.id); }
+  else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
+  else if(m.type==='block'){ mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+  else if(m.type==='chat'){ chatPush(m.system? m.text : (m.name+': '+m.text), m.system?'sys':''); }
+  else if(m.type==='rename'){ const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name); p.model.add(p.tag); } }
+  else if(m.type==='full'){ chatPush('Server is full right now, try again soon.', 'sys'); }
+}
+function mpConnect(){
+  if(mp.ws) return;
+  chatPush('Connecting to the server...', 'sys');
+  let ws; try{ ws=new WebSocket(mpUrl()); }catch(e){ chatPush('Could not connect.', 'sys'); return; }
+  mp.ws=ws;
+  ws.onopen=()=>{ mp.active=true; };
+  ws.onmessage=(ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } mpHandle(m); };
+  ws.onclose=()=>{ mp.active=false; mp.ws=null; mpClearPlayers(); chatPush('Disconnected from the server.', 'sys'); };
+  ws.onerror=()=>{ chatPush('Server unreachable. Is it online?', 'sys'); };
+}
+function mpSend(o){ if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} } }
+function mpSendBlock(x,y,z,b){ if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); } }
+
+// build the world from the server's seed, then enter the game
+function mpStartWorld(serverSeed){
+  seed = serverSeed>>>0; noise = makeNoise(seed);
+  for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
+  chunks.clear(); genQueue=[];
+  startGame();
+}
+function startMultiplayer(){ mpConnect(); }
+
+/* ---------------------------------------------------------------- chat --- */
+const chatLogEl=document.getElementById('chatLog');
+const chatInputEl=document.getElementById('chatInput');
+const chatMsgs=[];
+function chatPush(text, cls){
+  chatMsgs.push({ text, cls:cls||'', t:performance.now() });
+  while(chatMsgs.length>60) chatMsgs.shift();
+  renderChat();
+}
+function renderChat(){
+  const open = !chatBox.hidden;
+  chatLogEl.style.display = (state===PLAY || open) ? 'flex' : 'none';
+  const now=performance.now();
+  const show = chatMsgs.filter(m => open || now-m.t < 8000).slice(-12);
+  chatLogEl.innerHTML = show.map(m=>'<div class="cm '+m.cls+'">'+escapeHtml(m.text)+'</div>').join('');
+}
+function escapeHtml(s){ return (''+s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const chatBox=document.getElementById('chatBox');
+function openChat(){
+  chatBox.hidden=false; renderChat();
+  document.exitPointerLock();
+  chatInputEl.value=''; setTimeout(()=>chatInputEl.focus(), 0);
+}
+function closeChat(send){
+  const v=chatInputEl.value.trim();
+  chatBox.hidden=true; chatInputEl.blur();
+  if(send && v){
+    if(mp.active) mpSend({type:'chat', text:v});
+    else chatPush('You: '+v);
+  }
+  renderChat();
+  if(state===PLAY && !invOpen) canvas.requestPointerLock();
+}
+chatInputEl.addEventListener('keydown', e=>{
+  e.stopPropagation();
+  if(e.key==='Enter'){ e.preventDefault(); closeChat(true); }
+  else if(e.key==='Escape'){ e.preventDefault(); closeChat(false); }
+});
+
+/* ============================================================ LOOP ======== */
+renderHotbar(); buildInv();
+let last=performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
+
+  if(state===PLAY){
+    if(!invOpen && chatBox.hidden) updatePlayer(dt);   // freeze player while picker/chat open
+    ensureChunks(player.pos.x, player.pos.z);
+    processQueues(player.pos.x, player.pos.z);
+    raycast();
+    if(!mp.active) tickWater(dt);        // water/gravity stay client-side in singleplayer
+    updateMobs(dt);
+    mpUpdatePlayers(dt);
+    if(mp.active){                       // stream our position to the server ~15 Hz
+      const nowMs=performance.now();
+      if(nowMs-mp.lastPos>66){ mp.lastPos=nowMs; mp.posSent=(mp.posSent||0)+1;
+        mpSend({type:'pos', x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2),
+                yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); }
+    }
+    if(target){ outline.visible=true; outline.position.set(target.x+0.5,target.y+0.5,target.z+0.5); }
+    else outline.visible=false;
+  } else {
+    processQueues(player.pos.x, player.pos.z);
+  }
+  if(chatMsgs.length) renderChat();      // fade out old chat lines
+  updateSky(dt);
+
+  // camera + character model
+  const eye=new THREE.Vector3(player.pos.x, player.pos.y+player.eye, player.pos.z);
+  const d=camDir();
+  const moving=(keys['w']||keys['a']||keys['s']||keys['d']) && state===PLAY;
+  bobT += dt*(moving?9:3.5);
+  const cr=player.crouch||0;
+  body.position.set(player.pos.x, player.pos.y - cr*0.1, player.pos.z);
+  body.rotation.set(cr*0.35, player.yaw + Math.PI, 0);   // lean forward while sneaking
+  body.scale.set(0.9, 0.9*(1-cr*0.14), 0.9);
+  headPivot.rotation.x = -player.pitch;
+  body.visible = (state===PLAY && camMode!==0);
+
+  if(camMode===0){
+    camera.position.copy(eye);
+    camera.lookAt(eye.x+d.x, eye.y+d.y, eye.z+d.z);
+  } else {
+    const off=d.clone().multiplyScalar(camMode===1?-1:1);
+    const dist=camDistClamped(eye, off, 4.2);
+    camera.position.copy(eye).addScaledVector(off, dist);
+    if(camMode===1) camera.lookAt(eye.x+d.x*4, eye.y+d.y*4, eye.z+d.z*4);
+    else camera.lookAt(eye.x, eye.y, eye.z);
+  }
+  renderer.render(scene, camera);
+
+  // first-person hand overlay (only in first-person view)
+  if(state===PLAY && camMode===0){
+    updateViewmodel(dt, moving);
+    vmCam.aspect=camera.aspect; vmCam.updateProjectionMatrix();
+    renderer.autoClear=false; renderer.clearDepth();
+    renderer.render(vmScene, vmCam); renderer.autoClear=true;
+  }
+
+  if(state===PLAY && !dbg.hidden){
+    const b=(tod*24+6)%24;
+    dbg.textContent =
+      `Blockcraft (homage build)\n`+
+      `xyz ${player.pos.x.toFixed(1)} ${player.pos.y.toFixed(1)} ${player.pos.z.toFixed(1)}\n`+
+      `chunk ${Math.floor(player.pos.x/CH)},${Math.floor(player.pos.z/CH)}  chunks:${chunks.size}\n`+
+      `${player.flying?'flying':(player.onGround?'on ground':'in air')}  view:${['1st','3rd back','3rd front'][camMode]}\n`+
+      `looking at ${target? (pretty((BLOCKS[getBlock(target.x,target.y,target.z)]||{name:'?'}).name)+'  '+target.x+','+target.y+','+target.z) : '-'}`;
+  }
+}
+requestAnimationFrame(frame);
+
+addEventListener('resize', ()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+// warm the spawn area for the menu backdrop
+spawnPlayer(); ensureChunks(player.pos.x,player.pos.z);
+{ let g=0; while(genQueue.length && g<200){ const c=genQueue.shift(); if(!c.generated)c.generate(); g++; }
+  for(const [,c] of chunks) if(c.generated && Math.abs(c.cx-0)<=2 && Math.abs(c.cz-0)<=2) buildChunkMesh(c);
+  player.pos.y=terrainHeight(8,8)+2;
+}
+setTimeout(()=>{ const l=document.getElementById('loading'); l.classList.add('gone'); setTimeout(()=>l.remove(),500); }, 200);
+
+/* expose a tiny handle for the screenshot harness (matches repo convention) */
+window.__mc = {
+  get state(){ return state; }, start:startGame,
+  get player(){ return player; }, get chunks(){ return chunks.size; },
+  setTod(v){ tod=v; }, tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); },
+  look(yaw,pitch){ player.yaw=yaw; player.pitch=pitch; },
+  get target(){ raycast(); return target; },
+  mine(){ raycast(); breakBlock(); }, put(){ raycast(); placeBlock(); },
+  block(x,y,z){ return getBlock(x,y,z); },
+  set sel(v){ selSlot=v; renderHotbar(); }, get sel(){ return selSlot; },
+  set camMode(v){ camMode=v; }, get camMode(){ return camMode; },
+  give(name){ if(BLOCKS[name]){ hotbar[selSlot]=BLOCKS[name].id; renderHotbar(); showItemName(BLOCKS[name].id); } },
+  place(x,y,z,name){ const id=BLOCKS[name]?BLOCKS[name].id:0; setBlock(x,y,z,id);
+    if(mp.active){ mpSendBlock(x,y,z,id); } else { if(id===B.water) enqueueWater(x,y,z,0); if(GRAVITY.has(id)) settleColumn(x,z); touchWaterAround(x,y,z); } },
+  dig(x,y,z){ setBlock(x,y,z,0); if(mp.active){ mpSendBlock(x,y,z,0); } else { waterLvl.delete(wkey(x,y,z)); settleColumn(x,z); touchWaterAround(x,y,z); } },
+  mpPlayers(){ return [...mp.players.values()].map(p=>({id:p.id,name:p.name,x:+p.x.toFixed(1),y:+p.y.toFixed(1),z:+p.z.toFixed(1)})); },
+  name(x,y,z){ const b=getBlock(x,y,z); return b? BLOCKS[b].name : 'air'; },
+  hotbar, palette:()=>PALETTE.map(id=>BLOCKS[id].name),
+  spawn(x,y,z,t){ spawnMob(x,y,z,t); }, get mobs(){ return mobs.length; },
+  mpJoin(){ startMultiplayer(); }, mpInfo(){ return { active:mp.active, id:mp.id, players:mp.players.size, posSent:mp.posSent||0, posRecv:mp.posRecv||0, state:state }; },
+  chat(t){ if(mp.active) mpSend({type:'chat',text:t}); else chatPush('You: '+t); }, chats(){ return chatMsgs.map(m=>m.text); },
+  search(q){ invQuery=q; invSearch.value=q; renderInvGrid(); },
+  setCat(c){ invCat=c; invQuery=''; invSearch.value=''; buildInv(); },
+  invCount(){ return invGrid.children.length; },
+  openInv(){ if(!invOpen) toggleInv(); }, closeInv(){ if(invOpen) toggleInv(); }
+};
+</script>
+</body>
+</html>

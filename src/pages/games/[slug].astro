@@ -91,6 +91,8 @@ const tech = project.tech ?? [];
             title={`${project.title} playable demo`}
             class="w-full h-full"
             loading="lazy"
+            allow="pointer-lock; fullscreen; gamepad; autoplay"
+            allowfullscreen
           ></iframe>
         </div>
       ) : project.image ? (

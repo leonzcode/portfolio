@@ -102,6 +102,27 @@ aiProjects.forEach((p) => {
 
 export const gameProjects: Project[] = [
   {
+    slug: "minecraft",
+    title: "Blockcraft",
+    description:
+      "A voxel sandbox built from scratch in the browser: procedural worlds, hundreds of blocks, mobs, and a shared multiplayer server where you build alongside other people live.",
+    href: "/legacy/minecraft.html",
+    image: "/cards/card_minecraft.png",
+    tag: "Multiplayer",
+    story: [
+      "A block-building sandbox written from scratch with Three.js, in the spirit of Minecraft but with none of its assets. The terrain is generated procedurally from Perlin noise, split into chunks, and meshed with face culling and ambient occlusion so it stays smooth even with a large world loaded. Every texture is painted onto a canvas when the page loads, so nothing is copied from the original game.",
+      "It comes with hundreds of placeable blocks, sorted into creative-style categories with a search bar, and each block behaves the way you would expect: water flows, sand and gravel fall, glass and leaves let light through, and you can sneak along an edge without falling off. You can fly, break and place blocks, and spawn a couple of custom creatures.",
+      "The multiplayer mode connects to a small server I run on my own VPS. Everyone who joins shares one persistent world: you see other players move and place blocks in real time, the world autosaves and loads back the same every time, and you can talk to the room by pressing T to chat. The server is an authoritative relay written in Node, it hands out the shared world seed and every edit so all players stay in sync.",
+    ],
+    tech: [
+      "Three.js (WebGL), single file, no build step",
+      "Chunked voxel engine: face-culled meshing + ambient occlusion",
+      "Procedural Perlin terrain, canvas-generated textures",
+      "Node.js + ws multiplayer relay (shared seed, block persistence)",
+      "Self-hosted on a Hetzner VPS behind Caddy over secure WebSocket",
+    ],
+  },
+  {
     slug: "slope",
     title: "Slope",
     description:
