@@ -1246,6 +1246,7 @@ function spawnPlayer(){
 
 const keys = Object.create(null);
 let pointerLocked = false;
+let chatOpen = false;
 addEventListener('keydown', e=>{
   const k=e.key.toLowerCase();
   // typing in the search box: let it type, don't drive the game
@@ -1291,7 +1292,8 @@ canvas.addEventListener('wheel', e=>{
 
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = document.pointerLockElement===canvas;
-  if(!pointerLocked && state===PLAY && !invOpen) pause();
+  // don't pop the pause menu when we released the lock on purpose to type in chat
+  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen) pause();
 });
 document.addEventListener('mousemove', e=>{
   if(!pointerLocked) return;
@@ -1701,23 +1703,31 @@ function chatPush(text, cls){
   while(chatMsgs.length>60) chatMsgs.shift();
   renderChat();
 }
+const CHAT_LINGER=7000;   // ms a message stays on screen after it arrives
+let chatSig='';
 function renderChat(){
-  const open = !chatBox.hidden;
-  chatLogEl.style.display = (state===PLAY || open) ? 'flex' : 'none';
   const now=performance.now();
-  const show = chatMsgs.filter(m => open || now-m.t < 8000).slice(-12);
+  // when the box is open, show recent history; otherwise only lines that haven't
+  // lingered out yet, and hide the whole log entirely once they're gone.
+  const recent = chatMsgs.filter(m => now-m.t < CHAT_LINGER);
+  const visible = chatOpen || recent.length>0;
+  const show = visible ? (chatOpen ? chatMsgs : recent).slice(-12) : [];
+  const sig = (visible?'1':'0')+'|'+show.map(m=>m.t).join(',');
+  if(sig===chatSig) return;   // nothing changed since last frame
+  chatSig=sig;
+  chatLogEl.style.display = visible ? 'flex' : 'none';
   chatLogEl.innerHTML = show.map(m=>'<div class="cm '+m.cls+'">'+escapeHtml(m.text)+'</div>').join('');
 }
 function escapeHtml(s){ return (''+s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 const chatBox=document.getElementById('chatBox');
 function openChat(){
-  chatBox.hidden=false; renderChat();
+  chatOpen=true; chatBox.hidden=false; renderChat();
   document.exitPointerLock();
   chatInputEl.value=''; setTimeout(()=>chatInputEl.focus(), 0);
 }
 function closeChat(send){
   const v=chatInputEl.value.trim();
-  chatBox.hidden=true; chatInputEl.blur();
+  chatOpen=false; chatBox.hidden=true; chatInputEl.blur();
   if(send && v){
     if(mp.active) mpSend({type:'chat', text:v});
     else chatPush('You: '+v);
