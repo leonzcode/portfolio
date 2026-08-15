@@ -317,9 +317,20 @@ const REACH = 6;          // block interaction distance
 // flags: solid (collides), opaque (culls neighbours & no transparency), liquid.
 let TN = 0; const tile = () => TN++;   // tile-atlas slot allocator
 const BLOCKS = {};
-let BN = 1;                             // 0 = air
+// ---------------------------------------------------------------------------
+// FROZEN block-id order. Block ids are what get stored in the saved multiplayer
+// world and sent over the wire, so they must NEVER change: if the id assignment
+// shifts (e.g. by inserting a new block earlier in the list), every saved block
+// remaps to the wrong block (this is what made stone bricks show up as beds).
+// Each name below keeps its pinned id no matter what order def() is called in.
+// A NEW block just gets the next free id after this list — ONLY APPEND names
+// here, never reorder, insert, or remove them.
+// ---------------------------------------------------------------------------
+const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand","gravel","oak_log","oak_planks","oak_leaves","coal_ore","iron_ore","gold_ore","diamond_ore","redstone_ore","glass","water","sandstone","bricks","snow","ice","obsidian","netherrack","glowstone","pumpkin","melon","crafting_table","furnace","bookshelf","spruce_log","spruce_planks","birch_log","birch_planks","jungle_log","jungle_planks","acacia_log","acacia_planks","dark_oak_log","dark_oak_planks","white_wool","orange_wool","magenta_wool","light_blue_wool","yellow_wool","lime_wool","pink_wool","gray_wool","light_gray_wool","cyan_wool","purple_wool","blue_wool","brown_wool","green_wool","red_wool","black_wool","oak_door","spruce_door","birch_door","jungle_door","acacia_door","dark_oak_door","white_bed","orange_bed","magenta_bed","light_blue_bed","yellow_bed","lime_bed","pink_bed","gray_bed","light_gray_bed","cyan_bed","purple_bed","blue_bed","brown_bed","green_bed","red_bed","black_bed","oak_stairs","oak_fence","spruce_stairs","spruce_fence","birch_stairs","birch_fence","jungle_stairs","jungle_fence","acacia_stairs","acacia_fence","dark_oak_stairs","dark_oak_fence","ladder","oak_sign","spruce_sign","birch_sign","jungle_sign","acacia_sign","dark_oak_sign","granite","polished_granite","diorite","polished_diorite","andesite","polished_andesite","stone_bricks","mossy_stone_bricks","cracked_stone_bricks","chiseled_stone_bricks","mossy_cobblestone","red_sand","coarse_dirt","podzol","mycelium","clay","hardened_clay","soul_sand","end_stone","nether_brick","red_sandstone","chiseled_sandstone","quartz_block","chiseled_quartz","quartz_pillar","prismarine","prismarine_bricks","dark_prismarine","sea_lantern","slime_block","packed_ice","snow_block","sponge","hay_block","jack_o_lantern","emerald_ore","lapis_ore","nether_quartz_ore","iron_block","gold_block","diamond_block","emerald_block","coal_block","redstone_block","lapis_block","spruce_leaves","birch_leaves","jungle_leaves","acacia_leaves","dark_oak_leaves","leong_sahur_spawn_egg","tralaleon_spawn_egg","white_stained_clay","white_stained_glass","orange_stained_clay","orange_stained_glass","magenta_stained_clay","magenta_stained_glass","light_blue_stained_clay","light_blue_stained_glass","yellow_stained_clay","yellow_stained_glass","lime_stained_clay","lime_stained_glass","pink_stained_clay","pink_stained_glass","gray_stained_clay","gray_stained_glass","light_gray_stained_clay","light_gray_stained_glass","cyan_stained_clay","cyan_stained_glass","purple_stained_clay","purple_stained_glass","blue_stained_clay","blue_stained_glass","brown_stained_clay","brown_stained_glass","green_stained_clay","green_stained_glass","red_stained_clay","red_stained_glass","black_stained_clay","black_stained_glass"];
+const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
+let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
-  const id = BN++;
+  const id = (STABLE_ID[name]!==undefined) ? STABLE_ID[name] : nextFreeId++;
   BLOCKS[id] = Object.assign({ id, name, solid:true, opaque:true }, opts);
   BLOCKS[name] = BLOCKS[id];
   return id;
@@ -741,7 +752,7 @@ WOODS.forEach(w=>{
 });
 B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:false, cutout:true });
 // a sign for every wood type (typeable standing sign)
-WOODS.forEach(w=> B[w.id+'_sign'] = def(w.id+'_sign', { tiles:T(w.id+'_planks'), sign:true, solid:false, opaque:false }));
+WOODS.forEach(w=> B[w.id+'_sign'] = def(w.id+'_sign', { tiles:T(w.id+'_planks'), sign:true, solid:false, opaque:false, hex:w.plank }));
 
 // define every EXTRA block (pass-1 expansion)
 for(const e of EXTRA){
@@ -889,10 +900,10 @@ function makeSignTexture(lines){
 function updateSignObj(x,y,z){
   const m=signMeta.get(dkey(x,y,z)); if(!m) return;
   const k=dkey(x,y,z); let o=signTextObjs.get(k); const tex=makeSignTexture(m.lines);
-  if(!o){ o=new THREE.Mesh(new THREE.PlaneGeometry(0.78,0.4), new THREE.MeshBasicMaterial({map:tex,transparent:true})); scene.add(o); signTextObjs.set(k,o); }
+  if(!o){ o=new THREE.Mesh(new THREE.PlaneGeometry(0.68,0.34), new THREE.MeshBasicMaterial({map:tex,transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1})); scene.add(o); signTextObjs.set(k,o); }
   else { if(o.material.map) o.material.map.dispose(); o.material.map=tex; o.material.needsUpdate=true; }
   const dv=DIRV[m.facing];
-  o.position.set(x+0.5+dv[0]*0.45, y+0.72, z+0.5+dv[2]*0.45);
+  o.position.set(x+0.5+dv[0]*0.07, y+0.72, z+0.5+dv[2]*0.07);   // sit flush on the board face, not floating in front
   o.rotation.set(0, Math.atan2(dv[0],dv[2]), 0);
 }
 function removeSignObj(x,y,z){ const k=dkey(x,y,z); const o=signTextObjs.get(k); if(o){ scene.remove(o); if(o.material.map)o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); signTextObjs.delete(k); } }
@@ -2002,6 +2013,17 @@ function blockIconCanvas(id, size){
     px(0.12,0.50,0.76,0.06,lite); px(0.50,0.14,0.38,0.06,lite);                   // top faces (light)
     px(0.12,0.84,0.76,0.06,dark);                                                 // bottom shade
     px(0.50,0.44,0.38,0.06,dark);                                                 // step tread shade
+    return cv;
+  }
+  if(bl.sign){                     // a board on a short post, Minecraft-style
+    const s=size, hex=bl.hex||0x8a6a3a, rr=(hex>>16)&255, gg=(hex>>8)&255, bb=hex&255;
+    const main=`rgb(${rr},${gg},${bb})`, dark=`rgb(${(rr*0.72)|0},${(gg*0.72)|0},${(bb*0.72)|0})`, lite=`rgb(${Math.min(255,rr*1.12)|0},${Math.min(255,gg*1.12)|0},${Math.min(255,bb*1.12)|0})`;
+    const px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.10,0.12,0.80,0.46,main);                                                 // board
+    px(0.10,0.12,0.80,0.06,lite);                                                 // top highlight
+    px(0.10,0.52,0.80,0.06,dark);                                                 // board bottom edge
+    px(0.44,0.58,0.12,0.32,main); px(0.44,0.58,0.04,0.32,lite);                   // post
+    px(0.22,0.26,0.56,0.05,dark); px(0.22,0.38,0.42,0.05,dark);                   // "text" lines
     return cv;
   }
   const t=faceTile(bl,2);           // side texture
