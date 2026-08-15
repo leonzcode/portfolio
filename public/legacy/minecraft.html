@@ -276,7 +276,7 @@ function def(name, opts){
 /* ------------------------------------------------------------- the atlas -- */
 // Atlas is a grid of TILE×TILE cells. We paint each named texture and remember
 // its cell index, then blocks reference those indices.
-const ATLAS_COLS = 16, ATLAS_ROWS = 16;
+const ATLAS_COLS = 16, ATLAS_ROWS = 32;   // extra rows leave room for doors/beds tiles
 const atlasCanvas = document.createElement('canvas');
 atlasCanvas.width = ATLAS_COLS * TILE;
 atlasCanvas.height = ATLAS_ROWS * TILE;
@@ -421,6 +421,19 @@ paint('sand', speckle(0xdcd29a, 12, 7));
 paint('gravel', (()=>{ const r=rng(8), a=rgb(0x8a827c), b=rgb(0x6f6862); return (x,y)=> vary(r()<0.5?a:b, 18, r); })());
 paint('oak_leaves', leaves(12, 0x3f7d2f));
 // all wood types: log side/top + planks, each an original texture in the type's colours
+// a wood door face: framed panel, vertical grain, upper grille, brass knob
+function doorTex(hex, seed){
+  const base=rgb(hex), r=rng(seed);
+  const mul=(c,f)=>[Math.min(255,c[0]*f),Math.min(255,c[1]*f),Math.min(255,c[2]*f)];
+  const dark=mul(base,0.72), darker=mul(base,0.55), light=mul(base,1.12);
+  return (x,y)=>{
+    if(x===0||x===15||y===0||y===15) return vary(darker,5,r);          // outer frame
+    if(y===5||y===6) return vary(darker,5,r);                          // rail between panels
+    if((x===12||x===13)&&(y>=9&&y<=10)) return [232,205,110];          // brass knob
+    if(y>=2&&y<=4&&x>=3&&x<=12) return vary((x%2===0)?light:base,6,r);  // upper grille
+    return vary((x%5===0)?dark:base,7,r);                              // vertical grain
+  };
+}
 const WOODS = [
   { id:'oak',      side:0x6b5330, dark:0x4f3d1e, ring:0xa9814e, core:0x86603f, plank:0xb08a53 },
   { id:'spruce',   side:0x3e2e18, dark:0x281c0e, ring:0x76573a, core:0x4a3720, plank:0x6a4e30 },
@@ -605,6 +618,9 @@ for(const e of EXTRA){
     if(e.bottom) paint(e.name+'_bottom', e.bottom);
   }
 }
+// a door texture per wood type — painted directly, NOT via EXTRA, so the EXTRA block
+// loop doesn't also define a plain (non-door) block that shadows the real door block
+WOODS.forEach((w,i)=> paint(w.id+'_door', doorTex(w.plank, 9100+i)));
 
 /* upload the atlas as a texture */
 const atlasTex = new THREE.CanvasTexture(atlasCanvas);
@@ -656,6 +672,8 @@ WOODS.forEach(w=>{
 });
 // every wool colour
 WOOLS.forEach(([n])=> B[n+'_wool'] = def(n+'_wool', { tiles:T(n+'_wool') }));
+// a door for every wood type (thin, openable; geometry + state handled specially)
+WOODS.forEach(w=> B[w.id+'_door'] = def(w.id+'_door', { tiles:T(w.id+'_door'), door:true, opaque:false }));
 
 // define every EXTRA block (pass-1 expansion)
 for(const e of EXTRA){
@@ -731,6 +749,23 @@ function mpSetOverride(x,y,z,b){
   m.set((x-cx*CH)+','+y+','+(z-cz*CH), b);
 }
 
+// ---- doors: thin, right-click-openable blocks; per-cell state (facing + open) ----
+const doorMeta = new Map();      // "x,y,z" -> {facing:0-3, open:bool} : live render + collision
+let spDoors = {};                // "x,y,z" -> {f,o} : singleplayer door state, saved with the world
+const dkey=(x,y,z)=>x+','+y+','+z;
+function isDoor(id){ return !!(id && BLOCKS[id] && BLOCKS[id].door); }
+function doorBounds(facing, open){   // thin panel on one cell edge; opening rotates it 90 deg
+  const t=3/16, f=(facing+(open?1:0))&3;
+  if(f===0) return [0,1,0,1,0,t];
+  if(f===1) return [1-t,1,0,1,0,1];
+  if(f===2) return [0,1,0,1,1-t,1];
+  return [0,t,0,1,0,1];
+}
+function facingFromYaw(yaw){
+  const dx=-Math.sin(yaw), dz=-Math.cos(yaw);
+  return (Math.abs(dx)>Math.abs(dz)) ? (dx>0?1:3) : (dz>0?2:0);
+}
+
 // ---- singleplayer save (localStorage): the world's seed + every player block edit,
 // so a solo world keeps its progress across reloads and site updates. The shared
 // multiplayer world is saved separately on the server, not here. ----
@@ -738,14 +773,21 @@ let spSeed = seed;               // the singleplayer world's own seed
 let spEdits = {};                // "x,y,z" -> blockId (0 = air) : deviations from the terrain
 let spSaveTimer = null;
 const SP_KEY = 'leoncraft_sp_world';
-function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits })); }catch(e){} }
+function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors })); }catch(e){} }
 function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
 function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
-function spReloadWorld(){         // load the saved singleplayer world into `seed` + overrides
-  mpOverrides.clear(); spEdits = {};
-  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; } } }catch(e){}
+function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = removed)
+  if(mp.active) return;
+  const k=dkey(x,y,z);
+  if(m===null) delete spDoors[k]; else spDoors[k]={f:m.facing,o:m.open?1:0};
+  spScheduleSave();
+}
+function spReloadWorld(){         // load the saved singleplayer world into `seed` + overrides + doors
+  mpOverrides.clear(); doorMeta.clear(); spEdits = {}; spDoors = {};
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; } } }catch(e){}
   seed=spSeed; noise=makeNoise(seed);
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
+  for(const kk in spDoors){ doorMeta.set(kk, {facing:spDoors[kk].f, open:!!spDoors[kk].o}); }
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
 addEventListener('beforeunload', spSave);
@@ -952,6 +994,19 @@ function aoFactor(wx,wy,wz, F, co){
   const ao = (o1&&o2)?0:(3-(o1+o2+oc));
   return AO_LEVELS[ao];
 }
+// emit an arbitrary box (all 6 faces) with one tile — used for non-cube blocks like doors
+function pushBox(buf, wx, wy, wz, b, tile){
+  const [x0,x1,y0,y1,z0,z1]=b;
+  const [u0,v0,u1,v1]=tileUV(tile);
+  const uvc=[[u0,v0],[u1,v0],[u1,v1],[u0,v1]];
+  for(let f=0;f<6;f++){
+    const F=FACES[f], base=buf.pos.length/3, sh=F.s;
+    for(let i=0;i<4;i++){ const co=F.c[i];
+      buf.pos.push(wx+(co[0]?x1:x0), wy+(co[1]?y1:y0), wz+(co[2]?z1:z0));
+      buf.uv.push(uvc[i][0],uvc[i][1]); buf.col.push(sh,sh,sh); }
+    buf.idx.push(base,base+1,base+2, base,base+2,base+3);
+  }
+}
 function buildChunkMesh(c){
   const op = { pos:[], uv:[], col:[], idx:[] };
   const tr = { pos:[], uv:[], col:[], idx:[] };
@@ -977,6 +1032,11 @@ function buildChunkMesh(c){
     if (id===AIR) continue;
     const bl = BLOCKS[id];
     const wx=ox+x, wz=oz+z;
+    if (bl.door){                              // doors are a thin swinging panel, not a cube
+      const d = doorMeta.get(dkey(wx,y,wz));
+      pushBox(op, wx, y, wz, doorBounds(d?d.facing:0, d?d.open:false), (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      continue;
+    }
     for(let f=0;f<6;f++){
       const F=FACES[f];
       const nx=wx+F.n[0], ny=y+F.n[1], nz=wz+F.n[2];
@@ -1314,7 +1374,10 @@ canvas.addEventListener('mousedown', e=>{
   if(state!==PLAY) return;
   if(!pointerLocked){ canvas.requestPointerLock(); return; }
   if(e.button===0){ doSwing(); breakBlock(); }
-  else if(e.button===2){ doSwing(); placeBlock(); }
+  else if(e.button===2){ doSwing();
+    if(target && isDoor(getBlock(target.x,target.y,target.z))) toggleDoor(target.x,target.y,target.z);   // right-click a door = open/close
+    else placeBlock();
+  }
   else if(e.button===1){ pickBlock(); e.preventDefault(); }
 });
 canvas.addEventListener('contextmenu', e=>e.preventDefault());
@@ -1345,7 +1408,10 @@ function collides(px,py,pz){
   const z0=Math.floor(pz-w), z1=Math.floor(pz+w);
   for(let y=y0;y<=y1;y++) for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++){
     const b=getBlock(x,y,z);
-    if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid) return true;
+    if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid){
+      if(BLOCKS[b].door){ const d=doorMeta.get(x+','+y+','+z); if(d && d.open) continue; }  // open door = walk through
+      return true;
+    }
   }
   return false;
 }
@@ -1461,9 +1527,38 @@ function camDir(){
     -Math.cos(player.yaw)*Math.cos(player.pitch)
   );
 }
+// ---- door placement / open-close / removal ----
+function remeshChunkAt(x,z){ const cx=Math.floor(x/CH),cz=Math.floor(z/CH); const c=chunks.get(key(cx,cz)); if(c&&c.generated) buildChunkMesh(c); }
+function doorBottom(x,y,z){ let by=y; while(isDoor(getBlock(x,by-1,z))) by--; return by; }
+function placeDoor(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id=hotbar[selSlot];
+  if(getBlock(px,py,pz)!==AIR || getBlock(px,py+1,pz)!==AIR) return;               // needs two free cells
+  const floor=getBlock(px,py-1,pz); if(!(BLOCKS[floor]&&BLOCKS[floor].solid)) return; // and a floor to stand on
+  const w=player.w/2;                                                             // not inside the player
+  if(px+1>player.pos.x-w && px<player.pos.x+w && pz+1>player.pos.z-w && pz<player.pos.z+w && py+2>player.pos.y && py<player.pos.y+player.h) return;
+  const facing=facingFromYaw(player.yaw);
+  setBlock(px,py,pz,id); setBlock(px,py+1,pz,id);
+  doorMeta.set(dkey(px,py,pz),{facing,open:false}); doorMeta.set(dkey(px,py+1,pz),{facing,open:false});
+  mpSendBlock(px,py,pz,id); mpSendBlock(px,py+1,pz,id);
+  spRecordDoor(px,py,pz,{facing,open:false}); spRecordDoor(px,py+1,pz,{facing,open:false});
+  remeshChunkAt(px,pz);
+}
+function toggleDoor(x,y,z){
+  const by=doorBottom(x,y,z);
+  const cur=doorMeta.get(dkey(x,by,z)); const open=!(cur&&cur.open);   // flip both halves together
+  for(let h=0;h<2;h++){ const k=dkey(x,by+h,z); const mm=doorMeta.get(k)||{facing:0}; const nm={facing:mm.facing,open}; doorMeta.set(k,nm); spRecordDoor(x,by+h,z,nm); }
+  remeshChunkAt(x,z);
+}
+function breakDoor(x,y,z){
+  const by=doorBottom(x,y,z);
+  for(let h=0;h<2;h++){ setBlock(x,by+h,z,AIR); doorMeta.delete(dkey(x,by+h,z)); mpSendBlock(x,by+h,z,0); spRecordDoor(x,by+h,z,null); }
+  remeshChunkAt(x,z);
+}
 function breakBlock(){
   if(!target) return;
   const {x,y,z}=target;
+  if(isDoor(getBlock(x,y,z))){ breakDoor(x,y,z); return; }   // breaking either half removes the whole door
   setBlock(x,y,z, AIR);
   waterLvl.delete(wkey(x,y,z));
   if(!mp.active){                // keep the shared world static + consistent
@@ -1477,6 +1572,7 @@ function placeBlock(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   const id = hotbar[selSlot]; if(!id) return;
   const bl = BLOCKS[id];
+  if(bl.door){ placeDoor(); return; }                                   // doors place two cells tall
   if(bl.spawnEgg){ spawnMob(px+0.5, py, pz+0.5, bl.mobType); return; }   // egg spawns a creature
   const cur=getBlock(px,py,pz);
   // place into air, or into water (which removes the water)
@@ -1717,7 +1813,7 @@ function mpUpdatePlayers(dt){
 function mpHandle(m){
   if(m.type==='init'){
     mp.id=m.id; mp.name=m.name;
-    mpOverrides.clear();
+    mpOverrides.clear(); doorMeta.clear();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     mpClearPlayers();
     mpStartWorld(m.seed);
@@ -1910,6 +2006,12 @@ window.__mc = {
   get target(){ raycast(); return target; },
   mine(){ raycast(); breakBlock(); }, put(){ raycast(); placeBlock(); },
   block(x,y,z){ return getBlock(x,y,z); },
+  doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open}:null; },
+  doorCount(){ return doorMeta.size; },
+  useDoor(x,y,z){ toggleDoor(x,y,z); },
+  held(){ return hotbar[selSlot]; },
+  hasBlock(n){ return !!BLOCKS[n]; },
+  blockName(id){ return BLOCKS[id]?BLOCKS[id].name:null; },
   set sel(v){ selSlot=v; renderHotbar(); }, get sel(){ return selSlot; },
   set camMode(v){ camMode=v; }, get camMode(){ return camMode; },
   give(name){ if(BLOCKS[name]){ hotbar[selSlot]=BLOCKS[name].id; renderHotbar(); showItemName(BLOCKS[name].id); } },
