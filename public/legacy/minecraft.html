@@ -94,6 +94,8 @@
     background:rgba(255,255,255,.08); padding:2px 8px;
   }
   #tabList .pl .you{ color:#8fd18f; font-size:12px; align-self:center; }
+  #tabList .pl .pn{ display:flex; align-items:center; gap:6px; }
+  #tabList .ph{ width:16px; height:16px; image-rendering:pixelated; }
   #chatBox .prompt{ color:#fff; font-size:16px; }
   #chatInput{
     flex:1; font-family:inherit; font-size:15px; color:#fff; text-shadow:none;
@@ -140,6 +142,20 @@
   #sleepOverlay .sleepTitle{ font-size:30px; color:#fff; text-shadow:2px 2px 0 #222; letter-spacing:2px; }
   #sleepOverlay .btn{ pointer-events:auto; }
   @keyframes sleepFade{ from{ background:rgba(0,0,0,0);} }
+  /* skin editor */
+  #skinPanel{ gap:16px; }
+  .skinRow{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  #skinPresets .btn{ width:auto; padding:8px 14px; font-size:13px; }
+  .skinEdit{ display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; justify-content:center; }
+  .skinFaceWrap{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+  #skinFace{ image-rendering:pixelated; cursor:crosshair; border:2px solid; border-color:#333 #a9a9a9 #a9a9a9 #333; background:#000; }
+  .skinSide{ display:flex; flex-direction:column; gap:14px; }
+  .skinPalette{ display:grid; grid-template-columns:repeat(6,22px); gap:4px; }
+  .skinPalette .sw{ width:22px; height:22px; cursor:pointer; border:2px solid rgba(0,0,0,.5); }
+  .skinPalette .sw.sel{ outline:2px solid #fff; outline-offset:1px; }
+  .skinColors{ display:flex; flex-direction:column; gap:6px; font-size:13px; color:#eee; }
+  .skinColors label{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .skinColors input[type=color]{ width:46px; height:24px; border:none; background:none; cursor:pointer; }
   .hint b{ color:#fff; }
 
   /* inventory / block picker */
@@ -210,6 +226,7 @@
   <input class="nameField" id="nameInput" type="text" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false">
   <button class="btn" id="playBtn">Singleplayer</button>
   <button class="btn" id="mpBtn" style="margin-top:8px">Multiplayer (shared server)</button>
+  <button class="btn" id="skinBtn" style="margin-top:8px">Customize skin</button>
   <div class="hint" id="menuHint">
     <b>WASD</b> move &middot; <b>Mouse</b> look &middot; <b>Space</b> jump / fly up &middot; <b>Shift</b> down<br>
     <b>Left-click</b> break &middot; <b>Right-click</b> place &middot; <b>Wheel</b> / <b>1-9</b> select<br>
@@ -230,6 +247,30 @@
   <div class="sleepTitle">Sleeping&hellip;</div>
   <button class="btn" id="leaveBedBtn">Leave bed</button>
   <div class="hint">or press <b>Esc</b></div>
+</div>
+
+<div class="screen" id="skinPanel" hidden>
+  <div class="title" style="font-size:26px;">Customize Skin</div>
+  <div class="skinRow" id="skinPresets"></div>
+  <div class="skinEdit">
+    <div class="skinFaceWrap">
+      <canvas id="skinFace" width="176" height="176"></canvas>
+      <div class="hint">click / drag to paint your face</div>
+    </div>
+    <div class="skinSide">
+      <div class="skinPalette" id="skinPalette"></div>
+      <div class="skinColors">
+        <label>Skin <input type="color" id="colSkin"></label>
+        <label>Shirt <input type="color" id="colShirt"></label>
+        <label>Pants <input type="color" id="colPants"></label>
+        <label>Hair <input type="color" id="colHair"></label>
+      </div>
+    </div>
+  </div>
+  <div class="skinRow">
+    <button class="btn" id="skinSave" style="width:190px">Save</button>
+    <button class="btn" id="skinCancel" style="width:190px">Cancel</button>
+  </div>
 </div>
 
 <!-- Inventory / block picker -->
@@ -1222,26 +1263,75 @@ const mFace =new THREE.MeshLambertMaterial({ map:charTex(SKIN,6,205, g=>{
   g.fillStyle='#243a86'; g.fillRect(4,8,2,2); g.fillRect(11,8,2,2);   // pupils
   g.fillStyle='#7a4a30'; g.fillRect(5,12,6,1);                        // mouth
 })});
-const headMats=[mSkin,mSkin,mHair,mSkin,mFace,mSkin];  // +x,-x,+y,-y,+z(front),-z
+const DEFAULT_MATS={ skin:mSkin, shirt:mShirt, pants:mPants, hair:mHair, face:mFace };   // remote players use these
 function part(w,h,d,mat){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); }
 
-// a humanoid player model — used for the local third-person body and every
-// remote player in multiplayer
-function makeCharacterModel(){
+// ---- skins: the local player's own material set, retextured when the skin changes ----
+function faceTexFor(skinHex, facePaint){
+  return charTex(skinHex, 6, 205, g=>{
+    if(facePaint){ for(let i=0;i<64;i++){ const c=facePaint[i]; if(c==null||c<0) continue; g.fillStyle='#'+((c>>>0)&0xffffff).toString(16).padStart(6,'0'); g.fillRect((i%8)*2,(i/8|0)*2,2,2); } }
+    else { g.fillStyle='#f6f6f6'; g.fillRect(3,7,3,3); g.fillRect(10,7,3,3); g.fillStyle='#243a86'; g.fillRect(4,8,2,2); g.fillRect(11,8,2,2); g.fillStyle='#7a4a30'; g.fillRect(5,12,6,1); }
+  });
+}
+const localMats={
+  skin: new THREE.MeshLambertMaterial({ map:charTex(SKIN,8,201) }),
+  shirt:new THREE.MeshLambertMaterial({ map:charTex(SHIRT,10,202) }),
+  pants:new THREE.MeshLambertMaterial({ map:charTex(PANTS,10,203) }),
+  hair: new THREE.MeshLambertMaterial({ map:charTex(HAIR,8,204) }),
+  face: new THREE.MeshLambertMaterial({ map:faceTexFor(SKIN,null) }),
+};
+const SKIN_PRESETS=[
+  { name:'Classic', skin:SKIN,     shirt:SHIRT,   pants:PANTS,  hair:HAIR },
+  { name:'Miner',   skin:0xd9a066, shirt:0x394a7a, pants:0x2a2a2a, hair:0x30231a },
+  { name:'Ember',   skin:0xe0ac74, shirt:0xb23a2a, pants:0x3a2a1a, hair:0x141414 },
+  { name:'Forest',  skin:0xd9a066, shirt:0x3f7a34, pants:0x50381f, hair:0x2a1c10 },
+  { name:'Frost',   skin:0xe8c9a0, shirt:0x3aa0c9, pants:0x2a3550, hair:0xe8e0d0 },
+  { name:'Sun',     skin:0xd9a066, shirt:0xf2c400, pants:0x394a7a, hair:0x5a3a24 },
+];
+let currentSkin=Object.assign({}, SKIN_PRESETS[0]);
+let selfHeadURL='', defaultHeadURL='';
+function skinHeadURL(skin){   // tiny head icon for the Tab player list
+  const c=document.createElement('canvas'); c.width=c.height=16; const g=c.getContext('2d');
+  g.fillStyle=toHex(skin?skin.skin:SKIN); g.fillRect(0,0,16,16);
+  g.fillStyle=toHex(skin?skin.hair:HAIR); g.fillRect(0,0,16,4);
+  const fp=skin&&skin.facePaint;
+  if(fp){ for(let i=0;i<64;i++){ if(fp[i]==null||fp[i]<0) continue; g.fillStyle=toHex(fp[i]); g.fillRect((i%8)*2,(i/8|0)*2,2,2); } }
+  else { g.fillStyle='#f6f6f6'; g.fillRect(4,7,2,2); g.fillRect(10,7,2,2); g.fillStyle='#243a86'; g.fillRect(4,8,2,1); g.fillRect(10,8,2,1); }
+  return c.toDataURL();
+}
+function refreshHeadIcons(){ selfHeadURL=skinHeadURL(currentSkin); if(!defaultHeadURL) defaultHeadURL=skinHeadURL(null); }
+function applySkin(skin){
+  currentSkin=skin;
+  localMats.skin.map =charTex(skin.skin,8,201);  localMats.skin.needsUpdate=true;
+  localMats.shirt.map=charTex(skin.shirt,10,202); localMats.shirt.needsUpdate=true;
+  localMats.pants.map=charTex(skin.pants,10,203); localMats.pants.needsUpdate=true;
+  localMats.hair.map =charTex(skin.hair,8,204);   localMats.hair.needsUpdate=true;
+  localMats.face.map =faceTexFor(skin.skin, skin.facePaint||null); localMats.face.needsUpdate=true;
+  try{ localStorage.setItem('leoncraft_skin', JSON.stringify(skin)); }catch(e){}
+  refreshHeadIcons();
+}
+try{ const raw=localStorage.getItem('leoncraft_skin'); if(raw){ const s=JSON.parse(raw); if(s&&typeof s.skin==='number') applySkin(s); } }catch(e){}   // load saved skin
+refreshHeadIcons();
+
+// a humanoid player model — `mats` lets the local player show a custom skin while
+// remote players use the shared defaults
+function makeCharacterModel(mats){
+  mats=mats||DEFAULT_MATS;
+  const headMats=[mats.skin,mats.skin,mats.hair,mats.skin,mats.face,mats.skin];  // +x,-x,+y,-y,+z(front),-z
   const g=new THREE.Group();
-  const torso=part(8*S16,12*S16,4*S16,mShirt); torso.position.y=18*S16;
+  const torso=part(8*S16,12*S16,4*S16,mats.shirt); torso.position.y=18*S16;
   const hp=new THREE.Group(); hp.position.y=24*S16;
   const head=part(8*S16,8*S16,8*S16,headMats); head.position.y=4*S16; hp.add(head);
-  const armL=part(4*S16,12*S16,4*S16,mSkin); armL.position.set(-6*S16,18*S16,0);
-  const armR=part(4*S16,12*S16,4*S16,mSkin); armR.position.set( 6*S16,18*S16,0);
-  const legL=part(4*S16,12*S16,4*S16,mPants); legL.position.set(-2*S16,6*S16,0);
-  const legR=part(4*S16,12*S16,4*S16,mPants); legR.position.set( 2*S16,6*S16,0);
+  const armL=part(4*S16,12*S16,4*S16,mats.skin); armL.position.set(-6*S16,18*S16,0);
+  const armR=part(4*S16,12*S16,4*S16,mats.skin); armR.position.set( 6*S16,18*S16,0);
+  const legL=part(4*S16,12*S16,4*S16,mats.pants); legL.position.set(-2*S16,6*S16,0);
+  const legR=part(4*S16,12*S16,4*S16,mats.pants); legR.position.set( 2*S16,6*S16,0);
   g.add(torso,hp,armL,armR,legL,legR);
   g.scale.setScalar(0.9);           // ~1.8 blocks tall to match the hitbox
   g.userData={ headPivot:hp, legL, legR };
   return g;
 }
-const body=makeCharacterModel();
+const body=makeCharacterModel(localMats);
 const headPivot=body.userData.headPivot;
 body.visible=false; scene.add(body);
 // floating name tag above a remote player's head
@@ -1262,7 +1352,7 @@ const vmScene=new THREE.Scene();
 const vmCam=new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 10);
 vmScene.add(new THREE.AmbientLight(0xffffff,0.8));
 const vmDir=new THREE.DirectionalLight(0xffffff,0.6); vmDir.position.set(0.4,1,0.7); vmScene.add(vmDir);
-const vmArm=part(4*S16,12*S16,4*S16,mSkin); vmScene.add(vmArm);
+const vmArm=part(4*S16,12*S16,4*S16,localMats.skin); vmScene.add(vmArm);
 let vmBlock=null, vmHeldId=-1;
 function buildHeldBlock(id){
   if(vmBlock){ vmScene.remove(vmBlock); vmBlock.geometry.dispose(); vmBlock.material.dispose(); vmBlock=null; }
@@ -1994,6 +2084,60 @@ nameInputEl.addEventListener('input', ()=>{
   try{ localStorage.setItem('leoncraft_name', nm); }catch(e){}
   if(mp.active && nm) mpSend({type:'name', name:nm});
 });
+// ---- skin editor ----
+const skinPanel=document.getElementById('skinPanel');
+const skinFace=document.getElementById('skinFace'), sfCtx=skinFace.getContext('2d');
+const SKIN_PAL=[0xffffff,0x000000,0xd9a066,0x7a4a30,0xb23a2a,0xf2c400,0x3f7a34,0x3aa0c9,0x394a7a,0x792aac,0xed8dac,0x8e8e86];
+let editSkin=null, paintColor=0x000000, painting=false;
+function toHex(n){ return '#'+((n>>>0)&0xffffff).toString(16).padStart(6,'0'); }
+function fromHex(s){ return parseInt(s.slice(1),16); }
+function drawSkinFace(){
+  const s=176, cell=s/8;
+  sfCtx.fillStyle=toHex(editSkin.skin); sfCtx.fillRect(0,0,s,s);
+  const fp=editSkin.facePaint;
+  if(fp) for(let i=0;i<64;i++){ if(fp[i]==null||fp[i]<0) continue; sfCtx.fillStyle=toHex(fp[i]); sfCtx.fillRect((i%8)*cell,(i/8|0)*cell,cell,cell); }
+  sfCtx.strokeStyle='rgba(0,0,0,.18)'; sfCtx.lineWidth=1;
+  for(let i=1;i<8;i++){ sfCtx.beginPath(); sfCtx.moveTo(i*cell,0); sfCtx.lineTo(i*cell,s); sfCtx.moveTo(0,i*cell); sfCtx.lineTo(s,i*cell); sfCtx.stroke(); }
+}
+function paintAt(ev){
+  const r=skinFace.getBoundingClientRect();
+  const x=Math.floor((ev.clientX-r.left)/(r.width/8)), y=Math.floor((ev.clientY-r.top)/(r.height/8));
+  if(x<0||x>7||y<0||y>7) return;
+  if(!editSkin.facePaint) editSkin.facePaint=new Array(64).fill(null);
+  editSkin.facePaint[y*8+x] = (paintColor<0? null : paintColor);
+  drawSkinFace();
+}
+skinFace.addEventListener('mousedown', e=>{ painting=true; paintAt(e); });
+skinFace.addEventListener('mousemove', e=>{ if(painting) paintAt(e); });
+addEventListener('mouseup', ()=>{ painting=false; });
+function syncColorInputs(){
+  document.getElementById('colSkin').value=toHex(editSkin.skin);
+  document.getElementById('colShirt').value=toHex(editSkin.shirt);
+  document.getElementById('colPants').value=toHex(editSkin.pants);
+  document.getElementById('colHair').value=toHex(editSkin.hair);
+}
+function openSkinEditor(){
+  editSkin=JSON.parse(JSON.stringify(currentSkin));
+  const pr=document.getElementById('skinPresets'); pr.innerHTML='';
+  SKIN_PRESETS.forEach(p=>{ const b=document.createElement('button'); b.className='btn'; b.textContent=p.name;
+    b.addEventListener('click', ()=>{ editSkin.skin=p.skin; editSkin.shirt=p.shirt; editSkin.pants=p.pants; editSkin.hair=p.hair; syncColorInputs(); drawSkinFace(); }); pr.appendChild(b); });
+  const pal=document.getElementById('skinPalette'); pal.innerHTML='';
+  SKIN_PAL.forEach(c=>{ const sw=document.createElement('div'); sw.className='sw'+(c===paintColor?' sel':''); sw.style.background=toHex(c);
+    sw.addEventListener('click', ()=>{ paintColor=c; [...pal.children].forEach(el=>el.classList.remove('sel')); sw.classList.add('sel'); }); pal.appendChild(sw); });
+  const er=document.createElement('div'); er.className='sw'; er.textContent='×'; er.style.cssText+='display:flex;align-items:center;justify-content:center;color:#fff;background:#555;';
+  er.addEventListener('click', ()=>{ paintColor=-1; [...pal.children].forEach(el=>el.classList.remove('sel')); er.classList.add('sel'); }); pal.appendChild(er);
+  syncColorInputs(); drawSkinFace();
+  menuEl.hidden=true; skinPanel.hidden=false;
+}
+['colSkin','colShirt','colPants','colHair'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', e=>{
+    editSkin[{colSkin:'skin',colShirt:'shirt',colPants:'pants',colHair:'hair'}[id]] = fromHex(e.target.value); drawSkinFace();
+  });
+});
+document.getElementById('skinBtn').addEventListener('click', openSkinEditor);
+document.getElementById('skinSave').addEventListener('click', ()=>{ applySkin(editSkin); skinPanel.hidden=true; menuEl.hidden=false; });
+document.getElementById('skinCancel').addEventListener('click', ()=>{ skinPanel.hidden=true; menuEl.hidden=false; });
+
 creative = true;   // locked to creative for now
 
 /* ========================================================= MULTIPLAYER === */
@@ -2012,7 +2156,7 @@ function renderTabList(){
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
   tabListEl.innerHTML = '<div class="th">'+n+' player'+(n===1?'':'s')+' online</div>' +
-    rows.map(r=> '<div class="pl"><span>'+escapeHtml(r.name)+'</span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
+    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.you?selfHeadURL:defaultHeadURL)+'">'+escapeHtml(r.name)+'</span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
   tabListEl.hidden=false;
 }
 
