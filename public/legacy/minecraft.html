@@ -142,20 +142,6 @@
   #sleepOverlay .sleepTitle{ font-size:30px; color:#fff; text-shadow:2px 2px 0 #222; letter-spacing:2px; }
   #sleepOverlay .btn{ pointer-events:auto; }
   @keyframes sleepFade{ from{ background:rgba(0,0,0,0);} }
-  /* skin editor */
-  #skinPanel{ gap:16px; }
-  .skinRow{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
-  #skinPresets .btn{ width:auto; padding:8px 14px; font-size:13px; }
-  .skinEdit{ display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; justify-content:center; }
-  .skinFaceWrap{ display:flex; flex-direction:column; align-items:center; gap:6px; }
-  #skinFace{ image-rendering:pixelated; cursor:crosshair; border:2px solid; border-color:#333 #a9a9a9 #a9a9a9 #333; background:#000; }
-  .skinSide{ display:flex; flex-direction:column; gap:14px; }
-  .skinPalette{ display:grid; grid-template-columns:repeat(6,22px); gap:4px; }
-  .skinPalette .sw{ width:22px; height:22px; cursor:pointer; border:2px solid rgba(0,0,0,.5); }
-  .skinPalette .sw.sel{ outline:2px solid #fff; outline-offset:1px; }
-  .skinColors{ display:flex; flex-direction:column; gap:6px; font-size:13px; color:#eee; }
-  .skinColors label{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  .skinColors input[type=color]{ width:46px; height:24px; border:none; background:none; cursor:pointer; }
   /* sign text editor */
   #signEditor{ position:fixed; inset:0; z-index:22; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
   #signEditor[hidden]{ display:none; }
@@ -234,7 +220,6 @@
   <input class="nameField" id="nameInput" type="text" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false">
   <button class="btn" id="playBtn">Singleplayer</button>
   <button class="btn" id="mpBtn" style="margin-top:8px">Multiplayer (shared server)</button>
-  <button class="btn" id="skinBtn" style="margin-top:8px">Customize skin</button>
   <div class="hint" id="menuHint">
     <b>WASD</b> move &middot; <b>Mouse</b> look &middot; <b>Space</b> jump / fly up &middot; <b>Shift</b> down<br>
     <b>Left-click</b> break &middot; <b>Right-click</b> place &middot; <b>Wheel</b> / <b>1-9</b> select<br>
@@ -255,30 +240,6 @@
   <div class="sleepTitle">Sleeping&hellip;</div>
   <button class="btn" id="leaveBedBtn">Leave bed</button>
   <div class="hint">or press <b>Esc</b></div>
-</div>
-
-<div class="screen" id="skinPanel" hidden>
-  <div class="title" style="font-size:26px;">Customize Skin</div>
-  <div class="skinRow" id="skinPresets"></div>
-  <div class="skinEdit">
-    <div class="skinFaceWrap">
-      <canvas id="skinFace" width="176" height="176"></canvas>
-      <div class="hint">click / drag to paint your face</div>
-    </div>
-    <div class="skinSide">
-      <div class="skinPalette" id="skinPalette"></div>
-      <div class="skinColors">
-        <label>Skin <input type="color" id="colSkin"></label>
-        <label>Shirt <input type="color" id="colShirt"></label>
-        <label>Pants <input type="color" id="colPants"></label>
-        <label>Hair <input type="color" id="colHair"></label>
-      </div>
-    </div>
-  </div>
-  <div class="skinRow">
-    <button class="btn" id="skinSave" style="width:190px">Save</button>
-    <button class="btn" id="skinCancel" style="width:190px">Cancel</button>
-  </div>
 </div>
 
 <div id="signEditor" hidden>
@@ -1372,8 +1333,7 @@ function applySkin(skin){
   try{ localStorage.setItem('leoncraft_skin', JSON.stringify(skin)); }catch(e){}
   refreshHeadIcons();
 }
-try{ const raw=localStorage.getItem('leoncraft_skin'); if(raw){ const s=JSON.parse(raw); if(s&&typeof s.skin==='number') applySkin(s); } }catch(e){}   // load saved skin
-refreshHeadIcons();
+refreshHeadIcons();   // custom skins removed for now; character uses the default look
 
 // a humanoid player model — `mats` lets the local player show a custom skin while
 // remote players use the shared defaults
@@ -1894,8 +1854,7 @@ let signEditPos=null;
 function placeSign(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   const id=hotbar[selSlot];
-  if(getBlock(px,py,pz)!==AIR) return;
-  const floor=getBlock(px,py-1,pz); if(!(BLOCKS[floor]&&BLOCKS[floor].solid)) return;
+  if(getBlock(px,py,pz)!==AIR) return;   // just needs an empty cell against the block you clicked
   const facing=(facingFromYaw(player.yaw)+2)&3;   // the text faces the player who placed it
   setBlock(px,py,pz,id);
   signMeta.set(dkey(px,py,pz),{facing, lines:['','','','']});
@@ -2210,59 +2169,8 @@ nameInputEl.addEventListener('input', ()=>{
   try{ localStorage.setItem('leoncraft_name', nm); }catch(e){}
   if(mp.active && nm) mpSend({type:'name', name:nm});
 });
-// ---- skin editor ----
-const skinPanel=document.getElementById('skinPanel');
-const skinFace=document.getElementById('skinFace'), sfCtx=skinFace.getContext('2d');
-const SKIN_PAL=[0xffffff,0x000000,0xd9a066,0x7a4a30,0xb23a2a,0xf2c400,0x3f7a34,0x3aa0c9,0x394a7a,0x792aac,0xed8dac,0x8e8e86];
-let editSkin=null, paintColor=0x000000, painting=false;
+// colour helper (kept for the Tab head icons; the custom-skin editor was removed)
 function toHex(n){ return '#'+((n>>>0)&0xffffff).toString(16).padStart(6,'0'); }
-function fromHex(s){ return parseInt(s.slice(1),16); }
-function drawSkinFace(){
-  const s=176, cell=s/8;
-  sfCtx.fillStyle=toHex(editSkin.skin); sfCtx.fillRect(0,0,s,s);
-  const fp=editSkin.facePaint;
-  if(fp) for(let i=0;i<64;i++){ if(fp[i]==null||fp[i]<0) continue; sfCtx.fillStyle=toHex(fp[i]); sfCtx.fillRect((i%8)*cell,(i/8|0)*cell,cell,cell); }
-  sfCtx.strokeStyle='rgba(0,0,0,.18)'; sfCtx.lineWidth=1;
-  for(let i=1;i<8;i++){ sfCtx.beginPath(); sfCtx.moveTo(i*cell,0); sfCtx.lineTo(i*cell,s); sfCtx.moveTo(0,i*cell); sfCtx.lineTo(s,i*cell); sfCtx.stroke(); }
-}
-function paintAt(ev){
-  const r=skinFace.getBoundingClientRect();
-  const x=Math.floor((ev.clientX-r.left)/(r.width/8)), y=Math.floor((ev.clientY-r.top)/(r.height/8));
-  if(x<0||x>7||y<0||y>7) return;
-  if(!editSkin.facePaint) editSkin.facePaint=new Array(64).fill(null);
-  editSkin.facePaint[y*8+x] = (paintColor<0? null : paintColor);
-  drawSkinFace();
-}
-skinFace.addEventListener('mousedown', e=>{ painting=true; paintAt(e); });
-skinFace.addEventListener('mousemove', e=>{ if(painting) paintAt(e); });
-addEventListener('mouseup', ()=>{ painting=false; });
-function syncColorInputs(){
-  document.getElementById('colSkin').value=toHex(editSkin.skin);
-  document.getElementById('colShirt').value=toHex(editSkin.shirt);
-  document.getElementById('colPants').value=toHex(editSkin.pants);
-  document.getElementById('colHair').value=toHex(editSkin.hair);
-}
-function openSkinEditor(){
-  editSkin=JSON.parse(JSON.stringify(currentSkin));
-  const pr=document.getElementById('skinPresets'); pr.innerHTML='';
-  SKIN_PRESETS.forEach(p=>{ const b=document.createElement('button'); b.className='btn'; b.textContent=p.name;
-    b.addEventListener('click', ()=>{ editSkin.skin=p.skin; editSkin.shirt=p.shirt; editSkin.pants=p.pants; editSkin.hair=p.hair; syncColorInputs(); drawSkinFace(); }); pr.appendChild(b); });
-  const pal=document.getElementById('skinPalette'); pal.innerHTML='';
-  SKIN_PAL.forEach(c=>{ const sw=document.createElement('div'); sw.className='sw'+(c===paintColor?' sel':''); sw.style.background=toHex(c);
-    sw.addEventListener('click', ()=>{ paintColor=c; [...pal.children].forEach(el=>el.classList.remove('sel')); sw.classList.add('sel'); }); pal.appendChild(sw); });
-  const er=document.createElement('div'); er.className='sw'; er.textContent='×'; er.style.cssText+='display:flex;align-items:center;justify-content:center;color:#fff;background:#555;';
-  er.addEventListener('click', ()=>{ paintColor=-1; [...pal.children].forEach(el=>el.classList.remove('sel')); er.classList.add('sel'); }); pal.appendChild(er);
-  syncColorInputs(); drawSkinFace();
-  menuEl.hidden=true; skinPanel.hidden=false;
-}
-['colSkin','colShirt','colPants','colHair'].forEach(id=>{
-  document.getElementById(id).addEventListener('input', e=>{
-    editSkin[{colSkin:'skin',colShirt:'shirt',colPants:'pants',colHair:'hair'}[id]] = fromHex(e.target.value); drawSkinFace();
-  });
-});
-document.getElementById('skinBtn').addEventListener('click', openSkinEditor);
-document.getElementById('skinSave').addEventListener('click', ()=>{ applySkin(editSkin); skinPanel.hidden=true; menuEl.hidden=false; });
-document.getElementById('skinCancel').addEventListener('click', ()=>{ skinPanel.hidden=true; menuEl.hidden=false; });
 document.getElementById('signDoneBtn').addEventListener('click', ()=>closeSignEditor(true));
 document.getElementById('signCancelBtn').addEventListener('click', ()=>closeSignEditor(false));
 document.getElementById('signText').addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); closeSignEditor(false); } });
