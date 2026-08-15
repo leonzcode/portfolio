@@ -327,7 +327,7 @@ const BLOCKS = {};
 // A NEW block just gets the next free id after this list — ONLY APPEND names
 // here, never reorder, insert, or remove them.
 // ---------------------------------------------------------------------------
-const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand","gravel","oak_log","oak_planks","oak_leaves","coal_ore","iron_ore","gold_ore","diamond_ore","redstone_ore","glass","water","sandstone","bricks","snow","ice","obsidian","netherrack","glowstone","pumpkin","melon","crafting_table","furnace","bookshelf","spruce_log","spruce_planks","birch_log","birch_planks","jungle_log","jungle_planks","acacia_log","acacia_planks","dark_oak_log","dark_oak_planks","white_wool","orange_wool","magenta_wool","light_blue_wool","yellow_wool","lime_wool","pink_wool","gray_wool","light_gray_wool","cyan_wool","purple_wool","blue_wool","brown_wool","green_wool","red_wool","black_wool","oak_door","spruce_door","birch_door","jungle_door","acacia_door","dark_oak_door","white_bed","orange_bed","magenta_bed","light_blue_bed","yellow_bed","lime_bed","pink_bed","gray_bed","light_gray_bed","cyan_bed","purple_bed","blue_bed","brown_bed","green_bed","red_bed","black_bed","oak_stairs","oak_fence","spruce_stairs","spruce_fence","birch_stairs","birch_fence","jungle_stairs","jungle_fence","acacia_stairs","acacia_fence","dark_oak_stairs","dark_oak_fence","ladder","oak_sign","spruce_sign","birch_sign","jungle_sign","acacia_sign","dark_oak_sign","granite","polished_granite","diorite","polished_diorite","andesite","polished_andesite","stone_bricks","mossy_stone_bricks","cracked_stone_bricks","chiseled_stone_bricks","mossy_cobblestone","red_sand","coarse_dirt","podzol","mycelium","clay","hardened_clay","soul_sand","end_stone","nether_brick","red_sandstone","chiseled_sandstone","quartz_block","chiseled_quartz","quartz_pillar","prismarine","prismarine_bricks","dark_prismarine","sea_lantern","slime_block","packed_ice","snow_block","sponge","hay_block","jack_o_lantern","emerald_ore","lapis_ore","nether_quartz_ore","iron_block","gold_block","diamond_block","emerald_block","coal_block","redstone_block","lapis_block","spruce_leaves","birch_leaves","jungle_leaves","acacia_leaves","dark_oak_leaves","leong_sahur_spawn_egg","tralaleon_spawn_egg","white_stained_clay","white_stained_glass","orange_stained_clay","orange_stained_glass","magenta_stained_clay","magenta_stained_glass","light_blue_stained_clay","light_blue_stained_glass","yellow_stained_clay","yellow_stained_glass","lime_stained_clay","lime_stained_glass","pink_stained_clay","pink_stained_glass","gray_stained_clay","gray_stained_glass","light_gray_stained_clay","light_gray_stained_glass","cyan_stained_clay","cyan_stained_glass","purple_stained_clay","purple_stained_glass","blue_stained_clay","blue_stained_glass","brown_stained_clay","brown_stained_glass","green_stained_clay","green_stained_glass","red_stained_clay","red_stained_glass","black_stained_clay","black_stained_glass"];
+const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand","gravel","oak_log","oak_planks","oak_leaves","coal_ore","iron_ore","gold_ore","diamond_ore","redstone_ore","glass","water","sandstone","bricks","snow","ice","obsidian","netherrack","glowstone","pumpkin","melon","crafting_table","furnace","bookshelf","spruce_log","spruce_planks","birch_log","birch_planks","jungle_log","jungle_planks","acacia_log","acacia_planks","dark_oak_log","dark_oak_planks","white_wool","orange_wool","magenta_wool","light_blue_wool","yellow_wool","lime_wool","pink_wool","gray_wool","light_gray_wool","cyan_wool","purple_wool","blue_wool","brown_wool","green_wool","red_wool","black_wool","oak_door","spruce_door","birch_door","jungle_door","acacia_door","dark_oak_door","white_bed","orange_bed","magenta_bed","light_blue_bed","yellow_bed","lime_bed","pink_bed","gray_bed","light_gray_bed","cyan_bed","purple_bed","blue_bed","brown_bed","green_bed","red_bed","black_bed","oak_stairs","oak_fence","spruce_stairs","spruce_fence","birch_stairs","birch_fence","jungle_stairs","jungle_fence","acacia_stairs","acacia_fence","dark_oak_stairs","dark_oak_fence","ladder","oak_sign","spruce_sign","birch_sign","jungle_sign","acacia_sign","dark_oak_sign","granite","polished_granite","diorite","polished_diorite","andesite","polished_andesite","stone_bricks","mossy_stone_bricks","cracked_stone_bricks","chiseled_stone_bricks","mossy_cobblestone","red_sand","coarse_dirt","podzol","mycelium","clay","hardened_clay","soul_sand","end_stone","nether_brick","red_sandstone","chiseled_sandstone","quartz_block","chiseled_quartz","quartz_pillar","prismarine","prismarine_bricks","dark_prismarine","sea_lantern","slime_block","packed_ice","snow_block","sponge","hay_block","jack_o_lantern","emerald_ore","lapis_ore","nether_quartz_ore","iron_block","gold_block","diamond_block","emerald_block","coal_block","redstone_block","lapis_block","spruce_leaves","birch_leaves","jungle_leaves","acacia_leaves","dark_oak_leaves","leong_sahur_spawn_egg","tralaleon_spawn_egg","white_stained_clay","white_stained_glass","orange_stained_clay","orange_stained_glass","magenta_stained_clay","magenta_stained_glass","light_blue_stained_clay","light_blue_stained_glass","yellow_stained_clay","yellow_stained_glass","lime_stained_clay","lime_stained_glass","pink_stained_clay","pink_stained_glass","gray_stained_clay","gray_stained_glass","light_gray_stained_clay","light_gray_stained_glass","cyan_stained_clay","cyan_stained_glass","purple_stained_clay","purple_stained_glass","blue_stained_clay","blue_stained_glass","brown_stained_clay","brown_stained_glass","green_stained_clay","green_stained_glass","red_stained_clay","red_stained_glass","black_stained_clay","black_stained_glass","prg"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -484,6 +484,7 @@ paint('stone', speckle(0x808080, 14, 4));
 paint('cobble', (()=>{ const r=rng(5), base=rgb(0x828282); return (x,y)=>{ const n=(Math.floor(x/4)+Math.floor(y/4))%2; const c=n?base.map(v=>v*0.85|0):base; return vary(c, 20, r); };})());
 paint('bedrock', (()=>{ const r=rng(6); return (x,y)=>{ const v=(r()<0.5)?0x2a2a2a:0x4a4a4a; return vary(rgb(v), 20, r); };})());
 paint('sand', speckle(0xdcd29a, 12, 7));
+paint('prg', speckle(0x2fbe2e, 10, 77));   // green fallback tile; the world block renders the prg.glb sphere model
 paint('gravel', (()=>{ const r=rng(8), a=rgb(0x8a827c), b=rgb(0x6f6862); return (x,y)=> vary(r()<0.5?a:b, 18, r); })());
 paint('oak_leaves', leaves(12, 0x3f7d2f));
 // all wood types: log side/top + planks, each an original texture in the type's colours
@@ -754,6 +755,8 @@ WOODS.forEach(w=>{
 B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:false, cutout:true });
 // a sign for every wood type (typeable standing sign)
 WOODS.forEach(w=> B[w.id+'_sign'] = def(w.id+'_sign', { tiles:T(w.id+'_planks'), sign:true, solid:false, opaque:false, hex:w.plank }));
+// PRG: the one spherical block. Renders as the prg.glb model (a green smiley sphere), not a cube.
+B.prg = def('prg', { tiles:T('prg'), model:true, solid:true, opaque:false });
 
 // define every EXTRA block (pass-1 expansion)
 for(const e of EXTRA){
@@ -948,6 +951,69 @@ function removeSignObj(x,y,z){ const k=dkey(x,y,z); const g=signObjs.get(k); if(
 function clearSignObjs(){ for(const [,g] of signObjs) disposeSignGroup(g); signObjs.clear(); }
 function rebuildSignObjs(){ clearSignObjs(); for(const [k] of signMeta){ const c=k.split(','); updateSignObj(+c[0],+c[1],+c[2]); } }
 
+// ---- PRG: the one spherical block, rendered from prg.glb (a green smiley sphere). ----
+// Cubes get meshed into the chunk; a sphere can't be, so each PRG block gets its own 3D
+// object placed in its cell (same idea as signs). The model + texture are parsed from the
+// GLB once and shared by every instance.
+let prgModel = null, prgLoading = false;
+const prgObjs = new Map();       // "x,y,z" -> THREE.Mesh
+const prgPositions = new Set();  // every currently-loaded PRG block position
+const prgMeta = new Map();       // "x,y,z" -> {ang:0..7}  which way the face points
+let spPrg = {};                  // singleplayer save of PRG facings
+function isPrg(id){ return !!(id && BLOCKS[id] && BLOCKS[id].model); }
+function prgAng(k){ const m=prgMeta.get(k); return m?m.ang:0; }
+async function loadPrgModel(){
+  if(prgModel || prgLoading) return; prgLoading = true;
+  try{
+    const buf = await (await fetch('/legacy/prg.glb')).arrayBuffer();
+    const dv = new DataView(buf); const total = dv.getUint32(8,true);
+    let off = 12, json=null, bin=null;
+    while(off < total){ const clen=dv.getUint32(off,true), ctype=dv.getUint32(off+4,true); off+=8;
+      if(ctype===0x4E4F534A) json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf,off,clen)));   // "JSON"
+      else if(ctype===0x004E4942) bin = buf.slice(off, off+clen);                                          // "BIN\0"
+      off += clen; }
+    const CT={5120:Int8Array,5121:Uint8Array,5122:Int16Array,5123:Uint16Array,5125:Uint32Array,5126:Float32Array};
+    const CC={SCALAR:1,VEC2:2,VEC3:3,VEC4:4};
+    const readAcc = i => { const a=json.accessors[i], v=json.bufferViews[a.bufferView];
+      return new CT[a.componentType](bin, (v.byteOffset||0)+(a.byteOffset||0), CC[a.type]*a.count); };
+    const prim = json.meshes[0].primitives[0];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(readAcc(prim.attributes.POSITION),3));
+    if(prim.attributes.NORMAL!=null) geo.setAttribute('normal', new THREE.BufferAttribute(readAcc(prim.attributes.NORMAL),3));
+    if(prim.attributes.TEXCOORD_0!=null) geo.setAttribute('uv', new THREE.BufferAttribute(readAcc(prim.attributes.TEXCOORD_0),2));
+    if(prim.indices!=null) geo.setIndex(new THREE.BufferAttribute(readAcc(prim.indices),1));
+    if(prim.attributes.NORMAL==null) geo.computeVertexNormals();
+    // embedded PNG -> texture (glTF convention: flipY off)
+    const img=json.images[0], iv=json.bufferViews[img.bufferView];
+    const blob=new Blob([new Uint8Array(bin, iv.byteOffset||0, iv.byteLength)], {type:img.mimeType||'image/png'});
+    const tex=new THREE.Texture(await createImageBitmap(blob));
+    tex.colorSpace=THREE.SRGBColorSpace; tex.flipY=false;
+    tex.wrapS=THREE.RepeatWrapping; tex.repeat.x=-1; tex.offset.x=1;   // the model's front UVs read the PNG mirrored; flip so PRG reads left-to-right
+    tex.needsUpdate=true;
+    prgModel = { geo, mat:new THREE.MeshLambertMaterial({ map:tex, alphaTest:0.05, side:THREE.DoubleSide }) };
+    for(const k of prgPositions) ensurePrgObj(k);   // fill in objects for blocks already loaded
+  }catch(e){ console.error('prg model load failed', e); }
+  prgLoading = false;
+}
+function ensurePrgObj(k){
+  if(!prgModel || typeof scene==='undefined' || !scene || prgObjs.has(k)) return;
+  const p=k.split(','); const mesh=new THREE.Mesh(prgModel.geo, prgModel.mat);
+  mesh.position.set(+p[0]+0.5, +p[1]+0.5, +p[2]+0.5);   // unit sphere, centered in the cell
+  mesh.rotation.y = prgAng(k)*Math.PI/4;                // face points the way the placer chose
+  mesh.frustumCulled=true; scene.add(mesh); prgObjs.set(k, mesh);
+}
+function setPrgAng(k, ang){ prgMeta.set(k, {ang:ang|0}); const o=prgObjs.get(k); if(o) o.rotation.y=(ang|0)*Math.PI/4; else ensurePrgObj(k); }
+function removePrgObj(k){ const m=prgObjs.get(k); if(m){ scene.remove(m); prgObjs.delete(k); } }   // geo/mat are shared, so don't dispose
+function reconcilePrg(cx, cz, foundKeys){          // run at the end of a chunk mesh: add new, drop gone
+  const found=new Set(foundKeys);
+  for(const k of Array.from(prgPositions)){ const p=k.split(','); if(Math.floor(p[0]/CH)===cx && Math.floor(p[2]/CH)===cz && !found.has(k)){ prgPositions.delete(k); removePrgObj(k); } }
+  for(const k of foundKeys){ prgPositions.add(k); ensurePrgObj(k); }
+}
+function dropChunkPrg(cx, cz){                      // when a chunk unloads, drop its sphere objects
+  for(const k of Array.from(prgPositions)){ const p=k.split(','); if(Math.floor(p[0]/CH)===cx && Math.floor(p[2]/CH)===cz){ prgPositions.delete(k); removePrgObj(k); } }
+}
+function clearPrgObjs(){ for(const k of Array.from(prgObjs.keys())) removePrgObj(k); prgPositions.clear(); }
+
 // ---- singleplayer save (localStorage): the world's seed + every player block edit,
 // so a solo world keeps its progress across reloads and site updates. The shared
 // multiplayer world is saved separately on the server, not here. ----
@@ -955,7 +1021,7 @@ let spSeed = seed;               // the singleplayer world's own seed
 let spEdits = {};                // "x,y,z" -> blockId (0 = air) : deviations from the terrain
 let spSaveTimer = null;
 const SP_KEY = 'leoncraft_sp_world';
-function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns })); }catch(e){} }
+function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns, prg: spPrg })); }catch(e){} }
 function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
 function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
 function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = removed)
@@ -985,10 +1051,15 @@ function spRecordSign(x,y,z,m){
   if(m===null) delete spSigns[k]; else spSigns[k]={w:m.wall?1:0, a:m.ang, h:m.hex, l:m.lines};
   spScheduleSave();
 }
+function spRecordPrg(x,y,z,m){
+  if(mp.active) return; const k=dkey(x,y,z);
+  if(m===null) delete spPrg[k]; else spPrg[k]={a:m.ang};
+  spScheduleSave();
+}
 function spReloadWorld(){         // load the saved singleplayer world into seed + overrides + doors + beds + stairs + ladders
-  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs();
-  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {};
-  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; } } }catch(e){}
+  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs();
+  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {};
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; } } }catch(e){}
   seed=spSeed; noise=makeNoise(seed);
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
   for(const kk in spDoors){ doorMeta.set(kk, {facing:spDoors[kk].f, open:!!spDoors[kk].o}); }
@@ -996,6 +1067,7 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   for(const kk in spStairs){ stairMeta.set(kk, {facing:spStairs[kk].f}); }
   for(const kk in spLadders){ ladderMeta.set(kk, {facing:spLadders[kk].f}); }
   for(const kk in spSigns){ const s=spSigns[kk]; signMeta.set(kk, {wall:!!s.w, ang:(s.a!=null?s.a:(s.f!=null?facingToAng(s.f):0)), hex:s.h, lines:s.l||['','','','']}); }   // objects built later, once the scene exists
+  for(const kk in spPrg){ prgMeta.set(kk, {ang:spPrg[kk].a||0}); }   // PRG facings; spheres built when the chunks mesh
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
 addEventListener('beforeunload', spSave);
@@ -1219,6 +1291,7 @@ function buildChunkMesh(c){
   const op = { pos:[], uv:[], col:[], idx:[] };
   const tr = { pos:[], uv:[], col:[], idx:[] };
   const cut= { pos:[], uv:[], col:[], idx:[] };
+  const foundPrg = [];
   const push = (buf, bx,by,bz, face, tile, shadeMul, ao)=>{
     const F = FACES[face];
     const [u0,v0,u1,v1] = tileUV(tile);
@@ -1274,6 +1347,7 @@ function buildChunkMesh(c){
       continue;
     }
     if (bl.sign){ continue; }                  // signs render as separate rotatable 3D objects (see updateSignObj)
+    if (bl.model){ foundPrg.push(wx+','+y+','+wz); continue; }   // PRG renders as the prg.glb sphere object
     for(let f=0;f<6;f++){
       const F=FACES[f];
       const nx=wx+F.n[0], ny=y+F.n[1], nz=wz+F.n[2];
@@ -1307,6 +1381,7 @@ function buildChunkMesh(c){
   c.mesh = make(op, matOpaque);   if(c.mesh) scene.add(c.mesh);
   c.cmesh= make(cut, matCutout);  if(c.cmesh) scene.add(c.cmesh);
   c.tmesh= make(tr, matTrans);    if(c.tmesh) scene.add(c.tmesh);
+  reconcilePrg(c.cx, c.cz, foundPrg);   // add/remove the sphere objects for this chunk's PRG blocks
   c.dirty=false;
 }
 
@@ -1422,9 +1497,11 @@ const vmDir=new THREE.DirectionalLight(0xffffff,0.6); vmDir.position.set(0.4,1,0
 const vmArm=part(4*S16,12*S16,4*S16,localMats.skin); vmScene.add(vmArm);
 let vmBlock=null, vmHeldId=-1;
 function buildHeldBlock(id){
-  if(vmBlock){ vmScene.remove(vmBlock); vmBlock.geometry.dispose(); vmBlock.material.dispose(); vmBlock=null; }
+  if(vmBlock){ vmScene.remove(vmBlock); if(!vmBlock.userData.shared){ vmBlock.geometry.dispose(); vmBlock.material.dispose(); } vmBlock=null; }
   vmHeldId=id||0; if(!id) return;
-  const bl=BLOCKS[id]; const geo=new THREE.BoxGeometry(1,1,1);
+  const bl=BLOCKS[id];
+  if(bl.model && prgModel){ vmBlock=new THREE.Mesh(prgModel.geo, prgModel.mat); vmBlock.userData.shared=true; vmScene.add(vmBlock); return; }   // hold the PRG sphere
+  const geo=new THREE.BoxGeometry(1,1,1);
   const faceArg=[2,2,0,1,2,2]; const uv=geo.attributes.uv;   // box: +x,-x,+y,-y,+z,-z
   for(let f=0;f<6;f++){ const [u0,v0,u1,v1]=tileUV(faceTile(bl,faceArg[f]));
     const q=[[u0,v1],[u1,v1],[u0,v0],[u1,v0]];
@@ -1583,6 +1660,7 @@ function ensureChunks(px,pz){
       if(c.mesh){scene.remove(c.mesh);c.mesh.geometry.dispose();}
       if(c.cmesh){scene.remove(c.cmesh);c.cmesh.geometry.dispose();}
       if(c.tmesh){scene.remove(c.tmesh);c.tmesh.geometry.dispose();}
+      dropChunkPrg(c.cx, c.cz);
       chunks.delete(k);
     }
   }
@@ -1971,6 +2049,7 @@ function breakBlock(){
   if(isStair(getBlock(x,y,z))){ stairMeta.delete(dkey(x,y,z)); spRecordStair(x,y,z,null); }
   if(isLadder(getBlock(x,y,z))){ ladderMeta.delete(dkey(x,y,z)); spRecordLadder(x,y,z,null); }
   if(isSign(getBlock(x,y,z))){ signMeta.delete(dkey(x,y,z)); removeSignObj(x,y,z); spRecordSign(x,y,z,null); }
+  if(isPrg(getBlock(x,y,z))){ prgMeta.delete(dkey(x,y,z)); spRecordPrg(x,y,z,null); }
   setBlock(x,y,z, AIR);
   waterLvl.delete(wkey(x,y,z));
   if(!mp.active){                // keep the shared world static + consistent
@@ -2001,6 +2080,7 @@ function placeBlock(){
   }
   setBlock(px,py,pz, id);
   if(bl.stairs){ const sf=(facingFromYaw(player.yaw)+2)&3; stairMeta.set(dkey(px,py,pz),{facing:sf}); spRecordStair(px,py,pz,{facing:sf}); remeshChunkAt(px,pz); }   // low side faces the player, step rises away
+  if(bl.model){ const pa=((Math.round(player.yaw/(Math.PI/4))%8)+8)%8; setPrgAng(dkey(px,py,pz),pa); spRecordPrg(px,py,pz,{ang:pa}); if(mp.active) mpSend({type:'prg', x:px, y:py, z:pz, ang:pa}); remeshChunkAt(px,pz); }   // the sphere's face turns toward the placer
   if(!mp.active){                // keep the shared world static + consistent
     if(id===B.water) enqueueWater(px,py,pz,0);
     if(GRAVITY.has(id)) settleColumn(px,pz);
@@ -2067,6 +2147,21 @@ function blockIconCanvas(id, size){
     px(0.22,0.26,0.56,0.05,dark); px(0.22,0.38,0.42,0.05,dark);                   // "text" lines
     return cv;
   }
+  if(bl.model){                    // PRG: a green smiley face (2D stand-in for the sphere)
+    const s=size, cx=s*0.5, cy=s*0.5, R=s*0.46; g.imageSmoothingEnabled=true;
+    g.fillStyle='#2fbe2e'; g.beginPath(); g.arc(cx,cy,R,0,Math.PI*2); g.fill();
+    g.fillStyle='#141414';                                                     // eyes (tilted almonds)
+    for(const sx of [-1,1]){ g.save(); g.translate(cx+sx*R*0.34, cy-R*0.28); g.rotate(sx*0.5);
+      g.beginPath(); g.ellipse(0,0,R*0.17,R*0.27,0,0,Math.PI*2); g.fill(); g.restore(); }
+    g.fillStyle='#fff';                                                        // glints
+    for(const sx of [-1,1]){ g.beginPath(); g.arc(cx+sx*R*0.30, cy-R*0.42, R*0.06, 0, Math.PI*2); g.fill(); }
+    g.strokeStyle='#141414'; g.lineWidth=Math.max(1.5,R*0.12); g.lineCap='round';   // smile
+    g.beginPath(); g.arc(cx, cy-R*0.06, R*0.42, 0.16*Math.PI, 0.84*Math.PI); g.stroke();
+    g.font='900 '+Math.round(R*0.52)+'px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.lineWidth=Math.max(1.5,R*0.1); g.strokeStyle='#141414'; g.lineJoin='round';   // PRG
+    g.strokeText('PRG', cx, cy+R*0.54); g.fillStyle='#fff'; g.fillText('PRG', cx, cy+R*0.54);
+    return cv;
+  }
   const t=faceTile(bl,2);           // side texture
   const col=t%ATLAS_COLS, row=(t/ATLAS_COLS)|0;
   g.drawImage(atlasCanvas, col*TILE, row*TILE, TILE, TILE, 0,0,size,size);
@@ -2111,7 +2206,7 @@ function catOf(n){
   if(['iron_block','gold_block','diamond_block','emerald_block','coal_block','redstone_block','lapis_block'].includes(n)) return 'ores';
   const nature=['grass','dirt','coarse_dirt','podzol','mycelium','sand','red_sand','gravel','clay','snow','snow_block','ice','packed_ice','water','soul_sand','netherrack','end_stone','melon','pumpkin','hay_block'];
   if(nature.includes(n) || n.endsWith('_leaves') || n.endsWith('_log')) return 'nature';
-  const deco=['glass','bookshelf','crafting_table','furnace','glowstone','sea_lantern','sponge','slime_block','jack_o_lantern'];
+  const deco=['glass','bookshelf','crafting_table','furnace','glowstone','sea_lantern','sponge','slime_block','jack_o_lantern','prg'];
   if(deco.includes(n)) return 'deco';
   if(['bedrock'].includes(n) || n.endsWith('_spawn_egg')) return 'misc';
   return 'building';
@@ -2181,6 +2276,8 @@ function startGame(){
   ensureChunks(player.pos.x, player.pos.z);
   // generate the spawn area immediately so we don't fall through
   let guard=0; while(genQueue.length && guard<400){ const c=genQueue.shift(); if(!c.generated)c.generate(); guard++; }
+  clearPrgObjs();                    // clear any PRG spheres from a previous world before the spawn chunks reconcile
+  loadPrgModel();                    // begin loading prg.glb (once); objects fill in when it's ready
   for(const [,c] of chunks) if(c.generated && Math.abs(c.cx-Math.floor(player.pos.x/CH))<=2 && Math.abs(c.cz-Math.floor(player.pos.z/CH))<=2) buildChunkMesh(c);
   // drop player onto ground
   const gh=terrainHeight(Math.floor(player.pos.x),Math.floor(player.pos.z));
@@ -2296,10 +2393,11 @@ function mpUpdatePlayers(dt){
 function mpHandle(m){
   if(m.type==='init'){
     mp.id=m.id; mp.name=m.name;
-    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs();
+    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
     if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open}); } }
+    if(m.prg) for(const kk in m.prg){ prgMeta.set(kk, {ang:m.prg[kk].ang|0}); }   // PRG facings; spheres built when chunks mesh
     mpClearPlayers();
     mpStartWorld(m.seed);
     for(const pl of (m.players||[])) mpAddPlayer(pl);
@@ -2308,9 +2406,10 @@ function mpHandle(m){
   else if(m.type==='join'){ mpAddPlayer(m.player); }
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
-  else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+  else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
   else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {wall:!!m.wall, ang:(m.ang!=null?m.ang:(m.facing!=null?facingToAng(m.facing):0)), hex:m.hex, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
   else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open}); } remeshChunkAt(m.x, m.z); }
+  else if(m.type==='prg'){ setPrgAng(m.x+','+m.y+','+m.z, m.ang|0); }
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
@@ -2524,6 +2623,9 @@ window.__mc = {
   stairAt(x,y,z){ const s=stairMeta.get(x+','+y+','+z); return s?{facing:s.facing}:null; },
   setStair(x,y,z,facing){ setBlock(x,y,z,BLOCKS['oak_stairs'].id); stairMeta.set(x+','+y+','+z,{facing}); remeshChunkAt(x,z); },
   signAt(x,y,z){ const s=signMeta.get(x+','+y+','+z); return s?{wall:s.wall, ang:s.ang, lines:s.lines}:null; },
+  prgCount(){ return prgObjs.size; }, prgLoaded(){ return !!prgModel; },
+  prgAt(x,y,z){ const m=prgMeta.get(x+','+y+','+z); return m?{ang:m.ang}:null; },
+  putPrg(x,y,z,ang){ const id=BLOCKS['prg'].id; setBlock(x,y,z,id); mpSendBlock(x,y,z,id); setPrgAng(x+','+y+','+z,ang|0); spRecordPrg(x,y,z,{ang:ang|0}); if(mp.active) mpSend({type:'prg',x,y,z,ang:ang|0}); remeshChunkAt(x,z); },
   putSign(x,y,z,wall,ang,lines){ const id=BLOCKS['oak_sign'].id; setBlock(x,y,z,id); const m={wall:!!wall, ang:ang|0, hex:BLOCKS[id].hex, lines:(lines||['','','',''])}; signMeta.set(x+','+y+','+z,m); spRecordSign(x,y,z,m); remeshChunkAt(x,z); updateSignObj(x,y,z); },
   editSign(x,y,z){ openSignEditor(x,y,z); },
   ladderAt(x,y,z){ const l=ladderMeta.get(x+','+y+','+z); return l?{facing:l.facing}:null; },
