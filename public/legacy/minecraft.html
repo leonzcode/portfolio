@@ -865,12 +865,23 @@ let spStairs = {}, spLadders = {};
 function isStair(id){ return !!(id && BLOCKS[id] && BLOCKS[id].stairs); }
 function isLadder(id){ return !!(id && BLOCKS[id] && BLOCKS[id].ladder); }
 function isFence(id){ return !!(id && BLOCKS[id] && BLOCKS[id].fence); }
-function stairBoxes(facing){    // full bottom slab + a half-depth step on the back
+// stairs auto-shape into inner/outer corners when perpendicular stairs meet, like Minecraft.
+const STAIR_Q={ NW:[0,0.5,0,0.5], NE:[0.5,1,0,0.5], SW:[0,0.5,0.5,1], SE:[0.5,1,0.5,1] };
+const STAIR_HALF={ 0:['NW','NE'], 1:['NE','SE'], 2:['SW','SE'], 3:['NW','SW'] };   // the half on the mf (high) side
+const OUT_CW={0:'NE',1:'SE',2:'SW',3:'NW'}, OUT_CCW={0:'NW',1:'NE',2:'SE',3:'SW'};
+const IN_CW={0:'SE',1:'SW',2:'NW',3:'NE'},  IN_CCW={0:'SW',1:'NW',2:'NE',3:'SE'};
+function stairFacingAt(x,y,z){ const b=getBlock(x,y,z); if(!isStair(b)) return -1; const m=stairMeta.get(x+','+y+','+z); return m?m.facing:0; }
+function stairGeometry(x,y,z,F){
   const bottom=[0,1,0,0.5,0,1];
-  if(facing===0) return [bottom, [0,1,0.5,1,0.5,1]];
-  if(facing===2) return [bottom, [0,1,0.5,1,0,0.5]];
-  if(facing===1) return [bottom, [0,0.5,0.5,1,0,1]];
-  return [bottom, [0.5,1,0.5,1,0,1]];
+  const mf=(F+2)&3, ccw=(mf+3)&3;              // mf = the high/ascend side (Minecraft "facing")
+  let keys=STAIR_HALF[mf].slice();             // straight: the half-slab on the high side
+  const ff=stairFacingAt(x+DIRV[mf][0], y, z+DIRV[mf][2]);   // stair the steps ascend toward
+  const bb=stairFacingAt(x-DIRV[mf][0], y, z-DIRV[mf][2]);   // stair on the low side
+  if(ff>=0 && (((ff+2)&3)&1)!==(mf&1)){ const fmf=(ff+2)&3; keys=[fmf===ccw?OUT_CCW[mf]:OUT_CW[mf]]; }        // outer corner
+  else if(bb>=0 && (((bb+2)&3)&1)!==(mf&1)){ const bmf=(bb+2)&3; keys=STAIR_HALF[mf].concat(bmf===ccw?IN_CCW[mf]:IN_CW[mf]); } // inner
+  const boxes=[bottom];
+  for(const k of keys){ const q=STAIR_Q[k]; boxes.push([q[0],q[1], 0.5,1, q[2],q[3]]); }
+  return boxes;
 }
 function ladderBounds(facing){  // thin panel flat on the wall (opposite the facing)
   const t=2/16;
@@ -891,10 +902,13 @@ function signBoxes(facing){
   return [post, board];
 }
 function makeSignTexture(lines){
-  const c=document.createElement('canvas'); c.width=200; c.height=104; const g=c.getContext('2d');
-  g.clearRect(0,0,200,104); g.fillStyle='#241a0b'; g.font='bold 20px monospace'; g.textAlign='center'; g.textBaseline='middle';
+  const c=document.createElement('canvas'); c.width=256; c.height=136; const g=c.getContext('2d');
+  g.clearRect(0,0,256,136); g.font='900 27px monospace'; g.textAlign='center'; g.textBaseline='middle'; g.lineJoin='round';
   const ls=(lines||[]);
-  for(let i=0;i<4;i++){ const s=(ls[i]||'').slice(0,16); if(s) g.fillText(s, 100, 16+i*24); }
+  for(let i=0;i<4;i++){ const s=(ls[i]||'').slice(0,16); if(!s) continue; const y=20+i*31;
+    g.lineWidth=7; g.strokeStyle='rgba(255,255,255,0.92)'; g.strokeText(s,128,y);   // bright outline so it stands out on the wood
+    g.fillStyle='#000000'; g.fillText(s,128,y);                                      // solid, bold black text
+  }
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter; return t;
 }
 function updateSignObj(x,y,z){
@@ -1216,7 +1230,7 @@ function buildChunkMesh(c){
     }
     if (bl.stairs){                            // full bottom slab + a step on the back
       const m=stairMeta.get(dkey(wx,y,wz)); const stile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
-      for(const box of stairBoxes(m?m.facing:0)) pushBox(op, wx, y, wz, box, stile);
+      for(const box of stairGeometry(wx, y, wz, m?m.facing:0)) pushBox(op, wx, y, wz, box, stile);
       continue;
     }
     if (bl.ladder){                            // thin cutout panel flat on the wall
@@ -1820,13 +1834,15 @@ function placeDoor(){
   doorMeta.set(dkey(px,py,pz),{facing,open:false}); doorMeta.set(dkey(px,py+1,pz),{facing,open:false});
   mpSendBlock(px,py,pz,id); mpSendBlock(px,py+1,pz,id);
   spRecordDoor(px,py,pz,{facing,open:false}); spRecordDoor(px,py+1,pz,{facing,open:false});
+  if(mp.active) mpSend({type:'door', x:px, y:py, z:pz, facing, open:false});
   remeshChunkAt(px,pz);
 }
 function toggleDoor(x,y,z){
   const by=doorBottom(x,y,z);
-  const cur=doorMeta.get(dkey(x,by,z)); const open=!(cur&&cur.open);   // flip both halves together
+  const cur=doorMeta.get(dkey(x,by,z)); const open=!(cur&&cur.open), facing=(cur&&cur.facing)||0;   // flip both halves together
   for(let h=0;h<2;h++){ const k=dkey(x,by+h,z); const mm=doorMeta.get(k)||{facing:0}; const nm={facing:mm.facing,open}; doorMeta.set(k,nm); spRecordDoor(x,by+h,z,nm); }
   remeshChunkAt(x,z);
+  if(mp.active) mpSend({type:'door', x, y:by, z, facing, open});   // sync open/closed to everyone
 }
 function breakDoor(x,y,z){
   const by=doorBottom(x,y,z);
@@ -1959,7 +1975,7 @@ function placeBlock(){
        py+1>player.pos.y && py<player.pos.y+player.h) return;
   }
   setBlock(px,py,pz, id);
-  if(bl.stairs){ const sf=facingFromYaw(player.yaw); stairMeta.set(dkey(px,py,pz),{facing:sf}); spRecordStair(px,py,pz,{facing:sf}); remeshChunkAt(px,pz); }
+  if(bl.stairs){ const sf=(facingFromYaw(player.yaw)+2)&3; stairMeta.set(dkey(px,py,pz),{facing:sf}); spRecordStair(px,py,pz,{facing:sf}); remeshChunkAt(px,pz); }   // low side faces the player, step rises away
   if(!mp.active){                // keep the shared world static + consistent
     if(id===B.water) enqueueWater(px,py,pz,0);
     if(GRAVITY.has(id)) settleColumn(px,pz);
@@ -2258,6 +2274,7 @@ function mpHandle(m){
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ signMeta.set(kk, {facing:m.signs[kk].facing, lines:m.signs[kk].lines||['','','','']}); }   // objects rebuilt in startGame
+    if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open}); } }
     mpClearPlayers();
     mpStartWorld(m.seed);
     for(const pl of (m.players||[])) mpAddPlayer(pl);
@@ -2266,8 +2283,9 @@ function mpHandle(m){
   else if(m.type==='join'){ mpAddPlayer(m.player); }
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
-  else if(m.type==='block'){ if(m.b===0 && signMeta.has(m.x+','+m.y+','+m.z)){ signMeta.delete(m.x+','+m.y+','+m.z); removeSignObj(m.x,m.y,m.z); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+  else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
   else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {facing:m.facing, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
+  else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open}); } remeshChunkAt(m.x, m.z); }
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
@@ -2479,6 +2497,7 @@ window.__mc = {
   bedAt(x,y,z){ const b=bedMeta.get(x+','+y+','+z); return b?{facing:b.facing,head:b.head}:null; },
   bedCount(){ return bedMeta.size; },
   stairAt(x,y,z){ const s=stairMeta.get(x+','+y+','+z); return s?{facing:s.facing}:null; },
+  setStair(x,y,z,facing){ setBlock(x,y,z,BLOCKS['oak_stairs'].id); stairMeta.set(x+','+y+','+z,{facing}); remeshChunkAt(x,z); },
   signAt(x,y,z){ const s=signMeta.get(x+','+y+','+z); return s?{facing:s.facing, lines:s.lines}:null; },
   editSign(x,y,z){ openSignEditor(x,y,z); },
   ladderAt(x,y,z){ const l=ladderMeta.get(x+','+y+','+z); return l?{facing:l.facing}:null; },
