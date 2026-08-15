@@ -156,6 +156,14 @@
   .skinColors{ display:flex; flex-direction:column; gap:6px; font-size:13px; color:#eee; }
   .skinColors label{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .skinColors input[type=color]{ width:46px; height:24px; border:none; background:none; cursor:pointer; }
+  /* sign text editor */
+  #signEditor{ position:fixed; inset:0; z-index:22; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
+  #signEditor[hidden]{ display:none; }
+  .signBox{ background:#6b4a24; border:3px solid #3a2a13; padding:16px; display:flex; flex-direction:column; gap:10px; align-items:center; }
+  .signBoxTitle{ color:#fff; font-size:16px; }
+  #signText{ width:280px; height:112px; resize:none; font-family:inherit; font-size:15px; line-height:26px; text-align:center; color:#f3e9d2; background:#4a3418; border:2px solid #2a1c0c; outline:none; }
+  .signBtns{ display:flex; gap:10px; }
+  .signBtns .btn{ width:130px; }
   .hint b{ color:#fff; }
 
   /* inventory / block picker */
@@ -270,6 +278,17 @@
   <div class="skinRow">
     <button class="btn" id="skinSave" style="width:190px">Save</button>
     <button class="btn" id="skinCancel" style="width:190px">Cancel</button>
+  </div>
+</div>
+
+<div id="signEditor" hidden>
+  <div class="signBox">
+    <div class="signBoxTitle">Edit sign</div>
+    <textarea id="signText" rows="4" maxlength="120" spellcheck="false" autocomplete="off"></textarea>
+    <div class="signBtns">
+      <button class="btn" id="signDoneBtn">Done</button>
+      <button class="btn" id="signCancelBtn">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -760,6 +779,8 @@ WOODS.forEach(w=>{
   B[w.id+'_fence']  = def(w.id+'_fence',  { tiles:T(w.id+'_planks'), fence:true,  opaque:false });
 });
 B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:false, cutout:true });
+// a sign for every wood type (typeable standing sign)
+WOODS.forEach(w=> B[w.id+'_sign'] = def(w.id+'_sign', { tiles:T(w.id+'_planks'), sign:true, solid:false, opaque:false }));
 
 // define every EXTRA block (pass-1 expansion)
 for(const e of EXTRA){
@@ -887,6 +908,36 @@ function ladderBounds(facing){  // thin panel flat on the wall (opposite the fac
   return [1-t,1,0,1,0,1];
 }
 
+// ---- signs: standing signs you can type on; text is synced to the server ----
+const signMeta = new Map();      // "x,y,z" -> {facing, lines:[..4]}
+let spSigns = {};
+const signTextObjs = new Map();  // "x,y,z" -> THREE.Mesh (the floating text)
+function isSign(id){ return !!(id && BLOCKS[id] && BLOCKS[id].sign); }
+function signBoxes(facing){
+  const post=[7/16,9/16, 0,8/16, 7/16,9/16];
+  const board = (facing===0||facing===2) ? [2/16,14/16, 8/16,1, 7/16,9/16] : [7/16,9/16, 8/16,1, 2/16,14/16];
+  return [post, board];
+}
+function makeSignTexture(lines){
+  const c=document.createElement('canvas'); c.width=200; c.height=104; const g=c.getContext('2d');
+  g.clearRect(0,0,200,104); g.fillStyle='#241a0b'; g.font='bold 20px monospace'; g.textAlign='center'; g.textBaseline='middle';
+  const ls=(lines||[]);
+  for(let i=0;i<4;i++){ const s=(ls[i]||'').slice(0,16); if(s) g.fillText(s, 100, 16+i*24); }
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter; return t;
+}
+function updateSignObj(x,y,z){
+  const m=signMeta.get(dkey(x,y,z)); if(!m) return;
+  const k=dkey(x,y,z); let o=signTextObjs.get(k); const tex=makeSignTexture(m.lines);
+  if(!o){ o=new THREE.Mesh(new THREE.PlaneGeometry(0.78,0.4), new THREE.MeshBasicMaterial({map:tex,transparent:true})); scene.add(o); signTextObjs.set(k,o); }
+  else { if(o.material.map) o.material.map.dispose(); o.material.map=tex; o.material.needsUpdate=true; }
+  const dv=DIRV[m.facing];
+  o.position.set(x+0.5+dv[0]*0.45, y+0.72, z+0.5+dv[2]*0.45);
+  o.rotation.set(0, Math.atan2(dv[0],dv[2]), 0);
+}
+function removeSignObj(x,y,z){ const k=dkey(x,y,z); const o=signTextObjs.get(k); if(o){ scene.remove(o); if(o.material.map)o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); signTextObjs.delete(k); } }
+function clearSignObjs(){ for(const [,o] of signTextObjs){ scene.remove(o); if(o.material.map)o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); } signTextObjs.clear(); }
+function rebuildSignObjs(){ clearSignObjs(); for(const [k] of signMeta){ const c=k.split(','); updateSignObj(+c[0],+c[1],+c[2]); } }
+
 // ---- singleplayer save (localStorage): the world's seed + every player block edit,
 // so a solo world keeps its progress across reloads and site updates. The shared
 // multiplayer world is saved separately on the server, not here. ----
@@ -894,7 +945,7 @@ let spSeed = seed;               // the singleplayer world's own seed
 let spEdits = {};                // "x,y,z" -> blockId (0 = air) : deviations from the terrain
 let spSaveTimer = null;
 const SP_KEY = 'leoncraft_sp_world';
-function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders })); }catch(e){} }
+function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns })); }catch(e){} }
 function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
 function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
 function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = removed)
@@ -919,16 +970,22 @@ function spRecordLadder(x,y,z,m){
   if(m===null) delete spLadders[k]; else spLadders[k]={f:m.facing};
   spScheduleSave();
 }
+function spRecordSign(x,y,z,m){
+  if(mp.active) return; const k=dkey(x,y,z);
+  if(m===null) delete spSigns[k]; else spSigns[k]={f:m.facing, l:m.lines};
+  spScheduleSave();
+}
 function spReloadWorld(){         // load the saved singleplayer world into seed + overrides + doors + beds + stairs + ladders
-  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear();
-  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {};
-  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; } } }catch(e){}
+  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs();
+  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {};
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; } } }catch(e){}
   seed=spSeed; noise=makeNoise(seed);
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
   for(const kk in spDoors){ doorMeta.set(kk, {facing:spDoors[kk].f, open:!!spDoors[kk].o}); }
   for(const kk in spBeds){ bedMeta.set(kk, {facing:spBeds[kk].f, head:!!spBeds[kk].h}); }
   for(const kk in spStairs){ stairMeta.set(kk, {facing:spStairs[kk].f}); }
   for(const kk in spLadders){ ladderMeta.set(kk, {facing:spLadders[kk].f}); }
+  for(const kk in spSigns){ signMeta.set(kk, {facing:spSigns[kk].f, lines:spSigns[kk].l||['','','','']}); }   // objects built later, once the scene exists
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
 addEventListener('beforeunload', spSave);
@@ -1204,6 +1261,11 @@ function buildChunkMesh(c){
       if(conn(wx-1,wz)) for(const [a,b] of rails) pushBox(op, wx, y, wz, [0,6/16, a,b, 7/16,9/16], ftile);
       if(conn(wx,wz+1)) for(const [a,b] of rails) pushBox(op, wx, y, wz, [7/16,9/16, a,b, 10/16,1], ftile);
       if(conn(wx,wz-1)) for(const [a,b] of rails) pushBox(op, wx, y, wz, [7/16,9/16, a,b, 0,6/16], ftile);
+      continue;
+    }
+    if (bl.sign){                              // a standing sign: post + board (text is a separate plane)
+      const m=signMeta.get(dkey(wx,y,wz)); const sgtile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
+      for(const box of signBoxes(m?m.facing:0)) pushBox(op, wx, y, wz, box, sgtile);
       continue;
     }
     for(let f=0;f<6;f++){
@@ -1561,8 +1623,8 @@ let chatOpen = false;
 addEventListener('keydown', e=>{
   const k=e.key.toLowerCase();
   // typing in the search box: let it type, don't drive the game
-  if(document.activeElement && document.activeElement.tagName==='INPUT'){
-    if(k==='escape'){ document.activeElement.blur(); if(invOpen) toggleInv(); }
+  if(document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)){
+    if(k==='escape'){ if(signEditPos) closeSignEditor(false); else { document.activeElement.blur(); if(invOpen) toggleInv(); } }
     return;
   }
   keys[k]=true;
@@ -1575,7 +1637,7 @@ addEventListener('keydown', e=>{
   if(k==='f' && creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; }
   if(k==='f5' && state===PLAY){ e.preventDefault(); camMode=(camMode+1)%3; }
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(sleep.active) wakeUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; if(e.key==='Tab'){ tabShown=false; tabListEl.hidden=true; } });
 addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=false; if(tabListEl) tabListEl.hidden=true; });
@@ -1591,13 +1653,14 @@ addEventListener('keydown', e=>{
 });
 
 canvas.addEventListener('mousedown', e=>{
-  if(state!==PLAY || sleep.active) return;   // ignore clicks while lying in bed
+  if(state!==PLAY || sleep.active || signEditPos) return;   // ignore clicks while in bed / editing a sign
   if(!pointerLocked){ canvas.requestPointerLock(); return; }
   if(e.button===0){ doSwing(); breakBlock(); }
   else if(e.button===2){ doSwing();
     const tb = target && getBlock(target.x,target.y,target.z);
     if(target && isDoor(tb)) toggleDoor(target.x,target.y,target.z);       // right-click a door = open/close
     else if(target && isBed(tb)) sleepInBed(target.x,target.y,target.z);   // right-click a bed = lie down
+    else if(target && isSign(tb)) openSignEditor(target.x,target.y,target.z);   // right-click a sign = edit its text
     else placeBlock();
   }
   else if(e.button===1){ pickBlock(); e.preventDefault(); }
@@ -1611,7 +1674,7 @@ canvas.addEventListener('wheel', e=>{
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = document.pointerLockElement===canvas;
   // don't pop the pause menu when we released the lock on purpose to type in chat
-  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active) pause();
+  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos) pause();
 });
 document.addEventListener('mousemove', e=>{
   if(!pointerLocked) return;
@@ -1826,6 +1889,43 @@ function placeLadder(){
   spRecordLadder(px,py,pz,{facing});
   remeshChunkAt(px,pz);
 }
+// ---- signs ----
+let signEditPos=null;
+function placeSign(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id=hotbar[selSlot];
+  if(getBlock(px,py,pz)!==AIR) return;
+  const floor=getBlock(px,py-1,pz); if(!(BLOCKS[floor]&&BLOCKS[floor].solid)) return;
+  const facing=(facingFromYaw(player.yaw)+2)&3;   // the text faces the player who placed it
+  setBlock(px,py,pz,id);
+  signMeta.set(dkey(px,py,pz),{facing, lines:['','','','']});
+  mpSendBlock(px,py,pz,id);
+  spRecordSign(px,py,pz,signMeta.get(dkey(px,py,pz)));
+  remeshChunkAt(px,pz); updateSignObj(px,py,pz);
+  openSignEditor(px,py,pz);
+}
+function openSignEditor(x,y,z){
+  const m=signMeta.get(dkey(x,y,z)); if(!m) return;
+  signEditPos={x,y,z};
+  const ta=document.getElementById('signText');
+  ta.value=(m.lines||[]).join('\n').replace(/\n+$/,'');
+  document.exitPointerLock();
+  document.getElementById('signEditor').hidden=false;
+  setTimeout(()=>ta.focus(),0);
+}
+function closeSignEditor(save){
+  const ed=document.getElementById('signEditor'); if(ed.hidden) return;
+  ed.hidden=true;
+  const ta=document.getElementById('signText');
+  if(save && signEditPos){
+    const {x,y,z}=signEditPos;
+    const lines=ta.value.split('\n').slice(0,4).map(s=>s.slice(0,16)); while(lines.length<4) lines.push('');
+    const m=signMeta.get(dkey(x,y,z));
+    if(m){ m.lines=lines; updateSignObj(x,y,z); spRecordSign(x,y,z,m); if(mp.active) mpSend({type:'sign', x,y,z, facing:m.facing, lines}); }
+  }
+  signEditPos=null; ta.value='';
+  if(state===PLAY && !invOpen) canvas.requestPointerLock();
+}
 function breakBed(x,y,z){
   const m=bedMeta.get(dkey(x,y,z)); const facing=m?m.facing:0, head=m?m.head:false, dv=DIRV[facing];
   const ox=head? x-dv[0] : x+dv[0], oz=head? z-dv[2] : z+dv[2];    // the paired cell
@@ -1859,6 +1959,7 @@ function breakBlock(){
   if(isBed(getBlock(x,y,z))){ breakBed(x,y,z); return; }     // breaking either cell removes the whole bed
   if(isStair(getBlock(x,y,z))){ stairMeta.delete(dkey(x,y,z)); spRecordStair(x,y,z,null); }
   if(isLadder(getBlock(x,y,z))){ ladderMeta.delete(dkey(x,y,z)); spRecordLadder(x,y,z,null); }
+  if(isSign(getBlock(x,y,z))){ signMeta.delete(dkey(x,y,z)); removeSignObj(x,y,z); spRecordSign(x,y,z,null); }
   setBlock(x,y,z, AIR);
   waterLvl.delete(wkey(x,y,z));
   if(!mp.active){                // keep the shared world static + consistent
@@ -1875,6 +1976,7 @@ function placeBlock(){
   if(bl.door){ placeDoor(); return; }                                   // doors place two cells tall
   if(bl.bed){ placeBed(); return; }                                     // beds place two cells long
   if(bl.ladder){ placeLadder(); return; }                               // ladders mount on a wall
+  if(bl.sign){ placeSign(); return; }                                   // signs open a text editor on placement
   if(bl.spawnEgg){ spawnMob(px+0.5, py, pz+0.5, bl.mobType); return; }   // egg spawns a creature
   const cur=getBlock(px,py,pz);
   // place into air, or into water (which removes the water)
@@ -2041,6 +2143,7 @@ function startGame(){
   const gh=terrainHeight(Math.floor(player.pos.x),Math.floor(player.pos.z));
   player.pos.y = gh+2;
   state=PLAY; menuEl.hidden=true; pauseEl.hidden=true; invEl.hidden=true; invOpen=false;
+  rebuildSignObjs();                 // (re)create sign text now that the scene exists
   canvas.requestPointerLock();
 }
 function pause(){ state=PAUSE; pauseEl.hidden=false; document.getElementById('regenBtn').hidden = mp.active; document.exitPointerLock(); }
@@ -2055,7 +2158,9 @@ function startSingleplayer(){
 }
 function regen(){
   spSeed=(Math.random()*1e9)|0; seed=spSeed; noise=makeNoise(seed);
-  spEdits={}; mpOverrides.clear(); spSave();   // brand-new solo world, persisted immediately
+  spEdits={}; spDoors={}; spBeds={}; spStairs={}; spLadders={}; spSigns={};
+  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs();
+  spSave();   // brand-new solo world, persisted immediately
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
   startGame();
@@ -2137,6 +2242,9 @@ function openSkinEditor(){
 document.getElementById('skinBtn').addEventListener('click', openSkinEditor);
 document.getElementById('skinSave').addEventListener('click', ()=>{ applySkin(editSkin); skinPanel.hidden=true; menuEl.hidden=false; });
 document.getElementById('skinCancel').addEventListener('click', ()=>{ skinPanel.hidden=true; menuEl.hidden=false; });
+document.getElementById('signDoneBtn').addEventListener('click', ()=>closeSignEditor(true));
+document.getElementById('signCancelBtn').addEventListener('click', ()=>closeSignEditor(false));
+document.getElementById('signText').addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); closeSignEditor(false); } });
 
 creative = true;   // locked to creative for now
 
@@ -2196,8 +2304,9 @@ function mpUpdatePlayers(dt){
 function mpHandle(m){
   if(m.type==='init'){
     mp.id=m.id; mp.name=m.name;
-    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear();
+    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
+    if(m.signs) for(const kk in m.signs){ signMeta.set(kk, {facing:m.signs[kk].facing, lines:m.signs[kk].lines||['','','','']}); }   // objects rebuilt in startGame
     mpClearPlayers();
     mpStartWorld(m.seed);
     for(const pl of (m.players||[])) mpAddPlayer(pl);
@@ -2206,7 +2315,8 @@ function mpHandle(m){
   else if(m.type==='join'){ mpAddPlayer(m.player); }
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
-  else if(m.type==='block'){ mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+  else if(m.type==='block'){ if(m.b===0 && signMeta.has(m.x+','+m.y+','+m.z)){ signMeta.delete(m.x+','+m.y+','+m.z); removeSignObj(m.x,m.y,m.z); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+  else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {facing:m.facing, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
@@ -2418,6 +2528,8 @@ window.__mc = {
   bedAt(x,y,z){ const b=bedMeta.get(x+','+y+','+z); return b?{facing:b.facing,head:b.head}:null; },
   bedCount(){ return bedMeta.size; },
   stairAt(x,y,z){ const s=stairMeta.get(x+','+y+','+z); return s?{facing:s.facing}:null; },
+  signAt(x,y,z){ const s=signMeta.get(x+','+y+','+z); return s?{facing:s.facing, lines:s.lines}:null; },
+  editSign(x,y,z){ openSignEditor(x,y,z); },
   ladderAt(x,y,z){ const l=ladderMeta.get(x+','+y+','+z); return l?{facing:l.facing}:null; },
   onLadder(){ return isOnLadder(); },
   sleepAt(x,y,z){ sleepInBed(x,y,z); },
