@@ -114,6 +114,18 @@
   .btn:hover{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
   .btn:active{ border-color:#333 #a9a9a9 #a9a9a9 #333; }
   .hint{ font-size:12.5px; color:#b9b9b9; text-align:center; line-height:1.9; max-width:460px; }
+  /* sleeping: a soft vignette so the character on the bed stays visible behind it */
+  #sleepOverlay{
+    position:fixed; inset:0; z-index:20; pointer-events:none;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
+    gap:12px; padding-bottom:14vh;
+    background:radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 32%, rgba(0,0,0,.62) 100%);
+    animation:sleepFade .5s ease;
+  }
+  #sleepOverlay[hidden]{ display:none; }
+  #sleepOverlay .sleepTitle{ font-size:30px; color:#fff; text-shadow:2px 2px 0 #222; letter-spacing:2px; }
+  #sleepOverlay .btn{ pointer-events:auto; }
+  @keyframes sleepFade{ from{ background:rgba(0,0,0,0);} }
   .hint b{ color:#fff; }
 
   /* inventory / block picker */
@@ -197,6 +209,12 @@
   <button class="btn" id="regenBtn">New world</button>
   <button class="btn" id="menuBtn">Main menu</button>
   <div class="hint">Press <b>Esc</b> to resume</div>
+</div>
+
+<div id="sleepOverlay" hidden>
+  <div class="sleepTitle">Sleeping&hellip;</div>
+  <button class="btn" id="leaveBedBtn">Leave bed</button>
+  <div class="hint">or press <b>Esc</b></div>
 </div>
 
 <!-- Inventory / block picker -->
@@ -674,6 +692,8 @@ WOODS.forEach(w=>{
 WOOLS.forEach(([n])=> B[n+'_wool'] = def(n+'_wool', { tiles:T(n+'_wool') }));
 // a door for every wood type (thin, openable; geometry + state handled specially)
 WOODS.forEach(w=> B[w.id+'_door'] = def(w.id+'_door', { tiles:T(w.id+'_door'), door:true, opaque:false }));
+// a bed for every wool colour (two cells long, low; right-click to sleep)
+WOOLS.forEach(([n])=> B[n+'_bed'] = def(n+'_bed', { tiles:T(n+'_wool'), bed:true, solid:false, opaque:false }));
 
 // define every EXTRA block (pass-1 expansion)
 for(const e of EXTRA){
@@ -765,6 +785,19 @@ function facingFromYaw(yaw){
   const dx=-Math.sin(yaw), dz=-Math.cos(yaw);
   return (Math.abs(dx)>Math.abs(dz)) ? (dx>0?1:3) : (dz>0?2:0);
 }
+const DIRV=[[0,0,-1],[1,0,0],[0,0,1],[-1,0,0]];   // facing 0=-z, 1=+x, 2=+z, 3=-x
+
+// ---- beds: two cells long, low; right-click to lie down ----
+const bedMeta = new Map();     // "x,y,z" -> {facing, head}
+let spBeds = {};               // singleplayer bed state, saved with the world
+function isBed(id){ return !!(id && BLOCKS[id] && BLOCKS[id].bed); }
+function pillowBounds(facing){  // small raised pillow at the head end of the head cell
+  const y0=9/16, y1=13/16;
+  if(facing===0) return [3/16,13/16, y0,y1, 1/16,5/16];
+  if(facing===2) return [3/16,13/16, y0,y1, 11/16,15/16];
+  if(facing===1) return [11/16,15/16, y0,y1, 3/16,13/16];
+  return [1/16,5/16, y0,y1, 3/16,13/16];
+}
 
 // ---- singleplayer save (localStorage): the world's seed + every player block edit,
 // so a solo world keeps its progress across reloads and site updates. The shared
@@ -773,7 +806,7 @@ let spSeed = seed;               // the singleplayer world's own seed
 let spEdits = {};                // "x,y,z" -> blockId (0 = air) : deviations from the terrain
 let spSaveTimer = null;
 const SP_KEY = 'leoncraft_sp_world';
-function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors })); }catch(e){} }
+function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds })); }catch(e){} }
 function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
 function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
 function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = removed)
@@ -782,12 +815,19 @@ function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = r
   if(m===null) delete spDoors[k]; else spDoors[k]={f:m.facing,o:m.open?1:0};
   spScheduleSave();
 }
-function spReloadWorld(){         // load the saved singleplayer world into `seed` + overrides + doors
-  mpOverrides.clear(); doorMeta.clear(); spEdits = {}; spDoors = {};
-  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; } } }catch(e){}
+function spRecordBed(x,y,z,m){    // persist singleplayer bed state (m null = removed)
+  if(mp.active) return;
+  const k=dkey(x,y,z);
+  if(m===null) delete spBeds[k]; else spBeds[k]={f:m.facing,h:m.head?1:0};
+  spScheduleSave();
+}
+function spReloadWorld(){         // load the saved singleplayer world into seed + overrides + doors + beds
+  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); spEdits = {}; spDoors = {}; spBeds = {};
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; } } }catch(e){}
   seed=spSeed; noise=makeNoise(seed);
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
   for(const kk in spDoors){ doorMeta.set(kk, {facing:spDoors[kk].f, open:!!spDoors[kk].o}); }
+  for(const kk in spBeds){ bedMeta.set(kk, {facing:spBeds[kk].f, head:!!spBeds[kk].h}); }
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
 addEventListener('beforeunload', spSave);
@@ -1035,6 +1075,13 @@ function buildChunkMesh(c){
     if (bl.door){                              // doors are a thin swinging panel, not a cube
       const d = doorMeta.get(dkey(wx,y,wz));
       pushBox(op, wx, y, wz, doorBounds(d?d.facing:0, d?d.open:false), (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      continue;
+    }
+    if (bl.bed){                               // a bed is a low mattress (2 cells) with a pillow at the head
+      const m = bedMeta.get(dkey(wx,y,wz))||{facing:0,head:false};
+      const tile = (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
+      pushBox(op, wx, y, wz, [0.03,0.97, 0, 9/16, 0.03,0.97], tile);
+      if(m.head) pushBox(op, wx, y, wz, pillowBounds(m.facing), T('white_wool'));
       continue;
     }
     for(let f=0;f<6;f++){
@@ -1355,7 +1402,7 @@ addEventListener('keydown', e=>{
   if(k==='f' && creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; }
   if(k==='f5' && state===PLAY){ e.preventDefault(); camMode=(camMode+1)%3; }
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(sleep.active) wakeUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
 addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; });
@@ -1371,11 +1418,13 @@ addEventListener('keydown', e=>{
 });
 
 canvas.addEventListener('mousedown', e=>{
-  if(state!==PLAY) return;
+  if(state!==PLAY || sleep.active) return;   // ignore clicks while lying in bed
   if(!pointerLocked){ canvas.requestPointerLock(); return; }
   if(e.button===0){ doSwing(); breakBlock(); }
   else if(e.button===2){ doSwing();
-    if(target && isDoor(getBlock(target.x,target.y,target.z))) toggleDoor(target.x,target.y,target.z);   // right-click a door = open/close
+    const tb = target && getBlock(target.x,target.y,target.z);
+    if(target && isDoor(tb)) toggleDoor(target.x,target.y,target.z);       // right-click a door = open/close
+    else if(target && isBed(tb)) sleepInBed(target.x,target.y,target.z);   // right-click a bed = lie down
     else placeBlock();
   }
   else if(e.button===1){ pickBlock(); e.preventDefault(); }
@@ -1389,7 +1438,7 @@ canvas.addEventListener('wheel', e=>{
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = document.pointerLockElement===canvas;
   // don't pop the pause menu when we released the lock on purpose to type in chat
-  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen) pause();
+  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active) pause();
 });
 document.addEventListener('mousemove', e=>{
   if(!pointerLocked) return;
@@ -1555,10 +1604,52 @@ function breakDoor(x,y,z){
   for(let h=0;h<2;h++){ setBlock(x,by+h,z,AIR); doorMeta.delete(dkey(x,by+h,z)); mpSendBlock(x,by+h,z,0); spRecordDoor(x,by+h,z,null); }
   remeshChunkAt(x,z);
 }
+// ---- bed placement / removal ----
+function placeBed(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id=hotbar[selSlot];
+  const facing=facingFromYaw(player.yaw), dv=DIRV[facing];
+  const hx=px+dv[0], hz=pz+dv[2];                                   // head cell in the facing direction
+  if(getBlock(px,py,pz)!==AIR || getBlock(hx,py,hz)!==AIR) return;  // both cells free
+  const f1=getBlock(px,py-1,pz), f2=getBlock(hx,py-1,hz);
+  if(!(BLOCKS[f1]&&BLOCKS[f1].solid) || !(BLOCKS[f2]&&BLOCKS[f2].solid)) return;  // both on a floor
+  setBlock(px,py,pz,id); setBlock(hx,py,hz,id);
+  bedMeta.set(dkey(px,py,pz),{facing,head:false}); bedMeta.set(dkey(hx,py,hz),{facing,head:true});
+  mpSendBlock(px,py,pz,id); mpSendBlock(hx,py,hz,id);
+  spRecordBed(px,py,pz,{facing,head:false}); spRecordBed(hx,py,hz,{facing,head:true});
+  remeshChunkAt(px,pz); remeshChunkAt(hx,hz);
+}
+function breakBed(x,y,z){
+  const m=bedMeta.get(dkey(x,y,z)); const facing=m?m.facing:0, head=m?m.head:false, dv=DIRV[facing];
+  const ox=head? x-dv[0] : x+dv[0], oz=head? z-dv[2] : z+dv[2];    // the paired cell
+  for(const [cx,cz] of [[x,z],[ox,oz]]){ setBlock(cx,y,cz,AIR); bedMeta.delete(dkey(cx,y,cz)); mpSendBlock(cx,y,cz,0); spRecordBed(cx,y,cz,null); remeshChunkAt(cx,cz); }
+}
+// ---- sleeping ----
+const sleep = { active:false, bx:0, by:0, bz:0, facing:0 };
+function bedFoot(x,y,z){   // resolve to the foot cell whichever half was clicked
+  const m=bedMeta.get(dkey(x,y,z)); if(!m) return {x,y,z,facing:0};
+  if(m.head){ const dv=DIRV[m.facing]; return {x:x-dv[0], y, z:z-dv[2], facing:m.facing}; }
+  return {x,y,z,facing:m.facing};
+}
+function sleepInBed(x,y,z){
+  if(sleep.active) return;
+  const f=bedFoot(x,y,z);
+  sleep.active=true; sleep.bx=f.x; sleep.by=f.y; sleep.bz=f.z; sleep.facing=f.facing;
+  player.vel.set(0,0,0); player.flying=false;
+  document.getElementById('sleepOverlay').hidden=false;
+  document.exitPointerLock();
+}
+function wakeUp(){
+  if(!sleep.active) return;
+  sleep.active=false; document.getElementById('sleepOverlay').hidden=true;
+  player.pos.set(sleep.bx+0.5, sleep.by+1, sleep.bz+0.5); player.vel.set(0,0,0);   // stand up beside the bed
+  if(state===PLAY && !invOpen) canvas.requestPointerLock();
+}
 function breakBlock(){
   if(!target) return;
   const {x,y,z}=target;
   if(isDoor(getBlock(x,y,z))){ breakDoor(x,y,z); return; }   // breaking either half removes the whole door
+  if(isBed(getBlock(x,y,z))){ breakBed(x,y,z); return; }     // breaking either cell removes the whole bed
   setBlock(x,y,z, AIR);
   waterLvl.delete(wkey(x,y,z));
   if(!mp.active){                // keep the shared world static + consistent
@@ -1573,6 +1664,7 @@ function placeBlock(){
   const id = hotbar[selSlot]; if(!id) return;
   const bl = BLOCKS[id];
   if(bl.door){ placeDoor(); return; }                                   // doors place two cells tall
+  if(bl.bed){ placeBed(); return; }                                     // beds place two cells long
   if(bl.spawnEgg){ spawnMob(px+0.5, py, pz+0.5, bl.mobType); return; }   // egg spawns a creature
   const cur=getBlock(px,py,pz);
   // place into air, or into water (which removes the water)
@@ -1759,6 +1851,7 @@ document.getElementById('mpBtn').addEventListener('click', ()=>startMultiplayer(
 document.getElementById('resumeBtn').addEventListener('click', resume);
 document.getElementById('regenBtn').addEventListener('click', regen);
 document.getElementById('menuBtn').addEventListener('click', toMenu);
+document.getElementById('leaveBedBtn').addEventListener('click', wakeUp);
 
 // username: persisted to localStorage, applied live to the shared server when connected
 const nameInputEl=document.getElementById('nameInput');
@@ -1813,7 +1906,7 @@ function mpUpdatePlayers(dt){
 function mpHandle(m){
   if(m.type==='init'){
     mp.id=m.id; mp.name=m.name;
-    mpOverrides.clear(); doorMeta.clear();
+    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     mpClearPlayers();
     mpStartWorld(m.seed);
@@ -1919,7 +2012,7 @@ function frame(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
 
   if(state===PLAY){
-    if(!invOpen && chatBox.hidden) updatePlayer(dt);   // freeze player while picker/chat open
+    if(!invOpen && chatBox.hidden && !sleep.active) updatePlayer(dt);   // freeze while picker/chat/sleep open
     ensureChunks(player.pos.x, player.pos.z);
     processQueues(player.pos.x, player.pos.z);
     raycast();
@@ -1952,7 +2045,16 @@ function frame(now){
   headPivot.rotation.x = -player.pitch;
   body.visible = (state===PLAY && camMode!==0);
 
-  if(camMode===0){
+  if(sleep.active){
+    const dv=DIRV[sleep.facing];
+    const cx=sleep.bx+0.5+dv[0]/2, cz=sleep.bz+0.5+dv[2]/2;      // bed centre
+    body.visible=true;
+    body.position.set(cx, sleep.by+0.5, cz);
+    body.rotation.set(Math.PI/2, Math.atan2(dv[0], dv[2]), 0);   // lie flat on the mattress
+    body.scale.set(0.9,0.9,0.9);
+    camera.position.set(sleep.bx+0.5 - dv[0]*1.4, sleep.by+2.6, sleep.bz+0.5 - dv[2]*1.4);
+    camera.lookAt(cx, sleep.by+0.4, cz);
+  } else if(camMode===0){
     camera.position.copy(eye);
     camera.lookAt(eye.x+d.x, eye.y+d.y, eye.z+d.z);
   } else {
@@ -1965,7 +2067,7 @@ function frame(now){
   renderer.render(scene, camera);
 
   // first-person hand overlay (only in first-person view)
-  if(state===PLAY && camMode===0){
+  if(state===PLAY && camMode===0 && !sleep.active){
     updateViewmodel(dt, moving);
     vmCam.aspect=camera.aspect; vmCam.updateProjectionMatrix();
     renderer.autoClear=false; renderer.clearDepth();
@@ -2009,6 +2111,11 @@ window.__mc = {
   doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open}:null; },
   doorCount(){ return doorMeta.size; },
   useDoor(x,y,z){ toggleDoor(x,y,z); },
+  bedAt(x,y,z){ const b=bedMeta.get(x+','+y+','+z); return b?{facing:b.facing,head:b.head}:null; },
+  bedCount(){ return bedMeta.size; },
+  sleepAt(x,y,z){ sleepInBed(x,y,z); },
+  isSleeping(){ return sleep.active; },
+  wake(){ wakeUp(); },
   held(){ return hotbar[selSlot]; },
   hasBlock(n){ return !!BLOCKS[n]; },
   blockName(id){ return BLOCKS[id]?BLOCKS[id].name:null; },
