@@ -776,7 +776,7 @@ WOOLS.forEach(([n,hex])=> B[n+'_bed'] = def(n+'_bed', { tiles:T(n+'_wool'), bed:
 // stairs + fences for every wood type, plus one ladder
 WOODS.forEach(w=>{
   B[w.id+'_stairs'] = def(w.id+'_stairs', { tiles:T(w.id+'_planks'), stairs:true, opaque:false });
-  B[w.id+'_fence']  = def(w.id+'_fence',  { tiles:T(w.id+'_planks'), fence:true,  opaque:false });
+  B[w.id+'_fence']  = def(w.id+'_fence',  { tiles:T(w.id+'_planks'), fence:true,  opaque:false, hex:w.plank });
 });
 B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:false, cutout:true });
 // a sign for every wood type (typeable standing sign)
@@ -2022,6 +2022,16 @@ function blockIconCanvas(id, size){
     px(0.10,0.40,0.80,0.16,`rgb(${rr},${gg},${bb})`);                             // mattress
     px(0.10,0.40,0.80,0.045,`rgba(255,255,255,.22)`);                            // mattress highlight
     px(0.12,0.30,0.26,0.13,'#f3f3f3'); px(0.12,0.40,0.26,0.035,'#cfcfcf');        // pillow + shadow
+    return cv;
+  }
+  if(bl.fence){                    // two posts + two rails, Minecraft-style
+    const s=size, hex=bl.hex||0x8a6a3a, rr=(hex>>16)&255, gg=(hex>>8)&255, bb=hex&255;
+    const main=`rgb(${rr},${gg},${bb})`, dark=`rgb(${(rr*0.72)|0},${(gg*0.72)|0},${(bb*0.72)|0})`, lite=`rgb(${Math.min(255,rr*1.12)|0},${Math.min(255,gg*1.12)|0},${Math.min(255,bb*1.12)|0})`;
+    const px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.20,0.24,0.60,0.13,main); px(0.20,0.56,0.60,0.13,main);                   // top + bottom rails
+    px(0.24,0.08,0.16,0.84,main); px(0.60,0.08,0.16,0.84,main);                   // two posts
+    px(0.24,0.08,0.05,0.84,lite); px(0.60,0.08,0.05,0.84,lite);                   // post highlight (left)
+    px(0.35,0.08,0.05,0.84,dark); px(0.71,0.08,0.05,0.84,dark);                   // post shade (right)
     return cv;
   }
   const t=faceTile(bl,2);           // side texture
