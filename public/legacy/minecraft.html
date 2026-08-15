@@ -891,37 +891,60 @@ function ladderBounds(facing){  // thin panel flat on the wall (opposite the fac
   return [1-t,1,0,1,0,1];
 }
 
-// ---- signs: standing signs you can type on; text is synced to the server ----
-const signMeta = new Map();      // "x,y,z" -> {facing, lines:[..4]}
+// ---- signs: standing signs (rotate to any 45 deg, facing the placer) and wall
+// signs (just the board, flush on the wall). Each sign is a real 3D object so it
+// can rotate freely; the text auto-sizes to fit. Text is synced to the server. ----
+const signMeta = new Map();      // "x,y,z" -> {wall:bool, ang:0..7, hex:int, lines:[..4]}
 let spSigns = {};
-const signTextObjs = new Map();  // "x,y,z" -> THREE.Mesh (the floating text)
+const signObjs = new Map();      // "x,y,z" -> THREE.Group (post/board + text)
 function isSign(id){ return !!(id && BLOCKS[id] && BLOCKS[id].sign); }
-function signBoxes(facing){
-  const post=[7/16,9/16, 0,8/16, 7/16,9/16];
-  const board = (facing===0||facing===2) ? [2/16,14/16, 8/16,1, 7/16,9/16] : [7/16,9/16, 8/16,1, 2/16,14/16];
-  return [post, board];
-}
+function signHexAt(x,y,z,m){ if(m&&m.hex!=null) return m.hex; const b=BLOCKS[getBlock(x,y,z)]; return (b&&b.hex)||0x9c7a4d; }
+// facing (old 0..3, text-side) -> ang (0..7) for back-compat with signs saved before rotation
+function facingToAng(f){ return (((4-2*(f|0))%8)+8)%8; }
 function makeSignTexture(lines){
-  const c=document.createElement('canvas'); c.width=256; c.height=136; const g=c.getContext('2d');
-  g.clearRect(0,0,256,136); g.font='900 27px monospace'; g.textAlign='center'; g.textBaseline='middle'; g.lineJoin='round';
-  const ls=(lines||[]);
-  for(let i=0;i<4;i++){ const s=(ls[i]||'').slice(0,16); if(!s) continue; const y=20+i*31;
-    g.lineWidth=7; g.strokeStyle='rgba(255,255,255,0.92)'; g.strokeText(s,128,y);   // bright outline so it stands out on the wood
-    g.fillStyle='#000000'; g.fillText(s,128,y);                                      // solid, bold black text
+  const W=256,H=140,PADX=14,PADY=9;                       // auto-fit: pick the biggest font where every line fits
+  const c=document.createElement('canvas'); c.width=W; c.height=H; const g=c.getContext('2d');
+  g.textAlign='center'; g.textBaseline='middle'; g.lineJoin='round';
+  const ls=[]; for(let i=0;i<4;i++) ls.push(String((lines&&lines[i]!=null)?lines[i]:'').slice(0,30));
+  let last=-1; for(let i=0;i<4;i++) if(ls[i].trim()) last=i;
+  if(last>=0){
+    const rows=last+1; let font=54;
+    for(; font>=7; font--){ g.font='900 '+font+'px monospace';
+      let widest=0; for(let i=0;i<=last;i++) widest=Math.max(widest, g.measureText(ls[i]).width);
+      if(widest<=W-2*PADX && rows*font*1.2<=H-2*PADY) break; }               // shrink for long text, grow for short
+    g.font='900 '+font+'px monospace'; const lineH=font*1.2, startY=(H-rows*lineH)/2+lineH/2;
+    g.lineWidth=Math.max(3,font*0.26); g.strokeStyle='rgba(255,255,255,0.92)';
+    for(let i=0;i<=last;i++){ const s=ls[i]; if(!s.trim()) continue; const y=startY+i*lineH;
+      g.strokeText(s,W/2,y); g.fillStyle='#000000'; g.fillText(s,W/2,y); }     // bright outline + solid black so it reads on the wood
   }
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter; return t;
 }
 function updateSignObj(x,y,z){
-  const m=signMeta.get(dkey(x,y,z)); if(!m) return;
-  const k=dkey(x,y,z); let o=signTextObjs.get(k); const tex=makeSignTexture(m.lines);
-  if(!o){ o=new THREE.Mesh(new THREE.PlaneGeometry(0.68,0.34), new THREE.MeshBasicMaterial({map:tex,transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1})); scene.add(o); signTextObjs.set(k,o); }
-  else { if(o.material.map) o.material.map.dispose(); o.material.map=tex; o.material.needsUpdate=true; }
-  const dv=DIRV[m.facing];
-  o.position.set(x+0.5+dv[0]*0.07, y+0.72, z+0.5+dv[2]*0.07);   // sit flush on the board face, not floating in front
-  o.rotation.set(0, Math.atan2(dv[0],dv[2]), 0);
+  const m=signMeta.get(dkey(x,y,z)); const k=dkey(x,y,z);
+  removeSignObj(x,y,z);
+  if(!m || !scene) return;
+  const woodMat=new THREE.MeshLambertMaterial({ color:signHexAt(x,y,z,m) });
+  const textMat=new THREE.MeshBasicMaterial({ map:makeSignTexture(m.lines), transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1 });
+  const g=new THREE.Group();
+  const board=new THREE.Mesh(new THREE.BoxGeometry(0.72,0.42,0.09), woodMat);
+  const text=new THREE.Mesh(new THREE.PlaneGeometry(0.66,0.38), textMat);
+  const th=m.ang*Math.PI/4, fdx=Math.sin(th), fdz=Math.cos(th);   // front (text) faces this direction
+  if(m.wall){
+    board.position.set(0,0.05,0); text.position.set(0,0.05,0.051);
+    g.add(board); g.add(text);
+    g.position.set(x+0.5-fdx*0.44, y+0.5, z+0.5-fdz*0.44);         // board pushed back, flush against the wall
+  } else {
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.6,0.11), woodMat);
+    post.position.set(0,-0.2,0); board.position.set(0,0.26,0); text.position.set(0,0.26,0.051);
+    g.add(post); g.add(board); g.add(text);
+    g.position.set(x+0.5, y+0.5, z+0.5);
+  }
+  g.rotation.set(0,th,0);
+  scene.add(g); signObjs.set(k,g);
 }
-function removeSignObj(x,y,z){ const k=dkey(x,y,z); const o=signTextObjs.get(k); if(o){ scene.remove(o); if(o.material.map)o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); signTextObjs.delete(k); } }
-function clearSignObjs(){ for(const [,o] of signTextObjs){ scene.remove(o); if(o.material.map)o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); } signTextObjs.clear(); }
+function disposeSignGroup(g){ scene.remove(g); g.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material){ if(o.material.map)o.material.map.dispose(); o.material.dispose(); } }); }
+function removeSignObj(x,y,z){ const k=dkey(x,y,z); const g=signObjs.get(k); if(g){ disposeSignGroup(g); signObjs.delete(k); } }
+function clearSignObjs(){ for(const [,g] of signObjs) disposeSignGroup(g); signObjs.clear(); }
 function rebuildSignObjs(){ clearSignObjs(); for(const [k] of signMeta){ const c=k.split(','); updateSignObj(+c[0],+c[1],+c[2]); } }
 
 // ---- singleplayer save (localStorage): the world's seed + every player block edit,
@@ -958,7 +981,7 @@ function spRecordLadder(x,y,z,m){
 }
 function spRecordSign(x,y,z,m){
   if(mp.active) return; const k=dkey(x,y,z);
-  if(m===null) delete spSigns[k]; else spSigns[k]={f:m.facing, l:m.lines};
+  if(m===null) delete spSigns[k]; else spSigns[k]={w:m.wall?1:0, a:m.ang, h:m.hex, l:m.lines};
   spScheduleSave();
 }
 function spReloadWorld(){         // load the saved singleplayer world into seed + overrides + doors + beds + stairs + ladders
@@ -971,7 +994,7 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   for(const kk in spBeds){ bedMeta.set(kk, {facing:spBeds[kk].f, head:!!spBeds[kk].h}); }
   for(const kk in spStairs){ stairMeta.set(kk, {facing:spStairs[kk].f}); }
   for(const kk in spLadders){ ladderMeta.set(kk, {facing:spLadders[kk].f}); }
-  for(const kk in spSigns){ signMeta.set(kk, {facing:spSigns[kk].f, lines:spSigns[kk].l||['','','','']}); }   // objects built later, once the scene exists
+  for(const kk in spSigns){ const s=spSigns[kk]; signMeta.set(kk, {wall:!!s.w, ang:(s.a!=null?s.a:(s.f!=null?facingToAng(s.f):0)), hex:s.h, lines:s.l||['','','','']}); }   // objects built later, once the scene exists
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
 addEventListener('beforeunload', spSave);
@@ -1249,11 +1272,7 @@ function buildChunkMesh(c){
       if(conn(wx,wz-1)) for(const [a,b] of rails) pushBox(op, wx, y, wz, [7/16,9/16, a,b, 0,6/16], ftile);
       continue;
     }
-    if (bl.sign){                              // a standing sign: post + board (text is a separate plane)
-      const m=signMeta.get(dkey(wx,y,wz)); const sgtile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
-      for(const box of signBoxes(m?m.facing:0)) pushBox(op, wx, y, wz, box, sgtile);
-      continue;
-    }
+    if (bl.sign){ continue; }                  // signs render as separate rotatable 3D objects (see updateSignObj)
     for(let f=0;f<6;f++){
       const F=FACES[f];
       const nx=wx+F.n[0], ny=y+F.n[1], nz=wz+F.n[2];
@@ -1882,11 +1901,16 @@ function placeSign(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   const id=hotbar[selSlot];
   if(getBlock(px,py,pz)!==AIR) return;   // just needs an empty cell against the block you clicked
-  const facing=(facingFromYaw(player.yaw)+2)&3;   // the text faces the player who placed it
+  let wall=false, ang;
+  if(target.ny===0){ wall=true; ang = target.nx>0?2 : target.nx<0?6 : target.nz>0?0 : 4; }   // wall sign: board faces away from the wall
+  else { ang = ((Math.round(player.yaw/(Math.PI/4))%8)+8)%8; }                                  // standing sign: 45 deg snap, facing the placer
+  const hex=(BLOCKS[id]&&BLOCKS[id].hex)||0x9c7a4d;
   setBlock(px,py,pz,id);
-  signMeta.set(dkey(px,py,pz),{facing, lines:['','','','']});
+  const m={wall, ang, hex, lines:['','','','']};
+  signMeta.set(dkey(px,py,pz),m);
   mpSendBlock(px,py,pz,id);
-  spRecordSign(px,py,pz,signMeta.get(dkey(px,py,pz)));
+  spRecordSign(px,py,pz,m);
+  if(mp.active) mpSend({type:'sign', x:px, y:py, z:pz, wall, ang, hex, lines:['','','','']});
   remeshChunkAt(px,pz); updateSignObj(px,py,pz);
   openSignEditor(px,py,pz);
 }
@@ -1905,9 +1929,9 @@ function closeSignEditor(save){
   const ta=document.getElementById('signText');
   if(save && signEditPos){
     const {x,y,z}=signEditPos;
-    const lines=ta.value.split('\n').slice(0,4).map(s=>s.slice(0,16)); while(lines.length<4) lines.push('');
+    const lines=ta.value.split('\n').slice(0,4).map(s=>s.slice(0,24)); while(lines.length<4) lines.push('');
     const m=signMeta.get(dkey(x,y,z));
-    if(m){ m.lines=lines; updateSignObj(x,y,z); spRecordSign(x,y,z,m); if(mp.active) mpSend({type:'sign', x,y,z, facing:m.facing, lines}); }
+    if(m){ m.lines=lines; updateSignObj(x,y,z); spRecordSign(x,y,z,m); if(mp.active) mpSend({type:'sign', x,y,z, wall:m.wall, ang:m.ang, hex:m.hex, lines}); }
   }
   signEditPos=null; ta.value='';
   if(state===PLAY && !invOpen) canvas.requestPointerLock();
@@ -2273,7 +2297,7 @@ function mpHandle(m){
     mp.id=m.id; mp.name=m.name;
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
-    if(m.signs) for(const kk in m.signs){ signMeta.set(kk, {facing:m.signs[kk].facing, lines:m.signs[kk].lines||['','','','']}); }   // objects rebuilt in startGame
+    if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
     if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open}); } }
     mpClearPlayers();
     mpStartWorld(m.seed);
@@ -2284,7 +2308,7 @@ function mpHandle(m){
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
   else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
-  else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {facing:m.facing, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
+  else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {wall:!!m.wall, ang:(m.ang!=null?m.ang:(m.facing!=null?facingToAng(m.facing):0)), hex:m.hex, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
   else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open}); } remeshChunkAt(m.x, m.z); }
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
@@ -2498,7 +2522,8 @@ window.__mc = {
   bedCount(){ return bedMeta.size; },
   stairAt(x,y,z){ const s=stairMeta.get(x+','+y+','+z); return s?{facing:s.facing}:null; },
   setStair(x,y,z,facing){ setBlock(x,y,z,BLOCKS['oak_stairs'].id); stairMeta.set(x+','+y+','+z,{facing}); remeshChunkAt(x,z); },
-  signAt(x,y,z){ const s=signMeta.get(x+','+y+','+z); return s?{facing:s.facing, lines:s.lines}:null; },
+  signAt(x,y,z){ const s=signMeta.get(x+','+y+','+z); return s?{wall:s.wall, ang:s.ang, lines:s.lines}:null; },
+  putSign(x,y,z,wall,ang,lines){ const id=BLOCKS['oak_sign'].id; setBlock(x,y,z,id); const m={wall:!!wall, ang:ang|0, hex:BLOCKS[id].hex, lines:(lines||['','','',''])}; signMeta.set(x+','+y+','+z,m); spRecordSign(x,y,z,m); remeshChunkAt(x,z); updateSignObj(x,y,z); },
   editSign(x,y,z){ openSignEditor(x,y,z); },
   ladderAt(x,y,z){ const l=ladderMeta.get(x+','+y+','+z); return l?{facing:l.facing}:null; },
   onLadder(){ return isOnLadder(); },
