@@ -1761,9 +1761,11 @@ document.addEventListener('pointerlockchange', ()=>{
 });
 document.addEventListener('mousemove', e=>{
   if(!pointerLocked) return;
-  const s=0.0022;
-  player.yaw   -= e.movementX*s;
-  player.pitch -= e.movementY*s;
+  const s=0.0022, CAP=140;   // clamp spurious pointer-lock spikes so the view never flicks/jumps mid-turn
+  const mx=Math.max(-CAP, Math.min(CAP, e.movementX||0));
+  const my=Math.max(-CAP, Math.min(CAP, e.movementY||0));
+  player.yaw   -= mx*s;
+  player.pitch -= my*s;
   const lim=Math.PI/2-0.01;
   player.pitch=Math.max(-lim,Math.min(lim,player.pitch));
 });
@@ -1777,7 +1779,7 @@ function collides(px,py,pz){
   for(let y=y0;y<=y1;y++) for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++){
     const b=getBlock(x,y,z);
     if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid){
-      if(BLOCKS[b].door){ const d=doorMeta.get(x+','+y+','+z); if(d && d.open) continue; }  // open door = walk through
+      if(BLOCKS[b].door) continue;  // doors are always walk-through, open or closed
       return true;
     }
   }
@@ -1960,6 +1962,7 @@ function placeBed(){
   bedMeta.set(dkey(px,py,pz),{facing,head:false}); bedMeta.set(dkey(hx,py,hz),{facing,head:true});
   mpSendBlock(px,py,pz,id); mpSendBlock(hx,py,hz,id);
   spRecordBed(px,py,pz,{facing,head:false}); spRecordBed(hx,py,hz,{facing,head:true});
+  if(mp.active) mpSend({type:'bed', fx:px, fy:py, fz:pz, hx, hz, facing});   // sync facing + which half is the pillow
   remeshChunkAt(px,pz); remeshChunkAt(hx,hz);
 }
 function placeLadder(){
@@ -1972,6 +1975,7 @@ function placeLadder(){
   ladderMeta.set(dkey(px,py,pz),{facing});
   mpSendBlock(px,py,pz,id);
   spRecordLadder(px,py,pz,{facing});
+  if(mp.active) mpSend({type:'ladder', x:px, y:py, z:pz, facing});
   remeshChunkAt(px,pz);
 }
 // ---- signs ----
@@ -2079,7 +2083,7 @@ function placeBlock(){
        py+1>player.pos.y && py<player.pos.y+player.h) return;
   }
   setBlock(px,py,pz, id);
-  if(bl.stairs){ const sf=(facingFromYaw(player.yaw)+2)&3; stairMeta.set(dkey(px,py,pz),{facing:sf}); spRecordStair(px,py,pz,{facing:sf}); remeshChunkAt(px,pz); }   // low side faces the player, step rises away
+  if(bl.stairs){ const sf=(facingFromYaw(player.yaw)+2)&3; stairMeta.set(dkey(px,py,pz),{facing:sf}); spRecordStair(px,py,pz,{facing:sf}); if(mp.active) mpSend({type:'stair', x:px, y:py, z:pz, facing:sf}); remeshChunkAt(px,pz); }   // low side faces the player, step rises away
   if(bl.model){ const pa=((Math.round(player.yaw/(Math.PI/4))%8)+8)%8; setPrgAng(dkey(px,py,pz),pa); spRecordPrg(px,py,pz,{ang:pa}); if(mp.active) mpSend({type:'prg', x:px, y:py, z:pz, ang:pa}); remeshChunkAt(px,pz); }   // the sphere's face turns toward the placer
   if(!mp.active){                // keep the shared world static + consistent
     if(id===B.water) enqueueWater(px,py,pz,0);
@@ -2397,6 +2401,9 @@ function mpHandle(m){
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
     if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open}); } }
+    if(m.beds) for(const kk in m.beds){ bedMeta.set(kk, {facing:m.beds[kk].facing|0, head:!!m.beds[kk].head}); }   // bed facing + which half has the pillow
+    if(m.stairs) for(const kk in m.stairs){ stairMeta.set(kk, {facing:m.stairs[kk].facing|0}); }
+    if(m.ladders) for(const kk in m.ladders){ ladderMeta.set(kk, {facing:m.ladders[kk].facing|0}); }
     if(m.prg) for(const kk in m.prg){ prgMeta.set(kk, {ang:m.prg[kk].ang|0}); }   // PRG facings; spheres built when chunks mesh
     mpClearPlayers();
     mpStartWorld(m.seed);
@@ -2406,10 +2413,13 @@ function mpHandle(m){
   else if(m.type==='join'){ mpAddPlayer(m.player); }
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
-  else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+  else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
   else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {wall:!!m.wall, ang:(m.ang!=null?m.ang:(m.facing!=null?facingToAng(m.facing):0)), hex:m.hex, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
   else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open}); } remeshChunkAt(m.x, m.z); }
   else if(m.type==='prg'){ setPrgAng(m.x+','+m.y+','+m.z, m.ang|0); }
+  else if(m.type==='bed'){ bedMeta.set(m.fx+','+m.fy+','+m.fz, {facing:m.facing|0, head:false}); bedMeta.set(m.hx+','+m.fy+','+m.hz, {facing:m.facing|0, head:true}); remeshChunkAt(m.fx,m.fz); remeshChunkAt(m.hx,m.hz); }
+  else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
+  else if(m.type==='ladder'){ ladderMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
@@ -2625,6 +2635,7 @@ window.__mc = {
   signAt(x,y,z){ const s=signMeta.get(x+','+y+','+z); return s?{wall:s.wall, ang:s.ang, lines:s.lines}:null; },
   prgCount(){ return prgObjs.size; }, prgLoaded(){ return !!prgModel; },
   prgAt(x,y,z){ const m=prgMeta.get(x+','+y+','+z); return m?{ang:m.ang}:null; },
+  collidesAt(x,y,z){ return collides(x,y,z); },
   putPrg(x,y,z,ang){ const id=BLOCKS['prg'].id; setBlock(x,y,z,id); mpSendBlock(x,y,z,id); setPrgAng(x+','+y+','+z,ang|0); spRecordPrg(x,y,z,{ang:ang|0}); if(mp.active) mpSend({type:'prg',x,y,z,ang:ang|0}); remeshChunkAt(x,z); },
   putSign(x,y,z,wall,ang,lines){ const id=BLOCKS['oak_sign'].id; setBlock(x,y,z,id); const m={wall:!!wall, ang:ang|0, hex:BLOCKS[id].hex, lines:(lines||['','','',''])}; signMeta.set(x+','+y+','+z,m); spRecordSign(x,y,z,m); remeshChunkAt(x,z); updateSignObj(x,y,z); },
   editSign(x,y,z){ openSignEditor(x,y,z); },
