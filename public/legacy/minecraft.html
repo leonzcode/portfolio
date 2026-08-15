@@ -80,6 +80,20 @@
     background:rgba(0,0,0,.55);
   }
   #chatBox[hidden]{ display:none; }   /* the id's display:flex would otherwise defeat [hidden] */
+  /* multiplayer player list — hold Tab, Minecraft-style, top-centre */
+  #tabList{
+    position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:15;
+    min-width:170px; max-width:70vw; padding:5px 6px 6px; pointer-events:none;
+    background:rgba(0,0,0,.5); display:flex; flex-direction:column; gap:2px;
+  }
+  #tabList[hidden]{ display:none; }
+  #tabList .th{ font-size:12px; color:#d7d7d7; text-align:center; padding:1px 0 4px; }
+  #tabList .pl{
+    display:flex; justify-content:space-between; gap:16px; font-size:14px;
+    color:#fff; text-shadow:1px 1px 0 rgba(0,0,0,.8);
+    background:rgba(255,255,255,.08); padding:2px 8px;
+  }
+  #tabList .pl .you{ color:#8fd18f; font-size:12px; align-self:center; }
   #chatBox .prompt{ color:#fff; font-size:16px; }
   #chatInput{
     flex:1; font-family:inherit; font-size:15px; color:#fff; text-shadow:none;
@@ -185,6 +199,7 @@
 <div id="dbg" hidden></div>
 <div id="itemName"></div>
 <div id="chatLog"></div>
+<div id="tabList" hidden></div>
 <div id="chatBox" hidden><input id="chatInput" type="text" maxlength="240" autocomplete="off" spellcheck="false" placeholder=""></div>
 <div id="hotbar"></div>
 
@@ -693,7 +708,7 @@ WOOLS.forEach(([n])=> B[n+'_wool'] = def(n+'_wool', { tiles:T(n+'_wool') }));
 // a door for every wood type (thin, openable; geometry + state handled specially)
 WOODS.forEach(w=> B[w.id+'_door'] = def(w.id+'_door', { tiles:T(w.id+'_door'), door:true, opaque:false }));
 // a bed for every wool colour (two cells long, low; right-click to sleep)
-WOOLS.forEach(([n])=> B[n+'_bed'] = def(n+'_bed', { tiles:T(n+'_wool'), bed:true, solid:false, opaque:false }));
+WOOLS.forEach(([n,hex])=> B[n+'_bed'] = def(n+'_bed', { tiles:T(n+'_wool'), bed:true, solid:false, opaque:false, hex }));
 
 // define every EXTRA block (pass-1 expansion)
 for(const e of EXTRA){
@@ -1394,6 +1409,7 @@ addEventListener('keydown', e=>{
     return;
   }
   keys[k]=true;
+  if(k==='tab'){ e.preventDefault(); if(mp.active && state===PLAY && !invOpen){ tabShown=true; renderTabList(); } return; }   // hold Tab = player list
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
   if(k==='e' && state===PLAY){ e.preventDefault(); toggleInv(); }
   if(k==='t' && state===PLAY && !invOpen){ e.preventDefault(); openChat(); return; }
@@ -1404,8 +1420,8 @@ addEventListener('keydown', e=>{
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
   if(k==='escape'){ if(sleep.active) wakeUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
-addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
-addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; });
+addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; if(e.key==='Tab'){ tabShown=false; tabListEl.hidden=true; } });
+addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=false; if(tabListEl) tabListEl.hidden=true; });
 
 // double-tap space to toggle fly in creative
 let lastSpace=0;
@@ -1701,6 +1717,16 @@ function blockIconCanvas(id, size){
   const cv=document.createElement('canvas'); cv.width=cv.height=size;
   const g=cv.getContext('2d'); g.imageSmoothingEnabled=false;
   const bl=BLOCKS[id]; if(!bl) return cv;
+  if(bl.bed){                      // draw a little side-view bed instead of a plain wool square
+    const s=size, hex=bl.hex||0xd63b32, rr=(hex>>16)&255, gg=(hex>>8)&255, bb=hex&255;
+    const px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.12,0.66,0.12,0.20,'#4b3417'); px(0.76,0.66,0.12,0.20,'#4b3417');          // legs
+    px(0.08,0.54,0.84,0.16,'#6b4a24');                                            // wooden frame
+    px(0.10,0.40,0.80,0.16,`rgb(${rr},${gg},${bb})`);                             // mattress
+    px(0.10,0.40,0.80,0.045,`rgba(255,255,255,.22)`);                            // mattress highlight
+    px(0.12,0.30,0.26,0.13,'#f3f3f3'); px(0.12,0.40,0.26,0.035,'#cfcfcf');        // pillow + shadow
+    return cv;
+  }
   const t=faceTile(bl,2);           // side texture
   const col=t%ATLAS_COLS, row=(t/ATLAS_COLS)|0;
   g.drawImage(atlasCanvas, col*TILE, row*TILE, TILE, TILE, 0,0,size,size);
@@ -1870,6 +1896,20 @@ creative = true;   // locked to creative for now
    block edits and chat, and renders the other players live. */
 const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0 };
 
+// multiplayer player list — hold Tab to show everyone online at the top
+const tabListEl = document.getElementById('tabList');
+let tabShown = false;
+function renderTabList(){
+  if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
+  const rows=[{name: mp.name||('Player'+mp.id), you:true}];
+  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false});
+  rows.sort((a,b)=> a.name.localeCompare(b.name));
+  const n=rows.length;
+  tabListEl.innerHTML = '<div class="th">'+n+' player'+(n===1?'':'s')+' online</div>' +
+    rows.map(r=> '<div class="pl"><span>'+escapeHtml(r.name)+'</span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
+  tabListEl.hidden=false;
+}
+
 function mpUrl(){
   const h = location.hostname || 'localhost';
   if(h.endsWith('leonzhao.dev')) return 'wss://apps.leonzhao.dev/mc/ws';
@@ -2031,6 +2071,7 @@ function frame(now){
     processQueues(player.pos.x, player.pos.z);
   }
   if(chatMsgs.length) renderChat();      // fade out old chat lines
+  if(tabShown) renderTabList();          // keep the player list live while Tab is held
   updateSky(dt);
 
   // camera + character model
@@ -2046,14 +2087,19 @@ function frame(now){
   body.visible = (state===PLAY && camMode!==0);
 
   if(sleep.active){
-    const dv=DIRV[sleep.facing];
-    const cx=sleep.bx+0.5+dv[0]/2, cz=sleep.bz+0.5+dv[2]/2;      // bed centre
+    const dv=DIRV[sleep.facing];                       // foot -> head direction
     body.visible=true;
-    body.position.set(cx, sleep.by+0.5, cz);
-    body.rotation.set(Math.PI/2, Math.atan2(dv[0], dv[2]), 0);   // lie flat on the mattress
-    body.scale.set(0.9,0.9,0.9);
-    camera.position.set(sleep.bx+0.5 - dv[0]*1.4, sleep.by+2.6, sleep.bz+0.5 - dv[2]*1.4);
-    camera.lookAt(cx, sleep.by+0.4, cz);
+    // lie on your back: spine (local +y/head) points toward the pillow, face (local +z) points up
+    const headDir=new THREE.Vector3(dv[0],0,dv[2]);
+    const up=new THREE.Vector3(0,1,0);
+    const rightv=new THREE.Vector3().crossVectors(headDir,up).normalize();
+    body.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(rightv, headDir, up));
+    headPivot.rotation.x=0;
+    body.scale.set(0.82,0.82,0.82);
+    // feet just inside the foot cell, so the body runs up the mattress to the pillow
+    body.position.set(sleep.bx+0.5 - dv[0]*0.35, sleep.by+0.42, sleep.bz+0.5 - dv[2]*0.35);
+    camera.position.set(sleep.bx+0.5 - dv[0]*1.7, sleep.by+2.4, sleep.bz+0.5 - dv[2]*1.7);
+    camera.lookAt(sleep.bx+0.5 + dv[0]*0.6, sleep.by+0.3, sleep.bz+0.5 + dv[2]*0.6);
   } else if(camMode===0){
     camera.position.copy(eye);
     camera.lookAt(eye.x+d.x, eye.y+d.y, eye.z+d.z);
