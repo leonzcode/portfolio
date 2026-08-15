@@ -775,7 +775,7 @@ WOODS.forEach(w=> B[w.id+'_door'] = def(w.id+'_door', { tiles:T(w.id+'_door'), d
 WOOLS.forEach(([n,hex])=> B[n+'_bed'] = def(n+'_bed', { tiles:T(n+'_wool'), bed:true, solid:false, opaque:false, hex }));
 // stairs + fences for every wood type, plus one ladder
 WOODS.forEach(w=>{
-  B[w.id+'_stairs'] = def(w.id+'_stairs', { tiles:T(w.id+'_planks'), stairs:true, opaque:false });
+  B[w.id+'_stairs'] = def(w.id+'_stairs', { tiles:T(w.id+'_planks'), stairs:true, opaque:false, hex:w.plank });
   B[w.id+'_fence']  = def(w.id+'_fence',  { tiles:T(w.id+'_planks'), fence:true,  opaque:false, hex:w.plank });
 });
 B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:false, cutout:true });
@@ -2032,6 +2032,17 @@ function blockIconCanvas(id, size){
     px(0.24,0.08,0.16,0.84,main); px(0.60,0.08,0.16,0.84,main);                   // two posts
     px(0.24,0.08,0.05,0.84,lite); px(0.60,0.08,0.05,0.84,lite);                   // post highlight (left)
     px(0.35,0.08,0.05,0.84,dark); px(0.71,0.08,0.05,0.84,dark);                   // post shade (right)
+    return cv;
+  }
+  if(bl.stairs){                   // side-view two-step staircase
+    const s=size, hex=bl.hex||0x8a6a3a, rr=(hex>>16)&255, gg=(hex>>8)&255, bb=hex&255;
+    const main=`rgb(${rr},${gg},${bb})`, dark=`rgb(${(rr*0.72)|0},${(gg*0.72)|0},${(bb*0.72)|0})`, lite=`rgb(${Math.min(255,rr*1.12)|0},${Math.min(255,gg*1.12)|0},${Math.min(255,bb*1.12)|0})`;
+    const px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.12,0.50,0.76,0.40,main);                                                 // bottom slab (full width)
+    px(0.50,0.14,0.38,0.40,main);                                                 // upper step (right)
+    px(0.12,0.50,0.76,0.06,lite); px(0.50,0.14,0.38,0.06,lite);                   // top faces (light)
+    px(0.12,0.84,0.76,0.06,dark);                                                 // bottom shade
+    px(0.50,0.44,0.38,0.06,dark);                                                 // step tread shade
     return cv;
   }
   const t=faceTile(bl,2);           // side texture
