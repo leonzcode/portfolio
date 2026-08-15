@@ -309,6 +309,7 @@ try {
 const CH = 16;            // chunk width/depth
 const WH = 72;            // world height (blocks)
 const SEA = 30;           // sea level
+const BEDROCK_Y = 0;      // the single bedrock layer sits at the bottom of the world
 const TILE = 16;          // texture tile pixels
 const REACH = 6;          // block interaction distance
 
@@ -1796,8 +1797,8 @@ function updatePlayer(dt){
     const fp=player.pos.clone(); fp.y-=0.05;
     if(collides(fp.x,fp.y,fp.z)) player.onGround=true;
   }
-  // fell more than 10 blocks into the void: put the player back on the surface
-  if(player.pos.y < -10){
+  // fell 10 blocks below bedrock into the void: put the player back on the surface
+  if(player.pos.y < BEDROCK_Y - 10){
     player.pos.y = terrainHeight(Math.floor(player.pos.x), Math.floor(player.pos.z)) + 3;
     player.vel.set(0,0,0);
   }
