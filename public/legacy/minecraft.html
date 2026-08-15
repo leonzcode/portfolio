@@ -1431,6 +1431,7 @@ function ensureChunks(px,pz){
   }
 }
 let genQueue = [];
+let lastCX=1e9, lastCZ=1e9;   // last chunk the player was in (re-scan chunks only on crossing)
 function processQueues(px,pz){
   const ccx=Math.floor(px/CH), ccz=Math.floor(pz/CH);
   // generate a few chunks per frame
@@ -1941,6 +1942,7 @@ let state=MENU;
 const menuEl=document.getElementById('menu'), pauseEl=document.getElementById('pause');
 function startGame(){
   spawnPlayer();
+  lastCX=Math.floor(player.pos.x/CH); lastCZ=Math.floor(player.pos.z/CH);
   ensureChunks(player.pos.x, player.pos.z);
   // generate the spawn area immediately so we don't fall through
   let guard=0; while(genQueue.length && guard<400){ const c=genQueue.shift(); if(!c.generated)c.generate(); guard++; }
@@ -2157,17 +2159,25 @@ function frame(now){
 
   if(state===PLAY){
     if(!invOpen && chatBox.hidden && !sleep.active) updatePlayer(dt);   // freeze while picker/chat/sleep open
-    ensureChunks(player.pos.x, player.pos.z);
+    { const ccx=Math.floor(player.pos.x/CH), ccz=Math.floor(player.pos.z/CH);   // rescan chunks only when you cross into a new one
+      if(ccx!==lastCX || ccz!==lastCZ){ lastCX=ccx; lastCZ=ccz; ensureChunks(player.pos.x, player.pos.z); } }
     processQueues(player.pos.x, player.pos.z);
     raycast();
     if(!mp.active) tickWater(dt);        // water/gravity stay client-side in singleplayer
     updateMobs(dt);
     mpUpdatePlayers(dt);
-    if(mp.active){                       // stream our position to the server ~15 Hz
+    if(mp.active){                       // stream position, but only when it changes (idle heartbeat ~1 Hz)
       const nowMs=performance.now();
-      if(nowMs-mp.lastPos>66){ mp.lastPos=nowMs; mp.posSent=(mp.posSent||0)+1;
-        mpSend({type:'pos', x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2),
-                yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); }
+      if(nowMs-mp.lastPos>66){
+        const moved = Math.abs(player.pos.x-mp.sx)>0.02 || Math.abs(player.pos.y-mp.sy)>0.02 || Math.abs(player.pos.z-mp.sz)>0.02
+                   || Math.abs(player.yaw-mp.syaw)>0.01 || Math.abs(player.pitch-mp.spitch)>0.01;
+        if(moved || nowMs-mp.lastPos>1000){
+          mp.lastPos=nowMs; mp.posSent=(mp.posSent||0)+1;
+          mp.sx=player.pos.x; mp.sy=player.pos.y; mp.sz=player.pos.z; mp.syaw=player.yaw; mp.spitch=player.pitch;
+          mpSend({type:'pos', x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2),
+                  yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)});
+        }
+      }
     }
     if(target){ outline.visible=true; outline.position.set(target.x+0.5,target.y+0.5,target.z+0.5); }
     else outline.visible=false;
