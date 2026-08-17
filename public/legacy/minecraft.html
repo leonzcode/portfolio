@@ -1808,6 +1808,24 @@ function isOnLadder(){   // true when the player's box overlaps a ladder block
     }
   return false;
 }
+let stepSmooth = 0;   // eases the camera up over a few frames after auto-stepping onto a stair
+// Minecraft-style auto-step: if a horizontal move is blocked by a STAIR, climb onto it
+// instead of stopping. Gated to stairs so you still can't walk up plain walls/full blocks.
+function stepUpStair(p, axis){
+  const w=player.w/2, fy=Math.floor(player.pos.y);
+  let stair=false;                                  // the thing we bumped must be a stair
+  for(let z=Math.floor(p.z-w); z<=Math.floor(p.z+w) && !stair; z++)
+    for(let x=Math.floor(p.x-w); x<=Math.floor(p.x+w) && !stair; x++)
+      if(isStair(getBlock(x,fy,z))) stair=true;
+  if(!stair) return false;
+  const ny=fy+1;                                    // stand on top of that stair cell
+  if(collides(p.x, ny, p.z)) return false;          // only if there's room to stand up there
+  const rise=ny-player.pos.y;
+  player.pos[axis]=p[axis]; player.pos.y=ny;         // finish the blocked move and rise onto the stair
+  player.onGround=true; if(player.vel.y<0) player.vel.y=0;
+  stepSmooth=Math.min(1.3, stepSmooth+rise);
+  return true;
+}
 function updatePlayer(dt){
   const fwd = new THREE.Vector3(-Math.sin(player.yaw),0,-Math.cos(player.yaw));
   const right = new THREE.Vector3(Math.cos(player.yaw),0,-Math.sin(player.yaw));
@@ -1856,11 +1874,13 @@ function updatePlayer(dt){
 
   // integrate w/ per-axis collision (sliding)
   const grounded = player.onGround;   // support state carried from last frame
+  let didStep = false;                 // auto-step at most once per tick
   const step = (axis,d)=>{
     if(d===0) return;
     const p=player.pos.clone(); p[axis]+=d;
     if(collides(p.x,p.y,p.z)){
       if(axis==='y'){ if(d<0) player.onGround=true; player.vel.y=0; }
+      else if(!player.flying && grounded && !didStep && stepUpStair(p, axis)) didStep=true;   // walk up stairs
       else player.vel[axis]=0;
       return;
     }
@@ -1885,12 +1905,13 @@ function updatePlayer(dt){
   // sneak crouch easing: lowers the camera + squashes the body model
   player.crouch += ((player.sneak?1:0) - player.crouch) * (1 - Math.exp(-16*dt));
   player.eye = 1.62 - player.crouch*0.16;
+  stepSmooth = stepSmooth>0.003 ? stepSmooth*Math.exp(-16*dt) : 0;   // let the camera catch up to a step-up
 }
 
 /* ---- raycast (voxel DDA) for targeting ---- */
 let target=null; // {x,y,z, nx,ny,nz}
 function raycast(){
-  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye, player.pos.z);
+  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z);
   const d=camDir();
   let x=Math.floor(o.x), y=Math.floor(o.y), z=Math.floor(o.z);
   const stepX=Math.sign(d.x), stepY=Math.sign(d.y), stepZ=Math.sign(d.z);
@@ -2546,7 +2567,7 @@ function frame(now){
   updateSky(dt);
 
   // camera + character model
-  const eye=new THREE.Vector3(player.pos.x, player.pos.y+player.eye, player.pos.z);
+  const eye=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z);
   const d=camDir();
   const moving=(keys['w']||keys['a']||keys['s']||keys['d']) && state===PLAY;
   bobT += dt*(moving?9:3.5);
