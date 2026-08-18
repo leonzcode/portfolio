@@ -162,7 +162,8 @@
   .ctrlActions .btn{ width:210px; }
   /* skin editor */
   .skinWrap{ display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; justify-content:center; }
-  #skinView{ background:rgba(0,0,0,.28); border:2px solid; border-color:#555 #1c1c1c #1c1c1c #555; touch-action:none; cursor:crosshair; width:320px; height:400px; }
+  #skinEditor{ justify-content:flex-start; overflow-y:auto; padding:14px 0; gap:10px; }   /* scroll instead of clipping on short/odd screens */
+  #skinView{ background:rgba(0,0,0,.28); border:2px solid; border-color:#555 #1c1c1c #1c1c1c #555; touch-action:none; cursor:crosshair; width:min(320px,84vw); height:auto; aspect-ratio:4/5; max-height:46vh; }
   .skinTools{ display:flex; flex-direction:column; gap:12px; width:210px; }
   .skinLabel{ font-size:12.5px; color:#c9c9c9; }
   .skinSwatches{ display:grid; grid-template-columns:repeat(8, 1fr); gap:5px; }
@@ -304,6 +305,9 @@
       <div class="skinSwatches" id="skinSwatches"></div>
       <div class="skinRow">
         <label class="skinPick"><input type="color" id="skinColor" value="#c0392b"><span>Custom</span></label>
+      </div>
+      <div class="skinRow">
+        <button class="keybtn" id="skinFill" title="Fill the clicked face with the colour">Fill</button>
         <button class="keybtn" id="skinEyedrop" title="Pick a colour off the model">Eyedropper</button>
       </div>
       <div class="skinRow">
@@ -428,7 +432,7 @@ const BLOCKS = {};
 // A NEW block just gets the next free id after this list — ONLY APPEND names
 // here, never reorder, insert, or remove them.
 // ---------------------------------------------------------------------------
-const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand","gravel","oak_log","oak_planks","oak_leaves","coal_ore","iron_ore","gold_ore","diamond_ore","redstone_ore","glass","water","sandstone","bricks","snow","ice","obsidian","netherrack","glowstone","pumpkin","melon","crafting_table","furnace","bookshelf","spruce_log","spruce_planks","birch_log","birch_planks","jungle_log","jungle_planks","acacia_log","acacia_planks","dark_oak_log","dark_oak_planks","white_wool","orange_wool","magenta_wool","light_blue_wool","yellow_wool","lime_wool","pink_wool","gray_wool","light_gray_wool","cyan_wool","purple_wool","blue_wool","brown_wool","green_wool","red_wool","black_wool","oak_door","spruce_door","birch_door","jungle_door","acacia_door","dark_oak_door","white_bed","orange_bed","magenta_bed","light_blue_bed","yellow_bed","lime_bed","pink_bed","gray_bed","light_gray_bed","cyan_bed","purple_bed","blue_bed","brown_bed","green_bed","red_bed","black_bed","oak_stairs","oak_fence","spruce_stairs","spruce_fence","birch_stairs","birch_fence","jungle_stairs","jungle_fence","acacia_stairs","acacia_fence","dark_oak_stairs","dark_oak_fence","ladder","oak_sign","spruce_sign","birch_sign","jungle_sign","acacia_sign","dark_oak_sign","granite","polished_granite","diorite","polished_diorite","andesite","polished_andesite","stone_bricks","mossy_stone_bricks","cracked_stone_bricks","chiseled_stone_bricks","mossy_cobblestone","red_sand","coarse_dirt","podzol","mycelium","clay","hardened_clay","soul_sand","end_stone","nether_brick","red_sandstone","chiseled_sandstone","quartz_block","chiseled_quartz","quartz_pillar","prismarine","prismarine_bricks","dark_prismarine","sea_lantern","slime_block","packed_ice","snow_block","sponge","hay_block","jack_o_lantern","emerald_ore","lapis_ore","nether_quartz_ore","iron_block","gold_block","diamond_block","emerald_block","coal_block","redstone_block","lapis_block","spruce_leaves","birch_leaves","jungle_leaves","acacia_leaves","dark_oak_leaves","leong_sahur_spawn_egg","tralaleon_spawn_egg","white_stained_clay","white_stained_glass","orange_stained_clay","orange_stained_glass","magenta_stained_clay","magenta_stained_glass","light_blue_stained_clay","light_blue_stained_glass","yellow_stained_clay","yellow_stained_glass","lime_stained_clay","lime_stained_glass","pink_stained_clay","pink_stained_glass","gray_stained_clay","gray_stained_glass","light_gray_stained_clay","light_gray_stained_glass","cyan_stained_clay","cyan_stained_glass","purple_stained_clay","purple_stained_glass","blue_stained_clay","blue_stained_glass","brown_stained_clay","brown_stained_glass","green_stained_clay","green_stained_glass","red_stained_clay","red_stained_glass","black_stained_clay","black_stained_glass","prg"];
+const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand","gravel","oak_log","oak_planks","oak_leaves","coal_ore","iron_ore","gold_ore","diamond_ore","redstone_ore","glass","water","sandstone","bricks","snow","ice","obsidian","netherrack","glowstone","pumpkin","melon","crafting_table","furnace","bookshelf","spruce_log","spruce_planks","birch_log","birch_planks","jungle_log","jungle_planks","acacia_log","acacia_planks","dark_oak_log","dark_oak_planks","white_wool","orange_wool","magenta_wool","light_blue_wool","yellow_wool","lime_wool","pink_wool","gray_wool","light_gray_wool","cyan_wool","purple_wool","blue_wool","brown_wool","green_wool","red_wool","black_wool","oak_door","spruce_door","birch_door","jungle_door","acacia_door","dark_oak_door","white_bed","orange_bed","magenta_bed","light_blue_bed","yellow_bed","lime_bed","pink_bed","gray_bed","light_gray_bed","cyan_bed","purple_bed","blue_bed","brown_bed","green_bed","red_bed","black_bed","oak_stairs","oak_fence","spruce_stairs","spruce_fence","birch_stairs","birch_fence","jungle_stairs","jungle_fence","acacia_stairs","acacia_fence","dark_oak_stairs","dark_oak_fence","ladder","oak_sign","spruce_sign","birch_sign","jungle_sign","acacia_sign","dark_oak_sign","granite","polished_granite","diorite","polished_diorite","andesite","polished_andesite","stone_bricks","mossy_stone_bricks","cracked_stone_bricks","chiseled_stone_bricks","mossy_cobblestone","red_sand","coarse_dirt","podzol","mycelium","clay","hardened_clay","soul_sand","end_stone","nether_brick","red_sandstone","chiseled_sandstone","quartz_block","chiseled_quartz","quartz_pillar","prismarine","prismarine_bricks","dark_prismarine","sea_lantern","slime_block","packed_ice","snow_block","sponge","hay_block","jack_o_lantern","emerald_ore","lapis_ore","nether_quartz_ore","iron_block","gold_block","diamond_block","emerald_block","coal_block","redstone_block","lapis_block","spruce_leaves","birch_leaves","jungle_leaves","acacia_leaves","dark_oak_leaves","leong_sahur_spawn_egg","tralaleon_spawn_egg","white_stained_clay","white_stained_glass","orange_stained_clay","orange_stained_glass","magenta_stained_clay","magenta_stained_glass","light_blue_stained_clay","light_blue_stained_glass","yellow_stained_clay","yellow_stained_glass","lime_stained_clay","lime_stained_glass","pink_stained_clay","pink_stained_glass","gray_stained_clay","gray_stained_glass","light_gray_stained_clay","light_gray_stained_glass","cyan_stained_clay","cyan_stained_glass","purple_stained_clay","purple_stained_glass","blue_stained_clay","blue_stained_glass","brown_stained_clay","brown_stained_glass","green_stained_clay","green_stained_glass","red_stained_clay","red_stained_glass","black_stained_clay","black_stained_glass","prg","oak_trapdoor","spruce_trapdoor","birch_trapdoor","jungle_trapdoor","acacia_trapdoor","dark_oak_trapdoor"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -846,6 +850,7 @@ WOODS.forEach(w=>{
 WOOLS.forEach(([n])=> B[n+'_wool'] = def(n+'_wool', { tiles:T(n+'_wool') }));
 // a door for every wood type (thin, openable; geometry + state handled specially)
 WOODS.forEach(w=> B[w.id+'_door'] = def(w.id+'_door', { tiles:T(w.id+'_door'), door:true, opaque:false }));
+WOODS.forEach(w=> B[w.id+'_trapdoor'] = def(w.id+'_trapdoor', { tiles:T(w.id+'_planks'), trapdoor:true, solid:false, opaque:false, hex:w.plank }));   // thin openable panel, walk-through like our doors
 // a bed for every wool colour (two cells long, low; right-click to sleep)
 WOOLS.forEach(([n,hex])=> B[n+'_bed'] = def(n+'_bed', { tiles:T(n+'_wool'), bed:true, solid:false, opaque:false, hex }));
 // stairs + fences for every wood type, plus one ladder
@@ -950,6 +955,18 @@ function facingFromYaw(yaw){
   return (Math.abs(dx)>Math.abs(dz)) ? (dx>0?1:3) : (dz>0?2:0);
 }
 const DIRV=[[0,0,-1],[1,0,0],[0,0,1],[-1,0,0]];   // facing 0=-z, 1=+x, 2=+z, 3=-x
+// ---- trapdoors: a thin openable panel (horizontal when shut, vertical when open); walk-through ----
+const trapdoorMeta = new Map();  // "x,y,z" -> {facing:0-3, open:bool, top:bool}
+let spTrapdoors = {};
+function isTrapdoor(id){ return !!(id && BLOCKS[id] && BLOCKS[id].trapdoor); }
+function trapdoorBoxes(facing, open, top){
+  const t=3/16;
+  if(!open) return top ? [0,1, 1-t,1, 0,1] : [0,1, 0,t, 0,1];   // horizontal slab, top or bottom of the cell
+  if(facing===0) return [0,1, 0,1, 0,t];                        // open = vertical panel on the facing edge
+  if(facing===1) return [1-t,1, 0,1, 0,1];
+  if(facing===2) return [0,1, 0,1, 1-t,1];
+  return [0,t, 0,1, 0,1];
+}
 
 // ---- beds: two cells long, low; right-click to lie down ----
 const bedMeta = new Map();     // "x,y,z" -> {facing, head}
@@ -1122,7 +1139,7 @@ let spSeed = seed;               // the singleplayer world's own seed
 let spEdits = {};                // "x,y,z" -> blockId (0 = air) : deviations from the terrain
 let spSaveTimer = null;
 const SP_KEY = 'leoncraft_sp_world';
-function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns, prg: spPrg })); }catch(e){} }
+function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns, prg: spPrg, trapdoors: spTrapdoors })); }catch(e){} }
 function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
 function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
 function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = removed)
@@ -1147,6 +1164,11 @@ function spRecordLadder(x,y,z,m){
   if(m===null) delete spLadders[k]; else spLadders[k]={f:m.facing};
   spScheduleSave();
 }
+function spRecordTrapdoor(x,y,z,m){
+  if(mp.active) return; const k=dkey(x,y,z);
+  if(m===null) delete spTrapdoors[k]; else spTrapdoors[k]={f:m.facing, o:m.open?1:0, t:m.top?1:0};
+  spScheduleSave();
+}
 function spRecordSign(x,y,z,m){
   if(mp.active) return; const k=dkey(x,y,z);
   if(m===null) delete spSigns[k]; else spSigns[k]={w:m.wall?1:0, a:m.ang, h:m.hex, l:m.lines};
@@ -1158,9 +1180,9 @@ function spRecordPrg(x,y,z,m){
   spScheduleSave();
 }
 function spReloadWorld(){         // load the saved singleplayer world into seed + overrides + doors + beds + stairs + ladders
-  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs();
-  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {};
-  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; } } }catch(e){}
+  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear();
+  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {}; spTrapdoors = {};
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; } } }catch(e){}
   seed=spSeed; noise=makeNoise(seed);
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
   for(const kk in spDoors){ doorMeta.set(kk, {facing:spDoors[kk].f, open:!!spDoors[kk].o}); }
@@ -1169,6 +1191,7 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   for(const kk in spLadders){ ladderMeta.set(kk, {facing:spLadders[kk].f}); }
   for(const kk in spSigns){ const s=spSigns[kk]; signMeta.set(kk, {wall:!!s.w, ang:(s.a!=null?s.a:(s.f!=null?facingToAng(s.f):0)), hex:s.h, lines:s.l||['','','','']}); }   // objects built later, once the scene exists
   for(const kk in spPrg){ prgMeta.set(kk, {ang:spPrg[kk].a||0}); }   // PRG facings; spheres built when the chunks mesh
+  for(const kk in spTrapdoors){ const s=spTrapdoors[kk]; trapdoorMeta.set(kk, {facing:s.f|0, open:!!s.o, top:!!s.t}); }
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
 addEventListener('beforeunload', spSave);
@@ -1414,6 +1437,11 @@ function buildChunkMesh(c){
     if (id===AIR) continue;
     const bl = BLOCKS[id];
     const wx=ox+x, wz=oz+z;
+    if (bl.trapdoor){                          // trapdoor: horizontal panel (shut) or vertical panel (open)
+      const d = trapdoorMeta.get(dkey(wx,y,wz));
+      pushBox(op, wx, y, wz, trapdoorBoxes(d?d.facing:0, d?d.open:false, d?d.top:false), (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      continue;
+    }
     if (bl.door){                              // doors are a thin swinging panel, not a cube
       const d = doorMeta.get(dkey(wx,y,wz));
       pushBox(op, wx, y, wz, doorBounds(d?d.facing:0, d?d.open:false), (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
@@ -1610,6 +1638,7 @@ function makeNametag(name){
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter;
   const s=new THREE.Sprite(new THREE.SpriteMaterial({ map:t, transparent:true, depthTest:false }));
   s.scale.set(1.7,0.42,1); s.position.y=2.15; s.renderOrder=999;
+  s.raycast=()=>{};   // never block the punch/attack raycast (sprites also need raycaster.camera)
   return s;
 }
 
@@ -1811,6 +1840,7 @@ function processQueues(px,pz){
 const player = {
   pos: new THREE.Vector3(8, 0, 8),
   vel: new THREE.Vector3(),
+  kbVel: new THREE.Vector3(),   // knockback impulse (works even while flying); decays each frame
   yaw: 0, pitch: 0,
   onGround:false, flying:true, sprint:false, sneak:false, crouch:0,
   w:0.6, h:1.8, eye:1.62,
@@ -1857,6 +1887,7 @@ let bindListening = null;   // action id waiting for a new key/button (Controls 
 function useAction(){
   const tb = target && getBlock(target.x,target.y,target.z);
   if(target && isDoor(tb)) toggleDoor(target.x,target.y,target.z);
+  else if(target && isTrapdoor(tb)) toggleTrapdoor(target.x,target.y,target.z);   // right-click opens/closes
   else if(target && isBed(tb)) sleepInBed(target.x,target.y,target.z);
   else if(target && isSign(tb)) openSignEditor(target.x,target.y,target.z);
   else placeBlock();
@@ -2061,7 +2092,15 @@ function updatePlayer(dt){
     if(d===0) return;
     const p=player.pos.clone(); p[axis]+=d;
     if(collides(p.x,p.y,p.z)){
-      if(axis==='y'){ if(d<0) player.onGround=true; player.vel.y=0; }
+      if(axis==='y'){
+        if(d<0){ player.onGround=true;
+          // slime block: a fast landing flings you back up (unless you're sneaking), like Minecraft
+          const w=player.w/2, fy=Math.floor(p.y); let onSlime=false;
+          for(let z=Math.floor(p.z-w);z<=Math.floor(p.z+w)&&!onSlime;z++) for(let x=Math.floor(p.x-w);x<=Math.floor(p.x+w)&&!onSlime;x++){ if(getBlock(x,fy,z)===B.slime_block) onSlime=true; }
+          if(onSlime && !player.sneak && player.vel.y<-3){ player.vel.y=-player.vel.y*0.84; player.onGround=false; return; }
+        }
+        player.vel.y=0;
+      }
       else if(!player.flying && grounded && !didStep && stepUpStair(p, axis)) didStep=true;   // walk up stairs
       else player.vel[axis]=0;
       return;
@@ -2074,6 +2113,12 @@ function updatePlayer(dt){
   step('x', player.vel.x*dt);
   step('z', player.vel.z*dt);
   step('y', player.vel.y*dt);
+  // knockback impulse (a punch from another player): a decaying positional shove, applied even while flying
+  if(player.kbVel.lengthSq()>0.0004){
+    const km=(axis,d)=>{ if(d===0) return; const p=player.pos.clone(); p[axis]+=d; if(!collides(p.x,p.y,p.z)) player.pos[axis]=p[axis]; };
+    km('x', player.kbVel.x*dt); km('z', player.kbVel.z*dt); km('y', player.kbVel.y*dt);
+    player.kbVel.multiplyScalar(Math.exp(-6*dt)); if(player.kbVel.lengthSq()<0.0025) player.kbVel.set(0,0,0);
+  }
   // check ground contact
   if(!player.flying){
     const fp=player.pos.clone(); fp.y-=0.05;
@@ -2151,6 +2196,27 @@ function breakDoor(x,y,z){
   const by=doorBottom(x,y,z);
   for(let h=0;h<2;h++){ setBlock(x,by+h,z,AIR); doorMeta.delete(dkey(x,by+h,z)); mpSendBlock(x,by+h,z,0); spRecordDoor(x,by+h,z,null); }
   remeshChunkAt(x,z);
+}
+function placeTrapdoor(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id=hotbar[selSlot];
+  if(getBlock(px,py,pz)!==AIR) return;
+  const facing=facingFromYaw(player.yaw), top=target.ny<0;   // clicked a block's underside -> panel hangs at the top of the cell
+  setBlock(px,py,pz,id);
+  const m={facing, open:false, top};
+  trapdoorMeta.set(dkey(px,py,pz), m);
+  mpSendBlock(px,py,pz,id);
+  spRecordTrapdoor(px,py,pz,m);
+  if(mp.active) mpSend({type:'trapdoor', x:px, y:py, z:pz, facing, open:false, top});
+  remeshChunkAt(px,pz);
+}
+function toggleTrapdoor(x,y,z){
+  const m=trapdoorMeta.get(dkey(x,y,z))||{facing:0,open:false,top:false};
+  const nm={facing:m.facing, open:!m.open, top:m.top};
+  trapdoorMeta.set(dkey(x,y,z), nm);
+  spRecordTrapdoor(x,y,z,nm);
+  remeshChunkAt(x,z);
+  if(mp.active) mpSend({type:'trapdoor', x, y, z, facing:nm.facing, open:nm.open, top:nm.top});
 }
 // ---- bed placement / removal ----
 function placeBed(){
@@ -2263,14 +2329,33 @@ function killMobUnderCrosshair(){
   scene.remove(victim.model); mobs.splice(mobs.indexOf(victim),1);
   return true;
 }
+// left-click another player in multiplayer to punch them (a little knockback, dealt server-side)
+function punchPlayerUnderCrosshair(){
+  if(!mp.active || !mp.players.size) return false;
+  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z);
+  mobRay.set(o, camDir()); mobRay.far=REACH+1;
+  const models=[]; const byModel=new Map();
+  for(const [id,p] of mp.players){ if(p.model){ models.push(p.model); byModel.set(p.model, id); } }
+  if(!models.length) return false;
+  const hits=mobRay.intersectObjects(models, true);
+  if(!hits.length) return false;
+  if(target && target.dist!=null && target.dist < hits[0].distance-0.05) return false;   // a block is in the way
+  let node=hits[0].object, victim=null;
+  while(node){ if(byModel.has(node)){ victim=byModel.get(node); break; } node=node.parent; }
+  if(victim==null) return false;
+  mpSend({type:'hit', target:victim});   // the server works out the direction and shoves the target
+  return true;
+}
 function breakBlock(){
-  if(killMobUnderCrosshair()) return;   // a mob under the crosshair takes the hit first
+  if(punchPlayerUnderCrosshair()) return;   // punching a player takes priority
+  if(killMobUnderCrosshair()) return;   // a mob under the crosshair takes the hit next
   if(!target) return;
   const {x,y,z}=target;
   if(isDoor(getBlock(x,y,z))){ breakDoor(x,y,z); return; }   // breaking either half removes the whole door
   if(isBed(getBlock(x,y,z))){ breakBed(x,y,z); return; }     // breaking either cell removes the whole bed
   if(isStair(getBlock(x,y,z))){ stairMeta.delete(dkey(x,y,z)); spRecordStair(x,y,z,null); }
   if(isLadder(getBlock(x,y,z))){ ladderMeta.delete(dkey(x,y,z)); spRecordLadder(x,y,z,null); }
+  if(isTrapdoor(getBlock(x,y,z))){ trapdoorMeta.delete(dkey(x,y,z)); spRecordTrapdoor(x,y,z,null); }
   if(isSign(getBlock(x,y,z))){ signMeta.delete(dkey(x,y,z)); removeSignObj(x,y,z); spRecordSign(x,y,z,null); }
   if(isPrg(getBlock(x,y,z))){ prgMeta.delete(dkey(x,y,z)); spRecordPrg(x,y,z,null); }
   setBlock(x,y,z, AIR);
@@ -2287,6 +2372,7 @@ function placeBlock(){
   const id = hotbar[selSlot]; if(!id) return;
   const bl = BLOCKS[id];
   if(bl.door){ placeDoor(); return; }                                   // doors place two cells tall
+  if(bl.trapdoor){ placeTrapdoor(); return; }                           // trapdoors are a single openable panel
   if(bl.bed){ placeBed(); return; }                                     // beds place two cells long
   if(bl.ladder){ placeLadder(); return; }                               // ladders mount on a wall
   if(bl.sign){ placeSign(); return; }                                   // signs open a text editor on placement
@@ -2383,6 +2469,16 @@ function blockIconCanvas(id, size){
     g.font='900 '+Math.round(R*0.52)+'px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
     g.lineWidth=Math.max(1.5,R*0.1); g.strokeStyle='#141414'; g.lineJoin='round';   // PRG
     g.strokeText('PRG', cx, cy+R*0.54); g.fillStyle='#fff'; g.fillText('PRG', cx, cy+R*0.54);
+    return cv;
+  }
+  if(bl.trapdoor){                  // a slatted wooden panel
+    const s=size, hex=bl.hex||0x8a6a3a, rr=(hex>>16)&255, gg=(hex>>8)&255, bb=hex&255;
+    const main=`rgb(${rr},${gg},${bb})`, dark=`rgb(${(rr*0.58)|0},${(gg*0.58)|0},${(bb*0.58)|0})`;
+    const px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.14,0.30,0.72,0.40,main);
+    px(0.14,0.30,0.72,0.05,dark); px(0.14,0.65,0.72,0.05,dark);   // top/bottom frame
+    px(0.14,0.30,0.05,0.40,dark); px(0.81,0.30,0.05,0.40,dark);   // side frame
+    px(0.14,0.48,0.72,0.045,dark);                                // slat gap
     return cv;
   }
   const t=faceTile(bl,2);           // side texture
@@ -2521,8 +2617,8 @@ function startSingleplayer(){
 }
 function regen(){
   spSeed=(Math.random()*1e9)|0; seed=spSeed; noise=makeNoise(seed);
-  spEdits={}; spDoors={}; spBeds={}; spStairs={}; spLadders={}; spSigns={};
-  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs();
+  spEdits={}; spDoors={}; spBeds={}; spStairs={}; spLadders={}; spSigns={}; spPrg={}; spTrapdoors={};
+  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear();
   spSave();   // brand-new solo world, persisted immediately
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
@@ -2577,7 +2673,7 @@ const editCanvas=document.createElement('canvas'); editCanvas.width=editCanvas.h
 const editSkinTex=makeSkinTex(editCanvas);
 const SKIN_SWATCHES=['#141414','#ffffff','#7a4a30','#d9a066','#e8c9a0','#c98a54','#2ea3a3','#3aa0c9','#394a7a','#2c3e50','#3f7a34','#7bbf3a','#b23a2a','#e67e22','#f2c400','#8e44ad'];
 let skinRenderer=null, skinScene=null, skinCam=null, skinGroup=null, skinModel=null, skinRAF=0;
-let paintColor='#c0392b', skinOpen=false, skinDrag=false, skinMode=null, skinLX=0, skinLY=0, skinYaw=0.5, skinPitch=0.08, skinDist=4.6, eyedrop=false;
+let paintColor='#c0392b', skinOpen=false, skinDrag=false, skinMode=null, skinLX=0, skinLY=0, skinYaw=0.5, skinPitch=0.08, skinDist=4.6, eyedrop=false, fillMode=false;
 const skinRay=new THREE.Raycaster();
 function paintSkinColors(g, C){    // fill every part with the given base colours + face
   g.clearRect(0,0,64,64);
@@ -2607,12 +2703,13 @@ function skinLoop(){ if(!skinOpen) return; renderSkin(); skinRAF=requestAnimatio
 function renderSwatches(){ const el=document.getElementById('skinSwatches'); el.innerHTML='';
   for(const c of SKIN_SWATCHES){ const btn=document.createElement('button'); btn.className='swatch'+(c.toLowerCase()===paintColor.toLowerCase()?' sel':''); btn.style.background=c; btn.title=c;
     btn.addEventListener('click', ()=>{ paintColor=c; document.getElementById('skinColor').value=c; renderSwatches(); }); el.appendChild(btn); } }
-function setEyedrop(on){ eyedrop=on; document.getElementById('skinEyedrop').classList.toggle('on', on); skinViewCanvas.style.cursor=on?'copy':'crosshair'; }
+function setEyedrop(on){ eyedrop=on; if(on) fillMode=false; document.getElementById('skinEyedrop').classList.toggle('on', on); document.getElementById('skinFill').classList.toggle('on', fillMode); skinViewCanvas.style.cursor=on?'copy':'crosshair'; }
+function setFill(on){ fillMode=on; if(on) eyedrop=false; document.getElementById('skinFill').classList.toggle('on', on); document.getElementById('skinEyedrop').classList.toggle('on', eyedrop); skinViewCanvas.style.cursor=on?'cell':'crosshair'; }
 function openSkinEditor(){
   initSkinRenderer();
   editCtx.clearRect(0,0,64,64); editCtx.drawImage(skinCanvas,0,0); editSkinTex.needsUpdate=true;
   selectedSkinId=activeSkinId;
-  buildSkinModel(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); renderSwatches(); renderSkinGallery();
+  buildSkinModel(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); setFill(false); renderSwatches(); renderSkinGallery();
   skinEditorEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; skinOpen=true; skinLoop();
 }
 function closeSkinEditor(save){
@@ -2665,14 +2762,27 @@ function skinTexelAt(px,py){
   if(!hits.length || !hits[0].uv) return null;
   const uv=hits[0].uv; return { x:Math.min(63,Math.max(0,Math.floor(uv.x*64))), y:Math.min(63,Math.max(0,Math.floor((1-uv.y)*64))) };
 }
-function skinPaintAt(px,py){
-  const t=skinTexelAt(px,py); if(!t) return;
-  if(eyedrop){ const d=editCtx.getImageData(t.x,t.y,1,1).data; paintColor='#'+[d[0],d[1],d[2]].map(n=>n.toString(16).padStart(2,'0')).join(''); document.getElementById('skinColor').value=paintColor; renderSwatches(); setEyedrop(false); return; }
-  editCtx.fillStyle=paintColor; editCtx.fillRect(t.x,t.y,1,1); editSkinTex.needsUpdate=true; renderSkin();
+function skinPaintAt(px,py){ const t=skinTexelAt(px,py); if(!t) return; editCtx.fillStyle=paintColor; editCtx.fillRect(t.x,t.y,1,1); editSkinTex.needsUpdate=true; renderSkin(); }
+function eyedropAt(px,py){ const t=skinTexelAt(px,py); if(!t) return; const d=editCtx.getImageData(t.x,t.y,1,1).data; paintColor='#'+[d[0],d[1],d[2]].map(n=>n.toString(16).padStart(2,'0')).join(''); document.getElementById('skinColor').value=paintColor; renderSwatches(); setEyedrop(false); }
+function hexToRgb(h){ h=(h||'').replace('#',''); return { r:parseInt(h.slice(0,2),16)||0, g:parseInt(h.slice(2,4),16)||0, b:parseInt(h.slice(4,6),16)||0 }; }
+function faceRectAt(tx,ty){ for(const pk in PARTS){ const f=PARTS[pk].f; for(const fk in f){ const [x,y,w,h]=f[fk]; if(tx>=x&&tx<x+w&&ty>=y&&ty<y+h) return [x,y,w,h]; } } return null; }
+function floodFillAt(px,py){   // bucket fill: contiguous similar-coloured texels, kept within the clicked face
+  const t=skinTexelAt(px,py); if(!t) return; const r=faceRectAt(t.x,t.y); if(!r) return;
+  const [rx,ry,rw,rh]=r; const img=editCtx.getImageData(rx,ry,rw,rh), data=img.data;
+  const lx=t.x-rx, ly=t.y-ry, si=(ly*rw+lx)*4, sr=data[si],sg=data[si+1],sb=data[si+2];
+  const col=hexToRgb(paintColor), TOL=55, seen=new Uint8Array(rw*rh), stack=[[lx,ly]];
+  while(stack.length){ const q=stack.pop(), x=q[0], y=q[1]; if(x<0||x>=rw||y<0||y>=rh) continue; const p=y*rw+x; if(seen[p]) continue; const i=p*4;
+    if(Math.abs(data[i]-sr)+Math.abs(data[i+1]-sg)+Math.abs(data[i+2]-sb)>TOL) continue; seen[p]=1;
+    data[i]=col.r; data[i+1]=col.g; data[i+2]=col.b; data[i+3]=255; stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]); }
+  editCtx.putImageData(img,rx,ry); editSkinTex.needsUpdate=true; renderSkin();
 }
 skinViewCanvas.addEventListener('pointerdown', e=>{ try{ skinViewCanvas.setPointerCapture(e.pointerId); }catch(_){}; skinDrag=true; skinLX=e.clientX; skinLY=e.clientY;
-  // start on the model = paint (and keep painting as you drag); start on empty space = rotate
-  if(skinTexelAt(e.offsetX, e.offsetY)){ skinMode='paint'; skinPaintAt(e.offsetX, e.offsetY); } else { skinMode='rotate'; }
+  // start on the model = use the current tool; start on empty space = rotate
+  const hit=!!skinTexelAt(e.offsetX, e.offsetY);
+  if(!hit) skinMode='rotate';
+  else if(eyedrop){ eyedropAt(e.offsetX, e.offsetY); skinMode='none'; }
+  else if(fillMode){ floodFillAt(e.offsetX, e.offsetY); skinMode='none'; }
+  else { skinMode='paint'; skinPaintAt(e.offsetX, e.offsetY); }
   e.preventDefault(); });
 skinViewCanvas.addEventListener('pointermove', e=>{ if(!skinDrag) return;
   if(skinMode==='paint'){ skinPaintAt(e.offsetX, e.offsetY); }   // drag across the body to paint a stroke, no rotation
@@ -2681,6 +2791,7 @@ skinViewCanvas.addEventListener('pointerup', ()=>{ skinDrag=false; skinMode=null
 skinViewCanvas.addEventListener('wheel', e=>{ e.preventDefault(); skinDist=Math.max(2.4, Math.min(8.5, skinDist+(e.deltaY>0?0.5:-0.5))); if(skinCam){ skinCam.position.z=skinDist; renderSkin(); } }, {passive:false});
 document.getElementById('skinColor').addEventListener('input', e=>{ paintColor=e.target.value; renderSwatches(); });
 document.getElementById('skinEyedrop').addEventListener('click', ()=> setEyedrop(!eyedrop));
+document.getElementById('skinFill').addEventListener('click', ()=> setFill(!fillMode));
 document.getElementById('skinRandom').addEventListener('click', ()=>{ const rc=()=>Math.floor(Math.random()*0xffffff); paintSkinColors(editCtx,{skin:rc(),shirt:rc(),pants:rc(),hair:rc()}); editSkinTex.needsUpdate=true; renderSkin(); });
 document.getElementById('skinResetSkin').addEventListener('click', ()=>{ paintDefaultSkin(editCtx); editSkinTex.needsUpdate=true; renderSkin(); });
 document.getElementById('skinDone').addEventListener('click', ()=> closeSkinEditor(true));
@@ -2774,7 +2885,7 @@ function mpUpdatePlayers(dt){
 function mpHandle(m){
   if(m.type==='init'){
     mp.id=m.id; mp.name=m.name;
-    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs();
+    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
     if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open}); } }
@@ -2782,6 +2893,7 @@ function mpHandle(m){
     if(m.stairs) for(const kk in m.stairs){ stairMeta.set(kk, {facing:m.stairs[kk].facing|0}); }
     if(m.ladders) for(const kk in m.ladders){ ladderMeta.set(kk, {facing:m.ladders[kk].facing|0}); }
     if(m.prg) for(const kk in m.prg){ prgMeta.set(kk, {ang:m.prg[kk].ang|0}); }   // PRG facings; spheres built when chunks mesh
+    if(m.trapdoors) for(const kk in m.trapdoors){ const s=m.trapdoors[kk]; trapdoorMeta.set(kk, {facing:s.facing|0, open:!!s.open, top:!!s.top}); }
     mpClearPlayers();
     mpStartWorld(m.seed);
     for(const pl of (m.players||[])) mpAddPlayer(pl);
@@ -2791,14 +2903,16 @@ function mpHandle(m){
   else if(m.type==='join'){ mpAddPlayer(m.player); }
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
-  else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+  else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); if(trapdoorMeta.has(dk)) trapdoorMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
   else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {wall:!!m.wall, ang:(m.ang!=null?m.ang:(m.facing!=null?facingToAng(m.facing):0)), hex:m.hex, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
   else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open}); } remeshChunkAt(m.x, m.z); }
+  else if(m.type==='trapdoor'){ trapdoorMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, open:!!m.open, top:!!m.top}); remeshChunkAt(m.x, m.z); }
   else if(m.type==='prg'){ setPrgAng(m.x+','+m.y+','+m.z, m.ang|0); }
   else if(m.type==='bed'){ bedMeta.set(m.fx+','+m.fy+','+m.fz, {facing:m.facing|0, head:false}); bedMeta.set(m.hx+','+m.fy+','+m.hz, {facing:m.facing|0, head:true}); remeshChunkAt(m.fx,m.fz); remeshChunkAt(m.hx,m.hz); }
   else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='ladder'){ ladderMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='skin'){ applyRemoteSkin(m.id, m.png); }
+  else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); }
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
@@ -3007,6 +3121,9 @@ window.__mc = {
   doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open}:null; },
   doorCount(){ return doorMeta.size; },
   useDoor(x,y,z){ toggleDoor(x,y,z); },
+  trapdoorAt(x,y,z){ const d=trapdoorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open,top:d.top}:null; },
+  useTrapdoor(x,y,z){ toggleTrapdoor(x,y,z); },
+  putTrapdoor(x,y,z,facing,top){ const id=BLOCKS['oak_trapdoor'].id; setBlock(x,y,z,id); mpSendBlock(x,y,z,id); const m={facing:facing|0,open:false,top:!!top}; trapdoorMeta.set(x+','+y+','+z,m); spRecordTrapdoor(x,y,z,m); if(mp.active) mpSend({type:'trapdoor',x,y,z,facing:facing|0,open:false,top:!!top}); remeshChunkAt(x,z); },
   bedAt(x,y,z){ const b=bedMeta.get(x+','+y+','+z); return b?{facing:b.facing,head:b.head}:null; },
   bedCount(){ return bedMeta.size; },
   stairAt(x,y,z){ const s=stairMeta.get(x+','+y+','+z); return s?{facing:s.facing}:null; },
@@ -3016,6 +3133,9 @@ window.__mc = {
   prgAt(x,y,z){ const m=prgMeta.get(x+','+y+','+z); return m?{ang:m.ang}:null; },
   myHead(){ return (selfHeadURL||'').slice(0,60); }, mySkinLen(){ return localSkinDataURL().length; },
   remoteSkins(){ const a=[]; for(const [id,p] of mp.players) a.push({id, name:p.name, hasSkin:!!p.skinTex, head:(p.headURL||'').slice(0,60)}); return a; },
+  remotePos(){ const a=[]; for(const [id,p] of mp.players) a.push({id, x:+p.x.toFixed(2), y:+p.y.toFixed(2), z:+p.z.toFixed(2)}); return a; },
+  punchAim(){ raycast(); return punchPlayerUnderCrosshair(); }, kbVel(){ return {x:+player.kbVel.x.toFixed(2),y:+player.kbVel.y.toFixed(2),z:+player.kbVel.z.toFixed(2)}; },
+  testKnockback(dx,dy,dz){ player.kbVel.x+=dx; player.kbVel.y+=dy; player.kbVel.z+=dz; },
   openSkin(){ openSkinEditor(); }, randomizeSkin(){ const rc=()=>Math.floor(Math.random()*0xffffff); paintSkinColors(skinCtx,{skin:rc(),shirt:rc(),pants:rc(),hair:rc()}); localSkinTex.needsUpdate=true; saveLocalSkin(); refreshHeadIcons(); if(mp.active) mpSendSkin(); },
   skinDebug(){ return {yaw:+skinYaw.toFixed(3), pitch:+skinPitch.toFixed(3), dist:skinDist, skins:skins.length, hitCenter:!!skinTexelAt(160,200)}; },
   collidesAt(x,y,z){ return collides(x,y,z); },
@@ -3041,6 +3161,8 @@ window.__mc = {
   hotbar, palette:()=>PALETTE.map(id=>BLOCKS[id].name),
   spawn(x,y,z,t){ spawnMob(x,y,z,t); }, get mobs(){ return mobs.length; },
   mobList(){ return mobs.map(m=>({x:+m.x.toFixed(2),y:+m.y.toFixed(2),z:+m.z.toFixed(2)})); },
+  editTexel(x,y){ const d=editCtx.getImageData(x|0,y|0,1,1).data; return [d[0],d[1],d[2]]; },
+  skinTexel(px,py){ return skinTexelAt(px,py); }, skinFillAt(px,py){ floodFillAt(px,py); }, skinToolState(){ return {eyedrop, fillMode}; },
   mpJoin(){ startMultiplayer(); }, mpInfo(){ return { active:mp.active, id:mp.id, players:mp.players.size, posSent:mp.posSent||0, posRecv:mp.posRecv||0, state:state }; },
   chat(t){ if(mp.active) mpSend({type:'chat',text:t}); else chatPush('You: '+t); }, chats(){ return chatMsgs.map(m=>m.text); },
   search(q){ invQuery=q; invSearch.value=q; renderInvGrid(); },
