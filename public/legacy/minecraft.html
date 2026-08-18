@@ -1361,11 +1361,11 @@ function tickWater(dt){
 /* ============================================================ RENDERER ==== */
 const canvas = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1));   // cap at 1x: blocky pixel-art gains almost nothing from extra device pixels, and this is the biggest fill-rate win on high-DPI / Windows-scaled (150% -> DPR 1.5) displays
 renderer.setSize(innerWidth, innerHeight);
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x9fd4ff, 40, 150);
-const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.08, 1000);
+scene.fog = new THREE.Fog(0x9fd4ff, 34, 128);   // scaled to the smaller VIEW so the render edge fades at the same softness as before, no new pop-in
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.08, 320);
 
 const sun = new THREE.DirectionalLight(0xffffff, 1.0);
 sun.position.set(0.5,1,0.3);
@@ -1836,7 +1836,7 @@ function updateMobs(dt){
 }
 
 /* ============================================================ STREAMING === */
-const VIEW = 6;   // chunk radius
+const VIEW = 5;   // chunk radius (was 6; trimmed one ring to cut ~28% of in-view chunks -> fewer draw calls, less meshing/generation)
 function ensureChunks(px,pz){
   const ccx=Math.floor(px/CH), ccz=Math.floor(pz/CH);
   // generate a ring one larger than view so meshing has neighbours
@@ -2647,13 +2647,15 @@ function toggleInv(){
 
 /* ============================================================ DAY/NIGHT === */
 let tod = 0.25;   // locked to midday — always daytime for now
+// sky colours are constant; reuse one scratch Color per frame instead of allocating four
+const _dayCol=new THREE.Color(0x88ccff), _nightCol=new THREE.Color(0x05060f), _duskCol=new THREE.Color(0xff8a4d);
+const _sky=new THREE.Color();
 function updateSky(dt){
   const daylight = Math.max(0, Math.sin(tod*Math.PI*2 - Math.PI/2)*0.5+0.5); // 0 night .. 1 day
-  const dayCol=new THREE.Color(0x88ccff), nightCol=new THREE.Color(0x05060f), duskCol=new THREE.Color(0xff8a4d);
-  const sky=new THREE.Color().copy(nightCol).lerp(dayCol, daylight);
+  const sky=_sky.copy(_nightCol).lerp(_dayCol, daylight);
   // dusk/dawn tint
   const horizon = Math.pow(1-Math.abs(daylight-0.5)*2, 2);
-  if(daylight>0.05 && daylight<0.6) sky.lerp(duskCol, horizon*0.25);
+  if(daylight>0.05 && daylight<0.6) sky.lerp(_duskCol, horizon*0.25);
   scene.background = sky;
   scene.fog.color = sky;
   sun.intensity = 0.35 + daylight*0.9;
