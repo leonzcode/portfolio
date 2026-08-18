@@ -2048,6 +2048,12 @@ function updatePlayer(dt){
     else player.vel.y = Math.max(player.vel.y, -1.4);  // otherwise cling / slow slide
   }
 
+  // anti-stuck: if we're embedded in a solid block (e.g. another player placed one on us), rise out of it
+  if(collides(player.pos.x, player.pos.y, player.pos.z)){
+    let y=Math.floor(player.pos.y);
+    while(y<WH+3 && collides(player.pos.x, y, player.pos.z)) y++;
+    player.pos.y=y; player.vel.y=0;
+  }
   // integrate w/ per-axis collision (sliding)
   const grounded = player.onGround;   // support state carried from last frame
   let didStep = false;                 // auto-step at most once per tick
@@ -2101,7 +2107,7 @@ function raycast(){
   let nx=0,ny=0,nz=0, t=0;
   for(let i=0;i<80;i++){
     const b=getBlock(x,y,z);
-    if(b!==AIR && BLOCKS[b] && !BLOCKS[b].liquid){ target={x,y,z,nx,ny,nz}; return; }
+    if(b!==AIR && BLOCKS[b] && !BLOCKS[b].liquid){ target={x,y,z,nx,ny,nz,dist:t}; return; }
     if(tMX<tMY && tMX<tMZ){ x+=stepX; t=tMX; tMX+=tDX; nx=-stepX; ny=0; nz=0; }
     else if(tMY<tMZ){ y+=stepY; t=tMY; tMY+=tDY; nx=0; ny=-stepY; nz=0; }
     else { z+=stepZ; t=tMZ; tMZ+=tDZ; nx=0; ny=0; nz=-stepZ; }
@@ -2242,7 +2248,23 @@ function wakeUp(){
   player.pos.set(sleep.bx+0.5, sleep.by+1, sleep.bz+0.5); player.vel.set(0,0,0);   // stand up beside the bed
   if(state===PLAY && !invOpen) canvas.requestPointerLock();
 }
+// left-click a mob to kill it (raycast the crosshair against mob models)
+const mobRay=new THREE.Raycaster();
+function killMobUnderCrosshair(){
+  if(!mobs.length) return false;
+  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z);
+  mobRay.set(o, camDir()); mobRay.far=REACH+1;
+  const hits=mobRay.intersectObjects(mobs.map(m=>m.model), true);
+  if(!hits.length) return false;
+  if(target && target.dist!=null && target.dist < hits[0].distance-0.05) return false;   // a block is in the way -> mine it instead
+  let node=hits[0].object, victim=null;
+  while(node){ const m=mobs.find(mm=>mm.model===node); if(m){ victim=m; break; } node=node.parent; }
+  if(!victim) return false;
+  scene.remove(victim.model); mobs.splice(mobs.indexOf(victim),1);
+  return true;
+}
 function breakBlock(){
+  if(killMobUnderCrosshair()) return;   // a mob under the crosshair takes the hit first
   if(!target) return;
   const {x,y,z}=target;
   if(isDoor(getBlock(x,y,z))){ breakDoor(x,y,z); return; }   // breaking either half removes the whole door
@@ -2272,12 +2294,12 @@ function placeBlock(){
   const cur=getBlock(px,py,pz);
   // place into air, or into water (which removes the water)
   if(cur!==AIR && !(BLOCKS[cur] && BLOCKS[cur].liquid)) return;
-  // a SOLID block may not be placed inside the player
+  // a SOLID block may not be placed inside any player (yourself or someone else online)
   if(bl.solid){
     const w=player.w/2;
-    if(px+1>player.pos.x-w && px<player.pos.x+w &&
-       pz+1>player.pos.z-w && pz<player.pos.z+w &&
-       py+1>player.pos.y && py<player.pos.y+player.h) return;
+    const inside=(x,y,z)=> px+1>x-w && px<x+w && pz+1>z-w && pz<z+w && py+1>y && py<y+player.h;
+    if(inside(player.pos.x, player.pos.y, player.pos.z)) return;
+    if(mp.active) for(const [,pl] of mp.players){ if(inside(pl.x, pl.y, pl.z)) return; }
   }
   setBlock(px,py,pz, id);
   if(bl.stairs){ const sf=(facingFromYaw(player.yaw)+2)&3; stairMeta.set(dkey(px,py,pz),{facing:sf}); spRecordStair(px,py,pz,{facing:sf}); if(mp.active) mpSend({type:'stair', x:px, y:py, z:pz, facing:sf}); remeshChunkAt(px,pz); }   // low side faces the player, step rises away
@@ -3018,6 +3040,7 @@ window.__mc = {
   name(x,y,z){ const b=getBlock(x,y,z); return b? BLOCKS[b].name : 'air'; },
   hotbar, palette:()=>PALETTE.map(id=>BLOCKS[id].name),
   spawn(x,y,z,t){ spawnMob(x,y,z,t); }, get mobs(){ return mobs.length; },
+  mobList(){ return mobs.map(m=>({x:+m.x.toFixed(2),y:+m.y.toFixed(2),z:+m.z.toFixed(2)})); },
   mpJoin(){ startMultiplayer(); }, mpInfo(){ return { active:mp.active, id:mp.id, players:mp.players.size, posSent:mp.posSent||0, posRecv:mp.posRecv||0, state:state }; },
   chat(t){ if(mp.active) mpSend({type:'chat',text:t}); else chatPush('You: '+t); }, chats(){ return chatMsgs.map(m=>m.text); },
   search(q){ invQuery=q; invSearch.value=q; renderInvGrid(); },
