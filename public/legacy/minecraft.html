@@ -261,7 +261,7 @@
 
 <div class="screen" id="controls" hidden>
   <div class="title" style="font-size:30px;">Controls</div>
-  <div class="ctrlHint">Click a binding, then press the key you want. <b>Esc</b> cancels a change.</div>
+  <div class="ctrlHint">Click a binding, then press a key or click a mouse button. <b>Esc</b> cancels a change.</div>
   <div class="ctrlPanel" id="ctrlGrid"></div>
   <div class="ctrlActions">
     <button class="btn" id="ctrlResetBtn">Reset to default</button>
@@ -1746,8 +1746,11 @@ function spawnPlayer(){
 
 const keys = Object.create(null);
 
-// ---- keybinds: every action below is rebindable in the Controls menu and saved to localStorage ----
-const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3' };
+// ---- input binds: every action is rebindable in the Controls menu, to a KEY or a MOUSE button,
+// and saved to localStorage. Tokens: mouse buttons are 'mouse0' (left) / 'mouse1' (middle) /
+// 'mouse2' (right); keyboard keys are their lowercased key name. Held state lives in `keys` for
+// both, so a movement action can be bound to a mouse button and vice-versa. ----
+const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', attack:'mouse0', use:'mouse2', pick:'mouse1', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3' };
 let binds = Object.assign({}, DEFAULT_BINDS);
 try{ const sb=JSON.parse(localStorage.getItem('leoncraft_binds')||'{}'); for(const a in DEFAULT_BINDS) if(typeof sb[a]==='string' && sb[a]) binds[a]=sb[a]; }catch(e){}
 function saveBinds(){ try{ localStorage.setItem('leoncraft_binds', JSON.stringify(binds)); }catch(e){} }
@@ -1755,17 +1758,44 @@ const BIND_ACTIONS = [
   {id:'forward',label:'Walk forward'}, {id:'back',label:'Walk backward'},
   {id:'left',label:'Strafe left'},     {id:'right',label:'Strafe right'},
   {id:'jump',label:'Jump / fly up'},   {id:'sneak',label:'Sneak / fly down'},
-  {id:'sprint',label:'Sprint'},        {id:'inventory',label:'Open inventory'},
-  {id:'fly',label:'Toggle fly'},       {id:'chat',label:'Open chat'},
-  {id:'camera',label:'Change camera'}, {id:'debug',label:'Debug overlay'},
+  {id:'sprint',label:'Sprint'},        {id:'attack',label:'Attack / break'},
+  {id:'use',label:'Use / place'},      {id:'pick',label:'Pick block'},
+  {id:'inventory',label:'Open inventory'}, {id:'chat',label:'Open chat'},
+  {id:'fly',label:'Toggle fly'},       {id:'camera',label:'Change camera'},
+  {id:'debug',label:'Debug overlay'},
 ];
 function keyLabel(k){
+  if(k==='mouse0') return 'Left Click'; if(k==='mouse1') return 'Middle Click'; if(k==='mouse2') return 'Right Click';
+  if(k && k.slice(0,5)==='mouse') return 'Mouse '+k.slice(5);
   if(k===' ') return 'Space'; if(k==='control') return 'Ctrl'; if(k==='shift') return 'Shift'; if(k==='alt') return 'Alt';
   if(k==='arrowup') return 'Up'; if(k==='arrowdown') return 'Down'; if(k==='arrowleft') return '←'; if(k==='arrowright') return '→';
   if(!k) return '—'; if(k.length===1) return k.toUpperCase();
   return k.charAt(0).toUpperCase()+k.slice(1);
 }
-let bindListening = null;   // action id currently waiting for a new key (Controls screen)
+let bindListening = null;   // action id waiting for a new key/button (Controls screen)
+// context-sensitive "use" (right-click by default): open a door/bed/sign, otherwise place
+function useAction(){
+  const tb = target && getBlock(target.x,target.y,target.z);
+  if(target && isDoor(tb)) toggleDoor(target.x,target.y,target.z);
+  else if(target && isBed(tb)) sleepInBed(target.x,target.y,target.z);
+  else if(target && isSign(tb)) openSignEditor(target.x,target.y,target.z);
+  else placeBlock();
+}
+// discrete actions fire once per press, from either a key (keydown) or a mouse button (mousedown)
+const pd = e=>{ if(e && e.preventDefault) e.preventDefault(); };
+const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !signEditPos;
+const DISCRETE_RUN = {
+  inventory: e=>{ if(state===PLAY){ pd(e); toggleInv(); } },
+  chat:      e=>{ if(state===PLAY && !invOpen){ pd(e); openChat(); } },
+  debug:     e=>{ pd(e); dbg.hidden=!dbg.hidden; },
+  fly:       e=>{ if(creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; } },
+  camera:    e=>{ if(state===PLAY){ pd(e); camMode=(camMode+1)%3; } },
+  attack:    e=>{ if(inWorld()){ doSwing(); breakBlock(); } },
+  use:       e=>{ if(inWorld()){ doSwing(); useAction(); } },
+  pick:      e=>{ if(inWorld()){ pd(e); pickBlock(); } },
+};
+const DISCRETE_LIST = ['inventory','chat','debug','fly','camera','attack','use','pick'];
+function firePress(token, e){ for(const act of DISCRETE_LIST){ if(binds[act]===token) DISCRETE_RUN[act](e); } }
 let pointerLocked = false;
 let chatOpen = false;
 addEventListener('keydown', e=>{
@@ -1780,12 +1810,8 @@ addEventListener('keydown', e=>{
   keys[k]=true;
   if(k==='tab'){ e.preventDefault(); if(mp.active && state===PLAY && !invOpen){ tabShown=true; renderTabList(); } return; }   // hold Tab = player list
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
-  if(k===binds.inventory && state===PLAY){ e.preventDefault(); toggleInv(); }
-  if(k===binds.chat && state===PLAY && !invOpen){ e.preventDefault(); openChat(); return; }
   if(k==='/' && state===PLAY && !invOpen){ e.preventDefault(); openChat('/'); return; }   // Minecraft: '/' opens chat pre-filled for a command
-  if(k===binds.debug){ e.preventDefault(); dbg.hidden=!dbg.hidden; }
-  if(k===binds.fly && creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; }
-  if(k===binds.camera && state===PLAY){ e.preventDefault(); camMode=(camMode+1)%3; }
+  firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
   if(k==='escape'){ if(!ctrlEl.hidden) closeControls(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
@@ -1803,19 +1829,22 @@ addEventListener('keydown', e=>{
 });
 
 canvas.addEventListener('mousedown', e=>{
-  if(state!==PLAY || sleep.active || signEditPos) return;   // ignore clicks while in bed / editing a sign
+  const token='mouse'+e.button;
+  keys[token]=true;                                        // held state, so a mouse button can drive a held action too
+  if(state!==PLAY || sleep.active || signEditPos) return;  // ignore clicks while in bed / editing a sign
   if(!pointerLocked){ canvas.requestPointerLock(); return; }
-  if(e.button===0){ doSwing(); breakBlock(); }
-  else if(e.button===2){ doSwing();
-    const tb = target && getBlock(target.x,target.y,target.z);
-    if(target && isDoor(tb)) toggleDoor(target.x,target.y,target.z);       // right-click a door = open/close
-    else if(target && isBed(tb)) sleepInBed(target.x,target.y,target.z);   // right-click a bed = lie down
-    else if(target && isSign(tb)) openSignEditor(target.x,target.y,target.z);   // right-click a sign = edit its text
-    else placeBlock();
-  }
-  else if(e.button===1){ pickBlock(); e.preventDefault(); }
+  if(e.button===1) e.preventDefault();                     // stop middle-click autoscroll
+  firePress(token, e);                                     // attack / use / pick (or whatever is bound to this button)
 });
+addEventListener('mouseup', e=>{ keys['mouse'+e.button]=false; });
 canvas.addEventListener('contextmenu', e=>e.preventDefault());
+// Controls screen: clicking a mouse button binds it (capture phase, so it beats the key-button's own click)
+addEventListener('mousedown', e=>{
+  if(!bindListening) return;
+  e.preventDefault(); e.stopPropagation();
+  binds[bindListening]='mouse'+e.button; saveBinds(); bindListening=null; renderControls();
+}, true);
+addEventListener('contextmenu', e=>{ if(bindListening) e.preventDefault(); });
 canvas.addEventListener('wheel', e=>{
   if(state!==PLAY) return;
   selectSlot(selSlot + (e.deltaY>0?1:-1));
