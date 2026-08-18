@@ -105,7 +105,7 @@
   /* generic screen overlays */
   .screen{
     position:fixed; inset:0; z-index:20; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; gap:14px;
+    align-items:center; justify-content:center; gap:14px; overflow:hidden;
     background:rgba(0,0,0,.62);
   }
   .screen[hidden]{ display:none; }
@@ -129,7 +129,37 @@
   }
   .btn:hover{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
   .btn:active{ border-color:#333 #a9a9a9 #a9a9a9 #333; }
+  .btn:focus-visible, .keybtn:focus-visible{ outline:2px solid #ffec4d; outline-offset:2px; }
   .hint{ font-size:12.5px; color:#b9b9b9; text-align:center; line-height:1.9; max-width:460px; }
+  /* title screen: logo splash + tidy button group */
+  .logo{ position:relative; display:inline-flex; flex-direction:column; align-items:center; }
+  .splash{
+    position:absolute; left:100%; bottom:8px; margin-left:-30px; transform:rotate(-16deg); transform-origin:left center;
+    color:#ffec4d; font-size:14px; font-weight:700; text-shadow:2px 2px 0 #4a3a00;
+    white-space:nowrap; pointer-events:none; animation:splashPulse 1.1s ease-in-out infinite;
+  }
+  @keyframes splashPulse{ 0%,100%{ transform:rotate(-16deg) scale(1);} 50%{ transform:rotate(-16deg) scale(1.09);} }
+  @media (prefers-reduced-motion: reduce){ .splash{ animation:none; } }
+  .menuButtons{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+  /* controls / keybinds screen */
+  .ctrlHint{ font-size:12.5px; color:#c9c9c9; text-align:center; margin-top:-4px; max-width:560px; }
+  .ctrlPanel{
+    display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:6px 22px;
+    width:min(640px,92vw); max-height:54vh; overflow-y:auto; padding:10px 8px;
+    background:rgba(0,0,0,.3); border:2px solid; border-color:#555 #1c1c1c #1c1c1c #555;
+  }
+  .ctrlRow{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .ctrlLabel{ font-size:13px; color:#e8e8e8; text-shadow:1px 1px 0 rgba(0,0,0,.5); }
+  .keybtn{
+    font-family:inherit; font-size:12.5px; color:#fff; text-shadow:1px 1px 0 rgba(0,0,0,.5);
+    min-width:104px; padding:7px 6px; cursor:pointer; text-align:center;
+    background:#7a7a7a; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; image-rendering:pixelated;
+  }
+  .keybtn:hover{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
+  .keybtn.listening{ background:#586ea0; border-color:#9fb6e0 #26304a #26304a #9fb6e0; color:#ffec4d; }
+  .keybtn.conflict:not(.listening){ color:#ff7a7a; }
+  .ctrlActions{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .ctrlActions .btn{ width:210px; }
   /* sleeping: a soft vignette so the character on the bed stays visible behind it */
   #sleepOverlay{
     position:fixed; inset:0; z-index:20; pointer-events:none;
@@ -215,24 +245,38 @@
 
 <!-- Start / pause -->
 <div class="screen" id="menu">
-  <div class="title">LEONCRAFT</div>
+  <div class="logo">
+    <div class="title">LEONCRAFT</div>
+    <div class="splash" id="splash"></div>
+  </div>
   <div class="subtitle">a Minecraft-style sandbox &middot; original textures</div>
   <input class="nameField" id="nameInput" type="text" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false">
-  <button class="btn" id="playBtn">Singleplayer</button>
-  <button class="btn" id="mpBtn" style="margin-top:8px">Multiplayer (shared server)</button>
-  <div class="hint" id="menuHint">
-    <b>WASD</b> move &middot; <b>Mouse</b> look &middot; <b>Space</b> jump / fly up &middot; <b>Shift</b> down<br>
-    <b>Left-click</b> break &middot; <b>Right-click</b> place &middot; <b>Wheel</b> / <b>1-9</b> select<br>
-    <b>E</b> blocks &middot; <b>F</b> toggle fly &middot; <b>F5</b> camera view &middot; <b>F3</b> debug &middot; <b>Esc</b> pause<br>
-    Creative mode &middot; double-tap <b>Space</b> to fly
+  <div class="menuButtons">
+    <button class="btn" id="playBtn">Singleplayer</button>
+    <button class="btn" id="mpBtn">Multiplayer</button>
+    <button class="btn" id="controlsBtn">Controls&hellip;</button>
+  </div>
+  <div class="hint">Move with <b>WASD</b>, look with the <b>mouse</b>, and break / place with the mouse buttons.<br>Open <b>Controls</b> to change any key.</div>
+</div>
+
+<div class="screen" id="controls" hidden>
+  <div class="title" style="font-size:30px;">Controls</div>
+  <div class="ctrlHint">Click a binding, then press the key you want. <b>Esc</b> cancels a change.</div>
+  <div class="ctrlPanel" id="ctrlGrid"></div>
+  <div class="ctrlActions">
+    <button class="btn" id="ctrlResetBtn">Reset to default</button>
+    <button class="btn" id="ctrlDoneBtn">Done</button>
   </div>
 </div>
 
 <div class="screen" id="pause" hidden>
   <div class="title" style="font-size:32px;">PAUSED</div>
-  <button class="btn" id="resumeBtn">Back to game</button>
-  <button class="btn" id="regenBtn">New world</button>
-  <button class="btn" id="menuBtn">Main menu</button>
+  <div class="menuButtons">
+    <button class="btn" id="resumeBtn">Back to game</button>
+    <button class="btn" id="pauseControlsBtn">Controls&hellip;</button>
+    <button class="btn" id="regenBtn">New world</button>
+    <button class="btn" id="menuBtn">Main menu</button>
+  </div>
   <div class="hint">Press <b>Esc</b> to resume</div>
 </div>
 
@@ -1701,9 +1745,32 @@ function spawnPlayer(){
 }
 
 const keys = Object.create(null);
+
+// ---- keybinds: every action below is rebindable in the Controls menu and saved to localStorage ----
+const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3' };
+let binds = Object.assign({}, DEFAULT_BINDS);
+try{ const sb=JSON.parse(localStorage.getItem('leoncraft_binds')||'{}'); for(const a in DEFAULT_BINDS) if(typeof sb[a]==='string' && sb[a]) binds[a]=sb[a]; }catch(e){}
+function saveBinds(){ try{ localStorage.setItem('leoncraft_binds', JSON.stringify(binds)); }catch(e){} }
+const BIND_ACTIONS = [
+  {id:'forward',label:'Walk forward'}, {id:'back',label:'Walk backward'},
+  {id:'left',label:'Strafe left'},     {id:'right',label:'Strafe right'},
+  {id:'jump',label:'Jump / fly up'},   {id:'sneak',label:'Sneak / fly down'},
+  {id:'sprint',label:'Sprint'},        {id:'inventory',label:'Open inventory'},
+  {id:'fly',label:'Toggle fly'},       {id:'chat',label:'Open chat'},
+  {id:'camera',label:'Change camera'}, {id:'debug',label:'Debug overlay'},
+];
+function keyLabel(k){
+  if(k===' ') return 'Space'; if(k==='control') return 'Ctrl'; if(k==='shift') return 'Shift'; if(k==='alt') return 'Alt';
+  if(k==='arrowup') return 'Up'; if(k==='arrowdown') return 'Down'; if(k==='arrowleft') return '←'; if(k==='arrowright') return '→';
+  if(!k) return '—'; if(k.length===1) return k.toUpperCase();
+  return k.charAt(0).toUpperCase()+k.slice(1);
+}
+let bindListening = null;   // action id currently waiting for a new key (Controls screen)
 let pointerLocked = false;
 let chatOpen = false;
 addEventListener('keydown', e=>{
+  // Controls screen: the next key you press becomes the new bind (Esc cancels)
+  if(bindListening){ e.preventDefault(); const kk=e.key.toLowerCase(); if(kk!=='escape'){ binds[bindListening]=kk; saveBinds(); } bindListening=null; renderControls(); return; }
   const k=e.key.toLowerCase();
   // typing in the search box: let it type, don't drive the game
   if(document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)){
@@ -1713,22 +1780,22 @@ addEventListener('keydown', e=>{
   keys[k]=true;
   if(k==='tab'){ e.preventDefault(); if(mp.active && state===PLAY && !invOpen){ tabShown=true; renderTabList(); } return; }   // hold Tab = player list
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
-  if(k==='e' && state===PLAY){ e.preventDefault(); toggleInv(); }
-  if(k==='t' && state===PLAY && !invOpen){ e.preventDefault(); openChat(); return; }
+  if(k===binds.inventory && state===PLAY){ e.preventDefault(); toggleInv(); }
+  if(k===binds.chat && state===PLAY && !invOpen){ e.preventDefault(); openChat(); return; }
   if(k==='/' && state===PLAY && !invOpen){ e.preventDefault(); openChat('/'); return; }   // Minecraft: '/' opens chat pre-filled for a command
-  if(k==='f3'){ e.preventDefault(); dbg.hidden=!dbg.hidden; }
-  if(k==='f' && creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; }
-  if(k==='f5' && state===PLAY){ e.preventDefault(); camMode=(camMode+1)%3; }
+  if(k===binds.debug){ e.preventDefault(); dbg.hidden=!dbg.hidden; }
+  if(k===binds.fly && creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; }
+  if(k===binds.camera && state===PLAY){ e.preventDefault(); camMode=(camMode+1)%3; }
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(!ctrlEl.hidden) closeControls(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; if(e.key==='Tab'){ tabShown=false; tabListEl.hidden=true; } });
 addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=false; if(tabListEl) tabListEl.hidden=true; });
 
-// double-tap space to toggle fly in creative
+// double-tap the jump key to toggle fly in creative
 let lastSpace=0;
 addEventListener('keydown', e=>{
-  if(e.code==='Space' && creative && state===PLAY){
+  if(!bindListening && e.key.toLowerCase()===binds.jump && creative && state===PLAY){
     const now=performance.now();
     if(now-lastSpace<300){ player.flying=!player.flying; player.vel.y=0; }
     lastSpace=now;
@@ -1829,23 +1896,23 @@ function stepUpStair(p, axis){
 function updatePlayer(dt){
   const fwd = new THREE.Vector3(-Math.sin(player.yaw),0,-Math.cos(player.yaw));
   const right = new THREE.Vector3(Math.cos(player.yaw),0,-Math.sin(player.yaw));
-  player.sprint = !!keys['control'] || false;
+  player.sprint = !!keys[binds.sprint] || false;
   const wish = new THREE.Vector3();
-  if(keys['w']) wish.add(fwd); if(keys['s']) wish.sub(fwd);
-  if(keys['d']) wish.add(right); if(keys['a']) wish.sub(right);
+  if(keys[binds.forward]) wish.add(fwd); if(keys[binds.back]) wish.sub(fwd);
+  if(keys[binds.right]) wish.add(right); if(keys[binds.left]) wish.sub(right);
   wish.y=0; if(wish.lengthSq()>0) wish.normalize();
 
   const swimming = inLiquid();
   player.sneak = false;
   if(player.flying){
-    const speed = (keys['shift']?18:9);
+    const speed = (keys[binds.sneak]?18:9);
     player.vel.x = wish.x*speed; player.vel.z = wish.z*speed;
     player.vel.y = 0;
-    if(keys[' ']) player.vel.y = speed; if(keys['shift']) player.vel.y = -speed;
+    if(keys[binds.jump]) player.vel.y = speed; if(keys[binds.sneak]) player.vel.y = -speed;
   } else {
-    const sneaking = keys['shift'] && player.onGround && !swimming;
+    const sneaking = keys[binds.sneak] && player.onGround && !swimming;
     player.sneak = sneaking;
-    const base = sneaking ? 1.35 : (keys['w'] && keys['control'] ? 6.4 : 4.3);
+    const base = sneaking ? 1.35 : (keys[binds.forward] && keys[binds.sprint] ? 6.4 : 4.3);
     const accel = swimming? 3.0 : base;
     const tvx = wish.x*accel, tvz = wish.z*accel;
     // ice is slippery: velocity eases toward the target instead of snapping
@@ -1860,15 +1927,15 @@ function updatePlayer(dt){
     }
     const g = swimming? 9 : 26;
     player.vel.y -= g*dt;
-    if(swimming){ player.vel.y = Math.max(player.vel.y,-2.2); if(keys[' ']) player.vel.y = 3.2; }
-    else if(keys[' '] && player.onGround){ player.vel.y = 8.4; player.onGround=false; }
+    if(swimming){ player.vel.y = Math.max(player.vel.y,-2.2); if(keys[binds.jump]) player.vel.y = 3.2; }
+    else if(keys[binds.jump] && player.onGround){ player.vel.y = 8.4; player.onGround=false; }
     if(player.vel.y<-40) player.vel.y=-40;
   }
 
   // ladder: cling and climb when your box is inside a ladder
   if(!player.flying && isOnLadder()){
-    if(keys[' ']) player.vel.y = 3.0;                  // jump = climb up
-    else if(keys['shift']) player.vel.y = -3.0;        // sneak = climb down
+    if(keys[binds.jump]) player.vel.y = 3.0;                  // jump = climb up
+    else if(keys[binds.sneak]) player.vel.y = -3.0;          // sneak = climb down
     else player.vel.y = Math.max(player.vel.y, -1.4);  // otherwise cling / slow slide
   }
 
@@ -2345,6 +2412,34 @@ document.getElementById('regenBtn').addEventListener('click', regen);
 document.getElementById('menuBtn').addEventListener('click', toMenu);
 document.getElementById('leaveBedBtn').addEventListener('click', wakeUp);
 
+// ---- Controls / keybinds screen ----
+const ctrlEl=document.getElementById('controls'), ctrlGridEl=document.getElementById('ctrlGrid');
+(function(){ const el=document.getElementById('splash');
+  const lines=['Now with rebindable keys!','100% original textures!','Also try snowboarding!','Powder day!','Made by Leon!','Punch trees, get wood!','No two worlds alike!','So many blocks!'];
+  if(el) el.textContent = lines[(Math.random()*lines.length)|0];
+})();
+function bindConflicts(){ const seen={}, conf={}; for(const a of BIND_ACTIONS){ const k=binds[a.id]; if(seen[k]) conf[k]=true; seen[k]=1; } return conf; }
+function renderControls(){
+  if(!ctrlGridEl) return;
+  const conf=bindConflicts(); ctrlGridEl.innerHTML='';
+  for(const a of BIND_ACTIONS){
+    const row=document.createElement('div'); row.className='ctrlRow';
+    const lab=document.createElement('span'); lab.className='ctrlLabel'; lab.textContent=a.label;
+    const btn=document.createElement('button');
+    btn.className='keybtn'+(bindListening===a.id?' listening':'')+(conf[binds[a.id]]?' conflict':'');
+    btn.textContent = bindListening===a.id ? '> ? <' : keyLabel(binds[a.id]);
+    if(conf[binds[a.id]]) btn.title='This key is bound to more than one action';
+    btn.addEventListener('click', ()=>{ bindListening=(bindListening===a.id)?null:a.id; renderControls(); });
+    row.appendChild(lab); row.appendChild(btn); ctrlGridEl.appendChild(row);
+  }
+}
+function openControls(){ bindListening=null; renderControls(); ctrlEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; }
+function closeControls(){ bindListening=null; ctrlEl.hidden=true; if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false; }
+document.getElementById('controlsBtn').addEventListener('click', openControls);
+document.getElementById('pauseControlsBtn').addEventListener('click', openControls);
+document.getElementById('ctrlDoneBtn').addEventListener('click', closeControls);
+document.getElementById('ctrlResetBtn').addEventListener('click', ()=>{ binds=Object.assign({}, DEFAULT_BINDS); saveBinds(); bindListening=null; renderControls(); });
+
 // username: persisted to localStorage, applied live to the shared server when connected
 const nameInputEl=document.getElementById('nameInput');
 function getSavedName(){ try{ return (localStorage.getItem('leoncraft_name')||'').trim().slice(0,16); }catch(e){ return ''; } }
@@ -2569,7 +2664,7 @@ function frame(now){
   // camera + character model
   const eye=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z);
   const d=camDir();
-  const moving=(keys['w']||keys['a']||keys['s']||keys['d']) && state===PLAY;
+  const moving=(keys[binds.forward]||keys[binds.left]||keys[binds.back]||keys[binds.right]) && state===PLAY;
   bobT += dt*(moving?9:3.5);
   const cr=player.crouch||0;
   body.position.set(player.pos.x, player.pos.y - cr*0.1, player.pos.z);
