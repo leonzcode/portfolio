@@ -173,6 +173,15 @@
   .skinPick{ display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:#e6e6e6; cursor:pointer; }
   .skinPick input[type=color]{ width:34px; height:26px; padding:0; border:2px solid #333; background:#7a7a7a; cursor:pointer; }
   .keybtn.on{ background:#586ea0; border-color:#9fb6e0 #26304a #26304a #9fb6e0; color:#ffec4d; }
+  .btnRow{ display:flex; gap:8px; justify-content:center; }
+  .btn.half{ width:156px; }
+  .skinGalleryWrap{ width:min(560px,92vw); }
+  .skinGallery{ display:flex; gap:8px; overflow-x:auto; padding:8px 2px; min-height:76px; }
+  .skinCell{ position:relative; flex:0 0 auto; width:44px; height:68px; background:rgba(0,0,0,.28); border:2px solid; border-color:#555 #1c1c1c #1c1c1c #555; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .skinCell.sel{ border-color:#ffec4d #8a7a1a #8a7a1a #ffec4d; }
+  .skinCell img{ width:26px; height:52px; image-rendering:pixelated; }
+  .skinAdd{ font-size:24px; color:#cfcfcf; }
+  .skinDel{ position:absolute; top:-7px; right:-7px; width:16px; height:16px; padding:0; line-height:12px; font-size:12px; background:#b23a2a; color:#fff; border:1px solid #611; cursor:pointer; }
   /* sleeping: a soft vignette so the character on the bed stays visible behind it */
   #sleepOverlay{
     position:fixed; inset:0; z-index:20; pointer-events:none;
@@ -267,8 +276,10 @@
   <div class="menuButtons">
     <button class="btn" id="playBtn">Singleplayer</button>
     <button class="btn" id="mpBtn">Multiplayer</button>
-    <button class="btn" id="skinBtn">Skin&hellip;</button>
-    <button class="btn" id="controlsBtn">Controls&hellip;</button>
+    <div class="btnRow">
+      <button class="btn half" id="skinBtn">Skin&hellip;</button>
+      <button class="btn half" id="controlsBtn">Controls&hellip;</button>
+    </div>
   </div>
   <div class="hint">Move with <b>WASD</b>, look with the <b>mouse</b>, and break / place with the mouse buttons.<br>Open <b>Controls</b> to change any key.</div>
 </div>
@@ -301,9 +312,14 @@
       </div>
     </div>
   </div>
+  <div class="skinGalleryWrap">
+    <div class="skinLabel">My skins — click to load, ✕ to delete</div>
+    <div class="skinGallery" id="skinGallery"></div>
+  </div>
   <div class="ctrlActions">
     <button class="btn" id="skinCancel">Cancel</button>
-    <button class="btn" id="skinDone">Save skin</button>
+    <button class="btn" id="skinSaveNew">Save as new</button>
+    <button class="btn" id="skinDone">Save</button>
   </div>
 </div>
 
@@ -311,8 +327,10 @@
   <div class="title" style="font-size:32px;">PAUSED</div>
   <div class="menuButtons">
     <button class="btn" id="resumeBtn">Back to game</button>
-    <button class="btn" id="pauseSkinBtn">Skin&hellip;</button>
-    <button class="btn" id="pauseControlsBtn">Controls&hellip;</button>
+    <div class="btnRow">
+      <button class="btn half" id="pauseSkinBtn">Skin&hellip;</button>
+      <button class="btn half" id="pauseControlsBtn">Controls&hellip;</button>
+    </div>
     <button class="btn" id="regenBtn">New world</button>
     <button class="btn" id="menuBtn">Main menu</button>
   </div>
@@ -1541,8 +1559,25 @@ function loadSkinInto(ctx, tex, dataURL, done){    // draw a data-URL skin into 
   const img=new Image(); img.onload=()=>{ ctx.clearRect(0,0,64,64); ctx.drawImage(img,0,0,64,64); if(tex) tex.needsUpdate=true; if(done) done(); };
   img.onerror=()=>{ if(done) done(); }; img.src=dataURL;
 }
-(function loadSavedSkin(){ let saved=null; try{ saved=localStorage.getItem('leoncraft_skin64'); }catch(e){}
-  if(saved) loadSkinInto(skinCtx, localSkinTex, saved, refreshHeadIcons); else refreshHeadIcons();
+// ---- skin library: keep several skins in localStorage and wear any of them ----
+let skins=[], activeSkinId=null, selectedSkinId=null, nextSkinId=1; const skinThumbs={};
+function skinThumbURL(src){   // a small flat front-view thumbnail of a skin canvas
+  const c=document.createElement('canvas'); c.width=16; c.height=32; const g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+  const d=(rect,dx,dy)=>{ const [x,y,w,h]=rect; g.drawImage(src,x,y,w,h,dx,dy,w,h); };
+  d(PARTS.head.f.pz,4,0); d(PARTS.body.f.pz,4,8); d(PARTS.armR.f.pz,12,8); d(PARTS.armL.f.pz,0,8); d(PARTS.legR.f.pz,8,20); d(PARTS.legL.f.pz,4,20);
+  return c.toDataURL();
+}
+function saveSkinLibrary(){ try{ localStorage.setItem('leoncraft_skins', JSON.stringify(skins)); if(activeSkinId!=null) localStorage.setItem('leoncraft_active_skin', String(activeSkinId)); }catch(e){} }
+function loadSkinLibrary(){
+  try{ const raw=localStorage.getItem('leoncraft_skins'); if(raw){ const d=JSON.parse(raw); if(Array.isArray(d)) skins=d.filter(s=>s&&typeof s.png==='string'&&s.id!=null); } }catch(e){}
+  if(!skins.length){ let old=null; try{ old=localStorage.getItem('leoncraft_skin64'); }catch(e){} if(old) skins=[{id:1,png:old}]; }   // migrate the old single skin
+  nextSkinId=skins.reduce((m,s)=>Math.max(m,s.id|0),0)+1;
+  let a=null; try{ a=+localStorage.getItem('leoncraft_active_skin'); }catch(e){}
+  activeSkinId=(a && skins.some(s=>s.id===a)) ? a : (skins.length? skins[0].id : null);
+}
+loadSkinLibrary();
+(function applyActiveSkin(){ const s=skins.find(x=>x.id===activeSkinId);
+  if(s) loadSkinInto(skinCtx, localSkinTex, s.png, refreshHeadIcons); else refreshHeadIcons();
 })();
 
 // a humanoid model textured from a 64x64 skin. The local player passes its own editable
@@ -2520,7 +2555,7 @@ const editCanvas=document.createElement('canvas'); editCanvas.width=editCanvas.h
 const editSkinTex=makeSkinTex(editCanvas);
 const SKIN_SWATCHES=['#141414','#ffffff','#7a4a30','#d9a066','#e8c9a0','#c98a54','#2ea3a3','#3aa0c9','#394a7a','#2c3e50','#3f7a34','#7bbf3a','#b23a2a','#e67e22','#f2c400','#8e44ad'];
 let skinRenderer=null, skinScene=null, skinCam=null, skinGroup=null, skinModel=null, skinRAF=0;
-let paintColor='#c0392b', skinOpen=false, skinDrag=false, skinMoved=0, skinLX=0, skinLY=0, skinDX=0, skinDY=0, skinYaw=0.5, skinPitch=0.08, eyedrop=false;
+let paintColor='#c0392b', skinOpen=false, skinDrag=false, skinMode=null, skinLX=0, skinLY=0, skinYaw=0.5, skinPitch=0.08, skinDist=4.6, eyedrop=false;
 const skinRay=new THREE.Raycaster();
 function paintSkinColors(g, C){    // fill every part with the given base colours + face
   g.clearRect(0,0,64,64);
@@ -2541,7 +2576,7 @@ function initSkinRenderer(){
   skinScene.add(new THREE.AmbientLight(0xffffff,0.9));
   const d=new THREE.DirectionalLight(0xffffff,0.5); d.position.set(0.5,1,0.9); skinScene.add(d);
   const d2=new THREE.DirectionalLight(0xffffff,0.28); d2.position.set(-0.6,0.3,-0.8); skinScene.add(d2);
-  skinCam=new THREE.PerspectiveCamera(36, skinViewCanvas.width/skinViewCanvas.height, 0.1, 50); skinCam.position.set(0,0,4.6);
+  skinCam=new THREE.PerspectiveCamera(36, skinViewCanvas.width/skinViewCanvas.height, 0.1, 50); skinCam.position.set(0,0,skinDist);
   skinGroup=new THREE.Group(); skinScene.add(skinGroup);
 }
 function buildSkinModel(){ if(skinModel) skinGroup.remove(skinModel); skinModel=makeCharacterModel(editSkinTex); skinModel.position.y=-0.95; skinGroup.add(skinModel); }
@@ -2554,13 +2589,52 @@ function setEyedrop(on){ eyedrop=on; document.getElementById('skinEyedrop').clas
 function openSkinEditor(){
   initSkinRenderer();
   editCtx.clearRect(0,0,64,64); editCtx.drawImage(skinCanvas,0,0); editSkinTex.needsUpdate=true;
-  buildSkinModel(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); renderSwatches();
+  selectedSkinId=activeSkinId;
+  buildSkinModel(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); renderSwatches(); renderSkinGallery();
   skinEditorEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; skinOpen=true; skinLoop();
 }
 function closeSkinEditor(save){
   skinOpen=false; if(skinRAF) cancelAnimationFrame(skinRAF);
-  if(save){ skinCtx.clearRect(0,0,64,64); skinCtx.drawImage(editCanvas,0,0); localSkinTex.needsUpdate=true; saveLocalSkin(); refreshHeadIcons(); if(mp.active) mpSendSkin(); }
+  if(save) persistCurrentSkin(false);
   skinEditorEl.hidden=true; if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false;
+}
+// write the current edit into the library (a new entry, or overwrite the selected one), then wear it
+function persistCurrentSkin(forceNew){
+  const png=editCanvas.toDataURL();
+  let s=(!forceNew && selectedSkinId!=null) ? skins.find(x=>x.id===selectedSkinId) : null;
+  if(s){ s.png=png; } else { s={id:nextSkinId++, png}; skins.push(s); selectedSkinId=s.id; }
+  activeSkinId=s.id; skinThumbs[s.id]=skinThumbURL(editCanvas); saveSkinLibrary();
+  skinCtx.clearRect(0,0,64,64); skinCtx.drawImage(editCanvas,0,0); localSkinTex.needsUpdate=true; refreshHeadIcons(); saveLocalSkin();
+  if(mp.active) mpSendSkin();
+}
+function ensureThumb(s,img){
+  if(skinThumbs[s.id]){ img.src=skinThumbs[s.id]; return; }
+  const tmp=document.createElement('canvas'); tmp.width=tmp.height=64; const tg=tmp.getContext('2d');
+  const im=new Image(); im.onload=()=>{ tg.drawImage(im,0,0,64,64); skinThumbs[s.id]=skinThumbURL(tmp); img.src=skinThumbs[s.id]; }; im.src=s.png;
+}
+function renderSkinGallery(){
+  const el=document.getElementById('skinGallery'); if(!el) return; el.innerHTML='';
+  for(const s of skins){
+    const cell=document.createElement('div'); cell.className='skinCell'+(s.id===selectedSkinId?' sel':'');
+    const img=document.createElement('img'); ensureThumb(s,img); cell.appendChild(img);
+    const del=document.createElement('button'); del.className='skinDel'; del.textContent='✕'; del.title='Delete skin';
+    del.addEventListener('click', ev=>{ ev.stopPropagation(); deleteSkin(s.id); });
+    cell.appendChild(del);
+    cell.addEventListener('click', ()=> selectSkin(s.id));
+    el.appendChild(cell);
+  }
+  const add=document.createElement('div'); add.className='skinCell skinAdd'; add.textContent='＋'; add.title='New skin';
+  add.addEventListener('click', ()=> newSkin()); el.appendChild(add);
+}
+function selectSkin(id){ const s=skins.find(x=>x.id===id); if(!s) return; selectedSkinId=id; loadSkinInto(editCtx, editSkinTex, s.png, ()=>renderSkin()); renderSkinGallery(); }
+function newSkin(){ selectedSkinId=null; paintDefaultSkin(editCtx); editSkinTex.needsUpdate=true; renderSkin(); renderSkinGallery(); }
+function deleteSkin(id){
+  skins=skins.filter(x=>x.id!==id); delete skinThumbs[id];
+  if(selectedSkinId===id) selectedSkinId=null;
+  if(activeSkinId===id){ activeSkinId=skins.length? skins[0].id : null; const a=skins.find(x=>x.id===activeSkinId);
+    if(a) loadSkinInto(skinCtx, localSkinTex, a.png, ()=>{ refreshHeadIcons(); saveLocalSkin(); if(mp.active) mpSendSkin(); });
+    else { paintDefaultSkin(skinCtx); localSkinTex.needsUpdate=true; refreshHeadIcons(); saveLocalSkin(); if(mp.active) mpSendSkin(); } }
+  saveSkinLibrary(); renderSkinGallery();
 }
 function skinTexelAt(px,py){
   const rect=skinViewCanvas.getBoundingClientRect();
@@ -2574,15 +2648,21 @@ function skinPaintAt(px,py){
   if(eyedrop){ const d=editCtx.getImageData(t.x,t.y,1,1).data; paintColor='#'+[d[0],d[1],d[2]].map(n=>n.toString(16).padStart(2,'0')).join(''); document.getElementById('skinColor').value=paintColor; renderSwatches(); setEyedrop(false); return; }
   editCtx.fillStyle=paintColor; editCtx.fillRect(t.x,t.y,1,1); editSkinTex.needsUpdate=true; renderSkin();
 }
-skinViewCanvas.addEventListener('pointerdown', e=>{ try{ skinViewCanvas.setPointerCapture(e.pointerId); }catch(_){}; skinDrag=true; skinMoved=0; skinLX=e.clientX; skinLY=e.clientY; skinDX=e.offsetX; skinDY=e.offsetY; e.preventDefault(); });
-skinViewCanvas.addEventListener('pointermove', e=>{ if(!skinDrag) return; const dx=e.clientX-skinLX, dy=e.clientY-skinLY; skinLX=e.clientX; skinLY=e.clientY; skinMoved+=Math.abs(dx)+Math.abs(dy);
-  if(skinMoved>4){ skinYaw+=dx*0.01; skinPitch=Math.max(-1.3,Math.min(1.3, skinPitch+dy*0.01)); renderSkin(); } });
-skinViewCanvas.addEventListener('pointerup', e=>{ if(!skinDrag) return; skinDrag=false; if(skinMoved<=4) skinPaintAt(skinDX, skinDY); });   // no drag = a paint click
+skinViewCanvas.addEventListener('pointerdown', e=>{ try{ skinViewCanvas.setPointerCapture(e.pointerId); }catch(_){}; skinDrag=true; skinLX=e.clientX; skinLY=e.clientY;
+  // start on the model = paint (and keep painting as you drag); start on empty space = rotate
+  if(skinTexelAt(e.offsetX, e.offsetY)){ skinMode='paint'; skinPaintAt(e.offsetX, e.offsetY); } else { skinMode='rotate'; }
+  e.preventDefault(); });
+skinViewCanvas.addEventListener('pointermove', e=>{ if(!skinDrag) return;
+  if(skinMode==='paint'){ skinPaintAt(e.offsetX, e.offsetY); }   // drag across the body to paint a stroke, no rotation
+  else { const dx=e.clientX-skinLX, dy=e.clientY-skinLY; skinLX=e.clientX; skinLY=e.clientY; skinYaw+=dx*0.01; skinPitch=Math.max(-1.3,Math.min(1.3, skinPitch+dy*0.01)); renderSkin(); } });
+skinViewCanvas.addEventListener('pointerup', ()=>{ skinDrag=false; skinMode=null; });
+skinViewCanvas.addEventListener('wheel', e=>{ e.preventDefault(); skinDist=Math.max(2.4, Math.min(8.5, skinDist+(e.deltaY>0?0.5:-0.5))); if(skinCam){ skinCam.position.z=skinDist; renderSkin(); } }, {passive:false});
 document.getElementById('skinColor').addEventListener('input', e=>{ paintColor=e.target.value; renderSwatches(); });
 document.getElementById('skinEyedrop').addEventListener('click', ()=> setEyedrop(!eyedrop));
 document.getElementById('skinRandom').addEventListener('click', ()=>{ const rc=()=>Math.floor(Math.random()*0xffffff); paintSkinColors(editCtx,{skin:rc(),shirt:rc(),pants:rc(),hair:rc()}); editSkinTex.needsUpdate=true; renderSkin(); });
 document.getElementById('skinResetSkin').addEventListener('click', ()=>{ paintDefaultSkin(editCtx); editSkinTex.needsUpdate=true; renderSkin(); });
 document.getElementById('skinDone').addEventListener('click', ()=> closeSkinEditor(true));
+document.getElementById('skinSaveNew').addEventListener('click', ()=>{ persistCurrentSkin(true); renderSkinGallery(); });
 document.getElementById('skinCancel').addEventListener('click', ()=> closeSkinEditor(false));
 document.getElementById('skinBtn').addEventListener('click', openSkinEditor);
 document.getElementById('pauseSkinBtn').addEventListener('click', openSkinEditor);
@@ -2915,6 +2995,7 @@ window.__mc = {
   myHead(){ return (selfHeadURL||'').slice(0,60); }, mySkinLen(){ return localSkinDataURL().length; },
   remoteSkins(){ const a=[]; for(const [id,p] of mp.players) a.push({id, name:p.name, hasSkin:!!p.skinTex, head:(p.headURL||'').slice(0,60)}); return a; },
   openSkin(){ openSkinEditor(); }, randomizeSkin(){ const rc=()=>Math.floor(Math.random()*0xffffff); paintSkinColors(skinCtx,{skin:rc(),shirt:rc(),pants:rc(),hair:rc()}); localSkinTex.needsUpdate=true; saveLocalSkin(); refreshHeadIcons(); if(mp.active) mpSendSkin(); },
+  skinDebug(){ return {yaw:+skinYaw.toFixed(3), pitch:+skinPitch.toFixed(3), dist:skinDist, skins:skins.length, hitCenter:!!skinTexelAt(160,200)}; },
   collidesAt(x,y,z){ return collides(x,y,z); },
   putPrg(x,y,z,ang){ const id=BLOCKS['prg'].id; setBlock(x,y,z,id); mpSendBlock(x,y,z,id); setPrgAng(x+','+y+','+z,ang|0); spRecordPrg(x,y,z,{ang:ang|0}); if(mp.active) mpSend({type:'prg',x,y,z,ang:ang|0}); remeshChunkAt(x,z); },
   putSign(x,y,z,wall,ang,lines){ const id=BLOCKS['oak_sign'].id; setBlock(x,y,z,id); const m={wall:!!wall, ang:ang|0, hex:BLOCKS[id].hex, lines:(lines||['','','',''])}; signMeta.set(x+','+y+','+z,m); spRecordSign(x,y,z,m); remeshChunkAt(x,z); updateSignObj(x,y,z); },
