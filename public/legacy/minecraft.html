@@ -457,7 +457,11 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 "pale_oak_log","pale_oak_planks","pale_oak_leaves",
 "bamboo_block","bamboo_planks","bamboo_mosaic",
 "crimson_stem","crimson_planks","warped_stem","warped_planks",
-"stripped_oak_log","stripped_spruce_log","stripped_birch_log","stripped_jungle_log","stripped_acacia_log","stripped_dark_oak_log"];
+"stripped_oak_log","stripped_spruce_log","stripped_birch_log","stripped_jungle_log","stripped_acacia_log","stripped_dark_oak_log",
+// --- pass 3 (shaped: stairs, slabs, fences, trapdoors, carpets), appended ---
+"cobblestone_stairs","cobblestone_slab","stone_stairs","stone_slab","stone_brick_stairs","stone_brick_slab","mossy_stone_brick_stairs","mossy_stone_brick_slab","mossy_cobblestone_stairs","mossy_cobblestone_slab","brick_stairs","brick_slab","sandstone_stairs","sandstone_slab","smooth_sandstone_stairs","smooth_sandstone_slab","red_sandstone_stairs","red_sandstone_slab","smooth_red_sandstone_stairs","smooth_red_sandstone_slab","granite_stairs","granite_slab","polished_granite_stairs","polished_granite_slab","diorite_stairs","diorite_slab","polished_diorite_stairs","polished_diorite_slab","andesite_stairs","andesite_slab","polished_andesite_stairs","polished_andesite_slab","nether_brick_stairs","nether_brick_slab","red_nether_brick_stairs","red_nether_brick_slab","quartz_stairs","quartz_slab","smooth_quartz_stairs","smooth_quartz_slab","purpur_stairs","purpur_slab","prismarine_stairs","prismarine_slab","prismarine_brick_stairs","prismarine_brick_slab","dark_prismarine_stairs","dark_prismarine_slab","end_stone_brick_stairs","end_stone_brick_slab","deepslate_brick_stairs","deepslate_brick_slab","deepslate_tile_stairs","deepslate_tile_slab","cobbled_deepslate_stairs","cobbled_deepslate_slab","polished_deepslate_stairs","polished_deepslate_slab","blackstone_stairs","blackstone_slab","polished_blackstone_stairs","polished_blackstone_slab","polished_blackstone_brick_stairs","polished_blackstone_brick_slab","tuff_stairs","tuff_slab","mud_brick_stairs","mud_brick_slab",
+"mangrove_stairs","mangrove_slab","mangrove_fence","mangrove_trapdoor","cherry_stairs","cherry_slab","cherry_fence","cherry_trapdoor","pale_oak_stairs","pale_oak_slab","pale_oak_fence","pale_oak_trapdoor","bamboo_stairs","bamboo_slab","bamboo_fence","bamboo_trapdoor","crimson_stairs","crimson_slab","crimson_fence","crimson_trapdoor","warped_stairs","warped_slab","warped_fence","warped_trapdoor","bamboo_mosaic_stairs","bamboo_mosaic_slab",
+"white_carpet","orange_carpet","magenta_carpet","light_blue_carpet","yellow_carpet","lime_carpet","pink_carpet","gray_carpet","light_gray_carpet","cyan_carpet","purple_carpet","blue_carpet","brown_carpet","green_carpet","red_carpet","black_carpet"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1090,6 +1094,46 @@ for(const e of NEW_SOLIDS){
   B[e.name]=def(e.name, opts);
 }
 
+// pass 3 (shaped): stairs + slabs for stone, shaped variants for the new woods, carpets.
+// These reuse the existing stair/slab/fence/trapdoor geometry; only the tile + name differ.
+// [ shaped base name, atlas tile name, hex ]
+const STONE_SHAPED = [
+  ['cobblestone','cobble',0x828282], ['stone','stone',0x9d9d9d],
+  ['stone_brick','stone_bricks',0x7c7c7c], ['mossy_stone_brick','mossy_stone_bricks',0x71785c],
+  ['mossy_cobblestone','mossy_cobblestone',0x74805a], ['brick','bricks',0x9a5a44],
+  ['sandstone','sandstone',0xd8ce97], ['smooth_sandstone','smooth_sandstone',0xd6cc95],
+  ['red_sandstone','red_sandstone_side',0xa9531a], ['smooth_red_sandstone','smooth_red_sandstone',0xa6521a],
+  ['granite','granite',0x9a6152], ['polished_granite','polished_granite',0x9a6558],
+  ['diorite','diorite',0xc9c9c9], ['polished_diorite','polished_diorite',0xd2d2d2],
+  ['andesite','andesite',0x8a8c8d], ['polished_andesite','polished_andesite',0x969899],
+  ['nether_brick','nether_brick',0x2e1417], ['red_nether_brick','red_nether_bricks',0x460a0f],
+  ['quartz','quartz_block',0xebe8e2], ['smooth_quartz','smooth_quartz',0xe9e6df],
+  ['purpur','purpur_block',0xa578a5], ['prismarine','prismarine',0x639a8f],
+  ['prismarine_brick','prismarine_bricks',0x5f9e8f], ['dark_prismarine','dark_prismarine',0x33564a],
+  ['end_stone_brick','end_stone_bricks',0xdadab0], ['deepslate_brick','deepslate_bricks',0x474a4d],
+  ['deepslate_tile','deepslate_tiles',0x393b3e], ['cobbled_deepslate','cobbled_deepslate',0x4a4d50],
+  ['polished_deepslate','polished_deepslate',0x484a4d], ['blackstone','blackstone',0x2c2830],
+  ['polished_blackstone','polished_blackstone',0x2e2b33], ['polished_blackstone_brick','polished_blackstone_bricks',0x2b2830],
+  ['tuff','tuff',0x6b6d64], ['mud_brick','mud_bricks',0x8a6a4a],
+];
+for(const [base,tile,hex] of STONE_SHAPED){
+  B[base+'_stairs'] = def(base+'_stairs', { tiles:T(tile), stairs:true, opaque:false, hex });
+  B[base+'_slab']   = def(base+'_slab',   { tiles:T(tile), slab:true,   opaque:false, hex });
+}
+// the new wood types get the full wooden set (stairs, slab, fence, trapdoor)
+const NEWWOOD_SHAPED = [['mangrove',0x9a5f4e],['cherry',0xe4b6c2],['pale_oak',0xd6d2c4],['bamboo',0xc9b74a],['crimson',0x6a3350],['warped',0x2b6b6a]];
+for(const [wd,hex] of NEWWOOD_SHAPED){
+  const t=T(wd+'_planks');
+  B[wd+'_stairs']   = def(wd+'_stairs',   { tiles:t, stairs:true,   opaque:false, hex });
+  B[wd+'_slab']     = def(wd+'_slab',     { tiles:t, slab:true,     opaque:false, hex });
+  B[wd+'_fence']    = def(wd+'_fence',    { tiles:t, fence:true,    opaque:false, hex });
+  B[wd+'_trapdoor'] = def(wd+'_trapdoor', { tiles:t, trapdoor:true, solid:false, opaque:false, hex });
+}
+B.bamboo_mosaic_stairs = def('bamboo_mosaic_stairs', { tiles:T('bamboo_mosaic'), stairs:true, opaque:false, hex:0xc9b74a });
+B.bamboo_mosaic_slab   = def('bamboo_mosaic_slab',   { tiles:T('bamboo_mosaic'), slab:true,   opaque:false, hex:0xc9b74a });
+// carpets: a thin wool layer you walk over (no collision — you stand on the block beneath)
+for(const [n,hex] of WOOLS) B[n+'_carpet'] = def(n+'_carpet', { tiles:T(n+'_wool'), carpet:true, solid:false, opaque:false, hex });
+
 // blocks affected by gravity (settle downward like real Minecraft)
 const GRAVITY = new Set([B.sand, B.gravel, B.red_sand]);
 for(const [n] of WOOLS) GRAVITY.add(B[n+'_concrete_powder']);   // concrete powder falls like sand
@@ -1437,7 +1481,7 @@ function biomeAt(x,z){
 class Chunk{
   constructor(cx,cz){
     this.cx=cx; this.cz=cz;
-    this.data = new Uint8Array(CH*CH*WH);
+    this.data = new Uint16Array(CH*CH*WH);   // 16-bit: there are now >255 block types, so ids must not wrap at a byte
     this.mesh = null; this.tmesh = null;   // opaque + transparent meshes
     this.dirty = true; this.generated = false;
   }
@@ -1671,6 +1715,10 @@ function buildChunkMesh(c){
     }
     if (bl.cushion){                           // cushion: a low soft wool pad
       for(const box of cushionBoxes()) pushBox(op, wx, y, wz, box, (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      continue;
+    }
+    if (bl.carpet){                            // carpet: a thin flat wool layer on the floor
+      pushBox(op, wx, y, wz, [0,1, 0,1/16, 0,1], (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
       continue;
     }
     if (bl.door){                              // doors are a thin swinging panel, not a cube
@@ -2845,7 +2893,7 @@ const CATS=[
   {id:'misc',label:'Misc'},
 ];
 function catOf(n){
-  if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')||n.endsWith('_cushion')
+  if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')||n.endsWith('_cushion')||n.endsWith('_carpet')
      ||n.endsWith('_concrete')||n.endsWith('_concrete_powder')||n.endsWith('_glazed_terracotta')) return 'color';
   if(n.endsWith('_ore')) return 'ores';
   if(['iron_block','gold_block','diamond_block','emerald_block','coal_block','redstone_block','lapis_block',
