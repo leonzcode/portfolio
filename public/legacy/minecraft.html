@@ -314,6 +314,11 @@
         <button class="keybtn" id="skinRandom">Randomise</button>
         <button class="keybtn" id="skinResetSkin">Reset</button>
       </div>
+      <div class="skinRow">
+        <button class="keybtn" id="skinUploadBtn" title="Upload a Minecraft skin PNG (64×64 or legacy 64×32)">Upload skin file</button>
+        <input type="file" id="skinUpload" accept="image/png,image/*" hidden>
+      </div>
+      <div class="skinHint" id="skinUploadMsg" style="font-size:11px;opacity:.7;min-height:14px;"></div>
     </div>
   </div>
   <div class="skinGalleryWrap">
@@ -1817,6 +1822,23 @@ function setBoxUV(geo,f){
   uv.needsUpdate=true;
 }
 function skinPart(def,mat){ const geo=new THREE.BoxGeometry(def.w*S16,def.h*S16,def.d*S16); setBoxUV(geo,def.f); return new THREE.Mesh(geo,mat); }
+// Minecraft's second (outer) skin layer: hat, jacket, sleeves, trouser overlays.
+// Same face layout as PARTS, but reading the overlay regions of a 64x64 skin.
+const OVERLAY = {
+  head:{ px:[32,8,8,8], nx:[48,8,8,8], py:[40,0,8,8], ny:[48,0,8,8], pz:[40,8,8,8], nz:[56,8,8,8] },      // hat
+  body:{ px:[16,36,4,12], nx:[28,36,4,12], py:[20,32,8,4], ny:[28,32,8,4], pz:[20,36,8,12], nz:[32,36,8,12] }, // jacket
+  armR:{ px:[40,36,4,12], nx:[48,36,4,12], py:[44,32,4,4], ny:[48,32,4,4], pz:[44,36,4,12], nz:[52,36,4,12] },  // right sleeve
+  armL:{ px:[48,52,4,12], nx:[56,52,4,12], py:[52,48,4,4], ny:[56,48,4,4], pz:[52,52,4,12], nz:[60,52,4,12] },  // left sleeve
+  legR:{ px:[0,36,4,12], nx:[8,36,4,12], py:[4,32,4,4], ny:[8,32,4,4], pz:[4,36,4,12], nz:[12,36,4,12] },       // right trouser
+  legL:{ px:[0,52,4,12], nx:[8,52,4,12], py:[4,48,4,4], ny:[8,48,4,4], pz:[4,52,4,12], nz:[12,52,4,12] },       // left trouser
+};
+const OV_INF = 0.5;   // outer layer is 0.25px larger on every side, like Minecraft
+function skinPartOverlay(def, faces, mat){
+  const geo=new THREE.BoxGeometry((def.w+OV_INF)*S16,(def.h+OV_INF)*S16,(def.d+OV_INF)*S16);
+  setBoxUV(geo, faces);
+  const m=new THREE.Mesh(geo,mat); m.raycast=()=>{};   // never a paint/punch target; the base part handles hits
+  return m;
+}
 function fillFace(g,x,y,w,h,hex,noise){
   if(!noise){ g.fillStyle=toHex(hex); g.fillRect(x,y,w,h); return; }
   const base=rgb(hex), r=rng(((x+1)*131+(y+1)*17+hex)>>>0);
@@ -1880,18 +1902,21 @@ loadSkinLibrary();
 // a humanoid model textured from a 64x64 skin. The local player passes its own editable
 // skin; remote players get their own skin texture (or the shared default).
 function makeCharacterModel(skinTex){
-  const mat=new THREE.MeshLambertMaterial({ map:skinTex||defaultSkinTex });
+  const tex=skinTex||defaultSkinTex;
+  const mat=new THREE.MeshLambertMaterial({ map:tex });
+  // outer layer shares the same texture but keeps its transparent pixels transparent
+  const ovMat=new THREE.MeshLambertMaterial({ map:tex, transparent:true, alphaTest:0.5, side:THREE.DoubleSide, depthWrite:true });
   const g=new THREE.Group();
-  const torso=skinPart(PARTS.body,mat); torso.position.y=PARTS.body.pos[1]*S16;
+  const torso=skinPart(PARTS.body,mat); torso.position.y=PARTS.body.pos[1]*S16; torso.add(skinPartOverlay(PARTS.body, OVERLAY.body, ovMat));
   const hp=new THREE.Group(); hp.position.y=24*S16;
-  const head=skinPart(PARTS.head,mat); head.position.y=4*S16; hp.add(head);
-  const armL=skinPart(PARTS.armL,mat); armL.position.set(PARTS.armL.pos[0]*S16,PARTS.armL.pos[1]*S16,0);
-  const armR=skinPart(PARTS.armR,mat); armR.position.set(PARTS.armR.pos[0]*S16,PARTS.armR.pos[1]*S16,0);
-  const legL=skinPart(PARTS.legL,mat); legL.position.set(PARTS.legL.pos[0]*S16,PARTS.legL.pos[1]*S16,0);
-  const legR=skinPart(PARTS.legR,mat); legR.position.set(PARTS.legR.pos[0]*S16,PARTS.legR.pos[1]*S16,0);
+  const head=skinPart(PARTS.head,mat); head.position.y=4*S16; head.add(skinPartOverlay(PARTS.head, OVERLAY.head, ovMat)); hp.add(head);
+  const armL=skinPart(PARTS.armL,mat); armL.position.set(PARTS.armL.pos[0]*S16,PARTS.armL.pos[1]*S16,0); armL.add(skinPartOverlay(PARTS.armL, OVERLAY.armL, ovMat));
+  const armR=skinPart(PARTS.armR,mat); armR.position.set(PARTS.armR.pos[0]*S16,PARTS.armR.pos[1]*S16,0); armR.add(skinPartOverlay(PARTS.armR, OVERLAY.armR, ovMat));
+  const legL=skinPart(PARTS.legL,mat); legL.position.set(PARTS.legL.pos[0]*S16,PARTS.legL.pos[1]*S16,0); legL.add(skinPartOverlay(PARTS.legL, OVERLAY.legL, ovMat));
+  const legR=skinPart(PARTS.legR,mat); legR.position.set(PARTS.legR.pos[0]*S16,PARTS.legR.pos[1]*S16,0); legR.add(skinPartOverlay(PARTS.legR, OVERLAY.legR, ovMat));
   g.add(torso,hp,armL,armR,legL,legR);
   g.scale.setScalar(0.9);           // ~1.8 blocks tall to match the hitbox
-  g.userData={ headPivot:hp, legL, legR, mat, armR };
+  g.userData={ headPivot:hp, legL, legR, mat, ovMat, armR };
   return g;
 }
 const body=makeCharacterModel(localSkinTex);
@@ -1917,6 +1942,7 @@ const vmCam=new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 10);
 vmScene.add(new THREE.AmbientLight(0xffffff,0.8));
 const vmDir=new THREE.DirectionalLight(0xffffff,0.6); vmDir.position.set(0.4,1,0.7); vmScene.add(vmDir);
 const vmArm=skinPart(PARTS.armR, new THREE.MeshLambertMaterial({ map:localSkinTex })); vmScene.add(vmArm);
+vmArm.add(skinPartOverlay(PARTS.armR, OVERLAY.armR, new THREE.MeshLambertMaterial({ map:localSkinTex, transparent:true, alphaTest:0.5, side:THREE.DoubleSide })));   // first-person sleeve
 let vmBlock=null, vmHeldId=-1;
 function buildHeldBlock(id){
   if(vmBlock){ vmScene.remove(vmBlock); if(!vmBlock.userData.shared){ vmBlock.geometry.dispose(); vmBlock.material.dispose(); } vmBlock=null; }
@@ -3087,7 +3113,7 @@ function openSkinEditor(){
   initSkinRenderer();
   editCtx.clearRect(0,0,64,64); editCtx.drawImage(skinCanvas,0,0); editSkinTex.needsUpdate=true;
   selectedSkinId=activeSkinId;
-  buildSkinModel(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); setFill(false); renderSwatches(); renderSkinGallery();
+  buildSkinModel(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); setFill(false); renderSwatches(); renderSkinGallery(); skinUploadMsg('');
   skinEditorEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; skinOpen=true; skinLoop();
 }
 function closeSkinEditor(save){
@@ -3104,6 +3130,49 @@ function persistCurrentSkin(forceNew){
   skinCtx.clearRect(0,0,64,64); skinCtx.drawImage(editCanvas,0,0); localSkinTex.needsUpdate=true; refreshHeadIcons(); saveLocalSkin();
   if(mp.active) mpSendSkin();
 }
+// --- upload a Minecraft skin PNG and wear it -------------------------------
+function skinUploadMsg(t, isErr){ const el=document.getElementById('skinUploadMsg'); if(el){ el.textContent=t||''; el.style.color=isErr?'#c0392b':''; } }
+function copyMirror(sx,sy,w,h,dx,dy){   // draw an editCanvas region flipped horizontally into (dx,dy)
+  editCtx.save(); editCtx.translate(dx+w,dy); editCtx.scale(-1,1);
+  editCtx.imageSmoothingEnabled=false; editCtx.drawImage(editCanvas, sx,sy,w,h, 0,0,w,h); editCtx.restore();
+}
+function legacyToModern(){   // fill the 64x64 left arm/leg from the right arm/leg, exactly like Minecraft's legacy conversion
+  // left leg <- right leg (left/right faces swap, every face mirrored)
+  copyMirror(4,16,4,4, 20,48); copyMirror(8,16,4,4, 24,48);
+  copyMirror(4,20,4,12, 20,52); copyMirror(12,20,4,12, 28,52);
+  copyMirror(8,20,4,12, 16,52); copyMirror(0,20,4,12, 24,52);
+  // left arm <- right arm
+  copyMirror(44,16,4,4, 36,48); copyMirror(48,16,4,4, 40,48);
+  copyMirror(44,20,4,12, 36,52); copyMirror(52,20,4,12, 44,52);
+  copyMirror(48,20,4,12, 32,52); copyMirror(40,20,4,12, 40,52);
+}
+function applyUploadedSkin(img){
+  const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+  const square=(w===h), twoToOne=(w===2*h);
+  if(!(square||twoToOne) || w<64){ skinUploadMsg('That is not a Minecraft skin (needs 64×64, or legacy 64×32).', true); return; }
+  editCtx.clearRect(0,0,64,64); editCtx.imageSmoothingEnabled=false;
+  if(twoToOne){                     // legacy 64x32 (or an HD 2:1): draw the top, then mirror the missing left limbs
+    editCtx.drawImage(img, 0,0,w,h, 0,0,64,32);
+    legacyToModern();
+    skinUploadMsg('Loaded a legacy 64×32 skin (left arm/leg mirrored, like Minecraft).');
+  } else {                          // 64x64 (or an HD square): fit to 64x64
+    editCtx.drawImage(img, 0,0,w,h, 0,0,64,64);
+    skinUploadMsg('Skin loaded'+((w!==64)?(' (resized from '+w+'×'+h+')'):'')+'.');
+  }
+  editSkinTex.needsUpdate=true;
+  selectedSkinId=null;              // it becomes a new entry in your skin library
+  persistCurrentSkin(true);         // wear it now, save it, and sync to the server
+  renderSkinGallery();
+}
+function loadSkinFile(file){
+  if(!file || !/^image\//.test(file.type||'')){ skinUploadMsg('Please choose a PNG image.', true); return; }
+  const url=URL.createObjectURL(file); const img=new Image();
+  img.onload=()=>{ try{ applyUploadedSkin(img); }catch(e){ skinUploadMsg('Could not read that image.', true); } URL.revokeObjectURL(url); };
+  img.onerror=()=>{ skinUploadMsg('Could not read that image.', true); URL.revokeObjectURL(url); };
+  img.src=url;
+}
+document.getElementById('skinUploadBtn').addEventListener('click', ()=> document.getElementById('skinUpload').click());
+document.getElementById('skinUpload').addEventListener('change', e=>{ const f=e.target.files&&e.target.files[0]; if(f) loadSkinFile(f); e.target.value=''; });
 function ensureThumb(s,img){
   if(skinThumbs[s.id]){ img.src=skinThumbs[s.id]; return; }
   const tmp=document.createElement('canvas'); tmp.width=tmp.height=64; const tg=tmp.getContext('2d');
@@ -3241,7 +3310,8 @@ function applyRemoteSkin(id, dataURL){
   const p=mp.players.get(id); if(!p || !dataURL) return;
   if(!p.skinCanvas){ p.skinCanvas=document.createElement('canvas'); p.skinCanvas.width=p.skinCanvas.height=64; p.skinCtx=p.skinCanvas.getContext('2d'); p.skinTex=makeSkinTex(p.skinCanvas); }
   loadSkinInto(p.skinCtx, p.skinTex, dataURL, ()=>{
-    if(p.model && p.model.userData.mat){ p.model.userData.mat.map=p.skinTex; p.model.userData.mat.needsUpdate=true; }
+    if(p.model && p.model.userData.mat){ p.model.userData.mat.map=p.skinTex; p.model.userData.mat.needsUpdate=true;
+      if(p.model.userData.ovMat){ p.model.userData.ovMat.map=p.skinTex; p.model.userData.ovMat.needsUpdate=true; } }
     p.headURL=headURLFrom(p.skinCanvas);
     if(tabShown) renderTabList();
   });
