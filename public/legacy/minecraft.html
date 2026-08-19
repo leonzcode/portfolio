@@ -925,26 +925,15 @@ NEW_SOLIDS.push(
   { name:'mud', tex: speckle(0x3c3a3e,8,es()) },
   { name:'packed_mud', tex: speckle(0x8a6a4a,9,es()) },
   { name:'mud_bricks', tex: brickPat(es(),0x8a6a4a,0x6a4e32) },
-  // copper (oxidation states) + raw metal blocks
+  // copper (oxidation states) + cut copper
   { name:'copper_block', tex: copperTex(es(),0xc06d51) },
   { name:'exposed_copper', tex: copperTex(es(),0xa07a6a,0x6f8f7a) },
   { name:'weathered_copper', tex: copperTex(es(),0x6f9877,0x53a06a) },
   { name:'oxidized_copper', tex: copperTex(es(),0x4fa88a,0x6fbf9a) },
   { name:'cut_copper', tex: chiseledHex(es(),0xc06d51,0xa85a44) },
-  { name:'raw_iron_block', tex: spotsTex(es(),0xb59d84,0xd6b892) },
-  { name:'raw_copper_block', tex: copperTex(es(),0xb5714f,0x7a8f6a) },
-  { name:'raw_gold_block', tex: spotsTex(es(),0xcaa42f,0xe6c74a) },
-  // rare / nether blocks
-  { name:'netherite_block', tex: spotsTex(es(),0x2a2428,0x4a3f4a) },
-  { name:'ancient_debris', top: spotsTex(es(),0x5a4a42,0x7a5a3a), side: spotsTex(es(),0x453a34,0x6a4a2a) },
+  // crying obsidian
   { name:'crying_obsidian', tex: (()=>{ const r=rng(es()), o=rgb(0x180d28), p=rgb(0x3f2fae); return (x,y)=> r()<0.14? vary(p,22,r): vary(o,14,r); })(), light:10 },
-  // mushroom blocks
-  { name:'red_mushroom_block', tex: spotsTex(es(),0xc63f3a,0xe6ded0,[[3,3],[10,4],[6,10],[12,12],[2,12]]) },
-  { name:'brown_mushroom_block', tex: twoTone(es(),0x977251,0x876145,undefined,10) },
-  { name:'mushroom_stem', tex: speckle(0xd0cabb,5,es()) },
-  // fungal / warts / shroomlight
-  { name:'crimson_nylium', tex: nyliumTex(es(),0x8b2252) },
-  { name:'warped_nylium', tex: nyliumTex(es(),0x2e8e8c) },
+  // warts + shroomlight
   { name:'nether_wart_block', tex: twoTone(es(),0x7a0808,0x8b0a0a,0x6a0606,10) },
   { name:'warped_wart_block', tex: twoTone(es(),0x167a7a,0x1a8a8a,0x0f6a6a,10) },
   { name:'shroomlight', tex: speckle(0xe8a33a,10,es()), light:15 },
@@ -1702,6 +1691,7 @@ function buildChunkMesh(c){
     const id = c.data[(y*CH+z)*CH+x];
     if (id===AIR) continue;
     const bl = BLOCKS[id];
+    if (!bl) continue;                          // a reserved/removed id: treat as air
     const wx=ox+x, wz=oz+z;
     if (bl.trapdoor){                          // trapdoor: horizontal panel (shut) or vertical panel (open)
       const d = trapdoorMeta.get(dkey(wx,y,wz));
@@ -2896,12 +2886,11 @@ function catOf(n){
   if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')||n.endsWith('_cushion')||n.endsWith('_carpet')
      ||n.endsWith('_concrete')||n.endsWith('_concrete_powder')||n.endsWith('_glazed_terracotta')) return 'color';
   if(n.endsWith('_ore')) return 'ores';
-  if(['iron_block','gold_block','diamond_block','emerald_block','coal_block','redstone_block','lapis_block',
-      'raw_iron_block','raw_copper_block','raw_gold_block','netherite_block','ancient_debris','cut_copper'].includes(n)
+  if(['iron_block','gold_block','diamond_block','emerald_block','coal_block','redstone_block','lapis_block','cut_copper'].includes(n)
      || n.endsWith('_copper')) return 'ores';
   const nature=['grass','dirt','coarse_dirt','podzol','mycelium','sand','red_sand','gravel','clay','snow','snow_block','ice','packed_ice','water','soul_sand','netherrack','end_stone','melon','pumpkin','hay_block',
-      'moss_block','mud','packed_mud','dripstone_block','calcite','sculk','mushroom_stem','nether_wart_block','warped_wart_block','bamboo_block'];
-  if(nature.includes(n) || n.endsWith('_leaves') || n.endsWith('_log') || n.endsWith('_stem') || n.endsWith('_nylium') || n.endsWith('_mushroom_block')) return 'nature';
+      'moss_block','mud','packed_mud','dripstone_block','calcite','sculk','nether_wart_block','warped_wart_block','bamboo_block'];
+  if(nature.includes(n) || n.endsWith('_leaves') || n.endsWith('_log') || n.endsWith('_stem')) return 'nature';
   const deco=['glass','bookshelf','crafting_table','furnace','glowstone','sea_lantern','sponge','slime_block','super_slime_block','jack_o_lantern','prg',
       'tinted_glass','amethyst_block','crying_obsidian','shroomlight','honeycomb_block','dried_kelp_block'];
   if(deco.includes(n) || n.endsWith('_froglight')) return 'deco';
