@@ -177,12 +177,14 @@
   .btnRow{ display:flex; gap:8px; justify-content:center; }
   .btn.half{ width:156px; }
   .skinGalleryWrap{ width:min(560px,92vw); }
-  .skinGallery{ display:flex; gap:8px; overflow-x:auto; padding:8px 2px; min-height:76px; }
-  .skinCell{ position:relative; flex:0 0 auto; width:44px; height:68px; background:rgba(0,0,0,.28); border:2px solid; border-color:#555 #1c1c1c #1c1c1c #555; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .skinGallery{ display:flex; gap:8px; overflow-x:auto; padding:10px 2px; min-height:98px; }
+  .skinCell{ position:relative; flex:0 0 auto; width:52px; height:88px; background:rgba(0,0,0,.28); border:2px solid; border-color:#555 #1c1c1c #1c1c1c #555; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; padding:3px; }
   .skinCell.sel{ border-color:#ffec4d #8a7a1a #8a7a1a #ffec4d; }
   .skinCell img{ width:26px; height:52px; image-rendering:pixelated; }
+  .skinName{ font-size:9px; line-height:1.05; color:#dcdcdc; max-width:48px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
   .skinAdd{ font-size:24px; color:#cfcfcf; }
-  .skinDel{ position:absolute; top:-7px; right:-7px; width:16px; height:16px; padding:0; line-height:12px; font-size:12px; background:#b23a2a; color:#fff; border:1px solid #611; cursor:pointer; }
+  .skinDel{ position:absolute; top:-7px; right:-7px; width:16px; height:16px; padding:0; line-height:12px; font-size:12px; background:#b23a2a; color:#fff; border:1px solid #611; cursor:pointer; z-index:2; }
+  .skinRen{ position:absolute; top:-7px; left:-7px; width:16px; height:16px; padding:0; line-height:12px; font-size:10px; background:#2a6cb2; color:#fff; border:1px solid #163a5a; cursor:pointer; z-index:2; }
   /* sleeping: a soft vignette so the character on the bed stays visible behind it */
   #sleepOverlay{
     position:fixed; inset:0; z-index:20; pointer-events:none;
@@ -316,13 +318,18 @@
       </div>
       <div class="skinRow">
         <button class="keybtn" id="skinUploadBtn" title="Upload a Minecraft skin PNG (64×64 or legacy 64×32)">Upload skin file</button>
+        <button class="keybtn" id="skinExportBtn" title="Download this skin as a PNG you can share">Download</button>
         <input type="file" id="skinUpload" accept="image/png,image/*" hidden>
       </div>
       <div class="skinHint" id="skinUploadMsg" style="font-size:11px;opacity:.7;min-height:14px;"></div>
     </div>
   </div>
   <div class="skinGalleryWrap">
-    <div class="skinLabel">My skins — click to load, ✕ to delete</div>
+    <div class="skinLabel">Presets — click one to wear it</div>
+    <div class="skinGallery" id="skinPresets"></div>
+  </div>
+  <div class="skinGalleryWrap">
+    <div class="skinLabel">My skins — click to load, ✎ rename, ✕ delete</div>
     <div class="skinGallery" id="skinGallery"></div>
   </div>
   <div class="ctrlActions">
@@ -466,7 +473,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 3 (shaped: stairs, slabs, fences, trapdoors, carpets), appended ---
 "cobblestone_stairs","cobblestone_slab","stone_stairs","stone_slab","stone_brick_stairs","stone_brick_slab","mossy_stone_brick_stairs","mossy_stone_brick_slab","mossy_cobblestone_stairs","mossy_cobblestone_slab","brick_stairs","brick_slab","sandstone_stairs","sandstone_slab","smooth_sandstone_stairs","smooth_sandstone_slab","red_sandstone_stairs","red_sandstone_slab","smooth_red_sandstone_stairs","smooth_red_sandstone_slab","granite_stairs","granite_slab","polished_granite_stairs","polished_granite_slab","diorite_stairs","diorite_slab","polished_diorite_stairs","polished_diorite_slab","andesite_stairs","andesite_slab","polished_andesite_stairs","polished_andesite_slab","nether_brick_stairs","nether_brick_slab","red_nether_brick_stairs","red_nether_brick_slab","quartz_stairs","quartz_slab","smooth_quartz_stairs","smooth_quartz_slab","purpur_stairs","purpur_slab","prismarine_stairs","prismarine_slab","prismarine_brick_stairs","prismarine_brick_slab","dark_prismarine_stairs","dark_prismarine_slab","end_stone_brick_stairs","end_stone_brick_slab","deepslate_brick_stairs","deepslate_brick_slab","deepslate_tile_stairs","deepslate_tile_slab","cobbled_deepslate_stairs","cobbled_deepslate_slab","polished_deepslate_stairs","polished_deepslate_slab","blackstone_stairs","blackstone_slab","polished_blackstone_stairs","polished_blackstone_slab","polished_blackstone_brick_stairs","polished_blackstone_brick_slab","tuff_stairs","tuff_slab","mud_brick_stairs","mud_brick_slab",
 "mangrove_stairs","mangrove_slab","mangrove_fence","mangrove_trapdoor","cherry_stairs","cherry_slab","cherry_fence","cherry_trapdoor","pale_oak_stairs","pale_oak_slab","pale_oak_fence","pale_oak_trapdoor","bamboo_stairs","bamboo_slab","bamboo_fence","bamboo_trapdoor","crimson_stairs","crimson_slab","crimson_fence","crimson_trapdoor","warped_stairs","warped_slab","warped_fence","warped_trapdoor","bamboo_mosaic_stairs","bamboo_mosaic_slab",
-"white_carpet","orange_carpet","magenta_carpet","light_blue_carpet","yellow_carpet","lime_carpet","pink_carpet","gray_carpet","light_gray_carpet","cyan_carpet","purple_carpet","blue_carpet","brown_carpet","green_carpet","red_carpet","black_carpet"];
+"white_carpet","orange_carpet","magenta_carpet","light_blue_carpet","yellow_carpet","lime_carpet","pink_carpet","gray_carpet","light_gray_carpet","cyan_carpet","purple_carpet","blue_carpet","brown_carpet","green_carpet","red_carpet","black_carpet",
+// --- pass 4: purpular (purple) wood type + full variants ---
+"purpular_log","purpular_planks","purpular_leaves","purpular_stairs","purpular_slab","purpular_fence","purpular_trapdoor"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -603,14 +612,18 @@ function woodTop(seed, ringHex, coreHex){
 }
 function woolTex(seed, hex){
   const base=rgb(hex), r=rng(seed);
-  // low-res tuft grid (8x8 cells of 2px) gives the soft knitted-wool fuzz
-  const tuft=[]; for(let i=0;i<64;i++) tuft.push((r()*2-1)*0.10);
+  const dk=base.map(v=>Math.round(v*0.80)), lt=base.map(v=>Math.min(255,Math.round(v*1.12)));
+  const tuft=[]; for(let i=0;i<64;i++) tuft.push((r()*2-1)*0.07);   // soft fuzz across the cloth
   return (x,y)=>{
-    let f = 1 + tuft[(y>>1)*8 + (x>>1)];      // fuzzy tufts
-    if(((x+y)&3)===0) f *= 0.92;              // faint diagonal weave threads
-    if(((x-y+32)&3)===1) f *= 1.05;
-    if(r()<0.05) f *= 0.84;                   // occasional darker knot
-    return base.map(v=>Math.max(0,Math.min(255, v*f))|0);
+    // Minecraft 1.8 knit weave: 4px stitches on 3px rows, staggered, with dark "key
+    // lines" down the left of each stitch and along each row's bottom + a top highlight.
+    const band=(y/3)|0, off=(band&1)?2:0, sx=(x+off)%4, yb=y%3;
+    let col = base;
+    if(sx===0 || yb===2) col=dk;              // the weave lines that were missing
+    else if(yb===0) col=lt;                   // stitch highlight
+    if(r()<0.05) col=dk;                       // occasional knot
+    const f = 1 + tuft[(y>>1)*8 + (x>>1)];
+    return col.map(v=>Math.max(0,Math.min(255, v*f + (r()*2-1)*4))|0);
   };
 }
 function pretty(name){ return name.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase()); }
@@ -778,7 +791,7 @@ const EXTRA = [
   { name:'chiseled_quartz', top: speckle(0xe9e6df,5,es()), side: (()=>{ const r=rng(es()); return (x,y)=>{ if(x===0||x===15||y===0||y===15) return vary(rgb(0xd8d4cc),4,r); return vary(rgb(0xece9e2),5,r); }; })() },
   { name:'quartz_pillar',   top: speckle(0xe9e6df,4,es()), side: pillarSideTex(es(),0xe9e6df) },
   { name:'prismarine',        tex: prismarineTex(es(),0x639a8f) },
-  { name:'prismarine_bricks', tex: prismarineTex(es(),0x5f9e8f) },
+  { name:'prismarine_bricks', tex: sqBrick(es(),0x5f9e8f,0x4d8175,false,false) },   // stone-brick pattern, prismarine blue
   { name:'dark_prismarine',   tex: prismarineTex(es(),0x33564a) },
   { name:'sea_lantern',     tex: seaLanternTex(es()), light:15 },
   { name:'slime_block',     tex: slimeTex(es()), opaque:false },
@@ -936,6 +949,7 @@ NEW_SOLIDS.push(
   { name:'weathered_copper', tex: copperTex(es(),0x6f9877,0x53a06a) },
   { name:'oxidized_copper', tex: copperTex(es(),0x4fa88a,0x6fbf9a) },
   { name:'cut_copper', tex: chiseledHex(es(),0xc06d51,0xa85a44) },
+  { name:'netherite_block', tex: mineralBlock(es(),0x483f43) },   // diamond-block look, netherite colour
   // crying obsidian
   { name:'crying_obsidian', tex: (()=>{ const r=rng(es()), o=rgb(0x180d28), p=rgb(0x3f2fae); return (x,y)=> r()<0.14? vary(p,22,r): vary(o,14,r); })(), light:10 },
   // warts + shroomlight
@@ -963,6 +977,9 @@ NEW_SOLIDS.push(
   { name:'pale_oak_log', top: woodTop(es(),0xd8d4c6,0xbcb7a6), side: woodSide(es(),0x59594f,0x3f3f38) },
   { name:'pale_oak_planks', tex: planksTex(es(),0xd6d2c4) },
   { name:'pale_oak_leaves', tex: leaves(es(),0x9aa588), opaque:false, cutout:true },
+  { name:'purpular_log', top: woodTop(es(),0x9a6ab0,0x7a4a90), side: woodSide(es(),0x5a3a6a,0x432a50) },
+  { name:'purpular_planks', tex: planksTex(es(),0x8a5aa8) },
+  { name:'purpular_leaves', tex: leaves(es(),0x9a5ac0), opaque:false, cutout:true },
   { name:'bamboo_block', top: speckle(0xb3a52f,4,es()), side: striate(es(),0xc3b13b) },
   { name:'bamboo_planks', tex: planksTex(es(),0xc9b74a) },
   { name:'bamboo_mosaic', tex: brickPat(es(),0xc9b74a,0xa8963a) },
@@ -1115,7 +1132,7 @@ for(const [base,tile,hex] of STONE_SHAPED){
   B[base+'_slab']   = def(base+'_slab',   { tiles:T(tile), slab:true,   opaque:false, hex });
 }
 // the new wood types get the full wooden set (stairs, slab, fence, trapdoor)
-const NEWWOOD_SHAPED = [['mangrove',0x9a5f4e],['cherry',0xe4b6c2],['pale_oak',0xd6d2c4],['bamboo',0xc9b74a],['crimson',0x6a3350],['warped',0x2b6b6a]];
+const NEWWOOD_SHAPED = [['mangrove',0x9a5f4e],['cherry',0xe4b6c2],['pale_oak',0xd6d2c4],['bamboo',0xc9b74a],['crimson',0x6a3350],['warped',0x2b6b6a],['purpular',0x8a5aa8]];
 for(const [wd,hex] of NEWWOOD_SHAPED){
   const t=T(wd+'_planks');
   B[wd+'_stairs']   = def(wd+'_stairs',   { tiles:t, stairs:true,   opaque:false, hex });
@@ -1907,17 +1924,31 @@ function makeCharacterModel(skinTex){
   // outer layer shares the same texture but keeps its transparent pixels transparent
   const ovMat=new THREE.MeshLambertMaterial({ map:tex, transparent:true, alphaTest:0.5, side:THREE.DoubleSide, depthWrite:true });
   const g=new THREE.Group();
-  const torso=skinPart(PARTS.body,mat); torso.position.y=PARTS.body.pos[1]*S16; torso.add(skinPartOverlay(PARTS.body, OVERLAY.body, ovMat));
-  const hp=new THREE.Group(); hp.position.y=24*S16;
+  const HIP=12*S16;                  // legs meet the torso here; the whole upper body pivots at this waist for Minecraft's sneak
+  const upper=new THREE.Group(); upper.position.y=HIP;
+  const torso=skinPart(PARTS.body,mat); torso.position.y=PARTS.body.pos[1]*S16-HIP; torso.add(skinPartOverlay(PARTS.body, OVERLAY.body, ovMat));
+  const hp=new THREE.Group(); hp.position.y=24*S16-HIP;
   const head=skinPart(PARTS.head,mat); head.position.y=4*S16; head.add(skinPartOverlay(PARTS.head, OVERLAY.head, ovMat)); hp.add(head);
-  const armL=skinPart(PARTS.armL,mat); armL.position.set(PARTS.armL.pos[0]*S16,PARTS.armL.pos[1]*S16,0); armL.add(skinPartOverlay(PARTS.armL, OVERLAY.armL, ovMat));
-  const armR=skinPart(PARTS.armR,mat); armR.position.set(PARTS.armR.pos[0]*S16,PARTS.armR.pos[1]*S16,0); armR.add(skinPartOverlay(PARTS.armR, OVERLAY.armR, ovMat));
+  const armL=skinPart(PARTS.armL,mat); armL.position.set(PARTS.armL.pos[0]*S16,PARTS.armL.pos[1]*S16-HIP,0); armL.add(skinPartOverlay(PARTS.armL, OVERLAY.armL, ovMat));
+  const armR=skinPart(PARTS.armR,mat); armR.position.set(PARTS.armR.pos[0]*S16,PARTS.armR.pos[1]*S16-HIP,0); armR.add(skinPartOverlay(PARTS.armR, OVERLAY.armR, ovMat));
+  upper.add(torso,hp,armL,armR);
   const legL=skinPart(PARTS.legL,mat); legL.position.set(PARTS.legL.pos[0]*S16,PARTS.legL.pos[1]*S16,0); legL.add(skinPartOverlay(PARTS.legL, OVERLAY.legL, ovMat));
   const legR=skinPart(PARTS.legR,mat); legR.position.set(PARTS.legR.pos[0]*S16,PARTS.legR.pos[1]*S16,0); legR.add(skinPartOverlay(PARTS.legR, OVERLAY.legR, ovMat));
-  g.add(torso,hp,armL,armR,legL,legR);
+  g.add(upper,legL,legR);
   g.scale.setScalar(0.9);           // ~1.8 blocks tall to match the hitbox
-  g.userData={ headPivot:hp, legL, legR, mat, ovMat, armR };
+  g.userData={ headPivot:hp, upper, legL, legR, armL, armR, mat, ovMat };
   return g;
+}
+// pose a character (local body or a remote player): Minecraft-style crouch/sneak, sitting and a walk cycle.
+// The caller sets armR afterwards if a punch swing is playing (it overrides the walk swing on that arm).
+function poseCharacter(ud, crouch, sitting, walkPhase, walkAmp){
+  ud.upper.rotation.x = crouch*0.5;                 // sneak: upper body leans forward at the waist (butt tips up)
+  if(sitting){ ud.legL.rotation.x = ud.legR.rotation.x = -1.45; ud.armL.rotation.x = ud.armR.rotation.x = 0; return; }
+  const sw = Math.sin(walkPhase)*walkAmp, bend = crouch*0.45;
+  ud.legL.rotation.x =  sw + bend;                  // legs swing opposite each other
+  ud.legR.rotation.x = -sw + bend;
+  ud.armL.rotation.x = -sw*0.72;                    // arms swing opposite the legs
+  ud.armR.rotation.x =  sw*0.72;
 }
 const body=makeCharacterModel(localSkinTex);
 const headPivot=body.userData.headPivot;
@@ -1959,7 +1990,7 @@ function buildHeldBlock(id){
   vmScene.add(vmBlock);
 }
 let camMode=0;                 // 0 first-person, 1 third-back, 2 third-front
-let swing=0, bobT=0;
+let swing=0, bobT=0, walkAmpLocal=0;
 function doSwing(){ swing=1; if(mp.active) mpSend({type:'swing'}); }   // show the arm swing to other players too
 // a subtle red vignette at the screen edges when you get punched
 let hurtEl=null;
@@ -2260,6 +2291,7 @@ addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=fals
 // double-tap the jump key to toggle fly in creative
 let lastSpace=0;
 addEventListener('keydown', e=>{
+  if(e.repeat) return;   // holding jump to fly up auto-repeats keydown; those aren't taps, so don't let them toggle fly
   if(!bindListening && e.key.toLowerCase()===binds.jump && creative && state===PLAY){
     const now=performance.now();
     if(now-lastSpace<300){ player.flying=!player.flying; player.vel.y=0; }
@@ -2854,6 +2886,13 @@ function blockIconCanvas(id, size){
     px(0.16,0.46,0.68,0.34,main); px(0.24,0.38,0.52,0.12,lite); px(0.16,0.74,0.68,0.06,dark);   // top highlight + body + base shade
     return cv;
   }
+  if(bl.carpet){                    // a thin flat wool layer near the floor
+    const t=faceTile(bl,2), col=t%ATLAS_COLS, row=(t/ATLAS_COLS)|0;
+    g.drawImage(atlasCanvas, col*TILE, row*TILE, TILE, TILE, 0, Math.round(size*0.64), size, Math.round(size*0.24));   // thin strip
+    g.fillStyle='rgba(255,255,255,.20)'; g.fillRect(0, Math.round(size*0.64), size, Math.max(1,Math.round(size*0.04)));  // top highlight
+    g.fillStyle='rgba(0,0,0,.28)'; g.fillRect(0, Math.round(size*0.88)-1, size, Math.max(1,Math.round(size*0.05)));      // base shade
+    return cv;
+  }
   if(bl.slab){                      // a half block (bottom half of the tile)
     const t=faceTile(bl,2), col=t%ATLAS_COLS, row=(t/ATLAS_COLS)|0;
     g.drawImage(atlasCanvas, col*TILE, row*TILE, TILE, TILE, 0, size*0.5, size, size*0.5);   // lower half is the plank
@@ -2912,7 +2951,7 @@ function catOf(n){
   if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')||n.endsWith('_cushion')||n.endsWith('_carpet')
      ||n.endsWith('_concrete')||n.endsWith('_concrete_powder')||n.endsWith('_glazed_terracotta')) return 'color';
   if(n.endsWith('_ore')) return 'ores';
-  if(['iron_block','gold_block','diamond_block','emerald_block','coal_block','redstone_block','lapis_block','cut_copper'].includes(n)
+  if(['iron_block','gold_block','diamond_block','emerald_block','coal_block','redstone_block','lapis_block','cut_copper','netherite_block'].includes(n)
      || n.endsWith('_copper')) return 'ores';
   const nature=['grass','dirt','coarse_dirt','podzol','mycelium','sand','red_sand','gravel','clay','snow','snow_block','ice','packed_ice','water','soul_sand','netherrack','end_stone','melon','pumpkin','hay_block',
       'moss_block','mud','packed_mud','dripstone_block','calcite','sculk','nether_wart_block','warped_wart_block','bamboo_block'];
@@ -2923,6 +2962,8 @@ function catOf(n){
   if(['bedrock'].includes(n) || n.endsWith('_spawn_egg')) return 'misc';
   return 'building';
 }
+// blocks kept in the game (so existing builds are safe) but hidden from the picker
+const HIDDEN_BLOCKS = new Set(['soul_sand','white_stained_clay','chiseled_sandstone','chiseled_stone_bricks']);
 function renderInvGrid(){
   invGrid.innerHTML='';
   const q=invQuery.trim().toLowerCase();
@@ -2930,6 +2971,7 @@ function renderInvGrid(){
   for(const id of PALETTE){
     if(!id) continue;
     const name=BLOCKS[id].name, disp=pretty(name);
+    if(HIDDEN_BLOCKS.has(name)) continue;
     if(q){ if(!disp.toLowerCase().includes(q) && !name.includes(q)) continue; }
     else if(invCat!=='all' && catOf(name)!==invCat) continue;
     const c=document.createElement('div'); c.className='icell';
@@ -3113,7 +3155,7 @@ function openSkinEditor(){
   initSkinRenderer();
   editCtx.clearRect(0,0,64,64); editCtx.drawImage(skinCanvas,0,0); editSkinTex.needsUpdate=true;
   selectedSkinId=activeSkinId;
-  buildSkinModel(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); setFill(false); renderSwatches(); renderSkinGallery(); skinUploadMsg('');
+  buildSkinModel(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); setFill(false); renderSwatches(); renderSkinGallery(); renderPresetGallery(); skinUploadMsg('');
   skinEditorEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; skinOpen=true; skinLoop();
 }
 function closeSkinEditor(save){
@@ -3122,10 +3164,11 @@ function closeSkinEditor(save){
   skinEditorEl.hidden=true; if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false;
 }
 // write the current edit into the library (a new entry, or overwrite the selected one), then wear it
-function persistCurrentSkin(forceNew){
+function skinDisplayName(s){ return (s && s.name) ? s.name : ('Skin '+(s?s.id:'')); }
+function persistCurrentSkin(forceNew, name){
   const png=editCanvas.toDataURL();
   let s=(!forceNew && selectedSkinId!=null) ? skins.find(x=>x.id===selectedSkinId) : null;
-  if(s){ s.png=png; } else { s={id:nextSkinId++, png}; skins.push(s); selectedSkinId=s.id; }
+  if(s){ s.png=png; if(name) s.name=name; } else { const id=nextSkinId++; s={id, png, name: name||('Skin '+id)}; skins.push(s); selectedSkinId=id; }
   activeSkinId=s.id; skinThumbs[s.id]=skinThumbURL(editCanvas); saveSkinLibrary();
   skinCtx.clearRect(0,0,64,64); skinCtx.drawImage(editCanvas,0,0); localSkinTex.needsUpdate=true; refreshHeadIcons(); saveLocalSkin();
   if(mp.active) mpSendSkin();
@@ -3146,7 +3189,7 @@ function legacyToModern(){   // fill the 64x64 left arm/leg from the right arm/l
   copyMirror(44,20,4,12, 36,52); copyMirror(52,20,4,12, 44,52);
   copyMirror(48,20,4,12, 32,52); copyMirror(40,20,4,12, 40,52);
 }
-function applyUploadedSkin(img){
+function applyUploadedSkin(img, name){
   const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
   const square=(w===h), twoToOne=(w===2*h);
   if(!(square||twoToOne) || w<64){ skinUploadMsg('That is not a Minecraft skin (needs 64×64, or legacy 64×32).', true); return; }
@@ -3161,31 +3204,76 @@ function applyUploadedSkin(img){
   }
   editSkinTex.needsUpdate=true;
   selectedSkinId=null;              // it becomes a new entry in your skin library
-  persistCurrentSkin(true);         // wear it now, save it, and sync to the server
+  persistCurrentSkin(true, name);   // wear it now, save it (named), and sync to the server
   renderSkinGallery();
 }
 function loadSkinFile(file){
   if(!file || !/^image\//.test(file.type||'')){ skinUploadMsg('Please choose a PNG image.', true); return; }
+  const nm=(file.name||'Skin').replace(/\.[a-z0-9]+$/i,'').slice(0,24) || 'Skin';
   const url=URL.createObjectURL(file); const img=new Image();
-  img.onload=()=>{ try{ applyUploadedSkin(img); }catch(e){ skinUploadMsg('Could not read that image.', true); } URL.revokeObjectURL(url); };
+  img.onload=()=>{ try{ applyUploadedSkin(img, nm); }catch(e){ skinUploadMsg('Could not read that image.', true); } URL.revokeObjectURL(url); };
   img.onerror=()=>{ skinUploadMsg('Could not read that image.', true); URL.revokeObjectURL(url); };
   img.src=url;
 }
 document.getElementById('skinUploadBtn').addEventListener('click', ()=> document.getElementById('skinUpload').click());
 document.getElementById('skinUpload').addEventListener('change', e=>{ const f=e.target.files&&e.target.files[0]; if(f) loadSkinFile(f); e.target.value=''; });
+function exportSkin(){
+  const cur = selectedSkinId!=null ? skins.find(x=>x.id===selectedSkinId) : null;
+  const fn = (skinDisplayName(cur)||'skin').replace(/[^\w -]/g,'').trim().replace(/\s+/g,'_') || 'skin';
+  const a=document.createElement('a'); a.href=editCanvas.toDataURL('image/png'); a.download=fn+'.png';
+  document.body.appendChild(a); a.click(); a.remove(); skinUploadMsg('Downloaded '+a.download+'.');
+}
+document.getElementById('skinExportBtn').addEventListener('click', exportSkin);
+// built-in preset skins, served from /legacy/skins/ so everyone gets them
+const PRESET_SKINS=[
+  {name:'Steve', file:'steve.png'}, {name:'Alex', file:'alex.png'}, {name:'Dream', file:'dream.png'},
+  {name:'Technoblade', file:'technoblade.png'}, {name:'Spider Man', file:'spiderman.png'},
+  {name:'Peter Griffin', file:'peter_griffin.png'}, {name:'Donald Trump', file:'donald_trump.png'},
+  {name:'Sigma Male', file:'sigma_male.png'}, {name:'Tade', file:'tade.png'},
+];
+const presetThumbs={};
+function presetURL(p){ return '/legacy/skins/'+p.file; }
+function renderPresetGallery(){
+  const el=document.getElementById('skinPresets'); if(!el) return; el.innerHTML='';
+  for(const p of PRESET_SKINS){
+    const cell=document.createElement('div'); cell.className='skinCell'; cell.title=p.name;
+    const img=document.createElement('img');
+    if(presetThumbs[p.file]) img.src=presetThumbs[p.file];
+    else { const im=new Image(); im.onload=()=>{ presetThumbs[p.file]=skinThumbURL(im); img.src=presetThumbs[p.file]; }; im.onerror=()=>{ img.src=presetURL(p); }; im.src=presetURL(p); }
+    cell.appendChild(img);
+    const nm=document.createElement('div'); nm.className='skinName'; nm.textContent=p.name; cell.appendChild(nm);
+    cell.addEventListener('click', ()=> wearPreset(p));
+    el.appendChild(cell);
+  }
+}
+function wearPreset(p){
+  skinUploadMsg('Loading '+p.name+'…');
+  const im=new Image();
+  im.onload=()=>{ try{ applyUploadedSkin(im, p.name); }catch(e){ skinUploadMsg('Could not load that preset.', true); } };
+  im.onerror=()=>{ skinUploadMsg('Could not load preset '+p.name+'.', true); };
+  im.src=presetURL(p);
+}
 function ensureThumb(s,img){
   if(skinThumbs[s.id]){ img.src=skinThumbs[s.id]; return; }
   const tmp=document.createElement('canvas'); tmp.width=tmp.height=64; const tg=tmp.getContext('2d');
   const im=new Image(); im.onload=()=>{ tg.drawImage(im,0,0,64,64); skinThumbs[s.id]=skinThumbURL(tmp); img.src=skinThumbs[s.id]; }; im.src=s.png;
 }
+function renameSkin(id){
+  const s=skins.find(x=>x.id===id); if(!s) return;
+  const nm=prompt('Rename skin', skinDisplayName(s)); if(nm==null) return;
+  s.name = nm.trim().slice(0,24) || skinDisplayName(s);
+  saveSkinLibrary(); renderSkinGallery();
+}
 function renderSkinGallery(){
   const el=document.getElementById('skinGallery'); if(!el) return; el.innerHTML='';
   for(const s of skins){
-    const cell=document.createElement('div'); cell.className='skinCell'+(s.id===selectedSkinId?' sel':'');
+    const cell=document.createElement('div'); cell.className='skinCell'+(s.id===selectedSkinId?' sel':''); cell.title=skinDisplayName(s);
     const img=document.createElement('img'); ensureThumb(s,img); cell.appendChild(img);
+    const nm=document.createElement('div'); nm.className='skinName'; nm.textContent=skinDisplayName(s); cell.appendChild(nm);
+    const ren=document.createElement('button'); ren.className='skinRen'; ren.textContent='✎'; ren.title='Rename skin';
+    ren.addEventListener('click', ev=>{ ev.stopPropagation(); renameSkin(s.id); }); cell.appendChild(ren);
     const del=document.createElement('button'); del.className='skinDel'; del.textContent='✕'; del.title='Delete skin';
-    del.addEventListener('click', ev=>{ ev.stopPropagation(); deleteSkin(s.id); });
-    cell.appendChild(del);
+    del.addEventListener('click', ev=>{ ev.stopPropagation(); deleteSkin(s.id); }); cell.appendChild(del);
     cell.addEventListener('click', ()=> selectSkin(s.id));
     el.appendChild(cell);
   }
@@ -3324,18 +3412,20 @@ function mpClearPlayers(){ for(const [,p] of mp.players) scene.remove(p.model); 
 function mpUpdatePlayers(dt){
   for(const [,p] of mp.players){
     const k=1-Math.exp(-12*dt);
+    const ox=p.x, oz=p.z;
     p.x+=(p.tx-p.x)*k; p.y+=(p.ty-p.y)*k; p.z+=(p.tz-p.z)*k;
     p.crouch += ((p.sneak?1:0) - (p.crouch||0)) * (1-Math.exp(-16*dt));   // smooth the sneak lean
+    // walk cycle from how far they actually moved this frame, so others see them stride
+    const spd=Math.hypot(p.x-ox, p.z-oz)/Math.max(dt,1e-3);
+    p.walkAmp=(p.walkAmp||0) + ((spd>0.6?0.85:0)-(p.walkAmp||0))*(1-Math.exp(-14*dt));
+    if(spd>0.6) p.walkT=(p.walkT||0)+dt*9;
     const cr = p.sit ? 0 : (p.crouch||0);
-    p.model.position.set(p.x, p.y - cr*0.1, p.z);
-    p.model.rotation.set(cr*0.35, p.yaw + Math.PI, 0);                    // lean forward while sneaking
-    p.model.scale.set(0.9, 0.9*(1-cr*0.14), 0.9);
+    p.model.position.set(p.x, p.y - cr*0.12, p.z);
+    p.model.rotation.set(0, p.yaw + Math.PI, 0);
+    p.model.scale.set(0.9, 0.9, 0.9);
     p.model.userData.headPivot.rotation.x = -p.pitch;
-    const la = p.sit ? -1.45 : 0;                                         // legs swing forward when seated
-    if(p.model.userData.legL) p.model.userData.legL.rotation.x = la;
-    if(p.model.userData.legR) p.model.userData.legR.rotation.x = la;
-    if(p.swing>0){ p.swing=Math.max(0, p.swing-dt*3.4); const arm=p.model.userData.armR; if(arm) arm.rotation.x = -Math.sin((1-p.swing)*Math.PI)*1.5; }
-    else if(p.model.userData.armR) p.model.userData.armR.rotation.x = 0;
+    poseCharacter(p.model.userData, cr, !!p.sit, p.walkT||0, p.walkAmp||0);
+    if(p.swing>0){ p.swing=Math.max(0, p.swing-dt*3.4); const arm=p.model.userData.armR; if(arm) arm.rotation.x = -Math.sin((1-p.swing)*Math.PI)*1.5; }   // punch swing overrides the walk swing
   }
 }
 function mpHandle(m){
@@ -3510,14 +3600,16 @@ function frame(now){
   // camera + character model
   const eye=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z);
   const d=camDir();
-  const moving=(keys[binds.forward]||keys[binds.left]||keys[binds.back]||keys[binds.right]) && state===PLAY;
+  const moving=(keys[binds.forward]||keys[binds.left]||keys[binds.back]||keys[binds.right]) && state===PLAY && !sit.active;
   bobT += dt*(moving?9:3.5);
+  walkAmpLocal += ((moving?0.85:0) - walkAmpLocal) * (1-Math.exp(-14*dt));   // ease the walk swing in/out
   const cr = sit.active ? 0 : (player.crouch||0);
-  body.position.set(player.pos.x, player.pos.y - cr*0.1, player.pos.z);
-  body.rotation.set(cr*0.35, player.yaw + Math.PI, 0);   // lean forward while sneaking
-  body.scale.set(0.9, 0.9*(1-cr*0.14), 0.9);
+  body.position.set(player.pos.x, player.pos.y - cr*0.12, player.pos.z);
+  body.rotation.set(0, player.yaw + Math.PI, 0);         // the group no longer tilts; the upper body pivots at the waist instead
+  body.scale.set(0.9, 0.9, 0.9);
   headPivot.rotation.x = -player.pitch;
-  { const la = sit.active ? -1.45 : 0; body.userData.legL.rotation.x = la; body.userData.legR.rotation.x = la; }   // legs swing forward when seated
+  poseCharacter(body.userData, cr, sit.active, bobT, walkAmpLocal);
+  if(swing>0) body.userData.armR.rotation.x = -Math.sin((1-swing)*Math.PI)*1.5;   // a punch swing overrides the walk swing
   body.visible = (state===PLAY && camMode!==0);
 
   if(sleep.active){
