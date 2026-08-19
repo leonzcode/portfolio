@@ -1875,10 +1875,19 @@ function paintDefaultSkin(g){
   for(const P of [PARTS.legR,PARTS.legL]) for(const k of PART_ORDER){ const [x,y,w,h]=P.f[k]; fillFace(g,x,y,w,h,PANTS,8); }   // legs
 }
 function makeSkinTex(canvas){ const t=new THREE.CanvasTexture(canvas); t.magFilter=t.minFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace; return t; }
-const defaultSkinCanvas=document.createElement('canvas'); defaultSkinCanvas.width=defaultSkinCanvas.height=64; paintDefaultSkin(defaultSkinCanvas.getContext('2d'));
-const defaultSkinTex=makeSkinTex(defaultSkinCanvas);                                   // remote players with no custom skin
+const defaultSkinCanvas=document.createElement('canvas'); defaultSkinCanvas.width=defaultSkinCanvas.height=64;
+const defaultSkinCtx=defaultSkinCanvas.getContext('2d'); paintDefaultSkin(defaultSkinCtx);   // placeholder until Steve loads
+const defaultSkinTex=makeSkinTex(defaultSkinCanvas);                                   // the default skin (Steve) — worn by anyone without a custom skin
 const skinCanvas=document.createElement('canvas'); skinCanvas.width=skinCanvas.height=64; const skinCtx=skinCanvas.getContext('2d'); paintDefaultSkin(skinCtx);
 const localSkinTex=makeSkinTex(skinCanvas);                                            // the local player's editable skin
+// Steve is the built-in default skin (loaded async; the placeholder above shows until it arrives)
+let localSkinIsCustom=false;   // true once the player wears/edits/imports their own skin
+const steveDefaultImg=new Image();
+steveDefaultImg.onload=()=>{
+  defaultSkinCtx.clearRect(0,0,64,64); defaultSkinCtx.drawImage(steveDefaultImg,0,0); defaultSkinTex.needsUpdate=true;
+  if(!localSkinIsCustom){ skinCtx.clearRect(0,0,64,64); skinCtx.drawImage(steveDefaultImg,0,0); localSkinTex.needsUpdate=true; if(typeof refreshHeadIcons==='function') refreshHeadIcons(); if(mp.active) mpSendSkin(); }
+};
+steveDefaultImg.src='/legacy/skins/steve.png';
 function part(w,h,d,mat){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); }
 
 // ---- head icon for the Tab list (head-only, like Minecraft) + save/load the local skin ----
@@ -1912,8 +1921,13 @@ function loadSkinLibrary(){
   activeSkinId=(a && skins.some(s=>s.id===a)) ? a : (skins.length? skins[0].id : null);
 }
 loadSkinLibrary();
-(function applyActiveSkin(){ const s=skins.find(x=>x.id===activeSkinId);
-  if(s) loadSkinInto(skinCtx, localSkinTex, s.png, refreshHeadIcons); else refreshHeadIcons();
+(function applyWornSkin(){
+  // the persisted worn skin wins; then a library skin; otherwise the player wears Steve (applied when it loads)
+  let worn=null; try{ worn=localStorage.getItem('leoncraft_skin64'); }catch(e){}
+  if(worn){ localSkinIsCustom=true; loadSkinInto(skinCtx, localSkinTex, worn, refreshHeadIcons); return; }
+  const s=skins.find(x=>x.id===activeSkinId);
+  if(s){ localSkinIsCustom=true; loadSkinInto(skinCtx, localSkinTex, s.png, refreshHeadIcons); return; }
+  refreshHeadIcons();
 })();
 
 // a humanoid model textured from a 64x64 skin. The local player passes its own editable
@@ -1936,15 +1950,17 @@ function makeCharacterModel(skinTex){
   const legR=skinPart(PARTS.legR,mat); legR.position.set(PARTS.legR.pos[0]*S16,PARTS.legR.pos[1]*S16,0); legR.add(skinPartOverlay(PARTS.legR, OVERLAY.legR, ovMat));
   g.add(upper,legL,legR);
   g.scale.setScalar(0.9);           // ~1.8 blocks tall to match the hitbox
-  g.userData={ headPivot:hp, upper, legL, legR, armL, armR, mat, ovMat };
+  g.userData={ headPivot:hp, upper, legL, legR, armL, armR, mat, ovMat, hipY:HIP };
   return g;
 }
 // pose a character (local body or a remote player): Minecraft-style crouch/sneak, sitting and a walk cycle.
 // The caller sets armR afterwards if a punch swing is playing (it overrides the walk swing on that arm).
 function poseCharacter(ud, crouch, sitting, walkPhase, walkAmp){
-  ud.upper.rotation.x = crouch*0.5;                 // sneak: upper body leans forward at the waist (butt tips up)
+  // sneak: the hips do the work — the pelvis drops and tips back while the back stays fairly straight
+  ud.upper.rotation.x = crouch*0.22;                // only a slight forward lean (straight-ish back)
+  ud.upper.position.y = (ud.hipY||0) - crouch*0.16; // butt/pelvis sinks down
   if(sitting){ ud.legL.rotation.x = ud.legR.rotation.x = -1.45; ud.armL.rotation.x = ud.armR.rotation.x = 0; return; }
-  const sw = Math.sin(walkPhase)*walkAmp, bend = crouch*0.45;
+  const sw = Math.sin(walkPhase)*walkAmp, bend = crouch*0.55;   // legs fold up under the dropped hips
   ud.legL.rotation.x =  sw + bend;                  // legs swing opposite each other
   ud.legR.rotation.x = -sw + bend;
   ud.armL.rotation.x = -sw*0.72;                    // arms swing opposite the legs
@@ -2004,7 +2020,6 @@ function showHurt(){
 }
 function updateViewmodel(dt, moving){
   if(hotbar[selSlot]!==vmHeldId) buildHeldBlock(hotbar[selSlot]);
-  swing=Math.max(0, swing-dt*3.4);
   const bob=(moving?0.03:0.008)*Math.sin(bobT) - (player.crouch||0)*0.14;   // hand lowers when sneaking
   const sw=Math.sin((1-swing)*Math.PI);
   if(vmBlock){
@@ -2940,6 +2955,14 @@ const dbg=document.getElementById('dbg');
 /* inventory */
 const invEl=document.getElementById('inv'), invGrid=document.getElementById('invGrid');
 const invTabs=document.getElementById('invTabs'), invSearch=document.getElementById('invSearch');
+// hover tooltip: show a block's name when the pointer is over its icon in the picker
+const invTip=document.createElement('div'); invTip.id='invTip';
+invTip.style.cssText='position:fixed; z-index:40; pointer-events:none; display:none; background:rgba(18,14,26,.95); border:1px solid #55506a; color:#fff; font:600 12px/1.2 inherit; padding:3px 8px; white-space:nowrap; transform:translate(-50%,-135%); text-shadow:1px 1px 0 #000;';
+document.body.appendChild(invTip);
+invGrid.addEventListener('mousemove', e=>{ const cell=e.target.closest('.icell');
+  if(cell && cell.dataset.name){ invTip.textContent=cell.dataset.name; invTip.style.display='block'; invTip.style.left=e.clientX+'px'; invTip.style.top=e.clientY+'px'; }
+  else invTip.style.display='none'; });
+invGrid.addEventListener('mouseleave', ()=>{ invTip.style.display='none'; });
 let invOpen=false, invCat='all', invQuery='';
 // creative-inventory categories, in the Minecraft spirit
 const CATS=[
@@ -3160,18 +3183,37 @@ function openSkinEditor(){
 }
 function closeSkinEditor(save){
   skinOpen=false; if(skinRAF) cancelAnimationFrame(skinRAF);
-  if(save) persistCurrentSkin(false);
+  if(skinAutosaveTimer){ clearTimeout(skinAutosaveTimer); skinAutosaveTimer=null; }
+  if(save){ persistCurrentSkin(false, (selectedSkinId==null)?(pendingSkinName||'Custom skin'):undefined); pendingSkinName=null; renderSkinGallery(); }
   skinEditorEl.hidden=true; if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false;
 }
 // write the current edit into the library (a new entry, or overwrite the selected one), then wear it
 function skinDisplayName(s){ return (s && s.name) ? s.name : ('Skin '+(s?s.id:'')); }
+// wear the current edit on your character WITHOUT adding it to My skins
+function wearEditSkin(){
+  localSkinIsCustom=true;
+  skinCtx.clearRect(0,0,64,64); skinCtx.drawImage(editCanvas,0,0);
+  localSkinTex.needsUpdate=true; refreshHeadIcons(); saveLocalSkin();
+  if(mp.active) mpSendSkin();
+}
+// save the current edit into My skins (a new entry or the selected one), then wear it
 function persistCurrentSkin(forceNew, name){
   const png=editCanvas.toDataURL();
   let s=(!forceNew && selectedSkinId!=null) ? skins.find(x=>x.id===selectedSkinId) : null;
   if(s){ s.png=png; if(name) s.name=name; } else { const id=nextSkinId++; s={id, png, name: name||('Skin '+id)}; skins.push(s); selectedSkinId=id; }
   activeSkinId=s.id; skinThumbs[s.id]=skinThumbURL(editCanvas); saveSkinLibrary();
-  skinCtx.clearRect(0,0,64,64); skinCtx.drawImage(editCanvas,0,0); localSkinTex.needsUpdate=true; refreshHeadIcons(); saveLocalSkin();
-  if(mp.active) mpSendSkin();
+  wearEditSkin();
+}
+let pendingSkinName=null, skinAutosaveTimer=null;
+// called after a paint/fill edit: wear it live, and (debounced) save it to My skins automatically
+function scheduleSkinAutosave(){
+  localSkinIsCustom=true; skinCtx.clearRect(0,0,64,64); skinCtx.drawImage(editCanvas,0,0); localSkinTex.needsUpdate=true;   // live-wear the stroke (cheap; the debounced save does the rest)
+  if(skinAutosaveTimer) clearTimeout(skinAutosaveTimer);
+  skinAutosaveTimer=setTimeout(()=>{ skinAutosaveTimer=null;
+    const creating = (selectedSkinId==null);
+    persistCurrentSkin(false, creating ? (pendingSkinName||'Custom skin') : undefined);
+    pendingSkinName=null; renderSkinGallery();
+  }, 500);
 }
 // --- upload a Minecraft skin PNG and wear it -------------------------------
 function skinUploadMsg(t, isErr){ const el=document.getElementById('skinUploadMsg'); if(el){ el.textContent=t||''; el.style.color=isErr?'#c0392b':''; } }
@@ -3249,7 +3291,14 @@ function renderPresetGallery(){
 function wearPreset(p){
   skinUploadMsg('Loading '+p.name+'…');
   const im=new Image();
-  im.onload=()=>{ try{ applyUploadedSkin(im, p.name); }catch(e){ skinUploadMsg('Could not load that preset.', true); } };
+  im.onload=()=>{ try{
+    editCtx.clearRect(0,0,64,64); editCtx.imageSmoothingEnabled=false;
+    editCtx.drawImage(im, 0,0,im.naturalWidth||64,im.naturalHeight||64, 0,0,64,64);
+    editSkinTex.needsUpdate=true; selectedSkinId=null; pendingSkinName=p.name;
+    wearEditSkin();                 // wear it now, but it is NOT added to My skins until you edit it
+    renderSkinGallery();
+    skinUploadMsg('Wearing '+p.name+'. Edit it to save a copy to your skins.');
+  }catch(e){ skinUploadMsg('Could not load that preset.', true); } };
   im.onerror=()=>{ skinUploadMsg('Could not load preset '+p.name+'.', true); };
   im.src=presetURL(p);
 }
@@ -3280,8 +3329,12 @@ function renderSkinGallery(){
   const add=document.createElement('div'); add.className='skinCell skinAdd'; add.textContent='＋'; add.title='New skin';
   add.addEventListener('click', ()=> newSkin()); el.appendChild(add);
 }
-function selectSkin(id){ const s=skins.find(x=>x.id===id); if(!s) return; selectedSkinId=id; loadSkinInto(editCtx, editSkinTex, s.png, ()=>renderSkin()); renderSkinGallery(); }
-function newSkin(){ selectedSkinId=null; paintDefaultSkin(editCtx); editSkinTex.needsUpdate=true; renderSkin(); renderSkinGallery(); }
+function selectSkin(id){ const s=skins.find(x=>x.id===id); if(!s) return; selectedSkinId=id; pendingSkinName=null;
+  loadSkinInto(editCtx, editSkinTex, s.png, ()=>{ renderSkin(); wearEditSkin(); }); renderSkinGallery(); }   // wear the saved skin you clicked
+function newSkin(){ selectedSkinId=null; pendingSkinName='Custom skin';
+  editCtx.clearRect(0,0,64,64); editCtx.drawImage(defaultSkinCanvas,0,0);   // start a new skin from Steve
+  editSkinTex.needsUpdate=true; renderSkin(); renderSkinGallery();
+  skinUploadMsg('New skin from Steve — it saves to My skins once you edit it.'); }
 function deleteSkin(id){
   skins=skins.filter(x=>x.id!==id); delete skinThumbs[id];
   if(selectedSkinId===id) selectedSkinId=null;
@@ -3297,7 +3350,7 @@ function skinTexelAt(px,py){
   if(!hits.length || !hits[0].uv) return null;
   const uv=hits[0].uv; return { x:Math.min(63,Math.max(0,Math.floor(uv.x*64))), y:Math.min(63,Math.max(0,Math.floor((1-uv.y)*64))) };
 }
-function skinPaintAt(px,py){ const t=skinTexelAt(px,py); if(!t) return; editCtx.fillStyle=paintColor; editCtx.fillRect(t.x,t.y,1,1); editSkinTex.needsUpdate=true; renderSkin(); }
+function skinPaintAt(px,py){ const t=skinTexelAt(px,py); if(!t) return; editCtx.fillStyle=paintColor; editCtx.fillRect(t.x,t.y,1,1); editSkinTex.needsUpdate=true; renderSkin(); scheduleSkinAutosave(); }
 function eyedropAt(px,py){ const t=skinTexelAt(px,py); if(!t) return; const d=editCtx.getImageData(t.x,t.y,1,1).data; paintColor='#'+[d[0],d[1],d[2]].map(n=>n.toString(16).padStart(2,'0')).join(''); document.getElementById('skinColor').value=paintColor; renderSwatches(); setEyedrop(false); }
 function hexToRgb(h){ h=(h||'').replace('#',''); return { r:parseInt(h.slice(0,2),16)||0, g:parseInt(h.slice(2,4),16)||0, b:parseInt(h.slice(4,6),16)||0 }; }
 function faceRectAt(tx,ty){ for(const pk in PARTS){ const f=PARTS[pk].f; for(const fk in f){ const [x,y,w,h]=f[fk]; if(tx>=x&&tx<x+w&&ty>=y&&ty<y+h) return [x,y,w,h]; } } return null; }
@@ -3309,7 +3362,7 @@ function floodFillAt(px,py){   // bucket fill: contiguous similar-coloured texel
   while(stack.length){ const q=stack.pop(), x=q[0], y=q[1]; if(x<0||x>=rw||y<0||y>=rh) continue; const p=y*rw+x; if(seen[p]) continue; const i=p*4;
     if(Math.abs(data[i]-sr)+Math.abs(data[i+1]-sg)+Math.abs(data[i+2]-sb)>TOL) continue; seen[p]=1;
     data[i]=col.r; data[i+1]=col.g; data[i+2]=col.b; data[i+3]=255; stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]); }
-  editCtx.putImageData(img,rx,ry); editSkinTex.needsUpdate=true; renderSkin();
+  editCtx.putImageData(img,rx,ry); editSkinTex.needsUpdate=true; renderSkin(); scheduleSkinAutosave();
 }
 skinViewCanvas.addEventListener('pointerdown', e=>{ try{ skinViewCanvas.setPointerCapture(e.pointerId); }catch(_){}; skinDrag=true; skinLX=e.clientX; skinLY=e.clientY;
   // start on the model = use the current tool; start on empty space = rotate
@@ -3327,10 +3380,10 @@ skinViewCanvas.addEventListener('wheel', e=>{ e.preventDefault(); skinDist=Math.
 document.getElementById('skinColor').addEventListener('input', e=>{ paintColor=e.target.value; renderSwatches(); });
 document.getElementById('skinEyedrop').addEventListener('click', ()=> setEyedrop(!eyedrop));
 document.getElementById('skinFill').addEventListener('click', ()=> setFill(!fillMode));
-document.getElementById('skinRandom').addEventListener('click', ()=>{ const rc=()=>Math.floor(Math.random()*0xffffff); paintSkinColors(editCtx,{skin:rc(),shirt:rc(),pants:rc(),hair:rc()}); editSkinTex.needsUpdate=true; renderSkin(); });
+document.getElementById('skinRandom').addEventListener('click', ()=>{ const rc=()=>Math.floor(Math.random()*0xffffff); paintSkinColors(editCtx,{skin:rc(),shirt:rc(),pants:rc(),hair:rc()}); editSkinTex.needsUpdate=true; renderSkin(); scheduleSkinAutosave(); });
 document.getElementById('skinResetSkin').addEventListener('click', ()=>{ paintDefaultSkin(editCtx); editSkinTex.needsUpdate=true; renderSkin(); });
 document.getElementById('skinDone').addEventListener('click', ()=> closeSkinEditor(true));
-document.getElementById('skinSaveNew').addEventListener('click', ()=>{ persistCurrentSkin(true); renderSkinGallery(); });
+document.getElementById('skinSaveNew').addEventListener('click', ()=>{ persistCurrentSkin(true, pendingSkinName||'Custom skin'); pendingSkinName=null; renderSkinGallery(); });
 document.getElementById('skinCancel').addEventListener('click', ()=> closeSkinEditor(false));
 document.getElementById('skinBtn').addEventListener('click', openSkinEditor);
 document.getElementById('pauseSkinBtn').addEventListener('click', openSkinEditor);
@@ -3420,7 +3473,7 @@ function mpUpdatePlayers(dt){
     p.walkAmp=(p.walkAmp||0) + ((spd>0.6?0.85:0)-(p.walkAmp||0))*(1-Math.exp(-14*dt));
     if(spd>0.6) p.walkT=(p.walkT||0)+dt*9;
     const cr = p.sit ? 0 : (p.crouch||0);
-    p.model.position.set(p.x, p.y - cr*0.12, p.z);
+    p.model.position.set(p.x, p.y, p.z);
     p.model.rotation.set(0, p.yaw + Math.PI, 0);
     p.model.scale.set(0.9, 0.9, 0.9);
     p.model.userData.headPivot.rotation.x = -p.pitch;
@@ -3603,8 +3656,9 @@ function frame(now){
   const moving=(keys[binds.forward]||keys[binds.left]||keys[binds.back]||keys[binds.right]) && state===PLAY && !sit.active;
   bobT += dt*(moving?9:3.5);
   walkAmpLocal += ((moving?0.85:0) - walkAmpLocal) * (1-Math.exp(-14*dt));   // ease the walk swing in/out
+  if(swing>0) swing=Math.max(0, swing-dt*3.4);   // the arm-swing (break/place/punch) decays every frame, in any camera mode
   const cr = sit.active ? 0 : (player.crouch||0);
-  body.position.set(player.pos.x, player.pos.y - cr*0.12, player.pos.z);
+  body.position.set(player.pos.x, player.pos.y, player.pos.z);   // feet stay planted; the pelvis drop is done inside poseCharacter
   body.rotation.set(0, player.yaw + Math.PI, 0);         // the group no longer tilts; the upper body pivots at the waist instead
   body.scale.set(0.9, 0.9, 0.9);
   headPivot.rotation.x = -player.pitch;
@@ -3702,6 +3756,7 @@ window.__mc = {
   testKnockback(dx,dy,dz){ player.kbVel.x+=dx; player.kbVel.y+=dy; player.kbVel.z+=dz; },
   openSkin(){ openSkinEditor(); }, randomizeSkin(){ const rc=()=>Math.floor(Math.random()*0xffffff); paintSkinColors(skinCtx,{skin:rc(),shirt:rc(),pants:rc(),hair:rc()}); localSkinTex.needsUpdate=true; saveLocalSkin(); refreshHeadIcons(); if(mp.active) mpSendSkin(); },
   skinDebug(){ return {yaw:+skinYaw.toFixed(3), pitch:+skinPitch.toFixed(3), dist:skinDist, skins:skins.length, hitCenter:!!skinTexelAt(160,200)}; },
+  setSkinView(y,pi,dist){ skinYaw=y; if(pi!=null) skinPitch=pi; if(dist!=null){ skinDist=dist; if(skinCam) skinCam.position.z=dist; } renderSkin(); },
   collidesAt(x,y,z){ return collides(x,y,z); },
   putPrg(x,y,z,ang){ const id=BLOCKS['prg'].id; setBlock(x,y,z,id); mpSendBlock(x,y,z,id); setPrgAng(x+','+y+','+z,ang|0); spRecordPrg(x,y,z,{ang:ang|0}); if(mp.active) mpSend({type:'prg',x,y,z,ang:ang|0}); remeshChunkAt(x,z); },
   putSign(x,y,z,wall,ang,lines){ const id=BLOCKS['oak_sign'].id; setBlock(x,y,z,id); const m={wall:!!wall, ang:ang|0, hex:BLOCKS[id].hex, lines:(lines||['','','',''])}; signMeta.set(x+','+y+','+z,m); spRecordSign(x,y,z,m); remeshChunkAt(x,z); updateSignObj(x,y,z); },
