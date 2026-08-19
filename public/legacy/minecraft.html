@@ -1267,16 +1267,20 @@ const STAIR_HALF={ 0:['NW','NE'], 1:['NE','SE'], 2:['SW','SE'], 3:['NW','SW'] };
 const OUT_CW={0:'NE',1:'SE',2:'SW',3:'NW'}, OUT_CCW={0:'NW',1:'NE',2:'SE',3:'SW'};
 const IN_CW={0:'SE',1:'SW',2:'NW',3:'NE'},  IN_CCW={0:'SW',1:'NW',2:'NE',3:'SE'};
 function stairFacingAt(x,y,z){ const b=getBlock(x,y,z); if(!isStair(b)) return -1; const m=stairMeta.get(x+','+y+','+z); return m?m.facing:0; }
-function stairGeometry(x,y,z,F){
-  const bottom=[0,1,0,0.5,0,1];
+function stairTopAt(x,y,z){ const b=getBlock(x,y,z); if(!isStair(b)) return false; const m=stairMeta.get(x+','+y+','+z); return m?!!m.top:false; }
+function stairGeometry(x,y,z,F,top){
+  // upside-down (top) stairs are the same shape mirrored across the middle
+  const bottom = top ? [0,1,0.5,1,0,1] : [0,1,0,0.5,0,1];
+  const sy0 = top?0:0.5, sy1 = top?0.5:1;
   const mf=(F+2)&3, ccw=(mf+3)&3;              // mf = the high/ascend side (Minecraft "facing")
   let keys=STAIR_HALF[mf].slice();             // straight: the half-slab on the high side
-  const ff=stairFacingAt(x+DIRV[mf][0], y, z+DIRV[mf][2]);   // stair the steps ascend toward
-  const bb=stairFacingAt(x-DIRV[mf][0], y, z-DIRV[mf][2]);   // stair on the low side
+  const fx=x+DIRV[mf][0], fz=z+DIRV[mf][2], lx=x-DIRV[mf][0], lz=z-DIRV[mf][2];
+  const ff=(stairTopAt(fx,y,fz)===top)?stairFacingAt(fx,y,fz):-1;   // corners only form with same-half stairs
+  const bb=(stairTopAt(lx,y,lz)===top)?stairFacingAt(lx,y,lz):-1;
   if(ff>=0 && (((ff+2)&3)&1)!==(mf&1)){ const fmf=(ff+2)&3; keys=[fmf===ccw?OUT_CCW[mf]:OUT_CW[mf]]; }        // outer corner
   else if(bb>=0 && (((bb+2)&3)&1)!==(mf&1)){ const bmf=(bb+2)&3; keys=STAIR_HALF[mf].concat(bmf===ccw?IN_CCW[mf]:IN_CW[mf]); } // inner
   const boxes=[bottom];
-  for(const k of keys){ const q=STAIR_Q[k]; boxes.push([q[0],q[1], 0.5,1, q[2],q[3]]); }
+  for(const k of keys){ const q=STAIR_Q[k]; boxes.push([q[0],q[1], sy0,sy1, q[2],q[3]]); }
   return boxes;
 }
 function ladderBounds(facing){  // thin panel flat on the wall (opposite the facing)
@@ -1430,7 +1434,7 @@ function spRecordBed(x,y,z,m){    // persist singleplayer bed state (m null = re
 }
 function spRecordStair(x,y,z,m){
   if(mp.active) return; const k=dkey(x,y,z);
-  if(m===null) delete spStairs[k]; else spStairs[k]={f:m.facing};
+  if(m===null) delete spStairs[k]; else spStairs[k]={f:m.facing, t:m.top?1:0};
   spScheduleSave();
 }
 function spRecordLadder(x,y,z,m){
@@ -1466,7 +1470,7 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
   for(const kk in spDoors){ doorMeta.set(kk, {facing:spDoors[kk].f, open:!!spDoors[kk].o}); }
   for(const kk in spBeds){ bedMeta.set(kk, {facing:spBeds[kk].f, head:!!spBeds[kk].h}); }
-  for(const kk in spStairs){ stairMeta.set(kk, {facing:spStairs[kk].f}); }
+  for(const kk in spStairs){ stairMeta.set(kk, {facing:spStairs[kk].f, top:!!spStairs[kk].t}); }
   for(const kk in spLadders){ ladderMeta.set(kk, {facing:spLadders[kk].f}); }
   for(const kk in spSigns){ const s=spSigns[kk]; signMeta.set(kk, {wall:!!s.w, ang:(s.a!=null?s.a:(s.f!=null?facingToAng(s.f):0)), hex:s.h, lines:s.l||['','','','']}); }   // objects built later, once the scene exists
   for(const kk in spPrg){ prgMeta.set(kk, {ang:spPrg[kk].a||0}); }   // PRG facings; spheres built when the chunks mesh
@@ -1750,7 +1754,7 @@ function buildChunkMesh(c){
     }
     if (bl.stairs){                            // full bottom slab + a step on the back
       const m=stairMeta.get(dkey(wx,y,wz)); const stile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
-      for(const box of stairGeometry(wx, y, wz, m?m.facing:0)) pushBox(op, wx, y, wz, box, stile);
+      for(const box of stairGeometry(wx, y, wz, m?m.facing:0, m?!!m.top:false)) pushBox(op, wx, y, wz, box, stile);
       continue;
     }
     if (bl.ladder){                            // thin cutout panel flat on the wall
@@ -2541,7 +2545,7 @@ function raycast(){
   let nx=0,ny=0,nz=0, t=0;
   for(let i=0;i<80;i++){
     const b=getBlock(x,y,z);
-    if(b!==AIR && BLOCKS[b] && !BLOCKS[b].liquid){ target={x,y,z,nx,ny,nz,dist:t}; return; }
+    if(b!==AIR && BLOCKS[b] && !BLOCKS[b].liquid){ target={x,y,z,nx,ny,nz,dist:t, hy:o.y+d.y*t}; return; }
     if(tMX<tMY && tMX<tMZ){ x+=stepX; t=tMX; tMX+=tDX; nx=-stepX; ny=0; nz=0; }
     else if(tMY<tMZ){ y+=stepY; t=tMY; tMY+=tDY; nx=0; ny=-stepY; nz=0; }
     else { z+=stepZ; t=tMZ; tMZ+=tDZ; nx=0; ny=0; nz=-stepZ; }
@@ -2607,6 +2611,15 @@ function toggleTrapdoor(x,y,z){
   remeshChunkAt(x,z);
   if(mp.active) mpSend({type:'trapdoor', x, y, z, facing:nm.facing, open:nm.open, top:nm.top});
 }
+// Minecraft's top/bottom rule for slabs + stairs: clicking a block's top face gives the
+// lower half, its underside gives the upper half, and a side face uses which half of that
+// face you aimed at (py = the cell the block goes into).
+function upperHalfPlacement(py){
+  if(!target) return false;
+  if(target.ny<0) return true;
+  if(target.ny>0) return false;
+  return (target.hy - py) > 0.5;
+}
 function placeSlab(){
   const id=hotbar[selSlot];
   // clicking the open half of a matching slab completes it into a full (double) block
@@ -2617,7 +2630,7 @@ function placeSlab(){
   }
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   if(getBlock(px,py,pz)!==AIR) return;
-  const top = target.ny<0;   // clicked a block's underside -> a top (ceiling) slab, otherwise a bottom slab
+  const top = upperHalfPlacement(py);   // top face -> bottom slab; underside -> top slab; side -> the half you aimed at
   setBlock(px,py,pz,id); const m={top, double:false}; slabMeta.set(dkey(px,py,pz), m);
   mpSendBlock(px,py,pz,id); spRecordSlab(px,py,pz,m);
   if(mp.active) mpSend({type:'slab', x:px, y:py, z:pz, top, double:false}); remeshChunkAt(px,pz);
@@ -2814,7 +2827,7 @@ function placeBlock(){
     if(mp.active) for(const [,pl] of mp.players){ if(inside(pl.x, pl.y, pl.z)) return; }
   }
   setBlock(px,py,pz, id);
-  if(bl.stairs){ const sf=(facingFromYaw(player.yaw)+2)&3; stairMeta.set(dkey(px,py,pz),{facing:sf}); spRecordStair(px,py,pz,{facing:sf}); if(mp.active) mpSend({type:'stair', x:px, y:py, z:pz, facing:sf}); remeshChunkAt(px,pz); }   // low side faces the player, step rises away
+  if(bl.stairs){ const sf=(facingFromYaw(player.yaw)+2)&3; const top=upperHalfPlacement(py); const m={facing:sf, top}; stairMeta.set(dkey(px,py,pz),m); spRecordStair(px,py,pz,m); if(mp.active) mpSend({type:'stair', x:px, y:py, z:pz, facing:sf, top}); remeshChunkAt(px,pz); }   // low side faces the player; aim high to place it upside-down
   if(bl.model){ const pa=((Math.round(player.yaw/(Math.PI/4))%8)+8)%8; setPrgAng(dkey(px,py,pz),pa); spRecordPrg(px,py,pz,{ang:pa}); if(mp.active) mpSend({type:'prg', x:px, y:py, z:pz, ang:pa}); remeshChunkAt(px,pz); }   // the sphere's face turns toward the placer
   if(!mp.active){                // keep the shared world static + consistent
     if(id===B.water) enqueueWater(px,py,pz,0);
@@ -3492,7 +3505,7 @@ function mpHandle(m){
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
     if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open}); } }
     if(m.beds) for(const kk in m.beds){ bedMeta.set(kk, {facing:m.beds[kk].facing|0, head:!!m.beds[kk].head}); }   // bed facing + which half has the pillow
-    if(m.stairs) for(const kk in m.stairs){ stairMeta.set(kk, {facing:m.stairs[kk].facing|0}); }
+    if(m.stairs) for(const kk in m.stairs){ stairMeta.set(kk, {facing:m.stairs[kk].facing|0, top:!!m.stairs[kk].top}); }
     if(m.ladders) for(const kk in m.ladders){ ladderMeta.set(kk, {facing:m.ladders[kk].facing|0}); }
     if(m.prg) for(const kk in m.prg){ prgMeta.set(kk, {ang:m.prg[kk].ang|0}); }   // PRG facings; spheres built when chunks mesh
     if(m.trapdoors) for(const kk in m.trapdoors){ const s=m.trapdoors[kk]; trapdoorMeta.set(kk, {facing:s.facing|0, open:!!s.open, top:!!s.top}); }
@@ -3513,7 +3526,7 @@ function mpHandle(m){
   else if(m.type==='slab'){ slabMeta.set(m.x+','+m.y+','+m.z, {top:!!m.top, double:!!m.double}); remeshChunkAt(m.x, m.z); }
   else if(m.type==='prg'){ setPrgAng(m.x+','+m.y+','+m.z, m.ang|0); }
   else if(m.type==='bed'){ bedMeta.set(m.fx+','+m.fy+','+m.fz, {facing:m.facing|0, head:false}); bedMeta.set(m.hx+','+m.fy+','+m.hz, {facing:m.facing|0, head:true}); remeshChunkAt(m.fx,m.fz); remeshChunkAt(m.hx,m.hz); }
-  else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
+  else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, top:!!m.top}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='ladder'){ ladderMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='skin'){ applyRemoteSkin(m.id, m.png); }
   else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
@@ -3747,8 +3760,8 @@ window.__mc = {
   putSlab(x,y,z,top,dbl){ const id=BLOCKS['oak_slab'].id; setBlock(x,y,z,id); mpSendBlock(x,y,z,id); const m={top:!!top,double:!!dbl}; slabMeta.set(x+','+y+','+z,m); spRecordSlab(x,y,z,m); if(mp.active) mpSend({type:'slab',x,y,z,top:!!top,double:!!dbl}); remeshChunkAt(x,z); },
   bedAt(x,y,z){ const b=bedMeta.get(x+','+y+','+z); return b?{facing:b.facing,head:b.head}:null; },
   bedCount(){ return bedMeta.size; },
-  stairAt(x,y,z){ const s=stairMeta.get(x+','+y+','+z); return s?{facing:s.facing}:null; },
-  setStair(x,y,z,facing){ setBlock(x,y,z,BLOCKS['oak_stairs'].id); stairMeta.set(x+','+y+','+z,{facing}); remeshChunkAt(x,z); },
+  stairAt(x,y,z){ const s=stairMeta.get(x+','+y+','+z); return s?{facing:s.facing, top:!!s.top}:null; },
+  setStair(x,y,z,facing,top){ setBlock(x,y,z,BLOCKS['oak_stairs'].id); stairMeta.set(x+','+y+','+z,{facing,top:!!top}); remeshChunkAt(x,z); },
   signAt(x,y,z){ const s=signMeta.get(x+','+y+','+z); return s?{wall:s.wall, ang:s.ang, lines:s.lines}:null; },
   prgCount(){ return prgObjs.size; }, prgLoaded(){ return !!prgModel; },
   prgAt(x,y,z){ const m=prgMeta.get(x+','+y+','+z); return m?{ang:m.ang}:null; },
