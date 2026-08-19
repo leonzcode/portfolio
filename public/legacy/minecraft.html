@@ -475,7 +475,7 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 "mangrove_stairs","mangrove_slab","mangrove_fence","mangrove_trapdoor","cherry_stairs","cherry_slab","cherry_fence","cherry_trapdoor","pale_oak_stairs","pale_oak_slab","pale_oak_fence","pale_oak_trapdoor","bamboo_stairs","bamboo_slab","bamboo_fence","bamboo_trapdoor","crimson_stairs","crimson_slab","crimson_fence","crimson_trapdoor","warped_stairs","warped_slab","warped_fence","warped_trapdoor","bamboo_mosaic_stairs","bamboo_mosaic_slab",
 "white_carpet","orange_carpet","magenta_carpet","light_blue_carpet","yellow_carpet","lime_carpet","pink_carpet","gray_carpet","light_gray_carpet","cyan_carpet","purple_carpet","blue_carpet","brown_carpet","green_carpet","red_carpet","black_carpet",
 // --- pass 4: purpular (purple) wood type + full variants ---
-"purpular_log","purpular_planks","purpular_leaves","purpular_stairs","purpular_slab","purpular_fence","purpular_trapdoor"];
+"purpular_log","purpular_planks","purpular_leaves","purpular_stairs","purpular_slab","purpular_fence","purpular_trapdoor","purpular_door","purpular_sign"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -841,6 +841,7 @@ for(const e of EXTRA){
 // a door texture per wood type — painted directly, NOT via EXTRA, so the EXTRA block
 // loop doesn't also define a plain (non-door) block that shadows the real door block
 WOODS.forEach((w,i)=> paint(w.id+'_door', doorTex(w.plank, 9100+i)));
+paint('purpular_door', doorTex(0x8a5aa8, 9106));   // purple wood door texture
 // ladder texture (cutout: two rails + rungs, transparent between)
 paint('ladder', (function(){ const wood=rgb(0x8a6a3a), r=rng(9200);
   return (x,y)=>{ const rail=(x>=2&&x<=4)||(x>=11&&x<=13), rung=(y%5===1)&&(x>=3&&x<=12);
@@ -1054,6 +1055,7 @@ WOOLS.forEach(([n])=> B[n+'_wool'] = def(n+'_wool', { tiles:T(n+'_wool') }));
 WOOLS.forEach(([n,hex])=> B[n+'_cushion'] = def(n+'_cushion', { tiles:T(n+'_wool'), cushion:true, opaque:false, hex }));   // a low, soft wool pad you can sit/stand on
 // a door for every wood type (thin, openable; geometry + state handled specially)
 WOODS.forEach(w=> B[w.id+'_door'] = def(w.id+'_door', { tiles:T(w.id+'_door'), door:true, opaque:false }));
+B.purpular_door = def('purpular_door', { tiles:T('purpular_door'), door:true, opaque:false });
 WOODS.forEach(w=> B[w.id+'_trapdoor'] = def(w.id+'_trapdoor', { tiles:T(w.id+'_planks'), trapdoor:true, solid:false, opaque:false, hex:w.plank }));   // thin openable panel, walk-through like our doors
 WOODS.forEach(w=> B[w.id+'_slab'] = def(w.id+'_slab', { tiles:T(w.id+'_planks'), slab:true, opaque:false, hex:w.plank }));   // half block (top/bottom); two make a full block
 // a bed for every wool colour (two cells long, low; right-click to sleep)
@@ -1066,6 +1068,7 @@ WOODS.forEach(w=>{
 B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:false, cutout:true });
 // a sign for every wood type (typeable standing sign)
 WOODS.forEach(w=> B[w.id+'_sign'] = def(w.id+'_sign', { tiles:T(w.id+'_planks'), sign:true, solid:false, opaque:false, hex:w.plank }));
+B.purpular_sign = def('purpular_sign', { tiles:T('purpular_planks'), sign:true, solid:false, opaque:false, hex:0x8a5aa8 });
 // PRG: the one spherical block. Renders as the prg.glb model (a green smiley sphere), not a cube.
 B.prg = def('prg', { tiles:T('prg'), model:true, solid:true, opaque:false });
 
