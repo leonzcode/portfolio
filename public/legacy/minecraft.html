@@ -1897,7 +1897,7 @@ const keys = Object.create(null);
 // and saved to localStorage. Tokens: mouse buttons are 'mouse0' (left) / 'mouse1' (middle) /
 // 'mouse2' (right); keyboard keys are their lowercased key name. Held state lives in `keys` for
 // both, so a movement action can be bound to a mouse button and vice-versa. ----
-const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', attack:'mouse0', use:'mouse2', pick:'mouse1', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3' };
+const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', attack:'mouse0', use:'mouse2', pick:'mouse1', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3', cameraCombo:'f+5' };
 let binds = Object.assign({}, DEFAULT_BINDS);
 try{ const sb=JSON.parse(localStorage.getItem('leoncraft_binds')||'{}'); for(const a in DEFAULT_BINDS) if(typeof sb[a]==='string' && sb[a]) binds[a]=sb[a]; }catch(e){}
 function saveBinds(){ try{ localStorage.setItem('leoncraft_binds', JSON.stringify(binds)); }catch(e){} }
@@ -1920,26 +1920,34 @@ function keyLabel(k){
   return k.charAt(0).toUpperCase()+k.slice(1);
 }
 let bindListening = null;   // action id waiting for a new key/button (Controls screen)
+// key-combo (chord) support: press two keys together to fire an action. Default F+5 = change camera,
+// a handy stand-in for F5 on laptops where the function row needs Fn.
+let comboLatched = false;          // true once a combo fired this hold, so key-repeat doesn't re-fire it
+let flyToggledThisPress = false;   // did the current 'fly' key press toggle flying? (so a combo can undo it)
+let comboListening = null;         // array of captured keys while rebinding the combo (Controls screen)
+function comboKeys(){ const c=(binds.cameraCombo||'').split('+').map(s=>s.trim()).filter(Boolean); return c.length>=2? c : null; }
+function comboLabel(){ const c=comboKeys(); return c? c.map(keyLabel).join(' + ') : '—'; }
 // context-sensitive "use" (right-click by default): open a door/bed/sign, otherwise place
 function useAction(){
   const tb = target && getBlock(target.x,target.y,target.z);
   if(target && isDoor(tb)) toggleDoor(target.x,target.y,target.z);
   else if(target && isTrapdoor(tb)) toggleTrapdoor(target.x,target.y,target.z);   // right-click opens/closes
   else if(target && isBed(tb)) sleepInBed(target.x,target.y,target.z);
+  else if(target && isCushion(tb)) sitOnCushion(target.x,target.y,target.z);   // right-click a cushion to sit on it
   else if(target && isSign(tb)) openSignEditor(target.x,target.y,target.z);
   else placeBlock();
 }
 // discrete actions fire once per press, from either a key (keydown) or a mouse button (mousedown)
 const pd = e=>{ if(e && e.preventDefault) e.preventDefault(); };
-const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !signEditPos;
+const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !sit.active && !signEditPos;
 const DISCRETE_RUN = {
   inventory: e=>{ if(state===PLAY){ pd(e); toggleInv(); } },
   chat:      e=>{ if(state===PLAY && !invOpen){ pd(e); openChat(); } },
   debug:     e=>{ pd(e); dbg.hidden=!dbg.hidden; },
-  fly:       e=>{ if(creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; } },
+  fly:       e=>{ if(creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; flyToggledThisPress=true; } },
   camera:    e=>{ if(state===PLAY){ pd(e); camMode=(camMode+1)%3; } },
-  attack:    e=>{ if(inWorld()){ doSwing(); breakBlock(); } },
-  use:       e=>{ if(inWorld()){ doSwing(); useAction(); } },
+  attack:    e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); breakBlock(); } },
+  use:       e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },
   pick:      e=>{ if(inWorld()){ pd(e); pickBlock(); } },
 };
 const DISCRETE_LIST = ['inventory','chat','debug','fly','camera','attack','use','pick'];
@@ -1949,6 +1957,11 @@ let chatOpen = false;
 addEventListener('keydown', e=>{
   // Controls screen: the next key you press becomes the new bind (Esc cancels)
   if(bindListening){ e.preventDefault(); const kk=e.key.toLowerCase(); if(kk!=='escape'){ binds[bindListening]=kk; saveBinds(); } bindListening=null; renderControls(); return; }
+  if(comboListening){ e.preventDefault(); const kk=e.key.toLowerCase();
+    if(kk==='escape'){ comboListening=null; renderControls(); return; }
+    if(!comboListening.includes(kk)) comboListening.push(kk);
+    if(comboListening.length>=2){ binds.cameraCombo=comboListening.slice(0,2).join('+'); saveBinds(); comboListening=null; }
+    renderControls(); return; }
   const k=e.key.toLowerCase();
   // typing in the search box: let it type, don't drive the game
   if(document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)){
@@ -1959,11 +1972,21 @@ addEventListener('keydown', e=>{
   if(k==='tab'){ e.preventDefault(); if(mp.active && state===PLAY && !invOpen){ tabShown=true; renderTabList(); } return; }   // hold Tab = player list
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
   if(k==='/' && state===PLAY && !invOpen){ e.preventDefault(); openChat('/'); return; }   // Minecraft: '/' opens chat pre-filled for a command
+  { const ck=comboKeys();   // chord (e.g. F+5): fire once when every key of the combo is held, and swallow this key's own action
+    if(ck && ck.includes(k) && ck.every(kk=>keys[kk])){
+      if(!comboLatched){ comboLatched=true; DISCRETE_RUN.camera(e);
+        if(ck.includes(binds.fly) && flyToggledThisPress){ player.flying=!player.flying; player.vel.y=0; flyToggledThisPress=false; }   // undo the incidental fly toggle from the combo's F key
+      }
+      e.preventDefault(); return;
+    } }
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
-addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; if(e.key==='Tab'){ tabShown=false; tabListEl.hidden=true; } });
+addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false;
+  const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
+  if(kk===binds.fly) flyToggledThisPress=false;
+  if(e.key==='Tab'){ tabShown=false; tabListEl.hidden=true; } });
 addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=false; if(tabListEl) tabListEl.hidden=true; });
 
 // double-tap the jump key to toggle fly in creative
@@ -2358,6 +2381,21 @@ function breakBed(x,y,z){
 }
 // ---- sleeping ----
 const sleep = { active:false, bx:0, by:0, bz:0, facing:0 };
+// sit on a cushion (right-click). Freezes the player on the pad in a seated pose that other players see too.
+const SIT_DROP = 0.36;            // feet-origin drops this far so the seated hips rest on the cushion pad
+const sit = { active:false, x:0, y:0, z:0 };
+function sitOnCushion(x,y,z){
+  if(sit.active || sleep.active) return;
+  sit.active=true; sit.x=x; sit.y=y; sit.z=z;
+  player.vel.set(0,0,0); player.flying=false;
+  player.pos.set(x+0.5, y + CUSHION_H - SIT_DROP, z+0.5);   // sink onto the pad; the streamed position places the seated body on remote screens
+}
+function standUp(){
+  if(!sit.active) return;
+  sit.active=false;
+  player.pos.set(sit.x+0.5, sit.y+CUSHION_H, sit.z+0.5);    // stand on top of the cushion
+  player.vel.set(0,0,0);
+}
 function bedFoot(x,y,z){   // resolve to the foot cell whichever half was clicked
   const m=bedMeta.get(dkey(x,y,z)); if(!m) return {x,y,z,facing:0};
   if(m.head){ const dv=DIRV[m.facing]; return {x:x-dv[0], y, z:z-dv[2], facing:m.facing}; }
@@ -2406,7 +2444,12 @@ function punchPlayerUnderCrosshair(){
   let node=hits[0].object, victim=null;
   while(node){ if(byModel.has(node)){ victim=byModel.get(node); break; } node=node.parent; }
   if(victim==null) return false;
-  mpSend({type:'hit', target:victim});   // the server works out the direction and shoves the target
+  // send the aimed direction (we just did a precise local raycast); the server clamps the magnitude and relays.
+  // this avoids depending on the server's throttled copy of positions, which was dropping legitimate punches.
+  const vp=mp.players.get(victim); let dx=0, dz=0;
+  if(vp){ dx=vp.x-player.pos.x; dz=vp.z-player.pos.z; }
+  const len=Math.hypot(dx,dz)||1;
+  mpSend({type:'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)});
   return true;
 }
 function breakBlock(){
@@ -2736,12 +2779,21 @@ function renderControls(){
     btn.className='keybtn'+(bindListening===a.id?' listening':'')+(conf[binds[a.id]]?' conflict':'');
     btn.textContent = bindListening===a.id ? '> ? <' : keyLabel(binds[a.id]);
     if(conf[binds[a.id]]) btn.title='This key is bound to more than one action';
-    btn.addEventListener('click', ()=>{ bindListening=(bindListening===a.id)?null:a.id; renderControls(); });
+    btn.addEventListener('click', ()=>{ bindListening=(bindListening===a.id)?null:a.id; comboListening=null; renderControls(); });
+    row.appendChild(lab); row.appendChild(btn); ctrlGridEl.appendChild(row);
+  }
+  // key-combo row (e.g. F + 5 also changes the camera)
+  { const row=document.createElement('div'); row.className='ctrlRow';
+    const lab=document.createElement('span'); lab.className='ctrlLabel'; lab.textContent='Change camera (combo)';
+    const btn=document.createElement('button'); btn.className='keybtn'+(comboListening?' listening':'');
+    btn.textContent = comboListening ? (comboListening.length? comboListening.map(keyLabel).join(' + ')+' …' : '> ? <') : comboLabel();
+    btn.title='Two keys held together. Click, then press the two keys (Esc to cancel).';
+    btn.addEventListener('click', ()=>{ comboListening = comboListening ? null : []; bindListening=null; renderControls(); });
     row.appendChild(lab); row.appendChild(btn); ctrlGridEl.appendChild(row);
   }
 }
-function openControls(){ bindListening=null; renderControls(); ctrlEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; }
-function closeControls(){ bindListening=null; ctrlEl.hidden=true; if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false; }
+function openControls(){ bindListening=null; comboListening=null; renderControls(); ctrlEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; }
+function closeControls(){ bindListening=null; comboListening=null; ctrlEl.hidden=true; if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false; }
 document.getElementById('controlsBtn').addEventListener('click', openControls);
 document.getElementById('pauseControlsBtn').addEventListener('click', openControls);
 document.getElementById('ctrlDoneBtn').addEventListener('click', closeControls);
@@ -2935,7 +2987,7 @@ function mpAddPlayer(p){
   const model=makeCharacterModel(defaultSkinTex); model.visible=true; scene.add(model);
   const tag=makeNametag(p.name||('Player'+p.id)); model.add(tag);
   mp.players.set(p.id, { id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
-    x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0 });
+    x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0 });
   if(p.skin) applyRemoteSkin(p.id, p.skin);   // their custom skin, if they have one
 }
 // apply another player's 64x64 skin to their model + Tab head icon
@@ -2957,9 +3009,15 @@ function mpUpdatePlayers(dt){
   for(const [,p] of mp.players){
     const k=1-Math.exp(-12*dt);
     p.x+=(p.tx-p.x)*k; p.y+=(p.ty-p.y)*k; p.z+=(p.tz-p.z)*k;
-    p.model.position.set(p.x, p.y, p.z);
-    p.model.rotation.y = p.yaw + Math.PI;
+    p.crouch += ((p.sneak?1:0) - (p.crouch||0)) * (1-Math.exp(-16*dt));   // smooth the sneak lean
+    const cr = p.sit ? 0 : (p.crouch||0);
+    p.model.position.set(p.x, p.y - cr*0.1, p.z);
+    p.model.rotation.set(cr*0.35, p.yaw + Math.PI, 0);                    // lean forward while sneaking
+    p.model.scale.set(0.9, 0.9*(1-cr*0.14), 0.9);
     p.model.userData.headPivot.rotation.x = -p.pitch;
+    const la = p.sit ? -1.45 : 0;                                         // legs swing forward when seated
+    if(p.model.userData.legL) p.model.userData.legL.rotation.x = la;
+    if(p.model.userData.legR) p.model.userData.legR.rotation.x = la;
     if(p.swing>0){ p.swing=Math.max(0, p.swing-dt*3.4); const arm=p.model.userData.armR; if(arm) arm.rotation.x = -Math.sin((1-p.swing)*Math.PI)*1.5; }
     else if(p.model.userData.armR) p.model.userData.armR.rotation.x = 0;
   }
@@ -2996,8 +3054,9 @@ function mpHandle(m){
   else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='ladder'){ ladderMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='skin'){ applyRemoteSkin(m.id, m.png); }
-  else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); showHurt(); }   // you got punched
+  else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
+  else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
@@ -3093,7 +3152,7 @@ function frame(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
 
   if(state===PLAY){
-    if(!invOpen && chatBox.hidden && !sleep.active) updatePlayer(dt);   // freeze while picker/chat/sleep open
+    if(!invOpen && chatBox.hidden && !sleep.active && !sit.active) updatePlayer(dt);   // freeze while picker/chat/sleep/sitting
     { const ccx=Math.floor(player.pos.x/CH), ccz=Math.floor(player.pos.z/CH);   // rescan chunks only when you cross into a new one
       if(ccx!==lastCX || ccz!==lastCZ){ lastCX=ccx; lastCZ=ccz; ensureChunks(player.pos.x, player.pos.z); } }
     processQueues(player.pos.x, player.pos.z);
@@ -3113,6 +3172,15 @@ function frame(now){
                   yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)});
         }
       }
+      // pose (sit / sneak) is event-driven: sent only when it changes, throttled so rapid shift-taps can't spam the server
+      if(sit.active!==mp.poseSit || (!!player.sneak)!==mp.poseSneak){
+        const tnow=performance.now();
+        if(tnow-(mp.lastPose||0)>90){ mp.lastPose=tnow; mp.poseSit=sit.active; mp.poseSneak=!!player.sneak; mp.poseSent=(mp.poseSent||0)+1; mpSend({type:'pose', sit:sit.active, sneak:!!player.sneak}); }
+      }
+    }
+    if(sit.active){   // stand up on any move input, or if the cushion gets removed from under you
+      if(keys[binds.forward]||keys[binds.back]||keys[binds.left]||keys[binds.right]||keys[binds.jump]||keys[binds.sneak]) standUp();
+      else if(!isCushion(getBlock(sit.x,sit.y,sit.z))) standUp();
     }
     if(target){ outline.visible=true; outline.position.set(target.x+0.5,target.y+0.5,target.z+0.5); }
     else outline.visible=false;
@@ -3128,11 +3196,12 @@ function frame(now){
   const d=camDir();
   const moving=(keys[binds.forward]||keys[binds.left]||keys[binds.back]||keys[binds.right]) && state===PLAY;
   bobT += dt*(moving?9:3.5);
-  const cr=player.crouch||0;
+  const cr = sit.active ? 0 : (player.crouch||0);
   body.position.set(player.pos.x, player.pos.y - cr*0.1, player.pos.z);
   body.rotation.set(cr*0.35, player.yaw + Math.PI, 0);   // lean forward while sneaking
   body.scale.set(0.9, 0.9*(1-cr*0.14), 0.9);
   headPivot.rotation.x = -player.pitch;
+  { const la = sit.active ? -1.45 : 0; body.userData.legL.rotation.x = la; body.userData.legR.rotation.x = la; }   // legs swing forward when seated
   body.visible = (state===PLAY && camMode!==0);
 
   if(sleep.active){
@@ -3234,6 +3303,12 @@ window.__mc = {
   sleepAt(x,y,z){ sleepInBed(x,y,z); },
   isSleeping(){ return sleep.active; },
   wake(){ wakeUp(); },
+  sitOn(x,y,z){ sitOnCushion(x,y,z); }, isSitting(){ return sit.active; }, getUp(){ standUp(); },
+  setSneak(v){ player.sneak=!!v; }, combo(){ return binds.cameraCombo; },
+  remotePose(){ const a=[]; for(const [id,p] of mp.players) a.push({id, sit:!!p.sit, sneak:!!p.sneak, legX:+(p.model.userData.legL?p.model.userData.legL.rotation.x:0).toFixed(2), crouch:+(p.crouch||0).toFixed(2)}); return a; },
+  punchId(vid){ const p=mp.players.get(vid); if(!p) return false; let dx=p.x-player.pos.x, dz=p.z-player.pos.z; const len=Math.hypot(dx,dz)||1; mpSend({type:'hit', target:vid, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)}); return true; },
+  kbRecv(){ return mp.kbRecv||0; },
+  poseState(){ return {sit:sit.active, sneak:!!player.sneak, poseSit:mp.poseSit, poseSneak:mp.poseSneak, poseSent:mp.poseSent||0}; },
   held(){ return hotbar[selSlot]; },
   hasBlock(n){ return !!BLOCKS[n]; },
   blockName(id){ return BLOCKS[id]?BLOCKS[id].name:null; },
