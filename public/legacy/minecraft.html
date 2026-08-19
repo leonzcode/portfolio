@@ -432,7 +432,32 @@ const BLOCKS = {};
 // A NEW block just gets the next free id after this list — ONLY APPEND names
 // here, never reorder, insert, or remove them.
 // ---------------------------------------------------------------------------
-const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand","gravel","oak_log","oak_planks","oak_leaves","coal_ore","iron_ore","gold_ore","diamond_ore","redstone_ore","glass","water","sandstone","bricks","snow","ice","obsidian","netherrack","glowstone","pumpkin","melon","crafting_table","furnace","bookshelf","spruce_log","spruce_planks","birch_log","birch_planks","jungle_log","jungle_planks","acacia_log","acacia_planks","dark_oak_log","dark_oak_planks","white_wool","orange_wool","magenta_wool","light_blue_wool","yellow_wool","lime_wool","pink_wool","gray_wool","light_gray_wool","cyan_wool","purple_wool","blue_wool","brown_wool","green_wool","red_wool","black_wool","oak_door","spruce_door","birch_door","jungle_door","acacia_door","dark_oak_door","white_bed","orange_bed","magenta_bed","light_blue_bed","yellow_bed","lime_bed","pink_bed","gray_bed","light_gray_bed","cyan_bed","purple_bed","blue_bed","brown_bed","green_bed","red_bed","black_bed","oak_stairs","oak_fence","spruce_stairs","spruce_fence","birch_stairs","birch_fence","jungle_stairs","jungle_fence","acacia_stairs","acacia_fence","dark_oak_stairs","dark_oak_fence","ladder","oak_sign","spruce_sign","birch_sign","jungle_sign","acacia_sign","dark_oak_sign","granite","polished_granite","diorite","polished_diorite","andesite","polished_andesite","stone_bricks","mossy_stone_bricks","cracked_stone_bricks","chiseled_stone_bricks","mossy_cobblestone","red_sand","coarse_dirt","podzol","mycelium","clay","hardened_clay","soul_sand","end_stone","nether_brick","red_sandstone","chiseled_sandstone","quartz_block","chiseled_quartz","quartz_pillar","prismarine","prismarine_bricks","dark_prismarine","sea_lantern","slime_block","packed_ice","snow_block","sponge","hay_block","jack_o_lantern","emerald_ore","lapis_ore","nether_quartz_ore","iron_block","gold_block","diamond_block","emerald_block","coal_block","redstone_block","lapis_block","spruce_leaves","birch_leaves","jungle_leaves","acacia_leaves","dark_oak_leaves","leong_sahur_spawn_egg","tralaleon_spawn_egg","white_stained_clay","white_stained_glass","orange_stained_clay","orange_stained_glass","magenta_stained_clay","magenta_stained_glass","light_blue_stained_clay","light_blue_stained_glass","yellow_stained_clay","yellow_stained_glass","lime_stained_clay","lime_stained_glass","pink_stained_clay","pink_stained_glass","gray_stained_clay","gray_stained_glass","light_gray_stained_clay","light_gray_stained_glass","cyan_stained_clay","cyan_stained_glass","purple_stained_clay","purple_stained_glass","blue_stained_clay","blue_stained_glass","brown_stained_clay","brown_stained_glass","green_stained_clay","green_stained_glass","red_stained_clay","red_stained_glass","black_stained_clay","black_stained_glass","prg","oak_trapdoor","spruce_trapdoor","birch_trapdoor","jungle_trapdoor","acacia_trapdoor","dark_oak_trapdoor","oak_slab","spruce_slab","birch_slab","jungle_slab","acacia_slab","dark_oak_slab","super_slime_block","white_cushion","orange_cushion","magenta_cushion","light_blue_cushion","yellow_cushion","lime_cushion","pink_cushion","gray_cushion","light_gray_cushion","cyan_cushion","purple_cushion","blue_cushion","brown_cushion","green_cushion","red_cushion","black_cushion"];
+const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand","gravel","oak_log","oak_planks","oak_leaves","coal_ore","iron_ore","gold_ore","diamond_ore","redstone_ore","glass","water","sandstone","bricks","snow","ice","obsidian","netherrack","glowstone","pumpkin","melon","crafting_table","furnace","bookshelf","spruce_log","spruce_planks","birch_log","birch_planks","jungle_log","jungle_planks","acacia_log","acacia_planks","dark_oak_log","dark_oak_planks","white_wool","orange_wool","magenta_wool","light_blue_wool","yellow_wool","lime_wool","pink_wool","gray_wool","light_gray_wool","cyan_wool","purple_wool","blue_wool","brown_wool","green_wool","red_wool","black_wool","oak_door","spruce_door","birch_door","jungle_door","acacia_door","dark_oak_door","white_bed","orange_bed","magenta_bed","light_blue_bed","yellow_bed","lime_bed","pink_bed","gray_bed","light_gray_bed","cyan_bed","purple_bed","blue_bed","brown_bed","green_bed","red_bed","black_bed","oak_stairs","oak_fence","spruce_stairs","spruce_fence","birch_stairs","birch_fence","jungle_stairs","jungle_fence","acacia_stairs","acacia_fence","dark_oak_stairs","dark_oak_fence","ladder","oak_sign","spruce_sign","birch_sign","jungle_sign","acacia_sign","dark_oak_sign","granite","polished_granite","diorite","polished_diorite","andesite","polished_andesite","stone_bricks","mossy_stone_bricks","cracked_stone_bricks","chiseled_stone_bricks","mossy_cobblestone","red_sand","coarse_dirt","podzol","mycelium","clay","hardened_clay","soul_sand","end_stone","nether_brick","red_sandstone","chiseled_sandstone","quartz_block","chiseled_quartz","quartz_pillar","prismarine","prismarine_bricks","dark_prismarine","sea_lantern","slime_block","packed_ice","snow_block","sponge","hay_block","jack_o_lantern","emerald_ore","lapis_ore","nether_quartz_ore","iron_block","gold_block","diamond_block","emerald_block","coal_block","redstone_block","lapis_block","spruce_leaves","birch_leaves","jungle_leaves","acacia_leaves","dark_oak_leaves","leong_sahur_spawn_egg","tralaleon_spawn_egg","white_stained_clay","white_stained_glass","orange_stained_clay","orange_stained_glass","magenta_stained_clay","magenta_stained_glass","light_blue_stained_clay","light_blue_stained_glass","yellow_stained_clay","yellow_stained_glass","lime_stained_clay","lime_stained_glass","pink_stained_clay","pink_stained_glass","gray_stained_clay","gray_stained_glass","light_gray_stained_clay","light_gray_stained_glass","cyan_stained_clay","cyan_stained_glass","purple_stained_clay","purple_stained_glass","blue_stained_clay","blue_stained_glass","brown_stained_clay","brown_stained_glass","green_stained_clay","green_stained_glass","red_stained_clay","red_stained_glass","black_stained_clay","black_stained_glass","prg","oak_trapdoor","spruce_trapdoor","birch_trapdoor","jungle_trapdoor","acacia_trapdoor","dark_oak_trapdoor","oak_slab","spruce_slab","birch_slab","jungle_slab","acacia_slab","dark_oak_slab","super_slime_block","white_cushion","orange_cushion","magenta_cushion","light_blue_cushion","yellow_cushion","lime_cushion","pink_cushion","gray_cushion","light_gray_cushion","cyan_cushion","purple_cushion","blue_cushion","brown_cushion","green_cushion","red_cushion","black_cushion",
+// --- pass 2 (decorative full cubes), appended so saved worlds keep their ids ---
+"white_concrete","orange_concrete","magenta_concrete","light_blue_concrete","yellow_concrete","lime_concrete","pink_concrete","gray_concrete","light_gray_concrete","cyan_concrete","purple_concrete","blue_concrete","brown_concrete","green_concrete","red_concrete","black_concrete",
+"white_concrete_powder","orange_concrete_powder","magenta_concrete_powder","light_blue_concrete_powder","yellow_concrete_powder","lime_concrete_powder","pink_concrete_powder","gray_concrete_powder","light_gray_concrete_powder","cyan_concrete_powder","purple_concrete_powder","blue_concrete_powder","brown_concrete_powder","green_concrete_powder","red_concrete_powder","black_concrete_powder",
+"white_glazed_terracotta","orange_glazed_terracotta","magenta_glazed_terracotta","light_blue_glazed_terracotta","yellow_glazed_terracotta","lime_glazed_terracotta","pink_glazed_terracotta","gray_glazed_terracotta","light_gray_glazed_terracotta","cyan_glazed_terracotta","purple_glazed_terracotta","blue_glazed_terracotta","brown_glazed_terracotta","green_glazed_terracotta","red_glazed_terracotta","black_glazed_terracotta",
+"smooth_stone","smooth_sandstone","cut_sandstone","smooth_red_sandstone","cut_red_sandstone","smooth_quartz","quartz_bricks","end_stone_bricks","red_nether_bricks","chiseled_nether_bricks","cracked_nether_bricks",
+"purpur_block","purpur_pillar",
+"deepslate","cobbled_deepslate","polished_deepslate","deepslate_bricks","cracked_deepslate_bricks","deepslate_tiles","cracked_deepslate_tiles","chiseled_deepslate",
+"tuff","polished_tuff","tuff_bricks","chiseled_tuff",
+"calcite","dripstone_block","amethyst_block","tinted_glass",
+"blackstone","gilded_blackstone","polished_blackstone","polished_blackstone_bricks","cracked_polished_blackstone_bricks","chiseled_polished_blackstone",
+"basalt","smooth_basalt","polished_basalt",
+"mud","packed_mud","mud_bricks",
+"copper_block","exposed_copper","weathered_copper","oxidized_copper","cut_copper",
+"raw_iron_block","raw_copper_block","raw_gold_block",
+"netherite_block","ancient_debris","crying_obsidian",
+"red_mushroom_block","brown_mushroom_block","mushroom_stem",
+"crimson_nylium","warped_nylium","nether_wart_block","warped_wart_block","shroomlight",
+"ochre_froglight","verdant_froglight","pearlescent_froglight",
+"bone_block","honeycomb_block","dried_kelp_block","sculk","moss_block","terracotta",
+"mangrove_log","mangrove_planks","mangrove_leaves",
+"cherry_log","cherry_planks","cherry_leaves",
+"pale_oak_log","pale_oak_planks","pale_oak_leaves",
+"bamboo_block","bamboo_planks","bamboo_mosaic",
+"crimson_stem","crimson_planks","warped_stem","warped_planks",
+"stripped_oak_log","stripped_spruce_log","stripped_birch_log","stripped_jungle_log","stripped_acacia_log","stripped_dark_oak_log"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -447,7 +472,7 @@ function def(name, opts){
 /* ------------------------------------------------------------- the atlas -- */
 // Atlas is a grid of TILE×TILE cells. We paint each named texture and remember
 // its cell index, then blocks reference those indices.
-const ATLAS_COLS = 16, ATLAS_ROWS = 32;   // extra rows leave room for doors/beds tiles
+const ATLAS_COLS = 16, ATLAS_ROWS = 64;   // extra rows leave room for the growing block set
 const atlasCanvas = document.createElement('canvas');
 atlasCanvas.width = ATLAS_COLS * TILE;
 atlasCanvas.height = ATLAS_ROWS * TILE;
@@ -799,6 +824,168 @@ paint('ladder', (function(){ const wood=rgb(0x8a6a3a), r=rng(9200);
   return (x,y)=>{ const rail=(x>=2&&x<=4)||(x>=11&&x<=13), rung=(y%5===1)&&(x>=3&&x<=12);
     return (rail||rung)? vary(wood,10,r) : [0,0,0,0]; }; })());
 
+/* ===================================================================
+   pass 2 (Leon): a big set of decorative FULL-CUBE blocks with a
+   Minecraft 1.x look. Shaped variants (walls, panes, carpets, stairs,
+   slabs) come in a later pass. Names were appended to STABLE_BLOCK_NAMES
+   so existing multiplayer worlds keep every id.
+   =================================================================== */
+function lighten(hex,f){ const r=Math.min(255,Math.round(((hex>>16)&255)*f)), g=Math.min(255,Math.round(((hex>>8)&255)*f)), b=Math.min(255,Math.round((hex&255)*f)); return (r<<16)|(g<<8)|b; }
+function concreteTex(seed,hex){ return speckle(hex,3,seed); }
+function powderTex(seed,hex){ return speckle(hex,10,seed); }
+function glazedTex(seed,hex){ const r=rng(seed), a=rgb(hex), dk=rgb(lighten(hex,0.6)), wt=[236,236,232];
+  return (x,y)=>{ const cx=x<8?x:15-x, cy=y<8?y:15-y, d=cx+cy;   // 4-fold symmetric glaze motif
+    let c = d<3? wt : (d<6? dk : a);
+    if(((x^y)&8)!==0) c = (d<6? a : dk);
+    if(x===0||y===0||x===15||y===15) c=dk;
+    return vary(c,4,r); }; }
+function sqBrick(seed, baseHex, mortarHex, moss, crack){ const r=rng(seed), b=rgb(baseHex), m=rgb(mortarHex);
+  return (x,y)=>{ const row=(y/8)|0, off=(row%2)?8:0, bx=(x+off)%16;
+    let c=(y%8===0||bx===0)?vary(m,6,r):vary(b,9,r);
+    if(moss && r()<0.16) c=vary(rgb(0x5a7a3a),12,r);
+    if(crack && r()<0.10) c=vary(m,10,r);
+    return c; }; }
+function tileGrid(seed, baseHex, gapHex, cracked){ const r=rng(seed), b=rgb(baseHex), m=rgb(gapHex);
+  return (x,y)=>{ if(x%8===0||y%8===0) return vary(m,6,r); if(cracked && r()<0.08) return vary(m,9,r); return vary(b,8,r); }; }
+function chiseledHex(seed, baseHex, edgeHex){ const r=rng(seed), b=rgb(baseHex), m=rgb(edgeHex);
+  return (x,y)=>{ if(x===0||x===15||y===0||y===15||x===2||x===13||y===2||y===13) return vary(m,5,r); return vary(b,7,r); }; }
+function spotsTex(seed, baseHex, spotHex, pts){ const r=rng(seed), b=rgb(baseHex), s=rgb(spotHex); const P=pts||[[4,4],[11,6],[7,11],[13,13]];
+  return (x,y)=>{ for(const q of P) if(Math.abs(x-q[0])<=2&&Math.abs(y-q[1])<=2) return vary(s,6,r); return vary(b,7,r); }; }
+function copperTex(seed, hex, patinaHex){ const r=rng(seed), b=rgb(hex), p=patinaHex?rgb(patinaHex):null;
+  return (x,y)=>{ let c=vary(b,6,r); if(p && r()<0.2) c=vary(p,8,r); if(y%4===0) c=c.map(v=>Math.round(v*0.94)); return c; }; }
+function striate(seed,hex){ const r=rng(seed), b=rgb(hex); return (x,y)=>{ let c=vary(b,7,r); if(x%3===0) c=c.map(v=>Math.round(v*0.8)); return c; }; }
+function honeyTex(seed){ const r=rng(seed), a=rgb(0xd9a01f), b=rgb(0xe9b933), edge=rgb(0x8a5f16);
+  return (x,y)=>{ const row=(y/4)|0, off=(row%2)?3:0, hx=(x+off)%6; const c=(hx===0||y%4===0)?edge:(y%4<2?a:b); return vary(c,6,r); }; }
+function sculkTex(seed){ const r=rng(seed), base=rgb(0x0c1418), vein=rgb(0x2ac0b8);
+  return (x,y)=>{ if(r()<0.12) return vary(vein,20,r); return vary(base,10,r); }; }
+function nyliumTex(seed, hex){ const r=rng(seed), n=rgb(0x2e1a1a), t=rgb(hex);
+  return (x,y)=> r()<0.5? vary(t,14,r) : vary(n,12,r); }
+function fungusStem(seed, hex){ const r=rng(seed), base=rgb(hex); return (x,y)=>{ let c=vary(base,8,r); if(x%5===0) c=c.map(v=>Math.round(v*0.85)); return c; }; }
+
+// concrete hues (distinct from wool)
+const CONCRETE_HEX = { white:0xcfd5d6, orange:0xe06101, magenta:0xa9309f, light_blue:0x2489c7, yellow:0xf1af15, lime:0x5ea918, pink:0xd6658f, gray:0x373a3e, light_gray:0x7d7d78, cyan:0x157788, purple:0x64209c, blue:0x2c2e8f, brown:0x603c20, green:0x495b24, red:0x8e2121, black:0x080a0f };
+
+const NEW_SOLIDS = [];
+// three 16-colour families
+for(const [n,woolHex] of WOOLS){ const ch=CONCRETE_HEX[n];
+  NEW_SOLIDS.push({ name:n+'_concrete', tex: concreteTex(es(), ch) });
+  NEW_SOLIDS.push({ name:n+'_concrete_powder', tex: powderTex(es(), lighten(ch,1.2)) });
+  NEW_SOLIDS.push({ name:n+'_glazed_terracotta', tex: glazedTex(es(), woolHex) });
+}
+NEW_SOLIDS.push(
+  // smooth / cut stone family
+  { name:'smooth_stone', tex: speckle(0x9d9d9d,3,es()) },
+  { name:'smooth_sandstone', tex: speckle(0xd6cc95,4,es()) },
+  { name:'cut_sandstone', tex: chiseledHex(es(),0xd8ce97,0xc6bc85) },
+  { name:'smooth_red_sandstone', tex: speckle(0xa6521a,4,es()) },
+  { name:'cut_red_sandstone', tex: chiseledHex(es(),0xa9531a,0x954916) },
+  { name:'smooth_quartz', tex: speckle(0xe9e6df,3,es()) },
+  { name:'quartz_bricks', tex: sqBrick(es(),0xe9e6df,0xd8d4cc,false,false) },
+  { name:'end_stone_bricks', tex: sqBrick(es(),0xdadab0,0xc4c48c,false,false) },
+  { name:'red_nether_bricks', tex: brickPat(es(),0x460a0f,0x2a0a0d) },
+  { name:'chiseled_nether_bricks', tex: chiseledHex(es(),0x2e1417,0x40191d) },
+  { name:'cracked_nether_bricks', tex: brickPat(es(),0x2a1114,0x1f0c0f) },
+  { name:'purpur_block', tex: twoTone(es(),0xa578a5,0x9a6a9a,0xb086b0,8) },
+  { name:'purpur_pillar', top: twoTone(es(),0xa578a5,0x9a6a9a,undefined,6), side: pillarSideTex(es(),0xa578a5) },
+  // deepslate family
+  { name:'deepslate', top: speckle(0x515458,5,es()), side: pillarSideTex(es(),0x4c4f52) },
+  { name:'cobbled_deepslate', tex: twoTone(es(),0x4a4d50,0x3e4144,0x565a5e,14) },
+  { name:'polished_deepslate', tex: speckle(0x484a4d,4,es()) },
+  { name:'deepslate_bricks', tex: sqBrick(es(),0x474a4d,0x3a3d40,false,false) },
+  { name:'cracked_deepslate_bricks', tex: sqBrick(es(),0x474a4d,0x3a3d40,false,true) },
+  { name:'deepslate_tiles', tex: tileGrid(es(),0x393b3e,0x2f3134,false) },
+  { name:'cracked_deepslate_tiles', tex: tileGrid(es(),0x393b3e,0x2f3134,true) },
+  { name:'chiseled_deepslate', tex: chiseledHex(es(),0x3a3d40,0x2f3134) },
+  // tuff
+  { name:'tuff', tex: twoTone(es(),0x6b6d64,0x5e6058,0x76786e,10) },
+  { name:'polished_tuff', tex: speckle(0x676860,4,es()) },
+  { name:'tuff_bricks', tex: sqBrick(es(),0x62645b,0x54564e,false,false) },
+  { name:'chiseled_tuff', tex: chiseledHex(es(),0x5e6058,0x6b6d64) },
+  // misc rock
+  { name:'calcite', tex: (()=>{ const r=rng(es()); return (x,y)=> vary(rgb(0xe0e0da), r()<0.2?14:6, r); })() },
+  { name:'dripstone_block', tex: (()=>{ const r=rng(es()), base=rgb(0x9a6f5a); return (x,y)=>{ let c=vary(base,12,r); if((x+y)%6===0) c=c.map(v=>Math.round(v*0.9)); return c; }; })() },
+  { name:'amethyst_block', tex: twoTone(es(),0x9a70d4,0x8a5fc4,0xb48fe0,12) },
+  { name:'tinted_glass', tex: stainedGlass(es(),0x231f28), opaque:false },
+  // blackstone
+  { name:'blackstone', tex: twoTone(es(),0x2c2830,0x24202a,0x342e38,9) },
+  { name:'gilded_blackstone', tex: (()=>{ const r=rng(es()), b=rgb(0x2c2830), g=rgb(0xe8b64a); return (x,y)=> r()<0.12? vary(g,18,r): vary(b,9,r); })() },
+  { name:'polished_blackstone', tex: speckle(0x2e2b33,4,es()) },
+  { name:'polished_blackstone_bricks', tex: sqBrick(es(),0x2b2830,0x211e26,false,false) },
+  { name:'cracked_polished_blackstone_bricks', tex: sqBrick(es(),0x2b2830,0x211e26,false,true) },
+  { name:'chiseled_polished_blackstone', tex: chiseledHex(es(),0x2b2830,0x211e26) },
+  // basalt
+  { name:'basalt', top: speckle(0x4c4b52,5,es()), side: striate(es(),0x54535a) },
+  { name:'smooth_basalt', tex: speckle(0x494a4e,4,es()) },
+  { name:'polished_basalt', top: chiseledHex(es(),0x53525a,0x45444a), side: striate(es(),0x53525a) },
+  // mud
+  { name:'mud', tex: speckle(0x3c3a3e,8,es()) },
+  { name:'packed_mud', tex: speckle(0x8a6a4a,9,es()) },
+  { name:'mud_bricks', tex: brickPat(es(),0x8a6a4a,0x6a4e32) },
+  // copper (oxidation states) + raw metal blocks
+  { name:'copper_block', tex: copperTex(es(),0xc06d51) },
+  { name:'exposed_copper', tex: copperTex(es(),0xa07a6a,0x6f8f7a) },
+  { name:'weathered_copper', tex: copperTex(es(),0x6f9877,0x53a06a) },
+  { name:'oxidized_copper', tex: copperTex(es(),0x4fa88a,0x6fbf9a) },
+  { name:'cut_copper', tex: chiseledHex(es(),0xc06d51,0xa85a44) },
+  { name:'raw_iron_block', tex: spotsTex(es(),0xb59d84,0xd6b892) },
+  { name:'raw_copper_block', tex: copperTex(es(),0xb5714f,0x7a8f6a) },
+  { name:'raw_gold_block', tex: spotsTex(es(),0xcaa42f,0xe6c74a) },
+  // rare / nether blocks
+  { name:'netherite_block', tex: spotsTex(es(),0x2a2428,0x4a3f4a) },
+  { name:'ancient_debris', top: spotsTex(es(),0x5a4a42,0x7a5a3a), side: spotsTex(es(),0x453a34,0x6a4a2a) },
+  { name:'crying_obsidian', tex: (()=>{ const r=rng(es()), o=rgb(0x180d28), p=rgb(0x3f2fae); return (x,y)=> r()<0.14? vary(p,22,r): vary(o,14,r); })(), light:10 },
+  // mushroom blocks
+  { name:'red_mushroom_block', tex: spotsTex(es(),0xc63f3a,0xe6ded0,[[3,3],[10,4],[6,10],[12,12],[2,12]]) },
+  { name:'brown_mushroom_block', tex: twoTone(es(),0x977251,0x876145,undefined,10) },
+  { name:'mushroom_stem', tex: speckle(0xd0cabb,5,es()) },
+  // fungal / warts / shroomlight
+  { name:'crimson_nylium', tex: nyliumTex(es(),0x8b2252) },
+  { name:'warped_nylium', tex: nyliumTex(es(),0x2e8e8c) },
+  { name:'nether_wart_block', tex: twoTone(es(),0x7a0808,0x8b0a0a,0x6a0606,10) },
+  { name:'warped_wart_block', tex: twoTone(es(),0x167a7a,0x1a8a8a,0x0f6a6a,10) },
+  { name:'shroomlight', tex: speckle(0xe8a33a,10,es()), light:15 },
+  // froglights (glow, rotatable pillars)
+  { name:'ochre_froglight', top: speckle(0xe6d99a,4,es()), side: pillarSideTex(es(),0xd8c37a), light:15 },
+  { name:'verdant_froglight', top: speckle(0xc7e6b0,4,es()), side: pillarSideTex(es(),0x9fd68a), light:15 },
+  { name:'pearlescent_froglight', top: speckle(0xe6c9d9,4,es()), side: pillarSideTex(es(),0xd0a8c0), light:15 },
+  // organic decor
+  { name:'bone_block', top: chiseledHex(es(),0xe0dcc8,0xc8c2a8), side: striate(es(),0xe0dcc8) },
+  { name:'honeycomb_block', tex: honeyTex(es()) },
+  { name:'dried_kelp_block', tex: twoTone(es(),0x384326,0x2e3a24,0x50421f,12) },
+  { name:'sculk', tex: sculkTex(es()) },
+  { name:'moss_block', tex: twoTone(es(),0x5a6b2e,0x4c5c26,0x6a7a38,14) },
+  { name:'terracotta', tex: stainedClayTex(es(),0x975d43) },
+  // new wood types (logs, planks, leaves)
+  { name:'mangrove_log', top: woodTop(es(),0x9a5f4e,0x7a4436), side: woodSide(es(),0x6a3f36,0x4e2d27) },
+  { name:'mangrove_planks', tex: planksTex(es(),0x9a5f4e) },
+  { name:'mangrove_leaves', tex: leaves(es(),0x5a8f3a), opaque:false, cutout:true },
+  { name:'cherry_log', top: woodTop(es(),0xe8c0c8,0xd6a6b0), side: woodSide(es(),0x38312f,0x2a2321) },
+  { name:'cherry_planks', tex: planksTex(es(),0xe4b6c2) },
+  { name:'cherry_leaves', tex: leaves(es(),0xf2b8ce), opaque:false, cutout:true },
+  { name:'pale_oak_log', top: woodTop(es(),0xd8d4c6,0xbcb7a6), side: woodSide(es(),0x59594f,0x3f3f38) },
+  { name:'pale_oak_planks', tex: planksTex(es(),0xd6d2c4) },
+  { name:'pale_oak_leaves', tex: leaves(es(),0x9aa588), opaque:false, cutout:true },
+  { name:'bamboo_block', top: speckle(0xb3a52f,4,es()), side: striate(es(),0xc3b13b) },
+  { name:'bamboo_planks', tex: planksTex(es(),0xc9b74a) },
+  { name:'bamboo_mosaic', tex: brickPat(es(),0xc9b74a,0xa8963a) },
+  { name:'crimson_stem', top: speckle(0x4b2537,5,es()), side: fungusStem(es(),0x6a3350) },
+  { name:'crimson_planks', tex: planksTex(es(),0x6a3350) },
+  { name:'warped_stem', top: speckle(0x2b4d4c,5,es()), side: fungusStem(es(),0x3a8e8c) },
+  { name:'warped_planks', tex: planksTex(es(),0x2b6b6a) },
+  // stripped logs (rotatable pillars)
+  { name:'stripped_oak_log', top: woodTop(es(),0xc8a15a,0xb08a53), side: pillarSideTex(es(),0xb99a5f) },
+  { name:'stripped_spruce_log', top: woodTop(es(),0x9a7a50,0x7a5e3a), side: pillarSideTex(es(),0x8a6a45) },
+  { name:'stripped_birch_log', top: woodTop(es(),0xd7cb9e,0xc0b488), side: pillarSideTex(es(),0xd7cb9e) },
+  { name:'stripped_jungle_log', top: woodTop(es(),0xb0895a,0x8a6a40), side: pillarSideTex(es(),0xa9784f) },
+  { name:'stripped_acacia_log', top: woodTop(es(),0xc06a3a,0xa85a2e), side: pillarSideTex(es(),0xb15b30) },
+  { name:'stripped_dark_oak_log', top: woodTop(es(),0x5a4326,0x43301a), side: pillarSideTex(es(),0x5a4326) },
+);
+// paint every pass-2 texture into the atlas
+for(const e of NEW_SOLIDS){
+  if(e.tex){ paint(e.name, e.tex); }
+  else { paint(e.name+'_top', e.top); if(e.side) paint(e.name+'_side', e.side); if(e.bottom) paint(e.name+'_bottom', e.bottom); }
+}
+
 /* upload the atlas as a texture */
 const atlasTex = new THREE.CanvasTexture(atlasCanvas);
 atlasTex.magFilter = THREE.NearestFilter;
@@ -887,8 +1074,25 @@ for(const e of EXTRA){
   B[e.name]=def(e.name, opts);
 }
 
+// define every pass-2 block (decorative full cubes)
+for(const e of NEW_SOLIDS){
+  const opts={};
+  if(e.opaque===false) opts.opaque=false;
+  if(e.cutout) opts.cutout=true;
+  if(e.light) opts.light=e.light;
+  if(e.tex){ opts.tiles=T(e.name); }
+  else {
+    const top=T(e.name+'_top');
+    const side=e.side!==undefined?T(e.name+'_side'):top;
+    const bottom=e.bottom!==undefined?T(e.name+'_bottom'):top;
+    opts.tiles=[top, side, bottom];
+  }
+  B[e.name]=def(e.name, opts);
+}
+
 // blocks affected by gravity (settle downward like real Minecraft)
 const GRAVITY = new Set([B.sand, B.gravel, B.red_sand]);
+for(const [n] of WOOLS) GRAVITY.add(B[n+'_concrete_powder']);   // concrete powder falls like sand
 
 // placeable palette = every real block, in definition order
 const PALETTE = [];
@@ -2641,13 +2845,18 @@ const CATS=[
   {id:'misc',label:'Misc'},
 ];
 function catOf(n){
-  if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')||n.endsWith('_cushion')) return 'color';
+  if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')||n.endsWith('_cushion')
+     ||n.endsWith('_concrete')||n.endsWith('_concrete_powder')||n.endsWith('_glazed_terracotta')) return 'color';
   if(n.endsWith('_ore')) return 'ores';
-  if(['iron_block','gold_block','diamond_block','emerald_block','coal_block','redstone_block','lapis_block'].includes(n)) return 'ores';
-  const nature=['grass','dirt','coarse_dirt','podzol','mycelium','sand','red_sand','gravel','clay','snow','snow_block','ice','packed_ice','water','soul_sand','netherrack','end_stone','melon','pumpkin','hay_block'];
-  if(nature.includes(n) || n.endsWith('_leaves') || n.endsWith('_log')) return 'nature';
-  const deco=['glass','bookshelf','crafting_table','furnace','glowstone','sea_lantern','sponge','slime_block','super_slime_block','jack_o_lantern','prg'];
-  if(deco.includes(n)) return 'deco';
+  if(['iron_block','gold_block','diamond_block','emerald_block','coal_block','redstone_block','lapis_block',
+      'raw_iron_block','raw_copper_block','raw_gold_block','netherite_block','ancient_debris','cut_copper'].includes(n)
+     || n.endsWith('_copper')) return 'ores';
+  const nature=['grass','dirt','coarse_dirt','podzol','mycelium','sand','red_sand','gravel','clay','snow','snow_block','ice','packed_ice','water','soul_sand','netherrack','end_stone','melon','pumpkin','hay_block',
+      'moss_block','mud','packed_mud','dripstone_block','calcite','sculk','mushroom_stem','nether_wart_block','warped_wart_block','bamboo_block'];
+  if(nature.includes(n) || n.endsWith('_leaves') || n.endsWith('_log') || n.endsWith('_stem') || n.endsWith('_nylium') || n.endsWith('_mushroom_block')) return 'nature';
+  const deco=['glass','bookshelf','crafting_table','furnace','glowstone','sea_lantern','sponge','slime_block','super_slime_block','jack_o_lantern','prg',
+      'tinted_glass','amethyst_block','crying_obsidian','shroomlight','honeycomb_block','dried_kelp_block'];
+  if(deco.includes(n) || n.endsWith('_froglight')) return 'deco';
   if(['bedrock'].includes(n) || n.endsWith('_spawn_egg')) return 'misc';
   return 'building';
 }
