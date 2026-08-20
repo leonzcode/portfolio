@@ -279,6 +279,7 @@
   <div class="menuButtons">
     <button class="btn" id="playBtn">Singleplayer</button>
     <button class="btn" id="mpBtn">Multiplayer</button>
+    <button class="btn" id="bwBtn">Bed Wars</button>
     <div class="btnRow">
       <button class="btn half" id="skinBtn">Skin&hellip;</button>
       <button class="btn half" id="controlsBtn">Controls&hellip;</button>
@@ -1508,6 +1509,12 @@ class Chunk{
   set(x,y,z,v){ this.data[this.idx(x,y,z)] = v; }
   generate(){
     const { cx, cz } = this;
+    if(bwMode){   // bedwars: void world; the island prefab lives entirely in mpOverrides
+      this.generated = true;
+      const ovb = mpOverrides.get(this.cx+','+this.cz);
+      if(ovb) for(const [lk,b] of ovb){ const p=lk.split(','); this.set(+p[0],+p[1],+p[2], b); }
+      return;
+    }
     for(let x=0;x<CH;x++) for(let z=0;z<CH;z++){
       const wx = cx*CH + x, wz = cz*CH + z;
       const h = terrainHeight(wx,wz);
@@ -2260,7 +2267,7 @@ function useAction(){
 }
 // discrete actions fire once per press, from either a key (keydown) or a mouse button (mousedown)
 const pd = e=>{ if(e && e.preventDefault) e.preventDefault(); };
-const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !sit.active && !signEditPos;
+const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !sit.active && !signEditPos && !bwShopOpen;
 const DISCRETE_RUN = {
   inventory: e=>{ if(state===PLAY){ pd(e); toggleInv(); } },
   chat:      e=>{ if(state===PLAY && !invOpen){ pd(e); openChat(); } },
@@ -2301,8 +2308,9 @@ addEventListener('keydown', e=>{
       e.preventDefault(); return;
     } }
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
+  if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } }   // Bed Wars: shop + eat apple
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false;
   const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
@@ -2346,7 +2354,7 @@ canvas.addEventListener('wheel', e=>{
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = document.pointerLockElement===canvas;
   // don't pop the pause menu when we released the lock on purpose to type in chat
-  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos) pause();
+  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen) pause();
 });
 document.addEventListener('mousemove', e=>{
   if(!pointerLocked) return;
@@ -2517,8 +2525,9 @@ function updatePlayer(dt){
     const fp=player.pos.clone(); fp.y-=0.05;
     if(collides(fp.x,fp.y,fp.z)) player.onGround=true;
   }
-  // fell 10 blocks below bedrock into the void: put the player back on the surface
-  if(player.pos.y < BEDROCK_Y - 10){
+  // fell 10 blocks below bedrock into the void: put the player back on the surface (survival only;
+  // bedwars handles the void as a death via bwCheckVoid + the server, so don't rescue here)
+  if(!bwMode && player.pos.y < BEDROCK_Y - 10){
     player.pos.y = terrainHeight(Math.floor(player.pos.x), Math.floor(player.pos.z)) + 3;
     player.vel.set(0,0,0);
   }
@@ -2780,14 +2789,20 @@ function punchPlayerUnderCrosshair(){
   const vp=mp.players.get(victim); let dx=0, dz=0;
   if(vp){ dx=vp.x-player.pos.x; dz=vp.z-player.pos.z; }
   const len=Math.hypot(dx,dz)||1;
-  mpSend({type:'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)});
+  mpSend({type: bw.active?'bwhit':'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)});
   return true;
 }
 function breakBlock(){
+  if(bw.active && bw.dead) return;          // no acting while dead / spectating
   if(punchPlayerUnderCrosshair()) return;   // punching a player takes priority
   if(killMobUnderCrosshair()) return;   // a mob under the crosshair takes the hit next
   if(!target) return;
   const {x,y,z}=target;
+  if(bw.active){
+    const bwbid=getBlock(x,y,z);
+    if(isBed(bwbid)){ bwBreakBed(x,y,z); return; }              // breaking an enemy bed (server-verified)
+    if(bw.prefabSet.has(x+','+y+','+z)) return;                 // the island map itself is unbreakable
+  }
   if(isDoor(getBlock(x,y,z))){ breakDoor(x,y,z); return; }   // breaking either half removes the whole door
   if(isBed(getBlock(x,y,z))){ breakBed(x,y,z); return; }     // breaking either cell removes the whole bed
   if(isStair(getBlock(x,y,z))){ stairMeta.delete(dkey(x,y,z)); spRecordStair(x,y,z,null); }
@@ -2808,6 +2823,7 @@ function placeBlock(){
   if(!target) return;
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   const id = hotbar[selSlot]; if(!id) return;
+  if(bw.active){ if(bw.dead) return; if(bwBlockCount(id)<=0) return; }   // bedwars blocks are finite
   const bl = BLOCKS[id];
   if(bl.door){ placeDoor(); return; }                                   // doors place two cells tall
   if(bl.trapdoor){ placeTrapdoor(); return; }                           // trapdoors are a single openable panel
@@ -2835,6 +2851,7 @@ function placeBlock(){
     touchWaterAround(px,py,pz);
   }
   mpSendBlock(px,py,pz,id);
+  if(bw.active){ bw.counts[id]=Math.max(0,(bw.counts[id]||0)-1); renderHotbar(); }   // one bedwars block spent
 }
 function pickBlock(){ if(target){ const b=getBlock(target.x,target.y,target.z); if(b){ hotbar[selSlot]=b; renderHotbar(); showItemName(b); } } }
 
@@ -2950,7 +2967,7 @@ function renderHotbar(){
   for(let i=0;i<9;i++){
     const s=document.createElement('div'); s.className='slot'+(i===selSlot?' sel':'');
     const id=hotbar[i];
-    if(id){ s.appendChild(blockIconCanvas(id,40)); }
+    if(id){ const ic=blockIconCanvas(id,40); if(bw.active){ const n=bw.counts[id]||0; ic.style.opacity=n>0?'1':'0.35'; s.appendChild(ic); const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); } else s.appendChild(ic); }
     hotbarEl.appendChild(s);
   }
 }
@@ -3110,6 +3127,7 @@ function toMenu(){
 
 document.getElementById('playBtn').addEventListener('click', startSingleplayer);
 document.getElementById('mpBtn').addEventListener('click', ()=>startMultiplayer());
+document.getElementById('bwBtn').addEventListener('click', ()=>startBedwars());
 document.getElementById('resumeBtn').addEventListener('click', resume);
 document.getElementById('regenBtn').addEventListener('click', regen);
 document.getElementById('menuBtn').addEventListener('click', toMenu);
@@ -3444,10 +3462,11 @@ function renderTabList(){
 
 function mpUrl(){
   const h = location.hostname || 'localhost';
-  if(h.endsWith('leonzhao.dev')) return 'wss://apps.leonzhao.dev/mc/ws';
-  // local dev: server runs on 8600 (override with ?mp=ws://host:port)
-  const q = new URLSearchParams(location.search).get('mp');
-  return q || ('ws://'+h+':8600/ws');
+  let u;
+  if(h.endsWith('leonzhao.dev')) u = 'wss://apps.leonzhao.dev/mc/ws';
+  else { const q = new URLSearchParams(location.search).get('mp'); u = q || ('ws://'+h+':8600/ws'); }   // local dev override ?mp=ws://host:port
+  if(mp.bw) u += (u.indexOf('?')>=0?'&':'?')+'mode=bw';   // bedwars connects to the same server, separate match
+  return u;
 }
 function mpApplyRemoteBlock(x,y,z,b){
   mpSetOverride(x,y,z,b);
@@ -3498,6 +3517,8 @@ function mpUpdatePlayers(dt){
   }
 }
 function mpHandle(m){
+  if(m.type==='init' && (m.mode==='bw' || bw.active)){ bwInit(m); return; }   // bedwars has its own init/world
+  if(bw.active && bwHandle(m)) return;                                        // bedwars-only messages; others fall through
   if(m.type==='init'){
     mp.id=m.id; mp.name=m.name;
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear();
@@ -3551,6 +3572,7 @@ function mpConnect(){
 }
 function mpSend(o){ if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} } }
 function mpSendBlock(x,y,z,b){
+  if(bw.active){ mpSetOverride(x,y,z,b); mpSend({type:'bwblock',x,y,z,b}); return; }   // bedwars: dynamic edit into the match
   if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); }
   else spRecord(x,y,z,b);   // singleplayer: persist the edit locally
 }
@@ -3563,6 +3585,299 @@ function mpStartWorld(serverSeed){
   startGame();
 }
 function startMultiplayer(){ mpConnect(); }
+
+/* ============================================================ BED WARS === */
+/* A Hypixel-style Bed Wars mode. Connects to the same server with ?mode=bw, which
+   runs a separate authoritative match. The island map is a fixed prefab built
+   locally here (identical on every client) so we never ship it over the wire. */
+const BW_D = 34, BW_Y = 64, BW_VOID = 38;
+const BW_TEAMS = [
+  { id:0, name:'Red',    color:0xd6473b, wool:'red_wool',    bed:'red_bed',    conc:'red_concrete',    dir:[-1,0], facing:3 },
+  { id:1, name:'Blue',   color:0x3b6bd6, wool:'blue_wool',   bed:'blue_bed',   conc:'blue_concrete',   dir:[ 1,0], facing:1 },
+  { id:2, name:'Green',  color:0x46a83a, wool:'lime_wool',   bed:'lime_bed',   conc:'lime_concrete',   dir:[0,-1], facing:0 },
+  { id:3, name:'Yellow', color:0xe0c53a, wool:'yellow_wool', bed:'yellow_bed', conc:'yellow_concrete', dir:[0, 1], facing:2 },
+];
+function bwGeom(t){ const dx=t.dir[0], dz=t.dir[1], cx=dx*BW_D, cz=dz*BW_D;
+  return { cx, cz, bedFoot:{x:cx+dx*3,y:BW_Y+1,z:cz+dz*3}, bedHead:{x:cx+dx*4,y:BW_Y+1,z:cz+dz*4}, gen:{x:cx-dx*2,y:BW_Y+1,z:cz-dz*2}, spawn:{x:cx+0.5,y:BW_Y+1,z:cz+0.5} }; }
+const BW_GEOM = BW_TEAMS.map(bwGeom);
+const BW_DIAMOND = [ {x:-9,z:0}, {x:9,z:0}, {x:0,z:-9}, {x:0,z:9} ];
+const BW_EMERALD = [ {x:0,z:0} ];
+const BW_RESCOL = { iron:0xe4e4e4, gold:0xf4c542, diamond:0x38d9d3, emerald:0x2ecc55 };
+const BW_RESNAME = { iron:'Iron', gold:'Gold', diamond:'Diamond', emerald:'Emerald' };
+let bwMode = false;   // makes chunk generation produce void + prefab instead of terrain
+const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,diamond:0,emerald:0},
+  loadout:{sword:1,armor:1,pick:0,axe:0,shears:false}, beds:[true,true,true,true], teams:[], players:new Map(),
+  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, hotbarIds:[], prefabSet:new Set() };
+function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
+
+function startBedwars(){
+  if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
+  mp.bw = true; bw.active = true; bwMode = true;
+  bwEnsureUi();
+  mpConnect();
+}
+
+// ---- prefab map: write the islands into mpOverrides so streamed chunks show them ----
+function bwPlace(x,y,z,id){ if(id){ mpSetOverride(x,y,z,id); bw.prefabSet.add(x+','+y+','+z); } }
+function bwFill(x0,x1,y,z0,z1,id){ for(let x=x0;x<=x1;x++) for(let z=z0;z<=z1;z++) bwPlace(x,y,z,id); }
+function bwBuildMap(){
+  mpOverrides.clear(); bedMeta.clear(); bw.prefabSet.clear();
+  const endstone=bwId('end_stone'), stone=bwId('stone'), glow=bwId('glowstone');
+  const diamond=bwId('diamond_block'), emerald=bwId('emerald_block'), iron=bwId('iron_block'), gold=bwId('gold_block');
+  for(const t of BW_TEAMS){
+    const g=BW_GEOM[t.id], cx=g.cx, cz=g.cz, wool=bwId(t.wool), conc=bwId(t.conc);
+    bwFill(cx-5,cx+5,BW_Y,cz-5,cz+5, endstone);          // platform
+    bwFill(cx-5,cx+5,BW_Y-1,cz-5,cz+5, endstone);        // thickness
+    for(let x=cx-5;x<=cx+5;x++){ bwPlace(x,BW_Y,cz-5,conc); bwPlace(x,BW_Y,cz+5,conc); }   // team-colour border
+    for(let z=cz-5;z<=cz+5;z++){ bwPlace(cx-5,BW_Y,z,conc); bwPlace(cx+5,BW_Y,z,conc); }
+    bwFill(g.bedFoot.x-1,g.bedFoot.x+1,BW_Y,g.bedFoot.z-1,g.bedFoot.z+1, wool);   // wool patch under bed
+    bwPlace(g.bedHead.x,BW_Y,g.bedHead.z, wool);
+    // the bed itself (two cells) + metadata
+    bwPlace(g.bedFoot.x,BW_Y+1,g.bedFoot.z, bwId(t.bed));
+    bwPlace(g.bedHead.x,BW_Y+1,g.bedHead.z, bwId(t.bed));
+    bedMeta.set(g.bedFoot.x+','+(BW_Y+1)+','+g.bedFoot.z, {facing:t.facing, head:false});
+    bedMeta.set(g.bedHead.x+','+(BW_Y+1)+','+g.bedHead.z, {facing:t.facing, head:true});
+    bwPlace(g.gen.x,BW_Y,g.gen.z, iron);   // base forge: a floor tile; iron/gold spawn just above it
+    bwPlace(g.gen.x,BW_Y-1,g.gen.z, gold);
+  }
+  // centre island: doubles as the lobby (9x9) with the emerald generator on top
+  bwFill(-4,4,BW_Y,-4,4, stone); bwFill(-4,4,BW_Y-1,-4,4, stone);
+  bwPlace(0,BW_Y,0, emerald);
+  for(const d of BW_DIAMOND){ bwFill(d.x-1,d.x+1,BW_Y,d.z-1,d.z+1, endstone); bwPlace(d.x,BW_Y,d.z, diamond); }
+}
+function bwRebuildWorld(){
+  bwBuildMap();
+  for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
+  chunks.clear(); genQueue=[];
+}
+
+// ---- init + message routing ----
+function bwInit(m){
+  bw.active=true; bwMode=true; mp.id=m.id; mp.name=m.name;
+  bw.phase=m.phase; bw.beds=m.beds||[true,true,true,true];
+  bw.team = m.you? m.you.team : null;
+  if(m.you){ bw.hp=m.you.hp; bw.res=m.you.res||bw.res; bw.loadout=m.you.loadout||bw.loadout; }
+  bw.players.clear(); for(const p of (m.players||[])) bw.players.set(p.id, p);
+  mpClearPlayers();
+  bwRebuildWorld();
+  seed = 12345>>>0; noise = makeNoise(seed);   // void generation ignores it, but keep it defined
+  startGame();
+  player.pos.set(0.5, BW_Y+3, 0.5); player.vel.set(0,0,0); player.flying=false; player.hp=100;
+  for(const p of (m.players||[])) mpAddPlayer(p);
+  // items present already
+  bwClearItems(); if(m.items) for(const it of m.items) bwAddItem(it);
+  mpSendSkin();
+  bwCounts_reset();
+  bwSetHotbar();
+  bwEnsureUi(); bwUpdateHud();
+  chatPush('Joined Bed Wars. Press Start when ready.', 'sys');
+}
+// returns true if it handled a bedwars-only message
+function bwHandle(m){
+  switch(m.type){
+    case 'bwstate': bw.phase=m.phase; bw.beds=m.beds||bw.beds; bw.teams=m.teams||bw.teams; bw.countdown=m.countdown||0; bwUpdateHud();
+      if(m.phase==='playing'){ bwHideBanner(); } return true;
+    case 'bwyou': bw.team=m.team; bw.res=m.res||bw.res; bw.loadout=m.loadout||bw.loadout; bw.hp=m.hp!=null?m.hp:bw.hp; player.hp=bw.hp;
+      bwCounts_reset(); bwSetHotbar(); bwUpdateHud(); return true;
+    case 'bwteams': for(const p of (m.players||[])){ const e=bw.players.get(p.id)||{}; Object.assign(e,p); bw.players.set(p.id,e); if(mp.players.get(p.id)) mp.players.get(p.id).team=p.team; } bwUpdateHud(); return true;
+    case 'bwreset': bwRebuildWorld(); bwClearItems(); bwCounts_reset(); bwSetHotbar(); return true;
+    case 'bwblock': bwApplyBlock(m.x,m.y,m.z,m.b); return true;
+    case 'bwbeddown': bw.beds[m.team]=false; { const g=BW_GEOM[m.team]; bwApplyBlock(g.bedFoot.x,g.bedFoot.y,g.bedFoot.z,0); bwApplyBlock(g.bedHead.x,g.bedHead.y,g.bedHead.z,0); }
+      bwBanner((BW_TEAMS[m.team].name.toUpperCase())+' BED DESTROYED', BW_TEAMS[m.team].color, 2600); bwUpdateHud(); return true;
+    case 'bwitem': bwAddItem(m); return true;
+    case 'bwitemgone': bwRemoveItem(m.id); return true;
+    case 'bwres': bw.res=m.res; bwUpdateHud(); return true;
+    case 'bwbuyok': bwOnBuy(m); return true;
+    case 'bwbuyfail': bwFlashShop(m.item, m.reason==='have'?'Already owned':'Not enough resources'); return true;
+    case 'bwhp': { if(m.id===mp.id){ bw.hp=m.hp; player.hp=m.hp; showHurt(); bwUpdateHud(); } const e=bw.players.get(m.id); if(e) e.hp=m.hp; } return true;
+    case 'bwdeath': bwOnDeath(m); return true;
+    case 'bwrespawn': bwOnRespawn(m); return true;
+    case 'bwwin': bwOnWin(m); return true;
+  }
+  return false;
+}
+function bwApplyBlock(x,y,z,b){
+  if(b===0){ const dk=x+','+y+','+z; if(bedMeta.has(dk)) bedMeta.delete(dk); }
+  mpApplyRemoteBlock(x,y,z,b);
+}
+function bwBreakBed(x,y,z){
+  let tm=-1, g=null;
+  for(const t of BW_TEAMS){ const gg=BW_GEOM[t.id]; if((x===gg.bedFoot.x&&y===gg.bedFoot.y&&z===gg.bedFoot.z)||(x===gg.bedHead.x&&y===gg.bedHead.y&&z===gg.bedHead.z)){ tm=t.id; g=gg; break; } }
+  if(tm<0||!g) return;
+  if(tm===bw.team){ chatPush("You can't break your own bed!", 'sys'); return; }
+  mpSend({type:'bwblock', x:g.bedFoot.x, y:g.bedFoot.y, z:g.bedFoot.z, b:0});   // server verifies + broadcasts bwbeddown
+}
+
+// ---- finite blocks / hotbar ----
+function bwCounts_reset(){ bw.counts={}; bw.apples=0; }
+function bwSetHotbar(){
+  const t = bw.team!=null? BW_TEAMS[bw.team] : BW_TEAMS[0];
+  bw.hotbarIds = [ bwId(t.wool), bwId('oak_planks'), bwId('end_stone'), bwId('glass'), bwId('obsidian'), 0,0,0,0 ];
+  for(let i=0;i<9;i++) hotbar[i] = bw.hotbarIds[i];
+  selSlot = 0; renderHotbar();
+}
+function bwBlockCount(id){ return bw.counts[id]||0; }
+function bwGiveBlock(id,n){ bw.counts[id]=(bw.counts[id]||0)+n; renderHotbar(); }
+
+// ---- floating resource items ----
+function bwEnsureItemGroup(){ if(!bw.itemGroup){ bw.itemGroup=new THREE.Group(); scene.add(bw.itemGroup); } }
+function bwClearItems(){ if(bw.itemGroup){ scene.remove(bw.itemGroup); bw.itemGroup=null; } bw.items.clear(); bwEnsureItemGroup(); }
+function bwAddItem(it){
+  bwEnsureItemGroup(); if(bw.items.has(it.id)) return;
+  const geo=new THREE.BoxGeometry(0.35,0.35,0.35);
+  const mat=new THREE.MeshLambertMaterial({ color:BW_RESCOL[it.kind]||0xffffff, emissive:new THREE.Color(BW_RESCOL[it.kind]||0xffffff).multiplyScalar(0.25) });
+  const mesh=new THREE.Mesh(geo,mat); mesh.position.set(it.x, it.y, it.z);
+  bw.itemGroup.add(mesh); bw.items.set(it.id, {mesh, x:it.x, y:it.y, z:it.z, kind:it.kind, t:Math.random()*6.28});
+}
+function bwRemoveItem(id){ const e=bw.items.get(id); if(e){ if(bw.itemGroup) bw.itemGroup.remove(e.mesh); bw.items.delete(id); } }
+function bwUpdateItems(dt){
+  if(!bw.itemGroup) return;
+  for(const [id,e] of bw.items){ e.t+=dt; e.mesh.rotation.y+=dt*2.2; e.mesh.position.y = e.y + Math.sin(e.t*2)*0.09;
+    const dx=e.x-player.pos.x, dz=e.z-player.pos.z, dy=e.y-player.pos.y;
+    if(dx*dx+dz*dz < 1.7*1.7 && Math.abs(dy) < 2.4){ mpSend({type:'bwpickup', id}); }   // server validates + removes
+  }
+}
+
+// ---- combat / death ----
+function bwOnDeath(m){
+  const e=bw.players.get(m.id); if(e){ e.alive=false; e.eliminated=m.eliminated; }
+  if(m.id===mp.id){ bw.dead=true; bw.eliminated=m.eliminated; player.vel.set(0,0,0);
+    if(m.eliminated){ bwBanner('YOU DIED — eliminated', 0xff5555, 4000); bw.res={iron:0,gold:0,diamond:0,emerald:0}; bwCounts_reset(); renderHotbar(); }
+    else bwBanner('YOU DIED — respawning...', 0xffaa33, 5000);
+  }
+  bwUpdateHud();
+}
+function bwOnRespawn(m){
+  const e=bw.players.get(m.id); if(e){ e.alive=true; e.eliminated=false; e.hp=m.hp; }
+  if(m.id===mp.id){ bw.dead=false; bw.hp=m.hp; player.hp=m.hp; player.pos.set(m.x,m.y+0.2,m.z); player.vel.set(0,0,0); player.flying=false; bwHideBanner(); bwUpdateHud(); }
+}
+function bwOnWin(m){
+  bw.phase='ended';
+  const nm = m.team>=0 ? (BW_TEAMS[m.team].name+' team wins!') : 'Game over';
+  bwBanner('🏆 '+nm, m.team>=0?BW_TEAMS[m.team].color:0xffffff, 8000);
+  bwUpdateHud();
+}
+function bwOnBuy(m){
+  bw.res = m.res||bw.res; bw.loadout = m.loadout||bw.loadout;
+  const g = m.give||{};
+  if(g.block){ const nm={ wool:(bw.team!=null?BW_TEAMS[bw.team].wool:'white_wool'), planks:'oak_planks', endstone:'end_stone', glass:'glass', obsidian:'obsidian' }[g.block]; const id=bwId(nm); if(id) bwGiveBlock(id, g.n||1); }
+  if(g.item==='golden_apple') bw.apples++;
+  bwUpdateHud(); bwFlashShop(m.item, 'Purchased!', true);
+}
+function bwEatApple(){ if(bw.apples>0 && bw.hp<100 && !bw.dead){ bw.apples--; mpSend({type:'bweat'}); chatPush('You ate a golden apple.', 'sys'); } }
+
+// ---- void ----
+let bwVoidSent=0;
+function bwCheckVoid(){
+  if(bw.phase!=='playing' || bw.dead) return;
+  if(player.pos.y < BW_VOID && performance.now()-bwVoidSent>1000){ bwVoidSent=performance.now(); mpSend({type:'bwvoid'}); }
+}
+
+// ---- per-frame ----
+function bwFrame(dt){ if(!bw.active) return; bwUpdateItems(dt);
+  if(bw.phase==='playing') bwCheckVoid();
+  else if(player.pos.y < BW_VOID+3){ player.pos.set(0.5, BW_Y+3, 0.5); player.vel.set(0,0,0); }   // don't let players fall out of the lobby
+  bw._hudDue=(bw._hudDue||0)-dt; if(bw._hudDue<=0){ bw._hudDue=0.25; bwUpdateHud(); }
+}
+
+function startBedwarsBtn(){ mpSend({type:'bwstart'}); }
+
+/* ---- Bed Wars UI (HUD + shop), built in JS so it's self-contained ---- */
+const BW_SHOP = [
+  { cat:'Blocks', item:'wool',         name:'Wool',            sub:'×16', cost:{iron:4},    col:'#d64' },
+  { cat:'Blocks', item:'planks',       name:'Wood Planks',     sub:'×16', cost:{gold:4},    col:'#b86' },
+  { cat:'Blocks', item:'endstone',     name:'End Stone',       sub:'×12', cost:{iron:24},   col:'#dda' },
+  { cat:'Blocks', item:'glass',        name:'Glass',           sub:'×4',  cost:{iron:12},   col:'#9cf' },
+  { cat:'Blocks', item:'obsidian',     name:'Obsidian',        sub:'×4',  cost:{emerald:4}, col:'#312' },
+  { cat:'Melee',  item:'sword_stone',  name:'Stone Sword',     sub:'',    cost:{gold:10},   col:'#999' },
+  { cat:'Melee',  item:'sword_iron',   name:'Iron Sword',      sub:'',    cost:{emerald:4}, col:'#ccd' },
+  { cat:'Melee',  item:'sword_diamond',name:'Diamond Sword',   sub:'',    cost:{diamond:6}, col:'#4dd' },
+  { cat:'Armor',  item:'armor_chain',  name:'Chainmail Armor', sub:'perm',cost:{iron:40},   col:'#aab' },
+  { cat:'Armor',  item:'armor_iron',   name:'Iron Armor',      sub:'perm',cost:{gold:12},   col:'#ccd' },
+  { cat:'Armor',  item:'armor_diamond',name:'Diamond Armor',   sub:'perm',cost:{diamond:6}, col:'#4dd' },
+  { cat:'Special',item:'shears',       name:'Shears',          sub:'',    cost:{iron:20},   col:'#bbb' },
+  { cat:'Special',item:'golden_apple', name:'Golden Apple',    sub:'heal',cost:{gold:3},    col:'#fd4' },
+];
+const BW_CATS = ['Blocks','Melee','Armor','Special'];
+let bwUiBuilt=false, bwShopOpen=false, bwShopCat='Blocks', bwBannerTimer=0;
+function bwEnsureUi(){
+  if(bwUiBuilt) return; bwUiBuilt=true;
+  const css=document.createElement('style'); css.textContent=`
+   #bwHud{position:fixed;inset:0;z-index:14;pointer-events:none;font-family:inherit}
+   #bwBeds{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
+   #bwBeds .bt{display:flex;align-items:center;gap:5px;background:rgba(0,0,0,.5);border-radius:6px;padding:3px 8px;font-size:13px;font-weight:700;color:#fff}
+   #bwBeds .sq{width:11px;height:11px;border-radius:2px;display:inline-block}
+   #bwRes{position:absolute;left:12px;bottom:96px;display:flex;flex-direction:column;gap:5px}
+   #bwRes .r{display:flex;align-items:center;gap:7px;background:rgba(0,0,0,.5);border-radius:6px;padding:3px 9px;font-size:15px;font-weight:800;color:#fff;min-width:64px}
+   #bwRes .d{width:12px;height:12px;border-radius:50%}
+   #bwHealth{position:absolute;left:50%;bottom:66px;transform:translateX(-50%);font-size:17px;letter-spacing:1px;text-shadow:0 1px 2px #000}
+   #bwBanner{position:absolute;top:34%;left:50%;transform:translateX(-50%);text-align:center;font-size:34px;font-weight:900;color:#fff;text-shadow:0 2px 8px #000;display:none;pointer-events:none}
+   #bwLobby{position:absolute;top:26%;left:50%;transform:translateX(-50%);text-align:center;background:rgba(0,0,0,.72);border:1px solid #555;border-radius:12px;padding:20px 28px;pointer-events:auto;display:none}
+   #bwLobby h2{margin:0 0 6px;font-size:24px;color:#ffd54a} #bwLobby p{margin:4px 0 14px;color:#cfd6dc;font-size:14px}
+   #bwLobby button{font:inherit;font-weight:800;font-size:16px;background:#3aa03a;color:#fff;border:none;border-radius:8px;padding:10px 26px;cursor:pointer}
+   #bwLobby button:hover{background:#46b846}
+   #bwHint{position:absolute;right:12px;bottom:96px;background:rgba(0,0,0,.5);border-radius:6px;padding:5px 10px;color:#cfd6dc;font-size:12px}
+   #bwShop .sp{background:#2b2f36;border:1px solid #555;border-radius:12px;width:min(760px,94vw);max-height:88vh;overflow:auto;padding:16px 18px;color:#eee}
+   #bwShop h2{margin:0 0 4px;font-size:20px}
+   #bwShopTabs{display:flex;gap:6px;margin:10px 0}
+   #bwShopTabs button{font:inherit;font-weight:700;font-size:13px;background:#3a3f47;color:#ddd;border:1px solid #555;border-radius:7px;padding:6px 14px;cursor:pointer}
+   #bwShopTabs button.on{background:#2f83d6;border-color:#2f83d6;color:#fff}
+   #bwShopGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+   .bwCard{background:#3a3f47;border:1px solid #555;border-radius:9px;padding:12px;text-align:center;cursor:pointer;transition:.1s}
+   .bwCard:hover{border-color:#2f83d6;transform:translateY(-1px)}
+   .bwCard .ic{width:38px;height:38px;border-radius:7px;margin:0 auto 7px;border:2px solid rgba(255,255,255,.2)}
+   .bwCard .nm{font-weight:700;font-size:13.5px} .bwCard .sub{font-size:11px;color:#9aa}
+   .bwCard .cost{margin-top:7px;font-weight:800;font-size:13px}
+   .bwCard .msg{font-size:11px;height:12px;margin-top:3px;color:#8f8}
+  `;
+  document.head.appendChild(css);
+  const hud=document.createElement('div'); hud.id='bwHud';
+  hud.innerHTML='<div id="bwBeds"></div><div id="bwRes"></div><div id="bwHealth"></div><div id="bwHint">Shop: <b>B</b> · Eat apple: <b>G</b></div>'+
+    '<div id="bwBanner"></div><div id="bwLobby"><h2>Bed Wars</h2><p id="bwLobbyP">Waiting for players…</p><button id="bwStartBtn">Start match</button></div>';
+  document.body.appendChild(hud);
+  document.getElementById('bwStartBtn').addEventListener('click', ()=>{ startBedwarsBtn(); });
+  const shop=document.createElement('div'); shop.className='screen'; shop.id='bwShop'; shop.hidden=true;
+  shop.innerHTML='<div class="sp"><h2>🛒 Item Shop</h2><div style="font-size:12px;color:#9aa">Buy with the resources your generators make.</div><div id="bwShopTabs"></div><div id="bwShopGrid"></div></div>';
+  document.body.appendChild(shop);
+  const tabs=document.getElementById('bwShopTabs');
+  for(const c of BW_CATS){ const b=document.createElement('button'); b.textContent=c; b.onclick=()=>{ bwShopCat=c; bwRenderShop(); }; tabs.appendChild(b); }
+  shop.addEventListener('click',(e)=>{ if(e.target===shop) bwToggleShop(); });
+}
+function bwHealthStr(){ const h=Math.max(0,Math.min(100,bw.hp||0)); const full=Math.round(h/10); let s=''; for(let i=0;i<10;i++) s+= i<full?'❤':'🖤'; return s; }
+function bwUpdateHud(){
+  if(!bwUiBuilt) return;
+  const beds=document.getElementById('bwBeds');
+  beds.innerHTML = BW_TEAMS.map(t=>{ const alive=bw.beds[t.id]; const mine=t.id===bw.team;
+    return '<div class="bt"><span class="sq" style="background:#'+t.color.toString(16).padStart(6,'0')+'"></span>'+(alive?'🛏️':'❌')+(mine?' <span style="color:#ffd54a">YOU</span>':'')+'</div>'; }).join('');
+  const res=document.getElementById('bwRes');
+  res.innerHTML = ['iron','gold','diamond','emerald'].map(k=>'<div class="r"><span class="d" style="background:#'+BW_RESCOL[k].toString(16).padStart(6,'0')+'"></span>'+(bw.res[k]||0)+'</div>').join('');
+  document.getElementById('bwHealth').innerHTML = bw.phase==='playing' && !bw.eliminated ? bwHealthStr() : '';
+  const lobby=document.getElementById('bwLobby'); const p=document.getElementById('bwLobbyP');
+  if(bw.phase==='lobby'){ lobby.style.display='block'; p.textContent = 'Press Start to begin (bots not included — grab a friend!).'; }
+  else if(bw.phase==='countdown'){ lobby.style.display='block'; p.textContent = 'Starting in '+(bw.countdown||0)+'…'; document.getElementById('bwStartBtn').style.display='none'; }
+  else { lobby.style.display='none'; }
+}
+function bwBanner(text,color,ms){ if(!bwUiBuilt) return; const b=document.getElementById('bwBanner'); b.textContent=text; b.style.color='#'+((color||0xffffff).toString(16).padStart(6,'0')); b.style.display='block'; clearTimeout(bwBannerTimer); bwBannerTimer=setTimeout(()=>{ b.style.display='none'; }, ms||2500); }
+function bwHideBanner(){ if(!bwUiBuilt) return; document.getElementById('bwBanner').style.display='none'; }
+function bwCostStr(cost){ return Object.entries(cost).map(([k,v])=>'<span style="color:#'+BW_RESCOL[k].toString(16).padStart(6,'0')+'">'+v+' '+BW_RESNAME[k]+'</span>').join(' '); }
+function bwRenderShop(){
+  const tabs=document.getElementById('bwShopTabs'); [...tabs.children].forEach(b=> b.classList.toggle('on', b.textContent===bwShopCat));
+  const grid=document.getElementById('bwShopGrid'); grid.innerHTML='';
+  for(const it of BW_SHOP){ if(it.cat!==bwShopCat) continue;
+    const card=document.createElement('div'); card.className='bwCard'; card.dataset.item=it.item;
+    card.innerHTML='<div class="ic" style="background:'+it.col+'"></div><div class="nm">'+it.name+'</div><div class="sub">'+(it.sub||'&nbsp;')+'</div><div class="cost">'+bwCostStr(it.cost)+'</div><div class="msg"></div>';
+    card.onclick=()=>{ mpSend({type:'bwbuy', item:it.item}); };
+    grid.appendChild(card);
+  }
+}
+function bwFlashShop(item, msg, good){ const grid=document.getElementById('bwShopGrid'); if(!grid) return; const card=[...grid.children].find(c=>c.dataset.item===item); if(card){ const m=card.querySelector('.msg'); m.textContent=msg; m.style.color= good?'#8f8':'#f88'; setTimeout(()=>{ if(m.textContent===msg) m.textContent=''; }, 1400); } }
+function bwToggleShop(){
+  if(!bw.active || bw.dead) return;
+  bwShopOpen=!bwShopOpen; const el=document.getElementById('bwShop'); el.hidden=!bwShopOpen;
+  if(bwShopOpen){ bwRenderShop(); try{ document.exitPointerLock(); }catch(e){} }
+  else if(state===PLAY){ try{ canvas.requestPointerLock(); }catch(e){} }
+}
+
 
 /* ---------------------------------------------------------------- chat --- */
 const chatLogEl=document.getElementById('chatLog');
@@ -3627,7 +3942,7 @@ function frame(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
 
   if(state===PLAY){
-    if(!invOpen && chatBox.hidden && !sleep.active && !sit.active) updatePlayer(dt);   // freeze while picker/chat/sleep/sitting
+    if(!invOpen && chatBox.hidden && !sleep.active && !sit.active && !bwShopOpen) updatePlayer(dt);   // freeze while picker/chat/sleep/sitting/shopping
     { const ccx=Math.floor(player.pos.x/CH), ccz=Math.floor(player.pos.z/CH);   // rescan chunks only when you cross into a new one
       if(ccx!==lastCX || ccz!==lastCZ){ lastCX=ccx; lastCZ=ccz; ensureChunks(player.pos.x, player.pos.z); } }
     processQueues(player.pos.x, player.pos.z);
@@ -3635,6 +3950,7 @@ function frame(now){
     if(!mp.active) tickWater(dt);        // water/gravity stay client-side in singleplayer
     updateMobs(dt);
     mpUpdatePlayers(dt);
+    if(bw.active) bwFrame(dt);
     if(mp.active){                       // stream position, but only when it changes (idle heartbeat ~1 Hz)
       const nowMs=performance.now();
       if(nowMs-mp.lastPos>66){
@@ -3809,7 +4125,14 @@ window.__mc = {
   search(q){ invQuery=q; invSearch.value=q; renderInvGrid(); },
   setCat(c){ invCat=c; invQuery=''; invSearch.value=''; buildInv(); },
   invCount(){ return invGrid.children.length; },
-  openInv(){ if(!invOpen) toggleInv(); }, closeInv(){ if(invOpen) toggleInv(); }
+  openInv(){ if(!invOpen) toggleInv(); }, closeInv(){ if(invOpen) toggleInv(); },
+  // ---- bedwars test hooks ----
+  bwStart(){ startBedwars(); }, bwBegin(){ startBedwarsBtn(); },
+  bwState(){ return { active:bw.active, phase:bw.phase, team:bw.team, hp:bw.hp, res:bw.res, beds:bw.beds, items:bw.items.size, counts:Object.assign({},bw.counts), apples:bw.apples, pos:[+player.pos.x.toFixed(1),+player.pos.y.toFixed(1),+player.pos.z.toFixed(1)], prefab:bw.prefabSet.size, dead:bw.dead }; },
+  bwBuy(item){ mpSend({type:'bwbuy', item}); }, bwToggleShop(){ bwToggleShop(); return bwShopOpen; },
+  bwHitId(vid){ const p=mp.players.get(vid); if(!p) return false; let dx=p.x-player.pos.x, dz=p.z-player.pos.z; const len=Math.hypot(dx,dz)||1; mpSend({type:'bwhit', target:vid, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)}); return true; },
+  bwBlockAt(x,y,z){ return getBlock(x,y,z); }, bwGeom(t){ return BW_GEOM[t]; },
+  bwGive(name,n){ const id=BLOCKS[name]&&BLOCKS[name].id; if(id){ bw.counts[id]=(bw.counts[id]||0)+(n||16); renderHotbar(); } }
 };
 </script>
 </body>
