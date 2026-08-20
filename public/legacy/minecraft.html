@@ -2257,6 +2257,7 @@ function comboKeys(){ const c=(binds.cameraCombo||'').split('+').map(s=>s.trim()
 function comboLabel(){ const c=comboKeys(); return c? c.map(keyLabel).join(' + ') : '—'; }
 // context-sensitive "use" (right-click by default): open a door/bed/sign, otherwise place
 function useAction(){
+  if(bw.active){ bwUseAction(); return; }   // Bed Wars: right-click = shop villager / eat apple / place block
   const tb = target && getBlock(target.x,target.y,target.z);
   if(target && isDoor(tb)) toggleDoor(target.x,target.y,target.z);
   else if(target && isTrapdoor(tb)) toggleTrapdoor(target.x,target.y,target.z);   // right-click opens/closes
@@ -2267,12 +2268,12 @@ function useAction(){
 }
 // discrete actions fire once per press, from either a key (keydown) or a mouse button (mousedown)
 const pd = e=>{ if(e && e.preventDefault) e.preventDefault(); };
-const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !sit.active && !signEditPos && !bwShopOpen;
+const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !sit.active && !signEditPos && !bwShopOpen && !bwInvOpen;
 const DISCRETE_RUN = {
   inventory: e=>{ if(state===PLAY){ pd(e); toggleInv(); } },
   chat:      e=>{ if(state===PLAY && !invOpen){ pd(e); openChat(); } },
   debug:     e=>{ pd(e); dbg.hidden=!dbg.hidden; },
-  fly:       e=>{ if(creative && state===PLAY){ player.flying=!player.flying; player.vel.y=0; flyToggledThisPress=true; } },
+  fly:       e=>{ if(creative && state===PLAY && !bw.active){ player.flying=!player.flying; player.vel.y=0; flyToggledThisPress=true; } },
   camera:    e=>{ if(state===PLAY){ pd(e); camMode=(camMode+1)%3; } },
   attack:    e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); breakBlock(); } },
   use:       e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },
@@ -2310,7 +2311,7 @@ addEventListener('keydown', e=>{
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } }   // Bed Wars: shop + eat apple
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false;
   const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
@@ -2322,7 +2323,7 @@ addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=fals
 let lastSpace=0;
 addEventListener('keydown', e=>{
   if(e.repeat) return;   // holding jump to fly up auto-repeats keydown; those aren't taps, so don't let them toggle fly
-  if(!bindListening && e.key.toLowerCase()===binds.jump && creative && state===PLAY){
+  if(!bindListening && e.key.toLowerCase()===binds.jump && creative && state===PLAY && !bw.active){
     const now=performance.now();
     if(now-lastSpace<300){ player.flying=!player.flying; player.vel.y=0; }
     lastSpace=now;
@@ -2354,7 +2355,7 @@ canvas.addEventListener('wheel', e=>{
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = document.pointerLockElement===canvas;
   // don't pop the pause menu when we released the lock on purpose to type in chat
-  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen) pause();
+  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen && !bwInvOpen) pause();
 });
 document.addEventListener('mousemove', e=>{
   if(!pointerLocked) return;
@@ -2966,8 +2967,15 @@ function renderHotbar(){
   hotbarEl.innerHTML='';
   for(let i=0;i<9;i++){
     const s=document.createElement('div'); s.className='slot'+(i===selSlot?' sel':'');
-    const id=hotbar[i];
-    if(id){ const ic=blockIconCanvas(id,40); if(bw.active){ const n=bw.counts[id]||0; ic.style.opacity=n>0?'1':'0.35'; s.appendChild(ic); const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); } else s.appendChild(ic); }
+    if(bw.active){
+      const st=bw.slots[i];
+      if(st){ const ic=bwItemIcon(st,40);
+        let n=null; if(st.kind==='block') n=bw.counts[st.id]||0; else if(st.kind==='apple') n=bw.apples;
+        if(st.kind==='block') ic.style.opacity=(n>0)?'1':'0.4';
+        s.appendChild(ic);
+        if(n!=null && (n>1 || st.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); }
+      }
+    } else { const id=hotbar[i]; if(id) s.appendChild(blockIconCanvas(id,40)); }
     hotbarEl.appendChild(s);
   }
 }
@@ -3053,6 +3061,7 @@ invSearch.addEventListener('input', ()=>{
   renderInvGrid();
 });
 function toggleInv(){
+  if(bw.active){ bwToggleInv(); return; }   // Bed Wars uses a survival inventory, never the creative picker
   invOpen=!invOpen; invEl.hidden=!invOpen;
   if(invOpen){ for(const kk in keys) keys[kk]=false; document.exitPointerLock(); }
   else if(state===PLAY){ canvas.requestPointerLock(); }
@@ -3591,15 +3600,16 @@ function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(type
 /* A Hypixel-style Bed Wars mode. Connects to the same server with ?mode=bw, which
    runs a separate authoritative match. The island map is a fixed prefab built
    locally here (identical on every client) so we never ship it over the wire. */
-const BW_D = 34, BW_Y = 64, BW_VOID = 38;
+const BW_D = 34, BW_Y = 64, BW_VOID = 50;
 const BW_TEAMS = [
   { id:0, name:'Red',    color:0xd6473b, wool:'red_wool',    bed:'red_bed',    conc:'red_concrete',    dir:[-1,0], facing:3 },
   { id:1, name:'Blue',   color:0x3b6bd6, wool:'blue_wool',   bed:'blue_bed',   conc:'blue_concrete',   dir:[ 1,0], facing:1 },
   { id:2, name:'Green',  color:0x46a83a, wool:'lime_wool',   bed:'lime_bed',   conc:'lime_concrete',   dir:[0,-1], facing:0 },
   { id:3, name:'Yellow', color:0xe0c53a, wool:'yellow_wool', bed:'yellow_bed', conc:'yellow_concrete', dir:[0, 1], facing:2 },
 ];
-function bwGeom(t){ const dx=t.dir[0], dz=t.dir[1], cx=dx*BW_D, cz=dz*BW_D;
-  return { cx, cz, bedFoot:{x:cx+dx*3,y:BW_Y+1,z:cz+dz*3}, bedHead:{x:cx+dx*4,y:BW_Y+1,z:cz+dz*4}, gen:{x:cx-dx*2,y:BW_Y+1,z:cz-dz*2}, spawn:{x:cx+0.5,y:BW_Y+1,z:cz+0.5} }; }
+function bwGeom(t){ const dx=t.dir[0], dz=t.dir[1], cx=dx*BW_D, cz=dz*BW_D, px=dz, pz=-dx;   // px,pz = perpendicular to the team's direction
+  return { cx, cz, bedFoot:{x:cx+dx*3,y:BW_Y+1,z:cz+dz*3}, bedHead:{x:cx+dx*4,y:BW_Y+1,z:cz+dz*4}, gen:{x:cx-dx*2,y:BW_Y+1,z:cz-dz*2}, spawn:{x:cx+0.5,y:BW_Y+1,z:cz+0.5},
+           shop:{x:cx+px*3,y:BW_Y+1,z:cz+pz*3}, upgrade:{x:cx-px*3,y:BW_Y+1,z:cz-pz*3} }; }
 const BW_GEOM = BW_TEAMS.map(bwGeom);
 const BW_DIAMOND = [ {x:-9,z:0}, {x:9,z:0}, {x:0,z:-9}, {x:0,z:9} ];
 const BW_EMERALD = [ {x:0,z:0} ];
@@ -3608,7 +3618,7 @@ const BW_RESNAME = { iron:'Iron', gold:'Gold', diamond:'Diamond', emerald:'Emera
 let bwMode = false;   // makes chunk generation produce void + prefab instead of terrain
 const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,diamond:0,emerald:0},
   loadout:{sword:1,armor:1,pick:0,axe:0,shears:false}, beds:[true,true,true,true], teams:[], players:new Map(),
-  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, hotbarIds:[], prefabSet:new Set() };
+  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, slots:[], prefabSet:new Set(), villagers:[] };
 function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
@@ -3618,7 +3628,7 @@ function startBedwars(){
   mpConnect();
 }
 function bwEnterUi(){ bwEnsureUi(); const h=document.getElementById('bwHud'); if(h) h.style.display=''; }
-function bwLeaveUi(){ const h=document.getElementById('bwHud'); if(h) h.style.display='none'; const s=document.getElementById('bwShop'); if(s) s.hidden=true; bwShopOpen=false; }
+function bwLeaveUi(){ const h=document.getElementById('bwHud'); if(h) h.style.display='none'; const s=document.getElementById('bwShop'); if(s) s.hidden=true; const iv=document.getElementById('bwInv'); if(iv) iv.hidden=true; bwShopOpen=false; bwInvOpen=false; if(typeof bwClearVillagers==='function') bwClearVillagers(); }
 
 // ---- prefab map: write the islands into mpOverrides so streamed chunks show them ----
 function bwPlace(x,y,z,id){ if(id){ mpSetOverride(x,y,z,id); bw.prefabSet.add(x+','+y+','+z); } }
@@ -3652,6 +3662,7 @@ function bwRebuildWorld(){
   bwBuildMap();
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
+  bwSpawnVillagers();
 }
 
 // ---- init + message routing ----
@@ -3713,14 +3724,54 @@ function bwBreakBed(x,y,z){
 
 // ---- finite blocks / hotbar ----
 function bwCounts_reset(){ bw.counts={}; bw.apples=0; }
+// build the survival hotbar: sword, the 5 buyable blocks (with counts), then tools + apples
 function bwSetHotbar(){
-  const t = bw.team!=null? BW_TEAMS[bw.team] : BW_TEAMS[0];
-  bw.hotbarIds = [ bwId(t.wool), bwId('oak_planks'), bwId('end_stone'), bwId('glass'), bwId('obsidian'), 0,0,0,0 ];
-  for(let i=0;i<9;i++) hotbar[i] = bw.hotbarIds[i];
-  selSlot = 0; renderHotbar();
+  const wool = bw.team!=null? BW_TEAMS[bw.team].wool : 'white_wool';
+  const s = new Array(9).fill(null);
+  s[0] = { kind:'sword', tier:bw.loadout.sword||1 };
+  s[1] = { kind:'block', name:wool, id:bwId(wool) };
+  s[2] = { kind:'block', name:'oak_planks', id:bwId('oak_planks') };
+  s[3] = { kind:'block', name:'end_stone', id:bwId('end_stone') };
+  s[4] = { kind:'block', name:'glass', id:bwId('glass') };
+  s[5] = { kind:'block', name:'obsidian', id:bwId('obsidian') };
+  let k=6;
+  if(bw.loadout.pick>0 && k<9) s[k++]={ kind:'tool', tool:'pick', tier:bw.loadout.pick };
+  if(bw.loadout.axe>0 && k<9)  s[k++]={ kind:'tool', tool:'axe',  tier:bw.loadout.axe };
+  if(bw.loadout.shears && k<9) s[k++]={ kind:'tool', tool:'shears' };
+  if(bw.apples>0 && k<9)       s[k++]={ kind:'apple' };
+  bw.slots = s;
+  for(let i=0;i<9;i++) hotbar[i] = (s[i] && s[i].kind==='block') ? s[i].id : 0;
+  if(selSlot<0||selSlot>8) selSlot=0;
+  renderHotbar(); if(bwInvOpen) bwBuildInvScreen();
 }
 function bwBlockCount(id){ return bw.counts[id]||0; }
-function bwGiveBlock(id,n){ bw.counts[id]=(bw.counts[id]||0)+n; renderHotbar(); }
+function bwGiveBlock(id,n){ bw.counts[id]=(bw.counts[id]||0)+n; renderHotbar(); if(bwInvOpen) bwBuildInvScreen(); }
+
+// ---- item icons (drawn, since this game only has block textures) ----
+function bwItemIcon(stack, size){
+  if(!stack) { const c=document.createElement('canvas'); c.width=c.height=size; return c; }
+  if(stack.kind==='block') return blockIconCanvas(stack.id, size);
+  const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); const u=size/16;
+  const R=(x,y,w,h,col)=>{ g.fillStyle=col; g.fillRect(x*u,y*u,w*u,h*u); };
+  if(stack.kind==='sword'){
+    const blade=['#8a5a2b','#b7b7b7','#dcdcdc','#f2f2f2','#8fe9ff'][stack.tier]||'#b7b7b7';
+    // hilt bottom-left, blade top-right (diagonal)
+    R(3,11,2,2,'#6b4a2a'); R(4,10,2,2,'#6b4a2a'); R(3,10,3,1,'#caa15a');           // handle + guard
+    for(let i=0;i<7;i++){ R(6+i,10-i,2,2,blade); }                                    // blade
+    R(12,3,1,1,'#ffffff');
+  } else if(stack.kind==='tool' && stack.tool==='pick'){
+    R(3,11,2,2,'#6b4a2a'); R(4,9,2,2,'#6b4a2a'); R(5,7,2,2,'#6b4a2a');               // handle
+    R(3,5,10,2,'#c9c9c9'); R(3,6,1,2,'#c9c9c9'); R(12,6,1,2,'#c9c9c9');              // head
+  } else if(stack.kind==='tool' && stack.tool==='axe'){
+    R(4,11,2,2,'#6b4a2a'); R(5,9,2,2,'#6b4a2a'); R(6,7,2,2,'#6b4a2a');
+    R(6,3,5,5,'#c9c9c9'); R(5,4,1,3,'#c9c9c9');
+  } else if(stack.kind==='tool' && stack.tool==='shears'){
+    R(4,4,3,3,'#dcdcdc'); R(9,4,3,3,'#dcdcdc'); R(6,7,4,4,'#9aa'); R(7,10,2,3,'#6b4a2a');
+  } else if(stack.kind==='apple'){
+    R(5,4,6,2,'#c62828'); R(4,6,8,6,'#e53935'); R(5,12,6,1,'#c62828'); R(8,2,1,3,'#5d4037'); R(9,3,2,1,'#2e7d32');
+  }
+  return c;
+}
 
 // ---- floating resource items ----
 function bwEnsureItemGroup(){ if(!bw.itemGroup){ bw.itemGroup=new THREE.Group(); scene.add(bw.itemGroup); } }
@@ -3744,9 +3795,11 @@ function bwUpdateItems(dt){
 // ---- combat / death ----
 function bwOnDeath(m){
   const e=bw.players.get(m.id); if(e){ e.alive=false; e.eliminated=m.eliminated; }
-  if(m.id===mp.id){ bw.dead=true; bw.eliminated=m.eliminated; player.vel.set(0,0,0);
-    if(m.eliminated){ bwBanner('YOU DIED — eliminated', 0xff5555, 4000); bw.res={iron:0,gold:0,diamond:0,emerald:0}; bwCounts_reset(); renderHotbar(); }
-    else bwBanner('YOU DIED — respawning...', 0xffaa33, 5000);
+  if(m.id===mp.id){ bw.dead=true; bw.eliminated=m.eliminated; player.vel.set(0,0,0); player.flying=true;   // freeze; don't keep falling
+    if(player.pos.y < BW_Y+2) player.pos.y = BW_Y+8;
+    if(bwInvOpen) bwToggleInv(); if(bwShopOpen) bwToggleShop();
+    if(m.eliminated){ bwBanner('YOU DIED — eliminated (spectating)', 0xff5555, 5000); bw.res={iron:0,gold:0,diamond:0,emerald:0}; bwCounts_reset(); bwSetHotbar(); }
+    else bwBanner('YOU DIED — respawning…', 0xffaa33, 5000);
   }
   bwUpdateHud();
 }
@@ -3773,7 +3826,9 @@ function bwEatApple(){ if(bw.apples>0 && bw.hp<100 && !bw.dead){ bw.apples--; mp
 let bwVoidSent=0;
 function bwCheckVoid(){
   if(bw.phase!=='playing' || bw.dead) return;
-  if(player.pos.y < BW_VOID && performance.now()-bwVoidSent>1000){ bwVoidSent=performance.now(); mpSend({type:'bwvoid'}); }
+  if(player.pos.y < BW_VOID){ bwVoidSent=performance.now(); bw.dead=true;   // die the instant you drop past the void line
+    player.vel.set(0,0,0); player.flying=true; player.pos.y=BW_Y+8;          // stop the fall immediately; hover until respawn
+    mpSend({type:'bwvoid'}); bwBanner('YOU DIED', 0xff5555, 4500); }
 }
 
 // ---- per-frame ----
@@ -3802,7 +3857,7 @@ const BW_SHOP = [
   { cat:'Special',item:'golden_apple', name:'Golden Apple',    sub:'heal',cost:{gold:3},    col:'#fd4' },
 ];
 const BW_CATS = ['Blocks','Melee','Armor','Special'];
-let bwUiBuilt=false, bwShopOpen=false, bwShopCat='Blocks', bwBannerTimer=0;
+let bwUiBuilt=false, bwShopOpen=false, bwShopCat='Blocks', bwBannerTimer=0, bwInvOpen=false;
 function bwEnsureUi(){
   if(bwUiBuilt) return; bwUiBuilt=true;
   const css=document.createElement('style'); css.textContent=`
@@ -3832,10 +3887,22 @@ function bwEnsureUi(){
    .bwCard .nm{font-weight:700;font-size:13.5px} .bwCard .sub{font-size:11px;color:#9aa}
    .bwCard .cost{margin-top:7px;font-weight:800;font-size:13px}
    .bwCard .msg{font-size:11px;height:12px;margin-top:3px;color:#8f8}
+   #bwInv .bwinvp{background:#c6c6c6;border:3px solid #565656;border-radius:7px;width:min(430px,92vw);padding:12px 14px;color:#222;font-family:'Segoe UI',sans-serif}
+   #bwInv .bwih{font-size:16px;font-weight:800;margin-bottom:8px;color:#3a3a3a} #bwInv .bwih span{font-weight:400;font-size:12px;color:#777}
+   #bwInv .bwinvtop{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px}
+   #bwInv .bwarmor{display:flex;flex-direction:column;gap:4px}
+   #bwInv .bwprev{flex:1;min-height:154px;background:#8b8b8b;border:1px solid #565656;border-radius:4px;display:flex;align-items:center;justify-content:center;text-align:center;color:#eee;font-size:13px;font-weight:700}
+   #bwInv .bwcraft{display:grid;grid-template-columns:repeat(2,40px);gap:4px}
+   #bwInv .bwcraft .res{grid-column:1/3;width:auto}
+   #bwInv .bwlbl{font-size:11px;color:#555;margin:6px 0 3px;font-weight:700}
+   #bwInv .bwgrid{display:grid;grid-template-columns:repeat(9,40px);gap:4px}
+   #bwInv .bwislot{width:40px;height:40px;background:#8b8b8b;border:2px solid #6f6f6f;border-radius:3px;position:relative;display:flex;align-items:center;justify-content:center}
+   #bwInv .bwislot.sel{border-color:#fff}
+   #bwInv .bwislot .cnt{position:absolute;right:2px;bottom:0;font-size:12px;font-weight:800;color:#fff;text-shadow:1px 1px 0 #000}
   `;
   document.head.appendChild(css);
   const hud=document.createElement('div'); hud.id='bwHud';
-  hud.innerHTML='<div id="bwBeds"></div><div id="bwRes"></div><div id="bwHealth"></div><div id="bwHint">Shop: <b>B</b> · Eat apple: <b>G</b></div>'+
+  hud.innerHTML='<div id="bwBeds"></div><div id="bwRes"></div><div id="bwHealth"></div><div id="bwHint">Shop: right-click the <b>villager</b> · Inventory: <b>E</b> · Eat apple: <b>G</b></div>'+
     '<div id="bwBanner"></div><div id="bwLobby"><h2>Bed Wars</h2><p id="bwLobbyP">Waiting for players…</p><button id="bwStartBtn">Start match</button></div>';
   document.body.appendChild(hud);
   document.getElementById('bwStartBtn').addEventListener('click', ()=>{ startBedwarsBtn(); });
@@ -3877,8 +3944,86 @@ function bwFlashShop(item, msg, good){ const grid=document.getElementById('bwSho
 function bwToggleShop(){
   if(!bw.active || bw.dead) return;
   bwShopOpen=!bwShopOpen; const el=document.getElementById('bwShop'); el.hidden=!bwShopOpen;
-  if(bwShopOpen){ bwRenderShop(); try{ document.exitPointerLock(); }catch(e){} }
+  if(bwShopOpen){ if(bwInvOpen) bwToggleInv(); bwRenderShop(); try{ document.exitPointerLock(); }catch(e){} }
   else if(state===PLAY){ try{ canvas.requestPointerLock(); }catch(e){} }
+}
+
+/* ---- shop villager at each base (right-click it to open the shop) ---- */
+function bwMakeVillager(color){
+  const g=new THREE.Group();
+  const robe=new THREE.MeshLambertMaterial({color:0x8a6a45}), skin=new THREE.MeshLambertMaterial({color:0xcaa06a}), apron=new THREE.MeshLambertMaterial({color:color||0x4a7a34});
+  const mk=(w,h,d,mat,x,y,z)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x,y,z); g.add(m); return m; };
+  mk(0.6,0.85,0.34,robe,0,0.9,0);            // body
+  mk(0.52,0.5,0.36,apron,0,0.78,0.01);       // apron
+  mk(0.5,0.5,0.5,skin,0,1.55,0);             // head
+  mk(0.14,0.3,0.2,skin,0,1.5,0.33);          // big villager nose
+  mk(0.15,0.55,0.28,robe,-0.37,0.95,0.05); mk(0.15,0.55,0.28,robe,0.37,0.95,0.05);  // arms
+  mk(0.22,0.5,0.28,robe,-0.14,0.25,0); mk(0.22,0.5,0.28,robe,0.14,0.25,0);          // legs
+  return g;
+}
+function bwClearVillagers(){ for(const v of bw.villagers){ if(v.model) scene.remove(v.model); if(v.tag) scene.remove(v.tag); } bw.villagers=[]; }
+function bwSpawnVillagers(){
+  bwClearVillagers();
+  for(const t of BW_TEAMS){ const g=BW_GEOM[t.id], sp=g.shop;
+    const model=bwMakeVillager(t.color); model.position.set(sp.x+0.5, sp.y, sp.z+0.5); model.rotation.y=Math.atan2(g.cx-sp.x, g.cz-sp.z);
+    const tag=makeNametag('SHOP'); tag.position.set(sp.x+0.5, sp.y+2.15, sp.z+0.5);
+    scene.add(model); scene.add(tag);
+    bw.villagers.push({ model, tag, kind:'shop' });
+  }
+}
+function bwUseVillager(){
+  if(!bw.villagers.length) return false;
+  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z);
+  mobRay.set(o, camDir()); mobRay.far=4.5;
+  const hits=mobRay.intersectObjects(bw.villagers.map(v=>v.model), true);
+  if(!hits.length) return false;
+  let node=hits[0].object, v=null; while(node){ const f=bw.villagers.find(vv=>vv.model===node); if(f){ v=f; break; } node=node.parent; }
+  if(!v) return false;
+  if(v.kind==='shop' && !bwShopOpen) bwToggleShop();
+  return true;
+}
+function bwUseAction(){
+  if(bw.dead) return;
+  if(bwUseVillager()) return;                 // right-click the shopkeeper
+  const s=bw.slots[selSlot];
+  if(s && s.kind==='apple'){ bwEatApple(); return; }
+  placeBlock();                               // otherwise place the selected block
+}
+
+/* ---- survival inventory screen (replaces the creative block picker in Bed Wars) ---- */
+function bwArmorIcon(piece,tier){
+  const size=34, c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'), u=size/16;
+  const col=['','#8a5a3c','#8f8f8f','#d3d3d3','#57e0d8'][tier]||'#8f8f8f';
+  const R=(x,y,w,h)=>{ g.fillStyle=col; g.fillRect(x*u,y*u,w*u,h*u); };
+  if(piece==='helmet'){ R(3,3,10,3); R(3,6,3,4); R(10,6,3,4); R(4,9,8,2); }
+  else if(piece==='chest'){ R(3,3,10,2); R(3,3,2,10); R(11,3,2,10); R(5,3,6,10); g.fillStyle='rgba(0,0,0,.15)'; g.fillRect(6*u,6*u,4*u,5*u); }
+  else if(piece==='legs'){ R(3,2,10,3); R(3,5,3,9); R(10,5,3,9); R(7,5,2,6); }
+  else if(piece==='boots'){ R(3,4,4,6); R(9,4,4,6); R(3,10,5,3); R(8,10,5,3); }
+  return c;
+}
+function bwBuildInvScreen(){
+  bwEnsureUi();
+  let el=document.getElementById('bwInv');
+  if(!el){ el=document.createElement('div'); el.className='screen'; el.id='bwInv'; el.hidden=true; document.body.appendChild(el); el.addEventListener('click',e=>{ if(e.target===el) bwToggleInv(); }); }
+  const armorTier=bw.loadout.armor||1, armorNames=['','Leather','Chainmail','Iron','Diamond'];
+  el.innerHTML='<div class="bwinvp"><div class="bwih">Inventory <span>— survival</span></div>'
+    +'<div class="bwinvtop"><div class="bwarmor" id="bwArmor"></div><div class="bwprev"><div>'+(armorNames[armorTier]||'No')+'<br>Armor</div></div><div class="bwcraft" id="bwCraft"></div></div>'
+    +'<div class="bwlbl">Backpack</div><div class="bwgrid" id="bwStore"></div>'
+    +'<div class="bwlbl">Hotbar</div><div class="bwgrid hb" id="bwHotRow"></div></div>';
+  const arm=el.querySelector('#bwArmor');
+  ['helmet','chest','legs','boots'].forEach(pc=>{ const d=document.createElement('div'); d.className='bwislot'; if(armorTier>0) d.appendChild(bwArmorIcon(pc,armorTier)); arm.appendChild(d); });
+  const cr=el.querySelector('#bwCraft'); for(let i=0;i<5;i++){ const d=document.createElement('div'); d.className='bwislot'+(i===4?' res':''); cr.appendChild(d); }
+  const st=el.querySelector('#bwStore'); for(let i=0;i<27;i++){ const d=document.createElement('div'); d.className='bwislot'; st.appendChild(d); }
+  const hr=el.querySelector('#bwHotRow');
+  for(let i=0;i<9;i++){ const d=document.createElement('div'); d.className='bwislot'+(i===selSlot?' sel':''); const stk=bw.slots[i];
+    if(stk){ d.appendChild(bwItemIcon(stk,38)); let n=stk.kind==='block'?(bw.counts[stk.id]||0):(stk.kind==='apple'?bw.apples:null); if(n!=null&&(n>1||stk.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; d.appendChild(c); } }
+    hr.appendChild(d); }
+}
+function bwToggleInv(){
+  if(!bw.active) return;
+  bwInvOpen=!bwInvOpen;
+  if(bwInvOpen){ if(bwShopOpen) bwToggleShop(); bwBuildInvScreen(); document.getElementById('bwInv').hidden=false; for(const kk in keys) keys[kk]=false; try{ document.exitPointerLock(); }catch(e){} }
+  else { const el=document.getElementById('bwInv'); if(el) el.hidden=true; if(state===PLAY) try{ canvas.requestPointerLock(); }catch(e){} }
 }
 
 
@@ -3945,7 +4090,7 @@ function frame(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
 
   if(state===PLAY){
-    if(!invOpen && chatBox.hidden && !sleep.active && !sit.active && !bwShopOpen) updatePlayer(dt);   // freeze while picker/chat/sleep/sitting/shopping
+    if(!invOpen && chatBox.hidden && !sleep.active && !sit.active && !bwShopOpen && !bwInvOpen) updatePlayer(dt);   // freeze while picker/chat/sleep/sitting/shopping/inventory
     { const ccx=Math.floor(player.pos.x/CH), ccz=Math.floor(player.pos.z/CH);   // rescan chunks only when you cross into a new one
       if(ccx!==lastCX || ccz!==lastCZ){ lastCX=ccx; lastCZ=ccz; ensureChunks(player.pos.x, player.pos.z); } }
     processQueues(player.pos.x, player.pos.z);
@@ -4135,7 +4280,10 @@ window.__mc = {
   bwBuy(item){ mpSend({type:'bwbuy', item}); }, bwToggleShop(){ bwToggleShop(); return bwShopOpen; },
   bwHitId(vid){ const p=mp.players.get(vid); if(!p) return false; let dx=p.x-player.pos.x, dz=p.z-player.pos.z; const len=Math.hypot(dx,dz)||1; mpSend({type:'bwhit', target:vid, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)}); return true; },
   bwBlockAt(x,y,z){ return getBlock(x,y,z); }, bwGeom(t){ return BW_GEOM[t]; },
-  bwGive(name,n){ const id=BLOCKS[name]&&BLOCKS[name].id; if(id){ bw.counts[id]=(bw.counts[id]||0)+(n||16); renderHotbar(); } }
+  bwGive(name,n){ const id=BLOCKS[name]&&BLOCKS[name].id; if(id){ bw.counts[id]=(bw.counts[id]||0)+(n||16); renderHotbar(); } },
+  bwInv(){ bwToggleInv(); return bwInvOpen; }, bwVillagers(){ return bw.villagers.map(v=>({kind:v.kind, x:+v.model.position.x.toFixed(1), z:+v.model.position.z.toFixed(1)})); },
+  bwSlots(){ return bw.slots.map(s=> s? (s.kind+(s.tier?(':'+s.tier):'')) : null); }, bwUse(){ raycast(); useAction(); },
+  bwFall(){ player.pos.y = BW_VOID-4; player.vel.set(0,0,0); }, bwInvOpen(){ return bwInvOpen; }, creativePickerHidden(){ return invEl.hidden; }
 };
 </script>
 </body>
