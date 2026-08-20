@@ -3618,7 +3618,7 @@ const BW_RESNAME = { iron:'Iron', gold:'Gold', diamond:'Diamond', emerald:'Emera
 let bwMode = false;   // makes chunk generation produce void + prefab instead of terrain
 const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,diamond:0,emerald:0},
   loadout:{sword:1,armor:1,pick:0,axe:0,shears:false}, beds:[true,true,true,true], teams:[], players:new Map(),
-  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, slots:[], prefabSet:new Set(), villagers:[] };
+  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, slots:[], prefabSet:new Set(), villagers:[], teamUp:[{},{},{},{}] };
 function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
@@ -3668,7 +3668,7 @@ function bwRebuildWorld(){
 // ---- init + message routing ----
 function bwInit(m){
   bw.active=true; bwMode=true; mp.id=m.id; mp.name=m.name;
-  bw.phase=m.phase; bw.beds=m.beds||[true,true,true,true];
+  bw.phase=m.phase; bw.beds=m.beds||[true,true,true,true]; bw.teamUp=m.upgrades||bw.teamUp;
   bw.team = m.you? m.you.team : null;
   if(m.you){ bw.hp=m.you.hp; bw.res=m.you.res||bw.res; bw.loadout=m.you.loadout||bw.loadout; }
   bw.players.clear(); for(const p of (m.players||[])) bw.players.set(p.id, p);
@@ -3689,8 +3689,9 @@ function bwInit(m){
 // returns true if it handled a bedwars-only message
 function bwHandle(m){
   switch(m.type){
-    case 'bwstate': bw.phase=m.phase; bw.beds=m.beds||bw.beds; bw.teams=m.teams||bw.teams; bw.countdown=m.countdown||0; bwUpdateHud();
+    case 'bwstate': bw.phase=m.phase; bw.beds=m.beds||bw.beds; bw.teams=m.teams||bw.teams; bw.countdown=m.countdown||0; bw.teamUp=m.upgrades||bw.teamUp; bwUpdateHud();
       if(m.phase==='playing'){ bwHideBanner(); } return true;
+    case 'bwupgrades': if(m.team!=null) bw.teamUp[m.team]=m.up; if(bwShopOpen && bwShopCat==='Upgrades') bwRenderShop(); return true;
     case 'bwyou': bw.team=m.team; bw.res=m.res||bw.res; bw.loadout=m.loadout||bw.loadout; bw.hp=m.hp!=null?m.hp:bw.hp; player.hp=bw.hp;
       bwCounts_reset(); bwSetHotbar(); bwUpdateHud(); return true;
     case 'bwteams': for(const p of (m.players||[])){ const e=bw.players.get(p.id)||{}; Object.assign(e,p); bw.players.set(p.id,e); if(mp.players.get(p.id)) mp.players.get(p.id).team=p.team; } bwUpdateHud(); return true;
@@ -3856,7 +3857,14 @@ const BW_SHOP = [
   { cat:'Special',item:'shears',       name:'Shears',          sub:'',    cost:{iron:20},   col:'#bbb' },
   { cat:'Special',item:'golden_apple', name:'Golden Apple',    sub:'heal',cost:{gold:3},    col:'#fd4' },
 ];
-const BW_CATS = ['Blocks','Melee','Armor','Special'];
+const BW_CATS = ['Blocks','Melee','Armor','Special','Upgrades'];
+const BW_UPGRADES = [
+  { key:'sharp', name:'Sharpened Swords', desc:'Your team deals extra melee damage', cost:[4],        max:1, col:'#b48ead' },
+  { key:'prot',  name:'Reinforced Armor', desc:'Protection I–IV for the team',       cost:[2,4,8,16], max:4, col:'#8fa6c9' },
+  { key:'forge', name:'Iron Forge',       desc:'Your base generator runs faster',    cost:[2,4,6,8],  max:4, col:'#d8d090' },
+  { key:'heal',  name:'Heal Pool',         desc:'Regenerate health near your base',   cost:[3],        max:1, col:'#7fd88f' },
+  { key:'haste', name:'Maniac Miner',      desc:'Break blocks faster (Haste I–II)',   cost:[2,4],      max:2, col:'#e0b070' },
+];
 let bwUiBuilt=false, bwShopOpen=false, bwShopCat='Blocks', bwBannerTimer=0, bwInvOpen=false;
 function bwEnsureUi(){
   if(bwUiBuilt) return; bwUiBuilt=true;
@@ -3933,6 +3941,16 @@ function bwCostStr(cost){ return Object.entries(cost).map(([k,v])=>'<span style=
 function bwRenderShop(){
   const tabs=document.getElementById('bwShopTabs'); [...tabs.children].forEach(b=> b.classList.toggle('on', b.textContent===bwShopCat));
   const grid=document.getElementById('bwShopGrid'); grid.innerHTML='';
+  if(bwShopCat==='Upgrades'){
+    const up=(bw.team!=null && bw.teamUp[bw.team]) ? bw.teamUp[bw.team] : {};
+    for(const u of BW_UPGRADES){ const lvl=up[u.key]||0, maxed=lvl>=u.max, cost=maxed?null:u.cost[lvl];
+      const card=document.createElement('div'); card.className='bwCard'; card.dataset.item='up_'+u.key;
+      card.innerHTML='<div class="ic" style="background:'+u.col+'"></div><div class="nm">'+u.name+'</div><div class="sub">Level '+lvl+' / '+u.max+'</div><div class="cost">'+(maxed?'<span style="color:#8f8">MAXED</span>':('<span style="color:#38d9d3">'+cost+' Diamond</span>'))+'</div><div class="msg" style="color:#9aa">'+u.desc+'</div>';
+      if(!maxed) card.onclick=()=>{ mpSend({type:'bwupgrade', key:u.key}); };
+      grid.appendChild(card);
+    }
+    return;
+  }
   for(const it of BW_SHOP){ if(it.cat!==bwShopCat) continue;
     const card=document.createElement('div'); card.className='bwCard'; card.dataset.item=it.item;
     card.innerHTML='<div class="ic" style="background:'+it.col+'"></div><div class="nm">'+it.name+'</div><div class="sub">'+(it.sub||'&nbsp;')+'</div><div class="cost">'+bwCostStr(it.cost)+'</div><div class="msg"></div>';
@@ -3964,11 +3982,11 @@ function bwMakeVillager(color){
 function bwClearVillagers(){ for(const v of bw.villagers){ if(v.model) scene.remove(v.model); if(v.tag) scene.remove(v.tag); } bw.villagers=[]; }
 function bwSpawnVillagers(){
   bwClearVillagers();
-  for(const t of BW_TEAMS){ const g=BW_GEOM[t.id], sp=g.shop;
-    const model=bwMakeVillager(t.color); model.position.set(sp.x+0.5, sp.y, sp.z+0.5); model.rotation.y=Math.atan2(g.cx-sp.x, g.cz-sp.z);
-    const tag=makeNametag('SHOP'); tag.position.set(sp.x+0.5, sp.y+2.15, sp.z+0.5);
-    scene.add(model); scene.add(tag);
-    bw.villagers.push({ model, tag, kind:'shop' });
+  const add=(g,sp,kind,label,apron)=>{ const model=bwMakeVillager(apron); model.position.set(sp.x+0.5, sp.y, sp.z+0.5); model.rotation.y=Math.atan2(g.cx-sp.x, g.cz-sp.z);
+    const tag=makeNametag(label); tag.position.set(sp.x+0.5, sp.y+2.15, sp.z+0.5); scene.add(model); scene.add(tag); bw.villagers.push({ model, tag, kind }); };
+  for(const t of BW_TEAMS){ const g=BW_GEOM[t.id];
+    add(g, g.shop, 'shop', 'SHOP', t.color);
+    add(g, g.upgrade, 'upgrade', 'UPGRADES', 0x9b59b6);
   }
 }
 function bwUseVillager(){
@@ -3979,7 +3997,7 @@ function bwUseVillager(){
   if(!hits.length) return false;
   let node=hits[0].object, v=null; while(node){ const f=bw.villagers.find(vv=>vv.model===node); if(f){ v=f; break; } node=node.parent; }
   if(!v) return false;
-  if(v.kind==='shop' && !bwShopOpen) bwToggleShop();
+  if(!bwShopOpen){ bwShopCat = (v.kind==='upgrade') ? 'Upgrades' : (bwShopCat==='Upgrades'?'Blocks':bwShopCat); bwToggleShop(); }
   return true;
 }
 function bwUseAction(){
@@ -4283,7 +4301,8 @@ window.__mc = {
   bwGive(name,n){ const id=BLOCKS[name]&&BLOCKS[name].id; if(id){ bw.counts[id]=(bw.counts[id]||0)+(n||16); renderHotbar(); } },
   bwInv(){ bwToggleInv(); return bwInvOpen; }, bwVillagers(){ return bw.villagers.map(v=>({kind:v.kind, x:+v.model.position.x.toFixed(1), z:+v.model.position.z.toFixed(1)})); },
   bwSlots(){ return bw.slots.map(s=> s? (s.kind+(s.tier?(':'+s.tier):'')) : null); }, bwUse(){ raycast(); useAction(); },
-  bwFall(){ player.pos.y = BW_VOID-4; player.vel.set(0,0,0); }, bwInvOpen(){ return bwInvOpen; }, creativePickerHidden(){ return invEl.hidden; }
+  bwFall(){ player.pos.y = BW_VOID-4; player.vel.set(0,0,0); }, bwInvOpen(){ return bwInvOpen; }, creativePickerHidden(){ return invEl.hidden; },
+  bwUpgradeShop(){ bwShopCat='Upgrades'; if(!bwShopOpen) bwToggleShop(); }, bwUpgrade(key){ mpSend({type:'bwupgrade', key}); }, bwTeamUp(){ return bw.team!=null? bw.teamUp[bw.team] : null; }
 };
 </script>
 </body>
