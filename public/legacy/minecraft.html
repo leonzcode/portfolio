@@ -3101,7 +3101,8 @@ function startGame(){
 function pause(){ state=PAUSE; pauseEl.hidden=false; document.getElementById('regenBtn').hidden = mp.active; document.exitPointerLock(); }
 function resume(){ state=PLAY; pauseEl.hidden=true; canvas.requestPointerLock(); }
 function startSingleplayer(){
-  mp.active=false;
+  mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
+  if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
   spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
   spSave();            // pin the seed so even a brand-new world reloads identically
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
@@ -3119,7 +3120,7 @@ function regen(){
 }
 function toMenu(){
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} }   // leave the shared world; onclose clears remote players
-  mp.active=false;
+  mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   state=MENU; menuEl.hidden=false; pauseEl.hidden=true; invEl.hidden=true; invOpen=false;
   chatOpen=false; chatBox.hidden=true; chatLogEl.classList.remove('up');
   try{ document.exitPointerLock(); }catch(e){}
@@ -3584,7 +3585,7 @@ function mpStartWorld(serverSeed){
   chunks.clear(); genQueue=[];
   startGame();
 }
-function startMultiplayer(){ mpConnect(); }
+function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi(); mpConnect(); }
 
 /* ============================================================ BED WARS === */
 /* A Hypixel-style Bed Wars mode. Connects to the same server with ?mode=bw, which
@@ -3613,9 +3614,11 @@ function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 function startBedwars(){
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
   mp.bw = true; bw.active = true; bwMode = true;
-  bwEnsureUi();
+  bwEnterUi();
   mpConnect();
 }
+function bwEnterUi(){ bwEnsureUi(); const h=document.getElementById('bwHud'); if(h) h.style.display=''; }
+function bwLeaveUi(){ const h=document.getElementById('bwHud'); if(h) h.style.display='none'; const s=document.getElementById('bwShop'); if(s) s.hidden=true; bwShopOpen=false; }
 
 // ---- prefab map: write the islands into mpOverrides so streamed chunks show them ----
 function bwPlace(x,y,z,id){ if(id){ mpSetOverride(x,y,z,id); bw.prefabSet.add(x+','+y+','+z); } }
