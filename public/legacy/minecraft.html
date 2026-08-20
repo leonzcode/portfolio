@@ -2799,11 +2799,7 @@ function breakBlock(){
   if(killMobUnderCrosshair()) return;   // a mob under the crosshair takes the hit next
   if(!target) return;
   const {x,y,z}=target;
-  if(bw.active){
-    const bwbid=getBlock(x,y,z);
-    if(isBed(bwbid)){ bwBreakBed(x,y,z); return; }              // breaking an enemy bed (server-verified)
-    if(bw.prefabSet.has(x+','+y+','+z)) return;                 // the island map itself is unbreakable
-  }
+  if(bw.active) return;   // Bed Wars breaks blocks on a hold-timer (bwMineTick); the left-click press only punches
   if(isDoor(getBlock(x,y,z))){ breakDoor(x,y,z); return; }   // breaking either half removes the whole door
   if(isBed(getBlock(x,y,z))){ breakBed(x,y,z); return; }     // breaking either cell removes the whole bed
   if(isStair(getBlock(x,y,z))){ stairMeta.delete(dkey(x,y,z)); spRecordStair(x,y,z,null); }
@@ -3678,6 +3674,7 @@ function bwInit(m){
   startGame();
   player.pos.set(0.5, BW_Y+3, 0.5); player.vel.set(0,0,0); player.flying=false; player.hp=100;
   for(const p of (m.players||[])) mpAddPlayer(p);
+  for(const p of (m.players||[])){ const e=mp.players.get(p.id); if(e){ e.team=p.team; e.armor=p.armor; e.sword=p.sword; bwApplyRemoteGear(p.id); } }
   // items present already
   bwClearItems(); if(m.items) for(const it of m.items) bwAddItem(it);
   mpSendSkin();
@@ -3694,7 +3691,8 @@ function bwHandle(m){
     case 'bwupgrades': if(m.team!=null) bw.teamUp[m.team]=m.up; if(bwShopOpen && bwShopCat==='Upgrades') bwRenderShop(); return true;
     case 'bwyou': bw.team=m.team; bw.res=m.res||bw.res; bw.loadout=m.loadout||bw.loadout; bw.hp=m.hp!=null?m.hp:bw.hp; player.hp=bw.hp;
       bwCounts_reset(); bwSetHotbar(); bwUpdateHud(); return true;
-    case 'bwteams': for(const p of (m.players||[])){ const e=bw.players.get(p.id)||{}; Object.assign(e,p); bw.players.set(p.id,e); if(mp.players.get(p.id)) mp.players.get(p.id).team=p.team; } bwUpdateHud(); return true;
+    case 'bwteams': for(const p of (m.players||[])){ const e=bw.players.get(p.id)||{}; Object.assign(e,p); bw.players.set(p.id,e); const rp=mp.players.get(p.id); if(rp){ rp.team=p.team; rp.armor=p.armor; rp.sword=p.sword; bwApplyRemoteGear(p.id); } } bwApplyLocalGear(); bwUpdateHud(); return true;
+    case 'bwgear': { const rp=mp.players.get(m.id); if(rp){ rp.armor=m.armor; rp.sword=m.sword; bwApplyRemoteGear(m.id); } if(m.id===mp.id){ bw.loadout.armor=m.armor; bw.loadout.sword=m.sword; bwApplyLocalGear(); } } return true;
     case 'bwreset': bwRebuildWorld(); bwClearItems(); bwCounts_reset(); bwSetHotbar(); return true;
     case 'bwblock': bwApplyBlock(m.x,m.y,m.z,m.b); return true;
     case 'bwbeddown': bw.beds[m.team]=false; { const g=BW_GEOM[m.team]; bwApplyBlock(g.bedFoot.x,g.bedFoot.y,g.bedFoot.z,0); bwApplyBlock(g.bedHead.x,g.bedHead.y,g.bedHead.z,0); }
@@ -3743,7 +3741,7 @@ function bwSetHotbar(){
   bw.slots = s;
   for(let i=0;i<9;i++) hotbar[i] = (s[i] && s[i].kind==='block') ? s[i].id : 0;
   if(selSlot<0||selSlot>8) selSlot=0;
-  renderHotbar(); if(bwInvOpen) bwBuildInvScreen();
+  renderHotbar(); if(bwInvOpen) bwBuildInvScreen(); bwApplyLocalGear();
 }
 function bwBlockCount(id){ return bw.counts[id]||0; }
 function bwGiveBlock(id,n){ bw.counts[id]=(bw.counts[id]||0)+n; renderHotbar(); if(bwInvOpen) bwBuildInvScreen(); }
@@ -3774,6 +3772,36 @@ function bwItemIcon(stack, size){
   return c;
 }
 
+// ---- worn armour + held sword on a character model (local body or a remote player) ----
+function bwSetGear(model, teamColor, armorTier, swordTier){
+  const ud=model && model.userData; if(!ud) return;
+  if(ud.gear) for(const m of ud.gear){ if(m.parent) m.parent.remove(m); }
+  ud.gear=[];
+  const S=1/16;
+  const gear=(parent, w,h,d, x,y,z, col)=>{ if(!parent) return; const m=new THREE.Mesh(new THREE.BoxGeometry(w*S,h*S,d*S), new THREE.MeshLambertMaterial({color:col})); m.position.set(x*S,y*S,z*S); parent.add(m); ud.gear.push(m); };
+  if(armorTier>0){
+    const acol = armorTier===1 ? (teamColor!=null?teamColor:0x8a5a3c) : ([0,0,0x9a9a9a,0xe0e0e0,0x63e6df][armorTier]||0x9a9a9a);   // leather = team colour
+    const torso=ud.upper && ud.upper.children[0], head=ud.headPivot && ud.headPivot.children[0];
+    gear(head, 8.8,8.8,8.8, 0,0,0, acol);                               // helmet
+    gear(torso, 8.9,12.6,4.9, 0,0,0, acol);                            // chestplate
+    gear(ud.legL, 4.7,7,4.7, 0,2.3,0, acol); gear(ud.legR, 4.7,7,4.7, 0,2.3,0, acol);   // leggings
+    gear(ud.legL, 4.9,4.5,4.9, 0,-4,0, acol); gear(ud.legR, 4.9,4.5,4.9, 0,-4,0, acol); // boots
+  }
+  if(swordTier>0 && ud.armR){
+    const scol=[0x8a5a2b,0x8a5a2b,0xb7b7b7,0xe6e6e6,0x8fe9ff][swordTier]||0xb7b7b7;
+    const sw=new THREE.Group();
+    const bmat=new THREE.MeshLambertMaterial({color:scol}), hmat=new THREE.MeshLambertMaterial({color:0x5a3a1a});
+    const blade=new THREE.Mesh(new THREE.BoxGeometry(1.3*S,8*S,1.3*S), bmat); blade.position.y=3*S;
+    const guard=new THREE.Mesh(new THREE.BoxGeometry(4*S,1.3*S,1.3*S), hmat); guard.position.y=-1*S;
+    const hilt=new THREE.Mesh(new THREE.BoxGeometry(1.3*S,3*S,1.3*S), hmat); hilt.position.y=-2.5*S;
+    sw.add(blade,guard,hilt);
+    sw.position.set(0.6/16, -6/16, 2.5/16); sw.rotation.x=Math.PI*0.12;
+    ud.armR.add(sw); ud.gear.push(sw);
+  }
+}
+function bwApplyLocalGear(){ if(bw.active) bwSetGear(body, bw.team!=null?BW_TEAMS[bw.team].color:null, bw.loadout.armor||0, bw.loadout.sword||0); }
+function bwApplyRemoteGear(id){ const p=mp.players.get(id); if(!p||!p.model) return; bwSetGear(p.model, p.team!=null?BW_TEAMS[p.team].color:null, p.armor||0, p.sword||0); }
+
 // ---- floating resource items ----
 function bwEnsureItemGroup(){ if(!bw.itemGroup){ bw.itemGroup=new THREE.Group(); scene.add(bw.itemGroup); } }
 function bwClearItems(){ if(bw.itemGroup){ scene.remove(bw.itemGroup); bw.itemGroup=null; } bw.items.clear(); bwEnsureItemGroup(); }
@@ -3788,6 +3816,7 @@ function bwRemoveItem(id){ const e=bw.items.get(id); if(e){ if(bw.itemGroup) bw.
 function bwUpdateItems(dt){
   if(!bw.itemGroup) return;
   for(const [id,e] of bw.items){ e.t+=dt; e.mesh.rotation.y+=dt*2.2; e.mesh.position.y = e.y + Math.sin(e.t*2)*0.09;
+    if(bw.dead) continue;   // spectators can't collect resources
     const dx=e.x-player.pos.x, dz=e.z-player.pos.z, dy=e.y-player.pos.y;
     if(dx*dx+dz*dz < 1.7*1.7 && Math.abs(dy) < 2.4){ mpSend({type:'bwpickup', id}); }   // server validates + removes
   }
@@ -3799,8 +3828,8 @@ function bwOnDeath(m){
   if(m.id===mp.id){ bw.dead=true; bw.eliminated=m.eliminated; player.vel.set(0,0,0); player.flying=true;   // freeze; don't keep falling
     if(player.pos.y < BW_Y+2) player.pos.y = BW_Y+8;
     if(bwInvOpen) bwToggleInv(); if(bwShopOpen) bwToggleShop();
-    if(m.eliminated){ bwBanner('YOU DIED — eliminated (spectating)', 0xff5555, 5000); bw.res={iron:0,gold:0,diamond:0,emerald:0}; bwCounts_reset(); bwSetHotbar(); }
-    else bwBanner('YOU DIED — respawning…', 0xffaa33, 5000);
+    bw.res={iron:0,gold:0,diamond:0,emerald:0}; bwCounts_reset(); bwSetHotbar();   // on death you drop blocks + resources + apples; armour/sword/tools stay
+    bwBanner(m.eliminated?'YOU DIED — eliminated (spectating)':'YOU DIED — respawning…', m.eliminated?0xff5555:0xffaa33, 5000);
   }
   bwUpdateHud();
 }
@@ -3819,6 +3848,7 @@ function bwOnBuy(m){
   const g = m.give||{};
   if(g.block){ const nm={ wool:(bw.team!=null?BW_TEAMS[bw.team].wool:'white_wool'), planks:'oak_planks', endstone:'end_stone', glass:'glass', obsidian:'obsidian' }[g.block]; const id=bwId(nm); if(id) bwGiveBlock(id, g.n||1); }
   if(g.item==='golden_apple') bw.apples++;
+  bwSetHotbar();   // rebuild hotbar (new sword/tools) + refresh worn gear
   bwUpdateHud(); bwFlashShop(m.item, 'Purchased!', true);
 }
 function bwEatApple(){ if(bw.apples>0 && bw.hp<100 && !bw.dead){ bw.apples--; mpSend({type:'bweat'}); chatPush('You ate a golden apple.', 'sys'); } }
@@ -3833,7 +3863,43 @@ function bwCheckVoid(){
 }
 
 // ---- per-frame ----
-function bwFrame(dt){ if(!bw.active) return; bwUpdateItems(dt);
+// ---- timed block breaking: hold to break, crack animation, time depends on the block + your tools ----
+let bwMining=null, bwCrackMesh=null; const bwCrackTex=[];
+function bwMakeCrackTextures(){ if(bwCrackTex.length) return;
+  for(let s=0;s<10;s++){ const c=document.createElement('canvas'); c.width=c.height=16; const g=c.getContext('2d');
+    g.strokeStyle='rgba(0,0,0,0.7)'; g.lineWidth=1; let rng=97+s*131; const rand=()=>{ rng=(rng*1103515245+12345)&0x7fffffff; return rng/0x7fffffff; };
+    for(let i=0;i<=s;i++){ let x=1+rand()*14,y=1+rand()*14; g.beginPath(); g.moveTo(x,y); const steps=2+(s>>1);
+      for(let j=0;j<steps;j++){ x=Math.max(0,Math.min(16,x+(rand()-0.5)*9)); y=Math.max(0,Math.min(16,y+(rand()-0.5)*9)); g.lineTo(x,y); } g.stroke(); }
+    const t=new THREE.CanvasTexture(c); t.magFilter=t.minFilter=THREE.NearestFilter; bwCrackTex.push(t);
+  }
+}
+function bwBreakTime(bid){ const n=BLOCKS[bid]?BLOCKS[bid].name:''; let b;
+  if(/_wool$/.test(n)) b=0.5; else if(/_bed$/.test(n)) b=0.8; else if(/glass/.test(n)) b=0.4;
+  else if(/planks$|_log$|_wood$/.test(n)) b=0.55; else if(/end_stone/.test(n)) b=0.85;
+  else if(/obsidian/.test(n)) b=5.5; else if(/concrete$/.test(n)) b=0.85; else b=0.65;
+  if(/_wool$/.test(n) && bw.loadout.shears) b*=0.25;                                    // shears shred wool
+  if(/(stone|obsidian|concrete)/.test(n) && bw.loadout.pick) b*=(bw.loadout.pick>=2?0.35:0.55);
+  if(/(planks|_log|_wood)/.test(n) && bw.loadout.axe) b*=(bw.loadout.axe>=2?0.35:0.55);
+  return Math.max(0.12, b);
+}
+function bwBedTeam(x,y,z){ for(const t of BW_TEAMS){ const g=BW_GEOM[t.id]; if((x===g.bedFoot.x&&y===g.bedFoot.y&&z===g.bedFoot.z)||(x===g.bedHead.x&&y===g.bedHead.y&&z===g.bedHead.z)) return t.id; } return -1; }
+function bwClearMining(){ bwMining=null; if(bwCrackMesh) bwCrackMesh.visible=false; }
+function bwMineTick(dt){
+  if(!bw.active || bw.dead || bw.phase!=='playing' || bwShopOpen || bwInvOpen || !keys[binds.attack] || !target){ bwClearMining(); return; }
+  const x=target.x,y=target.y,z=target.z, bid=getBlock(x,y,z); if(!bid){ bwClearMining(); return; }
+  const bed=isBed(bid);
+  if(bed){ const tm=bwBedTeam(x,y,z); if(tm===bw.team || tm<0 || !bw.beds[tm]){ bwClearMining(); return; } }   // can't mine your own / already-broken bed
+  else if(bw.prefabSet.has(x+','+y+','+z)){ bwClearMining(); return; }                                          // the island map is unbreakable
+  if(!bwMining || bwMining.x!==x || bwMining.y!==y || bwMining.z!==z) bwMining={x,y,z,progress:0,time:bwBreakTime(bid),swingT:0};
+  bwMining.progress += dt;
+  bwMining.swingT += dt; if(bwMining.swingT>=0.28){ bwMining.swingT=0; if(typeof doSwing==='function') doSwing(); mpSend({type:'swing'}); }   // repeated mining swing (others see it too)
+  bwMakeCrackTextures();
+  const stage=Math.max(0,Math.min(9,Math.floor(bwMining.progress/bwMining.time*10)));
+  if(!bwCrackMesh){ bwCrackMesh=new THREE.Mesh(new THREE.BoxGeometry(1.008,1.008,1.008), new THREE.MeshBasicMaterial({transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1})); scene.add(bwCrackMesh); }
+  bwCrackMesh.material.map=bwCrackTex[stage]; bwCrackMesh.material.needsUpdate=true; bwCrackMesh.visible=true; bwCrackMesh.position.set(x+0.5,y+0.5,z+0.5);
+  if(bwMining.progress>=bwMining.time){ if(isBed(getBlock(x,y,z))) bwBreakBed(x,y,z); else { setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); } bwClearMining(); }
+}
+function bwFrame(dt){ if(!bw.active) return; bwUpdateItems(dt); bwMineTick(dt);
   if(bw.phase==='playing') bwCheckVoid();
   else if(player.pos.y < BW_VOID+3){ player.pos.set(0.5, BW_Y+3, 0.5); player.vel.set(0,0,0); }   // don't let players fall out of the lobby
   bw._hudDue=(bw._hudDue||0)-dt; if(bw._hudDue<=0){ bw._hudDue=0.25; bwUpdateHud(); }
@@ -4302,7 +4368,11 @@ window.__mc = {
   bwInv(){ bwToggleInv(); return bwInvOpen; }, bwVillagers(){ return bw.villagers.map(v=>({kind:v.kind, x:+v.model.position.x.toFixed(1), z:+v.model.position.z.toFixed(1)})); },
   bwSlots(){ return bw.slots.map(s=> s? (s.kind+(s.tier?(':'+s.tier):'')) : null); }, bwUse(){ raycast(); useAction(); },
   bwFall(){ player.pos.y = BW_VOID-4; player.vel.set(0,0,0); }, bwInvOpen(){ return bwInvOpen; }, creativePickerHidden(){ return invEl.hidden; },
-  bwUpgradeShop(){ bwShopCat='Upgrades'; if(!bwShopOpen) bwToggleShop(); }, bwUpgrade(key){ mpSend({type:'bwupgrade', key}); }, bwTeamUp(){ return bw.team!=null? bw.teamUp[bw.team] : null; }
+  bwUpgradeShop(){ bwShopCat='Upgrades'; if(!bwShopOpen) bwToggleShop(); }, bwUpgrade(key){ mpSend({type:'bwupgrade', key}); }, bwTeamUp(){ return bw.team!=null? bw.teamUp[bw.team] : null; },
+  bwHoldAttack(v){ keys['mouse0']=!!v; }, bwMining(){ return bwMining?{prog:+bwMining.progress.toFixed(2), time:+bwMining.time.toFixed(2), crack:!!(bwCrackMesh&&bwCrackMesh.visible)}:null; },
+  bwBreakTimeOf(name){ return bwBreakTime(BLOCKS[name]?BLOCKS[name].id:0); },
+  bwMineFor(x,y,z,ms){ const bid=getBlock(x,y,z); if(!bid) return {err:'no-block'}; const time=bwBreakTime(bid); let prog=0; const steps=Math.ceil(ms/16);
+    for(let i=0;i<steps;i++){ prog+=0.016; if(prog>=time){ if(isBed(getBlock(x,y,z))) bwBreakBed(x,y,z); else { setBlock(x,y,z,0); mpSendBlock(x,y,z,0); } return {broke:true, time:+time.toFixed(2), atMs:i*16}; } } return {broke:false, time:+time.toFixed(2), prog:+prog.toFixed(2)}; }
 };
 </script>
 </body>
