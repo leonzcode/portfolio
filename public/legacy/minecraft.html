@@ -130,6 +130,10 @@
   .codeField::placeholder{ color:#bdbdbd; letter-spacing:1px; }
   .codeRow .btn{ width:auto; flex:0 0 auto; padding:9px 16px; font-size:13px; }
   .codeMsg{ font-size:12px; min-height:16px; color:#ffec4d; text-align:center; text-shadow:1px 1px 0 rgba(0,0,0,.5); }
+  .menuDivider{ width:320px; max-width:80vw; height:1px; background:rgba(255,255,255,.16); margin:3px 0; }
+  .menuNote{ font-size:11.5px; color:#9a9a9a; letter-spacing:.5px; text-transform:uppercase; }
+  .btn.btn-sub{ background:#6a6a6a; font-size:13px; padding:8px 0; }   /* quieter secondary action */
+  .btn.btn-sub:hover{ background:#7f957f; }
   /* suggestion box */
   .suggestBox{
     font-family:inherit; font-size:14px; color:#fff; line-height:1.5;
@@ -297,18 +301,20 @@
   <div class="menuButtons">
     <button class="btn" id="playBtn">Singleplayer</button>
     <button class="btn" id="mpBtn">Multiplayer</button>
+    <div class="menuDivider"></div>
+    <div class="btnRow">
+      <button class="btn half" id="skinBtn">Skin&hellip;</button>
+      <button class="btn half" id="controlsBtn">Controls&hellip;</button>
+    </div>
+    <button class="btn btn-sub" id="suggestBtn">Suggest a feature&hellip;</button>
+    <div class="menuDivider"></div>
     <div class="codeRow">
       <input class="codeField" id="menuCode" type="text" maxlength="16" placeholder="Secret code" autocomplete="off" spellcheck="false">
       <button class="btn" id="menuCodeBtn">Enter</button>
     </div>
     <div class="codeMsg" id="menuCodeMsg"></div>
-    <div class="btnRow">
-      <button class="btn half" id="skinBtn">Skin&hellip;</button>
-      <button class="btn half" id="controlsBtn">Controls&hellip;</button>
-    </div>
-    <button class="btn" id="suggestBtn">Suggest a feature&hellip;</button>
   </div>
-  <div class="hint">Move with <b>WASD</b>, look with the <b>mouse</b>, and break / place with the mouse buttons.<br>Open <b>Controls</b> to change any key.</div>
+  <div class="hint">Move with <b>WASD</b>, look with the <b>mouse</b>, and break / place with the mouse buttons.</div>
 </div>
 
 <div class="screen" id="controls" hidden>
@@ -384,14 +390,16 @@
       <button class="btn half" id="pauseSkinBtn">Skin&hellip;</button>
       <button class="btn half" id="pauseControlsBtn">Controls&hellip;</button>
     </div>
+    <button class="btn btn-sub" id="pauseSuggestBtn">Suggest a feature&hellip;</button>
+    <div class="menuDivider"></div>
+    <button class="btn" id="regenBtn">New world</button>
+    <button class="btn" id="menuBtn">Main menu</button>
+    <div class="menuDivider"></div>
     <div class="codeRow">
       <input class="codeField" id="pauseCode" type="text" maxlength="16" placeholder="Secret code" autocomplete="off" spellcheck="false">
       <button class="btn" id="pauseCodeBtn">Enter</button>
     </div>
     <div class="codeMsg" id="pauseCodeMsg"></div>
-    <button class="btn" id="pauseSuggestBtn">Suggest a feature&hellip;</button>
-    <button class="btn" id="regenBtn">New world</button>
-    <button class="btn" id="menuBtn">Main menu</button>
   </div>
   <div class="hint">Press <b>Esc</b> to resume</div>
 </div>
@@ -2028,9 +2036,16 @@ function poseCharacter(ud, crouch, sitting, walkPhase, walkAmp){
   ud.armL.rotation.x = -sw*0.72;                    // arms swing opposite the legs
   ud.armR.rotation.x =  sw*0.72;
 }
-const body=makeCharacterModel(localSkinTex);
-const headPivot=body.userData.headPivot;
+let body=makeCharacterModel(localSkinTex);
+let headPivot=body.userData.headPivot;
 body.visible=false; scene.add(body);
+// swap your own model between humanoid / pig / diamond block (for the body codes), so first-person reflects it too
+function setLocalBody(kind){
+  if(modelKind(body)===kind) return;
+  const wasVisible=body.visible; scene.remove(body);
+  body = makeBodyModel(kind, localSkinTex);
+  headPivot = body.userData.headPivot; body.visible=wasVisible; scene.add(body);
+}
 // floating name tag above a remote player's head
 function makeNametag(name, color){
   const c=document.createElement('canvas'); c.width=256; c.height=64;
@@ -2053,6 +2068,17 @@ const vmDir=new THREE.DirectionalLight(0xffffff,0.6); vmDir.position.set(0.4,1,0
 const vmArm=skinPart(PARTS.armR, new THREE.MeshLambertMaterial({ map:localSkinTex })); vmScene.add(vmArm);
 vmArm.add(skinPartOverlay(PARTS.armR, OVERLAY.armR, new THREE.MeshLambertMaterial({ map:localSkinTex, transparent:true, alphaTest:0.5, side:THREE.DoubleSide })));   // first-person sleeve
 let vmBlock=null, vmHeldId=-1;
+// Bed Wars first-person held item: a flat sprite (sword / pickaxe / axe / shears / bow / apple / pearl / tnt / fireball)
+let vmItem=null, vmItemKey='';
+function bwHeldKey(st){ return st ? (st.kind+':'+(st.tier||0)+':'+(st.tool||'')+':'+(st.id||'')) : ''; }
+function clearVmItem(){ if(vmItem){ vmScene.remove(vmItem); if(vmItem.material.map) vmItem.material.map.dispose(); vmItem.geometry.dispose(); vmItem.material.dispose(); vmItem=null; } vmItemKey=''; }
+function buildBwHeldItem(st){
+  clearVmItem();
+  if(!st || st.kind==='block') return;
+  const tex=new THREE.CanvasTexture(bwItemIcon(st, 64)); tex.magFilter=tex.minFilter=THREE.NearestFilter;
+  vmItem=new THREE.Mesh(new THREE.PlaneGeometry(0.6,0.6), new THREE.MeshBasicMaterial({ map:tex, transparent:true, alphaTest:0.4, side:THREE.DoubleSide }));
+  vmScene.add(vmItem); vmItemKey=bwHeldKey(st);
+}
 function buildHeldBlock(id){
   if(vmBlock){ vmScene.remove(vmBlock); if(!vmBlock.userData.shared){ vmBlock.geometry.dispose(); vmBlock.material.dispose(); } vmBlock=null; }
   vmHeldId=id||0; if(!id || id===STICK_ITEM) return;   // the stick shows the bare hand/arm, no held cube
@@ -2081,9 +2107,24 @@ function showHurt(){
   requestAnimationFrame(()=>{ hurtEl.style.transition='opacity .45s ease'; hurtEl.style.opacity='0'; });
 }
 function updateViewmodel(dt, moving){
-  if(hotbar[selSlot]!==vmHeldId) buildHeldBlock(hotbar[selSlot]);
   const bob=(moving?0.03:0.008)*Math.sin(bobT) - (player.crouch||0)*0.14;   // hand lowers when sneaking
   const sw=Math.sin((1-swing)*Math.PI);
+  // Bed Wars: hold the selected weapon / tool / consumable as a flat sprite (blocks fall through to the cube path below)
+  const bwStack = bw.active ? bw.slots[selSlot] : null;
+  if(bwStack && bwStack.kind!=='block'){
+    if(vmBlock){ vmScene.remove(vmBlock); if(!vmBlock.userData.shared){ vmBlock.geometry.dispose(); vmBlock.material.dispose(); } vmBlock=null; vmHeldId=-1; }
+    if(bwHeldKey(bwStack)!==vmItemKey) buildBwHeldItem(bwStack);
+    if(vmItem){ vmItem.visible=true;
+      vmItem.position.set(0.52, -0.46+bob - sw*0.24, -0.82);
+      vmItem.rotation.set(0.15+sw*0.5, -0.5, -0.5);
+    }
+    vmArm.visible=true;
+    vmArm.position.set(0.92, -0.86+bob - sw*0.16, -0.9);
+    vmArm.rotation.set(-0.7 - sw*0.7, -0.1, -0.3);
+    return;
+  }
+  if(vmItem) clearVmItem();
+  if(hotbar[selSlot]!==vmHeldId) buildHeldBlock(hotbar[selSlot]);
   if(vmBlock){
     vmBlock.visible=true; vmBlock.scale.setScalar(0.52);
     vmBlock.position.set(0.62, -0.52+bob - sw*0.18, -1.05);
@@ -2500,7 +2541,8 @@ function updatePlayer(dt){
   } else {
     const sneaking = keys[binds.sneak] && player.onGround && !swimming;
     player.sneak = sneaking;
-    const base = sneaking ? 1.35 : (keys[binds.forward] && keys[binds.sprint] ? 6.4 : 4.3);
+    const spdBuff = (bw.active && bw.speedUntil>performance.now()) ? 1.45 : 1;   // Speed II potion
+    const base = (sneaking ? 1.35 : (keys[binds.forward] && keys[binds.sprint] ? 6.4 : 4.3)) * spdBuff;
     const accel = swimming? 3.0 : base;
     const tvx = wish.x*accel, tvz = wish.z*accel;
     // ice is slippery: velocity eases toward the target instead of snapping
@@ -2516,7 +2558,7 @@ function updatePlayer(dt){
     const g = swimming? 9 : 26;
     player.vel.y -= g*dt;
     if(swimming){ player.vel.y = Math.max(player.vel.y,-2.2); if(keys[binds.jump]) player.vel.y = 3.2; }
-    else if(keys[binds.jump] && player.onGround){ player.vel.y = 8.4; player.onGround=false; }
+    else if(keys[binds.jump] && player.onGround){ player.vel.y = 8.4 * ((bw.active && bw.jumpUntil>performance.now()) ? 1.7 : 1); player.onGround=false; }   // Jump Boost V potion
     if(player.vel.y<-40) player.vel.y=-40;
   }
 
@@ -3551,25 +3593,34 @@ const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastP
 /* ---- secret codes: cosmetic/gameplay effects synced to other players over the relay ----
    Codes are typed in the menu / pause "Secret code" box. "bedwars" launches Bed Wars;
    the rest set an effect the server stores + relays so everyone sees it. */
-const NAME_BLUE = '#4aa3ff';
+const NAME_BLUE = '#4aa3ff';              // the "leoniscool" code turns your name this colour
 const STICK_ITEM = 30000;                 // hotbar sentinel (well above any real block id) for the knockback stick
-const fx = { body:'none', blue:false, stick:false };   // this player's active effects
+const fx = { body:'none', color:'', stick:false, hide:false };   // this player's active effects ('' colour = default white name)
 let localEyeMul = 1;                      // giant/small change the local camera height a bit
 
 function flashCode(msg, el){ if(!el) return; el.textContent=msg; clearTimeout(el._t); el._t=setTimeout(()=>{ el.textContent=''; }, 3000); }
-function applyLocalBody(){ localEyeMul = fx.body==='giant' ? 2.4 : fx.body==='small' ? 0.5 : fx.body==='pig' ? 0.72 : 1; }
-function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, blue:fx.blue, stick:fx.stick }); }   // relayed to everyone else
+function applyLocalBody(){
+  setLocalBody(fx.body==='pig' ? 'pig' : fx.body==='block' ? 'block' : 'human');   // become a pig / block locally too, so first-person reflects it
+  localEyeMul = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.3 : fx.body==='pig' ? 0.6 : fx.body==='block' ? 0.95 : 1;   // camera rides at your new height
+}
+function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick }); }   // relayed to everyone else
 function giveStick(){ hotbar[0]=STICK_ITEM; selSlot=0; if(typeof renderHotbar==='function') renderHotbar(); if(typeof showItemName==='function') showItemName(STICK_ITEM); }
+function removeStick(){ if(hotbar[0]===STICK_ITEM){ hotbar[0]=0; if(typeof renderHotbar==='function') renderHotbar(); } }
+// Every code toggles: typing it again turns it back off. Body codes are one-at-a-time (a new one replaces the old).
 function applyCode(raw, msgEl){
   const code=(raw||'').trim().toLowerCase();
   if(!code) return;
   if(code==='bedwars'){ flashCode('Launching Bed Wars…', msgEl); startBedwars(); return; }
   let note='';
-  if(code==='leon'){ fx.blue=true; note='Your name is now blue in the player list.'; }
-  else if(code==='tade'){ fx.stick=true; giveStick(); note='Knockback stick equipped — check slot 1.'; }
-  else if(code==='giant'){ fx.body='giant'; note='You are now GIANT. Everyone can see it.'; }
-  else if(code==='small'){ fx.body='small'; note='You are now tiny. Everyone can see it.'; }
-  else if(code==='pig'){ fx.body='pig'; note='Oink! You are a pig now. Everyone can see it.'; }
+  if(code==='leoniscool'){ fx.color = fx.color ? '' : NAME_BLUE; note = fx.color ? 'Your name is now blue.' : 'Blue name turned off.'; }
+  else if(code==='hidename'){ fx.hide=!fx.hide; note = fx.hide ? 'Your name is now hidden from others.' : 'Your name is visible again.'; }
+  else if(code==='tade'){ fx.stick=!fx.stick; if(fx.stick){ giveStick(); note='Knockback stick equipped — check slot 1.'; } else { removeStick(); note='Knockback stick removed.'; } }
+  else if(code==='big' || code==='small' || code==='pig' || code==='block'){
+    const target = { big:'giant', small:'small', pig:'pig', block:'block' }[code];
+    fx.body = (fx.body===target) ? 'none' : target;   // typing the same body code again turns it off
+    const label = { giant:'GIANT', small:'tiny', pig:'a pig', block:'a diamond block' }[fx.body];
+    note = (fx.body==='none') ? 'Back to your normal self.' : ('You are now '+label+'. Everyone can see it.');
+  }
   else { flashCode('Unknown code.', msgEl); return; }
   applyLocalBody(); sendFx(); flashCode(note, msgEl);
 }
@@ -3595,36 +3646,57 @@ function makePigModel(){
   g.userData={ headPivot:hp, legFL, legFR, legBL, legBR, isPig:true };
   return g;
 }
-// swap a remote player between their humanoid model and a pig, keeping position + nametag
+// A full diamond-block avatar (the "block" secret code): a 1×1 cube textured from the game atlas.
+function makeBlockAvatarModel(){
+  const id=bwId('diamond_block'), bl=BLOCKS[id];
+  const geo=new THREE.BoxGeometry(1,1,1); let mesh;
+  if(bl){
+    const faceArg=[2,2,0,1,2,2]; const uv=geo.attributes.uv;                 // box: +x,-x,+y,-y,+z,-z
+    for(let f=0;f<6;f++){ const [u0,v0,u1,v1]=tileUV(faceTile(bl,faceArg[f]));
+      const q=[[u0,v1],[u1,v1],[u0,v0],[u1,v0]];
+      for(let k=0;k<4;k++) uv.setXY(f*4+k, q[k][0], q[k][1]); }
+    uv.needsUpdate=true;
+    mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map:atlasTex }));
+  } else { mesh=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color:0x6ff0e6 })); }
+  mesh.position.y=0.5;                                                        // sit the cube on the feet
+  const g=new THREE.Group(); g.add(mesh);
+  g.userData={ headPivot:new THREE.Group(), isBlock:true };                   // dummy headPivot so pitch code stays safe
+  g.add(g.userData.headPivot);
+  return g;
+}
+function modelKind(m){ const u=m&&m.userData; return (u&&u.isPig)?'pig':(u&&u.isBlock)?'block':'human'; }
+function bodyToKind(body){ return body==='pig'?'pig':body==='block'?'block':'human'; }   // giant/small stay humanoid, just scaled
+function makeBodyModel(kind, skinTex){ return kind==='pig'?makePigModel() : kind==='block'?makeBlockAvatarModel() : makeCharacterModel(skinTex||defaultSkinTex); }
+// swap a remote player's model between humanoid / pig / diamond block, keeping position + nametag
 function setPlayerBody(p, body){
   p.body = body || 'none';
-  const wantPig = p.body==='pig';
-  const isPig = !!(p.model && p.model.userData && p.model.userData.isPig);
-  if(wantPig !== isPig){
+  const want=bodyToKind(p.body);
+  if(modelKind(p.model)!==want){
     const tag=p.tag;
     if(p.model){ if(tag) p.model.remove(tag); scene.remove(p.model); }
-    p.model = wantPig ? makePigModel() : makeCharacterModel(p.skinTex||defaultSkinTex);
+    p.model = makeBodyModel(want, p.skinTex);
     if(tag) p.model.add(tag);
     p.model.visible=true; scene.add(p.model);
   }
 }
-function setPlayerBlue(p, blue){
-  p.blue = !!blue;
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.blue?NAME_BLUE:'#fff'); p.model.add(p.tag); }
+function setPlayerColor(p, color){
+  p.color = color || '';
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff'); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
+function setPlayerHide(p, hide){ p.hide=!!hide; if(p.tag) p.tag.visible=!p.hide; }   // hidename code: hide the floating nametag from others
 
 // multiplayer player list — hold Tab to show everyone online at the top
 const tabListEl = document.getElementById('tabList');
 let tabShown = false;
 function renderTabList(){
   if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
-  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, blue:fx.blue}];
-  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, blue:!!p.blue});
+  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color}];
+  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||''});
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
   tabListEl.innerHTML = '<div class="th">'+n+' player'+(n===1?'':'s')+' online</div>' +
-    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'"><span'+(r.blue?' style="color:'+NAME_BLUE+'"':'')+'>'+escapeHtml(r.name)+'</span></span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
+    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'"><span'+(r.color?' style="color:'+r.color+'"':'')+'>'+escapeHtml(r.name)+'</span></span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
   tabListEl.hidden=false;
 }
 
@@ -3643,15 +3715,16 @@ function mpApplyRemoteBlock(x,y,z,b){
 }
 function mpAddPlayer(p){
   if(!p || p.id===mp.id || mp.players.has(p.id)) return;
-  const blue=!!p.blue;
+  const color=p.color||'';
   const model=makeCharacterModel(defaultSkinTex); model.visible=true; scene.add(model);
-  const tag=makeNametag(p.name||('Player'+p.id), blue?NAME_BLUE:'#fff'); model.add(tag);
+  const tag=makeNametag(p.name||('Player'+p.id), color||'#fff'); model.add(tag);
   const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
     x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
-    body:'none', blue:blue };
+    body:'none', color:color, hide:!!p.hide };
   mp.players.set(p.id, rec);
+  if(p.hide) tag.visible=false;
   if(p.skin) applyRemoteSkin(p.id, p.skin);          // their custom skin, if they have one
-  if(p.body && p.body!=='none') setPlayerBody(rec, p.body);   // giant / small / pig already active on join
+  if(p.body && p.body!=='none') setPlayerBody(rec, p.body);   // big / small / pig / block already active on join
 }
 // apply another player's 64x64 skin to their model + Tab head icon
 function applyRemoteSkin(id, dataURL){
@@ -3680,17 +3753,18 @@ function mpUpdatePlayers(dt){
     p.walkAmp=(p.walkAmp||0) + ((spd>0.6?0.85:0)-(p.walkAmp||0))*(1-Math.exp(-14*dt));
     if(spd>0.6) p.walkT=(p.walkT||0)+dt*9;
     const cr = p.sit ? 0 : (p.crouch||0);
-    const bodyScale = p.body==='giant' ? 4.5 : p.body==='small' ? 0.18 : 0.9;   // giant 5x / small 5x-down vs the normal 0.9
+    const bodyScale = p.body==='giant' ? 4.5 : p.body==='small' ? 0.18 : p.body==='block' ? 1.0 : 0.9;   // giant 5x / small 5x-down / block 1× vs the normal 0.9
     p.model.position.set(p.x, p.y, p.z);
     p.model.rotation.set(0, p.yaw + Math.PI, 0);
+    p.model.scale.set(bodyScale, bodyScale, bodyScale);
     const ud=p.model.userData;
-    if(ud.isPig){
-      p.model.scale.set(bodyScale, bodyScale, bodyScale);
+    if(ud.isBlock){
+      /* a diamond block: no limbs to pose */
+    } else if(ud.isPig){
       ud.headPivot.rotation.x = -p.pitch*0.6;
       const sw=Math.sin(p.walkT||0)*(p.walkAmp||0);       // trot: diagonal legs swing together
       ud.legFL.rotation.x= sw; ud.legBR.rotation.x= sw; ud.legFR.rotation.x=-sw; ud.legBL.rotation.x=-sw;
     } else {
-      p.model.scale.set(bodyScale, bodyScale, bodyScale);
       ud.headPivot.rotation.x = -p.pitch;
       poseCharacter(ud, cr, !!p.sit, p.walkT||0, p.walkAmp||0);
       if(p.swing>0){ p.swing=Math.max(0, p.swing-dt*3.4); const arm=ud.armR; if(arm) arm.rotation.x = -Math.sin((1-p.swing)*Math.PI)*1.5; }   // punch swing overrides the walk swing
@@ -3735,11 +3809,11 @@ function mpHandle(m){
   else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
   else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
-  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerBlue(p, m.blue); } }   // secret-code effect: giant / small / pig / blue name
+  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerHide(p, m.hide); } }   // secret-code effect: big / small / pig / block / name colour / hidename
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
-    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.blue?NAME_BLUE:'#fff'); p.model.add(p.tag); } }
+    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff'); p.model.add(p.tag); } }
   }
   else if(m.type==='full'){ chatPush('Server is full right now, try again soon.', 'sys'); }
 }
@@ -3791,7 +3865,7 @@ const BW_RESNAME = { iron:'Iron', gold:'Gold', diamond:'Diamond', emerald:'Emera
 let bwMode = false;   // makes chunk generation produce void + prefab instead of terrain
 const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,diamond:0,emerald:0},
   loadout:{sword:1,armor:1,pick:0,axe:0,shears:false}, beds:[true,true,true,true], teams:[], players:new Map(),
-  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, tnt:0, fireballs:0, arrows:0, slots:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}], projectiles:[], explosions:[], tnts:[] };
+  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, tnt:0, fireballs:0, arrows:0, slots:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}], projectiles:[], explosions:[], tnts:[], speedUntil:0, jumpUntil:0, invisUntil:0 };
 function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
@@ -3887,6 +3961,7 @@ function bwHandle(m){
       bwCounts_reset(); bwSetHotbar(); bwUpdateHud(); return true;
     case 'bwteams': for(const p of (m.players||[])){ const e=bw.players.get(p.id)||{}; Object.assign(e,p); bw.players.set(p.id,e); const rp=mp.players.get(p.id); if(rp){ rp.team=p.team; rp.armor=p.armor; rp.sword=p.sword; bwApplyRemoteGear(p.id); } } bwApplyLocalGear(); bwUpdateHud(); return true;
     case 'bwgear': { const rp=mp.players.get(m.id); if(rp){ rp.armor=m.armor; rp.sword=m.sword; bwApplyRemoteGear(m.id); } if(m.id===mp.id){ bw.loadout.armor=m.armor; bw.loadout.sword=m.sword; bwApplyLocalGear(); } } return true;
+    case 'bwinvis': { const rp=mp.players.get(m.id); if(rp && rp.model) rp.model.visible=!m.on; } return true;   // an invisibility potion hid/unhid another player
     case 'bwreset': bwRebuildWorld(); bwClearItems(); bwCounts_reset(); bwSetHotbar(); return true;
     case 'bwblock': bwApplyBlock(m.x,m.y,m.z,m.b); return true;
     case 'bwbeddown': bw.beds[m.team]=false; { const g=BW_GEOM[m.team]; bwApplyBlock(g.bedFoot.x,g.bedFoot.y,g.bedFoot.z,0); bwApplyBlock(g.bedHead.x,g.bedHead.y,g.bedHead.z,0); }
@@ -3916,7 +3991,7 @@ function bwBreakBed(x,y,z){
 }
 
 // ---- finite blocks / hotbar ----
-function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; bw.arrows=0; }
+function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; bw.arrows=0; bw.speedUntil=0; bw.jumpUntil=0; bw.invisUntil=0; }
 // build the survival hotbar: sword, the 5 buyable blocks (with counts), then tools + apples
 function bwSetHotbar(){
   const wool = bw.team!=null? BW_TEAMS[bw.team].wool : 'white_wool';
@@ -3982,7 +4057,7 @@ function bwItemIcon(stack, size){
 
 // ---- worn armour + held sword on a character model (local body or a remote player) ----
 function bwSetGear(model, teamColor, armorTier, swordTier){
-  const ud=model && model.userData; if(!ud) return;
+  const ud=model && model.userData; if(!ud || ud.isPig || ud.isBlock) return;   // pig/block avatars have no humanoid slots to wear armour
   if(ud.gear) for(const m of ud.gear){ if(m.parent) m.parent.remove(m); }
   ud.gear=[];
   const S=1/16;
@@ -4060,6 +4135,9 @@ function bwOnBuy(m){
   if(g.item==='tnt') bw.tnt++;
   if(g.item==='fireball') bw.fireballs++;
   if(g.item==='arrow') bw.arrows += (g.n||6);
+  if(g.potion==='speed'){ bw.speedUntil=performance.now()+45000; chatPush('Speed II for 45s.', 'sys'); }
+  if(g.potion==='jump'){ bw.jumpUntil=performance.now()+45000; chatPush('Jump Boost V for 45s.', 'sys'); }
+  if(g.potion==='invis'){ bw.invisUntil=performance.now()+30000; chatPush('Invisibility for 30s — others can’t see you.', 'sys'); }
   bwSetHotbar();   // rebuild hotbar (new sword/tools) + refresh worn gear
   bwUpdateHud(); bwFlashShop(m.item, 'Purchased!', true);
 }
@@ -4141,8 +4219,11 @@ const BW_SHOP = [
   { cat:'Utility',item:'fireball',     name:'Fireball',        sub:'launch',   cost:{iron:40},   col:'#ff7018' },
   { cat:'Ranged', item:'bow',          name:'Bow',             sub:'',         cost:{gold:12},   col:'#8a5a3c' },
   { cat:'Ranged', item:'arrows',       name:'Arrows',          sub:'×6',       cost:{gold:2},    col:'#caa15a' },
+  { cat:'Potions',item:'pot_speed',    name:'Speed II Potion', sub:'45s',      cost:{emerald:1}, col:'#4fc3f7' },
+  { cat:'Potions',item:'pot_jump',     name:'Jump V Potion',   sub:'45s',      cost:{emerald:1}, col:'#8bc34a' },
+  { cat:'Potions',item:'pot_invis',    name:'Invisibility',    sub:'30s',      cost:{emerald:2}, col:'#9e9e9e' },
 ];
-const BW_CATS = ['Blocks','Melee','Armor','Ranged','Special','Utility','Upgrades'];
+const BW_CATS = ['Blocks','Melee','Armor','Ranged','Potions','Special','Utility','Upgrades'];
 const BW_UPGRADES = [
   { key:'sharp', name:'Sharpened Swords', desc:'Your team deals extra melee damage', cost:[4],        max:1, col:'#b48ead' },
   { key:'prot',  name:'Reinforced Armor', desc:'Protection I–IV for the team',       cost:[2,4,8,16], max:4, col:'#8fa6c9' },
@@ -4522,12 +4603,22 @@ function frame(now){
   const cr = sit.active ? 0 : (player.crouch||0);
   body.position.set(player.pos.x, player.pos.y, player.pos.z);   // feet stay planted; the pelvis drop is done inside poseCharacter
   body.rotation.set(0, player.yaw + Math.PI, 0);         // the group no longer tilts; the upper body pivots at the waist instead
-  const localBodyScale = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : 0.9;   // giant/small secret codes size your own third-person body too
+  const localBodyScale = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : fx.body==='block' ? 1.0 : 0.9;   // big/small/block secret codes size your own body too
   body.scale.set(localBodyScale, localBodyScale, localBodyScale);
-  headPivot.rotation.x = -player.pitch;
-  poseCharacter(body.userData, cr, sit.active, bobT, walkAmpLocal);
-  if(swing>0) body.userData.armR.rotation.x = -Math.sin((1-swing)*Math.PI)*1.5;   // a punch swing overrides the walk swing
-  body.visible = (state===PLAY && camMode!==0);
+  const lud=body.userData;
+  if(lud.isBlock){
+    /* a diamond block: no limbs to pose */
+  } else if(lud.isPig){
+    lud.headPivot.rotation.x = -player.pitch*0.6;
+    const psw=Math.sin(bobT)*walkAmpLocal;
+    lud.legFL.rotation.x=psw; lud.legBR.rotation.x=psw; lud.legFR.rotation.x=-psw; lud.legBL.rotation.x=-psw;
+  } else {
+    headPivot.rotation.x = -player.pitch;
+    poseCharacter(lud, cr, sit.active, bobT, walkAmpLocal);
+    if(swing>0) lud.armR.rotation.x = -Math.sin((1-swing)*Math.PI)*1.5;   // a punch swing overrides the walk swing
+  }
+  // show your own body in first person when a body code is active, so you see yourself as big/small/pig
+  body.visible = (state===PLAY && !sleep.active && (camMode!==0 || fx.body!=='none'));
 
   if(sleep.active){
     const dv=DIRV[sleep.facing];                       // foot -> head direction
@@ -4653,10 +4744,13 @@ window.__mc = {
   skinTexel(px,py){ return skinTexelAt(px,py); }, skinFillAt(px,py){ floodFillAt(px,py); }, skinToolState(){ return {eyedrop, fillMode}; },
   mpJoin(){ startMultiplayer(); }, mpInfo(){ return { active:mp.active, id:mp.id, players:mp.players.size, posSent:mp.posSent||0, posRecv:mp.posRecv||0, state:state }; },
   // ---- secret-code test hooks ----
-  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, blue:fx.blue, stick:fx.stick, eyeMul:localEyeMul }; },
+  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, eyeMul:localEyeMul, localKind:modelKind(body) }; },
+  remoteTags(){ return [...mp.players.values()].map(p=>({ id:p.id, tagVisible:p.tag?!!p.tag.visible:null, hide:!!p.hide, color:p.color||'', visible:!!(p.model&&p.model.visible) })); },
+  bwPotions(){ const t=performance.now(); return { speed:Math.max(0,Math.round((bw.speedUntil-t)/1000)), jump:Math.max(0,Math.round((bw.jumpUntil-t)/1000)), invis:Math.max(0,Math.round((bw.invisUntil-t)/1000)) }; },
+  selfBodyVisible(){ return !!body.visible; }, selfBodyKind(){ return modelKind(body); },
   hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
   tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
-  remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, blue:!!p.blue, isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), sx:+p.model.scale.x.toFixed(2) })); },
+  remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, color:p.color||'', isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), isBlock:!!(p.model&&p.model.userData&&p.model.userData.isBlock), sx:+p.model.scale.x.toFixed(2) })); },
   openSuggest(){ openSuggest(); return !suggestEl.hidden; }, sendSuggestion(){ return sendSuggestion(); }, setSuggest(t){ suggestTextEl.value=t; },
   chat(t){ if(mp.active) mpSend({type:'chat',text:t}); else chatPush('You: '+t); }, chats(){ return chatMsgs.map(m=>m.text); },
   search(q){ invQuery=q; invSearch.value=q; renderInvGrid(); },
