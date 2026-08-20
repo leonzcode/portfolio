@@ -68,9 +68,8 @@
       <div class="ctl"><div class="row"><b>Molar mass (relative)</b><span class="val" id="massLabel">1.00</span></div><input id="mass" type="range" min="0.2" max="4" step="0.01" value="1"></div>
     </div>
     <div class="panel" style="left:930px; top:184px; width:352px;">
-      <h3>Volume &amp; pressure <span>— move the piston</span></h3>
+      <h3>Container volume <span>— move the piston</span></h3>
       <div class="ctl"><div class="row"><b>Volume &nbsp;(piston up = bigger)</b><span class="val" id="volLabel">50%</span></div><input id="volume" type="range" min="0" max="100" value="50"></div>
-      <div class="ctl"><div class="row"><b>Pressure &nbsp;(push piston down)</b><span class="val" id="presLabel">—</span></div><input id="pressure" type="range" min="27" max="100" value="37"></div>
     </div>
     <div class="panel" style="left:930px; top:308px; width:352px;">
       <h3>View</h3>
@@ -99,9 +98,9 @@ const pvCanvas=el('pv'), pctx=pvCanvas.getContext('2d');
 const CW=canvas.width, CH=canvas.height;      // FIXED canvas — never resized, so the page never reflows
 
 const countSlider=el('count'),tempSlider=el('temperature'),massSlider=el('mass'),
-      volumeSlider=el('volume'),pressureSlider=el('pressure'),
+      volumeSlider=el('volume'),
       showVec=el('showVec'),showTrails=el('showTrails'),showHitsChk=el('showHits');
-const countLabel=el('countLabel'),tempLabel=el('tempLabel'),massLabel=el('massLabel'),volLabel=el('volLabel'),presLabel=el('presLabel');
+const countLabel=el('countLabel'),tempLabel=el('tempLabel'),massLabel=el('massLabel'),volLabel=el('volLabel');
 const playPauseBtn=el('playPause'),recBtn=el('recBtn'),clrBtn=el('clrBtn');
 
 // fixed sim constants (decluttered: radius / bins / trail-length / leak are no longer knobs)
@@ -120,9 +119,7 @@ function setGasH(h){ gasH=Math.max(GH_MIN,Math.min(GH_MAX,h)); offX=CXL; offY=Ma
 function boxArea(){ return CYW*gasH; }
 function getW(){return CYW;} function getH(){return gasH;}
 // Volume + Pressure sliders are two views of the same piston height
-function syncVP(){ volumeSlider.value=Math.round((gasH-GH_MIN)/(GH_MAX-GH_MIN)*100);
-  pressureSlider.value=Math.round(Math.max(27,Math.min(100,GH_MIN/gasH*100)));
-  volLabel.textContent=volumeSlider.value+'%'; presLabel.textContent=pressureSlider.value+'%'; }
+function syncVP(){ volumeSlider.value=Math.round((gasH-GH_MIN)/(GH_MAX-GH_MIN)*100); volLabel.textContent=volumeSlider.value+'%'; }
 
 class Particle{ constructor(x,y,vx,vy,r,c,m){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.r=r;this.color=c;this.mass=m;this.alive=true;}
   speed(){return Math.hypot(this.vx,this.vy);} KE(){return 0.5*this.mass*(this.vx*this.vx+this.vy*this.vy);} }
@@ -145,7 +142,6 @@ tempSlider.addEventListener('input',()=>{ if(temperature>lastTemp) heatFlare=Mat
 // heavier gas at the same temperature moves slower: rescale speeds to hold KE (T) constant
 massSlider.addEventListener('input',()=>{ const nm=+massSlider.value, f=Math.sqrt(massRel/nm); particles.forEach(p=>{p.vx*=f;p.vy*=f;p.mass=nm;}); massRel=nm; handleControls(); });
 volumeSlider.addEventListener('input',()=>{ setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); syncVP(); });
-pressureSlider.addEventListener('input',()=>{ setGasH(GH_MIN*100/(+pressureSlider.value)); syncVP(); });
 showVec.addEventListener('change',()=>showVectors=showVec.checked);
 showTrails.addEventListener('change',()=>showTrail=showTrails.checked);
 showHitsChk.addEventListener('change',()=>showHits=showHitsChk.checked);
