@@ -329,7 +329,7 @@
 
 <div class="screen" id="suggest" hidden>
   <div class="title" style="font-size:28px;">Suggest a feature</div>
-  <div class="ctrlHint">Got an idea for Leoncraft? A new block, mob, game mode, anything. It goes straight to Leon.</div>
+  <div class="ctrlHint">Any suggestions for Leoncraft? I will try to add your suggestions within 1-2 days.</div>
   <input class="nameField" id="suggestName" type="text" maxlength="60" placeholder="Your name (optional)" autocomplete="off" spellcheck="false">
   <textarea class="suggestBox" id="suggestText" maxlength="1000" placeholder="What should I add or change?"></textarea>
   <input class="hpField" id="suggestHp" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
@@ -3600,8 +3600,8 @@ let localEyeMul = 1;                      // giant/small change the local camera
 
 function flashCode(msg, el){ if(!el) return; el.textContent=msg; clearTimeout(el._t); el._t=setTimeout(()=>{ el.textContent=''; }, 3000); }
 function applyLocalBody(){
-  setLocalBody(fx.body==='pig' ? 'pig' : fx.body==='block' ? 'block' : 'human');   // become a pig / block locally too, so first-person reflects it
-  localEyeMul = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.3 : fx.body==='pig' ? 0.6 : fx.body==='block' ? 0.95 : 1;   // camera rides at your new height
+  setLocalBody(bodyToKind(fx.body));   // become a pig / block / tree locally too, so first-person reflects it
+  localEyeMul = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.3 : fx.body==='pig' ? 0.6 : fx.body==='block' ? 0.95 : fx.body==='tree' ? 1.7 : 1;   // camera rides at your new height
 }
 function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick }); }   // relayed to everyone else
 function giveStick(){ hotbar[0]=STICK_ITEM; selSlot=0; if(typeof renderHotbar==='function') renderHotbar(); if(typeof showItemName==='function') showItemName(STICK_ITEM); }
@@ -3613,12 +3613,12 @@ function applyCode(raw, msgEl){
   if(code==='bedwars'){ flashCode('Launching Bed Wars…', msgEl); startBedwars(); return; }
   let note='';
   if(code==='leoniscool'){ fx.color = fx.color ? '' : NAME_BLUE; note = fx.color ? 'Your name is now blue.' : 'Blue name turned off.'; }
-  else if(code==='hidename'){ fx.hide=!fx.hide; note = fx.hide ? 'Your name is now hidden from others.' : 'Your name is visible again.'; }
+  else if(code==='secret'){ fx.hide=!fx.hide; note = fx.hide ? 'Your name is now hidden from others.' : 'Your name is visible again.'; }
   else if(code==='tade'){ fx.stick=!fx.stick; if(fx.stick){ giveStick(); note='Knockback stick equipped — check slot 1.'; } else { removeStick(); note='Knockback stick removed.'; } }
-  else if(code==='big' || code==='small' || code==='pig' || code==='block'){
-    const target = { big:'giant', small:'small', pig:'pig', block:'block' }[code];
+  else if(code==='big' || code==='small' || code==='pig' || code==='block' || code==='tree'){
+    const target = { big:'giant', small:'small', pig:'pig', block:'block', tree:'tree' }[code];
     fx.body = (fx.body===target) ? 'none' : target;   // typing the same body code again turns it off
-    const label = { giant:'GIANT', small:'tiny', pig:'a pig', block:'a diamond block' }[fx.body];
+    const label = { giant:'GIANT', small:'tiny', pig:'a pig', block:'a diamond block', tree:'a tree' }[fx.body];
     note = (fx.body==='none') ? 'Back to your normal self.' : ('You are now '+label+'. Everyone can see it.');
   }
   else { flashCode('Unknown code.', msgEl); return; }
@@ -3632,17 +3632,17 @@ function makePigModel(){
   const g=new THREE.Group();
   const at=(m,x,y,z)=>{ m.position.set(x,y,z); return m; };
   const bodyM=box(10*P,8*P,16*P, PINK); bodyM.position.set(0,10*P,0); g.add(bodyM);       // torso lies along Z
-  const hp=new THREE.Group(); hp.position.set(0,12*P,-8*P); g.add(hp);                     // head pivots at the front of the body
-  const head=box(8*P,8*P,8*P, PINK); head.position.set(0,0,-4*P); hp.add(head);
-  const snout=box(4*P,3*P,1.2*P, SNOUT); snout.position.set(0,-1*P,-8.4*P); hp.add(snout);
-  hp.add(at(box(1*P,1*P,0.8*P, DARK), -1*P,-1*P,-8.9*P));   // nostrils
-  hp.add(at(box(1*P,1*P,0.8*P, DARK),  1*P,-1*P,-8.9*P));
-  hp.add(at(box(1.4*P,1.4*P,0.6*P, DARK), -2.4*P,1.6*P,-8.05*P));   // eyes
-  hp.add(at(box(1.4*P,1.4*P,0.6*P, DARK),  2.4*P,1.6*P,-8.05*P));
-  hp.add(at(box(2*P,2*P,1*P, PINK), -2.4*P,4.3*P,-2.5*P));   // ears
-  hp.add(at(box(2*P,2*P,1*P, PINK),  2.4*P,4.3*P,-2.5*P));
+  const hp=new THREE.Group(); hp.position.set(0,12*P,8*P); g.add(hp);                      // head pivots at the front (+Z, the way the model faces)
+  const head=box(8*P,8*P,8*P, PINK); head.position.set(0,0,4*P); hp.add(head);
+  const snout=box(4*P,3*P,1.2*P, SNOUT); snout.position.set(0,-1*P,8.4*P); hp.add(snout);
+  hp.add(at(box(1*P,1*P,0.8*P, DARK), -1*P,-1*P,8.9*P));   // nostrils
+  hp.add(at(box(1*P,1*P,0.8*P, DARK),  1*P,-1*P,8.9*P));
+  hp.add(at(box(1.4*P,1.4*P,0.6*P, DARK), -2.4*P,1.6*P,8.05*P));   // eyes
+  hp.add(at(box(1.4*P,1.4*P,0.6*P, DARK),  2.4*P,1.6*P,8.05*P));
+  hp.add(at(box(2*P,2*P,1*P, PINK), -2.4*P,4.3*P,2.5*P));   // ears
+  hp.add(at(box(2*P,2*P,1*P, PINK),  2.4*P,4.3*P,2.5*P));
   const leg=(x,z)=>{ const piv=new THREE.Group(); piv.position.set(x,6*P,z); const l=box(4*P,6*P,4*P, PINK); l.position.set(0,-3*P,0); piv.add(l); g.add(piv); return piv; };
-  const legFL=leg(-3*P,-5*P), legFR=leg(3*P,-5*P), legBL=leg(-3*P,5*P), legBR=leg(3*P,5*P);
+  const legFL=leg(-3*P,5*P), legFR=leg(3*P,5*P), legBL=leg(-3*P,-5*P), legBR=leg(3*P,-5*P);   // front legs under the head (+Z)
   g.userData={ headPivot:hp, legFL, legFR, legBL, legBR, isPig:true };
   return g;
 }
@@ -3664,9 +3664,34 @@ function makeBlockAvatarModel(){
   g.add(g.userData.headPivot);
   return g;
 }
-function modelKind(m){ const u=m&&m.userData; return (u&&u.isPig)?'pig':(u&&u.isBlock)?'block':'human'; }
-function bodyToKind(body){ return body==='pig'?'pig':body==='block'?'block':'human'; }   // giant/small stay humanoid, just scaled
-function makeBodyModel(kind, skinTex){ return kind==='pig'?makePigModel() : kind==='block'?makeBlockAvatarModel() : makeCharacterModel(skinTex||defaultSkinTex); }
+// a 1×1 cube textured from the atlas for any block id (used by the tree avatar)
+function bwTexturedCube(id){
+  const bl=BLOCKS[id], geo=new THREE.BoxGeometry(1,1,1);
+  if(bl){ const faceArg=[2,2,0,1,2,2], uv=geo.attributes.uv;
+    for(let f=0;f<6;f++){ const [u0,v0,u1,v1]=tileUV(faceTile(bl,faceArg[f])); const q=[[u0,v1],[u1,v1],[u0,v0],[u1,v0]]; for(let k=0;k<4;k++) uv.setXY(f*4+k, q[k][0], q[k][1]); }
+    uv.needsUpdate=true;
+    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map:atlasTex, transparent:!bl.opaque, alphaTest:bl.cutout?0.5:0, side:bl.cutout?THREE.DoubleSide:THREE.FrontSide }));
+  }
+  return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color:0x5a9a3a }));
+}
+// A full tree avatar (the "tree" secret code): oak-log trunk + oak-leaf canopy, built from real blocks.
+function makeTreeAvatarModel(){
+  const log=(typeof B!=='undefined'&&B.log)?B.log:bwId('oak_log'), leaf=(typeof B!=='undefined'&&B.leaves)?B.leaves:bwId('oak_leaves');
+  const g=new THREE.Group();
+  const put=(id,x,y,z)=>{ const m=bwTexturedCube(id); m.position.set(x,y,z); g.add(m); };
+  for(let y=0;y<3;y++) put(log, 0, 0.5+y, 0);                                 // 3-log trunk
+  for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++){                          // 3×3 canopy, two layers
+    if(!(Math.abs(dx)===1 && Math.abs(dz)===1)) put(leaf, dx, 3.5, dz);        // lower layer minus corners (rounder)
+    put(leaf, dx, 4.5, dz);
+  }
+  put(leaf, 0, 5.5, 0);                                                        // top cap
+  g.userData={ headPivot:new THREE.Group(), isTree:true };
+  g.add(g.userData.headPivot);
+  return g;
+}
+function modelKind(m){ const u=m&&m.userData; return (u&&u.isPig)?'pig':(u&&u.isTree)?'tree':(u&&u.isBlock)?'block':'human'; }
+function bodyToKind(body){ return body==='pig'?'pig':body==='tree'?'tree':body==='block'?'block':'human'; }   // giant/small stay humanoid, just scaled
+function makeBodyModel(kind, skinTex){ return kind==='pig'?makePigModel() : kind==='tree'?makeTreeAvatarModel() : kind==='block'?makeBlockAvatarModel() : makeCharacterModel(skinTex||defaultSkinTex); }
 // swap a remote player's model between humanoid / pig / diamond block, keeping position + nametag
 function setPlayerBody(p, body){
   p.body = body || 'none';
@@ -3753,15 +3778,15 @@ function mpUpdatePlayers(dt){
     p.walkAmp=(p.walkAmp||0) + ((spd>0.6?0.85:0)-(p.walkAmp||0))*(1-Math.exp(-14*dt));
     if(spd>0.6) p.walkT=(p.walkT||0)+dt*9;
     const cr = p.sit ? 0 : (p.crouch||0);
-    const bodyScale = p.body==='giant' ? 4.5 : p.body==='small' ? 0.18 : p.body==='block' ? 1.0 : 0.9;   // giant 5x / small 5x-down / block 1× vs the normal 0.9
+    const bodyScale = p.body==='giant' ? 4.5 : p.body==='small' ? 0.18 : (p.body==='block'||p.body==='tree') ? 1.0 : 0.9;   // giant 5x / small 5x-down / block+tree 1× vs the normal 0.9
     p.model.position.set(p.x, p.y, p.z);
     p.model.rotation.set(0, p.yaw + Math.PI, 0);
     p.model.scale.set(bodyScale, bodyScale, bodyScale);
     const ud=p.model.userData;
-    if(ud.isBlock){
-      /* a diamond block: no limbs to pose */
+    if(ud.isBlock || ud.isTree){
+      /* a diamond block or a tree: no limbs to pose */
     } else if(ud.isPig){
-      ud.headPivot.rotation.x = -p.pitch*0.6;
+      ud.headPivot.rotation.x = p.pitch*0.6;
       const sw=Math.sin(p.walkT||0)*(p.walkAmp||0);       // trot: diagonal legs swing together
       ud.legFL.rotation.x= sw; ud.legBR.rotation.x= sw; ud.legFR.rotation.x=-sw; ud.legBL.rotation.x=-sw;
     } else {
@@ -4091,7 +4116,7 @@ function bwItemIcon(stack, size){
 
 // ---- worn armour + held sword on a character model (local body or a remote player) ----
 function bwSetGear(model, teamColor, armorTier, swordTier){
-  const ud=model && model.userData; if(!ud || ud.isPig || ud.isBlock) return;   // pig/block avatars have no humanoid slots to wear armour
+  const ud=model && model.userData; if(!ud || ud.isPig || ud.isBlock || ud.isTree) return;   // pig/block/tree avatars have no humanoid slots to wear armour
   if(ud.gear) for(const m of ud.gear){ if(m.parent) m.parent.remove(m); }
   ud.gear=[];
   const S=1/16;
@@ -4167,7 +4192,7 @@ function bwOnWin(m){
 function bwOnBuy(m){
   bw.res = m.res||bw.res; bw.loadout = m.loadout||bw.loadout;
   const g = m.give||{};
-  if(g.block){ const nm={ wool:(bw.team!=null?BW_TEAMS[bw.team].wool:'white_wool'), planks:'oak_planks', endstone:'end_stone', glass:'glass', obsidian:'obsidian' }[g.block]; const id=bwId(nm); if(id) bwGiveBlock(id, g.n||1); }
+  if(g.block){ const nm={ wool:(bw.team!=null?BW_TEAMS[bw.team].wool:'white_wool'), planks:'oak_planks', endstone:'end_stone', glass:'glass', obsidian:'obsidian', sponge:'sponge' }[g.block]; const id=bwId(nm); if(id) bwGiveBlock(id, g.n||1); }
   if(g.item==='golden_apple') bw.apples++;
   if(g.item==='ender_pearl') bw.pearls++;
   if(g.item==='tnt') bw.tnt++;
@@ -4245,6 +4270,7 @@ const BW_SHOP = [
   { cat:'Blocks', item:'endstone',     name:'End Stone',       sub:'×12', cost:{iron:24},   col:'#dda' },
   { cat:'Blocks', item:'glass',        name:'Glass',           sub:'×4',  cost:{iron:12},   col:'#9cf' },
   { cat:'Blocks', item:'obsidian',     name:'Obsidian',        sub:'×4',  cost:{emerald:4}, col:'#312' },
+  { cat:'Blocks', item:'sponge',       name:'Sponge',          sub:'×4',  cost:{gold:30},   col:'#d9cf5b' },
   { cat:'Melee',  item:'sword_stone',  name:'Stone Sword',     sub:'',    cost:{gold:10},   col:'#999' },
   { cat:'Melee',  item:'sword_iron',   name:'Iron Sword',      sub:'',    cost:{emerald:4}, col:'#ccd' },
   { cat:'Melee',  item:'sword_diamond',name:'Diamond Sword',   sub:'',    cost:{diamond:6}, col:'#4dd' },
@@ -4642,13 +4668,13 @@ function frame(now){
   const cr = sit.active ? 0 : (player.crouch||0);
   body.position.set(player.pos.x, player.pos.y, player.pos.z);   // feet stay planted; the pelvis drop is done inside poseCharacter
   body.rotation.set(0, player.yaw + Math.PI, 0);         // the group no longer tilts; the upper body pivots at the waist instead
-  const localBodyScale = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : fx.body==='block' ? 1.0 : 0.9;   // big/small/block secret codes size your own body too
+  const localBodyScale = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : (fx.body==='block'||fx.body==='tree') ? 1.0 : 0.9;   // big/small/block/tree secret codes size your own body too
   body.scale.set(localBodyScale, localBodyScale, localBodyScale);
   const lud=body.userData;
-  if(lud.isBlock){
-    /* a diamond block: no limbs to pose */
+  if(lud.isBlock || lud.isTree){
+    /* a diamond block or a tree: no limbs to pose */
   } else if(lud.isPig){
-    lud.headPivot.rotation.x = -player.pitch*0.6;
+    lud.headPivot.rotation.x = player.pitch*0.6;
     const psw=Math.sin(bobT)*walkAmpLocal;
     lud.legFL.rotation.x=psw; lud.legBR.rotation.x=psw; lud.legFR.rotation.x=-psw; lud.legBL.rotation.x=-psw;
   } else {
@@ -4678,7 +4704,8 @@ function frame(now){
     camera.lookAt(eye.x+d.x, eye.y+d.y, eye.z+d.z);
   } else {
     const off=d.clone().multiplyScalar(camMode===1?-1:1);
-    const dist=camDistClamped(eye, off, 4.2);
+    const tpWant = 4.2 * (fx.body==='giant' ? 4.6 : fx.body==='small' ? 0.55 : fx.body==='tree' ? 2.6 : (fx.body==='pig'||fx.body==='block') ? 1.15 : 1);   // pull the camera back so a giant/tree body fits in frame
+    const dist=camDistClamped(eye, off, tpWant);
     camera.position.copy(eye).addScaledVector(off, dist);
     if(camMode===1) camera.lookAt(eye.x+d.x*4, eye.y+d.y*4, eye.z+d.z*4);
     else camera.lookAt(eye.x, eye.y, eye.z);
