@@ -2966,7 +2966,7 @@ function renderHotbar(){
     if(bw.active){
       const st=bw.slots[i];
       if(st){ const ic=bwItemIcon(st,40);
-        let n=null; if(st.kind==='block') n=bw.counts[st.id]||0; else if(st.kind==='apple') n=bw.apples;
+        let n=null; if(st.kind==='block') n=bw.counts[st.id]||0; else if(st.kind==='apple') n=bw.apples; else if(st.kind==='pearl') n=bw.pearls;
         if(st.kind==='block') ic.style.opacity=(n>0)?'1':'0.4';
         s.appendChild(ic);
         if(n!=null && (n>1 || st.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); }
@@ -3614,7 +3614,7 @@ const BW_RESNAME = { iron:'Iron', gold:'Gold', diamond:'Diamond', emerald:'Emera
 let bwMode = false;   // makes chunk generation produce void + prefab instead of terrain
 const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,diamond:0,emerald:0},
   loadout:{sword:1,armor:1,pick:0,axe:0,shears:false}, beds:[true,true,true,true], teams:[], players:new Map(),
-  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, slots:[], prefabSet:new Set(), villagers:[], teamUp:[{},{},{},{}] };
+  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, slots:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}] };
 function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
@@ -3624,7 +3624,7 @@ function startBedwars(){
   mpConnect();
 }
 function bwEnterUi(){ bwEnsureUi(); const h=document.getElementById('bwHud'); if(h) h.style.display=''; }
-function bwLeaveUi(){ const h=document.getElementById('bwHud'); if(h) h.style.display='none'; const s=document.getElementById('bwShop'); if(s) s.hidden=true; const iv=document.getElementById('bwInv'); if(iv) iv.hidden=true; bwShopOpen=false; bwInvOpen=false; if(typeof bwClearVillagers==='function') bwClearVillagers(); }
+function bwLeaveUi(){ const h=document.getElementById('bwHud'); if(h) h.style.display='none'; const s=document.getElementById('bwShop'); if(s) s.hidden=true; const iv=document.getElementById('bwInv'); if(iv) iv.hidden=true; bwShopOpen=false; bwInvOpen=false; if(typeof bwClearVillagers==='function') bwClearVillagers(); if(typeof bwClearGenerators==='function') bwClearGenerators(); }
 
 // ---- prefab map: write the islands into mpOverrides so streamed chunks show them ----
 function bwPlace(x,y,z,id){ if(id){ mpSetOverride(x,y,z,id); bw.prefabSet.add(x+','+y+','+z); } }
@@ -3658,13 +3658,27 @@ function bwRebuildWorld(){
   bwBuildMap();
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
-  bwSpawnVillagers();
+  bwSpawnVillagers(); bwSpawnGenerators();
 }
+// floating spinning item + label above each generator (Hypixel-style hologram)
+function bwClearGenerators(){ for(const g of bw.gens){ if(g.spin)scene.remove(g.spin); if(g.tag)scene.remove(g.tag); } bw.gens=[]; }
+function bwSpawnGenerators(){
+  bwClearGenerators();
+  const mk=(x,y,z,kind,label)=>{ const col=BW_RESCOL[kind]||0xffffff;
+    const spin=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.4,0.4), new THREE.MeshLambertMaterial({color:col, emissive:new THREE.Color(col).multiplyScalar(0.3)})); spin.position.set(x, y+1.5, z);
+    const tag=makeNametag(label); tag.position.set(x, y+2.4, z);
+    scene.add(spin); scene.add(tag); bw.gens.push({ spin, tag, kind, x, y, z }); };
+  for(const t of BW_TEAMS){ const g=BW_GEOM[t.id].gen; mk(g.x+0.5, g.y, g.z+0.5, 'iron', 'Generator'); }
+  for(const d of BW_DIAMOND){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'diamond', 'Diamond I'); }
+  for(const d of BW_EMERALD){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'emerald', 'Emerald I'); }
+  bwUpdateGenTiers();
+}
+function bwUpdateGenTiers(){ const roman=['','I','II','III']; for(const g of bw.gens){ if(g.kind==='diamond'||g.kind==='emerald'){ scene.remove(g.tag); g.tag=makeNametag((g.kind==='diamond'?'Diamond ':'Emerald ')+(roman[bw.genTier]||'I')); g.tag.position.set(g.x, g.y+2.4, g.z); scene.add(g.tag); } } }
 
 // ---- init + message routing ----
 function bwInit(m){
   bw.active=true; bwMode=true; mp.id=m.id; mp.name=m.name;
-  bw.phase=m.phase; bw.beds=m.beds||[true,true,true,true]; bw.teamUp=m.upgrades||bw.teamUp;
+  bw.phase=m.phase; bw.beds=m.beds||[true,true,true,true]; bw.teamUp=m.upgrades||bw.teamUp; bw.genTier=m.genTier||1;
   bw.team = m.you? m.you.team : null;
   if(m.you){ bw.hp=m.you.hp; bw.res=m.you.res||bw.res; bw.loadout=m.you.loadout||bw.loadout; }
   bw.players.clear(); for(const p of (m.players||[])) bw.players.set(p.id, p);
@@ -3686,7 +3700,7 @@ function bwInit(m){
 // returns true if it handled a bedwars-only message
 function bwHandle(m){
   switch(m.type){
-    case 'bwstate': bw.phase=m.phase; bw.beds=m.beds||bw.beds; bw.teams=m.teams||bw.teams; bw.countdown=m.countdown||0; bw.teamUp=m.upgrades||bw.teamUp; bwUpdateHud();
+    case 'bwstate': bw.phase=m.phase; bw.beds=m.beds||bw.beds; bw.teams=m.teams||bw.teams; bw.countdown=m.countdown||0; bw.teamUp=m.upgrades||bw.teamUp; { const ot=bw.genTier; bw.genTier=m.genTier||bw.genTier; if(bw.genTier!==ot) bwUpdateGenTiers(); } bwUpdateHud();
       if(m.phase==='playing'){ bwHideBanner(); } return true;
     case 'bwupgrades': if(m.team!=null) bw.teamUp[m.team]=m.up; if(bwShopOpen && bwShopCat==='Upgrades') bwRenderShop(); return true;
     case 'bwyou': bw.team=m.team; bw.res=m.res||bw.res; bw.loadout=m.loadout||bw.loadout; bw.hp=m.hp!=null?m.hp:bw.hp; player.hp=bw.hp;
@@ -3722,7 +3736,7 @@ function bwBreakBed(x,y,z){
 }
 
 // ---- finite blocks / hotbar ----
-function bwCounts_reset(){ bw.counts={}; bw.apples=0; }
+function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; }
 // build the survival hotbar: sword, the 5 buyable blocks (with counts), then tools + apples
 function bwSetHotbar(){
   const wool = bw.team!=null? BW_TEAMS[bw.team].wool : 'white_wool';
@@ -3738,6 +3752,7 @@ function bwSetHotbar(){
   if(bw.loadout.axe>0 && k<9)  s[k++]={ kind:'tool', tool:'axe',  tier:bw.loadout.axe };
   if(bw.loadout.shears && k<9) s[k++]={ kind:'tool', tool:'shears' };
   if(bw.apples>0 && k<9)       s[k++]={ kind:'apple' };
+  if(bw.pearls>0 && k<9)       s[k++]={ kind:'pearl' };
   bw.slots = s;
   for(let i=0;i<9;i++) hotbar[i] = (s[i] && s[i].kind==='block') ? s[i].id : 0;
   if(selSlot<0||selSlot>8) selSlot=0;
@@ -3768,6 +3783,8 @@ function bwItemIcon(stack, size){
     R(4,4,3,3,'#dcdcdc'); R(9,4,3,3,'#dcdcdc'); R(6,7,4,4,'#9aa'); R(7,10,2,3,'#6b4a2a');
   } else if(stack.kind==='apple'){
     R(5,4,6,2,'#c62828'); R(4,6,8,6,'#e53935'); R(5,12,6,1,'#c62828'); R(8,2,1,3,'#5d4037'); R(9,3,2,1,'#2e7d32');
+  } else if(stack.kind==='pearl'){
+    R(5,4,6,2,'#2aa87a'); R(4,6,8,6,'#33c690'); R(5,12,6,1,'#1c7a58'); R(6,7,2,2,'#bfffe6'); R(9,9,2,2,'#0f5a40');
   }
   return c;
 }
@@ -3848,6 +3865,7 @@ function bwOnBuy(m){
   const g = m.give||{};
   if(g.block){ const nm={ wool:(bw.team!=null?BW_TEAMS[bw.team].wool:'white_wool'), planks:'oak_planks', endstone:'end_stone', glass:'glass', obsidian:'obsidian' }[g.block]; const id=bwId(nm); if(id) bwGiveBlock(id, g.n||1); }
   if(g.item==='golden_apple') bw.apples++;
+  if(g.item==='ender_pearl') bw.pearls++;
   bwSetHotbar();   // rebuild hotbar (new sword/tools) + refresh worn gear
   bwUpdateHud(); bwFlashShop(m.item, 'Purchased!', true);
 }
@@ -3900,6 +3918,8 @@ function bwMineTick(dt){
   if(bwMining.progress>=bwMining.time){ if(isBed(getBlock(x,y,z))) bwBreakBed(x,y,z); else { setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); } bwClearMining(); }
 }
 function bwFrame(dt){ if(!bw.active) return; bwUpdateItems(dt); bwMineTick(dt);
+  const tt=performance.now()/500;
+  for(const g of bw.gens){ if(g.spin){ g.spin.rotation.y+=dt*1.6; g.spin.position.y=g.y+1.5+Math.sin(tt+g.x*0.7)*0.09; } }   // spin the generator holograms
   if(bw.phase==='playing') bwCheckVoid();
   else if(player.pos.y < BW_VOID+3){ player.pos.set(0.5, BW_Y+3, 0.5); player.vel.set(0,0,0); }   // don't let players fall out of the lobby
   bw._hudDue=(bw._hudDue||0)-dt; if(bw._hudDue<=0){ bw._hudDue=0.25; bwUpdateHud(); }
@@ -3922,8 +3942,9 @@ const BW_SHOP = [
   { cat:'Armor',  item:'armor_diamond',name:'Diamond Armor',   sub:'perm',cost:{diamond:6}, col:'#4dd' },
   { cat:'Special',item:'shears',       name:'Shears',          sub:'',    cost:{iron:20},   col:'#bbb' },
   { cat:'Special',item:'golden_apple', name:'Golden Apple',    sub:'heal',cost:{gold:3},    col:'#fd4' },
+  { cat:'Utility',item:'ender_pearl',  name:'Ender Pearl',     sub:'teleport', cost:{emerald:4}, col:'#2aa87a' },
 ];
-const BW_CATS = ['Blocks','Melee','Armor','Special','Upgrades'];
+const BW_CATS = ['Blocks','Melee','Armor','Special','Utility','Upgrades'];
 const BW_UPGRADES = [
   { key:'sharp', name:'Sharpened Swords', desc:'Your team deals extra melee damage', cost:[4],        max:1, col:'#b48ead' },
   { key:'prot',  name:'Reinforced Armor', desc:'Protection I–IV for the team',       cost:[2,4,8,16], max:4, col:'#8fa6c9' },
@@ -4071,7 +4092,19 @@ function bwUseAction(){
   if(bwUseVillager()) return;                 // right-click the shopkeeper
   const s=bw.slots[selSlot];
   if(s && s.kind==='apple'){ bwEatApple(); return; }
+  if(s && s.kind==='pearl'){ bwThrowPearl(); return; }
   placeBlock();                               // otherwise place the selected block
+}
+function bwThrowPearl(){
+  if(bw.pearls<=0 || bw.dead) return;
+  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z);
+  const dir=camDir(); const step=0.25; let px=o.x,py=o.y,pz=o.z, land=null;
+  for(let d=0.5; d<40; d+=step){ const nx=o.x+dir.x*d, ny=o.y+dir.y*d, nz=o.z+dir.z*d;
+    if(getBlock(Math.floor(nx),Math.floor(ny),Math.floor(nz))){ land={x:px,y:py,z:pz}; break; } px=nx; py=ny; pz=nz; }
+  if(!land) land={x:px,y:py,z:pz};
+  bw.pearls--; bwSetHotbar();
+  player.pos.set(land.x, Math.max(land.y, BW_VOID+2), land.z); player.vel.set(0,0,0);
+  mpSend({type:'pos', x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)});
 }
 
 /* ---- survival inventory screen (replaces the creative block picker in Bed Wars) ---- */
@@ -4100,7 +4133,7 @@ function bwBuildInvScreen(){
   const st=el.querySelector('#bwStore'); for(let i=0;i<27;i++){ const d=document.createElement('div'); d.className='bwislot'; st.appendChild(d); }
   const hr=el.querySelector('#bwHotRow');
   for(let i=0;i<9;i++){ const d=document.createElement('div'); d.className='bwislot'+(i===selSlot?' sel':''); const stk=bw.slots[i];
-    if(stk){ d.appendChild(bwItemIcon(stk,38)); let n=stk.kind==='block'?(bw.counts[stk.id]||0):(stk.kind==='apple'?bw.apples:null); if(n!=null&&(n>1||stk.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; d.appendChild(c); } }
+    if(stk){ d.appendChild(bwItemIcon(stk,38)); let n=stk.kind==='block'?(bw.counts[stk.id]||0):(stk.kind==='apple'?bw.apples:(stk.kind==='pearl'?bw.pearls:null)); if(n!=null&&(n>1||stk.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; d.appendChild(c); } }
     hr.appendChild(d); }
 }
 function bwToggleInv(){
@@ -4372,7 +4405,8 @@ window.__mc = {
   bwHoldAttack(v){ keys['mouse0']=!!v; }, bwMining(){ return bwMining?{prog:+bwMining.progress.toFixed(2), time:+bwMining.time.toFixed(2), crack:!!(bwCrackMesh&&bwCrackMesh.visible)}:null; },
   bwBreakTimeOf(name){ return bwBreakTime(BLOCKS[name]?BLOCKS[name].id:0); },
   bwMineFor(x,y,z,ms){ const bid=getBlock(x,y,z); if(!bid) return {err:'no-block'}; const time=bwBreakTime(bid); let prog=0; const steps=Math.ceil(ms/16);
-    for(let i=0;i<steps;i++){ prog+=0.016; if(prog>=time){ if(isBed(getBlock(x,y,z))) bwBreakBed(x,y,z); else { setBlock(x,y,z,0); mpSendBlock(x,y,z,0); } return {broke:true, time:+time.toFixed(2), atMs:i*16}; } } return {broke:false, time:+time.toFixed(2), prog:+prog.toFixed(2)}; }
+    for(let i=0;i<steps;i++){ prog+=0.016; if(prog>=time){ if(isBed(getBlock(x,y,z))) bwBreakBed(x,y,z); else { setBlock(x,y,z,0); mpSendBlock(x,y,z,0); } return {broke:true, time:+time.toFixed(2), atMs:i*16}; } } return {broke:false, time:+time.toFixed(2), prog:+prog.toFixed(2)}; },
+  bwGens(){ return bw.gens.length; }, bwGenTier(){ return bw.genTier; }, bwGiveP(n){ bw.pearls+=(n||1); bwSetHotbar(); }, bwPearls(){ return bw.pearls; }, bwSelPearl(){ const i=bw.slots.findIndex(s=>s&&s.kind==='pearl'); if(i>=0){ selSlot=i; renderHotbar(); } return i; }, bwThrow(){ bwThrowPearl(); }
 };
 </script>
 </body>
