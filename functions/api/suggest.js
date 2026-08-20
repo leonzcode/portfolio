@@ -33,10 +33,15 @@ export async function onRequestPost({ request, env }) {
 
   const name = (body?.name ?? "").toString().trim().slice(0, MAX_NAME) || "Anonymous";
   const message = (body?.message ?? "").toString().trim();
+  const emailRaw = (body?.email ?? "").toString().trim().slice(0, 120);
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw) ? emailRaw : "";   // optional; only kept if it's a valid address
 
   if (!message) return json({ error: "Type a suggestion first." }, 400);
   if (message.length > MAX_MESSAGE) {
     return json({ error: "Suggestion is too long (max 1000 characters)." }, 400);
+  }
+  if (emailRaw && !email) {
+    return json({ error: "That email doesn't look valid — fix it or leave it blank." }, 400);
   }
 
   if (!env.RESEND_API_KEY || !env.CONTACT_TO_EMAIL) {
@@ -57,9 +62,11 @@ export async function onRequestPost({ request, env }) {
       body: JSON.stringify({
         from: `Leoncraft Suggestions <${fromAddress}>`,
         to: [env.CONTACT_TO_EMAIL],
+        ...(email ? { reply_to: email } : {}),   // reply straight to the suggester when they left an address
         subject: `Leoncraft suggestion from ${name}`,
         text: [
           `From: ${name}`,
+          email ? `Notify: ${email}  (wants an update when it's added)` : `Notify: (no email given)`,
           "",
           message,
           "",

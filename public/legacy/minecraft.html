@@ -332,6 +332,8 @@
   <div class="ctrlHint">Any suggestions for Leoncraft? I will try to add your suggestions within 1-2 days.</div>
   <input class="nameField" id="suggestName" type="text" maxlength="60" placeholder="Your name (optional)" autocomplete="off" spellcheck="false">
   <textarea class="suggestBox" id="suggestText" maxlength="1000" placeholder="What should I add or change?"></textarea>
+  <input class="nameField" id="suggestEmail" type="email" maxlength="120" placeholder="Your email (optional)" autocomplete="off" spellcheck="false">
+  <div class="ctrlHint" style="margin-top:-2px;">Email is optional. Add it and I'll let you know when your suggestion gets added.</div>
   <input class="hpField" id="suggestHp" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
   <div class="codeMsg" id="suggestMsg"></div>
   <div class="ctrlActions">
@@ -3290,6 +3292,7 @@ document.getElementById('ctrlResetBtn').addEventListener('click', ()=>{ binds=Ob
 // ---- Suggestion box: emails a feature idea to Leon via /api/suggest (Cloudflare Pages Function) ----
 const suggestEl=document.getElementById('suggest');
 const suggestTextEl=document.getElementById('suggestText'), suggestNameEl=document.getElementById('suggestName');
+const suggestEmailEl=document.getElementById('suggestEmail');
 const suggestMsgEl=document.getElementById('suggestMsg'), suggestHpEl=document.getElementById('suggestHp');
 let suggestSending=false;
 function openSuggest(){ suggestEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; suggestMsgEl.textContent=''; suggestMsgEl.style.color='#ffec4d'; setTimeout(()=>suggestTextEl.focus(), 40); }
@@ -3298,11 +3301,13 @@ async function sendSuggestion(){
   if(suggestSending) return;
   const message=suggestTextEl.value.trim();
   if(!message){ suggestMsgEl.style.color='#ff9a9a'; suggestMsgEl.textContent='Type a suggestion first.'; return; }
+  const email=suggestEmailEl.value.trim();
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ suggestMsgEl.style.color='#ff9a9a'; suggestMsgEl.textContent='That email looks off — fix it or leave it blank.'; return; }
   suggestSending=true; suggestMsgEl.style.color='#ffec4d'; suggestMsgEl.textContent='Sending…';
   try{
     const r=await fetch('/api/suggest', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ name:suggestNameEl.value.trim(), message, website:suggestHpEl.value }) });
-    if(r.ok){ suggestMsgEl.style.color='#9fe89f'; suggestMsgEl.textContent='Thanks! Your suggestion was sent.'; suggestTextEl.value=''; }
+      body: JSON.stringify({ name:suggestNameEl.value.trim(), email, message, website:suggestHpEl.value }) });
+    if(r.ok){ suggestMsgEl.style.color='#9fe89f'; suggestMsgEl.textContent = email ? 'Thanks! I’ll email you when it’s added.' : 'Thanks! Your suggestion was sent.'; suggestTextEl.value=''; }
     else { let e='Could not send. Try again later.'; try{ const j=await r.json(); if(j&&j.error) e=j.error; }catch(_){} suggestMsgEl.style.color='#ff9a9a'; suggestMsgEl.textContent=e; }
   }catch(_){ suggestMsgEl.style.color='#ff9a9a'; suggestMsgEl.textContent='Network error. Are you online?'; }
   suggestSending=false;
@@ -3313,6 +3318,7 @@ document.getElementById('suggestCancelBtn').addEventListener('click', closeSugge
 document.getElementById('suggestSendBtn').addEventListener('click', sendSuggestion);
 suggestTextEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); closeSuggest(); } });
 suggestNameEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); closeSuggest(); } });
+suggestEmailEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); sendSuggestion(); } if(e.key==='Escape'){ e.preventDefault(); closeSuggest(); } });
 
 // ---- Skin editor: paint a 64x64 skin on a rotatable 3D model (skindex-style) ----
 const skinEditorEl=document.getElementById('skinEditor'), skinViewCanvas=document.getElementById('skinView');
