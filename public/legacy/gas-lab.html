@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gas Properties Lab — Kinetic Theory, Pressure &amp; the Gas Laws</title>
+<style>
+  :root{ --panel:#fff; --panel-border:#a7a7a7; --ink:#111; --sky1:#e9f2f8; --sky2:#cfe2ef; --nav:#37475a; --blue:#2f83d6; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:#c4cdd6; font-family:'Helvetica Neue',Arial,'Segoe UI',sans-serif; color:var(--ink); overflow:hidden; }
+  #fit{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  #sim{ width:1340px; height:706px; position:relative; transform-origin:center center; background:linear-gradient(#f4f8fb,#dfeaf2); box-shadow:0 6px 30px rgba(0,0,0,.25); }
+  #play{ position:absolute; left:0; top:0; right:0; bottom:50px; background:linear-gradient(180deg,var(--sky1),var(--sky2)); overflow:hidden; }
+  .panel{ position:absolute; background:var(--panel); border:1px solid var(--panel-border); border-radius:7px; box-shadow:0 2px 5px rgba(0,0,0,.14); padding:9px 12px; }
+  .panel h3{ margin:0 0 6px; font-size:14px; font-weight:700; color:#1c1c1c; }
+  .panel h3 span{ font-weight:400; font-size:12px; color:#777; }
+  .ctl{ margin:8px 1px 2px; }
+  .ctl .row{ display:flex; justify-content:space-between; align-items:baseline; font-size:12.5px; margin-bottom:2px; }
+  .ctl .row b{ font-weight:600; } .ctl .val{ font-variant-numeric:tabular-nums; color:#222; font-weight:700; }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:7px; border-radius:4px; background:#c9d3db; outline:none; margin:1px 0; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:15px; height:25px; border-radius:4px; background:linear-gradient(#8fccf3,#2f83d6); border:1px solid #1a5896; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.35); }
+  input[type=range]::-moz-range-thumb{ width:15px; height:25px; border-radius:4px; background:linear-gradient(#8fccf3,#2f83d6); border:1px solid #1a5896; cursor:pointer; }
+  label.chk{ display:flex; align-items:center; gap:8px; font-size:12.7px; margin:5px 0; cursor:pointer; user-select:none; }
+  label.chk input{ width:15px; height:15px; accent-color:var(--blue); }
+  .btns{ display:flex; gap:7px; margin-top:8px; }
+  button.pbtn{ flex:1; font-family:inherit; font-size:12px; font-weight:700; color:#222; cursor:pointer; background:linear-gradient(#fff,#e6e6e6); border:1px solid #9a9a9a; border-radius:6px; padding:7px 5px; }
+  button.pbtn:hover{ background:linear-gradient(#fff,#dcdcdc); }
+  button.pbtn.on{ background:linear-gradient(#bfe6ff,#7cc0f2); border-color:#2f83d6; }
+  #reset{ position:absolute; right:14px; bottom:58px; width:46px; height:46px; border-radius:50%; background:radial-gradient(circle at 35% 30%,#ffe98a,#f4c223); border:1px solid #b9860c; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,.3); display:flex; align-items:center; justify-content:center; }
+  #reset:hover{ filter:brightness(1.05); }
+  #nav{ position:absolute; left:0; right:0; bottom:0; height:50px; background:var(--nav); display:flex; align-items:center; padding:0 16px; color:#fff; }
+  #nav .title{ font-size:16px; font-weight:700; } #nav .title span{ opacity:.7; font-weight:400; }
+  #nav .spacer{ flex:1; } #nav .mark{ font-size:12px; opacity:.75; }
+  canvas{ display:block; }
+</style>
+</head>
+<body>
+<div id="fit"><div id="sim">
+  <div id="play">
+    <!-- left: gas container with a burner underneath -->
+    <canvas id="box" width="470" height="452" style="position:absolute; left:16px; top:14px;"></canvas>
+    <div class="panel" style="left:16px; top:480px; width:470px;">
+      <h3 style="margin-bottom:4px;">Speed distribution <span>— Maxwell&ndash;Boltzmann</span></h3>
+      <canvas id="hist" width="444" height="96" style="width:444px;height:96px;"></canvas>
+    </div>
+
+    <!-- middle: live values + gas-law graph -->
+    <div class="panel" style="left:502px; top:14px; width:372px;">
+      <h3>Live values <span>— watch them change</span></h3>
+      <canvas id="gauges" width="348" height="176" style="width:348px;height:176px;"></canvas>
+    </div>
+    <div class="panel" style="left:502px; top:236px; width:372px;">
+      <h3>P&ndash;V diagram <span>— PV = N&#8226;&#10216;KE&#10217; (2D ideal gas)</span></h3>
+      <canvas id="pv" width="348" height="330" style="width:348px;height:330px;"></canvas>
+    </div>
+
+    <!-- right: controls -->
+    <div class="panel" style="left:890px; top:14px; width:434px;">
+      <h3>Gas properties</h3>
+      <div class="ctl"><div class="row"><b>Number of particles, N</b><span class="val" id="countLabel">200</span></div><input id="count" type="range" min="10" max="500" value="200"></div>
+      <div class="ctl"><div class="row"><b>Temperature (relative)</b><span class="val" id="tempLabel">1.00</span></div><input id="temperature" type="range" min="0.2" max="4" step="0.01" value="1"></div>
+      <div class="ctl"><div class="row"><b>Particle mass (relative)</b><span class="val" id="massLabel">1.00</span></div><input id="mass" type="range" min="0.2" max="4" step="0.01" value="1"></div>
+      <div class="ctl"><div class="row"><b>Particle radius</b><span class="val" id="radiusLabel">4</span></div><input id="radius" type="range" min="2" max="10" value="4"></div>
+    </div>
+    <div class="panel" style="left:890px; top:212px; width:434px;">
+      <h3>Container &amp; pressure <span>— PV relationships</span></h3>
+      <div class="ctl"><div class="row"><b>Box width</b><span class="val" id="boxWidthLabel">400</span></div><input id="boxWidth" type="range" min="150" max="440" value="400"></div>
+      <div class="ctl"><div class="row"><b>Box height</b><span class="val" id="boxHeightLabel">340</span></div><input id="boxHeight" type="range" min="120" max="400" value="340"></div>
+      <div class="ctl"><div class="row"><b>Pressure&nbsp; <span style="font-weight:400;color:#888">(compresses the box)</span></b><span class="val" id="pressSlLabel">—</span></div><input id="pressure" type="range" min="1" max="100" value="50"></div>
+    </div>
+    <div class="panel" style="left:890px; top:396px; width:434px;">
+      <h3>Display &amp; tools</h3>
+      <label class="chk"><input id="showVec" type="checkbox"> Show velocity vectors</label>
+      <label class="chk"><input id="showTrails" type="checkbox" checked> Show trails</label>
+      <div class="ctl"><div class="row"><b>Trail length</b><span class="val" id="trailLengthLabel">0.75</span></div><input id="trailLength" type="range" min="0.01" max="1" step="0.01" value="0.75"></div>
+      <div class="ctl"><div class="row"><b>Histogram bins</b><span class="val" id="binsLabel">30</span></div><input id="bins" type="range" min="5" max="100" value="30"></div>
+      <div class="btns">
+        <button class="pbtn on" id="playPause">Pause</button>
+        <button class="pbtn" id="randomize">Randomize</button>
+        <button class="pbtn" id="leakToggle">Leak: OFF</button>
+      </div>
+    </div>
+
+    <button id="reset" title="Reset All" aria-label="Reset All">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#6a4a00" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+    </button>
+  </div>
+  <div id="nav">
+    <div class="title">Gas Properties <span>&nbsp;·&nbsp; Kinetic Theory, Pressure &amp; the Gas Laws</span></div>
+    <div class="spacer"></div><div class="mark">AP Physics 2 · thermodynamics</div>
+  </div>
+</div></div>
+
+<script>
+const el=id=>document.getElementById(id);
+const canvas=el('box'), ctx=canvas.getContext('2d');
+const histCanvas=el('hist'), hctx=histCanvas.getContext('2d');
+const gCanvas=el('gauges'), gctx=gCanvas.getContext('2d');
+const pvCanvas=el('pv'), pctx=pvCanvas.getContext('2d');
+const CW=canvas.width, CH=canvas.height;           // FIXED canvas — never resized, so the page never reflows
+const BURNER=42;                                    // reserved strip under the box for the heat source
+
+const countSlider=el('count'),tempSlider=el('temperature'),massSlider=el('mass'),radiusSlider=el('radius'),
+      boxWidthSlider=el('boxWidth'),boxHeightSlider=el('boxHeight'),pressureSlider=el('pressure'),
+      binsSlider=el('bins'),trailLengthSlider=el('trailLength'),showVec=el('showVec'),showTrails=el('showTrails');
+const countLabel=el('countLabel'),tempLabel=el('tempLabel'),massLabel=el('massLabel'),radiusLabel=el('radiusLabel'),
+      boxWidthLabel=el('boxWidthLabel'),boxHeightLabel=el('boxHeightLabel'),binsLabel=el('binsLabel'),trailLengthLabel=el('trailLengthLabel');
+const playPauseBtn=el('playPause'),randomizeBtn=el('randomize'),leakToggleBtn=el('leakToggle');
+
+let particleCount=+countSlider.value,temperature=+tempSlider.value,massRel=+massSlider.value,radius=+radiusSlider.value;
+let showVectors=showVec.checked,showTrail=showTrails.checked,trailLength=1-(+trailLengthSlider.value),histogramBins=+binsSlider.value;
+let running=true,hasLeak=false;
+let boxW=+boxWidthSlider.value, boxH=+boxHeightSlider.value, offX=(CW-boxW)/2, offY=14;
+let heatFlare=0, lastTemp=temperature;              // burner flare-up when temperature is raised
+const WMIN=+boxWidthSlider.min, WMAX=+boxWidthSlider.max, HMIN=+boxHeightSlider.min, HMAX=+boxHeightSlider.max;
+const VMAX=WMAX*HMAX;
+
+function recomputeBox(){ boxW=+boxWidthSlider.value; boxH=+boxHeightSlider.value; offX=Math.round((CW-boxW)/2);
+  for(const p of particles){ p.x=Math.max(p.r,Math.min(boxW-p.r,p.x)); p.y=Math.max(p.r,Math.min(boxH-p.r,p.y)); } }
+function getW(){return boxW;} function getH(){return boxH;}
+
+class Particle{ constructor(x,y,vx,vy,r,c,m){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.r=r;this.color=c;this.mass=m;this.alive=true;}
+  speed(){return Math.hypot(this.vx,this.vy);} KE(){return 0.5*this.mass*(this.vx*this.vx+this.vy*this.vy);} }
+let particles=[];
+const HUES=['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b'];
+const rc=()=>HUES[Math.floor(Math.random()*HUES.length)];
+function sampleSpeedFromTemp(T){const u1=Math.random(),u2=Math.random();const z=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);return 30*Math.sqrt(T)*Math.abs(z);}
+function initParticles(n){particles=[];for(let i=0;i<n;i++){const r=radius,x=r+Math.random()*(getW()-2*r),y=r+Math.random()*(getH()-2*r),sp=sampleSpeedFromTemp(temperature),a=Math.random()*Math.PI*2;particles.push(new Particle(x,y,sp*Math.cos(a),sp*Math.sin(a),r,rc(),massRel));}}
+
+function handleControls(){
+  particleCount=+countSlider.value;temperature=+tempSlider.value;massRel=+massSlider.value;radius=+radiusSlider.value;
+  showVectors=showVec.checked;showTrail=showTrails.checked;trailLength=1-(+trailLengthSlider.value);histogramBins=+binsSlider.value;
+  countLabel.textContent=particleCount;tempLabel.textContent=temperature.toFixed(2);massLabel.textContent=massRel.toFixed(2);radiusLabel.textContent=radius;
+  boxWidthLabel.textContent=boxW;boxHeightLabel.textContent=boxH;binsLabel.textContent=histogramBins;trailLengthLabel.textContent=(+trailLengthSlider.value).toFixed(2);
+}
+function getAverageKE(){const a=particles.filter(p=>p.alive);return a.length?a.reduce((s,p)=>s+p.KE(),0)/a.length:0;}
+function getAverageSpeed(){const a=particles.filter(p=>p.alive);return a.length?a.reduce((s,p)=>s+p.speed(),0)/a.length:0;}
+
+countSlider.addEventListener('input',()=>{handleControls();initParticles(particleCount);});
+tempSlider.addEventListener('input',()=>{ if(temperature>lastTemp) heatFlare=Math.min(1,heatFlare+ (temperature-lastTemp)); lastTemp=temperature;
+  handleControls(); const avg=getAverageSpeed(),target=20*Math.sqrt(temperature),sc=target/Math.max(1e-6,avg); particles.forEach(p=>{p.vx*=sc;p.vy*=sc;}); });
+massSlider.addEventListener('input',()=>{handleControls();particles.forEach(p=>p.mass=massRel);});
+radiusSlider.addEventListener('input',()=>{handleControls();initParticles(particleCount);});
+boxWidthSlider.addEventListener('input',()=>{recomputeBox();handleControls();});
+boxHeightSlider.addEventListener('input',()=>{recomputeBox();handleControls();});
+// pressure slider: set target P and adjust the box VOLUME (isothermal) to reach it -> Boyle's law, higher P = smaller box
+pressureSlider.addEventListener('input',()=>{
+  const KE=getAverageKE(), N=particles.length; const Ptarget=(+pressureSlider.value)/100 * (N*KE/(WMIN*HMIN)); // fraction of the max pressure
+  const Vtarget=Math.max(WMIN*HMIN, Math.min(VMAX, N*KE/Math.max(1e-6,Ptarget)));
+  const Vnow=boxW*boxH, sc=Math.sqrt(Vtarget/Math.max(1,Vnow));
+  boxWidthSlider.value=Math.round(Math.max(WMIN,Math.min(WMAX,boxW*sc)));
+  boxHeightSlider.value=Math.round(Math.max(HMIN,Math.min(HMAX,boxH*sc)));
+  recomputeBox(); handleControls();
+});
+binsSlider.addEventListener('input',handleControls);
+trailLengthSlider.addEventListener('input',handleControls);
+showVec.addEventListener('change',()=>showVectors=showVec.checked);
+showTrails.addEventListener('change',()=>showTrail=showTrails.checked);
+playPauseBtn.addEventListener('click',()=>{running=!running;playPauseBtn.textContent=running?'Pause':'Play';playPauseBtn.classList.toggle('on',running);});
+randomizeBtn.addEventListener('click',()=>particles.forEach(p=>{const s=sampleSpeedFromTemp(temperature),a=Math.random()*Math.PI*2;p.vx=s*Math.cos(a);p.vy=s*Math.sin(a);}));
+leakToggleBtn.addEventListener('click',()=>{hasLeak=!hasLeak;leakToggleBtn.textContent=hasLeak?'Leak: ON':'Leak: OFF';leakToggleBtn.classList.toggle('on',hasLeak);});
+el('reset').addEventListener('click',resetAll);
+function resetAll(){
+  countSlider.value=200;tempSlider.value=1;massSlider.value=1;radiusSlider.value=4;
+  boxWidthSlider.value=400;boxHeightSlider.value=340;pressureSlider.value=50;binsSlider.value=30;
+  showVec.checked=false;showTrails.checked=true;trailLengthSlider.value=0.75;
+  running=true;hasLeak=false;heatFlare=0;lastTemp=1;playPauseBtn.textContent='Pause';playPauseBtn.classList.add('on');leakToggleBtn.textContent='Leak: OFF';leakToggleBtn.classList.remove('on');
+  recomputeBox();handleControls();initParticles(particleCount);
+}
+
+function checkCollisions(){for(let i=0;i<particles.length;i++){const a=particles[i];if(!a.alive)continue;for(let j=i+1;j<particles.length;j++){const b=particles[j];if(!b.alive)continue;if(Math.hypot(b.x-a.x,b.y-a.y)<a.r+b.r)resolveCollision(a,b);}}}
+function resolveCollision(p1,p2){const d=Math.hypot(p2.x-p1.x,p2.y-p1.y)||1e-6,nx=(p2.x-p1.x)/d,ny=(p2.y-p1.y)/d,tx=-ny,ty=nx;
+  const t1=p1.vx*tx+p1.vy*ty,t2=p2.vx*tx+p2.vy*ty,n1=p1.vx*nx+p1.vy*ny,n2=p2.vx*nx+p2.vy*ny,m1=p1.mass,m2=p2.mass;
+  const v1=(n1*(m1-m2)+2*m2*n2)/(m1+m2),v2=(n2*(m2-m1)+2*m1*n1)/(m1+m2);
+  p1.vx=tx*t1+nx*v1;p1.vy=ty*t1+ny*v1;p2.vx=tx*t2+nx*v2;p2.vy=ty*t2+ny*v2;
+  const ov=(p1.r+p2.r)-d;p1.x-=ov*nx*0.5;p1.y-=ov*ny*0.5;p2.x+=ov*nx*0.5;p2.y+=ov*ny*0.5;}
+
+let wallHitMomentum=0,lastPressureUpdate=0,measuredP=0;
+function update(dt){for(const p of particles){if(!p.alive)continue;p.x+=p.vx*dt;p.y+=p.vy*dt;
+    if(!hasLeak){
+      if(p.x-p.r<0){p.x=p.r;wallHitMomentum+=2*Math.abs(p.vx)*p.mass;p.vx=Math.abs(p.vx);}
+      if(p.x+p.r>getW()){p.x=getW()-p.r;wallHitMomentum+=2*Math.abs(p.vx)*p.mass;p.vx=-Math.abs(p.vx);}
+      if(p.y-p.r<0){p.y=p.r;wallHitMomentum+=2*Math.abs(p.vy)*p.mass;p.vy=Math.abs(p.vy);}
+      if(p.y+p.r>getH()){p.y=getH()-p.r;wallHitMomentum+=2*Math.abs(p.vy)*p.mass;p.vy=-Math.abs(p.vy);}
+    }}
+  checkCollisions();}
+
+// theoretical (kinetic-theory) state, all smooth; 2D: <KE> = kT, P = N<KE>/V
+function theory(){ const N=particles.length, V=boxW*boxH, KE=getAverageKE(); return {N,V,KE,T:KE,P:N*KE/Math.max(1,V)}; }
+
+function step(){
+  if(running){ const now=performance.now(); const dt=Math.min(40,now-(step.last||now))/1000; step.last=now; update(dt);
+    if(now-lastPressureUpdate>100){ const per=2*(getW()+getH()); measuredP=wallHitMomentum/(per*dt); wallHitMomentum=0; lastPressureUpdate=now; }
+    draw(dt);
+  } else { step.last=performance.now(); draw(0); }
+  heatFlare=Math.max(0,heatFlare-0.02);
+  requestAnimationFrame(step);
+}
+
+function draw(dt){
+  const boxBottom=offY+boxH;
+  // clear the whole canvas (letterbox), keep box interior for trails
+  ctx.fillStyle='#dfe7ee'; ctx.fillRect(0,0,CW,offY); ctx.fillRect(0,boxBottom,CW,CH-boxBottom); ctx.fillRect(0,offY,offX,boxH); ctx.fillRect(offX+boxW,offY,CW-(offX+boxW),boxH);
+  ctx.fillStyle= showTrail ? `rgba(255,255,255,${trailLength})` : '#ffffff'; ctx.fillRect(offX,offY,boxW,boxH);
+  for(const p of particles){ if(!p.alive)continue; const X=offX+p.x,Y=offY+p.y;
+    ctx.beginPath(); ctx.fillStyle=p.color; ctx.arc(X,Y,p.r,0,Math.PI*2); ctx.fill();
+    if(showVectors){ ctx.beginPath(); ctx.moveTo(X,Y); ctx.lineTo(X+p.vx*0.08,Y+p.vy*0.08); ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.stroke(); } }
+  ctx.strokeStyle='#3a4652'; ctx.lineWidth=2; ctx.strokeRect(offX-1,offY-1,boxW+2,boxH+2);
+  drawBurner(boxBottom);
+  drawHistogram(); drawGauges(); drawPV();
+}
+
+// --- heat source: flame height grows with temperature; flares when you raise T ---
+function drawBurner(boxBottom){
+  const bx=offX+boxW/2, by=boxBottom+8, bw=Math.min(boxW*0.7,220), t=performance.now()/120;
+  ctx.fillStyle='#8b939c'; ctx.fillRect(bx-bw/2, by+18, bw, 8);           // burner bar
+  ctx.fillStyle='#6f767e'; ctx.fillRect(bx-8, by+26, 16, 6);
+  const heat=Math.min(1,(temperature-0.2)/3.8)+heatFlare*0.6;             // 0..~1.6
+  const n=10;
+  for(let i=0;i<n;i++){ const fx=bx-bw/2+ (i+0.5)*bw/n; const ph=(t+i*0.6);
+    const fh=(10+heat*30)*(0.6+0.4*Math.sin(ph)); const w=3+heat*2;
+    const g=ctx.createLinearGradient(0,by,0,by-fh);
+    g.addColorStop(0,`rgba(255,${120+heat*60},0,${0.85})`); g.addColorStop(0.6,`rgba(255,${180},40,0.55)`); g.addColorStop(1,'rgba(255,240,120,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(fx-w,by); ctx.quadraticCurveTo(fx-w,by-fh*0.6,fx,by-fh); ctx.quadraticCurveTo(fx+w,by-fh*0.6,fx+w,by); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle='#8a5a10'; ctx.font='11px Helvetica Neue,Arial'; ctx.textAlign='center';
+  ctx.fillText(temperature>lastTemp-0.001?'heat source  (higher T → faster particles)':'heat source', bx, by+42);
+}
+
+function drawHistogram(){
+  const Ww=histCanvas.width,Hh=histCanvas.height; hctx.clearRect(0,0,Ww,Hh);
+  hctx.fillStyle='#fff'; hctx.fillRect(0,0,Ww,Hh); hctx.strokeStyle='#cfd6dc'; hctx.strokeRect(0.5,0.5,Ww-1,Hh-1);
+  const speeds=particles.filter(p=>p.alive).map(p=>p.speed()); if(!speeds.length)return;
+  const bins=histogramBins,maxS=Math.max(1,...speeds),counts=new Array(bins).fill(0);
+  for(const s of speeds)counts[Math.min(bins-1,Math.floor((s/maxS)*bins))]++;
+  const maxC=Math.max(...counts,1),pad=8,barW=(Ww-pad*2)/bins;
+  for(let i=0;i<bins;i++){const h=(counts[i]/maxC)*(Hh-22);hctx.fillStyle='#2f83d6';hctx.fillRect(pad+i*barW,Hh-h-13,Math.max(1,barW-2),h);}
+  hctx.fillStyle='#333';hctx.font='11px Helvetica Neue,Arial';hctx.textAlign='left';hctx.fillText('slower',pad,Hh-3);hctx.textAlign='right';hctx.fillText('faster  →  speed',Ww-pad,Hh-3);
+}
+
+// --- live gauges: N, V, T, P bars that animate as you change things ---
+const gauge={N:0,V:0,T:0,P:0};
+function drawGauges(){
+  const th=theory(); const Ww=gCanvas.width,Hh=gCanvas.height; gctx.clearRect(0,0,Ww,Hh);
+  const Pref=th.N*th.T/(WMIN*HMIN);   // rough max pressure scale for the bar
+  const rows=[
+    ['N  (particles)', th.N/500, th.N.toFixed(0), '#2f83d6'],
+    ['V  (volume, area)', th.V/VMAX, (th.V/1000).toFixed(0)+'k', '#3aa03a'],
+    ['T  ∝ ⟨KE⟩', Math.min(1,th.T/1600), th.T.toFixed(0), '#e04b3a'],
+    ['P = N⟨KE⟩/V', Math.min(1,th.P/Math.max(1e-6,Pref)), th.P.toFixed(2), '#8a4fc4'],
+  ];
+  const bx=118, bw=Ww-bx-52, rh=Hh/rows.length;
+  rows.forEach((r,i)=>{ const key=['N','V','T','P'][i]; gauge[key]+=(r[1]-gauge[key])*0.18; const y=i*rh+rh/2;
+    gctx.fillStyle='#333'; gctx.font='12px Helvetica Neue,Arial'; gctx.textAlign='left'; gctx.textBaseline='middle'; gctx.fillText(r[0], 6, y);
+    gctx.fillStyle='#e6ebf0'; gctx.fillRect(bx,y-8,bw,16);
+    gctx.fillStyle=r[3]; gctx.fillRect(bx,y-8,bw*Math.max(0,Math.min(1,gauge[key])),16);
+    gctx.fillStyle='#222'; gctx.textAlign='right'; gctx.fillText(r[2], Ww-6, y);
+  });
+}
+
+// --- P-V diagram: current state point + the isotherm through it (Boyle) ---
+let pvMax=0.02;
+function drawPV(){
+  const th=theory(); const Ww=pvCanvas.width,Hh=pvCanvas.height; pctx.clearRect(0,0,Ww,Hh);
+  const l=42,r=Ww-12,t=12,b=Hh-30; pctx.fillStyle='#fff'; pctx.fillRect(l,t,r-l,b-t);
+  pvMax += (Math.max(th.P*1.6,0.01)-pvMax)*0.06;   // ease the P axis to fit
+  const gx=V=>l+(V/VMAX)*(r-l), gy=P=>b-(P/pvMax)*(b-t);
+  pctx.strokeStyle='#e2e8ee'; pctx.lineWidth=1;
+  for(let i=1;i<5;i++){ const X=l+(r-l)*i/5; pctx.beginPath();pctx.moveTo(X,t);pctx.lineTo(X,b);pctx.stroke(); const Y=t+(b-t)*i/5; pctx.beginPath();pctx.moveTo(l,Y);pctx.lineTo(r,Y);pctx.stroke(); }
+  // isotherm through the current point: P = (N*KE)/V (constant N,KE)
+  pctx.strokeStyle='rgba(224,75,58,0.8)'; pctx.lineWidth=2; pctx.beginPath(); let first=true;
+  const C=th.N*th.T; for(let V=WMIN*HMIN; V<=VMAX; V+=VMAX/120){ const P=C/V; if(P>pvMax*1.3)continue; const X=gx(V),Y=gy(P); first?(pctx.moveTo(X,Y),first=false):pctx.lineTo(X,Y); } pctx.stroke();
+  // axes
+  pctx.strokeStyle='#333'; pctx.lineWidth=1.4; pctx.beginPath(); pctx.moveTo(l,t); pctx.lineTo(l,b); pctx.lineTo(r,b); pctx.stroke();
+  pctx.fillStyle='#333'; pctx.font='11px Helvetica Neue,Arial'; pctx.textAlign='center'; pctx.fillText('Volume  V  →', (l+r)/2, b+18);
+  pctx.save(); pctx.translate(12,(t+b)/2); pctx.rotate(-Math.PI/2); pctx.fillText('Pressure  P  →',0,0); pctx.restore();
+  // current point
+  const X=gx(th.V),Y=gy(Math.min(pvMax,th.P)); pctx.beginPath(); pctx.arc(X,Y,6,0,6.28); pctx.fillStyle='#8a4fc4'; pctx.fill(); pctx.strokeStyle='#fff'; pctx.lineWidth=2.5; pctx.stroke();
+  pctx.fillStyle='#8a4fc4'; pctx.font='bold 11px Helvetica Neue,Arial'; pctx.textAlign='left'; pctx.fillText('now', X+9, Y-6);
+}
+
+function fit(){ const s=Math.min(1,(window.innerWidth-16)/1340,(window.innerHeight-16)/706); el('sim').style.transform='scale('+s+')'; }
+window.addEventListener('resize',fit);
+handleControls(); initParticles(particleCount); fit(); requestAnimationFrame(step);
+</script>
+</body>
+</html>

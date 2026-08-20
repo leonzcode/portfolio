@@ -370,6 +370,27 @@ export const scienceProjects: Project[] = [
     ],
   },
   {
+    slug: "gas-lab",
+    title: "Gas Properties Lab",
+    description:
+      "PhET-style ideal-gas lab: heat the gas with a burner, resize the container, and set the pressure while live gauges and a P–V diagram show how the number of particles, volume, temperature, and pressure track the ideal gas law.",
+    href: "/legacy/gas-lab.html",
+    image: "/cards/card_gas-lab.png",
+    tag: "Live demo",
+    story: [
+      "A 2D ideal gas built from scratch: a few hundred disks that collide elastically with each other and the walls. Pressure is measured the honest way, from the momentum the particles deliver to the walls each moment, and temperature comes straight from the average kinetic energy. Every reading emerges from the mechanics rather than being typed in.",
+      "The controls are the state variables of the ideal gas law. A burner under the container heats the gas (higher temperature means faster particles and a taller flame), the width and height sliders set the volume, and a pressure slider compresses or expands the box to demonstrate Boyle's law. Live bars for N, V, T, and P plus a P–V diagram with the state point riding along its isotherm show how a change in one variable moves the others.",
+      "I styled it after the PhET simulations my class uses. The goal was a sandbox where an AP Physics 2 student can build intuition for PV = nRT and the first law by watching the numbers change next to the particles that cause them.",
+    ],
+    tech: [
+      "HTML5 canvas, vanilla JS (single file)",
+      "Elastic 2D collision resolution (impulse along the contact normal)",
+      "Maxwell–Boltzmann speed sampling with a live histogram",
+      "Kinetic-theory pressure from wall momentum, temperature from average KE",
+      "Ideal gas relations and Boyle's-law compression",
+    ],
+  },
+  {
     slug: "doppler",
     title: "Doppler Effect Simulator",
     description:
