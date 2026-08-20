@@ -53,25 +53,27 @@
         <h3 style="margin:0;">P&ndash;V diagram <span>— traces the process path</span></h3>
         <div><button id="recBtn" class="mini">● Record</button> <button id="clrBtn" class="mini">Clear</button></div>
       </div>
-      <canvas id="pv" width="406" height="338" style="width:406px;height:338px;"></canvas>
+      <canvas id="pv" width="406" height="326" style="width:406px;height:326px;"></canvas>
     </div>
-    <div class="panel" style="left:486px; top:414px; width:430px;">
-      <h3>Live values <span>— PV = N&#8226;&#10216;KE&#10217; &nbsp;(2D ideal gas)</span></h3>
-      <canvas id="gauges" width="406" height="128" style="width:406px;height:128px;"></canvas>
+    <div class="panel" style="left:486px; top:400px; width:430px;">
+      <div class="phead">
+        <h3 style="margin:0;">Live values <span>— first law: Q = &Delta;U + W</span></h3>
+        <button id="workConv" class="mini">W: by gas</button>
+      </div>
+      <canvas id="gauges" width="406" height="176" style="width:406px;height:176px;"></canvas>
     </div>
 
     <!-- RIGHT: controls -->
     <div class="panel" style="left:930px; top:16px; width:352px;">
       <h3>Gas</h3>
-      <div class="ctl"><div class="row"><b>Number of particles, N</b><span class="val" id="countLabel">200</span></div><input id="count" type="range" min="10" max="500" value="200"></div>
-      <div class="ctl"><div class="row"><b>Temperature (relative)</b><span class="val" id="tempLabel">1.00</span></div><input id="temperature" type="range" min="0.2" max="4" step="0.01" value="1"></div>
-      <div class="ctl"><div class="row"><b>Molar mass (relative)</b><span class="val" id="massLabel">1.00</span></div><input id="mass" type="range" min="0.2" max="4" step="0.01" value="1"></div>
+      <div class="ctl"><div class="row"><b>Number of particles, N</b><span class="val" id="countLabel">250</span></div><input id="count" type="range" min="10" max="600" value="250"></div>
+      <div class="ctl"><div class="row"><b>Temperature (relative)</b><span class="val" id="tempLabel">1.00</span></div><input id="temperature" type="range" min="0.1" max="8" step="0.01" value="1"></div>
     </div>
-    <div class="panel" style="left:930px; top:184px; width:352px;">
+    <div class="panel" style="left:930px; top:150px; width:352px;">
       <h3>Container volume <span>— move the piston</span></h3>
       <div class="ctl"><div class="row"><b>Volume &nbsp;(piston up = bigger)</b><span class="val" id="volLabel">50%</span></div><input id="volume" type="range" min="0" max="100" value="50"></div>
     </div>
-    <div class="panel" style="left:930px; top:308px; width:352px;">
+    <div class="panel" style="left:930px; top:262px; width:352px;">
       <h3>View</h3>
       <label class="chk"><input id="showTrails" type="checkbox" checked> Show motion trails</label>
       <label class="chk"><input id="showHits" type="checkbox" checked> Show wall collisions</label>
@@ -97,106 +99,108 @@ const gCanvas=el('gauges'), gctx=gCanvas.getContext('2d');
 const pvCanvas=el('pv'), pctx=pvCanvas.getContext('2d');
 const CW=canvas.width, CH=canvas.height;      // FIXED canvas — never resized, so the page never reflows
 
-const countSlider=el('count'),tempSlider=el('temperature'),massSlider=el('mass'),
+const countSlider=el('count'),tempSlider=el('temperature'),
       volumeSlider=el('volume'),
       showVec=el('showVec'),showTrails=el('showTrails'),showHitsChk=el('showHits');
-const countLabel=el('countLabel'),tempLabel=el('tempLabel'),massLabel=el('massLabel'),volLabel=el('volLabel');
-const playPauseBtn=el('playPause'),recBtn=el('recBtn'),clrBtn=el('clrBtn');
+const countLabel=el('countLabel'),tempLabel=el('tempLabel'),volLabel=el('volLabel');
+const playPauseBtn=el('playPause'),recBtn=el('recBtn'),clrBtn=el('clrBtn'),workConv=el('workConv');
 
-// fixed sim constants (decluttered: radius / bins / trail-length / leak are no longer knobs)
 const RADIUS=4, BINS=28, TRAILFADE=0.25;
-// piston-in-cylinder geometry (fixed width, movable piston => volume = width * gas-column height)
-const CXL=62, CYW=300, CXR=CXL+CYW, BASEY=344;
-const GH_MIN=72, GH_MAX=272, VMIN=CYW*GH_MIN, VMAX=CYW*GH_MAX;
+const KE_PER_T=450;                             // avg KE per unit temperature (from the speed sampling)
+const CXL=62, CYW=300, CXR=CXL+CYW, BASEY=344;  // piston-in-cylinder geometry
+const GH_MIN=50, GH_MAX=276, VMIN=CYW*GH_MIN, VMAX=CYW*GH_MAX;
 
-let particleCount=+countSlider.value, temperature=+tempSlider.value, massRel=+massSlider.value;
+let particleCount=+countSlider.value, temperature=+tempSlider.value;
 let showVectors=showVec.checked, showTrail=showTrails.checked, showHits=showHitsChk.checked;
-let running=true, heatFlare=0, lastTemp=temperature;
-let gasH=(GH_MIN+GH_MAX)/2, offX=CXL, offY=BASEY-gasH;    // gas rectangle: [offX,offY] size CYW x gasH
+let running=true, heatFlare=0, lastTemp=temperature, workByGas=true;
+let gasH=(GH_MIN+GH_MAX)/2, offX=CXL, offY=BASEY-gasH;
 
 function setGasH(h){ gasH=Math.max(GH_MIN,Math.min(GH_MAX,h)); offX=CXL; offY=Math.round(BASEY-gasH);
   for(const p of particles){ p.x=Math.max(p.r,Math.min(CYW-p.r,p.x)); p.y=Math.max(p.r,Math.min(gasH-p.r,p.y)); } }
 function boxArea(){ return CYW*gasH; }
 function getW(){return CYW;} function getH(){return gasH;}
-// Volume + Pressure sliders are two views of the same piston height
 function syncVP(){ volumeSlider.value=Math.round((gasH-GH_MIN)/(GH_MAX-GH_MIN)*100); volLabel.textContent=volumeSlider.value+'%'; }
 
-class Particle{ constructor(x,y,vx,vy,r,c,m){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.r=r;this.color=c;this.mass=m;this.alive=true;}
-  speed(){return Math.hypot(this.vx,this.vy);} KE(){return 0.5*this.mass*(this.vx*this.vx+this.vy*this.vy);} }
+class Particle{ constructor(x,y,vx,vy,r,c){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.r=r;this.color=c;this.mass=1;this.alive=true;}
+  speed(){return Math.hypot(this.vx,this.vy);} KE(){return 0.5*(this.vx*this.vx+this.vy*this.vy);} }
 let particles=[];
 const HUES=['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b'];
 const rc=()=>HUES[Math.floor(Math.random()*HUES.length)];
-function sampleSpeedFromTemp(T){const u1=Math.random(),u2=Math.random();const z=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);return 30*Math.sqrt(T/massRel)*Math.abs(z);}
-function initParticles(n){particles=[];for(let i=0;i<n;i++){const x=RADIUS+Math.random()*(getW()-2*RADIUS),y=RADIUS+Math.random()*(getH()-2*RADIUS),sp=sampleSpeedFromTemp(temperature),a=Math.random()*Math.PI*2;particles.push(new Particle(x,y,sp*Math.cos(a),sp*Math.sin(a),RADIUS,rc(),massRel));}}
+function sampleSpeedFromTemp(T){const u1=Math.random(),u2=Math.random();const z=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);return 30*Math.sqrt(T)*Math.abs(z);}
 function getAverageKE(){const a=particles.filter(p=>p.alive);return a.length?a.reduce((s,p)=>s+p.KE(),0)/a.length:0;}
 function getAverageSpeed(){const a=particles.filter(p=>p.alive);return a.length?a.reduce((s,p)=>s+p.speed(),0)/a.length:0;}
+// force the average KE to exactly KE_PER_T*temperature. Elastic collisions conserve KE, so once set it stays
+// there; this makes T (and therefore the P-V point) rock-steady instead of wobbling with each re-sample.
+function normalizeKE(){ const target=KE_PER_T*temperature, ke=getAverageKE(); if(ke>1e-9){ const f=Math.sqrt(target/ke); for(const p of particles){p.vx*=f;p.vy*=f;} } }
+function initParticles(n){particles=[];for(let i=0;i<n;i++){const x=RADIUS+Math.random()*(getW()-2*RADIUS),y=RADIUS+Math.random()*(getH()-2*RADIUS),sp=sampleSpeedFromTemp(temperature),a=Math.random()*Math.PI*2;particles.push(new Particle(x,y,sp*Math.cos(a),sp*Math.sin(a),RADIUS,rc()));} normalizeKE(); }
 
 function handleControls(){
-  particleCount=+countSlider.value; temperature=+tempSlider.value; massRel=+massSlider.value;
+  particleCount=+countSlider.value; temperature=+tempSlider.value;
   showVectors=showVec.checked; showTrail=showTrails.checked; showHits=showHitsChk.checked;
-  countLabel.textContent=particleCount; tempLabel.textContent=temperature.toFixed(2); massLabel.textContent=massRel.toFixed(2);
+  countLabel.textContent=particleCount; tempLabel.textContent=temperature.toFixed(2);
 }
 countSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount);});
-tempSlider.addEventListener('input',()=>{ if(temperature>lastTemp) heatFlare=Math.min(1,heatFlare+(temperature-lastTemp)); lastTemp=temperature;
-  handleControls(); const avg=getAverageSpeed(),target=20*Math.sqrt(temperature/massRel),sc=target/Math.max(1e-6,avg); particles.forEach(p=>{p.vx*=sc;p.vy*=sc;}); });
-// heavier gas at the same temperature moves slower: rescale speeds to hold KE (T) constant
-massSlider.addEventListener('input',()=>{ const nm=+massSlider.value, f=Math.sqrt(massRel/nm); particles.forEach(p=>{p.vx*=f;p.vy*=f;p.mass=nm;}); massRel=nm; handleControls(); });
+tempSlider.addEventListener('input',()=>{ const nt=+tempSlider.value; if(nt>lastTemp) heatFlare=Math.min(1,heatFlare+(nt-lastTemp)); lastTemp=nt; handleControls(); normalizeKE(); });
 volumeSlider.addEventListener('input',()=>{ setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); syncVP(); });
 showVec.addEventListener('change',()=>showVectors=showVec.checked);
 showTrails.addEventListener('change',()=>showTrail=showTrails.checked);
 showHitsChk.addEventListener('change',()=>showHits=showHitsChk.checked);
 playPauseBtn.addEventListener('click',()=>{running=!running;playPauseBtn.textContent=running?'Pause':'Play';playPauseBtn.classList.toggle('on',running);});
+workConv.addEventListener('click',()=>{ workByGas=!workByGas; workConv.textContent=workByGas?'W: by gas':'W: on gas'; });
 recBtn.addEventListener('click',toggleRecord);
 clrBtn.addEventListener('click',()=>{traces=[];current=[];recording=false;recBtn.classList.remove('on');recBtn.textContent='● Record';});
 el('reset').addEventListener('click',resetAll);
 function resetAll(){
-  countSlider.value=200;tempSlider.value=1;massSlider.value=1;
+  countSlider.value=250;tempSlider.value=1;
   showVec.checked=false;showTrails.checked=true;showHitsChk.checked=true;
-  running=true;heatFlare=0;lastTemp=1;impacts.length=0;traces=[];current=[];recording=false;
-  recBtn.classList.remove('on');recBtn.textContent='● Record';
+  running=true;heatFlare=0;lastTemp=1;impacts.length=0;traces=[];current=[];recording=false;workByGas=true;
+  recBtn.classList.remove('on');recBtn.textContent='● Record'; workConv.textContent='W: by gas';
   playPauseBtn.textContent='Pause';playPauseBtn.classList.add('on');
-  setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount);
+  setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount); zeroWQ();
 }
 
 function checkCollisions(){for(let i=0;i<particles.length;i++){const a=particles[i];if(!a.alive)continue;for(let j=i+1;j<particles.length;j++){const b=particles[j];if(!b.alive)continue;if(Math.hypot(b.x-a.x,b.y-a.y)<a.r+b.r)resolveCollision(a,b);}}}
 function resolveCollision(p1,p2){const d=Math.hypot(p2.x-p1.x,p2.y-p1.y)||1e-6,nx=(p2.x-p1.x)/d,ny=(p2.y-p1.y)/d,tx=-ny,ty=nx;
-  const t1=p1.vx*tx+p1.vy*ty,t2=p2.vx*tx+p2.vy*ty,n1=p1.vx*nx+p1.vy*ny,n2=p2.vx*nx+p2.vy*ny,m1=p1.mass,m2=p2.mass;
-  const v1=(n1*(m1-m2)+2*m2*n2)/(m1+m2),v2=(n2*(m2-m1)+2*m1*n1)/(m1+m2);
-  p1.vx=tx*t1+nx*v1;p1.vy=ty*t1+ny*v1;p2.vx=tx*t2+nx*v2;p2.vy=ty*t2+ny*v2;
+  const t1=p1.vx*tx+p1.vy*ty,t2=p2.vx*tx+p2.vy*ty,n1=p1.vx*nx+p1.vy*ny,n2=p2.vx*nx+p2.vy*ny;
+  p1.vx=tx*t1+nx*n2;p1.vy=ty*t1+ny*n2;p2.vx=tx*t2+nx*n1;p2.vy=ty*t2+ny*n1;
   const ov=(p1.r+p2.r)-d;p1.x-=ov*nx*0.5;p1.y-=ov*ny*0.5;p2.x+=ov*nx*0.5;p2.y+=ov*ny*0.5;}
 
-let wallHitMomentum=0;
 let impacts=[];
 function spawnHit(x,y,color,mag){ if(!showHits)return; impacts.push({x,y,color,mag,life:1}); if(impacts.length>160) impacts.splice(0,impacts.length-160); }
 function update(dt){for(const p of particles){if(!p.alive)continue;p.x+=p.vx*dt;p.y+=p.vy*dt;
-    if(p.x-p.r<0){p.x=p.r;wallHitMomentum+=2*Math.abs(p.vx)*p.mass;p.vx=Math.abs(p.vx);spawnHit(0,p.y,p.color,Math.abs(p.vx));}
-    if(p.x+p.r>getW()){p.x=getW()-p.r;wallHitMomentum+=2*Math.abs(p.vx)*p.mass;p.vx=-Math.abs(p.vx);spawnHit(getW(),p.y,p.color,Math.abs(p.vx));}
-    if(p.y-p.r<0){p.y=p.r;wallHitMomentum+=2*Math.abs(p.vy)*p.mass;p.vy=Math.abs(p.vy);spawnHit(p.x,0,p.color,Math.abs(p.vy));}   // piston (top)
-    if(p.y+p.r>getH()){p.y=getH()-p.r;wallHitMomentum+=2*Math.abs(p.vy)*p.mass;p.vy=-Math.abs(p.vy);spawnHit(p.x,getH(),p.color,Math.abs(p.vy));} // floor
+    if(p.x-p.r<0){p.x=p.r;p.vx=Math.abs(p.vx);spawnHit(0,p.y,p.color,Math.abs(p.vx));}
+    if(p.x+p.r>getW()){p.x=getW()-p.r;p.vx=-Math.abs(p.vx);spawnHit(getW(),p.y,p.color,Math.abs(p.vx));}
+    if(p.y-p.r<0){p.y=p.r;p.vy=Math.abs(p.vy);spawnHit(p.x,0,p.color,Math.abs(p.vy));}
+    if(p.y+p.r>getH()){p.y=getH()-p.r;p.vy=-Math.abs(p.vy);spawnHit(p.x,getH(),p.color,Math.abs(p.vy));}
   }
   checkCollisions();}
 
+// 2D ideal gas: <KE> = kT, U = N<KE>, P = N<KE>/V
 function theory(){ const N=particles.length, V=boxArea(), KE=getAverageKE(); return {N,V,KE,T:KE,P:N*KE/Math.max(1,V)}; }
 
+// --- work & heat accounting (process quantities, first law Q = dU + W_by) ---
+let Wby=0, Qtot=0, prevV=null, prevKE=0, prevP=0;
+function zeroWQ(){ Wby=0; Qtot=0; prevV=null; }
+function accountWQ(){ const N=particles.length, V=boxArea(), KE=getAverageKE(), P=N*KE/Math.max(1,V);
+  if(prevV!==null){ const dV=V-prevV, dKE=KE-prevKE, Pm=(P+prevP)/2; Wby+=Pm*dV; Qtot+=N*dKE+Pm*dV; }
+  prevV=V; prevKE=KE; prevP=P; }
+
 function step(){
-  if(running){ const now=performance.now(); const dt=Math.min(40,now-(step.last||now))/1000; step.last=now; update(dt); draw(dt); }
-  else { step.last=performance.now(); draw(0); }
+  if(running){ const now=performance.now(); const dt=Math.min(40,now-(step.last||now))/1000; step.last=now; update(dt); }
+  else step.last=performance.now();
+  accountWQ();
+  draw();
   heatFlare=Math.max(0,heatFlare-0.02);
   requestAnimationFrame(step);
 }
 
-function draw(dt){
+function draw(){
   const gTop=offY, gBot=BASEY, gL=offX, gR=offX+CYW;
-  // clear only outside the gas rectangle (so trails inside persist), leaving room for the apparatus
-  ctx.fillStyle='#dfe7ee';
-  ctx.fillRect(0,0,CW,gTop); ctx.fillRect(0,gBot,CW,CH-gBot); ctx.fillRect(0,gTop,gL,gasH); ctx.fillRect(gR,gTop,CW-gR,gasH);
-  // gas interior — fade for trails (or clear white)
+  ctx.fillStyle='#dfe7ee'; ctx.fillRect(0,0,CW,gTop); ctx.fillRect(0,gBot,CW,CH-gBot); ctx.fillRect(0,gTop,gL,gasH); ctx.fillRect(gR,gTop,CW-gR,gasH);
   ctx.fillStyle= showTrail ? `rgba(255,255,255,${TRAILFADE})` : '#ffffff'; ctx.fillRect(gL,gTop,CYW,gasH);
-  // particles
   for(const p of particles){ if(!p.alive)continue; const X=gL+p.x,Y=gTop+p.y;
     ctx.beginPath(); ctx.fillStyle=p.color; ctx.arc(X,Y,p.r,0,Math.PI*2); ctx.fill();
     if(showVectors){ ctx.beginPath(); ctx.moveTo(X,Y); ctx.lineTo(X+p.vx*0.08,Y+p.vy*0.08); ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.stroke(); } }
-  // wall-collision bursts
   for(let i=impacts.length-1;i>=0;i--){ const im=impacts[i]; im.life-=0.055; if(im.life<=0){ impacts.splice(i,1); continue; }
     const X=gL+im.x, Y=gTop+im.y, t=1-im.life, spd=Math.min(1,im.mag/70), R=2+t*(9+spd*11);
     ctx.globalAlpha=im.life*0.85; ctx.strokeStyle=im.color; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(X,Y,R,0,Math.PI*2); ctx.stroke();
@@ -208,29 +212,23 @@ function draw(dt){
 
 function drawApparatus(gTop,gBot,gL,gR){
   const cxm=(gL+gR)/2;
-  // stand base
   ctx.fillStyle='#8b939c'; ctx.fillRect(gL-16, gBot, (gR-gL)+32, 16);
   ctx.fillStyle='#6f767e'; ctx.fillRect(gL-30, gBot+16, (gR-gL)+60, 10);
-  // heat source (flame under the base; grows with temperature, flares when raised)
-  const heat=Math.min(1,(temperature-0.2)/3.8)+heatFlare*0.5, tt=performance.now()/220;
+  const heat=Math.min(1,(temperature-0.1)/7.9)+heatFlare*0.5, tt=performance.now()/220;
   ctx.fillStyle='#7f868e'; ctx.fillRect(cxm-CYW*0.4, gBot+30, CYW*0.8, 6);
   for(let i=0;i<9;i++){ const fx=cxm-CYW*0.4+(i+0.5)*(CYW*0.8)/9, ph=(tt+i*0.37)%1;
     ctx.beginPath(); ctx.fillStyle=`rgba(255,${130+70*(1-ph)},20,${(0.35+0.5*heat)*(1-ph)})`;
     ctx.ellipse(fx, gBot+42-(6+heat*16)*ph, 3+heat*1.6, 7+heat*9-4*ph, 0,0,6.28); ctx.fill(); }
   ctx.fillStyle='#8a5a10'; ctx.font='10.5px Helvetica Neue,Arial'; ctx.textAlign='center'; ctx.fillText('heat source', cxm, gBot+66);
-  // cylinder side walls
   ctx.strokeStyle='#7d858e'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(gL-2, gTop-14); ctx.lineTo(gL-2, gBot+2); ctx.moveTo(gR+2, gTop-14); ctx.lineTo(gR+2, gBot+2); ctx.stroke();
-  // gas floor
   ctx.strokeStyle='#3a4652'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(gL-2,gBot); ctx.lineTo(gR+2,gBot); ctx.stroke();
-  // piston sitting on top of the gas (bar + rod + handle)
   ctx.fillStyle='#b9c0c7'; ctx.fillRect(gL-6, gTop-16, (gR-gL)+12, 16);
   ctx.fillStyle='#98a0a8'; ctx.fillRect(gL-6, gTop-2, (gR-gL)+12, 4);
   ctx.fillStyle='#8b939c'; ctx.fillRect(cxm-6, gTop-52, 12, 40);
   ctx.fillStyle='#b9c0c7'; ctx.fillRect(cxm-24, gTop-64, 48, 14);
-  // thermometer (right of cylinder), fill ~ temperature
   const thx=gR+30, tBot=gBot-4, tTop=120, tH=tBot-tTop;
   ctx.fillStyle='#cfd6dc'; ctx.fillRect(thx-4,tTop,8,tH); ctx.beginPath(); ctx.arc(thx,tBot,9,0,6.28); ctx.fill();
-  const frac=Math.max(0.04,Math.min(1,(temperature-0.2)/3.8));
+  const frac=Math.max(0.04,Math.min(1,(temperature-0.1)/7.9));
   ctx.fillStyle='#e04b3a'; ctx.fillRect(thx-2.5,tBot-frac*tH,5,frac*tH); ctx.beginPath(); ctx.arc(thx,tBot,6.5,0,6.28); ctx.fill();
   ctx.fillStyle='#556'; ctx.font='10px Helvetica Neue,Arial'; ctx.textAlign='center'; ctx.fillText('T',thx,tTop-5);
 }
@@ -245,41 +243,51 @@ function drawHistogram(){
   hctx.fillStyle='#333';hctx.font='11px Helvetica Neue,Arial';hctx.textAlign='left';hctx.fillText('slower',pad,Hh-3);hctx.textAlign='right';hctx.fillText('faster  →  speed',Ww-pad,Hh-3);
 }
 
-const gauge={N:0,V:0,T:0,P:0};
+function niceMax(v){ if(v<=1e-9)return 1; const p=Math.pow(10,Math.floor(Math.log10(v))); const m=v/p; for(const s of [1,1.5,2,3,4,5,6,8,10]) if(m<=s) return s*p; return 10*p; }
+const gauge={N:0,V:0,T:0,P:0,W:0,Q:0}; let wqScale=100;
 function drawGauges(){
   const th=theory(), Ww=gCanvas.width,Hh=gCanvas.height; gctx.clearRect(0,0,Ww,Hh);
+  const Wshown = workByGas ? Wby : -Wby;
+  const wqPeak=Math.max(Math.abs(Wby),Math.abs(Qtot),1);
+  if(wqPeak>wqScale*0.92 || wqPeak<wqScale*0.30) wqScale=niceMax(wqPeak*1.15);
   const rows=[
-    ['N  (particles)', th.N/500, th.N.toFixed(0), '#2f83d6'],
-    ['V  (volume, area)', (th.V-VMIN)/(VMAX-VMIN), (th.V/1000).toFixed(0)+'k', '#2ca02c'],
-    ['T  ∝ ⟨KE⟩', Math.min(1,th.T/1600), th.T.toFixed(0), '#e04b3a'],
-    ['P = N⟨KE⟩/V', Math.min(1,VMIN/th.V), th.P.toFixed(2), '#8a4fc4'],
+    {k:'N', lab:'N   (particles)', frac:th.N/600, val:th.N.toFixed(0), col:'#2f83d6'},
+    {k:'V', lab:'V   (volume)', frac:(th.V-VMIN)/(VMAX-VMIN), val:(th.V/1000).toFixed(0)+'k', col:'#2ca02c'},
+    {k:'T', lab:'T   ∝ ⟨KE⟩', frac:Math.min(1,th.T/3800), val:th.T.toFixed(0), col:'#e04b3a'},
+    {k:'P', lab:'P = N⟨KE⟩/V', frac:Math.min(1,VMIN/th.V), val:th.P.toFixed(2), col:'#8a4fc4'},
+    {k:'W', lab:workByGas?'W   (by gas)':'W   (on gas)', bip:Wshown/wqScale, val:Wshown.toFixed(0), col:'#e08a1e'},
+    {k:'Q', lab:'Q   (into gas)', bip:Qtot/wqScale, val:Qtot.toFixed(0), col:'#c2367f'},
   ];
-  const bx=126, bw=Ww-bx-56, rh=Hh/rows.length;
-  rows.forEach((r,i)=>{ const key=['N','V','T','P'][i]; gauge[key]+=(r[1]-gauge[key])*0.18; const y=i*rh+rh/2;
-    gctx.fillStyle='#333'; gctx.font='12.5px Helvetica Neue,Arial'; gctx.textAlign='left'; gctx.textBaseline='middle'; gctx.fillText(r[0],4,y);
-    gctx.fillStyle='#e6ebf0'; gctx.fillRect(bx,y-9,bw,18);
-    gctx.fillStyle=r[3]; gctx.fillRect(bx,y-9,bw*Math.max(0,Math.min(1,gauge[key])),18);
-    gctx.fillStyle='#222'; gctx.textAlign='right'; gctx.fillText(r[2],Ww-4,y); });
+  const bx=120, bw=Ww-bx-52, rh=Hh/rows.length;
+  gctx.textBaseline='middle';
+  rows.forEach((r,i)=>{ const y=i*rh+rh/2;
+    gctx.fillStyle='#333'; gctx.font='12px Helvetica Neue,Arial'; gctx.textAlign='left'; gctx.fillText(r.lab,4,y);
+    gctx.fillStyle='#e6ebf0'; gctx.fillRect(bx,y-8,bw,16);
+    if(r.bip!==undefined){ const cx=bx+bw/2; gauge[r.k]+=(Math.max(-1,Math.min(1,r.bip))-gauge[r.k])*0.2;
+      gctx.fillStyle= gauge[r.k]>=0 ? '#2ca02c' : '#d64545'; gctx.fillRect(cx, y-8, gauge[r.k]*(bw/2), 16);
+      gctx.strokeStyle='#aab4bd'; gctx.lineWidth=1; gctx.beginPath(); gctx.moveTo(cx,y-8); gctx.lineTo(cx,y+8); gctx.stroke();
+    } else { gauge[r.k]+=(r.frac-gauge[r.k])*0.18; gctx.fillStyle=r.col; gctx.fillRect(bx,y-8,bw*Math.max(0,Math.min(1,gauge[r.k])),16); }
+    gctx.fillStyle='#222'; gctx.textAlign='right'; gctx.fillText(r.val,Ww-4,y);
+  });
 }
 
 let traces=[], current=[], recording=false, recColor='#2f83d6', recIdx=0;
 const TRACE_COLORS=['#2f83d6','#2ca02c','#8a4fc4','#e08a1e','#0e8f8f','#c2367f'];
 function toggleRecord(){ recording=!recording;
-  if(recording){ recColor=TRACE_COLORS[recIdx++%TRACE_COLORS.length]; const th=theory(); current=[{V:th.V,P:th.P}]; recBtn.classList.add('on'); recBtn.textContent='■ Stop'; }
+  if(recording){ recColor=TRACE_COLORS[recIdx++%TRACE_COLORS.length]; const th=theory(); current=[{V:th.V,P:th.P}]; zeroWQ(); recBtn.classList.add('on'); recBtn.textContent='■ Stop'; }
   else { if(current.length>1) traces.push({pts:current,color:recColor}); current=[]; recBtn.classList.remove('on'); recBtn.textContent='● Record'; } }
 
-let pvMax=0.02; const vAxMax=VMAX*1.05;
+let pvMax=3; const vAxMax=VMAX*1.05;
 function drawPV(){
   const th=theory(), Ww=pvCanvas.width,Hh=pvCanvas.height; pctx.clearRect(0,0,Ww,Hh);
   if(recording){ const last=current[current.length-1];
     if(!last || Math.abs(th.V-last.V)/vAxMax>0.006 || Math.abs(th.P-last.P)/Math.max(1e-6,pvMax)>0.008){ current.push({V:th.V,P:th.P}); if(current.length>700)current.shift(); } }
   let peak=th.P; for(const tr of traces) for(const q of tr.pts) if(q.P>peak)peak=q.P; for(const q of current) if(q.P>peak)peak=q.P;
-  pvMax += (Math.max(peak*1.45,0.01)-pvMax)*0.06;
+  if(peak>pvMax*0.92 || peak<pvMax*0.32) pvMax=niceMax(peak*1.18);   // reframe only when the point nears the top or sits low
   const l=46,r=Ww-12,t=12,b=Hh-30; pctx.fillStyle='#fff'; pctx.fillRect(l,t,r-l,b-t);
   const gx=V=>l+(V/vAxMax)*(r-l), gy=P=>b-(Math.min(P,pvMax)/pvMax)*(b-t);
   pctx.strokeStyle='#e2e8ee'; pctx.lineWidth=1;
   for(let i=1;i<5;i++){ const X=l+(r-l)*i/5; pctx.beginPath();pctx.moveTo(X,t);pctx.lineTo(X,b);pctx.stroke(); const Y=t+(b-t)*i/5; pctx.beginPath();pctx.moveTo(l,Y);pctx.lineTo(r,Y);pctx.stroke(); }
-  // isotherm through the current point
   pctx.strokeStyle='rgba(224,75,58,0.55)'; pctx.setLineDash([5,4]); pctx.lineWidth=1.6; pctx.beginPath(); let first=true; const C=th.N*th.T;
   for(let V=VMIN*0.5; V<=vAxMax; V+=vAxMax/140){ const P=C/V; if(P>pvMax*1.2)continue; const X=gx(V),Y=gy(P); first?(pctx.moveTo(X,Y),first=false):pctx.lineTo(X,Y); } pctx.stroke(); pctx.setLineDash([]);
   const drawTrace=(pts,color)=>{ if(pts.length<1)return; pctx.strokeStyle=color; pctx.lineWidth=2.4; pctx.beginPath();
@@ -288,7 +296,7 @@ function drawPV(){
   for(const tr of traces) drawTrace(tr.pts,tr.color);
   if(current.length) drawTrace(current,recColor);
   pctx.strokeStyle='#333'; pctx.lineWidth=1.4; pctx.beginPath(); pctx.moveTo(l,t); pctx.lineTo(l,b); pctx.lineTo(r,b); pctx.stroke();
-  pctx.fillStyle='#333'; pctx.font='11.5px Helvetica Neue,Arial'; pctx.textAlign='center'; pctx.fillText('Volume  V  →',(l+r)/2,b+18);
+  pctx.fillStyle='#333'; pctx.font='11.5px Helvetica Neue,Arial'; pctx.textAlign='center'; pctx.textBaseline='alphabetic'; pctx.fillText('Volume  V  →',(l+r)/2,b+18);
   pctx.save(); pctx.translate(13,(t+b)/2); pctx.rotate(-Math.PI/2); pctx.fillText('Pressure  P  →',0,0); pctx.restore();
   const X=gx(th.V),Y=gy(th.P); pctx.beginPath(); pctx.arc(X,Y,6,0,6.28); pctx.fillStyle='#1b3b5f'; pctx.fill(); pctx.strokeStyle='#fff'; pctx.lineWidth=2.5; pctx.stroke();
   pctx.fillStyle='#1b3b5f'; pctx.font='bold 11px Helvetica Neue,Arial'; pctx.textAlign='left'; pctx.fillText('now',X+9,Y-6);
@@ -296,7 +304,7 @@ function drawPV(){
 
 function fit(){ const s=Math.min((window.innerWidth-12)/1300,(window.innerHeight-12)/720); el('sim').style.transform='scale('+Math.max(0.2,s)+')'; }
 window.addEventListener('resize',fit);
-setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount); fit(); requestAnimationFrame(step);
+setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount); zeroWQ(); fit(); requestAnimationFrame(step);
 </script>
 </body>
 </html>
