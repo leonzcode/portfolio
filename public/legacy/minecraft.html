@@ -4522,7 +4522,8 @@ function frame(now){
   const cr = sit.active ? 0 : (player.crouch||0);
   body.position.set(player.pos.x, player.pos.y, player.pos.z);   // feet stay planted; the pelvis drop is done inside poseCharacter
   body.rotation.set(0, player.yaw + Math.PI, 0);         // the group no longer tilts; the upper body pivots at the waist instead
-  body.scale.set(0.9, 0.9, 0.9);
+  const localBodyScale = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : 0.9;   // giant/small secret codes size your own third-person body too
+  body.scale.set(localBodyScale, localBodyScale, localBodyScale);
   headPivot.rotation.x = -player.pitch;
   poseCharacter(body.userData, cr, sit.active, bobT, walkAmpLocal);
   if(swing>0) body.userData.armR.rotation.x = -Math.sin((1-swing)*Math.PI)*1.5;   // a punch swing overrides the walk swing
