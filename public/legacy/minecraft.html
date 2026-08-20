@@ -476,7 +476,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 "mangrove_stairs","mangrove_slab","mangrove_fence","mangrove_trapdoor","cherry_stairs","cherry_slab","cherry_fence","cherry_trapdoor","pale_oak_stairs","pale_oak_slab","pale_oak_fence","pale_oak_trapdoor","bamboo_stairs","bamboo_slab","bamboo_fence","bamboo_trapdoor","crimson_stairs","crimson_slab","crimson_fence","crimson_trapdoor","warped_stairs","warped_slab","warped_fence","warped_trapdoor","bamboo_mosaic_stairs","bamboo_mosaic_slab",
 "white_carpet","orange_carpet","magenta_carpet","light_blue_carpet","yellow_carpet","lime_carpet","pink_carpet","gray_carpet","light_gray_carpet","cyan_carpet","purple_carpet","blue_carpet","brown_carpet","green_carpet","red_carpet","black_carpet",
 // --- pass 4: purpular (purple) wood type + full variants ---
-"purpular_log","purpular_planks","purpular_leaves","purpular_stairs","purpular_slab","purpular_fence","purpular_trapdoor","purpular_door","purpular_sign"];
+"purpular_log","purpular_planks","purpular_leaves","purpular_stairs","purpular_slab","purpular_fence","purpular_trapdoor","purpular_door","purpular_sign",
+// --- pass 5: bed wars ---
+"tnt"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -687,6 +689,9 @@ paint('bricks', bricks(21));
 paint('snow', speckle(0xf4f8fb, 6, 22));
 paint('ice', (()=>{ const r=rng(23); return (x,y)=>{ const v=vary(rgb(0x8fb8ea),12,r); return [v[0],v[1],v[2],220]; };})());
 paint('obsidian', (()=>{ const r=rng(24); return (x,y)=>{ const v=vary(rgb(0x180d28),16,r); if(r()<0.08) return vary(rgb(0x5a3c8a),20,r); return v; };})());
+paint('tnt', (()=>{ const r=rng(77); const letters={7:[1,2,3,6,10,11,12,14],8:[2,6,8,10,12,14]}; return (x,y)=>{
+  if(y>=6&&y<=9){ if((y===7||y===8) && (letters[y]||[]).includes(x)) return rgb(0x2a0c0c); return vary(rgb(0xf0f0f0),8,r); }
+  return vary(rgb(0xc62828),18,r); };})());
 paint('netherrack', (()=>{ const r=rng(25), base=rgb(0x6e2b2b); return (x,y)=> vary(base, 24, r); })());
 paint('glowstone', (()=>{ const r=rng(26), base=rgb(0xd6b24a); return (x,y)=>{ if(r()<0.3) return vary(rgb(0xfff2b0),20,r); return vary(base,18,r); };})());
 paint('pumpkin_side',(()=>{ const r=rng(29), base=rgb(0xd07f1e); return (x,y)=>{ if(x%4===0) return base.map(v=>v*0.85|0); return vary(base,10,r); };})());
@@ -1036,6 +1041,7 @@ B.bricks = def('bricks', { tiles:T('bricks') });
 B.snow   = def('snow',   { tiles:T('snow') });
 B.ice    = def('ice',    { tiles:T('ice'), opaque:false });
 B.obsidian=def('obsidian', { tiles:T('obsidian') });
+B.tnt=def('tnt', { tiles:T('tnt') });
 B.netherrack=def('netherrack', { tiles:T('netherrack') });
 B.glowstone=def('glowstone', { tiles:T('glowstone'), light:14 });
 B.pumpkin= def('pumpkin',{ tiles:[T('pumpkin_top'), T('pumpkin_side'), T('pumpkin_top')] });
@@ -2966,7 +2972,7 @@ function renderHotbar(){
     if(bw.active){
       const st=bw.slots[i];
       if(st){ const ic=bwItemIcon(st,40);
-        let n=null; if(st.kind==='block') n=bw.counts[st.id]||0; else if(st.kind==='apple') n=bw.apples; else if(st.kind==='pearl') n=bw.pearls;
+        let n=null; if(st.kind==='block') n=bw.counts[st.id]||0; else if(st.kind==='apple') n=bw.apples; else if(st.kind==='pearl') n=bw.pearls; else if(st.kind==='tnt') n=bw.tnt; else if(st.kind==='fireball') n=bw.fireballs;
         if(st.kind==='block') ic.style.opacity=(n>0)?'1':'0.4';
         s.appendChild(ic);
         if(n!=null && (n>1 || st.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); }
@@ -3614,7 +3620,7 @@ const BW_RESNAME = { iron:'Iron', gold:'Gold', diamond:'Diamond', emerald:'Emera
 let bwMode = false;   // makes chunk generation produce void + prefab instead of terrain
 const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,diamond:0,emerald:0},
   loadout:{sword:1,armor:1,pick:0,axe:0,shears:false}, beds:[true,true,true,true], teams:[], players:new Map(),
-  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, slots:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}] };
+  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, tnt:0, fireballs:0, slots:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}], projectiles:[], explosions:[], tnts:[] };
 function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
@@ -3703,6 +3709,8 @@ function bwHandle(m){
     case 'bwstate': bw.phase=m.phase; bw.beds=m.beds||bw.beds; bw.teams=m.teams||bw.teams; bw.countdown=m.countdown||0; bw.teamUp=m.upgrades||bw.teamUp; { const ot=bw.genTier; bw.genTier=m.genTier||bw.genTier; if(bw.genTier!==ot) bwUpdateGenTiers(); } bwUpdateHud();
       if(m.phase==='playing'){ bwHideBanner(); } return true;
     case 'bwupgrades': if(m.team!=null) bw.teamUp[m.team]=m.up; if(bwShopOpen && bwShopCat==='Upgrades') bwRenderShop(); return true;
+    case 'bwexplode': bwExplodeVisual(m.x,m.y,m.z,m.power||3); return true;
+    case 'bwfire': bwAddProjectile(m.ox,m.oy,m.oz, m.dx,m.dy,m.dz, false); return true;
     case 'bwyou': bw.team=m.team; bw.res=m.res||bw.res; bw.loadout=m.loadout||bw.loadout; bw.hp=m.hp!=null?m.hp:bw.hp; player.hp=bw.hp;
       bwCounts_reset(); bwSetHotbar(); bwUpdateHud(); return true;
     case 'bwteams': for(const p of (m.players||[])){ const e=bw.players.get(p.id)||{}; Object.assign(e,p); bw.players.set(p.id,e); const rp=mp.players.get(p.id); if(rp){ rp.team=p.team; rp.armor=p.armor; rp.sword=p.sword; bwApplyRemoteGear(p.id); } } bwApplyLocalGear(); bwUpdateHud(); return true;
@@ -3736,7 +3744,7 @@ function bwBreakBed(x,y,z){
 }
 
 // ---- finite blocks / hotbar ----
-function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; }
+function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; }
 // build the survival hotbar: sword, the 5 buyable blocks (with counts), then tools + apples
 function bwSetHotbar(){
   const wool = bw.team!=null? BW_TEAMS[bw.team].wool : 'white_wool';
@@ -3753,6 +3761,8 @@ function bwSetHotbar(){
   if(bw.loadout.shears && k<9) s[k++]={ kind:'tool', tool:'shears' };
   if(bw.apples>0 && k<9)       s[k++]={ kind:'apple' };
   if(bw.pearls>0 && k<9)       s[k++]={ kind:'pearl' };
+  if(bw.tnt>0 && k<9)          s[k++]={ kind:'tnt' };
+  if(bw.fireballs>0 && k<9)    s[k++]={ kind:'fireball' };
   bw.slots = s;
   for(let i=0;i<9;i++) hotbar[i] = (s[i] && s[i].kind==='block') ? s[i].id : 0;
   if(selSlot<0||selSlot>8) selSlot=0;
@@ -3785,6 +3795,10 @@ function bwItemIcon(stack, size){
     R(5,4,6,2,'#c62828'); R(4,6,8,6,'#e53935'); R(5,12,6,1,'#c62828'); R(8,2,1,3,'#5d4037'); R(9,3,2,1,'#2e7d32');
   } else if(stack.kind==='pearl'){
     R(5,4,6,2,'#2aa87a'); R(4,6,8,6,'#33c690'); R(5,12,6,1,'#1c7a58'); R(6,7,2,2,'#bfffe6'); R(9,9,2,2,'#0f5a40');
+  } else if(stack.kind==='tnt'){
+    return blockIconCanvas(B.tnt, size);
+  } else if(stack.kind==='fireball'){
+    R(5,5,6,6,'#ff7018'); R(6,4,4,1,'#ffb060'); R(4,6,1,4,'#e05000'); R(11,6,1,4,'#e05000'); R(6,11,4,1,'#e05000'); R(6,6,3,3,'#ffd080');
   }
   return c;
 }
@@ -3866,6 +3880,8 @@ function bwOnBuy(m){
   if(g.block){ const nm={ wool:(bw.team!=null?BW_TEAMS[bw.team].wool:'white_wool'), planks:'oak_planks', endstone:'end_stone', glass:'glass', obsidian:'obsidian' }[g.block]; const id=bwId(nm); if(id) bwGiveBlock(id, g.n||1); }
   if(g.item==='golden_apple') bw.apples++;
   if(g.item==='ender_pearl') bw.pearls++;
+  if(g.item==='tnt') bw.tnt++;
+  if(g.item==='fireball') bw.fireballs++;
   bwSetHotbar();   // rebuild hotbar (new sword/tools) + refresh worn gear
   bwUpdateHud(); bwFlashShop(m.item, 'Purchased!', true);
 }
@@ -3917,7 +3933,7 @@ function bwMineTick(dt){
   bwCrackMesh.material.map=bwCrackTex[stage]; bwCrackMesh.material.needsUpdate=true; bwCrackMesh.visible=true; bwCrackMesh.position.set(x+0.5,y+0.5,z+0.5);
   if(bwMining.progress>=bwMining.time){ if(isBed(getBlock(x,y,z))) bwBreakBed(x,y,z); else { setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); } bwClearMining(); }
 }
-function bwFrame(dt){ if(!bw.active) return; bwUpdateItems(dt); bwMineTick(dt);
+function bwFrame(dt){ if(!bw.active) return; bwUpdateItems(dt); bwMineTick(dt); bwUpdateBlasts(dt);
   const tt=performance.now()/500;
   for(const g of bw.gens){ if(g.spin){ g.spin.rotation.y+=dt*1.6; g.spin.position.y=g.y+1.5+Math.sin(tt+g.x*0.7)*0.09; } }   // spin the generator holograms
   if(bw.phase==='playing') bwCheckVoid();
@@ -3943,6 +3959,8 @@ const BW_SHOP = [
   { cat:'Special',item:'shears',       name:'Shears',          sub:'',    cost:{iron:20},   col:'#bbb' },
   { cat:'Special',item:'golden_apple', name:'Golden Apple',    sub:'heal',cost:{gold:3},    col:'#fd4' },
   { cat:'Utility',item:'ender_pearl',  name:'Ender Pearl',     sub:'teleport', cost:{emerald:4}, col:'#2aa87a' },
+  { cat:'Utility',item:'tnt',          name:'TNT',             sub:'3s fuse',  cost:{gold:4},    col:'#c62828' },
+  { cat:'Utility',item:'fireball',     name:'Fireball',        sub:'launch',   cost:{iron:40},   col:'#ff7018' },
 ];
 const BW_CATS = ['Blocks','Melee','Armor','Special','Utility','Upgrades'];
 const BW_UPGRADES = [
@@ -4093,6 +4111,8 @@ function bwUseAction(){
   const s=bw.slots[selSlot];
   if(s && s.kind==='apple'){ bwEatApple(); return; }
   if(s && s.kind==='pearl'){ bwThrowPearl(); return; }
+  if(s && s.kind==='tnt'){ bwTntPlace(); return; }
+  if(s && s.kind==='fireball'){ bwLaunchFireball(); return; }
   placeBlock();                               // otherwise place the selected block
 }
 function bwThrowPearl(){
@@ -4105,6 +4125,56 @@ function bwThrowPearl(){
   bw.pearls--; bwSetHotbar();
   player.pos.set(land.x, Math.max(land.y, BW_VOID+2), land.z); player.vel.set(0,0,0);
   mpSend({type:'pos', x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)});
+}
+// ---- TNT + Fireballs (explosions) ----
+function bwDoExplosion(x,y,z,power){
+  const r=Math.ceil(power);
+  for(let dx=-r;dx<=r;dx++)for(let dy=-r;dy<=r;dy++)for(let dz=-r;dz<=r;dz++){
+    if(dx*dx+dy*dy+dz*dz > power*power) continue;
+    const bx=Math.floor(x)+dx, by=Math.floor(y)+dy, bz=Math.floor(z)+dz, bid=getBlock(bx,by,bz);
+    if(!bid || isBed(bid) || bw.prefabSet.has(bx+','+by+','+bz)) continue;            // beds + the map are blast-proof
+    if(/obsidian/.test(BLOCKS[bid]?BLOCKS[bid].name:'')) continue;                    // obsidian resists blasts
+    setBlock(bx,by,bz,AIR); mpSendBlock(bx,by,bz,0);
+  }
+  mpSend({type:'bwexplode', x, y, z, power});    // server deals damage/knockback + relays the flash to others
+  bwExplodeVisual(x,y,z,power);
+}
+function bwExplodeVisual(x,y,z,power){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(1,10,8), new THREE.MeshBasicMaterial({color:0xffb040, transparent:true, opacity:0.85}));
+  m.position.set(x,y,z); scene.add(m); bw.explosions.push({mesh:m, t:0, power});
+  if(Math.hypot(player.pos.x-x, player.pos.z-z, player.pos.y-y) < power+3) showHurt();
+}
+function bwTntPlace(){
+  if(bw.tnt<=0 || bw.dead || !target) return;
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  if(getBlock(px,py,pz)) return;
+  bw.tnt--; bwSetHotbar();
+  setBlock(px,py,pz, B.tnt); mpSendBlock(px,py,pz, B.tnt);
+  bw.tnts.push({x:px,y:py,z:pz, at:performance.now()+3000});
+}
+function bwLaunchFireball(){
+  if(bw.fireballs<=0 || bw.dead) return;
+  bw.fireballs--; bwSetHotbar();
+  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z), dir=camDir(), sp=22;
+  bwAddProjectile(o.x+dir.x*1.2, o.y+dir.y*1.2, o.z+dir.z*1.2, dir.x*sp, dir.y*sp, dir.z*sp, true);
+  mpSend({type:'bwfire', ox:+o.x.toFixed(2),oy:+o.y.toFixed(2),oz:+o.z.toFixed(2), dx:+(dir.x*sp).toFixed(2),dy:+(dir.y*sp).toFixed(2),dz:+(dir.z*sp).toFixed(2)});
+}
+function bwAddProjectile(x,y,z,vx,vy,vz,mine){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(0.28,10,8), new THREE.MeshBasicMaterial({color:0xff7018}));
+  m.position.set(x,y,z); m.add(new THREE.PointLight(0xff8030,1.2,6)); scene.add(m);
+  bw.projectiles.push({mesh:m, x,y,z, vx,vy,vz, mine:!!mine, life:0});
+}
+function bwUpdateBlasts(dt){
+  for(let i=bw.explosions.length-1;i>=0;i--){ const e=bw.explosions[i]; e.t+=dt; e.mesh.scale.setScalar(e.power*(0.4+e.t*3)); e.mesh.material.opacity=Math.max(0,0.85-e.t*2.2); if(e.t>0.4){ scene.remove(e.mesh); bw.explosions.splice(i,1); } }
+  const now=performance.now();
+  for(let i=bw.tnts.length-1;i>=0;i--){ const t=bw.tnts[i]; if(now>=t.at){ if(getBlock(t.x,t.y,t.z)===B.tnt){ setBlock(t.x,t.y,t.z,AIR); mpSendBlock(t.x,t.y,t.z,0); } bwDoExplosion(t.x+0.5,t.y+0.5,t.z+0.5, 3.2); bw.tnts.splice(i,1); } }
+  for(let i=bw.projectiles.length-1;i>=0;i--){ const pr=bw.projectiles[i]; pr.life+=dt; let hit=false;
+    for(let s=0;s<3 && !hit;s++){ pr.x+=pr.vx*dt/3; pr.y+=pr.vy*dt/3; pr.z+=pr.vz*dt/3;
+      if(getBlock(Math.floor(pr.x),Math.floor(pr.y),Math.floor(pr.z))) hit=true;
+      else if(pr.mine){ for(const [,rp] of mp.players){ if(Math.hypot(rp.x-pr.x,(rp.y+1)-pr.y,rp.z-pr.z)<1.1){ hit=true; break; } } } }
+    pr.mesh.position.set(pr.x,pr.y,pr.z);
+    if(hit || pr.life>3){ scene.remove(pr.mesh); bw.projectiles.splice(i,1); if(pr.mine && hit) bwDoExplosion(pr.x,pr.y,pr.z, 2.6); }
+  }
 }
 
 /* ---- survival inventory screen (replaces the creative block picker in Bed Wars) ---- */
@@ -4406,7 +4476,10 @@ window.__mc = {
   bwBreakTimeOf(name){ return bwBreakTime(BLOCKS[name]?BLOCKS[name].id:0); },
   bwMineFor(x,y,z,ms){ const bid=getBlock(x,y,z); if(!bid) return {err:'no-block'}; const time=bwBreakTime(bid); let prog=0; const steps=Math.ceil(ms/16);
     for(let i=0;i<steps;i++){ prog+=0.016; if(prog>=time){ if(isBed(getBlock(x,y,z))) bwBreakBed(x,y,z); else { setBlock(x,y,z,0); mpSendBlock(x,y,z,0); } return {broke:true, time:+time.toFixed(2), atMs:i*16}; } } return {broke:false, time:+time.toFixed(2), prog:+prog.toFixed(2)}; },
-  bwGens(){ return bw.gens.length; }, bwGenTier(){ return bw.genTier; }, bwGiveP(n){ bw.pearls+=(n||1); bwSetHotbar(); }, bwPearls(){ return bw.pearls; }, bwSelPearl(){ const i=bw.slots.findIndex(s=>s&&s.kind==='pearl'); if(i>=0){ selSlot=i; renderHotbar(); } return i; }, bwThrow(){ bwThrowPearl(); }
+  bwGens(){ return bw.gens.length; }, bwGenTier(){ return bw.genTier; }, bwGiveP(n){ bw.pearls+=(n||1); bwSetHotbar(); }, bwPearls(){ return bw.pearls; }, bwSelPearl(){ const i=bw.slots.findIndex(s=>s&&s.kind==='pearl'); if(i>=0){ selSlot=i; renderHotbar(); } return i; }, bwThrow(){ bwThrowPearl(); },
+  bwGiveTnt(n){ bw.tnt+=(n||1); bwSetHotbar(); }, bwGiveFire(n){ bw.fireballs+=(n||1); bwSetHotbar(); }, bwExplodeAt(x,y,z,pw){ bwDoExplosion(x,y,z,pw||3); }, bwProjCount(){ return bw.projectiles.length; }, bwTntActive(){ return bw.tnts.length; }, bwFireCount(){ return bw.fireballs; }, bwHasTntBlock(){ return !!B.tnt; },
+  bwLaunch(){ bwLaunchFireball(); }, bwPlaceTnt(){ raycast(); bwTntPlace(); }, bwSelKind(k){ const i=bw.slots.findIndex(s=>s&&s.kind===k); if(i>=0){ selSlot=i; renderHotbar(); } return i; },
+  bwArmTnt(x,y,z){ setBlock(x,y,z,B.tnt); mpSendBlock(x,y,z,B.tnt); bw.tnts.push({x,y,z,at:performance.now()+3000}); }
 };
 </script>
 </body>
