@@ -3911,20 +3911,54 @@ function bwRebuildWorld(){
   chunks.clear(); genQueue=[];
   bwSpawnVillagers(); bwSpawnGenerators();
 }
-// floating spinning item + label above each generator (Hypixel-style hologram)
+// floating spinning item + hologram above each generator (Hypixel-style: tier line + live "Spawns in Ns" countdown)
+const BW_DIAMOND_MS=[30000,23000,12000], BW_EMERALD_MS=[60000,40000,25000];   // client mirror of the server tier intervals
+const BW_ROMAN=['I','II','III'];
+function bwGenInterval(kind){ const a=kind==='emerald'?BW_EMERALD_MS:BW_DIAMOND_MS; return a[Math.max(0,Math.min(2,bw.genTier-1))]; }
+function bwGenColHex(kind){ return '#'+(BW_RESCOL[kind]||0xffffff).toString(16).padStart(6,'0'); }
+function bwDrawHologram(canvas, lines){
+  const g=canvas.getContext('2d'); g.clearRect(0,0,canvas.width,canvas.height);
+  g.font='bold 24px monospace'; g.textAlign='center'; g.textBaseline='middle'; const lh=30, cx=canvas.width/2;
+  let y=(canvas.height - lines.length*lh)/2 + lh/2;
+  for(const ln of lines){ const w=Math.min(canvas.width-8, g.measureText(ln.text).width+18);
+    g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(cx-w/2, y-lh/2+2, w, lh-4);
+    g.fillStyle=ln.color||'#fff'; g.fillText(ln.text, cx, y); y+=lh; }
+}
+function bwMakeHologram(lines){
+  const c=document.createElement('canvas'); c.width=256; c.height=128; bwDrawHologram(c, lines);
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter;
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({ map:t, transparent:true, depthTest:false }));
+  s.scale.set(2.2,1.1,1); s.renderOrder=999; s.raycast=()=>{}; s.userData={canvas:c, tex:t};
+  return s;
+}
+function bwSetHologram(s, lines){ if(!s||!s.userData) return; bwDrawHologram(s.userData.canvas, lines); s.userData.tex.needsUpdate=true; }
+function bwGenLines(g){ const sec=Math.max(0, Math.ceil((g.nextAt-performance.now())/1000));
+  return [ {text:g.name+' '+(BW_ROMAN[bw.genTier-1]||'I'), color:bwGenColHex(g.kind)}, {text:'Spawns in '+sec+'s', color:'#dcdcdc'} ]; }
 function bwClearGenerators(){ for(const g of bw.gens){ if(g.spin)scene.remove(g.spin); if(g.tag)scene.remove(g.tag); } bw.gens=[]; }
 function bwSpawnGenerators(){
   bwClearGenerators();
+  const now=performance.now();
   const mk=(x,y,z,kind,label)=>{ const col=BW_RESCOL[kind]||0xffffff;
-    const spin=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.4,0.4), new THREE.MeshLambertMaterial({color:col, emissive:new THREE.Color(col).multiplyScalar(0.3)})); spin.position.set(x, y+1.5, z);
-    const tag=makeNametag(label); tag.position.set(x, y+2.4, z);
-    scene.add(spin); scene.add(tag); bw.gens.push({ spin, tag, kind, x, y, z }); };
-  for(const t of BW_TEAMS){ const g=BW_GEOM[t.id].gen; mk(g.x+0.5, g.y, g.z+0.5, 'iron', 'Generator'); }
-  for(const d of BW_DIAMOND){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'diamond', 'Diamond I'); }
-  for(const d of BW_EMERALD){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'emerald', 'Emerald I'); }
-  bwUpdateGenTiers();
+    const spin=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.4,0.4), new THREE.MeshLambertMaterial({color:col, emissive:new THREE.Color(col).multiplyScalar(0.3)})); spin.position.set(x, y+1.5, z); scene.add(spin);
+    const g={ spin, kind, x, y, z };
+    if(kind==='diamond'||kind==='emerald'){ g.name=(kind==='diamond'?'Diamond':'Emerald'); g.interval=bwGenInterval(kind); g.nextAt=now+g.interval; g.lastSec=-1;
+      g.tag=bwMakeHologram(bwGenLines(g)); }
+    else { g.tag=makeNametag(label); }
+    g.tag.position.set(x, y+2.7, z); scene.add(g.tag);
+    bw.gens.push(g);
+  };
+  for(const t of BW_TEAMS){ const gg=BW_GEOM[t.id].gen; mk(gg.x+0.5, gg.y, gg.z+0.5, 'iron', 'Generator'); }
+  for(const d of BW_DIAMOND){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'diamond', 'Diamond'); }
+  for(const d of BW_EMERALD){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'emerald', 'Emerald'); }
 }
-function bwUpdateGenTiers(){ const roman=['','I','II','III']; for(const g of bw.gens){ if(g.kind==='diamond'||g.kind==='emerald'){ scene.remove(g.tag); g.tag=makeNametag((g.kind==='diamond'?'Diamond ':'Emerald ')+(roman[bw.genTier]||'I')); g.tag.position.set(g.x, g.y+2.4, g.z); scene.add(g.tag); } } }
+function bwUpdateGenTiers(){ for(const g of bw.gens){ if(g.kind==='diamond'||g.kind==='emerald'){ g.interval=bwGenInterval(g.kind); g.nextAt=Math.min(g.nextAt, performance.now()+g.interval); g.lastSec=-1; bwSetHologram(g.tag, bwGenLines(g)); } } }
+function bwUpdateGenTimers(){ const now=performance.now();
+  for(const g of bw.gens){ if(!(g.kind==='diamond'||g.kind==='emerald')) continue;
+    if(now>=g.nextAt) g.nextAt=now+g.interval;                                  // local approximation; resynced by bwAddItem
+    const sec=Math.max(0, Math.ceil((g.nextAt-now)/1000));
+    if(sec!==g.lastSec){ g.lastSec=sec; bwSetHologram(g.tag, bwGenLines(g)); }  // only redraw when the second ticks
+  }
+}
 
 // ---- init + message routing ----
 function bwInit(m){
@@ -4094,6 +4128,10 @@ function bwAddItem(it){
   const mat=new THREE.MeshLambertMaterial({ color:BW_RESCOL[it.kind]||0xffffff, emissive:new THREE.Color(BW_RESCOL[it.kind]||0xffffff).multiplyScalar(0.25) });
   const mesh=new THREE.Mesh(geo,mat); mesh.position.set(it.x, it.y, it.z);
   bw.itemGroup.add(mesh); bw.items.set(it.id, {mesh, x:it.x, y:it.y, z:it.z, kind:it.kind, t:Math.random()*6.28});
+  if(it.kind==='diamond'||it.kind==='emerald'){                                   // resync the nearest matching generator's countdown to the real spawn
+    let best=null, bd=9; for(const g of bw.gens){ if(g.kind!==it.kind) continue; const dd=(g.x-it.x)*(g.x-it.x)+(g.z-it.z)*(g.z-it.z); if(dd<bd){ bd=dd; best=g; } }
+    if(best){ best.nextAt=performance.now()+best.interval; }
+  }
 }
 function bwRemoveItem(id){ const e=bw.items.get(id); if(e){ if(bw.itemGroup) bw.itemGroup.remove(e.mesh); bw.items.delete(id); } }
 function bwUpdateItems(dt){
@@ -4192,6 +4230,7 @@ function bwMineTick(dt){
 function bwFrame(dt){ if(!bw.active) return; bwUpdateItems(dt); bwMineTick(dt); bwUpdateBlasts(dt);
   const tt=performance.now()/500;
   for(const g of bw.gens){ if(g.spin){ g.spin.rotation.y+=dt*1.6; g.spin.position.y=g.y+1.5+Math.sin(tt+g.x*0.7)*0.09; } }   // spin the generator holograms
+  bwUpdateGenTimers();   // tick the "Spawns in Ns" countdown on diamond/emerald holograms
   if(bw.phase==='playing') bwCheckVoid();
   else if(player.pos.y < BW_VOID+3){ player.pos.set(0.5, BW_Y+3, 0.5); player.vel.set(0,0,0); }   // don't let players fall out of the lobby
   bw._hudDue=(bw._hudDue||0)-dt; if(bw._hudDue<=0){ bw._hudDue=0.25; bwUpdateHud(); }
@@ -4772,7 +4811,8 @@ window.__mc = {
   bwBreakTimeOf(name){ return bwBreakTime(BLOCKS[name]?BLOCKS[name].id:0); },
   bwMineFor(x,y,z,ms){ const bid=getBlock(x,y,z); if(!bid) return {err:'no-block'}; const time=bwBreakTime(bid); let prog=0; const steps=Math.ceil(ms/16);
     for(let i=0;i<steps;i++){ prog+=0.016; if(prog>=time){ if(isBed(getBlock(x,y,z))) bwBreakBed(x,y,z); else { setBlock(x,y,z,0); mpSendBlock(x,y,z,0); } return {broke:true, time:+time.toFixed(2), atMs:i*16}; } } return {broke:false, time:+time.toFixed(2), prog:+prog.toFixed(2)}; },
-  bwGens(){ return bw.gens.length; }, bwGenTier(){ return bw.genTier; }, bwGiveP(n){ bw.pearls+=(n||1); bwSetHotbar(); }, bwPearls(){ return bw.pearls; }, bwSelPearl(){ const i=bw.slots.findIndex(s=>s&&s.kind==='pearl'); if(i>=0){ selSlot=i; renderHotbar(); } return i; }, bwThrow(){ bwThrowPearl(); },
+  bwGens(){ return bw.gens.length; }, bwGenTier(){ return bw.genTier; },
+  bwGenHolos(){ return bw.gens.filter(g=>g.kind==='diamond'||g.kind==='emerald').map(g=>({ kind:g.kind, sec:Math.max(0,Math.ceil((g.nextAt-performance.now())/1000)), interval:g.interval, hasHolo:!!(g.tag&&g.tag.userData&&g.tag.userData.canvas) })); }, bwGiveP(n){ bw.pearls+=(n||1); bwSetHotbar(); }, bwPearls(){ return bw.pearls; }, bwSelPearl(){ const i=bw.slots.findIndex(s=>s&&s.kind==='pearl'); if(i>=0){ selSlot=i; renderHotbar(); } return i; }, bwThrow(){ bwThrowPearl(); },
   bwGiveTnt(n){ bw.tnt+=(n||1); bwSetHotbar(); }, bwGiveFire(n){ bw.fireballs+=(n||1); bwSetHotbar(); }, bwExplodeAt(x,y,z,pw){ bwDoExplosion(x,y,z,pw||3); }, bwProjCount(){ return bw.projectiles.length; }, bwTntActive(){ return bw.tnts.length; }, bwFireCount(){ return bw.fireballs; }, bwHasTntBlock(){ return !!B.tnt; },
   bwLaunch(){ bwLaunchFireball(); }, bwPlaceTnt(){ raycast(); bwTntPlace(); }, bwSelKind(k){ const i=bw.slots.findIndex(s=>s&&s.kind===k); if(i>=0){ selSlot=i; renderHotbar(); } return i; },
   bwArmTnt(x,y,z){ setBlock(x,y,z,B.tnt); mpSendBlock(x,y,z,B.tnt); bw.tnts.push({x,y,z,at:performance.now()+3000}); },
