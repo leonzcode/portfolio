@@ -1,23 +1,15 @@
 // Cloudflare Pages Function: POST /api/suggest
 //
-// Receives a game suggestion from the form above the Games grid, validates it,
-// drops bots that fall into the honeypot, then emails it to Leon via Resend.
-//
-// Reuses the same environment variables as the contact form, so no extra
-// configuration is needed (Cloudflare Pages dashboard → Settings → Environment
-// variables):
+// Receives a feature suggestion from the Leoncraft game menu (public/legacy/minecraft.html),
+// validates it, drops bots via a honeypot, then emails it to Leon via Resend's REST API.
+// Reuses the same env vars as the contact form.
 //
 //   RESEND_API_KEY      — API key from https://resend.com/api-keys
 //   CONTACT_TO_EMAIL    — destination address (Leon's inbox)
-//
-// Optional:
-//
-//   CONTACT_FROM_EMAIL  — sender shown to Leon. Must be on a verified domain in
-//                         Resend. Defaults to "contact@leonzhao.dev".
+//   CONTACT_FROM_EMAIL  — optional sender on a Resend-verified domain (defaults to contact@leonzhao.dev)
 
-const MAX_EMAIL = 200;
-const MAX_MESSAGE = 2000;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_NAME = 60;
+const MAX_MESSAGE = 1000;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -34,55 +26,25 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "Invalid request body." }, 400);
   }
 
-  // Honeypot: a real human won't see or fill this field. If it's non-empty, we
-  // silently pretend success so bots don't learn what tripped them up.
+  // Honeypot: a real player never sees or fills this. If it's set, fake success.
   if (typeof body?.website === "string" && body.website.trim().length > 0) {
     return json({ ok: true });
   }
 
+  const name = (body?.name ?? "").toString().trim().slice(0, MAX_NAME) || "Anonymous";
   const message = (body?.message ?? "").toString().trim();
-  const email = (body?.email ?? "").toString().trim();
 
-  if (!message) {
-    return json({ error: "Write a game suggestion first." }, 400);
-  }
+  if (!message) return json({ error: "Type a suggestion first." }, 400);
   if (message.length > MAX_MESSAGE) {
-    return json({ error: "That's a bit long (max 2000 characters)." }, 400);
-  }
-  // Email is optional — only validate it when someone actually gives one.
-  if (email) {
-    if (email.length > MAX_EMAIL) return json({ error: "Email is too long." }, 400);
-    if (!EMAIL_RE.test(email)) {
-      return json({ error: "That doesn't look like a valid email address." }, 400);
-    }
+    return json({ error: "Suggestion is too long (max 1000 characters)." }, 400);
   }
 
   if (!env.RESEND_API_KEY || !env.CONTACT_TO_EMAIL) {
-    console.error(
-      "suggest.js: missing env vars. RESEND_API_KEY set?",
-      Boolean(env.RESEND_API_KEY),
-      "CONTACT_TO_EMAIL set?",
-      Boolean(env.CONTACT_TO_EMAIL),
-    );
+    console.error("suggest.js: missing env vars. RESEND_API_KEY set?", Boolean(env.RESEND_API_KEY), "CONTACT_TO_EMAIL set?", Boolean(env.CONTACT_TO_EMAIL));
     return json({ error: "Server misconfigured. Please try again later." }, 500);
   }
 
   const fromAddress = env.CONTACT_FROM_EMAIL ?? "contact@leonzhao.dev";
-
-  const payload = {
-    from: `Game Suggestions <${fromAddress}>`,
-    to: [env.CONTACT_TO_EMAIL],
-    subject: "New game suggestion",
-    text: [
-      email ? `From: ${email}` : "From: (no email given)",
-      "",
-      message,
-      "",
-      "-- Sent from the game suggestion box on leonzhao.dev",
-    ].join("\n"),
-  };
-  // Let Leon reply straight to the suggester when they left an address.
-  if (email) payload.reply_to = email;
 
   let resendResponse;
   try {
@@ -92,7 +54,18 @@ export async function onRequestPost({ request, env }) {
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        from: `Leoncraft Suggestions <${fromAddress}>`,
+        to: [env.CONTACT_TO_EMAIL],
+        subject: `Leoncraft suggestion from ${name}`,
+        text: [
+          `From: ${name}`,
+          "",
+          message,
+          "",
+          "-- Sent from the Leoncraft in-game suggestion box on leonzhao.dev",
+        ].join("\n"),
+      }),
     });
   } catch (e) {
     console.error("suggest.js: fetch to Resend threw:", e);
@@ -108,7 +81,7 @@ export async function onRequestPost({ request, env }) {
   return json({ ok: true });
 }
 
-// Anything other than POST gets a clean 405 instead of a confusing default.
+// Anything other than POST gets a clean 405.
 export function onRequest({ request }) {
   if (request.method === "POST") return; // delegated to onRequestPost
   return new Response("Method not allowed", {

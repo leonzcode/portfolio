@@ -120,6 +120,24 @@
     background:rgba(255,255,255,.1); border:none;
   }
   .nameField::placeholder{ color:#cfcfcf; }
+  /* secret code box */
+  .codeRow{ display:flex; gap:8px; justify-content:center; width:320px; max-width:80vw; }
+  .codeField{
+    font-family:inherit; font-size:13px; color:#fff; text-align:center;
+    flex:1 1 auto; min-width:0; padding:9px 10px; outline:none;
+    background:rgba(255,255,255,.1); border:none; letter-spacing:2px;
+  }
+  .codeField::placeholder{ color:#bdbdbd; letter-spacing:1px; }
+  .codeRow .btn{ width:auto; flex:0 0 auto; padding:9px 16px; font-size:13px; }
+  .codeMsg{ font-size:12px; min-height:16px; color:#ffec4d; text-align:center; text-shadow:1px 1px 0 rgba(0,0,0,.5); }
+  /* suggestion box */
+  .suggestBox{
+    font-family:inherit; font-size:14px; color:#fff; line-height:1.5;
+    width:420px; max-width:84vw; height:140px; resize:vertical; padding:10px 12px; outline:none;
+    background:rgba(255,255,255,.1); border:none;
+  }
+  .suggestBox::placeholder{ color:#bdbdbd; }
+  .hpField{ position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }   /* honeypot: off-screen, bots fill it, humans don't */
   .btn{
     font-family:inherit; font-size:15px; color:#fff; text-shadow:2px 2px 0 rgba(0,0,0,.5);
     width:320px; max-width:80vw; padding:11px 0; cursor:pointer;
@@ -279,11 +297,16 @@
   <div class="menuButtons">
     <button class="btn" id="playBtn">Singleplayer</button>
     <button class="btn" id="mpBtn">Multiplayer</button>
-    <button class="btn" id="bwBtn">Bed Wars</button>
+    <div class="codeRow">
+      <input class="codeField" id="menuCode" type="text" maxlength="16" placeholder="Secret code" autocomplete="off" spellcheck="false">
+      <button class="btn" id="menuCodeBtn">Enter</button>
+    </div>
+    <div class="codeMsg" id="menuCodeMsg"></div>
     <div class="btnRow">
       <button class="btn half" id="skinBtn">Skin&hellip;</button>
       <button class="btn half" id="controlsBtn">Controls&hellip;</button>
     </div>
+    <button class="btn" id="suggestBtn">Suggest a feature&hellip;</button>
   </div>
   <div class="hint">Move with <b>WASD</b>, look with the <b>mouse</b>, and break / place with the mouse buttons.<br>Open <b>Controls</b> to change any key.</div>
 </div>
@@ -295,6 +318,19 @@
   <div class="ctrlActions">
     <button class="btn" id="ctrlResetBtn">Reset to default</button>
     <button class="btn" id="ctrlDoneBtn">Done</button>
+  </div>
+</div>
+
+<div class="screen" id="suggest" hidden>
+  <div class="title" style="font-size:28px;">Suggest a feature</div>
+  <div class="ctrlHint">Got an idea for Leoncraft? A new block, mob, game mode, anything. It goes straight to Leon.</div>
+  <input class="nameField" id="suggestName" type="text" maxlength="60" placeholder="Your name (optional)" autocomplete="off" spellcheck="false">
+  <textarea class="suggestBox" id="suggestText" maxlength="1000" placeholder="What should I add or change?"></textarea>
+  <input class="hpField" id="suggestHp" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
+  <div class="codeMsg" id="suggestMsg"></div>
+  <div class="ctrlActions">
+    <button class="btn" id="suggestSendBtn">Send suggestion</button>
+    <button class="btn" id="suggestCancelBtn">Back</button>
   </div>
 </div>
 
@@ -348,6 +384,12 @@
       <button class="btn half" id="pauseSkinBtn">Skin&hellip;</button>
       <button class="btn half" id="pauseControlsBtn">Controls&hellip;</button>
     </div>
+    <div class="codeRow">
+      <input class="codeField" id="pauseCode" type="text" maxlength="16" placeholder="Secret code" autocomplete="off" spellcheck="false">
+      <button class="btn" id="pauseCodeBtn">Enter</button>
+    </div>
+    <div class="codeMsg" id="pauseCodeMsg"></div>
+    <button class="btn" id="pauseSuggestBtn">Suggest a feature&hellip;</button>
     <button class="btn" id="regenBtn">New world</button>
     <button class="btn" id="menuBtn">Main menu</button>
   </div>
@@ -1990,12 +2032,12 @@ const body=makeCharacterModel(localSkinTex);
 const headPivot=body.userData.headPivot;
 body.visible=false; scene.add(body);
 // floating name tag above a remote player's head
-function makeNametag(name){
+function makeNametag(name, color){
   const c=document.createElement('canvas'); c.width=256; c.height=64;
   const g=c.getContext('2d'); g.font='bold 26px monospace'; g.textAlign='center'; g.textBaseline='middle';
   const w=Math.min(240, g.measureText(name).width+18);
   g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(128-w/2, 18, w, 30);
-  g.fillStyle='#fff'; g.fillText(name, 128, 34);
+  g.fillStyle=color||'#fff'; g.fillText(name, 128, 34);
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter;
   const s=new THREE.Sprite(new THREE.SpriteMaterial({ map:t, transparent:true, depthTest:false }));
   s.scale.set(1.7,0.42,1); s.position.y=2.15; s.renderOrder=999;
@@ -2013,7 +2055,7 @@ vmArm.add(skinPartOverlay(PARTS.armR, OVERLAY.armR, new THREE.MeshLambertMateria
 let vmBlock=null, vmHeldId=-1;
 function buildHeldBlock(id){
   if(vmBlock){ vmScene.remove(vmBlock); if(!vmBlock.userData.shared){ vmBlock.geometry.dispose(); vmBlock.material.dispose(); } vmBlock=null; }
-  vmHeldId=id||0; if(!id) return;
+  vmHeldId=id||0; if(!id || id===STICK_ITEM) return;   // the stick shows the bare hand/arm, no held cube
   const bl=BLOCKS[id];
   if(bl.model && prgModel){ vmBlock=new THREE.Mesh(prgModel.geo, prgModel.mat); vmBlock.userData.shared=true; vmScene.add(vmBlock); return; }   // hold the PRG sphere
   const geo=new THREE.BoxGeometry(1,1,1);
@@ -2317,7 +2359,7 @@ addEventListener('keydown', e=>{
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } }   // Bed Wars: shop + eat apple
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false;
   const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
@@ -2540,7 +2582,7 @@ function updatePlayer(dt){
   }
   // sneak crouch easing: lowers the camera + squashes the body model
   player.crouch += ((player.sneak?1:0) - player.crouch) * (1 - Math.exp(-16*dt));
-  player.eye = 1.62 - player.crouch*0.16;
+  player.eye = (1.62 - player.crouch*0.16) * localEyeMul;   // giant/small secret codes raise/lower the camera
   stepSmooth = stepSmooth>0.003 ? stepSmooth*Math.exp(-16*dt) : 0;   // let the camera catch up to a step-up
 }
 
@@ -2796,7 +2838,8 @@ function punchPlayerUnderCrosshair(){
   const vp=mp.players.get(victim); let dx=0, dz=0;
   if(vp){ dx=vp.x-player.pos.x; dz=vp.z-player.pos.z; }
   const len=Math.hypot(dx,dz)||1;
-  mpSend({type: bw.active?'bwhit':'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)});
+  const stick = (!bw.active && fx.stick && hotbar[selSlot]===STICK_ITEM);   // tade code: the stick launches its target ~10 blocks
+  mpSend({type: bw.active?'bwhit':'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3), stick:stick});
   return true;
 }
 function breakBlock(){
@@ -2826,6 +2869,7 @@ function placeBlock(){
   if(!target) return;
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   const id = hotbar[selSlot]; if(!id) return;
+  if(id===STICK_ITEM) return;   // the knockback stick is a tool, not a placeable block
   if(bw.active){ if(bw.dead) return; if(bwBlockCount(id)<=0) return; }   // bedwars blocks are finite
   const bl = BLOCKS[id];
   if(bl.door){ placeDoor(); return; }                                   // doors place two cells tall
@@ -2965,6 +3009,16 @@ function blockIconCanvas(id, size){
   g.drawImage(atlasCanvas, col*TILE, row*TILE, TILE, TILE, 0,0,size,size);
   return cv;
 }
+// icon for the secret-code knockback stick (a Minecraft-style diagonal wooden stick)
+function stickIconCanvas(size){
+  const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); const u=size/16;
+  g.save(); g.translate(size/2,size/2); g.rotate(-Math.PI/4); g.translate(-size/2,-size/2);
+  g.fillStyle='#6b4a24'; g.fillRect(7*u,2*u,2.5*u,12*u);            // shaft
+  g.fillStyle='#8a6634'; g.fillRect(7*u,2*u,1*u,12*u);              // light edge
+  g.fillStyle='#4d3416'; g.fillRect(7*u,4*u,2.5*u,1*u); g.fillRect(7*u,8*u,2.5*u,1*u); g.fillRect(7*u,11*u,2.5*u,1*u);  // grain
+  g.restore();
+  return c;
+}
 function renderHotbar(){
   hotbarEl.innerHTML='';
   for(let i=0;i<9;i++){
@@ -2977,7 +3031,7 @@ function renderHotbar(){
         s.appendChild(ic);
         if(n!=null && (n>1 || st.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); }
       }
-    } else { const id=hotbar[i]; if(id) s.appendChild(blockIconCanvas(id,40)); }
+    } else { const id=hotbar[i]; if(id===STICK_ITEM) s.appendChild(stickIconCanvas(40)); else if(id) s.appendChild(blockIconCanvas(id,40)); }
     hotbarEl.appendChild(s);
   }
 }
@@ -2986,7 +3040,7 @@ const itemNameEl=document.getElementById('itemName');
 let itemNameTimer=null;
 function showItemName(id){
   if(!id){ itemNameEl.style.opacity='0'; return; }
-  itemNameEl.textContent = BLOCKS[id].display || pretty(BLOCKS[id].name);
+  itemNameEl.textContent = (id===STICK_ITEM) ? 'Knockback Stick' : (BLOCKS[id].display || pretty(BLOCKS[id].name));
   itemNameEl.style.transition='none'; itemNameEl.style.opacity='1';
   void itemNameEl.offsetWidth;                 // restart the fade
   clearTimeout(itemNameTimer);
@@ -3139,7 +3193,16 @@ function toMenu(){
 
 document.getElementById('playBtn').addEventListener('click', startSingleplayer);
 document.getElementById('mpBtn').addEventListener('click', ()=>startMultiplayer());
-document.getElementById('bwBtn').addEventListener('click', ()=>startBedwars());
+// ---- secret code box (replaces the old Bed Wars button) ----
+function wireCodeBox(inputId, btnId, msgId){
+  const inp=document.getElementById(inputId), btn=document.getElementById(btnId), msg=document.getElementById(msgId);
+  if(!inp||!btn) return;
+  const submit=()=>{ const v=inp.value; inp.value=''; applyCode(v, msg); };
+  btn.addEventListener('click', submit);
+  inp.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); submit(); } if(e.key==='Escape'){ inp.blur(); } });
+}
+wireCodeBox('menuCode','menuCodeBtn','menuCodeMsg');
+wireCodeBox('pauseCode','pauseCodeBtn','pauseCodeMsg');
 document.getElementById('resumeBtn').addEventListener('click', resume);
 document.getElementById('regenBtn').addEventListener('click', regen);
 document.getElementById('menuBtn').addEventListener('click', toMenu);
@@ -3181,6 +3244,33 @@ document.getElementById('controlsBtn').addEventListener('click', openControls);
 document.getElementById('pauseControlsBtn').addEventListener('click', openControls);
 document.getElementById('ctrlDoneBtn').addEventListener('click', closeControls);
 document.getElementById('ctrlResetBtn').addEventListener('click', ()=>{ binds=Object.assign({}, DEFAULT_BINDS); saveBinds(); bindListening=null; renderControls(); });
+
+// ---- Suggestion box: emails a feature idea to Leon via /api/suggest (Cloudflare Pages Function) ----
+const suggestEl=document.getElementById('suggest');
+const suggestTextEl=document.getElementById('suggestText'), suggestNameEl=document.getElementById('suggestName');
+const suggestMsgEl=document.getElementById('suggestMsg'), suggestHpEl=document.getElementById('suggestHp');
+let suggestSending=false;
+function openSuggest(){ suggestEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; suggestMsgEl.textContent=''; suggestMsgEl.style.color='#ffec4d'; setTimeout(()=>suggestTextEl.focus(), 40); }
+function closeSuggest(){ suggestEl.hidden=true; if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false; }
+async function sendSuggestion(){
+  if(suggestSending) return;
+  const message=suggestTextEl.value.trim();
+  if(!message){ suggestMsgEl.style.color='#ff9a9a'; suggestMsgEl.textContent='Type a suggestion first.'; return; }
+  suggestSending=true; suggestMsgEl.style.color='#ffec4d'; suggestMsgEl.textContent='Sending…';
+  try{
+    const r=await fetch('/api/suggest', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name:suggestNameEl.value.trim(), message, website:suggestHpEl.value }) });
+    if(r.ok){ suggestMsgEl.style.color='#9fe89f'; suggestMsgEl.textContent='Thanks! Your suggestion was sent.'; suggestTextEl.value=''; }
+    else { let e='Could not send. Try again later.'; try{ const j=await r.json(); if(j&&j.error) e=j.error; }catch(_){} suggestMsgEl.style.color='#ff9a9a'; suggestMsgEl.textContent=e; }
+  }catch(_){ suggestMsgEl.style.color='#ff9a9a'; suggestMsgEl.textContent='Network error. Are you online?'; }
+  suggestSending=false;
+}
+document.getElementById('suggestBtn').addEventListener('click', openSuggest);
+document.getElementById('pauseSuggestBtn').addEventListener('click', openSuggest);
+document.getElementById('suggestCancelBtn').addEventListener('click', closeSuggest);
+document.getElementById('suggestSendBtn').addEventListener('click', sendSuggestion);
+suggestTextEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); closeSuggest(); } });
+suggestNameEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); closeSuggest(); } });
 
 // ---- Skin editor: paint a 64x64 skin on a rotatable 3D model (skindex-style) ----
 const skinEditorEl=document.getElementById('skinEditor'), skinViewCanvas=document.getElementById('skinView');
@@ -3458,17 +3548,83 @@ creative = true;   // locked to creative for now
    block edits and chat, and renders the other players live. */
 const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0 };
 
+/* ---- secret codes: cosmetic/gameplay effects synced to other players over the relay ----
+   Codes are typed in the menu / pause "Secret code" box. "bedwars" launches Bed Wars;
+   the rest set an effect the server stores + relays so everyone sees it. */
+const NAME_BLUE = '#4aa3ff';
+const STICK_ITEM = 30000;                 // hotbar sentinel (well above any real block id) for the knockback stick
+const fx = { body:'none', blue:false, stick:false };   // this player's active effects
+let localEyeMul = 1;                      // giant/small change the local camera height a bit
+
+function flashCode(msg, el){ if(!el) return; el.textContent=msg; clearTimeout(el._t); el._t=setTimeout(()=>{ el.textContent=''; }, 3000); }
+function applyLocalBody(){ localEyeMul = fx.body==='giant' ? 2.4 : fx.body==='small' ? 0.5 : fx.body==='pig' ? 0.72 : 1; }
+function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, blue:fx.blue, stick:fx.stick }); }   // relayed to everyone else
+function giveStick(){ hotbar[0]=STICK_ITEM; selSlot=0; if(typeof renderHotbar==='function') renderHotbar(); if(typeof showItemName==='function') showItemName(STICK_ITEM); }
+function applyCode(raw, msgEl){
+  const code=(raw||'').trim().toLowerCase();
+  if(!code) return;
+  if(code==='bedwars'){ flashCode('Launching Bed Wars…', msgEl); startBedwars(); return; }
+  let note='';
+  if(code==='leon'){ fx.blue=true; note='Your name is now blue in the player list.'; }
+  else if(code==='tade'){ fx.stick=true; giveStick(); note='Knockback stick equipped — check slot 1.'; }
+  else if(code==='giant'){ fx.body='giant'; note='You are now GIANT. Everyone can see it.'; }
+  else if(code==='small'){ fx.body='small'; note='You are now tiny. Everyone can see it.'; }
+  else if(code==='pig'){ fx.body='pig'; note='Oink! You are a pig now. Everyone can see it.'; }
+  else { flashCode('Unknown code.', msgEl); return; }
+  applyLocalBody(); sendFx(); flashCode(note, msgEl);
+}
+
+// A Minecraft-style pig built from coloured boxes (body + head + snout + 4 legs). Used as another player's model.
+function makePigModel(){
+  const P=S16, PINK=0xefaba6, SNOUT=0xd88a86, DARK=0x241717;
+  const box=(w,h,d,col)=>new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshLambertMaterial({color:col}));
+  const g=new THREE.Group();
+  const at=(m,x,y,z)=>{ m.position.set(x,y,z); return m; };
+  const bodyM=box(10*P,8*P,16*P, PINK); bodyM.position.set(0,10*P,0); g.add(bodyM);       // torso lies along Z
+  const hp=new THREE.Group(); hp.position.set(0,12*P,-8*P); g.add(hp);                     // head pivots at the front of the body
+  const head=box(8*P,8*P,8*P, PINK); head.position.set(0,0,-4*P); hp.add(head);
+  const snout=box(4*P,3*P,1.2*P, SNOUT); snout.position.set(0,-1*P,-8.4*P); hp.add(snout);
+  hp.add(at(box(1*P,1*P,0.8*P, DARK), -1*P,-1*P,-8.9*P));   // nostrils
+  hp.add(at(box(1*P,1*P,0.8*P, DARK),  1*P,-1*P,-8.9*P));
+  hp.add(at(box(1.4*P,1.4*P,0.6*P, DARK), -2.4*P,1.6*P,-8.05*P));   // eyes
+  hp.add(at(box(1.4*P,1.4*P,0.6*P, DARK),  2.4*P,1.6*P,-8.05*P));
+  hp.add(at(box(2*P,2*P,1*P, PINK), -2.4*P,4.3*P,-2.5*P));   // ears
+  hp.add(at(box(2*P,2*P,1*P, PINK),  2.4*P,4.3*P,-2.5*P));
+  const leg=(x,z)=>{ const piv=new THREE.Group(); piv.position.set(x,6*P,z); const l=box(4*P,6*P,4*P, PINK); l.position.set(0,-3*P,0); piv.add(l); g.add(piv); return piv; };
+  const legFL=leg(-3*P,-5*P), legFR=leg(3*P,-5*P), legBL=leg(-3*P,5*P), legBR=leg(3*P,5*P);
+  g.userData={ headPivot:hp, legFL, legFR, legBL, legBR, isPig:true };
+  return g;
+}
+// swap a remote player between their humanoid model and a pig, keeping position + nametag
+function setPlayerBody(p, body){
+  p.body = body || 'none';
+  const wantPig = p.body==='pig';
+  const isPig = !!(p.model && p.model.userData && p.model.userData.isPig);
+  if(wantPig !== isPig){
+    const tag=p.tag;
+    if(p.model){ if(tag) p.model.remove(tag); scene.remove(p.model); }
+    p.model = wantPig ? makePigModel() : makeCharacterModel(p.skinTex||defaultSkinTex);
+    if(tag) p.model.add(tag);
+    p.model.visible=true; scene.add(p.model);
+  }
+}
+function setPlayerBlue(p, blue){
+  p.blue = !!blue;
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.blue?NAME_BLUE:'#fff'); p.model.add(p.tag); }
+  if(tabShown) renderTabList();
+}
+
 // multiplayer player list — hold Tab to show everyone online at the top
 const tabListEl = document.getElementById('tabList');
 let tabShown = false;
 function renderTabList(){
   if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
-  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL}];
-  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL});
+  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, blue:fx.blue}];
+  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, blue:!!p.blue});
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
   tabListEl.innerHTML = '<div class="th">'+n+' player'+(n===1?'':'s')+' online</div>' +
-    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'">'+escapeHtml(r.name)+'</span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
+    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'"><span'+(r.blue?' style="color:'+NAME_BLUE+'"':'')+'>'+escapeHtml(r.name)+'</span></span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
   tabListEl.hidden=false;
 }
 
@@ -3487,11 +3643,15 @@ function mpApplyRemoteBlock(x,y,z,b){
 }
 function mpAddPlayer(p){
   if(!p || p.id===mp.id || mp.players.has(p.id)) return;
+  const blue=!!p.blue;
   const model=makeCharacterModel(defaultSkinTex); model.visible=true; scene.add(model);
-  const tag=makeNametag(p.name||('Player'+p.id)); model.add(tag);
-  mp.players.set(p.id, { id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
-    x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0 });
-  if(p.skin) applyRemoteSkin(p.id, p.skin);   // their custom skin, if they have one
+  const tag=makeNametag(p.name||('Player'+p.id), blue?NAME_BLUE:'#fff'); model.add(tag);
+  const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
+    x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
+    body:'none', blue:blue };
+  mp.players.set(p.id, rec);
+  if(p.skin) applyRemoteSkin(p.id, p.skin);          // their custom skin, if they have one
+  if(p.body && p.body!=='none') setPlayerBody(rec, p.body);   // giant / small / pig already active on join
 }
 // apply another player's 64x64 skin to their model + Tab head icon
 function applyRemoteSkin(id, dataURL){
@@ -3520,12 +3680,21 @@ function mpUpdatePlayers(dt){
     p.walkAmp=(p.walkAmp||0) + ((spd>0.6?0.85:0)-(p.walkAmp||0))*(1-Math.exp(-14*dt));
     if(spd>0.6) p.walkT=(p.walkT||0)+dt*9;
     const cr = p.sit ? 0 : (p.crouch||0);
+    const bodyScale = p.body==='giant' ? 4.5 : p.body==='small' ? 0.18 : 0.9;   // giant 5x / small 5x-down vs the normal 0.9
     p.model.position.set(p.x, p.y, p.z);
     p.model.rotation.set(0, p.yaw + Math.PI, 0);
-    p.model.scale.set(0.9, 0.9, 0.9);
-    p.model.userData.headPivot.rotation.x = -p.pitch;
-    poseCharacter(p.model.userData, cr, !!p.sit, p.walkT||0, p.walkAmp||0);
-    if(p.swing>0){ p.swing=Math.max(0, p.swing-dt*3.4); const arm=p.model.userData.armR; if(arm) arm.rotation.x = -Math.sin((1-p.swing)*Math.PI)*1.5; }   // punch swing overrides the walk swing
+    const ud=p.model.userData;
+    if(ud.isPig){
+      p.model.scale.set(bodyScale, bodyScale, bodyScale);
+      ud.headPivot.rotation.x = -p.pitch*0.6;
+      const sw=Math.sin(p.walkT||0)*(p.walkAmp||0);       // trot: diagonal legs swing together
+      ud.legFL.rotation.x= sw; ud.legBR.rotation.x= sw; ud.legFR.rotation.x=-sw; ud.legBL.rotation.x=-sw;
+    } else {
+      p.model.scale.set(bodyScale, bodyScale, bodyScale);
+      ud.headPivot.rotation.x = -p.pitch;
+      poseCharacter(ud, cr, !!p.sit, p.walkT||0, p.walkAmp||0);
+      if(p.swing>0){ p.swing=Math.max(0, p.swing-dt*3.4); const arm=ud.armR; if(arm) arm.rotation.x = -Math.sin((1-p.swing)*Math.PI)*1.5; }   // punch swing overrides the walk swing
+    }
   }
 }
 function mpHandle(m){
@@ -3547,6 +3716,7 @@ function mpHandle(m){
     mpStartWorld(m.seed);
     for(const pl of (m.players||[])) mpAddPlayer(pl);
     mpSendSkin();   // let everyone already here see my custom skin
+    applyLocalBody(); sendFx();   // re-assert my active secret-code effects so everyone here sees them
     chatPush('Joined the shared world as '+m.name+'  ('+((m.players||[]).length+1)+' online)', 'sys');
   }
   else if(m.type==='join'){ mpAddPlayer(m.player); }
@@ -3565,10 +3735,11 @@ function mpHandle(m){
   else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
   else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
+  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerBlue(p, m.blue); } }   // secret-code effect: giant / small / pig / blue name
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
-    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name); p.model.add(p.tag); } }
+    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.blue?NAME_BLUE:'#fff'); p.model.add(p.tag); } }
   }
   else if(m.type==='full'){ chatPush('Server is full right now, try again soon.', 'sys'); }
 }
@@ -4460,7 +4631,7 @@ window.__mc = {
   sitOn(x,y,z){ sitOnCushion(x,y,z); }, isSitting(){ return sit.active; }, getUp(){ standUp(); },
   setSneak(v){ player.sneak=!!v; }, combo(){ return binds.cameraCombo; },
   remotePose(){ const a=[]; for(const [id,p] of mp.players) a.push({id, sit:!!p.sit, sneak:!!p.sneak, legX:+(p.model.userData.legL?p.model.userData.legL.rotation.x:0).toFixed(2), crouch:+(p.crouch||0).toFixed(2)}); return a; },
-  punchId(vid){ const p=mp.players.get(vid); if(!p) return false; let dx=p.x-player.pos.x, dz=p.z-player.pos.z; const len=Math.hypot(dx,dz)||1; mpSend({type:'hit', target:vid, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)}); return true; },
+  punchId(vid){ const p=mp.players.get(vid); if(!p) return false; let dx=p.x-player.pos.x, dz=p.z-player.pos.z; const len=Math.hypot(dx,dz)||1; const stick=(!bw.active && fx.stick && hotbar[selSlot]===STICK_ITEM); mpSend({type:'hit', target:vid, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3), stick:stick}); return true; },
   kbRecv(){ return mp.kbRecv||0; },
   poseState(){ return {sit:sit.active, sneak:!!player.sneak, poseSit:mp.poseSit, poseSneak:mp.poseSneak, poseSent:mp.poseSent||0}; },
   held(){ return hotbar[selSlot]; },
@@ -4480,6 +4651,12 @@ window.__mc = {
   editTexel(x,y){ const d=editCtx.getImageData(x|0,y|0,1,1).data; return [d[0],d[1],d[2]]; },
   skinTexel(px,py){ return skinTexelAt(px,py); }, skinFillAt(px,py){ floodFillAt(px,py); }, skinToolState(){ return {eyedrop, fillMode}; },
   mpJoin(){ startMultiplayer(); }, mpInfo(){ return { active:mp.active, id:mp.id, players:mp.players.size, posSent:mp.posSent||0, posRecv:mp.posRecv||0, state:state }; },
+  // ---- secret-code test hooks ----
+  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, blue:fx.blue, stick:fx.stick, eyeMul:localEyeMul }; },
+  hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
+  tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
+  remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, blue:!!p.blue, isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), sx:+p.model.scale.x.toFixed(2) })); },
+  openSuggest(){ openSuggest(); return !suggestEl.hidden; }, sendSuggestion(){ return sendSuggestion(); }, setSuggest(t){ suggestTextEl.value=t; },
   chat(t){ if(mp.active) mpSend({type:'chat',text:t}); else chatPush('You: '+t); }, chats(){ return chatMsgs.map(m=>m.text); },
   search(q){ invQuery=q; invSearch.value=q; renderInvGrid(); },
   setCat(c){ invCat=c; invQuery=''; invSearch.value=''; buildInv(); },
