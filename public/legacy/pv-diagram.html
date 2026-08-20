@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PV Diagrams — Ideal Gas & the First Law</title>
+<style>
+  :root{
+    --panel:#ffffff; --panel-border:#a7a7a7; --ink:#111; --ink-soft:#444;
+    --iso-t:#e04b3a;   /* isothermal  */
+    --iso-p:#2f7bd6;   /* isobaric    */
+    --iso-v:#3aa03a;   /* isochoric   */
+    --adia:#8a4fc4;    /* adiabatic   */
+    --sky1:#e9f2f8; --sky2:#cfe2ef;
+    --nav:#37475a; --sel:#f6c531;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:#c4cdd6; font-family:'Helvetica Neue',Arial,'Segoe UI',sans-serif; color:var(--ink); overflow:hidden; }
+  #fit{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+  /* fixed PhET-style "screen" that scales to fit the window */
+  #sim{ width:1180px; height:700px; position:relative; transform-origin:center center;
+        background:linear-gradient(#f4f8fb,#dfeaf2); box-shadow:0 6px 30px rgba(0,0,0,.25); }
+  #play{ position:absolute; left:0; top:0; right:0; bottom:52px;
+         background:linear-gradient(180deg,var(--sky1),var(--sky2)); overflow:hidden; }
+
+  /* ---- PhET-style panel ---- */
+  .panel{ position:absolute; background:var(--panel); border:1px solid var(--panel-border);
+          border-radius:7px; box-shadow:0 2px 5px rgba(0,0,0,.14); padding:10px 12px; }
+  .panel h3{ margin:0 0 8px; font-size:15px; font-weight:700; color:#1c1c1c; }
+  .panel .sub{ font-size:11.5px; color:#666; }
+
+  /* ---- process radio-button group (PhET) ---- */
+  .procbtn{ display:flex; align-items:center; gap:9px; width:100%; text-align:left; cursor:pointer;
+            background:#f4f4f4; border:2px solid #d5d5d5; border-radius:6px; padding:7px 10px; margin:5px 0;
+            font-size:13.5px; font-weight:600; color:#333; transition:all .12s; }
+  .procbtn:hover{ background:#eef4fb; }
+  .procbtn .dot{ width:14px; height:14px; border-radius:50%; border:2px solid #9a9a9a; background:#fff; flex:0 0 auto; }
+  .procbtn small{ font-weight:400; color:#777; }
+  .procbtn.sel{ background:#fff; }
+  .procbtn.sel .dot{ box-shadow:inset 0 0 0 3px #fff; }
+
+  /* ---- sliders (PhET) ---- */
+  .ctl{ margin:11px 2px 3px; }
+  .ctl .row{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; margin-bottom:3px; }
+  .ctl .row b{ font-weight:700; } .ctl .val{ font-variant-numeric:tabular-nums; color:#222; font-weight:700; }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:7px; border-radius:4px;
+      background:#c9d3db; outline:none; margin:2px 0; }
+  input[type=range]:disabled{ opacity:.4; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:15px; height:27px; border-radius:4px;
+      background:linear-gradient(#8fccf3,#2f83d6); border:1px solid #1a5896; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.35); }
+  input[type=range]::-moz-range-thumb{ width:15px; height:27px; border-radius:4px;
+      background:linear-gradient(#8fccf3,#2f83d6); border:1px solid #1a5896; cursor:pointer; }
+  .seg{ display:flex; gap:6px; margin-top:2px; }
+  .seg button{ flex:1; }
+  button.pbtn{ font-family:inherit; font-size:12.5px; font-weight:700; color:#222; cursor:pointer;
+      background:linear-gradient(#fff,#e6e6e6); border:1px solid #9a9a9a; border-radius:6px; padding:7px 8px; }
+  button.pbtn:hover{ background:linear-gradient(#fff,#dcdcdc); }
+  button.pbtn.go{ background:linear-gradient(#c7f0c0,#8fd685); border-color:#4f9a45; }
+  button.pbtn:disabled{ opacity:.45; cursor:default; }
+
+  /* gas-type toggle */
+  .toggle{ display:flex; border:1px solid #9a9a9a; border-radius:6px; overflow:hidden; margin-top:3px; }
+  .toggle button{ flex:1; border:0; background:#efefef; padding:7px 4px; font-family:inherit; font-size:12.5px; font-weight:700; color:#555; cursor:pointer; }
+  .toggle button.on{ background:#2f83d6; color:#fff; }
+  .toggle button+button{ border-left:1px solid #9a9a9a; }
+
+  label.chk{ display:flex; align-items:center; gap:8px; font-size:13px; margin:6px 0; cursor:pointer; user-select:none; }
+  label.chk input{ width:16px; height:16px; accent-color:#2f83d6; }
+
+  /* readouts */
+  .read{ display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:13.5px; }
+  .read .k{ color:#555; } .read .v{ text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+  .read .hl{ height:1px; background:#e2e2e2; grid-column:1/3; margin:5px 0; }
+
+  /* equations */
+  .eqn{ font-size:11.7px; line-height:1.62; color:#222; }
+  .eqn .now{ background:#fff7d6; border-radius:4px; padding:1px 4px; box-shadow:inset 0 0 0 1px #ecd98a; }
+  .eqn i{ color:#333; }
+
+  /* reset-all (PhET yellow) */
+  #reset{ position:absolute; right:14px; bottom:58px; width:46px; height:46px; border-radius:50%;
+     background:radial-gradient(circle at 35% 30%,#ffe98a,#f4c223); border:1px solid #b9860c; cursor:pointer;
+     box-shadow:0 2px 4px rgba(0,0,0,.3); display:flex; align-items:center; justify-content:center; }
+  #reset:hover{ filter:brightness(1.05); }
+  #reset svg{ width:26px; height:26px; }
+
+  /* bottom nav bar (PhET-style; sim's own name, not PhET branding) */
+  #nav{ position:absolute; left:0; right:0; bottom:0; height:52px; background:var(--nav);
+        display:flex; align-items:center; padding:0 16px; color:#fff; }
+  #nav .title{ font-size:16px; font-weight:700; letter-spacing:.2px; }
+  #nav .title span{ opacity:.7; font-weight:400; }
+  #nav .spacer{ flex:1; }
+  #nav .mark{ font-size:12px; opacity:.75; }
+
+  canvas{ display:block; }
+</style>
+</head>
+<body>
+<div id="fit"><div id="sim">
+  <div id="play">
+    <canvas id="cyl"></canvas>
+    <canvas id="pv"></canvas>
+
+    <!-- process selection -->
+    <div class="panel" id="procPanel" style="left:806px; top:14px; width:356px;">
+      <h3>Thermodynamic process</h3>
+      <button class="procbtn" data-proc="isothermal"><span class="dot"></span>Isothermal <small>&nbsp;— constant&nbsp;T</small></button>
+      <button class="procbtn" data-proc="isobaric"><span class="dot"></span>Isobaric <small>&nbsp;— constant&nbsp;P</small></button>
+      <button class="procbtn" data-proc="isochoric"><span class="dot"></span>Isochoric <small>&nbsp;— constant&nbsp;V</small></button>
+      <button class="procbtn" data-proc="adiabatic"><span class="dot"></span>Adiabatic <small>&nbsp;— Q = 0</small></button>
+    </div>
+
+    <!-- controls -->
+    <div class="panel" id="ctlPanel" style="left:806px; top:224px; width:356px;">
+      <h3>Controls</h3>
+      <div class="ctl" id="freeCtl">
+        <div class="row"><b id="freeLbl">Final volume</b><span class="val"><span id="freeVal"></span> <span id="freeUnit"></span></span></div>
+        <input type="range" id="freeSlider">
+      </div>
+      <div class="ctl">
+        <div class="row"><b>Amount of gas, n</b><span class="val"><span id="nVal"></span> mol</span></div>
+        <input type="range" id="nSlider" min="0.2" max="2" step="0.05">
+      </div>
+      <div class="row" style="margin-top:8px; font-size:13px;"><b>Gas type</b></div>
+      <div class="toggle" id="gasToggle">
+        <button data-f="3" class="on">Monatomic</button>
+        <button data-f="5">Diatomic</button>
+      </div>
+      <div class="seg">
+        <button class="pbtn go" id="commitBtn">Add this step →</button>
+        <button class="pbtn" id="clearBtn">Clear path</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="showWork" checked> Shade work (area under curve)</label>
+      <label class="chk"><input type="checkbox" id="showIso"> Show isotherms (constant T)</label>
+    </div>
+
+    <!-- live readouts -->
+    <div class="panel" id="readPanel" style="left:372px; top:444px; width:414px;">
+      <div class="read">
+        <div class="k">Pressure&nbsp; P</div><div class="v"><span id="rP"></span> kPa</div>
+        <div class="k">Volume&nbsp; V</div><div class="v"><span id="rV"></span> L</div>
+        <div class="k">Temperature&nbsp; T</div><div class="v"><span id="rT"></span> K</div>
+        <div class="hl"></div>
+        <div class="k" style="grid-column:1/3;font-size:10.5px;color:#8a8a8a;letter-spacing:.4px">THIS STEP (start &rarr; current)</div>
+        <div class="k">Work by gas&nbsp; W</div><div class="v" style="color:var(--iso-p)"><span id="rW"></span> J</div>
+        <div class="k">Heat added&nbsp; Q</div><div class="v" style="color:var(--iso-t)"><span id="rQ"></span> J</div>
+        <div class="k">&Delta;Internal energy&nbsp; &Delta;U</div><div class="v" style="color:var(--adia)"><span id="rU"></span> J</div>
+        <div class="hl"></div>
+        <div class="k" style="grid-column:1/3;font-size:12px;color:#444">Path total&nbsp;(&Sigma;):&nbsp; &Sigma;W=<b id="sW"></b>&nbsp;&middot;&nbsp; &Sigma;Q=<b id="sQ"></b>&nbsp;&middot;&nbsp; &Sigma;&Delta;U=<b id="sU"></b> &nbsp;J</div>
+      </div>
+    </div>
+
+    <!-- equations -->
+    <div class="panel" id="eqnPanel" style="left:806px; top:470px; width:356px;">
+      <h3 style="margin-bottom:6px;">AP Physics 2 relations</h3>
+      <div class="eqn">
+        <div><i>PV = nRT</i> &nbsp;&middot;&nbsp; <i>&Delta;U = Q &minus; W</i></div>
+        <div><i>U = (f/2)nRT</i>,&nbsp; <i>&Delta;U = (f/2)nR&Delta;T</i></div>
+        <div><i>C<sub>V</sub>=(f/2)R</i>, <i>C<sub>P</sub>=C<sub>V</sub>+R</i>, <i>&gamma;=C<sub>P</sub>/C<sub>V</sub></i></div>
+        <div id="eqNow" style="margin-top:6px;"></div>
+      </div>
+    </div>
+
+    <button id="reset" title="Reset All" aria-label="Reset All">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#6a4a00" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+    </button>
+  </div>
+
+  <div id="nav">
+    <div class="title">PV Diagrams <span>&nbsp;·&nbsp; Ideal Gas &amp; the First Law of Thermodynamics</span></div>
+    <div class="spacer"></div>
+    <div class="mark">AP Physics 2 · thermodynamics</div>
+  </div>
+</div></div>
+
+<script>
+const R = 8.314;                 // J/(mol K)  — with P in kPa and V in L, P*V is already in joules
+const PROC = {
+  isothermal:{name:'Isothermal', color:'#e04b3a', free:'V', hold:'T'},
+  isobaric:  {name:'Isobaric',   color:'#2f7bd6', free:'V', hold:'P'},
+  isochoric: {name:'Isochoric',  color:'#3aa03a', free:'P', hold:'V'},
+  adiabatic: {name:'Adiabatic',  color:'#8a4fc4', free:'V', hold:'Q'},
+};
+// graph domain
+const VMAX=40, PMAX=400, VMIN=3, PMINg=8;
+
+const S = {                      // simulation state
+  n:1, f:3,
+  proc:'isothermal',
+  start:{P:0,V:0,T:0},           // the point we move FROM (the locked state)
+  cur:{P:0,V:0,T:0},             // current (live) state
+  path:[],                       // committed [{proc, from:{P,V,T}, to:{P,V,T}, color}]
+  points:[],                     // committed state points [{P,V}]
+  showWork:true, showIso:false,
+  pistonY:0,                     // animated piston position (px), eased toward target
+  sumW:0, sumQ:0, sumU:0,        // running totals over the committed path (net work of a cycle)
+};
+function gamma(){ return (S.f+2)/S.f; }
+function Cv(){ return (S.f/2)*R; }
+function T_of(P,V){ return P*V/(S.n*R); }
+
+// state reached from `s` along `proc` when the free variable = free
+function along(proc, s, free){
+  let P,V,T, g=gamma();
+  if(proc==='isobaric'){ P=s.P; V=free; T=s.T*V/s.V; }
+  else if(proc==='isochoric'){ V=s.V; P=free; T=s.T*P/s.P; }
+  else if(proc==='isothermal'){ T=s.T; V=free; P=s.P*s.V/V; }
+  else { V=free; P=s.P*Math.pow(s.V/V,g); T=s.T*Math.pow(s.V/V,g-1); } // adiabatic
+  return {P,V,T};
+}
+// W (by gas), Q, dU for the segment start->end (all joules)
+function thermo(proc, s, e){
+  let W;
+  if(proc==='isobaric')   W = s.P*(e.V - s.V);
+  else if(proc==='isochoric') W = 0;
+  else if(proc==='isothermal') W = S.n*R*s.T*Math.log(e.V/s.V);
+  else W = (s.P*s.V - e.P*e.V)/(gamma()-1);
+  const dU = S.n*Cv()*(e.T - s.T);
+  const Q  = dU + W;
+  return {W,Q,dU};
+}
+
+/* -------- canvases -------- */
+const cyl=document.getElementById('cyl'), cx=cyl.getContext('2d');
+const pv=document.getElementById('pv'),  px=pv.getContext('2d');
+const DPR=Math.min(2, window.devicePixelRatio||1);
+// cylinder region  (left of play area)
+const CYL={x:26,y:20,w:300,h:560};
+const PVR={x:360,y:14,w:432,h:414};   // PV plot region on screen
+function sizeCanvas(c,ctx,r){ c.style.left=r.x+'px'; c.style.top=r.y+'px'; c.style.position='absolute';
+  c.style.width=r.w+'px'; c.style.height=r.h+'px'; c.width=r.w*DPR; c.height=r.h*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); }
+sizeCanvas(cyl,cx,CYL); sizeCanvas(pv,px,PVR);
+
+/* -------- graph mapping -------- */
+const GL={l:52,r:PVR.w-14,t:16,b:PVR.h-40};   // inner plot box
+function gx(V){ return GL.l + (V/VMAX)*(GL.r-GL.l); }
+function gy(P){ return GL.b - (P/PMAX)*(GL.b-GL.t); }
+
+/* -------- particles -------- */
+const particles=[];
+function seedParticles(){ particles.length=0; for(let i=0;i<44;i++) particles.push({x:Math.random(),y:Math.random(),a:Math.random()*6.28,s:1}); }
+seedParticles();
+
+/* ======================================================= render: cylinder */
+function drawCyl(){
+  const W=CYL.w,H=CYL.h; cx.clearRect(0,0,W,H);
+  // apparatus metrics
+  const cxL=70, cxR=W-46, cw=cxR-cxL;         // inner cylinder x span
+  const baseY=H-96;                            // floor of gas
+  const maxGasH=baseY-70;                      // gas height at VMAX
+  const gasH=(S.cur.V/VMAX)*maxGasH;
+  const pistonTop = baseY-gasH;                // piston sits on top of gas
+  S.pistonY += (pistonTop - S.pistonY)*0.18;   // ease
+  const topY=S.pistonY;
+
+  // stand base
+  cx.fillStyle='#8b939c'; cx.fillRect(cxL-16, baseY, cw+32, 18);
+  cx.fillStyle='#6f767e'; cx.fillRect(cxL-30, baseY+18, cw+60, 12);
+
+  // gas region background
+  cx.fillStyle='#0e1622'; cx.fillRect(cxL, topY, cw, baseY-topY);
+  // temperature tint of the gas
+  const tt=Math.max(0,Math.min(1,(S.cur.T-150)/450));
+  cx.fillStyle=`rgba(${Math.round(60+tt*180)},${Math.round(90-tt*40)},${Math.round(200-tt*150)},0.16)`;
+  cx.fillRect(cxL, topY, cw, baseY-topY);
+
+  // particles (speed ~ sqrt(T))
+  const spd=0.6+1.9*Math.sqrt(Math.max(60,S.cur.T)/300);
+  for(const p of particles){
+    p.x+=Math.cos(p.a)*0.006*spd; p.y+=Math.sin(p.a)*0.006*spd;
+    if(p.x<0.03){p.x=0.03;p.a=Math.PI-p.a;} if(p.x>0.97){p.x=0.97;p.a=Math.PI-p.a;}
+    if(p.y<0.03){p.y=0.03;p.a=-p.a;} if(p.y>0.97){p.y=0.97;p.a=-p.a;}
+    const gxp=cxL+p.x*cw, gyp=topY+(0.02+p.y*0.96)*(baseY-topY);
+    cx.beginPath(); cx.arc(gxp,gyp,3.1,0,6.28);
+    cx.fillStyle=`rgb(${120+tt*120},${170-tt*60},${255-tt*120})`; cx.fill();
+  }
+  // cylinder walls
+  cx.lineWidth=4; cx.strokeStyle='#7d858e';
+  cx.beginPath(); cx.moveTo(cxL-2, topY-2); cx.lineTo(cxL-2, baseY+2);
+  cx.moveTo(cxR+2, topY-2); cx.lineTo(cxR+2, baseY+2); cx.stroke();
+
+  // piston
+  cx.fillStyle='#b9c0c7'; cx.fillRect(cxL-6, topY-16, cw+12, 16);
+  cx.fillStyle='#98a0a8'; cx.fillRect(cxL-6, topY-2, cw+12, 4);
+  cx.fillStyle='#8b939c'; cx.fillRect((cxL+cxR)/2-6, topY-58, 12, 44); // rod
+  cx.fillStyle='#b9c0c7'; cx.fillRect((cxL+cxR)/2-26, topY-70, 52, 14); // handle
+
+  // heat reservoir under the base — flame if Q>0, cooling if Q<0 for the live segment
+  const th=thermo(S.proc,S.start,S.cur); const Q=th.Q;
+  cx.font='11px Helvetica Neue,Arial'; cx.textAlign='center';
+  const hy=baseY+42;
+  if(Math.abs(Q)>0.5){
+    const heat=Q>0;
+    for(let i=0;i<7;i++){ const fx=cxL+ (i+0.5)*cw/7; const t=(perf()/220+i)%1;
+      cx.beginPath();
+      if(heat){ cx.fillStyle=`rgba(${255},${140+80*(1-t)},20,${0.85*(1-t)})`;
+        cx.ellipse(fx, hy-16*t, 4-2*t, 9-5*t, 0,0,6.28); }
+      else { cx.fillStyle=`rgba(120,190,255,${0.8*(1-t)})`; cx.ellipse(fx, hy+8*t, 3, 6, 0,0,6.28); }
+      cx.fill(); }
+    cx.fillStyle=heat?'#c23a1e':'#1f6fb2'; cx.fillText(heat?'heating  (Q > 0)':'cooling  (Q < 0)', (cxL+cxR)/2, hy+26);
+  } else { cx.fillStyle='#888'; cx.fillText('no heat flow  (Q = 0)', (cxL+cxR)/2, hy+26); }
+
+  // thermometer (right of cylinder)
+  const thx=cxR+24, thTop=topY<baseY-140?baseY-140:topY, tbY=baseY-8, tTop=110, tH=tbY-tTop;
+  cx.fillStyle='#cfd6dc'; cx.fillRect(thx-4,tTop,8,tH); cx.beginPath(); cx.arc(thx,tbY,9,0,6.28); cx.fillStyle='#cfd6dc'; cx.fill();
+  const frac=Math.max(0,Math.min(1,(S.cur.T-100)/500));
+  cx.fillStyle='#e04b3a'; cx.fillRect(thx-2.5,tbY-frac*tH,5,frac*tH); cx.beginPath(); cx.arc(thx,tbY,6.5,0,6.28); cx.fill();
+  cx.fillStyle='#556'; cx.textAlign='center'; cx.font='10px Helvetica Neue,Arial'; cx.fillText('T', thx, tTop-4);
+
+  // labels
+  cx.fillStyle='#3a4652'; cx.font='bold 12px Helvetica Neue,Arial'; cx.textAlign='center';
+  cx.fillText('gas', (cxL+cxR)/2, Math.min(baseY-8, topY+ (baseY-topY)/2 ));
+}
+let _t0=performance.now(); function perf(){ return performance.now()-_t0; }
+
+/* ======================================================= render: PV plot */
+function curvePoints(proc, s, e){
+  const pts=[]; const N=48;
+  if(proc==='isochoric'){ pts.push([s.V,s.P]); pts.push([e.V,e.P]); return pts; }
+  if(proc==='isobaric'){ pts.push([s.V,s.P]); pts.push([e.V,e.P]); return pts; }
+  for(let i=0;i<=N;i++){ const V=s.V+(e.V-s.V)*i/N;
+    let P; if(proc==='isothermal') P=s.P*s.V/V; else P=s.P*Math.pow(s.V/V,gamma());
+    pts.push([V,P]); }
+  return pts;
+}
+function drawPV(){
+  const W=PVR.w,H=PVR.h; px.clearRect(0,0,W,H);
+  // plot frame
+  px.fillStyle='#ffffff'; px.fillRect(GL.l,GL.t,GL.r-GL.l,GL.b-GL.t);
+  px.strokeStyle='#cfd6dc'; px.lineWidth=1;
+  for(let v=0;v<=VMAX;v+=5){ const X=gx(v); px.beginPath(); px.moveTo(X,GL.t); px.lineTo(X,GL.b); px.stroke(); }
+  for(let p=0;p<=PMAX;p+=50){ const Y=gy(p); px.beginPath(); px.moveTo(GL.l,Y); px.lineTo(GL.r,Y); px.stroke(); }
+
+  // isotherms (constant-T reference hyperbolas)
+  if(S.showIso){ px.strokeStyle='rgba(224,75,58,0.30)'; px.lineWidth=1; px.font='10px Helvetica Neue,Arial'; px.fillStyle='rgba(200,60,45,0.6)'; px.textAlign='left';
+    for(const T of [100,200,300,400,500,600]){ px.beginPath(); let first=true;
+      for(let V=VMIN;V<=VMAX;V+=0.5){ const P=S.n*R*T/V; if(P>PMAX*1.2)continue; const X=gx(V),Y=gy(P); first?(px.moveTo(X,Y),first=false):px.lineTo(X,Y);} px.stroke();
+      const Vlab=S.n*R*T/(PMAX*0.92); if(Vlab<VMAX&&Vlab>VMIN) px.fillText(T+' K', gx(Vlab)+2, gy(PMAX*0.92)); }
+  }
+  // axes
+  px.strokeStyle='#333'; px.lineWidth=1.6;
+  px.beginPath(); px.moveTo(GL.l,GL.t); px.lineTo(GL.l,GL.b); px.lineTo(GL.r,GL.b); px.stroke();
+  px.fillStyle='#333'; px.font='10px Helvetica Neue,Arial'; px.textAlign='center'; px.textBaseline='top';
+  for(let v=0;v<=VMAX;v+=10){ px.fillText(v, gx(v), GL.b+4); }
+  px.textAlign='right'; px.textBaseline='middle';
+  for(let p=0;p<=PMAX;p+=100){ px.fillText(p, GL.l-5, gy(p)); }
+  px.save(); px.textAlign='center'; px.font='bold 12px Helvetica Neue,Arial'; px.fillStyle='#222';
+  px.fillText('Volume  V  (L)', (GL.l+GL.r)/2, GL.b+20);
+  px.translate(14,(GL.t+GL.b)/2); px.rotate(-Math.PI/2); px.fillText('Pressure  P  (kPa)',0,0); px.restore();
+
+  const drawCurve=(pts,color,width,dash)=>{ px.strokeStyle=color; px.lineWidth=width; px.setLineDash(dash||[]);
+    px.beginPath(); pts.forEach(([V,P],i)=>{ const X=gx(V),Y=gy(P); i?px.lineTo(X,Y):px.moveTo(X,Y); }); px.stroke(); px.setLineDash([]); };
+
+  // committed segments
+  for(const seg of S.path){ drawCurve(curvePoints(seg.proc,seg.from,seg.to), seg.color, 3); }
+
+  // live (uncommitted) segment start->cur
+  const moving = Math.abs(S.cur.V-S.start.V)>1e-6 || Math.abs(S.cur.P-S.start.P)>1e-6;
+  const live = curvePoints(S.proc,S.start,S.cur);
+  if(S.showWork && moving){
+    // shade area under the live curve = work by gas
+    px.beginPath(); px.moveTo(gx(live[0][0]),GL.b);
+    live.forEach(([V,P])=>px.lineTo(gx(V),gy(P))); px.lineTo(gx(live[live.length-1][0]),GL.b); px.closePath();
+    px.fillStyle= (S.cur.V>=S.start.V) ? 'rgba(47,123,214,0.16)' : 'rgba(214,90,47,0.16)'; px.fill();
+  }
+  if(moving) drawCurve(live, PROC[S.proc].color, 3.4, [7,5]);
+
+  // committed points
+  const dot=(V,P,label,big)=>{ const X=gx(V),Y=gy(P); px.beginPath(); px.arc(X,Y,big?6:5,0,6.28);
+    px.fillStyle=big?'#111':'#333'; px.fill(); px.strokeStyle='#fff'; px.lineWidth=2; px.stroke();
+    if(label){ px.fillStyle='#111'; px.font='bold 12px Helvetica Neue,Arial'; px.textAlign='left'; px.textBaseline='bottom'; px.fillText(label, X+7, Y-4); } };
+  S.points.forEach((pt,i)=> dot(pt.V,pt.P, (i+1)+'') );
+  // current live point (larger, coloured)
+  const X=gx(S.cur.V),Y=gy(S.cur.P); px.beginPath(); px.arc(X,Y,7,0,6.28);
+  px.fillStyle=PROC[S.proc].color; px.fill(); px.strokeStyle='#fff'; px.lineWidth=2.5; px.stroke();
+}
+
+/* ======================================================= UI / logic */
+function slider(){ return document.getElementById('freeSlider'); }
+function setFreeSliderRange(){
+  // choose slider bounds so the resulting state stays on the graph
+  const s=S.start, p=S.proc, g=gamma(); const sl=slider();
+  if(PROC[p].free==='V'){
+    let lo=VMIN, hi=VMAX;
+    if(p==='isothermal'){ lo=Math.max(VMIN, s.P*s.V/PMAX); }                  // P<=PMAX
+    if(p==='adiabatic'){ lo=Math.max(VMIN, s.V*Math.pow(s.P/PMAX,1/g)); }
+    sl.min=lo.toFixed(2); sl.max=hi.toFixed(2); sl.step=0.1; sl.value=s.V;
+  } else { // isochoric: free = P
+    sl.min=PMINg; sl.max=PMAX; sl.step=1; sl.value=s.P;
+  }
+}
+function currentFree(){ return parseFloat(slider().value); }
+
+function recompute(){
+  S.cur = along(S.proc, S.start, currentFree());
+  render(); updatePanels();
+}
+function fmt(x,d){ return (Math.abs(x)<0.05&&d>0?0:x).toFixed(d); }
+function updatePanels(){
+  // process buttons
+  document.querySelectorAll('.procbtn').forEach(b=>{
+    const on=b.dataset.proc===S.proc; b.classList.toggle('sel',on);
+    b.querySelector('.dot').style.background=on?PROC[S.proc].color:'#fff';
+    b.querySelector('.dot').style.borderColor=on?PROC[S.proc].color:'#9a9a9a';
+    b.style.borderColor=on?PROC[b.dataset.proc].color:'#d5d5d5';
+    b.style.color=on?'#111':'#333';
+  });
+  // free control label
+  const free=PROC[S.proc].free;
+  document.getElementById('freeLbl').textContent = free==='V'?'Final volume  V':'Final pressure  P';
+  document.getElementById('freeUnit').textContent = free==='V'?'L':'kPa';
+  document.getElementById('freeVal').textContent = fmt(free==='V'?S.cur.V:S.cur.P, free==='V'?1:0);
+  document.getElementById('nVal').textContent = S.n.toFixed(2);
+  // readouts
+  const th=thermo(S.proc,S.start,S.cur);
+  document.getElementById('rP').textContent=fmt(S.cur.P,1);
+  document.getElementById('rV').textContent=fmt(S.cur.V,1);
+  document.getElementById('rT').textContent=fmt(S.cur.T,0);
+  document.getElementById('rW').textContent=fmt(th.W,1);
+  document.getElementById('rQ').textContent=fmt(th.Q,1);
+  document.getElementById('rU').textContent=fmt(th.dU,1);
+  document.getElementById('sW').textContent=fmt(S.sumW,1);
+  document.getElementById('sQ').textContent=fmt(S.sumQ,1);
+  document.getElementById('sU').textContent=fmt(S.sumU,1);
+  // gas toggle
+  document.querySelectorAll('#gasToggle button').forEach(b=>b.classList.toggle('on', +b.dataset.f===S.f));
+  // process-specific equation
+  const g=gamma().toFixed(3);
+  const eq={ isothermal:`<b>Isothermal:</b> <i>W = nRT&thinsp;ln(V<sub>f</sub>/V<sub>i</sub>)</i>,&nbsp; &Delta;U=0,&nbsp; Q=W`,
+    isobaric:`<b>Isobaric:</b> <i>W = P&thinsp;&Delta;V</i>,&nbsp; Q = nC<sub>P</sub>&Delta;T`,
+    isochoric:`<b>Isochoric:</b> <i>W = 0</i>,&nbsp; Q = &Delta;U = nC<sub>V</sub>&Delta;T`,
+    adiabatic:`<b>Adiabatic:</b> PV<sup>&gamma;</sup>=const&nbsp;(&gamma;=${g}),&nbsp; <i>W = (P<sub>i</sub>V<sub>i</sub>&minus;P<sub>f</sub>V<sub>f</sub>)/(&gamma;&minus;1)</i>` };
+  document.getElementById('eqNow').innerHTML=`<span class="now">${eq[S.proc]}</span>`;
+}
+
+function render(){ drawPV(); }
+function loop(){ drawCyl(); requestAnimationFrame(loop); }
+
+/* -------- interactions -------- */
+document.querySelectorAll('.procbtn').forEach(b=> b.onclick=()=>{ S.proc=b.dataset.proc; setFreeSliderRange(); recompute(); });
+slider().oninput=recompute;
+document.getElementById('nSlider').oninput=e=>{ S.n=parseFloat(e.target.value);
+  S.start.T=T_of(S.start.P,S.start.V);   // P,V fixed -> T follows the ideal-gas law
+  recompute(); };
+document.querySelectorAll('#gasToggle button').forEach(b=> b.onclick=()=>{ S.f=+b.dataset.f; recompute(); });
+document.getElementById('showWork').onchange=e=>{ S.showWork=e.target.checked; render(); };
+document.getElementById('showIso').onchange=e=>{ S.showIso=e.target.checked; render(); };
+
+document.getElementById('commitBtn').onclick=()=>{
+  const moving=Math.abs(S.cur.V-S.start.V)>1e-6||Math.abs(S.cur.P-S.start.P)>1e-6;
+  if(!moving) return;
+  if(S.points.length===0) S.points.push({P:S.start.P,V:S.start.V});
+  const th=thermo(S.proc,S.start,S.cur); S.sumW+=th.W; S.sumQ+=th.Q; S.sumU+=th.dU;
+  S.path.push({proc:S.proc, from:{...S.start}, to:{...S.cur}, color:PROC[S.proc].color});
+  S.points.push({P:S.cur.P,V:S.cur.V});
+  S.start={...S.cur}; setFreeSliderRange(); recompute();
+};
+document.getElementById('clearBtn').onclick=()=>{ S.path=[]; S.points=[]; S.sumW=S.sumQ=S.sumU=0; recompute(); };
+document.getElementById('reset').onclick=resetAll;
+
+function resetAll(){
+  S.n=1; S.f=3; S.proc='isothermal'; S.path=[]; S.points=[]; S.sumW=S.sumQ=S.sumU=0;
+  S.showWork=true; S.showIso=false;
+  document.getElementById('nSlider').value=1;
+  document.getElementById('showWork').checked=true; document.getElementById('showIso').checked=false;
+  S.start={P:200,V:12,T:T_of(200,12)};
+  S.pistonY=0;
+  setFreeSliderRange(); recompute();
+}
+
+/* -------- fit to window (scale down only, keeps canvases crisp) -------- */
+function fit(){ const s=Math.min(1,(window.innerWidth-20)/1180,(window.innerHeight-20)/700);
+  document.getElementById('sim').style.transform='scale('+s+')'; }
+window.addEventListener('resize',fit);
+
+resetAll(); fit(); loop();
+</script>
+</body>
+</html>
