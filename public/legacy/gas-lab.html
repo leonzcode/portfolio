@@ -307,39 +307,29 @@ function toggleRecord(){ recording=!recording;
   if(recording){ recColor=TRACE_COLORS[recIdx++%TRACE_COLORS.length]; const th=theory(); current=[{V:th.V,P:th.P}]; zeroWQ(); recBtn.classList.add('on'); recBtn.textContent='■ Stop'; }
   else { if(current.length>1) traces.push({pts:current,color:recColor}); current=[]; recBtn.classList.remove('on'); recBtn.textContent='● Record'; } }
 
-// The plot keeps a FIXED scale (pixels per unit V and per unit P). The drawn graph is
-// anchored at the origin and its axes/box physically grow outward as the dot (and any
-// recorded traces) reach larger values — the graph itself expands, the values don't rescale.
-let curVmax=VMAX*0.6, curPmax=6;
-const PFILL=11, PFLOOR=4, VFLOOR=VMAX*0.42;
-function niceStep(v){ if(v<=0)return 1; const p=Math.pow(10,Math.floor(Math.log10(v))); const m=v/p; return (m<1.5?1:m<3.5?2:m<7.5?5:10)*p; }
+// ONE fixed graph — the axes never rescale or stretch. V spans the whole box range. P is
+// fixed to the everyday working range so the default state and normal processes fill the
+// graph and show their shape; only extreme settings (max particles + max temp + fully
+// compressed) rise above the top.
+const vAxMax=VMAX*1.03, pAxMax=15;
 function drawPV(){
   const th=theory(), Ww=pvCanvas.width,Hh=pvCanvas.height; pctx.clearRect(0,0,Ww,Hh);
   if(recording){ const last=current[current.length-1];
-    if(!last || Math.abs(th.V-last.V)>VMAX*0.004 || Math.abs(th.P-last.P)>curPmax*0.008){ current.push({V:th.V,P:th.P}); if(current.length>700)current.shift(); } }
-  // furthest-out data (the dot plus any recorded traces)
-  let dV=th.V, dP=th.P; for(const tr of traces) for(const q of tr.pts){ if(q.V>dV)dV=q.V; if(q.P>dP)dP=q.P; } for(const q of current){ if(q.V>dV)dV=q.V; if(q.P>dP)dP=q.P; }
-  const tV=Math.min(VMAX*1.02, Math.max(VFLOOR, dV*1.10)), tP=Math.max(PFLOOR, dP*1.18);
-  curVmax += (tV-curVmax)*0.12; curPmax += (tP-curPmax)*0.12;   // smoothly grow/shrink the plotted extent
-  const l=46, b=Hh-30, tMax=12, availW=(Ww-12)-l, availH=b-tMax;
-  const sx=availW/(VMAX*1.02), sy=availH/Math.max(PFILL, curPmax);   // fixed scale until P exceeds PFILL, then it eases out to keep the dot in view
-  const boxR=l+curVmax*sx, boxT=b-curPmax*sy;
-  const gx=V=>l+V*sx, gy=P=>b-P*sy;
-  pctx.fillStyle='#fff'; pctx.fillRect(l,boxT,boxR-l,b-boxT);
+    if(!last || Math.abs(th.V-last.V)>vAxMax*0.004 || Math.abs(th.P-last.P)>pAxMax*0.004){ current.push({V:th.V,P:th.P}); if(current.length>900)current.shift(); } }
+  const l=46,r=Ww-12,t=12,b=Hh-30; pctx.fillStyle='#fff'; pctx.fillRect(l,t,r-l,b-t);
+  const gx=V=>l+(V/vAxMax)*(r-l), gy=P=>b-(Math.min(P,pAxMax)/pAxMax)*(b-t);
   pctx.strokeStyle='#e2e8ee'; pctx.lineWidth=1;
-  const vStep=niceStep(curVmax/5), pStep=niceStep(curPmax/5);
-  for(let v=vStep; v<curVmax; v+=vStep){ const X=gx(v); pctx.beginPath(); pctx.moveTo(X,b); pctx.lineTo(X,boxT); pctx.stroke(); }
-  for(let pp=pStep; pp<curPmax; pp+=pStep){ const Y=gy(pp); pctx.beginPath(); pctx.moveTo(l,Y); pctx.lineTo(boxR,Y); pctx.stroke(); }
+  for(let i=1;i<6;i++){ const X=l+(r-l)*i/6; pctx.beginPath();pctx.moveTo(X,t);pctx.lineTo(X,b);pctx.stroke(); const Y=t+(b-t)*i/6; pctx.beginPath();pctx.moveTo(l,Y);pctx.lineTo(r,Y);pctx.stroke(); }
   pctx.strokeStyle='rgba(224,75,58,0.55)'; pctx.setLineDash([5,4]); pctx.lineWidth=1.6; pctx.beginPath(); let first=true; const C=th.N*th.T;
-  for(let V=Math.max(VMIN*0.4, C/curPmax); V<=curVmax; V+=curVmax/160){ const P=C/V; if(P>curPmax)continue; const X=gx(V),Y=gy(P); first?(pctx.moveTo(X,Y),first=false):pctx.lineTo(X,Y);} pctx.stroke(); pctx.setLineDash([]);
+  for(let V=Math.max(VMIN*0.35, C/pAxMax); V<=vAxMax; V+=vAxMax/200){ const P=C/V; if(P>pAxMax)continue; const X=gx(V),Y=gy(P); first?(pctx.moveTo(X,Y),first=false):pctx.lineTo(X,Y);} pctx.stroke(); pctx.setLineDash([]);
   const drawTrace=(pts,color)=>{ if(pts.length<1)return; pctx.strokeStyle=color; pctx.lineWidth=2.4; pctx.beginPath();
      pts.forEach((q,i)=>{ const X=gx(q.V),Y=gy(q.P); i?pctx.lineTo(X,Y):pctx.moveTo(X,Y); }); pctx.stroke();
      const s0=pts[0]; pctx.fillStyle=color; pctx.beginPath(); pctx.arc(gx(s0.V),gy(s0.P),3,0,6.28); pctx.fill(); };
   for(const tr of traces) drawTrace(tr.pts,tr.color);
   if(current.length) drawTrace(current,recColor);
-  pctx.strokeStyle='#333'; pctx.lineWidth=1.4; pctx.beginPath(); pctx.moveTo(l,boxT); pctx.lineTo(l,b); pctx.lineTo(boxR,b); pctx.stroke();
-  pctx.fillStyle='#333'; pctx.font='11.5px Helvetica Neue,Arial'; pctx.textAlign='center'; pctx.textBaseline='alphabetic'; pctx.fillText('Volume  V  →',(l+boxR)/2,b+18);
-  pctx.save(); pctx.translate(13,(boxT+b)/2); pctx.rotate(-Math.PI/2); pctx.fillText('Pressure  P  →',0,0); pctx.restore();
+  pctx.strokeStyle='#333'; pctx.lineWidth=1.4; pctx.beginPath(); pctx.moveTo(l,t); pctx.lineTo(l,b); pctx.lineTo(r,b); pctx.stroke();
+  pctx.fillStyle='#333'; pctx.font='11.5px Helvetica Neue,Arial'; pctx.textAlign='center'; pctx.textBaseline='alphabetic'; pctx.fillText('Volume  V  →',(l+r)/2,b+18);
+  pctx.save(); pctx.translate(13,(t+b)/2); pctx.rotate(-Math.PI/2); pctx.fillText('Pressure  P  →',0,0); pctx.restore();
   const X=gx(th.V),Y=gy(th.P); pctx.beginPath(); pctx.arc(X,Y,6,0,6.28); pctx.fillStyle='#1b3b5f'; pctx.fill(); pctx.strokeStyle='#fff'; pctx.lineWidth=2.5; pctx.stroke();
   pctx.fillStyle='#1b3b5f'; pctx.font='bold 11px Helvetica Neue,Arial'; pctx.textAlign='left'; pctx.fillText('now',X+9,Y-6);
 }
