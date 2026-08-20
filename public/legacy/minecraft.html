@@ -3070,7 +3070,7 @@ function renderHotbar(){
     if(bw.active){
       const st=bw.slots[i];
       if(st){ const ic=bwItemIcon(st,40);
-        let n=null; if(st.kind==='block') n=bw.counts[st.id]||0; else if(st.kind==='apple') n=bw.apples; else if(st.kind==='pearl') n=bw.pearls; else if(st.kind==='tnt') n=bw.tnt; else if(st.kind==='fireball') n=bw.fireballs; else if(st.kind==='bow') n=bw.arrows;
+        let n=null; if(st.kind==='block') n=bw.counts[st.id]||0; else if(st.kind==='apple') n=bw.apples; else if(st.kind==='pearl') n=bw.pearls; else if(st.kind==='tnt') n=bw.tnt; else if(st.kind==='fireball') n=bw.fireballs; else if(st.kind==='bow') n=bw.arrows; else if(st.kind==='bucket') n=bw.water;
         if(st.kind==='block') ic.style.opacity=(n>0)?'1':'0.4';
         s.appendChild(ic);
         if(n!=null && (n>1 || st.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); }
@@ -3896,7 +3896,7 @@ const BW_RESNAME = { iron:'Iron', gold:'Gold', diamond:'Diamond', emerald:'Emera
 let bwMode = false;   // makes chunk generation produce void + prefab instead of terrain
 const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,diamond:0,emerald:0},
   loadout:{sword:1,armor:1,pick:0,axe:0,shears:false}, beds:[true,true,true,true], teams:[], players:new Map(),
-  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, tnt:0, fireballs:0, arrows:0, slots:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}], projectiles:[], explosions:[], tnts:[], speedUntil:0, jumpUntil:0, invisUntil:0 };
+  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, tnt:0, fireballs:0, arrows:0, water:0, slots:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}], projectiles:[], explosions:[], tnts:[], speedUntil:0, jumpUntil:0, invisUntil:0 };
 function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
@@ -4056,7 +4056,7 @@ function bwBreakBed(x,y,z){
 }
 
 // ---- finite blocks / hotbar ----
-function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; bw.arrows=0; bw.speedUntil=0; bw.jumpUntil=0; bw.invisUntil=0; }
+function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; bw.arrows=0; bw.water=0; bw.speedUntil=0; bw.jumpUntil=0; bw.invisUntil=0; }
 // build the survival hotbar: sword, the 5 buyable blocks (with counts), then tools + apples
 function bwSetHotbar(){
   const wool = bw.team!=null? BW_TEAMS[bw.team].wool : 'white_wool';
@@ -4068,6 +4068,8 @@ function bwSetHotbar(){
   s[4] = { kind:'block', name:'glass', id:bwId('glass') };
   s[5] = { kind:'block', name:'obsidian', id:bwId('obsidian') };
   let k=6;
+  const spongeId=bwId('sponge');
+  if((bw.counts[spongeId]||0)>0 && k<9) s[k++]={ kind:'block', name:'sponge', id:spongeId };   // bought sponge gets its own slot
   if(bw.loadout.pick>0 && k<9) s[k++]={ kind:'tool', tool:'pick', tier:bw.loadout.pick };
   if(bw.loadout.axe>0 && k<9)  s[k++]={ kind:'tool', tool:'axe',  tier:bw.loadout.axe };
   if(bw.loadout.shears && k<9) s[k++]={ kind:'tool', tool:'shears' };
@@ -4075,6 +4077,7 @@ function bwSetHotbar(){
   if(bw.pearls>0 && k<9)       s[k++]={ kind:'pearl' };
   if(bw.tnt>0 && k<9)          s[k++]={ kind:'tnt' };
   if(bw.fireballs>0 && k<9)    s[k++]={ kind:'fireball' };
+  if(bw.water>0 && k<9)        s[k++]={ kind:'bucket' };
   if(bw.loadout.bow && k<9)    s[k++]={ kind:'bow' };
   bw.slots = s;
   for(let i=0;i<9;i++) hotbar[i] = (s[i] && s[i].kind==='block') ? s[i].id : 0;
@@ -4116,6 +4119,8 @@ function bwItemIcon(stack, size){
     for(let i=0;i<10;i++){ R(4+((i*i)/14|0), 3+i, 1,1, '#6b4a2a'); }   // curved limb
     R(4,3,1,11,'#4a3218'); g.strokeStyle='#ddd'; g.lineWidth=1; g.beginPath(); g.moveTo(4.5*u,3.5*u); g.lineTo(11*u,8.5*u); g.lineTo(4.5*u,13.5*u); g.stroke();  // string + arrow
     R(6,8,7,1,'#caa15a');
+  } else if(stack.kind==='bucket'){
+    R(4,5,8,1,'#b9c0c6'); R(4,5,1,8,'#9aa1a7'); R(11,5,1,8,'#9aa1a7'); R(5,12,6,1,'#7f868c'); R(5,6,6,6,'#2a6cc7'); R(5,6,6,2,'#3f86e0');   // steel pail with water
   }
   return c;
 }
@@ -4204,6 +4209,7 @@ function bwOnBuy(m){
   if(g.item==='tnt') bw.tnt++;
   if(g.item==='fireball') bw.fireballs++;
   if(g.item==='arrow') bw.arrows += (g.n||6);
+  if(g.item==='water_bucket') bw.water++;
   if(g.potion==='speed'){ bw.speedUntil=performance.now()+45000; chatPush('Speed II for 45s.', 'sys'); }
   if(g.potion==='jump'){ bw.jumpUntil=performance.now()+45000; chatPush('Jump Boost V for 45s.', 'sys'); }
   if(g.potion==='invis'){ bw.invisUntil=performance.now()+30000; chatPush('Invisibility for 30s — others can’t see you.', 'sys'); }
@@ -4288,6 +4294,7 @@ const BW_SHOP = [
   { cat:'Utility',item:'ender_pearl',  name:'Ender Pearl',     sub:'teleport', cost:{emerald:4}, col:'#2aa87a' },
   { cat:'Utility',item:'tnt',          name:'TNT',             sub:'3s fuse',  cost:{gold:4},    col:'#c62828' },
   { cat:'Utility',item:'fireball',     name:'Fireball',        sub:'launch',   cost:{iron:40},   col:'#ff7018' },
+  { cat:'Utility',item:'water_bucket', name:'Water Bucket',    sub:'slows rushers', cost:{emerald:3}, col:'#2a6cc7' },
   { cat:'Ranged', item:'bow',          name:'Bow',             sub:'',         cost:{gold:12},   col:'#8a5a3c' },
   { cat:'Ranged', item:'arrows',       name:'Arrows',          sub:'×6',       cost:{gold:2},    col:'#caa15a' },
   { cat:'Potions',item:'pot_speed',    name:'Speed II Potion', sub:'45s',      cost:{emerald:1}, col:'#4fc3f7' },
@@ -4446,7 +4453,21 @@ function bwUseAction(){
   if(s && s.kind==='tnt'){ bwTntPlace(); return; }
   if(s && s.kind==='fireball'){ bwLaunchFireball(); return; }
   if(s && s.kind==='bow'){ bwLaunchArrow(); return; }
+  if(s && s.kind==='bucket'){ bwPlaceWater(); return; }
   placeBlock();                               // otherwise place the selected block
+}
+// Water bucket: lay a shallow puddle at the aimed spot. In the void map the water doesn't flow,
+// but standing in it makes you swim (slow + floaty), so it slows rushers like Hypixel's bucket.
+function bwPlaceWater(){
+  if(bw.water<=0 || bw.dead || !target) return;
+  const bx=target.x+target.nx, by=target.y+target.ny, bz=target.z+target.nz;
+  if(getBlock(bx,by,bz)) return;
+  const cells=[[0,0,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];   // source + 4 neighbours = a small pool
+  let placed=0;
+  for(const [dx,dy,dz] of cells){ const x=bx+dx, y=by+dy, z=bz+dz;
+    if(getBlock(x,y,z)===AIR){ setBlock(x,y,z,B.water); mpSendBlock(x,y,z,B.water); placed++; }
+  }
+  if(placed){ bw.water--; bwSetHotbar(); }
 }
 function bwThrowPearl(){
   if(bw.pearls<=0 || bw.dead) return;
@@ -4847,6 +4868,7 @@ window.__mc = {
   bwGens(){ return bw.gens.length; }, bwGenTier(){ return bw.genTier; },
   bwGenHolos(){ return bw.gens.filter(g=>g.kind==='diamond'||g.kind==='emerald').map(g=>({ kind:g.kind, sec:Math.max(0,Math.ceil((g.nextAt-performance.now())/1000)), interval:g.interval, hasHolo:!!(g.tag&&g.tag.userData&&g.tag.userData.canvas) })); }, bwGiveP(n){ bw.pearls+=(n||1); bwSetHotbar(); }, bwPearls(){ return bw.pearls; }, bwSelPearl(){ const i=bw.slots.findIndex(s=>s&&s.kind==='pearl'); if(i>=0){ selSlot=i; renderHotbar(); } return i; }, bwThrow(){ bwThrowPearl(); },
   bwGiveTnt(n){ bw.tnt+=(n||1); bwSetHotbar(); }, bwGiveFire(n){ bw.fireballs+=(n||1); bwSetHotbar(); }, bwExplodeAt(x,y,z,pw){ bwDoExplosion(x,y,z,pw||3); }, bwProjCount(){ return bw.projectiles.length; }, bwTntActive(){ return bw.tnts.length; }, bwFireCount(){ return bw.fireballs; }, bwHasTntBlock(){ return !!B.tnt; },
+  bwGiveWater(n){ bw.water+=(n||1); bwSetHotbar(); }, bwWater(){ return bw.water; }, bwGiveSponge(n){ const id=bwId('sponge'); bw.counts[id]=(bw.counts[id]||0)+(n||4); bwSetHotbar(); }, bwPlaceWaterAt(x,y,z){ setBlock(x,y,z,B.water); mpSendBlock(x,y,z,B.water); return getBlock(x,y,z)===B.water; },
   bwLaunch(){ bwLaunchFireball(); }, bwPlaceTnt(){ raycast(); bwTntPlace(); }, bwSelKind(k){ const i=bw.slots.findIndex(s=>s&&s.kind===k); if(i>=0){ selSlot=i; renderHotbar(); } return i; },
   bwArmTnt(x,y,z){ setBlock(x,y,z,B.tnt); mpSendBlock(x,y,z,B.tnt); bw.tnts.push({x,y,z,at:performance.now()+3000}); },
   bwGiveBow(){ bw.loadout.bow=true; bwSetHotbar(); }, bwGiveArrows(n){ bw.arrows+=(n||6); bwSetHotbar(); }, bwArrows(){ return bw.arrows; }, bwShootArrow(){ bwLaunchArrow(); }, bwHasBow(){ return !!bw.loadout.bow; }, bwShopCats(){ return BW_CATS.slice(); }, bwShopItems(cat){ return BW_SHOP.filter(s=>s.cat===cat).map(s=>s.item); }
