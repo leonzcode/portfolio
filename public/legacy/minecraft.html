@@ -3914,27 +3914,46 @@ function bwFill(x0,x1,y,z0,z1,id){ for(let x=x0;x<=x1;x++) for(let z=z0;z<=z1;z+
 function bwBuildMap(){
   mpOverrides.clear(); bedMeta.clear(); bw.prefabSet.clear();
   const endstone=bwId('end_stone'), stone=bwId('stone'), glow=bwId('glowstone');
-  const diamond=bwId('diamond_block'), emerald=bwId('emerald_block'), iron=bwId('iron_block'), gold=bwId('gold_block');
+  const quartz=bwId('quartz_block')||stone, obsid=bwId('obsidian');
+  const diamond=bwId('diamond_block'), emerald=bwId('emerald_block'), iron=bwId('iron_block');
   for(const t of BW_TEAMS){
     const g=BW_GEOM[t.id], cx=g.cx, cz=g.cz, wool=bwId(t.wool), conc=bwId(t.conc);
-    bwFill(cx-5,cx+5,BW_Y,cz-5,cz+5, endstone);          // platform
-    bwFill(cx-5,cx+5,BW_Y-1,cz-5,cz+5, endstone);        // thickness
-    for(let x=cx-5;x<=cx+5;x++){ bwPlace(x,BW_Y,cz-5,conc); bwPlace(x,BW_Y,cz+5,conc); }   // team-colour border
-    for(let z=cz-5;z<=cz+5;z++){ bwPlace(cx-5,BW_Y,z,conc); bwPlace(cx+5,BW_Y,z,conc); }
-    bwFill(g.bedFoot.x-1,g.bedFoot.x+1,BW_Y,g.bedFoot.z-1,g.bedFoot.z+1, wool);   // wool patch under bed
-    bwPlace(g.bedHead.x,BW_Y,g.bedHead.z, wool);
-    // the bed itself (two cells) + metadata
-    bwPlace(g.bedFoot.x,BW_Y+1,g.bedFoot.z, bwId(t.bed));
-    bwPlace(g.bedHead.x,BW_Y+1,g.bedHead.z, bwId(t.bed));
+    // island-local coords: f = forward (toward the bed / outside), s = sideways. Maps to world along the team's axis.
+    const dx=t.dir[0], dz=t.dir[1], px=dz, pz=-dx;
+    const put=(f,s,y,id)=>bwPlace(cx+dx*f+px*s, y, cz+dz*f+pz*s, id);
+    const fill=(f0,f1,s0,s1,y,id)=>{ for(let f=f0;f<=f1;f++) for(let s=s0;s<=s1;s++) put(f,s,y,id); };
+    // main platform (13 forward × 11 side), 2 thick, team-colour border + corner lights
+    fill(-6,6,-5,5, BW_Y, endstone); fill(-6,6,-5,5, BW_Y-1, endstone);
+    for(let s=-5;s<=5;s++){ put(6,s,BW_Y,conc); put(-6,s,BW_Y,conc); }
+    for(let f=-6;f<=6;f++){ put(f,5,BW_Y,conc); put(f,-5,BW_Y,conc); }
+    put(6,5,BW_Y,glow); put(6,-5,BW_Y,glow); put(-6,5,BW_Y,glow); put(-6,-5,BW_Y,glow);
+    // bed on its wool patch (foot f=3, head f=4). Players build their own defences from here.
+    fill(2,4,-1,1, BW_Y, wool);
+    put(3,0,BW_Y+1, bwId(t.bed)); put(4,0,BW_Y+1, bwId(t.bed));
     bedMeta.set(g.bedFoot.x+','+(BW_Y+1)+','+g.bedFoot.z, {facing:t.facing, head:false});
     bedMeta.set(g.bedHead.x+','+(BW_Y+1)+','+g.bedHead.z, {facing:t.facing, head:true});
-    bwPlace(g.gen.x,BW_Y,g.gen.z, iron);   // base forge: a floor tile; iron/gold spawn just above it
-    bwPlace(g.gen.x,BW_Y-1,g.gen.z, gold);
+    // team forge: a 3×3 colour pad with the iron tile (items spawn just above) + a light beneath
+    fill(-3,-1,-1,1, BW_Y, conc); put(-2,0,BW_Y, iron); put(-2,0,BW_Y-1, glow);
+    // shop + upgrade villager pedestals (quartz + colour trim + a light)
+    put(0,3,BW_Y, quartz); put(0,-3,BW_Y, quartz);
+    put(1,3,BW_Y, conc); put(-1,3,BW_Y, conc); put(1,-3,BW_Y, conc); put(-1,-3,BW_Y, conc);
+    put(0,4,BW_Y, glow); put(0,-4,BW_Y, glow);
+    // short bridge stub toward the centre so you have a launch point (still have to bridge the gap)
+    for(let f=-7;f>=-9;f--){ put(f,-1,BW_Y,endstone); put(f,0,BW_Y,endstone); put(f,1,BW_Y,endstone); }
+    put(-9,0,BW_Y,glow);
   }
-  // centre island: doubles as the lobby (9x9) with the emerald generator on top
+  // centre emerald island: a raised quartz-rimmed 9×9 with 4 obsidian pillars framing the emerald generator
   bwFill(-4,4,BW_Y,-4,4, stone); bwFill(-4,4,BW_Y-1,-4,4, stone);
+  for(let s=-4;s<=4;s++){ bwPlace(-4,BW_Y,s,quartz); bwPlace(4,BW_Y,s,quartz); bwPlace(s,BW_Y,-4,quartz); bwPlace(s,BW_Y,4,quartz); }
   bwPlace(0,BW_Y,0, emerald);
-  for(const d of BW_DIAMOND){ bwFill(d.x-1,d.x+1,BW_Y,d.z-1,d.z+1, endstone); bwPlace(d.x,BW_Y,d.z, diamond); }
+  for(const c of [[-2,-2],[2,-2],[-2,2],[2,2]]){ for(let h=1;h<=3;h++) bwPlace(c[0],BW_Y+h,c[1], obsid); bwPlace(c[0],BW_Y+4,c[1], glow); }
+  bwPlace(2,BW_Y,0,glow); bwPlace(-2,BW_Y,0,glow); bwPlace(0,BW_Y,2,glow); bwPlace(0,BW_Y,-2,glow);
+  // 4 diamond generator islands: raised quartz-rimmed 5×5 platforms with a light under the diamond block
+  for(const d of BW_DIAMOND){
+    bwFill(d.x-2,d.x+2,BW_Y,d.z-2,d.z+2, endstone); bwFill(d.x-2,d.x+2,BW_Y-1,d.z-2,d.z+2, endstone);
+    for(let s=-2;s<=2;s++){ bwPlace(d.x-2,BW_Y,d.z+s,quartz); bwPlace(d.x+2,BW_Y,d.z+s,quartz); bwPlace(d.x+s,BW_Y,d.z-2,quartz); bwPlace(d.x+s,BW_Y,d.z+2,quartz); }
+    bwPlace(d.x,BW_Y,d.z, diamond); bwPlace(d.x,BW_Y-1,d.z, glow);
+  }
 }
 function bwRebuildWorld(){
   bwBuildMap();
