@@ -296,6 +296,23 @@
   .pollBar i{ display:block; height:100%; width:0; transition:width .4s ease; }
   .pollBar i.yes{ background:#4bbf5b; } .pollBar i.no{ background:#d85a51; }
   .pollTotal{ font-size:12.5px; color:#e6e6e6; text-align:center; text-shadow:1px 1px 0 #2f2f2f; }
+  /* live vote tally, top-right during multiplayer — scales with the viewport, clear but low-key */
+  #pollMini{ position:fixed; top:clamp(8px,1.5vw,20px); right:clamp(8px,1.5vw,20px); z-index:9;
+    background:rgba(18,20,24,.5); border:1px solid rgba(255,255,255,.14); border-radius:6px;
+    padding:clamp(4px,.5vw,7px) clamp(7px,.9vw,12px); text-align:right; line-height:1.45;
+    font-size:clamp(10px,1.15vw,13px); color:#e9e9e9; text-shadow:1px 1px 0 rgba(0,0,0,.6); pointer-events:none; }
+  #pollMini[hidden]{ display:none; }
+  #pollMini .pmTitle{ font-size:.82em; color:#b7c0c9; letter-spacing:.3px; }
+  #pollMini .pmRow{ font-weight:600; }
+  #pollMini .pmY{ color:#79dd86; } #pollMini .pmN{ color:#ef948c; }
+  #pollMini .pmTot{ font-size:.78em; color:#9aa4ad; }
+  #pollMini .pmMinBtn{ pointer-events:auto; cursor:pointer; color:#aeb6bd; padding:0 3px; margin-left:4px; }
+  #pollMini .pmMinBtn:hover{ color:#fff; }
+  #pollMini .pmPill{ display:none; pointer-events:auto; cursor:pointer; font-size:1.15em; opacity:.75; }
+  #pollMini .pmPill:hover{ opacity:1; }
+  #pollMini.min{ background:none; border:none; padding:2px; }
+  #pollMini.min .pmFull{ display:none; }
+  #pollMini.min .pmPill{ display:block; }
 </style>
 </head>
 <body>
@@ -308,6 +325,14 @@
 <div id="tabList" hidden></div>
 <div id="chatBox" hidden><input id="chatInput" type="text" maxlength="240" autocomplete="off" spellcheck="false" placeholder=""></div>
 <div id="hotbar"></div>
+<div id="pollMini" hidden>
+  <div class="pmFull">
+    <div class="pmTitle">Private servers? <span class="pmMinBtn" id="pmMin" title="Minimize (V)">&minus;</span></div>
+    <div class="pmRow"><span class="pmY">Yes</span> <b id="pmYes">0%</b> &nbsp;<span class="pmN">No</span> <b id="pmNo">0%</b></div>
+    <div class="pmTot" id="pmTot">0 votes</div>
+  </div>
+  <div class="pmPill" id="pmPill" title="Show vote count (V)">📊</div>
+</div>
 <div class="screen" id="pollScreen" hidden>
   <div class="pollPanel">
     <div class="pollTitle">One quick question</div>
@@ -2352,7 +2377,7 @@ const keys = Object.create(null);
 // and saved to localStorage. Tokens: mouse buttons are 'mouse0' (left) / 'mouse1' (middle) /
 // 'mouse2' (right); keyboard keys are their lowercased key name. Held state lives in `keys` for
 // both, so a movement action can be bound to a mouse button and vice-versa. ----
-const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', sprint2:'r', zoom:'c', drop:'q', attack:'mouse0', use:'mouse2', pick:'mouse1', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3', cameraCombo:'f+5' };
+const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', sprint2:'r', zoom:'c', drop:'q', votes:'v', attack:'mouse0', use:'mouse2', pick:'mouse1', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3', cameraCombo:'f+5' };
 let binds = Object.assign({}, DEFAULT_BINDS);
 try{ const sb=JSON.parse(localStorage.getItem('leoncraft_binds')||'{}'); for(const a in DEFAULT_BINDS) if(typeof sb[a]==='string' && sb[a]) binds[a]=sb[a]; }catch(e){}
 function saveBinds(){ try{ localStorage.setItem('leoncraft_binds', JSON.stringify(binds)); }catch(e){} }
@@ -2362,6 +2387,7 @@ const BIND_ACTIONS = [
   {id:'jump',label:'Jump / fly up'},   {id:'sneak',label:'Sneak / fly down'},
   {id:'sprint',label:'Sprint'},        {id:'sprint2',label:'Sprint (alt)'},
   {id:'zoom',label:'Zoom (hold)'},     {id:'drop',label:'Drop item'},
+  {id:'votes',label:'Toggle vote count'},
   {id:'attack',label:'Attack / break'},{id:'use',label:'Use / place'},
   {id:'pick',label:'Pick block'},      {id:'inventory',label:'Open inventory'},
   {id:'chat',label:'Open chat'},       {id:'fly',label:'Toggle fly'},
@@ -2438,6 +2464,7 @@ addEventListener('keydown', e=>{
     } }
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
+  if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
   if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
@@ -3274,6 +3301,7 @@ function toMenu(){
   state=MENU; menuEl.hidden=false; pauseEl.hidden=true; invEl.hidden=true; invOpen=false;
   chatOpen=false; chatBox.hidden=true; chatLogEl.classList.remove('up');
   if(pollScreenEl) pollScreenEl.hidden=true; pollBlocking=false;
+  if(pollMiniEl) pollMiniEl.hidden=true;
   try{ document.exitPointerLock(); }catch(e){}
 }
 
@@ -3657,14 +3685,30 @@ function renderPoll(){
 }
 function showPoll(){
   if(bw.active) return;
-  if(pollVotedChoice()) return;                 // already answered on this computer — straight into the game
+  if(pollVotedChoice()){ renderPollMini(); return; }   // already answered on this computer — straight into the game
   pollBlocking=true; pollScreenEl.hidden=false; renderPoll(); try{ document.exitPointerLock(); }catch(e){}
 }
-function pollPlay(){ pollScreenEl.hidden=true; pollBlocking=false; if(state===PLAY){ try{ canvas.requestPointerLock(); }catch(e){} } }
+function pollPlay(){ pollScreenEl.hidden=true; pollBlocking=false; renderPollMini(); if(state===PLAY){ try{ canvas.requestPointerLock(); }catch(e){} } }
 function pollCast(choice){ if(pollVotedChoice()) return; localStorage.setItem('leoncraft_pollvoted', choice); pollData[choice]++; mpSend({type:'pollvote', device:pollDeviceId(), choice}); renderPoll(); }
 document.getElementById('pollYes').addEventListener('click', ()=>pollCast('yes'));
 document.getElementById('pollNo').addEventListener('click', ()=>pollCast('no'));
 document.getElementById('pollPlay').addEventListener('click', ()=>pollPlay());
+// ---- live vote tally in the corner (top-right), minimizable ----
+const pollMiniEl=document.getElementById('pollMini');
+let pollMiniMin = localStorage.getItem('leoncraft_pollmin')==='1';
+function renderPollMini(){
+  const show = mp.active && !bw.active && !pollBlocking;
+  pollMiniEl.hidden = !show;
+  if(!show) return;
+  pollMiniEl.classList.toggle('min', pollMiniMin);
+  const total=pollData.yes+pollData.no;
+  const yp = total ? Math.round(pollData.yes/total*100) : 0, np = total ? 100-yp : 0;
+  document.getElementById('pmYes').textContent=yp+'%'; document.getElementById('pmNo').textContent=np+'%';
+  document.getElementById('pmTot').textContent = total+' vote'+(total===1?'':'s');
+}
+function setPollMiniMin(v){ pollMiniMin=v; localStorage.setItem('leoncraft_pollmin', v?'1':'0'); renderPollMini(); }
+document.getElementById('pmMin').addEventListener('click', e=>{ e.stopPropagation(); setPollMiniMin(true); });
+document.getElementById('pmPill').addEventListener('click', e=>{ e.stopPropagation(); setPollMiniMin(false); });
 
 /* ---- secret codes: cosmetic/gameplay effects synced to other players over the relay ----
    Codes are typed in the menu / pause "Secret code" box. "bedwars" launches Bed Wars;
@@ -3918,7 +3962,7 @@ function mpHandle(m){
     if(m.id===mp.id){ mp.name=m.name; }
     else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff'); p.model.add(p.tag); } }
   }
-  else if(m.type==='poll'){ pollData={yes:m.yes|0, no:m.no|0}; renderPoll(); }   // live poll tally update
+  else if(m.type==='poll'){ pollData={yes:m.yes|0, no:m.no|0}; renderPoll(); renderPollMini(); }   // live poll tally update (modal + corner widget)
   else if(m.type==='full'){ chatPush('Server is full right now, try again soon.', 'sys'); }
 }
 function mpConnect(){
@@ -3974,6 +4018,7 @@ function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
+  if(pollMiniEl) pollMiniEl.hidden=true;
   mp.bw = true; bw.active = true; bwMode = true;
   bwEnterUi();
   mpConnect();
@@ -5025,6 +5070,7 @@ window.__mc = {
   bwSetLoadout(a,s){ bw.loadout.armor=a; bw.loadout.sword=s; bwApplyLocalGear(); bwSetHotbar(); },
   pollState(){ return { data:Object.assign({},pollData), voted:pollVotedChoice(), blocking:pollBlocking, shown:!pollScreenEl.hidden }; }, pollVote(c){ pollCast(c); }, pollPlay(){ pollPlay(); },
   clearVote(){ localStorage.removeItem('leoncraft_pollvoted'); },
+  pollMiniState(){ return { shown:!pollMiniEl.hidden, min:pollMiniMin, yes:document.getElementById('pmYes').textContent, no:document.getElementById('pmNo').textContent, tot:document.getElementById('pmTot').textContent }; }, togglePollMini(){ setPollMiniMin(!pollMiniMin); },
   bwKit(){ bw.loadout.sword=3; bw.loadout.pick=2; bw.loadout.axe=2; bw.loadout.shears=true; bw.loadout.bow=true; bw.apples=1; bw.pearls=1; bw.tnt=1; bw.fireballs=1; bw.water=1; bw.arrows=8; bwApplyLocalGear(); bwSetHotbar(); },
   bwGiveNamed(name,n){ const id=bwId(name); if(id) bwGiveBlock(id, n||1); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); }, bwDrop(){ bwDropSelected(); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); },
   bwSetRes(i,g,d,e){ bw.res={iron:i|0,gold:g|0,diamond:d|0,emerald:e|0}; bwUpdateHud(); if(bwInvOpen) bwBuildInvScreen(); }, bwOpenInv(){ if(!bwInvOpen) bwToggleInv(); },
