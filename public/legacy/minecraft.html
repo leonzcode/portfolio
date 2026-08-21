@@ -277,27 +277,25 @@
     transition:opacity .5s ease;
   }
   #loading.gone{ opacity:0; pointer-events:none; }
-  /* multiplayer poll card */
-  #pollCard{ position:fixed; top:56px; right:16px; z-index:14; width:260px; padding:14px 16px 16px;
-    background:rgba(24,26,30,.92); border:2px solid #565b63; border-radius:8px; color:#eee;
-    font-size:14px; box-shadow:0 6px 24px rgba(0,0,0,.5); }
-  #pollCard[hidden]{ display:none; }
-  #pollCard .pollQ{ font-size:15px; font-weight:700; margin:2px 0 12px; padding-right:14px; line-height:1.35; }
-  .pollBtns{ display:flex; gap:8px; }
-  .pollBtn{ flex:1; font-family:inherit; font-size:14px; font-weight:700; color:#fff; padding:9px 0; cursor:pointer;
-    border:none; border-radius:5px; }
-  .pollBtn.yes{ background:#3a9d4b; } .pollBtn.yes:hover{ background:#45b657; }
-  .pollBtn.no{ background:#c14b43; } .pollBtn.no:hover{ background:#d85a51; }
-  .pollClose{ position:absolute; top:6px; right:8px; background:none; border:none; color:#aab; font-size:20px; line-height:1; cursor:pointer; }
-  .pollClose:hover{ color:#fff; }
-  .pollBars{ display:flex; flex-direction:column; gap:8px; }
-  .pollRow{ display:flex; align-items:center; gap:8px; font-size:13px; }
-  .pollRow .pl{ width:28px; color:#cfd3d8; }
-  .pollRow .pp{ width:38px; text-align:right; font-variant-numeric:tabular-nums; color:#fff; }
-  .pollBar{ flex:1; height:12px; background:rgba(255,255,255,.12); border-radius:6px; overflow:hidden; }
-  .pollBar i{ display:block; height:100%; width:0; transition:width .4s ease; border-radius:6px; }
-  .pollBar i.yes{ background:#45b657; } .pollBar i.no{ background:#d85a51; }
-  .pollTotal{ margin-top:4px; font-size:12px; color:#aab; text-align:center; }
+  /* multiplayer poll — a blocking Minecraft-style dialog */
+  .pollPanel{ display:flex; flex-direction:column; align-items:center; gap:14px; width:400px; max-width:86vw;
+    padding:26px 26px 22px; background:#8f8f8f; image-rendering:pixelated;
+    background-image:repeating-linear-gradient(0deg, rgba(0,0,0,.10) 0 2px, rgba(255,255,255,.04) 2px 4px);
+    border:4px solid; border-color:#c6c6c6 #4b4b4b #4b4b4b #c6c6c6; box-shadow:0 8px 30px rgba(0,0,0,.55), inset 0 0 0 2px #6f6f6f; }
+  .pollTitle{ font-size:13px; letter-spacing:2px; text-transform:uppercase; color:#ffec4d; text-shadow:2px 2px 0 #3a3a00; }
+  .pollQ{ font-size:20px; font-weight:700; color:#fff; text-shadow:2px 2px 0 #2f2f2f; text-align:center; line-height:1.3; }
+  .pollBtns{ display:flex; gap:12px; }
+  .pollBtns .btn{ width:120px; }
+  #pollPlay{ width:200px; }
+  .pollBars{ display:flex; flex-direction:column; gap:9px; width:100%; }
+  .pollBars[hidden]{ display:none; }
+  .pollRow{ display:flex; align-items:center; gap:10px; font-size:14px; }
+  .pollRow .pl{ width:34px; color:#fff; text-shadow:1px 1px 0 #2f2f2f; }
+  .pollRow .pp{ width:44px; text-align:right; font-variant-numeric:tabular-nums; color:#fff; text-shadow:1px 1px 0 #2f2f2f; }
+  .pollBar{ flex:1; height:16px; background:#555; border:2px solid; border-color:#3a3a3a #7d7d7d #7d7d7d #3a3a3a; overflow:hidden; }
+  .pollBar i{ display:block; height:100%; width:0; transition:width .4s ease; }
+  .pollBar i.yes{ background:#4bbf5b; } .pollBar i.no{ background:#d85a51; }
+  .pollTotal{ font-size:12.5px; color:#e6e6e6; text-align:center; text-shadow:1px 1px 0 #2f2f2f; }
 </style>
 </head>
 <body>
@@ -310,17 +308,21 @@
 <div id="tabList" hidden></div>
 <div id="chatBox" hidden><input id="chatInput" type="text" maxlength="240" autocomplete="off" spellcheck="false" placeholder=""></div>
 <div id="hotbar"></div>
-<div id="pollCard" hidden>
-  <button class="pollClose" id="pollClose" title="Close">&times;</button>
-  <div class="pollQ">Should I add private servers?</div>
-  <div class="pollBtns" id="pollBtns">
-    <button class="pollBtn yes" id="pollYes">Yes</button>
-    <button class="pollBtn no" id="pollNo">No</button>
-  </div>
-  <div class="pollBars" id="pollBars" hidden>
-    <div class="pollRow"><span class="pl">Yes</span><div class="pollBar"><i id="pollYesBar" class="yes"></i></div><span class="pp" id="pollYesPct">0%</span></div>
-    <div class="pollRow"><span class="pl">No</span><div class="pollBar"><i id="pollNoBar" class="no"></i></div><span class="pp" id="pollNoPct">0%</span></div>
-    <div class="pollTotal" id="pollTotal">0 votes</div>
+<div class="screen" id="pollScreen" hidden>
+  <div class="pollPanel">
+    <div class="pollTitle">One quick question</div>
+    <div class="pollQ">Should I add private servers?</div>
+    <div class="pollBtns" id="pollBtns">
+      <button class="btn" id="pollYes">Yes</button>
+      <button class="btn" id="pollNo">No</button>
+    </div>
+    <div class="pollBars" id="pollBars" hidden>
+      <div class="pollRow"><span class="pl">Yes</span><div class="pollBar"><i id="pollYesBar" class="yes"></i></div><span class="pp" id="pollYesPct">0%</span></div>
+      <div class="pollRow"><span class="pl">No</span><div class="pollBar"><i id="pollNoBar" class="no"></i></div><span class="pp" id="pollNoPct">0%</span></div>
+      <div class="pollTotal" id="pollTotal">0 votes</div>
+    </div>
+    <button class="btn" id="pollPlay" hidden>Play &raquo;</button>
+    <div class="hint" id="pollHint">Cast a vote to jump into the game.</div>
   </div>
 </div>
 
@@ -2437,7 +2439,7 @@ addEventListener('keydown', e=>{
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } }   // Bed Wars: shop + eat apple
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false;
   const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
@@ -2459,7 +2461,7 @@ addEventListener('keydown', e=>{
 canvas.addEventListener('mousedown', e=>{
   const token='mouse'+e.button;
   keys[token]=true;                                        // held state, so a mouse button can drive a held action too
-  if(state!==PLAY || sleep.active || signEditPos) return;  // ignore clicks while in bed / editing a sign
+  if(state!==PLAY || sleep.active || signEditPos || pollBlocking) return;  // ignore clicks while in bed / editing a sign / answering the poll
   if(!pointerLocked){ canvas.requestPointerLock(); return; }
   if(e.button===1) e.preventDefault();                     // stop middle-click autoscroll
   firePress(token, e);                                     // attack / use / pick (or whatever is bound to this button)
@@ -2483,8 +2485,7 @@ canvas.addEventListener('wheel', e=>{
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = document.pointerLockElement===canvas;
   // don't pop the pause menu when we released the lock on purpose to type in chat / vote in the poll
-  const pollOpen = pollCardEl && !pollCardEl.hidden;
-  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen && !bwInvOpen && !pollOpen) pause();
+  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen && !bwInvOpen && !pollBlocking) pause();
 });
 document.addEventListener('mousemove', e=>{
   if(!pointerLocked) return;
@@ -3245,7 +3246,7 @@ function startGame(){
   player.pos.y = gh+2;
   state=PLAY; menuEl.hidden=true; pauseEl.hidden=true; invEl.hidden=true; invOpen=false;
   rebuildSignObjs();                 // (re)create sign text now that the scene exists
-  canvas.requestPointerLock();
+  if(!pollBlocking) canvas.requestPointerLock();   // the poll grabs the cursor instead when it's blocking
 }
 function pause(){ state=PAUSE; pauseEl.hidden=false; document.getElementById('regenBtn').hidden = mp.active; document.exitPointerLock(); }
 function resume(){ state=PLAY; pauseEl.hidden=true; canvas.requestPointerLock(); }
@@ -3272,7 +3273,7 @@ function toMenu(){
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   state=MENU; menuEl.hidden=false; pauseEl.hidden=true; invEl.hidden=true; invOpen=false;
   chatOpen=false; chatBox.hidden=true; chatLogEl.classList.remove('up');
-  if(pollCardEl) pollCardEl.hidden=true;
+  if(pollScreenEl) pollScreenEl.hidden=true; pollBlocking=false;
   try{ document.exitPointerLock(); }catch(e){}
 }
 
@@ -3637,27 +3638,33 @@ creative = true;   // locked to creative for now
    block edits and chat, and renders the other players live. */
 const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0 };
 
-/* ---- multiplayer poll: "Should I add private servers?" (server-tallied, one vote per computer) ---- */
-const pollCardEl=document.getElementById('pollCard');
-let pollData={yes:0,no:0};
+/* ---- multiplayer poll: a blocking dialog you must answer before playing (server-tallied, one vote per computer) ---- */
+const pollScreenEl=document.getElementById('pollScreen');
+let pollData={yes:0,no:0}, pollBlocking=false;
 function pollDeviceId(){ let d=localStorage.getItem('leoncraft_device'); if(!d){ d=Date.now().toString(36)+Math.random().toString(36).slice(2,10); localStorage.setItem('leoncraft_device', d); } return d; }
 function pollVotedChoice(){ return localStorage.getItem('leoncraft_pollvoted'); }
 function renderPoll(){
   const voted=pollVotedChoice();
   document.getElementById('pollBtns').style.display = voted ? 'none' : 'flex';
   document.getElementById('pollBars').hidden = !voted;
+  document.getElementById('pollPlay').hidden = !voted;
+  document.getElementById('pollHint').textContent = voted ? 'Thanks for voting! Click Play to continue.' : 'Cast a vote to jump into the game.';
   const total=pollData.yes+pollData.no;
   const yp = total ? Math.round(pollData.yes/total*100) : 0, np = total ? 100-yp : 0;
   document.getElementById('pollYesBar').style.width=yp+'%'; document.getElementById('pollNoBar').style.width=np+'%';
   document.getElementById('pollYesPct').textContent=yp+'%'; document.getElementById('pollNoPct').textContent=np+'%';
   document.getElementById('pollTotal').textContent = total+' vote'+(total===1?'':'s')+(voted?' • you voted '+voted:'');
 }
-function showPoll(){ if(bw.active) return; pollCardEl.hidden=false; renderPoll(); try{ document.exitPointerLock(); }catch(e){} }   // release the cursor so you can click a vote (survival MP only)
-function closePoll(){ pollCardEl.hidden=true; if(state===PLAY) try{ canvas.requestPointerLock(); }catch(e){} }
-function pollCast(choice){ if(pollVotedChoice()) return; localStorage.setItem('leoncraft_pollvoted', choice); pollData[choice]++; renderPoll(); mpSend({type:'pollvote', device:pollDeviceId(), choice}); }
+function showPoll(){
+  if(bw.active) return;
+  if(pollVotedChoice()) return;                 // already answered on this computer — straight into the game
+  pollBlocking=true; pollScreenEl.hidden=false; renderPoll(); try{ document.exitPointerLock(); }catch(e){}
+}
+function pollPlay(){ pollScreenEl.hidden=true; pollBlocking=false; if(state===PLAY){ try{ canvas.requestPointerLock(); }catch(e){} } }
+function pollCast(choice){ if(pollVotedChoice()) return; localStorage.setItem('leoncraft_pollvoted', choice); pollData[choice]++; mpSend({type:'pollvote', device:pollDeviceId(), choice}); renderPoll(); }
 document.getElementById('pollYes').addEventListener('click', ()=>pollCast('yes'));
 document.getElementById('pollNo').addEventListener('click', ()=>pollCast('no'));
-document.getElementById('pollClose').addEventListener('click', ()=>{ closePoll(); });
+document.getElementById('pollPlay').addEventListener('click', ()=>pollPlay());
 
 /* ---- secret codes: cosmetic/gameplay effects synced to other players over the relay ----
    Codes are typed in the menu / pause "Secret code" box. "bedwars" launches Bed Wars;
@@ -3880,12 +3887,13 @@ function mpHandle(m){
     if(m.prg) for(const kk in m.prg){ prgMeta.set(kk, {ang:m.prg[kk].ang|0}); }   // PRG facings; spheres built when chunks mesh
     if(m.trapdoors) for(const kk in m.trapdoors){ const s=m.trapdoors[kk]; trapdoorMeta.set(kk, {facing:s.facing|0, open:!!s.open, top:!!s.top}); }
     if(m.slabs) for(const kk in m.slabs){ const s=m.slabs[kk]; slabMeta.set(kk, {top:!!s.top, double:!!s.double}); }
+    if(m.poll){ pollData={yes:m.poll.yes|0, no:m.poll.no|0}; if(!bw.active && !pollVotedChoice()) pollBlocking=true; }   // set early so startGame skips the pointer lock
     mpClearPlayers();
     mpStartWorld(m.seed);
     for(const pl of (m.players||[])) mpAddPlayer(pl);
     mpSendSkin();   // let everyone already here see my custom skin
     applyLocalBody(); sendFx();   // re-assert my active secret-code effects so everyone here sees them
-    if(m.poll){ pollData={yes:m.poll.yes|0, no:m.poll.no|0}; showPoll(); }   // pop the private-servers poll on joining survival MP
+    showPoll();   // pop the blocking private-servers poll on joining survival MP (skips if already voted on this computer)
     chatPush('Joined the shared world as '+m.name+'  ('+((m.players||[]).length+1)+' online)', 'sys');
   }
   else if(m.type==='join'){ mpAddPlayer(m.player); }
@@ -4185,34 +4193,65 @@ function bwItemIcon(stack, size){
   if(stack.kind==='block') return blockIconCanvas(stack.id, size);
   const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); const u=size/16;
   const R=(x,y,w,h,col)=>{ g.fillStyle=col; g.fillRect(x*u,y*u,w*u,h*u); };
+  const P=(x,y,col)=>{ g.fillStyle=col; g.fillRect(Math.round(x*u),Math.round(y*u),Math.ceil(u),Math.ceil(u)); };   // one texel
   if(stack.kind==='sword'){
-    const blade=['#8a5a2b','#b7b7b7','#dcdcdc','#f2f2f2','#8fe9ff'][stack.tier]||'#b7b7b7';
-    // hilt bottom-left, blade top-right (diagonal)
-    R(3,11,2,2,'#6b4a2a'); R(4,10,2,2,'#6b4a2a'); R(3,10,3,1,'#caa15a');           // handle + guard
-    for(let i=0;i<7;i++){ R(6+i,10-i,2,2,blade); }                                    // blade
-    R(12,3,1,1,'#ffffff');
+    // Minecraft-style diagonal sword: material blade with a light edge, gold guard, wood handle
+    const t=stack.tier||1;
+    const M=['#8a5a2b','#9d9d9d','#dcdcdc','#dcdcdc','#57e0ec'][t]||'#dcdcdc';   // blade body
+    const D=['#5f3d1c','#6c6c6c','#a9a9a9','#a9a9a9','#33b8c6'][t]||'#a9a9a9';   // shaded edge
+    const L=['#a97438','#c6c6c6','#ffffff','#ffffff','#a6f4ff'][t]||'#ffffff';   // highlight
+    for(let i=0;i<7;i++){ const x=5+i,y=9-i; P(x,y,D); P(x+1,y,M); P(x,y-1,L); }   // blade, upper-left highlight
+    P(12,2,L); P(12,3,M); P(13,2,D);                                              // tip
+    P(4,10,'#caa15a'); P(5,10,'#d7b46a'); P(3,11,'#b8923f'); P(4,11,'#caa15a');   // gold guard
+    P(2,13,'#4a3018'); P(3,13,'#5a3a1c'); P(2,12,'#5a3a1c'); P(3,12,'#6e4a24');   // wood handle
   } else if(stack.kind==='tool' && stack.tool==='pick'){
-    R(3,11,2,2,'#6b4a2a'); R(4,9,2,2,'#6b4a2a'); R(5,7,2,2,'#6b4a2a');               // handle
-    R(3,5,10,2,'#c9c9c9'); R(3,6,1,2,'#c9c9c9'); R(12,6,1,2,'#c9c9c9');              // head
+    const t=stack.tier||1; const M=['#8a5a2b','#9d9d9d','#dcdcdc','#dcdcdc','#57e0ec'][t]||'#9d9d9d';
+    const D=['#5f3d1c','#6c6c6c','#a9a9a9','#a9a9a9','#33b8c6'][t]||'#6c6c6c', L=['#a97438','#c6c6c6','#fff','#fff','#a6f4ff'][t]||'#c6c6c6';
+    P(3,5,D);P(4,4,M);P(5,3,M);P(6,3,L);P(7,3,M);P(8,3,M);P(9,4,M);P(10,5,D);     // curved head bar
+    P(4,3,M);P(9,3,M);P(3,4,M);P(10,4,M);
+    for(let i=0;i<8;i++) P(7+ (i>>2), 5+i, '#6e4a24');                             // wood handle down-right
+    P(8,13,'#5a3a1c');
   } else if(stack.kind==='tool' && stack.tool==='axe'){
-    R(4,11,2,2,'#6b4a2a'); R(5,9,2,2,'#6b4a2a'); R(6,7,2,2,'#6b4a2a');
-    R(6,3,5,5,'#c9c9c9'); R(5,4,1,3,'#c9c9c9');
+    const t=stack.tier||1; const M=['#8a5a2b','#9d9d9d','#dcdcdc','#dcdcdc','#57e0ec'][t]||'#9d9d9d';
+    const D=['#5f3d1c','#6c6c6c','#a9a9a9','#a9a9a9','#33b8c6'][t]||'#6c6c6c', L=['#a97438','#c6c6c6','#fff','#fff','#a6f4ff'][t]||'#c6c6c6';
+    for(let y=3;y<=8;y++){ P(4,y,D); P(5,y,M); }                                   // axe head (left block)
+    P(6,3,M);P(6,4,M);P(6,5,M);P(7,4,M); P(5,3,L);                                 // blade bulge
+    for(let i=0;i<8;i++) P(6+ (i>>2), 5+i, '#6e4a24'); P(7,13,'#5a3a1c');          // wood handle
   } else if(stack.kind==='tool' && stack.tool==='shears'){
-    R(4,4,3,3,'#dcdcdc'); R(9,4,3,3,'#dcdcdc'); R(6,7,4,4,'#9aa'); R(7,10,2,3,'#6b4a2a');
+    P(4,4,'#d0d0d0');P(5,5,'#e6e6e6');P(6,6,'#c0c0c0');P(4,5,'#b8b8b8');           // upper blade
+    P(11,4,'#d0d0d0');P(10,5,'#e6e6e6');P(9,6,'#c0c0c0');P(11,5,'#b8b8b8');        // lower blade
+    P(7,7,'#8a8a8a');P(8,7,'#8a8a8a');P(7,8,'#6e4a24');P(8,9,'#6e4a24');P(7,10,'#6e4a24');P(8,11,'#6e4a24');   // pivot + handles
   } else if(stack.kind==='apple'){
-    R(5,4,6,2,'#c62828'); R(4,6,8,6,'#e53935'); R(5,12,6,1,'#c62828'); R(8,2,1,3,'#5d4037'); R(9,3,2,1,'#2e7d32');
+    // golden apple: gold body, shine, leaf + stem
+    R(5,4,6,7,'#f2c531'); R(4,5,1,5,'#e0a91e'); R(11,5,1,5,'#e0a91e'); R(5,3,5,1,'#e0a91e'); R(5,11,6,1,'#c9901a');
+    P(6,5,'#fff1b0'); P(7,5,'#fff1b0'); P(6,6,'#fde58a');                          // shine
+    P(8,2,'#6b4a1e'); P(8,1,'#6b4a1e'); P(9,2,'#3aa03a'); P(10,2,'#57c257');       // stem + leaf
   } else if(stack.kind==='pearl'){
-    R(5,4,6,2,'#2aa87a'); R(4,6,8,6,'#33c690'); R(5,12,6,1,'#1c7a58'); R(6,7,2,2,'#bfffe6'); R(9,9,2,2,'#0f5a40');
+    R(5,4,6,2,'#2fa382'); R(4,6,8,5,'#37bf98'); R(5,11,6,1,'#1c7a5e');             // orb
+    P(6,6,'#bff5e2'); P(7,6,'#bff5e2'); P(6,7,'#8fe6cb');                          // highlight
+    P(9,8,'#125c46'); P(10,8,'#125c46'); P(9,9,'#0f5140');                         // dark swirl
   } else if(stack.kind==='tnt'){
     return blockIconCanvas(B.tnt, size);
   } else if(stack.kind==='fireball'){
-    R(5,5,6,6,'#ff7018'); R(6,4,4,1,'#ffb060'); R(4,6,1,4,'#e05000'); R(11,6,1,4,'#e05000'); R(6,11,4,1,'#e05000'); R(6,6,3,3,'#ffd080');
+    R(6,5,5,6,'#ff7a18'); R(5,6,1,4,'#e05000'); R(11,6,1,4,'#e05000');   // body
+    R(6,4,4,1,'#ffb060'); R(6,11,4,1,'#d84a00');
+    P(7,6,'#ffe08a'); P(8,6,'#ffe08a'); P(7,7,'#ffd070');                          // hot core
+    P(4,7,'#ffb060'); P(12,8,'#ffb060'); P(8,3,'#ffcf80');                         // flame flicks
   } else if(stack.kind==='bow'){
-    for(let i=0;i<10;i++){ R(4+((i*i)/14|0), 3+i, 1,1, '#6b4a2a'); }   // curved limb
-    R(4,3,1,11,'#4a3218'); g.strokeStyle='#ddd'; g.lineWidth=1; g.beginPath(); g.moveTo(4.5*u,3.5*u); g.lineTo(11*u,8.5*u); g.lineTo(4.5*u,13.5*u); g.stroke();  // string + arrow
-    R(6,8,7,1,'#caa15a');
+    const B2='#7a5228', BD='#4a3218';
+    P(11,3,BD);P(12,4,B2);P(12,5,B2);P(13,6,B2);P(13,7,B2);P(13,8,B2);P(13,9,B2);P(12,10,B2);P(12,11,B2);P(11,12,BD);   // curved limb
+    P(11,4,B2);P(12,9,B2);
+    g.strokeStyle='#e8e8e8'; g.lineWidth=Math.max(1,u*0.5); g.beginPath(); g.moveTo(11.5*u,3.5*u); g.lineTo(5*u,7.7*u); g.lineTo(11.5*u,12*u); g.stroke();   // string
+    P(4,7,'#caa15a');P(5,7,'#caa15a');P(6,7,'#e8e8e8');P(3,6,'#e8e8e8');P(3,8,'#e8e8e8');   // nocked arrow + fletch
   } else if(stack.kind==='bucket'){
-    R(4,5,8,1,'#b9c0c6'); R(4,5,1,8,'#9aa1a7'); R(11,5,1,8,'#9aa1a7'); R(5,12,6,1,'#7f868c'); R(5,6,6,6,'#2a6cc7'); R(5,6,6,2,'#3f86e0');   // steel pail with water
+    R(4,6,8,1,'#c3c9cf'); R(4,7,1,6,'#a3aab1'); R(11,7,1,6,'#a3aab1'); R(4,13,8,1,'#7f868c');   // steel pail
+    R(5,7,6,5,'#2a6cc7'); R(5,7,6,2,'#4a86e0'); P(6,8,'#7fb0f5');                                // water + shine
+    R(3,4,2,1,'#9aa1a7'); R(11,4,2,1,'#9aa1a7'); R(3,5,1,2,'#9aa1a7'); R(12,5,1,2,'#9aa1a7');    // handle
+  } else if(stack.kind==='potion'){
+    const liq=stack.col||'#4fc3f7';
+    R(6,2,4,1,'#caa15a'); R(6,3,4,1,'#6e4a24');                                    // cork + neck
+    R(5,7,6,6,liq); R(5,4,6,3,'#d9e6ee'); R(6,6,4,1,liq); R(4,8,1,4,'#cfe0ea'); R(11,8,1,4,'#cfe0ea');   // glass bulb + liquid
+    P(6,9,'#ffffff');                                                              // glass glint
   }
   return c;
 }
@@ -4759,7 +4798,7 @@ function frame(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
 
   if(state===PLAY){
-    if(!invOpen && chatBox.hidden && !sleep.active && !sit.active && !bwShopOpen && !bwInvOpen) updatePlayer(dt);   // freeze while picker/chat/sleep/sitting/shopping/inventory
+    if(!invOpen && chatBox.hidden && !sleep.active && !sit.active && !bwShopOpen && !bwInvOpen && !pollBlocking) updatePlayer(dt);   // freeze while picker/chat/sleep/sitting/shopping/inventory/poll
     { const ccx=Math.floor(player.pos.x/CH), ccz=Math.floor(player.pos.z/CH);   // rescan chunks only when you cross into a new one
       if(ccx!==lastCX || ccz!==lastCZ){ lastCX=ccx; lastCZ=ccz; ensureChunks(player.pos.x, player.pos.z); } }
     processQueues(player.pos.x, player.pos.z);
@@ -4960,7 +4999,9 @@ window.__mc = {
   selfBodyVisible(){ return !!body.visible; }, selfBodyKind(){ return modelKind(body); },
   setKey(k,v){ keys[k]=!!v; }, camFov(){ return +camera.fov.toFixed(1); }, getBinds(){ return Object.assign({},binds); },
   bwSetLoadout(a,s){ bw.loadout.armor=a; bw.loadout.sword=s; bwApplyLocalGear(); bwSetHotbar(); },
-  pollState(){ return { data:Object.assign({},pollData), voted:pollVotedChoice(), cardShown:!pollCardEl.hidden }; }, pollVote(c){ pollCast(c); },
+  pollState(){ return { data:Object.assign({},pollData), voted:pollVotedChoice(), blocking:pollBlocking, shown:!pollScreenEl.hidden }; }, pollVote(c){ pollCast(c); }, pollPlay(){ pollPlay(); },
+  clearVote(){ localStorage.removeItem('leoncraft_pollvoted'); },
+  bwKit(){ bw.loadout.sword=3; bw.loadout.pick=2; bw.loadout.axe=2; bw.loadout.shears=true; bw.loadout.bow=true; bw.apples=1; bw.pearls=1; bw.tnt=1; bw.fireballs=1; bw.water=1; bw.arrows=8; bwApplyLocalGear(); bwSetHotbar(); },
   hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
   tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
   remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, color:p.color||'', isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), isBlock:!!(p.model&&p.model.userData&&p.model.userData.isBlock), sx:+p.model.scale.x.toFixed(2) })); },
