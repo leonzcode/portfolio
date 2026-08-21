@@ -2437,7 +2437,7 @@ addEventListener('mousedown', e=>{
   e.preventDefault(); e.stopPropagation();
   binds[bindListening]='mouse'+e.button; saveBinds(); bindListening=null; renderControls();
 }, true);
-addEventListener('contextmenu', e=>{ if(bindListening) e.preventDefault(); });
+addEventListener('contextmenu', e=>{ const el=e.target; if(el && (el.tagName==='INPUT'||el.tagName==='TEXTAREA')) return; e.preventDefault(); });   // no browser right-click menu over the game / shop
 canvas.addEventListener('wheel', e=>{
   if(state!==PLAY) return;
   selectSlot(selSlot + (e.deltaY>0?1:-1));
@@ -2543,8 +2543,9 @@ function updatePlayer(dt){
   } else {
     const sneaking = keys[binds.sneak] && player.onGround && !swimming;
     player.sneak = sneaking;
+    const sneakHeld = keys[binds.sneak] && !swimming;   // sneaking slows you in the air too, so a sneak-jump carries less far (like Minecraft)
     const spdBuff = (bw.active && bw.speedUntil>performance.now()) ? 1.45 : 1;   // Speed II potion
-    const base = (sneaking ? 1.35 : (keys[binds.forward] && keys[binds.sprint] ? 6.4 : 4.3)) * spdBuff;
+    const base = (sneakHeld ? 1.35 : (keys[binds.forward] && keys[binds.sprint] ? 6.4 : 4.3)) * spdBuff;
     const accel = swimming? 3.0 : base;
     const tvx = wish.x*accel, tvz = wish.z*accel;
     // ice is slippery: velocity eases toward the target instead of snapping
@@ -3911,22 +3912,26 @@ function bwLeaveUi(){ const h=document.getElementById('bwHud'); if(h) h.style.di
 // ---- prefab map: write the islands into mpOverrides so streamed chunks show them ----
 function bwPlace(x,y,z,id){ if(id){ mpSetOverride(x,y,z,id); bw.prefabSet.add(x+','+y+','+z); } }
 function bwFill(x0,x1,y,z0,z1,id){ for(let x=x0;x<=x1;x++) for(let z=z0;z<=z1;z++) bwPlace(x,y,z,id); }
+// Map: "Lighthouse" — a nautical 4-team layout with dock-style plank bases and a central banded lighthouse tower.
 function bwBuildMap(){
   mpOverrides.clear(); bedMeta.clear(); bw.prefabSet.clear();
-  const endstone=bwId('end_stone'), stone=bwId('stone'), glow=bwId('glowstone');
-  const quartz=bwId('quartz_block')||stone, obsid=bwId('obsidian');
+  const endstone=bwId('end_stone'), stone=bwId('stone'), glow=bwId('glowstone'), glass=bwId('glass');
+  const quartz=bwId('quartz_block')||stone, planks=bwId('oak_planks'), logg=bwId('oak_log')||planks;
+  const cobble=bwId('cobblestone')||stone, redc=bwId('red_concrete')||bwId('red_wool');
   const diamond=bwId('diamond_block'), emerald=bwId('emerald_block'), iron=bwId('iron_block');
+  // ---- team islands: wooden dock bases ----
   for(const t of BW_TEAMS){
     const g=BW_GEOM[t.id], cx=g.cx, cz=g.cz, wool=bwId(t.wool), conc=bwId(t.conc);
     // island-local coords: f = forward (toward the bed / outside), s = sideways. Maps to world along the team's axis.
     const dx=t.dir[0], dz=t.dir[1], px=dz, pz=-dx;
     const put=(f,s,y,id)=>bwPlace(cx+dx*f+px*s, y, cz+dz*f+pz*s, id);
     const fill=(f0,f1,s0,s1,y,id)=>{ for(let f=f0;f<=f1;f++) for(let s=s0;s<=s1;s++) put(f,s,y,id); };
-    // main platform (13 forward × 11 side), 2 thick, team-colour border + corner lights
-    fill(-6,6,-5,5, BW_Y, endstone); fill(-6,6,-5,5, BW_Y-1, endstone);
+    // plank dock (13 forward × 11 side) over an endstone base, with a team-colour trim
+    fill(-6,6,-5,5, BW_Y, planks); fill(-6,6,-5,5, BW_Y-1, endstone);
     for(let s=-5;s<=5;s++){ put(6,s,BW_Y,conc); put(-6,s,BW_Y,conc); }
     for(let f=-6;f<=6;f++){ put(f,5,BW_Y,conc); put(f,-5,BW_Y,conc); }
-    put(6,5,BW_Y,glow); put(6,-5,BW_Y,glow); put(-6,5,BW_Y,glow); put(-6,-5,BW_Y,glow);
+    // oak-log dock posts at the 4 corners, each topped with a lantern
+    for(const [cf,cs] of [[6,5],[6,-5],[-6,5],[-6,-5]]){ put(cf,cs,BW_Y+1,logg); put(cf,cs,BW_Y+2,logg); put(cf,cs,BW_Y+3,glow); }
     // bed on its wool patch (foot f=3, head f=4). Players build their own defences from here.
     fill(2,4,-1,1, BW_Y, wool);
     put(3,0,BW_Y+1, bwId(t.bed)); put(4,0,BW_Y+1, bwId(t.bed));
@@ -3938,20 +3943,26 @@ function bwBuildMap(){
     put(0,3,BW_Y, quartz); put(0,-3,BW_Y, quartz);
     put(1,3,BW_Y, conc); put(-1,3,BW_Y, conc); put(1,-3,BW_Y, conc); put(-1,-3,BW_Y, conc);
     put(0,4,BW_Y, glow); put(0,-4,BW_Y, glow);
-    // short bridge stub toward the centre so you have a launch point (still have to bridge the gap)
-    for(let f=-7;f>=-9;f--){ put(f,-1,BW_Y,endstone); put(f,0,BW_Y,endstone); put(f,1,BW_Y,endstone); }
-    put(-9,0,BW_Y,glow);
+    // wooden pier stub toward the centre with lamp posts at its end (still have to bridge the gap)
+    for(let f=-7;f>=-9;f--){ put(f,-1,BW_Y,planks); put(f,0,BW_Y,planks); put(f,1,BW_Y,planks); }
+    put(-9,-1,BW_Y+1,logg); put(-9,1,BW_Y+1,logg); put(-9,-1,BW_Y+2,glow); put(-9,1,BW_Y+2,glow);
   }
-  // centre emerald island: a raised quartz-rimmed 9×9 with 4 obsidian pillars framing the emerald generator
+  // ---- centre: the lighthouse (rocky base + red/white banded tower around the emerald generator) ----
   bwFill(-4,4,BW_Y,-4,4, stone); bwFill(-4,4,BW_Y-1,-4,4, stone);
-  for(let s=-4;s<=4;s++){ bwPlace(-4,BW_Y,s,quartz); bwPlace(4,BW_Y,s,quartz); bwPlace(s,BW_Y,-4,quartz); bwPlace(s,BW_Y,4,quartz); }
+  for(let s=-4;s<=4;s++){ bwPlace(-4,BW_Y,s,cobble); bwPlace(4,BW_Y,s,cobble); bwPlace(s,BW_Y,-4,cobble); bwPlace(s,BW_Y,4,cobble); }
   bwPlace(0,BW_Y,0, emerald);
-  for(const c of [[-2,-2],[2,-2],[-2,2],[2,2]]){ for(let h=1;h<=3;h++) bwPlace(c[0],BW_Y+h,c[1], obsid); bwPlace(c[0],BW_Y+4,c[1], glow); }
-  bwPlace(2,BW_Y,0,glow); bwPlace(-2,BW_Y,0,glow); bwPlace(0,BW_Y,2,glow); bwPlace(0,BW_Y,-2,glow);
-  // 4 diamond generator islands: raised quartz-rimmed 5×5 platforms with a light under the diamond block
+  const ring=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];   // 3×3 minus the open centre (the generator shaft)
+  for(let h=1;h<=10;h++){ const band=(Math.floor((h-1)/2)%2===0)?quartz:redc;   // alternating white/red bands
+    for(const [dx,dz] of ring){ if(h<=2 && ((dx===0&&Math.abs(dz)===1)||(dz===0&&Math.abs(dx)===1))) continue;   // 4 doorways at the base
+      bwPlace(dx,BW_Y+h,dz, band); } }
+  for(const [dx,dz] of ring) bwPlace(dx,BW_Y+11,dz, glass);   // glass lantern room
+  bwPlace(0,BW_Y+11,0, glow);                                 // the light
+  for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++) bwPlace(dx,BW_Y+12,dz, redc);   // roof
+  bwPlace(0,BW_Y+13,0, glow);                                 // beacon tip
+  // ---- 4 diamond generator islands: rocky islets ----
   for(const d of BW_DIAMOND){
-    bwFill(d.x-2,d.x+2,BW_Y,d.z-2,d.z+2, endstone); bwFill(d.x-2,d.x+2,BW_Y-1,d.z-2,d.z+2, endstone);
-    for(let s=-2;s<=2;s++){ bwPlace(d.x-2,BW_Y,d.z+s,quartz); bwPlace(d.x+2,BW_Y,d.z+s,quartz); bwPlace(d.x+s,BW_Y,d.z-2,quartz); bwPlace(d.x+s,BW_Y,d.z+2,quartz); }
+    bwFill(d.x-2,d.x+2,BW_Y,d.z-2,d.z+2, stone); bwFill(d.x-2,d.x+2,BW_Y-1,d.z-2,d.z+2, stone);
+    for(let s=-2;s<=2;s++){ bwPlace(d.x-2,BW_Y,d.z+s,cobble); bwPlace(d.x+2,BW_Y,d.z+s,cobble); bwPlace(d.x+s,BW_Y,d.z-2,cobble); bwPlace(d.x+s,BW_Y,d.z+2,cobble); }
     bwPlace(d.x,BW_Y,d.z, diamond); bwPlace(d.x,BW_Y-1,d.z, glow);
   }
 }
@@ -4637,7 +4648,8 @@ function closeChat(send){
   chatOpen=false; chatBox.hidden=true; chatInputEl.blur(); chatLogEl.classList.remove('up');
   if(send && v){
     chatHistory.push(v); if(chatHistory.length>50) chatHistory.shift();
-    if(mp.active) mpSend({type:'chat', text:v});
+    if(bw.active && /^\/start\b/i.test(v)){ startBedwarsBtn(); chatPush('Starting the match…', 'sys'); }   // /start begins the Bed Wars match
+    else if(mp.active) mpSend({type:'chat', text:v});
     else chatPush('<'+(getSavedName()||'You')+'> '+v);
   }
   chatHistIdx=-1;
