@@ -3988,18 +3988,16 @@ function bwClearGenerators(){ for(const g of bw.gens){ if(g.spin)scene.remove(g.
 function bwSpawnGenerators(){
   bwClearGenerators();
   const now=performance.now();
-  const mk=(x,y,z,kind,label)=>{ const col=BW_RESCOL[kind]||0xffffff;
+  const mk=(x,y,z,kind)=>{ const col=BW_RESCOL[kind]||0xffffff;
     const spin=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.4,0.4), new THREE.MeshLambertMaterial({color:col, emissive:new THREE.Color(col).multiplyScalar(0.3)})); spin.position.set(x, y+1.5, z); scene.add(spin);
     const g={ spin, kind, x, y, z };
     if(kind==='diamond'||kind==='emerald'){ g.name=(kind==='diamond'?'Diamond':'Emerald'); g.interval=bwGenInterval(kind); g.nextAt=now+g.interval; g.lastSec=-1;
-      g.tag=bwMakeHologram(bwGenLines(g)); }
-    else { g.tag=makeNametag(label); }
-    g.tag.position.set(x, y+2.7, z); scene.add(g.tag);
+      g.tag=bwMakeHologram(bwGenLines(g)); g.tag.position.set(x, y+2.7, z); scene.add(g.tag); }   // only diamond/emerald get a hologram, like Hypixel
     bw.gens.push(g);
   };
-  for(const t of BW_TEAMS){ const gg=BW_GEOM[t.id].gen; mk(gg.x+0.5, gg.y, gg.z+0.5, 'iron', 'Generator'); }
-  for(const d of BW_DIAMOND){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'diamond', 'Diamond'); }
-  for(const d of BW_EMERALD){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'emerald', 'Emerald'); }
+  for(const t of BW_TEAMS){ const gg=BW_GEOM[t.id].gen; mk(gg.x+0.5, gg.y, gg.z+0.5, 'iron'); }   // team forges have no hologram in Hypixel
+  for(const d of BW_DIAMOND){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'diamond'); }
+  for(const d of BW_EMERALD){ mk(d.x+0.5, BW_Y+1, d.z+0.5, 'emerald'); }
 }
 function bwUpdateGenTiers(){ for(const g of bw.gens){ if(g.kind==='diamond'||g.kind==='emerald'){ g.interval=bwGenInterval(g.kind); g.nextAt=Math.min(g.nextAt, performance.now()+g.interval); g.lastSec=-1; bwSetHologram(g.tag, bwGenLines(g)); } } }
 function bwUpdateGenTimers(){ const now=performance.now();
