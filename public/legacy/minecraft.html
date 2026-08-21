@@ -46,8 +46,8 @@
   .slot canvas{ width:40px; height:40px; image-rendering:pixelated; }
   .slot.sel{ outline:3px solid #fff; outline-offset:1px; z-index:2; }
   .slot .cnt{
-    position:absolute; right:2px; bottom:0; font-size:14px; line-height:1;
-    color:#fff;
+    position:absolute; right:3px; bottom:1px; font-size:14px; line-height:1;
+    font-weight:700; color:#fff; text-shadow:1px 1px 0 #3a3a3a;   /* single crisp Minecraft-style shadow */
   }
 
   /* held-item name popup, above the hotbar */
@@ -841,7 +841,7 @@ const EXTRA = [
   { name:'clay',            tex: speckle(0xa4a8b6,7,es()) },
   { name:'hardened_clay',   tex: speckle(0x96593f,10,es()) },
   { name:'soul_sand',       tex: soulSandTex(es()) },
-  { name:'end_stone',       tex: twoTone(es(),0xdadab0,0xcaca9a,undefined,7) },
+  { name:'end_stone',       tex: twoTone(es(),0xe8e2a0,0xd8d188,undefined,7) },
   { name:'nether_brick',    tex: brickPat(es(),0x2e1417,0x231013) },
   { name:'red_sandstone',   top: speckle(0xa64f16,8,es()), side: pillarSideTex(es(),0xa9531a), bottom: speckle(0xa64f16,8,es()) },
   { name:'chiseled_sandstone', top: speckle(0xd8ce97,8,es()), side: chiseledStone(es()), bottom: speckle(0xd8ce97,8,es()) },
@@ -2316,7 +2316,7 @@ const keys = Object.create(null);
 // and saved to localStorage. Tokens: mouse buttons are 'mouse0' (left) / 'mouse1' (middle) /
 // 'mouse2' (right); keyboard keys are their lowercased key name. Held state lives in `keys` for
 // both, so a movement action can be bound to a mouse button and vice-versa. ----
-const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', attack:'mouse0', use:'mouse2', pick:'mouse1', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3', cameraCombo:'f+5' };
+const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', sprint2:'r', zoom:'c', drop:'q', attack:'mouse0', use:'mouse2', pick:'mouse1', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3', cameraCombo:'f+5' };
 let binds = Object.assign({}, DEFAULT_BINDS);
 try{ const sb=JSON.parse(localStorage.getItem('leoncraft_binds')||'{}'); for(const a in DEFAULT_BINDS) if(typeof sb[a]==='string' && sb[a]) binds[a]=sb[a]; }catch(e){}
 function saveBinds(){ try{ localStorage.setItem('leoncraft_binds', JSON.stringify(binds)); }catch(e){} }
@@ -2324,11 +2324,12 @@ const BIND_ACTIONS = [
   {id:'forward',label:'Walk forward'}, {id:'back',label:'Walk backward'},
   {id:'left',label:'Strafe left'},     {id:'right',label:'Strafe right'},
   {id:'jump',label:'Jump / fly up'},   {id:'sneak',label:'Sneak / fly down'},
-  {id:'sprint',label:'Sprint'},        {id:'attack',label:'Attack / break'},
-  {id:'use',label:'Use / place'},      {id:'pick',label:'Pick block'},
-  {id:'inventory',label:'Open inventory'}, {id:'chat',label:'Open chat'},
-  {id:'fly',label:'Toggle fly'},       {id:'camera',label:'Change camera'},
-  {id:'debug',label:'Debug overlay'},
+  {id:'sprint',label:'Sprint'},        {id:'sprint2',label:'Sprint (alt)'},
+  {id:'zoom',label:'Zoom (hold)'},     {id:'drop',label:'Drop item'},
+  {id:'attack',label:'Attack / break'},{id:'use',label:'Use / place'},
+  {id:'pick',label:'Pick block'},      {id:'inventory',label:'Open inventory'},
+  {id:'chat',label:'Open chat'},       {id:'fly',label:'Toggle fly'},
+  {id:'camera',label:'Change camera'}, {id:'debug',label:'Debug overlay'},
 ];
 function keyLabel(k){
   if(k==='mouse0') return 'Left Click'; if(k==='mouse1') return 'Middle Click'; if(k==='mouse2') return 'Right Click';
@@ -2438,6 +2439,8 @@ addEventListener('mousedown', e=>{
   binds[bindListening]='mouse'+e.button; saveBinds(); bindListening=null; renderControls();
 }, true);
 addEventListener('contextmenu', e=>{ const el=e.target; if(el && (el.tagName==='INPUT'||el.tagName==='TEXTAREA')) return; e.preventDefault(); });   // no browser right-click menu over the game / shop
+// guard against an accidental Ctrl+W / tab close mid-game (browsers only allow a confirmation prompt, not a hard block)
+addEventListener('beforeunload', e=>{ if(typeof state!=='undefined' && (state===PLAY || (typeof bw!=='undefined' && bw.active))){ e.preventDefault(); e.returnValue=''; } });
 canvas.addEventListener('wheel', e=>{
   if(state!==PLAY) return;
   selectSlot(selSlot + (e.deltaY>0?1:-1));
@@ -2544,8 +2547,9 @@ function updatePlayer(dt){
     const sneaking = keys[binds.sneak] && player.onGround && !swimming;
     player.sneak = sneaking;
     const sneakHeld = keys[binds.sneak] && !swimming;   // sneaking slows you in the air too, so a sneak-jump carries less far (like Minecraft)
+    const sprinting = keys[binds.forward] && (keys[binds.sprint] || keys[binds.sprint2]);   // Ctrl or R
     const spdBuff = (bw.active && bw.speedUntil>performance.now()) ? 1.45 : 1;   // Speed II potion
-    const base = (sneakHeld ? 1.35 : (keys[binds.forward] && keys[binds.sprint] ? 6.4 : 4.3)) * spdBuff;
+    const base = (sneakHeld ? 1.35 : (sprinting ? 6.4 : 4.3)) * spdBuff;
     const accel = swimming? 3.0 : base;
     const tvx = wish.x*accel, tvz = wish.z*accel;
     // ice is slippery: velocity eases toward the target instead of snapping
@@ -4766,6 +4770,9 @@ function frame(now){
     if(camMode===1) camera.lookAt(eye.x+d.x*4, eye.y+d.y*4, eye.z+d.z*4);
     else camera.lookAt(eye.x, eye.y, eye.z);
   }
+  // zoom key (hold): ease the field of view down for a spyglass-style zoom
+  const wantFov = (state===PLAY && !chatOpen && keys[binds.zoom]) ? 22 : 72;
+  if(Math.abs(camera.fov-wantFov)>0.1){ camera.fov += (wantFov-camera.fov)*(1-Math.exp(-18*dt)); camera.updateProjectionMatrix(); }
   renderer.render(scene, camera);
 
   // first-person hand overlay (only in first-person view)
@@ -4870,6 +4877,7 @@ window.__mc = {
   remoteTags(){ return [...mp.players.values()].map(p=>({ id:p.id, tagVisible:p.tag?!!p.tag.visible:null, hide:!!p.hide, color:p.color||'', visible:!!(p.model&&p.model.visible) })); },
   bwPotions(){ const t=performance.now(); return { speed:Math.max(0,Math.round((bw.speedUntil-t)/1000)), jump:Math.max(0,Math.round((bw.jumpUntil-t)/1000)), invis:Math.max(0,Math.round((bw.invisUntil-t)/1000)) }; },
   selfBodyVisible(){ return !!body.visible; }, selfBodyKind(){ return modelKind(body); },
+  setKey(k,v){ keys[k]=!!v; }, camFov(){ return +camera.fov.toFixed(1); }, getBinds(){ return Object.assign({},binds); },
   hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
   tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
   remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, color:p.color||'', isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), isBlock:!!(p.model&&p.model.userData&&p.model.userData.isBlock), sx:+p.model.scale.x.toFixed(2) })); },
