@@ -277,6 +277,27 @@
     transition:opacity .5s ease;
   }
   #loading.gone{ opacity:0; pointer-events:none; }
+  /* multiplayer poll card */
+  #pollCard{ position:fixed; top:56px; right:16px; z-index:14; width:260px; padding:14px 16px 16px;
+    background:rgba(24,26,30,.92); border:2px solid #565b63; border-radius:8px; color:#eee;
+    font-size:14px; box-shadow:0 6px 24px rgba(0,0,0,.5); }
+  #pollCard[hidden]{ display:none; }
+  #pollCard .pollQ{ font-size:15px; font-weight:700; margin:2px 0 12px; padding-right:14px; line-height:1.35; }
+  .pollBtns{ display:flex; gap:8px; }
+  .pollBtn{ flex:1; font-family:inherit; font-size:14px; font-weight:700; color:#fff; padding:9px 0; cursor:pointer;
+    border:none; border-radius:5px; }
+  .pollBtn.yes{ background:#3a9d4b; } .pollBtn.yes:hover{ background:#45b657; }
+  .pollBtn.no{ background:#c14b43; } .pollBtn.no:hover{ background:#d85a51; }
+  .pollClose{ position:absolute; top:6px; right:8px; background:none; border:none; color:#aab; font-size:20px; line-height:1; cursor:pointer; }
+  .pollClose:hover{ color:#fff; }
+  .pollBars{ display:flex; flex-direction:column; gap:8px; }
+  .pollRow{ display:flex; align-items:center; gap:8px; font-size:13px; }
+  .pollRow .pl{ width:28px; color:#cfd3d8; }
+  .pollRow .pp{ width:38px; text-align:right; font-variant-numeric:tabular-nums; color:#fff; }
+  .pollBar{ flex:1; height:12px; background:rgba(255,255,255,.12); border-radius:6px; overflow:hidden; }
+  .pollBar i{ display:block; height:100%; width:0; transition:width .4s ease; border-radius:6px; }
+  .pollBar i.yes{ background:#45b657; } .pollBar i.no{ background:#d85a51; }
+  .pollTotal{ margin-top:4px; font-size:12px; color:#aab; text-align:center; }
 </style>
 </head>
 <body>
@@ -289,6 +310,19 @@
 <div id="tabList" hidden></div>
 <div id="chatBox" hidden><input id="chatInput" type="text" maxlength="240" autocomplete="off" spellcheck="false" placeholder=""></div>
 <div id="hotbar"></div>
+<div id="pollCard" hidden>
+  <button class="pollClose" id="pollClose" title="Close">&times;</button>
+  <div class="pollQ">Should I add private servers?</div>
+  <div class="pollBtns" id="pollBtns">
+    <button class="pollBtn yes" id="pollYes">Yes</button>
+    <button class="pollBtn no" id="pollNo">No</button>
+  </div>
+  <div class="pollBars" id="pollBars" hidden>
+    <div class="pollRow"><span class="pl">Yes</span><div class="pollBar"><i id="pollYesBar" class="yes"></i></div><span class="pp" id="pollYesPct">0%</span></div>
+    <div class="pollRow"><span class="pl">No</span><div class="pollBar"><i id="pollNoBar" class="no"></i></div><span class="pp" id="pollNoPct">0%</span></div>
+    <div class="pollTotal" id="pollTotal">0 votes</div>
+  </div>
+</div>
 
 <!-- Start / pause -->
 <div class="screen" id="menu">
@@ -2448,8 +2482,9 @@ canvas.addEventListener('wheel', e=>{
 
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = document.pointerLockElement===canvas;
-  // don't pop the pause menu when we released the lock on purpose to type in chat
-  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen && !bwInvOpen) pause();
+  // don't pop the pause menu when we released the lock on purpose to type in chat / vote in the poll
+  const pollOpen = pollCardEl && !pollCardEl.hidden;
+  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen && !bwInvOpen && !pollOpen) pause();
 });
 document.addEventListener('mousemove', e=>{
   if(!pointerLocked) return;
@@ -3237,6 +3272,7 @@ function toMenu(){
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   state=MENU; menuEl.hidden=false; pauseEl.hidden=true; invEl.hidden=true; invOpen=false;
   chatOpen=false; chatBox.hidden=true; chatLogEl.classList.remove('up');
+  if(pollCardEl) pollCardEl.hidden=true;
   try{ document.exitPointerLock(); }catch(e){}
 }
 
@@ -3601,6 +3637,28 @@ creative = true;   // locked to creative for now
    block edits and chat, and renders the other players live. */
 const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0 };
 
+/* ---- multiplayer poll: "Should I add private servers?" (server-tallied, one vote per computer) ---- */
+const pollCardEl=document.getElementById('pollCard');
+let pollData={yes:0,no:0};
+function pollDeviceId(){ let d=localStorage.getItem('leoncraft_device'); if(!d){ d=Date.now().toString(36)+Math.random().toString(36).slice(2,10); localStorage.setItem('leoncraft_device', d); } return d; }
+function pollVotedChoice(){ return localStorage.getItem('leoncraft_pollvoted'); }
+function renderPoll(){
+  const voted=pollVotedChoice();
+  document.getElementById('pollBtns').style.display = voted ? 'none' : 'flex';
+  document.getElementById('pollBars').hidden = !voted;
+  const total=pollData.yes+pollData.no;
+  const yp = total ? Math.round(pollData.yes/total*100) : 0, np = total ? 100-yp : 0;
+  document.getElementById('pollYesBar').style.width=yp+'%'; document.getElementById('pollNoBar').style.width=np+'%';
+  document.getElementById('pollYesPct').textContent=yp+'%'; document.getElementById('pollNoPct').textContent=np+'%';
+  document.getElementById('pollTotal').textContent = total+' vote'+(total===1?'':'s')+(voted?' • you voted '+voted:'');
+}
+function showPoll(){ if(bw.active) return; pollCardEl.hidden=false; renderPoll(); try{ document.exitPointerLock(); }catch(e){} }   // release the cursor so you can click a vote (survival MP only)
+function closePoll(){ pollCardEl.hidden=true; if(state===PLAY) try{ canvas.requestPointerLock(); }catch(e){} }
+function pollCast(choice){ if(pollVotedChoice()) return; localStorage.setItem('leoncraft_pollvoted', choice); pollData[choice]++; renderPoll(); mpSend({type:'pollvote', device:pollDeviceId(), choice}); }
+document.getElementById('pollYes').addEventListener('click', ()=>pollCast('yes'));
+document.getElementById('pollNo').addEventListener('click', ()=>pollCast('no'));
+document.getElementById('pollClose').addEventListener('click', ()=>{ closePoll(); });
+
 /* ---- secret codes: cosmetic/gameplay effects synced to other players over the relay ----
    Codes are typed in the menu / pause "Secret code" box. "bedwars" launches Bed Wars;
    the rest set an effect the server stores + relays so everyone sees it. */
@@ -3827,6 +3885,7 @@ function mpHandle(m){
     for(const pl of (m.players||[])) mpAddPlayer(pl);
     mpSendSkin();   // let everyone already here see my custom skin
     applyLocalBody(); sendFx();   // re-assert my active secret-code effects so everyone here sees them
+    if(m.poll){ pollData={yes:m.poll.yes|0, no:m.poll.no|0}; showPoll(); }   // pop the private-servers poll on joining survival MP
     chatPush('Joined the shared world as '+m.name+'  ('+((m.players||[]).length+1)+' online)', 'sys');
   }
   else if(m.type==='join'){ mpAddPlayer(m.player); }
@@ -3851,6 +3910,7 @@ function mpHandle(m){
     if(m.id===mp.id){ mp.name=m.name; }
     else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff'); p.model.add(p.tag); } }
   }
+  else if(m.type==='poll'){ pollData={yes:m.yes|0, no:m.no|0}; renderPoll(); }   // live poll tally update
   else if(m.type==='full'){ chatPush('Server is full right now, try again soon.', 'sys'); }
 }
 function mpConnect(){
@@ -4900,6 +4960,7 @@ window.__mc = {
   selfBodyVisible(){ return !!body.visible; }, selfBodyKind(){ return modelKind(body); },
   setKey(k,v){ keys[k]=!!v; }, camFov(){ return +camera.fov.toFixed(1); }, getBinds(){ return Object.assign({},binds); },
   bwSetLoadout(a,s){ bw.loadout.armor=a; bw.loadout.sword=s; bwApplyLocalGear(); bwSetHotbar(); },
+  pollState(){ return { data:Object.assign({},pollData), voted:pollVotedChoice(), cardShown:!pollCardEl.hidden }; }, pollVote(c){ pollCast(c); },
   hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
   tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
   remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, color:p.color||'', isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), isBlock:!!(p.model&&p.model.userData&&p.model.userData.isBlock), sx:+p.model.scale.x.toFixed(2) })); },
