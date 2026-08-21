@@ -4157,20 +4157,41 @@ function bwItemIcon(stack, size){
   return c;
 }
 
+// a shaded, beveled metallic material for armour (top highlight, bottom shade, side bevels, rivets) — reads like Minecraft plate
+const _armorMatCache={};
+function armorMat(hex){
+  if(_armorMatCache[hex]) return _armorMatCache[hex];
+  const c=document.createElement('canvas'); c.width=c.height=16; const g=c.getContext('2d');
+  const r=(hex>>16)&255, gr=(hex>>8)&255, b=hex&255;
+  const rgb=(m,a)=>`rgb(${Math.min(255,r*m+ (a||0))|0},${Math.min(255,gr*m+(a||0))|0},${Math.min(255,b*m+(a||0))|0})`;
+  g.fillStyle=rgb(1,0); g.fillRect(0,0,16,16);
+  g.fillStyle=rgb(1,45); g.fillRect(0,0,16,2);            // top highlight
+  g.fillStyle=rgb(0.55,0); g.fillRect(0,13,16,3);         // bottom shade
+  g.fillStyle=rgb(0.8,0); g.fillRect(0,7,16,1);           // a plate seam
+  g.fillStyle=rgb(1,30); g.fillRect(1,2,2,12);            // left bevel
+  g.fillStyle=rgb(0.6,0); g.fillRect(13,2,2,12);          // right bevel
+  g.fillStyle=rgb(0.5,0); g.fillRect(2,2,1,1); g.fillRect(13,2,1,1); g.fillRect(2,12,1,1); g.fillRect(13,12,1,1);   // rivets
+  const t=new THREE.CanvasTexture(c); t.magFilter=t.minFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace;
+  const mat=new THREE.MeshLambertMaterial({ map:t }); _armorMatCache[hex]=mat; return mat;
+}
 // ---- worn armour + held sword on a character model (local body or a remote player) ----
 function bwSetGear(model, teamColor, armorTier, swordTier){
   const ud=model && model.userData; if(!ud || ud.isPig || ud.isBlock || ud.isTree) return;   // pig/block/tree avatars have no humanoid slots to wear armour
   if(ud.gear) for(const m of ud.gear){ if(m.parent) m.parent.remove(m); }
   ud.gear=[];
   const S=1/16;
-  const gear=(parent, w,h,d, x,y,z, col)=>{ if(!parent) return; const m=new THREE.Mesh(new THREE.BoxGeometry(w*S,h*S,d*S), new THREE.MeshLambertMaterial({color:col})); m.position.set(x*S,y*S,z*S); parent.add(m); ud.gear.push(m); };
+  const gear=(parent, w,h,d, x,y,z, mat)=>{ if(!parent) return; const m=new THREE.Mesh(new THREE.BoxGeometry(w*S,h*S,d*S), mat); m.position.set(x*S,y*S,z*S); parent.add(m); ud.gear.push(m); };
   if(armorTier>0){
-    const acol = armorTier===1 ? (teamColor!=null?teamColor:0x8a5a3c) : ([0,0,0x9a9a9a,0xe0e0e0,0x63e6df][armorTier]||0x9a9a9a);   // leather = team colour
+    const acol = armorTier===1 ? (teamColor!=null?teamColor:0x8a5a3c) : ([0,0,0x9a9a9a,0xe6e6e6,0x63e6df][armorTier]||0x9a9a9a);   // leather = team colour
+    const mat=armorMat(acol);
     const torso=ud.upper && ud.upper.children[0], head=ud.headPivot && ud.headPivot.children[0];
-    gear(head, 8.8,8.8,8.8, 0,0,0, acol);                               // helmet
-    gear(torso, 8.9,12.6,4.9, 0,0,0, acol);                            // chestplate
-    gear(ud.legL, 4.7,7,4.7, 0,2.3,0, acol); gear(ud.legR, 4.7,7,4.7, 0,2.3,0, acol);   // leggings
-    gear(ud.legL, 4.9,4.5,4.9, 0,-4,0, acol); gear(ud.legR, 4.9,4.5,4.9, 0,-4,0, acol); // boots
+    gear(head, 9,8.6,9, 0,0.3,0, mat);                                  // helmet dome
+    gear(head, 9.6,1.6,9.6, 0,-3.4,0, mat);                             // helmet brim
+    gear(torso, 9.2,12.8,5.0, 0,0,0, mat);                             // chestplate
+    gear(torso, 10.4,3.4,5.4, 0,4.8,0, mat);                           // shoulder yoke across the top
+    gear(ud.armR, 4.7,7,4.7, 0,2,0, mat); gear(ud.armL, 4.7,7,4.7, 0,2,0, mat);         // arm sleeves (upper arm)
+    gear(ud.legL, 4.8,7,4.8, 0,2.3,0, mat); gear(ud.legR, 4.8,7,4.8, 0,2.3,0, mat);     // leggings
+    gear(ud.legL, 5.2,4.6,5.4, 0,-4,0.2, mat); gear(ud.legR, 5.2,4.6,5.4, 0,-4,0.2, mat); // boots (a touch wider)
   }
   if(swordTier>0 && ud.armR){
     const scol=[0x8a5a2b,0x8a5a2b,0xb7b7b7,0xe6e6e6,0x8fe9ff][swordTier]||0xb7b7b7;
@@ -4878,6 +4899,7 @@ window.__mc = {
   bwPotions(){ const t=performance.now(); return { speed:Math.max(0,Math.round((bw.speedUntil-t)/1000)), jump:Math.max(0,Math.round((bw.jumpUntil-t)/1000)), invis:Math.max(0,Math.round((bw.invisUntil-t)/1000)) }; },
   selfBodyVisible(){ return !!body.visible; }, selfBodyKind(){ return modelKind(body); },
   setKey(k,v){ keys[k]=!!v; }, camFov(){ return +camera.fov.toFixed(1); }, getBinds(){ return Object.assign({},binds); },
+  bwSetLoadout(a,s){ bw.loadout.armor=a; bw.loadout.sword=s; bwApplyLocalGear(); bwSetHotbar(); },
   hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
   tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
   remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, color:p.color||'', isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), isBlock:!!(p.model&&p.model.userData&&p.model.userData.isBlock), sx:+p.model.scale.x.toFixed(2) })); },
