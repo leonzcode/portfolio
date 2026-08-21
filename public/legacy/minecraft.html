@@ -2437,7 +2437,7 @@ addEventListener('keydown', e=>{
       e.preventDefault(); return;
     } }
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
-  if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } }   // Bed Wars: shop + eat apple
+  if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
   if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
@@ -2983,7 +2983,7 @@ function placeBlock(){
     touchWaterAround(px,py,pz);
   }
   mpSendBlock(px,py,pz,id);
-  if(bw.active){ bw.counts[id]=Math.max(0,(bw.counts[id]||0)-1); renderHotbar(); }   // one bedwars block spent
+  if(bw.active){ bw.counts[id]=Math.max(0,(bw.counts[id]||0)-1); bwSetHotbar(); }   // one bedwars block spent (rebuild so an empty stack disappears)
 }
 function pickBlock(){ if(target){ const b=getBlock(target.x,target.y,target.z); if(b){ hotbar[selSlot]=b; renderHotbar(); showItemName(b); } } }
 
@@ -4158,18 +4158,14 @@ function bwBreakBed(x,y,z){
 // ---- finite blocks / hotbar ----
 function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; bw.arrows=0; bw.water=0; bw.speedUntil=0; bw.jumpUntil=0; bw.invisUntil=0; }
 // build the survival hotbar: sword, the 5 buyable blocks (with counts), then tools + apples
+const BW_BLOCK_NAMES = ['oak_planks','end_stone','glass','obsidian','sponge'];   // + the team wool, prepended below
 function bwSetHotbar(){
   const wool = bw.team!=null? BW_TEAMS[bw.team].wool : 'white_wool';
   const s = new Array(9).fill(null);
   s[0] = { kind:'sword', tier:bw.loadout.sword||1 };
-  s[1] = { kind:'block', name:wool, id:bwId(wool) };
-  s[2] = { kind:'block', name:'oak_planks', id:bwId('oak_planks') };
-  s[3] = { kind:'block', name:'end_stone', id:bwId('end_stone') };
-  s[4] = { kind:'block', name:'glass', id:bwId('glass') };
-  s[5] = { kind:'block', name:'obsidian', id:bwId('obsidian') };
-  let k=6;
-  const spongeId=bwId('sponge');
-  if((bw.counts[spongeId]||0)>0 && k<9) s[k++]={ kind:'block', name:'sponge', id:spongeId };   // bought sponge gets its own slot
+  let k=1;
+  // only show blocks you actually own — they appear when you buy them and vanish when you run out (like Minecraft)
+  for(const nm of [wool, ...BW_BLOCK_NAMES]){ const id=bwId(nm); if(id && (bw.counts[id]||0)>0 && k<9) s[k++]={ kind:'block', name:nm, id }; }
   if(bw.loadout.pick>0 && k<9) s[k++]={ kind:'tool', tool:'pick', tier:bw.loadout.pick };
   if(bw.loadout.axe>0 && k<9)  s[k++]={ kind:'tool', tool:'axe',  tier:bw.loadout.axe };
   if(bw.loadout.shears && k<9) s[k++]={ kind:'tool', tool:'shears' };
@@ -4185,7 +4181,21 @@ function bwSetHotbar(){
   renderHotbar(); if(bwInvOpen) bwBuildInvScreen(); bwApplyLocalGear();
 }
 function bwBlockCount(id){ return bw.counts[id]||0; }
-function bwGiveBlock(id,n){ bw.counts[id]=(bw.counts[id]||0)+n; renderHotbar(); if(bwInvOpen) bwBuildInvScreen(); }
+function bwGiveBlock(id,n){ bw.counts[id]=(bw.counts[id]||0)+n; bwSetHotbar(); if(bwInvOpen) bwBuildInvScreen(); }   // rebuild so a newly-bought block appears
+// press Q to drop one of the selected item (blocks + consumables; keeps your sword / tools)
+function bwDropSelected(){
+  if(bw.dead) return;
+  const st=bw.slots[selSlot]; if(!st) return;
+  if(st.kind==='block'){ if((bw.counts[st.id]||0)<=0) return; bw.counts[st.id]--; }
+  else if(st.kind==='apple'){ if(bw.apples<=0) return; bw.apples--; }
+  else if(st.kind==='pearl'){ if(bw.pearls<=0) return; bw.pearls--; }
+  else if(st.kind==='tnt'){ if(bw.tnt<=0) return; bw.tnt--; }
+  else if(st.kind==='fireball'){ if(bw.fireballs<=0) return; bw.fireballs--; }
+  else if(st.kind==='bucket'){ if(bw.water<=0) return; bw.water--; }
+  else if(st.kind==='bow'){ if(bw.arrows<=0) return; bw.arrows--; }   // drops one arrow
+  else return;
+  bwSetHotbar();
+}
 
 // ---- item icons (drawn, since this game only has block textures) ----
 function bwItemIcon(stack, size){
@@ -5002,6 +5012,7 @@ window.__mc = {
   pollState(){ return { data:Object.assign({},pollData), voted:pollVotedChoice(), blocking:pollBlocking, shown:!pollScreenEl.hidden }; }, pollVote(c){ pollCast(c); }, pollPlay(){ pollPlay(); },
   clearVote(){ localStorage.removeItem('leoncraft_pollvoted'); },
   bwKit(){ bw.loadout.sword=3; bw.loadout.pick=2; bw.loadout.axe=2; bw.loadout.shears=true; bw.loadout.bow=true; bw.apples=1; bw.pearls=1; bw.tnt=1; bw.fireballs=1; bw.water=1; bw.arrows=8; bwApplyLocalGear(); bwSetHotbar(); },
+  bwGiveNamed(name,n){ const id=bwId(name); if(id) bwGiveBlock(id, n||1); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); }, bwDrop(){ bwDropSelected(); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); },
   hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
   tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
   remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, color:p.color||'', isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), isBlock:!!(p.model&&p.model.userData&&p.model.userData.isBlock), sx:+p.model.scale.x.toFixed(2) })); },
