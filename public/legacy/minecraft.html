@@ -4201,25 +4201,29 @@ function bwBreakBed(x,y,z){
 }
 
 // ---- finite blocks / hotbar ----
-function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; bw.arrows=0; bw.water=0; bw.speedUntil=0; bw.jumpUntil=0; bw.invisUntil=0; }
+function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; bw.arrows=0; bw.water=0; bw.speedUntil=0; bw.jumpUntil=0; bw.invisUntil=0; bwSlotPref={}; }
 // build the survival hotbar: sword, the 5 buyable blocks (with counts), then tools + apples
 const BW_BLOCK_NAMES = ['oak_planks','end_stone','glass','obsidian','sponge'];   // + the team wool, prepended below
+let bwSlotPref = {};   // item key -> preferred hotbar slot (set by dragging items in the inventory)
+function bwItemKey(st){ if(!st) return ''; if(st.kind==='block') return 'block:'+st.name; if(st.kind==='tool') return 'tool:'+st.tool; return st.kind; }
 function bwSetHotbar(){
   const wool = bw.team!=null? BW_TEAMS[bw.team].wool : 'white_wool';
-  const s = new Array(9).fill(null);
-  s[0] = { kind:'sword', tier:bw.loadout.sword||1 };
-  let k=1;
-  // only show blocks you actually own — they appear when you buy them and vanish when you run out (like Minecraft)
-  for(const nm of [wool, ...BW_BLOCK_NAMES]){ const id=bwId(nm); if(id && (bw.counts[id]||0)>0 && k<9) s[k++]={ kind:'block', name:nm, id }; }
-  if(bw.loadout.pick>0 && k<9) s[k++]={ kind:'tool', tool:'pick', tier:bw.loadout.pick };
-  if(bw.loadout.axe>0 && k<9)  s[k++]={ kind:'tool', tool:'axe',  tier:bw.loadout.axe };
-  if(bw.loadout.shears && k<9) s[k++]={ kind:'tool', tool:'shears' };
-  if(bw.apples>0 && k<9)       s[k++]={ kind:'apple' };
-  if(bw.pearls>0 && k<9)       s[k++]={ kind:'pearl' };
-  if(bw.tnt>0 && k<9)          s[k++]={ kind:'tnt' };
-  if(bw.fireballs>0 && k<9)    s[k++]={ kind:'fireball' };
-  if(bw.water>0 && k<9)        s[k++]={ kind:'bucket' };
-  if(bw.loadout.bow && k<9)    s[k++]={ kind:'bow' };
+  const items=[{ kind:'sword', tier:bw.loadout.sword||1 }];
+  // only carry blocks you actually own — they appear when you buy them and vanish when you run out (like Minecraft)
+  for(const nm of [wool, ...BW_BLOCK_NAMES]){ const id=bwId(nm); if(id && (bw.counts[id]||0)>0) items.push({ kind:'block', name:nm, id }); }
+  if(bw.loadout.pick>0) items.push({ kind:'tool', tool:'pick', tier:bw.loadout.pick });
+  if(bw.loadout.axe>0)  items.push({ kind:'tool', tool:'axe',  tier:bw.loadout.axe });
+  if(bw.loadout.shears) items.push({ kind:'tool', tool:'shears' });
+  if(bw.apples>0)       items.push({ kind:'apple' });
+  if(bw.pearls>0)       items.push({ kind:'pearl' });
+  if(bw.tnt>0)          items.push({ kind:'tnt' });
+  if(bw.fireballs>0)    items.push({ kind:'fireball' });
+  if(bw.water>0)        items.push({ kind:'bucket' });
+  if(bw.loadout.bow)    items.push({ kind:'bow' });
+  // arrange into 9 slots, honouring any dragged-to positions first, then filling gaps in order
+  const s = new Array(9).fill(null), rest=[];
+  for(const it of items){ const p=bwSlotPref[bwItemKey(it)]; if(p!=null && p>=0 && p<9 && !s[p]) s[p]=it; else rest.push(it); }
+  let fi=0; for(const it of rest){ while(fi<9 && s[fi]) fi++; if(fi<9) s[fi++]=it; }
   bw.slots = s;
   for(let i=0;i<9;i++) hotbar[i] = (s[i] && s[i].kind==='block') ? s[i].id : 0;
   if(selSlot<0||selSlot>8) selSlot=0;
@@ -4239,6 +4243,14 @@ function bwDropSelected(){
   else if(st.kind==='bucket'){ if(bw.water<=0) return; bw.water--; }
   else if(st.kind==='bow'){ if(bw.arrows<=0) return; bw.arrows--; }   // drops one arrow
   else return;
+  bwSetHotbar();
+}
+// drag items between hotbar slots in the inventory (Minecraft-style rearranging)
+function bwSwapSlots(from,to){
+  if(from===to || from<0 || to<0 || from>8 || to>8) return;
+  const a=bw.slots[from], b=bw.slots[to];
+  if(a) bwSlotPref[bwItemKey(a)]=to;
+  if(b) bwSlotPref[bwItemKey(b)]=from;
   bwSetHotbar();
 }
 
@@ -4568,6 +4580,9 @@ function bwEnsureUi(){
    #bwInv .bwgrid{display:grid;grid-template-columns:repeat(9,40px);gap:4px}
    #bwInv .bwislot{width:40px;height:40px;background:#8b8b8b;border:2px solid #6f6f6f;border-radius:3px;position:relative;display:flex;align-items:center;justify-content:center}
    #bwInv .bwislot.sel{border-color:#fff}
+   #bwInv .bwislot.drop{outline:2px solid #ffec4d;outline-offset:1px}
+   #bwInv .bwislot[draggable=true]{cursor:grab}
+   #bwInv #bwHotRow .bwislot canvas{pointer-events:none}
    #bwInv .bwislot .cnt{position:absolute;right:2px;bottom:0;font-size:12px;font-weight:800;color:#fff;text-shadow:1px 1px 0 #000}
   `;
   document.head.appendChild(css);
@@ -4792,7 +4807,12 @@ function bwBuildInvScreen(){
     st.appendChild(d); }
   const hr=el.querySelector('#bwHotRow');
   for(let i=0;i<9;i++){ const d=document.createElement('div'); d.className='bwislot'+(i===selSlot?' sel':''); const stk=bw.slots[i];
-    if(stk){ d.appendChild(bwItemIcon(stk,38)); let n=stk.kind==='block'?(bw.counts[stk.id]||0):(stk.kind==='apple'?bw.apples:(stk.kind==='pearl'?bw.pearls:null)); if(n!=null&&(n>1||stk.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; d.appendChild(c); } }
+    if(stk){ d.appendChild(bwItemIcon(stk,38)); let n=stk.kind==='block'?(bw.counts[stk.id]||0):(stk.kind==='apple'?bw.apples:(stk.kind==='pearl'?bw.pearls:(stk.kind==='tnt'?bw.tnt:(stk.kind==='fireball'?bw.fireballs:(stk.kind==='bucket'?bw.water:(stk.kind==='bow'?bw.arrows:null)))))); if(n!=null&&(n>1||stk.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; d.appendChild(c); } }
+    d.draggable=!!stk;                                    // drag to rearrange (Minecraft-style)
+    d.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', String(i)); e.dataTransfer.effectAllowed='move'; });
+    d.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; d.classList.add('drop'); });
+    d.addEventListener('dragleave', ()=>d.classList.remove('drop'));
+    d.addEventListener('drop', e=>{ e.preventDefault(); d.classList.remove('drop'); const from=parseInt(e.dataTransfer.getData('text/plain'),10); if(!isNaN(from)) bwSwapSlots(from, i); });
     hr.appendChild(d); }
 }
 function bwToggleInv(){
@@ -5074,6 +5094,7 @@ window.__mc = {
   bwKit(){ bw.loadout.sword=3; bw.loadout.pick=2; bw.loadout.axe=2; bw.loadout.shears=true; bw.loadout.bow=true; bw.apples=1; bw.pearls=1; bw.tnt=1; bw.fireballs=1; bw.water=1; bw.arrows=8; bwApplyLocalGear(); bwSetHotbar(); },
   bwGiveNamed(name,n){ const id=bwId(name); if(id) bwGiveBlock(id, n||1); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); }, bwDrop(){ bwDropSelected(); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); },
   bwSetRes(i,g,d,e){ bw.res={iron:i|0,gold:g|0,diamond:d|0,emerald:e|0}; bwUpdateHud(); if(bwInvOpen) bwBuildInvScreen(); }, bwOpenInv(){ if(!bwInvOpen) bwToggleInv(); },
+  bwSwap(f,t){ bwSwapSlots(f,t); return bw.slots.map(s=>s?bwItemKey(s):null); },
   hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
   tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
   remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, color:p.color||'', isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), isBlock:!!(p.model&&p.model.userData&&p.model.userData.isBlock), sx:+p.model.scale.x.toFixed(2) })); },
