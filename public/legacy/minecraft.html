@@ -4133,7 +4133,7 @@ function bwHandle(m){
       bwBanner((BW_TEAMS[m.team].name.toUpperCase())+' BED DESTROYED', BW_TEAMS[m.team].color, 2600); bwUpdateHud(); return true;
     case 'bwitem': bwAddItem(m); return true;
     case 'bwitemgone': bwRemoveItem(m.id); return true;
-    case 'bwres': bw.res=m.res; bwUpdateHud(); return true;
+    case 'bwres': bw.res=m.res; bwUpdateHud(); if(bwInvOpen) bwBuildInvScreen(); return true;
     case 'bwbuyok': bwOnBuy(m); return true;
     case 'bwbuyfail': bwFlashShop(m.item, m.reason==='have'?'Already owned':'Not enough resources'); return true;
     case 'bwhp': { if(m.id===mp.id){ bw.hp=m.hp; player.hp=m.hp; showHurt(); bwUpdateHud(); } const e=bw.players.get(m.id); if(e) e.hp=m.hp; } return true;
@@ -4262,6 +4262,17 @@ function bwItemIcon(stack, size){
     R(6,2,4,1,'#caa15a'); R(6,3,4,1,'#6e4a24');                                    // cork + neck
     R(5,7,6,6,liq); R(5,4,6,3,'#d9e6ee'); R(6,6,4,1,liq); R(4,8,1,4,'#cfe0ea'); R(11,8,1,4,'#cfe0ea');   // glass bulb + liquid
     P(6,9,'#ffffff');                                                              // glass glint
+  } else if(stack.kind==='res'){
+    const rk=stack.res;
+    if(rk==='iron'||rk==='gold'){
+      const base=rk==='iron'?'#d6d6d6':'#f4c542', hi=rk==='iron'?'#f2f2f2':'#ffe490', lo=rk==='iron'?'#9c9c9c':'#c1901a';
+      R(4,7,8,3,base); R(4,7,8,1,hi); R(4,9,8,1,lo); R(3,8,1,1,base); R(12,8,1,1,base);   // ingot bar
+      P(5,8,hi); P(6,8,hi);
+    } else {
+      const base=rk==='diamond'?'#4fd6e6':'#37c66a', hi=rk==='diamond'?'#c3f4fb':'#a9f0c1', lo=rk==='diamond'?'#2a9fb0':'#1e8a47';
+      R(7,3,2,1,hi); R(6,4,4,1,base); R(5,5,6,1,base); R(4,6,8,2,base); R(5,8,6,1,lo); R(6,9,4,1,lo); R(7,10,2,1,lo);   // faceted gem
+      P(7,4,hi); P(6,6,hi); P(8,5,hi);
+    }
   }
   return c;
 }
@@ -4533,8 +4544,7 @@ function bwUpdateHud(){
   const beds=document.getElementById('bwBeds');
   beds.innerHTML = BW_TEAMS.map(t=>{ const alive=bw.beds[t.id]; const mine=t.id===bw.team;
     return '<div class="bt"><span class="sq" style="background:#'+t.color.toString(16).padStart(6,'0')+'"></span>'+(alive?'🛏️':'❌')+(mine?' <span style="color:#ffd54a">YOU</span>':'')+'</div>'; }).join('');
-  const res=document.getElementById('bwRes');
-  res.innerHTML = ['iron','gold','diamond','emerald'].map(k=>'<div class="r"><span class="d" style="background:#'+BW_RESCOL[k].toString(16).padStart(6,'0')+'"></span>'+(bw.res[k]||0)+'</div>').join('');
+  const res=document.getElementById('bwRes'); res.innerHTML='';   // resources are inventory items now (press E), not a side counter
   document.getElementById('bwHealth').innerHTML = bw.phase==='playing' && !bw.eliminated ? bwHealthStr() : '';
   const lobby=document.getElementById('bwLobby'); const p=document.getElementById('bwLobbyP');
   if(bw.phase==='lobby'){ lobby.style.display='block'; p.textContent = 'Press Start to begin (bots not included — grab a friend!).'; }
@@ -4730,7 +4740,11 @@ function bwBuildInvScreen(){
   const arm=el.querySelector('#bwArmor');
   ['helmet','chest','legs','boots'].forEach(pc=>{ const d=document.createElement('div'); d.className='bwislot'; if(armorTier>0) d.appendChild(bwArmorIcon(pc,armorTier)); arm.appendChild(d); });
   const cr=el.querySelector('#bwCraft'); for(let i=0;i<5;i++){ const d=document.createElement('div'); d.className='bwislot'+(i===4?' res':''); cr.appendChild(d); }
-  const st=el.querySelector('#bwStore'); for(let i=0;i<27;i++){ const d=document.createElement('div'); d.className='bwislot'; st.appendChild(d); }
+  // resources live in the backpack as real item stacks (Minecraft 64-stacks), not a side counter
+  const resStacks=[]; for(const rk of ['iron','gold','diamond','emerald']){ let n=bw.res[rk]||0; while(n>0){ const q=Math.min(64,n); resStacks.push({res:rk, count:q}); n-=q; } }
+  const st=el.querySelector('#bwStore'); for(let i=0;i<27;i++){ const d=document.createElement('div'); d.className='bwislot';
+    if(i<resStacks.length){ const rs=resStacks[i]; d.appendChild(bwItemIcon({kind:'res', res:rs.res}, 38)); const c=document.createElement('span'); c.className='cnt'; c.textContent=rs.count; d.appendChild(c); }
+    st.appendChild(d); }
   const hr=el.querySelector('#bwHotRow');
   for(let i=0;i<9;i++){ const d=document.createElement('div'); d.className='bwislot'+(i===selSlot?' sel':''); const stk=bw.slots[i];
     if(stk){ d.appendChild(bwItemIcon(stk,38)); let n=stk.kind==='block'?(bw.counts[stk.id]||0):(stk.kind==='apple'?bw.apples:(stk.kind==='pearl'?bw.pearls:null)); if(n!=null&&(n>1||stk.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; d.appendChild(c); } }
@@ -5013,6 +5027,7 @@ window.__mc = {
   clearVote(){ localStorage.removeItem('leoncraft_pollvoted'); },
   bwKit(){ bw.loadout.sword=3; bw.loadout.pick=2; bw.loadout.axe=2; bw.loadout.shears=true; bw.loadout.bow=true; bw.apples=1; bw.pearls=1; bw.tnt=1; bw.fireballs=1; bw.water=1; bw.arrows=8; bwApplyLocalGear(); bwSetHotbar(); },
   bwGiveNamed(name,n){ const id=bwId(name); if(id) bwGiveBlock(id, n||1); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); }, bwDrop(){ bwDropSelected(); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); },
+  bwSetRes(i,g,d,e){ bw.res={iron:i|0,gold:g|0,diamond:d|0,emerald:e|0}; bwUpdateHud(); if(bwInvOpen) bwBuildInvScreen(); }, bwOpenInv(){ if(!bwInvOpen) bwToggleInv(); },
   hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
   tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
   remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, color:p.color||'', isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), isBlock:!!(p.model&&p.model.userData&&p.model.userData.isBlock), sx:+p.model.scale.x.toFixed(2) })); },
