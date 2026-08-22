@@ -790,6 +790,17 @@ function glassTex(seed){
     if (r()<0.06) return [255,255,255,150];
     return [180,205,220,55]; };
 }
+// glass PANE: a framed window (thick border + centre muntin cross) so its icon reads
+// differently from a solid glass block
+function glassPaneTex(seed){
+  const r=rng(seed);
+  return (x,y)=>{ const frame = x<=1||y<=1||x>=14||y>=14;
+    const cross = x===7||x===8||y===7||y===8;
+    if (frame) return [226,240,248,250];
+    if (cross) return [205,226,238,205];
+    if (r()<0.05) return [255,255,255,120];
+    return [180,206,222,35]; };
+}
 function waterTex(seed){
   const r=rng(seed), a=rgb(0x2f5bd0), b=rgb(0x3a6fe0);
   return (x,y)=> { const c = ((x+y)%5<2)?a:b; const v=vary(c,10,r); return [v[0],v[1],v[2],190]; };
@@ -949,6 +960,12 @@ function mineralBlock(seed, hex){ const r=rng(seed), base=rgb(hex);
 function stainedGlass(seed, hex){ const r=rng(seed), base=rgb(hex);
   return (x,y)=>{ const edge=x===0||y===0||x===15||y===15; const v=vary(base, edge?4:8, r);
     return [v[0],v[1],v[2], edge?235:110]; }; }
+// stained-glass PANE: framed window version, brighter frame + muntin cross, so the icon differs from the solid block
+function stainedGlassPaneTex(seed, hex){ const r=rng(seed), base=rgb(hex);
+  return (x,y)=>{ const frame=x<=1||y<=1||x>=14||y>=14; const cross=x===7||x===8||y===7||y===8; const v=vary(base, frame?4:8, r);
+    if(frame) return [Math.min(255,v[0]*1.35)|0, Math.min(255,v[1]*1.35)|0, Math.min(255,v[2]*1.35)|0, 250];
+    if(cross) return [Math.min(255,v[0]*1.15)|0, Math.min(255,v[1]*1.15)|0, Math.min(255,v[2]*1.15)|0, 205];
+    return [v[0],v[1],v[2], 80]; }; }
 function stainedClayTex(seed, hex){ const r=rng(seed), base=rgb(hex);
   return (x,y)=>{ let c=vary(base,9,r); if(r()<0.16) c=vary(base,-8,r);
     if((x===2||x===12)&&y>1&&y<14) c=c.map(v=>v*0.93|0); return c; }; }
@@ -1050,6 +1067,9 @@ for(const e of EXTRA){
     if(e.bottom) paint(e.name+'_bottom', e.bottom);
   }
 }
+// glass panes get their own framed "window" tiles so their inventory icon differs from the solid glass block
+paint('glass_pane', glassPaneTex(9300));
+DYES.forEach(([n,,glass],i)=> paint(n+'_stained_glass_pane', stainedGlassPaneTex(9310+i, glass)));
 // a door texture per wood type — painted directly, NOT via EXTRA, so the EXTRA block
 // loop doesn't also define a plain (non-door) block that shadows the real door block
 WOODS.forEach((w,i)=> paint(w.id+'_door', doorTex(w.plank, 9100+i)));
@@ -1280,8 +1300,8 @@ WOODS.forEach(w=>{
 });
 B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:false, cutout:true });
 // glass panes: thin, see-through panels that connect to neighbours (clear + 16 stained colours)
-B.glass_pane = def('glass_pane', { tiles:T('glass'), pane:true, opaque:false });
-for(const [n] of DYES) B[n+'_stained_glass_pane'] = def(n+'_stained_glass_pane', { tiles:T(n+'_stained_glass'), pane:true, opaque:false });
+B.glass_pane = def('glass_pane', { tiles:T('glass_pane'), pane:true, opaque:false });
+for(const [n] of DYES) B[n+'_stained_glass_pane'] = def(n+'_stained_glass_pane', { tiles:T(n+'_stained_glass_pane'), pane:true, opaque:false });
 // a sign for every wood type (typeable standing sign)
 WOODS.forEach(w=> B[w.id+'_sign'] = def(w.id+'_sign', { tiles:T(w.id+'_planks'), sign:true, solid:false, opaque:false, hex:w.plank }));
 B.purpular_sign = def('purpular_sign', { tiles:T('purpular_planks'), sign:true, solid:false, opaque:false, hex:0x8a5aa8 });
