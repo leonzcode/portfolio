@@ -547,7 +547,6 @@
     </div>
     <button class="btn btn-sub" id="pauseSuggestBtn">Suggest a feature&hellip;</button>
     <div class="menuDivider"></div>
-    <button class="btn" id="regenBtn">New world</button>
     <button class="btn" id="menuBtn">Main menu</button>
     <div class="menuDivider"></div>
     <div class="codeRow">
@@ -3386,22 +3385,13 @@ function startGame(){
   rebuildSignObjs();                 // (re)create sign text now that the scene exists
   if(!pollBlocking) canvas.requestPointerLock();   // the poll grabs the cursor instead when it's blocking
 }
-function pause(){ state=PAUSE; pauseEl.hidden=false; document.getElementById('regenBtn').hidden = mp.active; document.exitPointerLock(); }
+function pause(){ state=PAUSE; pauseEl.hidden=false; document.exitPointerLock(); }
 function resume(){ state=PLAY; pauseEl.hidden=true; canvas.requestPointerLock(); }
 function startSingleplayer(){
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
   spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
   spSave();            // pin the seed so even a brand-new world reloads identically
-  for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
-  chunks.clear(); genQueue=[];
-  startGame();
-}
-function regen(){
-  spSeed=(Math.random()*1e9)|0; seed=spSeed; noise=makeNoise(seed);
-  spEdits={}; spDoors={}; spBeds={}; spStairs={}; spLadders={}; spSigns={}; spPrg={}; spTrapdoors={}; spSlabs={};
-  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear();
-  spSave();   // brand-new solo world, persisted immediately
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
   startGame();
@@ -3433,7 +3423,6 @@ function wireCodeBox(inputId, btnId, msgId){
 wireCodeBox('menuCode','menuCodeBtn','menuCodeMsg');
 wireCodeBox('pauseCode','pauseCodeBtn','pauseCodeMsg');
 document.getElementById('resumeBtn').addEventListener('click', resume);
-document.getElementById('regenBtn').addEventListener('click', regen);
 document.getElementById('menuBtn').addEventListener('click', toMenu);
 document.getElementById('leaveBedBtn').addEventListener('click', wakeUp);
 
