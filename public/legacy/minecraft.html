@@ -4013,7 +4013,7 @@ const BW_RESNAME = { iron:'Iron', gold:'Gold', diamond:'Diamond', emerald:'Emera
 let bwMode = false;   // makes chunk generation produce void + prefab instead of terrain
 const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,diamond:0,emerald:0},
   loadout:{sword:1,armor:1,pick:0,axe:0,shears:false}, beds:[true,true,true,true], teams:[], players:new Map(),
-  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, tnt:0, fireballs:0, arrows:0, water:0, slots:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}], projectiles:[], explosions:[], tnts:[], speedUntil:0, jumpUntil:0, invisUntil:0 };
+  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, tnt:0, fireballs:0, arrows:0, water:0, slots:[], inv:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}], projectiles:[], explosions:[], tnts:[], speedUntil:0, jumpUntil:0, invisUntil:0 };
 function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
@@ -4220,12 +4220,12 @@ function bwSetHotbar(){
   if(bw.fireballs>0)    items.push({ kind:'fireball' });
   if(bw.water>0)        items.push({ kind:'bucket' });
   if(bw.loadout.bow)    items.push({ kind:'bow' });
-  // arrange into 9 slots, honouring any dragged-to positions first, then filling gaps in order
-  const s = new Array(9).fill(null), rest=[];
-  for(const it of items){ const p=bwSlotPref[bwItemKey(it)]; if(p!=null && p>=0 && p<9 && !s[p]) s[p]=it; else rest.push(it); }
-  let fi=0; for(const it of rest){ while(fi<9 && s[fi]) fi++; if(fi<9) s[fi++]=it; }
-  bw.slots = s;
-  for(let i=0;i<9;i++) hotbar[i] = (s[i] && s[i].kind==='block') ? s[i].id : 0;
+  // arrange into a 36-slot inventory (0-8 hotbar, 9-35 backpack): dragged-to positions first, then fill hotbar, then backpack
+  const inv = new Array(36).fill(null), rest=[];
+  for(const it of items){ const p=bwSlotPref[bwItemKey(it)]; if(p!=null && p>=0 && p<36 && !inv[p]) inv[p]=it; else rest.push(it); }
+  let fi=0; for(const it of rest){ while(fi<36 && inv[fi]) fi++; if(fi<36) inv[fi++]=it; }
+  bw.inv = inv; bw.slots = inv.slice(0,9);
+  for(let i=0;i<9;i++) hotbar[i] = (bw.slots[i] && bw.slots[i].kind==='block') ? bw.slots[i].id : 0;
   if(selSlot<0||selSlot>8) selSlot=0;
   renderHotbar(); if(bwInvOpen) bwBuildInvScreen(); bwApplyLocalGear();
 }
@@ -4245,10 +4245,11 @@ function bwDropSelected(){
   else return;
   bwSetHotbar();
 }
-// drag items between hotbar slots in the inventory (Minecraft-style rearranging)
+// drag items between any inventory slots — hotbar (0-8) or backpack (9-35), Minecraft-style
 function bwSwapSlots(from,to){
-  if(from===to || from<0 || to<0 || from>8 || to>8) return;
-  const a=bw.slots[from], b=bw.slots[to];
+  if(from===to || from<0 || to<0 || from>35 || to>35) return;
+  const inv=bw.inv||[]; const a=inv[from], b=inv[to];
+  if(!a && !b) return;
   if(a) bwSlotPref[bwItemKey(a)]=to;
   if(b) bwSlotPref[bwItemKey(b)]=from;
   bwSetHotbar();
@@ -4788,6 +4789,18 @@ function bwArmorIcon(piece,tier){
   else if(piece==='boots'){ R(3,4,4,6); R(9,4,4,6); R(3,10,5,3); R(8,10,5,3); }
   return c;
 }
+function bwSlotCount(stk){ if(!stk) return null; return stk.kind==='block'?(bw.counts[stk.id]||0):(stk.kind==='apple'?bw.apples:(stk.kind==='pearl'?bw.pearls:(stk.kind==='tnt'?bw.tnt:(stk.kind==='fireball'?bw.fireballs:(stk.kind==='bucket'?bw.water:(stk.kind==='bow'?bw.arrows:null)))))); }
+// one inventory cell that can be dragged (if it holds an item) and always accepts a drop, for slot index `idx` (0-35)
+function bwInvSlotEl(idx, stk, sel){
+  const d=document.createElement('div'); d.className='bwislot'+(sel?' sel':'');
+  if(stk){ d.appendChild(bwItemIcon(stk,38)); const n=bwSlotCount(stk); if(n!=null&&(n>1||stk.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; d.appendChild(c); }
+    d.draggable=true;
+    d.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', String(idx)); e.dataTransfer.effectAllowed='move'; }); }
+  d.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; d.classList.add('drop'); });
+  d.addEventListener('dragleave', ()=>d.classList.remove('drop'));
+  d.addEventListener('drop', e=>{ e.preventDefault(); d.classList.remove('drop'); const from=parseInt(e.dataTransfer.getData('text/plain'),10); if(!isNaN(from)) bwSwapSlots(from, idx); });
+  return d;
+}
 function bwBuildInvScreen(){
   bwEnsureUi();
   let el=document.getElementById('bwInv');
@@ -4800,20 +4813,16 @@ function bwBuildInvScreen(){
   const arm=el.querySelector('#bwArmor');
   ['helmet','chest','legs','boots'].forEach(pc=>{ const d=document.createElement('div'); d.className='bwislot'; if(armorTier>0) d.appendChild(bwArmorIcon(pc,armorTier)); arm.appendChild(d); });
   const cr=el.querySelector('#bwCraft'); for(let i=0;i<5;i++){ const d=document.createElement('div'); d.className='bwislot'+(i===4?' res':''); cr.appendChild(d); }
-  // resources live in the backpack as real item stacks (Minecraft 64-stacks), not a side counter
+  // resources fill the backpack as real 64-stacks (Minecraft), flowing around any items you've dragged there
   const resStacks=[]; for(const rk of ['iron','gold','diamond','emerald']){ let n=bw.res[rk]||0; while(n>0){ const q=Math.min(64,n); resStacks.push({res:rk, count:q}); n-=q; } }
-  const st=el.querySelector('#bwStore'); for(let i=0;i<27;i++){ const d=document.createElement('div'); d.className='bwislot';
-    if(i<resStacks.length){ const rs=resStacks[i]; d.appendChild(bwItemIcon({kind:'res', res:rs.res}, 38)); const c=document.createElement('span'); c.className='cnt'; c.textContent=rs.count; d.appendChild(c); }
+  const inv=bw.inv||[]; let ri=0;
+  const st=el.querySelector('#bwStore');
+  for(let bi=0; bi<27; bi++){ const idx=9+bi; const stk=inv[idx];
+    const d=bwInvSlotEl(idx, stk, false);   // items are draggable; empty slots are valid drop targets
+    if(!stk && ri<resStacks.length){ const rs=resStacks[ri++]; d.appendChild(bwItemIcon({kind:'res', res:rs.res}, 38)); const c=document.createElement('span'); c.className='cnt'; c.textContent=rs.count; d.appendChild(c); }
     st.appendChild(d); }
   const hr=el.querySelector('#bwHotRow');
-  for(let i=0;i<9;i++){ const d=document.createElement('div'); d.className='bwislot'+(i===selSlot?' sel':''); const stk=bw.slots[i];
-    if(stk){ d.appendChild(bwItemIcon(stk,38)); let n=stk.kind==='block'?(bw.counts[stk.id]||0):(stk.kind==='apple'?bw.apples:(stk.kind==='pearl'?bw.pearls:(stk.kind==='tnt'?bw.tnt:(stk.kind==='fireball'?bw.fireballs:(stk.kind==='bucket'?bw.water:(stk.kind==='bow'?bw.arrows:null)))))); if(n!=null&&(n>1||stk.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; d.appendChild(c); } }
-    d.draggable=!!stk;                                    // drag to rearrange (Minecraft-style)
-    d.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', String(i)); e.dataTransfer.effectAllowed='move'; });
-    d.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; d.classList.add('drop'); });
-    d.addEventListener('dragleave', ()=>d.classList.remove('drop'));
-    d.addEventListener('drop', e=>{ e.preventDefault(); d.classList.remove('drop'); const from=parseInt(e.dataTransfer.getData('text/plain'),10); if(!isNaN(from)) bwSwapSlots(from, i); });
-    hr.appendChild(d); }
+  for(let i=0;i<9;i++) hr.appendChild(bwInvSlotEl(i, bw.slots[i], i===selSlot));   // hotbar row (drag between here and the backpack)
 }
 function bwToggleInv(){
   if(!bw.active) return;
@@ -5094,7 +5103,7 @@ window.__mc = {
   bwKit(){ bw.loadout.sword=3; bw.loadout.pick=2; bw.loadout.axe=2; bw.loadout.shears=true; bw.loadout.bow=true; bw.apples=1; bw.pearls=1; bw.tnt=1; bw.fireballs=1; bw.water=1; bw.arrows=8; bwApplyLocalGear(); bwSetHotbar(); },
   bwGiveNamed(name,n){ const id=bwId(name); if(id) bwGiveBlock(id, n||1); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); }, bwDrop(){ bwDropSelected(); return bw.slots.map(s=>s?(s.kind+(s.id?(':'+(bw.counts[s.id]||0)):'')):null); },
   bwSetRes(i,g,d,e){ bw.res={iron:i|0,gold:g|0,diamond:d|0,emerald:e|0}; bwUpdateHud(); if(bwInvOpen) bwBuildInvScreen(); }, bwOpenInv(){ if(!bwInvOpen) bwToggleInv(); },
-  bwSwap(f,t){ bwSwapSlots(f,t); return bw.slots.map(s=>s?bwItemKey(s):null); },
+  bwSwap(f,t){ bwSwapSlots(f,t); return (bw.inv||[]).map(s=>s?bwItemKey(s):null); },
   hotbar0(){ return hotbar[0]; }, stickId(){ return STICK_ITEM; }, playerPos(){ return [+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)]; },
   tp(x,y,z){ player.pos.set(x,y,z); player.vel.set(0,0,0); mpSend({type:'pos', x:+x.toFixed(2), y:+y.toFixed(2), z:+z.toFixed(2), yaw:+player.yaw.toFixed(3), pitch:+player.pitch.toFixed(3)}); },
   remoteBodies(){ return [...mp.players.values()].map(p=>({ id:p.id, body:p.body, color:p.color||'', isPig:!!(p.model&&p.model.userData&&p.model.userData.isPig), isBlock:!!(p.model&&p.model.userData&&p.model.userData.isBlock), sx:+p.model.scale.x.toFixed(2) })); },
