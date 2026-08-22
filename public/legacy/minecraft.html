@@ -308,7 +308,7 @@
   #pollMini .pmTot{ font-size:.78em; color:#9aa4ad; }
   /* server list + create-server (Minecraft-styled) */
   .srvList{ width:460px; max-width:88vw; max-height:44vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding:2px; }
-  .srvCard{ display:flex; align-items:center; gap:12px; padding:9px 12px; cursor:pointer;
+  .srvCard{ position:relative; display:flex; align-items:center; gap:12px; padding:9px 12px; cursor:pointer;
     background:#6f6f6f; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
   .srvCard:hover{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
   .srvCard .ic{ width:40px; height:40px; flex:0 0 40px; image-rendering:pixelated; background:#555; border:1px solid #333; }
@@ -319,6 +319,9 @@
   .srvDel{ flex:0 0 auto; font-family:inherit; font-size:13px; color:#fff; padding:6px 12px; cursor:pointer;
     background:#7a7a7a; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
   .srvDel:hover{ filter:brightness(1.12); }
+  .srvDelX{ position:absolute; top:2px; right:2px; width:17px; height:17px; padding:0; line-height:13px; font-family:inherit; font-size:13px; color:#fff; cursor:pointer; z-index:2;
+    background:#b23a2a; border:2px solid; border-color:#d97b6f #611 #611 #d97b6f; }
+  .srvDelX:hover{ filter:brightness(1.15); }
   .srvNote{ font-size:12.5px; min-height:16px; color:#ffec4d; text-align:center; text-shadow:1px 1px 0 rgba(0,0,0,.5); }
   .createWrap{ display:flex; gap:22px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
   .createLeft{ display:flex; flex-direction:column; gap:10px; width:300px; max-width:84vw; }
@@ -4320,7 +4323,7 @@ function renderServerList(){
     card.appendChild(ic); card.appendChild(info);
     card.addEventListener('click', ()=>{ if(!card._confirming) joinServer(s); });
     if(adminMode && s.id!=='original'){                       // admins can delete servers
-      const del=document.createElement('button'); del.className='srvDel'; del.textContent='Delete'; del.title='Delete this server';
+      const del=document.createElement('button'); del.className='srvDelX'; del.textContent='×'; del.title='Delete this server';
       del.addEventListener('click', e=>{ e.stopPropagation(); confirmDeleteServer(s, card); });
       card.appendChild(del);
     }
