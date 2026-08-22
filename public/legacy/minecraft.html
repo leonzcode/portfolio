@@ -316,6 +316,9 @@
   .srvCard .nm{ font-size:15px; color:#fff; text-shadow:1px 1px 0 rgba(0,0,0,.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .srvCard .meta{ font-size:12px; color:#d7d7d7; }
   .srvCard .meta .lock{ color:#ffd24a; } .srvCard .meta .pub{ color:#9be07f; }
+  .srvDel{ flex:0 0 auto; font-family:inherit; font-size:13px; color:#fff; padding:6px 12px; cursor:pointer;
+    background:#7a7a7a; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
+  .srvDel:hover{ filter:brightness(1.12); }
   .srvNote{ font-size:12.5px; min-height:16px; color:#ffec4d; text-align:center; text-shadow:1px 1px 0 rgba(0,0,0,.5); }
   .createWrap{ display:flex; gap:22px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
   .createLeft{ display:flex; flex-direction:column; gap:10px; width:300px; max-width:84vw; }
@@ -361,7 +364,7 @@
     <div class="pmRow"><span class="pmY">Yes</span> <b id="pmYes">0%</b> &nbsp;<span class="pmN">No</span> <b id="pmNo">0%</b></div>
     <div class="pmTot" id="pmTot">0 votes</div>
   </div>
-  <div class="pmPill" id="pmPill" title="Show vote count (V)">📊</div>
+  <div class="pmPill" id="pmPill" title="Show vote count (V)">Votes</div>
 </div>
 <div class="screen" id="pollScreen" hidden>
   <div class="pollPanel">
@@ -400,7 +403,7 @@
     <button class="btn btn-sub" id="suggestBtn">Suggest a feature&hellip;</button>
     <div class="menuDivider"></div>
     <div class="codeRow">
-      <input class="codeField" id="menuCode" type="text" maxlength="16" placeholder="Secret code" autocomplete="off" spellcheck="false">
+      <input class="codeField" id="menuCode" type="password" maxlength="16" placeholder="Secret code" autocomplete="off" spellcheck="false">
       <button class="btn" id="menuCodeBtn">Enter</button>
     </div>
     <div class="codeMsg" id="menuCodeMsg"></div>
@@ -421,6 +424,7 @@
 <div class="screen" id="servers" hidden>
   <div class="title" style="font-size:30px;">Play Multiplayer</div>
   <div class="ctrlHint">Join a public server, or enter a password for a private one.</div>
+  <input class="nameField" id="srvSearch" type="text" maxlength="24" placeholder="Search servers by name" autocomplete="off" spellcheck="false">
   <div class="srvList" id="srvList"></div>
   <div class="srvNote" id="srvNote"></div>
   <div class="ctrlActions">
@@ -465,11 +469,12 @@
 <div class="screen" id="pwPrompt" hidden>
   <div class="pwPanel">
     <div class="pwTitle" id="pwTitle">Private server</div>
-    <div class="ctrlHint">Enter the password to join.</div>
+    <div class="ctrlHint">Enter the password to play, or join as a spectator to watch without building.</div>
     <input class="nameField" id="pwInput" type="password" maxlength="32" placeholder="Password" autocomplete="off" spellcheck="false">
     <div class="codeMsg" id="pwMsg"></div>
     <div class="ctrlActions">
       <button class="btn" id="pwJoinBtn">Join</button>
+      <button class="btn" id="pwSpectateBtn">Join as spectator</button>
       <button class="btn" id="pwCancelBtn">Back</button>
     </div>
   </div>
@@ -522,7 +527,7 @@
     <div class="skinGallery" id="skinPresets"></div>
   </div>
   <div class="skinGalleryWrap">
-    <div class="skinLabel">My skins — click to load, ✎ rename, ✕ delete</div>
+    <div class="skinLabel">My skins - click to load, rename, or delete</div>
     <div class="skinGallery" id="skinGallery"></div>
   </div>
   <div class="ctrlActions">
@@ -546,7 +551,7 @@
     <button class="btn" id="menuBtn">Main menu</button>
     <div class="menuDivider"></div>
     <div class="codeRow">
-      <input class="codeField" id="pauseCode" type="text" maxlength="16" placeholder="Secret code" autocomplete="off" spellcheck="false">
+      <input class="codeField" id="pauseCode" type="password" maxlength="16" placeholder="Secret code" autocomplete="off" spellcheck="false">
       <button class="btn" id="pauseCodeBtn">Enter</button>
     </div>
     <div class="codeMsg" id="pauseCodeMsg"></div>
@@ -2197,20 +2202,22 @@ function setLocalBody(kind){
   headPivot = body.userData.headPivot; body.visible=wasVisible; scene.add(body);
 }
 // floating name tag above a remote player's head
-function makeNametag(name, color, admin){
-  const c=document.createElement('canvas'); c.width=256; c.height=64;
+function makeNametag(name, color, admin, spectator){
+  const c=document.createElement('canvas'); c.width=320; c.height=64;
+  const HC=c.width/2;
   const g=c.getContext('2d'); g.textBaseline='middle';
   const nameFont='bold 26px monospace', admFont='italic bold 22px monospace';
-  g.font=admFont; const admW = admin ? g.measureText('ADMIN ').width : 0;
+  const tag = admin ? ' ADMIN' : (spectator ? ' SPECTATOR' : '');
+  g.font=admFont; const admW = tag ? g.measureText(tag).width : 0;
   g.font=nameFont; const nameW=g.measureText(name).width;
-  const total=Math.min(238, admW+nameW), w=total+18;
-  g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(128-w/2, 18, w, 30);
-  let x=128-total/2; g.textAlign='left';
-  if(admin){ g.font=admFont; g.fillStyle='#42e042'; g.fillText('ADMIN', x, 35); x+=admW; }
-  g.font=nameFont; g.fillStyle=color||'#fff'; g.fillText(name, x, 34);
+  const total=Math.min(c.width-18, nameW+admW), w=total+18;
+  g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(HC-w/2, 18, w, 30);
+  let x=HC-total/2; g.textAlign='left';
+  g.font=nameFont; g.fillStyle=color||'#fff'; g.fillText(name, x, 34); x+=nameW;
+  if(tag){ g.font=admFont; g.fillStyle= admin?'#42e042':'#c4ccd6'; g.fillText(tag, x, 35); }
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter;
   const s=new THREE.Sprite(new THREE.SpriteMaterial({ map:t, transparent:true, depthTest:false }));
-  s.scale.set(1.7,0.42,1); s.position.y=2.15; s.renderOrder=999;
+  s.scale.set(1.7*c.width/256,0.42,1); s.position.y=2.15; s.renderOrder=999;
   s.raycast=()=>{};   // never block the punch/attack raycast (sprites also need raycaster.camera)
   return s;
 }
@@ -2471,7 +2478,7 @@ const keys = Object.create(null);
 // and saved to localStorage. Tokens: mouse buttons are 'mouse0' (left) / 'mouse1' (middle) /
 // 'mouse2' (right); keyboard keys are their lowercased key name. Held state lives in `keys` for
 // both, so a movement action can be bound to a mouse button and vice-versa. ----
-const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', sprint2:'r', zoom:'c', drop:'q', votes:'v', attack:'mouse0', use:'mouse2', pick:'mouse1', inventory:'e', fly:'f', chat:'t', camera:'f5', debug:'f3', cameraCombo:'f+5' };
+const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', sprint2:'r', zoom:'c', drop:'q', votes:'v', attack:'mouse0', use:'mouse2', pick:'mouse1', break2:'f', place2:'g', pick2:'h', inventory:'e', chat:'t', camera:'f5', debug:'f3', cameraCombo:'' };
 let binds = Object.assign({}, DEFAULT_BINDS);
 try{ const sb=JSON.parse(localStorage.getItem('leoncraft_binds')||'{}'); for(const a in DEFAULT_BINDS) if(typeof sb[a]==='string' && sb[a]) binds[a]=sb[a]; }catch(e){}
 function saveBinds(){ try{ localStorage.setItem('leoncraft_binds', JSON.stringify(binds)); }catch(e){} }
@@ -2484,14 +2491,16 @@ const BIND_ACTIONS = [
   {id:'votes',label:'Toggle vote count'},
   {id:'attack',label:'Attack / break'},{id:'use',label:'Use / place'},
   {id:'pick',label:'Pick block'},      {id:'inventory',label:'Open inventory'},
-  {id:'chat',label:'Open chat'},       {id:'fly',label:'Toggle fly'},
-  {id:'camera',label:'Change camera'}, {id:'debug',label:'Debug overlay'},
+  {id:'chat',label:'Open chat'},       {id:'camera',label:'Change camera'},
+  {id:'debug',label:'Debug overlay'},
+  {id:'break2',label:'Break (key)'},   {id:'place2',label:'Place (key)'},
+  {id:'pick2',label:'Pick block (key)'},
 ];
 function keyLabel(k){
   if(k==='mouse0') return 'Left Click'; if(k==='mouse1') return 'Middle Click'; if(k==='mouse2') return 'Right Click';
   if(k && k.slice(0,5)==='mouse') return 'Mouse '+k.slice(5);
   if(k===' ') return 'Space'; if(k==='control') return 'Ctrl'; if(k==='shift') return 'Shift'; if(k==='alt') return 'Alt';
-  if(k==='arrowup') return 'Up'; if(k==='arrowdown') return 'Down'; if(k==='arrowleft') return '←'; if(k==='arrowright') return '→';
+  if(k==='arrowup') return 'Up'; if(k==='arrowdown') return 'Down'; if(k==='arrowleft') return 'Left'; if(k==='arrowright') return 'Right';
   if(!k) return '—'; if(k.length===1) return k.toUpperCase();
   return k.charAt(0).toUpperCase()+k.slice(1);
 }
@@ -2499,12 +2508,12 @@ let bindListening = null;   // action id waiting for a new key/button (Controls 
 // key-combo (chord) support: press two keys together to fire an action. Default F+5 = change camera,
 // a handy stand-in for F5 on laptops where the function row needs Fn.
 let comboLatched = false;          // true once a combo fired this hold, so key-repeat doesn't re-fire it
-let flyToggledThisPress = false;   // did the current 'fly' key press toggle flying? (so a combo can undo it)
 let comboListening = null;         // array of captured keys while rebinding the combo (Controls screen)
 function comboKeys(){ const c=(binds.cameraCombo||'').split('+').map(s=>s.trim()).filter(Boolean); return c.length>=2? c : null; }
 function comboLabel(){ const c=comboKeys(); return c? c.map(keyLabel).join(' + ') : '—'; }
 // context-sensitive "use" (right-click by default): open a door/bed/sign, otherwise place
 function useAction(){
+  if(mp.active && mp.spectator) return;     // spectators can't place, open doors, sleep, or edit signs
   if(bw.active){ bwUseAction(); return; }   // Bed Wars: right-click = shop villager / eat apple / place block
   const tb = target && getBlock(target.x,target.y,target.z);
   if(target && isDoor(tb)) toggleDoor(target.x,target.y,target.z);
@@ -2521,13 +2530,15 @@ const DISCRETE_RUN = {
   inventory: e=>{ if(state===PLAY){ pd(e); toggleInv(); } },
   chat:      e=>{ if(state===PLAY && !invOpen){ pd(e); openChat(); } },
   debug:     e=>{ pd(e); dbg.hidden=!dbg.hidden; },
-  fly:       e=>{ if(creative && state===PLAY && !bw.active){ player.flying=!player.flying; player.vel.y=0; flyToggledThisPress=true; } },
   camera:    e=>{ if(state===PLAY){ pd(e); camMode=(camMode+1)%3; } },
   attack:    e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); breakBlock(); } },
   use:       e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },
   pick:      e=>{ if(inWorld()){ pd(e); pickBlock(); } },
+  break2:    e=>{ if(bw.active) return; if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); breakBlock(); } },   // F: keyboard break (same as left click)
+  place2:    e=>{ if(bw.active) return; if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },     // G: keyboard place / use (same as right click; G stays "eat apple" in Bed Wars)
+  pick2:     e=>{ if(bw.active) return; if(inWorld()){ pd(e); pickBlock(); } },                                             // H: keyboard pick block (same as middle click)
 };
-const DISCRETE_LIST = ['inventory','chat','debug','fly','camera','attack','use','pick'];
+const DISCRETE_LIST = ['inventory','chat','debug','camera','attack','use','pick','break2','place2','pick2'];
 function firePress(token, e){ for(const act of DISCRETE_LIST){ if(binds[act]===token) DISCRETE_RUN[act](e); } }
 let pointerLocked = false;
 let chatOpen = false;
@@ -2551,9 +2562,7 @@ addEventListener('keydown', e=>{
   if(k==='/' && state===PLAY && !invOpen){ e.preventDefault(); openChat('/'); return; }   // Minecraft: '/' opens chat pre-filled for a command
   { const ck=comboKeys();   // chord (e.g. F+5): fire once when every key of the combo is held, and swallow this key's own action
     if(ck && ck.includes(k) && ck.every(kk=>keys[kk])){
-      if(!comboLatched){ comboLatched=true; DISCRETE_RUN.camera(e);
-        if(ck.includes(binds.fly) && flyToggledThisPress){ player.flying=!player.flying; player.vel.y=0; flyToggledThisPress=false; }   // undo the incidental fly toggle from the combo's F key
-      }
+      if(!comboLatched){ comboLatched=true; DISCRETE_RUN.camera(e); }
       e.preventDefault(); return;
     } }
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
@@ -2564,7 +2573,6 @@ addEventListener('keydown', e=>{
 });
 addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false;
   const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
-  if(kk===binds.fly) flyToggledThisPress=false;
   if(e.key==='Tab'){ tabShown=false; tabListEl.hidden=true; } });
 addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=false; if(tabListEl) tabListEl.hidden=true; });
 
@@ -3050,12 +3058,15 @@ function punchPlayerUnderCrosshair(){
   if(vp){ dx=vp.x-player.pos.x; dz=vp.z-player.pos.z; }
   const len=Math.hypot(dx,dz)||1;
   const stick = (!bw.active && fx.stick && hotbar[selSlot]===STICK_ITEM);   // tade code: the stick launches its target ~10 blocks
-  mpSend({type: bw.active?'bwhit':'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3), stick:stick});
+  mpSend({type: bw.active?'bwhit':'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3), stick:stick, kb:(stick?(fx.superStick?15:10):0), superStick:(stick&&fx.superStick)});
   return true;
 }
 function breakBlock(){
+  const specHit = mp.active && mp.spectator && fx.superStick;   // tadee code: a spectator may still punch players
+  if(mp.active && mp.spectator && !specHit) return;   // ordinary spectators can't break blocks, punch players or hit mobs
   if(bw.active && bw.dead) return;          // no acting while dead / spectating
   if(punchPlayerUnderCrosshair()) return;   // punching a player takes priority
+  if(mp.active && mp.spectator) return;     // a superStick spectator can punch (above) but still can't break blocks or kill mobs
   if(killMobUnderCrosshair()) return;   // a mob under the crosshair takes the hit next
   if(!target) return;
   const {x,y,z}=target;
@@ -3077,6 +3088,7 @@ function breakBlock(){
   mpSendBlock(x,y,z,0);
 }
 function placeBlock(){
+  if(mp.active && mp.spectator) return;     // spectators can't place blocks
   if(!target) return;
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   const id = hotbar[selSlot]; if(!id) return;
@@ -3676,9 +3688,9 @@ function renderSkinGallery(){
     const cell=document.createElement('div'); cell.className='skinCell'+(s.id===selectedSkinId?' sel':''); cell.title=skinDisplayName(s);
     const img=document.createElement('img'); ensureThumb(s,img); cell.appendChild(img);
     const nm=document.createElement('div'); nm.className='skinName'; nm.textContent=skinDisplayName(s); cell.appendChild(nm);
-    const ren=document.createElement('button'); ren.className='skinRen'; ren.textContent='✎'; ren.title='Rename skin';
+    const ren=document.createElement('button'); ren.className='skinRen'; ren.textContent='R'; ren.title='Rename skin';
     ren.addEventListener('click', ev=>{ ev.stopPropagation(); renameSkin(s.id); }); cell.appendChild(ren);
-    const del=document.createElement('button'); del.className='skinDel'; del.textContent='✕'; del.title='Delete skin';
+    const del=document.createElement('button'); del.className='skinDel'; del.textContent='×'; del.title='Delete skin';
     del.addEventListener('click', ev=>{ ev.stopPropagation(); deleteSkin(s.id); }); cell.appendChild(del);
     cell.addEventListener('click', ()=> selectSkin(s.id));
     el.appendChild(cell);
@@ -3767,7 +3779,7 @@ creative = true;   // locked to creative for now
 /* One shared, persistent server world. The client connects over WebSocket,
    receives the world seed + everyone's edits, then streams its own position,
    block edits and chat, and renders the other players live. */
-const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0, server:'original', serverName:'', border:0 };
+const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0, server:'original', serverName:'', border:0, spectator:false };
 let mpTarget = { server:'original', pw:'' };   // which server the next connect joins
 let adminMode = localStorage.getItem('leoncraft_admin')==='1';   // the 314159 code: join any server + ADMIN tag
 
@@ -3788,11 +3800,7 @@ function renderPoll(){
   document.getElementById('pollYesPct').textContent=yp+'%'; document.getElementById('pollNoPct').textContent=np+'%';
   document.getElementById('pollTotal').textContent = total+' vote'+(total===1?'':'s')+(voted?' • you voted '+voted:'');
 }
-function showPoll(){
-  if(bw.active) return;
-  if(pollVotedChoice()){ renderPollMini(); return; }   // already answered on this computer — straight into the game
-  pollBlocking=true; pollScreenEl.hidden=false; renderPoll(); try{ document.exitPointerLock(); }catch(e){}
-}
+function showPoll(){ pollBlocking=false; if(pollScreenEl) pollScreenEl.hidden=true; if(pollMiniEl) pollMiniEl.hidden=true; }   // poll removed
 function pollPlay(){ pollScreenEl.hidden=true; pollBlocking=false; renderPollMini(); if(state===PLAY){ try{ canvas.requestPointerLock(); }catch(e){} } }
 function pollCast(choice){ if(pollVotedChoice()) return; localStorage.setItem('leoncraft_pollvoted', choice); pollData[choice]++; mpSend({type:'pollvote', device:pollDeviceId(), choice}); renderPoll(); }
 document.getElementById('pollYes').addEventListener('click', ()=>pollCast('yes'));
@@ -3801,16 +3809,7 @@ document.getElementById('pollPlay').addEventListener('click', ()=>pollPlay());
 // ---- live vote tally in the corner (top-right), minimizable ----
 const pollMiniEl=document.getElementById('pollMini');
 let pollMiniMin = localStorage.getItem('leoncraft_pollmin')==='1';
-function renderPollMini(){
-  const show = mp.active && !bw.active && !pollBlocking;
-  pollMiniEl.hidden = !show;
-  if(!show) return;
-  pollMiniEl.classList.toggle('min', pollMiniMin);
-  const total=pollData.yes+pollData.no;
-  const yp = total ? Math.round(pollData.yes/total*100) : 0, np = total ? 100-yp : 0;
-  document.getElementById('pmYes').textContent=yp+'%'; document.getElementById('pmNo').textContent=np+'%';
-  document.getElementById('pmTot').textContent = total+' vote'+(total===1?'':'s');
-}
+function renderPollMini(){ if(pollMiniEl) pollMiniEl.hidden=true; }   // poll removed
 function setPollMiniMin(v){ pollMiniMin=v; localStorage.setItem('leoncraft_pollmin', v?'1':'0'); renderPollMini(); }
 document.getElementById('pmMin').addEventListener('click', e=>{ e.stopPropagation(); setPollMiniMin(true); });
 document.getElementById('pmPill').addEventListener('click', e=>{ e.stopPropagation(); setPollMiniMin(false); });
@@ -3820,7 +3819,7 @@ document.getElementById('pmPill').addEventListener('click', e=>{ e.stopPropagati
    the rest set an effect the server stores + relays so everyone sees it. */
 const NAME_BLUE = '#4aa3ff';              // the "leoniscool" code turns your name this colour
 const STICK_ITEM = 30000;                 // hotbar sentinel (well above any real block id) for the knockback stick
-const fx = { body:'none', color:'', stick:false, hide:false };   // this player's active effects ('' colour = default white name)
+const fx = { body:'none', color:'', stick:false, hide:false, superStick:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
 let localEyeMul = 1;                      // giant/small change the local camera height a bit
 
 function flashCode(msg, el){ if(!el) return; el.textContent=msg; clearTimeout(el._t); el._t=setTimeout(()=>{ el.textContent=''; }, 3000); }
@@ -3841,7 +3840,8 @@ function applyCode(raw, msgEl){
     flashCode(adminMode?'ADMIN mode on — you can join any server.':'ADMIN mode off.', msgEl); return; }
   if(code==='leoniscool'){ fx.color = fx.color ? '' : NAME_BLUE; note = fx.color ? 'Your name is now blue.' : 'Blue name turned off.'; }
   else if(code==='secret'){ fx.hide=!fx.hide; note = fx.hide ? 'Your name is now hidden from others.' : 'Your name is visible again.'; }
-  else if(code==='tade'){ fx.stick=!fx.stick; if(fx.stick){ giveStick(); note='Knockback stick equipped — check slot 1.'; } else { removeStick(); note='Knockback stick removed.'; } }
+  else if(code==='tade'){ fx.superStick=false; fx.stick=!fx.stick; if(fx.stick){ giveStick(); note='Knockback stick equipped - check slot 1.'; } else { removeStick(); note='Knockback stick removed.'; } }
+  else if(code==='tadee'){ fx.superStick=!fx.superStick; fx.stick=fx.superStick; if(fx.superStick){ giveStick(); note='Super knockback stick equipped (15 blocks). You can hit players even while spectating.'; } else { removeStick(); note='Super knockback stick removed.'; } }
   else if(code==='big' || code==='small' || code==='pig' || code==='block' || code==='tree'){
     const target = { big:'giant', small:'small', pig:'pig', block:'block', tree:'tree' }[code];
     fx.body = (fx.body===target) ? 'none' : target;   // typing the same body code again turns it off
@@ -3933,12 +3933,12 @@ function setPlayerBody(p, body){
 }
 function setPlayerColor(p, color){
   p.color = color || '';
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin); p.model.add(p.tag); p.tag.visible=!p.hide; }
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
 function setPlayerAdmin(p, admin){
   if(!!p.admin===!!admin) return; p.admin=!!admin;
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin); p.model.add(p.tag); p.tag.visible=!p.hide; }
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
 function setPlayerHide(p, hide){ p.hide=!!hide; if(p.tag) p.tag.visible=!p.hide; }   // hidename code: hide the floating nametag from others
@@ -3948,13 +3948,13 @@ const tabListEl = document.getElementById('tabList');
 let tabShown = false;
 function renderTabList(){
   if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
-  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:adminMode}];
-  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin});
+  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:adminMode, spectator:!!mp.spectator}];
+  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin, spectator:!!p.spectator});
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
-  const hdr = mp.serverName ? escapeHtml(mp.serverName)+' — '+n+' online' : (n+' player'+(n===1?'':'s')+' online');
+  const hdr = mp.serverName ? escapeHtml(mp.serverName)+' - '+n+' online' : (n+' player'+(n===1?'':'s')+' online');
   tabListEl.innerHTML = '<div class="th">'+hdr+'</div>' +
-    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'">'+(r.admin?'<span style="color:#42e042;font-style:italic;margin-right:5px">ADMIN</span>':'')+'<span'+(r.color?' style="color:'+r.color+'"':'')+'>'+escapeHtml(r.name)+'</span></span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
+    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'"><span'+(r.color?' style="color:'+r.color+'"':'')+'>'+escapeHtml(r.name)+'</span>'+(r.admin?'<span style="color:#42e042;font-style:italic;margin-left:5px">ADMIN</span>':(r.spectator?'<span style="color:#c4ccd6;font-style:italic;margin-left:5px">SPECTATOR</span>':''))+'</span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
   tabListEl.hidden=false;
 }
 
@@ -3972,6 +3972,7 @@ function mpUrl(){
   const p = new URLSearchParams();
   p.set('server', mpTarget.server || 'original');
   if(mpTarget.pw) p.set('pw', mpTarget.pw);
+  if(mpTarget.spectate) p.set('spectate', '1');
   if(adminMode) p.set('admin', '1');
   p.set('device', pollDeviceId());
   return u + (u.indexOf('?')>=0?'&':'?') + p.toString();
@@ -3983,12 +3984,12 @@ function mpApplyRemoteBlock(x,y,z,b){
 }
 function mpAddPlayer(p){
   if(!p || p.id===mp.id || mp.players.has(p.id)) return;
-  const color=p.color||'', admin=!!p.admin;
+  const color=p.color||'', admin=!!p.admin, spectator=!!p.spectator;
   const model=makeCharacterModel(defaultSkinTex); model.visible=true; scene.add(model);
-  const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', admin); model.add(tag);
+  const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', admin, spectator); model.add(tag);
   const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
     x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
-    body:'none', color:color, hide:!!p.hide, admin:admin };
+    body:'none', color:color, hide:!!p.hide, admin:admin, spectator:spectator };
   mp.players.set(p.id, rec);
   if(p.hide) tag.visible=false;
   if(p.skin) applyRemoteSkin(p.id, p.skin);          // their custom skin, if they have one
@@ -4043,7 +4044,8 @@ function mpHandle(m){
   if(m.type==='init' && (m.mode==='bw' || bw.active)){ bwInit(m); return; }   // bedwars has its own init/world
   if(bw.active && bwHandle(m)) return;                                        // bedwars-only messages; others fall through
   if(m.type==='init'){
-    mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.admin=!!m.admin;
+    mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.admin=!!m.admin; mp.spectator=!!m.spectator;
+    mp._pwFlow=false; if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;   // joined successfully — close the password prompt
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
@@ -4054,14 +4056,13 @@ function mpHandle(m){
     if(m.prg) for(const kk in m.prg){ prgMeta.set(kk, {ang:m.prg[kk].ang|0}); }   // PRG facings; spheres built when chunks mesh
     if(m.trapdoors) for(const kk in m.trapdoors){ const s=m.trapdoors[kk]; trapdoorMeta.set(kk, {facing:s.facing|0, open:!!s.open, top:!!s.top}); }
     if(m.slabs) for(const kk in m.slabs){ const s=m.slabs[kk]; slabMeta.set(kk, {top:!!s.top, double:!!s.double}); }
-    if(m.poll){ pollData={yes:m.poll.yes|0, no:m.poll.no|0}; if(!bw.active && !pollVotedChoice()) pollBlocking=true; }   // set early so startGame skips the pointer lock
     mpClearPlayers();
     mpStartWorld(m.seed);
     for(const pl of (m.players||[])) mpAddPlayer(pl);
     mpSendSkin();   // let everyone already here see my custom skin
     applyLocalBody(); sendFx();   // re-assert my active secret-code effects so everyone here sees them
-    showPoll();   // pop the blocking private-servers poll on joining survival MP (skips if already voted on this computer)
     chatPush('Joined the shared world as '+m.name+'  ('+((m.players||[]).length+1)+' online)', 'sys');
+    if(mp.spectator) chatPush('You joined as a SPECTATOR. You can look around and chat, but cannot build, break blocks, or fight.', 'sys');
   }
   else if(m.type==='join'){ mpAddPlayer(m.player); }
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
@@ -4080,14 +4081,15 @@ function mpHandle(m){
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
   else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
   else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerHide(p, m.hide); setPlayerAdmin(p, m.admin); } }   // secret-code effect: big / small / pig / block / name colour / hidename / admin
-  else if(m.type==='chat'){ chatPush(m.system? m.text : ((m.admin?'ADMIN ':'')+'<'+m.name+'> '+m.text), m.system?'sys':''); }
+  else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+(m.admin?' ADMIN':(m.spectator?' SPECTATOR':''))+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
-    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff', p.admin); p.model.add(p.tag); p.tag.visible=!p.hide; } }
+    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide; } }
   }
   else if(m.type==='poll'){ pollData={yes:m.yes|0, no:m.no|0}; renderPoll(); renderPollMini(); }   // live poll tally update (modal + corner widget)
   else if(m.type==='authfail'){ mp._joinErr='Wrong password.'; }
   else if(m.type==='noserver'){ mp._joinErr='That server no longer exists.'; }
+  else if(m.type==='kicked'){ mp._joinErr=m.reason||'You were removed from the server.'; }
   else if(m.type==='full'){ if(state!==PLAY) mp._joinErr='That server is full right now.'; else chatPush('Server is full right now, try again soon.', 'sys'); }
 }
 function mpConnect(){
@@ -4098,8 +4100,12 @@ function mpConnect(){
   ws.onopen=()=>{ mp.active=true; const nm=getSavedName(); if(nm) mpSend({type:'name', name:nm}); };
   ws.onmessage=(ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } mpHandle(m); };
   ws.onclose=()=>{ const wasPlaying=(state===PLAY); mp.active=false; mp.ws=null; mpClearPlayers(); mp.border=0; if(typeof updateWorldBorder==='function') updateWorldBorder();
-    if(mp._joinErr){ const e=mp._joinErr; mp._joinErr=null; if(typeof openServers==='function') openServers(e); }
+    const pwOpen = mp._pwFlow && pwPromptEl && !pwPromptEl.hidden;
+    if(mp._joinErr){ const e=mp._joinErr; mp._joinErr=null;
+      if(pwOpen){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent = e; }   // keep the password prompt open with the error on screen
+      else if(typeof openServers==='function') openServers(e); }
     else if(wasPlaying) chatPush('Disconnected from the server.', 'sys');
+    else if(pwOpen){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Server unreachable.'; }
     else if(typeof openServers==='function') openServers('Server unreachable. Is it online?'); };
   ws.onerror=()=>{};
 }
@@ -4130,30 +4136,61 @@ function mpStartWorld(serverSeed){
 function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi(); mpConnect(); }
 
 /* ================= server browser: pick / create / join a server ================= */
-const serversEl=document.getElementById('servers'), srvListEl=document.getElementById('srvList'), srvNoteEl=document.getElementById('srvNote');
+const serversEl=document.getElementById('servers'), srvListEl=document.getElementById('srvList'), srvNoteEl=document.getElementById('srvNote'), srvSearchEl=document.getElementById('srvSearch');
+if(srvSearchEl){ srvSearchEl.addEventListener('input', ()=>renderServerList()); srvSearchEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ srvSearchEl.value=''; renderServerList(); srvSearchEl.blur(); } }); }
 function serversNote(msg){ if(srvNoteEl){ srvNoteEl.textContent=msg||''; } }
 function openServers(finalNote){ serversEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; if(createServerEl) createServerEl.hidden=true; if(pwPromptEl) pwPromptEl.hidden=true; refreshServers(finalNote); }
 function closeServers(){ serversEl.hidden=true; menuEl.hidden=false; }
 function escHtml(s){ return (''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+let srvAllList=[];   // last-fetched server list, so the search box can filter without re-fetching
 async function refreshServers(finalNote){
   serversNote(finalNote||'Loading servers…'); srvListEl.innerHTML='';
   let data;
   try{ const r=await fetch(mcHttpBase()+'/servers',{cache:'no-store'}); data=await r.json(); }
   catch(e){ serversNote(finalNote||'Could not reach the server list. Is the server online?'); return; }
   serversNote(finalNote||'');
-  const list=(data&&data.servers)||[];
-  if(!list.length){ serversNote(finalNote||'No servers yet — create one!'); return; }
+  srvAllList=(data&&data.servers)||[];
+  if(!srvAllList.length){ serversNote(finalNote||'No servers yet - create one!'); return; }
+  renderServerList();
+}
+function renderServerList(){
+  srvListEl.innerHTML='';
+  const q=(srvSearchEl&&srvSearchEl.value||'').trim().toLowerCase();
+  const list = q ? srvAllList.filter(s=>(s.name||'').toLowerCase().includes(q)) : srvAllList;
+  if(!list.length){ serversNote('No servers match "'+q+'".'); return; }
+  serversNote('');
   for(const s of list){
     const card=document.createElement('div'); card.className='srvCard';
     const ic=document.createElement('canvas'); ic.className='ic'; ic.width=ic.height=32;
     drawServerIcon(ic, s.icon, s.id);
     const info=document.createElement('div'); info.className='info';
-    const lockTxt = s.isPublic ? '<span class="pub">Public</span>' : '<span class="lock">🔒 Private</span>';
+    const lockTxt = s.isPublic ? '<span class="pub">Public</span>' : '<span class="lock">Private</span>';
     info.innerHTML='<div class="nm">'+escHtml(s.name)+'</div><div class="meta">'+lockTxt+' · '+s.players+' online</div>';
     card.appendChild(ic); card.appendChild(info);
-    card.addEventListener('click', ()=>joinServer(s));
+    card.addEventListener('click', ()=>{ if(!card._confirming) joinServer(s); });
+    if(adminMode && s.id!=='original'){                       // admins can delete servers
+      const del=document.createElement('button'); del.className='srvDel'; del.textContent='Delete'; del.title='Delete this server';
+      del.addEventListener('click', e=>{ e.stopPropagation(); confirmDeleteServer(s, card); });
+      card.appendChild(del);
+    }
     srvListEl.appendChild(card);
   }
+}
+function confirmDeleteServer(s, card){
+  card._confirming=true; card.style.cursor='default'; card.innerHTML='';
+  const info=document.createElement('div'); info.className='info';
+  info.innerHTML='<div class="nm">Delete "'+escHtml(s.name)+'"?</div><div class="meta">This removes the world for everyone.</div>';
+  const no=document.createElement('button'); no.className='srvDel'; no.textContent='Cancel';
+  const yes=document.createElement('button'); yes.className='srvDel'; yes.style.background='#c14b43'; yes.textContent='Delete';
+  no.addEventListener('click', e=>{ e.stopPropagation(); refreshServers(); });
+  yes.addEventListener('click', e=>{ e.stopPropagation(); doDeleteServer(s); });
+  card.appendChild(info); card.appendChild(no); card.appendChild(yes);
+}
+async function doDeleteServer(s){
+  serversNote('Deleting…');
+  try{ const r=await fetch(mcHttpBase()+'/deleteserver',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ id:s.id, admin:true, device:pollDeviceId() }) }); const j=await r.json();
+    refreshServers((j&&j.ok)?'Server deleted.':((j&&j.error)||'Could not delete.')); }
+  catch(e){ refreshServers('Network error.'); }
 }
 function joinServer(s){
   if(s.isPublic || adminMode){ mpTarget={ server:s.id, pw:'' }; serversEl.hidden=true; startMultiplayer(); return; }
@@ -4163,11 +4200,13 @@ function joinServer(s){
 const pwPromptEl=document.getElementById('pwPrompt'), pwInputEl=document.getElementById('pwInput'), pwMsgEl=document.getElementById('pwMsg');
 let pwPendingServer=null;
 function openPwPrompt(s){ pwPendingServer=s; document.getElementById('pwTitle').textContent=s.name; pwMsgEl.textContent=''; pwInputEl.value=''; pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
-function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw){ pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; pwPromptEl.hidden=true; startMultiplayer(); }
+function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting…'; startMultiplayer(); }
+function pwSpectate(){ if(!pwPendingServer) return; mpTarget={ server:pwPendingServer.id, pw:'', spectate:true }; mp._pwFlow=false; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Joining as spectator…'; startMultiplayer(); }
 document.getElementById('pwJoinBtn').addEventListener('click', pwJoin);
+document.getElementById('pwSpectateBtn').addEventListener('click', pwSpectate);
 document.getElementById('pwCancelBtn').addEventListener('click', ()=>{ pwPromptEl.hidden=true; openServers(); });
 pwInputEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); pwJoin(); } if(e.key==='Escape'){ e.preventDefault(); pwPromptEl.hidden=true; openServers(); } });
-document.getElementById('srvRefreshBtn').addEventListener('click', refreshServers);
+document.getElementById('srvRefreshBtn').addEventListener('click', ()=>refreshServers());
 document.getElementById('srvBackBtn').addEventListener('click', closeServers);
 document.getElementById('srvCreateBtn').addEventListener('click', openCreateServer);
 
@@ -4691,7 +4730,7 @@ function bwOnRespawn(m){
 function bwOnWin(m){
   bw.phase='ended';
   const nm = m.team>=0 ? (BW_TEAMS[m.team].name+' team wins!') : 'Game over';
-  bwBanner('🏆 '+nm, m.team>=0?BW_TEAMS[m.team].color:0xffffff, 8000);
+  bwBanner(''+nm, m.team>=0?BW_TEAMS[m.team].color:0xffffff, 8000);
   bwUpdateHud();
 }
 function bwOnBuy(m){
@@ -4860,18 +4899,18 @@ function bwEnsureUi(){
   document.body.appendChild(hud);
   document.getElementById('bwStartBtn').addEventListener('click', ()=>{ startBedwarsBtn(); });
   const shop=document.createElement('div'); shop.className='screen'; shop.id='bwShop'; shop.hidden=true;
-  shop.innerHTML='<div class="sp"><h2>🛒 Item Shop</h2><div style="font-size:12px;color:#9aa">Buy with the resources your generators make.</div><div id="bwShopTabs"></div><div id="bwShopGrid"></div></div>';
+  shop.innerHTML='<div class="sp"><h2>Item Shop</h2><div style="font-size:12px;color:#9aa">Buy with the resources your generators make.</div><div id="bwShopTabs"></div><div id="bwShopGrid"></div></div>';
   document.body.appendChild(shop);
   const tabs=document.getElementById('bwShopTabs');
   for(const c of BW_CATS){ const b=document.createElement('button'); b.textContent=c; b.onclick=()=>{ bwShopCat=c; bwRenderShop(); }; tabs.appendChild(b); }
   shop.addEventListener('click',(e)=>{ if(e.target===shop) bwToggleShop(); });
 }
-function bwHealthStr(){ const h=Math.max(0,Math.min(100,bw.hp||0)); const full=Math.round(h/10); let s=''; for(let i=0;i<10;i++) s+= i<full?'❤':'🖤'; return s; }
+function bwHealthStr(){ const h=Math.max(0,Math.min(100,bw.hp||0)); const full=Math.round(h/10); let s=''; for(let i=0;i<10;i++) s+= i<full?'<span style="color:#ee2b2b">♥</span>':'<span style="color:#3a1414">♥</span>'; return s; }
 function bwUpdateHud(){
   if(!bwUiBuilt) return;
   const beds=document.getElementById('bwBeds');
   beds.innerHTML = BW_TEAMS.map(t=>{ const alive=bw.beds[t.id]; const mine=t.id===bw.team;
-    return '<div class="bt"><span class="sq" style="background:#'+t.color.toString(16).padStart(6,'0')+'"></span>'+(alive?'🛏️':'❌')+(mine?' <span style="color:#ffd54a">YOU</span>':'')+'</div>'; }).join('');
+    return '<div class="bt"><span class="sq" style="background:#'+t.color.toString(16).padStart(6,'0')+'"></span>'+(alive?'<span style="color:#cfe3ff">BED</span>':'<span style="color:#ff6b6b">OUT</span>')+(mine?' <span style="color:#ffd54a">YOU</span>':'')+'</div>'; }).join('');
   const res=document.getElementById('bwRes'); res.innerHTML='';   // resources are inventory items now (press E), not a side counter
   document.getElementById('bwHealth').innerHTML = bw.phase==='playing' && !bw.eliminated ? bwHealthStr() : '';
   const lobby=document.getElementById('bwLobby'); const p=document.getElementById('bwLobbyP');
@@ -5363,7 +5402,7 @@ window.__mc = {
   sitOn(x,y,z){ sitOnCushion(x,y,z); }, isSitting(){ return sit.active; }, getUp(){ standUp(); },
   setSneak(v){ player.sneak=!!v; }, combo(){ return binds.cameraCombo; },
   remotePose(){ const a=[]; for(const [id,p] of mp.players) a.push({id, sit:!!p.sit, sneak:!!p.sneak, legX:+(p.model.userData.legL?p.model.userData.legL.rotation.x:0).toFixed(2), crouch:+(p.crouch||0).toFixed(2)}); return a; },
-  punchId(vid){ const p=mp.players.get(vid); if(!p) return false; let dx=p.x-player.pos.x, dz=p.z-player.pos.z; const len=Math.hypot(dx,dz)||1; const stick=(!bw.active && fx.stick && hotbar[selSlot]===STICK_ITEM); mpSend({type:'hit', target:vid, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3), stick:stick}); return true; },
+  punchId(vid){ const p=mp.players.get(vid); if(!p) return false; let dx=p.x-player.pos.x, dz=p.z-player.pos.z; const len=Math.hypot(dx,dz)||1; const stick=(!bw.active && fx.stick && hotbar[selSlot]===STICK_ITEM); mpSend({type:'hit', target:vid, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3), stick:stick, kb:(stick?(fx.superStick?15:10):0), superStick:(stick&&fx.superStick)}); return true; },
   kbRecv(){ return mp.kbRecv||0; },
   poseState(){ return {sit:sit.active, sneak:!!player.sneak, poseSit:mp.poseSit, poseSneak:mp.poseSneak, poseSent:mp.poseSent||0}; },
   held(){ return hotbar[selSlot]; },
@@ -5388,7 +5427,8 @@ window.__mc = {
   joinTarget(id,pw){ mpTarget={server:id,pw:pw||''}; startMultiplayer(); }, adminOn(){ return adminMode; },
   playerAdmins(){ return [...mp.players.values()].map(p=>({name:p.name,admin:!!p.admin})); },
   // ---- secret-code test hooks ----
-  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, eyeMul:localEyeMul, localKind:modelKind(body) }; },
+  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, eyeMul:localEyeMul, localKind:modelKind(body) }; },
+  mpSpectator(){ return !!mp.spectator; },
   remoteTags(){ return [...mp.players.values()].map(p=>({ id:p.id, tagVisible:p.tag?!!p.tag.visible:null, hide:!!p.hide, color:p.color||'', visible:!!(p.model&&p.model.visible) })); },
   bwPotions(){ const t=performance.now(); return { speed:Math.max(0,Math.round((bw.speedUntil-t)/1000)), jump:Math.max(0,Math.round((bw.jumpUntil-t)/1000)), invis:Math.max(0,Math.round((bw.invisUntil-t)/1000)) }; },
   selfBodyVisible(){ return !!body.visible; }, selfBodyKind(){ return modelKind(body); },
