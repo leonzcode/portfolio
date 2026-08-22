@@ -1700,10 +1700,28 @@ function spRecordPrg(x,y,z,m){
   if(m===null) delete spPrg[k]; else spPrg[k]={a:m.ang};
   spScheduleSave();
 }
+const yOfKey = k => +k.split(',')[1];   // "x,y,z" -> y
+// drop saved single-player state stranded at/above the build limit (old ghost blocks)
+function purgeSavedAbove(){
+  let n=0;
+  for(const obj of [spEdits,spDoors,spBeds,spStairs,spLadders,spSigns,spPrg,spTrapdoors,spSlabs])
+    for(const k of Object.keys(obj)) if(yOfKey(k)>=WH){ delete obj[k]; n++; }
+  return n;
+}
+// drop live meta + rendered objects at/above the build limit (used after a multiplayer join)
+function purgeLiveAbove(){
+  let n=0;
+  for(const k of Array.from(signMeta.keys())) if(yOfKey(k)>=WH){ signMeta.delete(k); const c=k.split(','); removeSignObj(+c[0],+c[1],+c[2]); n++; }
+  for(const k of Array.from(prgMeta.keys())) if(yOfKey(k)>=WH){ prgMeta.delete(k); removePrgObj(k); n++; }
+  for(const mp2 of [doorMeta,bedMeta,stairMeta,ladderMeta,trapdoorMeta,slabMeta]) for(const k of Array.from(mp2.keys())) if(yOfKey(k)>=WH){ mp2.delete(k); n++; }
+  for(const k of Array.from(mpOverrides.keys())) if(yOfKey(k)>=WH){ mpOverrides.delete(k); n++; }
+  return n;
+}
 function spReloadWorld(){         // load the saved singleplayer world into seed + overrides + doors + beds + stairs + ladders
   mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear();
   spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {}; spTrapdoors = {}; spSlabs = {};
   try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; } } }catch(e){}
+  const purged = purgeSavedAbove();   // clear old ghost blocks stranded above the build limit, then persist the cleanup
   seed=spSeed; noise=makeNoise(seed);
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
   for(const kk in spDoors){ const sd=spDoors[kk]; doorMeta.set(kk, {facing:sd.f, open:!!sd.o, hinge:(sd.h==='l'?'left':sd.h==='r'?'right':undefined)}); }
@@ -1714,6 +1732,7 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   for(const kk in spPrg){ prgMeta.set(kk, {ang:spPrg[kk].a||0}); }   // PRG facings; spheres built when the chunks mesh
   for(const kk in spTrapdoors){ const s=spTrapdoors[kk]; trapdoorMeta.set(kk, {facing:s.f|0, open:!!s.o, top:!!s.t}); }
   for(const kk in spSlabs){ const s=spSlabs[kk]; slabMeta.set(kk, {top:!!s.t, double:!!s.d}); }
+  if(purged) spSave();           // write back the world with the ghost blocks removed
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
 addEventListener('beforeunload', spSave);
@@ -2892,6 +2911,7 @@ function doorBottom(x,y,z){ let by=y; while(isDoor(getBlock(x,by-1,z))) by--; re
 function placeDoor(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   const id=hotbar[selSlot];
+  if(py<0 || py+1>=WH) return;                                                     // a door is two cells tall; keep both under the build limit
   if(getBlock(px,py,pz)!==AIR || getBlock(px,py+1,pz)!==AIR) return;               // needs two free cells
   const floor=getBlock(px,py-1,pz); if(!(BLOCKS[floor]&&BLOCKS[floor].solid)) return; // and a floor to stand on
   const w=player.w/2;                                                             // not inside the player
@@ -3151,6 +3171,7 @@ function placeBlock(){
   if(mp.active && mp.spectator) return;     // spectators can't place blocks
   if(!target) return;
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  if(py<0 || py>=WH) return;   // never build at or above the world height — those cells are unreachable, so a sign/PRG there becomes an unbreakable ghost
   const id = hotbar[selSlot]; if(!id) return;
   if(id===STICK_ITEM) return;   // the knockback stick is a tool, not a placeable block
   if(bw.active){ if(bw.dead) return; if(bwBlockCount(id)<=0) return; }   // bedwars blocks are finite
@@ -4108,6 +4129,7 @@ function mpHandle(m){
     if(m.prg) for(const kk in m.prg){ prgMeta.set(kk, {ang:m.prg[kk].ang|0}); }   // PRG facings; spheres built when chunks mesh
     if(m.trapdoors) for(const kk in m.trapdoors){ const s=m.trapdoors[kk]; trapdoorMeta.set(kk, {facing:s.facing|0, open:!!s.open, top:!!s.top}); }
     if(m.slabs) for(const kk in m.slabs){ const s=m.slabs[kk]; slabMeta.set(kk, {top:!!s.top, double:!!s.double}); }
+    purgeLiveAbove();   // never render ghost blocks a server may still hold above the build limit
     mpClearPlayers();
     mpStartWorld(m.seed);
     for(const pl of (m.players||[])) mpAddPlayer(pl);
@@ -5424,6 +5446,9 @@ window.__mc = {
   putBlock(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); remeshChunkAt(x,z); return true; },
   collidesAt(px,py,pz){ return collides(px,py,pz); },
   setView(yaw,pitch){ player.yaw=yaw; player.pitch=pitch||0; },
+  spKeyName(){ return SP_KEY; }, reloadWorld(){ spReloadWorld(); },
+  metaKeys(which){ const m={sign:signMeta,prg:prgMeta,door:doorMeta,slab:slabMeta}[which]; return m?[...m.keys()]:[]; },
+  tryPlacePrg(bx,by,bz){ const id=BLOCKS['prg']&&BLOCKS['prg'].id; if(!id) return 'no prg block'; setBlock(bx,by+1,bz,AIR); hotbar[selSlot]=id; player.pos.set(bx+0.5, by+8, bz+4.5); target={x:bx,y:by,z:bz,nx:0,ny:1,nz:0,dist:1,hx:bx+0.5,hy:by+1,hz:bz+0.5}; placeBlock(); return prgMeta.has(dkey(bx,by+1,bz)); },
   paneConns(x,y,z){ const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); }; return {xp:conn(x+1,z),xm:conn(x-1,z),zp:conn(x,z+1),zm:conn(x,z-1)}; },
   placeDoorAt(hx,hz){ if(target){ target.hx=hx; target.hz=hz; } placeDoor(); },
   testDoorPlace(bx,by,bz,hx,hz,yaw){   // set up a clean spot + click point, place a door, report its hinge
