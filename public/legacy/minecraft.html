@@ -2129,6 +2129,17 @@ const OVERLAY = {
   legR:{ px:[0,36,4,12], nx:[8,36,4,12], py:[4,32,4,4], ny:[8,32,4,4], pz:[4,36,4,12], nz:[12,36,4,12] },       // right trouser
   legL:{ px:[0,52,4,12], nx:[8,52,4,12], py:[4,48,4,4], ny:[8,48,4,4], pz:[4,52,4,12], nz:[12,52,4,12] },       // left trouser
 };
+// slim (Alex) arms: 3px wide instead of 4, with the matching 3-wide UV packing.
+// Using these for slim skins keeps the back seam clean (a 4-wide model reading a
+// 3-wide skin samples a stray column, which shows as a dark line).
+const PARTS_SLIM = {
+  armR:{ w:3,h:12,d:4,pos:[5.5,18,0], f:{ px:[40,20,4,12],nx:[47,20,4,12],py:[44,16,3,4],ny:[47,16,3,4],pz:[44,20,3,12],nz:[51,20,3,12] } },
+  armL:{ w:3,h:12,d:4,pos:[-5.5,18,0],f:{ px:[32,52,4,12],nx:[39,52,4,12],py:[36,48,3,4],ny:[39,48,3,4],pz:[36,52,3,12],nz:[43,52,3,12] } },
+};
+const OVERLAY_SLIM = {
+  armR:{ px:[40,36,4,12], nx:[47,36,4,12], py:[44,32,3,4], ny:[47,32,3,4], pz:[44,36,3,12], nz:[51,36,3,12] },
+  armL:{ px:[48,52,4,12], nx:[55,52,4,12], py:[52,48,3,4], ny:[55,48,3,4], pz:[52,52,3,12], nz:[59,52,3,12] },
+};
 const OV_INF = 0.5;   // outer layer is 0.25px larger on every side, like Minecraft
 function skinPartOverlay(def, faces, mat){
   const geo=new THREE.BoxGeometry((def.w+OV_INF)*S16,(def.h+OV_INF)*S16,(def.d+OV_INF)*S16);
@@ -3141,6 +3152,31 @@ function punchPlayerUnderCrosshair(){
   mpSend({type: bw.active?'bwhit':'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3), stick:stick, kb:(stick?(fx.superStick?15:10):0), superStick:(stick&&fx.superStick)});
   return true;
 }
+// remove a sign/PRG that lives only in a meta map (e.g. an old ghost stranded above the build limit)
+function removeGhostBlock(type, k, x, y, z){
+  if(type==='sign'){ signMeta.delete(k); removeSignObj(x,y,z); spRecordSign(x,y,z,null); }
+  else if(type==='prg'){ prgMeta.delete(k); removePrgObj(k); spRecordPrg(x,y,z,null); }
+  if(y>=0 && y<WH){ setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); remeshChunkAt(x,z); }   // clear the real block too, if it's in range
+  else if(mp.active) mpSend({type:'block', x:x, y:y, z:z, b:0});                        // above the limit: ask the server to drop the stored edit
+}
+// left-click a sign/PRG that sits above the build limit (a ghost) to destroy it — those cells can't be raycast as blocks
+function breakGhostUnderCrosshair(){
+  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z);
+  mobRay.set(o, camDir()); mobRay.far=REACH+2;
+  const objs=[]; const byObj=new Map();
+  for(const [k,g] of signObjs){ if(yOfKey(k)>=WH){ objs.push(g); byObj.set(g,{k,type:'sign'}); } }
+  for(const [k,m] of prgObjs){ if(yOfKey(k)>=WH){ objs.push(m); byObj.set(m,{k,type:'prg'}); } }
+  if(!objs.length) return false;
+  const hits=mobRay.intersectObjects(objs, true);
+  if(!hits.length) return false;
+  if(target && target.dist!=null && target.dist < hits[0].distance-0.05) return false;   // a real block is closer; mine it instead
+  let node=hits[0].object, found=null;
+  while(node){ if(byObj.has(node)){ found=byObj.get(node); break; } node=node.parent; }
+  if(!found) return false;
+  const c=found.k.split(',').map(Number);
+  removeGhostBlock(found.type, found.k, c[0], c[1], c[2]);
+  return true;
+}
 function breakBlock(){
   const specHit = mp.active && mp.spectator && fx.superStick;   // tadee code: a spectator may still punch players
   if(mp.active && mp.spectator && !specHit) return;   // ordinary spectators can't break blocks, punch players or hit mobs
@@ -3148,6 +3184,7 @@ function breakBlock(){
   if(punchPlayerUnderCrosshair()) return;   // punching a player takes priority
   if(mp.active && mp.spectator) return;     // a superStick spectator can punch (above) but still can't break blocks or kill mobs
   if(killMobUnderCrosshair()) return;   // a mob under the crosshair takes the hit next
+  if(!bw.active && breakGhostUnderCrosshair()) return;   // destroy a ghost sign/PRG stranded above the build limit
   if(!target) return;
   const {x,y,z}=target;
   if(bw.active) return;   // Bed Wars breaks blocks on a hold-timer (bwMineTick); the left-click press only punches
@@ -5449,6 +5486,10 @@ window.__mc = {
   spKeyName(){ return SP_KEY; }, reloadWorld(){ spReloadWorld(); },
   metaKeys(which){ const m={sign:signMeta,prg:prgMeta,door:doorMeta,slab:slabMeta}[which]; return m?[...m.keys()]:[]; },
   tryPlacePrg(bx,by,bz){ const id=BLOCKS['prg']&&BLOCKS['prg'].id; if(!id) return 'no prg block'; setBlock(bx,by+1,bz,AIR); hotbar[selSlot]=id; player.pos.set(bx+0.5, by+8, bz+4.5); target={x:bx,y:by,z:bz,nx:0,ny:1,nz:0,dist:1,hx:bx+0.5,hy:by+1,hz:bz+0.5}; placeBlock(); return prgMeta.has(dkey(bx,by+1,bz)); },
+  makeGhostSign(x,y,z,wall,ang){ signMeta.set(dkey(x,y,z), {wall:!!wall,ang:ang|0,hex:0x9c7a4d,lines:['ghost','','','']}); updateSignObj(x,y,z); return signObjs.has(dkey(x,y,z)); },
+  signMetaHas(x,y,z){ return signMeta.has(dkey(x,y,z)); },
+  breakGhostRay(){ target=null; return breakGhostUnderCrosshair(); },
+  removeGhost(type,x,y,z){ removeGhostBlock(type, dkey(x,y,z), x,y,z); return signMeta.has(dkey(x,y,z)) || prgMeta.has(dkey(x,y,z)); },
   paneConns(x,y,z){ const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); }; return {xp:conn(x+1,z),xm:conn(x-1,z),zp:conn(x,z+1),zm:conn(x,z-1)}; },
   placeDoorAt(hx,hz){ if(target){ target.hx=hx; target.hz=hz; } placeDoor(); },
   testDoorPlace(bx,by,bz,hx,hz,yaw){   // set up a clean spot + click point, place a door, report its hinge
