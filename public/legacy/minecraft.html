@@ -519,6 +519,9 @@
         <button class="keybtn" id="skinExportBtn" title="Download this skin as a PNG you can share">Download</button>
         <input type="file" id="skinUpload" accept="image/png,image/*" hidden>
       </div>
+      <div class="skinRow">
+        <button class="keybtn" id="skinModelBtn" title="Slim (Alex) skins have 3-pixel arms. Switch this to match your skin so the arm edges line up.">Model: Classic</button>
+      </div>
       <div class="skinHint" id="skinUploadMsg" style="font-size:11px;opacity:.7;min-height:14px;"></div>
     </div>
   </div>
@@ -2171,6 +2174,7 @@ const defaultSkinCtx=defaultSkinCanvas.getContext('2d'); paintDefaultSkin(defaul
 const defaultSkinTex=makeSkinTex(defaultSkinCanvas);                                   // the default skin (Steve) — worn by anyone without a custom skin
 const skinCanvas=document.createElement('canvas'); skinCanvas.width=skinCanvas.height=64; const skinCtx=skinCanvas.getContext('2d'); paintDefaultSkin(skinCtx);
 const localSkinTex=makeSkinTex(skinCanvas);                                            // the local player's editable skin
+let localSlim=false;                                                                   // is the worn skin a slim (Alex, 3px arms) model?
 // Steve is the built-in default skin (loaded async; the placeholder above shows until it arrives)
 let localSkinIsCustom=false;   // true once the player wears/edits/imports their own skin
 const steveDefaultImg=new Image();
@@ -2210,6 +2214,7 @@ function loadSkinLibrary(){
   nextSkinId=skins.reduce((m,s)=>Math.max(m,s.id|0),0)+1;
   let a=null; try{ a=+localStorage.getItem('leoncraft_active_skin'); }catch(e){}
   activeSkinId=(a && skins.some(s=>s.id===a)) ? a : (skins.length? skins[0].id : null);
+  const act=skins.find(s=>s.id===activeSkinId); localSlim=!!(act && act.slim);
 }
 loadSkinLibrary();
 (function applyWornSkin(){
@@ -2223,7 +2228,7 @@ loadSkinLibrary();
 
 // a humanoid model textured from a 64x64 skin. The local player passes its own editable
 // skin; remote players get their own skin texture (or the shared default).
-function makeCharacterModel(skinTex){
+function makeCharacterModel(skinTex, slim){
   const tex=skinTex||defaultSkinTex;
   const mat=new THREE.MeshLambertMaterial({ map:tex });
   // outer layer shares the same texture but keeps its transparent pixels transparent
@@ -2234,14 +2239,16 @@ function makeCharacterModel(skinTex){
   const torso=skinPart(PARTS.body,mat); torso.position.y=PARTS.body.pos[1]*S16-HIP; torso.add(skinPartOverlay(PARTS.body, OVERLAY.body, ovMat));
   const hp=new THREE.Group(); hp.position.y=24*S16-HIP;
   const head=skinPart(PARTS.head,mat); head.position.y=4*S16; head.add(skinPartOverlay(PARTS.head, OVERLAY.head, ovMat)); hp.add(head);
-  const armL=skinPart(PARTS.armL,mat); armL.position.set(PARTS.armL.pos[0]*S16,PARTS.armL.pos[1]*S16-HIP,0); armL.add(skinPartOverlay(PARTS.armL, OVERLAY.armL, ovMat));
-  const armR=skinPart(PARTS.armR,mat); armR.position.set(PARTS.armR.pos[0]*S16,PARTS.armR.pos[1]*S16-HIP,0); armR.add(skinPartOverlay(PARTS.armR, OVERLAY.armR, ovMat));
+  const aL = slim ? PARTS_SLIM.armL : PARTS.armL, aR = slim ? PARTS_SLIM.armR : PARTS.armR;   // slim (Alex) skins use 3px arms
+  const oL = slim ? OVERLAY_SLIM.armL : OVERLAY.armL, oR = slim ? OVERLAY_SLIM.armR : OVERLAY.armR;
+  const armL=skinPart(aL,mat); armL.position.set(aL.pos[0]*S16,aL.pos[1]*S16-HIP,0); armL.add(skinPartOverlay(aL, oL, ovMat));
+  const armR=skinPart(aR,mat); armR.position.set(aR.pos[0]*S16,aR.pos[1]*S16-HIP,0); armR.add(skinPartOverlay(aR, oR, ovMat));
   upper.add(torso,hp,armL,armR);
   const legL=skinPart(PARTS.legL,mat); legL.position.set(PARTS.legL.pos[0]*S16,PARTS.legL.pos[1]*S16,0); legL.add(skinPartOverlay(PARTS.legL, OVERLAY.legL, ovMat));
   const legR=skinPart(PARTS.legR,mat); legR.position.set(PARTS.legR.pos[0]*S16,PARTS.legR.pos[1]*S16,0); legR.add(skinPartOverlay(PARTS.legR, OVERLAY.legR, ovMat));
   g.add(upper,legL,legR);
   g.scale.setScalar(0.9);           // ~1.8 blocks tall to match the hitbox
-  g.userData={ headPivot:hp, upper, legL, legR, armL, armR, mat, ovMat, hipY:HIP };
+  g.userData={ headPivot:hp, upper, legL, legR, armL, armR, mat, ovMat, hipY:HIP, slim:!!slim };
   return g;
 }
 // pose a character (local body or a remote player): Minecraft-style crouch/sneak, sitting and a walk cycle.
@@ -2257,15 +2264,25 @@ function poseCharacter(ud, crouch, sitting, walkPhase, walkAmp){
   ud.armL.rotation.x = -sw*0.72;                    // arms swing opposite the legs
   ud.armR.rotation.x =  sw*0.72;
 }
-let body=makeCharacterModel(localSkinTex);
+let body=makeCharacterModel(localSkinTex, localSlim);
 let headPivot=body.userData.headPivot;
 body.visible=false; scene.add(body);
 // swap your own model between humanoid / pig / diamond block (for the body codes), so first-person reflects it too
 function setLocalBody(kind){
   if(modelKind(body)===kind) return;
   const wasVisible=body.visible; scene.remove(body);
-  body = makeBodyModel(kind, localSkinTex);
+  body = makeBodyModel(kind, localSkinTex, localSlim);
   headPivot = body.userData.headPivot; body.visible=wasVisible; scene.add(body);
+}
+function rebuildLocalModel(){   // force-rebuild the local model at the current kind (used when the slim/classic arm width changes)
+  const kind=modelKind(body), wasVisible=body.visible; scene.remove(body);
+  body = makeBodyModel(kind, localSkinTex, localSlim);
+  headPivot = body.userData.headPivot; body.visible=wasVisible; scene.add(body);
+}
+function setLocalSlim(slim){
+  slim=!!slim; if(localSlim===slim) return;
+  localSlim=slim; rebuildLocalModel(); rebuildVmArm();
+  if(mp.active) mpSendSkin();   // slim rides with the skin message so others rebuild too
 }
 // floating name tag above a remote player's head
 function makeNametag(name, color, admin, spectator){
@@ -2293,8 +2310,14 @@ const vmScene=new THREE.Scene();
 const vmCam=new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 10);
 vmScene.add(new THREE.AmbientLight(0xffffff,0.8));
 const vmDir=new THREE.DirectionalLight(0xffffff,0.6); vmDir.position.set(0.4,1,0.7); vmScene.add(vmDir);
-const vmArm=skinPart(PARTS.armR, new THREE.MeshLambertMaterial({ map:localSkinTex })); vmScene.add(vmArm);
-vmArm.add(skinPartOverlay(PARTS.armR, OVERLAY.armR, new THREE.MeshLambertMaterial({ map:localSkinTex, transparent:true, alphaTest:0.5, side:THREE.DoubleSide })));   // first-person sleeve
+let vmArm;
+function rebuildVmArm(){   // first-person arm; slim skins use the 3px arm so the seam matches the body
+  if(vmArm){ vmScene.remove(vmArm); }
+  const aR = localSlim ? PARTS_SLIM.armR : PARTS.armR, oR = localSlim ? OVERLAY_SLIM.armR : OVERLAY.armR;
+  vmArm=skinPart(aR, new THREE.MeshLambertMaterial({ map:localSkinTex })); vmScene.add(vmArm);
+  vmArm.add(skinPartOverlay(aR, oR, new THREE.MeshLambertMaterial({ map:localSkinTex, transparent:true, alphaTest:0.5, side:THREE.DoubleSide })));   // first-person sleeve
+}
+rebuildVmArm();
 let vmBlock=null, vmHeldId=-1;
 // Bed Wars first-person held item: a flat sprite (sword / pickaxe / axe / shears / bow / apple / pearl / tnt / fireball)
 let vmItem=null, vmItemKey='';
@@ -3645,7 +3668,8 @@ function initSkinRenderer(){
   skinCam=new THREE.PerspectiveCamera(36, skinViewCanvas.width/skinViewCanvas.height, 0.1, 50); skinCam.position.set(0,0,skinDist);
   skinGroup=new THREE.Group(); skinScene.add(skinGroup);
 }
-function buildSkinModel(){ if(skinModel) skinGroup.remove(skinModel); skinModel=makeCharacterModel(editSkinTex); skinModel.position.y=-0.95; skinGroup.add(skinModel); }
+function buildSkinModel(){ if(skinModel) skinGroup.remove(skinModel); skinModel=makeCharacterModel(editSkinTex, localSlim); skinModel.position.y=-0.95; skinGroup.add(skinModel); }
+function updateSkinModelBtn(){ const b=document.getElementById('skinModelBtn'); if(b) b.textContent='Model: '+(localSlim?'Slim':'Classic'); }
 function renderSkin(){ if(skinRenderer){ skinGroup.rotation.set(skinPitch, skinYaw, 0); skinRenderer.render(skinScene, skinCam); } }
 function skinLoop(){ if(!skinOpen) return; renderSkin(); skinRAF=requestAnimationFrame(skinLoop); }
 function renderSwatches(){ const el=document.getElementById('skinSwatches'); el.innerHTML='';
@@ -3657,7 +3681,7 @@ function openSkinEditor(){
   initSkinRenderer();
   editCtx.clearRect(0,0,64,64); editCtx.drawImage(skinCanvas,0,0); editSkinTex.needsUpdate=true;
   selectedSkinId=activeSkinId;
-  buildSkinModel(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); setFill(false); renderSwatches(); renderSkinGallery(); renderPresetGallery(); skinUploadMsg('');
+  buildSkinModel(); updateSkinModelBtn(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); setFill(false); renderSwatches(); renderSkinGallery(); renderPresetGallery(); skinUploadMsg('');
   skinEditorEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; skinOpen=true; skinLoop();
 }
 function closeSkinEditor(save){
@@ -3679,7 +3703,7 @@ function wearEditSkin(){
 function persistCurrentSkin(forceNew, name){
   const png=editCanvas.toDataURL();
   let s=(!forceNew && selectedSkinId!=null) ? skins.find(x=>x.id===selectedSkinId) : null;
-  if(s){ s.png=png; if(name) s.name=name; } else { const id=nextSkinId++; s={id, png, name: name||('Skin '+id)}; skins.push(s); selectedSkinId=id; }
+  if(s){ s.png=png; s.slim=localSlim; if(name) s.name=name; } else { const id=nextSkinId++; s={id, png, name: name||('Skin '+id), slim:localSlim}; skins.push(s); selectedSkinId=id; }
   activeSkinId=s.id; skinThumbs[s.id]=skinThumbURL(editCanvas); saveSkinLibrary();
   wearEditSkin();
 }
@@ -3809,6 +3833,7 @@ function renderSkinGallery(){
   add.addEventListener('click', ()=> newSkin()); el.appendChild(add);
 }
 function selectSkin(id){ const s=skins.find(x=>x.id===id); if(!s) return; selectedSkinId=id; pendingSkinName=null;
+  setLocalSlim(!!s.slim); updateSkinModelBtn(); buildSkinModel();   // match the skin's arm width (slim/classic)
   loadSkinInto(editCtx, editSkinTex, s.png, ()=>{ renderSkin(); wearEditSkin(); }); renderSkinGallery(); }   // wear the saved skin you clicked
 function newSkin(){ selectedSkinId=null; pendingSkinName='Custom skin';
   editCtx.clearRect(0,0,64,64); editCtx.drawImage(defaultSkinCanvas,0,0);   // start a new skin from Steve
@@ -3861,12 +3886,16 @@ document.getElementById('skinEyedrop').addEventListener('click', ()=> setEyedrop
 document.getElementById('skinFill').addEventListener('click', ()=> setFill(!fillMode));
 document.getElementById('skinRandom').addEventListener('click', ()=>{ const rc=()=>Math.floor(Math.random()*0xffffff); paintSkinColors(editCtx,{skin:rc(),shirt:rc(),pants:rc(),hair:rc()}); editSkinTex.needsUpdate=true; renderSkin(); scheduleSkinAutosave(); });
 document.getElementById('skinResetSkin').addEventListener('click', ()=>{ paintDefaultSkin(editCtx); editSkinTex.needsUpdate=true; renderSkin(); });
+document.getElementById('skinModelBtn').addEventListener('click', ()=>{
+  setLocalSlim(!localSlim); updateSkinModelBtn(); buildSkinModel();   // switch arm width + refresh the preview
+  const s=skins.find(x=>x.id===(selectedSkinId!=null?selectedSkinId:activeSkinId)); if(s){ s.slim=localSlim; saveSkinLibrary(); }   // remember it on this skin
+});
 document.getElementById('skinDone').addEventListener('click', ()=> closeSkinEditor(true));
 document.getElementById('skinSaveNew').addEventListener('click', ()=>{ persistCurrentSkin(true, pendingSkinName||'Custom skin'); pendingSkinName=null; renderSkinGallery(); });
 document.getElementById('skinCancel').addEventListener('click', ()=> closeSkinEditor(false));
 document.getElementById('skinBtn').addEventListener('click', openSkinEditor);
 document.getElementById('pauseSkinBtn').addEventListener('click', openSkinEditor);
-function mpSendSkin(){ if(mp.active && mp.ws && mp.ws.readyState===1) mpSend({type:'skin', png:localSkinDataURL()}); }
+function mpSendSkin(){ if(mp.active && mp.ws && mp.ws.readyState===1) mpSend({type:'skin', png:localSkinDataURL(), slim:localSlim}); }
 
 // username: persisted to localStorage, applied live to the shared server when connected
 const nameInputEl=document.getElementById('nameInput');
@@ -4028,7 +4057,7 @@ function makeTreeAvatarModel(){
 }
 function modelKind(m){ const u=m&&m.userData; return (u&&u.isPig)?'pig':(u&&u.isTree)?'tree':(u&&u.isBlock)?'block':'human'; }
 function bodyToKind(body){ return body==='pig'?'pig':body==='tree'?'tree':body==='block'?'block':'human'; }   // giant/small stay humanoid, just scaled
-function makeBodyModel(kind, skinTex){ return kind==='pig'?makePigModel() : kind==='tree'?makeTreeAvatarModel() : kind==='block'?makeBlockAvatarModel() : makeCharacterModel(skinTex||defaultSkinTex); }
+function makeBodyModel(kind, skinTex, slim){ return kind==='pig'?makePigModel() : kind==='tree'?makeTreeAvatarModel() : kind==='block'?makeBlockAvatarModel() : makeCharacterModel(skinTex||defaultSkinTex, slim); }
 // swap a remote player's model between humanoid / pig / diamond block, keeping position + nametag
 function setPlayerBody(p, body){
   p.body = body || 'none';
@@ -4036,7 +4065,7 @@ function setPlayerBody(p, body){
   if(modelKind(p.model)!==want){
     const tag=p.tag;
     if(p.model){ if(tag) p.model.remove(tag); scene.remove(p.model); }
-    p.model = makeBodyModel(want, p.skinTex);
+    p.model = makeBodyModel(want, p.skinTex, p.slim);
     if(tag) p.model.add(tag);
     p.model.visible=true; scene.add(p.model);
   }
@@ -4094,23 +4123,34 @@ function mpApplyRemoteBlock(x,y,z,b){
 }
 function mpAddPlayer(p){
   if(!p || p.id===mp.id || mp.players.has(p.id)) return;
-  const color=p.color||'', admin=!!p.admin, spectator=!!p.spectator;
-  const model=makeCharacterModel(defaultSkinTex); model.visible=true; scene.add(model);
+  const color=p.color||'', admin=!!p.admin, spectator=!!p.spectator, slim=!!p.slim;
+  const model=makeCharacterModel(defaultSkinTex, slim); model.visible=true; scene.add(model);
   const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', admin, spectator); model.add(tag);
   const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
     x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
-    body:'none', color:color, hide:!!p.hide, admin:admin, spectator:spectator };
+    body:'none', color:color, hide:!!p.hide, admin:admin, spectator:spectator, slim:slim };
   mp.players.set(p.id, rec);
   if(p.hide) tag.visible=false;
-  if(p.skin) applyRemoteSkin(p.id, p.skin);          // their custom skin, if they have one
+  if(p.skin) applyRemoteSkin(p.id, p.skin, slim);    // their custom skin, if they have one
   if(p.body && p.body!=='none') setPlayerBody(rec, p.body);   // big / small / pig / block already active on join
 }
 // apply another player's 64x64 skin to their model + Tab head icon
-function applyRemoteSkin(id, dataURL){
+// rebuild a remote player's model geometry (keeps kind/tag/position) — used when their arm width (slim) changes
+function rebuildRemotePlayerModel(p){
+  const kind=modelKind(p.model), tag=p.tag, wasVis=p.model?p.model.visible:true;
+  if(p.model){ if(tag) p.model.remove(tag); scene.remove(p.model); }
+  p.model = makeBodyModel(kind, p.skinTex||defaultSkinTex, p.slim);
+  if(tag){ p.model.add(tag); tag.visible=!p.hide; }
+  p.model.visible=wasVis; scene.add(p.model);
+}
+function applyRemoteSkin(id, dataURL, slim){
   const p=mp.players.get(id); if(!p || !dataURL) return;
+  if(slim!==undefined) p._pendingSlim=!!slim;
   if(!p.skinCanvas){ p.skinCanvas=document.createElement('canvas'); p.skinCanvas.width=p.skinCanvas.height=64; p.skinCtx=p.skinCanvas.getContext('2d'); p.skinTex=makeSkinTex(p.skinCanvas); }
   loadSkinInto(p.skinCtx, p.skinTex, dataURL, ()=>{
-    if(p.model && p.model.userData.mat){ p.model.userData.mat.map=p.skinTex; p.model.userData.mat.needsUpdate=true;
+    const newSlim = (p._pendingSlim!==undefined) ? p._pendingSlim : !!p.slim;
+    if(!!p.slim !== newSlim){ p.slim=newSlim; rebuildRemotePlayerModel(p); }   // arm width changed -> rebuild geometry (also picks up the new skin)
+    else if(p.model && p.model.userData.mat){ p.model.userData.mat.map=p.skinTex; p.model.userData.mat.needsUpdate=true;
       if(p.model.userData.ovMat){ p.model.userData.ovMat.map=p.skinTex; p.model.userData.ovMat.needsUpdate=true; } }
     p.headURL=headURLFrom(p.skinCanvas);
     if(tabShown) renderTabList();
@@ -4187,7 +4227,7 @@ function mpHandle(m){
   else if(m.type==='bed'){ bedMeta.set(m.fx+','+m.fy+','+m.fz, {facing:m.facing|0, head:false}); bedMeta.set(m.hx+','+m.fy+','+m.hz, {facing:m.facing|0, head:true}); remeshChunkAt(m.fx,m.fz); remeshChunkAt(m.hx,m.hz); }
   else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, top:!!m.top}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='ladder'){ ladderMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
-  else if(m.type==='skin'){ applyRemoteSkin(m.id, m.png); }
+  else if(m.type==='skin'){ applyRemoteSkin(m.id, m.png, m.slim); }
   else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
   else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
@@ -5490,6 +5530,10 @@ window.__mc = {
   signMetaHas(x,y,z){ return signMeta.has(dkey(x,y,z)); },
   breakGhostRay(){ target=null; return breakGhostUnderCrosshair(); },
   removeGhost(type,x,y,z){ removeGhostBlock(type, dkey(x,y,z), x,y,z); return signMeta.has(dkey(x,y,z)) || prgMeta.has(dkey(x,y,z)); },
+  bodySlim(){ return { slim:!!(body.userData&&body.userData.slim), armW:+(body.userData.armR.geometry.parameters.width).toFixed(4), local:localSlim, vmArmW:+(vmArm.geometry.parameters.width).toFixed(4) }; },
+  setSlim(b){ setLocalSlim(b); return this.bodySlim(); },
+  clickSlimBtn(){ const el=document.getElementById('skinModelBtn'); el.click(); return el.textContent; },
+  remoteSlim(id){ const p=mp.players.get(id); return p?{slim:!!p.slim, armW:+(p.model.userData.armR.geometry.parameters.width).toFixed(4)}:null; },
   paneConns(x,y,z){ const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); }; return {xp:conn(x+1,z),xm:conn(x-1,z),zp:conn(x,z+1),zm:conn(x,z-1)}; },
   placeDoorAt(hx,hz){ if(target){ target.hx=hx; target.hz=hz; } placeDoor(); },
   testDoorPlace(bx,by,bz,hx,hz,yaw){   // set up a clean spot + click point, place a door, report its hinge
