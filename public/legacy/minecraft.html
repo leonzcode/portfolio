@@ -308,9 +308,8 @@
   #pollMini .pmTot{ font-size:.78em; color:#9aa4ad; }
   /* server list + create-server (Minecraft-styled) */
   .srvList{ width:460px; max-width:88vw; max-height:44vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding:2px; }
-  .srvCard{ position:relative; display:flex; align-items:center; gap:12px; padding:9px 12px; cursor:pointer;
-    background:#6f6f6f; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
-  .srvCard:hover{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
+  .srvCard{ position:relative; display:flex; align-items:center; gap:12px; padding:9px 12px; cursor:default;
+    background:#6f6f6f; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }   /* the row itself is not clickable: use Join / Spectate */
   .srvCard .ic{ width:40px; height:40px; flex:0 0 40px; image-rendering:pixelated; background:#555; border:1px solid #333; }
   .srvCard .info{ flex:1; min-width:0; text-align:left; }
   .srvCard .nm{ font-size:15px; color:#fff; text-shadow:1px 1px 0 rgba(0,0,0,.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -4329,17 +4328,16 @@ function renderServerList(){
     // Join / Spectate right on the card, so joining or watching is a single click
     const btns=document.createElement('div'); btns.className='srvBtns';
     const join=document.createElement('button'); join.className='srvBtn'; join.textContent='Join';
-    join.title=(s.isPublic||adminMode)?'Join this server':'Enter the password to play here';
+    join.title=s.isPublic?'Join this server':'Enter the password to play here';
     join.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) joinServer(s); });
     btns.appendChild(join);
-    if(!s.isPublic && !adminMode){                             // private: watch without the password
+    if(!s.isPublic){                                           // private: watch without the password
       const spec=document.createElement('button'); spec.className='srvBtn'; spec.textContent='Spectate';
       spec.title='Watch without the password. You cannot build, break or fight.';
       spec.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) spectateServer(s); });
       btns.appendChild(spec);
     }
     card.appendChild(btns);
-    card.addEventListener('click', ()=>{ if(!card._confirming) joinServer(s); });
     if(adminMode) card.classList.add('hasDel');               // reserve the corner room on every row so the buttons stay in line
     if(adminMode && s.id!=='original'){                       // admins can delete servers
       const del=document.createElement('button'); del.className='srvDelX'; del.textContent='×'; del.title='Delete this server';
@@ -4366,16 +4364,19 @@ async function doDeleteServer(s){
   catch(e){ refreshServers('Network error.'); }
 }
 function joinServer(s){
-  if(s.isPublic || adminMode){ mpTarget={ server:s.id, pw:'' }; serversEl.hidden=true; startMultiplayer(); return; }
-  openPwPrompt(s);
+  if(s.isPublic){ mpTarget={ server:s.id, pw:'' }; serversEl.hidden=true; startMultiplayer(); return; }
+  openPwPrompt(s);   // private always asks for the password (an admin can leave it blank)
 }
 // join a private server without its password: you appear to everyone as a SPECTATOR and cannot change the world
 function spectateServer(s){ mpTarget={ server:s.id, pw:'', spectate:true }; mp._pwFlow=false; serversEl.hidden=true; startMultiplayer(); }
 // ---- password prompt for private servers ----
 const pwPromptEl=document.getElementById('pwPrompt'), pwInputEl=document.getElementById('pwInput'), pwMsgEl=document.getElementById('pwMsg');
 let pwPendingServer=null;
-function openPwPrompt(s){ pwPendingServer=s; document.getElementById('pwTitle').textContent=s.name; pwMsgEl.textContent=''; pwInputEl.value=''; pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
-function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting…'; startMultiplayer(); }
+function openPwPrompt(s){ pwPendingServer=s; document.getElementById('pwTitle').textContent=s.name;
+  pwMsgEl.style.color = adminMode ? '#42e042' : '#ff9a9a';
+  pwMsgEl.textContent = adminMode ? 'ADMIN: leave this blank to join anyway.' : '';
+  pwInputEl.value=''; pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
+function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw && !adminMode){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting…'; startMultiplayer(); }
 function pwSpectate(){ if(!pwPendingServer) return; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Joining as spectator…'; spectateServer(pwPendingServer); }
 document.getElementById('pwJoinBtn').addEventListener('click', pwJoin);
 document.getElementById('pwSpectateBtn').addEventListener('click', pwSpectate);
