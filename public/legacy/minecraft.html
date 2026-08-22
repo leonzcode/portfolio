@@ -682,7 +682,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 4: purpular (purple) wood type + full variants ---
 "purpular_log","purpular_planks","purpular_leaves","purpular_stairs","purpular_slab","purpular_fence","purpular_trapdoor","purpular_door","purpular_sign",
 // --- pass 5: bed wars ---
-"tnt"];
+"tnt",
+// --- pass 6: glass panes (clear + 16 stained), appended so existing ids never shift ---
+"glass_pane","white_stained_glass_pane","orange_stained_glass_pane","magenta_stained_glass_pane","light_blue_stained_glass_pane","yellow_stained_glass_pane","lime_stained_glass_pane","pink_stained_glass_pane","gray_stained_glass_pane","light_gray_stained_glass_pane","cyan_stained_glass_pane","purple_stained_glass_pane","blue_stained_glass_pane","brown_stained_glass_pane","green_stained_glass_pane","red_stained_glass_pane","black_stained_glass_pane"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1277,6 +1279,9 @@ WOODS.forEach(w=>{
   B[w.id+'_fence']  = def(w.id+'_fence',  { tiles:T(w.id+'_planks'), fence:true,  opaque:false, hex:w.plank });
 });
 B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:false, cutout:true });
+// glass panes: thin, see-through panels that connect to neighbours (clear + 16 stained colours)
+B.glass_pane = def('glass_pane', { tiles:T('glass'), pane:true, opaque:false });
+for(const [n] of DYES) B[n+'_stained_glass_pane'] = def(n+'_stained_glass_pane', { tiles:T(n+'_stained_glass'), pane:true, opaque:false });
 // a sign for every wood type (typeable standing sign)
 WOODS.forEach(w=> B[w.id+'_sign'] = def(w.id+'_sign', { tiles:T(w.id+'_planks'), sign:true, solid:false, opaque:false, hex:w.plank }));
 B.purpular_sign = def('purpular_sign', { tiles:T('purpular_planks'), sign:true, solid:false, opaque:false, hex:0x8a5aa8 });
@@ -1419,8 +1424,10 @@ const doorMeta = new Map();      // "x,y,z" -> {facing:0-3, open:bool} : live re
 let spDoors = {};                // "x,y,z" -> {f,o} : singleplayer door state, saved with the world
 const dkey=(x,y,z)=>x+','+y+','+z;
 function isDoor(id){ return !!(id && BLOCKS[id] && BLOCKS[id].door); }
-function doorBounds(facing, open){   // thin panel on one cell edge; opening rotates it 90 deg
-  const t=3/16, f=(facing+(open?1:0))&3;
+function doorBounds(facing, open, hinge){   // thin panel on one cell edge; opening rotates it 90 deg around its hinge
+  const t=3/16;
+  const rot = open ? (hinge==='left' ? 3 : 1) : 0;   // left hinge swings the other way; undefined/'right' keep the original swing
+  const f=(facing+rot)&3;
   if(f===0) return [0,1,0,1,0,t];
   if(f===1) return [1-t,1,0,1,0,1];
   if(f===2) return [0,1,0,1,1-t,1];
@@ -1634,7 +1641,7 @@ function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); sp
 function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = removed)
   if(mp.active) return;
   const k=dkey(x,y,z);
-  if(m===null) delete spDoors[k]; else spDoors[k]={f:m.facing,o:m.open?1:0};
+  if(m===null) delete spDoors[k]; else spDoors[k]={f:m.facing,o:m.open?1:0,h:(m.hinge==='left'?'l':m.hinge==='right'?'r':undefined)};
   spScheduleSave();
 }
 function spRecordBed(x,y,z,m){    // persist singleplayer bed state (m null = removed)
@@ -1679,7 +1686,7 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; } } }catch(e){}
   seed=spSeed; noise=makeNoise(seed);
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
-  for(const kk in spDoors){ doorMeta.set(kk, {facing:spDoors[kk].f, open:!!spDoors[kk].o}); }
+  for(const kk in spDoors){ const sd=spDoors[kk]; doorMeta.set(kk, {facing:sd.f, open:!!sd.o, hinge:(sd.h==='l'?'left':sd.h==='r'?'right':undefined)}); }
   for(const kk in spBeds){ bedMeta.set(kk, {facing:spBeds[kk].f, head:!!spBeds[kk].h}); }
   for(const kk in spStairs){ stairMeta.set(kk, {facing:spStairs[kk].f, top:!!spStairs[kk].t}); }
   for(const kk in spLadders){ ladderMeta.set(kk, {facing:spLadders[kk].f}); }
@@ -1959,7 +1966,7 @@ function buildChunkMesh(c){
     }
     if (bl.door){                              // doors are a thin swinging panel, not a cube
       const d = doorMeta.get(dkey(wx,y,wz));
-      pushBox(op, wx, y, wz, doorBounds(d?d.facing:0, d?d.open:false), (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      pushBox(op, wx, y, wz, doorBounds(d?d.facing:0, d?d.open:false, d&&d.hinge), (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
       continue;
     }
     if (bl.bed){                               // a bed is a low mattress (2 cells) with a pillow at the head
@@ -1988,6 +1995,16 @@ function buildChunkMesh(c){
       if(conn(wx-1,wz)) for(const [a,b] of rails) pushBox(op, wx, y, wz, [0,6/16, a,b, 7/16,9/16], ftile);
       if(conn(wx,wz+1)) for(const [a,b] of rails) pushBox(op, wx, y, wz, [7/16,9/16, a,b, 10/16,1], ftile);
       if(conn(wx,wz-1)) for(const [a,b] of rails) pushBox(op, wx, y, wz, [7/16,9/16, a,b, 0,6/16], ftile);
+      continue;
+    }
+    if (bl.pane){                              // glass pane: a thin full-height panel + arms toward connected sides
+      const ptile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
+      const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); };
+      pushBox(tr, wx, y, wz, [7/16,9/16, 0,1, 7/16,9/16], ptile);                 // centre post
+      if(conn(wx+1,wz)) pushBox(tr, wx, y, wz, [9/16,1,   0,1, 7/16,9/16], ptile);
+      if(conn(wx-1,wz)) pushBox(tr, wx, y, wz, [0,7/16,   0,1, 7/16,9/16], ptile);
+      if(conn(wx,wz+1)) pushBox(tr, wx, y, wz, [7/16,9/16, 0,1, 9/16,1  ], ptile);
+      if(conn(wx,wz-1)) pushBox(tr, wx, y, wz, [7/16,9/16, 0,1, 0,7/16  ], ptile);
       continue;
     }
     if (bl.sign){ continue; }                  // signs render as separate rotatable 3D objects (see updateSignObj)
@@ -2627,6 +2644,18 @@ document.addEventListener('mousemove', e=>{
 });
 
 /* ---- physics + movement ---- */
+// a glass pane blocks only along its thin centre post + arms toward connected sides (panes are full height)
+function paneCollides(x,y,z, px,py,pz){
+  const w=player.w/2, minX=px-w, maxX=px+w, minZ=pz-w, maxZ=pz+w;
+  const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); };
+  const hit=(x0,x1,z0,z1)=> maxX>x0 && minX<x1 && maxZ>z0 && minZ<z1;
+  if(hit(x+7/16, x+9/16, z+7/16, z+9/16)) return true;
+  if(conn(x+1,z) && hit(x+9/16, x+1,    z+7/16, z+9/16)) return true;
+  if(conn(x-1,z) && hit(x,      x+7/16, z+7/16, z+9/16)) return true;
+  if(conn(x,z+1) && hit(x+7/16, x+9/16, z+9/16, z+1   )) return true;
+  if(conn(x,z-1) && hit(x+7/16, x+9/16, z,      z+7/16)) return true;
+  return false;
+}
 function collides(px,py,pz){
   const w=player.w/2;
   const x0=Math.floor(px-w), x1=Math.floor(px+w);
@@ -2636,6 +2665,7 @@ function collides(px,py,pz){
     const b=getBlock(x,y,z);
     if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid){
       if(BLOCKS[b].door) continue;  // doors are always walk-through, open or closed
+      if(BLOCKS[b].pane){ if(paneCollides(x,y,z,px,py,pz)) return true; continue; }   // thin, connect-shaped collision
       if(BLOCKS[b].slab){           // a slab only fills its half of the cell (unless doubled)
         const sm=slabMeta.get(x+','+y+','+z);
         if(sm && !sm.double){ const yb=sm.top?y+0.5:y, yt=sm.top?y+1:y+0.5; if(py+player.h<=yb || py>=yt) continue; }
@@ -2821,7 +2851,7 @@ function raycast(){
   let nx=0,ny=0,nz=0, t=0;
   for(let i=0;i<80;i++){
     const b=getBlock(x,y,z);
-    if(b!==AIR && BLOCKS[b] && !BLOCKS[b].liquid){ target={x,y,z,nx,ny,nz,dist:t, hy:o.y+d.y*t}; return; }
+    if(b!==AIR && BLOCKS[b] && !BLOCKS[b].liquid){ target={x,y,z,nx,ny,nz,dist:t, hx:o.x+d.x*t, hy:o.y+d.y*t, hz:o.z+d.z*t}; return; }
     if(tMX<tMY && tMX<tMZ){ x+=stepX; t=tMX; tMX+=tDX; nx=-stepX; ny=0; nz=0; }
     else if(tMY<tMZ){ y+=stepY; t=tMY; tMY+=tDY; nx=0; ny=-stepY; nz=0; }
     else { z+=stepZ; t=tMZ; tMZ+=tDZ; nx=0; ny=0; nz=-stepZ; }
@@ -2847,19 +2877,30 @@ function placeDoor(){
   const w=player.w/2;                                                             // not inside the player
   if(px+1>player.pos.x-w && px<player.pos.x+w && pz+1>player.pos.z-w && pz<player.pos.z+w && py+2>player.pos.y && py<player.pos.y+player.h) return;
   const facing=facingFromYaw(player.yaw);
+  // Minecraft-style hinge: where you clicked across the door decides left vs right,
+  // which sets which way it swings open. A door already on your left auto-flips it to
+  // the right so the two form a double door.
+  const dv=DIRV[facing], rx=-dv[2], rz=dv[0];   // the placer's "right" direction for this facing
+  let hinge='left';
+  if(typeof target.hx==='number'){
+    const rightAmount=(target.hx-(px+0.5))*rx + (target.hz-(pz+0.5))*rz;
+    hinge = rightAmount>0 ? 'right' : 'left';
+  }
+  if(isDoor(getBlock(px-rx,py,pz-rz))) hinge='right';        // a door on the left -> hinge right (double door)
+  else if(isDoor(getBlock(px+rx,py,pz+rz))) hinge='left';    // a door on the right -> hinge left
   setBlock(px,py,pz,id); setBlock(px,py+1,pz,id);
-  doorMeta.set(dkey(px,py,pz),{facing,open:false}); doorMeta.set(dkey(px,py+1,pz),{facing,open:false});
+  doorMeta.set(dkey(px,py,pz),{facing,open:false,hinge}); doorMeta.set(dkey(px,py+1,pz),{facing,open:false,hinge});
   mpSendBlock(px,py,pz,id); mpSendBlock(px,py+1,pz,id);
-  spRecordDoor(px,py,pz,{facing,open:false}); spRecordDoor(px,py+1,pz,{facing,open:false});
-  if(mp.active) mpSend({type:'door', x:px, y:py, z:pz, facing, open:false});
+  spRecordDoor(px,py,pz,{facing,open:false,hinge}); spRecordDoor(px,py+1,pz,{facing,open:false,hinge});
+  if(mp.active) mpSend({type:'door', x:px, y:py, z:pz, facing, open:false, hinge});
   remeshChunkAt(px,pz);
 }
 function toggleDoor(x,y,z){
   const by=doorBottom(x,y,z);
-  const cur=doorMeta.get(dkey(x,by,z)); const open=!(cur&&cur.open), facing=(cur&&cur.facing)||0;   // flip both halves together
-  for(let h=0;h<2;h++){ const k=dkey(x,by+h,z); const mm=doorMeta.get(k)||{facing:0}; const nm={facing:mm.facing,open}; doorMeta.set(k,nm); spRecordDoor(x,by+h,z,nm); }
+  const cur=doorMeta.get(dkey(x,by,z)); const open=!(cur&&cur.open), facing=(cur&&cur.facing)||0, hinge=(cur&&cur.hinge)||undefined;   // flip both halves together
+  for(let h=0;h<2;h++){ const k=dkey(x,by+h,z); const mm=doorMeta.get(k)||{facing:0}; const nm={facing:mm.facing,open,hinge:mm.hinge}; doorMeta.set(k,nm); spRecordDoor(x,by+h,z,nm); }
   remeshChunkAt(x,z);
-  if(mp.active) mpSend({type:'door', x, y:by, z, facing, open});   // sync open/closed to everyone
+  if(mp.active) mpSend({type:'door', x, y:by, z, facing, open, hinge});   // sync open/closed to everyone
 }
 function breakDoor(x,y,z){
   const by=doorBottom(x,y,z);
@@ -3290,6 +3331,8 @@ const CATS=[
   {id:'misc',label:'Misc'},
 ];
 function catOf(n){
+  if(n==='glass_pane') return 'deco';
+  if(n.endsWith('_stained_glass_pane')) return 'color';
   if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')||n.endsWith('_cushion')||n.endsWith('_carpet')
      ||n.endsWith('_concrete')||n.endsWith('_concrete_powder')||n.endsWith('_glazed_terracotta')) return 'color';
   if(n.endsWith('_ore')) return 'ores';
@@ -4038,7 +4081,7 @@ function mpHandle(m){
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
-    if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open}); } }
+    if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open, hinge:m.doors[kk].hinge}); } }
     if(m.beds) for(const kk in m.beds){ bedMeta.set(kk, {facing:m.beds[kk].facing|0, head:!!m.beds[kk].head}); }   // bed facing + which half has the pillow
     if(m.stairs) for(const kk in m.stairs){ stairMeta.set(kk, {facing:m.stairs[kk].facing|0, top:!!m.stairs[kk].top}); }
     if(m.ladders) for(const kk in m.ladders){ ladderMeta.set(kk, {facing:m.ladders[kk].facing|0}); }
@@ -4058,7 +4101,7 @@ function mpHandle(m){
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
   else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); if(trapdoorMeta.has(dk)) trapdoorMeta.delete(dk); if(slabMeta.has(dk)) slabMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
   else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {wall:!!m.wall, ang:(m.ang!=null?m.ang:(m.facing!=null?facingToAng(m.facing):0)), hex:m.hex, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
-  else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open}); } remeshChunkAt(m.x, m.z); }
+  else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open, hinge:m.hinge}); } remeshChunkAt(m.x, m.z); }
   else if(m.type==='trapdoor'){ trapdoorMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, open:!!m.open, top:!!m.top}); remeshChunkAt(m.x, m.z); }
   else if(m.type==='slab'){ slabMeta.set(m.x+','+m.y+','+m.z, {top:!!m.top, double:!!m.double}); remeshChunkAt(m.x, m.z); }
   else if(m.type==='prg'){ setPrgAng(m.x+','+m.y+','+m.z, m.ang|0); }
@@ -5356,7 +5399,23 @@ window.__mc = {
   get target(){ raycast(); return target; },
   mine(){ raycast(); breakBlock(); }, put(){ raycast(); placeBlock(); },
   block(x,y,z){ return getBlock(x,y,z); },
-  doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open}:null; },
+  doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open,hinge:d.hinge||'right'}:null; },
+  blockInfo(name){ const b=BLOCKS[name]; return b?{id:b.id,pane:!!b.pane,opaque:!!b.opaque,solid:!!b.solid,cat:catOf(name)}:null; },
+  putBlock(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); remeshChunkAt(x,z); return true; },
+  collidesAt(px,py,pz){ return collides(px,py,pz); },
+  setView(yaw,pitch){ player.yaw=yaw; player.pitch=pitch||0; },
+  paneConns(x,y,z){ const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); }; return {xp:conn(x+1,z),xm:conn(x-1,z),zp:conn(x,z+1),zm:conn(x,z-1)}; },
+  placeDoorAt(hx,hz){ if(target){ target.hx=hx; target.hz=hz; } placeDoor(); },
+  testDoorPlace(bx,by,bz,hx,hz,yaw){   // set up a clean spot + click point, place a door, report its hinge
+    const id=BLOCKS['oak_door']&&BLOCKS['oak_door'].id; if(!id) return 'no door block';
+    setBlock(bx,by,bz, BLOCKS['stone'].id); setBlock(bx,by+1,bz, AIR); setBlock(bx,by+2,bz, AIR);
+    doorMeta.delete(dkey(bx,by+1,bz)); doorMeta.delete(dkey(bx,by+2,bz));
+    hotbar[selSlot]=id; player.pos.set(bx+0.5, by+5, bz+4.5); player.yaw=(yaw||0);
+    target={x:bx,y:by,z:bz,nx:0,ny:1,nz:0,dist:1,hx:hx,hy:by+1,hz:hz};
+    placeDoor();
+    const d=doorMeta.get(dkey(bx,by+1,bz));
+    return d?{facing:d.facing,hinge:d.hinge||'right',open:d.open}:null;
+  },
   doorCount(){ return doorMeta.size; },
   useDoor(x,y,z){ toggleDoor(x,y,z); },
   trapdoorAt(x,y,z){ const d=trapdoorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open,top:d.top}:null; },
