@@ -306,6 +306,36 @@
   #pollMini .pmRow{ font-weight:600; }
   #pollMini .pmY{ color:#79dd86; } #pollMini .pmN{ color:#ef948c; }
   #pollMini .pmTot{ font-size:.78em; color:#9aa4ad; }
+  /* server list + create-server (Minecraft-styled) */
+  .srvList{ width:460px; max-width:88vw; max-height:44vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding:2px; }
+  .srvCard{ display:flex; align-items:center; gap:12px; padding:9px 12px; cursor:pointer;
+    background:#6f6f6f; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
+  .srvCard:hover{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
+  .srvCard .ic{ width:40px; height:40px; flex:0 0 40px; image-rendering:pixelated; background:#555; border:1px solid #333; }
+  .srvCard .info{ flex:1; min-width:0; text-align:left; }
+  .srvCard .nm{ font-size:15px; color:#fff; text-shadow:1px 1px 0 rgba(0,0,0,.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .srvCard .meta{ font-size:12px; color:#d7d7d7; }
+  .srvCard .meta .lock{ color:#ffd24a; } .srvCard .meta .pub{ color:#9be07f; }
+  .srvNote{ font-size:12.5px; min-height:16px; color:#ffec4d; text-align:center; text-shadow:1px 1px 0 rgba(0,0,0,.5); }
+  .createWrap{ display:flex; gap:22px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
+  .createLeft{ display:flex; flex-direction:column; gap:10px; width:300px; max-width:84vw; }
+  .createLeft .nameField{ width:100%; }
+  .csRow{ display:flex; gap:8px; }
+  .csRow .btn{ width:auto; flex:1; padding:9px 0; }
+  .btn.on{ background:#5a8f5a; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
+  .createRight{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .csIconLbl{ font-size:12px; color:#c9c9c9; letter-spacing:1px; text-transform:uppercase; }
+  #csIconCanvas{ width:132px; height:132px; image-rendering:pixelated; background:#2a2a2a; border:2px solid #555; cursor:crosshair; touch-action:none; }
+  .csPresets{ display:flex; gap:5px; }
+  .csPresets canvas{ width:30px; height:30px; image-rendering:pixelated; border:2px solid #555; cursor:pointer; background:#333; }
+  .csPresets canvas.on{ border-color:#ffec4d; }
+  .csTools{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .csIconBtns{ display:flex; gap:6px; }
+  #csSwatches{ width:168px; }
+  .pwPanel{ display:flex; flex-direction:column; align-items:center; gap:12px; width:340px; max-width:86vw;
+    padding:22px; background:#8f8f8f; border:4px solid; border-color:#c6c6c6 #4b4b4b #4b4b4b #c6c6c6; }
+  .pwTitle{ font-size:18px; font-weight:700; color:#fff; text-shadow:2px 2px 0 #2f2f2f; text-align:center; }
+  .pwPanel .nameField{ width:100%; }
   #pollMini .pmMinBtn{ pointer-events:auto; cursor:pointer; color:#aeb6bd; padding:0 3px; margin-left:4px; }
   #pollMini .pmMinBtn:hover{ color:#fff; }
   #pollMini .pmPill{ display:none; pointer-events:auto; cursor:pointer; font-size:1.15em; opacity:.75; }
@@ -385,6 +415,63 @@
   <div class="ctrlActions">
     <button class="btn" id="ctrlResetBtn">Reset to default</button>
     <button class="btn" id="ctrlDoneBtn">Done</button>
+  </div>
+</div>
+
+<div class="screen" id="servers" hidden>
+  <div class="title" style="font-size:30px;">Play Multiplayer</div>
+  <div class="ctrlHint">Join a public server, or enter a password for a private one.</div>
+  <div class="srvList" id="srvList"></div>
+  <div class="srvNote" id="srvNote"></div>
+  <div class="ctrlActions">
+    <button class="btn half" id="srvCreateBtn">Create server</button>
+    <button class="btn half" id="srvRefreshBtn">Refresh</button>
+  </div>
+  <button class="btn" id="srvBackBtn">Back</button>
+</div>
+
+<div class="screen" id="createServer" hidden>
+  <div class="title" style="font-size:28px;">Create a Server</div>
+  <div class="createWrap">
+    <div class="createLeft">
+      <input class="nameField" id="csName" type="text" maxlength="24" placeholder="Server name" autocomplete="off" spellcheck="false">
+      <div class="csRow">
+        <button class="btn half" id="csPublic">Public</button>
+        <button class="btn half" id="csPrivate">Private</button>
+      </div>
+      <input class="nameField" id="csPassword" type="text" maxlength="32" placeholder="Password (private only)" autocomplete="off" spellcheck="false" hidden>
+      <div class="codeMsg" id="csMsg"></div>
+    </div>
+    <div class="createRight">
+      <div class="csIconLbl">Icon</div>
+      <canvas id="csIconCanvas" width="256" height="256"></canvas>
+      <div class="csPresets" id="csPresets"></div>
+      <div class="csTools">
+        <div class="skinSwatches" id="csSwatches"></div>
+        <div class="csIconBtns">
+          <button class="keybtn" id="csUpload">Upload image</button>
+          <button class="keybtn" id="csClear">Clear</button>
+        </div>
+        <input type="file" id="csFile" accept="image/*" hidden>
+      </div>
+    </div>
+  </div>
+  <div class="ctrlActions">
+    <button class="btn" id="csCreateBtn">Create &amp; play</button>
+    <button class="btn" id="csCancelBtn">Back</button>
+  </div>
+</div>
+
+<div class="screen" id="pwPrompt" hidden>
+  <div class="pwPanel">
+    <div class="pwTitle" id="pwTitle">Private server</div>
+    <div class="ctrlHint">Enter the password to join.</div>
+    <input class="nameField" id="pwInput" type="password" maxlength="32" placeholder="Password" autocomplete="off" spellcheck="false">
+    <div class="codeMsg" id="pwMsg"></div>
+    <div class="ctrlActions">
+      <button class="btn" id="pwJoinBtn">Join</button>
+      <button class="btn" id="pwCancelBtn">Back</button>
+    </div>
   </div>
 </div>
 
@@ -2110,12 +2197,17 @@ function setLocalBody(kind){
   headPivot = body.userData.headPivot; body.visible=wasVisible; scene.add(body);
 }
 // floating name tag above a remote player's head
-function makeNametag(name, color){
+function makeNametag(name, color, admin){
   const c=document.createElement('canvas'); c.width=256; c.height=64;
-  const g=c.getContext('2d'); g.font='bold 26px monospace'; g.textAlign='center'; g.textBaseline='middle';
-  const w=Math.min(240, g.measureText(name).width+18);
+  const g=c.getContext('2d'); g.textBaseline='middle';
+  const nameFont='bold 26px monospace', admFont='italic bold 22px monospace';
+  g.font=admFont; const admW = admin ? g.measureText('ADMIN ').width : 0;
+  g.font=nameFont; const nameW=g.measureText(name).width;
+  const total=Math.min(238, admW+nameW), w=total+18;
   g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(128-w/2, 18, w, 30);
-  g.fillStyle=color||'#fff'; g.fillText(name, 128, 34);
+  let x=128-total/2; g.textAlign='left';
+  if(admin){ g.font=admFont; g.fillStyle='#42e042'; g.fillText('ADMIN', x, 35); x+=admW; }
+  g.font=nameFont; g.fillStyle=color||'#fff'; g.fillText(name, x, 34);
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter;
   const s=new THREE.Sprite(new THREE.SpriteMaterial({ map:t, transparent:true, depthTest:false }));
   s.scale.set(1.7,0.42,1); s.position.y=2.15; s.renderOrder=999;
@@ -2320,8 +2412,10 @@ const VIEW = 5;   // chunk radius (was 6; trimmed one ring to cut ~28% of in-vie
 function ensureChunks(px,pz){
   const ccx=Math.floor(px/CH), ccz=Math.floor(pz/CH);
   // generate a ring one larger than view so meshing has neighbours
+  const border = (mp.active && mp.border) ? mp.border : 0;
   for(let dz=-VIEW-1; dz<=VIEW+1; dz++) for(let dx=-VIEW-1; dx<=VIEW+1; dx++){
     const cx=ccx+dx, cz=ccz+dz, k=key(cx,cz);
+    if(border){ if(cx*CH>border || (cx+1)*CH<-border || cz*CH>border || (cz+1)*CH<-border) continue; }   // world border: skip chunks fully outside (caps chunk count -> less lag)
     if(!chunks.has(k)){ const c=new Chunk(cx,cz); chunks.set(k,c); genQueue.push(c); }
   }
   // drop far chunks
@@ -2466,7 +2560,7 @@ addEventListener('keydown', e=>{
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false;
   const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
@@ -2696,6 +2790,11 @@ function updatePlayer(dt){
   player.crouch += ((player.sneak?1:0) - player.crouch) * (1 - Math.exp(-16*dt));
   player.eye = (1.62 - player.crouch*0.16) * localEyeMul;   // giant/small secret codes raise/lower the camera
   stepSmooth = stepSmooth>0.003 ? stepSmooth*Math.exp(-16*dt) : 0;   // let the camera catch up to a step-up
+  if(mp.active && mp.border){                                        // world border: keep the player inside the bounded area
+    const b=mp.border-0.35;
+    if(player.pos.x> b){ player.pos.x= b; if(player.vel.x>0) player.vel.x=0; } else if(player.pos.x<-b){ player.pos.x=-b; if(player.vel.x<0) player.vel.x=0; }
+    if(player.pos.z> b){ player.pos.z= b; if(player.vel.z>0) player.vel.z=0; } else if(player.pos.z<-b){ player.pos.z=-b; if(player.vel.z<0) player.vel.z=0; }
+  }
 }
 
 /* ---- raycast (voxel DDA) for targeting ---- */
@@ -3302,11 +3401,15 @@ function toMenu(){
   chatOpen=false; chatBox.hidden=true; chatLogEl.classList.remove('up');
   if(pollScreenEl) pollScreenEl.hidden=true; pollBlocking=false;
   if(pollMiniEl) pollMiniEl.hidden=true;
+  if(typeof serversEl!=='undefined' && serversEl) serversEl.hidden=true;
+  if(typeof createServerEl!=='undefined' && createServerEl) createServerEl.hidden=true;
+  if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;
+  mp.border=0; if(typeof updateWorldBorder==='function') updateWorldBorder();
   try{ document.exitPointerLock(); }catch(e){}
 }
 
 document.getElementById('playBtn').addEventListener('click', startSingleplayer);
-document.getElementById('mpBtn').addEventListener('click', ()=>startMultiplayer());
+document.getElementById('mpBtn').addEventListener('click', ()=>openServers());
 // ---- secret code box (replaces the old Bed Wars button) ----
 function wireCodeBox(inputId, btnId, msgId){
   const inp=document.getElementById(inputId), btn=document.getElementById(btnId), msg=document.getElementById(msgId);
@@ -3664,7 +3767,9 @@ creative = true;   // locked to creative for now
 /* One shared, persistent server world. The client connects over WebSocket,
    receives the world seed + everyone's edits, then streams its own position,
    block edits and chat, and renders the other players live. */
-const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0 };
+const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0, server:'original', serverName:'', border:0 };
+let mpTarget = { server:'original', pw:'' };   // which server the next connect joins
+let adminMode = localStorage.getItem('leoncraft_admin')==='1';   // the 314159 code: join any server + ADMIN tag
 
 /* ---- multiplayer poll: a blocking dialog you must answer before playing (server-tallied, one vote per computer) ---- */
 const pollScreenEl=document.getElementById('pollScreen');
@@ -3723,7 +3828,7 @@ function applyLocalBody(){
   setLocalBody(bodyToKind(fx.body));   // become a pig / block / tree locally too, so first-person reflects it
   localEyeMul = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.3 : fx.body==='pig' ? 0.6 : fx.body==='block' ? 0.95 : fx.body==='tree' ? 1.7 : 1;   // camera rides at your new height
 }
-function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick }); }   // relayed to everyone else
+function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, admin:adminMode }); }   // relayed to everyone else
 function giveStick(){ hotbar[0]=STICK_ITEM; selSlot=0; if(typeof renderHotbar==='function') renderHotbar(); if(typeof showItemName==='function') showItemName(STICK_ITEM); }
 function removeStick(){ if(hotbar[0]===STICK_ITEM){ hotbar[0]=0; if(typeof renderHotbar==='function') renderHotbar(); } }
 // Every code toggles: typing it again turns it back off. Body codes are one-at-a-time (a new one replaces the old).
@@ -3732,6 +3837,8 @@ function applyCode(raw, msgEl){
   if(!code) return;
   if(code==='bedwars'){ flashCode('Launching Bed Wars…', msgEl); startBedwars(); return; }
   let note='';
+  if(code==='314159'){ adminMode=!adminMode; localStorage.setItem('leoncraft_admin', adminMode?'1':'0'); if(mp.active) sendFx(); if(tabShown) renderTabList();
+    flashCode(adminMode?'ADMIN mode on — you can join any server.':'ADMIN mode off.', msgEl); return; }
   if(code==='leoniscool'){ fx.color = fx.color ? '' : NAME_BLUE; note = fx.color ? 'Your name is now blue.' : 'Blue name turned off.'; }
   else if(code==='secret'){ fx.hide=!fx.hide; note = fx.hide ? 'Your name is now hidden from others.' : 'Your name is visible again.'; }
   else if(code==='tade'){ fx.stick=!fx.stick; if(fx.stick){ giveStick(); note='Knockback stick equipped — check slot 1.'; } else { removeStick(); note='Knockback stick removed.'; } }
@@ -3826,7 +3933,12 @@ function setPlayerBody(p, body){
 }
 function setPlayerColor(p, color){
   p.color = color || '';
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff'); p.model.add(p.tag); p.tag.visible=!p.hide; }
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin); p.model.add(p.tag); p.tag.visible=!p.hide; }
+  if(tabShown) renderTabList();
+}
+function setPlayerAdmin(p, admin){
+  if(!!p.admin===!!admin) return; p.admin=!!admin;
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
 function setPlayerHide(p, hide){ p.hide=!!hide; if(p.tag) p.tag.visible=!p.hide; }   // hidename code: hide the floating nametag from others
@@ -3836,22 +3948,33 @@ const tabListEl = document.getElementById('tabList');
 let tabShown = false;
 function renderTabList(){
   if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
-  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color}];
-  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||''});
+  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:adminMode}];
+  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin});
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
-  tabListEl.innerHTML = '<div class="th">'+n+' player'+(n===1?'':'s')+' online</div>' +
-    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'"><span'+(r.color?' style="color:'+r.color+'"':'')+'>'+escapeHtml(r.name)+'</span></span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
+  const hdr = mp.serverName ? escapeHtml(mp.serverName)+' — '+n+' online' : (n+' player'+(n===1?'':'s')+' online');
+  tabListEl.innerHTML = '<div class="th">'+hdr+'</div>' +
+    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'">'+(r.admin?'<span style="color:#42e042;font-style:italic;margin-right:5px">ADMIN</span>':'')+'<span'+(r.color?' style="color:'+r.color+'"':'')+'>'+escapeHtml(r.name)+'</span></span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
   tabListEl.hidden=false;
 }
 
-function mpUrl(){
+function mpWsUrl(){
   const h = location.hostname || 'localhost';
-  let u;
-  if(h.endsWith('leonzhao.dev')) u = 'wss://apps.leonzhao.dev/mc/ws';
-  else { const q = new URLSearchParams(location.search).get('mp'); u = q || ('ws://'+h+':8600/ws'); }   // local dev override ?mp=ws://host:port
-  if(mp.bw) u += (u.indexOf('?')>=0?'&':'?')+'mode=bw';   // bedwars connects to the same server, separate match
-  return u;
+  if(h.endsWith('leonzhao.dev')) return 'wss://apps.leonzhao.dev/mc/ws';
+  const q = new URLSearchParams(location.search).get('mp'); return q || ('ws://'+h+':8600/ws');   // local dev override ?mp=ws://host:port
+}
+function mcHttpBase(){   // HTTP origin for /mc/servers + /mc/createserver (derived from the ws URL)
+  return mpWsUrl().replace(/^wss:/,'https:').replace(/^ws:/,'http:').replace(/\/ws$/,'');
+}
+function mpUrl(){
+  let u = mpWsUrl();
+  if(mp.bw){ u += (u.indexOf('?')>=0?'&':'?')+'mode=bw'; return u; }   // bedwars: separate match
+  const p = new URLSearchParams();
+  p.set('server', mpTarget.server || 'original');
+  if(mpTarget.pw) p.set('pw', mpTarget.pw);
+  if(adminMode) p.set('admin', '1');
+  p.set('device', pollDeviceId());
+  return u + (u.indexOf('?')>=0?'&':'?') + p.toString();
 }
 function mpApplyRemoteBlock(x,y,z,b){
   mpSetOverride(x,y,z,b);
@@ -3860,12 +3983,12 @@ function mpApplyRemoteBlock(x,y,z,b){
 }
 function mpAddPlayer(p){
   if(!p || p.id===mp.id || mp.players.has(p.id)) return;
-  const color=p.color||'';
+  const color=p.color||'', admin=!!p.admin;
   const model=makeCharacterModel(defaultSkinTex); model.visible=true; scene.add(model);
-  const tag=makeNametag(p.name||('Player'+p.id), color||'#fff'); model.add(tag);
+  const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', admin); model.add(tag);
   const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
     x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
-    body:'none', color:color, hide:!!p.hide };
+    body:'none', color:color, hide:!!p.hide, admin:admin };
   mp.players.set(p.id, rec);
   if(p.hide) tag.visible=false;
   if(p.skin) applyRemoteSkin(p.id, p.skin);          // their custom skin, if they have one
@@ -3920,7 +4043,7 @@ function mpHandle(m){
   if(m.type==='init' && (m.mode==='bw' || bw.active)){ bwInit(m); return; }   // bedwars has its own init/world
   if(bw.active && bwHandle(m)) return;                                        // bedwars-only messages; others fall through
   if(m.type==='init'){
-    mp.id=m.id; mp.name=m.name;
+    mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.admin=!!m.admin;
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
@@ -3956,24 +4079,29 @@ function mpHandle(m){
   else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
   else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
-  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerHide(p, m.hide); } }   // secret-code effect: big / small / pig / block / name colour / hidename
-  else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+'> '+m.text), m.system?'sys':''); }
+  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerHide(p, m.hide); setPlayerAdmin(p, m.admin); } }   // secret-code effect: big / small / pig / block / name colour / hidename / admin
+  else if(m.type==='chat'){ chatPush(m.system? m.text : ((m.admin?'ADMIN ':'')+'<'+m.name+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
-    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff'); p.model.add(p.tag); } }
+    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff', p.admin); p.model.add(p.tag); p.tag.visible=!p.hide; } }
   }
   else if(m.type==='poll'){ pollData={yes:m.yes|0, no:m.no|0}; renderPoll(); renderPollMini(); }   // live poll tally update (modal + corner widget)
-  else if(m.type==='full'){ chatPush('Server is full right now, try again soon.', 'sys'); }
+  else if(m.type==='authfail'){ mp._joinErr='Wrong password.'; }
+  else if(m.type==='noserver'){ mp._joinErr='That server no longer exists.'; }
+  else if(m.type==='full'){ if(state!==PLAY) mp._joinErr='That server is full right now.'; else chatPush('Server is full right now, try again soon.', 'sys'); }
 }
 function mpConnect(){
   if(mp.ws) return;
-  chatPush('Connecting to the server...', 'sys');
-  let ws; try{ ws=new WebSocket(mpUrl()); }catch(e){ chatPush('Could not connect.', 'sys'); return; }
+  mp._joinErr=null;
+  let ws; try{ ws=new WebSocket(mpUrl()); }catch(e){ if(typeof serversNote==='function') serversNote('Could not connect.'); return; }
   mp.ws=ws;
   ws.onopen=()=>{ mp.active=true; const nm=getSavedName(); if(nm) mpSend({type:'name', name:nm}); };
   ws.onmessage=(ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } mpHandle(m); };
-  ws.onclose=()=>{ mp.active=false; mp.ws=null; mpClearPlayers(); chatPush('Disconnected from the server.', 'sys'); };
-  ws.onerror=()=>{ chatPush('Server unreachable. Is it online?', 'sys'); };
+  ws.onclose=()=>{ const wasPlaying=(state===PLAY); mp.active=false; mp.ws=null; mpClearPlayers(); mp.border=0; if(typeof updateWorldBorder==='function') updateWorldBorder();
+    if(mp._joinErr){ const e=mp._joinErr; mp._joinErr=null; if(typeof openServers==='function') openServers(e); }
+    else if(wasPlaying) chatPush('Disconnected from the server.', 'sys');
+    else if(typeof openServers==='function') openServers('Server unreachable. Is it online?'); };
+  ws.onerror=()=>{};
 }
 function mpSend(o){ if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} } }
 function mpSendBlock(x,y,z,b){
@@ -3983,13 +4111,140 @@ function mpSendBlock(x,y,z,b){
 }
 
 // build the world from the server's seed, then enter the game
+let worldBorderMesh=null;
+function updateWorldBorder(){
+  if(worldBorderMesh){ scene.remove(worldBorderMesh); worldBorderMesh.geometry.dispose(); worldBorderMesh.material.dispose(); worldBorderMesh=null; }
+  if(!(mp.active && mp.border)) return;
+  const b=mp.border, h=140;
+  const geo=new THREE.BoxGeometry(b*2, h, b*2);
+  const mat=new THREE.MeshBasicMaterial({ color:0x30d0e6, transparent:true, opacity:0.15, side:THREE.BackSide, depthWrite:false });   // Minecraft-style translucent border wall (seen from inside)
+  worldBorderMesh=new THREE.Mesh(geo, mat); worldBorderMesh.position.set(0, h/2-30, 0); scene.add(worldBorderMesh);
+}
 function mpStartWorld(serverSeed){
   seed = serverSeed>>>0; noise = makeNoise(seed);
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
   startGame();
+  updateWorldBorder();
 }
 function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi(); mpConnect(); }
+
+/* ================= server browser: pick / create / join a server ================= */
+const serversEl=document.getElementById('servers'), srvListEl=document.getElementById('srvList'), srvNoteEl=document.getElementById('srvNote');
+function serversNote(msg){ if(srvNoteEl){ srvNoteEl.textContent=msg||''; } }
+function openServers(finalNote){ serversEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; if(createServerEl) createServerEl.hidden=true; if(pwPromptEl) pwPromptEl.hidden=true; refreshServers(finalNote); }
+function closeServers(){ serversEl.hidden=true; menuEl.hidden=false; }
+function escHtml(s){ return (''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+async function refreshServers(finalNote){
+  serversNote(finalNote||'Loading servers…'); srvListEl.innerHTML='';
+  let data;
+  try{ const r=await fetch(mcHttpBase()+'/servers',{cache:'no-store'}); data=await r.json(); }
+  catch(e){ serversNote(finalNote||'Could not reach the server list. Is the server online?'); return; }
+  serversNote(finalNote||'');
+  const list=(data&&data.servers)||[];
+  if(!list.length){ serversNote(finalNote||'No servers yet — create one!'); return; }
+  for(const s of list){
+    const card=document.createElement('div'); card.className='srvCard';
+    const ic=document.createElement('canvas'); ic.className='ic'; ic.width=ic.height=32;
+    drawServerIcon(ic, s.icon, s.id);
+    const info=document.createElement('div'); info.className='info';
+    const lockTxt = s.isPublic ? '<span class="pub">Public</span>' : '<span class="lock">🔒 Private</span>';
+    info.innerHTML='<div class="nm">'+escHtml(s.name)+'</div><div class="meta">'+lockTxt+' · '+s.players+' online</div>';
+    card.appendChild(ic); card.appendChild(info);
+    card.addEventListener('click', ()=>joinServer(s));
+    srvListEl.appendChild(card);
+  }
+}
+function joinServer(s){
+  if(s.isPublic || adminMode){ mpTarget={ server:s.id, pw:'' }; serversEl.hidden=true; startMultiplayer(); return; }
+  openPwPrompt(s);
+}
+// ---- password prompt for private servers ----
+const pwPromptEl=document.getElementById('pwPrompt'), pwInputEl=document.getElementById('pwInput'), pwMsgEl=document.getElementById('pwMsg');
+let pwPendingServer=null;
+function openPwPrompt(s){ pwPendingServer=s; document.getElementById('pwTitle').textContent=s.name; pwMsgEl.textContent=''; pwInputEl.value=''; pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
+function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw){ pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; pwPromptEl.hidden=true; startMultiplayer(); }
+document.getElementById('pwJoinBtn').addEventListener('click', pwJoin);
+document.getElementById('pwCancelBtn').addEventListener('click', ()=>{ pwPromptEl.hidden=true; openServers(); });
+pwInputEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); pwJoin(); } if(e.key==='Escape'){ e.preventDefault(); pwPromptEl.hidden=true; openServers(); } });
+document.getElementById('srvRefreshBtn').addEventListener('click', refreshServers);
+document.getElementById('srvBackBtn').addEventListener('click', closeServers);
+document.getElementById('srvCreateBtn').addEventListener('click', openCreateServer);
+
+// draw a server's icon into a canvas (a data-URL image, or a generated default from the id)
+const _srvIconImgs={};
+function drawServerIcon(canvas, icon, id){
+  const g=canvas.getContext('2d'); const s=canvas.width; g.imageSmoothingEnabled=false; g.clearRect(0,0,s,s);
+  if(icon && icon.slice(0,11)==='data:image/'){
+    let img=_srvIconImgs[icon]; if(!img){ img=new Image(); img.onload=()=>{ try{ g.clearRect(0,0,s,s); g.drawImage(img,0,0,s,s); }catch(e){} }; img.src=icon; _srvIconImgs[icon]=img; if(img.complete){ try{ g.drawImage(img,0,0,s,s); }catch(e){} } }
+    else if(img.complete){ g.drawImage(img,0,0,s,s); }
+  } else {
+    // deterministic default: a coloured tile with the first letter
+    let h=0; for(let i=0;i<(id||'x').length;i++) h=(h*31+id.charCodeAt(i))>>>0;
+    const hue=h%360; g.fillStyle='hsl('+hue+',45%,42%)'; g.fillRect(0,0,s,s);
+    g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(0,0,s,s/3);
+    g.fillStyle='#fff'; g.font='bold '+Math.round(s*0.62)+'px monospace'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText((id==='original'?'O':(id||'?')[1]||'S').toUpperCase(), s/2, s*0.56);
+  }
+}
+
+/* ---- create server: icon editor (16×16 square, like the skin editor but one face) ---- */
+const createServerEl=document.getElementById('createServer');
+const csIconDisp=document.getElementById('csIconCanvas'), csIconG=csIconDisp.getContext('2d');
+const csIcon=document.createElement('canvas'); csIcon.width=csIcon.height=16; const csG=csIcon.getContext('2d');
+let csPublic=true, csColor='#7ac74a', csPainting=false;
+const CS_PALETTE=['#111111','#ffffff','#9d9d9d','#c14b43','#e0872f','#f2c531','#4bbf5b','#2f8f6b','#4a86e0','#3a4fc0','#8f4fd0','#d06bb0','#8a5a2b','#57e0e6','#e6e6e6','#5a3a1a'];
+function csRenderIcon(){ csIconG.imageSmoothingEnabled=false; csIconG.clearRect(0,0,256,256); csIconG.drawImage(csIcon,0,0,256,256);
+  csIconG.strokeStyle='rgba(0,0,0,.12)'; csIconG.lineWidth=1; for(let i=1;i<16;i++){ csIconG.beginPath(); csIconG.moveTo(i*16,0); csIconG.lineTo(i*16,256); csIconG.moveTo(0,i*16); csIconG.lineTo(256,i*16); csIconG.stroke(); } }
+function csFillIcon(fn){ csG.clearRect(0,0,16,16); fn(csG); csRenderIcon(); if(csPresetSel) csPresetSel.classList.remove('on'); csPresetSel=null; }
+function csPaintAt(ev){ const r=csIconDisp.getBoundingClientRect(); const x=Math.floor((ev.clientX-r.left)/r.width*16), y=Math.floor((ev.clientY-r.top)/r.height*16); if(x<0||x>15||y<0||y>15) return; csG.fillStyle=csColor; csG.fillRect(x,y,1,1); csRenderIcon(); }
+csIconDisp.addEventListener('pointerdown', e=>{ csPainting=true; csIconDisp.setPointerCapture(e.pointerId); csPaintAt(e); });
+csIconDisp.addEventListener('pointermove', e=>{ if(csPainting) csPaintAt(e); });
+addEventListener('pointerup', ()=>{ csPainting=false; });
+// palette
+const csSw=document.getElementById('csSwatches');
+CS_PALETTE.forEach(col=>{ const d=document.createElement('div'); d.className='swatch'; d.style.background=col; d.title=col; d.addEventListener('click', ()=>{ csColor=col; [...csSw.children].forEach(c=>c.classList.remove('sel')); d.classList.add('sel'); }); csSw.appendChild(d); });
+csSw.firstChild && (csSw.children[6].classList.add('sel'), csColor=CS_PALETTE[6]);
+// presets
+let csPresetSel=null;
+const CS_PRESETS=[
+  g=>{ g.fillStyle='#7ac74a'; g.fillRect(0,0,16,16); g.fillStyle='#6ab03e'; for(let i=0;i<40;i++) g.fillRect((i*7)%16,(i*11)%16,1,1); },       // grass
+  g=>{ g.fillStyle='#8f8f8f'; g.fillRect(0,0,16,16); g.fillStyle='#7a7a7a'; for(let i=0;i<50;i++) g.fillRect((i*5)%16,(i*13)%16,1,1); },       // stone
+  g=>{ g.fillStyle='#4fd6e6'; g.fillRect(0,0,16,16); g.fillStyle='#bff4fb'; g.fillRect(4,4,3,3); g.fillStyle='#2a9fb0'; g.fillRect(9,9,4,4); }, // diamond
+  g=>{ g.fillStyle='#3a2b1a'; g.fillRect(0,0,16,16); g.fillStyle='#c14b43'; g.fillRect(4,3,8,3); g.fillRect(2,6,12,5); g.fillStyle='#e0655c'; g.fillRect(5,7,4,2); }, // heart-ish (nether)
+  g=>{ g.fillStyle='#1b2a4a'; g.fillRect(0,0,16,16); g.fillStyle='#ffe14a'; const pts=[[8,2],[10,7],[15,7],[11,10],[13,15],[8,12],[3,15],[5,10],[1,7],[6,7]]; g.beginPath(); g.moveTo(pts[0][0],pts[0][1]); for(const p of pts) g.lineTo(p[0],p[1]); g.closePath(); g.fill(); }, // star
+];
+const csPresetsEl=document.getElementById('csPresets');
+CS_PRESETS.forEach((fn,i)=>{ const c=document.createElement('canvas'); c.width=c.height=16; fn(c.getContext('2d')); c.addEventListener('click', ()=>{ csFillIcon(fn); c.classList.add('on'); csPresetSel=c; }); csPresetsEl.appendChild(c); });
+// upload
+document.getElementById('csUpload').addEventListener('click', ()=>document.getElementById('csFile').click());
+document.getElementById('csFile').addEventListener('change', e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const img=new Image(); img.onload=()=>{ csG.clearRect(0,0,16,16); csG.imageSmoothingEnabled=false; csG.drawImage(img,0,0,16,16); csRenderIcon(); if(csPresetSel){ csPresetSel.classList.remove('on'); csPresetSel=null; } }; img.src=URL.createObjectURL(f); });
+document.getElementById('csClear').addEventListener('click', ()=>csFillIcon(g=>{ g.fillStyle='#5a5a5a'; g.fillRect(0,0,16,16); }));
+// public/private toggle
+function csSetPublic(v){ csPublic=v; document.getElementById('csPublic').classList.toggle('on', v); document.getElementById('csPrivate').classList.toggle('on', !v); document.getElementById('csPassword').hidden = v; }
+document.getElementById('csPublic').addEventListener('click', ()=>csSetPublic(true));
+document.getElementById('csPrivate').addEventListener('click', ()=>csSetPublic(false));
+function openCreateServer(){ serversEl.hidden=true; createServerEl.hidden=false; document.getElementById('csName').value=''; document.getElementById('csPassword').value=''; document.getElementById('csMsg').textContent=''; csSetPublic(true); CS_PRESETS[0](csG); csRenderIcon(); document.getElementById('csPresets').firstChild.classList.add('on'); csPresetSel=document.getElementById('csPresets').firstChild; setTimeout(()=>document.getElementById('csName').focus(),40); }
+let csSubmitting=false;
+async function csCreate(){
+  if(csSubmitting) return;
+  const name=document.getElementById('csName').value.trim(); const msg=document.getElementById('csMsg');
+  if(!name){ msg.style.color='#ff9a9a'; msg.textContent='Give your server a name.'; return; }
+  const password=csPublic?'':document.getElementById('csPassword').value;
+  if(!csPublic && !password){ msg.style.color='#ff9a9a'; msg.textContent='Set a password for a private server.'; return; }
+  csSubmitting=true; msg.style.color='#ffec4d'; msg.textContent='Creating…';
+  const icon=csIcon.toDataURL('image/png');
+  try{
+    const r=await fetch(mcHttpBase()+'/createserver',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ name, isPublic:csPublic, password, icon, device:pollDeviceId() }) });
+    const j=await r.json();
+    if(j&&j.id){ mpTarget={ server:j.id, pw:password }; createServerEl.hidden=true; startMultiplayer(); }
+    else { msg.style.color='#ff9a9a'; msg.textContent=(j&&j.error)||'Could not create the server.'; }
+  }catch(e){ msg.style.color='#ff9a9a'; msg.textContent='Network error. Try again?'; }
+  csSubmitting=false;
+}
+document.getElementById('csCreateBtn').addEventListener('click', csCreate);
+document.getElementById('csCancelBtn').addEventListener('click', ()=>{ createServerEl.hidden=true; openServers(); });
+['csName','csPassword'].forEach(idn=>{ const el=document.getElementById(idn); el.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); createServerEl.hidden=true; openServers(); } if(e.key==='Enter' && idn==='csPassword'){ e.preventDefault(); csCreate(); } }); });
 
 /* ============================================================ BED WARS === */
 /* A Hypixel-style Bed Wars mode. Connects to the same server with ?mode=bw, which
@@ -5128,6 +5383,10 @@ window.__mc = {
   editTexel(x,y){ const d=editCtx.getImageData(x|0,y|0,1,1).data; return [d[0],d[1],d[2]]; },
   skinTexel(px,py){ return skinTexelAt(px,py); }, skinFillAt(px,py){ floodFillAt(px,py); }, skinToolState(){ return {eyedrop, fillMode}; },
   mpJoin(){ startMultiplayer(); }, mpInfo(){ return { active:mp.active, id:mp.id, players:mp.players.size, posSent:mp.posSent||0, posRecv:mp.posRecv||0, state:state }; },
+  mpServer(){ return { server:mp.server, name:mp.serverName, border:mp.border, admin:mp.admin }; },
+  browseServers(){ openServers(); }, serverNames(){ return [...srvListEl.children].map(c=>{ const nm=c.querySelector('.nm'); return nm?nm.textContent:''; }); },
+  joinTarget(id,pw){ mpTarget={server:id,pw:pw||''}; startMultiplayer(); }, adminOn(){ return adminMode; },
+  playerAdmins(){ return [...mp.players.values()].map(p=>({name:p.name,admin:!!p.admin})); },
   // ---- secret-code test hooks ----
   code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, eyeMul:localEyeMul, localKind:modelKind(body) }; },
   remoteTags(){ return [...mp.players.values()].map(p=>({ id:p.id, tagVisible:p.tag?!!p.tag.visible:null, hide:!!p.hide, color:p.color||'', visible:!!(p.model&&p.model.visible) })); },
