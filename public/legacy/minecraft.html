@@ -2612,12 +2612,16 @@ function useAction(){
   if(mp.active && mp.spectator) return;     // spectators can't place, open doors, sleep, or edit signs
   if(bw.active){ bwUseAction(); return; }   // Bed Wars: right-click = shop villager / eat apple / place block
   const tb = target && getBlock(target.x,target.y,target.z);
-  if(target && isDoor(tb)) toggleDoor(target.x,target.y,target.z);
-  else if(target && isTrapdoor(tb)) toggleTrapdoor(target.x,target.y,target.z);   // right-click opens/closes
-  else if(target && isBed(tb)) sleepInBed(target.x,target.y,target.z);
-  else if(target && isCushion(tb)) sitOnCushion(target.x,target.y,target.z);   // right-click a cushion to sit on it
-  else if(target && isSign(tb)) openSignEditor(target.x,target.y,target.z);
-  else placeBlock();
+  // Minecraft: holding sneak while using skips the block's own action (open a door, flip a
+  // trapdoor, sleep, sit, edit a sign) so you can stack/place against it instead
+  if(target && !keys[binds.sneak]){
+    if(isDoor(tb)){ toggleDoor(target.x,target.y,target.z); return; }
+    if(isTrapdoor(tb)){ toggleTrapdoor(target.x,target.y,target.z); return; }   // right-click opens/closes
+    if(isBed(tb)){ sleepInBed(target.x,target.y,target.z); return; }
+    if(isCushion(tb)){ sitOnCushion(target.x,target.y,target.z); return; }      // right-click a cushion to sit on it
+    if(isSign(tb)){ openSignEditor(target.x,target.y,target.z); return; }
+  }
+  placeBlock();
 }
 // discrete actions fire once per press, from either a key (keydown) or a mouse button (mousedown)
 const pd = e=>{ if(e && e.preventDefault) e.preventDefault(); };
@@ -5546,6 +5550,8 @@ window.__mc = {
   doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open,hinge:d.hinge||'right'}:null; },
   blockInfo(name){ const b=BLOCKS[name]; return b?{id:b.id,pane:!!b.pane,opaque:!!b.opaque,solid:!!b.solid,cat:catOf(name)}:null; },
   putBlock(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); remeshChunkAt(x,z); return true; },
+  giveBlock(name){ const b=BLOCKS[name]; if(!b) return false; hotbar[selSlot]=b.id; if(typeof renderHotbar==='function') renderHotbar(); return true; },
+  useAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; useAction(); return true; },
   collidesAt(px,py,pz){ return collides(px,py,pz); },
   setView(yaw,pitch){ player.yaw=yaw; player.pitch=pitch||0; },
   spKeyName(){ return SP_KEY; }, reloadWorld(){ spReloadWorld(); },
