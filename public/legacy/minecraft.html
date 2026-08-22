@@ -3138,7 +3138,7 @@ function renderHotbar(){
     if(bw.active){
       const st=bw.slots[i];
       if(st){ const ic=bwItemIcon(st,40);
-        let n=null; if(st.kind==='block') n=bw.counts[st.id]||0; else if(st.kind==='apple') n=bw.apples; else if(st.kind==='pearl') n=bw.pearls; else if(st.kind==='tnt') n=bw.tnt; else if(st.kind==='fireball') n=bw.fireballs; else if(st.kind==='bow') n=bw.arrows; else if(st.kind==='bucket') n=bw.water;
+        let n=null; if(st.kind==='block') n=bw.counts[st.id]||0; else if(st.kind==='apple') n=bw.apples; else if(st.kind==='pearl') n=bw.pearls; else if(st.kind==='tnt') n=bw.tnt; else if(st.kind==='fireball') n=bw.fireballs; else if(st.kind==='bow') n=bw.arrows; else if(st.kind==='bucket') n=bw.water; else if(st.kind==='rescue') n=bw.rescue; else if(st.kind==='egg') n=bw.eggs;
         if(st.kind==='block') ic.style.opacity=(n>0)?'1':'0.4';
         s.appendChild(ic);
         if(n!=null && (n>1 || st.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); }
@@ -4013,7 +4013,7 @@ const BW_RESNAME = { iron:'Iron', gold:'Gold', diamond:'Diamond', emerald:'Emera
 let bwMode = false;   // makes chunk generation produce void + prefab instead of terrain
 const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,diamond:0,emerald:0},
   loadout:{sword:1,armor:1,pick:0,axe:0,shears:false}, beds:[true,true,true,true], teams:[], players:new Map(),
-  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, tnt:0, fireballs:0, arrows:0, water:0, slots:[], inv:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}], projectiles:[], explosions:[], tnts:[], speedUntil:0, jumpUntil:0, invisUntil:0 };
+  items:new Map(), itemGroup:null, dead:false, eliminated:false, counts:{}, apples:0, pearls:0, tnt:0, fireballs:0, arrows:0, water:0, rescue:0, eggs:0, slots:[], inv:[], prefabSet:new Set(), villagers:[], gens:[], genTier:1, teamUp:[{},{},{},{}], projectiles:[], explosions:[], tnts:[], speedUntil:0, jumpUntil:0, invisUntil:0 };
 function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
@@ -4165,7 +4165,7 @@ function bwHandle(m){
       if(m.phase==='playing'){ bwHideBanner(); } return true;
     case 'bwupgrades': if(m.team!=null) bw.teamUp[m.team]=m.up; if(bwShopOpen && bwShopCat==='Upgrades') bwRenderShop(); return true;
     case 'bwexplode': bwExplodeVisual(m.x,m.y,m.z,m.power||3); return true;
-    case 'bwfire': bwAddProjectile(m.ox,m.oy,m.oz, m.dx,m.dy,m.dz, false, 'fireball'); return true;
+    case 'bwfire': bwAddProjectile(m.ox,m.oy,m.oz, m.dx,m.dy,m.dz, false, m.kind==='egg'?'egg':'fireball'); return true;
     case 'bwarrow': bwAddProjectile(m.ox,m.oy,m.oz, m.dx,m.dy,m.dz, false, 'arrow'); return true;
     case 'bwyou': bw.team=m.team; bw.res=m.res||bw.res; bw.loadout=m.loadout||bw.loadout; bw.hp=m.hp!=null?m.hp:bw.hp; player.hp=bw.hp;
       bwCounts_reset(); bwSetHotbar(); bwUpdateHud(); return true;
@@ -4201,7 +4201,7 @@ function bwBreakBed(x,y,z){
 }
 
 // ---- finite blocks / hotbar ----
-function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; bw.arrows=0; bw.water=0; bw.speedUntil=0; bw.jumpUntil=0; bw.invisUntil=0; bwSlotPref={}; }
+function bwCounts_reset(){ bw.counts={}; bw.apples=0; bw.pearls=0; bw.tnt=0; bw.fireballs=0; bw.arrows=0; bw.water=0; bw.rescue=0; bw.eggs=0; bw.speedUntil=0; bw.jumpUntil=0; bw.invisUntil=0; bwSlotPref={}; }
 // build the survival hotbar: sword, the 5 buyable blocks (with counts), then tools + apples
 const BW_BLOCK_NAMES = ['oak_planks','end_stone','glass','obsidian','sponge'];   // + the team wool, prepended below
 let bwSlotPref = {};   // item key -> preferred hotbar slot (set by dragging items in the inventory)
@@ -4219,6 +4219,8 @@ function bwSetHotbar(){
   if(bw.tnt>0)          items.push({ kind:'tnt' });
   if(bw.fireballs>0)    items.push({ kind:'fireball' });
   if(bw.water>0)        items.push({ kind:'bucket' });
+  if(bw.rescue>0)       items.push({ kind:'rescue' });
+  if(bw.eggs>0)         items.push({ kind:'egg' });
   if(bw.loadout.bow)    items.push({ kind:'bow' });
   // arrange into a 36-slot inventory (0-8 hotbar, 9-35 backpack): dragged-to positions first, then fill hotbar, then backpack
   const inv = new Array(36).fill(null), rest=[];
@@ -4320,6 +4322,12 @@ function bwItemIcon(stack, size){
     R(6,2,4,1,'#caa15a'); R(6,3,4,1,'#6e4a24');                                    // cork + neck
     R(5,7,6,6,liq); R(5,4,6,3,'#d9e6ee'); R(6,6,4,1,liq); R(4,8,1,4,'#cfe0ea'); R(11,8,1,4,'#cfe0ea');   // glass bulb + liquid
     P(6,9,'#ffffff');                                                              // glass glint
+  } else if(stack.kind==='rescue'){
+    // rescue platform: a folded slimy platform disc
+    R(3,7,10,3,'#7ac74a'); R(3,7,10,1,'#9be06a'); R(3,9,10,1,'#5aa233'); R(4,6,8,1,'#8ad35a'); R(4,10,8,1,'#4d8f2c');
+    P(5,8,'#b6f08a'); P(9,8,'#b6f08a'); R(6,4,4,2,'#c9c9c9');   // a little launcher on top
+  } else if(stack.kind==='egg'){
+    R(6,3,4,2,'#f2ead9'); R(5,5,6,5,'#f7f1e3'); R(6,10,4,1,'#e4dcc8'); R(6,4,2,3,'#ffffff'); P(9,6,'#d8cfb8');   // egg
   } else if(stack.kind==='res'){
     const rk=stack.res;
     if(rk==='iron'||rk==='gold'){
@@ -4441,6 +4449,8 @@ function bwOnBuy(m){
   if(g.item==='fireball') bw.fireballs++;
   if(g.item==='arrow') bw.arrows += (g.n||6);
   if(g.item==='water_bucket') bw.water++;
+  if(g.item==='rescue_platform') bw.rescue++;
+  if(g.item==='bridge_egg') bw.eggs++;
   if(g.potion==='speed'){ bw.speedUntil=performance.now()+45000; chatPush('Speed II for 45s.', 'sys'); }
   if(g.potion==='jump'){ bw.jumpUntil=performance.now()+45000; chatPush('Jump Boost V for 45s.', 'sys'); }
   if(g.potion==='invis'){ bw.invisUntil=performance.now()+30000; chatPush('Invisibility for 30s — others can’t see you.', 'sys'); }
@@ -4526,6 +4536,8 @@ const BW_SHOP = [
   { cat:'Utility',item:'tnt',          name:'TNT',             sub:'3s fuse',  cost:{gold:4},    col:'#c62828' },
   { cat:'Utility',item:'fireball',     name:'Fireball',        sub:'launch',   cost:{iron:40},   col:'#ff7018' },
   { cat:'Utility',item:'water_bucket', name:'Water Bucket',    sub:'slows rushers', cost:{emerald:3}, col:'#2a6cc7' },
+  { cat:'Utility',item:'rescue_platform', name:'Rescue Platform', sub:'anti-void',  cost:{emerald:4}, col:'#7ac74a' },
+  { cat:'Utility',item:'bridge_egg',   name:'Bridge Egg',      sub:'lays a bridge', cost:{gold:30},   col:'#f2ead9' },
   { cat:'Ranged', item:'bow',          name:'Bow',             sub:'',         cost:{gold:12},   col:'#8a5a3c' },
   { cat:'Ranged', item:'arrows',       name:'Arrows',          sub:'×6',       cost:{gold:2},    col:'#caa15a' },
   { cat:'Potions',item:'pot_speed',    name:'Speed II Potion', sub:'45s',      cost:{emerald:1}, col:'#4fc3f7' },
@@ -4687,7 +4699,28 @@ function bwUseAction(){
   if(s && s.kind==='fireball'){ bwLaunchFireball(); return; }
   if(s && s.kind==='bow'){ bwLaunchArrow(); return; }
   if(s && s.kind==='bucket'){ bwPlaceWater(); return; }
+  if(s && s.kind==='rescue'){ bwUseRescue(); return; }
+  if(s && s.kind==='egg'){ bwThrowEgg(); return; }
   placeBlock();                               // otherwise place the selected block
+}
+// Rescue Platform: drops a temporary slime platform under you (anti-void), then it dissolves
+function bwUseRescue(){
+  if(bw.rescue<=0 || bw.dead) return;
+  const fx=Math.floor(player.pos.x), fy=Math.floor(player.pos.y-0.2)-1, fz=Math.floor(player.pos.z);
+  const id=bwId('slime_block')||bwId(bw.team!=null?BW_TEAMS[bw.team].wool:'white_wool');
+  const cells=[];
+  for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++){ const x=fx+dx, z=fz+dz; if(getBlock(x,fy,z)===AIR){ setBlock(x,fy,z,id); mpSendBlock(x,fy,z,id); cells.push([x,fy,z]); } }
+  if(!cells.length) return;
+  bw.rescue--; bwSetHotbar();
+  setTimeout(()=>{ for(const [x,y,z] of cells){ if(getBlock(x,y,z)===id && !bw.prefabSet.has(x+','+y+','+z)){ setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); } } }, 9000);   // dissolves after ~9s
+}
+// Bridge Egg: throws an egg that lays a wool bridge in your team's colour as it flies
+function bwThrowEgg(){
+  if(bw.eggs<=0 || bw.dead) return;
+  bw.eggs--; bwSetHotbar();
+  const o=new THREE.Vector3(player.pos.x, player.pos.y+player.eye-stepSmooth, player.pos.z), dir=camDir(), sp=24;
+  bwAddProjectile(o.x+dir.x, o.y+dir.y, o.z+dir.z, dir.x*sp, dir.y*sp+2, dir.z*sp, true, 'egg');
+  mpSend({type:'bwfire', kind:'egg', ox:+o.x.toFixed(2),oy:+o.y.toFixed(2),oz:+o.z.toFixed(2), dx:+(dir.x*sp).toFixed(2),dy:+(dir.y*sp+2).toFixed(2),dz:+(dir.z*sp).toFixed(2)});
 }
 // Water bucket: lay a shallow puddle at the aimed spot. In the void map the water doesn't flow,
 // but standing in it makes you swim (slow + floaty), so it slows rushers like Hypixel's bucket.
@@ -4757,23 +4790,28 @@ function bwLaunchArrow(){
 function bwAddProjectile(x,y,z,vx,vy,vz,mine,kind){
   kind=kind||'fireball'; let m;
   if(kind==='arrow'){ m=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.07,0.7), new THREE.MeshBasicMaterial({color:0x8a5a3c})); }
+  else if(kind==='egg'){ m=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,6), new THREE.MeshBasicMaterial({color:0xf7f1e3})); }
   else { m=new THREE.Mesh(new THREE.SphereGeometry(0.28,10,8), new THREE.MeshBasicMaterial({color:0xff7018})); m.add(new THREE.PointLight(0xff8030,1.2,6)); }
   m.position.set(x,y,z); scene.add(m);
-  bw.projectiles.push({mesh:m, x,y,z, vx,vy,vz, mine:!!mine, kind, life:0});
+  bw.projectiles.push({mesh:m, x,y,z, vx,vy,vz, mine:!!mine, kind, life:0, lastLay:null});
 }
 function bwUpdateBlasts(dt){
   for(let i=bw.explosions.length-1;i>=0;i--){ const e=bw.explosions[i]; e.t+=dt; e.mesh.scale.setScalar(e.power*(0.4+e.t*3)); e.mesh.material.opacity=Math.max(0,0.85-e.t*2.2); if(e.t>0.4){ scene.remove(e.mesh); bw.explosions.splice(i,1); } }
   const now=performance.now();
   for(let i=bw.tnts.length-1;i>=0;i--){ const t=bw.tnts[i]; if(now>=t.at){ if(getBlock(t.x,t.y,t.z)===B.tnt){ setBlock(t.x,t.y,t.z,AIR); mpSendBlock(t.x,t.y,t.z,0); } bwDoExplosion(t.x+0.5,t.y+0.5,t.z+0.5, 3.2); bw.tnts.splice(i,1); } }
   for(let i=bw.projectiles.length-1;i>=0;i--){ const pr=bw.projectiles[i]; pr.life+=dt;
-    if(pr.kind==='arrow') pr.vy -= 15*dt;   // arrows arc under gravity
+    if(pr.kind==='arrow' || pr.kind==='egg') pr.vy -= 15*dt;   // arrows + eggs arc under gravity
     let hit=false, hitId=0;
     for(let s=0;s<3 && !hit;s++){ pr.x+=pr.vx*dt/3; pr.y+=pr.vy*dt/3; pr.z+=pr.vz*dt/3;
       if(getBlock(Math.floor(pr.x),Math.floor(pr.y),Math.floor(pr.z))) hit=true;
-      else if(pr.mine){ for(const [id,rp] of mp.players){ if(Math.hypot(rp.x-pr.x,(rp.y+1)-pr.y,rp.z-pr.z)<1.1){ hit=true; hitId=id; break; } } } }
+      else if(pr.mine && pr.kind!=='egg'){ for(const [id,rp] of mp.players){ if(Math.hypot(rp.x-pr.x,(rp.y+1)-pr.y,rp.z-pr.z)<1.1){ hit=true; hitId=id; break; } } } }
     pr.mesh.position.set(pr.x,pr.y,pr.z);
     if(pr.kind==='arrow') pr.mesh.lookAt(pr.x+pr.vx, pr.y+pr.vy, pr.z+pr.vz);
-    if(hit || pr.life>(pr.kind==='arrow'?5:3) || pr.y<BW_VOID-6){ scene.remove(pr.mesh); bw.projectiles.splice(i,1);
+    if(pr.kind==='egg' && pr.mine){                        // lay a wool bridge in the team colour under the flying egg
+      const bx=Math.floor(pr.x), by=Math.floor(pr.y)-1, bz=Math.floor(pr.z), k=bx+','+by+','+bz;
+      if(pr.lastLay!==k && getBlock(bx,by,bz)===AIR){ const w=bwId(bw.team!=null?BW_TEAMS[bw.team].wool:'white_wool'); setBlock(bx,by,bz,w); mpSendBlock(bx,by,bz,w); pr.lastLay=k; }
+    }
+    if(hit || pr.life>(pr.kind==='arrow'||pr.kind==='egg'?5:3) || pr.y<BW_VOID-6){ scene.remove(pr.mesh); bw.projectiles.splice(i,1);
       if(pr.mine && hit){ if(pr.kind==='fireball') bwDoExplosion(pr.x,pr.y,pr.z,2.6); else if(pr.kind==='arrow' && hitId) mpSend({type:'bwarrowhit', target:hitId}); } }
   }
 }
@@ -4789,7 +4827,7 @@ function bwArmorIcon(piece,tier){
   else if(piece==='boots'){ R(3,4,4,6); R(9,4,4,6); R(3,10,5,3); R(8,10,5,3); }
   return c;
 }
-function bwSlotCount(stk){ if(!stk) return null; return stk.kind==='block'?(bw.counts[stk.id]||0):(stk.kind==='apple'?bw.apples:(stk.kind==='pearl'?bw.pearls:(stk.kind==='tnt'?bw.tnt:(stk.kind==='fireball'?bw.fireballs:(stk.kind==='bucket'?bw.water:(stk.kind==='bow'?bw.arrows:null)))))); }
+function bwSlotCount(stk){ if(!stk) return null; const map={apple:bw.apples,pearl:bw.pearls,tnt:bw.tnt,fireball:bw.fireballs,bucket:bw.water,rescue:bw.rescue,egg:bw.eggs,bow:bw.arrows}; if(stk.kind==='block') return bw.counts[stk.id]||0; return (stk.kind in map)?map[stk.kind]:null; }
 // one inventory cell that can be dragged (if it holds an item) and always accepts a drop, for slot index `idx` (0-35)
 function bwInvSlotEl(idx, stk, sel){
   const d=document.createElement('div'); d.className='bwislot'+(sel?' sel':'');
