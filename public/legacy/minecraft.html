@@ -1796,6 +1796,7 @@ const redOn = new Set();        // inputs currently emitting
 const litTorch = new Set();     // redstone torches currently burning
 const lampLit = new Set();      // lamps currently lit
 const btnTimer = new Map();     // "x,y,z" -> when this button pops back out
+const redPlates = new Map();    // just the pressure plates, coords pre-parsed: polled every tick
 let redDirty = true;
 const MAX_RED = 8000;           // a budget, so a huge contraption can't stall a phone
 const BTN_TICKS_WOOD = 1.5, BTN_TICKS_STONE = 1.0;   // Minecraft's button hold times
@@ -2103,8 +2104,9 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   for(const kk in spSlabs){ const s=spSlabs[kk]; slabMeta.set(kk, {top:!!s.t, double:!!s.d}); }
   for(const kk in spPots){ const id=blockByName(spPots[kk].p); if(id) potMeta.set(kk, id); }   // put each pot's flower back
   for(const kk in spAttach){ const a=spAttach[kk]; attachMeta.set(kk, {m:a.m|0, f:a.f|0, on:!!a.o}); if(a.o) redOn.add(kk); }
-  redParts.clear(); dustPower.clear(); litTorch.clear(); lampLit.clear(); btnTimer.clear();
-  for(const kk in spEdits){ const c=kk.split(','); if(isRedPart(spEdits[kk])) redParts.add(kk); }   // rebuild the circuit registry
+  redParts.clear(); redPlates.clear(); dustPower.clear(); litTorch.clear(); lampLit.clear(); btnTimer.clear();
+  for(const kk in spEdits){ const id=spEdits[kk]; if(!isRedPart(id)) continue;   // rebuild the circuit registry
+    redParts.add(kk); if(isPlate(id)){ const c=kk.split(','); redPlates.set(kk,[+c[0],+c[1],+c[2]]); } }
   redDirty=true;
   if(purged) spSave();           // write back the world with the ghost blocks removed
 }
@@ -2262,6 +2264,7 @@ function redTrack(x,y,z,idAt){
   const k=dkey(x,y,z), id=(idAt!==undefined) ? idAt : getBlock(x,y,z);
   if(isRedPart(id)){ if(redParts.size<MAX_RED) redParts.add(k); }
   else { redParts.delete(k); dustPower.delete(k); redOn.delete(k); litTorch.delete(k); lampLit.delete(k); btnTimer.delete(k); }
+  if(isPlate(id)) redPlates.set(k,[x,y,z]); else redPlates.delete(k);   // plates are polled every tick, so keep them apart
   redDirty=true;
 }
 // which block is this torch/lever/button bolted to?
@@ -2322,8 +2325,14 @@ function computeDust(){
     }
   }
 }
+const chunkOf = k => { const c=k.split(','); return Math.floor(+c[0]/CH)+','+Math.floor(+c[2]/CH); };
 function solveRedstone(){
   redDirty=false;
+  // Remember what the wire and the torches looked like. Their meshes are only
+  // rebuilt when their chunk is marked dirty, and nothing else does that when a
+  // power level changes — without this the wire keeps drawing its previous
+  // brightness, which reads as inverted the moment you step on a plate.
+  const prevDust = new Map(dustPower), prevLit = new Set(litTorch);
   for(let pass=0; pass<8; pass++){          // torches feed back into themselves, so settle first
     computeStrong(); computeDust();
     let changed=false;
@@ -2337,6 +2346,12 @@ function solveRedstone(){
     if(!changed) break;
   }
   computeStrong(); computeDust();
+  const redraw = new Set();
+  for(const [k,v] of dustPower) if(prevDust.get(k)!==v) redraw.add(chunkOf(k));
+  for(const k of prevDust.keys())  if(!dustPower.has(k)) redraw.add(chunkOf(k));
+  for(const k of litTorch)         if(!prevLit.has(k))   redraw.add(chunkOf(k));
+  for(const k of prevLit)          if(!litTorch.has(k))  redraw.add(chunkOf(k));
+  for(const ck of redraw){ const c=ck.split(','); remeshChunkAt(+c[0]*CH, +c[1]*CH); }
   applyRedstoneOutputs();
 }
 // doors, trapdoors and lamps follow the power. These are derived on every
@@ -2375,9 +2390,9 @@ function setRedInput(x,y,z,on){        // press/release an input and tell everyo
 }
 // a plate is down while anything is standing in its cell — your own player or anyone online
 function tickPlates(){
-  for(const k of redParts){
-    const c=k.split(',').map(Number), x=c[0], y=c[1], z=c[2];
-    if(!isPlate(getBlock(x,y,z))) continue;
+  for(const [k,c] of redPlates){
+    const x=c[0], y=c[1], z=c[2];
+    if(!isPlate(getBlock(x,y,z))){ redPlates.delete(k); continue; }
     let on=false;
     const stands=(px,py,pz)=> px>x-0.05 && px<x+1.05 && pz>z-0.05 && pz<z+1.05 && py>y-0.6 && py<y+0.7;
     if(stands(player.pos.x, player.pos.y, player.pos.z)) on=true;
@@ -3615,7 +3630,10 @@ function breakDoor(x,y,z){
   remeshChunkAt(x,z);
 }
 /* ---- placing torches, levers, buttons, plates and dust ---- */
-function solidFooting(id){ return !!(id && BLOCKS[id] && BLOCKS[id].solid && BLOCKS[id].opaque); }
+function solidFooting(id){
+  const b = id && BLOCKS[id];
+  return !!(b && b.solid && !b.flowerpot && !b.campfire);   // glass and wool count; a pot or a campfire is not a face
+}
 function spRecordAttach(x,y,z,a){
   if(mp.active) return; const k=dkey(x,y,z);
   if(a===null) delete spAttach[k]; else spAttach[k]={m:a.m|0, f:a.f|0, o:a.on?1:0};
@@ -5019,9 +5037,10 @@ function mpHandle(m){
     if(m.trapdoors) for(const kk in m.trapdoors){ const s=m.trapdoors[kk]; trapdoorMeta.set(kk, {facing:s.facing|0, open:!!s.open, top:!!s.top}); }
     if(m.slabs) for(const kk in m.slabs){ const s=m.slabs[kk]; slabMeta.set(kk, {top:!!s.top, double:!!s.double}); }
     if(m.pots) for(const kk in m.pots){ const id=blockByName(m.pots[kk].plant); if(id) potMeta.set(kk, id); }   // flower pots and what's planted in them
-    redParts.clear(); dustPower.clear(); redOn.clear(); litTorch.clear(); lampLit.clear(); btnTimer.clear();
+    redParts.clear(); redPlates.clear(); dustPower.clear(); redOn.clear(); litTorch.clear(); lampLit.clear(); btnTimer.clear();
     if(m.attach) for(const kk in m.attach){ const a=m.attach[kk]; attachMeta.set(kk, {m:a.m|0, f:a.f|0, on:!!a.on}); if(a.on) redOn.add(kk); }
-    for(const kk in (m.blocks||{})){ if(isRedPart(m.blocks[kk])) redParts.add(kk); }   // every circuit piece the server holds
+    for(const kk in (m.blocks||{})){ const id=m.blocks[kk]; if(!isRedPart(id)) continue;   // every circuit piece the server holds
+      redParts.add(kk); if(isPlate(id)){ const c=kk.split(','); redPlates.set(kk,[+c[0],+c[1],+c[2]]); } }
     redDirty=true;
     purgeLiveAbove();   // never render ghost blocks a server may still hold above the build limit
     mpClearPlayers();
@@ -6382,6 +6401,21 @@ window.__mc = {
   solveRed(){ solveRedstone(); }, redPartCount(){ return redParts.size; },
   doorAtOpen(x,y,z){ const d=doorMeta.get(dkey(x,y,z)); return d?!!d.open:null; },
   redTickNow(){ redAccum=1; tickRedstone(1); },
+  // read the brightness the wire is actually DRAWN with, straight off the chunk mesh,
+  // so a stale mesh can't pass a test that only checks the power number
+  dustDrawn(x,y,z){
+    const c=chunks.get(key(Math.floor(x/CH),Math.floor(z/CH)));
+    if(!c || !c.cmesh) return null;
+    const pos=c.cmesh.geometry.attributes.position, col=c.cmesh.geometry.attributes.color;
+    const ty=y+1/16;
+    for(let i=0;i<pos.count;i++){
+      if(Math.abs(pos.getY(i)-ty)>1e-4) continue;
+      const px=pos.getX(i), pz=pos.getZ(i);
+      if(px<x-1e-4 || px>x+1+1e-4 || pz<z-1e-4 || pz>z+1+1e-4) continue;
+      return +col.getX(i).toFixed(3);
+    }
+    return null;
+  },
   flowerNames(){ return { small:SMALL_FLOWERS.map(f=>f[0]), tall:TALL_FLOWERS.map(f=>f[0]) }; },
   blockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
   potAt(x,y,z){ const p=potMeta.get(dkey(x,y,z)); return p?blockName(p):null; },
