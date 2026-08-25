@@ -702,7 +702,11 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 8: torches, campfire, and redstone (wire, torch, lamp, lever, buttons, pressure plates) ---
 "torch","redstone_torch","campfire","redstone_wire","redstone_lamp","lever",
 "oak_button","spruce_button","birch_button","jungle_button","acacia_button","dark_oak_button","purpular_button","stone_button",
-"oak_pressure_plate","spruce_pressure_plate","birch_pressure_plate","jungle_pressure_plate","acacia_pressure_plate","dark_oak_pressure_plate","purpular_pressure_plate","stone_pressure_plate"];
+"oak_pressure_plate","spruce_pressure_plate","birch_pressure_plate","jungle_pressure_plate","acacia_pressure_plate","dark_oak_pressure_plate","purpular_pressure_plate","stone_pressure_plate",
+// --- pass 9: workshop blocks ---
+"enchanting_table","anvil","grindstone","stonecutter",
+// --- pass 10: vines ---
+"vine","weeping_vines","twisting_vines","cave_vines"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -932,7 +936,40 @@ paint('glowstone', (()=>{ const r=rng(26), base=rgb(0xd6b24a); return (x,y)=>{ i
 paint('pumpkin_side',(()=>{ const r=rng(29), base=rgb(0xd07f1e); return (x,y)=>{ if(x%4===0) return base.map(v=>v*0.85|0); return vary(base,10,r); };})());
 paint('pumpkin_top', speckle(0xb26a18, 10, 30));
 paint('melon_side', (()=>{ const r=rng(31), a=rgb(0x2f6b1e), b=rgb(0x4f8a2e); return (x,y)=> vary((x%4<2)?a:b, 12, r); })());
-paint('crafting_top', (()=>{ const r=rng(32), base=rgb(0xa2814f); return (x,y)=>{ if(x<8&&y<8) return vary(rgb(0x8a6a3f),10,r); return vary(base,10,r); };})());
+paint('crafting_top', (()=>{ const r=rng(32), frame=rgb(0x6b4f2c), slot=rgb(0xbb9a63);
+  return (x,y)=>{ if(x<2||y<2||x>13||y>13) return vary(frame,8,r);           // dark rim
+    if((x-2)%4===3 || (y-2)%4===3) return vary(frame,7,r);                   // lines between the nine slots
+    return vary(slot,9,r); };})());
+paint('crafting_side', (()=>{ const r=rng(34), wood=rgb(0x9c7c4a), lite=rgb(0xb0904f), dark=rgb(0x6b4f2c),
+    edge=rgb(0x7d5c33), steel=rgb(0xb9b9b9), grip=rgb(0x53401f);
+  return (x,y)=>{
+    if(y===0) return vary(lite,6,r);                                         // lit front lip of the tabletop
+    if(y<4)   return vary(dark,8,r);                                         // the dark band vanilla runs along the top
+    if(y===4) return vary(edge,6,r);                                         // shadow under the tabletop
+    if(y===10) return vary(edge,5,r);                                        // seam between the boards
+    const d = (x + y) - 17;                                                  // a saw leaning across the lower boards
+    if(y>=6 && y<=14){
+      if(Math.abs(d)<1 && x>=3 && x<=13) return vary(steel,10,r);            // the blade
+      if(d>=1 && d<2.1 && x>=3 && x<=13 && x%2===0) return vary(steel,14,r); // its teeth
+      if(x>=11 && d<-1 && d>-4) return vary(grip,8,r);                       // the handle at the top end
+    }
+    return vary(wood,9,r);
+  };})());
+paint('crafting_front', (()=>{ const r=rng(35), wood=rgb(0x9c7c4a), lite=rgb(0xb0904f), dark=rgb(0x6b4f2c),
+    edge=rgb(0x7d5c33), steel=rgb(0xb9b9b9), grip=rgb(0x53401f);
+  return (x,y)=>{
+    if(y===0) return vary(lite,6,r);
+    if(y<4)   return vary(dark,8,r);
+    if(y===4) return vary(edge,6,r);
+    if(y>=6 && y<=14){
+      const a=(x+y)-17, b=(x-y)+3;                                           // a saw and a hammer crossed over the boards
+      if(Math.abs(a)<1 && x>=4 && x<=13) return vary(steel,10,r);
+      if(a>=1 && a<2.1 && x>=4 && x<=13 && x%2===0) return vary(steel,14,r);
+      if(Math.abs(b)<1.2 && x>=2 && x<=11) return vary(grip,8,r);            // the hammer shaft
+      if(x>=10 && x<=13 && y>=6 && y<=9) return vary(steel,8,r);             // its head
+    }
+    return vary(wood,9,r);
+  };})());
 paint('furnace_front', (()=>{ const r=rng(33), base=rgb(0x707070); return (x,y)=>{ if(x>=4&&x<=11&&y>=6&&y<=12) return vary(rgb(0x222222),12,r); return vary(base,12,r); };})());
 paint('bookshelf', (()=>{ const r=rng(34); return (x,y)=>{ const wood=vary(rgb(0xa2814f),8,r); if(y<2||y>13||(y>7&&y<9)) return wood;
   const cols=[0xb23b3b,0x3b6bb2,0x3bb257,0xd2b24a]; return vary(rgb(cols[(x/4|0)%4]),14,r); };})());
@@ -1216,6 +1253,65 @@ function lampTex(seed, lit){ const r=rng(seed), base=rgb(lit?0xf2b855:0x6a4a28),
     if((x+1)%5===0 || (y+1)%5===0) return vary(grid,8,r);
     if(x>5&&x<10&&y>5&&y<10) return vary(core,10,r);
     return vary(base,10,r); }; }
+/* ---- workshop blocks ----
+   An enchanting table is obsidian with runes glowing along its sides, an anvil
+   is chipped dark iron, a grindstone is a stone wheel slung between two posts,
+   and a stonecutter is a stone bed with a saw standing up out of it.          */
+function enchantTopTex(seed){ const r=rng(seed), base=rgb(0x241d33), ink=rgb(0x4a2f6b), lip=rgb(0x14101d);
+  return (x,y)=>{ const d=Math.max(Math.abs(x-7.5), Math.abs(y-7.5));
+    if(d>6.5) return vary(lip,6,r);
+    if(d<4 && (x+y)%3===0) return vary(ink,14,r);      // faint sheen where the book sits
+    return vary(base,9,r); }; }
+function enchantSideTex(seed){ const r=rng(seed), obs=rgb(0x191323), rune=rgb(0x9a4fd6), glow=rgb(0xd08cff);
+  return (x,y)=>{ if(y>=8) return vary(obs, 8, r);                            // obsidian below
+    if((x*3+y*5)%11===0) return vary(glow,16,r);                              // runes scattered above
+    if((x+y*2)%7===0) return vary(rune,14,r);
+    return vary(rgb(0x2a2140), 9, r); }; }
+function anvilTopTex(seed){ const r=rng(seed), iron=rgb(0x605f63), light=rgb(0x7b7a80), nick=rgb(0x3d3c40);
+  return (x,y)=>{ if(r()<0.10) return vary(nick,10,r);                        // hammer marks
+    return vary(y<8?light:iron, 10, r); }; }
+function anvilSideTex(seed){ const r=rng(seed), iron=rgb(0x4a494e), dark=rgb(0x343338);
+  return (x,y)=>{ if(y%5===0) return vary(dark,8,r); return vary(iron,10,r); }; }
+function grindWoodTex(seed){ const r=rng(seed), wood=rgb(0x7a5a33), dark=rgb(0x5a4326);
+  return (x,y)=>{ if(x%6===0) return vary(dark,8,r); return vary(wood,10,r); }; }
+function grindWheelTex(seed){ const r=rng(seed), a=rgb(0x8d8d8d), b=rgb(0x6f6f6f);
+  return (x,y)=>{ const d=Math.hypot(x-7.5,y-7.5);
+    if(d>7.2) return [0,0,0,0];                                               // round the wheel off
+    if(d<2.2) return vary(rgb(0x5a4326),8,r);                                 // the axle through the middle
+    return vary(((d|0)%2)?b:a, 11, r); }; }
+function cutterTopTex(seed){ const r=rng(seed), stone=rgb(0x8a8a8a), slot=rgb(0x4a4a4a);
+  return (x,y)=>{ if(x>=7 && x<=8) return vary(slot,7,r);                     // the slot the blade runs in
+    return vary(stone,11,r); }; }
+function sawBladeTex(seed){ const r=rng(seed), steel=rgb(0xb9bcc2), edge=rgb(0x8a8d93);
+  return (x,y)=>{ if(y<2 || (x%3===0 && y<4)) return vary(edge,10,r);         // teeth along the top
+    return vary(steel,9,r); }; }
+/* ---- vines ----
+   The clinging vine is a ragged leafy sheet with a lot of daylight through it.
+   The three hanging or climbing kinds are strands that thin out as they go, and
+   cave vines carry berries.                                                    */
+function vineTex(seed){ const r=rng(seed), leaf=rgb(0x3f6b25), dark=rgb(0x2c4d19), pale=rgb(0x548a31);
+  // hashed per pixel so the sheet is ragged and organic rather than a repeating checker
+  const h=(x,y,s)=>{ let n=(x*374761393 + y*668265263 + (seed+s)*1274126177)|0;
+    n=Math.imul(n^(n>>>13), 1274126177); return ((n^(n>>>16))>>>0)/4294967296; };
+  return (x,y)=>{
+    const a = 4  + Math.round(Math.sin(y*0.42)*2.4);                          // two runners twisting down the sheet
+    const b = 11 + Math.round(Math.sin(y*0.38+2.1)*2.2);
+    const near = Math.min(Math.abs(x-a), Math.abs(x-b));
+    const density = near<1 ? 1 : near<3 ? 0.74 : near<5 ? 0.42 : 0.16;        // leaves cluster around the runners
+    const fade = y>11 ? 0.42 : 1;                                             // and thin into tendrils at the bottom
+    if(h(x,y,0) > density*fade) return [0,0,0,0];
+    const v=h(x,y,97);
+    return vary(v<0.22?pale:(v<0.72?leaf:dark), 12, r);
+  }; }
+function strandTex(seed, aHex, bHex, berryHex){
+  const r=rng(seed), a=rgb(aHex), b=rgb(bHex), berry=berryHex!==undefined?rgb(berryHex):null;
+  return (x,y)=>{
+    const wob = Math.round(Math.sin(y*0.55)*2.2);                             // the strand sways as it falls
+    const d = Math.abs(x - (7.5 + wob));
+    if(d > 2.3) return [0,0,0,0];
+    if(berry && d<1.6 && y%5===2) return vary(berry, 14, r);                   // berries hanging off it
+    return vary(d<1.1 ? a : b, 12, r);
+  }; }
 function mineralBlock(seed, hex){ const r=rng(seed), base=rgb(hex);
   return (x,y)=>{ let c=vary(base,6,r); if(x===0||y===0) c=c.map(v=>Math.min(255,v*1.15)|0);
     if(x===15||y===15) c=c.map(v=>v*0.85|0); return c; }; }
@@ -1351,6 +1447,18 @@ paint('campfire_flame',    fireTex(9485, 0xffe9a8, 0xff8c1e, 0xd83c0c));
 paint('redstone_dust',     redDustTex(9486));
 paint('redstone_lamp',     lampTex(9487, false));
 paint('redstone_lamp_on',  lampTex(9488, true));
+paint('enchant_top',   enchantTopTex(9500));
+paint('enchant_side',  enchantSideTex(9501));
+paint('anvil_top',     anvilTopTex(9502));
+paint('anvil_side',    anvilSideTex(9503));
+paint('grind_wood',    grindWoodTex(9504));
+paint('grind_wheel',   grindWheelTex(9505));
+paint('cutter_top',    cutterTopTex(9506));
+paint('saw_blade',     sawBladeTex(9507));
+paint('vine',           vineTex(9510));
+paint('weeping_vines',  strandTex(9511, 0x8a1f2e, 0x5c1220));
+paint('twisting_vines', strandTex(9512, 0x2f8a86, 0x1d5a58));
+paint('cave_vines',     strandTex(9513, 0x4a7a2e, 0x33591f, 0xf0a02a));
 // a door texture per wood type — painted directly, NOT via EXTRA, so the EXTRA block
 // loop doesn't also define a plain (non-door) block that shadows the real door block
 WOODS.forEach((w,i)=> paint(w.id+'_door', doorTex(w.plank, 9100+i)));
@@ -1553,7 +1661,23 @@ B.netherrack=def('netherrack', { tiles:T('netherrack') });
 B.glowstone=def('glowstone', { tiles:T('glowstone'), light:14 });
 B.pumpkin= def('pumpkin',{ tiles:[T('pumpkin_top'), T('pumpkin_side'), T('pumpkin_top')] });
 B.melon  = def('melon',  { tiles:T('melon_side') });
-B.crafting=def('crafting_table', { tiles:[T('crafting_top'), T('oak_planks'), T('oak_planks')] });
+B.crafting=def('crafting_table', { tiles:[T('crafting_top'), T('crafting_side'), T('oak_planks')] });
+/* Workshop blocks. None of them is a plain cube, so each draws itself from a few
+   boxes: an enchanting table stands three quarters high, an anvil is a base, a
+   waist and a wide face, a grindstone is a wheel slung between two posts, and a
+   stonecutter is a bed of stone with a saw standing out of it. */
+/* Vines. The clinging vine takes a wall or a ceiling and remembers which, in the
+   same attachMeta the torches use. The other three stack: weeping and cave vines
+   hang from what is above them, twisting vines climb from what is below. All of
+   them are climbable and all of them fall the moment their anchor goes.        */
+B.vine           = def('vine',           { tiles:T('vine'),           vine:true, climb:true, solid:false, opaque:false, cutout:true });
+B.weeping_vines  = def('weeping_vines',  { tiles:T('weeping_vines'),  strand:true, hangs:true,  climb:true, solid:false, opaque:false, cutout:true });
+B.twisting_vines = def('twisting_vines', { tiles:T('twisting_vines'), strand:true, hangs:false, climb:true, solid:false, opaque:false, cutout:true });
+B.cave_vines     = def('cave_vines',     { tiles:T('cave_vines'),     strand:true, hangs:true,  climb:true, solid:false, opaque:false, cutout:true, display:'Cave Vines' });
+B.enchanting_table = def('enchanting_table', { tiles:[T('enchant_top'), T('enchant_side'), T('enchant_side')], enchant:true, opaque:false, light:7 });
+B.anvil       = def('anvil',       { tiles:T('anvil_side'),  anvil:true,  opaque:false });
+B.grindstone  = def('grindstone',  { tiles:T('grind_wood'),  grind:true,  opaque:false });
+B.stonecutter = def('stonecutter', { tiles:[T('cutter_top'), T('stone'), T('stone')], cutter:true, opaque:false });
 B.furnace= def('furnace',{ tiles:[T('stone'), T('furnace_front'), T('stone')] });
 B.bookshelf=def('bookshelf', { tiles:[T('oak_planks'), T('bookshelf'), T('oak_planks')] });
 
@@ -1811,6 +1935,34 @@ function isLever(id){ return !!(id && BLOCKS[id] && BLOCKS[id].lever); }
 function isButton(id){ return !!(id && BLOCKS[id] && BLOCKS[id].button); }
 function isPlate(id){ return !!(id && BLOCKS[id] && BLOCKS[id].plate); }
 function isAttached(id){ return isTorch(id) || isLever(id) || isButton(id); }
+function isVine(id){ return !!(id && BLOCKS[id] && BLOCKS[id].vine); }
+function isStrand(id){ return !!(id && BLOCKS[id] && BLOCKS[id].strand); }
+function isClimbable(id){ return !!(id && BLOCKS[id] && (BLOCKS[id].ladder || BLOCKS[id].climb)); }
+// a clinging vine lies flat against whatever it grabbed
+function vineBounds(a){
+  const t=1/16;
+  if(!a || a.m===1) return [0,1, 1-t,1, 0,1];                 // hanging under a ceiling
+  const f=a.f||0;
+  if(f===0) return [0,1, 0,1, 1-t,1];
+  if(f===2) return [0,1, 0,1, 0,t];
+  if(f===1) return [0,t, 0,1, 0,1];
+  return [1-t,1, 0,1, 0,1];
+}
+// what each kind of vine needs in order to stay put
+function vineSupported(x,y,z){
+  const id=getBlock(x,y,z);
+  if(isVine(id)){
+    const a=attachMeta.get(dkey(x,y,z));
+    const c=(!a || a.m===1) ? [x,y+1,z] : supportCell(x,y,z,a);
+    return solidFooting(getBlock(c[0],c[1],c[2]));
+  }
+  if(isStrand(id)){
+    const up=BLOCKS[id].hangs;                                 // hangs from above, or climbs from below
+    const n=getBlock(x, up?y+1:y-1, z);
+    return n===id || solidFooting(n);                          // its own kind counts, so a strand can run on
+  }
+  return true;
+}
 // ---- flowers + flower pots ----
 const potMeta = new Map();    // "x,y,z" -> block id planted in that pot (absent = empty pot)
 let spPots = {};
@@ -2682,6 +2834,39 @@ function buildChunkMesh(c){
       pushDust(cut, wx, y, wz, (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]), 0.30+0.70*(p/15));
       continue;
     }
+    if (bl.enchant){                           // three quarters tall, with its top face capped on
+      pushBox(op, wx, y, wz, [0,1, 0,12/16, 0,1], T('enchant_side'));
+      pushBox(op, wx, y, wz, [0,1, 11.6/16,12/16, 0,1], T('enchant_top'));
+      continue;
+    }
+    if (bl.anvil){                             // base, waist, and the wide face you hammer on
+      pushBox(op, wx, y, wz, [2/16,14/16, 0,4/16,     2/16,14/16], T('anvil_side'));
+      pushBox(op, wx, y, wz, [5/16,11/16, 4/16,10/16, 6/16,10/16], T('anvil_side'));
+      pushBox(op, wx, y, wz, [1/16,15/16, 10/16,1,    3/16,13/16], T('anvil_top'));
+      continue;
+    }
+    if (bl.grind){                             // a wheel hung between two posts
+      pushBox(op, wx, y, wz, [2/16,6/16,  0,10/16, 5/16,11/16], T('grind_wood'));
+      pushBox(op, wx, y, wz, [10/16,14/16,0,10/16, 5/16,11/16], T('grind_wood'));
+      pushBox(op, wx, y, wz, [2/16,14/16, 10/16,13/16, 6/16,10/16], T('grind_wood'));
+      pushBox(cut, wx, y, wz, [4/16,12/16, 3/16,13/16, 6.5/16,9.5/16], T('grind_wheel'));
+      continue;
+    }
+    if (bl.cutter){                            // a bed of stone with the saw standing up out of it
+      pushBox(op, wx, y, wz, [0,1, 0,9/16, 0,1], T('stone'));
+      pushBox(op, wx, y, wz, [0,1, 8.6/16,9/16, 0,1], T('cutter_top'));
+      pushBox(cut, wx, y, wz, [7.4/16,8.6/16, 9/16,15/16, 3/16,13/16], T('saw_blade'));
+      continue;
+    }
+    if (bl.vine){                              // a ragged sheet lying flat on what it clings to
+      pushBox(cut, wx, y, wz, vineBounds(attachMeta.get(dkey(wx,y,wz))),
+              (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      continue;
+    }
+    if (bl.strand){                            // hanging or climbing strands, drawn as crossed quads
+      pushCross(cut, wx, y, wz, (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]), 0, 1, 0.36);
+      continue;
+    }
     if (bl.sign){ continue; }                  // signs render as separate rotatable 3D objects (see updateSignObj)
     if (bl.model){ foundPrg.push(wx+','+y+','+wz); continue; }   // PRG renders as the prg.glb sphere object
     for(let f=0;f<6;f++){
@@ -3386,6 +3571,9 @@ function collides(px,py,pz){
       }
       if(BLOCKS[b].cushion){ if(py>=y+CUSHION_H) continue; }   // a cushion is a low pad; stand on top of it
       if(BLOCKS[b].campfire){ if(py>=y+8/16) continue; }       // logs are 8 pixels tall; you stand on them
+      if(BLOCKS[b].enchant){ if(py>=y+12/16) continue; }        // three quarters tall
+      if(BLOCKS[b].cutter){ if(py>=y+9/16) continue; }          // you stand on the stone bed
+      if(BLOCKS[b].anvil || BLOCKS[b].grind){ if(py>=y+13/16) continue; }
       if(BLOCKS[b].flowerpot){                                  // a pot is a small 6x6x6 obstacle, not a full cube
         if(py>=y+POT_H) continue;
         if(!(px+w>x+5/16 && px-w<x+11/16 && pz+w>z+5/16 && pz-w<z+11/16)) continue;
@@ -3414,7 +3602,7 @@ function isOnLadder(){   // true when the player's box overlaps a ladder block
   for(let by=y0;by<=y1;by++)
    for(let bx=Math.floor(player.pos.x-w);bx<=Math.floor(player.pos.x+w);bx++)
     for(let bz=Math.floor(player.pos.z-w);bz<=Math.floor(player.pos.z+w);bz++){
-      const b=getBlock(bx,by,bz); if(b && BLOCKS[b] && BLOCKS[b].ladder) return true;
+      if(isClimbable(getBlock(bx,by,bz))) return true;   // ladders and every kind of vine
     }
   return false;
 }
@@ -3431,6 +3619,9 @@ function stepUpStair(p, axis){
       else if(isSlab(b)){ const sm=slabMeta.get(x+','+fy+','+z); if(sm && !sm.double && !sm.top) ny=Math.max(ny, fy+0.5); }
       else if(isCushion(b)) ny=Math.max(ny, fy+CUSHION_H);
       else if(isCampfire(b)) ny=Math.max(ny, fy+8/16);
+      else if(BLOCKS[b] && BLOCKS[b].enchant) ny=Math.max(ny, fy+12/16);
+      else if(BLOCKS[b] && BLOCKS[b].cutter)  ny=Math.max(ny, fy+9/16);
+      else if(BLOCKS[b] && (BLOCKS[b].anvil||BLOCKS[b].grind)) ny=Math.max(ny, fy+13/16);
     }
   if(ny<0) return false;
   const rise=ny-player.pos.y;
@@ -3696,6 +3887,47 @@ function breakRedBlock(x,y,z){
   if(mp.active) mpSend({ type:'attach', x, y, z, m:-1 });
   setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0);
   redTrack(x,y,z); remeshChunkAt(x,z);
+}
+// a clinging vine takes the wall or ceiling you clicked; it will not stand on a floor
+function placeVine(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  if(getBlock(px,py,pz)!==AIR) return;
+  if(!solidFooting(getBlock(target.x,target.y,target.z))) return;
+  if(target.ny>0) return;                                   // vines do not grow up off the ground
+  const a = target.ny<0 ? { m:1, f:0 }
+          : { m:2, f: target.nx>0?1 : target.nx<0?3 : target.nz>0?2 : 0 };
+  const id=hotbar[selSlot];
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+  setAttach(px,py,pz,a,true);
+  remeshChunkAt(px,pz);
+}
+// weeping and cave vines hang off what is above; twisting vines climb what is below.
+// Either way they will also grow from more of their own kind, so a strand runs on.
+function placeStrand(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  if(getBlock(px,py,pz)!==AIR || py<0 || py>=WH) return;
+  const id=hotbar[selSlot], up=BLOCKS[id].hangs;
+  const anchorId=getBlock(px, up?py+1:py-1, pz);
+  if(anchorId!==id && !solidFooting(anchorId)) return;
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+  remeshChunkAt(px,pz);
+}
+// a vine whose anchor just went away drops, and takes the strand below or above it with it
+function popUnsupportedVines(x,y,z){
+  for(const [dx,dy,dz] of NB6){
+    let cx=x+dx, cy=y+dy, cz=z+dz;
+    for(let n=0;n<64;n++){
+      const id=getBlock(cx,cy,cz);
+      if(!isVine(id) && !isStrand(id)) break;
+      if(vineSupported(cx,cy,cz)) break;
+      const hangs = isStrand(id) && BLOCKS[id].hangs;
+      if(isVine(id)){ attachMeta.delete(dkey(cx,cy,cz)); spRecordAttach(cx,cy,cz,null);
+        if(mp.active) mpSend({type:'attach', x:cx, y:cy, z:cz, m:-1}); }
+      setBlock(cx,cy,cz,AIR); mpSendBlock(cx,cy,cz,0); remeshChunkAt(cx,cz);
+      if(!isStrand(id)) break;
+      cy += hangs ? -1 : 1;                                  // follow the strand along and drop the rest of it
+    }
+  }
 }
 // plant a flower: it needs soil under it, and a tall one needs two free cells
 function placePlant(){
@@ -4033,6 +4265,9 @@ function breakBlock(){
   if(isBed(getBlock(x,y,z))){ breakBed(x,y,z); return; }     // breaking either cell removes the whole bed
   if(isPlant(getBlock(x,y,z))){ breakPlant(x,y,z); return; } // a tall flower comes out whole
   if(isPot(getBlock(x,y,z))){ breakPot(x,y,z); return; }     // takes the pot and whatever was in it
+  if(isVine(getBlock(x,y,z))){ attachMeta.delete(dkey(x,y,z)); spRecordAttach(x,y,z,null);
+    if(mp.active) mpSend({type:'attach', x, y, z, m:-1});
+    setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); remeshChunkAt(x,z); popUnsupportedVines(x,y,z); return; }
   if(isAttached(getBlock(x,y,z))){ breakRedBlock(x,y,z); popUnsupportedAttached(x,y,z); return; }
   if(isStair(getBlock(x,y,z))){ stairMeta.delete(dkey(x,y,z)); spRecordStair(x,y,z,null); }
   if(isLadder(getBlock(x,y,z))){ ladderMeta.delete(dkey(x,y,z)); spRecordLadder(x,y,z,null); }
@@ -4043,7 +4278,8 @@ function breakBlock(){
   setBlock(x,y,z, AIR);
   redTrack(x,y,z);
   popUnsupportedPlants(x,y,z);
-  popUnsupportedAttached(x,y,z);   // a flower rooted in the block just mined pops off
+  popUnsupportedAttached(x,y,z);
+  popUnsupportedVines(x,y,z);   // a flower rooted in the block just mined pops off
   if(!mp.active){                // keep the shared world static + consistent
     settleColumn(x,z);           // sand/gravel above may now fall
   }
@@ -4066,6 +4302,8 @@ function placeBlock(){
   if(bl.sign){ placeSign(); return; }                                   // signs open a text editor on placement
   if(bl.cross){ placePlant(); return; }                                 // flowers root in soil (tall ones take two cells)
   if(bl.torch||bl.lever||bl.button){ placeAttached(); return; }         // these bolt onto the face you clicked
+  if(bl.vine){ placeVine(); return; }                                   // clings to a wall or a ceiling
+  if(bl.strand){ placeStrand(); return; }                               // hangs from above, or climbs from below
   if(bl.plate||bl.dust){ placeOnFloor(); return; }                      // these need a solid top to lie on
   if(bl.flowerpot){ placePot(); return; }                               // a pot needs a surface to stand on
   if(id===B.sponge || id===B.wet_sponge){ placeSponge(); return; }      // a dry sponge drinks the water around it
@@ -4152,6 +4390,41 @@ function blockIconCanvas(id, size){
     px(0.06,0.60,0.88,0.14,'#5a4326'); px(0.06,0.60,0.88,0.05,'#6d5330');         // front log
     px(0.16,0.76,0.68,0.13,'#46331c'); px(0.16,0.76,0.68,0.04,'#57401f');         // log behind it
     px(0.06,0.72,0.88,0.04,'#2a2320');                                            // charred underside
+    return cv;
+  }
+  if(bl.anvil){                    // the anvil silhouette: wide foot, narrow waist, heavy face
+    const s=size, px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.08,0.14,0.84,0.26,'#605f63'); px(0.08,0.14,0.84,0.06,'#7b7a80'); px(0.08,0.34,0.84,0.06,'#3d3c40');
+    px(0.34,0.40,0.32,0.26,'#4a494e'); px(0.34,0.40,0.06,0.26,'#5c5b60');
+    px(0.14,0.66,0.72,0.22,'#4a494e'); px(0.14,0.66,0.72,0.05,'#5c5b60'); px(0.14,0.83,0.72,0.05,'#343338');
+    return cv;
+  }
+  if(bl.grind){                    // a stone wheel slung between two posts
+    const s=size, px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.10,0.22,0.14,0.66,'#7a5a33'); px(0.76,0.22,0.14,0.66,'#7a5a33');
+    px(0.10,0.22,0.05,0.66,'#8f6b3d'); px(0.85,0.22,0.05,0.66,'#5a4326');
+    px(0.30,0.24,0.40,0.44,'#8d8d8d'); px(0.34,0.20,0.32,0.52,'#8d8d8d');
+    px(0.34,0.24,0.10,0.44,'#a2a2a2'); px(0.58,0.24,0.10,0.44,'#6f6f6f');
+    px(0.44,0.38,0.12,0.16,'#5a4326');
+    px(0.06,0.86,0.88,0.08,'#5a4326');
+    return cv;
+  }
+  if(bl.cutter){                   // a bed of stone with the saw standing out of it
+    const s=size, px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.44,0.10,0.12,0.48,'#b9bcc2');
+    for(let i=0;i<5;i++) px(0.40,0.12+i*0.09,0.06,0.05,'#8a8d93');
+    px(0.06,0.54,0.88,0.30,'#8a8a8a'); px(0.06,0.54,0.88,0.07,'#9d9d9d'); px(0.06,0.78,0.88,0.06,'#666666');
+    px(0.44,0.54,0.12,0.07,'#4a4a4a');
+    return cv;
+  }
+  if(bl.enchant){                  // dark stand with runes glowing up its sides
+    const s=size, px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.10,0.30,0.80,0.58,'#191323'); px(0.10,0.30,0.80,0.10,'#2a2140');
+    px(0.10,0.82,0.80,0.06,'#100c18');
+    px(0.20,0.36,0.06,0.06,'#d08cff'); px(0.44,0.34,0.06,0.06,'#9a4fd6'); px(0.68,0.40,0.06,0.06,'#d08cff');
+    px(0.30,0.52,0.06,0.06,'#9a4fd6'); px(0.60,0.58,0.06,0.06,'#d08cff');
+    px(0.26,0.12,0.48,0.20,'#8a1f2e'); px(0.26,0.12,0.48,0.06,'#c23a4a');   // the book on top
+    px(0.48,0.12,0.05,0.20,'#e8dcc0');
     return cv;
   }
   if(bl.button || bl.plate){       // a raised pad, or a wide flat one
@@ -4295,8 +4568,9 @@ function catOf(n){
      || n.endsWith('_copper')) return 'ores';
   const nature=['grass','dirt','coarse_dirt','podzol','mycelium','sand','red_sand','gravel','clay','snow','snow_block','ice','packed_ice','water','soul_sand','netherrack','end_stone','melon','pumpkin','hay_block',
       'moss_block','mud','packed_mud','dripstone_block','calcite','sculk','nether_wart_block','warped_wart_block','bamboo_block'];
+  if(n==='vine'||n==='weeping_vines'||n==='twisting_vines'||n==='cave_vines') return 'nature';
   if(nature.includes(n) || n.endsWith('_leaves') || n.endsWith('_log') || n.endsWith('_stem')) return 'nature';
-  const deco=['glass','bookshelf','crafting_table','furnace','glowstone','sea_lantern','sponge','slime_block','super_slime_block','jack_o_lantern','prg',
+  const deco=['glass','bookshelf','crafting_table','furnace','enchanting_table','anvil','grindstone','stonecutter','glowstone','sea_lantern','sponge','slime_block','super_slime_block','jack_o_lantern','prg',
       'tinted_glass','amethyst_block','crying_obsidian','shroomlight','honeycomb_block','dried_kelp_block'];
   if(deco.includes(n) || n.endsWith('_froglight')) return 'deco';
   if(['bedrock'].includes(n) || n.endsWith('_spawn_egg')) return 'misc';
@@ -6412,7 +6686,8 @@ window.__mc = {
   block(x,y,z){ return getBlock(x,y,z); },
   doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open,hinge:d.hinge||'right'}:null; },
   blockInfo(name){ const b=BLOCKS[name]; return b?{id:b.id,pane:!!b.pane,opaque:!!b.opaque,solid:!!b.solid,cat:catOf(name)}:null; },
-  putBlock(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); redTrack(x,y,z); remeshChunkAt(x,z); return true; },
+  putBlock(x,y,z,name){ if(name==='air'){ setBlock(x,y,z,AIR); redTrack(x,y,z); remeshChunkAt(x,z); return true; }
+    const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); redTrack(x,y,z); remeshChunkAt(x,z); return true; },
   giveBlock(name){ const b=BLOCKS[name]; if(!b) return false; hotbar[selSlot]=b.id; if(typeof renderHotbar==='function') renderHotbar(); return true; },
   useAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; useAction(); return true; },
   // ---- flower / pot / sponge test hooks ----
@@ -6430,6 +6705,15 @@ window.__mc = {
   solveRed(){ solveRedstone(); }, redPartCount(){ return redParts.size; },
   doorAtOpen(x,y,z){ const d=doorMeta.get(dkey(x,y,z)); return d?!!d.open:null; },
   redTickNow(){ redAccum=1; tickRedstone(1); },
+  // ---- vine / workshop test hooks ----
+  attachAt(x,y,z){ const a=attachMeta.get(dkey(x,y,z)); return a?{m:a.m,f:a.f}:null; },
+  setAttachAt(x,y,z,m,f){ setAttach(x,y,z,{m:m|0,f:f|0},true); remeshChunkAt(x,z); },
+  climbAt(x,y,z){ const b=getBlock(x,y,z); return isClimbable(b); },
+  breakAt(x,y,z){ target={x,y,z,nx:0,ny:1,nz:0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; breakBlock(); return getBlock(x,y,z); },
+  onLadder(){ return isOnLadder(); },
+  meshTris(x,z,buf){ const c=chunks.get(key(Math.floor(x/CH),Math.floor(z/CH))); if(!c) return 0;
+    const m = buf==='cut'?c.cmesh : buf==='tr'?c.tmesh : c.mesh;
+    return (m && m.geometry.attributes.position) ? m.geometry.attributes.position.count/3 : 0; },
   // read the brightness the wire is actually DRAWN with, straight off the chunk mesh,
   // so a stale mesh can't pass a test that only checks the power number
   dustDrawn(x,y,z){
