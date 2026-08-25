@@ -698,7 +698,11 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 7: flowers (cross-model plants), flower pot, wet sponge ---
 "dandelion","poppy","blue_orchid","allium","azure_bluet","red_tulip","orange_tulip","white_tulip","pink_tulip","oxeye_daisy","cornflower","lily_of_the_valley","wither_rose","torchflower","closed_eyeblossom","open_eyeblossom","purpular_flower",
 "sunflower","lilac","rose_bush","peony","pitcher_plant",
-"flower_pot","wet_sponge","golden_dandelion"];
+"flower_pot","wet_sponge","golden_dandelion",
+// --- pass 8: torches, campfire, and redstone (wire, torch, lamp, lever, buttons, pressure plates) ---
+"torch","redstone_torch","campfire","redstone_wire","redstone_lamp","lever",
+"oak_button","spruce_button","birch_button","jungle_button","acacia_button","dark_oak_button","purpular_button","stone_button",
+"oak_pressure_plate","spruce_pressure_plate","birch_pressure_plate","jungle_pressure_plate","acacia_pressure_plate","dark_oak_pressure_plate","purpular_pressure_plate","stone_pressure_plate"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1175,6 +1179,43 @@ const TALL_FLOWERS = [
   ['peony',         { a:0xefb6d6, c:0xfadcec, y:0xf2e07a },                        T_PEONY,     TALL_STALK],
   ['pitcher_plant', { a:0x2f9ec4, b:0x1d6b87, c:0x7fd2e8 },                        T_PITCHER,   TALL_STALK],
 ];
+/* ---- torches, campfire, redstone ----
+   A torch is drawn as two small boxes (a stick and a flame) rather than one
+   UV-mapped quad, so these tiles are the material each box is wrapped in. */
+function torchWoodTex(seed){ const r=rng(seed), a=rgb(0x8a6a3a), b=rgb(0x6b4f28);
+  return (x,y)=> vary(y%4===3 ? b : a, 9, r); }
+function flameTex(seed, hot, mid, edge){ const r=rng(seed), h=rgb(hot), m=rgb(mid), e=rgb(edge);
+  return (x,y)=>{ const d=Math.abs(x-7.5)+Math.abs(y-7.5);
+    if(d<4) return vary(h,10,r); if(d<7) return vary(m,12,r); return vary(e,10,r); }; }
+// a flame drawn as a shape rather than a blob: broad at the base, tapering to a tip,
+// clear around the edges so the cross billboard reads as fire and not a card
+function fireTex(seed, hot, mid, edge){ const r=rng(seed), h=rgb(hot), m=rgb(mid), e=rgb(edge);
+  return (x,y)=>{
+    const t=(y-1)/14;                       // 0 at the tip, 1 at the base
+    if(t<0) return [0,0,0,0];
+    const halfW = 1.1 + t*5.4, d = Math.abs(x-7.5);
+    if(d>halfW) return [0,0,0,0];
+    const inner = d < halfW*0.48;
+    if(t>0.30 && inner) return vary(h,12,r);
+    return vary(inner?m:e, 12, r);
+  };
+}
+// campfire logs: bark with the pale cut ends Minecraft's campfire shows
+function campLogTex(seed){ const r=rng(seed), bark=rgb(0x5a4326), grain=rgb(0x46331c), ash=rgb(0x2a2320);
+  return (x,y)=>{ if(y>=13) return vary(ash, 8, r);          // charred underside
+    return vary((x%5===0||x%5===1) ? grain : bark, 10, r); }; }
+// redstone dust: dark when unpowered, the mesher tints it brighter as power rises
+function redDustTex(seed){ const r=rng(seed), a=rgb(0xd83a20), b=rgb(0xa02010);
+  return (x,y)=>{ const on = Math.abs(x-7.5)<2.5 || Math.abs(y-7.5)<2.5;
+    if(!on) return [0,0,0,0];
+    return vary(r()<0.3 ? b : a, 14, r); }; }
+// a redstone lamp: the same lattice, dark when off and lit from within when on
+function lampTex(seed, lit){ const r=rng(seed), base=rgb(lit?0xf2b855:0x6a4a28), grid=rgb(lit?0xc98a2e:0x4a331b), core=rgb(lit?0xfff0c0:0x8a6636);
+  return (x,y)=>{ const edge=x===0||y===0||x===15||y===15;
+    if(edge) return vary(grid,6,r);
+    if((x+1)%5===0 || (y+1)%5===0) return vary(grid,8,r);
+    if(x>5&&x<10&&y>5&&y<10) return vary(core,10,r);
+    return vary(base,10,r); }; }
 function mineralBlock(seed, hex){ const r=rng(seed), base=rgb(hex);
   return (x,y)=>{ let c=vary(base,6,r); if(x===0||y===0) c=c.map(v=>Math.min(255,v*1.15)|0);
     if(x===15||y===15) c=c.map(v=>v*0.85|0); return c; }; }
@@ -1300,6 +1341,16 @@ TALL_FLOWERS.forEach(function(f,i){
 });
 paint('flower_pot', flowerPotTex(9470));
 paint('wet_sponge', wetSpongeTex(9471));
+// torches, campfire, redstone
+paint('torch_wood',        torchWoodTex(9480));
+paint('torch_flame',       flameTex(9481, 0xfff4c2, 0xffc341, 0xf08a1e));
+paint('rtorch_flame',      flameTex(9482, 0xff6a5a, 0xe01c0c, 0x8a0f06));
+paint('rtorch_flame_off',  flameTex(9483, 0x8a3a34, 0x6a1a12, 0x3f0d07));
+paint('campfire_log',      campLogTex(9484));
+paint('campfire_flame',    fireTex(9485, 0xffe9a8, 0xff8c1e, 0xd83c0c));
+paint('redstone_dust',     redDustTex(9486));
+paint('redstone_lamp',     lampTex(9487, false));
+paint('redstone_lamp_on',  lampTex(9488, true));
 // a door texture per wood type — painted directly, NOT via EXTRA, so the EXTRA block
 // loop doesn't also define a plain (non-door) block that shadows the real door block
 WOODS.forEach((w,i)=> paint(w.id+'_door', doorTex(w.plank, 9100+i)));
@@ -1534,6 +1585,24 @@ B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:f
 SMALL_FLOWERS.forEach(function(f){ B[f[0]] = def(f[0], { tiles:T(f[0]), cross:true, plant:true, pot:true, solid:false, opaque:false, cutout:true }); });
 TALL_FLOWERS.forEach(function(f){ B[f[0]] = def(f[0], { tiles:T(f[0]+'_bottom'), topTile:T(f[0]+'_top'), cross:true, plant:true, tall:true, solid:false, opaque:false, cutout:true }); });
 B.flower_pot = def('flower_pot', { tiles:T('flower_pot'), flowerpot:true, opaque:false });
+/* ---- torches, campfire and redstone ----
+   Torches, levers and buttons attach to a face, so their orientation lives in
+   attachMeta. Buttons and plates are redstone inputs; the lamp, doors and
+   trapdoors are outputs. Every wood gets a button and a plate, purpular
+   included, plus the stone pair. */
+B.torch = def('torch', { tiles:T('torch_wood'), torch:true, solid:false, opaque:false, cutout:true, light:14 });
+B.redstone_torch = def('redstone_torch', { tiles:T('torch_wood'), torch:true, redTorch:true, solid:false, opaque:false, cutout:true, light:7 });
+B.campfire = def('campfire', { tiles:T('campfire_log'), campfire:true, opaque:false, cutout:true, light:15 });
+B.redstone_wire = def('redstone_wire', { tiles:T('redstone_dust'), dust:true, solid:false, opaque:false, cutout:true, display:'Redstone Dust' });
+B.redstone_lamp = def('redstone_lamp', { tiles:T('redstone_lamp'), lamp:true, litTile:T('redstone_lamp_on') });
+B.lever = def('lever', { tiles:T('cobble'), lever:true, solid:false, opaque:false, cutout:true });   // the tile is 'cobble', not 'cobblestone'
+const REDSTONE_WOODS = WOODS.map(w=>[w.id, T(w.id+'_planks'), w.plank]).concat([['purpular', T('purpular_planks'), 0x8a5aa8]]);
+for(const [id, tile, hex] of REDSTONE_WOODS){
+  B[id+'_button']         = def(id+'_button',         { tiles:tile, button:true, wooden:true, solid:false, opaque:false, hex });
+  B[id+'_pressure_plate'] = def(id+'_pressure_plate', { tiles:tile, plate:true,  wooden:true, solid:false, opaque:false, hex });
+}
+B.stone_button         = def('stone_button',         { tiles:T('stone'), button:true, solid:false, opaque:false });
+B.stone_pressure_plate = def('stone_pressure_plate', { tiles:T('stone'), plate:true,  solid:false, opaque:false });
 const FLOWER_NAMES = new Set(SMALL_FLOWERS.map(f=>f[0]).concat(TALL_FLOWERS.map(f=>f[0])));
 B.wet_sponge = def('wet_sponge', { tiles:T('wet_sponge') });
 // glass panes: thin, see-through panels that connect to neighbours (clear + 16 stained colours)
@@ -1626,6 +1695,12 @@ const GRAVITY = new Set([B.sand, B.gravel, B.red_sand]);
 for(const [n] of WOOLS) GRAVITY.add(B[n+'_concrete_powder']);   // concrete powder falls like sand
 
 // placeable palette = every real block, in definition order
+// catch a mistyped tile name at boot rather than as "cannot read '1'" inside the mesher
+for(const k of Object.keys(BLOCKS)){
+  const n=Number(k); if(!Number.isInteger(n)) continue;
+  const t=BLOCKS[n].tiles;
+  if(t===undefined || (Array.isArray(t) && t.some(v=>v===undefined))) console.error('block has no tile:', BLOCKS[n].name);
+}
 const PALETTE = [];
 for(const k of Object.keys(BLOCKS)){ const n=Number(k); if(Number.isInteger(n) && n>0 && !PALETTE.includes(n)) PALETTE.push(n); }
 
@@ -1711,6 +1786,30 @@ function trapdoorBoxes(facing, open, top){
 const slabMeta = new Map();   // "x,y,z" -> {top:bool, double:bool}
 let spSlabs = {};
 function isSlab(id){ return !!(id && BLOCKS[id] && BLOCKS[id].slab); }
+// ---- torches, buttons, levers: things bolted to a face ----
+// m: 0 = standing on the block below, 1 = hanging from the block above, 2 = on a wall.
+// f: which way it faces, away from whatever it is attached to (0=-z 1=+x 2=+z 3=-x).
+const NB6 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+const redParts = new Set();     // every redstone-ish block we know about ("x,y,z")
+const dustPower = new Map();    // "x,y,z" -> 0..15
+const redOn = new Set();        // inputs currently emitting
+const litTorch = new Set();     // redstone torches currently burning
+const lampLit = new Set();      // lamps currently lit
+const btnTimer = new Map();     // "x,y,z" -> when this button pops back out
+let redDirty = true;
+const MAX_RED = 8000;           // a budget, so a huge contraption can't stall a phone
+const BTN_TICKS_WOOD = 1.5, BTN_TICKS_STONE = 1.0;   // Minecraft's button hold times
+const attachMeta = new Map();   // "x,y,z" -> {m, f}
+let spAttach = {};
+function isTorch(id){ return !!(id && BLOCKS[id] && BLOCKS[id].torch); }
+function isRedTorch(id){ return !!(id && BLOCKS[id] && BLOCKS[id].redTorch); }
+function isCampfire(id){ return !!(id && BLOCKS[id] && BLOCKS[id].campfire); }
+function isDust(id){ return !!(id && BLOCKS[id] && BLOCKS[id].dust); }
+function isLamp(id){ return !!(id && BLOCKS[id] && BLOCKS[id].lamp); }
+function isLever(id){ return !!(id && BLOCKS[id] && BLOCKS[id].lever); }
+function isButton(id){ return !!(id && BLOCKS[id] && BLOCKS[id].button); }
+function isPlate(id){ return !!(id && BLOCKS[id] && BLOCKS[id].plate); }
+function isAttached(id){ return isTorch(id) || isLever(id) || isButton(id); }
 // ---- flowers + flower pots ----
 const potMeta = new Map();    // "x,y,z" -> block id planted in that pot (absent = empty pot)
 let spPots = {};
@@ -1917,7 +2016,7 @@ let spSeed = seed;               // the singleplayer world's own seed
 let spEdits = {};                // "x,y,z" -> blockId (0 = air) : deviations from the terrain
 let spSaveTimer = null;
 const SP_KEY = 'leoncraft_sp_world';
-function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns, prg: spPrg, trapdoors: spTrapdoors, slabs: spSlabs, pots: spPots })); }catch(e){} }
+function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns, prg: spPrg, trapdoors: spTrapdoors, slabs: spSlabs, pots: spPots, attach: spAttach })); }catch(e){} }
 function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
 function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
 function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = removed)
@@ -1988,9 +2087,9 @@ function purgeLiveAbove(){
   return n;
 }
 function spReloadWorld(){         // load the saved singleplayer world into seed + overrides + doors + beds + stairs + ladders
-  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear();
-  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {}; spTrapdoors = {}; spSlabs = {}; spPots = {};
-  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; spPots=w.pots||{}; } } }catch(e){}
+  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
+  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {}; spTrapdoors = {}; spSlabs = {}; spPots = {}; spAttach = {};
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; spPots=w.pots||{}; spAttach=w.attach||{}; } } }catch(e){}
   const purged = purgeSavedAbove();   // clear old ghost blocks stranded above the build limit, then persist the cleanup
   seed=spSeed; noise=makeNoise(seed);
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
@@ -2003,6 +2102,10 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   for(const kk in spTrapdoors){ const s=spTrapdoors[kk]; trapdoorMeta.set(kk, {facing:s.f|0, open:!!s.o, top:!!s.t}); }
   for(const kk in spSlabs){ const s=spSlabs[kk]; slabMeta.set(kk, {top:!!s.t, double:!!s.d}); }
   for(const kk in spPots){ const id=blockByName(spPots[kk].p); if(id) potMeta.set(kk, id); }   // put each pot's flower back
+  for(const kk in spAttach){ const a=spAttach[kk]; attachMeta.set(kk, {m:a.m|0, f:a.f|0, on:!!a.o}); if(a.o) redOn.add(kk); }
+  redParts.clear(); dustPower.clear(); litTorch.clear(); lampLit.clear(); btnTimer.clear();
+  for(const kk in spEdits){ const c=kk.split(','); if(isRedPart(spEdits[kk])) redParts.add(kk); }   // rebuild the circuit registry
+  redDirty=true;
   if(purged) spSave();           // write back the world with the ghost blocks removed
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
@@ -2140,6 +2243,161 @@ function settleColumn(x,z){
    because the sponge still uses it to walk the water it soaks up. */
 const wkey=(x,y,z)=>x+','+y+','+z;
 
+/* ====================== REDSTONE ==========================================
+   Inputs (buttons, pressure plates, levers, redstone blocks) emit power. Dust
+   carries it, losing one level per step over a range of 15, and can step up or
+   down a block the way Minecraft's does. Outputs (doors, trapdoors, lamps)
+   switch when power reaches them. A redstone torch burns unless the block it
+   is stuck to is powered, which is what makes inverters work, so the solve
+   runs to a fixed point rather than in one pass.
+
+   Only the INPUT is ever sent over the network: every client then derives the
+   same dust levels, torch states and door positions from it. That keeps a
+   circuit costing one small message per press instead of one per wire.        */
+function isRedPart(id){ return isDust(id)||isRedTorch(id)||isButton(id)||isPlate(id)||isLever(id)||isLamp(id)||isDoor(id)||isTrapdoor(id)||id===B.redstone_block; }
+// `idAt` lets a caller name the block explicitly. That matters for edits arriving
+// from the server: the chunk they land in may not be generated on this client yet,
+// so getBlock() would still read air and the circuit piece would never register.
+function redTrack(x,y,z,idAt){
+  const k=dkey(x,y,z), id=(idAt!==undefined) ? idAt : getBlock(x,y,z);
+  if(isRedPart(id)){ if(redParts.size<MAX_RED) redParts.add(k); }
+  else { redParts.delete(k); dustPower.delete(k); redOn.delete(k); litTorch.delete(k); lampLit.delete(k); btnTimer.delete(k); }
+  redDirty=true;
+}
+// which block is this torch/lever/button bolted to?
+function supportCell(x,y,z,a){
+  if(!a || a.m===0) return [x,y-1,z];
+  if(a.m===1) return [x,y+1,z];
+  const d=DIRV[a.f||0]; return [x-d[0], y, z-d[2]];
+}
+function emitting(k){
+  const c=k.split(',').map(Number), id=getBlock(c[0],c[1],c[2]);
+  if(id===B.redstone_block) return true;
+  if(isRedTorch(id)) return litTorch.has(k);
+  if(isButton(id)||isPlate(id)||isLever(id)) return redOn.has(k);
+  return false;
+}
+// is this cell receiving power from something next to it?
+function poweredAt(x,y,z){
+  for(const [dx,dy,dz] of NB6){
+    const nx=x+dx, ny=y+dy, nz=z+dz, nk=dkey(nx,ny,nz), nid=getBlock(nx,ny,nz);
+    if(isDust(nid) && (dustPower.get(nk)||0)>0) return true;
+    if(strongSet.has(nk)) return true;
+    if(!redParts.has(nk) || !emitting(nk)) continue;
+    if(isRedTorch(nid)){ if(ny===y-1) return true; }   // a torch powers the block above it
+    else return true;
+  }
+  return false;
+}
+const strongSet = new Set();    // blocks being driven by something bolted to them
+function computeStrong(){
+  strongSet.clear();
+  for(const k of redParts){
+    if(!emitting(k)) continue;
+    const c=k.split(',').map(Number), id=getBlock(c[0],c[1],c[2]);
+    if(isButton(id)||isLever(id)){ const s=supportCell(c[0],c[1],c[2], attachMeta.get(k)); strongSet.add(dkey(s[0],s[1],s[2])); }
+    else if(isRedTorch(id)) strongSet.add(dkey(c[0], c[1]+1, c[2]));   // a torch drives the block above it
+    else if(isPlate(id))    strongSet.add(dkey(c[0], c[1]-1, c[2]));   // a plate drives the block it rests on
+  }
+}
+function computeDust(){
+  dustPower.clear();
+  const q=[];
+  for(const k of redParts){
+    const c=k.split(',').map(Number);
+    if(!isDust(getBlock(c[0],c[1],c[2]))) continue;
+    for(const [dx,dy,dz] of NB6){
+      const nk=dkey(c[0]+dx,c[1]+dy,c[2]+dz);
+      if((redParts.has(nk) && emitting(nk)) || strongSet.has(nk)){ dustPower.set(k,15); q.push([c[0],c[1],c[2],15]); break; }
+    }
+  }
+  for(let i=0;i<q.length && i<MAX_RED;i++){
+    const [x,y,z,p]=q[i];
+    if(p<=1) continue;
+    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) for(const dy of [0,1,-1]){
+      const nx=x+dx, ny=y+dy, nz=z+dz, nk=dkey(nx,ny,nz);
+      if(!isDust(getBlock(nx,ny,nz))) continue;
+      if((dustPower.get(nk)||0) >= p-1) continue;
+      dustPower.set(nk, p-1); q.push([nx,ny,nz,p-1]);
+    }
+  }
+}
+function solveRedstone(){
+  redDirty=false;
+  for(let pass=0; pass<8; pass++){          // torches feed back into themselves, so settle first
+    computeStrong(); computeDust();
+    let changed=false;
+    for(const k of redParts){
+      const c=k.split(',').map(Number);
+      if(!isRedTorch(getBlock(c[0],c[1],c[2]))) continue;
+      const s=supportCell(c[0],c[1],c[2], attachMeta.get(k));
+      const on = !poweredAt(s[0],s[1],s[2]);
+      if(on !== litTorch.has(k)){ if(on) litTorch.add(k); else litTorch.delete(k); changed=true; }
+    }
+    if(!changed) break;
+  }
+  computeStrong(); computeDust();
+  applyRedstoneOutputs();
+}
+// doors, trapdoors and lamps follow the power. These are derived on every
+// client from the same inputs, so none of it is sent over the wire.
+function applyRedstoneOutputs(){
+  const remesh=new Set();
+  for(const k of redParts){
+    const c=k.split(',').map(Number), x=c[0], y=c[1], z=c[2], id=getBlock(x,y,z);
+    if(isLamp(id)){
+      const on=poweredAt(x,y,z);
+      if(on!==lampLit.has(k)){ if(on) lampLit.add(k); else lampLit.delete(k); remesh.add(Math.floor(x/CH)+','+Math.floor(z/CH)); }
+    } else if(isDoor(id)){
+      const by=doorBottom(x,y,z);
+      if(y!==by) continue;                                   // handle each door once, from its lower half
+      const on = poweredAt(x,by,z) || poweredAt(x,by+1,z);
+      const m=doorMeta.get(dkey(x,by,z));
+      if(m && !!m.pw !== on){                                // only act on a change, so manual clicks still work
+        for(let h=0;h<2;h++){ const kk=dkey(x,by+h,z), mm=doorMeta.get(kk); if(mm){ mm.pw=on; mm.open=on; spRecordDoor(x,by+h,z,mm); } }
+        remesh.add(Math.floor(x/CH)+','+Math.floor(z/CH));
+      }
+    } else if(isTrapdoor(id)){
+      const m=trapdoorMeta.get(k);
+      const on=poweredAt(x,y,z);
+      if(m && !!m.pw !== on){ m.pw=on; m.open=on; spRecordTrapdoor(x,y,z,m); remesh.add(Math.floor(x/CH)+','+Math.floor(z/CH)); }
+    }
+  }
+  for(const ck of remesh){ const c=ck.split(','); remeshChunkAt(+c[0]*CH, +c[1]*CH); }
+}
+function setRedInput(x,y,z,on){        // press/release an input and tell everyone
+  const k=dkey(x,y,z);
+  if(on===redOn.has(k)) return;
+  if(on) redOn.add(k); else redOn.delete(k);
+  redDirty=true; remeshChunkAt(x,z);
+  const a=attachMeta.get(k);
+  if(mp.active) mpSend({ type:'red', x, y, z, on:!!on, m:a?a.m:0, f:a?a.f:0 });
+}
+// a plate is down while anything is standing in its cell — your own player or anyone online
+function tickPlates(){
+  for(const k of redParts){
+    const c=k.split(',').map(Number), x=c[0], y=c[1], z=c[2];
+    if(!isPlate(getBlock(x,y,z))) continue;
+    let on=false;
+    const stands=(px,py,pz)=> px>x-0.05 && px<x+1.05 && pz>z-0.05 && pz<z+1.05 && py>y-0.6 && py<y+0.7;
+    if(stands(player.pos.x, player.pos.y, player.pos.z)) on=true;
+    if(!on && mp.active) for(const [,p] of mp.players){ if(stands(p.x,p.y,p.z)){ on=true; break; } }
+    if(!on) for(const mo of mobs){ if(stands(mo.x,mo.y,mo.z)){ on=true; break; } }
+    const was=redOn.has(k);
+    if(on!==was){ if(on) redOn.add(k); else redOn.delete(k); redDirty=true; remeshChunkAt(x,z); }
+  }
+}
+let redAccum=0;
+function tickRedstone(dt){
+  redAccum+=dt; if(redAccum<0.1) return; redAccum=0;
+  const now=performance.now();
+  for(const [k,t] of btnTimer){        // buttons pop back out on their own
+    if(now>=t){ btnTimer.delete(k); const c=k.split(',').map(Number); setRedInput(c[0],c[1],c[2],false); }
+  }
+  tickPlates();
+  if(redDirty) solveRedstone();
+}
+
 /* ============================================================ RENDERER ==== */
 const canvas = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:false });
@@ -2232,6 +2490,26 @@ function pushCross(buf, wx, wy, wz, tile, y0, y1, half, jitter){
     for(let i=0;i<4;i++) buf.col.push(1,1,1);   // plants render unshaded, like vanilla
     buf.idx.push(base,base+1,base+2, base,base+2,base+3);
   }
+}
+// the pad of a button or lever, on whichever face it was stuck to; `d` is how far it stands proud
+function buttonBox(a, d){
+  const a1=5/16, a2=11/16, lo=6/16, hi=10/16;
+  if(!a || a.m===0) return [a1,a2, 0,d, lo,hi];
+  if(a.m===1) return [a1,a2, 1-d,1, lo,hi];
+  const f=a.f||0;
+  if(f===0) return [a1,a2, lo,hi, 1-d,1];
+  if(f===2) return [a1,a2, lo,hi, 0,d];
+  if(f===1) return [0,d, lo,hi, a1,a2];
+  return [1-d,1, lo,hi, a1,a2];
+}
+// redstone dust lies flat on the floor; `t` is brightness, so a live wire glows
+function pushDust(buf, wx, wy, wz, tile, t){
+  const [u0,v0,u1,v1]=tileUV(tile);
+  const base=buf.pos.length/3, h=wy+1/16;
+  buf.pos.push(wx,h,wz,  wx+1,h,wz,  wx+1,h,wz+1,  wx,h,wz+1);
+  buf.uv.push(u0,v0, u1,v0, u1,v1, u0,v1);
+  for(let i=0;i<4;i++) buf.col.push(t,t,t);
+  buf.idx.push(base,base+1,base+2, base,base+2,base+3);
 }
 function buildChunkMesh(c){
   const op = { pos:[], uv:[], col:[], idx:[] };
@@ -2342,6 +2620,53 @@ function buildChunkMesh(c){
       }
       continue;
     }
+    if (bl.torch){                             // a stick with a flame on top, standing or bracketed to a wall
+      const k=dkey(wx,y,wz);
+      const lit = !bl.redTorch || litTorch.has(k);
+      const flame = bl.redTorch ? (lit?T('rtorch_flame'):T('rtorch_flame_off')) : T('torch_flame');
+      const a = attachMeta.get(k) || {m:0,f:0};
+      let ox=0, oz=0, oy=0;
+      if(a.m===2){ const d=DIRV[a.f||0]; ox=-d[0]*4/16; oz=-d[2]*4/16; oy=3/16; }   // wall torches lean back and sit higher
+      const st=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
+      pushBox(cut, wx, y, wz, [7/16+ox,9/16+ox, oy,      oy+10/16, 7/16+oz,9/16+oz], st);
+      pushBox(cut, wx, y, wz, [7/16+ox,9/16+ox, oy+9/16, oy+12/16, 7/16+oz,9/16+oz], flame);
+      continue;
+    }
+    if (bl.campfire){                          // four logs stacked in a hash, with fire sitting in them
+      const lt=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
+      pushBox(op, wx, y, wz, [0,1, 0,4/16, 2/16,6/16], lt);
+      pushBox(op, wx, y, wz, [0,1, 0,4/16, 10/16,14/16], lt);
+      pushBox(op, wx, y, wz, [2/16,6/16, 4/16,8/16, 0,1], lt);
+      pushBox(op, wx, y, wz, [10/16,14/16, 4/16,8/16, 0,1], lt);
+      pushCross(cut, wx, y, wz, T('campfire_flame'), 3/16, 14/16, 0.30, false);
+      continue;
+    }
+    if (bl.button){                            // a small pad that sinks in while it is held down
+      const k=dkey(wx,y,wz);
+      pushBox(op, wx, y, wz, buttonBox(attachMeta.get(k)||{m:0,f:0}, redOn.has(k)?1/16:2/16),
+              (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      continue;
+    }
+    if (bl.plate){                             // a flat plate that dips when something stands on it
+      const k=dkey(wx,y,wz);
+      pushBox(op, wx, y, wz, [1/16,15/16, 0, redOn.has(k)?0.5/16:1/16, 1/16,15/16],
+              (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      continue;
+    }
+    if (bl.lever){                             // cobble base plus a handle that throws to one side
+      const k=dkey(wx,y,wz), a=attachMeta.get(k)||{m:0,f:0}, on=redOn.has(k);
+      pushBox(op, wx, y, wz, buttonBox(a, 3/16), (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      const s=on?1:-1;
+      if(a.m===2){ const d=DIRV[a.f||0], px=-d[0], pz=-d[2];
+        pushBox(cut, wx, y, wz, [7/16+px*2/16, 9/16+px*2/16, (on?9/16:4/16), (on?12/16:7/16), 7/16+pz*2/16, 9/16+pz*2/16], T('torch_wood')); }
+      else pushBox(cut, wx, y, wz, [7/16+s*2/16, 9/16+s*2/16, 2/16, 9/16, 7/16, 9/16], T('torch_wood'));
+      continue;
+    }
+    if (bl.dust){                              // flat wire, drawn darker or brighter with the power it carries
+      const p=dustPower.get(dkey(wx,y,wz))||0;
+      pushDust(cut, wx, y, wz, (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]), 0.30+0.70*(p/15));
+      continue;
+    }
     if (bl.sign){ continue; }                  // signs render as separate rotatable 3D objects (see updateSignObj)
     if (bl.model){ foundPrg.push(wx+','+y+','+wz); continue; }   // PRG renders as the prg.glb sphere object
     for(let f=0;f<6;f++){
@@ -2353,7 +2678,8 @@ function buildChunkMesh(c){
       if (bl.liquid && nb===id) continue;
       if (!bl.opaque && !bl.liquid && !bl.cutout && nb===id) continue; // glass vs glass
       const faceArg = f===0?0 : f===1?1 : 2;
-      const tile = faceTile(bl, faceArg);
+      let tile = faceTile(bl, faceArg);
+      if (bl.lamp && lampLit.has(dkey(wx,y,wz))) tile = bl.litTile;   // a powered lamp lights up
       let buf = op, useAO = true;
       if (bl.liquid) { buf = tr; useAO = false; }
       else if (bl.cutout) buf = cut;
@@ -2907,6 +3233,8 @@ function useAction(){
     if(isCushion(tb)){ sitOnCushion(target.x,target.y,target.z); return; }      // right-click a cushion to sit on it
     if(isSign(tb)){ openSignEditor(target.x,target.y,target.z); return; }
     if(isPot(tb)){ usePot(target.x,target.y,target.z); return; }   // plant into / empty out a flower pot
+    if(isButton(tb)){ pressButton(target.x,target.y,target.z); return; }
+    if(isLever(tb)){ flipLever(target.x,target.y,target.z); return; }
   }
   placeBlock();
 }
@@ -3042,6 +3370,7 @@ function collides(px,py,pz){
         if(sm && !sm.double){ const yb=sm.top?y+0.5:y, yt=sm.top?y+1:y+0.5; if(py+player.h<=yb || py>=yt) continue; }
       }
       if(BLOCKS[b].cushion){ if(py>=y+CUSHION_H) continue; }   // a cushion is a low pad; stand on top of it
+      if(BLOCKS[b].campfire){ if(py>=y+8/16) continue; }       // logs are 8 pixels tall; you stand on them
       if(BLOCKS[b].flowerpot){                                  // a pot is a small 6x6x6 obstacle, not a full cube
         if(py>=y+POT_H) continue;
         if(!(px+w>x+5/16 && px-w<x+11/16 && pz+w>z+5/16 && pz-w<z+11/16)) continue;
@@ -3086,6 +3415,7 @@ function stepUpStair(p, axis){
       if(isStair(b)) ny=Math.max(ny, fy+1);
       else if(isSlab(b)){ const sm=slabMeta.get(x+','+fy+','+z); if(sm && !sm.double && !sm.top) ny=Math.max(ny, fy+0.5); }
       else if(isCushion(b)) ny=Math.max(ny, fy+CUSHION_H);
+      else if(isCampfire(b)) ny=Math.max(ny, fy+8/16);
     }
   if(ny<0) return false;
   const rise=ny-player.pos.y;
@@ -3269,6 +3599,7 @@ function placeDoor(){
   mpSendBlock(px,py,pz,id); mpSendBlock(px,py+1,pz,id);
   spRecordDoor(px,py,pz,{facing,open:false,hinge}); spRecordDoor(px,py+1,pz,{facing,open:false,hinge});
   if(mp.active) mpSend({type:'door', x:px, y:py, z:pz, facing, open:false, hinge});
+  redTrack(px,py,pz); redTrack(px,py+1,pz);
   remeshChunkAt(px,pz);
 }
 function toggleDoor(x,y,z){
@@ -3282,6 +3613,71 @@ function breakDoor(x,y,z){
   const by=doorBottom(x,y,z);
   for(let h=0;h<2;h++){ setBlock(x,by+h,z,AIR); doorMeta.delete(dkey(x,by+h,z)); mpSendBlock(x,by+h,z,0); spRecordDoor(x,by+h,z,null); }
   remeshChunkAt(x,z);
+}
+/* ---- placing torches, levers, buttons, plates and dust ---- */
+function solidFooting(id){ return !!(id && BLOCKS[id] && BLOCKS[id].solid && BLOCKS[id].opaque); }
+function spRecordAttach(x,y,z,a){
+  if(mp.active) return; const k=dkey(x,y,z);
+  if(a===null) delete spAttach[k]; else spAttach[k]={m:a.m|0, f:a.f|0, o:a.on?1:0};
+  spScheduleSave();
+}
+function setAttach(x,y,z,a,send){
+  const k=dkey(x,y,z);
+  attachMeta.set(k,a); spRecordAttach(x,y,z,a);
+  if(send && mp.active) mpSend({ type:'attach', x, y, z, m:a.m|0, f:a.f|0, on:!!a.on });
+}
+// a torch, lever or button takes the face you clicked: the top of a block, its
+// underside, or a wall — and remembers which, so it can hang off it correctly
+function placeAttached(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id=hotbar[selSlot];
+  if(getBlock(px,py,pz)!==AIR) return;
+  if(!solidFooting(getBlock(target.x,target.y,target.z))) return;   // needs something to hang off
+  let a;
+  if(target.ny>0)      a={ m:0, f:facingFromYaw(player.yaw) };      // standing on top
+  else if(target.ny<0){ if(isTorch(id)) return; a={ m:1, f:facingFromYaw(player.yaw) }; }   // torches don't hang upside down
+  else a={ m:2, f: target.nx>0?1 : target.nx<0?3 : target.nz>0?2 : 0 };   // bracketed to a wall, facing out of it
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+  setAttach(px,py,pz,a,true);
+  redTrack(px,py,pz); remeshChunkAt(px,pz);
+}
+// plates and dust both just need a solid top to sit on
+function placeOnFloor(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id=hotbar[selSlot];
+  if(getBlock(px,py,pz)!==AIR) return;
+  if(!solidFooting(getBlock(px,py-1,pz))) return;
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+  redTrack(px,py,pz); remeshChunkAt(px,pz);
+}
+// press a button: it sinks in, powers whatever it is wired to, and pops back
+// out on its own after a moment — 1.5s for wood, 1s for stone, as in Minecraft
+function pressButton(x,y,z){
+  const k=dkey(x,y,z); if(redOn.has(k)) return;
+  setRedInput(x,y,z,true);
+  btnTimer.set(k, performance.now() + (BLOCKS[getBlock(x,y,z)].wooden ? BTN_TICKS_WOOD : BTN_TICKS_STONE)*1000);
+}
+function flipLever(x,y,z){
+  const k=dkey(x,y,z), on=!redOn.has(k);
+  setRedInput(x,y,z,on);
+  const a=attachMeta.get(k)||{m:0,f:0}; a.on=on; setAttach(x,y,z,a,true);   // a lever stays where you left it
+}
+// anything bolted to a block falls off when that block goes
+function popUnsupportedAttached(x,y,z){
+  for(const [dx,dy,dz] of NB6){
+    const nx=x+dx, ny=y+dy, nz=z+dz, id=getBlock(nx,ny,nz);
+    if(!isAttached(id) && !isPlate(id) && !isDust(id)) continue;
+    const a=attachMeta.get(dkey(nx,ny,nz));
+    const s=(isPlate(id)||isDust(id)) ? [nx,ny-1,nz] : supportCell(nx,ny,nz,a);
+    if(solidFooting(getBlock(s[0],s[1],s[2]))) continue;
+    breakRedBlock(nx,ny,nz);
+  }
+}
+function breakRedBlock(x,y,z){
+  attachMeta.delete(dkey(x,y,z)); spRecordAttach(x,y,z,null);
+  if(mp.active) mpSend({ type:'attach', x, y, z, m:-1 });
+  setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0);
+  redTrack(x,y,z); remeshChunkAt(x,z);
 }
 // plant a flower: it needs soil under it, and a tall one needs two free cells
 function placePlant(){
@@ -3395,6 +3791,7 @@ function placeTrapdoor(){
   mpSendBlock(px,py,pz,id);
   spRecordTrapdoor(px,py,pz,m);
   if(mp.active) mpSend({type:'trapdoor', x:px, y:py, z:pz, facing, open:false, top});
+  redTrack(px,py,pz);
   remeshChunkAt(px,pz);
 }
 function toggleTrapdoor(x,y,z){
@@ -3618,6 +4015,7 @@ function breakBlock(){
   if(isBed(getBlock(x,y,z))){ breakBed(x,y,z); return; }     // breaking either cell removes the whole bed
   if(isPlant(getBlock(x,y,z))){ breakPlant(x,y,z); return; } // a tall flower comes out whole
   if(isPot(getBlock(x,y,z))){ breakPot(x,y,z); return; }     // takes the pot and whatever was in it
+  if(isAttached(getBlock(x,y,z))){ breakRedBlock(x,y,z); popUnsupportedAttached(x,y,z); return; }
   if(isStair(getBlock(x,y,z))){ stairMeta.delete(dkey(x,y,z)); spRecordStair(x,y,z,null); }
   if(isLadder(getBlock(x,y,z))){ ladderMeta.delete(dkey(x,y,z)); spRecordLadder(x,y,z,null); }
   if(isTrapdoor(getBlock(x,y,z))){ trapdoorMeta.delete(dkey(x,y,z)); spRecordTrapdoor(x,y,z,null); }
@@ -3625,7 +4023,9 @@ function breakBlock(){
   if(isSign(getBlock(x,y,z))){ signMeta.delete(dkey(x,y,z)); removeSignObj(x,y,z); spRecordSign(x,y,z,null); }
   if(isPrg(getBlock(x,y,z))){ prgMeta.delete(dkey(x,y,z)); spRecordPrg(x,y,z,null); }
   setBlock(x,y,z, AIR);
-  popUnsupportedPlants(x,y,z);   // a flower rooted in the block just mined pops off
+  redTrack(x,y,z);
+  popUnsupportedPlants(x,y,z);
+  popUnsupportedAttached(x,y,z);   // a flower rooted in the block just mined pops off
   if(!mp.active){                // keep the shared world static + consistent
     settleColumn(x,z);           // sand/gravel above may now fall
   }
@@ -3647,6 +4047,8 @@ function placeBlock(){
   if(bl.ladder){ placeLadder(); return; }                               // ladders mount on a wall
   if(bl.sign){ placeSign(); return; }                                   // signs open a text editor on placement
   if(bl.cross){ placePlant(); return; }                                 // flowers root in soil (tall ones take two cells)
+  if(bl.torch||bl.lever||bl.button){ placeAttached(); return; }         // these bolt onto the face you clicked
+  if(bl.plate||bl.dust){ placeOnFloor(); return; }                      // these need a solid top to lie on
   if(bl.flowerpot){ placePot(); return; }                               // a pot needs a surface to stand on
   if(id===B.sponge || id===B.wet_sponge){ placeSponge(); return; }      // a dry sponge drinks the water around it
   if(bl.spawnEgg){ spawnMob(px+0.5, py, pz+0.5, bl.mobType); return; }   // egg spawns a creature
@@ -3667,6 +4069,7 @@ function placeBlock(){
     if(GRAVITY.has(id)) settleColumn(px,pz);
   }
   mpSendBlock(px,py,pz,id);
+  redTrack(px,py,pz);
   if(bw.active){ bw.counts[id]=Math.max(0,(bw.counts[id]||0)-1); bwSetHotbar(); }   // one bedwars block spent (rebuild so an empty stack disappears)
 }
 function pickBlock(){ if(target){ const b=getBlock(target.x,target.y,target.z); if(b){ hotbar[selSlot]=b; renderHotbar(); showItemName(b); } } }
@@ -3834,9 +4237,12 @@ let invOpen=false, invCat='all', invQuery='';
 const CATS=[
   {id:'all',label:'All'},{id:'building',label:'Building'},{id:'nature',label:'Nature'},
   {id:'ores',label:'Ores & Metals'},{id:'color',label:'Wool & Color'},{id:'deco',label:'Decoration'},
+  {id:'redstone',label:'Redstone'},
   {id:'misc',label:'Misc'},
 ];
 function catOf(n){
+  if(n.endsWith('_button')||n.endsWith('_pressure_plate')||n==='redstone_wire'||n==='redstone_torch'||n==='redstone_lamp'||n==='lever'||n==='redstone_block') return 'redstone';
+  if(n==='torch'||n==='campfire') return 'deco';
   if(FLOWER_NAMES.has(n) || n==='flower_pot') return 'nature';   // flowers live with the plants
   if(n==='glass_pane') return 'deco';
   if(n.endsWith('_stained_glass_pane')) return 'color';
@@ -4602,7 +5008,7 @@ function mpHandle(m){
   if(m.type==='init'){
     mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.admin=!!m.admin; mp.spectator=!!m.spectator;
     mp._pwFlow=false; if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;   // joined successfully — close the password prompt
-    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear();
+    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
     if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open, hinge:m.doors[kk].hinge}); } }
@@ -4613,6 +5019,10 @@ function mpHandle(m){
     if(m.trapdoors) for(const kk in m.trapdoors){ const s=m.trapdoors[kk]; trapdoorMeta.set(kk, {facing:s.facing|0, open:!!s.open, top:!!s.top}); }
     if(m.slabs) for(const kk in m.slabs){ const s=m.slabs[kk]; slabMeta.set(kk, {top:!!s.top, double:!!s.double}); }
     if(m.pots) for(const kk in m.pots){ const id=blockByName(m.pots[kk].plant); if(id) potMeta.set(kk, id); }   // flower pots and what's planted in them
+    redParts.clear(); dustPower.clear(); redOn.clear(); litTorch.clear(); lampLit.clear(); btnTimer.clear();
+    if(m.attach) for(const kk in m.attach){ const a=m.attach[kk]; attachMeta.set(kk, {m:a.m|0, f:a.f|0, on:!!a.on}); if(a.on) redOn.add(kk); }
+    for(const kk in (m.blocks||{})){ if(isRedPart(m.blocks[kk])) redParts.add(kk); }   // every circuit piece the server holds
+    redDirty=true;
     purgeLiveAbove();   // never render ghost blocks a server may still hold above the build limit
     mpClearPlayers();
     mpStartWorld(m.seed);
@@ -4626,12 +5036,24 @@ function mpHandle(m){
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
   else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z;
-    if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); if(trapdoorMeta.has(dk)) trapdoorMeta.delete(dk); if(slabMeta.has(dk)) slabMeta.delete(dk); if(potMeta.has(dk)) potMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+    if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); if(trapdoorMeta.has(dk)) trapdoorMeta.delete(dk); if(slabMeta.has(dk)) slabMeta.delete(dk); if(potMeta.has(dk)) potMeta.delete(dk); if(attachMeta.has(dk)) attachMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); redTrack(m.x,m.y,m.z,m.b); }
   else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {wall:!!m.wall, ang:(m.ang!=null?m.ang:(m.facing!=null?facingToAng(m.facing):0)), hex:m.hex, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
   else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open, hinge:m.hinge}); } remeshChunkAt(m.x, m.z); }
   else if(m.type==='trapdoor'){ trapdoorMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, open:!!m.open, top:!!m.top}); remeshChunkAt(m.x, m.z); }
   else if(m.type==='slab'){ slabMeta.set(m.x+','+m.y+','+m.z, {top:!!m.top, double:!!m.double}); remeshChunkAt(m.x, m.z); }
   else if(m.type==='pot'){ const k=m.x+','+m.y+','+m.z; const id=blockByName(m.plant); if(id) potMeta.set(k,id); else potMeta.delete(k); remeshChunkAt(m.x, m.z); }
+  else if(m.type==='attach'){ const k=m.x+','+m.y+','+m.z;
+    if((m.m|0)<0){ attachMeta.delete(k); redOn.delete(k); } else { attachMeta.set(k, {m:m.m|0, f:m.f|0, on:!!m.on}); if(m.on) redOn.add(k); else redOn.delete(k); }
+    redDirty=true; remeshChunkAt(m.x, m.z); }
+  else if(m.type==='red'){ const k=m.x+','+m.y+','+m.z;   // someone pressed a button or threw a lever
+    if(m.on) redOn.add(k); else redOn.delete(k);
+    if(attachMeta.has(k)) attachMeta.get(k).on=!!m.on; else attachMeta.set(k,{m:m.m|0,f:m.f|0,on:!!m.on});
+    // arm our own release timer too, so a button can't stick on if whoever
+    // pressed it disconnects before sending the release
+    const bid=getBlock(m.x,m.y,m.z);
+    if(m.on && isButton(bid)) btnTimer.set(k, performance.now() + (BLOCKS[bid].wooden?BTN_TICKS_WOOD:BTN_TICKS_STONE)*1000 + 250);
+    else btnTimer.delete(k);
+    redDirty=true; remeshChunkAt(m.x, m.z); }
   else if(m.type==='prg'){ setPrgAng(m.x+','+m.y+','+m.z, m.ang|0); }
   else if(m.type==='bed'){ bedMeta.set(m.fx+','+m.fy+','+m.fz, {facing:m.facing|0, head:false}); bedMeta.set(m.hx+','+m.fy+','+m.hz, {facing:m.facing|0, head:true}); remeshChunkAt(m.fx,m.fz); remeshChunkAt(m.hx,m.hz); }
   else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, top:!!m.top}); remeshChunkAt(m.x,m.z); }
@@ -5811,6 +6233,7 @@ function frame(now){
       if(ccx!==lastCX || ccz!==lastCZ){ lastCX=ccx; lastCZ=ccz; ensureChunks(player.pos.x, player.pos.z); } }
     processQueues(player.pos.x, player.pos.z);
     raycast();
+    if(!bw.active) tickRedstone(dt);   // buttons pop out, plates read who is standing on them, power resolves
     updateMobs(dt);
     mpUpdatePlayers(dt);
     if(bw.active) bwFrame(dt);
@@ -5946,12 +6369,19 @@ window.__mc = {
   block(x,y,z){ return getBlock(x,y,z); },
   doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open,hinge:d.hinge||'right'}:null; },
   blockInfo(name){ const b=BLOCKS[name]; return b?{id:b.id,pane:!!b.pane,opaque:!!b.opaque,solid:!!b.solid,cat:catOf(name)}:null; },
-  putBlock(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); remeshChunkAt(x,z); return true; },
+  putBlock(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); redTrack(x,y,z); remeshChunkAt(x,z); return true; },
   giveBlock(name){ const b=BLOCKS[name]; if(!b) return false; hotbar[selSlot]=b.id; if(typeof renderHotbar==='function') renderHotbar(); return true; },
   useAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; useAction(); return true; },
   // ---- flower / pot / sponge test hooks ----
   atlasUsed(){ return cell; }, atlasMax(){ return ATLAS_COLS*ATLAS_ROWS; },
   clearHand(){ hotbar[selSlot]=0; if(typeof renderHotbar==='function') renderHotbar(); },
+  // ---- redstone test hooks ----
+  redAt(x,y,z){ const k=dkey(x,y,z); return { block:blockName(getBlock(x,y,z)), on:redOn.has(k), power:dustPower.get(k)||0,
+    lit:litTorch.has(k), lamp:lampLit.has(k), attach:attachMeta.get(k)||null }; },
+  pressAt(x,y,z){ pressButton(x,y,z); }, leverAt(x,y,z){ flipLever(x,y,z); },
+  solveRed(){ solveRedstone(); }, redPartCount(){ return redParts.size; },
+  doorAtOpen(x,y,z){ const d=doorMeta.get(dkey(x,y,z)); return d?!!d.open:null; },
+  redTickNow(){ redAccum=1; tickRedstone(1); },
   flowerNames(){ return { small:SMALL_FLOWERS.map(f=>f[0]), tall:TALL_FLOWERS.map(f=>f[0]) }; },
   blockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
   potAt(x,y,z){ const p=potMeta.get(dkey(x,y,z)); return p?blockName(p):null; },
