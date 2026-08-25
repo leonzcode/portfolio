@@ -2400,6 +2400,7 @@ class Chunk{
     if(worldDim()===1){                // the nether has its own shape entirely
       this.genNether();
       this.generated = true;
+      if(menuPano) return;                       // the title screen shows plain nether, nobody's builds
       const ovn = mpOverrides.get(this.cx+','+this.cz);
       if(ovn) for(const [lk,b] of ovn){ const p=lk.split(','); this.set(+p[0],+p[1],+p[2], b); }
       return;
@@ -3517,7 +3518,7 @@ const VIEW = 5;   // chunk radius (was 6; trimmed one ring to cut ~28% of in-vie
 function ensureChunks(px,pz){
   const ccx=Math.floor(px/CH), ccz=Math.floor(pz/CH);
   // generate a ring one larger than view so meshing has neighbours
-  const border = (mp.active && mp.border) ? mp.border : 0;
+  const border = borderNow();
   for(let dz=-VIEW-1; dz<=VIEW+1; dz++) for(let dx=-VIEW-1; dx<=VIEW+1; dx++){
     const cx=ccx+dx, cz=ccz+dz, k=key(cx,cz);
     if(border){ if(cx*CH>border || (cx+1)*CH<-border || cz*CH>border || (cz+1)*CH<-border) continue; }   // world border: skip chunks fully outside (caps chunk count -> less lag)
@@ -3927,11 +3928,11 @@ function updatePlayer(dt){
   player.crouch += ((player.sneak?1:0) - player.crouch) * (1 - Math.exp(-16*dt));
   player.eye = (1.62 - player.crouch*0.16) * localEyeMul;   // giant/small secret codes raise/lower the camera
   stepSmooth = stepSmooth>0.003 ? stepSmooth*Math.exp(-16*dt) : 0;   // let the camera catch up to a step-up
-  if(mp.active && mp.border){                                        // world border: keep the player inside the bounded area
-    const b=mp.border-0.35;
+  { const bn=borderNow();                                            // world border: keep the player inside the bounded area
+    const b=bn-0.35; if(bn){
     if(player.pos.x> b){ player.pos.x= b; if(player.vel.x>0) player.vel.x=0; } else if(player.pos.x<-b){ player.pos.x=-b; if(player.vel.x<0) player.vel.x=0; }
     if(player.pos.z> b){ player.pos.z= b; if(player.vel.z>0) player.vel.z=0; } else if(player.pos.z<-b){ player.pos.z=-b; if(player.vel.z<0) player.vel.z=0; }
-  }
+  } }
 }
 
 /* ---- raycast (voxel DDA) for targeting ---- */
@@ -4099,6 +4100,8 @@ function switchDim(to){
     redParts.add(kk); if(isPlate(id)){ const c=kk.split(','); redPlates.set(kk,[+c[0],+c[1],+c[2]]); } }
   redDirty=true;
   lastCX=NaN; lastCZ=NaN;
+  portalArmed=false;            // you may be standing in a portal on the far side; do not bounce straight back
+  updateWorldBorder();          // the nether's wall is a different size
   if(!mp.active) spSave();
 }
 let portalIn=0, portalArmed=true;
@@ -4115,8 +4118,11 @@ function tickPortal(dt){
 function travelThroughPortal(){
   const to = dim===0 ? 1 : 0;
   const k  = to===1 ? 1/8 : 8;         // Minecraft's eight-to-one map between the two worlds
-  const tx = Math.round(player.pos.x*k), tz = Math.round(player.pos.z*k), ty = Math.round(player.pos.y);
+  let tx = Math.round(player.pos.x*k), tz = Math.round(player.pos.z*k);
+  const ty = Math.round(player.pos.y);
   switchDim(to);
+  { const b=borderNow();                       // never come out beyond the wall on the far side
+    if(b){ const lim=b-6; tx=Math.max(-lim, Math.min(lim, tx)); tz=Math.max(-lim, Math.min(lim, tz)); } }
   const spot = arrivePortal(tx, ty, tz);
   player.pos.set(spot[0]+0.5, spot[1], spot[2]+0.5); player.vel.set(0,0,0);
   ensureChunks(player.pos.x, player.pos.z);
@@ -5108,25 +5114,42 @@ function updateSky(dt){
 
 /* ============================================================ STATE ======= */
 /* ---- title screen panorama ----
-   Minecraft turns slowly through a fixed view behind its menu. This does the
-   same thing, except the view is the live nether generated from your own
-   world's seed, so no two title screens are quite alike. It never touches the
-   dimension you are actually saved in - `worldDim()` is what the generator and
-   the sky read, and only the menu sets it to the nether.                     */
+   Minecraft turns slowly through a fixed view behind its menu, and every copy
+   of the game shows the same one. This does the same: its own pinned seed
+   rather than your world's, a spot chosen so the whole view is open nether
+   wastes, and none of anyone's builds in it. It never touches the dimension
+   you are actually saved in - `worldDim()` is what the generator and the sky
+   read, and only the menu sets it to the nether.                             */
 const PANO_TURN = 0.075;             // radians a second: one turn every 84s or so
+const PANO_SEED = 0x4c454f4e;        // pinned, so the title screen is the same for everyone
+// the roomiest patch of plain wastes this seed has to offer, hunted once
+function panoSpot(){
+  let best=[8,8], bestScore=-1;
+  for(let x=-192; x<=192; x+=32) for(let z=-192; z<=192; z+=32){
+    let waste=0;
+    for(let dx=-40; dx<=40; dx+=10) for(let dz=-40; dz<=40; dz+=10)
+      if(netherBiome(x+dx, z+dz)==='waste') waste++;
+    const headroom = netherRoof(x,z) - Math.max(netherFloor(x,z), NETHER_LAVA);
+    if(headroom < 15) continue;                                  // not enough cavern to look down
+    const score = waste*100 + headroom;
+    if(score > bestScore){ bestScore = score; best=[x,z]; }
+  }
+  return best;
+}
 function menuPanoStart(){
   if(menuPano) return;
   menuPano = true;
+  seed = PANO_SEED; noise = makeNoise(seed);                     // the panorama's own world, not yours
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
-  // stand high in the cavern, under the roof, where there is something to see
-  const x=8, z=8;
+  clearSignObjs(); clearPrgObjs();                               // nothing of your world hanging in the view
+  const [x,z]=panoSpot();
   ensureChunks(x,z);
   let g=0; while(genQueue.length && g<200){ const c=genQueue.shift(); if(!c.generated) c.generate(); g++; }
   let y=Math.max(NETHER_LAVA+8, Math.min(WH-9, netherRoof(x,z)-15));
-  while(y>NETHER_LAVA+3 && getBlock(x,y,z)!==AIR) y--;          // never start the camera inside rock
+  while(y>NETHER_LAVA+3 && getBlock(x,y,z)!==AIR) y--;           // never start the camera inside rock
   player.pos.set(x+0.5, y, z+0.5); player.vel.set(0,0,0);
-  player.pitch=-0.11; player.flying=true;
+  player.yaw=0; player.pitch=-0.11; player.flying=true;
   lastCX=Math.floor(x/CH); lastCZ=Math.floor(z/CH);
   for(const [,c] of chunks) if(c.generated && Math.abs(c.cx-lastCX)<=2 && Math.abs(c.cz-lastCZ)<=2) buildChunkMesh(c);
 }
@@ -5145,7 +5168,7 @@ const MENU=0, PLAY=1, PAUSE=2;
 let state=MENU;
 const menuEl=document.getElementById('menu'), pauseEl=document.getElementById('pause');
 function startGame(){
-  menuPano=false;                 // stop the panorama before the real world loads
+  menuPanoEnd();                  // stop the panorama and give the world its own seed back
   spawnPlayer();
   lastCX=Math.floor(player.pos.x/CH); lastCZ=Math.floor(player.pos.z/CH);
   ensureChunks(player.pos.x, player.pos.z);
@@ -5186,7 +5209,7 @@ function toMenu(){
   if(typeof serversEl!=='undefined' && serversEl) serversEl.hidden=true;
   if(typeof createServerEl!=='undefined' && createServerEl) createServerEl.hidden=true;
   if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;
-  mp.border=0; if(typeof updateWorldBorder==='function') updateWorldBorder();
+  mp.border=0; mp.netherBorder=0; if(typeof updateWorldBorder==='function') updateWorldBorder();
   try{ document.exitPointerLock(); }catch(e){}
 }
 
@@ -5849,7 +5872,7 @@ function mpHandle(m){
     if(md!==dim) return;      // an edit in the other world: recorded, but nothing here to redraw
   }
   if(m.type==='init'){
-    mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.admin=!!m.admin; mp.spectator=!!m.spectator;
+    mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.netherBorder=m.netherBorder||0; mp.admin=!!m.admin; mp.spectator=!!m.spectator;
     mp._pwFlow=false; if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;   // joined successfully — close the password prompt
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
     dim=0; mpDimStore[0]=null; mpDimStore[1]=null;    // you always arrive in the overworld
@@ -5951,7 +5974,7 @@ function mpConnect(){
   mp.ws=ws;
   ws.onopen=()=>{ mp.active=true; const nm=getSavedName(); if(nm) mpSend({type:'name', name:nm}); };
   ws.onmessage=(ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } mpHandle(m); };
-  ws.onclose=()=>{ const wasPlaying=(state===PLAY); mp.active=false; mp.ws=null; mpClearPlayers(); mp.border=0; if(typeof updateWorldBorder==='function') updateWorldBorder();
+  ws.onclose=()=>{ const wasPlaying=(state===PLAY); mp.active=false; mp.ws=null; mpClearPlayers(); mp.border=0; mp.netherBorder=0; if(typeof updateWorldBorder==='function') updateWorldBorder();
     const pwOpen = mp._pwFlow && pwPromptEl && !pwPromptEl.hidden;
     if(mp._joinErr){ const e=mp._joinErr; mp._joinErr=null;
       if(pwOpen){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent = e; }   // keep the password prompt open with the error on screen
@@ -6001,11 +6024,20 @@ function mpSendBlock(x,y,z,b){
 }
 
 // build the world from the server's seed, then enter the game
+// How far out a server lets you build and walk. The nether's is an eighth of
+// the overworld's, the same ratio the portals use, so the two cover the same
+// ground: eight blocks up top is one block down below.
+const NETHER_BORDER_DIV = 8;
+function borderNow(){
+  if(!(mp.active && mp.border)) return 0;
+  if(dim!==1) return mp.border;
+  return mp.netherBorder || Math.max(16, Math.round(mp.border/NETHER_BORDER_DIV));   // the server names it; this is the fallback
+}
 let worldBorderMesh=null;
 function updateWorldBorder(){
   if(worldBorderMesh){ scene.remove(worldBorderMesh); worldBorderMesh.geometry.dispose(); worldBorderMesh.material.dispose(); worldBorderMesh=null; }
-  if(!(mp.active && mp.border)) return;
-  const b=mp.border, h=140;
+  const b=borderNow(); if(!b) return;
+  const h=140;
   const geo=new THREE.BoxGeometry(b*2, h, b*2);
   const mat=new THREE.MeshBasicMaterial({ color:0x30d0e6, transparent:true, opacity:0.15, side:THREE.BackSide, depthWrite:false });   // Minecraft-style translucent border wall (seen from inside)
   worldBorderMesh=new THREE.Mesh(geo, mat); worldBorderMesh.position.set(0, h/2-30, 0); scene.add(worldBorderMesh);
@@ -7303,6 +7335,13 @@ window.__mc = {
   breakAt(x,y,z){ target={x,y,z,nx:0,ny:1,nz:0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; breakBlock(); return getBlock(x,y,z); },
   // ---- nether / flint and steel test hooks ----
   dim(){ return dim; }, flintId(){ return FLINT_ITEM; },
+  inPano(){ return menuPano; }, worldSeed(){ return seed>>>0; }, savedSeed(){ return spSeed>>>0; }, toMenu(){ toMenu(); },
+  recordOnly(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; spRecord(x,y,z,b.id); return true; },
+  regenAround(){ for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
+    chunks.clear(); genQueue=[]; ensureChunks(player.pos.x, player.pos.z);
+    let g=0; while(genQueue.length && g<400){ const c=genQueue.shift(); if(!c.generated) c.generate(); g++; } return chunks.size; },
+  borderNow(){ return borderNow(); }, borders(){ return { over:mp.border, nether:mp.netherBorder }; },
+  panoTurn(){ return PANO_TURN; },
   blockName(id){ return blockName(id); }, flintCanvas(n){ return flintIconCanvas(n); },
   mpPut(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; mpSendBlock(x,y,z,b.id); return true; },
   recordEdit(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); spRecord(x,y,z,b.id); remeshChunkAt(x,z); return true; },
