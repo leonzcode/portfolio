@@ -419,7 +419,7 @@
   <div class="menuButtons">
     <button class="btn" id="playBtn">Singleplayer</button>
     <button class="btn" id="mpBtn">Multiplayer</button>
-    <button class="btn btn-news" id="updatesBtn" hidden>What&rsquo;s New <span class="newTag">NEW</span></button>
+    <button class="btn btn-news" id="updatesBtn">What&rsquo;s New <span class="newTag">NEW</span></button>
     <div class="menuDivider"></div>
     <div class="btnRow">
       <button class="btn half" id="skinBtn">Skin&hellip;</button>
@@ -728,7 +728,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 8: torches, campfire, and redstone (wire, torch, lamp, lever, buttons, pressure plates) ---
 "torch","redstone_torch","campfire","redstone_wire","redstone_lamp","lever",
 "oak_button","spruce_button","birch_button","jungle_button","acacia_button","dark_oak_button","purpular_button","stone_button",
-"oak_pressure_plate","spruce_pressure_plate","birch_pressure_plate","jungle_pressure_plate","acacia_pressure_plate","dark_oak_pressure_plate","purpular_pressure_plate","stone_pressure_plate"];
+"oak_pressure_plate","spruce_pressure_plate","birch_pressure_plate","jungle_pressure_plate","acacia_pressure_plate","dark_oak_pressure_plate","purpular_pressure_plate","stone_pressure_plate",
+// --- pass 9: pistons ---
+"piston","sticky_piston","piston_head"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1242,6 +1244,30 @@ function lampTex(seed, lit){ const r=rng(seed), base=rgb(lit?0xf2b855:0x6a4a28),
     if((x+1)%5===0 || (y+1)%5===0) return vary(grid,8,r);
     if(x>5&&x<10&&y>5&&y<10) return vary(core,10,r);
     return vary(base,10,r); }; }
+/* ---- pistons ----
+   Vanilla's piston is a pale wooden face ringed in grey, a streaked grey shell,
+   an X-braced back, and a recessed panel that shows once the head is out. The
+   sticky variant swaps the face for slime.                                    */
+function pistonSideTex(seed){ const r=rng(seed), a=rgb(0xa9a29a), b=rgb(0x8d867e), edge=rgb(0x6f6960);
+  return (x,y)=>{ if(x<=1||x>=14) return vary(edge,7,r);            // the rails down each side
+    if(y%4===0) return vary(b,8,r);                                 // banding along the barrel
+    return vary(a,9,r); }; }
+function pistonFaceTex(seed){ const r=rng(seed), wood=rgb(0xb79a67), dark=rgb(0x8a7248), ring=rgb(0x6f6960);
+  return (x,y)=>{ const d=Math.max(Math.abs(x-7.5), Math.abs(y-7.5));
+    if(d>6.5) return vary(ring,6,r);                                // grey collar
+    if((x+y)%7===0) return vary(dark,7,r);                          // plank grain
+    return vary(wood,9,r); }; }
+function pistonStickyTex(seed){ const r=rng(seed), slime=rgb(0x7fbf5a), pale=rgb(0xa8dd86), ring=rgb(0x6f6960);
+  return (x,y)=>{ const d=Math.max(Math.abs(x-7.5), Math.abs(y-7.5));
+    if(d>6.5) return vary(ring,6,r);
+    if(d<3.2) return vary(pale,10,r);                               // gooey highlight in the middle
+    return vary(slime,11,r); }; }
+function pistonBackTex(seed){ const r=rng(seed), a=rgb(0x9c958c), brace=rgb(0x77716a);
+  return (x,y)=>{ const onX = Math.abs(x-y)<2 || Math.abs(x+y-15)<2;
+    return vary(onX?brace:a, 8, r); }; }
+function pistonInnerTex(seed){ const r=rng(seed), a=rgb(0x6b655e), lip=rgb(0x4f4a45);
+  return (x,y)=>{ const d=Math.max(Math.abs(x-7.5), Math.abs(y-7.5));
+    return vary(d>6.5?lip:a, 7, r); }; }
 function mineralBlock(seed, hex){ const r=rng(seed), base=rgb(hex);
   return (x,y)=>{ let c=vary(base,6,r); if(x===0||y===0) c=c.map(v=>Math.min(255,v*1.15)|0);
     if(x===15||y===15) c=c.map(v=>v*0.85|0); return c; }; }
@@ -1377,6 +1403,11 @@ paint('campfire_flame',    fireTex(9485, 0xffe9a8, 0xff8c1e, 0xd83c0c));
 paint('redstone_dust',     redDustTex(9486));
 paint('redstone_lamp',     lampTex(9487, false));
 paint('redstone_lamp_on',  lampTex(9488, true));
+paint('piston_side',   pistonSideTex(9490));
+paint('piston_face',   pistonFaceTex(9491));
+paint('piston_sticky', pistonStickyTex(9492));
+paint('piston_back',   pistonBackTex(9493));
+paint('piston_inner',  pistonInnerTex(9494));
 // a door texture per wood type — painted directly, NOT via EXTRA, so the EXTRA block
 // loop doesn't also define a plain (non-door) block that shadows the real door block
 WOODS.forEach((w,i)=> paint(w.id+'_door', doorTex(w.plank, 9100+i)));
@@ -1627,6 +1658,13 @@ for(const [id, tile, hex] of REDSTONE_WOODS){
   B[id+'_button']         = def(id+'_button',         { tiles:tile, button:true, wooden:true, solid:false, opaque:false, hex });
   B[id+'_pressure_plate'] = def(id+'_pressure_plate', { tiles:tile, plate:true,  wooden:true, solid:false, opaque:false, hex });
 }
+/* Pistons. Facing rides in attachMeta: for a piston `m` is the direction it
+   pushes (0 down, 1 up, 2 -z, 3 +x, 4 +z, 5 -x) and `on` means extended; for a
+   head, `m` is the same direction and `on` records that it belongs to a sticky
+   piston. Reusing that map means facing already saves and syncs. */
+B.piston        = def('piston',        { tiles:T('piston_side'), piston:true, opaque:false });
+B.sticky_piston = def('sticky_piston', { tiles:T('piston_side'), piston:true, sticky:true, opaque:false });
+B.piston_head   = def('piston_head',   { tiles:T('piston_side'), pistonHead:true, opaque:false, display:'Piston Head' });
 B.stone_button         = def('stone_button',         { tiles:T('stone'), button:true, solid:false, opaque:false });
 B.stone_pressure_plate = def('stone_pressure_plate', { tiles:T('stone'), plate:true,  solid:false, opaque:false });
 const FLOWER_NAMES = new Set(SMALL_FLOWERS.map(f=>f[0]).concat(TALL_FLOWERS.map(f=>f[0])));
@@ -1837,6 +1875,12 @@ function isLever(id){ return !!(id && BLOCKS[id] && BLOCKS[id].lever); }
 function isButton(id){ return !!(id && BLOCKS[id] && BLOCKS[id].button); }
 function isPlate(id){ return !!(id && BLOCKS[id] && BLOCKS[id].plate); }
 function isAttached(id){ return isTorch(id) || isLever(id) || isButton(id); }
+// piston directions: 0 down, 1 up, then the four compass ways (2..5 line up with DIRV 0..3)
+const PDIR  = [[0,-1,0],[0,1,0],[0,0,-1],[1,0,0],[0,0,1],[-1,0,0]];
+const POPP  = [1,0,4,5,2,3];
+const PFACE = [1,0,3,4,2,5];    // which entry of FACES is that direction's front
+function isPiston(id){ return !!(id && BLOCKS[id] && BLOCKS[id].piston); }
+function isPistonHead(id){ return !!(id && BLOCKS[id] && BLOCKS[id].pistonHead); }
 // ---- flowers + flower pots ----
 const potMeta = new Map();    // "x,y,z" -> block id planted in that pot (absent = empty pot)
 let spPots = {};
@@ -2282,7 +2326,7 @@ const wkey=(x,y,z)=>x+','+y+','+z;
    Only the INPUT is ever sent over the network: every client then derives the
    same dust levels, torch states and door positions from it. That keeps a
    circuit costing one small message per press instead of one per wire.        */
-function isRedPart(id){ return isDust(id)||isRedTorch(id)||isButton(id)||isPlate(id)||isLever(id)||isLamp(id)||isDoor(id)||isTrapdoor(id)||id===B.redstone_block; }
+function isRedPart(id){ return isDust(id)||isRedTorch(id)||isButton(id)||isPlate(id)||isLever(id)||isLamp(id)||isDoor(id)||isTrapdoor(id)||isPiston(id)||id===B.redstone_block; }
 // `idAt` lets a caller name the block explicitly. That matters for edits arriving
 // from the server: the chunk they land in may not be generated on this client yet,
 // so getBlock() would still read air and the circuit piece would never register.
@@ -2398,6 +2442,12 @@ function applyRedstoneOutputs(){
         for(let h=0;h<2;h++){ const kk=dkey(x,by+h,z), mm=doorMeta.get(kk); if(mm){ mm.pw=on; mm.open=on; spRecordDoor(x,by+h,z,mm); } }
         remesh.add(Math.floor(x/CH)+','+Math.floor(z/CH));
       }
+    } else if(isPiston(id)){
+      const a=attachMeta.get(k)||{m:1,f:0}, dir=(a.m|0)%6, want=poweredAt(x,y,z);
+      if(want !== !!a.on){
+        const moved = want ? pistonExtend(x,y,z,dir,!!BLOCKS[id].sticky) : pistonRetract(x,y,z,dir,!!BLOCKS[id].sticky);
+        if(moved){ a.on=want; setAttach(x,y,z,a,true); remesh.add(Math.floor(x/CH)+','+Math.floor(z/CH)); }
+      }
     } else if(isTrapdoor(id)){
       const m=trapdoorMeta.get(k);
       const on=poweredAt(x,y,z);
@@ -2405,6 +2455,147 @@ function applyRedstoneOutputs(){
     }
   }
   for(const ck of remesh){ const c=ck.split(','); remeshChunkAt(+c[0]*CH, +c[1]*CH); }
+}
+/* ---- pistons ----
+   A powered piston shoves the line of blocks in front of it forward by one, up
+   to twelve of them, and drops its head into the gap. A sticky one drags the
+   block back when it retracts.
+
+   What moves, and what doesn't:
+     immovable  bedrock, obsidian, another piston's head, and anything carrying
+                state that spans cells or lives as a separate object - doors,
+                beds, signs, flower pots - because shoving those would strand
+                their data.
+     fragile    plants, wire, torches, buttons, plates, levers. Pushed into,
+                they break, exactly as in Minecraft.
+     movable    everything else, and it carries its stair, slab, trapdoor,
+                ladder or PRG state along with it.                            */
+const PISTON_MAX_PUSH = 12;
+function pistonFragile(id){
+  const b=id&&BLOCKS[id];
+  return !!(b && (b.cross||b.plant||b.dust||b.torch||b.button||b.plate||b.lever));
+}
+function pistonImmovable(id){
+  const b=id&&BLOCKS[id];
+  if(!b) return false;
+  if(id===B.bedrock || id===B.obsidian || b.pistonHead) return true;
+  return !!(b.door || b.bed || b.sign || b.flowerpot);
+}
+function pistonPassable(id){ return id===AIR || (BLOCKS[id]&&BLOCKS[id].liquid) || pistonFragile(id); }
+// carry a moved block's single-cell state with it
+function movePistonMeta(ax,ay,az,bx,by,bz){
+  const from=dkey(ax,ay,az), to=dkey(bx,by,bz);
+  const move=(map, rec, msg)=>{
+    if(!map.has(from)) return;
+    const v=map.get(from); map.delete(from); map.set(to,v);
+    rec(ax,ay,az,null); rec(bx,by,bz,v);
+    if(mp.active && msg) mpSend(Object.assign({x:bx,y:by,z:bz}, msg(v)));
+  };
+  move(stairMeta,    spRecordStair,    v=>({type:'stair',    facing:v.facing, top:!!v.top}));
+  move(slabMeta,     spRecordSlab,     v=>({type:'slab',     top:!!v.top, double:!!v.double}));
+  move(trapdoorMeta, spRecordTrapdoor, v=>({type:'trapdoor', facing:v.facing, open:!!v.open, top:!!v.top}));
+  move(ladderMeta,   spRecordLadder,   v=>({type:'ladder',   facing:v.facing}));
+  move(prgMeta,      spRecordPrg,      v=>({type:'prg',      ang:v.ang|0}));
+}
+function destroyBlockAt(x,y,z){
+  const id=getBlock(x,y,z);
+  if(id===AIR) return;
+  if(isPlant(id)) breakPlant(x,y,z);
+  else if(isAttached(id)) breakRedBlock(x,y,z);
+  else { setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); redTrack(x,y,z); }
+}
+// the run of blocks a piston would shove; null if it can't
+function pistonPushLine(x,y,z,dir){
+  const d=PDIR[dir], cells=[];
+  let cx=x, cy=y, cz=z;
+  for(let i=0;i<=PISTON_MAX_PUSH;i++){
+    if(cy<0||cy>=WH) return null;
+    const id=getBlock(cx,cy,cz);
+    if(pistonPassable(id)) return cells;              // found somewhere for the line to go
+    if(pistonImmovable(id) || cells.length>=PISTON_MAX_PUSH) return null;
+    cells.push([cx,cy,cz,id]);
+    cx+=d[0]; cy+=d[1]; cz+=d[2];
+  }
+  return null;
+}
+function pistonExtend(x,y,z,dir,sticky){
+  const d=PDIR[dir], fx=x+d[0], fy=y+d[1], fz=z+d[2];
+  if(fy<0||fy>=WH) return false;
+  const line=pistonPushLine(fx,fy,fz,dir);
+  if(line===null) return false;
+  const ex=fx+d[0]*line.length, ey=fy+d[1]*line.length, ez=fz+d[2]*line.length;
+  if(ey<0||ey>=WH) return false;
+  destroyBlockAt(ex,ey,ez);                            // whatever the line lands on gives way
+  for(let i=line.length-1;i>=0;i--){                   // shift from the far end back
+    const c=line[i], nx=c[0]+d[0], ny=c[1]+d[1], nz=c[2]+d[2];
+    setBlock(nx,ny,nz,c[3]); mpSendBlock(nx,ny,nz,c[3]);
+    movePistonMeta(c[0],c[1],c[2], nx,ny,nz);
+    setBlock(c[0],c[1],c[2],AIR); mpSendBlock(c[0],c[1],c[2],0);
+    redTrack(nx,ny,nz); redTrack(c[0],c[1],c[2]);
+  }
+  destroyBlockAt(fx,fy,fz);                            // clear the cell the head takes
+  setBlock(fx,fy,fz,B.piston_head); mpSendBlock(fx,fy,fz,B.piston_head);
+  setAttach(fx,fy,fz,{m:dir,f:0,on:!!sticky},true);
+  remeshChunkAt(fx,fz); remeshChunkAt(ex,ez);
+  return true;
+}
+function pistonRetract(x,y,z,dir,sticky){
+  const d=PDIR[dir], hx=x+d[0], hy=y+d[1], hz=z+d[2];
+  if(isPistonHead(getBlock(hx,hy,hz))){
+    attachMeta.delete(dkey(hx,hy,hz)); spRecordAttach(hx,hy,hz,null);
+    if(mp.active) mpSend({type:'attach', x:hx, y:hy, z:hz, m:-1});
+    setBlock(hx,hy,hz,AIR); mpSendBlock(hx,hy,hz,0); redTrack(hx,hy,hz);
+  }
+  if(sticky){                                          // drag the block back with it
+    const px=hx+d[0], py=hy+d[1], pz=hz+d[2];
+    const id=getBlock(px,py,pz);
+    if(id!==AIR && !pistonPassable(id) && !pistonImmovable(id)){
+      setBlock(hx,hy,hz,id); mpSendBlock(hx,hy,hz,id);
+      movePistonMeta(px,py,pz, hx,hy,hz);
+      setBlock(px,py,pz,AIR); mpSendBlock(px,py,pz,0);
+      redTrack(hx,hy,hz); redTrack(px,py,pz);
+    }
+  }
+  remeshChunkAt(hx,hz);
+  return true;
+}
+// which of the six ways is the player looking? a piston pushes away from you
+// pulling out a piston takes its head with it, and knocking off the head
+// leaves the piston retracted rather than pointing at nothing
+function breakPiston(x,y,z){
+  const a=attachMeta.get(dkey(x,y,z));
+  if(a && a.on){ const d=PDIR[(a.m|0)%6], hx=x+d[0], hy=y+d[1], hz=z+d[2];
+    if(isPistonHead(getBlock(hx,hy,hz))){
+      attachMeta.delete(dkey(hx,hy,hz)); spRecordAttach(hx,hy,hz,null);
+      if(mp.active) mpSend({type:'attach', x:hx, y:hy, z:hz, m:-1});
+      setBlock(hx,hy,hz,AIR); mpSendBlock(hx,hy,hz,0); redTrack(hx,hy,hz); remeshChunkAt(hx,hz);
+    } }
+  attachMeta.delete(dkey(x,y,z)); spRecordAttach(x,y,z,null);
+  if(mp.active) mpSend({type:'attach', x, y, z, m:-1});
+  setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); redTrack(x,y,z); remeshChunkAt(x,z);
+}
+function breakPistonHead(x,y,z){
+  const a=attachMeta.get(dkey(x,y,z));
+  if(a){ const d=PDIR[(a.m|0)%6], bx=x-d[0], by=y-d[1], bz=z-d[2];
+    const pa=attachMeta.get(dkey(bx,by,bz));
+    if(isPiston(getBlock(bx,by,bz)) && pa){ pa.on=false; setAttach(bx,by,bz,pa,true); remeshChunkAt(bx,bz); } }
+  attachMeta.delete(dkey(x,y,z)); spRecordAttach(x,y,z,null);
+  if(mp.active) mpSend({type:'attach', x, y, z, m:-1});
+  setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); redTrack(x,y,z); remeshChunkAt(x,z);
+}
+function facing6FromLook(){
+  const d=camDir(), ax=Math.abs(d.x), ay=Math.abs(d.y), az=Math.abs(d.z);
+  if(ay>ax && ay>az) return d.y>0 ? 1 : 0;
+  if(ax>az) return d.x>0 ? 3 : 5;
+  return d.z>0 ? 4 : 2;
+}
+function placePiston(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  if(getBlock(px,py,pz)!==AIR) return;
+  const id=hotbar[selSlot];
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+  setAttach(px,py,pz,{m:facing6FromLook(), f:0, on:false}, true);
+  redTrack(px,py,pz); remeshChunkAt(px,pz);
 }
 function setRedInput(x,y,z,on){        // press/release an input and tell everyone
   const k=dkey(x,y,z);
@@ -2551,6 +2742,45 @@ function pushDust(buf, wx, wy, wz, tile, t){
   buf.uv.push(u0,v0, u1,v0, u1,v1, u0,v1);
   for(let i=0;i<4;i++) buf.col.push(t,t,t);
   buf.idx.push(base,base+1,base+2, base,base+2,base+3);
+}
+// like pushBox, but every face gets its own tile — a piston shows a different
+// texture on its front, its back and its barrel
+function pushBoxFaces(buf, wx, wy, wz, b, tiles){
+  const [x0,x1,y0,y1,z0,z1]=b;
+  for(let f=0;f<6;f++){
+    const F=FACES[f], base=buf.pos.length/3, sh=F.s;
+    const [u0,v0,u1,v1]=tileUV(tiles[f]);
+    const uvc=[[u0,v0],[u1,v0],[u1,v1],[u0,v1]];
+    for(let i=0;i<4;i++){ const co=F.c[i];
+      buf.pos.push(wx+(co[0]?x1:x0), wy+(co[1]?y1:y0), wz+(co[2]?z1:z0));
+      buf.uv.push(uvc[i][0],uvc[i][1]); buf.col.push(sh,sh,sh); }
+    buf.idx.push(base,base+1,base+2, base,base+2,base+3);
+  }
+}
+function pistonTiles(dir, front, back){
+  const t=[]; for(let f=0;f<6;f++) t[f]=T('piston_side');
+  t[PFACE[dir]]=front; t[PFACE[POPP[dir]]]=back;
+  return t;
+}
+function pistonBodyBox(dir){          // an extended body pulls 4px back off its face
+  const b=[0,1,0,1,0,1], d=PDIR[dir];
+  if(d[0]>0) b[1]=12/16; else if(d[0]<0) b[0]=4/16;
+  if(d[1]>0) b[3]=12/16; else if(d[1]<0) b[2]=4/16;
+  if(d[2]>0) b[5]=12/16; else if(d[2]<0) b[4]=4/16;
+  return b;
+}
+function headPlateBox(dir){           // the 4px plate at the far end of the head's cell
+  const b=[0,1,0,1,0,1], d=PDIR[dir];
+  if(d[0]>0) b[0]=12/16; else if(d[0]<0) b[1]=4/16;
+  if(d[1]>0) b[2]=12/16; else if(d[1]<0) b[3]=4/16;
+  if(d[2]>0) b[4]=12/16; else if(d[2]<0) b[5]=4/16;
+  return b;
+}
+function headShaftBox(dir){           // the 4x4 arm running back to the body
+  const d=PDIR[dir], lo=6/16, hi=10/16;
+  if(d[0]) return [d[0]>0?0:4/16, d[0]>0?12/16:1, lo,hi, lo,hi];
+  if(d[1]) return [lo,hi, d[1]>0?0:4/16, d[1]>0?12/16:1, lo,hi];
+  return [lo,hi, lo,hi, d[2]>0?0:4/16, d[2]>0?12/16:1];
 }
 function buildChunkMesh(c){
   const op = { pos:[], uv:[], col:[], idx:[] };
@@ -2706,6 +2936,19 @@ function buildChunkMesh(c){
     if (bl.dust){                              // flat wire, drawn darker or brighter with the power it carries
       const p=dustPower.get(dkey(wx,y,wz))||0;
       pushDust(cut, wx, y, wz, (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]), 0.30+0.70*(p/15));
+      continue;
+    }
+    if (bl.piston){                            // barrel; recessed once the head is out
+      const k=dkey(wx,y,wz), a=attachMeta.get(k)||{m:1,f:0}, dir=(a.m|0)%6, ext=!!a.on;
+      const front = ext ? T('piston_inner') : (bl.sticky ? T('piston_sticky') : T('piston_face'));
+      pushBoxFaces(op, wx, y, wz, ext?pistonBodyBox(dir):[0,1,0,1,0,1], pistonTiles(dir, front, T('piston_back')));
+      continue;
+    }
+    if (bl.pistonHead){                        // face plate plus the arm behind it
+      const k=dkey(wx,y,wz), a=attachMeta.get(k)||{m:1,f:0}, dir=(a.m|0)%6;
+      const front = a.on ? T('piston_sticky') : T('piston_face');
+      pushBoxFaces(op, wx, y, wz, headPlateBox(dir), pistonTiles(dir, front, T('piston_inner')));
+      pushBox(op, wx, y, wz, headShaftBox(dir), T('piston_side'));
       continue;
     }
     if (bl.sign){ continue; }                  // signs render as separate rotatable 3D objects (see updateSignObj)
@@ -4060,6 +4303,8 @@ function breakBlock(){
   if(isPlant(getBlock(x,y,z))){ breakPlant(x,y,z); return; } // a tall flower comes out whole
   if(isPot(getBlock(x,y,z))){ breakPot(x,y,z); return; }     // takes the pot and whatever was in it
   if(isAttached(getBlock(x,y,z))){ breakRedBlock(x,y,z); popUnsupportedAttached(x,y,z); return; }
+  if(isPiston(getBlock(x,y,z))){ breakPiston(x,y,z); return; }
+  if(isPistonHead(getBlock(x,y,z))){ breakPistonHead(x,y,z); return; }
   if(isStair(getBlock(x,y,z))){ stairMeta.delete(dkey(x,y,z)); spRecordStair(x,y,z,null); }
   if(isLadder(getBlock(x,y,z))){ ladderMeta.delete(dkey(x,y,z)); spRecordLadder(x,y,z,null); }
   if(isTrapdoor(getBlock(x,y,z))){ trapdoorMeta.delete(dkey(x,y,z)); spRecordTrapdoor(x,y,z,null); }
@@ -4093,6 +4338,7 @@ function placeBlock(){
   if(bl.cross){ placePlant(); return; }                                 // flowers root in soil (tall ones take two cells)
   if(bl.torch||bl.lever||bl.button){ placeAttached(); return; }         // these bolt onto the face you clicked
   if(bl.plate||bl.dust){ placeOnFloor(); return; }                      // these need a solid top to lie on
+  if(bl.piston){ placePiston(); return; }                               // a piston points the way you are looking
   if(bl.flowerpot){ placePot(); return; }                               // a pot needs a surface to stand on
   if(id===B.sponge || id===B.wet_sponge){ placeSponge(); return; }      // a dry sponge drinks the water around it
   if(bl.spawnEgg){ spawnMob(px+0.5, py, pz+0.5, bl.mobType); return; }   // egg spawns a creature
@@ -4162,6 +4408,30 @@ function blockIconCanvas(id, size){
     px(0.12,0.50,0.76,0.06,lite); px(0.50,0.14,0.38,0.06,lite);                   // top faces (light)
     px(0.12,0.84,0.76,0.06,dark);                                                 // bottom shade
     px(0.50,0.44,0.38,0.06,dark);                                                 // step tread shade
+    return cv;
+  }
+  if(bl.torch){                    // a stick with a flame, not a cube of wood
+    const s=size, px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.43,0.40,0.16,0.52,'#8a6a3a'); px(0.43,0.40,0.05,0.52,'#a98a52'); px(0.54,0.40,0.05,0.52,'#6b4f28');
+    if(bl.redTorch){ px(0.39,0.18,0.24,0.24,'#8a0f06'); px(0.42,0.21,0.18,0.17,'#e01c0c'); px(0.46,0.24,0.10,0.10,'#ff6a5a'); }
+    else { px(0.39,0.14,0.24,0.28,'#f08a1e'); px(0.42,0.17,0.18,0.21,'#ffc341'); px(0.46,0.21,0.10,0.12,'#fff4c2'); }
+    return cv;
+  }
+  if(bl.campfire){                 // crossed logs with fire sitting in them
+    const s=size, px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.36,0.16,0.28,0.24,'#d83c0c'); px(0.30,0.30,0.40,0.28,'#ff8c1e');        // flame body
+    px(0.42,0.24,0.16,0.30,'#ffe9a8');                                            // hot core
+    px(0.06,0.60,0.88,0.14,'#5a4326'); px(0.06,0.60,0.88,0.05,'#6d5330');         // front log
+    px(0.16,0.76,0.68,0.13,'#46331c'); px(0.16,0.76,0.68,0.04,'#57401f');         // log behind it
+    px(0.06,0.72,0.88,0.04,'#2a2320');                                            // charred underside
+    return cv;
+  }
+  if(bl.button || bl.plate){       // a raised pad, or a wide flat one
+    const s=size, hex=bl.hex||0x9c9c9c, rr=(hex>>16)&255, gg=(hex>>8)&255, bb=hex&255;
+    const main=`rgb(${rr},${gg},${bb})`, dark=`rgb(${(rr*0.70)|0},${(gg*0.70)|0},${(bb*0.70)|0})`, lite=`rgb(${Math.min(255,rr*1.14)|0},${Math.min(255,gg*1.14)|0},${Math.min(255,bb*1.14)|0})`;
+    const px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    if(bl.button){ px(0.26,0.34,0.48,0.30,main); px(0.26,0.34,0.48,0.07,lite); px(0.26,0.57,0.48,0.07,dark); px(0.26,0.34,0.06,0.30,lite); }
+    else { px(0.08,0.46,0.84,0.16,main); px(0.08,0.46,0.84,0.05,lite); px(0.08,0.57,0.84,0.05,dark); }
     return cv;
   }
   if(bl.sign){                     // a board on a short post, Minecraft-style
@@ -4285,7 +4555,7 @@ const CATS=[
   {id:'misc',label:'Misc'},
 ];
 function catOf(n){
-  if(n.endsWith('_button')||n.endsWith('_pressure_plate')||n==='redstone_wire'||n==='redstone_torch'||n==='redstone_lamp'||n==='lever'||n==='redstone_block') return 'redstone';
+  if(n==='piston'||n==='sticky_piston'||n==='piston_head'||n.endsWith('_button')||n.endsWith('_pressure_plate')||n==='redstone_wire'||n==='redstone_torch'||n==='redstone_lamp'||n==='lever'||n==='redstone_block') return 'redstone';
   if(n==='torch'||n==='campfire') return 'deco';
   if(FLOWER_NAMES.has(n) || n==='flower_pot') return 'nature';   // flowers live with the plants
   if(n==='glass_pane') return 'deco';
@@ -5173,19 +5443,18 @@ let UPDATE_POSTED = Date.parse('2026-08-25T05:10:00Z');     // when this batch w
 const UPDATE_WINDOW = 24*60*60*1000;
 function updatesAreFresh(){ const d = Date.now() - UPDATE_POSTED; return d >= 0 && d < UPDATE_WINDOW; }
 const UPDATES = [
-  ['poppy', 'Every flower', "I added all of Minecraft's flowers, twenty-three of them, plus a purpular bloom of my own. Each one takes root only in soil, and it breaks the moment you mine the block holding it up."],
-  ['flower_pot', 'Flower pots', "I added flower pots. Right-click one while holding a small flower to plant it, and right-click again to take it back out."],
-  ['redstone_dust', 'Redstone', "I built redstone from scratch. Wire carries a signal up to fifteen blocks and weakens as it travels, and a redstone torch burns until the block it is fixed to receives power, which is what lets you invert a signal."],
-  ['stone', 'Buttons and plates', "I added buttons and pressure plates in all seven woods, purpular included, along with the stone pair. They open doors and trapdoors and switch lamps on."],
-  ['torch_flame', 'Torches', "I added torches, both ordinary and redstone. They mount on the top, the underside, or the wall of a block, and they remember which surface you put them on."],
-  ['campfire_flame', 'Campfires', "I added campfires: four logs stacked in a cross with a fire sitting in them. You stand on the logs rather than sinking into an invisible cube."],
-  ['sponge', 'Sponges that work', "I made sponges do their job. A dry one drinks every water block within seven of it and turns wet, and setting it against netherrack wrings it out again."],
-  ['red_stained_glass_pane', 'Glass panes', "I added glass panes in clear and all sixteen dyed colours. They join up with their neighbours instead of floating as separate slabs."],
-  ['oak_door', 'Doors with hinges', "I gave doors proper hinges. Where you click decides which side the door swings from, so two placed side by side form a real double door."],
-  ['SKIN', 'Slim skins', "I added slim skins. An Alex-style skin now renders with three-pixel arms, which clears up the seam that used to run down the back."],
-  ['glass', 'Spectating', "I let you into a private server without its password as a spectator. You can look around and talk, but you cannot build, break, or fight."],
-  ['oak_planks', 'Sneak to build', "I made the sneak key override a block's own behaviour, so you can stack a trapdoor or build against a door instead of opening it."],
-  ['water', 'Still water', "I took flowing water out. A block of water now stays exactly where you put it."],
+  ['piston_face', 'Pistons', "I added pistons and sticky pistons. I made this using a flood fill that walks the line of blocks in front of the piston, stops at obsidian or after twelve of them, and then shifts the whole run forward one cell at a time from the far end back, so nothing overwrites a block still waiting to move."],
+  ['redstone_dust', 'Redstone', "I added working redstone wire, torches, buttons, levers and pressure plates. I made this using a breadth-first search that spreads power outward and drops one level per block, wrapped in a loop that runs the whole circuit again until the torches stop changing, which is what makes an inverter settle instead of flickering forever."],
+  ['poppy', 'Every flower', "I added twenty-three Minecraft flowers, plus a purpular one of my own. I made this using the cross model Minecraft draws plants with, two quads crossed in an X, and a hash of each block's coordinates that nudges every flower slightly so a field of them doesn't line up like a grid."],
+  ['flower_pot', 'Flower pots', "I added flower pots you can plant a flower in and take it back out of. I made this using a hash map from a block's coordinates to whatever is planted there, saved with the world and sent to everyone else so a potted flower looks the same on every screen."],
+  ['torch_flame', 'Torches', "I added torches, both ordinary and redstone. I made this using a small state field on each block that records whether it was stuck to the floor, the ceiling or a wall, so a wall torch brackets out of the wall and falls off if you mine what it was holding onto."],
+  ['campfire_flame', 'Campfires', "I added campfires that burn in a stack of logs. I made this using four boxes arranged in a cross for the wood and an alpha-cut billboard for the fire, so the flame reads as a shape instead of a flat card."],
+  ['stone', 'Buttons and plates', "I added buttons and pressure plates in all seven woods, purpular included, and the stone pair. I made this using a timer that pops a button back out on its own, and a per-tick collision check against every player and mob standing in a plate's cell."],
+  ['sponge', 'Sponges that work', "I added sponges that actually soak up water. I made this using a breadth-first flood fill capped at sixty-five blocks and a taxicab distance of seven, which are the exact limits Minecraft uses."],
+  ['red_stained_glass_pane', 'Glass panes', "I added glass panes in clear and all sixteen dyed colours. I made this using a neighbour check on each of the four sides that decides which arms to draw, so panes join into a wall instead of floating as separate posts."],
+  ['oak_door', 'Doors with hinges', "I added proper hinges to doors. I made this using the exact point where your click lands on the block face, which decides which side the hinge sits on and therefore which way the door swings open."],
+  ['oak_planks', 'Sneak to build', "I added sneaking as a way to build against a block instead of using it. I made this using a guard clause that short-circuits the block's own use handler when the sneak key is down, so control falls through to the placement path and a trapdoor stacks on a trapdoor rather than flipping open."],
+  ['water', 'Still water', "I removed flowing water. I made this by taking out the spread simulation entirely, so a block of water is now just a block and stays where you put it."],
 ];
 // draw one 16x16 texture from the atlas, scaled up, so the icon is the real thing
 function tileIcon(tileName, size){
@@ -5205,6 +5474,17 @@ function tileIcon(tileName, size){
 const updatesEl=document.getElementById('updates'), updatesBtn=document.getElementById('updatesBtn');
 function buildUpdates(){
   const list=document.getElementById('updList'); list.innerHTML='';
+  const when=document.getElementById('updWhen');
+  if(!updatesAreFresh()){                     // the board stays, the notices roll off
+    const row=document.createElement('div'); row.className='updRow';
+    const txt=document.createElement('div');
+    const h=document.createElement('div'); h.className='ut'; h.textContent='Nothing new today';
+    const bd=document.createElement('div'); bd.className='ub';
+    bd.textContent='There are no major updates right now. Check back after the next batch of changes goes out.';
+    txt.append(h,bd); row.appendChild(txt); list.appendChild(row);
+    when.textContent='Last update was more than a day ago';
+    return;
+  }
   for(const [icon, head, body] of UPDATES){
     const row=document.createElement('div'); row.className='updRow';
     if(icon==='SKIN'){ const im=document.createElement('img'); im.src=selfHeadURL||defaultHeadURL; im.alt=''; row.appendChild(im); }
@@ -5216,11 +5496,20 @@ function buildUpdates(){
     list.appendChild(row);
   }
   const hrs=Math.max(0, Math.round((UPDATE_POSTED+UPDATE_WINDOW-Date.now())/3600000));
-  document.getElementById('updWhen').textContent = hrs>1 ? ('This board comes down in about '+hrs+' hours') : 'This board comes down within the hour';
+  when.textContent = hrs>1 ? ('These are the last 24 hours of changes; the board refreshes in about '+hrs+' hours')
+                           : 'These notices roll off within the hour';
 }
 function openUpdates(){ buildUpdates(); updatesEl.hidden=false; menuEl.hidden=true; }
 function closeUpdates(){ updatesEl.hidden=true; menuEl.hidden=false; }
-function refreshUpdatesBtn(){ if(updatesBtn) updatesBtn.hidden = !updatesAreFresh(); }
+function refreshUpdatesBtn(){       // the board is always reachable; only the NEW flag expires
+  if(!updatesBtn) return;
+  updatesBtn.hidden = false;
+  const fresh = updatesAreFresh();
+  updatesBtn.classList.toggle('btn-news', fresh);
+  const tag = updatesBtn.querySelector('.newTag');
+  if(tag) tag.style.display = fresh ? '' : 'none';
+  if(!updatesEl.hidden) buildUpdates();
+}
 updatesBtn.addEventListener('click', openUpdates);
 document.getElementById('updBack').addEventListener('click', closeUpdates);
 refreshUpdatesBtn();
@@ -6492,6 +6781,18 @@ window.__mc = {
     when:document.getElementById('updWhen').textContent }; },
   updSetAge(hoursAgo){ UPDATE_POSTED = Date.now() - hoursAgo*3600000; refreshUpdatesBtn(); return updatesAreFresh(); },
   updOpen(){ openUpdates(); }, updClose(){ closeUpdates(); },
+  // ---- piston test hooks ----
+  pistonAt(x,y,z){ const a=attachMeta.get(dkey(x,y,z));
+    return { block:blockName(getBlock(x,y,z)), dir:a?(a.m|0):null, ext:a?!!a.on:null }; },
+  placePistonAt(x,y,z,dir,sticky){
+    const id=BLOCKS[sticky?'sticky_piston':'piston'].id;
+    setBlock(x,y,z,id); mpSendBlock(x,y,z,id);
+    setAttach(x,y,z,{m:dir,f:0,on:false},true); redTrack(x,y,z); remeshChunkAt(x,z); return true; },
+  iconInk(name){ const b=BLOCKS[name]; if(!b) return null;
+    const cv=blockIconCanvas(b.id,32), d=cv.getContext('2d').getImageData(0,0,32,32).data;
+    const cols=new Set(); let ink=0;
+    for(let i=0;i<d.length;i+=4){ if(d[i+3]>40){ ink++; cols.add(d[i]+','+d[i+1]+','+d[i+2]); } }
+    return { ink, colors:cols.size }; },
   // ---- redstone test hooks ----
   redAt(x,y,z){ const k=dkey(x,y,z); return { block:blockName(getBlock(x,y,z)), on:redOn.has(k), power:dustPower.get(k)||0,
     lit:litTorch.has(k), lamp:lampLit.has(k), attach:attachMeta.get(k)||null }; },
