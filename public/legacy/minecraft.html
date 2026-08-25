@@ -2243,7 +2243,8 @@ let spSaveTimer = null;
 let dim = 0;                 // 0 overworld, 1 nether. Declared up here because the
 const spDims=[null,null];    // world save runs at load time and reads both.
 const SP_KEY = 'leoncraft_sp_world';
-function spSave(){ try{
+function spSave(){ if(mp.active) return;   // a server's world is the server's; never write it over your solo one
+  try{
   // the world you are standing in plus the one you are not: same file, nether nested
   const cur={ blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders,
               signs: spSigns, prg: spPrg, trapdoors: spTrapdoors, slabs: spSlabs, pots: spPots, attach: spAttach };
@@ -4121,34 +4122,31 @@ function spInstall(o){ o=o||{};
   spSigns=o.signs||{}; spPrg=o.prg||{}; spTrapdoors=o.trapdoors||{}; spSlabs=o.slabs||{}; spPots=o.pots||{}; spAttach=o.attach||{}; }
 function switchDim(to){
   if(to===dim) return;
-  spDims[dim]=spCapture();
+  if(!mp.active) spDims[dim]=spCapture();      // on a server the mirror already holds it
   dim=to;
   clearConfetti();
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
-  spInstall(spDims[dim]); spApplyStores();
+  spInstall(mp.active ? mpDimStore[dim] : spDims[dim]); spApplyStores();
   redParts.clear(); redPlates.clear(); dustPower.clear(); litTorch.clear(); lampLit.clear(); btnTimer.clear();
   for(const kk in spEdits){ const id=spEdits[kk]; if(!isRedPart(id)) continue;
     redParts.add(kk); if(isPlate(id)){ const c=kk.split(','); redPlates.set(kk,[+c[0],+c[1],+c[2]]); } }
   redDirty=true;
   lastCX=NaN; lastCZ=NaN;
-  spSave();
+  if(!mp.active) spSave();
 }
-let portalIn=0, portalCooldown=0;
+let portalIn=0, portalArmed=true;
 function insidePortal(){
   const x=Math.floor(player.pos.x), z=Math.floor(player.pos.z), y=Math.floor(player.pos.y);
   return getBlock(x,y,z)===B.nether_portal || getBlock(x,y+1,z)===B.nether_portal;
 }
 function tickPortal(dt){
-  if(performance.now()<portalCooldown || !insidePortal()){ portalIn=0; return; }
+  if(!insidePortal()){ portalArmed=true; portalIn=0; return; }   // step clear and the portal arms again
+  if(!portalArmed){ portalIn=0; return; }                        // you came out of this one; it will not send you straight back
   portalIn+=dt;
   if(portalIn>=0.85){ portalIn=0; travelThroughPortal(); }
 }
 function travelThroughPortal(){
-  if(mp.active){                       // servers share one world; the nether is solo for now
-    showBanner('The Nether is singleplayer for now');
-    portalCooldown=performance.now()+6000; return;
-  }
   const to = dim===0 ? 1 : 0;
   const k  = to===1 ? 1/8 : 8;         // Minecraft's eight-to-one map between the two worlds
   const tx = Math.round(player.pos.x*k), tz = Math.round(player.pos.z*k), ty = Math.round(player.pos.y);
@@ -4158,7 +4156,7 @@ function travelThroughPortal(){
   ensureChunks(player.pos.x, player.pos.z);
   let guard=0; while(genQueue.length && guard<500){ const c=genQueue.shift(); if(!c.generated) c.generate(); guard++; }
   for(const [,c] of chunks) if(c.generated && Math.abs(c.cx-Math.floor(player.pos.x/CH))<=2 && Math.abs(c.cz-Math.floor(player.pos.z/CH))<=2) buildChunkMesh(c);
-  portalCooldown=performance.now()+2500;
+  portalArmed=false;                   // you land standing in the portal on the far side
   showBanner(dim===1 ? 'The Nether' : 'The Overworld');
 }
 // come out of the nearest portal on this side, or build one if there is none
@@ -4269,10 +4267,7 @@ function useFlint(){
   if(!target) return;
   const tb = getBlock(target.x, target.y, target.z);
   if(tb===B.tnt){ primeTnt(target.x, target.y, target.z); doSwing(); return; }
-  if(tb===B.obsidian){
-    if(mp.active){ showBanner('The Nether is singleplayer for now'); return; }
-    if(lightPortalFrom(target.x, target.y, target.z)){ doSwing(); return; }
-  }
+  if(tb===B.obsidian && lightPortalFrom(target.x, target.y, target.z)){ doSwing(); return; }
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   if(py<0 || py>=WH) return;
   if(getBlock(px,py,pz)!==AIR) return;
@@ -5834,10 +5829,40 @@ function mpUpdatePlayers(dt){
 function mpHandle(m){
   if(m.type==='init' && (m.mode==='bw' || bw.active)){ bwInit(m); return; }   // bedwars has its own init/world
   if(bw.active && bwHandle(m)) return;                                        // bedwars-only messages; others fall through
+  if(DIM_MSGS[m.type] && m.type!=='tnt'){
+    const md=(m.d|0);
+    mpMirror(md, m);
+    if(md!==dim) return;      // an edit in the other world: recorded, but nothing here to redraw
+  }
   if(m.type==='init'){
     mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.admin=!!m.admin; mp.spectator=!!m.spectator;
     mp._pwFlow=false; if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;   // joined successfully — close the password prompt
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
+    dim=0; mpDimStore[0]=null; mpDimStore[1]=null;    // you always arrive in the overworld
+    { const o=dimStore(0);
+      o.blocks=Object.assign({}, m.blocks||{}); o.signs=Object.assign({}, m.signs||{});
+      o.doors={}; if(m.doors) for(const kk in m.doors){ const d=m.doors[kk]; o.doors[kk]={ f:d.facing|0, o:d.open?1:0, h:(d.hinge==='left'?'l':d.hinge==='right'?'r':undefined) }; }
+      o.beds={};    if(m.beds)      for(const kk in m.beds)      o.beds[kk]={ f:m.beds[kk].facing|0, h:m.beds[kk].head?1:0 };
+      o.stairs={};  if(m.stairs)    for(const kk in m.stairs)    o.stairs[kk]={ f:m.stairs[kk].facing|0, t:m.stairs[kk].top?1:0 };
+      o.ladders={}; if(m.ladders)   for(const kk in m.ladders)   o.ladders[kk]={ f:m.ladders[kk].facing|0 };
+      o.prg={};     if(m.prg)       for(const kk in m.prg)       o.prg[kk]={ a:m.prg[kk].ang|0 };
+      o.trapdoors={}; if(m.trapdoors) for(const kk in m.trapdoors){ const t=m.trapdoors[kk]; o.trapdoors[kk]={ f:t.facing|0, o:t.open?1:0, t:t.top?1:0 }; }
+      o.slabs={};   if(m.slabs)     for(const kk in m.slabs)     o.slabs[kk]={ t:m.slabs[kk].top?1:0, d:m.slabs[kk].double?1:0 };
+      o.pots={};    if(m.pots)      for(const kk in m.pots)      o.pots[kk]={ p:m.pots[kk].plant };
+      o.attach={};  if(m.attach)    for(const kk in m.attach)    o.attach[kk]={ m:m.attach[kk].m|0, f:m.attach[kk].f|0, o:m.attach[kk].on?1:0 };
+      if(m.nether){ const n=m.nether, u=dimStore(1);
+        u.blocks=Object.assign({}, n.blocks||{}); u.signs=Object.assign({}, n.signs||{});
+        if(n.doors) for(const kk in n.doors){ const d=n.doors[kk]; u.doors[kk]={ f:d.facing|0, o:d.open?1:0, h:(d.hinge==='left'?'l':d.hinge==='right'?'r':undefined) }; }
+        if(n.beds)      for(const kk in n.beds)      u.beds[kk]={ f:n.beds[kk].facing|0, h:n.beds[kk].head?1:0 };
+        if(n.stairs)    for(const kk in n.stairs)    u.stairs[kk]={ f:n.stairs[kk].facing|0, t:n.stairs[kk].top?1:0 };
+        if(n.ladders)   for(const kk in n.ladders)   u.ladders[kk]={ f:n.ladders[kk].facing|0 };
+        if(n.prg)       for(const kk in n.prg)       u.prg[kk]={ a:n.prg[kk].ang|0 };
+        if(n.trapdoors) for(const kk in n.trapdoors){ const t=n.trapdoors[kk]; u.trapdoors[kk]={ f:t.facing|0, o:t.open?1:0, t:t.top?1:0 }; }
+        if(n.slabs)     for(const kk in n.slabs)     u.slabs[kk]={ t:n.slabs[kk].top?1:0, d:n.slabs[kk].double?1:0 };
+        if(n.pots)      for(const kk in n.pots)      u.pots[kk]={ p:n.pots[kk].plant };
+        if(n.attach)    for(const kk in n.attach)    u.attach[kk]={ m:n.attach[kk].m|0, f:n.attach[kk].f|0, o:n.attach[kk].on?1:0 };
+      }
+    }
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
     if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open, hinge:m.doors[kk].hinge}); } }
@@ -5888,6 +5913,7 @@ function mpHandle(m){
   else if(m.type==='bed'){ bedMeta.set(m.fx+','+m.fy+','+m.fz, {facing:m.facing|0, head:false}); bedMeta.set(m.hx+','+m.fy+','+m.hz, {facing:m.facing|0, head:true}); remeshChunkAt(m.fx,m.fz); remeshChunkAt(m.hx,m.hz); }
   else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, top:!!m.top}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='ladder'){ ladderMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
+  else if(m.type==='tnt'){ if((m.d|0)===dim) primeTnt(m.x|0, m.y|0, m.z|0, true); }   // someone lit a fuse
   else if(m.type==='skin'){ applyRemoteSkin(m.id, m.png, m.slim); }
   else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
@@ -5921,7 +5947,39 @@ function mpConnect(){
     else if(typeof openServers==='function') openServers('Server unreachable. Is it online?'); };
   ws.onerror=()=>{};
 }
-function mpSend(o){ if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} } }
+// Which messages are edits, and so belong to one dimension or the other. Both
+// halves of the connection tag them: outgoing gets `d` stamped on, incoming is
+// filed under the dimension it names. That is the whole of the nether's
+// networking - the server keeps a second set of edits, nothing else changes.
+const DIM_MSGS = { block:1, door:1, trapdoor:1, slab:1, pot:1, attach:1, red:1, prg:1, bed:1, stair:1, ladder:1, sign:1, tnt:1 };
+const mpDimStore=[null,null];
+function dimStore(d){ let o=mpDimStore[d];
+  if(!o) o=mpDimStore[d]={ blocks:{}, doors:{}, beds:{}, stairs:{}, ladders:{}, signs:{}, prg:{}, trapdoors:{}, slabs:{}, pots:{}, attach:{} };
+  return o; }
+// keep the mirror in step with every edit, whoever made it, in whichever world
+function mpMirror(d, m){
+  const o=dimStore(d), k=m.x+','+m.y+','+m.z;
+  if(m.type==='block'){
+    if(m.b) o.blocks[k]=m.b;
+    else for(const t of ['blocks','doors','beds','stairs','ladders','signs','prg','trapdoors','slabs','pots','attach']) delete o[t][k];
+  }
+  else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++)
+    o.doors[m.x+','+(by+h)+','+m.z]={ f:m.facing|0, o:m.open?1:0, h:(m.hinge==='left'?'l':m.hinge==='right'?'r':undefined) }; }
+  else if(m.type==='trapdoor') o.trapdoors[k]={ f:m.facing|0, o:m.open?1:0, t:m.top?1:0 };
+  else if(m.type==='slab')     o.slabs[k]={ t:m.top?1:0, d:m.double?1:0 };
+  else if(m.type==='pot'){ if(m.plant) o.pots[k]={ p:m.plant }; else delete o.pots[k]; }
+  else if(m.type==='attach'){ if((m.m|0)<0) delete o.attach[k]; else o.attach[k]={ m:m.m|0, f:m.f|0, o:m.on?1:0 }; }
+  else if(m.type==='red'){ if(o.attach[k]) o.attach[k].o=m.on?1:0; }
+  else if(m.type==='prg')      o.prg[k]={ a:m.ang|0 };
+  else if(m.type==='bed'){ o.beds[m.fx+','+m.fy+','+m.fz]={ f:m.facing|0, h:0 }; o.beds[m.hx+','+m.fy+','+m.hz]={ f:m.facing|0, h:1 }; }
+  else if(m.type==='stair')    o.stairs[k]={ f:m.facing|0, t:m.top?1:0 };
+  else if(m.type==='ladder')   o.ladders[k]={ f:m.facing|0 };
+  else if(m.type==='sign')     o.signs[k]={ w:m.wall?1:0, a:m.ang, h:m.hex, l:m.lines };
+}
+function mpSend(o){
+  if(mp.active && DIM_MSGS[o.type]){ if(dim) o.d=dim; mpMirror(dim, o); }
+  if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} }
+}
 function mpSendBlock(x,y,z,b){
   if(bw.active){ mpSetOverride(x,y,z,b); mpSend({type:'bwblock',x,y,z,b}); return; }   // bedwars: dynamic edit into the match
   if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); }
@@ -5939,6 +5997,7 @@ function updateWorldBorder(){
   worldBorderMesh=new THREE.Mesh(geo, mat); worldBorderMesh.position.set(0, h/2-30, 0); scene.add(worldBorderMesh);
 }
 function mpStartWorld(serverSeed){
+  dim=0;
   seed = serverSeed>>>0; noise = makeNoise(seed);
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
   chunks.clear(); genQueue=[];
@@ -7228,6 +7287,7 @@ window.__mc = {
   // ---- nether / flint and steel test hooks ----
   dim(){ return dim; }, flintId(){ return FLINT_ITEM; },
   blockName(id){ return blockName(id); }, flintCanvas(n){ return flintIconCanvas(n); },
+  mpPut(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; mpSendBlock(x,y,z,b.id); return true; },
   recordEdit(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); spRecord(x,y,z,b.id); remeshChunkAt(x,z); return true; },
   save(){ spSave(); },
   savedBlockAt(d,x,y,z){ const store = (d===dim) ? spEdits : ((spDims[d]&&spDims[d].blocks)||{});
@@ -7242,6 +7302,7 @@ window.__mc = {
   stepConfetti(dt){ tickConfetti(dt); },
   travel(){ travelThroughPortal(); return dim; },
   switchDim(d){ switchDim(d); return dim; },
+  loadAround(x,z){ ensureChunks(x,z); let g=0; while(genQueue.length && g<700){ const c=genQueue.shift(); if(!c.generated) c.generate(); g++; } return chunks.size; },
   netherFloorAt(x,z){ return netherFloor(x,z); }, netherRoofAt(x,z){ return netherRoof(x,z); },
   netherBiomeAt(x,z){ return netherBiome(x,z); },
   skyHex(){ return scene.background && scene.background.getHex ? scene.background.getHex() : 0; },
