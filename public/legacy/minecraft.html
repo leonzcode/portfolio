@@ -698,7 +698,7 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 7: flowers (cross-model plants), flower pot, wet sponge ---
 "dandelion","poppy","blue_orchid","allium","azure_bluet","red_tulip","orange_tulip","white_tulip","pink_tulip","oxeye_daisy","cornflower","lily_of_the_valley","wither_rose","torchflower","closed_eyeblossom","open_eyeblossom","purpular_flower",
 "sunflower","lilac","rose_bush","peony","pitcher_plant",
-"flower_pot","wet_sponge"];
+"flower_pot","wet_sponge","golden_dandelion"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1063,6 +1063,7 @@ const SMALL_FLOWERS = [
   ['closed_eyeblossom',  { a:0x8d9aa6, b:0x5f6d7a },                     H_EYE_CLOSED, STEM_LEAFY],
   ['open_eyeblossom',    { a:0xe08a2b, o:0x3a2a1c, y:0xf2d24a },         H_EYE_OPEN,  STEM_LEAFY],
   ['purpular_flower',    { a:0x8a5aa8, c:0xc79ce0, y:0xf1e07a },         H_PURPULAR,  STEM_TALL],
+  ['golden_dandelion',   { y:0xc9960e, a:0xffd634 },                     H_DANDELION, STEM_LEAFY],
 ];
 // ---- 2-block flowers: bottom half is a leafy stalk, top half carries the bloom ----
 const TALL_STALK = [
