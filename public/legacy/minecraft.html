@@ -706,7 +706,7 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 9: workshop blocks ---
 "enchanting_table","anvil","grindstone","stonecutter",
 // --- pass 10: vines ---
-"vine","weeping_vines","twisting_vines","cave_vines"];
+"vine","weeping_vines","twisting_vines","cave_vines","fire","lava","nether_portal","magma_block","soul_soil","crimson_nylium","warped_nylium","crimson_fungus","warped_fungus","ancient_debris"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1289,6 +1289,37 @@ function sawBladeTex(seed){ const r=rng(seed), steel=rgb(0xb9bcc2), edge=rgb(0x8
    The clinging vine is a ragged leafy sheet with a lot of daylight through it.
    The three hanging or climbing kinds are strands that thin out as they go, and
    cave vines carry berries.                                                    */
+// fire: wide at the base, licking up into ragged tongues
+function fireBlockTex(seed){ const r=rng(seed), hot=rgb(0xfff2a0), mid=rgb(0xffa62b), deep=rgb(0xe04a10), dark=rgb(0x8f2306);
+  return (x,y)=>{
+    const h = 15-y;                                                     // 0 at the bottom of the tile
+    const wob = Math.sin(x*0.8 + seed*0.13)*1.3;
+    const width = 7.4 - h*0.42 + wob*(h/15);
+    const d = Math.abs(x - 7.5 + wob*0.4);
+    if(d > Math.max(0.7, width)) return [0,0,0,0];
+    if(h>9 && ((x*3+y*5)%4===0)) return [0,0,0,0];                      // the tips break up into separate tongues
+    const t = d/Math.max(1,width);
+    return vary(t<0.3?hot : t<0.6?mid : t<0.85?deep : dark, 11, r);
+  }; }
+// lava: a dark crust with bright cracks running through it
+function lavaTex(seed){ const r=rng(seed), crust=rgb(0xcf4a12), glow=rgb(0xffb02e), hot=rgb(0xfff0a0), dark=rgb(0x8a2b08);
+  const h=(x,y,s)=>{ let n=(x*374761393 + y*668265263 + (seed+s)*1274126177)|0;
+    n=Math.imul(n^(n>>>13), 1274126177); return ((n^(n>>>16))>>>0)/4294967296; };
+  return (x,y)=>{
+    const v = Math.sin(x*0.55 + Math.cos(y*0.42)*2.1) + Math.cos(y*0.5 + Math.sin(x*0.38)*1.7);
+    const n = h(x,y,0)*0.5;
+    if(Math.abs(v) < 0.30) return vary(hot, 10, r);                     // the brightest seams
+    if(Math.abs(v) < 0.75) return vary(glow, 12, r);
+    return vary(n>0.36 ? crust : dark, 10, r);
+  }; }
+// nether portal: a violet sheet with brighter motes drifting through it
+function portalTex(seed){ const r=rng(seed), deep=rgb(0x5b18a8), mid=rgb(0x9b45e8), lite=rgb(0xe0b8ff);
+  return (x,y)=>{
+    const v = Math.sin(x*0.7 + y*0.35) + Math.cos(y*0.62 - x*0.25);
+    const c = v>0.85 ? lite : v>-0.1 ? mid : deep;
+    const o = vary(c, 16, r);
+    return [o[0],o[1],o[2], 205 + Math.round(Math.max(0,v)*35)];
+  }; }
 function vineTex(seed){ const r=rng(seed), leaf=rgb(0x3f6b25), dark=rgb(0x2c4d19), pale=rgb(0x548a31);
   // hashed per pixel so the sheet is ragged and organic rather than a repeating checker
   const h=(x,y,s)=>{ let n=(x*374761393 + y*668265263 + (seed+s)*1274126177)|0;
@@ -1459,6 +1490,19 @@ paint('vine',           vineTex(9510));
 paint('weeping_vines',  strandTex(9511, 0x8a1f2e, 0x5c1220));
 paint('twisting_vines', strandTex(9512, 0x2f8a86, 0x1d5a58));
 paint('cave_vines',     strandTex(9513, 0x4a7a2e, 0x33591f, 0xf0a02a));
+// a little nether mushroom: a stalk with a speckled cap
+function fungusTex(seed, capHex, spotHex){ const r=rng(seed), cap=rgb(capHex), spot=rgb(spotHex), stalk=rgb(0xd8cfc4);
+  return (x,y)=>{
+    const dx=x-7.5, dy=y-6.5;
+    if(y<10 && dx*dx*0.55 + dy*dy < 10) return vary(((x*3+y*5)%7)<2 ? spot : cap, 10, r);   // the cap
+    if(y>=9 && y<15 && Math.abs(x-7.5)<1.6) return vary(stalk, 9, r);                       // the stalk
+    return [0,0,0,0];
+  }; }
+paint('crimson_fungus',  fungusTex(9530, 0xa11c1c, 0xe8632a));
+paint('warped_fungus',   fungusTex(9531, 0x1f7a72, 0xe8c34a));
+paint('fire',           fireBlockTex(9520));
+paint('lava',           lavaTex(9521));
+paint('nether_portal',  portalTex(9522));
 // a door texture per wood type — painted directly, NOT via EXTRA, so the EXTRA block
 // loop doesn't also define a plain (non-door) block that shadows the real door block
 WOODS.forEach((w,i)=> paint(w.id+'_door', doorTex(w.plank, 9100+i)));
@@ -1616,6 +1660,21 @@ NEW_SOLIDS.push(
   { name:'stripped_jungle_log', top: woodTop(es(),0xb0895a,0x8a6a40), side: pillarSideTex(es(),0xa9784f) },
   { name:'stripped_acacia_log', top: woodTop(es(),0xc06a3a,0xa85a2e), side: pillarSideTex(es(),0xb15b30) },
   { name:'stripped_dark_oak_log', top: woodTop(es(),0x5a4326,0x43301a), side: pillarSideTex(es(),0x5a4326) },
+  // ---- the nether ----
+  { name:'magma_block', tex: (()=>{ const r=rng(es()), dark=rgb(0x38210f), warm=rgb(0x8d3a10), glow=rgb(0xe8761f);
+      return (x,y)=>{ const v=Math.sin(x*0.62+Math.cos(y*0.5)*1.9)+Math.cos(y*0.58-Math.sin(x*0.4)*1.5);
+        return vary(Math.abs(v)<0.34?glow : Math.abs(v)<0.8?warm : dark, 10, r); };})() },
+  { name:'soul_soil', tex: (()=>{ const r=rng(es()), base=rgb(0x4a3a30), pit=rgb(0x33261f);
+      return (x,y)=>{ const dx=((x+5)%8)-4, dy=((y+3)%8)-4;                 // the same hollow faces as soul sand, browner
+        return (dx*dx+dy*dy<4) ? vary(pit,9,r) : vary(base,9,r); };})() },
+  { name:'ancient_debris', top: (()=>{ const r=rng(es()), b=rgb(0x4a3730), n=rgb(0x5c4f4c);
+      return (x,y)=> r()<0.3? vary(n,12,r): vary(b,10,r); })(),
+    side: (()=>{ const r=rng(es()), b=rgb(0x4a3730), n=rgb(0x6a5a56);
+      return (x,y)=> ((x*3+y*5)%9)<2 ? vary(n,14,r) : vary(b,9,r); })() },
+  { name:'crimson_nylium', top: speckle(0x8a2222,9,es()), side: (()=>{ const r=rng(es()), nr=rgb(0x6e2b2b), red=rgb(0x8a2222);
+      return (x,y)=> (y<3 || (y<6 && ((x*5+y*3)%4)<2)) ? vary(red,10,r) : vary(nr,14,r); })() },
+  { name:'warped_nylium', top: speckle(0x1f7a72,9,es()), side: (()=>{ const r=rng(es()), nr=rgb(0x6e2b2b), tl=rgb(0x1f7a72);
+      return (x,y)=> (y<3 || (y<6 && ((x*5+y*3)%4)<2)) ? vary(tl,10,r) : vary(nr,14,r); })() },
 );
 // paint every pass-2 texture into the atlas
 for(const e of NEW_SOLIDS){
@@ -1657,6 +1716,16 @@ B.snow   = def('snow',   { tiles:T('snow') });
 B.ice    = def('ice',    { tiles:T('ice'), opaque:false });
 B.obsidian=def('obsidian', { tiles:T('obsidian') });
 B.tnt=def('tnt', { tiles:T('tnt') });
+B.fire=def('fire', { tiles:T('fire'), fire:true, solid:false, opaque:false, cutout:true, light:15 });
+B.lava=def('lava', { tiles:T('lava'), opaque:false, solid:false, liquid:true, lava:true, light:15 });
+B.nether_portal=def('nether_portal', { tiles:T('nether_portal'), portal:true, solid:false, opaque:false, light:11, display:'Nether Portal' });
+B.magma_block    = def('magma_block',    { tiles:T('magma_block'), light:3 });
+B.soul_soil      = def('soul_soil',      { tiles:T('soul_soil') });
+B.ancient_debris = def('ancient_debris', { tiles:[T('ancient_debris_top'), T('ancient_debris_side'), T('ancient_debris_top')] });
+B.crimson_nylium = def('crimson_nylium', { tiles:[T('crimson_nylium_top'), T('crimson_nylium_side'), T('netherrack')] });
+B.warped_nylium  = def('warped_nylium',  { tiles:[T('warped_nylium_top'),  T('warped_nylium_side'),  T('netherrack')] });
+B.crimson_fungus = def('crimson_fungus', { tiles:T('crimson_fungus'), cross:true, flower:true, solid:false, opaque:false, cutout:true });
+B.warped_fungus  = def('warped_fungus',  { tiles:T('warped_fungus'),  cross:true, flower:true, solid:false, opaque:false, cutout:true });
 B.netherrack=def('netherrack', { tiles:T('netherrack') });
 B.glowstone=def('glowstone', { tiles:T('glowstone'), light:14 });
 B.pumpkin= def('pumpkin',{ tiles:[T('pumpkin_top'), T('pumpkin_side'), T('pumpkin_top')] });
@@ -1978,6 +2047,9 @@ function canPlantOn(plantId, groundId){
   const n = BLOCKS[groundId].name;
   if(FLOWER_SOIL.has(n)) return true;
   if(BLOCKS[plantId] && BLOCKS[plantId].name==='wither_rose') return n==='netherrack' || n==='soul_sand';
+  const pn = BLOCKS[plantId] && BLOCKS[plantId].name;
+  if(pn==='crimson_fungus' || pn==='warped_fungus')             // fungi take any of the nether's ground
+    return n==='netherrack' || n==='crimson_nylium' || n==='warped_nylium' || n==='soul_sand' || n==='soul_soil';
   return false;
 }
 // a plant survives only while it is rooted in something it can grow on
@@ -2168,8 +2240,16 @@ function clearPrgObjs(){ for(const k of Array.from(prgObjs.keys())) removePrgObj
 let spSeed = seed;               // the singleplayer world's own seed
 let spEdits = {};                // "x,y,z" -> blockId (0 = air) : deviations from the terrain
 let spSaveTimer = null;
+let dim = 0;                 // 0 overworld, 1 nether. Declared up here because the
+const spDims=[null,null];    // world save runs at load time and reads both.
 const SP_KEY = 'leoncraft_sp_world';
-function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns, prg: spPrg, trapdoors: spTrapdoors, slabs: spSlabs, pots: spPots, attach: spAttach })); }catch(e){} }
+function spSave(){ try{
+  // the world you are standing in plus the one you are not: same file, nether nested
+  const cur={ blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders,
+              signs: spSigns, prg: spPrg, trapdoors: spTrapdoors, slabs: spSlabs, pots: spPots, attach: spAttach };
+  const over = (dim===0 ? cur : (spDims[0]||{})), under = (dim===1 ? cur : (spDims[1]||{}));
+  localStorage.setItem(SP_KEY, JSON.stringify(Object.assign({ seed: spSeed }, over, { nether: under })));
+}catch(e){} }
 function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
 function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
 function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = removed)
@@ -2241,10 +2321,20 @@ function purgeLiveAbove(){
 }
 function spReloadWorld(){         // load the saved singleplayer world into seed + overrides + doors + beds + stairs + ladders
   mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
+  dim=0; spDims[0]=null; spDims[1]=null;   // a reload always puts you back in the overworld
   spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {}; spTrapdoors = {}; spSlabs = {}; spPots = {}; spAttach = {};
-  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; spPots=w.pots||{}; spAttach=w.attach||{}; } } }catch(e){}
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; spPots=w.pots||{}; spAttach=w.attach||{}; spDims[1]=w.nether||null; } } }catch(e){}
   const purged = purgeSavedAbove();   // clear old ghost blocks stranded above the build limit, then persist the cleanup
   seed=spSeed; noise=makeNoise(seed);
+  spApplyStores();
+  if(purged) spSave();
+}
+// push the loaded stores into the live meta maps. Called on world load and again
+// on every trip through a portal, because each dimension keeps its own set.
+function spApplyStores(){
+  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear();
+  signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs();
+  trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
   for(const kk in spDoors){ const sd=spDoors[kk]; doorMeta.set(kk, {facing:sd.f, open:!!sd.o, hinge:(sd.h==='l'?'left':sd.h==='r'?'right':undefined)}); }
   for(const kk in spBeds){ bedMeta.set(kk, {facing:spBeds[kk].f, head:!!spBeds[kk].h}); }
@@ -2260,7 +2350,6 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   for(const kk in spEdits){ const id=spEdits[kk]; if(!isRedPart(id)) continue;   // rebuild the circuit registry
     redParts.add(kk); if(isPlate(id)){ const c=kk.split(','); redPlates.set(kk,[+c[0],+c[1],+c[2]]); } }
   redDirty=true;
-  if(purged) spSave();           // write back the world with the ghost blocks removed
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
 addEventListener('beforeunload', spSave);
@@ -2273,6 +2362,41 @@ function terrainHeight(x,z){
   const mt = noise.n2(x*0.0035+100, z*0.0035-100);
   if (mt>0.35) h += (mt-0.35)*70;                    // mountains
   return Math.max(4, Math.min(WH-6, Math.round(h)));
+}
+/* ====================== THE NETHER ========================================
+   A second world under the same seed: a netherrack cave the full height of the
+   map, capped top and bottom with bedrock, with a lava sea in the low ground.
+   The five regions below are the ones a Minecraft player would recognise -
+   wastes, crimson and warped forests, soul sand valleys and basalt deltas.   */
+const NETHER_LAVA = 20;            // anything hollow below this fills with lava
+function netherFloor(x,z){
+  const broad = noise.n2(x*0.0075+3100, z*0.0075-3100);
+  const hills = noise.n2(x*0.024-900,   z*0.024+900);
+  const rough = noise.n2(x*0.06+40,     z*0.06+40)*0.35;
+  return Math.max(3, Math.min(46, Math.round(24 + broad*9 + hills*10 + rough*6)));
+}
+function netherRoof(x,z){
+  const a = noise.n2(x*0.028-1700, z*0.028+1700);
+  return Math.max(46, Math.min(64, Math.round(55 + a*8)));
+}
+function netherBiome(x,z){
+  const t = noise.n2(x*0.005+1200, z*0.005-1200);
+  if(t < -0.42) return 'soul';
+  if(t < -0.16) return 'basalt';
+  if(t >  0.46) return 'warped';
+  if(t >  0.16) return 'crimson';
+  return 'waste';
+}
+// the first clear spot to stand on in a nether column, hunting outward from a height you name
+function netherStand(x,z,near){
+  const floor=netherFloor(x,z), roof=netherRoof(x,z);
+  const lo=Math.max(floor+1, NETHER_LAVA+2), hi=roof-4;
+  if(lo>hi) return -1;
+  const want=Math.max(lo, Math.min(hi, near|0));
+  for(let d=0; d<=hi-lo; d++){
+    for(const y of [want+d, want-d]) if(y>=lo && y<=hi) return y;
+  }
+  return lo;
 }
 function biomeAt(x,z){
   const t = noise.n2(x*0.004+500, z*0.004+500);
@@ -2297,6 +2421,13 @@ class Chunk{
       this.generated = true;
       const ovb = mpOverrides.get(this.cx+','+this.cz);
       if(ovb) for(const [lk,b] of ovb){ const p=lk.split(','); this.set(+p[0],+p[1],+p[2], b); }
+      return;
+    }
+    if(dim===1){                       // the nether has its own shape entirely
+      this.genNether();
+      this.generated = true;
+      const ovn = mpOverrides.get(this.cx+','+this.cz);
+      if(ovn) for(const [lk,b] of ovn){ const p=lk.split(','); this.set(+p[0],+p[1],+p[2], b); }
       return;
     }
     for(let x=0;x<CH;x++) for(let z=0;z<CH;z++){
@@ -2331,6 +2462,80 @@ class Chunk{
     // apply shared-world edits for this chunk (multiplayer)
     const ov = mpOverrides.get(this.cx+','+this.cz);
     if(ov) for(const [lk,b] of ov){ const p=lk.split(','); this.set(+p[0],+p[1],+p[2], b); }
+  }
+  genNether(){
+    const { cx, cz } = this;
+    const r = rng((cx*2654435761 ^ cz*40503 ^ 0x9e37)>>>0);
+    for(let x=0;x<CH;x++) for(let z=0;z<CH;z++){
+      const wx=cx*CH+x, wz=cz*CH+z;
+      const floor=netherFloor(wx,wz), roof=netherRoof(wx,wz), bio=netherBiome(wx,wz);
+      for(let y=0;y<WH;y++){
+        let b=AIR;
+        if(y===0 || y===WH-1) b=B.bedrock;                          // sealed top and bottom
+        else if(y<=floor)  b=this.netherStrata(wx,y,wz,floor,bio);
+        else if(y>=roof)   b=B.netherrack;
+        else if(y<=NETHER_LAVA) b=B.lava;                           // the lava sea fills the low ground
+        if(b!==AIR) this.set(x,y,z,b);
+      }
+      // glowstone grows in clumps on the underside of the roof
+      if(r()<0.012){
+        const gy=roof-1;
+        for(let dy=0;dy<2+((r()*3)|0);dy++){ const py=gy-dy; if(py>NETHER_LAVA && this.get(x,py,z)===AIR) this.set(x,py,z,B.glowstone); }
+      }
+    }
+    this.netherDeco(r);
+  }
+  netherStrata(wx,y,wz,floor,bio){
+    if(y===floor){                                                   // the surface each region wears
+      if(bio==='crimson') return B.crimson_nylium;
+      if(bio==='warped')  return B.warped_nylium;
+      if(bio==='soul')    return (noise.n2(wx*0.09, wz*0.09)>0 ? B.soul_sand : B.soul_soil);
+      if(bio==='basalt')  return (noise.n2(wx*0.11+7, wz*0.11-7)>0.1 ? B.basalt : B.blackstone);
+      return B.netherrack;
+    }
+    const n = noise.n3(wx*0.11+seed*0.01, y*0.11, wz*0.11);
+    if(y<12 && n>0.80) return B.ancient_debris;                      // the deep, rare one
+    if(n>0.70) return B.nether_quartz_ore;
+    if(n<-0.74) return B.magma_block;
+    if(bio==='soul'   && y>floor-3) return B.soul_soil;
+    if(bio==='basalt' && y>floor-4) return B.blackstone;
+    if(bio==='basalt' && n>0.55) return B.gilded_blackstone;
+    return B.netherrack;
+  }
+  netherDeco(r){
+    const { cx, cz } = this;
+    const put=(x,y,z,b)=>{ if(x>=0&&x<CH&&z>=0&&z<CH&&y>0&&y<WH-1 && this.get(x,y,z)===AIR) this.set(x,y,z,b); };
+    const n = 5 + ((r()*7)|0);
+    for(let i=0;i<n;i++){
+      const x=1+((r()*(CH-2))|0), z=1+((r()*(CH-2))|0);
+      const wx=cx*CH+x, wz=cz*CH+z;
+      const floor=netherFloor(wx,wz), roof=netherRoof(wx,wz), bio=netherBiome(wx,wz);
+      const gy=floor+1;
+      if(gy<=NETHER_LAVA+1 || gy>=roof-1) continue;                  // nothing grows out of the lava
+      if(bio==='crimson' || bio==='warped'){
+        const warped = bio==='warped';
+        if(r()<0.45){                                                // a huge fungus: a stem with a wart cap
+          const h=3+((r()*4)|0), stem=warped?B.warped_stem:B.crimson_stem, cap=warped?B.warped_wart_block:B.nether_wart_block;
+          if(gy+h+2>=roof) continue;
+          for(let d=0;d<h;d++) put(x,gy+d,z,stem);
+          const top=gy+h;
+          for(let dx=-2;dx<=2;dx++) for(let dz=-2;dz<=2;dz++){
+            if(Math.abs(dx)+Math.abs(dz)>2) continue;
+            put(x+dx, top, z+dz, r()<0.16 ? B.shroomlight : cap);   // the odd glowing block set into the cap
+            // vines trail off the underside of the cap, the way they do in vanilla
+            if((dx||dz) && r()<0.4){ const vine=warped?B.twisting_vines:B.weeping_vines;
+              if(warped){ for(let d=0;d<1+((r()*3)|0);d++) put(x+dx,gy+d,z+dz,vine); }
+              else      { for(let d=1;d<=1+((r()*3)|0);d++) put(x+dx,top-d,z+dz,vine); } }
+          }
+        } else put(x,gy,z, warped?B.warped_fungus:B.crimson_fungus);
+      } else if(bio==='soul'){
+        if(r()<0.3){ const h=2+((r()*3)|0); for(let d=0;d<h;d++) put(x,gy+d,z,B.bone_block); }
+        else if(r()<0.35) put(x,gy,z,B.fire);                        // soul fire, burning on the sand
+      } else if(bio==='basalt'){
+        const h=2+((r()*6)|0);                                       // basalt columns reaching for the roof
+        for(let d=0;d<h && gy+d<roof-1;d++) put(x,gy+d,z,B.basalt);
+      } else if(r()<0.2) put(x,gy,z,B.fire);                         // the wastes burn in patches
+    }
   }
   tree(x,y,z,r){
     const th = 4 + (r()*2|0);
@@ -2858,6 +3063,16 @@ function buildChunkMesh(c){
       pushBox(cut, wx, y, wz, [7.4/16,8.6/16, 9/16,15/16, 3/16,13/16], T('saw_blade'));
       continue;
     }
+    if (bl.portal){                            // a thin sheet standing in the plane of its frame
+      const t=5/16, lo=0.5-t/2, hi=0.5+t/2;
+      const b = portalAxisAt(wx,y,wz)===0 ? [0,1, 0,1, lo,hi] : [lo,hi, 0,1, 0,1];
+      pushBox(tr, wx, y, wz, b, (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
+      continue;
+    }
+    if (bl.fire){                              // crossed sheets of flame, filling the cell
+      pushCross(cut, wx, y, wz, (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]), 0, 1, 0.5);
+      continue;
+    }
     if (bl.vine){                              // a ragged sheet lying flat on what it clings to
       pushBox(cut, wx, y, wz, vineBounds(attachMeta.get(dkey(wx,y,wz))),
               (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]));
@@ -3152,6 +3367,12 @@ function buildBwHeldItem(st){
 function buildHeldBlock(id){
   if(vmBlock){ vmScene.remove(vmBlock); if(!vmBlock.userData.shared){ vmBlock.geometry.dispose(); vmBlock.material.dispose(); } vmBlock=null; }
   vmHeldId=id||0; if(!id || id===STICK_ITEM) return;   // the stick shows the bare hand/arm, no held cube
+  if(id===FLINT_ITEM){                               // flint and steel hangs in the hand as a flat sprite
+    const tex=new THREE.CanvasTexture(flintIconCanvas(64)); tex.magFilter=tex.minFilter=THREE.NearestFilter;
+    vmBlock=new THREE.Mesh(new THREE.PlaneGeometry(0.62,0.62),
+      new THREE.MeshBasicMaterial({ map:tex, transparent:true, alphaTest:0.4, side:THREE.DoubleSide }));
+    vmScene.add(vmBlock); return;
+  }
   const bl=BLOCKS[id];
   if(bl.model && prgModel){ vmBlock=new THREE.Mesh(prgModel.geo, prgModel.mat); vmBlock.userData.shared=true; vmScene.add(vmBlock); return; }   // hold the PRG sphere
   const geo=new THREE.BoxGeometry(1,1,1);
@@ -3436,6 +3657,7 @@ function useAction(){
     if(isButton(tb)){ pressButton(target.x,target.y,target.z); return; }
     if(isLever(tb)){ flipLever(target.x,target.y,target.z); return; }
   }
+  if(hotbar[selSlot]===FLINT_ITEM){ useFlint(); return; }   // flint and steel strikes rather than places
   placeBlock();
 }
 // discrete actions fire once per press, from either a key (keydown) or a mouse button (mousedown)
@@ -3888,6 +4110,258 @@ function breakRedBlock(x,y,z){
   setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0);
   redTrack(x,y,z); remeshChunkAt(x,z);
 }
+/* ---- travelling between the two worlds ----
+   Each dimension keeps its own set of edits. Swapping means stashing the one
+   you are leaving, dropping every chunk, and generating the other from the
+   same seed - which is why nothing has to be stored twice.                   */
+function spCapture(){ return { blocks:spEdits, doors:spDoors, beds:spBeds, stairs:spStairs, ladders:spLadders,
+  signs:spSigns, prg:spPrg, trapdoors:spTrapdoors, slabs:spSlabs, pots:spPots, attach:spAttach }; }
+function spInstall(o){ o=o||{};
+  spEdits=o.blocks||{}; spDoors=o.doors||{}; spBeds=o.beds||{}; spStairs=o.stairs||{}; spLadders=o.ladders||{};
+  spSigns=o.signs||{}; spPrg=o.prg||{}; spTrapdoors=o.trapdoors||{}; spSlabs=o.slabs||{}; spPots=o.pots||{}; spAttach=o.attach||{}; }
+function switchDim(to){
+  if(to===dim) return;
+  spDims[dim]=spCapture();
+  dim=to;
+  clearConfetti();
+  for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
+  chunks.clear(); genQueue=[];
+  spInstall(spDims[dim]); spApplyStores();
+  redParts.clear(); redPlates.clear(); dustPower.clear(); litTorch.clear(); lampLit.clear(); btnTimer.clear();
+  for(const kk in spEdits){ const id=spEdits[kk]; if(!isRedPart(id)) continue;
+    redParts.add(kk); if(isPlate(id)){ const c=kk.split(','); redPlates.set(kk,[+c[0],+c[1],+c[2]]); } }
+  redDirty=true;
+  lastCX=NaN; lastCZ=NaN;
+  spSave();
+}
+let portalIn=0, portalCooldown=0;
+function insidePortal(){
+  const x=Math.floor(player.pos.x), z=Math.floor(player.pos.z), y=Math.floor(player.pos.y);
+  return getBlock(x,y,z)===B.nether_portal || getBlock(x,y+1,z)===B.nether_portal;
+}
+function tickPortal(dt){
+  if(performance.now()<portalCooldown || !insidePortal()){ portalIn=0; return; }
+  portalIn+=dt;
+  if(portalIn>=0.85){ portalIn=0; travelThroughPortal(); }
+}
+function travelThroughPortal(){
+  if(mp.active){                       // servers share one world; the nether is solo for now
+    showBanner('The Nether is singleplayer for now');
+    portalCooldown=performance.now()+6000; return;
+  }
+  const to = dim===0 ? 1 : 0;
+  const k  = to===1 ? 1/8 : 8;         // Minecraft's eight-to-one map between the two worlds
+  const tx = Math.round(player.pos.x*k), tz = Math.round(player.pos.z*k), ty = Math.round(player.pos.y);
+  switchDim(to);
+  const spot = arrivePortal(tx, ty, tz);
+  player.pos.set(spot[0]+0.5, spot[1], spot[2]+0.5); player.vel.set(0,0,0);
+  ensureChunks(player.pos.x, player.pos.z);
+  let guard=0; while(genQueue.length && guard<500){ const c=genQueue.shift(); if(!c.generated) c.generate(); guard++; }
+  for(const [,c] of chunks) if(c.generated && Math.abs(c.cx-Math.floor(player.pos.x/CH))<=2 && Math.abs(c.cz-Math.floor(player.pos.z/CH))<=2) buildChunkMesh(c);
+  portalCooldown=performance.now()+2500;
+  showBanner(dim===1 ? 'The Nether' : 'The Overworld');
+}
+// come out of the nearest portal on this side, or build one if there is none
+function arrivePortal(x,y,z){
+  ensureChunks(x,z);
+  let guard=0; while(genQueue.length && guard<700){ const c=genQueue.shift(); if(!c.generated) c.generate(); guard++; }
+  let best=null, bd=1e9;
+  for(let dx=-14;dx<=14;dx++) for(let dz=-14;dz<=14;dz++){
+    for(let cy=1;cy<WH-1;cy++){
+      if(getBlock(x+dx,cy,z+dz)!==B.nether_portal) continue;
+      const d=dx*dx+dz*dz+(cy-y)*(cy-y)*0.25;
+      if(d<bd){ bd=d; best=[x+dx,cy,z+dz]; }
+    }
+  }
+  return best || buildArrivalPortal(x,y,z);
+}
+// a plain 4x5 frame, already lit, standing on a slab of obsidian so you land safe
+function buildArrivalPortal(x,y,z){
+  let base = dim===1 ? netherStand(x,z,y) : terrainHeight(x,z)+1;
+  base = Math.max(2, Math.min(WH-8, base));
+  const put=(px,py,pz,b)=>{ if(py<1||py>=WH-1) return; setBlock(px,py,pz,b); mpSendBlock(px,py,pz,b); };
+  for(let dx=-2;dx<=4;dx++) for(let dz=-2;dz<=2;dz++) put(x+dx, base-1, z+dz, B.obsidian);        // a landing floor
+  for(let dx=-2;dx<=4;dx++) for(let dy=0;dy<=5;dy++) for(let dz=-2;dz<=2;dz++) put(x+dx, base+dy, z+dz, AIR);
+  for(let dx=0;dx<=3;dx++){ put(x+dx, base, z, B.obsidian); put(x+dx, base+4, z, B.obsidian); }    // sill and lintel
+  for(let dy=1;dy<=3;dy++){ put(x, base+dy, z, B.obsidian); put(x+3, base+dy, z, B.obsidian); }    // jambs
+  for(let dx=1;dx<=2;dx++) for(let dy=1;dy<=3;dy++) put(x+dx, base+dy, z, B.nether_portal);
+  const done=new Set();
+  for(let dx=-2;dx<=4;dx++) for(let dz=-2;dz<=2;dz++){ const k=Math.floor((x+dx)/CH)+','+Math.floor((z+dz)/CH);
+    if(!done.has(k)){ done.add(k); remeshChunkAt(x+dx, z+dz); } }
+  return [x+1, base+1, z];
+}
+
+/* ====================== NETHER PORTALS ====================================
+   Strike an obsidian frame with flint and steel and the air inside it fills
+   with portal. Which way a portal block faces is worked out from its
+   neighbours rather than stored, so it survives a reload and needs nothing
+   sent over the network beyond the blocks themselves.                       */
+const PORTAL_MAX = 21*21;          // vanilla's largest frame
+function portalAxisAt(x,y,z){
+  const alongX = getBlock(x+1,y,z)===B.nether_portal || getBlock(x-1,y,z)===B.nether_portal;
+  const alongZ = getBlock(x,y,z+1)===B.nether_portal || getBlock(x,y,z-1)===B.nether_portal;
+  if(alongX && !alongZ) return 0;
+  if(alongZ && !alongX) return 1;
+  return (getBlock(x,y,z+1)===B.obsidian || getBlock(x,y,z-1)===B.obsidian) ? 0 : 1;   // one block wide
+}
+// flood the air inside the frame, in one plane, and refuse if it leaks out
+function portalCells(x,y,z,axis){
+  if(getBlock(x,y,z)!==AIR && getBlock(x,y,z)!==B.fire) return null;
+  const dirs = axis===0 ? [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0]] : [[0,0,1],[0,0,-1],[0,1,0],[0,-1,0]];
+  const seen=new Set(), out=[], q=[[x,y,z]];
+  let x0=x,x1=x,y0=y,y1=y,z0=z,z1=z;
+  while(q.length){
+    const [cx,cy,cz]=q.pop(), k=dkey(cx,cy,cz);
+    if(seen.has(k)) continue; seen.add(k);
+    if(cy<1 || cy>=WH-1) return null;
+    const id=getBlock(cx,cy,cz);
+    if(id===B.obsidian) continue;                       // the frame stops the fill
+    if(id!==AIR && id!==B.fire) return null;            // a gap, or something standing in the way
+    out.push([cx,cy,cz]);
+    if(out.length>PORTAL_MAX) return null;
+    x0=Math.min(x0,cx); x1=Math.max(x1,cx); y0=Math.min(y0,cy); y1=Math.max(y1,cy); z0=Math.min(z0,cz); z1=Math.max(z1,cz);
+    for(const d of dirs) q.push([cx+d[0],cy+d[1],cz+d[2]]);
+  }
+  const w = axis===0 ? (x1-x0+1) : (z1-z0+1), h = y1-y0+1;
+  if(w<2 || h<3 || w>21 || h>21) return null;           // same minimum as Minecraft: two wide, three tall
+  return out;
+}
+function ignitePortal(x,y,z){
+  for(const axis of [0,1]){
+    const cells=portalCells(x,y,z,axis);
+    if(!cells) continue;
+    for(const c of cells){ setBlock(c[0],c[1],c[2],B.nether_portal); mpSendBlock(c[0],c[1],c[2],B.nether_portal); }
+    const done=new Set();
+    for(const c of cells){ const k=Math.floor(c[0]/CH)+','+Math.floor(c[2]/CH); if(!done.has(k)){ done.add(k); remeshChunkAt(c[0],c[2]); } }
+    return true;
+  }
+  return false;
+}
+// you strike the obsidian, so the cell that lights is the one you struck toward
+function lightPortalFrom(x,y,z){
+  if(!target) return false;
+  return ignitePortal(target.x+target.nx, target.y+target.ny, target.z+target.nz);
+}
+// breaking any part of a frame or sheet puts the whole portal out
+function popPortal(x,y,z){
+  const q=[], seen=new Set();
+  for(const [dx,dy,dz] of NB6) q.push([x+dx,y+dy,z+dz]);
+  const gone=[];
+  while(q.length && gone.length<PORTAL_MAX){
+    const [cx,cy,cz]=q.pop(), k=dkey(cx,cy,cz);
+    if(seen.has(k)) continue; seen.add(k);
+    if(getBlock(cx,cy,cz)!==B.nether_portal) continue;
+    gone.push([cx,cy,cz]);
+    for(const [dx,dy,dz] of NB6) q.push([cx+dx,cy+dy,cz+dz]);
+  }
+  for(const c of gone){ setBlock(c[0],c[1],c[2],AIR); mpSendBlock(c[0],c[1],c[2],0); }
+  const done=new Set();
+  for(const c of gone){ const k=Math.floor(c[0]/CH)+','+Math.floor(c[2]/CH); if(!done.has(k)){ done.add(k); remeshChunkAt(c[0],c[2]); } }
+}
+
+/* ====================== FLINT AND STEEL ===================================
+   One tool, three jobs, the same three it has in Minecraft: strike a fire,
+   light a nether portal, and set off TNT. The one thing that is deliberately
+   different here is what TNT does when it goes off - it throws confetti into
+   the air and leaves the world exactly as it found it. Fire is placed where
+   you point it and stays there; it never spreads to anything.               */
+function useFlint(){
+  if(!target) return;
+  const tb = getBlock(target.x, target.y, target.z);
+  if(tb===B.tnt){ primeTnt(target.x, target.y, target.z); doSwing(); return; }
+  if(tb===B.obsidian){
+    if(mp.active){ showBanner('The Nether is singleplayer for now'); return; }
+    if(lightPortalFrom(target.x, target.y, target.z)){ doSwing(); return; }
+  }
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  if(py<0 || py>=WH) return;
+  if(getBlock(px,py,pz)!==AIR) return;
+  if(!solidFooting(getBlock(px,py-1,pz))) return;      // fire needs something under it to burn on
+  setBlock(px,py,pz,B.fire); mpSendBlock(px,py,pz,B.fire); remeshChunkAt(px,pz);
+  doSwing();
+}
+// fire goes out the moment whatever it was burning on is gone
+function popUnsupportedFire(x,y,z){
+  for(const [dx,dy,dz] of NB6){
+    const cx=x+dx, cy=y+dy, cz=z+dz;
+    if(getBlock(cx,cy,cz)!==B.fire) continue;
+    if(solidFooting(getBlock(cx,cy-1,cz))) continue;
+    setBlock(cx,cy,cz,AIR); mpSendBlock(cx,cy,cz,0); remeshChunkAt(cx,cz);
+  }
+}
+
+/* ---- TNT: a fuse, then confetti ---- */
+const tntFuses = [];                       // {x,y,z,at,spark,mine}
+const TNT_FUSE_MS = 3000;
+function primeTnt(x,y,z,fromNet){
+  if(tntFuses.some(t=>t.x===x && t.y===y && t.z===z)) return;
+  const spark=new THREE.Mesh(new THREE.SphereGeometry(0.1,6,5), new THREE.MeshBasicMaterial({color:0xffe9a8}));
+  spark.position.set(x+0.5, y+1.12, z+0.5); scene.add(spark);
+  tntFuses.push({ x, y, z, at:performance.now()+TNT_FUSE_MS, spark, mine:!fromNet });
+  if(!fromNet && mp.active) mpSend({type:'tnt', x, y, z});   // everyone runs their own fuse off the one message
+}
+function tickTnt(){
+  const now=performance.now();
+  for(let i=tntFuses.length-1;i>=0;i--){
+    const t=tntFuses[i], left=t.at-now;
+    if(left>0){
+      const rate = left<800 ? 90 : left<1800 ? 150 : 280;    // the blink quickens as the fuse burns down
+      t.spark.visible = (now % (rate*2)) < rate;
+      t.spark.scale.setScalar(1 + 0.35*Math.sin(now/70));
+      continue;
+    }
+    scene.remove(t.spark); t.spark.geometry.dispose(); t.spark.material.dispose();
+    if(getBlock(t.x,t.y,t.z)===B.tnt){
+      setBlock(t.x,t.y,t.z,AIR);
+      if(t.mine) mpSendBlock(t.x,t.y,t.z,0);                 // only the player who lit it edits the world
+      remeshChunkAt(t.x,t.z);
+    }
+    confettiBurst(t.x+0.5, t.y+0.6, t.z+0.5);
+    tntFuses.splice(i,1);
+  }
+}
+const CONFETTI_COLORS=[0xff4d6d,0xffd166,0x2fd18b,0x4cc9f0,0xb185ff,0xffffff,0xff9f1c,0x7bd389];
+const confetti=[];
+function confettiBurst(x,y,z,count){
+  const n=count||260;
+  const pos=new Float32Array(n*3), col=new Float32Array(n*3), vel=new Float32Array(n*3);
+  const c=new THREE.Color();
+  for(let i=0;i<n;i++){
+    pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z;
+    const a=Math.random()*Math.PI*2, sp=1.6+Math.random()*5.4;
+    vel[i*3]=Math.cos(a)*sp; vel[i*3+2]=Math.sin(a)*sp;
+    vel[i*3+1]=5.5+Math.random()*7.5;                        // thrown upward, so it rains back down
+    c.setHex(CONFETTI_COLORS[(Math.random()*CONFETTI_COLORS.length)|0]);
+    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(col,3));
+  const pts=new THREE.Points(geo, new THREE.PointsMaterial({ size:0.17, vertexColors:true, transparent:true, depthWrite:false }));
+  scene.add(pts);
+  confetti.push({ pts, vel, t:0, ttl:5.0 });
+}
+function tickConfetti(dt){
+  for(let i=confetti.length-1;i>=0;i--){
+    const c=confetti[i]; c.t+=dt;
+    const attr=c.pts.geometry.attributes.position, a=attr.array, v=c.vel;
+    const side=Math.pow(0.16,dt), up=Math.pow(0.5,dt);       // paper loses its speed quickly
+    for(let j=0;j<a.length;j+=3){
+      v[j+1]-=13*dt; v[j]*=side; v[j+2]*=side; v[j+1]*=up;
+      a[j]+=v[j]*dt; a[j+1]+=v[j+1]*dt; a[j+2]+=v[j+2]*dt;
+    }
+    attr.needsUpdate=true;
+    c.pts.material.opacity = c.t>c.ttl-1.4 ? Math.max(0,(c.ttl-c.t)/1.4) : 1;
+    if(c.t>=c.ttl){ scene.remove(c.pts); c.pts.geometry.dispose(); c.pts.material.dispose(); confetti.splice(i,1); }
+  }
+}
+function clearConfetti(){
+  for(const c of confetti){ scene.remove(c.pts); c.pts.geometry.dispose(); c.pts.material.dispose(); }
+  confetti.length=0;
+  for(const t of tntFuses){ scene.remove(t.spark); t.spark.geometry.dispose(); t.spark.material.dispose(); }
+  tntFuses.length=0;
+}
+
 // a clinging vine takes the wall or ceiling you clicked; it will not stand on a floor
 function placeVine(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
@@ -4279,7 +4753,9 @@ function breakBlock(){
   redTrack(x,y,z);
   popUnsupportedPlants(x,y,z);
   popUnsupportedAttached(x,y,z);
-  popUnsupportedVines(x,y,z);   // a flower rooted in the block just mined pops off
+  popUnsupportedVines(x,y,z);
+  popUnsupportedFire(x,y,z);
+  popPortal(x,y,z);              // a broken frame closes the whole sheet   // a flower rooted in the block just mined pops off
   if(!mp.active){                // keep the shared world static + consistent
     settleColumn(x,z);           // sand/gravel above may now fall
   }
@@ -4291,7 +4767,7 @@ function placeBlock(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   if(py<0 || py>=WH) return;   // never build at or above the world height — those cells are unreachable, so a sign/PRG there becomes an unbreakable ghost
   const id = hotbar[selSlot]; if(!id) return;
-  if(id===STICK_ITEM) return;   // the knockback stick is a tool, not a placeable block
+  if(isItem(id)) return;   // the stick and the flint and steel are tools, not placeable blocks
   if(bw.active){ if(bw.dead) return; if(bwBlockCount(id)<=0) return; }   // bedwars blocks are finite
   const bl = BLOCKS[id];
   if(bl.door){ placeDoor(); return; }                                   // doors place two cells tall
@@ -4518,16 +4994,20 @@ function renderHotbar(){
         s.appendChild(ic);
         if(n!=null && (n>1 || st.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); }
       }
-    } else { const id=hotbar[i]; if(id===STICK_ITEM) s.appendChild(stickIconCanvas(40)); else if(id) s.appendChild(blockIconCanvas(id,40)); }
+    } else { const id=hotbar[i]; if(id===STICK_ITEM) s.appendChild(stickIconCanvas(40)); else if(id===FLINT_ITEM) s.appendChild(flintIconCanvas(40)); else if(id) s.appendChild(blockIconCanvas(id,40)); }
     hotbarEl.appendChild(s);
   }
 }
 // held-item name pops up above the hotbar on select, then fades (like Minecraft)
 const itemNameEl=document.getElementById('itemName');
 let itemNameTimer=null;
+function showBanner(text){ showItemName(0); itemNameEl.textContent=text;
+  itemNameEl.style.transition='none'; itemNameEl.style.opacity='1'; void itemNameEl.offsetWidth;
+  clearTimeout(itemNameTimer);
+  itemNameTimer=setTimeout(()=>{ itemNameEl.style.transition='opacity .55s ease'; itemNameEl.style.opacity='0'; }, 2200); }
 function showItemName(id){
   if(!id){ itemNameEl.style.opacity='0'; return; }
-  itemNameEl.textContent = (id===STICK_ITEM) ? 'Knockback Stick' : (BLOCKS[id].display || pretty(BLOCKS[id].name));
+  itemNameEl.textContent = (id===STICK_ITEM) ? 'Knockback Stick' : (id===FLINT_ITEM) ? 'Flint and Steel' : (BLOCKS[id].display || pretty(BLOCKS[id].name));
   itemNameEl.style.transition='none'; itemNameEl.style.opacity='1';
   void itemNameEl.offsetWidth;                 // restart the fade
   clearTimeout(itemNameTimer);
@@ -4577,7 +5057,8 @@ function catOf(n){
   return 'building';
 }
 // blocks kept in the game (so existing builds are safe) but hidden from the picker
-const HIDDEN_BLOCKS = new Set(['soul_sand','white_stained_clay','chiseled_sandstone','chiseled_stone_bricks']);
+const HIDDEN_BLOCKS = new Set(['fire','nether_portal','soul_sand','white_stained_clay','chiseled_sandstone','chiseled_stone_bricks']);
+const EXTRA_ITEMS=[{ id:30001, name:'Flint and Steel', cat:'misc', icon:(n)=>flintIconCanvas(n) }];
 function renderInvGrid(){
   invGrid.innerHTML='';
   const q=invQuery.trim().toLowerCase();
@@ -4591,6 +5072,14 @@ function renderInvGrid(){
     const c=document.createElement('div'); c.className='icell';
     c.appendChild(blockIconCanvas(id,34)); c.title=disp;
     c.addEventListener('click', ()=>{ hotbar[selSlot]=id; renderHotbar(); showItemName(id); toggleInv(); });
+    invGrid.appendChild(c); shown++;
+  }
+  for(const it of EXTRA_ITEMS){                      // tools sit at the end, alongside the blocks
+    if(q){ if(!it.name.toLowerCase().includes(q)) continue; }
+    else if(invCat!=='all' && invCat!==it.cat) continue;
+    const c=document.createElement('div'); c.className='icell'; c.dataset.name=it.name;
+    c.appendChild(it.icon(34)); c.title=it.name;
+    c.addEventListener('click', ()=>{ hotbar[selSlot]=it.id; renderHotbar(); showItemName(it.id); toggleInv(); });
     invGrid.appendChild(c); shown++;
   }
   if(!shown){ const e=document.createElement('div'); e.style.cssText='grid-column:1/-1;color:#555;font-size:12px;padding:10px;text-align:center'; e.textContent='No blocks match.'; invGrid.appendChild(e); }
@@ -4623,6 +5112,14 @@ let tod = 0.25;   // locked to midday — always daytime for now
 const _dayCol=new THREE.Color(0x88ccff), _nightCol=new THREE.Color(0x05060f), _duskCol=new THREE.Color(0xff8a4d);
 const _sky=new THREE.Color();
 function updateSky(dt){
+  if(dim===1){                      // the nether has no sky: a low red ceiling of fog, lit from nowhere
+    const c=_sky.setHex(0x511a12);
+    scene.background=c; scene.fog.color=c; scene.fog.near=10; scene.fog.far=86;
+    sun.intensity=0.18; ambient.intensity=0.95; hemi.intensity=0.38;
+    sun.position.set(0,100,0);
+    return;
+  }
+  scene.fog.near=34; scene.fog.far=128;
   const daylight = Math.max(0, Math.sin(tod*Math.PI*2 - Math.PI/2)*0.5+0.5); // 0 night .. 1 day
   const sky=_sky.copy(_nightCol).lerp(_dayCol, daylight);
   // dusk/dawn tint
@@ -4660,6 +5157,7 @@ function startGame(){
 function pause(){ state=PAUSE; pauseEl.hidden=false; document.exitPointerLock(); }
 function resume(){ state=PLAY; pauseEl.hidden=true; canvas.requestPointerLock(); }
 function startSingleplayer(){
+  dim=0;
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
   spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
@@ -5086,6 +5584,21 @@ document.getElementById('pmPill').addEventListener('click', e=>{ e.stopPropagati
    the rest set an effect the server stores + relays so everyone sees it. */
 const NAME_BLUE = '#4aa3ff';              // the "leoniscool" code turns your name this colour
 const STICK_ITEM = 30000;                 // hotbar sentinel (well above any real block id) for the knockback stick
+const FLINT_ITEM = 30001;                 // same idea: flint and steel is a tool, not a block
+function isItem(id){ return id===STICK_ITEM || id===FLINT_ITEM; }
+// a steel striker with a wooden grip, a chipped flint below it, and sparks in between
+function flintIconCanvas(size){
+  const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); const u=size/16;
+  const px=(x,y,w,h,col)=>{ g.fillStyle=col; g.fillRect(x*u,y*u,w*u,h*u); };
+  px(5,2,7,2,'#b9bcc4'); px(5,2,7,1,'#e4e7ec');        // the striker's back
+  px(11,3,2,5,'#b9bcc4'); px(12,3,1,5,'#8e939c');      // its hook
+  px(7,4,3,1,'#8e939c');
+  px(3,2,2,6,'#7a5227'); px(3,2,1,6,'#9c6c36'); px(3,7,2,1,'#5a3a18');   // the grip
+  px(5,9,7,5,'#474d54'); px(5,9,7,1,'#6d747c');        // the flint
+  px(6,14,5,1,'#2f343a'); px(7,10,3,2,'#5d646c'); px(9,12,2,1,'#3b4147');
+  px(12,8,1,1,'#ffd15c'); px(13,10,1,1,'#ffa62b'); px(12,12,1,1,'#ffe6a0'); px(14,6,1,1,'#ffc24d');   // sparks
+  return c;
+}
 const fx = { body:'none', color:'', stick:false, hide:false, superStick:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
 let localEyeMul = 1;                      // giant/small change the local camera height a bit
 
@@ -6551,6 +7064,8 @@ function frame(now){
     processQueues(player.pos.x, player.pos.z);
     raycast();
     if(!bw.active) tickRedstone(dt);   // buttons pop out, plates read who is standing on them, power resolves
+    tickTnt(); tickConfetti(dt);   // lit TNT counts down, then throws paper into the air
+    tickPortal(dt);                // standing in a portal takes you to the other world
     updateMobs(dt);
     mpUpdatePlayers(dt);
     if(bw.active) bwFrame(dt);
@@ -6710,6 +7225,27 @@ window.__mc = {
   setAttachAt(x,y,z,m,f){ setAttach(x,y,z,{m:m|0,f:f|0},true); remeshChunkAt(x,z); },
   climbAt(x,y,z){ const b=getBlock(x,y,z); return isClimbable(b); },
   breakAt(x,y,z){ target={x,y,z,nx:0,ny:1,nz:0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; breakBlock(); return getBlock(x,y,z); },
+  // ---- nether / flint and steel test hooks ----
+  dim(){ return dim; }, flintId(){ return FLINT_ITEM; },
+  blockName(id){ return blockName(id); }, flintCanvas(n){ return flintIconCanvas(n); },
+  recordEdit(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); spRecord(x,y,z,b.id); remeshChunkAt(x,z); return true; },
+  save(){ spSave(); },
+  savedBlockAt(d,x,y,z){ const store = (d===dim) ? spEdits : ((spDims[d]&&spDims[d].blocks)||{});
+    return blockName(store[x+','+y+','+z]||0); },
+  giveFlint(){ hotbar[selSlot]=FLINT_ITEM; if(typeof renderHotbar==='function') renderHotbar(); return true; },
+  strikeAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5};
+    const before=hotbar[selSlot]; hotbar[selSlot]=FLINT_ITEM; useFlint(); hotbar[selSlot]=before; return true; },
+  portalAxis(x,y,z){ return portalAxisAt(x,y,z); },
+  tntCount(){ return tntFuses.length; }, confettiCount(){ return confetti.length; },
+  confettiPoints(){ return confetti.reduce((n,c)=>n+c.pts.geometry.attributes.position.count,0); },
+  fastForwardTnt(){ for(const t of tntFuses) t.at=performance.now()-1; tickTnt(); },
+  stepConfetti(dt){ tickConfetti(dt); },
+  travel(){ travelThroughPortal(); return dim; },
+  switchDim(d){ switchDim(d); return dim; },
+  netherFloorAt(x,z){ return netherFloor(x,z); }, netherRoofAt(x,z){ return netherRoof(x,z); },
+  netherBiomeAt(x,z){ return netherBiome(x,z); },
+  skyHex(){ return scene.background && scene.background.getHex ? scene.background.getHex() : 0; },
+  fogRange(){ return [scene.fog.near, scene.fog.far]; },
   onLadder(){ return isOnLadder(); },
   meshTris(x,z,buf){ const c=chunks.get(key(Math.floor(x/CH),Math.floor(z/CH))); if(!c) return 0;
     const m = buf==='cut'?c.cmesh : buf==='tr'?c.tmesh : c.mesh;
