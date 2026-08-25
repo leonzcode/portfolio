@@ -2135,78 +2135,10 @@ function settleColumn(x,z){
   }
 }
 
-/* simple bounded flowing water — spreads down, then sideways up to MAXL steps */
-const waterLvl = new Map();
-let waterQ = [];
+/* Water does not flow: a placed block of water stays exactly where you put it,
+   and the oceans and lakes the terrain generates sit still. `wkey` survives
+   because the sponge still uses it to walk the water it soaks up. */
 const wkey=(x,y,z)=>x+','+y+','+z;
-function enqueueWater(x,y,z,lvl){ if(lvl!==undefined) waterLvl.set(wkey(x,y,z),lvl); waterQ.push([x,y,z]); }
-function touchWaterAround(x,y,z){
-  for(const [dx,dy,dz] of [[0,0,0],[0,1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]])
-    if(getBlock(x+dx,y+dy,z+dz)===B.water) enqueueWater(x+dx,y+dy,z+dz);
-}
-/* ---- multiplayer water: the flow is derived, never stored -----------------
-   The server only ever holds the source block a player placed. Every client
-   then runs the same spread from those sources — the sim has no randomness and
-   processes its queue in waves, so it is a breadth-first flood and everyone
-   lands on the same water. That keeps the server a relay (no simulation, no
-   broadcast storm) and keeps one bucket costing one saved block instead of the
-   ~85 it spreads into. Terrain water — oceans and lakes — is never a source, so
-   it sits still rather than trying to flood the world.                       */
-const waterSrc = new Set();     // "x,y,z" the server knows about; these persist
-const waterDrv = new Set();     // "x,y,z" this client worked out; never sent, never saved
-const MAX_DERIVED = 4000;       // local budget, so a prank bucket can't bog down a phone
-function addWaterSource(x,y,z){ const k=wkey(x,y,z); waterSrc.add(k); waterDrv.delete(k); enqueueWater(x,y,z,0); }
-// a source went away, so the water it fed is no longer trustworthy: wipe what we
-// derived nearby and let whatever sources remain flow back in
-function rewetArea(x,y,z){
-  const R=8;
-  for(const k of [...waterDrv]){
-    const c=k.split(','), cx=+c[0], cy=+c[1], cz=+c[2];
-    if(Math.abs(cx-x)>R || Math.abs(cy-y)>R+6 || Math.abs(cz-z)>R) continue;
-    waterDrv.delete(k); waterLvl.delete(k);
-    if(getBlock(cx,cy,cz)===B.water) setBlock(cx,cy,cz,AIR);   // setBlock dirties the chunk for us
-  }
-  for(const k of waterSrc){
-    const c=k.split(','), cx=+c[0], cy=+c[1], cz=+c[2];
-    if(Math.abs(cx-x)<=R*2 && Math.abs(cy-y)<=R*2 && Math.abs(cz-z)<=R*2) enqueueWater(cx,cy,cz,0);
-  }
-}
-function removeWaterAt(x,y,z){ const k=wkey(x,y,z); waterLvl.delete(k);
-  if(waterSrc.delete(k) || waterDrv.delete(k)) rewetArea(x,y,z); }
-let waterTimer=0, waterSweep=0;
-function tickWater(dt){
-  waterTimer+=dt; if(waterTimer<0.18) return; waterTimer=0;
-  // a source whose chunk hadn't loaded yet fell out of the queue; sweep the ones
-  // near the player back in so the flow fills itself out as you walk around
-  if(mp.active && ++waterSweep>=14){
-    waterSweep=0;
-    const px=player.pos.x, py=player.pos.y, pz=player.pos.z;
-    for(const k of waterSrc){ const c=k.split(',');
-      if(Math.abs(+c[0]-px)<=48 && Math.abs(+c[1]-py)<=48 && Math.abs(+c[2]-pz)<=48) enqueueWater(+c[0],+c[1],+c[2],0);
-    }
-  }
-  const q=waterQ; waterQ=[]; let n=0; const MAXL=6;
-  const derived = mp.active;                       // online, anything we spread is ours alone
-  if(derived && waterDrv.size>=MAX_DERIVED) return;
-  const spread=(nx,ny,nz,lvl)=>{                   // setBlock dirties the chunk; the frame loop remeshes it
-    setBlock(nx,ny,nz,B.water); waterLvl.set(wkey(nx,ny,nz),lvl); enqueueWater(nx,ny,nz);
-    if(derived) waterDrv.add(wkey(nx,ny,nz));      // ours to undo, and never sent to the server
-  };
-  for(const [x,y,z] of q){
-    if(n++>3000) break;
-    if(getBlock(x,y,z)!==B.water) continue;
-    const lvl=waterLvl.get(wkey(x,y,z)) ?? 0;
-    // water washes a flower away, like Minecraft. Online we leave flowers alone and
-    // flow around them: derived water isn't authoritative, so it must not delete
-    // anything the server is holding on to.
-    const wash=(nx,ny,nz)=>{ const b=getBlock(nx,ny,nz);
-      if(isPlant(b)){ if(derived) return false; breakPlant(nx,ny,nz); return true; }
-      return b===AIR; };
-    if(wash(x,y-1,z)){ spread(x,y-1,z,0); continue; }
-    if(lvl<MAXL) for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]])
-      if(wash(x+dx,y,z+dz)) spread(x+dx,y,z+dz,lvl+1);
-  }
-}
 
 /* ============================================================ RENDERER ==== */
 const canvas = document.getElementById('gl');
@@ -3425,7 +3357,7 @@ function absorbWater(x,y,z){
       const nx=cx+dx, ny=cy+dy, nz=cz+dz, k=wkey(nx,ny,nz);
       if(seen.has(k)) continue; seen.add(k);
       if(getBlock(nx,ny,nz)!==B.water) continue;
-      setBlock(nx,ny,nz,AIR); waterLvl.delete(k); mpSendBlock(nx,ny,nz,0);
+      setBlock(nx,ny,nz,AIR); mpSendBlock(nx,ny,nz,0);
       touched.add(Math.floor(nx/CH)+','+Math.floor(nz/CH));
       if(++drank >= SPONGE_MAX) break;
       q.push([nx,ny,nz,d+1]);
@@ -3692,14 +3624,10 @@ function breakBlock(){
   if(isSlab(getBlock(x,y,z))){ slabMeta.delete(dkey(x,y,z)); spRecordSlab(x,y,z,null); }
   if(isSign(getBlock(x,y,z))){ signMeta.delete(dkey(x,y,z)); removeSignObj(x,y,z); spRecordSign(x,y,z,null); }
   if(isPrg(getBlock(x,y,z))){ prgMeta.delete(dkey(x,y,z)); spRecordPrg(x,y,z,null); }
-  const wasWater = getBlock(x,y,z)===B.water;
   setBlock(x,y,z, AIR);
-  waterLvl.delete(wkey(x,y,z));
-  if(mp.active && wasWater) removeWaterAt(x,y,z);
   popUnsupportedPlants(x,y,z);   // a flower rooted in the block just mined pops off
   if(!mp.active){                // keep the shared world static + consistent
     settleColumn(x,z);           // sand/gravel above may now fall
-    touchWaterAround(x,y,z);     // adjacent water may flow into the gap
   }
   mpSendBlock(x,y,z,0);
 }
@@ -3736,12 +3664,9 @@ function placeBlock(){
   if(bl.stairs){ const sf=(facingFromYaw(player.yaw)+2)&3; const top=upperHalfPlacement(py); const m={facing:sf, top}; stairMeta.set(dkey(px,py,pz),m); spRecordStair(px,py,pz,m); if(mp.active) mpSend({type:'stair', x:px, y:py, z:pz, facing:sf, top}); remeshChunkAt(px,pz); }   // low side faces the player; aim high to place it upside-down
   if(bl.model){ const pa=((Math.round(player.yaw/(Math.PI/4))%8)+8)%8; setPrgAng(dkey(px,py,pz),pa); spRecordPrg(px,py,pz,{ang:pa}); if(mp.active) mpSend({type:'prg', x:px, y:py, z:pz, ang:pa}); remeshChunkAt(px,pz); }   // the sphere's face turns toward the placer
   if(!mp.active){                // keep the shared world static + consistent
-    if(id===B.water) enqueueWater(px,py,pz,0);
     if(GRAVITY.has(id)) settleColumn(px,pz);
-    touchWaterAround(px,py,pz);
   }
   mpSendBlock(px,py,pz,id);
-  if(mp.active && !bw.active && id===B.water) addWaterSource(px,py,pz);   // the server holds the source; our client works out the flow
   if(bw.active){ bw.counts[id]=Math.max(0,(bw.counts[id]||0)-1); bwSetHotbar(); }   // one bedwars block spent (rebuild so an empty stack disappears)
 }
 function pickBlock(){ if(target){ const b=getBlock(target.x,target.y,target.z); if(b){ hotbar[selSlot]=b; renderHotbar(); showItemName(b); } } }
@@ -4678,9 +4603,7 @@ function mpHandle(m){
     mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.admin=!!m.admin; mp.spectator=!!m.spectator;
     mp._pwFlow=false; if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;   // joined successfully — close the password prompt
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear();
-    waterSrc.clear(); waterDrv.clear(); waterLvl.clear(); waterQ.length=0;
-    for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]);
-      if(m.blocks[kk]===B.water) waterSrc.add(kk); }   // sources only; the flow is re-derived locally
+    for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
     if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open, hinge:m.doors[kk].hinge}); } }
     if(m.beds) for(const kk in m.beds){ bedMeta.set(kk, {facing:m.beds[kk].facing|0, head:!!m.beds[kk].head}); }   // bed facing + which half has the pillow
@@ -4703,7 +4626,7 @@ function mpHandle(m){
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
   else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z;
-    if(m.b===B.water) addWaterSource(m.x,m.y,m.z); else if(waterSrc.has(dk)||waterDrv.has(dk)) removeWaterAt(m.x,m.y,m.z); if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); if(trapdoorMeta.has(dk)) trapdoorMeta.delete(dk); if(slabMeta.has(dk)) slabMeta.delete(dk); if(potMeta.has(dk)) potMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+    if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); if(trapdoorMeta.has(dk)) trapdoorMeta.delete(dk); if(slabMeta.has(dk)) slabMeta.delete(dk); if(potMeta.has(dk)) potMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
   else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {wall:!!m.wall, ang:(m.ang!=null?m.ang:(m.facing!=null?facingToAng(m.facing):0)), hex:m.hex, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
   else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open, hinge:m.hinge}); } remeshChunkAt(m.x, m.z); }
   else if(m.type==='trapdoor'){ trapdoorMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, open:!!m.open, top:!!m.top}); remeshChunkAt(m.x, m.z); }
@@ -5888,7 +5811,6 @@ function frame(now){
       if(ccx!==lastCX || ccz!==lastCZ){ lastCX=ccx; lastCZ=ccz; ensureChunks(player.pos.x, player.pos.z); } }
     processQueues(player.pos.x, player.pos.z);
     raycast();
-    if(!bw.active) tickWater(dt);        // water is simulated client-side in both modes; online the spread is derived, never stored
     updateMobs(dt);
     mpUpdatePlayers(dt);
     if(bw.active) bwFrame(dt);
@@ -6030,7 +5952,6 @@ window.__mc = {
   // ---- flower / pot / sponge test hooks ----
   atlasUsed(){ return cell; }, atlasMax(){ return ATLAS_COLS*ATLAS_ROWS; },
   clearHand(){ hotbar[selSlot]=0; if(typeof renderHotbar==='function') renderHotbar(); },
-  waterState(){ return { src:waterSrc.size, drv:waterDrv.size, q:waterQ.length, mp:mp.active, bw:bw.active, state:state, PLAY:PLAY, inv:invOpen }; },
   flowerNames(){ return { small:SMALL_FLOWERS.map(f=>f[0]), tall:TALL_FLOWERS.map(f=>f[0]) }; },
   blockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
   potAt(x,y,z){ const p=potMeta.get(dkey(x,y,z)); return p?blockName(p):null; },
@@ -6110,8 +6031,8 @@ window.__mc = {
   set camMode(v){ camMode=v; }, get camMode(){ return camMode; },
   give(name){ if(BLOCKS[name]){ hotbar[selSlot]=BLOCKS[name].id; renderHotbar(); showItemName(BLOCKS[name].id); } },
   place(x,y,z,name){ const id=BLOCKS[name]?BLOCKS[name].id:0; setBlock(x,y,z,id);
-    if(mp.active){ mpSendBlock(x,y,z,id); } else { if(id===B.water) enqueueWater(x,y,z,0); if(GRAVITY.has(id)) settleColumn(x,z); touchWaterAround(x,y,z); } },
-  dig(x,y,z){ setBlock(x,y,z,0); if(mp.active){ mpSendBlock(x,y,z,0); } else { waterLvl.delete(wkey(x,y,z)); settleColumn(x,z); touchWaterAround(x,y,z); } },
+    if(mp.active){ mpSendBlock(x,y,z,id); } else { if(GRAVITY.has(id)) settleColumn(x,z); } },
+  dig(x,y,z){ setBlock(x,y,z,0); if(mp.active){ mpSendBlock(x,y,z,0); } else { settleColumn(x,z); } },
   mpPlayers(){ return [...mp.players.values()].map(p=>({id:p.id,name:p.name,x:+p.x.toFixed(1),y:+p.y.toFixed(1),z:+p.z.toFixed(1)})); },
   name(x,y,z){ const b=getBlock(x,y,z); return b? BLOCKS[b].name : 'air'; },
   hotbar, palette:()=>PALETTE.map(id=>BLOCKS[id].name),
