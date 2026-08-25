@@ -694,7 +694,11 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 5: bed wars ---
 "tnt",
 // --- pass 6: glass panes (clear + 16 stained), appended so existing ids never shift ---
-"glass_pane","white_stained_glass_pane","orange_stained_glass_pane","magenta_stained_glass_pane","light_blue_stained_glass_pane","yellow_stained_glass_pane","lime_stained_glass_pane","pink_stained_glass_pane","gray_stained_glass_pane","light_gray_stained_glass_pane","cyan_stained_glass_pane","purple_stained_glass_pane","blue_stained_glass_pane","brown_stained_glass_pane","green_stained_glass_pane","red_stained_glass_pane","black_stained_glass_pane"];
+"glass_pane","white_stained_glass_pane","orange_stained_glass_pane","magenta_stained_glass_pane","light_blue_stained_glass_pane","yellow_stained_glass_pane","lime_stained_glass_pane","pink_stained_glass_pane","gray_stained_glass_pane","light_gray_stained_glass_pane","cyan_stained_glass_pane","purple_stained_glass_pane","blue_stained_glass_pane","brown_stained_glass_pane","green_stained_glass_pane","red_stained_glass_pane","black_stained_glass_pane",
+// --- pass 7: flowers (cross-model plants), flower pot, wet sponge ---
+"dandelion","poppy","blue_orchid","allium","azure_bluet","red_tulip","orange_tulip","white_tulip","pink_tulip","oxeye_daisy","cornflower","lily_of_the_valley","wither_rose","torchflower","closed_eyeblossom","open_eyeblossom","purpular_flower",
+"sunflower","lilac","rose_bush","peony","pitcher_plant",
+"flower_pot","wet_sponge"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -964,6 +968,212 @@ function slimeTex(seed, baseHex, hiHex){ const r=rng(seed), base=rgb(baseHex||0x
     return [c[0],c[1],c[2], 205]; }; }
 function spongeTex(seed){ const r=rng(seed), base=rgb(0xc6bf4c);
   return (x,y)=>{ if(r()<0.15) return vary(rgb(0x8e8836),12,r); return vary(base,14,r); }; }
+// a sponge that has drunk its fill: darker, greener, with bigger soaked pores
+function wetSpongeTex(seed){ const r=rng(seed), base=rgb(0x8d9440), pore=rgb(0x4f5622);
+  return (x,y)=>{ if(r()<0.22) return vary(pore,10,r); return vary(base,13,r); }; }
+// terracotta flower pot: fired-clay body with a slightly flared rim
+function flowerPotTex(seed){ const r=rng(seed), clay=rgb(0x9c5a3f), rim=rgb(0xb56b4c), dark=rgb(0x7a4430);
+  return (x,y)=>{ if(y<=2) return vary(rim,7,r);            // rim catches the light
+    if(y>=14) return vary(dark,6,r);                        // shadowed foot
+    return vary(clay, r()<0.18?12:6, r); }; }
+/* ---- flowers: hand-drawn 16x16 art for Minecraft-style cross-model plants ----
+   Every flower is drawn by hand rather than recoloured from one blob, so each one
+   reads as itself at a glance the way vanilla's do. '.' is transparent; every other
+   character indexes that plant's own palette. Shared vocabulary:
+     s/k stem + shadow   l leaf   a/b/c petal (main / shade / highlight)
+     y/o centre          w white accent
+   Heads are 8 rows and sit on one of the stem bases below, so the art below is just
+   the part that differs between flowers. */
+const STEM_LEAFY = [
+  '......ss........',
+  '.....lss........',
+  '....llssl.......',
+  '.....lssll......',
+  '......ss........',
+  '......ss........',
+  '......ss........',
+  '................',
+];
+const STEM_THIN = [
+  '......s.........',
+  '.....ls.........',
+  '.....lsl........',
+  '....llsll.......',
+  '.....lsl........',
+  '......s.........',
+  '......s.........',
+  '................',
+];
+const STEM_TALL = [
+  '......s.........',
+  '......s.........',
+  '.....ls.........',
+  '....lls.........',
+  '.....lsl........',
+  '......sl........',
+  '......s.........',
+  '................',
+];
+const GREENS = { s:0x4f8a2e, k:0x3a6b22, l:0x6aa83e };
+function flowerArt(pal, head, stem){ return { pal: Object.assign({}, GREENS, pal), rows: head.concat(stem || STEM_LEAFY) }; }
+// paint a plant's art into an atlas tile; a touch of per-pixel noise keeps big petals from going flat
+function plantTex(art, seed){
+  const pal = {}; for (const ch in art.pal) pal[ch] = rgb(art.pal[ch]);
+  const rows = art.rows, r = rng(seed || 7);
+  const noise = []; for (let i=0;i<256;i++) noise.push((r()*2-1)*8);
+  const cl = v => Math.max(0, Math.min(255, v|0));
+  return (x,y)=>{
+    const row = rows[y]; if(!row) return [0,0,0,0];
+    const ch = row[x]; const c = (ch && ch!=='.') ? pal[ch] : null;
+    if(!c) return [0,0,0,0];
+    const d = noise[(y*16+x)&255];
+    return [cl(c[0]+d), cl(c[1]+d), cl(c[2]+d), 255];
+  };
+}
+// ---- the heads (rows 0-7 of each flower) ----
+const H_POPPY = ['................','......bb........','.....baab.......','....baaaab......','...baaaaaab.....','...baayyaab.....','...bbaaaabb.....','....bbaabb......'];
+const H_DANDELION = ['................','.....yyyy.......','....yaaaay......','...yaaaaaay.....','...yaaaaaay.....','....yaaaay......','.....yyyy.......','......ss........'];
+const H_TULIP = ['................','................','.....b.b........','.....bab........','....baaab.......','....baaab.......','....baaab.......','.....bab........'];
+const H_ALLIUM = ['................','......aa........','.....aabaa......','....abaabaa.....','....aabaaba.....','.....abaab......','......aa........','................'];
+const H_BLUET = ['................','................','....w...w.......','...wyw.wyw......','....w...w.......','.....w.w........','......ww........','......ss........'];
+const H_DAISY = ['................','.....w.w........','....wwwww.......','...wwyyyww......','...wwyyyww......','...wwyyyww......','....wwwww.......','.....w.w........'];
+const H_CORNFLOWER = ['................','....a...a.......','.....aa.aa......','...aaabaaa......','....abbba.......','...aaabaaa......','.....aa.aa......','....a...a.......'];
+const H_ORCHID = ['................','......a.........','.....aca........','....acyca.......','....acyca.......','.....aca........','...a..a.........','..aca.s.........'];
+const H_LILY = ['................','......ss........','...w..ss........','..www.ss........','...w..ss.w......','......ss.www....','......ss..w.....','......ss........'];
+const H_TORCHFLOWER = ['................','......b.........','.....bab........','....bayab.......','...bayyyab......','...bayyyab......','....bayab.......','.....bab........'];
+const H_EYE_CLOSED = ['................','................','......bb........','.....baab.......','.....baab.......','.....baab.......','......bb........','................'];
+const H_EYE_OPEN = ['................','.....a.a........','....aaaaa.......','...aaoooaa......','...aaoyoaa......','...aaoooaa......','....aaaaa.......','.....a.a........'];
+const H_PURPULAR = ['................','......c.........','...a.cac.a......','...aacacaa......','..acaayaaca.....','...aacacaa......','...a.cac.a......','......c.........'];
+// ---- 1-block flowers: name -> [art, stem base] ----
+const SMALL_FLOWERS = [
+  ['dandelion',          { y:0xf0c81c, a:0xffe957 },                     H_DANDELION, STEM_LEAFY],
+  ['poppy',              { a:0xee3a33, b:0xaa1f1a, y:0xffe96a },         H_POPPY,     STEM_LEAFY],
+  ['blue_orchid',        { a:0x2fbdea, c:0x8ae2f7, y:0xfaf28a },         H_ORCHID,    STEM_LEAFY],
+  ['allium',             { a:0xc478e8, b:0x9750bd },                     H_ALLIUM,    STEM_TALL],
+  ['azure_bluet',        { w:0xf2f4ee, y:0xe8d24a },                      H_BLUET,     STEM_LEAFY],
+  ['red_tulip',          { a:0xe63b34, b:0xa32320 },                     H_TULIP,     STEM_THIN],
+  ['orange_tulip',       { a:0xf28f2c, b:0xb5601a },                     H_TULIP,     STEM_THIN],
+  ['white_tulip',        { a:0xf0f2ec, b:0xc2c7bb },                     H_TULIP,     STEM_THIN],
+  ['pink_tulip',         { a:0xf9bad6, b:0xd487a9 },                     H_TULIP,     STEM_THIN],
+  ['oxeye_daisy',        { w:0xf3f5ef, y:0xf0d63f },                     H_DAISY,     STEM_LEAFY],
+  ['cornflower',         { a:0x5a74ee, b:0x3346b4 },                     H_CORNFLOWER,STEM_TALL],
+  ['lily_of_the_valley', { w:0xf4f6f1, s:0x4f8430 },                     H_LILY,      STEM_LEAFY],
+  ['wither_rose',        { a:0x2b2b2b, b:0x141414, y:0x4a4a4a, s:0x2f2f2f, k:0x1c1c1c, l:0x3a3a3a }, H_POPPY, STEM_LEAFY],
+  ['torchflower',        { a:0xf4762b, b:0xb84413, y:0xffd451 },         H_TORCHFLOWER, STEM_LEAFY],
+  ['closed_eyeblossom',  { a:0x8d9aa6, b:0x5f6d7a },                     H_EYE_CLOSED, STEM_LEAFY],
+  ['open_eyeblossom',    { a:0xe08a2b, o:0x3a2a1c, y:0xf2d24a },         H_EYE_OPEN,  STEM_LEAFY],
+  ['purpular_flower',    { a:0x8a5aa8, c:0xc79ce0, y:0xf1e07a },         H_PURPULAR,  STEM_TALL],
+];
+// ---- 2-block flowers: bottom half is a leafy stalk, top half carries the bloom ----
+const TALL_STALK = [
+  '......ss........','.....lsss.......','....llsssl......','.....lsssll.....',
+  '......sss.......','.....lsss.......','......sss.......','.....lsssl......',
+  '......sss.......','......sss.......','....llsss.......','......sssll.....',
+  '......sss.......','......sss.......','......sss.......','................',
+];
+const SUNFLOWER_STALK = [
+  '......ss........','......ss........','.....lss........','....llssll......',
+  '......ssl.......','......ss........','.....lss........','....llss.l......',
+  '......ssll......','......ss........','......ss........','.....lss........',
+  '....llss........','......ss........','......ss........','................',
+];
+const T_SUNFLOWER = [
+  '................',
+  '......yy........',
+  '....yyaayy......',
+  '..yyaaaaaayy....',
+  '..yaaooooaay....',
+  '.yaaoooooooaay..',
+  '.yaaoooooooaay..',
+  '.yaaoooooooaay..',
+  '..yaaooooaay....',
+  '..yyaaaaaayy....',
+  '....yyaayy......',
+  '......yy........',
+  '......ss........',
+  '......ss........',
+  '......ss........',
+  '................',
+];
+const T_LILAC = [
+  '................',
+  '.....a.a.a......',
+  '....aacaaca.....',
+  '...acaaacaaa....',
+  '..aacaaacaaca...',
+  '..acaaacaaaca...',
+  '...aacaaacaa....',
+  '....acaaaca.....',
+  '.....aacaa......',
+  '......aca.......',
+  '.......a........',
+  '......ss........',
+  '......ss........',
+  '......ss........',
+  '......ss........',
+  '................',
+];
+const T_ROSE = [
+  '................',
+  '.....bb.bb......',
+  '....baab.aab....',
+  '...baaabbaaab...',
+  '...baayaayaab...',
+  '...baaabbaaab...',
+  '....baab.aab....',
+  '.....bb..bb.....',
+  '......bab.......',
+  '.....baaab......',
+  '.....baaab......',
+  '......bab.......',
+  '......ss........',
+  '......ss........',
+  '......ss........',
+  '................',
+];
+const T_PEONY = [
+  '................',
+  '.....cc.cc......',
+  '....caaccaac....',
+  '...caaaaaaaac...',
+  '...caayyyyaac...',
+  '...caaaaaaaac...',
+  '....caaccaac....',
+  '.....cc..cc.....',
+  '......cac.......',
+  '.....caaac......',
+  '......cac.......',
+  '......ss........',
+  '......ss........',
+  '......ss........',
+  '......ss........',
+  '................',
+];
+const T_PITCHER = [
+  '................',
+  '......a.........',
+  '.....aca........',
+  '.....aca.a......',
+  '....aacaaca.....',
+  '....aacaacca....',
+  '....aacaacca....',
+  '....aabaabba....',
+  '.....aba.ba.....',
+  '.....aba.ba.....',
+  '......ab........',
+  '......ss........',
+  '......ss........',
+  '......ss........',
+  '......ss........',
+  '................',
+];
+const TALL_FLOWERS = [
+  ['sunflower',     { y:0xf2d02c, a:0xffe95c, o:0x6b4a1e },                        T_SUNFLOWER, SUNFLOWER_STALK],
+  ['lilac',         { a:0xc79ae0, c:0xe8d3f2 },                                    T_LILAC,     TALL_STALK],
+  ['rose_bush',     { a:0xd2312c, b:0x8f1815, y:0xf0d84a },                        T_ROSE,      TALL_STALK],
+  ['peony',         { a:0xefb6d6, c:0xfadcec, y:0xf2e07a },                        T_PEONY,     TALL_STALK],
+  ['pitcher_plant', { a:0x2f9ec4, b:0x1d6b87, c:0x7fd2e8 },                        T_PITCHER,   TALL_STALK],
+];
 function mineralBlock(seed, hex){ const r=rng(seed), base=rgb(hex);
   return (x,y)=>{ let c=vary(base,6,r); if(x===0||y===0) c=c.map(v=>Math.min(255,v*1.15)|0);
     if(x===15||y===15) c=c.map(v=>v*0.85|0); return c; }; }
@@ -1080,6 +1290,15 @@ for(const e of EXTRA){
 // glass panes get their own framed "window" tiles so their inventory icon differs from the solid glass block
 paint('glass_pane', glassPaneTex(9300));
 DYES.forEach(([n,,glass],i)=> paint(n+'_stained_glass_pane', stainedGlassPaneTex(9310+i, glass)));
+// flowers: one tile per small flower, two per tall flower (bloom on top, stalk below)
+SMALL_FLOWERS.forEach(function(f,i){ paint(f[0], plantTex(flowerArt(f[1], f[2], f[3]), 9400+i)); });
+TALL_FLOWERS.forEach(function(f,i){
+  const pal = Object.assign({}, GREENS, f[1]);
+  paint(f[0]+'_top',    plantTex({ pal:pal, rows:f[2] }, 9440+i*2));
+  paint(f[0]+'_bottom', plantTex({ pal:pal, rows:f[3] }, 9441+i*2));
+});
+paint('flower_pot', flowerPotTex(9470));
+paint('wet_sponge', wetSpongeTex(9471));
 // a door texture per wood type — painted directly, NOT via EXTRA, so the EXTRA block
 // loop doesn't also define a plain (non-door) block that shadows the real door block
 WOODS.forEach((w,i)=> paint(w.id+'_door', doorTex(w.plank, 9100+i)));
@@ -1309,6 +1528,13 @@ WOODS.forEach(w=>{
   B[w.id+'_fence']  = def(w.id+'_fence',  { tiles:T(w.id+'_planks'), fence:true,  opaque:false, hex:w.plank });
 });
 B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:false, cutout:true });
+// flowers: Minecraft's cross model — two crossed quads, walk-through, and they pop off
+// if whatever they are rooted in goes away. Small ones can also live in a flower pot.
+SMALL_FLOWERS.forEach(function(f){ B[f[0]] = def(f[0], { tiles:T(f[0]), cross:true, plant:true, pot:true, solid:false, opaque:false, cutout:true }); });
+TALL_FLOWERS.forEach(function(f){ B[f[0]] = def(f[0], { tiles:T(f[0]+'_bottom'), topTile:T(f[0]+'_top'), cross:true, plant:true, tall:true, solid:false, opaque:false, cutout:true }); });
+B.flower_pot = def('flower_pot', { tiles:T('flower_pot'), flowerpot:true, opaque:false });
+const FLOWER_NAMES = new Set(SMALL_FLOWERS.map(f=>f[0]).concat(TALL_FLOWERS.map(f=>f[0])));
+B.wet_sponge = def('wet_sponge', { tiles:T('wet_sponge') });
 // glass panes: thin, see-through panels that connect to neighbours (clear + 16 stained colours)
 B.glass_pane = def('glass_pane', { tiles:T('glass_pane'), pane:true, opaque:false });
 for(const [n] of DYES) B[n+'_stained_glass_pane'] = def(n+'_stained_glass_pane', { tiles:T(n+'_stained_glass_pane'), pane:true, opaque:false });
@@ -1484,9 +1710,34 @@ function trapdoorBoxes(facing, open, top){
 const slabMeta = new Map();   // "x,y,z" -> {top:bool, double:bool}
 let spSlabs = {};
 function isSlab(id){ return !!(id && BLOCKS[id] && BLOCKS[id].slab); }
+// ---- flowers + flower pots ----
+const potMeta = new Map();    // "x,y,z" -> block id planted in that pot (absent = empty pot)
+let spPots = {};
+function isPlant(id){ return !!(id && BLOCKS[id] && BLOCKS[id].plant); }
+function isTallPlant(id){ return !!(id && BLOCKS[id] && BLOCKS[id].tall); }
+function isPot(id){ return !!(id && BLOCKS[id] && BLOCKS[id].flowerpot); }
+function isPottable(id){ return !!(id && BLOCKS[id] && BLOCKS[id].pot); }   // small flowers fit in a pot
+// what a flower will root in — Minecraft's list: grass, the dirts, farmland, moss, mud.
+// (wither roses also take netherrack and soul sand, as in vanilla)
+const FLOWER_SOIL = new Set(['grass','dirt','coarse_dirt','podzol','mycelium','clay','moss_block','mud','packed_mud','rooted_dirt','terracotta','hardened_clay']);
+function canPlantOn(plantId, groundId){
+  if(!groundId || !BLOCKS[groundId]) return false;
+  const n = BLOCKS[groundId].name;
+  if(FLOWER_SOIL.has(n)) return true;
+  if(BLOCKS[plantId] && BLOCKS[plantId].name==='wither_rose') return n==='netherrack' || n==='soul_sand';
+  return false;
+}
+// a plant survives only while it is rooted in something it can grow on
+function plantSupported(x,y,z){
+  const id = getBlock(x,y,z);
+  if(!isPlant(id)) return true;
+  if(isTallPlant(id) && getBlock(x,y-1,z)===id) return true;   // upper half rides on its own lower half
+  return canPlantOn(id, getBlock(x,y-1,z));
+}
 function slabBoxes(top, dbl){ if(dbl) return [[0,1, 0,1, 0,1]]; return [ top ? [0,1, 0.5,1, 0,1] : [0,1, 0,0.5, 0,1] ]; }
 // ---- cushions: a low, soft wool pad (all 16 colours) you can sit/stand on ----
 const CUSHION_H = 5/16;
+const POT_H = 6/16;             // a flower pot is 6 pixels tall, like vanilla's
 function isCushion(id){ return !!(id && BLOCKS[id] && BLOCKS[id].cushion); }
 function cushionBoxes(){ return [ [1/16,15/16, 0,4/16, 1/16,15/16], [2/16,14/16, 4/16,CUSHION_H, 2/16,14/16] ]; }   // puffy pad: body + rounded top
 
@@ -1665,7 +1916,7 @@ let spSeed = seed;               // the singleplayer world's own seed
 let spEdits = {};                // "x,y,z" -> blockId (0 = air) : deviations from the terrain
 let spSaveTimer = null;
 const SP_KEY = 'leoncraft_sp_world';
-function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns, prg: spPrg, trapdoors: spTrapdoors, slabs: spSlabs })); }catch(e){} }
+function spSave(){ try{ localStorage.setItem(SP_KEY, JSON.stringify({ seed: spSeed, blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders, signs: spSigns, prg: spPrg, trapdoors: spTrapdoors, slabs: spSlabs, pots: spPots })); }catch(e){} }
 function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
 function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
 function spRecordDoor(x,y,z,m){   // persist singleplayer door state (m null = removed)
@@ -1695,6 +1946,14 @@ function spRecordTrapdoor(x,y,z,m){
   if(m===null) delete spTrapdoors[k]; else spTrapdoors[k]={f:m.facing, o:m.open?1:0, t:m.top?1:0};
   spScheduleSave();
 }
+function spRecordPot(x,y,z,plantId){   // which flower is sitting in this pot (null = emptied)
+  if(mp.active) return; const k=dkey(x,y,z);
+  if(plantId===null) delete spPots[k]; else spPots[k]={p:blockName(plantId)};
+  spScheduleSave();
+}
+// pots are saved by block NAME, not id, so a saved world keeps its flowers even if ids shift
+function blockName(id){ return (BLOCKS[id] && BLOCKS[id].name) || ''; }
+function blockByName(n){ const b=BLOCKS[n]; return b?b.id:0; }
 function spRecordSlab(x,y,z,m){
   if(mp.active) return; const k=dkey(x,y,z);
   if(m===null) delete spSlabs[k]; else spSlabs[k]={t:m.top?1:0, d:m.double?1:0};
@@ -1728,9 +1987,9 @@ function purgeLiveAbove(){
   return n;
 }
 function spReloadWorld(){         // load the saved singleplayer world into seed + overrides + doors + beds + stairs + ladders
-  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear();
-  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {}; spTrapdoors = {}; spSlabs = {};
-  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; } } }catch(e){}
+  mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear();
+  spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {}; spTrapdoors = {}; spSlabs = {}; spPots = {};
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; spPots=w.pots||{}; } } }catch(e){}
   const purged = purgeSavedAbove();   // clear old ghost blocks stranded above the build limit, then persist the cleanup
   seed=spSeed; noise=makeNoise(seed);
   for(const kk in spEdits){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], spEdits[kk]); }
@@ -1742,6 +2001,7 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   for(const kk in spPrg){ prgMeta.set(kk, {ang:spPrg[kk].a||0}); }   // PRG facings; spheres built when the chunks mesh
   for(const kk in spTrapdoors){ const s=spTrapdoors[kk]; trapdoorMeta.set(kk, {facing:s.f|0, open:!!s.o, top:!!s.t}); }
   for(const kk in spSlabs){ const s=spSlabs[kk]; slabMeta.set(kk, {top:!!s.t, double:!!s.d}); }
+  for(const kk in spPots){ const id=blockByName(spPots[kk].p); if(id) potMeta.set(kk, id); }   // put each pot's flower back
   if(purged) spSave();           // write back the world with the ghost blocks removed
 }
 spReloadWorld();                 // so the menu preview and first session already show your saved world
@@ -1891,9 +2151,11 @@ function tickWater(dt){
     if(n++>3000) break;
     if(getBlock(x,y,z)!==B.water) continue;
     const lvl=waterLvl.get(wkey(x,y,z)) ?? 0;
-    if(getBlock(x,y-1,z)===AIR){ setBlock(x,y-1,z,B.water); waterLvl.set(wkey(x,y-1,z),0); enqueueWater(x,y-1,z); continue; }
+    // water washes a flower away, like Minecraft (the cell then floods as normal)
+    const wash=(nx,ny,nz)=>{ const b=getBlock(nx,ny,nz); if(isPlant(b)){ breakPlant(nx,ny,nz); return true; } return b===AIR; };
+    if(wash(x,y-1,z)){ setBlock(x,y-1,z,B.water); waterLvl.set(wkey(x,y-1,z),0); enqueueWater(x,y-1,z); continue; }
     if(lvl<MAXL) for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]])
-      if(getBlock(x+dx,y,z+dz)===AIR){ setBlock(x+dx,y,z+dz,B.water); waterLvl.set(wkey(x+dx,y,z+dz),lvl+1); enqueueWater(x+dx,y,z+dz); }
+      if(wash(x+dx,y,z+dz)){ setBlock(x+dx,y,z+dz,B.water); waterLvl.set(wkey(x+dx,y,z+dz),lvl+1); enqueueWater(x+dx,y,z+dz); }
   }
 }
 
@@ -1965,6 +2227,28 @@ function pushBox(buf, wx, wy, wz, b, tile){
     for(let i=0;i<4;i++){ const co=F.c[i];
       buf.pos.push(wx+(co[0]?x1:x0), wy+(co[1]?y1:y0), wz+(co[2]?z1:z0));
       buf.uv.push(uvc[i][0],uvc[i][1]); buf.col.push(sh,sh,sh); }
+    buf.idx.push(base,base+1,base+2, base,base+2,base+3);
+  }
+}
+// Minecraft nudges every plant by a hash of its position so a meadow doesn't read as a
+// grid of identical stems. Same idea here: a stable per-cell offset, no randomness.
+function plantOffset(wx, wz){
+  let h = ((wx*3129871) ^ (wz*116129781)) | 0;
+  h = (h*h*60493 + h*19990303) | 0;
+  return [ (((h>>>16)&15)/15 - 0.5) * 0.36, (((h>>>22)&15)/15 - 0.5) * 0.36 ];
+}
+// the "cross" model: two quads crossed in an X. matCutout is double-sided, so one quad each.
+function pushCross(buf, wx, wy, wz, tile, y0, y1, half, jitter){
+  const [u0,v0,u1,v1] = tileUV(tile);
+  const h = half===undefined ? 0.45 : half;
+  const j = jitter===false ? [0,0] : plantOffset(wx, wz);
+  const cx = wx + 0.5 + j[0], cz = wz + 0.5 + j[1];
+  const planes = [ [[cx-h,cz-h],[cx+h,cz+h]], [[cx-h,cz+h],[cx+h,cz-h]] ];
+  for(const [[ax,az],[bx,bz]] of planes){
+    const base = buf.pos.length/3;
+    buf.pos.push(ax, wy+y0, az,  bx, wy+y0, bz,  bx, wy+y1, bz,  ax, wy+y1, az);
+    buf.uv.push(u0,v0, u1,v0, u1,v1, u0,v1);
+    for(let i=0;i<4;i++) buf.col.push(1,1,1);   // plants render unshaded, like vanilla
     buf.idx.push(base,base+1,base+2, base,base+2,base+3);
   }
 }
@@ -2054,6 +2338,27 @@ function buildChunkMesh(c){
       if(conn(wx-1,wz)) pushBox(tr, wx, y, wz, [0,7/16,   0,1, 7/16,9/16], ptile);
       if(conn(wx,wz+1)) pushBox(tr, wx, y, wz, [7/16,9/16, 0,1, 9/16,1  ], ptile);
       if(conn(wx,wz-1)) pushBox(tr, wx, y, wz, [7/16,9/16, 0,1, 0,7/16  ], ptile);
+      continue;
+    }
+    if (bl.cross){                             // flowers + other plants: crossed quads, no cube faces
+      let ctile = (typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
+      if (bl.tall && getBlock(wx, y-1, wz) === id) ctile = bl.topTile;   // upper half carries the bloom
+      pushCross(cut, wx, y, wz, ctile, 0, 1);
+      continue;
+    }
+    if (bl.flowerpot){                         // terracotta pot: four thin walls + a floor, 6px tall
+      const ptile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
+      pushBox(op, wx, y, wz, [5/16,11/16, 0,1/16,  5/16,11/16], ptile);    // floor
+      pushBox(op, wx, y, wz, [5/16,6/16,  0,6/16,  5/16,11/16], ptile);    // -x wall
+      pushBox(op, wx, y, wz, [10/16,11/16,0,6/16,  5/16,11/16], ptile);    // +x wall
+      pushBox(op, wx, y, wz, [6/16,10/16, 0,6/16,  5/16,6/16 ], ptile);    // -z wall
+      pushBox(op, wx, y, wz, [6/16,10/16, 0,6/16, 10/16,11/16], ptile);    // +z wall
+      const held = potMeta.get(dkey(wx,y,wz));
+      if(held && BLOCKS[held]){
+        pushBox(op, wx, y, wz, [6/16,10/16, 1/16,5/16, 6/16,10/16], T('dirt'));   // soil it's planted in
+        const pb = BLOCKS[held];
+        pushCross(cut, wx, y, wz, (typeof pb.tiles==='number'?pb.tiles:pb.tiles[1]), 5/16, 17/16, 0.27, false);
+      }
       continue;
     }
     if (bl.sign){ continue; }                  // signs render as separate rotatable 3D objects (see updateSignObj)
@@ -2620,6 +2925,7 @@ function useAction(){
     if(isBed(tb)){ sleepInBed(target.x,target.y,target.z); return; }
     if(isCushion(tb)){ sitOnCushion(target.x,target.y,target.z); return; }      // right-click a cushion to sit on it
     if(isSign(tb)){ openSignEditor(target.x,target.y,target.z); return; }
+    if(isPot(tb)){ usePot(target.x,target.y,target.z); return; }   // plant into / empty out a flower pot
   }
   placeBlock();
 }
@@ -2755,6 +3061,10 @@ function collides(px,py,pz){
         if(sm && !sm.double){ const yb=sm.top?y+0.5:y, yt=sm.top?y+1:y+0.5; if(py+player.h<=yb || py>=yt) continue; }
       }
       if(BLOCKS[b].cushion){ if(py>=y+CUSHION_H) continue; }   // a cushion is a low pad; stand on top of it
+      if(BLOCKS[b].flowerpot){                                  // a pot is a small 6x6x6 obstacle, not a full cube
+        if(py>=y+POT_H) continue;
+        if(!(px+w>x+5/16 && px-w<x+11/16 && pz+w>z+5/16 && pz-w<z+11/16)) continue;
+      }
       return true;
     }
   }
@@ -2992,6 +3302,107 @@ function breakDoor(x,y,z){
   for(let h=0;h<2;h++){ setBlock(x,by+h,z,AIR); doorMeta.delete(dkey(x,by+h,z)); mpSendBlock(x,by+h,z,0); spRecordDoor(x,by+h,z,null); }
   remeshChunkAt(x,z);
 }
+// plant a flower: it needs soil under it, and a tall one needs two free cells
+function placePlant(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id=hotbar[selSlot];
+  if(getBlock(px,py,pz)!==AIR) return;
+  if(!canPlantOn(id, getBlock(px,py-1,pz))) return;
+  const tall = isTallPlant(id);
+  if(tall && (py+1>=WH || getBlock(px,py+1,pz)!==AIR)) return;
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+  if(tall){ setBlock(px,py+1,pz,id); mpSendBlock(px,py+1,pz,id); }
+  remeshChunkAt(px,pz);
+}
+// breaking either half of a tall flower takes the whole plant
+function breakPlant(x,y,z){
+  const id=getBlock(x,y,z);
+  const cells=[[x,y,z]];
+  if(isTallPlant(id)){
+    if(getBlock(x,y+1,z)===id) cells.push([x,y+1,z]);
+    if(getBlock(x,y-1,z)===id) cells.push([x,y-1,z]);
+  }
+  for(const [cx,cy,cz] of cells){ setBlock(cx,cy,cz,AIR); mpSendBlock(cx,cy,cz,0); }
+  remeshChunkAt(x,z);
+}
+// a flower whose soil just went away pops off, exactly like Minecraft
+function popUnsupportedPlants(x,y,z){
+  for(let i=1;i<=2;i++){
+    const id=getBlock(x,y+i,z);
+    if(!isPlant(id)) break;
+    if(plantSupported(x,y+i,z)) break;
+    breakPlant(x,y+i,z);
+  }
+  const potHere=getBlock(x,y+1,z);   // a pot needs something under it too
+  if(isPot(potHere) && !isPotFooting(getBlock(x,y,z))) breakPot(x,y+1,z);
+}
+function isPotFooting(id){ return !!(id && BLOCKS[id] && BLOCKS[id].solid && id!==B.water); }
+function placePot(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  if(getBlock(px,py,pz)!==AIR) return;
+  if(!isPotFooting(getBlock(px,py-1,pz))) return;   // pots need to stand on something
+  const id=hotbar[selSlot];
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+  remeshChunkAt(px,pz);
+}
+function breakPot(x,y,z){
+  potMeta.delete(dkey(x,y,z)); spRecordPot(x,y,z,null);
+  if(mp.active) mpSend({type:'pot', x, y, z, plant:''});
+  setBlock(x,y,z,AIR); mpSendBlock(x,y,z,0); remeshChunkAt(x,z);
+}
+// right-click a pot: plant what you're holding, or take back what's already in it
+function usePot(x,y,z){
+  const k=dkey(x,y,z), held=hotbar[selSlot], inPot=potMeta.get(k);
+  if(inPot){ potMeta.delete(k); spRecordPot(x,y,z,null); if(mp.active) mpSend({type:'pot', x, y, z, plant:''}); showItemName(inPot); }
+  else {
+    if(!isPottable(held)) return;      // only the small flowers fit
+    potMeta.set(k, held); spRecordPot(x,y,z,held); if(mp.active) mpSend({type:'pot', x, y, z, plant:blockName(held)});
+  }
+  remeshChunkAt(x,z);
+}
+// ---- sponges ----
+// Minecraft's numbers exactly: a dry sponge drinks every water block it can reach within
+// a taxicab radius of 7, up to 65 of them, then turns wet. A wet sponge dries back out on
+// netherrack, the way it does the moment you carry one into the Nether.
+const SPONGE_REACH = 7, SPONGE_MAX = 65;
+function absorbWater(x,y,z){
+  const seen = new Set([wkey(x,y,z)]);
+  const q = [[x,y,z,0]];
+  let drank = 0, touched = new Set();
+  while(q.length && drank < SPONGE_MAX){
+    const [cx,cy,cz,d] = q.shift();
+    if(d >= SPONGE_REACH) continue;
+    for(const [dx,dy,dz] of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]){
+      const nx=cx+dx, ny=cy+dy, nz=cz+dz, k=wkey(nx,ny,nz);
+      if(seen.has(k)) continue; seen.add(k);
+      if(getBlock(nx,ny,nz)!==B.water) continue;
+      setBlock(nx,ny,nz,AIR); waterLvl.delete(k); mpSendBlock(nx,ny,nz,0);
+      touched.add(Math.floor(nx/CH)+','+Math.floor(nz/CH));
+      if(++drank >= SPONGE_MAX) break;
+      q.push([nx,ny,nz,d+1]);
+    }
+  }
+  for(const ck of touched){ const c=ck.split(','); remeshChunkAt(+c[0]*CH, +c[1]*CH); }
+  return drank;
+}
+function nextToNetherrack(x,y,z){
+  for(const [dx,dy,dz] of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]])
+    if(getBlock(x+dx,y+dy,z+dz)===B.netherrack) return true;
+  return false;
+}
+function placeSponge(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const cur=getBlock(px,py,pz);
+  if(cur!==AIR && !(BLOCKS[cur] && BLOCKS[cur].liquid)) return;
+  let id=hotbar[selSlot];
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+  if(id===B.sponge){
+    if(absorbWater(px,py,pz)>0){ id=B.wet_sponge; setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id); showItemName(id); }
+  } else if(id===B.wet_sponge && nextToNetherrack(px,py,pz)){
+    id=B.sponge; setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id); showItemName(id);   // wrung out by the heat
+  }
+  remeshChunkAt(px,pz);
+}
 function placeTrapdoor(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   const id=hotbar[selSlot];
@@ -3224,6 +3635,8 @@ function breakBlock(){
   if(bw.active) return;   // Bed Wars breaks blocks on a hold-timer (bwMineTick); the left-click press only punches
   if(isDoor(getBlock(x,y,z))){ breakDoor(x,y,z); return; }   // breaking either half removes the whole door
   if(isBed(getBlock(x,y,z))){ breakBed(x,y,z); return; }     // breaking either cell removes the whole bed
+  if(isPlant(getBlock(x,y,z))){ breakPlant(x,y,z); return; } // a tall flower comes out whole
+  if(isPot(getBlock(x,y,z))){ breakPot(x,y,z); return; }     // takes the pot and whatever was in it
   if(isStair(getBlock(x,y,z))){ stairMeta.delete(dkey(x,y,z)); spRecordStair(x,y,z,null); }
   if(isLadder(getBlock(x,y,z))){ ladderMeta.delete(dkey(x,y,z)); spRecordLadder(x,y,z,null); }
   if(isTrapdoor(getBlock(x,y,z))){ trapdoorMeta.delete(dkey(x,y,z)); spRecordTrapdoor(x,y,z,null); }
@@ -3232,6 +3645,7 @@ function breakBlock(){
   if(isPrg(getBlock(x,y,z))){ prgMeta.delete(dkey(x,y,z)); spRecordPrg(x,y,z,null); }
   setBlock(x,y,z, AIR);
   waterLvl.delete(wkey(x,y,z));
+  popUnsupportedPlants(x,y,z);   // a flower rooted in the block just mined pops off
   if(!mp.active){                // keep the shared world static + consistent
     settleColumn(x,z);           // sand/gravel above may now fall
     touchWaterAround(x,y,z);     // adjacent water may flow into the gap
@@ -3253,6 +3667,9 @@ function placeBlock(){
   if(bl.bed){ placeBed(); return; }                                     // beds place two cells long
   if(bl.ladder){ placeLadder(); return; }                               // ladders mount on a wall
   if(bl.sign){ placeSign(); return; }                                   // signs open a text editor on placement
+  if(bl.cross){ placePlant(); return; }                                 // flowers root in soil (tall ones take two cells)
+  if(bl.flowerpot){ placePot(); return; }                               // a pot needs a surface to stand on
+  if(id===B.sponge || id===B.wet_sponge){ placeSponge(); return; }      // a dry sponge drinks the water around it
   if(bl.spawnEgg){ spawnMob(px+0.5, py, pz+0.5, bl.mobType); return; }   // egg spawns a creature
   const cur=getBlock(px,py,pz);
   // place into air, or into water (which removes the water)
@@ -3443,6 +3860,7 @@ const CATS=[
   {id:'misc',label:'Misc'},
 ];
 function catOf(n){
+  if(FLOWER_NAMES.has(n) || n==='flower_pot') return 'nature';   // flowers live with the plants
   if(n==='glass_pane') return 'deco';
   if(n.endsWith('_stained_glass_pane')) return 'color';
   if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')||n.endsWith('_cushion')||n.endsWith('_carpet')
@@ -4207,7 +4625,7 @@ function mpHandle(m){
   if(m.type==='init'){
     mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.admin=!!m.admin; mp.spectator=!!m.spectator;
     mp._pwFlow=false; if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;   // joined successfully — close the password prompt
-    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear();
+    mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear();
     for(const kk in m.blocks){ const c=kk.split(','); mpSetOverride(+c[0],+c[1],+c[2], m.blocks[kk]); }
     if(m.signs) for(const kk in m.signs){ const s=m.signs[kk]; signMeta.set(kk, {wall:!!s.wall, ang:(s.ang!=null?s.ang:(s.facing!=null?facingToAng(s.facing):0)), hex:s.hex, lines:s.lines||['','','','']}); }   // objects rebuilt in startGame
     if(m.doors) for(const kk in m.doors){ const c=kk.split(','); const by=+c[1]; for(let h=0;h<2;h++){ doorMeta.set(c[0]+','+(by+h)+','+c[2], {facing:m.doors[kk].facing, open:!!m.doors[kk].open, hinge:m.doors[kk].hinge}); } }
@@ -4217,6 +4635,7 @@ function mpHandle(m){
     if(m.prg) for(const kk in m.prg){ prgMeta.set(kk, {ang:m.prg[kk].ang|0}); }   // PRG facings; spheres built when chunks mesh
     if(m.trapdoors) for(const kk in m.trapdoors){ const s=m.trapdoors[kk]; trapdoorMeta.set(kk, {facing:s.facing|0, open:!!s.open, top:!!s.top}); }
     if(m.slabs) for(const kk in m.slabs){ const s=m.slabs[kk]; slabMeta.set(kk, {top:!!s.top, double:!!s.double}); }
+    if(m.pots) for(const kk in m.pots){ const id=blockByName(m.pots[kk].plant); if(id) potMeta.set(kk, id); }   // flower pots and what's planted in them
     purgeLiveAbove();   // never render ghost blocks a server may still hold above the build limit
     mpClearPlayers();
     mpStartWorld(m.seed);
@@ -4229,11 +4648,12 @@ function mpHandle(m){
   else if(m.type==='join'){ mpAddPlayer(m.player); }
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
-  else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); if(trapdoorMeta.has(dk)) trapdoorMeta.delete(dk); if(slabMeta.has(dk)) slabMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
+  else if(m.type==='block'){ const dk=m.x+','+m.y+','+m.z; if(m.b===0){ if(signMeta.has(dk)){ signMeta.delete(dk); removeSignObj(m.x,m.y,m.z); } if(doorMeta.has(dk)) doorMeta.delete(dk); if(bedMeta.has(dk)) bedMeta.delete(dk); if(stairMeta.has(dk)) stairMeta.delete(dk); if(ladderMeta.has(dk)) ladderMeta.delete(dk); if(prgMeta.has(dk)) prgMeta.delete(dk); if(trapdoorMeta.has(dk)) trapdoorMeta.delete(dk); if(slabMeta.has(dk)) slabMeta.delete(dk); if(potMeta.has(dk)) potMeta.delete(dk); } mpApplyRemoteBlock(m.x,m.y,m.z,m.b); }
   else if(m.type==='sign'){ const k=m.x+','+m.y+','+m.z; signMeta.set(k, {wall:!!m.wall, ang:(m.ang!=null?m.ang:(m.facing!=null?facingToAng(m.facing):0)), hex:m.hex, lines:m.lines||['','','','']}); updateSignObj(m.x,m.y,m.z); }
   else if(m.type==='door'){ const by=m.y|0; for(let h=0;h<2;h++){ doorMeta.set(m.x+','+(by+h)+','+m.z, {facing:m.facing|0, open:!!m.open, hinge:m.hinge}); } remeshChunkAt(m.x, m.z); }
   else if(m.type==='trapdoor'){ trapdoorMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, open:!!m.open, top:!!m.top}); remeshChunkAt(m.x, m.z); }
   else if(m.type==='slab'){ slabMeta.set(m.x+','+m.y+','+m.z, {top:!!m.top, double:!!m.double}); remeshChunkAt(m.x, m.z); }
+  else if(m.type==='pot'){ const k=m.x+','+m.y+','+m.z; const id=blockByName(m.plant); if(id) potMeta.set(k,id); else potMeta.delete(k); remeshChunkAt(m.x, m.z); }
   else if(m.type==='prg'){ setPrgAng(m.x+','+m.y+','+m.z, m.ang|0); }
   else if(m.type==='bed'){ bedMeta.set(m.fx+','+m.fy+','+m.fz, {facing:m.facing|0, head:false}); bedMeta.set(m.hx+','+m.fy+','+m.hz, {facing:m.facing|0, head:true}); remeshChunkAt(m.fx,m.fz); remeshChunkAt(m.hx,m.hz); }
   else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, top:!!m.top}); remeshChunkAt(m.x,m.z); }
@@ -5552,6 +5972,19 @@ window.__mc = {
   putBlock(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); remeshChunkAt(x,z); return true; },
   giveBlock(name){ const b=BLOCKS[name]; if(!b) return false; hotbar[selSlot]=b.id; if(typeof renderHotbar==='function') renderHotbar(); return true; },
   useAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; useAction(); return true; },
+  // ---- flower / pot / sponge test hooks ----
+  atlasUsed(){ return cell; }, atlasMax(){ return ATLAS_COLS*ATLAS_ROWS; },
+  clearHand(){ hotbar[selSlot]=0; if(typeof renderHotbar==='function') renderHotbar(); },
+  flowerNames(){ return { small:SMALL_FLOWERS.map(f=>f[0]), tall:TALL_FLOWERS.map(f=>f[0]) }; },
+  blockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
+  potAt(x,y,z){ const p=potMeta.get(dkey(x,y,z)); return p?blockName(p):null; },
+  breakAt(x,y,z){ target={x,y,z,nx:0,ny:1,nz:0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; breakBlock(); },
+  tileOf(name){ return tileIndex[name]; },
+  tilePixel(name,px,py){ const t=tileIndex[name]; if(t===undefined) return null;
+    const ox=(t%ATLAS_COLS)*TILE, oy=((t/ATLAS_COLS)|0)*TILE; const d=actx.getImageData(ox+px,oy+py,1,1).data; return [d[0],d[1],d[2],d[3]]; },
+  crossVerts(x,y,z){ const c=chunks.get(key(Math.floor(x/CH),Math.floor(z/CH))); return c&&c.cmesh?c.cmesh.geometry.attributes.position.count:0; },
+  waterCount(x,y,z,r){ let n=0; for(let dy=-r;dy<=r;dy++)for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++) if(getBlock(x+dx,y+dy,z+dz)===B.water) n++; return n; },
+  fillWater(x,y,z,w,h,d){ for(let dy=0;dy<h;dy++)for(let dz=0;dz<d;dz++)for(let dx=0;dx<w;dx++){ setBlock(x+dx,y+dy,z+dz,B.water); } remeshChunkAt(x,z); },
   collidesAt(px,py,pz){ return collides(px,py,pz); },
   setView(yaw,pitch){ player.yaw=yaw; player.pitch=pitch||0; },
   spKeyName(){ return SP_KEY; }, reloadWorld(){ spReloadWorld(); },
