@@ -326,6 +326,23 @@
   .srvBtn{ font-family:inherit; font-size:12.5px; color:#fff; padding:7px 11px; cursor:pointer; white-space:nowrap;
     text-shadow:1px 1px 0 rgba(0,0,0,.5); background:#7a7a7a; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
   .srvBtn:hover{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
+  .btn-news{ background:#6a7f52; border-color:#a6c481 #2c3a20 #2c3a20 #a6c481; }
+  .btn-news:hover{ background:#7d9a5e; border-color:#c2e09a #2c3a20 #2c3a20 #c2e09a; }
+  .newTag{ font-size:11px; color:#ffec4d; text-shadow:2px 2px 0 rgba(0,0,0,.5); margin-left:8px; letter-spacing:1px; }
+  .updList{
+    width:min(680px, 92vw); max-height:56vh; overflow-y:auto; margin:14px 0 20px;
+    display:flex; flex-direction:column; gap:8px; padding-right:4px;
+  }
+  .updRow{
+    display:flex; align-items:flex-start; gap:12px; padding:10px 12px; text-align:left;
+    background:#6f6f6f; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9;
+  }
+  .updRow canvas, .updRow img{
+    width:32px; height:32px; flex:0 0 32px; image-rendering:pixelated;
+    background:#585858; border:2px solid; border-color:#333 #a9a9a9 #a9a9a9 #333;
+  }
+  .updRow .ut{ font-size:14px; color:#ffec4d; text-shadow:2px 2px 0 rgba(0,0,0,.5); margin-bottom:3px; }
+  .updRow .ub{ font-size:12.5px; line-height:1.5; color:#e6e6e6; text-shadow:1px 1px 0 rgba(0,0,0,.45); }
   .srvNote{ font-size:12.5px; min-height:16px; color:#ffec4d; text-align:center; text-shadow:1px 1px 0 rgba(0,0,0,.5); }
   .createWrap{ display:flex; gap:22px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
   .createLeft{ display:flex; flex-direction:column; gap:10px; width:300px; max-width:84vw; }
@@ -402,6 +419,7 @@
   <div class="menuButtons">
     <button class="btn" id="playBtn">Singleplayer</button>
     <button class="btn" id="mpBtn">Multiplayer</button>
+    <button class="btn btn-news" id="updatesBtn" hidden>What&rsquo;s New <span class="newTag">NEW</span></button>
     <div class="menuDivider"></div>
     <div class="btnRow">
       <button class="btn half" id="skinBtn">Skin&hellip;</button>
@@ -426,6 +444,14 @@
     <button class="btn" id="ctrlResetBtn">Reset to default</button>
     <button class="btn" id="ctrlDoneBtn">Done</button>
   </div>
+</div>
+
+<!-- Updates: shown on the main menu for 24 hours after a release, then it hides itself -->
+<div class="screen" id="updates" hidden>
+  <div class="title" style="font-size:32px;">What&rsquo;s New</div>
+  <div class="ctrlHint" id="updWhen">Posted just now</div>
+  <div class="updList" id="updList"></div>
+  <button class="btn" id="updBack">Back</button>
 </div>
 
 <div class="screen" id="servers" hidden>
@@ -3299,7 +3325,7 @@ addEventListener('keydown', e=>{
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(updatesEl && !updatesEl.hidden){ closeUpdates(); } else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false;
   const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
@@ -4377,6 +4403,7 @@ function toMenu(){
   chatOpen=false; chatBox.hidden=true; chatLogEl.classList.remove('up');
   if(pollScreenEl) pollScreenEl.hidden=true; pollBlocking=false;
   if(pollMiniEl) pollMiniEl.hidden=true;
+  if(typeof updatesEl!=='undefined' && updatesEl) updatesEl.hidden=true;
   if(typeof serversEl!=='undefined' && serversEl) serversEl.hidden=true;
   if(typeof createServerEl!=='undefined' && createServerEl) createServerEl.hidden=true;
   if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;
@@ -5137,6 +5164,68 @@ function mpStartWorld(serverSeed){
 function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi(); mpConnect(); }
 
 /* ================= server browser: pick / create / join a server ================= */
+/* ====================== WHAT'S NEW =========================================
+   A short changelog on the main menu, written in my own voice. It shows for a
+   day after a release and then takes itself down, so the menu doesn't collect
+   stale notices. Each line gets the actual in-game texture of the thing it
+   describes, drawn straight from the atlas.                                  */
+let UPDATE_POSTED = Date.parse('2026-08-25T05:10:00Z');     // when this batch went live
+const UPDATE_WINDOW = 24*60*60*1000;
+function updatesAreFresh(){ const d = Date.now() - UPDATE_POSTED; return d >= 0 && d < UPDATE_WINDOW; }
+const UPDATES = [
+  ['poppy', 'Every flower', "I added all of Minecraft's flowers, twenty-three of them, plus a purpular bloom of my own. Each one takes root only in soil, and it breaks the moment you mine the block holding it up."],
+  ['flower_pot', 'Flower pots', "I added flower pots. Right-click one while holding a small flower to plant it, and right-click again to take it back out."],
+  ['redstone_dust', 'Redstone', "I built redstone from scratch. Wire carries a signal up to fifteen blocks and weakens as it travels, and a redstone torch burns until the block it is fixed to receives power, which is what lets you invert a signal."],
+  ['stone', 'Buttons and plates', "I added buttons and pressure plates in all seven woods, purpular included, along with the stone pair. They open doors and trapdoors and switch lamps on."],
+  ['torch_flame', 'Torches', "I added torches, both ordinary and redstone. They mount on the top, the underside, or the wall of a block, and they remember which surface you put them on."],
+  ['campfire_flame', 'Campfires', "I added campfires: four logs stacked in a cross with a fire sitting in them. You stand on the logs rather than sinking into an invisible cube."],
+  ['sponge', 'Sponges that work', "I made sponges do their job. A dry one drinks every water block within seven of it and turns wet, and setting it against netherrack wrings it out again."],
+  ['red_stained_glass_pane', 'Glass panes', "I added glass panes in clear and all sixteen dyed colours. They join up with their neighbours instead of floating as separate slabs."],
+  ['oak_door', 'Doors with hinges', "I gave doors proper hinges. Where you click decides which side the door swings from, so two placed side by side form a real double door."],
+  ['SKIN', 'Slim skins', "I added slim skins. An Alex-style skin now renders with three-pixel arms, which clears up the seam that used to run down the back."],
+  ['glass', 'Spectating', "I let you into a private server without its password as a spectator. You can look around and talk, but you cannot build, break, or fight."],
+  ['oak_planks', 'Sneak to build', "I made the sneak key override a block's own behaviour, so you can stack a trapdoor or build against a door instead of opening it."],
+  ['water', 'Still water', "I took flowing water out. A block of water now stays exactly where you put it."],
+];
+// draw one 16x16 texture from the atlas, scaled up, so the icon is the real thing
+function tileIcon(tileName, size){
+  const cv=document.createElement('canvas'); cv.width=cv.height=size;
+  const g=cv.getContext('2d'); g.imageSmoothingEnabled=false;
+  const t=tileIndex[tileName];
+  if(t===undefined){                      // no such texture: draw Minecraft's missing-texture check
+    g.fillStyle='#000'; g.fillRect(0,0,size,size);
+    g.fillStyle='#f0f'; const h=size/2; g.fillRect(0,0,h,h); g.fillRect(h,h,h,h);
+    console.error('updates: no texture named', tileName);
+    return cv;
+  }
+  const ox=(t%ATLAS_COLS)*TILE, oy=((t/ATLAS_COLS)|0)*TILE;
+  g.drawImage(atlasCanvas, ox, oy, TILE, TILE, 0, 0, size, size);
+  return cv;
+}
+const updatesEl=document.getElementById('updates'), updatesBtn=document.getElementById('updatesBtn');
+function buildUpdates(){
+  const list=document.getElementById('updList'); list.innerHTML='';
+  for(const [icon, head, body] of UPDATES){
+    const row=document.createElement('div'); row.className='updRow';
+    if(icon==='SKIN'){ const im=document.createElement('img'); im.src=selfHeadURL||defaultHeadURL; im.alt=''; row.appendChild(im); }
+    else row.appendChild(tileIcon(icon, 32));
+    const txt=document.createElement('div');
+    const h=document.createElement('div'); h.className='ut'; h.textContent=head;
+    const b=document.createElement('div'); b.className='ub'; b.textContent=body;
+    txt.append(h,b); row.appendChild(txt);
+    list.appendChild(row);
+  }
+  const hrs=Math.max(0, Math.round((UPDATE_POSTED+UPDATE_WINDOW-Date.now())/3600000));
+  document.getElementById('updWhen').textContent = hrs>1 ? ('This board comes down in about '+hrs+' hours') : 'This board comes down within the hour';
+}
+function openUpdates(){ buildUpdates(); updatesEl.hidden=false; menuEl.hidden=true; }
+function closeUpdates(){ updatesEl.hidden=true; menuEl.hidden=false; }
+function refreshUpdatesBtn(){ if(updatesBtn) updatesBtn.hidden = !updatesAreFresh(); }
+updatesBtn.addEventListener('click', openUpdates);
+document.getElementById('updBack').addEventListener('click', closeUpdates);
+refreshUpdatesBtn();
+setInterval(refreshUpdatesBtn, 60000);   // takes itself down once the day is up
+
 const serversEl=document.getElementById('servers'), srvListEl=document.getElementById('srvList'), srvNoteEl=document.getElementById('srvNote'), srvSearchEl=document.getElementById('srvSearch');
 if(srvSearchEl){ srvSearchEl.addEventListener('input', ()=>renderServerList()); srvSearchEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ srvSearchEl.value=''; renderServerList(); srvSearchEl.blur(); } }); }
 function serversNote(msg){ if(srvNoteEl){ srvNoteEl.textContent=msg||''; } }
@@ -6394,6 +6483,15 @@ window.__mc = {
   // ---- flower / pot / sponge test hooks ----
   atlasUsed(){ return cell; }, atlasMax(){ return ATLAS_COLS*ATLAS_ROWS; },
   clearHand(){ hotbar[selSlot]=0; if(typeof renderHotbar==='function') renderHotbar(); },
+  // ---- what's-new board test hooks ----
+  updState(){ return { fresh:updatesAreFresh(), btnHidden:updatesBtn.hidden, pageHidden:updatesEl.hidden,
+    rows:document.querySelectorAll('#updList .updRow').length,
+    heads:[...document.querySelectorAll('#updList .ut')].map(e=>e.textContent),
+    bodies:[...document.querySelectorAll('#updList .ub')].map(e=>e.textContent),
+    icons:[...document.querySelectorAll('#updList .updRow')].map(r=>!!r.querySelector('canvas,img')),
+    when:document.getElementById('updWhen').textContent }; },
+  updSetAge(hoursAgo){ UPDATE_POSTED = Date.now() - hoursAgo*3600000; refreshUpdatesBtn(); return updatesAreFresh(); },
+  updOpen(){ openUpdates(); }, updClose(){ closeUpdates(); },
   // ---- redstone test hooks ----
   redAt(x,y,z){ const k=dkey(x,y,z); return { block:blockName(getBlock(x,y,z)), on:redOn.has(k), power:dustPower.get(k)||0,
     lit:litTorch.has(k), lamp:lampLit.has(k), attach:attachMeta.get(k)||null }; },
