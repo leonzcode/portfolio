@@ -334,6 +334,25 @@
   .csRow .btn{ width:auto; flex:1; padding:9px 0; }
   .btn.on{ background:#5a8f5a; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; }
   .createRight{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .csReason{ height:auto; resize:none; font:inherit; font-size:13px; line-height:1.35; padding:8px 10px; text-align:left; }
+  /* server requests: the admin queue, and the answer you are waiting on */
+  #reqBox{ width:100%; max-width:620px; margin:0 auto 14px; text-align:left; }
+  .reqHead{ font-size:12px; letter-spacing:1px; text-transform:uppercase; color:#c9c9c9; margin:0 0 6px; }
+  .reqRow{ display:flex; gap:10px; align-items:flex-start; padding:9px 10px; margin-bottom:6px;
+    background:#2b2b2b; border:2px solid; border-color:#6b6b6b #1f1f1f #1f1f1f #6b6b6b; }
+  .reqIcon{ width:34px; height:34px; flex:0 0 34px; image-rendering:pixelated; background:#1e1e1e; border:1px solid #555; }
+  .reqMain{ flex:1 1 auto; min-width:0; }
+  .reqName{ font-size:14px; color:#fff; }
+  .reqMeta{ font-size:11.5px; color:#a8a8a8; margin-top:1px; }
+  .reqWhy{ font-size:12.5px; color:#dcdcdc; margin-top:4px; white-space:pre-wrap; word-break:break-word; }
+  .reqBtns{ display:flex; gap:6px; flex:0 0 auto; align-self:center; }
+  .reqBtn{ font:inherit; font-size:12px; padding:5px 10px; cursor:pointer; color:#fff;
+    background:#3f6b3a; border:2px solid; border-color:#7fbf78 #24401f #24401f #7fbf78; }
+  .reqBtn.no{ background:#6b3a3a; border-color:#bf7878 #401f1f #401f1f #bf7878; }
+  .reqBtn:hover{ filter:brightness(1.15); }
+  .reqNote{ font-size:12.5px; padding:8px 10px; margin-bottom:6px; background:#2b2b2b;
+    border-left:4px solid #6b6b6b; color:#dcdcdc; }
+  .reqNote.ok{ border-left-color:#4bbf5b; } .reqNote.no{ border-left-color:#d85a51; }
   .csIconLbl{ font-size:12px; color:#c9c9c9; letter-spacing:1px; text-transform:uppercase; }
   #csIconCanvas{ width:132px; height:132px; image-rendering:pixelated; background:#2a2a2a; border:2px solid #555; cursor:crosshair; touch-action:none; }
   .csPresets{ display:flex; gap:5px; }
@@ -430,19 +449,20 @@
 
 <div class="screen" id="servers" hidden>
   <div class="title" style="font-size:30px;">Play Multiplayer</div>
+  <div id="reqBox" hidden></div>
   <div class="ctrlHint">Join a public server, enter a password for a private one, or spectate to just watch.</div>
   <input class="nameField" id="srvSearch" type="text" maxlength="24" placeholder="Search servers by name" autocomplete="off" spellcheck="false">
   <div class="srvList" id="srvList"></div>
   <div class="srvNote" id="srvNote"></div>
   <div class="ctrlActions">
-    <button class="btn half" id="srvCreateBtn">Create server</button>
+    <button class="btn half" id="srvCreateBtn">Request server</button>
     <button class="btn half" id="srvRefreshBtn">Refresh</button>
   </div>
   <button class="btn" id="srvBackBtn">Back</button>
 </div>
 
 <div class="screen" id="createServer" hidden>
-  <div class="title" style="font-size:28px;">Create a Server</div>
+  <div class="title" style="font-size:28px;">Request a Server</div>
   <div class="createWrap">
     <div class="createLeft">
       <input class="nameField" id="csName" type="text" maxlength="24" placeholder="Server name" autocomplete="off" spellcheck="false">
@@ -451,6 +471,8 @@
         <button class="btn half" id="csPrivate">Private</button>
       </div>
       <input class="nameField" id="csPassword" type="text" maxlength="32" placeholder="Password (private only)" autocomplete="off" spellcheck="false" hidden>
+      <textarea class="nameField csReason" id="csReason" maxlength="200" rows="3" placeholder="Why do you want this server? (optional)" spellcheck="false"></textarea>
+      <div class="ctrlHint" style="text-align:left;margin:0;">An admin reads every request before the server is made.</div>
       <div class="codeMsg" id="csMsg"></div>
     </div>
     <div class="createRight">
@@ -468,7 +490,7 @@
     </div>
   </div>
   <div class="ctrlActions">
-    <button class="btn" id="csCreateBtn">Create &amp; play</button>
+    <button class="btn" id="csCreateBtn">Send request</button>
     <button class="btn" id="csCancelBtn">Back</button>
   </div>
 </div>
@@ -3637,7 +3659,13 @@ const DISCRETE_RUN = {
   inventory: e=>{ if(state===PLAY){ pd(e); toggleInv(); } },
   chat:      e=>{ if(state===PLAY && !invOpen){ pd(e); openChat(); } },
   debug:     e=>{ pd(e); dbg.hidden=!dbg.hidden; },
-  camera:    e=>{ if(state===PLAY){ pd(e); camMode=(camMode+1)%3; } },
+  camera:    e=>{ if(state!==PLAY) return; pd(e);
+    if(ghostArmed){                                    // the hide code takes F5 over: vanish instead of moving the camera
+      fx.ghost=!fx.ghost; applyGhost();
+      if(typeof chatPush==='function') chatPush(fx.ghost?'You are invisible. Press F5 to come back.':'You are visible again.', 'sys');
+      return;
+    }
+    camMode=(camMode+1)%3; },
   attack:    e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); breakBlock(); } },
   use:       e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },
   pick:      e=>{ if(inWorld()){ pd(e); pickBlock(); } },
@@ -5631,15 +5659,16 @@ function flintIconCanvas(size){
   px(12,8,1,1,'#ffd15c'); px(13,10,1,1,'#ffa62b'); px(12,12,1,1,'#ffe6a0'); px(14,6,1,1,'#ffc24d');   // sparks
   return c;
 }
-const fx = { body:'none', color:'', stick:false, hide:false, superStick:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
+const fx = { body:'none', color:'', stick:false, hide:false, superStick:false, ghost:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
 let localEyeMul = 1;                      // giant/small change the local camera height a bit
+let ghostArmed = false;                   // the 'hide' code: once armed, F5 vanishes you instead of moving the camera
 
 function flashCode(msg, el){ if(!el) return; el.textContent=msg; clearTimeout(el._t); el._t=setTimeout(()=>{ el.textContent=''; }, 3000); }
 function applyLocalBody(){
   setLocalBody(bodyToKind(fx.body));   // become a pig / block / tree locally too, so first-person reflects it
   localEyeMul = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.3 : fx.body==='pig' ? 0.6 : fx.body==='block' ? 0.95 : fx.body==='tree' ? 1.7 : 1;   // camera rides at your new height
 }
-function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, admin:adminMode }); }   // relayed to everyone else
+function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, admin:adminMode, ghost:fx.ghost }); }   // relayed to everyone else
 function giveStick(){ hotbar[0]=STICK_ITEM; selSlot=0; if(typeof renderHotbar==='function') renderHotbar(); if(typeof showItemName==='function') showItemName(STICK_ITEM); }
 function removeStick(){ if(hotbar[0]===STICK_ITEM){ hotbar[0]=0; if(typeof renderHotbar==='function') renderHotbar(); } }
 // Every code toggles: typing it again turns it back off. Body codes are one-at-a-time (a new one replaces the old).
@@ -5652,6 +5681,11 @@ function applyCode(raw, msgEl){
     flashCode(adminMode?'ADMIN mode on — you can join any server.':'ADMIN mode off.', msgEl); return; }
   if(code==='leoniscool'){ fx.color = fx.color ? '' : NAME_BLUE; note = fx.color ? 'Your name is now blue.' : 'Blue name turned off.'; }
   else if(code==='secret'){ fx.hide=!fx.hide; note = fx.hide ? 'Your name is now hidden from others.' : 'Your name is visible again.'; }
+  else if(code==='hide'){                   // arm it, then F5 is the switch
+    ghostArmed=!ghostArmed;
+    if(!ghostArmed && fx.ghost){ fx.ghost=false; applyGhost(); }
+    note = ghostArmed ? 'Invisibility ready. Press F5 to vanish, F5 again to come back.' : 'Invisibility off. F5 goes back to changing the camera.';
+  }
   else if(code==='tade'){ fx.superStick=false; fx.stick=!fx.stick; if(fx.stick){ giveStick(); note='Knockback stick equipped - check slot 1.'; } else { removeStick(); note='Knockback stick removed.'; } }
   else if(code==='tadee'){ fx.superStick=!fx.superStick; fx.stick=fx.superStick; if(fx.superStick){ giveStick(); note='Super knockback stick equipped (15 blocks). You can hit players even while spectating.'; } else { removeStick(); note='Super knockback stick removed.'; } }
   else if(code==='big' || code==='small' || code==='pig' || code==='block' || code==='tree'){
@@ -5753,7 +5787,19 @@ function setPlayerAdmin(p, admin){
   if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
-function setPlayerHide(p, hide){ p.hide=!!hide; if(p.tag) p.tag.visible=!p.hide; }   // hidename code: hide the floating nametag from others
+// The hide code: your whole body goes, not just the nametag. Locally that means
+// the third-person model and the arm in front of you; for everyone else it is
+// the model, the nametag and the skin, so there is nothing left to see.
+function applyGhost(){
+  if(fx.ghost) body.visible=false;         // the frame loop keeps it that way from here
+  sendFx();
+}
+function setPlayerGhost(p, on){
+  p.ghost = !!on;
+  if(p.model) p.model.visible = !p.ghost;
+  if(p.tag) p.tag.visible = !p.ghost && !p.hide;
+}
+function setPlayerHide(p, hide){ p.hide=!!hide; if(p.tag) p.tag.visible = !p.hide && !p.ghost; }   // hidename code: hide the floating nametag from others
 
 // multiplayer player list — hold Tab to show everyone online at the top
 const tabListEl = document.getElementById('tabList');
@@ -5801,8 +5847,9 @@ function mpAddPlayer(p){
   const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', admin, spectator); model.add(tag);
   const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
     x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
-    body:'none', color:color, hide:!!p.hide, admin:admin, spectator:spectator, slim:slim };
+    body:'none', color:color, hide:!!p.hide, ghost:!!p.ghost, admin:admin, spectator:spectator, slim:slim };
   mp.players.set(p.id, rec);
+  if(p.ghost) setPlayerGhost(rec, true);
   if(p.hide) tag.visible=false;
   if(p.skin) applyRemoteSkin(p.id, p.skin, slim);    // their custom skin, if they have one
   if(p.body && p.body!=='none') setPlayerBody(rec, p.body);   // big / small / pig / block already active on join
@@ -5955,7 +6002,7 @@ function mpHandle(m){
   else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
   else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
-  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerHide(p, m.hide); setPlayerAdmin(p, m.admin); } }   // secret-code effect: big / small / pig / block / name colour / hidename / admin
+  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerGhost(p, m.ghost); setPlayerHide(p, m.hide); setPlayerAdmin(p, m.admin); } }   // secret-code effect: big / small / pig / block / name colour / hidename / admin
   else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+(m.admin?' ADMIN':(m.spectator?' SPECTATOR':''))+'> '+m.text), m.system?'sys':''); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
@@ -6056,6 +6103,84 @@ function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(type
 const serversEl=document.getElementById('servers'), srvListEl=document.getElementById('srvList'), srvNoteEl=document.getElementById('srvNote'), srvSearchEl=document.getElementById('srvSearch');
 if(srvSearchEl){ srvSearchEl.addEventListener('input', ()=>renderServerList()); srvSearchEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ srvSearchEl.value=''; renderServerList(); srvSearchEl.blur(); } }); }
 function serversNote(msg){ if(srvNoteEl){ srvNoteEl.textContent=msg||''; } }
+/* ---- server requests ----
+   Asking for a server files a request; an admin sees it here with the name, the
+   icon and whatever reason was given, and either approves it (which is when the
+   server is actually made) or turns it down. Whoever asked sees the answer on
+   this same screen the next time they open it.                                */
+const reqBoxEl=document.getElementById('reqBox');
+function reqStore(key){ try{ return JSON.parse(localStorage.getItem(key)||'{}'); }catch(e){ return {}; } }
+function reqSave(key, m){ try{ localStorage.setItem(key, JSON.stringify(m)); }catch(e){} }
+function rememberReqPassword(rid, pw){ const m=reqStore('leoncraft_reqpw'); m[rid]=pw; reqSave('leoncraft_reqpw', m); }
+function markReqSeen(rid){ const m=reqStore('leoncraft_reqseen'); m[rid]=1; reqSave('leoncraft_reqseen', m); }
+function reqSeen(rid){ return !!reqStore('leoncraft_reqseen')[rid]; }
+function reqAgo(t){
+  const s=Math.max(0, Math.floor((Date.now()-(t||0))/1000));
+  if(s<60) return 'just now';
+  if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
+}
+function reqNote(cls, text){ const d=document.createElement('div'); d.className='reqNote'+(cls?' '+cls:''); d.textContent=text; return d; }
+async function refreshRequests(){
+  if(!reqBoxEl) return;
+  let data=null;
+  try{
+    const r=await fetch(mcHttpBase()+'/requests?device='+encodeURIComponent(pollDeviceId())+(adminMode?'&admin=1':''));
+    data=await r.json();
+  }catch(e){ reqBoxEl.hidden=true; return; }
+  reqBoxEl.innerHTML=''; let shown=0;
+
+  // your own asks: the ones still waiting, and any answer you have not seen yet
+  for(const r of (data.mine||[])){
+    if(r.state==='pending'){ reqBoxEl.appendChild(reqNote('', '"'+r.name+'" is waiting for an admin to review it.')); shown++; continue; }
+    if(r.state==='approved' && r.serverId){                  // carry the password you set over to the real server
+      const pw=reqStore('leoncraft_reqpw')[r.id];
+      if(pw){ const m=reqStore('leoncraft_srvpw'); m[r.serverId]=pw; reqSave('leoncraft_srvpw', m); }
+    }
+    if(reqSeen(r.id)) continue;
+    reqBoxEl.appendChild(reqNote(r.state==='approved'?'ok':'no',
+      r.state==='approved' ? '"'+r.name+'" was approved. It is in the list below.'
+                           : '"'+r.name+'" was turned down.'+(r.note?' '+r.note:'')));
+    shown++; markReqSeen(r.id);
+  }
+
+  // the admin queue
+  const pend=data.pending||[];
+  if(adminMode && pend.length){
+    const h=document.createElement('div'); h.className='reqHead';
+    h.textContent=pend.length+' server request'+(pend.length===1?'':'s')+' to review';
+    reqBoxEl.appendChild(h); shown++;
+    for(const r of pend){
+      const row=document.createElement('div'); row.className='reqRow';
+      const ic=document.createElement('img'); ic.className='reqIcon'; ic.alt=''; if(r.icon) ic.src=r.icon;
+      const main=document.createElement('div'); main.className='reqMain';
+      const nm=document.createElement('div'); nm.className='reqName'; nm.textContent=r.name;
+      const meta=document.createElement('div'); meta.className='reqMeta';
+      meta.textContent=(r.isPublic?'Public':'Private')+(r.by?' \u00b7 asked by '+r.by:'')+' \u00b7 '+reqAgo(r.createdAt);
+      main.appendChild(nm); main.appendChild(meta);
+      if(r.reason){ const why=document.createElement('div'); why.className='reqWhy'; why.textContent=r.reason; main.appendChild(why); }
+      const btns=document.createElement('div'); btns.className='reqBtns';
+      const yes=document.createElement('button'); yes.className='reqBtn'; yes.textContent='Approve';
+      const no=document.createElement('button'); no.className='reqBtn no'; no.textContent='Deny';
+      yes.addEventListener('click', ()=>reviewRequest(r, true));
+      no.addEventListener('click', ()=>reviewRequest(r, false));
+      btns.appendChild(yes); btns.appendChild(no);
+      row.appendChild(ic); row.appendChild(main); row.appendChild(btns);
+      reqBoxEl.appendChild(row);
+    }
+  }
+  reqBoxEl.hidden = !shown;
+}
+async function reviewRequest(r, approve){
+  const note = approve ? '' : (prompt('Tell them why, if you like (optional):','')||'');
+  try{
+    const res=await fetch(mcHttpBase()+'/reviewserver',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ id:r.id, admin:true, approve:!!approve, note }) });
+    const j=await res.json();
+    refreshServers((j&&j.error) ? j.error : (approve ? '"'+r.name+'" approved.' : '"'+r.name+'" turned down.'));
+  }catch(e){ refreshServers('Network error. Try again?'); }
+}
 function openServers(finalNote){ serversEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; if(createServerEl) createServerEl.hidden=true; if(pwPromptEl) pwPromptEl.hidden=true; refreshServers(finalNote); }
 function closeServers(){ serversEl.hidden=true; menuEl.hidden=false; }
 function escHtml(s){ return (''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -6064,8 +6189,9 @@ async function refreshServers(finalNote){
   serversNote(finalNote||'Loading servers…'); srvListEl.innerHTML='';
   let data;
   try{ const r=await fetch(mcHttpBase()+'/servers',{cache:'no-store'}); data=await r.json(); }
-  catch(e){ serversNote(finalNote||'Could not reach the server list. Is the server online?'); return; }
+  catch(e){ serversNote(finalNote||'Could not reach the server list. Is the server online?'); refreshRequests(); return; }
   serversNote(finalNote||'');
+  refreshRequests();                                 // pending reviews for an admin, answers for whoever asked
   srvAllList=(data&&data.servers)||[];
   if(!srvAllList.length){ serversNote(finalNote||'No servers yet - create one!'); return; }
   renderServerList();
@@ -6134,7 +6260,8 @@ let pwPendingServer=null;
 function openPwPrompt(s){ pwPendingServer=s; document.getElementById('pwTitle').textContent=s.name;
   pwMsgEl.style.color = adminMode ? '#42e042' : '#ff9a9a';
   pwMsgEl.textContent = adminMode ? 'ADMIN: leave this blank to join anyway.' : '';
-  pwInputEl.value=''; pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
+  pwInputEl.value=reqStore('leoncraft_srvpw')[s.id]||'';   // your own server fills its password in for you
+  pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
 function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw && !adminMode){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting…'; startMultiplayer(); }
 function pwSpectate(){ if(!pwPendingServer) return; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Joining as spectator…'; spectateServer(pwPendingServer); }
 document.getElementById('pwJoinBtn').addEventListener('click', pwJoin);
@@ -6198,7 +6325,7 @@ document.getElementById('csClear').addEventListener('click', ()=>csFillIcon(g=>{
 function csSetPublic(v){ csPublic=v; document.getElementById('csPublic').classList.toggle('on', v); document.getElementById('csPrivate').classList.toggle('on', !v); document.getElementById('csPassword').hidden = v; }
 document.getElementById('csPublic').addEventListener('click', ()=>csSetPublic(true));
 document.getElementById('csPrivate').addEventListener('click', ()=>csSetPublic(false));
-function openCreateServer(){ serversEl.hidden=true; createServerEl.hidden=false; document.getElementById('csName').value=''; document.getElementById('csPassword').value=''; document.getElementById('csMsg').textContent=''; csSetPublic(true); CS_PRESETS[0](csG); csRenderIcon(); document.getElementById('csPresets').firstChild.classList.add('on'); csPresetSel=document.getElementById('csPresets').firstChild; setTimeout(()=>document.getElementById('csName').focus(),40); }
+function openCreateServer(){ serversEl.hidden=true; createServerEl.hidden=false; document.getElementById('csName').value=''; document.getElementById('csPassword').value=''; document.getElementById('csReason').value=''; document.getElementById('csMsg').textContent=''; csSetPublic(true); CS_PRESETS[0](csG); csRenderIcon(); document.getElementById('csPresets').firstChild.classList.add('on'); csPresetSel=document.getElementById('csPresets').firstChild; setTimeout(()=>document.getElementById('csName').focus(),40); }
 let csSubmitting=false;
 async function csCreate(){
   if(csSubmitting) return;
@@ -6206,19 +6333,24 @@ async function csCreate(){
   if(!name){ msg.style.color='#ff9a9a'; msg.textContent='Give your server a name.'; return; }
   const password=csPublic?'':document.getElementById('csPassword').value;
   if(!csPublic && !password){ msg.style.color='#ff9a9a'; msg.textContent='Set a password for a private server.'; return; }
-  csSubmitting=true; msg.style.color='#ffec4d'; msg.textContent='Creating…';
+  csSubmitting=true; msg.style.color='#ffec4d'; msg.textContent='Sending…';
   const icon=csIcon.toDataURL('image/png');
+  const reason=(document.getElementById('csReason').value||'').trim();
   try{
-    const r=await fetch(mcHttpBase()+'/createserver',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ name, isPublic:csPublic, password, icon, device:pollDeviceId() }) });
+    const r=await fetch(mcHttpBase()+'/createserver',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ name, isPublic:csPublic, password, icon, reason, by:getSavedName()||'', device:pollDeviceId() }) });
     const j=await r.json();
-    if(j&&j.id){ mpTarget={ server:j.id, pw:password }; createServerEl.hidden=true; startMultiplayer(); }
-    else { msg.style.color='#ff9a9a'; msg.textContent=(j&&j.error)||'Could not create the server.'; }
+    if(j&&j.requested){
+      if(!csPublic) rememberReqPassword(j.id, password);   // so you can walk straight in once it is approved
+      createServerEl.hidden=true; openServers('Request sent. An admin will look at it.');
+    }
+    else { msg.style.color='#ff9a9a'; msg.textContent=(j&&j.error)||'Could not send the request.'; }
   }catch(e){ msg.style.color='#ff9a9a'; msg.textContent='Network error. Try again?'; }
   csSubmitting=false;
 }
 document.getElementById('csCreateBtn').addEventListener('click', csCreate);
 document.getElementById('csCancelBtn').addEventListener('click', ()=>{ createServerEl.hidden=true; openServers(); });
-['csName','csPassword'].forEach(idn=>{ const el=document.getElementById(idn); el.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); createServerEl.hidden=true; openServers(); } if(e.key==='Enter' && idn==='csPassword'){ e.preventDefault(); csCreate(); } }); });
+['csName','csPassword','csReason'].forEach(idn=>{ const el=document.getElementById(idn); el.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); createServerEl.hidden=true; openServers(); } if(e.key==='Enter' && idn==='csPassword'){ e.preventDefault(); csCreate(); } }); });
 
 /* ============================================================ BED WARS === */
 /* A Hypixel-style Bed Wars mode. Connects to the same server with ?mode=bw, which
@@ -7103,6 +7235,137 @@ function bwToggleInv(){
 const chatLogEl=document.getElementById('chatLog');
 const chatInputEl=document.getElementById('chatInput');
 const chatMsgs=[];
+// ---- profanity filter ------------------------------------------------------
+// Same filter the server runs, kept here for the chat that never leaves this
+// machine (singleplayer echo, Bed Wars). Chat folded down to bare letters, so the usual ways
+// round a filter all land on the same word: F.U.C.K, fuuuuck, FÜCK, f0ck and
+// ph*ck are one term. Every letter is matched with a "+" so any amount of
+// repetition works. Two things stop it over-reaching: SAFE_WORDS clears terms
+// that live inside ordinary words (class, assassin, cocktail), and a match that
+// runs across a space or a symbol is only allowed when it looks like deliberate
+// spacing-out rather than two innocent words happening to touch.
+const LEET_BASE = {
+  "4": "a", "@": "a", "^": "a", "8": "b", "(": "c", "<": "c", "{": "c", "3": "e", "6": "g", "9": "g",
+  "1": "i", "!": "i", "|": "i", "0": "o", "5": "s", "$": "s", "7": "t", "+": "t", "2": "z",
+  "à": "a", "á": "a", "â": "a", "ã": "a", "ä": "a", "å": "a",
+  "è": "e", "é": "e", "ê": "e", "ë": "e",
+  "ì": "i", "í": "i", "î": "i", "ï": "i",
+  "ò": "o", "ó": "o", "ô": "o", "õ": "o", "ö": "o", "ø": "o",
+  "ù": "u", "ú": "u", "û": "u", "ü": "u",
+  "ç": "c", "ñ": "n", "ý": "y", "ÿ": "y", "ß": "s"
+};
+// a second pass also reads "l" as "i", which catches b1tch spelled "bltch".
+// It is a separate pass because folding every l would wreck ordinary words.
+const LEET_L = Object.assign({ l: "i" }, LEET_BASE);
+const BAD_WORDS = [
+  "fuck", "fuk", "fuc", "fck", "fock", "feck", "fack", "fuq", "phuck", "phuk", "phck", "fugg",
+  "motherfucker", "mofo", "stfu", "wtf",
+  "shit", "sht", "shyt", "bullshit", "dogshit", "shitty", "shithead", "shitface", "dipshit", "batshit",
+  "bitch", "btch", "biatch", "biotch", "beotch", "bich", "beatch", "sonofabitch",
+  "asshole", "azzhole", "arsehole", "asshat", "assclown", "jackass", "dumbass", "smartass", "badass", "asswipe", "fatass",
+  "bastard", "damn", "goddamn", "dammit", "crap", "piss", "pissed",
+  "dick", "dickhead", "dickwad", "cock", "cocksucker", "prick", "wanker", "wank", "tosser",
+  "pussy", "cunt", "kunt", "twat", "slut", "whore", "skank", "thot", "hooker",
+  "penis", "vagina", "boobs", "titties", "nutsack", "ballsack", "scrotum",
+  "bollocks", "bugger", "arse", "douche", "douchebag", "scumbag", "turd", "queef", "butthole",
+  "retard", "retarded", "tard", "spastic", "spaz", "cripple", "midget",
+  "nigger", "nigga", "niger", "negro", "coon", "chink", "gook", "spic", "wetback", "beaner",
+  "kike", "raghead", "towelhead", "paki", "honky", "gyppo",
+  "faggot", "fggt", "dyke", "tranny", "queer",
+  "rape", "rapist", "molest", "pedo", "pedophile", "paedo",
+  "nazi", "hitler", "kkk", "heil",
+  "kys", "killyourself",
+  "porn", "pornhub", "hentai", "onlyfans",
+  "anal", "blowjob", "handjob", "sexy", "horny", "milf", "orgasm", "masturbate", "jerkoff",
+  "idiot", "moron", "stupid", "loser"
+];
+// terms that also live inside perfectly ordinary words
+const SAFE_WORDS = new Set([
+  "class", "classic", "classes", "classroom", "grass", "grasses", "pass", "passed", "passes", "password",
+  "passenger", "passion", "passive", "bass", "brass", "glass", "glasses", "mass", "massive", "compass",
+  "embassy", "assassin", "assassinate", "assemble", "assembly", "assess", "asset", "assets", "assign",
+  "assignment", "assist", "assistant", "associate", "assume", "assure", "harass", "embarrass", "molasses",
+  "potassium", "sassy", "lass", "cassette", "carcass", "canvas", "atlas", "surpass", "bypass", "amass",
+  "cocktail", "cockpit", "peacock", "shuttlecock", "cockroach", "cocoa", "hancock", "woodcock",
+  "analysis", "analyse", "analyze", "analyst", "analog", "analogy", "analgesic", "canal", "banal",
+  "dickens", "dickinson", "medic", "predict", "verdict", "addict", "benedict",
+  "shiitake", "mishit", "scunthorpe", "penistone", "therapist", "therapists", "titan", "titanium",
+  "constitution", "substitute", "essex", "sussex", "middlesex", "sexton", "sextant", "sextet", "unisex",
+  "scrape", "grape", "drape", "trapeze", "therapy", "digit", "digits", "legit", "guitar",
+  "dumbbell", "dumbbells", "crapshoot", "scrap", "scrappy", "phoenix", "stupidly"
+]);
+function foldChar(ch, map) {
+  const low = ch.toLowerCase();
+  if (map[low] !== undefined) return map[low];
+  if (low >= "a" && low <= "z") return low;
+  return "";
+}
+// bare letters, plus a map back to where each one came from in the original text
+function foldText(text, map) {
+  let tight = "";
+  const idx = [];
+  for (let i = 0; i < text.length; i++) { const f = foldChar(text[i], map); if (f) { tight += f; idx.push(i); } }
+  return { tight: tight, idx: idx };
+}
+const BAD_RE = BAD_WORDS.map(function (w) { return { word: w, re: new RegExp(w.split("").join("+") + "+", "g") }; });
+// the ordinary word an offset falls inside, so SAFE_WORDS can clear a false hit
+function wordAround(text, at) {
+  let a = at, b = at;
+  while (a > 0 && /[A-Za-z]/.test(text[a - 1])) a--;
+  while (b < text.length - 1 && /[A-Za-z]/.test(text[b + 1])) b++;
+  return text.slice(a, b + 1).toLowerCase();
+}
+// A hit that runs across a gap needs to look deliberate. A gap is whatever the
+// fold threw away between two kept letters, so "a$$hole" has no gaps at all
+// ($ folds to s) while "big item" has one. Symbols between letters read as
+// evasion; a space reads as two ordinary words, unless every letter is split
+// apart ("s h i t") or the match swallows whole words on both sides.
+function atWordEdge(text, from, to) {
+  const before = from > 0 ? text[from - 1] : " ";
+  const after = to < text.length - 1 ? text[to + 1] : " ";
+  return !/[A-Za-z0-9]/.test(before) && !/[A-Za-z0-9]/.test(after);
+}
+function spanOk(text, idx, a, b, letters) {
+  let gaps = 0, spaceGaps = 0;
+  for (let k = a; k < b; k++) {
+    const from = idx[k] + 1, to = idx[k + 1];
+    if (to <= from) continue;
+    gaps++;
+    const gap = text.slice(from, to);
+    if (gap.length > 3) return false;                 // that far apart is two separate words
+    if (/\s/.test(gap)) spaceGaps++;
+  }
+  if (!spaceGaps) return true;                        // symbols only, so somebody is dodging the filter
+  if (gaps === letters - 1) return true;              // every letter split apart: s h i t
+  return atWordEdge(text, idx[a], idx[b]);            // ass hole: whole words either side
+}
+function censor(text) {
+  if (!text) return text;
+  const chars = text.split("");
+  let hit = false;
+  for (const map of [LEET_BASE, LEET_L]) {
+    const f = foldText(text, map);
+    if (!f.tight) break;
+    for (const b of BAD_RE) {
+      b.re.lastIndex = 0;
+      let m;
+      while ((m = b.re.exec(f.tight)) !== null) {
+        // step on by one every time, so a long match that gets rejected cannot
+        // hide a real one starting inside it ("is sh1t" was masking "sh1t")
+        b.re.lastIndex = m.index + 1;
+        const from = f.idx[m.index], to = f.idx[m.index + m[0].length - 1];
+        if (from === undefined || to === undefined) continue;
+        if (SAFE_WORDS.has(wordAround(text, from))) continue;
+        if (!spanOk(text, f.idx, m.index, m.index + m[0].length - 1, b.word.length)) continue;
+        for (let i = from; i <= to; i++) if (/\S/.test(chars[i])) chars[i] = "*";
+        hit = true;
+      }
+    }
+    if (hit) break;   // the l-as-i pass is only a fallback for when nothing was found
+  }
+  return chars.join("");
+}
+
 function chatPush(text, cls){
   chatMsgs.push({ text, cls:cls||'', t:performance.now() });
   while(chatMsgs.length>60) chatMsgs.shift();
@@ -7139,7 +7402,7 @@ function closeChat(send){
     chatHistory.push(v); if(chatHistory.length>50) chatHistory.shift();
     if(bw.active && /^\/start\b/i.test(v)){ startBedwarsBtn(); chatPush('Starting the match…', 'sys'); }   // /start begins the Bed Wars match
     else if(mp.active) mpSend({type:'chat', text:v});
-    else chatPush('<'+(getSavedName()||'You')+'> '+v);
+    else chatPush('<'+(getSavedName()||'You')+'> '+censor(v));
   }
   chatHistIdx=-1;
   renderChat();
@@ -7235,7 +7498,7 @@ function frame(now){
     if(swing>0) lud.armR.rotation.x = -Math.sin((1-swing)*Math.PI)*1.5;   // a punch swing overrides the walk swing
   }
   // show your own body in first person when a body code is active, so you see yourself as big/small/pig
-  body.visible = (state===PLAY && !sleep.active && (camMode!==0 || fx.body!=='none'));
+  body.visible = (state===PLAY && !sleep.active && !fx.ghost && (camMode!==0 || fx.body!=='none'));   // the hide code takes you out of your own view too
 
   if(sleep.active){
     const dv=DIRV[sleep.facing];                       // foot -> head direction
@@ -7268,7 +7531,7 @@ function frame(now){
   renderer.render(scene, camera);
 
   // first-person hand overlay (only in first-person view)
-  if(state===PLAY && camMode===0 && !sleep.active){
+  if(state===PLAY && camMode===0 && !sleep.active && !fx.ghost){
     updateViewmodel(dt, moving);
     vmCam.aspect=camera.aspect; vmCam.updateProjectionMatrix();
     renderer.autoClear=false; renderer.clearDepth();
@@ -7342,6 +7605,16 @@ window.__mc = {
     let g=0; while(genQueue.length && g<400){ const c=genQueue.shift(); if(!c.generated) c.generate(); g++; } return chunks.size; },
   borderNow(){ return borderNow(); }, borders(){ return { over:mp.border, nether:mp.netherBorder }; },
   panoTurn(){ return PANO_TURN; },
+  // ---- chat filter / hide code test hooks ----
+  censor(t){ return censor(t); },
+  ghostArmed(){ return ghostArmed; }, ghost(){ return !!fx.ghost; },
+  mpId(){ return mp.id; },
+  openServers(){ openServers(); }, openCreateServer(){ openCreateServer(); },
+  dbgFx(){ return { active:mp.active, ghost:fx.ghost, armed:ghostArmed, players:[...mp.players.keys()], recs:[...mp.players.values()].map(p=>({id:p.id, ghost:!!p.ghost, vis:!!(p.model&&p.model.visible)})) }; },
+  pressF5(){ DISCRETE_RUN.camera({preventDefault(){}}); return { ghost:!!fx.ghost, cam:camMode }; },
+  bodyVisible(){ return !!body.visible; },
+  applyCode(c){ applyCode(c, null); return { armed:ghostArmed, ghost:!!fx.ghost }; },
+  remoteGhost(id){ const p=mp.players.get(id); return p? { ghost:!!p.ghost, model:!!(p.model&&p.model.visible), tag:!!(p.tag&&p.tag.visible) } : null; },
   blockName(id){ return blockName(id); }, flintCanvas(n){ return flintIconCanvas(n); },
   mpPut(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; mpSendBlock(x,y,z,b.id); return true; },
   recordEdit(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); spRecord(x,y,z,b.id); remeshChunkAt(x,z); return true; },
