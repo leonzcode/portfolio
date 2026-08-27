@@ -353,6 +353,12 @@
   .reqNote{ font-size:12.5px; padding:8px 10px; margin-bottom:6px; background:#2b2b2b;
     border-left:4px solid #6b6b6b; color:#dcdcdc; }
   .reqNote.ok{ border-left-color:#4bbf5b; } .reqNote.no{ border-left-color:#d85a51; }
+  .srvEditX{ position:absolute; top:2px; right:2px; width:17px; height:17px; padding:0; line-height:13px; text-align:center;
+    font-family:inherit; font-size:11px; color:#fff; cursor:pointer; z-index:2; background:#4f5a7a;
+    border:2px solid; border-color:#8b97bd #2b3148 #2b3148 #8b97bd; }
+  .srvEditX:hover{ filter:brightness(1.2); }
+  .srvCard.hasDel .srvEditX{ right:21px; }               /* step aside when the delete badge is there too */
+  .srvCard.hasEdit{ padding-right:32px; }                /* the corner room a lone edit badge needs */
   .csIconLbl{ font-size:12px; color:#c9c9c9; letter-spacing:1px; text-transform:uppercase; }
   #csIconCanvas{ width:132px; height:132px; image-rendering:pixelated; background:#2a2a2a; border:2px solid #555; cursor:crosshair; touch-action:none; }
   .csPresets{ display:flex; gap:5px; }
@@ -462,7 +468,7 @@
 </div>
 
 <div class="screen" id="createServer" hidden>
-  <div class="title" style="font-size:28px;">Request a Server</div>
+  <div class="title" style="font-size:28px;" id="csTitle">Request a Server</div>
   <div class="createWrap">
     <div class="createLeft">
       <input class="nameField" id="csName" type="text" maxlength="24" placeholder="Server name" autocomplete="off" spellcheck="false">
@@ -472,7 +478,7 @@
       </div>
       <input class="nameField" id="csPassword" type="text" maxlength="32" placeholder="Password (private only)" autocomplete="off" spellcheck="false" hidden>
       <textarea class="nameField csReason" id="csReason" maxlength="200" rows="3" placeholder="Why do you want this server? (optional)" spellcheck="false"></textarea>
-      <div class="ctrlHint" style="text-align:left;margin:0;">An admin reads every request before the server is made.</div>
+      <div class="ctrlHint" style="text-align:left;margin:0;" id="csHint">An admin reads every request before the server is made.</div>
       <div class="codeMsg" id="csMsg"></div>
     </div>
     <div class="createRight">
@@ -3599,7 +3605,7 @@ const keys = Object.create(null);
 // and saved to localStorage. Tokens: mouse buttons are 'mouse0' (left) / 'mouse1' (middle) /
 // 'mouse2' (right); keyboard keys are their lowercased key name. Held state lives in `keys` for
 // both, so a movement action can be bound to a mouse button and vice-versa. ----
-const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', sprint2:'r', zoom:'c', drop:'q', votes:'v', attack:'mouse0', use:'mouse2', pick:'mouse1', break2:'f', place2:'g', pick2:'h', inventory:'e', chat:'t', camera:'f5', debug:'f3', cameraCombo:'' };
+const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', sprint2:'r', zoom:'c', drop:'q', votes:'v', attack:'mouse0', use:'mouse2', pick:'mouse1', break2:'f', place2:'g', pick2:'h', inventory:'e', chat:'t', camera:'f5', camera2:'q', debug:'f3', cameraCombo:'' };
 let binds = Object.assign({}, DEFAULT_BINDS);
 try{ const sb=JSON.parse(localStorage.getItem('leoncraft_binds')||'{}'); for(const a in DEFAULT_BINDS) if(typeof sb[a]==='string' && sb[a]) binds[a]=sb[a]; }catch(e){}
 function saveBinds(){ try{ localStorage.setItem('leoncraft_binds', JSON.stringify(binds)); }catch(e){} }
@@ -3615,7 +3621,7 @@ const BIND_ACTIONS = [
   {id:'chat',label:'Open chat'},       {id:'camera',label:'Change camera'},
   {id:'debug',label:'Debug overlay'},
   {id:'break2',label:'Break (key)'},   {id:'place2',label:'Place (key)'},
-  {id:'pick2',label:'Pick block (key)'},
+  {id:'pick2',label:'Pick block (key)'}, {id:'camera2',label:'Change camera (key)'},
 ];
 function keyLabel(k){
   if(k==='mouse0') return 'Left Click'; if(k==='mouse1') return 'Middle Click'; if(k==='mouse2') return 'Right Click';
@@ -3659,13 +3665,8 @@ const DISCRETE_RUN = {
   inventory: e=>{ if(state===PLAY){ pd(e); toggleInv(); } },
   chat:      e=>{ if(state===PLAY && !invOpen){ pd(e); openChat(); } },
   debug:     e=>{ pd(e); dbg.hidden=!dbg.hidden; },
-  camera:    e=>{ if(state!==PLAY) return; pd(e);
-    if(ghostArmed){                                    // the hide code takes F5 over: vanish instead of moving the camera
-      fx.ghost=!fx.ghost; applyGhost();
-      if(typeof chatPush==='function') chatPush(fx.ghost?'You are invisible. Press F5 to come back.':'You are visible again.', 'sys');
-      return;
-    }
-    camMode=(camMode+1)%3; },
+  camera:    e=>{ if(state===PLAY){ pd(e); camMode=(camMode+1)%3; } },
+  camera2:   e=>{ if(state===PLAY){ pd(e); camMode=(camMode+1)%3; } },   // Q: the same thing without reaching for the function row
   attack:    e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); breakBlock(); } },
   use:       e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },
   pick:      e=>{ if(inWorld()){ pd(e); pickBlock(); } },
@@ -5585,13 +5586,24 @@ function mpSendSkin(){ if(mp.active && mp.ws && mp.ws.readyState===1) mpSend({ty
 
 // username: persisted to localStorage, applied live to the shared server when connected
 const nameInputEl=document.getElementById('nameInput');
-function getSavedName(){ try{ return (localStorage.getItem('leoncraft_name')||'').trim().slice(0,16); }catch(e){ return ''; } }
+// A name goes through the same filter as chat. The server does this too, so
+// this is only so you see straight away what everyone else will see.
+function cleanOwnName(raw){
+  const out = censor(('' + (raw || '')).trim().slice(0,16)).replace(/\*/g,'').replace(/\s+/g,' ').trim();
+  return /[A-Za-z0-9]/.test(out) ? out : '';       // the bad part is dropped, not starred; nothing left is no name
+}
+function getSavedName(){ try{ return cleanOwnName(localStorage.getItem('leoncraft_name')||''); }catch(e){ return ''; } }
 nameInputEl.value=getSavedName();
+// Filter what gets saved and sent on every keystroke, but only rewrite the box
+// once you are done typing. Cleaning it mid-word would make an innocent name
+// that passes through a bad one on the way (fuchsia) impossible to type.
 nameInputEl.addEventListener('input', ()=>{
-  const nm=nameInputEl.value.trim().slice(0,16);
+  const nm=cleanOwnName(nameInputEl.value);
   try{ localStorage.setItem('leoncraft_name', nm); }catch(e){}
   if(mp.active && nm) mpSend({type:'name', name:nm});
 });
+nameInputEl.addEventListener('change', ()=>{ nameInputEl.value=cleanOwnName(nameInputEl.value); });
+nameInputEl.addEventListener('blur',   ()=>{ nameInputEl.value=cleanOwnName(nameInputEl.value); });
 // colour helper (kept for the Tab head icons; the custom-skin editor was removed)
 function toHex(n){ return '#'+((n>>>0)&0xffffff).toString(16).padStart(6,'0'); }
 document.getElementById('signDoneBtn').addEventListener('click', ()=>closeSignEditor(true));
@@ -5606,7 +5618,12 @@ creative = true;   // locked to creative for now
    block edits and chat, and renders the other players live. */
 const mp = { ws:null, active:false, id:null, name:null, players:new Map(), lastPos:0, server:'original', serverName:'', border:0, spectator:false };
 let mpTarget = { server:'original', pw:'' };   // which server the next connect joins
-let adminMode = localStorage.getItem('leoncraft_admin')==='1';   // the 314159 code: join any server + ADMIN tag
+let adminMode = localStorage.getItem('leoncraft_admin')==='1';   // the 314159 code: join any server, review requests, ADMIN tag
+// The longer code is the owner one. Everything an admin can do, plus the things
+// that change or destroy somebody else's server: delete it, rename it, redraw
+// its icon, set its password. Owner counts as admin too, so one code is enough.
+let ownerMode = localStorage.getItem('leoncraft_owner')==='1';
+function isAdmin(){ return adminMode || ownerMode; }
 
 /* ---- multiplayer poll: a blocking dialog you must answer before playing (server-tallied, one vote per computer) ---- */
 const pollScreenEl=document.getElementById('pollScreen');
@@ -5661,14 +5678,13 @@ function flintIconCanvas(size){
 }
 const fx = { body:'none', color:'', stick:false, hide:false, superStick:false, ghost:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
 let localEyeMul = 1;                      // giant/small change the local camera height a bit
-let ghostArmed = false;                   // the 'hide' code: once armed, F5 vanishes you instead of moving the camera
 
 function flashCode(msg, el){ if(!el) return; el.textContent=msg; clearTimeout(el._t); el._t=setTimeout(()=>{ el.textContent=''; }, 3000); }
 function applyLocalBody(){
   setLocalBody(bodyToKind(fx.body));   // become a pig / block / tree locally too, so first-person reflects it
   localEyeMul = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.3 : fx.body==='pig' ? 0.6 : fx.body==='block' ? 0.95 : fx.body==='tree' ? 1.7 : 1;   // camera rides at your new height
 }
-function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, admin:adminMode, ghost:fx.ghost }); }   // relayed to everyone else
+function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, admin:isAdmin(), ghost:fx.ghost }); }   // relayed to everyone else
 function giveStick(){ hotbar[0]=STICK_ITEM; selSlot=0; if(typeof renderHotbar==='function') renderHotbar(); if(typeof showItemName==='function') showItemName(STICK_ITEM); }
 function removeStick(){ if(hotbar[0]===STICK_ITEM){ hotbar[0]=0; if(typeof renderHotbar==='function') renderHotbar(); } }
 // Every code toggles: typing it again turns it back off. Body codes are one-at-a-time (a new one replaces the old).
@@ -5678,13 +5694,14 @@ function applyCode(raw, msgEl){
   if(code==='bedwars'){ flashCode('Launching Bed Wars…', msgEl); startBedwars(); return; }
   let note='';
   if(code==='314159'){ adminMode=!adminMode; localStorage.setItem('leoncraft_admin', adminMode?'1':'0'); if(mp.active) sendFx(); if(tabShown) renderTabList();
-    flashCode(adminMode?'ADMIN mode on — you can join any server.':'ADMIN mode off.', msgEl); return; }
+    flashCode(adminMode?'ADMIN mode on. You can join any server and review requests.':'ADMIN mode off.', msgEl); return; }
+  if(code==='3141592653589'){ ownerMode=!ownerMode; localStorage.setItem('leoncraft_owner', ownerMode?'1':'0'); if(mp.active) sendFx(); if(tabShown) renderTabList();
+    flashCode(ownerMode?'OWNER mode on. You can also delete, rename and re-password any server.':'OWNER mode off.', msgEl); return; }
   if(code==='leoniscool'){ fx.color = fx.color ? '' : NAME_BLUE; note = fx.color ? 'Your name is now blue.' : 'Blue name turned off.'; }
   else if(code==='secret'){ fx.hide=!fx.hide; note = fx.hide ? 'Your name is now hidden from others.' : 'Your name is visible again.'; }
-  else if(code==='hide'){                   // arm it, then F5 is the switch
-    ghostArmed=!ghostArmed;
-    if(!ghostArmed && fx.ghost){ fx.ghost=false; applyGhost(); }
-    note = ghostArmed ? 'Invisibility ready. Press F5 to vanish, F5 again to come back.' : 'Invisibility off. F5 goes back to changing the camera.';
+  else if(code==='hide'){                   // straight in: type it and you are gone
+    fx.ghost=!fx.ghost; applyGhost();
+    note = fx.ghost ? 'You are invisible. Nobody can see you. Type hide again to come back.' : 'You are visible again.';
   }
   else if(code==='tade'){ fx.superStick=false; fx.stick=!fx.stick; if(fx.stick){ giveStick(); note='Knockback stick equipped - check slot 1.'; } else { removeStick(); note='Knockback stick removed.'; } }
   else if(code==='tadee'){ fx.superStick=!fx.superStick; fx.stick=fx.superStick; if(fx.superStick){ giveStick(); note='Super knockback stick equipped (15 blocks). You can hit players even while spectating.'; } else { removeStick(); note='Super knockback stick removed.'; } }
@@ -5806,7 +5823,7 @@ const tabListEl = document.getElementById('tabList');
 let tabShown = false;
 function renderTabList(){
   if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
-  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:adminMode, spectator:!!mp.spectator}];
+  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:isAdmin(), spectator:!!mp.spectator}];
   for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin, spectator:!!p.spectator});
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
@@ -5831,7 +5848,7 @@ function mpUrl(){
   p.set('server', mpTarget.server || 'original');
   if(mpTarget.pw) p.set('pw', mpTarget.pw);
   if(mpTarget.spectate) p.set('spectate', '1');
-  if(adminMode) p.set('admin', '1');
+  if(isAdmin()) p.set('admin', '1');
   p.set('device', pollDeviceId());
   return u + (u.indexOf('?')>=0?'&':'?') + p.toString();
 }
@@ -6126,7 +6143,7 @@ async function refreshRequests(){
   if(!reqBoxEl) return;
   let data=null;
   try{
-    const r=await fetch(mcHttpBase()+'/requests?device='+encodeURIComponent(pollDeviceId())+(adminMode?'&admin=1':''));
+    const r=await fetch(mcHttpBase()+'/requests?device='+encodeURIComponent(pollDeviceId())+(isAdmin()?'&admin=1':''));
     data=await r.json();
   }catch(e){ reqBoxEl.hidden=true; return; }
   reqBoxEl.innerHTML=''; let shown=0;
@@ -6147,7 +6164,7 @@ async function refreshRequests(){
 
   // the admin queue
   const pend=data.pending||[];
-  if(adminMode && pend.length){
+  if(isAdmin() && pend.length){
     const h=document.createElement('div'); h.className='reqHead';
     h.textContent=pend.length+' server request'+(pend.length===1?'':'s')+' to review';
     reqBoxEl.appendChild(h); shown++;
@@ -6223,11 +6240,16 @@ function renderServerList(){
       btns.appendChild(spec);
     }
     card.appendChild(btns);
-    if(adminMode) card.classList.add('hasDel');               // reserve the corner room on every row so the buttons stay in line
-    if(adminMode && s.id!=='original'){                       // admins can delete servers
-      const del=document.createElement('button'); del.className='srvDelX'; del.textContent='×'; del.title='Delete this server';
-      del.addEventListener('click', e=>{ e.stopPropagation(); confirmDeleteServer(s, card); });
-      card.appendChild(del);
+    if(ownerMode) card.classList.add(s.id==='original' ? 'hasEdit' : 'hasDel');   // corner room for the badges this card gets
+    if(ownerMode){                                            // only the owner code changes or removes somebody else's server
+      const ed=document.createElement('button'); ed.className='srvEditX'; ed.textContent='✎'; ed.title='Edit name, icon or password';
+      ed.addEventListener('click', e=>{ e.stopPropagation(); openEditServer(s); });
+      card.appendChild(ed);
+      if(s.id!=='original'){
+        const del=document.createElement('button'); del.className='srvDelX'; del.textContent='×'; del.title='Delete this server';
+        del.addEventListener('click', e=>{ e.stopPropagation(); confirmDeleteServer(s, card); });
+        card.appendChild(del);
+      }
     }
     srvListEl.appendChild(card);
   }
@@ -6244,7 +6266,7 @@ function confirmDeleteServer(s, card){
 }
 async function doDeleteServer(s){
   serversNote('Deleting…');
-  try{ const r=await fetch(mcHttpBase()+'/deleteserver',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ id:s.id, admin:true, device:pollDeviceId() }) }); const j=await r.json();
+  try{ const r=await fetch(mcHttpBase()+'/deleteserver',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ id:s.id, owner:true, device:pollDeviceId() }) }); const j=await r.json();
     refreshServers((j&&j.ok)?'Server deleted.':((j&&j.error)||'Could not delete.')); }
   catch(e){ refreshServers('Network error.'); }
 }
@@ -6258,11 +6280,11 @@ function spectateServer(s){ mpTarget={ server:s.id, pw:'', spectate:true }; mp._
 const pwPromptEl=document.getElementById('pwPrompt'), pwInputEl=document.getElementById('pwInput'), pwMsgEl=document.getElementById('pwMsg');
 let pwPendingServer=null;
 function openPwPrompt(s){ pwPendingServer=s; document.getElementById('pwTitle').textContent=s.name;
-  pwMsgEl.style.color = adminMode ? '#42e042' : '#ff9a9a';
-  pwMsgEl.textContent = adminMode ? 'ADMIN: leave this blank to join anyway.' : '';
+  pwMsgEl.style.color = isAdmin() ? '#42e042' : '#ff9a9a';
+  pwMsgEl.textContent = isAdmin() ? 'ADMIN: leave this blank to join anyway.' : '';
   pwInputEl.value=reqStore('leoncraft_srvpw')[s.id]||'';   // your own server fills its password in for you
   pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
-function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw && !adminMode){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting…'; startMultiplayer(); }
+function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw && !isAdmin()){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting…'; startMultiplayer(); }
 function pwSpectate(){ if(!pwPendingServer) return; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Joining as spectator…'; spectateServer(pwPendingServer); }
 document.getElementById('pwJoinBtn').addEventListener('click', pwJoin);
 document.getElementById('pwSpectateBtn').addEventListener('click', pwSpectate);
@@ -6325,17 +6347,53 @@ document.getElementById('csClear').addEventListener('click', ()=>csFillIcon(g=>{
 function csSetPublic(v){ csPublic=v; document.getElementById('csPublic').classList.toggle('on', v); document.getElementById('csPrivate').classList.toggle('on', !v); document.getElementById('csPassword').hidden = v; }
 document.getElementById('csPublic').addEventListener('click', ()=>csSetPublic(true));
 document.getElementById('csPrivate').addEventListener('click', ()=>csSetPublic(false));
-function openCreateServer(){ serversEl.hidden=true; createServerEl.hidden=false; document.getElementById('csName').value=''; document.getElementById('csPassword').value=''; document.getElementById('csReason').value=''; document.getElementById('csMsg').textContent=''; csSetPublic(true); CS_PRESETS[0](csG); csRenderIcon(); document.getElementById('csPresets').firstChild.classList.add('on'); csPresetSel=document.getElementById('csPresets').firstChild; setTimeout(()=>document.getElementById('csName').focus(),40); }
+function openCreateServer(){ csEditing=null; serversEl.hidden=true; createServerEl.hidden=false;
+  document.getElementById('csTitle').textContent='Request a Server';
+  document.getElementById('csCreateBtn').textContent='Send request';
+  document.getElementById('csHint').textContent='An admin reads every request before the server is made.';
+  document.getElementById('csReason').hidden=false; document.getElementById('csName').value=''; document.getElementById('csPassword').value=''; document.getElementById('csReason').value=''; document.getElementById('csMsg').textContent=''; csSetPublic(true); CS_PRESETS[0](csG); csRenderIcon(); document.getElementById('csPresets').firstChild.classList.add('on'); csPresetSel=document.getElementById('csPresets').firstChild; setTimeout(()=>document.getElementById('csName').focus(),40); }
+let csEditing=null;   // the server being edited, or null when this is a new request
+// The owner code can change a server after the fact. It is the same form as a
+// request, filled in from the server it is editing, so there is one icon
+// painter and one set of fields rather than two of each.
+function openEditServer(s){
+  csEditing=s;
+  serversEl.hidden=true; createServerEl.hidden=false;
+  document.getElementById('csTitle').textContent='Edit Server';
+  document.getElementById('csCreateBtn').textContent='Save changes';
+  document.getElementById('csHint').textContent='Leave the password blank to keep the one it already has.';
+  document.getElementById('csName').value=s.name||'';
+  document.getElementById('csPassword').value='';
+  document.getElementById('csReason').hidden=true;
+  document.getElementById('csMsg').textContent='';
+  csSetPublic(!!s.isPublic);
+  csG.clearRect(0,0,16,16);
+  if(s.icon){ const img=new Image(); img.onload=()=>{ csG.clearRect(0,0,16,16); csG.drawImage(img,0,0,16,16); csRenderIcon(); }; img.src=s.icon; }
+  else { CS_PRESETS[0](csG); }
+  csRenderIcon();
+  setTimeout(()=>document.getElementById('csName').focus(),40);
+}
 let csSubmitting=false;
 async function csCreate(){
   if(csSubmitting) return;
   const name=document.getElementById('csName').value.trim(); const msg=document.getElementById('csMsg');
   if(!name){ msg.style.color='#ff9a9a'; msg.textContent='Give your server a name.'; return; }
   const password=csPublic?'':document.getElementById('csPassword').value;
-  if(!csPublic && !password){ msg.style.color='#ff9a9a'; msg.textContent='Set a password for a private server.'; return; }
-  csSubmitting=true; msg.style.color='#ffec4d'; msg.textContent='Sending…';
+  if(!csPublic && !password && !csEditing){ msg.style.color='#ff9a9a'; msg.textContent='Set a password for a private server.'; return; }
+  csSubmitting=true; msg.style.color='#ffec4d'; msg.textContent=csEditing?'Saving…':'Sending…';
   const icon=csIcon.toDataURL('image/png');
   const reason=(document.getElementById('csReason').value||'').trim();
+  if(csEditing){
+    try{
+      const body={ id:csEditing.id, owner:true, name, icon, isPublic:csPublic };
+      if(password) body.password=password;                 // blank means keep the one it has
+      const r=await fetch(mcHttpBase()+'/editserver',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+      const j=await r.json();
+      if(j&&j.ok){ csEditing=null; createServerEl.hidden=true; openServers('Saved "'+j.name+'".'); }
+      else { msg.style.color='#ff9a9a'; msg.textContent=(j&&j.error)||'Could not save the changes.'; }
+    }catch(e){ msg.style.color='#ff9a9a'; msg.textContent='Network error. Try again?'; }
+    csSubmitting=false; return;
+  }
   try{
     const r=await fetch(mcHttpBase()+'/createserver',{ method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ name, isPublic:csPublic, password, icon, reason, by:getSavedName()||'', device:pollDeviceId() }) });
@@ -7236,14 +7294,9 @@ const chatLogEl=document.getElementById('chatLog');
 const chatInputEl=document.getElementById('chatInput');
 const chatMsgs=[];
 // ---- profanity filter ------------------------------------------------------
-// Same filter the server runs, kept here for the chat that never leaves this
-// machine (singleplayer echo, Bed Wars). Chat folded down to bare letters, so the usual ways
-// round a filter all land on the same word: F.U.C.K, fuuuuck, FÜCK, f0ck and
-// ph*ck are one term. Every letter is matched with a "+" so any amount of
-// repetition works. Two things stop it over-reaching: SAFE_WORDS clears terms
-// that live inside ordinary words (class, assassin, cocktail), and a match that
-// runs across a space or a symbol is only allowed when it looks like deliberate
-// spacing-out rather than two innocent words happening to touch.
+// Same filter the server runs (mlhub/apps/mc/filter.js), kept here for the chat
+// and names that never leave this machine: singleplayer echo, Bed Wars, and
+// showing you your own name filtered before you ever join.
 const LEET_BASE = {
   "4": "a", "@": "a", "^": "a", "8": "b", "(": "c", "<": "c", "{": "c", "3": "e", "6": "g", "9": "g",
   "1": "i", "!": "i", "|": "i", "0": "o", "5": "s", "$": "s", "7": "t", "+": "t", "2": "z",
@@ -7258,7 +7311,7 @@ const LEET_BASE = {
 // It is a separate pass because folding every l would wreck ordinary words.
 const LEET_L = Object.assign({ l: "i" }, LEET_BASE);
 const BAD_WORDS = [
-  "fuck", "fuk", "fuc", "fck", "fock", "feck", "fack", "fuq", "phuck", "phuk", "phck", "fugg",
+  "fuck", "fuk", "fck", "fock", "feck", "fack", "fuq", "phuck", "phuk", "phck", "fugg",
   "motherfucker", "mofo", "stfu", "wtf",
   "shit", "sht", "shyt", "bullshit", "dogshit", "shitty", "shithead", "shitface", "dipshit", "batshit",
   "bitch", "btch", "biatch", "biotch", "beotch", "bich", "beatch", "sonofabitch",
@@ -7292,7 +7345,15 @@ const SAFE_WORDS = new Set([
   "shiitake", "mishit", "scunthorpe", "penistone", "therapist", "therapists", "titan", "titanium",
   "constitution", "substitute", "essex", "sussex", "middlesex", "sexton", "sextant", "sextet", "unisex",
   "scrape", "grape", "drape", "trapeze", "therapy", "digit", "digits", "legit", "guitar",
-  "dumbbell", "dumbbells", "crapshoot", "scrap", "scrappy", "phoenix", "stupidly"
+  "dumbbell", "dumbbells", "crapshoot", "scrap", "scrappy", "phoenix", "stupidly", "fuchsia", "shtick",
+  // short terms live inside a surprising number of ordinary words
+  "custard", "mustard", "bastardise", "standard", "standards", "retardant",
+  "spice", "spicy", "spices", "suspicion", "suspicious", "auspicious", "conspicuous", "despicable",
+  "raccoon", "cocoon", "tycoon", "lagoon", "monsoon",
+  "closer", "closest", "oxymoron", "morocco",
+  "coarse", "hoarse", "sparse", "arsenal", "parse", "parsed", "marseille",
+  "therapeutic", "torpedo", "thorny", "pakistan", "pakistani", "analogue", "analytics",
+  "grapes", "drapes", "scrapes", "trapezoid", "praise"
 ]);
 function foldChar(ch, map) {
   const low = ch.toLowerCase();
@@ -7607,13 +7668,19 @@ window.__mc = {
   panoTurn(){ return PANO_TURN; },
   // ---- chat filter / hide code test hooks ----
   censor(t){ return censor(t); },
-  ghostArmed(){ return ghostArmed; }, ghost(){ return !!fx.ghost; },
+  ghost(){ return !!fx.ghost; },
   mpId(){ return mp.id; },
+  binds(){ return Object.assign({}, binds); },
+  rename(n){ nameInputEl.value=n; nameInputEl.dispatchEvent(new Event('input')); nameInputEl.dispatchEvent(new Event('change')); return nameInputEl.value; },
+  myName(){ return mp.name||''; },
+  remoteName(id){ const p=mp.players.get(id); return p? (p.name||'') : null; },
   openServers(){ openServers(); }, openCreateServer(){ openCreateServer(); },
-  dbgFx(){ return { active:mp.active, ghost:fx.ghost, armed:ghostArmed, players:[...mp.players.keys()], recs:[...mp.players.values()].map(p=>({id:p.id, ghost:!!p.ghost, vis:!!(p.model&&p.model.visible)})) }; },
+  openEditServer(sv){ openEditServer(sv); }, serverList(){ return srvAllList.slice(); },
+  dbgFx(){ return { active:mp.active, ghost:fx.ghost, players:[...mp.players.keys()], recs:[...mp.players.values()].map(p=>({id:p.id, ghost:!!p.ghost, vis:!!(p.model&&p.model.visible)})) }; },
   pressF5(){ DISCRETE_RUN.camera({preventDefault(){}}); return { ghost:!!fx.ghost, cam:camMode }; },
+  pressCam2(){ DISCRETE_RUN.camera2({preventDefault(){}}); return { cam:camMode }; },
   bodyVisible(){ return !!body.visible; },
-  applyCode(c){ applyCode(c, null); return { armed:ghostArmed, ghost:!!fx.ghost }; },
+  applyCode(c){ applyCode(c, null); return { ghost:!!fx.ghost }; },
   remoteGhost(id){ const p=mp.players.get(id); return p? { ghost:!!p.ghost, model:!!(p.model&&p.model.visible), tag:!!(p.tag&&p.tag.visible) } : null; },
   blockName(id){ return blockName(id); }, flintCanvas(n){ return flintIconCanvas(n); },
   mpPut(x,y,z,name){ const b=BLOCKS[name]; if(!b) return false; mpSendBlock(x,y,z,b.id); return true; },
@@ -7746,7 +7813,7 @@ window.__mc = {
   mpJoin(){ startMultiplayer(); }, mpInfo(){ return { active:mp.active, id:mp.id, players:mp.players.size, posSent:mp.posSent||0, posRecv:mp.posRecv||0, state:state }; },
   mpServer(){ return { server:mp.server, name:mp.serverName, border:mp.border, admin:mp.admin }; },
   browseServers(){ openServers(); }, serverNames(){ return [...srvListEl.children].map(c=>{ const nm=c.querySelector('.nm'); return nm?nm.textContent:''; }); },
-  joinTarget(id,pw){ mpTarget={server:id,pw:pw||''}; startMultiplayer(); }, adminOn(){ return adminMode; },
+  joinTarget(id,pw){ mpTarget={server:id,pw:pw||''}; startMultiplayer(); }, adminOn(){ return isAdmin(); }, ownerOn(){ return ownerMode; }, plainAdminOn(){ return adminMode; },
   playerAdmins(){ return [...mp.players.values()].map(p=>({name:p.name,admin:!!p.admin})); },
   // ---- secret-code test hooks ----
   code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, eyeMul:localEyeMul, localKind:modelKind(body) }; },
