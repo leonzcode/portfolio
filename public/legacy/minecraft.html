@@ -3741,8 +3741,9 @@ addEventListener('keydown', e=>{
       e.preventDefault(); return;
     } }
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
-  if(bb.active && bb.phase==='vote' && state===PLAY && !invOpen && !chatOpen){
-    if(k>='1' && k<='5'){ e.preventDefault(); bbRate(+k); return; }
+  if(bb.active && state===PLAY && !invOpen && !chatOpen){
+    if(bb.phase==='vote' && k>='1' && k<='5'){ e.preventDefault(); bbRate(+k); return; }
+    if(k==='k' && (bb.phase==='lobby' || bb.phase==='starting')){ e.preventDefault(); bbStartBtn(); return; }
   }
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
@@ -3792,7 +3793,7 @@ canvas.addEventListener('wheel', e=>{
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = document.pointerLockElement===canvas;
   // don't pop the pause menu when we released the lock on purpose to type in chat / vote in the poll
-  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen && !bwInvOpen && !pollBlocking) pause();
+  if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen && !bwInvOpen && !pollBlocking && !bbFreeCursor()) pause();
 });
 document.addEventListener('mousemove', e=>{
   if(!pointerLocked) return;
@@ -6477,7 +6478,7 @@ const bb = {
   active:false, phase:'lobby', left:0, theme:'', themes:[], plots:[], votePlot:0,
   plot:-1, results:null, ratings:['','Poor','Okay','Good','Great','Legendary'],
   geom:{ plotW:12, pitch:15, floorY:60, buildH:12, maxPlots:8 },
-  myVotes:{}, myTheme:-1, waiting:0, playing:0, prefabSet:new Set(),
+  myVotes:{}, myTheme:-1, waiting:0, playing:0, prefabSet:new Set(), deadline:0,
 };
 function bbId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 function bbOrigin(i){ return { x: i*bb.geom.pitch, z: 0 }; }
@@ -6581,6 +6582,7 @@ function bbInit(m){
   if(m.geom) bb.geom=m.geom;
   if(m.ratings) bb.ratings=m.ratings;
   bb.phase=m.phase; bb.left=m.left||0; bb.theme=m.theme||''; bb.themes=m.themes||[];
+  bb.deadline = performance.now() + bb.left*1000;
   bb.plots=m.plots||[]; bb.votePlot=m.votePlot||0; bb.plot=(m.you&&m.you.plot!=null)?m.you.plot:-1;
   bb.myVotes={}; bb.myTheme=-1;
   mpClearPlayers();
@@ -6603,12 +6605,14 @@ function bbHandle(m){
     case 'bbstate': {
       const wasPhase=bb.phase, wasPlot=bb.votePlot;
       bb.phase=m.phase; bb.left=m.left||0; bb.theme=m.theme||''; bb.themes=m.themes||[];
+      bb.deadline = performance.now() + bb.left*1000;   // the server only speaks on changes, so run the clock here
       bb.plots=m.plots||[]; bb.votePlot=m.votePlot||0; bb.results=m.results||null;
       bb.waiting=m.waiting||0; bb.playing=m.playing||0;
       if(m.phase!==wasPhase){
         bb.myVotes = (m.phase==='vote') ? {} : bb.myVotes;
         if(m.phase==='theme'){ bb.myTheme=-1; bb.myVotes={}; }
         bbPlaceForPhase();
+        bbCursor();
         bbBanner(bbPhaseTitle(m.phase), 2200);
       } else if(m.phase==='vote' && m.votePlot!==wasPlot){
         bbPlaceForPhase();
@@ -6653,6 +6657,30 @@ function bbRate(v){
 }
 function bbStartBtn(){ mpSend({type:'bbstart'}); }
 
+/* ---- the clock, and the cursor ---- */
+function bbTick(){
+  if(!bb.active) return;
+  const left = bb.deadline ? Math.max(0, Math.ceil((bb.deadline - performance.now())/1000)) : 0;
+  if(left === bb.left) return;
+  bb.left = left;
+  const t=document.getElementById('bbTimer');
+  if(!t) return;
+  t.textContent = bb.phase==='lobby' ? '' : (Math.floor(left/60)+':'+String(left%60).padStart(2,'0'));
+  t.className = (bb.phase==='build' && left<=30) ? 'low' : '';
+}
+// Rating is a click, so hand the mouse back while people are voting and take it
+// again once they are building. Nobody should have to press Escape mid-round.
+// the phases you click through rather than play through
+function bbFreeCursor(){
+  return bb.active && (bb.phase==='vote' || bb.phase==='results' || bb.phase==='theme' || bb.phase==='lobby' || bb.phase==='starting');
+}
+function bbCursor(){
+  if(!bb.active || state!==PLAY) return;
+  const wantCursor = bbFreeCursor();
+  if(wantCursor){ if(document.pointerLockElement) document.exitPointerLock(); }
+  else if(!document.pointerLockElement && !invOpen && chatBox.hidden){ try{ canvas.requestPointerLock(); }catch(e){} }
+}
+
 /* ---- HUD ---- */
 let bbHudEl=null, bbBannerT=null;
 function bbEnsureUi(){
@@ -6693,11 +6721,11 @@ function bbUpdateHud(){
   if(bb.phase==='lobby' || bb.phase==='starting'){
     const p=document.createElement('div'); p.className='bbLobby';
     p.innerHTML='<h2>Build Battle</h2><p>'+bb.playing+' ready'+(bb.waiting?(' · '+bb.waiting+' waiting'):'')+'</p>';
-    const b=document.createElement('button'); b.className='bbBtn'; b.textContent='Start round';
+    const b=document.createElement('button'); b.className='bbBtn'; b.textContent='Press K to start';
     b.addEventListener('click', bbStartBtn);
     p.appendChild(b);
     panel.appendChild(p);
-    hint.textContent='Two players starts it on its own.';
+    hint.textContent='Anyone can press K. Two players starts it on its own anyway.';
     return;
   }
   if(bb.phase==='theme'){
@@ -7845,6 +7873,7 @@ function frame(now){
     updateMobs(dt);
     mpUpdatePlayers(dt);
     if(bw.active) bwFrame(dt);
+    if(bb.active){ bbTick(); bbCursor(); }
     if(mp.active){                       // stream position, but only when it changes (idle heartbeat ~1 Hz)
       const nowMs=performance.now();
       if(nowMs-mp.lastPos>66){
@@ -8024,6 +8053,8 @@ window.__mc = {
     myTheme:bb.myTheme, geom:bb.geom, waiting:bb.waiting, playing:bb.playing }; },
   bbOrigin(i){ return bbOrigin(i); },
   bbArenaBlocks(){ return bb.prefabSet.size; },
+  setState(v){ state=v; },
+  bbClock(){ return { deadline:bb.deadline, left:bb.left, now:performance.now(), phase:bb.phase, state:state, active:bb.active }; },
   bbMesh(){ let gen=0, meshed=0, dirty=0, tris=0;
     for(const [,c] of chunks){ if(c.generated) gen++; if(c.dirty) dirty++;
       if(c.mesh){ meshed++; const a=c.mesh.geometry.attributes.position; if(a) tris+=a.count; } }
