@@ -6694,9 +6694,10 @@ function bbTick(){
 }
 // Rating is a click, so hand the mouse back while people are voting and take it
 // again once they are building. Nobody should have to press Escape mid-round.
-// the phases you click through rather than play through
+// the phases you click through rather than play through: picking a theme and
+// rating a build. Results is only read, so the mouse stays on the world.
 function bbFreeCursor(){
-  return bb.active && (bb.phase==='vote' || bb.phase==='results' || bb.phase==='theme');
+  return bb.active && (bb.phase==='vote' || bb.phase==='theme');
 }
 function bbCursor(){
   if(!bb.active || state!==PLAY) return;
@@ -8079,6 +8080,7 @@ window.__mc = {
   bbArenaBlocks(){ return bb.prefabSet.size; },
   setState(v){ state=v; },
   bbFreeCursor(){ return bbFreeCursor(); },
+  bbSetPhase(ph){ bb.phase=ph; },
   mpSpectator(){ return !!mp.spectator; },
   remoteSpectator(id){ const q=mp.players.get(id); if(!q) return null;
     return { spectator:!!q.spectator, tag: (q.tag && q.tag.userData.label)||'', hasTag: !!q.tag }; },
