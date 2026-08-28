@@ -786,7 +786,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 9: workshop blocks ---
 "enchanting_table","anvil","grindstone","stonecutter",
 // --- pass 10: vines ---
-"vine","weeping_vines","twisting_vines","cave_vines","fire","lava","nether_portal","magma_block","soul_soil","crimson_nylium","warped_nylium","crimson_fungus","warped_fungus","ancient_debris"];
+"vine","weeping_vines","twisting_vines","cave_vines","fire","lava","nether_portal","magma_block","soul_soil","crimson_nylium","warped_nylium","crimson_fungus","warped_fungus","ancient_debris",
+// --- pass 11: walls ---
+"cobblestone_wall","mossy_cobblestone_wall","stone_brick_wall","mossy_stone_brick_wall","granite_wall","diorite_wall","andesite_wall","brick_wall","mud_brick_wall","sandstone_wall","red_sandstone_wall","prismarine_wall","nether_brick_wall","red_nether_brick_wall","end_stone_brick_wall","blackstone_wall","polished_blackstone_wall","polished_blackstone_brick_wall","cobbled_deepslate_wall","polished_deepslate_wall","deepslate_brick_wall","deepslate_tile_wall","tuff_wall","polished_tuff_wall","tuff_brick_wall"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1927,6 +1929,17 @@ for(const [base,tile,hex] of STONE_SHAPED){
   B[base+'_stairs'] = def(base+'_stairs', { tiles:T(tile), stairs:true, opaque:false, hex });
   B[base+'_slab']   = def(base+'_slab',   { tiles:T(tile), slab:true,   opaque:false, hex });
 }
+// Walls, exactly the set Minecraft has one for. The smooth, polished-granite,
+// quartz and purpur families have no wall in the game, so they get none here.
+const WALL_BASES = new Set(['cobblestone','mossy_cobblestone','stone_brick','mossy_stone_brick','granite','diorite','andesite',
+  'brick','mud_brick','sandstone','red_sandstone','prismarine','nether_brick','red_nether_brick','end_stone_brick',
+  'blackstone','polished_blackstone','polished_blackstone_brick','cobbled_deepslate','polished_deepslate',
+  'deepslate_brick','deepslate_tile','tuff']);
+for(const [base,tile,hex] of STONE_SHAPED)
+  if(WALL_BASES.has(base)) B[base+'_wall'] = def(base+'_wall', { tiles:T(tile), wall:true, opaque:false, hex });
+// the two tuff variants that have a wall but no stairs entry above
+B.polished_tuff_wall = def('polished_tuff_wall', { tiles:T('polished_tuff'), wall:true, opaque:false, hex:0x676860 });
+B.tuff_brick_wall    = def('tuff_brick_wall',    { tiles:T('tuff_bricks'),   wall:true, opaque:false, hex:0x62645b });
 // the new wood types get the full wooden set (stairs, slab, fence, trapdoor)
 const NEWWOOD_SHAPED = [['mangrove',0x9a5f4e],['cherry',0xe4b6c2],['pale_oak',0xd6d2c4],['bamboo',0xc9b74a],['crimson',0x6a3350],['warped',0x2b6b6a],['purpular',0x8a5aa8]];
 for(const [wd,hex] of NEWWOOD_SHAPED){
@@ -3017,6 +3030,23 @@ function buildChunkMesh(c){
       if(conn(wx,wz-1)) for(const [a,b] of rails) pushBox(op, wx, y, wz, [7/16,9/16, a,b, 0,6/16], ftile);
       continue;
     }
+    if (bl.wall){                              // a fat post with low arms reaching its neighbours
+      const wtile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
+      const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].wall || BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); };
+      const cE=conn(wx+1,wz), cW=conn(wx-1,wz), cS=conn(wx,wz+1), cN=conn(wx,wz-1);
+      const above=getBlock(wx,y+1,wz);
+      const covered=!!(above!==AIR && BLOCKS[above] && BLOCKS[above].solid);   // a torch or a flower on top does not count
+      // Minecraft drops the centre post when the wall runs dead straight with nothing
+      // on top, so a long run reads as one line instead of a row of little pillars.
+      const straight=(cE&&cW&&!cS&&!cN)||(cS&&cN&&!cE&&!cW);
+      const top=covered?1:14/16;               // the arms rise the last two pixels to carry whatever sits above
+      if(covered || !straight) pushBox(op, wx, y, wz, [4/16,12/16, 0,1, 4/16,12/16], wtile);
+      if(cE) pushBox(op, wx, y, wz, [8/16,1,     0,top, 5/16,11/16], wtile);
+      if(cW) pushBox(op, wx, y, wz, [0,8/16,     0,top, 5/16,11/16], wtile);
+      if(cS) pushBox(op, wx, y, wz, [5/16,11/16, 0,top, 8/16,1    ], wtile);
+      if(cN) pushBox(op, wx, y, wz, [5/16,11/16, 0,top, 0,8/16    ], wtile);
+      continue;
+    }
     if (bl.pane){                              // glass pane: a thin full-height panel + arms toward connected sides
       const ptile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
       const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); };
@@ -3835,15 +3865,34 @@ function paneCollides(x,y,z, px,py,pz){
   if(conn(x,z-1) && hit(x+7/16, x+9/16, z,      z+7/16)) return true;
   return false;
 }
+// a wall blocks along its post and whichever arms it has grown, and it stands
+// 1.5 blocks tall, so you cannot hop one the way you can hop a plain block
+function wallCollides(x,y,z, px,pz){
+  const w=player.w/2, minX=px-w, maxX=px+w, minZ=pz-w, maxZ=pz+w;
+  const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].wall || BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); };
+  const hit=(x0,x1,z0,z1)=> maxX>x0 && minX<x1 && maxZ>z0 && minZ<z1;
+  if(hit(x+4/16, x+12/16, z+4/16, z+12/16)) return true;
+  if(conn(x+1,z) && hit(x+8/16, x+1,     z+5/16, z+11/16)) return true;
+  if(conn(x-1,z) && hit(x,      x+8/16,  z+5/16, z+11/16)) return true;
+  if(conn(x,z+1) && hit(x+5/16, x+11/16, z+8/16, z+1    )) return true;
+  if(conn(x,z-1) && hit(x+5/16, x+11/16, z,      z+8/16 )) return true;
+  return false;
+}
 function collides(px,py,pz){
   const w=player.w/2;
   const x0=Math.floor(px-w), x1=Math.floor(px+w);
   const y0=Math.floor(py), y1=Math.floor(py+player.h);
   const z0=Math.floor(pz-w), z1=Math.floor(pz+w);
+  const yb=y0-1;                  // a wall under your feet reaches half a block up into this one
+  for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++){
+    const b=getBlock(x,yb,z);
+    if(b!==AIR && BLOCKS[b] && BLOCKS[b].wall && py<yb+1.5 && wallCollides(x,yb,z,px,pz)) return true;
+  }
   for(let y=y0;y<=y1;y++) for(let z=z0;z<=z1;z++) for(let x=x0;x<=x1;x++){
     const b=getBlock(x,y,z);
     if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid){
       if(BLOCKS[b].door) continue;  // doors are always walk-through, open or closed
+      if(BLOCKS[b].wall){ if(wallCollides(x,y,z,px,pz)) return true; continue; }      // post + arms, nothing between
       if(BLOCKS[b].pane){ if(paneCollides(x,y,z,px,py,pz)) return true; continue; }   // thin, connect-shaped collision
       if(BLOCKS[b].slab){           // a slab only fills its half of the cell (unless doubled)
         const sm=slabMeta.get(x+','+y+','+z);
@@ -4519,11 +4568,14 @@ function usePot(x,y,z){
   remeshChunkAt(x,z);
 }
 // ---- sponges ----
-// Minecraft's numbers exactly: a dry sponge drinks every water block it can reach within
+// Minecraft's numbers exactly: a dry sponge drinks every liquid block it can reach within
 // a taxicab radius of 7, up to 65 of them, then turns wet. A wet sponge dries back out on
 // netherrack, the way it does the moment you carry one into the Nether.
+// Vanilla sponges only take water; this one takes lava as well, which is far more
+// use in the nether and is the whole reason anybody carries one down there.
 const SPONGE_REACH = 7, SPONGE_MAX = 65;
-function absorbWater(x,y,z){
+function isSoakable(id){ return id===B.water || id===B.lava; }
+function absorbLiquid(x,y,z){
   const seen = new Set([wkey(x,y,z)]);
   const q = [[x,y,z,0]];
   let drank = 0, touched = new Set();
@@ -4533,7 +4585,7 @@ function absorbWater(x,y,z){
     for(const [dx,dy,dz] of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]){
       const nx=cx+dx, ny=cy+dy, nz=cz+dz, k=wkey(nx,ny,nz);
       if(seen.has(k)) continue; seen.add(k);
-      if(getBlock(nx,ny,nz)!==B.water) continue;
+      if(!isSoakable(getBlock(nx,ny,nz))) continue;
       setBlock(nx,ny,nz,AIR); mpSendBlock(nx,ny,nz,0);
       touched.add(Math.floor(nx/CH)+','+Math.floor(nz/CH));
       if(++drank >= SPONGE_MAX) break;
@@ -4555,7 +4607,7 @@ function placeSponge(){
   let id=hotbar[selSlot];
   setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
   if(id===B.sponge){
-    if(absorbWater(px,py,pz)>0){ id=B.wet_sponge; setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id); showItemName(id); }
+    if(absorbLiquid(px,py,pz)>0){ id=B.wet_sponge; setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id); showItemName(id); }
   } else if(id===B.wet_sponge && nextToNetherrack(px,py,pz)){
     id=B.sponge; setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id); showItemName(id);   // wrung out by the heat
   }
@@ -4890,6 +4942,18 @@ function blockIconCanvas(id, size){
     px(0.12,0.30,0.26,0.13,'#f3f3f3'); px(0.12,0.40,0.26,0.035,'#cfcfcf');        // pillow + shadow
     return cv;
   }
+  if(bl.wall){                     // a stubby post with a lower run of wall either side
+    const s=size, hex=bl.hex||0x8a8a8a, rr=(hex>>16)&255, gg=(hex>>8)&255, bb=hex&255;
+    const main=`rgb(${rr},${gg},${bb})`, dark=`rgb(${(rr*0.7)|0},${(gg*0.7)|0},${(bb*0.7)|0})`, lite=`rgb(${Math.min(255,rr*1.16)|0},${Math.min(255,gg*1.16)|0},${Math.min(255,bb*1.16)|0})`;
+    const px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.04,0.46,0.32,0.42,main); px(0.64,0.46,0.32,0.42,main);                   // the low run either side
+    px(0.04,0.46,0.32,0.07,lite); px(0.64,0.46,0.32,0.07,lite);                   // their top faces
+    px(0.30,0.46,0.06,0.42,dark); px(0.90,0.46,0.06,0.42,dark);                   // and their shaded ends
+    px(0.34,0.20,0.32,0.68,main);                                                 // the post
+    px(0.34,0.20,0.32,0.07,lite);                                                 // post top
+    px(0.60,0.20,0.06,0.68,dark);                                                 // post shade
+    return cv;
+  }
   if(bl.fence){                    // two posts + two rails, Minecraft-style
     const s=size, hex=bl.hex||0x8a6a3a, rr=(hex>>16)&255, gg=(hex>>8)&255, bb=hex&255;
     const main=`rgb(${rr},${gg},${bb})`, dark=`rgb(${(rr*0.72)|0},${(gg*0.72)|0},${(bb*0.72)|0})`, lite=`rgb(${Math.min(255,rr*1.12)|0},${Math.min(255,gg*1.12)|0},${Math.min(255,bb*1.12)|0})`;
@@ -5121,6 +5185,7 @@ function searchTags(name){
   if(name.indexOf('fungus')>=0)          t+=' mushroom fungus';
   if(b.light)                            t+=' light glow lamp bright';
   if(b.door || b.trapdoor)               t+=' door';
+  if(b.wall)                             t+=' wall walls barrier border stone';
   if(b.ladder || b.climb)                t+=' climb ladder';
   if(/_log$|_stem$|_planks$|_fence$|_stairs$|_slab$|_door$|_trapdoor$/.test(name)) t+=' wood';
   if(/^nether|nylium|soul_|blackstone|basalt|magma|crimson|warped|glowstone|obsidian|shroomlight|ancient_debris/.test(name)) t+=' nether';
@@ -8101,7 +8166,7 @@ window.__mc = {
   mine(){ raycast(); breakBlock(); }, put(){ raycast(); placeBlock(); },
   block(x,y,z){ return getBlock(x,y,z); },
   doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open,hinge:d.hinge||'right'}:null; },
-  blockInfo(name){ const b=BLOCKS[name]; return b?{id:b.id,pane:!!b.pane,opaque:!!b.opaque,solid:!!b.solid,cat:catOf(name)}:null; },
+  blockInfo(name){ const b=BLOCKS[name]; return b?{id:b.id,pane:!!b.pane,wall:!!b.wall,opaque:!!b.opaque,solid:!!b.solid,cat:catOf(name)}:null; },
   putBlock(x,y,z,name){ if(name==='air'){ setBlock(x,y,z,AIR); redTrack(x,y,z); remeshChunkAt(x,z); return true; }
     const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); redTrack(x,y,z); remeshChunkAt(x,z); return true; },
   giveBlock(name){ const b=BLOCKS[name]; if(!b) return false; hotbar[selSlot]=b.id; if(typeof renderHotbar==='function') renderHotbar(); return true; },
@@ -8171,6 +8236,12 @@ window.__mc = {
       if(c.mesh){ meshed++; const a=c.mesh.geometry.attributes.position; if(a) tris+=a.count; } }
     return { chunks:chunks.size, gen, meshed, dirty, tris, sceneKids:scene.children.length, view:VIEW,
              cam:[+player.pos.x.toFixed(1), +player.pos.y.toFixed(1), +player.pos.z.toFixed(1)], mode:bbMode }; },
+  // ---- wall test hooks ----
+  hits(x,y,z){ return collides(x,y,z); },
+  wallList(){ return PALETTE.filter(id=>BLOCKS[id].wall).map(id=>BLOCKS[id].name); },
+  searchCount(q){ q=q.toLowerCase(); let n=0;
+    for(const id of PALETTE){ const nm=BLOCKS[id].name; if(HIDDEN_BLOCKS.has(nm)) continue; if(searchHit(nm, pretty(nm), q)) n++; }
+    return n; },
   bbForceStart(){ bbStartBtn(); },
   bbVoteTheme(i){ bbVoteTheme(i); },
   bbRate(v){ bbRate(v); },
