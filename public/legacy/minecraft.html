@@ -354,6 +354,7 @@
   .srvCard .nm{ font-size:15px; color:#fff; text-shadow:1px 1px 0 rgba(0,0,0,.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .srvCard .meta{ font-size:12px; color:#d7d7d7; }
   .srvCard .meta .lock{ color:#ffd24a; } .srvCard .meta .pub{ color:#9be07f; }
+  .srvCard .meta .mini{ color:#8fb4ff; }   /* a game mode, not a world you build in */
   .srvDel{ flex:0 0 auto; font-family:inherit; font-size:13px; color:#fff; padding:6px 12px; cursor:pointer;
     background:#7a7a7a; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
   .srvDel:hover{ filter:brightness(1.12); }
@@ -4764,7 +4765,7 @@ function breakGhostUnderCrosshair(){
   return true;
 }
 function breakBlock(){
-  if(bb.active && !bbCanEdit()) return;      // build battle: only in your plot, only while building
+  if(bb.active && !bbCanBreak()) return;     // build battle: your plot only, and never the floor under it
   const specHit = mp.active && mp.spectator && fx.superStick;   // tadee code: a spectator may still punch players
   if(mp.active && mp.spectator && !specHit) return;   // ordinary spectators can't break blocks, punch players or hit mobs
   if(bw.active && bw.dead) return;          // no acting while dead / spectating
@@ -4803,7 +4804,7 @@ function breakBlock(){
 }
 function placeBlock(){
   if(mp.active && mp.spectator) return;     // spectators can't place blocks
-  if(bb.active && !bbCanEdit()) return;     // build battle: only in your plot, only while building
+  if(bb.active && !bbCanPlace()) return;    // build battle: only in your plot, only while building
   if(!target) return;
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   if(py<0 || py>=WH) return;   // never build at or above the world height — those cells are unreachable, so a sign/PRG there becomes an unbreakable ghost
@@ -6276,13 +6277,16 @@ function renderServerList(){
     const ic=document.createElement('canvas'); ic.className='ic'; ic.width=ic.height=32;
     drawServerIcon(ic, s.icon, s.id);
     const info=document.createElement('div'); info.className='info';
-    const lockTxt = s.isPublic ? '<span class="pub">Public</span>' : '<span class="lock">Private</span>';
-    info.innerHTML='<div class="nm">'+escHtml(s.name)+'</div><div class="meta">'+lockTxt+' · '+s.players+' online</div>';
+    const kindTxt = s.mode ? '<span class="mini">Minigame</span>'
+                           : (s.isPublic ? '<span class="pub">Public</span>' : '<span class="lock">Private</span>');
+    const countTxt = s.mode ? (s.players+' playing') : (s.players+' online');
+    info.innerHTML='<div class="nm">'+escHtml(s.name)+'</div><div class="meta">'+kindTxt+' · '+countTxt+'</div>';
     card.appendChild(ic); card.appendChild(info);
     // Join / Spectate right on the card, so joining or watching is a single click
     const btns=document.createElement('div'); btns.className='srvBtns';
     const join=document.createElement('button'); join.className='srvBtn'; join.textContent='Join';
-    join.title=s.isPublic?'Join this server':'Enter the password to play here';
+    if(s.mode==='bb'){ join.textContent='Play'; join.title='Play Build Battle'; }
+    else join.title=s.isPublic?'Join this server':'Enter the password to play here';
     join.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) joinServer(s); });
     btns.appendChild(join);
     if(!s.isPublic){                                           // private: watch without the password
@@ -6477,7 +6481,7 @@ let bbMode = false;   // makes chunk generation produce void + the arena prefab
 const bb = {
   active:false, phase:'lobby', left:0, theme:'', themes:[], plots:[], votePlot:0,
   plot:-1, results:null, ratings:['','Poor','Okay','Good','Great','Legendary'],
-  geom:{ plotW:12, pitch:15, floorY:60, buildH:12, maxPlots:8 },
+  geom:{ plotW:24, pitch:27, floorY:40, buildH:24, maxPlots:8 },
   myVotes:{}, myTheme:-1, waiting:0, playing:0, prefabSet:new Set(), deadline:0,
 };
 function bbId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
@@ -6548,8 +6552,8 @@ function bbApplyBlock(x,y,z,b){
 function bbGoToPlot(i, watching){
   const g=bb.geom, c=bbCentre(i);
   if(watching){                       // stand out in front and above, looking into the plot
-    player.pos.set(c.x, g.floorY+6, c.z - g.plotW - 6);
-    player.yaw=Math.PI; player.pitch=-0.22; player.flying=true;
+    player.pos.set(c.x, g.floorY+g.buildH*0.55, c.z - g.plotW - 10);
+    player.yaw=Math.PI; player.pitch=-0.28; player.flying=true;
   } else {
     player.pos.set(c.x, g.floorY+1.2, c.z - 2);
     player.yaw=Math.PI; player.pitch=-0.05; player.flying=false;
@@ -6571,8 +6575,8 @@ function bbPlaceForPhase(){
   if(bb.phase==='results'){ bbGoToPlot(0, true); return; }
   // lobby and theme voting: hover over the middle of the row
   const g=bb.geom, mid=(g.maxPlots-1)*g.pitch/2 + g.plotW/2;
-  player.pos.set(mid, g.floorY+11, -(g.plotW + 16));
-  player.yaw=Math.PI; player.pitch=-0.2; player.flying=true; player.vel.set(0,0,0);
+  player.pos.set(mid, g.floorY+g.buildH+6, -(g.plotW + 30));
+  player.yaw=Math.PI; player.pitch=-0.24; player.flying=true; player.vel.set(0,0,0);
   bbLoadHere();
 }
 
@@ -6640,12 +6644,13 @@ function bbPhaseTitle(p){
 /* ---- sending ---- */
 // you may only change your own plot, and only while the build clock is running
 function bbCanEdit(){
-  if(!bb.active) return false;
-  if(bb.phase!=='build' || bb.plot<0) return false;
-  if(!target) return false;
-  const t = target.nx!==undefined ? { x:target.x+target.nx, y:target.y+target.ny, z:target.z+target.nz } : target;
-  return bbInPlot(bb.plot, t.x, t.y, t.z) || bbInPlot(bb.plot, target.x, target.y, target.z);
+  return bb.active && bb.phase==='build' && bb.plot>=0 && !!target;
 }
+// Breaking hits the block you are looking at; placing fills the cell in front of
+// it. Checking either one would let you dig up the floor, because the air above
+// a floor block is inside the plot even though the floor itself is not.
+function bbCanBreak(){ return bbCanEdit() && bbInPlot(bb.plot, target.x, target.y, target.z); }
+function bbCanPlace(){ return bbCanEdit() && bbInPlot(bb.plot, target.x+target.nx, target.y+target.ny, target.z+target.nz); }
 function bbSendBlock(x,y,z,b){ if(mp.active) mpSend({type:'bbblock', x, y, z, b}); }
 function bbVoteTheme(i){ if(bb.phase!=='theme'||bb.plot<0) return; bb.myTheme=i; mpSend({type:'bbthemevote', i}); bbUpdateHud(); }
 function bbRate(v){
@@ -6672,7 +6677,7 @@ function bbTick(){
 // again once they are building. Nobody should have to press Escape mid-round.
 // the phases you click through rather than play through
 function bbFreeCursor(){
-  return bb.active && (bb.phase==='vote' || bb.phase==='results' || bb.phase==='theme' || bb.phase==='lobby' || bb.phase==='starting');
+  return bb.active && (bb.phase==='vote' || bb.phase==='results' || bb.phase==='theme');
 }
 function bbCursor(){
   if(!bb.active || state!==PLAY) return;
@@ -8054,6 +8059,10 @@ window.__mc = {
   bbOrigin(i){ return bbOrigin(i); },
   bbArenaBlocks(){ return bb.prefabSet.size; },
   setState(v){ state=v; },
+  bbFreeCursor(){ return bbFreeCursor(); },
+  // aim at a cell the way the crosshair would, and report what the gates allow
+  bbAimAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5};
+    return { canBreak:bbCanBreak(), canPlace:bbCanPlace() }; },
   bbClock(){ return { deadline:bb.deadline, left:bb.left, now:performance.now(), phase:bb.phase, state:state, active:bb.active }; },
   bbMesh(){ let gen=0, meshed=0, dirty=0, tris=0;
     for(const [,c] of chunks){ if(c.generated) gen++; if(c.dirty) dirty++;
