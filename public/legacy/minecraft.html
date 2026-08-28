@@ -3374,6 +3374,7 @@ function makeNametag(name, color, admin, spectator){
   const s=new THREE.Sprite(new THREE.SpriteMaterial({ map:t, transparent:true, depthTest:false }));
   s.scale.set(1.7*c.width/256,0.42,1); s.position.y=2.15; s.renderOrder=999;
   s.raycast=()=>{};   // never block the punch/attack raycast (sprites also need raycaster.camera)
+  s.userData.label = tag.trim();   // the tag is drawn into a canvas, so keep the text readable too
   return s;
 }
 
@@ -4183,6 +4184,7 @@ function insidePortal(){
   return getBlock(x,y,z)===B.nether_portal || getBlock(x,y+1,z)===B.nether_portal;
 }
 function tickPortal(dt){
+  if(bb.active){ portalIn=0; return; }                           // Build Battle is one arena; there is nowhere to travel to
   if(!insidePortal()){ portalArmed=true; portalIn=0; return; }   // step clear and the portal arms again
   if(!portalArmed){ portalIn=0; return; }                        // you came out of this one; it will not send you straight back
   portalIn+=dt;
@@ -4312,7 +4314,8 @@ function useFlint(){
   if(!target) return;
   const tb = getBlock(target.x, target.y, target.z);
   if(tb===B.tnt){ primeTnt(target.x, target.y, target.z); doSwing(); return; }
-  if(tb===B.obsidian && lightPortalFrom(target.x, target.y, target.z)){ doSwing(); return; }
+  // a portal in Build Battle would lead nowhere, so do not let one light at all
+  if(tb===B.obsidian && !bb.active && lightPortalFrom(target.x, target.y, target.z)){ doSwing(); return; }
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   if(py<0 || py>=WH) return;
   if(getBlock(px,py,pz)!==AIR) return;
@@ -5847,6 +5850,11 @@ function setPlayerColor(p, color){
   if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
+function setPlayerSpectator(p, spec){
+  if(!!p.spectator===!!spec) return; p.spectator=!!spec;
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide && !p.ghost; }
+  if(tabShown) renderTabList();
+}
 function setPlayerAdmin(p, admin){
   if(!!p.admin===!!admin) return; p.admin=!!admin;
   if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide; }
@@ -6621,10 +6629,14 @@ function bbHandle(m){
       } else if(m.phase==='vote' && m.votePlot!==wasPlot){
         bbPlaceForPhase();
       }
+      bbSyncSpectator();
       bbUpdateHud();
       return true;
     }
-    case 'bbyou': bb.plot=(m.plot!=null)?m.plot:-1; bbUpdateHud(); return true;
+    case 'bbyou': bb.plot=(m.plot!=null)?m.plot:-1; bbSyncSpectator(); bbUpdateHud(); return true;
+    case 'bbwatchers':
+      for(const w of (m.players||[])){ const rp=mp.players.get(w.id); if(rp) setPlayerSpectator(rp, w.spectator); }
+      bbSyncSpectator(); return true;
     case 'bbreset':
       bb.myVotes={}; bb.myTheme=-1; bb.results=null;
       bbRebuildWorld(); bbPlaceForPhase(); bbUpdateHud(); return true;
@@ -6632,6 +6644,13 @@ function bbHandle(m){
     case 'bbvoted': bb.myVotes[m.i]=m.v; bbUpdateHud(); return true;
   }
   return false;
+}
+// Mid-round with no plot means you are watching, and that is what the tab list
+// and your nametag should say, the same as a spectator on a private server.
+function bbSyncSpectator(){
+  const mid = bb.phase!=='lobby' && bb.phase!=='starting';
+  const spec = bb.active && mid && bb.plot<0;
+  if(!!mp.spectator !== spec){ mp.spectator=spec; if(tabShown) renderTabList(); }
 }
 function bbPhaseTitle(p){
   return p==='theme' ? 'Vote for a theme'
@@ -8060,6 +8079,11 @@ window.__mc = {
   bbArenaBlocks(){ return bb.prefabSet.size; },
   setState(v){ state=v; },
   bbFreeCursor(){ return bbFreeCursor(); },
+  mpSpectator(){ return !!mp.spectator; },
+  remoteSpectator(id){ const q=mp.players.get(id); if(!q) return null;
+    return { spectator:!!q.spectator, tag: (q.tag && q.tag.userData.label)||'', hasTag: !!q.tag }; },
+  tabHtml(){ renderTabList(); return tabListEl.innerHTML; },
+  forcePortalAt(x,y,z){ setBlock(x,y,z,B.nether_portal); remeshChunkAt(x,z); return getBlock(x,y,z)===B.nether_portal; },
   // aim at a cell the way the crosshair would, and report what the gates allow
   bbAimAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5};
     return { canBreak:bbCanBreak(), canPlace:bbCanPlace() }; },
