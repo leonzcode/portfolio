@@ -719,7 +719,7 @@ try {
 
 /* ------------------------------------------------------------- constants -- */
 const CH = 16;            // chunk width/depth
-const WH = 72;            // world height (blocks)
+const WH = 144;           // world height (blocks) — the build limit, doubled from 72
 const SEA = 30;           // sea level
 const BEDROCK_Y = 0;      // the single bedrock layer sits at the bottom of the world
 const TILE = 16;          // texture tile pixels
@@ -2050,6 +2050,13 @@ function trapdoorBoxes(facing, open, top){
 const slabMeta = new Map();   // "x,y,z" -> {top:bool, double:bool}
 let spSlabs = {};
 function isSlab(id){ return !!(id && BLOCKS[id] && BLOCKS[id].slab); }
+// How high a slab reaches inside its own cell. A plain bottom slab stops half way
+// up; a top slab or a doubled one reaches the ceiling. A slab with no meta on it
+// (an older save, a block that arrived over the network before its meta did) counts
+// as the bottom slab it was almost certainly placed as, rather than a full cube.
+function slabIsTop(x,y,z){ const m=slabMeta.get(dkey(x,y,z)); return !!(m && m.top); }
+function slabIsDouble(x,y,z){ const m=slabMeta.get(dkey(x,y,z)); return !!(m && m.double); }
+function slabTop(x,y,z){ return (slabIsTop(x,y,z)||slabIsDouble(x,y,z)) ? y+1 : y+0.5; }
 // ---- torches, buttons, levers: things bolted to a face ----
 // m: 0 = standing on the block below, 1 = hanging from the block above, 2 = on a wall.
 // f: which way it faces, away from whatever it is attached to (0=-z 1=+x 2=+z 3=-x).
@@ -2436,6 +2443,7 @@ function terrainHeight(x,z){
    The five regions below are the ones a Minecraft player would recognise -
    wastes, crimson and warped forests, soul sand valleys and basalt deltas.   */
 const NETHER_LAVA = 20;            // anything hollow below this fills with lava
+const NETHER_TOP  = 72;            // the nether keeps its own bedrock roof; raising the overworld's limit does not stretch it
 function netherFloor(x,z){
   const broad = noise.n2(x*0.0075+3100, z*0.0075-3100);
   const hills = noise.n2(x*0.024-900,   z*0.024+900);
@@ -2538,9 +2546,10 @@ class Chunk{
     for(let x=0;x<CH;x++) for(let z=0;z<CH;z++){
       const wx=cx*CH+x, wz=cz*CH+z;
       const floor=netherFloor(wx,wz), roof=netherRoof(wx,wz), bio=netherBiome(wx,wz);
-      for(let y=0;y<WH;y++){
+      const cap=Math.min(WH, NETHER_TOP);
+      for(let y=0;y<cap;y++){
         let b=AIR;
-        if(y===0 || y===WH-1) b=B.bedrock;                          // sealed top and bottom
+        if(y===0 || y===cap-1) b=B.bedrock;                         // sealed top and bottom
         else if(y<=floor)  b=this.netherStrata(wx,y,wz,floor,bio);
         else if(y>=roof)   b=B.netherrack;
         else if(y<=NETHER_LAVA) b=B.lava;                           // the lava sea fills the low ground
@@ -3894,9 +3903,9 @@ function collides(px,py,pz){
       if(BLOCKS[b].door) continue;  // doors are always walk-through, open or closed
       if(BLOCKS[b].wall){ if(wallCollides(x,y,z,px,pz)) return true; continue; }      // post + arms, nothing between
       if(BLOCKS[b].pane){ if(paneCollides(x,y,z,px,py,pz)) return true; continue; }   // thin, connect-shaped collision
-      if(BLOCKS[b].slab){           // a slab only fills its half of the cell (unless doubled)
-        const sm=slabMeta.get(x+','+y+','+z);
-        if(sm && !sm.double){ const yb=sm.top?y+0.5:y, yt=sm.top?y+1:y+0.5; if(py+player.h<=yb || py>=yt) continue; }
+      if(BLOCKS[b].slab && !slabIsDouble(x,y,z)){   // a slab only fills its half of the cell
+        const top=slabIsTop(x,y,z), yb=top?y+0.5:y, yt=top?y+1:y+0.5;
+        if(py+player.h<=yb || py>=yt) continue;
       }
       if(BLOCKS[b].cushion){ if(py>=y+CUSHION_H) continue; }   // a cushion is a low pad; stand on top of it
       if(BLOCKS[b].campfire){ if(py>=y+8/16) continue; }       // logs are 8 pixels tall; you stand on them
@@ -3944,7 +3953,7 @@ function stepUpStair(p, axis){
     for(let x=Math.floor(p.x-w); x<=Math.floor(p.x+w); x++){
       const b=getBlock(x,fy,z);
       if(isStair(b)) ny=Math.max(ny, fy+1);
-      else if(isSlab(b)){ const sm=slabMeta.get(x+','+fy+','+z); if(sm && !sm.double && !sm.top) ny=Math.max(ny, fy+0.5); }
+      else if(isSlab(b)) ny=Math.max(ny, slabTop(x,fy,z));   // every kind of slab, the way stairs do
       else if(isCushion(b)) ny=Math.max(ny, fy+CUSHION_H);
       else if(isCampfire(b)) ny=Math.max(ny, fy+8/16);
       else if(BLOCKS[b] && BLOCKS[b].cutter)  ny=Math.max(ny, fy+9/16);
@@ -8167,7 +8176,8 @@ window.__mc = {
   block(x,y,z){ return getBlock(x,y,z); },
   doorAt(x,y,z){ const d=doorMeta.get(x+','+y+','+z); return d?{facing:d.facing,open:d.open,hinge:d.hinge||'right'}:null; },
   blockInfo(name){ const b=BLOCKS[name]; return b?{id:b.id,pane:!!b.pane,wall:!!b.wall,opaque:!!b.opaque,solid:!!b.solid,cat:catOf(name)}:null; },
-  putBlock(x,y,z,name){ if(name==='air'){ setBlock(x,y,z,AIR); redTrack(x,y,z); remeshChunkAt(x,z); return true; }
+  putBlock(x,y,z,name){ slabMeta.delete(dkey(x,y,z));   // a raw set leaves no shape behind for the next block to inherit
+    if(name==='air'){ setBlock(x,y,z,AIR); redTrack(x,y,z); remeshChunkAt(x,z); return true; }
     const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); redTrack(x,y,z); remeshChunkAt(x,z); return true; },
   giveBlock(name){ const b=BLOCKS[name]; if(!b) return false; hotbar[selSlot]=b.id; if(typeof renderHotbar==='function') renderHotbar(); return true; },
   useAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; useAction(); return true; },
@@ -8236,6 +8246,11 @@ window.__mc = {
       if(c.mesh){ meshed++; const a=c.mesh.geometry.attributes.position; if(a) tris+=a.count; } }
     return { chunks:chunks.size, gen, meshed, dirty, tris, sceneKids:scene.children.length, view:VIEW,
              cam:[+player.pos.x.toFixed(1), +player.pos.y.toFixed(1), +player.pos.z.toFixed(1)], mode:bbMode }; },
+  // ---- slab / build-limit test hooks ----
+  worldHeight(){ return WH; }, netherTop(){ return NETHER_TOP; },
+  setDim(d){ switchDim(d|0); },
+  hold(action, ms){ const k=binds[action]||action; keys[k]=true; setTimeout(()=>{ keys[k]=false; }, ms); },
+  slabTopAt(x,y,z){ return slabTop(x,y,z); },
   // ---- wall test hooks ----
   hits(x,y,z){ return collides(x,y,z); },
   wallList(){ return PALETTE.filter(id=>BLOCKS[id].wall).map(id=>BLOCKS[id].name); },
