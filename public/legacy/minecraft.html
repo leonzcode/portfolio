@@ -153,6 +153,45 @@
   .btn:active{ border-color:#333 #a9a9a9 #a9a9a9 #333; }
   .btn:focus-visible, .keybtn:focus-visible{ outline:2px solid #ffec4d; outline-offset:2px; }
   .hint{ font-size:12.5px; color:#b9b9b9; text-align:center; line-height:1.9; max-width:460px; }
+  /* build battle HUD */
+  #bbHud{ position:fixed; inset:0; z-index:14; pointer-events:none; display:none;
+    font-family:inherit; color:#fff; text-shadow:1px 1px 0 #000; }
+  #bbTop{ position:absolute; top:10px; left:50%; transform:translateX(-50%); display:flex; gap:14px;
+    align-items:baseline; background:rgba(18,14,26,.72); border:2px solid; border-color:#6b6b6b #1f1f1f #1f1f1f #6b6b6b;
+    padding:5px 14px; }
+  #bbPhase{ font-size:15px; letter-spacing:1px; text-transform:uppercase; }
+  #bbTimer{ font-size:20px; font-variant-numeric:tabular-nums; }
+  #bbTimer.low{ color:#ff6b6b; }
+  #bbTheme{ position:absolute; top:52px; left:50%; transform:translateX(-50%); font-size:17px; color:#ffec4d; }
+  #bbBanner{ position:absolute; top:34%; left:50%; transform:translateX(-50%); font-size:38px; letter-spacing:2px;
+    opacity:0; transition:opacity .4s ease; white-space:nowrap; }
+  #bbPanel{ position:absolute; left:50%; bottom:92px; transform:translateX(-50%); pointer-events:auto; }
+  #bbHint{ position:absolute; left:50%; bottom:66px; transform:translateX(-50%); font-size:12.5px; color:#cfcfcf; }
+  .bbBtn{ font:inherit; color:#fff; cursor:pointer; background:#4a4a4a; padding:8px 14px;
+    border:2px solid; border-color:#9d9d9d #2b2b2b #2b2b2b #9d9d9d; }
+  .bbBtn:hover{ filter:brightness(1.18); }
+  .bbBtn.on{ background:#3f6b3a; border-color:#7fbf78 #24401f #24401f #7fbf78; }
+  .bbLobby{ text-align:center; background:rgba(18,14,26,.8); border:2px solid; border-color:#6b6b6b #1f1f1f #1f1f1f #6b6b6b; padding:14px 26px; }
+  .bbLobby h2{ margin:0 0 4px; font-size:22px; font-weight:400; }
+  .bbLobby p{ margin:0 0 10px; font-size:13px; color:#cfcfcf; }
+  .bbThemes{ display:flex; gap:10px; }
+  .bbTheme{ display:flex; flex-direction:column; align-items:center; gap:3px; min-width:130px; }
+  .bbTheme b{ font-size:16px; color:#ffec4d; }
+  .bbWho{ text-align:center; font-size:15px; margin-bottom:8px; }
+  .bbRates{ display:flex; gap:8px; }
+  .bbRate{ display:flex; flex-direction:column; align-items:center; gap:2px; min-width:74px; padding:6px 8px; }
+  .bbRate b{ font-size:17px; }
+  .bbRate span{ font-size:11px; color:#cfcfcf; }
+  .bbRate.r1{ border-color:#c98a8a #3d2020 #3d2020 #c98a8a; }
+  .bbRate.r5{ border-color:#8ac9a0 #203d2c #203d2c #8ac9a0; }
+  .bbResults{ background:rgba(18,14,26,.82); border:2px solid; border-color:#6b6b6b #1f1f1f #1f1f1f #6b6b6b;
+    padding:10px 16px; min-width:340px; }
+  .bbRow{ display:flex; gap:12px; align-items:baseline; padding:3px 0; font-size:14px; }
+  .bbRow.win{ color:#ffec4d; font-size:16px; }
+  .bbRow .pos{ width:20px; color:#9d9d9d; }
+  .bbRow .nm{ flex:1 1 auto; }
+  .bbRow .sc{ font-variant-numeric:tabular-nums; }
+  .bbRow .rt{ width:86px; text-align:right; font-size:12px; color:#cfcfcf; }
   /* title screen: logo splash + tidy button group */
   .logo{ position:relative; display:inline-flex; flex-direction:column; align-items:center; }
   .splash{
@@ -2419,7 +2458,7 @@ class Chunk{
   set(x,y,z,v){ this.data[this.idx(x,y,z)] = v; }
   generate(){
     const { cx, cz } = this;
-    if(bwMode){   // bedwars: void world; the island prefab lives entirely in mpOverrides
+    if(bwMode || bbMode){   // bedwars and build battle: void world, the prefab lives entirely in mpOverrides
       this.generated = true;
       const ovb = mpOverrides.get(this.cx+','+this.cz);
       if(ovb) for(const [lk,b] of ovb){ const p=lk.split(','); this.set(+p[0],+p[1],+p[2], b); }
@@ -3702,6 +3741,9 @@ addEventListener('keydown', e=>{
       e.preventDefault(); return;
     } }
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
+  if(bb.active && bb.phase==='vote' && state===PLAY && !invOpen && !chatOpen){
+    if(k>='1' && k<='5'){ e.preventDefault(); bbRate(+k); return; }
+  }
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
@@ -4721,6 +4763,7 @@ function breakGhostUnderCrosshair(){
   return true;
 }
 function breakBlock(){
+  if(bb.active && !bbCanEdit()) return;      // build battle: only in your plot, only while building
   const specHit = mp.active && mp.spectator && fx.superStick;   // tadee code: a spectator may still punch players
   if(mp.active && mp.spectator && !specHit) return;   // ordinary spectators can't break blocks, punch players or hit mobs
   if(bw.active && bw.dead) return;          // no acting while dead / spectating
@@ -4759,6 +4802,7 @@ function breakBlock(){
 }
 function placeBlock(){
   if(mp.active && mp.spectator) return;     // spectators can't place blocks
+  if(bb.active && !bbCanEdit()) return;     // build battle: only in your plot, only while building
   if(!target) return;
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   if(py<0 || py>=WH) return;   // never build at or above the world height — those cells are unreachable, so a sign/PRG there becomes an unbreakable ghost
@@ -5219,6 +5263,7 @@ function resume(){ state=PLAY; pauseEl.hidden=true; canvas.requestPointerLock();
 function startSingleplayer(){
   dim=0;
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
+  mp.bb=false; bb.active=false; bbMode=false; bbLeaveUi();
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
   spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
   spSave();            // pin the seed so even a brand-new world reloads identically
@@ -5229,6 +5274,7 @@ function startSingleplayer(){
 function toMenu(){
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} }   // leave the shared world; onclose clears remote players
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
+  mp.bb=false; bb.active=false; bbMode=false; bbLeaveUi();
   state=MENU; menuEl.hidden=false; pauseEl.hidden=true; invEl.hidden=true; invOpen=false;
   showHud(false);
   menuPanoEnd(); menuPanoStart();   // back to the turning nether behind the buttons
@@ -5844,6 +5890,7 @@ function mcHttpBase(){   // HTTP origin for /mc/servers + /mc/createserver (deri
 function mpUrl(){
   let u = mpWsUrl();
   if(mp.bw){ u += (u.indexOf('?')>=0?'&':'?')+'mode=bw'; return u; }   // bedwars: separate match
+  if(mp.bb){ u += (u.indexOf('?')>=0?'&':'?')+'mode=bb'; return u; }   // build battle: separate round
   const p = new URLSearchParams();
   p.set('server', mpTarget.server || 'original');
   if(mpTarget.pw) p.set('pw', mpTarget.pw);
@@ -5928,6 +5975,8 @@ function mpUpdatePlayers(dt){
   }
 }
 function mpHandle(m){
+  if(m.type==='init' && (m.mode==='bb' || bb.active)){ bbInit(m); return; }   // build battle has its own init/world
+  if(bb.active && bbHandle(m)) return;                                        // build-battle-only messages
   if(m.type==='init' && (m.mode==='bw' || bw.active)){ bwInit(m); return; }   // bedwars has its own init/world
   if(bw.active && bwHandle(m)) return;                                        // bedwars-only messages; others fall through
   if(DIM_MSGS[m.type] && m.type!=='tnt'){
@@ -6082,6 +6131,7 @@ function mpSend(o){
   if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} }
 }
 function mpSendBlock(x,y,z,b){
+  if(bb.active){ if(bbInPlot(bb.plot,x,y,z)){ mpSetOverride(x,y,z,b); bbSendBlock(x,y,z,b); } return; }   // build battle: your plot only
   if(bw.active){ mpSetOverride(x,y,z,b); mpSend({type:'bwblock',x,y,z,b}); return; }   // bedwars: dynamic edit into the match
   if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); }
   else spRecord(x,y,z,b);   // singleplayer: persist the edit locally
@@ -6114,7 +6164,8 @@ function mpStartWorld(serverSeed){
   startGame();
   updateWorldBorder();
 }
-function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi(); mpConnect(); }
+function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi();
+  mp.bb=false; bb.active=false; bbMode=false; if(typeof bbLeaveUi==='function') bbLeaveUi(); mpConnect(); }
 
 /* ================= server browser: pick / create / join a server ================= */
 const serversEl=document.getElementById('servers'), srvListEl=document.getElementById('srvList'), srvNoteEl=document.getElementById('srvNote'), srvSearchEl=document.getElementById('srvSearch');
@@ -6240,8 +6291,9 @@ function renderServerList(){
       btns.appendChild(spec);
     }
     card.appendChild(btns);
-    if(ownerMode) card.classList.add(s.id==='original' ? 'hasEdit' : 'hasDel');   // corner room for the badges this card gets
-    if(ownerMode){                                            // only the owner code changes or removes somebody else's server
+    const ownable = ownerMode && !s.pinned;                   // a pinned game mode is not a world you can edit
+    if(ownable) card.classList.add(s.id==='original' ? 'hasEdit' : 'hasDel');
+    if(ownable){                                            // only the owner code changes or removes somebody else's server
       const ed=document.createElement('button'); ed.className='srvEditX'; ed.textContent='✎'; ed.title='Edit name, icon or password';
       ed.addEventListener('click', e=>{ e.stopPropagation(); openEditServer(s); });
       card.appendChild(ed);
@@ -6271,6 +6323,7 @@ async function doDeleteServer(s){
   catch(e){ refreshServers('Network error.'); }
 }
 function joinServer(s){
+  if(s.mode==='bb'){ serversEl.hidden=true; startBuildBattle(); return; }   // Build Battle is its own game, not a world
   if(s.isPublic){ mpTarget={ server:s.id, pw:'' }; serversEl.hidden=true; startMultiplayer(); return; }
   openPwPrompt(s);   // private always asks for the password (an admin can leave it blank)
 }
@@ -6409,6 +6462,300 @@ async function csCreate(){
 document.getElementById('csCreateBtn').addEventListener('click', csCreate);
 document.getElementById('csCancelBtn').addEventListener('click', ()=>{ createServerEl.hidden=true; openServers(); });
 ['csName','csPassword','csReason'].forEach(idn=>{ const el=document.getElementById(idn); el.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Escape'){ e.preventDefault(); createServerEl.hidden=true; openServers(); } if(e.key==='Enter' && idn==='csPassword'){ e.preventDefault(); csCreate(); } }); });
+
+/* ======================================================== BUILD BATTLE === */
+/* A Hypixel-style build contest. Connects to the same server with ?mode=bb, which
+   runs a separate authoritative round. The arena (plots, dividing walls, floor) is a
+   fixed prefab built locally here from the constants the server sends, so we never
+   ship it over the wire; only what people actually build travels.
+
+   A round runs: lobby -> vote on a theme -> five minutes building -> everyone is
+   walked past each plot to rate it -> results. Turn up mid-round and you watch it
+   out, then you are dealt in at the next lobby.                                  */
+let bbMode = false;   // makes chunk generation produce void + the arena prefab
+const bb = {
+  active:false, phase:'lobby', left:0, theme:'', themes:[], plots:[], votePlot:0,
+  plot:-1, results:null, ratings:['','Poor','Okay','Good','Great','Legendary'],
+  geom:{ plotW:12, pitch:15, floorY:60, buildH:12, maxPlots:8 },
+  myVotes:{}, myTheme:-1, waiting:0, playing:0, prefabSet:new Set(),
+};
+function bbId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
+function bbOrigin(i){ return { x: i*bb.geom.pitch, z: 0 }; }
+function bbCentre(i){ const o=bbOrigin(i); return { x:o.x + bb.geom.plotW/2, z:o.z + bb.geom.plotW/2 }; }
+// the cell you are allowed to change: inside your own plot, above the floor, under the wall top
+function bbInPlot(i, x, y, z){
+  if(i<0) return false;
+  const o=bbOrigin(i), g=bb.geom;
+  return x>=o.x && x<o.x+g.plotW && z>=o.z && z<o.z+g.plotW && y>g.floorY && y<=g.floorY+g.buildH;
+}
+
+function startBuildBattle(){
+  if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
+  // close the browser screens, or they sit over the game once it starts
+  if(serversEl) serversEl.hidden=true;
+  if(typeof createServerEl!=='undefined' && createServerEl) createServerEl.hidden=true;
+  if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;
+  if(pollMiniEl) pollMiniEl.hidden=true;
+  mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi();
+  mp.bb=true; bb.active=true; bbMode=true;
+  bbEnterUi();
+  mpConnect();
+}
+function bbEnterUi(){ bbEnsureUi(); const h=document.getElementById('bbHud'); if(h) h.style.display='block'; }
+function bbLeaveUi(){ const h=document.getElementById('bbHud'); if(h) h.style.display='none'; }
+
+/* ---- the arena, written into mpOverrides so streamed chunks show it ---- */
+function bbPlace(x,y,z,id){ if(id){ mpSetOverride(x,y,z,id); bb.prefabSet.add(x+','+y+','+z); } }
+function bbBuildArena(){
+  mpOverrides.clear(); bb.prefabSet.clear();
+  const g=bb.geom;
+  const grass=bbId('grass'), stone=bbId('stone'), glass=bbId('glass'), quartz=bbId('quartz_block')||stone;
+  const glow=bbId('glowstone');
+  for(let i=0;i<g.maxPlots;i++){
+    const o=bbOrigin(i);
+    // the plot floor, with a quartz rim so the edge of your ground is obvious
+    for(let dx=-1;dx<=g.plotW;dx++) for(let dz=-1;dz<=g.plotW;dz++){
+      const edge = dx<0 || dz<0 || dx>=g.plotW || dz>=g.plotW;
+      bbPlace(o.x+dx, g.floorY, o.z+dz, edge?quartz:grass);
+    }
+    // walls left and right, so neighbours cannot see or reach in
+    for(let dy=1;dy<=g.buildH;dy++){
+      for(let dz=-1;dz<=g.plotW;dz++){
+        bbPlace(o.x-2, g.floorY+dy, o.z+dz, glass);
+        bbPlace(o.x+g.plotW+1, g.floorY+dy, o.z+dz, glass);
+      }
+      // and a back wall, so the row reads as separate rooms
+      for(let dx=-1;dx<=g.plotW;dx++) bbPlace(o.x+dx, g.floorY+dy, o.z+g.plotW+1, glass);
+    }
+    // a lamp at each back corner so a plot is lit at night
+    bbPlace(o.x-1, g.floorY+g.buildH, o.z+g.plotW, glow);
+    bbPlace(o.x+g.plotW, g.floorY+g.buildH, o.z+g.plotW, glow);
+  }
+}
+function bbRebuildWorld(){
+  bbBuildArena();
+  for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
+  chunks.clear(); genQueue=[];
+}
+function bbApplyBlock(x,y,z,b){
+  mpSetOverride(x,y,z,b);
+  const c=chunks.get(key(Math.floor(x/CH), Math.floor(z/CH)));
+  if(c && c.generated){ setBlock(x,y,z,b); remeshChunkAt(x,z); }
+}
+
+/* ---- where you stand in each phase ---- */
+function bbGoToPlot(i, watching){
+  const g=bb.geom, c=bbCentre(i);
+  if(watching){                       // stand out in front and above, looking into the plot
+    player.pos.set(c.x, g.floorY+6, c.z - g.plotW - 6);
+    player.yaw=Math.PI; player.pitch=-0.22; player.flying=true;
+  } else {
+    player.pos.set(c.x, g.floorY+1.2, c.z - 2);
+    player.yaw=Math.PI; player.pitch=-0.05; player.flying=false;
+  }
+  player.vel.set(0,0,0);
+  bbLoadHere();
+}
+// Every phase change teleports you, so build and mesh what is around you right
+// away rather than letting the frame loop trickle it in and leave you in fog.
+function bbLoadHere(){
+  ensureChunks(player.pos.x, player.pos.z);
+  let guard=0; while(genQueue.length && guard<500){ const ch=genQueue.shift(); if(!ch.generated) ch.generate(); guard++; }
+  const ccx=Math.floor(player.pos.x/CH), ccz=Math.floor(player.pos.z/CH);
+  for(const [,c] of chunks) if(c.generated && c.dirty && Math.abs(c.cx-ccx)<=3 && Math.abs(c.cz-ccz)<=3) buildChunkMesh(c);
+}
+function bbPlaceForPhase(){
+  if(bb.phase==='build' && bb.plot>=0){ bbGoToPlot(bb.plot, false); return; }
+  if(bb.phase==='vote'){ bbGoToPlot(bb.votePlot, true); return; }
+  if(bb.phase==='results'){ bbGoToPlot(0, true); return; }
+  // lobby and theme voting: hover over the middle of the row
+  const g=bb.geom, mid=(g.maxPlots-1)*g.pitch/2 + g.plotW/2;
+  player.pos.set(mid, g.floorY+11, -(g.plotW + 16));
+  player.yaw=Math.PI; player.pitch=-0.2; player.flying=true; player.vel.set(0,0,0);
+  bbLoadHere();
+}
+
+/* ---- messages ---- */
+function bbInit(m){
+  bb.active=true; bbMode=true; mp.id=m.id; mp.name=m.name;
+  if(m.geom) bb.geom=m.geom;
+  if(m.ratings) bb.ratings=m.ratings;
+  bb.phase=m.phase; bb.left=m.left||0; bb.theme=m.theme||''; bb.themes=m.themes||[];
+  bb.plots=m.plots||[]; bb.votePlot=m.votePlot||0; bb.plot=(m.you&&m.you.plot!=null)?m.you.plot:-1;
+  bb.myVotes={}; bb.myTheme=-1;
+  mpClearPlayers();
+  bbRebuildWorld();
+  seed=4242>>>0; noise=makeNoise(seed);       // void generation ignores it, but keep it defined
+  startGame();
+  // whatever people have already built this round
+  if(m.builds) for(const set of m.builds) for(const k in set){ const c=k.split(','); bbApplyBlock(+c[0],+c[1],+c[2], set[k]); }
+  bbPlaceForPhase();
+  for(const p of (m.players||[])) mpAddPlayer(p);
+  mpSendSkin();
+  bbEnsureUi(); bbUpdateHud();
+  const midRound = ['theme','build','vote','results'].indexOf(bb.phase)>=0;
+  chatPush(midRound && bb.plot<0 ? 'Joined Build Battle. Watching this round, you are in for the next one.'
+                                 : 'Joined Build Battle.', 'sys');
+}
+// returns true if it handled a build-battle-only message
+function bbHandle(m){
+  switch(m.type){
+    case 'bbstate': {
+      const wasPhase=bb.phase, wasPlot=bb.votePlot;
+      bb.phase=m.phase; bb.left=m.left||0; bb.theme=m.theme||''; bb.themes=m.themes||[];
+      bb.plots=m.plots||[]; bb.votePlot=m.votePlot||0; bb.results=m.results||null;
+      bb.waiting=m.waiting||0; bb.playing=m.playing||0;
+      if(m.phase!==wasPhase){
+        bb.myVotes = (m.phase==='vote') ? {} : bb.myVotes;
+        if(m.phase==='theme'){ bb.myTheme=-1; bb.myVotes={}; }
+        bbPlaceForPhase();
+        bbBanner(bbPhaseTitle(m.phase), 2200);
+      } else if(m.phase==='vote' && m.votePlot!==wasPlot){
+        bbPlaceForPhase();
+      }
+      bbUpdateHud();
+      return true;
+    }
+    case 'bbyou': bb.plot=(m.plot!=null)?m.plot:-1; bbUpdateHud(); return true;
+    case 'bbreset':
+      bb.myVotes={}; bb.myTheme=-1; bb.results=null;
+      bbRebuildWorld(); bbPlaceForPhase(); bbUpdateHud(); return true;
+    case 'bbblock': bbApplyBlock(m.x,m.y,m.z,m.b); return true;
+    case 'bbvoted': bb.myVotes[m.i]=m.v; bbUpdateHud(); return true;
+  }
+  return false;
+}
+function bbPhaseTitle(p){
+  return p==='theme' ? 'Vote for a theme'
+       : p==='build' ? 'Build!'
+       : p==='vote'  ? 'Rate the builds'
+       : p==='results' ? 'Results'
+       : p==='starting' ? 'Starting soon' : 'Waiting for players';
+}
+
+/* ---- sending ---- */
+// you may only change your own plot, and only while the build clock is running
+function bbCanEdit(){
+  if(!bb.active) return false;
+  if(bb.phase!=='build' || bb.plot<0) return false;
+  if(!target) return false;
+  const t = target.nx!==undefined ? { x:target.x+target.nx, y:target.y+target.ny, z:target.z+target.nz } : target;
+  return bbInPlot(bb.plot, t.x, t.y, t.z) || bbInPlot(bb.plot, target.x, target.y, target.z);
+}
+function bbSendBlock(x,y,z,b){ if(mp.active) mpSend({type:'bbblock', x, y, z, b}); }
+function bbVoteTheme(i){ if(bb.phase!=='theme'||bb.plot<0) return; bb.myTheme=i; mpSend({type:'bbthemevote', i}); bbUpdateHud(); }
+function bbRate(v){
+  if(bb.phase!=='vote') return;
+  const pl=bb.plots[bb.votePlot];
+  if(pl && pl.id===mp.id) return;                 // you cannot rate your own build
+  mpSend({type:'bbvote', i:bb.votePlot, v});
+  bb.myVotes[bb.votePlot]=v; bbUpdateHud();
+}
+function bbStartBtn(){ mpSend({type:'bbstart'}); }
+
+/* ---- HUD ---- */
+let bbHudEl=null, bbBannerT=null;
+function bbEnsureUi(){
+  if(bbHudEl) return;
+  const hud=document.createElement('div'); hud.id='bbHud';
+  hud.innerHTML =
+    '<div id="bbTop"><span id="bbPhase"></span><span id="bbTimer"></span></div>'+
+    '<div id="bbTheme"></div>'+
+    '<div id="bbBanner"></div>'+
+    '<div id="bbPanel"></div>'+
+    '<div id="bbHint"></div>';
+  document.body.appendChild(hud);
+  bbHudEl=hud;
+}
+function bbBanner(text, ms){
+  bbEnsureUi();
+  const el=document.getElementById('bbBanner'); if(!el) return;
+  el.textContent=text; el.style.opacity='1';
+  clearTimeout(bbBannerT);
+  bbBannerT=setTimeout(()=>{ el.style.opacity='0'; }, ms||2000);
+}
+function bbUpdateHud(){
+  if(!bb.active) return;
+  bbEnsureUi();
+  document.getElementById('bbPhase').textContent = bbPhaseTitle(bb.phase);
+  const t=document.getElementById('bbTimer');
+  t.textContent = bb.phase==='lobby' ? '' : (Math.floor(bb.left/60)+':'+String(bb.left%60).padStart(2,'0'));
+  t.className = (bb.phase==='build' && bb.left<=30) ? 'low' : '';
+  const th=document.getElementById('bbTheme');
+  th.textContent = bb.theme ? ('Theme: '+bb.theme) : '';
+  th.style.display = bb.theme ? '' : 'none';
+
+  const panel=document.getElementById('bbPanel');
+  panel.innerHTML='';
+  const hint=document.getElementById('bbHint');
+  hint.textContent='';
+
+  if(bb.phase==='lobby' || bb.phase==='starting'){
+    const p=document.createElement('div'); p.className='bbLobby';
+    p.innerHTML='<h2>Build Battle</h2><p>'+bb.playing+' ready'+(bb.waiting?(' · '+bb.waiting+' waiting'):'')+'</p>';
+    const b=document.createElement('button'); b.className='bbBtn'; b.textContent='Start round';
+    b.addEventListener('click', bbStartBtn);
+    p.appendChild(b);
+    panel.appendChild(p);
+    hint.textContent='Two players starts it on its own.';
+    return;
+  }
+  if(bb.phase==='theme'){
+    if(bb.plot<0){ hint.textContent='Watching this round. You are in for the next one.'; return; }
+    const row=document.createElement('div'); row.className='bbThemes';
+    bb.themes.forEach((opt,i)=>{
+      const b=document.createElement('button');
+      b.className='bbBtn bbTheme'+(bb.myTheme===i?' on':'');
+      b.innerHTML='<span>'+escHtml(opt.name)+'</span><b>'+(opt.votes||0)+'</b>';
+      b.addEventListener('click', ()=>bbVoteTheme(i));
+      row.appendChild(b);
+    });
+    panel.appendChild(row);
+    hint.textContent='Pick what everybody builds.';
+    return;
+  }
+  if(bb.phase==='build'){
+    hint.textContent = bb.plot<0 ? 'Watching this round. Fly around and look.'
+                                 : 'Build inside your own plot. Press E for blocks.';
+    return;
+  }
+  if(bb.phase==='vote'){
+    const pl=bb.plots[bb.votePlot];
+    const mine = pl && pl.id===mp.id;
+    const who=document.createElement('div'); who.className='bbWho';
+    who.textContent = pl ? (mine ? 'Your build' : (pl.name||'Player')+"'s build") : 'Empty plot';
+    panel.appendChild(who);
+    if(!mine && bb.plot>=0 || (!mine && bb.plot<0)){
+      const row=document.createElement('div'); row.className='bbRates';
+      for(let v=1;v<=5;v++){
+        const b=document.createElement('button');
+        b.className='bbBtn bbRate r'+v+(bb.myVotes[bb.votePlot]===v?' on':'');
+        b.innerHTML='<b>'+v+'</b><span>'+escHtml(bb.ratings[v]||'')+'</span>';
+        b.addEventListener('click', ()=>bbRate(v));
+        row.appendChild(b);
+      }
+      panel.appendChild(row);
+      hint.textContent='Press 1 to 5, or click.';
+    } else {
+      hint.textContent='This one is yours, so you sit this vote out.';
+    }
+    return;
+  }
+  if(bb.phase==='results'){
+    const rows=bb.results||[];
+    const tbl=document.createElement('div'); tbl.className='bbResults';
+    rows.forEach((r,n)=>{
+      const line=document.createElement('div'); line.className='bbRow'+(n===0?' win':'');
+      line.innerHTML='<span class="pos">'+(n+1)+'</span><span class="nm">'+escHtml(r.name||'Player')+'</span>'+
+        '<span class="sc">'+(r.votes? r.avg.toFixed(2) : '-')+'</span>'+
+        '<span class="rt">'+escHtml(r.votes? (bb.ratings[Math.round(r.avg)]||'') : 'no votes')+'</span>';
+      tbl.appendChild(line);
+    });
+    panel.appendChild(tbl);
+    hint.textContent='Next round starts shortly.';
+    return;
+  }
+}
 
 /* ============================================================ BED WARS === */
 /* A Hypixel-style Bed Wars mode. Connects to the same server with ?mode=bw, which
@@ -7670,6 +8017,31 @@ window.__mc = {
   censor(t){ return censor(t); },
   ghost(){ return !!fx.ghost; },
   mpId(){ return mp.id; },
+  // ---- build battle test hooks ----
+  startBuildBattle(){ startBuildBattle(); },
+  bb(){ return { active:bb.active, phase:bb.phase, left:bb.left, theme:bb.theme, themes:bb.themes,
+    plots:bb.plots, votePlot:bb.votePlot, plot:bb.plot, results:bb.results, myVotes:bb.myVotes,
+    myTheme:bb.myTheme, geom:bb.geom, waiting:bb.waiting, playing:bb.playing }; },
+  bbOrigin(i){ return bbOrigin(i); },
+  bbArenaBlocks(){ return bb.prefabSet.size; },
+  bbMesh(){ let gen=0, meshed=0, dirty=0, tris=0;
+    for(const [,c] of chunks){ if(c.generated) gen++; if(c.dirty) dirty++;
+      if(c.mesh){ meshed++; const a=c.mesh.geometry.attributes.position; if(a) tris+=a.count; } }
+    return { chunks:chunks.size, gen, meshed, dirty, tris, sceneKids:scene.children.length, view:VIEW,
+             cam:[+player.pos.x.toFixed(1), +player.pos.y.toFixed(1), +player.pos.z.toFixed(1)], mode:bbMode }; },
+  bbForceStart(){ bbStartBtn(); },
+  bbVoteTheme(i){ bbVoteTheme(i); },
+  bbRate(v){ bbRate(v); },
+  bbInMyPlot(){ return bbInPlot(bb.plot, Math.floor(player.pos.x), bb.geom.floorY+1, Math.floor(player.pos.z)); },
+  // place or clear a cell through the same gate the mouse goes through
+  bbPut(x,y,z,name){
+    const id = name==='air' ? 0 : ((BLOCKS[name] && BLOCKS[name].id) || 0);
+    if(name!=='air' && !id) return false;
+    if(bb.phase!=='build' || bb.plot<0) return false;
+    if(!bbInPlot(bb.plot, x, y, z)) return false;
+    setBlock(x,y,z,id); mpSetOverride(x,y,z,id); bbSendBlock(x,y,z,id); remeshChunkAt(x,z);
+    return true;
+  },
   binds(){ return Object.assign({}, binds); },
   rename(n){ nameInputEl.value=n; nameInputEl.dispatchEvent(new Event('input')); nameInputEl.dispatchEvent(new Event('change')); return nameInputEl.value; },
   myName(){ return mp.name||''; },
