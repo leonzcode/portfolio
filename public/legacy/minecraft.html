@@ -3946,6 +3946,10 @@ function isOnLadder(){   // true when the player's box overlaps a ladder block
 let stepSmooth = 0;   // eases the camera up over a few frames after auto-stepping onto a stair
 // Minecraft-style auto-step: if a horizontal move is blocked by a STAIR, climb onto it
 // instead of stopping. Gated to stairs so you still can't walk up plain walls/full blocks.
+// Minecraft's auto-step. Anything up to this much higher you simply walk onto;
+// anything taller you have to jump. Standing on a slab puts your feet half a block
+// up, which is what makes stepping off it onto a full block a walk and not a jump.
+const STEP_H = 0.6;
 function stepUpStair(p, axis){
   const w=player.w/2, fy=Math.floor(player.pos.y);
   let ny=-1;                                        // step onto a stair (full cell) or a bottom slab (half cell)
@@ -3958,6 +3962,11 @@ function stepUpStair(p, axis){
       else if(isCampfire(b)) ny=Math.max(ny, fy+8/16);
       else if(BLOCKS[b] && BLOCKS[b].cutter)  ny=Math.max(ny, fy+9/16);
       else if(BLOCKS[b] && (BLOCKS[b].anvil||BLOCKS[b].grind)) ny=Math.max(ny, fy+13/16);
+      // an ordinary block, but only when you are already stood high enough that its
+      // top is a step and not a climb: off a slab onto the block beside it, say.
+      // Doors you walk through, and a wall is too tall to stand on either way.
+      else if(BLOCKS[b] && BLOCKS[b].solid && !BLOCKS[b].door && !BLOCKS[b].wall
+              && (fy+1)-player.pos.y <= STEP_H) ny=Math.max(ny, fy+1);
     }
   if(ny<0) return false;
   const rise=ny-player.pos.y;
@@ -8250,6 +8259,7 @@ window.__mc = {
   worldHeight(){ return WH; }, netherTop(){ return NETHER_TOP; },
   setDim(d){ switchDim(d|0); },
   hold(action, ms){ const k=binds[action]||action; keys[k]=true; setTimeout(()=>{ keys[k]=false; }, ms); },
+  release(action){ const k=binds[action]||action; keys[k]=false; },
   slabTopAt(x,y,z){ return slabTop(x,y,z); },
   // ---- wall test hooks ----
   hits(x,y,z){ return collides(x,y,z); },
