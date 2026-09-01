@@ -4017,7 +4017,9 @@ addEventListener('keydown', e=>{
     if(bb.phase==='theme' && k>='1' && k<='3'){ e.preventDefault(); bbVoteTheme(+k-1); return; }
     if(k==='k' && (bb.phase==='lobby' || bb.phase==='starting')){ e.preventDefault(); bbStartBtn(); return; }
   }
-  if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){ if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
+  if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){
+    if(k==='k' && (bw.phase==='lobby')){ e.preventDefault(); startBedwarsBtn(); return; }   // same key that starts Build Battle
+    if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
   if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
@@ -6250,7 +6252,10 @@ function mcHttpBase(){   // HTTP origin for /mc/servers + /mc/createserver (deri
 }
 function mpUrl(){
   let u = mpWsUrl();
-  if(mp.bw){ u += (u.indexOf('?')>=0?'&':'?')+'mode=bw'; return u; }   // bedwars: separate match
+  if(mp.bw){                                        // bedwars: separate match, and it keeps the name you chose
+    const nm=getSavedName();
+    return u + (u.indexOf('?')>=0?'&':'?') + 'mode=bw' + (nm ? '&name='+encodeURIComponent(nm) : '');
+  }
   if(mp.bb){                                        // build battle: separate round
     const nm=getSavedName();
     return u + (u.indexOf('?')>=0?'&':'?') + 'mode=bb' + (nm ? '&name='+encodeURIComponent(nm) : '');
@@ -6648,7 +6653,7 @@ function renderServerList(){
     // Join / Spectate right on the card, so joining or watching is a single click
     const btns=document.createElement('div'); btns.className='srvBtns';
     const join=document.createElement('button'); join.className='srvBtn'; join.textContent='Join';
-    if(s.mode==='bb'){ join.textContent='Play'; join.title='Play Build Battle'; }
+    if(s.mode){ join.textContent='Play'; join.title='Play '+s.name; }
     else join.title=s.isPublic?'Join this server':'Enter the password to play here';
     join.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) joinServer(s); });
     btns.appendChild(join);
@@ -6692,6 +6697,7 @@ async function doDeleteServer(s){
 }
 function joinServer(s){
   if(s.mode==='bb'){ serversEl.hidden=true; startBuildBattle(); return; }   // Build Battle is its own game, not a world
+  if(s.mode==='bw'){ serversEl.hidden=true; startBedwars(); return; }       // and so is Bed Wars
   if(s.isPublic){ mpTarget={ server:s.id, pw:'' }; serversEl.hidden=true; startMultiplayer(); return; }
   openPwPrompt(s);   // private always asks for the password (an admin can leave it blank)
 }
@@ -7014,6 +7020,10 @@ function bbHandle(m){
       bb.plotsWanted = (m.plots!=null) ? m.plots : bb.plots.length;
       bb.myVotes={}; bb.myTheme=-1; bb.results=null;
       bbRebuildWorld(); bbPlaceForPhase(); bbUpdateHud(); return true;
+    case 'bbplots':                       // somebody arrived mid-round and needs a plot of their own
+      bb.plotsWanted = m.plots;
+      bbRebuildWorld(); bbLoadHere();     // put the extra plot in the world; nobody gets teleported
+      bbUpdateHud(); return true;
     case 'bbblock': bbApplyBlock(m.x,m.y,m.z,m.b); return true;
     case 'bbvoted': bb.myVotes[m.i]=m.v; bbUpdateHud(); return true;
     case 'bbvotecast': bbShowVote(m.id, m.v); return true;   // somebody else's score, over their head
@@ -7608,7 +7618,8 @@ function bwSetGear(model, teamColor, armorTier, swordTier){
     const guard=new THREE.Mesh(new THREE.BoxGeometry(4*S,1.3*S,1.3*S), hmat); guard.position.y=-1*S;
     const hilt=new THREE.Mesh(new THREE.BoxGeometry(1.3*S,3*S,1.3*S), hmat); hilt.position.y=-2.5*S;
     sw.add(blade,guard,hilt);
-    sw.position.set(0.6/16, -6/16, 2.5/16); sw.rotation.x=Math.PI*0.12;
+    sw.position.set(0.6/16, -5.5/16, 3.2/16);
+    sw.rotation.x=Math.PI*0.28;        // out in front and up, the angle Minecraft holds a sword at
     ud.armR.add(sw); ud.gear.push(sw);
   }
 }
@@ -7786,10 +7797,16 @@ function bwEnsureUi(){
    #bwRes .d{width:12px;height:12px;border-radius:50%}
    #bwHealth{position:absolute;left:50%;bottom:66px;transform:translateX(-50%);font-size:17px;letter-spacing:1px;text-shadow:0 1px 2px #000}
    #bwBanner{position:absolute;top:34%;left:50%;transform:translateX(-50%);text-align:center;font-size:34px;font-weight:900;color:#fff;text-shadow:0 2px 8px #000;display:none;pointer-events:none}
-   #bwLobby{position:absolute;top:26%;left:50%;transform:translateX(-50%);text-align:center;background:rgba(0,0,0,.72);border:1px solid #555;border-radius:12px;padding:20px 28px;pointer-events:auto;display:none}
-   #bwLobby h2{margin:0 0 6px;font-size:24px;color:#ffd54a} #bwLobby p{margin:4px 0 14px;color:#cfd6dc;font-size:14px}
-   #bwLobby button{font:inherit;font-weight:800;font-size:16px;background:#3aa03a;color:#fff;border:none;border-radius:8px;padding:10px 26px;cursor:pointer}
-   #bwLobby button:hover{background:#46b846}
+   /* dead centre on its own panel, the same as Build Battle's, so the thing you
+      have to answer is the thing you are already looking at */
+   #bwLobby{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:auto;display:none;
+     background:rgba(14,11,20,.86);border:3px solid;border-color:#8a8a8a #232323 #232323 #8a8a8a;padding:16px 20px;
+     box-shadow:0 6px 24px rgba(0,0,0,.55)}
+   #bwLobby h2{margin:0 0 6px;font-size:26px;font-weight:400;color:#fff} #bwLobby p{margin:0 0 14px;color:#cfcfcf;font-size:14px}
+   #bwLobby button{font:inherit;font-size:15px;color:#fff;cursor:pointer;background:#4a4a4a;padding:11px 18px;
+     border:3px solid;border-color:#b4b4b4 #2b2b2b #2b2b2b #b4b4b4}
+   #bwLobby button:hover{filter:brightness(1.18)}
+   #bwLobbyHint{margin:10px 0 0;font-size:13px;color:#dcdcdc}
    #bwHint{position:absolute;right:12px;bottom:96px;background:rgba(0,0,0,.5);border-radius:6px;padding:5px 10px;color:#cfd6dc;font-size:12px}
    #bwShop .sp{background:#2b2f36;border:1px solid #555;border-radius:12px;width:min(760px,94vw);max-height:88vh;overflow:auto;padding:16px 18px;color:#eee}
    #bwShop h2{margin:0 0 4px;font-size:20px}
@@ -7822,7 +7839,8 @@ function bwEnsureUi(){
   document.head.appendChild(css);
   const hud=document.createElement('div'); hud.id='bwHud';
   hud.innerHTML='<div id="bwBeds"></div><div id="bwRes"></div><div id="bwHealth"></div><div id="bwHint">Shop: right-click the <b>villager</b> · Inventory: <b>E</b> · Eat apple: <b>G</b></div>'+
-    '<div id="bwBanner"></div><div id="bwLobby"><h2>Bed Wars</h2><p id="bwLobbyP">Waiting for players…</p><button id="bwStartBtn">Start match</button></div>';
+    '<div id="bwBanner"></div><div id="bwLobby"><h2>Bed Wars</h2><p id="bwLobbyP">Waiting for players…</p>'+
+    '<button id="bwStartBtn">Press K to start</button><p id="bwLobbyHint">Anyone here can press K.</p></div>';
   document.body.appendChild(hud);
   document.getElementById('bwStartBtn').addEventListener('click', ()=>{ startBedwarsBtn(); });
   const shop=document.createElement('div'); shop.className='screen'; shop.id='bwShop'; shop.hidden=true;
@@ -7841,8 +7859,11 @@ function bwUpdateHud(){
   const res=document.getElementById('bwRes'); res.innerHTML='';   // resources are inventory items now (press E), not a side counter
   document.getElementById('bwHealth').innerHTML = bw.phase==='playing' && !bw.eliminated ? bwHealthStr() : '';
   const lobby=document.getElementById('bwLobby'); const p=document.getElementById('bwLobbyP');
-  if(bw.phase==='lobby'){ lobby.style.display='block'; p.textContent = 'Press Start to begin (bots not included — grab a friend!).'; }
-  else if(bw.phase==='countdown'){ lobby.style.display='block'; p.textContent = 'Starting in '+(bw.countdown||0)+'…'; document.getElementById('bwStartBtn').style.display='none'; }
+  const hint=document.getElementById('bwLobbyHint'), btn=document.getElementById('bwStartBtn');
+  if(bw.phase==='lobby'){ lobby.style.display='block'; p.textContent = 'Grab a friend — there are no bots to fight.';
+    btn.style.display=''; if(hint) hint.textContent='Anyone here can press K.'; }
+  else if(bw.phase==='countdown'){ lobby.style.display='block'; p.textContent = 'Starting in '+(bw.countdown||0)+'…';
+    btn.style.display='none'; if(hint) hint.textContent=''; }
   else { lobby.style.display='none'; }
 }
 function bwBanner(text,color,ms){ if(!bwUiBuilt) return; const b=document.getElementById('bwBanner'); b.textContent=text; b.style.color='#'+((color||0xffffff).toString(16).padStart(6,'0')); b.style.display='block'; clearTimeout(bwBannerTimer); bwBannerTimer=setTimeout(()=>{ b.style.display='none'; }, ms||2500); }
@@ -8708,6 +8729,16 @@ window.__mc = {
   openInv(){ if(!invOpen) toggleInv(); }, closeInv(){ if(invOpen) toggleInv(); },
   // ---- bedwars test hooks ----
   bwStart(){ startBedwars(); }, bwBegin(){ startBedwarsBtn(); },
+  bwGive(tier){ bw.loadout.sword=tier|0; bwApplyLocalGear(); return bw.loadout; },
+  bwSwordAim(){ const ud=body.userData; if(!ud||!ud.gear||!ud.gear.length) return null;
+    const sw=ud.gear[ud.gear.length-1];
+    body.updateMatrixWorld(true);
+    const bladeDir=new THREE.Vector3(0,1,0).transformDirection(sw.matrixWorld);   // which way the blade points
+    const fwd=new THREE.Vector3(0,0,1).transformDirection(body.matrixWorld);      // which way the body faces
+    const r=v=>[+v.x.toFixed(2),+v.y.toFixed(2),+v.z.toFixed(2)];
+    return { blade:r(bladeDir), bodyFacing:r(fwd), gear:ud.gear.length,
+             along:{ forward:+bladeDir.dot(fwd).toFixed(2), up:+bladeDir.y.toFixed(2) } }; },
+  bwState(){ return { active:bw.active, phase:bw.phase, team:bw.team, loadout:bw.loadout }; },
   bwState(){ return { active:bw.active, phase:bw.phase, team:bw.team, hp:bw.hp, res:bw.res, beds:bw.beds, items:bw.items.size, counts:Object.assign({},bw.counts), apples:bw.apples, pos:[+player.pos.x.toFixed(1),+player.pos.y.toFixed(1),+player.pos.z.toFixed(1)], prefab:bw.prefabSet.size, dead:bw.dead }; },
   bwBuy(item){ mpSend({type:'bwbuy', item}); }, bwToggleShop(){ bwToggleShop(); return bwShopOpen; },
   bwHitId(vid){ const p=mp.players.get(vid); if(!p) return false; let dx=p.x-player.pos.x, dz=p.z-player.pos.z; const len=Math.hypot(dx,dz)||1; mpSend({type:'bwhit', target:vid, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)}); return true; },
