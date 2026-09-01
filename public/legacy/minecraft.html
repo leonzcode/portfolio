@@ -788,7 +788,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 10: vines ---
 "vine","weeping_vines","twisting_vines","cave_vines","fire","lava","nether_portal","magma_block","soul_soil","crimson_nylium","warped_nylium","crimson_fungus","warped_fungus","ancient_debris",
 // --- pass 11: walls ---
-"cobblestone_wall","mossy_cobblestone_wall","stone_brick_wall","mossy_stone_brick_wall","granite_wall","diorite_wall","andesite_wall","brick_wall","mud_brick_wall","sandstone_wall","red_sandstone_wall","prismarine_wall","nether_brick_wall","red_nether_brick_wall","end_stone_brick_wall","blackstone_wall","polished_blackstone_wall","polished_blackstone_brick_wall","cobbled_deepslate_wall","polished_deepslate_wall","deepslate_brick_wall","deepslate_tile_wall","tuff_wall","polished_tuff_wall","tuff_brick_wall"];
+"cobblestone_wall","mossy_cobblestone_wall","stone_brick_wall","mossy_stone_brick_wall","granite_wall","diorite_wall","andesite_wall","brick_wall","mud_brick_wall","sandstone_wall","red_sandstone_wall","prismarine_wall","nether_brick_wall","red_nether_brick_wall","end_stone_brick_wall","blackstone_wall","polished_blackstone_wall","polished_blackstone_brick_wall","cobbled_deepslate_wall","polished_deepslate_wall","deepslate_brick_wall","deepslate_tile_wall","tuff_wall","polished_tuff_wall","tuff_brick_wall",
+// --- pass 12: saplings and iron bars ---
+"oak_sapling","spruce_sapling","birch_sapling","jungle_sapling","acacia_sapling","dark_oak_sapling","cherry_sapling","pale_oak_sapling","mangrove_propagule","purpular_sapling","iron_bars"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1148,6 +1150,70 @@ function plantTex(art, seed){
   return (x,y)=>{
     const row = rows[y]; if(!row) return [0,0,0,0];
     const ch = row[x]; const c = (ch && ch!=='.') ? pal[ch] : null;
+    if(!c) return [0,0,0,0];
+    const d = noise[(y*16+x)&255];
+    return [cl(c[0]+d), cl(c[1]+d), cl(c[2]+d), 255];
+  };
+}
+/* ---- saplings ----
+   Four silhouettes cover the whole set, the way Minecraft's own sprites do: a
+   round bush for the oaks, a stepped cone for spruce, a wide drooping crown for
+   jungle, a thin scrubby one for acacia, and a hanging shoot for the mangrove
+   propagule. Only the colours change between species. */
+const SAP_BUSH = [
+  '................','................','.......a........','......aba.......',
+  '.....abbba......','....abbbbba.....','....abbabba.....','...abbbbbbba....',
+  '...abbabbabb....','....abbbbba.....','.....abbba......','......a.a.......',
+  '.......s........','.......s........','.......s........','................',
+];
+const SAP_CONIFER = [
+  '................','.......a........','.......b........','......aba.......',
+  '......bbb.......','.....abbba......','.....bbabb......','....abbbbba.....',
+  '....bbabbab.....','...abbbbbbba....','...bbabbabbb....','....a.....a.....',
+  '.......s........','.......s........','.......s........','................',
+];
+const SAP_DROOP = [
+  '................','................','.......a........','......aba.......',
+  '...aabbbbbaa....','..abbbabbbbba...','..abbbbbbbbba...','...abbbbbbba....',
+  '..a..abbba..a...','..b...a.a...b...','..b.........b...','.......s........',
+  '.......s........','.......s........','................','................',
+];
+const SAP_SCRUB = [
+  '................','................','....a......a....','....b.a..a.b....',
+  '.....b.aba.b....','.....abbbba.....','......abba......','....a.abba.a....',
+  '....b..ab..b....','.....a.aa.a.....','.......s........','.......s........',
+  '.......s........','.......s........','................','................',
+];
+const SAP_HANG = [
+  '................','......aaa.......','.....abbba......','.....abbba......',
+  '......aba.......','.......s........','.......s........','.......s........',
+  '.......s........','.......s........','.......s........','.......s........',
+  '.......s........','.......k........','................','................',
+];
+// [ block name, tree species, sprite, edge colour, body colour ]
+const SAPLINGS = [
+  ['oak_sapling',        'oak',      SAP_BUSH,    0x4a7a24, 0x5f9c2e],
+  ['spruce_sapling',     'spruce',   SAP_CONIFER, 0x2f4f22, 0x3d6b2c],
+  ['birch_sapling',      'birch',    SAP_BUSH,    0x5f8f36, 0x77ad46],
+  ['jungle_sapling',     'jungle',   SAP_DROOP,   0x2f7a1e, 0x3f9c28],
+  ['acacia_sapling',     'acacia',   SAP_SCRUB,   0x5d7a2a, 0x76963a],
+  ['dark_oak_sapling',   'dark_oak', SAP_BUSH,    0x2e5418, 0x3f6f22],
+  ['cherry_sapling',     'cherry',   SAP_BUSH,    0xd77fa8, 0xf2b4d0],
+  ['pale_oak_sapling',   'pale_oak', SAP_BUSH,    0x8f9b7e, 0xb3bda2],
+  ['mangrove_propagule', 'mangrove', SAP_HANG,    0x3d6b2c, 0x548a3a],
+  ['purpular_sapling',   'purpular', SAP_BUSH,    0x6b3a8f, 0x8f5ab5],
+];
+// Iron bars: three vertical bars, each a bright edge against a darker one, which
+// is all Minecraft's texture is. The pane model stretches this across the panel.
+function ironBarsTex(seed){
+  const r = rng(seed || 31);
+  const noise = []; for(let i=0;i<256;i++) noise.push((r()*2-1)*9);
+  const cl = v => Math.max(0, Math.min(255, v|0));
+  const light = rgb(0xdcdcdc), dark = rgb(0x8f8f8f);
+  return (x,y)=>{
+    let c=null;
+    if(x===1 || x===7 || x===13) c=light;
+    else if(x===2 || x===8 || x===14) c=dark;
     if(!c) return [0,0,0,0];
     const d = noise[(y*16+x)&255];
     return [cl(c[0]+d), cl(c[1]+d), cl(c[2]+d), 255];
@@ -1529,6 +1595,8 @@ TALL_FLOWERS.forEach(function(f,i){
   paint(f[0]+'_top',    plantTex({ pal:pal, rows:f[2] }, 9440+i*2));
   paint(f[0]+'_bottom', plantTex({ pal:pal, rows:f[3] }, 9441+i*2));
 });
+SAPLINGS.forEach(function(sp,i){ paint(sp[0], plantTex({ pal:{ a:sp[3], b:sp[4], s:0x6b4e2a, k:0x4a3418 }, rows:sp[2] }, 9600+i)); });
+paint('iron_bars', ironBarsTex(9620));
 paint('flower_pot', flowerPotTex(9470));
 paint('wet_sponge', wetSpongeTex(9471));
 // torches, campfire, redstone
@@ -1838,6 +1906,14 @@ B.ladder = def('ladder', { tiles:T('ladder'), ladder:true, solid:false, opaque:f
 SMALL_FLOWERS.forEach(function(f){ B[f[0]] = def(f[0], { tiles:T(f[0]), cross:true, plant:true, pot:true, solid:false, opaque:false, cutout:true }); });
 TALL_FLOWERS.forEach(function(f){ B[f[0]] = def(f[0], { tiles:T(f[0]+'_bottom'), topTile:T(f[0]+'_top'), cross:true, plant:true, tall:true, solid:false, opaque:false, cutout:true }); });
 B.flower_pot = def('flower_pot', { tiles:T('flower_pot'), flowerpot:true, opaque:false });
+// Saplings: a cross model like a flower, but putting one in the ground grows the
+// tree straight away rather than waiting on bone meal.
+SAPLINGS.forEach(function(sp){
+  B[sp[0]] = def(sp[0], { tiles:T(sp[0]), cross:true, plant:true, pot:true, sapling:sp[1],
+                          solid:false, opaque:false, cutout:true, hex:sp[4] });
+});
+// Iron bars use the glass-pane model, but they are cut out rather than see-through
+B.iron_bars = def('iron_bars', { tiles:T('iron_bars'), pane:true, cutout:true, opaque:false, hex:0xc0c0c0 });
 /* ---- torches, campfire and redstone ----
    Torches, levers and buttons attach to a face, so their orientation lives in
    attachMeta. Buttons and plates are redstone inputs; the lamp, doors and
@@ -1965,6 +2041,11 @@ for(const k of Object.keys(BLOCKS)){
   const t=BLOCKS[n].tiles;
   if(t===undefined || (Array.isArray(t) && t.some(v=>v===undefined))) console.error('block has no tile:', BLOCKS[n].name);
 }
+// isOpaque() reaches through two object lookups; the mesher asks the same question
+// tens of thousands of times a chunk, so keep the answers in a flat table.
+const OPAQUE = new Uint8Array(65536);
+function refreshOpaqueTable(){ OPAQUE.fill(0); for(const k of Object.keys(BLOCKS)){ const n=Number(k); if(Number.isInteger(n) && n>0 && BLOCKS[n].opaque) OPAQUE[n]=1; } }
+refreshOpaqueTable();
 const PALETTE = [];
 for(const k of Object.keys(BLOCKS)){ const n=Number(k); if(Number.isInteger(n) && n>0 && !PALETTE.includes(n)) PALETTE.push(n); }
 
@@ -2480,16 +2561,127 @@ function biomeAt(x,z){
   return 'plains';
 }
 
+/* ====================== TREES =============================================
+   One shape per species, built the way Minecraft builds them: oak and birch are a
+   trunk under a blob, spruce is a stepped cone, jungle is tall with the crown
+   right at the top, acacia leans over and carries a flat plate, dark oak and pale
+   oak stand on a 2x2 trunk, cherry throws out arms that each end in a blossom
+   crown, mangrove sits on prop roots. `put` decides where the blocks land, so the
+   same code grows a sapling in the open world and plants a tree into a chunk.  */
+function growTree(kind, x, y, z, r, put){
+  const log = B[kind+'_log'] || B[kind+'_stem'] || B.log;
+  const leaf = B[kind+'_leaves'] || B.leaves;
+  const ri = n => (r()*n)|0;
+  const leafAt = (px,py,pz)=> put(px,py,pz,leaf,true);     // leaves only fill air
+  const logAt  = (px,py,pz)=> put(px,py,pz,log,false);     // wood goes in regardless
+  // a flat layer of leaves. `keep` is how often a square corner survives, which is
+  // what stops every canopy from looking like a box.
+  const plate = (cx,cy,cz,rad,keep)=>{
+    for(let dx=-rad;dx<=rad;dx++) for(let dz=-rad;dz<=rad;dz++){
+      const ax=Math.abs(dx), az=Math.abs(dz);
+      if(rad>0 && ax===rad && az===rad && r()>=keep) continue;
+      if(rad>=3 && ax+az>rad+1) continue;                  // round the wide plates off
+      leafAt(cx+dx,cy,cz+dz);
+    }
+  };
+
+  if(kind==='oak' || kind==='birch'){
+    const h=(kind==='birch'?5:4)+ri(3), top=y+h-1;         // oak 4-6, birch 5-7
+    for(let i=0;i<h;i++) logAt(x,y+i,z);
+    plate(x,top-2,z,2,0.2); plate(x,top-1,z,2,0.2);        // two wide layers, ragged corners
+    plate(x,top,z,1,1);     plate(x,top+1,z,1,0);          // 3x3, then a cross on the crown
+    return;
+  }
+  if(kind==='spruce'){
+    const h=6+ri(4), top=y+h-1;
+    for(let i=0;i<h;i++) logAt(x,y+i,z);
+    leafAt(x,top+1,z);                                     // the point
+    for(let yy=top; yy>=y+2; yy--){
+      const d=top-yy;                                      // 0 at the highest log
+      const rad=Math.min(2, 1+((d/2)|0));                  // 1,1,2,2,2...
+      plate(x,yy,z,rad, d%2===0 ? 0.15 : 0.7);             // the corners step in and out down the skirt
+    }
+    return;
+  }
+  if(kind==='jungle'){
+    const h=7+ri(5), top=y+h-1;                            // tall and bare, crown at the very top
+    for(let i=0;i<h;i++) logAt(x,y+i,z);
+    plate(x,top-1,z,2,0.2); plate(x,top,z,2,0); plate(x,top+1,z,1,0.4);
+    return;
+  }
+  if(kind==='acacia'){
+    const h=5+ri(3);
+    for(let i=0;i<h;i++) logAt(x,y+i,z);
+    const dirs=[[1,0],[-1,0],[0,1],[0,-1]], d0=dirs[ri(4)];
+    let bx=x, bz=z, by=y+h-1;
+    for(let i=0,n=2+ri(2); i<n; i++){ bx+=d0[0]; bz+=d0[1]; by++; logAt(bx,by,bz); }
+    plate(bx,by,bz,3,0.1); plate(bx,by+1,bz,2,0.3);        // the flat plate an acacia wears
+    if(r()<0.7){                                            // usually a shorter arm the other way
+      let cx=x, cz=z, cy=y+h-3;
+      for(let i=0,n=1+ri(2); i<n; i++){ cx-=d0[0]; cz-=d0[1]; cy++; logAt(cx,cy,cz); }
+      plate(cx,cy,cz,2,0.2); plate(cx,cy+1,cz,1,0.5);
+    }
+    return;
+  }
+  if(kind==='dark_oak' || kind==='pale_oak'){
+    const h=(kind==='pale_oak'?7:6)+ri(3), top=y+h-1;      // four logs abreast, all the way up
+    for(let i=0;i<h;i++){ logAt(x,y+i,z); logAt(x+1,y+i,z); logAt(x,y+i,z+1); logAt(x+1,y+i,z+1); }
+    for(const c of [[x,z],[x+1,z],[x,z+1],[x+1,z+1]]){
+      plate(c[0],top-2,c[1],2,0.05); plate(c[0],top-1,c[1],2,0.3); plate(c[0],top,c[1],2,0.2);
+    }
+    plate(x,top+1,z,1,0.5); plate(x+1,top+1,z+1,1,0.5);
+    return;
+  }
+  if(kind==='cherry'){
+    const h=5+ri(3);
+    for(let i=0;i<h;i++) logAt(x,y+i,z);
+    const dirs=[[1,0],[-1,0],[0,1],[0,-1]], first=ri(4);
+    for(let a=0,arms=2+ri(2); a<arms; a++){
+      const d=dirs[(first+a)%4];
+      let bx=x, bz=z, by=y+h-2+ri(2);
+      for(let i=1,n=2+ri(2); i<=n; i++){ bx+=d[0]; bz+=d[1]; if(i%2===0) by++; logAt(bx,by,bz); }
+      plate(bx,by-1,bz,2,0.3); plate(bx,by,bz,3,0.5);      // a round ball of blossom on each arm
+      plate(bx,by+1,bz,3,0.3); plate(bx,by+2,bz,2,0.4); plate(bx,by+3,bz,1,0.5);
+    }
+    plate(x,y+h,z,2,0.4); plate(x,y+h+1,z,2,0.2); plate(x,y+h+2,z,1,0.5);
+    return;
+  }
+  if(kind==='mangrove'){
+    const h=5+ri(3), top=y+h-1;
+    for(let i=0;i<h;i++) logAt(x,y+i,z);
+    for(const d of [[1,0],[-1,0],[0,1],[0,-1]]) if(r()<0.85){  // prop roots arching out of the mud
+      logAt(x+d[0],y,z+d[1]); logAt(x+d[0],y+1,z+d[1]);
+    }
+    plate(x,top-2,z,2,0.1); plate(x,top-1,z,2,0.3);
+    plate(x,top,z,2,0.2);   plate(x,top+1,z,1,0.5);
+    return;
+  }
+  // purpular is Leon's own wood, so it gets a shape of its own: a slim trunk under
+  // a narrow crown that tapers to a point
+  const h=7+ri(3), top=y+h-1;
+  for(let i=0;i<h;i++) logAt(x,y+i,z);
+  plate(x,top-3,z,1,0.3); plate(x,top-2,z,2,0.15); plate(x,top-1,z,2,0.3);
+  plate(x,top,z,2,0);    plate(x,top+1,z,1,0.6);  leafAt(x,top+2,z);
+}
+// how much clear sky each species needs before it will take
+const TREE_HEADROOM = { oak:8, birch:9, spruce:13, jungle:14, acacia:10, dark_oak:11,
+                        pale_oak:12, cherry:11, mangrove:10, purpular:13 };
+
 class Chunk{
   constructor(cx,cz){
     this.cx=cx; this.cz=cz;
     this.data = new Uint16Array(CH*CH*WH);   // 16-bit: there are now >255 block types, so ids must not wrap at a byte
     this.mesh = null; this.tmesh = null;   // opaque + transparent meshes
     this.dirty = true; this.generated = false;
+    // The highest cell in this chunk that holds anything. Everything above it is
+    // sky, and the mesher can stop there instead of walking to the build limit.
+    // It only ever grows here; the mesher works out the true value as it scans
+    // and writes it back, so breaking the top of a tower lowers it again.
+    this.maxY = -1;
   }
   idx(x,y,z){ return (y*CH + z)*CH + x; }
   get(x,y,z){ if(y<0||y>=WH) return AIR; return this.data[this.idx(x,y,z)]; }
-  set(x,y,z,v){ this.data[this.idx(x,y,z)] = v; }
+  set(x,y,z,v){ this.data[this.idx(x,y,z)] = v; if(v!==AIR && y>this.maxY) this.maxY=y; }
   generate(){
     const { cx, cz } = this;
     if(bwMode || bbMode){   // bedwars and build battle: void world, the prefab lives entirely in mpOverrides
@@ -2615,17 +2807,15 @@ class Chunk{
       } else if(r()<0.2) put(x,gy,z,B.fire);                         // the wastes burn in patches
     }
   }
+  // the forest uses the same shapes a sapling grows, so a planted oak matches the
+  // ones already standing around it; anything reaching past the chunk is clipped
   tree(x,y,z,r){
-    const th = 4 + (r()*2|0);
-    for(let i=0;i<th;i++) if(y+i<WH) this.set(x,y+i,z,B.log);
-    const top=y+th;
-    for(let dy=-2;dy<=1;dy++) for(let dx=-2;dx<=2;dx++) for(let dz=-2;dz<=2;dz++){
-      const rad = (dy>=0)?1:2;
-      if (Math.abs(dx)+Math.abs(dz) > rad+1) continue;
-      const px=x+dx, py=top+dy, pz=z+dz;
-      if (px<0||px>=CH||pz<0||pz>=CH||py<0||py>=WH) continue;
-      if (this.get(px,py,pz)===AIR) this.set(px,py,pz,B.leaves);
-    }
+    const kind = (biomeFor(this.cx,this.cz)==='snow') ? 'spruce' : (r()<0.18 ? 'birch' : 'oak');
+    growTree(kind, x, y, z, r, (px,py,pz,id,soft)=>{
+      if(px<0||px>=CH||pz<0||pz>=CH||py<0||py>=WH) return;
+      if(soft && this.get(px,py,pz)!==AIR) return;
+      this.set(px,py,pz,id);
+    });
   }
 }
 function biomeFor(cx,cz){ return biomeAt(cx*CH+8, cz*CH+8); }
@@ -2662,13 +2852,19 @@ function setBlock(wx,wy,wz,v){
   if(lz===0) markDirty(cx,cz-1); if(lz===CH-1) markDirty(cx,cz+1);
 }
 function markDirty(cx,cz){ const c=chunks.get(key(cx,cz)); if(c) c.dirty=true; }
+// the highest cell worth looking at above a column: everything over it is sky
+function columnTop(wx,wz){
+  const c=chunks.get(key(Math.floor(wx/CH), Math.floor(wz/CH)));
+  return c ? Math.max(0, Math.min(WH-1, c.maxY)) : WH-1;
+}
 
 /* gravity: settle sand/gravel down a column until each rests on something */
 function settleColumn(x,z){
   let changed=true, guard=0;
-  while(changed && guard++<WH){
+  const top=columnTop(x,z);
+  while(changed && guard++<=top){
     changed=false;
-    for(let y=1;y<WH;y++){
+    for(let y=1;y<=top;y++){
       const id=getBlock(x,y,z);
       if(GRAVITY.has(id) && getBlock(x,y-1,z)===AIR){ setBlock(x,y,z,AIR); setBlock(x,y-1,z,id); changed=true; }
     }
@@ -2878,6 +3074,13 @@ function tileUV(t){
   const v1 = 1 - (row/ATLAS_ROWS) - UEPS, v0 = 1 - (row+1)/ATLAS_ROWS + UEPS;
   return [u0,v0,u1,v1];
 }
+// The same four numbers, worked out once for every cell in the atlas. The mesher
+// asks for them thousands of times a chunk, and handing back a fresh array each
+// time was making more garbage than geometry.
+const TILE_UV = new Float32Array(ATLAS_COLS*ATLAS_ROWS*4);
+for(let t=0;t<ATLAS_COLS*ATLAS_ROWS;t++){
+  const q=tileUV(t); TILE_UV[t*4]=q[0]; TILE_UV[t*4+1]=q[1]; TILE_UV[t*4+2]=q[2]; TILE_UV[t*4+3]=q[3];
+}
 
 /* face definitions: normal + 4 corner offsets (CCW) + shade */
 const FACES = [
@@ -2888,23 +3091,26 @@ const FACES = [
   { n:[1,0,0],  c:[[1,0,1],[1,0,0],[1,1,0],[1,1,1]], s:0.62 },  // +x
   { n:[-1,0,0], c:[[0,0,0],[0,0,1],[0,1,1],[0,1,0]], s:0.62 },  // -x
 ];
+// the two axes that lie in each face's plane, so corner shading never has to work them out
+for(const F of FACES){ const ax=[0,1,2].filter(a=>F.n[a]===0); F.t1=ax[0]; F.t2=ax[1]; }
 const faceOrder = [0,1,2,3,4,5];
 const FACE_TILE = [0,1,2,3,4,5].map(f => f===0?0 : f===1?1 : 2); // -> faceTile arg
 
 const AO_LEVELS = [0.48, 0.66, 0.83, 1.0];
-function aoFactor(wx,wy,wz, F, co){
-  const n=F.n;
+// Corner shading. Called four times per face and once more per corner, so it runs
+// tens of thousands of times per chunk: no arrays, no closures, and `gb` reads
+// straight out of the chunk being meshed whenever the sample lands inside it.
+function aoFactor(wx,wy,wz, F, co, gb){
+  const n=F.n, t1=F.t1, t2=F.t2;
   const fx=wx+n[0], fy=wy+n[1], fz=wz+n[2];        // block in front of the face
-  const axes=[0,1,2].filter(a=>n[a]===0);           // the two in-plane axes
-  const t1=axes[0], t2=axes[1];
   const s1=co[t1]*2-1, s2=co[t2]*2-1;
-  const d1=[0,0,0]; d1[t1]=s1;
-  const d2=[0,0,0]; d2[t2]=s2;
-  const o1 = isOpaque(getBlock(fx+d1[0],fy+d1[1],fz+d1[2]))?1:0;
-  const o2 = isOpaque(getBlock(fx+d2[0],fy+d2[1],fz+d2[2]))?1:0;
-  const oc = isOpaque(getBlock(fx+d1[0]+d2[0],fy+d1[1]+d2[1],fz+d1[2]+d2[2]))?1:0;
-  const ao = (o1&&o2)?0:(3-(o1+o2+oc));
-  return AO_LEVELS[ao];
+  let ax=0, ay=0, az=0, bx=0, by=0, bz=0;
+  if(t1===0) ax=s1; else if(t1===1) ay=s1; else az=s1;
+  if(t2===0) bx=s2; else if(t2===1) by=s2; else bz=s2;
+  const o1 = OPAQUE[gb(fx+ax,fy+ay,fz+az)];
+  const o2 = OPAQUE[gb(fx+bx,fy+by,fz+bz)];
+  const oc = OPAQUE[gb(fx+ax+bx,fy+ay+by,fz+az+bz)];
+  return AO_LEVELS[(o1&&o2)?0:(3-(o1+o2+oc))];
 }
 // emit an arbitrary box (all 6 faces) with one tile — used for non-cube blocks like doors
 function pushBox(buf, wx, wy, wz, b, tile){
@@ -2966,25 +3172,34 @@ function buildChunkMesh(c){
   const tr = { pos:[], uv:[], col:[], idx:[] };
   const cut= { pos:[], uv:[], col:[], idx:[] };
   const foundPrg = [];
+  const ox=c.cx*CH, oz=c.cz*CH, cdata=c.data;
+  // a block read that skips the chunk-map lookup whenever the cell is in this chunk,
+  // which is nearly always: only the four border columns ever fall through
+  const gb = (wx,wy,wz)=>{
+    const lx=wx-ox, lz=wz-oz;
+    if(lx>=0 && lx<CH && lz>=0 && lz<CH && wy>=0 && wy<WH) return cdata[(wy*CH+lz)*CH+lx];
+    return getBlock(wx,wy,wz);
+  };
   const push = (buf, bx,by,bz, face, tile, shadeMul, ao)=>{
-    const F = FACES[face];
-    const [u0,v0,u1,v1] = tileUV(tile);
-    const uvc = [[u0,v0],[u1,v0],[u1,v1],[u0,v1]];
+    const F = FACES[face], t4=tile*4;
+    const u0=TILE_UV[t4], v0=TILE_UV[t4+1], u1=TILE_UV[t4+2], v1=TILE_UV[t4+3];
     const base = buf.pos.length/3;
+    const P=buf.pos, U=buf.uv, C=buf.col;
     for(let i=0;i<4;i++){
       const co=F.c[i];
-      const a = ao ? aoFactor(bx,by,bz,F,co) : 1;
-      const sh = shadeMul*a;
-      buf.pos.push(bx+co[0], by+co[1], bz+co[2]);
-      buf.uv.push(uvc[i][0], uvc[i][1]);
-      buf.col.push(sh, sh, sh);
+      const sh = shadeMul * (ao ? aoFactor(bx,by,bz,F,co,gb) : 1);
+      P.push(bx+co[0], by+co[1], bz+co[2]);
+      U.push(i===0?u0:i===1?u1:i===2?u1:u0, i<2?v0:v1);
+      C.push(sh, sh, sh);
     }
     buf.idx.push(base,base+1,base+2, base,base+2,base+3);
   };
-  const ox=c.cx*CH, oz=c.cz*CH;
-  for(let y=0;y<WH;y++) for(let z=0;z<CH;z++) for(let x=0;x<CH;x++){
+  const scanTop=Math.min(WH-1, c.maxY);      // sky above this, nothing to build
+  let seenTop=-1;
+  for(let y=0;y<=scanTop;y++) for(let z=0;z<CH;z++) for(let x=0;x<CH;x++){
     const id = c.data[(y*CH+z)*CH+x];
     if (id===AIR) continue;
+    seenTop=y;                               // ascending, so the last one wins
     const bl = BLOCKS[id];
     if (!bl) continue;                          // a reserved/removed id: treat as air
     const wx=ox+x, wz=oz+z;
@@ -3059,11 +3274,12 @@ function buildChunkMesh(c){
     if (bl.pane){                              // glass pane: a thin full-height panel + arms toward connected sides
       const ptile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
       const conn=(nx,nz)=>{ const nb=getBlock(nx,y,nz); return !!(nb && BLOCKS[nb] && (BLOCKS[nb].pane || (BLOCKS[nb].opaque && BLOCKS[nb].solid))); };
-      pushBox(tr, wx, y, wz, [7/16,9/16, 0,1, 7/16,9/16], ptile);                 // centre post
-      if(conn(wx+1,wz)) pushBox(tr, wx, y, wz, [9/16,1,   0,1, 7/16,9/16], ptile);
-      if(conn(wx-1,wz)) pushBox(tr, wx, y, wz, [0,7/16,   0,1, 7/16,9/16], ptile);
-      if(conn(wx,wz+1)) pushBox(tr, wx, y, wz, [7/16,9/16, 0,1, 9/16,1  ], ptile);
-      if(conn(wx,wz-1)) pushBox(tr, wx, y, wz, [7/16,9/16, 0,1, 0,7/16  ], ptile);
+      const pbuf = bl.cutout ? cut : tr;        // glass is see-through; iron bars are cut out
+      pushBox(pbuf, wx, y, wz, [7/16,9/16, 0,1, 7/16,9/16], ptile);                 // centre post
+      if(conn(wx+1,wz)) pushBox(pbuf, wx, y, wz, [9/16,1,   0,1, 7/16,9/16], ptile);
+      if(conn(wx-1,wz)) pushBox(pbuf, wx, y, wz, [0,7/16,   0,1, 7/16,9/16], ptile);
+      if(conn(wx,wz+1)) pushBox(pbuf, wx, y, wz, [7/16,9/16, 0,1, 9/16,1  ], ptile);
+      if(conn(wx,wz-1)) pushBox(pbuf, wx, y, wz, [7/16,9/16, 0,1, 0,7/16  ], ptile);
       continue;
     }
     if (bl.cross){                             // flowers + other plants: crossed quads, no cube faces
@@ -3177,9 +3393,9 @@ function buildChunkMesh(c){
     for(let f=0;f<6;f++){
       const F=FACES[f];
       const nx=wx+F.n[0], ny=y+F.n[1], nz=wz+F.n[2];
-      const nb = getBlock(nx,ny,nz);
+      const nb = gb(nx,ny,nz);
       // cull if neighbour opaque; for liquids/glass cull against same block
-      if (isOpaque(nb)) continue;
+      if (OPAQUE[nb]) continue;
       if (bl.liquid && nb===id) continue;
       if (!bl.opaque && !bl.liquid && !bl.cutout && nb===id) continue; // glass vs glass
       const faceArg = f===0?0 : f===1?1 : 2;
@@ -3209,6 +3425,7 @@ function buildChunkMesh(c){
   c.cmesh= make(cut, matCutout);  if(c.cmesh) scene.add(c.cmesh);
   c.tmesh= make(tr, matTrans);    if(c.tmesh) scene.add(c.tmesh);
   reconcilePrg(c.cx, c.cz, foundPrg);   // add/remove the sphere objects for this chunk's PRG blocks
+  c.maxY = seenTop;                     // the scan just told us the real ceiling; let it come back down
   c.dirty=false;
 }
 
@@ -3605,7 +3822,7 @@ function mobBlocked(x,y,z){
     }
   return false;
 }
-function mobSurface(x,z){ for(let yy=WH-1;yy>0;yy--){ const b=getBlock(x,yy,z); if(b!==AIR&&BLOCKS[b]&&BLOCKS[b].solid) return yy+1; } return SEA+2; }
+function mobSurface(x,z){ for(let yy=columnTop(x,z);yy>0;yy--){ const b=getBlock(x,yy,z); if(b!==AIR&&BLOCKS[b]&&BLOCKS[b].solid) return yy+1; } return SEA+2; }
 function updateMobs(dt){
   for(const m of mobs){
     m.wt-=dt;
@@ -4293,7 +4510,8 @@ function arrivePortal(x,y,z){
   let guard=0; while(genQueue.length && guard<700){ const c=genQueue.shift(); if(!c.generated) c.generate(); guard++; }
   let best=null, bd=1e9;
   for(let dx=-14;dx<=14;dx++) for(let dz=-14;dz<=14;dz++){
-    for(let cy=1;cy<WH-1;cy++){
+    const ct=columnTop(x+dx,z+dz);
+    for(let cy=1;cy<=ct;cy++){
       if(getBlock(x+dx,cy,z+dz)!==B.nether_portal) continue;
       const d=dx*dx+dz*dz+(cy-y)*(cy-y)*0.25;
       if(d<bd){ bd=d; best=[x+dx,cy,z+dz]; }
@@ -4538,6 +4756,34 @@ function placePlant(){
   setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
   if(tall){ setBlock(px,py+1,pz,id); mpSendBlock(px,py+1,pz,id); }
   remeshChunkAt(px,pz);
+}
+// A sapling does not stand around waiting: the moment it is in the ground it
+// becomes the tree it was always going to be. No bone meal, no ticking.
+function sproutTree(kind, x, y, z){
+  const need = TREE_HEADROOM[kind] || 10;
+  for(let i=1;i<=need;i++) if(y+i>=WH || getBlock(x,y+i,z)!==AIR) return false;   // no room: it stays a sapling
+  const r = rng(((x*73856093) ^ (z*19349663) ^ (Date.now()&0xffff)) >>> 0);
+  const touched = new Set();
+  const drop = (px,py,pz,id)=>{
+    setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+    touched.add(Math.floor(px/CH)+','+Math.floor(pz/CH));
+  };
+  drop(x,y,z,AIR);                                        // the sapling itself becomes trunk
+  growTree(kind, x, y, z, r, (px,py,pz,id,soft)=>{
+    if(py<0||py>=WH) return;
+    if(soft && getBlock(px,py,pz)!==AIR) return;
+    drop(px,py,pz,id);
+  });
+  for(const k of touched){ const p=k.split(','); remeshChunkAt(+p[0]*CH, +p[1]*CH); }
+  return true;
+}
+function placeSapling(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id=hotbar[selSlot], bl=BLOCKS[id];
+  if(getBlock(px,py,pz)!==AIR) return;
+  if(!canPlantOn(id, getBlock(px,py-1,pz))) return;
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id); remeshChunkAt(px,pz);
+  sproutTree(bl.sapling, px, py, pz);
 }
 // breaking either half of a tall flower takes the whole plant
 function breakPlant(x,y,z){
@@ -4905,6 +5151,7 @@ function placeBlock(){
   if(bl.bed){ placeBed(); return; }                                     // beds place two cells long
   if(bl.ladder){ placeLadder(); return; }                               // ladders mount on a wall
   if(bl.sign){ placeSign(); return; }                                   // signs open a text editor on placement
+  if(bl.sapling){ placeSapling(); return; }                             // a sapling turns into its tree on the spot
   if(bl.cross){ placePlant(); return; }                                 // flowers root in soil (tall ones take two cells)
   if(bl.torch||bl.lever||bl.button){ placeAttached(); return; }         // these bolt onto the face you clicked
   if(bl.vine){ placeVine(); return; }                                   // clings to a wall or a ceiling
@@ -5170,6 +5417,8 @@ function catOf(n){
   if(n.endsWith('_button')||n.endsWith('_pressure_plate')||n==='redstone_wire'||n==='redstone_torch'||n==='redstone_lamp'||n==='lever'||n==='redstone_block') return 'redstone';
   if(n==='torch'||n==='campfire') return 'deco';
   if(FLOWER_NAMES.has(n) || n==='flower_pot') return 'nature';   // flowers live with the plants
+  if(n.endsWith('_sapling') || n==='mangrove_propagule') return 'nature';
+  if(n==='iron_bars') return 'deco';
   if(n==='glass_pane') return 'deco';
   if(n.endsWith('_stained_glass_pane')) return 'color';
   if(n.endsWith('_wool')||n.endsWith('_stained_clay')||n.endsWith('_stained_glass')||n.endsWith('_cushion')||n.endsWith('_carpet')
@@ -5204,6 +5453,8 @@ function searchTags(name){
   if(b.light)                            t+=' light glow lamp bright';
   if(b.door || b.trapdoor)               t+=' door';
   if(b.wall)                             t+=' wall walls barrier border stone';
+  if(b.sapling)                          t+=' sapling saplings tree trees plant sprout wood';
+  if(b.pane)                             t+=' pane bars window';
   if(b.ladder || b.climb)                t+=' climb ladder';
   if(/_log$|_stem$|_planks$|_fence$|_stairs$|_slab$|_door$|_trapdoor$/.test(name)) t+=' wood';
   if(/^nether|nylium|soul_|blackstone|basalt|magma|crimson|warped|glowstone|obsidian|shroomlight|ancient_debris/.test(name)) t+=' nether';
@@ -8255,6 +8506,12 @@ window.__mc = {
       if(c.mesh){ meshed++; const a=c.mesh.geometry.attributes.position; if(a) tris+=a.count; } }
     return { chunks:chunks.size, gen, meshed, dirty, tris, sceneKids:scene.children.length, view:VIEW,
              cam:[+player.pos.x.toFixed(1), +player.pos.y.toFixed(1), +player.pos.z.toFixed(1)], mode:bbMode }; },
+  sprout(kind,x,y,z){ return sproutTree(kind,x,y,z); },
+  // ---- performance bench hooks ----
+  benchMesh(){ let n=0; const t=performance.now();
+    for(const [,c] of chunks){ if(c.generated){ buildChunkMesh(c); n++; } }
+    return { ms:+(performance.now()-t).toFixed(1), chunks:n }; },
+  chunkTops(){ const out=[]; for(const [,c] of chunks) if(c.generated) out.push(c.maxY===undefined?-1:c.maxY); return out; },
   // ---- slab / build-limit test hooks ----
   worldHeight(){ return WH; }, netherTop(){ return NETHER_TOP; },
   setDim(d){ switchDim(d|0); },
