@@ -138,7 +138,7 @@ const GH_MIN=50, GH_MAX=276, VMIN=CYW*GH_MIN, VMAX=CYW*GH_MAX;
 let particleCount=+countSlider.value, temperature=+tempSlider.value;
 let showVectors=showVec.checked, showTrail=showTrails.checked, showHits=showHitsChk.checked;
 let running=true, heatFlare=0, lastTemp=temperature, workByGas=true;
-let process='free', ref={V0:1,t0:1};      // selected process + reference state (anchor for the constraint)
+let process='free';                       // the selected process; each constraint runs from the current state
 let gasH=(GH_MIN+GH_MAX)/2, offX=CXL, offY=BASEY-gasH;
 
 function setGasH(h){ gasH=Math.max(GH_MIN,Math.min(GH_MAX,h)); offX=CXL; offY=Math.round(BASEY-gasH);
@@ -169,54 +169,56 @@ function handleControls(){
   showVectors=showVec.checked; showTrail=showTrails.checked; showHits=showHitsChk.checked;
   countLabel.textContent=particleCount; tempLabel.textContent=temperature.toFixed(2);
 }
-countSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount); ref={V0:boxArea(),t0:temperature};});
+countSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount);});
 tempSlider.addEventListener('input',()=>{ const prevT=temperature, nt=+tempSlider.value;
   if(nt>lastTemp) heatFlare=Math.min(1,heatFlare+(nt-lastTemp)); lastTemp=nt;
   handleControls(); applyTempConstraint(prevT); normalizeKE(); });
 volumeSlider.addEventListener('input',()=>{ const prevV=boxArea();
   setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); applyVolConstraint(prevV); syncVP(); });
-// Moving the piston: hold whatever the chosen process holds, by letting the
-// temperature take the strain.
-//
-// On Free the piston is a real one, weighted and insulated. Pushing it in does work
-// on the gas and there is nowhere for that energy to go, so the gas warms (Q = 0,
-// which in two dimensions is T ∝ 1/V); letting it back out cools the gas again. Each
-// step runs from wherever the gas is now rather than from a fixed anchor, so the two
-// sliders never fight each other, and the pressure follows from PV = nRT throughout.
+/* How each process couples the piston to the burner. `onVolume` is the power the
+   temperature follows the volume by when you move the piston; `onTemp` is the power
+   the volume follows the temperature by when you turn the heat. Zero means that
+   slider moves its own variable alone and the pressure takes up the slack.
+
+   Both sliders work in every process. Nothing is ever greyed out: whichever one you
+   reach for, the process decides what the other one does. Free is the odd one out on
+   purpose, because its two sliders are two different physical actions - pushing an
+   insulated piston does work on the gas (T ∝ 1/V), while turning the heat up under a
+   weighted one lets it expand instead (V ∝ T).                                   */
+const COUPLING = {
+  free:       { onVolume:-1, onTemp:+1 },
+  isothermal: { onVolume: 0, onTemp: 0 },   // T is pinned; sliding it just picks a different isotherm
+  isobaric:   { onVolume:+1, onTemp:+1 },   // P pinned, so V/T stays put
+  isochoric:  { onVolume: 0, onTemp: 0 },   // V is pinned; sliding it just picks a different box
+  adiabatic:  { onVolume:-1, onTemp:-1 },   // Q = 0, so V·T stays put (2D, γ = 2)
+};
+// Every step runs from wherever the gas is now rather than from a fixed anchor, so
+// the two sliders never drift apart. The apparatus has ends, though: the piston runs
+// out of travel and the burner runs out of range. When that happens the follower just
+// stops there, exactly as a real rig would, and from that point the container is a
+// fixed box - keep heating and the extra energy comes out as pressure instead.
 function applyVolConstraint(prevV){
-  if(process==='free' && prevV>0){
-    const nt=Math.max(0.1, Math.min(8, temperature*(prevV/Math.max(1,boxArea()))));
-    temperature=nt; lastTemp=nt; tempSlider.value=nt.toFixed(2); tempLabel.textContent=nt.toFixed(2); normalizeKE();
-    return;
-  }
-  if(process!=='isobaric' && process!=='adiabatic') return;
-  const V=boxArea();
-  let nt = process==='isobaric' ? ref.t0*(V/ref.V0)     // P const  => T ∝ V
-                                : ref.t0*(ref.V0/V);    // Q = 0 (2D, γ=2) => T ∝ 1/V
-  nt=Math.max(0.1,Math.min(8,nt));
-  temperature=nt; lastTemp=nt; tempSlider.value=nt.toFixed(2); tempLabel.textContent=nt.toFixed(2); normalizeKE();
+  const k=(COUPLING[process]||{}).onVolume||0;
+  if(!k || prevV<=0) return;
+  const V=Math.max(1, boxArea());
+  const t=Math.max(0.1, Math.min(8, temperature*Math.pow(V/prevV, k)));
+  temperature=t; lastTemp=t; tempSlider.value=t.toFixed(2); tempLabel.textContent=t.toFixed(2); normalizeKE();
 }
-// Heating on Free: the weight on the piston keeps the pressure where it is, so the
-// gas pushes the piston up rather than pressing harder (P const => V ∝ T). If the
-// piston runs out of travel it stops there, and the container is a fixed box from
-// that point on, which is exactly what a real one would do.
 function applyTempConstraint(prevT){
-  if(process!=='free' || prevT<=1e-6) return;
-  setGasH(gasH*(temperature/prevT)); syncVP();
+  const k=(COUPLING[process]||{}).onTemp||0;
+  if(!k || prevT<=1e-6) return;
+  setGasH(gasH*Math.pow(temperature/prevT, k)); syncVP();     // setGasH stops at the ends of the travel
 }
 // Spell out the rule you are working under. Two processes can look alike if you only
 // ever drag one slider, so the panel says which variable is pinned and what follows.
 const PROC_NOTE={
   free:      'Nothing is pinned. Squeeze the gas and it warms; heat it and the piston rides up. P follows from PV = nRT.',
-  isothermal:'T is pinned. Squeeze the gas and the pressure rises in step: PV stays put, which is Boyle\u2019s law.',
-  isobaric:  'P is pinned. The temperature follows the volume, so V/T stays put: Charles\u2019s law.',
-  isochoric: 'V is pinned. The pressure follows the temperature, so P/T stays put: Gay-Lussac\u2019s law.',
-  adiabatic: 'No heat in or out. Squeezing does work on the gas, so it warms as it shrinks and cools as it grows.',
+  isothermal:'T holds still while you move the piston, so PV stays put: Boyle\u2019s law. Move T to pick another isotherm.',
+  isobaric:  'P holds still, so V/T stays put: Charles\u2019s law. Move either slider and the other follows.',
+  isochoric: 'V holds still while you heat, so P/T stays put: Gay-Lussac\u2019s law. Move V to pick another box size.',
+  adiabatic: 'No heat in or out, so V\u00b7T stays put. Squeeze the gas and it warms; heat it and it expands.',
 };
-function setProcess(pr){ process=pr; ref={V0:boxArea(), t0:temperature};
-  const tempLocked=(pr==='isothermal'||pr==='isobaric'||pr==='adiabatic'), volLocked=(pr==='isochoric');
-  tempSlider.disabled=tempLocked; volumeSlider.disabled=volLocked;
-  tempSlider.style.opacity=tempLocked?0.4:1; volumeSlider.style.opacity=volLocked?0.4:1;
+function setProcess(pr){ process=pr;
   const note=el('procNote'); if(note) note.textContent=PROC_NOTE[pr]||''; }
 document.querySelectorAll('input[name=proc]').forEach(r=>r.addEventListener('change',()=>{ if(r.checked) setProcess(r.value); }));
 showVec.addEventListener('change',()=>showVectors=showVec.checked);
@@ -234,8 +236,8 @@ function resetAll(){
   recBtn.classList.remove('on');recBtn.textContent='● Record'; workConv.textContent='W: by gas';
   playPauseBtn.textContent='Pause';playPauseBtn.classList.add('on');
   const freeR=document.querySelector('input[name=proc][value=free]'); if(freeR) freeR.checked=true;
-  tempSlider.disabled=false; volumeSlider.disabled=false; tempSlider.style.opacity=1; volumeSlider.style.opacity=1; setProcess('free');
-  setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount); zeroWQ(); ref={V0:boxArea(),t0:temperature};
+  setProcess('free');
+  setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount); zeroWQ();
 }
 
 function checkCollisions(){for(let i=0;i<particles.length;i++){const a=particles[i];if(!a.alive)continue;for(let j=i+1;j<particles.length;j++){const b=particles[j];if(!b.alive)continue;if(Math.hypot(b.x-a.x,b.y-a.y)<a.r+b.r)resolveCollision(a,b);}}}
@@ -464,7 +466,7 @@ function drawPV(){
 function fit(){ const s=Math.min((window.innerWidth-12)/1300,(window.innerHeight-12)/720); el('sim').style.transform='scale('+Math.max(0.2,s)+')'; }
 window.addEventListener('resize',fit);
 setProcess('free');
-setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount); zeroWQ(); ref={V0:boxArea(),t0:temperature}; fit(); requestAnimationFrame(step);
+setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount); zeroWQ(); fit(); requestAnimationFrame(step);
 </script>
 </body>
 </html>
