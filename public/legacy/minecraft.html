@@ -7289,9 +7289,13 @@ const BW_TEAMS = [
   { id:2, name:'Green',  color:0x46a83a, wool:'lime_wool',   bed:'lime_bed',   conc:'lime_concrete',   dir:[0,-1], facing:0 },
   { id:3, name:'Yellow', color:0xe0c53a, wool:'yellow_wool', bed:'yellow_bed', conc:'yellow_concrete', dir:[0, 1], facing:2 },
 ];
+// Island-local coordinates: f runs from the map (-f, the front) back into the base
+// (+f), s is sideways. The bed sits out front where it is reachable, the hall stands
+// behind it, and nothing is ever built above the bed.
 function bwGeom(t){ const dx=t.dir[0], dz=t.dir[1], cx=dx*BW_D, cz=dz*BW_D, px=dz, pz=-dx;   // px,pz = perpendicular to the team's direction
-  return { cx, cz, bedFoot:{x:cx+dx*3,y:BW_Y+1,z:cz+dz*3}, bedHead:{x:cx+dx*4,y:BW_Y+1,z:cz+dz*4}, gen:{x:cx-dx*2,y:BW_Y+1,z:cz-dz*2}, spawn:{x:cx+0.5,y:BW_Y+1,z:cz+0.5},
-           shop:{x:cx+px*3,y:BW_Y+1,z:cz+pz*3}, upgrade:{x:cx-px*3,y:BW_Y+1,z:cz-pz*3} }; }
+  const at=(f,s)=>({ x:cx+dx*f+px*s, y:BW_Y+1, z:cz+dz*f+pz*s });
+  return { cx, cz, bedFoot:at(-3,0), bedHead:at(-4,0), gen:at(4,0), spawn:{x:cx+0.5,y:BW_Y+1,z:cz+0.5},
+           shop:at(3,3), upgrade:at(3,-3) }; }
 const BW_GEOM = BW_TEAMS.map(bwGeom);
 const BW_DIAMOND = [ {x:-9,z:0}, {x:9,z:0}, {x:0,z:-9}, {x:0,z:9} ];
 const BW_EMERALD = [ {x:0,z:0} ];
@@ -7323,46 +7327,127 @@ function bwBuildMap(){
   const quartz=bwId('quartz_block')||stone, planks=bwId('oak_planks'), logg=bwId('oak_log')||planks;
   const cobble=bwId('cobblestone')||stone, redc=bwId('red_concrete')||bwId('red_wool');
   const diamond=bwId('diamond_block'), emerald=bwId('emerald_block'), iron=bwId('iron_block');
-  // ---- team islands: wooden dock bases ----
+  // ---- team islands ----------------------------------------------------------
+  // Each island is one building: a stone-and-timber hall in the team's colour with a
+  // wide open front, and the bed standing out in front of it on its own apron. The
+  // hall starts four blocks behind the bed and its roof never reaches over, so the
+  // bed is always in the open with clear sky above - only players ever cover it.
   for(const t of BW_TEAMS){
-    const g=BW_GEOM[t.id], cx=g.cx, cz=g.cz, wool=bwId(t.wool), conc=bwId(t.conc);
-    // island-local coords: f = forward (toward the bed / outside), s = sideways. Maps to world along the team's axis.
+    const g=BW_GEOM[t.id], cx=g.cx, cz=g.cz;
+    const conc=bwId(t.conc), wool=bwId(t.wool);
+    const brick=bwId('stone_bricks'), crack=bwId('cracked_stone_bricks')||brick, chis=bwId('chiseled_stone_bricks')||brick;
+    const beam=bwId('spruce_log')||logg, plank=bwId('spruce_planks')||planks;
+    const pane=bwId('glass_pane')||glass, shelf=bwId('bookshelf'), rod=bwId('end_rod');
+    const lamp=bwId('sea_lantern')||glow, bars=bwId('iron_bars')||pane;
+    const bslab=bwId('stone_brick_slab')||brick, qslab=bwId('quartz_slab')||quartz;
+    const rug=bwId(t.conc);
     const dx=t.dir[0], dz=t.dir[1], px=dz, pz=-dx;
-    const put=(f,s,y,id)=>bwPlace(cx+dx*f+px*s, y, cz+dz*f+pz*s, id);
-    const fill=(f0,f1,s0,s1,y,id)=>{ for(let f=f0;f<=f1;f++) for(let s=s0;s<=s1;s++) put(f,s,y,id); };
-    // plank dock (13 forward × 11 side) over an endstone base, with a team-colour trim
-    fill(-6,6,-5,5, BW_Y, planks); fill(-6,6,-5,5, BW_Y-1, endstone);
-    for(let s=-5;s<=5;s++){ put(6,s,BW_Y,conc); put(-6,s,BW_Y,conc); }
+    const put=(f,sd,y,id)=>bwPlace(cx+dx*f+px*sd, y, cz+dz*f+pz*sd, id);
+    const fill=(f0,f1,s0,s1,y,id)=>{ for(let f=f0;f<=f1;f++) for(let sd=s0;sd<=s1;sd++) put(f,sd,y,id); };
+    const col=(f,sd,y0,y1,id)=>{ for(let y=y0;y<=y1;y++) put(f,sd,y,id); };
+
+    // --- the island itself: end stone under a timber deck, tapering underneath ---
+    fill(-6,6,-5,5, BW_Y-1, endstone);
+    fill(-5,5,-4,4, BW_Y-2, endstone);
+    fill(-3,3,-3,3, BW_Y-3, endstone);
+    fill(-6,6,-5,5, BW_Y, plank);
+    for(let sd=-5;sd<=5;sd++){ put(6,sd,BW_Y,conc); put(-6,sd,BW_Y,conc); }
     for(let f=-6;f<=6;f++){ put(f,5,BW_Y,conc); put(f,-5,BW_Y,conc); }
-    // oak-log dock posts at the 4 corners, each topped with a lantern
-    for(const [cf,cs] of [[6,5],[6,-5],[-6,5],[-6,-5]]){ put(cf,cs,BW_Y+1,logg); put(cf,cs,BW_Y+2,logg); put(cf,cs,BW_Y+3,glow); }
-    // bed on its wool patch (foot f=3, head f=4). Players build their own defences from here.
-    fill(2,4,-1,1, BW_Y, wool);
-    put(3,0,BW_Y+1, bwId(t.bed)); put(4,0,BW_Y+1, bwId(t.bed));
-    bedMeta.set(g.bedFoot.x+','+(BW_Y+1)+','+g.bedFoot.z, {facing:t.facing, head:false});
-    bedMeta.set(g.bedHead.x+','+(BW_Y+1)+','+g.bedHead.z, {facing:t.facing, head:true});
-    // team forge: a 3×3 colour pad with the iron tile (items spawn just above) + a light beneath
-    fill(-3,-1,-1,1, BW_Y, conc); put(-2,0,BW_Y, iron); put(-2,0,BW_Y-1, glow);
-    // shop + upgrade villager pedestals (quartz + colour trim + a light)
-    put(0,3,BW_Y, quartz); put(0,-3,BW_Y, quartz);
-    put(1,3,BW_Y, conc); put(-1,3,BW_Y, conc); put(1,-3,BW_Y, conc); put(-1,-3,BW_Y, conc);
-    put(0,4,BW_Y, glow); put(0,-4,BW_Y, glow);
-    // wooden pier stub toward the centre with lamp posts at its end (still have to bridge the gap)
-    for(let f=-7;f>=-9;f--){ put(f,-1,BW_Y,planks); put(f,0,BW_Y,planks); put(f,1,BW_Y,planks); }
-    put(-9,-1,BW_Y+1,logg); put(-9,1,BW_Y+1,logg); put(-9,-1,BW_Y+2,glow); put(-9,1,BW_Y+2,glow);
+
+    // --- the bed, out front on a wool apron, with a low kerb round it ---
+    fill(-5,-2,-2,2, BW_Y, wool);
+    put(-3,0,BW_Y+1, bwId(t.bed)); put(-4,0,BW_Y+1, bwId(t.bed));
+    const bedFace=(t.facing+2)%4;   // the head is the one nearer the map now
+    bedMeta.set(g.bedFoot.x+','+(BW_Y+1)+','+g.bedFoot.z, {facing:bedFace, head:false});
+    bedMeta.set(g.bedHead.x+','+(BW_Y+1)+','+g.bedHead.z, {facing:bedFace, head:true});
+    for(let f=-5;f<=-1;f++){ put(f,3,BW_Y,conc); put(f,-3,BW_Y,conc); }
+    for(let sd=-3;sd<=3;sd++) put(-5,sd,BW_Y,conc);
+    // two little lamp posts flanking the bed, so it is lit but never roofed
+    for(const sd of [-2,2]){ put(-5,sd,BW_Y+1, brick); put(-5,sd,BW_Y+2, rod); }
+
+    // --- the hall: f = +1 back to +6, four clear blocks behind the bed ---
+    const TOP=BW_Y+7;
+    for(const [f,sd] of [[1,5],[1,-5],[6,5],[6,-5]]) col(f,sd,BW_Y+1,TOP, beam);
+    for(let sd=-4;sd<=4;sd++) for(let y=BW_Y+1;y<=TOP;y++)                      // back wall
+      put(6,sd,y, (y===BW_Y+1)?brick : (y===TOP)?chis : ((sd%3===0)?crack:conc));
+    for(let f=2;f<=5;f++) for(const sd of [-5,5]) for(let y=BW_Y+1;y<=TOP;y++){ // sides, with windows
+      const win=(y>=BW_Y+3 && y<=BW_Y+5) && (f===2||f===4);
+      put(f,sd,y, win?pane : (y===BW_Y+1)?brick : (y===TOP)?chis : ((f%2)?conc:brick));
+    }
+    for(const sd of [-4,4]) col(1,sd,BW_Y+1,TOP, conc);                          // front shoulders
+    for(let sd=-3;sd<=3;sd++){ put(1,sd,TOP,chis); put(1,sd,TOP-1,beam); }       // lintel over the opening
+    for(const sd of [-3,3]) col(1,sd,BW_Y+1,TOP-2, beam);                        // door jambs
+
+    // --- a gabled roof, ridge front-to-back, peaking eleven blocks over the floor ---
+    for(let f=1;f<=6;f++) for(let sd=-5;sd<=5;sd++){
+      const y=TOP+(5-Math.abs(sd));
+      put(f,sd,y, (Math.abs(sd)===5)?beam:conc);
+      if(Math.abs(sd)<5) put(f,sd,y-1, brick);        // close the diagonal so it is solid from below
+    }
+    for(let f=1;f<=6;f++) put(f,0,TOP+6, chis);        // ridge cap
+    for(const f of [1,6]) for(let sd=-4;sd<=4;sd++)    // fill the two gable ends in
+      for(let y=TOP+1; y<=TOP+(5-Math.abs(sd))-1; y++) put(f,sd,y, brick);
+
+    // --- inside: a rug, the forge, the two traders, and something on the walls ---
+    fill(2,5,-4,4, BW_Y, plank);
+    fill(3,5,-2,2, BW_Y, rug);
+    fill(3,5,-1,1, BW_Y, conc);
+    put(4,0,BW_Y, iron); put(4,0,BW_Y-1, glow);                                  // the forge, room all round it
+    for(const sd of [-3,3]){                                                      // trader pedestals, clear of the jambs
+      put(3,sd,BW_Y, quartz); put(3,sd,BW_Y-1, glow);
+      put(2,sd,BW_Y, conc); put(4,sd,BW_Y, conc);
+    }
+    for(let sd=-3;sd<=3;sd++) if(sd!==0) put(5,sd,BW_Y+1, shelf);                 // a wall of books at the back
+    for(const sd of [-4,4]){ put(5,sd,BW_Y+1, brick); put(5,sd,BW_Y+2, rod); }    // lamp posts in the back corners
+    put(6,0,BW_Y+3, lamp); put(6,0,BW_Y+2, chis);                                 // a lit alcove behind the forge
+    for(const sd of [-2,2]) col(6,sd,BW_Y+2,BW_Y+4, bars);                        // grille either side of it
+
+    // --- the front steps and the pier out toward the map ---
+    for(let sd=-2;sd<=2;sd++) put(-6,sd,BW_Y+1, bslab);
+    for(let f=-7;f>=-9;f--) for(let sd=-1;sd<=1;sd++) put(f,sd,BW_Y, plank);
+    for(let f=-7;f>=-9;f--){ put(f,2,BW_Y,conc); put(f,-2,BW_Y,conc); }
+    for(let f=-7;f>=-9;f--){ put(f,2,BW_Y+1,bars); put(f,-2,BW_Y+1,bars); }       // railings down the pier
+    put(-9,2,BW_Y+1,beam); put(-9,-2,BW_Y+1,beam);
+    put(-9,2,BW_Y+2,rod);  put(-9,-2,BW_Y+2,rod);                                 // lamps at the pier head
   }
-  // ---- centre: the lighthouse (rocky base + red/white banded tower around the emerald generator) ----
-  bwFill(-4,4,BW_Y,-4,4, stone); bwFill(-4,4,BW_Y-1,-4,4, stone);
-  for(let s=-4;s<=4;s++){ bwPlace(-4,BW_Y,s,cobble); bwPlace(4,BW_Y,s,cobble); bwPlace(s,BW_Y,-4,cobble); bwPlace(s,BW_Y,4,cobble); }
-  bwPlace(0,BW_Y,0, emerald);
-  const ring=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];   // 3×3 minus the open centre (the generator shaft)
-  for(let h=1;h<=10;h++){ const band=(Math.floor((h-1)/2)%2===0)?quartz:redc;   // alternating white/red bands
-    for(const [dx,dz] of ring){ if(h<=2 && ((dx===0&&Math.abs(dz)===1)||(dz===0&&Math.abs(dx)===1))) continue;   // 4 doorways at the base
-      bwPlace(dx,BW_Y+h,dz, band); } }
-  for(const [dx,dz] of ring) bwPlace(dx,BW_Y+11,dz, glass);   // glass lantern room
-  bwPlace(0,BW_Y+11,0, glow);                                 // the light
-  for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++) bwPlace(dx,BW_Y+12,dz, redc);   // roof
-  bwPlace(0,BW_Y+13,0, glow);                                 // beacon tip
+  // ---- centre: a proper lighthouse on its rock ----------------------------------
+  // A stepped rock, a tapering banded tower with a walkway round the lamp room, and
+  // the emerald generator standing in the open shaft at the bottom.
+  {
+    const white=bwId('quartz_block')||stone, band=bwId('red_concrete')||redc;
+    const rock=bwId('andesite')||stone, moss=bwId('mossy_cobblestone')||cobble;
+    const rail=bwId('iron_bars')||glass, slabq=bwId('quartz_slab')||white;
+    const rod=bwId('end_rod'), lampb=bwId('sea_lantern')||glow;
+    bwFill(-6,6,BW_Y-2,-6,6, rock);
+    bwFill(-5,5,BW_Y-1,-5,5, rock);
+    bwFill(-4,4,BW_Y,-4,4, rock);
+    for(let sd=-4;sd<=4;sd++){ bwPlace(-4,BW_Y,sd,moss); bwPlace(4,BW_Y,sd,moss); bwPlace(sd,BW_Y,-4,moss); bwPlace(sd,BW_Y,4,moss); }
+    for(let x=-5;x<=5;x++) for(let z=-5;z<=5;z++)                                  // a low shelf of rock round the base
+      if(Math.max(Math.abs(x),Math.abs(z))===5) bwPlace(x,BW_Y-1,z, moss);
+    bwPlace(0,BW_Y,0, emerald);
+    // the tower: 3x3 shell with the generator shaft open up the middle
+    const ring=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+    for(let h=1;h<=12;h++){
+      const shell=(Math.floor((h-1)/3)%2===0)?white:band;
+      for(const [ax,az] of ring){
+        if(h<=2 && ((ax===0&&Math.abs(az)===1)||(az===0&&Math.abs(ax)===1))) continue;   // four doorways in
+        bwPlace(ax,BW_Y+h,az, shell);
+      }
+    }
+    // the gallery: a walkway on corbels, railed, right under the lamp room
+    for(let x=-2;x<=2;x++) for(let z=-2;z<=2;z++)
+      if(Math.max(Math.abs(x),Math.abs(z))===2) bwPlace(x,BW_Y+12,z, slabq);
+    for(let x=-2;x<=2;x++) for(let z=-2;z<=2;z++)
+      if(Math.max(Math.abs(x),Math.abs(z))===2) bwPlace(x,BW_Y+13,z, rail);
+    // the lamp room: glass all round, the light in the middle, a capped roof
+    for(const [ax,az] of ring) bwPlace(ax,BW_Y+13,az, glass);
+    for(const [ax,az] of ring) bwPlace(ax,BW_Y+14,az, glass);
+    bwPlace(0,BW_Y+13,0, lampb); bwPlace(0,BW_Y+14,0, lampb);
+    for(let x=-1;x<=1;x++) for(let z=-1;z<=1;z++) bwPlace(x,BW_Y+15,z, band);
+    for(let x=-2;x<=2;x++) for(let z=-2;z<=2;z++)
+      if(Math.max(Math.abs(x),Math.abs(z))===2 && (x===0||z===0)) bwPlace(x,BW_Y+15,z, band);   // eaves
+    bwPlace(0,BW_Y+16,0, white); bwPlace(0,BW_Y+17,0, rod);
+  }
   // ---- 4 diamond generator islands: rocky islets ----
   for(const d of BW_DIAMOND){
     bwFill(d.x-2,d.x+2,BW_Y,d.z-2,d.z+2, stone); bwFill(d.x-2,d.x+2,BW_Y-1,d.z-2,d.z+2, stone);
@@ -8837,7 +8922,12 @@ window.__mc = {
   bwState(){ return { active:bw.active, phase:bw.phase, team:bw.team, hp:bw.hp, res:bw.res, beds:bw.beds, items:bw.items.size, counts:Object.assign({},bw.counts), apples:bw.apples, pos:[+player.pos.x.toFixed(1),+player.pos.y.toFixed(1),+player.pos.z.toFixed(1)], prefab:bw.prefabSet.size, dead:bw.dead }; },
   bwBuy(item){ mpSend({type:'bwbuy', item}); }, bwToggleShop(){ bwToggleShop(); return bwShopOpen; },
   bwHitId(vid){ const p=mp.players.get(vid); if(!p) return false; let dx=p.x-player.pos.x, dz=p.z-player.pos.z; const len=Math.hypot(dx,dz)||1; mpSend({type:'bwhit', target:vid, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3)}); return true; },
-  bwBlockAt(x,y,z){ return getBlock(x,y,z); }, bwGeom(t){ return BW_GEOM[t]; },
+  bwBlockAt(x,y,z){ return getBlock(x,y,z); }, bwGeom(t){ return BW_GEOM[t]; }, bwTeams(){ return BW_TEAMS; },
+  // read the prefab straight out of the override map, so a survey does not depend on
+  // which chunks happen to be loaded around the player
+  bwPrefabAt(x,y,z){ const cx=Math.floor(x/CH), cz=Math.floor(z/CH);
+    const m=mpOverrides.get(cx+','+cz); if(!m) return 0;
+    return m.get((x-cx*CH)+','+y+','+(z-cz*CH))||0; },
   bwGive(name,n){ const id=BLOCKS[name]&&BLOCKS[name].id; if(id){ bw.counts[id]=(bw.counts[id]||0)+(n||16); renderHotbar(); } },
   bwInv(){ bwToggleInv(); return bwInvOpen; }, bwVillagers(){ return bw.villagers.map(v=>({kind:v.kind, x:+v.model.position.x.toFixed(1), z:+v.model.position.z.toFixed(1)})); },
   bwSlots(){ return bw.slots.map(s=> s? (s.kind+(s.tier?(':'+s.tier):'')) : null); }, bwUse(){ raycast(); useAction(); },
