@@ -788,7 +788,7 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 10: vines ---
 "vine","weeping_vines","twisting_vines","cave_vines","fire","lava","nether_portal","magma_block","soul_soil","crimson_nylium","warped_nylium","crimson_fungus","warped_fungus","ancient_debris",
 // --- pass 11: walls ---
-"cobblestone_wall","mossy_cobblestone_wall","stone_brick_wall","mossy_stone_brick_wall","granite_wall","diorite_wall","andesite_wall","brick_wall","mud_brick_wall","sandstone_wall","red_sandstone_wall","prismarine_wall","nether_brick_wall","red_nether_brick_wall","end_stone_brick_wall","blackstone_wall","polished_blackstone_wall","polished_blackstone_brick_wall","cobbled_deepslate_wall","polished_deepslate_wall","deepslate_brick_wall","deepslate_tile_wall","tuff_wall","polished_tuff_wall","tuff_brick_wall",
+"cobblestone_wall","mossy_cobblestone_wall","stone_brick_wall","mossy_stone_brick_wall","granite_wall","diorite_wall","andesite_wall","brick_wall","mud_brick_wall","sandstone_wall","red_sandstone_wall","prismarine_wall","nether_brick_wall","red_nether_brick_wall","end_stone_brick_wall","blackstone_wall","polished_blackstone_wall","polished_blackstone_brick_wall","cobbled_deepslate_wall","polished_deepslate_wall","deepslate_brick_wall","deepslate_tile_wall","tuff_wall","polished_tuff_wall","tuff_brick_wall","end_rod",
 // --- pass 12: saplings and iron bars ---
 "oak_sapling","spruce_sapling","birch_sapling","jungle_sapling","acacia_sapling","dark_oak_sapling","cherry_sapling","pale_oak_sapling","mangrove_propagule","purpular_sapling","iron_bars"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
@@ -1597,6 +1597,14 @@ TALL_FLOWERS.forEach(function(f,i){
 });
 SAPLINGS.forEach(function(sp,i){ paint(sp[0], plantTex({ pal:{ a:sp[3], b:sp[4], s:0x6b4e2a, k:0x4a3418 }, rows:sp[2] }, 9600+i)); });
 paint('iron_bars', ironBarsTex(9620));
+// An end rod is a pale, faintly lit shaft on a short violet foot. Two tiles: the
+// shaft and the foot, both flat enough to read at the two-pixel width it is drawn at.
+paint('end_rod', (()=>{ const r=rng(9630); const n=[]; for(let i=0;i<256;i++) n.push((r()*2-1)*7);
+  return (x,y)=>{ const c=(x+y)%2 ? [244,242,236] : [232,229,222]; const d=n[(y*16+x)&255];
+    return [Math.min(255,c[0]+d), Math.min(255,c[1]+d), Math.min(255,c[2]+d), 255]; }; })());
+paint('end_rod_base', (()=>{ const r=rng(9631); const n=[]; for(let i=0;i<256;i++) n.push((r()*2-1)*9);
+  return (x,y)=>{ const c=(y<8) ? [151,124,166] : [122,99,136]; const d=n[(y*16+x)&255];
+    return [Math.max(0,c[0]+d), Math.max(0,c[1]+d), Math.max(0,c[2]+d), 255]; }; })());
 paint('flower_pot', flowerPotTex(9470));
 paint('wet_sponge', wetSpongeTex(9471));
 // torches, campfire, redstone
@@ -1914,6 +1922,8 @@ SAPLINGS.forEach(function(sp){
 });
 // Iron bars use the glass-pane model, but they are cut out rather than see-through
 B.iron_bars = def('iron_bars', { tiles:T('iron_bars'), pane:true, cutout:true, opaque:false, hex:0xc0c0c0 });
+// An end rod points out of whatever you stick it to, like a torch, and glows.
+B.end_rod = def('end_rod', { tiles:T('end_rod'), endRod:true, solid:false, opaque:false, light:true, hex:0xe8e4ee });
 /* ---- torches, campfire and redstone ----
    Torches, levers and buttons attach to a face, so their orientation lives in
    attachMeta. Buttons and plates are redstone inputs; the lamp, doors and
@@ -3303,6 +3313,25 @@ function buildChunkMesh(c){
       }
       continue;
     }
+    if (bl.endRod){                            // a 2-pixel shaft on a 4-pixel foot, pointing out of its face
+      const a = attachMeta.get(dkey(wx,y,wz)) || {m:0,f:0};
+      const rod=T('end_rod'), foot=T('end_rod_base');
+      const A=6/16, Bq=10/16, C=7/16, D=9/16;         // foot spans 6..10, shaft 7..9
+      if(a.m===0){                                     // standing on the floor
+        pushBox(op, wx, y, wz, [A,Bq, 0,1/16, A,Bq], foot);
+        pushBox(op, wx, y, wz, [C,D, 1/16,1, C,D], rod);
+      } else if(a.m===1){                              // hanging from the ceiling
+        pushBox(op, wx, y, wz, [A,Bq, 15/16,1, A,Bq], foot);
+        pushBox(op, wx, y, wz, [C,D, 0,15/16, C,D], rod);
+      } else {                                         // bracketed to a wall, sticking straight out
+        const f=a.f||0;
+        if(f===0){ pushBox(op, wx,y,wz, [A,Bq, A,Bq, 0,1/16], foot);  pushBox(op, wx,y,wz, [C,D, C,D, 1/16,1], rod); }
+        else if(f===2){ pushBox(op, wx,y,wz, [A,Bq, A,Bq, 15/16,1], foot); pushBox(op, wx,y,wz, [C,D, C,D, 0,15/16], rod); }
+        else if(f===1){ pushBox(op, wx,y,wz, [0,1/16, A,Bq, A,Bq], foot); pushBox(op, wx,y,wz, [1/16,1, C,D, C,D], rod); }
+        else { pushBox(op, wx,y,wz, [15/16,1, A,Bq, A,Bq], foot); pushBox(op, wx,y,wz, [0,15/16, C,D, C,D], rod); }
+      }
+      continue;
+    }
     if (bl.torch){                             // a stick with a flame on top, standing or bracketed to a wall
       const k=dkey(wx,y,wz);
       const lit = !bl.redTorch || litTorch.has(k);
@@ -3595,11 +3624,14 @@ function makeCharacterModel(skinTex, slim){
 // pose a character (local body or a remote player): Minecraft-style crouch/sneak, sitting and a walk cycle.
 // The caller sets armR afterwards if a punch swing is playing (it overrides the walk swing on that arm).
 function poseCharacter(ud, crouch, sitting, walkPhase, walkAmp){
-  // sneak: the hips do the work — the pelvis drops and tips back while the back stays fairly straight
-  ud.upper.rotation.x = crouch*0.22;                // only a slight forward lean (straight-ish back)
-  ud.upper.position.y = (ud.hipY||0) - crouch*0.16; // butt/pelvis sinks down
+  // Sneaking folds you right over at the hips, the way Minecraft's does: the pelvis
+  // drops and the whole upper body tips forward. The head pivot is counter-rotated
+  // below, so you stay looking where you are aiming rather than at your own boots.
+  ud.upper.rotation.x = crouch*0.62;
+  ud.upper.position.y = (ud.hipY||0) - crouch*0.22;
+  if(ud.headPivot) ud.headPivot.rotation.z = 0;
   if(sitting){ ud.legL.rotation.x = ud.legR.rotation.x = -1.45; ud.armL.rotation.x = ud.armR.rotation.x = 0; return; }
-  const sw = Math.sin(walkPhase)*walkAmp, bend = crouch*0.55;   // legs fold up under the dropped hips
+  const sw = Math.sin(walkPhase)*walkAmp, bend = crouch*0.62;   // legs fold up under the dropped hips
   ud.legL.rotation.x =  sw + bend;                  // legs swing opposite each other
   ud.legR.rotation.x = -sw + bend;
   ud.armL.rotation.x = -sw*0.72;                    // arms swing opposite the legs
@@ -3625,18 +3657,23 @@ function setLocalSlim(slim){
   localSlim=slim; rebuildLocalModel(); rebuildVmArm();
   if(mp.active) mpSendSkin();   // slim rides with the skin message so others rebuild too
 }
-// floating name tag above a remote player's head
-function makeNametag(name, color, admin, spectator){
-  const c=document.createElement('canvas'); c.width=320; c.height=64;
+// floating name tag above a remote player's head. In Bed Wars it leads with the team
+// in that team's own colour, the way Hypixel does, so you can tell friend from foe
+// across the map without waiting to be hit.
+function makeNametag(name, color, admin, spectator, team){
+  const c=document.createElement('canvas'); c.width=380; c.height=64;
   const HC=c.width/2;
   const g=c.getContext('2d'); g.textBaseline='middle';
   const nameFont='bold 26px monospace', admFont='italic bold 22px monospace';
   const tag = admin ? ' ADMIN' : (spectator ? ' SPECTATOR' : '');
+  const tm = (team!=null && typeof BW_TEAMS!=='undefined' && BW_TEAMS[team]) ? '['+BW_TEAMS[team].name.toUpperCase()+'] ' : '';
+  const tmCol = tm ? '#'+BW_TEAMS[team].color.toString(16).padStart(6,'0') : '';
   g.font=admFont; const admW = tag ? g.measureText(tag).width : 0;
-  g.font=nameFont; const nameW=g.measureText(name).width;
-  const total=Math.min(c.width-18, nameW+admW), w=total+18;
+  g.font=nameFont; const nameW=g.measureText(name).width, tmW = tm ? g.measureText(tm).width : 0;
+  const total=Math.min(c.width-18, tmW+nameW+admW), w=total+18;
   g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(HC-w/2, 18, w, 30);
   let x=HC-total/2; g.textAlign='left';
+  if(tm){ g.font=nameFont; g.fillStyle=tmCol; g.fillText(tm, x, 34); x+=tmW; }
   g.font=nameFont; g.fillStyle=color||'#fff'; g.fillText(name, x, 34); x+=nameW;
   if(tag){ g.font=admFont; g.fillStyle= admin?'#42e042':'#c4ccd6'; g.fillText(tag, x, 35); }
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter;
@@ -3980,8 +4017,8 @@ const DISCRETE_RUN = {
   attack:    e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); breakBlock(); } },
   use:       e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },
   pick:      e=>{ if(inWorld()){ pd(e); pickBlock(); } },
-  break2:    e=>{ if(bw.active) return; if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); breakBlock(); } },   // F: keyboard break (same as left click)
-  place2:    e=>{ if(bw.active) return; if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },     // G: keyboard place / use (same as right click; G stays "eat apple" in Bed Wars)
+  break2:    e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); breakBlock(); } },   // F: keyboard break, same as left click, Bed Wars included
+  place2:    e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },     // G: keyboard place / use, same as right click
   pick2:     e=>{ if(bw.active) return; if(inWorld()){ pd(e); pickBlock(); } },                                             // H: keyboard pick block (same as middle click)
 };
 const DISCRETE_LIST = ['inventory','chat','debug','camera','attack','use','pick','break2','place2','pick2'];
@@ -4019,7 +4056,7 @@ addEventListener('keydown', e=>{
   }
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){
     if(k==='k' && (bw.phase==='lobby')){ e.preventDefault(); startBedwarsBtn(); return; }   // same key that starts Build Battle
-    if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='g'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
+    if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='x'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
   if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
@@ -5155,7 +5192,7 @@ function placeBlock(){
   if(bl.sign){ placeSign(); return; }                                   // signs open a text editor on placement
   if(bl.sapling){ placeSapling(); return; }                             // a sapling turns into its tree on the spot
   if(bl.cross){ placePlant(); return; }                                 // flowers root in soil (tall ones take two cells)
-  if(bl.torch||bl.lever||bl.button){ placeAttached(); return; }         // these bolt onto the face you clicked
+  if(bl.torch||bl.lever||bl.button||bl.endRod){ placeAttached(); return; }  // these bolt onto the face you clicked
   if(bl.vine){ placeVine(); return; }                                   // clings to a wall or a ceiling
   if(bl.strand){ placeStrand(); return; }                               // hangs from above, or climbs from below
   if(bl.plate||bl.dust){ placeOnFloor(); return; }                      // these need a solid top to lie on
@@ -5207,6 +5244,14 @@ function blockIconCanvas(id, size){
     px(0.10,0.40,0.80,0.16,`rgb(${rr},${gg},${bb})`);                             // mattress
     px(0.10,0.40,0.80,0.045,`rgba(255,255,255,.22)`);                            // mattress highlight
     px(0.12,0.30,0.26,0.13,'#f3f3f3'); px(0.12,0.40,0.26,0.035,'#cfcfcf');        // pillow + shadow
+    return cv;
+  }
+  if(bl.endRod){                   // a pale shaft standing on a short violet foot
+    const s=size, px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    px(0.36,0.80,0.28,0.12,'#7a6388'); px(0.36,0.80,0.28,0.04,'#977ca6');     // foot
+    px(0.43,0.12,0.14,0.68,'#efece6');                                        // shaft
+    px(0.43,0.12,0.05,0.68,'#ffffff'); px(0.53,0.12,0.04,0.68,'#cfcabf');     // lit edge, shaded edge
+    px(0.43,0.10,0.14,0.04,'#ffffff');                                        // tip
     return cv;
   }
   if(bl.wall){                     // a stubby post with a lower run of wall either side
@@ -5417,7 +5462,7 @@ const CATS=[
 ];
 function catOf(n){
   if(n.endsWith('_button')||n.endsWith('_pressure_plate')||n==='redstone_wire'||n==='redstone_torch'||n==='redstone_lamp'||n==='lever'||n==='redstone_block') return 'redstone';
-  if(n==='torch'||n==='campfire') return 'deco';
+  if(n==='torch'||n==='campfire'||n==='end_rod') return 'deco';
   if(FLOWER_NAMES.has(n) || n==='flower_pot') return 'nature';   // flowers live with the plants
   if(n.endsWith('_sapling') || n==='mangrove_propagule') return 'nature';
   if(n==='iron_bars') return 'deco';
@@ -5453,6 +5498,7 @@ function searchTags(name){
   if(b.flowerpot)                        t+=' flower plant pot';
   if(name.indexOf('fungus')>=0)          t+=' mushroom fungus';
   if(b.light)                            t+=' light glow lamp bright';
+  if(b.endRod)                           t+=' end rod rods pillar beacon';
   if(b.door || b.trapdoor)               t+=' door';
   if(b.wall)                             t+=' wall walls barrier border stone';
   if(b.sapling)                          t+=' sapling saplings tree trees plant sprout wood';
@@ -6200,17 +6246,17 @@ function setPlayerBody(p, body){
 }
 function setPlayerColor(p, color){
   p.color = color || '';
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide; }
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
 function setPlayerSpectator(p, spec){
   if(!!p.spectator===!!spec) return; p.spectator=!!spec;
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide && !p.ghost; }
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide && !p.ghost; }
   if(tabShown) renderTabList();
 }
 function setPlayerAdmin(p, admin){
   if(!!p.admin===!!admin) return; p.admin=!!admin;
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide; }
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
 // The hide code: your whole body goes, not just the nametag. Locally that means
@@ -6232,13 +6278,16 @@ const tabListEl = document.getElementById('tabList');
 let tabShown = false;
 function renderTabList(){
   if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
-  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:isAdmin(), spectator:!!mp.spectator}];
-  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin, spectator:!!p.spectator});
+  const teamOf = t => (bw.active && t!=null && BW_TEAMS[t]) ? BW_TEAMS[t] : null;
+  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:isAdmin(), spectator:!!mp.spectator, team:teamOf(bw.active?bw.team:null)}];
+  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin, spectator:!!p.spectator, team:teamOf(p.team)});
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
   const hdr = mp.serverName ? escapeHtml(mp.serverName)+' - '+n+' online' : (n+' player'+(n===1?'':'s')+' online');
   tabListEl.innerHTML = '<div class="th">'+hdr+'</div>' +
-    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'"><span'+(r.color?' style="color:'+r.color+'"':'')+'>'+escapeHtml(r.name)+'</span>'+(r.admin?'<span style="color:#42e042;font-style:italic;margin-left:5px">ADMIN</span>':(r.spectator?'<span style="color:#c4ccd6;font-style:italic;margin-left:5px">SPECTATOR</span>':''))+'</span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
+    rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'">'+
+      (r.team?'<span style="color:#'+r.team.color.toString(16).padStart(6,'0')+';font-weight:800;margin-right:5px">['+r.team.name.toUpperCase()+']</span>':'')+
+      '<span'+(r.color?' style="color:'+r.color+'"':'')+'>'+escapeHtml(r.name)+'</span>'+(r.admin?'<span style="color:#42e042;font-style:italic;margin-left:5px">ADMIN</span>':(r.spectator?'<span style="color:#c4ccd6;font-style:italic;margin-left:5px">SPECTATOR</span>':''))+'</span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
   tabListEl.hidden=false;
 }
 
@@ -6277,7 +6326,7 @@ function mpAddPlayer(p){
   if(!p || p.id===mp.id || mp.players.has(p.id)) return;
   const color=p.color||'', admin=!!p.admin, spectator=!!p.spectator, slim=!!p.slim;
   const model=makeCharacterModel(defaultSkinTex, slim); model.visible=true; scene.add(model);
-  const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', admin, spectator); model.add(tag);
+  const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', admin, spectator, p.team); model.add(tag);
   const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
     x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
     body:'none', color:color, hide:!!p.hide, ghost:!!p.ghost, admin:admin, spectator:spectator, slim:slim };
@@ -6339,6 +6388,8 @@ function mpUpdatePlayers(dt){
     } else {
       ud.headPivot.rotation.x = -p.pitch;
       poseCharacter(ud, cr, !!p.sit, p.walkT||0, p.walkAmp||0);
+      // a sneaking player's name is hidden, the same as in Minecraft
+      if(p.tag) p.tag.visible = !p.hide && !p.ghost && cr < 0.5;
       if(p.swing>0){ p.swing=Math.max(0, p.swing-dt*3.4); const arm=ud.armR; if(arm) arm.rotation.x = -Math.sin((1-p.swing)*Math.PI)*1.5; }   // punch swing overrides the walk swing
     }
   }
@@ -6438,10 +6489,18 @@ function mpHandle(m){
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
   else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
   else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerGhost(p, m.ghost); setPlayerHide(p, m.hide); setPlayerAdmin(p, m.admin); } }   // secret-code effect: big / small / pig / block / name colour / hidename / admin
-  else if(m.type==='chat'){ chatPush(m.system? m.text : ('<'+m.name+(m.admin?' ADMIN':(m.spectator?' SPECTATOR':''))+'> '+m.text), m.system?'sys':''); }
+  else if(m.type==='chat'){
+    if(m.system){ chatPush(m.text, 'sys'); }
+    else {
+      // in Bed Wars a message leads with the sender's team, in that team's colour
+      const t = (bw.active && m.team!=null && BW_TEAMS[m.team]) ? BW_TEAMS[m.team] : null;
+      chatPush('<'+m.name+(m.admin?' ADMIN':(m.spectator?' SPECTATOR':''))+'> '+m.text, '',
+               t ? { text:'['+t.name.toUpperCase()+']', color:'#'+t.color.toString(16).padStart(6,'0') } : null);
+    }
+  }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
-    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff', p.admin, p.spectator); p.model.add(p.tag); p.tag.visible=!p.hide; } }
+    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; } }
   }
   else if(m.type==='poll'){ pollData={yes:m.yes|0, no:m.no|0}; renderPoll(); renderPollMini(); }   // live poll tally update (modal + corner widget)
   else if(m.type==='authfail'){ mp._joinErr='Wrong password.'; }
@@ -6966,6 +7025,7 @@ function bbPlaceForPhase(){
 
 /* ---- messages ---- */
 function bbInit(m){
+  wipeWorldEntities();
   bb.active=true; bbMode=true; mp.id=m.id; mp.name=m.name;
   if(m.geom) bb.geom=m.geom;
   if(m.ratings) bb.ratings=m.ratings;
@@ -7020,10 +7080,6 @@ function bbHandle(m){
       bb.plotsWanted = (m.plots!=null) ? m.plots : bb.plots.length;
       bb.myVotes={}; bb.myTheme=-1; bb.results=null;
       bbRebuildWorld(); bbPlaceForPhase(); bbUpdateHud(); return true;
-    case 'bbplots':                       // somebody arrived mid-round and needs a plot of their own
-      bb.plotsWanted = m.plots;
-      bbRebuildWorld(); bbLoadHere();     // put the extra plot in the world; nobody gets teleported
-      bbUpdateHud(); return true;
     case 'bbblock': bbApplyBlock(m.x,m.y,m.z,m.b); return true;
     case 'bbvoted': bb.myVotes[m.i]=m.v; bbUpdateHud(); return true;
     case 'bbvotecast': bbShowVote(m.id, m.v); return true;   // somebody else's score, over their head
@@ -7368,7 +7424,20 @@ function bwUpdateGenTimers(){ const now=performance.now();
 }
 
 // ---- init + message routing ----
+// Everything the old world left lying around: signs, PRG spheres, dropped items,
+// mob models, fuses. A server switch has to leave none of it behind, or you get
+// somebody else's signpost floating in the middle of a Bed Wars island.
+function wipeWorldEntities(){
+  try{ clearSignObjs(); }catch(e){}
+  try{ clearPrgObjs(); }catch(e){}
+  try{ signMeta.clear(); prgMeta.clear(); }catch(e){}
+  try{ if(typeof clearMobs==='function') clearMobs(); }catch(e){}
+  try{ for(const t of tntFuses){ if(t.spark && t.spark.parent) t.spark.parent.remove(t.spark); } tntFuses.length=0; }catch(e){}
+  try{ doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); trapdoorMeta.clear();
+       slabMeta.clear(); potMeta.clear(); attachMeta.clear(); }catch(e){}
+}
 function bwInit(m){
+  wipeWorldEntities();
   bw.active=true; bwMode=true; mp.id=m.id; mp.name=m.name;
   bw.phase=m.phase; bw.beds=m.beds||[true,true,true,true]; bw.teamUp=m.upgrades||bw.teamUp; bw.genTier=m.genTier||1;
   bw.team = m.you? m.you.team : null;
@@ -7383,6 +7452,10 @@ function bwInit(m){
   for(const p of (m.players||[])){ const e=mp.players.get(p.id); if(e){ e.team=p.team; e.armor=p.armor; e.sword=p.sword; bwApplyRemoteGear(p.id); } }
   // items present already
   bwClearItems(); if(m.items) for(const it of m.items) bwAddItem(it);
+  // everything built before you arrived. Without this a latecomer walks through
+  // other people's bridges because their blocks were never in this client's world.
+  if(m.blocks) for(const k in m.blocks){ const c=k.split(','); bwApplyBlock(+c[0],+c[1],+c[2], m.blocks[k]); }
+  if(m.skins) for(const sk of m.skins) applyRemoteSkin(sk.id, sk.png, sk.slim);
   mpSendSkin();
   bwCounts_reset();
   bwSetHotbar();
@@ -7624,7 +7697,10 @@ function bwSetGear(model, teamColor, armorTier, swordTier){
   }
 }
 function bwApplyLocalGear(){ if(bw.active) bwSetGear(body, bw.team!=null?BW_TEAMS[bw.team].color:null, bw.loadout.armor||0, bw.loadout.sword||0); }
-function bwApplyRemoteGear(id){ const p=mp.players.get(id); if(!p||!p.model) return; bwSetGear(p.model, p.team!=null?BW_TEAMS[p.team].color:null, p.armor||0, p.sword||0); }
+function bwApplyRemoteGear(id){ const p=mp.players.get(id); if(!p||!p.model) return;
+  bwSetGear(p.model, p.team!=null?BW_TEAMS[p.team].color:null, p.armor||0, p.sword||0);
+  if(p.tag){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
+}
 
 // ---- floating resource items ----
 function bwEnsureItemGroup(){ if(!bw.itemGroup){ bw.itemGroup=new THREE.Group(); scene.add(bw.itemGroup); } }
@@ -7755,13 +7831,13 @@ const BW_SHOP = [
   { cat:'Blocks', item:'endstone',     name:'End Stone',       sub:'×12', cost:{iron:24},   col:'#dda' },
   { cat:'Blocks', item:'glass',        name:'Glass',           sub:'×4',  cost:{iron:12},   col:'#9cf' },
   { cat:'Blocks', item:'obsidian',     name:'Obsidian',        sub:'×4',  cost:{emerald:4}, col:'#312' },
-  { cat:'Blocks', item:'sponge',       name:'Sponge',          sub:'×4',  cost:{gold:30},   col:'#d9cf5b' },
-  { cat:'Melee',  item:'sword_stone',  name:'Stone Sword',     sub:'',    cost:{gold:10},   col:'#999' },
-  { cat:'Melee',  item:'sword_iron',   name:'Iron Sword',      sub:'',    cost:{emerald:4}, col:'#ccd' },
-  { cat:'Melee',  item:'sword_diamond',name:'Diamond Sword',   sub:'',    cost:{diamond:6}, col:'#4dd' },
+  { cat:'Blocks', item:'sponge',       name:'Sponge',          sub:'×4',  cost:{gold:6},    col:'#d9cf5b' },
+  { cat:'Melee',  item:'sword_stone',  name:'Stone Sword',     sub:'',    cost:{iron:10},   col:'#999' },
+  { cat:'Melee',  item:'sword_iron',   name:'Iron Sword',      sub:'',    cost:{gold:7},    col:'#ccd' },
+  { cat:'Melee',  item:'sword_diamond',name:'Diamond Sword',   sub:'',    cost:{emerald:4}, col:'#4dd' },
   { cat:'Armor',  item:'armor_chain',  name:'Chainmail Armor', sub:'perm',cost:{iron:40},   col:'#aab' },
   { cat:'Armor',  item:'armor_iron',   name:'Iron Armor',      sub:'perm',cost:{gold:12},   col:'#ccd' },
-  { cat:'Armor',  item:'armor_diamond',name:'Diamond Armor',   sub:'perm',cost:{diamond:6}, col:'#4dd' },
+  { cat:'Armor',  item:'armor_diamond',name:'Diamond Armor',   sub:'perm',cost:{emerald:6}, col:'#4dd' },
   { cat:'Special',item:'shears',       name:'Shears',          sub:'',    cost:{iron:20},   col:'#bbb' },
   { cat:'Special',item:'golden_apple', name:'Golden Apple',    sub:'heal',cost:{gold:3},    col:'#fd4' },
   { cat:'Utility',item:'ender_pearl',  name:'Ender Pearl',     sub:'teleport', cost:{emerald:4}, col:'#2aa87a' },
@@ -7769,7 +7845,7 @@ const BW_SHOP = [
   { cat:'Utility',item:'fireball',     name:'Fireball',        sub:'launch',   cost:{iron:40},   col:'#ff7018' },
   { cat:'Utility',item:'water_bucket', name:'Water Bucket',    sub:'slows rushers', cost:{emerald:3}, col:'#2a6cc7' },
   { cat:'Utility',item:'rescue_platform', name:'Rescue Platform', sub:'anti-void',  cost:{emerald:4}, col:'#7ac74a' },
-  { cat:'Utility',item:'bridge_egg',   name:'Bridge Egg',      sub:'lays a bridge', cost:{gold:30},   col:'#f2ead9' },
+  { cat:'Utility',item:'bridge_egg',   name:'Bridge Egg',      sub:'lays a bridge', cost:{emerald:4}, col:'#f2ead9' },
   { cat:'Ranged', item:'bow',          name:'Bow',             sub:'',         cost:{gold:12},   col:'#8a5a3c' },
   { cat:'Ranged', item:'arrows',       name:'Arrows',          sub:'×6',       cost:{gold:2},    col:'#caa15a' },
   { cat:'Potions',item:'pot_speed',    name:'Speed II Potion', sub:'45s',      cost:{emerald:1}, col:'#4fc3f7' },
@@ -7838,7 +7914,7 @@ function bwEnsureUi(){
   `;
   document.head.appendChild(css);
   const hud=document.createElement('div'); hud.id='bwHud';
-  hud.innerHTML='<div id="bwBeds"></div><div id="bwRes"></div><div id="bwHealth"></div><div id="bwHint">Shop: right-click the <b>villager</b> · Inventory: <b>E</b> · Eat apple: <b>G</b></div>'+
+  hud.innerHTML='<div id="bwBeds"></div><div id="bwRes"></div><div id="bwHealth"></div><div id="bwHint">Shop: right-click the <b>villager</b> · Inventory: <b>E</b> · Eat apple: <b>X</b></div>'+
     '<div id="bwBanner"></div><div id="bwLobby"><h2>Bed Wars</h2><p id="bwLobbyP">Waiting for players…</p>'+
     '<button id="bwStartBtn">Press K to start</button><p id="bwLobbyHint">Anyone here can press K.</p></div>';
   document.body.appendChild(hud);
@@ -7854,8 +7930,15 @@ function bwHealthStr(){ const h=Math.max(0,Math.min(100,bw.hp||0)); const full=M
 function bwUpdateHud(){
   if(!bwUiBuilt) return;
   const beds=document.getElementById('bwBeds');
-  beds.innerHTML = BW_TEAMS.map(t=>{ const alive=bw.beds[t.id]; const mine=t.id===bw.team;
-    return '<div class="bt"><span class="sq" style="background:#'+t.color.toString(16).padStart(6,'0')+'"></span>'+(alive?'<span style="color:#cfe3ff">BED</span>':'<span style="color:#ff6b6b">OUT</span>')+(mine?' <span style="color:#ffd54a">YOU</span>':'')+'</div>'; }).join('');
+  beds.innerHTML = BW_TEAMS.map(t=>{ const bed=bw.beds[t.id], mine=t.id===bw.team;
+    const info=(bw.teams||[]).find(x=>x.id===t.id);
+    const left=info ? (info.alive!=null ? info.alive : info.members) : null;
+    // With the bed gone, how many are still standing is the thing everyone wants to
+    // know: it is the difference between finishing a team off and walking into three.
+    const count = left!=null ? '<span style="color:#cfe3ff;opacity:.85">'+left+'</span>' : '';
+    return '<div class="bt"><span class="sq" style="background:#'+t.color.toString(16).padStart(6,'0')+'"></span>'+
+      (bed?'<span style="color:#cfe3ff">BED</span>':'<span style="color:#ff6b6b">OUT</span>')+
+      count+(mine?' <span style="color:#ffd54a">YOU</span>':'')+'</div>'; }).join('');
   const res=document.getElementById('bwRes'); res.innerHTML='';   // resources are inventory items now (press E), not a side counter
   document.getElementById('bwHealth').innerHTML = bw.phase==='playing' && !bw.eliminated ? bwHealthStr() : '';
   const lobby=document.getElementById('bwLobby'); const p=document.getElementById('bwLobbyP');
@@ -8008,8 +8091,14 @@ function bwExplodeVisual(x,y,z,power){
 }
 function bwTntPlace(){
   if(bw.tnt<=0 || bw.dead || !target) return;
-  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const px=target.x+target.nx, pz=target.z+target.nz;
+  let py=target.y+target.ny;
   if(getBlock(px,py,pz)) return;
+  // Hypixel's TNT is an entity, not a block: throw it over a gap and it drops to
+  // whatever is underneath before it blows. Fall to the first solid thing below.
+  let drop=py;
+  while(drop>1 && !getBlock(px,drop-1,pz)) drop--;
+  py=drop;
   bw.tnt--; bwSetHotbar();
   setBlock(px,py,pz, B.tnt); mpSendBlock(px,py,pz, B.tnt);
   bw.tnts.push({x:px,y:py,z:pz, at:performance.now()+3000});
@@ -8250,8 +8339,8 @@ function censor(text) {
   return chars.join("");
 }
 
-function chatPush(text, cls){
-  chatMsgs.push({ text, cls:cls||'', t:performance.now() });
+function chatPush(text, cls, pre){
+  chatMsgs.push({ text, cls:cls||'', pre:pre||null, t:performance.now() });
   while(chatMsgs.length>60) chatMsgs.shift();
   renderChat();
 }
@@ -8268,7 +8357,9 @@ function renderChat(){
   if(sig===chatSig) return;   // nothing changed since last frame
   chatSig=sig;
   chatLogEl.style.display = visible ? 'flex' : 'none';
-  chatLogEl.innerHTML = show.map(m=>'<div class="cm '+m.cls+'">'+escapeHtml(m.text)+'</div>').join('');
+  chatLogEl.innerHTML = show.map(m=>'<div class="cm '+m.cls+'">'+
+    (m.pre && /^#[0-9a-f]{6}$/i.test(m.pre.color) ? '<span style="color:'+m.pre.color+';font-weight:800">'+escapeHtml(m.pre.text)+'</span> ' : '')+
+    escapeHtml(m.text)+'</div>').join('');
 }
 function escapeHtml(s){ return (''+s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 const chatBox=document.getElementById('chatBox');
@@ -8284,7 +8375,11 @@ function closeChat(send){
   chatOpen=false; chatBox.hidden=true; chatInputEl.blur(); chatLogEl.classList.remove('up');
   if(send && v){
     chatHistory.push(v); if(chatHistory.length>50) chatHistory.shift();
-    if(bw.active && /^\/start\b/i.test(v)){ startBedwarsBtn(); chatPush('Starting the match…', 'sys'); }   // /start begins the Bed Wars match
+    if(/^\/start\b/i.test(v)){                                    // /start begins a round in whichever game you are in
+      if(bw.active){ startBedwarsBtn(); chatPush('Starting the match…', 'sys'); }
+      else if(bb.active){ bbStartBtn(); chatPush('Starting the round…', 'sys'); }
+      else chatPush('There is nothing to start here. /start works in Bed Wars and Build Battle.', 'sys');
+    }
     else if(mp.active) mpSend({type:'chat', text:v});
     else chatPush('<'+(getSavedName()||'You')+'> '+censor(v));
   }
