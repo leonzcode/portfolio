@@ -16,6 +16,12 @@
   .panel h3 span{ font-weight:400; font-size:11.5px; color:#7a7a7a; }
   .phead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:7px; }
   .ctl{ margin:9px 1px 3px; }
+  /* the state equation, balancing in front of you: move any slider and both sides
+     stay level, which is the one thing a table of numbers cannot show on its own */
+  #idcheck{ margin-top:7px; padding-top:7px; border-top:1px solid #e6ebf0; display:flex; align-items:center;
+    justify-content:center; gap:7px; font-size:12.5px; color:#5a636b; letter-spacing:.2px; }
+  #idcheck b{ font-size:14px; color:#1c1c1c; font-variant-numeric:tabular-nums; min-width:52px; text-align:center; }
+  #idcheck .eq{ font-size:15px; color:#2ca02c; font-weight:700; }
   .ctl .row{ display:flex; justify-content:space-between; align-items:baseline; font-size:12.5px; margin-bottom:3px; }
   .ctl .row b{ font-weight:600; } .ctl .val{ font-variant-numeric:tabular-nums; color:#1b3b5f; font-weight:700; }
   input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:7px; border-radius:4px; background:#c9d3db; outline:none; margin:1px 0; }
@@ -61,6 +67,7 @@
         <button id="workConv" class="mini">W: by gas</button>
       </div>
       <canvas id="gauges" width="406" height="176" style="width:406px;height:176px;"></canvas>
+      <div id="idcheck">P&middot;V <b id="idLeft">&mdash;</b><span class="eq">=</span><b id="idRight">&mdash;</b> n&middot;R&middot;T</div>
     </div>
 
     <!-- RIGHT: controls -->
@@ -80,8 +87,7 @@
       <label class="chk"><input type="radio" name="proc" value="isobaric"> Isobaric &nbsp;<span style="color:#8a8a8a;font-size:11px">— constant P</span></label>
       <label class="chk"><input type="radio" name="proc" value="isochoric"> Isochoric &nbsp;<span style="color:#8a8a8a;font-size:11px">— constant V</span></label>
       <label class="chk"><input type="radio" name="proc" value="adiabatic"> Adiabatic &nbsp;<span style="color:#8a8a8a;font-size:11px">&mdash; Q = 0</span></label>
-      <p style="margin:7px 1px 0;font-size:11px;line-height:1.4;color:#7a7a7a;"><b>Free</b> is a weighted, insulated piston:
-        squeeze the gas and it warms, heat it and the piston rides up.</p>
+      <p id="procNote" style="margin:7px 1px 0;font-size:11px;line-height:1.4;color:#7a7a7a;"></p>
     </div>
     <div class="panel" style="left:930px; top:428px; width:352px;">
       <h3>View</h3>
@@ -105,6 +111,7 @@
 const el=id=>document.getElementById(id);
 const canvas=el('box'), ctx=canvas.getContext('2d');
 const histCanvas=el('hist'), hctx=histCanvas.getContext('2d');
+const idLeft=el('idLeft'), idRight=el('idRight');
 const gCanvas=el('gauges'), gctx=gCanvas.getContext('2d');
 const pvCanvas=el('pv'), pctx=pvCanvas.getContext('2d');
 const CW=canvas.width, CH=canvas.height;      // FIXED canvas — never resized, so the page never reflows
@@ -163,25 +170,15 @@ function handleControls(){
   countLabel.textContent=particleCount; tempLabel.textContent=temperature.toFixed(2);
 }
 countSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount); ref={V0:boxArea(),t0:temperature};});
-tempSlider.addEventListener('input',()=>{ const prevT=temperature, nt=+tempSlider.value;
+tempSlider.addEventListener('input',()=>{ const nt=+tempSlider.value;
   if(nt>lastTemp) heatFlare=Math.min(1,heatFlare+(nt-lastTemp)); lastTemp=nt;
-  handleControls(); applyTempConstraint(prevT); normalizeKE(); });
-volumeSlider.addEventListener('input',()=>{ const prevV=boxArea();
-  setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); applyVolConstraint(prevV); syncVP(); });
+  handleControls(); normalizeKE(); });
+volumeSlider.addEventListener('input',()=>{
+  setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); applyVolConstraint(); syncVP(); });
 // Moving the piston: hold whatever the chosen process holds, by letting the
-// temperature take the strain.
-//
-// Free is a piston under a fixed weight with no heat leaking in, so it behaves the
-// way a real one does. Pushing it in does work on the gas and there is nowhere for
-// that energy to go, so the gas warms (Q = 0, and in two dimensions that is T ∝ 1/V);
-// letting it out cools the gas the same way. Every step runs from wherever the gas
-// is now rather than from a fixed anchor, so the two sliders never fight each other.
-function applyVolConstraint(prevV){
-  if(process==='free' && prevV>0){
-    const nt=Math.max(0.1, Math.min(8, temperature*(prevV/Math.max(1,boxArea()))));
-    temperature=nt; lastTemp=nt; tempSlider.value=nt.toFixed(2); tempLabel.textContent=nt.toFixed(2); normalizeKE();
-    return;
-  }
+// temperature take the strain. Free holds nothing, so it does not come through here
+// at all - its sliders move one variable each and the pressure follows from PV = nRT.
+function applyVolConstraint(){
   if(process!=='isobaric' && process!=='adiabatic') return;
   const V=boxArea();
   let nt = process==='isobaric' ? ref.t0*(V/ref.V0)     // P const  => T ∝ V
@@ -189,18 +186,20 @@ function applyVolConstraint(prevV){
   nt=Math.max(0.1,Math.min(8,nt));
   temperature=nt; lastTemp=nt; tempSlider.value=nt.toFixed(2); tempLabel.textContent=nt.toFixed(2); normalizeKE();
 }
-// Heating on Free: the weight on the piston keeps the pressure where it is, so the
-// gas pushes the piston up instead of pressing harder (P const => V ∝ T). If the
-// piston reaches the end of its travel it simply stops there, and from that point on
-// the container is a fixed box.
-function applyTempConstraint(prevT){
-  if(process!=='free' || prevT<=1e-6) return;
-  setGasH(gasH*(temperature/prevT)); syncVP();
-}
+// Spell out the rule you are working under. Two processes can look alike if you only
+// ever drag one slider, so the panel says which variable is pinned and what follows.
+const PROC_NOTE={
+  free:      'Nothing is pinned. Move either slider on its own and the pressure follows from PV = nRT.',
+  isothermal:'T is pinned. Squeeze the gas and the pressure rises in step: PV stays put, which is Boyle\u2019s law.',
+  isobaric:  'P is pinned. The temperature follows the volume, so V/T stays put: Charles\u2019s law.',
+  isochoric: 'V is pinned. The pressure follows the temperature, so P/T stays put: Gay-Lussac\u2019s law.',
+  adiabatic: 'No heat in or out. Squeezing does work on the gas, so it warms as it shrinks and cools as it grows.',
+};
 function setProcess(pr){ process=pr; ref={V0:boxArea(), t0:temperature};
   const tempLocked=(pr==='isothermal'||pr==='isobaric'||pr==='adiabatic'), volLocked=(pr==='isochoric');
   tempSlider.disabled=tempLocked; volumeSlider.disabled=volLocked;
-  tempSlider.style.opacity=tempLocked?0.4:1; volumeSlider.style.opacity=volLocked?0.4:1; }
+  tempSlider.style.opacity=tempLocked?0.4:1; volumeSlider.style.opacity=volLocked?0.4:1;
+  const note=el('procNote'); if(note) note.textContent=PROC_NOTE[pr]||''; }
 document.querySelectorAll('input[name=proc]').forEach(r=>r.addEventListener('change',()=>{ if(r.checked) setProcess(r.value); }));
 showVec.addEventListener('change',()=>showVectors=showVec.checked);
 showTrails.addEventListener('change',()=>showTrail=showTrails.checked);
@@ -217,7 +216,7 @@ function resetAll(){
   recBtn.classList.remove('on');recBtn.textContent='● Record'; workConv.textContent='W: by gas';
   playPauseBtn.textContent='Pause';playPauseBtn.classList.add('on');
   const freeR=document.querySelector('input[name=proc][value=free]'); if(freeR) freeR.checked=true;
-  tempSlider.disabled=false; volumeSlider.disabled=false; tempSlider.style.opacity=1; volumeSlider.style.opacity=1; process='free';
+  tempSlider.disabled=false; volumeSlider.disabled=false; tempSlider.style.opacity=1; volumeSlider.style.opacity=1; setProcess('free');
   setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount); zeroWQ(); ref={V0:boxArea(),t0:temperature};
 }
 
@@ -404,6 +403,7 @@ function drawGauges(){
     } else { gauge[r.k]+=(r.frac-gauge[r.k])*0.18; gctx.fillStyle=r.col; gctx.fillRect(bx,y-8,bw*Math.max(0,Math.min(1,gauge[r.k])),16); }
     gctx.fillStyle='#222'; gctx.textAlign='right'; gctx.fillText(r.val,Ww-4,y);
   });
+  idLeft.textContent=(P*Vl).toFixed(1); idRight.textContent=(n*R_GAS*T).toFixed(1);
 }
 
 let traces=[], current=[], recording=false, recColor='#2f83d6', recIdx=0;
@@ -445,6 +445,7 @@ function drawPV(){
 
 function fit(){ const s=Math.min((window.innerWidth-12)/1300,(window.innerHeight-12)/720); el('sim').style.transform='scale('+Math.max(0.2,s)+')'; }
 window.addEventListener('resize',fit);
+setProcess('free');
 setGasH((GH_MIN+GH_MAX)/2); syncVP(); handleControls(); initParticles(particleCount); zeroWQ(); ref={V0:boxArea(),t0:temperature}; fit(); requestAnimationFrame(step);
 </script>
 </body>
