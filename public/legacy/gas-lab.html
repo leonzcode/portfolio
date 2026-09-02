@@ -43,8 +43,8 @@
     <!-- LEFT: piston-in-cylinder + speed distribution -->
     <canvas id="box" width="448" height="428" style="position:absolute; left:18px; top:16px;"></canvas>
     <div class="panel" style="left:18px; top:456px; width:448px;">
-      <h3 style="margin-bottom:5px;">Speed distribution <span>— Maxwell&ndash;Boltzmann</span></h3>
-      <canvas id="hist" width="424" height="92" style="width:424px;height:92px;"></canvas>
+      <h3 style="margin-bottom:5px;">Speed distribution <span>&mdash; measured against Maxwell&ndash;Boltzmann</span></h3>
+      <canvas id="hist" width="424" height="152" style="width:424px;height:152px;"></canvas>
     </div>
 
     <!-- MIDDLE: P-V diagram (recordable) + live values -->
@@ -75,13 +75,15 @@
     </div>
     <div class="panel" style="left:930px; top:224px; width:352px;">
       <h3>Process <span>— what is held constant</span></h3>
-      <label class="chk"><input type="radio" name="proc" value="free" checked> Free &nbsp;<span style="color:#8a8a8a;font-size:11px">— manual</span></label>
+      <label class="chk"><input type="radio" name="proc" value="free" checked> Free &nbsp;<span style="color:#8a8a8a;font-size:11px">&mdash; nothing held</span></label>
       <label class="chk"><input type="radio" name="proc" value="isothermal"> Isothermal &nbsp;<span style="color:#8a8a8a;font-size:11px">— constant T</span></label>
       <label class="chk"><input type="radio" name="proc" value="isobaric"> Isobaric &nbsp;<span style="color:#8a8a8a;font-size:11px">— constant P</span></label>
       <label class="chk"><input type="radio" name="proc" value="isochoric"> Isochoric &nbsp;<span style="color:#8a8a8a;font-size:11px">— constant V</span></label>
-      <label class="chk"><input type="radio" name="proc" value="adiabatic"> Adiabatic &nbsp;<span style="color:#8a8a8a;font-size:11px">— Q = 0</span></label>
+      <label class="chk"><input type="radio" name="proc" value="adiabatic"> Adiabatic &nbsp;<span style="color:#8a8a8a;font-size:11px">&mdash; Q = 0</span></label>
+      <p style="margin:7px 1px 0;font-size:11px;line-height:1.4;color:#7a7a7a;"><b>Free</b> is a weighted, insulated piston:
+        squeeze the gas and it warms, heat it and the piston rides up.</p>
     </div>
-    <div class="panel" style="left:930px; top:404px; width:352px;">
+    <div class="panel" style="left:930px; top:428px; width:352px;">
       <h3>View</h3>
       <label class="chk"><input id="showTrails" type="checkbox" checked> Show motion trails</label>
       <label class="chk"><input id="showHits" type="checkbox" checked> Show wall collisions</label>
@@ -113,7 +115,12 @@ const countSlider=el('count'),tempSlider=el('temperature'),
 const countLabel=el('countLabel'),tempLabel=el('tempLabel'),volLabel=el('volLabel');
 const playPauseBtn=el('playPause'),recBtn=el('recBtn'),clrBtn=el('clrBtn'),workConv=el('workConv');
 
-const RADIUS=4, BINS=28, TRAILFADE=0.25;
+const RADIUS=4, BINS=44, TRAILFADE=0.25;
+const SPEED_MAX=190;                            // the speed axis never rescales, so heating the gas visibly
+                                                // slides the whole curve right and flattens it, the way the
+                                                // figure in a textbook does
+let histEMA=new Array(BINS).fill(0);            // a running average of each bin: a few hundred particles is a
+                                                // noisy sample, and the line should read as a curve, not static
 const KE_PER_T=450;                             // avg KE per unit temperature (from the speed sampling)
 // display units — the physics runs in raw sim units; these just make the readouts small and
 // human-readable while keeping PV = nRT exact (n = N/100 mol, V in "litres", T relative, R = 8.314).
@@ -138,7 +145,11 @@ class Particle{ constructor(x,y,vx,vy,r,c){this.x=x;this.y=y;this.vx=vx;this.vy=
 let particles=[];
 const HUES=['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b'];
 const rc=()=>HUES[Math.floor(Math.random()*HUES.length)];
-function sampleSpeedFromTemp(T){const u1=Math.random(),u2=Math.random();const z=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);return 30*Math.sqrt(T)*Math.abs(z);}
+function gauss(){ const u1=Math.max(1e-12,Math.random()), u2=Math.random(); return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2); }
+// A 2D Maxwell-Boltzmann speed. Each velocity component is an independent normal
+// draw, which makes the speed Rayleigh-distributed - exactly the curve the graph
+// plots. sigma is set so the average kinetic energy lands on KE_PER_T*T.
+function sampleSpeedFromTemp(T){ const sd=Math.sqrt(KE_PER_T*Math.max(0,T)); return Math.hypot(gauss()*sd, gauss()*sd); }
 function getAverageKE(){const a=particles.filter(p=>p.alive);return a.length?a.reduce((s,p)=>s+p.KE(),0)/a.length:0;}
 function getAverageSpeed(){const a=particles.filter(p=>p.alive);return a.length?a.reduce((s,p)=>s+p.speed(),0)/a.length:0;}
 // force the average KE to exactly KE_PER_T*temperature. Elastic collisions conserve KE, so once set it stays
@@ -152,16 +163,39 @@ function handleControls(){
   countLabel.textContent=particleCount; tempLabel.textContent=temperature.toFixed(2);
 }
 countSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount); ref={V0:boxArea(),t0:temperature};});
-tempSlider.addEventListener('input',()=>{ const nt=+tempSlider.value; if(nt>lastTemp) heatFlare=Math.min(1,heatFlare+(nt-lastTemp)); lastTemp=nt; handleControls(); normalizeKE(); });
-volumeSlider.addEventListener('input',()=>{ setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); applyVolConstraint(); syncVP(); });
-// when moving the piston, keep the selected process's constraint by adjusting temperature (KE)
-function applyVolConstraint(){
+tempSlider.addEventListener('input',()=>{ const prevT=temperature, nt=+tempSlider.value;
+  if(nt>lastTemp) heatFlare=Math.min(1,heatFlare+(nt-lastTemp)); lastTemp=nt;
+  handleControls(); applyTempConstraint(prevT); normalizeKE(); });
+volumeSlider.addEventListener('input',()=>{ const prevV=boxArea();
+  setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); applyVolConstraint(prevV); syncVP(); });
+// Moving the piston: hold whatever the chosen process holds, by letting the
+// temperature take the strain.
+//
+// Free is a piston under a fixed weight with no heat leaking in, so it behaves the
+// way a real one does. Pushing it in does work on the gas and there is nowhere for
+// that energy to go, so the gas warms (Q = 0, and in two dimensions that is T ∝ 1/V);
+// letting it out cools the gas the same way. Every step runs from wherever the gas
+// is now rather than from a fixed anchor, so the two sliders never fight each other.
+function applyVolConstraint(prevV){
+  if(process==='free' && prevV>0){
+    const nt=Math.max(0.1, Math.min(8, temperature*(prevV/Math.max(1,boxArea()))));
+    temperature=nt; lastTemp=nt; tempSlider.value=nt.toFixed(2); tempLabel.textContent=nt.toFixed(2); normalizeKE();
+    return;
+  }
   if(process!=='isobaric' && process!=='adiabatic') return;
   const V=boxArea();
   let nt = process==='isobaric' ? ref.t0*(V/ref.V0)     // P const  => T ∝ V
                                 : ref.t0*(ref.V0/V);    // Q = 0 (2D, γ=2) => T ∝ 1/V
   nt=Math.max(0.1,Math.min(8,nt));
   temperature=nt; lastTemp=nt; tempSlider.value=nt.toFixed(2); tempLabel.textContent=nt.toFixed(2); normalizeKE();
+}
+// Heating on Free: the weight on the piston keeps the pressure where it is, so the
+// gas pushes the piston up instead of pressing harder (P const => V ∝ T). If the
+// piston reaches the end of its travel it simply stops there, and from that point on
+// the container is a fixed box.
+function applyTempConstraint(prevT){
+  if(process!=='free' || prevT<=1e-6) return;
+  setGasH(gasH*(temperature/prevT)); syncVP();
 }
 function setProcess(pr){ process=pr; ref={V0:boxArea(), t0:temperature};
   const tempLocked=(pr==='isothermal'||pr==='isobaric'||pr==='adiabatic'), volLocked=(pr==='isochoric');
@@ -261,14 +295,85 @@ function drawApparatus(gTop,gBot,gL,gR){
   ctx.fillStyle='#556'; ctx.font='10px Helvetica Neue,Arial'; ctx.textAlign='center'; ctx.fillText('T',thx,tTop-5);
 }
 
+// Draw a line through a set of points, rounding each corner off, so a binned
+// sample comes out as a curve rather than a run of little steps.
+function curveThrough(ctx, pts){
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for(let i=0;i<pts.length-1;i++){
+    const mx=(pts[i][0]+pts[i+1][0])/2, my=(pts[i][1]+pts[i+1][1])/2;
+    ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+  }
+  ctx.lineTo(pts[pts.length-1][0], pts[pts.length-1][1]);
+}
 function drawHistogram(){
-  const Ww=histCanvas.width,Hh=histCanvas.height; hctx.clearRect(0,0,Ww,Hh); hctx.fillStyle='#fff'; hctx.fillRect(0,0,Ww,Hh); hctx.strokeStyle='#cfd6dc'; hctx.strokeRect(0.5,0.5,Ww-1,Hh-1);
-  const speeds=particles.filter(p=>p.alive).map(p=>p.speed()); if(!speeds.length)return;
-  const maxS=Math.max(1,...speeds),counts=new Array(BINS).fill(0);
-  for(const s of speeds)counts[Math.min(BINS-1,Math.floor((s/maxS)*BINS))]++;
-  const maxC=Math.max(...counts,1),pad=8,barW=(Ww-pad*2)/BINS;
-  for(let i=0;i<BINS;i++){const h=(counts[i]/maxC)*(Hh-22);hctx.fillStyle='#2f83d6';hctx.fillRect(pad+i*barW,Hh-h-13,Math.max(1,barW-2),h);}
-  hctx.fillStyle='#333';hctx.font='11px Helvetica Neue,Arial';hctx.textAlign='left';hctx.fillText('slower',pad,Hh-3);hctx.textAlign='right';hctx.fillText('faster  →  speed',Ww-pad,Hh-3);
+  const Ww=histCanvas.width, Hh=histCanvas.height;
+  hctx.clearRect(0,0,Ww,Hh); hctx.fillStyle='#fff'; hctx.fillRect(0,0,Ww,Hh);
+  hctx.strokeStyle='#cfd6dc'; hctx.lineWidth=1; hctx.strokeRect(0.5,0.5,Ww-1,Hh-1);
+  const L=26, R=Ww-12, T=22, B=Hh-24, PW=R-L, PH=B-T;
+  const alive=particles.filter(p=>p.alive), N=alive.length;
+  const binW=SPEED_MAX/BINS;
+  const X=v=>L+Math.min(1,Math.max(0,v/SPEED_MAX))*PW;
+
+  // what the gas is actually doing, as a density so it shares a scale with the prediction
+  const counts=new Array(BINS).fill(0);
+  for(const p of alive){ const i=Math.floor(p.speed()/binW); if(i>=0 && i<BINS) counts[i]++; }
+  for(let i=0;i<BINS;i++){ const d = N ? counts[i]/(N*binW) : 0; histEMA[i]+=(d-histEMA[i])*0.10; }
+  // one light pass across neighbouring bins. A few hundred particles is a small
+  // sample and every bin rattles; this settles the line without touching the shape,
+  // so a gas genuinely out of equilibrium still shows up as one.
+  const dens=new Array(BINS);
+  for(let i=0;i<BINS;i++){
+    const a=histEMA[Math.max(0,i-1)], b=histEMA[i], c=histEMA[Math.min(BINS-1,i+1)];
+    dens[i]=0.25*a+0.5*b+0.25*c;
+  }
+
+  // what kinetic theory says it should be doing. In two dimensions Maxwell-Boltzmann
+  // is f(v) = (v/a²)·e^(−v²/2a²), and a² is exactly the average kinetic energy the
+  // particles are carrying, so the curve is drawn from the gas's own measured energy.
+  const a=Math.max(1e-6, Math.sqrt(getAverageKE()));
+  const f=v=>(v/(a*a))*Math.exp(-(v*v)/(2*a*a));
+  const yScale=(PH*0.86)/Math.max(1e-9, f(a));
+  const Y=d=>B-Math.min(PH, d*yScale);
+
+  // grid, then the axis it hangs from
+  hctx.strokeStyle='#eef2f6'; hctx.lineWidth=1; hctx.beginPath();
+  for(let g=1;g<=3;g++){ const yy=Math.round(B-PH*g/4)+0.5; hctx.moveTo(L,yy); hctx.lineTo(R,yy); }
+  for(let v=40; v<SPEED_MAX; v+=40){ const xx=Math.round(X(v))+0.5; hctx.moveTo(xx,T); hctx.lineTo(xx,B); }
+  hctx.stroke();
+
+  // the three speeds every Maxwell-Boltzmann question asks about
+  const marks=[['most probable', a], ['average', a*Math.sqrt(Math.PI/2)], ['rms', a*Math.SQRT2]];
+  hctx.strokeStyle='#9aa4ad'; hctx.setLineDash([2,3]); hctx.beginPath();
+  for(const m of marks){ const xx=Math.round(X(m[1]))+0.5; hctx.moveTo(xx,Y(f(m[1]))); hctx.lineTo(xx,B); }
+  hctx.stroke(); hctx.setLineDash([]);
+
+  // measured: a filled curve, because this is the thing you came to watch
+  const pts=[[X(0),Y(0)]];
+  for(let i=0;i<BINS;i++) pts.push([X((i+0.5)*binW), Y(dens[i])]);
+  pts.push([X(SPEED_MAX), Y(0)]);
+  hctx.beginPath(); curveThrough(hctx, pts);
+  hctx.lineTo(R,B); hctx.lineTo(L,B); hctx.closePath();
+  hctx.fillStyle='rgba(47,131,214,.17)'; hctx.fill();
+  hctx.beginPath(); curveThrough(hctx, pts);
+  hctx.strokeStyle='#2f83d6'; hctx.lineWidth=2; hctx.stroke();
+
+  // the ideal curve laid over it, so you can see how closely the two agree
+  hctx.beginPath();
+  for(let px=0; px<=PW; px+=2){ const v=(px/PW)*SPEED_MAX, yy=Y(f(v)); if(px===0) hctx.moveTo(L,yy); else hctx.lineTo(L+px,yy); }
+  hctx.strokeStyle='#c1443e'; hctx.lineWidth=1.5; hctx.setLineDash([4,3]); hctx.stroke(); hctx.setLineDash([]);
+
+  // axes
+  hctx.strokeStyle='#b9c2ca'; hctx.lineWidth=1; hctx.beginPath();
+  hctx.moveTo(L+0.5,T); hctx.lineTo(L+0.5,B+0.5); hctx.lineTo(R,B+0.5); hctx.stroke();
+  hctx.fillStyle='#5a636b'; hctx.font='10px Helvetica Neue,Arial'; hctx.textAlign='center';
+  for(let v=0; v<=SPEED_MAX; v+=40){ const xx=X(v); hctx.fillText(String(v), xx, B+12); }
+  hctx.fillText('speed  (sim units)', (L+R)/2, Hh-4);
+  hctx.save(); hctx.translate(9, (T+B)/2); hctx.rotate(-Math.PI/2);
+  hctx.fillText('particles', 0, 0); hctx.restore();
+
+  // the numbers behind the three dashed lines
+  hctx.textAlign='right'; hctx.fillStyle='#5a636b';
+  hctx.fillText('most probable '+marks[0][1].toFixed(0)+'  ·  average '+marks[1][1].toFixed(0)+'  ·  rms '+marks[2][1].toFixed(0), R, T-8);
 }
 
 function niceMax(v){ if(v<=1e-9)return 1; const p=Math.pow(10,Math.floor(Math.log10(v))); const m=v/p; for(const s of [1,1.5,2,3,4,5,6,8,10]) if(m<=s) return s*p; return 10*p; }
@@ -331,7 +436,11 @@ function drawPV(){
   pctx.fillStyle='#333'; pctx.font='11.5px Helvetica Neue,Arial'; pctx.textAlign='center'; pctx.textBaseline='alphabetic'; pctx.fillText('Volume  V  →',(l+r)/2,b+18);
   pctx.save(); pctx.translate(13,(t+b)/2); pctx.rotate(-Math.PI/2); pctx.fillText('Pressure  P  →',0,0); pctx.restore();
   const X=gx(th.V),Y=gy(th.P); pctx.beginPath(); pctx.arc(X,Y,6,0,6.28); pctx.fillStyle='#1b3b5f'; pctx.fill(); pctx.strokeStyle='#fff'; pctx.lineWidth=2.5; pctx.stroke();
-  pctx.fillStyle='#1b3b5f'; pctx.font='bold 11px Helvetica Neue,Arial'; pctx.textAlign='left'; pctx.fillText('now',X+9,Y-6);
+  // keep the label inside the plot when the state point is hard against an edge
+  pctx.fillStyle='#1b3b5f'; pctx.font='bold 11px Helvetica Neue,Arial';
+  const rightEdge = X > pvCanvas.width-46;
+  pctx.textAlign = rightEdge ? 'right' : 'left';
+  pctx.fillText('now', rightEdge ? X-9 : X+9, Math.max(14, Y-6));
 }
 
 function fit(){ const s=Math.min((window.innerWidth-12)/1300,(window.innerHeight-12)/720); el('sim').style.transform='scale('+Math.max(0.2,s)+')'; }
