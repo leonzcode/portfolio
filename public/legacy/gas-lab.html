@@ -170,15 +170,25 @@ function handleControls(){
   countLabel.textContent=particleCount; tempLabel.textContent=temperature.toFixed(2);
 }
 countSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount); ref={V0:boxArea(),t0:temperature};});
-tempSlider.addEventListener('input',()=>{ const nt=+tempSlider.value;
+tempSlider.addEventListener('input',()=>{ const prevT=temperature, nt=+tempSlider.value;
   if(nt>lastTemp) heatFlare=Math.min(1,heatFlare+(nt-lastTemp)); lastTemp=nt;
-  handleControls(); normalizeKE(); });
-volumeSlider.addEventListener('input',()=>{
-  setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); applyVolConstraint(); syncVP(); });
+  handleControls(); applyTempConstraint(prevT); normalizeKE(); });
+volumeSlider.addEventListener('input',()=>{ const prevV=boxArea();
+  setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); applyVolConstraint(prevV); syncVP(); });
 // Moving the piston: hold whatever the chosen process holds, by letting the
-// temperature take the strain. Free holds nothing, so it does not come through here
-// at all - its sliders move one variable each and the pressure follows from PV = nRT.
-function applyVolConstraint(){
+// temperature take the strain.
+//
+// On Free the piston is a real one, weighted and insulated. Pushing it in does work
+// on the gas and there is nowhere for that energy to go, so the gas warms (Q = 0,
+// which in two dimensions is T ∝ 1/V); letting it back out cools the gas again. Each
+// step runs from wherever the gas is now rather than from a fixed anchor, so the two
+// sliders never fight each other, and the pressure follows from PV = nRT throughout.
+function applyVolConstraint(prevV){
+  if(process==='free' && prevV>0){
+    const nt=Math.max(0.1, Math.min(8, temperature*(prevV/Math.max(1,boxArea()))));
+    temperature=nt; lastTemp=nt; tempSlider.value=nt.toFixed(2); tempLabel.textContent=nt.toFixed(2); normalizeKE();
+    return;
+  }
   if(process!=='isobaric' && process!=='adiabatic') return;
   const V=boxArea();
   let nt = process==='isobaric' ? ref.t0*(V/ref.V0)     // P const  => T ∝ V
@@ -186,10 +196,18 @@ function applyVolConstraint(){
   nt=Math.max(0.1,Math.min(8,nt));
   temperature=nt; lastTemp=nt; tempSlider.value=nt.toFixed(2); tempLabel.textContent=nt.toFixed(2); normalizeKE();
 }
+// Heating on Free: the weight on the piston keeps the pressure where it is, so the
+// gas pushes the piston up rather than pressing harder (P const => V ∝ T). If the
+// piston runs out of travel it stops there, and the container is a fixed box from
+// that point on, which is exactly what a real one would do.
+function applyTempConstraint(prevT){
+  if(process!=='free' || prevT<=1e-6) return;
+  setGasH(gasH*(temperature/prevT)); syncVP();
+}
 // Spell out the rule you are working under. Two processes can look alike if you only
 // ever drag one slider, so the panel says which variable is pinned and what follows.
 const PROC_NOTE={
-  free:      'Nothing is pinned. Move either slider on its own and the pressure follows from PV = nRT.',
+  free:      'Nothing is pinned. Squeeze the gas and it warms; heat it and the piston rides up. P follows from PV = nRT.',
   isothermal:'T is pinned. Squeeze the gas and the pressure rises in step: PV stays put, which is Boyle\u2019s law.',
   isobaric:  'P is pinned. The temperature follows the volume, so V/T stays put: Charles\u2019s law.',
   isochoric: 'V is pinned. The pressure follows the temperature, so P/T stays put: Gay-Lussac\u2019s law.',
