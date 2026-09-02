@@ -134,10 +134,12 @@ const KE_PER_T=450;                             // avg KE per unit temperature (
 const N2MOL=100, VOL_SCALE=8000, R_GAS=8.314, ENERGY_SCALE=R_GAS/(N2MOL*KE_PER_T);
 const CXL=62, CYW=300, CXR=CXL+CYW, BASEY=344;  // piston-in-cylinder geometry
 const GH_MIN=50, GH_MAX=276, VMIN=CYW*GH_MIN, VMAX=CYW*GH_MAX;
+const T_MIN=0.1, T_MAX=8;                       // the ends of the temperature slider's travel
 
 let particleCount=+countSlider.value, temperature=+tempSlider.value;
 let showVectors=showVec.checked, showTrail=showTrails.checked, showHits=showHitsChk.checked;
-let running=true, heatFlare=0, lastTemp=temperature, workByGas=true;
+let running=true, heatFlare=0, coolFlare=0, lastTemp=temperature, workByGas=true;
+let lastShownT=temperature;                     // for telling heating from cooling under the cylinder
 let process='free';                       // the selected process; each constraint runs from the current state
 let gasH=(GH_MIN+GH_MAX)/2, offX=CXL, offY=BASEY-gasH;
 
@@ -170,10 +172,11 @@ function handleControls(){
   countLabel.textContent=particleCount; tempLabel.textContent=temperature.toFixed(2);
 }
 countSlider.addEventListener('input',()=>{handleControls(); initParticles(particleCount);});
-tempSlider.addEventListener('input',()=>{ const prevT=temperature, nt=+tempSlider.value;
-  if(nt>lastTemp) heatFlare=Math.min(1,heatFlare+(nt-lastTemp)); lastTemp=nt;
+tempSlider.addEventListener('input',()=>{ if(HELD[process]==='T'){ tempSlider.value=temperature.toFixed(2); return; }
+  const prevT=temperature; lastTemp=+tempSlider.value;
   handleControls(); applyTempConstraint(prevT); normalizeKE(); });
-volumeSlider.addEventListener('input',()=>{ const prevV=boxArea();
+volumeSlider.addEventListener('input',()=>{ if(HELD[process]==='V'){ syncVP(); return; }
+  const prevV=boxArea();
   setGasH(GH_MIN+(+volumeSlider.value/100)*(GH_MAX-GH_MIN)); applyVolConstraint(prevV); syncVP(); });
 /* How each process couples the piston to the burner. `onVolume` is the power the
    temperature follows the volume by when you move the piston; `onTemp` is the power
@@ -187,27 +190,42 @@ volumeSlider.addEventListener('input',()=>{ const prevV=boxArea();
    weighted one lets it expand instead (V ∝ T).                                   */
 const COUPLING = {
   free:       { onVolume:-1, onTemp:+1 },
-  isothermal: { onVolume: 0, onTemp: 0 },   // T is pinned; sliding it just picks a different isotherm
+  isothermal: { onVolume: 0, onTemp: 0 },
   isobaric:   { onVolume:+1, onTemp:+1 },   // P pinned, so V/T stays put
-  isochoric:  { onVolume: 0, onTemp: 0 },   // V is pinned; sliding it just picks a different box
+  isochoric:  { onVolume: 0, onTemp: 0 },
   adiabatic:  { onVolume:-1, onTemp:-1 },   // Q = 0, so V·T stays put (2D, γ = 2)
 };
+// The one quantity each process is named for. It is greyed out and it does not move,
+// whichever slider you pull - which is the whole point of picking that process.
+const HELD = { isothermal:'T', isobaric:'P', isochoric:'V', adiabatic:'Q' };
 // Every step runs from wherever the gas is now rather than from a fixed anchor, so
-// the two sliders never drift apart. The apparatus has ends, though: the piston runs
-// out of travel and the burner runs out of range. When that happens the follower just
-// stops there, exactly as a real rig would, and from that point the container is a
-// fixed box - keep heating and the extra energy comes out as pressure instead.
+// the two sliders never drift apart.
+//
+// The apparatus has ends: the piston runs out of travel and the burner runs out of
+// range. When the follower reaches its stop, the slider you are dragging stops with
+// it. Letting the driver carry on would leave the pair off the process curve - the
+// volume pinned at 0% while the temperature kept falling - and the readings would
+// stop meaning anything. Both simply come to rest at the end of the run.
 function applyVolConstraint(prevV){
   const k=(COUPLING[process]||{}).onVolume||0;
   if(!k || prevV<=0) return;
   const V=Math.max(1, boxArea());
-  const t=Math.max(0.1, Math.min(8, temperature*Math.pow(V/prevV, k)));
+  const want=temperature*Math.pow(V/prevV, k);
+  const t=Math.max(T_MIN, Math.min(T_MAX, want));
+  if(Math.abs(t-want)>1e-9)                                   // the burner is at its limit: the piston stops here too
+    setGasH((prevV*Math.pow(t/temperature, 1/k))/CYW);
   temperature=t; lastTemp=t; tempSlider.value=t.toFixed(2); tempLabel.textContent=t.toFixed(2); normalizeKE();
 }
 function applyTempConstraint(prevT){
   const k=(COUPLING[process]||{}).onTemp||0;
   if(!k || prevT<=1e-6) return;
-  setGasH(gasH*Math.pow(temperature/prevT, k)); syncVP();     // setGasH stops at the ends of the travel
+  const want=gasH*Math.pow(temperature/prevT, k);
+  const h=Math.max(GH_MIN, Math.min(GH_MAX, want));
+  if(Math.abs(h-want)>1e-9){                                  // the piston is at the end of its travel: the heat stops here too
+    const t=Math.max(T_MIN, Math.min(T_MAX, prevT*Math.pow(h/gasH, 1/k)));
+    temperature=t; lastTemp=t; tempSlider.value=t.toFixed(2); tempLabel.textContent=t.toFixed(2);
+  }
+  setGasH(h); syncVP();
 }
 // Spell out the rule you are working under. Two processes can look alike if you only
 // ever drag one slider, so the panel says which variable is pinned and what follows.
@@ -219,6 +237,10 @@ const PROC_NOTE={
   adiabatic: 'No heat in or out, so V\u00b7T stays put. Squeeze the gas and it warms; heat it and it expands.',
 };
 function setProcess(pr){ process=pr;
+  // if the held quantity is one you would otherwise drag, take the slider away
+  const tLocked=(HELD[pr]==='T'), vLocked=(HELD[pr]==='V');
+  tempSlider.disabled=tLocked; volumeSlider.disabled=vLocked;
+  tempSlider.style.opacity=tLocked?0.4:1; volumeSlider.style.opacity=vLocked?0.4:1;
   const note=el('procNote'); if(note) note.textContent=PROC_NOTE[pr]||''; }
 document.querySelectorAll('input[name=proc]').forEach(r=>r.addEventListener('change',()=>{ if(r.checked) setProcess(r.value); }));
 showVec.addEventListener('change',()=>showVectors=showVec.checked);
@@ -232,7 +254,7 @@ el('reset').addEventListener('click',resetAll);
 function resetAll(){
   countSlider.value=250;tempSlider.value=1;
   showVec.checked=false;showTrails.checked=true;showHitsChk.checked=true;
-  running=true;heatFlare=0;lastTemp=1;impacts.length=0;traces=[];current=[];recording=false;workByGas=true;
+  running=true;heatFlare=0;coolFlare=0;lastShownT=1;lastTemp=1;impacts.length=0;traces=[];current=[];recording=false;workByGas=true;
   recBtn.classList.remove('on');recBtn.textContent='● Record'; workConv.textContent='W: by gas';
   playPauseBtn.textContent='Pause';playPauseBtn.classList.add('on');
   const freeR=document.querySelector('input[name=proc][value=free]'); if(freeR) freeR.checked=true;
@@ -263,7 +285,14 @@ function theory(){ const N=particles.length, V=boxArea(), KE=getAverageKE(); ret
 let Wby=0, Qtot=0, prevV=null, prevKE=0, prevP=0;
 function zeroWQ(){ Wby=0; Qtot=0; prevV=null; }
 function accountWQ(){ const N=particles.length, V=boxArea(), KE=getAverageKE(), P=N*KE/Math.max(1,V);
-  if(prevV!==null){ const dV=V-prevV, dKE=KE-prevKE, Pm=(P+prevP)/2; Wby+=Pm*dV; Qtot+=N*dKE+Pm*dV; }
+  if(prevV!==null){
+    const dV=V-prevV, dU=N*(KE-prevKE), Pm=(P+prevP)/2;
+    // On an adiabat Q = 0 is the definition of the process, so the whole change in
+    // internal energy is work. Taking W from the first law rather than from a
+    // trapezoid across a dragged slider keeps the heat gauge on zero where it belongs.
+    if(process==='adiabatic'){ Wby += -dU; }
+    else { Wby += Pm*dV; Qtot += dU + Pm*dV; }
+  }
   prevV=V; prevKE=KE; prevP=P; }
 
 function step(){
@@ -271,10 +300,18 @@ function step(){
   else step.last=performance.now();
   accountWQ();
   draw();
-  heatFlare=Math.max(0,heatFlare-0.02);
+  trackHeat();
   requestAnimationFrame(step);
 }
 
+// Watch the temperature itself rather than the slider, so it catches every way the
+// gas can warm or cool: the burner, the piston moving on a coupled process, a reset.
+function trackHeat(){
+  const d=temperature-lastShownT; lastShownT=temperature;
+  if(d>0.001) heatFlare=Math.min(1, heatFlare+d*1.4);
+  else if(d<-0.001) coolFlare=Math.min(1, coolFlare-d*1.4);
+  heatFlare=Math.max(0, heatFlare-0.014); coolFlare=Math.max(0, coolFlare-0.014);
+}
 function draw(){
   const gTop=offY, gBot=BASEY, gL=offX, gR=offX+CYW;
   ctx.fillStyle='#dfe7ee'; ctx.fillRect(0,0,CW,gTop); ctx.fillRect(0,gBot,CW,CH-gBot); ctx.fillRect(0,gTop,gL,gasH); ctx.fillRect(gR,gTop,CW-gR,gasH);
@@ -296,11 +333,30 @@ function drawApparatus(gTop,gBot,gL,gR){
   ctx.fillStyle='#8b939c'; ctx.fillRect(gL-16, gBot, (gR-gL)+32, 16);
   ctx.fillStyle='#6f767e'; ctx.fillRect(gL-30, gBot+16, (gR-gL)+60, 10);
   const heat=Math.min(1,(temperature-0.1)/7.9)+heatFlare*0.5, tt=performance.now()/220;
-  ctx.fillStyle='#7f868e'; ctx.fillRect(cxm-CYW*0.4, gBot+30, CYW*0.8, 6);
-  for(let i=0;i<9;i++){ const fx=cxm-CYW*0.4+(i+0.5)*(CYW*0.8)/9, ph=(tt+i*0.37)%1;
-    ctx.beginPath(); ctx.fillStyle=`rgba(255,${130+70*(1-ph)},20,${(0.35+0.5*heat)*(1-ph)})`;
-    ctx.ellipse(fx, gBot+42-(6+heat*16)*ph, 3+heat*1.6, 7+heat*9-4*ph, 0,0,6.28); ctx.fill(); }
-  ctx.fillStyle='#8a5a10'; ctx.font='10.5px Helvetica Neue,Arial'; ctx.textAlign='center'; ctx.fillText('heat source', cxm, gBot+66);
+  const L=cxm-CYW*0.4, TRAYW=CYW*0.8;
+  ctx.fillStyle='#7f868e'; ctx.fillRect(L, gBot+30, TRAYW, 6);
+  if(coolFlare>0.02 && coolFlare>=heatFlare){
+    // Taking heat out, so the burner gives way to the lab's other option: a tray of ice
+    // under the cylinder. The vapour rolls off the sides and sinks, the way cold air does.
+    const chill=Math.min(1, 0.4+coolFlare);
+    for(let i=0;i<7;i++){
+      const cx=L+(i+0.5)*(TRAYW/7), sz=12+((i*5)%4), wob=Math.sin(tt*1.6+i)*0.7;
+      const x=cx-sz/2, y=gBot+30-sz+wob;
+      ctx.fillStyle=`rgba(193,230,246,${0.80+0.18*chill})`; ctx.fillRect(x, y, sz, sz);
+      ctx.fillStyle=`rgba(245,253,255,${0.9*chill})`;       ctx.fillRect(x+1.5, y+1.5, sz-3, 3);    // lit top face
+      ctx.fillStyle='rgba(112,170,202,0.6)';                ctx.fillRect(x+sz-3, y+1.5, 2.5, sz-3); // shaded edge
+      ctx.strokeStyle='rgba(96,152,184,0.65)'; ctx.lineWidth=1; ctx.strokeRect(x+0.5, y+0.5, sz-1, sz-1);
+    }
+    for(let i=0;i<5;i++){ const ph=(tt*0.55+i*0.21)%1, fx=cxm-CYW*0.3+i*(CYW*0.6/4);
+      ctx.beginPath(); ctx.fillStyle=`rgba(168,209,234,${0.32*(1-ph)*chill})`;
+      ctx.ellipse(fx, gBot+36+11*ph, 6+5*ph, 2.4+1.6*ph, 0,0,6.28); ctx.fill(); }
+    ctx.fillStyle='#3f6b86'; ctx.font='10.5px Helvetica Neue,Arial'; ctx.textAlign='center'; ctx.fillText('ice bath', cxm, gBot+66);
+  } else {
+    for(let i=0;i<9;i++){ const fx=L+(i+0.5)*(TRAYW)/9, ph=(tt+i*0.37)%1;
+      ctx.beginPath(); ctx.fillStyle=`rgba(255,${130+70*(1-ph)},20,${(0.35+0.5*heat)*(1-ph)})`;
+      ctx.ellipse(fx, gBot+42-(6+heat*16)*ph, 3+heat*1.6, 7+heat*9-4*ph, 0,0,6.28); ctx.fill(); }
+    ctx.fillStyle='#8a5a10'; ctx.font='10.5px Helvetica Neue,Arial'; ctx.textAlign='center'; ctx.fillText('heat source', cxm, gBot+66);
+  }
   ctx.strokeStyle='#7d858e'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(gL-2, gTop-14); ctx.lineTo(gL-2, gBot+2); ctx.moveTo(gR+2, gTop-14); ctx.lineTo(gR+2, gBot+2); ctx.stroke();
   ctx.strokeStyle='#3a4652'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(gL-2,gBot); ctx.lineTo(gR+2,gBot); ctx.stroke();
   ctx.fillStyle='#b9c0c7'; ctx.fillRect(gL-6, gTop-16, (gR-gL)+12, 16);
@@ -413,15 +469,17 @@ function drawGauges(){
     {k:'Q', lab:'Q   (into gas)', bip:Qd/wqScale, val:Qd.toFixed(1), col:'#c2367f'},
   ];
   const bx=120, bw=Ww-bx-52, rh=Hh/rows.length;
+  const heldKey=HELD[process]||'';
   gctx.textBaseline='middle';
-  rows.forEach((r,i)=>{ const y=i*rh+rh/2;
-    gctx.fillStyle='#333'; gctx.font='12px Helvetica Neue,Arial'; gctx.textAlign='left'; gctx.fillText(r.lab,4,y);
+  rows.forEach((r,i)=>{ const y=i*rh+rh/2; const held=(r.k===heldKey);
+    gctx.fillStyle=held?'#9aa4ad':'#333'; gctx.font='12px Helvetica Neue,Arial'; gctx.textAlign='left'; gctx.fillText(r.lab,4,y);
+    if(held){ gctx.font='10px Helvetica Neue,Arial'; gctx.fillStyle='#9aa4ad'; gctx.fillText('held', bx-34, y); gctx.font='12px Helvetica Neue,Arial'; }
     gctx.fillStyle='#e6ebf0'; gctx.fillRect(bx,y-8,bw,16);
     if(r.bip!==undefined){ const cx=bx+bw/2; gauge[r.k]+=(Math.max(-1,Math.min(1,r.bip))-gauge[r.k])*0.2;
-      gctx.fillStyle= gauge[r.k]>=0 ? '#2ca02c' : '#d64545'; gctx.fillRect(cx, y-8, gauge[r.k]*(bw/2), 16);
+      gctx.fillStyle= held ? '#b9c2ca' : (gauge[r.k]>=0 ? '#2ca02c' : '#d64545'); gctx.fillRect(cx, y-8, gauge[r.k]*(bw/2), 16);
       gctx.strokeStyle='#aab4bd'; gctx.lineWidth=1; gctx.beginPath(); gctx.moveTo(cx,y-8); gctx.lineTo(cx,y+8); gctx.stroke();
-    } else { gauge[r.k]+=(r.frac-gauge[r.k])*0.18; gctx.fillStyle=r.col; gctx.fillRect(bx,y-8,bw*Math.max(0,Math.min(1,gauge[r.k])),16); }
-    gctx.fillStyle='#222'; gctx.textAlign='right'; gctx.fillText(r.val,Ww-4,y);
+    } else { gauge[r.k]+=(r.frac-gauge[r.k])*0.18; gctx.fillStyle=held?'#b9c2ca':r.col; gctx.fillRect(bx,y-8,bw*Math.max(0,Math.min(1,gauge[r.k])),16); }
+    gctx.fillStyle=held?'#7a838b':'#222'; gctx.textAlign='right'; gctx.fillText(r.val,Ww-4,y);
   });
   idLeft.textContent=(P*Vl).toFixed(1); idRight.textContent=(n*R_GAS*T).toFixed(1);
 }
