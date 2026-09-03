@@ -789,6 +789,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 "vine","weeping_vines","twisting_vines","cave_vines","fire","lava","nether_portal","magma_block","soul_soil","crimson_nylium","warped_nylium","crimson_fungus","warped_fungus","ancient_debris",
 // --- pass 11: walls ---
 "cobblestone_wall","mossy_cobblestone_wall","stone_brick_wall","mossy_stone_brick_wall","granite_wall","diorite_wall","andesite_wall","brick_wall","mud_brick_wall","sandstone_wall","red_sandstone_wall","prismarine_wall","nether_brick_wall","red_nether_brick_wall","end_stone_brick_wall","blackstone_wall","polished_blackstone_wall","polished_blackstone_brick_wall","cobbled_deepslate_wall","polished_deepslate_wall","deepslate_brick_wall","deepslate_tile_wall","tuff_wall","polished_tuff_wall","tuff_brick_wall","end_rod",
+// --- pass 13: paintings and lanterns ---
+"painting_kebab","painting_aztec","painting_alban","painting_wanderer","painting_sunset","painting_void",
+"lantern","soul_lantern","purpular_lantern",
 // --- pass 12: saplings and iron bars ---
 "oak_sapling","spruce_sapling","birch_sapling","jungle_sapling","acacia_sapling","dark_oak_sapling","cherry_sapling","pale_oak_sapling","mangrove_propagule","purpular_sapling","iron_bars"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
@@ -1597,6 +1600,107 @@ TALL_FLOWERS.forEach(function(f,i){
 });
 SAPLINGS.forEach(function(sp,i){ paint(sp[0], plantTex({ pal:{ a:sp[3], b:sp[4], s:0x6b4e2a, k:0x4a3418 }, rows:sp[2] }, 9600+i)); });
 paint('iron_bars', ironBarsTex(9620));
+/* ---- paintings ----
+   Each one is a single atlas tile, so a wall full of them costs the renderer no more
+   than a wall of stone and costs the network nothing at all: a painting is one block
+   id and the face it hangs on. The frame is painted into the tile so every picture
+   sits in the same oak surround. */
+function paintingTex(seed, art){
+  const r=rng(seed); const n=[]; for(let i=0;i<256;i++) n.push((r()*2-1)*6);
+  const cl=v=>Math.max(0,Math.min(255,v|0));
+  const FRAME_D=[74,52,26], FRAME_L=[123,92,50];
+  return (x,y)=>{
+    if(x===0||y===0||x===15||y===15) return FRAME_D;
+    if(x===1||y===1||x===14||y===14) return FRAME_L;
+    const c=art((x-2)/12, (y-2)/12, x, y);        // u,v in 0..1 across the canvas
+    const d=n[(y*16+x)&255];
+    return [cl(c[0]+d), cl(c[1]+d), cl(c[2]+d)];
+  };
+}
+const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
+const PAINTINGS = [
+  // a skewer over a red ground
+  ['painting_kebab', 9700, (u,v)=>{
+    if(Math.abs(u-0.5)<0.055 && v>0.12) return [96,70,38];
+    const band=Math.floor((v-0.14)/0.17);
+    if(Math.abs(u-0.5)<0.20 && v>0.14 && v<0.86)
+      return (band%2===0) ? [148,74,40] : [104,140,58];
+    return mix([176,60,52],[132,38,34], v);
+  }],
+  // stepped geometry, terracotta and teal
+  ['painting_aztec', 9701, (u,v)=>{
+    const s=Math.max(Math.abs(u-0.5), Math.abs(v-0.5));
+    if(s>0.44) return [176,126,80];
+    if(s>0.36) return [92,58,36];
+    if(s>0.28) return [200,150,96];
+    if(s>0.20) return [58,132,128];
+    if(s>0.12) return [200,150,96];
+    return [178,74,52];
+  }],
+  // a cottage under an open sky
+  ['painting_alban', 9702, (u,v)=>{
+    if(v>0.72) return mix([92,142,62],[62,104,44], (v-0.72)/0.28);
+    const inHouse = u>0.30 && u<0.70 && v>0.44 && v<0.74;
+    if(inHouse){ if(u>0.44 && u<0.56 && v>0.58) return [92,64,36]; return [206,196,176]; }
+    const roof = v>0.32 && v<0.46 && Math.abs(u-0.5) < (v-0.30)*1.6;
+    if(roof) return [150,58,44];
+    return mix([150,196,232],[206,226,244], v);
+  }],
+  // a figure on a hill under a full moon
+  ['painting_wanderer', 9703, (u,v)=>{
+    if(v>0.70) return mix([40,52,44],[24,32,28], (v-0.70)/0.30);
+    if(Math.hypot(u-0.74, v-0.24)<0.11) return [238,234,206];
+    const body = Math.abs(u-0.40)<0.06 && v>0.44 && v<0.72;
+    const head = Math.hypot(u-0.40, v-0.40)<0.055;
+    if(body||head) return [26,28,34];
+    return mix([28,36,62],[74,86,128], v);
+  }],
+  // a low sun over water
+  ['painting_sunset', 9704, (u,v)=>{
+    if(v>0.58){ const t=(v-0.58)/0.42;
+      const streak = Math.abs(u-0.5)<0.06 ? 0.35 : 0;
+      return mix(mix([46,74,116],[22,40,72], t), [246,196,120], streak); }
+    if(Math.hypot((u-0.5)*1.0, (v-0.50)*1.0)<0.15) return [252,214,132];
+    return mix([250,170,96],[176,92,132], v/0.58);
+  }],
+  // a portal in the dark
+  ['painting_void', 9705, (u,v)=>{
+    const d=Math.hypot(u-0.5, v-0.5);
+    if(d<0.30) return mix([164,96,214],[54,20,86], d/0.30);
+    const star=(Math.abs(Math.sin((u*37+v*61)*12))>0.997);
+    return star ? [214,206,232] : mix([22,18,30],[12,10,18], d);
+  }],
+];
+/* ---- lanterns ----
+   Minecraft's lantern is an iron cage with a light inside, standing on the floor or
+   hanging on a short chain. One tile for the cage, one for the chain. */
+function lanternTex(seed, glowA, glowB){
+  const r=rng(seed); const n=[]; for(let i=0;i<256;i++) n.push((r()*2-1)*7);
+  const cl=v=>Math.max(0,Math.min(255,v|0));
+  const iron=[122,122,126], ironD=[86,86,90], ironL=[164,164,168];
+  return (x,y)=>{
+    let c;
+    if(y<=2)  c = (y===0)?ironD : (y===1?ironL:iron);            // the cap
+    else if(y>=13) c = (y===15)?ironD : iron;                     // the base
+    else if(x<=2 || x>=13) c = (x===0||x===15)?ironD : iron;      // the corner posts
+    else c = mix(glowA, glowB, (y-3)/9);                          // the light inside
+    const d=n[(y*16+x)&255];
+    return [cl(c[0]+d), cl(c[1]+d), cl(c[2]+d)];
+  };
+}
+const LANTERNS = [
+  ['lantern',          9710, [255,226,150], [246,168,58],  0xf0b93c],
+  ['soul_lantern',     9711, [186,248,255], [46,196,222],  0x35c8dc],
+  ['purpular_lantern', 9712, [236,196,255], [150,72,214],  0x9a4fd6],
+];
+// paint them once the tables above exist
+PAINTINGS.forEach(function(pt){ paint(pt[0], paintingTex(pt[1], pt[2])); });
+LANTERNS.forEach(function(l){ paint(l[0], lanternTex(l[1], l[2], l[3])); });
+paint('lantern_chain', (()=>{ const r=rng(9715); const n=[]; for(let i=0;i<256;i++) n.push((r()*2-1)*8);
+  const cl=v=>Math.max(0,Math.min(255,v|0));
+  return (x,y)=>{ const link=(y%4<2) ? (Math.abs(x-7)<=1||Math.abs(x-8)<=1) : (Math.abs(x-6)<=1||Math.abs(x-9)<=1);
+    const c = link ? [150,150,156] : [96,96,100]; const d=n[(y*16+x)&255];
+    return [cl(c[0]+d), cl(c[1]+d), cl(c[2]+d)]; }; })());
 // An end rod is a pale, faintly lit shaft on a short violet foot. Two tiles: the
 // shaft and the foot, both flat enough to read at the two-pixel width it is drawn at.
 paint('end_rod', (()=>{ const r=rng(9630); const n=[]; for(let i=0;i<256;i++) n.push((r()*2-1)*7);
@@ -1924,6 +2028,9 @@ SAPLINGS.forEach(function(sp){
 B.iron_bars = def('iron_bars', { tiles:T('iron_bars'), pane:true, cutout:true, opaque:false, hex:0xc0c0c0 });
 // An end rod points out of whatever you stick it to, like a torch, and glows.
 B.end_rod = def('end_rod', { tiles:T('end_rod'), endRod:true, solid:false, opaque:false, light:true, hex:0xe8e4ee });
+// Paintings hang flat on a wall; lanterns stand on the floor or hang from a ceiling.
+PAINTINGS.forEach(function(pt){ B[pt[0]] = def(pt[0], { tiles:T(pt[0]), painting:true, solid:false, opaque:false, hex:0x7b5c32 }); });
+LANTERNS.forEach(function(l){ B[l[0]] = def(l[0], { tiles:T(l[0]), lantern:true, solid:false, opaque:false, light:true, hex:l[4] }); });
 /* ---- torches, campfire and redstone ----
    Torches, levers and buttons attach to a face, so their orientation lives in
    attachMeta. Buttons and plates are redstone inputs; the lamp, doors and
@@ -3313,6 +3420,29 @@ function buildChunkMesh(c){
       }
       continue;
     }
+    if (bl.painting){                          // a framed panel lying flat against its wall
+      const a = attachMeta.get(dkey(wx,y,wz)) || {m:2,f:0};
+      const t=1/16, tile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]);
+      const f=a.f||0;
+      const bx = f===0 ? [1/16,15/16, 1/16,15/16, 1-t,1]
+               : f===2 ? [1/16,15/16, 1/16,15/16, 0,t]
+               : f===1 ? [0,t,        1/16,15/16, 1/16,15/16]
+               :         [1-t,1,      1/16,15/16, 1/16,15/16];
+      pushBox(op, wx, y, wz, bx, tile);
+      continue;
+    }
+    if (bl.lantern){                           // an iron cage of light, standing or hung on a chain
+      const a = attachMeta.get(dkey(wx,y,wz)) || {m:0,f:0};
+      const tile=(typeof bl.tiles==='number'?bl.tiles:bl.tiles[1]), chain=T('lantern_chain');
+      if(a.m===1){                             // hanging: the cage drops clear of the ceiling
+        pushBox(op, wx, y, wz, [5/16,11/16, 2/16,9/16, 5/16,11/16], tile);
+        pushBox(op, wx, y, wz, [7/16,9/16,  9/16,1,    7/16,9/16 ], chain);
+      } else {
+        pushBox(op, wx, y, wz, [5/16,11/16, 0,7/16,    5/16,11/16], tile);
+        pushBox(op, wx, y, wz, [6/16,10/16, 7/16,9/16, 6/16,10/16], chain);
+      }
+      continue;
+    }
     if (bl.endRod){                            // a 2-pixel shaft on a 4-pixel foot, pointing out of its face
       const a = attachMeta.get(dkey(wx,y,wz)) || {m:0,f:0};
       const rod=T('end_rod'), foot=T('end_rod_base');
@@ -3952,9 +4082,12 @@ const keys = Object.create(null);
 // and saved to localStorage. Tokens: mouse buttons are 'mouse0' (left) / 'mouse1' (middle) /
 // 'mouse2' (right); keyboard keys are their lowercased key name. Held state lives in `keys` for
 // both, so a movement action can be bound to a mouse button and vice-versa. ----
-const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', sprint2:'r', zoom:'c', drop:'q', votes:'v', attack:'mouse0', use:'mouse2', pick:'mouse1', break2:'f', place2:'g', pick2:'h', inventory:'e', chat:'t', camera:'f5', camera2:'q', debug:'f3', cameraCombo:'' };
+const DEFAULT_BINDS = { forward:'w', back:'s', left:'a', right:'d', jump:' ', sneak:'shift', sprint:'control', sprint2:'r', zoom:'c', drop:'z', votes:'v', attack:'mouse0', use:'mouse2', pick:'mouse1', break2:'f', place2:'g', pick2:'h', inventory:'e', chat:'t', camera:'f5', camera2:'q', debug:'f3', cameraCombo:'' };
 let binds = Object.assign({}, DEFAULT_BINDS);
 try{ const sb=JSON.parse(localStorage.getItem('leoncraft_binds')||'{}'); for(const a in DEFAULT_BINDS) if(typeof sb[a]==='string' && sb[a]) binds[a]=sb[a]; }catch(e){}
+// Q belongs to the camera. Anyone whose saved keys still have it dropping items gets
+// that one moved off, rather than having two actions fight over the same key.
+if(binds.drop==='q'){ binds.drop=DEFAULT_BINDS.drop; saveBinds(); }
 function saveBinds(){ try{ localStorage.setItem('leoncraft_binds', JSON.stringify(binds)); }catch(e){} }
 const BIND_ACTIONS = [
   {id:'forward',label:'Walk forward'}, {id:'back',label:'Walk backward'},
@@ -4445,11 +4578,24 @@ function placeAttached(){
   if(!solidFooting(getBlock(target.x,target.y,target.z))) return;   // needs something to hang off
   let a;
   if(target.ny>0)      a={ m:0, f:facingFromYaw(player.yaw) };      // standing on top
-  else if(target.ny<0){ if(isTorch(id)) return; a={ m:1, f:facingFromYaw(player.yaw) }; }   // torches don't hang upside down
+  else if(target.ny<0){ if(isTorch(id)) return; a={ m:1, f:facingFromYaw(player.yaw) }; }   // torches don't hang upside down; lanterns do
   else a={ m:2, f: target.nx>0?1 : target.nx<0?3 : target.nz>0?2 : 0 };   // bracketed to a wall, facing out of it
   setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
   setAttach(px,py,pz,a,true);
   redTrack(px,py,pz); remeshChunkAt(px,pz);
+}
+// A painting hangs on a wall and nowhere else: click the side of a block and it goes
+// up flat against it, facing out into the room.
+function placePainting(){
+  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
+  const id=hotbar[selSlot];
+  if(target.ny!==0) return;                                        // not floors, not ceilings
+  if(getBlock(px,py,pz)!==AIR) return;
+  if(!solidFooting(getBlock(target.x,target.y,target.z))) return;   // needs a wall behind it
+  const a={ m:2, f: target.nx>0?1 : target.nx<0?3 : target.nz>0?2 : 0 };
+  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
+  setAttach(px,py,pz,a,true);
+  remeshChunkAt(px,pz);
 }
 // plates and dust both just need a solid top to sit on
 function placeOnFloor(){
@@ -4920,7 +5066,13 @@ function placeTrapdoor(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   const id=hotbar[selSlot];
   if(getBlock(px,py,pz)!==AIR) return;
-  const facing=facingFromYaw(player.yaw), top=target.ny<0;   // clicked a block's underside -> panel hangs at the top of the cell
+  // Where the panel sits and which way it swings both come from what you clicked, the
+  // way Minecraft does it: click a block's underside and it hangs at the top of the
+  // cell, its top and it lies on the floor, and on a side face the half you aimed at
+  // decides. A side click also points the hinge back at the block you clicked.
+  const top = upperHalfPlacement(py);
+  const facing = (target.ny!==0) ? facingFromYaw(player.yaw)
+               : (target.nx>0 ? 1 : target.nx<0 ? 3 : target.nz>0 ? 2 : 0);
   setBlock(px,py,pz,id);
   const m={facing, open:false, top};
   trapdoorMeta.set(dkey(px,py,pz), m);
@@ -5192,7 +5344,8 @@ function placeBlock(){
   if(bl.sign){ placeSign(); return; }                                   // signs open a text editor on placement
   if(bl.sapling){ placeSapling(); return; }                             // a sapling turns into its tree on the spot
   if(bl.cross){ placePlant(); return; }                                 // flowers root in soil (tall ones take two cells)
-  if(bl.torch||bl.lever||bl.button||bl.endRod){ placeAttached(); return; }  // these bolt onto the face you clicked
+  if(bl.painting){ placePainting(); return; }                           // paintings only hang on walls
+  if(bl.torch||bl.lever||bl.button||bl.endRod||bl.lantern){ placeAttached(); return; }  // these bolt onto the face you clicked
   if(bl.vine){ placeVine(); return; }                                   // clings to a wall or a ceiling
   if(bl.strand){ placeStrand(); return; }                               // hangs from above, or climbs from below
   if(bl.plate||bl.dust){ placeOnFloor(); return; }                      // these need a solid top to lie on
@@ -5463,6 +5616,7 @@ const CATS=[
 function catOf(n){
   if(n.endsWith('_button')||n.endsWith('_pressure_plate')||n==='redstone_wire'||n==='redstone_torch'||n==='redstone_lamp'||n==='lever'||n==='redstone_block') return 'redstone';
   if(n==='torch'||n==='campfire'||n==='end_rod') return 'deco';
+  if(n.startsWith('painting_')||n.endsWith('lantern')) return 'deco';
   if(FLOWER_NAMES.has(n) || n==='flower_pot') return 'nature';   // flowers live with the plants
   if(n.endsWith('_sapling') || n==='mangrove_propagule') return 'nature';
   if(n==='iron_bars') return 'deco';
@@ -5499,6 +5653,8 @@ function searchTags(name){
   if(name.indexOf('fungus')>=0)          t+=' mushroom fungus';
   if(b.light)                            t+=' light glow lamp bright';
   if(b.endRod)                           t+=' end rod rods pillar beacon';
+  if(b.painting)                         t+=' painting paintings art picture frame wall decoration';
+  if(b.lantern)                          t+=' lantern lanterns light lamp hang chain';
   if(b.door || b.trapdoor)               t+=' door';
   if(b.wall)                             t+=' wall walls barrier border stone';
   if(b.sapling)                          t+=' sapling saplings tree trees plant sprout wood';
@@ -7532,7 +7688,10 @@ function bwInit(m){
   bwRebuildWorld();
   seed = 12345>>>0; noise = makeNoise(seed);   // void generation ignores it, but keep it defined
   startGame();
-  player.pos.set(0.5, BW_Y+3, 0.5); player.vel.set(0,0,0); player.flying=false; player.hp=100;
+  // Start where the server says you belong. Dropping everyone at the origin meant a
+  // latecomer spawned on the middle island and had to bridge home.
+  const sp = (m.you && m.you.spawn) ? m.you.spawn : { x:0.5, y:BW_Y+3, z:0.5 };
+  player.pos.set(sp.x, sp.y, sp.z); player.vel.set(0,0,0); player.flying=false; player.hp=100;
   for(const p of (m.players||[])) mpAddPlayer(p);
   for(const p of (m.players||[])){ const e=mp.players.get(p.id); if(e){ e.team=p.team; e.armor=p.armor; e.sword=p.sword; bwApplyRemoteGear(p.id); } }
   // items present already
@@ -8642,6 +8801,9 @@ window.__mc = {
     const b=BLOCKS[name]; if(!b) return false; setBlock(x,y,z,b.id); redTrack(x,y,z); remeshChunkAt(x,z); return true; },
   giveBlock(name){ const b=BLOCKS[name]; if(!b) return false; hotbar[selSlot]=b.id; if(typeof renderHotbar==='function') renderHotbar(); return true; },
   useAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5}; useAction(); return true; },
+  // the same, but you say exactly where on the face the crosshair landed
+  useAtHit(x,y,z,nx,ny,nz,hx,hy,hz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx,hy,hz}; useAction(); return true; },
+  trapdoorAt(x,y,z){ const d=trapdoorMeta.get(dkey(x,y,z)); return d?{facing:d.facing,open:!!d.open,top:!!d.top}:null; },
   // ---- flower / pot / sponge test hooks ----
   atlasUsed(){ return cell; }, atlasMax(){ return ATLAS_COLS*ATLAS_ROWS; },
   clearHand(){ hotbar[selSlot]=0; if(typeof renderHotbar==='function') renderHotbar(); },
