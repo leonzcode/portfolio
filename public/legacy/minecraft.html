@@ -5260,7 +5260,13 @@ function punchPlayerUnderCrosshair(){
   if(vp){ dx=vp.x-player.pos.x; dz=vp.z-player.pos.z; }
   const len=Math.hypot(dx,dz)||1;
   const stick = (!bw.active && fx.stick && hotbar[selSlot]===STICK_ITEM);   // tade code: the stick launches its target ~10 blocks
-  mpSend({type: bw.active?'bwhit':'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3), stick:stick, kb:(stick?(fx.superStick?15:10):0), superStick:(stick&&fx.superStick)});
+  // The tadee code follows you into Bed Wars, where there is no stick to hold: the
+  // knockback rides on your sword instead and stays on for the whole match, at the
+  // same fifteen blocks the stick throws.
+  const bwKb = (bw.active && fx.superStick);
+  const kbBlocks = bwKb ? 15 : (stick ? (fx.superStick?15:10) : 0);
+  mpSend({type: bw.active?'bwhit':'hit', target:victim, dx:+(dx/len).toFixed(3), dz:+(dz/len).toFixed(3),
+          stick:stick, kb:kbBlocks, superStick:(bwKb || (stick&&fx.superStick))});
   return true;
 }
 // remove a sign/PRG that lives only in a meta map (e.g. an old ghost stranded above the build limit)
@@ -6290,7 +6296,7 @@ function applyLocalBody(){
   setLocalBody(bodyToKind(fx.body));   // become a pig / block / tree locally too, so first-person reflects it
   localEyeMul = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.3 : fx.body==='pig' ? 0.6 : fx.body==='block' ? 0.95 : fx.body==='tree' ? 1.7 : 1;   // camera rides at your new height
 }
-function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, admin:isAdmin(), ghost:fx.ghost }); }   // relayed to everyone else
+function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, admin:isAdmin(), ghost:fx.ghost }); }   // relayed to everyone else
 function giveStick(){ hotbar[0]=STICK_ITEM; selSlot=0; if(typeof renderHotbar==='function') renderHotbar(); if(typeof showItemName==='function') showItemName(STICK_ITEM); }
 function removeStick(){ if(hotbar[0]===STICK_ITEM){ hotbar[0]=0; if(typeof renderHotbar==='function') renderHotbar(); } }
 // Every code toggles: typing it again turns it back off. Body codes are one-at-a-time (a new one replaces the old).
@@ -6310,7 +6316,9 @@ function applyCode(raw, msgEl){
     note = fx.ghost ? 'You are invisible. Nobody can see you. Type hide again to come back.' : 'You are visible again.';
   }
   else if(code==='tade'){ fx.superStick=false; fx.stick=!fx.stick; if(fx.stick){ giveStick(); note='Knockback stick equipped - check slot 1.'; } else { removeStick(); note='Knockback stick removed.'; } }
-  else if(code==='tadee'){ fx.superStick=!fx.superStick; fx.stick=fx.superStick; if(fx.superStick){ giveStick(); note='Super knockback stick equipped (15 blocks). You can hit players even while spectating.'; } else { removeStick(); note='Super knockback stick removed.'; } }
+  else if(code==='tadee'){ fx.superStick=!fx.superStick; fx.stick=fx.superStick;
+    if(fx.superStick){ giveStick(); note='Super knockback equipped (15 blocks). Your Bed Wars sword carries it too, and you can hit players even while spectating.'; }
+    else { removeStick(); note='Super knockback removed.'; } }
   else if(code==='big' || code==='small' || code==='pig' || code==='block' || code==='tree'){
     const target = { big:'giant', small:'small', pig:'pig', block:'block', tree:'tree' }[code];
     fx.body = (fx.body===target) ? 'none' : target;   // typing the same body code again turns it off
