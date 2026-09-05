@@ -793,7 +793,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 "painting_kebab","painting_aztec","painting_alban","painting_wanderer","painting_sunset","painting_void",
 "lantern","soul_lantern","purpular_lantern",
 // --- pass 12: saplings and iron bars ---
-"oak_sapling","spruce_sapling","birch_sapling","jungle_sapling","acacia_sapling","dark_oak_sapling","cherry_sapling","pale_oak_sapling","mangrove_propagule","purpular_sapling","iron_bars"];
+"oak_sapling","spruce_sapling","birch_sapling","jungle_sapling","acacia_sapling","dark_oak_sapling","cherry_sapling","pale_oak_sapling","mangrove_propagule","purpular_sapling","iron_bars",
+// --- pass 14: parkour pads ---
+"parkour_start","parkour_end"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1923,6 +1925,18 @@ for(const e of NEW_SOLIDS){
   else { paint(e.name+'_top', e.top); if(e.side) paint(e.name+'_side', e.side); if(e.bottom) paint(e.name+'_bottom', e.bottom); }
 }
 
+// Parkour pads. The start pad is the brightest green in the game so it reads as
+// "go" from across a course; the finish is a four-pixel checker, a race flag.
+paint('parkour_start', (function(){ const r=rng(9700), rim=rgb(0x1f7a2a), lit=rgb(0x6dff78), face=rgb(0x35d945);
+  return (x,y)=>{ if(x===0||y===0||x===15||y===15) return vary(rim, 5, r);
+    if(x===1||y===1||x===14||y===14) return vary(lit, 8, r);          // a bright lip catches the light
+    return vary(((x+y)%6===0) ? lit : face, 11, r); };                 // a faint weave, not a flat slab of colour
+})());
+paint('parkour_end', (function(){ const r=rng(9701), rim=rgb(0x2b2b2b), pale=rgb(0xf4f4f4), dark=rgb(0x141414);
+  return (x,y)=>{ if(x===0||y===0||x===15||y===15) return vary(rim, 5, r);
+    return vary((((x>>2)&1) ^ ((y>>2)&1)) ? pale : dark, 7, r); };     // 4x4 squares: a chequered flag
+})());
+
 /* upload the atlas as a texture */
 const atlasTex = new THREE.CanvasTexture(atlasCanvas);
 atlasTex.magFilter = THREE.NearestFilter;
@@ -2049,6 +2063,10 @@ for(const [id, tile, hex] of REDSTONE_WOODS){
 }
 B.stone_button         = def('stone_button',         { tiles:T('stone'), button:true, solid:false, opaque:false });
 B.stone_pressure_plate = def('stone_pressure_plate', { tiles:T('stone'), plate:true,  solid:false, opaque:false });
+// Parkour pads are ordinary pressure plates that also drive the course timer, so
+// they dip underfoot and power redstone exactly like every other plate.
+B.parkour_start = def('parkour_start', { tiles:T('parkour_start'), plate:true, parkour:'start', solid:false, opaque:false, hex:0x35d945, display:'Parkour Start' });
+B.parkour_end   = def('parkour_end',   { tiles:T('parkour_end'),   plate:true, parkour:'end',   solid:false, opaque:false, hex:0xf4f4f4, display:'Parkour End' });
 const FLOWER_NAMES = new Set(SMALL_FLOWERS.map(f=>f[0]).concat(TALL_FLOWERS.map(f=>f[0])));
 B.wet_sponge = def('wet_sponge', { tiles:T('wet_sponge') });
 // glass panes: thin, see-through panels that connect to neighbours (clear + 16 stained colours)
@@ -3150,7 +3168,24 @@ function tickPlates(){
     if(on!==was){ if(on) redOn.add(k); else redOn.delete(k); redDirty=true; remeshChunkAt(x,z); }
   }
 }
-let redAccum=0;
+// F and G repeat once you have held them for a second: F keeps breaking, G keeps
+// placing, and you can walk while either is going, so a tunnel or a path is one
+// hold rather than a hundred taps. Bed Wars keeps the single press only.
+const HOLD_ARM_MS = 1000, HOLD_BREAK_MS = 90, HOLD_PLACE_MS = 110;
+const heldSince = { break2:0, place2:0 }, heldNext = { break2:0, place2:0 };
+function tickHeldTools(){
+  if(bw.active || !inWorld()){ heldSince.break2=0; heldSince.place2=0; return; }
+  const now = performance.now();
+  for(const act of ['break2','place2']){
+    if(!keys[binds[act]]){ heldSince[act]=0; continue; }
+    if(!heldSince[act]){ heldSince[act]=now; heldNext[act]=now+HOLD_ARM_MS; continue; }
+    if(now < heldNext[act]) continue;
+    heldNext[act] = now + (act==='break2' ? HOLD_BREAK_MS : HOLD_PLACE_MS);
+    doSwing();
+    if(act==='break2') breakBlock(); else placeBlock();   // placeBlock, not useAction: no door left flapping
+  }
+}
+let redAccum=0, pkBoardAccum=0;
 function tickRedstone(dt){
   redAccum+=dt; if(redAccum<0.1) return; redAccum=0;
   const now=performance.now();
@@ -4142,13 +4177,36 @@ function useAction(){
     if(isPot(tb)){ usePot(target.x,target.y,target.z); return; }   // plant into / empty out a flower pot
     if(isButton(tb)){ pressButton(target.x,target.y,target.z); return; }
     if(isLever(tb)){ flipLever(target.x,target.y,target.z); return; }
+    if(pkIsPad(tb)){ pkOpenPanel(target.x,target.y,target.z,dim,pkIsPad(tb)); return; }   // pair this pad with its partner
   }
   if(hotbar[selSlot]===FLINT_ITEM){ useFlint(); return; }   // flint and steel strikes rather than places
   placeBlock();
 }
 // discrete actions fire once per press, from either a key (keydown) or a mouse button (mousedown)
+// Z: a creative-only sprint, roughly three times your usual pace on foot and in
+// the air. It stays out of Bed Wars, Build Battle and any parkour run, where
+// being three times faster than everyone else would not be a feature.
+let superSpeed = false;
+function superSpeedOk(){ return creative && !bw.active && !bb.active && !parkour.run; }
+function superSpeedMul(){
+  if(superSpeed && !superSpeedOk()) toggleSuperSpeed(false);
+  return superSpeed ? 3.2 : 1;
+}
+let spdChipEl = null;
+function toggleSuperSpeed(on){
+  superSpeed = (on===undefined) ? !superSpeed : !!on;
+  if(!spdChipEl){
+    spdChipEl = document.createElement('div');
+    spdChipEl.style.cssText = 'position:fixed;right:12px;bottom:96px;z-index:15;pointer-events:none;'+
+      'background:rgba(10,12,16,.72);border:2px solid rgba(120,190,255,.55);padding:4px 10px;'+
+      'font-size:12px;color:#cfe3ff;display:none';
+    spdChipEl.innerHTML = '<b style="background:#2b3038;border:1px solid #59606b;padding:1px 5px">Z</b> super speed';
+    document.body.appendChild(spdChipEl);
+  }
+  spdChipEl.style.display = superSpeed ? 'block' : 'none';
+}
 const pd = e=>{ if(e && e.preventDefault) e.preventDefault(); };
-const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !sit.active && !signEditPos && !bwShopOpen && !bwInvOpen;
+const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !sit.active && !signEditPos && !bwShopOpen && !bwInvOpen && !parkour.panel;
 const DISCRETE_RUN = {
   inventory: e=>{ if(state===PLAY){ pd(e); toggleInv(); } },
   chat:      e=>{ if(state===PLAY && !invOpen){ pd(e); openChat(); } },
@@ -4162,7 +4220,7 @@ const DISCRETE_RUN = {
   place2:    e=>{ if(sit.active){ standUp(); return; } if(inWorld()){ doSwing(); useAction(); } },     // G: keyboard place / use, same as right click
   pick2:     e=>{ if(bw.active) return; if(inWorld()){ pd(e); pickBlock(); } },                                             // H: keyboard pick block (same as middle click)
 };
-const DISCRETE_LIST = ['inventory','chat','debug','camera','attack','use','pick','break2','place2','pick2'];
+const DISCRETE_LIST = ['inventory','chat','debug','camera','camera2','attack','use','pick','break2','place2','pick2'];
 function firePress(token, e){ for(const act of DISCRETE_LIST){ if(binds[act]===token) DISCRETE_RUN[act](e); } }
 let pointerLocked = false;
 let chatOpen = false;
@@ -4175,6 +4233,7 @@ addEventListener('keydown', e=>{
     if(comboListening.length>=2){ binds.cameraCombo=comboListening.slice(0,2).join('+'); saveBinds(); comboListening=null; }
     renderControls(); return; }
   const k=e.key.toLowerCase();
+  syncMods(e);
   // typing in the search box: let it type, don't drive the game
   if(document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)){
     if(k==='escape'){ if(signEditPos) closeSignEditor(false); else { document.activeElement.blur(); if(invOpen) toggleInv(); } }
@@ -4198,11 +4257,23 @@ addEventListener('keydown', e=>{
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){
     if(k==='k' && (bw.phase==='lobby' || bw.phase==='ended')){ e.preventDefault(); startBedwarsBtn(); return; }   // same key that starts Build Battle
     if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='x'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
+  if(k==='z' && state===PLAY && !chatOpen && !invOpen && !bindListening && superSpeedOk()){
+    e.preventDefault(); toggleSuperSpeed();
+    chatPush(superSpeed ? 'Super speed on. Press Z again to go back to normal.' : 'Super speed off.', 'sys');
+    return;
+  }
+  if(k==='k' && parkour.run && !chatOpen && !invOpen && state===PLAY){ e.preventDefault(); pkAbandon(); return; }   // K: give up on the course and take flight back
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(pollBlocking) return; if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(pollBlocking) return; if(parkour.panel) pkClosePanel(); else if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
-addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false;
+// Windows can swallow a keyup: the Sticky Keys prompt steals focus after five taps
+// of Shift, alt-tab does it, so does losing pointer lock mid-press. A Shift left
+// stuck down leaves you crawling at a third speed and refusing to step off a ledge,
+// which reads as "I pressed shift and now I can't move". Every key event carries the
+// true modifier state, so trust that over what we think we saw.
+function syncMods(e){ keys.shift=!!e.shiftKey; keys.control=!!e.ctrlKey; keys.alt=!!e.altKey; }
+addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false; syncMods(e);
   const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
   if(e.key==='Tab'){ tabShown=false; tabListEl.hidden=true; } });
 addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=false; if(tabListEl) tabListEl.hidden=true; });
@@ -4213,7 +4284,7 @@ addEventListener('keydown', e=>{
   if(e.repeat) return;   // holding jump to fly up auto-repeats keydown; those aren't taps, so don't let them toggle fly
   // Creative flight normally stops at the edge of a Bed Wars match. The milan45 code
   // carries it in there as well.
-  if(!bindListening && e.key.toLowerCase()===binds.jump && state===PLAY && (fx.fly || (creative && !bw.active))){
+  if(!bindListening && e.key.toLowerCase()===binds.jump && state===PLAY && !parkour.run && (fx.fly || (creative && !bw.active))){
     const now=performance.now();
     if(now-lastSpace<300){ player.flying=!player.flying; player.vel.y=0; }
     lastSpace=now;
@@ -4400,7 +4471,7 @@ function updatePlayer(dt){
   const swimming = inLiquid();
   player.sneak = false;
   if(player.flying){
-    const speed = (keys[binds.sneak]?18:9);
+    const speed = (keys[binds.sneak]?18:9) * superSpeedMul();
     player.vel.x = wish.x*speed; player.vel.z = wish.z*speed;
     player.vel.y = 0;
     if(keys[binds.jump]) player.vel.y = speed; if(keys[binds.sneak]) player.vel.y = -speed;
@@ -4410,7 +4481,7 @@ function updatePlayer(dt){
     const sneakHeld = keys[binds.sneak] && !swimming;   // sneaking slows you in the air too, so a sneak-jump carries less far (like Minecraft)
     const sprinting = keys[binds.forward] && (keys[binds.sprint] || keys[binds.sprint2]);   // Ctrl or R
     const spdBuff = (bw.active && bw.speedUntil>performance.now()) ? 1.45 : 1;   // Speed II potion
-    const base = (sneakHeld ? 1.35 : (sprinting ? 6.4 : 4.3)) * spdBuff;
+    const base = (sneakHeld ? 1.35 : (sprinting ? 6.4 : 4.3)) * spdBuff * superSpeedMul();
     const accel = swimming? 3.0 : base;
     const tvx = wish.x*accel, tvz = wish.z*accel;
     // ice is slippery: velocity eases toward the target instead of snapping
@@ -5533,6 +5604,17 @@ function blockIconCanvas(id, size){
     px(0.44,0.54,0.12,0.07,'#4a4a4a');
     return cv;
   }
+  if(bl.parkour){                  // a flat pad wearing its own marking: green to go, chequered to finish
+    const s=size, px=(x,y,w,h,c)=>{ g.fillStyle=c; g.fillRect(Math.round(x*s),Math.round(y*s),Math.ceil(w*s),Math.ceil(h*s)); };
+    if(bl.parkour==='start'){
+      px(0.08,0.46,0.84,0.16,'#35d945'); px(0.08,0.46,0.84,0.05,'#6dff78'); px(0.08,0.57,0.84,0.05,'#1f7a2a');
+    } else {
+      for(let i=0;i<7;i++) px(0.08+i*0.12, 0.46, 0.12, 0.16, (i&1)?'#141414':'#f4f4f4');
+      for(let i=0;i<7;i++) px(0.08+i*0.12, 0.46, 0.12, 0.05, (i&1)?'#3a3a3a':'#ffffff');
+      px(0.08,0.57,0.84,0.05,'rgba(0,0,0,.45)');
+    }
+    return cv;
+  }
   if(bl.button || bl.plate){       // a raised pad, or a wide flat one
     const s=size, hex=bl.hex||0x9c9c9c, rr=(hex>>16)&255, gg=(hex>>8)&255, bb=hex&255;
     const main=`rgb(${rr},${gg},${bb})`, dark=`rgb(${(rr*0.70)|0},${(gg*0.70)|0},${(bb*0.70)|0})`, lite=`rgb(${Math.min(255,rr*1.14)|0},${Math.min(255,gg*1.14)|0},${Math.min(255,bb*1.14)|0})`;
@@ -5667,6 +5749,7 @@ const CATS=[
 ];
 function catOf(n){
   if(n.endsWith('_button')||n.endsWith('_pressure_plate')||n==='redstone_wire'||n==='redstone_torch'||n==='redstone_lamp'||n==='lever'||n==='redstone_block') return 'redstone';
+  if(n==='parkour_start'||n==='parkour_end') return 'redstone';   // they are pressure plates, and that is where people look for them
   if(n==='torch'||n==='campfire'||n==='end_rod') return 'deco';
   if(n.startsWith('painting_')||n.endsWith('lantern')) return 'deco';
   if(FLOWER_NAMES.has(n) || n==='flower_pot') return 'nature';   // flowers live with the plants
@@ -6115,10 +6198,28 @@ function exportSkin(){
 }
 document.getElementById('skinExportBtn').addEventListener('click', exportSkin);
 // built-in preset skins, served from /legacy/skins/ so everyone gets them
+// Real skins, pulled from the accounts they belong to. The legacy 64x32 ones
+// (Notch and jeb_ among them, from before skins grew a second arm) are converted
+// on the way in, the same way Minecraft does it.
 const PRESET_SKINS=[
-  {name:'Steve', file:'steve.png'}, {name:'Alex', file:'alex.png'}, {name:'Dream', file:'dream.png'},
-  {name:'Technoblade', file:'technoblade.png'}, {name:'Spider Man', file:'spiderman.png'},
-  {name:'Peter Griffin', file:'peter_griffin.png'}, {name:'Donald Trump', file:'donald_trump.png'},
+  {name:'Steve', file:'steve.png'}, {name:'Alex', file:'alex.png'},
+  {name:'Notch', file:'notch.png'}, {name:'Jeb', file:'jeb.png'}, {name:'Dinnerbone', file:'dinnerbone.png'},
+  {name:'Dream', file:'dream.png'}, {name:'Technoblade', file:'technoblade.png'},
+  {name:'GeorgeNotFound', file:'georgenotfound.png'}, {name:'Sapnap', file:'sapnap.png'},
+  {name:'BadBoyHalo', file:'badboyhalo.png'}, {name:'Skeppy', file:'skeppy.png'},
+  {name:'TommyInnit', file:'tommyinnit.png'}, {name:'Tubbo', file:'tubbo.png'},
+  {name:'Wilbur Soot', file:'wilbur_soot.png'}, {name:'Philza', file:'philza.png'},
+  {name:'Ranboo', file:'ranboo.png'}, {name:'Quackity', file:'quackity.png'},
+  {name:'Purpled', file:'purpled.png'}, {name:'Punz', file:'punz.png'},
+  {name:'Antfrost', file:'antfrost.png'}, {name:'Awesamdude', file:'awesamdude.png'},
+  {name:'Foolish', file:'foolish.png'}, {name:'Fundy', file:'fundy.png'},
+  {name:'Grian', file:'grian.png'}, {name:'Mumbo Jumbo', file:'mumbo_jumbo.png'},
+  {name:'Etho', file:'etho.png'}, {name:'Docm77', file:'docm77.png'},
+  {name:'Xisuma', file:'xisuma.png'}, {name:'iJevin', file:'ijevin.png'},
+  {name:'ZombieCleo', file:'zombiecleo.png'},
+  {name:'CaptainSparklez', file:'captainsparklez.png'}, {name:'Vikkstar', file:'vikkstar.png'},
+  {name:'Preston', file:'preston.png'}, {name:'Stampy', file:'stampy.png'},
+  {name:'Spider Man', file:'spiderman.png'}, {name:'Peter Griffin', file:'peter_griffin.png'},
   {name:'Sigma Male', file:'sigma_male.png'}, {name:'Tade', file:'tade.png'},
 ];
 const presetThumbs={};
@@ -6140,8 +6241,10 @@ function wearPreset(p){
   skinUploadMsg('Loading '+p.name+'…');
   const im=new Image();
   im.onload=()=>{ try{
+    const iw=im.naturalWidth||64, ih=im.naturalHeight||64;
     editCtx.clearRect(0,0,64,64); editCtx.imageSmoothingEnabled=false;
-    editCtx.drawImage(im, 0,0,im.naturalWidth||64,im.naturalHeight||64, 0,0,64,64);
+    if(iw===2*ih){ editCtx.drawImage(im, 0,0,iw,ih, 0,0,64,32); legacyToModern(); }   // a skin from before the second arm
+    else editCtx.drawImage(im, 0,0,iw,ih, 0,0,64,64);
     editSkinTex.needsUpdate=true; selectedSkinId=null; pendingSkinName=p.name;
     wearEditSkin();                 // wear it now, but it is NOT added to My skins until you edit it
     renderSkinGallery();
@@ -6457,6 +6560,7 @@ function setPlayerBody(p, body){
     if(p.model){ if(tag) p.model.remove(tag); scene.remove(p.model); }
     p.model = makeBodyModel(want, p.skinTex, p.slim);
     if(tag) p.model.add(tag);
+    if(bw.active) setTimeout(()=>bwApplyRemoteGear(p.id), 0);   // the new model starts bare
     p.model.visible=true; scene.add(p.model);
   }
 }
@@ -6551,6 +6655,19 @@ function mpAddPlayer(p){
   if(p.hide) tag.visible=false;
   if(p.skin) applyRemoteSkin(p.id, p.skin, slim);    // their custom skin, if they have one
   if(p.body && p.body!=='none') setPlayerBody(rec, p.body);   // big / small / pig / block already active on join
+  bwDressRemote(rec, p);
+}
+// Everything we know about what this player is wearing, from whichever packet got
+// here first, put onto the model now that there is one.
+function bwDressRemote(rec, p){
+  if(!bw.active || !rec) return;
+  const known = (typeof bw.players!=='undefined' && bw.players.get) ? bw.players.get(rec.id) : null;
+  const pick = (a,b)=> (a!==undefined && a!==null) ? a : b;
+  rec.team  = pick(known && known.team,  p && p.team);
+  rec.armor = pick(known && known.armor, p && p.armor);
+  rec.sword = pick(known && known.sword, p && p.sword);
+  rec.superStick = !!pick(known && known.superStick, p && p.superStick);
+  bwApplyRemoteGear(rec.id);
 }
 // apply another player's 64x64 skin to their model + Tab head icon
 // rebuild a remote player's model geometry (keeps kind/tag/position) — used when their arm width (slim) changes
@@ -6667,12 +6784,14 @@ function mpHandle(m){
     purgeLiveAbove();   // never render ghost blocks a server may still hold above the build limit
     mpClearPlayers();
     mpStartWorld(m.seed);
+    pkApplySync(m.parkour);   // every course this server knows, with its leaderboard
     for(const pl of (m.players||[])) mpAddPlayer(pl);
     mpSendSkin();   // let everyone already here see my custom skin
     applyLocalBody(); sendFx();   // re-assert my active secret-code effects so everyone here sees them
     chatPush('Joined the shared world as '+m.name+'  ('+((m.players||[]).length+1)+' online)', 'sys');
     if(mp.spectator) chatPush('You joined as a SPECTATOR. You can look around and chat, but cannot build, break blocks, or fight.', 'sys');
   }
+  else if(m.type==='pk'){ if(m.op==='sync') pkApplySync(m.courses); }   // a course was linked, renamed or beaten
   else if(m.type==='join'){ mpAddPlayer(m.player); }
   else if(m.type==='leave'){ mpRemovePlayer(m.id); }
   else if(m.type==='pos'){ mp.posRecv=(mp.posRecv||0)+1; const p=mp.players.get(m.id); if(p){ p.tx=m.x; p.ty=m.y; p.tz=m.z; p.yaw=m.yaw; p.pitch=m.pitch; } }
@@ -7756,7 +7875,8 @@ function bwInit(m){
   const sp = (m.you && m.you.spawn) ? m.you.spawn : { x:0.5, y:BW_Y+3, z:0.5 };
   player.pos.set(sp.x, sp.y, sp.z); player.vel.set(0,0,0); player.flying=!!fx.fly; player.hp=100;
   for(const p of (m.players||[])) mpAddPlayer(p);
-  for(const p of (m.players||[])){ const e=mp.players.get(p.id); if(e){ e.team=p.team; e.armor=p.armor; e.sword=p.sword; bwApplyRemoteGear(p.id); } }
+  for(const p of (m.players||[])){ const q=bw.players.get(p.id)||{}; Object.assign(q,p); bw.players.set(p.id,q);
+    const e=mp.players.get(p.id); if(e) bwDressRemote(e, p); }
   // items present already
   bwClearItems(); if(m.items) for(const it of m.items) bwAddItem(it);
   // everything built before you arrived. Without this a latecomer walks through
@@ -7781,8 +7901,10 @@ function bwHandle(m){
     case 'bwarrow': bwAddProjectile(m.ox,m.oy,m.oz, m.dx,m.dy,m.dz, false, 'arrow'); return true;
     case 'bwyou': bw.team=m.team; bw.res=m.res||bw.res; bw.loadout=m.loadout||bw.loadout; bw.hp=m.hp!=null?m.hp:bw.hp; player.hp=bw.hp;
       bwCounts_reset(); bwSetHotbar(); bwUpdateHud(); return true;
-    case 'bwteams': for(const p of (m.players||[])){ const e=bw.players.get(p.id)||{}; Object.assign(e,p); bw.players.set(p.id,e); const rp=mp.players.get(p.id); if(rp){ rp.team=p.team; rp.armor=p.armor; rp.sword=p.sword; bwApplyRemoteGear(p.id); } } bwApplyLocalGear(); bwUpdateHud(); return true;
-    case 'bwgear': { const rp=mp.players.get(m.id); if(rp){ rp.armor=m.armor; rp.sword=m.sword; bwApplyRemoteGear(m.id); } if(m.id===mp.id){ bw.loadout.armor=m.armor; bw.loadout.sword=m.sword; bwApplyLocalGear(); } } return true;
+    case 'bwteams': for(const p of (m.players||[])){ const e=bw.players.get(p.id)||{}; Object.assign(e,p); bw.players.set(p.id,e); const rp=mp.players.get(p.id); if(rp) bwDressRemote(rp, p); } bwApplyLocalGear(); bwUpdateHud(); return true;
+    case 'bwgear': { const e=bw.players.get(m.id)||{}; e.armor=m.armor; e.sword=m.sword; bw.players.set(m.id,e);   // remembered even if their model is not here yet
+      const rp=mp.players.get(m.id); if(rp){ rp.armor=m.armor; rp.sword=m.sword; bwApplyRemoteGear(m.id); }
+      if(m.id===mp.id){ bw.loadout.armor=m.armor; bw.loadout.sword=m.sword; bwApplyLocalGear(); } } return true;
     case 'bwinvis': { const rp=mp.players.get(m.id); if(rp && rp.model) rp.model.visible=!m.on; } return true;   // an invisibility potion hid/unhid another player
     case 'bwreset': bwRebuildWorld(); bwClearItems(); bwCounts_reset(); bwSetHotbar(); return true;
     case 'bwblock': bwApplyBlock(m.x,m.y,m.z,m.b); return true;
@@ -8162,6 +8284,522 @@ const BW_SHOP = [
   { cat:'Potions',item:'pot_invis',    name:'Invisibility',    sub:'30s',      cost:{emerald:2}, col:'#9e9e9e' },
 ];
 const BW_CATS = ['Blocks','Melee','Armor','Ranged','Potions','Special','Utility','Upgrades'];
+const PK_CSS = `
+   #pkHud{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:15;pointer-events:none;
+     display:none;text-align:center;background:rgba(10,12,16,.72);border:2px solid rgba(53,217,69,.5);
+     padding:7px 20px 9px;min-width:200px}
+   #pkHud .eyebrow{font-size:10px;letter-spacing:3px;color:#8dffa0;opacity:.85}
+   #pkHud .clock{font-size:38px;font-weight:700;line-height:1.05;font-variant-numeric:tabular-nums;color:#fff}
+   #pkHud .clock.pb{color:#8dffa0}
+   #pkHud .sub{font-size:12px;color:#aab4c0;margin-top:2px}
+   #pkHud .exit{font-size:11px;color:#dfe6ee;margin-top:6px;opacity:.9}
+   #pkHud .exit b{background:#2b3038;border:1px solid #59606b;padding:1px 6px;font-weight:700}
+   #pkPanel{position:fixed;inset:0;z-index:26;display:none;align-items:center;justify-content:center;
+     background:rgba(0,0,0,.45)}
+   #pkPanel .sp{width:min(520px,94vw);max-height:86vh;overflow:auto;background:rgba(18,20,26,.97);
+     border:3px solid;border-color:#8a8a8a #232323 #232323 #8a8a8a;padding:16px 18px 14px;color:#e7ecf2}
+   #pkPanel h2{margin:0;font-size:19px;font-weight:700}
+   #pkPanel .head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+   #pkPanel .where{font-size:12px;color:#9aa4b0;margin:2px 0 2px}
+   #pkPanel .qm{font:inherit;font-size:15px;font-weight:700;width:30px;height:30px;flex:0 0 auto;cursor:pointer;
+     color:#e7ecf2;background:#2b3038;border:2px solid;border-color:#767b84 #1b1e23 #1b1e23 #767b84}
+   #pkPanel .qm:hover{filter:brightness(1.25)}
+   #pkPanel .lbl{font-size:11px;letter-spacing:2px;color:#8b95a1;margin:14px 0 6px}
+   #pkPanel .row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;cursor:pointer;
+     color:#e7ecf2;background:#23272e;border:2px solid;border-color:#4a5058 #14161a #14161a #4a5058;
+     padding:8px 10px;margin-bottom:6px}
+   #pkPanel button.row:hover{background:#2c313a}
+   #pkPanel .row .sq{width:14px;height:14px;flex:0 0 auto}
+   #pkPanel .row .main{flex:1;font-size:14px}
+   #pkPanel .row .sub{font-size:11.5px;color:#9aa4b0;margin-top:1px}
+   #pkPanel .row .go{font-size:12px;color:#8dffa0;flex:0 0 auto}
+   #pkPanel .none{font-size:12.5px;color:#8b95a1;padding:4px 0 2px;line-height:1.5}
+   #pkPanel input.nm{font:inherit;font-size:14px;width:100%;box-sizing:border-box;color:#fff;background:#14161a;
+     border:2px solid;border-color:#14161a #4a5058 #4a5058 #14161a;padding:7px 9px;outline:none}
+   #pkPanel .foot{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+   #pkPanel .pkb{font:inherit;font-size:13px;cursor:pointer;color:#fff;background:#4a4a4a;padding:8px 18px;
+     width:auto;flex:0 0 auto;border:3px solid;border-color:#b4b4b4 #2b2b2b #2b2b2b #b4b4b4}
+   #pkPanel .pkb:hover{filter:brightness(1.2)}
+   #pkPanel .pkb.warn{background:#6a3030}
+   #pkPanel .help p{margin:0 0 9px;font-size:13px;line-height:1.55;color:#cfd6de}
+   #pkPanel .help b{color:#8dffa0}
+`;
+
+/* ============================================== PARKOUR COURSES ===========
+   A bright green Parkour Start pad and a chequered Parkour End pad make a
+   course. You pair them by hand: right-click a pad and pick its partner. The
+   pairing and every time ever set live under a course id on the server, not
+   under the block, so a pad can be broken, put back somewhere else and pointed
+   at the same course with its leaderboard intact. Standing on Start puts a
+   stopwatch on screen and takes flight away until you finish or press K. */
+const PK_KEY = 'leoncraft_parkour';
+const parkour = {
+  courses: new Map(),   // id -> { id, name, start, end, times:[{name,ms}] }
+  run: null,            // { id, t0, best } while a course is being run
+  pad: null,            // the pad under your feet, so one step is one trigger
+  boards: new Map(),    // "d:x,y,z" -> THREE.Sprite floating over a pad
+  boardSig: new Map(),  // what each board was drawn from, so it is only redrawn on a change
+  panel: null,          // { x,y,z,d,kind } while the link menu is open
+  help: false,          // the link menu is showing its instructions
+  result: null,         // { text, sub, ok, until } the finish banner
+};
+function pkMe(){ return (mp.active && mp.name) ? mp.name : 'You'; }
+function pkFmt(ms){
+  const t = Math.max(0, ms) / 1000;
+  if(t < 60) return t.toFixed(2);
+  const m = Math.floor(t / 60);
+  return m + ':' + (t - m * 60).toFixed(2).padStart(5, '0');
+}
+const pkPadKey = p => p ? (p.d + ':' + p.x + ',' + p.y + ',' + p.z) : '';
+function pkNewId(){ return 'c' + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36); }
+function pkIsPad(id){ const b = BLOCKS[id]; return (b && b.parkour) || null; }
+
+/* ---- where the courses live ---- */
+function pkSaveLocal(){
+  if(mp.active) return;
+  try{ localStorage.setItem(PK_KEY, JSON.stringify({ courses: [...parkour.courses.values()] })); }catch(e){}
+}
+function pkLoadLocal(){
+  parkour.courses.clear();
+  try{ const j = JSON.parse(localStorage.getItem(PK_KEY) || 'null');
+    if(j && j.courses) for(const c of j.courses) parkour.courses.set(c.id, c);
+  }catch(e){}
+  pkTouch();
+}
+function pkApplySync(list){
+  parkour.courses.clear();
+  for(const c of (list || [])) parkour.courses.set(c.id, c);
+  pkTouch();
+}
+function pkTouch(){ parkour.boardSig.clear(); pkRenderPanel(); }
+// Send a course up. On a server that is the only copy that matters; solo, it is
+// the localStorage file.
+function pkPush(c){
+  parkour.courses.set(c.id, c);
+  if(mp.active) mpSend({ type:'pk', op:'link', course:{ id:c.id, name:c.name, start:c.start, end:c.end } });
+  else pkSaveLocal();
+  pkTouch();
+}
+function pkRecordLocal(id, name, ms){
+  const c = parkour.courses.get(id); if(!c) return -1;
+  c.times = c.times || [];
+  const row = c.times.find(t => t.name === name);
+  if(row){ if(ms >= row.ms) return c.times.findIndex(t => t.name === name) + 1; row.ms = ms; }
+  else c.times.push({ name, ms });
+  c.times.sort((a, b) => a.ms - b.ms);
+  if(c.times.length > 50) c.times.length = 50;
+  return c.times.findIndex(t => t.name === name) + 1;
+}
+function pkMyBest(c){
+  const row = ((c && c.times) || []).find(t => t.name === pkMe());
+  return row ? row.ms : null;
+}
+
+/* ---- every pad in the world, whichever world you are in ---- */
+function pkScanPads(){
+  const out = [];
+  const scan = (blocks, d) => { if(!blocks) return;
+    for(const k in blocks){ const kind = pkIsPad(blocks[k]); if(!kind) continue;
+      const c = k.split(','); out.push({ kind, x:+c[0], y:+c[1], z:+c[2], d }); } };
+  if(mp.active){ scan(mpDimStore[0] && mpDimStore[0].blocks, 0); scan(mpDimStore[1] && mpDimStore[1].blocks, 1); }
+  else { scan(spEdits, dim); const o = spDims[dim ? 0 : 1]; scan(o && o.blocks, dim ? 0 : 1); }
+  return out;
+}
+function pkCourseOfPad(x, y, z, d){
+  const k = d + ':' + x + ',' + y + ',' + z;
+  for(const [, c] of parkour.courses){
+    if(pkPadKey(c.start) === k) return { course:c, side:'start' };
+    if(pkPadKey(c.end)   === k) return { course:c, side:'end' };
+  }
+  return null;
+}
+
+/* ---- the board that floats over a pad ----
+   Everything in this game is set in a monospace face, so the leaderboard is
+   built as strict columns: rank, name, time. It reads like a speedrun board,
+   which is what it is. The only colour is the header band, which carries the
+   pad's own texture: solid green for a start, a chequer strip for a finish. */
+function pkBoardCanvas(pad, link){
+  const W = 360, ROW = 26, c = document.createElement('canvas');
+  const course = link && link.course, side = link && link.side;
+  const times = (course && course.times) || [];
+  const top = times.slice(0, 10);
+  const me = pkMe();
+  const myIdx = times.findIndex(t => t.name === me);
+  const mineBelow = myIdx >= 10;                       // your row is already up there if you made the ten
+  const HEAD = 52, NAME = course ? 30 : 0;
+  const listH = course ? (top.length ? top.length * ROW + 10 : ROW + 10) : ROW * 2 + 6;
+  const mineH = mineBelow ? ROW + 12 : 0;
+  const H = HEAD + NAME + listH + mineH + 12;
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const mono = px => (px + 'px ui-monospace, Consolas, "Courier New", monospace');
+
+  g.fillStyle = 'rgba(10,12,16,0.86)'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = pad.kind === 'end' ? 'rgba(230,230,230,0.55)' : 'rgba(53,217,69,0.55)';
+  g.lineWidth = 3; g.strokeRect(1.5, 1.5, W - 3, H - 3);
+
+  // A ribbon of the pad's own marking, then the word on solid dark. Running the
+  // chequer behind the letters looked like a finish flag and read like nothing.
+  const RIB = 10;
+  if(pad.kind === 'end'){
+    for(let i = 0; i < Math.ceil(W / 10); i++) for(let j = 0; j < 2; j++){
+      g.fillStyle = ((i + j) & 1) ? '#f4f4f4' : '#141414';
+      g.fillRect(i * 10, 4 + j * (RIB / 2), 10, RIB / 2);
+    }
+  } else {
+    g.fillStyle = '#35d945'; g.fillRect(0, 4, W, RIB);
+    g.fillStyle = 'rgba(31,122,42,0.55)';
+    for(let i = 0; i < W; i += 10) g.fillRect(i, 4, 5, RIB);
+  }
+  g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(0, 4 + RIB, W, 48 - RIB - 4);
+  g.textBaseline = 'middle'; g.textAlign = 'center';
+  g.font = 'bold ' + mono(24);
+  g.fillStyle = pad.kind === 'end' ? '#ffffff' : '#8dffa0';
+  g.fillText(pad.kind === 'end' ? 'F I N I S H' : 'S T A R T', W / 2, 4 + RIB + (48 - RIB - 4) / 2);
+
+  let y = HEAD;
+  if(!course){
+    g.font = 'bold ' + mono(18); g.fillStyle = '#ffd54a';
+    g.fillText('Right-click to link', W / 2, y + 15);
+    g.font = mono(14); g.fillStyle = '#9aa4b0';
+    g.fillText(pad.kind === 'end' ? 'pair it with a Parkour Start' : 'pair it with a Parkour End', W / 2, y + 40);
+    return c;
+  }
+
+  g.font = 'bold ' + mono(17); g.fillStyle = '#dfe6ee';
+  g.fillText(course.name || 'Parkour', W / 2, y + 15);
+  y += NAME;
+
+  const MEDAL = ['#ffd54a', '#d7dde5', '#d9954a'];
+  g.font = mono(17);
+  if(!top.length){
+    g.fillStyle = '#8b95a1'; g.textAlign = 'center';
+    g.fillText('no times yet', W / 2, y + 16);
+  } else {
+    for(let i = 0; i < top.length; i++){
+      const t = top[i], mine = t.name === me, cy = y + 8 + i * ROW + ROW / 2;
+      if(mine){ g.fillStyle = 'rgba(53,217,69,0.16)'; g.fillRect(6, cy - ROW / 2, W - 12, ROW); }
+      g.fillStyle = MEDAL[i] || '#7f8892'; g.textAlign = 'right';
+      g.fillText(String(i + 1), 34, cy);
+      g.fillStyle = mine ? '#8dffa0' : '#e7ecf2'; g.textAlign = 'left';
+      g.fillText(t.name.slice(0, 14), 46, cy);
+      g.fillStyle = mine ? '#8dffa0' : '#c3cbd4'; g.textAlign = 'right';
+      g.fillText(pkFmt(t.ms), W - 16, cy);
+    }
+  }
+  y += listH;
+
+  if(mineBelow){
+    g.strokeStyle = 'rgba(255,255,255,0.16)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(12, y + 3); g.lineTo(W - 12, y + 3); g.stroke();
+    const cy = y + 8 + ROW / 2;
+    g.fillStyle = 'rgba(53,217,69,0.16)'; g.fillRect(6, cy - ROW / 2, W - 12, ROW);
+    g.font = mono(17); g.fillStyle = '#8dffa0';
+    g.textAlign = 'right'; g.fillText(String(myIdx + 1), 34, cy);
+    g.textAlign = 'left';  g.fillText(times[myIdx].name.slice(0, 14), 46, cy);
+    g.textAlign = 'right'; g.fillText(pkFmt(times[myIdx].ms), W - 16, cy);
+  }
+  return c;
+}
+function pkBoardSig(pad, link){
+  const c = link && link.course;
+  if(!c) return pad.kind + '|none';
+  return pad.kind + '|' + c.id + '|' + c.name + '|' + link.side + '|' + (c.start ? 1 : 0) + (c.end ? 1 : 0) + '|' +
+    (c.times || []).slice(0, 10).map(t => t.name + ':' + t.ms).join(',') + '|' +
+    (c.times || []).findIndex(t => t.name === pkMe());
+}
+function pkDropBoard(k){
+  const s = parkour.boards.get(k); if(!s) return;
+  scene.remove(s); if(s.material.map) s.material.map.dispose(); s.material.dispose();
+  parkour.boards.delete(k); parkour.boardSig.delete(k);
+}
+function pkClearBoards(){ for(const k of [...parkour.boards.keys()]) pkDropBoard(k); }
+// Rebuild only what changed, and only for pads close enough to read.
+function pkUpdateBoards(){
+  if(!scene || state !== PLAY || bw.active || bb.active){ if(parkour.boards.size) pkClearBoards(); return; }
+  const near = [], R = 48;
+  for(const p of pkScanPads()){
+    if(p.d !== dim) continue;
+    const dx = p.x + 0.5 - player.pos.x, dz = p.z + 0.5 - player.pos.z;
+    const d2 = dx * dx + dz * dz;
+    if(d2 <= R * R) near.push([d2, p]);
+  }
+  near.sort((a, b) => a[0] - b[0]);
+  const keep = new Set();
+  for(const [, p] of near.slice(0, 12)){
+    const k = p.d + ':' + p.x + ',' + p.y + ',' + p.z;
+    keep.add(k);
+    const link = pkCourseOfPad(p.x, p.y, p.z, p.d);
+    const sig = pkBoardSig(p, link);
+    if(parkour.boardSig.get(k) === sig) continue;
+    pkDropBoard(k);
+    const cv = pkBoardCanvas(p, link);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.LinearFilter;
+    // The canvas has no transparent pixels, so an opaque sprite loses nothing and
+    // joins the depth-sorted queue: two boards down one corridor now occlude properly.
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:false, depthTest:true }));
+    const w = 2.0, h = w * cv.height / cv.width;
+    sp.scale.set(w, h, 1);
+    sp.position.set(p.x + 0.5, p.y + 1.15 + h / 2, p.z + 0.5);
+    sp.raycast = () => {};
+    scene.add(sp);
+    parkour.boards.set(k, sp); parkour.boardSig.set(k, sig);
+  }
+  for(const k of [...parkour.boards.keys()]) if(!keep.has(k)) pkDropBoard(k);
+}
+
+/* ---- running a course ---- */
+function pkStart(course){
+  parkour.run = { id:course.id, t0:performance.now(), best:pkMyBest(course) };
+  player.flying = false;
+  parkour.result = null;
+  pkEnsureUi();
+  chatPush('Parkour started: ' + (course.name || 'Parkour') + '. Flight is off until you finish or press K.', 'sys');
+}
+function pkFinish(course){
+  const run = parkour.run; if(!run || run.id !== course.id) return;
+  const ms = performance.now() - run.t0;
+  parkour.run = null;
+  const best = run.best;
+  if(mp.active) mpSend({ type:'pk', op:'time', id:course.id, ms:Math.round(ms) });
+  else { pkRecordLocal(course.id, pkMe(), Math.round(ms)); pkSaveLocal(); }
+  const pb = (best == null) || ms < best;
+  parkour.result = {
+    text: pkFmt(ms),
+    sub: pb ? (best == null ? 'first time on this course' : 'personal best by ' + pkFmt(best - ms) + 's')
+            : ('your best is ' + pkFmt(best)),
+    ok: pb, until: performance.now() + 6000
+  };
+  chatPush('Finished ' + (course.name || 'Parkour') + ' in ' + pkFmt(ms) + 's' + (pb ? ' - personal best!' : ''), 'sys');
+  pkTouch();
+}
+function pkAbandon(){
+  if(!parkour.run) return;
+  parkour.run = null;
+  parkour.result = { text:'ended', sub:'flight is back', ok:false, until:performance.now() + 2500 };
+  chatPush('Parkour ended. No time recorded.', 'sys');
+}
+// One step onto a pad is one trigger: you have to leave it and come back to fire again.
+function pkTick(){
+  if(bw.active || bb.active || state !== PLAY){ parkour.pad = null; pkHud(); return; }
+  const x = Math.floor(player.pos.x), z = Math.floor(player.pos.z);
+  let hit = null;
+  for(const yy of [Math.floor(player.pos.y), Math.floor(player.pos.y - 0.12)]){
+    const kind = pkIsPad(getBlock(x, yy, z));
+    if(kind){ hit = { kind, x, y:yy, z }; break; }
+  }
+  const key = hit ? (dim + ':' + hit.x + ',' + hit.y + ',' + hit.z) : null;
+  if(key !== parkour.pad){
+    parkour.pad = key;
+    if(hit){
+      const link = pkCourseOfPad(hit.x, hit.y, hit.z, dim);
+      if(link && link.course.start && link.course.end){
+        if(link.side === 'start') pkStart(link.course);
+        else pkFinish(link.course);
+      } else if(!parkour.run){
+        chatPush('This pad has no partner yet. Right-click it to link one.', 'sys');
+      }
+    }
+  }
+  if(parkour.run) player.flying = false;   // no flying your way round a course
+  pkHud();
+}
+
+/* ---- the stopwatch ---- */
+let pkUiBuilt = false;
+function pkEnsureUi(){
+  if(pkUiBuilt) return; pkUiBuilt = true;
+  const css = document.createElement('style'); css.textContent = PK_CSS;
+  document.head.appendChild(css);
+  const hud = document.createElement('div'); hud.id = 'pkHud';
+  hud.innerHTML = '<div class="eyebrow">PARKOUR</div><div class="clock" id="pkClock">0.00</div>' +
+                  '<div class="sub" id="pkSub"></div><div class="exit" id="pkExit"><b>K</b> end parkour</div>';
+  document.body.appendChild(hud);
+  const panel = document.createElement('div'); panel.id = 'pkPanel';
+  panel.innerHTML = '<div class="sp" id="pkPanelBody"></div>';
+  document.body.appendChild(panel);
+  panel.addEventListener('mousedown', e => { if(e.target === panel) pkClosePanel(); });
+}
+function pkHud(){
+  if(!pkUiBuilt){ if(!parkour.run && !parkour.result) return; pkEnsureUi(); }
+  const hud = document.getElementById('pkHud'); if(!hud) return;
+  const clock = document.getElementById('pkClock'), sub = document.getElementById('pkSub'), exit = document.getElementById('pkExit');
+  if(parkour.run){
+    const c = parkour.courses.get(parkour.run.id);
+    const ms = performance.now() - parkour.run.t0;
+    const best = parkour.run.best;
+    hud.style.display = 'block';
+    hud.style.borderColor = 'rgba(53,217,69,.5)';
+    clock.textContent = pkFmt(ms);
+    clock.className = 'clock' + (best != null && ms < best ? ' pb' : '');
+    sub.textContent = (c ? (c.name || 'Parkour') : 'Parkour') + (best != null ? '  ·  best ' + pkFmt(best) : '  ·  no time yet');
+    exit.style.display = '';
+  } else if(parkour.result && performance.now() < parkour.result.until){
+    hud.style.display = 'block';
+    hud.style.borderColor = parkour.result.ok ? 'rgba(53,217,69,.5)' : 'rgba(255,255,255,.25)';
+    clock.textContent = parkour.result.text;
+    clock.className = 'clock' + (parkour.result.ok ? ' pb' : '');
+    sub.textContent = parkour.result.sub;
+    exit.style.display = 'none';
+  } else {
+    hud.style.display = 'none';
+  }
+}
+
+/* ---- the link menu ---- */
+function pkOpenPanel(x, y, z, d, kind){
+  pkEnsureUi();
+  parkour.panel = { x, y, z, d, kind };
+  parkour.help = false;
+  document.getElementById('pkPanel').style.display = 'flex';
+  for(const kk in keys) keys[kk] = false;
+  try{ document.exitPointerLock(); }catch(e){}
+  pkRenderPanel();
+}
+function pkClosePanel(){
+  parkour.panel = null;
+  const p = document.getElementById('pkPanel'); if(p) p.style.display = 'none';
+}
+function pkEsc(v){ const d = document.createElement('div'); d.textContent = (v == null ? '' : String(v)); return d.innerHTML; }
+function pkSwatch(kind){
+  return kind === 'end'
+    ? '<span class="sq" style="background:conic-gradient(#f4f4f4 0 25%,#141414 0 50%,#f4f4f4 0 75%,#141414 0)"></span>'
+    : '<span class="sq" style="background:#35d945"></span>';
+}
+function pkKindName(kind){ return kind === 'end' ? 'Parkour End' : 'Parkour Start'; }
+function pkRenderPanel(){
+  if(!parkour.panel || !pkUiBuilt) return;
+  const P = parkour.panel, body = document.getElementById('pkPanelBody');
+  if(!body) return;
+  const mine = pkCourseOfPad(P.x, P.y, P.z, P.d);
+
+  if(parkour.help){
+    body.innerHTML =
+      '<div class="head"><h2>How parkour works</h2></div>' +
+      '<div class="help" style="margin-top:10px">' +
+      '<p><b>1.</b> Put a <b>Parkour Start</b> pad where the course begins and a <b>Parkour End</b> pad where it finishes. Build whatever you like in between.</p>' +
+      '<p><b>2.</b> Right-click either pad and pick its partner from the list. That pairs them into one course, and you can give the course a name.</p>' +
+      '<p><b>3.</b> Step on the start pad. A stopwatch appears and flight switches off. Reach the end pad and the clock stops. Only your fastest run is kept.</p>' +
+      '<p><b>4.</b> Press <b>K</b> at any point to give up. Nothing is recorded and you get flight back.</p>' +
+      '<p><b>5.</b> The top ten times float above both pads, with your own place underneath if you are not in them.</p>' +
+      '<p>Times belong to the course, not to the block. Break a pad and the course waits: put a new pad down, right-click it, and pick the old course under <b>Rebuild a saved course</b>. Every time comes straight back.</p>' +
+      '</div>' +
+      '<div class="foot"><button class="pkb" data-act="back">Back</button></div>';
+  } else {
+    const here = { x:P.x, y:P.y, z:P.z, d:P.d };
+    // the pad it is already tied to is not a thing to change to
+    const cur = mine ? (mine.side === 'start' ? mine.course.end : mine.course.start) : null;
+    const pads = pkScanPads().filter(p => p.kind !== P.kind && pkPadKey(p) !== pkPadKey(cur));
+    const dist = p => Math.round(Math.hypot(p.x + 0.5 - player.pos.x, p.y - player.pos.y, p.z + 0.5 - player.pos.z));
+    const padRow = p => {
+      const l = pkCourseOfPad(p.x, p.y, p.z, p.d);
+      return '<button class="row" data-act="pair" data-x="' + p.x + '" data-y="' + p.y + '" data-z="' + p.z + '" data-d="' + p.d + '">' +
+        pkSwatch(p.kind) +
+        '<span class="main">' + pkKindName(p.kind) +
+          '<div class="sub">' + p.x + ', ' + p.y + ', ' + p.z + (p.d ? ' (nether)' : '') +
+          ' · ' + dist(p) + ' blocks away' + (l ? ' · in ' + pkEsc(l.course.name || 'Parkour') : '') + '</div></span>' +
+        '<span class="go">Link</span></button>';
+    };
+
+    let h = '<div class="head"><div><h2>' + (mine ? 'Parkour course' : 'Link parkour') + '</h2>' +
+            '<div class="where">' + pkKindName(P.kind) + ' at ' + P.x + ', ' + P.y + ', ' + P.z + (P.d ? ' (nether)' : '') + '</div></div>' +
+            '<button class="qm" data-act="help" title="How does this work?">?</button></div>';
+
+    if(mine){
+      const c = mine.course;
+      const other = mine.side === 'start' ? c.end : c.start;
+      const otherKind = mine.side === 'start' ? 'end' : 'start';
+      h += '<div class="lbl">COURSE NAME</div>' +
+           '<input class="nm" id="pkName" maxlength="24" value="' + pkEsc(c.name || 'Parkour') + '">' +
+           '<div class="lbl">PAIRED WITH</div>' +
+           (other
+             ? '<div class="row" style="cursor:default">' + pkSwatch(otherKind) +
+                 '<span class="main">' + pkKindName(otherKind) +
+                 '<div class="sub">' + other.x + ', ' + other.y + ', ' + other.z + (other.d ? ' (nether)' : '') + '</div></span>' +
+                 '<span class="go">' + ((c.times || []).length) + ' times</span></div>'
+             : '<div class="none">Nothing yet. Pick a partner below.</div>');
+    }
+
+    if(pads.length || !cur){
+      h += '<div class="lbl">' + (mine ? 'CHANGE THE PARTNER' : 'LINK WITH') + '</div>';
+      h += pads.length
+        ? pads.sort((a, b) => dist(a) - dist(b)).map(padRow).join('')
+        : '<div class="none">No ' + pkKindName(P.kind === 'end' ? 'start' : 'end') + ' pad has been placed yet. Go and put one down, then come back.</div>';
+    }
+
+    const rebuild = [...parkour.courses.values()].filter(c => !mine || c.id !== mine.course.id);
+    if(rebuild.length){
+      h += '<div class="lbl">REBUILD A SAVED COURSE</div>';
+      h += rebuild.map(c =>
+        '<button class="row" data-act="adopt" data-id="' + pkEsc(c.id) + '">' +
+          '<span class="sq" style="background:#4a5058"></span>' +
+          '<span class="main">' + pkEsc(c.name || 'Parkour') +
+          '<div class="sub">' + ((c.times || []).length) + ' times saved · keeps the leaderboard</div></span>' +
+          '<span class="go">Use</span></button>').join('');
+    }
+
+    h += '<div class="foot">' +
+         (mine ? '<button class="pkb warn" data-act="forget">Delete course</button>' : '') +
+         '<button class="pkb" data-act="close">Done</button></div>';
+    body.innerHTML = h;
+    void here;
+  }
+
+  body.querySelectorAll('[data-act]').forEach(el => el.addEventListener('click', pkPanelClick));
+  const nm = document.getElementById('pkName');
+  if(nm){
+    nm.addEventListener('keydown', e => e.stopPropagation());
+    nm.addEventListener('change', () => {
+      const m = pkCourseOfPad(P.x, P.y, P.z, P.d); if(!m) return;
+      m.course.name = nm.value.slice(0, 24).trim() || 'Parkour';
+      pkPush(m.course);
+    });
+  }
+}
+function pkPanelClick(e){
+  const el = e.currentTarget, act = el.dataset.act, P = parkour.panel;
+  if(!P) return;
+  if(act === 'help'){ parkour.help = true; pkRenderPanel(); return; }
+  if(act === 'back'){ parkour.help = false; pkRenderPanel(); return; }
+  if(act === 'close'){ pkClosePanel(); return; }
+  const here = { x:P.x, y:P.y, z:P.z, d:P.d };
+  const mine = pkCourseOfPad(P.x, P.y, P.z, P.d);
+  if(act === 'forget'){
+    if(mine){
+      parkour.courses.delete(mine.course.id);
+      if(mp.active) mpSend({ type:'pk', op:'forget', id:mine.course.id }); else pkSaveLocal();
+      pkTouch(); pkRenderPanel();
+    }
+    return;
+  }
+  if(act === 'pair'){
+    const other = { x:+el.dataset.x, y:+el.dataset.y, z:+el.dataset.z, d:+el.dataset.d };
+    const c = mine ? mine.course
+                   : { id:pkNewId(), name:'Parkour ' + (parkour.courses.size + 1), start:null, end:null, times:[] };
+    if(P.kind === 'start'){ c.start = here; c.end = other; } else { c.end = here; c.start = other; }
+    // a pad only ever belongs to one course, so take it off any other
+    for(const [, o] of parkour.courses){
+      if(o === c) continue;
+      for(const side of ['start', 'end'])
+        if(pkPadKey(o[side]) === pkPadKey(here) || pkPadKey(o[side]) === pkPadKey(other)) o[side] = null;
+    }
+    pkPush(c);
+    chatPush('Linked: ' + (c.name || 'Parkour') + '.', 'sys');
+    pkRenderPanel();
+    return;
+  }
+  if(act === 'adopt'){
+    const c = parkour.courses.get(el.dataset.id); if(!c) return;
+    if(P.kind === 'start') c.start = here; else c.end = here;
+    pkPush(c);
+    chatPush('This pad is now the ' + (P.kind === 'start' ? 'start' : 'finish') + ' of ' + (c.name || 'Parkour') + '.', 'sys');
+    pkRenderPanel();
+    return;
+  }
+}
+
 const BW_UPGRADES = [
   { key:'sharp', name:'Sharpened Swords', desc:'Your team deals extra melee damage', cost:[4],        max:1, col:'#b48ead' },
   { key:'prot',  name:'Reinforced Armor', desc:'Protection I–IV for the team',       cost:[2,4,8,16], max:4, col:'#8fa6c9' },
@@ -8558,7 +9196,14 @@ const BAD_WORDS = [
   "kys", "killyourself",
   "porn", "pornhub", "hentai", "onlyfans",
   "anal", "blowjob", "handjob", "sexy", "horny", "milf", "orgasm", "masturbate", "jerkoff",
-  "idiot", "moron", "stupid", "loser"
+  "idiot", "moron", "stupid", "loser",
+  // Three letters that live inside hundreds of ordinary words, so these are marked
+  // whole-word: "ass" and "asses" are caught, "class", "passport" and "assassin" are
+  // not, and no safe-word list has to keep up. Deliberate spacing ("a s s") and leet
+  // ("@$$", "a55") still land, because the fold runs before the check.
+  { w: "ass", whole: true }, { w: "asses", whole: true }, { w: "assed", whole: true },
+  { w: "azz", whole: true }, { w: "arses", whole: true }, { w: "asss", whole: true },
+  { w: "assy", whole: true }, { w: "assholes", whole: true }, { w: "asshats", whole: true }
 ];
 // terms that also live inside perfectly ordinary words
 const SAFE_WORDS = new Set([
@@ -8596,7 +9241,12 @@ function foldText(text, map) {
   for (let i = 0; i < text.length; i++) { const f = foldChar(text[i], map); if (f) { tight += f; idx.push(i); } }
   return { tight: tight, idx: idx };
 }
-const BAD_RE = BAD_WORDS.map(function (w) { return { word: w, re: new RegExp(w.split("").join("+") + "+", "g") }; });
+// A term is either a plain string or { w, whole }. "whole" means the match has to
+// stand on its own as a word, which is what makes a three-letter term usable.
+const BAD_RE = BAD_WORDS.map(function (t) {
+  const w = (typeof t === "string") ? t : t.w;
+  return { word: w, whole: !!(t && t.whole), re: new RegExp(w.split("").join("+") + "+", "g") };
+});
 // the ordinary word an offset falls inside, so SAFE_WORDS can clear a false hit
 function wordAround(text, at) {
   let a = at, b = at;
@@ -8645,6 +9295,7 @@ function censor(text) {
         const from = f.idx[m.index], to = f.idx[m.index + m[0].length - 1];
         if (from === undefined || to === undefined) continue;
         if (SAFE_WORDS.has(wordAround(text, from))) continue;
+        if (b.whole && !atWordEdge(text, from, to)) continue;   // "ass" yes, "class" no
         if (!spanOk(text, f.idx, m.index, m.index + m[0].length - 1, b.word.length)) continue;
         for (let i = from; i <= to; i++) if (/\S/.test(chars[i])) chars[i] = "*";
         hit = true;
@@ -8743,6 +9394,9 @@ function frame(now){
     processQueues(player.pos.x, player.pos.z);
     raycast();
     if(!bw.active) tickRedstone(dt);   // buttons pop out, plates read who is standing on them, power resolves
+    tickHeldTools();                   // holding F or G keeps breaking or placing while you walk
+    pkTick();                          // parkour: the pad under your feet starts, stops or is just scenery
+    { pkBoardAccum += dt; if(pkBoardAccum > 0.5){ pkBoardAccum = 0; pkUpdateBoards(); } }
     tickTnt(); tickConfetti(dt);   // lit TNT counts down, then throws paper into the air
     tickPortal(dt);                // standing in a portal takes you to the other world
     updateMobs(dt);
@@ -8921,6 +9575,41 @@ window.__mc = {
     let g=0; while(genQueue.length && g<400){ const c=genQueue.shift(); if(!c.generated) c.generate(); g++; } return chunks.size; },
   borderNow(){ return borderNow(); }, borders(){ return { over:mp.border, nether:mp.netherBorder }; },
   panoTurn(){ return PANO_TURN; },
+  // ---- parkour test hooks ----
+  pk(){ return { run: parkour.run ? { id:parkour.run.id, ms:Math.round(performance.now()-parkour.run.t0), best:parkour.run.best } : null,
+    pad: parkour.pad, boards: parkour.boards.size, panel: parkour.panel,
+    result: parkour.result ? { text:parkour.result.text, sub:parkour.result.sub, ok:parkour.result.ok } : null,
+    courses: [...parkour.courses.values()].map(c=>({ id:c.id, name:c.name, start:c.start, end:c.end, times:c.times||[] })) }; },
+  pkPads(){ return pkScanPads(); },
+  tileColors(name){ const t=T(name); if(t===undefined) return null;
+    const ox=(t%ATLAS_COLS)*TILE, oy=((t/ATLAS_COLS)|0)*TILE;
+    const d=actx.getImageData(ox,oy,TILE,TILE).data, cols=new Set(); let lit=0;
+    for(let i=0;i<d.length;i+=4){ cols.add(d[i]+','+d[i+1]+','+d[i+2]); if(d[i+3]>0) lit++; }
+    return { colors:cols.size, filled:lit }; },
+  pkOpen(x,y,z){ const k=pkIsPad(getBlock(x,y,z)); if(!k) return false; pkOpenPanel(x,y,z,dim,k); return true; },
+  pkPanelHtml(){ const b=document.getElementById('pkPanelBody'); return b?b.innerHTML:''; },
+  pkPanelClickAct(act, i){ const b=document.getElementById('pkPanelBody'); if(!b) return false;
+    const els=[...b.querySelectorAll('[data-act="'+act+'"]')]; const el=els[i||0]; if(!el) return false; el.click(); return true; },
+  pkHudText(){ const h=document.getElementById('pkHud');
+    if(!h || h.style.display==='none') return null;
+    return { clock:document.getElementById('pkClock').textContent, sub:document.getElementById('pkSub').textContent,
+             exit:document.getElementById('pkExit').style.display!=='none' }; },
+  pkBoardAt(x,y,z){ const s=parkour.boards.get(dim+':'+x+','+y+','+z);
+    return s?{ w:s.scale.x, h:s.scale.y, y:s.position.y }:null; },
+  pkTickNow(){ pkTick(); }, pkBoardsNow(){ pkUpdateBoards(); },
+  // how much of the worn skin's left-arm block is filled in: a legacy 64x32 file
+  // has nothing there until the loader mirrors the right arm across
+  skinLeftArmFill(){ const d=editCtx.getImageData(32,48,16,16).data; let n=0;
+    for(let i=3;i<d.length;i+=4) if(d[i]>0) n++; return n; },
+  pkSeed(id, rows){ const c=parkour.courses.get(id); if(!c) return false; c.times=rows.slice(); pkTouch(); return true; },
+  pkClose(){ pkClosePanel(); },
+  // ---- movement / key test hooks ----
+  superSpeed(){ return superSpeed; }, toggleSpeed(v){ toggleSuperSpeed(v); },
+  speedMul(){ return superSpeedMul(); },
+  groundUnder(x,z){ return groundUnder(x,z); },
+  keyState(k){ return !!keys[k]; }, setKey(k,v){ keys[k]=!!v; },
+  heldTick(){ tickHeldTools(); }, heldSince(){ return { f:heldSince.break2, g:heldSince.place2 }; },
+  camMode2(){ return camMode; },
   // ---- chat filter / hide code test hooks ----
   censor(t){ return censor(t); },
   ghost(){ return !!fx.ghost; },
