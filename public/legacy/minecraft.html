@@ -609,12 +609,21 @@
       <div class="skinRow">
         <button class="keybtn" id="skinModelBtn" title="Slim (Alex) skins have 3-pixel arms. Switch this to match your skin so the arm edges line up.">Model: Classic</button>
       </div>
+      <div class="skinRow">
+        <button class="keybtn" id="capeUploadBtn" title="Wear a cape you made yourself: a 64×32 PNG, the same size Minecraft uses.">Upload cape</button>
+        <button class="keybtn" id="capeClearBtn" title="Take the cape off">No cape</button>
+        <input type="file" id="capeUpload" accept="image/png,image/*" hidden>
+      </div>
       <div class="skinHint" id="skinUploadMsg" style="font-size:11px;opacity:.7;min-height:14px;"></div>
     </div>
   </div>
   <div class="skinGalleryWrap">
     <div class="skinLabel">Presets — click one to wear it</div>
     <div class="skinGallery" id="skinPresets"></div>
+  </div>
+  <div class="skinGalleryWrap">
+    <div class="skinLabel">Capes — click one to wear it</div>
+    <div class="skinGallery" id="capeGallery"></div>
   </div>
   <div class="skinGalleryWrap">
     <div class="skinLabel">My skins - click to load, rename, or delete</div>
@@ -2531,14 +2540,20 @@ let dim = 0;                 // 0 overworld, 1 nether. Declared up here because 
 const spDims=[null,null];    // world save runs at load time and reads both.
 // which world to build and light: the panorama's, or the one you are playing in
 function worldDim(){ return dim; }   // the panorama is the overworld now, so it follows you
+// Where everyone starts. An admin moves it with /setworldspawn. It belongs to the
+// world it was set in: a server keeps its own and hands it to everyone who joins, a
+// solo world keeps its own in its save file. One is never used for the other.
+let worldSpawn = null;
+let spSpawn = null;                       // the solo world's spawn, loaded with the solo world
 const SP_KEY = 'leoncraft_sp_world';
+try{ localStorage.removeItem('leoncraft_spawn'); }catch(e){}   // an old global spawn key that leaked between worlds
 function spSave(){ if(mp.active) return;   // a server's world is the server's; never write it over your solo one
   try{
   // the world you are standing in plus the one you are not: same file, nether nested
   const cur={ blocks: spEdits, doors: spDoors, beds: spBeds, stairs: spStairs, ladders: spLadders,
               signs: spSigns, prg: spPrg, trapdoors: spTrapdoors, slabs: spSlabs, pots: spPots, attach: spAttach };
   const over = (dim===0 ? cur : (spDims[0]||{})), under = (dim===1 ? cur : (spDims[1]||{}));
-  localStorage.setItem(SP_KEY, JSON.stringify(Object.assign({ seed: spSeed }, over, { nether: under })));
+  localStorage.setItem(SP_KEY, JSON.stringify(Object.assign({ seed: spSeed }, over, { nether: under, spawn: spSpawn })));
 }catch(e){} }
 function spScheduleSave(){ clearTimeout(spSaveTimer); spSaveTimer=setTimeout(spSave, 600); }   // debounce disk writes
 function spRecord(x,y,z,b){ spEdits[x+','+y+','+z]=b; mpSetOverride(x,y,z,b); spScheduleSave(); }
@@ -2613,7 +2628,8 @@ function spReloadWorld(){         // load the saved singleplayer world into seed
   mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
   dim=0; spDims[0]=null; spDims[1]=null;   // a reload always puts you back in the overworld
   spEdits = {}; spDoors = {}; spBeds = {}; spStairs = {}; spLadders = {}; spSigns = {}; spPrg = {}; spTrapdoors = {}; spSlabs = {}; spPots = {}; spAttach = {};
-  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; spPots=w.pots||{}; spAttach=w.attach||{}; spDims[1]=w.nether||null; } } }catch(e){}
+  try{ const raw=localStorage.getItem(SP_KEY); if(raw){ const w=JSON.parse(raw); if(w && typeof w.seed==='number'){ spSeed=w.seed>>>0; spEdits=w.blocks||{}; spDoors=w.doors||{}; spBeds=w.beds||{}; spStairs=w.stairs||{}; spLadders=w.ladders||{}; spSigns=w.signs||{}; spPrg=w.prg||{}; spTrapdoors=w.trapdoors||{}; spSlabs=w.slabs||{}; spPots=w.pots||{}; spAttach=w.attach||{}; spDims[1]=w.nether||null; spSpawn=(w.spawn&&typeof w.spawn.x==='number')?w.spawn:null; } } }catch(e){}
+  worldSpawn = spSpawn;                    // a solo world's spawn, and only a solo world's
   const purged = purgeSavedAbove();   // clear old ghost blocks stranded above the build limit, then persist the cleanup
   seed=spSeed; noise=makeNoise(seed);
   spApplyStores();
@@ -3642,10 +3658,10 @@ const SKIN=0xd9a066, SHIRT=0x2ea3a3, PANTS=0x394a7a, HAIR=0x5a3a24;
 const PARTS = {
   head:{ w:8,h:8,d:8, pos:[0,4,0],  f:{ px:[0,8,8,8],   nx:[16,8,8,8],  py:[8,0,8,8],  ny:[16,0,8,8], pz:[8,8,8,8],   nz:[24,8,8,8] } },
   body:{ w:8,h:12,d:4,pos:[0,18,0], f:{ px:[16,20,4,12],nx:[28,20,4,12],py:[20,16,8,4],ny:[28,16,8,4],pz:[20,20,8,12],nz:[32,20,8,12] } },
-  armR:{ w:4,h:12,d:4,pos:[6,18,0], f:{ px:[40,20,4,12],nx:[48,20,4,12],py:[44,16,4,4],ny:[48,16,4,4],pz:[44,20,4,12],nz:[52,20,4,12] } },
-  armL:{ w:4,h:12,d:4,pos:[-6,18,0],f:{ px:[32,52,4,12],nx:[40,52,4,12],py:[36,48,4,4],ny:[40,48,4,4],pz:[36,52,4,12],nz:[44,52,4,12] } },
-  legR:{ w:4,h:12,d:4,pos:[2,6,0],  f:{ px:[0,20,4,12], nx:[8,20,4,12], py:[4,16,4,4], ny:[8,16,4,4], pz:[4,20,4,12], nz:[12,20,4,12] } },
-  legL:{ w:4,h:12,d:4,pos:[-2,6,0], f:{ px:[16,52,4,12],nx:[24,52,4,12],py:[20,48,4,4],ny:[24,48,4,4],pz:[20,52,4,12],nz:[28,52,4,12] } },
+  armR:{ w:4,h:12,d:4,pos:[-6,18,0],f:{ px:[40,20,4,12],nx:[48,20,4,12],py:[44,16,4,4],ny:[48,16,4,4],pz:[44,20,4,12],nz:[52,20,4,12] } },
+  armL:{ w:4,h:12,d:4,pos:[6,18,0], f:{ px:[32,52,4,12],nx:[40,52,4,12],py:[36,48,4,4],ny:[40,48,4,4],pz:[36,52,4,12],nz:[44,52,4,12] } },
+  legR:{ w:4,h:12,d:4,pos:[-2,6,0], f:{ px:[0,20,4,12], nx:[8,20,4,12], py:[4,16,4,4], ny:[8,16,4,4], pz:[4,20,4,12], nz:[12,20,4,12] } },
+  legL:{ w:4,h:12,d:4,pos:[2,6,0],  f:{ px:[16,52,4,12],nx:[24,52,4,12],py:[20,48,4,4],ny:[24,48,4,4],pz:[20,52,4,12],nz:[28,52,4,12] } },
 };
 const PART_ORDER=['px','nx','py','ny','pz','nz'];
 function setBoxUV(geo,f){
@@ -3656,7 +3672,11 @@ function setBoxUV(geo,f){
   });
   uv.needsUpdate=true;
 }
-function skinPart(def,mat){ const geo=new THREE.BoxGeometry(def.w*S16,def.h*S16,def.d*S16); setBoxUV(geo,def.f); return new THREE.Mesh(geo,mat); }
+function skinPart(def,mat,hang){
+  const geo=new THREE.BoxGeometry(def.w*S16,def.h*S16,def.d*S16); setBoxUV(geo,def.f);
+  if(hang) geo.translate(0, -def.h*S16/2, 0);   // hang from the shoulder / hip, so rotating there keeps the joint closed
+  return new THREE.Mesh(geo,mat);
+}
 // Minecraft's second (outer) skin layer: hat, jacket, sleeves, trouser overlays.
 // Same face layout as PARTS, but reading the overlay regions of a 64x64 skin.
 const OVERLAY = {
@@ -3671,17 +3691,18 @@ const OVERLAY = {
 // Using these for slim skins keeps the back seam clean (a 4-wide model reading a
 // 3-wide skin samples a stray column, which shows as a dark line).
 const PARTS_SLIM = {
-  armR:{ w:3,h:12,d:4,pos:[5.5,18,0], f:{ px:[40,20,4,12],nx:[47,20,4,12],py:[44,16,3,4],ny:[47,16,3,4],pz:[44,20,3,12],nz:[51,20,3,12] } },
-  armL:{ w:3,h:12,d:4,pos:[-5.5,18,0],f:{ px:[32,52,4,12],nx:[39,52,4,12],py:[36,48,3,4],ny:[39,48,3,4],pz:[36,52,3,12],nz:[43,52,3,12] } },
+  armR:{ w:3,h:12,d:4,pos:[-5.5,18,0],f:{ px:[40,20,4,12],nx:[47,20,4,12],py:[44,16,3,4],ny:[47,16,3,4],pz:[44,20,3,12],nz:[51,20,3,12] } },
+  armL:{ w:3,h:12,d:4,pos:[5.5,18,0], f:{ px:[32,52,4,12],nx:[39,52,4,12],py:[36,48,3,4],ny:[39,48,3,4],pz:[36,52,3,12],nz:[43,52,3,12] } },
 };
 const OVERLAY_SLIM = {
   armR:{ px:[40,36,4,12], nx:[47,36,4,12], py:[44,32,3,4], ny:[47,32,3,4], pz:[44,36,3,12], nz:[51,36,3,12] },
   armL:{ px:[48,52,4,12], nx:[55,52,4,12], py:[52,48,3,4], ny:[55,48,3,4], pz:[52,52,3,12], nz:[59,52,3,12] },
 };
 const OV_INF = 0.5;   // outer layer is 0.25px larger on every side, like Minecraft
-function skinPartOverlay(def, faces, mat){
+function skinPartOverlay(def, faces, mat, hang){
   const geo=new THREE.BoxGeometry((def.w+OV_INF)*S16,(def.h+OV_INF)*S16,(def.d+OV_INF)*S16);
   setBoxUV(geo, faces);
+  if(hang) geo.translate(0, -def.h*S16/2, 0);          // stay wrapped around the part it covers
   const m=new THREE.Mesh(geo,mat); m.raycast=()=>{};   // never a paint/punch target; the base part handles hits
   return m;
 }
@@ -3776,16 +3797,250 @@ function makeCharacterModel(skinTex, slim){
   const head=skinPart(PARTS.head,mat); head.position.y=4*S16; head.add(skinPartOverlay(PARTS.head, OVERLAY.head, ovMat)); hp.add(head);
   const aL = slim ? PARTS_SLIM.armL : PARTS.armL, aR = slim ? PARTS_SLIM.armR : PARTS.armR;   // slim (Alex) skins use 3px arms
   const oL = slim ? OVERLAY_SLIM.armL : OVERLAY.armL, oR = slim ? OVERLAY_SLIM.armR : OVERLAY.armR;
-  const armL=skinPart(aL,mat); armL.position.set(aL.pos[0]*S16,aL.pos[1]*S16-HIP,0); armL.add(skinPartOverlay(aL, oL, ovMat));
-  const armR=skinPart(aR,mat); armR.position.set(aR.pos[0]*S16,aR.pos[1]*S16-HIP,0); armR.add(skinPartOverlay(aR, oR, ovMat));
+  // each limb sits at its joint (shoulder at y=24, hip at y=12) and hangs down from it
+  const armL=skinPart(aL,mat,1); armL.position.set(aL.pos[0]*S16,(aL.pos[1]+aL.h/2)*S16-HIP,0); armL.add(skinPartOverlay(aL, oL, ovMat, 1));
+  const armR=skinPart(aR,mat,1); armR.position.set(aR.pos[0]*S16,(aR.pos[1]+aR.h/2)*S16-HIP,0); armR.add(skinPartOverlay(aR, oR, ovMat, 1));
   upper.add(torso,hp,armL,armR);
-  const legL=skinPart(PARTS.legL,mat); legL.position.set(PARTS.legL.pos[0]*S16,PARTS.legL.pos[1]*S16,0); legL.add(skinPartOverlay(PARTS.legL, OVERLAY.legL, ovMat));
-  const legR=skinPart(PARTS.legR,mat); legR.position.set(PARTS.legR.pos[0]*S16,PARTS.legR.pos[1]*S16,0); legR.add(skinPartOverlay(PARTS.legR, OVERLAY.legR, ovMat));
+  const legL=skinPart(PARTS.legL,mat,1); legL.position.set(PARTS.legL.pos[0]*S16,(PARTS.legL.pos[1]+PARTS.legL.h/2)*S16,0); legL.add(skinPartOverlay(PARTS.legL, OVERLAY.legL, ovMat, 1));
+  const legR=skinPart(PARTS.legR,mat,1); legR.position.set(PARTS.legR.pos[0]*S16,(PARTS.legR.pos[1]+PARTS.legR.h/2)*S16,0); legR.add(skinPartOverlay(PARTS.legR, OVERLAY.legR, ovMat, 1));
   g.add(upper,legL,legR);
+  const cape=makeCapeObject();
+  cape.pivot.position.set(0, 24*S16-HIP, -2*S16);   // off the top of the shoulders, against the back
+  upper.add(cape.pivot);
   g.scale.setScalar(0.9);           // ~1.8 blocks tall to match the hitbox
-  g.userData={ headPivot:hp, upper, legL, legR, armL, armR, mat, ovMat, hipY:HIP, slim:!!slim };
+  g.userData={ headPivot:hp, upper, legL, legR, armL, armR, mat, ovMat, hipY:HIP, slim:!!slim, cape };
   return g;
 }
+/* ==================================================== CAPES ===============
+   A cape is a 64x32 texture wrapped on a 10x16x1 slab that hangs off the back of
+   the shoulders. Ten designs ship with the game, drawn here as pixel art the same
+   way every block texture is, and you can upload your own 64x32 PNG instead.
+
+   The way it moves is Minecraft's: a second, lagging copy of your position chases
+   the real one at a quarter of the gap each tick, and the cape's angle comes from
+   how far the two have drifted apart. Run and the gap opens along the way you are
+   facing, so the cape lifts behind you; turn hard and it swings out to the side;
+   jump and it flicks up. Stop and it settles back against your legs. */
+const CAPE_W = 10, CAPE_H = 16, CAPE_D = 1;
+
+// ---- the ten designs ----
+// Each paints the visible outside face at 10x16. Everything else (lining, edges,
+// the top and bottom strips) is filled in around it.
+const CAPES = [
+  { id:'creeper', name:'Creeper', edge:'#2a5c2a', line:'#1d3f1d', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        const n=((x*7+y*13)%5);
+        g.fillStyle = n===0 ? '#5aa85a' : n===1 ? '#3f8c3f' : '#4a9a4a';
+        g.fillRect(x,y,1,1);
+      }
+      g.fillStyle='#0d0d0d';                                  // the face, centred
+      g.fillRect(2,4,2,2); g.fillRect(6,4,2,2);
+      g.fillRect(4,6,2,3); g.fillRect(3,8,1,2); g.fillRect(6,8,1,2);
+    } },
+  { id:'ender', name:'Ender', edge:'#241a33', line:'#160f22', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        const d=Math.hypot(x-4.5, y-7.5);
+        const t=(Math.sin(d*1.6 - 1.2) + 1) / 2;
+        const c=Math.round(30+t*50), p=Math.round(20+t*90);
+        g.fillStyle='rgb('+c+','+Math.round(c*0.5)+','+p+')';
+        g.fillRect(x,y,1,1);
+      }
+      g.fillStyle='#d8b4ff'; g.fillRect(4,7,2,2);
+      g.fillStyle='#8f5cd6'; g.fillRect(3,6,1,1); g.fillRect(6,9,1,1);
+    } },
+  { id:'ember', name:'Ember', edge:'#4a1206', line:'#2c0b04', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        const t=1-(y/15);
+        const r=Math.round(90+t*150), gg=Math.round(20+t*90), b=Math.round(12+t*10);
+        g.fillStyle='rgb('+r+','+gg+','+b+')'; g.fillRect(x,y,1,1);
+      }
+      g.fillStyle='#ffd24a';                                  // a flame licking up the middle
+      const flame=[[4,3],[5,3],[4,4],[5,4],[3,5],[4,5],[5,5],[6,5],[4,6],[5,6],[4,7]];
+      for(const [x,y] of flame) g.fillRect(x,y,1,1);
+      g.fillStyle='#fff0b0'; g.fillRect(4,4,2,2);
+    } },
+  { id:'glacier', name:'Glacier', edge:'#4a7fa8', line:'#2c4f6b', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        const n=((x*5+y*3)%7);
+        g.fillStyle = n<2 ? '#cfe9f7' : n<4 ? '#b3dbf0' : '#9ecbe8';
+        g.fillRect(x,y,1,1);
+      }
+      g.fillStyle='#ffffff';                                  // a six-armed crystal
+      g.fillRect(4,3,2,10); g.fillRect(1,7,8,2);
+      g.fillRect(2,5,1,1); g.fillRect(7,5,1,1); g.fillRect(2,10,1,1); g.fillRect(7,10,1,1);
+    } },
+  { id:'chequer', name:'Chequer', edge:'#2b2b2b', line:'#1a1a1a', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        g.fillStyle = (((x>>1)+(y>>1)) & 1) ? '#f4f4f4' : '#141414';
+        g.fillRect(x,y,1,1);
+      }
+    } },
+  { id:'sunburst', name:'Sunburst', edge:'#8a5a10', line:'#4d320a', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        const a=Math.atan2(y-4, x-4.5);
+        const t=(Math.sin(a*6)+1)/2;
+        g.fillStyle = t>0.55 ? '#ffd24a' : '#e8a01e';
+        g.fillRect(x,y,1,1);
+      }
+      g.fillStyle='#fff3c4'; g.fillRect(3,3,4,3); g.fillRect(4,2,2,5);
+    } },
+  { id:'forest', name:'Forest', edge:'#2f4f2a', line:'#1d331a', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        g.fillStyle = ((x*3+y*5)%6)<2 ? '#3f6b38' : '#365c30';
+        g.fillRect(x,y,1,1);
+      }
+      g.fillStyle='#7ab54f';                                  // a pine, wide at the bottom
+      for(let i=0;i<5;i++) g.fillRect(4-i%3, 3+i*2, 2+(i%3)*2, 2);
+      g.fillStyle='#5a3d22'; g.fillRect(4,13,2,3);
+    } },
+  { id:'void', name:'Void', edge:'#101018', line:'#08080d', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        g.fillStyle = ((x+y)&1) ? '#14141f' : '#101019'; g.fillRect(x,y,1,1);
+      }
+      const stars=[[1,2],[7,1],[4,4],[8,6],[2,7],[5,9],[9,11],[3,12],[6,14],[1,10]];
+      for(const [x,y] of stars){ g.fillStyle='#dfe6ff'; g.fillRect(x,y,1,1); }
+      g.fillStyle='#8fa0ff'; g.fillRect(4,4,1,1); g.fillRect(6,14,1,1);
+    } },
+  { id:'tide', name:'Tide', edge:'#0f4a52', line:'#0a3138', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        const w=Math.sin((x*0.9)+(y*0.7));
+        g.fillStyle = w>0.5 ? '#4fd0d6' : w>-0.2 ? '#2fa8b4' : '#1c7f8c';
+        g.fillRect(x,y,1,1);
+      }
+      g.fillStyle='#bff4f7';
+      for(let x=0;x<10;x++){ const y=6+Math.round(Math.sin(x*0.8)*2); g.fillRect(x,y,1,1); }
+    } },
+  { id:'leoncraft', name:'Leoncraft', edge:'#1d2733', line:'#131a23', paint(g){
+      for(let y=0;y<16;y++) for(let x=0;x<10;x++){
+        const t=y/15;
+        g.fillStyle='rgb('+Math.round(30+t*20)+','+Math.round(52+t*40)+','+Math.round(80+t*70)+')';
+        g.fillRect(x,y,1,1);
+      }
+      g.fillStyle='#35d945';                                   // an L, the site's green
+      g.fillRect(3,4,2,7); g.fillRect(3,11,5,2);
+      g.fillStyle='#8dffa0'; g.fillRect(3,4,2,1);
+    } },
+];
+const CAPE_BY_ID = {}; for(const c of CAPES) CAPE_BY_ID[c.id]=c;
+
+// a full 64x32 cape sheet: the design on the outside, a plain lining on the inside,
+// and the edge colour on the four thin strips
+function capeCanvasFor(design){
+  const c=document.createElement('canvas'); c.width=64; c.height=32;
+  const g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+  g.clearRect(0,0,64,32);
+  g.fillStyle=design.edge||'#333';
+  g.fillRect(0,1,1,16); g.fillRect(11,1,1,16);      // the two side edges
+  g.fillRect(1,0,10,1); g.fillRect(11,0,10,1);      // top and bottom strips
+  g.fillStyle=design.line||'#222'; g.fillRect(12,1,10,16);   // the lining you see from behind the player
+  g.save(); g.translate(1,1); design.paint(g); g.restore();
+  return c;
+}
+const capeTexCache = new Map();
+function capeTexture(id){
+  if(!id) return null;
+  if(capeTexCache.has(id)) return capeTexCache.get(id);
+  const d=CAPE_BY_ID[id]; if(!d) return null;
+  const t=new THREE.CanvasTexture(capeCanvasFor(d));
+  t.magFilter=t.minFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace;
+  capeTexCache.set(id,t);
+  return t;
+}
+// a cape someone drew themselves, handed over as a data URL
+function capeTextureFromURL(url, onReady){
+  if(capeTexCache.has(url)) return capeTexCache.get(url);
+  const cv=document.createElement('canvas'); cv.width=64; cv.height=32;
+  const t=new THREE.CanvasTexture(cv);
+  t.magFilter=t.minFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace;
+  capeTexCache.set(url,t);
+  const im=new Image();
+  im.onload=()=>{ const g=cv.getContext('2d'); g.imageSmoothingEnabled=false;
+    g.clearRect(0,0,64,32); g.drawImage(im,0,0,im.naturalWidth||64,im.naturalHeight||32,0,0,64,32);
+    t.needsUpdate=true; if(onReady) onReady(); };
+  im.src=url;
+  return t;
+}
+function capeTexFor(cape, onReady){
+  if(!cape) return null;
+  return (cape.slice(0,5)==='data:') ? capeTextureFromURL(cape, onReady) : capeTexture(cape);
+}
+
+// The cape sheet is 64x32, so its own UV maths rather than the 64x64 skin one.
+function setCapeUV(geo){
+  const U=64, V=32;
+  const f = {
+    px:[0,1,CAPE_D,CAPE_H], nx:[CAPE_D+CAPE_W,1,CAPE_D,CAPE_H],
+    py:[CAPE_D,0,CAPE_W,CAPE_D], ny:[CAPE_D+CAPE_W,0,CAPE_W,CAPE_D],
+    pz:[CAPE_D+CAPE_W+CAPE_D,1,CAPE_W,CAPE_H],   // the lining, against your back
+    nz:[CAPE_D,1,CAPE_W,CAPE_H],                 // the design, facing the world
+  };
+  const uv=geo.attributes.uv;
+  PART_ORDER.forEach((key,i)=>{ const [x,y,w,h]=f[key];
+    const u0=x/U,u1=(x+w)/U,v0=1-y/V,v1=1-(y+h)/V;
+    uv.setXY(i*4+0,u0,v0); uv.setXY(i*4+1,u1,v0); uv.setXY(i*4+2,u0,v1); uv.setXY(i*4+3,u1,v1);
+  });
+  uv.needsUpdate=true;
+}
+// the slab plus the pivot it swings from, ready to hang off a pair of shoulders
+function makeCapeObject(){
+  const geo=new THREE.BoxGeometry(CAPE_W*S16, CAPE_H*S16, CAPE_D*S16);
+  setCapeUV(geo);
+  geo.translate(0, -CAPE_H*S16/2, -CAPE_D*S16/2);    // hangs from the shoulders, sitting just behind them
+  const mat=new THREE.MeshLambertMaterial({ map:null, transparent:true, alphaTest:0.5, side:THREE.DoubleSide });
+  const mesh=new THREE.Mesh(geo, mat);
+  const pivot=new THREE.Group();
+  pivot.add(mesh);
+  pivot.visible=false;
+  return { pivot, mesh, mat };
+}
+// Where the cape hangs and how far it can swing. The numbers are Minecraft's, in
+// degrees, and the clamps are what stop it folding through your legs or over your head.
+const CAPE_REST = 6, CAPE_LIFT_MAX = 150, CAPE_SIDE_MAX = 20, CAPE_UP_MIN = -6, CAPE_UP_MAX = 32;
+function poseCape(ud, drift, yaw, sneak, bobPhase, bobAmp){
+  const cp = ud && ud.cape; if(!cp || !cp.pivot.visible) return;
+  const fx=-Math.sin(yaw), fz=-Math.cos(yaw);          // the way the body is facing
+  const rx= Math.cos(yaw), rz=-Math.sin(yaw);          // and its right
+  const clamp=(v,a,b)=> v<a?a : v>b?b : v;
+  // drift is (lagging copy - you): running forward leaves it behind, which is what
+  // lifts the cape; turning leaves it out to one side, which swings it sideways.
+  let lift = clamp(-(drift.x*fx + drift.z*fz) * 100, 0, CAPE_LIFT_MAX);
+  const side = clamp((drift.x*rx + drift.z*rz) * 100, -CAPE_SIDE_MAX, CAPE_SIDE_MAX);
+  let up = clamp(drift.y * 10, CAPE_UP_MIN, CAPE_UP_MAX);
+  up += Math.sin(bobPhase) * 10 * (bobAmp||0);         // a walk makes it flap
+  if(sneak) up += 25;                                  // crouching bunches it up behind you
+  const deg = Math.PI/180;
+  cp.pivot.rotation.set((CAPE_REST + lift/2 + up)*deg, 0, (side/2)*deg);
+}
+// the lagging copy of a position, a quarter of the way closer every tick (20/s)
+function stepCloak(cloak, x, y, z, dt){
+  if(!cloak) return { x, y, z };
+  if(Math.abs(x-cloak.x)>10 || Math.abs(y-cloak.y)>10 || Math.abs(z-cloak.z)>10){
+    cloak.x=x; cloak.y=y; cloak.z=z; return cloak;     // a teleport: put it back on you rather than trail across the map
+  }
+  const k = 1 - Math.pow(0.75, Math.min(dt,0.2)*20);
+  cloak.x += (x-cloak.x)*k; cloak.y += (y-cloak.y)*k; cloak.z += (z-cloak.z)*k;
+  return cloak;
+}
+function capeDrift(cloak, x, y, z){ return { x:cloak.x-x, y:cloak.y-y, z:cloak.z-z }; }
+
+// ---- which cape you are wearing ----
+const CAPE_KEY = 'leoncraft_cape';
+let localCape = null;
+try{ const v=localStorage.getItem(CAPE_KEY); if(v) localCape=v; }catch(e){}
+function setModelCape(model, cape){
+  const ud=model && model.userData; if(!ud || !ud.cape) return;
+  const tex = capeTexFor(cape, ()=>{ ud.cape.mat.needsUpdate=true; });
+  ud.cape.mat.map = tex; ud.cape.mat.needsUpdate = true;
+  ud.cape.pivot.visible = !!tex;
+}
+function setLocalCape(cape){
+  localCape = cape || null;
+  try{ if(localCape) localStorage.setItem(CAPE_KEY, localCape); else localStorage.removeItem(CAPE_KEY); }catch(e){}
+  setModelCape(body, localCape);
+  if(typeof skinModel!=='undefined' && skinModel) setModelCape(skinModel, localCape);   // the editor's figure too
+  if(mp.active) mpSendSkin();     // the cape rides along with the skin message
+}
+
 // pose a character (local body or a remote player): Minecraft-style crouch/sneak, sitting and a walk cycle.
 // The caller sets armR afterwards if a punch swing is playing (it overrides the walk swing on that arm).
 function poseCharacter(ud, crouch, sitting, walkPhase, walkAmp){
@@ -3804,6 +4059,8 @@ function poseCharacter(ud, crouch, sitting, walkPhase, walkAmp){
 }
 let body=makeCharacterModel(localSkinTex, localSlim);
 let headPivot=body.userData.headPivot;
+let localCloak=null;                 // the lagging copy of where you are, which is what moves the cape
+setModelCape(body, localCape);
 body.visible=false; scene.add(body);
 // swap your own model between humanoid / pig / diamond block (for the body codes), so first-person reflects it too
 function setLocalBody(kind){
@@ -3811,11 +4068,13 @@ function setLocalBody(kind){
   const wasVisible=body.visible; scene.remove(body);
   body = makeBodyModel(kind, localSkinTex, localSlim);
   headPivot = body.userData.headPivot; body.visible=wasVisible; scene.add(body);
+  setModelCape(body, localCape);
 }
 function rebuildLocalModel(){   // force-rebuild the local model at the current kind (used when the slim/classic arm width changes)
   const kind=modelKind(body), wasVisible=body.visible; scene.remove(body);
   body = makeBodyModel(kind, localSkinTex, localSlim);
   headPivot = body.userData.headPivot; body.visible=wasVisible; scene.add(body);
+  setModelCape(body, localCape);
 }
 function setLocalSlim(slim){
   slim=!!slim; if(localSlim===slim) return;
@@ -4104,13 +4363,14 @@ const player = {
 };
 let creative = true;
 
-// Where everyone starts. An admin can move it with /setworldspawn, and it sticks:
-// locally for a single-player world, and for everyone on a server.
-let worldSpawn = null;
-try{ const j=JSON.parse(localStorage.getItem('leoncraft_spawn')||'null'); if(j && typeof j.x==='number') worldSpawn=j; }catch(e){}
+// The spawn only applies in the overworld, which is where you always arrive.
+// (worldSpawn and spSpawn are declared up with the solo save, because the solo world
+// loads at start-up and would otherwise read them before they exist.)
+function spawnHere(){ return (worldSpawn && dim===0) ? worldSpawn : null; }
 function spawnPlayer(){
-  if(worldSpawn && (worldSpawn.d==null || worldSpawn.d===dim)){
-    player.pos.set(worldSpawn.x, worldSpawn.y, worldSpawn.z);
+  const w = spawnHere();
+  if(w){
+    player.pos.set(w.x, w.y, w.z);
   } else {
     const h = terrainHeight(8,8);
     player.pos.set(8.5, h+3, 8.5);
@@ -4183,18 +4443,19 @@ function useAction(){
   placeBlock();
 }
 // discrete actions fire once per press, from either a key (keydown) or a mouse button (mousedown)
-// Z: a creative-only sprint, roughly three times your usual pace on foot and in
-// the air. It stays out of Bed Wars, Build Battle and any parkour run, where
-// being three times faster than everyone else would not be a feature.
-let superSpeed = false;
+// Hold Z for a creative-only sprint, roughly three times your usual pace on foot and
+// in the air. Held rather than toggled, so it works like a sprint key and cannot be
+// left switched on by mistake. It stays out of Bed Wars, Build Battle and any parkour
+// run, where being three times faster than everyone else would not be a feature.
+const SUPER_SPEED_KEY = 'z', SUPER_SPEED_MUL = 3.2;
 function superSpeedOk(){ return creative && !bw.active && !bb.active && !parkour.run; }
-function superSpeedMul(){
-  if(superSpeed && !superSpeedOk()) toggleSuperSpeed(false);
-  return superSpeed ? 3.2 : 1;
-}
-let spdChipEl = null;
-function toggleSuperSpeed(on){
-  superSpeed = (on===undefined) ? !superSpeed : !!on;
+function superSpeedOn(){ return !!keys[SUPER_SPEED_KEY] && state===PLAY && !chatOpen && !invOpen && superSpeedOk(); }
+function superSpeedMul(){ return superSpeedOn() ? SUPER_SPEED_MUL : 1; }
+let spdChipEl = null, spdChipOn = null;
+function superSpeedChip(){
+  const on = superSpeedOn();
+  if(on === spdChipOn) return;              // only touch the DOM when it actually changes
+  spdChipOn = on;
   if(!spdChipEl){
     spdChipEl = document.createElement('div');
     spdChipEl.style.cssText = 'position:fixed;right:12px;bottom:96px;z-index:15;pointer-events:none;'+
@@ -4203,7 +4464,7 @@ function toggleSuperSpeed(on){
     spdChipEl.innerHTML = '<b style="background:#2b3038;border:1px solid #59606b;padding:1px 5px">Z</b> super speed';
     document.body.appendChild(spdChipEl);
   }
-  spdChipEl.style.display = superSpeed ? 'block' : 'none';
+  spdChipEl.style.display = on ? 'block' : 'none';
 }
 const pd = e=>{ if(e && e.preventDefault) e.preventDefault(); };
 const inWorld = ()=> state===PLAY && !invOpen && !sleep.active && !sit.active && !signEditPos && !bwShopOpen && !bwInvOpen && !parkour.panel;
@@ -4257,11 +4518,6 @@ addEventListener('keydown', e=>{
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){
     if(k==='k' && (bw.phase==='lobby' || bw.phase==='ended')){ e.preventDefault(); startBedwarsBtn(); return; }   // same key that starts Build Battle
     if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='x'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
-  if(k==='z' && state===PLAY && !chatOpen && !invOpen && !bindListening && superSpeedOk()){
-    e.preventDefault(); toggleSuperSpeed();
-    chatPush(superSpeed ? 'Super speed on. Press Z again to go back to normal.' : 'Super speed off.', 'sys');
-    return;
-  }
   if(k==='k' && parkour.run && !chatOpen && !invOpen && state===PLAY){ e.preventDefault(); pkAbandon(); return; }   // K: give up on the course and take flight back
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
@@ -5945,9 +6201,12 @@ function startGame(){
   clearPrgObjs();                    // clear any PRG spheres from a previous world before the spawn chunks reconcile
   loadPrgModel();                    // begin loading prg.glb (once); objects fill in when it's ready
   for(const [,c] of chunks) if(c.generated && Math.abs(c.cx-Math.floor(player.pos.x/CH))<=2 && Math.abs(c.cz-Math.floor(player.pos.z/CH))<=2) buildChunkMesh(c);
-  // drop player onto ground
-  const gh=terrainHeight(Math.floor(player.pos.x),Math.floor(player.pos.z));
-  player.pos.y = gh+2;
+  // Drop onto the ground, unless an admin has said exactly where to stand: the set
+  // spawn is often a block someone built, which the terrain height knows nothing about.
+  if(!spawnHere()){
+    const gh=terrainHeight(Math.floor(player.pos.x),Math.floor(player.pos.z));
+    player.pos.y = gh+2;
+  }
   state=PLAY; menuEl.hidden=true; pauseEl.hidden=true; invEl.hidden=true; invOpen=false;
   showHud(true);
   rebuildSignObjs();                 // (re)create sign text now that the scene exists
@@ -5960,6 +6219,7 @@ function startSingleplayer(){
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   mp.bb=false; bb.active=false; bbMode=false; bbLeaveUi();
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
+  worldSpawn = null;   // whatever a server told us stops applying the moment we leave it
   spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
   spSave();            // pin the seed so even a brand-new world reloads identically
   for(const [,c] of chunks){ if(c.mesh)scene.remove(c.mesh); if(c.cmesh)scene.remove(c.cmesh); if(c.tmesh)scene.remove(c.tmesh); }
@@ -6096,7 +6356,17 @@ function initSkinRenderer(){
   skinCam=new THREE.PerspectiveCamera(36, skinViewCanvas.width/skinViewCanvas.height, 0.1, 50); skinCam.position.set(0,0,skinDist);
   skinGroup=new THREE.Group(); skinScene.add(skinGroup);
 }
-function buildSkinModel(){ if(skinModel) skinGroup.remove(skinModel); skinModel=makeCharacterModel(editSkinTex, localSlim); skinModel.position.y=-0.95; skinGroup.add(skinModel); }
+function buildSkinModel(){ if(skinModel) skinGroup.remove(skinModel); skinModel=makeCharacterModel(editSkinTex, localSlim); skinModel.position.y=-0.95; skinGroup.add(skinModel);
+  setModelCape(skinModel, localCape);   // so the cape you picked is on the figure you are looking at
+  const cp=skinModel.userData.cape; if(cp) cp.pivot.rotation.set(6*Math.PI/180,0,0); }
+// switch the model to match what the file was drawn for, and say whether it moved
+function applyDetectedArms(slim){
+  if(localSlim === !!slim) return !!slim;
+  setLocalSlim(!!slim);
+  updateSkinModelBtn();
+  if(typeof buildSkinModel==='function') buildSkinModel();
+  return !!slim;
+}
 function updateSkinModelBtn(){ const b=document.getElementById('skinModelBtn'); if(b) b.textContent='Model: '+(localSlim?'Slim':'Classic'); }
 function renderSkin(){ if(skinRenderer){ skinGroup.rotation.set(skinPitch, skinYaw, 0); skinRenderer.render(skinScene, skinCam); } }
 function skinLoop(){ if(!skinOpen) return; renderSkin(); skinRAF=requestAnimationFrame(skinLoop); }
@@ -6109,7 +6379,7 @@ function openSkinEditor(){
   initSkinRenderer();
   editCtx.clearRect(0,0,64,64); editCtx.drawImage(skinCanvas,0,0); editSkinTex.needsUpdate=true;
   selectedSkinId=activeSkinId;
-  buildSkinModel(); updateSkinModelBtn(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); setFill(false); renderSwatches(); renderSkinGallery(); renderPresetGallery(); skinUploadMsg('');
+  buildSkinModel(); updateSkinModelBtn(); skinYaw=0.5; skinPitch=0.08; setEyedrop(false); setFill(false); renderSwatches(); renderSkinGallery(); renderPresetGallery(); renderCapeGallery(); skinUploadMsg('');
   skinEditorEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; skinOpen=true; skinLoop();
 }
 function closeSkinEditor(save){
@@ -6162,6 +6432,19 @@ function legacyToModern(){   // fill the 64x64 left arm/leg from the right arm/l
   copyMirror(44,20,4,12, 36,52); copyMirror(52,20,4,12, 44,52);
   copyMirror(48,20,4,12, 32,52); copyMirror(40,20,4,12, 40,52);
 }
+// Classic arms are four pixels wide and slim ones three, which leaves two empty
+// columns down the outside of each arm block. Minecraft tells the two apart the same
+// way, so a skin drawn for Alex arrives wearing Alex's arms without anyone touching
+// the Model button.
+function detectSlimSkin(ctx){
+  const clear = (x,y,w,h) => {
+    const d = ctx.getImageData(x,y,w,h).data;
+    for(let i=3;i<d.length;i+=4) if(d[i] > 16) return false;
+    return true;
+  };
+  return clear(54,20,2,12) && clear(50,16,2,4)     // right arm: outer column and half its underside
+      && clear(46,52,2,12) && clear(42,48,2,4);    // left arm: the same two places
+}
 function applyUploadedSkin(img, name){
   const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
   const square=(w===h), twoToOne=(w===2*h);
@@ -6170,10 +6453,13 @@ function applyUploadedSkin(img, name){
   if(twoToOne){                     // legacy 64x32 (or an HD 2:1): draw the top, then mirror the missing left limbs
     editCtx.drawImage(img, 0,0,w,h, 0,0,64,32);
     legacyToModern();
+    applyDetectedArms(false);       // there were no slim skins back when this format was current
     skinUploadMsg('Loaded a legacy 64×32 skin (left arm/leg mirrored, like Minecraft).');
   } else {                          // 64x64 (or an HD square): fit to 64x64
     editCtx.drawImage(img, 0,0,w,h, 0,0,64,64);
-    skinUploadMsg('Skin loaded'+((w!==64)?(' (resized from '+w+'×'+h+')'):'')+'.');
+    const slim = applyDetectedArms(detectSlimSkin(editCtx));
+    skinUploadMsg('Skin loaded'+((w!==64)?(' (resized from '+w+'×'+h+')'):'')+
+                  (slim ? ' — slim arms, so the model switched to Slim.' : '.'));
   }
   editSkinTex.needsUpdate=true;
   selectedSkinId=null;              // it becomes a new entry in your skin library
@@ -6197,33 +6483,87 @@ function exportSkin(){
   document.body.appendChild(a); a.click(); a.remove(); skinUploadMsg('Downloaded '+a.download+'.');
 }
 document.getElementById('skinExportBtn').addEventListener('click', exportSkin);
+document.getElementById('capeUploadBtn').addEventListener('click', ()=> document.getElementById('capeUpload').click());
+document.getElementById('capeUpload').addEventListener('change', e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=''; if(f) loadCapeFile(f); });
+document.getElementById('capeClearBtn').addEventListener('click', ()=>{ setLocalCape(null); renderCapeGallery(); skinUploadMsg('Cape off.'); });
 // built-in preset skins, served from /legacy/skins/ so everyone gets them
 // Real skins, pulled from the accounts they belong to. The legacy 64x32 ones
 // (Notch and jeb_ among them, from before skins grew a second arm) are converted
 // on the way in, the same way Minecraft does it.
+// Real skins, no famous faces: Mojang's own default characters, plus a set of
+// anonymous player-made skins. Legacy 64x32 files are converted on the way in.
 const PRESET_SKINS=[
   {name:'Steve', file:'steve.png'}, {name:'Alex', file:'alex.png'},
-  {name:'Notch', file:'notch.png'}, {name:'Jeb', file:'jeb.png'}, {name:'Dinnerbone', file:'dinnerbone.png'},
-  {name:'Dream', file:'dream.png'}, {name:'Technoblade', file:'technoblade.png'},
-  {name:'GeorgeNotFound', file:'georgenotfound.png'}, {name:'Sapnap', file:'sapnap.png'},
-  {name:'BadBoyHalo', file:'badboyhalo.png'}, {name:'Skeppy', file:'skeppy.png'},
-  {name:'TommyInnit', file:'tommyinnit.png'}, {name:'Tubbo', file:'tubbo.png'},
-  {name:'Wilbur Soot', file:'wilbur_soot.png'}, {name:'Philza', file:'philza.png'},
-  {name:'Ranboo', file:'ranboo.png'}, {name:'Quackity', file:'quackity.png'},
-  {name:'Purpled', file:'purpled.png'}, {name:'Punz', file:'punz.png'},
-  {name:'Antfrost', file:'antfrost.png'}, {name:'Awesamdude', file:'awesamdude.png'},
-  {name:'Foolish', file:'foolish.png'}, {name:'Fundy', file:'fundy.png'},
-  {name:'Grian', file:'grian.png'}, {name:'Mumbo Jumbo', file:'mumbo_jumbo.png'},
-  {name:'Etho', file:'etho.png'}, {name:'Docm77', file:'docm77.png'},
-  {name:'Xisuma', file:'xisuma.png'}, {name:'iJevin', file:'ijevin.png'},
-  {name:'ZombieCleo', file:'zombiecleo.png'},
-  {name:'CaptainSparklez', file:'captainsparklez.png'}, {name:'Vikkstar', file:'vikkstar.png'},
-  {name:'Preston', file:'preston.png'}, {name:'Stampy', file:'stampy.png'},
+  {name:'Ari', file:'ari.png'}, {name:'Efe', file:'efe.png'}, {name:'Kai', file:'kai.png'},
+  {name:'Noor', file:'noor.png'}, {name:'Zuri', file:'zuri.png'},
+  {name:'Traveller', file:'traveller.png'}, {name:'Duelist', file:'duelist.png'},
+  {name:'Forest Ranger', file:'forest_ranger.png'}, {name:'Field Kit', file:'field_kit.png'},
+  {name:'Brown Coat', file:'brown_coat.png'}, {name:'Sea Captain', file:'sea_captain.png'},
+  {name:'Navy Officer', file:'navy_officer.png'}, {name:'Tuxedo', file:'tuxedo.png'},
+  {name:'Black Tie', file:'black_tie.png'}, {name:'Gold Trim', file:'gold_trim.png'},
+  {name:'Winter Coat', file:'winter_coat.png'}, {name:'Frost Hood', file:'frost_hood.png'},
+  {name:'Ice Diver', file:'ice_diver.png'}, {name:'Deep Teal', file:'deep_teal.png'},
+  {name:'Gold Plate', file:'gold_plate.png'}, {name:'Crimson Cloak', file:'crimson_cloak.png'},
+  {name:'Red Hoodie', file:'red_hoodie.png'}, {name:'Bone Hoodie', file:'bone_hoodie.png'},
+  {name:'Red Cap', file:'red_cap.png'}, {name:'Team Colours', file:'team_colours.png'},
+  {name:'Sunset Hero', file:'sunset_hero.png'}, {name:'Night Panda', file:'night_panda.png'},
+  {name:'Panda Coat', file:'panda_coat.png'}, {name:'Slime', file:'slime.png'},
+  {name:'Neon', file:'neon.png'}, {name:'Rainbow Sleeves', file:'rainbow_sleeves.png'},
+  {name:'Confetti', file:'confetti.png'},
   {name:'Spider Man', file:'spiderman.png'}, {name:'Peter Griffin', file:'peter_griffin.png'},
   {name:'Sigma Male', file:'sigma_male.png'}, {name:'Tade', file:'tade.png'},
 ];
 const presetThumbs={};
 function presetURL(p){ return '/legacy/skins/'+p.file; }
+// The cape row: the ten built-in designs, plus whatever you uploaded. Each swatch
+// shows the design itself rather than a name, because that is what you are choosing.
+function capeSwatchURL(cape){
+  const c=document.createElement('canvas'); c.width=20; c.height=32;
+  const g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+  const src = (cape && cape.slice(0,5)==='data:') ? null : (CAPE_BY_ID[cape] ? capeCanvasFor(CAPE_BY_ID[cape]) : null);
+  if(src) g.drawImage(src, 1,1,10,16, 0,0,20,32);
+  return c.toDataURL();
+}
+function renderCapeGallery(){
+  const el=document.getElementById('capeGallery'); if(!el) return;
+  el.innerHTML='';
+  const cell=(label, cape, thumbURL)=>{
+    const d=document.createElement('div'); d.className='skinCell'+(localCape===cape?' sel':''); d.title=label;
+    if(thumbURL){ const img=document.createElement('img'); img.src=thumbURL; d.appendChild(img); }
+    else { const x=document.createElement('div'); x.className='skinAdd'; x.textContent='—'; d.appendChild(x); }
+    const nm=document.createElement('div'); nm.className='skinName'; nm.textContent=label; d.appendChild(nm);
+    d.addEventListener('click', ()=>{ setLocalCape(cape); renderCapeGallery(); skinUploadMsg(cape?('Wearing the '+label+' cape.'):'Cape off.'); });
+    el.appendChild(d);
+  };
+  cell('None', null, null);
+  for(const c of CAPES) cell(c.name, c.id, capeSwatchURL(c.id));
+  if(localCape && localCape.slice(0,5)==='data:'){
+    const d=document.createElement('div'); d.className='skinCell sel'; d.title='Your cape';
+    const img=document.createElement('img'); img.src=localCape; img.style.objectFit='none'; img.style.imageRendering='pixelated';
+    d.appendChild(img);
+    const nm=document.createElement('div'); nm.className='skinName'; nm.textContent='Yours'; d.appendChild(nm);
+    el.appendChild(d);
+  }
+}
+function loadCapeFile(file){
+  if(!file || !/^image\//.test(file.type||'')){ skinUploadMsg('Please choose a PNG image.', true); return; }
+  const url=URL.createObjectURL(file), img=new Image();
+  img.onload=()=>{
+    try{
+      const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+      if(w < 2*h - 1 || w > 2*h + 1){ skinUploadMsg('A cape is twice as wide as it is tall (64×32).', true); URL.revokeObjectURL(url); return; }
+      const c=document.createElement('canvas'); c.width=64; c.height=32;
+      const g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+      g.clearRect(0,0,64,32); g.drawImage(img, 0,0,w,h, 0,0,64,32);
+      setLocalCape(c.toDataURL('image/png'));
+      renderCapeGallery();
+      skinUploadMsg('Wearing your own cape'+((w!==64)?(' (resized from '+w+'×'+h+')'):'')+'.');
+    }catch(e){ skinUploadMsg('Could not read that image.', true); }
+    URL.revokeObjectURL(url);
+  };
+  img.onerror=()=>{ skinUploadMsg('Could not read that image.', true); URL.revokeObjectURL(url); };
+  img.src=url;
+}
 function renderPresetGallery(){
   const el=document.getElementById('skinPresets'); if(!el) return; el.innerHTML='';
   for(const p of PRESET_SKINS){
@@ -6243,8 +6583,8 @@ function wearPreset(p){
   im.onload=()=>{ try{
     const iw=im.naturalWidth||64, ih=im.naturalHeight||64;
     editCtx.clearRect(0,0,64,64); editCtx.imageSmoothingEnabled=false;
-    if(iw===2*ih){ editCtx.drawImage(im, 0,0,iw,ih, 0,0,64,32); legacyToModern(); }   // a skin from before the second arm
-    else editCtx.drawImage(im, 0,0,iw,ih, 0,0,64,64);
+    if(iw===2*ih){ editCtx.drawImage(im, 0,0,iw,ih, 0,0,64,32); legacyToModern(); applyDetectedArms(false); }   // a skin from before the second arm
+    else { editCtx.drawImage(im, 0,0,iw,ih, 0,0,64,64); applyDetectedArms(detectSlimSkin(editCtx)); }
     editSkinTex.needsUpdate=true; selectedSkinId=null; pendingSkinName=p.name;
     wearEditSkin();                 // wear it now, but it is NOT added to My skins until you edit it
     renderSkinGallery();
@@ -6343,7 +6683,7 @@ document.getElementById('skinSaveNew').addEventListener('click', ()=>{ persistCu
 document.getElementById('skinCancel').addEventListener('click', ()=> closeSkinEditor(false));
 document.getElementById('skinBtn').addEventListener('click', openSkinEditor);
 document.getElementById('pauseSkinBtn').addEventListener('click', openSkinEditor);
-function mpSendSkin(){ if(mp.active && mp.ws && mp.ws.readyState===1) mpSend({type:'skin', png:localSkinDataURL(), slim:localSlim}); }
+function mpSendSkin(){ if(mp.active && mp.ws && mp.ws.readyState===1) mpSend({type:'skin', png:localSkinDataURL(), slim:localSlim, cape:localCape||''}); }
 
 // username: persisted to localStorage, applied live to the shared server when connected
 const nameInputEl=document.getElementById('nameInput');
@@ -6560,6 +6900,7 @@ function setPlayerBody(p, body){
     if(p.model){ if(tag) p.model.remove(tag); scene.remove(p.model); }
     p.model = makeBodyModel(want, p.skinTex, p.slim);
     if(tag) p.model.add(tag);
+    setModelCape(p.model, p.cape);
     if(bw.active) setTimeout(()=>bwApplyRemoteGear(p.id), 0);   // the new model starts bare
     p.model.visible=true; scene.add(p.model);
   }
@@ -6653,6 +6994,8 @@ function mpAddPlayer(p){
   mp.players.set(p.id, rec);
   if(p.ghost) setPlayerGhost(rec, true);
   if(p.hide) tag.visible=false;
+  rec.cape = p.cape || null;
+  setModelCape(model, rec.cape);
   if(p.skin) applyRemoteSkin(p.id, p.skin, slim);    // their custom skin, if they have one
   if(p.body && p.body!=='none') setPlayerBody(rec, p.body);   // big / small / pig / block already active on join
   bwDressRemote(rec, p);
@@ -6684,7 +7027,7 @@ function applyRemoteSkin(id, dataURL, slim){
   if(!p.skinCanvas){ p.skinCanvas=document.createElement('canvas'); p.skinCanvas.width=p.skinCanvas.height=64; p.skinCtx=p.skinCanvas.getContext('2d'); p.skinTex=makeSkinTex(p.skinCanvas); }
   loadSkinInto(p.skinCtx, p.skinTex, dataURL, ()=>{
     const newSlim = (p._pendingSlim!==undefined) ? p._pendingSlim : !!p.slim;
-    if(!!p.slim !== newSlim){ p.slim=newSlim; rebuildRemotePlayerModel(p); }   // arm width changed -> rebuild geometry (also picks up the new skin)
+    if(!!p.slim !== newSlim){ p.slim=newSlim; rebuildRemotePlayerModel(p); setModelCape(p.model, p.cape); }   // arm width changed -> rebuild geometry (also picks up the new skin)
     else if(p.model && p.model.userData.mat){ p.model.userData.mat.map=p.skinTex; p.model.userData.mat.needsUpdate=true;
       if(p.model.userData.ovMat){ p.model.userData.ovMat.map=p.skinTex; p.model.userData.ovMat.needsUpdate=true; } }
     p.headURL=headURLFrom(p.skinCanvas);
@@ -6724,6 +7067,8 @@ function mpUpdatePlayers(dt){
       // a sneaking player's name is hidden, the same as in Minecraft
       if(p.tag) p.tag.visible = !p.hide && !p.ghost && cr < 0.5;
       if(p.swing>0){ p.swing=Math.max(0, p.swing-dt*3.4); const arm=ud.armR; if(arm) arm.rotation.x = -Math.sin((1-p.swing)*Math.PI)*1.5; }   // punch swing overrides the walk swing
+      p.cloak = stepCloak(p.cloak, p.x, p.y, p.z, dt);
+      poseCape(ud, capeDrift(p.cloak, p.x, p.y, p.z), p.yaw, (p.crouch||0)>0.5, p.walkT||0, p.walkAmp||0);
     }
   }
 }
@@ -6738,6 +7083,9 @@ function mpHandle(m){
     if(md!==dim) return;      // an edit in the other world: recorded, but nothing here to redraw
   }
   if(m.type==='init'){
+    // Read before anything builds the world: startGame() stands you somewhere the
+    // moment it runs, so the server's spawn has to be in hand by then.
+    worldSpawn = (m.spawn && typeof m.spawn.x==='number') ? { x:+m.spawn.x, y:+m.spawn.y, z:+m.spawn.z, d:0 } : null;
     mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.netherBorder=m.netherBorder||0; mp.admin=!!m.admin; mp.spectator=!!m.spectator;
     mp._pwFlow=false; if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;   // joined successfully — close the password prompt
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
@@ -6819,7 +7167,9 @@ function mpHandle(m){
   else if(m.type==='stair'){ stairMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0, top:!!m.top}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='ladder'){ ladderMeta.set(m.x+','+m.y+','+m.z, {facing:m.facing|0}); remeshChunkAt(m.x,m.z); }
   else if(m.type==='tnt'){ if((m.d|0)===dim) primeTnt(m.x|0, m.y|0, m.z|0, true); }   // someone lit a fuse
-  else if(m.type==='skin'){ applyRemoteSkin(m.id, m.png, m.slim); }
+  else if(m.type==='skin'){ const q=mp.players.get(m.id);
+    if(q && m.cape!==undefined){ q.cape=m.cape||null; setModelCape(q.model, q.cape); }
+    applyRemoteSkin(m.id, m.png, m.slim); }
   else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
   else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
@@ -6833,8 +7183,8 @@ function mpHandle(m){
                t ? { text:'['+t.name.toUpperCase()+']', color:'#'+t.color.toString(16).padStart(6,'0') } : null);
     }
   }
-  else if(m.type==='worldspawn'){ worldSpawn={ x:+m.x, y:+m.y, z:+m.z, d:(m.d|0) };
-    chatPush('An admin moved the world spawn.', 'sys'); }
+  else if(m.type==='worldspawn'){ worldSpawn={ x:+m.x, y:+m.y, z:+m.z, d:0 };
+    chatPush('An admin moved the world spawn to '+Math.floor(worldSpawn.x)+', '+Math.round(worldSpawn.y)+', '+Math.floor(worldSpawn.z)+'.', 'sys'); }
   else if(m.type==='kicked'){ chatPush(m.reason||'You were removed from this server.', 'sys'); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
@@ -8109,9 +8459,11 @@ function bwSetGear(model, teamColor, armorTier, swordTier, kbSword){
     gear(head, 9.6,1.6,9.6, 0,-3.4,0, mat);                             // helmet brim
     gear(torso, 9.2,12.8,5.0, 0,0,0, mat);                             // chestplate
     gear(torso, 10.4,3.4,5.4, 0,4.8,0, mat);                           // shoulder yoke across the top
-    gear(ud.armR, 4.7,7,4.7, 0,2,0, mat); gear(ud.armL, 4.7,7,4.7, 0,2,0, mat);         // arm sleeves (upper arm)
-    gear(ud.legL, 4.8,7,4.8, 0,2.3,0, mat); gear(ud.legR, 4.8,7,4.8, 0,2.3,0, mat);     // leggings
-    gear(ud.legL, 5.2,4.6,5.4, 0,-4,0.2, mat); gear(ud.legR, 5.2,4.6,5.4, 0,-4,0.2, mat); // boots (a touch wider)
+    // a limb's origin is its joint now, so everything worn on one hangs six down from there
+    const J=-6;
+    gear(ud.armR, 4.7,7,4.7, 0,2+J,0, mat); gear(ud.armL, 4.7,7,4.7, 0,2+J,0, mat);         // arm sleeves (upper arm)
+    gear(ud.legL, 4.8,7,4.8, 0,2.3+J,0, mat); gear(ud.legR, 4.8,7,4.8, 0,2.3+J,0, mat);     // leggings
+    gear(ud.legL, 5.2,4.6,5.4, 0,-4+J,0.2, mat); gear(ud.legR, 5.2,4.6,5.4, 0,-4+J,0.2, mat); // boots (a touch wider)
   }
   if(swordTier>0 && ud.armR){
     // a sword carrying the tadee knockback glows blue, whatever it is made of
@@ -8122,7 +8474,7 @@ function bwSetGear(model, teamColor, armorTier, swordTier, kbSword){
     const guard=new THREE.Mesh(new THREE.BoxGeometry(4*S,1.3*S,1.3*S), hmat); guard.position.y=-1*S;
     const hilt=new THREE.Mesh(new THREE.BoxGeometry(1.3*S,3*S,1.3*S), hmat); hilt.position.y=-2.5*S;
     sw.add(blade,guard,hilt);
-    sw.position.set(0.6/16, -5.5/16, 3.2/16);
+    sw.position.set(0.6/16, -11.5/16, 3.2/16);   // measured from the shoulder now, not the middle of the arm
     sw.rotation.x=Math.PI*0.28;        // out in front and up, the angle Minecraft holds a sword at
     ud.armR.add(sw); ud.gear.push(sw);
   }
@@ -8380,16 +8732,18 @@ function pkPush(c){
   else pkSaveLocal();
   pkTouch();
 }
+// Every run is its own row: beat your own time and you hold two places, the way a
+// speedrun board works. The cap is on rows per course, not rows per player.
 function pkRecordLocal(id, name, ms){
   const c = parkour.courses.get(id); if(!c) return -1;
   c.times = c.times || [];
-  const row = c.times.find(t => t.name === name);
-  if(row){ if(ms >= row.ms) return c.times.findIndex(t => t.name === name) + 1; row.ms = ms; }
-  else c.times.push({ name, ms });
+  const row = { name, ms, at: Date.now() };
+  c.times.push(row);
   c.times.sort((a, b) => a.ms - b.ms);
-  if(c.times.length > 50) c.times.length = 50;
-  return c.times.findIndex(t => t.name === name) + 1;
+  if(c.times.length > 100) c.times.length = 100;
+  return c.times.indexOf(row) + 1;
 }
+// your fastest is the first row with your name on it, since the list is sorted
 function pkMyBest(c){
   const row = ((c && c.times) || []).find(t => t.name === pkMe());
   return row ? row.ms : null;
@@ -8425,8 +8779,8 @@ function pkBoardCanvas(pad, link){
   const times = (course && course.times) || [];
   const top = times.slice(0, 10);
   const me = pkMe();
-  const myIdx = times.findIndex(t => t.name === me);
-  const mineBelow = myIdx >= 10;                       // your row is already up there if you made the ten
+  const myIdx = times.findIndex(t => t.name === me);   // your fastest, the list being sorted
+  const mineBelow = myIdx >= 10;                       // a row of yours is already up there if you made the ten
   const HEAD = 52, NAME = course ? 30 : 0;
   const listH = course ? (top.length ? top.length * ROW + 10 : ROW + 10) : ROW * 2 + 6;
   const mineH = mineBelow ? ROW + 12 : 0;
@@ -8506,6 +8860,7 @@ function pkBoardSig(pad, link){
   const c = link && link.course;
   if(!c) return pad.kind + '|none';
   return pad.kind + '|' + c.id + '|' + c.name + '|' + link.side + '|' + (c.start ? 1 : 0) + (c.end ? 1 : 0) + '|' +
+    (c.times || []).length + '|' +
     (c.times || []).slice(0, 10).map(t => t.name + ':' + t.ms).join(',') + '|' +
     (c.times || []).findIndex(t => t.name === pkMe());
 }
@@ -8564,14 +8919,15 @@ function pkFinish(course){
   parkour.run = null;
   const best = run.best;
   if(mp.active) mpSend({ type:'pk', op:'time', id:course.id, ms:Math.round(ms) });
-  else { pkRecordLocal(course.id, pkMe(), Math.round(ms)); pkSaveLocal(); }
   const pb = (best == null) || ms < best;
+  const place = mp.active ? 0 : pkRecordLocal(course.id, pkMe(), Math.round(ms));
   parkour.result = {
     text: pkFmt(ms),
-    sub: pb ? (best == null ? 'first time on this course' : 'personal best by ' + pkFmt(best - ms) + 's')
-            : ('your best is ' + pkFmt(best)),
+    sub: (pb ? (best == null ? 'first time on this course' : 'personal best by ' + pkFmt(best - ms) + 's')
+             : ('your best is ' + pkFmt(best))) + (place ? '  ·  #' + place : ''),
     ok: pb, until: performance.now() + 6000
   };
+  if(!mp.active) pkSaveLocal();
   chatPush('Finished ' + (course.name || 'Parkour') + ' in ' + pkFmt(ms) + 's' + (pb ? ' - personal best!' : ''), 'sys');
   pkTouch();
 }
@@ -9351,11 +9707,15 @@ function closeChat(send){
     }
     else if(/^\/setworldspawn\b/i.test(v)){
       if(!isAdmin()) chatPush('/setworldspawn is for admins.', 'sys');
+      else if(dim!==0) chatPush('The world spawn has to be in the overworld: that is where everyone arrives.', 'sys');
       else {
-        worldSpawn = { x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), d:dim };
-        try{ localStorage.setItem('leoncraft_spawn', JSON.stringify(worldSpawn)); }catch(e){}
-        if(mp.active) mpSend({type:'worldspawn', x:worldSpawn.x, y:worldSpawn.y, z:worldSpawn.z, d:dim});
-        chatPush('World spawn set to '+Math.round(worldSpawn.x)+', '+Math.round(worldSpawn.y)+', '+Math.round(worldSpawn.z)+'.', 'sys');
+        // Snap to the middle of the block you are standing on, so everyone lands on the
+        // same square rather than scattered by whatever decimals you stopped at.
+        worldSpawn = { x:Math.floor(player.pos.x)+0.5, y:+player.pos.y.toFixed(2), z:Math.floor(player.pos.z)+0.5, d:0 };
+        if(mp.active) mpSend({type:'worldspawn', x:worldSpawn.x, y:worldSpawn.y, z:worldSpawn.z, d:0});
+        else { spSpawn = worldSpawn; spSave(); }
+        chatPush('World spawn set to '+Math.floor(worldSpawn.x)+', '+Math.round(worldSpawn.y)+', '+Math.floor(worldSpawn.z)+
+                 (mp.active ? '. Everyone who joins arrives here.' : '.'), 'sys');
       }
     }
     else if(/^\/start\b/i.test(v)){                               // /start begins a round in whichever game you are in
@@ -9395,6 +9755,7 @@ function frame(now){
     raycast();
     if(!bw.active) tickRedstone(dt);   // buttons pop out, plates read who is standing on them, power resolves
     tickHeldTools();                   // holding F or G keeps breaking or placing while you walk
+    superSpeedChip();                  // the Z chip follows the key, so it cannot be left showing
     pkTick();                          // parkour: the pad under your feet starts, stops or is just scenery
     { pkBoardAccum += dt; if(pkBoardAccum > 0.5){ pkBoardAccum = 0; pkUpdateBoards(); } }
     tickTnt(); tickConfetti(dt);   // lit TNT counts down, then throws paper into the air
@@ -9460,8 +9821,10 @@ function frame(now){
     lud.legFL.rotation.x=psw; lud.legBR.rotation.x=psw; lud.legFR.rotation.x=-psw; lud.legBL.rotation.x=-psw;
   } else {
     headPivot.rotation.x = -player.pitch;
-    poseCharacter(lud, cr, sit.active, bobT, walkAmpLocal);
+    poseCharacter(lud, cr, sit.active, (window.__poseHold!=null?window.__poseHold:bobT), (window.__poseAmp!=null?window.__poseAmp:walkAmpLocal));
     if(swing>0) lud.armR.rotation.x = -Math.sin((1-swing)*Math.PI)*1.5;   // a punch swing overrides the walk swing
+    localCloak = stepCloak(localCloak, player.pos.x, player.pos.y, player.pos.z, dt);
+    poseCape(lud, capeDrift(localCloak, player.pos.x, player.pos.y, player.pos.z), player.yaw, cr>0.5, bobT, walkAmpLocal);
   }
   // show your own body in first person when a body code is active, so you see yourself as big/small/pig
   body.visible = (state===PLAY && !sleep.active && !fx.ghost && (camMode!==0 || fx.body!=='none'));   // the hide code takes you out of your own view too
@@ -9597,15 +9960,54 @@ window.__mc = {
   pkBoardAt(x,y,z){ const s=parkour.boards.get(dim+':'+x+','+y+','+z);
     return s?{ w:s.scale.x, h:s.scale.y, y:s.position.y }:null; },
   pkTickNow(){ pkTick(); }, pkBoardsNow(){ pkUpdateBoards(); },
+  // ---- model test hooks ----
+  markArms(){ const ud=body.userData;
+    const paint=(part,hex)=>{ if(!part) return; part.material=new THREE.MeshBasicMaterial({color:hex}); };
+    paint(ud.armR, 0xff2020); paint(ud.armL, 0x2060ff);
+    paint(ud.legR, 0xff9020); paint(ud.legL, 0x20c0ff); return true; },
+  // ---- multiplayer test hook: join the world the ?mp= override points at ----
+  joinShared(server){ mpTarget.server = server || 'original'; mpTarget.pw=''; mpTarget.spectate=false;
+    mp.bw=false; mp.bb=false; mpConnect(); return true; },
+  // ---- cape test hooks ----
+  capes(){ return CAPES.map(c=>({id:c.id,name:c.name})); },
+  capeCanvas(id){ const d=CAPE_BY_ID[id]; return d?capeCanvasFor(d):null; },
+  cape(){ return localCape; }, setCape(v){ setLocalCape(v); },
+  capeState(){ const c=body.userData.cape; if(!c) return null;
+    return { on:c.pivot.visible, x:+c.pivot.rotation.x.toFixed(4), z:+c.pivot.rotation.z.toFixed(4),
+             hasMap:!!c.mat.map }; },
+  capeSheet(id){ const d=CAPE_BY_ID[id]; if(!d) return null;
+    const cv=capeCanvasFor(d), g=cv.getContext('2d');
+    const px=(x,y)=>{ const q=g.getImageData(x,y,1,1).data; return q[3]===0?null:(q[0]+','+q[1]+','+q[2]); };
+    const cols=new Set(); let filled=0;
+    const d2=g.getImageData(1,1,10,16).data;
+    for(let i=0;i<d2.length;i+=4){ if(d2[i+3]>0){ filled++; cols.add(d2[i]+','+d2[i+1]+','+d2[i+2]); } }
+    return { filled, colors:cols.size, edge:px(0,4), lining:px(14,4), top:px(4,0) }; },
+  cloak(){ return localCloak ? {x:+localCloak.x.toFixed(3),y:+localCloak.y.toFixed(3),z:+localCloak.z.toFixed(3)} : null; },
+  poseTest(amp){ const ud=body.userData;
+    poseCharacter(ud, 0, false, Math.PI/2, amp); return { armR:ud.armR.rotation.x, armL:ud.armL.rotation.x }; },
+  // how far the top of a limb wanders from where it sits at rest when it swings. A limb
+  // that pivots at its joint never moves it; one that pivots at its middle tears open.
+  jointGap(part, rot){
+    const ud=body.userData, m=ud[part]; if(!m) return null;
+    const g=m.geometry; g.computeBoundingBox();
+    const top=g.boundingBox.max.y;
+    const at=(r)=>{ const old=m.rotation.x; m.rotation.x=r; m.updateMatrixWorld(true);
+      const v=new THREE.Vector3(0, top, 0).applyMatrix4(m.matrixWorld);
+      m.rotation.x=old; m.updateMatrixWorld(true); return v; };
+    return +at(rot||0).distanceTo(at(0)).toFixed(4);
+  },
+  armX(){ const ud=body.userData; return { armR:ud.armR.position.x, armL:ud.armL.position.x,
+    legR:ud.legR.position.x, legL:ud.legL.position.x }; },
   // how much of the worn skin's left-arm block is filled in: a legacy 64x32 file
   // has nothing there until the loader mirrors the right arm across
+  loadSkinImage(img, name){ applyUploadedSkin(img, name||'test'); return true; },
   skinLeftArmFill(){ const d=editCtx.getImageData(32,48,16,16).data; let n=0;
     for(let i=3;i<d.length;i+=4) if(d[i]>0) n++; return n; },
   pkSeed(id, rows){ const c=parkour.courses.get(id); if(!c) return false; c.times=rows.slice(); pkTouch(); return true; },
   pkClose(){ pkClosePanel(); },
   // ---- movement / key test hooks ----
-  superSpeed(){ return superSpeed; }, toggleSpeed(v){ toggleSuperSpeed(v); },
-  speedMul(){ return superSpeedMul(); },
+  superSpeed(){ return superSpeedOn(); }, speedMul(){ return superSpeedMul(); },
+  speedChipShown(){ return !!spdChipEl && spdChipEl.style.display==='block'; },
   groundUnder(x,z){ return groundUnder(x,z); },
   keyState(k){ return !!keys[k]; }, setKey(k,v){ keys[k]=!!v; },
   heldTick(){ tickHeldTools(); }, heldSince(){ return { f:heldSince.break2, g:heldSince.place2 }; },
