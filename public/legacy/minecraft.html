@@ -367,6 +367,14 @@
   .srvCard .meta{ font-size:12px; color:#d7d7d7; }
   .srvCard .meta .lock{ color:#ffd24a; } .srvCard .meta .pub{ color:#9be07f; }
   .srvCard .meta .mini{ color:#8fb4ff; }   /* a game mode, not a world you build in */
+  .srvCard .srvAdmin{ flex:0 0 auto; display:flex; flex-direction:column; gap:2px; margin-right:2px; }
+  .srvCard .srvArrow{ font:inherit; font-size:10px; line-height:1; width:20px; height:15px; padding:0; cursor:pointer;
+    color:#e8e8e8; background:#4a4a4a; border:1px solid; border-color:#8a8a8a #232323 #232323 #8a8a8a; }
+  .srvCard .srvArrow:hover:not(:disabled){ background:#5c6a5c; }
+  .srvCard .srvArrow:disabled{ opacity:.35; cursor:default; }
+  .srvCard .srvKind{ font:inherit; font-size:11px; padding:3px 8px; cursor:pointer; color:#e8e8e8;
+    background:#3a4150; border:2px solid; border-color:#6b7486 #1b1f27 #1b1f27 #6b7486; }
+  .srvCard .srvKind:hover{ filter:brightness(1.2); }
   .srvDel{ flex:0 0 auto; font-family:inherit; font-size:13px; color:#fff; padding:6px 12px; cursor:pointer;
     background:#7a7a7a; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
   .srvDel:hover{ filter:brightness(1.12); }
@@ -508,7 +516,7 @@
 <div class="screen" id="servers" hidden>
   <div class="title" style="font-size:30px;">Play Multiplayer</div>
   <div id="reqBox" hidden></div>
-  <div class="ctrlHint">Join a public server, enter a password for a private one, or spectate to just watch.</div>
+  <div class="ctrlHint">Join a public server, enter a password for a private one, or press Play on a minigame to try the map without building on it.</div>
   <input class="nameField" id="srvSearch" type="text" maxlength="24" placeholder="Search servers by name" autocomplete="off" spellcheck="false">
   <div class="srvList" id="srvList"></div>
   <div class="srvNote" id="srvNote"></div>
@@ -527,6 +535,7 @@
       <div class="csRow">
         <button class="btn half" id="csPublic">Public</button>
         <button class="btn half" id="csPrivate">Private</button>
+        <button class="btn half" id="csMinigame" title="Anyone can play it; the password is what lets you build on it.">Minigame</button>
       </div>
       <input class="nameField" id="csPassword" type="text" maxlength="32" placeholder="Password (private only)" autocomplete="off" spellcheck="false" hidden>
       <textarea class="nameField csReason" id="csReason" maxlength="200" rows="3" placeholder="Why do you want this server? (optional)" spellcheck="false"></textarea>
@@ -556,7 +565,7 @@
 <div class="screen" id="pwPrompt" hidden>
   <div class="pwPanel">
     <div class="pwTitle" id="pwTitle">Private server</div>
-    <div class="ctrlHint">Enter the password to play, or join as a spectator to watch without building.</div>
+    <div class="ctrlHint" id="pwHint">Enter the password to play, or join as a spectator to watch without building.</div>
     <input class="nameField" id="pwInput" type="password" maxlength="32" placeholder="Password" autocomplete="off" spellcheck="false">
     <div class="codeMsg" id="pwMsg"></div>
     <div class="ctrlActions">
@@ -6940,7 +6949,7 @@ let tabShown = false;
 function renderTabList(){
   if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
   const teamOf = t => (bw.active && t!=null && BW_TEAMS[t]) ? BW_TEAMS[t] : null;
-  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:isAdmin(), spectator:!!mp.spectator, team:teamOf(bw.active?bw.team:null)}];
+  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:isAdmin(), spectator:!!mp.spectator && !mp.minigame, team:teamOf(bw.active?bw.team:null)}];
   for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin, spectator:!!p.spectator, team:teamOf(p.team)});
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
@@ -6985,12 +6994,14 @@ function mpApplyRemoteBlock(x,y,z,b){
 }
 function mpAddPlayer(p){
   if(!p || p.id===mp.id || mp.players.has(p.id)) return;
-  const color=p.color||'', admin=!!p.admin, spectator=!!p.spectator, slim=!!p.slim;
+  // Somebody who walked into a minigame is playing it, not watching it, so they get no
+  // SPECTATOR label even though the server holds them to a spectator's permissions.
+  const color=p.color||'', admin=!!p.admin, spectator=!!p.spectator && !p.minigame, slim=!!p.slim;
   const model=makeCharacterModel(defaultSkinTex, slim); model.visible=true; scene.add(model);
   const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', admin, spectator, p.team); model.add(tag);
   const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
     x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
-    body:'none', color:color, hide:!!p.hide, ghost:!!p.ghost, admin:admin, spectator:spectator, slim:slim };
+    body:'none', color:color, hide:!!p.hide, ghost:!!p.ghost, admin:admin, spectator:spectator, minigame:!!p.minigame, slim:slim };
   mp.players.set(p.id, rec);
   if(p.ghost) setPlayerGhost(rec, true);
   if(p.hide) tag.visible=false;
@@ -7087,6 +7098,7 @@ function mpHandle(m){
     // moment it runs, so the server's spawn has to be in hand by then.
     worldSpawn = (m.spawn && typeof m.spawn.x==='number') ? { x:+m.spawn.x, y:+m.spawn.y, z:+m.spawn.z, d:0 } : null;
     mp.id=m.id; mp.name=m.name; mp.server=m.server||'original'; mp.serverName=m.serverName||''; mp.border=m.border||0; mp.netherBorder=m.netherBorder||0; mp.admin=!!m.admin; mp.spectator=!!m.spectator;
+    mp.minigame=!!m.minigame; mp.kind=m.kind||'';
     mp._pwFlow=false; if(typeof pwPromptEl!=='undefined' && pwPromptEl) pwPromptEl.hidden=true;   // joined successfully — close the password prompt
     mpOverrides.clear(); doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear(); signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs(); trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
     dim=0; mpDimStore[0]=null; mpDimStore[1]=null;    // you always arrive in the overworld
@@ -7137,7 +7149,8 @@ function mpHandle(m){
     mpSendSkin();   // let everyone already here see my custom skin
     applyLocalBody(); sendFx();   // re-assert my active secret-code effects so everyone here sees them
     chatPush('Joined the shared world as '+m.name+'  ('+((m.players||[]).length+1)+' online)', 'sys');
-    if(mp.spectator) chatPush('You joined as a SPECTATOR. You can look around and chat, but cannot build, break blocks, or fight.', 'sys');
+    if(mp.minigame) chatPush('You are playing '+(mp.serverName||'this map')+'. Run the parkour and look around; to build here, press Edit on the server list and enter the password.', 'sys');
+    else if(mp.spectator) chatPush('You joined as a SPECTATOR. You can look around and chat, but cannot build, break blocks, or fight.', 'sys');
   }
   else if(m.type==='pk'){ if(m.op==='sync') pkApplySync(m.courses); }   // a course was linked, renamed or beaten
   else if(m.type==='join'){ mpAddPlayer(m.player); }
@@ -7380,20 +7393,30 @@ async function refreshServers(finalNote){
   if(!srvAllList.length){ serversNote(finalNote||'No servers yet - create one!'); return; }
   renderServerList();
 }
+// Older servers were only public or private; the list still says so, and a category
+// the client does not recognise falls back to that pair.
+const SRV_KIND_LABEL = { public:'Public', private:'Private', minigame:'Minigame' };
+function srvKindOf(s){
+  if(s.mode) return 'minigame';
+  return SRV_KIND_LABEL[s.kind] ? s.kind : (s.isPublic ? 'public' : 'private');
+}
 function renderServerList(){
   srvListEl.innerHTML='';
   const q=(srvSearchEl&&srvSearchEl.value||'').trim().toLowerCase();
   const list = q ? srvAllList.filter(s=>(s.name||'').toLowerCase().includes(q)) : srvAllList;
   if(!list.length){ serversNote('No servers match "'+q+'".'); return; }
   serversNote('');
+  const movable = list.filter(x=>!x.pinned);     // the two built-in games stay where they are
   for(const s of list){
+    const idx = movable.indexOf(s);
     const card=document.createElement('div'); card.className='srvCard';
     const ic=document.createElement('canvas'); ic.className='ic'; ic.width=ic.height=32;
     drawServerIcon(ic, s.icon, s.id);
     const info=document.createElement('div'); info.className='info';
-    const kindTxt = s.mode ? '<span class="mini">Minigame</span>'
-                           : (s.isPublic ? '<span class="pub">Public</span>' : '<span class="lock">Private</span>');
-    const countTxt = s.mode ? (s.players+' playing') : (s.players+' online');
+    const kind = srvKindOf(s);
+    const kindTxt = (s.mode || kind==='minigame') ? '<span class="mini">Minigame</span>'
+                  : (kind==='public' ? '<span class="pub">Public</span>' : '<span class="lock">Private</span>');
+    const countTxt = (s.mode || kind==='minigame') ? (s.players+' playing') : (s.players+' online');
     const newTxt = s.mode ? '<span class="new">New!</span>' : '';
     info.innerHTML='<div class="nm">'+escHtml(s.name)+'</div><div class="meta">'+kindTxt+' · '+countTxt+newTxt+'</div>';
     card.appendChild(ic); card.appendChild(info);
@@ -7401,14 +7424,36 @@ function renderServerList(){
     const btns=document.createElement('div'); btns.className='srvBtns';
     const join=document.createElement('button'); join.className='srvBtn'; join.textContent='Join';
     if(s.mode){ join.textContent='Play'; join.title='Play '+s.name; }
-    else join.title=s.isPublic?'Join this server':'Enter the password to play here';
+    else if(kind==='minigame'){ join.textContent='Play';
+      join.title='Play '+s.name+'. You can run the parkour, but not change the map.'; }
+    else join.title=(kind==='public')?'Join this server':'Enter the password to play here';
     join.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) joinServer(s); });
     btns.appendChild(join);
-    if(!s.isPublic){                                           // private: watch without the password
+    if(kind==='minigame' && !s.mode){                          // the password is what lets you build here
+      const ed=document.createElement('button'); ed.className='srvBtn'; ed.textContent='Edit';
+      ed.title='Enter the password to build on this map.';
+      ed.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) editMinigame(s); });
+      btns.appendChild(ed);
+    } else if(kind==='private'){                               // private: watch without the password
       const spec=document.createElement('button'); spec.className='srvBtn'; spec.textContent='Spectate';
       spec.title='Watch without the password. You cannot build, break or fight.';
       spec.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) spectateServer(s); });
       btns.appendChild(spec);
+    }
+    // an admin can move a server up and down the list and change what it counts as
+    if(isAdmin() && !s.pinned){
+      const adm=document.createElement('div'); adm.className='srvAdmin';
+      const up=document.createElement('button'); up.className='srvArrow'; up.textContent='▲'; up.title='Move up the list';
+      const dn=document.createElement('button'); dn.className='srvArrow'; dn.textContent='▼'; dn.title='Move down the list';
+      up.disabled = idx===0; dn.disabled = idx===movable.length-1;
+      up.addEventListener('click', e=>{ e.stopPropagation(); moveServer(s.id, -1); });
+      dn.addEventListener('click', e=>{ e.stopPropagation(); moveServer(s.id, +1); });
+      adm.appendChild(up); adm.appendChild(dn);
+      btns.insertBefore(adm, btns.firstChild);
+      const kb=document.createElement('button'); kb.className='srvKind'; kb.textContent=SRV_KIND_LABEL[kind];
+      kb.title='Category: '+SRV_KIND_LABEL[kind]+'. Click to change it.';
+      kb.addEventListener('click', e=>{ e.stopPropagation(); cycleServerKind(s); });
+      btns.appendChild(kb);
     }
     card.appendChild(btns);
     const ownable = ownerMode && !s.pinned;                   // a pinned game mode is not a world you can edit
@@ -7425,6 +7470,34 @@ function renderServerList(){
     }
     srvListEl.appendChild(card);
   }
+}
+// Move one server a place up or down and send the whole new order, so the server does
+// not have to work out what changed.
+async function moveServer(id, dir){
+  const movable = srvAllList.filter(x=>!x.pinned);
+  const i = movable.findIndex(x=>x.id===id);
+  const j = i + dir;
+  if(i<0 || j<0 || j>=movable.length) return;
+  const tmp=movable[i]; movable[i]=movable[j]; movable[j]=tmp;
+  srvAllList = srvAllList.filter(x=>x.pinned).concat(movable);
+  renderServerList();
+  try{
+    const r=await fetch(mcHttpBase()+'/serverorder',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ admin:true, ids:movable.map(x=>x.id) }) });
+    const jn=await r.json();
+    if(jn && jn.error) refreshServers(jn.error);
+  }catch(e){ refreshServers('Network error.'); }
+}
+const SRV_KIND_NEXT = { public:'private', private:'minigame', minigame:'public' };
+async function cycleServerKind(s){
+  const want = SRV_KIND_NEXT[srvKindOf(s)] || 'public';
+  serversNote('Making "'+s.name+'" '+SRV_KIND_LABEL[want].toLowerCase()+'…');
+  try{
+    const r=await fetch(mcHttpBase()+'/serverkind',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ admin:true, id:s.id, kind:want }) });
+    const jn=await r.json();
+    refreshServers((jn&&jn.ok) ? ('"'+s.name+'" is now '+SRV_KIND_LABEL[want].toLowerCase()+'.') : ((jn&&jn.error)||'Could not change it.'));
+  }catch(e){ refreshServers('Network error.'); }
 }
 function confirmDeleteServer(s, card){
   card._confirming=true; card.style.cursor='default'; card.innerHTML='';
@@ -7445,18 +7518,29 @@ async function doDeleteServer(s){
 function joinServer(s){
   if(s.mode==='bb'){ serversEl.hidden=true; startBuildBattle(); return; }   // Build Battle is its own game, not a world
   if(s.mode==='bw'){ serversEl.hidden=true; startBedwars(); return; }       // and so is Bed Wars
-  if(s.isPublic){ mpTarget={ server:s.id, pw:'' }; serversEl.hidden=true; startMultiplayer(); return; }
+  const kind=srvKindOf(s);
+  // A minigame is open to everyone with no password at all: you arrive able to run the
+  // course but not to change it, which is what the Edit button is for.
+  if(kind==='public' || kind==='minigame'){ mpTarget={ server:s.id, pw:'' }; mp._pwFlow=false; serversEl.hidden=true; startMultiplayer(); return; }
   openPwPrompt(s);   // private always asks for the password (an admin can leave it blank)
 }
+function editMinigame(s){ openPwPrompt(s, true); }
 // join a private server without its password: you appear to everyone as a SPECTATOR and cannot change the world
 function spectateServer(s){ mpTarget={ server:s.id, pw:'', spectate:true }; mp._pwFlow=false; serversEl.hidden=true; startMultiplayer(); }
 // ---- password prompt for private servers ----
 const pwPromptEl=document.getElementById('pwPrompt'), pwInputEl=document.getElementById('pwInput'), pwMsgEl=document.getElementById('pwMsg');
 let pwPendingServer=null;
-function openPwPrompt(s){ pwPendingServer=s; document.getElementById('pwTitle').textContent=s.name;
+function openPwPrompt(s, forEdit){ pwPendingServer=s; document.getElementById('pwTitle').textContent=s.name;
   pwMsgEl.style.color = isAdmin() ? '#42e042' : '#ff9a9a';
   pwMsgEl.textContent = isAdmin() ? 'ADMIN: leave this blank to join anyway.' : '';
   pwInputEl.value=reqStore('leoncraft_srvpw')[s.id]||'';   // your own server fills its password in for you
+  // On a minigame the password is not the door, it is the toolbox: Play already let
+  // you in, so there is nothing to spectate and the wording says what it is for.
+  const hint=document.getElementById('pwHint'), spec=document.getElementById('pwSpectateBtn');
+  if(hint) hint.textContent = forEdit
+    ? 'This map is open to play. Enter the password to build on it.'
+    : 'Enter the password to play, or join as a spectator to watch without building.';
+  if(spec) spec.style.display = forEdit ? 'none' : '';
   pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
 function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw && !isAdmin()){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting…'; startMultiplayer(); }
 function pwSpectate(){ if(!pwPendingServer) return; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Joining as spectator…'; spectateServer(pwPendingServer); }
@@ -7489,7 +7573,7 @@ function drawServerIcon(canvas, icon, id){
 const createServerEl=document.getElementById('createServer');
 const csIconDisp=document.getElementById('csIconCanvas'), csIconG=csIconDisp.getContext('2d');
 const csIcon=document.createElement('canvas'); csIcon.width=csIcon.height=16; const csG=csIcon.getContext('2d');
-let csPublic=true, csColor='#7ac74a', csPainting=false;
+let csKind='public', csColor='#7ac74a', csPainting=false;
 const CS_PALETTE=['#111111','#ffffff','#9d9d9d','#c14b43','#e0872f','#f2c531','#4bbf5b','#2f8f6b','#4a86e0','#3a4fc0','#8f4fd0','#d06bb0','#8a5a2b','#57e0e6','#e6e6e6','#5a3a1a'];
 function csRenderIcon(){ csIconG.imageSmoothingEnabled=false; csIconG.clearRect(0,0,256,256); csIconG.drawImage(csIcon,0,0,256,256);
   csIconG.strokeStyle='rgba(0,0,0,.12)'; csIconG.lineWidth=1; for(let i=1;i<16;i++){ csIconG.beginPath(); csIconG.moveTo(i*16,0); csIconG.lineTo(i*16,256); csIconG.moveTo(0,i*16); csIconG.lineTo(256,i*16); csIconG.stroke(); } }
@@ -7518,9 +7602,17 @@ document.getElementById('csUpload').addEventListener('click', ()=>document.getEl
 document.getElementById('csFile').addEventListener('change', e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; const img=new Image(); img.onload=()=>{ csG.clearRect(0,0,16,16); csG.imageSmoothingEnabled=false; csG.drawImage(img,0,0,16,16); csRenderIcon(); if(csPresetSel){ csPresetSel.classList.remove('on'); csPresetSel=null; } }; img.src=URL.createObjectURL(f); });
 document.getElementById('csClear').addEventListener('click', ()=>csFillIcon(g=>{ g.fillStyle='#5a5a5a'; g.fillRect(0,0,16,16); }));
 // public/private toggle
-function csSetPublic(v){ csPublic=v; document.getElementById('csPublic').classList.toggle('on', v); document.getElementById('csPrivate').classList.toggle('on', !v); document.getElementById('csPassword').hidden = v; }
-document.getElementById('csPublic').addEventListener('click', ()=>csSetPublic(true));
-document.getElementById('csPrivate').addEventListener('click', ()=>csSetPublic(false));
+function csSetKind(k){ csKind = SRV_KIND_LABEL[k] ? k : 'public';
+  document.getElementById('csPublic').classList.toggle('on', csKind==='public');
+  document.getElementById('csPrivate').classList.toggle('on', csKind==='private');
+  const mg=document.getElementById('csMinigame'); if(mg) mg.classList.toggle('on', csKind==='minigame');
+  document.getElementById('csPassword').hidden = (csKind==='public');
+  document.getElementById('csPassword').placeholder = csKind==='minigame' ? 'Password (needed to build here)' : 'Password (private only)';
+}
+function csSetPublic(v){ csSetKind(v ? 'public' : 'private'); }
+document.getElementById('csPublic').addEventListener('click', ()=>csSetKind('public'));
+document.getElementById('csPrivate').addEventListener('click', ()=>csSetKind('private'));
+{ const mg=document.getElementById('csMinigame'); if(mg) mg.addEventListener('click', ()=>csSetKind('minigame')); }
 function openCreateServer(){ csEditing=null; serversEl.hidden=true; createServerEl.hidden=false;
   document.getElementById('csTitle').textContent='Request a Server';
   document.getElementById('csCreateBtn').textContent='Send request';
@@ -7540,7 +7632,7 @@ function openEditServer(s){
   document.getElementById('csPassword').value='';
   document.getElementById('csReason').hidden=true;
   document.getElementById('csMsg').textContent='';
-  csSetPublic(!!s.isPublic);
+  csSetKind(srvKindOf(s));
   csG.clearRect(0,0,16,16);
   if(s.icon){ const img=new Image(); img.onload=()=>{ csG.clearRect(0,0,16,16); csG.drawImage(img,0,0,16,16); csRenderIcon(); }; img.src=s.icon; }
   else { CS_PRESETS[0](csG); }
@@ -7552,14 +7644,14 @@ async function csCreate(){
   if(csSubmitting) return;
   const name=document.getElementById('csName').value.trim(); const msg=document.getElementById('csMsg');
   if(!name){ msg.style.color='#ff9a9a'; msg.textContent='Give your server a name.'; return; }
-  const password=csPublic?'':document.getElementById('csPassword').value;
-  if(!csPublic && !password && !csEditing){ msg.style.color='#ff9a9a'; msg.textContent='Set a password for a private server.'; return; }
+  const password=(csKind==='public')?'':document.getElementById('csPassword').value;
+  if(csKind!=='public' && !password && !csEditing){ msg.style.color='#ff9a9a'; msg.textContent='Set a password for a '+csKind+' server.'; return; }
   csSubmitting=true; msg.style.color='#ffec4d'; msg.textContent=csEditing?'Saving…':'Sending…';
   const icon=csIcon.toDataURL('image/png');
   const reason=(document.getElementById('csReason').value||'').trim();
   if(csEditing){
     try{
-      const body={ id:csEditing.id, owner:true, name, icon, isPublic:csPublic };
+      const body={ id:csEditing.id, owner:true, name, icon, kind:csKind, isPublic:(csKind==='public') };
       if(password) body.password=password;                 // blank means keep the one it has
       const r=await fetch(mcHttpBase()+'/editserver',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
       const j=await r.json();
@@ -7570,10 +7662,10 @@ async function csCreate(){
   }
   try{
     const r=await fetch(mcHttpBase()+'/createserver',{ method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ name, isPublic:csPublic, password, icon, reason, by:getSavedName()||'', device:pollDeviceId() }) });
+      body:JSON.stringify({ name, kind:csKind, isPublic:(csKind==='public'), password, icon, reason, by:getSavedName()||'', device:pollDeviceId() }) });
     const j=await r.json();
     if(j&&j.requested){
-      if(!csPublic) rememberReqPassword(j.id, password);   // so you can walk straight in once it is approved
+      if(csKind!=='public') rememberReqPassword(j.id, password);   // so you can walk straight in once it is approved
       createServerEl.hidden=true; openServers('Request sent. An admin will look at it.');
     }
     else { msg.style.color='#ff9a9a'; msg.textContent=(j&&j.error)||'Could not send the request.'; }
@@ -9965,6 +10057,10 @@ window.__mc = {
     const paint=(part,hex)=>{ if(!part) return; part.material=new THREE.MeshBasicMaterial({color:hex}); };
     paint(ud.armR, 0xff2020); paint(ud.armL, 0x2060ff);
     paint(ud.legR, 0xff9020); paint(ud.legL, 0x20c0ff); return true; },
+  // ---- server list test hooks ----
+  openServers(){ openServers(); return true; },
+  mpMinigame(){ return !!mp.minigame; },
+  srvList(){ return srvAllList.map(x=>({id:x.id,name:x.name,kind:srvKindOf(x),pinned:!!x.pinned})); },
   // ---- multiplayer test hook: join the world the ?mp= override points at ----
   joinShared(server){ mpTarget.server = server || 'original'; mpTarget.pw=''; mpTarget.spectate=false;
     mp.bw=false; mp.bb=false; mpConnect(); return true; },
