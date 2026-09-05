@@ -2027,7 +2027,7 @@ SAPLINGS.forEach(function(sp){
 // Iron bars use the glass-pane model, but they are cut out rather than see-through
 B.iron_bars = def('iron_bars', { tiles:T('iron_bars'), pane:true, cutout:true, opaque:false, hex:0xc0c0c0 });
 // An end rod points out of whatever you stick it to, like a torch, and glows.
-B.end_rod = def('end_rod', { tiles:T('end_rod'), endRod:true, solid:false, opaque:false, light:true, hex:0xe8e4ee });
+B.end_rod = def('end_rod', { tiles:T('end_rod'), endRod:true, solid:true, opaque:false, light:true, hex:0xe8e4ee });
 // Paintings hang flat on a wall; lanterns stand on the floor or hang from a ceiling.
 PAINTINGS.forEach(function(pt){ B[pt[0]] = def(pt[0], { tiles:T(pt[0]), painting:true, solid:false, opaque:false, hex:0x7b5c32 }); });
 LANTERNS.forEach(function(l){ B[l[0]] = def(l[0], { tiles:T(l[0]), lantern:true, solid:false, opaque:false, light:true, hex:l[4] }); });
@@ -4069,9 +4069,17 @@ const player = {
 };
 let creative = true;
 
+// Where everyone starts. An admin can move it with /setworldspawn, and it sticks:
+// locally for a single-player world, and for everyone on a server.
+let worldSpawn = null;
+try{ const j=JSON.parse(localStorage.getItem('leoncraft_spawn')||'null'); if(j && typeof j.x==='number') worldSpawn=j; }catch(e){}
 function spawnPlayer(){
-  const h = terrainHeight(8,8);
-  player.pos.set(8.5, h+3, 8.5);
+  if(worldSpawn && (worldSpawn.d==null || worldSpawn.d===dim)){
+    player.pos.set(worldSpawn.x, worldSpawn.y, worldSpawn.z);
+  } else {
+    const h = terrainHeight(8,8);
+    player.pos.set(8.5, h+3, 8.5);
+  }
   player.vel.set(0,0,0);
   player.flying = false;      // spawn walking; double-tap Space to toggle flight
 }
@@ -4188,7 +4196,7 @@ addEventListener('keydown', e=>{
     if(k==='k' && (bb.phase==='lobby' || bb.phase==='starting')){ e.preventDefault(); bbStartBtn(); return; }
   }
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){
-    if(k==='k' && (bw.phase==='lobby')){ e.preventDefault(); startBedwarsBtn(); return; }   // same key that starts Build Battle
+    if(k==='k' && (bw.phase==='lobby' || bw.phase==='ended')){ e.preventDefault(); startBedwarsBtn(); return; }   // same key that starts Build Battle
     if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='x'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
@@ -4203,7 +4211,9 @@ addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=fals
 let lastSpace=0;
 addEventListener('keydown', e=>{
   if(e.repeat) return;   // holding jump to fly up auto-repeats keydown; those aren't taps, so don't let them toggle fly
-  if(!bindListening && e.key.toLowerCase()===binds.jump && creative && state===PLAY && !bw.active){
+  // Creative flight normally stops at the edge of a Bed Wars match. The milan45 code
+  // carries it in there as well.
+  if(!bindListening && e.key.toLowerCase()===binds.jump && state===PLAY && (fx.fly || (creative && !bw.active))){
     const now=performance.now();
     if(now-lastSpace<300){ player.flying=!player.flying; player.vel.y=0; }
     lastSpace=now;
@@ -4276,6 +4286,20 @@ function wallCollides(x,y,z, px,pz){
   if(conn(x,z-1) && hit(x+5/16, x+11/16, z,      z+8/16 )) return true;
   return false;
 }
+// An end rod is a two-pixel shaft, and you can stand on the end of one. It blocks
+// only where the shaft actually is, so walking past one at floor level is unhindered.
+function endRodCollides(x,y,z, px,py,pz){
+  const w=player.w/2, a=attachMeta.get(dkey(x,y,z)) || {m:0,f:0};
+  const hit=(x0,x1,y0,y1,z0,z1)=>
+    px+w>x+x0 && px-w<x+x1 && py+player.h>y+y0 && py<y+y1 && pz+w>z+z0 && pz-w<z+z1;
+  const C=7/16, D=9/16, A=6/16, Bq=10/16;
+  if(a.m===0) return hit(C,D, 0,1, C,D) || hit(A,Bq, 0,1/16, A,Bq);
+  if(a.m===1) return hit(C,D, 0,1, C,D) || hit(A,Bq, 15/16,1, A,Bq);
+  const f=a.f||0;
+  if(f===0) return hit(C,D, C,D, 0,1);
+  if(f===2) return hit(C,D, C,D, 0,1);
+  return hit(0,1, C,D, C,D);
+}
 function collides(px,py,pz){
   const w=player.w/2;
   const x0=Math.floor(px-w), x1=Math.floor(px+w);
@@ -4290,6 +4314,7 @@ function collides(px,py,pz){
     const b=getBlock(x,y,z);
     if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid){
       if(BLOCKS[b].door) continue;  // doors are always walk-through, open or closed
+      if(BLOCKS[b].endRod){ if(endRodCollides(x,y,z,px,py,pz)) return true; continue; }   // just the shaft, so you can perch on one
       if(BLOCKS[b].wall){ if(wallCollides(x,y,z,px,pz)) return true; continue; }      // post + arms, nothing between
       if(BLOCKS[b].pane){ if(paneCollides(x,y,z,px,py,pz)) return true; continue; }   // thin, connect-shaped collision
       if(BLOCKS[b].slab && !slabIsDouble(x,y,z)){   // a slab only fills its half of the cell
@@ -4314,14 +4339,11 @@ function inLiquid(){
   return b!==AIR && BLOCKS[b] && BLOCKS[b].liquid;
 }
 // is there solid ground directly under the player's footprint at (x,z)?
-function groundUnder(x,z){
-  const w=player.w/2, fy=Math.floor(player.pos.y-0.02);
-  for(let bx=Math.floor(x-w);bx<=Math.floor(x+w);bx++)
-   for(let bz=Math.floor(z-w);bz<=Math.floor(z+w);bz++){
-     const b=getBlock(bx,fy,bz); if(b!==AIR && BLOCKS[b] && BLOCKS[b].solid) return true;
-   }
-  return false;
-}
+// Is there still something holding you up if you step here? Ask the real collision
+// shape rather than "is that cell occupied": a glass pane, a fence or a wall only
+// holds you along its post, so sneaking has to stop at the edge of the post and not
+// at the edge of the cell. Slabs, stairs and everything else fall out of it for free.
+function groundUnder(x,z){ return collides(x, player.pos.y-0.06, z); }
 function isOnLadder(){   // true when the player's box overlaps a ladder block
   const w=player.w/2*0.9;
   const y0=Math.floor(player.pos.y), y1=Math.floor(player.pos.y+player.h-0.1);
@@ -4675,13 +4697,22 @@ function tickPortal(dt){
 }
 function travelThroughPortal(){
   const to = dim===0 ? 1 : 0;
+  const pc = portalCellAt();
+  const from = pc ? [pc[0], pc[1], pc[2], dim] : null;   // remember which portal you stepped into
   const k  = to===1 ? 1/8 : 8;         // Minecraft's eight-to-one map between the two worlds
   let tx = Math.round(player.pos.x*k), tz = Math.round(player.pos.z*k);
   const ty = Math.round(player.pos.y);
   switchDim(to);
   { const b=borderNow();                       // never come out beyond the wall on the far side
     if(b){ const lim=b-6; tx=Math.max(-lim, Math.min(lim, tx)); tz=Math.max(-lim, Math.min(lim, tz)); } }
-  const spot = arrivePortal(tx, ty, tz);
+  let spot = null;
+  const link = from ? portalPairs.get(portalKey(from[3], from[0], from[1], from[2])) : null;
+  if(link && getBlock(link[0], link[1], link[2])===B.nether_portal) spot=[link[0], link[1], link[2]];
+  if(!spot) spot = arrivePortal(tx, ty, tz);
+  if(from){                                   // tie the two together, both ways
+    portalPairs.set(portalKey(from[3], from[0], from[1], from[2]), [spot[0], spot[1], spot[2], to]);
+    portalPairs.set(portalKey(to, spot[0], spot[1], spot[2]), [from[0], from[1], from[2], from[3]]);
+  }
   player.pos.set(spot[0]+0.5, spot[1], spot[2]+0.5); player.vel.set(0,0,0);
   ensureChunks(player.pos.x, player.pos.z);
   let guard=0; while(genQueue.length && guard<500){ const c=genQueue.shift(); if(!c.generated) c.generate(); guard++; }
@@ -4689,12 +4720,27 @@ function travelThroughPortal(){
   portalArmed=false;                   // you land standing in the portal on the far side
   showBanner(dim===1 ? 'The Nether' : 'The Overworld');
 }
+// Which portal is tied to which. A pair is remembered the first time it is used, so
+// coming back always drops you in the portal you originally left from rather than
+// digging a fresh one a few blocks away. Without this, the eight-to-one map between
+// the worlds turns a small offset in the nether into a big one in the overworld, and
+// the search misses the portal that is already standing there.
+const portalPairs = new Map();
+const portalKey = (d,x,y,z)=> d+':'+x+','+y+','+z;
+// the portal cell you are actually standing in
+function portalCellAt(){
+  const x=Math.floor(player.pos.x), z=Math.floor(player.pos.z), y=Math.floor(player.pos.y);
+  if(getBlock(x,y,z)===B.nether_portal) return [x,y,z];
+  if(getBlock(x,y+1,z)===B.nether_portal) return [x,y+1,z];
+  return null;
+}
 // come out of the nearest portal on this side, or build one if there is none
 function arrivePortal(x,y,z){
   ensureChunks(x,z);
   let guard=0; while(genQueue.length && guard<700){ const c=genQueue.shift(); if(!c.generated) c.generate(); guard++; }
   let best=null, bd=1e9;
-  for(let dx=-14;dx<=14;dx++) for(let dz=-14;dz<=14;dz++){
+  const R = 20;                        // wide enough that the 8:1 map cannot slip past an existing portal
+  for(let dx=-R;dx<=R;dx++) for(let dz=-R;dz<=R;dz++){
     const ct=columnTop(x+dx,z+dz);
     for(let cy=1;cy<=ct;cy++){
       if(getBlock(x+dx,cy,z+dz)!==B.nether_portal) continue;
@@ -6288,7 +6334,7 @@ function flintIconCanvas(size){
   px(12,8,1,1,'#ffd15c'); px(13,10,1,1,'#ffa62b'); px(12,12,1,1,'#ffe6a0'); px(14,6,1,1,'#ffc24d');   // sparks
   return c;
 }
-const fx = { body:'none', color:'', stick:false, hide:false, superStick:false, ghost:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
+const fx = { body:'none', color:'', stick:false, hide:false, superStick:false, ghost:false, fly:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
 let localEyeMul = 1;                      // giant/small change the local camera height a bit
 
 function flashCode(msg, el){ if(!el) return; el.textContent=msg; clearTimeout(el._t); el._t=setTimeout(()=>{ el.textContent=''; }, 3000); }
@@ -6316,9 +6362,15 @@ function applyCode(raw, msgEl){
     note = fx.ghost ? 'You are invisible. Nobody can see you. Type hide again to come back.' : 'You are visible again.';
   }
   else if(code==='tade'){ fx.superStick=false; fx.stick=!fx.stick; if(fx.stick){ giveStick(); note='Knockback stick equipped - check slot 1.'; } else { removeStick(); note='Knockback stick removed.'; } }
-  else if(code==='tadee'){ fx.superStick=!fx.superStick; fx.stick=fx.superStick;
-    if(fx.superStick){ giveStick(); note='Super knockback equipped (15 blocks). Your Bed Wars sword carries it too, and you can hit players even while spectating.'; }
-    else { removeStick(); note='Super knockback removed.'; } }
+  else if(code==='milan45'){ fx.fly=!fx.fly;
+    if(fx.fly) note='Flight unlocked, Bed Wars included. Double-tap jump to take off.';
+    else { player.flying=false; player.vel.y=0; note='Flight locked again.'; } }
+  else if(code==='tadee'){ fx.superStick=!fx.superStick;
+    // No stick to carry: the effect lives on the sword you already hold, which turns
+    // blue so everyone can see what hit them.
+    if(typeof bwApplyLocalGear==='function') bwApplyLocalGear();
+    note = fx.superStick ? 'Super knockback on: your sword turns blue and throws 15 blocks.'
+                         : 'Super knockback off.'; }
   else if(code==='big' || code==='small' || code==='pig' || code==='block' || code==='tree'){
     const target = { big:'giant', small:'small', pig:'pig', block:'block', tree:'tree' }[code];
     fx.body = (fx.body===target) ? 'none' : target;   // typing the same body code again turns it off
@@ -6662,6 +6714,9 @@ function mpHandle(m){
                t ? { text:'['+t.name.toUpperCase()+']', color:'#'+t.color.toString(16).padStart(6,'0') } : null);
     }
   }
+  else if(m.type==='worldspawn'){ worldSpawn={ x:+m.x, y:+m.y, z:+m.z, d:(m.d|0) };
+    chatPush('An admin moved the world spawn.', 'sys'); }
+  else if(m.type==='kicked'){ chatPush(m.reason||'You were removed from this server.', 'sys'); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
     else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; } }
@@ -7699,7 +7754,7 @@ function bwInit(m){
   // Start where the server says you belong. Dropping everyone at the origin meant a
   // latecomer spawned on the middle island and had to bridge home.
   const sp = (m.you && m.you.spawn) ? m.you.spawn : { x:0.5, y:BW_Y+3, z:0.5 };
-  player.pos.set(sp.x, sp.y, sp.z); player.vel.set(0,0,0); player.flying=false; player.hp=100;
+  player.pos.set(sp.x, sp.y, sp.z); player.vel.set(0,0,0); player.flying=!!fx.fly; player.hp=100;
   for(const p of (m.players||[])) mpAddPlayer(p);
   for(const p of (m.players||[])){ const e=mp.players.get(p.id); if(e){ e.team=p.team; e.armor=p.armor; e.sword=p.sword; bwApplyRemoteGear(p.id); } }
   // items present already
@@ -7717,7 +7772,8 @@ function bwInit(m){
 // returns true if it handled a bedwars-only message
 function bwHandle(m){
   switch(m.type){
-    case 'bwstate': bw.phase=m.phase; bw.beds=m.beds||bw.beds; bw.teams=m.teams||bw.teams; bw.countdown=m.countdown||0; bw.teamUp=m.upgrades||bw.teamUp; { const ot=bw.genTier; bw.genTier=m.genTier||bw.genTier; if(bw.genTier!==ot) bwUpdateGenTiers(); } bwUpdateHud();
+    case 'bwkb': { const q=mp.players.get(m.id); if(q){ q.superStick=!!m.on; bwApplyRemoteGear(m.id); } } return true;
+    case 'bwstate': bw.phase=m.phase; bw.beds=m.beds||bw.beds; bw.teams=m.teams||bw.teams; bw.countdown=m.countdown||0; bw.lobbyIn=m.lobbyIn||0; bw.endedIn=m.endedIn||0; bw.teamUp=m.upgrades||bw.teamUp; { const ot=bw.genTier; bw.genTier=m.genTier||bw.genTier; if(bw.genTier!==ot) bwUpdateGenTiers(); } bwUpdateHud();
       if(m.phase==='playing'){ bwHideBanner(); } return true;
     case 'bwupgrades': if(m.team!=null) bw.teamUp[m.team]=m.up; if(bwShopOpen && bwShopCat==='Upgrades') bwRenderShop(); return true;
     case 'bwexplode': bwExplodeVisual(m.x,m.y,m.z,m.power||3); return true;
@@ -7917,7 +7973,7 @@ function armorMat(hex){
   const mat=new THREE.MeshLambertMaterial({ map:t }); _armorMatCache[hex]=mat; return mat;
 }
 // ---- worn armour + held sword on a character model (local body or a remote player) ----
-function bwSetGear(model, teamColor, armorTier, swordTier){
+function bwSetGear(model, teamColor, armorTier, swordTier, kbSword){
   const ud=model && model.userData; if(!ud || ud.isPig || ud.isBlock || ud.isTree) return;   // pig/block/tree avatars have no humanoid slots to wear armour
   if(ud.gear) for(const m of ud.gear){ if(m.parent) m.parent.remove(m); }
   ud.gear=[];
@@ -7936,7 +7992,8 @@ function bwSetGear(model, teamColor, armorTier, swordTier){
     gear(ud.legL, 5.2,4.6,5.4, 0,-4,0.2, mat); gear(ud.legR, 5.2,4.6,5.4, 0,-4,0.2, mat); // boots (a touch wider)
   }
   if(swordTier>0 && ud.armR){
-    const scol=[0x8a5a2b,0x8a5a2b,0xb7b7b7,0xe6e6e6,0x8fe9ff][swordTier]||0xb7b7b7;
+    // a sword carrying the tadee knockback glows blue, whatever it is made of
+    const scol = kbSword ? 0x3d7bff : ([0x8a5a2b,0x8a5a2b,0xb7b7b7,0xe6e6e6,0x8fe9ff][swordTier]||0xb7b7b7);
     const sw=new THREE.Group();
     const bmat=new THREE.MeshLambertMaterial({color:scol}), hmat=new THREE.MeshLambertMaterial({color:0x5a3a1a});
     const blade=new THREE.Mesh(new THREE.BoxGeometry(1.3*S,8*S,1.3*S), bmat); blade.position.y=3*S;
@@ -7948,9 +8005,9 @@ function bwSetGear(model, teamColor, armorTier, swordTier){
     ud.armR.add(sw); ud.gear.push(sw);
   }
 }
-function bwApplyLocalGear(){ if(bw.active) bwSetGear(body, bw.team!=null?BW_TEAMS[bw.team].color:null, bw.loadout.armor||0, bw.loadout.sword||0); }
+function bwApplyLocalGear(){ if(bw.active) bwSetGear(body, bw.team!=null?BW_TEAMS[bw.team].color:null, bw.loadout.armor||0, bw.loadout.sword||0, fx.superStick); }
 function bwApplyRemoteGear(id){ const p=mp.players.get(id); if(!p||!p.model) return;
-  bwSetGear(p.model, p.team!=null?BW_TEAMS[p.team].color:null, p.armor||0, p.sword||0);
+  bwSetGear(p.model, p.team!=null?BW_TEAMS[p.team].color:null, p.armor||0, p.sword||0, p.superStick);
   if(p.tag){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
 }
 
@@ -7991,7 +8048,7 @@ function bwOnDeath(m){
 }
 function bwOnRespawn(m){
   const e=bw.players.get(m.id); if(e){ e.alive=true; e.eliminated=false; e.hp=m.hp; }
-  if(m.id===mp.id){ bw.dead=false; bw.hp=m.hp; player.hp=m.hp; player.pos.set(m.x,m.y+0.2,m.z); player.vel.set(0,0,0); player.flying=false; bwHideBanner(); bwUpdateHud(); }
+  if(m.id===mp.id){ bw.dead=false; bw.hp=m.hp; player.hp=m.hp; player.pos.set(m.x,m.y+0.2,m.z); player.vel.set(0,0,0); player.flying=!!fx.fly; bwHideBanner(); bwUpdateHud(); }
 }
 function bwOnWin(m){
   bw.phase='ended';
@@ -8195,10 +8252,17 @@ function bwUpdateHud(){
   document.getElementById('bwHealth').innerHTML = bw.phase==='playing' && !bw.eliminated ? bwHealthStr() : '';
   const lobby=document.getElementById('bwLobby'); const p=document.getElementById('bwLobbyP');
   const hint=document.getElementById('bwLobbyHint'), btn=document.getElementById('bwStartBtn');
-  if(bw.phase==='lobby'){ lobby.style.display='block'; p.textContent = 'Grab a friend — there are no bots to fight.';
-    btn.style.display=''; if(hint) hint.textContent='Anyone here can press K.'; }
+  // The panel stays up in the lobby and on the win screen, so there is always a way
+  // to begin. It used to vanish the moment a game ended, which left people with no
+  // button and a K key that did nothing.
+  if(bw.phase==='lobby'){ lobby.style.display='block';
+    p.textContent = bw.lobbyIn ? ('Starting in '+bw.lobbyIn+'s') : 'Waiting for players…';
+    btn.style.display=''; if(hint) hint.textContent='Anyone here can press K to start now.'; }
   else if(bw.phase==='countdown'){ lobby.style.display='block'; p.textContent = 'Starting in '+(bw.countdown||0)+'…';
     btn.style.display='none'; if(hint) hint.textContent=''; }
+  else if(bw.phase==='ended'){ lobby.style.display='block';
+    p.textContent = bw.endedIn ? ('Next game in '+bw.endedIn+'s') : 'Game over.';
+    btn.style.display=''; if(hint) hint.textContent='Or press K to go again now.'; }
   else { lobby.style.display='none'; }
 }
 function bwBanner(text,color,ms){ if(!bwUiBuilt) return; const b=document.getElementById('bwBanner'); b.textContent=text; b.style.color='#'+((color||0xffffff).toString(16).padStart(6,'0')); b.style.display='block'; clearTimeout(bwBannerTimer); bwBannerTimer=setTimeout(()=>{ b.style.display='none'; }, ms||2500); }
@@ -8627,7 +8691,23 @@ function closeChat(send){
   chatOpen=false; chatBox.hidden=true; chatInputEl.blur(); chatLogEl.classList.remove('up');
   if(send && v){
     chatHistory.push(v); if(chatHistory.length>50) chatHistory.shift();
-    if(/^\/start\b/i.test(v)){                                    // /start begins a round in whichever game you are in
+    if(/^\/kick\b/i.test(v)){
+      const who=v.replace(/^\/kick\s*/i,'').trim();
+      if(!isAdmin()) chatPush('/kick is for admins.', 'sys');
+      else if(!who) chatPush('Who? Try /kick <name>.', 'sys');
+      else if(!mp.active) chatPush('There is nobody else here to kick.', 'sys');
+      else mpSend({type:'kick', name:who});
+    }
+    else if(/^\/setworldspawn\b/i.test(v)){
+      if(!isAdmin()) chatPush('/setworldspawn is for admins.', 'sys');
+      else {
+        worldSpawn = { x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2), d:dim };
+        try{ localStorage.setItem('leoncraft_spawn', JSON.stringify(worldSpawn)); }catch(e){}
+        if(mp.active) mpSend({type:'worldspawn', x:worldSpawn.x, y:worldSpawn.y, z:worldSpawn.z, d:dim});
+        chatPush('World spawn set to '+Math.round(worldSpawn.x)+', '+Math.round(worldSpawn.y)+', '+Math.round(worldSpawn.z)+'.', 'sys');
+      }
+    }
+    else if(/^\/start\b/i.test(v)){                               // /start begins a round in whichever game you are in
       if(bw.active){ startBedwarsBtn(); chatPush('Starting the match…', 'sys'); }
       else if(bb.active){ bbStartBtn(); chatPush('Starting the round…', 'sys'); }
       else chatPush('There is nothing to start here. /start works in Bed Wars and Build Battle.', 'sys');
@@ -9054,7 +9134,7 @@ window.__mc = {
   joinTarget(id,pw){ mpTarget={server:id,pw:pw||''}; startMultiplayer(); }, adminOn(){ return isAdmin(); }, ownerOn(){ return ownerMode; }, plainAdminOn(){ return adminMode; },
   playerAdmins(){ return [...mp.players.values()].map(p=>({name:p.name,admin:!!p.admin})); },
   // ---- secret-code test hooks ----
-  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, eyeMul:localEyeMul, localKind:modelKind(body) }; },
+  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, fly:fx.fly, eyeMul:localEyeMul, localKind:modelKind(body) }; },
   mpSpectator(){ return !!mp.spectator; },
   remoteTags(){ return [...mp.players.values()].map(p=>({ id:p.id, tagVisible:p.tag?!!p.tag.visible:null, hide:!!p.hide, color:p.color||'', visible:!!(p.model&&p.model.visible) })); },
   bwPotions(){ const t=performance.now(); return { speed:Math.max(0,Math.round((bw.speedUntil-t)/1000)), jump:Math.max(0,Math.round((bw.jumpUntil-t)/1000)), invis:Math.max(0,Math.round((bw.invisUntil-t)/1000)) }; },
@@ -9080,6 +9160,7 @@ window.__mc = {
   // ---- bedwars test hooks ----
   bwStart(){ startBedwars(); }, bwBegin(){ startBedwarsBtn(); },
   bwGive(tier){ bw.loadout.sword=tier|0; bwApplyLocalGear(); return bw.loadout; },
+  bwSetPhase(ph){ bw.phase=ph; bwUpdateHud(); }, bwForceHud(){ bwUpdateHud(); },
   bwSwordAim(){ const ud=body.userData; if(!ud||!ud.gear||!ud.gear.length) return null;
     const sw=ud.gear[ud.gear.length-1];
     body.updateMatrixWorld(true);
