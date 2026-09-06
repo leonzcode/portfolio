@@ -380,7 +380,26 @@
   #srvSet .ssRow .keybtn{ flex:1; min-width:0; }
   #srvSet .keybtn.on{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; color:#ffec4d; }
   #srvSet .ssHint{ font-size:12px; color:#171717; line-height:1.5; }
+  #srvSet .ssPw{ display:flex; align-items:center; gap:7px; }
+  #srvSet .ssPw .tag{ flex:0 0 34px; font-size:11px; color:#1f1f1f; }
+  #srvSet .ssPw .val{ flex:1; min-width:0; font-size:13px; color:#111; background:#b9b9b9;
+    border:2px solid; border-color:#8f8f8f #d6d6d6 #d6d6d6 #8f8f8f; padding:6px 8px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; user-select:text; }
+  #srvSet .ssPw .val.none{ color:#4a4a4a; font-style:italic; }
+  #srvSet .ssPw .nameField{ flex:1; min-width:0; width:auto; text-align:left; }
+  #srvSet .ssPw .keybtn{ flex:0 0 auto; min-width:66px; }
+  #srvSet .ssIcon{ display:flex; align-items:center; gap:9px; }
+  #srvSet .ssIcon canvas.prev{ width:44px; height:44px; flex:0 0 44px; image-rendering:pixelated;
+    border:2px solid; border-color:#8f8f8f #d6d6d6 #d6d6d6 #8f8f8f; background:#666; }
+  #srvSet .ssIcon .picks{ display:flex; gap:5px; flex-wrap:wrap; flex:1; min-width:0; }
+  #srvSet .ssIcon .picks canvas{ width:26px; height:26px; image-rendering:pixelated; cursor:pointer;
+    border:2px solid; border-color:#8f8f8f #d6d6d6 #d6d6d6 #8f8f8f; }
+  #srvSet .ssIcon .picks canvas:hover{ border-color:#ffec4d #8a7a1a #8a7a1a #ffec4d; }
   #srvSet .ssMsg{ font-size:12px; min-height:15px; text-align:center; color:#5a1f1f; }
+  #srvSet .ssDel{ font:inherit; font-size:12px; cursor:pointer; color:#ffdede; background:#7a3030; padding:7px 0; width:100%;
+    border:2px solid; border-color:#a85a5a #3d1717 #3d1717 #a85a5a; }
+  #srvSet .ssDel:hover{ filter:brightness(1.2); }
+  #srvSet .ssDel.armed{ background:#c14b43; color:#fff; }
   /* an admin drags a card to move it up or down the list */
   .srvCard.srvDrag{ cursor:grab; }
   .srvCard.srvDrag:active{ cursor:grabbing; }
@@ -532,7 +551,7 @@
   <div class="ctrlHint">Join a public server, enter a password for a private one, or press Play on a minigame to try the map without building on it.</div>
   <input class="nameField" id="srvSearch" type="text" maxlength="24" placeholder="Search servers by name" autocomplete="off" spellcheck="false">
   <div class="srvList" id="srvList"></div>
-    <div id="srvAdminHint" hidden>Drag a server to move it up or down the list.</div>
+    <div id="srvAdminHint" hidden>Drag any card to move it up or down the list.</div>
   <div class="srvNote" id="srvNote"></div>
   <div class="ctrlActions">
     <button class="btn half" id="srvCreateBtn">Request server</button>
@@ -580,15 +599,34 @@
   <div class="pwPanel">
     <div class="ssTitle">Server settings</div>
     <div class="ssName" id="ssName">Server</div>
-    <div class="ssLbl">CATEGORY</div>
-    <div class="ssRow">
+    <div class="ssLbl">NAME</div>
+    <input class="nameField" id="ssName2" type="text" maxlength="24" placeholder="Server name" autocomplete="off" spellcheck="false">
+    <div class="ssLbl">ICON</div>
+    <div class="ssIcon">
+      <canvas class="prev" id="ssIconPrev" width="16" height="16"></canvas>
+      <div class="picks" id="ssIconPicks"></div>
+      <button class="keybtn" id="ssIconUpload" style="flex:0 0 auto;min-width:72px;">Upload</button>
+      <input type="file" id="ssIconFile" accept="image/*" hidden>
+    </div>
+    <div class="ssLbl" id="ssCatLbl">CATEGORY</div>
+    <div class="ssRow" id="ssCatRow">
       <button class="keybtn" id="ssPublic" title="Anyone can join and build.">Public</button>
       <button class="keybtn" id="ssPrivate" title="The password is the way in.">Private</button>
       <button class="keybtn" id="ssMinigame" title="Anyone can play it; the password is what lets you build on it.">Minigame</button>
     </div>
-    <div class="ssLbl">PASSWORD</div>
-    <input class="nameField" id="ssPassword" type="text" maxlength="32" placeholder="New password" autocomplete="off" spellcheck="false">
+    <div class="ssLbl" id="ssPwLbl">PASSWORD</div>
+    <div class="ssPw" id="ssPwNowRow">
+      <span class="tag">Now</span>
+      <div class="val" id="ssPwNow">••••••••</div>
+      <button class="keybtn" id="ssPwShow" title="Show the password this server is checking right now">Show</button>
+    </div>
+    <div class="ssPw" id="ssPwNewRow">
+      <span class="tag">New</span>
+      <input class="nameField" id="ssPassword" type="password" maxlength="32" placeholder="New password" autocomplete="off" spellcheck="false">
+      <button class="keybtn" id="ssNewShow" title="Show what you are typing instead of dots">Show</button>
+    </div>
     <div class="ssHint" id="ssPwHint"></div>
+    <button class="ssDel" id="ssDeleteBtn">Delete this server</button>
     <div class="ssMsg" id="ssMsg"></div>
     <div class="ssRow" style="margin-top:4px;">
       <button class="btn" id="ssSaveBtn" style="width:auto;flex:1;padding:9px 0;">Save</button>
@@ -7442,7 +7480,7 @@ function renderServerList(){
   const list = q ? srvAllList.filter(s=>(s.name||'').toLowerCase().includes(q)) : srvAllList;
   if(!list.length){ serversNote('No servers match "'+q+'".'); return; }
   serversNote('');
-  const movable = list.filter(x=>!x.pinned);     // the two built-in games stay where they are
+  const movable = list;                          // the built-in games take part in the order too
   for(const s of list){
     const idx = movable.indexOf(s);
     const card=document.createElement('div'); card.className='srvCard';
@@ -7477,7 +7515,7 @@ function renderServerList(){
       btns.appendChild(spec);
     }
     // everything an admin can change about a server is behind this one gear
-    if(isAdmin() && !s.pinned){
+    if(isAdmin()){
       const gear=document.createElement('button'); gear.className='srvGear'; gear.textContent='⚙';
       gear.title='Server settings: category and password';
       gear.addEventListener('click', e=>{ e.stopPropagation(); openServerSettings(s, idx); });
@@ -7535,14 +7573,14 @@ function srvMakeDraggable(card, s){
 async function dropServerOn(dragId, targetId, above){
   srvDragId=null;
   if(!dragId || dragId===targetId) return;
-  const movable = srvAllList.filter(x=>!x.pinned);
+  const movable = srvAllList.slice();
   const from = movable.findIndex(x=>x.id===dragId);
   if(from<0) return;
   const [moved] = movable.splice(from, 1);
   const to = movable.findIndex(x=>x.id===targetId);
   if(to<0) return;
   movable.splice(above ? to : to+1, 0, moved);
-  srvAllList = srvAllList.filter(x=>x.pinned).concat(movable);
+  srvAllList = movable;
   renderServerList();                                    // move it now; the save follows
   try{
     const r=await fetch(mcHttpBase()+'/serverorder',{ method:'POST', headers:{'Content-Type':'application/json'},
@@ -7558,9 +7596,103 @@ async function dropServerOn(dragId, targetId, above){
    click it: you set what you want and press Save, so a half-made change never lands. */
 const srvSetEl = document.getElementById('srvSet');
 let ssTarget=null, ssKind='public', ssIndex=0, ssBusy=false;
+let ssPwShown=false, ssPwValue=null, ssDelArmed=false;
+// Deleting takes the world with it, so the button asks once. Clicking anything else in
+// the panel, or leaving it, disarms again.
+function ssSetDelete(armed){
+  ssDelArmed=!!armed;
+  const b=document.getElementById('ssDeleteBtn'); if(!b) return;
+  b.classList.toggle('armed', ssDelArmed);
+  b.textContent = ssDelArmed ? 'Really delete it? This removes the world for everyone.' : 'Delete this server';
+}
+async function ssDelete(){
+  if(!ssTarget || ssBusy) return;
+  if(!ssDelArmed){ ssSetDelete(true); return; }
+  const s=ssTarget;
+  ssBusy=true; ssMsg('Deleting…');
+  try{
+    const r=await fetch(mcHttpBase()+'/deleteserver',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ admin:true, owner:ownerMode, id:s.id, device:pollDeviceId() }) }).then(x=>x.json());
+    if(r && r.error){ ssMsg(r.error, true); ssBusy=false; ssSetDelete(false); return; }
+    closeServerSettings('Deleted "'+s.name+'".');
+  }catch(e){ ssMsg('Network error. Try again?', true); ssBusy=false; }
+}
+// The icon an admin is choosing. The freehand painter stays in the owner's editor;
+// here it is the same presets and an upload, which is what changing an icon usually
+// comes down to.
+const ssIcon=document.createElement('canvas'); ssIcon.width=ssIcon.height=16;
+const ssIconG=ssIcon.getContext('2d');
+let ssIconChanged=false;
+function ssDrawIconPrev(){
+  const cv=document.getElementById('ssIconPrev'); if(!cv) return;
+  const g=cv.getContext('2d'); g.imageSmoothingEnabled=false;
+  g.clearRect(0,0,16,16); g.drawImage(ssIcon,0,0,16,16);
+}
+function ssSetIconFrom(fn){ ssIconG.clearRect(0,0,16,16); fn(ssIconG); ssIconChanged=true; ssDrawIconPrev(); }
+function ssLoadIcon(s){
+  ssIconChanged=false;
+  ssIconG.clearRect(0,0,16,16);
+  if(s.icon && s.icon.slice(0,11)==='data:image/'){
+    const im=new Image();
+    im.onload=()=>{ ssIconG.clearRect(0,0,16,16); ssIconG.imageSmoothingEnabled=false; ssIconG.drawImage(im,0,0,16,16); ssDrawIconPrev(); };
+    im.src=s.icon;
+  } else {
+    drawServerIcon(ssIcon, '', s.id);        // the same letter tile the card falls back to
+  }
+  ssDrawIconPrev();
+}
+function ssBuildIconPicks(){
+  const el=document.getElementById('ssIconPicks'); if(!el || el.childElementCount) return;
+  CS_PRESETS.forEach(fn=>{
+    const cv=document.createElement('canvas'); cv.width=cv.height=16;
+    fn(cv.getContext('2d'));
+    cv.title='Use this icon';
+    cv.addEventListener('click', ()=>ssSetIconFrom(fn));
+    el.appendChild(cv);
+  });
+}
+// The password a server is checking, on request. It never rides along with the server
+// list; it is fetched only when an admin asks to see it, and forgotten when the panel
+// closes.
+function ssRenderPw(){
+  const val=document.getElementById('ssPwNow'), btn=document.getElementById('ssPwShow');
+  if(!val || !btn) return;
+  const has = !!(ssTarget && ssTarget.hasPassword);
+  btn.disabled = !has;
+  btn.textContent = ssPwShown ? 'Hide' : 'Show';
+  val.classList.toggle('none', !has);
+  if(!has){ val.textContent='No password set'; return; }
+  val.textContent = ssPwShown ? (ssPwValue===null ? 'Loading…' : (ssPwValue || 'No password set')) : '••••••••';
+}
+async function ssTogglePw(){
+  if(!ssTarget || !ssTarget.hasPassword) return;
+  if(ssPwShown){ ssPwShown=false; ssRenderPw(); return; }
+  ssPwShown=true;
+  if(ssPwValue===null){
+    ssRenderPw();
+    try{
+      const r=await fetch(mcHttpBase()+'/revealpassword',{ method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ admin:true, id:ssTarget.id }) });
+      const jn=await r.json();
+      if(jn && jn.ok) ssPwValue = jn.password || '';
+      else { ssPwShown=false; ssMsg((jn&&jn.error)||'Could not read it.', true); }
+    }catch(e){ ssPwShown=false; ssMsg('Network error.', true); }
+  }
+  ssRenderPw();
+}
+// and the one being typed: dots by default, plain text if you ask
+function ssToggleNewPw(){
+  const el=document.getElementById('ssPassword'), btn=document.getElementById('ssNewShow');
+  if(!el || !btn) return;
+  const showing = el.type === 'text';
+  el.type = showing ? 'password' : 'text';
+  btn.textContent = showing ? 'Show' : 'Hide';
+  el.focus();
+}
 function ssMsg(t, bad){ const el=document.getElementById('ssMsg'); if(!el) return;
   el.textContent=t||''; el.style.color = bad ? '#7a1a1a' : '#1f4d1f'; }
 function ssPickKind(k){
+  ssSetDelete(false);
   ssKind = SRV_KIND_LABEL[k] ? k : 'public';
   for(const id of ['ssPublic','ssPrivate','ssMinigame']){
     const el=document.getElementById(id); if(el) el.classList.toggle('on', id==='ss'+ssKind[0].toUpperCase()+ssKind.slice(1));
@@ -7577,7 +7709,26 @@ function openServerSettings(s, idx){
   ssTarget=s; ssIndex=idx|0; ssBusy=false;
   document.getElementById('ssName').textContent=s.name;
   document.getElementById('ssPassword').value='';
+  ssPwShown=false; ssPwValue=null;
+  ssSetDelete(false);
+  // Bed Wars and Build Battle are games, not worlds: they have a name, an icon and a
+  // place in the list, and nothing else here applies to them.
+  { const isGame=!!s.mode;
+    for(const id of ['ssCatLbl','ssCatRow','ssPwLbl','ssPwNowRow','ssPwNewRow','ssPwHint']){
+      const el=document.getElementById(id); if(el) el.style.display = isGame ? 'none' : '';
+    }
+    const d=document.getElementById('ssDeleteBtn'); if(d) d.style.display = isGame ? 'none' : '';
+  }
+  { const b=document.getElementById('ssDeleteBtn');
+    // the Original Server is where everyone starts, and the two games are built in
+    const keep = (s.id==='original') || !!s.mode;
+    if(b){ b.disabled = keep; b.style.display = keep ? 'none' : ''; } }
+  document.getElementById('ssName2').value=s.name||'';
+  ssBuildIconPicks(); ssLoadIcon(s);
+  { const el=document.getElementById('ssPassword'), b=document.getElementById('ssNewShow');
+    if(el) el.type='password'; if(b) b.textContent='Show'; }
   ssPickKind(srvKindOf(s));
+  ssRenderPw();
   ssMsg('');
   srvSetEl.hidden=false; serversEl.hidden=true;
   setTimeout(()=>{ const el=document.getElementById('ssPassword'); if(el) el.focus(); }, 40);
@@ -7585,17 +7736,32 @@ function openServerSettings(s, idx){
 function closeServerSettings(note){ srvSetEl.hidden=true; ssTarget=null; openServers(note||''); }
 async function ssSave(){
   if(!ssTarget || ssBusy) return;
+  ssSetDelete(false);
   const s=ssTarget, pw=document.getElementById('ssPassword').value.trim();
   const wasKind=srvKindOf(s);
-  if(ssKind!=='public' && !pw && !s.hasPassword){ ssMsg('Set a password before making it '+SRV_KIND_LABEL[ssKind].toLowerCase()+'.', true); return; }
+  const name=document.getElementById('ssName2').value.trim();
+  if(!name){ ssMsg('A server needs a name.', true); return; }
+  if(!s.mode && ssKind!=='public' && !pw && !s.hasPassword){ ssMsg('Set a password before making it '+SRV_KIND_LABEL[ssKind].toLowerCase()+'.', true); return; }
   ssBusy=true; ssMsg('Saving…');
   const post=(path, body)=>fetch(mcHttpBase()+path, { method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify(Object.assign({ admin:true, id:s.id }, body)) }).then(r=>r.json());
   try{
     const done=[];
+    if(name!==s.name || ssIconChanged){
+      const body={ admin:true, id:s.id, name };
+      if(ssIconChanged) body.icon = ssIcon.toDataURL('image/png');
+      const where = s.mode ? '/editmode' : '/editserver';   // a game keeps its name and icon somewhere else
+      const r=await fetch(mcHttpBase()+where,{ method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body) }).then(x=>x.json());
+      if(r && r.error){ ssMsg(r.error, true); ssBusy=false; return; }
+      if(name!==s.name) done.push('renamed');
+      if(ssIconChanged) done.push('new icon');
+      s.name=name;
+    }
+    if(s.mode){ closeServerSettings(done.length ? ('"'+s.name+'": '+done.join(', ')+'.') : 'Nothing to change.'); return; }
     if(pw){ const r=await post('/serverpassword', { password:pw });
       if(r && r.error){ ssMsg(r.error, true); ssBusy=false; return; }
-      s.hasPassword=true; done.push('password changed'); }
+      s.hasPassword=true; ssPwValue=pw; done.push('password changed'); }
     if(ssKind!==wasKind){ const r=await post('/serverkind', { kind:ssKind });
       if(r && r.error){ ssMsg(r.error==='needpassword' ? 'Set a password first.' : r.error, true); ssBusy=false; return; }
       done.push('now '+SRV_KIND_LABEL[ssKind].toLowerCase()); }
@@ -7654,6 +7820,23 @@ pwInputEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Ente
 document.getElementById('ssPublic').addEventListener('click', ()=>ssPickKind('public'));
 document.getElementById('ssPrivate').addEventListener('click', ()=>ssPickKind('private'));
 document.getElementById('ssMinigame').addEventListener('click', ()=>ssPickKind('minigame'));
+document.getElementById('ssDeleteBtn').addEventListener('click', ssDelete);
+document.getElementById('ssIconUpload').addEventListener('click', ()=>document.getElementById('ssIconFile').click());
+document.getElementById('ssIconFile').addEventListener('change', e=>{
+  const f=e.target.files && e.target.files[0]; e.target.value='';
+  if(!f) return;
+  const url=URL.createObjectURL(f), im=new Image();
+  im.onload=()=>{ ssIconG.clearRect(0,0,16,16); ssIconG.imageSmoothingEnabled=false;
+    ssIconG.drawImage(im,0,0,im.naturalWidth||16,im.naturalHeight||16,0,0,16,16);
+    ssIconChanged=true; ssDrawIconPrev(); URL.revokeObjectURL(url); };
+  im.onerror=()=>{ ssMsg('Could not read that image.', true); URL.revokeObjectURL(url); };
+  im.src=url;
+});
+document.getElementById('ssName2').addEventListener('keydown', e=>{ e.stopPropagation();
+  if(e.key==='Enter'){ e.preventDefault(); ssSave(); }
+  if(e.key==='Escape'){ e.preventDefault(); closeServerSettings(); } });
+document.getElementById('ssPwShow').addEventListener('click', ssTogglePw);
+document.getElementById('ssNewShow').addEventListener('click', ssToggleNewPw);
 document.getElementById('ssSaveBtn').addEventListener('click', ssSave);
 document.getElementById('ssCancelBtn').addEventListener('click', ()=>closeServerSettings());
 document.getElementById('ssPassword').addEventListener('keydown', e=>{ e.stopPropagation();
@@ -7762,7 +7945,7 @@ async function csCreate(){
   const reason=(document.getElementById('csReason').value||'').trim();
   if(csEditing){
     try{
-      const body={ id:csEditing.id, owner:true, name, icon, kind:csKind, isPublic:(csKind==='public') };
+      const body={ id:csEditing.id, owner:ownerMode, admin:isAdmin(), name, icon, kind:csKind, isPublic:(csKind==='public') };
       if(password) body.password=password;                 // blank means keep the one it has
       const r=await fetch(mcHttpBase()+'/editserver',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
       const j=await r.json();
@@ -10171,6 +10354,7 @@ window.__mc = {
   // ---- server list test hooks ----
   openServers(){ openServers(); return true; },
   mpMinigame(){ return !!mp.minigame; },
+  dragId(){ return srvDragId; },
   srvList(){ return srvAllList.map(x=>({id:x.id,name:x.name,kind:srvKindOf(x),pinned:!!x.pinned})); },
   // ---- multiplayer test hook: join the world the ?mp= override points at ----
   joinShared(server){ mpTarget.server = server || 'original'; mpTarget.pw=''; mpTarget.spectate=false;
