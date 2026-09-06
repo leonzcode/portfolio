@@ -8474,7 +8474,7 @@ function mcPaintZoom(dir) {
 }
 function mcPaintOpen() {
   if (mc.paint) return;
-  if (!(mc.role === 'hider' && mc.alive && mc.playing)) return;
+  if (!(mc.playing && mc.alive)) return;
   mc.paint = true; mc.paintDrag = false; mc.paintOrbit = false; mc.paintDist = MC_PAINT_DIST;
   mcPaintEnsureUi(); mcPaintUi(); mcPaintCursor();
   mc.camWas = camMode;                       // whatever view you were in, you get it back
@@ -8638,13 +8638,13 @@ function mcSetLook(p) {
   if (tag) p.model.add(tag);
   scene.add(p.model);
 }
-function mcSetLocalLook(hider) {
-  const want = hider ? 'mc:blank' : 'human';
+function mcSetLocalLook(playing) {
+  const want = playing ? 'mc:blank' : 'human';
   if (mc.localKind === want) return;
   mc.localKind = want;
   const wasVisible = body.visible;
   scene.remove(body);
-  body = makeBodyModel('human', hider ? mcSkinTex : localSkinTex, hider ? false : localSlim);
+  body = makeBodyModel('human', playing ? mcSkinTex : localSkinTex, playing ? false : localSlim);
   headPivot = body.userData.headPivot;
   body.visible = wasVisible;
   scene.add(body);
@@ -8709,13 +8709,13 @@ function mcHandle(m) {
       if (typeof m.x === 'number' && mc.playing) mcStand(m.x, m.y, m.z);
       // a hider is a blank figure until they paint themselves, and sees it in third
       // person so they can tell what everyone else is looking at
-      const amHider = mc.role === 'hider' && mc.alive && mc.playing;
-      if (amHider && mc.localKind !== 'mc:blank') {
+      const inRound = mc.playing && mc.alive;
+      if (inRound && mc.localKind !== 'mc:blank') {
         mcBlankSkin(); mcSendSkin(true);
         if (!mc.paint) camMode = mc.camWas || 1;   // the view you last chose, third-back by default
       }
-      mcSetLocalLook(amHider);
-      if (!amHider) mcPaintClose();
+      mcSetLocalLook(inRound);
+      if (!inRound) mcPaintClose();
       mcHud();
       return true;
     }
@@ -8830,10 +8830,10 @@ function mcKey(k, e) {
   }
   if (k === 'k' && mc.phase === 'lobby') { mpSend({ type: 'mcstart' }); return true; }
   if (k === 'h') { mc.help = !mc.help; mcHud(); return true; }
+  if (mc.playing && mc.alive && k === 'b') { if (mc.paint) mcPaintClose(); else mcPaintOpen(); return true; }
   if (mc.role === 'hider' && mc.alive && mc.playing) {
     if (k >= '1' && k <= '6') { mc.pose = +k - 1; mpSend({ type: 'mcpose', pose: mc.pose }); mcHud(); return true; }
     if (k === 'v') { mpSend({ type: 'mctaunt' }); return true; }
-    if (k === 'b') { if (mc.paint) mcPaintClose(); else mcPaintOpen(); return true; }
   }
   if (mc.role === 'seeker') {
     if (k === 'r') { mpSend({ type: 'mcreload' }); return true; }
@@ -8873,6 +8873,9 @@ function mcEnsureUi() {
    #mcVote .row.on{border-color:#8dffa0;background:rgba(141,255,160,.12)}
    #mcVote .row .k{width:22px;height:22px;flex:0 0 22px;display:flex;align-items:center;justify-content:center;
      background:#2b3a2b;border:1px solid #5d7a5d;font-size:12px;font-weight:700;color:#dff5df}
+   #mcVote .row .shot{width:96px;height:60px;flex:0 0 96px;object-fit:cover;display:block;
+     border:2px solid rgba(120,200,120,.28);image-rendering:pixelated;background:#0d120d}
+   #mcVote .row.on .shot{border-color:#8dffa0}
    #mcVote .row .nm{flex:1;font-size:14px;color:#eaf5ea}
    #mcVote .row .bl{font-size:11.5px;color:#9ab39a}
    #mcVote .row .n{font-size:14px;font-weight:700;color:#8dffa0;min-width:22px;text-align:right}
@@ -8966,6 +8969,7 @@ function mcHud() {
   if (mc.phase === 'vote') {
     document.getElementById('mcVoteRows').innerHTML = mc.maps.map((m, i) =>
       '<div class="row' + (mc.myVote === m.id ? ' on' : '') + '"><span class="k">' + (i + 1) + '</span>' +
+      '<img class="shot" src="/legacy/mecha/' + encodeURIComponent(m.id) + '.png" alt="">' +
       '<span class="nm">' + escHtml(m.name) + '<div class="bl">' + escHtml(m.blurb || '') + '</div></span>' +
       '<span class="n">' + ((mc.votes && mc.votes[m.id]) || 0) + '</span></div>').join('');
   }
@@ -8990,7 +8994,8 @@ function mcHud() {
     gun.innerHTML = '';
   } else if (mc.playing && mc.role === 'seeker') {
     gear.innerHTML = '<div class="b">' + kb('F', 'fire') + '  ·  ' + kb('R', 'reload') + '</div>' +
-                     '<div class="b">' + kb('Q', 'change view') + '  ·  ' + kb('H', 'all the keys') + '</div>';
+                     '<div class="b">' + kb('B', 'paint yourself') + '  ·  ' + kb('Q', 'change view') + '</div>' +
+                     '<div class="b">' + kb('H', 'all the keys') + '</div>';
     const reloading = t < mc.reloadUntil, stunned = t < mc.stunUntil;
     gun.innerHTML =
       '<div class="ammo">' + (reloading ? '--' : mc.ammo) + ' <small>/ ' + mc.ammoMax + '</small></div>' +
@@ -11265,9 +11270,8 @@ function frame(now){
     poseCape(lud, capeDrift(localCloak, player.pos.x, player.pos.y, player.pos.z), player.yaw, cr>0.5, bobT, walkAmpLocal);
     // A held pose is not an animation, so it goes on last and wins: the walk cycle
     // above would otherwise put the limbs straight back where they were.
-    if(mc.active && mc.role==='hider' && mc.alive && mc.playing){
+    if(mc.active && mc.role==='hider' && mc.alive && mc.playing)
       mcPoseModel(body, mc.pose, performance.now()/1000 + 1);
-    }
   }
   // show your own body in first person when a body code is active, so you see yourself as big/small/pig
   body.visible = (state===PLAY && !sleep.active && !fx.ghost && (camMode!==0 || fx.body!=='none'));   // the hide code takes you out of your own view too
