@@ -4393,7 +4393,7 @@ function updateViewmodel(dt, moving){
   if(vmGun) vmGun.visible=false;
   if(vmArm.scale.x!==1) vmArm.scale.setScalar(1);
   // a hider carries nothing at all: no block, and no empty hand waving about either
-  if(mc.active){
+  if(mc.active && !mc.edit){
     if(vmBlock) vmBlock.visible=false;
     if(vmItem) clearVmItem();
     vmArm.visible=false;
@@ -5912,7 +5912,7 @@ function breakGhostUnderCrosshair(){
   return true;
 }
 function breakBlock(){
-  if(mc.active) return;                     // nothing in Mecha Chameleon is yours to break
+  if(mc.active && !mc.edit) return;         // not yours to break, unless you are editing the map
   if(bb.active && !bbCanBreak()) return;     // build battle: your plot only, and never the floor under it
   const specHit = mp.active && mp.spectator && fx.superStick;   // tadee code: a spectator may still punch players
   if(mp.active && mp.spectator && !specHit) return;   // ordinary spectators can't break blocks, punch players or hit mobs
@@ -5951,7 +5951,7 @@ function breakBlock(){
   mpSendBlock(x,y,z,0);
 }
 function placeBlock(){
-  if(mc.active) return;                     // nor to build
+  if(mc.active && !mc.edit) return;         // nor to build
   if(mp.active && mp.spectator) return;     // spectators can't place blocks
   if(bb.active && !bbCanPlace()) return;    // build battle: only in your plot, only while building
   if(!target) return;
@@ -7505,6 +7505,7 @@ function mpSend(o){
   if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} }
 }
 function mpSendBlock(x,y,z,b){
+  if(mc.edit){ mpSetOverride(x,y,z,b); mpSend({type:'mcedit', x, y, z, block: b ? blockName(b) : null}); return; }   // an admin editing a map
   if(bb.active){ if(bbInPlot(bb.plot,x,y,z)){ mpSetOverride(x,y,z,b); bbSendBlock(x,y,z,b); } return; }   // build battle: your plot only
   if(bw.active){ mpSetOverride(x,y,z,b); mpSend({type:'bwblock',x,y,z,b}); return; }   // bedwars: dynamic edit into the match
   if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); }
@@ -8237,6 +8238,7 @@ const mc = {
   active: false, phase: 'lobby', left: 0, deadline: 0,
   mapId: '', mapName: '', maps: [], votes: {}, myVote: '',
   poses: [], pose: 0, painted: false, help: false, helpSeen: false,
+  edit: false,
   paint: false, paintColor: '#b3271f', paintSize: 2, paintTool: 'brush',
   paintDrag: false, paintOrbit: false, paintDist: 4.2,
   paintYaw: 0, paintPitch: 0.12, camWas: 1,
@@ -8280,6 +8282,13 @@ function mcBuildMap(msg) {
     }
     mpSetOverride(x, y, z, id);
     if (meta && meta.dr) mpSetOverride(x, y + 1, z, id);   // a door is two cells tall
+  }
+  // the overlay of admin edits, laid over the built map so a joiner sees the same
+  // world as everyone who has been here a while
+  for (const k in (msg.edits || {})) {
+    const nm = msg.edits[k], c = k.split(',');
+    const b = nm ? (BLOCKS[nm] ? BLOCKS[nm].id : 0) : 0;
+    mpSetOverride(+c[0], +c[1], +c[2], b);
   }
   mc.bounds = msg.bounds || null;
   mc.spawn = msg.spawn || null;
@@ -8799,6 +8808,18 @@ function mcHandle(m) {
       return true;
     }
     case 'mcpose': { const p = mp.players.get(m.id); if (p) p.mcPose = m.pose | 0; return true; }
+    case 'mcediting': {
+      mc.edit = !!m.on;
+      if (mc.edit) mcPaintClose();
+      mcHud();
+      return true;
+    }
+    case 'mcedit': {                       // somebody's change, applied here as it happens
+      const b = m.block ? (BLOCKS[m.block] ? BLOCKS[m.block].id : 0) : 0;
+      mpSetOverride(m.x, m.y, m.z, b);
+      remeshChunkAt(m.x, m.z);
+      return true;
+    }
     case 'mcshot': mcTracer(m); return true;
     case 'mcfound': {
       mcFeed((m.byName || '?') + ' found ' + (m.name || '?'));
@@ -8874,7 +8895,8 @@ function mcFrame(dt) {
   // holding the fire key keeps the gun going
   if (mc.firing) mcFire();
   if (mc.kick) mc.kick = Math.max(0, mc.kick - dt * 6);
-  if (hotbarEl && hotbarEl.style.display !== 'none') hotbarEl.style.display = 'none';   // no blocks to hold in here
+  const wantBar = mc.edit ? '' : 'none';    // no blocks to hold in here, unless you are building the map
+  if (hotbarEl && hotbarEl.style.display !== wantBar) hotbarEl.style.display = wantBar;
   if (!mc.paint) mc.camWas = camMode;   // remember whichever view the player picked for themselves
   mcHud();
 }
@@ -11218,6 +11240,11 @@ function closeChat(send){
       else if(!who) chatPush('Who? Try /kick <name>.', 'sys');
       else if(!mp.active) chatPush('There is nobody else here to kick.', 'sys');
       else mpSend({type:'kick', name:who});
+    }
+    else if(/^\/edit\b/i.test(v)){                                // build in a Mecha Chameleon map
+      if(!mc.active) chatPush('/edit is for the Mecha Chameleon maps.', 'sys');
+      else if(!isAdmin()) chatPush('/edit is for admins.', 'sys');
+      else mpSend({type:'mcedittoggle'});
     }
     else if(/^\/setworldspawn\b/i.test(v)){
       if(!isAdmin()) chatPush('/setworldspawn is for admins.', 'sys');
