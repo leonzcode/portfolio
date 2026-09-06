@@ -367,14 +367,27 @@
   .srvCard .meta{ font-size:12px; color:#d7d7d7; }
   .srvCard .meta .lock{ color:#ffd24a; } .srvCard .meta .pub{ color:#9be07f; }
   .srvCard .meta .mini{ color:#8fb4ff; }   /* a game mode, not a world you build in */
-  .srvCard .srvAdmin{ flex:0 0 auto; display:flex; flex-direction:column; gap:2px; margin-right:2px; }
-  .srvCard .srvArrow{ font:inherit; font-size:10px; line-height:1; width:20px; height:15px; padding:0; cursor:pointer;
-    color:#e8e8e8; background:#4a4a4a; border:1px solid; border-color:#8a8a8a #232323 #232323 #8a8a8a; }
-  .srvCard .srvArrow:hover:not(:disabled){ background:#5c6a5c; }
-  .srvCard .srvArrow:disabled{ opacity:.35; cursor:default; }
-  .srvCard .srvKind{ font:inherit; font-size:11px; padding:3px 8px; cursor:pointer; color:#e8e8e8;
-    background:#3a4150; border:2px solid; border-color:#6b7486 #1b1f27 #1b1f27 #6b7486; }
-  .srvCard .srvKind:hover{ filter:brightness(1.2); }
+  /* the admin gear: everything that changes a server lives behind this one button */
+  .srvCard .srvGear{ font:inherit; font-size:14px; line-height:1; width:30px; height:30px; padding:0; cursor:pointer;
+    color:#e8e8e8; background:#3a4150; border:2px solid; border-color:#6b7486 #1b1f27 #1b1f27 #6b7486; }
+  .srvCard .srvGear:hover{ filter:brightness(1.3); }
+  /* server settings */
+  #srvSet .pwPanel{ width:400px; gap:9px; align-items:stretch; }
+  #srvSet .ssTitle{ font-size:19px; color:#fff; text-align:center; text-shadow:2px 2px 0 rgba(0,0,0,.5); }
+  #srvSet .ssName{ font-size:13px; color:#ffec4d; text-align:center; margin-top:-6px; }
+  #srvSet .ssLbl{ font-size:11px; letter-spacing:2px; color:#1f1f1f; margin-top:6px; }
+  #srvSet .ssRow{ display:flex; gap:6px; }
+  #srvSet .ssRow .keybtn{ flex:1; min-width:0; }
+  #srvSet .keybtn.on{ background:#8fa98f; border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; color:#ffec4d; }
+  #srvSet .ssHint{ font-size:12px; color:#171717; line-height:1.5; }
+  #srvSet .ssMsg{ font-size:12px; min-height:15px; text-align:center; color:#5a1f1f; }
+  /* an admin drags a card to move it up or down the list */
+  .srvCard.srvDrag{ cursor:grab; }
+  .srvCard.srvDrag:active{ cursor:grabbing; }
+  .srvCard.dragging{ opacity:.4; }
+  .srvCard.dropAbove{ box-shadow:inset 0 3px 0 #ffec4d; }
+  .srvCard.dropBelow{ box-shadow:inset 0 -3px 0 #ffec4d; }
+  #srvAdminHint{ font-size:11.5px; color:#bdbdbd; text-align:center; margin:-4px 0 2px; }
   .srvDel{ flex:0 0 auto; font-family:inherit; font-size:13px; color:#fff; padding:6px 12px; cursor:pointer;
     background:#7a7a7a; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
   .srvDel:hover{ filter:brightness(1.12); }
@@ -519,6 +532,7 @@
   <div class="ctrlHint">Join a public server, enter a password for a private one, or press Play on a minigame to try the map without building on it.</div>
   <input class="nameField" id="srvSearch" type="text" maxlength="24" placeholder="Search servers by name" autocomplete="off" spellcheck="false">
   <div class="srvList" id="srvList"></div>
+    <div id="srvAdminHint" hidden>Drag a server to move it up or down the list.</div>
   <div class="srvNote" id="srvNote"></div>
   <div class="ctrlActions">
     <button class="btn half" id="srvCreateBtn">Request server</button>
@@ -559,6 +573,27 @@
   <div class="ctrlActions">
     <button class="btn" id="csCreateBtn">Send request</button>
     <button class="btn" id="csCancelBtn">Back</button>
+  </div>
+</div>
+
+<div class="screen" id="srvSet" hidden>
+  <div class="pwPanel">
+    <div class="ssTitle">Server settings</div>
+    <div class="ssName" id="ssName">Server</div>
+    <div class="ssLbl">CATEGORY</div>
+    <div class="ssRow">
+      <button class="keybtn" id="ssPublic" title="Anyone can join and build.">Public</button>
+      <button class="keybtn" id="ssPrivate" title="The password is the way in.">Private</button>
+      <button class="keybtn" id="ssMinigame" title="Anyone can play it; the password is what lets you build on it.">Minigame</button>
+    </div>
+    <div class="ssLbl">PASSWORD</div>
+    <input class="nameField" id="ssPassword" type="text" maxlength="32" placeholder="New password" autocomplete="off" spellcheck="false">
+    <div class="ssHint" id="ssPwHint"></div>
+    <div class="ssMsg" id="ssMsg"></div>
+    <div class="ssRow" style="margin-top:4px;">
+      <button class="btn" id="ssSaveBtn" style="width:auto;flex:1;padding:9px 0;">Save</button>
+      <button class="btn" id="ssCancelBtn" style="width:auto;flex:1;padding:9px 0;">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -4530,7 +4565,7 @@ addEventListener('keydown', e=>{
   if(k==='k' && parkour.run && !chatOpen && !invOpen && state===PLAY){ e.preventDefault(); pkAbandon(); return; }   // K: give up on the course and take flight back
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
-  if(k==='escape'){ if(pollBlocking) return; if(parkour.panel) pkClosePanel(); else if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
+  if(k==='escape'){ if(pollBlocking) return; if(parkour.panel) pkClosePanel(); else if(srvSetEl && !srvSetEl.hidden) closeServerSettings(); else if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
 });
 // Windows can swallow a keyup: the Sticky Keys prompt steals focus after five taps
 // of Shift, alt-tab does it, so does losing pointer lock mid-press. A Shift left
@@ -7378,7 +7413,7 @@ async function reviewRequest(r, approve){
     refreshServers((j&&j.error) ? j.error : (approve ? '"'+r.name+'" approved.' : '"'+r.name+'" turned down.'));
   }catch(e){ refreshServers('Network error. Try again?'); }
 }
-function openServers(finalNote){ serversEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; if(createServerEl) createServerEl.hidden=true; if(pwPromptEl) pwPromptEl.hidden=true; refreshServers(finalNote); }
+function openServers(finalNote){ serversEl.hidden=false; menuEl.hidden=true; pauseEl.hidden=true; if(createServerEl) createServerEl.hidden=true; if(pwPromptEl) pwPromptEl.hidden=true; if(srvSetEl) srvSetEl.hidden=true; refreshServers(finalNote); }
 function closeServers(){ serversEl.hidden=true; menuEl.hidden=false; }
 function escHtml(s){ return (''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 let srvAllList=[];   // last-fetched server list, so the search box can filter without re-fetching
@@ -7402,6 +7437,7 @@ function srvKindOf(s){
 }
 function renderServerList(){
   srvListEl.innerHTML='';
+  { const h=document.getElementById('srvAdminHint'); if(h) h.hidden = !isAdmin(); }
   const q=(srvSearchEl&&srvSearchEl.value||'').trim().toLowerCase();
   const list = q ? srvAllList.filter(s=>(s.name||'').toLowerCase().includes(q)) : srvAllList;
   if(!list.length){ serversNote('No servers match "'+q+'".'); return; }
@@ -7440,20 +7476,13 @@ function renderServerList(){
       spec.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) spectateServer(s); });
       btns.appendChild(spec);
     }
-    // an admin can move a server up and down the list and change what it counts as
+    // everything an admin can change about a server is behind this one gear
     if(isAdmin() && !s.pinned){
-      const adm=document.createElement('div'); adm.className='srvAdmin';
-      const up=document.createElement('button'); up.className='srvArrow'; up.textContent='▲'; up.title='Move up the list';
-      const dn=document.createElement('button'); dn.className='srvArrow'; dn.textContent='▼'; dn.title='Move down the list';
-      up.disabled = idx===0; dn.disabled = idx===movable.length-1;
-      up.addEventListener('click', e=>{ e.stopPropagation(); moveServer(s.id, -1); });
-      dn.addEventListener('click', e=>{ e.stopPropagation(); moveServer(s.id, +1); });
-      adm.appendChild(up); adm.appendChild(dn);
-      btns.insertBefore(adm, btns.firstChild);
-      const kb=document.createElement('button'); kb.className='srvKind'; kb.textContent=SRV_KIND_LABEL[kind];
-      kb.title='Category: '+SRV_KIND_LABEL[kind]+'. Click to change it.';
-      kb.addEventListener('click', e=>{ e.stopPropagation(); cycleServerKind(s); });
-      btns.appendChild(kb);
+      const gear=document.createElement('button'); gear.className='srvGear'; gear.textContent='⚙';
+      gear.title='Server settings: category and password';
+      gear.addEventListener('click', e=>{ e.stopPropagation(); openServerSettings(s, idx); });
+      btns.insertBefore(gear, btns.firstChild);
+      srvMakeDraggable(card, s);              // and drag the card itself to move it up or down
     }
     card.appendChild(btns);
     const ownable = ownerMode && !s.pinned;                   // a pinned game mode is not a world you can edit
@@ -7471,33 +7500,107 @@ function renderServerList(){
     srvListEl.appendChild(card);
   }
 }
-// Move one server a place up or down and send the whole new order, so the server does
-// not have to work out what changed.
-async function moveServer(id, dir){
+/* ---- re-ordering: an admin drags a card where they want it ----
+   Dropping saves the whole new order straight away, so there is no arrangement sitting
+   unsaved on screen. The two built-in games are not worlds and stay pinned on top. */
+let srvDragId=null;
+function srvClearDropMarks(){
+  for(const el of srvListEl.querySelectorAll('.srvCard')) el.classList.remove('dropAbove','dropBelow');
+}
+function srvMakeDraggable(card, s){
+  card.classList.add('srvDrag');
+  card.draggable = true;
+  card.addEventListener('dragstart', e=>{
+    if(e.target.closest('button')){ e.preventDefault(); return; }   // a button press is not a drag
+    srvDragId=s.id; card.classList.add('dragging');
+    e.dataTransfer.effectAllowed='move';
+    try{ e.dataTransfer.setData('text/plain', s.id); }catch(err){}
+  });
+  card.addEventListener('dragend', ()=>{ srvDragId=null; card.classList.remove('dragging'); srvClearDropMarks(); });
+  card.addEventListener('dragover', e=>{
+    if(!srvDragId || srvDragId===s.id) return;
+    e.preventDefault(); e.dataTransfer.dropEffect='move';
+    const r=card.getBoundingClientRect(), above=(e.clientY - r.top) < r.height/2;
+    card.classList.toggle('dropAbove', above);
+    card.classList.toggle('dropBelow', !above);
+  });
+  card.addEventListener('dragleave', ()=>card.classList.remove('dropAbove','dropBelow'));
+  card.addEventListener('drop', e=>{
+    e.preventDefault();
+    const above=card.classList.contains('dropAbove');
+    card.classList.remove('dropAbove','dropBelow');
+    dropServerOn(srvDragId, s.id, above);
+  });
+}
+async function dropServerOn(dragId, targetId, above){
+  srvDragId=null;
+  if(!dragId || dragId===targetId) return;
   const movable = srvAllList.filter(x=>!x.pinned);
-  const i = movable.findIndex(x=>x.id===id);
-  const j = i + dir;
-  if(i<0 || j<0 || j>=movable.length) return;
-  const tmp=movable[i]; movable[i]=movable[j]; movable[j]=tmp;
+  const from = movable.findIndex(x=>x.id===dragId);
+  if(from<0) return;
+  const [moved] = movable.splice(from, 1);
+  const to = movable.findIndex(x=>x.id===targetId);
+  if(to<0) return;
+  movable.splice(above ? to : to+1, 0, moved);
   srvAllList = srvAllList.filter(x=>x.pinned).concat(movable);
-  renderServerList();
+  renderServerList();                                    // move it now; the save follows
   try{
     const r=await fetch(mcHttpBase()+'/serverorder',{ method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ admin:true, ids:movable.map(x=>x.id) }) });
     const jn=await r.json();
     if(jn && jn.error) refreshServers(jn.error);
+    else serversNote('Moved "'+moved.name+'".');
   }catch(e){ refreshServers('Network error.'); }
 }
-const SRV_KIND_NEXT = { public:'private', private:'minigame', minigame:'public' };
-async function cycleServerKind(s){
-  const want = SRV_KIND_NEXT[srvKindOf(s)] || 'public';
-  serversNote('Making "'+s.name+'" '+SRV_KIND_LABEL[want].toLowerCase()+'…');
+
+/* ---- server settings: one panel behind the gear, for admins only ----
+   Category, password and where the server sits in the list. Nothing here saves as you
+   click it: you set what you want and press Save, so a half-made change never lands. */
+const srvSetEl = document.getElementById('srvSet');
+let ssTarget=null, ssKind='public', ssIndex=0, ssBusy=false;
+function ssMsg(t, bad){ const el=document.getElementById('ssMsg'); if(!el) return;
+  el.textContent=t||''; el.style.color = bad ? '#7a1a1a' : '#1f4d1f'; }
+function ssPickKind(k){
+  ssKind = SRV_KIND_LABEL[k] ? k : 'public';
+  for(const id of ['ssPublic','ssPrivate','ssMinigame']){
+    const el=document.getElementById(id); if(el) el.classList.toggle('on', id==='ss'+ssKind[0].toUpperCase()+ssKind.slice(1));
+  }
+  const need = (ssKind!=='public') && !(ssTarget && ssTarget.hasPassword);
+  const hint=document.getElementById('ssPwHint');
+  if(hint) hint.textContent = need
+    ? 'This server has never had a password. Set one here to make it '+SRV_KIND_LABEL[ssKind].toLowerCase()+'.'
+    : (ssTarget && ssTarget.hasPassword
+        ? 'Leave this blank to keep the password it already has. It is remembered even while the server is public, so turning it private again brings the old one back.'
+        : 'A public server does not check a password, so it does not need one.');
+}
+function openServerSettings(s, idx){
+  ssTarget=s; ssIndex=idx|0; ssBusy=false;
+  document.getElementById('ssName').textContent=s.name;
+  document.getElementById('ssPassword').value='';
+  ssPickKind(srvKindOf(s));
+  ssMsg('');
+  srvSetEl.hidden=false; serversEl.hidden=true;
+  setTimeout(()=>{ const el=document.getElementById('ssPassword'); if(el) el.focus(); }, 40);
+}
+function closeServerSettings(note){ srvSetEl.hidden=true; ssTarget=null; openServers(note||''); }
+async function ssSave(){
+  if(!ssTarget || ssBusy) return;
+  const s=ssTarget, pw=document.getElementById('ssPassword').value.trim();
+  const wasKind=srvKindOf(s);
+  if(ssKind!=='public' && !pw && !s.hasPassword){ ssMsg('Set a password before making it '+SRV_KIND_LABEL[ssKind].toLowerCase()+'.', true); return; }
+  ssBusy=true; ssMsg('Saving…');
+  const post=(path, body)=>fetch(mcHttpBase()+path, { method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({ admin:true, id:s.id }, body)) }).then(r=>r.json());
   try{
-    const r=await fetch(mcHttpBase()+'/serverkind',{ method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ admin:true, id:s.id, kind:want }) });
-    const jn=await r.json();
-    refreshServers((jn&&jn.ok) ? ('"'+s.name+'" is now '+SRV_KIND_LABEL[want].toLowerCase()+'.') : ((jn&&jn.error)||'Could not change it.'));
-  }catch(e){ refreshServers('Network error.'); }
+    const done=[];
+    if(pw){ const r=await post('/serverpassword', { password:pw });
+      if(r && r.error){ ssMsg(r.error, true); ssBusy=false; return; }
+      s.hasPassword=true; done.push('password changed'); }
+    if(ssKind!==wasKind){ const r=await post('/serverkind', { kind:ssKind });
+      if(r && r.error){ ssMsg(r.error==='needpassword' ? 'Set a password first.' : r.error, true); ssBusy=false; return; }
+      done.push('now '+SRV_KIND_LABEL[ssKind].toLowerCase()); }
+    closeServerSettings(done.length ? ('"'+s.name+'": '+done.join(', ')+'.') : 'Nothing to change.');
+  }catch(e){ ssMsg('Network error. Try again?', true); ssBusy=false; }
 }
 function confirmDeleteServer(s, card){
   card._confirming=true; card.style.cursor='default'; card.innerHTML='';
@@ -7548,6 +7651,14 @@ document.getElementById('pwJoinBtn').addEventListener('click', pwJoin);
 document.getElementById('pwSpectateBtn').addEventListener('click', pwSpectate);
 document.getElementById('pwCancelBtn').addEventListener('click', ()=>{ pwPromptEl.hidden=true; openServers(); });
 pwInputEl.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); pwJoin(); } if(e.key==='Escape'){ e.preventDefault(); pwPromptEl.hidden=true; openServers(); } });
+document.getElementById('ssPublic').addEventListener('click', ()=>ssPickKind('public'));
+document.getElementById('ssPrivate').addEventListener('click', ()=>ssPickKind('private'));
+document.getElementById('ssMinigame').addEventListener('click', ()=>ssPickKind('minigame'));
+document.getElementById('ssSaveBtn').addEventListener('click', ssSave);
+document.getElementById('ssCancelBtn').addEventListener('click', ()=>closeServerSettings());
+document.getElementById('ssPassword').addEventListener('keydown', e=>{ e.stopPropagation();
+  if(e.key==='Enter'){ e.preventDefault(); ssSave(); }
+  if(e.key==='Escape'){ e.preventDefault(); closeServerSettings(); } });
 document.getElementById('srvRefreshBtn').addEventListener('click', ()=>refreshServers());
 document.getElementById('srvBackBtn').addEventListener('click', closeServers);
 document.getElementById('srvCreateBtn').addEventListener('click', openCreateServer);
