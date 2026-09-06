@@ -2941,7 +2941,7 @@ class Chunk{
   set(x,y,z,v){ this.data[this.idx(x,y,z)] = v; if(v!==AIR && y>this.maxY) this.maxY=y; }
   generate(){
     const { cx, cz } = this;
-    if(bwMode || bbMode){   // bedwars and build battle: void world, the prefab lives entirely in mpOverrides
+    if(bwMode || bbMode || mcMode){   // the three games: void world, the map lives entirely in mpOverrides
       this.generated = true;
       const ovb = mpOverrides.get(this.cx+','+this.cz);
       if(ovb) for(const [lk,b] of ovb){ const p=lk.split(','); this.set(+p[0],+p[1],+p[2], b); }
@@ -4259,6 +4259,28 @@ function buildHeldBlock(id){
   vmBlock=new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map:atlasTex, transparent:!bl.opaque, alphaTest:bl.cutout?0.5:0, side:THREE.DoubleSide }));
   vmScene.add(vmBlock);
 }
+// Mecha Chameleon: the seeker carries a paint gun rather than a block, so it gets
+// its own little viewmodel. Built out of boxes, the way everything else here is.
+let vmGun=null, vmGunFlash=null;
+function mcVmGun(){
+  if(vmGun) return vmGun;
+  const g=new THREE.Group();
+  const shell=new THREE.MeshLambertMaterial({ color:0x39414c });
+  const dark =new THREE.MeshLambertMaterial({ color:0x22272e });
+  const trim =new THREE.MeshLambertMaterial({ color:0x63d68a });
+  const box=(w,h,d,m,x,y,z)=>{ const q=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), m); q.position.set(x,y,z); g.add(q); return q; };
+  box(0.17,0.17,0.62, shell,  0,      0,      -0.10);   // receiver
+  box(0.10,0.10,0.44, dark,   0,      0.01,   -0.55);   // barrel
+  box(0.13,0.05,0.20, trim,   0,      0.10,   -0.16);   // the sight rail
+  box(0.05,0.06,0.05, dark,   0,      0.145,  -0.34);   // front post
+  box(0.13,0.26,0.15, shell, -0.005, -0.19,    0.10);   // grip
+  box(0.11,0.20,0.13, dark,   0,     -0.16,   -0.12);   // magazine
+  box(0.15,0.09,0.16, trim,   0,      0.02,    0.20);   // the paint tank at the back
+  vmGunFlash=box(0.20,0.20,0.20, new THREE.MeshBasicMaterial({ color:0xfff2a8, transparent:true, opacity:0.85 }), 0, 0.01, -0.80);
+  vmGunFlash.visible=false;
+  vmScene.add(g); vmGun=g; return g;
+}
+
 let camMode=0;                 // 0 first-person, 1 third-back, 2 third-front
 let swing=0, bobT=0, walkAmpLocal=0;
 function doSwing(){ swing=1; if(mp.active) mpSend({type:'swing'}); }   // show the arm swing to other players too
@@ -4289,6 +4311,22 @@ function updateViewmodel(dt, moving){
     vmArm.rotation.set(-0.7 - sw*0.7, -0.1, -0.3);
     return;
   }
+  // a seeker holds the paint gun; nobody in this mode holds a block
+  if(mc.active && mc.role==='seeker' && mc.playing){
+    if(vmBlock){ vmBlock.visible=false; }
+    if(vmItem) clearVmItem();
+    const gun=mcVmGun(), kick=mc.kick||0;
+    gun.visible=true; gun.scale.setScalar(0.62);
+    gun.position.set(0.30, -0.27+bob, -1.02 + kick*0.10);
+    gun.rotation.set(-0.04 + kick*0.28, 0.06, 0.02);
+    if(vmGunFlash) vmGunFlash.visible = performance.now() < (mc.flashUntil||0);
+    // the arm reads as a slab of skin this close to the lens, so the gun holds
+    // the frame on its own, the way a blocky shooter does
+    vmArm.visible=false;
+    return;
+  }
+  if(vmGun) vmGun.visible=false;
+  if(vmArm.scale.x!==1) vmArm.scale.setScalar(1);
   if(vmItem) clearVmItem();
   if(hotbar[selSlot]!==vmHeldId) buildHeldBlock(hotbar[selSlot]);
   if(vmBlock){
@@ -4616,6 +4654,8 @@ addEventListener('keydown', e=>{
       e.preventDefault(); return;
     } }
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
+  if(mc.active && mc.role==='seeker' && k==='f' && state===PLAY && !chatOpen && !invOpen) mc.firing=true;
+  if(mc.active && mcKey(k, e)){ e.preventDefault(); return; }   // the whole game is on the keyboard
   if(bb.active && state===PLAY && !invOpen && !chatOpen){
     if(bb.phase==='vote' && k>='1' && k<='5'){ e.preventDefault(); bbRate(+k); return; }
     if(bb.phase==='theme' && k>='1' && k<='3'){ e.preventDefault(); bbVoteTheme(+k-1); return; }
@@ -4636,6 +4676,7 @@ addEventListener('keydown', e=>{
 // true modifier state, so trust that over what we think we saw.
 function syncMods(e){ keys.shift=!!e.shiftKey; keys.control=!!e.ctrlKey; keys.alt=!!e.altKey; }
 addEventListener('keyup', e=>{ const kk=e.key.toLowerCase(); keys[kk]=false; syncMods(e);
+  if(mc.active && kk==='f') mc.firing=false;
   const ck=comboKeys(); if(ck && ck.includes(kk)) comboLatched=false;   // let the combo fire again next time it's pressed
   if(e.key==='Tab'){ tabShown=false; tabListEl.hidden=true; } });
 addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; tabShown=false; if(tabListEl) tabListEl.hidden=true; });
@@ -5774,6 +5815,7 @@ function breakGhostUnderCrosshair(){
   return true;
 }
 function breakBlock(){
+  if(mc.active) return;                     // nothing in Mecha Chameleon is yours to break
   if(bb.active && !bbCanBreak()) return;     // build battle: your plot only, and never the floor under it
   const specHit = mp.active && mp.spectator && fx.superStick;   // tadee code: a spectator may still punch players
   if(mp.active && mp.spectator && !specHit) return;   // ordinary spectators can't break blocks, punch players or hit mobs
@@ -5812,6 +5854,7 @@ function breakBlock(){
   mpSendBlock(x,y,z,0);
 }
 function placeBlock(){
+  if(mc.active) return;                     // nor to build
   if(mp.active && mp.spectator) return;     // spectators can't place blocks
   if(bb.active && !bbCanPlace()) return;    // build battle: only in your plot, only while building
   if(!target) return;
@@ -6324,6 +6367,7 @@ function startSingleplayer(){
   dim=0;
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   mp.bb=false; bb.active=false; bbMode=false; bbLeaveUi();
+  mp.mc=false; mc.active=false; mcMode=false; mcLeaveUi();
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
   worldSpawn = null;   // whatever a server told us stops applying the moment we leave it
   spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
@@ -6492,7 +6536,9 @@ function closeSkinEditor(save){
   skinOpen=false; if(skinRAF) cancelAnimationFrame(skinRAF);
   if(skinAutosaveTimer){ clearTimeout(skinAutosaveTimer); skinAutosaveTimer=null; }
   if(save){ persistCurrentSkin(false, (selectedSkinId==null)?(pendingSkinName||'Custom skin'):undefined); pendingSkinName=null; renderSkinGallery(); }
-  skinEditorEl.hidden=true; if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false;
+  skinEditorEl.hidden=true;
+  if(typeof mcAfterSkin==='function' && mcAfterSkin()) return;   // straight back into the round
+  if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false;
 }
 // write the current edit into the library (a new entry, or overwrite the selected one), then wear it
 function skinDisplayName(s){ return (s && s.name) ? s.name : ('Skin '+(s?s.id:'')); }
@@ -6994,7 +7040,7 @@ function makeTreeAvatarModel(){
   g.add(g.userData.headPivot);
   return g;
 }
-function modelKind(m){ const u=m&&m.userData; return (u&&u.isPig)?'pig':(u&&u.isTree)?'tree':(u&&u.isBlock)?'block':'human'; }
+function modelKind(m){ const u=m&&m.userData; return (u&&u.isPig)?'pig':(u&&u.isTree)?'tree':(u&&u.isProp)?'prop':(u&&u.isBlock)?'block':'human'; }
 function bodyToKind(body){ return body==='pig'?'pig':body==='tree'?'tree':body==='block'?'block':'human'; }   // giant/small stay humanoid, just scaled
 function makeBodyModel(kind, skinTex, slim){ return kind==='pig'?makePigModel() : kind==='tree'?makeTreeAvatarModel() : kind==='block'?makeBlockAvatarModel() : makeCharacterModel(skinTex||defaultSkinTex, slim); }
 // swap a remote player's model between humanoid / pig / diamond block, keeping position + nametag
@@ -7075,6 +7121,10 @@ function mpUrl(){
   if(mp.bb){                                        // build battle: separate round
     const nm=getSavedName();
     return u + (u.indexOf('?')>=0?'&':'?') + 'mode=bb' + (nm ? '&name='+encodeURIComponent(nm) : '');
+  }
+  if(mp.mc){                                        // mecha chameleon: separate round
+    const nm=getSavedName();
+    return u + (u.indexOf('?')>=0?'&':'?') + 'mode=mecha' + (nm ? '&name='+encodeURIComponent(nm) : '');
   }
   const p = new URLSearchParams();
   p.set('server', mpTarget.server || 'original');
@@ -7163,7 +7213,7 @@ function mpUpdatePlayers(dt){
     p.model.rotation.set(0, p.yaw + Math.PI, 0);
     p.model.scale.set(bodyScale, bodyScale, bodyScale);
     const ud=p.model.userData;
-    if(ud.isBlock || ud.isTree){
+    if(ud.isBlock || ud.isTree || ud.isProp){
       /* a diamond block or a tree: no limbs to pose */
     } else if(ud.isPig){
       ud.headPivot.rotation.x = p.pitch*0.6;
@@ -7183,6 +7233,8 @@ function mpUpdatePlayers(dt){
 function mpHandle(m){
   if(m.type==='init' && (m.mode==='bb' || bb.active)){ bbInit(m); return; }   // build battle has its own init/world
   if(bb.active && bbHandle(m)) return;                                        // build-battle-only messages
+  if(m.type==='init' && (m.mode==='mecha' || mc.active)){ mcInit(m); return; }   // mecha chameleon has its own init/world
+  if(mc.active && mcHandle(m)) return;                                          // mecha-only messages
   if(m.type==='init' && (m.mode==='bw' || bw.active)){ bwInit(m); return; }   // bedwars has its own init/world
   if(bw.active && bwHandle(m)) return;                                        // bedwars-only messages; others fall through
   if(DIM_MSGS[m.type] && m.type!=='tnt'){
@@ -7391,7 +7443,8 @@ function mpStartWorld(serverSeed){
   updateWorldBorder();
 }
 function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi();
-  mp.bb=false; bb.active=false; bbMode=false; if(typeof bbLeaveUi==='function') bbLeaveUi(); mpConnect(); }
+  mp.bb=false; bb.active=false; bbMode=false; if(typeof bbLeaveUi==='function') bbLeaveUi();
+  mp.mc=false; mc.active=false; mcMode=false; if(typeof mcLeaveUi==='function') mcLeaveUi(); mpConnect(); }
 
 /* ================= server browser: pick / create / join a server ================= */
 const serversEl=document.getElementById('servers'), srvListEl=document.getElementById('srvList'), srvNoteEl=document.getElementById('srvNote'), srvSearchEl=document.getElementById('srvSearch');
@@ -7882,6 +7935,7 @@ async function doDeleteServer(s){
 function joinServer(s){
   if(s.mode==='bb'){ serversEl.hidden=true; startBuildBattle(); return; }   // Build Battle is its own game, not a world
   if(s.mode==='bw'){ serversEl.hidden=true; startBedwars(); return; }       // and so is Bed Wars
+  if(s.mode==='mecha'){ serversEl.hidden=true; startMecha(); return; }      // and so is Mecha Chameleon
   const kind=srvKindOf(s);
   // A minigame is open to everyone with no password at all: you arrive able to run the
   // course but not to change it, which is what the Edit button is for.
@@ -8075,6 +8129,505 @@ document.getElementById('csCancelBtn').addEventListener('click', ()=>{ createSer
    A round runs: lobby -> vote on a theme -> five minutes building -> everyone is
    walked past each plot to rate it -> results. Turn up mid-round and you watch it
    out, then you are dealt in at the next lobby.                                  */
+/* ============================================ MECHA CHAMELEON ==============
+   Hide and seek where the hiders are the furniture. The server owns the round and
+   ships the map as a palette plus a block dictionary, so the geometry lives in one
+   place; this side builds it, draws it, and puts the whole game on the keyboard.
+
+   Nothing here needs a mouse cursor: the map vote, the prop you turn into, the pose
+   you hold, taunting, reloading and firing are all keys. */
+let mcMode = false;                 // makes chunk generation produce void, like Bed Wars
+const mc = {
+  active: false, phase: 'lobby', left: 0, deadline: 0,
+  mapId: '', mapName: '', maps: [], votes: {}, myVote: '',
+  poses: [], props: [], prop: null, pose: 0,
+  role: 'hider', alive: false, playing: false,
+  hp: 100, ammo: 24, hpMax: 100, ammoMax: 24, score: 0,
+  stunUntil: 0, reloadUntil: 0, lastFire: 0, firing: false,
+  hiders: 0, hidersTotal: 0, seekers: 0, here: 0,
+  results: null, bounds: null, spawn: null,
+  propModels: new Map(),            // player id -> the block they are pretending to be
+  tracers: [], marks: [], feed: [],
+};
+const MC_SHOT_GAP = 220;
+
+/* ---- building the map the server sent ---- */
+function mcApplyBlock(x, y, z, id) {
+  mpSetOverride(x, y, z, id);
+  const c = chunks.get(key(Math.floor(x / CH), Math.floor(z / CH)));
+  if (c && c.generated) { setBlock(x, y, z, id); remeshChunkAt(x, z); }
+}
+// The server's format: palette of names, then "x,y,z" -> index, or [index, meta].
+// Meta carries the same shapes the world already knows about, so furniture can be
+// stairs and slabs rather than a pile of cubes.
+function mcBuildMap(msg) {
+  mpOverrides.clear();
+  doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear();
+  signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs();
+  trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
+  const ids = (msg.palette || []).map(n => { const b = BLOCKS[n]; return b ? b.id : 0; });
+  for (const k in msg.blocks) {
+    const v = msg.blocks[k];
+    const idx = Array.isArray(v) ? v[0] : v, meta = Array.isArray(v) ? v[1] : null;
+    const id = ids[idx];
+    if (!id) continue;
+    const c = k.split(','), x = +c[0], y = +c[1], z = +c[2];
+    if (meta) {
+      if (meta.s) slabMeta.set(k, { top: !!meta.t, double: !!meta.d });
+      else if (meta.dr) { for (let h = 0; h < 2; h++) doorMeta.set(x + ',' + (y + h) + ',' + z, { facing: meta.f | 0, open: false, hinge: meta.h ? 'left' : 'right' }); }
+      else if (meta.td) trapdoorMeta.set(k, { facing: meta.f | 0, open: !!meta.o, top: !!meta.t });
+      else if (meta.bd) bedMeta.set(k, { facing: meta.f | 0, head: !!meta.hd });
+      else if (meta.a) attachMeta.set(k, { m: meta.m | 0, f: meta.f | 0, on: false });
+      else if (meta.f !== undefined) stairMeta.set(k, { facing: meta.f | 0, top: !!meta.t });
+    }
+    mpSetOverride(x, y, z, id);
+    if (meta && meta.dr) mpSetOverride(x, y + 1, z, id);   // a door is two cells tall
+  }
+  mc.bounds = msg.bounds || null;
+  mc.spawn = msg.spawn || null;
+  mc.mapId = msg.id; mc.mapName = msg.name;
+  mc.props = msg.props || [];
+  for (const [, c] of chunks) { if (c.mesh) scene.remove(c.mesh); if (c.cmesh) scene.remove(c.cmesh); if (c.tmesh) scene.remove(c.tmesh); }
+  chunks.clear(); genQueue = [];
+}
+
+// Put the player down somewhere and make sure the world around them is actually
+// built, or they drop through a map that has not meshed yet.
+function mcStand(x, y, z) {
+  player.pos.set(x, y, z); player.vel.set(0, 0, 0); player.flying = false;
+  lastCX = Math.floor(x / CH); lastCZ = Math.floor(z / CH);
+  ensureChunks(x, z);
+  let guard = 0;
+  while (genQueue.length && guard < 400) { const ch = genQueue.shift(); if (!ch.generated) ch.generate(); guard++; }
+  for (const [, ch] of chunks) if (ch.generated && Math.abs(ch.cx - lastCX) <= 2 && Math.abs(ch.cz - lastCZ) <= 2) buildChunkMesh(ch);
+}
+
+/* ---- a hider looks like a block, held in a pose ---- */
+function mcPropModel(name) {
+  const b = BLOCKS[name];
+  const g = new THREE.Group();
+  const cube = bwTexturedCube(b ? b.id : 0);
+  cube.position.y = 0.5;
+  g.add(cube);
+  g.userData = { isProp: true, headPivot: new THREE.Group() };
+  g.add(g.userData.headPivot);
+  return g;
+}
+// Six ways to hold still. They are what makes two hiders behind the same prop read
+// differently, and every one of them is on a number key.
+function mcPoseModel(model, pose, t) {
+  if (!model) return;
+  const c = model.children && model.children[0];
+  if (!c) return;
+  c.rotation.set(0, 0, 0); c.scale.set(1, 1, 1); c.position.set(0, 0.5, 0);
+  model.rotation.z = 0;
+  switch (pose) {
+    case 1: c.scale.set(1, 0.5, 1); c.position.y = 0.25; break;                       // crouch
+    case 2: c.scale.set(1, 0.35, 1); c.position.y = 0.18; c.rotation.y = Math.PI / 4; break;  // lie flat
+    case 3: c.rotation.z = 0.5; c.position.y = 0.55; break;                            // tilt
+    case 4: c.rotation.y = (t || 0) * 1.6; break;                                      // spin
+    case 5: c.position.y = 0.9 + Math.sin((t || 0) * 2) * 0.12; break;                 // float
+    default: break;                                                                    // stand
+  }
+}
+function mcSetProp(p, name) {
+  if (!p) return;
+  p.mcProp = name || null;
+  const want = name ? 'prop:' + name : 'human';
+  if (p.mcKind === want) return;
+  p.mcKind = want;
+  const tag = p.tag;
+  if (p.model) { if (tag) p.model.remove(tag); scene.remove(p.model); }
+  p.model = name ? mcPropModel(name) : makeBodyModel('human', p.skinTex, p.slim);
+  if (tag) p.model.add(tag);
+  scene.add(p.model);
+}
+function mcSetLocalProp(name) {
+  mc.prop = name || null;
+  const want = name ? 'prop:' + name : 'human';
+  if (mc.localKind === want) return;
+  mc.localKind = want;
+  const wasVisible = body.visible;
+  scene.remove(body);
+  body = name ? mcPropModel(name) : makeBodyModel('human', localSkinTex, localSlim);
+  headPivot = body.userData.headPivot;
+  body.visible = wasVisible;
+  scene.add(body);
+}
+
+/* ---- joining ---- */
+function startMecha() {
+  if (mp.ws) { try { mp.ws.close(); } catch (e) {} mp.ws = null; }
+  if (serversEl) serversEl.hidden = true;
+  if (typeof createServerEl !== 'undefined' && createServerEl) createServerEl.hidden = true;
+  if (typeof pwPromptEl !== 'undefined' && pwPromptEl) pwPromptEl.hidden = true;
+  if (pollMiniEl) pollMiniEl.hidden = true;
+  mp.bw = false; bw.active = false; bwMode = false; if (typeof bwLeaveUi === 'function') bwLeaveUi();
+  mp.bb = false; bb.active = false; bbMode = false; if (typeof bbLeaveUi === 'function') bbLeaveUi();
+  mp.mc = true; mc.active = true; mcMode = true;
+  mcEnterUi();
+  mpConnect();
+}
+function mcInit(m) {
+  wipeWorldEntities();
+  mc.active = true; mcMode = true; mp.id = m.id; mp.name = m.name;
+  mc.maps = m.maps || []; mc.poses = m.poses || [];
+  mc.hpMax = m.hpMax || 100; mc.ammoMax = m.ammoMax || 24;
+  mc.phase = m.phase; mc.left = m.left || 0; mc.deadline = performance.now() + mc.left * 1000;
+  mc.mapId = m.mapId || ''; mc.votes = m.votes || {}; mc.myVote = '';
+  mc.propModels.clear();
+  mpClearPlayers();
+  for (const [, c] of chunks) { if (c.mesh) scene.remove(c.mesh); if (c.cmesh) scene.remove(c.cmesh); if (c.tmesh) scene.remove(c.tmesh); }
+  chunks.clear(); genQueue = [];
+  seed = 7373 >>> 0; noise = makeNoise(seed);
+  startGame();
+  for (const p of (m.players || [])) mpAddPlayer(p);
+  mpSendSkin();
+  mcEnsureUi(); mcHud();
+  chatPush('Joined Mecha Chameleon. Everything here is on a key: press H for the list.', 'sys');
+}
+
+function mcHandle(m) {
+  switch (m.type) {
+    case 'mcstate': {
+      const was = mc.phase;
+      mc.phase = m.phase; mc.left = m.left || 0;
+      mc.deadline = performance.now() + mc.left * 1000;
+      mc.mapId = m.mapId || mc.mapId; mc.votes = m.votes || {};
+      mc.hiders = m.hiders || 0; mc.hidersTotal = m.hidersTotal || 0;
+      mc.seekers = m.seekers || 0; mc.here = m.here || 0;
+      mc.lobbyIn = m.lobbyIn || 0; mc.results = m.results || null;
+      if (m.maps && m.maps.length) mc.maps = m.maps;
+      if (m.phase !== was) {
+        if (m.phase === 'vote') mc.myVote = '';
+        mcBanner(mcPhaseTitle(m.phase));
+      }
+      mcHud();
+      return true;
+    }
+    case 'mcmap': mcBuildMap(m); mcStand(m.ox + m.spawn.x, m.y0 + m.spawn.y, m.spawn.z); mcHud(); return true;
+    case 'mcyou': {
+      mc.role = m.role; mc.alive = !!m.alive; mc.playing = !!m.playing;
+      mc.pose = m.pose | 0; mc.hp = m.hp; mc.ammo = m.ammo; mc.score = m.score || 0;
+      if (m.props && m.props.length) mc.props = m.props;
+      if (m.poses && m.poses.length) mc.poses = m.poses;
+      if (m.stunned) mc.stunUntil = performance.now() + m.stunned;
+      if (typeof m.x === 'number' && mc.playing) mcStand(m.x, m.y, m.z);
+      // you look like the thing you are hiding as, and see it in third person
+      mcSetLocalProp(mc.role === 'hider' && mc.alive && mc.playing ? m.prop : null);
+      if (mc.role === 'hider' && mc.playing && mc.alive) camMode = 1;
+      mcHud();
+      return true;
+    }
+    case 'mcplayers': {
+      for (const q of (m.players || [])) {
+        const p = mp.players.get(q.id);
+        if (!p) continue;
+        p.mcRole = q.role; p.mcAlive = q.alive; p.mcPose = q.pose | 0;
+        mcSetProp(p, (q.role === 'hider' && q.alive && q.playing) ? q.prop : null);
+        if (p.tag) p.tag.visible = !(q.role === 'hider' && q.alive);   // a hider has no name over them
+      }
+      mcHud();
+      return true;
+    }
+    case 'mcprop': { const p = mp.players.get(m.id); if (p) mcSetProp(p, m.prop); return true; }
+    case 'mcpose': { const p = mp.players.get(m.id); if (p) p.mcPose = m.pose | 0; return true; }
+    case 'mcshot': mcTracer(m); return true;
+    case 'mcfound': {
+      mcFeed((m.byName || '?') + ' found ' + (m.name || '?'));
+      mcMark(m.x, m.y, m.z, 0xff5555);
+      if (m.id === mp.id) { mc.alive = false; mcSetLocalProp(null); mcBanner('Found!'); }
+      mcHud();
+      return true;
+    }
+    case 'mctaunt': {
+      mcMark(m.x, m.y + 1.6, m.z, m.forced ? 0xffd54a : 0x8dffa0);
+      if (m.forced) mcFeed('Something rattled...');
+      else mcFeed((m.name || 'someone') + ' taunted');
+      return true;
+    }
+    case 'mcreload': { mc.reloadUntil = performance.now() + (m.ms || 1800); mcHud(); return true; }
+    case 'mcstun': { mc.stunUntil = performance.now() + (m.ms || 4000); mcBanner('Jammed!'); return true; }
+  }
+  return false;
+}
+
+/* ---- painting the skin you are wearing when they find you ---- */
+// The editor is normally reached from the menu, so opening it mid-round has to let
+// the cursor go on the way in and put the game back together on the way out.
+function mcOpenSkin() {
+  mc.skinReturn = true;
+  try { if (document.exitPointerLock) document.exitPointerLock(); } catch (e) {}
+  openSkinEditor();
+}
+function mcAfterSkin() {
+  if (!mc.skinReturn) return false;
+  mc.skinReturn = false;
+  menuEl.hidden = true; pauseEl.hidden = true;
+  if (state === PLAY) { try { canvas.requestPointerLock(); } catch (e) {} }
+  return true;
+}
+
+/* ---- shooting ---- */
+function mcFire() {
+  if (mc.role !== 'seeker' || mc.phase !== 'seek') return;
+  const t = performance.now();
+  if (t < mc.stunUntil || t < mc.reloadUntil) return;
+  if (t - mc.lastFire < MC_SHOT_GAP) return;
+  mc.lastFire = t;
+  const d = camDir();
+  const eye = { x: player.pos.x, y: player.pos.y + player.eye, z: player.pos.z };
+  mpSend({ type: 'mcshoot', x: eye.x, y: eye.y, z: eye.z, dx: d.x, dy: d.y, dz: d.z });
+  mc.kick = 1;
+  mc.flashUntil = t + 90;
+}
+// a line where the bullet went, and a puff where it stopped
+function mcTracer(m) {
+  const g = new THREE.BufferGeometry();
+  const len = Math.max(0.5, m.len || 8);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(
+    [m.x, m.y, m.z, m.x + m.dx * len, m.y + m.dy * len, m.z + m.dz * len], 3));
+  const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: m.hit ? 0xff6b6b : 0xffe066, transparent: true, opacity: 0.9 }));
+  scene.add(line);
+  mc.tracers.push({ o: line, until: performance.now() + 140 });
+}
+function mcMark(x, y, z, color) {
+  const s = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6),
+    new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.75, depthTest: false }));
+  s.position.set(x, y, z); s.renderOrder = 998; s.raycast = () => {};
+  scene.add(s);
+  mc.marks.push({ o: s, until: performance.now() + 1600 });
+}
+function mcSweep() {
+  const t = performance.now();
+  for (let i = mc.tracers.length - 1; i >= 0; i--) if (t > mc.tracers[i].until) {
+    const o = mc.tracers[i].o; scene.remove(o); o.geometry.dispose(); o.material.dispose(); mc.tracers.splice(i, 1);
+  }
+  for (let i = mc.marks.length - 1; i >= 0; i--) if (t > mc.marks[i].until) {
+    const o = mc.marks[i].o; scene.remove(o); o.geometry.dispose(); o.material.dispose(); mc.marks.splice(i, 1);
+  }
+}
+
+/* ---- the frame ---- */
+function mcFrame(dt) {
+  if (!mc.active) return;
+  mcSweep();
+  const t = performance.now() / 1000;
+  // everyone else, held in whatever pose they chose
+  for (const [, p] of mp.players) if (p.mcProp && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
+  if (mc.prop) mcPoseModel(body, mc.pose, t + 1);
+  // holding the fire key keeps the gun going
+  if (mc.firing) mcFire();
+  if (mc.kick) mc.kick = Math.max(0, mc.kick - dt * 6);
+  if (hotbarEl && hotbarEl.style.display !== 'none') hotbarEl.style.display = 'none';   // no blocks to hold in here
+  mcHud();
+}
+
+/* ---- what the keys do ---- */
+// Every one of these is a key, on purpose: the brief was that the mouse cursor is
+// never needed, so the vote, the prop, the pose, the taunt and the gun are all here.
+function mcKey(k, e) {
+  if (!mc.active || state !== PLAY || chatOpen || invOpen) return false;
+  if (mc.phase === 'vote' && k >= '1' && k <= String(Math.min(9, mc.maps.length))) {
+    const map = mc.maps[+k - 1];
+    if (map) { mc.myVote = map.id; mpSend({ type: 'mcvote', map: map.id }); mcFeed('Voted for ' + map.name); mcHud(); }
+    return true;
+  }
+  if (k === 'k' && mc.phase === 'lobby') { mpSend({ type: 'mcstart' }); return true; }
+  if (k === 'h') { mc.help = !mc.help; mcHud(); return true; }
+  if (mc.role === 'hider' && mc.alive && mc.playing) {
+    if (k >= '1' && k <= '6') { mc.pose = +k - 1; mpSend({ type: 'mcpose', pose: mc.pose }); mcHud(); return true; }
+    if (k === 'q' || k === 'e') {           // step through the props you can be
+      const i = Math.max(0, mc.props.indexOf(mc.prop));
+      const n = mc.props.length || 1;
+      const j = (k === 'e' ? i + 1 : i - 1 + n) % n;
+      mpSend({ type: 'mcprop', prop: mc.props[j] });
+      return true;
+    }
+    if (k === 't') { mpSend({ type: 'mctaunt' }); return true; }
+    if (k === 'b') { mcOpenSkin(); return true; }      // paint the skin you wear when found
+  }
+  if (mc.role === 'seeker') {
+    if (k === 'r') { mpSend({ type: 'mcreload' }); return true; }
+    if (k === 'f') { mcFire(); return true; }
+  }
+  return false;
+}
+function mcPhaseTitle(p) {
+  return p === 'vote' ? 'Vote for a map'
+       : p === 'hide' ? (mc.role === 'seeker' ? 'Wait here...' : 'Hide!')
+       : p === 'seek' ? (mc.role === 'seeker' ? 'Go and find them' : 'Keep still')
+       : p === 'ended' ? 'Round over'
+       : 'Waiting for players';
+}
+
+/* ---- the Mecha Chameleon screen ----
+   Everything is a readout, never a control: the keys do the work, so nothing here
+   has to be clicked and the cursor stays locked to the game. */
+let mcUiBuilt = false, mcBannerTimer = 0;
+function mcEnsureUi() {
+  if (mcUiBuilt) return; mcUiBuilt = true;
+  const css = document.createElement('style'); css.textContent = `
+   #mcHud{position:fixed;inset:0;z-index:14;pointer-events:none;font-family:inherit;display:none}
+   #mcTop{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;
+     background:rgba(10,14,10,.62);border:2px solid rgba(120,200,120,.35);padding:5px 14px}
+   #mcTop .ph{font-size:14px;font-weight:700;color:#cdf5cd;letter-spacing:1px}
+   #mcTop .clk{font-size:20px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums;min-width:52px;text-align:center}
+   #mcTop .cnt{font-size:12px;color:#a9c3a9}
+   #mcRole{position:absolute;top:52px;left:50%;transform:translateX(-50%);font-size:12px;letter-spacing:2px}
+   #mcRole.hider{color:#8dffa0} #mcRole.seeker{color:#ff9a6b}
+   #mcVote{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,92vw);
+     background:rgba(8,12,8,.86);border:3px solid;border-color:#7ea87e #1d2a1d #1d2a1d #7ea87e;padding:16px 18px;display:none}
+   #mcVote h2{margin:0 0 4px;font-size:20px;font-weight:700;color:#fff;text-align:center}
+   #mcVote .sub{font-size:12px;color:#a9c3a9;text-align:center;margin-bottom:12px}
+   #mcVote .row{display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;
+     background:rgba(255,255,255,.05);border:2px solid transparent}
+   #mcVote .row.on{border-color:#8dffa0;background:rgba(141,255,160,.12)}
+   #mcVote .row .k{width:22px;height:22px;flex:0 0 22px;display:flex;align-items:center;justify-content:center;
+     background:#2b3a2b;border:1px solid #5d7a5d;font-size:12px;font-weight:700;color:#dff5df}
+   #mcVote .row .nm{flex:1;font-size:14px;color:#eaf5ea}
+   #mcVote .row .bl{font-size:11.5px;color:#9ab39a}
+   #mcVote .row .n{font-size:14px;font-weight:700;color:#8dffa0;min-width:22px;text-align:right}
+   #mcGear{position:absolute;left:12px;bottom:92px;display:flex;flex-direction:column;gap:5px}
+   #mcGear .b{background:rgba(10,14,10,.6);border:1px solid rgba(140,190,140,.3);padding:4px 9px;font-size:12.5px;color:#dff0df}
+   #mcGear .b b{color:#fff}
+   #mcGun{position:absolute;right:14px;bottom:92px;text-align:right}
+   #mcGun .ammo{font-size:26px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums}
+   #mcGun .ammo small{font-size:14px;color:#9ab39a;font-weight:600}
+   #mcGun .hp{font-size:12px;color:#ffb38a}
+   #mcGun .st{font-size:12px;color:#ff6b6b}
+   #mcFeed{position:absolute;right:14px;top:80px;width:240px;text-align:right;font-size:12px;color:#dff0df}
+   #mcFeed div{background:rgba(10,14,10,.5);padding:2px 7px;margin-bottom:3px;display:inline-block}
+   #mcBanner{position:absolute;top:31%;left:50%;transform:translateX(-50%);text-align:center;
+     font-size:32px;font-weight:900;color:#fff;text-shadow:0 2px 8px #000;display:none}
+   #mcEnd{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,92vw);display:none;
+     background:rgba(8,12,8,.9);border:3px solid;border-color:#7ea87e #1d2a1d #1d2a1d #7ea87e;padding:16px 18px}
+   #mcEnd h2{margin:0 0 10px;font-size:22px;font-weight:800;color:#fff;text-align:center}
+   #mcEnd table{width:100%;border-collapse:collapse;font-size:13.5px;color:#eaf5ea}
+   #mcEnd td{padding:3px 4px}
+   #mcEnd td.r{text-align:right;color:#8dffa0;font-weight:700}
+   #mcEnd td.role{color:#9ab39a;font-size:12px}
+   #mcHelp{position:absolute;left:12px;top:80px;width:230px;background:rgba(8,12,8,.72);
+     border:1px solid rgba(140,190,140,.3);padding:8px 10px;font-size:12px;color:#dff0df;display:none}
+   #mcHelp b{color:#fff} #mcHelp div{margin-bottom:2px}
+  `;
+  document.head.appendChild(css);
+  const h = document.createElement('div'); h.id = 'mcHud';
+  h.innerHTML =
+    '<div id="mcTop"><span class="ph" id="mcPhase">WAITING</span><span class="clk" id="mcClock">0:00</span>' +
+      '<span class="cnt" id="mcCount"></span></div>' +
+    '<div id="mcRole"></div>' +
+    '<div id="mcVote"><h2>Vote for a map</h2><div class="sub">Press the number beside the one you want</div>' +
+      '<div id="mcVoteRows"></div></div>' +
+    '<div id="mcGear"></div>' +
+    '<div id="mcGun"></div>' +
+    '<div id="mcFeed"></div>' +
+    '<div id="mcBanner"></div>' +
+    '<div id="mcEnd"><h2 id="mcEndTitle"></h2><table id="mcEndRows"></table></div>' +
+    '<div id="mcHelp"></div>';
+  document.body.appendChild(h);
+}
+function mcEnterUi() {
+  mcEnsureUi();
+  const h = document.getElementById('mcHud'); if (h) h.style.display = 'block';
+}
+function mcLeaveUi() {
+  const h = document.getElementById('mcHud'); if (h) h.style.display = 'none';
+  if (hotbarEl) hotbarEl.style.display = '';
+}
+function mcBanner(text) {
+  if (!mcUiBuilt) return;
+  const b = document.getElementById('mcBanner');
+  b.textContent = text; b.style.display = 'block';
+  clearTimeout(mcBannerTimer);
+  mcBannerTimer = setTimeout(() => { b.style.display = 'none'; }, 2200);
+}
+function mcFeed(text) {
+  mc.feed.unshift({ text: text, at: performance.now() });
+  if (mc.feed.length > 6) mc.feed.length = 6;
+  if (!mcUiBuilt) return;
+  const el = document.getElementById('mcFeed');
+  const live = mc.feed.filter(f => performance.now() - f.at < 7000);
+  mc.feed = live;
+  el.innerHTML = live.map(f => '<div>' + escHtml(f.text) + '</div>').join('');
+}
+function mcClock(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+function mcPretty(name) {
+  return (name || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+function mcHud() {
+  if (!mcUiBuilt) return;
+  const t = performance.now();
+  document.getElementById('mcPhase').textContent = mcPhaseTitle(mc.phase).toUpperCase();
+  document.getElementById('mcClock').textContent =
+    mc.phase === 'lobby' ? (mc.lobbyIn ? mcClock(mc.lobbyIn * 1000) : '--:--') : mcClock(mc.deadline - t);
+  document.getElementById('mcCount').textContent =
+    mc.phase === 'lobby' ? (mc.here + ' waiting  ·  K to start')
+                         : (mc.hiders + '/' + mc.hidersTotal + ' hiding  ·  ' + mc.seekers + ' seeking');
+
+  const role = document.getElementById('mcRole');
+  role.className = mc.playing ? mc.role : '';
+  role.textContent = !mc.playing ? '' : mc.role === 'seeker' ? 'SEEKER' : (mc.alive ? 'HIDER' : 'FOUND — WATCHING');
+
+  // the map vote
+  const vote = document.getElementById('mcVote');
+  vote.style.display = mc.phase === 'vote' ? 'block' : 'none';
+  if (mc.phase === 'vote') {
+    document.getElementById('mcVoteRows').innerHTML = mc.maps.map((m, i) =>
+      '<div class="row' + (mc.myVote === m.id ? ' on' : '') + '"><span class="k">' + (i + 1) + '</span>' +
+      '<span class="nm">' + escHtml(m.name) + '<div class="bl">' + escHtml(m.blurb || '') + '</div></span>' +
+      '<span class="n">' + ((mc.votes && mc.votes[m.id]) || 0) + '</span></div>').join('');
+  }
+
+  // what a hider is wearing, or what a seeker is holding
+  const gear = document.getElementById('mcGear');
+  const gun = document.getElementById('mcGun');
+  if (mc.playing && mc.role === 'hider' && mc.alive) {
+    const pose = (mc.poses[mc.pose] || {}).name || '';
+    gear.innerHTML =
+      '<div class="b">Hiding as <b>' + escHtml(mcPretty(mc.prop)) + '</b>  <small>Q / E</small></div>' +
+      '<div class="b">Pose <b>' + escHtml(pose) + '</b>  <small>1-' + mc.poses.length + '</small></div>' +
+      '<div class="b"><b>T</b> taunt  ·  <b>B</b> paint your skin</div>';
+    gun.innerHTML = '';
+  } else if (mc.playing && mc.role === 'seeker') {
+    gear.innerHTML = '<div class="b"><b>F</b> fire  ·  <b>R</b> reload</div>';
+    const reloading = t < mc.reloadUntil, stunned = t < mc.stunUntil;
+    gun.innerHTML =
+      '<div class="ammo">' + (reloading ? '--' : mc.ammo) + ' <small>/ ' + mc.ammoMax + '</small></div>' +
+      '<div class="hp">' + mc.hp + ' hp</div>' +
+      (stunned ? '<div class="st">JAMMED</div>' : reloading ? '<div class="st">RELOADING</div>' : '');
+  } else { gear.innerHTML = ''; gun.innerHTML = ''; }
+
+  // the scoreboard at the end
+  const end = document.getElementById('mcEnd');
+  end.style.display = (mc.phase === 'ended' && mc.results) ? 'block' : 'none';
+  if (mc.phase === 'ended' && mc.results) {
+    document.getElementById('mcEndTitle').textContent =
+      mc.results.hidersWon ? 'The hiders got away' : 'The seekers found everybody';
+    document.getElementById('mcEndRows').innerHTML = mc.results.rows.map(r =>
+      '<tr><td>' + escHtml(r.name) + '</td><td class="role">' + r.role + (r.finds ? ' · ' + r.finds + ' found' : '') +
+      '</td><td class="r">' + r.score + '</td></tr>').join('');
+  }
+
+  const help = document.getElementById('mcHelp');
+  help.style.display = mc.help ? 'block' : 'none';
+  if (mc.help) {
+    help.innerHTML =
+      '<div><b>H</b> hide this list</div>' +
+      '<div><b>1-6</b> pose, or vote for a map</div>' +
+      '<div><b>Q / E</b> what you look like</div>' +
+      '<div><b>T</b> taunt</div>' +
+      '<div><b>B</b> paint your skin</div>' +
+      '<div><b>F</b> fire (seeker)</div>' +
+      '<div><b>R</b> reload (seeker)</div>' +
+      '<div><b>K</b> start a round</div>' +
+      '<div><b>Q</b> also flips the camera when you are not hiding</div>';
+  }
+}
+
 let bbMode = false;   // makes chunk generation produce void + the arena prefab
 const bb = {
   active:false, phase:'lobby', left:0, theme:'', themes:[], plots:[], votePlot:0,
@@ -8928,7 +9481,7 @@ function armorMat(hex){
 }
 // ---- worn armour + held sword on a character model (local body or a remote player) ----
 function bwSetGear(model, teamColor, armorTier, swordTier, kbSword){
-  const ud=model && model.userData; if(!ud || ud.isPig || ud.isBlock || ud.isTree) return;   // pig/block/tree avatars have no humanoid slots to wear armour
+  const ud=model && model.userData; if(!ud || ud.isPig || ud.isBlock || ud.isTree || ud.isProp) return;   // pig/block/tree/prop avatars have no humanoid slots to wear armour
   if(ud.gear) for(const m of ud.gear){ if(m.parent) m.parent.remove(m); }
   ud.gear=[];
   const S=1/16;
@@ -10246,6 +10799,7 @@ function frame(now){
     mpUpdatePlayers(dt);
     if(bw.active) bwFrame(dt);
     if(bb.active){ bbTick(); bbCursor(); }
+    if(mc.active) mcFrame(dt);
     if(mp.active){                       // stream position, but only when it changes (idle heartbeat ~1 Hz)
       const nowMs=performance.now();
       if(nowMs-mp.lastPos>66){
@@ -10295,7 +10849,7 @@ function frame(now){
   const localBodyScale = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : (fx.body==='block'||fx.body==='tree') ? 1.0 : 0.9;   // big/small/block/tree secret codes size your own body too
   body.scale.set(localBodyScale, localBodyScale, localBodyScale);
   const lud=body.userData;
-  if(lud.isBlock || lud.isTree){
+  if(lud.isBlock || lud.isTree || lud.isProp){
     /* a diamond block or a tree: no limbs to pose */
   } else if(lud.isPig){
     lud.headPivot.rotation.x = player.pitch*0.6;
@@ -10447,6 +11001,24 @@ window.__mc = {
     const paint=(part,hex)=>{ if(!part) return; part.material=new THREE.MeshBasicMaterial({color:hex}); };
     paint(ud.armR, 0xff2020); paint(ud.armL, 0x2060ff);
     paint(ud.legR, 0xff9020); paint(ud.legL, 0x20c0ff); return true; },
+  // ---- mecha chameleon test hooks ----
+  mcLoadMap(msg){ mcMode=true; mc.active=true; mcEnsureUi(); mcBuildMap(msg); return true; },
+  mcStandAt(x,y,z){ mcStand(x,y,z); return true; },
+  startMecha(){ startMecha(); },
+  mecha(){ return { active:mc.active, phase:mc.phase, mapId:mc.mapId, role:mc.role, alive:mc.alive,
+    playing:mc.playing, prop:mc.prop, pose:mc.pose, hp:mc.hp, ammo:mc.ammo, score:mc.score,
+    props:mc.props.length, poses:mc.poses.length, maps:mc.maps.map(x=>x.id), myVote:mc.myVote,
+    votes:mc.votes, hiders:mc.hiders, seekers:mc.seekers,
+    blocks:(()=>{ let n=0; for(const [,m] of mpOverrides) n+=m.size; return n; })() }; },
+  mcKey(k){ return mcKey(k, { preventDefault(){} }); },
+  mcHudText(){ const g=id=>{ const e=document.getElementById(id); return e?e.textContent:''; };
+    return { phase:g('mcPhase'), clock:g('mcClock'), count:g('mcCount'), role:g('mcRole'),
+      gear:g('mcGear'), gun:g('mcGun'), vote:g('mcVoteRows'),
+      voteShown:(()=>{ const e=document.getElementById('mcVote'); return !!e && e.style.display==='block'; })(),
+      endShown:(()=>{ const e=document.getElementById('mcEnd'); return !!e && e.style.display==='block'; })(),
+      end:g('mcEndRows') }; },
+  mcBlockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
+  mcPropKind(){ return mc.localKind || ''; },
   // ---- server list test hooks ----
   openServers(){ openServers(); return true; },
   mpMinigame(){ return !!mp.minigame; },
