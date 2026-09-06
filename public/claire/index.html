@@ -6,28 +6,45 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Claire</title>
 <style>
-  /* Black on white and nothing else. The only lines on the page are the two the
-     input and the button need to be findable at all. */
+  /* Black on white and nothing else, centred, with the comments in a strip you can
+     scroll through and the box to write in sitting still underneath it. The only
+     lines on the page are the ones the inputs need to be findable at all. */
   html, body { background: #fff; color: #000; }
   body {
-    margin: 0;
-    padding: 24px 16px 40px;
+    margin: 0 auto;
+    padding: 24px 16px 32px;
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-    max-width: 640px;
+    max-width: 620px;
+    text-align: center;
   }
-  h1 { font-size: 24px; font-weight: normal; margin: 0 0 20px; }
-  #list { margin: 0 0 20px; }
-  .c { margin: 0 0 8px; overflow-wrap: anywhere; }
+  h1 { font-size: 24px; font-weight: normal; margin: 0 0 18px; }
+
+  #list { max-height: 62vh; overflow-y: auto; margin: 0 0 16px; }
+  .c { margin: 0 0 12px; overflow-wrap: anywhere; }
   .c .n { font-weight: bold; }
-  form { display: flex; gap: 8px; flex-wrap: wrap; }
-  input, button {
+  .c .q { font-size: 13px; }                      /* the line a reply is answering */
+  .c .q b { font-weight: bold; }
+
+  .r { margin-top: 2px; font-size: 14px; }
+  .r button {
+    font: inherit; color: #000; background: none; border: 0;
+    padding: 1px 4px; margin: 0 1px; cursor: pointer;
+  }
+  .r button.on { text-decoration: underline; }    /* the ones you pressed */
+  .r .reply { font-size: 13px; text-decoration: underline; }
+
+  #to { margin: 0 0 8px; font-size: 13px; }
+  #to button { font: inherit; color: #000; background: none; border: 0; cursor: pointer; text-decoration: underline; }
+
+  form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  input, #post {
     font: inherit; color: #000; background: #fff;
     border: 1px solid #000; padding: 5px 7px;
   }
-  #name { width: 120px; }
-  #text { flex: 1; min-width: 180px; }
-  button { cursor: pointer; padding: 5px 14px; }
-  ::placeholder { color: #000; opacity: 1; }   /* the browser's grey would be a third colour */
+  #name { width: 110px; }
+  #text { flex: 1; min-width: 170px; }
+  #post { cursor: pointer; padding: 5px 14px; }
+  ::placeholder { color: #000; opacity: 1; }      /* the browser's grey would be a third colour */
   #note { margin: 8px 0 0; }
 </style>
 </head>
@@ -37,23 +54,35 @@
 
 <div id="list"></div>
 
+<div id="to" hidden></div>
+
 <form id="f" autocomplete="off">
   <input id="name" maxlength="24" placeholder="name">
   <input id="text" maxlength="400" placeholder="comment">
-  <button type="submit">Post</button>
+  <button id="post" type="submit">Post</button>
 </form>
 <p id="note"></p>
 
 <script>
 (function () {
+  var REACTIONS = ['\u{1F44D}', '❤️', '\u{1F602}', '\u{1F389}', '\u{1F62E}', '\u{1F622}'];
   var list = document.getElementById('list');
   var form = document.getElementById('f');
   var nameEl = document.getElementById('name');
   var textEl = document.getElementById('text');
   var note = document.getElementById('note');
-  var ws = null, tries = 0;
+  var toBar = document.getElementById('to');
+  var ws = null, tries = 0, replyTo = 0;
+  var msgs = [];                       // everything on the wall, in order
+  var rows = {};                       // id -> the element showing it
 
   try { nameEl.value = localStorage.getItem('claire_name') || ''; } catch (e) {}
+  // who you are, only so a reaction counts once and can be taken back
+  var uid = '';
+  try {
+    uid = localStorage.getItem('claire_uid') || '';
+    if (!uid) { uid = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2); localStorage.setItem('claire_uid', uid); }
+  } catch (e) { uid = Math.random().toString(36).slice(2); }
 
   function wsUrl() {
     var h = location.hostname || 'localhost';
@@ -67,16 +96,77 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
   }
-  function atBottom() {
-    return (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 60);
+  function byId(id) { for (var i = 0; i < msgs.length; i++) if (msgs[i].id === id) return msgs[i]; return null; }
+  function atBottom() { return list.scrollHeight - list.scrollTop - list.clientHeight < 40; }
+  function toBottom() { list.scrollTop = list.scrollHeight; }
+
+  function reactRow(m) {
+    var r = document.createElement('div');
+    r.className = 'r';
+    REACTIONS.forEach(function (e) {
+      var who = (m.re && m.re[e]) || [];
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = who.length ? (e + ' ' + who.length) : e;
+      b.title = 'React ' + e;
+      if (who.indexOf(uid) >= 0) b.className = 'on';
+      b.addEventListener('click', function () { send({ type: 'react', id: m.id, emoji: e, uid: uid }); });
+      r.appendChild(b);
+    });
+    var rep = document.createElement('button');
+    rep.type = 'button';
+    rep.className = 'reply';
+    rep.textContent = 'reply';
+    rep.addEventListener('click', function () { setReply(m.id); });
+    r.appendChild(rep);
+    return r;
+  }
+  function draw(m) {
+    var d = document.createElement('div');
+    d.className = 'c';
+    var head = '';
+    if (m.to) {
+      var p = byId(m.to);
+      var quoted = p ? (p.text.length > 60 ? p.text.slice(0, 60) + '…' : p.text) : 'a deleted comment';
+      head = '<div class="q">↳ <b>' + esc(p ? p.name : '') + '</b> ' + esc(quoted) + '</div>';
+    }
+    d.innerHTML = head + '<div><span class="n">' + esc(m.name) + '</span> ' + esc(m.text) + '</div>';
+    d.appendChild(reactRow(m));
+    return d;
   }
   function add(m) {
     var wasDown = atBottom();
-    var d = document.createElement('div');
-    d.className = 'c';
-    d.innerHTML = '<span class="n">' + esc(m.name) + '</span> ' + esc(m.text);
+    msgs.push(m);
+    var d = draw(m);
+    rows[m.id] = d;
     list.appendChild(d);
-    if (wasDown) window.scrollTo(0, document.body.scrollHeight);
+    if (wasDown) toBottom();
+  }
+  function redraw(id) {
+    var m = byId(id), old = rows[id];
+    if (!m || !old) return;
+    var wasDown = atBottom();
+    var d = draw(m);
+    rows[id] = d;
+    old.replaceWith(d);
+    if (wasDown) toBottom();
+  }
+  function setReply(id) {
+    replyTo = id | 0;
+    var m = replyTo && byId(replyTo);
+    if (!m) { replyTo = 0; toBar.hidden = true; return; }
+    toBar.hidden = false;
+    toBar.innerHTML = 'replying to <b>' + esc(m.name) + '</b> ';
+    var x = document.createElement('button');
+    x.type = 'button'; x.textContent = 'cancel';
+    x.addEventListener('click', function () { setReply(0); });
+    toBar.appendChild(x);
+    textEl.focus();
+  }
+  function send(o) {
+    if (!ws || ws.readyState !== 1) { note.textContent = 'Not connected yet.'; return false; }
+    ws.send(JSON.stringify(o));
+    return true;
   }
 
   function connect() {
@@ -85,11 +175,15 @@
     ws.onmessage = function (ev) {
       var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.type === 'init') {
-        list.innerHTML = '';
+        list.innerHTML = ''; msgs = []; rows = {};
         (m.messages || []).forEach(add);
-        window.scrollTo(0, document.body.scrollHeight);
+        toBottom();
+        if (replyTo && !byId(replyTo)) setReply(0);
       } else if (m.type === 'msg') {
         add(m.msg);
+      } else if (m.type === 're') {
+        var t = byId(m.id);
+        if (t) { t.re = m.re; redraw(m.id); }
       } else if (m.type === 'slow') {
         note.textContent = 'One at a time.';
       } else if (m.type === 'full') {
@@ -110,12 +204,12 @@
     e.preventDefault();
     var text = textEl.value.trim();
     if (!text) return;
-    if (!ws || ws.readyState !== 1) { note.textContent = 'Not connected yet.'; return; }
     var name = nameEl.value.trim();
     try { localStorage.setItem('claire_name', name); } catch (err) {}
-    ws.send(JSON.stringify({ type: 'post', name: name, text: text }));
+    if (!send({ type: 'post', name: name, text: text, to: replyTo })) return;
     textEl.value = '';
     note.textContent = '';
+    setReply(0);
   });
 })();
 </script>
