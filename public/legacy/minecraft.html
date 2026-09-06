@@ -4687,7 +4687,7 @@ addEventListener('keydown', e=>{
   if(e.repeat) return;   // holding jump to fly up auto-repeats keydown; those aren't taps, so don't let them toggle fly
   // Creative flight normally stops at the edge of a Bed Wars match. The milan45 code
   // carries it in there as well.
-  if(!bindListening && e.key.toLowerCase()===binds.jump && state===PLAY && !parkour.run && (fx.fly || (creative && !bw.active))){
+  if(!bindListening && e.key.toLowerCase()===binds.jump && state===PLAY && !parkour.run && !mc.active && (fx.fly || (creative && !bw.active))){
     const now=performance.now();
     if(now-lastSpace<300){ player.flying=!player.flying; player.vel.y=0; }
     lastSpace=now;
@@ -8191,6 +8191,41 @@ function mcBuildMap(msg) {
   chunks.clear(); genQueue = [];
 }
 
+// Before the first map of the session arrives there is nothing under anybody's feet:
+// this is a void world, so a player joining the lobby falls forever while they vote.
+// Give them a pad to wait on. The first mcmap wipes it, and after that the last map
+// stays built between rounds, so this only ever runs on the way in.
+const MC_LOBBY = { x: 8, y: 40, z: 8, r: 7 };
+function mcBuildLobby() {
+  mpOverrides.clear();
+  doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear();
+  signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs();
+  trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
+  const L = MC_LOBBY;
+  const put = (x, y, z, name, meta) => {
+    const b = BLOCKS[name]; if (!b) return;
+    if (meta) {
+      const k = x + ',' + y + ',' + z;
+      if (meta.s) slabMeta.set(k, { top: !!meta.t, double: false });
+      else if (meta.f !== undefined) stairMeta.set(k, { facing: meta.f | 0, top: !!meta.t });
+    }
+    mpSetOverride(x, y, z, b.id);
+  };
+  for (let dx = -L.r; dx <= L.r; dx++) for (let dz = -L.r; dz <= L.r; dz++) {
+    const edge = Math.abs(dx) === L.r || Math.abs(dz) === L.r;
+    put(L.x + dx, L.y - 1, L.z + dz, 'polished_andesite');
+    put(L.x + dx, L.y, L.z + dz, edge ? 'stone_bricks' : ((dx + dz) & 1 ? 'smooth_stone' : 'polished_andesite'));
+    if (edge) put(L.x + dx, L.y + 1, L.z + dz, 'oak_fence');
+  }
+  for (const c of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {          // four lamps on posts
+    const x = L.x + c[0] * (L.r - 1), z = L.z + c[1] * (L.r - 1);
+    put(x, L.y + 1, z, 'oak_fence'); put(x, L.y + 2, z, 'oak_fence'); put(x, L.y + 3, z, 'sea_lantern');
+  }
+  for (const [, c] of chunks) { if (c.mesh) scene.remove(c.mesh); if (c.cmesh) scene.remove(c.cmesh); if (c.tmesh) scene.remove(c.tmesh); }
+  chunks.clear(); genQueue = [];
+  mcStand(L.x + 0.5, L.y + 1, L.z + 0.5);
+}
+
 // Put the player down somewhere and make sure the world around them is actually
 // built, or they drop through a map that has not meshed yet.
 function mcStand(x, y, z) {
@@ -8281,6 +8316,7 @@ function mcInit(m) {
   chunks.clear(); genQueue = [];
   seed = 7373 >>> 0; noise = makeNoise(seed);
   startGame();
+  mcBuildLobby();                      // something to wait on until a map is voted in
   for (const p of (m.players || [])) mpAddPlayer(p);
   mpSendSkin();
   mcEnsureUi(); mcHud();
@@ -8411,6 +8447,7 @@ function mcSweep() {
 /* ---- the frame ---- */
 function mcFrame(dt) {
   if (!mc.active) return;
+  player.flying = false;      // nobody flies in here: a hider would drift out of the room
   mcSweep();
   const t = performance.now() / 1000;
   // everyone else, held in whatever pose they chose
@@ -11019,6 +11056,10 @@ window.__mc = {
       end:g('mcEndRows') }; },
   mcBlockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
   mcPropKind(){ return mc.localKind || ''; },
+  mcFlying(){ return { flying:!!player.flying, y:player.pos.y, onGround:!!player.onGround }; },
+  mcLobbyPad(){ return { blocks:mpOverrides.size ? [...mpOverrides.values()].reduce((n,m)=>n+m.size,0) : 0,
+    under:blockName(getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y)-1, Math.floor(player.pos.z))) }; },
+  mcTryFly(){ player.flying = true; return !!player.flying; },
   // ---- server list test hooks ----
   openServers(){ openServers(); return true; },
   mpMinigame(){ return !!mp.minigame; },
