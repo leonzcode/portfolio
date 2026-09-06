@@ -4383,6 +4383,13 @@ function updateViewmodel(dt, moving){
   }
   if(vmGun) vmGun.visible=false;
   if(vmArm.scale.x!==1) vmArm.scale.setScalar(1);
+  // a hider carries nothing at all: no block, and no empty hand waving about either
+  if(mc.active){
+    if(vmBlock) vmBlock.visible=false;
+    if(vmItem) clearVmItem();
+    vmArm.visible=false;
+    return;
+  }
   if(vmItem) clearVmItem();
   if(hotbar[selSlot]!==vmHeldId) buildHeldBlock(hotbar[selSlot]);
   if(vmBlock){
@@ -4753,12 +4760,21 @@ addEventListener('keydown', e=>{
 canvas.addEventListener('mousedown', e=>{
   const token='mouse'+e.button;
   keys[token]=true;                                        // held state, so a mouse button can drive a held action too
+  // painting owns the mouse: left lays paint down, right turns you on the spot,
+  // and neither of them should be grabbing the pointer back
+  if(mc.paint){
+    e.preventDefault();
+    if(e.button===2){ mc.paintOrbit=true; }
+    else if(e.button===0){ mc.paintDrag=true; mcPaintPick(e); }
+    return;
+  }
   if(state!==PLAY || sleep.active || signEditPos || pollBlocking) return;  // ignore clicks while in bed / editing a sign / answering the poll
   if(!pointerLocked){ canvas.requestPointerLock(); return; }
   if(e.button===1) e.preventDefault();                     // stop middle-click autoscroll
   firePress(token, e);                                     // attack / use / pick (or whatever is bound to this button)
 });
-addEventListener('mouseup', e=>{ keys['mouse'+e.button]=false; });
+addEventListener('mouseup', e=>{ keys['mouse'+e.button]=false;
+  if(mc.paint){ if(e.button===2) mc.paintOrbit=false; if(e.button===0){ mc.paintDrag=false; mcSendSkin(true); } } });
 canvas.addEventListener('contextmenu', e=>e.preventDefault());
 // Controls screen: clicking a mouse button binds it (capture phase, so it beats the key-button's own click)
 addEventListener('mousedown', e=>{
@@ -4780,6 +4796,11 @@ document.addEventListener('pointerlockchange', ()=>{
   if(!pointerLocked && state===PLAY && !invOpen && !chatOpen && !sleep.active && !signEditPos && !bwShopOpen && !bwInvOpen && !pollBlocking && !bbFreeCursor()) pause();
 });
 document.addEventListener('mousemove', e=>{
+  if(mc.paint){
+    if(mc.paintOrbit){ mc.paintSpin += e.movementX * 0.008; player.pitch = Math.max(-0.8, Math.min(0.8, player.pitch + e.movementY*0.003)); }
+    else if(mc.paintDrag) mcPaintPick(e);
+    return;
+  }
   if(!pointerLocked) return;
   const s=0.0022, CAP=140;   // clamp spurious pointer-lock spikes so the view never flicks/jumps mid-turn
   const mx=Math.max(-CAP, Math.min(CAP, e.movementX||0));
@@ -6593,7 +6614,6 @@ function closeSkinEditor(save){
   if(skinAutosaveTimer){ clearTimeout(skinAutosaveTimer); skinAutosaveTimer=null; }
   if(save){ persistCurrentSkin(false, (selectedSkinId==null)?(pendingSkinName||'Custom skin'):undefined); pendingSkinName=null; renderSkinGallery(); }
   skinEditorEl.hidden=true;
-  if(typeof mcAfterSkin==='function' && mcAfterSkin()) return;   // straight back into the round
   if(state===PAUSE) pauseEl.hidden=false; else menuEl.hidden=false;
 }
 // write the current edit into the library (a new entry, or overwrite the selected one), then wear it
@@ -8190,19 +8210,20 @@ document.getElementById('csCancelBtn').addEventListener('click', ()=>{ createSer
    ships the map as a palette plus a block dictionary, so the geometry lives in one
    place; this side builds it, draws it, and puts the whole game on the keyboard.
 
-   Nothing here needs a mouse cursor: the map vote, the prop you turn into, the pose
+   Nothing here needs a mouse cursor except the brush: the map vote, the pose
    you hold, taunting, reloading and firing are all keys. */
 let mcMode = false;                 // makes chunk generation produce void, like Bed Wars
 const mc = {
   active: false, phase: 'lobby', left: 0, deadline: 0,
   mapId: '', mapName: '', maps: [], votes: {}, myVote: '',
-  poses: [], props: [], prop: null, pose: 0,
+  poses: [], pose: 0, painted: false,
+  paint: false, paintColor: '#b3271f', paintSize: 2, paintTool: 'brush',
+  paintDrag: false, paintOrbit: false, paintSpin: 0, paintLift: 0,
   role: 'hider', alive: false, playing: false,
   hp: 100, ammo: 24, hpMax: 100, ammoMax: 24, score: 0,
   stunUntil: 0, reloadUntil: 0, lastFire: 0, firing: false,
   hiders: 0, hidersTotal: 0, seekers: 0, here: 0,
   results: null, bounds: null, spawn: null,
-  propModels: new Map(),            // player id -> the block they are pretending to be
   tracers: [], marks: [], feed: [],
 };
 const MC_SHOT_GAP = 220;
@@ -8242,7 +8263,6 @@ function mcBuildMap(msg) {
   mc.bounds = msg.bounds || null;
   mc.spawn = msg.spawn || null;
   mc.mapId = msg.id; mc.mapName = msg.name;
-  mc.props = msg.props || [];
   for (const [, c] of chunks) { if (c.mesh) scene.remove(c.mesh); if (c.cmesh) scene.remove(c.cmesh); if (c.tmesh) scene.remove(c.tmesh); }
   chunks.clear(); genQueue = [];
 }
@@ -8251,35 +8271,52 @@ function mcBuildMap(msg) {
 // this is a void world, so a player joining the lobby falls forever while they vote.
 // Give them a pad to wait on. The first mcmap wipes it, and after that the last map
 // stays built between rounds, so this only ever runs on the way in.
-const MC_LOBBY = { x: 8, y: 40, z: 8, r: 7 };
+const MC_LOBBY = { x: 8, y: 40, z: 8, r: 8 };
 function mcBuildLobby() {
   mpOverrides.clear();
   doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear();
   signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs();
   trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
-  const L = MC_LOBBY;
+  const L = MC_LOBBY, R = L.r;
   const put = (x, y, z, name, meta) => {
     const b = BLOCKS[name]; if (!b) return;
+    const k = x + ',' + y + ',' + z;
     if (meta) {
-      const k = x + ',' + y + ',' + z;
       if (meta.s) slabMeta.set(k, { top: !!meta.t, double: false });
       else if (meta.f !== undefined) stairMeta.set(k, { facing: meta.f | 0, top: !!meta.t });
+      else if (meta.a) attachMeta.set(k, { m: meta.m | 0, f: meta.f | 0, on: false });
     }
     mpSetOverride(x, y, z, b.id);
   };
-  for (let dx = -L.r; dx <= L.r; dx++) for (let dz = -L.r; dz <= L.r; dz++) {
-    const edge = Math.abs(dx) === L.r || Math.abs(dz) === L.r;
+  // a room rather than a plate: stone floor, plank walls with windows, a beamed
+  // ceiling and a lamp in each corner, so waiting for a vote feels like somewhere
+  for (let dx = -R; dx <= R; dx++) for (let dz = -R; dz <= R; dz++) {
+    const edge = Math.abs(dx) === R || Math.abs(dz) === R;
     put(L.x + dx, L.y - 1, L.z + dz, 'polished_andesite');
     put(L.x + dx, L.y, L.z + dz, edge ? 'stone_bricks' : ((dx + dz) & 1 ? 'smooth_stone' : 'polished_andesite'));
-    if (edge) put(L.x + dx, L.y + 1, L.z + dz, 'oak_fence');
+    put(L.x + dx, L.y + 6, L.z + dz, (dx + dz) % 3 === 0 ? 'oak_log' : 'oak_planks');
+    if (!edge) continue;
+    for (let y = 1; y <= 5; y++) {
+      const corner = Math.abs(dx) === R && Math.abs(dz) === R;
+      const window = !corner && y >= 3 && y <= 4 && ((dx + dz + 64) % 3 !== 0);
+      put(L.x + dx, L.y + y, L.z + dz, corner ? 'oak_log' : window ? 'glass_pane' : 'oak_planks');
+    }
   }
-  for (const c of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {          // four lamps on posts
-    const x = L.x + c[0] * (L.r - 1), z = L.z + c[1] * (L.r - 1);
-    put(x, L.y + 1, z, 'oak_fence'); put(x, L.y + 2, z, 'oak_fence'); put(x, L.y + 3, z, 'sea_lantern');
+  for (const c of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    const x = L.x + c[0] * (R - 2), z = L.z + c[1] * (R - 2);
+    put(x, L.y + 1, z, 'oak_fence'); put(x, L.y + 2, z, 'oak_fence');
+    put(x, L.y + 3, z, 'lantern', { a: 1, m: 0, f: 0 });
   }
-  for (const [, c] of chunks) { if (c.mesh) scene.remove(c.mesh); if (c.cmesh) scene.remove(c.cmesh); if (c.tmesh) scene.remove(c.tmesh); }
+  // benches down two sides and a hearth in the middle, to stand around while you vote
+  for (let dz = -3; dz <= 3; dz++) {
+    put(L.x - R + 2, L.y + 1, L.z + dz, 'oak_stairs', { f: 3, t: 0 });
+    put(L.x + R - 2, L.y + 1, L.z + dz, 'oak_stairs', { f: 1, t: 0 });
+  }
+  put(L.x, L.y + 1, L.z, 'campfire');
+  for (const c of [[-1, 0], [1, 0], [0, -1], [0, 1]]) put(L.x + c[0], L.y + 1, L.z + c[1], 'cobblestone_slab', { s: 1, t: 0 });
+  for (const [, ch] of chunks) { if (ch.mesh) scene.remove(ch.mesh); if (ch.cmesh) scene.remove(ch.cmesh); if (ch.tmesh) scene.remove(ch.tmesh); }
   chunks.clear(); genQueue = [];
-  mcStand(L.x + 0.5, L.y + 1, L.z + 0.5);
+  mcStand(L.x + 0.5, L.y + 1, L.z + 4.5);
 }
 
 // Put the player down somewhere and make sure the world around them is actually
@@ -8293,54 +8330,277 @@ function mcStand(x, y, z) {
   for (const [, ch] of chunks) if (ch.generated && Math.abs(ch.cx - lastCX) <= 2 && Math.abs(ch.cz - lastCZ) <= 2) buildChunkMesh(ch);
 }
 
-/* ---- a hider looks like a block, held in a pose ---- */
-function mcPropModel(name) {
-  const b = BLOCKS[name];
-  const g = new THREE.Group();
-  const cube = bwTexturedCube(b ? b.id : 0);
-  cube.position.y = 0.5;
-  g.add(cube);
-  g.userData = { isProp: true, headPivot: new THREE.Group() };
-  g.add(g.userData.headPivot);
-  return g;
+/* ---- a hider is a person in a blank white skin, held in a pose ----
+   The round starts everybody as an unpainted figure and hands them a brush. The
+   skin lives on its own canvas so painting in a round never touches the skin you
+   picked in the menu, and it goes out over the ordinary skin message, so everyone
+   else sees what you painted without any new plumbing. */
+const mcSkinCanvas = document.createElement('canvas');
+mcSkinCanvas.width = mcSkinCanvas.height = 64;
+const mcSkinCtx = mcSkinCanvas.getContext('2d', { willReadFrequently: true });
+const mcSkinTex = makeSkinTex(mcSkinCanvas);
+// the six base-layer patches of a 64x64 skin; the overlay patches stay clear so a
+// blank hider is one clean figure rather than a figure inside a second baggy one
+const MC_SKIN_PARTS = [[0, 0, 32, 16], [16, 16, 24, 16], [40, 16, 16, 16],
+                       [0, 16, 16, 16], [32, 48, 16, 16], [16, 48, 16, 16]];
+function mcBlankSkin() {
+  mcSkinCtx.clearRect(0, 0, 64, 64);
+  mcSkinCtx.fillStyle = '#ffffff';
+  for (const r of MC_SKIN_PARTS) mcSkinCtx.fillRect(r[0], r[1], r[2], r[3]);
+  mcSkinTex.needsUpdate = true;
+  mc.painted = false;
 }
-// Six ways to hold still. They are what makes two hiders behind the same prop read
-// differently, and every one of them is on a number key.
+let mcSkinSendAt = 0, mcSkinSendTimer = 0;
+function mcSendSkin(now) {
+  if (!(mp.active && mp.ws && mp.ws.readyState === 1)) return;
+  // painting is a drag, so coalesce: send at most every 700ms, and always send last
+  clearTimeout(mcSkinSendTimer);
+  const t = performance.now();
+  if (!now && t - mcSkinSendAt < 700) { mcSkinSendTimer = setTimeout(() => mcSendSkin(true), 720); return; }
+  mcSkinSendAt = t;
+  mpSend({ type: 'skin', png: mcSkinCanvas.toDataURL(), slim: false, cape: '' });
+}
+
+/* ---- painting yourself, in the world rather than in a menu -----------------
+   B stops you moving, lets the cursor go and turns your own body into the
+   canvas: point at an arm and drag, and you are painting the arm. The camera
+   stays put and the figure turns instead, which is how you reach your own back.
+   The brush tip is the cursor, so the colour you are about to lay down is always
+   the thing under your hand.                                                  */
+const MC_PAINT_COLORS = [
+  '#ffffff', '#b8b8b8', '#6e6e6e', '#1d1d1d',
+  '#9a6b32', '#5a3a1c', '#d8ce97', '#e08a2f',
+  '#b3271f', '#6d1610', '#f2c531', '#7ac74a',
+  '#3f8f2f', '#1f5220', '#7ec8e3', '#2f4fc0',
+];
+const MC_PAINT_TOOLS = [['brush', 'Brush'], ['fill', 'Fill'], ['pick', 'Pick']];
+const mcRay = new THREE.Raycaster();
+let mcPaintUiBuilt = false;
+
+function mcPaintCursor() {
+  // the cursor is a chip of the colour you are holding, so you never look away to check
+  const c = document.createElement('canvas'); c.width = c.height = 24;
+  const g = c.getContext('2d');
+  const n = Math.max(6, Math.min(18, 6 + mc.paintSize * 4));
+  const o = (24 - n) / 2;
+  g.fillStyle = '#000000'; g.fillRect(o - 2, o - 2, n + 4, n + 4);
+  g.fillStyle = '#ffffff'; g.fillRect(o - 1, o - 1, n + 2, n + 2);
+  g.fillStyle = mc.paintColor; g.fillRect(o, o, n, n);
+  canvas.style.cursor = 'url(' + c.toDataURL() + ') 12 12, crosshair';
+}
+
+function mcPaintEnsureUi() {
+  if (mcPaintUiBuilt) return; mcPaintUiBuilt = true;
+  const css = document.createElement('style');
+  css.textContent = [
+    '#mcPaint{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:15;display:none;',
+    ' background:rgba(10,14,10,.78);border:2px solid rgba(120,200,120,.35);padding:9px 12px;',
+    ' font-family:inherit;color:#cdf5cd;user-select:none}',
+    '#mcPaint .row{display:flex;align-items:flex-end;gap:6px}',
+    '#mcPaint .well{width:26px;height:26px;border:2px solid rgba(0,0,0,.55);cursor:pointer;',
+    ' transition:transform .07s linear,border-color .07s linear}',
+    '#mcPaint .well:hover{border-color:rgba(205,245,205,.5)}',
+    '#mcPaint .well.on{transform:translateY(-5px);border-color:#f2e37a}',
+    '#mcPaint .sep{width:2px;align-self:stretch;background:rgba(120,200,120,.28);margin:0 5px}',
+    '#mcPaint .btn2{min-width:44px;height:26px;line-height:22px;text-align:center;padding:0 8px;cursor:pointer;',
+    ' border:2px solid rgba(120,200,120,.3);background:rgba(0,0,0,.28);color:#a9c3a9;font-size:12px;letter-spacing:1px}',
+    '#mcPaint .btn2:hover{color:#e8ffe8;border-color:rgba(120,200,120,.55)}',
+    '#mcPaint .btn2.on{color:#0f140f;background:#cdf5cd;border-color:#cdf5cd}',
+    '#mcPaint .sz{width:26px;min-width:26px;padding:0}',
+    '#mcPaint .hint{margin-top:7px;font-size:11px;color:#8fa08f;letter-spacing:.4px;text-align:center}',
+    '#mcPaint .hint b{color:#cdf5cd;font-weight:600}',
+  ].join('\n');
+  document.head.appendChild(css);
+  const el = document.createElement('div'); el.id = 'mcPaint';
+  const wells = MC_PAINT_COLORS.map(function (c, i) {
+    return '<div class="well" data-col="' + i + '" style="background:' + c + '"></div>';
+  }).join('');
+  const tools = MC_PAINT_TOOLS.map(function (t) {
+    return '<div class="btn2" data-tool="' + t[0] + '">' + t[1] + '</div>';
+  }).join('');
+  const sizes = [1, 2, 3].map(function (n) {
+    return '<div class="btn2 sz" data-size="' + n + '">' + n + '</div>';
+  }).join('');
+  el.innerHTML = '<div class="row">' + wells + '<div class="sep"></div>' + tools +
+                 '<div class="sep"></div>' + sizes + '</div>' +
+                 '<div class="hint">Drag to paint  &middot;  <b>right-drag</b> turns you round  &middot;  ' +
+                 '<b>B</b> or <b>Esc</b> when you are done</div>';
+  document.body.appendChild(el);
+  el.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+  el.addEventListener('click', function (e) {
+    const t = e.target;
+    if (t.dataset.col !== undefined) mc.paintColor = MC_PAINT_COLORS[+t.dataset.col];
+    else if (t.dataset.tool) mc.paintTool = t.dataset.tool;
+    else if (t.dataset.size) mc.paintSize = +t.dataset.size;
+    else return;
+    mcPaintUi(); mcPaintCursor();
+  });
+}
+function mcPaintUi() {
+  const el = document.getElementById('mcPaint'); if (!el) return;
+  el.style.display = mc.paint ? 'block' : 'none';
+  for (const w of el.querySelectorAll('.well')) w.classList.toggle('on', MC_PAINT_COLORS[+w.dataset.col] === mc.paintColor);
+  for (const b of el.querySelectorAll('[data-tool]')) b.classList.toggle('on', b.dataset.tool === mc.paintTool);
+  for (const b of el.querySelectorAll('[data-size]')) b.classList.toggle('on', +b.dataset.size === mc.paintSize);
+}
+
+function mcPaintOpen() {
+  if (mc.paint) return;
+  if (!(mc.role === 'hider' && mc.alive && mc.playing)) return;
+  mc.paint = true; mc.paintDrag = false; mc.paintOrbit = false;
+  mcPaintEnsureUi(); mcPaintUi(); mcPaintCursor();
+  camMode = 2; body.visible = true;          // face on, and right-drag turns you round
+  try { if (document.exitPointerLock) document.exitPointerLock(); } catch (e) {}
+  mcHud();
+}
+function mcPaintClose() {
+  if (!mc.paint) return;
+  mc.paint = false; mc.paintDrag = false; mc.paintOrbit = false;
+  camMode = 1;
+  mcPaintUi();
+  canvas.style.cursor = '';
+  mcSendSkin(true);
+  if (state === PLAY) { try { canvas.requestPointerLock(); } catch (e) {} }
+  mcHud();
+}
+
+// which patch of the skin a texel belongs to, so a fill stops at the edge of a limb
+function mcSkinPartAt(px, py) {
+  for (const r of MC_SKIN_PARTS)
+    if (px >= r[0] && px < r[0] + r[2] && py >= r[1] && py < r[1] + r[3]) return r;
+  return null;
+}
+function mcPaintAt(px, py) {
+  const part = mcSkinPartAt(px, py);
+  if (!part) return false;                       // never paint into the patches nothing samples
+  if (mc.paintTool === 'pick') {
+    const d = mcSkinCtx.getImageData(px, py, 1, 1).data;
+    mc.paintColor = '#' + [d[0], d[1], d[2]].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
+    mc.paintTool = 'brush'; mcPaintUi(); mcPaintCursor();
+    return false;
+  }
+  if (mc.paintTool === 'fill') { mcFloodFill(px, py, part); return true; }
+  const n = mc.paintSize, o = (n / 2) | 0;
+  const x0 = Math.max(part[0], px - o), y0 = Math.max(part[1], py - o);
+  const x1 = Math.min(part[0] + part[2], px - o + n), y1 = Math.min(part[1] + part[3], py - o + n);
+  if (x1 <= x0 || y1 <= y0) return false;
+  mcSkinCtx.fillStyle = mc.paintColor;
+  mcSkinCtx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  mcSkinTex.needsUpdate = true; mc.painted = true;
+  return true;
+}
+function mcFloodFill(px, py, part) {
+  const img = mcSkinCtx.getImageData(part[0], part[1], part[2], part[3]);
+  const d = img.data, W = part[2], H = part[3];
+  const sx = px - part[0], sy = py - part[1];
+  const at = function (x, y) { return ((y * W + x) << 2); };
+  const s = at(sx, sy);
+  const want = [d[s], d[s + 1], d[s + 2], d[s + 3]];
+  const c = mc.paintColor;
+  const to = [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16), 255];
+  if (want[0] === to[0] && want[1] === to[1] && want[2] === to[2] && want[3] === to[3]) return;
+  const same = function (i) { return d[i] === want[0] && d[i + 1] === want[1] && d[i + 2] === want[2] && d[i + 3] === want[3]; };
+  const stack = [[sx, sy]];
+  while (stack.length) {
+    const p = stack.pop(), x = p[0], y = p[1];
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const i = at(x, y);
+    if (!same(i)) continue;
+    d[i] = to[0]; d[i + 1] = to[1]; d[i + 2] = to[2]; d[i + 3] = to[3];
+    stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+  }
+  mcSkinCtx.putImageData(img, part[0], part[1]);
+  mcSkinTex.needsUpdate = true; mc.painted = true;
+}
+
+// point at yourself and find the texel under the cursor
+function mcPaintPick(ev) {
+  if (!mc.paint || !body) return false;
+  const r = canvas.getBoundingClientRect();
+  const nx = ((ev.clientX - r.left) / r.width) * 2 - 1;
+  const ny = -((ev.clientY - r.top) / r.height) * 2 + 1;
+  mcRay.setFromCamera({ x: nx, y: ny }, camera);
+  const hits = mcRay.intersectObject(body, true);
+  for (const h of hits) {
+    if (!h.uv) continue;
+    const px = Math.floor(h.uv.x * 64), py = Math.floor((1 - h.uv.y) * 64);
+    if (px < 0 || py < 0 || px > 63 || py > 63) continue;
+    if (mcPaintAt(px, py)) mcSendSkin(false);
+    return true;
+  }
+  return false;
+}
+
+/* Six ways to hold still, and every one of them is a real body position rather
+   than a squashed cube. The limbs already hang from their joints, so rotating one
+   swings it the way a shoulder or a hip does and the seam stays closed. */
 function mcPoseModel(model, pose, t) {
-  if (!model) return;
-  const c = model.children && model.children[0];
-  if (!c) return;
-  c.rotation.set(0, 0, 0); c.scale.set(1, 1, 1); c.position.set(0, 0.5, 0);
-  model.rotation.z = 0;
+  const u = model && model.userData;
+  if (!u || !u.upper) return;                       // anything that is not a character
+  const HIP = u.hipY;
+  const { upper, legL, legR, armL, armR, headPivot } = u;
+  // a pose is absolute, so start from rest every frame rather than accumulating.
+  // rotation.y is the direction the player is facing and belongs to the caller.
+  model.rotation.x = 0; model.rotation.z = 0;
+  upper.rotation.set(0, 0, 0); headPivot.rotation.set(0, 0, 0);
+  armL.rotation.set(0, 0, 0); armR.rotation.set(0, 0, 0);
+  legL.rotation.set(0, 0, 0); legR.rotation.set(0, 0, 0);
+  const drop = d => { upper.position.y = HIP - d; legL.position.y = HIP - d; legR.position.y = HIP - d; };
+  drop(0);
+  const HALF = Math.PI / 2;
   switch (pose) {
-    case 1: c.scale.set(1, 0.5, 1); c.position.y = 0.25; break;                       // crouch
-    case 2: c.scale.set(1, 0.35, 1); c.position.y = 0.18; c.rotation.y = Math.PI / 4; break;  // lie flat
-    case 3: c.rotation.z = 0.5; c.position.y = 0.55; break;                            // tilt
-    case 4: c.rotation.y = (t || 0) * 1.6; break;                                      // spin
-    case 5: c.position.y = 0.9 + Math.sin((t || 0) * 2) * 0.12; break;                 // float
-    default: break;                                                                    // stand
+    case 1:                                          // sit: legs out in front, hands behind
+      legL.rotation.x = -HALF; legR.rotation.x = -HALF;
+      armL.rotation.x = 0.55; armR.rotation.x = 0.55;
+      armL.rotation.z = -0.14; armR.rotation.z = 0.14;
+      upper.rotation.x = 0.14; headPivot.rotation.x = -0.1;
+      drop(HIP * 0.78);
+      break;
+    case 2:                                          // starfish: everything thrown out
+      armL.rotation.z = 1.4; armR.rotation.z = -1.4;
+      armL.rotation.x = -0.12; armR.rotation.x = -0.12;
+      legL.rotation.z = 0.4; legR.rotation.z = -0.4;
+      headPivot.rotation.x = -0.14;
+      break;
+    case 3:                                          // lie down: hinged flat at the hip
+      upper.rotation.x = -HALF; legL.rotation.x = -HALF; legR.rotation.x = -HALF;
+      armL.rotation.z = 0.28; armR.rotation.z = -0.28;
+      drop(HIP - 0.16);
+      break;
+    case 4:                                          // crouch, the way sneaking looks
+      upper.rotation.x = 0.5; headPivot.rotation.x = -0.34;
+      armL.rotation.x = -0.45; armR.rotation.x = -0.45;
+      drop(0.22);
+      break;
+    case 5: {                                        // wave
+      const s = Math.sin((t || 0) * 5);
+      armR.rotation.z = -2.5 - s * 0.22; armR.rotation.x = -0.2;
+      armL.rotation.x = 0.16;
+      headPivot.rotation.y = 0.18;
+      break;
+    }
+    default: break;                                  // stand
   }
 }
-function mcSetProp(p, name) {
+// Everyone in a round wears the blank skin they were given, painted or not. Nobody
+// turns into a block any more, so this only has to make sure the model exists.
+function mcSetLook(p) {
   if (!p) return;
-  p.mcProp = name || null;
-  const want = name ? 'prop:' + name : 'human';
-  if (p.mcKind === want) return;
-  p.mcKind = want;
+  if (p.mcKind === 'human') return;
+  p.mcKind = 'human';
   const tag = p.tag;
   if (p.model) { if (tag) p.model.remove(tag); scene.remove(p.model); }
-  p.model = name ? mcPropModel(name) : makeBodyModel('human', p.skinTex, p.slim);
+  p.model = makeBodyModel('human', p.skinTex, p.slim);
   if (tag) p.model.add(tag);
   scene.add(p.model);
 }
-function mcSetLocalProp(name) {
-  mc.prop = name || null;
-  const want = name ? 'prop:' + name : 'human';
+function mcSetLocalLook(hider) {
+  const want = hider ? 'mc:blank' : 'human';
   if (mc.localKind === want) return;
   mc.localKind = want;
   const wasVisible = body.visible;
   scene.remove(body);
-  body = name ? mcPropModel(name) : makeBodyModel('human', localSkinTex, localSlim);
+  body = makeBodyModel('human', hider ? mcSkinTex : localSkinTex, hider ? false : localSlim);
   headPivot = body.userData.headPivot;
   body.visible = wasVisible;
   scene.add(body);
@@ -8366,7 +8626,6 @@ function mcInit(m) {
   mc.hpMax = m.hpMax || 100; mc.ammoMax = m.ammoMax || 24;
   mc.phase = m.phase; mc.left = m.left || 0; mc.deadline = performance.now() + mc.left * 1000;
   mc.mapId = m.mapId || ''; mc.votes = m.votes || {}; mc.myVote = '';
-  mc.propModels.clear();
   mpClearPlayers();
   for (const [, c] of chunks) { if (c.mesh) scene.remove(c.mesh); if (c.cmesh) scene.remove(c.cmesh); if (c.tmesh) scene.remove(c.tmesh); }
   chunks.clear(); genQueue = [];
@@ -8401,13 +8660,15 @@ function mcHandle(m) {
     case 'mcyou': {
       mc.role = m.role; mc.alive = !!m.alive; mc.playing = !!m.playing;
       mc.pose = m.pose | 0; mc.hp = m.hp; mc.ammo = m.ammo; mc.score = m.score || 0;
-      if (m.props && m.props.length) mc.props = m.props;
       if (m.poses && m.poses.length) mc.poses = m.poses;
       if (m.stunned) mc.stunUntil = performance.now() + m.stunned;
       if (typeof m.x === 'number' && mc.playing) mcStand(m.x, m.y, m.z);
-      // you look like the thing you are hiding as, and see it in third person
-      mcSetLocalProp(mc.role === 'hider' && mc.alive && mc.playing ? m.prop : null);
-      if (mc.role === 'hider' && mc.playing && mc.alive) camMode = 1;
+      // a hider is a blank figure until they paint themselves, and sees it in third
+      // person so they can tell what everyone else is looking at
+      const amHider = mc.role === 'hider' && mc.alive && mc.playing;
+      if (amHider && mc.localKind !== 'mc:blank') { mcBlankSkin(); mcSendSkin(true); }
+      mcSetLocalLook(amHider);
+      if (amHider) camMode = mc.paint ? 2 : 1; else mcPaintClose();
       mcHud();
       return true;
     }
@@ -8416,19 +8677,18 @@ function mcHandle(m) {
         const p = mp.players.get(q.id);
         if (!p) continue;
         p.mcRole = q.role; p.mcAlive = q.alive; p.mcPose = q.pose | 0;
-        mcSetProp(p, (q.role === 'hider' && q.alive && q.playing) ? q.prop : null);
+        mcSetLook(p);
         if (p.tag) p.tag.visible = !(q.role === 'hider' && q.alive);   // a hider has no name over them
       }
       mcHud();
       return true;
     }
-    case 'mcprop': { const p = mp.players.get(m.id); if (p) mcSetProp(p, m.prop); return true; }
     case 'mcpose': { const p = mp.players.get(m.id); if (p) p.mcPose = m.pose | 0; return true; }
     case 'mcshot': mcTracer(m); return true;
     case 'mcfound': {
       mcFeed((m.byName || '?') + ' found ' + (m.name || '?'));
       mcMark(m.x, m.y, m.z, 0xff5555);
-      if (m.id === mp.id) { mc.alive = false; mcSetLocalProp(null); mcBanner('Found!'); }
+      if (m.id === mp.id) { mc.alive = false; mcSetLocalLook(false); mcPaintClose(); mcBanner('Found!'); }
       mcHud();
       return true;
     }
@@ -8442,22 +8702,6 @@ function mcHandle(m) {
     case 'mcstun': { mc.stunUntil = performance.now() + (m.ms || 4000); mcBanner('Jammed!'); return true; }
   }
   return false;
-}
-
-/* ---- painting the skin you are wearing when they find you ---- */
-// The editor is normally reached from the menu, so opening it mid-round has to let
-// the cursor go on the way in and put the game back together on the way out.
-function mcOpenSkin() {
-  mc.skinReturn = true;
-  try { if (document.exitPointerLock) document.exitPointerLock(); } catch (e) {}
-  openSkinEditor();
-}
-function mcAfterSkin() {
-  if (!mc.skinReturn) return false;
-  mc.skinReturn = false;
-  menuEl.hidden = true; pauseEl.hidden = true;
-  if (state === PLAY) { try { canvas.requestPointerLock(); } catch (e) {} }
-  return true;
 }
 
 /* ---- shooting ---- */
@@ -8507,8 +8751,9 @@ function mcFrame(dt) {
   mcSweep();
   const t = performance.now() / 1000;
   // everyone else, held in whatever pose they chose
-  for (const [, p] of mp.players) if (p.mcProp && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
-  if (mc.prop) mcPoseModel(body, mc.pose, t + 1);
+  for (const [, p] of mp.players)
+    if (p.mcRole === 'hider' && p.mcAlive && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
+  // the local body is posed after its own walk animation instead, further down the frame
   // holding the fire key keeps the gun going
   if (mc.firing) mcFire();
   if (mc.kick) mc.kick = Math.max(0, mc.kick - dt * 6);
@@ -8518,9 +8763,16 @@ function mcFrame(dt) {
 
 /* ---- what the keys do ---- */
 // Every one of these is a key, on purpose: the brief was that the mouse cursor is
-// never needed, so the vote, the prop, the pose, the taunt and the gun are all here.
+// only wanted for painting, so the vote, the pose, the taunt and the gun are all keys.
 function mcKey(k, e) {
   if (!mc.active || state !== PLAY || chatOpen || invOpen) return false;
+  if (mc.paint) {                          // painting takes the keyboard until you stop
+    if (k === 'escape' || k === 'b') { mcPaintClose(); return true; }
+    if (k === 'arrowleft')  { mc.paintSpin -= 0.35; return true; }
+    if (k === 'arrowright') { mc.paintSpin += 0.35; return true; }
+    if (k >= '1' && k <= '6') { mc.pose = +k - 1; mpSend({ type: 'mcpose', pose: mc.pose }); mcHud(); return true; }
+    return true;
+  }
   if (mc.phase === 'vote' && k >= '1' && k <= String(Math.min(9, mc.maps.length))) {
     const map = mc.maps[+k - 1];
     if (map) { mc.myVote = map.id; mpSend({ type: 'mcvote', map: map.id }); mcFeed('Voted for ' + map.name); mcHud(); }
@@ -8530,15 +8782,8 @@ function mcKey(k, e) {
   if (k === 'h') { mc.help = !mc.help; mcHud(); return true; }
   if (mc.role === 'hider' && mc.alive && mc.playing) {
     if (k >= '1' && k <= '6') { mc.pose = +k - 1; mpSend({ type: 'mcpose', pose: mc.pose }); mcHud(); return true; }
-    if (k === 'q' || k === 'e') {           // step through the props you can be
-      const i = Math.max(0, mc.props.indexOf(mc.prop));
-      const n = mc.props.length || 1;
-      const j = (k === 'e' ? i + 1 : i - 1 + n) % n;
-      mpSend({ type: 'mcprop', prop: mc.props[j] });
-      return true;
-    }
     if (k === 't') { mpSend({ type: 'mctaunt' }); return true; }
-    if (k === 'b') { mcOpenSkin(); return true; }      // paint the skin you wear when found
+    if (k === 'b') { if (mc.paint) mcPaintClose(); else mcPaintOpen(); return true; }
   }
   if (mc.role === 'seeker') {
     if (k === 'r') { mpSend({ type: 'mcreload' }); return true; }
@@ -8681,9 +8926,8 @@ function mcHud() {
   if (mc.playing && mc.role === 'hider' && mc.alive) {
     const pose = (mc.poses[mc.pose] || {}).name || '';
     gear.innerHTML =
-      '<div class="b">Hiding as <b>' + escHtml(mcPretty(mc.prop)) + '</b>  <small>Q / E</small></div>' +
       '<div class="b">Pose <b>' + escHtml(pose) + '</b>  <small>1-' + mc.poses.length + '</small></div>' +
-      '<div class="b"><b>T</b> taunt  ·  <b>B</b> paint your skin</div>';
+      '<div class="b"><b>B</b> paint yourself  ·  <b>T</b> taunt</div>';
     gun.innerHTML = '';
   } else if (mc.playing && mc.role === 'seeker') {
     gear.innerHTML = '<div class="b"><b>F</b> fire  ·  <b>R</b> reload</div>';
@@ -8711,9 +8955,8 @@ function mcHud() {
     help.innerHTML =
       '<div><b>H</b> hide this list</div>' +
       '<div><b>1-6</b> pose, or vote for a map</div>' +
-      '<div><b>Q / E</b> what you look like</div>' +
       '<div><b>T</b> taunt</div>' +
-      '<div><b>B</b> paint your skin</div>' +
+      '<div><b>B</b> paint yourself, in the world</div>' +
       '<div><b>F</b> fire (seeker)</div>' +
       '<div><b>R</b> reload (seeker)</div>' +
       '<div><b>K</b> start a round</div>' +
@@ -10876,7 +11119,7 @@ function frame(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05) dt=0.05;
 
   if(state===PLAY){
-    if(!invOpen && chatBox.hidden && !sleep.active && !sit.active && !bwShopOpen && !bwInvOpen && !pollBlocking) updatePlayer(dt);   // freeze while picker/chat/sleep/sitting/shopping/inventory/poll
+    if(!invOpen && chatBox.hidden && !sleep.active && !sit.active && !bwShopOpen && !bwInvOpen && !pollBlocking && !mc.paint) updatePlayer(dt);   // freeze while picker/chat/sleep/sitting/shopping/inventory/poll/painting
     { const ccx=Math.floor(player.pos.x/CH), ccz=Math.floor(player.pos.z/CH);   // rescan chunks only when you cross into a new one
       if(ccx!==lastCX || ccz!==lastCZ){ lastCX=ccx; lastCZ=ccz; ensureChunks(player.pos.x, player.pos.z); } }
     processQueues(player.pos.x, player.pos.z);
@@ -10954,6 +11197,12 @@ function frame(now){
     if(swing>0) lud.armR.rotation.x = -Math.sin((1-swing)*Math.PI)*1.5;   // a punch swing overrides the walk swing
     localCloak = stepCloak(localCloak, player.pos.x, player.pos.y, player.pos.z, dt);
     poseCape(lud, capeDrift(localCloak, player.pos.x, player.pos.y, player.pos.z), player.yaw, cr>0.5, bobT, walkAmpLocal);
+    // A held pose is not an animation, so it goes on last and wins: the walk cycle
+    // above would otherwise put the limbs straight back where they were.
+    if(mc.active && mc.role==='hider' && mc.alive && mc.playing){
+      mcPoseModel(body, mc.pose, performance.now()/1000 + 1);
+      if(mc.paint) body.rotation.y = player.yaw + Math.PI + mc.paintSpin;   // you turn, the camera stays
+    }
   }
   // show your own body in first person when a body code is active, so you see yourself as big/small/pig
   body.visible = (state===PLAY && !sleep.active && !fx.ghost && (camMode!==0 || fx.body!=='none'));   // the hide code takes you out of your own view too
@@ -11099,8 +11348,8 @@ window.__mc = {
   mcStandAt(x,y,z){ mcStand(x,y,z); return true; },
   startMecha(){ startMecha(); },
   mecha(){ return { active:mc.active, phase:mc.phase, mapId:mc.mapId, role:mc.role, alive:mc.alive,
-    playing:mc.playing, prop:mc.prop, pose:mc.pose, hp:mc.hp, ammo:mc.ammo, score:mc.score,
-    props:mc.props.length, poses:mc.poses.length, maps:mc.maps.map(x=>x.id), myVote:mc.myVote,
+    playing:mc.playing, pose:mc.pose, hp:mc.hp, ammo:mc.ammo, score:mc.score,
+    painted:mc.painted, poses:mc.poses.length, maps:mc.maps.map(x=>x.id), myVote:mc.myVote,
     votes:mc.votes, hiders:mc.hiders, seekers:mc.seekers,
     blocks:(()=>{ let n=0; for(const [,m] of mpOverrides) n+=m.size; return n; })() }; },
   mcKey(k){ return mcKey(k, { preventDefault(){} }); },
@@ -11111,7 +11360,21 @@ window.__mc = {
       endShown:(()=>{ const e=document.getElementById('mcEnd'); return !!e && e.style.display==='block'; })(),
       end:g('mcEndRows') }; },
   mcBlockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
-  mcPropKind(){ return mc.localKind || ''; },
+  mcLookKind(){ return mc.localKind || ''; },
+  mcCam(n){ camMode = n|0; return camMode; },
+  mcPaint(){ return { on:mc.paint, tool:mc.paintTool, color:mc.paintColor, size:mc.paintSize,
+    spin:+mc.paintSpin.toFixed(3), painted:mc.painted,
+    barShown:(()=>{ const e=document.getElementById('mcPaint'); return !!e && e.style.display==='block'; })(),
+    wells:document.querySelectorAll('#mcPaint .well').length }; },
+  mcPaintPixel(x,y){ const d=mcSkinCtx.getImageData(x,y,1,1).data; return [d[0],d[1],d[2],d[3]]; },
+  mcPaintPoke(x,y){ return mcPaintAt(x,y); },
+  mcPaintTool(t){ mc.paintTool=t; mcPaintUi(); return mc.paintTool; },
+  mcPaintColor(c){ mc.paintColor=c; mcPaintUi(); return mc.paintColor; },
+  mcPoseOf(){ const u=body.userData; return u && u.upper ? {
+    upperX:+u.upper.rotation.x.toFixed(2), legLX:+u.legL.rotation.x.toFixed(2),
+    armLZ:+u.armL.rotation.z.toFixed(2), armRZ:+u.armR.rotation.z.toFixed(2),
+    legLZ:+u.legL.rotation.z.toFixed(2), dropY:+u.upper.position.y.toFixed(3),
+    hipY:+u.hipY.toFixed(3) } : null; },
   mcFlying(){ return { flying:!!player.flying, y:player.pos.y, onGround:!!player.onGround }; },
   mcLobbyPad(){ return { blocks:mpOverrides.size ? [...mpOverrides.values()].reduce((n,m)=>n+m.size,0) : 0,
     under:blockName(getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y)-1, Math.floor(player.pos.z))) }; },
