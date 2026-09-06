@@ -5,84 +5,274 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Claire</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
 <style>
-  /* Black on white and nothing else, centred, with the comments in a strip you can
-     scroll through and the box to write in sitting still underneath it. The only
-     lines on the page are the ones the inputs need to be findable at all. */
-  html, body { background: #fff; color: #000; }
+  /* Discord's dark theme, near enough: its colours, its spacing, its rhythm. gg sans
+     is Discord's own and not ours to ship, so this falls back to Open Sans, which is
+     what it grew out of and reads almost identically at these sizes. */
+  :root {
+    --bg:        #313338;   /* the channel itself */
+    --bg-2:      #2b2d31;   /* rails and pills */
+    --bg-3:      #1e1f22;   /* darkest: the scrollbar track, the tooltip */
+    --hover:     #2e3035;   /* a message you are pointing at */
+    --input:     #383a40;
+    --text:      #dbdee1;
+    --strong:    #f2f3f5;
+    --muted:     #949ba4;
+    --line:      #3f4147;
+    --blurple:   #5865f2;
+    --blue:      #00a8fc;
+    --danger:    #f23f43;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0 auto;
-    padding: 24px 16px 32px;
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-    max-width: 620px;
-    text-align: center;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.375 "Open Sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column;
+    overflow: hidden;
   }
-  h1 { font-size: 24px; font-weight: normal; margin: 0 0 18px; }
 
-  #list { max-height: 62vh; overflow-y: auto; margin: 0 0 16px; }
-  .c { margin: 0 0 12px; overflow-wrap: anywhere; }
-  .c .n { font-weight: bold; }
-  .c .q { font-size: 13px; }                      /* the line a reply is answering */
-  .c .q b { font-weight: bold; }
-
-  .r { margin-top: 2px; font-size: 14px; }
-  .r button {
-    font: inherit; color: #000; background: none; border: 0;
-    padding: 1px 4px; margin: 0 1px; cursor: pointer;
+  /* ---- channel bar ---- */
+  header {
+    flex: 0 0 48px; display: flex; align-items: center; gap: 8px;
+    padding: 0 16px; background: var(--bg);
+    box-shadow: 0 1px 0 rgba(4,4,5,.2), 0 1.5px 0 rgba(6,6,7,.05), 0 2px 0 rgba(4,4,5,.05);
+    z-index: 2;
   }
-  .r button.on { text-decoration: underline; }    /* the ones you pressed */
-  .r .reply { font-size: 13px; text-decoration: underline; }
+  header .hash { color: var(--muted); font-size: 24px; font-weight: 400; line-height: 1; }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--strong); }
+  header .sep { width: 1px; height: 24px; background: var(--line); margin: 0 8px; }
+  header .topic { font-size: 14px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header .here { margin-left: auto; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  header .dot { width: 8px; height: 8px; border-radius: 50%; background: #23a55a; }
 
-  #to { margin: 0 0 8px; font-size: 13px; }
-  #to button { font: inherit; color: #000; background: none; border: 0; cursor: pointer; text-decoration: underline; }
+  /* ---- messages ---- */
+  #scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px 0 8px; }
+  #scroll::-webkit-scrollbar { width: 16px; }
+  #scroll::-webkit-scrollbar-track { background: var(--bg-3); border: 4px solid var(--bg); border-radius: 8px; }
+  #scroll::-webkit-scrollbar-thumb { background: var(--bg-3); border: 4px solid var(--bg); border-radius: 8px; }
+  #scroll::-webkit-scrollbar-thumb:hover { background: #111214; }
 
-  form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  input, #post {
-    font: inherit; color: #000; background: #fff;
-    border: 1px solid #000; padding: 5px 7px;
+  #welcome { padding: 16px 16px 24px; }
+  #welcome .ring {
+    width: 68px; height: 68px; border-radius: 50%; background: var(--input);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 8px;
   }
-  #name { width: 110px; }
-  #text { flex: 1; min-width: 170px; }
-  #post { cursor: pointer; padding: 5px 14px; }
-  ::placeholder { color: #000; opacity: 1; }      /* the browser's grey would be a third colour */
-  #note { margin: 8px 0 0; }
+  #welcome .ring span { font-size: 40px; color: var(--strong); line-height: 1; }
+  #welcome h2 { margin: 0 0 8px; font-size: 32px; font-weight: 800; color: #fff; }
+  #welcome p { margin: 0; font-size: 16px; color: var(--muted); }
+
+  .msg { position: relative; padding: 2px 48px 2px 72px; margin-top: 17px; }
+  .msg.cont { margin-top: 0; padding-top: 1px; padding-bottom: 1px; }
+  .msg:hover { background: var(--hover); }
+  .msg .av {
+    position: absolute; left: 16px; top: 2px; width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 18px; font-weight: 600; user-select: none;
+  }
+  .msg .head { display: flex; align-items: baseline; gap: 8px; }
+  .msg .who { color: var(--strong); font-size: 16px; font-weight: 500; }
+  .msg .when { color: var(--muted); font-size: 12px; font-weight: 500; }
+  .msg .body { color: var(--text); font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg .body .ed { color: var(--muted); font-size: 10px; margin-left: 4px; }
+  /* the timestamp that appears in the gutter of a grouped message */
+  .msg .gut {
+    position: absolute; left: 0; width: 72px; top: 2px; text-align: right; padding-right: 16px;
+    color: var(--muted); font-size: 11px; opacity: 0;
+  }
+  .msg.cont:hover .gut { opacity: 1; }
+
+  /* the reply line above a message */
+  .ref { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; color: var(--muted); font-size: 14px; }
+  .msg.hasref { padding-top: 6px; }
+  .msg.hasref .av { top: 26px; }
+  .msg .spine {
+    position: absolute; left: 36px; top: 14px; width: 32px; height: 12px;
+    border-left: 2px solid var(--line); border-top: 2px solid var(--line);
+    border-top-left-radius: 6px;
+  }
+  .ref .rav { width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center;
+              justify-content: center; color: #fff; font-size: 9px; font-weight: 600; flex: 0 0 16px; }
+  .ref .rwho { color: var(--strong); font-weight: 500; }
+  .ref .rtext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---- reactions ---- */
+  .re { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .re button {
+    display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px;
+    background: var(--bg-2); border: 1px solid transparent; border-radius: 8px;
+    color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .re button:hover { border-color: var(--muted); }
+  .re button.mine { background: rgba(88,101,242,.16); border-color: var(--blurple); color: #c9cdfb; }
+  .re .add { color: var(--muted); padding: 0 6px; }
+  .re .add svg { display: block; }
+
+  /* ---- the hover toolbar ---- */
+  .tools {
+    position: absolute; right: 16px; top: -16px; display: none;
+    background: var(--bg-2); border: 1px solid rgba(0,0,0,.2); border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(4,4,5,.15);
+  }
+  .msg:hover .tools, .msg.menuopen .tools { display: flex; }
+  .tools button {
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    background: none; border: 0; color: var(--muted); cursor: pointer;
+  }
+  .tools button:hover { background: var(--hover); color: var(--strong); }
+  .tools button.del:hover { color: var(--danger); }
+
+  /* ---- emoji picker ---- */
+  .picker {
+    position: absolute; right: 16px; top: 20px; z-index: 5; width: 232px; padding: 8px;
+    background: var(--bg-2); border: 1px solid rgba(0,0,0,.3); border-radius: 8px;
+    box-shadow: 0 8px 16px rgba(0,0,0,.24);
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px;
+  }
+  .picker button {
+    height: 26px; background: none; border: 0; border-radius: 4px; font-size: 17px; cursor: pointer; padding: 0;
+  }
+  .picker button:hover { background: var(--hover); }
+
+  /* ---- editing in place ---- */
+  .edit textarea {
+    width: 100%; resize: none; background: var(--input); color: var(--text);
+    border: 0; border-radius: 8px; padding: 10px; font: inherit; font-size: 16px; outline: none;
+  }
+  .edit .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .edit .hint b { color: var(--blue); font-weight: 400; cursor: pointer; }
+
+  /* ---- composer ---- */
+  #bottom { flex: 0 0 auto; padding: 0 16px 24px; }
+  #replybar {
+    display: none; align-items: center; gap: 6px; font-size: 13px; color: var(--muted);
+    background: var(--bg-2); border-radius: 8px 8px 0 0; padding: 8px 12px; margin-bottom: -8px;
+  }
+  #replybar b { color: var(--strong); font-weight: 600; }
+  #replybar .x { margin-left: auto; background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; }
+  #composer { display: flex; align-items: flex-end; gap: 12px; background: var(--input); border-radius: 8px; padding: 11px 16px; }
+  #text {
+    flex: 1; background: none; border: 0; outline: none; resize: none;
+    color: var(--text); font: inherit; font-size: 16px; max-height: 144px; line-height: 1.375;
+  }
+  #text::placeholder { color: var(--muted); }
+  #send { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; }
+  #send:hover { color: var(--strong); }
+  #foot { display: flex; align-items: center; gap: 6px; height: 24px; padding: 4px 2px 0; font-size: 13px; color: var(--muted); }
+  #foot b { color: var(--strong); font-weight: 600; }
+  #foot .who { cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); }
+  #typing { display: none; align-items: center; gap: 6px; }
+  #typing .dots { display: inline-flex; gap: 2px; }
+  #typing .dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); animation: b 1.2s infinite; }
+  #typing .dots i:nth-child(2) { animation-delay: .2s; }
+  #typing .dots i:nth-child(3) { animation-delay: .4s; }
+  @keyframes b { 0%,60%,100% { opacity:.35; transform: translateY(0); } 30% { opacity:1; transform: translateY(-2px); } }
+  @media (prefers-reduced-motion: reduce) { #typing .dots i { animation: none; } }
+  #note { color: var(--danger); }
+
+  /* ---- the name prompt, Discord's modal shape ---- */
+  #gate { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.6); }
+  #gate .box { width: 420px; max-width: 92vw; background: var(--bg); border-radius: 5px; box-shadow: 0 8px 20px rgba(0,0,0,.4); }
+  #gate .top { padding: 24px 16px 0; text-align: center; }
+  #gate h3 { margin: 0 0 8px; font-size: 24px; font-weight: 700; color: #fff; }
+  #gate p { margin: 0 0 20px; font-size: 16px; color: var(--muted); }
+  #gate .field { padding: 0 16px 20px; text-align: left; }
+  #gate label { display: block; font-size: 12px; font-weight: 700; letter-spacing: .02em; color: #b5bac1; margin-bottom: 8px; }
+  #gate input { width: 100%; padding: 10px; background: var(--bg-3); border: 1px solid #1e1f22; border-radius: 3px; color: var(--text); font: inherit; outline: none; }
+  #gate .bar { padding: 16px; background: var(--bg-2); border-radius: 0 0 5px 5px; display: flex; justify-content: flex-end; }
+  #gate .go { background: var(--blurple); color: #fff; border: 0; border-radius: 3px; padding: 10px 24px; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+  #gate .go:hover { background: #4752c4; }
 </style>
 </head>
 <body>
 
-<h1>Claire</h1>
+<header>
+  <span class="hash">#</span>
+  <h1>claire</h1>
+  <span class="sep"></span>
+  <span class="topic">say something nice</span>
+  <span class="here"><span class="dot"></span><span id="here">1</span> online</span>
+</header>
 
-<div id="list"></div>
+<div id="scroll">
+  <div id="welcome">
+    <div class="ring"><span>#</span></div>
+    <h2>Welcome to #claire!</h2>
+    <p>This is the start of the #claire channel.</p>
+  </div>
+  <div id="list"></div>
+</div>
 
-<div id="to" hidden></div>
+<div id="bottom">
+  <div id="replybar">
+    <span>Replying to <b id="replyto"></b></span>
+    <button class="x" id="replyx" type="button" title="Cancel">&times;</button>
+  </div>
+  <div id="composer">
+    <textarea id="text" rows="1" maxlength="400" placeholder="Message #claire"></textarea>
+    <button id="send" type="button" title="Send">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.3 21.7 22 12 2.3 2.3 2.3 9.9 16 12 2.3 14.1z"/></svg>
+    </button>
+  </div>
+  <div id="foot">
+    <span id="typing"><span class="dots"><i></i><i></i><i></i></span><span id="typingwho"></span></span>
+    <span id="idline">posting as <b id="mename">anon</b> <span class="who" id="changename">change</span></span>
+    <span id="note"></span>
+  </div>
+</div>
 
-<form id="f" autocomplete="off">
-  <input id="name" maxlength="24" placeholder="name">
-  <input id="text" maxlength="400" placeholder="comment">
-  <button id="post" type="submit">Post</button>
-</form>
-<p id="note"></p>
+<div id="gate">
+  <div class="box">
+    <div class="top">
+      <h3>What should we call you?</h3>
+      <p>This is how everyone in #claire will see you.</p>
+    </div>
+    <div class="field">
+      <label for="gatename">DISPLAY NAME</label>
+      <input id="gatename" maxlength="24" placeholder="anon" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="bar"><button class="go" id="gatego" type="button">Continue</button></div>
+  </div>
+</div>
 
 <script>
 (function () {
-  var REACTIONS = ['\u{1F44D}', '❤️', '\u{1F602}', '\u{1F389}', '\u{1F62E}', '\u{1F622}'];
+  var REACTIONS = ['\u{1F44D}','\u{1F44E}','❤️','\u{1F602}','\u{1F389}','\u{1F62E}','\u{1F622}','\u{1F525}',
+                   '\u{1F440}','\u{1F4AF}','\u{1F64F}','\u{1F605}','\u{1F60D}','\u{1F914}','\u{1F62D}','✨'];
+  // Discord's default avatar colours
+  var AVCOL = ['#5865f2','#3ba55c','#faa81a','#ed4245','#eb459e','#00a8fc'];
+
+  var scroll = document.getElementById('scroll');
   var list = document.getElementById('list');
-  var form = document.getElementById('f');
-  var nameEl = document.getElementById('name');
   var textEl = document.getElementById('text');
   var note = document.getElementById('note');
-  var toBar = document.getElementById('to');
-  var ws = null, tries = 0, replyTo = 0;
-  var msgs = [];                       // everything on the wall, in order
-  var rows = {};                       // id -> the element showing it
+  var replybar = document.getElementById('replybar');
+  var replyto = document.getElementById('replyto');
+  var meNameEl = document.getElementById('mename');
+  var typingEl = document.getElementById('typing');
+  var typingWho = document.getElementById('typingwho');
+  var gate = document.getElementById('gate');
 
-  try { nameEl.value = localStorage.getItem('claire_name') || ''; } catch (e) {}
-  // who you are, only so a reaction counts once and can be taken back
-  var uid = '';
+  var ws = null, tries = 0, replyId = 0, editId = 0;
+  var msgs = [], rows = {};
+  var myName = '', uid = '', lastTypingSent = 0, typingTimer = 0, typingNames = {};
+
+  try { myName = localStorage.getItem('claire_name') || ''; } catch (e) {}
   try {
     uid = localStorage.getItem('claire_uid') || '';
     if (!uid) { uid = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2); localStorage.setItem('claire_uid', uid); }
   } catch (e) { uid = Math.random().toString(36).slice(2); }
+  function setName(n) {
+    myName = (n || '').trim().slice(0, 24);
+    meNameEl.textContent = myName || 'anon';
+    try { localStorage.setItem('claire_name', myName); } catch (e) {}
+  }
+  setName(myName);
 
   function wsUrl() {
     var h = location.hostname || 'localhost';
@@ -96,79 +286,228 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
   }
-  function byId(id) { for (var i = 0; i < msgs.length; i++) if (msgs[i].id === id) return msgs[i]; return null; }
-  function atBottom() { return list.scrollHeight - list.scrollTop - list.clientHeight < 40; }
-  function toBottom() { list.scrollTop = list.scrollHeight; }
-
-  function reactRow(m) {
-    var r = document.createElement('div');
-    r.className = 'r';
-    REACTIONS.forEach(function (e) {
-      var who = (m.re && m.re[e]) || [];
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = who.length ? (e + ' ' + who.length) : e;
-      b.title = 'React ' + e;
-      if (who.indexOf(uid) >= 0) b.className = 'on';
-      b.addEventListener('click', function () { send({ type: 'react', id: m.id, emoji: e, uid: uid }); });
-      r.appendChild(b);
-    });
-    var rep = document.createElement('button');
-    rep.type = 'button';
-    rep.className = 'reply';
-    rep.textContent = 'reply';
-    rep.addEventListener('click', function () { setReply(m.id); });
-    r.appendChild(rep);
-    return r;
+  function hash(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
+  function avColor(name) { return AVCOL[hash(name || 'anon') % AVCOL.length]; }
+  function initial(name) { return (name || 'a').trim().charAt(0).toUpperCase() || 'A'; }
+  function clock(t) {
+    var d = new Date(t);
+    var hh = d.getHours(), ap = hh >= 12 ? 'PM' : 'AM';
+    hh = hh % 12; if (!hh) hh = 12;
+    return hh + ':' + String(d.getMinutes()).padStart(2, '0') + ' ' + ap;
   }
+  function stamp(t) {
+    var d = new Date(t), now = new Date();
+    var sameDay = d.toDateString() === now.toDateString();
+    var y = new Date(now.getTime() - 86400000);
+    if (sameDay) return 'Today at ' + clock(t);
+    if (d.toDateString() === y.toDateString()) return 'Yesterday at ' + clock(t);
+    return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear() + ' ' + clock(t);
+  }
+  function byId(id) { for (var i = 0; i < msgs.length; i++) if (msgs[i].id === id) return msgs[i]; return null; }
+  function prevOf(id) { for (var i = 0; i < msgs.length; i++) if (msgs[i].id === id) return msgs[i - 1] || null; return null; }
+  function atBottom() { return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60; }
+  function toBottom() { scroll.scrollTop = scroll.scrollHeight; }
+  function icon(d, w) {
+    return '<svg width="' + (w || 20) + '" height="' + (w || 20) + '" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' + d + '</svg>';
+  }
+  var I_EMOJI = '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zM8.5 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM12 18c2.3 0 4.2-1.4 5-3.4H7c.8 2 2.7 3.4 5 3.4z"/>';
+  var I_REPLY = '<path d="M10 8V4l-8 8 8 8v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/>';
+  var I_EDIT  = '<path d="M19.3 8.9 15.1 4.7l1.4-1.4a2 2 0 0 1 2.8 0l1.4 1.4a2 2 0 0 1 0 2.8l-1.4 1.4zM3 17.2 13.7 6.5l3.8 3.8L6.8 21H3v-3.8z"/>';
+  var I_DEL   = '<path d="M15 3H9v1H4v2h16V4h-5V3zM6 8v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8H6zm4 3h2v7h-2v-7zm4 0h2v7h-2v-7z"/>';
+  var I_ADDRE = '<path d="M12 2a10 10 0 1 0 4.5 18.9l-.9-1.8A8 8 0 1 1 20 12h2A10 10 0 0 0 12 2zm-3.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM12 18c2.3 0 4.2-1.4 5-3.4H7c.8 2 2.7 3.4 5 3.4zM20 16v-3h2v3h3v2h-3v3h-2v-3h-3v-2h3z"/>';
+
+  /* ---------- one message ---------- */
   function draw(m) {
-    var d = document.createElement('div');
-    d.className = 'c';
-    var head = '';
+    var prev = prevOf(m.id);
+    var grouped = prev && prev.name === m.name && !m.to && (m.at - prev.at) < 7 * 60000;
+    var el = document.createElement('div');
+    el.className = 'msg' + (grouped ? ' cont' : '') + (m.to ? ' hasref' : '');
+    el.dataset.id = m.id;
+
+    var html = '';
     if (m.to) {
       var p = byId(m.to);
-      var quoted = p ? (p.text.length > 60 ? p.text.slice(0, 60) + '…' : p.text) : 'a deleted comment';
-      head = '<div class="q">↳ <b>' + esc(p ? p.name : '') + '</b> ' + esc(quoted) + '</div>';
+      var pn = p ? p.name : 'someone';
+      var pt = p ? p.text : 'Original message was deleted';
+      html += '<div class="spine"></div><div class="ref">' +
+              '<span class="rav" style="background:' + avColor(pn) + '">' + esc(initial(pn)) + '</span>' +
+              '<span class="rwho">' + esc(pn) + '</span>' +
+              '<span class="rtext">' + esc(pt) + '</span></div>';
     }
-    d.innerHTML = head + '<div><span class="n">' + esc(m.name) + '</span> ' + esc(m.text) + '</div>';
-    d.appendChild(reactRow(m));
-    return d;
+    if (grouped) {
+      html += '<div class="gut">' + clock(m.at) + '</div>';
+    } else {
+      html += '<div class="av" style="background:' + avColor(m.name) + '">' + esc(initial(m.name)) + '</div>' +
+              '<div class="head"><span class="who">' + esc(m.name) + '</span>' +
+              '<span class="when">' + stamp(m.at) + '</span></div>';
+    }
+    html += '<div class="body">' + esc(m.text) + (m.ed ? '<span class="ed">(edited)</span>' : '') + '</div>';
+    el.innerHTML = html;
+
+    // reactions
+    var re = m.re || {};
+    var keys = Object.keys(re).filter(function (k) { return (re[k] || []).length; });
+    if (keys.length) {
+      var bar = document.createElement('div');
+      bar.className = 're';
+      keys.forEach(function (k) {
+        var who = re[k], b = document.createElement('button');
+        b.type = 'button';
+        b.className = who.indexOf(uid) >= 0 ? 'mine' : '';
+        b.innerHTML = '<span>' + k + '</span><span>' + who.length + '</span>';
+        b.title = k;
+        b.addEventListener('click', function () { send({ type: 'react', id: m.id, emoji: k, uid: uid }); });
+        bar.appendChild(b);
+      });
+      var add = document.createElement('button');
+      add.type = 'button'; add.className = 'add'; add.title = 'Add reaction';
+      add.innerHTML = icon(I_ADDRE, 18);
+      add.addEventListener('click', function (e) { openPicker(el, m.id, e); });
+      bar.appendChild(add);
+      el.appendChild(bar);
+    }
+
+    // hover toolbar
+    var tools = document.createElement('div');
+    tools.className = 'tools';
+    tools.appendChild(toolBtn('Add Reaction', I_EMOJI, function (e) { openPicker(el, m.id, e); }));
+    tools.appendChild(toolBtn('Reply', I_REPLY, function () { setReply(m.id); }));
+    if (m.uid && m.uid === uid) {
+      tools.appendChild(toolBtn('Edit', I_EDIT, function () { startEdit(m.id); }));
+      var d = toolBtn('Delete', I_DEL, function () { send({ type: 'del', id: m.id, uid: uid }); });
+      d.className = 'del';
+      tools.appendChild(d);
+    }
+    el.appendChild(tools);
+    return el;
   }
+  function toolBtn(title, path, fn) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.title = title; b.innerHTML = icon(path, 20);
+    b.addEventListener('click', fn);
+    return b;
+  }
+
+  /* ---------- the emoji picker ---------- */
+  var picker = null;
+  function closePicker() {
+    if (!picker) return;
+    var owner = picker.parentElement;
+    if (owner) owner.classList.remove('menuopen');
+    picker.remove(); picker = null;
+  }
+  function openPicker(el, id, ev) {
+    if (ev) ev.stopPropagation();
+    var was = picker && picker.dataset.for === String(id);
+    closePicker();
+    if (was) return;
+    picker = document.createElement('div');
+    picker.className = 'picker';
+    picker.dataset.for = String(id);
+    REACTIONS.forEach(function (e) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = e; b.title = e;
+      b.addEventListener('click', function (evt) {
+        evt.stopPropagation();
+        send({ type: 'react', id: id, emoji: e, uid: uid });
+        closePicker();
+      });
+      picker.appendChild(b);
+    });
+    picker.addEventListener('click', function (e) { e.stopPropagation(); });
+    el.classList.add('menuopen');
+    el.appendChild(picker);
+  }
+  document.addEventListener('click', closePicker);
+
+  /* ---------- editing in place ---------- */
+  function startEdit(id) {
+    var m = byId(id), el = rows[id];
+    if (!m || !el) return;
+    editId = id;
+    var body = el.querySelector('.body');
+    var box = document.createElement('div');
+    box.className = 'edit';
+    var ta = document.createElement('textarea');
+    ta.rows = 1; ta.maxLength = 400; ta.value = m.text;
+    var hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.innerHTML = 'escape to <b data-x="c">cancel</b> • enter to <b data-x="s">save</b>';
+    box.appendChild(ta); box.appendChild(hint);
+    body.replaceWith(box);
+    grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    function save() {
+      var v = ta.value.trim();
+      if (v && v !== m.text) send({ type: 'edit', id: id, uid: uid, text: v });
+      else redraw(id);
+      editId = 0;
+    }
+    function cancel() { editId = 0; redraw(id); }
+    ta.addEventListener('input', function () { grow(ta); });
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    hint.addEventListener('click', function (e) {
+      var x = e.target.getAttribute('data-x');
+      if (x === 'c') cancel(); if (x === 's') save();
+    });
+  }
+
+  /* ---------- list plumbing ---------- */
   function add(m) {
     var wasDown = atBottom();
     msgs.push(m);
-    var d = draw(m);
-    rows[m.id] = d;
-    list.appendChild(d);
+    var el = draw(m);
+    rows[m.id] = el;
+    list.appendChild(el);
     if (wasDown) toBottom();
   }
   function redraw(id) {
     var m = byId(id), old = rows[id];
     if (!m || !old) return;
     var wasDown = atBottom();
-    var d = draw(m);
-    rows[id] = d;
-    old.replaceWith(d);
+    var el = draw(m);
+    rows[id] = el;
+    old.replaceWith(el);
     if (wasDown) toBottom();
   }
+  function remove(id) {
+    var i = msgs.findIndex(function (x) { return x.id === id; });
+    if (i < 0) return;
+    msgs.splice(i, 1);
+    if (rows[id]) { rows[id].remove(); delete rows[id]; }
+    // anything that answered it now says the original is gone
+    msgs.forEach(function (x) { if (x.to === id) redraw(x.id); });
+  }
   function setReply(id) {
-    replyTo = id | 0;
-    var m = replyTo && byId(replyTo);
-    if (!m) { replyTo = 0; toBar.hidden = true; return; }
-    toBar.hidden = false;
-    toBar.innerHTML = 'replying to <b>' + esc(m.name) + '</b> ';
-    var x = document.createElement('button');
-    x.type = 'button'; x.textContent = 'cancel';
-    x.addEventListener('click', function () { setReply(0); });
-    toBar.appendChild(x);
+    replyId = id | 0;
+    var m = replyId && byId(replyId);
+    if (!m) { replyId = 0; replybar.style.display = 'none'; return; }
+    replyto.textContent = m.name;
+    replybar.style.display = 'flex';
     textEl.focus();
   }
   function send(o) {
-    if (!ws || ws.readyState !== 1) { note.textContent = 'Not connected yet.'; return false; }
+    if (!ws || ws.readyState !== 1) { note.textContent = 'Not connected.'; return false; }
     ws.send(JSON.stringify(o));
     return true;
   }
+  function grow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 144) + 'px'; }
 
+  /* ---------- typing ---------- */
+  function showTyping() {
+    var names = Object.keys(typingNames).filter(function (n) { return Date.now() - typingNames[n] < 6000; });
+    if (!names.length) { typingEl.style.display = 'none'; return; }
+    typingEl.style.display = 'flex';
+    var who = names.length === 1 ? ('<b>' + esc(names[0]) + '</b> is typing...')
+            : names.length === 2 ? ('<b>' + esc(names[0]) + '</b> and <b>' + esc(names[1]) + '</b> are typing...')
+            : 'Several people are typing...';
+    typingWho.innerHTML = who;
+  }
+  setInterval(showTyping, 1500);
+
+  /* ---------- the socket ---------- */
   function connect() {
     try { ws = new WebSocket(wsUrl()); } catch (e) { retry(); return; }
     ws.onopen = function () { tries = 0; note.textContent = ''; };
@@ -177,40 +516,79 @@
       if (m.type === 'init') {
         list.innerHTML = ''; msgs = []; rows = {};
         (m.messages || []).forEach(add);
+        document.getElementById('here').textContent = m.here || 1;
         toBottom();
-        if (replyTo && !byId(replyTo)) setReply(0);
+        if (replyId && !byId(replyId)) setReply(0);
       } else if (m.type === 'msg') {
         add(m.msg);
+        delete typingNames[m.msg.name]; showTyping();
       } else if (m.type === 're') {
-        var t = byId(m.id);
-        if (t) { t.re = m.re; redraw(m.id); }
+        var t = byId(m.id); if (t) { t.re = m.re; redraw(m.id); }
+      } else if (m.type === 'edit') {
+        var e2 = byId(m.id);
+        if (e2) { e2.text = m.text; e2.ed = m.ed; if (editId !== m.id) redraw(m.id); }
+      } else if (m.type === 'del') {
+        if (replyId === m.id) setReply(0);
+        remove(m.id);
+      } else if (m.type === 'here') {
+        document.getElementById('here').textContent = m.here || 1;
+      } else if (m.type === 'typing') {
+        typingNames[m.name] = Date.now(); showTyping();
       } else if (m.type === 'slow') {
-        note.textContent = 'One at a time.';
+        note.textContent = 'You are sending messages too quickly.';
+        setTimeout(function () { note.textContent = ''; }, 2500);
       } else if (m.type === 'full') {
-        note.textContent = 'Too many people here right now. Try again in a minute.';
+        note.textContent = 'This channel is full right now.';
       }
     };
     ws.onclose = function () { ws = null; retry(); };
     ws.onerror = function () {};
   }
-  function retry() {
-    note.textContent = 'Reconnecting...';
-    tries++;
-    setTimeout(connect, Math.min(8000, 500 * tries));
-  }
+  function retry() { note.textContent = 'Reconnecting...'; tries++; setTimeout(connect, Math.min(8000, 500 * tries)); }
   connect();
 
-  form.addEventListener('submit', function (e) {
-    e.preventDefault();
+  /* ---------- sending ---------- */
+  function post() {
     var text = textEl.value.trim();
     if (!text) return;
-    var name = nameEl.value.trim();
-    try { localStorage.setItem('claire_name', name); } catch (err) {}
-    if (!send({ type: 'post', name: name, text: text, to: replyTo })) return;
-    textEl.value = '';
+    if (!send({ type: 'post', name: myName, text: text, to: replyId, uid: uid })) return;
+    textEl.value = ''; grow(textEl);
     note.textContent = '';
     setReply(0);
+  }
+  textEl.addEventListener('input', function () {
+    grow(textEl);
+    var now = Date.now();
+    if (textEl.value && now - lastTypingSent > 2200 && ws && ws.readyState === 1) {
+      lastTypingSent = now;
+      ws.send(JSON.stringify({ type: 'typing', name: myName }));
+    }
   });
+  textEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); post(); }
+    if (e.key === 'Escape' && replyId) { e.preventDefault(); setReply(0); }
+  });
+  document.getElementById('send').addEventListener('click', post);
+  document.getElementById('replyx').addEventListener('click', function () { setReply(0); });
+
+  /* ---------- who you are ---------- */
+  function openGate() {
+    gate.style.display = 'flex';
+    var g = document.getElementById('gatename');
+    g.value = myName;
+    setTimeout(function () { g.focus(); }, 30);
+  }
+  function closeGate() {
+    setName(document.getElementById('gatename').value || 'anon');
+    gate.style.display = 'none';
+    textEl.focus();
+  }
+  document.getElementById('gatego').addEventListener('click', closeGate);
+  document.getElementById('gatename').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); closeGate(); }
+  });
+  document.getElementById('changename').addEventListener('click', openGate);
+  if (!myName) openGate();
 })();
 </script>
 
