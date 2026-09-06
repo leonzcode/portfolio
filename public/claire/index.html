@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Claire</title>
+<style>
+  /* Black on white and nothing else. The only lines on the page are the two the
+     input and the button need to be findable at all. */
+  html, body { background: #fff; color: #000; }
+  body {
+    margin: 0;
+    padding: 24px 16px 40px;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    max-width: 640px;
+  }
+  h1 { font-size: 24px; font-weight: normal; margin: 0 0 20px; }
+  #list { margin: 0 0 20px; }
+  .c { margin: 0 0 8px; overflow-wrap: anywhere; }
+  .c .n { font-weight: bold; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
+  input, button {
+    font: inherit; color: #000; background: #fff;
+    border: 1px solid #000; padding: 5px 7px;
+  }
+  #name { width: 120px; }
+  #text { flex: 1; min-width: 180px; }
+  button { cursor: pointer; padding: 5px 14px; }
+  ::placeholder { color: #000; opacity: 1; }   /* the browser's grey would be a third colour */
+  #note { margin: 8px 0 0; }
+</style>
+</head>
+<body>
+
+<h1>Claire</h1>
+
+<div id="list"></div>
+
+<form id="f" autocomplete="off">
+  <input id="name" maxlength="24" placeholder="name">
+  <input id="text" maxlength="400" placeholder="comment">
+  <button type="submit">Post</button>
+</form>
+<p id="note"></p>
+
+<script>
+(function () {
+  var list = document.getElementById('list');
+  var form = document.getElementById('f');
+  var nameEl = document.getElementById('name');
+  var textEl = document.getElementById('text');
+  var note = document.getElementById('note');
+  var ws = null, tries = 0;
+
+  try { nameEl.value = localStorage.getItem('claire_name') || ''; } catch (e) {}
+
+  function wsUrl() {
+    var h = location.hostname || 'localhost';
+    var q = new URLSearchParams(location.search).get('mp');
+    if (q) return q + '?mode=claire';
+    if (/leonzhao\.dev$/.test(h)) return 'wss://apps.leonzhao.dev/mc/ws?mode=claire';
+    return 'ws://' + h + ':8600/ws?mode=claire';
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function atBottom() {
+    return (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 60);
+  }
+  function add(m) {
+    var wasDown = atBottom();
+    var d = document.createElement('div');
+    d.className = 'c';
+    d.innerHTML = '<span class="n">' + esc(m.name) + '</span> ' + esc(m.text);
+    list.appendChild(d);
+    if (wasDown) window.scrollTo(0, document.body.scrollHeight);
+  }
+
+  function connect() {
+    try { ws = new WebSocket(wsUrl()); } catch (e) { retry(); return; }
+    ws.onopen = function () { tries = 0; note.textContent = ''; };
+    ws.onmessage = function (ev) {
+      var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === 'init') {
+        list.innerHTML = '';
+        (m.messages || []).forEach(add);
+        window.scrollTo(0, document.body.scrollHeight);
+      } else if (m.type === 'msg') {
+        add(m.msg);
+      } else if (m.type === 'slow') {
+        note.textContent = 'One at a time.';
+      } else if (m.type === 'full') {
+        note.textContent = 'Too many people here right now. Try again in a minute.';
+      }
+    };
+    ws.onclose = function () { ws = null; retry(); };
+    ws.onerror = function () {};
+  }
+  function retry() {
+    note.textContent = 'Reconnecting...';
+    tries++;
+    setTimeout(connect, Math.min(8000, 500 * tries));
+  }
+  connect();
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var text = textEl.value.trim();
+    if (!text) return;
+    if (!ws || ws.readyState !== 1) { note.textContent = 'Not connected yet.'; return; }
+    var name = nameEl.value.trim();
+    try { localStorage.setItem('claire_name', name); } catch (err) {}
+    ws.send(JSON.stringify({ type: 'post', name: name, text: text }));
+    textEl.value = '';
+    note.textContent = '';
+  });
+})();
+</script>
+
+</body>
+</html>
