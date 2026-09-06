@@ -910,7 +910,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 12: saplings and iron bars ---
 "oak_sapling","spruce_sapling","birch_sapling","jungle_sapling","acacia_sapling","dark_oak_sapling","cherry_sapling","pale_oak_sapling","mangrove_propagule","purpular_sapling","iron_bars",
 // --- pass 14: parkour pads ---
-"parkour_start","parkour_end"];
+"parkour_start","parkour_end",
+// --- pass 15: village blocks (paths, farms, desert scrub, loot) ---
+"dirt_path","farmland","wheat","cactus","dead_bush","cobweb","chest"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -2047,6 +2049,51 @@ paint('parkour_start', (function(){ const r=rng(9700), rim=rgb(0x1f7a2a), lit=rg
     if(x===1||y===1||x===14||y===14) return vary(lit, 8, r);          // a bright lip catches the light
     return vary(((x+y)%6===0) ? lit : face, 11, r); };                 // a faint weave, not a flat slab of colour
 })());
+/* --- village blocks ---------------------------------------------------------
+   Paths and farmland read from directly above almost all the time, so the top
+   faces carry the detail and the sides are close to plain dirt.                */
+paint('dirt_path_top', (function(){ const r=rng(9710), a=rgb(0x9a8156), b=rgb(0x8a7349);
+  return (x,y)=> vary((x*7+y*3)%11<5 ? a : b, 9, r); })());
+paint('dirt_path_side', (function(){ const r=rng(9711), soil=rgb(0x866043), top=rgb(0x9a8156);
+  return (x,y)=> y<1 ? vary(top, 7, r) : vary(soil, 13, r); })());
+paint('farmland', (function(){ const r=rng(9712), dry=rgb(0x6b4b2c), furrow=rgb(0x4a3220);
+  return (x,y)=>{ const inFurrow = (y%5===2 || y%5===3);
+    return vary(inFurrow ? furrow : dry, 10, r); }; })());
+paint('farmland_wet', (function(){ const r=rng(9713), dry=rgb(0x4a341f), furrow=rgb(0x2f2013);
+  return (x,y)=>{ const inFurrow = (y%5===2 || y%5===3);
+    return vary(inFurrow ? furrow : dry, 9, r); }; })());
+// mature wheat: stalks with a heavy head, drawn as a cross like the flowers
+paint('wheat', (function(){ const r=rng(9714), stem=rgb(0xb9a03f), ear=rgb(0xdcc352), dark=rgb(0x8d7629);
+  return (x,y)=>{ const col=(x%5); if(col!==1 && col!==3) return [0,0,0,0];
+    if(y<3) return [0,0,0,0];
+    if(y<9) return vary(((x+y)%3===0)?ear:dark, 12, r);      // the head, heavier at the top
+    return vary(stem, 10, r); }; })());
+paint('cactus_top', (function(){ const r=rng(9715), a=rgb(0x0f7a2e), b=rgb(0x0c6626);
+  return (x,y)=>{ const edge = x<1||y<1||x>14||y>14; return vary(edge?b:a, 8, r); }; })());
+paint('cactus_side', (function(){ const r=rng(9716), a=rgb(0x11803a), rib=rgb(0x0a5a24), spine=rgb(0xd8e0a0);
+  return (x,y)=>{ if(x===0||x===15) return vary(rib, 6, r);
+    if((x===4||x===11) && y%4===1) return vary(spine, 10, r);    // the little spines down each rib
+    return vary(((x===3||x===12)?rib:a), 10, r); }; })());
+paint('dead_bush', (function(){ const r=rng(9717), twig=rgb(0x7a5a2c), dark=rgb(0x5a4120);
+  return (x,y)=>{ const stalk = (x===7||x===8) && y>4;
+    const branch = (y===6 && x>3 && x<12) || (y===9 && x>2 && x<13) || (y===4 && x>5 && x<10);
+    if(!stalk && !branch) return [0,0,0,0];
+    return vary(((x+y)%3===0)?dark:twig, 12, r); }; })());
+paint('cobweb', (function(){ const r=rng(9718), web=rgb(0xe4e8ec);
+  return (x,y)=>{ const dx=x-7.5, dy=y-7.5;
+    const spoke = Math.abs(dx)<0.8 || Math.abs(dy)<0.8 || Math.abs(Math.abs(dx)-Math.abs(dy))<0.8;
+    const ring = Math.abs(Math.max(Math.abs(dx),Math.abs(dy)) % 3.2) < 0.8;
+    if(!spoke && !ring) return [0,0,0,0];
+    return vary(web, 10, r).concat(230); }; })());
+paint('chest_top', (function(){ const r=rng(9719), wood=rgb(0x9a6b32), band=rgb(0x6d4a20);
+  return (x,y)=>{ if(x<1||y<1||x>14||y>14) return vary(band, 8, r);
+    return vary(((y%4===0)?band:wood), 11, r); }; })());
+paint('chest_side', (function(){ const r=rng(9720), wood=rgb(0x8d6129), band=rgb(0x63431d), iron=rgb(0x9aa0a6);
+  return (x,y)=>{ if(y===5||y===6) return vary(band, 7, r);          // the lid seam
+    if(x>6 && x<10 && y>4 && y<9) return vary(iron, 9, r);           // the latch
+    if(x<1||x>14) return vary(band, 8, r);
+    return vary(wood, 12, r); }; })());
+
 paint('parkour_end', (function(){ const r=rng(9701), rim=rgb(0x2b2b2b), pale=rgb(0xf4f4f4), dark=rgb(0x141414);
   return (x,y)=>{ if(x===0||y===0||x===15||y===15) return vary(rim, 5, r);
     return vary((((x>>2)&1) ^ ((y>>2)&1)) ? pale : dark, 7, r); };     // 4x4 squares: a chequered flag
@@ -2182,6 +2229,15 @@ B.stone_pressure_plate = def('stone_pressure_plate', { tiles:T('stone'), plate:t
 // they dip underfoot and power redstone exactly like every other plate.
 B.parkour_start = def('parkour_start', { tiles:T('parkour_start'), plate:true, parkour:'start', solid:false, opaque:false, hex:0x35d945, display:'Parkour Start' });
 B.parkour_end   = def('parkour_end',   { tiles:T('parkour_end'),   plate:true, parkour:'end',   solid:false, opaque:false, hex:0xf4f4f4, display:'Parkour End' });
+/* --- village blocks: what a real village is actually made of --------------- */
+B.dirt_path = def('dirt_path', { tiles:[T('dirt_path_top'), T('dirt_path_side'), T('dirt')], display:'Dirt Path' });
+B.farmland  = def('farmland',  { tiles:[T('farmland'), T('dirt'), T('dirt')] });
+B.cactus    = def('cactus',    { tiles:[T('cactus_top'), T('cactus_side'), T('cactus_top')], hex:0x11803a });
+B.chest     = def('chest',     { tiles:[T('chest_top'), T('chest_side'), T('chest_top')], hex:0x8d6129 });
+B.wheat     = def('wheat',     { tiles:T('wheat'),     cross:true, plant:true, solid:false, opaque:false, cutout:true, hex:0xdcc352 });
+B.dead_bush = def('dead_bush', { tiles:T('dead_bush'), cross:true, plant:true, pot:true, solid:false, opaque:false, cutout:true, hex:0x7a5a2c, display:'Dead Bush' });
+B.cobweb    = def('cobweb',    { tiles:T('cobweb'),    cross:true, plant:true, solid:false, opaque:false, cutout:true, hex:0xe4e8ec });
+
 const FLOWER_NAMES = new Set(SMALL_FLOWERS.map(f=>f[0]).concat(TALL_FLOWERS.map(f=>f[0])));
 B.wet_sponge = def('wet_sponge', { tiles:T('wet_sponge') });
 // glass panes: thin, see-through panels that connect to neighbours (clear + 16 stained colours)
