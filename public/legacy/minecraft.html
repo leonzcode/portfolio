@@ -407,6 +407,26 @@
   .srvCard.dropAbove{ box-shadow:inset 0 3px 0 #ffec4d; }
   .srvCard.dropBelow{ box-shadow:inset 0 -3px 0 #ffec4d; }
   #srvAdminHint{ font-size:11.5px; color:#bdbdbd; text-align:center; margin:-4px 0 2px; }
+  /* deleted servers: an admin-only drawer under the list */
+  #srvTrashWrap{ width:min(560px,92vw); margin-top:2px; }
+  #srvTrashTab{ font:inherit; font-size:12.5px; width:100%; cursor:pointer; text-align:left; padding:7px 12px;
+    color:#dcdcdc; background:#3f3f3f; border:2px solid; border-color:#6a6a6a #232323 #232323 #6a6a6a; }
+  #srvTrashTab:hover{ filter:brightness(1.15); }
+  #srvTrashTab .cnt{ color:#ffec4d; }
+  #srvTrashTab .arrow{ float:right; opacity:.75; }
+  #srvTrashList{ max-height:36vh; overflow-y:auto; padding:6px 0 2px; display:flex; flex-direction:column; gap:6px; }
+  .trashCard{ display:flex; align-items:center; gap:10px; padding:7px 10px; background:rgba(0,0,0,.28);
+    border:2px solid; border-color:#4a4a4a #1c1c1c #1c1c1c #4a4a4a; }
+  .trashCard .ic{ width:30px; height:30px; flex:0 0 30px; image-rendering:pixelated; background:#555; border:1px solid #333; opacity:.75; }
+  .trashCard .info{ flex:1; min-width:0; text-align:left; }
+  .trashCard .nm{ font-size:13.5px; color:#cfcfcf; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .trashCard .meta{ font-size:11px; color:#9a9a9a; }
+  .trashCard button{ font:inherit; font-size:11.5px; flex:0 0 auto; padding:5px 10px; cursor:pointer; color:#fff;
+    background:#4a4a4a; border:2px solid; border-color:#8a8a8a #232323 #232323 #8a8a8a; }
+  .trashCard button:hover{ filter:brightness(1.2); }
+  .trashCard button.gone{ background:#7a3030; border-color:#a85a5a #3d1717 #3d1717 #a85a5a; }
+  .trashCard button.gone.armed{ background:#c14b43; }
+  #srvTrashNote{ font-size:11.5px; color:#9a9a9a; padding:6px 12px 2px; line-height:1.5; text-align:left; }
   .srvDel{ flex:0 0 auto; font-family:inherit; font-size:13px; color:#fff; padding:6px 12px; cursor:pointer;
     background:#7a7a7a; border:2px solid; border-color:#a9a9a9 #333 #333 #a9a9a9; }
   .srvDel:hover{ filter:brightness(1.12); }
@@ -552,6 +572,10 @@
   <input class="nameField" id="srvSearch" type="text" maxlength="24" placeholder="Search servers by name" autocomplete="off" spellcheck="false">
   <div class="srvList" id="srvList"></div>
     <div id="srvAdminHint" hidden>Drag any card to move it up or down the list.</div>
+    <div id="srvTrashWrap" hidden>
+      <button id="srvTrashTab">Deleted servers <span class="cnt" id="srvTrashCount">(0)</span><span class="arrow" id="srvTrashArrow">▸</span></button>
+      <div id="srvTrashList" hidden></div>
+    </div>
   <div class="srvNote" id="srvNote"></div>
   <div class="ctrlActions">
     <button class="btn half" id="srvCreateBtn">Request server</button>
@@ -7455,14 +7479,85 @@ function openServers(finalNote){ serversEl.hidden=false; menuEl.hidden=true; pau
 function closeServers(){ serversEl.hidden=true; menuEl.hidden=false; }
 function escHtml(s){ return (''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 let srvAllList=[];   // last-fetched server list, so the search box can filter without re-fetching
+let srvTrashList=[], srvTrashOpen=false, srvTrashArmed=null;
+
+/* ---- deleted servers ----
+   Deleting a server sets it aside rather than shredding it, so this drawer is where an
+   admin puts one back or finally lets it go. It only exists for an admin, and the list
+   behind it only arrives when one asks for it. */
+function trashAgo(t){
+  if(!t) return 'a while ago';
+  const s=Math.max(0, Date.now()-t)/1000;
+  if(s<90) return 'just now';
+  if(s<5400) return Math.round(s/60)+' minutes ago';
+  if(s<172800) return Math.round(s/3600)+' hours ago';
+  return Math.round(s/86400)+' days ago';
+}
+function renderTrash(){
+  const wrap=document.getElementById('srvTrashWrap'); if(!wrap) return;
+  wrap.hidden = !isAdmin();
+  if(!isAdmin()) return;
+  document.getElementById('srvTrashCount').textContent='('+srvTrashList.length+')';
+  document.getElementById('srvTrashArrow').textContent = srvTrashOpen ? '▾' : '▸';
+  const list=document.getElementById('srvTrashList');
+  list.hidden = !srvTrashOpen;
+  if(!srvTrashOpen) return;
+  list.innerHTML='';
+  if(!srvTrashList.length){
+    const n=document.createElement('div'); n.id='srvTrashNote';
+    n.textContent='Nothing here. A server you delete lands in this drawer, and its world is kept until you remove it for good.';
+    list.appendChild(n); return;
+  }
+  for(const t of srvTrashList){
+    const card=document.createElement('div'); card.className='trashCard';
+    const ic=document.createElement('canvas'); ic.className='ic'; ic.width=ic.height=32;
+    drawServerIcon(ic, t.icon, t.id);
+    const info=document.createElement('div'); info.className='info';
+    info.innerHTML='<div class="nm">'+escHtml(t.name)+'</div><div class="meta">'+
+      (SRV_KIND_LABEL[t.kind]||'Private')+' · deleted '+trashAgo(t.deletedAt)+'</div>';
+    const back=document.createElement('button'); back.textContent='Restore';
+    back.title='Put this server back in the list with its world as it was';
+    back.addEventListener('click', ()=>restoreServer(t));
+    const gone=document.createElement('button'); gone.className='gone';
+    gone.textContent = (srvTrashArmed===t.id) ? 'Really? This cannot be undone' : 'Delete forever';
+    if(srvTrashArmed===t.id) gone.classList.add('armed');
+    gone.title='Remove this server and its world for good';
+    gone.addEventListener('click', ()=>{
+      if(srvTrashArmed!==t.id){ srvTrashArmed=t.id; renderTrash(); return; }
+      purgeServer(t);
+    });
+    card.appendChild(ic); card.appendChild(info); card.appendChild(back); card.appendChild(gone);
+    list.appendChild(card);
+  }
+}
+async function restoreServer(t){
+  serversNote('Restoring "'+t.name+'"…');
+  try{
+    const r=await fetch(mcHttpBase()+'/restoreserver',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ admin:true, id:t.id }) }).then(x=>x.json());
+    srvTrashArmed=null;
+    refreshServers((r&&r.ok) ? ('"'+t.name+'" is back.') : ((r&&r.error)||'Could not restore it.'));
+  }catch(e){ refreshServers('Network error.'); }
+}
+async function purgeServer(t){
+  serversNote('Removing "'+t.name+'"…');
+  try{
+    const r=await fetch(mcHttpBase()+'/purgeserver',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ admin:true, id:t.id }) }).then(x=>x.json());
+    srvTrashArmed=null;
+    refreshServers((r&&r.ok) ? ('"'+t.name+'" is gone for good.') : ((r&&r.error)||'Could not remove it.'));
+  }catch(e){ refreshServers('Network error.'); }
+}
 async function refreshServers(finalNote){
   serversNote(finalNote||'Loading servers…'); srvListEl.innerHTML='';
   let data;
-  try{ const r=await fetch(mcHttpBase()+'/servers',{cache:'no-store'}); data=await r.json(); }
-  catch(e){ serversNote(finalNote||'Could not reach the server list. Is the server online?'); refreshRequests(); return; }
+  try{ const r=await fetch(mcHttpBase()+'/servers'+(isAdmin()?'?admin=1':''),{cache:'no-store'}); data=await r.json(); }
+  catch(e){ serversNote(finalNote||'Could not reach the server list. Is the server online?'); refreshRequests(); renderTrash(); return; }
   serversNote(finalNote||'');
   refreshRequests();                                 // pending reviews for an admin, answers for whoever asked
   srvAllList=(data&&data.servers)||[];
+  srvTrashList=(data&&data.deleted)||[];
+  renderTrash();
   if(!srvAllList.length){ serversNote(finalNote||'No servers yet - create one!'); return; }
   renderServerList();
 }
@@ -7603,7 +7698,7 @@ function ssSetDelete(armed){
   ssDelArmed=!!armed;
   const b=document.getElementById('ssDeleteBtn'); if(!b) return;
   b.classList.toggle('armed', ssDelArmed);
-  b.textContent = ssDelArmed ? 'Really delete it? This removes the world for everyone.' : 'Delete this server';
+  b.textContent = ssDelArmed ? 'Really? It moves to Deleted servers, where you can put it back.' : 'Delete this server';
 }
 async function ssDelete(){
   if(!ssTarget || ssBusy) return;
@@ -7842,6 +7937,7 @@ document.getElementById('ssCancelBtn').addEventListener('click', ()=>closeServer
 document.getElementById('ssPassword').addEventListener('keydown', e=>{ e.stopPropagation();
   if(e.key==='Enter'){ e.preventDefault(); ssSave(); }
   if(e.key==='Escape'){ e.preventDefault(); closeServerSettings(); } });
+document.getElementById('srvTrashTab').addEventListener('click', ()=>{ srvTrashOpen=!srvTrashOpen; srvTrashArmed=null; renderTrash(); });
 document.getElementById('srvRefreshBtn').addEventListener('click', ()=>refreshServers());
 document.getElementById('srvBackBtn').addEventListener('click', closeServers);
 document.getElementById('srvCreateBtn').addEventListener('click', openCreateServer);
@@ -10355,6 +10451,10 @@ window.__mc = {
   openServers(){ openServers(); return true; },
   mpMinigame(){ return !!mp.minigame; },
   dragId(){ return srvDragId; },
+  trash(){ return { open:srvTrashOpen, list:srvTrashList.map(t=>t.name),
+    shown:(()=>{ const w=document.getElementById('srvTrashWrap'); return !!w && !w.hidden; })(),
+    rows:document.querySelectorAll('#srvTrashList .trashCard').length }; },
+  trashTab(){ const b=document.getElementById('srvTrashTab'); if(b) b.click(); return srvTrashOpen; },
   srvList(){ return srvAllList.map(x=>({id:x.id,name:x.name,kind:srvKindOf(x),pinned:!!x.pinned})); },
   // ---- multiplayer test hook: join the world the ?mp= override points at ----
   joinShared(server){ mpTarget.server = server || 'original'; mpTarget.pw=''; mpTarget.spectate=false;
