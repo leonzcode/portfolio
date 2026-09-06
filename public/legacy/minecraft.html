@@ -4726,6 +4726,7 @@ addEventListener('keydown', e=>{
       e.preventDefault(); return;
     } }
   if(mc.active && mc.role==='seeker' && k==='f' && state===PLAY && !chatOpen && !invOpen) mc.firing=true;
+  if(spec.on && (k==='n' || k==='m') && state===PLAY && !chatOpen && !invOpen){ e.preventDefault(); specCycle(k==='m'?1:-1); return; }
   if(mc.active && mcKey(k, e)){ e.preventDefault(); return; }   // this mode's keys win over the bindings
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
   if(bb.active && state===PLAY && !invOpen && !chatOpen){
@@ -4759,7 +4760,7 @@ addEventListener('keydown', e=>{
   if(e.repeat) return;   // holding jump to fly up auto-repeats keydown; those aren't taps, so don't let them toggle fly
   // Creative flight normally stops at the edge of a Bed Wars match. The milan45 code
   // carries it in there as well.
-  if(!bindListening && e.key.toLowerCase()===binds.jump && state===PLAY && !parkour.run && !mc.active && (fx.fly || (creative && !bw.active))){
+  if(!bindListening && e.key.toLowerCase()===binds.jump && state===PLAY && !parkour.run && (!mc.active || spec.on) && (fx.fly || (creative && !bw.active))){
     const now=performance.now();
     if(now-lastSpace<300){ player.flying=!player.flying; player.vel.y=0; }
     lastSpace=now;
@@ -8650,6 +8651,73 @@ function mcSetLocalLook(playing) {
   scene.add(body);
 }
 
+/* ---- spectating -----------------------------------------------------------
+   Being out of a round should not mean standing in a field waiting for it to
+   end. Once you are found in Mecha Chameleon, or knocked out for good in Bed
+   Wars, you go invisible, you can fly, and N and M ride round the people still
+   in it. One more press past the end of the list gives you the camera back. */
+const spec = { on: false, id: null, wasGhost: false, wasFly: false };
+function specCan() {
+  if (mc.active) return !!(mc.playing && !mc.alive);
+  if (bw.active) return !!(bw.dead && bw.eliminated);
+  return false;
+}
+function specSet(on) {
+  if (spec.on === on) return;
+  spec.on = on;
+  if (on) {
+    spec.wasGhost = !!fx.ghost; spec.wasFly = !!player.flying;
+    fx.ghost = true; player.flying = true;
+  } else {
+    fx.ghost = spec.wasGhost; player.flying = spec.wasFly;
+    spec.id = null;
+  }
+  if (mp.active) sendFx();
+  specHud();
+}
+// everybody still in the round, in a stable order so N and M are opposites
+function specTargets() {
+  const out = [];
+  for (const [id, p] of mp.players) {
+    if (mc.active) { if (p.mcPlaying && p.mcAlive) out.push(id); }
+    else if (bw.active) { if (!p.bwOut) out.push(id); }
+    else out.push(id);
+  }
+  return out.sort((a, b) => a - b);
+}
+function specCycle(dir) {
+  const list = specTargets();
+  if (!list.length) { spec.id = null; specHud(); return; }
+  const i = list.indexOf(spec.id);
+  let j = (i < 0) ? (dir > 0 ? 0 : list.length - 1) : i + dir;
+  if (j >= list.length || j < -1) j = -1;      // one past either end is the free camera
+  spec.id = (j < 0) ? null : list[j];
+  specHud();
+}
+function specWatching() { return (spec.on && spec.id != null) ? mp.players.get(spec.id) : null; }
+
+let specEl = null;
+function specHud() {
+  if (!specEl) {
+    specEl = document.createElement('div');
+    specEl.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:14;' +
+      'pointer-events:none;display:none;background:rgba(10,14,10,.66);border:2px solid rgba(120,200,120,.3);' +
+      'padding:5px 12px;font-size:12.5px;color:#cdf5cd;letter-spacing:.4px;text-align:center';
+    document.body.appendChild(specEl);
+  }
+  specEl.style.display = spec.on ? 'block' : 'none';
+  if (!spec.on) return;
+  const p = specWatching();
+  specEl.innerHTML = 'SPECTATING &middot; ' +
+    (p ? 'watching <b>' + escHtml(p.name || ('Player' + p.id)) + '</b>' : '<b>free camera</b>') +
+    '  &middot;  <b>N</b> / <b>M</b> change  &middot;  fly with <b>Space</b> and <b>Shift</b>';
+}
+function specFrame() {
+  specSet(specCan());
+  if (!spec.on) return;
+  if (spec.id != null && !mp.players.has(spec.id)) { spec.id = null; specHud(); }
+}
+
 /* ---- joining ---- */
 function startMecha() {
   if (mp.ws) { try { mp.ws.close(); } catch (e) {} mp.ws = null; }
@@ -8723,7 +8791,7 @@ function mcHandle(m) {
       for (const q of (m.players || [])) {
         const p = mp.players.get(q.id);
         if (!p) continue;
-        p.mcRole = q.role; p.mcAlive = q.alive; p.mcPose = q.pose | 0;
+        p.mcRole = q.role; p.mcAlive = q.alive; p.mcPlaying = q.playing; p.mcPose = q.pose | 0;
         mcSetLook(p);
         if (p.tag) p.tag.visible = !(q.role === 'hider' && q.alive);   // a hider has no name over them
       }
@@ -8794,12 +8862,14 @@ function mcSweep() {
 /* ---- the frame ---- */
 function mcFrame(dt) {
   if (!mc.active) return;
-  player.flying = false;      // nobody flies in here: a hider would drift out of the room
+  if (!spec.on) player.flying = false;   // nobody flies in here, unless they are out of the round
   mcSweep();
   const t = performance.now() / 1000;
   // everyone else, held in whatever pose they chose
-  for (const [, p] of mp.players)
+  for (const [, p] of mp.players) {
+    if (p.model && p.mcPlaying && !p.mcAlive) p.model.visible = false;   // out of the round, out of sight
     if (p.mcRole === 'hider' && p.mcAlive && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
+  }
   // the local body is posed after its own walk animation instead, further down the frame
   // holding the fire key keeps the gun going
   if (mc.firing) mcFire();
@@ -9954,6 +10024,7 @@ function bwUpdateItems(dt){
 // ---- combat / death ----
 function bwOnDeath(m){
   const e=bw.players.get(m.id); if(e){ e.alive=false; e.eliminated=m.eliminated; }
+  const rp=mp.players.get(m.id); if(rp) rp.bwOut = !!m.eliminated;   // out for good: not somebody to spectate
   if(m.id===mp.id){ bw.dead=true; bw.eliminated=m.eliminated; player.vel.set(0,0,0); player.flying=true;   // freeze; don't keep falling
     if(player.pos.y < BW_Y+2) player.pos.y = BW_Y+8;
     if(bwInvOpen) bwToggleInv(); if(bwShopOpen) bwToggleShop();
@@ -9963,6 +10034,7 @@ function bwOnDeath(m){
   bwUpdateHud();
 }
 function bwOnRespawn(m){
+  { const rp=mp.players.get(m.id); if(rp) rp.bwOut=false; }
   const e=bw.players.get(m.id); if(e){ e.alive=true; e.eliminated=false; e.hp=m.hp; }
   if(m.id===mp.id){ bw.dead=false; bw.hp=m.hp; player.hp=m.hp; player.pos.set(m.x,m.y+0.2,m.z); player.vel.set(0,0,0); player.flying=!!fx.fly; bwHideBanner(); bwUpdateHud(); }
 }
@@ -11207,6 +11279,7 @@ function frame(now){
     if(bw.active) bwFrame(dt);
     if(bb.active){ bbTick(); bbCursor(); }
     if(mc.active) mcFrame(dt);
+    if(mc.active || bw.active) specFrame();
     if(mp.active){                       // stream position, but only when it changes (idle heartbeat ~1 Hz)
       const nowMs=performance.now();
       if(nowMs-mp.lastPos>66){
@@ -11290,6 +11363,10 @@ function frame(now){
     body.position.set(sleep.bx+0.5 - dv[0]*0.35, sleep.by+0.42, sleep.bz+0.5 - dv[2]*0.35);
     camera.position.set(sleep.bx+0.5 - dv[0]*1.7, sleep.by+2.4, sleep.bz+0.5 - dv[2]*1.7);
     camera.lookAt(sleep.bx+0.5 + dv[0]*0.6, sleep.by+0.3, sleep.bz+0.5 + dv[2]*0.6);
+  } else if(specWatching()){
+    const sp=specWatching(), sy=sp.y+1.62, cp=Math.cos(sp.pitch||0);
+    camera.position.set(sp.x, sy, sp.z);
+    camera.lookAt(sp.x - Math.sin(sp.yaw||0)*cp, sy + Math.sin(sp.pitch||0), sp.z - Math.cos(sp.yaw||0)*cp);
   } else if(mc.paint){
     // Painting swings the camera right round you and straight through whatever is in
     // the way. Clamping it off a wall is correct everywhere else in the game and
@@ -11442,6 +11519,10 @@ window.__mc = {
   mcBlockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
   mcLookKind(){ return mc.localKind || ''; },
   mcCam(n){ camMode = n|0; return camMode; },
+  spec(){ return { can:specCan(), on:spec.on, id:spec.id, ghost:!!fx.ghost, flying:!!player.flying,
+    targets:specTargets(), shown:(()=>{ const e=document.querySelector('div[style*="SPECTATING"]'); return !!specEl && specEl.style.display==='block'; })() }; },
+  specForce(on){ specSet(!!on); return spec.on; },
+  specCycle(d){ specCycle(d|0); return spec.id; },
   mcPaint(){ return { on:mc.paint, tool:mc.paintTool, color:mc.paintColor, size:mc.paintSize,
     yaw:+mc.paintYaw.toFixed(3), dist:+mc.paintDist.toFixed(2), painted:mc.painted,
     paused:state===PAUSE, cam:camMode, camWas:mc.camWas,
