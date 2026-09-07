@@ -5007,8 +5007,12 @@ function updatePlayer(dt){
     player.vel.y -= g*dt;
     if(swimming){ player.vel.y = Math.max(player.vel.y,-2.2); if(keys[binds.jump]) player.vel.y = 3.2; }
     else if(keys[binds.jump] && player.onGround){
-      // Mecha Chameleon jumps the same as everywhere else: no boost, no cap.
-      player.vel.y = 8.4 * ((bw.active && bw.jumpUntil>performance.now()) ? 1.7 : 1);
+      // A hider is half height, so a wall that is nothing to anybody else is twice
+      // their own size. They get a jump to match: 10.6 against gravity 26 is 2.16
+      // blocks, which clears a two-block wall and still leaves the roofs out of reach.
+      // Everyone else jumps the normal 8.4, which is 1.36.
+      const hider = mc.active && (mc.sized||1) < 1;
+      player.vel.y = hider ? MC_HIDER_JUMP : 8.4 * ((bw.active && bw.jumpUntil>performance.now()) ? 1.7 : 1);
       player.onGround=false;
     }   // Jump Boost V potion
     if(player.vel.y<-40) player.vel.y=-40;
@@ -9379,6 +9383,7 @@ function mcEnsureUi() {
    Being small is the whole advantage: you fit under a bench, behind a fence post,
    inside a doorway. The hitbox shrinks with the model, or you would be caught by
    walls you can plainly see through. */
+const MC_HIDER_JUMP = 10.6;   // see the jump in the physics step: 2.16 blocks
 const MC_SMALL = 0.5;      // how big a hider looks
 const MC_THIN = 0.28;      // and how wide they actually are, which is thinner still, so
                            // they can press into a doorway or a corner and half vanish
@@ -11975,7 +11980,6 @@ window.__mc = {
     rows:document.querySelectorAll('#srvTrashList .trashCard').length }; },
   trashTab(){ const b=document.getElementById('srvTrashTab'); if(b) b.click(); return srvTrashOpen; },
   srvList(){ return srvAllList.map(x=>({id:x.id,name:x.name,kind:srvKindOf(x),pinned:!!x.pinned})); },
-  openServers(){ openServers(); },
   // ---- multiplayer test hook: join the world the ?mp= override points at ----
   joinShared(server){ mpTarget.server = server || 'original'; mpTarget.pw=''; mpTarget.spectate=false;
     mp.bw=false; mp.bb=false; mpConnect(); return true; },
