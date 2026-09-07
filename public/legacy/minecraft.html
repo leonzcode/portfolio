@@ -9584,6 +9584,18 @@ function mcEnsureUi() {
    #mcTop .cnt{font-size:12px;color:#a9c3a9}
    #mcRole{position:absolute;top:52px;left:50%;transform:translateX(-50%);font-size:12px;letter-spacing:2px}
    #mcRole.hider{color:#8dffa0} #mcRole.seeker{color:#ff9a6b}
+   #mcStart{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;
+     flex-direction:column;align-items:center;gap:10px;pointer-events:none;text-align:center}
+   #mcStart .cap{width:76px;height:76px;display:flex;align-items:center;justify-content:center;
+     font-size:38px;font-weight:800;color:#0f140f;background:#cdf5cd;
+     border:4px solid;border-color:#eafbea #6f8f6f #6f8f6f #eafbea;
+     box-shadow:0 4px 0 rgba(0,0,0,.45);animation:mcCapPulse 1.8s ease-in-out infinite}
+   @keyframes mcCapPulse{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+   @media (prefers-reduced-motion:reduce){ #mcStart .cap{animation:none} }
+   #mcStart .say{font-size:19px;font-weight:700;letter-spacing:1px;color:#fff;
+     text-shadow:0 2px 0 rgba(0,0,0,.75)}
+   #mcStart .sub{font-size:12.5px;color:#cdf5cd;background:rgba(10,14,10,.6);padding:3px 10px;
+     border:2px solid rgba(120,200,120,.3)}
    #mcVote{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,92vw);
      background:rgba(8,12,8,.86);border:3px solid;border-color:#7ea87e #1d2a1d #1d2a1d #7ea87e;padding:16px 18px;display:none}
    #mcVote h2{margin:0 0 4px;font-size:20px;font-weight:700;color:#fff;text-align:center}
@@ -9637,6 +9649,8 @@ function mcEnsureUi() {
     '<div id="mcGear"></div>' +
     '<div id="mcGun"></div>' +
     '<div id="mcFeed"></div>' +
+    '<div id="mcStart"><div class="cap">K</div><div class="say">Press K to start the round</div>' +
+      '<div class="sub" id="mcStartSub"></div></div>' +
     '<div id="mcBanner"></div>' +
     '<div id="mcEnd"><h2 id="mcEndTitle"></h2><table id="mcEndRows"></table></div>' +
     '<div id="mcHelp"></div>';
@@ -9723,6 +9737,7 @@ function mcEnterUi() {
 }
 function mcLeaveUi() {
   const h = document.getElementById('mcHud'); if (h) h.style.display = 'none';
+  { const cross = document.getElementById('cross'); if (cross) cross.style.display = ''; }
   if (hotbarEl) hotbarEl.style.display = '';
   mc.paint = false; mcPaintUi(); mcPaintCursor();   // nothing of the brush follows you out
   for (const g of mc.pings) if (g.el.parentNode) g.el.parentNode.removeChild(g.el);
@@ -9760,6 +9775,20 @@ function mcHud() {
   document.getElementById('mcCount').textContent =
     mc.phase === 'lobby' ? (mc.here + ' waiting  ·  K to start')
                          : (mc.hiders + '/' + mc.hidersTotal + ' hiding  ·  ' + mc.seekers + ' seeking');
+
+  // Waiting for a round is the one moment nothing else is on screen, and the only
+  // thing to do is press a key, so it goes in the middle rather than in the strip
+  // along the top. The crosshair goes away while it is up: there is nothing to aim at.
+  const start = document.getElementById('mcStart');
+  const lobby = mc.phase === 'lobby' && !mc.paint;
+  start.style.display = lobby ? 'flex' : 'none';
+  if (lobby) {
+    document.getElementById('mcStartSub').textContent =
+      mc.lobbyIn ? ('Starting on its own in ' + mc.lobbyIn + 's')
+      : mc.here > 1 ? (mc.here + ' waiting  ·  anyone here can press it')
+      : 'Anyone here can press it';
+  }
+  { const cross = document.getElementById('cross'); if (cross && !mc.paint) cross.style.display = lobby ? 'none' : ''; }
 
   const role = document.getElementById('mcRole');
   role.className = mc.playing ? mc.role : '';
