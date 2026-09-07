@@ -8402,7 +8402,19 @@ function medUi() {
   medBarEl.style.display = med.active ? 'block' : 'none';
 }
 function medFrame() {
-  if (!med.active || !medBarEl) return;
+  if (!med.active) return;
+  // there is no floor between the plots, so a builder who stops flying falls for ever.
+  // Put them back over the plot they were nearest to.
+  if (player.pos.y < 20) {
+    let best = med.maps[0];
+    for (const one of med.maps) if (!best || Math.abs(player.pos.x - one.ox) < Math.abs(player.pos.x - best.ox)) best = one;
+    if (best) {
+      mcStand(best.ox + 14.5, best.y0 + 10, 14.5);
+      player.flying = true;
+      chatPush('Back over ' + best.name + '.', 'sys');
+    }
+  }
+  if (!medBarEl) return;
   let where = 'between the plots';
   for (const one of med.maps) if (Math.abs(player.pos.x - (one.ox + 14)) < 24) { where = one.name; break; }
   medBarEl.textContent = 'MAP EDITOR - ' + where.toUpperCase();
