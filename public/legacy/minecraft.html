@@ -4150,6 +4150,10 @@ function makeCapeObject(){
   geo.translate(0, -CAPE_H*S16/2, -CAPE_D*S16/2);    // hangs from the shoulders, sitting just behind them
   const mat=new THREE.MeshLambertMaterial({ map:null, transparent:true, alphaTest:0.5, side:THREE.DoubleSide });
   const mesh=new THREE.Mesh(geo, mat);
+  // It hangs a pixel off the back of the torso, so a ray at the back of the body hits
+  // the cape first. Its UVs are in cape space, not skin space, so the brush read a
+  // texel from nowhere and the whole back of the torso refused to take paint.
+  mesh.raycast=()=>{};
   const pivot=new THREE.Group();
   pivot.add(mesh);
   pivot.visible=false;
@@ -4393,7 +4397,7 @@ function updateViewmodel(dt, moving){
   if(vmGun) vmGun.visible=false;
   if(vmArm.scale.x!==1) vmArm.scale.setScalar(1);
   // a hider carries nothing at all: no block, and no empty hand waving about either
-  if(mc.active && !mc.edit){
+  if(mc.active && !mcBuilding()){
     if(vmBlock) vmBlock.visible=false;
     if(vmItem) clearVmItem();
     vmArm.visible=false;
@@ -5000,10 +5004,12 @@ function updatePlayer(dt){
     player.vel.y -= g*dt;
     if(swimming){ player.vel.y = Math.max(player.vel.y,-2.2); if(keys[binds.jump]) player.vel.y = 3.2; }
     else if(keys[binds.jump] && player.onGround){
-      // Mecha Chameleon is played in a village full of fences and low walls, and a
-      // vanilla jump clears neither. Everyone in that mode jumps a little higher.
-      const boost = (bw.active && bw.jumpUntil>performance.now()) ? 1.7 : (mc.active ? 1.3 : 1);
-      player.vel.y = 8.4 * boost; player.onGround=false;
+      // In Mecha Chameleon a jump clears exactly one block and no more, for everyone.
+      // A hider is half the height but the physics does not care, so they get the same
+      // one block rather than twice as much of one.
+      if(mc.active) player.vel.y = MC_JUMP;
+      else player.vel.y = 8.4 * ((bw.active && bw.jumpUntil>performance.now()) ? 1.7 : 1);
+      player.onGround=false;
     }   // Jump Boost V potion
     if(player.vel.y<-40) player.vel.y=-40;
   }
@@ -5935,8 +5941,9 @@ function breakGhostUnderCrosshair(){
   removeGhostBlock(found.type, found.k, c[0], c[1], c[2]);
   return true;
 }
+function mcBuilding(){ return mc.edit || mc.build; }   // an admin editing, or you off building Purpular Village
 function breakBlock(){
-  if(mc.active && !mc.edit) return;         // not yours to break, unless you are editing the map
+  if(mc.active && !mcBuilding()) return;    // not yours to break, unless the map is open
   if(bb.active && !bbCanBreak()) return;     // build battle: your plot only, and never the floor under it
   const specHit = mp.active && mp.spectator && fx.superStick;   // tadee code: a spectator may still punch players
   if(mp.active && mp.spectator && !specHit) return;   // ordinary spectators can't break blocks, punch players or hit mobs
@@ -5975,7 +5982,7 @@ function breakBlock(){
   mpSendBlock(x,y,z,0);
 }
 function placeBlock(){
-  if(mc.active && !mc.edit) return;         // nor to build
+  if(mc.active && !mcBuilding()) return;    // nor to build
   if(mp.active && mp.spectator) return;     // spectators can't place blocks
   if(bb.active && !bbCanPlace()) return;    // build battle: only in your plot, only while building
   if(!target) return;
@@ -6488,7 +6495,7 @@ function startSingleplayer(){
   dim=0;
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   mp.bb=false; bb.active=false; bbMode=false; bbLeaveUi();
-  mp.mc=false; mc.active=false; mcMode=false; mcLeaveUi();
+  mp.mc=false; mc.active=false; mcMode=false; mcLeaveUi(); mcSetSize(false); mcBlind(false);
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
   worldSpawn = null;   // whatever a server told us stops applying the moment we leave it
   spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
@@ -7530,7 +7537,7 @@ function mpSend(o){
   if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} }
 }
 function mpSendBlock(x,y,z,b){
-  if(mc.edit){ mpSetOverride(x,y,z,b); mpSend({type:'mcedit', x, y, z, block: b ? blockName(b) : null}); return; }   // an admin editing a map
+  if(mc.active && mcBuilding()){ mpSetOverride(x,y,z,b); mpSend({type:'mcedit', x, y, z, block: b ? blockName(b) : null}); return; }   // editing a map, or building Purpular Village
   if(bb.active){ if(bbInPlot(bb.plot,x,y,z)){ mpSetOverride(x,y,z,b); bbSendBlock(x,y,z,b); } return; }   // build battle: your plot only
   if(bw.active){ mpSetOverride(x,y,z,b); mpSend({type:'bwblock',x,y,z,b}); return; }   // bedwars: dynamic edit into the match
   if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); }
@@ -7566,7 +7573,8 @@ function mpStartWorld(serverSeed){
 }
 function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi();
   mp.bb=false; bb.active=false; bbMode=false; if(typeof bbLeaveUi==='function') bbLeaveUi();
-  mp.mc=false; mc.active=false; mcMode=false; if(typeof mcLeaveUi==='function') mcLeaveUi(); mpConnect(); }
+  mp.mc=false; mc.active=false; mcMode=false;
+  if(typeof mcLeaveUi==='function'){ mcLeaveUi(); mcSetSize(false); mcBlind(false); } mpConnect(); }
 
 /* ================= server browser: pick / create / join a server ================= */
 const serversEl=document.getElementById('servers'), srvListEl=document.getElementById('srvList'), srvNoteEl=document.getElementById('srvNote'), srvSearchEl=document.getElementById('srvSearch');
@@ -8262,8 +8270,8 @@ let mcMode = false;                 // makes chunk generation produce void, like
 const mc = {
   active: false, phase: 'lobby', left: 0, deadline: 0,
   mapId: '', mapName: '', maps: [], votes: {}, myVote: '',
-  poses: [], pose: 0, painted: false, help: false, helpSeen: false,
-  edit: false,
+  poses: [], pose: 0, painted: false, help: false, helpSeen: false, sized: 1,
+  edit: false, build: false,
   paint: false, paintColor: '#b3271f', paintSize: 2, paintTool: 'brush',
   paintDrag: false, paintOrbit: false, paintDist: 4.2,
   paintYaw: 0, paintPitch: 0.12, camWas: 1,
@@ -8541,7 +8549,7 @@ function mcPaintClose() {
   mc.paint = false; mc.paintDrag = false; mc.paintOrbit = false;
   camMode = mc.camWas | 0;
   mcPaintUi();
-  canvas.style.cursor = ''; document.body.style.cursor = '';
+  mcPaintCursor();          // hides the chip and gives the crosshair back
   mcSendSkin(true);
   if (state === PLAY) { try { canvas.requestPointerLock(); } catch (e) {} }
   mcHud();
@@ -8596,23 +8604,38 @@ function mcFloodFill(px, py, part) {
 // A lit face is not the colour of the block: the sun, the ambient light and the
 // corner shading all move it, so reading the pixel gave colours far darker than the
 // wall being pointed at. Take the block's own texture instead.
-function mcBlockInk(id) {
+// One texel of one face, which is what you actually clicked on. Averaging the whole
+// tile gave a block one colour for ever, however varied the pixels on it were.
+function mcFaceInk(id, face, u, v) {
   const bl = BLOCKS[id]; if (!bl) return null;
-  const tile = faceTile(bl, 0);
+  const tile = faceTile(bl, face);
   const col = tile % ATLAS_COLS, row = (tile / ATLAS_COLS) | 0;
-  let d; try { d = actx.getImageData(col * TILE, row * TILE, TILE, TILE).data; } catch (e) { return null; }
-  let r = 0, g = 0, b = 0, n = 0;
-  for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 40) continue; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
-  return n ? [(r / n) | 0, (g / n) | 0, (b / n) | 0] : null;
+  const px = Math.max(0, Math.min(TILE - 1, Math.floor(u * TILE)));
+  const py = Math.max(0, Math.min(TILE - 1, Math.floor(v * TILE)));
+  let d; try { d = actx.getImageData(col * TILE + px, row * TILE + py, 1, 1).data; } catch (e) { return null; }
+  return d[3] < 40 ? null : [d[0], d[1], d[2]];
 }
-// walk the ray a step at a time and return the first block it runs into
-function mcRayBlock(origin, dir, far) {
-  for (let t = 0.2; t < far; t += 0.06) {
-    const x = Math.floor(origin.x + dir.x * t), y = Math.floor(origin.y + dir.y * t), z = Math.floor(origin.z + dir.z * t);
-    const b = getBlock(x, y, z);
-    if (b && BLOCKS[b] && BLOCKS[b].solid && !BLOCKS[b].door) return b;
+// Walk the ray finely and stop the moment it enters a solid cell, keeping the point
+// where it went in: that tells us which face was hit and where on it.
+function mcRayFace(origin, dir, far) {
+  let px = origin.x, py = origin.y, pz = origin.z;
+  for (let t = 0.1; t < far; t += 0.015) {
+    const x = origin.x + dir.x * t, y = origin.y + dir.y * t, z = origin.z + dir.z * t;
+    const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
+    const b = getBlock(bx, by, bz);
+    if (b && BLOCKS[b] && BLOCKS[b].solid && !BLOCKS[b].door) {
+      // which boundary did we cross to get in here?
+      const cx = Math.floor(px) !== bx, cy = Math.floor(py) !== by, cz = Math.floor(pz) !== bz;
+      const fx = x - bx, fy = y - by, fz = z - bz;
+      let face, u, v;
+      if (cy && !cx && !cz) { face = dir.y < 0 ? 0 : 1; u = fx; v = fz; }        // top or bottom
+      else if (cx) { face = 2; u = (dir.x > 0) ? fz : 1 - fz; v = 1 - fy; }      // an x-facing side
+      else { face = 2; u = (dir.z > 0) ? 1 - fx : fx; v = 1 - fy; }              // a z-facing side
+      return { id: b, face: face, u: u, v: v };
+    }
+    px = x; py = y; pz = z;
   }
-  return 0;
+  return null;
 }
 function mcSetColor(rgb) {
   mc.paintColor = '#' + rgb.map(function (v) {
@@ -8638,9 +8661,9 @@ function mcPickScreen(ev) {
     if (d[3] > 8) { mcSetColor([d[0], d[1], d[2]]); return true; }
     break;
   }
-  // then the world, by the block rather than by the lit pixel
-  const hit = mcRayBlock(mcRay.ray.origin, mcRay.ray.direction, 48);
-  const ink = hit ? mcBlockInk(hit) : null;
+  // then the world: the exact texel of the face under the cursor, unlit
+  const hit = mcRayFace(mcRay.ray.origin, mcRay.ray.direction, 48);
+  const ink = hit ? mcFaceInk(hit.id, hit.face, hit.u, hit.v) : null;
   if (ink) { mcSetColor(ink); return true; }
   // and if it is nothing but sky, fall back to what is on screen
   try {
@@ -8725,6 +8748,35 @@ function mcPoseModel(model, pose, t) {
 }
 // Everyone in a round wears the blank skin they were given, painted or not. Nobody
 // turns into a block any more, so this only has to make sure the model exists.
+// The gun a seeker holds, small enough to sit in a hand: the first-person one is
+// too big and lives in its own scene. A hider should be able to see who is armed.
+function mcHeldGun() {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshLambertMaterial({ color: 0x39414c });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x22272e });
+  const trim = new THREE.MeshLambertMaterial({ color: 0x63d68a });
+  const box = (w, h, d, m, x, y, z) => {
+    const q = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); q.position.set(x, y, z); g.add(q); return q;
+  };
+  box(0.11, 0.11, 0.42, shell, 0, 0, -0.14);
+  box(0.07, 0.07, 0.30, dark, 0, 0.01, -0.42);
+  box(0.09, 0.06, 0.12, trim, 0, 0.07, 0.06);
+  box(0.08, 0.14, 0.09, shell, 0, -0.10, 0.10);
+  return g;
+}
+function mcSetHeldGun(p, on) {
+  const ud = p.model && p.model.userData;
+  if (!ud || !ud.armR) return;
+  if (on && !p.mcGun) {
+    p.mcGun = mcHeldGun();
+    p.mcGun.position.set(0, -0.62, -0.16);        // in the hand, at the end of the arm
+    p.mcGun.rotation.x = -0.25;
+    ud.armR.add(p.mcGun);
+  } else if (!on && p.mcGun) {
+    if (p.mcGun.parent) p.mcGun.parent.remove(p.mcGun);
+    p.mcGun = null;
+  }
+}
 function mcSetLook(p) {
   if (!p) return;
   if (p.mcKind === 'human') return;
@@ -8732,6 +8784,7 @@ function mcSetLook(p) {
   const tag = p.tag;
   if (p.model) { if (tag) p.model.remove(tag); scene.remove(p.model); }
   p.model = makeBodyModel('human', p.skinTex, p.slim);
+  p.mcGun = null;                       // the old one went with the old model
   if (tag) p.model.add(tag);
   scene.add(p.model);
 }
@@ -8870,7 +8923,10 @@ function mcHandle(m) {
       mc.pose = m.pose | 0; mc.hp = m.hp; mc.ammo = m.ammo; mc.score = m.score || 0;
       if (m.poses && m.poses.length) mc.poses = m.poses;
       if (m.stunned) mc.stunUntil = performance.now() + m.stunned;
-      if (typeof m.x === 'number' && mc.playing) mcStand(m.x, m.y, m.z);
+      // only when the round is placing you. Following every message put you back on
+      // the position the server last heard about, which jerked you a fraction of a
+      // block up or down every time you changed pose.
+      if (m.place && typeof m.x === 'number' && mc.playing) mcStand(m.x, m.y, m.z);
       // a hider is a blank figure until they paint themselves, and sees it in third
       // person so they can tell what everyone else is looking at
       const inRound = mc.playing && mc.alive;
@@ -8899,6 +8955,13 @@ function mcHandle(m) {
       return true;
     }
     case 'mcpose': { const p = mp.players.get(m.id); if (p) p.mcPose = m.pose | 0; return true; }
+    case 'mcbuilding': {                   // /prg: you have stepped out of the game
+      mc.build = !!m.on;
+      if (mc.build) { mcPaintClose(); mcSetSize(false); }
+      else if (!mc.mapId || mc.mapId === 'purpular') mcBuildLobby();   // nothing running: back to the lobby
+      mcHud();
+      return true;
+    }
     case 'mcediting': {
       mc.edit = !!m.on;
       if (mc.edit) mcPaintClose();
@@ -8974,11 +9037,19 @@ function mcSweep() {
 function mcFrame(dt) {
   if (!mc.active) return;
   if (!spec.on) player.flying = false;   // nobody flies in here, unless they are out of the round
+  const blind = mc.phase === 'hide' && mc.role === 'seeker' && mc.playing;
+  mcBlind(blind, (mc.deadline - performance.now()) / 1000);
+  mcSetSize(mc.playing && mc.alive && mc.role === 'hider');
   mcSweep();
   const t = performance.now() / 1000;
   // everyone else, held in whatever pose they chose
   for (const [, p] of mp.players) {
     if (p.model && p.mcPlaying && !p.mcAlive) p.model.visible = false;   // out of the round, out of sight
+    if (p.model && p.mcPlaying) {                                        // hiders are half size to everyone
+      const sc = 0.9 * ((p.mcRole === 'hider' && p.mcAlive) ? MC_SMALL : 1);
+      p.model.scale.set(sc, sc, sc);
+    }
+    mcSetHeldGun(p, !!(p.mcPlaying && p.mcRole === 'seeker'));
     if (p.mcRole === 'hider' && p.mcAlive && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
     // a name floating over a hider gives them away, which is the whole game. Only the
     // seekers are named, so you can see who is hunting and they cannot see who is not.
@@ -8988,7 +9059,7 @@ function mcFrame(dt) {
   // holding the fire key keeps the gun going
   if (mc.firing) mcFire();
   if (mc.kick) mc.kick = Math.max(0, mc.kick - dt * 6);
-  const wantBar = mc.edit ? '' : 'none';    // no blocks to hold in here, unless you are building the map
+  const wantBar = mcBuilding() ? '' : 'none';   // no blocks to hold in here, unless the map is open
   if (hotbarEl && hotbarEl.style.display !== wantBar) hotbarEl.style.display = wantBar;
   if (!mc.paint) mc.camWas = camMode;   // remember whichever view the player picked for themselves
   mcHud();
@@ -9110,6 +9181,48 @@ function mcEnsureUi() {
     '<div id="mcHelp"></div>';
   document.body.appendChild(h);
 }
+// A seeker used to be shut in a room for the hiding window. The room was geometry
+// nobody wanted to look at, above the map or under it, and all it did was stop them
+// seeing. Blacking out their own screen does the same job and leaves the map alone.
+let mcBlindEl = null;
+function mcBlind(on, left) {
+  if (!mcBlindEl) {
+    mcBlindEl = document.createElement('div');
+    mcBlindEl.style.cssText = 'position:fixed;inset:0;z-index:17;display:none;background:#050705;' +
+      'color:#cdf5cd;font-family:inherit;align-items:center;justify-content:center;flex-direction:column;gap:10px';
+    mcBlindEl.innerHTML = '<div style="font-size:22px;letter-spacing:3px">EYES SHUT</div>' +
+      '<div id="mcBlindSub" style="font-size:13px;color:#8fa08f"></div>' +
+      '<div id="mcBlindClk" style="font-size:40px;font-weight:700;font-variant-numeric:tabular-nums"></div>';
+    document.body.appendChild(mcBlindEl);
+  }
+  mcBlindEl.style.display = on ? 'flex' : 'none';
+  if (!on) return;
+  const sub = document.getElementById('mcBlindSub'), clk = document.getElementById('mcBlindClk');
+  if (sub) sub.textContent = 'The hiders are finding somewhere to be';
+  if (clk) clk.textContent = Math.max(0, Math.ceil(left)) + 's';
+}
+
+/* ---- a hider is half the size of everyone else -------------------------------
+   Being small is the whole advantage: you fit under a bench, behind a fence post,
+   inside a doorway. The hitbox shrinks with the model, or you would be caught by
+   walls you can plainly see through. */
+// A jump that just clears a block and no more. Gravity here is 26, so v = sqrt(2*26*h)
+// and 7.45 reaches 1.07 blocks: enough for a step, not enough for a fence. The default
+// 8.4 reaches 1.36, which was clearing things the village needs you to walk round.
+const MC_JUMP = 7.45;
+const MC_SMALL = 0.5;      // how big a hider looks
+const MC_THIN = 0.28;      // and how wide they actually are, which is thinner still, so
+                           // they can press into a doorway or a corner and half vanish
+function mcSetSize(small) {
+  const want = small ? MC_SMALL : 1;
+  if (mc.sized === want) return;
+  mc.sized = want;
+  player.w = 0.6 * (small ? MC_THIN : 1); player.h = 1.8 * want; player.eye = 1.62 * want;
+  if (body) body.scale.setScalar(0.9 * want);
+  // growing back inside something would wedge you: lift until you are clear
+  if (!small) for (let i = 0; i < 4 && collides(player.pos.x, player.pos.y, player.pos.z); i++) player.pos.y += 1;
+}
+
 function mcEnterUi() {
   mcEnsureUi();
   const h = document.getElementById('mcHud'); if (h) h.style.display = 'block';
@@ -9117,6 +9230,7 @@ function mcEnterUi() {
 function mcLeaveUi() {
   const h = document.getElementById('mcHud'); if (h) h.style.display = 'none';
   if (hotbarEl) hotbarEl.style.display = '';
+  mc.paint = false; mcPaintUi(); mcPaintCursor();   // nothing of the brush follows you out
 }
 function mcBanner(text) {
   if (!mcUiBuilt) return;
@@ -9177,6 +9291,7 @@ function mcHud() {
   const hiding = mc.playing && mc.alive && mc.role === 'hider';
   const seeking = mc.playing && mc.role === 'seeker';
   gear.innerHTML = mc.paint ? ''
+    : mc.build ? kb('/prg', 'building Purpular Village &mdash; type it again to rejoin')
     : hiding ? kb('V', 'pose: <em>' + escHtml((mc.poses[mc.pose] || {}).name || '') + '</em>') +
                kb('B', 'paint yourself')
     : seeking ? kb('F', 'shoot') + kb('R', 'reload')
@@ -9218,6 +9333,7 @@ function mcHud() {
       '<div><b>F</b> fire (seeker)</div>' +
       '<div><b>R</b> reload (seeker)</div>' +
       '<div><b>K</b> start a round</div>' +
+      '<div><b>/prg</b> build Purpular Village together</div>' +
       '<div><b>Q</b> change view</div>';
   }
 }
@@ -11335,6 +11451,10 @@ function closeChat(send){
       else if(!who) chatPush('Who? Try /kick <name>.', 'sys');
       else if(!mp.active) chatPush('There is nobody else here to kick.', 'sys');
       else mpSend({type:'kick', name:who});
+    }
+    else if(/^\/prg\b/i.test(v)){                                 // Purpular Village: everybody builds
+      if(!mc.active) chatPush('/prg is for Mecha Chameleon.', 'sys');
+      else mpSend({type:'mcbuild'});
     }
     else if(/^\/edit\b/i.test(v)){                                // build in a Mecha Chameleon map
       if(!mc.active) chatPush('/edit is for the Mecha Chameleon maps.', 'sys');
