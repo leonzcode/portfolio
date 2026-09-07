@@ -8876,7 +8876,9 @@ function mcHandle(m) {
       const inRound = mc.playing && mc.alive;
       if (inRound && mc.localKind !== 'mc:blank') {
         mcBlankSkin(); mcSendSkin(true);
-        if (!mc.paint) camMode = mc.camWas || 1;   // the view you last chose, third-back by default
+        // a seeker is aiming a gun, so they start in first person; a hider has to see
+        // the pose they are holding, so they start behind themselves
+        if (!mc.paint) camMode = (mc.role === 'seeker') ? 0 : (mc.camWas || 1);
       }
       mcSetLocalLook(inRound);
       if (!inRound) mcPaintClose();
@@ -8890,7 +8892,8 @@ function mcHandle(m) {
         p.mcRole = q.role; p.mcAlive = q.alive; p.mcPlaying = q.playing; p.mcPose = q.pose | 0;
         if (q.skin && p.mcSkinSeen !== q.skin) { p.mcSkinSeen = q.skin; applyRemoteSkin(q.id, q.skin, false); }
         mcSetLook(p);
-        if (p.tag) p.tag.visible = !(q.role === 'hider' && q.alive);   // a hider has no name over them
+        // the tag rule is enforced every frame in mcFrame; the generic player update
+        // rewrites it, and it runs after this message is handled
       }
       mcHud();
       return true;
@@ -8977,6 +8980,9 @@ function mcFrame(dt) {
   for (const [, p] of mp.players) {
     if (p.model && p.mcPlaying && !p.mcAlive) p.model.visible = false;   // out of the round, out of sight
     if (p.mcRole === 'hider' && p.mcAlive && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
+    // a name floating over a hider gives them away, which is the whole game. Only the
+    // seekers are named, so you can see who is hunting and they cannot see who is not.
+    if (p.tag) p.tag.visible = !!(p.mcPlaying && p.mcRole === 'seeker' && !p.ghost && !p.hide);
   }
   // the local body is posed after its own walk animation instead, further down the frame
   // holding the fire key keeps the gun going
@@ -9164,39 +9170,28 @@ function mcHud() {
   const gear = document.getElementById('mcGear');
   const gun = document.getElementById('mcGun');
   // a key chip: the key itself, then what it does, so it reads as a button to press
+  // Two buttons each, and nothing else: the only things you have to press to take
+  // part. A hider poses and paints, a seeker shoots and reloads. Everything else is
+  // on the H list for anyone who goes looking for it.
   const kb = (k, what) => '<div class="b"><span class="k">' + k + '</span>' + what + '</div>';
-  if (mc.paint) { gear.innerHTML = ''; gun.innerHTML = ''; }
-  else
-  if (mc.phase === 'vote') {
-    gear.innerHTML = kb('1-' + mc.maps.length, 'vote for a map') + kb('H', 'all the keys');
-    gun.innerHTML = '';
-  } else if (mc.phase === 'lobby' || mc.phase === 'starting') {
-    gear.innerHTML = kb('K', 'start a round') + kb('H', 'all the keys');
-    gun.innerHTML = '';
-  } else if (mc.playing && mc.role === 'hider' && mc.alive) {
-    const pose = (mc.poses[mc.pose] || {}).name || '';
-    gear.innerHTML =
-      kb('V', 'pose: <em>' + escHtml(pose) + '</em>') +
-      kb('B', 'paint yourself') +
-      kb('Q', 'change view') +
-      kb('H', 'all the keys');
-    gun.innerHTML = '';
-  } else if (mc.playing && mc.role === 'seeker') {
-    gear.innerHTML =
-      kb('F', 'fire <em>or left-click</em>') +
-      kb('R', 'reload <em>or right-click</em>') +
-      kb('B', 'paint yourself') +
-      kb('Q', 'change view') +
-      kb('H', 'all the keys');
+  const hiding = mc.playing && mc.alive && mc.role === 'hider';
+  const seeking = mc.playing && mc.role === 'seeker';
+  gear.innerHTML = mc.paint ? ''
+    : hiding ? kb('V', 'pose: <em>' + escHtml((mc.poses[mc.pose] || {}).name || '') + '</em>') +
+               kb('B', 'paint yourself')
+    : seeking ? kb('F', 'shoot') + kb('R', 'reload')
+    : '';
+
+  if (seeking && !mc.paint) {
     const reloading = t < mc.reloadUntil, stunned = t < mc.stunUntil;
     gun.innerHTML =
       '<div class="ammo">' + (reloading ? '--' : mc.ammo) + ' <small>/ ' + mc.ammoMax + '</small></div>' +
       '<div class="hp">' + mc.hp + ' hp</div>' +
       (stunned ? '<div class="st">JAMMED</div>' : reloading ? '<div class="st">RELOADING</div>' : '');
   } else {
-    gear.innerHTML = kb('H', 'all the keys');
     gun.innerHTML = '';
   }
+
 
   // the scoreboard at the end
   const end = document.getElementById('mcEnd');
