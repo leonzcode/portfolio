@@ -8306,6 +8306,7 @@ const mc = {
   mapId: '', mapName: '', maps: [], votes: {}, myVote: '',
   poses: [], pose: 0, painted: false, help: false, helpSeen: false, sized: 1,
   edit: false, build: false,
+  pings: [],
   paint: false, paintColor: '#b3271f', paintH: 0.01, paintS: 0.83, paintV: 0.7,
   paintSize: 2, paintTool: 'brush',
   paintDrag: false, paintOrbit: false, paintDist: 4.2,
@@ -8918,23 +8919,33 @@ function mcFaceInk(id, face, u, v) {
 }
 // Walk the ray finely and stop the moment it enters a solid cell, keeping the point
 // where it went in: that tells us which face was hit and where on it.
+// Walk the ray boundary to boundary rather than in little steps. Stepping along
+// samples the world at whatever point the step happened to land on, so the texel it
+// read was a step's worth away from the one under the cursor and two clicks a few
+// pixels apart could land on the same one. This crosses at the exact face, so the
+// point it reads is the point you clicked.
 function mcRayFace(origin, dir, far) {
-  let px = origin.x, py = origin.y, pz = origin.z;
-  for (let t = 0.1; t < far; t += 0.015) {
-    const x = origin.x + dir.x * t, y = origin.y + dir.y * t, z = origin.z + dir.z * t;
-    const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
-    const b = getBlock(bx, by, bz);
+  let x = Math.floor(origin.x), y = Math.floor(origin.y), z = Math.floor(origin.z);
+  const sx = dir.x > 0 ? 1 : -1, sy = dir.y > 0 ? 1 : -1, sz = dir.z > 0 ? 1 : -1;
+  const EPS = 1e-12;
+  const tdx = Math.abs(dir.x) < EPS ? Infinity : Math.abs(1 / dir.x);
+  const tdy = Math.abs(dir.y) < EPS ? Infinity : Math.abs(1 / dir.y);
+  const tdz = Math.abs(dir.z) < EPS ? Infinity : Math.abs(1 / dir.z);
+  let tmx = tdx === Infinity ? Infinity : (dir.x > 0 ? x + 1 - origin.x : origin.x - x) * tdx;
+  let tmy = tdy === Infinity ? Infinity : (dir.y > 0 ? y + 1 - origin.y : origin.y - y) * tdy;
+  let tmz = tdz === Infinity ? Infinity : (dir.z > 0 ? z + 1 - origin.z : origin.z - z) * tdz;
+  let t = 0, axis = -1;
+  for (let i = 0; i < 640 && t < far; i++) {
+    if (tmx < tmy && tmx < tmz) { x += sx; t = tmx; tmx += tdx; axis = 0; }
+    else if (tmy < tmz) { y += sy; t = tmy; tmy += tdy; axis = 1; }
+    else { z += sz; t = tmz; tmz += tdz; axis = 2; }
+    const b = getBlock(x, y, z);
     if (b && BLOCKS[b] && BLOCKS[b].solid && !BLOCKS[b].door) {
-      // which boundary did we cross to get in here?
-      const cx = Math.floor(px) !== bx, cy = Math.floor(py) !== by, cz = Math.floor(pz) !== bz;
-      const fx = x - bx, fy = y - by, fz = z - bz;
-      let face, u, v;
-      if (cy && !cx && !cz) { face = dir.y < 0 ? 0 : 1; u = fx; v = fz; }        // top or bottom
-      else if (cx) { face = 2; u = (dir.x > 0) ? fz : 1 - fz; v = 1 - fy; }      // an x-facing side
-      else { face = 2; u = (dir.z > 0) ? 1 - fx : fx; v = 1 - fy; }              // a z-facing side
-      return { id: b, face: face, u: u, v: v };
+      const fx = origin.x + dir.x * t - x, fy = origin.y + dir.y * t - y, fz = origin.z + dir.z * t - z;
+      if (axis === 1) return { id: b, face: sy > 0 ? 1 : 0, u: fx, v: fz };       // in through the bottom, or the top
+      if (axis === 0) return { id: b, face: 2, u: sx > 0 ? fz : 1 - fz, v: 1 - fy };
+      return { id: b, face: 2, u: sz > 0 ? 1 - fx : fx, v: 1 - fy };
     }
-    px = x; py = y; pz = z;
   }
   return null;
 }
@@ -9269,9 +9280,10 @@ function mcHandle(m) {
       mcHud();
       return true;
     }
-    case 'mcreveal': {                   // every so often a hider gives themselves away
-      mcMark(m.x, m.y + 1.6, m.z, 0xffd54a);
-      mcFeed('Something rattled...');
+    case 'mcreveal': {                   // a hider gives themselves away, by accident or on purpose
+      mcMark(m.x, m.y + 1.15, m.z, 0xffd54a);        // a half-height hider wears it lower
+      mcPing(m.x, m.y, m.z);
+      mcFeed(m.called ? (m.by ? escHtml(m.by) + ' whistled!' : 'A whistle!') : 'Something rattled...');
       return true;
     }
     case 'mcreload': { mc.reloadUntil = performance.now() + (m.ms || 1800); mcHud(); return true; }
@@ -9303,6 +9315,51 @@ function mcTracer(m) {
   scene.add(line);
   mc.tracers.push({ o: line, until: performance.now() + 140 });
 }
+/* ---- which way the whistle came from ---------------------------------------
+   A seeker hears a hider and needs to know where to turn. The arrow sits on a
+   ring round the crosshair and keeps pointing at the spot as the seeker turns,
+   because an arrow that only tells you the bearing at the moment it appeared is
+   no use the second you move.                                                  */
+let mcPingEl = null;
+function mcPing(x, y, z) {
+  if (!(mc.playing && mc.role === 'seeker')) return;   // the seekers are who this is for
+  if (!mcPingEl) {
+    const css = document.createElement('style');
+    css.textContent = [
+      '#mcPings{position:fixed;left:50%;top:50%;width:0;height:0;z-index:13;pointer-events:none}',
+      '#mcPings .ping{position:absolute;left:0;top:0;transform-origin:0 0}',
+      '#mcPings .ping i{display:block;width:0;height:0;border-left:10px solid transparent;',
+      ' border-right:10px solid transparent;border-bottom:18px solid #ffd54a;',
+      ' transform:translate(-10px,-124px);filter:drop-shadow(0 0 3px rgba(0,0,0,.85))}',
+    ].join('\n');
+    document.head.appendChild(css);
+    mcPingEl = document.createElement('div'); mcPingEl.id = 'mcPings';
+    document.body.appendChild(mcPingEl);
+  }
+  const el = document.createElement('div'); el.className = 'ping';
+  el.innerHTML = '<i></i>';
+  mcPingEl.appendChild(el);
+  mc.pings.push({ el: el, x: x, y: y, z: z, until: performance.now() + 5000 });
+  while (mc.pings.length > 4) { const old = mc.pings.shift(); if (old.el.parentNode) old.el.parentNode.removeChild(old.el); }
+}
+// keep every arrow pointing at its own spot, and fade it out as it goes
+function mcPingFrame() {
+  if (!mc.pings.length) return;
+  const now = performance.now();
+  for (let i = mc.pings.length - 1; i >= 0; i--) {
+    const g = mc.pings[i];
+    const left = g.until - now;
+    if (left <= 0 || !(mc.playing && mc.role === 'seeker')) {
+      if (g.el.parentNode) g.el.parentNode.removeChild(g.el);
+      mc.pings.splice(i, 1); continue;
+    }
+    // the yaw that would face the spot, against the yaw we are actually facing
+    const rel = Math.atan2(-(g.x - player.pos.x), -(g.z - player.pos.z)) - player.yaw;
+    g.el.style.transform = 'rotate(' + (-rel) + 'rad)';
+    g.el.style.opacity = Math.min(1, left / 900);
+  }
+}
+
 function mcMark(x, y, z, color) {
   const s = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6),
     new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.75, depthTest: false }));
@@ -9332,16 +9389,26 @@ function mcFrame(dt) {
     mcFeed('Out of the world. Back to the middle of the map.');
   }
   mcSweep();
+  mcPingFrame();
   const t = performance.now() / 1000;
+  const hunting = mc.playing && mc.alive && mc.role === 'seeker' && mc.phase === 'seek';
   // everyone else, held in whatever pose they chose
   for (const [, p] of mp.players) {
-    if (p.model && p.mcPlaying && !p.mcAlive) p.model.visible = false;   // out of the round, out of sight
+    // Out of the round, out of sight. Worked out every frame rather than switched
+    // off once: this used to hide a player the moment they were found and never put
+    // them back, so anybody who had been caught in an earlier round stayed invisible
+    // for the rest of the session, in plain sight, to everyone.
+    if (p.model) p.model.visible = !p.ghost && !(p.mcPlaying && !p.mcAlive);
     if (p.model && p.mcPlaying) {                                        // hiders are half size to everyone
       const sc = 0.9 * ((p.mcRole === 'hider' && p.mcAlive) ? MC_SMALL : 1);
       p.model.scale.set(sc, sc, sc);
     }
     mcSetHeldGun(p, !!(p.mcPlaying && p.mcRole === 'seeker'));
     if (p.mcRole === 'hider' && p.mcAlive && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
+    // a hider swallowed by a block, with a seeker standing on top of them
+    mcSeeThrough(p, hunting && p.mcPlaying && p.mcAlive && p.mcRole === 'hider' && p.model &&
+                    Math.hypot(p.x - player.pos.x, p.y - player.pos.y, p.z - player.pos.z) < MC_SEE_R &&
+                    mcBuried(p));
     // a name floating over a hider gives them away, which is the whole game. Only the
     // seekers are named, so you can see who is hunting and they cannot see who is not.
     if (p.tag) p.tag.visible = !!(p.mcPlaying && p.mcRole === 'seeker' && !p.ghost && !p.hide);
@@ -9383,6 +9450,10 @@ function mcKey(k, e) {
     if (k === 'v') {                       // step to the next pose, rather than counting keys
       mc.pose = (mc.pose + 1) % Math.max(1, mc.poses.length);
       mpSend({ type: 'mcpose', pose: mc.pose }); mcHud(); return true;
+    }
+    if (k === 'n') {                       // whistle: give yourself away, and get paid for it
+      if (mc.phase !== 'seek') { mcFeed('Nothing to whistle at yet.'); return true; }
+      mpSend({ type: 'mctaunt' }); return true;
     }
   }
   if (mc.role === 'seeker') {
@@ -9483,6 +9554,50 @@ const MC_HIDER_JUMP = 10.6;   // see the jump in the physics step: 2.16 blocks
 const MC_SMALL = 0.5;      // how big a hider looks
 const MC_THIN = 0.28;      // and how wide they actually are, which is thinner still, so
                            // they can press into a doorway or a corner and half vanish
+/* ---- a hider who is inside a block ------------------------------------------
+   A hider is thin enough to press into a wall, and small enough to stand inside
+   a bush or under a slab. Sometimes the block wins and there is nothing left to
+   see: they are still there to be shot, but a seeker standing on top of them has
+   nothing to aim at. When that happens, and only when the seeker is close enough
+   to be right on them, the hider is outlined through the world.
+
+   The outline is a shell of the same shapes turned inside out and drawn with the
+   depth test off, so it comes through the block as a flat silhouette. It hangs
+   off each limb, so it follows whatever pose they are holding for nothing.     */
+const MC_SEE_R = 6;                    // how close a seeker has to be for it
+function mcShell(p) {
+  if (p.shell) return p.shell;
+  if (!p.model) return null;
+  const meshes = [];
+  p.model.traverse(function (o) { if (o.isMesh && !o.userData.isShell) meshes.push(o); });
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff5a4d, side: THREE.BackSide,
+                                            depthTest: false, transparent: true, opacity: 0.85 });
+  const parts = [];
+  for (const o of meshes) {
+    const sh = new THREE.Mesh(o.geometry, mat);
+    sh.userData.isShell = true;
+    sh.scale.setScalar(1.16);
+    sh.renderOrder = 900;
+    sh.visible = false;
+    o.add(sh);
+    parts.push(sh);
+  }
+  p.shell = { mat: mat, parts: parts };
+  return p.shell;
+}
+function mcSeeThrough(p, on) {
+  if (!on && !p.shell) return;
+  const sh = mcShell(p); if (!sh) return;
+  if (!!p.seen === !!on) return;
+  p.seen = !!on;
+  for (const m of sh.parts) m.visible = !!on;
+}
+// is anything actually standing where they are?
+function mcBuried(p) {
+  const bx = Math.floor(p.x), bz = Math.floor(p.z);
+  return getBlock(bx, Math.floor(p.y + 0.05), bz) !== 0 || getBlock(bx, Math.floor(p.y + 0.45), bz) !== 0;
+}
+
 function mcSetSize(small) {
   const want = small ? MC_SMALL : 1;
   if (mc.sized === want) return;
@@ -9502,6 +9617,8 @@ function mcLeaveUi() {
   const h = document.getElementById('mcHud'); if (h) h.style.display = 'none';
   if (hotbarEl) hotbarEl.style.display = '';
   mc.paint = false; mcPaintUi(); mcPaintCursor();   // nothing of the brush follows you out
+  for (const g of mc.pings) if (g.el.parentNode) g.el.parentNode.removeChild(g.el);
+  mc.pings.length = 0;                              // and no arrows either
 }
 function mcBanner(text) {
   if (!mcUiBuilt) return;
@@ -9563,7 +9680,7 @@ function mcHud() {
   const seeking = mc.playing && mc.role === 'seeker';
   gear.innerHTML = mc.paint ? ''
     : hiding ? kb('V', 'pose: <em>' + escHtml((mc.poses[mc.pose] || {}).name || '') + '</em>') +
-               kb('B', 'paint yourself')
+               kb('B', 'paint yourself') + kb('N', 'whistle')
     : seeking ? kb('F', 'shoot') + kb('R', 'reload')
     : '';
 
@@ -9599,6 +9716,7 @@ function mcHud() {
       '<div><b>W A S D</b> move  ·  <b>Space</b> jump</div>' +
       '<div><b>1-6</b> pose, or vote for a map</div>' +
       '<div><b>V</b> next pose</div>' +
+      '<div><b>N</b> whistle (hider): points the seekers at you, and scores</div>' +
       '<div><b>B</b> paint yourself, in the world</div>' +
       '<div><b>F</b> fire (seeker)</div>' +
       '<div><b>R</b> reload (seeker)</div>' +
@@ -12067,6 +12185,21 @@ window.__mc = {
     const r=c.getBoundingClientRect();
     mcValPick({ clientX:r.left+2, clientY:r.top + r.height*fy }); return mc.paintColor; },
   mcPaintPixel(x,y){ const d=mcSkinCtx.getImageData(x,y,1,1).data; return [d[0],d[1],d[2],d[3]]; },
+  mcPings(){ return mc.pings.map(g=>({ at:[g.x,+g.y.toFixed(1),g.z],
+    rot:g.el.style.transform, op:g.el.style.opacity })); },
+  mcMarks(){ return mc.marks.map(m=>({ y:+m.o.position.y.toFixed(2) })); },
+  // the dropper, at a point on the screen, without going through a mouse event
+  mcDropAt(nx, ny){
+    mcRay.setFromCamera({ x:nx, y:ny }, camera);
+    const hit = mcRayFace(mcRay.ray.origin, mcRay.ray.direction, 48);
+    if(!hit) return null;
+    const ink = mcFaceInk(hit.id, hit.face, hit.u, hit.v);
+    return { block:blockName(hit.id), face:hit.face,
+             texel:[Math.floor(hit.u*16), Math.floor(hit.v*16)], ink:ink }; },
+  mcSeeState(){ return [...mp.players.values()].map(p=>({ id:p.id, role:p.mcRole||'', alive:!!p.mcAlive,
+    seen:!!p.seen, shell:!!(p.shell && p.shell.parts.length),
+    buried:(p.model?mcBuried(p):null),
+    dist:+Math.hypot(p.x-player.pos.x, p.y-player.pos.y, p.z-player.pos.z).toFixed(2) })); },
   mcPaintPoke(x,y){ return mcPaintAt(x,y); },
   mcPaintTool(t){ mc.paintTool=t; mcPaintUi(); return mc.paintTool; },
   mcPaintColor(c){ mc.paintColor=c; mcPaintUi(); return mc.paintColor; },
