@@ -8306,7 +8306,8 @@ const mc = {
   mapId: '', mapName: '', maps: [], votes: {}, myVote: '',
   poses: [], pose: 0, painted: false, help: false, helpSeen: false, sized: 1,
   edit: false, build: false,
-  paint: false, paintColor: '#b3271f', paintSize: 2, paintTool: 'brush',
+  paint: false, paintColor: '#b3271f', paintH: 0.01, paintS: 0.83, paintV: 0.7,
+  paintSize: 2, paintTool: 'brush',
   paintDrag: false, paintOrbit: false, paintDist: 4.2,
   paintYaw: 0, paintPitch: 0.12, camWas: 1,
   role: 'hider', alive: false, playing: false,
@@ -8642,6 +8643,81 @@ const MC_PAINT_COLORS = [
   '#3f8f2f', '#1f5220', '#7ec8e3', '#2f4fc0',
 ];
 const MC_PAINT_TOOLS = [['brush', 'Brush'], ['fill', 'Fill'], ['pick', 'Pick']];
+/* ---- the colour mixer ------------------------------------------------------
+   Sixteen wells cover the obvious colours; this is for everything else. It is
+   drawn one cell at a time into a 25x25 canvas and blown up with no smoothing,
+   so the wheel is made of visible squares like everything else in the game: a
+   round airbrushed gradient would be the one thing on screen that is not.    */
+const MC_WHEEL_N = 25;                 // cells across the disc, and up the bar
+const MC_WHEEL_PX = 3;                 // how many screen pixels a cell is
+function mcHsvHex(h, s, v) {
+  h = ((h % 1) + 1) % 1; s = Math.max(0, Math.min(1, s)); v = Math.max(0, Math.min(1, v));
+  const i = Math.floor(h * 6), f = h * 6 - i;
+  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  const r = [v, q, p, p, t, v][i % 6], g = [t, v, v, q, p, p][i % 6], b = [p, p, t, v, v, q][i % 6];
+  const hx = n => Math.round(n * 255).toString(16).padStart(2, '0');
+  return '#' + hx(r) + hx(g) + hx(b);
+}
+function mcHexHsv(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d + (g < b ? 6 : 0)) / 6 : mx === g ? ((b - r) / d + 2) / 6 : ((r - g) / d + 4) / 6;
+  return { h: h, s: mx ? d / mx : 0, v: mx };
+}
+// the disc, at whatever brightness is set, and the marker over the cell you are on
+function mcWheelDraw() {
+  const c = document.getElementById('mcWheelC'); if (!c) return;
+  const g = c.getContext('2d'), N = MC_WHEEL_N, m = (N - 1) / 2;
+  g.clearRect(0, 0, N, N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = x - m, dy = y - m, r = Math.hypot(dx, dy) / m;
+    if (r > 1.04) continue;
+    g.fillStyle = mcHsvHex(Math.atan2(dy, dx) / (Math.PI * 2), Math.min(1, r), mc.paintV);
+    g.fillRect(x, y, 1, 1);
+  }
+  const mark = document.getElementById('mcWheelM');
+  if (mark) {
+    const rr = mc.paintS * m, a = mc.paintH * Math.PI * 2;
+    mark.style.left = ((m + Math.cos(a) * rr) * MC_WHEEL_PX) + 'px';
+    mark.style.top  = ((m + Math.sin(a) * rr) * MC_WHEEL_PX) + 'px';
+  }
+}
+// the brightness column: the colour you have picked, from black up to full
+function mcValDraw() {
+  const c = document.getElementById('mcValC'); if (!c) return;
+  const g = c.getContext('2d'), N = MC_WHEEL_N;
+  for (let y = 0; y < N; y++) {
+    g.fillStyle = mcHsvHex(mc.paintH, mc.paintS, 1 - y / (N - 1));
+    g.fillRect(0, y, 1, 1);
+  }
+  const mark = document.getElementById('mcValM');
+  if (mark) mark.style.top = (Math.round((1 - mc.paintV) * (N - 1)) * MC_WHEEL_PX) + 'px';
+}
+function mcSetHsv(h, s, v) {
+  mc.paintH = h; mc.paintS = s; mc.paintV = v;
+  mc.paintColor = mcHsvHex(h, s, v);
+  mcWheelDraw(); mcValDraw(); mcPaintUi(); mcPaintCursor();
+}
+// picking a well moves the mixer to that colour, so the two never disagree
+function mcSetPaintColor(hex) {
+  const c = mcHexHsv(hex);
+  mc.paintH = c.h; mc.paintS = c.s; mc.paintV = c.v; mc.paintColor = hex;
+  mcWheelDraw(); mcValDraw();
+}
+// a press or a drag anywhere on the disc
+function mcWheelPick(ev) {
+  const c = document.getElementById('mcWheelC'); if (!c) return;
+  const b = c.getBoundingClientRect(), m = (MC_WHEEL_N - 1) / 2;
+  const dx = (ev.clientX - b.left) / MC_WHEEL_PX - m, dy = (ev.clientY - b.top) / MC_WHEEL_PX - m;
+  mcSetHsv(Math.atan2(dy, dx) / (Math.PI * 2), Math.min(1, Math.hypot(dx, dy) / m), mc.paintV);
+}
+function mcValPick(ev) {
+  const c = document.getElementById('mcValC'); if (!c) return;
+  const b = c.getBoundingClientRect();
+  mcSetHsv(mc.paintH, mc.paintS, 1 - Math.max(0, Math.min(1, (ev.clientY - b.top) / b.height)));
+}
 const mcPixel = new Uint8Array(4);
 const mcRay = new THREE.Raycaster();
 let mcPaintUiBuilt = false;
@@ -8696,6 +8772,13 @@ function mcPaintEnsureUi() {
     '#mcPaint .btn2:hover{color:#e8ffe8;border-color:rgba(120,200,120,.55)}',
     '#mcPaint .btn2.on{color:#0f140f;background:#cdf5cd;border-color:#cdf5cd}',
     '#mcPaint .sz{width:26px;min-width:26px;padding:0}',
+    '#mcPaint .mix{position:relative;line-height:0}',
+    '#mcPaint canvas{image-rendering:pixelated;border:2px solid rgba(0,0,0,.55);cursor:crosshair;display:block}',
+    '#mcPaint #mcWheelC{width:' + (MC_WHEEL_N * MC_WHEEL_PX) + 'px;height:' + (MC_WHEEL_N * MC_WHEEL_PX) + 'px;border-radius:50%}',
+    '#mcPaint #mcValC{width:15px;height:' + (MC_WHEEL_N * MC_WHEEL_PX) + 'px}',
+    '#mcPaint .mk{position:absolute;pointer-events:none;border:2px solid #f2e37a;box-shadow:0 0 0 1px rgba(0,0,0,.75)}',
+    '#mcPaint #mcWheelM{width:9px;height:9px;margin:-1px 0 0 -1px;transform:translate(-50%,-50%)}',
+    '#mcPaint #mcValM{left:-1px;width:15px;height:5px;margin-top:1px}',
     '#mcPaint .hint{margin-top:7px;font-size:11px;color:#8fa08f;letter-spacing:.4px;text-align:center}',
     '#mcPaint .hint b{color:#cdf5cd;font-weight:600}',
   ].join('\n');
@@ -8710,8 +8793,12 @@ function mcPaintEnsureUi() {
   const sizes = [1, 2, 3].map(function (n) {
     return '<div class="btn2 sz" data-size="' + n + '">' + n + '</div>';
   }).join('');
+  const mixer = '<div class="mix"><canvas id="mcWheelC" width="' + MC_WHEEL_N + '" height="' + MC_WHEEL_N + '"></canvas>' +
+                '<div class="mk" id="mcWheelM"></div></div>' +
+                '<div class="mix"><canvas id="mcValC" width="1" height="' + MC_WHEEL_N + '"></canvas>' +
+                '<div class="mk" id="mcValM"></div></div>';
   el.innerHTML = '<div class="row">' + wells + '<div class="sep"></div>' + tools +
-                 '<div class="sep"></div>' + sizes + '</div>' +
+                 '<div class="sep"></div>' + sizes + '<div class="sep"></div>' + mixer + '</div>' +
                  '<div class="hint">Drag to paint  &middot;  <b>right-drag</b> swings the camera round you  &middot;  ' +
                  '<b>scroll</b> or <b>&minus;</b>&thinsp;/&thinsp;<b>=</b> zooms  &middot;  ' +
                  '<b>B</b> or <b>Esc</b> when you are done</div>';
@@ -8719,12 +8806,21 @@ function mcPaintEnsureUi() {
   el.addEventListener('mousedown', function (e) { e.stopPropagation(); });
   el.addEventListener('click', function (e) {
     const t = e.target;
-    if (t.dataset.col !== undefined) mc.paintColor = MC_PAINT_COLORS[+t.dataset.col];
+    if (t.dataset.col !== undefined) mcSetPaintColor(MC_PAINT_COLORS[+t.dataset.col]);
     else if (t.dataset.tool) mc.paintTool = t.dataset.tool;
     else if (t.dataset.size) mc.paintSize = +t.dataset.size;
     else return;
     mcPaintUi(); mcPaintCursor();
   });
+  // press and drag across the disc or the column, and let go anywhere
+  let mixing = null;
+  el.addEventListener('mousedown', function (e) {
+    if (e.target.id === 'mcWheelC') { mixing = mcWheelPick; mcWheelPick(e); }
+    else if (e.target.id === 'mcValC') { mixing = mcValPick; mcValPick(e); }
+  });
+  window.addEventListener('mousemove', function (e) { if (mixing && mc.paint) mixing(e); });
+  window.addEventListener('mouseup', function () { mixing = null; });
+  mcSetPaintColor(mc.paintColor);
 }
 function mcPaintUi() {
   const el = document.getElementById('mcPaint'); if (!el) return;
@@ -11958,6 +12054,18 @@ window.__mc = {
     paused:state===PAUSE, cam:camMode, camWas:mc.camWas,
     barShown:(()=>{ const e=document.getElementById('mcPaint'); return !!e && e.style.display==='block'; })(),
     wells:document.querySelectorAll('#mcPaint .well').length }; },
+  mcMixer(){ const w=document.getElementById('mcWheelC'), v=document.getElementById('mcValC');
+    const wm=document.getElementById('mcWheelM'), vm=document.getElementById('mcValM');
+    const box=e=>{ if(!e) return null; const r=e.getBoundingClientRect(); return [Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)]; };
+    return { h:+mc.paintH.toFixed(3), s:+mc.paintS.toFixed(3), v:+mc.paintV.toFixed(3), color:mc.paintColor,
+      wheel:box(w), bar:box(v), mark:wm?[wm.style.left, wm.style.top]:null, valMark:vm?vm.style.top:null,
+      preset:MC_PAINT_COLORS.indexOf(mc.paintColor) }; },
+  mcMixAt(fx, fy){ const c=document.getElementById('mcWheelC'); if(!c) return null;
+    const r=c.getBoundingClientRect();
+    mcWheelPick({ clientX:r.left + r.width*fx, clientY:r.top + r.height*fy }); return mc.paintColor; },
+  mcMixVal(fy){ const c=document.getElementById('mcValC'); if(!c) return null;
+    const r=c.getBoundingClientRect();
+    mcValPick({ clientX:r.left+2, clientY:r.top + r.height*fy }); return mc.paintColor; },
   mcPaintPixel(x,y){ const d=mcSkinCtx.getImageData(x,y,1,1).data; return [d[0],d[1],d[2],d[3]]; },
   mcPaintPoke(x,y){ return mcPaintAt(x,y); },
   mcPaintTool(t){ mc.paintTool=t; mcPaintUi(); return mc.paintTool; },
