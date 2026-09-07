@@ -4764,6 +4764,8 @@ addEventListener('keydown', e=>{
   if(e.repeat) return;   // holding jump to fly up auto-repeats keydown; those aren't taps, so don't let them toggle fly
   // Creative flight normally stops at the edge of a Bed Wars match. The milan45 code
   // carries it in there as well.
+  // Building Purpular Village is the third case: you are out of the round and the
+  // whole point is to get up to where the roof goes.
   if(!bindListening && e.key.toLowerCase()===binds.jump && state===PLAY && !parkour.run && (!mc.active || spec.on) && (fx.fly || (creative && !bw.active))){
     const now=performance.now();
     if(now-lastSpace<300){ player.flying=!player.flying; player.vel.y=0; }
@@ -5004,11 +5006,8 @@ function updatePlayer(dt){
     player.vel.y -= g*dt;
     if(swimming){ player.vel.y = Math.max(player.vel.y,-2.2); if(keys[binds.jump]) player.vel.y = 3.2; }
     else if(keys[binds.jump] && player.onGround){
-      // In Mecha Chameleon a jump clears exactly one block and no more, for everyone.
-      // A hider is half the height but the physics does not care, so they get the same
-      // one block rather than twice as much of one.
-      if(mc.active) player.vel.y = MC_JUMP;
-      else player.vel.y = 8.4 * ((bw.active && bw.jumpUntil>performance.now()) ? 1.7 : 1);
+      // Mecha Chameleon jumps the same as everywhere else: no boost, no cap.
+      player.vel.y = 8.4 * ((bw.active && bw.jumpUntil>performance.now()) ? 1.7 : 1);
       player.onGround=false;
     }   // Jump Boost V potion
     if(player.vel.y<-40) player.vel.y=-40;
@@ -5093,7 +5092,7 @@ function updatePlayer(dt){
   }
   // sneak crouch easing: lowers the camera + squashes the body model
   player.crouch += ((player.sneak?1:0) - player.crouch) * (1 - Math.exp(-16*dt));
-  player.eye = (1.62 - player.crouch*0.16) * localEyeMul;   // giant/small secret codes raise/lower the camera
+  player.eye = (1.62 - player.crouch*0.16) * localEyeMul * (mc.sized || 1);   // giant/small secret codes raise/lower the camera; a mecha hider is half height
   stepSmooth = stepSmooth>0.003 ? stepSmooth*Math.exp(-16*dt) : 0;   // let the camera catch up to a step-up
   { const bn=borderNow();                                            // world border: keep the player inside the bounded area
     const b=bn-0.35; if(bn){
@@ -5941,7 +5940,7 @@ function breakGhostUnderCrosshair(){
   removeGhostBlock(found.type, found.k, c[0], c[1], c[2]);
   return true;
 }
-function mcBuilding(){ return mc.edit || mc.build; }   // an admin editing, or you off building Purpular Village
+function mcBuilding(){ return mc.edit; }   // an admin with /edit on, and nobody else
 function breakBlock(){
   if(mc.active && !mcBuilding()) return;    // not yours to break, unless the map is open
   if(bb.active && !bbCanBreak()) return;     // build battle: your plot only, and never the floor under it
@@ -6495,7 +6494,8 @@ function startSingleplayer(){
   dim=0;
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   mp.bb=false; bb.active=false; bbMode=false; bbLeaveUi();
-  mp.mc=false; mc.active=false; mcMode=false; mcLeaveUi(); mcSetSize(false); mcBlind(false);
+  mp.mc=false; mc.active=false; mcMode=false; mcLeaveUi(); mcSetSize(false);
+  medLeave();
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
   worldSpawn = null;   // whatever a server told us stops applying the moment we leave it
   spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
@@ -7254,6 +7254,11 @@ function mpUrl(){
     return u + (u.indexOf('?')>=0?'&':'?') + 'mode=mecha' + (nm ? '&name='+encodeURIComponent(nm) : '')
              + (isAdmin() ? '&admin=1' : '');
   }
+  if(mp.med){                                       // the map editor, which has a password
+    const nm=getSavedName();
+    return u + (u.indexOf('?')>=0?'&':'?') + 'mode=mcedit' + (nm ? '&name='+encodeURIComponent(nm) : '')
+             + '&pw=' + encodeURIComponent(med.pw || '') + (isAdmin() ? '&admin=1' : '');
+  }
   const p = new URLSearchParams();
   p.set('server', mpTarget.server || 'original');
   if(mpTarget.pw) p.set('pw', mpTarget.pw);
@@ -7363,6 +7368,8 @@ function mpHandle(m){
   if(bb.active && bbHandle(m)) return;                                        // build-battle-only messages
   if(m.type==='init' && (m.mode==='mecha' || mc.active)){ mcInit(m); return; }   // mecha chameleon has its own init/world
   if(mc.active && mcHandle(m)) return;                                          // mecha-only messages
+  if(m.type==='init' && (m.mode==='mcedit' || med.active)){ medInit(m); return; }   // and the map editor has its own
+  if(med.active && medHandle(m)) return;
   if(m.type==='init' && (m.mode==='bw' || bw.active)){ bwInit(m); return; }   // bedwars has its own init/world
   if(bw.active && bwHandle(m)) return;                                        // bedwars-only messages; others fall through
   if(DIM_MSGS[m.type] && m.type!=='tnt'){
@@ -7537,7 +7544,11 @@ function mpSend(o){
   if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} }
 }
 function mpSendBlock(x,y,z,b){
-  if(mc.active && mcBuilding()){ mpSetOverride(x,y,z,b); mpSend({type:'mcedit', x, y, z, block: b ? blockName(b) : null}); return; }   // editing a map, or building Purpular Village
+  // editing a map, or building Purpular Village. The map id goes with it: between
+  // rounds the server has no map in hand, and this is what tells it which one you
+  // are standing in rather than dropping the change on the floor.
+  if(med.active){ mpSetOverride(x,y,z,b); mpSend({type:'mcedit', x, y, z, block: b ? blockName(b) : null}); return; }   // the map editor writes straight to the maps
+  if(mc.active && mcBuilding()){ mpSetOverride(x,y,z,b); mpSend({type:'mcedit', map: mc.mapId||'', x, y, z, block: b ? blockName(b) : null}); return; }
   if(bb.active){ if(bbInPlot(bb.plot,x,y,z)){ mpSetOverride(x,y,z,b); bbSendBlock(x,y,z,b); } return; }   // build battle: your plot only
   if(bw.active){ mpSetOverride(x,y,z,b); mpSend({type:'bwblock',x,y,z,b}); return; }   // bedwars: dynamic edit into the match
   if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); }
@@ -7574,7 +7585,8 @@ function mpStartWorld(serverSeed){
 function startMultiplayer(){ mp.bw=false; bw.active=false; bwMode=false; if(typeof bwLeaveUi==='function') bwLeaveUi();
   mp.bb=false; bb.active=false; bbMode=false; if(typeof bbLeaveUi==='function') bbLeaveUi();
   mp.mc=false; mc.active=false; mcMode=false;
-  if(typeof mcLeaveUi==='function'){ mcLeaveUi(); mcSetSize(false); mcBlind(false); } mpConnect(); }
+  if(typeof medLeave==='function') medLeave();
+  if(typeof mcLeaveUi==='function'){ mcLeaveUi(); mcSetSize(false); } mpConnect(); }
 
 /* ================= server browser: pick / create / join a server ================= */
 const serversEl=document.getElementById('servers'), srvListEl=document.getElementById('srvList'), srvNoteEl=document.getElementById('srvNote'), srvSearchEl=document.getElementById('srvSearch');
@@ -8066,6 +8078,7 @@ function joinServer(s){
   if(s.mode==='bb'){ serversEl.hidden=true; startBuildBattle(); return; }   // Build Battle is its own game, not a world
   if(s.mode==='bw'){ serversEl.hidden=true; startBedwars(); return; }       // and so is Bed Wars
   if(s.mode==='mecha'){ serversEl.hidden=true; startMecha(); return; }      // and so is Mecha Chameleon
+  if(s.mode==='mcedit'){ openPwPrompt(s); return; }                        // the map editor always asks for its password
   const kind=srvKindOf(s);
   // A minigame is open to everyone with no password at all: you arrive able to run the
   // course but not to change it, which is what the Edit button is for.
@@ -8090,7 +8103,9 @@ function openPwPrompt(s, forEdit){ pwPendingServer=s; document.getElementById('p
     : 'Enter the password to play, or join as a spectator to watch without building.';
   if(spec) spec.style.display = forEdit ? 'none' : '';
   pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
-function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw && !isAdmin()){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; } mpTarget={ server:pwPendingServer.id, pw:pw }; mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting…'; startMultiplayer(); }
+function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw && !isAdmin()){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; }
+  if(pwPendingServer.mode==='mcedit'){ mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting...'; startMapEditor(pw); return; }
+  mpTarget={ server:pwPendingServer.id, pw:pw }; mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting…'; startMultiplayer(); }
 function pwSpectate(){ if(!pwPendingServer) return; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Joining as spectator…'; spectateServer(pwPendingServer); }
 document.getElementById('pwJoinBtn').addEventListener('click', pwJoin);
 document.getElementById('pwSpectateBtn').addEventListener('click', pwSpectate);
@@ -8293,11 +8308,29 @@ function mcApplyBlock(x, y, z, id) {
 // The server's format: palette of names, then "x,y,z" -> index, or [index, meta].
 // Meta carries the same shapes the world already knows about, so furniture can be
 // stairs and slabs rather than a pile of cubes.
-function mcBuildMap(msg) {
+// Wipe whatever world is standing, so a map can be laid down on nothing.
+function mcClearWorld() {
   mpOverrides.clear();
   doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear();
   signMeta.clear(); clearSignObjs(); prgMeta.clear(); clearPrgObjs();
   trapdoorMeta.clear(); slabMeta.clear(); potMeta.clear(); attachMeta.clear(); redOn.clear();
+}
+// Somebody else's block, put into the world here. The override is what a chunk is
+// built from, so it goes in first; a chunk that is already standing then has to be
+// told separately, or the change stays invisible until that chunk is rebuilt.
+function mcApplyEdit(x, y, z, name) {
+  const b = name ? (BLOCKS[name] ? BLOCKS[name].id : 0) : 0;
+  mpApplyRemoteBlock(x, y, z, b);
+  remeshChunkAt(x, z);
+}
+// Drop every built chunk, so the next look at the world rebuilds it from the overrides.
+function mcDropChunks() {
+  for (const [, c] of chunks) { if (c.mesh) scene.remove(c.mesh); if (c.cmesh) scene.remove(c.cmesh); if (c.tmesh) scene.remove(c.tmesh); }
+  chunks.clear(); genQueue = [];
+}
+// One map's blocks, laid on top of whatever is already there. The map editor calls
+// this once per plot; a round calls it once, on a cleared world.
+function mcApplyMap(msg) {
   const ids = (msg.palette || []).map(n => { const b = BLOCKS[n]; return b ? b.id : 0; });
   for (const k in msg.blocks) {
     const v = msg.blocks[k];
@@ -8316,18 +8349,88 @@ function mcBuildMap(msg) {
     mpSetOverride(x, y, z, id);
     if (meta && meta.dr) mpSetOverride(x, y + 1, z, id);   // a door is two cells tall
   }
-  // the overlay of admin edits, laid over the built map so a joiner sees the same
-  // world as everyone who has been here a while
+  // the overlay of edits, laid over the built map so a joiner sees the same world
+  // as everyone who has been here a while
   for (const k in (msg.edits || {})) {
     const nm = msg.edits[k], c = k.split(',');
     const b = nm ? (BLOCKS[nm] ? BLOCKS[nm].id : 0) : 0;
     mpSetOverride(+c[0], +c[1], +c[2], b);
   }
+}
+/* ---- the Mecha Map Editor -------------------------------------------------
+   A separate entry in the server list, behind a password. It is not a round: the
+   four maps are laid out as four plots of land and you fly over them and build,
+   the way you would on any creative server. Every block goes to the real Mecha
+   Chameleon maps, so the map you leave behind is the one the next round is on. */
+const med = { active: false, pw: '', maps: [] };
+function medInit(m) {
+  if (serversEl) serversEl.hidden = true;
+  if (typeof pwPromptEl !== 'undefined' && pwPromptEl) pwPromptEl.hidden = true;
+  mp._pwFlow = false;
+  wipeWorldEntities();
+  med.active = true; mcMode = true;                 // a void world: only what the maps put there
+  mp.id = m.id; mp.name = m.name;
+  med.maps = (m.maps || []).map(x => ({ id: x.id, name: x.name, ox: x.ox | 0, y0: x.y0 | 0 }));
+  mpClearPlayers();
+  mcClearWorld();
+  for (const one of (m.maps || [])) mcApplyMap(one);
+  mcDropChunks();
+  seed = 7373 >>> 0; noise = makeNoise(seed);
+  startGame();
+  for (const p of (m.players || [])) mpAddPlayer(p);
+  mpSendSkin();
+  const at = m.at || { x: 14.5, y: 50, z: 14.5 };
+  mcStand(at.x, at.y, at.z);
+  player.flying = true;                             // you arrive in the air, over the first plot
+  medUi();
+  chatPush('Mecha Map Editor. Four plots, one per map. Build on them and the game uses what you leave.', 'sys');
+  chatPush('Anything you place during a round is shown to the players when that round ends.', 'sys');
+}
+function medHandle(m) {
+  if (m.type === 'mcedit') { mcApplyEdit(m.x, m.y, m.z, m.block); return true; }
+  return false;
+}
+// a line along the top saying which plot you are standing over
+let medBarEl = null;
+function medUi() {
+  if (!medBarEl) {
+    medBarEl = document.createElement('div');
+    medBarEl.style.cssText = 'position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:12;' +
+      'font-size:12px;letter-spacing:2px;color:#dfe8df;background:rgba(10,14,10,.55);padding:4px 12px;pointer-events:none';
+    document.body.appendChild(medBarEl);
+  }
+  medBarEl.style.display = med.active ? 'block' : 'none';
+}
+function medFrame() {
+  if (!med.active || !medBarEl) return;
+  let where = 'between the plots';
+  for (const one of med.maps) if (Math.abs(player.pos.x - (one.ox + 14)) < 24) { where = one.name; break; }
+  medBarEl.textContent = 'MAP EDITOR - ' + where.toUpperCase();
+}
+function medLeave() {
+  med.active = false; mp.med = false; mcMode = false; med.maps = [];
+  if (medBarEl) medBarEl.style.display = 'none';
+}
+function startMapEditor(pw) {
+  if (mp.ws) { try { mp.ws.close(); } catch (e) {} mp.ws = null; }
+  if (typeof createServerEl !== 'undefined' && createServerEl) createServerEl.hidden = true;
+  if (pollMiniEl) pollMiniEl.hidden = true;
+  mp.bw = false; bw.active = false; bwMode = false; if (typeof bwLeaveUi === 'function') bwLeaveUi();
+  mp.bb = false; bb.active = false; bbMode = false; if (typeof bbLeaveUi === 'function') bbLeaveUi();
+  mp.mc = false; mc.active = false; if (typeof mcLeaveUi === 'function') { mcLeaveUi(); mcSetSize(false); }
+  mp.med = true; med.pw = pw || '';
+  mpConnect();
+}
+
+function mcBuildMap(msg) {
+  mcClearWorld();
+  mcApplyMap(msg);
   mc.bounds = msg.bounds || null;
   mc.spawn = msg.spawn || null;
+  mc.ox = msg.ox | 0; mc.y0 = msg.y0 | 0;
   mc.mapId = msg.id; mc.mapName = msg.name;
-  for (const [, c] of chunks) { if (c.mesh) scene.remove(c.mesh); if (c.cmesh) scene.remove(c.cmesh); if (c.tmesh) scene.remove(c.tmesh); }
-  chunks.clear(); genQueue = [];
+  mcBuildWaitRoom();          // the seekers' room comes with every map, off in the dark
+  mcDropChunks();
 }
 
 // Before the first map of the session arrives there is nothing under anybody's feet:
@@ -8335,6 +8438,62 @@ function mcBuildMap(msg) {
 // Give them a pad to wait on. The first mcmap wipes it, and after that the last map
 // stays built between rounds, so this only ever runs on the way in.
 const MC_LOBBY = { x: 8, y: 40, z: 8, r: 8 };
+// Where a seeker sits out the hiding window. Five hundred blocks from anything, so it
+// never renders from a village: the last version of this was a room over the map and
+// the first thing anyone said was that there was a house floating above them.
+const MC_WAIT = { x: 8, y: 40, z: -512, r: 5 };
+// It is built alongside whichever map arrives, and is the same room every time.
+function mcBuildWaitRoom() {
+  const W = MC_WAIT, R = W.r;
+  const put = (x, y, z, name, meta) => {
+    const b = BLOCKS[name]; if (!b) return;
+    const k = x + ',' + y + ',' + z;
+    if (meta) {
+      if (meta.s) slabMeta.set(k, { top: !!meta.t, double: false });
+      else if (meta.a) attachMeta.set(k, { m: meta.m | 0, f: meta.f | 0, on: false });
+      else if (meta.f !== undefined) stairMeta.set(k, { facing: meta.f | 0, top: !!meta.t });
+    }
+    mpSetOverride(x, y, z, b.id);
+  };
+  for (let dx = -R; dx <= R; dx++) for (let dz = -R; dz <= R; dz++) {
+    const edge = Math.abs(dx) === R || Math.abs(dz) === R;
+    put(W.x + dx, W.y - 1, W.z + dz, edge ? 'stone_bricks' : ((dx + dz) & 1 ? 'polished_andesite' : 'smooth_stone'));
+    put(W.x + dx, W.y + 5, W.z + dz, 'dark_oak_planks');        // a lid: nobody peeks out
+    if (!edge) continue;
+    for (let y = 0; y <= 4; y++) {
+      const corner = Math.abs(dx) === R && Math.abs(dz) === R;
+      put(W.x + dx, W.y + y, W.z + dz, corner ? 'dark_oak_log' : 'stone_bricks');
+    }
+  }
+  // a bench round three sides and a lamp in each corner, so it is a room to wait in
+  for (let d = -R + 2; d <= R - 2; d++) {
+    put(W.x + d, W.y, W.z - R + 1, 'dark_oak_stairs', { f: 0, t: 0 });
+    put(W.x - R + 1, W.y, W.z + d, 'dark_oak_stairs', { f: 3, t: 0 });
+    put(W.x + R - 1, W.y, W.z + d, 'dark_oak_stairs', { f: 1, t: 0 });
+  }
+  for (const c of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    const x = W.x + c[0] * (R - 1), z = W.z + c[1] * (R - 1);
+    put(x, W.y + 4, z, 'lantern', { a: 1, m: 0, f: 0 });
+  }
+  put(W.x, W.y, W.z, 'red_carpet', { s: 1, t: 0 });
+}
+// The middle of the map you are in, on the ground, which is where the void puts you
+// back. The plot is 28 across, so its centre is 14: if that square is somehow blocked
+// the round's own spawn is the fallback, because that one is checked to be standable.
+function mcCentre() {
+  const ox = mc.ox || 0, y0 = mc.y0 || 40;
+  const solid = (x, y, z) => { const b = getBlock(Math.floor(x), y, Math.floor(z)); return !!(b && BLOCKS[b] && BLOCKS[b].solid); };
+  const tries = [[14.5, 14.5]];
+  if (mc.spawn) tries.push([mc.spawn.x + 0.5, mc.spawn.z + 0.5]);
+  for (const [lx, lz] of tries) {
+    const x = ox + lx, z = lz;
+    for (let dy = 0; dy <= 8; dy++) {
+      const y = y0 + dy;
+      if (!solid(x, y, z) && !solid(x, y + 1, z) && solid(x, y - 1, z)) return { x: x, y: y, z: z };
+    }
+  }
+  return { x: ox + 14.5, y: y0 + 3, z: 14.5 };
+}
 function mcBuildLobby() {
   mpOverrides.clear();
   doorMeta.clear(); bedMeta.clear(); stairMeta.clear(); ladderMeta.clear();
@@ -8876,6 +9035,7 @@ function startMecha() {
   if (pollMiniEl) pollMiniEl.hidden = true;
   mp.bw = false; bw.active = false; bwMode = false; if (typeof bwLeaveUi === 'function') bwLeaveUi();
   mp.bb = false; bb.active = false; bbMode = false; if (typeof bbLeaveUi === 'function') bbLeaveUi();
+  if (typeof medLeave === 'function') medLeave();
   mp.mc = true; mc.active = true; mcMode = true;
   mcEnterUi();
   mpConnect();
@@ -8955,13 +9115,6 @@ function mcHandle(m) {
       return true;
     }
     case 'mcpose': { const p = mp.players.get(m.id); if (p) p.mcPose = m.pose | 0; return true; }
-    case 'mcbuilding': {                   // /prg: you have stepped out of the game
-      mc.build = !!m.on;
-      if (mc.build) { mcPaintClose(); mcSetSize(false); }
-      else if (!mc.mapId || mc.mapId === 'purpular') mcBuildLobby();   // nothing running: back to the lobby
-      mcHud();
-      return true;
-    }
     case 'mcediting': {
       mc.edit = !!m.on;
       if (mc.edit) mcPaintClose();
@@ -8969,9 +9122,7 @@ function mcHandle(m) {
       return true;
     }
     case 'mcedit': {                       // somebody's change, applied here as it happens
-      const b = m.block ? (BLOCKS[m.block] ? BLOCKS[m.block].id : 0) : 0;
-      mpSetOverride(m.x, m.y, m.z, b);
-      remeshChunkAt(m.x, m.z);
+      mcApplyEdit(m.x, m.y, m.z, m.block);
       return true;
     }
     case 'mcshot': mcTracer(m); return true;
@@ -9036,10 +9187,14 @@ function mcSweep() {
 /* ---- the frame ---- */
 function mcFrame(dt) {
   if (!mc.active) return;
-  if (!spec.on) player.flying = false;   // nobody flies in here, unless they are out of the round
-  const blind = mc.phase === 'hide' && mc.role === 'seeker' && mc.playing;
-  mcBlind(blind, (mc.deadline - performance.now()) / 1000);
+  if (!spec.on) player.flying = false;   // nobody flies in a round, unless they are out of it
   mcSetSize(mc.playing && mc.alive && mc.role === 'hider');
+  // the void has no floor: step off the edge and you are put back in the middle
+  if (player.pos.y < (mc.y0 || 40) - 14 && !spec.on) {
+    const c = mc.mapId ? mcCentre() : { x: MC_LOBBY.x + 0.5, y: MC_LOBBY.y, z: MC_LOBBY.z + 0.5 };
+    mcStand(c.x, c.y, c.z);
+    mcFeed('Out of the world. Back to the middle of the map.');
+  }
   mcSweep();
   const t = performance.now() / 1000;
   // everyone else, held in whatever pose they chose
@@ -9184,32 +9339,10 @@ function mcEnsureUi() {
 // A seeker used to be shut in a room for the hiding window. The room was geometry
 // nobody wanted to look at, above the map or under it, and all it did was stop them
 // seeing. Blacking out their own screen does the same job and leaves the map alone.
-let mcBlindEl = null;
-function mcBlind(on, left) {
-  if (!mcBlindEl) {
-    mcBlindEl = document.createElement('div');
-    mcBlindEl.style.cssText = 'position:fixed;inset:0;z-index:17;display:none;background:#050705;' +
-      'color:#cdf5cd;font-family:inherit;align-items:center;justify-content:center;flex-direction:column;gap:10px';
-    mcBlindEl.innerHTML = '<div style="font-size:22px;letter-spacing:3px">EYES SHUT</div>' +
-      '<div id="mcBlindSub" style="font-size:13px;color:#8fa08f"></div>' +
-      '<div id="mcBlindClk" style="font-size:40px;font-weight:700;font-variant-numeric:tabular-nums"></div>';
-    document.body.appendChild(mcBlindEl);
-  }
-  mcBlindEl.style.display = on ? 'flex' : 'none';
-  if (!on) return;
-  const sub = document.getElementById('mcBlindSub'), clk = document.getElementById('mcBlindClk');
-  if (sub) sub.textContent = 'The hiders are finding somewhere to be';
-  if (clk) clk.textContent = Math.max(0, Math.ceil(left)) + 's';
-}
-
 /* ---- a hider is half the size of everyone else -------------------------------
    Being small is the whole advantage: you fit under a bench, behind a fence post,
    inside a doorway. The hitbox shrinks with the model, or you would be caught by
    walls you can plainly see through. */
-// A jump that just clears a block and no more. Gravity here is 26, so v = sqrt(2*26*h)
-// and 7.45 reaches 1.07 blocks: enough for a step, not enough for a fence. The default
-// 8.4 reaches 1.36, which was clearing things the village needs you to walk round.
-const MC_JUMP = 7.45;
 const MC_SMALL = 0.5;      // how big a hider looks
 const MC_THIN = 0.28;      // and how wide they actually are, which is thinner still, so
                            // they can press into a doorway or a corner and half vanish
@@ -9218,7 +9351,8 @@ function mcSetSize(small) {
   if (mc.sized === want) return;
   mc.sized = want;
   player.w = 0.6 * (small ? MC_THIN : 1); player.h = 1.8 * want; player.eye = 1.62 * want;
-  if (body) body.scale.setScalar(0.9 * want);
+  // the body and the camera height are re-applied every frame from mc.sized, so there
+  // is nothing to set here beyond the collision box
   // growing back inside something would wedge you: lift until you are clear
   if (!small) for (let i = 0; i < 4 && collides(player.pos.x, player.pos.y, player.pos.z); i++) player.pos.y += 1;
 }
@@ -9291,7 +9425,6 @@ function mcHud() {
   const hiding = mc.playing && mc.alive && mc.role === 'hider';
   const seeking = mc.playing && mc.role === 'seeker';
   gear.innerHTML = mc.paint ? ''
-    : mc.build ? kb('/prg', 'building Purpular Village &mdash; type it again to rejoin')
     : hiding ? kb('V', 'pose: <em>' + escHtml((mc.poses[mc.pose] || {}).name || '') + '</em>') +
                kb('B', 'paint yourself')
     : seeking ? kb('F', 'shoot') + kb('R', 'reload')
@@ -9333,7 +9466,6 @@ function mcHud() {
       '<div><b>F</b> fire (seeker)</div>' +
       '<div><b>R</b> reload (seeker)</div>' +
       '<div><b>K</b> start a round</div>' +
-      '<div><b>/prg</b> build Purpular Village together</div>' +
       '<div><b>Q</b> change view</div>';
   }
 }
@@ -11452,10 +11584,6 @@ function closeChat(send){
       else if(!mp.active) chatPush('There is nobody else here to kick.', 'sys');
       else mpSend({type:'kick', name:who});
     }
-    else if(/^\/prg\b/i.test(v)){                                 // Purpular Village: everybody builds
-      if(!mc.active) chatPush('/prg is for Mecha Chameleon.', 'sys');
-      else mpSend({type:'mcbuild'});
-    }
     else if(/^\/edit\b/i.test(v)){                                // build in a Mecha Chameleon map
       if(!mc.active) chatPush('/edit is for the Mecha Chameleon maps.', 'sys');
       else if(!isAdmin()) chatPush('/edit is for admins.', 'sys');
@@ -11521,6 +11649,7 @@ function frame(now){
     if(bw.active) bwFrame(dt);
     if(bb.active){ bbTick(); bbCursor(); }
     if(mc.active) mcFrame(dt);
+    if(med.active) medFrame();
     if(mc.active || bw.active) specFrame();
     if(mp.active){                       // stream position, but only when it changes (idle heartbeat ~1 Hz)
       const nowMs=performance.now();
@@ -11568,7 +11697,8 @@ function frame(now){
   const cr = sit.active ? 0 : (player.crouch||0);
   body.position.set(player.pos.x, player.pos.y, player.pos.z);   // feet stay planted; the pelvis drop is done inside poseCharacter
   body.rotation.set(0, player.yaw + Math.PI, 0);         // the group no longer tilts; the upper body pivots at the waist instead
-  const localBodyScale = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : (fx.body==='block'||fx.body==='tree') ? 1.0 : 0.9;   // big/small/block/tree secret codes size your own body too
+  const localBodyScale = (fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : (fx.body==='block'||fx.body==='tree') ? 1.0 : 0.9)
+                       * (mc.sized || 1);   // big/small/block/tree secret codes size your own body too, and a mecha hider is half size
   body.scale.set(localBodyScale, localBodyScale, localBodyScale);
   const lud=body.userData;
   if(lud.isBlock || lud.isTree || lud.isProp){
@@ -11746,6 +11876,13 @@ window.__mc = {
   mcLoadMap(msg){ mcMode=true; mc.active=true; mcEnsureUi(); mcBuildMap(msg); return true; },
   mcStandAt(x,y,z){ mcStand(x,y,z); return true; },
   startMecha(){ startMecha(); },
+  startMapEditor(pw){ startMapEditor(pw); },
+  mcSizes(){ return { sized:mc.sized||1, w:+player.w.toFixed(3), h:+player.h.toFixed(3),
+    eye:+player.eye.toFixed(3), body:+body.scale.x.toFixed(3) }; },
+  mapEditor(){ return { active:med.active, maps:med.maps.map(m=>m.id),
+    blocks:(()=>{ let n=0; for(const [,m] of mpOverrides) n+=m.size; return n; })(),
+    bar:(medBarEl && medBarEl.style.display!=='none') ? medBarEl.textContent : '',
+    flying:!!player.flying, at:[+player.pos.x.toFixed(1), +player.pos.y.toFixed(1), +player.pos.z.toFixed(1)] }; },
   mecha(){ return { active:mc.active, phase:mc.phase, mapId:mc.mapId, role:mc.role, alive:mc.alive,
     playing:mc.playing, pose:mc.pose, hp:mc.hp, ammo:mc.ammo, score:mc.score,
     painted:mc.painted, poses:mc.poses.length, maps:mc.maps.map(x=>x.id), myVote:mc.myVote,
