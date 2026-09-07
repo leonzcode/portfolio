@@ -4775,8 +4775,13 @@ canvas.addEventListener('mousedown', e=>{
   if(mc.paint){
     e.preventDefault();
     if(e.button===2){ mc.paintOrbit=true; }
-    else if(e.button===0){ mc.paintDrag=true; mcPaintPick(e); }
+    else if(e.button===0){ mc.paintDrag=true; mcTipMove(e); mcPaintPick(e); }
     return;
+  }
+  // a seeker's gun is on the mouse as well as the keys: left fires, right reloads
+  if(mc.active && mc.role==='seeker' && mc.playing && state===PLAY && !chatOpen && !invOpen && !mc.edit){
+    if(e.button===0){ e.preventDefault(); mc.firing=true; mcFire(); return; }
+    if(e.button===2){ e.preventDefault(); mpSend({ type:'mcreload' }); return; }
   }
   if(state!==PLAY || sleep.active || signEditPos || pollBlocking) return;  // ignore clicks while in bed / editing a sign / answering the poll
   if(!pointerLocked){ canvas.requestPointerLock(); return; }
@@ -4784,6 +4789,7 @@ canvas.addEventListener('mousedown', e=>{
   firePress(token, e);                                     // attack / use / pick (or whatever is bound to this button)
 });
 addEventListener('mouseup', e=>{ keys['mouse'+e.button]=false;
+  if(mc.active && e.button===0) mc.firing=false;
   if(mc.paint){ if(e.button===2) mc.paintOrbit=false; if(e.button===0){ mc.paintDrag=false; mcSendSkin(true); } } });
 canvas.addEventListener('contextmenu', e=>e.preventDefault());
 // Controls screen: clicking a mouse button binds it (capture phase, so it beats the key-button's own click)
@@ -4809,6 +4815,7 @@ document.addEventListener('pointerlockchange', ()=>{
 });
 document.addEventListener('mousemove', e=>{
   if(mc.paint){
+    mcTipMove(e);
     if(mc.paintOrbit){
       mc.paintYaw -= e.movementX * 0.008;
       mc.paintPitch = Math.max(-1.35, Math.min(1.35, mc.paintPitch + e.movementY * 0.006));
@@ -5017,6 +5024,22 @@ function updatePlayer(dt){
   // integrate w/ per-axis collision (sliding)
   const grounded = player.onGround;   // support state carried from last frame
   let didStep = false;                 // auto-step at most once per tick
+  // A blocked move used to be refused outright, which left you standing wherever the
+  // frame began: up to a whole frame of travel short of the wall. That is the gap you
+  // cannot walk across. Take the largest part of the move that still fits instead, so
+  // you finish flush against it.
+  const slideUpTo = (axis,d)=>{
+    let lo=0, hi=d;
+    for(let i=0;i<10;i++){
+      const mid=(lo+hi)/2;
+      const q=player.pos.clone(); q[axis]+=mid;
+      if(collides(q.x,q.y,q.z)) hi=mid; else lo=mid;
+    }
+    if(lo===0) return;
+    const q=player.pos.clone(); q[axis]+=lo;
+    if((axis==='x'||axis==='z') && player.sneak && grounded && !groundUnder(q.x,q.z)) return;
+    player.pos[axis]=q[axis];
+  };
   const step = (axis,d)=>{
     if(d===0) return;
     const p=player.pos.clone(); p[axis]+=d;
@@ -5032,8 +5055,9 @@ function updatePlayer(dt){
         }
         player.vel.y=0;
       }
-      else if(!player.flying && grounded && !didStep && stepUpStair(p, axis)) didStep=true;   // walk up stairs
+      else if(!player.flying && grounded && !didStep && stepUpStair(p, axis)){ didStep=true; return; }   // walk up stairs
       else player.vel[axis]=0;
+      slideUpTo(axis, d);
       return;
     }
     // sneak edge protection: refuse a horizontal step that walks off a ledge
@@ -7220,7 +7244,8 @@ function mpUrl(){
   }
   if(mp.mc){                                        // mecha chameleon: separate round
     const nm=getSavedName();
-    return u + (u.indexOf('?')>=0?'&':'?') + 'mode=mecha' + (nm ? '&name='+encodeURIComponent(nm) : '');
+    return u + (u.indexOf('?')>=0?'&':'?') + 'mode=mecha' + (nm ? '&name='+encodeURIComponent(nm) : '')
+             + (isAdmin() ? '&admin=1' : '');
   }
   const p = new URLSearchParams();
   p.set('server', mpTarget.server || 'original');
@@ -8232,7 +8257,7 @@ document.getElementById('csCancelBtn').addEventListener('click', ()=>{ createSer
    place; this side builds it, draws it, and puts the whole game on the keyboard.
 
    Nothing here needs a mouse cursor except the brush: the map vote, the pose
-   you hold, taunting, reloading and firing are all keys. */
+   you hold, reloading and firing are all keys. */
 let mcMode = false;                 // makes chunk generation produce void, like Bed Wars
 const mc = {
   active: false, phase: 'lobby', left: 0, deadline: 0,
@@ -8388,7 +8413,7 @@ function mcSendSkin(now) {
   const t = performance.now();
   if (!now && t - mcSkinSendAt < 700) { mcSkinSendTimer = setTimeout(() => mcSendSkin(true), 720); return; }
   mcSkinSendAt = t;
-  mpSend({ type: 'skin', png: mcSkinCanvas.toDataURL(), slim: false, cape: '' });
+  mpSend({ type: 'mcskin', png: mcSkinCanvas.toDataURL(), slim: false });
 }
 
 /* ---- painting yourself, in the world rather than in a menu -----------------
@@ -8408,18 +8433,36 @@ const mcPixel = new Uint8Array(4);
 const mcRay = new THREE.Raycaster();
 let mcPaintUiBuilt = false;
 
+let mcTipEl = null;
 function mcPaintCursor() {
-  if (!mc.paint) { canvas.style.cursor = ''; document.body.style.cursor = ''; return; }
-  // the cursor is a chip of the colour you are holding, so you never look away to check
-  const c = document.createElement('canvas'); c.width = c.height = 24;
-  const g = c.getContext('2d');
-  const n = Math.max(6, Math.min(18, 6 + mc.paintSize * 4));
-  const o = (24 - n) / 2;
-  g.fillStyle = '#000000'; g.fillRect(o - 2, o - 2, n + 4, n + 4);
-  g.fillStyle = '#ffffff'; g.fillRect(o - 1, o - 1, n + 2, n + 2);
-  g.fillStyle = mc.paintColor; g.fillRect(o, o, n, n);
-  const url = 'url(' + c.toDataURL() + ') 12 12, crosshair';
-  canvas.style.cursor = url; document.body.style.cursor = url;
+  if (!mcTipEl) {
+    mcTipEl = document.createElement('div');
+    mcTipEl.style.cssText = 'position:fixed;z-index:16;pointer-events:none;display:none;' +
+      'transform:translate(-50%,-50%);border:2px solid #000;outline:1px solid #fff';
+    document.body.appendChild(mcTipEl);
+  }
+  const cross = document.getElementById('cross');
+  if (!mc.paint) {
+    canvas.style.cursor = ''; document.body.style.cursor = '';
+    mcTipEl.style.display = 'none';
+    if (cross) cross.style.display = '';
+    return;
+  }
+  // A cursor image is placed by a hotspot the browser is free to ignore, which put the
+  // chip somewhere other than the point the pick actually used. This chip is ours, set
+  // at the very coordinates the raycast is handed, so the two cannot disagree. The
+  // game crosshair goes away too: it is a second thing to aim with, and it is not it.
+  canvas.style.cursor = 'crosshair'; document.body.style.cursor = 'crosshair';
+  const n = 6 + mc.paintSize * 4;
+  mcTipEl.style.width = n + 'px'; mcTipEl.style.height = n + 'px';
+  mcTipEl.style.background = mc.paintColor;
+  mcTipEl.style.display = 'block';
+  if (cross) cross.style.display = 'none';
+}
+function mcTipMove(ev) {
+  if (!mcTipEl || !mc.paint) return;
+  mcTipEl.style.left = ev.clientX + 'px';
+  mcTipEl.style.top = ev.clientY + 'px';
 }
 
 function mcPaintEnsureUi() {
@@ -8488,8 +8531,8 @@ function mcPaintOpen() {
   mc.paint = true; mc.paintDrag = false; mc.paintOrbit = false; mc.paintDist = MC_PAINT_DIST;
   mcPaintEnsureUi(); mcPaintUi(); mcPaintCursor();
   mc.camWas = camMode;                       // whatever view you were in, you get it back
-  mc.paintYaw = player.yaw; mc.paintPitch = 0.12;   // start face on
-  camMode = 2; body.visible = true;
+  mc.paintYaw = player.yaw + Math.PI; mc.paintPitch = 0.12;   // start behind you
+  camMode = 1; body.visible = true;
   try { if (document.exitPointerLock) document.exitPointerLock(); } catch (e) {}
   mcHud();
 }
@@ -8550,19 +8593,62 @@ function mcFloodFill(px, py, part) {
 // Lift the colour of whatever is under the cursor, anywhere on screen: a plank
 // wall, a patch of grass, your own sleeve. Reading the drawing buffer needs the
 // frame to be fresh, so draw one first and read it in the same go.
+// A lit face is not the colour of the block: the sun, the ambient light and the
+// corner shading all move it, so reading the pixel gave colours far darker than the
+// wall being pointed at. Take the block's own texture instead.
+function mcBlockInk(id) {
+  const bl = BLOCKS[id]; if (!bl) return null;
+  const tile = faceTile(bl, 0);
+  const col = tile % ATLAS_COLS, row = (tile / ATLAS_COLS) | 0;
+  let d; try { d = actx.getImageData(col * TILE, row * TILE, TILE, TILE).data; } catch (e) { return null; }
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 40) continue; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+  return n ? [(r / n) | 0, (g / n) | 0, (b / n) | 0] : null;
+}
+// walk the ray a step at a time and return the first block it runs into
+function mcRayBlock(origin, dir, far) {
+  for (let t = 0.2; t < far; t += 0.06) {
+    const x = Math.floor(origin.x + dir.x * t), y = Math.floor(origin.y + dir.y * t), z = Math.floor(origin.z + dir.z * t);
+    const b = getBlock(x, y, z);
+    if (b && BLOCKS[b] && BLOCKS[b].solid && !BLOCKS[b].door) return b;
+  }
+  return 0;
+}
+function mcSetColor(rgb) {
+  mc.paintColor = '#' + rgb.map(function (v) {
+    return Math.max(0, Math.min(255, v | 0)).toString(16).padStart(2, '0');
+  }).join('');
+  mc.paintTool = 'brush'; mcPaintUi(); mcPaintCursor();
+}
 function mcPickScreen(ev) {
   const r = canvas.getBoundingClientRect();
   const x = Math.round((ev.clientX - r.left) * (canvas.width / r.width));
   const y = Math.round((ev.clientY - r.top) * (canvas.height / r.height));
   if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return false;
+  // your own skin first: pointing at a sleeve should hand back that exact texel
+  const nx = ((ev.clientX - r.left) / r.width) * 2 - 1;
+  const ny = -((ev.clientY - r.top) / r.height) * 2 + 1;
+  mcRay.setFromCamera({ x: nx, y: ny }, camera);
+  const hits = body ? mcRay.intersectObject(body, true) : [];
+  for (const h of hits) {
+    if (!h.uv) continue;
+    const tx = Math.floor(h.uv.x * 64), ty = Math.floor((1 - h.uv.y) * 64);
+    if (tx < 0 || ty < 0 || tx > 63 || ty > 63) continue;
+    const d = mcSkinCtx.getImageData(tx, ty, 1, 1).data;
+    if (d[3] > 8) { mcSetColor([d[0], d[1], d[2]]); return true; }
+    break;
+  }
+  // then the world, by the block rather than by the lit pixel
+  const hit = mcRayBlock(mcRay.ray.origin, mcRay.ray.direction, 48);
+  const ink = hit ? mcBlockInk(hit) : null;
+  if (ink) { mcSetColor(ink); return true; }
+  // and if it is nothing but sky, fall back to what is on screen
   try {
     renderer.render(scene, camera);
     const gl = renderer.getContext();
     gl.readPixels(x, canvas.height - 1 - y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, mcPixel);
   } catch (e) { return false; }
-  mc.paintColor = '#' + [mcPixel[0], mcPixel[1], mcPixel[2]]
-    .map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
-  mc.paintTool = 'brush'; mcPaintUi(); mcPaintCursor();
+  mcSetColor([mcPixel[0], mcPixel[1], mcPixel[2]]);
   return true;
 }
 
@@ -8579,6 +8665,7 @@ function mcPaintPick(ev) {
     if (!h.uv) continue;
     const px = Math.floor(h.uv.x * 64), py = Math.floor((1 - h.uv.y) * 64);
     if (px < 0 || py < 0 || px > 63 || py > 63) continue;
+    mc.lastTexel = [px, py];
     if (mcPaintAt(px, py)) mcSendSkin(false);
     return true;
   }
@@ -8801,6 +8888,7 @@ function mcHandle(m) {
         const p = mp.players.get(q.id);
         if (!p) continue;
         p.mcRole = q.role; p.mcAlive = q.alive; p.mcPlaying = q.playing; p.mcPose = q.pose | 0;
+        if (q.skin && p.mcSkinSeen !== q.skin) { p.mcSkinSeen = q.skin; applyRemoteSkin(q.id, q.skin, false); }
         mcSetLook(p);
         if (p.tag) p.tag.visible = !(q.role === 'hider' && q.alive);   // a hider has no name over them
       }
@@ -8828,10 +8916,9 @@ function mcHandle(m) {
       mcHud();
       return true;
     }
-    case 'mctaunt': {
-      mcMark(m.x, m.y + 1.6, m.z, m.forced ? 0xffd54a : 0x8dffa0);
-      if (m.forced) mcFeed('Something rattled...');
-      else mcFeed((m.name || 'someone') + ' taunted');
+    case 'mcreveal': {                   // every so often a hider gives themselves away
+      mcMark(m.x, m.y + 1.6, m.z, 0xffd54a);
+      mcFeed('Something rattled...');
       return true;
     }
     case 'mcreload': { mc.reloadUntil = performance.now() + (m.ms || 1800); mcHud(); return true; }
@@ -8903,7 +8990,7 @@ function mcFrame(dt) {
 
 /* ---- what the keys do ---- */
 // Every one of these is a key, on purpose: the brief was that the mouse cursor is
-// only wanted for painting, so the vote, the pose, the taunt and the gun are all keys.
+// only wanted for painting, so the vote, the pose and the gun are all keys.
 function mcKey(k, e) {
   if (!mc.active || state !== PLAY || chatOpen || invOpen) return false;
   if (mc.paint) {                          // painting takes the keyboard until you stop
@@ -8925,7 +9012,10 @@ function mcKey(k, e) {
   if (mc.playing && mc.alive && k === 'b') { if (mc.paint) mcPaintClose(); else mcPaintOpen(); return true; }
   if (mc.role === 'hider' && mc.alive && mc.playing) {
     if (k >= '1' && k <= '6') { mc.pose = +k - 1; mpSend({ type: 'mcpose', pose: mc.pose }); mcHud(); return true; }
-    if (k === 'v') { mpSend({ type: 'mctaunt' }); return true; }
+    if (k === 'v') {                       // step to the next pose, rather than counting keys
+      mc.pose = (mc.pose + 1) % Math.max(1, mc.poses.length);
+      mpSend({ type: 'mcpose', pose: mc.pose }); mcHud(); return true;
+    }
   }
   if (mc.role === 'seeker') {
     if (k === 'r') { mpSend({ type: 'mcreload' }); return true; }
@@ -8971,9 +9061,13 @@ function mcEnsureUi() {
    #mcVote .row .nm{flex:1;font-size:14px;color:#eaf5ea}
    #mcVote .row .bl{font-size:11.5px;color:#9ab39a}
    #mcVote .row .n{font-size:14px;font-weight:700;color:#8dffa0;min-width:22px;text-align:right}
-   #mcGear{position:absolute;left:12px;bottom:92px;display:flex;flex-direction:column;gap:5px}
-   #mcGear .b{background:rgba(10,14,10,.6);border:1px solid rgba(140,190,140,.3);padding:4px 9px;font-size:12.5px;color:#dff0df}
-   #mcGear .b b{color:#fff}
+   #mcGear{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;
+     flex-wrap:wrap;justify-content:center;gap:6px;max-width:min(760px,94vw)}
+   #mcGear .b{display:flex;align-items:center;gap:7px;background:rgba(10,14,10,.72);
+     border:2px solid rgba(120,200,120,.32);padding:5px 11px 5px 6px;font-size:12.5px;color:#dff0df;white-space:nowrap}
+   #mcGear .b .k{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;
+     padding:0 5px;background:#cdf5cd;color:#0f140f;font-weight:700;font-size:11.5px;letter-spacing:.5px}
+   #mcGear .b em{font-style:normal;color:#fff;font-weight:600}
    #mcGun{position:absolute;right:14px;bottom:92px;text-align:right}
    #mcGun .ammo{font-size:26px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums}
    #mcGun .ammo small{font-size:14px;color:#9ab39a;font-weight:600}
@@ -9069,32 +9163,38 @@ function mcHud() {
   // what a hider is wearing, or what a seeker is holding
   const gear = document.getElementById('mcGear');
   const gun = document.getElementById('mcGun');
-  const kb = (k, what) => '<b>' + k + '</b> ' + what;
+  // a key chip: the key itself, then what it does, so it reads as a button to press
+  const kb = (k, what) => '<div class="b"><span class="k">' + k + '</span>' + what + '</div>';
+  if (mc.paint) { gear.innerHTML = ''; gun.innerHTML = ''; }
+  else
   if (mc.phase === 'vote') {
-    gear.innerHTML = '<div class="b">' + kb('1-' + mc.maps.length, 'vote for a map') + '</div>' +
-                     '<div class="b">' + kb('H', 'all the keys') + '</div>';
+    gear.innerHTML = kb('1-' + mc.maps.length, 'vote for a map') + kb('H', 'all the keys');
     gun.innerHTML = '';
   } else if (mc.phase === 'lobby' || mc.phase === 'starting') {
-    gear.innerHTML = '<div class="b">' + kb('K', 'start a round') + '  ·  ' + kb('H', 'all the keys') + '</div>';
+    gear.innerHTML = kb('K', 'start a round') + kb('H', 'all the keys');
     gun.innerHTML = '';
   } else if (mc.playing && mc.role === 'hider' && mc.alive) {
     const pose = (mc.poses[mc.pose] || {}).name || '';
     gear.innerHTML =
-      '<div class="b">Pose <b>' + escHtml(pose) + '</b>  <small>1-' + mc.poses.length + '</small></div>' +
-      '<div class="b">' + kb('B', 'paint yourself') + '  ·  ' + kb('V', 'taunt') + '</div>' +
-      '<div class="b">' + kb('Q', 'change view') + '  ·  ' + kb('H', 'all the keys') + '</div>';
+      kb('V', 'pose: <em>' + escHtml(pose) + '</em>') +
+      kb('B', 'paint yourself') +
+      kb('Q', 'change view') +
+      kb('H', 'all the keys');
     gun.innerHTML = '';
   } else if (mc.playing && mc.role === 'seeker') {
-    gear.innerHTML = '<div class="b">' + kb('F', 'fire') + '  ·  ' + kb('R', 'reload') + '</div>' +
-                     '<div class="b">' + kb('B', 'paint yourself') + '  ·  ' + kb('Q', 'change view') + '</div>' +
-                     '<div class="b">' + kb('H', 'all the keys') + '</div>';
+    gear.innerHTML =
+      kb('F', 'fire <em>or left-click</em>') +
+      kb('R', 'reload <em>or right-click</em>') +
+      kb('B', 'paint yourself') +
+      kb('Q', 'change view') +
+      kb('H', 'all the keys');
     const reloading = t < mc.reloadUntil, stunned = t < mc.stunUntil;
     gun.innerHTML =
       '<div class="ammo">' + (reloading ? '--' : mc.ammo) + ' <small>/ ' + mc.ammoMax + '</small></div>' +
       '<div class="hp">' + mc.hp + ' hp</div>' +
       (stunned ? '<div class="st">JAMMED</div>' : reloading ? '<div class="st">RELOADING</div>' : '');
   } else {
-    gear.innerHTML = '<div class="b">' + kb('H', 'all the keys') + '</div>';
+    gear.innerHTML = kb('H', 'all the keys');
     gun.innerHTML = '';
   }
 
@@ -9118,12 +9218,12 @@ function mcHud() {
       '<div><b>H</b> hide this list</div>' +
       '<div><b>W A S D</b> move  ·  <b>Space</b> jump</div>' +
       '<div><b>1-6</b> pose, or vote for a map</div>' +
-      '<div><b>V</b> taunt</div>' +
+      '<div><b>V</b> next pose</div>' +
       '<div><b>B</b> paint yourself, in the world</div>' +
       '<div><b>F</b> fire (seeker)</div>' +
       '<div><b>R</b> reload (seeker)</div>' +
       '<div><b>K</b> start a round</div>' +
-      '<div><b>Q</b> also flips the camera when you are not hiding</div>';
+      '<div><b>Q</b> change view</div>';
   }
 }
 
@@ -11546,6 +11646,16 @@ window.__mc = {
   mcBlockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
   mcLookKind(){ return mc.localKind || ''; },
   mcCam(n){ camMode = n|0; return camMode; },
+  rawPlayers(){ return mp.players; },
+  mcProject(part){ const u=body.userData; const o = part==='head' ? u.headPivot : part==='armL' ? u.armL : part==='legL' ? u.legL : u.upper;
+    // the visible middle of the part, not its joint: limbs hang from their pivots, so
+    // a leg's origin is up at the hip and projecting it lands you on the torso
+    const v=new THREE.Box3().setFromObject(part==='upper' ? u.upper.children[0] : o).getCenter(new THREE.Vector3());
+    v.project(camera);
+    const r=canvas.getBoundingClientRect();
+    return { x: r.left + (v.x*0.5+0.5)*r.width, y: r.top + (-v.y*0.5+0.5)*r.height }; },
+  mcPickAt(sx,sy){ const before=mc.painted; mcPaintPick({ clientX:sx, clientY:sy });
+    return { painted: mc.painted !== before, texel: mc.lastTexel || null }; },
   spec(){ return { can:specCan(), on:spec.on, id:spec.id, ghost:!!fx.ghost, flying:!!player.flying,
     targets:specTargets(), shown:(()=>{ const e=document.querySelector('div[style*="SPECTATING"]'); return !!specEl && specEl.style.display==='block'; })() }; },
   specForce(on){ specSet(!!on); return spec.on; },
