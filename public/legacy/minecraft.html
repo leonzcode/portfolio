@@ -4731,7 +4731,13 @@ addEventListener('keydown', e=>{
       e.preventDefault(); return;
     } }
   if(mc.active && mc.role==='seeker' && k==='f' && state===PLAY && !chatOpen && !invOpen) mc.firing=true;
-  if(spec.on && (k==='n' || k==='m') && state===PLAY && !chatOpen && !invOpen){ e.preventDefault(); specCycle(k==='m'?1:-1); return; }
+  // N is the hider's whistle, so a locked hider cycles with the arrow keys instead;
+  // a spectator has no whistle and keeps N and M as well.
+  if(typeof specFree==='function' && specFree() && state===PLAY && !chatOpen && !invOpen && !mc.paint){
+    if(k==='arrowleft'){ e.preventDefault(); specCycle(-1); return; }
+    if(k==='arrowright'){ e.preventDefault(); specCycle(1); return; }
+    if(spec.on && (k==='n' || k==='m')){ e.preventDefault(); specCycle(k==='m'?1:-1); return; }
+  }
   if(mc.active && mcKey(k, e)){ e.preventDefault(); return; }   // this mode's keys win over the bindings
   firePress(k, e);   // run any rebindable action (inventory, chat, fly, attack, use, ...) assigned to this key
   if(bb.active && state===PLAY && !invOpen && !chatOpen){
@@ -4808,11 +4814,34 @@ addEventListener('mousedown', e=>{
 addEventListener('contextmenu', e=>{ const el=e.target; if(el && (el.tagName==='INPUT'||el.tagName==='TEXTAREA')) return; e.preventDefault(); });   // no browser right-click menu over the game / shop
 // guard against an accidental Ctrl+W / tab close mid-game (browsers only allow a confirmation prompt, not a hard block)
 addEventListener('beforeunload', e=>{ if(typeof state!=='undefined' && (state===PLAY || (typeof bw!=='undefined' && bw.active))){ e.preventDefault(); e.returnValue=''; } });
+// A pinch on a Mac or Chromebook trackpad arrives here as a wheel event with ctrl
+// held, and its steps are small and frequent rather than one notch at a time. Take
+// it as a zoom, and stop the browser from zooming the whole page with it, which is
+// what it does with a pinch over any other part of a page.
 canvas.addEventListener('wheel', e=>{
   if(state!==PLAY) return;
-  if(mc.paint){ mcPaintZoom(e.deltaY>0 ? 1 : -1); return; }
+  const pinch = e.ctrlKey;
+  if(pinch && e.cancelable) e.preventDefault();
+  if(mc.paint){
+    if(e.cancelable) e.preventDefault();
+    mcPaintZoom(pinch ? e.deltaY/22 : (e.deltaY>0 ? 1 : -1));
+    return;
+  }
+  if(pinch) return;                       // a pinch is not a way to change your hotbar slot
   selectSlot(selSlot + (e.deltaY>0?1:-1));
-}, {passive:true});
+}, {passive:false});
+// Safari sends its own gesture events for the same pinch instead of a ctrl-wheel.
+let mcGestScale = 1;
+canvas.addEventListener('gesturestart', e=>{ if(state===PLAY){ if(e.cancelable) e.preventDefault(); mcGestScale = e.scale || 1; } });
+canvas.addEventListener('gesturechange', e=>{
+  if(state!==PLAY) return;
+  if(e.cancelable) e.preventDefault();
+  if(!mc.paint) return;
+  const now = e.scale || 1;
+  mcPaintZoom((mcGestScale - now) * 6);
+  mcGestScale = now;
+});
+canvas.addEventListener('gestureend', e=>{ if(state===PLAY && e.cancelable) e.preventDefault(); });
 
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = document.pointerLockElement===canvas;
@@ -5064,6 +5093,9 @@ function updatePlayer(dt){
   const step = (axis,d)=>{
     if(d===0) return;
     const p=player.pos.clone(); p[axis]+=d;
+    // Watching from outside the game, or flying while your body waits somewhere else:
+    // walls are not yours to bump into.
+    if(mcFreeCam()){ player.pos[axis]=p[axis]; return; }
     if(collides(p.x,p.y,p.z)){
       if(axis==='y'){
         if(d<0){ player.onGround=true;
@@ -8318,7 +8350,7 @@ const mc = {
   mapId: '', mapName: '', maps: [], votes: {}, myVote: '',
   poses: [], pose: 0, painted: false, help: false, helpSeen: false, sized: 1,
   edit: false, build: false,
-  pings: [],
+  pings: [], locked: false, lockAt: null,
   paint: false, paintColor: '#b3271f', paintH: 0.01, paintS: 0.83, paintV: 0.7,
   paintSize: 2, paintTool: 'brush',
   paintDrag: false, paintOrbit: false, paintDist: 4.2,
@@ -8821,7 +8853,7 @@ function mcPaintEnsureUi() {
   el.innerHTML = '<div class="row">' + wells + '<div class="sep"></div>' + tools +
                  '<div class="sep"></div>' + sizes + '<div class="sep"></div>' + mixer + '</div>' +
                  '<div class="hint">Drag to paint  &middot;  <b>right-drag</b> swings the camera round you  &middot;  ' +
-                 '<b>scroll</b> or <b>&minus;</b>&thinsp;/&thinsp;<b>=</b> zooms  &middot;  ' +
+                 '<b>scroll</b>, <b>pinch</b> or <b>9</b>&thinsp;/&thinsp;<b>0</b> zooms  &middot;  ' +
                  '<b>B</b> or <b>Esc</b> when you are done</div>';
   document.body.appendChild(el);
   el.addEventListener('mousedown', function (e) { e.stopPropagation(); });
@@ -8852,8 +8884,11 @@ function mcPaintUi() {
 }
 
 const MC_PAINT_DIST = 4.2;               // the same distance the third-person camera normally sits at
+// dir is how far, not which way: one notch of a wheel is 1, a pinch is a fraction
+// of one, so the same call serves both.
 function mcPaintZoom(dir) {
-  mc.paintDist = Math.max(1.3, Math.min(9, mc.paintDist + dir * 0.45));
+  if (!isFinite(dir)) return;
+  mc.paintDist = Math.max(1.3, Math.min(9, mc.paintDist + Math.max(-3, Math.min(3, dir)) * 0.45));
 }
 function mcPaintOpen() {
   if (mc.paint) return;
@@ -9207,23 +9242,56 @@ function specCycle(dir) {
   spec.id = (j < 0) ? null : list[j];
   specHud();
 }
-function specWatching() { return (spec.on && spec.id != null) ? mp.players.get(spec.id) : null; }
+// A locked hider is watching too: their body is holding still somewhere and their
+// eyes are free, which is the same thing a spectator has.
+function specFree() { return spec.on || (mc.active && mc.locked); }
+function specWatching() { return (specFree() && spec.id != null) ? mp.players.get(spec.id) : null; }
 
 let specEl = null;
 function specHud() {
   if (!specEl) {
+    const css = document.createElement('style');
+    css.textContent = [
+      '#mcSpecBar{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:14;display:none;',
+      ' align-items:center;gap:0;background:rgba(10,14,10,.72);border:2px solid rgba(120,200,120,.34);',
+      ' color:#cdf5cd;font-family:inherit;user-select:none}',
+      '#mcSpecBar .arw{width:44px;height:44px;display:flex;flex-direction:column;align-items:center;',
+      ' justify-content:center;cursor:pointer;color:#dff5df;background:rgba(255,255,255,.05)}',
+      '#mcSpecBar .arw:hover{background:rgba(141,255,160,.16)}',
+      '#mcSpecBar .arw b{font-size:20px;line-height:1}',
+      '#mcSpecBar .arw i{font-size:10px;font-style:normal;color:#8fa08f;letter-spacing:1px}',
+      '#mcSpecBar .who{padding:0 18px;text-align:center;min-width:210px}',
+      '#mcSpecBar .who .t{font-size:11px;letter-spacing:2px;color:#8fa08f}',
+      '#mcSpecBar .who .n{font-size:17px;font-weight:700;color:#fff}',
+      '#mcSpecBar .who .h{font-size:11px;color:#8fa08f;margin-top:2px}',
+    ].join('\n');
+    document.head.appendChild(css);
     specEl = document.createElement('div');
-    specEl.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:14;' +
-      'pointer-events:none;display:none;background:rgba(10,14,10,.66);border:2px solid rgba(120,200,120,.3);' +
-      'padding:5px 12px;font-size:12.5px;color:#cdf5cd;letter-spacing:.4px;text-align:center';
+    specEl.id = 'mcSpecBar';
+    specEl.innerHTML = '<div class="arw" data-d="-1"><b>&#8249;</b><i id="mcSpecKL"></i></div>' +
+      '<div class="who"><div class="t">SPECTATING</div><div class="n" id="mcSpecName"></div>' +
+      '<div class="h" id="mcSpecHint"></div></div>' +
+      '<div class="arw" data-d="1"><b>&#8250;</b><i id="mcSpecKR"></i></div>';
+    specEl.addEventListener('click', function (e) {
+      const a = e.target.closest ? e.target.closest('.arw') : null;
+      if (a) specCycle(+a.dataset.d);
+    });
     document.body.appendChild(specEl);
   }
-  specEl.style.display = spec.on ? 'block' : 'none';
-  if (!spec.on) return;
-  const p = specWatching();
-  specEl.innerHTML = 'SPECTATING &middot; ' +
-    (p ? 'watching <b>' + escHtml(p.name || ('Player' + p.id)) + '</b>' : '<b>free camera</b>') +
-    '  &middot;  <b>N</b> / <b>M</b> change  &middot;  fly with <b>Space</b> and <b>Shift</b>';
+  // The middle of the screen belongs to the map vote and the scoreboard when either
+  // is up, so this waits its turn rather than sitting on top of them.
+  const clear = mc.phase === 'hide' || mc.phase === 'seek';
+  const on = (spec.on || (mc.active && mc.locked)) && clear;
+  specEl.style.display = on ? 'flex' : 'none';
+  if (on) {
+    const w = specWatching();
+    document.getElementById('mcSpecName').textContent =
+      w ? (w.name || ('Player' + w.id)) : (mc.locked ? 'your own camera' : 'free camera');
+    document.getElementById('mcSpecHint').textContent =
+      mc.locked ? 'L steps back into your body' : 'fly with Space and Shift';
+    document.getElementById('mcSpecKL').textContent = spec.on ? 'N' : '←';
+    document.getElementById('mcSpecKR').textContent = spec.on ? 'M' : '→';
+  }
 }
 function specFrame() {
   specSet(specCan());
@@ -9301,6 +9369,7 @@ function mcHandle(m) {
         // the pose they are holding, so they start behind themselves
         if (!mc.paint) camMode = (mc.role === 'seeker') ? 0 : (mc.camWas || 1);
       }
+      if (mc.locked && !(m.playing && m.alive && m.role === 'hider')) { mc.locked = false; mc.lockAt = null; player.flying = false; specHud(); }
       mcSetLocalLook(inRound);
       if (inRound) mcSendSkin(true);        // the canvas you are about to paint
       else mcSendSavedSkin();               // and your own skin again once it is over
@@ -9478,7 +9547,8 @@ function mcSweep() {
 /* ---- the frame ---- */
 function mcFrame(dt) {
   if (!mc.active) return;
-  if (!spec.on) player.flying = false;   // nobody flies in a round, unless they are out of it
+  // nobody flies in a round, unless they are out of it or have left their body behind
+  if (!spec.on && !mc.locked) player.flying = false;
   mcSetSize(mc.playing && mc.alive && mc.role === 'hider');
   // the void has no floor: step off the edge and you are put back in the middle
   if (player.pos.y < (mc.y0 || 40) - 14 && !spec.on) {
@@ -9531,8 +9601,8 @@ function mcKey(k, e) {
     if (k === 'escape' || k === 'b') { mcPaintClose(); return true; }
     if (k === 'arrowleft')  { mc.paintYaw += 0.3; return true; }
     if (k === 'arrowright') { mc.paintYaw -= 0.3; return true; }
-    if (k === 'arrowup'   || k === '=' || k === '+') { mcPaintZoom(-1); return true; }
-    if (k === 'arrowdown' || k === '-' || k === '_') { mcPaintZoom(1);  return true; }
+    if (k === 'arrowup'   || k === '=' || k === '+' || k === '9') { mcPaintZoom(-1); return true; }
+    if (k === 'arrowdown' || k === '-' || k === '_' || k === '0') { mcPaintZoom(1);  return true; }
     if (k >= '1' && k <= '6') { mc.pose = +k - 1; mpSend({ type: 'mcpose', pose: mc.pose }); mcHud(); return true; }
     return true;
   }
@@ -9554,6 +9624,7 @@ function mcKey(k, e) {
       if (mc.phase !== 'seek') { mcFeed('Nothing to whistle at yet.'); return true; }
       mpSend({ type: 'mctaunt' }); return true;
     }
+    if (k === 'l') { mcLock(!mc.locked); return true; }   // leave the body behind
   }
   if (mc.role === 'seeker') {
     if (k === 'r') { mpSend({ type: 'mcreload' }); return true; }
@@ -9677,6 +9748,10 @@ const MC_THIN = 0.28;      // and how wide they actually are, which is thinner s
    The outline is a shell of the same shapes turned inside out and drawn with the
    depth test off, so it comes through the block as a flat silhouette. It hangs
    off each limb, so it follows whatever pose they are holding for nothing.     */
+// Flying with nothing to collide with: out of the round, or locked out of your body.
+function mcFreeCam() {
+  return (typeof spec !== 'undefined' && spec.on) || (typeof mc !== 'undefined' && mc.active && mc.locked);
+}
 const MC_SEE_R = 6;                    // how close a seeker has to be for it
 function mcShell(p) {
   if (!p.model) return null;
@@ -9720,6 +9795,35 @@ function mcBuried(p) {
   return !!(b && BLOCKS[b] && BLOCKS[b].solid);
 }
 
+/* ---- leaving your body behind -----------------------------------------------
+   L pins the body where it stands, in the pose it is holding, and lets you fly off
+   as a camera. Everyone else sees the body standing still, and that is what a
+   seeker has to shoot: the server stops taking your position while you are locked,
+   so wandering about cannot move the thing they are aiming at. Pressing L again
+   puts you back in it, rather than wherever you drifted to.                      */
+function mcLock(on) {
+  if (!(mc.playing && mc.alive && mc.role === 'hider')) return;
+  if (on === !!mc.locked) return;
+  if (on) {
+    mcPaintClose();
+    mc.locked = true;
+    mc.lockAt = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
+    player.flying = true;
+    mpSend({ type: 'mclock', on: true });
+    mcBanner('Body left behind');
+    mcFeed('Your body is holding still. L to step back into it.');
+  } else {
+    mc.locked = false;
+    const at = mc.lockAt;
+    mc.lockAt = null;
+    player.flying = false;
+    spec.id = null;
+    if (at) mcStand(at.x, at.y, at.z);
+    mpSend({ type: 'mclock', on: false });
+    mcBanner('Back in your body');
+  }
+  mcHud(); specHud();
+}
 function mcSetSize(small) {
   const want = small ? MC_SMALL : 1;
   if (mc.sized === want) return;
@@ -9740,6 +9844,7 @@ function mcLeaveUi() {
   { const cross = document.getElementById('cross'); if (cross) cross.style.display = ''; }
   if (hotbarEl) hotbarEl.style.display = '';
   mc.paint = false; mcPaintUi(); mcPaintCursor();   // nothing of the brush follows you out
+  mc.locked = false; mc.lockAt = null;
   for (const g of mc.pings) if (g.el.parentNode) g.el.parentNode.removeChild(g.el);
   mc.pings.length = 0;                              // and no arrows either
 }
@@ -9816,8 +9921,10 @@ function mcHud() {
   const hiding = mc.playing && mc.alive && mc.role === 'hider';
   const seeking = mc.playing && mc.role === 'seeker';
   gear.innerHTML = mc.paint ? ''
-    : hiding ? kb('V', 'pose: <em>' + escHtml((mc.poses[mc.pose] || {}).name || '') + '</em>') +
-               kb('B', 'paint yourself') + kb('N', 'whistle')
+    : hiding ? (mc.locked
+                 ? kb('L', 'step back into your body') + kb('N', 'whistle')
+                 : kb('V', 'pose: <em>' + escHtml((mc.poses[mc.pose] || {}).name || '') + '</em>') +
+                   kb('B', 'paint yourself') + kb('N', 'whistle') + kb('L', 'leave your body'))
     : seeking ? kb('F', 'shoot') + kb('R', 'reload')
     : '';
 
@@ -12087,7 +12194,9 @@ function frame(now){
   walkAmpLocal += ((moving?0.85:0) - walkAmpLocal) * (1-Math.exp(-14*dt));   // ease the walk swing in/out
   if(swing>0) swing=Math.max(0, swing-dt*3.4);   // the arm-swing (break/place/punch) decays every frame, in any camera mode
   const cr = sit.active ? 0 : (player.crouch||0);
-  body.position.set(player.pos.x, player.pos.y, player.pos.z);   // feet stay planted; the pelvis drop is done inside poseCharacter
+  // a locked hider is somewhere else entirely: their body waits where they left it
+  if(mc.active && mc.locked && mc.lockAt) body.position.set(mc.lockAt.x, mc.lockAt.y, mc.lockAt.z);
+  else body.position.set(player.pos.x, player.pos.y, player.pos.z);   // feet stay planted; the pelvis drop is done inside poseCharacter
   body.rotation.set(0, player.yaw + Math.PI, 0);         // the group no longer tilts; the upper body pivots at the waist instead
   const localBodyScale = (fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : (fx.body==='block'||fx.body==='tree') ? 1.0 : 0.9)
                        * (mc.sized || 1);   // big/small/block/tree secret codes size your own body too, and a mecha hider is half size
@@ -12301,7 +12410,9 @@ window.__mc = {
   mcPickAt(sx,sy){ const before=mc.painted; mcPaintPick({ clientX:sx, clientY:sy });
     return { painted: mc.painted !== before, texel: mc.lastTexel || null }; },
   spec(){ return { can:specCan(), on:spec.on, id:spec.id, ghost:!!fx.ghost, flying:!!player.flying,
-    targets:specTargets(), shown:(()=>{ const e=document.querySelector('div[style*="SPECTATING"]'); return !!specEl && specEl.style.display==='block'; })() }; },
+    targets:specTargets(), locked:!!mc.locked,
+    shown:!!(specEl && specEl.style.display && specEl.style.display!=='none'),
+    watching:(()=>{ const w=specWatching(); return w ? (w.name||('Player'+w.id)) : null; })() }; },
   specForce(on){ specSet(!!on); return spec.on; },
   specCycle(d){ specCycle(d|0); return spec.id; },
   mcPaint(){ return { on:mc.paint, tool:mc.paintTool, color:mc.paintColor, size:mc.paintSize,
@@ -12338,6 +12449,8 @@ window.__mc = {
     const ink = mcFaceInk(hit.id, hit.face, hit.u, hit.v);
     return { block:blockName(hit.id), face:hit.face,
              texel:[Math.floor(hit.u*16), Math.floor(hit.v*16)], ink:ink }; },
+  mcLockState(){ return { locked:!!mc.locked, at:mc.lockAt, flying:!!player.flying,
+    pos:[+player.pos.x.toFixed(1), +player.pos.y.toFixed(1), +player.pos.z.toFixed(1)] }; },
   mcSeeState(){ return [...mp.players.values()].map(p=>({ id:p.id, role:p.mcRole||'', alive:!!p.mcAlive,
     seen:!!(p.shellParts && p.shellParts.length && p.shellParts[0].visible),
     shell:!!(p.shellParts && p.shellParts.length && p.shellFor===p.model),
