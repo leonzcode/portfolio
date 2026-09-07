@@ -4533,7 +4533,8 @@ function updateMobs(dt){
 }
 
 /* ============================================================ STREAMING === */
-const VIEW = 5;   // chunk radius (was 6; trimmed one ring to cut ~28% of in-view chunks -> fewer draw calls, less meshing/generation)
+let VIEW = 5;     // chunk radius (was 6; trimmed one ring to cut ~28% of in-view chunks -> fewer draw calls, less meshing/generation)
+const VIEW_NORMAL = 5, VIEW_EDITOR = 9;   // the map editor's world is four small plots in an empty sky
 function ensureChunks(px,pz){
   const ccx=Math.floor(px/CH), ccz=Math.floor(pz/CH);
   // generate a ring one larger than view so meshing has neighbours
@@ -7551,7 +7552,14 @@ function mpSend(o){
   if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} }
 }
 function mpSendBlock(x,y,z,b){
-  if(med.active){ mpSetOverride(x,y,z,b); mpSend({type:'mcedit', x, y, z, block: b ? blockName(b) : null}); return; }   // the map editor writes straight to the maps
+  if(med.active){                                          // the map editor writes straight to the maps
+    if(!medPlotAt(x,z)){
+      if(performance.now()-medGapSaid > 4000){ medGapSaid=performance.now();
+        chatPush('That is the gap between two plots. Build on a plot and it goes into that map.', 'sys'); }
+      return;
+    }
+    mpSetOverride(x,y,z,b); mpSend({type:'mcedit', x, y, z, block: b ? blockName(b) : null}); return;
+  }
 
   if(bb.active){ if(bbInPlot(bb.plot,x,y,z)){ mpSetOverride(x,y,z,b); bbSendBlock(x,y,z,b); } return; }   // build battle: your plot only
   if(bw.active){ mpSetOverride(x,y,z,b); mpSend({type:'bwblock',x,y,z,b}); return; }   // bedwars: dynamic edit into the match
@@ -8377,7 +8385,10 @@ function medInit(m) {
   wipeWorldEntities();
   med.active = true; mcMode = true;                 // a void world: only what the maps put there
   mp.id = m.id; mp.name = m.name;
-  med.maps = (m.maps || []).map(x => ({ id: x.id, name: x.name, ox: x.ox | 0, y0: x.y0 | 0 }));
+  med.maps = (m.maps || []).map(x => ({ id: x.id, name: x.name, ox: x.ox | 0, y0: x.y0 | 0,
+                                        bounds: x.bounds || { x1: -2, x2: 30, z1: -2, z2: 30 } }));
+  // see the whole row from anywhere in it, and see it clearly
+  VIEW = VIEW_EDITOR; scene.fog.near = 140; scene.fog.far = 340;
   mpClearPlayers();
   mcClearWorld();
   for (const one of (m.maps || [])) mcApplyMap(one);
@@ -8393,6 +8404,17 @@ function medInit(m) {
   chatPush('Mecha Map Editor. Four plots, one per map. Build on them and the game uses what you leave.', 'sys');
   chatPush('Anything you place during a round is shown to the players when that round ends.', 'sys');
 }
+// Which plot a block belongs to. The ten-block gaps between the plots belong to no
+// map, so a block dropped in one would go nowhere: refuse it here rather than let it
+// sit on the screen as something only you can see.
+function medPlotAt(x, z) {
+  for (const one of med.maps) {
+    const b = one.bounds;
+    if (x - one.ox >= b.x1 - 2 && x - one.ox <= b.x2 + 2 && z >= b.z1 - 2 && z <= b.z2 + 2) return one;
+  }
+  return null;
+}
+let medGapSaid = 0;
 function medHandle(m) {
   if (m.type === 'mcedit') { mcApplyEdit(m.x, m.y, m.z, m.block); return true; }
   return false;
@@ -8422,12 +8444,13 @@ function medFrame() {
     }
   }
   if (!medBarEl) return;
-  let where = 'between the plots';
-  for (const one of med.maps) if (Math.abs(player.pos.x - (one.ox + 14)) < 24) { where = one.name; break; }
+  const on = medPlotAt(Math.floor(player.pos.x), Math.floor(player.pos.z));
+  const where = on ? on.name : 'between the plots';
   medBarEl.textContent = 'MAP EDITOR - ' + where.toUpperCase();
 }
 function medLeave() {
   med.active = false; mp.med = false; mcMode = false; med.maps = [];
+  VIEW = VIEW_NORMAL; scene.fog.near = 34; scene.fog.far = 128;
   if (medBarEl) medBarEl.style.display = 'none';
 }
 function startMapEditor(pw) {
