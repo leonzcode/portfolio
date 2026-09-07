@@ -4397,7 +4397,7 @@ function updateViewmodel(dt, moving){
   if(vmGun) vmGun.visible=false;
   if(vmArm.scale.x!==1) vmArm.scale.setScalar(1);
   // a hider carries nothing at all: no block, and no empty hand waving about either
-  if(mc.active && !mcBuilding()){
+  if(mc.active){
     if(vmBlock) vmBlock.visible=false;
     if(vmItem) clearVmItem();
     vmArm.visible=false;
@@ -4785,7 +4785,7 @@ canvas.addEventListener('mousedown', e=>{
     return;
   }
   // a seeker's gun is on the mouse as well as the keys: left fires, right reloads
-  if(mc.active && mc.role==='seeker' && mc.playing && state===PLAY && !chatOpen && !invOpen && !mc.edit){
+  if(mc.active && mc.role==='seeker' && mc.playing && state===PLAY && !chatOpen && !invOpen){
     if(e.button===0){ e.preventDefault(); mc.firing=true; mcFire(); return; }
     if(e.button===2){ e.preventDefault(); mpSend({ type:'mcreload' }); return; }
   }
@@ -5940,9 +5940,8 @@ function breakGhostUnderCrosshair(){
   removeGhostBlock(found.type, found.k, c[0], c[1], c[2]);
   return true;
 }
-function mcBuilding(){ return mc.edit; }   // an admin with /edit on, and nobody else
 function breakBlock(){
-  if(mc.active && !mcBuilding()) return;    // not yours to break, unless the map is open
+  if(mc.active) return;                     // a round is not a world you can dig up
   if(bb.active && !bbCanBreak()) return;     // build battle: your plot only, and never the floor under it
   const specHit = mp.active && mp.spectator && fx.superStick;   // tadee code: a spectator may still punch players
   if(mp.active && mp.spectator && !specHit) return;   // ordinary spectators can't break blocks, punch players or hit mobs
@@ -5981,7 +5980,7 @@ function breakBlock(){
   mpSendBlock(x,y,z,0);
 }
 function placeBlock(){
-  if(mc.active && !mcBuilding()) return;    // nor to build
+  if(mc.active) return;                     // nor build in
   if(mp.active && mp.spectator) return;     // spectators can't place blocks
   if(bb.active && !bbCanPlace()) return;    // build battle: only in your plot, only while building
   if(!target) return;
@@ -6496,7 +6495,7 @@ function startSingleplayer(){
   mp.bb=false; bb.active=false; bbMode=false; bbLeaveUi();
   mp.mc=false; mc.active=false; mcMode=false; mcLeaveUi(); mcSetSize(false);
   medLeave();
-  if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
+  mpDropSocket();
   worldSpawn = null;   // whatever a server told us stops applying the moment we leave it
   spReloadWorld();     // load the saved solo world (or a fresh one) into seed + overrides
   spSave();            // pin the seed so even a brand-new world reloads identically
@@ -7493,6 +7492,14 @@ function mpHandle(m){
   else if(m.type==='kicked'){ mp._joinErr=m.reason||'You were removed from the server.'; }
   else if(m.type==='full'){ if(state!==PLAY) mp._joinErr='That server is full right now.'; else chatPush('Server is full right now, try again soon.', 'sys'); }
 }
+// Closing a socket fires its onclose a moment later, by which time the next one is
+// already open: the old handler then wipes mp.ws and drops you back on the server
+// list. Take its handlers off before closing it, so it goes quietly.
+function mpDropSocket(){
+  if(!mp.ws) return;
+  try{ mp.ws.onclose=null; mp.ws.onmessage=null; mp.ws.onerror=null; mp.ws.onopen=null; mp.ws.close(); }catch(e){}
+  mp.ws=null;
+}
 function mpConnect(){
   if(mp.ws) return;
   mp._joinErr=null;
@@ -7544,11 +7551,8 @@ function mpSend(o){
   if(mp.ws && mp.ws.readyState===1){ try{ mp.ws.send(JSON.stringify(o)); }catch(e){} }
 }
 function mpSendBlock(x,y,z,b){
-  // editing a map, or building Purpular Village. The map id goes with it: between
-  // rounds the server has no map in hand, and this is what tells it which one you
-  // are standing in rather than dropping the change on the floor.
   if(med.active){ mpSetOverride(x,y,z,b); mpSend({type:'mcedit', x, y, z, block: b ? blockName(b) : null}); return; }   // the map editor writes straight to the maps
-  if(mc.active && mcBuilding()){ mpSetOverride(x,y,z,b); mpSend({type:'mcedit', map: mc.mapId||'', x, y, z, block: b ? blockName(b) : null}); return; }
+
   if(bb.active){ if(bbInPlot(bb.plot,x,y,z)){ mpSetOverride(x,y,z,b); bbSendBlock(x,y,z,b); } return; }   // build battle: your plot only
   if(bw.active){ mpSetOverride(x,y,z,b); mpSend({type:'bwblock',x,y,z,b}); return; }   // bedwars: dynamic edit into the match
   if(mp.active){ mpSetOverride(x,y,z,b); mpSend({type:'block',x,y,z,b}); }
@@ -7760,6 +7764,7 @@ async function refreshServers(finalNote){
 // the client does not recognise falls back to that pair.
 const SRV_KIND_LABEL = { public:'Public', private:'Private', minigame:'Minigame' };
 function srvKindOf(s){
+  if(s.mode==='mcedit') return 'private';   // the map editor is a locked door, not a game
   if(s.mode) return 'minigame';
   return SRV_KIND_LABEL[s.kind] ? s.kind : (s.isPublic ? 'public' : 'private');
 }
@@ -7778,16 +7783,17 @@ function renderServerList(){
     drawServerIcon(ic, s.icon, s.id);
     const info=document.createElement('div'); info.className='info';
     const kind = srvKindOf(s);
-    const kindTxt = (s.mode || kind==='minigame') ? '<span class="mini">Minigame</span>'
+    const kindTxt = kind==='minigame' ? '<span class="mini">Minigame</span>'
                   : (kind==='public' ? '<span class="pub">Public</span>' : '<span class="lock">Private</span>');
-    const countTxt = (s.mode || kind==='minigame') ? (s.players+' playing') : (s.players+' online');
-    const newTxt = s.mode ? '<span class="new">New!</span>' : '';
+    const countTxt = kind==='minigame' ? (s.players+' playing') : (s.players+' online');
+    const newTxt = (s.mode && s.mode!=='mcedit') ? '<span class="new">New!</span>' : '';
     info.innerHTML='<div class="nm">'+escHtml(s.name)+'</div><div class="meta">'+kindTxt+' · '+countTxt+newTxt+'</div>';
     card.appendChild(ic); card.appendChild(info);
     // Join / Spectate right on the card, so joining or watching is a single click
     const btns=document.createElement('div'); btns.className='srvBtns';
     const join=document.createElement('button'); join.className='srvBtn'; join.textContent='Join';
-    if(s.mode){ join.textContent='Play'; join.title='Play '+s.name; }
+    if(s.mode==='mcedit'){ join.title='Enter the password to build on the Mecha Chameleon maps.'; }
+    else if(s.mode){ join.textContent='Play'; join.title='Play '+s.name; }
     else if(kind==='minigame'){ join.textContent='Play';
       join.title='Play '+s.name+'. You can run the parkour, but not change the map.'; }
     else join.title=(kind==='public')?'Join this server':'Enter the password to play here';
@@ -7798,7 +7804,7 @@ function renderServerList(){
       ed.title='Enter the password to build on this map.';
       ed.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) editMinigame(s); });
       btns.appendChild(ed);
-    } else if(kind==='private'){                               // private: watch without the password
+    } else if(kind==='private' && !s.mode){                    // private: watch without the password
       const spec=document.createElement('button'); spec.className='srvBtn'; spec.textContent='Spectate';
       spec.title='Watch without the password. You cannot build, break or fight.';
       spec.addEventListener('click', e=>{ e.stopPropagation(); if(!card._confirming) spectateServer(s); });
@@ -8098,10 +8104,11 @@ function openPwPrompt(s, forEdit){ pwPendingServer=s; document.getElementById('p
   // On a minigame the password is not the door, it is the toolbox: Play already let
   // you in, so there is nothing to spectate and the wording says what it is for.
   const hint=document.getElementById('pwHint'), spec=document.getElementById('pwSpectateBtn');
-  if(hint) hint.textContent = forEdit
-    ? 'This map is open to play. Enter the password to build on it.'
+  if(hint) hint.textContent = s.mode==='mcedit'
+    ? 'The four Mecha Chameleon maps, laid out as four plots. Enter the password to build on them.'
+    : forEdit ? 'This map is open to play. Enter the password to build on it.'
     : 'Enter the password to play, or join as a spectator to watch without building.';
-  if(spec) spec.style.display = forEdit ? 'none' : '';
+  if(spec) spec.style.display = (forEdit || s.mode==='mcedit') ? 'none' : '';
   pwPromptEl.hidden=false; serversEl.hidden=true; setTimeout(()=>pwInputEl.focus(),40); }
 function pwJoin(){ if(!pwPendingServer) return; const pw=pwInputEl.value; if(!pw && !isAdmin()){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent='Enter a password.'; return; }
   if(pwPendingServer.mode==='mcedit'){ mp._pwFlow=true; pwMsgEl.style.color='#ffec4d'; pwMsgEl.textContent='Connecting...'; startMapEditor(pw); return; }
@@ -8424,7 +8431,7 @@ function medLeave() {
   if (medBarEl) medBarEl.style.display = 'none';
 }
 function startMapEditor(pw) {
-  if (mp.ws) { try { mp.ws.close(); } catch (e) {} mp.ws = null; }
+  mpDropSocket();
   if (typeof createServerEl !== 'undefined' && createServerEl) createServerEl.hidden = true;
   if (pollMiniEl) pollMiniEl.hidden = true;
   mp.bw = false; bw.active = false; bwMode = false; if (typeof bwLeaveUi === 'function') bwLeaveUi();
@@ -9040,7 +9047,7 @@ function specFrame() {
 
 /* ---- joining ---- */
 function startMecha() {
-  if (mp.ws) { try { mp.ws.close(); } catch (e) {} mp.ws = null; }
+  mpDropSocket();
   if (serversEl) serversEl.hidden = true;
   if (typeof createServerEl !== 'undefined' && createServerEl) createServerEl.hidden = true;
   if (typeof pwPromptEl !== 'undefined' && pwPromptEl) pwPromptEl.hidden = true;
@@ -9127,12 +9134,6 @@ function mcHandle(m) {
       return true;
     }
     case 'mcpose': { const p = mp.players.get(m.id); if (p) p.mcPose = m.pose | 0; return true; }
-    case 'mcediting': {
-      mc.edit = !!m.on;
-      if (mc.edit) mcPaintClose();
-      mcHud();
-      return true;
-    }
     case 'mcedit': {                       // somebody's change, applied here as it happens
       mcApplyEdit(m.x, m.y, m.z, m.block);
       return true;
@@ -9226,7 +9227,7 @@ function mcFrame(dt) {
   // holding the fire key keeps the gun going
   if (mc.firing) mcFire();
   if (mc.kick) mc.kick = Math.max(0, mc.kick - dt * 6);
-  const wantBar = mcBuilding() ? '' : 'none';   // no blocks to hold in here, unless the map is open
+  const wantBar = 'none';   // there are no blocks to hold in a round
   if (hotbarEl && hotbarEl.style.display !== wantBar) hotbarEl.style.display = wantBar;
   if (!mc.paint) mc.camWas = camMode;   // remember whichever view the player picked for themselves
   mcHud();
@@ -9500,7 +9501,7 @@ function bbInPlot(i, x, y, z){
 }
 
 function startBuildBattle(){
-  if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
+  mpDropSocket();
   // close the browser screens, or they sit over the game once it starts
   if(serversEl) serversEl.hidden=true;
   if(typeof createServerEl!=='undefined' && createServerEl) createServerEl.hidden=true;
@@ -9885,7 +9886,7 @@ const bw = { active:false, phase:'lobby', team:null, hp:100, res:{iron:0,gold:0,
 function bwId(name){ return (BLOCKS[name] && BLOCKS[name].id) || 0; }
 
 function startBedwars(){
-  if(mp.ws){ try{ mp.ws.close(); }catch(e){} mp.ws=null; }
+  mpDropSocket();
   if(pollMiniEl) pollMiniEl.hidden=true;
   mp.bw = true; bw.active = true; bwMode = true;
   bwEnterUi();
@@ -11596,10 +11597,10 @@ function closeChat(send){
       else if(!mp.active) chatPush('There is nobody else here to kick.', 'sys');
       else mpSend({type:'kick', name:who});
     }
-    else if(/^\/edit\b/i.test(v)){                                // build in a Mecha Chameleon map
-      if(!mc.active) chatPush('/edit is for the Mecha Chameleon maps.', 'sys');
-      else if(!isAdmin()) chatPush('/edit is for admins.', 'sys');
-      else mpSend({type:'mcedittoggle'});
+    else if(/^\/(edit|prg)\b/i.test(v) && mc.active){
+      // both of these used to build a map from inside a round. That happens in the
+      // Mecha Map Editor now, which is its own server with its own password.
+      chatPush('Maps are built in the Mecha Map Editor now: leave the game and join it from the server list.', 'sys');
     }
     else if(/^\/setworldspawn\b/i.test(v)){
       if(!isAdmin()) chatPush('/setworldspawn is for admins.', 'sys');
@@ -11951,6 +11952,7 @@ window.__mc = {
     rows:document.querySelectorAll('#srvTrashList .trashCard').length }; },
   trashTab(){ const b=document.getElementById('srvTrashTab'); if(b) b.click(); return srvTrashOpen; },
   srvList(){ return srvAllList.map(x=>({id:x.id,name:x.name,kind:srvKindOf(x),pinned:!!x.pinned})); },
+  openServers(){ openServers(); },
   // ---- multiplayer test hook: join the world the ?mp= override points at ----
   joinShared(server){ mpTarget.server = server || 'original'; mpTarget.pw=''; mpTarget.spectate=false;
     mp.bw=false; mp.bb=false; mpConnect(); return true; },
