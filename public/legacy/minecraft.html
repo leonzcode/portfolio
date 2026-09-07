@@ -5005,7 +5005,18 @@ function updatePlayer(dt){
     }
     const g = swimming? 9 : 26;
     player.vel.y -= g*dt;
-    if(swimming){ player.vel.y = Math.max(player.vel.y,-2.2); if(keys[binds.jump]) player.vel.y = 3.2; }
+    if(swimming){
+      player.vel.y = Math.max(player.vel.y,-2.2);
+      if(keys[binds.jump]){
+        // Paddling up is 3.2, which is enough to rise through water and nothing like
+        // enough to get over the lip once you are out of it, so a one-block pond held
+        // you in it. With your head out of the water a jump is a proper jump.
+        const head = getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y + player.h*0.9), Math.floor(player.pos.z));
+        const under = !!(head && BLOCKS[head] && BLOCKS[head].liquid);
+        if(under) player.vel.y = 3.2;
+        else if(player.vel.y < 1) player.vel.y = (mc.active && (mc.sized||1) < 1) ? MC_HIDER_JUMP : 8.4;
+      }
+    }
     else if(keys[binds.jump] && player.onGround){
       // A hider is half height, so a wall that is nothing to anybody else is twice
       // their own size. They get a jump to match: 10.6 against gravity 26 is 2.16
@@ -7200,6 +7211,7 @@ function setPlayerSpectator(p, spec){
 }
 function setPlayerAdmin(p, admin){
   if(!!p.admin===!!admin) return; p.admin=!!admin;
+  if(tabShown) renderTabList();
   if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
@@ -8621,6 +8633,14 @@ function mcBlankSkin() {
   mc.painted = false;
 }
 let mcSkinSendAt = 0, mcSkinSendTimer = 0;
+// Outside a round you look like yourself. Mecha Chameleon has its own skin channel
+// because a hider's canvas is not the skin you saved, and mpSendSkin talks on the
+// world's channel, which nothing in here is listening to: so everybody was a
+// default Steve to everybody else in the lobby.
+function mcSendSavedSkin() {
+  if (!(mp.active && mp.ws && mp.ws.readyState === 1)) return;
+  mpSend({ type: 'mcskin', png: localSkinDataURL(), slim: !!localSlim });
+}
 function mcSendSkin(now) {
   if (!(mp.active && mp.ws && mp.ws.readyState === 1)) return;
   // painting is a drag, so coalesce: send at most every 700ms, and always send last
@@ -8949,6 +8969,30 @@ function mcRayFace(origin, dir, far) {
   }
   return null;
 }
+// The chunk meshes carry real texture coordinates into the atlas, so the pixel the
+// ray lands on is the pixel that was drawn there. That works for a fire, a torch or
+// a flower as well as a wall: a cube's face has no meaning on a cross-shaped mesh,
+// which is why picking from a fire only ever gave one colour before. A transparent
+// texel is a hole in a cutout mesh, so the ray keeps going through it.
+function mcPickMesh() {
+  const objs = [];
+  for (const [, c] of chunks) {
+    if (c.mesh) objs.push(c.mesh);
+    if (c.cmesh) objs.push(c.cmesh);
+    if (c.tmesh) objs.push(c.tmesh);
+  }
+  if (!objs.length) return null;
+  const hits = mcRay.intersectObjects(objs, false);
+  for (const h of hits) {
+    if (!h.uv) continue;
+    const px = Math.min(atlasCanvas.width - 1, Math.max(0, Math.floor(h.uv.x * atlasCanvas.width)));
+    const py = Math.min(atlasCanvas.height - 1, Math.max(0, Math.floor((1 - h.uv.y) * atlasCanvas.height)));
+    let d; try { d = actx.getImageData(px, py, 1, 1).data; } catch (e) { return null; }
+    if (d[3] < 40) continue;                    // see-through: whatever is behind it
+    return [d[0], d[1], d[2]];
+  }
+  return null;
+}
 function mcSetColor(rgb) {
   mc.paintColor = '#' + rgb.map(function (v) {
     return Math.max(0, Math.min(255, v | 0)).toString(16).padStart(2, '0');
@@ -8973,9 +9017,11 @@ function mcPickScreen(ev) {
     if (d[3] > 8) { mcSetColor([d[0], d[1], d[2]]); return true; }
     break;
   }
-  // then the world: the exact texel of the face under the cursor, unlit
-  const hit = mcRayFace(mcRay.ray.origin, mcRay.ray.direction, 48);
-  const ink = hit ? mcFaceInk(hit.id, hit.face, hit.u, hit.v) : null;
+  // then the world: the exact texel of whatever is under the cursor, unlit
+  const ink = mcPickMesh() || (function () {
+    const hit = mcRayFace(mcRay.ray.origin, mcRay.ray.direction, 48);
+    return hit ? mcFaceInk(hit.id, hit.face, hit.u, hit.v) : null;
+  })();
   if (ink) { mcSetColor(ink); return true; }
   // and if it is nothing but sky, fall back to what is on screen
   try {
@@ -9021,7 +9067,13 @@ function mcPoseModel(model, pose, t) {
   upper.rotation.set(0, 0, 0); headPivot.rotation.set(0, 0, 0);
   armL.rotation.set(0, 0, 0); armR.rotation.set(0, 0, 0);
   legL.rotation.set(0, 0, 0); legR.rotation.set(0, 0, 0);
-  const drop = d => { upper.position.y = HIP - d; legL.position.y = HIP - d; legR.position.y = HIP - d; };
+  // Each part drops from where it rests, not from the hip. The legs hang from their
+  // own joint halfway down, so dropping them "to the hip" shoved them up inside the
+  // torso: from a distance a hider had no legs at all, and it stayed that way after
+  // the round because nothing put them back.
+  if (!u.restY) u.restY = { upper: upper.position.y, legL: legL.position.y, legR: legR.position.y };
+  const R = u.restY;
+  const drop = d => { upper.position.y = R.upper - d; legL.position.y = R.legL - d; legR.position.y = R.legR - d; };
   drop(0);
   const HALF = Math.PI / 2;
   switch (pose) {
@@ -9207,7 +9259,7 @@ function mcInit(m) {
   startGame();
   mcBuildLobby();                      // something to wait on until a map is voted in
   for (const p of (m.players || [])) mpAddPlayer(p);
-  mpSendSkin();
+  mcSendSavedSkin();                        // arrive looking like yourself
   mcEnsureUi(); mcHud();
   chatPush('Joined Mecha Chameleon. Everything here is on a key: press H for the list.', 'sys');
 }
@@ -9250,6 +9302,8 @@ function mcHandle(m) {
         if (!mc.paint) camMode = (mc.role === 'seeker') ? 0 : (mc.camWas || 1);
       }
       mcSetLocalLook(inRound);
+      if (inRound) mcSendSkin(true);        // the canvas you are about to paint
+      else mcSendSavedSkin();               // and your own skin again once it is over
       if (!inRound) mcPaintClose();
       mcHud();
       return true;
@@ -9259,7 +9313,14 @@ function mcHandle(m) {
         const p = mp.players.get(q.id);
         if (!p) continue;
         p.mcRole = q.role; p.mcAlive = q.alive; p.mcPlaying = q.playing; p.mcPose = q.pose | 0;
-        if (q.skin && p.mcSkinSeen !== q.skin) { p.mcSkinSeen = q.skin; applyRemoteSkin(q.id, q.skin, false); }
+        // who is an admin, and who is watching rather than playing, for the tab list
+        const wasLabel = (p.admin ? 1 : 0) + (p.spectator ? 2 : 0);
+        p.admin = !!q.admin; p.spectator = !!q.spectator;
+        if (wasLabel !== (p.admin ? 1 : 0) + (p.spectator ? 2 : 0) && tabShown) renderTabList();
+        // Take the slim flag from the same message as the skin. Forcing it false here
+        // fought the skin relay, which carries the real one: the model was rebuilt on
+        // every packet, and a rebuilt model loses its pose and comes back wrong.
+        if (q.skin && p.mcSkinSeen !== q.skin) { p.mcSkinSeen = q.skin; applyRemoteSkin(q.id, q.skin, !!q.slim); }
         mcSetLook(p);
         // the tag rule is enforced every frame in mcFrame; the generic player update
         // rewrites it, and it runs after this message is handled
@@ -9283,7 +9344,8 @@ function mcHandle(m) {
     case 'mcreveal': {                   // a hider gives themselves away, by accident or on purpose
       mcMark(m.x, m.y + 1.15, m.z, 0xffd54a);        // a half-height hider wears it lower
       mcPing(m.x, m.y, m.z);
-      mcFeed(m.called ? (m.by ? escHtml(m.by) + ' whistled!' : 'A whistle!') : 'Something rattled...');
+      if (m.id === mp.id) mcWhistled(!!m.called);    // your own: you pressed it, so say so
+      else mcFeed(m.called ? (m.by ? escHtml(m.by) + ' whistled!' : 'A whistle!') : 'Something rattled...');
       return true;
     }
     case 'mcreload': { mc.reloadUntil = performance.now() + (m.ms || 1800); mcHud(); return true; }
@@ -9360,12 +9422,48 @@ function mcPingFrame() {
   }
 }
 
+/* ---- your own whistle -------------------------------------------------------
+   You cannot hear yourself, and the mark that goes over your head is behind you in
+   first person, so pressing the key felt like nothing happened. A ring goes out
+   from the middle of the screen instead, which is what the sound looks like.     */
+let mcRingEl = null;
+function mcWhistled(called) {
+  if (!mcRingEl) {
+    const css = document.createElement('style');
+    css.textContent = [
+      '@keyframes mcRingOut{from{transform:translate(-50%,-50%) scale(.25);opacity:.95}',
+      ' to{transform:translate(-50%,-50%) scale(1);opacity:0}}',
+      '#mcRing{position:fixed;left:50%;top:50%;width:280px;height:280px;margin:0;z-index:13;',
+      ' border:4px solid #ffd54a;border-radius:50%;pointer-events:none;opacity:0;',
+      ' transform:translate(-50%,-50%) scale(.25)}',
+      '#mcRing.go{animation:mcRingOut .75s ease-out}',
+    ].join('\n');
+    document.head.appendChild(css);
+    mcRingEl = document.createElement('div'); mcRingEl.id = 'mcRing';
+    document.body.appendChild(mcRingEl);
+  }
+  mcRingEl.classList.remove('go');
+  void mcRingEl.offsetWidth;                  // restart the animation on a second press
+  mcRingEl.classList.add('go');
+  mcBanner(called ? 'Whistled!' : 'You rattled something');
+  mcFeed(called ? 'You whistled. They know roughly where you are.' : 'Something rattled...');
+}
+
 function mcMark(x, y, z, color) {
   const s = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6),
     new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.75, depthTest: false }));
   s.position.set(x, y, z); s.renderOrder = 998; s.raycast = () => {};
   scene.add(s);
   mc.marks.push({ o: s, until: performance.now() + 1600 });
+}
+// Put a body back where it rests. The walk animation only turns joints, so a pose
+// that moved one stays moved until something undoes it.
+function mcPoseRest(model) {
+  const u = model && model.userData;
+  if (!u || !u.upper || !u.restY) return;
+  u.upper.position.y = u.restY.upper;
+  u.legL.position.y = u.restY.legL;
+  u.legR.position.y = u.restY.legR;
 }
 function mcSweep() {
   const t = performance.now();
@@ -9405,6 +9503,7 @@ function mcFrame(dt) {
     }
     mcSetHeldGun(p, !!(p.mcPlaying && p.mcRole === 'seeker'));
     if (p.mcRole === 'hider' && p.mcAlive && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
+    else if (p.model) mcPoseRest(p.model);   // nobody keeps a pose once they stop holding it
     // a hider swallowed by a block, with a seeker standing on top of them
     mcSeeThrough(p, hunting && p.mcPlaying && p.mcAlive && p.mcRole === 'hider' && p.model &&
                     Math.hypot(p.x - player.pos.x, p.y - player.pos.y, p.z - player.pos.z) < MC_SEE_R &&
@@ -9566,8 +9665,11 @@ const MC_THIN = 0.28;      // and how wide they actually are, which is thinner s
    off each limb, so it follows whatever pose they are holding for nothing.     */
 const MC_SEE_R = 6;                    // how close a seeker has to be for it
 function mcShell(p) {
-  if (p.shell) return p.shell;
   if (!p.model) return null;
+  // A skin change can rebuild the model underneath us. Shells hung off the old one
+  // are not in the scene any more, and shells the new one never got would leave the
+  // outline stuck on or stuck off, so they are tied to the model they were made for.
+  if (p.shellFor === p.model && p.shellParts) return p.shellParts;
   const meshes = [];
   p.model.traverse(function (o) { if (o.isMesh && !o.userData.isShell) meshes.push(o); });
   const mat = new THREE.MeshBasicMaterial({ color: 0xff5a4d, side: THREE.BackSide,
@@ -9582,20 +9684,26 @@ function mcShell(p) {
     o.add(sh);
     parts.push(sh);
   }
-  p.shell = { mat: mat, parts: parts };
-  return p.shell;
+  p.shellFor = p.model; p.shellParts = parts;
+  return parts;
 }
+// Set every frame from the state of the world rather than switched on and left:
+// a red figure that will not go away is worse than no outline at all.
 function mcSeeThrough(p, on) {
-  if (!on && !p.shell) return;
-  const sh = mcShell(p); if (!sh) return;
-  if (!!p.seen === !!on) return;
-  p.seen = !!on;
-  for (const m of sh.parts) m.visible = !!on;
+  if (!on && p.shellFor !== p.model) { p.shellParts = null; p.shellFor = null; return; }
+  if (!on && !p.shellParts) return;
+  const parts = mcShell(p); if (!parts) return;
+  for (const m of parts) m.visible = !!on;
 }
-// is anything actually standing where they are?
+// Is a wall actually standing where they are? Read the middle of the body and
+// nothing else: their feet sit exactly on a block boundary, and a remote player's
+// height is interpolated, so a test at foot level flickers into the ground under
+// them and outlines every hider on the map in red. Half a block up cannot.
+// It has to be something solid, too. Standing in a flower bed is a hiding place,
+// not a bug, and lighting it up would take the place away.
 function mcBuried(p) {
-  const bx = Math.floor(p.x), bz = Math.floor(p.z);
-  return getBlock(bx, Math.floor(p.y + 0.05), bz) !== 0 || getBlock(bx, Math.floor(p.y + 0.45), bz) !== 0;
+  const b = getBlock(Math.floor(p.x), Math.floor(p.y + 0.45), Math.floor(p.z));
+  return !!(b && BLOCKS[b] && BLOCKS[b].solid);
 }
 
 function mcSetSize(small) {
@@ -12189,6 +12297,11 @@ window.__mc = {
     rot:g.el.style.transform, op:g.el.style.opacity })); },
   mcMarks(){ return mc.marks.map(m=>({ y:+m.o.position.y.toFixed(2) })); },
   // the dropper, at a point on the screen, without going through a mouse event
+  // the pick as the button actually does it: the mesh first, the block behind after
+  mcPickAt(nx, ny){
+    mcRay.setFromCamera({ x:nx, y:ny }, camera);
+    const ink = mcPickMesh();
+    return ink ? ink.join(',') : null; },
   mcDropAt(nx, ny){
     mcRay.setFromCamera({ x:nx, y:ny }, camera);
     const hit = mcRayFace(mcRay.ray.origin, mcRay.ray.direction, 48);
@@ -12197,12 +12310,15 @@ window.__mc = {
     return { block:blockName(hit.id), face:hit.face,
              texel:[Math.floor(hit.u*16), Math.floor(hit.v*16)], ink:ink }; },
   mcSeeState(){ return [...mp.players.values()].map(p=>({ id:p.id, role:p.mcRole||'', alive:!!p.mcAlive,
-    seen:!!p.seen, shell:!!(p.shell && p.shell.parts.length),
+    seen:!!(p.shellParts && p.shellParts.length && p.shellParts[0].visible),
+    shell:!!(p.shellParts && p.shellParts.length && p.shellFor===p.model),
     buried:(p.model?mcBuried(p):null),
     dist:+Math.hypot(p.x-player.pos.x, p.y-player.pos.y, p.z-player.pos.z).toFixed(2) })); },
   mcPaintPoke(x,y){ return mcPaintAt(x,y); },
   mcPaintTool(t){ mc.paintTool=t; mcPaintUi(); return mc.paintTool; },
   mcPaintColor(c){ mc.paintColor=c; mcPaintUi(); return mc.paintColor; },
+  localBody(){ const u=body.userData; return { legL:u.legL.position.y, legR:u.legR.position.y, upper:u.upper.position.y }; },
+  poseLocal(n){ mcPoseModel(body, n|0, 0); return true; },
   mcPoseOf(){ const u=body.userData; return u && u.upper ? {
     upperX:+u.upper.rotation.x.toFixed(2), legLX:+u.legL.rotation.x.toFixed(2),
     armLZ:+u.armL.rotation.z.toFixed(2), armRZ:+u.armR.rotation.z.toFixed(2),
