@@ -5065,8 +5065,10 @@ function updatePlayer(dt){
     else player.vel.y = Math.max(player.vel.y, -1.4);  // otherwise cling / slow slide
   }
 
-  // anti-stuck: if we're embedded in a solid block (e.g. another player placed one on us), rise out of it
-  if(collides(player.pos.x, player.pos.y, player.pos.z)){
+  // anti-stuck: if we're embedded in a solid block (e.g. another player placed one on us), rise out of it.
+  // Not for a camera: being inside a block is the whole point of flying through one,
+  // and shoving it up out of every wall it entered is what made that a bumpy ride.
+  if(!mcFreeCam() && collides(player.pos.x, player.pos.y, player.pos.z)){
     let y=Math.floor(player.pos.y);
     while(y<WH+3 && collides(player.pos.x, y, player.pos.z)) y++;
     player.pos.y=y; player.vel.y=0;
@@ -5095,7 +5097,7 @@ function updatePlayer(dt){
     const p=player.pos.clone(); p[axis]+=d;
     // Watching from outside the game, or flying while your body waits somewhere else:
     // walls are not yours to bump into.
-    if(mcFreeCam()){ player.pos[axis]=p[axis]; return; }
+    if(mcFreeCam()){ player.pos[axis]=p[axis]; player.onGround=false; return; }
     if(collides(p.x,p.y,p.z)){
       if(axis==='y'){
         if(d<0){ player.onGround=true;
@@ -9807,7 +9809,7 @@ function mcLock(on) {
   if (on) {
     mcPaintClose();
     mc.locked = true;
-    mc.lockAt = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
+    mc.lockAt = { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch };
     player.flying = true;
     mpSend({ type: 'mclock', on: true });
     mcBanner('Body left behind');
@@ -12194,10 +12196,13 @@ function frame(now){
   walkAmpLocal += ((moving?0.85:0) - walkAmpLocal) * (1-Math.exp(-14*dt));   // ease the walk swing in/out
   if(swing>0) swing=Math.max(0, swing-dt*3.4);   // the arm-swing (break/place/punch) decays every frame, in any camera mode
   const cr = sit.active ? 0 : (player.crouch||0);
-  // a locked hider is somewhere else entirely: their body waits where they left it
-  if(mc.active && mc.locked && mc.lockAt) body.position.set(mc.lockAt.x, mc.lockAt.y, mc.lockAt.z);
+  // A locked hider is somewhere else entirely: the body waits where they left it,
+  // facing the way they were facing. Turning to look around must not spin it, or
+  // everyone else sees a statue and the owner sees a weathervane.
+  const lockedBody = mc.active && mc.locked && mc.lockAt;
+  if(lockedBody) body.position.set(mc.lockAt.x, mc.lockAt.y, mc.lockAt.z);
   else body.position.set(player.pos.x, player.pos.y, player.pos.z);   // feet stay planted; the pelvis drop is done inside poseCharacter
-  body.rotation.set(0, player.yaw + Math.PI, 0);         // the group no longer tilts; the upper body pivots at the waist instead
+  body.rotation.set(0, (lockedBody ? mc.lockAt.yaw : player.yaw) + Math.PI, 0);         // the group no longer tilts; the upper body pivots at the waist instead
   const localBodyScale = (fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.18 : (fx.body==='block'||fx.body==='tree') ? 1.0 : 0.9)
                        * (mc.sized || 1);   // big/small/block/tree secret codes size your own body too, and a mecha hider is half size
   body.scale.set(localBodyScale, localBodyScale, localBodyScale);
@@ -12209,7 +12214,7 @@ function frame(now){
     const psw=Math.sin(bobT)*walkAmpLocal;
     lud.legFL.rotation.x=psw; lud.legBR.rotation.x=psw; lud.legFR.rotation.x=-psw; lud.legBL.rotation.x=-psw;
   } else {
-    headPivot.rotation.x = -player.pitch;
+    headPivot.rotation.x = lockedBody ? -(mc.lockAt.pitch || 0) : -player.pitch;
     poseCharacter(lud, cr, sit.active, (window.__poseHold!=null?window.__poseHold:bobT), (window.__poseAmp!=null?window.__poseAmp:walkAmpLocal));
     if(swing>0) lud.armR.rotation.x = -Math.sin((1-swing)*Math.PI)*1.5;   // a punch swing overrides the walk swing
     localCloak = stepCloak(localCloak, player.pos.x, player.pos.y, player.pos.z, dt);
@@ -12449,6 +12454,7 @@ window.__mc = {
     const ink = mcFaceInk(hit.id, hit.face, hit.u, hit.v);
     return { block:blockName(hit.id), face:hit.face,
              texel:[Math.floor(hit.u*16), Math.floor(hit.v*16)], ink:ink }; },
+  bodyYaw(){ return body.rotation.y - Math.PI; },
   mcLockState(){ return { locked:!!mc.locked, at:mc.lockAt, flying:!!player.flying,
     pos:[+player.pos.x.toFixed(1), +player.pos.y.toFixed(1), +player.pos.z.toFixed(1)] }; },
   mcSeeState(){ return [...mp.players.values()].map(p=>({ id:p.id, role:p.mcRole||'', alive:!!p.mcAlive,
