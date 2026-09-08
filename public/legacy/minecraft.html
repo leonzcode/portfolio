@@ -9576,10 +9576,15 @@ function mcFrame(dt) {
     mcSetHeldGun(p, !!(p.mcPlaying && p.mcRole === 'seeker'));
     if (p.mcRole === 'hider' && p.mcAlive && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
     else if (p.model) mcPoseRest(p.model);   // nobody keeps a pose once they stop holding it
-    // a hider swallowed by a block, with a seeker standing on top of them
-    mcSeeThrough(p, hunting && p.mcPlaying && p.mcAlive && p.mcRole === 'hider' && p.model &&
-                    Math.hypot(p.x - player.pos.x, p.y - player.pos.y, p.z - player.pos.z) < MC_SEE_R &&
-                    mcBuried(p));
+    // A hider swallowed by a block, with a seeker standing on top of them. And once
+    // the round is over, every hider who was never found lights up wherever they were
+    // standing, flashing, so the seekers get to see where they had been looking.
+    const showed = mc.phase === 'ended' && p.mcPlaying && p.mcAlive && p.mcRole === 'hider' && p.model;
+    mcSeeThrough(p, showed ||
+                    (hunting && p.mcPlaying && p.mcAlive && p.mcRole === 'hider' && p.model &&
+                     Math.hypot(p.x - player.pos.x, p.y - player.pos.y, p.z - player.pos.z) < MC_SEE_R &&
+                     mcBuried(p)));
+    if (p.shellMat) p.shellMat.opacity = showed ? (0.3 + 0.55 * (0.5 + 0.5 * Math.sin(t * 7))) : 0.85;
     // a name floating over a hider gives them away, which is the whole game. Only the
     // seekers are named, so you can see who is hunting and they cannot see who is not.
     if (p.tag) p.tag.visible = !!(p.mcPlaying && p.mcRole === 'seeker' && !p.ghost && !p.hide);
@@ -9775,7 +9780,7 @@ function mcShell(p) {
     o.add(sh);
     parts.push(sh);
   }
-  p.shellFor = p.model; p.shellParts = parts;
+  p.shellFor = p.model; p.shellParts = parts; p.shellMat = mat;
   return parts;
 }
 // Set every frame from the state of the world rather than switched on and left:
@@ -12455,6 +12460,7 @@ window.__mc = {
     return { block:blockName(hit.id), face:hit.face,
              texel:[Math.floor(hit.u*16), Math.floor(hit.v*16)], ink:ink }; },
   bodyYaw(){ return body.rotation.y - Math.PI; },
+  mcShellOpacity(){ for(const [,q] of mp.players) if(q.shellMat && q.shellParts && q.shellParts[0] && q.shellParts[0].visible) return q.shellMat.opacity; return null; },
   mcLockState(){ return { locked:!!mc.locked, at:mc.lockAt, flying:!!player.flying,
     pos:[+player.pos.x.toFixed(1), +player.pos.y.toFixed(1), +player.pos.z.toFixed(1)] }; },
   mcSeeState(){ return [...mp.players.values()].map(p=>({ id:p.id, role:p.mcRole||'', alive:!!p.mcAlive,
