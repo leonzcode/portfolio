@@ -4669,7 +4669,9 @@ function useAction(){
 // left switched on by mistake. It stays out of Bed Wars, Build Battle and any parkour
 // run, where being three times faster than everyone else would not be a feature.
 const SUPER_SPEED_KEY = 'z', SUPER_SPEED_MUL = 3.2;
-function superSpeedOk(){ return creative && !bw.active && !bb.active && !parkour.run; }
+// Not in Mecha Chameleon: a hider who can cross the village in a second is not
+// hiding, and a seeker who can is not searching.
+function superSpeedOk(){ return creative && !bw.active && !bb.active && !parkour.run && !mc.active; }
 function superSpeedOn(){ return !!keys[SUPER_SPEED_KEY] && state===PLAY && !chatOpen && !invOpen && superSpeedOk(); }
 function superSpeedMul(){ return superSpeedOn() ? SUPER_SPEED_MUL : 1; }
 let spdChipEl = null, spdChipOn = null;
@@ -4771,7 +4773,7 @@ addEventListener('keydown', e=>{
   if(e.repeat) return;   // holding jump to fly up auto-repeats keydown; those aren't taps, so don't let them toggle fly
   // Creative flight normally stops at the edge of a Bed Wars match. The milan45 code
   // carries it in there as well.
-  // Building Purpular Village is the third case: you are out of the round and the
+  // Building Purpular Biome is the third case: you are out of the round and the
   // whole point is to get up to where the roof goes.
   if(!bindListening && e.key.toLowerCase()===binds.jump && state===PLAY && !parkour.run && (!mc.active || spec.on) && (fx.fly || (creative && !bw.active))){
     const now=performance.now();
@@ -5048,9 +5050,10 @@ function updatePlayer(dt){
     }
     else if(keys[binds.jump] && player.onGround){
       // A hider is half height, so a wall that is nothing to anybody else is twice
-      // their own size. They get a jump to match: 10.6 against gravity 26 is 2.16
-      // blocks, which clears a two-block wall and still leaves the roofs out of reach.
-      // Everyone else jumps the normal 8.4, which is 1.36.
+      // their own size, and they get a little more to work with: 9.1 against gravity
+      // 26 is 1.59 blocks. That clears a step and a fence and cannot reach two blocks,
+      // which is the height a hider was getting over before. Everyone else jumps the
+      // normal 8.4, which is 1.36.
       const hider = mc.active && (mc.sized||1) < 1;
       player.vel.y = hider ? MC_HIDER_JUMP : 8.4 * ((bw.active && bw.jumpUntil>performance.now()) ? 1.7 : 1);
       player.onGround=false;
@@ -7554,6 +7557,13 @@ function mpDropSocket(){
 function mpConnect(){
   if(mp.ws) return;
   mp._joinErr=null;
+  // Being a spectator belongs to the server you were on, not to you. It used to
+  // survive the trip to the next one: watch a private world without the password,
+  // or a Build Battle round you arrived too late for, and you carried that with you
+  // into Bed Wars or a world you were welcome to build in, where nothing would break
+  // or land a punch and nothing said why. A world says so again in its init if it
+  // means it, and a minigame has no such thing.
+  mp.spectator=false; mp.minigame=false;
   let ws; try{ ws=new WebSocket(mpUrl()); }catch(e){ if(typeof serversNote==='function') serversNote('Could not connect.'); return; }
   mp.ws=ws;
   ws.onopen=()=>{ mp.active=true; const nm=getSavedName(); if(nm) mpSend({type:'name', name:nm}); };
@@ -9525,7 +9535,7 @@ function mcMark(x, y, z, color) {
     new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.75, depthTest: false }));
   s.position.set(x, y, z); s.renderOrder = 998; s.raycast = () => {};
   scene.add(s);
-  mc.marks.push({ o: s, until: performance.now() + 1600 });
+  mc.marks.push({ o: s, until: performance.now() + 1000 });   // a second, and gone
 }
 // Put a body back where it rests. The walk animation only turns joints, so a pose
 // that moved one stays moved until something undoes it.
@@ -9576,15 +9586,13 @@ function mcFrame(dt) {
     mcSetHeldGun(p, !!(p.mcPlaying && p.mcRole === 'seeker'));
     if (p.mcRole === 'hider' && p.mcAlive && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
     else if (p.model) mcPoseRest(p.model);   // nobody keeps a pose once they stop holding it
-    // A hider swallowed by a block, with a seeker standing on top of them. And once
-    // the round is over, every hider who was never found lights up wherever they were
-    // standing, flashing, so the seekers get to see where they had been looking.
+    // The outline is for the scoreboard and nothing else now: every hider who was
+    // never found lights up where they were standing, so the seekers get to see where
+    // they had been looking. Giving one away mid-round is the whistle's job, and that
+    // is a mark over their head and an arrow on the screen, not a red figure.
     const showed = mc.phase === 'ended' && p.mcPlaying && p.mcAlive && p.mcRole === 'hider' && p.model;
-    mcSeeThrough(p, showed ||
-                    (hunting && p.mcPlaying && p.mcAlive && p.mcRole === 'hider' && p.model &&
-                     Math.hypot(p.x - player.pos.x, p.y - player.pos.y, p.z - player.pos.z) < MC_SEE_R &&
-                     mcBuried(p)));
-    if (p.shellMat) p.shellMat.opacity = showed ? (0.3 + 0.55 * (0.5 + 0.5 * Math.sin(t * 7))) : 0.85;
+    mcSeeThrough(p, showed);
+    if (p.shellMat) p.shellMat.opacity = 0.3 + 0.55 * (0.5 + 0.5 * Math.sin(t * 7));
     // a name floating over a hider gives them away, which is the whole game. Only the
     // seekers are named, so you can see who is hunting and they cannot see who is not.
     if (p.tag) p.tag.visible = !!(p.mcPlaying && p.mcRole === 'seeker' && !p.ghost && !p.hide);
@@ -9741,7 +9749,7 @@ function mcEnsureUi() {
    Being small is the whole advantage: you fit under a bench, behind a fence post,
    inside a doorway. The hitbox shrinks with the model, or you would be caught by
    walls you can plainly see through. */
-const MC_HIDER_JUMP = 10.6;   // see the jump in the physics step: 2.16 blocks
+const MC_HIDER_JUMP = 9.1;    // see the jump in the physics step: 1.59 blocks
 const MC_SMALL = 0.5;      // how big a hider looks
 const MC_THIN = 0.28;      // and how wide they actually are, which is thinner still, so
                            // they can press into a doorway or a corner and half vanish
@@ -9971,7 +9979,7 @@ function mcHud() {
       '<div><b>B</b> paint yourself, in the world</div>' +
       '<div><b>F</b> fire (seeker)</div>' +
       '<div><b>R</b> reload (seeker)</div>' +
-      '<div><b>K</b> start a round</div>' +
+      '<div><b>K</b> start a round (or type <b>/start</b>)</div>' +
       '<div><b>Q</b> change view</div>';
   }
 }
@@ -12090,6 +12098,11 @@ function closeChat(send){
       else if(!mp.active) chatPush('There is nobody else here to kick.', 'sys');
       else mpSend({type:'kick', name:who});
     }
+    else if(/^\/start\b/i.test(v)){                                // the same thing K does
+      if(!mc.active) chatPush('/start is for Mecha Chameleon.', 'sys');
+      else if(mc.phase!=='lobby') chatPush('A round is already going.', 'sys');
+      else mpSend({type:'mcstart'});
+    }
     else if(/^\/(edit|prg)\b/i.test(v) && mc.active){
       // both of these used to build a map from inside a round. That happens in the
       // Mecha Map Editor now, which is its own server with its own password.
@@ -12407,6 +12420,9 @@ window.__mc = {
       endShown:(()=>{ const e=document.getElementById('mcEnd'); return !!e && e.style.display==='block'; })(),
       end:g('mcEndRows') }; },
   mcBlockAt(x,y,z){ return blockName(getBlock(x,y,z)); },
+  superSpeedOk(){ return superSpeedOk(); },
+  mechaMapNames(){ return mc.maps.map(m=>m.name); },
+  mechaMapBlurbs(){ return mc.maps.map(m=>m.blurb); },
   mcLookKind(){ return mc.localKind || ''; },
   mcCam(n){ camMode = n|0; return camMode; },
   rawPlayers(){ return mp.players; },
@@ -12493,7 +12509,9 @@ window.__mc = {
   srvList(){ return srvAllList.map(x=>({id:x.id,name:x.name,kind:srvKindOf(x),pinned:!!x.pinned})); },
   // ---- multiplayer test hook: join the world the ?mp= override points at ----
   joinShared(server){ mpTarget.server = server || 'original'; mpTarget.pw=''; mpTarget.spectate=false;
-    mp.bw=false; mp.bb=false; mpConnect(); return true; },
+    mp.bw=false; mp.bb=false; mp.mc=false; mp.med=false; mpDropSocket(); mpConnect(); return true; },
+  joinSpectate(server){ mpTarget.server = server || 'original'; mpTarget.pw=''; mpTarget.spectate=true;
+    mp.bw=false; mp.bb=false; mp.mc=false; mp.med=false; mpDropSocket(); mpConnect(); return true; },
   // ---- cape test hooks ----
   capes(){ return CAPES.map(c=>({id:c.id,name:c.name})); },
   capeCanvas(id){ const d=CAPE_BY_ID[id]; return d?capeCanvasFor(d):null; },
@@ -12561,6 +12579,7 @@ window.__mc = {
   splash(){ return document.getElementById('splash').textContent; },
   newTags(){ return { menu: !!document.querySelector('#mpBtn .newTag'), card: !!document.querySelector('.srvCard .meta .new') }; },
   mpSpectator(){ return !!mp.spectator; },
+  forceSpectator(v){ mp.spectator=!!v; return !!mp.spectator; },
   remoteSpectator(id){ const q=mp.players.get(id); if(!q) return null;
     return { spectator:!!q.spectator, tag: (q.tag && q.tag.userData.label)||'', hasTag: !!q.tag }; },
   tabHtml(){ renderTabList(); return tabListEl.innerHTML; },
