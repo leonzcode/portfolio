@@ -3969,8 +3969,11 @@ function makeCharacterModel(skinTex, slim){
   const cape=makeCapeObject();
   cape.pivot.position.set(0, 24*S16-HIP, -2*S16);   // off the top of the shoulders, against the back
   upper.add(cape.pivot);
+  const elytra=makeElytraObject();
+  elytra.pivot.position.set(0, 23*S16-HIP, -2*S16); // a shade lower, where the straps would sit
+  upper.add(elytra.pivot);
   g.scale.setScalar(0.9);           // ~1.8 blocks tall to match the hitbox
-  g.userData={ headPivot:hp, upper, legL, legR, armL, armR, mat, ovMat, hipY:HIP, slim:!!slim, cape };
+  g.userData={ headPivot:hp, upper, legL, legR, armL, armR, mat, ovMat, hipY:HIP, slim:!!slim, cape, elytra };
   return g;
 }
 /* ==================================================== CAPES ===============
@@ -4143,6 +4146,105 @@ function setCapeUV(geo){
   });
   uv.needsUpdate=true;
 }
+/* ---- elytra --------------------------------------------------------------
+   Two wings off the shoulders, on the same pivot the cape hangs from and drawn
+   from the same 64x32 sheet. That is why a cape becomes your elytra in
+   Minecraft and why it does here: the wing reads the cape's design where the
+   cape reads it, so whatever you are wearing is what you fly on. Without one
+   you get the plain membrane, painted below.
+
+   The wing is Minecraft's: ten wide, twenty tall, one deep, hinged at its top
+   inner corner so it folds against your back and opens out behind you.       */
+const WING_W = 10, WING_H = 20, WING_D = 1;
+function setWingUV(geo, mirror){
+  const U = 64, V = 32;
+  // the cape sheet: design at (1,1) 10x16, lining at (12,1), edges either side
+  const f = {
+    px: [0, 1, WING_D, 16], nx: [WING_D + WING_W, 1, WING_D, 16],
+    py: [WING_D, 0, WING_W, WING_D], ny: [WING_D + WING_W, 0, WING_W, WING_D],
+    pz: [WING_D + WING_W + WING_D, 1, WING_W, 16],
+    nz: [WING_D, 1, WING_W, 16],
+  };
+  const uv = geo.attributes.uv;
+  PART_ORDER.forEach((key, i) => {
+    const [x, y, w, h] = f[key];
+    let u0 = x / U, u1 = (x + w) / U;
+    if (mirror) { const t = u0; u0 = u1; u1 = t; }
+    const v0 = 1 - y / V, v1 = 1 - (y + h) / V;
+    uv.setXY(i * 4 + 0, u0, v0); uv.setXY(i * 4 + 1, u1, v0);
+    uv.setXY(i * 4 + 2, u0, v1); uv.setXY(i * 4 + 3, u1, v1);
+  });
+  uv.needsUpdate = true;
+}
+// The plain elytra, painted into the same 64x32 layout a cape uses, so one set
+// of UVs serves both. Grey-green membrane, a darker leading edge, the ribs.
+let elytraPlainTex = null;
+function elytraPlainTexture(){
+  if (elytraPlainTex) return elytraPlainTex;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 32;
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  const px = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+  px(0, 0, 64, 32, 'rgba(0,0,0,0)');
+  px(0, 1, 1, 16, '#4a4a52'); px(11, 1, 1, 16, '#4a4a52');      // the two edges
+  px(1, 0, 10, 1, '#5c5c66'); px(11, 0, 10, 1, '#3e3e45');
+  px(12, 1, 10, 16, '#3c3c43');                                  // the underside
+  px(1, 1, 10, 16, '#787f74');                                   // the membrane
+  px(1, 1, 10, 2, '#9aa294');                                    // lit along the top
+  px(1, 15, 10, 2, '#5f665c');                                   // shaded at the tip
+  for (let i = 0; i < 4; i++) px(2 + i * 2, 2, 1, 14, '#67705f'); // the ribs
+  px(1, 1, 2, 16, '#5a6157');                                     // the leading edge
+  elytraPlainTex = new THREE.CanvasTexture(c);
+  elytraPlainTex.magFilter = THREE.NearestFilter;
+  elytraPlainTex.minFilter = THREE.NearestFilter;
+  elytraPlainTex.generateMipmaps = false;
+  return elytraPlainTex;
+}
+function makeElytraObject(){
+  const mat = new THREE.MeshLambertMaterial({ map: null, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });
+  const pivot = new THREE.Group();
+  const wings = [];
+  for (const side of [1, -1]) {                       // right first, then left
+    const geo = new THREE.BoxGeometry(WING_W * S16, WING_H * S16, WING_D * S16);
+    setWingUV(geo, side < 0);
+    // hinge at the top inner corner, so the wing folds in against the back
+    geo.translate(side * WING_W * S16 / 2, -WING_H * S16 / 2, -WING_D * S16 / 2);
+    const m = new THREE.Mesh(geo, mat);
+    m.raycast = () => {};                             // never in the way of the brush
+    const hinge = new THREE.Group();
+    hinge.position.set(side * 1 * S16, 0, -1 * S16);   // just off the shoulder, behind the torso
+    hinge.add(m);
+    pivot.add(hinge);
+    wings.push({ hinge: hinge, mesh: m, side: side });
+  }
+  pivot.visible = false;
+  return { pivot: pivot, wings: wings, mat: mat };
+}
+// Folded against the back, or open and swept behind you. Minecraft's angles: a
+// closed wing sits about fifteen degrees out, an open one about seventy.
+function poseElytra(ud, gliding, bobPhase, bobAmp){
+  const el = ud && ud.elytra; if (!el || !el.pivot.visible) return;
+  const deg = Math.PI / 180;
+  const want = gliding ? 72 : 15;
+  el.open = el.open === undefined ? want : el.open + (want - el.open) * 0.25;
+  const flap = gliding ? 0 : Math.sin(bobPhase) * 3 * (bobAmp || 0);
+  for (const w of el.wings) {
+    w.hinge.rotation.set((gliding ? -8 : 12) * deg,
+                         w.side * (gliding ? -14 : -6) * deg,
+                         w.side * -(el.open + flap) * deg);
+  }
+}
+// What a player's wings are made of: their cape if they have one, the plain
+// membrane if not. Hides the cape while they are out, the way Minecraft does.
+function setModelElytra(model, on, cape){
+  const ud = model && model.userData; if (!ud || !ud.elytra) return;
+  ud.elytra.pivot.visible = !!on;
+  if (on) {
+    const tex = cape ? capeTexFor(cape, () => { ud.elytra.mat.needsUpdate = true; }) : null;
+    ud.elytra.mat.map = tex || elytraPlainTexture();
+    ud.elytra.mat.needsUpdate = true;
+  }
+  if (ud.cape) ud.cape.pivot.visible = !!(ud.cape.mat.map) && !on;
+}
 // the slab plus the pivot it swings from, ready to hang off a pair of shoulders
 function makeCapeObject(){
   const geo=new THREE.BoxGeometry(CAPE_W*S16, CAPE_H*S16, CAPE_D*S16);
@@ -4197,7 +4299,9 @@ function setModelCape(model, cape){
   const ud=model && model.userData; if(!ud || !ud.cape) return;
   const tex = capeTexFor(cape, ()=>{ ud.cape.mat.needsUpdate=true; });
   ud.cape.mat.map = tex; ud.cape.mat.needsUpdate = true;
-  ud.cape.pivot.visible = !!tex;
+  const wings = !!(ud.elytra && ud.elytra.pivot.visible);
+  ud.cape.pivot.visible = !!tex && !wings;      // one or the other, never both
+  if(wings){ ud.elytra.mat.map = tex || elytraPlainTexture(); ud.elytra.mat.needsUpdate = true; }
 }
 function setLocalCape(cape){
   localCape = cape || null;
@@ -4250,27 +4354,40 @@ function setLocalSlim(slim){
 // floating name tag above a remote player's head. In Bed Wars it leads with the team
 // in that team's own colour, the way Hypixel does, so you can tell friend from foe
 // across the map without waiting to be hit.
-function makeNametag(name, color, admin, spectator, team){
+/* ---- the tags after a name ------------------------------------------------
+   Rarest first, so the thing that says the most about somebody reads first:
+   there are a few admins, fewer people who found the code than that, and
+   spectators come and go all day. Somebody can be more than one, and then they
+   wear both.                                                                  */
+const ROLE_TAGS = [
+  { key: 'admin',     text: 'ADMIN',     color: '#42e042' },
+  { key: 'cool',      text: 'COOL',      color: '#4ec9ff' },
+  { key: 'spectator', text: 'SPECTATOR', color: '#c4ccd6' },
+];
+function roleTagsOf(o){ return o ? ROLE_TAGS.filter(t => o[t.key]) : []; }
+
+function makeNametag(name, color, tags, team){
   const c=document.createElement('canvas'); c.width=380; c.height=64;
   const HC=c.width/2;
   const g=c.getContext('2d'); g.textBaseline='middle';
   const nameFont='bold 26px monospace', admFont='italic bold 22px monospace';
-  const tag = admin ? ' ADMIN' : (spectator ? ' SPECTATOR' : '');
+  const list = Array.isArray(tags) ? tags : roleTagsOf(tags);
   const tm = (team!=null && typeof BW_TEAMS!=='undefined' && BW_TEAMS[team]) ? '['+BW_TEAMS[team].name.toUpperCase()+'] ' : '';
   const tmCol = tm ? '#'+BW_TEAMS[team].color.toString(16).padStart(6,'0') : '';
-  g.font=admFont; const admW = tag ? g.measureText(tag).width : 0;
+  g.font=admFont; const tagW = list.reduce((n,t)=> n + g.measureText(' '+t.text).width, 0);
   g.font=nameFont; const nameW=g.measureText(name).width, tmW = tm ? g.measureText(tm).width : 0;
-  const total=Math.min(c.width-18, tmW+nameW+admW), w=total+18;
+  const total=Math.min(c.width-18, tmW+nameW+tagW), w=total+18;
   g.fillStyle='rgba(0,0,0,0.5)'; g.fillRect(HC-w/2, 18, w, 30);
   let x=HC-total/2; g.textAlign='left';
   if(tm){ g.font=nameFont; g.fillStyle=tmCol; g.fillText(tm, x, 34); x+=tmW; }
   g.font=nameFont; g.fillStyle=color||'#fff'; g.fillText(name, x, 34); x+=nameW;
-  if(tag){ g.font=admFont; g.fillStyle= admin?'#42e042':'#c4ccd6'; g.fillText(tag, x, 35); }
+  g.font=admFont;
+  for(const t of list){ g.fillStyle=t.color; const piece=' '+t.text; g.fillText(piece, x, 35); x+=g.measureText(piece).width; }
   const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=THREE.LinearFilter;
   const s=new THREE.Sprite(new THREE.SpriteMaterial({ map:t, transparent:true, depthTest:false }));
   s.scale.set(1.7*c.width/256,0.42,1); s.position.y=2.15; s.renderOrder=999;
   s.raycast=()=>{};   // never block the punch/attack raycast (sprites also need raycaster.camera)
-  s.userData.label = tag.trim();   // the tag is drawn into a canvas, so keep the text readable too
+  s.userData.label = list.map(t=>t.text).join(' ');   // drawn into a canvas, so keep the text readable too
   return s;
 }
 
@@ -4302,8 +4419,9 @@ function buildBwHeldItem(st){
 function buildHeldBlock(id){
   if(vmBlock){ vmScene.remove(vmBlock); if(!vmBlock.userData.shared){ vmBlock.geometry.dispose(); vmBlock.material.dispose(); } vmBlock=null; }
   vmHeldId=id||0; if(!id || id===STICK_ITEM) return;   // the stick shows the bare hand/arm, no held cube
-  if(id===FLINT_ITEM){                               // flint and steel hangs in the hand as a flat sprite
-    const tex=new THREE.CanvasTexture(flintIconCanvas(64)); tex.magFilter=tex.minFilter=THREE.NearestFilter;
+  if(id===FLINT_ITEM || id===ELYTRA_ITEM){           // a tool hangs in the hand as a flat sprite
+    const tex=new THREE.CanvasTexture(id===FLINT_ITEM ? flintIconCanvas(64) : elytraIconCanvas(64));
+    tex.magFilter=tex.minFilter=THREE.NearestFilter;
     vmBlock=new THREE.Mesh(new THREE.PlaneGeometry(0.62,0.62),
       new THREE.MeshBasicMaterial({ map:tex, transparent:true, alphaTest:0.4, side:THREE.DoubleSide }));
     vmScene.add(vmBlock); return;
@@ -4999,6 +5117,66 @@ function stepUpStair(p, axis){
   stepSmooth=Math.min(1.3, stepSmooth+rise);
   return true;
 }
+/* ---- gliding --------------------------------------------------------------
+   Hold the elytra and press jump while you are off the ground and the wings
+   open. What happens after that is Minecraft's own arithmetic, run at its own
+   twenty ticks a second: look down to trade height for speed, level out to
+   glide, look up to climb until the speed runs out. Landing folds them again.
+
+   Minecraft works in blocks per tick and this game in blocks per second, so
+   the velocity is divided going in and multiplied coming out.               */
+const GLIDE_HZ = 20;
+let glideAcc = 0;
+function elytraHeld(){ return hotbar[selSlot] === ELYTRA_ITEM; }
+function elytraCanStart(){
+  return elytraHeld() && !player.onGround && !player.flying && !inLiquid() && !glide.on;
+}
+function glideStart(){
+  glide.on = true; glideAcc = 0;
+  showItemName(ELYTRA_ITEM);
+}
+function glideStop(){
+  if(!glide.on) return;
+  glide.on = false;
+}
+function glideStep(dt){
+  if(glide.on && (player.onGround || inLiquid() || !elytraHeld() || player.flying)) glideStop();
+  if(!glide.on) return false;
+  glideAcc += dt;
+  const step = 1 / GLIDE_HZ;
+  let guard = 0;
+  while(glideAcc >= step && guard++ < 8){
+    glideAcc -= step;
+    const d = camDir();                                  // where you are pointing
+    // everything below is per tick, in blocks per tick
+    let vx = player.vel.x / GLIDE_HZ, vy = player.vel.y / GLIDE_HZ, vz = player.vel.z / GLIDE_HZ;
+    const horiz = Math.hypot(d.x, d.z);
+    const vHoriz = Math.hypot(vx, vz);
+    const len = Math.hypot(d.x, d.y, d.z) || 1;
+    let cos = horiz;                                     // cos(pitch)
+    cos = cos * cos * Math.min(1, len / 0.4);
+    vy += -0.08 + cos * 0.06;
+    if(vy < 0 && horiz > 0){
+      const add = vy * -0.1 * cos;
+      vy += add;
+      vx += d.x * add / horiz;
+      vz += d.z * add / horiz;
+    }
+    if(d.y < 0 && horiz > 0){                            // nose down: height into speed
+      const add = vHoriz * (-d.y) * 0.04;
+      vy -= add * 3.2;
+      vx += d.x * add / horiz;
+      vz += d.z * add / horiz;
+    }
+    if(horiz > 0){                                       // and the flight path turns to follow you
+      vx += (d.x / horiz * vHoriz - vx) * 0.1;
+      vz += (d.z / horiz * vHoriz - vz) * 0.1;
+    }
+    vx *= 0.99; vy *= 0.98; vz *= 0.99;
+    player.vel.x = vx * GLIDE_HZ; player.vel.y = vy * GLIDE_HZ; player.vel.z = vz * GLIDE_HZ;
+  }
+  return true;
+}
 function updatePlayer(dt){
   const fwd = new THREE.Vector3(-Math.sin(player.yaw),0,-Math.cos(player.yaw));
   const right = new THREE.Vector3(Math.cos(player.yaw),0,-Math.sin(player.yaw));
@@ -5010,7 +5188,9 @@ function updatePlayer(dt){
 
   const swimming = inLiquid();
   player.sneak = false;
-  if(player.flying){
+  if(glideStep(dt)){
+    // the wings have the controls: no walking, no gravity, no jump
+  } else if(player.flying){
     const speed = (keys[binds.sneak]?18:9) * superSpeedMul();
     player.vel.x = wish.x*speed; player.vel.z = wish.z*speed;
     player.vel.y = 0;
@@ -5048,6 +5228,7 @@ function updatePlayer(dt){
         else if(player.vel.y < 1) player.vel.y = (mc.active && (mc.sized||1) < 1) ? MC_HIDER_JUMP : 8.4;
       }
     }
+    else if(keys[binds.jump] && !player.onGround && elytraCanStart()){ glideStart(); }
     else if(keys[binds.jump] && player.onGround){
       // A hider is half height, so a wall that is nothing to anybody else is twice
       // their own size, and they get a little more to work with: 9.1 against gravity
@@ -5126,6 +5307,7 @@ function updatePlayer(dt){
   step('x', player.vel.x*dt);
   step('z', player.vel.z*dt);
   step('y', player.vel.y*dt);
+  if(glide.on && (player.onGround || inLiquid())) glideStop();   // touching down folds them
   // knockback impulse (a punch from another player): a decaying positional shove, applied even while flying
   if(player.kbVel.lengthSq()>0.0004){
     const km=(axis,d)=>{ if(d===0) return; const p=player.pos.clone(); p[axis]+=d; if(!collides(p.x,p.y,p.z)) player.pos[axis]=p[axis]; };
@@ -6290,7 +6472,7 @@ function renderHotbar(){
         s.appendChild(ic);
         if(n!=null && (n>1 || st.kind==='block')){ const c=document.createElement('span'); c.className='cnt'; c.textContent=n; s.appendChild(c); }
       }
-    } else { const id=hotbar[i]; if(id===STICK_ITEM) s.appendChild(stickIconCanvas(40)); else if(id===FLINT_ITEM) s.appendChild(flintIconCanvas(40)); else if(id) s.appendChild(blockIconCanvas(id,40)); }
+    } else { const id=hotbar[i]; if(id===STICK_ITEM) s.appendChild(stickIconCanvas(40)); else if(id===FLINT_ITEM) s.appendChild(flintIconCanvas(40)); else if(id===ELYTRA_ITEM) s.appendChild(elytraIconCanvas(40)); else if(id) s.appendChild(blockIconCanvas(id,40)); }
     hotbarEl.appendChild(s);
   }
 }
@@ -6303,7 +6485,7 @@ function showBanner(text){ showItemName(0); itemNameEl.textContent=text;
   itemNameTimer=setTimeout(()=>{ itemNameEl.style.transition='opacity .55s ease'; itemNameEl.style.opacity='0'; }, 2200); }
 function showItemName(id){
   if(!id){ itemNameEl.style.opacity='0'; return; }
-  itemNameEl.textContent = (id===STICK_ITEM) ? 'Knockback Stick' : (id===FLINT_ITEM) ? 'Flint and Steel' : (BLOCKS[id].display || pretty(BLOCKS[id].name));
+  itemNameEl.textContent = (id===STICK_ITEM) ? 'Knockback Stick' : (id===FLINT_ITEM) ? 'Flint and Steel' : (id===ELYTRA_ITEM) ? 'Elytra' : (BLOCKS[id].display || pretty(BLOCKS[id].name));
   itemNameEl.style.transition='none'; itemNameEl.style.opacity='1';
   void itemNameEl.offsetWidth;                 // restart the fade
   clearTimeout(itemNameTimer);
@@ -6358,7 +6540,10 @@ function catOf(n){
 }
 // blocks kept in the game (so existing builds are safe) but hidden from the picker
 const HIDDEN_BLOCKS = new Set(['fire','nether_portal','soul_sand','white_stained_clay','chiseled_sandstone','chiseled_stone_bricks']);
-const EXTRA_ITEMS=[{ id:30001, name:'Flint and Steel', cat:'misc', tags:'fire lighter tool flint steel portal tnt', icon:(n)=>flintIconCanvas(n) }];
+const EXTRA_ITEMS=[
+  { id:30001, name:'Flint and Steel', cat:'misc', tags:'fire lighter tool flint steel portal tnt', icon:(n)=>flintIconCanvas(n) },
+  { id:30002, name:'Elytra', cat:'misc', tags:'elytra wings fly flying glide glider cape', icon:(n)=>elytraIconCanvas(n) },
+];
 // Extra words a block answers to in the search box. Typing "flower" should turn
 // up every flower, not just the two with the word in their name, and the same
 // goes for plants, vines, lights and wood.
@@ -7094,7 +7279,21 @@ document.getElementById('pmPill').addEventListener('click', e=>{ e.stopPropagati
 const NAME_BLUE = '#4aa3ff';              // the "leoniscool" code turns your name this colour
 const STICK_ITEM = 30000;                 // hotbar sentinel (well above any real block id) for the knockback stick
 const FLINT_ITEM = 30001;                 // same idea: flint and steel is a tool, not a block
-function isItem(id){ return id===STICK_ITEM || id===FLINT_ITEM; }
+const ELYTRA_ITEM = 30002;                // and a pair of wings is neither
+function isItem(id){ return id===STICK_ITEM || id===FLINT_ITEM || id===ELYTRA_ITEM; }
+function elytraIconCanvas(size){
+  const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); const u=size/16;
+  const px=(x,y,w,h,col)=>{ g.fillStyle=col; g.fillRect(x*u,y*u,w*u,h*u); };
+  // a folded pair, seen from behind: two membranes either side of the straps
+  for(const s of [0,1]){
+    const x = s ? 8 : 3;
+    px(x,3,5,10,'#787f74'); px(x,3,5,2,'#9aa294'); px(x,11,5,2,'#5f665c');
+    px(s?12:3,3,1,10,'#4a4a52');
+    px(x+1,5,1,6,'#67705f'); px(x+3,5,1,6,'#67705f');
+  }
+  px(7,2,2,12,'#5a5f56'); px(7,2,2,2,'#767c71');   // the straps down the middle
+  return c;
+}
 // a steel striker with a wooden grip, a chipped flint below it, and sparks in between
 function flintIconCanvas(size){
   const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d'); const u=size/16;
@@ -7108,7 +7307,9 @@ function flintIconCanvas(size){
   px(12,8,1,1,'#ffd15c'); px(13,10,1,1,'#ffa62b'); px(12,12,1,1,'#ffe6a0'); px(14,6,1,1,'#ffc24d');   // sparks
   return c;
 }
-const fx = { body:'none', color:'', stick:false, hide:false, superStick:false, ghost:false, fly:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
+const glide = { on:false };               // the wings are out and you are flying on them
+let lastElytraHeld = null;                // so the model is only re-dressed when it changes
+const fx = { body:'none', color:'', stick:false, hide:false, superStick:false, ghost:false, fly:false, cool:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
 let localEyeMul = 1;                      // giant/small change the local camera height a bit
 
 function flashCode(msg, el){ if(!el) return; el.textContent=msg; clearTimeout(el._t); el._t=setTimeout(()=>{ el.textContent=''; }, 3000); }
@@ -7116,7 +7317,7 @@ function applyLocalBody(){
   setLocalBody(bodyToKind(fx.body));   // become a pig / block / tree locally too, so first-person reflects it
   localEyeMul = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.3 : fx.body==='pig' ? 0.6 : fx.body==='block' ? 0.95 : fx.body==='tree' ? 1.7 : 1;   // camera rides at your new height
 }
-function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, admin:isAdmin(), ghost:fx.ghost }); }   // relayed to everyone else
+function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, admin:isAdmin(), cool:fx.cool, ghost:fx.ghost }); }   // relayed to everyone else
 function giveStick(){ hotbar[0]=STICK_ITEM; selSlot=0; if(typeof renderHotbar==='function') renderHotbar(); if(typeof showItemName==='function') showItemName(STICK_ITEM); }
 function removeStick(){ if(hotbar[0]===STICK_ITEM){ hotbar[0]=0; if(typeof renderHotbar==='function') renderHotbar(); } }
 // Every code toggles: typing it again turns it back off. Body codes are one-at-a-time (a new one replaces the old).
@@ -7130,6 +7331,8 @@ function applyCode(raw, msgEl){
   if(code==='3141592653589'){ ownerMode=!ownerMode; localStorage.setItem('leoncraft_owner', ownerMode?'1':'0'); if(mp.active) sendFx(); if(tabShown) renderTabList();
     flashCode(ownerMode?'OWNER mode on. You can also delete, rename and re-password any server.':'OWNER mode off.', msgEl); return; }
   if(code==='leoniscool'){ fx.color = fx.color ? '' : NAME_BLUE; note = fx.color ? 'Your name is now blue.' : 'Blue name turned off.'; }
+  else if(code==='looc'){ fx.cool=!fx.cool;
+    note = fx.cool ? 'COOL. Everyone can see it beside your name.' : 'Not cool any more.'; }
   else if(code==='secret'){ fx.hide=!fx.hide; note = fx.hide ? 'Your name is now hidden from others.' : 'Your name is visible again.'; }
   else if(code==='hide'){                   // straight in: type it and you are gone
     fx.ghost=!fx.ghost; applyGhost();
@@ -7238,18 +7441,18 @@ function setPlayerBody(p, body){
 }
 function setPlayerColor(p, color){
   p.color = color || '';
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
 function setPlayerSpectator(p, spec){
   if(!!p.spectator===!!spec) return; p.spectator=!!spec;
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide && !p.ghost; }
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p, p.team); p.model.add(p.tag); p.tag.visible=!p.hide && !p.ghost; }
   if(tabShown) renderTabList();
 }
 function setPlayerAdmin(p, admin){
   if(!!p.admin===!!admin) return; p.admin=!!admin;
   if(tabShown) renderTabList();
-  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
   if(tabShown) renderTabList();
 }
 // The hide code: your whole body goes, not just the nametag. Locally that means
@@ -7264,7 +7467,12 @@ function setPlayerGhost(p, on){
   if(p.model) p.model.visible = !p.ghost;
   if(p.tag) p.tag.visible = !p.ghost && !p.hide;
 }
-function setPlayerHide(p, hide){ p.hide=!!hide; if(p.tag) p.tag.visible = !p.hide && !p.ghost; }   // hidename code: hide the floating nametag from others
+function setPlayerHide(p, hide){ p.hide=!!hide; if(p.tag) p.tag.visible = !p.hide && !p.ghost; }
+function setPlayerCool(p, cool){
+  if(!!p.cool===!!cool) return; p.cool=!!cool;
+  if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p, p.team); p.model.add(p.tag); p.tag.visible=!p.hide && !p.ghost; }
+  if(tabShown) renderTabList();
+}   // hidename code: hide the floating nametag from others
 
 // multiplayer player list — hold Tab to show everyone online at the top
 const tabListEl = document.getElementById('tabList');
@@ -7272,15 +7480,16 @@ let tabShown = false;
 function renderTabList(){
   if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
   const teamOf = t => (bw.active && t!=null && BW_TEAMS[t]) ? BW_TEAMS[t] : null;
-  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:isAdmin(), spectator:!!mp.spectator && !mp.minigame, team:teamOf(bw.active?bw.team:null)}];
-  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin, spectator:!!p.spectator, team:teamOf(p.team)});
+  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:isAdmin(), cool:!!fx.cool, spectator:!!mp.spectator && !mp.minigame, team:teamOf(bw.active?bw.team:null)}];
+  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin, cool:!!p.cool, spectator:!!p.spectator, team:teamOf(p.team)});
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
   const hdr = mp.serverName ? escapeHtml(mp.serverName)+' - '+n+' online' : (n+' player'+(n===1?'':'s')+' online');
   tabListEl.innerHTML = '<div class="th">'+hdr+'</div>' +
     rows.map(r=> '<div class="pl"><span class="pn"><img class="ph" src="'+(r.head||defaultHeadURL)+'">'+
       (r.team?'<span style="color:#'+r.team.color.toString(16).padStart(6,'0')+';font-weight:800;margin-right:5px">['+r.team.name.toUpperCase()+']</span>':'')+
-      '<span'+(r.color?' style="color:'+r.color+'"':'')+'>'+escapeHtml(r.name)+'</span>'+(r.admin?'<span style="color:#42e042;font-style:italic;margin-left:5px">ADMIN</span>':(r.spectator?'<span style="color:#c4ccd6;font-style:italic;margin-left:5px">SPECTATOR</span>':''))+'</span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
+      '<span'+(r.color?' style="color:'+r.color+'"':'')+'>'+escapeHtml(r.name)+'</span>'+
+      roleTagsOf(r).map(t=>'<span style="color:'+t.color+';font-style:italic;margin-left:5px">'+t.text+'</span>').join('')+'</span>'+(r.you?'<span class="you">you</span>':'<span></span>')+'</div>').join('');
   tabListEl.hidden=false;
 }
 
@@ -7305,7 +7514,7 @@ function mpUrl(){
   if(mp.mc){                                        // mecha chameleon: separate round
     const nm=getSavedName();
     return u + (u.indexOf('?')>=0?'&':'?') + 'mode=mecha' + (nm ? '&name='+encodeURIComponent(nm) : '')
-             + (isAdmin() ? '&admin=1' : '');
+             + (isAdmin() ? '&admin=1' : '') + (fx.cool ? '&cool=1' : '');
   }
   if(mp.med){                                       // the map editor, which has a password
     const nm=getSavedName();
@@ -7331,15 +7540,17 @@ function mpAddPlayer(p){
   // SPECTATOR label even though the server holds them to a spectator's permissions.
   const color=p.color||'', admin=!!p.admin, spectator=!!p.spectator && !p.minigame, slim=!!p.slim;
   const model=makeCharacterModel(defaultSkinTex, slim); model.visible=true; scene.add(model);
-  const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', admin, spectator, p.team); model.add(tag);
+  const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', p, p.team); model.add(tag);
   const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
     x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
-    body:'none', color:color, hide:!!p.hide, ghost:!!p.ghost, admin:admin, spectator:spectator, minigame:!!p.minigame, slim:slim };
+    body:'none', color:color, hide:!!p.hide, ghost:!!p.ghost, admin:admin, cool:!!p.cool, spectator:spectator, minigame:!!p.minigame, slim:slim,
+    elytra:!!p.ely, gliding:!!p.gld };
   mp.players.set(p.id, rec);
   if(p.ghost) setPlayerGhost(rec, true);
   if(p.hide) tag.visible=false;
   rec.cape = p.cape || null;
   setModelCape(model, rec.cape);
+  if(rec.elytra) setModelElytra(model, true, rec.cape);
   if(p.skin) applyRemoteSkin(p.id, p.skin, slim);    // their custom skin, if they have one
   if(p.body && p.body!=='none') setPlayerBody(rec, p.body);   // big / small / pig / block already active on join
   bwDressRemote(rec, p);
@@ -7362,6 +7573,7 @@ function rebuildRemotePlayerModel(p){
   const kind=modelKind(p.model), tag=p.tag, wasVis=p.model?p.model.visible:true;
   if(p.model){ if(tag) p.model.remove(tag); scene.remove(p.model); }
   p.model = makeBodyModel(kind, p.skinTex||defaultSkinTex, p.slim);
+  if(p.elytra) setModelElytra(p.model, true, p.cape);
   if(tag){ p.model.add(tag); tag.visible=!p.hide; }
   p.model.visible=wasVis; scene.add(p.model);
 }
@@ -7413,6 +7625,7 @@ function mpUpdatePlayers(dt){
       if(p.swing>0){ p.swing=Math.max(0, p.swing-dt*3.4); const arm=ud.armR; if(arm) arm.rotation.x = -Math.sin((1-p.swing)*Math.PI)*1.5; }   // punch swing overrides the walk swing
       p.cloak = stepCloak(p.cloak, p.x, p.y, p.z, dt);
       poseCape(ud, capeDrift(p.cloak, p.x, p.y, p.z), p.yaw, (p.crouch||0)>0.5, p.walkT||0, p.walkAmp||0);
+      poseElytra(ud, !!p.gliding, p.walkT||0, p.walkAmp||0);
     }
   }
 }
@@ -7522,15 +7735,18 @@ function mpHandle(m){
     applyRemoteSkin(m.id, m.png, m.slim); }
   else if(m.type==='knockback'){ player.kbVel.x += (+m.dx||0); player.kbVel.y += (+m.dy||0); player.kbVel.z += (+m.dz||0); mp.kbRecv=(mp.kbRecv||0)+1; showHurt(); }   // you got punched
   else if(m.type==='swing'){ const p=mp.players.get(m.id); if(p) p.swing=1; }   // another player swung their arm
-  else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak; } }   // another player sat down / started sneaking
-  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerGhost(p, m.ghost); setPlayerHide(p, m.hide); setPlayerAdmin(p, m.admin); } }   // secret-code effect: big / small / pig / block / name colour / hidename / admin
+  else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak;
+    if(!!p.elytra !== !!m.ely){ p.elytra=!!m.ely; setModelElytra(p.model, p.elytra, p.cape); }
+    p.gliding=!!m.gld; } }   // another player sat down, started sneaking, or put their wings out
+  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerGhost(p, m.ghost); setPlayerHide(p, m.hide); setPlayerCool(p, m.cool); setPlayerAdmin(p, m.admin); } }   // secret-code effect: big / small / pig / block / name colour / hidename / admin
   else if(m.type==='chat'){
     if(m.system){ chatPush(m.text, 'sys'); }
     else {
       // in Bed Wars a message leads with the sender's team, in that team's colour
       const t = (bw.active && m.team!=null && BW_TEAMS[m.team]) ? BW_TEAMS[m.team] : null;
-      chatPush('<'+m.name+(m.admin?' ADMIN':(m.spectator?' SPECTATOR':''))+'> '+m.text, '',
-               t ? { text:'['+t.name.toUpperCase()+']', color:'#'+t.color.toString(16).padStart(6,'0') } : null);
+      chatPush(m.text, '',
+               t ? { text:'['+t.name.toUpperCase()+']', color:'#'+t.color.toString(16).padStart(6,'0') } : null,
+               { name:m.name, tags:roleTagsOf(m) });
     }
   }
   else if(m.type==='worldspawn'){ worldSpawn={ x:+m.x, y:+m.y, z:+m.z, d:0 };
@@ -7538,7 +7754,7 @@ function mpHandle(m){
   else if(m.type==='kicked'){ chatPush(m.reason||'You were removed from this server.', 'sys'); }
   else if(m.type==='rename'){
     if(m.id===mp.id){ mp.name=m.name; }
-    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; } }
+    else { const p=mp.players.get(m.id); if(p){ p.name=m.name; p.model.remove(p.tag); p.tag=makeNametag(m.name, p.color||'#fff', p, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; } }
   }
   else if(m.type==='poll'){ pollData={yes:m.yes|0, no:m.no|0}; renderPoll(); renderPollMini(); }   // live poll tally update (modal + corner widget)
   else if(m.type==='authfail'){ mp._joinErr='Wrong password.'; }
@@ -9396,7 +9612,7 @@ function mcHandle(m) {
         p.mcRole = q.role; p.mcAlive = q.alive; p.mcPlaying = q.playing; p.mcPose = q.pose | 0;
         // who is an admin, and who is watching rather than playing, for the tab list
         const wasLabel = (p.admin ? 1 : 0) + (p.spectator ? 2 : 0);
-        p.admin = !!q.admin; p.spectator = !!q.spectator;
+        p.admin = !!q.admin; p.cool = !!q.cool; p.spectator = !!q.spectator;
         if (wasLabel !== (p.admin ? 1 : 0) + (p.spectator ? 2 : 0) && tabShown) renderTabList();
         // Take the slim flag from the same message as the skin. Forcing it false here
         // fought the skin relay, which carries the real one: the model was rebuilt on
@@ -10873,7 +11089,7 @@ function bwSetGear(model, teamColor, armorTier, swordTier, kbSword){
 function bwApplyLocalGear(){ if(bw.active) bwSetGear(body, bw.team!=null?BW_TEAMS[bw.team].color:null, bw.loadout.armor||0, bw.loadout.sword||0, fx.superStick); }
 function bwApplyRemoteGear(id){ const p=mp.players.get(id); if(!p||!p.model) return;
   bwSetGear(p.model, p.team!=null?BW_TEAMS[p.team].color:null, p.armor||0, p.sword||0, p.superStick);
-  if(p.tag){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p.admin, p.spectator, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
+  if(p.tag){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p, p.team); p.model.add(p.tag); p.tag.visible=!p.hide; }
 }
 
 // ---- floating resource items ----
@@ -12055,8 +12271,8 @@ function censor(text) {
   return chars.join("");
 }
 
-function chatPush(text, cls, pre){
-  chatMsgs.push({ text, cls:cls||'', pre:pre||null, t:performance.now() });
+function chatPush(text, cls, pre, who){
+  chatMsgs.push({ text, cls:cls||'', pre:pre||null, who:who||null, t:performance.now() });
   while(chatMsgs.length>60) chatMsgs.shift();
   renderChat();
 }
@@ -12075,6 +12291,9 @@ function renderChat(){
   chatLogEl.style.display = visible ? 'flex' : 'none';
   chatLogEl.innerHTML = show.map(m=>'<div class="cm '+m.cls+'">'+
     (m.pre && /^#[0-9a-f]{6}$/i.test(m.pre.color) ? '<span style="color:'+m.pre.color+';font-weight:800">'+escapeHtml(m.pre.text)+'</span> ' : '')+
+    // a speaker's name, then whatever they are, each in its own colour
+    (m.who ? '&lt;'+escapeHtml(m.who.name)+
+      (m.who.tags||[]).map(t=>' <span style="color:'+t.color+';font-style:italic">'+t.text+'</span>').join('')+'&gt; ' : '')+
     escapeHtml(m.text)+'</div>').join('');
 }
 function escapeHtml(s){ return (''+s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -12185,7 +12404,9 @@ function frame(now){
       // pose (sit / sneak) is event-driven: sent only when it changes, throttled so rapid shift-taps can't spam the server
       if(sit.active!==mp.poseSit || (!!player.sneak)!==mp.poseSneak){
         const tnow=performance.now();
-        if(tnow-(mp.lastPose||0)>90){ mp.lastPose=tnow; mp.poseSit=sit.active; mp.poseSneak=!!player.sneak; mp.poseSent=(mp.poseSent||0)+1; mpSend({type:'pose', sit:sit.active, sneak:!!player.sneak}); }
+        if(tnow-(mp.lastPose||0)>90){ mp.lastPose=tnow; mp.poseSit=sit.active; mp.poseSneak=!!player.sneak;
+          mp.poseEly=elytraHeld(); mp.poseGld=!!glide.on; mp.poseSent=(mp.poseSent||0)+1;
+          mpSend({type:'pose', sit:sit.active, sneak:!!player.sneak, ely:mp.poseEly, gld:mp.poseGld}); }
       }
     }
     if(sit.active){   // stand up on any move input, or if the cushion gets removed from under you
@@ -12237,6 +12458,10 @@ function frame(now){
     if(swing>0) lud.armR.rotation.x = -Math.sin((1-swing)*Math.PI)*1.5;   // a punch swing overrides the walk swing
     localCloak = stepCloak(localCloak, player.pos.x, player.pos.y, player.pos.z, dt);
     poseCape(lud, capeDrift(localCloak, player.pos.x, player.pos.y, player.pos.z), player.yaw, cr>0.5, bobT, walkAmpLocal);
+    // your own wings: dressed when you pick them up, posed every frame after
+    { const want = elytraHeld();
+      if(lastElytraHeld !== want){ lastElytraHeld = want; setModelElytra(body, want, localCape); }
+      poseElytra(lud, glide.on, bobT, walkAmpLocal); }
     // A held pose is not an animation, so it goes on last and wins: the walk cycle
     // above would otherwise put the limbs straight back where they were.
     if(mc.active && mc.role==='hider' && mc.alive && mc.playing)
@@ -12643,6 +12868,14 @@ window.__mc = {
   savedBlockAt(d,x,y,z){ const store = (d===dim) ? spEdits : ((spDims[d]&&spDims[d].blocks)||{});
     return blockName(store[x+','+y+','+z]||0); },
   giveFlint(){ hotbar[selSlot]=FLINT_ITEM; if(typeof renderHotbar==='function') renderHotbar(); return true; },
+  giveElytra(){ hotbar[selSlot]=ELYTRA_ITEM; if(typeof renderHotbar==='function') renderHotbar(); return true; },
+  holdId(id){ hotbar[selSlot]=id|0; if(typeof renderHotbar==='function') renderHotbar(); return true; },
+  elytraState(){ const u=body.userData; return { held:elytraHeld(), gliding:!!glide.on,
+    wingsShown:!!(u.elytra && u.elytra.pivot.visible), wings:u.elytra?u.elytra.wings.length:0,
+    capeShown:!!(u.cape && u.cape.pivot.visible),
+    tex:!!(u.elytra && u.elytra.mat.map) }; },
+  remoteElytra(){ return [...mp.players.values()].map(q=>({ id:q.id, held:!!q.elytra, gliding:!!q.gliding,
+    wingsShown:!!(q.model && q.model.userData.elytra && q.model.userData.elytra.pivot.visible) })); },
   strikeAt(x,y,z,nx,ny,nz){ target={x,y,z,nx:nx|0,ny:ny|0,nz:nz|0,dist:1,hx:x+0.5,hy:y+0.5,hz:z+0.5};
     const before=hotbar[selSlot]; hotbar[selSlot]=FLINT_ITEM; useFlint(); hotbar[selSlot]=before; return true; },
   portalAxis(x,y,z){ return portalAxisAt(x,y,z); },
@@ -12770,7 +13003,7 @@ window.__mc = {
   joinTarget(id,pw){ mpTarget={server:id,pw:pw||''}; startMultiplayer(); }, adminOn(){ return isAdmin(); }, ownerOn(){ return ownerMode; }, plainAdminOn(){ return adminMode; },
   playerAdmins(){ return [...mp.players.values()].map(p=>({name:p.name,admin:!!p.admin})); },
   // ---- secret-code test hooks ----
-  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, fly:fx.fly, eyeMul:localEyeMul, localKind:modelKind(body) }; },
+  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, fly:fx.fly, cool:!!fx.cool, eyeMul:localEyeMul, localKind:modelKind(body) }; },
   mpSpectator(){ return !!mp.spectator; },
   remoteTags(){ return [...mp.players.values()].map(p=>({ id:p.id, tagVisible:p.tag?!!p.tag.visible:null, hide:!!p.hide, color:p.color||'', visible:!!(p.model&&p.model.visible) })); },
   bwPotions(){ const t=performance.now(); return { speed:Math.max(0,Math.round((bw.speedUntil-t)/1000)), jump:Math.max(0,Math.round((bw.jumpUntil-t)/1000)), invis:Math.max(0,Math.round((bw.invisUntil-t)/1000)) }; },
