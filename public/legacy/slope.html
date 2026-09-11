@@ -148,6 +148,48 @@
     font-variant-numeric:tabular-nums;
   }
   .stat.best .val{ color:var(--neon); text-shadow:0 0 20px color-mix(in srgb, var(--neon) 60%, transparent); }
+  /* ---- the board ----------------------------------------------------------
+     Ten rows of the same monospace the score readout uses, so a number here
+     lines up with the number you just scored. Your own row keeps the neon; the
+     rest sit back in the grey so the list reads as a ladder you are on rather
+     than a wall of names.                                                    */
+  .board{
+    width:min(460px, 86vw); margin:20px auto 0; text-align:left;
+    border:1px solid color-mix(in srgb, var(--neon) 22%, transparent);
+    background:rgba(2, 10, 6, .72); backdrop-filter:blur(3px);
+    padding:12px 14px 14px;
+  }
+  .board .bhead{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-size:11px; letter-spacing:2.5px; text-transform:uppercase;
+    color:color-mix(in srgb, var(--neon) 72%, #fff); margin-bottom:8px;
+  }
+  .board .bhead .note{ letter-spacing:.4px; text-transform:none; opacity:.55; font-size:11px; color:#cfe8d8 }
+  .board ol{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px }
+  .board li{
+    display:grid; grid-template-columns:26px 1fr auto; gap:10px; align-items:baseline;
+    padding:3px 8px; font-size:14px; color:#9fb3a6;
+    font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  .board li .pos{ text-align:right; opacity:.5; font-size:12px }
+  .board li .who{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .board li .pts{ font-variant-numeric:tabular-nums }
+  .board li.me{ color:var(--neon); background:color-mix(in srgb, var(--neon) 10%, transparent) }
+  .board li.me .pos{ opacity:.9 }
+  .board .bnote{ margin-top:9px; font-size:11.5px; color:#8aa295; min-height:15px }
+  .board .bname{ display:flex; gap:8px; align-items:center; margin-top:11px }
+  .board .bname input{
+    flex:1; min-width:0; background:rgba(255,255,255,.05); color:#eafff2;
+    border:1px solid color-mix(in srgb, var(--neon) 30%, transparent);
+    padding:7px 10px; font:inherit; font-size:13px; letter-spacing:1px; outline:none;
+  }
+  .board .bname input:focus{ border-color:var(--neon) }
+  .board .bname button{
+    background:none; color:color-mix(in srgb, var(--neon) 85%, #fff); cursor:pointer;
+    border:1px solid color-mix(in srgb, var(--neon) 35%, transparent);
+    padding:7px 12px; font:inherit; font-size:12px; letter-spacing:1.5px; text-transform:uppercase;
+  }
+  .board .bname button:hover{ border-color:var(--neon); color:var(--neon) }
   .newbest{
     font-size:12px; font-weight:700; letter-spacing:.3em; color:var(--neon);
     margin:-24px 0 26px; opacity:0; text-transform:uppercase;
@@ -294,6 +336,15 @@
     <button class="btn ghost" id="play2Btn">2 Players</button>
     <button class="btn ghost" id="garageBtn">Garage</button>
   </div>
+  <div class="board" id="board">
+    <div class="bhead"><span>Global top 10</span><span class="note" id="boardNote">loading</span></div>
+    <ol id="boardRows"></ol>
+    <div class="bnote" id="boardMsg"></div>
+    <div class="bname">
+      <input id="boardName" maxlength="14" placeholder="Your name" autocomplete="off" spellcheck="false">
+      <button id="boardSave">Save</button>
+    </div>
+  </div>
   <div class="keys" id="keysHint">
     <b>&#8592;</b> <b>&#8594;</b> or <b>A</b> <b>D</b> to steer<br>
     Dodge the red &nbsp;&middot;&nbsp; Stay on the track &nbsp;&middot;&nbsp; Ride the ramps<br>
@@ -310,6 +361,11 @@
   </div>
   <div class="newbest" id="newBest">New record</div>
   <div class="earned" id="earned"></div>
+  <div class="board" id="board2">
+    <div class="bhead"><span>Global top 10</span><span class="note" id="boardNote2"></span></div>
+    <ol id="boardRows2"></ol>
+    <div class="bnote" id="boardMsg2"></div>
+  </div>
   <div class="row">
     <button class="btn" id="againBtn">Again</button>
     <button class="btn ghost" id="garage2Btn">Garage</button>
@@ -371,8 +427,11 @@ const THICK      = 2.4;      // visual thickness of the runway slabs
 const RAIL       = 0.5;      // width of the glowing edge strip
 const LINE_SP    = 3;        // cross line every N nodes
 
-const HW_START   = 8.4;      // half width of a full-width runway at the start
-const HW_END     = 5.8;      // ...and once the run is fully ramped up
+// Three times the runway it used to be. Two balls sharing one descent were
+// crowded on the old width, and a wide floor gives the hazards room to read as
+// something you pick a line through rather than something you squeeze past.
+const HW_START   = 25.2;     // half width of a full-width runway at the start
+const HW_END     = 17.4;     // ...and once the run is fully ramped up
 
 const SPD_START  = 38;       // units/second at the gate
 const SPD_END    = 138;      // terminal target speed
@@ -380,12 +439,13 @@ const SPD_RAMP   = 7200;     // distance over which the target climbs
 const SPD_EASE   = 1.5;      // how hard actual speed chases the target
 const PITCH_GAIN = 1.35;     // steeper track => faster
 
-const LAT_ACC    = 108;      // steering acceleration
+const LAT_ACC    = 324;      // steering acceleration, up with the width: a runway
+                             // three times across takes three times the push to cross
 const LAT_DRAG   = 3.3;      // lateral drag => terminal lateral ≈ 33
 const GRAV       = 132;
 
-const CAM_BACK   = 12.0;
-const CAM_UP     = 5.4;
+const CAM_BACK   = 16.0;     // back far enough that the wide runway fits the frame
+const CAM_UP     = 7.0;      // and high enough to see the floor you are crossing
 const LOOK_AHEAD = 27;
 const LOOK_UP    = 1.1;
 const FOV_BASE   = 68;
@@ -1952,8 +2012,79 @@ function finishRun(){
   }
   el('earned').textContent = gained > 0 ? '+' + gained + ' coins  ·  ' + coins + ' total' : '';
   labelEls[0].textContent = 'BEST ' + best;
+  const b2 = el('board2'); if(b2) b2.hidden = numPlayers > 1;   // a shared keyboard is its own game
+  if(numPlayers === 1){ boardPaint(null, '', ''); boardSubmit(Math.floor(list[0].score)); }
   overEl.hidden = false;
   audio.stop();
+}
+
+
+/* ---- the global board ------------------------------------------------------
+   One run, one row: the server keeps a player's best rather than every attempt,
+   so the list stays a ladder instead of a log. The name lives in this browser
+   and goes up with the score; nothing else about you does.
+
+   The board is on the same box the Minecraft server runs on, which is the only
+   backend this site has, so there is nothing new to keep alive for it.       */
+const BOARD_API = (location.hostname.endsWith('leonzhao.dev') || location.hostname === 'leonzhao.dev')
+  ? 'https://apps.leonzhao.dev/mc'
+  : (new URLSearchParams(location.search).get('api') || 'https://apps.leonzhao.dev/mc');
+let boardName = '';
+try{ boardName = localStorage.getItem('slopeName') || ''; }catch(e){}
+let boardRowsCache = [];
+
+function boardPaint(rows, msg, note){
+  boardRowsCache = rows || boardRowsCache;
+  const mine = (boardName || '').toLowerCase();
+  const html = (boardRowsCache.slice(0, 10)).map((r, i) =>
+    '<li class="' + (r.name.toLowerCase() === mine ? 'me' : '') + '">' +
+      '<span class="pos">' + (i + 1) + '</span>' +
+      '<span class="who">' + esc(r.name) + '</span>' +
+      '<span class="pts">' + r.score + '</span>' +
+    '</li>').join('');
+  for(const id of ['boardRows','boardRows2']){
+    const o = el(id); if(o) o.innerHTML = html || '<li><span class="pos"></span><span class="who">nobody yet</span><span class="pts"></span></li>';
+  }
+  for(const id of ['boardMsg','boardMsg2']){ const o = el(id); if(o && msg !== undefined) o.textContent = msg || ''; }
+  for(const id of ['boardNote','boardNote2']){ const o = el(id); if(o && note !== undefined) o.textContent = note || ''; }
+}
+function esc(t){ return String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function boardLoad(){
+  try{
+    const r = await fetch(BOARD_API + '/scores?game=slope', { cache:'no-store' });
+    const j = await r.json();
+    if(j && j.board){ boardPaint(j.board, undefined, j.board.length ? '' : 'be the first'); return true; }
+    boardPaint([], '', 'unavailable');
+  }catch(e){ boardPaint([], '', 'offline'); }
+  return false;
+}
+// Only a solo run goes up. Two people sharing a keyboard is a different game and
+// putting it on the same ladder would not be comparing like with like.
+async function boardSubmit(score){
+  if(numPlayers > 1) return;
+  if(!boardName){ boardPaint(null, 'Add a name to get on the board.'); return; }
+  if(!(score > 0)) return;
+  try{
+    const r = await fetch(BOARD_API + '/scores', {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ game:'slope', name:boardName, score:Math.floor(score) })
+    });
+    const j = await r.json();
+    if(j && j.board){
+      boardPaint(j.board,
+        j.beat ? (j.rank && j.rank <= 10 ? 'Number ' + j.rank + ' in the world.' : 'Your best is now ' + j.best + '.')
+               : 'Your best is still ' + j.best + '.', '');
+    } else boardPaint(null, (j && j.error) || 'Could not reach the board.');
+  }catch(e){ boardPaint(null, 'Could not reach the board.'); }
+}
+function boardSetName(){
+  const inp = el('boardName'); if(!inp) return;
+  const v = inp.value.replace(/[^A-Za-z0-9 _-]/g, '').trim().slice(0, 14);
+  inp.value = v;
+  boardName = v;
+  try{ localStorage.setItem('slopeName', v); }catch(e){}
+  boardPaint(null, v ? 'Saved. Your runs go up as ' + v + '.' : 'Add a name to get on the board.');
 }
 
 function syncHud(){
@@ -2184,6 +2315,15 @@ if(matchMedia('(hover: none)').matches){
     '<span style="opacity:.6">Two players: one thumb in each half of the split</span>';
 }
 
+{ const inp = el('boardName');
+  if(inp){
+    inp.value = boardName;
+    el('boardSave').addEventListener('click', boardSetName);
+    inp.addEventListener('keydown', e => { e.stopPropagation(); if(e.key === 'Enter') boardSetName(); });
+    inp.addEventListener('keyup', e => e.stopPropagation());
+  }
+  boardPaint([], boardName ? '' : 'Add a name to get on the board.', 'loading');
+  boardLoad(); }
 el('playBtn').addEventListener('click', () => startGame(1));
 el('play2Btn').addEventListener('click', () => startGame(2));
 el('againBtn').addEventListener('click', () => startGame(numPlayers));
@@ -2854,6 +2994,12 @@ const HANDLE = window.__slope = {
   },
   get death(){ return players[0].deathKind; },
   get coins(){ return coins; },
+  // the global board, so a harness can drive it without a full run
+  board: { submit:(n)=>boardSubmit(n), load:()=>boardLoad(), setName:(v)=>{ el('boardName').value=v; boardSetName(); },
+           get name(){ return boardName; },
+           get rows(){ return boardRowsCache.slice(); } },
+  get width(){ return { start:HW_START, end:HW_END, steer:LAT_ACC }; },
+  set players2(v){ numPlayers = v ? 2 : 1; },
   start: startGame,
   /* fast-forward the run to a given distance, for testing later track shapes */
   seek(s){
