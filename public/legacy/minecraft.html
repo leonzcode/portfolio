@@ -5080,6 +5080,23 @@ function inLiquid(){
 // holds you along its post, so sneaking has to stop at the edge of the post and not
 // at the edge of the cell. Slabs, stairs and everything else fall out of it for free.
 function groundUnder(x,z){ return collides(x, player.pos.y-0.06, z); }
+/* In Mecha Chameleon a wall is something you go up. A hider needs the roofs and
+   the ledges to be worth anything, and a seeker who could not follow would just be
+   watching them leave. Press against a wall and hold jump: you go up it at a
+   ladder's pace, which is slow enough that it is a decision rather than a dodge. */
+const MC_CLIMB = 3.2;                 // the same speed a ladder gives you
+function mcOnWall(){
+  if(!(mc.active && mc.playing && mc.alive) || player.flying || glide.on) return false;
+  const w = player.w/2 + 0.08;        // a shade past your own box, so touching counts
+  const y0 = Math.floor(player.pos.y + 0.1), y1 = Math.floor(player.pos.y + player.h - 0.1);
+  for(let by=y0; by<=y1; by++){
+    for(const [dx,dz] of [[w,0],[-w,0],[0,w],[0,-w]]){
+      const b = getBlock(Math.floor(player.pos.x+dx), by, Math.floor(player.pos.z+dz));
+      if(b && BLOCKS[b] && BLOCKS[b].solid) return true;
+    }
+  }
+  return false;
+}
 function isOnLadder(){   // true when the player's box overlaps a ladder block
   const w=player.w/2*0.9;
   const y0=Math.floor(player.pos.y), y1=Math.floor(player.pos.y+player.h-0.1);
@@ -5249,6 +5266,11 @@ function updatePlayer(dt){
     if(player.vel.y<-40) player.vel.y=-40;
   }
 
+  // a wall in a round behaves like a ladder you brought with you
+  if(!player.flying && !glide.on && mcOnWall()){
+    if(keys[binds.jump]) player.vel.y = MC_CLIMB;
+    else if(keys[binds.sneak]) player.vel.y = -MC_CLIMB;      // and back down again
+  }
   // ladder: cling and climb when your box is inside a ladder
   if(!player.flying && isOnLadder()){
     if(keys[binds.jump]) player.vel.y = 3.0;                  // jump = climb up
@@ -12667,6 +12689,7 @@ window.__mc = {
     votes:mc.votes, hiders:mc.hiders, seekers:mc.seekers,
     blocks:(()=>{ let n=0; for(const [,m] of mpOverrides) n+=m.size; return n; })() }; },
   mcKey(k){ return mcKey(k, { preventDefault(){} }); },
+  mcWall(){ return { on: mcOnWall(), w: player.w, speed: MC_CLIMB }; },
   mcHudText(){ const g=id=>{ const e=document.getElementById(id); return e?e.textContent:''; };
     return { phase:g('mcPhase'), clock:g('mcClock'), count:g('mcCount'), role:g('mcRole'),
       gear:g('mcGear'), gun:g('mcGun'), vote:g('mcVoteRows'),
