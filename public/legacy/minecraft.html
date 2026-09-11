@@ -4762,8 +4762,12 @@ function comboKeys(){ const c=(binds.cameraCombo||'').split('+').map(s=>s.trim()
 function comboLabel(){ const c=comboKeys(); return c? c.map(keyLabel).join(' + ') : '—'; }
 // context-sensitive "use" (right-click by default): open a door/bed/sign, otherwise place
 function useAction(){
-  if(mp.active && mp.spectator) return;     // spectators can't place, open doors, sleep, or edit signs
-  if(bw.active){ bwUseAction(); return; }   // Bed Wars: right-click = shop villager / eat apple / place block
+  // A spectator cannot change the world, but a door, a bed and a cushion are not
+  // changing the world so much as using it, and being unable to sit down or step
+  // through a doorway made watching a server a stranger experience than it needed
+  // to be. Everything past this line that leaves a mark is still theirs to leave.
+  const watching = mp.active && mp.spectator;
+  if(bw.active){ if(watching) return; bwUseAction(); return; }   // Bed Wars: right-click = shop villager / eat apple / place block
   const tb = target && getBlock(target.x,target.y,target.z);
   // Minecraft: holding sneak while using skips the block's own action (open a door, flip a
   // trapdoor, sleep, sit, edit a sign) so you can stack/place against it instead
@@ -4772,12 +4776,14 @@ function useAction(){
     if(isTrapdoor(tb)){ toggleTrapdoor(target.x,target.y,target.z); return; }   // right-click opens/closes
     if(isBed(tb)){ sleepInBed(target.x,target.y,target.z); return; }
     if(isCushion(tb)){ sitOnCushion(target.x,target.y,target.z); return; }      // right-click a cushion to sit on it
+    if(watching) return;                     // the rest of these write something down
     if(isSign(tb)){ openSignEditor(target.x,target.y,target.z); return; }
     if(isPot(tb)){ usePot(target.x,target.y,target.z); return; }   // plant into / empty out a flower pot
     if(isButton(tb)){ pressButton(target.x,target.y,target.z); return; }
     if(isLever(tb)){ flipLever(target.x,target.y,target.z); return; }
     if(pkIsPad(tb)){ pkOpenPanel(target.x,target.y,target.z,dim,pkIsPad(tb)); return; }   // pair this pad with its partner
   }
+  if(watching) return;
   if(hotbar[selSlot]===FLINT_ITEM){ useFlint(); return; }   // flint and steel strikes rather than places
   placeBlock();
 }
@@ -4868,7 +4874,8 @@ addEventListener('keydown', e=>{
   if(bw.active && state===PLAY && !invOpen && !chatOpen && !sleep.active && !bwShopOpen && !bwInvOpen){
     if(k==='k' && (bw.phase==='lobby' || bw.phase==='ended')){ e.preventDefault(); startBedwarsBtn(); return; }   // same key that starts Build Battle
     if(k==='b'){ e.preventDefault(); bwToggleShop(); return; } if(k==='x'){ bwEatApple(); return; } if(k===binds.drop){ bwDropSelected(); return; } }   // Bed Wars: shop + eat apple + drop item
-  if(k==='k' && parkour.run && !chatOpen && !invOpen && state===PLAY){ e.preventDefault(); pkAbandon(); return; }   // K: give up on the course and take flight back
+  if(k==='k' && parkour.run && !chatOpen && !invOpen && state===PLAY){ e.preventDefault();
+    if(e.shiftKey) pkAbandon(); else pkRestart(); return; }   // K: back to the start. Shift+K: give up and take flight back
   if(k===binds.votes && mp.active && !bw.active && !chatOpen && !pollBlocking){ setPollMiniMin(!pollMiniMin); return; }   // V: minimize / restore the corner vote count
   if(k>='1'&&k<='9'){ selectSlot((+k)-1); }
   if(k==='escape'){ if(pollBlocking) return; if(parkour.panel) pkClosePanel(); else if(srvSetEl && !srvSetEl.hidden) closeServerSettings(); else if(bwInvOpen) bwToggleInv(); else if(bwShopOpen) bwToggleShop(); else if(!skinEditorEl.hidden) closeSkinEditor(false); else if(!ctrlEl.hidden) closeControls(); else if(!suggestEl.hidden) closeSuggest(); else if(pwPromptEl && !pwPromptEl.hidden){ pwPromptEl.hidden=true; openServers(); } else if(createServerEl && !createServerEl.hidden){ createServerEl.hidden=true; openServers(); } else if(serversEl && !serversEl.hidden) closeServers(); else if(signEditPos) closeSignEditor(false); else if(sleep.active) wakeUp(); else if(sit.active) standUp(); else if(invOpen) toggleInv(); else if(state===PLAY) pause(); else if(state===PAUSE) resume(); }
@@ -11520,7 +11527,7 @@ function pkStart(course){
   player.flying = false;
   parkour.result = null;
   pkEnsureUi();
-  chatPush('Parkour started: ' + (course.name || 'Parkour') + '. Flight is off until you finish or press K.', 'sys');
+  chatPush('Parkour started: ' + (course.name || 'Parkour') + '. K puts you back on the start pad, Shift+K gives up.', 'sys');
 }
 function pkFinish(course){
   const run = parkour.run; if(!run || run.id !== course.id) return;
@@ -11540,10 +11547,32 @@ function pkFinish(course){
   chatPush('Finished ' + (course.name || 'Parkour') + ' in ' + pkFmt(ms) + 's' + (pb ? ' - personal best!' : ''), 'sys');
   pkTouch();
 }
+// Falling off is most of parkour, and walking all the way back is none of it. K
+// puts you on the start pad with the clock back at zero. Hold shift and it gives
+// up on the course instead, which is what K used to do on its own.
+function pkRestart(){
+  const run = parkour.run; if(!run) return;
+  const c = parkour.courses.get(run.id);
+  if(!c || !c.start){ pkAbandon(); return; }
+  const st = c.start;
+  if((st.d|0) !== dim){ chatPush('That course starts in the other world.', 'sys'); return; }
+  if(sit.active) standUp();
+  if(sleep.active) wakeUp();
+  // Stand on the pad rather than in it, and remember we are already there: pkTick
+  // fires on the step onto a pad, and landing on the start pad would otherwise
+  // start the run a second time.
+  player.pos.set(st.x + 0.5, st.y + 1, st.z + 0.5);
+  player.vel.set(0, 0, 0); player.flying = false;
+  parkour.pad = pkPadKey(st);
+  run.t0 = performance.now();
+  parkour.result = { text:'back to the start', sub:'the clock is back to zero', ok:true, until:performance.now() + 2000 };
+  chatPush('Back to the start of ' + (c.name || 'the course') + '. The clock starts again.', 'sys');
+  pkHud();
+}
 function pkAbandon(){
   if(!parkour.run) return;
   parkour.run = null;
-  parkour.result = { text:'ended', sub:'flight is back', ok:false, until:performance.now() + 2500 };
+  parkour.result = { text:'gave up', sub:'flight is back', ok:false, until:performance.now() + 2500 };
   chatPush('Parkour ended. No time recorded.', 'sys');
 }
 // One step onto a pad is one trigger: you have to leave it and come back to fire again.
@@ -12801,6 +12830,23 @@ window.__mc = {
   bbVoteColour(v){ return BB_VOTE_COLOURS[v]||''; },
   roster(){ return [...mp.players.values()].map(q=>({id:q.id, name:q.name, model:!!q.model, tag:!!q.voteTag})); },
   terrainTop(x,z){ return terrainHeight(x,z); }, seaLevel(){ return SEA; },
+  useProbe(){ return { sneakBind:binds.sneak, sneakHeld:!!keys[binds.sneak], bw:!!bw.active,
+    spec:!!mp.spectator, active:!!mp.active, target:target?[target.x,target.y,target.z]:null }; },
+  pkLinkCourse(name, start, end){            // pair two pads without going through the panel
+    const c = { id: pkNewId(), name: name || 'Test Course',
+                start: { x:start[0], y:start[1], z:start[2], d:dim },
+                end:   { x:end[0],   y:end[1],   z:end[2],   d:dim }, times: [] };
+    pkPush(c); return c.id; },
+  pkState(){ const r=parkour.run; const c=r?parkour.courses.get(r.id):null;
+    return { running:!!r, name:c?(c.name||''):'', ms:r?Math.round(performance.now()-r.t0):0,
+      start:c&&c.start?[c.start.x,c.start.y,c.start.z]:null }; },
+  key(k, opt){
+    const sh = !!(opt && opt.shift);
+    if(sh) window.dispatchEvent(new KeyboardEvent('keydown', { key:'Shift', shiftKey:true, bubbles:true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key:k, shiftKey:sh, bubbles:true }));
+    window.dispatchEvent(new KeyboardEvent('keyup',   { key:k, shiftKey:sh, bubbles:true }));
+    if(sh) window.dispatchEvent(new KeyboardEvent('keyup', { key:'Shift', shiftKey:false, bubbles:true }));
+    return true; },
   splash(){ return document.getElementById('splash').textContent; },
   newTags(){ return { menu: !!document.querySelector('#mpBtn .newTag'), card: !!document.querySelector('.srvCard .meta .new') }; },
   mpSpectator(){ return !!mp.spectator; },
