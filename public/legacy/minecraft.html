@@ -9495,16 +9495,49 @@ function mcPickMesh() {
     if (c.tmesh) objs.push(c.tmesh);
   }
   if (!objs.length) return null;
+  mcRay.far = 64;                               // what you are pointing at, not a speck on the horizon
   const hits = mcRay.intersectObjects(objs, false);
+  mcRay.far = Infinity;
+  const TW = atlasCanvas.width / ATLAS_COLS, TH = atlasCanvas.height / ATLAS_ROWS;
   for (const h of hits) {
     if (!h.uv) continue;
-    const px = Math.min(atlasCanvas.width - 1, Math.max(0, Math.floor(h.uv.x * atlasCanvas.width)));
-    const py = Math.min(atlasCanvas.height - 1, Math.max(0, Math.floor((1 - h.uv.y) * atlasCanvas.height)));
-    let d; try { d = actx.getImageData(px, py, 1, 1).data; } catch (e) { return null; }
+    // Land inside the tile rather than on its seam. A uv that comes out exactly on a
+    // boundary reads the first pixel of the block next to it in the atlas, which is
+    // some other block's colour entirely.
+    let px = h.uv.x * atlasCanvas.width, py = (1 - h.uv.y) * atlasCanvas.height;
+    const tx = Math.max(0, Math.min(ATLAS_COLS - 1, Math.floor(px / TW)));
+    const ty = Math.max(0, Math.min(ATLAS_ROWS - 1, Math.floor(py / TH)));
+    px = Math.min(tx * TW + TW - 0.51, Math.max(tx * TW + 0.51, px));
+    py = Math.min(ty * TH + TH - 0.51, Math.max(ty * TH + 0.51, py));
+    let d; try { d = actx.getImageData(px | 0, py | 0, 1, 1).data; } catch (e) { return null; }
     if (d[3] < 40) continue;                    // see-through: whatever is behind it
     return [d[0], d[1], d[2]];
   }
   return null;
+}
+/* ---- the colour that is actually there ---------------------------------------
+   The atlas texel is the block's colour with no light on it, which is not the colour
+   you clicked: a cobblestone wall in shadow draws near black and hands back mid grey,
+   eighty-odd levels away from what is on the screen. So read the screen. A three by
+   three patch, median per channel, because one anti-aliased pixel on the edge of a
+   block should not decide what colour you asked for.                             */
+function mcScreenInk(x, y) {
+  try {
+    renderer.render(scene, camera);
+    const gl = renderer.getContext();
+    const buf = new Uint8Array(3 * 3 * 4);
+    const sx = Math.max(0, Math.min(canvas.width - 3, x - 1));
+    const sy = Math.max(0, Math.min(canvas.height - 3, canvas.height - 2 - y));
+    gl.readPixels(sx, sy, 3, 3, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    const out = [];
+    for (let c = 0; c < 3; c++) {
+      const a = [];
+      for (let i = 0; i < 9; i++) a.push(buf[i * 4 + c]);
+      a.sort(function (p, q) { return p - q; });
+      out.push(a[4]);
+    }
+    return out;
+  } catch (e) { return null; }
 }
 function mcSetColor(rgb) {
   mc.paintColor = '#' + rgb.map(function (v) {
@@ -9530,19 +9563,15 @@ function mcPickScreen(ev) {
     if (d[3] > 8) { mcSetColor([d[0], d[1], d[2]]); return true; }
     break;
   }
-  // then the world: the exact texel of whatever is under the cursor, unlit
-  const ink = mcPickMesh() || (function () {
+  // then the world, as it looks. The texel is the fallback for when the frame cannot
+  // be read at all; it is the right colour for the wrong lighting, which is better
+  // than nothing and worse than the pixel itself.
+  const ink = mcScreenInk(x, y) || mcPickMesh() || (function () {
     const hit = mcRayFace(mcRay.ray.origin, mcRay.ray.direction, 48);
     return hit ? mcFaceInk(hit.id, hit.face, hit.u, hit.v) : null;
   })();
-  if (ink) { mcSetColor(ink); return true; }
-  // and if it is nothing but sky, fall back to what is on screen
-  try {
-    renderer.render(scene, camera);
-    const gl = renderer.getContext();
-    gl.readPixels(x, canvas.height - 1 - y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, mcPixel);
-  } catch (e) { return false; }
-  mcSetColor([mcPixel[0], mcPixel[1], mcPixel[2]]);
+  if (!ink) return false;
+  mcSetColor(ink);
   return true;
 }
 
@@ -13431,6 +13460,17 @@ window.__mc = {
     return { x:(v.x*0.5+0.5)*innerWidth, y:(-v.y*0.5+0.5)*innerHeight, z:v.z }; },
   // just one plot in the world, for taking its picture without the next one along in it
   hideHand(on){ vmScene.visible = !on; return true; },   // the arm and whatever it holds, out of shot
+  // what the picker would hand back for a point on screen, and what is drawn there
+  pickAt(x,y){ const nx=(x/canvas.width)*2-1, ny=-(y/canvas.height)*2+1;
+    mcRay.setFromCamera({x:nx,y:ny}, camera);
+    return mcScreenInk(x,y) || mcPickMesh(); },
+  pickTexel(x,y){ const nx=(x/canvas.width)*2-1, ny=-(y/canvas.height)*2+1;
+    mcRay.setFromCamera({x:nx,y:ny}, camera);
+    return mcPickMesh(); },
+  screenPixel(x,y){ try{ renderer.render(scene, camera);
+      const gl=renderer.getContext(); const px=new Uint8Array(4);
+      gl.readPixels(x, canvas.height-1-y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return [px[0],px[1],px[2]]; }catch(e){ return null; } },
   showOnly(id){ if(!med.active) return false;
     mcClearWorld();
     for(const one of med.raw) if(!id || one.id===id) mcApplyMap(one);
