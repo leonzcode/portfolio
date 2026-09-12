@@ -2068,9 +2068,11 @@ function finishRun(){
 
 
 /* ---- the global board ------------------------------------------------------
-   One run, one row: the server keeps a player's best rather than every attempt,
-   so the list stays a ladder instead of a log. The name lives in this browser
-   and goes up with the score; nothing else about you does.
+   One run, one row, and the row is the run - not the person. Two people called Ada
+   each hold their own places, and beating your own score puts you on the list twice
+   rather than erasing the first one. A name is what you are called, not who you are,
+   so it was never safe to key the board on it. The name lives in this browser and
+   goes up with the score; nothing else about you does.
 
    The board is on the same box the Minecraft server runs on, which is the only
    backend this site has, so there is nothing new to keep alive for it.       */
@@ -2084,8 +2086,13 @@ let boardRowsCache = [];
 function boardPaint(rows, msg, note){
   boardRowsCache = rows || boardRowsCache;
   const mine = (boardName || '').toLowerCase();
+  // your best is simply the first row with your name on it, the list being sorted.
+  // Only that one is picked out: lighting up every row that shares a name would
+  // light up somebody else's run too.
+  let mineAt = -1;
+  if(mine) mineAt = boardRowsCache.findIndex(r => r.name.toLowerCase() === mine);
   const html = (boardRowsCache.slice(0, 10)).map((r, i) =>
-    '<li class="' + (r.name.toLowerCase() === mine ? 'me' : '') + '">' +
+    '<li class="' + (i === mineAt ? 'me' : '') + '">' +
       '<span class="pos">' + (i + 1) + '</span>' +
       '<span class="who">' + esc(r.name) + '</span>' +
       '<span class="pts">' + r.score + '</span>' +
@@ -2120,9 +2127,11 @@ async function boardSubmit(score){
     });
     const j = await r.json();
     if(j && j.board){
+      const cut = j.board.length ? j.board[j.board.length - 1].score : 0;
       boardPaint(j.board,
-        j.beat ? (j.rank && j.rank <= 10 ? 'Number ' + j.rank + ' in the world.' : 'Your best is now ' + j.best + '.')
-               : 'Your best is still ' + j.best + '.', '');
+        j.beat ? (j.rank <= 10 ? 'Number ' + j.rank + ' in the world.'
+                               : 'On the board at ' + j.rank + '.')
+               : 'Not on the board - ' + cut + ' gets you on it.', '');
     } else boardPaint(null, (j && j.error) || 'Could not reach the board.');
   }catch(e){ boardPaint(null, 'Could not reach the board.'); }
 }

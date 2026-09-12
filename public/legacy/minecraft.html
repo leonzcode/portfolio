@@ -2210,7 +2210,7 @@ B.purpular_door = def('purpular_door', { tiles:T('purpular_door'), door:true, op
 WOODS.forEach(w=> B[w.id+'_trapdoor'] = def(w.id+'_trapdoor', { tiles:T(w.id+'_planks'), trapdoor:true, solid:false, opaque:false, hex:w.plank }));   // thin openable panel, walk-through like our doors
 WOODS.forEach(w=> B[w.id+'_slab'] = def(w.id+'_slab', { tiles:T(w.id+'_planks'), slab:true, opaque:false, hex:w.plank }));   // half block (top/bottom); two make a full block
 // a bed for every wool colour (two cells long, low; right-click to sleep)
-WOOLS.forEach(([n,hex])=> B[n+'_bed'] = def(n+'_bed', { tiles:T(n+'_wool'), bed:true, solid:false, opaque:false, hex }));
+WOOLS.forEach(([n,hex])=> B[n+'_bed'] = def(n+'_bed', { tiles:T(n+'_wool'), bed:true, solid:true, opaque:false, hex }));
 // stairs + fences for every wood type, plus one ladder
 WOODS.forEach(w=>{
   B[w.id+'_stairs'] = def(w.id+'_stairs', { tiles:T(w.id+'_planks'), stairs:true, opaque:false, hex:w.plank });
@@ -2547,6 +2547,7 @@ function plantSupported(x,y,z){
 function slabBoxes(top, dbl){ if(dbl) return [[0,1, 0,1, 0,1]]; return [ top ? [0,1, 0.5,1, 0,1] : [0,1, 0,0.5, 0,1] ]; }
 // ---- cushions: a low, soft wool pad (all 16 colours) you can sit/stand on ----
 const CUSHION_H = 5/16;
+const BED_H = 9/16;    // a bed is nine pixels tall: you stand on it, not in it
 const POT_H = 6/16;             // a flower pot is 6 pixels tall, like vanilla's
 function isCushion(id){ return !!(id && BLOCKS[id] && BLOCKS[id].cushion); }
 function cushionBoxes(){ return [ [1/16,15/16, 0,4/16, 1/16,15/16], [2/16,14/16, 4/16,CUSHION_H, 2/16,14/16] ]; }   // puffy pad: body + rounded top
@@ -5086,6 +5087,7 @@ function collides(px,py,pz){
         const top=slabIsTop(x,y,z), yb=top?y+0.5:y, yt=top?y+1:y+0.5;
         if(py+player.h<=yb || py>=yt) continue;
       }
+      if(BLOCKS[b].bed){ if(py>=y+BED_H) continue; }           // a bed is a low block; stand on it, never in it
       if(BLOCKS[b].cushion){ if(py>=y+CUSHION_H) continue; }   // a cushion is a low pad; stand on top of it
       if(BLOCKS[b].campfire){ if(py>=y+8/16) continue; }       // logs are 8 pixels tall; you stand on them
       if(BLOCKS[b].cutter){ if(py>=y+9/16) continue; }          // you stand on the stone bed
@@ -5151,6 +5153,7 @@ function stepUpStair(p, axis){
       const b=getBlock(x,fy,z);
       if(isStair(b)) ny=Math.max(ny, fy+1);
       else if(isSlab(b)) ny=Math.max(ny, slabTop(x,fy,z));   // every kind of slab, the way stairs do
+      else if(isBed(b)) ny=Math.max(ny, fy+BED_H);
       else if(isCushion(b)) ny=Math.max(ny, fy+CUSHION_H);
       else if(isCampfire(b)) ny=Math.max(ny, fy+8/16);
       else if(BLOCKS[b] && BLOCKS[b].cutter)  ny=Math.max(ny, fy+9/16);
@@ -7930,7 +7933,13 @@ function mpSendBlock(x,y,z,b){
         chatPush('That is the gap between two plots. Build on a plot and it goes into that map.', 'sys'); }
       return;
     }
-    mpSetOverride(x,y,z,b); mpSend({type:'mcedit', x, y, z, block: b ? blockName(b) : null}); return;
+    mpSetOverride(x,y,z,b);
+    // The angle is written by the placement code a line or two after the block
+    // itself, so read it on the next tick: reading it now would send every stair
+    // facing whichever way the default is, which is exactly the bug this fixes.
+    const nm = b ? blockName(b) : null;
+    setTimeout(()=>mpSend({type:'mcedit', x, y, z, block:nm, meta: nm ? mcMetaAt(x,y,z) : null}), 0);
+    return;
   }
 
   if(bb.active){ if(bbInPlot(bb.plot,x,y,z)){ mpSetOverride(x,y,z,b); bbSendBlock(x,y,z,b); } return; }   // build battle: your plot only
@@ -8708,8 +8717,40 @@ function mcClearWorld() {
 // Somebody else's block, put into the world here. The override is what a chunk is
 // built from, so it goes in first; a chunk that is already standing then has to be
 // told separately, or the change stays invisible until that chunk is rebuilt.
-function mcApplyEdit(x, y, z, name) {
+/* Which way a stair faces, which half a slab is, which way a door swings: all of
+   it lives in a map beside the block rather than in the block id. An edit used to
+   carry only the name, so everything with an angle arrived pointing whichever way
+   the default happened to be - right in the editor, wrong in the game. */
+function mcMetaAt(x, y, z) {
+  const k = dkey(x, y, z), B = BLOCKS[getBlock(x, y, z)];
+  if (!B) return null;
+  if (B.slab)     { const m = slabMeta.get(k);     return m ? { s:1, t:m.top?1:0, d:m.double?1:0 } : null; }
+  if (B.door)     { const m = doorMeta.get(k);     return m ? { dr:1, f:m.facing|0, h:(m.hinge==='left')?1:0, o:m.open?1:0 } : null; }
+  if (B.trapdoor) { const m = trapdoorMeta.get(k); return m ? { td:1, f:m.facing|0, o:m.open?1:0, t:m.top?1:0 } : null; }
+  if (B.bed)      { const m = bedMeta.get(k);      return m ? { bd:1, f:m.facing|0, hd:m.head?1:0 } : null; }
+  if (B.ladder)   { const m = ladderMeta.get(k);   return m ? { ld:1, f:m.facing|0 } : null; }
+  const at = attachMeta.get(k); if (at) return { a:1, m:at.m|0, f:at.f|0 };
+  const st = stairMeta.get(k);  if (st) return { f:st.facing|0, t:st.top?1:0 };
+  return null;
+}
+// ...and putting it back on the other side. Clearing first, so a block replaced by
+// a plain one does not keep the angle of whatever used to be there.
+function mcSetMeta(x, y, z, meta) {
+  const k = dkey(x, y, z);
+  slabMeta.delete(k); doorMeta.delete(k); trapdoorMeta.delete(k);
+  bedMeta.delete(k); ladderMeta.delete(k); attachMeta.delete(k); stairMeta.delete(k);
+  if (!meta) return;
+  if (meta.s) slabMeta.set(k, { top:!!meta.t, double:!!meta.d });
+  else if (meta.dr) { for (let h = 0; h < 2; h++) doorMeta.set(dkey(x, y+h, z), { facing:meta.f|0, open:!!meta.o, hinge:meta.h?'left':'right' }); }
+  else if (meta.td) trapdoorMeta.set(k, { facing:meta.f|0, open:!!meta.o, top:!!meta.t });
+  else if (meta.bd) bedMeta.set(k, { facing:meta.f|0, head:!!meta.hd });
+  else if (meta.a)  attachMeta.set(k, { m:meta.m|0, f:meta.f|0, on:false });
+  else if (meta.ld) ladderMeta.set(k, { facing:meta.f|0 });
+  else if (meta.f !== undefined) stairMeta.set(k, { facing:meta.f|0, top:!!meta.t });
+}
+function mcApplyEdit(x, y, z, name, meta) {
   const b = name ? (BLOCKS[name] ? BLOCKS[name].id : 0) : 0;
+  mcSetMeta(x, y, z, meta || null);
   mpApplyRemoteBlock(x, y, z, b);
   remeshChunkAt(x, z);
 }
@@ -8734,6 +8775,7 @@ function mcApplyMap(msg) {
       else if (meta.td) trapdoorMeta.set(k, { facing: meta.f | 0, open: !!meta.o, top: !!meta.t });
       else if (meta.bd) bedMeta.set(k, { facing: meta.f | 0, head: !!meta.hd });
       else if (meta.a) attachMeta.set(k, { m: meta.m | 0, f: meta.f | 0, on: false });
+      else if (meta.ld) ladderMeta.set(k, { facing: meta.f | 0 });
       else if (meta.f !== undefined) stairMeta.set(k, { facing: meta.f | 0, top: !!meta.t });
     }
     mpSetOverride(x, y, z, id);
@@ -8742,8 +8784,10 @@ function mcApplyMap(msg) {
   // the overlay of edits, laid over the built map so a joiner sees the same world
   // as everyone who has been here a while
   for (const k in (msg.edits || {})) {
-    const nm = msg.edits[k], c = k.split(',');
+    const v = msg.edits[k], c = k.split(',');
+    const nm = (typeof v === 'string') ? v : (v && v.b) || null;      // a name, or a name with an angle
     const b = nm ? (BLOCKS[nm] ? BLOCKS[nm].id : 0) : 0;
+    mcSetMeta(+c[0], +c[1], +c[2], (v && v.m) || null);
     mpSetOverride(+c[0], +c[1], +c[2], b);
   }
 }
@@ -8793,7 +8837,7 @@ function medPlotAt(x, z) {
 }
 let medGapSaid = 0;
 function medHandle(m) {
-  if (m.type === 'mcedit') { mcApplyEdit(m.x, m.y, m.z, m.block); return true; }
+  if (m.type === 'mcedit') { mcApplyEdit(m.x, m.y, m.z, m.block, m.meta); return true; }
   // somebody made a plot: build it where it stands rather than making everyone rejoin
   if (m.type === 'mcmapadd' && m.map) {
     const one = m.map;
@@ -8802,7 +8846,9 @@ function medHandle(m) {
                     bounds: one.bounds || { x1: -2, x2: 30, z1: -2, z2: 30 } });
     mcApplyMap(one);
     for (const k in (one.edits || {})) {
-      const nm = one.edits[k], c = k.split(',');
+      const v = one.edits[k], c = k.split(',');
+      const nm = (typeof v === 'string') ? v : (v && v.b) || null;
+      mcSetMeta(+c[0], +c[1], +c[2], (v && v.m) || null);
       mpSetOverride(+c[0], +c[1], +c[2], nm ? (BLOCKS[nm] ? BLOCKS[nm].id : 0) : 0);
     }
     mcDropChunks();
@@ -8962,6 +9008,7 @@ function mcBuildWaitRoom() {
     if (meta) {
       if (meta.s) slabMeta.set(k, { top: !!meta.t, double: false });
       else if (meta.a) attachMeta.set(k, { m: meta.m | 0, f: meta.f | 0, on: false });
+      else if (meta.ld) ladderMeta.set(k, { facing: meta.f | 0 });
       else if (meta.f !== undefined) stairMeta.set(k, { facing: meta.f | 0, top: !!meta.t });
     }
     mpSetOverride(x, y, z, b.id);
@@ -9018,6 +9065,7 @@ function mcBuildLobby() {
       if (meta.s) slabMeta.set(k, { top: !!meta.t, double: false });
       else if (meta.f !== undefined) stairMeta.set(k, { facing: meta.f | 0, top: !!meta.t });
       else if (meta.a) attachMeta.set(k, { m: meta.m | 0, f: meta.f | 0, on: false });
+      else if (meta.ld) ladderMeta.set(k, { facing: meta.f | 0 });
     }
     mpSetOverride(x, y, z, b.id);
   };
@@ -9851,7 +9899,7 @@ function mcHandle(m) {
     case 'mccrawl': { const p = mp.players.get(m.id); if (p) p.mcCrawl = !!m.on; return true; }
     case 'join': if (m.player) setTimeout(() => mcApplyRoster([m.player]), 0); return false;
     case 'mcedit': {                       // somebody's change, applied here as it happens
-      mcApplyEdit(m.x, m.y, m.z, m.block);
+      mcApplyEdit(m.x, m.y, m.z, m.block, m.meta);
       return true;
     }
     case 'mcshot': mcTracer(m); return true;
@@ -13164,6 +13212,7 @@ window.__mc = {
   hold(action, ms){ const k=binds[action]||action; keys[k]=true; setTimeout(()=>{ keys[k]=false; }, ms); },
   release(action){ const k=binds[action]||action; keys[k]=false; },
   slabTopAt(x,y,z){ return slabTop(x,y,z); },
+  metaAt(x,y,z){ return mcMetaAt(x,y,z); },
   // ---- wall test hooks ----
   hits(x,y,z){ return collides(x,y,z); },
   wallList(){ return PALETTE.filter(id=>BLOCKS[id].wall).map(id=>BLOCKS[id].name); },
