@@ -425,8 +425,20 @@ const R          = 1;        // ball radius; every other size is in ball radii
 const SEG        = 4;        // spacing between path nodes
 const THICK      = 2.4;      // visual thickness of the runway slabs
 const RAIL       = 0.5;      // width of the glowing edge strip
-const HZ_H       = 1.8;      // how tall a red block stands - low enough that a
-                             // ramp clears it and short enough to see over
+/* How hard the run is, in the few numbers that actually decide it. A solo run is
+   the game as it was: the red stands tall, fills its slot, and the ball is checked
+   close to its own size. A shared run is gentler on all of it, because two people
+   on one keyboard are fighting the screen as much as the track. setScale() picks a
+   column. */
+let HZ_H     = 2.2;   // how tall a red block stands
+let SLOT_W   = 3.2;   // how wide a slot in a gate row is
+let SLOT_FILL= 0.40;  // and how much of that slot the block fills
+let MAX_RUN  = 6;     // most red blocks that may stand shoulder to shoulder
+let MOVE_W   = 0.78;  // the sliding wall, as a fraction of the runway
+let HIT_U    = 0.68;  // the ball against a hazard: sideways, as a fraction of R
+let HIT_Y    = 1.70;  // ...how far under one you can pass
+let HIT_S    = 0.85;  // ...and along the track
+let EDGE_GRIP= 0.22;  // how far past the lip the floor still holds you
 const LINE_SP    = 3;        // cross line every N nodes
 
 /* Two balls sharing one descent were crowded, so a shared run gets three times
@@ -453,14 +465,20 @@ let CAM_UP       = 5.4;
    wider in practice if you cannot cross it, and it is no use at all if the camera
    cannot show you both edges of it. */
 const SCALE = {
-  1: { hw0: 8.4,  hw1: 5.8,  acc: 108, back: 12.0, up: 5.4, spread: 0   },
-  2: { hw0: 25.2, hw1: 17.4, acc: 324, back: 16.0, up: 7.0, spread: 7.8 }
+  1: { hw0: 8.4,  hw1: 5.8,  acc: 108, back: 12.0, up: 5.4, spread: 0,
+       hzH: 2.2, slotW: 3.2, fill: 0.40, run: 6, moveW: 0.78,
+       hitU: 0.68, hitY: 1.70, hitS: 0.85, edge: 0.22 },
+  2: { hw0: 25.2, hw1: 17.4, acc: 324, back: 16.0, up: 7.0, spread: 7.8,
+       hzH: 1.8, slotW: 3.0, fill: 0.34, run: 3, moveW: 0.62,
+       hitU: 0.50, hitY: 1.45, hitS: 0.70, edge: 0.50 }
 };
 let startSpread = 0;                   // how far apart two balls line up at the gate
 function setScale(n){
   const k = SCALE[n > 1 ? 2 : 1];
   HW_START = k.hw0; HW_END = k.hw1; LAT_ACC = k.acc;
   CAM_BACK = k.back; CAM_UP = k.up; startSpread = k.spread;
+  HZ_H = k.hzH; SLOT_W = k.slotW; SLOT_FILL = k.fill; MAX_RUN = k.run; MOVE_W = k.moveW;
+  HIT_U = k.hitU; HIT_Y = k.hitY; HIT_S = k.hitS; EDGE_GRIP = k.edge;
 }
 const LOOK_AHEAD = 27;
 const LOOK_UP    = 1.1;
@@ -775,7 +793,6 @@ function pieceU(p, s){
 function pieceY(p, s){ return p.y0 + (p.y1 - p.y0) * pieceT(p, s); }
 /* The lip holds you for half a ball past where the floor ends, so hanging off the
    edge is a moment to correct in rather than the instant the run is over. */
-const EDGE_GRIP = R*0.5;
 function supportAt(s,u){
   for(let i=0;i<pieces.length;i++){
     const p = pieces[i];
@@ -1187,7 +1204,7 @@ function genChunk(){
     const spacing = paced(rnd(34, 48), diff);
     len = snap(rows*spacing + 46);
     addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
-    const slotW = 3.0;
+    const slotW = SLOT_W;
     const slots = Math.floor((HW*2)/slotW);
     const openings = Math.max(1, 2 - Math.round(diff));
     // the gate drifts by at most one slot per row, and only when there is
@@ -1200,10 +1217,20 @@ function genChunk(){
       const open = new Set();
       for(let k=0;k<openings;k++) open.add(gate+k);
       if(rng() < 0.3) open.add(rndi(0, slots-1));
+      // Never more than MAX_RUN red blocks shoulder to shoulder. On the wide runway a
+      // row of sixteen slots with one gate in it is a wall you read as a dead end
+      // rather than a gate you thread, so the row is broken into short clusters and
+      // you always have somewhere else to aim.
+      let run = 0;
+      for(let i=0;i<slots;i++){
+        if(open.has(i)){ run = 0; continue; }
+        if(run >= MAX_RUN){ open.add(i); run = 0; continue; }
+        run++;
+      }
       for(let i=0;i<slots;i++){
         if(open.has(i)) continue;
         const uc = -HW + slotW*(i+0.5);
-        addHazardBox(s, s+2.6, uc-slotW*0.34, uc+slotW*0.34, curY, HZ_H);
+        addHazardBox(s, s+2.6, uc-slotW*SLOT_FILL, uc+slotW*SLOT_FILL, curY, HZ_H);
       }
     }
     break;
@@ -1320,7 +1347,7 @@ function genChunk(){
     addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
     for(let i=0;i<bars;i++){
       const s = s0 + 34 + i*spacing;
-      const w = HW*0.62;               // leaves a real lane on either side of it
+      const w = HW*MOVE_W;             // on a shared run it leaves a real lane either side
       addHazardBox(s, s+3.4, -w/2, w/2, curY, HZ_H, {
         move:{ amp: HW - w/2, spd: rnd(0.7,1.25), phase: rng()*Math.PI*2 }
       });
@@ -2564,14 +2591,14 @@ function stepPhysics(p, dt){
   // hazards
   for(let i=0;i<hazards.length;i++){
     const h = hazards[i];
-    if(p.s + R*0.7 < h.s0 || p.s - R*0.7 > h.s1) continue;
+    if(p.s + R*HIT_S < h.s0 || p.s - R*HIT_S > h.s1) continue;
     let uL = h.uL, uR = h.uR;
     if(h.move) { uL += h.moveOff || 0; uR += h.moveOff || 0; }
     // The ball is checked smaller than it draws. Clipping the corner of a block
     // at speed reads as a graze, and dying to something you visibly got past is
     // the worst way for a run to end.
-    if(p.u + R*0.5 < uL || p.u - R*0.5 > uR) continue;
-    if(p.y + R*1.45 < h.y0 || p.y > h.y1) continue;
+    if(p.u + R*HIT_U < uL || p.u - R*HIT_U > uR) continue;
+    if(p.y + R*HIT_Y < h.y0 || p.y > h.y1) continue;
     die(p, 'hit');
     break;
   }
@@ -3024,7 +3051,23 @@ const HANDLE = window.__slope = {
            get rows(){ return boardRowsCache.slice(); } },
   get width(){ return { start:HW_START, end:HW_END, steer:LAT_ACC, back:CAM_BACK, spread:startSpread }; },
   get scale(){ return JSON.parse(JSON.stringify(SCALE)); },
-  get forgive(){ return { hazardH:HZ_H, edge:EDGE_GRIP }; },
+  get forgive(){ return { hazardH:HZ_H, edge:EDGE_GRIP, maxRun:MAX_RUN }; },
+  // the longest line of red standing shoulder to shoulder anywhere in the world
+  longestRun(){
+    const rows = new Map();
+    for(const h of hazards){ const k = h.s0.toFixed(2); (rows.get(k) || rows.set(k, []).get(k)).push(h); }
+    let worst = 0;
+    for(const [, list] of rows){
+      list.sort((a,b)=>a.uL-b.uL);
+      let run = 1;
+      for(let i=1;i<list.length;i++){
+        if(list[i].uL - list[i-1].uR < 2.0) run++; else run = 1;
+        worst = Math.max(worst, run);
+      }
+      worst = Math.max(worst, Math.min(run, list.length));
+    }
+    return worst;
+  },
   supported(s,u){ return !!supportAt(s,u); },
   set players2(v){ numPlayers = v ? 2 : 1; },
   start: startGame,
