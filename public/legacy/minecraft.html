@@ -838,7 +838,9 @@ const WH = 144;           // world height (blocks) — the build limit, doubled 
 const SEA = 30;           // sea level
 const BEDROCK_Y = 0;      // the single bedrock layer sits at the bottom of the world
 const TILE = 16;          // texture tile pixels
-const REACH = 6;          // block interaction distance
+const REACH_BASE = 6;     // block interaction distance
+const REACH_PRG  = 10;    // ...and what the /prg code gives you instead
+let REACH = REACH_BASE;   // everything that reaches - blocks, mobs, punches - reads this
 
 /* ------------------------------------------------------------ block table -- */
 // tiles: single index = all faces; [top,side,bottom] = per-orientation.
@@ -4361,6 +4363,7 @@ function setLocalSlim(slim){
    wear both.                                                                  */
 const ROLE_TAGS = [
   { key: 'admin',     text: 'ADMIN',     color: '#42e042' },
+  { key: 'prg',       text: 'PRG',       color: '#ffb03a' },
   { key: 'cool',      text: 'COOL',      color: '#4ec9ff' },
   { key: 'spectator', text: 'SPECTATOR', color: '#c4ccd6' },
 ];
@@ -5272,6 +5275,10 @@ function updatePlayer(dt){
     if(keys[binds.jump] && mcCrawlAmt() < 0.5) player.vel.y = MC_CLIMB;
     // sneak lets go of a wall, but on the floor it is the crawl key instead
     else if(keys[binds.sneak] && !player.onGround) player.vel.y = -MC_CLIMB;
+    // Otherwise you hold where you are. Climbing three blocks and sliding straight
+    // back down the moment you stop pressing jump is not climbing, it is a jump with
+    // extra steps. You come down by holding sneak, or by walking off the wall.
+    else player.vel.y = Math.max(player.vel.y, 0);
   }
   // ladder: cling and climb when your box is inside a ladder
   if(!player.flying && isOnLadder()){
@@ -7344,7 +7351,7 @@ function flintIconCanvas(size){
 }
 const glide = { on:false };               // the wings are out and you are flying on them
 let lastElytraHeld = null;                // so the model is only re-dressed when it changes
-const fx = { body:'none', color:'', stick:false, hide:false, superStick:false, ghost:false, fly:false, cool:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
+const fx = { body:'none', color:'', stick:false, hide:false, superStick:false, ghost:false, fly:false, cool:false, prg:false };   // this player's active effects ('' colour = default white name). superStick = tadee code: 15-block knockback + hit while spectating
 let localEyeMul = 1;                      // giant/small change the local camera height a bit
 
 function flashCode(msg, el){ if(!el) return; el.textContent=msg; clearTimeout(el._t); el._t=setTimeout(()=>{ el.textContent=''; }, 3000); }
@@ -7352,7 +7359,7 @@ function applyLocalBody(){
   setLocalBody(bodyToKind(fx.body));   // become a pig / block / tree locally too, so first-person reflects it
   localEyeMul = fx.body==='giant' ? 4.5 : fx.body==='small' ? 0.3 : fx.body==='pig' ? 0.6 : fx.body==='block' ? 0.95 : fx.body==='tree' ? 1.7 : 1;   // camera rides at your new height
 }
-function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, admin:isAdmin(), cool:fx.cool, ghost:fx.ghost }); }   // relayed to everyone else
+function sendFx(){ if(mp.active) mpSend({ type:'fx', body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, admin:isAdmin(), cool:fx.cool, prg:fx.prg, ghost:fx.ghost }); }   // relayed to everyone else
 function giveStick(){ hotbar[0]=STICK_ITEM; selSlot=0; if(typeof renderHotbar==='function') renderHotbar(); if(typeof showItemName==='function') showItemName(STICK_ITEM); }
 function removeStick(){ if(hotbar[0]===STICK_ITEM){ hotbar[0]=0; if(typeof renderHotbar==='function') renderHotbar(); } }
 // Every code toggles: typing it again turns it back off. Body codes are one-at-a-time (a new one replaces the old).
@@ -7368,6 +7375,11 @@ function applyCode(raw, msgEl){
   if(code==='leoniscool'){ fx.color = fx.color ? '' : NAME_BLUE; note = fx.color ? 'Your name is now blue.' : 'Blue name turned off.'; }
   else if(code==='looc'){ fx.cool=!fx.cool;
     note = fx.cool ? 'COOL. Everyone can see it beside your name.' : 'Not cool any more.'; }
+  // Reach is one number and everything that points at something reads it, so this
+  // lengthens blocks, mobs and punches together rather than only the one you notice.
+  else if(code==='prg' || code==='/prg'){ fx.prg=!fx.prg; REACH = fx.prg ? REACH_PRG : REACH_BASE;
+    note = fx.prg ? 'PRG. Your reach is now ' + REACH_PRG + ' blocks, and everyone can see the tag.'
+                  : 'PRG off. Back to ' + REACH_BASE + ' blocks.'; }
   else if(code==='secret'){ fx.hide=!fx.hide; note = fx.hide ? 'Your name is now hidden from others.' : 'Your name is visible again.'; }
   else if(code==='hide'){                   // straight in: type it and you are gone
     fx.ghost=!fx.ghost; applyGhost();
@@ -7505,6 +7517,14 @@ function setPlayerGhost(p, on){
 function setPlayerHide(p, hide){ p.hide=!!hide; if(p.tag) p.tag.visible = !p.hide && !p.ghost; }
 function setPlayerCool(p, cool){
   if(!!p.cool===!!cool) return; p.cool=!!cool;
+  redrawNametag(p);
+}
+function setPlayerPrg(p, prg){
+  if(!!p.prg===!!prg) return; p.prg=!!prg;
+  redrawNametag(p);
+}
+// a tag is baked into a texture, so a role changing means drawing a new one
+function redrawNametag(p){
   if(p.tag && p.model){ p.model.remove(p.tag); p.tag=makeNametag(p.name||('Player'+p.id), p.color||'#fff', p, p.team); p.model.add(p.tag); p.tag.visible=!p.hide && !p.ghost; }
   if(tabShown) renderTabList();
 }   // hidename code: hide the floating nametag from others
@@ -7515,8 +7535,8 @@ let tabShown = false;
 function renderTabList(){
   if(!mp.active || state!==PLAY){ tabShown=false; tabListEl.hidden=true; return; }
   const teamOf = t => (bw.active && t!=null && BW_TEAMS[t]) ? BW_TEAMS[t] : null;
-  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:isAdmin(), cool:!!fx.cool, spectator:!!mp.spectator && !mp.minigame, team:teamOf(bw.active?bw.team:null)}];
-  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin, cool:!!p.cool, spectator:!!p.spectator, team:teamOf(p.team)});
+  const rows=[{name: mp.name||('Player'+mp.id), you:true, head:selfHeadURL, color:fx.color, admin:isAdmin(), cool:!!fx.cool, prg:!!fx.prg, spectator:!!mp.spectator && !mp.minigame, team:teamOf(bw.active?bw.team:null)}];
+  for(const [,p] of mp.players) rows.push({name: p.name||('Player'+p.id), you:false, head:p.headURL||defaultHeadURL, color:p.color||'', admin:!!p.admin, cool:!!p.cool, prg:!!p.prg, spectator:!!p.spectator, team:teamOf(p.team)});
   rows.sort((a,b)=> a.name.localeCompare(b.name));
   const n=rows.length;
   const hdr = mp.serverName ? escapeHtml(mp.serverName)+' - '+n+' online' : (n+' player'+(n===1?'':'s')+' online');
@@ -7549,7 +7569,7 @@ function mpUrl(){
   if(mp.mc){                                        // mecha chameleon: separate round
     const nm=getSavedName();
     return u + (u.indexOf('?')>=0?'&':'?') + 'mode=mecha' + (nm ? '&name='+encodeURIComponent(nm) : '')
-             + (isAdmin() ? '&admin=1' : '') + (fx.cool ? '&cool=1' : '');
+             + (isAdmin() ? '&admin=1' : '') + (fx.cool ? '&cool=1' : '') + (fx.prg ? '&prg=1' : '');
   }
   if(mp.med){                                       // the map editor, which has a password
     const nm=getSavedName();
@@ -7578,7 +7598,7 @@ function mpAddPlayer(p){
   const tag=makeNametag(p.name||('Player'+p.id), color||'#fff', p, p.team); model.add(tag);
   const rec={ id:p.id, name:p.name, model, tag, headURL:defaultHeadURL, skinCanvas:null, skinCtx:null, skinTex:null,
     x:p.x, y:p.y, z:p.z, tx:p.x, ty:p.y, tz:p.z, yaw:p.yaw||0, pitch:p.pitch||0, sit:!!p.sit, sneak:!!p.sneak, crouch:0,
-    body:'none', color:color, hide:!!p.hide, ghost:!!p.ghost, admin:admin, cool:!!p.cool, spectator:spectator, minigame:!!p.minigame, slim:slim,
+    body:'none', color:color, hide:!!p.hide, ghost:!!p.ghost, admin:admin, cool:!!p.cool, prg:!!p.prg, spectator:spectator, minigame:!!p.minigame, slim:slim,
     elytra:!!p.ely, gliding:!!p.gld };
   mp.players.set(p.id, rec);
   if(p.ghost) setPlayerGhost(rec, true);
@@ -7773,7 +7793,7 @@ function mpHandle(m){
   else if(m.type==='pose'){ const p=mp.players.get(m.id); if(p){ p.sit=!!m.sit; p.sneak=!!m.sneak;
     if(!!p.elytra !== !!m.ely){ p.elytra=!!m.ely; setModelElytra(p.model, p.elytra, p.cape); }
     p.gliding=!!m.gld; } }   // another player sat down, started sneaking, or put their wings out
-  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerGhost(p, m.ghost); setPlayerHide(p, m.hide); setPlayerCool(p, m.cool); setPlayerAdmin(p, m.admin); } }   // secret-code effect: big / small / pig / block / name colour / hidename / admin
+  else if(m.type==='fx'){ const p=mp.players.get(m.id); if(p){ setPlayerBody(p, m.body); setPlayerColor(p, m.color); setPlayerGhost(p, m.ghost); setPlayerHide(p, m.hide); setPlayerCool(p, m.cool); setPlayerPrg(p, m.prg); setPlayerAdmin(p, m.admin); } }   // secret-code effect: big / small / pig / block / name colour / hidename / admin
   else if(m.type==='chat'){
     if(m.system){ chatPush(m.text, 'sys'); }
     else {
@@ -9633,7 +9653,7 @@ function mcApplyRoster(list) {
     p.mcCrawl = !!q.crawl;                    // so somebody joining mid-round sees them down
     // who is an admin, and who is watching rather than playing, for the tab list
     const wasLabel = (p.admin ? 1 : 0) + (p.spectator ? 2 : 0);
-    p.admin = !!q.admin; p.cool = !!q.cool; p.spectator = !!q.spectator;
+    p.admin = !!q.admin; p.cool = !!q.cool; p.prg = !!q.prg; p.spectator = !!q.spectator;
     if (wasLabel !== (p.admin ? 1 : 0) + (p.spectator ? 2 : 0) && tabShown) renderTabList();
     // Take the slim flag from the same message as the skin. Forcing it false here
     // fought the skin relay, which carries the real one: the model was rebuilt on
@@ -12466,9 +12486,10 @@ function closeChat(send){
       else if(mc.phase!=='lobby') chatPush('A round is already going.', 'sys');
       else mpSend({type:'mcstart'});
     }
-    else if(/^\/(edit|prg)\b/i.test(v) && mc.active){
-      // both of these used to build a map from inside a round. That happens in the
-      // Mecha Map Editor now, which is its own server with its own password.
+    else if(/^\/prg\b/i.test(v)){ applyCode('prg', null); }
+    else if(/^\/edit\b/i.test(v) && mc.active){
+      // this used to build a map from inside a round. That happens in the Mecha Map
+      // Editor now, which is its own server with its own password.
       chatPush('Maps are built in the Mecha Map Editor now: leave the game and join it from the server list.', 'sys');
     }
     else if(/^\/setworldspawn\b/i.test(v)){
@@ -13172,7 +13193,7 @@ window.__mc = {
   joinTarget(id,pw){ mpTarget={server:id,pw:pw||''}; startMultiplayer(); }, adminOn(){ return isAdmin(); }, ownerOn(){ return ownerMode; }, plainAdminOn(){ return adminMode; },
   playerAdmins(){ return [...mp.players.values()].map(p=>({name:p.name,admin:!!p.admin})); },
   // ---- secret-code test hooks ----
-  code(c){ applyCode(c, null); }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, fly:fx.fly, cool:!!fx.cool, eyeMul:localEyeMul, localKind:modelKind(body) }; },
+  code(c){ applyCode(c, null); }, roleTags(o){ return roleTagsOf(o); }, target(){ return target ? {x:target.x,y:target.y,z:target.z,dist:+target.dist.toFixed(2)} : null; }, fxState(){ return { body:fx.body, color:fx.color, hide:fx.hide, stick:fx.stick, superStick:fx.superStick, fly:fx.fly, cool:!!fx.cool, prg:!!fx.prg, reach:REACH, eyeMul:localEyeMul, localKind:modelKind(body) }; },
   mpSpectator(){ return !!mp.spectator; },
   remoteTags(){ return [...mp.players.values()].map(p=>({ id:p.id, tagVisible:p.tag?!!p.tag.visible:null, hide:!!p.hide, color:p.color||'', visible:!!(p.model&&p.model.visible) })); },
   bwPotions(){ const t=performance.now(); return { speed:Math.max(0,Math.round((bw.speedUntil-t)/1000)), jump:Math.max(0,Math.round((bw.jumpUntil-t)/1000)), invis:Math.max(0,Math.round((bw.invisUntil-t)/1000)) }; },
