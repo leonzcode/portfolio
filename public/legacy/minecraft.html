@@ -5225,7 +5225,8 @@ function updatePlayer(dt){
     const sneakHeld = keys[binds.sneak] && !swimming;   // sneaking slows you in the air too, so a sneak-jump carries less far (like Minecraft)
     const sprinting = keys[binds.forward] && (keys[binds.sprint] || keys[binds.sprint2]);   // Ctrl or R
     const spdBuff = (bw.active && bw.speedUntil>performance.now()) ? 1.45 : 1;   // Speed II potion
-    const base = (sneakHeld ? 1.35 : (sprinting ? 6.4 : 4.3)) * spdBuff * superSpeedMul();
+    const base = (sneakHeld ? 1.35 : (sprinting ? 6.4 : 4.3)) * spdBuff * superSpeedMul()
+               * (1 - (1 - MC_CRAWL_SPD) * mcCrawlAmt());   // a belly crawl is slower than a sneak
     const accel = swimming? 3.0 : base;
     const tvx = wish.x*accel, tvz = wish.z*accel;
     // ice is slippery: velocity eases toward the target instead of snapping
@@ -5253,7 +5254,7 @@ function updatePlayer(dt){
       }
     }
     else if(keys[binds.jump] && !player.onGround && elytraCanStart()){ glideStart(); }
-    else if(keys[binds.jump] && player.onGround){
+    else if(keys[binds.jump] && player.onGround && mcCrawlAmt() < 0.5){   // no jumping off your stomach
       // A hider is half height, so a wall that is nothing to anybody else is twice
       // their own size, and they get a little more to work with: 9.1 against gravity
       // 26 is 1.59 blocks. That clears a step and a fence and cannot reach two blocks,
@@ -5268,8 +5269,9 @@ function updatePlayer(dt){
 
   // a wall in a round behaves like a ladder you brought with you
   if(!player.flying && !glide.on && mcOnWall()){
-    if(keys[binds.jump]) player.vel.y = MC_CLIMB;
-    else if(keys[binds.sneak]) player.vel.y = -MC_CLIMB;      // and back down again
+    if(keys[binds.jump] && mcCrawlAmt() < 0.5) player.vel.y = MC_CLIMB;
+    // sneak lets go of a wall, but on the floor it is the crawl key instead
+    else if(keys[binds.sneak] && !player.onGround) player.vel.y = -MC_CLIMB;
   }
   // ladder: cling and climb when your box is inside a ladder
   if(!player.flying && isOnLadder()){
@@ -5356,7 +5358,11 @@ function updatePlayer(dt){
   }
   // sneak crouch easing: lowers the camera + squashes the body model
   player.crouch += ((player.sneak?1:0) - player.crouch) * (1 - Math.exp(-16*dt));
-  player.eye = (1.62 - player.crouch*0.16) * localEyeMul * (mc.sized || 1);   // giant/small secret codes raise/lower the camera; a mecha hider is half height
+  // a crawl takes the camera most of the way to the floor, and the hitbox with it
+  const crawlK = mcCrawlAmt();
+  player.eye = (1.62 - player.crouch*0.16) * localEyeMul * (mc.sized || 1)
+             * (1 - (1 - MC_CRAWL_EYE) * crawlK);   // giant/small secret codes raise/lower the camera; a mecha hider is half height
+  if(mc.active) player.h = 1.8 * (mc.sized || 1) * (1 - (1 - MC_CRAWL_H) * crawlK);
   stepSmooth = stepSmooth>0.003 ? stepSmooth*Math.exp(-16*dt) : 0;   // let the camera catch up to a step-up
   { const bn=borderNow();                                            // world border: keep the player inside the bounded area
     const b=bn-0.35; if(bn){
@@ -8618,6 +8624,7 @@ const mc = {
   hiders: 0, hidersTotal: 0, seekers: 0, here: 0,
   results: null, bounds: null, spawn: null,
   tracers: [], marks: [], feed: [],
+  crawl: false, crawlT: 0,
 };
 const MC_SHOT_GAP = 220;
 
@@ -9402,6 +9409,29 @@ function mcPoseModel(model, pose, t) {
     default: break;                                  // stand
   }
 }
+/* Flat on the front, legs straight back, arms out past the head with the gun in
+   them. k blends the whole thing out of the standing pose, so the same function
+   draws every frame of going down and getting up. */
+function mcPoseCrawl(model, k, t, moving) {
+  const u = model && model.userData;
+  if (!u || !u.upper) return;
+  const { upper, legL, legR, armL, armR, headPivot } = u;
+  if (!u.restY) u.restY = { upper: upper.position.y, legL: legL.position.y, legR: legR.position.y };
+  const R = u.restY, HALF = Math.PI / 2, HIP = u.hipY;
+  model.rotation.x = 0; model.rotation.z = 0;
+  // a slow paddle of the legs while they are actually moving, so a crawl is not a slide
+  const sw = moving ? Math.sin((t || 0) * 3.4) * 0.3 * k : 0;
+  upper.rotation.set(HALF * k, 0, 0);              // chest down onto the floor
+  legL.rotation.set(HALF * k + sw, 0,  0.10 * k);  // legs straight out behind
+  legR.rotation.set(HALF * k - sw, 0, -0.10 * k);
+  // the arms hang from the chest, so once the chest is flat they reach forward on
+  // their own; this takes them the rest of the way and brings the hands together
+  armL.rotation.set(-2.55 * k, 0, -0.16 * k);
+  armR.rotation.set(-2.55 * k, 0,  0.16 * k);
+  headPivot.rotation.set(-HALF * 0.92 * k, 0, 0);  // face up off the floor, looking ahead
+  const d = (HIP - 0.16) * k;
+  upper.position.y = R.upper - d; legL.position.y = R.legL - d; legR.position.y = R.legR - d;
+}
 // Everyone in a round wears the blank skin they were given, painted or not. Nobody
 // turns into a block any more, so this only has to make sure the model exists.
 // The gun a seeker holds, small enough to sit in a hand: the first-person one is
@@ -9584,9 +9614,35 @@ function mcInit(m) {
   startGame();
   mcBuildLobby();                      // something to wait on until a map is voted in
   for (const p of (m.players || [])) mpAddPlayer(p);
+  mcApplyRoster(m.players);                 // and know who is hunting before anything else happens
   mcSendSavedSkin();                        // arrive looking like yourself
   mcEnsureUi(); mcHud();
   chatPush('Joined Mecha Chameleon. Everything here is on a key: press H for the list.', 'sys');
+}
+
+/* Who everyone is, from whichever message brought the rows. The list arrives twice:
+   inside `init` when you join, and as `mcplayers` whenever it changes. Joining used
+   to take the first one through the plain multiplayer path, which knows nothing
+   about roles, so anyone walking in mid-round saw no seekers and no crawls until
+   something else happened to push the list again. */
+function mcApplyRoster(list) {
+  for (const q of (list || [])) {
+    const p = mp.players.get(q.id);
+    if (!p) continue;
+    p.mcRole = q.role; p.mcAlive = q.alive; p.mcPlaying = q.playing; p.mcPose = q.pose | 0;
+    p.mcCrawl = !!q.crawl;                    // so somebody joining mid-round sees them down
+    // who is an admin, and who is watching rather than playing, for the tab list
+    const wasLabel = (p.admin ? 1 : 0) + (p.spectator ? 2 : 0);
+    p.admin = !!q.admin; p.cool = !!q.cool; p.spectator = !!q.spectator;
+    if (wasLabel !== (p.admin ? 1 : 0) + (p.spectator ? 2 : 0) && tabShown) renderTabList();
+    // Take the slim flag from the same message as the skin. Forcing it false here
+    // fought the skin relay, which carries the real one: the model was rebuilt on
+    // every packet, and a rebuilt model loses its pose and comes back wrong.
+    if (q.skin && p.mcSkinSeen !== q.skin) { p.mcSkinSeen = q.skin; applyRemoteSkin(q.id, q.skin, !!q.slim); }
+    mcSetLook(p);
+    // the tag rule is enforced every frame in mcFrame; the generic player update
+    // rewrites it, and it runs after this message is handled
+  }
 }
 
 function mcHandle(m) {
@@ -9611,6 +9667,7 @@ function mcHandle(m) {
     case 'mcyou': {
       mc.role = m.role; mc.alive = !!m.alive; mc.playing = !!m.playing;
       mc.pose = m.pose | 0; mc.hp = m.hp; mc.ammo = m.ammo; mc.score = m.score || 0;
+      if (!(m.playing && m.alive)) mc.crawl = false;        // a new round stands you back up
       if (m.poses && m.poses.length) mc.poses = m.poses;
       if (m.stunned) mc.stunUntil = performance.now() + m.stunned;
       // only when the round is placing you. Following every message put you back on
@@ -9634,27 +9691,10 @@ function mcHandle(m) {
       mcHud();
       return true;
     }
-    case 'mcplayers': {
-      for (const q of (m.players || [])) {
-        const p = mp.players.get(q.id);
-        if (!p) continue;
-        p.mcRole = q.role; p.mcAlive = q.alive; p.mcPlaying = q.playing; p.mcPose = q.pose | 0;
-        // who is an admin, and who is watching rather than playing, for the tab list
-        const wasLabel = (p.admin ? 1 : 0) + (p.spectator ? 2 : 0);
-        p.admin = !!q.admin; p.cool = !!q.cool; p.spectator = !!q.spectator;
-        if (wasLabel !== (p.admin ? 1 : 0) + (p.spectator ? 2 : 0) && tabShown) renderTabList();
-        // Take the slim flag from the same message as the skin. Forcing it false here
-        // fought the skin relay, which carries the real one: the model was rebuilt on
-        // every packet, and a rebuilt model loses its pose and comes back wrong.
-        if (q.skin && p.mcSkinSeen !== q.skin) { p.mcSkinSeen = q.skin; applyRemoteSkin(q.id, q.skin, !!q.slim); }
-        mcSetLook(p);
-        // the tag rule is enforced every frame in mcFrame; the generic player update
-        // rewrites it, and it runs after this message is handled
-      }
-      mcHud();
-      return true;
-    }
+    case 'mcplayers': mcApplyRoster(m.players); mcHud(); return true;
     case 'mcpose': { const p = mp.players.get(m.id); if (p) p.mcPose = m.pose | 0; return true; }
+    case 'mccrawl': { const p = mp.players.get(m.id); if (p) p.mcCrawl = !!m.on; return true; }
+    case 'join': if (m.player) setTimeout(() => mcApplyRoster([m.player]), 0); return false;
     case 'mcedit': {                       // somebody's change, applied here as it happens
       mcApplyEdit(m.x, m.y, m.z, m.block);
       return true;
@@ -9668,8 +9708,7 @@ function mcHandle(m) {
       return true;
     }
     case 'mcreveal': {                   // a hider gives themselves away, by accident or on purpose
-      mcMark(m.x, m.y + 1.15, m.z, 0xffd54a);        // a half-height hider wears it lower
-      mcPing(m.x, m.y, m.z);
+      mcPing(m.x, m.y, m.z);                         // a bearing for the seekers, nothing in the world
       if (m.id === mp.id) mcWhistled(!!m.called);    // your own: you pressed it, so say so
       else mcFeed(m.called ? (m.by ? escHtml(m.by) + ' whistled!' : 'A whistle!') : 'Something rattled...');
       return true;
@@ -9679,6 +9718,37 @@ function mcHandle(m) {
   }
   return false;
 }
+
+/* ---- going prone -----------------------------------------------------------
+   Standing up needs the room to do it in, or a seeker who crawled under a slab
+   would stand straight into it and be shoved somewhere they never chose to go.
+   So the key asks, and the ceiling answers.                                    */
+function mcHeadroom() {
+  const need = 1.8 * (mc.sized || 1), w = player.w / 2;
+  for (let y = Math.floor(player.pos.y + player.h + 0.05); y <= Math.floor(player.pos.y + need - 0.05); y++) {
+    for (const [dx, dz] of [[w, w], [w, -w], [-w, w], [-w, -w]]) {   // the whole box, not just the middle
+      const b = getBlock(Math.floor(player.pos.x + dx), y, Math.floor(player.pos.z + dz));
+      if (b && BLOCKS[b] && BLOCKS[b].solid) return false;
+    }
+  }
+  return true;
+}
+function mcCrawlStep(dt) {
+  const can = mc.playing && mc.alive && mc.role === 'seeker' && mc.phase === 'seek'
+              && !player.flying && !glide.on && !mc.locked && !spec.on && !mc.paint;
+  let want = !!(can && keys[binds.sneak] && player.onGround);
+  if (mc.crawl && !want && can && !mcHeadroom()) want = true;   // nowhere to stand up into
+  if (!can) want = false;
+  if (want !== mc.crawl) {
+    mc.crawl = want;
+    mpSend({ type: 'mccrawl', on: want });
+    mcHud();
+  }
+  const to = mc.crawl ? 1 : 0;
+  mc.crawlT += (to - mc.crawlT) * (1 - Math.exp(-MC_CRAWL_EASE * dt));
+  if (Math.abs(mc.crawlT - to) < 0.002) mc.crawlT = to;
+}
+const mcCrawlAmt = () => (mc.active ? (mc.crawlT || 0) : 0);
 
 /* ---- shooting ---- */
 function mcFire() {
@@ -9749,9 +9819,9 @@ function mcPingFrame() {
 }
 
 /* ---- your own whistle -------------------------------------------------------
-   You cannot hear yourself, and the mark that goes over your head is behind you in
-   first person, so pressing the key felt like nothing happened. A ring goes out
-   from the middle of the screen instead, which is what the sound looks like.     */
+   You cannot hear yourself and nothing appears in the world any more, so pressing
+   the key would feel like nothing happened. A ring goes out from the middle of the
+   screen, which is what the sound looks like from the inside.                    */
 let mcRingEl = null;
 function mcWhistled(called) {
   if (!mcRingEl) {
@@ -9815,6 +9885,7 @@ function mcFrame(dt) {
   }
   mcSweep();
   mcPingFrame();
+  mcCrawlStep(dt);
   const t = performance.now() / 1000;
   const hunting = mc.playing && mc.alive && mc.role === 'seeker' && mc.phase === 'seek';
   // everyone else, held in whatever pose they chose
@@ -9829,7 +9900,17 @@ function mcFrame(dt) {
       p.model.scale.set(sc, sc, sc);
     }
     mcSetHeldGun(p, !!(p.mcPlaying && p.mcRole === 'seeker'));
+    // Each client eases the change itself rather than being sent a number every
+    // frame: the message says down or up, and the animation is the same length
+    // wherever it is drawn.
+    const wantC = (p.mcCrawl && p.mcPlaying && p.mcAlive && p.mcRole === 'seeker') ? 1 : 0;
+    p.crawlT = (p.crawlT || 0) + (wantC - (p.crawlT || 0)) * (1 - Math.exp(-MC_CRAWL_EASE * dt));
+    if (Math.abs(p.crawlT - wantC) < 0.002) p.crawlT = wantC;
+    // the gun hangs off the arm, so it swings up with it: bring the barrel back
+    // level with the ground, which is where a prone shooter actually points it
+    if (p.mcGun) p.mcGun.rotation.x = -0.25 + 2.30 * (p.crawlT || 0);
     if (p.mcRole === 'hider' && p.mcAlive && p.model) mcPoseModel(p.model, p.mcPose | 0, t + (p.id % 7));
+    else if (p.model && p.crawlT > 0.002) mcPoseCrawl(p.model, p.crawlT, p.walkT || 0, (p.walkAmp || 0) > 0.2);
     else if (p.model) mcPoseRest(p.model);   // nobody keeps a pose once they stop holding it
     // The outline is for the scoreboard and nothing else now: every hider who was
     // never found lights up where they were standing, so the seekers get to see where
@@ -9994,6 +10075,17 @@ function mcEnsureUi() {
    Being small is the whole advantage: you fit under a bench, behind a fence post,
    inside a doorway. The hitbox shrinks with the model, or you would be caught by
    walls you can plainly see through. */
+/* ---- a seeker on their belly ------------------------------------------------
+   Hold shift in a round and a seeker goes prone: down onto their front, rifle out
+   ahead, eyeline about a third of a block off the floor. It is slow and it cannot
+   jump, and that is the trade - you give up the ability to move for a low line
+   under a fence, through a crop row, or along a floor a standing player cannot
+   see down. The change is eased, not switched, so everybody watching sees them go
+   down and get back up rather than snap between two shapes.                     */
+const MC_CRAWL_H   = 0.34;    // how tall a crawling seeker is, against standing
+const MC_CRAWL_EYE = 0.24;    // and where their eyes end up: ~0.39 off the floor
+const MC_CRAWL_SPD = 0.62;    // and how much of a sneak's pace they keep
+const MC_CRAWL_EASE = 6.5;    // how quickly the change plays out
 const MC_HIDER_JUMP = 9.1;    // see the jump in the physics step: 1.59 blocks
 const MC_SMALL = 0.5;      // how big a hider looks
 const MC_THIN = 0.28;      // and how wide they actually are, which is thinner still, so
@@ -10220,6 +10312,7 @@ function mcHud() {
       '<div><b>W A S D</b> move  ·  <b>Space</b> jump</div>' +
       '<div><b>1-6</b> pose, or vote for a map</div>' +
       '<div><b>V</b> next pose</div>' +
+      '<div><b>Shift</b> crawl (seeker): flat on your front, slow, and low enough to see under things</div>' +
       '<div><b>N</b> whistle (hider): points the seekers at you, and scores</div>' +
       '<div><b>B</b> paint yourself, in the world</div>' +
       '<div><b>F</b> fire (seeker)</div>' +
@@ -12517,6 +12610,8 @@ function frame(now){
     // above would otherwise put the limbs straight back where they were.
     if(mc.active && mc.role==='hider' && mc.alive && mc.playing)
       mcPoseModel(body, mc.pose, performance.now()/1000 + 1);
+    else if(mcCrawlAmt() > 0.002)
+      mcPoseCrawl(body, mcCrawlAmt(), performance.now()/1000, moving);
   }
   // show your own body in first person when a body code is active, so you see yourself as big/small/pig
   body.visible = (state===PLAY && !sleep.active && !fx.ghost && (camMode!==0 || fx.body!=='none'));   // the hide code takes you out of your own view too
@@ -12739,6 +12834,11 @@ window.__mc = {
   mcPings(){ return mc.pings.map(g=>({ at:[g.x,+g.y.toFixed(1),g.z],
     rot:g.el.style.transform, op:g.el.style.opacity })); },
   mcMarks(){ return mc.marks.map(m=>({ y:+m.o.position.y.toFixed(2) })); },
+  mcRing(){ const r=document.getElementById('mcRing'); return { there:!!r, going:!!(r && r.classList.contains('go')) }; },
+  mcCrawl(){ return { on:mc.crawl, t:+mc.crawlT.toFixed(3), eye:+player.eye.toFixed(3), h:+player.h.toFixed(3),
+    upper:+(body.userData.upper ? body.userData.upper.rotation.x : 0).toFixed(3) }; },
+  mcCrawlOf(id){ const p=mp.players.get(id); return p ? { on:!!p.mcCrawl, t:+(p.crawlT||0).toFixed(3),
+    upper:+((p.model&&p.model.userData.upper) ? p.model.userData.upper.rotation.x : 0).toFixed(3) } : null; },
   // the dropper, at a point on the screen, without going through a mouse event
   // the pick as the button actually does it: the mesh first, the block behind after
   mcPickAt(nx, ny){

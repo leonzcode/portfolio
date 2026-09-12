@@ -425,13 +425,16 @@ const R          = 1;        // ball radius; every other size is in ball radii
 const SEG        = 4;        // spacing between path nodes
 const THICK      = 2.4;      // visual thickness of the runway slabs
 const RAIL       = 0.5;      // width of the glowing edge strip
+const HZ_H       = 1.8;      // how tall a red block stands - low enough that a
+                             // ramp clears it and short enough to see over
 const LINE_SP    = 3;        // cross line every N nodes
 
-// Three times the runway it used to be. Two balls sharing one descent were
-// crowded on the old width, and a wide floor gives the hazards room to read as
-// something you pick a line through rather than something you squeeze past.
-const HW_START   = 25.2;     // half width of a full-width runway at the start
-const HW_END     = 17.4;     // ...and once the run is fully ramped up
+/* Two balls sharing one descent were crowded, so a shared run gets three times
+   the runway. A solo run keeps the width it always had - the narrow track is the
+   game on your own, and widening it just made the descent easy. These move
+   together with the steering and the camera in setScale(). */
+let HW_START     = 8.4;      // half width of a full-width runway at the start
+let HW_END       = 5.8;      // ...and once the run is fully ramped up
 
 const SPD_START  = 38;       // units/second at the gate
 const SPD_END    = 138;      // terminal target speed
@@ -439,13 +442,26 @@ const SPD_RAMP   = 7200;     // distance over which the target climbs
 const SPD_EASE   = 1.5;      // how hard actual speed chases the target
 const PITCH_GAIN = 1.35;     // steeper track => faster
 
-const LAT_ACC    = 324;      // steering acceleration, up with the width: a runway
-                             // three times across takes three times the push to cross
+let LAT_ACC      = 108;      // steering acceleration
 const LAT_DRAG   = 3.3;      // lateral drag => terminal lateral ≈ 33
 const GRAV       = 132;
 
-const CAM_BACK   = 16.0;     // back far enough that the wide runway fits the frame
-const CAM_UP     = 7.0;      // and high enough to see the floor you are crossing
+let CAM_BACK     = 12.0;
+let CAM_UP       = 5.4;
+
+/* Everything that has to grow together when the runway does. A wider floor is no
+   wider in practice if you cannot cross it, and it is no use at all if the camera
+   cannot show you both edges of it. */
+const SCALE = {
+  1: { hw0: 8.4,  hw1: 5.8,  acc: 108, back: 12.0, up: 5.4, spread: 0   },
+  2: { hw0: 25.2, hw1: 17.4, acc: 324, back: 16.0, up: 7.0, spread: 7.8 }
+};
+let startSpread = 0;                   // how far apart two balls line up at the gate
+function setScale(n){
+  const k = SCALE[n > 1 ? 2 : 1];
+  HW_START = k.hw0; HW_END = k.hw1; LAT_ACC = k.acc;
+  CAM_BACK = k.back; CAM_UP = k.up; startSpread = k.spread;
+}
 const LOOK_AHEAD = 27;
 const LOOK_UP    = 1.1;
 const FOV_BASE   = 68;
@@ -757,12 +773,15 @@ function pieceU(p, s){
 }
 /* surface height at s — pieces may rise or fall, which is what makes ramps */
 function pieceY(p, s){ return p.y0 + (p.y1 - p.y0) * pieceT(p, s); }
+/* The lip holds you for half a ball past where the floor ends, so hanging off the
+   edge is a moment to correct in rather than the instant the run is over. */
+const EDGE_GRIP = R*0.5;
 function supportAt(s,u){
   for(let i=0;i<pieces.length;i++){
     const p = pieces[i];
     if(s >= p.s0 && s <= p.s1){
       const uu = pieceU(p, s);
-      if(u >= uu[0] && u <= uu[1]) return p;
+      if(u >= uu[0] - EDGE_GRIP && u <= uu[1] + EDGE_GRIP) return p;
     }
   }
   return null;
@@ -1168,7 +1187,7 @@ function genChunk(){
     const spacing = paced(rnd(34, 48), diff);
     len = snap(rows*spacing + 46);
     addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
-    const slotW = 3.4;
+    const slotW = 3.0;
     const slots = Math.floor((HW*2)/slotW);
     const openings = Math.max(1, 2 - Math.round(diff));
     // the gate drifts by at most one slot per row, and only when there is
@@ -1184,7 +1203,7 @@ function genChunk(){
       for(let i=0;i<slots;i++){
         if(open.has(i)) continue;
         const uc = -HW + slotW*(i+0.5);
-        addHazardBox(s, s+3.2, uc-slotW*0.44, uc+slotW*0.44, curY, 2.3);
+        addHazardBox(s, s+2.6, uc-slotW*0.34, uc+slotW*0.34, curY, HZ_H);
       }
     }
     break;
@@ -1229,7 +1248,7 @@ function genChunk(){
       const s = s0 + 28 + i*spacing;
       const w = HW*2*cover;
       const uL = side < 0 ? -HW : HW - w;
-      addHazardBox(s, s+4.5, uL, uL+w, curY, 2.4);
+      addHazardBox(s, s+3.6, uL, uL+w, curY, HZ_H);
       side *= -1;
     }
     break;
@@ -1288,7 +1307,7 @@ function genChunk(){
     for(let i=0;i<n;i++){
       const s = s0 + 26 + (i/n)*(len-52) + rnd(-8,8);
       const u = rnd(-HW+1.6, HW-1.6);
-      addHazardBox(s, s+2.2, u-1.1, u+1.1, curY, 7.5, { pillar:true });
+      addHazardBox(s, s+1.8, u-0.8, u+0.8, curY, 6.4, { pillar:true });
     }
     break;
   }
@@ -1301,8 +1320,8 @@ function genChunk(){
     addPiece(s0, s0+len, -HW, HW, -HW, HW, curY);
     for(let i=0;i<bars;i++){
       const s = s0 + 34 + i*spacing;
-      const w = HW*0.85;
-      addHazardBox(s, s+4.0, -w/2, w/2, curY, 2.4, {
+      const w = HW*0.62;               // leaves a real lane on either side of it
+      addHazardBox(s, s+3.4, -w/2, w/2, curY, HZ_H, {
         move:{ amp: HW - w/2, spd: rnd(0.7,1.25), phase: rng()*Math.PI*2 }
       });
     }
@@ -1365,7 +1384,7 @@ function genChunk(){
     const n = rndi(2,3);
     for(let i=0;i<n;i++){
       const at = s0+run+L + flight*(0.25 + 0.16*i);
-      addHazardBox(at, at+3.2, -HW*0.58, HW*0.58, curY, 2.4);
+      addHazardBox(at, at+2.6, -HW*0.46, HW*0.46, curY, HZ_H);
     }
     break;
   }
@@ -1419,7 +1438,7 @@ function genChunk(){
     for(let i=0;i<3;i++){
       const at = s0+run+L + flight*(0.2 + 0.18*i);
       // hazards only under the ramp's own lane, so the flat line stays viable
-      addHazardBox(at, at+3.2, rL+0.6, rR-0.6, curY, 2.4);
+      addHazardBox(at, at+2.6, rL+1.2, rR-1.2, curY, HZ_H);
     }
     break;
   }
@@ -1437,7 +1456,7 @@ function genChunk(){
     addPiece(s0+run+L, s0+len, -HW, HW, -HW, HW, curY);
     const bedS = s0+run+L + flight*0.18;
     const bedE = s0+run+L + flight*0.62;
-    for(let at=bedS; at<bedE; at+=9) addHazardBox(at, at+4.5, -HW, HW, curY, 2.4);
+    for(let at=bedS; at<bedE; at+=10) addHazardBox(at, at+3.6, -HW, HW, curY, HZ_H);
     break;
   }
 
@@ -1458,7 +1477,7 @@ function genChunk(){
 
 /* a single red block */
 function addBlock(s, u, w, y){
-  addHazardBox(s, s+3.2, u-w/2, u+w/2, y, 2.4);
+  addHazardBox(s, s+2.6, u-w/2, u+w/2, y, HZ_H);
 }
 
 /* geometry for one hazard box, in track space */
@@ -1859,7 +1878,7 @@ function resetWorld(seed){
     // you can always tell the two balls apart on a shared screen
     applySkin(p, skin, i > 0);
     p.s = 6;
-    p.u = numPlayers > 1 ? (i === 0 ? -2.6 : 2.6) : 0;
+    p.u = numPlayers > 1 ? (i === 0 ? -startSpread : startSpread) : 0;
     const sp = supportAt(p.s, p.u);
     if(sp) p.y = pieceY(sp, p.s);
     p.ball.visible = i < numPlayers;
@@ -1890,6 +1909,7 @@ function layout(){
 
 function startGame(n){
   numPlayers = Math.max(1, Math.min(MAX_P, n || numPlayers));
+  setScale(numPlayers);
   resetWorld((Date.now() & 0xffffffff) >>> 0);
   players.forEach(p => setView(p, false));
   layout();
@@ -1901,6 +1921,7 @@ function startGame(n){
 }
 function toMenu(){
   numPlayers = 1;
+  setScale(1);
   resetWorld(0xC0FFEE);
   layout();
   const p = players[0];
@@ -2543,11 +2564,14 @@ function stepPhysics(p, dt){
   // hazards
   for(let i=0;i<hazards.length;i++){
     const h = hazards[i];
-    if(p.s + R < h.s0 || p.s - R > h.s1) continue;
+    if(p.s + R*0.7 < h.s0 || p.s - R*0.7 > h.s1) continue;
     let uL = h.uL, uR = h.uR;
     if(h.move) { uL += h.moveOff || 0; uR += h.moveOff || 0; }
-    if(p.u + R*0.82 < uL || p.u - R*0.82 > uR) continue;
-    if(p.y + R*1.9 < h.y0 || p.y > h.y1) continue;
+    // The ball is checked smaller than it draws. Clipping the corner of a block
+    // at speed reads as a graze, and dying to something you visibly got past is
+    // the worst way for a run to end.
+    if(p.u + R*0.5 < uL || p.u - R*0.5 > uR) continue;
+    if(p.y + R*1.45 < h.y0 || p.y > h.y1) continue;
     die(p, 'hit');
     break;
   }
@@ -2998,7 +3022,10 @@ const HANDLE = window.__slope = {
   board: { submit:(n)=>boardSubmit(n), load:()=>boardLoad(), setName:(v)=>{ el('boardName').value=v; boardSetName(); },
            get name(){ return boardName; },
            get rows(){ return boardRowsCache.slice(); } },
-  get width(){ return { start:HW_START, end:HW_END, steer:LAT_ACC }; },
+  get width(){ return { start:HW_START, end:HW_END, steer:LAT_ACC, back:CAM_BACK, spread:startSpread }; },
+  get scale(){ return JSON.parse(JSON.stringify(SCALE)); },
+  get forgive(){ return { hazardH:HZ_H, edge:EDGE_GRIP }; },
+  supported(s,u){ return !!supportAt(s,u); },
   set players2(v){ numPlayers = v ? 2 : 1; },
   start: startGame,
   /* fast-forward the run to a given distance, for testing later track shapes */
