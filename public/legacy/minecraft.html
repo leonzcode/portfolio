@@ -8805,7 +8805,7 @@ function mcApplyMap(msg) {
    four maps are laid out as four plots of land and you fly over them and build,
    the way you would on any creative server. Every block goes to the real Mecha
    Chameleon maps, so the map you leave behind is the one the next round is on. */
-const med = { active: false, pw: '', maps: [] };
+const med = { active: false, pw: '', maps: [], raw: [] };
 function medInit(m) {
   if (serversEl) serversEl.hidden = true;
   if (typeof pwPromptEl !== 'undefined' && pwPromptEl) pwPromptEl.hidden = true;
@@ -8820,7 +8820,8 @@ function medInit(m) {
   VIEW = VIEW_EDITOR; scene.fog.near = 140; scene.fog.far = 340;
   mpClearPlayers();
   mcClearWorld();
-  for (const one of (m.maps || [])) mcApplyMap(one);
+  med.raw = (m.maps || []).slice();                 // kept, so one plot can be shown by itself
+  for (const one of med.raw) mcApplyMap(one);
   mcDropChunks();
   seed = 7373 >>> 0; noise = makeNoise(seed);
   startGame();
@@ -8850,6 +8851,7 @@ function medHandle(m) {
   // somebody made a plot: build it where it stands rather than making everyone rejoin
   if (m.type === 'mcmapadd' && m.map) {
     const one = m.map;
+    med.raw.push(one);
     med.maps.push({ id: one.id, name: one.name, blurb: one.blurb || '', pic: one.pic | 0,
                     ox: one.ox | 0, y0: one.y0 | 0,
                     bounds: one.bounds || { x1: -2, x2: 30, z1: -2, z2: 30 } });
@@ -13423,7 +13425,16 @@ window.__mc = {
   openSuggest(){ openSuggest(); return !suggestEl.hidden; }, sendSuggestion(){ return sendSuggestion(); }, setSuggest(t){ suggestTextEl.value=t; },
   chat(t){ if(mp.active) mpSend({type:'chat',text:t}); else chatPush('You: '+t); }, chats(){ return chatMsgs.map(m=>m.text); },
   say(t){ chatInputEl.value = t; closeChat(true); return true; },          // the real path, commands and all
-  editor(){ return { active: med.active, maps: med.maps.map(o=>({ id:o.id, name:o.name, blurb:o.blurb, ox:o.ox })) }; },
+  editor(){ return { active: med.active, maps: med.maps.map(o=>({ id:o.id, name:o.name, blurb:o.blurb,
+    ox:o.ox, y0:o.y0, pic:o.pic|0, bounds:o.bounds })) }; },
+  project(x,y,z){ const v=new THREE.Vector3(x,y,z).project(camera);   // world point -> where it lands on screen
+    return { x:(v.x*0.5+0.5)*innerWidth, y:(-v.y*0.5+0.5)*innerHeight, z:v.z }; },
+  // just one plot in the world, for taking its picture without the next one along in it
+  hideHand(on){ vmScene.visible = !on; return true; },   // the arm and whatever it holds, out of shot
+  showOnly(id){ if(!med.active) return false;
+    mcClearWorld();
+    for(const one of med.raw) if(!id || one.id===id) mcApplyMap(one);
+    mcDropChunks(); return true; },
   search(q){ invQuery=q; invSearch.value=q; renderInvGrid(); },
   setCat(c){ invCat=c; invQuery=''; invSearch.value=''; buildInv(); },
   invCount(){ return invGrid.children.length; },
