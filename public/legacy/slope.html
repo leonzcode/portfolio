@@ -2082,17 +2082,25 @@ const BOARD_API = (location.hostname.endsWith('leonzhao.dev') || location.hostna
 let boardName = '';
 try{ boardName = localStorage.getItem('slopeName') || ''; }catch(e){}
 let boardRowsCache = [];
+/* Which rows on the board are actually yours. Not "the rows with your name on",
+   which is how it used to work and why somebody else called Leon lit up as you:
+   a name is what you are called, not who you are. These are the stamps the server
+   gave back for the runs this browser actually put up, so they are yours and
+   nobody else's, however many other people share the name. */
+let boardMine = [];
+try{ const raw = JSON.parse(localStorage.getItem('slopeMine') || '[]');
+     if(Array.isArray(raw)) boardMine = raw.filter(n => typeof n === 'number'); }catch(e){}
+function boardRemember(at){
+  if(!at || boardMine.indexOf(at) >= 0) return;
+  boardMine.push(at);
+  if(boardMine.length > 60) boardMine = boardMine.slice(-60);   // a board only holds 25
+  try{ localStorage.setItem('slopeMine', JSON.stringify(boardMine)); }catch(e){}
+}
 
 function boardPaint(rows, msg, note){
   boardRowsCache = rows || boardRowsCache;
-  const mine = (boardName || '').toLowerCase();
-  // your best is simply the first row with your name on it, the list being sorted.
-  // Only that one is picked out: lighting up every row that shares a name would
-  // light up somebody else's run too.
-  let mineAt = -1;
-  if(mine) mineAt = boardRowsCache.findIndex(r => r.name.toLowerCase() === mine);
   const html = (boardRowsCache.slice(0, 10)).map((r, i) =>
-    '<li class="' + (i === mineAt ? 'me' : '') + '">' +
+    '<li class="' + (boardMine.indexOf(r.at) >= 0 ? 'me' : '') + '">' +
       '<span class="pos">' + (i + 1) + '</span>' +
       '<span class="who">' + esc(r.name) + '</span>' +
       '<span class="pts">' + r.score + '</span>' +
@@ -2127,6 +2135,7 @@ async function boardSubmit(score){
     });
     const j = await r.json();
     if(j && j.board){
+      boardRemember(j.at);
       const cut = j.board.length ? j.board[j.board.length - 1].score : 0;
       boardPaint(j.board,
         j.beat ? (j.rank <= 10 ? 'Number ' + j.rank + ' in the world.'
@@ -3056,6 +3065,7 @@ const HANDLE = window.__slope = {
   get coins(){ return coins; },
   // the global board, so a harness can drive it without a full run
   board: { submit:(n)=>boardSubmit(n), load:()=>boardLoad(), setName:(v)=>{ el('boardName').value=v; boardSetName(); },
+           get mine(){ return boardMine.slice(); },
            get name(){ return boardName; },
            get rows(){ return boardRowsCache.slice(); } },
   get width(){ return { start:HW_START, end:HW_END, steer:LAT_ACC, back:CAM_BACK, spread:startSpread }; },
