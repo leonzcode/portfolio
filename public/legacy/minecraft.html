@@ -259,7 +259,7 @@
     width:10px; height:18px; background:#8fa98f; border:2px solid;
     border-color:#bfe0bf #2c3a2c #2c3a2c #bfe0bf; cursor:pointer;
   }
-  .ctrlSlide .val{ font-size:12.5px; color:#ffb03a; min-width:34px; text-align:right;
+  .ctrlSlide .val{ font-size:12.5px; color:#b46cff; min-width:34px; text-align:right;
     text-shadow:1px 1px 0 rgba(0,0,0,.5); font-variant-numeric:tabular-nums; }
   .skinPick{ display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:#e6e6e6; cursor:pointer; }
   .skinPick input[type=color]{ width:34px; height:26px; padding:0; border:2px solid #333; background:#7a7a7a; cursor:pointer; }
@@ -857,7 +857,7 @@ const BEDROCK_Y = 0;      // the single bedrock layer sits at the bottom of the 
 const TILE = 16;          // texture tile pixels
 const REACH_BASE = 6;     // block interaction distance
 const REACH_PRG  = 10;    // ...and what the /prg code hands you to start with
-const REACH_MIN  = 3, REACH_MAX = 16;   // and how far the slider in Controls will go
+const REACH_MIN  = 3, REACH_MAX = 100;  // and how far the slider in Controls will go
 let REACH = REACH_BASE;   // everything that reaches - blocks, mobs, punches - reads this
 // Kept, because somebody who set it to twelve wants it at twelve the next time too.
 let prgReach = REACH_PRG;
@@ -4390,7 +4390,7 @@ function setLocalSlim(slim){
    wear both.                                                                  */
 const ROLE_TAGS = [
   { key: 'admin',     text: 'ADMIN',     color: '#42e042' },
-  { key: 'prg',       text: 'PRG',       color: '#ffb03a' },
+  { key: 'prg',       text: 'PRG',       color: '#b46cff' },
   { key: 'cool',      text: 'COOL',      color: '#4ec9ff' },
   { key: 'spectator', text: 'SPECTATOR', color: '#c4ccd6' },
 ];
@@ -5422,7 +5422,11 @@ function raycast(){
   let tMZ = stepZ>0? (z+1-o.z)/d.z : stepZ<0? (z-o.z)/d.z : 1e9;
   tMX=Math.abs(tMX); tMY=Math.abs(tMY); tMZ=Math.abs(tMZ);
   let nx=0,ny=0,nz=0, t=0;
-  for(let i=0;i<80;i++){
+  // One step of the walk crosses one cell boundary, and a diagonal ray crosses up to
+  // three per block, so the budget has to follow the reach rather than sit at a
+  // number that quietly capped it well short of what the slider promised.
+  const steps = Math.min(400, Math.ceil(REACH * 3) + 8);
+  for(let i=0;i<steps;i++){
     const b=getBlock(x,y,z);
     if(b!==AIR && BLOCKS[b] && !BLOCKS[b].liquid){ target={x,y,z,nx,ny,nz,dist:t, hx:o.x+d.x*t, hy:o.y+d.y*t, hz:o.z+d.z*t}; return; }
     if(tMX<tMY && tMX<tMZ){ x+=stepX; t=tMX; tMX+=tDX; nx=-stepX; ny=0; nz=0; }
