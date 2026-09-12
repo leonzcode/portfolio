@@ -2180,7 +2180,8 @@ B.crafting=def('crafting_table', { tiles:[T('crafting_top'), T('crafting_side'),
    boxes: an anvil is a base, a
    waist and a wide face, a grindstone is a wheel slung between two posts, and a
    stonecutter is a bed of stone with a saw standing out of it. */
-/* Vines. The clinging vine takes a wall or a ceiling and remembers which, in the
+/* Vines. The clinging vine takes a wall, a ceiling or the top of a block and
+   remembers which, in the
    same attachMeta the torches use. The other three stack: weeping and cave vines
    hang from what is above them, twisting vines climb from what is below. All of
    them are climbable and all of them fall the moment their anchor goes.        */
@@ -2504,6 +2505,7 @@ function isClimbable(id){ return !!(id && BLOCKS[id] && (BLOCKS[id].ladder || BL
 function vineBounds(a){
   const t=1/16;
   if(!a || a.m===1) return [0,1, 1-t,1, 0,1];                 // hanging under a ceiling
+  if(a.m===0)       return [0,1, 0,t, 0,1];                   // spread over the top of a block
   const f=a.f||0;
   if(f===0) return [0,1, 0,1, 1-t,1];
   if(f===2) return [0,1, 0,1, 0,t];
@@ -5850,8 +5852,11 @@ function placeVine(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
   if(getBlock(px,py,pz)!==AIR) return;
   if(!solidFooting(getBlock(target.x,target.y,target.z))) return;
-  if(target.ny>0) return;                                   // vines do not grow up off the ground
+  // A vine takes any face of the block you clicked: the underside to hang from, a
+  // side to cling to, or the top to spread over. m is the same three-way the torches
+  // use, so the support check and the breakage that follows it come along for free.
   const a = target.ny<0 ? { m:1, f:0 }
+          : target.ny>0 ? { m:0, f:0 }
           : { m:2, f: target.nx>0?1 : target.nx<0?3 : target.nz>0?2 : 0 };
   const id=hotbar[selSlot];
   setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
@@ -13216,6 +13221,11 @@ window.__mc = {
   hold(action, ms){ const k=binds[action]||action; keys[k]=true; setTimeout(()=>{ keys[k]=false; }, ms); },
   release(action){ const k=binds[action]||action; keys[k]=false; },
   slabTopAt(x,y,z){ return slabTop(x,y,z); },
+  cutoutVerts(x,z){ const c=chunks.get(key(Math.floor(x/CH), Math.floor(z/CH)));
+    return (c && c.cmesh && c.cmesh.geometry && c.cmesh.geometry.attributes.position)
+      ? c.cmesh.geometry.attributes.position.count : 0; },
+  vineAt(x,y,z){ const a=attachMeta.get(dkey(x,y,z));
+    return isVine(getBlock(x,y,z)) ? { m:a?a.m:null, f:a?a.f:null, box:vineBounds(a) } : null; },
   metaAt(x,y,z){ return mcMetaAt(x,y,z); },
   // ---- wall test hooks ----
   hits(x,y,z){ return collides(x,y,z); },
