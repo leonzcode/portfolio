@@ -9540,9 +9540,12 @@ function mcScreenInk(x, y) {
   } catch (e) { return null; }
 }
 function mcSetColor(rgb) {
-  mc.paintColor = '#' + rgb.map(function (v) {
+  const hex = '#' + rgb.map(function (v) {
     return Math.max(0, Math.min(255, v | 0)).toString(16).padStart(2, '0');
   }).join('');
+  // through the same door the wells use, so the wheel and the value strip land on
+  // what you just picked instead of still pointing at the colour before it
+  mcSetPaintColor(hex);
   mc.paintTool = 'brush'; mcPaintUi(); mcPaintCursor();
 }
 function mcPickScreen(ev) {
@@ -13464,6 +13467,10 @@ window.__mc = {
   pickAt(x,y){ const nx=(x/canvas.width)*2-1, ny=-(y/canvas.height)*2+1;
     mcRay.setFromCamera({x:nx,y:ny}, camera);
     return mcScreenInk(x,y) || mcPickMesh(); },
+  mcPaintOn(on){ mc.paint=!!on; mcPaintEnsureUi(); mcPaintUi(); mcPaintCursor(); return mc.paint; },
+  hsvHex(h,s,v){ return mcHsvHex(h,s,v); },
+  mcPickAtScreen(x,y){ const r=canvas.getBoundingClientRect();
+    return mcPickScreen({ clientX:r.left + x*(r.width/canvas.width), clientY:r.top + y*(r.height/canvas.height) }); },
   pickTexel(x,y){ const nx=(x/canvas.width)*2-1, ny=-(y/canvas.height)*2+1;
     mcRay.setFromCamera({x:nx,y:ny}, camera);
     return mcPickMesh(); },
