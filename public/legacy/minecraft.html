@@ -9566,13 +9566,17 @@ function mcPickScreen(ev) {
     if (d[3] > 8) { mcSetColor([d[0], d[1], d[2]]); return true; }
     break;
   }
-  // then the world, as it looks. The texel is the fallback for when the frame cannot
-  // be read at all; it is the right colour for the wrong lighting, which is better
-  // than nothing and worse than the pixel itself.
-  const ink = mcScreenInk(x, y) || mcPickMesh() || (function () {
+  /* Then the world: the exact texel under the cursor, as the block is rather than as
+     it happens to be lit. Reading the screen instead sounds right - it is the pixel
+     you clicked - but a wall facing away from the sun draws near black, so every pick
+     off a shaded face came back almost black and the brightness sat on the floor. The
+     texel is the same pixel with the shadow taken off it, and it is still per-pixel:
+     a fire, a flower and a leafy block all give their own colours.
+     The screen is what is left for things with no texture to read - the sky, mostly. */
+  const ink = mcPickMesh() || (function () {
     const hit = mcRayFace(mcRay.ray.origin, mcRay.ray.direction, 48);
     return hit ? mcFaceInk(hit.id, hit.face, hit.u, hit.v) : null;
-  })();
+  })() || mcScreenInk(x, y);
   if (!ink) return false;
   mcSetColor(ink);
   return true;
@@ -13466,7 +13470,7 @@ window.__mc = {
   // what the picker would hand back for a point on screen, and what is drawn there
   pickAt(x,y){ const nx=(x/canvas.width)*2-1, ny=-(y/canvas.height)*2+1;
     mcRay.setFromCamera({x:nx,y:ny}, camera);
-    return mcScreenInk(x,y) || mcPickMesh(); },
+    return mcPickMesh() || mcScreenInk(x,y); },
   mcPaintOn(on){ mc.paint=!!on; mcPaintEnsureUi(); mcPaintUi(); mcPaintCursor(); return mc.paint; },
   hsvHex(h,s,v){ return mcHsvHex(h,s,v); },
   mcPickAtScreen(x,y){ const r=canvas.getBoundingClientRect();
