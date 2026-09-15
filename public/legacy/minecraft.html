@@ -940,7 +940,9 @@ const STABLE_BLOCK_NAMES = ["grass","dirt","stone","cobblestone","bedrock","sand
 // --- pass 14: parkour pads ---
 "parkour_start","parkour_end",
 // --- pass 15: village blocks (paths, farms, desert scrub, loot) ---
-"dirt_path","farmland","wheat","cactus","dead_bush","cobweb","chest"];
+"dirt_path","farmland","wheat","cactus","dead_bush","cobweb","chest",
+// --- pass 16: the gallery (pictures that hang over more than one block) ---
+"art_sunflowers","art_soup_can","art_green_apple","art_smiley","art_pixel_heart","art_great_wave","art_water_lilies","art_last_supper","art_mona_lisa","art_pearl_earring","art_american_gothic","art_starry_night","art_the_scream","art_mondrian","art_ekirby","art_leon_tag","art_nighthawks","art_creation","art_persistence","art_birth_of_venus"];
 const STABLE_ID = {}; STABLE_BLOCK_NAMES.forEach((n,i)=>{ STABLE_ID[n]=i+1; });
 let nextFreeId = STABLE_BLOCK_NAMES.length + 1;   // 0 = air; new blocks append here, never shifting existing ids
 function def(name, opts){
@@ -1841,7 +1843,329 @@ const LANTERNS = [
   ['purpular_lantern', 9712, [236,196,255], [150,72,214],  0x9a4fd6],
 ];
 // paint them once the tables above exist
+/* ---- the gallery ------------------------------------------------------------
+   Twenty pictures at the seven sizes Minecraft uses for its own paintings, which
+   are 1x1, 2x1, 1x2, 2x2, 4x2, 4x3 and 4x4 blocks. A picture is drawn once onto a
+   canvas sixteen pixels per block, so a four-wide one is 64 pixels across and gets
+   four blocks' worth of detail rather than one block's worth stretched.
+
+   The wall cells are ordinary blocks, which is what makes them save, sync and break
+   like everything else; the picture itself is one flat quad hung in front of them,
+   the way a sign is its own object. Nothing here is a Minecraft painting: they are
+   famous pictures, plus a few that are not famous at all.                        */
+const ART_FRAME_D = '#4a3419', ART_FRAME_L = '#7b5c32';
+function artRect(g, c, x, y, w, h) { g.fillStyle = c; g.fillRect(x | 0, y | 0, Math.max(1, w | 0), Math.max(1, h | 0)); }
+function artDisc(g, c, cx, cy, r) {
+  g.fillStyle = c;
+  for (let y = Math.floor(cy - r); y <= cy + r; y++)
+    for (let x = Math.floor(cx - r); x <= cx + r; x++)
+      if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r) g.fillRect(x, y, 1, 1);
+}
+// a wash that changes down the picture, one row at a time so it stays pixelly
+function artSky(g, x, y, w, h, top, bot) {
+  for (let i = 0; i < h; i++) {
+    const t = i / Math.max(1, h - 1);
+    g.fillStyle = 'rgb(' + [0, 1, 2].map(function (k) {
+      return Math.round(top[k] + (bot[k] - top[k]) * t);
+    }).join(',') + ')';
+    g.fillRect(x, y + i, w, 1);
+  }
+}
+// blocky capitals, for the one that is a word rather than a picture
+const ART_GLYPHS = {
+  L: ['100', '100', '100', '100', '111'],
+  E: ['111', '100', '111', '100', '111'],
+  O: ['111', '101', '101', '101', '111'],
+  N: ['101', '111', '111', '111', '101'],
+};
+function artWord(g, word, x, y, px, fill, edge) {
+  let cx = x;
+  for (const ch of word) {
+    const rows = ART_GLYPHS[ch]; if (!rows) { cx += 4 * px; continue; }
+    for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) {
+      if (rows[r][c] !== '1') continue;
+      if (edge) artRect(g, edge, cx + c * px - 1, y + r * px - 1, px + 2, px + 2);
+    }
+    for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) {
+      if (rows[r][c] === '1') artRect(g, fill, cx + c * px, y + r * px, px, px);
+    }
+    cx += 4 * px;
+  }
+}
+
+const ART = [
+  /* ---------------------------------------------------------------- 1 x 1 ---- */
+  { id: 'sunflowers', label: 'Sunflowers', w: 1, h: 1, draw(g, W, H) {
+      artRect(g, '#b8912f', 0, 0, W, H);
+      artRect(g, '#7c5c1e', 0, H * 0.72, W, H * 0.28);                  // table
+      artRect(g, '#8a6a28', W * 0.34, H * 0.55, W * 0.32, H * 0.22);    // vase
+      for (const [x, y, r] of [[0.32, 0.30, 0.13], [0.62, 0.26, 0.12], [0.48, 0.44, 0.11]]) {
+        artDisc(g, '#e8c33a', W * x, H * y, W * r);
+        artDisc(g, '#6b4a14', W * x, H * y, W * r * 0.42);
+      }
+    } },
+  { id: 'soup_can', label: 'Soup Can', w: 1, h: 1, draw(g, W, H) {
+      artRect(g, '#d9cdb4', 0, 0, W, H);
+      artRect(g, '#c0202a', W * 0.26, H * 0.14, W * 0.48, H * 0.36);    // red top half
+      artRect(g, '#efe6d2', W * 0.26, H * 0.50, W * 0.48, H * 0.36);    // white bottom
+      artRect(g, '#c9a227', W * 0.26, H * 0.47, W * 0.48, H * 0.05);    // the gold band
+    } },
+  { id: 'green_apple', label: 'The Son of Man', w: 1, h: 1, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [150, 176, 198], [96, 124, 150]);
+      artRect(g, '#1d232c', W * 0.18, H * 0.52, W * 0.64, H * 0.48);    // shoulders
+      artDisc(g, '#e4c39a', W * 0.5, H * 0.42, W * 0.20);               // face
+      artDisc(g, '#4e9a35', W * 0.5, H * 0.44, W * 0.15);               // and the apple over it
+      artRect(g, '#3a2a12', W * 0.48, H * 0.30, W * 0.05, H * 0.07);
+    } },
+  { id: 'smiley', label: 'Have a Nice Day', w: 1, h: 1, draw(g, W, H) {
+      artRect(g, '#f2c12e', 0, 0, W, H);
+      artDisc(g, '#1a1408', W * 0.34, H * 0.36, W * 0.07);
+      artDisc(g, '#1a1408', W * 0.66, H * 0.36, W * 0.07);
+      for (let i = 0; i < 9; i++) {                                     // a grin, drawn as an arc of dots
+        const t = i / 8, a = Math.PI * (0.18 + 0.64 * t);
+        artDisc(g, '#1a1408', W * (0.5 - Math.cos(a) * 0.26), H * (0.55 + Math.sin(a) * 0.20), W * 0.045);
+      }
+    } },
+  { id: 'pixel_heart', label: 'Pixel Heart', w: 1, h: 1, draw(g, W, H) {
+      artRect(g, '#241b2e', 0, 0, W, H);
+      const rows = ['0110110', '1111111', '1111111', '0111110', '0011100', '0001000'];
+      const px = W / 9;
+      for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++)
+        if (rows[r][c] === '1') artRect(g, r < 2 ? '#ff5f6d' : '#d8323f', px * (c + 1), px * (r + 2), px + 1, px + 1);
+    } },
+
+  /* ---------------------------------------------------------------- 2 x 1 ---- */
+  { id: 'great_wave', label: 'The Great Wave', w: 2, h: 1, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [222, 214, 186], [190, 182, 156]);
+      artRect(g, '#1d3f6e', 0, H * 0.58, W, H * 0.42);                  // the sea
+      for (let x = 0; x < W; x++) {                                     // the crest, curling left to right
+        const t = x / W;
+        const top = H * (0.62 - 0.44 * Math.sin(Math.PI * Math.min(1, t * 1.25)));
+        artRect(g, '#2f5f96', x, top, 1, H - top);
+        artRect(g, '#e8eef4', x, top, 1, Math.max(1, H * 0.06));
+      }
+      artDisc(g, '#c8503c', W * 0.80, H * 0.22, W * 0.05);              // the small sun
+      artRect(g, '#d8dde2', W * 0.30, H * 0.80, W * 0.18, H * 0.05);    // a boat
+    } },
+  { id: 'water_lilies', label: 'Water Lilies', w: 2, h: 1, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [86, 124, 138], [40, 72, 96]);
+      for (let i = 0; i < 26; i++) {
+        const x = (i * 37 % 100) / 100 * W, y = H * (0.25 + (i * 53 % 100) / 100 * 0.70);
+        artDisc(g, i % 3 ? '#3f7a52' : '#55966a', x, y, W * 0.035);
+        if (i % 5 === 0) artDisc(g, '#e6a8bd', x, y - 1, W * 0.016);
+      }
+    } },
+  { id: 'last_supper', label: 'The Last Supper', w: 2, h: 1, draw(g, W, H) {
+      artRect(g, '#4a3a2a', 0, 0, W, H);
+      artRect(g, '#6d5a42', W * 0.06, H * 0.10, W * 0.88, H * 0.44);    // the back wall
+      artRect(g, '#9fb6c6', W * 0.44, H * 0.16, W * 0.12, H * 0.26);    // the window behind him
+      for (let i = 0; i < 13; i++) {                                    // thirteen at the table
+        const x = W * (0.08 + i * 0.07);
+        artRect(g, i === 6 ? '#c8c2b0' : '#8a7d68', x, H * 0.34, W * 0.035, H * 0.26);
+        artDisc(g, '#e0c2a0', x + W * 0.017, H * 0.32, W * 0.022);
+      }
+      artRect(g, '#d8d2c2', W * 0.04, H * 0.62, W * 0.92, H * 0.14);    // the cloth
+    } },
+
+  /* ---------------------------------------------------------------- 1 x 2 ---- */
+  { id: 'mona_lisa', label: 'Mona Lisa', w: 1, h: 2, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [122, 128, 92], [70, 84, 58]);              // the landscape behind her
+      artRect(g, '#4a5a44', 0, H * 0.46, W, H * 0.16);
+      artRect(g, '#2e2418', W * 0.10, H * 0.60, W * 0.80, H * 0.40);    // the dark gown
+      artDisc(g, '#d8b88c', W * 0.50, H * 0.40, W * 0.26);              // face
+      artRect(g, '#2a2018', W * 0.20, H * 0.26, W * 0.60, H * 0.22);    // hair over the brow
+      artRect(g, '#2a2018', W * 0.16, H * 0.40, W * 0.16, H * 0.34);    // and down each side
+      artRect(g, '#2a2018', W * 0.68, H * 0.40, W * 0.16, H * 0.34);
+      artRect(g, '#7a5a42', W * 0.36, H * 0.40, W * 0.08, H * 0.03);    // eyes
+      artRect(g, '#7a5a42', W * 0.56, H * 0.40, W * 0.08, H * 0.03);
+      artRect(g, '#9a6a58', W * 0.44, H * 0.50, W * 0.12, H * 0.02);    // the smile
+      artRect(g, '#c8a880', W * 0.30, H * 0.74, W * 0.40, H * 0.10);    // hands folded
+    } },
+  { id: 'pearl_earring', label: 'Girl with a Pearl Earring', w: 1, h: 2, draw(g, W, H) {
+      artRect(g, '#14161a', 0, 0, W, H);
+      artRect(g, '#3a2a1c', W * 0.14, H * 0.64, W * 0.72, H * 0.36);    // her coat
+      artDisc(g, '#e2c0a0', W * 0.50, H * 0.40, W * 0.26);              // face
+      artRect(g, '#1f5fa8', W * 0.18, H * 0.20, W * 0.64, H * 0.20);    // the blue turban
+      artRect(g, '#d8c24a', W * 0.60, H * 0.30, W * 0.26, H * 0.18);    // its yellow tail
+      artRect(g, '#2a1a12', W * 0.36, H * 0.40, W * 0.08, H * 0.03);
+      artRect(g, '#2a1a12', W * 0.56, H * 0.40, W * 0.08, H * 0.03);
+      artDisc(g, '#f2f0e4', W * 0.64, H * 0.53, W * 0.06);              // the pearl
+    } },
+  { id: 'american_gothic', label: 'American Gothic', w: 1, h: 2, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [178, 186, 190], [140, 150, 156]);
+      artRect(g, '#d6d2c4', W * 0.10, H * 0.14, W * 0.80, H * 0.34);    // the white house
+      artRect(g, '#2a2a2a', W * 0.42, H * 0.22, W * 0.16, H * 0.20);    // its gothic window
+      artRect(g, '#23282e', W * 0.06, H * 0.52, W * 0.38, H * 0.48);    // him
+      artRect(g, '#3a3f46', W * 0.56, H * 0.52, W * 0.38, H * 0.48);    // her
+      artDisc(g, '#e0bd96', W * 0.25, H * 0.50, W * 0.13);
+      artDisc(g, '#e0bd96', W * 0.75, H * 0.50, W * 0.12);
+      artRect(g, '#c9b06a', W * 0.44, H * 0.56, W * 0.04, H * 0.34);    // the pitchfork
+      artRect(g, '#c9b06a', W * 0.38, H * 0.56, W * 0.16, H * 0.03);
+    } },
+
+  /* ---------------------------------------------------------------- 2 x 2 ---- */
+  { id: 'starry_night', label: 'The Starry Night', w: 2, h: 2, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [22, 40, 92], [42, 72, 130]);
+      for (let i = 0; i < 11; i++) {                                    // the stars, each in its halo
+        const x = W * ((i * 29 % 100) / 100), y = H * (0.06 + (i * 47 % 60) / 100);
+        artDisc(g, '#3f6ab8', x, y, W * 0.055); artDisc(g, '#f2e06a', x, y, W * 0.028);
+      }
+      artDisc(g, '#3f6ab8', W * 0.82, H * 0.18, W * 0.10);
+      artDisc(g, '#f4d24a', W * 0.82, H * 0.18, W * 0.06);              // the moon
+      for (let x = 0; x < W; x++) {                                     // the cypress
+        const t = x / W;
+        if (Math.abs(t - 0.14) < 0.07) artRect(g, '#16221c', x, H * (0.18 + Math.abs(t - 0.14) * 4), 1, H);
+      }
+      artRect(g, '#1b2c4a', 0, H * 0.74, W, H * 0.26);                  // the village
+      for (let i = 0; i < 7; i++) artRect(g, '#e8c65a', W * (0.22 + i * 0.10), H * 0.80, W * 0.025, H * 0.03);
+      artRect(g, '#101c18', W * 0.46, H * 0.62, W * 0.05, H * 0.16);    // the church spire
+    } },
+  { id: 'the_scream', label: 'The Scream', w: 2, h: 2, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [214, 108, 40], [176, 64, 44]);
+      artRect(g, '#2a4a70', 0, H * 0.46, W, H * 0.22);                  // the fjord
+      for (let x = 0; x < W; x++) artRect(g, '#6a4a2a', x, H * (0.66 + 0.16 * (x / W)), 1, H);   // the rail
+      artRect(g, '#3a2a1a', 0, H * 0.70, W, H * 0.06);
+      artRect(g, '#2e2a3a', W * 0.34, H * 0.44, W * 0.30, H * 0.56);    // the figure
+      artDisc(g, '#d8c08a', W * 0.49, H * 0.40, W * 0.12);              // head
+      artDisc(g, '#1a1410', W * 0.45, H * 0.38, W * 0.022);
+      artDisc(g, '#1a1410', W * 0.53, H * 0.38, W * 0.022);
+      artDisc(g, '#1a1410', W * 0.49, H * 0.46, W * 0.035);             // the open mouth
+    } },
+  { id: 'mondrian', label: 'Composition in Red, Blue and Yellow', w: 2, h: 2, draw(g, W, H) {
+      artRect(g, '#efeee8', 0, 0, W, H);
+      artRect(g, '#c8202a', W * 0.52, 0, W * 0.48, H * 0.54);
+      artRect(g, '#1f3f9a', 0, H * 0.66, W * 0.30, H * 0.34);
+      artRect(g, '#e8c22a', W * 0.78, H * 0.78, W * 0.22, H * 0.22);
+      const b = Math.max(2, W * 0.045);
+      artRect(g, '#101010', W * 0.50, 0, b, H);
+      artRect(g, '#101010', 0, H * 0.62, W, b);
+      artRect(g, '#101010', W * 0.28, H * 0.62, b, H * 0.38);
+      artRect(g, '#101010', W * 0.50, H * 0.76, W * 0.50, b);
+    } },
+  { id: 'ekirby', label: 'eKirby', w: 2, h: 2, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [120, 200, 236], [188, 232, 246]);
+      artRect(g, '#7cc46a', 0, H * 0.80, W, H * 0.20);                  // a bit of ground
+      artDisc(g, '#f19ac0', W * 0.50, H * 0.48, W * 0.30);              // the pink one
+      artDisc(g, '#f19ac0', W * 0.22, H * 0.66, W * 0.10);              // arms
+      artDisc(g, '#f19ac0', W * 0.78, H * 0.66, W * 0.10);
+      artDisc(g, '#e0508a', W * 0.34, H * 0.76, W * 0.11);              // and the red feet
+      artDisc(g, '#e0508a', W * 0.66, H * 0.76, W * 0.11);
+      artRect(g, '#1a2a4a', W * 0.42, H * 0.38, W * 0.05, H * 0.12);    // eyes
+      artRect(g, '#1a2a4a', W * 0.54, H * 0.38, W * 0.05, H * 0.12);
+      artRect(g, '#ffffff', W * 0.42, H * 0.38, W * 0.05, H * 0.04);
+      artRect(g, '#ffffff', W * 0.54, H * 0.38, W * 0.05, H * 0.04);
+      artDisc(g, '#ef7fa8', W * 0.34, H * 0.52, W * 0.05);              // blush
+      artDisc(g, '#ef7fa8', W * 0.66, H * 0.52, W * 0.05);
+    } },
+
+  /* ---------------------------------------------------------------- 4 x 2 ---- */
+  { id: 'leon_tag', label: 'LEON', w: 4, h: 2, draw(g, W, H) {
+      artRect(g, '#2b2f36', 0, 0, W, H);                                // a wall to tag
+      for (let i = 0; i < 160; i++) {                                   // roughed up a bit
+        const x = (i * 71 % 997) / 997 * W, y = (i * 137 % 991) / 991 * H;
+        artRect(g, i % 2 ? '#333841' : '#25292f', x, y, 2, 2);
+      }
+      artRect(g, '#1b1e23', 0, H * 0.78, W, H * 0.22);
+      const px = Math.max(2, Math.round(H * 0.085));
+      artWord(g, 'LEON', W * 0.10, H * 0.30, px, '#ff36a3', '#13161a');
+      artWord(g, 'LEON', W * 0.10 - px * 0.22, H * 0.30 - px * 0.22, px, '#ffd23f', null);
+      for (let i = 0; i < 24; i++) {                                    // a few spray flecks
+        const x = W * (0.06 + (i * 41 % 100) / 100 * 0.88), y = H * (0.18 + (i * 67 % 100) / 100 * 0.62);
+        artRect(g, i % 3 ? '#ff36a3' : '#42d7f5', x, y, 1, 1);
+      }
+    } },
+  { id: 'nighthawks', label: 'Nighthawks', w: 4, h: 2, draw(g, W, H) {
+      artRect(g, '#10141c', 0, 0, W, H);                                // the street at night
+      artRect(g, '#1a2028', 0, H * 0.72, W, H * 0.28);
+      artRect(g, '#d8c86a', W * 0.16, H * 0.24, W * 0.66, H * 0.46);    // the lit diner
+      artRect(g, '#7a6a3a', W * 0.16, H * 0.24, W * 0.66, H * 0.04);
+      artRect(g, '#c2a85a', W * 0.20, H * 0.54, W * 0.58, H * 0.10);    // the counter
+      for (const [x, c] of [[0.30, '#2a2a3a'], [0.44, '#8a2a2a'], [0.52, '#2a2a3a'], [0.68, '#e8e4d8']]) {
+        artRect(g, c, W * x, H * 0.38, W * 0.05, H * 0.18);
+        artDisc(g, '#d8b890', W * (x + 0.025), H * 0.35, W * 0.022);
+      }
+      artRect(g, '#0a0c10', 0, 0, W * 0.16, H);                         // dark either side
+      artRect(g, '#0a0c10', W * 0.82, 0, W * 0.18, H);
+    } },
+
+  /* ---------------------------------------------------------------- 4 x 3 ---- */
+  { id: 'creation', label: 'The Creation of Adam', w: 4, h: 3, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [188, 176, 150], [150, 136, 112]);
+      artDisc(g, '#c8b48c', W * 0.72, H * 0.46, W * 0.20);              // the cloak of the almighty
+      artRect(g, '#8a6a4a', W * 0.60, H * 0.62, W * 0.34, H * 0.30);    // the reclining figure
+      artRect(g, '#e0bd96', W * 0.06, H * 0.56, W * 0.30, H * 0.22);
+      artDisc(g, '#e0bd96', W * 0.14, H * 0.48, W * 0.09);              // his head
+      artDisc(g, '#e0bd96', W * 0.80, H * 0.40, W * 0.08);
+      artRect(g, '#e8c8a4', W * 0.34, H * 0.44, W * 0.14, H * 0.05);    // the two arms, reaching
+      artRect(g, '#e8c8a4', W * 0.54, H * 0.42, W * 0.14, H * 0.05);
+      artRect(g, '#fff0d8', W * 0.485, H * 0.43, W * 0.03, H * 0.03);   // and the gap between them
+    } },
+  { id: 'persistence', label: 'The Persistence of Memory', w: 4, h: 3, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [140, 176, 198], [214, 186, 142]);
+      artRect(g, '#7a5a3a', 0, H * 0.62, W, H * 0.38);                  // the plain
+      artRect(g, '#3a2e22', 0, H * 0.58, W * 0.34, H * 0.10);           // the cliff
+      artRect(g, '#5a4a32', W * 0.10, H * 0.30, W * 0.06, H * 0.34);    // the dead tree
+      artRect(g, '#5a4a32', W * 0.10, H * 0.30, W * 0.22, H * 0.04);
+      for (const [x, y, r] of [[0.16, 0.36, 0.09], [0.46, 0.70, 0.11], [0.74, 0.60, 0.10]]) {
+        artDisc(g, '#d8cfa8', W * x, H * y, W * r);                     // clocks, going soft
+        artDisc(g, '#8a8060', W * x, H * y, W * r * 0.7);
+        artRect(g, '#2a2418', W * x, H * (y - r * 0.6), W * 0.01, H * r * 0.6);
+      }
+      artRect(g, '#d8cfa8', W * 0.44, H * 0.70, W * 0.16, H * 0.16);    // one draped over the edge
+    } },
+
+  /* ---------------------------------------------------------------- 4 x 4 ---- */
+  { id: 'birth_of_venus', label: 'The Birth of Venus', w: 4, h: 4, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [168, 196, 190], [96, 140, 150]);
+      artRect(g, '#4a7a86', 0, H * 0.66, W, H * 0.34);                  // the sea
+      for (let i = 0; i < 40; i++) artRect(g, '#7fb0b8', W * ((i * 53 % 100) / 100), H * (0.68 + (i * 31 % 30) / 100), W * 0.03, 1);
+      artDisc(g, '#e8e0cc', W * 0.50, H * 0.74, W * 0.26);              // the shell
+      for (let i = 0; i < 9; i++) {
+        const a = Math.PI * (1.05 + i * 0.11);
+        artRect(g, '#cfc4a8', W * (0.5 + Math.cos(a) * 0.24), H * (0.74 + Math.sin(a) * 0.24), 2, H * 0.10);
+      }
+      artRect(g, '#e6c39c', W * 0.46, H * 0.34, W * 0.09, H * 0.36);    // her
+      artDisc(g, '#e6c39c', W * 0.50, H * 0.30, W * 0.07);
+      artRect(g, '#b0700f', W * 0.42, H * 0.26, W * 0.17, H * 0.26);    // the long hair
+      artRect(g, '#2a6a44', W * 0.06, H * 0.40, W * 0.14, H * 0.30);    // trees at the edge
+      artRect(g, '#2a6a44', W * 0.84, H * 0.42, W * 0.12, H * 0.28);
+    } },
+];
+
+/* Each picture is drawn once, at sixteen pixels per block, and kept. The frame goes
+   round the whole picture rather than round every block of it, which is the thing
+   that makes a four-wide painting look like one painting. */
+const artCanvases = new Map();
+function artCanvas(a) {
+  let c = artCanvases.get(a.id); if (c) return c;
+  c = document.createElement('canvas');
+  c.width = 16 * a.w; c.height = 16 * a.h;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  a.draw(g, c.width, c.height);
+  const b = Math.max(1, Math.round(Math.min(c.width, c.height) / 16));   // the surround
+  g.fillStyle = ART_FRAME_D;
+  g.fillRect(0, 0, c.width, b); g.fillRect(0, c.height - b, c.width, b);
+  g.fillRect(0, 0, b, c.height); g.fillRect(c.width - b, 0, b, c.height);
+  g.fillStyle = ART_FRAME_L;
+  g.fillRect(b, b, c.width - 2 * b, b); g.fillRect(b, c.height - 2 * b, c.width - 2 * b, b);
+  g.fillRect(b, b, b, c.height - 2 * b); g.fillRect(c.width - 2 * b, b, b, c.height - 2 * b);
+  artCanvases.set(a.id, c);
+  return c;
+}
+// the inventory tile: the whole picture squeezed into one, so you can tell them apart
+function artIcon(a) {
+  const c = artCanvas(a);
+  const s = document.createElement('canvas'); s.width = 16; s.height = 16;
+  const g = s.getContext('2d');
+  g.imageSmoothingEnabled = true;
+  g.drawImage(c, 0, 0, 16, 16);
+  const d = g.getImageData(0, 0, 16, 16).data;
+  return (x, y) => { const i = (y * 16 + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+}
+
 PAINTINGS.forEach(function(pt){ paint(pt[0], paintingTex(pt[1], pt[2])); });
+ART.forEach(function(a){ paint('art_' + a.id, artIcon(a)); });
 LANTERNS.forEach(function(l){ paint(l[0], lanternTex(l[1], l[2], l[3])); });
 paint('lantern_chain', (()=>{ const r=rng(9715); const n=[]; for(let i=0;i<256;i++) n.push((r()*2-1)*8);
   const cl=v=>Math.max(0,Math.min(255,v|0));
@@ -2235,6 +2559,10 @@ B.iron_bars = def('iron_bars', { tiles:T('iron_bars'), pane:true, cutout:true, o
 B.end_rod = def('end_rod', { tiles:T('end_rod'), endRod:true, solid:true, opaque:false, light:true, hex:0xe8e4ee });
 // Paintings hang flat on a wall; lanterns stand on the floor or hang from a ceiling.
 PAINTINGS.forEach(function(pt){ B[pt[0]] = def(pt[0], { tiles:T(pt[0]), painting:true, solid:false, opaque:false, hex:0x7b5c32 }); });
+// A picture over more than one block: the cells are ordinary blocks so they save and
+// sync like anything else, and the picture is one quad hung in front of them.
+ART.forEach(function(a){ B['art_' + a.id] = def('art_' + a.id, { tiles:T('art_' + a.id), painting:true, art:a,
+  display:a.label, solid:false, opaque:false, hex:0x7b5c32 }); });
 LANTERNS.forEach(function(l){ B[l[0]] = def(l[0], { tiles:T(l[0]), lantern:true, solid:false, opaque:false, light:true, hex:l[4] }); });
 /* ---- torches, campfire and redstone ----
    Torches, levers and buttons attach to a face, so their orientation lives in
@@ -2717,10 +3045,175 @@ function reconcilePrg(cx, cz, foundKeys){          // run at the end of a chunk 
   for(const k of Array.from(prgPositions)){ const p=k.split(','); if(Math.floor(p[0]/CH)===cx && Math.floor(p[2]/CH)===cz && !found.has(k)){ prgPositions.delete(k); removePrgObj(k); } }
   for(const k of foundKeys){ prgPositions.add(k); ensurePrgObj(k); }
 }
+// A picture hangs facing one of four ways, and the anchor is always the cell with
+// the smallest coordinates, so half the facings need the picture turned round or it
+// reads back to front.
+const artTextures = new Map();
+function artTexture(a, flip) {
+  const k = a.id + (flip ? '|f' : '');
+  let t = artTextures.get(k); if (t) return t;
+  t = new THREE.CanvasTexture(artCanvas(a));
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  if (flip) { t.wrapS = THREE.RepeatWrapping; t.repeat.x = -1; t.offset.x = 1; }
+  artTextures.set(k, t);
+  return t;
+}
+const artOf = id => (BLOCKS[id] && BLOCKS[id].art) || null;
+const isPainting = id => !!(id && BLOCKS[id] && BLOCKS[id].painting);
+
+/* Which cell of which picture is this? A picture is a rectangle of identical blocks
+   on one wall, so walk to the bottom corner of the run and step back in whole
+   picture-widths. Two copies of the same picture side by side stay two pictures
+   rather than merging into one wide one. */
+function artAnchor(x, y, z) {
+  const id = getBlock(x, y, z); const a = artOf(id); if (!a) return null;
+  const at = attachMeta.get(dkey(x, y, z)); const f = (at && at.f) || 0;
+  const same = (px, py, pz) => {
+    if (getBlock(px, py, pz) !== id) return false;
+    const m = attachMeta.get(dkey(px, py, pz));
+    return ((m && m.f) || 0) === f;
+  };
+  const hx = (f === 0 || f === 2) ? 1 : 0, hz = (f === 0 || f === 2) ? 0 : 1;   // the horizontal run
+  let y0 = y; while (same(x, y0 - 1, z)) y0--;
+  let cx = x, cz = z;
+  while (same(cx - hx, y0, cz - hz)) { cx -= hx; cz -= hz; }
+  const alongH = (x - cx) * hx + (z - cz) * hz;
+  const stepH = Math.floor(alongH / a.w) * a.w, stepY = Math.floor((y - y0) / a.h) * a.h;
+  return { a, f, x: cx + hx * stepH, y: y0 + stepY, z: cz + hz * stepH, hx, hz };
+}
+const artKey = an => an.x + ',' + an.y + ',' + an.z;
+
+const artObjs = new Map();         // anchor key -> the quad hanging there
+const artCells = new Set();        // every cell that is part of some picture
+function artRemoveObj(k) {
+  const o = artObjs.get(k); if (!o) return;
+  scene.remove(o); o.geometry.dispose(); artObjs.delete(k);
+}
+function artEnsureObj(an) {
+  const k = artKey(an);
+  if (artObjs.has(k) || typeof scene === 'undefined' || !scene) return;
+  const a = an.a, f = an.f;
+  // just off the wall, so it never fights the block behind it for the same pixels
+  const OFF = 1.3 / 16;
+  // Turning the quad to face out already mirrors it for two of the four walls, so
+  // only the other two need the picture turned round. Getting this backwards writes
+  // every word in the gallery back to front, which is how it was found.
+  const flip = (f === 1 || f === 3);
+  const mat = new THREE.MeshLambertMaterial({ map: artTexture(a, flip), transparent: false, side: THREE.FrontSide });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(a.w, a.h), mat);
+  const cx = an.x + an.hx * (a.w / 2) + (an.hx ? 0 : 0.5);
+  const cz = an.z + an.hz * (a.w / 2) + (an.hz ? 0 : 0.5);
+  const cy = an.y + a.h / 2;
+  if (f === 2) { mesh.position.set(cx, cy, an.z + OFF); mesh.rotation.y = 0; }
+  else if (f === 0) { mesh.position.set(cx, cy, an.z + 1 - OFF); mesh.rotation.y = Math.PI; }
+  else if (f === 1) { mesh.position.set(an.x + OFF, cy, cz); mesh.rotation.y = -Math.PI / 2; }
+  else { mesh.position.set(an.x + 1 - OFF, cy, cz); mesh.rotation.y = Math.PI / 2; }
+  mesh.renderOrder = 1; mesh.raycast = () => {};
+  scene.add(mesh); artObjs.set(k, mesh);
+}
+// run at the end of a chunk mesh: every painting cell it found, and drop what went
+function artReconcile(cx, cz, found) {
+  const seen = new Set(found);
+  for (const k of Array.from(artCells)) {
+    const p = k.split(',');
+    if (Math.floor(+p[0] / CH) === cx && Math.floor(+p[2] / CH) === cz && !seen.has(k)) artCells.delete(k);
+  }
+  for (const k of found) artCells.add(k);
+  artRebuild();
+}
+// The anchors are worked out from the cells, so any change anywhere rebuilds the set
+// of quads. There are never many pictures in view, so this is cheap enough to do
+// whole rather than trying to work out which one moved.
+function artRebuild() {
+  const want = new Map();
+  for (const k of artCells) {
+    const p = k.split(',');
+    const an = artAnchor(+p[0], +p[1], +p[2]);
+    if (an) want.set(artKey(an), an);
+  }
+  for (const k of Array.from(artObjs.keys())) if (!want.has(k)) artRemoveObj(k);
+  for (const [, an] of want) artEnsureObj(an);
+}
+function artDropChunk(cx, cz) {
+  for (const k of Array.from(artCells)) {
+    const p = k.split(',');
+    if (Math.floor(+p[0] / CH) === cx && Math.floor(+p[2] / CH) === cz) artCells.delete(k);
+  }
+  artRebuild();
+}
+function artClear() { for (const k of Array.from(artObjs.keys())) artRemoveObj(k); artCells.clear(); }
+
+/* ---- hanging one up ---------------------------------------------------------
+   A picture takes as many cells as it is blocks, all of them empty and all of them
+   with something solid behind. The cell you clicked is the bottom corner nearest
+   the origin, which is the same corner the anchor uses, so what you point at is
+   where the picture starts. */
+function artFits(a, f, x, y, z, hx, hz) {
+  for (let i = 0; i < a.w; i++) for (let j = 0; j < a.h; j++) {
+    const px = x + hx * i, py = y + j, pz = z + hz * i;
+    if (py < 1 || py >= WH - 1) return false;
+    if (getBlock(px, py, pz) !== AIR) return false;
+    const d = DIRV[f];                                   // the wall is the other side of the facing
+    if (!solidFooting(getBlock(px - d[0], py, pz - d[2]))) return false;
+  }
+  return true;
+}
+function placePainting() {
+  const id = hotbar[selSlot], a = artOf(id);
+  if (target.ny !== 0) return;                           // not floors, not ceilings
+  const px = target.x + target.nx, py = target.y + target.ny, pz = target.z + target.nz;
+  if (getBlock(px, py, pz) !== AIR) return;
+  if (!solidFooting(getBlock(target.x, target.y, target.z))) return;
+  const f = target.nx > 0 ? 1 : target.nx < 0 ? 3 : target.nz > 0 ? 2 : 0;
+  if (!a) {                                              // the old one-block pictures
+    setBlock(px, py, pz, id); mpSendBlock(px, py, pz, id);
+    setAttach(px, py, pz, { m: 2, f: f }, true);
+    remeshChunkAt(px, pz);
+    return;
+  }
+  const hx = (f === 0 || f === 2) ? 1 : 0, hz = (f === 0 || f === 2) ? 0 : 1;
+  // try the clicked cell as the near corner, then slide back along and down until it
+  // fits, so a big picture still goes up when you click its middle
+  let put = null;
+  for (let di = 0; di < a.w && !put; di++) for (let dj = 0; dj < a.h && !put; dj++) {
+    const bx = px - hx * di, by = py - dj, bz = pz - hz * di;
+    if (artFits(a, f, bx, by, bz, hx, hz)) put = { x: bx, y: by, z: bz };
+  }
+  if (!put) { chatPush('No room for that one here - it needs ' + a.w + ' by ' + a.h + ' blocks of clear wall.', 'sys'); return; }
+  for (let i = 0; i < a.w; i++) for (let j = 0; j < a.h; j++) {
+    const cx = put.x + hx * i, cy = put.y + j, cz = put.z + hz * i;
+    setBlock(cx, cy, cz, id); mpSendBlock(cx, cy, cz, id);
+    setAttach(cx, cy, cz, { m: 2, f: f }, true);
+    remeshChunkAt(cx, cz);
+  }
+}
+// Break any cell and the whole picture comes off the wall, the way a bed does.
+function breakPainting(x, y, z) {
+  const an = artAnchor(x, y, z);
+  if (!an) {                                             // a one-block one, or something odd
+    attachMeta.delete(dkey(x, y, z)); spRecordAttach(x, y, z, null);
+    if (mp.active) mpSend({ type: 'attach', x, y, z, m: -1 });
+    setBlock(x, y, z, AIR); mpSendBlock(x, y, z, 0); remeshChunkAt(x, z);
+    return;
+  }
+  const a = an.a;
+  for (let i = 0; i < a.w; i++) for (let j = 0; j < a.h; j++) {
+    const cx = an.x + an.hx * i, cy = an.y + j, cz = an.z + an.hz * i;
+    if (getBlock(cx, cy, cz) !== getBlock(x, y, z)) continue;
+    attachMeta.delete(dkey(cx, cy, cz)); spRecordAttach(cx, cy, cz, null);
+    if (mp.active) mpSend({ type: 'attach', x: cx, y: cy, z: cz, m: -1 });
+    setBlock(cx, cy, cz, AIR); mpSendBlock(cx, cy, cz, 0);
+    artCells.delete(cx + ',' + cy + ',' + cz);
+    remeshChunkAt(cx, cz);
+  }
+  artRebuild();
+}
+
 function dropChunkPrg(cx, cz){                      // when a chunk unloads, drop its sphere objects
   for(const k of Array.from(prgPositions)){ const p=k.split(','); if(Math.floor(p[0]/CH)===cx && Math.floor(p[2]/CH)===cz){ prgPositions.delete(k); removePrgObj(k); } }
 }
-function clearPrgObjs(){ for(const k of Array.from(prgObjs.keys())) removePrgObj(k); prgPositions.clear(); }
+function clearPrgObjs(){ for(const k of Array.from(prgObjs.keys())) removePrgObj(k); prgPositions.clear(); artClear(); }
 
 // ---- singleplayer save (localStorage): the world's seed + every player block edit,
 // so a solo world keeps its progress across reloads and site updates. The shared
@@ -3532,7 +4025,7 @@ function buildChunkMesh(c){
   const op = { pos:[], uv:[], col:[], idx:[] };
   const tr = { pos:[], uv:[], col:[], idx:[] };
   const cut= { pos:[], uv:[], col:[], idx:[] };
-  const foundPrg = [];
+  const foundPrg = [], foundArt = [];
   const ox=c.cx*CH, oz=c.cz*CH, cdata=c.data;
   // a block read that skips the chunk-map lookup whenever the cell is in this chunk,
   // which is nearly always: only the four border columns ever fall through
@@ -3662,6 +4155,10 @@ function buildChunkMesh(c){
         const pb = BLOCKS[held];
         pushCross(cut, wx, y, wz, (typeof pb.tiles==='number'?pb.tiles:pb.tiles[1]), 5/16, 17/16, 0.27, false);
       }
+      continue;
+    }
+    if (bl.painting && bl.art){                // one of the gallery: drawn as its own quad
+      foundArt.push(wx + ',' + y + ',' + wz);
       continue;
     }
     if (bl.painting){                          // a framed panel lying flat against its wall
@@ -3828,6 +4325,7 @@ function buildChunkMesh(c){
   c.cmesh= make(cut, matCutout);  if(c.cmesh) scene.add(c.cmesh);
   c.tmesh= make(tr, matTrans);    if(c.tmesh) scene.add(c.tmesh);
   reconcilePrg(c.cx, c.cz, foundPrg);   // add/remove the sphere objects for this chunk's PRG blocks
+  artReconcile(c.cx, c.cz, foundArt);   // and the pictures hanging on this chunk's walls
   c.maxY = seenTop;                     // the scan just told us the real ceiling; let it come back down
   c.dirty=false;
 }
@@ -4700,7 +5198,7 @@ function ensureChunks(px,pz){
       if(c.mesh){scene.remove(c.mesh);c.mesh.geometry.dispose();}
       if(c.cmesh){scene.remove(c.cmesh);c.cmesh.geometry.dispose();}
       if(c.tmesh){scene.remove(c.tmesh);c.tmesh.geometry.dispose();}
-      dropChunkPrg(c.cx, c.cz);
+      dropChunkPrg(c.cx, c.cz); artDropChunk(c.cx, c.cz);
       chunks.delete(k);
     }
   }
@@ -5520,17 +6018,6 @@ function placeAttached(){
 }
 // A painting hangs on a wall and nowhere else: click the side of a block and it goes
 // up flat against it, facing out into the room.
-function placePainting(){
-  const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
-  const id=hotbar[selSlot];
-  if(target.ny!==0) return;                                        // not floors, not ceilings
-  if(getBlock(px,py,pz)!==AIR) return;
-  if(!solidFooting(getBlock(target.x,target.y,target.z))) return;   // needs a wall behind it
-  const a={ m:2, f: target.nx>0?1 : target.nx<0?3 : target.nz>0?2 : 0 };
-  setBlock(px,py,pz,id); mpSendBlock(px,py,pz,id);
-  setAttach(px,py,pz,a,true);
-  remeshChunkAt(px,pz);
-}
 // plates and dust both just need a solid top to sit on
 function placeOnFloor(){
   const px=target.x+target.nx, py=target.y+target.ny, pz=target.z+target.nz;
@@ -6270,6 +6757,7 @@ function breakBlock(){
   if(bw.active) return;   // Bed Wars breaks blocks on a hold-timer (bwMineTick); the left-click press only punches
   if(isDoor(getBlock(x,y,z))){ breakDoor(x,y,z); return; }   // breaking either half removes the whole door
   if(isBed(getBlock(x,y,z))){ breakBed(x,y,z); return; }     // breaking either cell removes the whole bed
+  if(isPainting(getBlock(x,y,z))){ breakPainting(x,y,z); return; }   // and any corner takes the whole picture
   if(isPlant(getBlock(x,y,z))){ breakPlant(x,y,z); return; } // a tall flower comes out whole
   if(isPot(getBlock(x,y,z))){ breakPot(x,y,z); return; }     // takes the pot and whatever was in it
   if(isVine(getBlock(x,y,z))){ attachMeta.delete(dkey(x,y,z)); spRecordAttach(x,y,z,null);
@@ -6597,7 +7085,7 @@ function catOf(n){
   if(n.endsWith('_button')||n.endsWith('_pressure_plate')||n==='redstone_wire'||n==='redstone_torch'||n==='redstone_lamp'||n==='lever'||n==='redstone_block') return 'redstone';
   if(n==='parkour_start'||n==='parkour_end') return 'redstone';   // they are pressure plates, and that is where people look for them
   if(n==='torch'||n==='campfire'||n==='end_rod') return 'deco';
-  if(n.startsWith('painting_')||n.endsWith('lantern')) return 'deco';
+  if(n.startsWith('painting_')||n.startsWith('art_')||n.endsWith('lantern')) return 'deco';
   if(FLOWER_NAMES.has(n) || n==='flower_pot') return 'nature';   // flowers live with the plants
   if(n.endsWith('_sapling') || n==='mangrove_propagule') return 'nature';
   if(n==='iron_bars') return 'deco';
@@ -6638,6 +7126,7 @@ function searchTags(name){
   if(b.light)                            t+=' light glow lamp bright';
   if(b.endRod)                           t+=' end rod rods pillar beacon';
   if(b.painting)                         t+=' painting paintings art picture frame wall decoration';
+  if(b.art)                              t+=' ' + b.art.label.toLowerCase() + ' gallery famous large';
   if(b.lantern)                          t+=' lantern lanterns light lamp hang chain';
   if(b.door || b.trapdoor)               t+=' door';
   if(b.wall)                             t+=' wall walls barrier border stone';
@@ -11676,7 +12165,8 @@ const PK_CSS = `
 const PK_KEY = 'leoncraft_parkour';
 const parkour = {
   courses: new Map(),   // id -> { id, name, start, end, times:[{name,ms}] }
-  run: null,            // { id, t0, best } while a course is being run
+  run: null,            // { id, t0, best, back } while a course is being run
+  trail: [],            // the last stretch of ground walked, so K knows the run-up
   pad: null,            // the pad under your feet, so one step is one trigger
   boards: new Map(),    // "d:x,y,z" -> THREE.Sprite floating over a pad
   boardSig: new Map(),  // what each board was drawn from, so it is only redrawn on a change
@@ -11894,16 +12384,75 @@ function pkUpdateBoards(){
   for(const k of [...parkour.boards.keys()]) if(!keep.has(k)) pkDropBoard(k);
 }
 
+/* ---- where you walked in from ----------------------------------------------
+   K used to put you back on the start pad, which is the one place it must not: the
+   pad fires when you land on it, so landing on it starts another run, which prints
+   another message, and you cannot walk out of it because every attempt to leave is
+   another landing. What K wants is the ground you crossed on your way in - a couple
+   of blocks short of the pad, where there is room to stand and nothing to trigger.
+   So the last stretch of walking is remembered, and K reads back along it.      */
+const PK_TRAIL_MAX = 24;
+const PK_BACK_MIN = 2.2;         // far enough from the pad that walking off it is a choice
+const PK_BACK_MAX = 8;           // and near enough that it is still the same place
+function pkTrailStep(){
+  if(!player.onGround || state !== PLAY) return;
+  const t = parkour.trail;
+  const last = t[t.length - 1];
+  if(last && last.d === dim && Math.hypot(player.pos.x - last.x, player.pos.z - last.z) < 0.7
+     && Math.abs(player.pos.y - last.y) < 1.2) return;
+  t.push({ x:player.pos.x, y:player.pos.y, z:player.pos.z, yaw:player.yaw, d:dim });
+  if(t.length > PK_TRAIL_MAX) t.shift();
+}
+// somewhere a player can actually be put: room for them, ground under them, and not
+// a pad, because a pad is the thing we are trying to get off
+function pkStandable(x, y, z){
+  if(!(y >= 1 && y < WH - 2)) return false;
+  const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
+  if(pkIsPad(getBlock(bx, by, bz)) || pkIsPad(getBlock(bx, by - 1, bz))) return false;
+  if(collides(x, y, z)) return false;
+  return solidFooting(getBlock(bx, by - 1, bz));
+}
+function pkApproach(pad){
+  if(!pad) return null;
+  const px = pad.x + 0.5, pz = pad.z + 0.5;
+  // the newest point on the walk in that is far enough back to be off the pad
+  for(let i = parkour.trail.length - 1; i >= 0; i--){
+    const t = parkour.trail[i];
+    if(t.d !== dim) continue;
+    const d = Math.hypot(t.x - px, t.z - pz);
+    if(d < PK_BACK_MIN || d > PK_BACK_MAX) continue;
+    if(pkStandable(t.x, t.y, t.z)) return { x:t.x, y:t.y, z:t.z, yaw:t.yaw };
+  }
+  // no walk to read: step off the pad the way you came, and failing that any way at
+  // all. Something has to be found, or K would put you nowhere.
+  const from = parkour.trail.length ? parkour.trail[parkour.trail.length - 1] : null;
+  const base = from ? Math.atan2(from.x - px, from.z - pz) : 0;
+  for(let a = 0; a < 16; a++){
+    const th = base + (a ? (a % 2 ? 1 : -1) * Math.ceil(a / 2) * (Math.PI / 8) : 0);
+    for(const d of [3, 4, 2.5, 5]){
+      const x = px + Math.sin(th) * d, z = pz + Math.cos(th) * d;
+      for(const dy of [0, 1, -1, 2, -2, 3]){
+        const y = pad.y + 1 + dy;
+        if(pkStandable(x, y, z)) return { x:x, y:y, z:z, yaw:Math.atan2(x - px, z - pz) };
+      }
+    }
+  }
+  return null;
+}
+
 /* ---- running a course ---- */
 function pkStart(course){
-  parkour.run = { id:course.id, t0:performance.now(), best:pkMyBest(course) };
+  const prev = (parkour.run && parkour.run.id === course.id) ? parkour.run.back : null;
+  const back = (course.start ? pkApproach(course.start) : null) || prev;
+  parkour.run = { id:course.id, t0:performance.now(), best:pkMyBest(course), back:back, pending:false };
   player.flying = false;
   parkour.result = null;
   pkEnsureUi();
-  chatPush('Parkour started: ' + (course.name || 'Parkour') + '. K puts you back on the start pad, Shift+K gives up.', 'sys');
+  chatPush('Parkour started: ' + (course.name || 'Parkour') + '. K puts you back to the run-up, Shift+K gives up.', 'sys');
 }
 function pkFinish(course){
   const run = parkour.run; if(!run || run.id !== course.id) return;
+  if(run.pending) return;                 // the clock has not started: walk onto the pad first
   const ms = performance.now() - run.t0;
   parkour.run = null;
   const best = run.best;
@@ -11931,15 +12480,25 @@ function pkRestart(){
   if((st.d|0) !== dim){ chatPush('That course starts in the other world.', 'sys'); return; }
   if(sit.active) standUp();
   if(sleep.active) wakeUp();
-  // Stand on the pad rather than in it, and remember we are already there: pkTick
-  // fires on the step onto a pad, and landing on the start pad would otherwise
-  // start the run a second time.
-  player.pos.set(st.x + 0.5, st.y + 1, st.z + 0.5);
+  // The spot picked when the run began, not a fresh one: by now the trail is full of
+  // the course itself, and K would put you back wherever you last stood on it rather
+  // than at the start.
+  const back = run.back || pkApproach(st);
+  if(!back){
+    chatPush('There is nowhere clear to put you back. Shift+K leaves the course.', 'sys');
+    return;
+  }
+  run.back = back;
+  player.pos.set(back.x, back.y, back.z);
   player.vel.set(0, 0, 0); player.flying = false;
-  parkour.pad = pkPadKey(st);
-  run.t0 = performance.now();
-  parkour.result = { text:'back to the start', sub:'the clock is back to zero', ok:true, until:performance.now() + 2000 };
-  chatPush('Back to the start of ' + (c.name || 'the course') + '. The clock starts again.', 'sys');
+  if(back.yaw != null) player.yaw = back.yaw;
+  // Off the pad, and the clock waits: walking onto the pad is what sets it going, the
+  // same as the first time. Nothing here can put you on the pad, so nothing here can
+  // start a run you did not ask for.
+  parkour.pad = null;
+  run.pending = true; run.t0 = performance.now();
+  parkour.result = { text:'back to the run-up', sub:'step on the pad to start the clock', ok:true, until:performance.now() + 2500 };
+  chatPush('Back to just before ' + (c.name || 'the course') + '. Step on the pad when you are ready.', 'sys');
   pkHud();
 }
 function pkAbandon(){
@@ -11964,6 +12523,11 @@ function pkTick(){
       const link = pkCourseOfPad(hit.x, hit.y, hit.z, dim);
       if(link && link.course.start && link.course.end){
         if(link.side === 'start') pkStart(link.course);
+        else if(parkour.run && parkour.run.pending && parkour.run.id === link.course.id){
+          // the end pad, on a clock that has not started: walking backwards through
+          // the course is not a time, so say so rather than recording a zero
+          chatPush('The clock has not started - step on the start pad first.', 'sys');
+        }
         else pkFinish(link.course);
       } else if(!parkour.run){
         chatPush('This pad has no partner yet. Right-click it to link one.', 'sys');
@@ -11971,6 +12535,8 @@ function pkTick(){
     }
   }
   if(parkour.run) player.flying = false;   // no flying your way round a course
+  if(parkour.run && parkour.run.pending) parkour.run.t0 = performance.now();   // held at zero
+  pkTrailStep();
   pkHud();
 }
 
@@ -13001,7 +13567,10 @@ window.__mc = {
   borderNow(){ return borderNow(); }, borders(){ return { over:mp.border, nether:mp.netherBorder }; },
   panoTurn(){ return PANO_TURN; },
   // ---- parkour test hooks ----
-  pk(){ return { run: parkour.run ? { id:parkour.run.id, ms:Math.round(performance.now()-parkour.run.t0), best:parkour.run.best } : null,
+  pkTrail(){ return parkour.trail.map(t=>[+t.x.toFixed(2), +t.y.toFixed(2), +t.z.toFixed(2)]); },
+  pkBack(){ return parkour.run && parkour.run.back ? [+parkour.run.back.x.toFixed(2),
+    +parkour.run.back.y.toFixed(2), +parkour.run.back.z.toFixed(2)] : null; },
+  pk(){ return { run: parkour.run ? { id:parkour.run.id, ms:Math.round(performance.now()-parkour.run.t0), best:parkour.run.best, pending:!!parkour.run.pending } : null,
     pad: parkour.pad, boards: parkour.boards.size, panel: parkour.panel,
     result: parkour.result ? { text:parkour.result.text, sub:parkour.result.sub, ok:parkour.result.ok } : null,
     courses: [...parkour.courses.values()].map(c=>({ id:c.id, name:c.name, start:c.start, end:c.end, times:c.times||[] })) }; },
@@ -13259,6 +13828,12 @@ window.__mc = {
   hold(action, ms){ const k=binds[action]||action; keys[k]=true; setTimeout(()=>{ keys[k]=false; }, ms); },
   release(action){ const k=binds[action]||action; keys[k]=false; },
   slabTopAt(x,y,z){ return slabTop(x,y,z); },
+  artList(){ return ART.map(a=>({ id:'art_'+a.id, label:a.label, w:a.w, h:a.h })); },
+  artAt(x,y,z){ const an=artAnchor(x,y,z); return an ? { id:'art_'+an.a.id, w:an.a.w, h:an.a.h,
+    f:an.f, anchor:[an.x,an.y,an.z] } : null; },
+  artObjs(){ return [...artObjs.entries()].map(([k,o])=>({ at:k,
+    pos:[+o.position.x.toFixed(2),+o.position.y.toFixed(2),+o.position.z.toFixed(2)],
+    yaw:+o.rotation.y.toFixed(3) })); },
   cutoutVerts(x,z){ const c=chunks.get(key(Math.floor(x/CH), Math.floor(z/CH)));
     return (c && c.cmesh && c.cmesh.geometry && c.cmesh.geometry.attributes.position)
       ? c.cmesh.geometry.attributes.position.count : 0; },
