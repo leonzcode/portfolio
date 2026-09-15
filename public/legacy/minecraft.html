@@ -3092,7 +3092,15 @@ function artRemoveObj(k) {
 }
 function artEnsureObj(an) {
   const k = artKey(an);
-  if (artObjs.has(k) || typeof scene === 'undefined' || !scene) return;
+  if (typeof scene === 'undefined' || !scene) return;
+  const have = artObjs.get(k);
+  if (have) {
+    // The blocks arrive before the facing does, so the first quad can be hung the
+    // wrong way round and then corrected. Leaving it alone because something is
+    // already there is how it would stay wrong.
+    if (have.userData.f === an.f && have.userData.art === an.a.id) return;
+    artRemoveObj(k);
+  }
   const a = an.a, f = an.f;
   // just off the wall, so it never fights the block behind it for the same pixels
   const OFF = 1.3 / 16;
@@ -3110,6 +3118,7 @@ function artEnsureObj(an) {
   else if (f === 1) { mesh.position.set(an.x + OFF, cy, cz); mesh.rotation.y = -Math.PI / 2; }
   else { mesh.position.set(an.x + 1 - OFF, cy, cz); mesh.rotation.y = Math.PI / 2; }
   mesh.renderOrder = 1; mesh.raycast = () => {};
+  mesh.userData = { f: f, art: a.id };
   scene.add(mesh); artObjs.set(k, mesh);
 }
 // run at the end of a chunk mesh: every painting cell it found, and drop what went
