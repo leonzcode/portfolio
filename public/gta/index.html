@@ -38,7 +38,25 @@
   #boot .sub{ font-family:var(--hud); font-size:13px; letter-spacing:6px; text-transform:uppercase; color:var(--dim); }
   #boot .hint{ font-size:13px; color:var(--dim); max-width:560px; line-height:1.8; }
   #boot .hint b{ color:#fff; font-weight:600; }
-  #boot button{
+  #who{ display:flex; flex-direction:column; align-items:center; gap:14px; }
+  #who .lab{ font-family:var(--hud); font-size:12px; letter-spacing:4px; text-transform:uppercase; color:var(--dim); }
+  #who input{
+    font-family:var(--hud); font-size:16px; letter-spacing:2px; text-align:center; width:230px;
+    padding:9px 12px; color:#fff; background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.22); border-radius:2px; outline:none;
+  }
+  #who input:focus{ border-color:rgba(255,233,168,.6); }
+  #cast{ display:flex; gap:12px; }
+  #cast button{
+    font-family:var(--hud); font-size:12px; letter-spacing:2px; text-transform:uppercase;
+    padding:8px 4px 10px; width:98px; cursor:pointer; color:rgba(255,255,255,.7);
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.16); border-radius:2px;
+    display:flex; flex-direction:column; align-items:center; gap:7px;
+  }
+  #cast button i{ display:block; width:34px; height:34px; border-radius:2px; }
+  #cast button.on{ color:#fff; border-color:rgba(255,233,168,.7); background:rgba(255,233,168,.10); }
+
+  #boot button#play{
     font-family:var(--hud); font-size:16px; font-weight:600; letter-spacing:3px; text-transform:uppercase;
     padding:13px 44px; cursor:pointer; color:#120d16; border:0; border-radius:2px;
     background:linear-gradient(180deg,#ffe9a8,#ffb36b);
@@ -256,6 +274,11 @@
     <b>WASD</b> move &middot; <b>Shift</b> sprint &middot; <b>Space</b> jump &middot; <b>F</b> get in or out of a car<br>
     <b>Right mouse</b> aim &middot; <b>Left mouse</b> fire &middot; <b>R</b> reload &middot; <b>Q</b> weapon wheel<br>
     <b>V</b> camera &middot; <b>B</b> radio &middot; <b>T</b> chat &middot; <b>Esc</b> pause
+  </div>
+  <div id="who">
+    <div class="lab">Who are you</div>
+    <input id="myname" maxlength="14" autocomplete="off" spellcheck="false" placeholder="your name">
+    <div id="cast"></div>
   </div>
   <button id="play">Enter the city</button>
   <div id="loadline">building the city…</div>
