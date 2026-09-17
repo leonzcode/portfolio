@@ -46,7 +46,8 @@ export function connect(ctx) {
   const others = new Map();                 // id -> { g, car, ... }
   let ws = null, me = 0, sendAt = 0, alive = false, myName = '';
 
-  const url = WS + (WS.indexOf('?') >= 0 ? '&' : '?') + 'mode=gta';
+  const url = WS + (WS.indexOf('?') >= 0 ? '&' : '?') + 'mode=gta'
+    + (ctx.name ? '&name=' + encodeURIComponent(ctx.name) : '');
   try { ws = new WebSocket(url); } catch (e) { return null; }
 
   ws.onopen = () => { alive = true; };
@@ -72,6 +73,15 @@ export function connect(ctx) {
       const o = others.get(m.id); if (!o) return;
       o.tx = m.x; o.ty = m.y; o.tz = m.z; o.tyaw = m.yaw;
       o.inCar = !!m.car; o.kindId = m.kind || null; o.sp = m.sp || 0; o.aim = !!m.aim;
+      if (m.cast !== undefined && m.cast !== null && o.cast !== m.cast) {
+        o.cast = m.cast;                            // they changed who they are
+        scene.remove(o.g);
+        const g = bodyFor({ id: o.id, cast: m.cast });
+        g.position.copy(o.g.position);
+        g.add(o.tag);
+        o.g = g;
+        scene.add(g);
+      }
       return;
     }
     if (m.type === 'name') { const o = others.get(m.id); if (o) retag(o, m.name); return; }
@@ -100,9 +110,17 @@ export function connect(ctx) {
 
   function send(obj) { if (alive) { try { ws.send(JSON.stringify(obj)); } catch (e) {} } }
 
+  function bodyFor(p) {
+    // the character they chose, if they told us; otherwise something from their id
+    const cast = ctx.CAST && ctx.CAST[p.cast | 0];
+    if (cast && p.cast !== undefined && p.cast !== null) {
+      return makePerson(cast.shirt, cast.skin, cast.legs, { hair: cast.hair });
+    }
+    return makePerson(SHIRTS[p.id % SHIRTS.length], SKINS[(p.id * 7) % SKINS.length]);
+  }
   function addOther(p) {
     if (!p || p.id === me || others.has(p.id)) return;
-    const g = makePerson(SHIRTS[p.id % SHIRTS.length], SKINS[(p.id * 7) % SKINS.length]);
+    const g = bodyFor(p);
     g.position.set(p.x || 0, p.y || 0, p.z || 0);
     const tag = tagFor(p.name || 'someone');
     g.add(tag);
@@ -159,7 +177,7 @@ export function connect(ctx) {
           type: 'pos', x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2),
           yaw: +(inCar ? player.car.yaw : player.look).toFixed(3),
           car: inCar, kind: inCar ? player.car.kind.id : null,
-          aim: player.aiming,
+          aim: player.aiming, cast: ctx.cast | 0,
           sp: inCar ? +player.car.speed.toFixed(1) : +player.speed.toFixed(1),
         });
       }

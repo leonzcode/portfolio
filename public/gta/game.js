@@ -145,8 +145,11 @@ scene.fog = new THREE.Fog(0xbcd0e0, 90, 820);
 // the sky on its own, so it can be baked into the environment map
 const skyEnvScene = new THREE.Scene();
 skyEnvScene.add(new THREE.Mesh(sky.geometry, sky.material));
-let pmrem = null, envAt = -9;
+let pmrem = null, envAt = -9, envWhen = 0;
 function refreshEnv(day) {
+  const now = performance.now();
+  if (now - envWhen < 4000 && envAt >= 0) return;
+  envWhen = now;
   if (!pmrem) pmrem = new THREE.PMREMGenerator(renderer);
   const old = scene.environment;
   scene.environment = pmrem.fromScene(skyEnvScene, 0, 1, 3000).texture;
@@ -196,13 +199,13 @@ const finalMat = new THREE.ShaderMaterial({
   uniforms: {
     tD: { value: null }, tB: { value: null },
     bloom: { value: 0.5 }, time: { value: 0 }, night: { value: 0 }, aspect: { value: 1 },
-    dead: { value: 0 },
+    dead: { value: 0 }, bloomOff: { value: 0 },
   },
   vertexShader: POST_VERT,
   fragmentShader: `
-    uniform sampler2D tD, tB; uniform float bloom, time, night, aspect, dead; varying vec2 vUv;
+    uniform sampler2D tD, tB; uniform float bloom, time, night, aspect, dead, bloomOff; varying vec2 vUv;
     void main(){
-      vec3 c = texture2D(tD, vUv).rgb + texture2D(tB, vUv).rgb * bloom * (1.0 + night * 0.7);
+      vec3 c = texture2D(tD, vUv).rgb + texture2D(tB, vUv).rgb * bloom * (1.0 + night * 0.7) * (1.0 - bloomOff);
       // a gentle S curve, which is what stops a render looking flat
       c = clamp(c, 0.0, 1.6);
       c = c * c * (3.0 - 2.0 * clamp(c, 0.0, 1.0)) * 0.34 + c * 0.66;
@@ -248,10 +251,38 @@ function draw(mat, target) {
   renderer.setRenderTarget(target);
   renderer.render(postScene, postCam);
 }
+/* If the frame time will not come down, take something away: the device pixel
+   ratio first, then the bloom. Better a simpler picture that moves than a
+   prettier one that does not. */
+let frameAvg = 16, qualityAt = 0, quality = 2;
+function stepQuality(dt, now) {
+  frameAvg += (dt * 1000 - frameAvg) * 0.05;
+  if (now - qualityAt < 2500) return;
+  qualityAt = now;
+  if (frameAvg > 26 && quality > 0) {
+    quality--;
+    if (quality === 1) { renderer.setPixelRatio(1); makeTargets(); }
+    frameAvg = 16;
+  } else if (frameAvg < 13 && quality < 2) {
+    quality++;
+    if (quality === 2) { renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); makeTargets(); }
+    frameAvg = 16;
+  }
+}
+
 function renderPost(t) {
   renderer.setRenderTarget(rtScene);
   renderer.clear();
   renderer.render(scene, camera);
+  if (quality === 0) {                             // no bloom at all
+    finalMat.uniforms.tD.value = rtScene.texture;
+    finalMat.uniforms.tB.value = rtScene.texture;
+    finalMat.uniforms.bloomOff.value = 1;
+    finalMat.uniforms.time.value = t;
+    draw(finalMat, null);
+    return;
+  }
+  finalMat.uniforms.bloomOff.value = 0;
   brightMat.uniforms.tD.value = rtScene.texture;
   draw(brightMat, rtA);
   blurMat.uniforms.tD.value = rtA.texture;
@@ -269,6 +300,43 @@ function renderPost(t) {
 /* ---------------------------------------------------------------- the city -- */
 const CITY_SEED = 20261115;
 let city = null, solids = [];
+
+/* ---------------------------------------------------------------- the cast --
+   Three of them, picked on the way in and remembered, so the person other
+   players see in the street is the person you chose. */
+export const CAST = [
+  { id: 0, name: 'Dez',   shirt: 0x7c8288, skin: 0x8a5a36, legs: 0x38513a, hair: 0x120f0d },
+  { id: 1, name: 'Marco', shirt: 0x24365e, skin: 0xd9a877, legs: 0x3a3f4a, hair: 0x2a1f18 },
+  { id: 2, name: 'Rae',   shirt: 0x93332c, skin: 0xf0d2b4, legs: 0x1e2026, hair: 0x5b3a1e },
+];
+let castPick = 1, myName = '';
+try {
+  castPick = Math.max(0, Math.min(2, +(localStorage.getItem('gtaCast') || 1)));
+  myName = (localStorage.getItem('gtaName') || '').slice(0, 14);
+} catch (e) {}
+
+function buildCastUi() {
+  const box = el('cast');
+  const input = el('myname');
+  input.value = myName;
+  input.addEventListener('input', () => {
+    myName = input.value.slice(0, 14);
+    try { localStorage.setItem('gtaName', myName); } catch (e) {}
+  });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') el('play').click(); });
+  CAST.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.innerHTML = '<i style="background:#' + c.shirt.toString(16).padStart(6, '0') + '"></i>' + c.name;
+    b.onclick = () => {
+      castPick = i;
+      try { localStorage.setItem('gtaCast', String(i)); } catch (e) {}
+      [...box.children].forEach((k, j) => k.classList.toggle('on', j === i));
+    };
+    box.appendChild(b);
+  });
+  [...box.children].forEach((k, j) => k.classList.toggle('on', j === castPick));
+}
+buildCastUi();
 
 /* ---------------------------------------------------------------- the player */
 const player = {
@@ -1334,6 +1402,7 @@ function frame() {
   last = now;
   if (!started) return;
   simulate(dt, now);
+  stepQuality(dt, now);
   drawHud(now);
   renderPost(now / 1000);
 }
@@ -1535,7 +1604,8 @@ async function start() {
   for (const c of traffic.cars) cars.push(c);
 
   el('loadline').textContent = 'almost there…';
-  player.model = makePerson(0x2a3a6a, 0xe0b48c);
+  const me = CAST[castPick];
+  player.model = makePerson(me.shirt, me.skin, me.legs, { hair: me.hair });
   scene.add(player.model);
   initFx(scene);
   police = makePolice({
@@ -1562,7 +1632,8 @@ async function start() {
   // multiplayer is optional: if the server is not reachable the city is still there
   try {
     const mod = await import('./net.js');
-    net = mod.connect({ scene, player, cars, say, esc, THREE, damage, explode, tracer });
+    net = mod.connect({ scene, player, cars, say, esc, THREE, damage, explode, tracer,
+                        name: myName, cast: castPick, CAST });
   } catch (e) { say('Playing on your own - could not reach the server.', 'sys'); }
 
   refreshEnv(1);
@@ -1590,6 +1661,8 @@ window.__gta = {
     cam.target.set(x, player.pos.y + 1.5, z); },
   get traffic(){ return traffic; },
   get net(){ return net; },
+  get cast(){ return { pick: castPick, name: myName }; },
+  pickCast(i){ castPick = i; },
   get police(){ return police; },
   get pickups(){ return pickups; },
   get missions(){ return missions; },
