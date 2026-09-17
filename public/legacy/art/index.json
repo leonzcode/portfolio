@@ -1,0 +1,116 @@
+[
+ {
+  "id": "mona_lisa",
+  "label": "Mona Lisa",
+  "w": 1,
+  "h": 2
+ },
+ {
+  "id": "pearl",
+  "label": "Girl with a Pearl Earring",
+  "w": 1,
+  "h": 2
+ },
+ {
+  "id": "scream",
+  "label": "The Scream",
+  "w": 1,
+  "h": 2
+ },
+ {
+  "id": "wanderer",
+  "label": "Wanderer above the Sea of Fog",
+  "w": 1,
+  "h": 2
+ },
+ {
+  "id": "sunflowers",
+  "label": "Sunflowers",
+  "w": 1,
+  "h": 1
+ },
+ {
+  "id": "van_gogh",
+  "label": "Self-Portrait",
+  "w": 1,
+  "h": 1
+ },
+ {
+  "id": "hokusai",
+  "label": "The Great Wave",
+  "w": 2,
+  "h": 1
+ },
+ {
+  "id": "sunrise",
+  "label": "Impression, Sunrise",
+  "w": 2,
+  "h": 1
+ },
+ {
+  "id": "water_lilies",
+  "label": "Water Lilies",
+  "w": 2,
+  "h": 1
+ },
+ {
+  "id": "whistler",
+  "label": "Whistler's Mother",
+  "w": 2,
+  "h": 1
+ },
+ {
+  "id": "starry_night",
+  "label": "The Starry Night",
+  "w": 2,
+  "h": 2
+ },
+ {
+  "id": "kiss",
+  "label": "The Kiss",
+  "w": 2,
+  "h": 2
+ },
+ {
+  "id": "kandinsky",
+  "label": "Composition VIII",
+  "w": 2,
+  "h": 2
+ },
+ {
+  "id": "birth_venus",
+  "label": "The Birth of Venus",
+  "w": 4,
+  "h": 2
+ },
+ {
+  "id": "last_supper",
+  "label": "The Last Supper",
+  "w": 4,
+  "h": 2
+ },
+ {
+  "id": "creation",
+  "label": "The Creation of Adam",
+  "w": 4,
+  "h": 2
+ },
+ {
+  "id": "night_watch",
+  "label": "The Night Watch",
+  "w": 4,
+  "h": 3
+ },
+ {
+  "id": "hay_wain",
+  "label": "The Hay Wain",
+  "w": 4,
+  "h": 3
+ },
+ {
+  "id": "delights",
+  "label": "The Garden of Earthly Delights",
+  "w": 4,
+  "h": 4
+ }
+]
