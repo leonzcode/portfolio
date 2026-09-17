@@ -112,6 +112,22 @@ export function impact(pos, kind) {
   }
 }
 
+// a car that has been shot up trails smoke
+export function smoke(pos) {
+  const m = takePuff();
+  m.position.copy(pos);
+  m.material.color.setHex(0x3a3a3c);
+  m.material.opacity = 0.5;
+  m.scale.setScalar(0.5);
+  const drift = (Math.random() - 0.5) * 0.6;
+  play(m, 1.6, (o, k, dt) => {
+    o.material.opacity = 0.5 * (1 - k);
+    o.scale.setScalar(0.5 + k * 2.6);
+    o.position.y += 1.7 * dt;
+    o.position.x += drift * dt;
+  });
+}
+
 export function explode(pos) {
   const m = takeFlash();
   m.position.copy(pos);

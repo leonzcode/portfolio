@@ -3,10 +3,14 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 import { buildCity, CITY, rng } from './city.js';
-import { makePerson, poseWalk, poseIdle, poseAim, poseSit, posePunch } from './person.js';
+import { makePerson, poseWalk, poseIdle, poseAim, poseSit, posePunch, poseJump } from './person.js';
 import { makeCar, CAR_KINDS, beamMat, headMat } from './vehicle.js';
 import { makeTraffic } from './traffic.js';
-import { initFx, muzzle, tracer, impact, explode, stepFx } from './fx.js';
+import { initFx, muzzle, tracer, impact, explode, smoke, stepFx } from './fx.js';
+import { makePolice } from './police.js';
+import * as snd from './audio.js';
+import { makePickups } from './pickups.js';
+import { makeMissions } from './missions.js';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -86,6 +90,7 @@ const sky = new THREE.Mesh(
 );
 sky.frustumCulled = false;
 scene.add(sky);
+scene.add(camera);        // so the first person weapon, a child of it, renders
 
 const sun = new THREE.DirectionalLight(0xffe9c4, 2.6);
 sun.castShadow = true;
@@ -189,10 +194,11 @@ const finalMat = new THREE.ShaderMaterial({
   uniforms: {
     tD: { value: null }, tB: { value: null },
     bloom: { value: 0.5 }, time: { value: 0 }, night: { value: 0 }, aspect: { value: 1 },
+    dead: { value: 0 },
   },
   vertexShader: POST_VERT,
   fragmentShader: `
-    uniform sampler2D tD, tB; uniform float bloom, time, night, aspect; varying vec2 vUv;
+    uniform sampler2D tD, tB; uniform float bloom, time, night, aspect, dead; varying vec2 vUv;
     void main(){
       vec3 c = texture2D(tD, vUv).rgb + texture2D(tB, vUv).rgb * bloom * (1.0 + night * 0.7);
       // a gentle S curve, which is what stops a render looking flat
@@ -209,6 +215,11 @@ const finalMat = new THREE.ShaderMaterial({
       // grain
       float g = fract(sin(dot(vUv * (1.0 + fract(time)), vec2(12.9898, 78.233))) * 43758.5453);
       c += (g - 0.5) * 0.010;
+      // going down drains the colour out of the world
+      if (dead > 0.001) {
+        float l2 = dot(c, vec3(0.2126, 0.7152, 0.0722));
+        c = mix(c, vec3(l2) * 0.72, dead);
+      }
       gl_FragColor = vec4(pow(max(c, 0.0), vec3(1.0 / 2.2)), 1.0);
     }`,
 });
@@ -269,11 +280,26 @@ const player = {
   car: null,                    // the car being driven, if any
   model: null,
 };
-const cam = { yaw: 0, pitch: -0.12, dist: 5.4, target: new THREE.Vector3(), shake: 0 };
+const cam = { yaw: 0, pitch: -0.12, dist: 5.4, target: new THREE.Vector3(), shake: 0, mode: 0 };
+const CAM_DIST = [5.4, 8.2, 0];
+
+/* -------------------------------------------------------------- pickups ----- */
+let pickups = null, missions = null;
+function takePickup(kind, label) {
+  if (kind === 'health') player.hp = clamp(player.hp + 25, 0, 100);
+  if (kind === 'armour') player.armour = clamp(player.armour + 50, 0, 100);
+  if (kind === 'cash') player.cash += 120 + ((Math.random() * 380) | 0);
+  if (kind === 'ammo') {
+    for (const w of WEAPONS) if (w.mag) w.ammo += w.mag * 2;
+    hudWeapon();
+  }
+  snd.pickup();
+  hint(label === 'cash' ? 'Cash' : label);
+}
 
 /* ---------------------------------------------------------------- the cars -- */
 const cars = [];
-let traffic = null;
+let traffic = null, police = null;
 
 /* ------------------------------------------------------------------- input -- */
 const keys = Object.create(null);
@@ -289,7 +315,14 @@ addEventListener('keydown', e => {
   if (k === 'escape') { setPaused(!paused); e.preventDefault(); }
   if (k === 'f' && !paused) { toggleCar(); e.preventDefault(); }
   if (k === 'r' && !paused) reload();
+  if (k === 'v' && !paused) {
+    cam.mode = (cam.mode + 1) % 3;
+    hint(['Camera: close', 'Camera: far', 'Camera: first person'][cam.mode]);
+    showGun();
+  }
+  if (k === 'b' && !paused) cycleRadio();
   if (k === 'q' && !paused) openWheel();
+  if (k === 'm') { muted = !muted; snd.volume(muted ? 0 : 0.55); hint(muted ? 'Sound off' : 'Sound on'); }
   if (k >= '1' && k <= '7') setWeapon(+k - 1);
   if (k === ' ') e.preventDefault();
 });
@@ -351,7 +384,7 @@ const WEAPONS = [
 ];
 for (const w of WEAPONS) w.in = w.mag;               // what is in the magazine now
 
-let weapon = 0, fireDown = false, fireCool = 0, reloadT = 0, meleeT = 0, meleeArm = 1;
+let weapon = 0, fireDown = false, fireCool = 0, reloadT = 0, meleeT = 0, meleeArm = 1, muted = false;
 const wep = () => WEAPONS[weapon];
 
 function setWeapon(i) {
@@ -425,17 +458,27 @@ function makeGun(id) {
   return g;
 }
 const gunModels = {};
-let heldGun = null;
+let heldGun = null, fpGun = null;
 function showGun() {
   const hand = player.model && player.model.userData.armR.hand;
   if (!hand) return;
   if (heldGun) { hand.remove(heldGun); heldGun = null; }
+  if (fpGun) { camera.remove(fpGun); fpGun = null; }
   const id = wep().id;
   if (id === 'fist') return;
   if (!gunModels[id]) gunModels[id] = makeGun(id);
   heldGun = gunModels[id];
   heldGun.position.set(0.01, -0.07, 0.02);
   hand.add(heldGun);
+  // the same gun again, held in front of the camera for the first person view
+  fpGun = makeGun(id);
+  // barrel forward, sights up: a quarter turn about x puts the sights under the
+  // barrel, so it takes a half turn about z as well to right it
+  fpGun.rotation.set(Math.PI / 2, 0, Math.PI);
+  fpGun.position.set(0.17, -0.14, -0.27);
+  fpGun.scale.setScalar(0.92);
+  fpGun.visible = cam.mode === 2;
+  camera.add(fpGun);
 }
 
 /* ---- the weapon wheel ----------------------------------------------------- */
@@ -538,7 +581,7 @@ function stepPlayer(dt) {
 
   // the body turns to face the way it is going, or the way you aim
   player.speed = Math.hypot(player.vel.x, player.vel.z);
-  if (player.aiming) player.look = cam.yaw;
+  if (player.aiming || cam.mode === 2) player.look = cam.yaw;
   else if (player.speed > 0.4) {
     const want = Math.atan2(-player.vel.x, -player.vel.z);
     let d = want - player.look;
@@ -561,6 +604,8 @@ function toggleCar() {
     c.driver = null; player.car = null;
     player.model.visible = true;
     el('speedo').style.display = 'none';
+    el('radio').style.display = 'none';
+    if (radioOn) { radioOn = false; snd.radio(false); }
     hint('');
     hudWeapon();
     return;
@@ -579,6 +624,7 @@ function toggleCar() {
   el('speedo').style.display = 'block';
   el('wepname').textContent = best.kind.label;
   el('wepammo').textContent = '';
+  showRadio();
   hint('');
 }
 function stepCar(c, dt) {
@@ -621,6 +667,7 @@ function stepCar(c, dt) {
   if (!hitX) c.pos.x = nx;
   if (!hitZ) c.pos.z = nz;
   if (hitX || hitZ) {                                  // a bump costs you most of your speed
+    snd.crash(Math.min(1, Math.abs(c.speed) / 20));
     c.speed *= -0.22;
     cam.shake = Math.min(1, cam.shake + 0.5);
     if (c.driver === 'me') damage(Math.min(18, Math.abs(c.speed) * 1.2));
@@ -678,6 +725,14 @@ function castRay(from, dir, range) {
       if (d != null && d < t) { t = d; hit = { kind: 'car', car: c }; }
     }
   }
+  if (police) {
+    for (const c of police.cops) {
+      if (c.hp <= 0) continue;
+      const q = c.g.position;
+      const d = rayAABB(from, dir, q.x - 0.3, q.x + 0.3, q.y + 0.1, q.y + 1.85, q.z - 0.26, q.z + 0.26);
+      if (d != null && d < t) { t = d; hit = { kind: 'cop', cop: c }; }
+    }
+  }
   if (net && net.others) {
     for (const o of net.others.values()) {
       if (!o.g || !o.g.visible) continue;
@@ -690,6 +745,11 @@ function castRay(from, dir, range) {
 }
 
 function gunTip() {
+  if (cam.mode === 2 && fpGun && fpGun.visible) {
+    const v = new THREE.Vector3(0, -0.34, 0);
+    fpGun.localToWorld(v);
+    return v;
+  }
   if (heldGun) {
     const v = new THREE.Vector3(0, -0.34, 0);
     heldGun.localToWorld(v);
@@ -714,13 +774,15 @@ function fireOnce(w) {
     const end = from.clone().addScaledVector(dir, r.t);
     tracer(gunTip(), end);
     if (r.hit) {
-      impact(end, r.hit.kind === 'ped' || r.hit.kind === 'player' ? 'body' : r.hit.kind);
+      impact(end, (r.hit.kind === 'ped' || r.hit.kind === 'player' || r.hit.kind === 'cop') ? 'body' : r.hit.kind);
       if (r.hit.kind === 'ped') { hurtPed(r.hit.ped, w.dmg); struck = true; }
+      if (r.hit.kind === 'cop') { hurtCop(r.hit.cop, w.dmg); struck = true; }
       if (r.hit.kind === 'car') { hurtCar(r.hit.car, w.dmg); struck = true; }
       if (r.hit.kind === 'player' && net) { net.hit(r.hit.id, w.dmg); struck = true; }
     }
   }
   muzzle(gunTip(), w.id === 'shotgun' || w.id === 'sniper' ? 1.5 : 1);
+  snd.gunshot(w.id, 1);
   if (struck) flashReticle();
   cam.shake = Math.min(1, cam.shake + w.kick * 0.06);
   cam.pitch = clamp(cam.pitch + w.kick * 0.0045, -1.15, 0.72);
@@ -761,6 +823,8 @@ function stepGrenades(dt) {
 }
 function blast(pos, dmg, radius) {
   explode(pos);
+  const d = player.pos.distanceTo(pos);
+  snd.boom(Math.max(0.05, 1 - d / 160));
   cam.shake = Math.min(1.4, cam.shake + 1.1);
   if (traffic) {
     for (const p of traffic.peds) {
@@ -771,6 +835,12 @@ function blast(pos, dmg, radius) {
     for (const c of cars) {
       const d = Math.hypot(c.pos.x - pos.x, c.pos.z - pos.z);
       if (d < radius) hurtCar(c, dmg * (1 - d / radius));
+    }
+  }
+  if (police) {
+    for (const c of police.cops) {
+      const d = Math.hypot(c.x - pos.x, c.z - pos.z);
+      if (d < radius) hurtCop(c, dmg * (1 - d / radius));
     }
   }
   const dp = player.pos.distanceTo(pos);
@@ -792,6 +862,12 @@ function hurtPed(p, dmg) {
     p.idle = 0; p.speed = 3.4;                      // they run for it
     wanted(1);
   }
+}
+function hurtCop(c, dmg) {
+  if (c.hp <= 0) return;
+  c.hp -= dmg;
+  wanted(3);
+  if (c.hp <= 0) { player.cash += 40; say('An officer is down. That will not help.', 'sys'); }
 }
 function hurtCar(c, dmg) {
   c.hp = (c.hp === undefined ? 140 : c.hp) - dmg;
@@ -828,14 +904,41 @@ function flashReticle() {
   reticleT = 0.12;
 }
 
+/* ---- going down ---------------------------------------------------------- */
+let overT = 0;
+function gameOver(word, sub, cost) {
+  if (overT > 0) return;
+  overT = 3.4;
+  el('overword').textContent = word;
+  el('oversub').textContent = sub;
+  el('over').classList.toggle('busted', word === 'BUSTED');
+  el('over').classList.add('on');
+  player.vel.set(0, 0, 0);
+  if (player.car) { player.car.driver = null; player.car = null; el('speedo').style.display = 'none'; }
+  player.cash = Math.max(0, player.cash - (cost || 0));
+  if (police) police.clear();
+}
+function stepOver(dt) {
+  if (overT <= 0) return;
+  overT -= dt;
+  finalMat.uniforms.dead.value = Math.min(1, (3.4 - overT) * 1.4);
+  if (overT <= 0) {
+    overT = 0;
+    finalMat.uniforms.dead.value = 0;
+    el('over').classList.remove('on');
+    respawn();
+  }
+}
+
 function damage(n) {
+  if (overT > 0) return;
   if (player.armour > 0) { const take = Math.min(player.armour, n); player.armour -= take; n -= take; }
   player.hp = clamp(player.hp - n, 0, 100);
   cam.shake = Math.min(1, cam.shake + 0.3);
   const h = el('hurt');
   h.classList.add('on');
   setTimeout(() => h.classList.remove('on'), 60);
-  if (player.hp <= 0) respawn();
+  if (player.hp <= 0) gameOver('WASTED', 'you did not make it', 0);
 }
 function respawn() {
   player.hp = 100; player.armour = 0; player.stars = 0; drawStars();
@@ -865,13 +968,63 @@ function punchLands(w) {
   }
 }
 
+/* ---- the scope -----------------------------------------------------------
+   Aiming a rifle with a scope on it goes to the eye and narrows the view, which
+   is the whole point of a scope; everything else aims over the shoulder.      */
+let scoped = false, fovNow = 54;
+function stepScope(dt) {
+  const want = player.aiming && wep().scope && !player.car;
+  if (want !== scoped) {
+    scoped = want;
+    el('scope').classList.toggle('on', scoped);
+  }
+  const wantFov = scoped ? 14 : (player.aiming ? 46 : 54);
+  if (Math.abs(fovNow - wantFov) > 0.05) {
+    fovNow = lerp(fovNow, wantFov, 1 - Math.exp(-11 * dt));
+    camera.fov = fovNow;
+    camera.updateProjectionMatrix();
+  }
+  if (fpGun) fpGun.visible = cam.mode === 2 && !player.car && !scoped;
+}
+
 /* -------------------------------------------------------------- the camera -- */
 function stepCamera(dt) {
+  if (scoped) {
+    const dir = new THREE.Vector3(
+      -Math.sin(cam.yaw) * Math.cos(cam.pitch), Math.sin(cam.pitch), -Math.cos(cam.yaw) * Math.cos(cam.pitch));
+    camera.position.set(player.pos.x, player.pos.y + 1.64, player.pos.z);
+    cam.target.copy(camera.position).add(dir);
+    camera.lookAt(cam.target);
+    return;
+  }
   const inCar = !!player.car;
+  if (cam.mode === 2) {
+    // first person: the camera is the eye, so it is placed and pointed rather
+    // than swung round a point
+    const dir = new THREE.Vector3(
+      -Math.sin(cam.yaw) * Math.cos(cam.pitch), Math.sin(cam.pitch), -Math.cos(cam.yaw) * Math.cos(cam.pitch));
+    if (inCar) {
+      const c = player.car;
+      const fwd = new THREE.Vector3(-Math.sin(c.yaw), 0, -Math.cos(c.yaw));
+      const side = new THREE.Vector3(Math.cos(c.yaw), 0, -Math.sin(c.yaw));
+      camera.position.set(
+        c.pos.x - side.x * 0.36 + fwd.x * 0.15, c.pos.y + 1.16, c.pos.z - side.z * 0.36 + fwd.z * 0.15);
+    } else {
+      camera.position.set(player.pos.x, player.pos.y + 1.64, player.pos.z);
+    }
+    if (cam.shake > 0.001) {
+      camera.position.x += (Math.random() - 0.5) * cam.shake * 0.06;
+      camera.position.y += (Math.random() - 0.5) * cam.shake * 0.06;
+      cam.shake *= Math.exp(-6 * dt);
+    }
+    cam.target.copy(camera.position).add(dir);
+    camera.lookAt(cam.target);
+    return;
+  }
   const anchor = inCar
     ? new THREE.Vector3(player.car.pos.x, player.car.pos.y + 1.5, player.car.pos.z)
     : new THREE.Vector3(player.pos.x, player.pos.y + 1.5, player.pos.z);
-  const wantDist = cam.lock || (inCar ? 8.4 : (player.aiming ? 2.4 : 5.4));
+  const wantDist = cam.lock || (inCar ? CAM_DIST[cam.mode] + 3 : (player.aiming ? 2.4 : CAM_DIST[cam.mode]));
   cam.dist = lerp(cam.dist, wantDist, 1 - Math.exp(-7 * dt));
   cam.target.lerp(anchor, 1 - Math.exp(-16 * dt));
 
@@ -988,6 +1141,19 @@ function drawMap() {
   mg.translate(-(px + span / 2) * k, -(pz + span / 2) * k);
   mg.drawImage(mapBase, 0, 0);
 
+  // where the jobs are, and whatever the current one wants
+  if (missions) {
+    for (const s of missions.spots) {
+      if (!s.obj.visible) continue;
+      mg.fillStyle = '#ffd23f';
+      mg.beginPath(); mg.arc((s.x + span / 2) * k, (s.z + span / 2) * k, 4 / zoom, 0, 7); mg.fill();
+    }
+    for (const m of missions.marks) {
+      if (!m.obj.visible) continue;
+      mg.fillStyle = '#5ee0ff';
+      mg.beginPath(); mg.arc((m.x + span / 2) * k, (m.z + span / 2) * k, 4.5 / zoom, 0, 7); mg.fill();
+    }
+  }
   // other people in the world
   if (net && net.others) {
     mg.fillStyle = '#7fd1ff';
@@ -1052,9 +1218,68 @@ function hint(t) {
 }
 
 /* ------------------------------------------------------------------ pause --- */
+function drawBigMap() {
+  const c = el('bigmap');
+  if (!c || !mapBase) return;
+  const g = c.getContext('2d');
+  const S = c.width;
+  g.fillStyle = '#0d1014'; g.fillRect(0, 0, S, S);
+  g.drawImage(mapBase, 0, 0, S, S);
+  const span = CITY.grid * CITY.pitch + CITY.road;
+  const k = S / span;
+  const at = (x, z) => [(x + span / 2) * k, (z + span / 2) * k];
+  // the pickups, so the map is worth opening
+  if (pickups) {
+    for (const it of pickups.items) {
+      if (it.gone > 0) continue;
+      const p = at(it.x, it.z);
+      g.fillStyle = it.kind === 'health' ? '#4be05a' : it.kind === 'armour' ? '#4aa8f0'
+        : it.kind === 'cash' ? '#6ee07a' : '#f0c040';
+      g.fillRect(p[0] - 2.5, p[1] - 2.5, 5, 5);
+    }
+  }
+  if (missions) {
+    for (const s of missions.spots) {
+      if (!s.obj.visible) continue;
+      const p = at(s.x, s.z);
+      g.fillStyle = '#ffd23f';
+      g.beginPath(); g.arc(p[0], p[1], 5, 0, 7); g.fill();
+    }
+    for (const m of missions.marks) {
+      const p = at(m.x, m.z);
+      g.fillStyle = '#5ee0ff';
+      g.beginPath(); g.arc(p[0], p[1], 5, 0, 7); g.fill();
+    }
+  }
+  if (police) {
+    g.fillStyle = '#5a9cff';
+    for (const u of police.units) {
+      const p = at(u.car.pos.x, u.car.pos.z);
+      g.beginPath(); g.arc(p[0], p[1], 4, 0, 7); g.fill();
+    }
+  }
+  if (net && net.others) {
+    g.fillStyle = '#7fd1ff';
+    for (const o of net.others.values()) {
+      if (!o.g) continue;
+      const p = at(o.g.position.x, o.g.position.z);
+      g.beginPath(); g.arc(p[0], p[1], 4, 0, 7); g.fill();
+    }
+  }
+  const me = at(player.car ? player.car.pos.x : player.pos.x, player.car ? player.car.pos.z : player.pos.z);
+  g.save();
+  g.translate(me[0], me[1]);
+  g.rotate(-(player.car ? player.car.yaw : player.look) + Math.PI);
+  g.fillStyle = '#ffffff'; g.strokeStyle = 'rgba(0,0,0,.8)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(0, -9); g.lineTo(6, 8); g.lineTo(0, 4); g.lineTo(-6, 8); g.closePath();
+  g.fill(); g.stroke();
+  g.restore();
+}
+
 function setPaused(v) {
   paused = v;
   el('pause').classList.toggle('on', v);
+  if (v) drawBigMap();
   if (v) document.exitPointerLock();
   else renderer.domElement.requestPointerLock();
 }
@@ -1079,7 +1304,8 @@ function frame() {
 function simulate(dt, now) {
   const slow = wheelOn ? 0.22 : 1;
   const sdt = dt * slow;
-  if (!paused && !chatting) {
+  stepOver(dt);
+  if (!paused && !chatting && overT <= 0) {
     if (player.car) stepCar(player.car, sdt);
     else stepPlayer(sdt);
     stepGrenades(sdt);
@@ -1093,6 +1319,7 @@ function simulate(dt, now) {
       firedThisClick = true;
       if (w.melee) {
         meleeT = w.rate; meleeArm = meleeArm ? 0 : 1;
+        snd.punch();
         fireCool = w.rate;
         setTimeout(() => punchLands(w), 150);
       } else if (w.in > 0) {
@@ -1107,10 +1334,26 @@ function simulate(dt, now) {
       }
     }
   }
+  if (pickups && !paused && !chatting && overT <= 0) pickups.step(dt, player, takePickup);
+  if (missions && !paused && !chatting && overT <= 0) missions.step(dt);
+  smokeT -= dt;
+  if (smokeT <= 0) {
+    smokeT = 0.22;
+    for (const c of cars) {
+      if (!c.group.visible || c.hp === undefined || c.hp > 55) continue;
+      if (Math.random() > 0.5) continue;
+      smoke(new THREE.Vector3(c.pos.x + (Math.random() - 0.5), c.pos.y + 1.1, c.pos.z + (Math.random() - 0.5)));
+    }
+  }
   if (traffic && !paused && !chatting) {
     const eye = player.car ? player.car.pos : player.pos;
     traffic.step(dt, eye, now / 1000, player.car);
+    if (police && overT <= 0) {
+      police.step(dt, player, player.stars, now / 1000,
+        () => gameOver('BUSTED', 'the police took you in', Math.round(player.cash * 0.3)));
+    }
   }
+  stepScope(dt);
   stepCamera(dt);
   stepSky(dt);
 
@@ -1118,10 +1361,14 @@ function simulate(dt, now) {
   if (player.car) {
     player.model.visible = false;
   } else {
-    player.model.visible = true;
+    // out of sight in the eye view, and hidden when the camera has been shoved
+    // right up against the back of his head by a wall
+    const near = camera.position.distanceTo(cam.target) < 1.5;
+    player.model.visible = cam.mode !== 2 && !scoped && !near;
     player.model.position.set(player.pos.x, player.pos.y, player.pos.z);
     player.model.rotation.y = player.look;
     if (meleeT > 0) posePunch(player.model, 1 - meleeT / wep().rate, meleeArm);
+    else if (!player.onGround) poseJump(player.model, player.vel.y * 0.2);
     else if (player.aiming) poseAim(player.model, cam.pitch);
     else if (player.speed > 0.4) poseWalk(player.model, player.walkT, Math.min(1, player.speed / SPRINT));
     else poseIdle(player.model, now / 1000);
@@ -1129,6 +1376,7 @@ function simulate(dt, now) {
 
   if (reticleT > 0) { reticleT -= dt; if (reticleT <= 0) el('reticle').classList.remove('hit'); }
   stepFx(dt, camera);
+  stepSound(dt);
   if (net) net.tick(dt);
   if (city.tick) city.tick(now / 1000);
 }
@@ -1147,17 +1395,73 @@ function drawHud(now) {
   el('hpbar').style.transform = 'scaleX(' + (player.hp / 100) + ')';
   el('apbar').style.transform = 'scaleX(' + (player.armour / 100) + ')';
   el('cash').textContent = '$' + player.cash.toLocaleString();
-  el('reticle').classList.toggle('on', player.aiming && !player.car && !wep().melee);
+  el('reticle').classList.toggle('on', player.aiming && !player.car && !wep().melee && !scoped);
   if (player.car) {
     const mph = Math.abs(player.car.speed) * 2.237;
     el('spd').textContent = Math.round(mph);
     el('gear').textContent = player.car.speed < -0.2 ? 'R' : 'D';
   }
+  if (missions) {
+    const line = missions.hud();
+    el('job').innerHTML = line;
+    el('job').classList.toggle('on', !!line);
+  }
   drawMap();
+}
+
+/* ------------------------------------------------------------------ radio --- */
+let radioOn = false, radioIdx = 0, smokeT = 0;
+function cycleRadio() {
+  if (!player.car) { hint('Get in a car first'); return; }
+  if (!radioOn) { radioOn = true; radioIdx = 0; }
+  else if (radioIdx + 1 < snd.stationNames.length) radioIdx++;
+  else { radioOn = false; }
+  snd.radio(radioOn, radioIdx);
+  showRadio();
+}
+function showRadio() {
+  const r = el('radio');
+  r.style.display = player.car ? 'block' : 'none';
+  r.innerHTML = radioOn ? 'radio<br><b>' + snd.stationNames[radioIdx] + '</b>' : 'radio<br><b>off</b>';
+}
+
+/* ------------------------------------------------------------------ sound --- */
+let footPhase = 0, ambienceAt = 0;
+function stepSound(dt) {
+  if (!snd.isOn()) return;
+  const c = player.car;
+  snd.engine(!!c, c ? c.speed : 0, c ? c.kind.top : 1, c ? ((keys['w'] ? 1 : 0) + (keys['s'] ? 0.5 : 0)) : 0);
+  snd.tyres(!!c && !!keys['shift'] && Math.abs(c.speed) > 6);
+  // a step every half cycle of the walk, and none at all in the air
+  if (!c && player.onGround && player.speed > 0.5) {
+    footPhase += player.speed * dt * 1.5;
+    if (footPhase > Math.PI) {
+      footPhase -= Math.PI;
+      snd.footstep(player.speed > 7);
+    }
+  }
+  // the nearest siren, quieter the further off it is
+  let loud = 0;
+  if (police) {
+    for (const u of police.units) {
+      if (u.car.hp <= 0) continue;
+      const d = Math.hypot(u.car.pos.x - player.pos.x, u.car.pos.z - player.pos.z);
+      loud = Math.max(loud, Math.max(0, 1 - d / 150));
+    }
+  }
+  snd.sirens(dt, loud);
+  snd.radioTick();
+  if (radioOn && !player.car) { snd.radio(false); }
+  ambienceAt -= dt;
+  if (ambienceAt <= 0) {
+    ambienceAt = 2;
+    snd.city(1 - Math.min(1, Math.abs(player.pos.x) / CITY.half), clock > 20 || clock < 6);
+  }
 }
 
 /* ------------------------------------------------------------------ start --- */
 async function start() {
+  snd.start();                                  // the click that got us here is the gesture
   el('loadline').textContent = 'laying out the streets…';
   await new Promise(r => setTimeout(r, 30));
   city = buildCity(scene, CITY_SEED, () => {});
@@ -1172,6 +1476,13 @@ async function start() {
   player.model = makePerson(0x2a3a6a, 0xe0b48c);
   scene.add(player.model);
   initFx(scene);
+  police = makePolice({
+    scene, solids, groundAt, hitsSolid, damage, cars,
+    fx: { explode, tracer, muzzle, impact },
+    sound: snd,
+  });
+  pickups = makePickups(scene, 7, groundAt);
+  missions = makeMissions({ scene, player, groundAt, hint, say, traffic, snd });
   buildWheel();
   drawStars();
   showGun();
@@ -1205,7 +1516,7 @@ window.__gta = {
   get player(){ return player; },
   get cars(){ return cars; },
   get city(){ return city; },
-  get cam(){ return cam; },
+  get cam(){ cam.fov = camera.fov; return cam; },
   get started(){ return started; },
   start, setPaused, toggleCar, setWeapon, say, reload,
   fire(){ const w = wep(); if (w.melee || w.in <= 0) return; w.in--; if (w.lob) throwGrenade(); else fireOnce(w); hudWeapon(); },
@@ -1214,8 +1525,17 @@ window.__gta = {
   tp(x,z){ player.pos.set(x, groundAt(x,z), z); player.vel.set(0,0,0);
     cam.target.set(x, player.pos.y + 1.5, z); },
   get traffic(){ return traffic; },
+  get net(){ return net; },
+  get police(){ return police; },
+  get pickups(){ return pickups; },
+  get missions(){ return missions; },
+  job(kind){ missions.start(kind || 'courier'); },
+  camMode(m){ cam.mode = m; showGun(); },
+  get cam2(){ return { fov: camera.fov }; },
+  radio(){ cycleRadio(); },
+  bust(){ gameOver('BUSTED', 'the police took you in', 0); },
   stats(){ return { pos:[+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)],
-    hp:player.hp, stars:player.stars, car:!!player.car, speed:player.car?+player.car.speed.toFixed(2):0,
+    hp:player.hp, stars:player.stars, heat:police?police.count:0, down:overT>0, car:!!player.car, speed:player.car?+player.car.speed.toFixed(2):0,
     solids:solids.length, cars:cars.length, peds:traffic?traffic.peds.length:0, weapon:wep().name, ammo:wep().in, clock:+clock.toFixed(1) }; },
   key(k, on){ keys[k] = !!on; },
   step(n, dt){ for (let i = 0; i < (n || 1); i++) simulate(dt || 0.05, performance.now()); },
