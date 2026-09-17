@@ -4858,6 +4858,19 @@ function buildHeldBlock(id){
     vmScene.add(vmBlock); return;
   }
   const bl=BLOCKS[id];
+  // A barrier is mostly nothing, so a cube of it in the hand is a mess of red edges.
+  // Minecraft holds it as the flat sign it is, and so does this.
+  if(bl && bl.barrier){
+    const c=document.createElement('canvas'); c.width=c.height=16;
+    const g=c.getContext('2d');
+    const idx=tileIndex['barrier'], ox=(idx%ATLAS_COLS)*TILE, oy=((idx/ATLAS_COLS)|0)*TILE;
+    g.drawImage(atlasCanvas, ox, oy, TILE, TILE, 0, 0, 16, 16);
+    const tex=new THREE.CanvasTexture(c);
+    tex.magFilter=tex.minFilter=THREE.NearestFilter;
+    vmBlock=new THREE.Mesh(new THREE.PlaneGeometry(0.62,0.62),
+      new THREE.MeshBasicMaterial({ map:tex, transparent:true, alphaTest:0.4, side:THREE.DoubleSide }));
+    vmScene.add(vmBlock); return;
+  }
   if(bl.model && prgModel){ vmBlock=new THREE.Mesh(prgModel.geo, prgModel.mat); vmBlock.userData.shared=true; vmScene.add(vmBlock); return; }   // hold the PRG sphere
   const geo=new THREE.BoxGeometry(1,1,1);
   const faceArg=[2,2,0,1,2,2]; const uv=geo.attributes.uv;   // box: +x,-x,+y,-y,+z,-z
