@@ -249,6 +249,19 @@ export function poseSit(g) {
   u.hips.position.y = HIP_Y - 0.30;
 }
 
+// in the air: legs tucked, arms out for balance
+export function poseJump(g, rise) {
+  const u = g.userData; rest(u);
+  const k = Math.max(-1, Math.min(1, rise));
+  u.legL.hip.rotation.x = -0.55 + k * 0.3; u.legL.knee.rotation.x = -0.9 - k * 0.3;
+  u.legR.hip.rotation.x = 0.25 - k * 0.2; u.legR.knee.rotation.x = -0.35;
+  u.armL.sh.rotation.set(-0.5 - k * 0.6, 0, 0.5);
+  u.armR.sh.rotation.set(-0.5 - k * 0.6, 0, -0.5);
+  u.armL.elbow.rotation.x = -0.5; u.armR.elbow.rotation.x = -0.5;
+  u.torso.rotation.x = 0.1 - k * 0.12;
+  u.hips.position.y = HIP_Y;
+}
+
 // a punch, and the wind up to it: t runs 0 to 1
 export function posePunch(g, t, arm) {
   const u = g.userData; rest(u);
