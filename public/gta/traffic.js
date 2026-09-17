@@ -31,7 +31,8 @@ const SHIRTS = [0x2a3a6a, 0x8a2a2a, 0x2e6b4a, 0xd0d0d0, 0x3b3b42, 0x7a4f9a, 0xc0
 const SKINS = [0xe8c39a, 0xd9a877, 0xb07a4e, 0x8a5a36, 0x5f3b22, 0xf0d2b4];
 const TROUSERS = [0x23262e, 0x3a4152, 0x5a4632, 0x2c2c30, 0x6a6a72];
 
-export function makeTraffic(scene, city, seed) {
+export function makeTraffic(scene, city, seed, hooks) {
+  const hook = hooks || {};
   let s = seed >>> 0;
   const r = () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
   const pick = a => a[(r() * a.length) | 0];
@@ -147,11 +148,33 @@ export function makeTraffic(scene, city, seed) {
     const p = {
       g, x0: -CITY.half + CITY.road / 2 + bx * CITY.pitch, z0: -CITY.half + CITY.road / 2 + bz * CITY.pitch,
       t: r() * LOOP, dir: r() < 0.5 ? 1 : -1, speed: 1.15 + r() * 0.55,
-      phase: r() * 6.28, idle: 0, hp: 100, dead: 0, base: 1.15 + r() * 0.55,
+      phase: r() * 6.28, idle: 0, hp: 100, dead: 0, flee: 0, base: 1.15 + r() * 0.55,
     };
     pedPlace(p);
     scene.add(g);
     peds.push(p);
+  }
+
+  /* Something loud happened: everybody nearby turns round and runs. Reversing
+     the way they were walking is enough - what reads as panic is the speed and
+     the fact that they all do it at once. */
+  function panic(x, z, radius) {
+    for (const p of peds) {
+      if (p.dead) continue;
+      const d = Math.hypot(p.g.position.x - x, p.g.position.z - z);
+      if (d > (radius || 26)) continue;
+      p.idle = 0;
+      p.speed = 4.4 + Math.random() * 1.2;
+      p.flee = 5 + Math.random() * 4;
+      // run whichever way round the block leads away from the noise
+      const ahead = p.dir;
+      const nx = p.g.position.x - x, nz = p.g.position.z - z;
+      const face = Math.atan2(-nx, -nz);
+      let diff = face - p.g.rotation.y;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      if (Math.abs(diff) < Math.PI / 2) p.dir = -ahead;
+    }
   }
 
   /* ---- the step ----------------------------------------------------------- */
@@ -220,6 +243,18 @@ export function makeTraffic(scene, city, seed) {
 
       if (left <= 0.4) { turn(a); }
       place(a);
+      // walking in front of traffic: they brake, and if they cannot, it hurts
+      if (hook.player && !hook.player.car) {
+        const pd = a.axis === 'z' ? (hook.player.pos.z - a.at) * a.dir : (hook.player.pos.x - a.at) * a.dir;
+        const side = a.axis === 'z'
+          ? Math.abs(hook.player.pos.x - c.pos.x) : Math.abs(hook.player.pos.z - c.pos.z);
+        if (side < 2.4 && pd > 0 && pd < 10) c.speed = Math.max(0, c.speed - 26 * dt);
+        if (side < 1.5 && pd > -1.6 && pd < 2.6 && c.speed > 3.5 && hook.damage) {
+          hook.damage(6 + c.speed * 1.5);
+          c.speed *= 0.35;
+          if (hook.hit) hook.hit(c);
+        }
+      }
       if (!far) c.apply();
     }
 
@@ -240,16 +275,20 @@ export function makeTraffic(scene, city, seed) {
         } else if (p.dead <= 0) { p.dead = 0.5; }
         continue;
       }
+      if (p.flee > 0) {
+        p.flee -= dt;
+        if (p.flee <= 0) p.speed = p.base;
+      }
       if (far) continue;
-      if (p.speed > p.base) p.speed = Math.max(p.base, p.speed - dt * 0.5);
+      if (p.flee <= 0 && p.speed > p.base) p.speed = Math.max(p.base, p.speed - dt * 0.5);
       if (p.idle > 0) { p.idle -= dt; poseIdle(p.g, t + p.phase); continue; }
       if (Math.random() < dt * 0.02) { p.idle = 1 + Math.random() * 4; continue; }
       p.t += p.speed * p.dir * dt;
       p.phase += p.speed * dt * 1.55;
       pedPlace(p);
-      poseWalk(p.g, p.phase, 0.12);
+      poseWalk(p.g, p.phase, p.flee > 0 ? 0.85 : 0.12);
     }
   }
 
-  return { cars, ai, peds, step };
+  return { cars, ai, peds, step, panic };
 }

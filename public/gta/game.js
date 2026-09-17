@@ -3,7 +3,7 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 import { buildCity, CITY, rng } from './city.js';
-import { makePerson, poseWalk, poseIdle, poseAim, poseSit, posePunch, poseJump } from './person.js';
+import { makePerson, poseWalk, poseIdle, poseAim, poseSit, posePunch, poseJump, poseCrouch } from './person.js';
 import { makeCar, CAR_KINDS, beamMat, headMat } from './vehicle.js';
 import { makeTraffic } from './traffic.js';
 import { initFx, muzzle, tracer, impact, explode, smoke, stepFx } from './fx.js';
@@ -11,6 +11,8 @@ import { makePolice } from './police.js';
 import * as snd from './audio.js';
 import { makePickups } from './pickups.js';
 import { makeMissions } from './missions.js';
+import { makeWeather } from './weather.js';
+import { makeShops } from './shops.js';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -276,7 +278,7 @@ const player = {
   onGround: false,
   h: 1.82, r: 0.34,
   hp: 100, armour: 0, cash: 0, stars: 0,
-  sprint: false, aiming: false, walkT: 0, speed: 0,
+  sprint: false, aiming: false, walkT: 0, speed: 0, wind: 1, crouch: false, hurtAt: 0,
   car: null,                    // the car being driven, if any
   model: null,
 };
@@ -284,7 +286,7 @@ const cam = { yaw: 0, pitch: -0.12, dist: 5.4, target: new THREE.Vector3(), shak
 const CAM_DIST = [5.4, 8.2, 0];
 
 /* -------------------------------------------------------------- pickups ----- */
-let pickups = null, missions = null;
+let pickups = null, missions = null, weather = null;
 function takePickup(kind, label) {
   if (kind === 'health') player.hp = clamp(player.hp + 25, 0, 100);
   if (kind === 'armour') player.armour = clamp(player.armour + 50, 0, 100);
@@ -311,6 +313,13 @@ addEventListener('keydown', e => {
     return;
   }
   keys[k] = true;
+  if (shops && shops.near && k >= '1' && k <= '7' && !paused) {
+    if (shops.buy(+k - 1)) { showShop(); }
+    e.preventDefault();
+    return;
+  }
+  if (k === 'control' && !paused) player.crouch = !player.crouch;
+  if (k === 'h' && !paused && player.car) { snd.horn(); if (traffic) traffic.panic(player.car.pos.x, player.car.pos.z, 14); }
   if (k === 't' && !paused) { openChat(); e.preventDefault(); }
   if (k === 'escape') { setPaused(!paused); e.preventDefault(); }
   if (k === 'f' && !paused) { toggleCar(); e.preventDefault(); }
@@ -557,15 +566,18 @@ function stepPlayer(dt) {
   const moving = wish.lengthSq() > 0;
   if (moving) wish.normalize();
 
-  player.sprint = !!keys['shift'] && !player.aiming;
-  const want = player.aiming ? WALK : player.sprint ? SPRINT : RUN;
+  // sprinting runs down, then you are back to a jog until you get your breath
+  if (player.sprint) player.wind = Math.max(0, player.wind - dt * 0.14);
+  else player.wind = Math.min(1, player.wind + dt * 0.09);
+  player.sprint = !!keys['shift'] && !player.aiming && player.wind > 0.02;
+  const want = player.crouch ? 1.9 : player.aiming ? WALK : player.sprint ? SPRINT : RUN;
   const target = wish.multiplyScalar(moving ? want : 0);
   const accel = player.onGround ? 14 : 3.5;
   player.vel.x = lerp(player.vel.x, target.x, 1 - Math.exp(-accel * dt));
   player.vel.z = lerp(player.vel.z, target.z, 1 - Math.exp(-accel * dt));
 
   player.vel.y -= GRAV * dt;
-  if (keys[' '] && player.onGround) { player.vel.y = JUMP; player.onGround = false; }
+  if (keys[' '] && player.onGround && !player.crouch) { player.vel.y = JUMP; player.onGround = false; }
 
   // move, axis at a time, so sliding along a wall works
   const p = player.pos;
@@ -783,6 +795,7 @@ function fireOnce(w) {
   }
   muzzle(gunTip(), w.id === 'shotgun' || w.id === 'sniper' ? 1.5 : 1);
   snd.gunshot(w.id, 1);
+  if (traffic) traffic.panic(player.pos.x, player.pos.z, 30);
   if (struck) flashReticle();
   cam.shake = Math.min(1, cam.shake + w.kick * 0.06);
   cam.pitch = clamp(cam.pitch + w.kick * 0.0045, -1.15, 0.72);
@@ -823,6 +836,7 @@ function stepGrenades(dt) {
 }
 function blast(pos, dmg, radius) {
   explode(pos);
+  if (traffic) traffic.panic(pos.x, pos.z, 55);
   const d = player.pos.distanceTo(pos);
   snd.boom(Math.max(0.05, 1 - d / 160));
   cam.shake = Math.min(1.4, cam.shake + 1.1);
@@ -934,6 +948,7 @@ function damage(n) {
   if (overT > 0) return;
   if (player.armour > 0) { const take = Math.min(player.armour, n); player.armour -= take; n -= take; }
   player.hp = clamp(player.hp - n, 0, 100);
+  player.hurtAt = performance.now();
   cam.shake = Math.min(1, cam.shake + 0.3);
   const h = el('hurt');
   h.classList.add('on');
@@ -1010,7 +1025,7 @@ function stepCamera(dt) {
       camera.position.set(
         c.pos.x - side.x * 0.36 + fwd.x * 0.15, c.pos.y + 1.16, c.pos.z - side.z * 0.36 + fwd.z * 0.15);
     } else {
-      camera.position.set(player.pos.x, player.pos.y + 1.64, player.pos.z);
+      camera.position.set(player.pos.x, player.pos.y + (player.crouch ? 1.12 : 1.64), player.pos.z);
     }
     if (cam.shake > 0.001) {
       camera.position.x += (Math.random() - 0.5) * cam.shake * 0.06;
@@ -1023,7 +1038,7 @@ function stepCamera(dt) {
   }
   const anchor = inCar
     ? new THREE.Vector3(player.car.pos.x, player.car.pos.y + 1.5, player.car.pos.z)
-    : new THREE.Vector3(player.pos.x, player.pos.y + 1.5, player.pos.z);
+    : new THREE.Vector3(player.pos.x, player.pos.y + (player.crouch ? 1.1 : 1.5), player.pos.z);
   const wantDist = cam.lock || (inCar ? CAM_DIST[cam.mode] + 3 : (player.aiming ? 2.4 : CAM_DIST[cam.mode]));
   cam.dist = lerp(cam.dist, wantDist, 1 - Math.exp(-7 * dt));
   cam.target.lerp(anchor, 1 - Math.exp(-16 * dt));
@@ -1079,6 +1094,21 @@ function stepSky(dt) {
   skyUniforms.top.value.copy(top);
   skyUniforms.bottom.value.copy(bot);
   skyUniforms.drift.value += dt * 0.0016;
+  if (weather) {
+    const w = weather.step(dt, camera, night > 0.5, () => snd.boom(0.55));
+    // rain flattens the sky, closes the fog in and wets the road
+    skyUniforms.cover.value = 0.42 + w.rain * 0.55;
+    scene.fog.far *= 1 - w.rain * 0.45;
+    scene.fog.near *= 1 - w.rain * 0.4;
+    sun.intensity *= 1 - w.rain * 0.72;
+    hemi.intensity *= 1 - w.rain * 0.2;
+    if (city.setWet) city.setWet(w.rain);
+    if (w.flash > 0) {
+      fill.intensity += w.flash * 2.6;
+      hemi.intensity += w.flash * 1.6;
+    }
+    finalMat.uniforms.bloom.value = 0.5 + w.rain * 0.25;
+  }
   skyUniforms.cloudLit.value.setHSL(0.10, 0.22 * (1 - day) + 0.06, lerp(0.10, 0.95, day));
   skyUniforms.cloudDark.value.setHSL(0.60, 0.20, lerp(0.05, 0.62, day));
   skyUniforms.sun.value.copy(sun.position).normalize();
@@ -1146,6 +1176,10 @@ function drawMap() {
     for (const s of missions.spots) {
       if (!s.obj.visible) continue;
       mg.fillStyle = '#ffd23f';
+      mg.beginPath(); mg.arc((s.x + span / 2) * k, (s.z + span / 2) * k, 4 / zoom, 0, 7); mg.fill();
+    }
+    if (shops) for (const s of shops.spots) {
+      mg.fillStyle = '#66ff9a';
       mg.beginPath(); mg.arc((s.x + span / 2) * k, (s.z + span / 2) * k, 4 / zoom, 0, 7); mg.fill();
     }
     for (const m of missions.marks) {
@@ -1245,6 +1279,11 @@ function drawBigMap() {
       g.fillStyle = '#ffd23f';
       g.beginPath(); g.arc(p[0], p[1], 5, 0, 7); g.fill();
     }
+    if (shops) for (const s of shops.spots) {
+      const p = at(s.x, s.z);
+      g.fillStyle = '#66ff9a';
+      g.beginPath(); g.arc(p[0], p[1], 5, 0, 7); g.fill();
+    }
     for (const m of missions.marks) {
       const p = at(m.x, m.z);
       g.fillStyle = '#5ee0ff';
@@ -1305,6 +1344,10 @@ function simulate(dt, now) {
   const slow = wheelOn ? 0.22 : 1;
   const sdt = dt * slow;
   stepOver(dt);
+  // health creeps back to half if nobody has touched you for a while
+  if (player.hp > 0 && player.hp < 50 && now - player.hurtAt > 6000) {
+    player.hp = Math.min(50, player.hp + dt * 4);
+  }
   if (!paused && !chatting && overT <= 0) {
     if (player.car) stepCar(player.car, sdt);
     else stepPlayer(sdt);
@@ -1336,6 +1379,12 @@ function simulate(dt, now) {
   }
   if (pickups && !paused && !chatting && overT <= 0) pickups.step(dt, player, takePickup);
   if (missions && !paused && !chatting && overT <= 0) missions.step(dt);
+  if (shops && !paused && !chatting && overT <= 0) {
+    const was = shops.near;
+    shops.step(dt, now / 1000);
+    if (shops.near !== was) showShop();
+    else if (shops.near) showShop();
+  }
   smokeT -= dt;
   if (smokeT <= 0) {
     smokeT = 0.22;
@@ -1369,6 +1418,7 @@ function simulate(dt, now) {
     player.model.rotation.y = player.look;
     if (meleeT > 0) posePunch(player.model, 1 - meleeT / wep().rate, meleeArm);
     else if (!player.onGround) poseJump(player.model, player.vel.y * 0.2);
+    else if (player.crouch) poseCrouch(player.model, player.walkT, player.speed > 0.4);
     else if (player.aiming) poseAim(player.model, cam.pitch);
     else if (player.speed > 0.4) poseWalk(player.model, player.walkT, Math.min(1, player.speed / SPRINT));
     else poseIdle(player.model, now / 1000);
@@ -1407,6 +1457,14 @@ function drawHud(now) {
     el('job').classList.toggle('on', !!line);
   }
   drawMap();
+}
+
+/* ------------------------------------------------------------------- shop --- */
+let shops = null;
+function showShop() {
+  const on = !!(shops && shops.near);
+  el('shop').classList.toggle('on', on);
+  if (on) el('shop').innerHTML = shops.panel();
 }
 
 /* ------------------------------------------------------------------ radio --- */
@@ -1469,7 +1527,11 @@ async function start() {
 
   el('loadline').textContent = 'putting the traffic out…';
   await new Promise(r => setTimeout(r, 20));
-  traffic = makeTraffic(scene, city, 99);
+  traffic = makeTraffic(scene, city, 99, {
+    player,
+    damage,
+    hit(c) { cam.shake = Math.min(1.2, cam.shake + 0.8); snd.crash(0.6); },
+  });
   for (const c of traffic.cars) cars.push(c);
 
   el('loadline').textContent = 'almost there…';
@@ -1481,8 +1543,10 @@ async function start() {
     fx: { explode, tracer, muzzle, impact },
     sound: snd,
   });
+  weather = makeWeather(scene);
   pickups = makePickups(scene, 7, groundAt);
   missions = makeMissions({ scene, player, groundAt, hint, say, traffic, snd });
+  shops = makeShops({ scene, player, groundAt, weapons: WEAPONS, hint, say, snd });
   buildWheel();
   drawStars();
   showGun();
@@ -1529,6 +1593,10 @@ window.__gta = {
   get police(){ return police; },
   get pickups(){ return pickups; },
   get missions(){ return missions; },
+  get weather(){ return weather; },
+  get shops(){ return shops; },
+  crouch(v){ player.crouch = !!v; },
+  setRain(v){ weather.set(v); },
   job(kind){ missions.start(kind || 'courier'); },
   camMode(m){ cam.mode = m; showGun(); },
   get cam2(){ return { fov: camera.fov }; },
@@ -1536,7 +1604,7 @@ window.__gta = {
   bust(){ gameOver('BUSTED', 'the police took you in', 0); },
   stats(){ return { pos:[+player.pos.x.toFixed(2),+player.pos.y.toFixed(2),+player.pos.z.toFixed(2)],
     hp:player.hp, stars:player.stars, heat:police?police.count:0, down:overT>0, car:!!player.car, speed:player.car?+player.car.speed.toFixed(2):0,
-    solids:solids.length, cars:cars.length, peds:traffic?traffic.peds.length:0, weapon:wep().name, ammo:wep().in, clock:+clock.toFixed(1) }; },
+    solids:solids.length, cars:cars.length, peds:traffic?traffic.peds.length:0, weapon:wep().name, ammo:wep().in, spare:wep().ammo, armour:player.armour, cash:player.cash, clock:+clock.toFixed(1) }; },
   key(k, on){ keys[k] = !!on; },
   step(n, dt){ for (let i = 0; i < (n || 1); i++) simulate(dt || 0.05, performance.now()); },
   perf(){ const t0 = performance.now(); scene.updateMatrixWorld(true); const t1 = performance.now();

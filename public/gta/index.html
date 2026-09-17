@@ -112,6 +112,20 @@
   #reticle i:nth-child(3){ top:13px; left:0;    height:2px; width:9px; }
   #reticle i:nth-child(4){ top:13px; right:0;   height:2px; width:9px; }
 
+  #shop{
+    position:absolute; right:26px; bottom:220px; width:270px; display:none;
+    background:rgba(4,6,10,.7); border-left:3px solid var(--cash); padding:12px 14px;
+    font-family:var(--hud); font-size:13px; letter-spacing:1px;
+  }
+  #shop.on{ display:block; }
+  #shop .t{ font-size:15px; letter-spacing:3px; text-transform:uppercase; color:#fff; margin-bottom:8px; }
+  #shop .r{ display:flex; gap:9px; align-items:baseline; color:rgba(255,255,255,.78); padding:2px 0; }
+  #shop .r b{ color:var(--star); font-weight:600; width:12px; }
+  #shop .r span{ flex:1; }
+  #shop .r i{ font-style:normal; color:var(--cash); font-variant-numeric:tabular-nums; }
+  #shop .r.no{ color:rgba(255,255,255,.3); }
+  #shop .r.no i{ color:rgba(255,255,255,.3); }
+
   #job{
     position:absolute; left:50%; top:22px; transform:translateX(-50%);
     font-family:var(--hud); font-size:14px; letter-spacing:2px; text-transform:uppercase;
@@ -262,6 +276,7 @@
   <div id="speedo"><div class="v" id="spd">0</div><div class="u">mph</div><div class="gear" id="gear"></div></div>
   <div id="radio"></div>
   <div id="job"></div>
+  <div id="shop"></div>
   <div id="hint"></div>
   <div id="chat">
     <div id="chatlog"></div>
@@ -292,6 +307,8 @@
       <b>Q</b><span>weapon wheel</span>
       <b>1 - 7</b><span>change weapon</span>
       <b>V</b><span>camera: near, far, first person</span>
+      <b>Ctrl</b><span>crouch</span>
+      <b>H</b><span>horn</span>
       <b>B</b><span>car radio</span>
       <b>M</b><span>sound on or off</span>
       <b>T</b><span>chat</span>

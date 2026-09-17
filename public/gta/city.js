@@ -423,10 +423,8 @@ export function buildCity(scene, seed, onProgress) {
   const roadAt = function (i) { return -CITY.half + i * CITY.pitch; };
 
   // ---- the road surface -----------------------------------------------------
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(span + 400, span + 400),
-    new THREE.MeshStandardMaterial({ map: asphaltTex(), roughness: 0.92, metalness: 0.02 })
-  );
+  const groundMat = new THREE.MeshStandardMaterial({ map: asphaltTex(), roughness: 0.92, metalness: 0.02 });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(span + 400, span + 400), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   group.add(ground);
@@ -776,6 +774,13 @@ export function buildCity(scene, seed, onProgress) {
       bulbMat.emissiveIntensity = v * 2.6;
       poolMat.uniforms.uStrength.value = Math.max(0, v - 0.18) * 0.95;
       bulbMat.color.setHex(v > 0.35 ? 0xffe9b0 : 0x2a2a28);
+    },
+    // wet tarmac is a mirror, which is most of what rain looks like at night
+    setWet: function (v) {
+      groundMat.roughness = 0.92 - v * 0.58;
+      groundMat.metalness = 0.02 + v * 0.45;
+      paveMat.roughness = 0.94 - v * 0.42;
+      paveMat.metalness = 0.02 + v * 0.22;
     },
     tick: function (t) {
       // the lights run on a twenty second cycle, the two axes out of step
