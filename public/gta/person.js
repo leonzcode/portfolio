@@ -249,6 +249,23 @@ export function poseSit(g) {
   u.hips.position.y = HIP_Y - 0.30;
 }
 
+// down on one knee's worth of crouch: smaller, slower, steadier
+export function poseCrouch(g, phase, moving) {
+  const u = g.userData; rest(u);
+  const s = Math.sin(phase), c = Math.cos(phase);
+  u.hips.position.y = HIP_Y - 0.36;
+  u.legL.hip.rotation.x = 0.62 + (moving ? s * 0.34 : 0);
+  u.legR.hip.rotation.x = 0.62 - (moving ? s * 0.34 : 0);
+  u.legL.knee.rotation.x = -1.28 - (moving ? Math.max(0, -s) * 0.3 : 0);
+  u.legR.knee.rotation.x = -1.28 - (moving ? Math.max(0, s) * 0.3 : 0);
+  u.legL.foot.rotation.x = 0.5; u.legR.foot.rotation.x = 0.5;
+  u.torso.rotation.x = 0.22;
+  u.armL.sh.rotation.set(-0.5 + (moving ? -s * 0.2 : 0), 0, 0.2);
+  u.armR.sh.rotation.set(-0.5 + (moving ? s * 0.2 : 0), 0, -0.2);
+  u.armL.elbow.rotation.x = -1.0; u.armR.elbow.rotation.x = -1.0;
+  if (moving) u.hips.position.y -= Math.abs(c) * 0.03;
+}
+
 // in the air: legs tucked, arms out for balance
 export function poseJump(g, rise) {
   const u = g.userData; rest(u);

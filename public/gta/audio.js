@@ -283,4 +283,19 @@ export function radioTick() {
   }
 }
 
+export function horn() {
+  if (!ready) return;
+  const t = ac.currentTime;
+  for (const f of [392, 494]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'square'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.14, t + 0.02);
+    g.gain.setValueAtTime(0.14, t + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.45);
+  }
+}
+
 export function volume(v) { if (ready) master.gain.value = v; }
