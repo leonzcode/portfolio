@@ -1862,6 +1862,10 @@ const LANTERNS = [
    which is nicer than a blank frame and far nicer than blocking the world on twenty
    downloads.                                                                    */
 const ART_FRAME_D = '#4a3419', ART_FRAME_L = '#7b5c32';
+/* Sixty-four pixels a block rather than Minecraft's sixteen. Minecraft's paintings are
+   pixel art drawn to be read at sixteen; a photograph of the Mona Lisa at sixteen is a
+   smudge with a face-shaped area in it. At sixty-four you can tell who it is.       */
+const ART_RES = 64;
 function artRect(g, c, x, y, w, h) { g.fillStyle = c; g.fillRect(x | 0, y | 0, Math.max(1, w | 0), Math.max(1, h | 0)); }
 const ART_GLYPHS = {
   L: ['100', '100', '100', '100', '111'],
@@ -1925,17 +1929,18 @@ const ART = [
 const artCanvases = new Map();
 const artPending = new Map();
 function artFrame(g, W, H) {
-  const b = Math.max(2, Math.round(Math.min(W, H) / 16));
+  const b = Math.max(2, Math.round(Math.min(W, H) / 24));
+  const l = Math.max(1, Math.round(b / 4));
   g.fillStyle = ART_FRAME_D;
   g.fillRect(0, 0, W, b); g.fillRect(0, H - b, W, b); g.fillRect(0, 0, b, H); g.fillRect(W - b, 0, b, H);
   g.fillStyle = ART_FRAME_L;
-  g.fillRect(b - 1, b - 1, W - 2 * b + 2, 1); g.fillRect(b - 1, H - b, W - 2 * b + 2, 1);
-  g.fillRect(b - 1, b - 1, 1, H - 2 * b + 2); g.fillRect(W - b, b - 1, 1, H - 2 * b + 2);
+  g.fillRect(b - l, b - l, W - 2 * b + 2 * l, l); g.fillRect(b - l, H - b, W - 2 * b + 2 * l, l);
+  g.fillRect(b - l, b - l, l, H - 2 * b + 2 * l); g.fillRect(W - b, b - l, l, H - 2 * b + 2 * l);
 }
 function artCanvas(a) {
   let c = artCanvases.get(a.id); if (c) return c;
   c = document.createElement('canvas');
-  c.width = 16 * a.w; c.height = 16 * a.h;
+  c.width = ART_RES * a.w; c.height = ART_RES * a.h;
   const g = c.getContext('2d');
   g.imageSmoothingEnabled = false;
   if (a.draw) { a.draw(g, c.width, c.height); artFrame(g, c.width, c.height); }
@@ -1952,7 +1957,7 @@ function artCanvas(a) {
     };
     img.onerror = function () { artPending.delete(a.id); };
     artPending.set(a.id, 1);
-    img.src = 'art/' + a.id + '.png';
+    img.src = 'art/' + a.id + '.jpg';
   }
   artCanvases.set(a.id, c);
   return c;
@@ -2896,8 +2901,12 @@ function artTexture(a, flip) {
   const k = a.id + (flip ? '|f' : '');
   let t = artTextures.get(k); if (t) return t;
   t = new THREE.CanvasTexture(artCanvas(a));
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
-  t.generateMipmaps = false;
+  // These are photographs, so they are filtered like photographs: smoothed rather than
+  // squared off, and mipped so one across the room is not a field of sparkle.
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = 4;
+  if (THREE.SRGBColorSpace) t.colorSpace = THREE.SRGBColorSpace;
   if (flip) { t.wrapS = THREE.RepeatWrapping; t.repeat.x = -1; t.offset.x = 1; }
   artTextures.set(k, t);
   return t;
@@ -2951,6 +2960,7 @@ function artEnsureObj(an) {
   // picture reads the right way round on all four, because the turn mirrors the
   // texture exactly as often as it mirrors which end the anchor is at.
   const flip = false;
+  if (a.draw) { const tx = artTexture(a, flip); tx.magFilter = THREE.NearestFilter; }
   const mat = new THREE.MeshLambertMaterial({ map: artTexture(a, flip), transparent: false, side: THREE.FrontSide });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(a.w, a.h), mat);
   const cx = an.x + an.hx * (a.w / 2) + (an.hx ? 0 : 0.5);
@@ -7228,10 +7238,13 @@ function startGame(){
   rebuildSignObjs();                 // (re)create sign text now that the scene exists
   if(!pollBlocking) canvas.requestPointerLock();   // the poll grabs the cursor instead when it's blocking
 }
-function pause(){ state=PAUSE; pauseEl.hidden=false; document.exitPointerLock(); }
-function resume(){ state=PLAY; pauseEl.hidden=true; canvas.requestPointerLock(); }
+function pause(){ state=PAUSE; pauseEl.hidden=false; document.exitPointerLock();
+  if(typeof pkHud==='function') pkHud(); }              // the clock steps off the screen with you
+function resume(){ state=PLAY; pauseEl.hidden=true; canvas.requestPointerLock();
+  if(typeof pkHud==='function') pkHud(); }
 function startSingleplayer(){
   dim=0;
+  pkLeave();                                     // a server's course does not come home with you
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   mp.bb=false; bb.active=false; bbMode=false; bbLeaveUi();
   mp.mc=false; mc.active=false; mcMode=false; mcLeaveUi(); mcSetSize(false);
@@ -7245,6 +7258,7 @@ function startSingleplayer(){
   startGame();
 }
 function toMenu(){
+  pkLeave();                                     // the stopwatch does not follow you to the title screen
   if(mp.ws){ try{ mp.ws.close(); }catch(e){} }   // leave the shared world; onclose clears remote players
   mp.active=false; mp.bw=false; bw.active=false; bwMode=false; bwLeaveUi();
   mp.bb=false; bb.active=false; bbMode=false; bbLeaveUi();
@@ -8315,7 +8329,7 @@ function mpConnect(){
   mp.ws=ws;
   ws.onopen=()=>{ mp.active=true; const nm=getSavedName(); if(nm) mpSend({type:'name', name:nm}); };
   ws.onmessage=(ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } mpHandle(m); };
-  ws.onclose=()=>{ const wasPlaying=(state===PLAY); mp.active=false; mp.ws=null; mpClearPlayers(); mp.border=0; mp.netherBorder=0; if(typeof updateWorldBorder==='function') updateWorldBorder();
+  ws.onclose=()=>{ const wasPlaying=(state===PLAY); pkLeave(); mp.active=false; mp.ws=null; mpClearPlayers(); mp.border=0; mp.netherBorder=0; if(typeof updateWorldBorder==='function') updateWorldBorder();
     const pwOpen = mp._pwFlow && pwPromptEl && !pwPromptEl.hidden;
     if(mp._joinErr){ const e=mp._joinErr; mp._joinErr=null;
       if(pwOpen){ pwMsgEl.style.color='#ff9a9a'; pwMsgEl.textContent = e; }   // keep the password prompt open with the error on screen
@@ -9256,6 +9270,7 @@ function medCycleBody(){
 // a seeker in the editor may crawl, because that is half of what a seeker can see
 function medCrawling(){ return med.active && MED_BODIES[med.body] === 'seeker'; }
 function medInit(m) {
+  pkLeave();                 // a course belongs to the world you left
   if (serversEl) serversEl.hidden = true;
   if (typeof pwPromptEl !== 'undefined' && pwPromptEl) pwPromptEl.hidden = true;
   mp._pwFlow = false;
@@ -9349,6 +9364,10 @@ function medShot(){
   const w = 320, h = 180;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
+  // Draw first, read second, in one go. The drawing buffer is not kept between
+  // frames, so reading the canvas at any other moment hands back a black rectangle -
+  // which is exactly what the map list was showing.
+  try{ renderer.render(scene, camera); }catch(e){}
   const src = renderer.domElement;
   // cover: take the widest centre strip of the view that matches the frame
   const sw = Math.min(src.width, src.height * (w / h));
@@ -10302,6 +10321,7 @@ function startMecha() {
   mpConnect();
 }
 function mcInit(m) {
+  pkLeave();                 // a course belongs to the world you left
   wipeWorldEntities();
   mc.active = true; mcMode = true; mp.id = m.id; mp.name = m.name;
   mc.maps = m.maps || []; mc.poses = m.poses || [];
@@ -11151,6 +11171,7 @@ function bbPlaceForPhase(){
 
 /* ---- messages ---- */
 function bbInit(m){
+  pkLeave();                 // a course belongs to the world you left
   wipeWorldEntities();
   bb.active=true; bbMode=true; mp.id=m.id; mp.name=m.name;
   if(m.geom) bb.geom=m.geom;
@@ -11648,6 +11669,7 @@ function wipeWorldEntities(){
        slabMeta.clear(); potMeta.clear(); attachMeta.clear(); }catch(e){}
 }
 function bwInit(m){
+  pkLeave();                 // a course belongs to the world you left
   wipeWorldEntities();
   bw.active=true; bwMode=true; mp.id=m.id; mp.name=m.name;
   bw.phase=m.phase; bw.beds=m.beds||[true,true,true,true]; bw.teamUp=m.upgrades||bw.teamUp; bw.genTier=m.genTier||1;
@@ -12463,6 +12485,20 @@ function pkRestart(){
   chatPush('Back to just before ' + (c.name || 'the course') + '. Step on the pad when you are ready.', 'sys');
   pkHud();
 }
+/* Leaving takes the stopwatch with you. A run belongs to the world it started in, so
+   stepping out of that world - to the menu, into a minigame, or because the socket
+   went away - ends it. It used to only stop being updated, which left the clock
+   sitting on the screen over whatever you did next. */
+function pkLeave(){
+  parkour.run = null;
+  parkour.result = null;
+  parkour.pad = null;
+  if(parkour.trail) parkour.trail.length = 0;
+  if(parkour.panel) pkClosePanel();
+  pkClearBoards();
+  const hud = document.getElementById('pkHud');
+  if(hud) hud.style.display = 'none';
+}
 function pkAbandon(){
   if(!parkour.run) return;
   parkour.run = null;
@@ -12520,6 +12556,9 @@ function pkEnsureUi(){
 function pkHud(){
   if(!pkUiBuilt){ if(!parkour.run && !parkour.result) return; pkEnsureUi(); }
   const hud = document.getElementById('pkHud'); if(!hud) return;
+  // paused, or off in a minigame: the run is still yours, but the clock is not the
+  // thing you are looking at
+  if(state !== PLAY || bw.active || bb.active || mc.active || med.active){ hud.style.display = 'none'; return; }
   const clock = document.getElementById('pkClock'), sub = document.getElementById('pkSub'), exit = document.getElementById('pkExit');
   if(parkour.run){
     const c = parkour.courses.get(parkour.run.id);
@@ -13531,6 +13570,9 @@ window.__mc = {
   panoTurn(){ return PANO_TURN; },
   // ---- parkour test hooks ----
   pkTrail(){ return parkour.trail.map(t=>[+t.x.toFixed(2), +t.y.toFixed(2), +t.z.toFixed(2)]); },
+  pkHudShown(){ const h=document.getElementById('pkHud'); return !!(h && h.style.display==='block'); },
+  toMenu(){ toMenu(); }, pause(){ pause(); }, resume(){ resume(); },
+  pkLeaveNow(){ pkLeave(); return true; },
   pkBack(){ return parkour.run && parkour.run.back ? [+parkour.run.back.x.toFixed(2),
     +parkour.run.back.y.toFixed(2), +parkour.run.back.z.toFixed(2)] : null; },
   pk(){ return { run: parkour.run ? { id:parkour.run.id, ms:Math.round(performance.now()-parkour.run.t0), best:parkour.run.best, pending:!!parkour.run.pending } : null,

@@ -4,12 +4,13 @@ import ProjectCard from "./ProjectCard.astro";
 
 interface Props {
   projects: Project[];
-  initialCount?: number;
 }
 
-const { projects, initialCount = 2 } = Astro.props;
-const total = projects.length;
-const hasMore = total > initialCount;
+/* Every project is on the page. Hiding all but two behind a "View all" button asked
+   a visitor to work out that there was more to see before they could see it, which
+   is the wrong way round for a page whose whole job is to show the work. The search
+   box stays: it narrows a long list, which is a different thing from hiding it. */
+const { projects } = Astro.props;
 
 const buildSearchIndex = (p: Project) =>
   [p.title, p.description, p.tag, ...(p.tech ?? []), ...(p.story ?? [])]
@@ -18,7 +19,7 @@ const buildSearchIndex = (p: Project) =>
     .toLowerCase();
 ---
 
-<div data-project-section data-initial-count={initialCount}>
+<div data-project-section>
   <div class="mb-8">
     <div class="relative max-w-md">
       <svg
@@ -59,79 +60,26 @@ const buildSearchIndex = (p: Project) =>
     No projects match your search.
   </p>
 
-  {
-    hasMore && (
-      <div class="mt-10 flex" data-toggle-wrap>
-        <button
-          type="button"
-          data-toggle
-          aria-expanded="false"
-          class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors"
-        >
-          <span data-label-collapsed>View all {total}</span>
-          <span data-label-expanded class="hidden">Show less</span>
-        </button>
-      </div>
-    )
-  }
 </div>
 
 <script>
   document.querySelectorAll<HTMLElement>("[data-project-section]").forEach((section) => {
-    const initialCount = parseInt(section.dataset.initialCount ?? "2", 10);
     const cards = Array.from(section.querySelectorAll<HTMLElement>("[data-card]"));
     const input = section.querySelector<HTMLInputElement>("[data-search-input]");
-    const btn = section.querySelector<HTMLButtonElement>("[data-toggle]");
-    const toggleWrap = section.querySelector<HTMLElement>("[data-toggle-wrap]");
-    const collapsedLabel = btn?.querySelector<HTMLElement>("[data-label-collapsed]");
-    const expandedLabel = btn?.querySelector<HTMLElement>("[data-label-expanded]");
     const noResults = section.querySelector<HTMLElement>("[data-no-results]");
-
-    let expanded = false;
 
     const apply = () => {
       const q = (input?.value ?? "").trim().toLowerCase();
-      const searching = q.length > 0;
-      let shownInCollapsed = 0;
-      let totalMatches = 0;
-
+      let matches = 0;
       cards.forEach((card) => {
-        const haystack = card.dataset.search ?? "";
-        const matches = !searching || haystack.includes(q);
-        if (!matches) {
-          card.classList.add("hidden");
-          return;
-        }
-        totalMatches++;
-        if (searching || expanded) {
-          card.classList.remove("hidden");
-        } else {
-          if (shownInCollapsed < initialCount) {
-            card.classList.remove("hidden");
-            shownInCollapsed++;
-          } else {
-            card.classList.add("hidden");
-          }
-        }
+        const hit = !q || (card.dataset.search ?? "").includes(q);
+        card.classList.toggle("hidden", !hit);
+        if (hit) matches++;
       });
-
-      noResults?.classList.toggle("hidden", totalMatches > 0);
-      if (toggleWrap) toggleWrap.classList.toggle("hidden", searching || totalMatches <= initialCount);
-
-      if (btn) {
-        btn.setAttribute("aria-expanded", String(expanded));
-        collapsedLabel?.classList.toggle("hidden", expanded);
-        expandedLabel?.classList.toggle("hidden", !expanded);
-      }
+      noResults?.classList.toggle("hidden", matches > 0);
     };
 
-    btn?.addEventListener("click", () => {
-      expanded = !expanded;
-      apply();
-    });
-
     input?.addEventListener("input", apply);
-
     apply();
   });
 </script>
