@@ -1,0 +1,258 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>GTA VI</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#f2f5f8;
+    --dim:rgba(255,255,255,.52);
+    --hp:#74d36a; --armour:#57a9e8; --star:#f5c13d; --cash:#79e07a;
+    --shade:0 2px 4px rgba(0,0,0,.85);
+    --hud:"Oswald","Haettenschweiler","Arial Narrow",system-ui,sans-serif;
+    --body:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,Arial,sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:#05070b; overflow:hidden; }
+  body{ font-family:var(--body); color:var(--ink); -webkit-font-smoothing:antialiased; user-select:none; }
+  canvas{ display:block; }
+
+  /* ---------- the title card ---------- */
+  #boot{
+    position:fixed; inset:0; z-index:60; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:26px; text-align:center;
+    background:
+      radial-gradient(120% 90% at 50% 34%, rgba(255,120,190,.20) 0%, rgba(8,10,18,.93) 55%, #05070b 100%),
+      linear-gradient(180deg,#0a0d16,#05070b);
+  }
+  #boot .wm{
+    font-family:var(--hud);
+    font-size:clamp(58px,13vw,172px); font-weight:700; letter-spacing:-.01em; line-height:.86;
+    background:linear-gradient(180deg,#ffe9a8 0%,#ff9ec8 46%,#9a6bff 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 6px 30px rgba(255,120,190,.35));
+    font-style:italic;
+  }
+  #boot .sub{ font-family:var(--hud); font-size:13px; letter-spacing:6px; text-transform:uppercase; color:var(--dim); }
+  #boot .hint{ font-size:13px; color:var(--dim); max-width:560px; line-height:1.8; }
+  #boot .hint b{ color:#fff; font-weight:600; }
+  #boot button{
+    font-family:var(--hud); font-size:16px; font-weight:600; letter-spacing:3px; text-transform:uppercase;
+    padding:13px 44px; cursor:pointer; color:#120d16; border:0; border-radius:2px;
+    background:linear-gradient(180deg,#ffe9a8,#ffb36b);
+  }
+  #boot button:hover{ filter:brightness(1.08); }
+  #boot.gone{ display:none; }
+  #loadline{ font-family:var(--hud); font-size:12px; letter-spacing:4px; color:var(--dim); text-transform:uppercase; }
+
+  /* ---------- the heads-up display ---------- */
+  #hud{ position:fixed; inset:0; z-index:20; pointer-events:none; opacity:0; transition:opacity .5s; }
+  #hud.on{ opacity:1; }
+
+  /* the map, the one thing you look at every second of the game */
+  #map{ position:absolute; left:26px; bottom:30px; width:224px; }
+  #map canvas{
+    display:block; width:100%; height:158px; border-radius:3px;
+    box-shadow:0 0 0 2px rgba(0,0,0,.72), 0 6px 18px rgba(0,0,0,.5);
+  }
+  #map .bars{ margin-top:3px; display:flex; flex-direction:column; gap:2px; }
+  #map .bar{ height:4px; background:rgba(0,0,0,.62); box-shadow:0 0 0 1px rgba(0,0,0,.6); }
+  #map .bar i{ display:block; height:100%; width:100%; transform-origin:left; transition:transform .18s; }
+
+  #stars{ position:absolute; right:26px; top:22px; display:flex; gap:4px; }
+  #stars span{
+    width:21px; height:21px; background:var(--star); opacity:.14;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.75));
+    clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
+    transition:opacity .12s;
+  }
+  #stars span.on{ opacity:1; }
+  #stars.hot span.on{ animation:starflash .6s steps(2,end) infinite; }
+  @keyframes starflash{ 0%,60%{opacity:1} 61%,100%{opacity:.25} }
+
+  #cash{
+    position:absolute; right:26px; top:52px; font-family:var(--hud); font-weight:500;
+    font-size:30px; line-height:1; color:var(--cash); text-shadow:var(--shade);
+    font-variant-numeric:tabular-nums;
+  }
+  #bank{
+    position:absolute; right:26px; top:84px; font-family:var(--hud); font-size:13px;
+    letter-spacing:2px; color:rgba(255,255,255,.4); text-transform:uppercase;
+  }
+  #wep{ position:absolute; right:26px; top:112px; text-align:right; opacity:0; transition:opacity .2s; }
+  #wep.on{ opacity:1; }
+  #wep .n{ font-family:var(--hud); font-size:14px; letter-spacing:3px; text-transform:uppercase; color:var(--dim); }
+  #wep .a{ font-family:var(--hud); font-size:26px; font-weight:500; line-height:1.1; text-shadow:var(--shade);
+           font-variant-numeric:tabular-nums; }
+  #wep .a em{ font-style:normal; font-size:16px; color:var(--dim); }
+
+  #speedo{ position:absolute; right:30px; bottom:34px; width:170px; text-align:right; display:none; }
+  #speedo .v{ font-family:var(--hud); font-size:52px; font-weight:500; line-height:.9;
+              font-variant-numeric:tabular-nums; text-shadow:var(--shade); }
+  #speedo .u{ font-family:var(--hud); font-size:12px; letter-spacing:5px; color:var(--dim); text-transform:uppercase; }
+  #speedo .gear{ font-family:var(--hud); font-size:13px; letter-spacing:3px; color:var(--star); margin-top:5px; }
+
+  #reticle{
+    position:fixed; left:50%; top:50%; width:28px; height:28px; margin:-14px 0 0 -14px;
+    z-index:21; pointer-events:none; opacity:0; transition:opacity .1s, transform .1s;
+  }
+  #reticle.on{ opacity:.92; }
+  #reticle.hit{ transform:scale(1.35); }
+  #reticle i{ position:absolute; background:#fff; box-shadow:0 0 3px rgba(0,0,0,.95); }
+  #reticle i:nth-child(1){ left:13px; top:0;    width:2px; height:9px; }
+  #reticle i:nth-child(2){ left:13px; bottom:0; width:2px; height:9px; }
+  #reticle i:nth-child(3){ top:13px; left:0;    height:2px; width:9px; }
+  #reticle i:nth-child(4){ top:13px; right:0;   height:2px; width:9px; }
+
+  #hint{
+    position:absolute; left:50%; bottom:118px; transform:translateX(-50%);
+    font-family:var(--hud); font-size:14px; letter-spacing:2px; text-transform:uppercase;
+    background:rgba(4,6,10,.62); padding:7px 16px; border-radius:2px; opacity:0; transition:opacity .22s;
+  }
+  #hint.on{ opacity:1; }
+  #hint b{ color:var(--star); font-weight:600; }
+
+  /* the flash when you take a hit */
+  #hurt{ position:fixed; inset:0; z-index:19; pointer-events:none; opacity:0;
+         background:radial-gradient(120% 90% at 50% 50%, transparent 40%, rgba(180,20,20,.55) 100%);
+         transition:opacity .5s; }
+  #hurt.on{ opacity:1; transition:opacity .05s; }
+
+  /* ---------- the weapon wheel ---------- */
+  #wheel{
+    position:fixed; inset:0; z-index:30; display:none; pointer-events:none;
+    background:radial-gradient(60% 60% at 50% 50%, rgba(4,6,10,.28), rgba(4,6,10,.72));
+  }
+  #wheel.on{ display:block; }
+  #wheel .hub{ position:absolute; left:50%; top:50%; width:0; height:0; }
+  #wheel .seg{
+    position:absolute; width:118px; margin:-26px 0 0 -59px; text-align:center;
+    font-family:var(--hud); font-size:13px; letter-spacing:2px; text-transform:uppercase;
+    color:rgba(255,255,255,.5); transition:color .1s, transform .1s;
+  }
+  #wheel .seg b{ display:block; font-size:15px; font-weight:500; color:rgba(255,255,255,.62); }
+  #wheel .seg.on{ color:#fff; transform:scale(1.14); }
+  #wheel .seg.on b{ color:var(--star); }
+  #wheel .seg.out{ opacity:.28; }
+  #wheel .ring{
+    position:absolute; left:50%; top:50%; width:230px; height:230px; margin:-115px 0 0 -115px;
+    border:1px solid rgba(255,255,255,.14); border-radius:50%;
+  }
+
+  /* ---------- chat ---------- */
+  #chat{ position:absolute; left:26px; top:22px; width:400px; z-index:22; pointer-events:none; }
+  #chatlog{ display:flex; flex-direction:column; gap:3px; max-height:210px; overflow:hidden; }
+  #chatlog div{
+    font-size:13px; line-height:1.45; text-shadow:0 1px 3px rgba(0,0,0,.9);
+    background:rgba(4,6,10,.36); padding:3px 9px; border-radius:2px; width:fit-content; max-width:100%;
+    transition:opacity .8s;
+  }
+  #chatlog .sys{ color:var(--star); }
+  #chatlog .me b{ color:var(--cash); }
+  #chatlog b{ color:#8fc6ff; font-weight:700; }
+  #chatbox{ margin-top:7px; display:none; pointer-events:auto; }
+  #chatbox.on{ display:block; }
+  #chatbox input{
+    width:100%; font:inherit; font-size:13px; padding:8px 11px; color:#fff;
+    background:rgba(4,6,10,.85); border:1px solid rgba(255,255,255,.28); border-radius:2px; outline:none;
+  }
+
+  #pause{
+    position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
+    background:rgba(4,6,10,.74); backdrop-filter:blur(3px);
+  }
+  #pause.on{ display:flex; }
+  #pause .card{ text-align:center; }
+  #pause h2{ font-family:var(--hud); font-size:46px; font-weight:600; letter-spacing:.02em; margin:0 0 4px; font-style:italic; }
+  #pause p{ font-family:var(--hud); color:var(--dim); font-size:13px; letter-spacing:4px; margin:0 0 26px; text-transform:uppercase; }
+  #pause .keys{
+    display:grid; grid-template-columns:auto auto; gap:7px 20px; font-size:13px; text-align:left;
+    color:var(--dim); margin:0 auto 26px; width:fit-content;
+  }
+  #pause .keys b{ color:#fff; font-weight:600; font-family:var(--hud); letter-spacing:1px; }
+  #pause button{
+    font-family:var(--hud); font-size:14px; font-weight:600; letter-spacing:3px; text-transform:uppercase;
+    padding:12px 32px; cursor:pointer; color:#120d16; border:0; border-radius:2px;
+    background:linear-gradient(180deg,#ffe9a8,#ffb36b);
+  }
+</style>
+
+<div id="boot">
+  <div>
+    <div class="wm">GTA&nbsp;VI</div>
+    <div class="sub">Leon Zhao &middot; an original city</div>
+  </div>
+  <div class="hint">
+    <b>WASD</b> move &middot; <b>Shift</b> sprint &middot; <b>Space</b> jump &middot; <b>F</b> get in or out of a car<br>
+    <b>Right mouse</b> aim &middot; <b>Left mouse</b> fire &middot; <b>R</b> reload &middot; <b>Q</b> weapon wheel<br>
+    <b>T</b> chat &middot; <b>Esc</b> pause
+  </div>
+  <button id="play">Enter the city</button>
+  <div id="loadline">building the city…</div>
+</div>
+
+<div id="hud">
+  <div id="map">
+    <canvas id="mapc" width="448" height="316"></canvas>
+    <div class="bars">
+      <div class="bar"><i id="hpbar" style="background:var(--hp)"></i></div>
+      <div class="bar"><i id="apbar" style="background:var(--armour)"></i></div>
+    </div>
+  </div>
+  <div id="stars"><span></span><span></span><span></span><span></span><span></span></div>
+  <div id="cash">$0</div>
+  <div id="bank"></div>
+  <div id="wep"><div class="n" id="wepname">Unarmed</div><div class="a" id="wepammo"></div></div>
+  <div id="speedo"><div class="v" id="spd">0</div><div class="u">mph</div><div class="gear" id="gear"></div></div>
+  <div id="hint"></div>
+  <div id="chat">
+    <div id="chatlog"></div>
+    <div id="chatbox"><input id="chatin" maxlength="160" autocomplete="off" spellcheck="false" placeholder="say something"></div>
+  </div>
+</div>
+
+<div id="reticle"><i></i><i></i><i></i><i></i></div>
+<div id="hurt"></div>
+<div id="wheel"><div class="ring"></div><div class="hub" id="wheelhub"></div></div>
+
+<div id="pause">
+  <div class="card">
+    <h2>PAUSED</h2>
+    <p>GTA VI</p>
+    <div class="keys">
+      <b>W A S D</b><span>move / drive</span>
+      <b>Shift</b><span>sprint / handbrake</span>
+      <b>Space</b><span>jump / brake</span>
+      <b>F</b><span>enter or leave a car</span>
+      <b>Right mouse</b><span>aim</span>
+      <b>Left mouse</b><span>fire</span>
+      <b>R</b><span>reload</span>
+      <b>Q</b><span>weapon wheel</span>
+      <b>1 - 7</b><span>change weapon</span>
+      <b>T</b><span>chat</span>
+    </div>
+    <button id="resume">Back to the city</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "/legacy/vendor/three-0.163.0.module.js" } }
+</script>
+<script type="module">
+const boot = document.getElementById('boot'), loadline = document.getElementById('loadline');
+function fatal(msg){ loadline.textContent = 'Could not start: ' + msg; loadline.style.color = '#ff8f8f'; }
+addEventListener('error', e => fatal(e.message || 'script error'));
+addEventListener('unhandledrejection', e => fatal((e.reason && e.reason.message) || 'load error'));
+
+let THREE;
+try { THREE = await import('three'); }
+catch (_e) {
+  try { THREE = await import('https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js'); }
+  catch (e2) { fatal('3D library failed to load.'); throw e2; }
+}
+window.THREE = THREE;
+loadline.textContent = 'starting the engine…';
+await import('./game.js');
+</script>
