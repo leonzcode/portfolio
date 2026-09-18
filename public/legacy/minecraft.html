@@ -5543,12 +5543,17 @@ function groundUnder(x,z){ return collides(x, player.pos.y-0.06, z); }
 const MC_CLIMB = 3.2;                 // the same speed a ladder gives you
 function mcOnWall(){
   if(!(mc.active && mc.playing && mc.alive) || player.flying || glide.on) return false;
+  // A hider cannot see a barrier, so a hider cannot climb one either: the invisible
+  // wall round a map is there to be the edge of it, not a ladder to the outside.
+  const hider = mc.role === 'hider';
   const w = player.w/2 + 0.08;        // a shade past your own box, so touching counts
   const y0 = Math.floor(player.pos.y + 0.1), y1 = Math.floor(player.pos.y + player.h - 0.1);
   for(let by=y0; by<=y1; by++){
     for(const [dx,dz] of [[w,0],[-w,0],[0,w],[0,-w]]){
       const b = getBlock(Math.floor(player.pos.x+dx), by, Math.floor(player.pos.z+dz));
-      if(b && BLOCKS[b] && BLOCKS[b].solid) return true;
+      if(!(b && BLOCKS[b] && BLOCKS[b].solid)) continue;
+      if(hider && BLOCKS[b].barrier) continue;
+      return true;
     }
   }
   return false;
@@ -5843,8 +5848,18 @@ function barrierHeld(){
   const b = BLOCKS[hotbar[selSlot]];
   return !!(b && b.barrier);
 }
+/* Holding one is not quite enough. A barrier is the map maker's tool, and the
+   people who are only visiting the map - somebody watching, somebody playing a
+   minigame they cannot build on, or a hider in a round of Mecha - should never
+   see where the edges of it are, whatever they happen to have in hand. */
+function barrierVisible(){
+  if (!barrierHeld()) return false;
+  if (mp.spectator) return false;                             // watching, or playing without the password
+  if (mc.active && mc.role === 'hider') return false;         // hiding: the walls stay invisible
+  return true;
+}
 function barrierWatch(){
-  const want = barrierHeld();
+  const want = barrierVisible();
   if (want === barriersOn) return;
   barriersOn = want;
   for (const [, c] of chunks) c.dirty = true;      // every one of them looks different now
@@ -13619,6 +13634,13 @@ window.__mc = {
     blocks:(()=>{ let n=0; for(const [,m] of mpOverrides) n+=m.size; return n; })() }; },
   mcKey(k){ return mcKey(k, { preventDefault(){} }); },
   mcWall(){ return { on: mcOnWall(), w: player.w, speed: MC_CLIMB }; },
+  // who a barrier will show itself to: a round, and a spectator, faked for a test
+  mcAs(role){ mc.active = true; mc.role = role; mc.playing = true; mc.alive = true; barrierWatch();
+    return { role: mc.role, active: mc.active }; },
+  mcNotPlaying(){ mc.active = false; mc.playing = false; mc.alive = false; barrierWatch();
+    return { active: mc.active }; },
+  specAs(v){ mp.spectator = !!v; barrierWatch();
+    return { active: mp.active, spectator: mp.spectator }; },
   mcHudText(){ const g=id=>{ const e=document.getElementById(id); return e?e.textContent:''; };
     return { phase:g('mcPhase'), clock:g('mcClock'), count:g('mcCount'), role:g('mcRole'),
       gear:g('mcGear'), gun:g('mcGun'), vote:g('mcVoteRows'),
@@ -13837,7 +13859,7 @@ window.__mc = {
   artOrigin(id, f, x, y, z){ const a=(BLOCKS[id]||{}).art; if(!a) return null;
     const o=artOrigin(a, f, x, y, z); return { x:o.x, y:o.y, z:o.z, w:a.w, h:a.h }; },
   artLoaded(){ return ART.filter(a=>!a.draw).map(a=>({ id:a.id, pending:artPending.has(a.id) })); },
-  barriers(){ return { shown:barriersShown(), held:barrierHeld() }; },
+  barriers(){ return { shown:barriersShown(), held:barrierHeld(), visible:barrierVisible() }; },
   medBody(){ return { i:med.body, kind:MED_BODIES[med.body], w:+player.w.toFixed(3), h:+player.h.toFixed(3),
     eye:+player.eye.toFixed(3), sized:mc.sized, crawl:+(mc.crawlT||0).toFixed(2) }; },
   medCycle(){ medCycleBody(); return MED_BODIES[med.body]; },
