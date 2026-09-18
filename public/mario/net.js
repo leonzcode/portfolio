@@ -99,6 +99,7 @@ export function connect(ctx) {
         const k = kartFor(r.id);
         if (k) { k.finished = 1; k.time = r.time === null ? world.raceTime : r.time; k.place = r.place; }
       }
+      if (m.cup) world.setCup(m.cup, myId);
       return;
     }
 
