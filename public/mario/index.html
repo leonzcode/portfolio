@@ -153,7 +153,10 @@
   #notice.on{ opacity:1; transform:translateX(-50%) scale(1.04); }
 
   /* ---------- the countdown ---------- */
-  #count{ position:fixed; inset:0; z-index:34; display:none; place-items:center; pointer-events:none; }
+  #count{
+    position:fixed; left:0; right:0; top:0; height:74vh; z-index:34; display:none;
+    place-items:center; pointer-events:none;
+  }
   #count.on{ display:grid; }
   #count .lights{ display:flex; gap:18px; }
   #count .lights i{
@@ -198,6 +201,13 @@
   #results.on{ display:grid; }
   #results .panel{ width:min(470px,92vw); }
   #results .foot{ font-weight:700; font-size:13px; margin-top:13px; text-align:center; opacity:.7; }
+  #results .wrap{ display:flex; gap:14px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
+  #cup{ display:none; }
+  #cup.on{ display:block; }
+  #cup .panel{ width:min(220px,88vw); }
+  #cup h2{ font-size:16px; }
+  #cup .rows .r{ grid-template-columns:26px 1fr auto; font-size:13px; padding:4px 8px; }
+  #cup .rows .r .p{ font-size:15px; }
 
   #board{ position:fixed; right:26px; top:120px; z-index:21; width:230px; display:none; }
   #board.on{ display:block; }
@@ -271,10 +281,13 @@
 <div id="watch" class="">Watching this race &middot; <span>you start the next one</span></div>
 
 <div id="results">
-  <div class="panel">
-    <h2 id="restitle">Race over</h2>
-    <div class="rows" id="resrows"></div>
-    <div class="foot" id="resfoot">Next race starting&hellip;</div>
+  <div class="wrap">
+    <div class="panel">
+      <h2 id="restitle">Race over</h2>
+      <div class="rows" id="resrows"></div>
+      <div class="foot" id="resfoot">Next race starting&hellip;</div>
+    </div>
+    <div id="cup"><div class="panel"><h2>Cup</h2><div class="rows" id="cuprows"></div></div></div>
   </div>
 </div>
 

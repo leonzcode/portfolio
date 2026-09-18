@@ -548,6 +548,23 @@ function time(t) {
 }
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+/* the running cup, when there is a lobby keeping one */
+let cupRows = null, cupMe = 0;
+function setCup(rows, myId) {
+  cupRows = rows; cupMe = myId;
+  drawCup();
+}
+function drawCup() {
+  const box = el('cup');
+  if (!box) return;
+  if (!cupRows || cupRows.length < 2) { box.classList.remove('on'); return; }
+  box.classList.add('on');
+  el('cuprows').innerHTML = cupRows.slice(0, 8).map((r, i) =>
+    '<div class="r' + (r.id === cupMe ? ' me' : '') + (i === 0 ? ' p1' : '') + '">'
+    + '<span class="p">' + (i + 1) + '</span><span>' + esc(r.name) + '</span>'
+    + '<span class="t">' + r.points + '</span></div>').join('');
+}
+
 function showResults(final) {
   const live = order();
   el('restitle').textContent = final ? 'Race over' : 'You finished ' + ord(me ? me.place : 1);
@@ -555,6 +572,7 @@ function showResults(final) {
     '<div class="r' + (k === me ? ' me' : '') + (k.bot ? ' bot' : '') + (k.place === 1 ? ' p1' : '') + '">'
     + '<span class="p">' + k.place + '</span><span>' + esc(k.name) + '</span>'
     + '<span class="t">' + (k.finished ? time(k.time) : '-') + '</span></div>').join('');
+  drawCup();
   el('results').classList.add('on');
 }
 
@@ -716,6 +734,7 @@ async function start() {
           if (p === 'results') endRace();
         },
         setSpectating(v) { spectating = v; el('watch').classList.toggle('on', v); },
+        setCup,
         spinOut, useItem, items: () => items, track: () => track,
         get raceTime() { return raceTime; },
         addTime(dt) { raceTime += dt; },
