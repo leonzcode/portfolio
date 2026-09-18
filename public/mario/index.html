@@ -1,0 +1,303 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Super Kart GP</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ---------------------------------------------------------------------------
+     Sticker flat: every panel is a solid fill with a hard navy keyline and a
+     dropped shadow of the same navy, no gradients and no blur. That is what a
+     kart racer's furniture is actually made of - vinyl decals - and it keeps the
+     numbers readable over a bright, busy 3D scene, which glass never does.
+  --------------------------------------------------------------------------- */
+  :root{
+    --sky:#4fb7ff; --grass:#57c04a; --road:#6b6f78;
+    --gold:#ffd233; --red:#e8402a; --blue:#2b56d6; --ink:#17223b; --cream:#fff6e2;
+    --display:"Baloo 2","Trebuchet MS",system-ui,sans-serif;
+    --body:"Nunito","Segoe UI",system-ui,sans-serif;
+    --key:3px solid var(--ink);
+    --drop:0 4px 0 var(--ink);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; overflow:hidden; background:#101a2e; }
+  body{ font-family:var(--body); color:var(--cream); user-select:none; -webkit-font-smoothing:antialiased; }
+  canvas{ display:block; }
+
+  /* numbers wear a navy outline, the way a console racer letters its HUD */
+  .out{
+    font-family:var(--display); font-weight:800; color:#fff;
+    -webkit-text-stroke:5px var(--ink); paint-order:stroke fill;
+    text-shadow:0 5px 0 var(--ink);
+  }
+
+  /* ---------- title and lobby ---------- */
+  #title{
+    position:fixed; inset:0; z-index:60; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:20px; text-align:center;
+    /* a short window scrolls rather than cropping the wordmark off the top */
+    justify-content:safe center; overflow-y:auto; padding:18px 14px;
+    background:
+      repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 26px, transparent 26px 52px),
+      radial-gradient(120% 90% at 50% 18%, #7fd0ff 0%, #4fb7ff 42%, #2b56d6 100%);
+  }
+  #title .wm{
+    font-family:var(--display); font-weight:800; font-size:clamp(40px,9vw,112px);
+    line-height:.92; letter-spacing:-.01em; color:var(--gold);
+    -webkit-text-stroke:9px var(--ink); paint-order:stroke fill;
+    text-shadow:0 10px 0 var(--ink); transform:rotate(-2.5deg);
+  }
+  #title .wm small{ display:block; font-size:.34em; color:#fff; -webkit-text-stroke:6px var(--ink); letter-spacing:.22em; }
+  #title .card{
+    background:var(--cream); color:var(--ink); border:var(--key); border-radius:18px;
+    box-shadow:0 8px 0 var(--ink); padding:18px 22px; width:min(430px,88vw);
+  }
+  #title .card h2{ font-family:var(--display); font-weight:800; font-size:19px; margin:0 0 12px; letter-spacing:.04em; }
+  #title label{ display:block; font-weight:800; font-size:12px; letter-spacing:.14em; text-transform:uppercase; opacity:.6; margin-bottom:5px; }
+  #title input{
+    width:100%; font-family:var(--display); font-weight:700; font-size:18px; padding:9px 12px;
+    color:var(--ink); background:#fff; border:var(--key); border-radius:11px; outline:none;
+  }
+  #title input:focus{ border-color:var(--blue); }
+  #cast{ display:flex; gap:9px; justify-content:center; margin:14px 0 4px; flex-wrap:wrap; }
+  #cast button{
+    width:78px; padding:8px 4px 9px; cursor:pointer; font-family:var(--display); font-weight:700;
+    font-size:12px; letter-spacing:.06em; color:var(--ink); background:#fff;
+    border:var(--key); border-radius:13px; box-shadow:0 4px 0 var(--ink);
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+  }
+  #cast button i{ width:34px; height:34px; border-radius:50%; border:var(--key); display:block; }
+  #cast button.on{ background:var(--gold); transform:translateY(2px); box-shadow:0 2px 0 var(--ink); }
+  #cast button:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
+  .big{
+    font-family:var(--display); font-weight:800; font-size:21px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--ink); background:var(--gold);
+    border:var(--key); border-radius:15px; box-shadow:0 6px 0 var(--ink);
+    padding:12px 34px; cursor:pointer;
+  }
+  .big:active{ transform:translateY(4px); box-shadow:0 2px 0 var(--ink); }
+  .big:focus-visible{ outline:4px solid #fff; outline-offset:3px; }
+  #keys{ font-weight:700; font-size:13px; color:#fff; line-height:1.85; text-shadow:0 2px 0 rgba(23,34,59,.55); }
+  #keys b{ background:var(--ink); border-radius:6px; padding:2px 7px; margin:0 1px; }
+  #load{ font-family:var(--display); font-weight:700; font-size:13px; letter-spacing:.18em; text-transform:uppercase; color:#fff; opacity:.85; }
+  #title.gone{ display:none; }
+
+  /* ---------- the race HUD ---------- */
+  #hud{ position:fixed; inset:0; z-index:20; pointer-events:none; opacity:0; transition:opacity .35s; }
+  #hud.on{ opacity:1; }
+
+  /* the item slot is the signature: a square that spins and slams to a stop */
+  #slot{
+    position:absolute; left:26px; top:22px; width:104px; height:104px;
+    background:rgba(255,246,226,.92); border:var(--key); border-radius:20px; box-shadow:var(--drop);
+    display:grid; place-items:center; overflow:hidden;
+  }
+  #slot .face{ width:72px; height:72px; position:relative; }
+  #slot.spin .face{ animation:roul .11s steps(1,end) infinite; }
+  @keyframes roul{ 0%{ transform:translateY(-8px) } 50%{ transform:translateY(8px) } 100%{ transform:translateY(-8px) } }
+  #slot.land{ animation:slam .28s cubic-bezier(.2,1.7,.4,1) both; }
+  @keyframes slam{ 0%{ transform:scale(1.28) rotate(-6deg) } 100%{ transform:scale(1) rotate(0) } }
+  #slot.empty{ background:rgba(255,246,226,.35); }
+  #slot .n{
+    position:absolute; right:-4px; bottom:-8px; font-family:var(--display); font-weight:800;
+    font-size:26px; color:#fff; -webkit-text-stroke:4px var(--ink); paint-order:stroke fill;
+  }
+
+  #lap{ position:absolute; right:26px; top:18px; text-align:right; }
+  #lap .n{ font-size:62px; line-height:.9; }
+  #lap .of{ font-family:var(--display); font-weight:700; font-size:26px; color:var(--gold);
+            -webkit-text-stroke:4px var(--ink); paint-order:stroke fill; }
+  #lap em{ display:block; font-family:var(--display); font-style:normal; font-weight:800; font-size:13px;
+           letter-spacing:.3em; color:#fff; text-shadow:0 2px 0 var(--ink); margin-top:-4px; }
+
+  #place{ position:absolute; left:26px; bottom:150px; display:flex; align-items:flex-start; }
+  #place .n{ font-size:86px; line-height:.86; }
+  #place .sfx{ font-family:var(--display); font-weight:800; font-size:30px; color:#fff;
+               -webkit-text-stroke:5px var(--ink); paint-order:stroke fill; margin-top:8px; }
+  #place.p1 .n{ color:var(--gold); }
+  #place.p2 .n{ color:#dfe6ef; }
+  #place.p3 .n{ color:#f0a05a; }
+
+  #mini{
+    position:absolute; left:26px; bottom:22px; width:190px; height:116px;
+    background:rgba(23,34,59,.55); border:var(--key); border-radius:16px; box-shadow:var(--drop);
+    overflow:hidden;
+  }
+  #mini canvas{ width:100%; height:100%; }
+
+  #coins{ position:absolute; right:26px; bottom:78px; display:flex; align-items:center; gap:9px; }
+  #coins i{ width:30px; height:30px; border-radius:50%; background:var(--gold); border:var(--key);
+            box-shadow:0 3px 0 var(--ink); display:block; }
+  #coins span{ font-family:var(--display); font-weight:800; font-size:34px; color:#fff;
+               -webkit-text-stroke:5px var(--ink); paint-order:stroke fill; }
+
+  #speed{ position:absolute; right:26px; bottom:24px; text-align:right; }
+  #speed .n{ font-size:46px; line-height:.9; }
+  #speed em{ font-family:var(--display); font-style:normal; font-weight:800; font-size:13px;
+             letter-spacing:.2em; color:#fff; text-shadow:0 2px 0 var(--ink); }
+
+  /* the drift charge, tucked under the speed so both live in one corner */
+  #charge{ position:absolute; right:26px; bottom:70px; width:120px; height:10px;
+           background:rgba(23,34,59,.5); border:var(--key); border-radius:7px; overflow:hidden; opacity:0; transition:opacity .15s; }
+  #charge.on{ opacity:1; }
+  #charge i{ display:block; height:100%; width:0; background:var(--blue); transition:width .06s linear; }
+  #charge.hot i{ background:var(--gold); }
+
+  #notice{
+    position:absolute; left:50%; top:22%; transform:translateX(-50%);
+    font-family:var(--display); font-weight:800; font-size:clamp(22px,4vw,40px); color:#fff;
+    -webkit-text-stroke:6px var(--ink); paint-order:stroke fill; text-shadow:0 6px 0 var(--ink);
+    opacity:0; transition:opacity .2s, transform .2s; text-align:center; white-space:nowrap;
+  }
+  #notice.on{ opacity:1; transform:translateX(-50%) scale(1.04); }
+
+  /* ---------- the countdown ---------- */
+  #count{ position:fixed; inset:0; z-index:34; display:none; place-items:center; pointer-events:none; }
+  #count.on{ display:grid; }
+  #count .lights{ display:flex; gap:18px; }
+  #count .lights i{
+    width:clamp(44px,7vw,74px); height:clamp(44px,7vw,74px); border-radius:50%;
+    background:var(--cream); border:5px solid var(--ink); box-shadow:0 6px 0 var(--ink);
+    display:block; opacity:.55; transition:opacity .1s, background .1s;
+  }
+  #count .lights i.lit{ background:var(--red); opacity:1; }
+  #count .lights i.go{ background:#43d94f; opacity:1; }
+  #count .word{
+    font-family:var(--display); font-weight:800; font-size:clamp(60px,14vw,170px); color:var(--gold);
+    -webkit-text-stroke:10px var(--ink); paint-order:stroke fill; text-shadow:0 12px 0 var(--ink);
+    display:none;
+  }
+  #count.go .lights{ display:none; }
+  #count.go .word{ display:block; animation:pop .5s cubic-bezier(.2,1.8,.3,1) both; }
+  @keyframes pop{ from{ transform:scale(.3) rotate(-8deg); opacity:0 } to{ transform:scale(1) rotate(-3deg); opacity:1 } }
+
+  /* ---------- standings, results, spectating ---------- */
+  .panel{
+    background:var(--cream); color:var(--ink); border:var(--key); border-radius:20px;
+    box-shadow:0 8px 0 var(--ink); padding:16px 18px;
+  }
+  .panel h2{
+    font-family:var(--display); font-weight:800; font-size:22px; margin:0 0 12px;
+    letter-spacing:.05em; text-transform:uppercase;
+  }
+  .rows{ display:flex; flex-direction:column; gap:5px; }
+  .rows .r{
+    display:grid; grid-template-columns:38px 1fr auto; gap:11px; align-items:center;
+    background:#fff; border:2px solid var(--ink); border-radius:12px; padding:6px 10px;
+    font-weight:800; font-size:15px;
+  }
+  .rows .r .p{ font-family:var(--display); font-size:19px; text-align:center; }
+  .rows .r .t{ font-variant-numeric:tabular-nums; font-weight:700; opacity:.75; font-size:14px; }
+  .rows .r.me{ background:var(--gold); }
+  .rows .r.p1 .p{ color:#b8860b; }
+  .rows .r.bot{ opacity:.62; }
+
+  #results{ position:fixed; inset:0; z-index:40; display:none; place-items:center;
+            background:rgba(23,34,59,.72); }
+  #results.on{ display:grid; }
+  #results .panel{ width:min(470px,92vw); }
+  #results .foot{ font-weight:700; font-size:13px; margin-top:13px; text-align:center; opacity:.7; }
+
+  #board{ position:fixed; right:26px; top:120px; z-index:21; width:230px; display:none; }
+  #board.on{ display:block; }
+  #board .panel{ padding:12px 13px; }
+  #board h2{ font-size:15px; margin-bottom:8px; }
+  #board .rows .r{ font-size:13px; padding:4px 8px; grid-template-columns:28px 1fr auto; }
+  #board .rows .r .p{ font-size:15px; }
+
+  #watch{
+    position:fixed; left:50%; top:22px; transform:translateX(-50%); z-index:36; display:none;
+    background:var(--red); color:#fff; border:var(--key); border-radius:14px; box-shadow:var(--drop);
+    padding:9px 18px; font-family:var(--display); font-weight:800; font-size:15px; letter-spacing:.08em;
+  }
+  #watch.on{ display:block; }
+  #watch span{ color:var(--gold); }
+
+  /* ---------- chat ---------- */
+  #chat{ position:fixed; left:26px; top:140px; width:320px; z-index:22; pointer-events:none; }
+  #log{ display:flex; flex-direction:column; gap:4px; }
+  #log div{
+    font-weight:700; font-size:13px; background:rgba(23,34,59,.72); border:2px solid var(--ink);
+    border-radius:10px; padding:3px 9px; width:fit-content; max-width:100%; color:#fff;
+    transition:opacity .8s;
+  }
+  #log .sys{ color:var(--gold); }
+  #log b{ color:#8fd3ff; }
+  #say{ margin-top:7px; display:none; pointer-events:auto; }
+  #say.on{ display:block; }
+  #say input{
+    width:100%; font-family:var(--body); font-weight:700; font-size:13px; padding:7px 10px;
+    color:var(--ink); background:#fff; border:var(--key); border-radius:10px; outline:none;
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    #slot.spin .face, #slot.land, #count.go .word{ animation:none; }
+  }
+</style>
+
+<div id="title">
+  <div class="wm">SUPER KART<small>GRAND PRIX</small></div>
+  <div class="card">
+    <h2>Pick a racer</h2>
+    <label for="nick">Name</label>
+    <input id="nick" maxlength="12" placeholder="Player" autocomplete="off" spellcheck="false">
+    <div id="cast"></div>
+  </div>
+  <button class="big" id="go">Start engine</button>
+  <div id="keys">
+    <b>&#8593;</b> go &middot; <b>&#8595;</b> brake &middot; <b>&#8592;</b> <b>&#8594;</b> steer &middot;
+    <b>Shift</b> hop and drift<br>
+    <b>E</b> use item &middot; <b>C</b> camera &middot; <b>M</b> sound &middot; <b>T</b> chat &middot; <b>Esc</b> pause
+  </div>
+  <div id="load">building the circuit&hellip;</div>
+</div>
+
+<div id="hud">
+  <div id="slot" class="empty"><div class="face" id="face"></div></div>
+  <div id="lap"><span class="n out" id="lapn">1</span><span class="of" id="lapof">/3</span><em>lap</em></div>
+  <div id="place" class="p1"><span class="n out" id="placen">1</span><span class="sfx" id="placesfx">st</span></div>
+  <div id="mini"><canvas id="minic" width="380" height="232"></canvas></div>
+  <div id="coins"><i></i><span id="coinn">0</span></div>
+  <div id="charge"><i id="chargei"></i></div>
+  <div id="speed"><span class="n out" id="speedn">0</span><em>km/h</em></div>
+  <div id="notice"></div>
+</div>
+
+<div id="board"><div class="panel"><h2>Standings</h2><div class="rows" id="boardrows"></div></div></div>
+
+<div id="count"><div class="lights"><i></i><i></i><i></i></div><div class="word">GO!</div></div>
+
+<div id="watch" class="">Watching this race &middot; <span>you start the next one</span></div>
+
+<div id="results">
+  <div class="panel">
+    <h2 id="restitle">Race over</h2>
+    <div class="rows" id="resrows"></div>
+    <div class="foot" id="resfoot">Next race starting&hellip;</div>
+  </div>
+</div>
+
+<div id="chat">
+  <div id="log"></div>
+  <div id="say"><input id="sayin" maxlength="140" autocomplete="off" spellcheck="false" placeholder="say something"></div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "/legacy/vendor/three-0.163.0.module.js" } }
+</script>
+<script type="module">
+const load = document.getElementById('load');
+function fatal(m){ load.textContent = 'Could not start: ' + m; load.style.color = '#ffd233'; }
+addEventListener('error', e => fatal(e.message || 'script error'));
+addEventListener('unhandledrejection', e => fatal((e.reason && e.reason.message) || 'load error'));
+let THREE;
+try { THREE = await import('three'); }
+catch (_e) {
+  try { THREE = await import('https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js'); }
+  catch (e2) { fatal('3D library failed to load.'); throw e2; }
+}
+window.THREE = THREE;
+load.textContent = 'warming the tyres…';
+await import('./game.js');
+</script>

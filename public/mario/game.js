@@ -1,0 +1,790 @@
+/* ---------------------------------------------------------------------------
+   Super Kart GP - the loop.
+
+   One circuit, one lobby, three laps. This file owns the renderer, the race
+   state machine, the camera, the HUD and the input; the track, the karts, the
+   items, the computer drivers and the network each live next door.
+
+   The race runs on the clock the server keeps when somebody else is connected,
+   and on its own clock when nobody is. Either way the phases are the same:
+   waiting, the lights, the race, the results, and round again. Turn up mid-race
+   and you watch this one from the grid and start the next.
+--------------------------------------------------------------------------- */
+const THREE = window.THREE;
+import { buildTrack } from './track.js';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js';
+import { makeBrain, driveBrain } from './ai.js';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js';
+import * as snd from './audio.js';
+
+const el = id => document.getElementById(id);
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const LAPS = 3;
+const CPN = 8;
+const GRID = 8;                       // how big a field the circuit is set up for
+
+/* ------------------------------------------------------------------ renderer */
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;        // flat and bright, like the genre
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x4fb7ff);
+scene.fog = new THREE.Fog(0x8fd3ff, 260, 640);
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 1600);
+
+/* a bright sky with a few flat clouds, painted into a dome */
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(900, 24, 14),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    uniforms: { top: { value: new THREE.Color(0x2f8fe0) }, bot: { value: new THREE.Color(0xbfe8ff) } },
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `
+      uniform vec3 top, bot; varying vec3 vP;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5); }
+      float n(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+        return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
+      void main(){
+        float y = clamp(vP.y, 0.0, 1.0);
+        vec3 c = mix(bot, top, pow(y, 0.7));
+        if (vP.y > 0.04) {
+          vec2 uv = vP.xz / max(vP.y, 0.08) * 0.55;
+          float f = n(uv) * 0.6 + n(uv * 2.3) * 0.3 + n(uv * 5.1) * 0.1;
+          float cloud = smoothstep(0.56, 0.78, f) * smoothstep(0.04, 0.3, vP.y);
+          c = mix(c, vec3(1.0), cloud * 0.9);
+        }
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  })
+);
+sky.frustumCulled = false;
+scene.add(sky);
+
+const sun = new THREE.DirectionalLight(0xfff4d8, 2.1);
+sun.position.set(120, 190, 80);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 10; sun.shadow.camera.far = 420;
+sun.shadow.camera.left = -110; sun.shadow.camera.right = 110;
+sun.shadow.camera.top = 110; sun.shadow.camera.bottom = -110;
+sun.shadow.bias = -0.0006;
+sun.shadow.normalBias = 0.05;
+scene.add(sun);
+scene.add(sun.target);
+scene.add(new THREE.HemisphereLight(0xcfeaff, 0x5f9a4a, 0.85));
+scene.add(new THREE.AmbientLight(0xffffff, 0.28));
+
+/* ------------------------------------------------------------------- state -- */
+let track = null, items = null;
+let phase = 'title';                  // title | count | race | results
+let phaseT = 0;
+let me = null;                        // the player's kart
+let karts = [];                       // everything on the grid, in no order
+let brains = [];                      // the computer drivers
+let spectating = false;
+let raceTime = 0, results = [], notified = 0;
+let net = null, myName = 'Player', myCast = 0;
+let started = false, paused = false, chatting = false;
+let soloRound = 0, autoBrain = null;
+
+try {
+  myName = (localStorage.getItem('mkName') || '').slice(0, 12);
+  myCast = clamp(+(localStorage.getItem('mkCast') || 0), 0, RACERS.length - 1);
+} catch (e) {}
+
+/* ------------------------------------------------------------------- input -- */
+const keys = Object.create(null);
+const input = { gas: 0, brake: 0, steer: 0, hop: false };
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (chatting) { if (k === 'escape') closeChat(false); return; }
+  keys[k] = true;
+  if (k === 't' && started) { openChat(); e.preventDefault(); }
+  if (k === 'e' && started) useItem(me);
+  if (k === 'c' && started) camMode = (camMode + 1) % 3;
+  if (k === 'escape' && started) paused = !paused;
+  if (k === 'm' && started) { snd.mute(!snd.muted_()); notice(snd.muted_() ? 'Sound off' : 'Sound on'); }
+  if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+function readInput() {
+  const left = keys['arrowleft'] || keys['a'];
+  const right = keys['arrowright'] || keys['d'];
+  input.gas = (keys['arrowup'] || keys['w']) ? 1 : 0;
+  input.brake = (keys['arrowdown'] || keys['s']) ? 1 : 0;
+  input.steer = (right ? 1 : 0) - (left ? 1 : 0);
+  input.hop = !!(keys['shift'] || keys[' ']);
+  if (phase !== 'race' || spectating || !me || me.finished || paused) {
+    // nobody moves before the lights; holding the throttle there is the rocket
+    // start, and goRace() is where that gets paid out
+    input.gas = 0; input.brake = 0; input.steer = 0; input.hop = false;
+  }
+  return input;
+}
+
+/* --------------------------------------------------------------- the field -- */
+function addKart(racer, opts) {
+  const k = makeKart(racer);
+  k.id = opts.id;
+  k.name = opts.name || racer.name;
+  k.bot = !!opts.bot;
+  k.remote = !!opts.remote;
+  scene.add(k.group);
+  karts.push(k);
+  return k;
+}
+
+function clearField() {
+  for (const k of karts) scene.remove(k.group);
+  karts = [];
+  brains = [];
+  if (items) items.clear();
+}
+
+function placeOnGrid() {
+  // the running order of the last race sets the grid for the next one
+  karts.forEach((k, n) => {
+    const slot = track.gridSlot(n);
+    k.pos.copy(slot.pos);
+    k.yaw = slot.yaw;
+    k.speed = 0; k.drift = 0; k.driftT = 0; k.slide = 0; k.hop = 0; k.hopV = 0;
+    k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0; k.coins = 0;
+    k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0;
+    k.item = null; k.itemN = 0; k.roulette = 0;
+    k.hint = null;
+    const pr = track.project(k.pos.x, k.pos.z, null);
+    k.hint = pr.i;
+    k.pos.y = pr.y;
+    apply(k);
+  });
+  for (const b of track.itemBoxes) b.taken = 0;
+  for (const c of track.coins) c.taken = 0;
+}
+
+/* start a round. `field` is either null (solo, filled with computer drivers) or
+   the list of humans the server says are racing this round. */
+function startRound(field, seed) {
+  clearField();
+  results = [];
+  raceTime = 0; notified = 0;
+  const grid = [];
+  if (field && field.length) {
+    for (const p of field) {
+      grid.push(addKart(RACERS[clamp(p.cast | 0, 0, RACERS.length - 1)], {
+        id: p.id, name: p.name, remote: p.id !== (net && net.id),
+      }));
+    }
+    me = karts.find(k => k.id === (net && net.id)) || null;
+    if (!me) spectating = true;
+  } else {
+    me = addKart(RACERS[myCast], { id: 'me', name: myName || 'You' });
+  }
+  // fill the grid with computer drivers, but only when it is a solo race
+  if (!field || field.length <= 1) {
+    let s = (seed | 0) || 1234;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+    const pool = RACERS.filter(r => !(me && me.who === r));
+    for (let n = karts.length; n < GRID; n++) {
+      const r = pool[(n - 1 + pool.length) % pool.length];
+      const k = addKart(r, { id: 'bot' + n, name: r.name, bot: true });
+      brains.push(makeBrain(k, 0.52 + rnd() * 0.42, 99 + n * 17));
+    }
+  }
+  placeOnGrid();
+  snapCamera();
+  spectating = !me;
+  phase = 'count';
+  phaseT = 4.2;
+  el('watch').classList.toggle('on', spectating);
+  el('results').classList.remove('on');
+  el('board').classList.add('on');
+  el('hud').classList.add('on');
+  hudItem();
+  say(spectating ? 'Watching this race. You are in the next one.' : 'Three laps. Good luck.', 'sys');
+}
+
+/* --------------------------------------------------------------- the laps --- */
+function cpOf(i) { return Math.floor(i / track.samples.length * CPN) % CPN; }
+
+function lapLogic(k, pr) {
+  const c = cpOf(pr.i);
+  const next = (k.cpi + 1) % CPN;
+  if (c === next) {
+    k.cpi = c;
+    if (c === 0) {
+      k.lap++;
+      if (k.lap > LAPS) finishKart(k);
+      else if (k === me) {
+        snd.lapChime();
+        notice(k.lap === LAPS ? 'Final lap' : 'Lap ' + k.lap);
+        if (k.lap === LAPS) say('Final lap.', 'sys');
+      }
+    }
+  }
+}
+
+function finishKart(k) {
+  if (k.finished) return;
+  k.finished = 1;
+  k.time = raceTime;
+  k.lap = LAPS;
+  results.push(k);
+  k.place = results.length;
+  if (k === me) {
+    notice(ord(results.length) + '!');
+    snd.fanfare(results.length <= 3);
+    showResults(false);
+  }
+  if (k === me && net) net.finish(raceTime, results.length);
+}
+
+function order() {
+  // everybody still going, sorted by how far round they are
+  const live = karts.slice().sort((a, b) => {
+    if (a.finished && b.finished) return a.time - b.time;
+    if (a.finished) return -1;
+    if (b.finished) return 1;
+    return lapProg(b, track) - lapProg(a, track);
+  });
+  live.forEach((k, i) => { k.place = i + 1; });
+  return live;
+}
+
+/* --------------------------------------------------------------- the items -- */
+function pickupBox(k, b) {
+  if (k.item || k.roulette > 0) return;
+  b.taken = 6;
+  k.roulette = 1.05;
+  k.rollTo = rollItem(k.place, karts.length);
+  k.rollN = rollCount(k.rollTo, k.place, karts.length);
+  if (k === me) { el('slot').classList.add('spin'); el('slot').classList.remove('empty'); }
+}
+
+function useItem(k) {
+  if (!k || !k.item || k.finished || phase !== 'race') return;
+  const id = k.item;
+  const def = ITEMS[id];
+  if (def.self) {
+    if (id === 'star') { k.star = 6.5; k.boost = Math.max(k.boost, 0.4); if (k === me) notice('Star!'); }
+    if (id === 'surge') {
+      for (const o of karts) {
+        if (o === k || o.place >= k.place || o.star > 0) continue;
+        o.slow = 3; o.speed *= 0.6; o.coins = Math.max(0, o.coins - 2);
+        if (o.remote && net && k === me) net.hitThem(o.id, 'surge');
+      }
+      if (k === me) notice('Surge!');
+      puff(k.pos.clone().setY(k.pos.y + 1.4), 0x8fd3ff);
+    }
+  } else if (id === 'turbo') {
+    k.boost = Math.max(k.boost, 1.25);
+    if (k === me) snd.boost();
+    for (let i = 0; i < 6; i++) spark(k.pos.clone().setY(k.pos.y + 0.4), 0xffd233, 2);
+  } else {
+    items.spawn(id, k, karts);
+  }
+  if (net && k === me) net.fire(id);
+  k.itemN--;
+  if (k.itemN <= 0) { k.item = null; k.itemN = 0; }
+  if (k === me) hudItem();
+}
+
+/* --------------------------------------------------------------- the world -- */
+function stepWorld(dt) {
+  const live = order();
+  const leader = live[0] ? lapProg(live[0], track) : 0;
+
+  // the computer drivers, and the autopilot when a test is driving
+  if (autoBrain) {
+    autoBrain.hazards = items.hazards;
+    autoBrain.input = phase === 'race' ? driveBrain(autoBrain, track, dt, karts, leader, useItem)
+                                       : { gas: 0, brake: 0, steer: 0, hop: false };
+  }
+  for (const b of brains) {
+    b.hazards = items.hazards;
+    const inp = driveBrain(b, track, dt, karts, leader, useItem);
+    b.input = inp;
+  }
+
+  for (const k of karts) {
+    if (k.remote) continue;                       // somebody else's kart, they drive it
+    let inp;
+    if (k === me) inp = autoBrain ? (autoBrain.input || { gas: 1, brake: 0, steer: 0, hop: false }) : readInput();
+    else {
+      const b = brains.find(q => q.kart === k);
+      inp = (b && b.input) || { gas: 1, brake: 0, steer: 0, hop: false };
+      if (phase !== 'race') inp = { gas: 0, brake: 0, steer: 0, hop: false };
+    }
+    if (k.finished) inp = { gas: 1, brake: 0, steer: (brains.find(q => q.kart === k) ? 0 : 0), hop: false };
+    const pr = stepKart(k, inp, track, dt);
+    if (phase === 'race') lapLogic(k, pr);
+
+    // the tarmac furniture
+    for (const b of track.itemBoxes) {
+      if (b.taken > 0) continue;
+      if (Math.hypot(b.pos.x - k.pos.x, b.pos.z - k.pos.z) > 1.7) continue;
+      pickupBox(k, b);
+      puff(b.pos.clone(), 0xffd233);
+      if (k === me) snd.tick();
+    }
+    for (const c of track.coins) {
+      if (c.taken > 0) continue;
+      if (Math.hypot(c.pos.x - k.pos.x, c.pos.z - k.pos.z) > 1.5) continue;
+      c.taken = 8;
+      k.coins = Math.min(10, k.coins + 1);
+      if (k === me) { coinPop(c.pos.clone()); snd.coin(); }
+    }
+    for (const p of track.boostPads) {
+      if (Math.hypot(p.pos.x - k.pos.x, p.pos.z - k.pos.z) > p.w + 2) continue;
+      if (k === me && k.boost <= 0.2) snd.boost();
+      k.boost = Math.max(k.boost, 0.85);
+    }
+
+    // the roulette landing
+    if (k.roulette > 0) {
+      k.roulette -= dt;
+      if (k.roulette <= 0) {
+        k.item = k.rollTo; k.itemN = k.rollN;
+        if (k === me) { el('slot').classList.remove('spin'); el('slot').classList.add('land'); setTimeout(() => el('slot').classList.remove('land'), 300); hudItem(); snd.land(); }
+      }
+    }
+    // the drift sparks, and the boost trail
+    if (k.drift !== 0 && k.speed > 8 && Math.random() < 0.6) {
+      const hot = k.driftT > 1.45;
+      const back = k.pos.clone().setY(k.pos.y + 0.25);
+      back.x += Math.sin(k.yaw) * 1.1; back.z += Math.cos(k.yaw) * 1.1;
+      spark(back, k.driftT > 0.75 ? (hot ? 0xffd233 : 0x8fd3ff) : 0xdfe6ef, 1.2);
+    }
+    if ((k.boost > 0 || k.star > 0) && Math.random() < 0.7) {
+      const back = k.pos.clone().setY(k.pos.y + 0.3);
+      back.x += Math.sin(k.yaw) * 1.3; back.z += Math.cos(k.yaw) * 1.3;
+      spark(back, k.star > 0 ? 0xffd233 : 0xff8a1f, 1.5);
+    }
+    if (k.wallHit) { k.wallHit = 0; puff(k.pos.clone().setY(k.pos.y + 0.6), 0xfff6e2); if (k === me) snd.bump(); }
+  }
+
+  // karts touching karts
+  for (let i = 0; i < karts.length; i++) {
+    for (let j = i + 1; j < karts.length; j++) {
+      const a = karts[i], b = karts[j];
+      if (a.remote && b.remote) continue;
+      if (bump(a, b)) {
+        // a star ploughs straight through anybody else
+        if (a.star > 0 && b.star <= 0 && !b.remote) spinOut(b, false);
+        if (b.star > 0 && a.star <= 0 && !a.remote) spinOut(a, false);
+      }
+    }
+  }
+
+  items.step(dt, karts, (k, kind, by) => {
+    if (k === me) { notice('Hit!'); snd.spin(); }
+    if (kind === 'bomb' && Math.hypot(k.pos.x - (me ? me.pos.x : 0), k.pos.z - (me ? me.pos.z : 0)) < 22) snd.bang();
+    // my shell, their kart: their browser has to be told, it owns that kart
+    if (k.remote && me && by === me.id && net) net.hitThem(k.id, kind);
+  });
+
+  // the boxes and coins come back
+  for (const b of track.itemBoxes) if (b.taken > 0) b.taken -= dt;
+  for (const c of track.coins) if (c.taken > 0) c.taken -= dt;
+  dressTrack();
+
+  for (const k of karts) apply(k);
+}
+
+/* the item boxes spin and bob, and hide for a moment after being taken */
+let dressT = 0;
+function dressTrack() {
+  dressT += 0.016;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  track.itemBoxes.forEach((b, i) => {
+    const on = b.taken <= 0;
+    e.set(dressT * 0.8 + i, dressT * 1.3 + i, 0);
+    q.setFromEuler(e);
+    s.setScalar(on ? 1 : 0.001);
+    p.set(b.pos.x, b.pos.y + Math.sin(dressT * 2 + i) * 0.16, b.pos.z);
+    m.compose(p, q, s);
+    track.boxMesh.setMatrixAt(i, m);
+  });
+  track.boxMesh.instanceMatrix.needsUpdate = true;
+  track.coins.forEach((c, i) => {
+    const on = c.taken <= 0;
+    e.set(0, dressT * 3 + i, 0);
+    q.setFromEuler(e);
+    s.setScalar(on ? 1 : 0.001);
+    p.set(c.pos.x, c.pos.y + Math.sin(dressT * 3 + i) * 0.12, c.pos.z);
+    m.compose(p, q, s);
+    track.coinMesh.setMatrixAt(i, m);
+  });
+  track.coinMesh.instanceMatrix.needsUpdate = true;
+}
+
+/* -------------------------------------------------------------- the camera -- */
+let camMode = 0;
+const camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
+function snapCamera() {
+  const watch = me || karts[0];
+  if (!watch) return;
+  const c = CAM[camMode];
+  camPos.set(watch.pos.x + Math.sin(watch.yaw) * c.d, watch.pos.y + c.h, watch.pos.z + Math.cos(watch.yaw) * c.d);
+  camAim.set(watch.pos.x, watch.pos.y + 1.25, watch.pos.z);
+  camera.position.copy(camPos);
+  camera.lookAt(camAim);
+}
+const CAM = [{ d: 6.8, h: 2.9, fov: 62 }, { d: 10.5, h: 4.6, fov: 58 }, { d: 3.4, h: 1.9, fov: 70 }];
+function stepCamera(dt) {
+  const watch = spectating ? (order()[0] || me) : me;
+  if (!watch) return;
+  const c = CAM[camMode];
+  const back = keys['r'] ? -1 : 1;
+  const yaw = watch.yaw + (watch.slide * 0.5);
+  const want = new THREE.Vector3(
+    watch.pos.x + Math.sin(yaw) * c.d * back,
+    watch.pos.y + c.h + watch.hop * 0.4,
+    watch.pos.z + Math.cos(yaw) * c.d * back
+  );
+  const k = 1 - Math.exp(-(phase === 'count' ? 3 : 7.5) * dt);
+  camPos.lerp(want, k);
+  camAim.lerp(new THREE.Vector3(watch.pos.x, watch.pos.y + 1.25, watch.pos.z), 1 - Math.exp(-11 * dt));
+  camera.position.copy(camPos);
+  camera.lookAt(camAim);
+  const fov = c.fov + (watch.boost > 0 ? 6 : 0) + (watch.star > 0 ? 3 : 0);
+  if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = lerp(camera.fov, fov, 1 - Math.exp(-6 * dt)); camera.updateProjectionMatrix(); }
+  // keep the sun's shadow box on the action
+  sun.position.set(watch.pos.x + 120, 190, watch.pos.z + 80);
+  sun.target.position.set(watch.pos.x, 0, watch.pos.z);
+}
+
+/* ----------------------------------------------------------------- the HUD -- */
+function ord(n) {
+  const s = ['th', 'st', 'nd', 'rd'][(n % 10 > 3 || (n % 100 - n % 10) === 10) ? 0 : n % 10] || 'th';
+  return n + s;
+}
+function hudItem() {
+  const slot = el('slot'), face = el('face');
+  if (!me || !me.item) { slot.classList.add('empty'); face.innerHTML = ''; return; }
+  slot.classList.remove('empty');
+  face.innerHTML = ITEMS[me.item].face + (me.itemN > 1 ? '<span class="n">x' + me.itemN + '</span>' : '');
+}
+let noticeT = 0;
+function notice(text) {
+  el('notice').textContent = text;
+  el('notice').classList.add('on');
+  noticeT = 1.6;
+}
+function drawHud(dt) {
+  if (noticeT > 0) { noticeT -= dt; if (noticeT <= 0) el('notice').classList.remove('on'); }
+  const watch = spectating ? (order()[0] || me) : me;
+  if (!watch) return;
+  el('lapn').textContent = Math.min(LAPS, watch.lap);
+  el('lapof').textContent = '/' + LAPS;
+  const pl = watch.place || 1;
+  el('placen').textContent = pl;
+  el('placesfx').textContent = ord(pl).replace(/^\d+/, '');
+  el('place').className = 'p' + Math.min(3, pl);
+  el('coinn').textContent = watch.coins;
+  el('speedn').textContent = Math.round(Math.abs(watch.speed) * 3.6);
+  const ch = el('charge');
+  if (watch.drift !== 0) {
+    ch.classList.add('on');
+    ch.classList.toggle('hot', watch.driftT > 1.45);
+    el('chargei').style.width = clamp(watch.driftT / 1.45, 0, 1) * 100 + '%';
+  } else ch.classList.remove('on');
+  drawBoard();
+  drawMini();
+}
+
+function drawBoard() {
+  const live = order();
+  const rows = live.slice(0, 8).map(k =>
+    '<div class="r' + (k === me ? ' me' : '') + (k.bot ? ' bot' : '') + (k.place === 1 ? ' p1' : '') + '">'
+    + '<span class="p">' + k.place + '</span>'
+    + '<span>' + esc(k.name) + '</span>'
+    + '<span class="t">' + (k.finished ? time(k.time) : 'L' + Math.min(LAPS, k.lap)) + '</span></div>').join('');
+  el('boardrows').innerHTML = rows;
+}
+
+const minic = el('minic'), mg = minic.getContext('2d');
+function drawMini() {
+  const W = minic.width, H = minic.height;
+  const b = track.bounds;
+  const pad = 16;
+  const sx = (W - pad * 2) / (b.maxx - b.minx), sz = (H - pad * 2) / (b.maxz - b.minz);
+  const s = Math.min(sx, sz);
+  const ox = pad + ((W - pad * 2) - (b.maxx - b.minx) * s) / 2;
+  const oz = pad + ((H - pad * 2) - (b.maxz - b.minz) * s) / 2;
+  const X = x => ox + (x - b.minx) * s, Z = z => oz + (z - b.minz) * s;
+  mg.clearRect(0, 0, W, H);
+  mg.lineWidth = 10; mg.lineJoin = 'round'; mg.strokeStyle = '#17223b';
+  mg.beginPath();
+  track.outline.forEach((p, i) => { i ? mg.lineTo(X(p[0]), Z(p[1])) : mg.moveTo(X(p[0]), Z(p[1])); });
+  mg.closePath(); mg.stroke();
+  mg.lineWidth = 6; mg.strokeStyle = '#9aa3b2'; mg.stroke();
+  for (const k of karts) {
+    mg.beginPath();
+    mg.arc(X(k.pos.x), Z(k.pos.z), k === me ? 7 : 5, 0, 7);
+    mg.fillStyle = k === me ? '#ffd233' : (k.bot ? '#fff6e2' : '#8fd3ff');
+    mg.fill();
+    mg.lineWidth = 3; mg.strokeStyle = '#17223b'; mg.stroke();
+  }
+}
+
+function time(t) {
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2);
+}
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function showResults(final) {
+  const live = order();
+  el('restitle').textContent = final ? 'Race over' : 'You finished ' + ord(me ? me.place : 1);
+  el('resrows').innerHTML = live.map(k =>
+    '<div class="r' + (k === me ? ' me' : '') + (k.bot ? ' bot' : '') + (k.place === 1 ? ' p1' : '') + '">'
+    + '<span class="p">' + k.place + '</span><span>' + esc(k.name) + '</span>'
+    + '<span class="t">' + (k.finished ? time(k.time) : '-') + '</span></div>').join('');
+  el('results').classList.add('on');
+}
+
+/* ------------------------------------------------------------------- chat --- */
+function say(text, cls) {
+  const log = el('log');
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.innerHTML = text;
+  log.appendChild(d);
+  while (log.children.length > 7) log.removeChild(log.firstChild);
+  setTimeout(() => { if (d.parentNode) d.style.opacity = '0'; }, 13000);
+}
+function openChat() { chatting = true; el('say').classList.add('on'); el('sayin').value = ''; setTimeout(() => el('sayin').focus(), 0); }
+function closeChat(send) {
+  const v = el('sayin').value.trim();
+  chatting = false; el('say').classList.remove('on'); el('sayin').blur();
+  if (send && v) { if (net) net.chat(v); else say('<b>' + esc(myName || 'You') + '</b> ' + esc(v), 'me'); }
+}
+el('sayin').addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') closeChat(true);
+  if (e.key === 'Escape') closeChat(false);
+});
+
+/* ---------------------------------------------------------- the round clock -- */
+function stepPhase(dt) {
+  // when the server is in charge it sends the phase; otherwise run it here
+  if (net && net.alive) return;
+  phaseT -= dt;
+  if (phase === 'count') {
+    setLights(phaseT);
+    if (phaseT <= 0) goRace();
+  } else if (phase === 'race') {
+    raceTime += dt;
+    const done = karts.every(k => k.finished);
+    if (done || (results.length && raceTime - results[0].time > 22) || raceTime > 400) endRace();
+  } else if (phase === 'results') {
+    if (phaseT <= 0) { soloRound++; startRound(null, 4321 + soloRound * 77); }
+  }
+}
+let litWas = -1;
+function setLights(t) {
+  const c = el('count');
+  c.classList.add('on');
+  c.classList.remove('go');
+  const lit = t < 3 ? (t < 1 ? 3 : t < 2 ? 2 : 1) : 0;
+  [...c.querySelectorAll('.lights i')].forEach((i, n) => i.className = n < lit ? 'lit' : '');
+  if (lit !== litWas) { if (lit > 0 && lit > litWas) snd.beep(false); litWas = lit; }
+}
+function goRace() {
+  phase = 'race';
+  raceTime = 0;
+  litWas = -1;
+  snd.beep(true);
+  snd.music(true);
+  const c = el('count');
+  c.classList.add('go');
+  setTimeout(() => c.classList.remove('on'), 900);
+  // a rocket start for anyone already on the throttle
+  if (me && !spectating && (keys['arrowup'] || keys['w'])) { me.boost = 1.1; notice('Rocket start!'); }
+  for (const b of brains) if (Math.random() < b.skill * 0.7) b.kart.boost = 0.8;
+}
+function endRace() {
+  phase = 'results';
+  phaseT = 11;
+  snd.music(false);
+  for (const k of karts) if (!k.finished) { k.finished = 1; k.time = raceTime; results.push(k); k.place = results.length; }
+  order();
+  showResults(true);
+  el('board').classList.remove('on');
+  el('resfoot').textContent = net && net.alive ? 'Next race starting soon' : 'Next race in a few seconds';
+}
+
+/* -------------------------------------------------------------- the loop ---- */
+let last = performance.now();
+function frame() {
+  requestAnimationFrame(frame);
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (!started) { renderer.render(scene, camera); return; }
+
+  if (!paused) {
+    stepPhase(dt);
+    if (phase === 'race' || phase === 'count') stepWorld(dt);
+    else for (const k of karts) apply(k);
+    if (net && net.alive) {
+      if (phase === 'race') raceTime += dt;
+      net.tick(dt);
+    }
+  }
+  stepCamera(dt);
+  stepFx(dt, camera);
+  stepSound(dt);
+  drawHud(dt);
+  renderer.render(scene, camera);
+}
+
+/* ------------------------------------------------------------------ sound --- */
+function stepSound() {
+  if (!snd.isOn()) return;
+  const k = spectating ? (order()[0] || me) : me;
+  if (!k) return;
+  snd.engine(phase === 'race' || phase === 'count', k.speed, topSpeed(k), k.offroad);
+  snd.skid(k.drift !== 0 && k.speed > 8);
+  snd.musicTick();
+}
+
+/* ------------------------------------------------------------------ start --- */
+function buildCast() {
+  const box = el('cast');
+  const input = el('nick');
+  input.value = myName;
+  input.addEventListener('input', () => {
+    myName = input.value.slice(0, 12);
+    try { localStorage.setItem('mkName', myName); } catch (e) {}
+  });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') el('go').click(); });
+  RACERS.forEach((r, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = '<i style="background:#' + r.shirt.toString(16).padStart(6, '0') + '"></i>' + r.name;
+    b.onclick = () => {
+      myCast = i;
+      try { localStorage.setItem('mkCast', String(i)); } catch (e) {}
+      [...box.children].forEach((c, j) => c.classList.toggle('on', j === i));
+      if (net) net.setCast(i);
+    };
+    box.appendChild(b);
+  });
+  [...box.children].forEach((c, j) => c.classList.toggle('on', j === myCast));
+}
+
+async function start() {
+  snd.start();                             // the click that got us here is the gesture
+  el('load').textContent = 'laying out the circuit…';
+  await new Promise(r => setTimeout(r, 20));
+  track = buildTrack(scene);
+  initFx(scene);
+  items = makeItemWorld(scene, track, { blast });
+
+  el('load').textContent = 'lining up…';
+  await new Promise(r => setTimeout(r, 20));
+
+  // the network decides the round if anybody else is about
+  try {
+    const mod = await import('./net.js');
+    net = mod.connect({
+      scene, THREE, say, esc,
+      get name() { return myName; },
+      get cast() { return myCast; },
+      world: {
+        startRound, get karts() { return karts; }, get me() { return me; },
+        setPhase(p, t, extra) {
+          phase = p; phaseT = t;
+          if (p === 'count') setLights(t);
+          if (p === 'race' && !extra) goRace();
+          if (p === 'results') endRace();
+        },
+        setSpectating(v) { spectating = v; el('watch').classList.toggle('on', v); },
+        spinOut, useItem, items: () => items, track: () => track,
+        get raceTime() { return raceTime; },
+        addTime(dt) { raceTime += dt; },
+        setRaceTime(t) { raceTime = t; },
+        RACERS, notice,
+      },
+    });
+  } catch (e) { say('Racing on your own, the lobby is not reachable.', 'sys'); }
+
+  // wait for the lobby to answer one way or the other before deciding this is a
+  // solo race, or every session starts a race of its own and then throws it away
+  if (net) { for (let i = 0; i < 44 && !net.settled; i++) await new Promise(r => setTimeout(r, 50)); }
+
+  started = true;
+  el('title').classList.add('gone');
+  if (!net || !net.alive) startRound(null, 4321);
+  el('hud').classList.add('on');
+}
+
+buildCast();
+el('go').addEventListener('click', () => { if (!started) start(); });
+frame();
+
+/* a handle, so a test can drive the whole thing without a keyboard */
+window.__mk = {
+  get phase() { return phase; },
+  get karts() { return karts; },
+  get me() { return me; },
+  get track() { return track; },
+  get items() { return items; },
+  get results() { return results; },
+  get spectating() { return spectating; },
+  get net() { return net; },
+  get started() { return started; },
+  start,
+  key(k, on) { keys[k] = !!on; },
+  // a test can freeze the loop and run the world by hand, which makes the
+  // countdown and the finish deterministic instead of a race with the renderer
+  pause(v) { paused = !!v; return paused; },
+  step(n, dt) {
+    for (let i = 0; i < (n || 1); i++) {
+      stepPhase(dt || 0.02);
+      if (phase === 'race' || phase === 'count') stepWorld(dt || 0.02);
+      stepCamera(dt || 0.02);
+    }
+    drawHud(dt || 0.02);
+  },
+  autopilot(on) {
+    autoBrain = on && me ? makeBrain(me, 0.95, 4242) : null;
+    return !!autoBrain;
+  },
+  giveItem(id, n) { if (me) { me.item = id; me.itemN = n || 1; me.roulette = 0; hudItem(); } },
+  use() { useItem(me); },
+  tp(s, lateral) {
+    const a = track.at(((s % track.length) + track.length) % track.length);
+    me.pos.copy(a.p).addScaledVector(a.n, (lateral || 0) * a.w);
+    me.yaw = Math.atan2(-a.t.x, -a.t.z);
+    me.hint = null;
+    const pr = track.project(me.pos.x, me.pos.z, null);
+    me.hint = pr.i; me.pos.y = pr.y; me.prog = pr.s;
+  },
+  stats() {
+    return {
+      phase, spectating, laps: LAPS, lap: me ? me.lap : 0, place: me ? me.place : 0,
+      speed: me ? +me.speed.toFixed(2) : 0, coins: me ? me.coins : 0,
+      item: me ? me.item : null, itemN: me ? me.itemN : 0,
+      karts: karts.length, bots: brains.length, time: +raceTime.toFixed(2),
+      finished: me ? !!me.finished : false, results: results.length,
+      trackLen: track ? Math.round(track.length) : 0,
+    };
+  },
+};
