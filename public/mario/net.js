@@ -20,6 +20,7 @@ export function connect(ctx) {
   const { world, say, esc } = ctx;
   let ws = null, alive = false, settled = false, myId = 0, myName = '';
   let lastPhase = '', lastRound = -1, sendAt = 0;
+  let sent = 0, got = 0;                 // counted, so a test can see which side went quiet
   const seen = new Map();            // id -> the last thing they said
 
   const url = WS + (WS.indexOf('?') >= 0 ? '&' : '?') + 'mode=mk'
@@ -58,6 +59,7 @@ export function connect(ctx) {
     if (m.type === 'cast') { const p = seen.get(m.id); if (p) p.cast = m.cast; return; }
 
     if (m.type === 'pos') {
+      got++;
       let p = seen.get(m.id);
       if (!p) { p = {}; seen.set(m.id, p); }
       p.tx = m.x; p.ty = m.y; p.tz = m.z; p.tyaw = m.yaw;
@@ -145,6 +147,7 @@ export function connect(ctx) {
   return {
     get alive() { return alive; },
     get settled() { return settled; },
+    get traffic() { return { sent, got }; },
     get id() { return myId; },
     get name() { return myName; },
     get others() { return seen; },
@@ -160,6 +163,7 @@ export function connect(ctx) {
       const now = performance.now();
       if (me && now - sendAt > 70) {
         sendAt = now;
+        sent++;
         send({
           type: 'pos',
           x: +me.pos.x.toFixed(2), y: +me.pos.y.toFixed(2), z: +me.pos.z.toFixed(2),
