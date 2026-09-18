@@ -72,6 +72,11 @@
   .screen{
     position:fixed; inset:0; z-index:20;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
+    /* a twenty row board makes these screens tall, so let a short window scroll
+       rather than clip the buttons off the bottom. `safe` keeps the top reachable:
+       plain centring pushes overflow off both ends. */
+    justify-content:safe center;
+    overflow-y:auto;
     background:radial-gradient(120% 90% at 50% 40%, rgba(var(--tint),.55) 0%, color-mix(in srgb, var(--sheet) 86%, transparent) 55%, color-mix(in srgb, var(--sheet) 96%, transparent) 100%);
     text-align:center;
     padding:24px;
@@ -149,10 +154,12 @@
   }
   .stat.best .val{ color:var(--neon); text-shadow:0 0 20px color-mix(in srgb, var(--neon) 60%, transparent); }
   /* ---- the board ----------------------------------------------------------
-     Ten rows of the same monospace the score readout uses, so a number here
+     Twenty rows of the same monospace the score readout uses, so a number here
      lines up with the number you just scored. Your own row keeps the neon; the
      rest sit back in the grey so the list reads as a ladder you are on rather
-     than a wall of names.                                                    */
+     than a wall of names. If your run is further down than twentieth it gets a
+     row of its own under the list, with the rank it actually has - the point of
+     a ladder is knowing which rung you are on, not only who is at the top.   */
   .board{
     width:min(460px, 86vw); margin:20px auto 0; text-align:left;
     border:1px solid color-mix(in srgb, var(--neon) 22%, transparent);
@@ -165,10 +172,20 @@
     color:color-mix(in srgb, var(--neon) 72%, #fff); margin-bottom:8px;
   }
   .board .bhead .note{ letter-spacing:.4px; text-transform:none; opacity:.55; font-size:11px; color:#cfe8d8 }
-  .board ol{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px }
+  .board ol{
+    list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;
+    /* twenty rows fit a normal screen; a short one gets a scrollbar rather than
+       a board that runs off the bottom */
+    max-height:min(52vh, 520px); overflow-y:auto; scrollbar-width:thin;
+  }
+  .board ol[hidden]{ display:none }
+  .board ol.byou{
+    max-height:none; overflow:visible; margin-top:7px; padding-top:7px;
+    border-top:1px solid color-mix(in srgb, var(--neon) 18%, transparent);
+  }
   .board li{
-    display:grid; grid-template-columns:26px 1fr auto; gap:10px; align-items:baseline;
-    padding:3px 8px; font-size:14px; color:#9fb3a6;
+    display:grid; grid-template-columns:30px 1fr auto; gap:10px; align-items:baseline;
+    padding:2px 8px; font-size:13px; color:#9fb3a6;
     font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
   .board li .pos{ text-align:right; opacity:.5; font-size:12px }
@@ -337,8 +354,9 @@
     <button class="btn ghost" id="garageBtn">Garage</button>
   </div>
   <div class="board" id="board">
-    <div class="bhead"><span>Global top 10</span><span class="note" id="boardNote">loading</span></div>
+    <div class="bhead"><span>Global top 20</span><span class="note" id="boardNote">loading</span></div>
     <ol id="boardRows"></ol>
+    <ol class="byou" id="boardYou" hidden></ol>
     <div class="bnote" id="boardMsg"></div>
     <div class="bname">
       <input id="boardName" maxlength="14" placeholder="Your name" autocomplete="off" spellcheck="false">
@@ -362,8 +380,9 @@
   <div class="newbest" id="newBest">New record</div>
   <div class="earned" id="earned"></div>
   <div class="board" id="board2">
-    <div class="bhead"><span>Global top 10</span><span class="note" id="boardNote2"></span></div>
+    <div class="bhead"><span>Global top 20</span><span class="note" id="boardNote2"></span></div>
     <ol id="boardRows2"></ol>
+    <ol class="byou" id="boardYou2" hidden></ol>
     <div class="bnote" id="boardMsg2"></div>
   </div>
   <div class="row">
@@ -2093,20 +2112,35 @@ try{ const raw = JSON.parse(localStorage.getItem('slopeMine') || '[]');
 function boardRemember(at){
   if(!at || boardMine.indexOf(at) >= 0) return;
   boardMine.push(at);
-  if(boardMine.length > 60) boardMine = boardMine.slice(-60);   // a board only holds 25
+  if(boardMine.length > 60) boardMine = boardMine.slice(-60);   // the board only keeps so many
   try{ localStorage.setItem('slopeMine', JSON.stringify(boardMine)); }catch(e){}
 }
 
+const BOARD_SHOW = 20;
+function boardRow(r, rank, mine){
+  return '<li class="' + (mine ? 'me' : '') + '">' +
+    '<span class="pos">' + rank + '</span>' +
+    '<span class="who">' + esc(r.name) + '</span>' +
+    '<span class="pts">' + r.score + '</span>' +
+  '</li>';
+}
 function boardPaint(rows, msg, note){
   boardRowsCache = rows || boardRowsCache;
-  const html = (boardRowsCache.slice(0, 10)).map((r, i) =>
-    '<li class="' + (boardMine.indexOf(r.at) >= 0 ? 'me' : '') + '">' +
-      '<span class="pos">' + (i + 1) + '</span>' +
-      '<span class="who">' + esc(r.name) + '</span>' +
-      '<span class="pts">' + r.score + '</span>' +
-    '</li>').join('');
+  const html = boardRowsCache.slice(0, BOARD_SHOW)
+    .map((r, i) => boardRow(r, i + 1, boardMine.indexOf(r.at) >= 0)).join('');
+  // The board comes back in order, so the first row this browser made is its best
+  // one. If it is past the twenty on show, it gets its own row underneath with the
+  // rank it really has.
+  let mine = -1;
+  for(let i = 0; i < boardRowsCache.length; i++){
+    if(boardMine.indexOf(boardRowsCache[i].at) >= 0){ mine = i; break; }
+  }
+  const youHtml = mine >= BOARD_SHOW ? boardRow(boardRowsCache[mine], mine + 1, true) : '';
   for(const id of ['boardRows','boardRows2']){
     const o = el(id); if(o) o.innerHTML = html || '<li><span class="pos"></span><span class="who">nobody yet</span><span class="pts"></span></li>';
+  }
+  for(const id of ['boardYou','boardYou2']){
+    const o = el(id); if(o){ o.innerHTML = youHtml; o.hidden = !youHtml; }
   }
   for(const id of ['boardMsg','boardMsg2']){ const o = el(id); if(o && msg !== undefined) o.textContent = msg || ''; }
   for(const id of ['boardNote','boardNote2']){ const o = el(id); if(o && note !== undefined) o.textContent = note || ''; }
@@ -2138,8 +2172,8 @@ async function boardSubmit(score){
       boardRemember(j.at);
       const cut = j.board.length ? j.board[j.board.length - 1].score : 0;
       boardPaint(j.board,
-        j.beat ? (j.rank <= 10 ? 'Number ' + j.rank + ' in the world.'
-                               : 'On the board at ' + j.rank + '.')
+        j.beat ? (j.rank <= BOARD_SHOW ? 'Number ' + j.rank + ' in the world.'
+                                      : 'On the board at ' + j.rank + '.')
                : 'Not on the board - ' + cut + ' gets you on it.', '');
     } else boardPaint(null, (j && j.error) || 'Could not reach the board.');
   }catch(e){ boardPaint(null, 'Could not reach the board.'); }
@@ -3065,9 +3099,11 @@ const HANDLE = window.__slope = {
   get coins(){ return coins; },
   // the global board, so a harness can drive it without a full run
   board: { submit:(n)=>boardSubmit(n), load:()=>boardLoad(), setName:(v)=>{ el('boardName').value=v; boardSetName(); },
+           get shown(){ return BOARD_SHOW; },
+           get rows(){ return boardRowsCache.slice(); },
+           you(){ const o = el('boardYou'); return o && !o.hidden ? o.textContent.trim() : ''; },
            get mine(){ return boardMine.slice(); },
-           get name(){ return boardName; },
-           get rows(){ return boardRowsCache.slice(); } },
+           get name(){ return boardName; } },
   get width(){ return { start:HW_START, end:HW_END, steer:LAT_ACC, back:CAM_BACK, spread:startSpread }; },
   get scale(){ return JSON.parse(JSON.stringify(SCALE)); },
   get forgive(){ return { hazardH:HZ_H, edge:EDGE_GRIP, maxRun:MAX_RUN }; },
