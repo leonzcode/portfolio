@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Super Kart GP - the loop.
+   Leon Cart - the loop.
 
    One circuit, one lobby, three laps. This file owns the renderer, the race
    state machine, the camera, the HUD and the input; the track, the karts, the
@@ -691,7 +691,7 @@ function buildCast() {
     myName = input.value.slice(0, 12);
     try { localStorage.setItem('mkName', myName); } catch (e) {}
   });
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') el('go').click(); });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') el('online').click(); });
   RACERS.forEach((r, i) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -707,7 +707,9 @@ function buildCast() {
   [...box.children].forEach((c, j) => c.classList.toggle('on', j === myCast));
 }
 
-async function start() {
+async function start(online) {
+  if (started) return;
+  const wantLobby = online === undefined ? true : !!online;
   snd.start();                             // the click that got us here is the gesture
   el('load').textContent = 'laying out the circuit…';
   await new Promise(r => setTimeout(r, 20));
@@ -718,8 +720,9 @@ async function start() {
   el('load').textContent = 'lining up…';
   await new Promise(r => setTimeout(r, 20));
 
-  // the network decides the round if anybody else is about
+  // the lobby decides the round, when you asked for one
   try {
+    if (!wantLobby) throw new Error('solo');
     const mod = await import('./net.js');
     net = mod.connect({
       scene, THREE, say, esc,
@@ -742,11 +745,15 @@ async function start() {
         RACERS, notice,
       },
     });
-  } catch (e) { say('Racing on your own, the lobby is not reachable.', 'sys'); }
+  } catch (e) {
+    net = null;
+    if (wantLobby) say('Racing on your own, the lobby is not reachable.', 'sys');
+  }
 
   // wait for the lobby to answer one way or the other before deciding this is a
   // solo race, or every session starts a race of its own and then throws it away
   if (net) { for (let i = 0; i < 44 && !net.settled; i++) await new Promise(r => setTimeout(r, 50)); }
+  if (net && !net.alive) { net = null; say('The lobby did not answer. Racing on your own.', 'sys'); }
 
   started = true;
   el('title').classList.add('gone');
@@ -755,7 +762,8 @@ async function start() {
 }
 
 buildCast();
-el('go').addEventListener('click', () => { if (!started) start(); });
+el('solo').addEventListener('click', () => start(false));
+el('online').addEventListener('click', () => start(true));
 frame();
 
 /* a handle, so a test can drive the whole thing without a keyboard */
@@ -770,6 +778,8 @@ window.__mk = {
   get net() { return net; },
   get started() { return started; },
   start,
+  startSolo() { return start(false); },
+  startOnline() { return start(true); },
   key(k, on) { keys[k] = !!on; },
   // a test can freeze the loop and run the world by hand, which makes the
   // countdown and the finish deterministic instead of a race with the renderer
