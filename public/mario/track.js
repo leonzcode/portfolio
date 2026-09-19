@@ -11,6 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
+import { themeById } from './themes.js?v=23';
 
 /* The lap.
 
@@ -94,12 +95,13 @@ function canvasTex(w, h, draw, rep) {
   return t;
 }
 
-function tarmacTex() {
+function tarmacTex(th) {
+  const [base, spread, tint] = th.tarmacGrit;
   return canvasTex(256, 256, (g, W, H) => {
-    g.fillStyle = '#5c616b'; g.fillRect(0, 0, W, H);
+    g.fillStyle = th.tarmac; g.fillRect(0, 0, W, H);
     for (let i = 0; i < 6000; i++) {
-      const v = 88 + Math.random() * 34;
-      g.fillStyle = 'rgba(' + (v | 0) + ',' + (v | 0) + ',' + ((v + 6) | 0) + ',.45)';
+      const v = base + Math.random() * spread;
+      g.fillStyle = 'rgba(' + (v | 0) + ',' + (v | 0) + ',' + ((v + tint) | 0) + ',.45)';
       g.fillRect(Math.random() * W, Math.random() * H, 2, 2);
     }
     for (let i = 0; i < 18; i++) {
@@ -108,16 +110,16 @@ function tarmacTex() {
     }
   }, [1, 1]);
 }
-function grassTex() {
+function grassTex(th) {
   return canvasTex(256, 256, (g, W, H) => {
-    g.fillStyle = '#57c04a'; g.fillRect(0, 0, W, H);
+    g.fillStyle = th.ground; g.fillRect(0, 0, W, H);
     for (let i = 0; i < 4200; i++) {
       const v = Math.random();
-      g.fillStyle = v < 0.5 ? 'rgba(74,170,60,.55)' : 'rgba(112,208,92,.5)';
+      g.fillStyle = v < 0.5 ? th.groundFleck[0] : th.groundFleck[1];
       g.fillRect(Math.random() * W, Math.random() * H, 3, 3);
     }
     for (let i = 0; i < 90; i++) {
-      g.strokeStyle = 'rgba(66,150,56,.55)'; g.lineWidth = 2;
+      g.strokeStyle = th.blade; g.lineWidth = 2;
       const x = Math.random() * W, y = Math.random() * H;
       g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() - 0.5) * 12, y - 8 - Math.random() * 10); g.stroke();
     }
@@ -131,7 +133,7 @@ function catmull(p0, p1, p2, p3, t, key) {
   return 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
 }
 
-function sampleLoop(seed) {
+function sampleLoop(seed, th) {
   basins.length = 0;                  // a new lap digs its own hollows
   const CP = makeCP(seed);
   const fine = [];
@@ -237,13 +239,16 @@ function sampleLoop(seed) {
   // All three sit on straight stretches. They are flat inside, because the deck,
   // the tube and the sheet are all built square to the road, and a flat section
   // on the circuit's best corner is a corner thrown away.
-  const features = [
+  // Each place gets the sections that suit it: there is no water in a lava
+  // hollow and no river through a city block.
+  const ALL = {
     // long and gentle, because a bridge is a bridge: at this slope the crest
     // does not reach the launch threshold and nobody is thrown off it
-    { kind: 'bridge', at: 0.06, len: 34, rise: 4.5 },
-    { kind: 'tunnel', at: 0.44, len: 30 },
-    { kind: 'water', at: 0.83, len: 34, drop: 3.1 },
-  ];
+    bridge: { kind: 'bridge', at: 0.06, len: 34, rise: 4.5 },
+    tunnel: { kind: 'tunnel', at: 0.44, len: 30 },
+    water: { kind: 'water', at: 0.83, len: 34, drop: 3.1 },
+  };
+  const features = (th.features || ['bridge', 'tunnel', 'water']).map(k => Object.assign({}, ALL[k]));
   for (const f of features) {
     f.i0 = Math.floor(f.at * M);
     f.ids = [];
@@ -275,7 +280,7 @@ function sampleLoop(seed) {
      because every other part of the game asks the track "how far round am I"
      and expects one answer. */
   const splits = [];
-  {
+  if (th.split !== false) {
     const at = 0.70, len = 24, i0 = Math.floor(at * M);
     let mid = null;
     for (let k = 0; k < len; k++) {
@@ -294,8 +299,9 @@ function sampleLoop(seed) {
 }
 
 /* ---- put it together ----------------------------------------------------- */
-export function buildTrack(scene, seed) {
-  const { samples, length, ramps, features, splits } = sampleLoop(seed);
+export function buildTrack(scene, seed, themeId) {
+  const th = themeById(themeId);
+  const { samples, length, ramps, features, splits } = sampleLoop(seed, th);
   const N = samples.length;
   /* The camber pivots on the inside edge rather than the middle of the road.
      Tilting about the middle drops the inside edge below the field it is cut
@@ -321,7 +327,7 @@ export function buildTrack(scene, seed) {
     gp.setY(i, groundY(x, z));
   }
   gg.computeVertexNormals();
-  const ground = new THREE.Mesh(gg, new THREE.MeshStandardMaterial({ map: grassTex(), roughness: 1 }));
+  const ground = new THREE.Mesh(gg, new THREE.MeshStandardMaterial({ map: grassTex(th), roughness: 1 }));
   ground.receiveShadow = true;
   group.add(ground);
 
@@ -358,14 +364,14 @@ export function buildTrack(scene, seed) {
   }
   const road = new THREE.Mesh(
     ribbon(pos, uv, idx),
-    new THREE.MeshStandardMaterial({ map: tarmacTex(), roughness: 0.82, metalness: 0.02 })
+    new THREE.MeshStandardMaterial({ map: tarmacTex(th), roughness: 0.82, metalness: 0.02 })
   );
   road.receiveShadow = true;
   group.add(road);
 
   const kerbTex = canvasTex(64, 64, (g, W, H) => {
-    g.fillStyle = '#e8402a'; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#fff6e2'; g.fillRect(0, 0, W, H / 2);
+    g.fillStyle = th.kerbA; g.fillRect(0, 0, W, H);
+    g.fillStyle = th.kerbB; g.fillRect(0, 0, W, H / 2);
   }, [1, 1]);
   const kerb = new THREE.Mesh(ribbon(kpos, kuv, kidx),
     new THREE.MeshStandardMaterial({ map: kerbTex, roughness: 0.7 }));
@@ -409,14 +415,14 @@ export function buildTrack(scene, seed) {
   const m4 = new THREE.Matrix4();
 
   /* trees and hills for the middle distance */
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8a5a36, roughness: 1 });
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f9440, roughness: 1, flatShading: true });
+  const trunkMat = new THREE.MeshStandardMaterial({ color: th.trunk, roughness: 1 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: th.leaf, roughness: 1, flatShading: true });
   const trunks = [], leaves = [];
   // the trees get their own stream, started from the lap's seed so a new circuit
   // gets a new wood rather than the same one draped over it
   let tseed = (seed | 0) * 7 + 7;
   const rnd = () => { tseed = (tseed * 1103515245 + 12345) & 0x7fffffff; return tseed / 0x7fffffff; };
-  for (let k = 0; k < 420; k++) {
+  for (let k = 0; k < th.treeCount; k++) {
     const a = rnd() * Math.PI * 2, d = 150 + rnd() * 260;
     const x = Math.cos(a) * d, z = Math.sin(a) * d * 0.8;
     // keep the trees clear of the tarmac
@@ -539,6 +545,116 @@ export function buildTrack(scene, seed) {
       }));
       sheet.renderOrder = 2;
       group.add(sheet);
+    }
+  }
+
+  /* ---- what this place has that the others do not ------------------------ */
+  const ice = [], lava = [];
+  {
+    let ss = ((seed | 0) * 13 + 5) & 0x7fffffff;
+    const rr = () => { ss = (ss * 1103515245 + 12345) & 0x7fffffff; return ss / 0x7fffffff; };
+
+    if (th.signature === 'ice') {
+      // Patches on the tarmac rather than beside it: the line matters, and you
+      // can see them coming if you are looking far enough ahead.
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xdff2ff, roughness: 0.06, metalness: 0.25,
+        transparent: true, opacity: 0.78, depthWrite: false,
+      });
+      const geo = new THREE.CircleGeometry(1, 12);
+      geo.rotateX(-Math.PI / 2);
+      const im = new THREE.InstancedMesh(geo, mat, 34);
+      im.frustumCulled = false; im.renderOrder = 1; im.name = 'ice';
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+      for (let k = 0; k < 34; k++) {
+        const a = samples[Math.floor(rr() * N)];
+        const lat = (rr() * 1.4 - 0.7) * a.w;
+        const p = a.p.clone().addScaledVector(a.n, lat);
+        const r = 2.6 + rr() * 3.4;
+        sc.set(r, 1, r * (0.7 + rr() * 0.6));
+        m.compose(new THREE.Vector3(p.x, surf(a, lat) + 0.09, p.z), q, sc);
+        im.setMatrixAt(k, m);
+        ice.push({ x: p.x, z: p.z, r: r * 0.9 });
+      }
+      im.instanceMatrix.needsUpdate = true;
+      group.add(im);
+    }
+
+    if (th.signature === 'lava') {
+      // Off the racing line, glowing, and it throws you if you put a wheel in it.
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xff7a1a, emissive: 0xff4a10, emissiveIntensity: 1.35, roughness: 0.55,
+      });
+      const geo = new THREE.CircleGeometry(1, 14);
+      geo.rotateX(-Math.PI / 2);
+      const im = new THREE.InstancedMesh(geo, mat, 26);
+      im.frustumCulled = false; im.name = 'lava';
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+      for (let k = 0; k < 26; k++) {
+        const a = samples[Math.floor(rr() * N)];
+        const side = rr() < 0.5 ? 1 : -1;
+        const p = a.p.clone().addScaledVector(a.n, side * (a.w + 5 + rr() * 16));
+        const r = 3.5 + rr() * 5;
+        sc.set(r, 1, r);
+        m.compose(new THREE.Vector3(p.x, groundY(p.x, p.z) + 0.12, p.z), q, sc);
+        im.setMatrixAt(k, m);
+        lava.push({ x: p.x, z: p.z, r: r * 0.85 });
+      }
+      im.instanceMatrix.needsUpdate = true;
+      group.add(im);
+    }
+
+    if (th.signature === 'towers') {
+      // A city either side of the road, close enough to feel like walls, with
+      // windows lit at the height a window is lit.
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x2a3150, roughness: 0.85 });
+      const litMat = new THREE.MeshStandardMaterial({
+        color: 0x0f1428, emissive: 0x39d0ff, emissiveIntensity: 0.55, roughness: 0.4,
+      });
+      const body = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), wallMat, 120);
+      const glow = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), litMat, 120);
+      body.frustumCulled = glow.frustumCulled = false;
+      body.name = glow.name = 'towers';
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3();
+      for (let k = 0; k < 120; k++) {
+        const a = samples[Math.floor(rr() * N)];
+        const side = rr() < 0.5 ? 1 : -1;
+        const off = a.w + 9 + rr() * 34;
+        const p = a.p.clone().addScaledVector(a.n, side * off);
+        const w = 7 + rr() * 11, h = 16 + rr() * 54;
+        const foot = groundY(p.x, p.z);
+        e.set(0, Math.atan2(a.t.x, a.t.z), 0); q.setFromEuler(e);
+        sc.set(w, h, w * (0.7 + rr() * 0.6));
+        m.compose(new THREE.Vector3(p.x, foot + h / 2, p.z), q, sc);
+        body.setMatrixAt(k, m);
+        sc.set(w * 0.82, h * 0.86, w * 0.58);
+        m.compose(new THREE.Vector3(p.x, foot + h / 2, p.z), q, sc);
+        glow.setMatrixAt(k, m);
+      }
+      body.instanceMatrix.needsUpdate = true;
+      glow.instanceMatrix.needsUpdate = true;
+      body.castShadow = true;
+      group.add(body); group.add(glow);
+    }
+
+    if (th.signature === 'rocks') {
+      // Boulders standing in the run off, so going wide is a decision.
+      const mat = new THREE.MeshStandardMaterial({ color: 0xa8663c, roughness: 1, flatShading: true });
+      const im = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), mat, 90);
+      im.frustumCulled = false; im.castShadow = true; im.name = 'rocks';
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3();
+      for (let k = 0; k < 90; k++) {
+        const a = samples[Math.floor(rr() * N)];
+        const side = rr() < 0.5 ? 1 : -1;
+        const p = a.p.clone().addScaledVector(a.n, side * (a.w + 4 + rr() * 26));
+        const r = 1.6 + rr() * 4.2;
+        e.set(rr() * 3, rr() * 6, rr() * 3); q.setFromEuler(e);
+        sc.set(r, r * (0.7 + rr() * 0.7), r);
+        m.compose(new THREE.Vector3(p.x, groundY(p.x, p.z) + r * 0.45, p.z), q, sc);
+        im.setMatrixAt(k, m);
+      }
+      im.instanceMatrix.needsUpdate = true;
+      group.add(im);
     }
   }
 
@@ -756,6 +872,9 @@ export function buildTrack(scene, seed) {
 
   return {
     group, samples, length, ramps, features, splits, project, at, gridSlot, groundY,
+    theme: th,
+    // the patches that change how the ground under you behaves
+    ice, lava,
     // things on the road you have to go round rather than through
     blocks,
     // how far past the tarmac the wall is, so the barriers can stand on it
