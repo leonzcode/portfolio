@@ -163,6 +163,8 @@ export function makeCones(scene, track) {
 
   return {
     list, step, shove,
+    // every mesh the cones own, so a new circuit can take the old ones away
+    meshes: smallM.concat(largeM),
     get count() { return list.length; },
     get moving() { return list.filter(c => c.vx !== 0 || c.vz !== 0).length; },
   };

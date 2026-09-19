@@ -12,43 +12,55 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-/* The lap: a long pit straight, a fast right sweeper, a chicane, a hairpin, and
-   a long left-hander that spits you back onto the straight. Width is per point
-   so the hairpin can open out and the chicane can pinch. */
-const CP = [
-  { x: -60, z: -128, w: 9.5 },
-  { x: 40, z: -132, w: 9.5 },
-  { x: 118, z: -120, w: 9.0 },
-  { x: 168, z: -84, w: 8.5 },
-  { x: 180, z: -26, w: 8.0 },
-  { x: 144, z: 14, w: 7.5 },
-  { x: 172, z: 58, w: 8.0 },
-  { x: 152, z: 110, w: 11.0 },
-  { x: 84, z: 126, w: 10.0 },
-  { x: 24, z: 104, w: 8.5 },
-  { x: -42, z: 124, w: 9.0 },
-  { x: -112, z: 102, w: 10.5 },
-  { x: -154, z: 42, w: 9.0 },
-  { x: -146, z: -42, w: 9.0 },
-  { x: -112, z: -104, w: 9.5 },
-];
+/* The lap.
+
+   Drawn fresh for every race from the round's seed, because a circuit you have
+   learned is a circuit you stop reading. The shape is a ring whose radius is a
+   few smooth harmonics of the angle round it: that gives long straights, real
+   corners and the odd hairpin, and it can never cross itself, which a wandering
+   walk very much can. Width varies point to point so a hairpin can open out and
+   a chicane can pinch.
+
+   Both browsers in a lobby build from the same seed, so both get the same lap
+   without a byte of it going over the wire. */
+function makeCP(seed) {
+  let s = (seed | 0) || 1;
+  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const n = 15 + Math.floor(rnd() * 5);
+  const wave = [
+    { k: 2, a: 0.10 + rnd() * 0.15, p: rnd() * 6.283 },
+    { k: 3, a: 0.06 + rnd() * 0.13, p: rnd() * 6.283 },
+    { k: 5, a: 0.04 + rnd() * 0.08, p: rnd() * 6.283 },
+    { k: 7, a: 0.02 + rnd() * 0.05, p: rnd() * 6.283 },
+  ];
+  const squash = 0.78 + rnd() * 0.22;
+  const spin = rnd() * 6.283;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const th = (i / n) * Math.PI * 2;
+    let r = 1;
+    for (const q of wave) r += q.a * Math.sin(q.k * th + q.p);
+    const R = 168 * r;
+    out.push({
+      x: Math.cos(th + spin) * R,
+      z: Math.sin(th + spin) * R * squash,
+      w: 7.5 + rnd() * 3.6,
+    });
+  }
+  return out;
+}
 
 const STEP = 2.2;                 // metres between samples
-const KERB = 1.5;                 // kerb strip, just outside the tarmac
+const KERB = 1.5;                 // the red and white, the outer strip of the road
 // The wall stands on the edge of the tarmac itself, so the barrier is on the
-// road rather than beside it, and the red and white is the outer strip of the
-// road rather than a verge past the end of it. props.js finds this line by
-// asking project where it is, so the barriers follow it wherever it goes,
-// camber and all.
+// road rather than beside it. props.js finds this line by asking project where
+// it is, so the barriers follow it wherever it goes, camber and all.
 const SHOULDER = 0;
 
 function hill(x, z) {
-  // gentle ground, so the circuit rolls rather than sitting on a table
+  // gentle ground, so the circuit sits in country rather than on a table
   return Math.sin(x * 0.0075) * 3.4 + Math.cos(z * 0.0091) * 3.0 + Math.sin((x + z) * 0.004) * 2.2;
 }
-// where the grass actually is, rim of hills and all. The road follows hill()
-// alone, so anything standing off to the side has to ask for this instead or it
-// floats a metre over the field.
 // Hollows dug into the field. The water section runs along a channel, and a
 // channel means the ground either side has to come down to meet it, or the road
 // is simply buried under a flat field.
@@ -119,7 +131,9 @@ function catmull(p0, p1, p2, p3, t, key) {
   return 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
 }
 
-function sampleLoop() {
+function sampleLoop(seed) {
+  basins.length = 0;                  // a new lap digs its own hollows
+  const CP = makeCP(seed);
   const fine = [];
   const n = CP.length;
   for (let i = 0; i < n; i++) {
@@ -148,6 +162,20 @@ function sampleLoop() {
       w: a.w, s, len,
     });
     s += len;
+  }
+
+  /* ---- the road is graded ------------------------------------------------- */
+  // The ground rolls; a road laid on it should not. Average each sample's height
+  // over the fifty odd metres either side of it, which keeps the long climbs and
+  // takes out the short bumps that were being felt through the wheels.
+  {
+    const raw = out.map(a => a.p.y);
+    const n = out.length, W = 12;
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let d = -W; d <= W; d++) sum += raw[(i + d + n) % n];
+      out[i].p.y = sum / (W * 2 + 1);
+    }
   }
 
   /* ---- the lean of the corners ------------------------------------------- */
@@ -238,8 +266,8 @@ function sampleLoop() {
 }
 
 /* ---- put it together ----------------------------------------------------- */
-export function buildTrack(scene) {
-  const { samples, length, ramps, features } = sampleLoop();
+export function buildTrack(scene, seed) {
+  const { samples, length, ramps, features } = sampleLoop(seed);
   const N = samples.length;
   /* The camber pivots on the inside edge rather than the middle of the road.
      Tilting about the middle drops the inside edge below the field it is cut
@@ -348,8 +376,10 @@ export function buildTrack(scene) {
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8a5a36, roughness: 1 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f9440, roughness: 1, flatShading: true });
   const trunks = [], leaves = [];
-  let seed = 7;
-  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  // the trees get their own stream, started from the lap's seed so a new circuit
+  // gets a new wood rather than the same one draped over it
+  let tseed = (seed | 0) * 7 + 7;
+  const rnd = () => { tseed = (tseed * 1103515245 + 12345) & 0x7fffffff; return tseed / 0x7fffffff; };
   for (let k = 0; k < 420; k++) {
     const a = rnd() * Math.PI * 2, d = 150 + rnd() * 260;
     const x = Math.cos(a) * d, z = Math.sin(a) * d * 0.8;
