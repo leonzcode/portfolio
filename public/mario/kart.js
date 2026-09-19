@@ -141,7 +141,11 @@ export function makeKart(who) {
 
 export function apply(k) {
   k.group.position.set(k.pos.x, k.pos.y + k.hop, k.pos.z);
-  k.group.rotation.y = k.yaw + k.slide;
+  // The kart is drawn cocked INTO the corner, which is what a drift looks like:
+  // slide is the angle travel sits away from the heading, so the body goes the
+  // other way. Adding it instead swung the kart away from the turn, and pressing
+  // right while drifting looked for all the world like going left.
+  k.group.rotation.y = k.yaw - k.slide * 0.45;
   k.body.rotation.z = k.lean;
   k.body.rotation.x = -k.speed * 0.0012;
   for (const w of k.wheels) {
@@ -224,7 +228,8 @@ export function stepKart(k, input, track, dt) {
     k.steerVis += (steer * 0.55 - k.steerVis) * Math.min(1, dt * 10);
     const wantSlide = k.drift !== 0 ? -k.drift * 0.42 : 0;
     k.slide += (wantSlide - k.slide) * Math.min(1, dt * 6);
-    k.lean += ((k.drift !== 0 ? k.drift * 0.16 : -steer * 0.05) - k.lean) * Math.min(1, dt * 8);
+    // and it rolls to the outside of the corner, drifting or not
+    k.lean += ((k.drift !== 0 ? -k.drift * 0.16 : -steer * 0.05) - k.lean) * Math.min(1, dt * 8);
   }
 
   // the hop arc

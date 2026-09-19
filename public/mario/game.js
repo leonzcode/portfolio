@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=3';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=3';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=3';
-import { makeBrain, driveBrain } from './ai.js?v=3';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=3';
-import * as snd from './audio.js?v=3';
+import { buildTrack } from './track.js?v=4';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=4';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=4';
+import { makeBrain, driveBrain } from './ai.js?v=4';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=4';
+import * as snd from './audio.js?v=4';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -112,7 +112,7 @@ addEventListener('keydown', e => {
   keys[k] = true;
   if (k === 't' && started) { openChat(); e.preventDefault(); }
   if (k === 'e' && started) useItem(me);
-  if (k === 'c' && started) camMode = (camMode + 1) % 3;
+  if (k === 'q' && started) { camMode = (camMode + 1) % CAM.length; notice(CAM[camMode].name + ' view'); }
   if (k === 'escape' && started) paused = !paused;
   if (k === 'm' && started) { snd.mute(!snd.muted_()); notice(snd.muted_() ? 'Sound off' : 'Sound on'); }
   if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) e.preventDefault();
@@ -438,32 +438,51 @@ function dressTrack() {
 }
 
 /* -------------------------------------------------------------- the camera -- */
-let camMode = 0;
+let camMode = 0, camHidden = null;
 const camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
 function snapCamera() {
   const watch = me || karts[0];
   if (!watch) return;
   const c = CAM[camMode];
   camPos.set(watch.pos.x + Math.sin(watch.yaw) * c.d, watch.pos.y + c.h, watch.pos.z + Math.cos(watch.yaw) * c.d);
-  camAim.set(watch.pos.x, watch.pos.y + 1.25, watch.pos.z);
+  if (c.aim) camAim.set(watch.pos.x - Math.sin(watch.yaw) * c.aim, watch.pos.y + 1.1, watch.pos.z - Math.cos(watch.yaw) * c.aim);
+  else camAim.set(watch.pos.x, watch.pos.y + 1.25, watch.pos.z);
   camera.position.copy(camPos);
   camera.lookAt(camAim);
 }
-const CAM = [{ d: 6.8, h: 2.9, fov: 62 }, { d: 10.5, h: 4.6, fov: 58 }, { d: 3.4, h: 1.9, fov: 70 }];
+// d is how far behind, h how high, aim how far up the road it looks instead of
+// at the kart, hide whether the kart is in the way of its own camera
+const CAM = [
+  { name: 'Chase',    d: 6.8,  h: 2.9,  fov: 62 },
+  { name: 'Far',      d: 10.5, h: 4.6,  fov: 58 },
+  { name: 'Close',    d: 3.4,  h: 1.9,  fov: 70 },
+  { name: 'Driver',   d: 0.15, h: 1.45, fov: 78, aim: 15, hide: true },
+  { name: 'Overhead', d: 2.2,  h: 15,   fov: 52 },
+];
 function stepCamera(dt) {
   const watch = spectating ? (order()[0] || me) : me;
   if (!watch) return;
   const c = CAM[camMode];
   const back = keys['r'] ? -1 : 1;
-  const yaw = watch.yaw + (watch.slide * 0.5);
+  // sit behind where the kart is going, not where it is pointing, so a drift
+  // reads as the kart cocked across a view that still follows the road
+  const yaw = watch.yaw + watch.slide * 0.35;
   const want = new THREE.Vector3(
     watch.pos.x + Math.sin(yaw) * c.d * back,
     watch.pos.y + c.h + watch.hop * 0.4,
     watch.pos.z + Math.cos(yaw) * c.d * back
   );
+  const look = new THREE.Vector3(watch.pos.x, watch.pos.y + 1.25, watch.pos.z);
+  if (c.aim) {
+    look.set(watch.pos.x - Math.sin(yaw) * c.aim * back, watch.pos.y + 1.1,
+             watch.pos.z - Math.cos(yaw) * c.aim * back);
+  }
+  // from the driver's seat the kart is only in the way
+  if (camHidden && (camHidden !== watch || !c.hide)) { camHidden.group.visible = true; camHidden = null; }
+  if (c.hide) { watch.group.visible = false; camHidden = watch; }
   const k = 1 - Math.exp(-(phase === 'count' ? 3 : 7.5) * dt);
   camPos.lerp(want, k);
-  camAim.lerp(new THREE.Vector3(watch.pos.x, watch.pos.y + 1.25, watch.pos.z), 1 - Math.exp(-11 * dt));
+  camAim.lerp(look, 1 - Math.exp(-11 * dt));
   camera.position.copy(camPos);
   camera.lookAt(camAim);
   const fov = c.fov + (watch.boost > 0 ? 6 : 0) + (watch.star > 0 ? 3 : 0);
@@ -728,7 +747,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=3');
+    const mod = await import('./net.js?v=4');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -780,6 +799,9 @@ window.__mk = {
   get items() { return items; },
   get results() { return results; },
   get spectating() { return spectating; },
+  get camera() { return camera; },
+  get view() { return CAM[camMode].name; },
+  get views() { return CAM.map(c => c.name); },
   get net() { return net; },
   get started() { return started; },
   start,
