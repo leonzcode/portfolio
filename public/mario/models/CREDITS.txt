@@ -1,0 +1,14 @@
+Models
+------
+Every .glb in this folder is from Kenney's Racing Kit (version 2.0), taken
+unmodified from https://kenney.nl/assets/racing-kit
+
+Licence: Creative Commons Zero (CC0 1.0 Universal), public domain.
+http://creativecommons.org/publicdomain/zero/1.0/
+
+Free for personal, educational and commercial use. Crediting Kenney is not
+required; it is here so anyone reading this knows what these files are and where
+they came from.
+
+The karts themselves are not from here - they are built in code in kart.js, one
+per racer, so each one can carry its driver's colours.

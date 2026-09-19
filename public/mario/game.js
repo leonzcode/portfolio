@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=7';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=7';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=7';
-import { makeBrain, driveBrain } from './ai.js?v=7';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=7';
-import * as snd from './audio.js?v=7';
+import { buildTrack } from './track.js?v=8';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=8';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=8';
+import { makeBrain, driveBrain } from './ai.js?v=8';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=8';
+import * as snd from './audio.js?v=8';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -778,6 +778,8 @@ async function start(online) {
   el('load').textContent = 'laying out the circuit…';
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
+  // the scenery turns up when it turns up; the circuit is drivable without it
+  import('./props.js?v=8').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
 
@@ -787,7 +789,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=7');
+    const mod = await import('./net.js?v=8');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -923,6 +925,7 @@ window.__mk = {
   get results() { return results; },
   get spectating() { return spectating; },
   get camera() { return camera; },
+  get props() { return scene.getObjectByName('props'); },
   get paused() { return paused; },
   get sound() { return snd.musicNow(); },
   get bind() { return bind; },
