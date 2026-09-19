@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=26';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=26';
-import { packLook, unpackLook, normalise } from './parts.js?v=26';
-import { makeGarage, PARTS } from './garage.js?v=26';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=26';
-import { makeRescue } from './rescue.js?v=26';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=26';
-import { makeBrain, driveBrain } from './ai.js?v=26';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=26';
-import { makeCones } from './cones.js?v=26';
-import { makeHazards } from './hazards.js?v=26';
-import { THEMES, themeById } from './themes.js?v=26';
-import * as snd from './audio.js?v=26';
+import { buildTrack } from './track.js?v=27';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=27';
+import { packLook, unpackLook, normalise } from './parts.js?v=27';
+import { makeGarage, PARTS } from './garage.js?v=27';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=27';
+import { makeRescue } from './rescue.js?v=27';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=27';
+import { makeBrain, driveBrain } from './ai.js?v=27';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=27';
+import { makeCones } from './cones.js?v=27';
+import { makeHazards } from './hazards.js?v=27';
+import { THEMES, themeById } from './themes.js?v=27';
+import * as snd from './audio.js?v=27';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -321,7 +321,7 @@ function buildWorld(seed, themeId) {
   hazards = makeHazards(scene, track, seed);
   rescue = makeRescue(scene, track);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=26').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=27').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
 }
 
 /* --------------------------------------------------------------- the field -- */
@@ -1285,7 +1285,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=26');
+    const mod = await import('./net.js?v=27');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },

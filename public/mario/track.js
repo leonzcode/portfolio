@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf } from './themes.js?v=26';
+import { themeById, rulesOf, lookOf } from './themes.js?v=27';
 
 /* The lap.
 
@@ -407,7 +407,7 @@ function sampleLoop(seed, th) {
        you. It is longer and narrows far less than it first did: a causeway that
        pinches hard AND has nothing at the edge is not a section, it is a trap,
        and the first version of it put the entire field in the water. */
-    causeway: { len: 40, to: 0.78, lift: 2.4, shape(a, t, f) {
+    causeway: { len: 40, to: 0.78, lift: 2.4, straight: 0.45, shape(a, t, f) {
       a.w *= 1 - (1 - f.to) * bump(t);
       a.p.y += f.lift * bump(t);
       a.causeway = bump(t);
@@ -465,6 +465,16 @@ function sampleLoop(seed, th) {
   };
 
   const features = [];
+
+  /* There is no crossover section, and there cannot be one drawn this way.
+     The lap is a radius as a function of angle, so two different points on it
+     are never near each other: measured over ten seeds the closest the road
+     ever comes to itself is forty five metres of field, which is not something
+     you can build a flyover across.
+
+     The over and under is in the split instead, where it is real: on the
+     circuits that ask for it the two lanes leave the island at different
+     heights, so one of them is a deck and the other runs underneath it. */
   const order = wanted.map((f, n) => ({ f, n }))
     .sort((a, b) => FEATURES[b.f.kind].len - FEATURES[a.f.kind].len);
   let spread = 0;
@@ -480,11 +490,26 @@ function sampleLoop(seed, th) {
        a clear two hundred metres from the line. */
     const runUp = f.kind === 'chasm' ? 95 : 0;
     const clearOfLine = i => !runUp || Math.min((i + M) % M, (M - i) % M) > runUp;
+    /* And a section with nothing at the edge of it goes on straight ground.
+       A causeway round a bend is a causeway the whole field runs wide off,
+       which is not a section, it is a hole with a road leading into it. */
+    const want = def.straight || 0;
+    const straightEnough = i => {
+      if (!want) return true;
+      let turn = 0;
+      for (let k = 0; k < len; k++) {
+        const u = out[(i + k + M * 2) % M].t, v = out[(i + k + 1 + M * 2) % M].t;
+        turn += Math.abs(u.x * v.z - u.z * v.x);
+      }
+      return turn < want;
+    };
     let ok = false;
     for (let tries = 0; tries < M; tries++) {
-      if (room(i0, len) && clearOfLine(i0) && clearOfLine(i0 + len)) { ok = true; break; }
+      if (room(i0, len) && clearOfLine(i0) && clearOfLine(i0 + len) && straightEnough(i0)) { ok = true; break; }
       i0 = (i0 + 7) % M;
     }
+    // and if the lap simply has no straight long enough, it does without
+    if (!ok && want) continue;
     if (!ok) continue;
     claim(i0, len);
     features.push(Object.assign({}, def, f, { len, i0, order: n, ids: [] }));
@@ -577,6 +602,26 @@ function sampleLoop(seed, th) {
          there is no island. */
       const raw = ISLE * bump(Math.max(0, Math.min(1, (u - 0.16) / 0.68)));
       a.island = raw < 1.6 ? 0 : raw;
+      /* And on the circuits that ask for it, the two lanes do not stay level
+         with each other: one climbs over while the other dips under, so a split
+         is a choice about where you come out as well as which side you take.
+         It is applied across the island rather than as a step at the middle, so
+         the road surface stays continuous where it is still road. */
+      if (th.splitStyle === 'updown') {
+        /* Tied to the island's own width rather than to the distance along the
+           section. The tilt is applied across the island, so if it exists where
+           the island does not yet, the road steps by three metres at the exact
+           sample the island appears, and the whole field is thrown across it. */
+        a.splitLift = a.island * 0.38;
+        /* The low lane is a cutting, so the ground has to come down to meet
+           it, and by more than the lane drops: the hollow has to clear the far
+           edge of the tarmac as well as the middle of it, or the field closes
+           over the outside of the road. */
+        if (a.splitLift > 0.3) {
+          const at = a.p.clone().addScaledVector(a.n, -(a.w * 0.85));
+          basins.push({ x: at.x, z: at.z, r: a.w * 2.2, drop: a.splitLift * 2 + 4.5 });
+        }
+      }
       // and the lanes come out wider than the road they replace, because two of
       // them have to hold a field that was queueing up in one
       a.w += ISLE * 1.35 * bump(u);
@@ -597,6 +642,26 @@ function sampleLoop(seed, th) {
     });
   }
 
+  /* ---- and the ground gets out of the way --------------------------------
+     Sections that drop the road - a shelf, the low lane of a tilted split, the
+     dip into water - leave it below the field it was cut into, and a road under
+     the field is a road you cannot see. Rather than have every one of them
+     remember to dig its own hollow, one pass at the end looks at where the road
+     actually ended up and takes the ground down to meet it wherever it has to.
+  -------------------------------------------------------------------------- */
+  for (let i = 0; i < M; i += 2) {
+    const a = out[i];
+    // the lowest point across the width of it: the camber pivots on the inside
+    // edge, so that is a.p.y, and a tilted split takes one lane below even that
+    const low = a.p.y - (a.splitLift || 0);
+    for (const sgn of [1, -1]) {
+      const e = a.p.clone().addScaledVector(a.n, sgn * (a.w + KERB * 2));
+      const g = hill(e.x, e.z);
+      if (g <= low - 0.6) continue;
+      basins.push({ x: e.x, z: e.z, r: a.w * 1.6, drop: g - low + 1.8 });
+    }
+  }
+
   return { samples: out, length: s, ramps, features, splits };
 }
 
@@ -604,6 +669,7 @@ function sampleLoop(seed, th) {
 export function buildTrack(scene, seed, themeId) {
   const th = themeById(themeId);
   const R = rulesOf(th);
+  const LOOK = lookOf(th);
   const { samples, length, ramps, features, splits } = sampleLoop(seed, th);
   const N = samples.length;
   /* The camber pivots on the inside edge rather than the middle of the road.
@@ -615,7 +681,12 @@ export function buildTrack(scene, seed, themeId) {
   // a ramp only covers its own half, rising from the middle of the road to the
   // edge, so how much of it you get depends on how far across you are
   const rampAt = (a, lat) => (a.ramp ? a.ramp * Math.max(0, Math.min(1, (lat * a.rampSide) / a.w)) : 0);
-  const surf = (a, lat) => a.p.y + lat * a.bank + lift(a) + rampAt(a, lat);
+  /* One lane of a split higher than the other. Ramped across the island rather
+     than stepped at the centreline: the middle of a split is not road, so the
+     surface only has to be continuous out where it is. */
+  const tiltAt = (a, lat) => (a.splitLift && a.island
+    ? a.splitLift * Math.max(-1, Math.min(1, lat / a.island)) : 0);
+  const surf = (a, lat) => a.p.y + lat * a.bank + lift(a) + rampAt(a, lat) + tiltAt(a, lat);
   const group = new THREE.Group();
   scene.add(group);
 
@@ -775,9 +846,17 @@ export function buildTrack(scene, seed, themeId) {
     const ids = f.ids;
 
     if (f.kind === 'bridge') {
-      // a deck under the road and piers down to whatever the ground is doing
-      const deckMat = new THREE.MeshStandardMaterial({ color: 0x8d8d8d, roughness: 0.9 });
-      const pierMat = new THREE.MeshStandardMaterial({ color: 0x6f747d, roughness: 0.95 });
+      /* A deck under the road and piers down to whatever the ground is doing.
+         What it is made of is the circuit's: stone on Sunfield Loop, planks and
+         rope at Redrock Dunes, an ice arch at Glacier Pass, a lit skyway at
+         Neon Mile, black columns at Ember Hollow. */
+      const L = LOOK.bridge;
+      const deckMat = new THREE.MeshStandardMaterial({
+        color: L.deck, roughness: L.kind === 'ice' ? 0.12 : 0.9,
+        metalness: L.kind === 'skyway' ? 0.35 : 0,
+        transparent: L.kind === 'ice', opacity: L.kind === 'ice' ? 0.82 : 1,
+      });
+      const pierMat = new THREE.MeshStandardMaterial({ color: L.pier, roughness: 0.95 });
       const dp = [], du = [], di = [];
       ids.forEach((i, k) => {
         const a = samples[i];
@@ -793,31 +872,96 @@ export function buildTrack(scene, seed, themeId) {
       const deck = new THREE.Mesh(ribbon(dp, du, di), deckMat);
       deck.receiveShadow = true;
       group.add(deck);
-      for (let k = 2; k < ids.length - 2; k += 5) {
+
+      // a lit strip down each edge where the circuit races at night
+      if (L.edge) {
+        const glow = new THREE.MeshBasicMaterial({ color: L.edge });
+        for (const side of [1, -1]) {
+          const ep = [], eu = [], ei = [];
+          ids.forEach((i, k) => {
+            const a = samples[i];
+            const o = a.p.clone().addScaledVector(a.n, side * (a.w + KERB));
+            ep.push(o.x, o.y - 0.5, o.z, o.x, o.y - 0.95, o.z);
+            eu.push(0, k, 1, k);
+          });
+          for (let k = 0; k < ids.length - 1; k++) {
+            const aa = k * 2, bb = aa + 1, cc = aa + 2, dd = aa + 3;
+            ei.push(aa, bb, cc, bb, dd, cc);
+          }
+          const strip = new THREE.Mesh(ribbon(ep, eu, ei), glow);
+          strip.material.side = THREE.DoubleSide;
+          group.add(strip);
+        }
+      }
+
+      const every = L.kind === 'rope' ? 3 : 5;
+      for (let k = 2; k < ids.length - 2; k += every) {
         const a = samples[ids[k]];
         for (const side of [1, -1]) {
           const top = a.p.clone().addScaledVector(a.n, side * a.w * 0.78);
           const foot = groundY(top.x, top.z);
           const h = Math.max(1, top.y - 0.85 - foot);
-          const pier = new THREE.Mesh(new THREE.BoxGeometry(1.5, h, 1.5), pierMat);
-          pier.position.set(top.x, foot + h / 2, top.z);
-          pier.castShadow = true;
-          group.add(pier);
+          if (L.kind === 'rope') {
+            // posts up from the deck rather than piers down to the ground: a
+            // rope bridge hangs, it does not stand on anything
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 2.2, 7), pierMat);
+            post.position.set(top.x, top.y + 0.2, top.z);
+            post.castShadow = true;
+            group.add(post);
+          } else {
+            const pier = new THREE.Mesh(new THREE.BoxGeometry(1.5, h, 1.5), pierMat);
+            pier.position.set(top.x, foot + h / 2, top.z);
+            pier.castShadow = true;
+            group.add(pier);
+          }
+        }
+      }
+      // and the ropes themselves, slung between the posts
+      if (L.kind === 'rope') {
+        const ropeMat = new THREE.MeshStandardMaterial({ color: L.rope, roughness: 1 });
+        for (const side of [1, -1]) {
+          for (const hgt of [1.25, 0.55]) {
+            const rp = [], ru = [], ri = [];
+            ids.forEach((i, k) => {
+              const a = samples[i];
+              const o = a.p.clone().addScaledVector(a.n, side * a.w * 0.78);
+              // a sag between the posts, which is what makes it read as rope
+              const sag = Math.sin((k % 6) / 6 * Math.PI) * 0.22;
+              rp.push(o.x, o.y + hgt - sag, o.z, o.x, o.y + hgt - sag - 0.1, o.z);
+              ru.push(0, k, 1, k);
+            });
+            for (let k = 0; k < ids.length - 1; k++) {
+              const aa = k * 2, bb = aa + 1, cc = aa + 2, dd = aa + 3;
+              ri.push(aa, bb, cc, bb, dd, cc);
+            }
+            const rope = new THREE.Mesh(ribbon(rp, ru, ri), ropeMat);
+            rope.material.side = THREE.DoubleSide;
+            group.add(rope);
+          }
         }
       }
     }
 
     if (f.kind === 'tunnel') {
-      // a half pipe over the road, wide enough to clear the kerbs and low
-      // enough to feel like a tunnel, with a light every so often
-      const R = [], RU = [], RI = [], RINGS = 9;
+      /* A half pipe over the road, wide enough to clear the kerbs and low
+         enough to feel like a tunnel. A cave is the same tube with its radius
+         knocked about so no two rings match, and with a mountain built over it
+         so it is bored through something rather than laid on the ground. */
+      const L = LOOK.tunnel;
+      const cave = L.kind === 'cave' || L.kind === 'lavatube';
+      const R = [], RU = [], RI = [], RINGS = cave ? 11 : 9;
+      let wob = (f.i0 * 2654435761) & 0x7fffffff;
+      const wr = () => { wob = (wob * 1103515245 + 12345) & 0x7fffffff; return wob / 0x7fffffff; };
       ids.forEach((i, k) => {
         const a = samples[i];
         const rad = a.w + KERB;
         for (let j = 0; j <= RINGS; j++) {
           const ang = Math.PI * (j / RINGS);
-          const p = a.p.clone().addScaledVector(a.n, Math.cos(ang) * rad);
-          R.push(p.x, a.p.y + Math.sin(ang) * rad * 0.58 - 0.2, p.z);
+          // rock is not a half pipe: the radius wanders, but it never comes in
+          // far enough to touch the road
+          const knock = cave ? 1 + (wr() - 0.35) * 0.3 : 1;
+          const p = a.p.clone().addScaledVector(a.n, Math.cos(ang) * rad * knock);
+          R.push(p.x, a.p.y + Math.sin(ang) * rad * 0.58 * knock - 0.2, p.z);
           RU.push(j / RINGS, k * 0.5);
         }
       });
@@ -828,12 +972,56 @@ export function buildTrack(scene, seed, themeId) {
           RI.push(aa, bb, cc, bb, dd, cc);
         }
       }
-      // both sides: an arch you can see coming, and a roof once you are under it
-      const tube = new THREE.Mesh(ribbon(R, RU, RI),
-        new THREE.MeshStandardMaterial({ color: 0x59606e, roughness: 0.95, side: THREE.DoubleSide }));
+      const tubeMat = new THREE.MeshStandardMaterial({
+        color: L.colour, roughness: L.rough, side: THREE.DoubleSide, flatShading: cave,
+        metalness: L.kind === 'pipe' ? 0.45 : 0,
+        transparent: L.clear !== undefined, opacity: L.clear === undefined ? 1 : L.clear,
+        emissive: L.crack ? new THREE.Color(L.crack) : 0x000000,
+        emissiveIntensity: L.crack ? 0.22 : 0,
+      });
+      const tube = new THREE.Mesh(ribbon(R, RU, RI), tubeMat);
       tube.castShadow = true; tube.receiveShadow = true;
       group.add(tube);
-      const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff6e2, emissive: 0xffd233, emissiveIntensity: 1.1 });
+
+      /* And the mountain it is bored through. Without this a cave is a tube
+         lying on a field, which is a pipe: the point of a cave is that there is
+         a hill and the road goes into it. */
+      if (L.mount !== undefined) {
+        /* Built as a shell round the bore, not a lump on top of it. Dropped on
+           the road as one mass the first version simply filled the mouth in:
+           every rock here is pushed out far enough that its near face clears
+           the tube, so what you drive at is a hole in a hill. */
+        const mat = new THREE.MeshStandardMaterial({ color: L.mount, roughness: 1, flatShading: true });
+        for (let k = 0; k < ids.length; k += 3) {
+          const a = samples[ids[k]];
+          const t = k / (ids.length - 1);
+          // the hill grows out of the ground at both ends and is highest in the
+          // middle, so the road goes into something rather than under a slab
+          const big = 0.45 + 0.55 * Math.sin(Math.PI * Math.min(1, Math.max(0, t)));
+          const bore = a.w + KERB;
+          const r = bore * 0.95 * big;
+          const spots = [
+            { x: bore + r * 0.62, y: bore * 0.1 },
+            { x: -(bore + r * 0.62), y: bore * 0.1 },
+            { x: 0, y: bore * 0.58 + r * 0.55 },
+            { x: bore * 0.66, y: bore * 0.5 + r * 0.4 },
+            { x: -bore * 0.66, y: bore * 0.5 + r * 0.4 },
+          ];
+          for (const sp of spots) {
+            const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), mat);
+            const at = a.p.clone().addScaledVector(a.n, sp.x);
+            rock.position.set(at.x, a.p.y + sp.y - 0.4, at.z);
+            rock.rotation.set(wr() * 3, wr() * 3, wr() * 3);
+            rock.scale.set(1.25, 0.95, 1.25);
+            rock.castShadow = true; rock.receiveShadow = true;
+            group.add(rock);
+          }
+        }
+      }
+
+      const lampMat = new THREE.MeshStandardMaterial({
+        color: 0xfff6e2, emissive: L.lamp, emissiveIntensity: 1.2,
+      });
       for (let k = 2; k < ids.length - 2; k += 4) {
         const a = samples[ids[k]];
         const lamp = new THREE.Mesh(new THREE.BoxGeometry(a.w * 0.5, 0.25, 1.1), lampMat);
@@ -841,12 +1029,48 @@ export function buildTrack(scene, seed, themeId) {
         lamp.rotation.y = Math.atan2(a.t.x, a.t.z);
         group.add(lamp);
       }
+      // a lit ring every few metres, which is what makes a pipe a pipe
+      /* Cracks, for a tube bored through rock that is still cooling. Thin lit
+         bands round the inside, which is the one thing that tells you a black
+         tunnel on a black circuit is there at all. */
+      if (L.crack !== undefined) {
+        const crackMat = new THREE.MeshBasicMaterial({ color: L.crack, side: THREE.DoubleSide });
+        for (let k = 1; k < ids.length - 1; k += 2) {
+          const a = samples[ids[k]];
+          const rad = (a.w + KERB) * (0.86 + wr() * 0.1);
+          const arc = 0.5 + wr() * 1.5;
+          const band = new THREE.Mesh(
+            new THREE.TorusGeometry(rad, 0.1 + wr() * 0.1, 4, 10, arc), crackMat);
+          band.position.set(a.p.x, a.p.y - 0.2, a.p.z);
+          band.rotation.y = Math.atan2(a.n.x, a.n.z) + Math.PI / 2;
+          band.rotation.z = wr() * 2;
+          band.scale.set(1, 0.62, 1);
+          group.add(band);
+        }
+      }
+      if (L.ring !== undefined) {
+        const ringMat = new THREE.MeshBasicMaterial({ color: L.ring, side: THREE.DoubleSide });
+        for (let k = 1; k < ids.length - 1; k += 3) {
+          const a = samples[ids[k]];
+          const rad = a.w + KERB;
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(rad * 0.82, 0.16, 5, 18, Math.PI), ringMat);
+          ring.position.set(a.p.x, a.p.y - 0.2, a.p.z);
+          ring.rotation.y = Math.atan2(a.n.x, a.n.z) + Math.PI / 2;
+          ring.scale.set(1, 0.7, 1);
+          group.add(ring);
+        }
+      }
     }
 
     if (f.kind === 'water') {
-      // A sheet that follows the channel. A rectangle big enough to cover the
-      // dip also floods every field around it, because the ground out there is
-      // higher than the water.
+      /* A sheet that follows the channel. A rectangle big enough to cover the
+         dip also floods every field around it, because the ground out there is
+         higher than the water.
+
+         Frozen, it is not a sheet you sink through: it is a lid, nearly opaque
+         and sitting where the road left off, and the road under it is what you
+         actually drive on. */
+      const L = LOOK.water;
       const wp = [], wu = [], wi = [], SPAN = 17;
       ids.forEach((i, k) => {
         const a = samples[i];
@@ -860,8 +1084,10 @@ export function buildTrack(scene, seed, themeId) {
         wi.push(aa, cc, bb, bb, cc, dd);
       }
       const sheet = new THREE.Mesh(ribbon(wp, wu, wi), new THREE.MeshStandardMaterial({
-        color: 0x2e86c8, roughness: 0.18, metalness: 0.15,
-        transparent: true, opacity: 0.62, depthWrite: false, side: THREE.DoubleSide,
+        color: L.colour, roughness: L.rough, metalness: L.kind === 'frozen' ? 0.05 : 0.15,
+        transparent: true, opacity: L.opacity, depthWrite: false, side: THREE.DoubleSide,
+        emissive: L.glow ? new THREE.Color(L.glow) : 0x000000,
+        emissiveIntensity: L.glow ? 0.5 : 0,
       }));
       sheet.renderOrder = 2;
       group.add(sheet);
@@ -1015,6 +1241,33 @@ export function buildTrack(scene, seed, themeId) {
       const rim = new THREE.Mesh(ribbon(kp, ku, ki), kerbMat());
       rim.receiveShadow = true;
       group.add(rim);
+    }
+
+    /* Where the two lanes are at different heights, each needs something under
+       its outer edge: the high one is a deck standing above the field and the
+       low one is a cutting through it, and without this the first floats and
+       the second is buried. */
+    if (samples[sp.i].splitLift > 0.4) {
+      const skirtMat = new THREE.MeshStandardMaterial({ map: kerbTex, color: 0x9a9a92, roughness: 0.95 });
+      for (const side of [1, -1]) {
+        const sp2 = [], su = [], si = [];
+        ids.forEach((i, k) => {
+          const a = samples[i];
+          const o = a.p.clone().addScaledVector(a.n, side * (a.w + KERB));
+          const top = surf(a, side * (a.w + KERB));
+          const foot = Math.min(top - 0.4, groundY(o.x, o.z) - 0.6);
+          sp2.push(o.x, top, o.z, o.x, foot, o.z);
+          su.push(0, a.s / 6, 1, a.s / 6);
+        });
+        for (let k = 0; k < ids.length - 1; k++) {
+          const aa = k * 2, bb = aa + 1, cc = aa + 2, dd = aa + 3;
+          si.push(aa, bb, cc, bb, dd, cc);
+        }
+        const skirt = new THREE.Mesh(ribbon(sp2, su, si), skirtMat);
+        skirt.material.side = THREE.DoubleSide;
+        skirt.receiveShadow = true;
+        group.add(skirt);
+      }
     }
 
     const wall = new THREE.MeshStandardMaterial({ color: 0xfff6e2, roughness: 0.9 });
@@ -1211,7 +1464,9 @@ export function buildTrack(scene, seed, themeId) {
     // otherwise have dropped, so the tarmac never sinks under the field
     // and the half of a ramp you are actually on, if you are on one
     const ramp = a.ramp ? a.ramp * Math.max(0, Math.min(1, (lt * a.rampSide) / a.w)) : 0;
-    let y = a.p.y + (nb.p.y - a.p.y) * f + lt * bank + a.w * Math.abs(bank) + ramp;
+    const tilt = a.splitLift && a.island
+      ? a.splitLift * Math.max(-1, Math.min(1, lt / a.island)) : 0;
+    let y = a.p.y + (nb.p.y - a.p.y) * f + lt * bank + a.w * Math.abs(bank) + ramp + tilt;
     // Off the tarmac the ground takes over. The kerb is drawn from the road edge
     // down to the grass, so the height has to follow it down: keeping the road's
     // own height out there put a kart nearly two metres under the field on the

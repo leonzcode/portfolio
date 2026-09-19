@@ -46,7 +46,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS,
          chassisOf, wheelsOf, trailOf, hatOf, faceOf, suitOf, normalise,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=26';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=27';
 export { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS, normalise };
 
 /* ---- the model ----------------------------------------------------------- */
