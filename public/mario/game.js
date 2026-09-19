@@ -11,13 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=19';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=19';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=19';
-import { makeBrain, driveBrain } from './ai.js?v=19';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=19';
-import { makeCones } from './cones.js?v=19';
-import * as snd from './audio.js?v=19';
+import { buildTrack } from './track.js?v=20';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=20';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=20';
+import { makeBrain, driveBrain } from './ai.js?v=20';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=20';
+import { makeCones } from './cones.js?v=20';
+import * as snd from './audio.js?v=20';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -210,7 +210,7 @@ function placeOnGrid() {
     k.pos.copy(slot.pos);
     k.yaw = slot.yaw;
     k.speed = 0; k.drift = 0; k.driftT = 0; k.slide = 0; k.hop = 0; k.hopV = 0;
-    k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0; k.coins = 0;
+    k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0;
     k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0;
     k.item = null; k.itemN = 0; k.roulette = 0; k.queue = [];
     k.hint = null;
@@ -220,7 +220,6 @@ function placeOnGrid() {
     apply(k);
   });
   for (const b of track.itemBoxes) b.taken = 0;
-  for (const c of track.coins) c.taken = 0;
 }
 
 /* start a round. `field` is either null (solo, filled with computer drivers) or
@@ -353,7 +352,7 @@ function useItem(k) {
     if (id === 'surge') {
       for (const o of karts) {
         if (o === k || o.place >= k.place || o.star > 0) continue;
-        o.slow = 3; o.speed *= 0.6; o.coins = Math.max(0, o.coins - 2);
+        o.slow = 3; o.speed *= 0.6;
         if (o.remote && net && k === me) net.hitThem(o.id, 'surge');
       }
       if (k === me) notice('Surge!');
@@ -416,13 +415,6 @@ function stepWorld(dt) {
       for (let n = 0; n < 7; n++) spark(b.pos.clone(), n % 2 ? 0xdff2ff : 0x2f7fd0, 2.2);
       if (k === me) snd.tick();
     }
-    if (phase === 'race') for (const c of track.coins) {
-      if (c.taken > 0) continue;
-      if (Math.hypot(c.pos.x - k.pos.x, c.pos.z - k.pos.z) > 1.5) continue;
-      c.taken = 8;
-      k.coins = Math.min(10, k.coins + 1);
-      if (k === me) { coinPop(c.pos.clone()); snd.coin(); }
-    }
     for (const p of track.boostPads) {
       if (Math.hypot(p.pos.x - k.pos.x, p.pos.z - k.pos.z) > p.w + 2) continue;
       if (k === me && k.boost <= 0.2) snd.boost();
@@ -458,10 +450,10 @@ function stepWorld(dt) {
     }
     // the drift sparks, and the boost trail
     if (k.drift !== 0 && k.speed > 8 && Math.random() < 0.6) {
-      const hot = k.driftT > 1.45;
+      const hot = k.driftT > 1.0;
       const back = k.pos.clone().setY(k.pos.y + 0.25);
       back.x += Math.sin(k.yaw) * 1.1; back.z += Math.cos(k.yaw) * 1.1;
-      spark(back, k.driftT > 0.75 ? (hot ? 0xffd233 : 0x8fd3ff) : 0xdfe6ef, 1.2);
+      spark(back, k.driftT > 0.5 ? (hot ? 0xffd233 : 0x8fd3ff) : 0xdfe6ef, 1.2);
     }
     if ((k.boost > 0 || k.star > 0) && Math.random() < 0.7) {
       const back = k.pos.clone().setY(k.pos.y + 0.3);
@@ -497,9 +489,8 @@ function stepWorld(dt) {
     if (k.remote && me && by === me.id && net) net.hitThem(k.id, kind);
   });
 
-  // the boxes and coins come back
+  // the boxes come back
   for (const b of track.itemBoxes) if (b.taken > 0) b.taken -= dt;
-  for (const c of track.coins) if (c.taken > 0) c.taken -= dt;
   dressTrack();
 
   for (const k of karts) apply(k);
@@ -527,16 +518,6 @@ function dressTrack() {
   });
   track.boxMesh.instanceMatrix.needsUpdate = true;
   track.coreMesh.instanceMatrix.needsUpdate = true;
-  track.coins.forEach((c, i) => {
-    const on = c.taken <= 0;
-    e.set(0, dressT * 3 + i, 0);
-    q.setFromEuler(e);
-    s.setScalar(on ? 1 : 0.001);
-    p.set(c.pos.x, c.pos.y + Math.sin(dressT * 3 + i) * 0.12, c.pos.z);
-    m.compose(p, q, s);
-    track.coinMesh.setMatrixAt(i, m);
-  });
-  track.coinMesh.instanceMatrix.needsUpdate = true;
 }
 
 /* -------------------------------------------------------------- the camera -- */
@@ -674,13 +655,12 @@ function drawHud(dt) {
   el('placen').textContent = pl;
   el('placesfx').textContent = ord(pl).replace(/^\d+/, '');
   el('place').className = 'p' + Math.min(3, pl);
-  el('coinn').textContent = watch.coins;
   el('speedn').textContent = Math.round(Math.abs(watch.speed) * 3.6);
   const ch = el('charge');
   if (watch.drift !== 0) {
     ch.classList.add('on');
-    ch.classList.toggle('hot', watch.driftT > 1.45);
-    el('chargei').style.width = clamp(watch.driftT / 1.45, 0, 1) * 100 + '%';
+    ch.classList.toggle('hot', watch.driftT > 1.0);
+    el('chargei').style.width = clamp(watch.driftT / 1.0, 0, 1) * 100 + '%';
   } else ch.classList.remove('on');
   drawBoard();
   drawMini();
@@ -919,7 +899,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=19').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=20').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
@@ -930,7 +910,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=19');
+    const mod = await import('./net.js?v=20');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1121,13 +1101,17 @@ window.__mk = {
     me.pos.copy(a.p).addScaledVector(a.n, (lateral || 0) * a.w);
     me.yaw = Math.atan2(-a.t.x, -a.t.z);
     me.hint = null;
+    // put it down on the road: teleporting a kart that happened to be mid-jump
+    // left it holding the launch it had already used, and it could not take off
+    // again until it had landed somewhere it was no longer standing
+    me.hop = 0; me.hopV = 0; me.launched = 0; me.roadRise = 0; me.pushX = 0; me.pushZ = 0;
     const pr = track.project(me.pos.x, me.pos.z, null);
     me.hint = pr.i; me.pos.y = pr.y; me.prog = pr.s;
   },
   stats() {
     return {
       phase, spectating, laps: LAPS, lap: me ? me.lap : 0, place: me ? me.place : 0,
-      speed: me ? +me.speed.toFixed(2) : 0, coins: me ? me.coins : 0,
+      speed: me ? +me.speed.toFixed(2) : 0,
       item: me ? me.item : null, itemN: me ? me.itemN : 0,
       queued: me ? me.queue.length : 0,
       karts: karts.length, bots: brains.length, time: +raceTime.toFixed(2),

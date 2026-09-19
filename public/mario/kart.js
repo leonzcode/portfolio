@@ -130,12 +130,12 @@ export function makeKart(who) {
     pos: new THREE.Vector3(), yaw: 0, speed: 0,
     drift: 0,            // -1 left, 1 right, 0 none
     driftT: 0, slide: 0, hop: 0, hopV: 0,
-    pitch: 0, roadRise: 0, inSand: 0, bash: false, hitBy: 0,
+    pitch: 0, roadRise: 0, bash: false, hitBy: 0, launched: 0,
     // velocity across the wheels, from being shoved: it decays as they bite
     pushX: 0, pushZ: 0,
     // how hard you are revving on the grid, which everybody can see
     rev: 0,
-    boost: 0, coins: 0, spin: 0, slow: 0, star: 0,
+    boost: 0, spin: 0, slow: 0, star: 0,
     lap: 1, cpi: 0, prog: 0, place: 1, finished: 0,
     item: null, itemN: 0, roulette: 0,
     // what is queued behind the one in the slot, oldest first
@@ -180,7 +180,7 @@ export function apply(k) {
 /* ---- how it drives ------------------------------------------------------- */
 export const TUNE = {
   accel: 15,
-  top: 30,                 // metres a second on tarmac, before coins and boosts
+  top: 30,                 // metres a second on tarmac, before boosts
   reverse: 9,
   brake: 26,
   drag: 5,
@@ -190,7 +190,6 @@ export const TUNE = {
   offAccel: 0.45,
   boostTop: 1.45,
   starTop: 1.22,
-  coinTop: 0.011,          // each coin is a little more top end
   // A hop off the suspension, in metres a second. Everything that leaves the
   // ground from here on is a projectile under G, so this is a launch speed and
   // not a feel knob: 2.1 up and back down under gravity is about four tenths of
@@ -201,7 +200,7 @@ export const TUNE = {
 
 export function topSpeed(k) {
   // topMul is the computer drivers' handicap, 1 for anyone at a keyboard
-  let t = TUNE.top * (k.topMul || 1) * (1 + k.coins * TUNE.coinTop);
+  let t = TUNE.top * (k.topMul || 1);
   if (k.boost > 0) t *= TUNE.boostTop;
   if (k.star > 0) t *= TUNE.starTop;
   if (k.offroad && k.star <= 0) t *= TUNE.offTop;
@@ -244,8 +243,12 @@ export function stepKart(k, input, track, dt) {
     if (k.hop > 0.05 && k.pendingDrift && k.drift === 0) { k.drift = k.pendingDrift; k.driftT = 0; }
     if (!input.hop && k.drift !== 0) {
       // let go: whatever was charged comes out as a boost
-      if (k.driftT > 1.45) k.boost = Math.max(k.boost, 1.15);
-      else if (k.driftT > 0.75) k.boost = Math.max(k.boost, 0.7);
+      // The walls are on the tarmac edge now and the road is eighteen metres
+      // across, so a full lock slide runs out of room in about half a second.
+      // A mini turbo you cannot physically hold long enough for is not a mini
+      // turbo, so the marks come down to meet the circuit.
+      if (k.driftT > 1.0) k.boost = Math.max(k.boost, 1.15);
+      else if (k.driftT > 0.5) k.boost = Math.max(k.boost, 0.7);
       k.drift = 0; k.driftT = 0; k.pendingDrift = 0;
     }
     if (k.drift !== 0) {
@@ -274,7 +277,12 @@ export function stepKart(k, input, track, dt) {
     k.hopV -= TUNE.G * dt;
     if (k.hop <= 0) {
       if (k.hopV < -4) k.landed = 1;        // a real landing, not the end of a flick
-      k.hop = 0; k.hopV = 0;
+      k.hop = 0; k.hopV = 0; k.launched = 0;
+      // Forget what the road was doing when you left it. Holding on to it meant
+      // the first frame back on the ground compared a stale climb against the
+      // flat you had just landed on, read that as a crest, and threw the kart
+      // straight back into the air: a jump, then a bounce, then a bigger bounce.
+      k.roadRise = 0;
     }
   }
 
@@ -304,19 +312,14 @@ export function stepKart(k, input, track, dt) {
   // under the surface, when there is a surface to be under
   k.wet = pr.waterY !== null && (k.pos.y + k.hop + 0.7) < pr.waterY;
 
-  // Sand on the outside of a steep bend. Arrive at it quickly and it takes the
-  // car away from you; crawl into it and it just drags.
-  if (pr.sand && k.hop <= 0.05 && k.star <= 0) {
-    if (!k.inSand && Math.abs(k.speed) > 17) spinOut(k, false);
-    k.speed *= Math.exp(-2.4 * dt);
-    k.inSand = 1;
-  } else k.inSand = 0;
-
   /* Leaving the ground the way a car does. While the road climbs it is lifting
      you at your speed times its slope, and the moment it stops climbing that
      lift is yours with nothing holding you down. So a fast run at a ramp throws
      you further than a slow one, and a gentle hill does not throw you at all. */
-  if (k.hop <= 0.001 && k.spin <= 0) {
+  // A drift flick only lifts the kart a couple of hand widths, so it must not
+  // be able to block a ramp: pressing the button on the way up should add to
+  // the launch, not cancel it.
+  if (k.hop <= 0.35 && k.spin <= 0 && !k.launched) {
     const rise = pr.slope * k.speed;
     /* Leaving a ramp is a projectile problem and nothing else. The road was
        climbing at an angle th = atan(slope); a kart travelling at v along it has
@@ -328,9 +331,19 @@ export function stepKart(k, input, track, dt) {
        The bar is where it is because a ramp lifts you several metres a second and
        the rolling ground lifts you one or two, and a gentle hill that launched
        the kart would leave it airborne all lap with no wheels to accelerate on. */
-    if (k.roadRise > 4.5 && rise < k.roadRise - 2.2) {
+    /* The bar is low, and the second half of the test is what keeps a rolling
+       hill from launching anybody: slope is read off the sample the kart is on,
+       so it steps rather than glides, and only a real crest drops it in a single
+       frame. That is why coming out of the water, or off any ramp back onto the
+       flat, catches a little air, while the long rise and fall of the ground
+       catches none. */
+    if (k.roadRise > 2.0 && rise < k.roadRise - 0.9) {
+      k.launched = 1;          // and not again until the wheels are back down
       const th = Math.atan(k.roadSlope);
-      k.hopV = Math.max(k.hopV, Math.abs(k.speed) * Math.sin(th));
+      let up = Math.abs(k.speed) * Math.sin(th);
+      // pulling up on it as you leave adds a little, the way a hop does
+      if (input.hop) up += 1.1;
+      k.hopV = Math.max(k.hopV, up);
       k.speed *= Math.cos(th);              // that lift came out of your road speed
     }
     k.roadRise = rise;
@@ -428,6 +441,5 @@ export function spinOut(k, hard) {
   k.spin = hard ? 1.5 : 1.05;
   k.speed *= 0.18;
   k.boost = 0; k.drift = 0; k.driftT = 0;
-  k.coins = Math.max(0, k.coins - (hard ? 3 : 2));
   return true;
 }
