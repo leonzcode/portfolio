@@ -11,12 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=12';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=12';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=12';
-import { makeBrain, driveBrain } from './ai.js?v=12';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=12';
-import * as snd from './audio.js?v=12';
+import { buildTrack } from './track.js?v=13';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=13';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=13';
+import { makeBrain, driveBrain } from './ai.js?v=13';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=13';
+import { makeCones } from './cones.js?v=13';
+import * as snd from './audio.js?v=13';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -83,7 +84,7 @@ scene.add(new THREE.HemisphereLight(0xcfeaff, 0x5f9a4a, 0.85));
 scene.add(new THREE.AmbientLight(0xffffff, 0.28));
 
 /* ------------------------------------------------------------------- state -- */
-let track = null, items = null;
+let track = null, items = null, cones = null;
 let phase = 'title';                  // title | count | race | results
 let phaseT = 0;
 let me = null;                        // the player's kart
@@ -337,6 +338,18 @@ function useItem(k) {
   const def = ITEMS[id];
   if (def.self) {
     if (id === 'star') { k.star = 6.5; k.boost = Math.max(k.boost, 0.4); if (k === me) notice('Star!'); }
+    if (id === 'oil') {
+      // the computer drivers get slowed here; a person's screen is splattered by
+      // the 'fire' that goes out with this, which their browser hears and this
+      // one does not
+      for (const o of karts) {
+        if (o === k || o.remote || o.star > 0) continue;
+        o.slow = Math.max(o.slow, 2.2);
+      }
+      if (k === me) notice('Oil can!');
+      else oilSplat();                      // a computer driver got you
+      puff(k.pos.clone().setY(k.pos.y + 1.2), 0x1b2030);
+    }
     if (id === 'surge') {
       for (const o of karts) {
         if (o === k || o.place >= k.place || o.star > 0) continue;
@@ -461,6 +474,12 @@ function stepWorld(dt) {
     }
   }
 
+  // the cones, which go where they are knocked and stay there
+  cones.step(dt, karts, (k, i, vx, vz) => {
+    if (k === me && net && net.alive) net.cone(i, vx, vz);
+    if (k === me) snd.bump();
+  });
+
   items.step(dt, karts, (k, kind, by) => {
     if (k === me) { notice('Hit!'); snd.spin(); }
     if (kind === 'bomb' && Math.hypot(k.pos.x - (me ? me.pos.x : 0), k.pos.z - (me ? me.pos.z : 0)) < 22) snd.bang();
@@ -575,6 +594,32 @@ function hudItem() {
   slot.classList.remove('empty');
   face.innerHTML = ITEMS[me.item].face + (me.itemN > 1 ? '<span class="n">x' + me.itemN + '</span>' : '');
 }
+/* Somebody's oil, on your glass. Fresh blobs each time so it never lands the
+   same way twice, and they wipe themselves off after a few seconds. */
+let oilT = 0;
+function oilSplat() {
+  const box = el('oil');
+  if (!box) return;
+  const n = 7 + Math.floor(Math.random() * 4);
+  let html = '';
+  for (let i = 0; i < n; i++) {
+    const w = 12 + Math.random() * 26, h = w * (0.55 + Math.random() * 0.6);
+    html += '<i style="left:' + (Math.random() * 92 - 4).toFixed(1) + '%;top:'
+      + (Math.random() * 86 - 4).toFixed(1) + '%;width:' + w.toFixed(1) + 'vmin;height:'
+      + h.toFixed(1) + 'vmin;--r:' + (Math.random() * 360).toFixed(0) + 'deg;animation-delay:'
+      + (Math.random() * 0.18).toFixed(2) + 's"></i>';
+  }
+  box.innerHTML = html;
+  box.classList.add('on');
+  oilT = 3.4;
+  snd.bump();
+}
+function oilStep(dt) {
+  if (oilT <= 0) return;
+  oilT -= dt;
+  if (oilT <= 0) { el('oil').classList.remove('on'); el('oil').innerHTML = ''; }
+}
+
 let noticeT = 0;
 function notice(text) {
   el('notice').textContent = text;
@@ -582,6 +627,7 @@ function notice(text) {
   noticeT = 1.6;
 }
 function drawHud(dt) {
+  oilStep(dt);
   if (noticeT > 0) { noticeT -= dt; if (noticeT <= 0) el('notice').classList.remove('on'); }
   const watch = spectating ? (order()[0] || me) : me;
   if (!watch) return;
@@ -823,9 +869,10 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=12').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=13').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
+  cones = makeCones(scene, track);
 
   el('load').textContent = 'lining up…';
   await new Promise(r => setTimeout(r, 20));
@@ -833,7 +880,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=12');
+    const mod = await import('./net.js?v=13');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -848,6 +895,8 @@ async function start(online) {
           if (p === 'results') endRace();
         },
         setSpectating(v) { spectating = v; el('watch').classList.toggle('on', v); },
+        oil: oilSplat,
+        shoveCone(i, vx, vz) { if (cones) cones.shove(i, vx, vz); },
         setCup,
         spinOut, useItem, items: () => items, track: () => track,
         get raceTime() { return raceTime; },
@@ -973,8 +1022,11 @@ window.__mk = {
   get spectating() { return spectating; },
   get camera() { return camera; },
   get props() { return scene.getObjectByName('props'); },
+  get cones() { return cones; },
   get paused() { return paused; },
   get sound() { return snd.musicNow(); },
+  oil: oilSplat,
+  roll: (place, field) => rollItem(place, field),
   get bind() { return bind; },
   menu,
   get view() { return CAM[camMode].name; },

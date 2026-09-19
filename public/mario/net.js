@@ -71,6 +71,9 @@ export function connect(ctx) {
     if (m.type === 'fire') {
       // show it, but let the thrower's browser decide what it hits
       const k = kartFor(m.id);
+      // an oil can lands on everybody's glass but the thrower's, and the
+      // thrower is the one browser that does not get this message
+      if (m.kind === 'oil') { world.oil(); return; }
       if (k) {
         if (m.kind === 'turbo' || m.kind === 'star') k.boost = Math.max(k.boost, 0.8);
         else world.items().spawn(m.kind, k, world.karts, true);
@@ -104,6 +107,10 @@ export function connect(ctx) {
       if (m.cup) world.setCup(m.cup, myId);
       return;
     }
+
+    // somebody knocked a cone: run the same shove here and the settling maths
+    // takes it to the same place without anybody streaming its position
+    if (m.type === 'cone') { world.shoveCone(m.i | 0, +m.vx || 0, +m.vz || 0); return; }
 
     if (m.type === 'started') {
       say('<b>' + esc(m.name) + '</b> called the race on.', 'sys');
@@ -160,6 +167,7 @@ export function connect(ctx) {
     chat(text) { send({ type: 'chat', text }); },
     setCast(i) { send({ type: 'cast', i }); },
     fire(kind) { send({ type: 'fire', kind }); },
+    cone(i, vx, vz) { send({ type: 'cone', i, vx: +vx.toFixed(2), vz: +vz.toFixed(2) }); },
     hitThem(id, kind) { send({ type: 'hit', id, kind }); },
     finish(t, place) { send({ type: 'fin', t, place }); },
 

@@ -11,7 +11,7 @@
    little SVG for the slot in the corner of the screen.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { spinOut } from './kart.js?v=12';
+import { spinOut } from './kart.js?v=13';
 
 const svg = (inner) => '<svg viewBox="0 0 64 64" width="100%" height="100%">' + inner + '</svg>';
 const K = 'stroke="#17223b" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';
@@ -41,6 +41,13 @@ export const ITEMS = {
     face: svg('<circle cx="30" cy="38" r="19" fill="#17223b" ' + K + '/>'
             + '<path d="M40 22 Q48 14 54 18" fill="none" stroke="#ffd233" stroke-width="5" stroke-linecap="round"/>'),
   },
+  oil: {
+    // thrown over your shoulder: it lands on everybody else's screen, not yours
+    name: 'Oil Can', self: true, others: true,
+    face: svg('<path d="M14 26 h30 l8 8 v18 a4 4 0 0 1 -4 4 H18 a4 4 0 0 1 -4 -4 Z" fill="#3a3f4a" ' + K + '/>'
+            + '<path d="M44 30 q10 -8 14 -2" fill="none" stroke="#17223b" stroke-width="5" stroke-linecap="round"/>'
+            + '<circle cx="52" cy="18" r="5" fill="#17223b" stroke="none"/>'),
+  },
   star: {
     name: 'Star', self: true,
     face: svg('<path d="M32 6 L40 26 L62 26 L44 39 L51 59 L32 46 L13 59 L20 39 L2 26 L24 26 Z" fill="#ffd233" ' + K + '/>'),
@@ -56,11 +63,11 @@ const TABLE = [
   // place 1st
   [['slick', 5], ['bolt', 4], ['turbo', 2]],
   [['slick', 4], ['bolt', 4], ['turbo', 3], ['seeker', 1]],
-  [['bolt', 3], ['turbo', 4], ['seeker', 3], ['slick', 2], ['bomb', 1]],
-  [['turbo', 4], ['seeker', 4], ['bomb', 2], ['bolt', 2], ['star', 1]],
-  [['turbo', 3], ['seeker', 4], ['bomb', 2], ['star', 2], ['surge', 2]],
+  [['bolt', 3], ['turbo', 4], ['seeker', 3], ['slick', 2], ['bomb', 1], ['oil', 1]],
+  [['turbo', 4], ['seeker', 4], ['bomb', 2], ['bolt', 2], ['star', 1], ['oil', 2]],
+  [['turbo', 3], ['seeker', 4], ['bomb', 2], ['star', 2], ['surge', 2], ['oil', 2]],
   // last rows
-  [['turbo', 3], ['seeker', 3], ['star', 3], ['surge', 3], ['bomb', 2]],
+  [['turbo', 3], ['seeker', 3], ['star', 3], ['surge', 3], ['bomb', 2], ['oil', 2]],
 ];
 
 export function rollItem(place, field) {
