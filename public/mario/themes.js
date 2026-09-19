@@ -30,6 +30,16 @@
 export const THEMES = [
   {
     id: 'meadow',
+    // the two lanes of its split are not level with each other
+    splitStyle: 'updown',
+    /* What the sections are made of here. The same tunnel is a timber barn on
+       Sunfield Loop and a cave through a mountain at Redrock Dunes, and it is
+       the same forty lines of code either way. */
+    look: {
+      tunnel: { kind: 'arch', colour: 0xc08a4e, rough: 0.95, lamp: 0xffd233 },
+      bridge: { kind: 'stone', deck: 0x9a9a92, pier: 0x7d8078 },
+      water: { kind: 'river', colour: 0x2e86c8, opacity: 0.62, rough: 0.18 },
+    },
     // how much light there is in the air here, and how much the kerbs and the
     // road markings make for themselves after dark
     ambient: 0.28, glow: 0,
@@ -73,6 +83,12 @@ export const THEMES = [
   },
   {
     id: 'dunes',
+    look: {
+      // a cave, bored through a mountain that is put there for it to go through
+      tunnel: { kind: 'cave', colour: 0x9a6f47, rough: 1, lamp: 0xffb04a, mount: 0xa97a4e },
+      bridge: { kind: 'rope', deck: 0x9a6f3c, pier: 0x6f5030, rope: 0xd9c49a },
+      water: { kind: 'river', colour: 0x3f92b8, opacity: 0.55, rough: 0.2 },
+    },
     // how much light there is in the air here, and how much the kerbs and the
     // road markings make for themselves after dark
     ambient: 0.3, glow: 0,
@@ -113,6 +129,12 @@ export const THEMES = [
   },
   {
     id: 'frost',
+    look: {
+      tunnel: { kind: 'ice', colour: 0xbfe8ff, rough: 0.1, lamp: 0xdff2ff, clear: 0.72 },
+      bridge: { kind: 'ice', deck: 0xd8eefc, pier: 0xa9c8dd },
+      // a lake with a lid on it: the surface sits where the road left off
+      water: { kind: 'frozen', colour: 0xd8eefc, opacity: 0.92, rough: 0.08 },
+    },
     // how much light there is in the air here, and how much the kerbs and the
     // road markings make for themselves after dark
     ambient: 0.34, glow: 0,
@@ -152,6 +174,13 @@ export const THEMES = [
   },
   {
     id: 'neon',
+    // the two lanes of its split are not level with each other
+    splitStyle: 'updown',
+    look: {
+      tunnel: { kind: 'pipe', colour: 0x141c34, rough: 0.35, lamp: 0x39d0ff, ring: 0xff2f6e },
+      bridge: { kind: 'skyway', deck: 0x1b2340, pier: 0x232d52, edge: 0x39d0ff },
+      water: { kind: 'coolant', colour: 0x18c8d8, opacity: 0.58, rough: 0.1, glow: 0x18c8d8 },
+    },
     // how much light there is in the air here, and how much the kerbs, the
     // barriers and the road markings make for themselves after dark
     ambient: 0.62, glow: 1.35,
@@ -191,6 +220,11 @@ export const THEMES = [
   },
   {
     id: 'ember',
+    look: {
+      tunnel: { kind: 'lavatube', colour: 0x2a2024, rough: 0.95, lamp: 0xff7a1a, crack: 0xff5a18, mount: 0x322528 },
+      bridge: { kind: 'basalt', deck: 0x2e2a2e, pier: 0x241e22 },
+      water: { kind: 'river', colour: 0x8c3a1e, opacity: 0.7, rough: 0.3 },
+    },
     // how much light there is in the air here, and how much the kerbs and the
     // road markings make for themselves after dark
     ambient: 0.34, glow: 0.5,
@@ -233,6 +267,13 @@ export const THEMES = [
 /* Everything a theme does not say for itself. A place that sets nothing plays
    like a plain race, which is what makes the tables above readable: a number is
    only written down where it differs. */
+export const BASE_LOOK = {
+  tunnel: { kind: 'arch', colour: 0x59606e, rough: 0.95, lamp: 0xffd233 },
+  bridge: { kind: 'stone', deck: 0x8d8d8d, pier: 0x6f747d },
+  water: { kind: 'river', colour: 0x2e86c8, opacity: 0.62, rough: 0.18 },
+};
+export const lookOf = th => Object.assign({}, BASE_LOOK, (th && th.look) || {});
+
 export const BASE_DRESS = { tree: 0xffffff, bark: 0xffffff, barrier: 0xffffff, metal: 0xffffff, cloth: 0xffffff };
 export const dressOf = th => Object.assign({}, BASE_DRESS, (th && th.dress) || {});
 

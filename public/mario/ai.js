@@ -9,8 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=26';
-import { topSpeed } from './kart.js?v=26';
+import { ITEMS, lapProg } from './items.js?v=27';
+import { topSpeed } from './kart.js?v=27';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
@@ -90,7 +90,11 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
       // road it likes anyway, which is different for every driver.
       const q = track.project(k.pos.x, k.pos.z, k.hint);
       if (!br.side) {
-        br.side = Math.abs(q.lateral) > q.half * 0.3 ? (q.lateral > 0 ? 1 : -1) : br.side0;
+        /* Its own side unless it is already committed to the other one. A
+           field arriving together is a field on one racing line, and reading
+           the side off position alone sent all seven of them down the same
+           lane and left the other empty. */
+        br.side = Math.abs(q.lateral) > q.half * 0.55 ? (q.lateral > 0 ? 1 : -1) : br.side0;
       }
       /* And once the island is actually under the car, the side is settled by
          where the car is, not by what it decided thirty metres ago. Shoved
