@@ -128,12 +128,47 @@ function sampleLoop() {
     });
     s += len;
   }
-  return { samples: out, length: s };
+
+  /* ---- the lean of the corners ------------------------------------------- */
+  // Measure the bend a little way ahead of each sample and smooth it, or the
+  // road twitches from one sample to the next. `bank` is a slope: how much
+  // height a metre of lateral offset buys, so the outside of the corner rises
+  // and the inside drops.
+  const M = out.length;
+  for (let i = 0; i < M; i++) {
+    const a = out[i], b = out[(i + 9) % M];
+    out[i].turn = Math.atan2(a.t.x * b.t.z - a.t.z * b.t.x, a.t.x * b.t.x + a.t.z * b.t.z);
+  }
+  for (let i = 0; i < M; i++) {
+    let sum = 0;
+    for (let d = -8; d <= 8; d++) sum += out[(i + d + M) % M].turn;
+    // negative, because the outside of the bend is the side away from the turn
+    out[i].bank = Math.max(-0.13, Math.min(0.13, -(sum / 17) * 1.7));
+  }
+
+  /* ---- the ramps ---------------------------------------------------------- */
+  // The road itself climbs these, so a kart drives up rather than through, and
+  // the lip is where game.js throws it into the air.
+  const ramps = [];
+  for (const at of [0.235, 0.615]) {
+    const i0 = Math.floor(at * M), len = 6, rise = 1.7;
+    for (let k = 0; k < len; k++) {
+      const i = (i0 + k) % M;
+      const f = k / (len - 1);
+      out[i].lift = rise * f * f * (3 - 2 * f);         // eased, so the run in is gentle
+      out[i].p.y += out[i].lift;
+      out[i].bank = 0;                                   // flat on the ramp
+    }
+    const lip = out[(i0 + len - 1) % M];
+    ramps.push({ i: (i0 + len - 1) % M, pos: lip.p.clone(), s: lip.s });
+  }
+
+  return { samples: out, length: s, ramps };
 }
 
 /* ---- put it together ----------------------------------------------------- */
 export function buildTrack(scene) {
-  const { samples, length } = sampleLoop();
+  const { samples, length, ramps } = sampleLoop();
   const N = samples.length;
   const group = new THREE.Group();
   scene.add(group);
@@ -160,11 +195,14 @@ export function buildTrack(scene) {
     const a = samples[i];
     const l = a.p.clone().addScaledVector(a.n, a.w);
     const r = a.p.clone().addScaledVector(a.n, -a.w);
+    l.y += a.w * a.bank; r.y -= a.w * a.bank;          // the lean of the corner
     pos.push(l.x, l.y + 0.06, l.z, r.x, r.y + 0.06, r.z);
     uv.push(0, a.s / 9, 1, a.s / 9);
     // kerbs, one strip either side
+    // the kerb carries the lean back down to the grass, so nothing hangs in the air
     const lo = a.p.clone().addScaledVector(a.n, a.w + KERB);
     const ro = a.p.clone().addScaledVector(a.n, -(a.w + KERB));
+    lo.y = groundY(lo.x, lo.z); ro.y = groundY(ro.x, ro.z);
     kpos.push(l.x, l.y + 0.05, l.z, lo.x, lo.y + 0.05, lo.z, r.x, r.y + 0.05, r.z, ro.x, ro.y + 0.05, ro.z);
     kuv.push(0, a.s / 3.2, 1, a.s / 3.2, 0, a.s / 3.2, 1, a.s / 3.2);
   }
@@ -370,18 +408,22 @@ export function buildTrack(scene) {
     const nb = samples[(best + (along >= 0 ? 1 : samples.length - 1)) % samples.length];
     const span = Math.abs(nb.s - a.s) || 1;
     const f = Math.min(1, Math.abs(along) / span);
-    const y = a.p.y + (nb.p.y - a.p.y) * f;
+    // the lean, held flat once you are off the tarmac so the kerb does not
+    // launch anybody, and the ramps come along for the ride in p.y already
+    const bank = a.bank + ((nb.bank - a.bank) * f);
+    const lt = Math.max(-a.w, Math.min(a.w, lateral));
+    const y = a.p.y + (nb.p.y - a.p.y) * f + lt * bank;
     return {
       i: best, s: a.s + along, lateral, half: a.w,
       onRoad: Math.abs(lateral) <= a.w + 0.4,
       onKerb: Math.abs(lateral) > a.w + 0.4 && Math.abs(lateral) <= a.w + KERB,
       wall: a.w + SHOULDER,
-      y, t: a.t, n: a.n,
+      y, bank, t: a.t, n: a.n,
     };
   }
 
   return {
-    group, samples, length, project, at, gridSlot, groundY,
+    group, samples, length, ramps, project, at, gridSlot, groundY,
     // how far past the tarmac the wall is, so the barriers can stand on it
     shoulder: SHOULDER,
     itemBoxes, boostPads, coins, boxMesh, coinMesh,
