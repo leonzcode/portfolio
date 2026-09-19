@@ -93,6 +93,9 @@ let spectating = false;
 let raceTime = 0, results = [], notified = 0;
 let net = null, myName = 'Player', myCast = 0;
 let started = false, paused = false, chatting = false;
+// a test freezes the loop and runs the world by hand; that is not the same as
+// the pause menu, which also takes the controls away
+let frozen = false;
 let soloRound = 0, autoBrain = null;
 
 try {
@@ -127,7 +130,9 @@ function readInput() {
   const right = keys['arrowright'] || keys['d'];
   input.gas = (keys['arrowup'] || keys['w']) ? 1 : 0;
   input.brake = (keys['arrowdown'] || keys['s']) ? 1 : 0;
-  input.steer = (right ? 1 : 0) - (left ? 1 : 0);
+  // a positive steer is a turn to the left in kart.js, which is the sign the
+  // front wheels and the lean are already drawn from, so left is the +1 here
+  input.steer = (left ? 1 : 0) - (right ? 1 : 0);
   input.hop = !!(keys['shift'] || keys[' ']);
   if (phase !== 'race' || spectating || !me || me.finished || paused) {
     // nobody moves before the lights; holding the throttle there is the rocket
@@ -656,7 +661,7 @@ function frame() {
   last = now;
   if (!started) { renderer.render(scene, camera); return; }
 
-  if (!paused) {
+  if (!paused && !frozen) {
     stepPhase(dt);
     if (phase === 'race' || phase === 'count') stepWorld(dt);
     else for (const k of karts) apply(k);
@@ -723,7 +728,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js');
+    const mod = await import('./net.js?v=2');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -783,7 +788,7 @@ window.__mk = {
   key(k, on) { keys[k] = !!on; },
   // a test can freeze the loop and run the world by hand, which makes the
   // countdown and the finish deterministic instead of a race with the renderer
-  pause(v) { paused = !!v; return paused; },
+  pause(v) { frozen = !!v; return frozen; },
   step(n, dt) {
     for (let i = 0; i < (n || 1); i++) {
       stepPhase(dt || 0.02);
