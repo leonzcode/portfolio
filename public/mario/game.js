@@ -17,6 +17,7 @@ import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v
 import { makeBrain, driveBrain } from './ai.js?v=24';
 import { initFx, spark, puff, blast, stepFx } from './fx.js?v=24';
 import { makeCones } from './cones.js?v=24';
+import { makeHazards } from './hazards.js?v=24';
 import { THEMES, themeById } from './themes.js?v=24';
 import * as snd from './audio.js?v=24';
 
@@ -87,7 +88,7 @@ scene.add(hemi);
 scene.add(new THREE.AmbientLight(0xffffff, 0.28));
 
 /* ------------------------------------------------------------------- state -- */
-let track = null, items = null, cones = null;
+let track = null, items = null, cones = null, hazards = null;
 let phase = 'title';                  // title | count | race | results
 let phaseT = 0;
 let me = null;                        // the player's kart
@@ -231,6 +232,7 @@ function buildWorld(seed, themeId) {
     shredGroup(track.group);
     shredGroup(scene.getObjectByName('props'));
     if (cones) for (const m of cones.meshes) shredGroup(m);
+    if (hazards) shredGroup(hazards.group);
   }
   worldSeed = seed;
   worldTheme = th.id;
@@ -238,6 +240,7 @@ function buildWorld(seed, themeId) {
   track = buildTrack(scene, seed, th.id);
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
+  hazards = makeHazards(scene, track, seed);
   // the scenery turns up when it turns up; the circuit is drivable without it
   import('./props.js?v=24').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
 }
@@ -392,7 +395,7 @@ function pickupBox(k, b) {
   if (k.roulette > 0 || heldCount(k) >= SLOTS) return;
   b.taken = 6;
   k.roulette = 1.05;
-  k.rollTo = rollItem(k.place, karts.length);
+  k.rollTo = rollItem(k.place, karts.length, track.rules.items);
   k.rollN = rollCount(k.rollTo, k.place, karts.length);
   if (k === me) { el('slot').classList.add('spin'); el('slot').classList.remove('empty'); }
 }
@@ -446,14 +449,20 @@ function stepWorld(dt) {
   const live = order();
   const leader = live[0] ? lapProg(live[0], track) : 0;
 
+  /* What a computer driver is trying to miss: whatever anybody has dropped on
+     the road, plus whatever this place is doing at this instant. A boulder
+     halfway across the road is a hazard; the same boulder off in the field is
+     not, so the list is rebuilt every frame rather than placed once. */
+  const dodge = items.hazards.concat(hazards.threats(raceTime));
+
   // the computer drivers, and the autopilot when a test is driving
   if (autoBrain) {
-    autoBrain.hazards = items.hazards;
+    autoBrain.hazards = dodge;
     autoBrain.input = phase === 'race' ? driveBrain(autoBrain, track, dt, karts, leader, useItem)
                                        : { gas: 0, brake: 0, steer: 0, hop: false };
   }
   for (const b of brains) {
-    b.hazards = items.hazards;
+    b.hazards = dodge;
     const inp = driveBrain(b, track, dt, karts, leader, useItem);
     b.input = inp;
   }
@@ -541,6 +550,15 @@ function stepWorld(dt) {
       }
     }
   }
+
+  /* Whatever this place does that the others do not. It runs off the race
+     clock rather than off dt, so every browser in the room has the gates shut
+     and the geysers blowing at the same moment without anybody saying so. */
+  hazards.step(dt, raceTime, karts, (k, what) => {
+    if (k !== me || !what) return;
+    notice('HIT BY ' + what.toUpperCase());
+    snd.bump();
+  });
 
   // the cones, which go where they are knocked and stay there
   cones.step(dt, karts, (k, i, vx, vz) => {
@@ -1247,6 +1265,7 @@ window.__mk = {
   get camera() { return camera; },
   get props() { return scene.getObjectByName('props'); },
   get cones() { return cones; },
+  get hazards() { return hazards; },
   rebuild: (seed, theme) => buildWorld(seed | 0, theme),
   get theme() { return worldTheme; },
   sky: () => scene.background,
@@ -1279,7 +1298,7 @@ window.__mk = {
   hitLine: (by, kind) => hitBy(by, kind),
   hurt: (x, z, speed, hard) => me && spinOut(me, !!hard, { x, z, speed }),
   oil: oilSplat,
-  roll: (place, field) => rollItem(place, field),
+  roll: (place, field) => rollItem(place, field, track.rules.items),
   get bind() { return bind; },
   menu,
   get view() { return CAM[camMode].name; },
@@ -1293,6 +1312,8 @@ window.__mk = {
   // a test can freeze the loop and run the world by hand, which makes the
   // countdown and the finish deterministic instead of a race with the renderer
   pause(v) { frozen = !!v; return frozen; },
+  // the clock the hazards run off, so a test can wind one to the moment it goes
+  clock(t) { if (t !== undefined) raceTime = t; return raceTime; },
   // Park the camera somewhere and stop the follow camera fighting it, which is
   // the only way to photograph a whole section of the lap at once. Call it with
   // nothing to give the camera back.

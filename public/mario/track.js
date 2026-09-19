@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById } from './themes.js?v=24';
+import { themeById, rulesOf } from './themes.js?v=24';
 
 /* The lap.
 
@@ -135,7 +135,12 @@ function catmull(p0, p1, p2, p3, t, key) {
 
 function sampleLoop(seed, th) {
   basins.length = 0;                  // a new lap digs its own hollows
+  const R = rulesOf(th);
   const CP = makeCP(seed);
+  // how wide the road is here. Sunfield Loop is the broadest thing on the
+  // calendar and Neon Mile is a corridor, and that alone changes how a corner
+  // has to be taken more than any amount of paint would.
+  for (const c of CP) c.w *= R.width;
   const fine = [];
   const n = CP.length;
   for (let i = 0; i < n; i++) {
@@ -157,8 +162,17 @@ function sampleLoop(seed, th) {
     const a = fine[i], b = fine[(i + 1) % fine.length];
     const dx = b.x - a.x, dz = b.z - a.z;
     const len = Math.hypot(dx, dz) || 1e-6;
+    /* The height of a road is the height of the ground it spans, not the height
+       of the ground under the middle of it. On a slope the outer edge of a wide
+       one cuts into the hill, and Sunfield Loop, which is the widest thing on
+       the calendar, had its tarmac buried under the field for it. */
+    const m = a.w + 1.6;                               // out past the kerb
+    const top = Math.max(
+      hill(a.x, a.z),
+      hill(a.x - (dz / len) * m, a.z + (dx / len) * m),
+      hill(a.x + (dz / len) * m, a.z - (dx / len) * m));
     out.push({
-      p: new THREE.Vector3(a.x, hill(a.x, a.z), a.z),
+      p: new THREE.Vector3(a.x, top, a.z),
       t: new THREE.Vector3(dx / len, 0, dz / len),
       n: new THREE.Vector3(-dz / len, 0, dx / len),      // left of travel
       w: a.w, s, len,
@@ -176,7 +190,14 @@ function sampleLoop(seed, th) {
     for (let i = 0; i < n; i++) {
       let sum = 0;
       for (let d = -W; d <= W; d++) sum += raw[(i + d + n) % n];
-      out[i].p.y = sum / (W * 2 + 1);
+      // graded, but never so far under the ground it spans that the field
+      // closes over it. The quarter metre of slack is what the kerb blends away.
+      out[i].p.y = Math.max(sum / (W * 2 + 1), raw[i] - 0.25);
+    }
+    // and one light pass over that, so the clamp does not leave a step in it
+    const fix = out.map(a => a.p.y);
+    for (let i = 0; i < n; i++) {
+      out[i].p.y = (fix[(i - 1 + n) % n] + fix[i] * 2 + fix[(i + 1) % n]) / 4;
     }
   }
 
@@ -195,7 +216,10 @@ function sampleLoop(seed, th) {
     for (let d = -8; d <= 8; d++) sum += out[(i + d + M) % M].turn;
     // negative, because the outside of the bend is the side away from the turn
     out[i].bend = sum / 17;
-    out[i].bank = Math.max(-0.08, Math.min(0.08, -out[i].bend * 0.62));
+    // how hard the circuit leans into its corners. Redrock Dunes builds proper
+    // banked bowls out of them; Glacier Pass keeps them nearly flat, because
+    // camber you cannot hold on ice is a cliff rather than a corner.
+    out[i].bank = Math.max(-0.08, Math.min(0.08, -out[i].bend * 0.62)) * R.bank;
   }
   // the start straight stays flat, so the line, the gantry and the grid all sit
   // where they are drawn
@@ -210,13 +234,19 @@ function sampleLoop(seed, th) {
   // the lip is where game.js throws it into the air.
   const ramps = [];
   let rside = 0;
-  for (const at of [0.235, 0.615]) {
+  // how many, and where. They are spread evenly round the lap, alternating
+  // sides, so a circuit with four of them gives you a jump every quarter.
+  const rampAts = [];
+  for (let k = 0; k < R.ramps; k++) rampAts.push(0.235 + k / R.ramps);
+  for (const raw of rampAts) {
+    const at = raw % 1;
     const side = (rside++ % 2) ? 1 : -1;        // one each way round the lap
     /* The height of the jump is (v sin th)^2 / 2G, so a quarter of the height
        wants half the launch speed and half the launch speed wants half the ramp
        angle. 1.1m over four samples is about ten degrees, which throws a kart at
-       racing speed a bit under a metre. */
-    const i0 = Math.floor(at * M), len = 4, rise = 1.1;
+       racing speed a bit under a metre. Ember Hollow builds them half again as
+       steep, which is most of why it is the circuit it is. */
+    const i0 = Math.floor(at * M), len = 4, rise = R.rampRise;
     for (let k = 0; k < len; k++) {
       const i = (i0 + k) % M;
       const f = k / (len - 1);
@@ -365,6 +395,7 @@ function sampleLoop(seed, th) {
 /* ---- put it together ----------------------------------------------------- */
 export function buildTrack(scene, seed, themeId) {
   const th = themeById(themeId);
+  const R = rulesOf(th);
   const { samples, length, ramps, features, splits } = sampleLoop(seed, th);
   const N = samples.length;
   /* The camber pivots on the inside edge rather than the middle of the road.
@@ -805,8 +836,9 @@ export function buildTrack(scene, seed, themeId) {
   // and not across the split either, where the middle of the road is an island
   // and a row of three would put the middle one inside it
   const busy = i => nearRamp(i) || (samples[i].island || 0) > 0.15;
-  for (let k = 0; k < 7; k++) {
-    let i = Math.floor(((0.1 + k * 0.128 + brnd() * 0.04) % 1) * N);
+  const ROWS = R.boxRows;
+  for (let k = 0; k < ROWS; k++) {
+    let i = Math.floor(((0.1 + k * (0.9 / ROWS) + brnd() * 0.04) % 1) * N);
     for (let n = 0; n < N && busy(i); n++) i = (i + 5) % N;
     const a = samples[i];
     for (const off of [-0.55, 0, 0.55]) {
@@ -818,8 +850,9 @@ export function buildTrack(scene, seed, themeId) {
   // twice as many as there were, spread round the lap and set off to one side or
   // the other so taking one is a line you have to choose rather than a gift
   const boostPads = [];
-  for (let k = 0; k < 6; k++) {
-    let i = Math.floor(((0.07 + k * 0.161 + brnd() * 0.04) % 1) * N);
+  const PADS = R.pads;
+  for (let k = 0; k < PADS; k++) {
+    let i = Math.floor(((0.07 + k * (0.94 / PADS) + brnd() * 0.04) % 1) * N);
     for (let n = 0; n < N && (samples[i].island || 0) > 0.15; n++) i = (i + 5) % N;
     const a = samples[i];
     const off = (brnd() * 1.1 - 0.55) * a.w;
@@ -981,6 +1014,8 @@ export function buildTrack(scene, seed, themeId) {
   return {
     group, samples, length, ramps, features, splits, project, at, gridSlot, groundY,
     theme: th,
+    // what this place does to a kart: read by the physics every frame
+    rules: R,
     // the patches that change how the ground under you behaves
     ice, lava,
     // where the road divides, which the cars need in order to pick a side

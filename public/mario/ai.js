@@ -46,6 +46,24 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
   const k = br.kart;
   if (k.finished) return { gas: 0, brake: 0, steer: 0, hop: false };
   const N = track.samples.length;
+  const R = track.rules || { grip: 1 };
+
+  /* Stuck. On a low grip circuit, or against a barrier after a bad landing, a
+     driver can end up nose first into something with the throttle pinned and no
+     way out of it, and sit there for the rest of the race. If it has been
+     crawling for a couple of seconds it backs off, reverses, and turns towards
+     the road, which is what a person does without thinking about it. */
+  br.stuckT = Math.abs(k.speed) < 3.5 && k.spin <= 0 ? (br.stuckT || 0) + dt : 0;
+  if (br.stuckT > 2) {
+    br.backT = 1.1;
+    br.stuckT = 0;
+  }
+  if (br.backT > 0) {
+    br.backT -= dt;
+    const q = track.project(k.pos.x, k.pos.z, k.hint);
+    // reverse, pointing the nose back at the middle of the road as it goes
+    return { gas: 0, brake: 1, steer: q.lateral > 0 ? -0.8 : 0.8, hop: false };
+  }
 
   /* The split, which is the one part of the lap where the middle of the road is
      not road. A driver that treats it as a wide straight aims up the middle and
@@ -102,11 +120,17 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
   let err = want - k.yaw;
   while (err > Math.PI) err -= Math.PI * 2;
   while (err < -Math.PI) err += Math.PI * 2;
-  let steer = Math.max(-1, Math.min(1, err * 2.1));
+  // a slippery circuit needs more lock for the same change of direction, and
+  // a grippy one needs less or the car saws at the wheel all the way round
+  let steer = Math.max(-1, Math.min(1, err * 2.1 / R.grip));
 
   // lift and drift for the tight stuff
   const bend = curveAhead(track, k.hint, Math.round(14 + k.speed * 0.8));
-  const cap = 1 - Math.min(0.52, bend * 0.42) * (1.25 - br.skill * 0.45);
+  // and it has to slow down more for the same corner where the grip is low.
+  // The root of it, not the whole of it: cornering speed goes with the root of
+  // the grip, and lifting in proportion made a lap of Glacier Pass take three
+  // times as long as a lap of anywhere else.
+  const cap = 1 - Math.min(0.58, bend * 0.42 / Math.sqrt(R.grip)) * (1.25 - br.skill * 0.45);
   // off its own top end, so a quicker field stays quick round the corners too
   const wantSpeed = topSpeed(k) * (0.72 + br.skill * 0.3) * cap;
   const gas = k.speed < wantSpeed ? 1 : 0;

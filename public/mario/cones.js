@@ -54,6 +54,10 @@ function coneMeshes(scene, n, size) {
 }
 
 export function makeCones(scene, track) {
+  // how thickly this place litters its road, and how many of them are the big
+  // ones. Neon Mile is peppered with small ones; Redrock Dunes has fewer, and
+  // a third of those are the kind you go round.
+  const R = track.rules || { coneEvery: 23, coneBig: 0.16 };
   const list = [];
   let seed = 4242;
   const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
@@ -62,9 +66,9 @@ export function makeCones(scene, track) {
   // the racing line down the straights, a knot of them on the apex of the
   // corners, and the big ones where there is room to go round.
   const L = track.length;
-  for (let s = 26; s < L; s += 23) {
+  for (let s = 26; s < L; s += R.coneEvery) {
     const a = track.at(s);
-    const big = rnd() < 0.16;
+    const big = rnd() < R.coneBig;
     let lat = (rnd() * 1.4 - 0.7) * a.w;
     // not up the middle of the split, where the middle is an island
     const isle = a.island || 0;
