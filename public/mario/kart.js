@@ -302,11 +302,13 @@ export function bump(a, b) {
   const d = Math.hypot(dx, dz);
   if (d > 1.9 || d < 1e-4) return false;
   const nx = dx / d, nz = dz / d;
-  const push = (1.9 - d) * 0.5;
+  // twice the shove there used to be: touching wheels should cost somebody the
+  // corner, not tidy them apart
+  const push = (1.9 - d) * 1.0;
   a.pos.x -= nx * push; a.pos.z -= nz * push;
   b.pos.x += nx * push; b.pos.z += nz * push;
   const rel = a.speed - b.speed;
-  if (rel > 0) { a.speed -= rel * 0.16; b.speed += rel * 0.12; }
+  if (rel > 0) { a.speed -= rel * 0.32; b.speed += rel * 0.24; }
   return true;
 }
 

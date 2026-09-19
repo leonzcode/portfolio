@@ -113,6 +113,25 @@
     display:grid; place-items:center; overflow:hidden; position:relative;
   }
   #slotq .q svg, #slotq .q > *{ width:32px; height:32px; }
+  /* what to do with the thing that just landed in the slot */
+  #usehint{
+    position:absolute; left:26px; top:192px; display:none; flex-direction:column; gap:2px;
+    animation:hintflash 0.9s steps(1,end) infinite;
+  }
+  #usehint.on{ display:flex; }
+  #usehint b{
+    font-family:var(--display); font-weight:800; font-size:17px; letter-spacing:.04em;
+    color:#fff; text-shadow:0 3px 0 var(--ink), 0 0 8px rgba(23,34,59,.65);
+  }
+  #usehint i{
+    font-style:normal; background:var(--gold); color:var(--ink); border:2px solid var(--ink);
+    border-radius:7px; padding:1px 8px; margin-left:2px; text-shadow:none;
+  }
+  #usehint span{
+    font-weight:800; font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:#fff; opacity:.8; text-shadow:0 2px 0 var(--ink);
+  }
+  @keyframes hintflash{ 0%,62%{ opacity:1 } 63%,100%{ opacity:.2 } }
   #slotq .q .n{
     position:absolute; right:-2px; bottom:-5px; font-family:var(--display); font-weight:800;
     font-size:15px; color:#fff; -webkit-text-stroke:3px var(--ink); paint-order:stroke fill;
@@ -217,7 +236,7 @@
   }
   @keyframes blink{ 0%,64%{ opacity:1 } 65%,100%{ opacity:.16 } }
   /* the lap, the place and the item slot have nothing to say in a lobby */
-  #hud.lobby #lap, #hud.lobby #place, #hud.lobby #slot, #hud.lobby #slotq{ display:none; }
+  #hud.lobby #lap, #hud.lobby #place, #hud.lobby #slot, #hud.lobby #slotq, #hud.lobby #usehint{ display:none; }
 
   /* ---------- the countdown ---------- */
   #count{
@@ -374,7 +393,7 @@
   }
 
   @media (prefers-reduced-motion:reduce){
-    #slot.spin .face, #slot.land, #count.go .word, #lobby b{ animation:none; }
+    #slot.spin .face, #slot.land, #count.go .word, #lobby b, #usehint{ animation:none; }
   }
 </style>
 
@@ -400,6 +419,7 @@
 <div id="hud">
   <div id="slot" class="empty"><div class="face" id="face"></div></div>
   <div id="slotq"></div>
+  <div id="usehint"><b>Press <i>E</i></b><span>to use it</span></div>
   <div id="lap"><span class="n out" id="lapn">1</span><span class="of" id="lapof">/3</span><em>lap</em></div>
   <div id="place" class="p1"><span class="n out" id="placen">1</span><span class="sfx" id="placesfx">st</span></div>
   <div id="mini"><canvas id="minic" width="380" height="232"></canvas></div>
@@ -477,5 +497,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=14');
+await import('./game.js?v=15');
 </script>
