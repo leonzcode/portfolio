@@ -9,8 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=23';
-import { topSpeed } from './kart.js?v=23';
+import { ITEMS, lapProg } from './items.js?v=24';
+import { topSpeed } from './kart.js?v=24';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
@@ -18,6 +18,11 @@ export function makeBrain(kart, skill, seed) {
   return {
     kart, skill,
     line: (rnd() - 0.5) * 0.9,          // which part of the road it likes
+    side: 0,                            // which way round the split, once it decides
+    // and the way it would go if it happened to be in the middle of the road
+    // when the road divides. Fixed per driver and alternating down the grid, so
+    // a field arriving together comes out of the split in two queues, not one.
+    side0: (seed | 0) % 34 < 17 ? -1 : 1,
     itemWait: 0.6 + rnd() * 1.4,
     wobble: rnd() * 6.28,
     rnd,
@@ -42,13 +47,53 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
   if (k.finished) return { gas: 0, brake: 0, steer: 0, hop: false };
   const N = track.samples.length;
 
+  /* The split, which is the one part of the lap where the middle of the road is
+     not road. A driver that treats it as a wide straight aims up the middle and
+     drives into the island, so it picks a side on the way in and holds it: the
+     decision is made once, well before the divide, and it sits in the middle of
+     the lane it chose rather than at some fraction of a width that is half kerb.
+     The aim point is pulled in through the split too, because an aim point past
+     the far end of it is a line back across the island. */
+  const sp = track.splitAt;
+  let side = 0;
+  if (sp) {
+    const L = track.length;
+    const toEnd = (((sp.s1 - k.prog) % L) + L) % L;
+    const span = (((sp.s1 - sp.s0) % L) + L) % L;
+    if (toEnd < span + 110) {
+      // whichever side it is already on when the road starts to open, so the
+      // field fans out instead of seven cars crossing each other for the same
+      // lane. A car sitting on the middle line falls back on the part of the
+      // road it likes anyway, which is different for every driver.
+      if (!br.side) {
+        const q = track.project(k.pos.x, k.pos.z, k.hint);
+        br.side = Math.abs(q.lateral) > q.half * 0.3 ? (q.lateral > 0 ? 1 : -1) : br.side0;
+      }
+      side = br.side;
+    } else br.side = 0;
+  }
+
   // where to aim: up the road, but pulled in close when there is a bend coming,
   // or the aim point ends up across the grass on the inside of a hairpin
   const soon = curveAhead(track, k.hint, 18);
-  const look = Math.round((5 + k.speed * 0.5 * (0.8 + br.skill * 0.4)) / (1 + soon * 1.6));
+  let look = Math.round((5 + k.speed * 0.5 * (0.8 + br.skill * 0.4)) / (1 + soon * 1.6));
+  if (side) look = Math.min(look, 9);
   const tgt = track.samples[(k.hint + Math.max(3, look)) % N];
   br.wobble += dt * 0.7;
-  const lane = Math.max(-0.62, Math.min(0.62, br.line * 0.5 + Math.sin(br.wobble) * 0.1));
+  let lane = Math.max(-0.62, Math.min(0.62, br.line * 0.5 + Math.sin(br.wobble) * 0.1));
+  if (side) {
+    // the widest the island gets between here and where it is looking, so the
+    // line clears it on the way in as well as alongside it
+    const isle = Math.max(tgt.island || 0, track.samples[k.hint % N].island || 0);
+    const laneW = Math.max(3, tgt.w - isle);
+    /* Its own part of the lane rather than the exact middle of it. Sending every
+       driver that picked this side to one line sent them all to the same two
+       metres of road, where they arrived together, shoved each other off it, and
+       ended up back on the wrong side of the island. Keeping each driver's own
+       preference inside the lane is what lets four of them through it at once. */
+    const off = isle + laneW * (0.5 + br.line * 0.5 + Math.sin(br.wobble) * 0.06);
+    lane = side * Math.min(0.95, Math.max((isle + 1.8) / tgt.w, off / tgt.w));
+  }
   const aim = tgt.p.clone().addScaledVector(tgt.n, lane * tgt.w);
 
   // steer at it
@@ -77,21 +122,6 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
     if (ahead < 0.72) continue;
     const side = (-Math.cos(k.yaw) * hx + Math.sin(k.yaw) * hz) / d;
     steer += (side > 0 ? -1 : 1) * (1 - d / 16) * 0.9;
-  }
-  /* And round anything standing in the road: the house in the middle of the
-     split is not a hazard you can drive over and shrug off, it stops you dead.
-     Aim further out than its edge, and commit early, because a computer driver
-     that notices it at the last moment simply parks against it. */
-  for (const b of (br.blocks || [])) {
-    const bx = b.x - k.pos.x, bz = b.z - k.pos.z;
-    const d = Math.hypot(bx, bz);
-    const reach = b.r + 26;
-    if (d > reach || d < 0.1) continue;
-    const ahead = (-Math.sin(k.yaw) * bx + -Math.cos(k.yaw) * bz) / d;
-    if (ahead < 0.35) continue;
-    const side = (-Math.cos(k.yaw) * bx + Math.sin(k.yaw) * bz) / d;
-    const want = (b.r + 3) / Math.max(b.r + 3, d);
-    steer += (side > 0 ? -1 : 1) * want * (1.4 - Math.min(1, d / reach));
   }
   steer = Math.max(-1, Math.min(1, steer));
 

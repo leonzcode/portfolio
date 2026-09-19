@@ -65,7 +65,10 @@ export function makeCones(scene, track) {
   for (let s = 26; s < L; s += 23) {
     const a = track.at(s);
     const big = rnd() < 0.16;
-    const lat = (rnd() * 1.4 - 0.7) * a.w;
+    let lat = (rnd() * 1.4 - 0.7) * a.w;
+    // not up the middle of the split, where the middle is an island
+    const isle = a.island || 0;
+    if (isle > 0.15 && Math.abs(lat) < isle + 1.6) lat = (lat >= 0 ? 1 : -1) * (isle + 1.6 + rnd() * 3);
     const p = a.p.clone().addScaledVector(a.n, lat);
     list.push({
       x: p.x, z: p.z, y: p.y, vx: 0, vz: 0, spin: rnd() * 6.3, wob: 0,
@@ -124,6 +127,13 @@ export function makeCones(scene, track) {
         if (Math.abs(pr.lateral) > pr.wall) {
           const over = (Math.abs(pr.lateral) - pr.wall) * Math.sign(pr.lateral);
           c.x -= pr.n.x * over; c.z -= pr.n.z * over;
+          c.vx *= -0.35; c.vz *= -0.35;
+        }
+        // and it bounces off the island up the middle of the split the same way
+        if (pr.island > 0 && Math.abs(pr.lateral) < pr.island) {
+          const side = pr.lateral >= 0 ? 1 : -1;
+          const push = pr.island - Math.abs(pr.lateral);
+          c.x += pr.n.x * side * push; c.z += pr.n.z * side * push;
           c.vx *= -0.35; c.vz *= -0.35;
         }
         c.y = pr.y;

@@ -347,20 +347,37 @@ export function stepKart(k, input, track, dt) {
     }
   }
 
-  // Anything on the road you have to go round: the house in the middle of the
-  // split. Pushed out of it along the line from its middle, and charged for the
-  // interruption, the same way the fence charges you.
-  if (track.blocks) {
-    for (const b of track.blocks) {
-      const dx = k.pos.x - b.x, dz = k.pos.z - b.z;
-      const d = Math.hypot(dx, dz);
-      if (d > b.r || d < 1e-4) continue;
-      const out = (b.r - d) / d;
-      k.pos.x += dx * out; k.pos.z += dz * out;
-      k.speed *= 0.64;
-      k.drift = 0; k.driftT = 0;
-      k.wallHit = 1;
+  /* The island up the middle of the split, with the house standing on it. It is
+     the fence turned inward: outside it you are in one lane or the other, inside
+     it you are not on the road at all. Resolving it the same way the fence is
+     resolved means clipping the kerb of it costs a scrape and driving square
+     into it costs the corner, which is what the two should feel like.
+
+     Doing it by lateral distance rather than by a circle round the house is also
+     what makes the split a split: the whole length of the island stops you, not
+     just the building, so the two lanes are genuinely separated. */
+  if (pr.island > 0 && Math.abs(pr.lateral) < pr.island) {
+    const side = pr.lateral >= 0 ? 1 : -1;
+    const push = pr.island - Math.abs(pr.lateral);
+    k.pos.x += pr.n.x * side * push;
+    k.pos.z += pr.n.z * side * push;
+    const nx = -pr.n.x * side, nz = -pr.n.z * side;   // into the kerb
+    const v = velOf(k);
+    const vn = v.x * nx + v.z * nz;
+    if (vn > 0) {
+      const tx = v.x - vn * nx, tz = v.z - vn * nz;
+      v.x = tx * 0.86 - nx * vn * 0.22;
+      v.z = tz * 0.86 - nz * vn * 0.22;
+      setVel(k, v);
     }
+    if (vn > 17) spinOut(k, vn > 27, { x: -nx, z: -nz, speed: vn });
+    const lane = Math.atan2(-pr.t.x, -pr.t.z);
+    let d = lane - k.yaw;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    k.yaw += d * 0.35;
+    k.drift = 0; k.driftT = 0;
+    k.wallHit = 1;
   }
 
   // over the grass but not on it: a jump is not a trip through the rough
