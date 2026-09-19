@@ -11,13 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=13';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=13';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=13';
-import { makeBrain, driveBrain } from './ai.js?v=13';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=13';
-import { makeCones } from './cones.js?v=13';
-import * as snd from './audio.js?v=13';
+import { buildTrack } from './track.js?v=14';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=14';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=14';
+import { makeBrain, driveBrain } from './ai.js?v=14';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=14';
+import { makeCones } from './cones.js?v=14';
+import * as snd from './audio.js?v=14';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -424,7 +424,7 @@ function stepWorld(dt) {
     for (const p of track.boostPads) {
       if (Math.hypot(p.pos.x - k.pos.x, p.pos.z - k.pos.z) > p.w + 2) continue;
       if (k === me && k.boost <= 0.2) snd.boost();
-      k.boost = Math.max(k.boost, 0.85);
+      k.boost = Math.max(k.boost, p.ramp ? 1.2 : 0.85);
     }
 
     // the lip of a ramp throws you: the road has already carried you up it, so
@@ -432,8 +432,16 @@ function stepWorld(dt) {
     for (const r of track.ramps) {
       if (k.hop > 0.02 || k.speed < 10) continue;
       if (Math.hypot(r.pos.x - k.pos.x, r.pos.z - k.pos.z) > 5) continue;
-      k.hopV = Math.max(k.hopV, 4.2 + k.speed * 0.2);
+      k.hopV = Math.max(k.hopV, 5.4 + k.speed * 0.26);
+      k.airG = 18;                          // a jump hangs longer than a hop
       k.drift = 0; k.driftT = 0;
+      if (k === me) snd.land();
+    }
+
+    // back on the ground after a jump: a puff of dust and a thump
+    if (k.landed) {
+      k.landed = 0;
+      puff(k.pos.clone().setY(k.pos.y + 0.2), 0xcfd6e0);
       if (k === me) snd.land();
     }
 
@@ -869,7 +877,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=13').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=14').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
@@ -880,7 +888,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=13');
+    const mod = await import('./net.js?v=14');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
