@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=10';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=10';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=10';
-import { makeBrain, driveBrain } from './ai.js?v=10';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=10';
-import * as snd from './audio.js?v=10';
+import { buildTrack } from './track.js?v=11';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=11';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=11';
+import { makeBrain, driveBrain } from './ai.js?v=11';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=11';
+import * as snd from './audio.js?v=11';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -137,6 +137,11 @@ const input = { gas: 0, brake: 0, steer: 0, hop: false };
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (waiting) { e.preventDefault(); bindTo(k); return; }
+  // Somebody is typing. The game has no business reading the keyboard then,
+  // least of all calling preventDefault on the letters it happens to drive
+  // with, which is what stopped anyone putting a W or an S in their name.
+  const on = e.target;
+  if (on && (on.tagName === 'INPUT' || on.tagName === 'TEXTAREA' || on.isContentEditable)) return;
   if (chatting) { if (k === 'escape') closeChat(false); return; }
   keys[k] = true;
   if (k === 'escape' && started) { menu(!paused); e.preventDefault(); return; }
@@ -175,7 +180,9 @@ function readInput() {
 
 /* --------------------------------------------------------------- the field -- */
 // how much more top end the computer drivers get than you do
-const BOT_TOP = 1.4;
+const BOT_TOP = 1.68;
+// how long the results stand before the next race, matching the lobby server
+const RESULTS = 10;
 
 function addKart(racer, opts) {
   const k = makeKart(racer);
@@ -204,7 +211,7 @@ function placeOnGrid() {
     k.speed = 0; k.drift = 0; k.driftT = 0; k.slide = 0; k.hop = 0; k.hopV = 0;
     k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0; k.coins = 0;
     k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0;
-    k.item = null; k.itemN = 0; k.roulette = 0;
+    k.item = null; k.itemN = 0; k.roulette = 0; k.queue = [];
     k.hint = null;
     const pr = track.project(k.pos.x, k.pos.z, null);
     k.hint = pr.i;
@@ -310,8 +317,13 @@ function order() {
 }
 
 /* --------------------------------------------------------------- the items -- */
+// how many you can be carrying at once, the one in the slot included
+const SLOTS = 3;
+function heldCount(k) { return (k.item ? 1 : 0) + k.queue.length; }
+
 function pickupBox(k, b) {
-  if (k.item || k.roulette > 0) return;
+  // one roulette at a time, but it can land behind whatever you already have
+  if (k.roulette > 0 || heldCount(k) >= SLOTS) return;
   b.taken = 6;
   k.roulette = 1.05;
   k.rollTo = rollItem(k.place, karts.length);
@@ -343,7 +355,11 @@ function useItem(k) {
   }
   if (net && k === me) net.fire(id);
   k.itemN--;
-  if (k.itemN <= 0) { k.item = null; k.itemN = 0; }
+  if (k.itemN <= 0) {
+    const next = k.queue.shift();
+    if (next) { k.item = next.id; k.itemN = next.n; }
+    else { k.item = null; k.itemN = 0; }
+  }
   if (k === me) hudItem();
 }
 
@@ -402,7 +418,8 @@ function stepWorld(dt) {
     if (k.roulette > 0) {
       k.roulette -= dt;
       if (k.roulette <= 0) {
-        k.item = k.rollTo; k.itemN = k.rollN;
+        if (k.item) k.queue.push({ id: k.rollTo, n: k.rollN });
+        else { k.item = k.rollTo; k.itemN = k.rollN; }
         if (k === me) { el('slot').classList.remove('spin'); el('slot').classList.add('land'); setTimeout(() => el('slot').classList.remove('land'), 300); hudItem(); snd.land(); }
       }
     }
@@ -538,6 +555,12 @@ function ord(n) {
 }
 function hudItem() {
   const slot = el('slot'), face = el('face');
+  const q = el('slotq');
+  if (q) {
+    q.innerHTML = (me ? me.queue : []).map(it =>
+      '<div class="q">' + ITEMS[it.id].face + (it.n > 1 ? '<span class="n">x' + it.n + '</span>' : '') + '</div>'
+    ).join('');
+  }
   if (!me || !me.item) { slot.classList.add('empty'); face.innerHTML = ''; return; }
   slot.classList.remove('empty');
   face.innerHTML = ITEMS[me.item].face + (me.itemN > 1 ? '<span class="n">x' + me.itemN + '</span>' : '');
@@ -639,6 +662,14 @@ function showResults(final) {
   el('results').classList.add('on');
 }
 
+// the gap between races, said out loud, so the wait has a shape to it
+function resCount() {
+  if (phase !== 'results') return;
+  const left = Math.max(0, Math.ceil(phaseT));
+  el('resfoot').innerHTML = (net && net.alive ? 'Back to the lobby in <b>' : 'Next race in <b>')
+    + left + '</b>';
+}
+
 /* ------------------------------------------------------------------- chat --- */
 function say(text, cls) {
   const log = el('log');
@@ -674,6 +705,7 @@ function stepPhase(dt) {
     const done = karts.every(k => k.finished);
     if (done || (results.length && raceTime - results[0].time > 22) || raceTime > 400) endRace();
   } else if (phase === 'results') {
+    resCount();
     if (phaseT <= 0) { soloRound++; startRound(null, 4321 + soloRound * 77); }
   }
 }
@@ -704,13 +736,13 @@ function goRace() {
 }
 function endRace() {
   phase = 'results';
-  phaseT = 11;
+  phaseT = RESULTS;
   snd.music(false);
   for (const k of karts) if (!k.finished) { k.finished = 1; k.time = raceTime; results.push(k); k.place = results.length; }
   order();
   showResults(true);
   el('board').classList.remove('on');
-  el('resfoot').textContent = net && net.alive ? 'Next race starting soon' : 'Next race in a few seconds';
+  el('resfoot').innerHTML = 'Next race in <b>10</b>'; resCount();
 }
 
 /* -------------------------------------------------------------- the loop ---- */
@@ -781,7 +813,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=10').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=11').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
 
@@ -791,7 +823,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=10');
+    const mod = await import('./net.js?v=11');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -898,6 +930,9 @@ function bindTo(k) {
 }
 el('resume').addEventListener('click', () => menu(false));
 el('tocontrols').addEventListener('click', () => menuPage('keys'));
+// back to the title card, which is a fresh page rather than an unpicking of
+// everything a race has set up
+el('tostart').addEventListener('click', () => { location.href = location.pathname; });
 el('bindback').addEventListener('click', () => menuPage('main'));
 el('bindreset').addEventListener('click', () => { bindDefaults(); bindSave(); drawBinds(); });
 el('bindrows').addEventListener('click', e => {
@@ -955,7 +990,17 @@ window.__mk = {
     autoBrain = on && me ? makeBrain(me, 0.95, 4242) : null;
     return !!autoBrain;
   },
-  giveItem(id, n) { if (me) { me.item = id; me.itemN = n || 1; me.roulette = 0; hudItem(); } },
+  // giveItem sets what is in your hand, addItem lands one behind it the way a
+  // box does. A test wants both, and confusing them makes it ask for one thing
+  // and get another.
+  giveItem(id, n) { if (me) { me.item = id; me.itemN = n || 1; me.queue = []; me.roulette = 0; hudItem(); } },
+  addItem(id, n) {
+    if (!me) return;
+    if (me.item) me.queue.push({ id, n: n || 1 });
+    else { me.item = id; me.itemN = n || 1; }
+    me.roulette = 0; hudItem();
+  },
+  get held() { return me ? [me.item && { id: me.item, n: me.itemN }].filter(Boolean).concat(me.queue) : []; },
   use() { useItem(me); },
   tp(s, lateral) {
     const a = track.at(((s % track.length) + track.length) % track.length);
@@ -970,6 +1015,7 @@ window.__mk = {
       phase, spectating, laps: LAPS, lap: me ? me.lap : 0, place: me ? me.place : 0,
       speed: me ? +me.speed.toFixed(2) : 0, coins: me ? me.coins : 0,
       item: me ? me.item : null, itemN: me ? me.itemN : 0,
+      queued: me ? me.queue.length : 0,
       karts: karts.length, bots: brains.length, time: +raceTime.toFixed(2),
       finished: me ? !!me.finished : false, results: results.length,
       trackLen: track ? Math.round(track.length) : 0,

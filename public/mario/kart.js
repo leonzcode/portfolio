@@ -133,6 +133,8 @@ export function makeKart(who) {
     boost: 0, coins: 0, spin: 0, slow: 0, star: 0,
     lap: 1, cpi: 0, prog: 0, place: 1, finished: 0,
     item: null, itemN: 0, roulette: 0,
+    // what is queued behind the one in the slot, oldest first
+    queue: [],
     hint: 0, offroad: false, wheelSpin: 0, steerVis: 0, lean: 0, topMul: 1,
   };
   apply(kart);
