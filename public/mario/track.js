@@ -558,13 +558,42 @@ export function buildTrack(scene) {
   }
 
   /* their meshes */
+  /* The boxes: a blue crystal with a question mark on every face and a brighter
+     core turning inside it. Two instanced meshes between the lot of them, and
+     the question mark is drawn rather than modelled, which is what keeps the
+     shell to one draw call. */
+  const boxTex = canvasTex(128, 128, (g, W, H) => {
+    g.fillStyle = 'rgba(58,150,220,0.92)';
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#bfe8ff'; g.lineWidth = 9;
+    g.strokeRect(6, 6, W - 12, H - 12);
+    // a few facets, so it reads as cut rather than moulded
+    g.strokeStyle = 'rgba(200,238,255,0.45)'; g.lineWidth = 5;
+    g.beginPath();
+    g.moveTo(6, 40); g.lineTo(46, 6); g.moveTo(W - 6, H - 40); g.lineTo(W - 46, H - 6);
+    g.stroke();
+    g.fillStyle = '#fff6e2';
+    g.font = 'bold 86px "Trebuchet MS", system-ui, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.strokeStyle = '#17223b'; g.lineWidth = 10;
+    g.strokeText('?', W / 2, H / 2 + 4);
+    g.fillText('?', W / 2, H / 2 + 4);
+  }, [1, 1]);
   const boxMat = new THREE.MeshStandardMaterial({
-    color: 0xfff6e2, emissive: 0xffd233, emissiveIntensity: 0.35, roughness: 0.4, transparent: true, opacity: 0.92,
+    map: boxTex, color: 0xffffff, emissive: 0x2f7fd0, emissiveIntensity: 0.45,
+    roughness: 0.22, metalness: 0.1, transparent: true, opacity: 0.86,
   });
   const boxGeo = new THREE.BoxGeometry(2.1, 2.1, 2.1);
   const boxMesh = new THREE.InstancedMesh(boxGeo, boxMat, itemBoxes.length);
   boxMesh.frustumCulled = false;
   group.add(boxMesh);
+  const coreMesh = new THREE.InstancedMesh(
+    new THREE.OctahedronGeometry(0.72, 0),
+    new THREE.MeshStandardMaterial({ color: 0xdff2ff, emissive: 0x8fd3ff, emissiveIntensity: 1.2, roughness: 0.3 }),
+    itemBoxes.length
+  );
+  coreMesh.frustumCulled = false;
+  group.add(coreMesh);
 
   const coinGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.11, 14);
   coinGeo.rotateX(Math.PI / 2);
@@ -677,7 +706,7 @@ export function buildTrack(scene) {
     group, samples, length, ramps, features, project, at, gridSlot, groundY,
     // how far past the tarmac the wall is, so the barriers can stand on it
     shoulder: SHOULDER,
-    itemBoxes, boostPads, coins, boxMesh, coinMesh,
+    itemBoxes, boostPads, coins, boxMesh, coreMesh, coinMesh,
     // the ribbon, in a form the minimap can draw cheaply
     outline: samples.filter((_, i) => i % 3 === 0).map(a => [a.p.x, a.p.z]),
     bounds: samples.reduce((b, a) => ({
