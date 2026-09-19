@@ -11,13 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=16';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=16';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=16';
-import { makeBrain, driveBrain } from './ai.js?v=16';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=16';
-import { makeCones } from './cones.js?v=16';
-import * as snd from './audio.js?v=16';
+import { buildTrack } from './track.js?v=17';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=17';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=17';
+import { makeBrain, driveBrain } from './ai.js?v=17';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=17';
+import { makeCones } from './cones.js?v=17';
+import * as snd from './audio.js?v=17';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -427,16 +427,11 @@ function stepWorld(dt) {
       k.boost = Math.max(k.boost, p.ramp ? 1.2 : 0.85);
     }
 
-    // the lip of a ramp throws you: the road has already carried you up it, so
-    // all this does is decide how far the rest of the climb takes you
-    for (const r of track.ramps) {
-      if (k.hop > 0.02 || k.speed < 10) continue;
-      if (Math.hypot(r.pos.x - k.pos.x, r.pos.z - k.pos.z) > 5) continue;
-      k.hopV = Math.max(k.hopV, 5.4 + k.speed * 0.26);
-      k.airG = 18;                          // a jump hangs longer than a hop
-      k.drift = 0; k.driftT = 0;
-      if (k === me) snd.land();
-    }
+    // The ramps do not throw anybody any more: kart.js works out that the road
+    // has stopped climbing under it and keeps whatever lift it had, which is how
+    // a car leaves a jump. All that is left here is cancelling a drift, since
+    // there is nothing to slide on up there.
+    if (k.hop > 0.3 && k.drift !== 0) { k.drift = 0; k.driftT = 0; }
 
     // a few bubbles on the way past, for whoever is under the surface
     if (k.wet && Math.random() < 0.22) {
@@ -672,6 +667,12 @@ function drawHud(dt) {
   el('place').className = 'p' + Math.min(3, pl);
   el('coinn').textContent = watch.coins;
   el('speedn').textContent = Math.round(Math.abs(watch.speed) * 3.6);
+  const dp = el('dpow');
+  if (dp) {
+    dp.classList.toggle('on', watch.driftE < 0.995 || watch.drift !== 0);
+    dp.classList.toggle('low', watch.driftE < 0.25);
+    el('dpowi').style.width = (watch.driftE * 100).toFixed(0) + '%';
+  }
   const ch = el('charge');
   if (watch.drift !== 0) {
     ch.classList.add('on');
@@ -787,6 +788,14 @@ function stepPhase(dt) {
   if (net && net.alive) return;
   phaseT -= dt;
   if (phase === 'count') {
+    // revving on the grid: hold the throttle or the drift button and the kart
+    // shakes, and the longer you hold it the harder it goes when the lights
+    // change. Let go and it winds back down.
+    if (me && !spectating && !paused) {
+      const on = down('gas') || down('hop');
+      me.rev = Math.max(0, Math.min(1, me.rev + (on ? 1.05 : -2.2) * dt));
+    }
+    for (const b of brains) b.kart.rev = Math.min(1, b.kart.rev + b.skill * 0.9 * dt);
     setLights(phaseT);
     if (phaseT <= 0) goRace();
   } else if (phase === 'race') {
@@ -820,7 +829,12 @@ function goRace() {
   [...c.querySelectorAll('.lights i')].forEach((i, n) => i.classList.toggle('lit', n === 2));
   setTimeout(() => c.classList.remove('on'), 900);
   // a rocket start for anyone already on the throttle
-  if (me && !spectating && down('gas')) { me.boost = 1.1; notice('Rocket start!'); }
+  // whatever was wound up on the grid comes out here
+  if (me && !spectating && me.rev > 0.15) {
+    me.boost = 0.75 + me.rev * 0.75;
+    notice(me.rev > 0.85 ? 'Rocket start!' : 'Good launch');
+  }
+  for (const k of karts) k.rev = 0;
   for (const b of brains) if (Math.random() < b.skill * 0.7) b.kart.boost = 0.8;
 }
 function endRace() {
@@ -902,7 +916,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=16').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=17').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
@@ -913,7 +927,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=16');
+    const mod = await import('./net.js?v=17');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1058,6 +1072,7 @@ window.__mk = {
   get cones() { return cones; },
   get paused() { return paused; },
   get sound() { return snd.musicNow(); },
+  topOf: k => topSpeed(k),
   oil: oilSplat,
   roll: (place, field) => rollItem(place, field),
   get bind() { return bind; },

@@ -65,6 +65,7 @@ export function connect(ctx) {
       p.tx = m.x; p.ty = m.y; p.tz = m.z; p.tyaw = m.yaw;
       p.sp = m.sp; p.lap = m.lap; p.prog = m.prog;
       p.spin = m.spin; p.drift = m.drift; p.boost = m.boost;
+      p.rev = +m.rev || 0;
       return;
     }
 
@@ -184,6 +185,7 @@ export function connect(ctx) {
           yaw: +me.yaw.toFixed(3), sp: +me.speed.toFixed(2),
           lap: me.lap, prog: +me.prog.toFixed(1),
           spin: me.spin > 0, drift: me.drift !== 0, boost: me.boost > 0,
+          rev: +me.rev.toFixed(2),
         });
       }
       // ease every remote kart towards the last word from its owner
@@ -207,6 +209,7 @@ export function connect(ctx) {
         k.lean += ((p.drift ? 0.12 : 0) - k.lean) * (1 - Math.exp(-6 * dt));
         if (p.boost) k.boost = Math.max(k.boost, 0.2);
         if (p.spin) k.spin = Math.max(k.spin, 0.2);
+        k.rev = p.rev || 0;              // so their grid shake is on your screen too
         // dead reckoning between packets, so a kart never stands still mid-corner
         p.tx += -Math.sin(p.tyaw) * (p.sp || 0) * dt;
         p.tz += -Math.cos(p.tyaw) * (p.sp || 0) * dt;

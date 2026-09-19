@@ -130,6 +130,10 @@ export function makeKart(who) {
     pos: new THREE.Vector3(), yaw: 0, speed: 0,
     drift: 0,            // -1 left, 1 right, 0 none
     driftT: 0, slide: 0, hop: 0, hopV: 0,
+    driftE: 1,           // how much slide you have left in the tank
+    pitch: 0, roadRise: 0, inSand: 0,
+    // how hard you are revving on the grid, which everybody can see
+    rev: 0,
     boost: 0, coins: 0, spin: 0, slow: 0, star: 0,
     lap: 1, cpi: 0, prog: 0, place: 1, finished: 0,
     item: null, itemN: 0, roulette: 0,
@@ -154,8 +158,16 @@ export function apply(k) {
   // rotation.z is applied before the yaw, so it rolls the kart about its own
   // length: that is the camber of the road under it
   k.group.rotation.z = k.roll;
+  // revving on the grid: a shake everybody can see, since rev rides along in the
+  // position each browser sends
+  if (k.rev > 0.02) {
+    const t = performance.now() * 0.001;
+    k.group.position.x += Math.sin(t * 37) * 0.11 * k.rev;
+    k.group.position.z += Math.cos(t * 31) * 0.07 * k.rev;
+  }
   k.body.rotation.z = k.lean;
-  k.body.rotation.x = -k.speed * 0.0012;
+  // nose up on the way up, nose down on the way down
+  k.body.rotation.x = -k.speed * 0.0012 + k.pitch;
   for (const w of k.wheels) {
     w.hub.rotation.y = w.steers ? k.steerVis : 0;
     w.spin.rotation.x = k.wheelSpin;
@@ -179,6 +191,12 @@ export const TUNE = {
   starTop: 1.22,
   coinTop: 0.011,          // each coin is a little more top end
   hopV: 4.2,
+  // a slide costs energy and buys a little top end while it lasts; the bar fills
+  // back up when you are straight, so drifting is something you spend rather
+  // than something you simply hold
+  driftSpend: 0.42,
+  driftFill: 0.24,
+  driftTop: 1.08,
 };
 
 export function topSpeed(k) {
@@ -187,6 +205,7 @@ export function topSpeed(k) {
   if (k.boost > 0) t *= TUNE.boostTop;
   if (k.star > 0) t *= TUNE.starTop;
   if (k.offroad && k.star <= 0) t *= TUNE.offTop;
+  if (k.drift !== 0) t *= TUNE.driftTop;      // a slide carries you
   if (k.wet) t *= 0.88;                    // water is thicker than air
   if (k.slow > 0) t *= 0.55;
   return t;
@@ -218,27 +237,35 @@ export function stepKart(k, input, track, dt) {
     if (k.speed > top) k.speed -= (k.speed - top) * Math.min(1, dt * 4.5);
 
     // the hop, and the drift that follows it
-    if (input.hop && k.hop <= 0.001 && k.drift === 0 && k.speed > 6) {
+    if (input.hop && k.hop <= 0.001 && k.drift === 0 && k.speed > 6 && k.driftE > 0.12) {
       k.hopV = TUNE.hopV;
       k.pendingDrift = Math.abs(input.steer) > 0.2 ? Math.sign(input.steer) : 0;
     }
     if (k.hop > 0.05 && k.pendingDrift && k.drift === 0) { k.drift = k.pendingDrift; k.driftT = 0; }
-    if (!input.hop && k.drift !== 0) {
-      // let go: whatever was charged comes out as a boost
+    // letting go, or running the tank dry, both end the slide and both pay out
+    // whatever was charged
+    const endDrift = () => {
       if (k.driftT > 1.45) k.boost = Math.max(k.boost, 1.15);
       else if (k.driftT > 0.75) k.boost = Math.max(k.boost, 0.7);
       k.drift = 0; k.driftT = 0; k.pendingDrift = 0;
-    }
+    };
+    if (!input.hop && k.drift !== 0) endDrift();
     if (k.drift !== 0) {
-      if (k.speed < 5) { k.drift = 0; k.driftT = 0; }
+      k.driftE = Math.max(0, k.driftE - TUNE.driftSpend * dt);
+      if (k.speed < 5 || k.driftE <= 0) endDrift();
       else k.driftT += dt;
+    } else {
+      k.driftE = Math.min(1, k.driftE + TUNE.driftFill * dt);
     }
 
     // steering: less lock at speed, more of it while sliding
     const grip = Math.min(1, Math.abs(k.speed) / 7);
     const lock = (k.drift !== 0 ? TUNE.driftSteer : TUNE.steer) * (1 - Math.min(0.42, Math.abs(k.speed) / top * 0.42));
     let steer = input.steer;
-    if (k.drift !== 0) steer = k.drift * 0.55 + input.steer * 0.55;    // you can tighten or open the slide
+    // A slide holds its own line, but the wheel is still yours: hold it into the
+    // corner and it tightens, hold it out and the kart comes round the other way.
+    // Half and half meant the slide always won and you could only ever tighten.
+    if (k.drift !== 0) steer = Math.max(-1.35, Math.min(1.35, k.drift * 0.45 + input.steer * 0.9));
     // in the air you can shift the nose, not steer
     k.yaw += steer * lock * grip * dt * (k.speed < -0.3 ? -1 : 1) * (flying ? 0.28 : 1);
     k.steerVis += (steer * 0.55 - k.steerVis) * Math.min(1, dt * 10);
@@ -275,6 +302,33 @@ export function stepKart(k, input, track, dt) {
   k.offroad = !pr.onRoad && !pr.onKerb && k.hop <= 0.05;
   // under the surface, when there is a surface to be under
   k.wet = pr.waterY !== null && (k.pos.y + k.hop + 0.7) < pr.waterY;
+
+  // Sand on the outside of a steep bend. Arrive at it quickly and it takes the
+  // car away from you; crawl into it and it just drags.
+  if (pr.sand && k.hop <= 0.05 && k.star <= 0) {
+    if (!k.inSand && Math.abs(k.speed) > 17) spinOut(k, false);
+    k.speed *= Math.exp(-2.4 * dt);
+    k.inSand = 1;
+  } else k.inSand = 0;
+
+  /* Leaving the ground the way a car does. While the road climbs it is lifting
+     you at your speed times its slope, and the moment it stops climbing that
+     lift is yours with nothing holding you down. So a fast run at a ramp throws
+     you further than a slow one, and a gentle hill does not throw you at all. */
+  if (k.hop <= 0.001 && k.spin <= 0) {
+    const rise = pr.slope * k.speed;
+    // A ramp lifts you several metres a second; the rolling ground lifts you
+    // one or two. Set the bar between them, or a gentle hill has the kart
+    // airborne the whole lap with no wheels to accelerate on.
+    if (k.roadRise > 4.5 && rise < k.roadRise - 2.2) {
+      k.hopV = Math.max(k.hopV, k.roadRise);
+      k.airG = 18;                          // a jump hangs longer than a drift hop
+    }
+    k.roadRise = rise;
+  }
+  // the nose follows the arc
+  const want = k.hop > 0.05 ? Math.atan2(k.hopV, Math.max(8, Math.abs(k.speed))) * 0.85 : 0;
+  k.pitch += (want - k.pitch) * Math.min(1, dt * 7);
   k.pos.y = pr.y;
   // ease onto the camber rather than snapping to it
   k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);
