@@ -138,6 +138,8 @@ export function makeKart(who, build) {
     // how hard you are revving on the grid, which everybody can see
     rev: 0,
     boost: 0, spin: 0, slow: 0, star: 0,
+    // over nothing: how long for, and how far down
+    falling: 0, fallV: 0, fallY: 0, overEdge: 0, rescue: 0,
     lap: 1, cpi: 0, prog: 0, place: 1, finished: 0,
     item: null, itemN: 0, roulette: 0,
     // what is queued behind the one in the slot, oldest first
@@ -390,7 +392,17 @@ export function stepKart(k, input, track, dt) {
   /* Ice takes the grip away rather than the speed: the kart keeps rolling but
      the tyres stop answering, so a corner taken on a patch runs wide. Lava is
      the opposite - it does not slow you, it throws you. */
+  /* A strip of something that is not tarmac down one side of the road. Sand
+     holds you, ice takes the grip away, ash does a bit of both. It is checked
+     before the ice patches so a patch can still override it. */
   k.onIce = 0;
+  if (pr.strip && k.hop <= 0.05 && k.star <= 0) {
+    if (pr.strip === 'ice') k.onIce = 1;
+    else {
+      k.speed *= Math.pow(pr.strip === 'sand' ? 0.55 : 0.72, dt);
+      if (pr.strip === 'ash') k.onIce = 1;
+    }
+  }
   if (track.ice && k.hop <= 0.05) {
     for (const p of track.ice) {
       if (Math.hypot(k.pos.x - p.x, k.pos.z - p.z) > p.r) continue;
@@ -486,10 +498,48 @@ export function stepKart(k, input, track, dt) {
   // the nose follows the arc
   const want = k.hop > 0.05 ? Math.atan2(k.hopV, Math.max(8, Math.abs(k.speed))) * 0.85 : 0;
   k.pitch += (want - k.pitch) * Math.min(1, dt * 7);
+  /* ---- over nothing -----------------------------------------------------
+     A gap in the road, or over the edge of a causeway, and there is no surface
+     under the car at all. It stops being driven and starts being a falling
+     object; the game notices and sends something to fish it out.
+
+     The test is for the road being missing rather than for the car being low,
+     because project() still reports a height over a gap: the samples are there,
+     only the tarmac is not. Left to itself the car would drive straight across
+     the hole on a floor that is not drawn. */
+  /* Clearly off, not brushing it. Half a metre past the edge is a wheel over
+     the line; two and a half is a car that has left. */
+  const nothing = pr.gap || (pr.causeway > 0.4 && Math.abs(pr.lateral) > pr.wall + 2.4);
+  /* Airborne counts as airborne even on the frame the launch happens. hop is
+     integrated at the top of the next step, so on the frame a ramp fires it is
+     still zero while hopV is already several metres a second: testing hop alone
+     dropped every car straight down the hole it had just been thrown over. */
+  const flying = k.hop > 0.05 || k.hopV > 0.5;
+  if (!k.falling && nothing && !flying && k.spin <= 0) {
+    k.falling = 1;
+    k.fallV = Math.min(0, k.hopV);
+    k.fallY = k.pos.y;
+    k.drift = 0; k.driftT = 0;
+  }
+  if (k.falling) {
+    // a projectile again, and nothing under it to land on
+    k.fallV -= TUNE.G * dt;
+    k.fallY += k.fallV * dt;
+    k.pos.y = k.fallY;
+    k.speed *= Math.exp(-0.6 * dt);
+    k.falling += dt;
+    k.hop = 0; k.hopV = 0; k.launched = 0; k.roadRise = 0;
+    k.prog = pr.s;
+    return pr;
+  }
   k.pos.y = pr.y;
   // ease onto the camber rather than snapping to it
   k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);
-  if (Math.abs(pr.lateral) > pr.wall) {
+  /* A causeway has no fence on it. Everywhere else the edge of the tarmac is a
+     barrier; here it is an edge, and going over it is the point. */
+  if (Math.abs(pr.lateral) > pr.wall && pr.causeway > 0.4) {
+    k.overEdge = 1;
+  } else if (Math.abs(pr.lateral) > pr.wall) {
     /* A barrier is a collision like any other, so it is resolved like one. The
        velocity is split along the wall and into it; the part into it is reversed
        and mostly absorbed, the part along it is kept bar a scrape; and what comes

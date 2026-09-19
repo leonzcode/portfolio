@@ -56,6 +56,7 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
   /* Not before it has ever moved. On the grid every car is stationary for the
      whole countdown, which this read as four seconds of being stuck, so the
      lights went out and the entire field reversed. */
+  if (k.rescue || k.falling) { br.stuckT = 0; br.backT = 0; return { gas: 0, brake: 0, steer: 0, hop: false }; }
   if (Math.abs(k.speed) > 8) br.rolled = 1;
   br.stuckT = br.rolled && Math.abs(k.speed) < 3.5 && k.spin <= 0 ? (br.stuckT || 0) + dt : 0;
   if (br.stuckT > 2) {
@@ -111,6 +112,12 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
   const tgt = track.samples[(k.hint + Math.max(3, look)) % N];
   br.wobble += dt * 0.7;
   let lane = Math.max(-0.62, Math.min(0.62, br.line * 0.5 + Math.sin(br.wobble) * 0.1));
+  /* Down the middle where the edge is a drop. A driver holding its favourite
+     line a metre off the kerb is holding it a metre off the kerb on a causeway
+     too, and there is no kerb there: the whole field walked off the side of the
+     first one of these ever built. */
+  const edge = Math.max(tgt.causeway || 0, track.samples[k.hint % N].causeway || 0);
+  if (edge > 0.1) lane *= Math.max(0.12, 1 - edge);
   if (side) {
     // the widest the island gets between here and where it is looking, so the
     // line clears it on the way in as well as alongside it

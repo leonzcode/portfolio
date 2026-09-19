@@ -41,7 +41,12 @@ function makeCP(seed) {
     const th = (i / n) * Math.PI * 2;
     let r = 1;
     for (const q of wave) r += q.a * Math.sin(q.k * th + q.p);
-    const R = 168 * r;
+    /* A bigger circuit than it used to be, but not by as much as it first was.
+       Ten sections a lap need somewhere to go and the old radius could not place
+       the last two or three of them; at two hundred they all fitted and a lap of
+       the slowest circuit took over seventy seconds, which is three and a half
+       minutes for a race. */
+    const R = 180 * r;
     out.push({
       x: Math.cos(th + spin) * R,
       z: Math.sin(th + spin) * R * squash,
@@ -291,26 +296,204 @@ function sampleLoop(seed, th) {
     ramps.push({ i: (i0 + len - 1) % M, pos: lip.p.clone(), s: lip.s, side });
   }
 
-  /* ---- the bridge, the tunnel and the water ------------------------------ */
+  /* ---- what happens to the road on the way round --------------------------
+     A catalogue of sections, and a list per circuit of which ones it gets.
+     Everything in here changes how the lap drives rather than how it looks:
+     where it climbs, where it pinches, where it leans over, where it stops
+     being there at all. The look is applied later, and is also the circuit's
+     own, so a tunnel at Redrock Dunes is a cave through a mountain and the same
+     tunnel at Neon Mile is a lit glass pipe.
+
+     `len` is how many samples it covers, `shape` is what it does to each of
+     them, and `t` runs 0 to 1 across it. Placement is worked out below: they
+     are spread round the lap and never land on each other, on a ramp, or on
+     the start line, so a circuit can carry ten of them without any two
+     arguing about the same piece of road.
+  -------------------------------------------------------------------------- */
   // A smooth rise from nothing to the full amount and back, so each section
   // joins the road either side of it without a step.
   const bump = t => 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
-  // All three sit on straight stretches. They are flat inside, because the deck,
-  // the tube and the sheet are all built square to the road, and a flat section
-  // on the circuit's best corner is a corner thrown away.
-  // Each place gets the sections that suit it: there is no water in a lava
-  // hollow and no river through a city block.
-  const ALL = {
-    // long and gentle, because a bridge is a bridge: at this slope the crest
-    // does not reach the launch threshold and nobody is thrown off it
-    bridge: { kind: 'bridge', at: 0.06, len: 34, rise: 4.5 },
-    tunnel: { kind: 'tunnel', at: 0.44, len: 30 },
-    water: { kind: 'water', at: 0.83, len: 34, drop: 3.1 },
+  // and one that goes up and stays up, for anything that leaves you higher or
+  // lower than it found you
+  const ease = t => t * t * (3 - 2 * t);
+
+  const FEATURES = {
+    /* long and gentle, because a bridge is a bridge: at this slope the crest
+       does not reach the launch threshold and nobody is thrown off it */
+    bridge: { len: 34, rise: 4.5, flat: 1, shape(a, t, f) { a.p.y += f.rise * bump(t); a.bridge = 1; } },
+
+    /* enclosed. What the tube is made of is the circuit's business. */
+    tunnel: { len: 30, flat: 1, shape(a) { a.tunnel = 1; } },
+
+    /* a channel with something in it you drive through the bottom of */
+    water: { len: 34, drop: 3.1, flat: 1, shape(a, t, f, k) {
+      a.p.y -= f.drop * bump(t);
+      a.water = 1;
+      a.waterY = f.surfaceY;
+      if (k % 3 === 0) basins.push({ x: a.p.x, z: a.p.z, r: a.w + 26, drop: f.drop * bump(t) + 1.2 });
+    } },
+
+    /* The road stops. There is a run up, a lip, nothing at all for a few
+       samples, and a landing. Miss it and something comes and fishes you out. */
+    /* The road stops. There is a run up, a lip steep enough to throw a car
+       clear at anything like racing speed, nothing at all for a few samples,
+       and a landing that is lower than the lip so you cannot clip the far side.
+
+       The lip and the hole are sized against each other, and the sizing has to
+       hold on the slow circuits as well as the quick ones. A launch only fires
+       when the road's climb times your speed clears a bar; at the first lip it
+       was the bar that decided whether you jumped, so a car arriving at twenty
+       simply drove off the end without ever leaving the ground. The lip is now
+       steep enough that anything doing eighteen is thrown, and the hole short
+       enough that being thrown clears it. */
+    chasm: { len: 26, flat: 1, gapFrom: 0.52, gapTo: 0.62, drop: 26, lip: 4.2, shape(a, t, f, k) {
+      a.chasm = 1;
+      if (t > f.gapFrom && t < f.gapTo) {
+        a.gap = 1;
+        // and the ground goes with it, or the hole is a hole with a field in it
+        if (k % 2 === 0) basins.push({ x: a.p.x, z: a.p.z, r: a.w + 22, drop: f.drop });
+        return;
+      }
+      if (t <= f.gapFrom) a.p.y += f.lip * ease(Math.min(1, t / f.gapFrom));
+      else a.p.y += f.lip * 0.45 * (1 - ease(Math.min(1, (t - f.gapTo) / (1 - f.gapTo) * 1.4)));
+    } },
+
+    /* A crest steep enough to throw a car at racing speed, then away again. */
+    hump: { len: 18, rise: 3.4, flat: 1, shape(a, t, f) {
+      a.p.y += f.rise * Math.sin(Math.PI * t) ** 1.6;
+    } },
+
+    /* A run of small crests. Nothing here throws you on its own; taken
+       together they unsettle the car for the whole length of it. */
+    whoops: { len: 30, rise: 0.85, shape(a, t, f) {
+      a.p.y += f.rise * Math.sin(t * Math.PI * 7) * Math.sin(Math.PI * t);
+      a.bank *= 0.4;
+    } },
+
+    /* The road pinches. Nothing else changes, which is the point: the corner
+       is the same corner and there is half as much room to get it wrong. */
+    narrows: { len: 24, to: 0.55, shape(a, t, f) {
+      a.w *= 1 - (1 - f.to) * bump(t);
+    } },
+
+    /* And the opposite: it opens out into somewhere you can take any line you
+       like, which is where the overtaking happens. */
+    arena: { len: 26, by: 1.7, shape(a, t, f) {
+      a.w *= 1 + (f.by - 1) * bump(t);
+      a.bank *= 0.5;
+    } },
+
+    /* A wall of a corner: the camber goes far past anything the rest of the
+       lap does, so the outside of it is something you ride rather than fall
+       off. It only leans the way the corner already goes. */
+    bowl: { len: 28, lean: 0.3, shape(a, t, f) {
+      const want = a.bend >= 0 ? -f.lean : f.lean;
+      a.bank += (want - a.bank) * bump(t);
+      a.w *= 1 + 0.25 * bump(t);
+    } },
+
+    /* A shelf: the road runs level and then simply drops away, so you leave it
+       at whatever speed you arrived and land a long way down. */
+    shelf: { len: 24, drop: 5.5, flat: 1, shape(a, t, f) {
+      // the drop runs out over a third of the section rather than falling off a
+      // cliff: a car should leave a shelf, not be dropped down a hole by it
+      a.p.y -= f.drop * (t < 0.4 ? 0 : ease(Math.min(1, (t - 0.4) / 0.42)));
+      a.shelf = 1;
+    } },
+
+    /* A narrow road with the ground taken away either side of it and no fence
+       to save you. Rescue picks up anybody who goes over the edge. */
+    /* A road with the ground taken away either side of it and no fence to save
+       you. It is longer and narrows far less than it first did: a causeway that
+       pinches hard AND has nothing at the edge is not a section, it is a trap,
+       and the first version of it put the entire field in the water. */
+    causeway: { len: 40, to: 0.78, lift: 2.4, shape(a, t, f) {
+      a.w *= 1 - (1 - f.to) * bump(t);
+      a.p.y += f.lift * bump(t);
+      a.causeway = bump(t);
+      a.bank = 0;
+      if (bump(t) > 0.4) a.noFence = 1;
+    } },
+
+    /* A long climb with the camber wound right up, which is the only way a
+       kart holds a curve that steep. It comes back down the other side. */
+    spiral: { len: 46, rise: 13, lean: 0.24, shape(a, t, f) {
+      a.p.y += f.rise * Math.sin(Math.PI * t) ** 1.3;
+      const want = a.bend >= 0 ? -f.lean : f.lean;
+      a.bank += (want - a.bank) * Math.sin(Math.PI * t);
+      a.spiral = 1;
+    } },
+
+    /* Rollers. Gentler than the whoops and twice as long, which on ice is the
+       difference between a bumpy straight and one you cannot put power down on. */
+    moguls: { len: 40, rise: 0.55, shape(a, t, f) {
+      a.p.y += f.rise * Math.sin(t * Math.PI * 11) * Math.sin(Math.PI * t);
+    } },
+
+    /* A strip of the surface down one side that is not tarmac, so the quick
+       line and the safe line are not the same line. What the strip is made of
+       is the circuit's own: sand, ice, or ash. */
+    strip: { len: 34, shape(a, t, f) {
+      a.strip = bump(t) > 0.2 ? (f.side || 1) : 0;
+      a.stripKind = f.of || 'sand';
+    } },
+
+    /* Boosters, the length of a straight, down one half of the road. */
+    boostlane: { len: 26, shape(a, t, f) {
+      if (bump(t) > 0.3) a.boostlane = f.side || 1;
+    } },
   };
-  const features = (th.features || ['bridge', 'tunnel', 'water']).map(k => Object.assign({}, ALL[k]));
+
+  /* ---- where each of them goes -------------------------------------------
+     Spread round the lap, never on top of each other, never on a ramp and
+     never over the start line. Longest first, because a long section placed
+     after a dozen short ones has nowhere left to go. */
+  const wanted = (th.features || ['bridge', 'tunnel', 'water'])
+    .map(k => (typeof k === 'string' ? { kind: k } : Object.assign({}, k)))
+    .filter(f => FEATURES[f.kind]);
+  const taken = new Uint8Array(M);
+  const START_CLEAR = 24;
+  const MARGIN = 3;
+  for (let d = -START_CLEAR; d <= START_CLEAR; d++) taken[(d + M * 2) % M] = 1;
+  for (const r of ramps) for (let d = -6; d <= 6; d++) taken[(r.i + d + M) % M] = 1;
+  const room = (i0, len) => {
+    for (let k = -MARGIN; k < len + MARGIN; k++) if (taken[(i0 + k + M * 2) % M]) return false;
+    return true;
+  };
+  const claim = (i0, len) => {
+    for (let k = -MARGIN; k < len + MARGIN; k++) taken[(i0 + k + M * 2) % M] = 1;
+  };
+
+  const features = [];
+  const order = wanted.map((f, n) => ({ f, n }))
+    .sort((a, b) => FEATURES[b.f.kind].len - FEATURES[a.f.kind].len);
+  let spread = 0;
+  for (const { f, n } of order) {
+    const def = FEATURES[f.kind];
+    const len = f.len || def.len;
+    // start from a different part of the lap for each one, then walk on until
+    // there is space; the stride is coprime-ish with the lap so it covers it
+    let i0 = Math.floor(((0.08 + (spread++) * 0.147 + (seed % 97) / 97 * 0.1) % 1) * M);
+    /* A gap needs a run at it. Placed just past the start line, the first car
+       off the grid meets it from a standstill, drives into it, gets put back
+       short of it and drives into it again. Anything with a hole in it is kept
+       a clear two hundred metres from the line. */
+    const runUp = f.kind === 'chasm' ? 95 : 0;
+    const clearOfLine = i => !runUp || Math.min((i + M) % M, (M - i) % M) > runUp;
+    let ok = false;
+    for (let tries = 0; tries < M; tries++) {
+      if (room(i0, len) && clearOfLine(i0) && clearOfLine(i0 + len)) { ok = true; break; }
+      i0 = (i0 + 7) % M;
+    }
+    if (!ok) continue;
+    claim(i0, len);
+    features.push(Object.assign({}, def, f, { len, i0, order: n, ids: [] }));
+  }
+  // and applied in lap order, so anything reading the list reads it the way you
+  // would drive it
+  features.sort((a, b) => a.i0 - b.i0);
+
   for (const f of features) {
-    f.i0 = Math.floor(f.at * M);
-    f.ids = [];
     // the water sits at the height the road was before it dipped
     let sum = 0;
     for (let k = 0; k < f.len; k++) sum += out[(f.i0 + k) % M].p.y;
@@ -320,16 +503,12 @@ function sampleLoop(seed, th) {
       const t = k / (f.len - 1);
       const a = out[i];
       f.ids.push(i);
-      a.bank = 0;                                   // flat through all three
-      if (f.kind === 'bridge') { a.p.y += f.rise * bump(t); a.bridge = 1; }
-      else if (f.kind === 'tunnel') a.tunnel = 1;
-      else if (f.kind === 'water') {
-        a.p.y -= f.drop * bump(t);
-        a.water = 1;
-        a.waterY = f.surfaceY;
-        if (k % 3 === 0) basins.push({ x: a.p.x, z: a.p.z, r: a.w + 26, drop: f.drop * bump(t) + 1.2 });
-      }
+      // a section that is built square to the road is flat through it, because
+      // camber under a deck or a tube is camber nobody can use
+      if (f.flat) a.bank = 0;
+      f.shape(a, t, f, k);
     }
+    f.s = out[(f.i0 + (f.len >> 1)) % M].s;
   }
 
   /* ---- the split ---------------------------------------------------------- */
@@ -477,6 +656,10 @@ export function buildTrack(scene, seed, themeId) {
   }
   for (let i = 0; i < N; i++) {
     const j = (i + 1) % N;
+    /* Where there is no road there is no road. A gap is a hole in the ribbon
+       rather than a stretch of invisible tarmac, so what is under it is the
+       field, a long way down, and the physics and the eye agree about that. */
+    if (samples[i].gap || samples[j].gap) continue;
     const a = i * 3, b = a + 1, c = a + 2;
     const e = j * 3, f = e + 1, g = e + 2;
     idx.push(a, e, b, b, e, f);            // left half
@@ -485,6 +668,7 @@ export function buildTrack(scene, seed, themeId) {
     const ja = j * 4, jb = ja + 1, jc = ja + 2, jd = ja + 3;
     kidx.push(ka, kb, ja, kb, jb, ja);            // left kerb, facing up
     kidx.push(kc, jc, kd, kd, jc, jd);            // right kerb, facing up
+    void 0;
   }
   const road = new THREE.Mesh(
     ribbon(pos, uv, idx),
@@ -899,6 +1083,15 @@ export function buildTrack(scene, seed, themeId) {
     const p = a.p.clone().addScaledVector(a.n, off);
     boostPads.push({ pos: p.clone().setY(surf(a, off)), i, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.34 });
   }
+  /* A booster on the run up to every gap. A jump you have to arrive at quickly
+     should hand you the speed to do it, and it turns a hole in the road from
+     something that catches you out into something you aim at. */
+  for (const f of features) {
+    if (f.kind !== 'chasm') continue;
+    const i = f.ids[Math.max(0, Math.floor(f.len * 0.3))];
+    const a = samples[i];
+    boostPads.push({ pos: a.p.clone().setY(surf(a, 0)), i, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.9, ramp: true });
+  }
   // a booster on the run up to each ramp, so you are thrown further for taking it
   for (const r of ramps) {
     const a = samples[(r.i - 3 + N) % N];
@@ -1045,6 +1238,15 @@ export function buildTrack(scene, seed, themeId) {
       slope: ((nb.p.y + rampAt(nb, lt)) - (a.p.y + rampAt(a, lt))) / (Math.abs(nb.s - a.s) || 1),
       // the island up the middle of a split: inside this, laterally, is not road
       island: a.island ? a.island + ((nb.island || 0) - a.island) * f : 0,
+      // there is no road here at all, and nothing under it either
+      gap: !!(a.gap && nb.gap),
+      // a strip of something that is not tarmac down one side, and what of
+      strip: a.strip && Math.sign(lateral) === Math.sign(a.strip) && Math.abs(lateral) > a.w * 0.25
+             ? a.stripKind : null,
+      // a road with the ground taken away either side of it: over the edge is a fall
+      causeway: a.causeway || 0,
+      // boosters down one half of it
+      boostlane: a.boostlane && Math.sign(lateral) === Math.sign(a.boostlane) ? 1 : 0,
       // the surface above you, when there is one
       waterY: a.waterY === undefined ? null : a.waterY,
       tunnel: !!a.tunnel,

@@ -16,6 +16,7 @@ import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from
 import { packLook, unpackLook, normalise } from './parts.js?v=26';
 import { makeGarage, PARTS } from './garage.js?v=26';
 import { plantOn, dropPlant, stepPlants } from './plant.js?v=26';
+import { makeRescue } from './rescue.js?v=26';
 import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=26';
 import { makeBrain, driveBrain } from './ai.js?v=26';
 import { initFx, spark, puff, blast, stepFx } from './fx.js?v=26';
@@ -153,7 +154,7 @@ const amb = new THREE.AmbientLight(0xffffff, 0.28);
 scene.add(amb);
 
 /* ------------------------------------------------------------------- state -- */
-let track = null, items = null, cones = null, hazards = null;
+let track = null, items = null, cones = null, hazards = null, rescue = null;
 let phase = 'title';                  // title | count | race | results
 let phaseT = 0;
 let me = null;                        // the player's kart
@@ -318,6 +319,7 @@ function buildWorld(seed, themeId) {
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
   hazards = makeHazards(scene, track, seed);
+  rescue = makeRescue(scene, track);
   // the scenery turns up when it turns up; the circuit is drivable without it
   import('./props.js?v=26').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
 }
@@ -340,6 +342,7 @@ function addKart(racer, opts) {
 }
 
 function clearField() {
+  if (rescue) rescue.clear();
   for (const k of karts) { dropPlant(k); scene.remove(k.group); }
   karts = [];
   brains = [];
@@ -356,6 +359,7 @@ function placeOnGrid() {
     k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0;
     k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0;
     k.item = null; k.itemN = 0; k.roulette = 0; k.queue = [];
+    k.falling = 0; k.fallV = 0; k.overEdge = 0; k.rescue = 0;
     k.hint = null;
     // and nobody is stuck on the grid; they simply have not been let go yet
     const b = brains.find(q => q.kart === k);
@@ -566,8 +570,17 @@ function stepWorld(dt) {
       if (phase !== 'race') inp = { gas: 0, brake: 0, steer: 0, hop: false };
     }
     if (k.finished) inp = { gas: 1, brake: 0, steer: (brains.find(q => q.kart === k) ? 0 : 0), hop: false };
+    // being carried back is not being driven: the balloon owns the car until it
+    // puts it down, and a physics step in the middle of that fights it
+    if (k.rescue) continue;
     const pr = stepKart(k, inp, track, dt);
     if (phase === 'race') lapLogic(k, pr);
+
+    // a lane of boosters down one half of a straight
+    if (pr.boostlane && phase === 'race') {
+      if (k === me && k.boost <= 0.2) snd.boost();
+      k.boost = Math.max(k.boost, 0.8);
+    }
 
     // the tarmac furniture, which only counts once the race is on
     if (phase === 'race') for (const b of track.itemBoxes) {
@@ -663,6 +676,17 @@ function stepWorld(dt) {
       }
     }
   }
+
+  /* Anybody over the edge. The fall is the physics; this is what comes for
+     them afterwards, and it costs them the time it takes and all their speed,
+     which is the right price for a gap you can misjudge. */
+  for (const k of karts) {
+    if (k.falling > 0.35 && !k.rescue && !k.finished) {
+      rescue.send(k);
+      if (k === me) { notice('Fished out'); snd.spin(); }
+    }
+  }
+  rescue.step(dt);
 
   /* The Snappers. Each one belongs to the kart it is bolted to, so a bite is
      decided by whoever owns the plant and the kart that got eaten is told the
