@@ -78,79 +78,6 @@
     letter-spacing:.16em; text-transform:uppercase; opacity:.45;
   }
   #gparts h3:first-child{ margin-top:0; }
-
-  /* the record card: who you are, what you have, and what you have done */
-  #acct{ width:min(320px,88vw); }
-  #acct .row2{ display:flex; gap:8px; }
-  #acct input{ font-size:15px; padding:8px 10px; }
-  #acct .go{
-    width:100%; margin-top:9px; padding:10px 8px; cursor:pointer; font-family:var(--display);
-    font-weight:800; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink);
-    background:var(--gold); border:var(--key); border-radius:12px; box-shadow:0 4px 0 var(--ink);
-  }
-  #acct .go.alt{ background:#fff; }
-  #acct .go:active{ transform:translateY(2px); box-shadow:0 2px 0 var(--ink); }
-  #acct .go:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
-  #acct .err{ margin-top:8px; font-weight:700; font-size:12px; color:#c9302a; min-height:1.1em; }
-  #acct .who{ font-family:var(--display); font-weight:800; font-size:20px; margin:2px 0 2px; }
-  #acct .purse{ display:flex; align-items:center; gap:8px; margin:6px 0 12px; }
-  #acct .purse i{
-    width:20px; height:20px; border-radius:50%; background:var(--gold);
-    border:3px solid var(--ink); box-shadow:inset 0 0 0 3px rgba(224,162,26,.9);
-  }
-  #acct .purse b{ font-family:var(--display); font-weight:800; font-size:22px; }
-  #acct .stats{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:10px; }
-  #acct .stats div{
-    background:#fff; border:var(--key); border-radius:11px; padding:7px 8px; text-align:center;
-  }
-  #acct .stats b{ display:block; font-family:var(--display); font-weight:800; font-size:19px; }
-  #acct .stats span{ font-weight:800; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; opacity:.55; }
-  #acct .hint{ font-weight:700; font-size:11.5px; line-height:1.5; opacity:.62; margin-top:2px; }
-
-  /* the shop, which covers the screen because the list is long */
-  #shop{
-    position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
-    padding:18px; background:rgba(12,20,40,.72); backdrop-filter:blur(3px);
-  }
-  #shop[hidden]{ display:none; }
-  #shop .panel{
-    width:min(720px,94vw); max-height:88vh; display:flex; flex-direction:column;
-    background:var(--cream); color:var(--ink); border:var(--key); border-radius:20px;
-    box-shadow:0 10px 0 var(--ink); padding:16px 18px;
-  }
-  #shop .top{ display:flex; align-items:center; gap:12px; margin-bottom:8px; }
-  #shop .top h2{ font-family:var(--display); font-weight:800; font-size:22px; margin:0; flex:1; }
-  #shop .top b{
-    font-family:var(--display); font-weight:800; font-size:19px; padding:4px 12px;
-    background:var(--gold); border:var(--key); border-radius:999px;
-  }
-  #shop .top button{
-    cursor:pointer; font-family:var(--display); font-weight:800; font-size:12px; letter-spacing:.08em;
-    text-transform:uppercase; padding:8px 12px; background:#fff; color:var(--ink);
-    border:var(--key); border-radius:11px; box-shadow:0 3px 0 var(--ink);
-  }
-  #shopnote{ font-weight:700; font-size:12px; opacity:.62; margin-bottom:8px; min-height:1.2em; }
-  #shoplist{ overflow-y:auto; display:flex; flex-direction:column; gap:5px; padding-right:4px; }
-  #shoplist h4{
-    margin:9px 0 1px; font-family:var(--display); font-weight:800; font-size:11px;
-    letter-spacing:.16em; text-transform:uppercase; opacity:.45;
-  }
-  #shoplist h4:first-child{ margin-top:0; }
-  #shoplist .item{
-    display:flex; align-items:center; gap:10px; background:#fff; border:var(--key);
-    border-radius:12px; padding:8px 10px;
-  }
-  #shoplist .item span{ flex:1; font-family:var(--display); font-weight:700; font-size:14px; }
-  #shoplist .item em{
-    font-style:normal; font-family:var(--display); font-weight:800; font-size:14px; opacity:.72;
-  }
-  #shoplist .item button{
-    cursor:pointer; font-family:var(--display); font-weight:800; font-size:11px; letter-spacing:.08em;
-    text-transform:uppercase; padding:7px 12px; background:var(--gold); color:var(--ink);
-    border:var(--key); border-radius:10px; box-shadow:0 3px 0 var(--ink); min-width:74px;
-  }
-  #shoplist .item button:disabled{ background:#e7e3d8; box-shadow:none; cursor:default; opacity:.7; }
-  #shoplist .item.got{ background:#eaf6e6; }
   #gparts .opt{ display:flex; align-items:center; gap:7px; }
   #gparts .opt b{
     flex:1; text-align:center; font-family:var(--display); font-weight:700; font-size:14px;
@@ -167,12 +94,6 @@
   }
   #gparts .opt button:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--ink); }
   #gparts .opt button:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
-  /* how many more of this part are waiting in the shop */
-  #gparts .opt u{
-    text-decoration:none; width:26px; text-align:right; font-family:var(--display);
-    font-weight:800; font-size:11px; color:var(--ink); opacity:0;
-  }
-  #gparts .opt.some u{ opacity:.45; }
   #title .card h2{ font-family:var(--display); font-weight:800; font-size:19px; margin:0 0 12px; letter-spacing:.04em; }
   #title label{ display:block; font-weight:800; font-size:12px; letter-spacing:.14em; text-transform:uppercase; opacity:.6; margin-bottom:5px; }
   #title input{
@@ -193,17 +114,6 @@
   #maps button:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
   #mapnote{ font-weight:700; font-size:12px; color:var(--ink); opacity:.62; margin:-6px 0 10px; min-height:1.2em; }
 
-  /* the purse: under the lap counter, and it only appears once you have one */
-  #coin{
-    position:fixed; right:18px; top:104px; display:flex; align-items:center; gap:7px;
-    opacity:0; transition:opacity .2s ease; pointer-events:none;
-  }
-  #coin.on{ opacity:1; }
-  #coin i{
-    width:22px; height:22px; border-radius:50%; background:var(--gold);
-    border:3px solid var(--ink); box-shadow:inset 0 0 0 3px rgba(224,162,26,.9);
-  }
-  #coin .n{ font-family:var(--display); font-weight:800; font-size:26px; }
 
   #cast{ display:flex; gap:9px; justify-content:center; margin:14px 0 4px; flex-wrap:wrap; }
   #cast button{
@@ -243,30 +153,22 @@
     opacity:0; transition:opacity .12s linear;
   }
   #tags .tag.me{ color:var(--gold); font-size:15px; }
-  /* what a name can be wearing, bought in the shop. These are the only things
-     in the game you spend coins on that everybody else can see. */
-  /* what a race paid, on the results footer */
-  #resfoot .paid{
-    display:inline-block; margin-left:10px; padding:3px 11px; border-radius:999px;
-    background:var(--gold); color:var(--ink); border:3px solid var(--ink);
-    font-family:var(--display); font-weight:800; font-size:14px;
-  }
 
-  #tags .tag.t-gold{ color:#ffd233; }
-  #tags .tag.t-glow{ text-shadow:0 0 10px #8fe9ff, 0 0 20px #8fe9ff; }
-  #tags .tag.t-flame{
-    background:linear-gradient(180deg,#fff0a8,#ff8a1f 55%,#e8402a);
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-    -webkit-text-stroke:4px var(--ink); paint-order:stroke fill;
+  /* Pointing back down the road. Middle of the screen and flashing, because it
+     is the one message in the game you need to act on immediately rather than
+     read. It sits above the notices, which are things that have already
+     happened to you. */
+  #wrong{
+    position:fixed; left:0; right:0; top:26%; z-index:30; text-align:center; pointer-events:none;
+    font-family:var(--display); font-weight:800; font-size:clamp(30px,6.5vw,62px);
+    letter-spacing:.06em; text-transform:uppercase; color:#ff4b3a;
+    -webkit-text-stroke:7px var(--ink); paint-order:stroke fill;
+    text-shadow:0 6px 0 var(--ink);
+    opacity:0; transition:opacity .12s linear;
   }
-  #tags .tag.t-rainbow{
-    background:linear-gradient(90deg,#ff5f6d,#ffd233,#43d94f,#39d0ff,#9a4fd0,#ff5f6d);
-    background-size:220% 100%; -webkit-background-clip:text; background-clip:text; color:transparent;
-    -webkit-text-stroke:4px var(--ink); paint-order:stroke fill;
-    animation:tagroll 3.4s linear infinite;
-  }
-  @keyframes tagroll{ from{ background-position:0 0; } to{ background-position:220% 0; } }
-  @media (prefers-reduced-motion: reduce){ #tags .tag.t-rainbow{ animation:none; } }
+  #wrong.on{ animation:wrongflash .58s steps(1,end) infinite; }
+  @keyframes wrongflash{ 0%,55%{ opacity:1; } 56%,100%{ opacity:0; } }
+  @media (prefers-reduced-motion: reduce){ #wrong.on{ animation:none; opacity:1; } }
 
   /* ---------- the race HUD ---------- */
   #hud{ position:fixed; inset:0; z-index:20; pointer-events:none; opacity:0; transition:opacity .35s; }
@@ -639,10 +541,6 @@
   <label>Who</label>
   <div id="cast"></div>
   </div>
-  <div class="card" id="acct">
-    <h2>Your record</h2>
-    <div id="acctbody"></div>
-  </div>
   <div class="card" id="garage">
     <h2>Your kart</h2>
     <div id="gstage"><canvas id="gcan"></canvas><span id="ghint">drag to turn</span></div>
@@ -660,26 +558,18 @@
   <div id="load">building the circuit&hellip;</div>
 </div>
 
-<div id="shop" hidden>
-  <div class="panel">
-    <div class="top"><h2>Shop</h2><b id="shopcoins">0</b><button type="button" id="shopx">Close</button></div>
-    <div id="shopnote"></div>
-    <div id="shoplist"></div>
-  </div>
-</div>
-
 <div id="tags"></div>
 <div id="hud">
   <div id="slot" class="empty"><div class="face" id="face"></div></div>
   <div id="slotq"></div>
   <div id="usehint"><b>Press <i>E</i></b><span>to use it</span></div>
   <div id="lap"><span class="n out" id="lapn">1</span><span class="of" id="lapof">/3</span><em>lap</em></div>
-  <div id="coin"><i></i><span class="n out" id="coinn">0</span></div>
   <div id="place" class="p1"><span class="n out" id="placen">1</span><span class="sfx" id="placesfx">st</span></div>
   <div id="mini"><canvas id="minic" width="380" height="232"></canvas></div>
   <div id="charge"><i id="chargei"></i></div>
   <div id="speed"><span class="n out" id="speedn">0</span><em>km/h</em></div>
   <div id="notice"></div>
+  <div id="wrong">Wrong way</div>
 </div>
 
 <div id="board"><div class="panel"><h2>Standings</h2><div class="rows" id="boardrows"></div></div></div>
@@ -753,5 +643,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=25');
+await import('./game.js?v=26');
 </script>

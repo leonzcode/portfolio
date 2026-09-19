@@ -11,20 +11,18 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=25';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=25';
-import { packLook, unpackLook, normalise } from './parts.js?v=25';
-import { makeGarage, PARTS } from './garage.js?v=25';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=25';
-import * as account from './account.js?v=25';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=25';
-import { makeBrain, driveBrain } from './ai.js?v=25';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=25';
-import { makeCones } from './cones.js?v=25';
-import { makeHazards } from './hazards.js?v=25';
-import { makeCoins } from './coins.js?v=25';
-import { THEMES, themeById } from './themes.js?v=25';
-import * as snd from './audio.js?v=25';
+import { buildTrack } from './track.js?v=26';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=26';
+import { packLook, unpackLook, normalise } from './parts.js?v=26';
+import { makeGarage, PARTS } from './garage.js?v=26';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=26';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=26';
+import { makeBrain, driveBrain } from './ai.js?v=26';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=26';
+import { makeCones } from './cones.js?v=26';
+import { makeHazards } from './hazards.js?v=26';
+import { THEMES, themeById } from './themes.js?v=26';
+import * as snd from './audio.js?v=26';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -155,9 +153,7 @@ const amb = new THREE.AmbientLight(0xffffff, 0.28);
 scene.add(amb);
 
 /* ------------------------------------------------------------------- state -- */
-let track = null, items = null, cones = null, hazards = null, coins = null;
-// what you have picked up this race, and the quickest lap of it you have set
-let purse = 0, bestLap = 0, lapStart = 0;
+let track = null, items = null, cones = null, hazards = null;
 let phase = 'title';                  // title | count | race | results
 let phaseT = 0;
 let me = null;                        // the player's kart
@@ -314,7 +310,6 @@ function buildWorld(seed, themeId) {
     shredGroup(scene.getObjectByName('props'));
     if (cones) for (const m of cones.meshes) shredGroup(m);
     if (hazards) shredGroup(hazards.group);
-    if (coins) for (const m of coins.meshes) shredGroup(m);
   }
   worldSeed = seed;
   worldTheme = th.id;
@@ -323,14 +318,13 @@ function buildWorld(seed, themeId) {
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
   hazards = makeHazards(scene, track, seed);
-  coins = makeCoins(scene, track, seed);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=25').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=26').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
 }
 
 /* --------------------------------------------------------------- the field -- */
 // how much more top end the computer drivers get than you do
-const BOT_TOP = 1.68;
+const BOT_TOP = 2.02;
 // how long the results stand before the next race, matching the lobby server
 const RESULTS = 10;
 
@@ -361,8 +355,11 @@ function placeOnGrid() {
     k.speed = 0; k.drift = 0; k.driftT = 0; k.slide = 0; k.hop = 0; k.hopV = 0;
     k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0;
     k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0;
-    k.item = null; k.itemN = 0; k.roulette = 0; k.queue = []; k.coins = 0;
+    k.item = null; k.itemN = 0; k.roulette = 0; k.queue = [];
     k.hint = null;
+    // and nobody is stuck on the grid; they simply have not been let go yet
+    const b = brains.find(q => q.kart === k);
+    if (b) { b.rolled = 0; b.stuckT = 0; b.backT = 0; b.side = 0; }
     const pr = track.project(k.pos.x, k.pos.z, null);
     k.hint = pr.i;
     k.pos.y = pr.y;
@@ -379,8 +376,8 @@ function startRound(field, seed, asPhase, themeId) {
   clearField();
   results = [];
   raceTime = 0; notified = 0;
-  purse = 0; bestLap = 0; lapStart = 0;
-  coinHud();
+  wrongT = 0;
+  el('wrong').classList.remove('on');
   const grid = [];
   if (field && field.length) {
     for (const p of field) {
@@ -435,14 +432,6 @@ function lapLogic(k, pr) {
     k.cpi = c;
     if (c === 0) {
       k.lap++;
-      /* Your own lap time, for the record. Only yours: the server keeps a best
-         lap per circuit per account, and a bot's lap is nobody's. */
-      if (k === me) {
-        const t = raceTime - lapStart;
-        if (lapStart > 0 && t > 5 && (!bestLap || t < bestLap)) bestLap = +t.toFixed(2);
-        lapStart = raceTime;
-        if (net) net.purse(purse, bestLap);
-      }
       if (k.lap > LAPS) finishKart(k);
       else if (k === me) {
         snd.lapChime();
@@ -596,6 +585,18 @@ function stepWorld(dt) {
       k.boost = Math.max(k.boost, p.ramp ? 1.2 : 0.85);
     }
 
+    /* Pointing the wrong way. Measured against the road's own direction rather
+       than against progress, because progress hardly moves while you are
+       sitting still and facing backwards, which is exactly the moment somebody
+       needs telling. It has to hold for most of a second before it says so:
+       half a spin out points you the wrong way for an instant, and being shouted
+       at for that is worse than not being told at all. */
+    if (k === me && phase === 'race') {
+      const wrong = (-Math.sin(k.yaw) * pr.t.x + -Math.cos(k.yaw) * pr.t.z) < -0.35;
+      wrongT = wrong ? Math.min(2, wrongT + dt) : 0;
+      el('wrong').classList.toggle('on', wrongT > 0.7);
+    }
+
     // The ramps do not throw anybody any more: kart.js works out that the road
     // has stopped climbing under it and keeps whatever lift it had, which is how
     // a car leaves a jump. All that is left here is cancelling a drift, since
@@ -662,18 +663,6 @@ function stepWorld(dt) {
       }
     }
   }
-
-  /* The coins. A few of them in the bank is a few more miles an hour, which is
-     the whole reason to take the line that goes through them. */
-  coins.step(dt, raceTime, karts, me, () => {
-    if (phase !== 'race') return;
-    purse++;
-    snd.tick();
-    if (me) { me.coins = (me.coins || 0) + 1; puff(me.pos.clone().setY(me.pos.y + 1), 0xffd233); }
-    coinHud();
-    // the lobby banks the round at the end, so it needs telling as we go
-    if (net) net.purse(purse, bestLap);
-  });
 
   /* The Snappers. Each one belongs to the kart it is bolted to, so a bite is
      decided by whoever owns the plant and the kart that got eaten is told the
@@ -904,12 +893,8 @@ function makeTags() {
   tagFor = new Map();
   for (const k of karts) {
     const d = document.createElement('div');
-    /* What somebody's name is wearing. Bought in the shop, so it is the one
-       thing you can spend coins on that everybody else in the lobby sees,
-       which is most of what makes it worth spending them on. */
-    const worn = k === me ? account.tags() : (tagOf.get(k.id) || []);
-    d.className = 'tag' + (k === me ? ' me' : '') + worn.map(t => ' t-' + t).join('');
-    d.textContent = (worn.indexOf('crown') >= 0 ? '\u265b ' : '') + k.name;
+    d.className = 'tag' + (k === me ? ' me' : '');
+    d.textContent = k.name;
     box.appendChild(d);
     tagFor.set(k, d);
   }
@@ -941,18 +926,8 @@ function hitBy(by, kind) {
   return who && by !== (me && me.id) ? 'Hit by ' + who + "'s " + what + '!' : 'Hit!';
 }
 
-/* The purse, on the HUD. It sits with the lap counter rather than with the
-   speed, because it is something you are collecting rather than something the
-   car is doing. */
-function coinHud() {
-  const n = el('coinn');
-  if (n) n.textContent = purse;
-  const box = el('coin');
-  if (box) box.classList.toggle('on', purse > 0);
-}
-
-// what everybody's name is wearing, by lobby id
-const tagOf = new Map();
+// how long you have been pointing back down the road
+let wrongT = 0;
 
 let noticeT = 0;
 function notice(text) {
@@ -1151,23 +1126,6 @@ function endRace() {
   el('board').classList.remove('on');
   el('resfoot').innerHTML = 'Next race in <b>10</b>'; resCount();
 
-  /* What the race was worth. The lobby settles a lobby race and says so; a race
-     run on your own has nobody to settle it, so it is banked from here. Either
-     way the payout is the server's opinion, not this one. */
-  if (me && account.signedIn() && !net) {
-    account.bankRace(me.place || results.length, karts.length, purse, bestLap, worldTheme)
-      .then(paid => { if (paid > 0) payNote(paid); });
-  }
-}
-
-/* The line under the results that says what you took away from it. */
-function payNote(paid) {
-  const foot = el('resfoot');
-  if (!foot) return;
-  const b = document.createElement('span');
-  b.className = 'paid';
-  b.textContent = '+' + paid.toLocaleString() + ' coins';
-  foot.appendChild(b);
 }
 
 /* -------------------------------------------------------------- the loop ---- */
@@ -1238,13 +1196,6 @@ function buildCast() {
   });
   [...box.children].forEach((c, j) => c.classList.toggle('on', j === myCast));
   buildGarage();
-  drawAcct();
-  const x = el('shopx');
-  if (x) x.onclick = () => { el('shop').hidden = true; };
-  const panel = el('shop');
-  if (panel) panel.addEventListener('click', e => { if (e.target === panel) panel.hidden = true; });
-  account.onChange(() => { drawAcct(); if (!el('shop').hidden) drawShop(); });
-  account.resume();
 }
 
 /* The garage. Three rows of arrows, and the car on the turntable next to them
@@ -1267,35 +1218,15 @@ function buildGarage() {
     const name = document.createElement('b');
     const label = document.createElement('em');
     label.textContent = part.label;
-    /* Only what you actually have. Cycling through parts you cannot use and
-       being told no is worse than not being offered them: the row says how many
-       more are waiting in the shop instead, which is the thing that makes a
-       race worth winning. */
-    const mine = () => part.list.filter(x => account.owns(part.key, x.id));
     const step = d => {
-      const list = mine();
-      if (!list.length) return;
-      const i = list.findIndex(x => x.id === myBuild[part.key]);
-      const n = list[(((i < 0 ? 0 : i) + d) % list.length + list.length) % list.length];
+      const i = part.list.findIndex(x => x.id === myBuild[part.key]);
+      const n = part.list[(((i < 0 ? 0 : i) + d) % part.list.length + part.list.length) % part.list.length];
       myBuild[part.key] = n.id;
+      name.textContent = n.name;
       saveBuild();
       garage.show(RACERS[myCast], myBuild);
       tellLook();
       snd.tick();
-      paint();
-    };
-    const paint = () => {
-      const list = mine();
-      if (list.length && !list.some(x => x.id === myBuild[part.key])) {
-        myBuild[part.key] = list[0].id;
-        saveBuild();
-        garage.show(RACERS[myCast], myBuild);
-      }
-      const now = part.list.find(x => x.id === myBuild[part.key]) || part.list[0];
-      const locked = part.list.length - list.length;
-      name.textContent = now.name;
-      row.classList.toggle('some', locked > 0);
-      lock.textContent = locked > 0 ? '+' + locked : '';
     };
     const arrow = (txt, d) => {
       const b = document.createElement('button');
@@ -1305,125 +1236,13 @@ function buildGarage() {
       b.onclick = () => step(d);
       return b;
     };
-    const lock = document.createElement('u');
-    lock.title = 'more in the shop';
-    row.append(label, arrow('‹', -1), name, arrow('›', 1), lock);
+    name.textContent = (part.list.find(x => x.id === myBuild[part.key]) || part.list[0]).name;
+    row.append(label, arrow('‹', -1), name, arrow('›', 1));
     rows.appendChild(row);
-    paint();
-    repaintGarage.push(paint);
-  }
-  account.onChange(() => { for (const f of repaintGarage) f(); });
-}
-const repaintGarage = [];
-
-/* ---------------------------------------------------------------------------
-   The record card, and the shop.
-
-   Signed out it is two boxes and a button. Signed in it is your balance, what
-   you have won, and the way into the shop. Everything here is optional: with no
-   account, or with the server down, the game is the game it always was and you
-   simply do not keep anything.
---------------------------------------------------------------------------- */
-function drawAcct() {
-  const box = el('acctbody');
-  if (!box) return;
-  const a = account.acct;
-  box.textContent = '';
-  const mk = (tag, cls, text) => {
-    const n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text !== undefined) n.textContent = text;
-    return n;
-  };
-  if (!account.signedIn()) {
-    const u = document.createElement('input');
-    u.id = 'acctuser'; u.placeholder = 'Name'; u.maxLength = 14; u.autocomplete = 'username';
-    const w = document.createElement('input');
-    w.id = 'acctpass'; w.placeholder = 'Password'; w.type = 'password'; w.maxLength = 40;
-    w.autocomplete = 'current-password';
-    const go = mk('button', 'go', 'Sign in');
-    const nw = mk('button', 'go alt', 'Create an account');
-    const err = mk('div', 'err', a.err || '');
-    const run = fn => async () => {
-      go.disabled = nw.disabled = true;
-      await fn(u.value.trim(), w.value);
-      go.disabled = nw.disabled = false;
-      drawAcct();
-    };
-    go.onclick = run(account.login);
-    nw.onclick = run(account.signup);
-    w.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
-    const shop = mk('button', 'go alt', 'Look at the shop');
-    shop.onclick = () => openShop();
-    box.append(u, w, go, nw, err, shop,
-      mk('div', 'hint', 'An account keeps your coins, your record and everything you buy. '
-        + 'Coins come from the race and from what you pick up on it.'));
-    return;
-  }
-  const st = a.stats || { races: 0, wins: 0, podium: 0, best: 0 };
-  const purse = mk('div', 'purse');
-  purse.append(mk('i'), mk('b', '', a.coins.toLocaleString()));
-  const grid = mk('div', 'stats');
-  const cell = (n, label) => {
-    const d = document.createElement('div');
-    d.append(mk('b', '', n), mk('span', '', label));
-    return d;
-  };
-  grid.append(cell(st.races, 'races'), cell(st.wins, 'wins'),
-              cell(st.podium, 'podiums'), cell(st.best ? ord(st.best) : '-', 'best'));
-  const shop = mk('button', 'go', 'Shop');
-  shop.onclick = () => openShop();
-  const out = mk('button', 'go alt', 'Sign out');
-  out.onclick = async () => { await account.logout(); drawAcct(); };
-  box.append(mk('div', 'who', a.user), purse, grid, shop, out, mk('div', 'err', a.err || ''));
-}
-
-function openShop() {
-  const panel = el('shop');
-  if (!panel) return;
-  panel.hidden = false;
-  drawShop();
-}
-function drawShop() {
-  const list = el('shoplist'), note = el('shopnote'), coins = el('shopcoins');
-  if (!list) return;
-  const a = account.acct;
-  coins.textContent = a.coins.toLocaleString();
-  note.textContent = account.signedIn()
-    ? (a.err || 'Everything you buy is yours for good, and it goes on whichever racer you pick.')
-    : 'Sign in to buy any of this. Prices are what they are for everybody.';
-  list.textContent = '';
-  let kind = '';
-  for (const it of a.shop) {
-    if (it.kind !== kind) {
-      kind = it.kind;
-      const h = document.createElement('h4');
-      h.textContent = kind;
-      list.appendChild(h);
-    }
-    const row = document.createElement('div');
-    row.className = 'item';
-    const got = a.owned.indexOf(it.id) >= 0;
-    if (got) row.classList.add('got');
-    const nm = document.createElement('span');
-    nm.textContent = it.name;
-    const cost = document.createElement('em');
-    cost.textContent = got ? '' : it.cost.toLocaleString();
-    const buy = document.createElement('button');
-    buy.type = 'button';
-    buy.textContent = got ? 'Owned' : 'Buy';
-    buy.disabled = got || !account.signedIn() || a.coins < it.cost;
-    buy.onclick = async () => {
-      buy.disabled = true;
-      await account.buy(it.id);
-      if (net) net.refreshAcct();
-      drawShop();
-      drawAcct();
-    };
-    row.append(nm, cost, buy);
-    list.appendChild(row);
   }
 }
+
+
 
 async function start(online) {
   if (started) return;
@@ -1442,13 +1261,11 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=25');
+    const mod = await import('./net.js?v=26');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
       get cast() { return packLook(myCast, myBuild); },
-      // the token, if there is one, so the lobby knows whose race to bank
-      auth: () => (account.signedIn() ? { user: account.acct.user, token: account.acct.token } : null),
       world: {
         startRound, get karts() { return karts; }, get me() { return me; },
         setPhase(p, t, extra) {
@@ -1469,11 +1286,6 @@ async function start(online) {
         addTime(dt) { raceTime += dt; },
         setRaceTime(t) { raceTime = t; },
         RACERS, notice,
-        // the lobby paid a race, or something was bought; keep the balance the
-        // title screen shows in step without another round trip
-        banked: v => account.banked(v),
-        tagsFor: id => (tagOf.get(id) || []),
-        setTags(id, list) { tagOf.set(id, list || []); },
       },
     });
   } catch (e) {
@@ -1657,7 +1469,6 @@ window.__mk = {
              programs: i.programs ? i.programs.length : 0 };
   },
   RACERS,
-  get account() { return account; },
   get itemTable() { return ITEMS; },
   get hazards() { return hazards; },
   rebuild: (seed, theme) => buildWorld(seed | 0, theme),

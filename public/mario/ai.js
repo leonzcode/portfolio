@@ -9,8 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=25';
-import { topSpeed } from './kart.js?v=25';
+import { ITEMS, lapProg } from './items.js?v=26';
+import { topSpeed } from './kart.js?v=26';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
@@ -53,7 +53,11 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
      way out of it, and sit there for the rest of the race. If it has been
      crawling for a couple of seconds it backs off, reverses, and turns towards
      the road, which is what a person does without thinking about it. */
-  br.stuckT = Math.abs(k.speed) < 3.5 && k.spin <= 0 ? (br.stuckT || 0) + dt : 0;
+  /* Not before it has ever moved. On the grid every car is stationary for the
+     whole countdown, which this read as four seconds of being stuck, so the
+     lights went out and the entire field reversed. */
+  if (Math.abs(k.speed) > 8) br.rolled = 1;
+  br.stuckT = br.rolled && Math.abs(k.speed) < 3.5 && k.spin <= 0 ? (br.stuckT || 0) + dt : 0;
   if (br.stuckT > 2) {
     br.backT = 1.1;
     br.stuckT = 0;
