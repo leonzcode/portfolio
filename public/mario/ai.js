@@ -9,8 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=24';
-import { topSpeed } from './kart.js?v=24';
+import { ITEMS, lapProg } from './items.js?v=25';
+import { topSpeed } from './kart.js?v=25';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
