@@ -11,13 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=21';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=21';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=21';
-import { makeBrain, driveBrain } from './ai.js?v=21';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=21';
-import { makeCones } from './cones.js?v=21';
-import * as snd from './audio.js?v=21';
+import { buildTrack } from './track.js?v=22';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=22';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=22';
+import { makeBrain, driveBrain } from './ai.js?v=22';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=22';
+import { makeCones } from './cones.js?v=22';
+import * as snd from './audio.js?v=22';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -186,6 +186,10 @@ function readInput() {
    wire. Everything that hangs off the track - the scenery, the cones, the
    hazards lying about - goes with the old one. */
 let worldSeed = 0;
+/* A race on your own gets a new lap too, and a new one on the first race of the
+   session rather than the same opening circuit every time you load the page. */
+let soloSeed = 0;
+function newSoloSeed() { soloSeed = ((Math.random() * 0x7ffffffe) | 0) + 1; return soloSeed; }
 function shredGroup(g) {
   if (!g) return;
   g.traverse(o => {
@@ -209,7 +213,7 @@ function buildWorld(seed) {
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=21').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=22').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
 }
 
 /* --------------------------------------------------------------- the field -- */
@@ -300,6 +304,7 @@ function startRound(field, seed, asPhase) {
   el('hud').classList.add('on');
   hudItem();
   lobbyShow(lobby);
+  makeTags();
   say(lobby ? 'In the lobby. Drive about, and press ' + keyName(bind.go[0]) + ' when everybody is here.'
             : (spectating ? 'Watching this race. You are in the next one.' : 'Three laps. Good luck.'), 'sys');
 }
@@ -418,11 +423,13 @@ function stepWorld(dt) {
   // the computer drivers, and the autopilot when a test is driving
   if (autoBrain) {
     autoBrain.hazards = items.hazards;
+    autoBrain.blocks = track.blocks;
     autoBrain.input = phase === 'race' ? driveBrain(autoBrain, track, dt, karts, leader, useItem)
                                        : { gas: 0, brake: 0, steer: 0, hop: false };
   }
   for (const b of brains) {
     b.hazards = items.hazards;
+    b.blocks = track.blocks;
     const inp = driveBrain(b, track, dt, karts, leader, useItem);
     b.input = inp;
   }
@@ -518,7 +525,7 @@ function stepWorld(dt) {
   });
 
   items.step(dt, karts, (k, kind, by) => {
-    if (k === me) { notice('Hit!'); snd.spin(); }
+    if (k === me) { notice(hitBy(by, kind)); snd.spin(); }
     if (kind === 'bomb' && Math.hypot(k.pos.x - (me ? me.pos.x : 0), k.pos.z - (me ? me.pos.z : 0)) < 22) snd.bang();
     // my shell, their kart: their browser has to be told, it owns that kart
     if (k.remote && me && by === me.id && net) net.hitThem(k.id, kind);
@@ -701,6 +708,51 @@ function oilStep(dt) {
   if (oilT <= 0) { el('oil').classList.remove('on'); el('oil').innerHTML = ''; }
 }
 
+/* Everybody's name over their kart, yours in gold so you can pick yourself out
+   of a pack. One div each, moved by projecting the kart's head through the
+   camera: eight elements is nothing, and text drawn by the browser stays crisp
+   at any distance in a way a texture does not. */
+let tagFor = new Map();
+function makeTags() {
+  const box = el('tags');
+  if (!box) return;
+  box.innerHTML = '';
+  tagFor = new Map();
+  for (const k of karts) {
+    const d = document.createElement('div');
+    d.className = 'tag' + (k === me ? ' me' : '');
+    d.textContent = k.name;
+    box.appendChild(d);
+    tagFor.set(k, d);
+  }
+}
+const tagV = new THREE.Vector3();
+function drawTags() {
+  if (!tagFor.size) return;
+  const w = innerWidth, h = innerHeight;
+  for (const [k, d] of tagFor) {
+    if (k === me && camMode === 3) { d.style.opacity = '0'; continue; }
+    tagV.set(k.pos.x, k.pos.y + k.hop + 2.5, k.pos.z).project(camera);
+    const far = k === me ? 0 : Math.hypot(k.pos.x - camPos.x, k.pos.z - camPos.z);
+    if (tagV.z > 1 || far > 150) { d.style.opacity = '0'; continue; }
+    d.style.opacity = far > 110 ? String(1 - (far - 110) / 40) : '1';
+    d.style.transform = 'translate(-50%,-100%) translate('
+      + ((tagV.x * 0.5 + 0.5) * w).toFixed(1) + 'px,' + ((-tagV.y * 0.5 + 0.5) * h).toFixed(1) + 'px)';
+  }
+}
+
+/* Who did that to you. The thrower's id comes along with the hit, so the notice
+   can name them rather than saying "Hit!" and leaving you to guess. */
+function nameOf(id) {
+  const k = karts.find(q => q.id === id);
+  return k ? k.name : null;
+}
+function hitBy(by, kind) {
+  const what = ITEMS[kind] ? ITEMS[kind].name : 'that';
+  const who = nameOf(by);
+  return who && by !== (me && me.id) ? 'Hit by ' + who + "'s " + what + '!' : 'Hit!';
+}
+
 let noticeT = 0;
 function notice(text) {
   el('notice').textContent = text;
@@ -710,6 +762,7 @@ function notice(text) {
 function drawHud(dt) {
   oilStep(dt);
   hintStep(dt);
+  drawTags();
   if (noticeT > 0) { noticeT -= dt; if (noticeT <= 0) el('notice').classList.remove('on'); }
   const watch = spectating ? (order()[0] || me) : me;
   // under the surface, if that is where whoever we are watching happens to be
@@ -854,7 +907,7 @@ function stepPhase(dt) {
     if (done || (results.length && raceTime - results[0].time > 22) || raceTime > 400) endRace();
   } else if (phase === 'results') {
     resCount();
-    if (phaseT <= 0) { soloRound++; startRound(null, 4321 + soloRound * 77); }
+    if (phaseT <= 0) { soloRound++; startRound(null, newSoloSeed()); }
   }
 }
 let litWas = -1;
@@ -964,7 +1017,7 @@ async function start(online) {
   snd.start();                             // the click that got us here is the gesture
   el('load').textContent = 'laying out the circuit…';
   await new Promise(r => setTimeout(r, 20));
-  buildWorld(4321);
+  buildWorld(newSoloSeed());
   initFx(scene);
 
   el('load').textContent = 'lining up…';
@@ -973,7 +1026,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=21');
+    const mod = await import('./net.js?v=22');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -988,6 +1041,7 @@ async function start(online) {
           if (p === 'results') endRace();
         },
         setSpectating(v) { spectating = v; el('watch').classList.toggle('on', v); },
+        hitBy, nameOf,
         oil: oilSplat,
         shoveCone(i, vx, vz) { if (cones) cones.shove(i, vx, vz); },
         setCup,
@@ -1010,7 +1064,7 @@ async function start(online) {
 
   started = true;
   el('title').classList.add('gone');
-  if (!net || !net.alive) startRound(null, 4321);
+  if (!net || !net.alive) startRound(null, soloSeed);
   el('hud').classList.add('on');
 }
 
@@ -1117,6 +1171,7 @@ window.__mk = {
   get props() { return scene.getObjectByName('props'); },
   get cones() { return cones; },
   rebuild: seed => buildWorld(seed | 0),
+  get worldSeed() { return worldSeed; },
   /* The flattest, straightest stretch on whatever lap got drawn, clear of the
      ramps and the three big sections. A test that wants somewhere ordinary to
      stand a kart cannot name an arc length any more, because the arc lengths
@@ -1141,6 +1196,8 @@ window.__mk = {
   get paused() { return paused; },
   get sound() { return snd.musicNow(); },
   topOf: k => topSpeed(k),
+  hitLine: (by, kind) => hitBy(by, kind),
+  hurt: (x, z, speed, hard) => me && spinOut(me, !!hard, { x, z, speed }),
   oil: oilSplat,
   roll: (place, field) => rollItem(place, field),
   get bind() { return bind; },

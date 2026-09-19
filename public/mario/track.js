@@ -207,7 +207,9 @@ function sampleLoop(seed) {
   // The road itself climbs these, so a kart drives up rather than through, and
   // the lip is where game.js throws it into the air.
   const ramps = [];
+  let rside = 0;
   for (const at of [0.235, 0.615]) {
+    const side = (rside++ % 2) ? 1 : -1;        // one each way round the lap
     /* The height of the jump is (v sin th)^2 / 2G, so a quarter of the height
        wants half the launch speed and half the launch speed wants half the ramp
        angle. 1.1m over four samples is about ten degrees, which throws a kart at
@@ -216,12 +218,16 @@ function sampleLoop(seed) {
     for (let k = 0; k < len; k++) {
       const i = (i0 + k) % M;
       const f = k / (len - 1);
-      out[i].lift = rise * f * f * (3 - 2 * f);         // eased, so the run in is gentle
-      out[i].p.y += out[i].lift;
+      // On one side of the road only, so a jump is a line you choose rather than
+      // one you are given. It is kept off p.y, unlike the bridge and the water,
+      // because it is not the whole width: the height it adds depends on how far
+      // across the road you are, and surf() and project() work that out.
+      out[i].ramp = rise * f * f * (3 - 2 * f);
+      out[i].rampSide = side;
       out[i].bank = 0;                                   // flat on the ramp
     }
     const lip = out[(i0 + len - 1) % M];
-    ramps.push({ i: (i0 + len - 1) % M, pos: lip.p.clone(), s: lip.s });
+    ramps.push({ i: (i0 + len - 1) % M, pos: lip.p.clone(), s: lip.s, side });
   }
 
   /* ---- the bridge, the tunnel and the water ------------------------------ */
@@ -262,12 +268,34 @@ function sampleLoop(seed) {
     }
   }
 
-  return { samples: out, length: s, ramps, features };
+  /* ---- the split ---------------------------------------------------------- */
+  /* Somewhere on the lap the road opens out to more than twice its width for a
+     few seconds and there is a house in the middle of it, so you go left or you
+     go right. It is done by widening the one road rather than by branching it,
+     because every other part of the game asks the track "how far round am I"
+     and expects one answer. */
+  const splits = [];
+  {
+    const at = 0.70, len = 24, i0 = Math.floor(at * M);
+    let mid = null;
+    for (let k = 0; k < len; k++) {
+      const i = (i0 + k) % M;
+      const a = out[i];
+      a.w *= 1 + 1.35 * bump(k / (len - 1));
+      a.bank = 0;
+      a.split = 1;
+      if (k === Math.floor(len / 2)) mid = a;
+    }
+    if (mid) splits.push({ i: (i0 + Math.floor(len / 2)) % M, s: mid.s, x: mid.p.x, y: mid.p.y, z: mid.p.z,
+                           yaw: Math.atan2(mid.t.x, mid.t.z), r: Math.min(9.5, mid.w * 0.42) });
+  }
+
+  return { samples: out, length: s, ramps, features, splits };
 }
 
 /* ---- put it together ----------------------------------------------------- */
 export function buildTrack(scene, seed) {
-  const { samples, length, ramps, features } = sampleLoop(seed);
+  const { samples, length, ramps, features, splits } = sampleLoop(seed);
   const N = samples.length;
   /* The camber pivots on the inside edge rather than the middle of the road.
      Tilting about the middle drops the inside edge below the field it is cut
@@ -275,7 +303,10 @@ export function buildTrack(scene, seed) {
      grass. Lifting the whole road by the amount the low side would have dropped
      keeps it on top of the world and only ever raises the outside. */
   const lift = a => a.w * Math.abs(a.bank);
-  const surf = (a, lat) => a.p.y + lat * a.bank + lift(a);
+  // a ramp only covers its own half, rising from the middle of the road to the
+  // edge, so how much of it you get depends on how far across you are
+  const rampAt = (a, lat) => (a.ramp ? a.ramp * Math.max(0, Math.min(1, (lat * a.rampSide) / a.w)) : 0);
+  const surf = (a, lat) => a.p.y + lat * a.bank + lift(a) + rampAt(a, lat);
   const group = new THREE.Group();
   scene.add(group);
 
@@ -300,10 +331,13 @@ export function buildTrack(scene, seed) {
   for (let i = 0; i < N; i++) {
     const a = samples[i];
     const l = a.p.clone().addScaledVector(a.n, a.w);
+    const c = a.p.clone();
     const r = a.p.clone().addScaledVector(a.n, -a.w);
-    l.y = surf(a, a.w); r.y = surf(a, -a.w);           // the lean of the corner
-    pos.push(l.x, l.y + 0.06, l.z, r.x, r.y + 0.06, r.z);
-    uv.push(0, a.s / 9, 1, a.s / 9);
+    // three across, not two: a ramp covers one half of the road, so the middle
+    // of it has to be a vertex of its own or the rise is smeared over the lot
+    l.y = surf(a, a.w); c.y = surf(a, 0); r.y = surf(a, -a.w);
+    pos.push(l.x, l.y + 0.06, l.z, c.x, c.y + 0.06, c.z, r.x, r.y + 0.06, r.z);
+    uv.push(0, a.s / 9, 0.5, a.s / 9, 1, a.s / 9);
     // The kerb is the outer strip of the road now, not a verge outside it, so it
     // lies on the tarmac and leans with it.
     const lo = a.p.clone().addScaledVector(a.n, a.w - KERB).setY(surf(a, a.w - KERB));
@@ -313,8 +347,10 @@ export function buildTrack(scene, seed) {
   }
   for (let i = 0; i < N; i++) {
     const j = (i + 1) % N;
-    const a = i * 2, b = a + 1, c = j * 2, d = c + 1;
-    idx.push(a, c, b, b, c, d);
+    const a = i * 3, b = a + 1, c = a + 2;
+    const e = j * 3, f = e + 1, g = e + 2;
+    idx.push(a, e, b, b, e, f);            // left half
+    idx.push(b, f, c, c, f, g);            // right half
     const ka = i * 4, kb = ka + 1, kc = ka + 2, kd = ka + 3;
     const ja = j * 4, jb = ja + 1, jc = ja + 2, jd = ja + 3;
     kidx.push(ka, kb, ja, kb, jb, ja);            // left kerb, facing up
@@ -506,6 +542,36 @@ export function buildTrack(scene, seed) {
     }
   }
 
+  /* ---- the house in the middle of the split ------------------------------ */
+  const blocks = [];
+  for (const sp of splits) {
+    const wall = new THREE.MeshStandardMaterial({ color: 0xfff6e2, roughness: 0.9 });
+    const roof = new THREE.MeshStandardMaterial({ color: 0xe8402a, roughness: 0.85 });
+    const ink = new THREE.MeshStandardMaterial({ color: 0x17223b, roughness: 0.7 });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x8fd3ff, roughness: 0.25, metalness: 0.2 });
+    const h = new THREE.Group();
+    const W = sp.r * 1.5, D = sp.r * 1.25, H = sp.r * 0.95;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), wall);
+    body.position.y = H / 2; h.add(body);
+    // a pitched roof, which is a four sided pyramid squashed along the ridge
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(W * 0.78, H * 0.62, 4), roof);
+    cap.position.y = H + H * 0.31;
+    cap.rotation.y = Math.PI / 4;
+    cap.scale.set(1, 1, D / W);
+    h.add(cap);
+    const door = new THREE.Mesh(new THREE.BoxGeometry(W * 0.16, H * 0.46, 0.3), ink);
+    door.position.set(0, H * 0.23, D / 2 + 0.1); h.add(door);
+    for (const sx of [-1, 1]) {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(W * 0.17, H * 0.22, 0.25), glass);
+      win.position.set(sx * W * 0.28, H * 0.58, D / 2 + 0.08); h.add(win);
+    }
+    for (const o of h.children) { o.castShadow = true; o.receiveShadow = true; }
+    h.position.set(sp.x, sp.y, sp.z);
+    h.rotation.y = sp.yaw;
+    group.add(h);
+    blocks.push({ x: sp.x, z: sp.z, r: sp.r });
+  }
+
   /* ---- things on the road ------------------------------------------------- */
   let bs = 991;
   const brnd = () => { bs = (bs * 1103515245 + 12345) & 0x7fffffff; return bs / 0x7fffffff; };
@@ -655,7 +721,9 @@ export function buildTrack(scene, seed) {
     const lt = Math.max(-a.w, Math.min(a.w, lateral));
     // the same pivot the road is built on: lifted by what the low side would
     // otherwise have dropped, so the tarmac never sinks under the field
-    let y = a.p.y + (nb.p.y - a.p.y) * f + lt * bank + a.w * Math.abs(bank);
+    // and the half of a ramp you are actually on, if you are on one
+    const ramp = a.ramp ? a.ramp * Math.max(0, Math.min(1, (lt * a.rampSide) / a.w)) : 0;
+    let y = a.p.y + (nb.p.y - a.p.y) * f + lt * bank + a.w * Math.abs(bank) + ramp;
     // Off the tarmac the ground takes over. The kerb is drawn from the road edge
     // down to the grass, so the height has to follow it down: keeping the road's
     // own height out there put a kart nearly two metres under the field on the
@@ -675,8 +743,11 @@ export function buildTrack(scene, seed) {
       onKerb: Math.abs(lateral) > a.w - KERB && Math.abs(lateral) <= a.w + 0.4,
       wall: a.w + SHOULDER,
       y, bank, t: a.t, n: a.n,
-      // how steeply the road is climbing here, which is what throws a car
-      slope: (nb.p.y - a.p.y) / (Math.abs(nb.s - a.s) || 1),
+      // How steeply the road is climbing under you, which is what throws a car.
+      // Under you, not down the middle: a ramp covers one half of the road, so
+      // the centreline is flat through it and reading the slope there would mean
+      // nothing ever took off.
+      slope: ((nb.p.y + rampAt(nb, lt)) - (a.p.y + rampAt(a, lt))) / (Math.abs(nb.s - a.s) || 1),
       // the surface above you, when there is one
       waterY: a.waterY === undefined ? null : a.waterY,
       tunnel: !!a.tunnel,
@@ -684,7 +755,9 @@ export function buildTrack(scene, seed) {
   }
 
   return {
-    group, samples, length, ramps, features, project, at, gridSlot, groundY,
+    group, samples, length, ramps, features, splits, project, at, gridSlot, groundY,
+    // things on the road you have to go round rather than through
+    blocks,
     // how far past the tarmac the wall is, so the barriers can stand on it
     shoulder: SHOULDER,
     itemBoxes, boostPads, boxMesh, coreMesh,
