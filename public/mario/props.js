@@ -209,6 +209,63 @@ export async function buildProps(scene, THREE, track) {
   put('grandStandCovered', covered);
   put('grandStand', stands);
 
+  /* People in them. Two instanced meshes for the whole crowd, coloured per
+     instance, seated in rows that climb toward the back the way the stand does.
+     They are small and far away, so a body and a head is all anybody can make
+     out and all they are given. */
+  function crowd(spots, wide, deep, high) {
+    if (!spots.length) return;
+    const ROWS = 5, COLS = 8;
+    const n = spots.length * ROWS * COLS;
+    const body = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.5, 0.85, 0.4),
+      new THREE.MeshStandardMaterial({ roughness: 0.9 }), n);
+    const head = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.26, 7, 6),
+      new THREE.MeshStandardMaterial({ roughness: 0.95 }), n);
+    const SHIRT = [0xe8402a, 0xffd233, 0x2b56d6, 0x43d94f, 0x8fd3ff, 0xfff6e2, 0xf4762a];
+    const SKIN = [0xf0c8a0, 0xd9a273, 0xa9754c, 0x7a4f2e, 0xf7ddc0];
+    const col = new THREE.Color();
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+    const one = new THREE.Vector3(1, 1, 1), tiny = new THREE.Vector3(1e-4, 1e-4, 1e-4);
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    let i = 0;
+    for (const sp of spots) {
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const empty = rnd() < 0.12;      // a few empty seats, or it reads as wallpaper
+          const lx = (c / (COLS - 1) - 0.5) * wide * 0.78 + (rnd() - 0.5) * 0.3;
+          const lz = deep * (0.3 - r / (ROWS - 1) * 0.5);
+          const ly = high * (0.26 + r / (ROWS - 1) * 0.42);
+          const cs = Math.cos(sp.yaw), sn = Math.sin(sp.yaw);
+          // the stand's own yaw turns the row into place
+          const wx = sp.pos.x + lx * cs + lz * sn;
+          const wz = sp.pos.z - lx * sn + lz * cs;
+          e.set(0, sp.yaw, 0); q.setFromEuler(e);
+          const sz = empty ? tiny : one;
+          m.compose(new THREE.Vector3(wx, sp.pos.y + ly, wz), q, sz);
+          body.setMatrixAt(i, m);
+          col.setHex(SHIRT[(rnd() * SHIRT.length) | 0]); body.setColorAt(i, col);
+          m.compose(new THREE.Vector3(wx, sp.pos.y + ly + 0.56, wz), q, sz);
+          head.setMatrixAt(i, m);
+          col.setHex(SKIN[(rnd() * SKIN.length) | 0]); head.setColorAt(i, col);
+          i++;
+        }
+      }
+    }
+    body.name = 'crowd'; head.name = 'crowd';
+    for (const im of [body, head]) {
+      im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.frustumCulled = false;
+      im.castShadow = true;
+      group.add(im);
+    }
+  }
+  crowd(covered, 10, 10.2, 10.7);
+  crowd(stands, 9, 9, 8.1);
+
   /* ---- banner towers, tall enough to see a corner coming ----------------- */
   const towersR = [], towersG = [];
   for (let k = 0; k < 10; k++) {

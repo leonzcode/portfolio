@@ -11,13 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=17';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=17';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=17';
-import { makeBrain, driveBrain } from './ai.js?v=17';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=17';
-import { makeCones } from './cones.js?v=17';
-import * as snd from './audio.js?v=17';
+import { buildTrack } from './track.js?v=18';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=18';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=18';
+import { makeBrain, driveBrain } from './ai.js?v=18';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=18';
+import { makeCones } from './cones.js?v=18';
+import * as snd from './audio.js?v=18';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -411,7 +411,9 @@ function stepWorld(dt) {
       if (b.taken > 0) continue;
       if (Math.hypot(b.pos.x - k.pos.x, b.pos.z - k.pos.z) > 1.7) continue;
       pickupBox(k, b);
-      puff(b.pos.clone(), 0xffd233);
+      // the box going is something everybody sees, whoever took it
+      puff(b.pos.clone(), 0x8fd3ff);
+      for (let n = 0; n < 7; n++) spark(b.pos.clone(), n % 2 ? 0xdff2ff : 0x2f7fd0, 2.2);
       if (k === me) snd.tick();
     }
     if (phase === 'race') for (const c of track.coins) {
@@ -516,8 +518,15 @@ function dressTrack() {
     p.set(b.pos.x, b.pos.y + Math.sin(dressT * 2 + i) * 0.16, b.pos.z);
     m.compose(p, q, s);
     track.boxMesh.setMatrixAt(i, m);
+    // the core turns the other way inside the shell
+    e.set(-dressT * 1.6 + i, dressT * 2.1 + i, dressT * 0.7);
+    q.setFromEuler(e);
+    s.setScalar(on ? 1 + Math.sin(dressT * 4 + i) * 0.08 : 0.001);
+    m.compose(p, q, s);
+    track.coreMesh.setMatrixAt(i, m);
   });
   track.boxMesh.instanceMatrix.needsUpdate = true;
+  track.coreMesh.instanceMatrix.needsUpdate = true;
   track.coins.forEach((c, i) => {
     const on = c.taken <= 0;
     e.set(0, dressT * 3 + i, 0);
@@ -916,7 +925,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=17').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=18').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
@@ -927,7 +936,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=17');
+    const mod = await import('./net.js?v=18');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
