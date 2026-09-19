@@ -135,7 +135,7 @@ export function makeKart(who) {
     item: null, itemN: 0, roulette: 0,
     // what is queued behind the one in the slot, oldest first
     queue: [],
-    hint: 0, offroad: false, wheelSpin: 0, steerVis: 0, lean: 0, topMul: 1, roll: 0,
+    hint: 0, offroad: false, wheelSpin: 0, steerVis: 0, lean: 0, topMul: 1, roll: 0, wet: false,
     // how hard gravity pulls on whatever is in the air: a drift hop is a flick,
     // a ramp is a jump, and they should not fall at the same rate
     airG: 26,
@@ -187,6 +187,7 @@ export function topSpeed(k) {
   if (k.boost > 0) t *= TUNE.boostTop;
   if (k.star > 0) t *= TUNE.starTop;
   if (k.offroad && k.star <= 0) t *= TUNE.offTop;
+  if (k.wet) t *= 0.88;                    // water is thicker than air
   if (k.slow > 0) t *= 0.55;
   return t;
 }
@@ -272,6 +273,8 @@ export function stepKart(k, input, track, dt) {
   k.hint = pr.i;
   // over the grass but not on it: a jump is not a trip through the rough
   k.offroad = !pr.onRoad && !pr.onKerb && k.hop <= 0.05;
+  // under the surface, when there is a surface to be under
+  k.wet = pr.waterY !== null && (k.pos.y + k.hop + 0.7) < pr.waterY;
   k.pos.y = pr.y;
   // ease onto the camber rather than snapping to it
   k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);
