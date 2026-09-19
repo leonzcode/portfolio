@@ -13,6 +13,8 @@
 const THREE = window.THREE;
 import { buildTrack } from './track.js?v=24';
 import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=24';
+import { packLook, unpackLook, normalise } from './parts.js?v=24';
+import { makeGarage, PARTS } from './garage.js?v=24';
 import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=24';
 import { makeBrain, driveBrain } from './ai.js?v=24';
 import { initFx, spark, puff, blast, stepFx } from './fx.js?v=24';
@@ -105,10 +107,17 @@ let frozen = false;
 let camPinned = false;          // a test has parked the camera; leave it alone
 let soloRound = 0, autoBrain = null;
 
+// how your car is put together, which is yours and is remembered
+let myBuild = normalise(null);
 try {
   myName = (localStorage.getItem('mkName') || '').slice(0, 12);
   myCast = clamp(+(localStorage.getItem('mkCast') || 0), 0, RACERS.length - 1);
+  const saved = localStorage.getItem('mkBuild');
+  if (saved) myBuild = normalise(JSON.parse(saved));
 } catch (e) {}
+function saveBuild() {
+  try { localStorage.setItem('mkBuild', JSON.stringify(myBuild)); } catch (e) {}
+}
 
 /* ------------------------------------------------------------------- input -- */
 // Every action carries its own keys so the pause menu can change them. Esc is
@@ -256,7 +265,7 @@ const BOT_TOP = 1.68;
 const RESULTS = 10;
 
 function addKart(racer, opts) {
-  const k = makeKart(racer);
+  const k = makeKart(racer, opts.build);
   k.id = opts.id;
   k.name = opts.name || racer.name;
   k.bot = !!opts.bot;
@@ -303,14 +312,16 @@ function startRound(field, seed, asPhase, themeId) {
   const grid = [];
   if (field && field.length) {
     for (const p of field) {
-      grid.push(addKart(RACERS[clamp(p.cast | 0, 0, RACERS.length - 1)], {
-        id: p.id, name: p.name, remote: p.id !== (net && net.id),
+      // one number carries who they picked and what they built it out of
+      const look = unpackLook(p.cast | 0);
+      grid.push(addKart(RACERS[clamp(look.cast, 0, RACERS.length - 1)], {
+        id: p.id, name: p.name, remote: p.id !== (net && net.id), build: look.build,
       }));
     }
     me = karts.find(k => k.id === (net && net.id)) || null;
     if (!me) spectating = true;
   } else {
-    me = addKart(RACERS[myCast], { id: 'me', name: myName || 'You' });
+    me = addKart(RACERS[myCast], { id: 'me', name: myName || 'You', build: myBuild });
   }
   // Fill the grid with computer drivers, but only when you are racing on your
   // own. A lobby with one person in it is still a lobby: the next person to turn
@@ -532,12 +543,24 @@ function stepWorld(dt) {
       const hot = k.driftT > 1.0;
       const back = k.pos.clone().setY(k.pos.y + 0.25);
       back.x += Math.sin(k.yaw) * 1.1; back.z += Math.cos(k.yaw) * 1.1;
-      spark(back, k.driftT > 0.5 ? (hot ? 0xffd233 : 0x8fd3ff) : 0xdfe6ef, 1.2);
+      // the drift keeps its own colours, because they are the charge meter:
+      // white, then blue, then gold is how you know the turbo is ready
+      spark(back, k.driftT > 0.5 ? (hot ? 0xffd233 : 0x8fd3ff) : 0xdfe6ef, 1.2,
+            k.trail && k.trail.shape, k.trail && k.trail.size);
     }
+    /* The boost trail, out of the exhausts this car actually has rather than
+       out of a point behind it, in whichever style it was built with. A star
+       overrules it: being invincible should look the same on everybody. */
     if ((k.boost > 0 || k.star > 0) && Math.random() < 0.7) {
-      const back = k.pos.clone().setY(k.pos.y + 0.3);
-      back.x += Math.sin(k.yaw) * 1.3; back.z += Math.cos(k.yaw) * 1.3;
-      spark(back, k.star > 0 ? 0xffd233 : 0xff8a1f, 1.5);
+      const tr = k.trail || { shape: 'spark', hot: 0xffd233, cool: 0xff8a1f, size: 1 };
+      const pipes = k.exhaust && k.exhaust.length ? k.exhaust : [{ x: 0, y: 0.3, z: -1.3 }];
+      const e = pipes[(Math.random() * pipes.length) | 0];
+      const cs = Math.cos(k.yaw), sn = Math.sin(k.yaw);
+      const back = k.pos.clone().setY(k.pos.y + k.hop + e.y);
+      back.x += e.x * cs + e.z * sn;
+      back.z += -e.x * sn + e.z * cs;
+      spark(back, k.star > 0 ? 0xffd233 : (Math.random() < 0.5 ? tr.hot : tr.cool), 1.5,
+            k.star > 0 ? 'star' : tr.shape, tr.size);
     }
     if (k.wallHit) { k.wallHit = 0; puff(k.pos.clone().setY(k.pos.y + 0.6), 0xfff6e2); if (k === me) snd.bump(); }
   }
@@ -1005,7 +1028,13 @@ function frame() {
   const now = performance.now();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  if (!started) { renderer.render(scene, camera); return; }
+  if (!started) {
+    // the title screen is a panel over the world, so the world behind it barely
+    // matters; the turntable is the thing anybody is actually looking at
+    if (garage) garage.frame(dt);
+    renderer.render(scene, camera);
+    return;
+  }
 
   if (!paused && !frozen) {
     stepPhase(dt);
@@ -1051,15 +1080,63 @@ function buildCast() {
       myCast = i;
       try { localStorage.setItem('mkCast', String(i)); } catch (e) {}
       [...box.children].forEach((c, j) => c.classList.toggle('on', j === i));
-      if (net) net.setCast(i);
+      tellLook();
+      if (garage) garage.show(RACERS[myCast], myBuild);
     };
     box.appendChild(b);
   });
   [...box.children].forEach((c, j) => c.classList.toggle('on', j === myCast));
+  buildGarage();
+}
+
+/* The garage. Three rows of arrows, and the car on the turntable next to them
+   changes as you press them. */
+let garage = null;
+function tellLook() { if (net) net.setCast(packLook(myCast, myBuild)); }
+function buildGarage() {
+  const canvas = el('gcan'), rows = el('gparts');
+  if (!canvas || !rows || garage) return;
+  garage = makeGarage(canvas);
+  garage.show(RACERS[myCast], myBuild);
+  for (const part of PARTS) {
+    if (part.group) {
+      const h = document.createElement('h3');
+      h.textContent = part.group;
+      rows.appendChild(h);
+    }
+    const row = document.createElement('div');
+    row.className = 'opt';
+    const name = document.createElement('b');
+    const label = document.createElement('em');
+    label.textContent = part.label;
+    const step = d => {
+      const i = part.list.findIndex(x => x.id === myBuild[part.key]);
+      const n = part.list[(((i < 0 ? 0 : i) + d) % part.list.length + part.list.length) % part.list.length];
+      myBuild[part.key] = n.id;
+      name.textContent = n.name;
+      saveBuild();
+      garage.show(RACERS[myCast], myBuild);
+      tellLook();
+      snd.tick();
+    };
+    const arrow = (txt, d) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = txt;
+      b.setAttribute('aria-label', (d < 0 ? 'previous ' : 'next ') + part.label.toLowerCase());
+      b.onclick = () => step(d);
+      return b;
+    };
+    name.textContent = (part.list.find(x => x.id === myBuild[part.key]) || part.list[0]).name;
+    row.append(label, arrow('‹', -1), name, arrow('›', 1));
+    rows.appendChild(row);
+  }
 }
 
 async function start(online) {
   if (started) return;
+  // the garage has done its job; give the context back before a race wants it
+  if (garage) { garage.dispose(); garage = null; }
   const wantLobby = online === undefined ? true : !!online;
   snd.start();                             // the click that got us here is the gesture
   el('load').textContent = 'laying out the circuit…';
@@ -1077,7 +1154,7 @@ async function start(online) {
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
-      get cast() { return myCast; },
+      get cast() { return packLook(myCast, myBuild); },
       world: {
         startRound, get karts() { return karts; }, get me() { return me; },
         setPhase(p, t, extra) {
