@@ -11,14 +11,14 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=23';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=23';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=23';
-import { makeBrain, driveBrain } from './ai.js?v=23';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=23';
-import { makeCones } from './cones.js?v=23';
-import { THEMES, themeById } from './themes.js?v=23';
-import * as snd from './audio.js?v=23';
+import { buildTrack } from './track.js?v=24';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=24';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=24';
+import { makeBrain, driveBrain } from './ai.js?v=24';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=24';
+import { makeCones } from './cones.js?v=24';
+import { THEMES, themeById } from './themes.js?v=24';
+import * as snd from './audio.js?v=24';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -100,6 +100,7 @@ let started = false, paused = false, chatting = false;
 // a test freezes the loop and runs the world by hand; that is not the same as
 // the pause menu, which also takes the controls away
 let frozen = false;
+let camPinned = false;          // a test has parked the camera; leave it alone
 let soloRound = 0, autoBrain = null;
 
 try {
@@ -238,7 +239,7 @@ function buildWorld(seed, themeId) {
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=23').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=24').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
 }
 
 /* --------------------------------------------------------------- the field -- */
@@ -448,13 +449,11 @@ function stepWorld(dt) {
   // the computer drivers, and the autopilot when a test is driving
   if (autoBrain) {
     autoBrain.hazards = items.hazards;
-    autoBrain.blocks = track.blocks;
     autoBrain.input = phase === 'race' ? driveBrain(autoBrain, track, dt, karts, leader, useItem)
                                        : { gas: 0, brake: 0, steer: 0, hop: false };
   }
   for (const b of brains) {
     b.hazards = items.hazards;
-    b.blocks = track.blocks;
     const inp = driveBrain(b, track, dt, karts, leader, useItem);
     b.input = inp;
   }
@@ -610,6 +609,7 @@ const CAM = [
   { name: 'Overhead', d: 2.2,  h: 15,   fov: 52 },
 ];
 function stepCamera(dt) {
+  if (camPinned) return;
   const watch = spectating ? (order()[0] || me) : me;
   if (!watch) return;
   const c = CAM[camMode];
@@ -1051,7 +1051,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=23');
+    const mod = await import('./net.js?v=24');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1293,6 +1293,16 @@ window.__mk = {
   // a test can freeze the loop and run the world by hand, which makes the
   // countdown and the finish deterministic instead of a race with the renderer
   pause(v) { frozen = !!v; return frozen; },
+  // Park the camera somewhere and stop the follow camera fighting it, which is
+  // the only way to photograph a whole section of the lap at once. Call it with
+  // nothing to give the camera back.
+  eye(from, at) {
+    camPinned = !!from;
+    if (!from) return false;
+    camera.position.set(from[0], from[1], from[2]);
+    camera.lookAt(at[0], at[1], at[2]);
+    return true;
+  },
   step(n, dt) {
     for (let i = 0; i < (n || 1); i++) {
       stepPhase(dt || 0.02);
@@ -1317,17 +1327,20 @@ window.__mk = {
   },
   get held() { return me ? [me.item && { id: me.item, n: me.itemN }].filter(Boolean).concat(me.queue) : []; },
   use() { useItem(me); },
-  tp(s, lateral) {
+  get brains() { return brains; },
+  tp(s, lateral) { return window.__mk.tpKart(me, s, lateral); },
+  tpKart(k, s, lateral) {
+    if (!k) return;
     const a = track.at(((s % track.length) + track.length) % track.length);
-    me.pos.copy(a.p).addScaledVector(a.n, (lateral || 0) * a.w);
-    me.yaw = Math.atan2(-a.t.x, -a.t.z);
-    me.hint = null;
+    k.pos.copy(a.p).addScaledVector(a.n, (lateral || 0) * a.w);
+    k.yaw = Math.atan2(-a.t.x, -a.t.z);
+    k.hint = null;
     // put it down on the road: teleporting a kart that happened to be mid-jump
     // left it holding the launch it had already used, and it could not take off
     // again until it had landed somewhere it was no longer standing
-    me.hop = 0; me.hopV = 0; me.launched = 0; me.roadRise = 0; me.pushX = 0; me.pushZ = 0;
-    const pr = track.project(me.pos.x, me.pos.z, null);
-    me.hint = pr.i; me.pos.y = pr.y; me.prog = pr.s;
+    k.hop = 0; k.hopV = 0; k.launched = 0; k.roadRise = 0; k.pushX = 0; k.pushZ = 0;
+    const pr = track.project(k.pos.x, k.pos.z, null);
+    k.hint = pr.i; k.pos.y = pr.y; k.prog = pr.s;
   },
   stats() {
     return {

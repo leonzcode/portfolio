@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById } from './themes.js?v=23';
+import { themeById } from './themes.js?v=24';
 
 /* The lap.
 
@@ -274,25 +274,89 @@ function sampleLoop(seed, th) {
   }
 
   /* ---- the split ---------------------------------------------------------- */
-  /* Somewhere on the lap the road opens out to more than twice its width for a
-     few seconds and there is a house in the middle of it, so you go left or you
-     go right. It is done by widening the one road rather than by branching it,
-     because every other part of the game asks the track "how far round am I"
-     and expects one answer. */
+  /* Somewhere on the lap the road genuinely divides: a strip of the country the
+     race is in comes up through the middle of the tarmac, with a house standing
+     on it, and a full width lane runs down either side. You go left or you go
+     right, and both are roads rather than a squeeze past an obstacle.
+
+     It is still one ribbon underneath, because every other part of the game asks
+     the track "how far round am I" and wants one answer. The island is recorded
+     as a half width per sample: the road is widened by exactly that much, so
+     each lane keeps the width it had, and the middle of it is not road. */
   const splits = [];
   if (th.split !== false) {
-    const at = 0.70, len = 24, i0 = Math.floor(at * M);
-    let mid = null;
+    const len = 34;
+    /* Where it goes: the openest stretch of lap that is clear of the ramps and
+       of the bridge, the tunnel and the water. A split is a decision, and a
+       decision belongs somewhere you are not already busy.
+
+       Openest, not merely straightest, because the road has to more than double
+       its width here and a wide road on a tight bend folds its inside edge over
+       itself. So each stretch is scored by the tightest radius in it, the widest
+       bend on the lap wins, and the split is then built only as big as that bend
+       will take. On a generous circuit that is the full size; on a twisty one it
+       is a narrower island between narrower lanes, which is still a split. */
+    const taken = new Set();
+    for (const f of features) for (const i of f.ids) taken.add(i);
+    for (const r of ramps) for (let k = -18; k <= 18; k++) taken.add((r.i + k + M) % M);
+    // and not over the line, where the grid stands and the lap is counted
+    for (let k = -34; k <= 34; k++) taken.add((k + M * 2) % M);
+    const radius = i => {
+      const u = out[i].t, v = out[(i + 1) % M].t;
+      const d = Math.abs(u.x * v.z - u.z * v.x);
+      return d < 1e-5 ? 1e6 : STEP / d;
+    };
+    let i0 = -1, openest = 0;
+    for (let c = 0; c < M; c++) {
+      let tight = 1e9, clear = true;
+      for (let k = -4; k < len + 4 && clear; k++) {
+        const i = (c + k + M * 2) % M;
+        if (taken.has(i)) clear = false;
+        else tight = Math.min(tight, radius(i));
+      }
+      if (clear && tight > openest) { openest = tight; i0 = c; }
+    }
+    if (i0 < 0) { i0 = Math.floor(0.70 * M); openest = 1e9; }
+    // 1.35 lanes' worth of extra width, or as much of it as the bend allows
+    const grow = Math.max(0, Math.min(12.2, openest / 1.9 - out[i0].w));
+    const ISLE = grow / 1.35;
+    const ids = [];
+    let mid = null, first = null, last = null;
     for (let k = 0; k < len; k++) {
       const i = (i0 + k) % M;
       const a = out[i];
-      a.w *= 1 + 1.35 * bump(k / (len - 1));
+      const u = k / (len - 1);
+      /* The road opens out before the island appears in it, and closes again
+         after it has gone. If the two grew together the divider would come up
+         out of the middle of the tarmac underneath whoever was driving down it,
+         with nowhere already made to go; opening first means the lane you pick
+         is there to be picked, and it is never narrower than the road you came
+         in on. */
+      /* A blunt nose at each end rather than a knife edge. Tapered to nothing,
+         the last couple of metres of island are narrower than the kerb drawn
+         round them, so the two flanks meet and paint a kerb straight down the
+         middle of a road that has not divided yet. Below a width worth having,
+         there is no island. */
+      const raw = ISLE * bump(Math.max(0, Math.min(1, (u - 0.16) / 0.68)));
+      a.island = raw < 1.6 ? 0 : raw;
+      // and the lanes come out wider than the road they replace, because two of
+      // them have to hold a field that was queueing up in one
+      a.w += ISLE * 1.35 * bump(u);
       a.bank = 0;
       a.split = 1;
+      if (k === 0) first = a;
+      if (k === len - 1) last = a;
       if (k === Math.floor(len / 2)) mid = a;
+      if (a.island) ids.push(i);
     }
-    if (mid) splits.push({ i: (i0 + Math.floor(len / 2)) % M, s: mid.s, x: mid.p.x, y: mid.p.y, z: mid.p.z,
-                           yaw: Math.atan2(mid.t.x, mid.t.z), r: Math.min(9.5, mid.w * 0.42) });
+    if (mid) splits.push({
+      i: (i0 + Math.floor(len / 2)) % M, s: mid.s, s0: first.s, s1: last.s,
+      x: mid.p.x, y: mid.p.y, z: mid.p.z, yaw: Math.atan2(mid.t.x, mid.t.z),
+      isle: ISLE, lane: mid.w - ISLE,
+      // in the order you meet them, which a sort by distance cannot promise when
+      // the island happens to straddle the start line
+      ids,
+    });
   }
 
   return { samples: out, length: s, ramps, features, splits };
@@ -658,15 +722,53 @@ export function buildTrack(scene, seed, themeId) {
     }
   }
 
-  /* ---- the house in the middle of the split ------------------------------ */
-  const blocks = [];
+  /* ---- the island, and the house standing on it -------------------------- */
   for (const sp of splits) {
+    // the island itself: the ground of this place, laid up the middle of the
+    // road with a kerb round it so it reads as something you go around
+    const ip = [], iu = [], ii = [];
+    const kp = [], ku = [], ki = [];
+    const ids = sp.ids;
+    ids.forEach((i, k) => {
+      const a = samples[i], w = a.island;
+      const l = a.p.clone().addScaledVector(a.n, w);
+      const r = a.p.clone().addScaledVector(a.n, -w);
+      ip.push(l.x, surf(a, w) + 0.22, l.z, r.x, surf(a, -w) + 0.22, r.z);
+      iu.push(0, a.s / 8, 1, a.s / 8);
+      // a thin kerb strip down each flank of it
+      const kw = w + 0.9;
+      const lk = a.p.clone().addScaledVector(a.n, kw);
+      const rk = a.p.clone().addScaledVector(a.n, -kw);
+      kp.push(l.x, surf(a, w) + 0.2, l.z, lk.x, surf(a, kw) + 0.07, lk.z,
+              r.x, surf(a, -w) + 0.2, r.z, rk.x, surf(a, -kw) + 0.07, rk.z);
+      ku.push(0, a.s / 2.6, 1, a.s / 2.6, 0, a.s / 2.6, 1, a.s / 2.6);
+    });
+    for (let k = 0; k < ids.length - 1; k++) {
+      const aa = k * 2, bb = aa + 1, cc = aa + 2, dd = aa + 3;
+      ii.push(aa, cc, bb, bb, cc, dd);
+      const ka = k * 4, kb = ka + 1, kc = ka + 2, kd = ka + 3;
+      const ja = (k + 1) * 4, jb = ja + 1, jc = ja + 2, jd = ja + 3;
+      ki.push(ka, kb, ja, kb, jb, ja);
+      ki.push(kc, jc, kd, kd, jc, jd);
+    }
+    if (ids.length > 1) {
+      const isle = new THREE.Mesh(ribbon(ip, iu, ii),
+        new THREE.MeshStandardMaterial({ map: grassTex(th), roughness: 1 }));
+      isle.receiveShadow = true;
+      group.add(isle);
+      const rim = new THREE.Mesh(ribbon(kp, ku, ki),
+        new THREE.MeshStandardMaterial({ map: kerbTex, roughness: 0.7 }));
+      rim.receiveShadow = true;
+      group.add(rim);
+    }
+
     const wall = new THREE.MeshStandardMaterial({ color: 0xfff6e2, roughness: 0.9 });
     const roof = new THREE.MeshStandardMaterial({ color: 0xe8402a, roughness: 0.85 });
     const ink = new THREE.MeshStandardMaterial({ color: 0x17223b, roughness: 0.7 });
     const glass = new THREE.MeshStandardMaterial({ color: 0x8fd3ff, roughness: 0.25, metalness: 0.2 });
     const h = new THREE.Group();
-    const W = sp.r * 1.5, D = sp.r * 1.25, H = sp.r * 0.95;
+    const r = sp.isle * 0.72;
+    const W = r * 1.5, D = r * 1.25, H = r * 0.95;
     const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), wall);
     body.position.y = H / 2; h.add(body);
     // a pitched roof, which is a four sided pyramid squashed along the ridge
@@ -685,7 +787,7 @@ export function buildTrack(scene, seed, themeId) {
     h.position.set(sp.x, sp.y, sp.z);
     h.rotation.y = sp.yaw;
     group.add(h);
-    blocks.push({ x: sp.x, z: sp.z, r: sp.r });
+    // the house is on the island, so the island does the stopping, not the house
   }
 
   /* ---- things on the road ------------------------------------------------- */
@@ -700,9 +802,12 @@ export function buildTrack(scene, seed, themeId) {
     const d = Math.abs(((i - r.i + N) % N + N / 2) % N - N / 2);
     return d < 14;
   });
+  // and not across the split either, where the middle of the road is an island
+  // and a row of three would put the middle one inside it
+  const busy = i => nearRamp(i) || (samples[i].island || 0) > 0.15;
   for (let k = 0; k < 7; k++) {
     let i = Math.floor(((0.1 + k * 0.128 + brnd() * 0.04) % 1) * N);
-    for (let n = 0; n < N && nearRamp(i); n++) i = (i + 5) % N;
+    for (let n = 0; n < N && busy(i); n++) i = (i + 5) % N;
     const a = samples[i];
     for (const off of [-0.55, 0, 0.55]) {
       const p = a.p.clone().addScaledVector(a.n, off * a.w);
@@ -714,7 +819,8 @@ export function buildTrack(scene, seed, themeId) {
   // the other so taking one is a line you have to choose rather than a gift
   const boostPads = [];
   for (let k = 0; k < 6; k++) {
-    const i = Math.floor(((0.07 + k * 0.161 + brnd() * 0.04) % 1) * N);
+    let i = Math.floor(((0.07 + k * 0.161 + brnd() * 0.04) % 1) * N);
+    for (let n = 0; n < N && (samples[i].island || 0) > 0.15; n++) i = (i + 5) % N;
     const a = samples[i];
     const off = (brnd() * 1.1 - 0.55) * a.w;
     const p = a.p.clone().addScaledVector(a.n, off);
@@ -864,6 +970,8 @@ export function buildTrack(scene, seed, themeId) {
       // the centreline is flat through it and reading the slope there would mean
       // nothing ever took off.
       slope: ((nb.p.y + rampAt(nb, lt)) - (a.p.y + rampAt(a, lt))) / (Math.abs(nb.s - a.s) || 1),
+      // the island up the middle of a split: inside this, laterally, is not road
+      island: a.island ? a.island + ((nb.island || 0) - a.island) * f : 0,
       // the surface above you, when there is one
       waterY: a.waterY === undefined ? null : a.waterY,
       tunnel: !!a.tunnel,
@@ -875,8 +983,8 @@ export function buildTrack(scene, seed, themeId) {
     theme: th,
     // the patches that change how the ground under you behaves
     ice, lava,
-    // things on the road you have to go round rather than through
-    blocks,
+    // where the road divides, which the cars need in order to pick a side
+    splitAt: splits[0] || null,
     // how far past the tarmac the wall is, so the barriers can stand on it
     shoulder: SHOULDER,
     itemBoxes, boostPads, boxMesh, coreMesh,
