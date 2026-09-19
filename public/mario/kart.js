@@ -136,6 +136,9 @@ export function makeKart(who) {
     // what is queued behind the one in the slot, oldest first
     queue: [],
     hint: 0, offroad: false, wheelSpin: 0, steerVis: 0, lean: 0, topMul: 1, roll: 0,
+    // how hard gravity pulls on whatever is in the air: a drift hop is a flick,
+    // a ramp is a jump, and they should not fall at the same rate
+    airG: 26,
   };
   apply(kart);
   return kart;
@@ -201,11 +204,16 @@ export function stepKart(k, input, track, dt) {
   } else {
     const gas = input.gas ? 1 : 0;
     const brake = input.brake ? 1 : 0;
+    // Nothing under the wheels means nothing to push against and nothing to slow
+    // you: off a ramp you keep exactly what you took off with, which is what
+    // makes the jump worth taking.
+    const flying = k.hop > 0.05;
     const acc = TUNE.accel * (k.offroad && k.star <= 0 ? TUNE.offAccel : 1);
-    if (gas) k.speed += acc * dt * (k.speed < 0 ? 2.2 : 1);
+    if (flying) { /* airborne: the throttle and the brake are not connected to anything */ }
+    else if (gas) k.speed += acc * dt * (k.speed < 0 ? 2.2 : 1);
     else if (brake) k.speed -= TUNE.brake * dt;
     else k.speed -= Math.sign(k.speed) * Math.min(Math.abs(k.speed), TUNE.drag * dt);
-    if (!gas && brake) k.speed = Math.max(k.speed, -TUNE.reverse);
+    if (!gas && brake && !flying) k.speed = Math.max(k.speed, -TUNE.reverse);
     if (k.speed > top) k.speed -= (k.speed - top) * Math.min(1, dt * 4.5);
 
     // the hop, and the drift that follows it
@@ -230,7 +238,8 @@ export function stepKart(k, input, track, dt) {
     const lock = (k.drift !== 0 ? TUNE.driftSteer : TUNE.steer) * (1 - Math.min(0.42, Math.abs(k.speed) / top * 0.42));
     let steer = input.steer;
     if (k.drift !== 0) steer = k.drift * 0.55 + input.steer * 0.55;    // you can tighten or open the slide
-    k.yaw += steer * lock * grip * dt * (k.speed < -0.3 ? -1 : 1);
+    // in the air you can shift the nose, not steer
+    k.yaw += steer * lock * grip * dt * (k.speed < -0.3 ? -1 : 1) * (flying ? 0.28 : 1);
     k.steerVis += (steer * 0.55 - k.steerVis) * Math.min(1, dt * 10);
     const wantSlide = k.drift !== 0 ? -k.drift * 0.42 : 0;
     k.slide += (wantSlide - k.slide) * Math.min(1, dt * 6);
@@ -241,8 +250,11 @@ export function stepKart(k, input, track, dt) {
   // the hop arc
   if (k.hopV !== 0 || k.hop > 0) {
     k.hop += k.hopV * dt;
-    k.hopV -= 26 * dt;
-    if (k.hop <= 0) { k.hop = 0; k.hopV = 0; }
+    k.hopV -= k.airG * dt;
+    if (k.hop <= 0) {
+      k.hop = 0; k.hopV = 0;
+      if (k.airG !== 26) { k.airG = 26; k.landed = 1; }    // back on the road
+    }
   }
 
   if (k.boost > 0) k.boost = Math.max(0, k.boost - dt);
@@ -258,7 +270,8 @@ export function stepKart(k, input, track, dt) {
   // the surface, and the wall
   const pr = track.project(k.pos.x, k.pos.z, k.hint);
   k.hint = pr.i;
-  k.offroad = !pr.onRoad && !pr.onKerb;
+  // over the grass but not on it: a jump is not a trip through the rough
+  k.offroad = !pr.onRoad && !pr.onKerb && k.hop <= 0.05;
   k.pos.y = pr.y;
   // ease onto the camber rather than snapping to it
   k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);

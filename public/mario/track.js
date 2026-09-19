@@ -35,7 +35,11 @@ const CP = [
 
 const STEP = 2.2;                 // metres between samples
 const KERB = 1.5;                 // kerb strip, just outside the tarmac
-const SHOULDER = 3.2;             // how far past the kerb before a wall
+// The wall stands on the outside edge of the kerb, so the barrier is the next
+// thing after the red and white and there is no strip of grass between them to
+// drive along. props.js finds this line by asking project where it is, so the
+// barriers follow it wherever it goes.
+const SHOULDER = KERB;
 
 function hill(x, z) {
   // gentle ground, so the circuit rolls rather than sitting on a table
@@ -143,7 +147,14 @@ function sampleLoop() {
     let sum = 0;
     for (let d = -8; d <= 8; d++) sum += out[(i + d + M) % M].turn;
     // negative, because the outside of the bend is the side away from the turn
-    out[i].bank = Math.max(-0.13, Math.min(0.13, -(sum / 17) * 1.7));
+    out[i].bank = Math.max(-0.08, Math.min(0.08, -(sum / 17) * 1.7));
+  }
+  // the start straight stays flat, so the line, the gantry and the grid all sit
+  // where they are drawn
+  const FLAT = 26;
+  for (let d = -FLAT; d <= FLAT; d++) {
+    const i = (d + M) % M;
+    out[i].bank *= Math.min(1, Math.abs(d) / FLAT) ** 2;
   }
 
   /* ---- the ramps ---------------------------------------------------------- */
@@ -170,6 +181,13 @@ function sampleLoop() {
 export function buildTrack(scene) {
   const { samples, length, ramps } = sampleLoop();
   const N = samples.length;
+  /* The camber pivots on the inside edge rather than the middle of the road.
+     Tilting about the middle drops the inside edge below the field it is cut
+     into, which buries the road under the ground mesh and puts a kart under the
+     grass. Lifting the whole road by the amount the low side would have dropped
+     keeps it on top of the world and only ever raises the outside. */
+  const lift = a => a.w * Math.abs(a.bank);
+  const surf = (a, lat) => a.p.y + lat * a.bank + lift(a);
   const group = new THREE.Group();
   scene.add(group);
 
@@ -195,7 +213,7 @@ export function buildTrack(scene) {
     const a = samples[i];
     const l = a.p.clone().addScaledVector(a.n, a.w);
     const r = a.p.clone().addScaledVector(a.n, -a.w);
-    l.y += a.w * a.bank; r.y -= a.w * a.bank;          // the lean of the corner
+    l.y = surf(a, a.w); r.y = surf(a, -a.w);           // the lean of the corner
     pos.push(l.x, l.y + 0.06, l.z, r.x, r.y + 0.06, r.z);
     uv.push(0, a.s / 9, 1, a.s / 9);
     // kerbs, one strip either side
@@ -308,22 +326,28 @@ export function buildTrack(scene) {
     const a = samples[i];
     for (const off of [-0.55, 0, 0.55]) {
       const p = a.p.clone().addScaledVector(a.n, off * a.w);
-      itemBoxes.push({ pos: p.clone().setY(p.y + 1.35), i, taken: 0 });
+      itemBoxes.push({ pos: p.clone().setY(surf(a, off * a.w) + 1.35), i, taken: 0 });
     }
   }
   const boostPads = [];
   for (const at of [0.08, 0.53, 0.75]) {
     const i = Math.floor(at * N);
     const a = samples[i];
-    boostPads.push({ pos: a.p.clone(), i, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.5 });
+    boostPads.push({ pos: a.p.clone().setY(surf(a, 0)), i, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.5 });
   }
+  // a booster on the run up to each ramp, so you are thrown further for taking it
+  for (const r of ramps) {
+    const a = samples[(r.i - 3 + N) % N];
+    boostPads.push({ pos: a.p.clone().setY(surf(a, 0)), i: (r.i - 3 + N) % N, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.8, ramp: true });
+  }
+
   const coins = [];
   for (let k = 0; k < 60; k++) {
     const i = Math.floor((k / 60) * N + 7) % N;
     const a = samples[i];
     const off = Math.sin(k * 1.7) * 0.5;
     const p = a.p.clone().addScaledVector(a.n, off * a.w);
-    coins.push({ pos: p.clone().setY(p.y + 0.75), i, taken: 0 });
+    coins.push({ pos: p.clone().setY(surf(a, off * a.w) + 0.75), i, taken: 0 });
   }
 
   /* their meshes */
@@ -412,7 +436,20 @@ export function buildTrack(scene) {
     // launch anybody, and the ramps come along for the ride in p.y already
     const bank = a.bank + ((nb.bank - a.bank) * f);
     const lt = Math.max(-a.w, Math.min(a.w, lateral));
-    const y = a.p.y + (nb.p.y - a.p.y) * f + lt * bank;
+    // the same pivot the road is built on: lifted by what the low side would
+    // otherwise have dropped, so the tarmac never sinks under the field
+    let y = a.p.y + (nb.p.y - a.p.y) * f + lt * bank + a.w * Math.abs(bank);
+    // Off the tarmac the ground takes over. The kerb is drawn from the road edge
+    // down to the grass, so the height has to follow it down: keeping the road's
+    // own height out there put a kart nearly two metres under the field on the
+    // inside of a banked corner, with the camera below the surface and the road
+    // hidden behind ground it was looking at from underneath.
+    const over = Math.abs(lateral) - a.w;
+    if (over > 0) {
+      const g = groundY(x, z);
+      const m = Math.min(1, over / KERB);
+      y += (g - y) * m;
+    }
     return {
       i: best, s: a.s + along, lateral, half: a.w,
       onRoad: Math.abs(lateral) <= a.w + 0.4,

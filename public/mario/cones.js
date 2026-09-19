@@ -18,6 +18,12 @@ const THREE = window.THREE;
 
 const ORANGE = 0xf4762a, WHITE = 0xfff6e2, INK = 0x17223b;
 
+// How big they stand. The ordinary ones are chest high on a kart, the large
+// ones you go round rather than through. The collision radius comes off the
+// same number so the two never drift apart.
+const SIZE = { small: 2.1, large: 3.3 };
+const radiusOf = size => 0.46 * size * 1.28;
+
 function coneMeshes(scene, n, size) {
   const h = 1.15 * size, r = 0.46 * size;
   const body = new THREE.Mesh(
@@ -63,13 +69,13 @@ export function makeCones(scene, track) {
     const p = a.p.clone().addScaledVector(a.n, lat);
     list.push({
       x: p.x, z: p.z, y: p.y, vx: 0, vz: 0, spin: rnd() * 6.3, wob: 0,
-      big, r: big ? 1.15 : 0.62, hint: null, home: { x: p.x, z: p.z },
+      big, r: radiusOf(big ? SIZE.large : SIZE.small), hint: null, home: { x: p.x, z: p.z },
     });
   }
 
   const small = list.filter(c => !c.big), large = list.filter(c => c.big);
-  const smallM = coneMeshes(scene, Math.max(1, small.length), 1);
-  const largeM = coneMeshes(scene, Math.max(1, large.length), 2.1);
+  const smallM = coneMeshes(scene, Math.max(1, small.length), SIZE.small);
+  const largeM = coneMeshes(scene, Math.max(1, large.length), SIZE.large);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new THREE.Vector3(1, 1, 1);
 
   function draw() {
