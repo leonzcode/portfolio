@@ -158,6 +158,33 @@
   }
   #notice.on{ opacity:1; transform:translateX(-50%) scale(1.04); }
 
+  /* ---------- the waiting lobby ----------
+     A band across the upper third, flashing, because it is asking for something
+     rather than reporting something. The key it names is whatever it is bound to. */
+  #lobby{
+    position:fixed; left:0; right:0; top:19vh; z-index:33; display:none;
+    flex-direction:column; align-items:center; gap:10px; text-align:center;
+    pointer-events:none; padding:0 14px;
+  }
+  #lobby.on{ display:flex; }
+  #lobby b{
+    font-family:var(--display); font-weight:800; font-size:clamp(26px,5vw,56px); color:var(--gold);
+    -webkit-text-stroke:8px var(--ink); paint-order:stroke fill; text-shadow:0 8px 0 var(--ink);
+    animation:blink 1.15s steps(1,end) infinite;
+  }
+  #lobby span{
+    font-family:var(--display); font-weight:700; font-size:clamp(13px,1.9vw,18px);
+    letter-spacing:.12em; text-transform:uppercase; color:#fff;
+    text-shadow:0 3px 0 var(--ink), 0 0 9px rgba(23,34,59,.7);
+  }
+  #lobby i{
+    font-style:normal; background:var(--ink); color:var(--gold); border-radius:8px;
+    padding:3px 11px; margin:0 4px; text-shadow:none;
+  }
+  @keyframes blink{ 0%,64%{ opacity:1 } 65%,100%{ opacity:.16 } }
+  /* the lap, the place and the item slot have nothing to say in a lobby */
+  #hud.lobby #lap, #hud.lobby #place, #hud.lobby #slot{ display:none; }
+
   /* ---------- the countdown ---------- */
   #count{
     position:fixed; left:0; right:0; top:0; height:74vh; z-index:34; display:none;
@@ -312,7 +339,7 @@
   }
 
   @media (prefers-reduced-motion:reduce){
-    #slot.spin .face, #slot.land, #count.go .word{ animation:none; }
+    #slot.spin .face, #slot.land, #count.go .word, #lobby b{ animation:none; }
   }
 </style>
 
@@ -348,6 +375,7 @@
 
 <div id="board"><div class="panel"><h2>Standings</h2><div class="rows" id="boardrows"></div></div></div>
 
+<div id="lobby"><b>Waiting for players</b><span>press <i id="lobbykey">K</i> to start the race</span></div>
 <div id="count"><div class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></div><div class="word">GO!</div></div>
 
 <div id="watch" class="">Watching this race &middot; <span>you start the next one</span></div>
@@ -411,5 +439,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=5');
+await import('./game.js?v=6');
 </script>

@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=5';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=5';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=5';
-import { makeBrain, driveBrain } from './ai.js?v=5';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=5';
-import * as snd from './audio.js?v=5';
+import { buildTrack } from './track.js?v=6';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=6';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=6';
+import { makeBrain, driveBrain } from './ai.js?v=6';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=6';
+import * as snd from './audio.js?v=6';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -113,6 +113,7 @@ const BINDS = {
   left:  { name: 'Steer left',    keys: ['arrowleft', 'a'] },
   right: { name: 'Steer right',   keys: ['arrowright', 'd'] },
   hop:   { name: 'Hop and drift', keys: [' ', 'shift'] },
+  go:    { name: 'Start the race', keys: ['k'] },
   item:  { name: 'Use item',      keys: ['e'] },
   view:  { name: 'Change view',   keys: ['q'] },
   look:  { name: 'Look behind',   keys: ['r'] },
@@ -142,6 +143,7 @@ addEventListener('keydown', e => {
   if (paused) return;                       // the menu has the keyboard while it is up
   if (hit('chat', k) && started) { openChat(); e.preventDefault(); }
   if (hit('item', k) && started) useItem(me);
+  if (hit('go', k) && started && phase === 'wait' && net && net.alive) net.go();
   if (hit('view', k) && started) { camMode = (camMode + 1) % CAM.length; notice(CAM[camMode].name + ' view'); }
   if (hit('mute', k) && started) { snd.mute(!snd.muted_()); notice(snd.muted_() ? 'Sound off' : 'Sound on'); }
   if (bound(k)) e.preventDefault();
@@ -162,9 +164,10 @@ function readInput() {
   // front wheels and the lean are already drawn from, so left is the +1 here
   input.steer = (left ? 1 : 0) - (right ? 1 : 0);
   input.hop = down('hop');
-  if (phase !== 'race' || spectating || !me || me.finished || paused) {
+  if ((phase !== 'race' && phase !== 'wait') || spectating || !me || me.finished || paused) {
     // nobody moves before the lights; holding the throttle there is the rocket
-    // start, and goRace() is where that gets paid out
+    // start, and goRace() is where that gets paid out. The lobby is the one
+    // other place you are allowed to drive.
     input.gas = 0; input.brake = 0; input.steer = 0; input.hop = false;
   }
   return input;
@@ -214,7 +217,7 @@ function placeOnGrid() {
 
 /* start a round. `field` is either null (solo, filled with computer drivers) or
    the list of humans the server says are racing this round. */
-function startRound(field, seed) {
+function startRound(field, seed, asPhase) {
   clearField();
   results = [];
   raceTime = 0; notified = 0;
@@ -245,14 +248,16 @@ function startRound(field, seed) {
   placeOnGrid();
   snapCamera();
   spectating = !me;
-  phase = 'count';
-  phaseT = 4.2;
-  el('watch').classList.toggle('on', spectating);
+  const lobby = asPhase === 'wait';
+  phase = lobby ? 'wait' : 'count';
+  phaseT = lobby ? 0 : 4.2;
+  el('watch').classList.toggle('on', spectating && !lobby);
   el('results').classList.remove('on');
-  el('board').classList.add('on');
   el('hud').classList.add('on');
   hudItem();
-  say(spectating ? 'Watching this race. You are in the next one.' : 'Three laps. Good luck.', 'sys');
+  lobbyShow(lobby);
+  say(lobby ? 'In the lobby. Drive about, and press ' + keyName(bind.go[0]) + ' when everybody is here.'
+            : (spectating ? 'Watching this race. You are in the next one.' : 'Three laps. Good luck.'), 'sys');
 }
 
 /* --------------------------------------------------------------- the laps --- */
@@ -370,15 +375,15 @@ function stepWorld(dt) {
     const pr = stepKart(k, inp, track, dt);
     if (phase === 'race') lapLogic(k, pr);
 
-    // the tarmac furniture
-    for (const b of track.itemBoxes) {
+    // the tarmac furniture, which only counts once the race is on
+    if (phase === 'race') for (const b of track.itemBoxes) {
       if (b.taken > 0) continue;
       if (Math.hypot(b.pos.x - k.pos.x, b.pos.z - k.pos.z) > 1.7) continue;
       pickupBox(k, b);
       puff(b.pos.clone(), 0xffd233);
       if (k === me) snd.tick();
     }
-    for (const c of track.coins) {
+    if (phase === 'race') for (const c of track.coins) {
       if (c.taken > 0) continue;
       if (Math.hypot(c.pos.x - k.pos.x, c.pos.z - k.pos.z) > 1.5) continue;
       c.taken = 8;
@@ -717,7 +722,7 @@ function frame() {
 
   if (!paused && !frozen) {
     stepPhase(dt);
-    if (phase === 'race' || phase === 'count') stepWorld(dt);
+    if (phase === 'race' || phase === 'count' || phase === 'wait') stepWorld(dt);
     else for (const k of karts) apply(k);
     if (net && net.alive) {
       if (phase === 'race') raceTime += dt;
@@ -782,7 +787,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=5');
+    const mod = await import('./net.js?v=6');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -791,6 +796,7 @@ async function start(online) {
         startRound, get karts() { return karts; }, get me() { return me; },
         setPhase(p, t, extra) {
           phase = p; phaseT = t;
+          lobbyShow(p === 'wait');
           if (p === 'count') setLights(t);
           if (p === 'race' && !extra) goRace();
           if (p === 'results') endRace();
@@ -826,6 +832,17 @@ el('online').addEventListener('click', () => start(true));
 frame();
 
 /* a handle, so a test can drive the whole thing without a keyboard */
+/* ------------------------------------------------------------ the lobby ----- */
+// The waiting room: everyone drives about on the same circuit with nothing being
+// counted, until somebody calls the race on.
+function lobbyShow(on) {
+  el('lobby').classList.toggle('on', on);
+  el('board').classList.toggle('on', !on);
+  el('hud').classList.toggle('lobby', on);
+  el('lobbykey').textContent = keyName(bind.go[0] || 'k');
+  if (on) { el('count').classList.remove('on'); el('results').classList.remove('on'); }
+}
+
 /* ------------------------------------------------------------- the menu ----- */
 // Esc stops the race and puts a card in front of it. Two pages: the short list
 // of things you can do, and the key table behind Controls.
@@ -922,7 +939,7 @@ window.__mk = {
   step(n, dt) {
     for (let i = 0; i < (n || 1); i++) {
       stepPhase(dt || 0.02);
-      if (phase === 'race' || phase === 'count') stepWorld(dt || 0.02);
+      if (phase === 'race' || phase === 'count' || phase === 'wait') stepWorld(dt || 0.02);
       stepCamera(dt || 0.02);
     }
     drawHud(dt || 0.02);
