@@ -77,7 +77,7 @@ export async function buildProps(scene, THREE, track) {
   const euler = new THREE.Euler(), scl = new THREE.Vector3();
 
   // spots are { pos, yaw, scale }; one model, however many of them
-  async function put(name, spots, faceOn) {
+  async function put(name, spots, faceOn, reheight) {
     if (!spots.length) return;
     let gltf;
     try { gltf = await load(loader, name); } catch (e) { return; }
@@ -90,6 +90,10 @@ export async function buildProps(scene, THREE, track) {
       for (const sp of spots) {
         sp.pos.x -= Math.sin(sp.yaw) * halfDepth;
         sp.pos.z -= Math.cos(sp.yaw) * halfDepth;
+        // and take the height again where it actually ended up: moving it half a
+        // metre and keeping the old y leaves it in the air wherever the road is
+        // not flat across, which with one sided ramps is most of a lap
+        if (reheight) sp.pos.y = reheight(sp.pos);
       }
     }
     for (const part of model.list) {
@@ -196,8 +200,9 @@ export async function buildProps(scene, THREE, track) {
       walked += seg;
     }
   }
-  put('barrierRed', red, true);         // the face on the wall, the body behind it
-  put('barrierWhite', white, true);
+  const onRoad = p => track.project(p.x, p.z, null).y;
+  put('barrierRed', red, true, onRoad);   // the face on the wall, the body behind it
+  put('barrierWhite', white, true, onRoad);
 
   /* ---- where a crowd would stand ----------------------------------------- */
   const stands = [], covered = [];

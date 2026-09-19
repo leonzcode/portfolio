@@ -130,7 +130,7 @@ export function makeKart(who) {
     pos: new THREE.Vector3(), yaw: 0, speed: 0,
     drift: 0,            // -1 left, 1 right, 0 none
     driftT: 0, slide: 0, hop: 0, hopV: 0,
-    pitch: 0, roadRise: 0, bash: false, hitBy: 0, launched: 0,
+    pitch: 0, roadRise: 0, bash: false, hitBy: 0, launched: 0, onIce: 0,
     // the tumble: how far it is tipped, and how fast that is changing
     tumbleX: 0, tumbleZ: 0, wobX: 0, wobZ: 0, spinRate: 11,
     // velocity across the wheels, from being shoved: it decays as they bite
@@ -269,9 +269,11 @@ export function stepKart(k, input, track, dt) {
     let steer = input.steer;
     if (k.drift !== 0) steer = k.drift * 0.55 + input.steer * 0.55;    // you can tighten or open the slide
     // in the air you can shift the nose, not steer
-    k.yaw += steer * lock * grip * dt * (k.speed < -0.3 ? -1 : 1) * (flying ? 0.28 : 1);
+    // ice: the wheels turn, the kart does not
+    k.yaw += steer * lock * grip * dt * (k.speed < -0.3 ? -1 : 1) * (flying ? 0.28 : 1) * (k.onIce ? 0.34 : 1);
     k.steerVis += (steer * 0.55 - k.steerVis) * Math.min(1, dt * 10);
-    const wantSlide = k.drift !== 0 ? -k.drift * 0.42 : 0;
+    // and what slide there is hangs on longer, because nothing is scrubbing it off
+    const wantSlide = k.drift !== 0 ? -k.drift * 0.42 : (k.onIce ? k.slide * 0.9 : 0);
     k.slide += (wantSlide - k.slide) * Math.min(1, dt * 6);
     // and it rolls to the outside of the corner, drifting or not
     k.lean += ((k.drift !== 0 ? -k.drift * 0.16 : -steer * 0.05) - k.lean) * Math.min(1, dt * 8);
@@ -324,6 +326,27 @@ export function stepKart(k, input, track, dt) {
   // the surface, and the wall
   const pr = track.project(k.pos.x, k.pos.z, k.hint);
   k.hint = pr.i;
+  /* Ice takes the grip away rather than the speed: the kart keeps rolling but
+     the tyres stop answering, so a corner taken on a patch runs wide. Lava is
+     the opposite - it does not slow you, it throws you. */
+  k.onIce = 0;
+  if (track.ice && k.hop <= 0.05) {
+    for (const p of track.ice) {
+      if (Math.hypot(k.pos.x - p.x, k.pos.z - p.z) > p.r) continue;
+      k.onIce = 1;
+      break;
+    }
+  }
+  if (track.lava && k.hop <= 0.05 && k.star <= 0 && k.spin <= 0) {
+    for (const p of track.lava) {
+      const dx = k.pos.x - p.x, dz = k.pos.z - p.z;
+      if (Math.hypot(dx, dz) > p.r) continue;
+      spinOut(k, true, { x: -dx, z: -dz, speed: Math.max(18, Math.abs(k.speed)) });
+      k.hopV = Math.max(k.hopV, 5.5);
+      break;
+    }
+  }
+
   // Anything on the road you have to go round: the house in the middle of the
   // split. Pushed out of it along the line from its middle, and charged for the
   // interruption, the same way the fence charges you.

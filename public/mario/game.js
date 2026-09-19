@@ -11,13 +11,14 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=22';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=22';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=22';
-import { makeBrain, driveBrain } from './ai.js?v=22';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=22';
-import { makeCones } from './cones.js?v=22';
-import * as snd from './audio.js?v=22';
+import { buildTrack } from './track.js?v=23';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=23';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=23';
+import { makeBrain, driveBrain } from './ai.js?v=23';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=23';
+import { makeCones } from './cones.js?v=23';
+import { THEMES, themeById } from './themes.js?v=23';
+import * as snd from './audio.js?v=23';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -46,10 +47,11 @@ const sky = new THREE.Mesh(
   new THREE.SphereGeometry(900, 24, 14),
   new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false,
-    uniforms: { top: { value: new THREE.Color(0x2f8fe0) }, bot: { value: new THREE.Color(0xbfe8ff) } },
+    uniforms: { top: { value: new THREE.Color(0x2f8fe0) }, bot: { value: new THREE.Color(0xbfe8ff) },
+                cloud: { value: 0.9 } },
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: `
-      uniform vec3 top, bot; varying vec3 vP;
+      uniform vec3 top, bot; uniform float cloud; varying vec3 vP;
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5); }
       float n(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
         return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
@@ -59,8 +61,8 @@ const sky = new THREE.Mesh(
         if (vP.y > 0.04) {
           vec2 uv = vP.xz / max(vP.y, 0.08) * 0.55;
           float f = n(uv) * 0.6 + n(uv * 2.3) * 0.3 + n(uv * 5.1) * 0.1;
-          float cloud = smoothstep(0.56, 0.78, f) * smoothstep(0.04, 0.3, vP.y);
-          c = mix(c, vec3(1.0), cloud * 0.9);
+          float puff = smoothstep(0.56, 0.78, f) * smoothstep(0.04, 0.3, vP.y);
+          c = mix(c, vec3(1.0), puff * cloud);
         }
         gl_FragColor = vec4(c, 1.0);
       }`,
@@ -80,7 +82,8 @@ sun.shadow.bias = -0.0006;
 sun.shadow.normalBias = 0.05;
 scene.add(sun);
 scene.add(sun.target);
-scene.add(new THREE.HemisphereLight(0xcfeaff, 0x5f9a4a, 0.85));
+const hemi = new THREE.HemisphereLight(0xcfeaff, 0x5f9a4a, 0.85);
+scene.add(hemi);
 scene.add(new THREE.AmbientLight(0xffffff, 0.28));
 
 /* ------------------------------------------------------------------- state -- */
@@ -149,6 +152,7 @@ addEventListener('keydown', e => {
   if (paused) return;                       // the menu has the keyboard while it is up
   if (hit('chat', k) && started) { openChat(); e.preventDefault(); }
   if (hit('item', k) && started) useItem(me);
+  if (phase === 'wait' && k >= '1' && k <= '5') castVote(THEMES[+k - 1].id);
   if (hit('go', k) && started && phase === 'wait' && net && net.alive) net.go();
   if (hit('view', k) && started) { camMode = (camMode + 1) % CAM.length; notice(CAM[camMode].name + ' view'); }
   if (hit('mute', k) && started) { snd.mute(!snd.muted_()); notice(snd.muted_() ? 'Sound off' : 'Sound on'); }
@@ -185,10 +189,28 @@ function readInput() {
    lobby build from the same number, which is why none of it has to go over the
    wire. Everything that hangs off the track - the scenery, the cones, the
    hazards lying about - goes with the old one. */
-let worldSeed = 0;
+let worldSeed = 0, worldTheme = '';
+/* The sky, the light and the haze belong to the place, so they move with it.
+   Everything else about a theme is baked into the track when it is built. */
+function dressSky(th) {
+  scene.background = new THREE.Color(th.sky);
+  // the dome too, or the ground changes and the weather does not
+  sky.material.uniforms.top.value.setHex(th.skyTop);
+  sky.material.uniforms.bot.value.setHex(th.skyBot);
+  sky.material.uniforms.cloud.value = th.cloud;
+  scene.fog = new THREE.Fog(th.fog, th.fogNear, th.fogFar);
+  sun.color = new THREE.Color(th.sun);
+  sun.intensity = th.sunPower;
+  hemi.color = new THREE.Color(th.hemiSky);
+  hemi.groundColor = new THREE.Color(th.hemiGround);
+  hemi.intensity = th.hemiPower;
+}
 /* A race on your own gets a new lap too, and a new one on the first race of the
    session rather than the same opening circuit every time you load the page. */
 let soloSeed = 0;
+// which place Singleplayer races in, remembered between sessions
+let pickedTheme = THEMES[0].id;
+try { const t = localStorage.getItem('mkTheme'); if (t && themeById(t).id === t) pickedTheme = t; } catch (e) {}
 function newSoloSeed() { soloSeed = ((Math.random() * 0x7ffffffe) | 0) + 1; return soloSeed; }
 function shredGroup(g) {
   if (!g) return;
@@ -200,8 +222,9 @@ function shredGroup(g) {
   });
   if (g.parent) g.parent.remove(g);
 }
-function buildWorld(seed) {
-  if (track && worldSeed === seed) return;
+function buildWorld(seed, themeId) {
+  const th = themeById(themeId || worldTheme || THEMES[0].id);
+  if (track && worldSeed === seed && worldTheme === th.id) return;
   if (track) {
     if (items) items.clear();
     shredGroup(track.group);
@@ -209,11 +232,13 @@ function buildWorld(seed) {
     if (cones) for (const m of cones.meshes) shredGroup(m);
   }
   worldSeed = seed;
-  track = buildTrack(scene, seed);
+  worldTheme = th.id;
+  dressSky(th);
+  track = buildTrack(scene, seed, th.id);
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=22').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=23').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
 }
 
 /* --------------------------------------------------------------- the field -- */
@@ -261,9 +286,9 @@ function placeOnGrid() {
 
 /* start a round. `field` is either null (solo, filled with computer drivers) or
    the list of humans the server says are racing this round. */
-function startRound(field, seed, asPhase) {
-  // a fresh circuit for the round, when the round is a fresh one
-  buildWorld((seed | 0) || 4321);
+function startRound(field, seed, asPhase, themeId) {
+  // a fresh circuit for the round, in whichever place the room settled on
+  buildWorld((seed | 0) || 4321, themeId);
   clearField();
   results = [];
   raceTime = 0; notified = 0;
@@ -907,7 +932,7 @@ function stepPhase(dt) {
     if (done || (results.length && raceTime - results[0].time > 22) || raceTime > 400) endRace();
   } else if (phase === 'results') {
     resCount();
-    if (phaseT <= 0) { soloRound++; startRound(null, newSoloSeed()); }
+    if (phaseT <= 0) { soloRound++; startRound(null, newSoloSeed(), undefined, pickedTheme); }
   }
 }
 let litWas = -1;
@@ -1017,7 +1042,7 @@ async function start(online) {
   snd.start();                             // the click that got us here is the gesture
   el('load').textContent = 'laying out the circuit…';
   await new Promise(r => setTimeout(r, 20));
-  buildWorld(newSoloSeed());
+  buildWorld(newSoloSeed(), pickedTheme);
   initFx(scene);
 
   el('load').textContent = 'lining up…';
@@ -1026,7 +1051,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=22');
+    const mod = await import('./net.js?v=23');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1043,6 +1068,7 @@ async function start(online) {
         setSpectating(v) { spectating = v; el('watch').classList.toggle('on', v); },
         hitBy, nameOf,
         oil: oilSplat,
+        setVotes(v, mine) { voteCount = v || {}; if (mine !== undefined) myVote = mine; drawVote(); },
         shoveCone(i, vx, vz) { if (cones) cones.shove(i, vx, vz); },
         setCup,
         spinOut, useItem, items: () => items, track: () => track,
@@ -1064,10 +1090,38 @@ async function start(online) {
 
   started = true;
   el('title').classList.add('gone');
-  if (!net || !net.alive) startRound(null, soloSeed);
+  if (!net || !net.alive) startRound(null, soloSeed, undefined, pickedTheme);
   el('hud').classList.add('on');
 }
 
+/* The five places, as swatches of their own sky over their own ground. Picking
+   one is remembered, because most people have a favourite and nobody wants to
+   set it again every time. */
+function buildMaps() {
+  const box = el('maps');
+  if (!box) return;
+  box.innerHTML = '';
+  THEMES.forEach(t => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = t.id === pickedTheme ? 'on' : '';
+    const hex = n => '#' + n.toString(16).padStart(6, '0');
+    b.innerHTML = '<i style="background:linear-gradient(' + hex(t.sky) + ' 0 55%,'
+      + t.ground + ' 55% 100%)"></i>' + t.name;
+    b.addEventListener('click', () => {
+      pickedTheme = t.id;
+      try { localStorage.setItem('mkTheme', t.id); } catch (e) {}
+      [...box.children].forEach(c => c.classList.remove('on'));
+      b.classList.add('on');
+      el('mapnote').textContent = t.blurb;
+    });
+    b.addEventListener('mouseenter', () => { el('mapnote').textContent = t.blurb; });
+    box.appendChild(b);
+  });
+  el('mapnote').textContent = themeById(pickedTheme).blurb;
+}
+
+buildMaps();
 buildCast();
 el('solo').addEventListener('click', () => start(false));
 el('online').addEventListener('click', () => start(true));
@@ -1077,12 +1131,35 @@ frame();
 /* ------------------------------------------------------------ the lobby ----- */
 // The waiting room: everyone drives about on the same circuit with nothing being
 // counted, until somebody calls the race on.
+/* The vote. Everybody in the room gets one, the number keys cast it, and the
+   count sits under the banner so you can see which way it is going and change
+   your mind. Nobody voting is not a stalemate, so the server picks at random. */
+let voteCount = {};
+function drawVote() {
+  const box = el('vote');
+  if (!box) return;
+  box.innerHTML = THEMES.map((t, i) =>
+    '<button data-id="' + t.id + '"' + (myVote === t.id ? ' class="on"' : '') + '>'
+    + '<b>' + (i + 1) + '</b>' + esc(t.name)
+    + '<i>' + (voteCount[t.id] || 0) + '</i></button>').join('');
+}
+let myVote = null;
+function castVote(id) {
+  if (!net || !net.alive || phase !== 'wait') return;
+  myVote = id;
+  voteCount = Object.assign({}, voteCount);
+  net.vote(id);
+  drawVote();
+}
+
 function lobbyShow(on) {
   snd.music(on, 'lobby');
   el('lobby').classList.toggle('on', on);
   el('board').classList.toggle('on', !on);
   el('hud').classList.toggle('lobby', on);
   el('lobbykey').textContent = keyName(bind.go[0] || 'k');
+  el('vote').classList.toggle('on', on && !!(net && net.alive));
+  if (on) drawVote();
   if (on) { el('count').classList.remove('on'); el('results').classList.remove('on'); }
 }
 
@@ -1170,7 +1247,10 @@ window.__mk = {
   get camera() { return camera; },
   get props() { return scene.getObjectByName('props'); },
   get cones() { return cones; },
-  rebuild: seed => buildWorld(seed | 0),
+  rebuild: (seed, theme) => buildWorld(seed | 0, theme),
+  get theme() { return worldTheme; },
+  sky: () => scene.background,
+  get themes() { return THEMES.map(t => t.id); },
   get worldSeed() { return worldSeed; },
   /* The flattest, straightest stretch on whatever lap got drawn, clear of the
      ramps and the three big sections. A test that wants somewhere ordinary to

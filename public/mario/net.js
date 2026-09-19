@@ -115,6 +115,8 @@ export function connect(ctx) {
     // takes it to the same place without anybody streaming its position
     if (m.type === 'cone') { world.shoveCone(m.i | 0, +m.vx || 0, +m.vz || 0); return; }
 
+    if (m.type === 'votes') { world.setVotes(m.votes); return; }
+
     if (m.type === 'started') {
       say('<b>' + esc(m.name) + '</b> called the race on.', 'sys');
       return;
@@ -135,7 +137,7 @@ export function connect(ctx) {
       lastRound = m.round;
       lastPhase = '';
       for (const [, p] of seen) { p.tx = undefined; }
-      world.startRound(m.racers.map(r => ({ id: r.id, name: r.name, cast: r.cast })), m.seed, m.phase);
+      world.startRound(m.racers.map(r => ({ id: r.id, name: r.name, cast: r.cast })), m.seed, m.phase, m.theme);
     }
     if (m.phase !== lastPhase) {
       lastPhase = m.phase;
@@ -151,6 +153,7 @@ export function connect(ctx) {
     // anybody the server lists who is not racing this round is watching it
     const meRow = (m.players || []).find(p => p.id === myId);
     if (meRow) world.setSpectating(!meRow.racing);
+    if (m.votes) world.setVotes(m.votes, meRow ? (meRow.vote || null) : undefined);
     for (const p of (m.players || [])) {
       if (p.id === myId) continue;
       const s = seen.get(p.id) || {};
@@ -171,6 +174,7 @@ export function connect(ctx) {
     setCast(i) { send({ type: 'cast', i }); },
     fire(kind) { send({ type: 'fire', kind }); },
     cone(i, vx, vz) { send({ type: 'cone', i, vx: +vx.toFixed(2), vz: +vz.toFixed(2) }); },
+    vote(id) { send({ type: 'vote', id }); },
     hitThem(id, kind) { send({ type: 'hit', id, kind }); },
     finish(t, place) { send({ type: 'fin', t, place }); },
 
