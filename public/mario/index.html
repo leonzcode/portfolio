@@ -170,6 +170,28 @@
   }
   #notice.on{ opacity:1; transform:translateX(-50%) scale(1.04); }
 
+  /* ---------- somebody threw an oil can ----------
+     Blobs on the glass rather than a wash over the whole screen: you can still
+     race through it, which is the point, and it wipes itself off. */
+  #oil{ position:fixed; inset:0; z-index:35; pointer-events:none; opacity:0; transition:opacity .18s; }
+  #oil.on{ opacity:1; }
+  #oil i{
+    position:absolute; display:block; border-radius:48% 52% 60% 40% / 55% 45% 58% 42%;
+    background:
+      radial-gradient(38% 32% at 34% 30%, rgba(255,255,255,.34), rgba(255,255,255,0) 60%),
+      radial-gradient(70% 70% at 50% 50%, #1b2030 60%, rgba(27,32,48,.82) 100%);
+    box-shadow:0 0 18px rgba(12,16,26,.55);
+    animation:oilrun 3.4s ease-in forwards;
+  }
+  @keyframes oilrun{
+    0%{ transform:scale(.15) rotate(var(--r)); opacity:0 }
+    9%{ transform:scale(1.06) rotate(var(--r)); opacity:1 }
+    72%{ transform:scale(1) translateY(6px) rotate(var(--r)); opacity:1 }
+    100%{ transform:scale(.86) translateY(34px) rotate(var(--r)); opacity:0 }
+  }
+  @media (prefers-reduced-motion:reduce){ #oil i{ animation:oilhold 3.4s linear forwards } }
+  @keyframes oilhold{ 0%,85%{ opacity:1 } 100%{ opacity:0 } }
+
   /* ---------- the waiting lobby ----------
      A band across the upper third, flashing, because it is asking for something
      rather than reporting something. The key it names is whatever it is bound to. */
@@ -390,6 +412,7 @@
 <div id="board"><div class="panel"><h2>Standings</h2><div class="rows" id="boardrows"></div></div></div>
 
 <div id="lobby"><b>Waiting for players</b><span>press <i id="lobbykey">K</i> to start the race</span></div>
+<div id="oil"></div>
 <div id="count"><div class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></div><div class="word">GO!</div></div>
 
 <div id="watch" class="">Watching this race &middot; <span>you start the next one</span></div>
@@ -454,5 +477,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=12');
+await import('./game.js?v=13');
 </script>
