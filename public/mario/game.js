@@ -11,13 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=18';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=18';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=18';
-import { makeBrain, driveBrain } from './ai.js?v=18';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=18';
-import { makeCones } from './cones.js?v=18';
-import * as snd from './audio.js?v=18';
+import { buildTrack } from './track.js?v=19';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=19';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=19';
+import { makeBrain, driveBrain } from './ai.js?v=19';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=19';
+import { makeCones } from './cones.js?v=19';
+import * as snd from './audio.js?v=19';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -676,12 +676,6 @@ function drawHud(dt) {
   el('place').className = 'p' + Math.min(3, pl);
   el('coinn').textContent = watch.coins;
   el('speedn').textContent = Math.round(Math.abs(watch.speed) * 3.6);
-  const dp = el('dpow');
-  if (dp) {
-    dp.classList.toggle('on', watch.driftE < 0.995 || watch.drift !== 0);
-    dp.classList.toggle('low', watch.driftE < 0.25);
-    el('dpowi').style.width = (watch.driftE * 100).toFixed(0) + '%';
-  }
   const ch = el('charge');
   if (watch.drift !== 0) {
     ch.classList.add('on');
@@ -925,7 +919,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=18').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=19').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
@@ -936,7 +930,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=18');
+    const mod = await import('./net.js?v=19');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1079,6 +1073,7 @@ window.__mk = {
   get camera() { return camera; },
   get props() { return scene.getObjectByName('props'); },
   get cones() { return cones; },
+  get items() { return items; },
   get paused() { return paused; },
   get sound() { return snd.musicNow(); },
   topOf: k => topSpeed(k),
