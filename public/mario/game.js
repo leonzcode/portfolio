@@ -15,6 +15,7 @@ import { buildTrack } from './track.js?v=24';
 import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=24';
 import { packLook, unpackLook, normalise } from './parts.js?v=24';
 import { makeGarage, PARTS } from './garage.js?v=24';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=24';
 import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=24';
 import { makeBrain, driveBrain } from './ai.js?v=24';
 import { initFx, spark, puff, blast, stepFx } from './fx.js?v=24';
@@ -276,7 +277,7 @@ function addKart(racer, opts) {
 }
 
 function clearField() {
-  for (const k of karts) scene.remove(k.group);
+  for (const k of karts) { dropPlant(k); scene.remove(k.group); }
   karts = [];
   brains = [];
   if (items) items.clear();
@@ -433,6 +434,11 @@ function useItem(k) {
       else oilSplat();                      // a computer driver got you
       puff(k.pos.clone().setY(k.pos.y + 1.2), 0x1b2030);
     }
+    if (id === 'plant') {
+      plantOn(k);
+      if (k === me) notice('Snapper!');
+      puff(k.pos.clone().setY(k.pos.y + 1.1), 0x2f9440);
+    }
     if (id === 'surge') {
       for (const o of karts) {
         if (o === k || o.place >= k.place || o.star > 0) continue;
@@ -577,6 +583,23 @@ function stepWorld(dt) {
       }
     }
   }
+
+  /* The Snappers. Each one belongs to the kart it is bolted to, so a bite is
+     decided by whoever owns the plant and the kart that got eaten is told the
+     same way a shell tells it. */
+  stepPlants(dt, karts, items.hazards, (owner, victim, kind, dir) => {
+    if (kind === 'hazard') {
+      items.eat(victim);
+      puff(new THREE.Vector3(victim.x, me ? me.pos.y + 0.6 : 0.6, victim.z), 0x2f9440);
+      if (owner === me) snd.tick();
+      return;
+    }
+    if (!victim.remote) spinOut(victim, false, { x: dir.x, z: dir.z, speed: 18 });
+    if (victim.remote && owner === me && net) net.hitThem(victim.id, 'plant');
+    puff(victim.pos.clone().setY(victim.pos.y + 0.9), 0x2f9440);
+    if (victim === me) { notice(hitBy(owner.id, 'plant')); snd.spin(); }
+    if (owner === me) snd.bump();
+  });
 
   /* Whatever this place does that the others do not. It runs off the race
      clock rather than off dt, so every browser in the room has the gates shut
@@ -1346,6 +1369,7 @@ window.__mk = {
   get camera() { return camera; },
   get props() { return scene.getObjectByName('props'); },
   get cones() { return cones; },
+  get itemTable() { return ITEMS; },
   get hazards() { return hazards; },
   rebuild: (seed, theme) => buildWorld(seed | 0, theme),
   get theme() { return worldTheme; },
