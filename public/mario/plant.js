@@ -17,24 +17,33 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
+import { spinOut } from './kart.js?v=25';
+import { merge, vertexMat, cyl, ball } from './parts.js?v=25';
+
 const LIFE = 8.5;              // how long it stays bolted on
 const REACH = 5.2;             // how far in front it can get at something
 const BITE = 0.55;             // how long a lunge takes, start to finish
 
 /* The model. A drum, a coiled stem out of it, and a head made of two jaws that
-   open and shut. Built once per plant and thrown away with it; there is only
-   ever a handful of them on a circuit at a time. */
+   open and shut.
+
+   Only the parts that have to move independently are separate meshes: the drum,
+   the three stem segments, the two jaws and the face. Everything inside each of
+   those is merged with its colour in the vertices, which takes a Snapper from
+   thirty five draw calls to seven. On a full grid all carrying one that is the
+   difference between two hundred and eighty extra calls a frame and fifty six.
+--------------------------------------------------------------------------- */
 function grow(colour) {
   const g = new THREE.Group();
-  const mat = (c, rough) => new THREE.MeshStandardMaterial({ color: c, roughness: rough === undefined ? 0.7 : rough, flatShading: true });
+  const M = () => vertexMat(0.7, true);
 
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.5, 12), mat(0x6b6f78, 0.5));
-  drum.position.y = 0.25;
+  // the drum it grows out of
+  const drum = merge([
+    { g: cyl(0.42, 0.46, 0.5, 12, 'y', 0, 0.25, 0), c: 0x6b6f78 },
+    { g: cyl(0.48, 0.48, 0.09, 12, 'y', 0, 0.42, 0), c: 0xffd233 },
+    { g: cyl(0.5, 0.5, 0.07, 12, 'y', 0, 0.03, 0), c: 0x4e525a },
+  ], M());
   g.add(drum);
-  const band = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.05, 5, 12), mat(0xffd233, 0.4));
-  band.rotation.x = Math.PI / 2;
-  band.position.y = 0.42;
-  g.add(band);
 
   // the stem, in three segments so it can arc when it lunges
   const stem = new THREE.Group();
@@ -45,15 +54,17 @@ function grow(colour) {
   for (let i = 0; i < 3; i++) {
     const seg = new THREE.Group();
     seg.position.y = i ? 0.34 : 0.06;
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.11 - i * 0.012, 0.13 - i * 0.012, 0.34, 7), mat(0x2f9440));
-    m.position.y = 0.17;
-    seg.add(m);
-    // a leaf off each joint, which is most of what makes it read as a plant
-    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 4), mat(0x3aa84c));
-    leaf.scale.set(1.5, 0.3, 0.8);
-    leaf.position.set(i % 2 ? 0.2 : -0.2, 0.14, 0);
-    leaf.rotation.z = i % 2 ? -0.5 : 0.5;
-    seg.add(leaf);
+    const side = i % 2 ? 1 : -1;
+    // built at the origin, squashed, tilted, and only then put where it goes:
+    // scaling a shape that has already been moved scales the move as well
+    const leaf = ball(0.16, 0, 0, 0);
+    leaf.scale(1.5, 0.3, 0.8);
+    leaf.rotateZ(side * -0.5);
+    leaf.translate(side * 0.2, 0.14, 0);
+    seg.add(merge([
+      { g: cyl(0.11 - i * 0.012, 0.13 - i * 0.012, 0.34, 7, 'y', 0, 0.17, 0), c: 0x2f9440 },
+      { g: leaf, c: 0x3aa84c },
+    ], M()));
     parent.add(seg);
     joints.push(seg);
     parent = seg;
@@ -65,34 +76,30 @@ function grow(colour) {
   parent.add(headPivot);
   const jaws = [];
   for (const sign of [1, -1]) {
-    const jaw = new THREE.Group();
-    const shell = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(colour));
-    shell.rotation.z = sign > 0 ? 0 : Math.PI;
-    jaw.add(shell);
-    const gum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.06, 10), mat(0xfff6e2, 0.6));
-    gum.position.y = sign * 0.02;
-    jaw.add(gum);
+    const bits = [];
+    const shell = new THREE.SphereGeometry(0.3, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).toNonIndexed();
+    if (sign < 0) shell.rotateZ(Math.PI);
+    bits.push({ g: shell, c: colour });
+    bits.push({ g: cyl(0.3, 0.3, 0.06, 10, 'y', 0, sign * 0.02, 0), c: 0xfff6e2 });
     for (let i = 0; i < 7; i++) {
       const a = (i / 7) * Math.PI * 2;
-      const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 4), mat(0xfff6e2, 0.5));
-      tooth.position.set(Math.cos(a) * 0.23, sign * 0.08, Math.sin(a) * 0.23);
-      tooth.rotation.x = sign > 0 ? 0 : Math.PI;
-      jaw.add(tooth);
+      const t = new THREE.ConeGeometry(0.045, 0.14, 4).toNonIndexed();
+      if (sign < 0) t.rotateX(Math.PI);
+      t.translate(Math.cos(a) * 0.23, sign * 0.08, Math.sin(a) * 0.23);
+      bits.push({ g: t, c: 0xfff6e2 });
     }
+    const jaw = merge(bits, M());
     headPivot.add(jaw);
     jaws.push({ jaw, sign });
   }
   // two small eyes on top, so it is obvious which way it is looking
+  const eyes = [];
   for (const sx of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.075, 7, 5), mat(0xfff6e2, 0.4));
-    eye.position.set(sx * 0.14, 0.2, 0.2);
-    headPivot.add(eye);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.038, 6, 4), mat(0x17223b, 0.4));
-    pupil.position.set(sx * 0.14, 0.21, 0.26);
-    headPivot.add(pupil);
+    eyes.push({ g: ball(0.075, sx * 0.14, 0.2, 0.2), c: 0xfff6e2 });
+    eyes.push({ g: ball(0.038, sx * 0.14, 0.21, 0.26), c: 0x17223b });
   }
+  headPivot.add(merge(eyes, M()));
 
-  for (const o of g.children) { o.castShadow = true; }
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   return { group: g, joints, jaws, headPivot };
 }

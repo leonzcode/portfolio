@@ -141,7 +141,9 @@ export async function buildProps(scene, THREE, track) {
         im.setMatrixAt(i, m4);
       });
       im.instanceMatrix.needsUpdate = true;
-      im.castShadow = true;
+      // the same rule as the track's own trees: the wood and the crowd are too
+      // far from the road for their shadows to be worth a shadow map pass
+      im.castShadow = name !== 'treeLarge' && name !== 'treeSmall';
       im.receiveShadow = true;
       im.frustumCulled = false;            // one box round the whole circuit is useless
       im.matrixWorldAutoUpdate = false;

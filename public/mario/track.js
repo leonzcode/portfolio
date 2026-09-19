@@ -575,7 +575,11 @@ export function buildTrack(scene, seed, themeId) {
   trunks.forEach((t, k) => { pv.set(t.x, t.y + t.h / 2, t.z); sc.set(1, t.h, 1); m4.compose(pv, q, sc); tm.setMatrixAt(k, m4); });
   leaves.forEach((l, k) => { pv.set(l.x, l.y + l.r, l.z); sc.set(l.r, l.r, l.r); m4.compose(pv, q, sc); lm.setMatrixAt(k, m4); });
   tm.instanceMatrix.needsUpdate = true; lm.instanceMatrix.needsUpdate = true;
-  tm.castShadow = lm.castShadow = true;
+  /* Trees do not cast. There are four hundred of them, they stand well off the
+     road, and every one is a draw into the shadow map for a shadow that lands
+     in a field nobody drives on. They still receive, so they are not flat. */
+  tm.castShadow = lm.castShadow = false;
+  tm.receiveShadow = lm.receiveShadow = true;
   tm.frustumCulled = lm.frustumCulled = false;
   group.add(tm); group.add(lm);
 

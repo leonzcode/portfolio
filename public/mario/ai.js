@@ -83,9 +83,17 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
       // field fans out instead of seven cars crossing each other for the same
       // lane. A car sitting on the middle line falls back on the part of the
       // road it likes anyway, which is different for every driver.
+      const q = track.project(k.pos.x, k.pos.z, k.hint);
       if (!br.side) {
-        const q = track.project(k.pos.x, k.pos.z, k.hint);
         br.side = Math.abs(q.lateral) > q.half * 0.3 ? (q.lateral > 0 ? 1 : -1) : br.side0;
+      }
+      /* And once the island is actually under the car, the side is settled by
+         where the car is, not by what it decided thirty metres ago. Shoved
+         across on the way in, it used to spend the whole split trying to steer
+         back through the island, which is the one line that is not available. */
+      if (q.island > 1) {
+        const on = q.lateral > 0 ? 1 : -1;
+        if (on !== br.side) br.side = on;
       }
       side = br.side;
     } else br.side = 0;

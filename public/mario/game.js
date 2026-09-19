@@ -35,6 +35,62 @@ const GRID = 8;                       // how big a field the circuit is set up f
 
 /* ------------------------------------------------------------------ renderer */
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+
+/* ---------------------------------------------------------------------------
+   How hard to work.
+
+   The same page runs on a desktop with a real graphics card and on a laptop
+   that is doing this in software, and there is no way to tell which from the
+   outside. So it watches its own frame times and moves: consistently slow and
+   it drops the resolution it renders at, then the shadows, then the draw
+   distance; consistently quick and it puts them back, one step at a time.
+
+   The steps are deliberately coarse and the hysteresis deliberately wide. A
+   renderer that adjusts every second is a renderer you can see adjusting, which
+   is worse than the frame rate it was trying to fix.
+--------------------------------------------------------------------------- */
+const LEVELS = [
+  { dpr: 1.6, shadow: 2048, shadows: true, far: 1.0 },
+  { dpr: 1.25, shadow: 2048, shadows: true, far: 1.0 },
+  { dpr: 1.0, shadow: 1024, shadows: true, far: 0.85 },
+  { dpr: 0.85, shadow: 1024, shadows: true, far: 0.7 },
+  { dpr: 0.75, shadow: 512, shadows: false, far: 0.6 },
+];
+let level = 0;
+let frameLog = [], lastShift = 0;
+function applyLevel() {
+  const L = LEVELS[level];
+  renderer.setPixelRatio(Math.min(devicePixelRatio, L.dpr));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = L.shadows;
+  if (sun && sun.shadow && sun.shadow.mapSize.x !== L.shadow) {
+    sun.shadow.mapSize.set(L.shadow, L.shadow);
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
+  if (camera) {
+    camera.far = 1600 * L.far;
+    camera.updateProjectionMatrix();
+  }
+  if (scene && scene.fog && track) {
+    scene.fog.near = track.theme.fogNear * L.far;
+    scene.fog.far = track.theme.fogFar * L.far;
+  }
+  renderer.shadowMap.needsUpdate = true;
+}
+/* One frame's worth of evidence. Judged on the median of the last couple of
+   hundred, not on any one of them: a single long frame is a garbage collection
+   or a tab coming back, and reacting to those is how a renderer ends up
+   flapping between two settings for ever. */
+function watchFrame(ms, now) {
+  frameLog.push(ms);
+  if (frameLog.length < 150) return;
+  frameLog.sort((a, b) => a - b);
+  const med = frameLog[frameLog.length >> 1];
+  frameLog = [];
+  if (now - lastShift < 4000) return;
+  if (med > 22 && level < LEVELS.length - 1) { level++; lastShift = now; applyLevel(); }
+  else if (med < 12.5 && level > 0) { level--; lastShift = now; applyLevel(); }
+}
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -64,10 +120,15 @@ const sky = new THREE.Mesh(
       void main(){
         float y = clamp(vP.y, 0.0, 1.0);
         vec3 c = mix(bot, top, pow(y, 0.7));
-        if (vP.y > 0.04) {
+        /* The dome covers the whole screen, so anything in here runs for every
+           pixel of it. Two octaves rather than three, and none at all on the
+           circuits that have no weather to speak of: on Neon Mile and Ember
+           Hollow this was three octaves of noise a pixel to produce a cloud
+           nobody could see against the sky it was drawn on. */
+        if (cloud > 0.05 && vP.y > 0.04) {
           vec2 uv = vP.xz / max(vP.y, 0.08) * 0.55;
-          float f = n(uv) * 0.6 + n(uv * 2.3) * 0.3 + n(uv * 5.1) * 0.1;
-          float puff = smoothstep(0.56, 0.78, f) * smoothstep(0.04, 0.3, vP.y);
+          float f = n(uv) * 0.66 + n(uv * 2.6) * 0.34;
+          float puff = smoothstep(0.54, 0.79, f) * smoothstep(0.04, 0.3, vP.y);
           c = mix(c, vec3(1.0), puff * cloud);
         }
         gl_FragColor = vec4(c, 1.0);
@@ -224,6 +285,8 @@ function dressSky(th) {
   // and how much light is simply in the air. Neon Mile is a night circuit, and
   // a night circuit lit only by a low sun is one you cannot see the road on.
   amb.intensity = th.ambient === undefined ? 0.28 : th.ambient;
+  // a new sky replaces the fog, so the quality step has to be put back on it
+  applyLevel();
 }
 /* A race on your own gets a new lap too, and a new one on the first race of the
    session rather than the same opening circuit every time you load the page. */
@@ -1112,8 +1175,10 @@ let last = performance.now();
 function frame() {
   requestAnimationFrame(frame);
   const now = performance.now();
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const raw = now - last;
+  const dt = Math.min(0.05, raw / 1000);
   last = now;
+  if (started) watchFrame(raw, now);
   if (!started) {
     // the title screen is a panel over the world, so the world behind it barely
     // matters; the turntable is the thing anybody is actually looking at
@@ -1581,6 +1646,16 @@ window.__mk = {
   get props() { return scene.getObjectByName('props'); },
   get cones() { return cones; },
   get garage() { return garage; },
+  plantOn,
+  // which quality step it has settled on, and a way to pin one for a test
+  quality(n) { if (n !== undefined) { level = Math.max(0, Math.min(LEVELS.length - 1, n | 0)); applyLevel(); } return level; },
+  // what the renderer is actually being asked to do, for a performance run
+  draw() {
+    const i = renderer.info;
+    return { calls: i.render.calls, tris: i.render.triangles,
+             geoms: i.memory.geometries, texs: i.memory.textures,
+             programs: i.programs ? i.programs.length : 0 };
+  },
   RACERS,
   get account() { return account; },
   get itemTable() { return ITEMS; },

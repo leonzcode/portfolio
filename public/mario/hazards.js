@@ -21,94 +21,97 @@
 const THREE = window.THREE;
 
 import { spinOut } from './kart.js?v=25';
+import { merge, vertexMat, box, cyl } from './parts.js?v=25';
 
 const TAU = Math.PI * 2;
 
 /* ---- the models ----------------------------------------------------------- */
-/* Small, cheap and readable at speed. Everything is flat shaded and low poly to
-   sit with the rest of the game, and each one is built once and reused. */
+/* Small, cheap and readable at speed, and every one of them a single mesh with
+   its colours in the vertices. A cattle grid drawn as a frame and seven bars is
+   eight draw calls and there are four of them on the circuit; drawn this way
+   the whole set costs four. Nothing here moves any part of itself
+   independently, so there is no reason for any of them to be more than one. */
 function model(look) {
-  const g = new THREE.Group();
-  const mat = (c, rough, emis) => new THREE.MeshStandardMaterial({
-    color: c, roughness: rough === undefined ? 0.85 : rough, flatShading: true,
-    emissive: emis || 0x000000, emissiveIntensity: emis ? 0.85 : 0,
-  });
+  const bits = [];
+  let rough = 0.85, emis = 0;
+
   if (look === 'hay') {
     // a round bale, banded, lying on its side so it rolls the way it looks
-    const bale = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1.9, 12), mat(0xe0b954));
-    bale.rotation.z = Math.PI / 2;
-    g.add(bale);
-    for (const z of [-0.62, 0, 0.62]) {
-      const band = new THREE.Mesh(new THREE.TorusGeometry(1.01, 0.07, 5, 12), mat(0xa8813a));
-      band.position.x = z;
-      band.rotation.y = Math.PI / 2;
-      g.add(band);
+    bits.push({ g: cyl(1, 1, 1.9, 12, 'x', 0, 0, 0), c: 0xe0b954 });
+    for (const x of [-0.62, 0, 0.62]) {
+      const band = new THREE.TorusGeometry(1.01, 0.07, 5, 12).toNonIndexed();
+      band.rotateY(Math.PI / 2);
+      band.translate(x, 0, 0);
+      bits.push({ g: band, c: 0xa8813a });
     }
   } else if (look === 'boulder') {
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 0), mat(0x8a6b4e, 0.95));
-    rock.scale.set(1, 0.92, 1.06);
-    g.add(rock);
-    const chip = new THREE.Mesh(new THREE.TetrahedronGeometry(0.42), mat(0x6f553d, 0.95));
-    chip.position.set(0.6, 0.45, -0.3);
-    g.add(chip);
+    const rock = new THREE.DodecahedronGeometry(1, 0).toNonIndexed();
+    rock.scale(1, 0.92, 1.06);
+    bits.push({ g: rock, c: 0x8a6b4e });
+    const chip = new THREE.TetrahedronGeometry(0.42).toNonIndexed();
+    chip.translate(0.6, 0.45, -0.3);
+    bits.push({ g: chip, c: 0x6f553d });
+    rough = 0.95;
   } else if (look === 'icicle') {
-    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.55, 3.4, 7), new THREE.MeshStandardMaterial({
-      color: 0xbfe8ff, roughness: 0.18, metalness: 0.1, transparent: true, opacity: 0.85, flatShading: true,
-    }));
-    spike.rotation.x = Math.PI;              // point down
-    spike.position.y = 1.7;
-    g.add(spike);
+    const spike = new THREE.ConeGeometry(0.55, 3.4, 7).toNonIndexed();
+    spike.rotateX(Math.PI);
+    spike.translate(0, 1.7, 0);
+    bits.push({ g: spike, c: 0xbfe8ff });
+    rough = 0.2;
   } else if (look === 'ember') {
-    const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85, 0), mat(0x3a1c14, 0.9, 0xff5a18));
-    g.add(ball);
-    const hot = new THREE.Mesh(new THREE.IcosahedronGeometry(1.15, 0), new THREE.MeshBasicMaterial({
-      color: 0xff8a1f, transparent: true, opacity: 0.32,
-    }));
-    g.add(hot);
+    bits.push({ g: new THREE.IcosahedronGeometry(0.85, 0).toNonIndexed(), c: 0x3a1c14 });
+    const hot = new THREE.IcosahedronGeometry(1.1, 0).toNonIndexed();
+    bits.push({ g: hot, c: 0xff5a18 });
+    emis = 0xff5a18;
+    rough = 0.9;
   } else if (look === 'grid') {
     // a cattle grid: bars across the road in a shallow frame
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(1, 0.16, 1), mat(0x6b6f78, 0.7));
-    g.add(frame);
+    bits.push({ g: box(1, 0.16, 1, 0, 0, 0), c: 0x6b6f78 });
     for (let i = -3; i <= 3; i++) {
-      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1, 6), mat(0x9aa2ae, 0.4));
-      bar.rotation.z = Math.PI / 2;
-      bar.position.set(0, 0.14, i * 0.14);
-      g.add(bar);
+      bits.push({ g: cyl(0.09, 0.09, 1, 6, 'x', 0, 0.14, -i * 0.14), c: 0x9aa2ae });
     }
+    rough = 0.55;
   } else if (look === 'gate') {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(1, 0.85, 0.5), new THREE.MeshStandardMaterial({
-      color: 0x18203c, roughness: 0.4, emissive: 0xff2f6e, emissiveIntensity: 1.1, flatShading: true,
-    }));
-    g.add(bar);
+    bits.push({ g: box(1, 0.85, 0.5, 0, 0, 0), c: 0x18203c });
+    bits.push({ g: box(1.01, 0.3, 0.52, 0, 0, 0), c: 0xff2f6e });
+    emis = 0xff2f6e;
+    rough = 0.4;
   } else if (look === 'spring') {
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.08, 0.3, 14), new THREE.MeshStandardMaterial({
-      color: 0x101a30, roughness: 0.35, emissive: 0x39d0ff, emissiveIntensity: 1.2,
-    }));
-    pad.position.y = 0.15;
-    g.add(pad);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.09, 6, 16), new THREE.MeshBasicMaterial({ color: 0x8fe9ff }));
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = 0.33;
-    g.add(ring);
+    bits.push({ g: cyl(1, 1.08, 0.3, 14, 'y', 0, 0.15, 0), c: 0x101a30 });
+    const ring = new THREE.TorusGeometry(0.72, 0.09, 6, 16).toNonIndexed();
+    ring.rotateX(Math.PI / 2);
+    ring.translate(0, 0.33, 0);
+    bits.push({ g: ring, c: 0x8fe9ff });
+    emis = 0x39d0ff;
+    rough = 0.35;
   } else if (look === 'sand') {
-    const pit = new THREE.Mesh(new THREE.CircleGeometry(1, 16), new THREE.MeshStandardMaterial({
-      color: 0xb98748, roughness: 1,
-    }));
-    pit.rotation.x = -Math.PI / 2;
-    g.add(pit);
+    const pit = new THREE.CircleGeometry(1, 16).toNonIndexed();
+    pit.rotateX(-Math.PI / 2);
+    bits.push({ g: pit, c: 0xb98748 });
+    rough = 1;
   } else if (look === 'drift') {
-    const heap = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 7, 0, TAU, 0, Math.PI / 2), new THREE.MeshStandardMaterial({
-      color: 0xf4fbff, roughness: 1, flatShading: true,
-    }));
-    heap.scale.set(1, 0.42, 1);
-    g.add(heap);
+    const heap = new THREE.SphereGeometry(1, 12, 7, 0, TAU, 0, Math.PI / 2).toNonIndexed();
+    heap.scale(1, 0.42, 1);
+    bits.push({ g: heap, c: 0xf4fbff });
+    rough = 1;
   } else if (look === 'vent') {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.35, 6, 14), mat(0x2a1a18, 0.95, 0x8c2a0e));
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = 0.16;
-    g.add(ring);
+    const ring = new THREE.TorusGeometry(1.5, 0.35, 6, 14).toNonIndexed();
+    ring.rotateX(Math.PI / 2);
+    ring.translate(0, 0.16, 0);
+    bits.push({ g: ring, c: 0x5a2a1c });
+    emis = 0x8c2a0e;
+    rough = 0.95;
   }
-  for (const o of g.children) { o.castShadow = true; o.receiveShadow = true; }
+  if (!bits.length) bits.push({ g: box(0.2, 0.2, 0.2, 0, 0, 0), c: 0x888888 });
+
+  const mat = vertexMat(rough, true);
+  if (emis) { mat.emissive = new THREE.Color(emis); mat.emissiveIntensity = 0.9; }
+  if (look === 'icicle') { mat.transparent = true; mat.opacity = 0.85; mat.metalness = 0.1; }
+  const m = merge(bits, mat);
+  m.receiveShadow = true;
+  // a group, because the rest of this file positions and scales a group
+  const g = new THREE.Group();
+  g.add(m);
   return g;
 }
 
@@ -380,8 +383,8 @@ export function makeHazards(scene, track, seed) {
         const lift = open ? 1 : 0;
         o.lift = (o.lift === undefined ? lift : o.lift + (lift - o.lift) * Math.min(1, dt * 7));
         o.mesh.position.y = o.groundY + 0.5 + o.lift * 4.2;
-        o.mesh.material = o.mesh.material;
-        for (const c of o.mesh.children) c.material.emissiveIntensity = open ? 0.25 : 1.3;
+        // it dims when it is up, so open and shut read at a distance
+        o.mesh.children[0].material.emissiveIntensity = open ? 0.2 : 1.4;
         if (o.lift > 0.35) continue;                 // up: nothing to hit
         for (const k of karts) {
           if (k.finished || k.spin > 0) continue;
@@ -400,7 +403,7 @@ export function makeHazards(scene, track, seed) {
         }
 
       } else if (o.kind === 'spring') {
-        o.mesh.children[1].rotation.z = t * 2.4;
+        o.mesh.rotation.y = t * 2.4;
         for (const k of karts) {
           if (k.finished || k.hop > 0.3) continue;
           if (Math.hypot(k.pos.x - o.p.x, k.pos.z - o.p.z) > o.r) continue;

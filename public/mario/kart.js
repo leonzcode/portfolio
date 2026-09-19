@@ -46,32 +46,8 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS,
          chassisOf, wheelsOf, trailOf, hatOf, faceOf, suitOf, normalise,
-         box, cyl, ball, taper, INK, STEEL, DARK } from './parts.js?v=25';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=25';
 export { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS, normalise };
-
-function merge(parts, mat) {
-  let n = 0;
-  for (const p of parts) n += p.g.attributes.position.count;
-  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
-  const c = new THREE.Color();
-  let o = 0;
-  for (const p of parts) {
-    const count = p.g.attributes.position.count;
-    pos.set(p.g.attributes.position.array, o * 3);
-    nor.set(p.g.attributes.normal.array, o * 3);
-    c.setHex(p.c);
-    for (let i = 0; i < count; i++) { col[(o + i) * 3] = c.r; col[(o + i) * 3 + 1] = c.g; col[(o + i) * 3 + 2] = c.b; }
-    o += count;
-    p.g.dispose();
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  const m = new THREE.Mesh(g, mat);
-  m.castShadow = true;
-  return m;
-}
 
 /* ---- the model ----------------------------------------------------------- */
 /* A kart is a body, a set of wheels, a driver and a trail, and the four are
