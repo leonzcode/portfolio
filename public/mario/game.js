@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js';
-import { makeBrain, driveBrain } from './ai.js';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js';
-import * as snd from './audio.js';
+import { buildTrack } from './track.js?v=3';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=3';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=3';
+import { makeBrain, driveBrain } from './ai.js?v=3';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=3';
+import * as snd from './audio.js?v=3';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -728,7 +728,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=2');
+    const mod = await import('./net.js?v=3');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
