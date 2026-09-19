@@ -204,7 +204,6 @@ export function topSpeed(k) {
   if (k.boost > 0) t *= TUNE.boostTop;
   if (k.star > 0) t *= TUNE.starTop;
   if (k.offroad && k.star <= 0) t *= TUNE.offTop;
-  if (k.wet) t *= 0.88;                    // water is thicker than air
   if (k.slow > 0) t *= 0.55;
   return t;
 }

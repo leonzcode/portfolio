@@ -11,13 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=20';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=20';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=20';
-import { makeBrain, driveBrain } from './ai.js?v=20';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=20';
-import { makeCones } from './cones.js?v=20';
-import * as snd from './audio.js?v=20';
+import { buildTrack } from './track.js?v=21';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=21';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=21';
+import { makeBrain, driveBrain } from './ai.js?v=21';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=21';
+import { makeCones } from './cones.js?v=21';
+import * as snd from './audio.js?v=21';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -179,6 +179,39 @@ function readInput() {
   return input;
 }
 
+/* ---------------------------------------------------------- the world -------- */
+/* A circuit a lap of which you have learned is a circuit you stop reading, so a
+   new one is drawn for every race from that round's seed. Both browsers in a
+   lobby build from the same number, which is why none of it has to go over the
+   wire. Everything that hangs off the track - the scenery, the cones, the
+   hazards lying about - goes with the old one. */
+let worldSeed = 0;
+function shredGroup(g) {
+  if (!g) return;
+  g.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    const m = o.material;
+    if (Array.isArray(m)) m.forEach(x => x && x.dispose && x.dispose());
+    else if (m) { if (m.map && m.map.dispose) m.map.dispose(); if (m.dispose) m.dispose(); }
+  });
+  if (g.parent) g.parent.remove(g);
+}
+function buildWorld(seed) {
+  if (track && worldSeed === seed) return;
+  if (track) {
+    if (items) items.clear();
+    shredGroup(track.group);
+    shredGroup(scene.getObjectByName('props'));
+    if (cones) for (const m of cones.meshes) shredGroup(m);
+  }
+  worldSeed = seed;
+  track = buildTrack(scene, seed);
+  items = makeItemWorld(scene, track, { blast });
+  cones = makeCones(scene, track);
+  // the scenery turns up when it turns up; the circuit is drivable without it
+  import('./props.js?v=21').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+}
+
 /* --------------------------------------------------------------- the field -- */
 // how much more top end the computer drivers get than you do
 const BOT_TOP = 1.68;
@@ -225,6 +258,8 @@ function placeOnGrid() {
 /* start a round. `field` is either null (solo, filled with computer drivers) or
    the list of humans the server says are racing this round. */
 function startRound(field, seed, asPhase) {
+  // a fresh circuit for the round, when the round is a fresh one
+  buildWorld((seed | 0) || 4321);
   clearField();
   results = [];
   raceTime = 0; notified = 0;
@@ -611,6 +646,37 @@ function hudItem() {
 }
 /* Somebody's oil, on your glass. Fresh blobs each time so it never lands the
    same way twice, and they wipe themselves off after a few seconds. */
+/* Water on the glass: it beads up while you are under and runs off when you
+   come out. The drops are made once on the way in, because making them every
+   frame is a lot of DOM for something nobody is looking at yet. */
+let wetOn = false, dryT = 0;
+function wetGlass(under, dt) {
+  const box = el('drops');
+  if (!box) return;
+  if (under && !wetOn) {
+    wetOn = true; dryT = 0;
+    box.classList.remove('off');
+    const n = 16 + Math.floor(Math.random() * 10);
+    let html = '';
+    for (let i = 0; i < n; i++) {
+      const w = 0.7 + Math.random() * 2.4;
+      html += '<b style="left:' + (Math.random() * 96).toFixed(1) + '%;top:'
+        + (Math.random() * 88).toFixed(1) + '%;width:' + w.toFixed(2) + 'vmin;height:'
+        + (w * (1 + Math.random() * 0.5)).toFixed(2) + 'vmin;animation-delay:'
+        + (Math.random() * 0.35).toFixed(2) + 's"></b>';
+    }
+    box.innerHTML = html;
+    box.classList.add('on');
+  } else if (!under && wetOn) {
+    wetOn = false; dryT = 1.3;
+    box.classList.add('off');
+  }
+  if (dryT > 0) {
+    dryT -= dt;
+    if (dryT <= 0) { box.classList.remove('on', 'off'); box.innerHTML = ''; }
+  }
+}
+
 let oilT = 0;
 function oilSplat() {
   const box = el('oil');
@@ -648,6 +714,7 @@ function drawHud(dt) {
   const watch = spectating ? (order()[0] || me) : me;
   // under the surface, if that is where whoever we are watching happens to be
   el('wet').classList.toggle('on', !!(watch && watch.wet));
+  wetGlass(!!(watch && watch.wet), dt);
   if (!watch) return;
   el('lapn').textContent = Math.min(LAPS, watch.lap);
   el('lapof').textContent = '/' + LAPS;
@@ -897,12 +964,8 @@ async function start(online) {
   snd.start();                             // the click that got us here is the gesture
   el('load').textContent = 'laying out the circuit…';
   await new Promise(r => setTimeout(r, 20));
-  track = buildTrack(scene);
-  // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=20').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  buildWorld(4321);
   initFx(scene);
-  items = makeItemWorld(scene, track, { blast });
-  cones = makeCones(scene, track);
 
   el('load').textContent = 'lining up…';
   await new Promise(r => setTimeout(r, 20));
@@ -910,7 +973,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=20');
+    const mod = await import('./net.js?v=21');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1053,6 +1116,27 @@ window.__mk = {
   get camera() { return camera; },
   get props() { return scene.getObjectByName('props'); },
   get cones() { return cones; },
+  rebuild: seed => buildWorld(seed | 0),
+  /* The flattest, straightest stretch on whatever lap got drawn, clear of the
+     ramps and the three big sections. A test that wants somewhere ordinary to
+     stand a kart cannot name an arc length any more, because the arc lengths
+     are different every race. */
+  flat() {
+    const S = track.samples, M = S.length;
+    let best = { score: 1e9, s: 0 };
+    for (let i = 0; i < M; i++) {
+      const a = S[i], c = S[(i + 12) % M];
+      let near = 0;
+      for (const r of track.ramps) if (Math.abs(((i - r.i + M) % M + M / 2) % M - M / 2) < 20) near = 1;
+      for (const f of track.features) if (f.ids.indexOf(i) >= 0) near = 1;
+      if (near) continue;
+      const turn = Math.abs(Math.atan2(a.t.x * c.t.z - a.t.z * c.t.x, a.t.x * c.t.x + a.t.z * c.t.z));
+      const slope = Math.abs(track.project(a.p.x, a.p.z, i).slope);
+      const score = turn * 3 + slope * 9;
+      if (score < best.score) best = { score, s: a.s };
+    }
+    return best.s;
+  },
   get items() { return items; },
   get paused() { return paused; },
   get sound() { return snd.musicNow(); },
