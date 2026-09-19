@@ -219,7 +219,9 @@ export function buildTrack(scene) {
   }
   const banner = new THREE.Mesh(new THREE.BoxGeometry(s0.w * 2 + 5, 2.6, 0.6), goldMat);
   banner.position.copy(s0.p).setY(s0.p.y + 8.2);
-  banner.rotation.y = Math.atan2(s0.t.x, s0.t.z) + Math.PI / 2;
+  // across the road between the two posts, not lying along it: the box is long
+  // on its own x, so that has to end up pointing down the normal
+  banner.rotation.y = Math.atan2(s0.t.x, s0.t.z);
   banner.castShadow = true;
   group.add(banner);
 

@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=9';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=9';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=9';
-import { makeBrain, driveBrain } from './ai.js?v=9';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=9';
-import * as snd from './audio.js?v=9';
+import { buildTrack } from './track.js?v=10';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=10';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=10';
+import { makeBrain, driveBrain } from './ai.js?v=10';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=10';
+import * as snd from './audio.js?v=10';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -781,7 +781,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=9').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=10').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
 
@@ -791,7 +791,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=9');
+    const mod = await import('./net.js?v=10');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },

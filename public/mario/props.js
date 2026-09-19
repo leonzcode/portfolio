@@ -24,7 +24,7 @@ const SCALE = {
   barrierRed: 9, barrierWhite: 9,
   pylon: 6, treeLarge: 6, treeSmall: 6,
   tentLong: 7, tent: 7,
-  lightPostModern: 9, flagCheckers: 7, overhead: 16, fenceStraight: 9,
+  lightPostModern: 9, flagCheckers: 7,
 };
 
 /* one load per model, however many times it is asked for */
@@ -108,18 +108,33 @@ export async function buildProps(scene, THREE, track) {
 
   /* ---- barriers down both edges ------------------------------------------ */
   /* These are the edge of the circuit, not decoration beside it: the kit draws a
-     barrier from one end, with its front face on the origin and its body behind,
-     so putting the origin on the wall line makes the barrier you can see the
-     wall you bounce off. It is 2.25m long once scaled, so stepping by that puts
-     them end to end. Turning them to look at the road is what keeps the body on
-     the outside of both sides rather than the inside of one. */
-  const STEP = 2.25;
+     barrier from one end with its front face on the origin and its body behind,
+     so putting the origin on the wall line makes the barrier you can see the wall
+     you bounce off.
+
+     They have to be spaced along the WALL, though, not along the middle of the
+     road. Round the outside of a corner the wall is longer than the centreline,
+     so stepping 2.25m down the middle leaves the run short by the difference and
+     opens holes in it - which you cannot see but can still drive into, because
+     the wall is continuous even where the barrier is not. Same where the road
+     changes width and the wall line steps sideways. So walk each edge itself. */
+  const STEP = 2.2;                        // the barrier is 2.25m, so joints overlap
   const red = [], white = [];
-  for (let s = 0, n = 0; s < L; s += STEP, n++) {
-    const a = track.at(s);
-    for (const sgn of [1, -1]) {
+  for (const sgn of [1, -1]) {
+    let carry = 0, prev = null, n = 0;
+    for (let s = 0; s <= L; s += 1) {
+      const a = track.at(s % L);
       const pos = side(a, sgn * (a.w + track.shoulder));
-      (n % 2 ? red : white).push({ pos, yaw: facingRoad(a, sgn) });
+      if (prev) {
+        carry += Math.hypot(pos.x - prev.x, pos.z - prev.z);
+        while (carry >= STEP) {
+          carry -= STEP;
+          (n++ % 2 ? red : white).push({ pos: pos.clone(), yaw: facingRoad(a, sgn) });
+        }
+      } else {
+        (n++ % 2 ? red : white).push({ pos: pos.clone(), yaw: facingRoad(a, sgn) });
+      }
+      prev = pos;
     }
   }
   put('barrierRed', red);
@@ -196,13 +211,10 @@ export async function buildProps(scene, THREE, track) {
   put('tentLong', longTents);
 
   /* ---- the start line ----------------------------------------------------- */
+  // No gantry from the kit here: track.js already builds one over the line, in
+  // the gold and navy the rest of the game is lettered in. Two would be the
+  // barrier problem again.
   const start = track.at(0);
-  const gantry = [{
-    pos: start.p.clone(),                  // the gantry straddles the road, so road height
-    yaw: alongX(start.n.x, start.n.z),     // spanning the road, not lying along it
-    scale: (start.w * 2 + 6) / (1.26 * SCALE.overhead),
-  }];
-  put('overhead', gantry);
   put('flagCheckers', [
     { pos: side(start, start.w + 2.4), yaw: withRoad(start) },
     { pos: side(start, -(start.w + 2.4)), yaw: withRoad(start) },
