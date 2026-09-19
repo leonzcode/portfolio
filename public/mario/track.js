@@ -48,9 +48,19 @@ function hill(x, z) {
 // where the grass actually is, rim of hills and all. The road follows hill()
 // alone, so anything standing off to the side has to ask for this instead or it
 // floats a metre over the field.
+// Hollows dug into the field. The water section runs along a channel, and a
+// channel means the ground either side has to come down to meet it, or the road
+// is simply buried under a flat field.
+const basins = [];
 export function groundY(x, z) {
   const rim = Math.max(0, (Math.max(Math.abs(x), Math.abs(z)) - 210) / 240);
-  return hill(x, z) + rim * rim * 46;
+  let y = hill(x, z) + rim * rim * 46;
+  for (let i = 0; i < basins.length; i++) {
+    const b = basins[i];
+    const d = Math.hypot(x - b.x, z - b.z);
+    if (d < b.r) y -= b.drop * (0.5 + 0.5 * Math.cos(Math.PI * d / b.r));
+  }
+  return y;
 }
 
 function canvasTex(w, h, draw, rep) {
@@ -174,12 +184,48 @@ function sampleLoop() {
     ramps.push({ i: (i0 + len - 1) % M, pos: lip.p.clone(), s: lip.s });
   }
 
-  return { samples: out, length: s, ramps };
+  /* ---- the bridge, the tunnel and the water ------------------------------ */
+  // A smooth rise from nothing to the full amount and back, so each section
+  // joins the road either side of it without a step.
+  const bump = t => 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
+  // All three sit on straight stretches. They are flat inside, because the deck,
+  // the tube and the sheet are all built square to the road, and a flat section
+  // on the circuit's best corner is a corner thrown away.
+  const features = [
+    { kind: 'bridge', at: 0.06, len: 26, rise: 6.5 },
+    { kind: 'tunnel', at: 0.44, len: 30 },
+    { kind: 'water', at: 0.83, len: 34, drop: 3.1 },
+  ];
+  for (const f of features) {
+    f.i0 = Math.floor(f.at * M);
+    f.ids = [];
+    // the water sits at the height the road was before it dipped
+    let sum = 0;
+    for (let k = 0; k < f.len; k++) sum += out[(f.i0 + k) % M].p.y;
+    f.surfaceY = sum / f.len + 0.4;
+    for (let k = 0; k < f.len; k++) {
+      const i = (f.i0 + k) % M;
+      const t = k / (f.len - 1);
+      const a = out[i];
+      f.ids.push(i);
+      a.bank = 0;                                   // flat through all three
+      if (f.kind === 'bridge') { a.p.y += f.rise * bump(t); a.bridge = 1; }
+      else if (f.kind === 'tunnel') a.tunnel = 1;
+      else if (f.kind === 'water') {
+        a.p.y -= f.drop * bump(t);
+        a.water = 1;
+        a.waterY = f.surfaceY;
+        if (k % 3 === 0) basins.push({ x: a.p.x, z: a.p.z, r: a.w + 26, drop: f.drop * bump(t) + 1.2 });
+      }
+    }
+  }
+
+  return { samples: out, length: s, ramps, features };
 }
 
 /* ---- put it together ----------------------------------------------------- */
 export function buildTrack(scene) {
-  const { samples, length, ramps } = sampleLoop();
+  const { samples, length, ramps, features } = sampleLoop();
   const N = samples.length;
   /* The camber pivots on the inside edge rather than the middle of the road.
      Tilting about the middle drops the inside edge below the field it is cut
@@ -319,6 +365,104 @@ export function buildTrack(scene) {
   /* the stands, the barriers and the rest of the furniture are real models now,
      and they live in props.js */
 
+  /* ---- the bridge, the tunnel and the water, built ------------------------ */
+  for (const f of features) {
+    const ids = f.ids;
+
+    if (f.kind === 'bridge') {
+      // a deck under the road and piers down to whatever the ground is doing
+      const deckMat = new THREE.MeshStandardMaterial({ color: 0x8d8d8d, roughness: 0.9 });
+      const pierMat = new THREE.MeshStandardMaterial({ color: 0x6f747d, roughness: 0.95 });
+      const dp = [], du = [], di = [];
+      ids.forEach((i, k) => {
+        const a = samples[i];
+        const l = a.p.clone().addScaledVector(a.n, a.w + KERB);
+        const r = a.p.clone().addScaledVector(a.n, -(a.w + KERB));
+        dp.push(l.x, l.y - 0.85, l.z, r.x, r.y - 0.85, r.z);
+        du.push(0, k, 1, k);
+      });
+      for (let k = 0; k < ids.length - 1; k++) {
+        const aa = k * 2, bb = aa + 1, cc = aa + 2, dd = aa + 3;
+        di.push(aa, bb, cc, bb, dd, cc);
+      }
+      const deck = new THREE.Mesh(ribbon(dp, du, di), deckMat);
+      deck.receiveShadow = true;
+      group.add(deck);
+      for (let k = 2; k < ids.length - 2; k += 5) {
+        const a = samples[ids[k]];
+        for (const side of [1, -1]) {
+          const top = a.p.clone().addScaledVector(a.n, side * a.w * 0.78);
+          const foot = groundY(top.x, top.z);
+          const h = Math.max(1, top.y - 0.85 - foot);
+          const pier = new THREE.Mesh(new THREE.BoxGeometry(1.5, h, 1.5), pierMat);
+          pier.position.set(top.x, foot + h / 2, top.z);
+          pier.castShadow = true;
+          group.add(pier);
+        }
+      }
+    }
+
+    if (f.kind === 'tunnel') {
+      // a half pipe over the road, wide enough to clear the kerbs and low
+      // enough to feel like a tunnel, with a light every so often
+      const R = [], RU = [], RI = [], RINGS = 9;
+      ids.forEach((i, k) => {
+        const a = samples[i];
+        const rad = a.w + KERB;
+        for (let j = 0; j <= RINGS; j++) {
+          const ang = Math.PI * (j / RINGS);
+          const p = a.p.clone().addScaledVector(a.n, Math.cos(ang) * rad);
+          R.push(p.x, a.p.y + Math.sin(ang) * rad * 0.58 - 0.2, p.z);
+          RU.push(j / RINGS, k * 0.5);
+        }
+      });
+      for (let k = 0; k < ids.length - 1; k++) {
+        for (let j = 0; j < RINGS; j++) {
+          const aa = k * (RINGS + 1) + j, bb = aa + 1;
+          const cc = (k + 1) * (RINGS + 1) + j, dd = cc + 1;
+          RI.push(aa, bb, cc, bb, dd, cc);
+        }
+      }
+      // both sides: an arch you can see coming, and a roof once you are under it
+      const tube = new THREE.Mesh(ribbon(R, RU, RI),
+        new THREE.MeshStandardMaterial({ color: 0x59606e, roughness: 0.95, side: THREE.DoubleSide }));
+      tube.castShadow = true; tube.receiveShadow = true;
+      group.add(tube);
+      const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff6e2, emissive: 0xffd233, emissiveIntensity: 1.1 });
+      for (let k = 2; k < ids.length - 2; k += 4) {
+        const a = samples[ids[k]];
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(a.w * 0.5, 0.25, 1.1), lampMat);
+        lamp.position.set(a.p.x, a.p.y + (a.w + KERB) * 0.58 - 0.65, a.p.z);
+        lamp.rotation.y = Math.atan2(a.t.x, a.t.z);
+        group.add(lamp);
+      }
+    }
+
+    if (f.kind === 'water') {
+      // A sheet that follows the channel. A rectangle big enough to cover the
+      // dip also floods every field around it, because the ground out there is
+      // higher than the water.
+      const wp = [], wu = [], wi = [], SPAN = 17;
+      ids.forEach((i, k) => {
+        const a = samples[i];
+        const l = a.p.clone().addScaledVector(a.n, a.w + SPAN);
+        const r = a.p.clone().addScaledVector(a.n, -(a.w + SPAN));
+        wp.push(l.x, f.surfaceY, l.z, r.x, f.surfaceY, r.z);
+        wu.push(0, k * 0.35, 1, k * 0.35);
+      });
+      for (let k = 0; k < ids.length - 1; k++) {
+        const aa = k * 2, bb = aa + 1, cc = aa + 2, dd = aa + 3;
+        wi.push(aa, cc, bb, bb, cc, dd);
+      }
+      const sheet = new THREE.Mesh(ribbon(wp, wu, wi), new THREE.MeshStandardMaterial({
+        color: 0x2e86c8, roughness: 0.18, metalness: 0.15,
+        transparent: true, opacity: 0.62, depthWrite: false, side: THREE.DoubleSide,
+      }));
+      sheet.renderOrder = 2;
+      group.add(sheet);
+    }
+  }
+
   /* ---- things on the road ------------------------------------------------- */
   const itemBoxes = [];
   for (const at of [0.17, 0.42, 0.63, 0.86]) {
@@ -456,11 +600,14 @@ export function buildTrack(scene) {
       onKerb: Math.abs(lateral) > a.w + 0.4 && Math.abs(lateral) <= a.w + KERB,
       wall: a.w + SHOULDER,
       y, bank, t: a.t, n: a.n,
+      // the surface above you, when there is one
+      waterY: a.waterY === undefined ? null : a.waterY,
+      tunnel: !!a.tunnel,
     };
   }
 
   return {
-    group, samples, length, ramps, project, at, gridSlot, groundY,
+    group, samples, length, ramps, features, project, at, gridSlot, groundY,
     // how far past the tarmac the wall is, so the barriers can stand on it
     shoulder: SHOULDER,
     itemBoxes, boostPads, coins, boxMesh, coinMesh,

@@ -11,13 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=15';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=15';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=15';
-import { makeBrain, driveBrain } from './ai.js?v=15';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=15';
-import { makeCones } from './cones.js?v=15';
-import * as snd from './audio.js?v=15';
+import { buildTrack } from './track.js?v=16';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=16';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=16';
+import { makeBrain, driveBrain } from './ai.js?v=16';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=16';
+import { makeCones } from './cones.js?v=16';
+import * as snd from './audio.js?v=16';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -438,6 +438,11 @@ function stepWorld(dt) {
       if (k === me) snd.land();
     }
 
+    // a few bubbles on the way past, for whoever is under the surface
+    if (k.wet && Math.random() < 0.22) {
+      puff(k.pos.clone().setY(k.pos.y + 0.7 + Math.random()), 0x9fd8ff);
+    }
+
     // back on the ground after a jump: a puff of dust and a thump
     if (k.landed) {
       k.landed = 0;
@@ -656,6 +661,8 @@ function drawHud(dt) {
   hintStep(dt);
   if (noticeT > 0) { noticeT -= dt; if (noticeT <= 0) el('notice').classList.remove('on'); }
   const watch = spectating ? (order()[0] || me) : me;
+  // under the surface, if that is where whoever we are watching happens to be
+  el('wet').classList.toggle('on', !!(watch && watch.wet));
   if (!watch) return;
   el('lapn').textContent = Math.min(LAPS, watch.lap);
   el('lapof').textContent = '/' + LAPS;
@@ -895,7 +902,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=15').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=16').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
@@ -906,7 +913,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=15');
+    const mod = await import('./net.js?v=16');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },

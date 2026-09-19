@@ -189,6 +189,18 @@
   }
   #notice.on{ opacity:1; transform:translateX(-50%) scale(1.04); }
 
+  /* ---------- under the surface ----------
+     A wash rather than a wall of blue: you still have to be able to see the
+     road you are driving along the bottom of. */
+  #wet{
+    position:fixed; inset:0; z-index:32; pointer-events:none; opacity:0;
+    transition:opacity .35s;
+    background:
+      radial-gradient(120% 90% at 50% 40%, rgba(46,134,200,.18), rgba(19,62,104,.55) 100%);
+    box-shadow:inset 0 0 22vmin rgba(11,40,70,.55);
+  }
+  #wet.on{ opacity:1; }
+
   /* ---------- somebody threw an oil can ----------
      Blobs on the glass rather than a wash over the whole screen: you can still
      race through it, which is the point, and it wipes itself off. */
@@ -432,6 +444,7 @@
 <div id="board"><div class="panel"><h2>Standings</h2><div class="rows" id="boardrows"></div></div></div>
 
 <div id="lobby"><b>Waiting for players</b><span>press <i id="lobbykey">K</i> to start the race</span></div>
+<div id="wet"></div>
 <div id="oil"></div>
 <div id="count"><div class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></div><div class="word">GO!</div></div>
 
@@ -497,5 +510,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=15');
+await import('./game.js?v=16');
 </script>
