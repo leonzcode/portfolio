@@ -164,11 +164,15 @@ export function apply(k) {
   k.group.rotation.x = k.tumbleX;
   // revving on the grid: a shake everybody can see, since rev rides along in the
   // position each browser sends
-  if (k.rev > 0.02) {
+  // and the same rattle for a cattle grid, which is the point of a cattle grid
+  const buzz = Math.max(k.rev > 0.02 ? k.rev : 0, k.shake || 0);
+  if (buzz > 0.02) {
     const t = performance.now() * 0.001;
-    k.group.position.x += Math.sin(t * 37) * 0.11 * k.rev;
-    k.group.position.z += Math.cos(t * 31) * 0.07 * k.rev;
+    k.group.position.x += Math.sin(t * 37) * 0.11 * buzz;
+    k.group.position.z += Math.cos(t * 31) * 0.07 * buzz;
+    k.group.position.y += Math.sin(t * 53) * 0.05 * (k.shake || 0);
   }
+  if (k.shake > 0) k.shake = Math.max(0, k.shake - 0.06);
   k.body.rotation.z = k.lean;
   // nose up on the way up, nose down on the way down
   k.body.rotation.x = -k.speed * 0.0012 + k.pitch;
@@ -202,18 +206,30 @@ export const TUNE = {
   G: 9.81,
 };
 
+/* What the place you are racing in does to a kart. Every circuit sets its own,
+   and a kart carries the current one on itself so topSpeed() can be asked about
+   a kart without also being handed the track. */
+export const PLAIN = {
+  grip: 1, slide: 0, top: 1, accel: 1, offTop: TUNE.offTop,
+  driftCharge: 1, boost: 1, hop: 1,
+};
+
 export function topSpeed(k) {
+  const R = k.rules || PLAIN;
   // topMul is the computer drivers' handicap, 1 for anyone at a keyboard
-  let t = TUNE.top * (k.topMul || 1);
+  let t = TUNE.top * R.top * (k.topMul || 1);
   if (k.boost > 0) t *= TUNE.boostTop;
   if (k.star > 0) t *= TUNE.starTop;
-  if (k.offroad && k.star <= 0) t *= TUNE.offTop;
+  if (k.offroad && k.star <= 0) t *= R.offTop;
   if (k.slow > 0) t *= 0.55;
   return t;
 }
 
 /* input: { gas, brake, steer, hop, } with steer in -1..1 */
 export function stepKart(k, input, track, dt) {
+  // the rules of this place, picked up from the circuit the kart is on
+  k.rules = (track && track.rules) || PLAIN;
+  const R = k.rules;
   const top = topSpeed(k);
 
   if (k.spin > 0) {
@@ -234,7 +250,7 @@ export function stepKart(k, input, track, dt) {
     // makes the jump worth taking.
     const flying = k.hop > 0.05;
     k.bash = !!input.hop;          // leaning on it as you make contact
-    const acc = TUNE.accel * (k.offroad && k.star <= 0 ? TUNE.offAccel : 1);
+    const acc = TUNE.accel * R.accel * (k.offroad && k.star <= 0 ? TUNE.offAccel : 1);
     if (flying) { /* airborne: the throttle and the brake are not connected to anything */ }
     else if (gas) k.speed += acc * dt * (k.speed < 0 ? 2.2 : 1);
     else if (brake) k.speed -= TUNE.brake * dt;
@@ -244,7 +260,7 @@ export function stepKart(k, input, track, dt) {
 
     // the hop, and the drift that follows it
     if (input.hop && k.hop <= 0.001 && k.drift === 0 && k.speed > 6) {
-      k.hopV = TUNE.hopV;
+      k.hopV = TUNE.hopV * R.hop;
       k.pendingDrift = Math.abs(input.steer) > 0.2 ? Math.sign(input.steer) : 0;
     }
     if (k.hop > 0.05 && k.pendingDrift && k.drift === 0) { k.drift = k.pendingDrift; k.driftT = 0; }
@@ -254,8 +270,11 @@ export function stepKart(k, input, track, dt) {
       // across, so a full lock slide runs out of room in about half a second.
       // A mini turbo you cannot physically hold long enough for is not a mini
       // turbo, so the marks come down to meet the circuit.
-      if (k.driftT > 1.0) k.boost = Math.max(k.boost, 1.15);
-      else if (k.driftT > 0.5) k.boost = Math.max(k.boost, 0.7);
+      // how long it takes to charge and how much it pays are both the circuit's
+      // to set: Neon Mile charges in three quarters of the time, Ember Hollow
+      // pays a quarter more for the same slide
+      if (k.driftT * R.driftCharge > 1.0) k.boost = Math.max(k.boost, 1.15 * R.boost);
+      else if (k.driftT * R.driftCharge > 0.5) k.boost = Math.max(k.boost, 0.7 * R.boost);
       k.drift = 0; k.driftT = 0; k.pendingDrift = 0;
     }
     if (k.drift !== 0) {
@@ -270,10 +289,14 @@ export function stepKart(k, input, track, dt) {
     if (k.drift !== 0) steer = k.drift * 0.55 + input.steer * 0.55;    // you can tighten or open the slide
     // in the air you can shift the nose, not steer
     // ice: the wheels turn, the kart does not
-    k.yaw += steer * lock * grip * dt * (k.speed < -0.3 ? -1 : 1) * (flying ? 0.28 : 1) * (k.onIce ? 0.34 : 1);
+    k.yaw += steer * lock * grip * R.grip * dt * (k.speed < -0.3 ? -1 : 1) * (flying ? 0.28 : 1) * (k.onIce ? 0.34 : 1);
     k.steerVis += (steer * 0.55 - k.steerVis) * Math.min(1, dt * 10);
     // and what slide there is hangs on longer, because nothing is scrubbing it off
-    const wantSlide = k.drift !== 0 ? -k.drift * 0.42 : (k.onIce ? k.slide * 0.9 : 0);
+    /* What the back end does when you are not asking it to. On a loose or icy
+       circuit a slide does not simply stop when the drift does: it hangs on and
+       has to be caught, which is the whole character of the place. */
+    const wantSlide = k.drift !== 0 ? -k.drift * 0.42
+                    : (k.onIce ? k.slide * 0.9 : k.slide * R.slide);
     k.slide += (wantSlide - k.slide) * Math.min(1, dt * 6);
     // and it rolls to the outside of the corner, drifting or not
     k.lean += ((k.drift !== 0 ? -k.drift * 0.16 : -steer * 0.05) - k.lean) * Math.min(1, dt * 8);

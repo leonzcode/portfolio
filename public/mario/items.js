@@ -75,12 +75,20 @@ const TABLE = [
   [['turbo', 3], ['seeker', 3], ['star', 3], ['surge', 3], ['bomb', 2], ['oil', 2]],
 ];
 
-export function rollItem(place, field) {
+/* Where you are in the order decides the row; where you are racing bends it.
+   Ember Hollow deals bombs and stars, Glacier Pass deals slicks, Neon Mile deals
+   turbos. The bias is a multiplier on the weights rather than a separate table,
+   so the catch up in the rows above still works the same everywhere. */
+export function rollItem(place, field, bias) {
   const row = TABLE[Math.min(TABLE.length - 1, Math.max(0, Math.round((place - 1) / Math.max(1, field - 1) * (TABLE.length - 1))))];
+  const b = bias || {};
   let total = 0;
-  for (const r of row) total += r[1];
+  for (const r of row) total += r[1] * (b[r[0]] === undefined ? 1 : b[r[0]]);
   let pick = Math.random() * total;
-  for (const r of row) { pick -= r[1]; if (pick <= 0) return r[0]; }
+  for (const r of row) {
+    pick -= r[1] * (b[r[0]] === undefined ? 1 : b[r[0]]);
+    if (pick <= 0) return r[0];
+  }
   return row[0][0];
 }
 // three of something, sometimes, when you are well back
