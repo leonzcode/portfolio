@@ -41,6 +41,13 @@ function hill(x, z) {
   // gentle ground, so the circuit rolls rather than sitting on a table
   return Math.sin(x * 0.0075) * 3.4 + Math.cos(z * 0.0091) * 3.0 + Math.sin((x + z) * 0.004) * 2.2;
 }
+// where the grass actually is, rim of hills and all. The road follows hill()
+// alone, so anything standing off to the side has to ask for this instead or it
+// floats a metre over the field.
+export function groundY(x, z) {
+  const rim = Math.max(0, (Math.max(Math.abs(x), Math.abs(z)) - 210) / 240);
+  return hill(x, z) + rim * rim * 46;
+}
 
 function canvasTex(w, h, draw, rep) {
   const c = document.createElement('canvas');
@@ -138,10 +145,8 @@ export function buildTrack(scene) {
   const gp = gg.attributes.position;
   for (let i = 0; i < gp.count; i++) {
     const x = gp.getX(i), z = gp.getZ(i);
-    const edge = Math.max(Math.abs(x), Math.abs(z));
-    // lift the far ground into a rim of hills, so the course sits in a bowl
-    const rim = Math.max(0, (edge - 210) / 240);
-    gp.setY(i, hill(x, z) + rim * rim * 46);
+    // the rim of hills the course sits in is part of groundY
+    gp.setY(i, groundY(x, z));
   }
   gg.computeVertexNormals();
   const ground = new THREE.Mesh(gg, new THREE.MeshStandardMaterial({ map: grassTex(), roughness: 1 }));
@@ -261,7 +266,7 @@ export function buildTrack(scene) {
       near = Math.min(near, dx * dx + dz * dz);
     }
     if (near < 400) continue;
-    const y = hill(x, z) + Math.max(0, (Math.max(Math.abs(x), Math.abs(z)) - 210) / 240) ** 2 * 46;
+    const y = groundY(x, z);
     const h = 5 + rnd() * 5;
     trunks.push({ x, y, z, h });
     leaves.push({ x, y: y + h * 0.78, z, r: 2.6 + rnd() * 1.8 });
@@ -276,22 +281,8 @@ export function buildTrack(scene) {
   tm.frustumCulled = lm.frustumCulled = false;
   group.add(tm); group.add(lm);
 
-  /* grandstands along the pit straight */
-  const standMat = new THREE.MeshStandardMaterial({ color: 0x2b56d6, roughness: 0.8 });
-  const crowdMat = new THREE.MeshStandardMaterial({ color: 0xffd233, roughness: 0.9 });
-  for (let k = 0; k < 4; k++) {
-    const a = samples[Math.floor((k * 13 + 6) % N)];
-    const base = a.p.clone().addScaledVector(a.n, a.w + 17);
-    const st = new THREE.Mesh(new THREE.BoxGeometry(22, 5.5, 9), standMat);
-    st.position.copy(base).setY(base.y + 2.6);
-    st.rotation.y = Math.atan2(a.t.x, a.t.z) + Math.PI / 2;
-    st.castShadow = true; st.receiveShadow = true;
-    group.add(st);
-    const crowd = new THREE.Mesh(new THREE.BoxGeometry(21, 1.1, 8), crowdMat);
-    crowd.position.copy(base).setY(base.y + 5.7);
-    crowd.rotation.y = st.rotation.y;
-    group.add(crowd);
-  }
+  /* the stands, the barriers and the rest of the furniture are real models now,
+     and they live in props.js */
 
   /* ---- things on the road ------------------------------------------------- */
   const itemBoxes = [];
@@ -404,7 +395,7 @@ export function buildTrack(scene) {
   }
 
   return {
-    group, samples, length, project, at, gridSlot,
+    group, samples, length, project, at, gridSlot, groundY,
     itemBoxes, boostPads, coins, boxMesh, coinMesh,
     // the ribbon, in a form the minimap can draw cheaply
     outline: samples.filter((_, i) => i % 3 === 0).map(a => [a.p.x, a.p.z]),
