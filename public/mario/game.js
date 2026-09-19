@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=11';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=11';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=11';
-import { makeBrain, driveBrain } from './ai.js?v=11';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=11';
-import * as snd from './audio.js?v=11';
+import { buildTrack } from './track.js?v=12';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=12';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=12';
+import { makeBrain, driveBrain } from './ai.js?v=12';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=12';
+import * as snd from './audio.js?v=12';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -412,6 +412,16 @@ function stepWorld(dt) {
       if (Math.hypot(p.pos.x - k.pos.x, p.pos.z - k.pos.z) > p.w + 2) continue;
       if (k === me && k.boost <= 0.2) snd.boost();
       k.boost = Math.max(k.boost, 0.85);
+    }
+
+    // the lip of a ramp throws you: the road has already carried you up it, so
+    // all this does is decide how far the rest of the climb takes you
+    for (const r of track.ramps) {
+      if (k.hop > 0.02 || k.speed < 10) continue;
+      if (Math.hypot(r.pos.x - k.pos.x, r.pos.z - k.pos.z) > 5) continue;
+      k.hopV = Math.max(k.hopV, 4.2 + k.speed * 0.2);
+      k.drift = 0; k.driftT = 0;
+      if (k === me) snd.land();
     }
 
     // the roulette landing
@@ -813,7 +823,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=11').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=12').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
 
@@ -823,7 +833,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=11');
+    const mod = await import('./net.js?v=12');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },

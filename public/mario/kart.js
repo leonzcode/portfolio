@@ -135,7 +135,7 @@ export function makeKart(who) {
     item: null, itemN: 0, roulette: 0,
     // what is queued behind the one in the slot, oldest first
     queue: [],
-    hint: 0, offroad: false, wheelSpin: 0, steerVis: 0, lean: 0, topMul: 1,
+    hint: 0, offroad: false, wheelSpin: 0, steerVis: 0, lean: 0, topMul: 1, roll: 0,
   };
   apply(kart);
   return kart;
@@ -148,6 +148,9 @@ export function apply(k) {
   // other way. Adding it instead swung the kart away from the turn, and pressing
   // right while drifting looked for all the world like going left.
   k.group.rotation.y = k.yaw - k.slide * 0.45;
+  // rotation.z is applied before the yaw, so it rolls the kart about its own
+  // length: that is the camber of the road under it
+  k.group.rotation.z = k.roll;
   k.body.rotation.z = k.lean;
   k.body.rotation.x = -k.speed * 0.0012;
   for (const w of k.wheels) {
@@ -257,6 +260,8 @@ export function stepKart(k, input, track, dt) {
   k.hint = pr.i;
   k.offroad = !pr.onRoad && !pr.onKerb;
   k.pos.y = pr.y;
+  // ease onto the camber rather than snapping to it
+  k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);
   if (Math.abs(pr.lateral) > pr.wall) {
     const push = (Math.abs(pr.lateral) - pr.wall) * Math.sign(pr.lateral);
     k.pos.x -= pr.n.x * push;
