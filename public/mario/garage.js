@@ -14,8 +14,8 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { makeKart, apply } from './kart.js?v=27';
-import { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS, normalise } from './parts.js?v=27';
+import { makeKart, apply } from './kart.js?v=28';
+import { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS, normalise } from './parts.js?v=28';
 
 /* The rows under the turntable, in two groups: the car, then the person in it.
    Grouping them matters more than it sounds - six unlabelled rows of arrows is
