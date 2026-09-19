@@ -107,15 +107,19 @@ export async function buildProps(scene, THREE, track) {
   };
 
   /* ---- barriers down both edges ------------------------------------------ */
-  // a barrier is 2.25m long once scaled, so step by that and they meet
-  const STEP = 2.25, OUT = 3.9;             // just past the kerb and the shoulder
+  /* These are the edge of the circuit, not decoration beside it: the kit draws a
+     barrier from one end, with its front face on the origin and its body behind,
+     so putting the origin on the wall line makes the barrier you can see the
+     wall you bounce off. It is 2.25m long once scaled, so stepping by that puts
+     them end to end. Turning them to look at the road is what keeps the body on
+     the outside of both sides rather than the inside of one. */
+  const STEP = 2.25;
   const red = [], white = [];
   for (let s = 0, n = 0; s < L; s += STEP, n++) {
     const a = track.at(s);
-    const yaw = withRoad(a);                 // end to end, so they make one run
     for (const sgn of [1, -1]) {
-      const pos = side(a, sgn * (a.w + OUT));
-      (n % 2 ? red : white).push({ pos, yaw });
+      const pos = side(a, sgn * (a.w + track.shoulder));
+      (n % 2 ? red : white).push({ pos, yaw: facingRoad(a, sgn) });
     }
   }
   put('barrierRed', red);
