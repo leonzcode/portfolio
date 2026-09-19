@@ -85,7 +85,8 @@ scene.add(sun);
 scene.add(sun.target);
 const hemi = new THREE.HemisphereLight(0xcfeaff, 0x5f9a4a, 0.85);
 scene.add(hemi);
-scene.add(new THREE.AmbientLight(0xffffff, 0.28));
+const amb = new THREE.AmbientLight(0xffffff, 0.28);
+scene.add(amb);
 
 /* ------------------------------------------------------------------- state -- */
 let track = null, items = null, cones = null, hazards = null;
@@ -206,6 +207,9 @@ function dressSky(th) {
   hemi.color = new THREE.Color(th.hemiSky);
   hemi.groundColor = new THREE.Color(th.hemiGround);
   hemi.intensity = th.hemiPower;
+  // and how much light is simply in the air. Neon Mile is a night circuit, and
+  // a night circuit lit only by a low sun is one you cannot see the road on.
+  amb.intensity = th.ambient === undefined ? 0.28 : th.ambient;
 }
 /* A race on your own gets a new lap too, and a new one on the first race of the
    session rather than the same opening circuit every time you load the page. */

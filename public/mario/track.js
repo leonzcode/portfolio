@@ -95,19 +95,48 @@ function canvasTex(w, h, draw, rep) {
   return t;
 }
 
+/* The road. The uv runs across the ribbon in u and along the lap in v, so this
+   texture knows which way is across: the two dark bands at a third and two
+   thirds of the width are the racing line worn into it, and the pale bands at
+   the very edges are the white line painted down them. That alone does more for
+   the look of a circuit than any amount of grit, because it tells you where the
+   road goes before you can see the corner. */
 function tarmacTex(th) {
   const [base, spread, tint] = th.tarmacGrit;
   return canvasTex(256, 256, (g, W, H) => {
     g.fillStyle = th.tarmac; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 6000; i++) {
+    // the worn line, darker and softened at its edges
+    for (const at of [0.3, 0.7]) {
+      const grad = g.createLinearGradient((at - 0.16) * W, 0, (at + 0.16) * W, 0);
+      grad.addColorStop(0, 'rgba(20,22,26,0)');
+      grad.addColorStop(0.5, 'rgba(20,22,26,.30)');
+      grad.addColorStop(1, 'rgba(20,22,26,0)');
+      g.fillStyle = grad;
+      g.fillRect((at - 0.16) * W, 0, 0.32 * W, H);
+    }
+    for (let i = 0; i < 7000; i++) {
       const v = base + Math.random() * spread;
       g.fillStyle = 'rgba(' + (v | 0) + ',' + (v | 0) + ',' + ((v + tint) | 0) + ',.45)';
       g.fillRect(Math.random() * W, Math.random() * H, 2, 2);
     }
+    // patches, as if it had been resurfaced in places
     for (let i = 0; i < 18; i++) {
       g.fillStyle = 'rgba(80,84,92,.5)';
       g.fillRect(Math.random() * W, Math.random() * H, 20 + Math.random() * 70, 8 + Math.random() * 26);
     }
+    /* And the white line down each edge, scuffed rather than crisp. Inboard of
+       the very edge, because the outer metre and a half of the ribbon is under
+       the kerb: painted at u=0 the line was there and nobody ever saw it. */
+    const LX = Math.round(W * 0.105), LW = 5;
+    g.fillStyle = 'rgba(244,246,250,.6)';
+    g.fillRect(LX, 0, LW, H);
+    g.fillRect(W - LX - LW, 0, LW, H);
+    g.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 90; i++) {
+      g.fillStyle = 'rgba(0,0,0,.5)';
+      g.fillRect(Math.random() < 0.5 ? LX : W - LX - LW, Math.random() * H, LW, 2 + Math.random() * 5);
+    }
+    g.globalCompositeOperation = 'source-over';
   }, [1, 1]);
 }
 function grassTex(th) {
@@ -468,8 +497,16 @@ export function buildTrack(scene, seed, themeId) {
     g.fillStyle = th.kerbA; g.fillRect(0, 0, W, H);
     g.fillStyle = th.kerbB; g.fillRect(0, 0, W, H / 2);
   }, [1, 1]);
-  const kerb = new THREE.Mesh(ribbon(kpos, kuv, kidx),
-    new THREE.MeshStandardMaterial({ map: kerbTex, roughness: 0.7 }));
+  /* After dark the kerb makes its own light. It is the one thing on a night
+     circuit that has to be legible at a distance, because it is the only thing
+     telling you where the road stops. */
+  const kerbMat = () => new THREE.MeshStandardMaterial({
+    map: kerbTex, roughness: 0.7,
+    emissive: th.glow ? new THREE.Color(th.kerbB) : 0x000000,
+    emissiveMap: th.glow ? kerbTex : null,
+    emissiveIntensity: th.glow || 0,
+  });
+  const kerb = new THREE.Mesh(ribbon(kpos, kuv, kidx), kerbMat());
   kerb.receiveShadow = true;
   group.add(kerb);
 
@@ -787,8 +824,7 @@ export function buildTrack(scene, seed, themeId) {
         new THREE.MeshStandardMaterial({ map: grassTex(th), roughness: 1 }));
       isle.receiveShadow = true;
       group.add(isle);
-      const rim = new THREE.Mesh(ribbon(kp, ku, ki),
-        new THREE.MeshStandardMaterial({ map: kerbTex, roughness: 0.7 }));
+      const rim = new THREE.Mesh(ribbon(kp, ku, ki), kerbMat());
       rim.receiveShadow = true;
       group.add(rim);
     }

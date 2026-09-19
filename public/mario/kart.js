@@ -26,6 +26,24 @@ export const RACERS = [
 const BODY_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.08 });
 const TYRE_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
 
+/* The patch of dark a car sits in. The sun casts a real shadow, but a single
+   directional light throws it off to one side, so at a glance nothing looks
+   like it is touching the ground. This is the contact: a soft disc under the
+   floor that shrinks and fades as the car leaves the road, which is also the
+   only cue you get for how high you are in the air. Built once and shared. */
+const SHADOW_TEX = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const r = g.createRadialGradient(32, 32, 2, 32, 32, 31);
+  r.addColorStop(0, 'rgba(0,0,0,.55)');
+  r.addColorStop(0.55, 'rgba(0,0,0,.3)');
+  r.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
+
 /* Yaw zero faces -z here, the same as everything else in these games, so the
    model is built nose-first towards -z. The helpers negate z once so the part
    list can be written the way you would sketch it, nose forward. */
@@ -43,6 +61,21 @@ function cyl(r1, r2, len, seg, axis, x, y, z) {
 }
 function ball(r, x, y, z) {
   const g = new THREE.IcosahedronGeometry(r, 1).toNonIndexed();
+  g.translate(x, y, -z);
+  return g;
+}
+/* A box that is narrower at one end than the other, which is what almost every
+   panel on a car actually is. Built by moving the front face in rather than by
+   loading a model, so it still merges into the same two meshes as everything
+   else and still costs nothing. Front means towards the nose, -z. */
+function taper(wFront, wBack, h, hFront, d, x, y, z) {
+  const g = new THREE.BoxGeometry(wBack, h, d).toNonIndexed();
+  const p = g.attributes.position;
+  const kx = wFront / wBack, ky = hFront / h;
+  for (let i = 0; i < p.count; i++) {
+    if (p.getZ(i) < 0) { p.setX(i, p.getX(i) * kx); p.setY(i, p.getY(i) * ky); }
+  }
+  g.computeVertexNormals();
   g.translate(x, y, -z);
   return g;
 }
@@ -77,21 +110,56 @@ export function makeKart(who) {
   const body = new THREE.Group();
   group.add(body);
 
+  /* The car. A floor pan, a tapered tub, side pods with radiator slots, a
+     pointed nose on a front wing, an engine cover, exhausts, a rear wing on
+     pylons with endplates, and a roll hoop behind the driver's head. All of it
+     is boxes, cylinders and tapered boxes so the whole thing still merges into
+     one mesh with its colours in the vertices. */
+  const INK = 0x17223b, STEEL = 0xb8bcc4, DARK = 0x3a3f4a, RUBBER = 0x1d2430;
   const shell = [
-    // chassis: a wedge with a fat nose, sat low
-    { g: box(1.5, 0.42, 2.3, 0, 0.42, 0), c: r.kart },
-    { g: box(1.62, 0.26, 1.5, 0, 0.30, -0.1), c: r.kart },
-    { g: box(1.2, 0.30, 0.5, 0, 0.66, 0.95), c: r.trim },        // nose cone
-    { g: box(1.34, 0.20, 0.8, 0, 0.70, -0.75), c: r.trim },      // engine deck
-    { g: box(0.9, 0.34, 0.5, 0, 0.90, -0.95), c: 0x3a3f4a },     // engine block
-    { g: cyl(0.12, 0.14, 0.7, 7, 'z', 0.34, 1.02, -1.25), c: 0xb8bcc4 },  // pipes
-    { g: cyl(0.12, 0.14, 0.7, 7, 'z', -0.34, 1.02, -1.25), c: 0xb8bcc4 },
-    { g: box(1.5, 0.12, 0.34, 0, 1.24, -1.05), c: r.trim },      // spoiler
-    { g: box(0.14, 0.34, 0.14, 0.62, 1.05, -1.05), c: r.kart },
-    { g: box(0.14, 0.34, 0.14, -0.62, 1.05, -1.05), c: r.kart },
-    { g: box(0.78, 0.5, 0.16, 0, 0.92, -0.34), c: r.kart },      // seat back
-    { g: cyl(0.22, 0.22, 0.07, 10, 'z', 0, 1.02, 0.5), c: 0x17223b },     // wheel
-    { g: box(0.07, 0.24, 0.07, 0, 0.88, 0.5), c: 0x3a3f4a },
+    // floor pan, a little wider than the tub and much darker, which is what
+    // gives the car a shadow line down its side instead of one flat slab
+    { g: box(1.72, 0.14, 2.5, 0, 0.26, -0.05), c: DARK },
+    { g: box(1.5, 0.1, 2.56, 0, 0.2, -0.05), c: INK },
+    // the tub, narrowing towards the nose
+    { g: taper(0.86, 1.34, 0.46, 0.34, 2.0, 0, 0.5, 0.18), c: r.kart },
+    { g: taper(0.7, 1.1, 0.16, 0.12, 2.0, 0, 0.74, 0.2), c: r.trim },   // top flash
+    // side pods, with a dark intake at the front of each
+    { g: taper(0.34, 0.5, 0.42, 0.3, 1.5, 0.66, 0.5, -0.1), c: r.kart },
+    { g: taper(0.34, 0.5, 0.42, 0.3, 1.5, -0.66, 0.5, -0.1), c: r.kart },
+    { g: box(0.3, 0.26, 0.1, 0.66, 0.52, 0.66), c: INK },
+    { g: box(0.3, 0.26, 0.1, -0.66, 0.52, 0.66), c: INK },
+    // nose, pointed, on a wing with endplates
+    { g: taper(0.2, 0.8, 0.28, 0.14, 0.9, 0, 0.52, 1.5), c: r.trim },
+    { g: box(1.66, 0.08, 0.42, 0, 0.32, 1.72), c: r.trim },
+    { g: box(0.06, 0.2, 0.42, 0.82, 0.4, 1.72), c: r.kart },
+    { g: box(0.06, 0.2, 0.42, -0.82, 0.4, 1.72), c: r.kart },
+    // cockpit surround and the seat behind it
+    { g: box(0.9, 0.16, 0.12, 0, 0.8, 0.62), c: DARK },
+    { g: box(0.82, 0.52, 0.14, 0, 0.94, -0.36), c: r.kart },
+    { g: box(0.56, 0.2, 0.22, 0, 1.24, -0.44), c: DARK },               // headrest
+    // roll hoop over the driver's shoulders
+    { g: cyl(0.07, 0.07, 0.56, 7, 'y', 0.34, 1.12, -0.5), c: STEEL },
+    { g: cyl(0.07, 0.07, 0.56, 7, 'y', -0.34, 1.12, -0.5), c: STEEL },
+    { g: cyl(0.07, 0.07, 0.72, 7, 'x', 0, 1.38, -0.5), c: STEEL },
+    // engine cover, exhausts, and the gearbox behind them
+    { g: taper(0.74, 0.5, 0.44, 0.5, 0.9, 0, 0.78, -0.95), c: r.kart },
+    { g: box(0.62, 0.3, 0.3, 0, 0.72, -1.3), c: DARK },
+    { g: cyl(0.1, 0.12, 0.66, 7, 'z', 0.26, 0.95, -1.34), c: STEEL },
+    { g: cyl(0.1, 0.12, 0.66, 7, 'z', -0.26, 0.95, -1.34), c: STEEL },
+    // rear wing: a plane on two pylons, with endplates standing off it
+    { g: box(0.1, 0.42, 0.24, 0.24, 1.14, -1.2), c: DARK },
+    { g: box(0.1, 0.42, 0.24, -0.24, 1.14, -1.2), c: DARK },
+    { g: box(1.44, 0.09, 0.4, 0, 1.38, -1.24), c: r.trim },
+    { g: box(1.3, 0.06, 0.22, 0, 1.24, -1.34), c: r.trim },             // lower element
+    { g: box(0.07, 0.42, 0.52, 0.72, 1.24, -1.26), c: r.kart },
+    { g: box(0.07, 0.42, 0.52, -0.72, 1.24, -1.26), c: r.kart },
+    // mirrors, because a car with none reads as a toy
+    { g: box(0.16, 0.1, 0.08, 0.5, 0.86, 0.52), c: DARK },
+    { g: box(0.16, 0.1, 0.08, -0.5, 0.86, 0.52), c: DARK },
+    // the steering wheel, and the column it sits on
+    { g: cyl(0.2, 0.2, 0.06, 12, 'z', 0, 1.0, 0.52), c: INK },
+    { g: cyl(0.06, 0.06, 0.3, 6, 'z', 0, 0.92, 0.66), c: DARK },
   ];
 
   // the driver: big head, small body, hands on the wheel
@@ -116,17 +184,46 @@ export function makeKart(who) {
   for (const [sx, sz, steers] of [[-1, 1, true], [1, 1, true], [-1, -1, false], [1, -1, false]]) {
     const hub = new THREE.Group();
     hub.position.set(sx * WX, 0.38, -sz * WZ);
+    /* A tyre with a rim in it and spokes across the rim, which is the one place
+       on a kart you actually look at when it is standing still on the grid. The
+       sidewall is a slightly larger dark disc so the tread reads as tread. */
+    /* An alloy with five holes in it rather than five spokes on it: the rim is
+       one disc standing proud of the sidewall, and the holes are dark plugs
+       standing proud of the rim. Spokes laid inside the tyre were invisible,
+       which is the trouble with modelling the gaps instead of the metal. */
+    const rimC = r.trim, holes = [];
+    for (let n = 0; n < 5; n++) {
+      const a = (n / 5) * Math.PI * 2;
+      const b = new THREE.CylinderGeometry(0.062, 0.062, 0.06, 7).toNonIndexed();
+      b.rotateZ(Math.PI / 2);
+      b.translate(0.2, Math.sin(a) * 0.17, Math.cos(a) * 0.17);
+      holes.push({ g: b, c: 0x1d2430 });
+      const c = b.clone(); c.translate(-0.4, 0, 0);
+      holes.push({ g: c, c: 0x1d2430 });
+    }
     const m = merge([
-      { g: cyl(0.38, 0.38, 0.34, 12, 'x', 0, 0, 0), c: 0x17223b },
-      { g: cyl(0.2, 0.2, 0.36, 8, 'x', 0, 0, 0), c: 0xfff6e2 },
-    ], TYRE_MAT);
+      { g: cyl(0.41, 0.41, 0.34, 16, 'x', 0, 0, 0), c: 0x1d2430 },      // tread
+      { g: cyl(0.37, 0.37, 0.36, 16, 'x', 0, 0, 0), c: 0x2a3140 },      // sidewall
+      { g: cyl(0.29, 0.29, 0.38, 12, 'x', 0, 0, 0), c: rimC },          // rim face
+      { g: cyl(0.1, 0.1, 0.42, 8, 'x', 0, 0, 0), c: 0xb8bcc4 },         // hub nut
+    ].concat(holes), TYRE_MAT);
     hub.add(m);
     body.add(hub);
     wheels.push({ hub, spin: m, steers });
   }
 
+  // the contact patch, which lives outside the body group so it stays flat on
+  // the road while the car above it leans, pitches and tumbles
+  const shade = new THREE.Mesh(SHADOW_GEO, new THREE.MeshBasicMaterial({
+    map: SHADOW_TEX, transparent: true, depthWrite: false, opacity: 0.85,
+  }));
+  /* No renderOrder games here. A transparent mesh forced to draw before the
+     opaque world is a transparent mesh the road then paints straight over,
+     which is exactly what happened: the patch was there and invisible. */
+  group.add(shade);
+
   const kart = {
-    who: r, group, body, wheels,
+    who: r, group, body, wheels, shade,
     pos: new THREE.Vector3(), yaw: 0, speed: 0,
     drift: 0,            // -1 left, 1 right, 0 none
     driftT: 0, slide: 0, hop: 0, hopV: 0,
@@ -173,6 +270,18 @@ export function apply(k) {
     k.group.position.y += Math.sin(t * 53) * 0.05 * (k.shake || 0);
   }
   if (k.shake > 0) k.shake = Math.max(0, k.shake - 0.06);
+  /* The contact patch stays on the road and shrinks with height, which is what
+     tells you how far up you are: the car itself gives you nothing to judge it
+     against once the horizon has gone. */
+  if (k.shade) {
+    const up = Math.max(0, k.hop);
+    k.shade.position.set(0, 0.03 - k.hop, 0);
+    k.shade.rotation.y = -k.group.rotation.y;             // square to the world
+    const f = 1 / (1 + up * 0.5);
+    k.shade.scale.set(f, 1, f);
+    k.shade.material.opacity = 0.85 * f * f;
+    k.shade.visible = up < 9;
+  }
   k.body.rotation.z = k.lean;
   // nose up on the way up, nose down on the way down
   k.body.rotation.x = -k.speed * 0.0012 + k.pitch;
