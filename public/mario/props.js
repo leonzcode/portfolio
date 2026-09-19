@@ -22,7 +22,7 @@ const SCALE = {
   grandStandCovered: 9, grandStand: 9,
   bannerTowerRed: 7, bannerTowerGreen: 7,
   barrierRed: 9, barrierWhite: 9,
-  pylon: 6, treeLarge: 6, treeSmall: 6,
+  treeLarge: 6, treeSmall: 6,
   tentLong: 7, tent: 7,
   lightPostModern: 9, flagCheckers: 7,
 };
@@ -162,7 +162,9 @@ export async function buildProps(scene, THREE, track) {
       if (Math.abs(pr.lateral) >= pr.wall) hi = mid; else lo = mid;
     }
     const p = a.p.clone().addScaledVector(a.n, sgn * hi);
-    p.y = track.groundY(p.x, p.z);
+    // on the road surface, which leans on a banked corner: standing them on the
+    // field left the barrier below the tarmac on every bend
+    p.y = track.project(p.x, p.z, i).y;
     return p;
   }
 
@@ -185,7 +187,9 @@ export async function buildProps(scene, THREE, track) {
       while (next <= walked + seg) {
         const at = next - walked;
         const pos = new THREE.Vector3(from.x + dx * at, 0, from.z + dz * at);
-        pos.y = track.groundY(pos.x, pos.z);
+        // on the road, like the ring points it sits between: asking the ground
+        // here put the barrier back under the tarmac on every banked corner
+        pos.y = track.project(pos.x, pos.z, null).y;
         (n++ % 2 ? red : white).push({ pos, yaw });
         next += STEP;
       }
@@ -275,17 +279,6 @@ export async function buildProps(scene, THREE, track) {
   }
   put('bannerTowerRed', towersR);
   put('bannerTowerGreen', towersG);
-
-  /* ---- cones on the inside of the tight corners -------------------------- */
-  const cones = [];
-  for (let s = 0; s < L; s += 4) {
-    const a = track.at(s), b = track.at((s + 22) % L);
-    const turn = Math.atan2(a.t.x * b.t.z - a.t.z * b.t.x, a.t.x * b.t.x + a.t.z * b.t.z);
-    if (Math.abs(turn) < 0.5) continue;            // only where it actually bends
-    const inner = turn > 0 ? 1 : -1;
-    cones.push({ pos: side(a, inner * (a.w + 1.1)), yaw: withRoad(a) });
-  }
-  put('pylon', cones);
 
   /* ---- trees, close enough to flick past --------------------------------- */
   const big = [], small = [];

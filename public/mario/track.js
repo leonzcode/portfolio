@@ -35,11 +35,12 @@ const CP = [
 
 const STEP = 2.2;                 // metres between samples
 const KERB = 1.5;                 // kerb strip, just outside the tarmac
-// The wall stands on the outside edge of the kerb, so the barrier is the next
-// thing after the red and white and there is no strip of grass between them to
-// drive along. props.js finds this line by asking project where it is, so the
-// barriers follow it wherever it goes.
-const SHOULDER = KERB;
+// The wall stands on the edge of the tarmac itself, so the barrier is on the
+// road rather than beside it, and the red and white is the outer strip of the
+// road rather than a verge past the end of it. props.js finds this line by
+// asking project where it is, so the barriers follow it wherever it goes,
+// camber and all.
+const SHOULDER = 0;
 
 function hill(x, z) {
   // gentle ground, so the circuit rolls rather than sitting on a table
@@ -54,13 +55,19 @@ function hill(x, z) {
 const basins = [];
 export function groundY(x, z) {
   const rim = Math.max(0, (Math.max(Math.abs(x), Math.abs(z)) - 210) / 240);
-  let y = hill(x, z) + rim * rim * 46;
+  const y = hill(x, z) + rim * rim * 46;
+  // The deepest hollow that reaches here, not the sum of them. Adding them up
+  // meant a dozen overlapping basins along the channel dug a seventeen metre pit
+  // instead of the three metre one each of them asked for.
+  let dig = 0;
   for (let i = 0; i < basins.length; i++) {
     const b = basins[i];
     const d = Math.hypot(x - b.x, z - b.z);
-    if (d < b.r) y -= b.drop * (0.5 + 0.5 * Math.cos(Math.PI * d / b.r));
+    if (d >= b.r) continue;
+    const cut = b.drop * (0.5 + 0.5 * Math.cos(Math.PI * d / b.r));
+    if (cut > dig) dig = cut;
   }
-  return y;
+  return y - dig;
 }
 
 function canvasTex(w, h, draw, rep) {
@@ -157,25 +164,9 @@ function sampleLoop() {
     let sum = 0;
     for (let d = -8; d <= 8; d++) sum += out[(i + d + M) % M].turn;
     // negative, because the outside of the bend is the side away from the turn
-    out[i].bend = sum / 17;                    // the smoothed bend, kept for the sand
+    out[i].bend = sum / 17;
     out[i].bank = Math.max(-0.08, Math.min(0.08, -out[i].bend * 0.62));
   }
-  /* Sand on the outside of the sharpest bends. With the wall on the kerb there
-     is no run-off left to put it in, so it goes where running wide actually
-     takes you: the outer strip of the tarmac itself.
-
-     Which bends count comes from the circuit rather than a number picked in
-     advance. This lap is mostly corners, so any fixed threshold on the camber
-     either catches all of them or none; taking the sharpest sixth by curvature
-     gives a handful of bends whatever shape the circuit is. */
-  const sorted = out.map(a => Math.abs(a.bend)).sort((p, q) => q - p);
-  const cut = sorted[Math.floor(sorted.length * 0.16)];
-  for (let i = 0; i < M; i++) {
-    const a = out[i];
-    if (Math.abs(a.bend) < cut) continue;
-    a.sand = a.bank > 0 ? 1 : -1;          // the high side is the outside
-  }
-
   // the start straight stays flat, so the line, the gantry and the grid all sit
   // where they are drawn
   const FLAT = 26;
@@ -189,9 +180,11 @@ function sampleLoop() {
   // the lip is where game.js throws it into the air.
   const ramps = [];
   for (const at of [0.235, 0.615]) {
-    // short and steep: the launch comes from how fast the road is climbing when
-    // it stops climbing, so a long gentle rise throws nobody anywhere
-    const i0 = Math.floor(at * M), len = 4, rise = 2.7;
+    /* The height of the jump is (v sin th)^2 / 2G, so a quarter of the height
+       wants half the launch speed and half the launch speed wants half the ramp
+       angle. 1.1m over four samples is about ten degrees, which throws a kart at
+       racing speed a bit under a metre. */
+    const i0 = Math.floor(at * M), len = 4, rise = 1.1;
     for (let k = 0; k < len; k++) {
       const i = (i0 + k) % M;
       const f = k / (len - 1);
@@ -211,7 +204,9 @@ function sampleLoop() {
   // the tube and the sheet are all built square to the road, and a flat section
   // on the circuit's best corner is a corner thrown away.
   const features = [
-    { kind: 'bridge', at: 0.06, len: 26, rise: 6.5 },
+    // long and gentle, because a bridge is a bridge: at this slope the crest
+    // does not reach the launch threshold and nobody is thrown off it
+    { kind: 'bridge', at: 0.06, len: 34, rise: 4.5 },
     { kind: 'tunnel', at: 0.44, len: 30 },
     { kind: 'water', at: 0.83, len: 34, drop: 3.1 },
   ];
@@ -281,12 +276,11 @@ export function buildTrack(scene) {
     l.y = surf(a, a.w); r.y = surf(a, -a.w);           // the lean of the corner
     pos.push(l.x, l.y + 0.06, l.z, r.x, r.y + 0.06, r.z);
     uv.push(0, a.s / 9, 1, a.s / 9);
-    // kerbs, one strip either side
-    // the kerb carries the lean back down to the grass, so nothing hangs in the air
-    const lo = a.p.clone().addScaledVector(a.n, a.w + KERB);
-    const ro = a.p.clone().addScaledVector(a.n, -(a.w + KERB));
-    lo.y = groundY(lo.x, lo.z); ro.y = groundY(ro.x, ro.z);
-    kpos.push(l.x, l.y + 0.05, l.z, lo.x, lo.y + 0.05, lo.z, r.x, r.y + 0.05, r.z, ro.x, ro.y + 0.05, ro.z);
+    // The kerb is the outer strip of the road now, not a verge outside it, so it
+    // lies on the tarmac and leans with it.
+    const lo = a.p.clone().addScaledVector(a.n, a.w - KERB).setY(surf(a, a.w - KERB));
+    const ro = a.p.clone().addScaledVector(a.n, -(a.w - KERB)).setY(surf(a, -(a.w - KERB)));
+    kpos.push(l.x, l.y + 0.07, l.z, lo.x, lo.y + 0.07, lo.z, r.x, r.y + 0.07, r.z, ro.x, ro.y + 0.07, ro.z);
     kuv.push(0, a.s / 3.2, 1, a.s / 3.2, 0, a.s / 3.2, 1, a.s / 3.2);
   }
   for (let i = 0; i < N; i++) {
@@ -309,31 +303,6 @@ export function buildTrack(scene) {
     g.fillStyle = '#e8402a'; g.fillRect(0, 0, W, H);
     g.fillStyle = '#fff6e2'; g.fillRect(0, 0, W, H / 2);
   }, [1, 1]);
-  /* the sand, a strip laid on the outer third of the steep bends */
-  const sp = [], su = [], si = [];
-  let sn = 0;
-  for (let i = 0; i < N; i++) {
-    const a = samples[i], j = (i + 1) % N, b2 = samples[j];
-    if (!a.sand || !b2.sand || a.sand !== b2.sand) continue;
-    const put = (q, lo, hi) => {
-      const l = q.p.clone().addScaledVector(q.n, q.sand * q.w * lo);
-      const r = q.p.clone().addScaledVector(q.n, q.sand * q.w * hi);
-      sp.push(l.x, surf(q, q.sand * q.w * lo) + 0.075, l.z, r.x, surf(q, q.sand * q.w * hi) + 0.075, r.z);
-      su.push(0, q.s / 5, 1, q.s / 5);
-    };
-    put(a, 0.58, 1); put(b2, 0.58, 1);
-    const base = sn * 4;
-    si.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
-    sn++;
-  }
-  if (sn) {
-    const sand = new THREE.Mesh(ribbon(sp, su, si), new THREE.MeshStandardMaterial({
-      color: 0xd9c08a, roughness: 1,
-    }));
-    sand.receiveShadow = true;
-    group.add(sand);
-  }
-
   const kerb = new THREE.Mesh(ribbon(kpos, kuv, kidx),
     new THREE.MeshStandardMaterial({ map: kerbTex, roughness: 0.7 }));
   kerb.receiveShadow = true;
@@ -512,26 +481,23 @@ export function buildTrack(scene) {
   const brnd = () => { bs = (bs * 1103515245 + 12345) & 0x7fffffff; return bs / 0x7fffffff; };
 
   const itemBoxes = [];
-  // A row in the air over each jump, about where a kart is at the top of its
-  // arc, so the jump is worth taking for more than the jump. A row sitting just
-  // past the lip is one you fly straight over.
-  for (const r of ramps) {
-    const i = (r.i + 6) % N;
-    const a = samples[i];
-    for (const off of [-0.5, 0, 0.5]) {
-      const p = a.p.clone().addScaledVector(a.n, off * a.w);
-      itemBoxes.push({ pos: p.clone().setY(surf(a, off * a.w) + 2.3), i, taken: 0 });
-    }
-  }
-  // and the rest scattered round the lap
-  for (let k = 0; k < 5; k++) {
-    const i = Math.floor(((0.13 + k * 0.17 + brnd() * 0.05) % 1) * N);
+  // Nowhere near the ramps. A row before one is a row you are looking past, a
+  // row after it is a row you fly over, and a row on it is a row you cannot
+  // steer for. Boxes belong where you can actually go and get them.
+  const nearRamp = i => ramps.some(r => {
+    const d = Math.abs(((i - r.i + N) % N + N / 2) % N - N / 2);
+    return d < 14;
+  });
+  for (let k = 0; k < 7; k++) {
+    let i = Math.floor(((0.1 + k * 0.128 + brnd() * 0.04) % 1) * N);
+    for (let n = 0; n < N && nearRamp(i); n++) i = (i + 5) % N;
     const a = samples[i];
     for (const off of [-0.55, 0, 0.55]) {
       const p = a.p.clone().addScaledVector(a.n, off * a.w);
       itemBoxes.push({ pos: p.clone().setY(surf(a, off * a.w) + 1.35), i, taken: 0 });
     }
   }
+
   // twice as many as there were, spread round the lap and set off to one side or
   // the other so taking one is a line you have to choose rather than a gift
   const boostPads = [];
@@ -548,14 +514,6 @@ export function buildTrack(scene) {
     boostPads.push({ pos: a.p.clone().setY(surf(a, 0)), i: (r.i - 3 + N) % N, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.8, ramp: true });
   }
 
-  const coins = [];
-  for (let k = 0; k < 60; k++) {
-    const i = Math.floor((k / 60) * N + 7) % N;
-    const a = samples[i];
-    const off = Math.sin(k * 1.7) * 0.5;
-    const p = a.p.clone().addScaledVector(a.n, off * a.w);
-    coins.push({ pos: p.clone().setY(surf(a, off * a.w) + 0.75), i, taken: 0 });
-  }
 
   /* their meshes */
   /* The boxes: a blue crystal with a question mark on every face and a brighter
@@ -595,13 +553,6 @@ export function buildTrack(scene) {
   coreMesh.frustumCulled = false;
   group.add(coreMesh);
 
-  const coinGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.11, 14);
-  coinGeo.rotateX(Math.PI / 2);
-  const coinMesh = new THREE.InstancedMesh(coinGeo,
-    new THREE.MeshStandardMaterial({ color: 0xffd233, emissive: 0xffb300, emissiveIntensity: 0.35, roughness: 0.35, metalness: 0.4 }),
-    coins.length);
-  coinMesh.frustumCulled = false;
-  group.add(coinMesh);
 
   const padTex = canvasTex(128, 128, (g, W, H) => {
     g.fillStyle = '#ff8a1f'; g.fillRect(0, 0, W, H);
@@ -689,11 +640,11 @@ export function buildTrack(scene) {
     return {
       i: best, s: a.s + along, lateral, half: a.w,
       onRoad: Math.abs(lateral) <= a.w + 0.4,
-      onKerb: Math.abs(lateral) > a.w + 0.4 && Math.abs(lateral) <= a.w + KERB,
+      // the red and white is the outer strip of the road, so riding it is riding
+      // the edge rather than being off the track
+      onKerb: Math.abs(lateral) > a.w - KERB && Math.abs(lateral) <= a.w + 0.4,
       wall: a.w + SHOULDER,
       y, bank, t: a.t, n: a.n,
-      // the outer strip of a steep bend is sand, and sand is not for driving on
-      sand: !!a.sand && Math.abs(lateral) > a.w * 0.58 && Math.sign(lateral) === a.sand,
       // how steeply the road is climbing here, which is what throws a car
       slope: (nb.p.y - a.p.y) / (Math.abs(nb.s - a.s) || 1),
       // the surface above you, when there is one
@@ -706,7 +657,7 @@ export function buildTrack(scene) {
     group, samples, length, ramps, features, project, at, gridSlot, groundY,
     // how far past the tarmac the wall is, so the barriers can stand on it
     shoulder: SHOULDER,
-    itemBoxes, boostPads, coins, boxMesh, coreMesh, coinMesh,
+    itemBoxes, boostPads, boxMesh, coreMesh,
     // the ribbon, in a form the minimap can draw cheaply
     outline: samples.filter((_, i) => i % 3 === 0).map(a => [a.p.x, a.p.z]),
     bounds: samples.reduce((b, a) => ({
