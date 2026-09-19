@@ -57,6 +57,18 @@ export const ITEMS = {
     name: 'Star', self: true,
     face: svg('<path d="M32 6 L40 26 L62 26 L44 39 L51 59 L32 46 L13 59 L20 39 L2 26 L24 26 Z" fill="#ffd233" ' + K + '/>'),
   },
+  plant: {
+    /* The rare one. It rides on the nose for a few seconds and bites whatever
+       comes near: a kart gets spun, a banana or an oil slick gets eaten, and
+       every bite drags you forward a little. Nothing to aim and nothing to
+       throw, which is the point of it - it is the item you use by driving at
+       people. */
+    name: 'Snapper', self: true,
+    face: svg('<path d="M30 54 h10 v-16 h-10 z" fill="#2f9440" ' + K + '/>'
+            + '<path d="M18 30 q0 -16 17 -16 q17 0 17 16 q0 4 -3 6 q-14 -6 -28 0 q-3 -2 -3 -6 z" fill="#e8402a" ' + K + '/>'
+            + '<path d="M18 34 q0 14 17 14 q17 0 17 -14 q-14 7 -34 0 z" fill="#c9302a" ' + K + '/>'
+            + '<path d="M24 34 l4 6 l4 -6 l4 6 l4 -6" fill="none" stroke="#fff6e2" stroke-width="3"/>'),
+  },
   surge: {
     name: 'Surge', self: true,
     face: svg('<path d="M36 4 L14 34 H28 L22 60 L50 26 H34 Z" fill="#8fd3ff" ' + K + '/>'),
@@ -68,11 +80,11 @@ const TABLE = [
   // place 1st
   [['peel', 6], ['slick', 4], ['bolt', 3], ['turbo', 2]],
   [['peel', 5], ['slick', 3], ['bolt', 4], ['turbo', 3], ['seeker', 1]],
-  [['peel', 3], ['bolt', 3], ['turbo', 4], ['seeker', 3], ['slick', 2], ['bomb', 1], ['oil', 1]],
-  [['peel', 2], ['turbo', 4], ['seeker', 4], ['bomb', 2], ['bolt', 2], ['star', 1], ['oil', 2]],
-  [['turbo', 3], ['seeker', 4], ['bomb', 2], ['star', 2], ['surge', 2], ['oil', 2]],
+  [['peel', 3], ['bolt', 3], ['turbo', 4], ['seeker', 3], ['slick', 2], ['bomb', 1], ['oil', 1], ['plant', 1]],
+  [['peel', 2], ['turbo', 4], ['seeker', 4], ['bomb', 2], ['bolt', 2], ['star', 1], ['oil', 2], ['plant', 2]],
+  [['turbo', 3], ['seeker', 4], ['bomb', 2], ['star', 2], ['surge', 2], ['oil', 2], ['plant', 2]],
   // last rows
-  [['turbo', 3], ['seeker', 3], ['star', 3], ['surge', 3], ['bomb', 2], ['oil', 2]],
+  [['turbo', 3], ['seeker', 3], ['star', 3], ['surge', 3], ['bomb', 2], ['oil', 2], ['plant', 2]],
 ];
 
 /* Where you are in the order decides the row; where you are racing bends it.
@@ -261,7 +273,18 @@ export function makeItemWorld(scene, track, fx) {
     live.length = 0; hazards.length = 0;
   }
 
-  return { spawn, step, clear, live, hazards };
+  /* Something took one off the road. The Snapper is the only thing that does
+     this, and it is worth having: it is the one item that clears a line rather
+     than adding to it. */
+  function eat(h) {
+    const i = hazards.indexOf(h);
+    if (i < 0) return false;
+    scene.remove(h.g);
+    hazards.splice(i, 1);
+    return true;
+  }
+
+  return { spawn, step, clear, live, hazards, eat };
 }
 
 export function lapProg(k, track) {
