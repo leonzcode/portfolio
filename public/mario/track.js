@@ -157,8 +157,25 @@ function sampleLoop() {
     let sum = 0;
     for (let d = -8; d <= 8; d++) sum += out[(i + d + M) % M].turn;
     // negative, because the outside of the bend is the side away from the turn
-    out[i].bank = Math.max(-0.08, Math.min(0.08, -(sum / 17) * 1.7));
+    out[i].bend = sum / 17;                    // the smoothed bend, kept for the sand
+    out[i].bank = Math.max(-0.08, Math.min(0.08, -out[i].bend * 0.62));
   }
+  /* Sand on the outside of the sharpest bends. With the wall on the kerb there
+     is no run-off left to put it in, so it goes where running wide actually
+     takes you: the outer strip of the tarmac itself.
+
+     Which bends count comes from the circuit rather than a number picked in
+     advance. This lap is mostly corners, so any fixed threshold on the camber
+     either catches all of them or none; taking the sharpest sixth by curvature
+     gives a handful of bends whatever shape the circuit is. */
+  const sorted = out.map(a => Math.abs(a.bend)).sort((p, q) => q - p);
+  const cut = sorted[Math.floor(sorted.length * 0.16)];
+  for (let i = 0; i < M; i++) {
+    const a = out[i];
+    if (Math.abs(a.bend) < cut) continue;
+    a.sand = a.bank > 0 ? 1 : -1;          // the high side is the outside
+  }
+
   // the start straight stays flat, so the line, the gantry and the grid all sit
   // where they are drawn
   const FLAT = 26;
@@ -172,7 +189,9 @@ function sampleLoop() {
   // the lip is where game.js throws it into the air.
   const ramps = [];
   for (const at of [0.235, 0.615]) {
-    const i0 = Math.floor(at * M), len = 6, rise = 1.7;
+    // short and steep: the launch comes from how fast the road is climbing when
+    // it stops climbing, so a long gentle rise throws nobody anywhere
+    const i0 = Math.floor(at * M), len = 4, rise = 2.7;
     for (let k = 0; k < len; k++) {
       const i = (i0 + k) % M;
       const f = k / (len - 1);
@@ -290,6 +309,31 @@ export function buildTrack(scene) {
     g.fillStyle = '#e8402a'; g.fillRect(0, 0, W, H);
     g.fillStyle = '#fff6e2'; g.fillRect(0, 0, W, H / 2);
   }, [1, 1]);
+  /* the sand, a strip laid on the outer third of the steep bends */
+  const sp = [], su = [], si = [];
+  let sn = 0;
+  for (let i = 0; i < N; i++) {
+    const a = samples[i], j = (i + 1) % N, b2 = samples[j];
+    if (!a.sand || !b2.sand || a.sand !== b2.sand) continue;
+    const put = (q, lo, hi) => {
+      const l = q.p.clone().addScaledVector(q.n, q.sand * q.w * lo);
+      const r = q.p.clone().addScaledVector(q.n, q.sand * q.w * hi);
+      sp.push(l.x, surf(q, q.sand * q.w * lo) + 0.075, l.z, r.x, surf(q, q.sand * q.w * hi) + 0.075, r.z);
+      su.push(0, q.s / 5, 1, q.s / 5);
+    };
+    put(a, 0.58, 1); put(b2, 0.58, 1);
+    const base = sn * 4;
+    si.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    sn++;
+  }
+  if (sn) {
+    const sand = new THREE.Mesh(ribbon(sp, su, si), new THREE.MeshStandardMaterial({
+      color: 0xd9c08a, roughness: 1,
+    }));
+    sand.receiveShadow = true;
+    group.add(sand);
+  }
+
   const kerb = new THREE.Mesh(ribbon(kpos, kuv, kidx),
     new THREE.MeshStandardMaterial({ map: kerbTex, roughness: 0.7 }));
   kerb.receiveShadow = true;
@@ -464,20 +508,39 @@ export function buildTrack(scene) {
   }
 
   /* ---- things on the road ------------------------------------------------- */
+  let bs = 991;
+  const brnd = () => { bs = (bs * 1103515245 + 12345) & 0x7fffffff; return bs / 0x7fffffff; };
+
   const itemBoxes = [];
-  for (const at of [0.17, 0.42, 0.63, 0.86]) {
-    const i = Math.floor(at * N);
+  // A row in the air over each jump, about where a kart is at the top of its
+  // arc, so the jump is worth taking for more than the jump. A row sitting just
+  // past the lip is one you fly straight over.
+  for (const r of ramps) {
+    const i = (r.i + 6) % N;
+    const a = samples[i];
+    for (const off of [-0.5, 0, 0.5]) {
+      const p = a.p.clone().addScaledVector(a.n, off * a.w);
+      itemBoxes.push({ pos: p.clone().setY(surf(a, off * a.w) + 2.3), i, taken: 0 });
+    }
+  }
+  // and the rest scattered round the lap
+  for (let k = 0; k < 5; k++) {
+    const i = Math.floor(((0.13 + k * 0.17 + brnd() * 0.05) % 1) * N);
     const a = samples[i];
     for (const off of [-0.55, 0, 0.55]) {
       const p = a.p.clone().addScaledVector(a.n, off * a.w);
       itemBoxes.push({ pos: p.clone().setY(surf(a, off * a.w) + 1.35), i, taken: 0 });
     }
   }
+  // twice as many as there were, spread round the lap and set off to one side or
+  // the other so taking one is a line you have to choose rather than a gift
   const boostPads = [];
-  for (const at of [0.08, 0.53, 0.75]) {
-    const i = Math.floor(at * N);
+  for (let k = 0; k < 6; k++) {
+    const i = Math.floor(((0.07 + k * 0.161 + brnd() * 0.04) % 1) * N);
     const a = samples[i];
-    boostPads.push({ pos: a.p.clone().setY(surf(a, 0)), i, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.5 });
+    const off = (brnd() * 1.1 - 0.55) * a.w;
+    const p = a.p.clone().addScaledVector(a.n, off);
+    boostPads.push({ pos: p.clone().setY(surf(a, off)), i, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.34 });
   }
   // a booster on the run up to each ramp, so you are thrown further for taking it
   for (const r of ramps) {
@@ -600,6 +663,10 @@ export function buildTrack(scene) {
       onKerb: Math.abs(lateral) > a.w + 0.4 && Math.abs(lateral) <= a.w + KERB,
       wall: a.w + SHOULDER,
       y, bank, t: a.t, n: a.n,
+      // the outer strip of a steep bend is sand, and sand is not for driving on
+      sand: !!a.sand && Math.abs(lateral) > a.w * 0.58 && Math.sign(lateral) === a.sand,
+      // how steeply the road is climbing here, which is what throws a car
+      slope: (nb.p.y - a.p.y) / (Math.abs(nb.s - a.s) || 1),
       // the surface above you, when there is one
       waterY: a.waterY === undefined ? null : a.waterY,
       tunnel: !!a.tunnel,
