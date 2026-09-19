@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=4';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=4';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=4';
-import { makeBrain, driveBrain } from './ai.js?v=4';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=4';
-import * as snd from './audio.js?v=4';
+import { buildTrack } from './track.js?v=5';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=5';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=5';
+import { makeBrain, driveBrain } from './ai.js?v=5';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=5';
+import * as snd from './audio.js?v=5';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -104,18 +104,47 @@ try {
 } catch (e) {}
 
 /* ------------------------------------------------------------------- input -- */
+// Every action carries its own keys so the pause menu can change them. Esc is
+// not in here on purpose: it is the way back out of a menu you have just bound
+// yourself out of.
+const BINDS = {
+  gas:   { name: 'Accelerate',    keys: ['arrowup', 'w'] },
+  brake: { name: 'Brake',         keys: ['arrowdown', 's'] },
+  left:  { name: 'Steer left',    keys: ['arrowleft', 'a'] },
+  right: { name: 'Steer right',   keys: ['arrowright', 'd'] },
+  hop:   { name: 'Hop and drift', keys: [' ', 'shift'] },
+  item:  { name: 'Use item',      keys: ['e'] },
+  view:  { name: 'Change view',   keys: ['q'] },
+  look:  { name: 'Look behind',   keys: ['r'] },
+  chat:  { name: 'Chat',          keys: ['t'] },
+  mute:  { name: 'Mute',          keys: ['m'] },
+};
+let bind = {};
+function bindDefaults() { for (const a in BINDS) bind[a] = BINDS[a].keys.slice(); }
+bindDefaults();
+try {
+  const saved = JSON.parse(localStorage.getItem('mkBinds') || 'null');
+  if (saved) for (const a in bind) if (Array.isArray(saved[a])) bind[a] = saved[a].slice(0, 2);
+} catch (e) {}
+function bindSave() { try { localStorage.setItem('mkBinds', JSON.stringify(bind)); } catch (e) {} }
+const down = a => bind[a].some(k => keys[k]);
+const hit = (a, k) => bind[a].indexOf(k) >= 0;
+const bound = k => { for (const a in bind) if (bind[a].indexOf(k) >= 0) return true; return false; };
+
 const keys = Object.create(null);
 const input = { gas: 0, brake: 0, steer: 0, hop: false };
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
+  if (waiting) { e.preventDefault(); bindTo(k); return; }
   if (chatting) { if (k === 'escape') closeChat(false); return; }
   keys[k] = true;
-  if (k === 't' && started) { openChat(); e.preventDefault(); }
-  if (k === 'e' && started) useItem(me);
-  if (k === 'q' && started) { camMode = (camMode + 1) % CAM.length; notice(CAM[camMode].name + ' view'); }
-  if (k === 'escape' && started) paused = !paused;
-  if (k === 'm' && started) { snd.mute(!snd.muted_()); notice(snd.muted_() ? 'Sound off' : 'Sound on'); }
-  if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) e.preventDefault();
+  if (k === 'escape' && started) { menu(!paused); e.preventDefault(); return; }
+  if (paused) return;                       // the menu has the keyboard while it is up
+  if (hit('chat', k) && started) { openChat(); e.preventDefault(); }
+  if (hit('item', k) && started) useItem(me);
+  if (hit('view', k) && started) { camMode = (camMode + 1) % CAM.length; notice(CAM[camMode].name + ' view'); }
+  if (hit('mute', k) && started) { snd.mute(!snd.muted_()); notice(snd.muted_() ? 'Sound off' : 'Sound on'); }
+  if (bound(k)) e.preventDefault();
 });
 addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
@@ -126,14 +155,13 @@ addEventListener('resize', () => {
 });
 
 function readInput() {
-  const left = keys['arrowleft'] || keys['a'];
-  const right = keys['arrowright'] || keys['d'];
-  input.gas = (keys['arrowup'] || keys['w']) ? 1 : 0;
-  input.brake = (keys['arrowdown'] || keys['s']) ? 1 : 0;
+  const left = down('left'), right = down('right');
+  input.gas = down('gas') ? 1 : 0;
+  input.brake = down('brake') ? 1 : 0;
   // a positive steer is a turn to the left in kart.js, which is the sign the
   // front wheels and the lean are already drawn from, so left is the +1 here
   input.steer = (left ? 1 : 0) - (right ? 1 : 0);
-  input.hop = !!(keys['shift'] || keys[' ']);
+  input.hop = down('hop');
   if (phase !== 'race' || spectating || !me || me.finished || paused) {
     // nobody moves before the lights; holding the throttle there is the rocket
     // start, and goRace() is where that gets paid out
@@ -143,6 +171,9 @@ function readInput() {
 }
 
 /* --------------------------------------------------------------- the field -- */
+// how much more top end the computer drivers get than you do
+const BOT_TOP = 1.75;
+
 function addKart(racer, opts) {
   const k = makeKart(racer);
   k.id = opts.id;
@@ -207,6 +238,7 @@ function startRound(field, seed) {
     for (let n = karts.length; n < GRID; n++) {
       const r = pool[(n - 1 + pool.length) % pool.length];
       const k = addKart(r, { id: 'bot' + n, name: r.name, bot: true });
+      k.topMul = BOT_TOP;
       brains.push(makeBrain(k, 0.52 + rnd() * 0.42, 99 + n * 17));
     }
   }
@@ -463,7 +495,7 @@ function stepCamera(dt) {
   const watch = spectating ? (order()[0] || me) : me;
   if (!watch) return;
   const c = CAM[camMode];
-  const back = keys['r'] ? -1 : 1;
+  const back = down('look') ? -1 : 1;
   // sit behind where the kart is going, not where it is pointing, so a drift
   // reads as the kart cocked across a view that still follows the road
   const yaw = watch.yaw + watch.slide * 0.35;
@@ -643,8 +675,9 @@ function setLights(t) {
   const c = el('count');
   c.classList.add('on');
   c.classList.remove('go');
-  const lit = t < 3 ? (t < 1 ? 3 : t < 2 ? 2 : 1) : 0;
-  [...c.querySelectorAll('.lights i')].forEach((i, n) => i.className = n < lit ? 'lit' : '');
+  // red, then red and amber, and the green only lands with the flag
+  const lit = t < 1.5 ? 2 : t < 3 ? 1 : 0;
+  [...c.querySelectorAll('.lights i')].forEach((i, n) => i.classList.toggle('lit', n < lit));
   if (lit !== litWas) { if (lit > 0 && lit > litWas) snd.beep(false); litWas = lit; }
 }
 function goRace() {
@@ -655,9 +688,11 @@ function goRace() {
   snd.music(true);
   const c = el('count');
   c.classList.add('go');
+  // the other two go out, the way a real one does
+  [...c.querySelectorAll('.lights i')].forEach((i, n) => i.classList.toggle('lit', n === 2));
   setTimeout(() => c.classList.remove('on'), 900);
   // a rocket start for anyone already on the throttle
-  if (me && !spectating && (keys['arrowup'] || keys['w'])) { me.boost = 1.1; notice('Rocket start!'); }
+  if (me && !spectating && down('gas')) { me.boost = 1.1; notice('Rocket start!'); }
   for (const b of brains) if (Math.random() < b.skill * 0.7) b.kart.boost = 0.8;
 }
 function endRace() {
@@ -747,7 +782,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=4');
+    const mod = await import('./net.js?v=5');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -791,6 +826,76 @@ el('online').addEventListener('click', () => start(true));
 frame();
 
 /* a handle, so a test can drive the whole thing without a keyboard */
+/* ------------------------------------------------------------- the menu ----- */
+// Esc stops the race and puts a card in front of it. Two pages: the short list
+// of things you can do, and the key table behind Controls.
+let waiting = null;                         // { action, slot } while a key is being caught
+function menu(on) {
+  paused = !!on;
+  waiting = null;
+  el('menu').classList.toggle('on', paused);
+  if (!paused) return;
+  menuPage('main');
+  el('vol').value = String(Math.round(snd.volume_() * 100));
+  el('voln').textContent = el('vol').value;
+  el('resume').focus();
+}
+function menuPage(which) {
+  el('menumain').hidden = which !== 'main';
+  el('menukeys').hidden = which !== 'keys';
+  if (which === 'keys') drawBinds();
+}
+const KEYNAME = { ' ': 'Space', arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→' };
+function keyName(k) {
+  if (KEYNAME[k]) return KEYNAME[k];
+  return k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1);
+}
+function drawBinds() {
+  el('bindrows').innerHTML = Object.keys(BINDS).map(a => {
+    const chips = [0, 1].map(i => {
+      const k = bind[a][i];
+      const now = waiting && waiting.action === a && waiting.slot === i;
+      const cls = now ? 'wait' : (k === undefined ? 'none' : '');
+      return '<button class="' + cls + '" data-a="' + a + '" data-i="' + i + '">'
+        + (now ? '…' : (k === undefined ? '+' : esc(keyName(k)))) + '</button>';
+    }).join('');
+    return '<div class="b"><span>' + BINDS[a].name + '</span><div class="ks">' + chips + '</div></div>';
+  }).join('');
+}
+function bindTo(k) {
+  const w = waiting;
+  waiting = null;
+  if (k === 'escape') { drawBinds(); return; }        // changed your mind
+  for (const a in bind) if (a !== w.action) bind[a] = bind[a].filter(x => x !== k);
+  const list = bind[w.action].slice();
+  list[w.slot] = k;
+  bind[w.action] = list.filter(x => x !== undefined && x !== null);
+  bindSave();
+  drawBinds();
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+el('resume').addEventListener('click', () => menu(false));
+el('tocontrols').addEventListener('click', () => menuPage('keys'));
+el('bindback').addEventListener('click', () => menuPage('main'));
+el('bindreset').addEventListener('click', () => { bindDefaults(); bindSave(); drawBinds(); });
+el('bindrows').addEventListener('click', e => {
+  const b = e.target.closest('button[data-a]');
+  if (!b) return;
+  waiting = { action: b.dataset.a, slot: +b.dataset.i };
+  drawBinds();
+});
+el('vol').addEventListener('input', () => {
+  const v = +el('vol').value;
+  el('voln').textContent = String(v);
+  snd.volume(v / 100);
+  if (snd.muted_()) snd.mute(false);           // reaching for the slider means you want sound
+  try { localStorage.setItem('mkVol', String(v)); } catch (e) {}
+});
+try {
+  const v = localStorage.getItem('mkVol');
+  if (v !== null) snd.volume(+v / 100);
+} catch (e) {}
+
 window.__mk = {
   get phase() { return phase; },
   get karts() { return karts; },
@@ -800,6 +905,9 @@ window.__mk = {
   get results() { return results; },
   get spectating() { return spectating; },
   get camera() { return camera; },
+  get paused() { return paused; },
+  get bind() { return bind; },
+  menu,
   get view() { return CAM[camMode].name; },
   get views() { return CAM.map(c => c.name); },
   get net() { return net; },

@@ -8,7 +8,7 @@
    ahead of the clock so it does not depend on the frame rate.
 --------------------------------------------------------------------------- */
 let ac = null, master = null, musicGain = null, noiseBuf = null;
-let eng = null, ready = false, muted = false;
+let eng = null, ready = false, muted = false, level = 0.5;
 
 function noise(sec) {
   const n = Math.floor(ac.sampleRate * sec);
@@ -24,7 +24,7 @@ export function start() {
   if (!AC) return false;
   ac = new AC();
   master = ac.createGain();
-  master.gain.value = 0.5;
+  master.gain.value = muted ? 0 : level;
   master.connect(ac.destination);
   musicGain = ac.createGain();
   musicGain.gain.value = 0.30;
@@ -45,7 +45,11 @@ export function start() {
   return true;
 }
 export function isOn() { return ready; }
-export function mute(v) { muted = v; if (ready) master.gain.value = v ? 0 : 0.5; }
+export function mute(v) { muted = v; if (ready) master.gain.value = v ? 0 : level; }
+// the menu's slider. It works before start() too, so the level is already right
+// on the first note rather than snapping down after it
+export function volume(v) { level = Math.max(0, Math.min(1, v)); if (ready && !muted) master.gain.value = level; return level; }
+export function volume_() { return level; }
 export function muted_() { return muted; }
 
 function tone(wave, hz, at, life, vol, dest) {

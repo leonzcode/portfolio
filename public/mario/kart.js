@@ -133,7 +133,7 @@ export function makeKart(who) {
     boost: 0, coins: 0, spin: 0, slow: 0, star: 0,
     lap: 1, cpi: 0, prog: 0, place: 1, finished: 0,
     item: null, itemN: 0, roulette: 0,
-    hint: 0, offroad: false, wheelSpin: 0, steerVis: 0, lean: 0,
+    hint: 0, offroad: false, wheelSpin: 0, steerVis: 0, lean: 0, topMul: 1,
   };
   apply(kart);
   return kart;
@@ -174,7 +174,8 @@ export const TUNE = {
 };
 
 export function topSpeed(k) {
-  let t = TUNE.top * (1 + k.coins * TUNE.coinTop);
+  // topMul is the computer drivers' handicap, 1 for anyone at a keyboard
+  let t = TUNE.top * (k.topMul || 1) * (1 + k.coins * TUNE.coinTop);
   if (k.boost > 0) t *= TUNE.boostTop;
   if (k.star > 0) t *= TUNE.starTop;
   if (k.offroad && k.star <= 0) t *= TUNE.offTop;

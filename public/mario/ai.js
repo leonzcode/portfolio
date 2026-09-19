@@ -9,7 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=4';
+import { ITEMS, lapProg } from './items.js?v=5';
+import { topSpeed } from './kart.js?v=5';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
@@ -61,7 +62,8 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
   // lift and drift for the tight stuff
   const bend = curveAhead(track, k.hint, Math.round(14 + k.speed * 0.8));
   const cap = 1 - Math.min(0.52, bend * 0.42) * (1.25 - br.skill * 0.45);
-  const wantSpeed = 30 * (0.72 + br.skill * 0.3) * cap;
+  // off its own top end, so a quicker field stays quick round the corners too
+  const wantSpeed = topSpeed(k) * (0.72 + br.skill * 0.3) * cap;
   const gas = k.speed < wantSpeed ? 1 : 0;
   const brake = k.speed > wantSpeed * 1.22 ? 1 : 0;
   const hop = br.skill > 0.45 && Math.abs(err) > 0.42 && k.speed > 13 && bend > 0.55;
