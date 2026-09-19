@@ -224,14 +224,21 @@ export async function buildProps(scene, THREE, track) {
       // +x runs along the wall; pick the turn that leaves +z looking at the road
       const inward = track.samples[i % track.samples.length].p.clone().sub(to);
       const yaw = ((-dz) * inward.x + dx * inward.z) > 0 ? alongX(dx, dz) : alongX(-dx, -dz);
+      /* Nothing to lean on where there is nothing to lean on. A causeway is a
+         road with the ground taken away either side of it and a gap is no road
+         at all; fencing either turns the one place on the circuit you can
+         actually fall off into a corridor. */
+      const here = track.samples[i % track.samples.length];
+      const open = here.gap || here.noFence;
       while (next <= walked + seg) {
         const at = next - walked;
+        next += STEP;
+        if (open) { n++; continue; }
         const pos = new THREE.Vector3(from.x + dx * at, 0, from.z + dz * at);
         // on the road, like the ring points it sits between: asking the ground
         // here put the barrier back under the tarmac on every banked corner
         pos.y = track.project(pos.x, pos.z, null).y;
         (n++ % 2 ? red : white).push({ pos, yaw });
-        next += STEP;
       }
       walked += seg;
     }

@@ -48,7 +48,13 @@ export const THEMES = [
     tarmac: '#5c616b', tarmacGrit: [88, 34, 6],
     kerbA: '#e8402a', kerbB: '#fff6e2',
     trunk: 0x8a5a36, leaf: 0x2f9440, treeShape: 'cone', treeCount: 420,
-    features: ['bridge', 'tunnel', 'water'], split: true,
+    /* What the lap does on the way round. Ten sections, laid out by the
+       generator so no two land on each other, and this is the set that makes
+       Sunfield Loop the one you learn on: a river, a causeway over it, a long
+       open arena to overtake in, and nothing on it that can drop you. */
+    features: ['bridge', 'tunnel', 'water', 'arena', 'causeway', 'moguls',
+               'hump', 'whoops', 'narrows', { kind: 'boostlane', side: 1 }],
+    split: true,
     signature: null,
     music: 'race',
     rules: {
@@ -81,7 +87,13 @@ export const THEMES = [
     tarmac: '#8a7358', tarmacGrit: [140, 40, -12],
     kerbA: '#c9452f', kerbB: '#ffe7c2',
     trunk: 0x9a6b3c, leaf: 0x7aa05a, treeShape: 'cactus', treeCount: 260,
-    features: ['bridge', 'tunnel'], split: true,
+    /* Canyon country: two gaps in the road with nothing under them, a cave
+       through a mountain, a banked bowl, a shelf that drops away, and sand
+       across one side of a straight. */
+    features: ['chasm', { kind: 'chasm', len: 26 }, 'tunnel', 'bowl', 'shelf',
+               'whoops', { kind: 'strip', of: 'sand', side: -1 }, 'arena',
+               'bridge', 'narrows'],
+    split: true,
     signature: 'rocks',
     music: 'race',
     rules: {
@@ -115,7 +127,13 @@ export const THEMES = [
     tarmac: '#6d7580', tarmacGrit: [120, 30, 10],
     kerbA: '#2b56d6', kerbB: '#fff6e2',
     trunk: 0x6b4a30, leaf: 0x2c6b4a, treeShape: 'cone', treeCount: 380,
-    features: ['bridge', 'tunnel', 'water'], split: true,
+    /* A frozen lake to cross, a crevasse to jump, a shelf of ice with the
+       ground gone either side of it, rollers that will not let you put the
+       power down, and a run of bare ice across one half of the road. */
+    features: ['water', 'causeway', 'chasm', 'moguls', 'narrows',
+               { kind: 'strip', of: 'ice', side: 1 }, 'tunnel', 'bridge',
+               'bowl', { kind: 'hump', rise: 2.4 }],
+    split: true,
     signature: 'ice',
     music: 'race',
     rules: {
@@ -148,7 +166,13 @@ export const THEMES = [
     tarmac: '#31384a', tarmacGrit: [70, 26, 14],
     kerbA: '#ff2f6e', kerbB: '#8fe9ff',
     trunk: 0x2a3350, leaf: 0x39d0ff, treeShape: 'post', treeCount: 200,
-    features: ['tunnel', 'bridge'], split: true,
+    /* A city: a climb round the outside of a tower with the camber wound up
+       to hold it, a glass pipe through a building, two lanes of boosters, and
+       the road pinching twice where it threads between blocks. */
+    features: ['spiral', 'tunnel', { kind: 'boostlane', side: 1 },
+               { kind: 'boostlane', side: -1 }, 'narrows',
+               { kind: 'narrows', to: 0.62 }, 'bowl', 'bridge', 'hump', 'arena'],
+    split: true,
     signature: 'towers',
     music: 'race',
     rules: {
@@ -181,7 +205,13 @@ export const THEMES = [
     tarmac: '#3c3438', tarmacGrit: [74, 26, 8],
     kerbA: '#ff7a1a', kerbB: '#2b2226',
     trunk: 0x2e2226, leaf: 0x6b3430, treeShape: 'spire', treeCount: 240,
-    features: ['bridge', 'tunnel'], split: true,
+    /* The dangerous one: two fire pits with no road over them, two shelves
+       that drop away, a climb round a spire, a lava tube, and ash across one
+       side of the road where you would most like to be. */
+    features: ['chasm', { kind: 'chasm', len: 26 }, 'shelf',
+               { kind: 'shelf', drop: 7 }, 'spiral', 'tunnel',
+               { kind: 'strip', of: 'ash', side: -1 }, 'bridge', 'whoops', 'narrows'],
+    split: true,
     signature: 'lava',
     music: 'race',
     rules: {
