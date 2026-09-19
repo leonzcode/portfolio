@@ -46,7 +46,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS,
          chassisOf, wheelsOf, trailOf, hatOf, faceOf, suitOf, normalise,
-         box, cyl, ball, taper, INK, STEEL, DARK } from './parts.js?v=24';
+         box, cyl, ball, taper, INK, STEEL, DARK } from './parts.js?v=25';
 export { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS, normalise };
 
 function merge(parts, mat) {
@@ -161,7 +161,7 @@ export function makeKart(who, build) {
     pushX: 0, pushZ: 0,
     // how hard you are revving on the grid, which everybody can see
     rev: 0,
-    boost: 0, spin: 0, slow: 0, star: 0,
+    boost: 0, spin: 0, slow: 0, star: 0, coins: 0,
     lap: 1, cpi: 0, prog: 0, place: 1, finished: 0,
     item: null, itemN: 0, roulette: 0,
     // what is queued behind the one in the slot, oldest first
@@ -277,6 +277,10 @@ export function topSpeed(k) {
   if (k.star > 0) t *= TUNE.starTop;
   if (k.offroad && k.star <= 0) t *= R.offTop;
   if (k.slow > 0) t *= 0.55;
+  /* Coins. Ten of them is the most that counts, and each is worth about one
+     per cent: enough that a lap spent collecting is a lap spent getting faster,
+     not enough that being short of them loses you the race on its own. */
+  t *= 1 + Math.min(10, k.coins || 0) * 0.011;
   return t;
 }
 

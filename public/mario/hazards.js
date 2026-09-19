@@ -20,7 +20,7 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { spinOut } from './kart.js?v=24';
+import { spinOut } from './kart.js?v=25';
 
 const TAU = Math.PI * 2;
 
