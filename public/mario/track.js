@@ -223,32 +223,9 @@ export function buildTrack(scene) {
   banner.castShadow = true;
   group.add(banner);
 
-  /* the barrier: one striped ribbon down each side, which is what the edge of a
-     circuit actually looks like and reads far better than a line of posts */
+  /* the edge of the circuit is a run of barrier models now, placed in props.js
+     against the wall line this returns as `shoulder` */
   const m4 = new THREE.Matrix4();
-  const barTex = canvasTex(64, 64, (g, W, H) => {
-    g.fillStyle = '#fff6e2'; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#e8402a'; g.fillRect(0, 0, W / 2, H);
-  }, [1, 1]);
-  const barMat = new THREE.MeshStandardMaterial({ map: barTex, roughness: 0.75 });
-  const BAR_H = 1.35;
-  for (const side of [-1, 1]) {
-    const bp = [], bu = [], bi = [];
-    for (let i = 0; i < N; i++) {
-      const a = samples[i];
-      const foot = a.p.clone().addScaledVector(a.n, side * (a.w + SHOULDER));
-      bp.push(foot.x, foot.y, foot.z, foot.x, foot.y + BAR_H, foot.z);
-      bu.push(a.s / 5.4, 0, a.s / 5.4, 1);
-    }
-    for (let i = 0; i < N; i++) {
-      const j = (i + 1) % N;
-      const a = i * 2, b = a + 1, c = j * 2, d = c + 1;
-      if (side < 0) bi.push(a, c, b, b, c, d); else bi.push(a, b, c, b, d, c);
-    }
-    const bar = new THREE.Mesh(ribbon(bp, bu, bi), barMat);
-    bar.castShadow = true; bar.receiveShadow = true;
-    group.add(bar);
-  }
 
   /* trees and hills for the middle distance */
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8a5a36, roughness: 1 });
@@ -396,6 +373,8 @@ export function buildTrack(scene) {
 
   return {
     group, samples, length, project, at, gridSlot, groundY,
+    // how far past the tarmac the wall is, so the barriers can stand on it
+    shoulder: SHOULDER,
     itemBoxes, boostPads, coins, boxMesh, coinMesh,
     // the ribbon, in a form the minimap can draw cheaply
     outline: samples.filter((_, i) => i % 3 === 0).map(a => [a.p.x, a.p.z]),

@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=8';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=8';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=8';
-import { makeBrain, driveBrain } from './ai.js?v=8';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=8';
-import * as snd from './audio.js?v=8';
+import { buildTrack } from './track.js?v=9';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=9';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=9';
+import { makeBrain, driveBrain } from './ai.js?v=9';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=9';
+import * as snd from './audio.js?v=9';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -175,7 +175,7 @@ function readInput() {
 
 /* --------------------------------------------------------------- the field -- */
 // how much more top end the computer drivers get than you do
-const BOT_TOP = 1.75;
+const BOT_TOP = 1.4;
 
 function addKart(racer, opts) {
   const k = makeKart(racer);
@@ -233,8 +233,10 @@ function startRound(field, seed, asPhase) {
   } else {
     me = addKart(RACERS[myCast], { id: 'me', name: myName || 'You' });
   }
-  // fill the grid with computer drivers, but only when it is a solo race
-  if (!field || field.length <= 1) {
+  // Fill the grid with computer drivers, but only when you are racing on your
+  // own. A lobby with one person in it is still a lobby: the next person to turn
+  // up should find a grid of people rather than a field of robots.
+  if (!field || !field.length) {
     let s = (seed | 0) || 1234;
     const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
     const pool = RACERS.filter(r => !(me && me.who === r));
@@ -779,7 +781,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=8').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=9').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
 
@@ -789,7 +791,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=8');
+    const mod = await import('./net.js?v=9');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
