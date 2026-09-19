@@ -85,8 +85,10 @@ export function connect(ctx) {
     if (m.type === 'hurt') {
       const me = world.me;
       if (!me) return;
-      if (m.kind === 'surge') { me.slow = 3; me.speed *= 0.6; world.notice('Surged!'); }
-      else if (world.spinOut(me, m.kind === 'bomb')) world.notice('Hit!');
+      // m.by is whoever threw it, so the notice can name them
+      const who = world.nameOf(m.by);
+      if (m.kind === 'surge') { me.slow = 3; me.speed *= 0.6; world.notice(who ? 'Surged by ' + who + '!' : 'Surged!'); }
+      else if (world.spinOut(me, m.kind === 'bomb')) world.notice(world.hitBy(m.by, m.kind));
       return;
     }
 

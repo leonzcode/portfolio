@@ -131,6 +131,8 @@ export function makeKart(who) {
     drift: 0,            // -1 left, 1 right, 0 none
     driftT: 0, slide: 0, hop: 0, hopV: 0,
     pitch: 0, roadRise: 0, bash: false, hitBy: 0, launched: 0,
+    // the tumble: how far it is tipped, and how fast that is changing
+    tumbleX: 0, tumbleZ: 0, wobX: 0, wobZ: 0, spinRate: 11,
     // velocity across the wheels, from being shoved: it decays as they bite
     pushX: 0, pushZ: 0,
     // how hard you are revving on the grid, which everybody can see
@@ -158,7 +160,8 @@ export function apply(k) {
   k.group.rotation.y = k.yaw - k.slide * 0.45;
   // rotation.z is applied before the yaw, so it rolls the kart about its own
   // length: that is the camber of the road under it
-  k.group.rotation.z = k.roll;
+  k.group.rotation.z = k.roll + k.tumbleZ;
+  k.group.rotation.x = k.tumbleX;
   // revving on the grid: a shake everybody can see, since rev rides along in the
   // position each browser sends
   if (k.rev > 0.02) {
@@ -169,6 +172,7 @@ export function apply(k) {
   k.body.rotation.z = k.lean;
   // nose up on the way up, nose down on the way down
   k.body.rotation.x = -k.speed * 0.0012 + k.pitch;
+  void 0;
   for (const w of k.wheels) {
     w.hub.rotation.y = w.steers ? k.steerVis : 0;
     w.spin.rotation.x = k.wheelSpin;
@@ -213,9 +217,13 @@ export function stepKart(k, input, track, dt) {
   const top = topSpeed(k);
 
   if (k.spin > 0) {
-    // spun out: no control, just the pirouette
+    // spun out: no control, just the tumble it was given
     k.spin -= dt;
-    k.yaw += dt * 11;
+    k.yaw += dt * (k.spinRate || 11);
+    k.tumbleX += k.wobX * dt;
+    k.tumbleZ += k.wobZ * dt;
+    const settle = Math.exp(-2.1 * dt);
+    k.wobX *= settle; k.wobZ *= settle;
     k.speed *= Math.exp(-3.4 * dt);
     k.drift = 0; k.driftT = 0; k.slide *= 0.9;
   } else {
@@ -269,6 +277,16 @@ export function stepKart(k, input, track, dt) {
     k.lean += ((k.drift !== 0 ? -k.drift * 0.16 : -steer * 0.05) - k.lean) * Math.min(1, dt * 8);
   }
 
+  // Back onto its wheels once the spin is done. It always lands face up: a kart
+  // on its roof is one nobody can do anything with.
+  if (k.spin <= 0 && (k.tumbleX || k.tumbleZ)) {
+    const up = Math.max(0, 1 - dt * 3.6);
+    k.tumbleX *= up; k.tumbleZ *= up;
+    if (Math.abs(k.tumbleX) < 0.008) k.tumbleX = 0;
+    if (Math.abs(k.tumbleZ) < 0.008) k.tumbleZ = 0;
+    k.wobX = 0; k.wobZ = 0;
+  }
+
   // the hop arc
   if (k.hopV !== 0 || k.hop > 0) {
     // y += vy*dt, vy -= G*dt. The whole of it.
@@ -306,6 +324,22 @@ export function stepKart(k, input, track, dt) {
   // the surface, and the wall
   const pr = track.project(k.pos.x, k.pos.z, k.hint);
   k.hint = pr.i;
+  // Anything on the road you have to go round: the house in the middle of the
+  // split. Pushed out of it along the line from its middle, and charged for the
+  // interruption, the same way the fence charges you.
+  if (track.blocks) {
+    for (const b of track.blocks) {
+      const dx = k.pos.x - b.x, dz = k.pos.z - b.z;
+      const d = Math.hypot(dx, dz);
+      if (d > b.r || d < 1e-4) continue;
+      const out = (b.r - d) / d;
+      k.pos.x += dx * out; k.pos.z += dz * out;
+      k.speed *= 0.64;
+      k.drift = 0; k.driftT = 0;
+      k.wallHit = 1;
+    }
+  }
+
   // over the grass but not on it: a jump is not a trip through the rough
   k.offroad = !pr.onRoad && !pr.onKerb && k.hop <= 0.05;
   // under the surface, when there is a surface to be under
@@ -355,18 +389,38 @@ export function stepKart(k, input, track, dt) {
   // ease onto the camber rather than snapping to it
   k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);
   if (Math.abs(pr.lateral) > pr.wall) {
+    /* A barrier is a collision like any other, so it is resolved like one. The
+       velocity is split along the wall and into it; the part into it is reversed
+       and mostly absorbed, the part along it is kept bar a scrape; and what comes
+       out is turned back into a speed along the kart's own heading plus a shove
+       across it, exactly as a kart to kart hit is.
+
+       Clipping a wall at a shallow angle therefore costs you very little and a
+       head on one costs you nearly everything, which is what it should do, and
+       which the old flat multiply could not tell apart. */
     const push = (Math.abs(pr.lateral) - pr.wall) * Math.sign(pr.lateral);
     k.pos.x -= pr.n.x * push;
     k.pos.z -= pr.n.z * push;
-    // a barrier should scrub you along itself, not pin you to it: point the kart
-    // back down the road and charge for the angle you hit it at
-    const along = Math.abs(-Math.sin(k.yaw) * pr.t.x + -Math.cos(k.yaw) * pr.t.z);
+
+    const into = pr.lateral > 0 ? 1 : -1;            // outward, along the normal
+    const nx = pr.n.x * into, nz = pr.n.z * into;
+    const v = velOf(k);
+    const vn = v.x * nx + v.z * nz;                  // into the wall
+    if (vn > 0) {
+      const WALL_BOUNCE = 0.22, WALL_SCRAPE = 0.86;
+      const tx = v.x - vn * nx, tz = v.z - vn * nz;  // along it
+      v.x = tx * WALL_SCRAPE - nx * vn * WALL_BOUNCE;
+      v.z = tz * WALL_SCRAPE - nz * vn * WALL_BOUNCE;
+      setVel(k, v);
+    }
+    // a heavy one throws you, and it throws you the way you hit it
+    if (vn > 17) spinOut(k, vn > 27, { x: -nx, z: -nz, speed: vn });
+    // and the nose comes back round to the road, because a kart is not a puck
     const wallYaw = Math.atan2(-pr.t.x, -pr.t.z);
     let d = wallYaw - k.yaw;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
-    k.yaw += d * 0.4;
-    k.speed *= 0.58 + 0.34 * along;
+    k.yaw += d * 0.35;
     k.drift = 0; k.driftT = 0;
     k.wallHit = 1;
   }
@@ -435,10 +489,38 @@ export function bump(a, b) {
   return true;
 }
 
-export function spinOut(k, hard) {
+/* Losing it.
+
+   Which way a kart tumbles comes out of where it was hit. The direction of the
+   blow is resolved against the kart's own nose: how much of it came from the
+   side and how much from front or back. A tap on the right spins you left and
+   rolls you the same way; a shunt from behind lifts the nose; a head on hit
+   drops it. The harder the hit, the faster all three.
+
+   The one liberty taken with the physics is the landing: however it tumbles, it
+   comes back onto its wheels rather than finishing on its roof, because a kart
+   lying upside down in the middle of a race is a kart nobody can do anything
+   with. `hit` is { x, z, speed } - where the blow came from, and how hard. */
+export function spinOut(k, hard, hit) {
   if (k.star > 0) return false;
   k.spin = hard ? 1.5 : 1.05;
   k.speed *= 0.18;
   k.boost = 0; k.drift = 0; k.driftT = 0;
+
+  const h = heading(k);
+  let side = 0, front = -1, mag = 1;
+  if (hit && (hit.x || hit.z)) {
+    const d = Math.hypot(hit.x, hit.z) || 1;
+    const ux = hit.x / d, uz = hit.z / d;
+    front = ux * h.x + uz * h.z;              // +1 from behind, -1 head on
+    side = ux * -h.z + uz * h.x;              // left or right of the nose
+    mag = Math.min(2.4, 0.55 + Math.abs(hit.speed || 12) / 15);
+  }
+  k.spinRate = (hard ? 11 : 8.2) * (Math.abs(side) > 0.12 ? -Math.sign(side) : 1) * mag;
+  k.wobZ = -side * 5.8 * mag;                 // tapped on the right, rolls to the left
+  // front is +1 when the blow came from ahead, so the sign flips: hit from
+  // behind and the nose comes up, hit head on and it goes down
+  k.wobX = -front * 3.8 * mag;
+  if (hard) { k.wobZ *= 1.35; k.wobX *= 1.35; }
   return true;
 }

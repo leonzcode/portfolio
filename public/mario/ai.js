@@ -9,8 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=21';
-import { topSpeed } from './kart.js?v=21';
+import { ITEMS, lapProg } from './items.js?v=22';
+import { topSpeed } from './kart.js?v=22';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
@@ -77,6 +77,21 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
     if (ahead < 0.72) continue;
     const side = (-Math.cos(k.yaw) * hx + Math.sin(k.yaw) * hz) / d;
     steer += (side > 0 ? -1 : 1) * (1 - d / 16) * 0.9;
+  }
+  /* And round anything standing in the road: the house in the middle of the
+     split is not a hazard you can drive over and shrug off, it stops you dead.
+     Aim further out than its edge, and commit early, because a computer driver
+     that notices it at the last moment simply parks against it. */
+  for (const b of (br.blocks || [])) {
+    const bx = b.x - k.pos.x, bz = b.z - k.pos.z;
+    const d = Math.hypot(bx, bz);
+    const reach = b.r + 26;
+    if (d > reach || d < 0.1) continue;
+    const ahead = (-Math.sin(k.yaw) * bx + -Math.cos(k.yaw) * bz) / d;
+    if (ahead < 0.35) continue;
+    const side = (-Math.cos(k.yaw) * bx + Math.sin(k.yaw) * bz) / d;
+    const want = (b.r + 3) / Math.max(b.r + 3, d);
+    steer += (side > 0 ? -1 : 1) * want * (1.4 - Math.min(1, d / reach));
   }
   steer = Math.max(-1, Math.min(1, steer));
 

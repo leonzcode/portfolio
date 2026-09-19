@@ -11,7 +11,7 @@
    little SVG for the slot in the corner of the screen.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { spinOut } from './kart.js?v=21';
+import { spinOut } from './kart.js?v=22';
 
 const svg = (inner) => '<svg viewBox="0 0 64 64" width="100%" height="100%">' + inner + '</svg>';
 const K = 'stroke="#17223b" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';
@@ -207,7 +207,8 @@ export function makeItemWorld(scene, track, fx) {
         if (k.finished || (p.t < 0.25 && k.id === p.owner)) continue;
         if (Math.hypot(k.pos.x - p.x, k.pos.z - p.z) > 1.7) continue;
         if (p.kind === 'bomb') boom(p, karts, onHit);
-        else if (spinOut(k, false) && onHit) onHit(k, p.kind, p.owner);
+        // where it came from and how fast, so the kart tumbles the right way
+        else if (spinOut(k, false, { x: p.x - k.pos.x, z: p.z - k.pos.z, speed: p.speed }) && onHit) onHit(k, p.kind, p.owner);
         struck = true;
         break;
       }
@@ -224,7 +225,8 @@ export function makeItemWorld(scene, track, fx) {
       for (const k of (h.ghost ? [] : karts)) {
         if (k.finished || (h.t < 0.6 && k.id === h.owner)) continue;
         if (Math.hypot(k.pos.x - h.x, k.pos.z - h.z) > h.r) continue;
-        if (spinOut(k, false) && onHit) onHit(k, h.kind, h.owner);
+        // a thing lying on the road throws you off the way you drove onto it
+        if (spinOut(k, false, { x: h.x - k.pos.x, z: h.z - k.pos.z, speed: Math.abs(k.speed) }) && onHit) onHit(k, h.kind, h.owner);
         scene.remove(h.g);
         hazards.splice(i, 1);
         break;
@@ -238,7 +240,9 @@ export function makeItemWorld(scene, track, fx) {
     for (const k of karts) {
       if (k.finished) continue;
       if (Math.hypot(k.pos.x - p.x, k.pos.z - p.z) > 7) continue;
-      if (spinOut(k, true) && onHit) onHit(k, 'bomb', p.owner);
+      // out from the blast, harder the closer you were standing
+      const d = Math.hypot(k.pos.x - p.x, k.pos.z - p.z);
+      if (spinOut(k, true, { x: p.x - k.pos.x, z: p.z - k.pos.z, speed: 34 * (1 - d / 7) }) && onHit) onHit(k, 'bomb', p.owner);
     }
   }
   function kill(i, p) { scene.remove(p.g); live.splice(i, 1); }
