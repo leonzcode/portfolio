@@ -30,9 +30,6 @@ export function connect(ctx) {
   ws.onopen = () => {
     alive = true; settled = true;
     send({ type: 'cast', i: ctx.cast });
-    // who this is, if they are signed in. The password never comes down here:
-    // the title screen did that over http and this presents the token it got.
-    if (ctx.auth && ctx.auth()) send(Object.assign({ type: 'auth' }, ctx.auth()));
   };
   ws.onclose = () => {
     const was = alive;
@@ -108,10 +105,6 @@ export function connect(ctx) {
       return;
     }
 
-    // the account: what it is worth now, and what everybody's name is wearing
-    if (m.type === 'acct') { if (m.ok) world.banked(m); return; }
-    if (m.type === 'who') { world.setTags(m.id | 0, m.tags || []); return; }
-
     if (m.type === 'results') {
       for (const r of m.rows) {
         const k = kartFor(r.id);
@@ -182,11 +175,6 @@ export function connect(ctx) {
     get others() { return seen; },
     chat(text) { send({ type: 'chat', text }); },
     setCast(i) { send({ type: 'cast', i }); },
-    // something was bought while the lobby was open; ask for the account again
-    // so a name effect turns up without a reconnect
-    refreshAcct() { send({ type: 'refresh' }); },
-    // what this browser has collected this round, and the lap it has set
-    purse(n, lap) { send({ type: 'purse', n, lap }); },
     fire(kind) { send({ type: 'fire', kind }); },
     cone(i, vx, vz) { send({ type: 'cone', i, vx: +vx.toFixed(2), vz: +vz.toFixed(2) }); },
     vote(id) { send({ type: 'vote', id }); },
