@@ -30,6 +30,7 @@ export function start() {
   musicGain.gain.value = 0.30;
   musicGain.connect(master);
   noiseBuf = noise(2);
+  loadTracks();
 
   // the engine: a buzz and a sub, through a filter that opens with the revs
   const a = ac.createOscillator(), b = ac.createOscillator();
@@ -157,12 +158,61 @@ const ARP = [12, 16, 19, 16, 12, 16, 19, 24];
 const ROOT = 98;                       // low G
 let musicOn = false, nextAt = 0, step16 = 0;
 
-export function music(on) {
-  if (!ready) return;
-  musicOn = on;
-  musicGain.gain.setTargetAtTime(on ? 0.3 : 0, ac.currentTime, 0.3);
-  if (on && nextAt < ac.currentTime) { nextAt = ac.currentTime + 0.06; step16 = 0; }
+/* The music is two CC0 loops by Kenney (see music/CREDITS.txt), decoded into
+   buffers and looped through the same gain the chiptune used. If a file will not
+   load or will not decode, the chiptune below covers for it, so the game never
+   ends up silent because of a missing asset. */
+const TRACKS = { race: 'music/race.ogg', lobby: 'music/lobby.ogg' };
+const buffers = Object.create(null);
+let musicSrc = null, musicWhich = '';
+
+function loadTracks() {
+  for (const k in TRACKS) {
+    fetch(new URL(TRACKS[k], import.meta.url).href)
+      .then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status))
+      .then(b => ac.decodeAudioData(b))
+      .then(buf => {
+        buffers[k] = buf;
+        if (musicWhich === k && !musicSrc) playLoop(k);     // it arrived late, start it now
+      })
+      .catch(function () {});
+  }
 }
+function playLoop(k) {
+  stopLoop();
+  const src = ac.createBufferSource();
+  src.buffer = buffers[k];
+  src.loop = true;
+  src.connect(musicGain);
+  src.start();
+  musicSrc = src;
+  musicOn = false;                    // the chiptune stands down while a file plays
+}
+function stopLoop() {
+  if (!musicSrc) return;
+  try { musicSrc.stop(); } catch (e) {}
+  musicSrc.disconnect();
+  musicSrc = null;
+}
+
+export function music(on, which) {
+  if (!ready) return;
+  const want = on ? (which || 'race') : '';
+  if (want === musicWhich) return;
+  musicWhich = want;
+  if (!want) {
+    stopLoop(); musicOn = false;
+    musicGain.gain.setTargetAtTime(0, ac.currentTime, 0.3);
+    return;
+  }
+  musicGain.gain.setTargetAtTime(0.3, ac.currentTime, 0.3);
+  if (buffers[want]) { playLoop(want); return; }
+  stopLoop();
+  musicOn = true;
+  if (nextAt < ac.currentTime) { nextAt = ac.currentTime + 0.06; step16 = 0; }
+}
+// what the music is doing, for a test and for the sake of being able to ask
+export function musicNow() { return { which: musicWhich, file: !!musicSrc, synth: musicOn, loaded: Object.keys(buffers) }; }
 export function musicTick() {
   if (!ready || !musicOn) return;
   const spb = 60 / 132 / 4;            // sixteenths at 132 bpm

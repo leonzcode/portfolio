@@ -1,0 +1,15 @@
+Music
+-----
+race.ogg   "Polka Train"   by Kenney (kenney.nl), from the Music Loops pack
+lobby.ogg  "Wacky Waiting" by Kenney (kenney.nl), from the Music Loops pack
+
+Both are Creative Commons Zero (CC0 1.0 Universal), public domain:
+http://creativecommons.org/publicdomain/zero/1.0/
+
+Free for personal, educational and commercial use. Crediting Kenney is not
+required; it is here because knowing where a file came from is worth more than
+the licence makes us write down.
+
+Everything else you hear in Leon Cart - engines, coins, item sounds, the
+countdown beeps - is synthesised in audio.js at runtime. There are no other
+audio files.

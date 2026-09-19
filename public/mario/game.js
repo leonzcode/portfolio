@@ -11,12 +11,12 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=6';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=6';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=6';
-import { makeBrain, driveBrain } from './ai.js?v=6';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=6';
-import * as snd from './audio.js?v=6';
+import { buildTrack } from './track.js?v=7';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=7';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=7';
+import { makeBrain, driveBrain } from './ai.js?v=7';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=7';
+import * as snd from './audio.js?v=7';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -690,7 +690,7 @@ function goRace() {
   raceTime = 0;
   litWas = -1;
   snd.beep(true);
-  snd.music(true);
+  snd.music(true, 'race');
   const c = el('count');
   c.classList.add('go');
   // the other two go out, the way a real one does
@@ -787,7 +787,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=6');
+    const mod = await import('./net.js?v=7');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -836,6 +836,7 @@ frame();
 // The waiting room: everyone drives about on the same circuit with nothing being
 // counted, until somebody calls the race on.
 function lobbyShow(on) {
+  snd.music(on, 'lobby');
   el('lobby').classList.toggle('on', on);
   el('board').classList.toggle('on', !on);
   el('hud').classList.toggle('lobby', on);
@@ -923,6 +924,7 @@ window.__mk = {
   get spectating() { return spectating; },
   get camera() { return camera; },
   get paused() { return paused; },
+  get sound() { return snd.musicNow(); },
   get bind() { return bind; },
   menu,
   get view() { return CAM[camMode].name; },
