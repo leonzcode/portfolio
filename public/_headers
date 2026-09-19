@@ -1,0 +1,10 @@
+# /mario and /gta are hand-written module graphs with unhashed filenames, and the
+# page itself is always revalidated while its modules default to a four hour
+# cache. That pairing is the bug: new HTML next to an old game.js loads a page
+# whose buttons the script has never heard of. Revalidate the modules too, so
+# the whole graph moves together on every deploy. Unchanged files answer 304.
+/mario/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/gta/*
+  Cache-Control: public, max-age=0, must-revalidate
