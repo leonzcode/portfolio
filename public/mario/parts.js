@@ -1,0 +1,562 @@
+/* ---------------------------------------------------------------------------
+   Leon Cart - what a kart is made of.
+
+   Five bodies, four sets of wheels and five exhaust trails, and any of them go
+   with any of them. None of them carries a colour of its own: every panel is
+   painted from the racer you picked, so Pip's buggy is Pip's red and Tock's is
+   Tock's teal, and a grid of eight is still eight recognisable cars however
+   anybody has built them.
+
+   Parts are cosmetic. They change nothing about how a kart drives, which is
+   deliberate: a lobby where the fast build wins is a lobby where nobody picks
+   the one they like.
+
+   Everything is boxes, cylinders and tapered boxes so a whole car still merges
+   into two meshes with its colours in the vertices, and a full grid still costs
+   a couple of dozen draw calls.
+
+   Sizes are metres. The nose points at +z here; the helpers negate z once so a
+   part list can be written the way you would sketch it, nose forward.
+--------------------------------------------------------------------------- */
+const THREE = window.THREE;
+
+export const INK = 0x17223b, STEEL = 0xb8bcc4, DARK = 0x3a3f4a, RUBBER = 0x1d2430;
+export const GLASS = 0x9fd8ff, CHROME = 0xd8dde4;
+
+export function box(w, h, d, x, y, z) {
+  const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+  g.translate(x, y, -z);
+  return g;
+}
+export function cyl(r1, r2, len, seg, axis, x, y, z) {
+  const g = new THREE.CylinderGeometry(r1, r2, len, seg).toNonIndexed();
+  if (axis === 'x') g.rotateZ(Math.PI / 2);
+  if (axis === 'z') g.rotateX(Math.PI / 2);
+  g.translate(x, y, -z);
+  return g;
+}
+export function ball(r, x, y, z) {
+  const g = new THREE.IcosahedronGeometry(r, 1).toNonIndexed();
+  g.translate(x, y, -z);
+  return g;
+}
+/* A box narrower at one end than the other, which is what almost every panel on
+   a car actually is. Front means towards the nose. */
+export function taper(wFront, wBack, h, hFront, d, x, y, z) {
+  const g = new THREE.BoxGeometry(wBack, h, d).toNonIndexed();
+  const p = g.attributes.position;
+  const kx = wFront / wBack, ky = hFront / h;
+  for (let i = 0; i < p.count; i++) {
+    if (p.getZ(i) < 0) { p.setX(i, p.getX(i) * kx); p.setY(i, p.getY(i) * ky); }
+  }
+  g.computeVertexNormals();
+  g.translate(x, y, -z);
+  return g;
+}
+/* A tube bent round one axis, for roll cages and bumper hoops: a torus cut to
+   an arc, which is far cheaper to build than a swept path and reads the same. */
+export function hoop(r, thick, arc, start, axis, x, y, z) {
+  const g = new THREE.TorusGeometry(r, thick, 5, 14, arc).toNonIndexed();
+  g.rotateZ(start);
+  if (axis === 'x') g.rotateY(Math.PI / 2);
+  g.translate(x, y, -z);
+  return g;
+}
+
+/* ---------------------------------------------------------------------------
+   The bodies. Each returns its parts plus where the driver sits on it and how
+   far off the ground its floor is, so the same driver fits every one of them.
+--------------------------------------------------------------------------- */
+
+/* the open wheel racer: wings, side pods and a roll hoop */
+function formula(r) {
+  return {
+    seat: { y: 0.5, z: 0.02, lean: 0 }, ride: 0.38, wheelbase: 0.86, track: 0.88,
+    parts: [
+      { g: box(1.72, 0.14, 2.5, 0, 0.26, -0.05), c: DARK },
+      { g: box(1.5, 0.1, 2.56, 0, 0.2, -0.05), c: INK },
+      { g: taper(0.86, 1.34, 0.46, 0.34, 2.0, 0, 0.5, 0.18), c: r.kart },
+      { g: taper(0.7, 1.1, 0.16, 0.12, 2.0, 0, 0.74, 0.2), c: r.trim },
+      { g: taper(0.34, 0.5, 0.42, 0.3, 1.5, 0.66, 0.5, -0.1), c: r.kart },
+      { g: taper(0.34, 0.5, 0.42, 0.3, 1.5, -0.66, 0.5, -0.1), c: r.kart },
+      { g: box(0.3, 0.26, 0.1, 0.66, 0.52, 0.66), c: INK },
+      { g: box(0.3, 0.26, 0.1, -0.66, 0.52, 0.66), c: INK },
+      { g: taper(0.2, 0.8, 0.28, 0.14, 0.9, 0, 0.52, 1.5), c: r.trim },
+      { g: box(1.66, 0.08, 0.42, 0, 0.32, 1.72), c: r.trim },
+      { g: box(0.06, 0.2, 0.42, 0.82, 0.4, 1.72), c: r.kart },
+      { g: box(0.06, 0.2, 0.42, -0.82, 0.4, 1.72), c: r.kart },
+      { g: box(0.9, 0.16, 0.12, 0, 0.8, 0.62), c: DARK },
+      { g: box(0.82, 0.52, 0.14, 0, 0.94, -0.36), c: r.kart },
+      { g: box(0.56, 0.2, 0.22, 0, 1.24, -0.44), c: DARK },
+      { g: cyl(0.07, 0.07, 0.56, 7, 'y', 0.34, 1.12, -0.5), c: STEEL },
+      { g: cyl(0.07, 0.07, 0.56, 7, 'y', -0.34, 1.12, -0.5), c: STEEL },
+      { g: cyl(0.07, 0.07, 0.72, 7, 'x', 0, 1.38, -0.5), c: STEEL },
+      { g: taper(0.74, 0.5, 0.44, 0.5, 0.9, 0, 0.78, -0.95), c: r.kart },
+      { g: box(0.62, 0.3, 0.3, 0, 0.72, -1.3), c: DARK },
+      { g: cyl(0.1, 0.12, 0.66, 7, 'z', 0.26, 0.95, -1.34), c: STEEL },
+      { g: cyl(0.1, 0.12, 0.66, 7, 'z', -0.26, 0.95, -1.34), c: STEEL },
+      { g: box(0.1, 0.42, 0.24, 0.24, 1.14, -1.2), c: DARK },
+      { g: box(0.1, 0.42, 0.24, -0.24, 1.14, -1.2), c: DARK },
+      { g: box(1.44, 0.09, 0.4, 0, 1.38, -1.24), c: r.trim },
+      { g: box(1.3, 0.06, 0.22, 0, 1.24, -1.34), c: r.trim },
+      { g: box(0.07, 0.42, 0.52, 0.72, 1.24, -1.26), c: r.kart },
+      { g: box(0.07, 0.42, 0.52, -0.72, 1.24, -1.26), c: r.kart },
+      { g: box(0.16, 0.1, 0.08, 0.5, 0.86, 0.52), c: DARK },
+      { g: box(0.16, 0.1, 0.08, -0.5, 0.86, 0.52), c: DARK },
+    ],
+    exhaust: [{ x: 0.26, y: 0.95, z: -1.66 }, { x: -0.26, y: 0.95, z: -1.66 }],
+  };
+}
+
+/* the go kart: a floor, side rails, a bumper hoop and the engine slung beside
+   the seat, which is what a real one is and none of it is bodywork */
+function roadster(r) {
+  const rail = [];
+  for (const sx of [1, -1]) {
+    rail.push({ g: cyl(0.075, 0.075, 2.3, 6, 'z', sx * 0.82, 0.4, -0.05), c: r.trim });
+    rail.push({ g: cyl(0.07, 0.07, 0.34, 6, 'y', sx * 0.82, 0.26, 1.0), c: r.trim });
+    rail.push({ g: cyl(0.07, 0.07, 0.34, 6, 'y', sx * 0.82, 0.26, -1.0), c: r.trim });
+  }
+  return {
+    seat: { y: 0.46, z: -0.12, lean: 0.1 }, ride: 0.36, wheelbase: 0.9, track: 0.84,
+    parts: [
+      { g: box(1.5, 0.12, 2.5, 0, 0.3, 0), c: r.kart },
+      { g: box(1.32, 0.1, 2.3, 0, 0.38, 0), c: DARK },
+      // a rounded nose box with a number plate on it
+      { g: taper(0.86, 1.4, 0.4, 0.3, 0.85, 0, 0.52, 1.36), c: r.kart },
+      { g: box(0.62, 0.34, 0.06, 0, 0.6, 1.79), c: 0xfff6e2 },
+      { g: box(1.38, 0.1, 0.3, 0, 0.3, 1.82), c: r.trim },
+      // the seat: a bucket with high sides
+      { g: box(0.72, 0.5, 0.14, 0, 0.72, -0.5), c: r.trim },
+      { g: box(0.12, 0.34, 0.6, 0.34, 0.62, -0.2), c: r.trim },
+      { g: box(0.12, 0.34, 0.6, -0.34, 0.62, -0.2), c: r.trim },
+      { g: box(0.76, 0.1, 0.62, 0, 0.46, -0.2), c: r.trim },
+      // the engine, off to one side the way a kart carries it
+      { g: box(0.44, 0.44, 0.56, 0.6, 0.62, -0.6), c: DARK },
+      { g: cyl(0.2, 0.2, 0.3, 10, 'x', 0.86, 0.66, -0.6), c: STEEL },
+      { g: cyl(0.1, 0.1, 0.9, 7, 'z', 0.6, 0.86, -1.1), c: STEEL },
+      // steering column and wheel, standing up in front of the driver
+      { g: cyl(0.05, 0.05, 0.6, 6, 'y', 0, 0.68, 0.6), c: DARK },
+      { g: cyl(0.22, 0.22, 0.06, 12, 'y', 0, 0.98, 0.56), c: INK },
+      // bumper hoop round the back
+      { g: hoop(0.62, 0.07, Math.PI, 0, 'x', 0, 0.52, -1.42), c: r.trim },
+      { g: box(1.3, 0.12, 0.12, 0, 0.52, -1.5), c: r.trim },
+      // floor pan fairings over the rear wheels
+      { g: taper(0.36, 0.2, 0.22, 0.18, 0.7, 0.78, 0.6, -0.9), c: r.kart },
+      { g: taper(0.36, 0.2, 0.22, 0.18, 0.7, -0.78, 0.6, -0.9), c: r.kart },
+    ].concat(rail),
+    exhaust: [{ x: 0.6, y: 0.86, z: -1.55 }],
+  };
+}
+
+/* the buggy: everything raised, a cage over the driver, arches over the wheels
+   and the spare on the back */
+function buggy(r) {
+  const cage = [];
+  for (const sx of [1, -1]) {
+    cage.push({ g: cyl(0.06, 0.06, 1.0, 6, 'y', sx * 0.52, 1.2, 0.42), c: STEEL });
+    cage.push({ g: cyl(0.06, 0.06, 1.0, 6, 'y', sx * 0.52, 1.2, -0.72), c: STEEL });
+    cage.push({ g: cyl(0.06, 0.06, 1.2, 6, 'z', sx * 0.52, 1.7, -0.15), c: STEEL });
+  }
+  const arch = [];
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    arch.push({ g: hoop(0.58, 0.07, Math.PI, 0, 'x', sx * 0.84, 0.66, sz * 0.92), c: r.trim });
+    arch.push({ g: box(0.34, 0.08, 1.1, sx * 0.84, 1.22, sz * 0.92), c: r.kart });
+  }
+  return {
+    seat: { y: 0.74, z: -0.05, lean: 0 }, ride: 0.56, wheelbase: 0.92, track: 0.84,
+    parts: [
+      { g: box(1.4, 0.16, 2.4, 0, 0.58, -0.05), c: r.kart },
+      { g: box(1.2, 0.12, 2.2, 0, 0.7, -0.05), c: DARK },
+      { g: taper(0.9, 1.3, 0.4, 0.3, 0.9, 0, 0.82, 1.24), c: r.kart },
+      // a grille and a pair of lamps on the nose
+      { g: box(0.9, 0.22, 0.08, 0, 0.8, 1.7), c: INK },
+      { g: cyl(0.14, 0.14, 0.12, 10, 'z', 0.34, 0.98, 1.68), c: 0xfff6e2 },
+      { g: cyl(0.14, 0.14, 0.12, 10, 'z', -0.34, 0.98, 1.68), c: 0xfff6e2 },
+      { g: box(1.5, 0.14, 0.14, 0, 0.62, 1.74), c: STEEL },           // bull bar
+      // the seat and the cage rails
+      { g: box(0.78, 0.56, 0.14, 0, 1.06, -0.46), c: r.trim },
+      { g: box(0.8, 0.1, 0.62, 0, 0.78, -0.18), c: r.trim },
+      { g: cyl(0.22, 0.22, 0.06, 12, 'z', 0, 1.06, 0.5), c: INK },
+      // a light bar across the top of the cage
+      { g: box(1.0, 0.14, 0.18, 0, 1.78, 0.4), c: DARK },
+      { g: cyl(0.08, 0.08, 0.1, 8, 'z', 0.3, 1.78, 0.5), c: 0xfff6e2 },
+      { g: cyl(0.08, 0.08, 0.1, 8, 'z', 0, 1.78, 0.5), c: 0xfff6e2 },
+      { g: cyl(0.08, 0.08, 0.1, 8, 'z', -0.3, 1.78, 0.5), c: 0xfff6e2 },
+      // engine, snorkel and the spare wheel on the tail
+      { g: box(0.8, 0.44, 0.6, 0, 1.0, -1.02), c: DARK },
+      { g: cyl(0.1, 0.1, 1.1, 7, 'y', 0.56, 1.4, -0.9), c: STEEL },
+      { g: cyl(0.42, 0.42, 0.26, 12, 'z', 0, 1.0, -1.44), c: RUBBER },
+      { g: cyl(0.2, 0.2, 0.3, 8, 'z', 0, 1.0, -1.44), c: r.trim },
+    ].concat(cage, arch),
+    exhaust: [{ x: 0.56, y: 1.9, z: -0.9 }],
+  };
+}
+
+/* the speeder: low, covered wheels, a dorsal fin and twin thrusters */
+function speeder(r) {
+  return {
+    seat: { y: 0.46, z: 0.06, lean: 0.28 }, ride: 0.34, wheelbase: 0.94, track: 0.8,
+    parts: [
+      { g: taper(0.7, 1.5, 0.5, 0.34, 3.0, 0, 0.5, 0.1), c: r.kart },
+      { g: taper(0.5, 1.2, 0.2, 0.12, 3.0, 0, 0.78, 0.12), c: r.trim },
+      // fairings over all four wheels, which is what makes it read as sealed
+      { g: taper(0.42, 0.5, 0.56, 0.4, 1.2, 0.78, 0.5, 0.86), c: r.kart },
+      { g: taper(0.42, 0.5, 0.56, 0.4, 1.2, -0.78, 0.5, 0.86), c: r.kart },
+      { g: taper(0.5, 0.42, 0.6, 0.46, 1.3, 0.78, 0.52, -0.9), c: r.kart },
+      { g: taper(0.5, 0.42, 0.6, 0.46, 1.3, -0.78, 0.52, -0.9), c: r.kart },
+      // a canopy bar and a windscreen in front of the driver
+      { g: box(0.7, 0.3, 0.06, 0, 0.94, 0.66), c: GLASS },
+      { g: box(0.76, 0.08, 0.1, 0, 1.1, 0.64), c: r.trim },
+      { g: box(0.14, 0.34, 0.5, 0.36, 0.92, 0.3), c: r.trim },
+      { g: box(0.14, 0.34, 0.5, -0.36, 0.92, 0.3), c: r.trim },
+      // the fin down the tail
+      { g: taper(0.09, 0.09, 0.62, 0.2, 1.2, 0, 1.06, -0.9), c: r.trim },
+      // twin thrusters, ringed
+      { g: cyl(0.24, 0.3, 0.5, 12, 'z', 0.34, 0.62, -1.5), c: DARK },
+      { g: cyl(0.24, 0.3, 0.5, 12, 'z', -0.34, 0.62, -1.5), c: DARK },
+      { g: cyl(0.18, 0.18, 0.1, 12, 'z', 0.34, 0.62, -1.72), c: r.trim },
+      { g: cyl(0.18, 0.18, 0.1, 12, 'z', -0.34, 0.62, -1.72), c: r.trim },
+      // a splitter and a diffuser, so it looks like it is holding itself down
+      { g: box(1.62, 0.07, 0.5, 0, 0.26, 1.6), c: INK },
+      { g: box(1.5, 0.22, 0.4, 0, 0.34, -1.54), c: INK },
+      { g: cyl(0.2, 0.2, 0.05, 12, 'z', 0, 0.82, 0.5), c: INK },
+    ],
+    exhaust: [{ x: 0.34, y: 0.62, z: -1.85 }, { x: -0.34, y: 0.62, z: -1.85 }],
+  };
+}
+
+/* the hauler: a stubby pickup with a bed, a grille and a stack */
+function hauler(r) {
+  return {
+    seat: { y: 0.72, z: 0.12, lean: 0 }, ride: 0.44, wheelbase: 0.92, track: 0.88,
+    parts: [
+      { g: box(1.66, 0.22, 2.7, 0, 0.44, -0.02), c: DARK },
+      { g: box(1.56, 0.3, 1.2, 0, 0.7, 0.82), c: r.kart },            // bonnet
+      { g: box(1.5, 0.16, 0.5, 0, 0.88, 0.82), c: r.trim },
+      // the cab: pillars and a screen, open topped so the driver reads
+      { g: box(1.5, 0.5, 0.16, 0, 0.9, -0.05), c: r.kart },
+      { g: box(0.16, 0.46, 0.9, 0.7, 0.92, 0.36), c: r.kart },
+      { g: box(0.16, 0.46, 0.9, -0.7, 0.92, 0.36), c: r.kart },
+      { g: box(1.16, 0.44, 0.07, 0, 1.06, 0.44), c: GLASS },
+      { g: box(1.3, 0.1, 0.12, 0, 1.3, 0.44), c: r.trim },
+      // grille, lamps and a bumper
+      { g: box(1.3, 0.34, 0.12, 0, 0.66, 1.42), c: INK },
+      { g: cyl(0.16, 0.16, 0.12, 10, 'z', 0.5, 0.78, 1.44), c: 0xfff6e2 },
+      { g: cyl(0.16, 0.16, 0.12, 10, 'z', -0.5, 0.78, 1.44), c: 0xfff6e2 },
+      { g: box(1.7, 0.18, 0.2, 0, 0.46, 1.5), c: STEEL },
+      { g: box(1.7, 0.18, 0.2, 0, 0.46, -1.42), c: STEEL },
+      // the bed, with sides and a toolbox in it
+      { g: box(1.56, 0.36, 0.1, 0, 0.72, -1.36), c: r.kart },
+      { g: box(0.1, 0.36, 1.1, 0.73, 0.72, -0.86), c: r.kart },
+      { g: box(0.1, 0.36, 1.1, -0.73, 0.72, -0.86), c: r.kart },
+      { g: box(1.1, 0.26, 0.4, 0, 0.68, -0.52), c: r.trim },
+      // a stack up the back of the cab
+      { g: cyl(0.1, 0.1, 1.0, 8, 'y', 0.6, 1.2, -0.2), c: STEEL },
+      { g: cyl(0.13, 0.13, 0.12, 8, 'y', 0.6, 1.72, -0.2), c: DARK },
+      { g: cyl(0.22, 0.22, 0.05, 12, 'z', 0, 1.0, 0.24), c: INK },
+    ],
+    exhaust: [{ x: 0.6, y: 1.78, z: -0.2 }],
+  };
+}
+
+export const CHASSIS = [
+  { id: 'formula', name: 'Formula', make: formula },
+  { id: 'roadster', name: 'Roadster', make: roadster },
+  { id: 'buggy', name: 'Buggy', make: buggy },
+  { id: 'speeder', name: 'Speeder', make: speeder },
+  { id: 'hauler', name: 'Hauler', make: hauler },
+];
+
+/* ---------------------------------------------------------------------------
+   The wheels. Each returns its parts and its radius, and the body sits on
+   whatever radius comes back, so a set of knobblies lifts the whole car.
+--------------------------------------------------------------------------- */
+
+function slicks(r) {
+  const holes = [];
+  for (let n = 0; n < 5; n++) {
+    const a = (n / 5) * Math.PI * 2;
+    const b = cyl(0.062, 0.062, 0.06, 7, 'x', 0.2, Math.sin(a) * 0.17, 0);
+    b.translate(0, 0, Math.cos(a) * 0.17);
+    holes.push({ g: b, c: RUBBER });
+    const c = b.clone(); c.translate(-0.4, 0, 0);
+    holes.push({ g: c, c: RUBBER });
+  }
+  return { r: 0.41, parts: [
+    { g: cyl(0.41, 0.41, 0.34, 16, 'x', 0, 0, 0), c: RUBBER },
+    { g: cyl(0.37, 0.37, 0.36, 16, 'x', 0, 0, 0), c: 0x2a3140 },
+    { g: cyl(0.29, 0.29, 0.38, 12, 'x', 0, 0, 0), c: r.trim },
+    { g: cyl(0.1, 0.1, 0.42, 8, 'x', 0, 0, 0), c: STEEL },
+  ].concat(holes) };
+}
+
+function knobblies(r) {
+  const tread = [];
+  for (let n = 0; n < 12; n++) {
+    const a = (n / 12) * Math.PI * 2;
+    for (const off of [-0.11, 0.11]) {
+      const b = box(0.16, 0.12, 0.2, off, Math.sin(a) * 0.46, Math.cos(a) * 0.46);
+      b.rotateX(-a);
+      const g = box(0.16, 0.12, 0.2, 0, 0, 0);
+      g.rotateX(a);
+      g.translate(off, Math.sin(a) * 0.46, Math.cos(a) * 0.46);
+      tread.push({ g, c: RUBBER });
+    }
+  }
+  return { r: 0.52, parts: [
+    { g: cyl(0.46, 0.46, 0.42, 14, 'x', 0, 0, 0), c: 0x232a36 },
+    { g: cyl(0.26, 0.26, 0.44, 10, 'x', 0, 0, 0), c: r.trim },
+    { g: cyl(0.13, 0.13, 0.48, 8, 'x', 0, 0, 0), c: STEEL },
+    { g: cyl(0.3, 0.3, 0.06, 10, 'x', 0.23, 0, 0), c: r.kart },
+    { g: cyl(0.3, 0.3, 0.06, 10, 'x', -0.23, 0, 0), c: r.kart },
+  ].concat(tread) };
+}
+
+function wires(r) {
+  const spokes = [];
+  for (let n = 0; n < 14; n++) {
+    const a = (n / 14) * Math.PI;
+    for (const off of [-0.07, 0.07]) {
+      const g = box(0.03, 0.72, 0.03, 0, 0, 0);
+      g.rotateX(a);
+      g.translate(off, 0, 0);
+      spokes.push({ g, c: CHROME });
+    }
+  }
+  return { r: 0.44, parts: [
+    { g: cyl(0.44, 0.44, 0.2, 18, 'x', 0, 0, 0), c: RUBBER },
+    { g: cyl(0.4, 0.4, 0.22, 18, 'x', 0, 0, 0), c: 0x2a3140 },
+    { g: cyl(0.38, 0.38, 0.12, 18, 'x', 0, 0, 0), c: r.trim },
+    { g: cyl(0.12, 0.12, 0.28, 10, 'x', 0, 0, 0), c: CHROME },
+    { g: cyl(0.06, 0.06, 0.34, 8, 'x', 0, 0, 0), c: r.kart },
+  ].concat(spokes) };
+}
+
+function turbines(r) {
+  const vanes = [];
+  for (let n = 0; n < 9; n++) {
+    const a = (n / 9) * Math.PI * 2;
+    const g = box(0.08, 0.3, 0.09, 0, 0.19, 0);
+    g.rotateZ(0.5);
+    g.rotateX(a);
+    g.translate(0.19, 0, 0);
+    vanes.push({ g, c: r.kart });
+    const c = g.clone(); c.translate(-0.38, 0, 0);
+    vanes.push({ g: c, c: r.kart });
+  }
+  return { r: 0.42, parts: [
+    { g: cyl(0.42, 0.42, 0.36, 16, 'x', 0, 0, 0), c: RUBBER },
+    { g: cyl(0.34, 0.34, 0.4, 16, 'x', 0, 0, 0), c: r.trim },
+    { g: cyl(0.2, 0.2, 0.44, 12, 'x', 0, 0, 0), c: INK },
+    { g: cyl(0.09, 0.09, 0.46, 8, 'x', 0, 0, 0), c: r.trim },
+  ].concat(vanes) };
+}
+
+export const WHEELS = [
+  { id: 'slick', name: 'Slicks', make: slicks },
+  { id: 'knobbly', name: 'Knobblies', make: knobblies },
+  { id: 'wire', name: 'Wires', make: wires },
+  { id: 'turbine', name: 'Turbines', make: turbines },
+];
+
+/* ---------------------------------------------------------------------------
+   The trail. What comes out of the exhausts when you are on a boost, and what
+   the drift throws off the back wheels. Each one is a shape and a pair of
+   colours; the racer's own colour is mixed in so it still reads as yours.
+--------------------------------------------------------------------------- */
+export const TRAILS = [
+  { id: 'spark', name: 'Sparks', shape: 'spark', hot: 0xffd233, cool: 0xff8a1f, size: 1 },
+  { id: 'flame', name: 'Flames', shape: 'flame', hot: 0xfff0a8, cool: 0xff3d18, size: 1.35 },
+  { id: 'bubble', name: 'Bubbles', shape: 'bubble', hot: 0xdff2ff, cool: 0x8fd3ff, size: 1.15 },
+  { id: 'star', name: 'Stars', shape: 'star', hot: 0xfff6e2, cool: 0xffd233, size: 1.2 },
+  { id: 'bolt', name: 'Bolts', shape: 'bolt', hot: 0xd8f0ff, cool: 0x7a5cff, size: 0.95 },
+];
+
+/* ---------------------------------------------------------------------------
+   The driver. A hat, a face and what they are wearing, and the same rule
+   applies as to the car: nothing carries a colour of its own, so a crown on
+   Juno is pink and a crown on Tock is teal, and everybody is still
+   recognisable at the far end of a straight.
+
+   The head is built around its own origin with the neck at y=0, because the
+   body it sits on decides where that is.
+--------------------------------------------------------------------------- */
+
+function hatCap(r) {
+  return [
+    { g: box(0.6, 0.14, 0.6, 0, 0.48, -0.02), c: r.cap },
+    { g: box(0.42, 0.1, 0.32, 0, 0.39, 0.32), c: r.cap },
+    { g: box(0.62, 0.05, 0.1, 0, 0.42, -0.02), c: r.trim },
+  ];
+}
+function hatHelmet(r) {
+  return [
+    { g: ball(0.4, 0, 0.3, 0), c: r.cap },
+    { g: box(0.84, 0.1, 0.5, 0, 0.5, -0.05), c: r.trim },
+    { g: box(0.5, 0.12, 0.14, 0, 0.16, 0.36), c: r.trim },
+    { g: cyl(0.09, 0.09, 0.16, 8, 'x', 0.38, 0.28, 0), c: r.trim },
+    { g: cyl(0.09, 0.09, 0.16, 8, 'x', -0.38, 0.28, 0), c: r.trim },
+  ];
+}
+function hatBeanie(r) {
+  return [
+    { g: ball(0.38, 0, 0.32, 0), c: r.shirt },
+    { g: cyl(0.4, 0.4, 0.16, 12, 'y', 0, 0.2, 0), c: r.trim },
+    { g: ball(0.12, 0, 0.66, 0), c: r.trim },
+  ];
+}
+function hatCrown(r) {
+  const pts = [];
+  for (let n = 0; n < 6; n++) {
+    const a = (n / 6) * Math.PI * 2;
+    pts.push({ g: box(0.1, 0.24, 0.1, Math.sin(a) * 0.3, 0.58, Math.cos(a) * 0.3), c: 0xffd233 });
+  }
+  return [
+    { g: cyl(0.34, 0.34, 0.22, 12, 'y', 0, 0.46, 0), c: 0xffd233 },
+    { g: cyl(0.36, 0.36, 0.06, 12, 'y', 0, 0.36, 0), c: r.trim },
+  ].concat(pts);
+}
+function hatHair(r) {
+  return [
+    { g: ball(0.37, 0, 0.3, -0.02), c: r.hair || 0x4a3325 },
+    { g: box(0.5, 0.18, 0.2, 0, 0.34, 0.3), c: r.hair || 0x4a3325 },
+  ];
+}
+export const HATS = [
+  { id: 'cap', name: 'Cap', make: hatCap },
+  { id: 'helmet', name: 'Helmet', make: hatHelmet },
+  { id: 'beanie', name: 'Beanie', make: hatBeanie },
+  { id: 'crown', name: 'Crown', make: hatCrown },
+  { id: 'hair', name: 'Bare head', make: hatHair },
+];
+
+function facePlain(r) {
+  return [
+    { g: box(0.1, 0.07, 0.05, -0.13, 0.22, 0.31), c: INK },
+    { g: box(0.1, 0.07, 0.05, 0.13, 0.22, 0.31), c: INK },
+    { g: box(0.2, 0.05, 0.05, 0, 0.36, 0.3), c: 0x5a4030 },
+  ];
+}
+function faceGoggles(r) {
+  return [
+    { g: box(0.62, 0.16, 0.08, 0, 0.24, 0.3), c: DARK },
+    { g: cyl(0.11, 0.11, 0.08, 10, 'z', -0.14, 0.24, 0.34), c: GLASS },
+    { g: cyl(0.11, 0.11, 0.08, 10, 'z', 0.14, 0.24, 0.34), c: GLASS },
+    { g: box(0.74, 0.08, 0.06, 0, 0.24, -0.06), c: r.trim },
+  ];
+}
+function faceShades(r) {
+  return [
+    { g: box(0.24, 0.12, 0.06, -0.15, 0.24, 0.33), c: INK },
+    { g: box(0.24, 0.12, 0.06, 0.15, 0.24, 0.33), c: INK },
+    { g: box(0.1, 0.05, 0.05, 0, 0.26, 0.33), c: INK },
+    { g: box(0.05, 0.05, 0.3, 0.32, 0.26, 0.16), c: INK },
+    { g: box(0.05, 0.05, 0.3, -0.32, 0.26, 0.16), c: INK },
+    { g: box(0.16, 0.05, 0.04, 0, 0.1, 0.33), c: 0xc2705c },
+  ];
+}
+function faceVisor(r) {
+  return [
+    { g: box(0.6, 0.26, 0.1, 0, 0.24, 0.29), c: 0x12203a },
+    { g: box(0.62, 0.06, 0.09, 0, 0.38, 0.3), c: r.trim },
+    { g: box(0.5, 0.05, 0.08, 0, 0.11, 0.31), c: r.trim },
+  ];
+}
+export const FACES = [
+  { id: 'plain', name: 'Plain', make: facePlain },
+  { id: 'goggles', name: 'Goggles', make: faceGoggles },
+  { id: 'shades', name: 'Shades', make: faceShades },
+  { id: 'visor', name: 'Visor', make: faceVisor },
+];
+
+function suitRace(r, st) {
+  return [
+    { g: box(0.52, 0.44, 0.34, 0, st.y + 0.48, st.z), c: r.shirt },
+    { g: box(0.42, 0.14, 0.3, 0, st.y + 0.3, st.z + 0.04), c: r.trim },
+    { g: box(0.2, 0.1, 0.32, 0, st.y + 0.58, st.z + 0.03), c: r.trim },
+  ];
+}
+function suitJacket(r, st) {
+  return [
+    { g: box(0.56, 0.46, 0.36, 0, st.y + 0.48, st.z), c: r.trim },
+    { g: box(0.16, 0.44, 0.35, 0, st.y + 0.48, st.z + 0.01), c: r.shirt },
+    { g: box(0.58, 0.1, 0.36, 0, st.y + 0.68, st.z), c: 0xfff6e2 },
+  ];
+}
+function suitOverall(r, st) {
+  return [
+    { g: box(0.54, 0.44, 0.34, 0, st.y + 0.48, st.z), c: 0x3f5fa8 },
+    { g: box(0.13, 0.5, 0.06, -0.17, st.y + 0.5, st.z + 0.17), c: 0x3f5fa8 },
+    { g: box(0.13, 0.5, 0.06, 0.17, st.y + 0.5, st.z + 0.17), c: 0x3f5fa8 },
+    { g: box(0.26, 0.2, 0.05, 0, st.y + 0.4, st.z + 0.18), c: r.trim },
+  ];
+}
+function suitTee(r, st) {
+  return [
+    { g: box(0.5, 0.42, 0.32, 0, st.y + 0.47, st.z), c: r.shirt },
+    { g: box(0.3, 0.2, 0.05, 0, st.y + 0.5, st.z + 0.16), c: r.trim },
+    { g: box(0.52, 0.06, 0.33, 0, st.y + 0.66, st.z), c: 0xfff6e2 },
+  ];
+}
+export const SUITS = [
+  { id: 'race', name: 'Race suit', make: suitRace },
+  { id: 'jacket', name: 'Jacket', make: suitJacket },
+  { id: 'overall', name: 'Overalls', make: suitOverall },
+  { id: 'tee', name: 'Tee', make: suitTee },
+];
+
+/* ---- what a build is ----------------------------------------------------- */
+const pick = (list, id, n) => {
+  const i = list.findIndex(p => p.id === id);
+  return list[i >= 0 ? i : ((n | 0) % list.length + list.length) % list.length];
+};
+export function normalise(build) {
+  const b = build || {};
+  return {
+    chassis: pick(CHASSIS, b.chassis, 0).id,
+    wheels: pick(WHEELS, b.wheels, 0).id,
+    trail: pick(TRAILS, b.trail, 0).id,
+    hat: pick(HATS, b.hat, 0).id,
+    face: pick(FACES, b.face, 0).id,
+    suit: pick(SUITS, b.suit, 0).id,
+  };
+}
+export const chassisOf = id => pick(CHASSIS, id, 0);
+export const wheelsOf = id => pick(WHEELS, id, 0);
+export const trailOf = id => pick(TRAILS, id, 0);
+export const hatOf = id => pick(HATS, id, 0);
+export const faceOf = id => pick(FACES, id, 0);
+export const suitOf = id => pick(SUITS, id, 0);
+
+/* ---------------------------------------------------------------------------
+   Putting a look on the wire. The lobby already relays one number per player
+   for which racer they picked, so the build travels inside that number rather
+   than as a new message: eight racers times five bodies times four wheel sets
+   times five trails is eight hundred values, which fits in the integer that was
+   already being sent. Nothing on the server had to learn about any of this.
+--------------------------------------------------------------------------- */
+const ORDER = [
+  ['chassis', CHASSIS], ['wheels', WHEELS], ['trail', TRAILS],
+  ['hat', HATS], ['face', FACES], ['suit', SUITS],
+];
+export function packLook(cast, build) {
+  const b = normalise(build);
+  let n = 0;
+  for (let i = ORDER.length - 1; i >= 0; i--) {
+    const list = ORDER[i][1];
+    n = n * list.length + Math.max(0, list.findIndex(x => x.id === b[ORDER[i][0]]));
+  }
+  return (cast & 7) + 8 * n;
+}
+export function unpackLook(n) {
+  let r = Math.max(0, n | 0);
+  const cast = r & 7;
+  r = Math.floor(r / 8);
+  const build = {};
+  for (const pair of ORDER) {
+    build[pair[0]] = pair[1][r % pair[1].length].id;
+    r = Math.floor(r / pair[1].length);
+  }
+  return { cast, build };
+}

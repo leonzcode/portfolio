@@ -44,41 +44,11 @@ const SHADOW_TEX = (() => {
 })();
 const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
-/* Yaw zero faces -z here, the same as everything else in these games, so the
-   model is built nose-first towards -z. The helpers negate z once so the part
-   list can be written the way you would sketch it, nose forward. */
-function box(w, h, d, x, y, z) {
-  const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
-  g.translate(x, y, -z);
-  return g;
-}
-function cyl(r1, r2, len, seg, axis, x, y, z) {
-  const g = new THREE.CylinderGeometry(r1, r2, len, seg).toNonIndexed();
-  if (axis === 'x') g.rotateZ(Math.PI / 2);
-  if (axis === 'z') g.rotateX(Math.PI / 2);
-  g.translate(x, y, -z);
-  return g;
-}
-function ball(r, x, y, z) {
-  const g = new THREE.IcosahedronGeometry(r, 1).toNonIndexed();
-  g.translate(x, y, -z);
-  return g;
-}
-/* A box that is narrower at one end than the other, which is what almost every
-   panel on a car actually is. Built by moving the front face in rather than by
-   loading a model, so it still merges into the same two meshes as everything
-   else and still costs nothing. Front means towards the nose, -z. */
-function taper(wFront, wBack, h, hFront, d, x, y, z) {
-  const g = new THREE.BoxGeometry(wBack, h, d).toNonIndexed();
-  const p = g.attributes.position;
-  const kx = wFront / wBack, ky = hFront / h;
-  for (let i = 0; i < p.count; i++) {
-    if (p.getZ(i) < 0) { p.setX(i, p.getX(i) * kx); p.setY(i, p.getY(i) * ky); }
-  }
-  g.computeVertexNormals();
-  g.translate(x, y, -z);
-  return g;
-}
+import { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS,
+         chassisOf, wheelsOf, trailOf, hatOf, faceOf, suitOf, normalise,
+         box, cyl, ball, taper, INK, STEEL, DARK } from './parts.js?v=24';
+export { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS, normalise };
+
 function merge(parts, mat) {
   let n = 0;
   for (const p of parts) n += p.g.attributes.position.count;
@@ -104,113 +74,67 @@ function merge(parts, mat) {
 }
 
 /* ---- the model ----------------------------------------------------------- */
-export function makeKart(who) {
+/* A kart is a body, a set of wheels, a driver and a trail, and the four are
+   chosen separately. Nothing that comes out of the garage carries a colour of
+   its own: every panel is painted out of the racer, so however anybody has
+   built theirs, a grid of eight is still eight recognisable cars. */
+export function makeKart(who, build) {
   const r = who || RACERS[0];
+  const b = normalise(build);
+  const spec = chassisOf(b.chassis).make(r);
+  const tyre = wheelsOf(b.wheels).make(r);
   const group = new THREE.Group();
   const body = new THREE.Group();
   group.add(body);
 
-  /* The car. A floor pan, a tapered tub, side pods with radiator slots, a
-     pointed nose on a front wing, an engine cover, exhausts, a rear wing on
-     pylons with endplates, and a roll hoop behind the driver's head. All of it
-     is boxes, cylinders and tapered boxes so the whole thing still merges into
-     one mesh with its colours in the vertices. */
-  const INK = 0x17223b, STEEL = 0xb8bcc4, DARK = 0x3a3f4a, RUBBER = 0x1d2430;
-  const shell = [
-    // floor pan, a little wider than the tub and much darker, which is what
-    // gives the car a shadow line down its side instead of one flat slab
-    { g: box(1.72, 0.14, 2.5, 0, 0.26, -0.05), c: DARK },
-    { g: box(1.5, 0.1, 2.56, 0, 0.2, -0.05), c: INK },
-    // the tub, narrowing towards the nose
-    { g: taper(0.86, 1.34, 0.46, 0.34, 2.0, 0, 0.5, 0.18), c: r.kart },
-    { g: taper(0.7, 1.1, 0.16, 0.12, 2.0, 0, 0.74, 0.2), c: r.trim },   // top flash
-    // side pods, with a dark intake at the front of each
-    { g: taper(0.34, 0.5, 0.42, 0.3, 1.5, 0.66, 0.5, -0.1), c: r.kart },
-    { g: taper(0.34, 0.5, 0.42, 0.3, 1.5, -0.66, 0.5, -0.1), c: r.kart },
-    { g: box(0.3, 0.26, 0.1, 0.66, 0.52, 0.66), c: INK },
-    { g: box(0.3, 0.26, 0.1, -0.66, 0.52, 0.66), c: INK },
-    // nose, pointed, on a wing with endplates
-    { g: taper(0.2, 0.8, 0.28, 0.14, 0.9, 0, 0.52, 1.5), c: r.trim },
-    { g: box(1.66, 0.08, 0.42, 0, 0.32, 1.72), c: r.trim },
-    { g: box(0.06, 0.2, 0.42, 0.82, 0.4, 1.72), c: r.kart },
-    { g: box(0.06, 0.2, 0.42, -0.82, 0.4, 1.72), c: r.kart },
-    // cockpit surround and the seat behind it
-    { g: box(0.9, 0.16, 0.12, 0, 0.8, 0.62), c: DARK },
-    { g: box(0.82, 0.52, 0.14, 0, 0.94, -0.36), c: r.kart },
-    { g: box(0.56, 0.2, 0.22, 0, 1.24, -0.44), c: DARK },               // headrest
-    // roll hoop over the driver's shoulders
-    { g: cyl(0.07, 0.07, 0.56, 7, 'y', 0.34, 1.12, -0.5), c: STEEL },
-    { g: cyl(0.07, 0.07, 0.56, 7, 'y', -0.34, 1.12, -0.5), c: STEEL },
-    { g: cyl(0.07, 0.07, 0.72, 7, 'x', 0, 1.38, -0.5), c: STEEL },
-    // engine cover, exhausts, and the gearbox behind them
-    { g: taper(0.74, 0.5, 0.44, 0.5, 0.9, 0, 0.78, -0.95), c: r.kart },
-    { g: box(0.62, 0.3, 0.3, 0, 0.72, -1.3), c: DARK },
-    { g: cyl(0.1, 0.12, 0.66, 7, 'z', 0.26, 0.95, -1.34), c: STEEL },
-    { g: cyl(0.1, 0.12, 0.66, 7, 'z', -0.26, 0.95, -1.34), c: STEEL },
-    // rear wing: a plane on two pylons, with endplates standing off it
-    { g: box(0.1, 0.42, 0.24, 0.24, 1.14, -1.2), c: DARK },
-    { g: box(0.1, 0.42, 0.24, -0.24, 1.14, -1.2), c: DARK },
-    { g: box(1.44, 0.09, 0.4, 0, 1.38, -1.24), c: r.trim },
-    { g: box(1.3, 0.06, 0.22, 0, 1.24, -1.34), c: r.trim },             // lower element
-    { g: box(0.07, 0.42, 0.52, 0.72, 1.24, -1.26), c: r.kart },
-    { g: box(0.07, 0.42, 0.52, -0.72, 1.24, -1.26), c: r.kart },
-    // mirrors, because a car with none reads as a toy
-    { g: box(0.16, 0.1, 0.08, 0.5, 0.86, 0.52), c: DARK },
-    { g: box(0.16, 0.1, 0.08, -0.5, 0.86, 0.52), c: DARK },
-    // the steering wheel, and the column it sits on
-    { g: cyl(0.2, 0.2, 0.06, 12, 'z', 0, 1.0, 0.52), c: INK },
-    { g: cyl(0.06, 0.06, 0.3, 6, 'z', 0, 0.92, 0.66), c: DARK },
-  ];
+  /* The car itself comes out of the garage: whichever body was chosen, painted
+     out of the racer who is driving it. The driver is built separately and put
+     on the seat the body asks for, so the same person fits a formula car and a
+     pickup without being modelled twice. */
+  const shirt = r.shirt, skin = r.skin, cap = r.cap;
+  const st = spec.seat;
 
-  // the driver: big head, small body, hands on the wheel
-  const d = [
-    { g: box(0.52, 0.44, 0.34, 0, 0.98, 0.02), c: r.shirt },
-    { g: cyl(0.10, 0.10, 0.10, 8, 'y', 0, 1.24, 0.02), c: r.skin },
-    { g: ball(0.36, 0, 1.55, 0.02), c: r.skin },                  // head
-    { g: box(0.62, 0.14, 0.62, 0, 1.78, 0.0), c: r.cap },         // cap crown
-    { g: box(0.44, 0.10, 0.34, 0, 1.68, 0.34), c: r.cap },        // peak
-    { g: box(0.10, 0.06, 0.05, -0.13, 1.5, 0.34), c: 0x17223b },  // eyes
-    { g: box(0.10, 0.06, 0.05, 0.13, 1.5, 0.34), c: 0x17223b },
-    { g: cyl(0.09, 0.09, 0.5, 7, 'y', -0.3, 1.05, 0.26), c: r.shirt },
-    { g: cyl(0.09, 0.09, 0.5, 7, 'y', 0.3, 1.05, 0.26), c: r.shirt },
-    { g: ball(0.12, -0.24, 1.02, 0.46), c: 0xfff6e2 },            // gloves
-    { g: ball(0.12, 0.24, 1.02, 0.46), c: 0xfff6e2 },
-  ];
-  // lean the arms forward onto the wheel
-  body.add(merge(shell.concat(d), BODY_MAT));
+  // the torso, which stays with the car, wearing whatever was chosen
+  const torso = suitOf(b.suit).make(r, st).concat([
+    { g: cyl(0.1, 0.1, 0.1, 8, 'y', 0, st.y + 0.74, st.z), c: skin },
+  ]);
+  body.add(merge(spec.parts.concat(torso), BODY_MAT));
 
+  /* The head and the arms move, so they are their own little groups rather than
+     part of the merge. A driver who looks into the corner and turns the wheel
+     with the wheel is most of what makes a kart look alive at speed. */
+  const head = new THREE.Group();
+  head.position.set(0, st.y + 0.8, -st.z);
+  head.add(merge([{ g: ball(0.34, 0, 0.26, 0), c: skin }]
+    .concat(hatOf(b.hat).make(r), faceOf(b.face).make(r)), BODY_MAT));
+  body.add(head);
+
+  const arms = new THREE.Group();
+  arms.position.set(0, st.y + 0.55, -(st.z + 0.1));
+  arms.add(merge([
+    { g: cyl(0.09, 0.09, 0.52, 7, 'y', -0.28, -0.02, 0.2), c: shirt },
+    { g: cyl(0.09, 0.09, 0.52, 7, 'y', 0.28, -0.02, 0.2), c: shirt },
+    { g: ball(0.12, -0.24, -0.06, 0.42), c: 0xfff6e2 },
+    { g: ball(0.12, 0.24, -0.06, 0.42), c: 0xfff6e2 },
+  ], BODY_MAT));
+  arms.rotation.x = -0.5 - st.lean;
+  body.add(arms);
+
+  /* Every wheel is its own merge so the set can change without the car being
+     rebuilt round it, and the body sits on whatever radius came back: a set of
+     knobblies lifts the whole car by the difference. */
   const wheels = [];
-  const WX = 0.86, WZ = 0.82;
+  const WX = spec.track, WZ = spec.wheelbase;
   for (const [sx, sz, steers] of [[-1, 1, true], [1, 1, true], [-1, -1, false], [1, -1, false]]) {
     const hub = new THREE.Group();
-    hub.position.set(sx * WX, 0.38, -sz * WZ);
-    /* A tyre with a rim in it and spokes across the rim, which is the one place
-       on a kart you actually look at when it is standing still on the grid. The
-       sidewall is a slightly larger dark disc so the tread reads as tread. */
-    /* An alloy with five holes in it rather than five spokes on it: the rim is
-       one disc standing proud of the sidewall, and the holes are dark plugs
-       standing proud of the rim. Spokes laid inside the tyre were invisible,
-       which is the trouble with modelling the gaps instead of the metal. */
-    const rimC = r.trim, holes = [];
-    for (let n = 0; n < 5; n++) {
-      const a = (n / 5) * Math.PI * 2;
-      const b = new THREE.CylinderGeometry(0.062, 0.062, 0.06, 7).toNonIndexed();
-      b.rotateZ(Math.PI / 2);
-      b.translate(0.2, Math.sin(a) * 0.17, Math.cos(a) * 0.17);
-      holes.push({ g: b, c: 0x1d2430 });
-      const c = b.clone(); c.translate(-0.4, 0, 0);
-      holes.push({ g: c, c: 0x1d2430 });
-    }
-    const m = merge([
-      { g: cyl(0.41, 0.41, 0.34, 16, 'x', 0, 0, 0), c: 0x1d2430 },      // tread
-      { g: cyl(0.37, 0.37, 0.36, 16, 'x', 0, 0, 0), c: 0x2a3140 },      // sidewall
-      { g: cyl(0.29, 0.29, 0.38, 12, 'x', 0, 0, 0), c: rimC },          // rim face
-      { g: cyl(0.1, 0.1, 0.42, 8, 'x', 0, 0, 0), c: 0xb8bcc4 },         // hub nut
-    ].concat(holes), TYRE_MAT);
+    hub.position.set(sx * WX, tyre.r, -sz * WZ);
+    const m = merge(tyre.parts.map(q => ({ g: q.g.clone(), c: q.c })), TYRE_MAT);
     hub.add(m);
     body.add(hub);
-    wheels.push({ hub, spin: m, steers });
+    wheels.push({ hub, spin: m, steers, y0: tyre.r });
   }
+  // and the body rides at the height its wheels give it
+  body.position.y = tyre.r - spec.ride;
 
   // the contact patch, which lives outside the body group so it stays flat on
   // the road while the car above it leans, pitches and tumbles
@@ -223,7 +147,10 @@ export function makeKart(who) {
   group.add(shade);
 
   const kart = {
-    who: r, group, body, wheels, shade,
+    who: r, group, body, wheels, shade, head, arms,
+    build: b, trail: trailOf(b.trail), exhaust: spec.exhaust || [],
+    // how far the suspension is compressed, and how far it has left to go
+    squat: 0, squatV: 0,
     pos: new THREE.Vector3(), yaw: 0, speed: 0,
     drift: 0,            // -1 left, 1 right, 0 none
     driftT: 0, slide: 0, hop: 0, hopV: 0,
@@ -286,9 +213,28 @@ export function apply(k) {
   // nose up on the way up, nose down on the way down
   k.body.rotation.x = -k.speed * 0.0012 + k.pitch;
   void 0;
+  /* The driver. Head turns into the corner and the shoulders follow it a beat
+     later; the arms turn with the wheel. It is a few radians of nothing and it
+     is most of what stops a kart at speed looking like a pushed brick. */
+  if (k.head) {
+    const into = k.steerVis * 1.5 + k.slide * 0.5;
+    k.head.rotation.y = Math.max(-0.7, Math.min(0.7, into));
+    k.head.rotation.z = -into * 0.22 - k.lean * 0.5;
+    // and it ducks a little under hard acceleration, and lifts on the brakes
+    k.head.position.z = -(k.who ? 0 : 0) + Math.min(0.06, Math.max(-0.06, -k.speed * 0.0016));
+  }
+  if (k.arms) k.arms.rotation.y = k.steerVis * 0.85;
+
+  /* The suspension. Each wheel is pushed up into the body by how hard the car
+     is being asked to do something: braking loads the front, power loads the
+     back, and a corner loads the outside. Landing squashes all four. */
   for (const w of k.wheels) {
     w.hub.rotation.y = w.steers ? k.steerVis : 0;
     w.spin.rotation.x = k.wheelSpin;
+    const front = w.hub.position.z > 0 ? -1 : 1;    // +z is the tail here
+    const side = Math.sign(w.hub.position.x);
+    const load = front * (k.pitch * 0.9) + side * k.lean * 0.6 + k.squat;
+    w.hub.position.y = w.y0 + Math.max(-0.1, Math.min(0.12, load * 0.5));
   }
   const s = 1 + Math.min(0.14, k.boost * 0.5);
   k.group.scale.set(1 / (1 + (s - 1) * 0.4), 1, s);
@@ -427,6 +373,8 @@ export function stepKart(k, input, track, dt) {
     k.hop += k.hopV * dt;
     k.hopV -= TUNE.G * dt;
     if (k.hop <= 0) {
+      // the springs take the landing: a kick into the dampers that settles out
+      if (k.hopV < -2) k.squatV = Math.max(-9, k.hopV * 0.5);
       if (k.hopV < -4) k.landed = 1;        // a real landing, not the end of a flick
       k.hop = 0; k.hopV = 0; k.launched = 0;
       // Forget what the road was doing when you left it. Holding on to it meant
@@ -436,6 +384,11 @@ export function stepKart(k, input, track, dt) {
       k.roadRise = 0;
     }
   }
+
+  // a spring and a damper on the body, which is all a suspension has to be
+  k.squatV += (-k.squat * 46 - k.squatV * 9) * dt;
+  k.squat += k.squatV * dt;
+  if (Math.abs(k.squat) < 0.001 && Math.abs(k.squatV) < 0.01) { k.squat = 0; k.squatV = 0; }
 
   if (k.boost > 0) k.boost = Math.max(0, k.boost - dt);
   if (k.star > 0) k.star = Math.max(0, k.star - dt);

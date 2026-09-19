@@ -56,6 +56,44 @@
     background:var(--cream); color:var(--ink); border:var(--key); border-radius:18px;
     box-shadow:0 8px 0 var(--ink); padding:18px 22px; width:min(430px,88vw);
   }
+  /* the two panels sit side by side when there is room and stack when there is
+     not, which on a phone puts the car under the choices that change it */
+  #title .row{ display:flex; gap:18px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
+  #garage{ width:min(340px,88vw); }
+  #gstage{
+    position:relative; border:var(--key); border-radius:13px; overflow:hidden;
+    background:radial-gradient(120% 100% at 50% 0%, #cfe9ff 0%, #8ab8e8 62%, #5d81b8 100%);
+    box-shadow:inset 0 4px 0 rgba(23,34,59,.12);
+  }
+  #gcan{ display:block; width:100%; height:186px; cursor:grab; }
+  #gcan:active{ cursor:grabbing; }
+  #ghint{
+    position:absolute; left:0; right:0; bottom:5px; text-align:center; pointer-events:none;
+    font-weight:800; font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+    color:#fff; opacity:.72; text-shadow:0 2px 0 rgba(23,34,59,.6);
+  }
+  #gparts{ margin-top:11px; display:flex; flex-direction:column; gap:6px; }
+  #gparts h3{
+    margin:5px 0 0; font-family:var(--display); font-weight:800; font-size:11px;
+    letter-spacing:.16em; text-transform:uppercase; opacity:.45;
+  }
+  #gparts h3:first-child{ margin-top:0; }
+  #gparts .opt{ display:flex; align-items:center; gap:7px; }
+  #gparts .opt b{
+    flex:1; text-align:center; font-family:var(--display); font-weight:700; font-size:14px;
+    background:#fff; border:var(--key); border-radius:11px; padding:7px 4px; letter-spacing:.03em;
+  }
+  #gparts .opt em{
+    font-style:normal; width:54px; font-weight:800; font-size:10px; letter-spacing:.12em;
+    text-transform:uppercase; opacity:.6;
+  }
+  #gparts .opt button{
+    width:34px; height:34px; cursor:pointer; font-family:var(--display); font-weight:800; font-size:17px;
+    color:var(--ink); background:#fff; border:var(--key); border-radius:11px; box-shadow:0 3px 0 var(--ink);
+    line-height:1; padding:0;
+  }
+  #gparts .opt button:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--ink); }
+  #gparts .opt button:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
   #title .card h2{ font-family:var(--display); font-weight:800; font-size:19px; margin:0 0 12px; letter-spacing:.04em; }
   #title label{ display:block; font-weight:800; font-size:12px; letter-spacing:.14em; text-transform:uppercase; opacity:.6; margin-bottom:5px; }
   #title input{
@@ -475,6 +513,7 @@
 
 <div id="title">
   <div class="wm">LEON CART<small>Fastest one wins</small></div>
+  <div class="row">
   <div class="card">
     <h2>Pick a racer</h2>
     <label for="nick">Name</label>
@@ -484,6 +523,12 @@
   <div id="mapnote"></div>
   <label>Who</label>
   <div id="cast"></div>
+  </div>
+  <div class="card" id="garage">
+    <h2>Your kart</h2>
+    <div id="gstage"><canvas id="gcan"></canvas><span id="ghint">drag to turn</span></div>
+    <div id="gparts"></div>
+  </div>
   </div>
   <div id="play">
     <button class="big alt" id="solo">Singleplayer<small>you and seven others</small></button>

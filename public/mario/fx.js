@@ -46,13 +46,56 @@ export function initFx(s) {
 }
 function play(o, life, fn) { o.visible = true; live.push({ o, t: 0, life, fn }); }
 
-export function spark(pos, color, up) {
+/* One particle, in whichever style the kart throwing it was built with. The
+   shape is the same quad either way; what changes is how long it lives, how
+   fast it falls, how it grows and how it turns, which between them is the whole
+   difference between a spark, a flame and a bubble. */
+export function spark(pos, color, up, style, size) {
   const m = takeSpark();
   m.position.copy(pos);
   m.material.color.setHex(color);
   m.material.opacity = 1;
+  const s = size || 1;
+  m.scale.setScalar(s);
   const v = new THREE.Vector3((Math.random() - 0.5) * 5, (up || 1) + Math.random() * 3, (Math.random() - 0.5) * 5);
-  play(m, 0.32, (o, k, dt) => { v.y -= 16 * dt; o.position.addScaledVector(v, dt); o.material.opacity = 1 - k; });
+  if (style === 'flame') {
+    // it lifts instead of falling, and swells as it burns out
+    v.set((Math.random() - 0.5) * 2, (up || 1) * 0.4 + Math.random(), (Math.random() - 0.5) * 2);
+    play(m, 0.42, (o, k, dt) => {
+      v.y += 5 * dt;
+      o.position.addScaledVector(v, dt);
+      o.scale.setScalar(s * (1 + k * 1.6));
+      o.material.opacity = 1 - k * k;
+    });
+  } else if (style === 'bubble') {
+    // slow, floaty, and it pops rather than fading
+    v.multiplyScalar(0.45);
+    play(m, 0.85, (o, k, dt) => {
+      v.y += 3.2 * dt;
+      o.position.addScaledVector(v, dt);
+      o.scale.setScalar(s * (0.6 + k * 0.9));
+      o.material.opacity = k > 0.86 ? (1 - k) * 7 : 0.8;
+    });
+  } else if (style === 'star') {
+    // it tumbles and drops like anything else, but it spins doing it
+    play(m, 0.55, (o, k, dt) => {
+      v.y -= 11 * dt;
+      o.position.addScaledVector(v, dt);
+      o.rotation.z += dt * 9;
+      o.scale.setScalar(s * (1 - k * 0.5));
+      o.material.opacity = 1 - k;
+    });
+  } else if (style === 'bolt') {
+    // short, sharp and stretched along the way it is going
+    v.multiplyScalar(1.5);
+    play(m, 0.2, (o, k, dt) => {
+      o.position.addScaledVector(v, dt);
+      o.scale.set(s * 0.4, s * (1.8 - k), s);
+      o.material.opacity = 1 - k * k;
+    });
+  } else {
+    play(m, 0.32, (o, k, dt) => { v.y -= 16 * dt; o.position.addScaledVector(v, dt); o.material.opacity = 1 - k; });
+  }
 }
 export function puff(pos, color) {
   const m = takePuff();
