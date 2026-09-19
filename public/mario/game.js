@@ -11,13 +11,13 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=14';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=14';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=14';
-import { makeBrain, driveBrain } from './ai.js?v=14';
-import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=14';
-import { makeCones } from './cones.js?v=14';
-import * as snd from './audio.js?v=14';
+import { buildTrack } from './track.js?v=15';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=15';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=15';
+import { makeBrain, driveBrain } from './ai.js?v=15';
+import { initFx, spark, puff, blast, coinPop, stepFx } from './fx.js?v=15';
+import { makeCones } from './cones.js?v=15';
+import * as snd from './audio.js?v=15';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -373,7 +373,7 @@ function useItem(k) {
     if (next) { k.item = next.id; k.itemN = next.n; }
     else { k.item = null; k.itemN = 0; }
   }
-  if (k === me) hudItem();
+  if (k === me) { hudItem(); useHint(false); }
 }
 
 /* --------------------------------------------------------------- the world -- */
@@ -451,7 +451,7 @@ function stepWorld(dt) {
       if (k.roulette <= 0) {
         if (k.item) k.queue.push({ id: k.rollTo, n: k.rollN });
         else { k.item = k.rollTo; k.itemN = k.rollN; }
-        if (k === me) { el('slot').classList.remove('spin'); el('slot').classList.add('land'); setTimeout(() => el('slot').classList.remove('land'), 300); hudItem(); snd.land(); }
+        if (k === me) { el('slot').classList.remove('spin'); el('slot').classList.add('land'); setTimeout(() => el('slot').classList.remove('land'), 300); hudItem(); snd.land(); useHint(true); }
       }
     }
     // the drift sparks, and the boost trail
@@ -590,6 +590,23 @@ function ord(n) {
   const s = ['th', 'st', 'nd', 'rd'][(n % 10 > 3 || (n % 100 - n % 10) === 10) ? 0 : n % 10] || 'th';
   return n + s;
 }
+/* A word about the thing that just landed, for as long as it takes to read it.
+   It names whatever the use key is bound to, and goes the moment the slot is
+   empty, so it can never be telling you to press something for nothing. */
+let hintT = 0;
+function useHint(on) {
+  hintT = on ? 3.6 : 0;
+  const h = el('usehint');
+  if (!h) return;
+  h.querySelector('i').textContent = keyName(bind.item[0] || 'e');
+  h.classList.toggle('on', !!on);
+}
+function hintStep(dt) {
+  if (hintT <= 0) return;
+  hintT -= dt;
+  if (hintT <= 0 || !me || !me.item) { hintT = 0; el('usehint').classList.remove('on'); }
+}
+
 function hudItem() {
   const slot = el('slot'), face = el('face');
   const q = el('slotq');
@@ -636,6 +653,7 @@ function notice(text) {
 }
 function drawHud(dt) {
   oilStep(dt);
+  hintStep(dt);
   if (noticeT > 0) { noticeT -= dt; if (noticeT <= 0) el('notice').classList.remove('on'); }
   const watch = spectating ? (order()[0] || me) : me;
   if (!watch) return;
@@ -877,7 +895,7 @@ async function start(online) {
   await new Promise(r => setTimeout(r, 20));
   track = buildTrack(scene);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=14').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  import('./props.js?v=15').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
   initFx(scene);
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
@@ -888,7 +906,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=14');
+    const mod = await import('./net.js?v=15');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
