@@ -53,6 +53,40 @@ export function taper(wFront, wBack, h, hFront, d, x, y, z) {
   g.translate(x, y, -z);
   return g;
 }
+/* ---------------------------------------------------------------------------
+   Many little shapes into one mesh, with their colours baked into the vertices.
+   This is the single most important thing in the whole game for performance: a
+   car, a plant or a cattle grid drawn as twenty objects is twenty draw calls,
+   and drawn this way it is one. Anything that does not have to move
+   independently of the rest of itself should come through here.
+--------------------------------------------------------------------------- */
+export const vertexMat = (rough, flat) => new THREE.MeshStandardMaterial({
+  vertexColors: true, roughness: rough === undefined ? 0.8 : rough, flatShading: !!flat,
+});
+export function merge(parts, mat) {
+  let n = 0;
+  for (const p of parts) n += p.g.attributes.position.count;
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
+  const c = new THREE.Color();
+  let o = 0;
+  for (const p of parts) {
+    const count = p.g.attributes.position.count;
+    pos.set(p.g.attributes.position.array, o * 3);
+    nor.set(p.g.attributes.normal.array, o * 3);
+    c.setHex(p.c);
+    for (let i = 0; i < count; i++) { col[(o + i) * 3] = c.r; col[(o + i) * 3 + 1] = c.g; col[(o + i) * 3 + 2] = c.b; }
+    o += count;
+    p.g.dispose();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = true;
+  return m;
+}
+
 /* A tube bent round one axis, for roll cages and bumper hoops: a torus cut to
    an arc, which is far cheaper to build than a swept path and reads the same. */
 export function hoop(r, thick, arc, start, axis, x, y, z) {
