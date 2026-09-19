@@ -320,5 +320,8 @@ catch (_e) {
 }
 window.THREE = THREE;
 load.textContent = 'warming the tyres…';
-await import('./game.js?v=2');
+// Every import inside /mario carries the same ?v= stamp, so a deploy can never
+// pair this page with a module left over from the last one. Bump it here and in
+// the modules together: grep -o '\.js?v=[0-9]*' *.js index.html | sort -u
+await import('./game.js?v=3');
 </script>
