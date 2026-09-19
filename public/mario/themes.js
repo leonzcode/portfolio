@@ -30,6 +30,14 @@
 export const THEMES = [
   {
     id: 'meadow',
+    // how much light there is in the air here, and how much the kerbs and the
+    // road markings make for themselves after dark
+    ambient: 0.28, glow: 0,
+    /* What the scenery is wearing. The furniture round a circuit is the same
+       kit everywhere, so without this every place has the same green trees and
+       the same red barriers standing in it and the palette stops at the kerb.
+       Each colour multiplies the model's own, so 0xffffff is the kit as drawn. */
+    dress: { tree: 0x9ee06a, bark: 0xc79a62, barrier: 0xffffff, metal: 0xffffff, cloth: 0xffffff },
     name: 'Sunfield Loop',
     blurb: 'Open country, wide corners, and the hay coming across the road',
     sky: 0x4fb7ff, fog: 0x8fd3ff, fogNear: 260, fogFar: 640,
@@ -59,6 +67,10 @@ export const THEMES = [
   },
   {
     id: 'dunes',
+    // how much light there is in the air here, and how much the kerbs and the
+    // road markings make for themselves after dark
+    ambient: 0.3, glow: 0,
+    dress: { tree: 0xc6cf7a, bark: 0xd9b07a, barrier: 0xffd8ad, metal: 0xf0d3ad, cloth: 0xffdfb4 },
     name: 'Redrock Dunes',
     blurb: 'Narrow, loose and hot, with boulders off the banking and wind on the straights',
     sky: 0xf0b071, fog: 0xf3c79a, fogNear: 200, fogFar: 560,
@@ -89,6 +101,10 @@ export const THEMES = [
   },
   {
     id: 'frost',
+    // how much light there is in the air here, and how much the kerbs and the
+    // road markings make for themselves after dark
+    ambient: 0.34, glow: 0,
+    dress: { tree: 0x86b6a4, bark: 0xa08a74, barrier: 0xdcecfa, metal: 0xe4f1fb, cloth: 0xe8f4ff },
     name: 'Glacier Pass',
     blurb: 'The grip goes. Long slides, icicles overhead and drifts on the exits',
     sky: 0xbfe0f5, fog: 0xdcecf7, fogNear: 170, fogFar: 520,
@@ -118,11 +134,15 @@ export const THEMES = [
   },
   {
     id: 'neon',
+    // how much light there is in the air here, and how much the kerbs, the
+    // barriers and the road markings make for themselves after dark
+    ambient: 0.62, glow: 1.35,
+    dress: { tree: 0x2f88c8, bark: 0x40507e, barrier: 0x8c9ad6, metal: 0x7d8fd4, cloth: 0x8f7fd0 },
     name: 'Neon Mile',
     blurb: 'Tight, grippy and technical. Light gates shut in your face',
     sky: 0x121a33, fog: 0x1b2444, fogNear: 120, fogFar: 460,
     skyTop: 0x080d22, skyBot: 0x2b3765, cloud: 0.12,
-    sun: 0x9fb4ff, sunPower: 0.9, hemiSky: 0x3a4a8c, hemiGround: 0x101728, hemiPower: 0.75,
+    sun: 0x9fb4ff, sunPower: 1.05, hemiSky: 0x5c6fb8, hemiGround: 0x1a2440, hemiPower: 1.05,
     ground: '#262d44', groundFleck: ['rgba(40,48,72,.6)', 'rgba(58,70,104,.5)'],
     blade: 'rgba(70,86,132,.45)',
     tarmac: '#31384a', tarmacGrit: [70, 26, 14],
@@ -147,6 +167,10 @@ export const THEMES = [
   },
   {
     id: 'ember',
+    // how much light there is in the air here, and how much the kerbs and the
+    // road markings make for themselves after dark
+    ambient: 0.34, glow: 0.5,
+    dress: { tree: 0x9a5a44, bark: 0x6b4038, barrier: 0xffb48a, metal: 0xc98a72, cloth: 0xd08a68 },
     name: 'Ember Hollow',
     blurb: 'Biggest jumps, biggest reward, and the ground erupts underneath you',
     sky: 0x39121a, fog: 0x5a1c1e, fogNear: 130, fogFar: 470,
@@ -179,6 +203,9 @@ export const THEMES = [
 /* Everything a theme does not say for itself. A place that sets nothing plays
    like a plain race, which is what makes the tables above readable: a number is
    only written down where it differs. */
+export const BASE_DRESS = { tree: 0xffffff, bark: 0xffffff, barrier: 0xffffff, metal: 0xffffff, cloth: 0xffffff };
+export const dressOf = th => Object.assign({}, BASE_DRESS, (th && th.dress) || {});
+
 export const BASE_RULES = {
   grip: 1, slide: 0, top: 1, accel: 1, offTop: 0.48,
   driftCharge: 1, boost: 1, hop: 1,

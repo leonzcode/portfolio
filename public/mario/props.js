@@ -16,6 +16,19 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
+import { dressOf } from './themes.js?v=24';
+
+/* Which part of a place's palette each model wears. The kit is one kit, so
+   without this every circuit has the same green trees and the same red barriers
+   standing round it and the theme stops at the kerb. */
+const WEARS = {
+  treeLarge: 'tree', treeSmall: 'tree',
+  barrierRed: 'barrier', barrierWhite: 'barrier',
+  grandStandCovered: 'metal', grandStand: 'metal',
+  lightPostModern: 'metal', flagCheckers: 'cloth',
+  bannerTowerRed: 'cloth', bannerTowerGreen: 'cloth',
+  tentLong: 'cloth', tent: 'cloth',
+};
 
 const DIR = 'models/';
 const SCALE = {
@@ -68,6 +81,8 @@ function parts(root, THREE) {
 }
 
 export async function buildProps(scene, THREE, track) {
+  const dress = dressOf(track.theme);
+  const glow = track.theme.glow || 0;
   const loader = new GLTFLoader();
   const group = new THREE.Group();
   group.name = 'props';
@@ -97,7 +112,26 @@ export async function buildProps(scene, THREE, track) {
       }
     }
     for (const part of model.list) {
-      const im = new THREE.InstancedMesh(part.geometry, part.material, spots.length);
+      /* The kit's own material, tinted to this place. It has to be a copy: the
+         materials are shared between models inside a glb, and painting the
+         original would repaint the same trees on every circuit after it. A
+         trunk keeps the bark colour and everything else takes the model's, so
+         a tinted tree does not end up with a green trunk. */
+      const mat = part.material.clone();
+      const key = WEARS[name];
+      if (key) {
+        const brown = mat.color && mat.color.r > mat.color.b * 1.15 && mat.color.g < mat.color.r * 0.85;
+        const tint = key === 'tree' && brown ? dress.bark : dress[key];
+        if (tint !== undefined) mat.color.multiplyScalar(1).multiply(new THREE.Color(tint));
+        /* On a circuit that races after dark the barriers light themselves.
+           They are the line between road and not road, and on Neon Mile they
+           are the only thing that tells you where it goes. */
+        if (glow && key === 'barrier') {
+          mat.emissive = mat.color.clone();
+          mat.emissiveIntensity = glow * 0.55;
+        }
+      }
+      const im = new THREE.InstancedMesh(part.geometry, mat, spots.length);
       im.name = name;
       spots.forEach((sp, i) => {
         euler.set(0, sp.yaw || 0, 0);
