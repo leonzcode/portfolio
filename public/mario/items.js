@@ -11,7 +11,7 @@
    little SVG for the slot in the corner of the screen.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { spinOut } from './kart.js?v=18';
+import { spinOut } from './kart.js?v=19';
 
 const svg = (inner) => '<svg viewBox="0 0 64 64" width="100%" height="100%">' + inner + '</svg>';
 const K = 'stroke="#17223b" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';
@@ -25,6 +25,11 @@ export const ITEMS = {
     name: 'Slick', drop: true,
     face: svg('<ellipse cx="32" cy="40" rx="24" ry="14" fill="#3a3f4a" ' + K + '/>'
             + '<ellipse cx="24" cy="36" rx="6" ry="3" fill="#8fd3ff" stroke="none"/>'),
+  },
+  peel: {
+    name: 'Banana', drop: true, triple: true,
+    face: svg('<path d="M12 20 Q18 48 46 52 Q58 52 56 44 Q40 44 26 30 Q20 24 20 18 Z" fill="#ffd233" ' + K + '/>'
+            + '<path d="M12 20 Q14 14 20 18" fill="none" ' + K + '/>'),
   },
   bolt: {
     name: 'Bolt', shoot: true, triple: true,
@@ -61,10 +66,10 @@ export const ITEMS = {
 /* What the box gives you, by where you are. Lower rows are further back. */
 const TABLE = [
   // place 1st
-  [['slick', 5], ['bolt', 4], ['turbo', 2]],
-  [['slick', 4], ['bolt', 4], ['turbo', 3], ['seeker', 1]],
-  [['bolt', 3], ['turbo', 4], ['seeker', 3], ['slick', 2], ['bomb', 1], ['oil', 1]],
-  [['turbo', 4], ['seeker', 4], ['bomb', 2], ['bolt', 2], ['star', 1], ['oil', 2]],
+  [['peel', 6], ['slick', 4], ['bolt', 3], ['turbo', 2]],
+  [['peel', 5], ['slick', 3], ['bolt', 4], ['turbo', 3], ['seeker', 1]],
+  [['peel', 3], ['bolt', 3], ['turbo', 4], ['seeker', 3], ['slick', 2], ['bomb', 1], ['oil', 1]],
+  [['peel', 2], ['turbo', 4], ['seeker', 4], ['bomb', 2], ['bolt', 2], ['star', 1], ['oil', 2]],
   [['turbo', 3], ['seeker', 4], ['bomb', 2], ['star', 2], ['surge', 2], ['oil', 2]],
   // last rows
   [['turbo', 3], ['seeker', 3], ['star', 3], ['surge', 3], ['bomb', 2], ['oil', 2]],
@@ -92,6 +97,17 @@ function shapeFor(kind) {
   if (kind === 'slick') {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.25, 0.14, 14), mat(0x2a2f38));
     m.position.y = 0.09; g.add(m);
+  } else if (kind === 'peel') {
+    // a curl of skin lying on the road: a squashed torus section, ends and all
+    const body = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.17, 6, 10, Math.PI * 1.15), mat(0xffd233));
+    body.rotation.x = Math.PI / 2;
+    body.scale.set(1, 1, 0.55);
+    body.position.y = 0.17;
+    g.add(body);
+    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.11, 0.42, 5), mat(0x8a5a36));
+    stalk.position.set(0.55, 0.3, 0.3);
+    stalk.rotation.z = 0.9;
+    g.add(stalk);
   } else if (kind === 'bolt') {
     g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 1), mat(0x43d94f, 0x43d94f)));
     g.position.y = 0.62;
@@ -113,12 +129,14 @@ export function makeItemWorld(scene, track, fx) {
   const hazards = [];     // things lying on the road
 
   function spawn(kind, owner, karts, ghost) {
-    if (kind === 'slick') {
-      const g = shapeFor('slick');
+    if (kind === 'slick' || kind === 'peel') {
+      const g = shapeFor(kind);
       const back = owner.yaw;
       g.position.set(owner.pos.x + Math.sin(back) * 2.6, owner.pos.y + 0.02, owner.pos.z + Math.cos(back) * 2.6);
       scene.add(g);
-      hazards.push({ kind, g, owner: owner.id, t: 0, x: g.position.x, z: g.position.z, r: 1.5, ghost: !!ghost });
+      g.rotation.y = Math.random() * Math.PI * 2;
+      hazards.push({ kind, g, owner: owner.id, t: 0, x: g.position.x, z: g.position.z,
+                     r: kind === 'peel' ? 1.15 : 1.5, ghost: !!ghost });
       return;
     }
     if (kind === 'bolt' || kind === 'seeker' || kind === 'bomb') {

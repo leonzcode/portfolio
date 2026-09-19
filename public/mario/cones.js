@@ -70,6 +70,9 @@ export function makeCones(scene, track) {
     list.push({
       x: p.x, z: p.z, y: p.y, vx: 0, vz: 0, spin: rnd() * 6.3, wob: 0,
       big, r: radiusOf(big ? SIZE.large : SIZE.small), hint: null, home: { x: p.x, z: p.z },
+      // one shove per contact: a kart resting against a cone was shoving it
+      // again every frame, which added up to a velocity no single hit could give
+      cool: 0,
     });
   }
 
@@ -94,13 +97,14 @@ export function makeCones(scene, track) {
   /* A shove, whoever it came from. The same call runs on the browser that did
      the hitting and on everyone else's when the message arrives, so the cone
      ends up in the same place without anybody streaming its position. */
+  // The same shove moves a heavy cone less, which is the whole of what makes the
+  // large ones large. It lives here so a shove off the network obeys it too.
+  const MASS = { small: 1, large: 2.4 };
   function shove(i, vx, vz) {
     const c = list[i];
     if (!c) return;
-    c.vx += vx; c.vz += vz;
-    const sp = Math.hypot(c.vx, c.vz);
-    const cap = c.big ? 9 : 17;
-    if (sp > cap) { c.vx = c.vx / sp * cap; c.vz = c.vz / sp * cap; }
+    const m = c.big ? MASS.large : MASS.small;
+    c.vx += vx / m; c.vz += vz / m;
     c.wob = Math.min(0.85, c.wob + (c.big ? 0.18 : 0.45));
   }
 
@@ -125,6 +129,7 @@ export function makeCones(scene, track) {
         c.y = pr.y;
       }
       if (c.wob > 0) c.wob = Math.max(0, c.wob - dt * (moving ? 0.6 : 2.6));
+      if (c.cool > 0) c.cool -= dt;
 
       for (const k of karts) {
         if (k.finished) continue;
@@ -132,16 +137,24 @@ export function makeCones(scene, track) {
         const d = Math.hypot(dx, dz);
         if (d > c.r + 1.05) continue;
         const sp = Math.abs(k.speed);
-        if (sp < 1.2) continue;
+        if (sp < 1.2 || c.cool > 0) continue;
         // it goes the way the kart was going, with a nudge to whichever side it
         // was already sitting on, so it scatters instead of shooting straight
         const fx = -Math.sin(k.yaw), fz = -Math.cos(k.yaw);
         const away = d > 0.01 ? { x: dx / d, z: dz / d } : { x: fx, z: fz };
-        const force = sp * (c.big ? 0.34 : 0.72);
-        const vx = (fx * 0.65 + away.x * 0.55) * force;
-        const vz = (fz * 0.65 + away.z * 0.55) * force;
+        // hit it with the hop button down and it goes twice as far
+        // hit it with the hop button down and it goes about twice as far, which
+        // needs the ceiling raised with it or the extra is simply clipped off
+        const hard = !!k.bash;
+        const force = sp * 0.72 * (hard ? 2.2 : 1);
+        let vx = (fx * 0.65 + away.x * 0.55) * force;
+        let vz = (fz * 0.65 + away.z * 0.55) * force;
+        const cap = 17 * (hard ? 2.2 : 1);
+        const mag = Math.hypot(vx, vz);
+        if (mag > cap) { vx = vx / mag * cap; vz = vz / mag * cap; }
         shove(i, vx, vz);
-        k.speed *= c.big ? 0.84 : 0.955;
+        c.cool = 0.35;
+        if (!k.bash) k.speed *= c.big ? 0.84 : 0.955;
         if (onShove) onShove(k, i, vx, vz);
       }
     }

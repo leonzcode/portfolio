@@ -180,14 +180,6 @@
   #charge.on{ opacity:1; }
   #charge i{ display:block; height:100%; width:0; background:var(--blue); transition:width .06s linear; }
   #charge.hot i{ background:var(--gold); }
-  /* how much slide you have left. It empties while you hold one and fills back
-     up when you are straight, so a drift is something you spend. */
-  #dpow{ position:absolute; right:26px; bottom:86px; width:120px; height:8px;
-         background:rgba(23,34,59,.5); border:2px solid var(--ink); border-radius:6px;
-         overflow:hidden; opacity:0; transition:opacity .15s; }
-  #dpow.on{ opacity:1; }
-  #dpow i{ display:block; height:100%; width:100%; background:#43d94f; transition:width .08s linear, background .2s; }
-  #dpow.low i{ background:var(--red); }
 
   #notice{
     position:absolute; left:50%; top:22%; transform:translateX(-50%);
@@ -256,7 +248,7 @@
   }
   @keyframes blink{ 0%,64%{ opacity:1 } 65%,100%{ opacity:.16 } }
   /* the lap, the place and the item slot have nothing to say in a lobby */
-  #hud.lobby #lap, #hud.lobby #place, #hud.lobby #slot, #hud.lobby #slotq, #hud.lobby #usehint, #hud.lobby #dpow{ display:none; }
+  #hud.lobby #lap, #hud.lobby #place, #hud.lobby #slot, #hud.lobby #slotq, #hud.lobby #usehint{ display:none; }
 
   /* ---------- the countdown ---------- */
   #count{
@@ -445,7 +437,6 @@
   <div id="mini"><canvas id="minic" width="380" height="232"></canvas></div>
   <div id="coins"><i></i><span id="coinn">0</span></div>
   <div id="charge"><i id="chargei"></i></div>
-  <div id="dpow"><i id="dpowi"></i></div>
   <div id="speed"><span class="n out" id="speedn">0</span><em>km/h</em></div>
   <div id="notice"></div>
 </div>
@@ -519,5 +510,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=18');
+await import('./game.js?v=19');
 </script>
