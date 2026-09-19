@@ -105,6 +105,11 @@ export function connect(ctx) {
       return;
     }
 
+    if (m.type === 'started') {
+      say('<b>' + esc(m.name) + '</b> called the race on.', 'sys');
+      return;
+    }
+
     if (m.type === 'chat') {
       say('<b>' + esc(m.name) + '</b> ' + esc(m.text), m.id === myId ? 'me' : '');
       return;
@@ -120,11 +125,11 @@ export function connect(ctx) {
       lastRound = m.round;
       lastPhase = '';
       for (const [, p] of seen) { p.tx = undefined; }
-      world.startRound(m.racers.map(r => ({ id: r.id, name: r.name, cast: r.cast })), m.seed);
+      world.startRound(m.racers.map(r => ({ id: r.id, name: r.name, cast: r.cast })), m.seed, m.phase);
     }
     if (m.phase !== lastPhase) {
       lastPhase = m.phase;
-      world.setPhase(m.phase === 'wait' ? 'count' : m.phase, m.t);
+      world.setPhase(m.phase, m.t);
       if (m.phase === 'race' && typeof m.raceT === 'number') world.setRaceTime(m.raceT);
     } else if (m.phase === 'count') {
       world.setPhase('count', m.t);
@@ -145,6 +150,7 @@ export function connect(ctx) {
   }
 
   return {
+    go() { send({ type: 'go' }); },
     get alive() { return alive; },
     get settled() { return settled; },
     get traffic() { return { sent, got }; },
