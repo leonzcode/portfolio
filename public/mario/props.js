@@ -38,18 +38,33 @@ function load(loader, name) {
 
 /* Flatten a loaded model to the meshes it is really made of, with its own
    hierarchy baked into the geometry, so each one can become a single
-   InstancedMesh no matter how the kit nested it. */
+   InstancedMesh no matter how the kit nested it.
+
+   And then move it onto its own origin. The kit does not draw these models
+   where their node sits: a barrier's mesh is the better part of a unit away
+   from it, which at the scale used here is nearly six metres. Anything placed
+   by its node therefore lands six metres from where it was asked to be, which
+   is a barrier you bump into before you reach it and a tree in the wrong
+   field. Centre the footprint on x and z, stand the feet on y = 0, and then a
+   spot means a spot. */
 function parts(root, THREE) {
   const out = [];
   root.updateMatrixWorld(true);
+  const box = new THREE.Box3();
   root.traverse(o => {
     if (!o.isMesh || !o.geometry) return;
     const g = o.geometry.clone();
     g.applyMatrix4(o.matrixWorld);
+    g.computeBoundingBox();
+    box.union(g.boundingBox);
     out.push({ geometry: g, material: o.material });
   });
-  void THREE;
-  return out;
+  if (out.length) {
+    const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+    for (const part of out) part.geometry.translate(-cx, -box.min.y, -cz);
+  }
+  const size = box.isEmpty() ? new THREE.Vector3() : box.getSize(new THREE.Vector3());
+  return { list: out, size };
 }
 
 export async function buildProps(scene, THREE, track) {
@@ -62,12 +77,22 @@ export async function buildProps(scene, THREE, track) {
   const euler = new THREE.Euler(), scl = new THREE.Vector3();
 
   // spots are { pos, yaw, scale }; one model, however many of them
-  async function put(name, spots) {
+  async function put(name, spots, faceOn) {
     if (!spots.length) return;
     let gltf;
     try { gltf = await load(loader, name); } catch (e) { return; }
     const base = SCALE[name] || 1;
-    for (const part of parts(gltf.scene, THREE)) {
+    const model = parts(gltf.scene, THREE);
+    // a model that is meant to stand ON a line rather than straddle it gets
+    // pushed back by half its depth, so its near face lands on the spot
+    if (faceOn) {
+      const halfDepth = model.size.z * base / 2;
+      for (const sp of spots) {
+        sp.pos.x -= Math.sin(sp.yaw) * halfDepth;
+        sp.pos.z -= Math.cos(sp.yaw) * halfDepth;
+      }
+    }
+    for (const part of model.list) {
       const im = new THREE.InstancedMesh(part.geometry, part.material, spots.length);
       im.name = name;
       spots.forEach((sp, i) => {
@@ -107,38 +132,68 @@ export async function buildProps(scene, THREE, track) {
   };
 
   /* ---- barriers down both edges ------------------------------------------ */
-  /* These are the edge of the circuit, not decoration beside it: the kit draws a
-     barrier from one end with its front face on the origin and its body behind,
-     so putting the origin on the wall line makes the barrier you can see the wall
-     you bounce off.
+  /* The barrier has to stand on the surface the physics actually stops you at,
+     and that surface is not a neat 3.2m offset from the tarmac.
 
-     They have to be spaced along the WALL, though, not along the middle of the
-     road. Round the outside of a corner the wall is longer than the centreline,
-     so stepping 2.25m down the middle leaves the run short by the difference and
-     opens holes in it - which you cannot see but can still drive into, because
-     the wall is continuous even where the barrier is not. Same where the road
-     changes width and the wall line steps sideways. So walk each edge itself. */
+     stepKart asks track.project where it is, and project answers with the offset
+     from the NEAREST SAMPLE's centre. Round the outside of a corner the nearest
+     sample is one further round, and measured from there the offset crosses the
+     limit while the kart is still short of where a constant offset would put the
+     wall. So the wall cuts the corner, and barriers drawn on the constant offset
+     sit outside it: you bump into nothing, a few metres before you reach them.
+
+     So ask the same question the physics asks. For each sample, walk outward and
+     find the first offset at which project says you have hit, by bisection, and
+     stand the barrier's front face there. What you can see is then what you hit,
+     everywhere, including the corners.
+
+     The kit draws a barrier from one end, with its front face on the origin and
+     its body behind, which is what makes this work: the origin goes on the wall. */
   const STEP = 2.2;                        // the barrier is 2.25m, so joints overlap
   const red = [], white = [];
+
+  // the first offset from this sample at which the physics says you have hit
+  function wallAt(i, sgn) {
+    const a = track.samples[i];
+    let lo = a.w, hi = a.w + track.shoulder * 2.4;
+    for (let k = 0; k < 16; k++) {
+      const mid = (lo + hi) / 2;
+      const pr = track.project(a.p.x + a.n.x * sgn * mid, a.p.z + a.n.z * sgn * mid, i);
+      if (Math.abs(pr.lateral) >= pr.wall) hi = mid; else lo = mid;
+    }
+    const p = a.p.clone().addScaledVector(a.n, sgn * hi);
+    p.y = track.groundY(p.x, p.z);
+    return p;
+  }
+
   for (const sgn of [1, -1]) {
-    let carry = 0, prev = null, n = 0;
-    for (let s = 0; s <= L; s += 1) {
-      const a = track.at(s % L);
-      const pos = side(a, sgn * (a.w + track.shoulder));
-      if (prev) {
-        carry += Math.hypot(pos.x - prev.x, pos.z - prev.z);
-        while (carry >= STEP) {
-          carry -= STEP;
-          (n++ % 2 ? red : white).push({ pos: pos.clone(), yaw: facingRoad(a, sgn) });
-        }
-      } else {
-        (n++ % 2 ? red : white).push({ pos: pos.clone(), yaw: facingRoad(a, sgn) });
+    // the wall as a closed ring of points, then walked at an even spacing: round
+    // the outside of a corner the edge is longer than the middle of the road, so
+    // stepping along the centreline instead leaves holes you cannot see
+    const ring = [];
+    for (let i = 0; i < track.samples.length; i++) ring.push(wallAt(i, sgn));
+    ring.push(ring[0].clone());
+    let walked = 0, next = 0, n = 0;
+    for (let i = 1; i < ring.length; i++) {
+      const from = ring[i - 1], to = ring[i];
+      const seg = Math.hypot(to.x - from.x, to.z - from.z);
+      if (seg < 1e-6) continue;
+      const dx = (to.x - from.x) / seg, dz = (to.z - from.z) / seg;
+      // +x runs along the wall; pick the turn that leaves +z looking at the road
+      const inward = track.samples[i % track.samples.length].p.clone().sub(to);
+      const yaw = ((-dz) * inward.x + dx * inward.z) > 0 ? alongX(dx, dz) : alongX(-dx, -dz);
+      while (next <= walked + seg) {
+        const at = next - walked;
+        const pos = new THREE.Vector3(from.x + dx * at, 0, from.z + dz * at);
+        pos.y = track.groundY(pos.x, pos.z);
+        (n++ % 2 ? red : white).push({ pos, yaw });
+        next += STEP;
       }
-      prev = pos;
+      walked += seg;
     }
   }
-  put('barrierRed', red);
-  put('barrierWhite', white);
+  put('barrierRed', red, true);         // the face on the wall, the body behind it
+  put('barrierWhite', white, true);
 
   /* ---- where a crowd would stand ----------------------------------------- */
   const stands = [], covered = [];

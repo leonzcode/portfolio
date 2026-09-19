@@ -364,12 +364,19 @@ export function buildTrack(scene) {
     const dx = x - a.p.x, dz = z - a.p.z;
     const along = dx * a.t.x + dz * a.t.z;
     const lateral = dx * a.n.x + dz * a.n.z;
+    // Height between samples, not at them. Handing back the nearest sample's own
+    // y made the kart step up and down every couple of metres, which reads as a
+    // bumpy ride on a road that is meant to be smooth.
+    const nb = samples[(best + (along >= 0 ? 1 : samples.length - 1)) % samples.length];
+    const span = Math.abs(nb.s - a.s) || 1;
+    const f = Math.min(1, Math.abs(along) / span);
+    const y = a.p.y + (nb.p.y - a.p.y) * f;
     return {
       i: best, s: a.s + along, lateral, half: a.w,
       onRoad: Math.abs(lateral) <= a.w + 0.4,
       onKerb: Math.abs(lateral) > a.w + 0.4 && Math.abs(lateral) <= a.w + KERB,
       wall: a.w + SHOULDER,
-      y: a.p.y, t: a.t, n: a.n,
+      y, t: a.t, n: a.n,
     };
   }
 

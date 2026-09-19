@@ -105,6 +105,18 @@
   #slot.land{ animation:slam .28s cubic-bezier(.2,1.7,.4,1) both; }
   @keyframes slam{ 0%{ transform:scale(1.28) rotate(-6deg) } 100%{ transform:scale(1) rotate(0) } }
   #slot.empty{ background:rgba(255,246,226,.35); }
+  /* what is queued behind the slot: the same box, smaller, in the order it lands */
+  #slotq{ position:absolute; left:26px; top:136px; display:flex; gap:7px; }
+  #slotq .q{
+    width:46px; height:46px; background:rgba(255,246,226,.92);
+    border:3px solid var(--ink); border-radius:11px; box-shadow:0 3px 0 var(--ink);
+    display:grid; place-items:center; overflow:hidden; position:relative;
+  }
+  #slotq .q svg, #slotq .q > *{ width:32px; height:32px; }
+  #slotq .q .n{
+    position:absolute; right:-2px; bottom:-5px; font-family:var(--display); font-weight:800;
+    font-size:15px; color:#fff; -webkit-text-stroke:3px var(--ink); paint-order:stroke fill;
+  }
   #slot .n{
     position:absolute; right:-4px; bottom:-8px; font-family:var(--display); font-weight:800;
     font-size:26px; color:#fff; -webkit-text-stroke:4px var(--ink); paint-order:stroke fill;
@@ -183,7 +195,7 @@
   }
   @keyframes blink{ 0%,64%{ opacity:1 } 65%,100%{ opacity:.16 } }
   /* the lap, the place and the item slot have nothing to say in a lobby */
-  #hud.lobby #lap, #hud.lobby #place, #hud.lobby #slot{ display:none; }
+  #hud.lobby #lap, #hud.lobby #place, #hud.lobby #slot, #hud.lobby #slotq{ display:none; }
 
   /* ---------- the countdown ---------- */
   #count{
@@ -298,6 +310,7 @@
   #results.on{ display:grid; }
   #results .panel{ width:min(470px,92vw); }
   #results .foot{ font-weight:700; font-size:13px; margin-top:13px; text-align:center; opacity:.7; }
+  #resfoot b{ font-family:var(--display); font-size:19px; color:var(--red); margin-left:3px; }
   #results .wrap{ display:flex; gap:14px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
   #cup{ display:none; }
   #cup.on{ display:block; }
@@ -364,6 +377,7 @@
 
 <div id="hud">
   <div id="slot" class="empty"><div class="face" id="face"></div></div>
+  <div id="slotq"></div>
   <div id="lap"><span class="n out" id="lapn">1</span><span class="of" id="lapof">/3</span><em>lap</em></div>
   <div id="place" class="p1"><span class="n out" id="placen">1</span><span class="sfx" id="placesfx">st</span></div>
   <div id="mini"><canvas id="minic" width="380" height="232"></canvas></div>
@@ -387,6 +401,7 @@
       <button class="mrow go" id="resume">Resume race</button>
       <div class="mrow vol"><span>Volume</span><input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume"><b id="voln">50</b></div>
       <button class="mrow" id="tocontrols">Controls<i>&rsaquo;</i></button>
+      <button class="mrow" id="tostart">Home<i>&rsaquo;</i></button>
       <a class="mrow" id="tohome" href="/">Back to leonzhao.dev<i>&rsaquo;</i></a>
     </div>
     <div id="menukeys" hidden>
@@ -405,7 +420,7 @@
     <div class="panel">
       <h2 id="restitle">Race over</h2>
       <div class="rows" id="resrows"></div>
-      <div class="foot" id="resfoot">Next race starting&hellip;</div>
+      <div class="foot" id="resfoot">Next race in <b>10</b></div>
     </div>
     <div id="cup"><div class="panel"><h2>Cup</h2><div class="rows" id="cuprows"></div></div></div>
   </div>
@@ -439,5 +454,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=10');
+await import('./game.js?v=11');
 </script>
