@@ -89,6 +89,11 @@ function hit(freq, life, vol, type, q) {
   src.start(t, Math.random(), life + 0.05);
 }
 
+/* What has been asked for, and the last tier each cue was asked at. A test
+   cannot listen to the speakers, and "the drift makes a noise" is a thing worth
+   being able to check, so the cues count themselves. Costs an increment. */
+export const heard = { charge: 0, turbo: 0, boost: 0, chargeAt: 0, turboAt: 0 };
+
 /* ---- the one-shots ------------------------------------------------------- */
 export function coin() {
   if (!ready) return;
@@ -103,7 +108,31 @@ export function land() {
   tone('square', 784, t, 0.08, 0.18);
   tone('square', 1175, t + 0.07, 0.16, 0.18);
 }
-export function boost() { sweep('sawtooth', 320, 1400, 0.4, 0.2); hit(900, 0.35, 0.16, 'bandpass', 0.7); }
+export function boost() {
+  heard.boost++;
+  sweep('sawtooth', 320, 1400, 0.4, 0.2);
+  hit(900, 0.35, 0.16, 'bandpass', 0.7);
+}
+/* The drift charge landing a tier. Blue, orange and purple each get their own
+   note, rising, so the charge can be heard rather than watched: in Mario Kart
+   the sparks are as much a sound as a picture, and a drift you have to look
+   down at is a drift you are not driving. */
+export function charge(tier) {
+  heard.charge++; heard.chargeAt = tier;
+  if (!ready) return;
+  const t = ac.currentTime;
+  const base = [0, 620, 830, 1108][tier] || 620;
+  tone('triangle', base, t, 0.07, 0.12);
+  tone('triangle', base * 1.5, t + 0.045, 0.09, 0.09);
+}
+/* And the turbo itself going off, which is a harder, shorter version of a
+   booster: the bigger the tier the lower it starts and the further it sweeps. */
+export function turbo(tier) {
+  heard.turbo++; heard.turboAt = tier;
+  const from = [0, 420, 360, 300][tier] || 420;
+  sweep('sawtooth', from, 1500 + tier * 220, 0.3 + tier * 0.06, 0.2);
+  hit(760 + tier * 120, 0.26, 0.15, 'bandpass', 0.8);
+}
 export function bump() { hit(320, 0.12, 0.22, 'lowpass', 1); }
 export function spin() { sweep('square', 700, 180, 0.6, 0.18); }
 export function bang() {
@@ -128,15 +157,20 @@ export function fanfare(good) {
 }
 
 /* ---- the continuous ones ------------------------------------------------- */
-export function engine(on, speed, top, offroad) {
+export function engine(on, speed, top, offroad, air) {
   if (!ready) return;
   const t = ac.currentTime;
   if (!on) { eng.g.gain.setTargetAtTime(0, t, 0.15); return; }
   const rev = Math.min(1.3, Math.abs(speed) / Math.max(1, top));
-  eng.a.frequency.setTargetAtTime(64 + rev * 150, t, 0.06);
-  eng.b.frequency.setTargetAtTime(32 + rev * 74, t, 0.06);
-  eng.lp.frequency.setTargetAtTime(380 + rev * 1500 + (offroad ? -120 : 0), t, 0.08);
-  eng.g.gain.setTargetAtTime(0.055 + rev * 0.075, t, 0.08);
+  /* With no wheels on the ground there is nothing loading the engine, so it
+     revs free: the note climbs and the muffling comes off. It lasts as long as
+     the jump does and it is the difference between a car that left the ground
+     and a car whose height changed. */
+  const free = air ? 1 : 0;
+  eng.a.frequency.setTargetAtTime(64 + rev * 150 + free * 46, t, free ? 0.035 : 0.06);
+  eng.b.frequency.setTargetAtTime(32 + rev * 74 + free * 22, t, free ? 0.035 : 0.06);
+  eng.lp.frequency.setTargetAtTime(380 + rev * 1500 + (offroad ? -120 : 0) + free * 900, t, 0.08);
+  eng.g.gain.setTargetAtTime(0.055 + rev * 0.075 + free * 0.012, t, 0.08);
 }
 export function skid(on) {
   if (!ready) return;
