@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Leon Cart - the loop.
+   Leon Kart - the loop.
 
    One circuit, one lobby, three laps. This file owns the renderer, the race
    state machine, the camera, the HUD and the input; the track, the karts, the
@@ -12,9 +12,9 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 import { buildTrack } from './track.js?v=28';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, RACERS, TUNE } from './kart.js?v=28';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=28';
 import { packLook, unpackLook, normalise } from './parts.js?v=28';
-import { makeGarage, PARTS } from './garage.js?v=28';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=28';
 import { plantOn, dropPlant, stepPlants } from './plant.js?v=28';
 import { makeRescue } from './rescue.js?v=28';
 import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=28';
@@ -325,8 +325,17 @@ function buildWorld(seed, themeId) {
 }
 
 /* --------------------------------------------------------------- the field -- */
-// how much more top end the computer drivers get than you do
+/* How much more top end the computer drivers get than you do, and how far that
+   is allowed to move during a race.
+
+   Rubber banding, and it watches you rather than the field. Lead for more than
+   a few seconds and the number climbs; drop back and it falls again. It moves
+   at a few per cent a second and is held between three quarters and a quarter
+   over, so what you feel is the race closing up behind you rather than the
+   computer cheating in front of you. */
 const BOT_TOP = 2.02;
+const BAND_LO = 0.78, BAND_HI = 1.22;
+let band = 1, leadT = 0;
 // how long the results stand before the next race, matching the lobby server
 const RESULTS = 10;
 
@@ -380,6 +389,7 @@ function startRound(field, seed, asPhase, themeId) {
   clearField();
   results = [];
   raceTime = 0; notified = 0;
+  band = 1; leadT = 0;
   wrongT = 0;
   el('wrong').classList.remove('on');
   const grid = [];
@@ -542,6 +552,16 @@ function stepWorld(dt) {
   const live = order();
   const leader = live[0] ? lapProg(live[0], track) : 0;
 
+  /* The elastic. How long you have been in front decides which way it moves,
+     and it only moves while a race is actually running. */
+  if (phase === 'race' && me && !me.finished) {
+    const first = (me.place || 9) === 1;
+    leadT = first ? Math.min(12, leadT + dt) : Math.max(-12, leadT - dt);
+    const want = leadT > 5 ? BAND_HI : leadT < -5 ? BAND_LO : 1;
+    band += (want - band) * Math.min(1, dt * 0.22);
+    for (const b of brains) b.kart.topMul = BOT_TOP * band;
+  }
+
   /* What a computer driver is trying to miss: whatever anybody has dropped on
      the road, plus whatever this place is doing at this instant. A boulder
      halfway across the road is a hazard; the same boulder off in the field is
@@ -638,14 +658,17 @@ function stepWorld(dt) {
       }
     }
     // the drift sparks, and the boost trail
-    if (k.drift !== 0 && k.speed > 8 && Math.random() < 0.6) {
-      const hot = k.driftT > 1.0;
+    if (k.drift !== 0 && k.speed > 8 && Math.random() < 0.72) {
       const back = k.pos.clone().setY(k.pos.y + 0.25);
       back.x += Math.sin(k.yaw) * 1.1; back.z += Math.cos(k.yaw) * 1.1;
-      // the drift keeps its own colours, because they are the charge meter:
-      // white, then blue, then gold is how you know the turbo is ready
-      spark(back, k.driftT > 0.5 ? (hot ? 0xffd233 : 0x8fd3ff) : 0xdfe6ef, 1.2,
-            k.trail && k.trail.shape, k.trail && k.trail.size);
+      /* The sparks are the charge meter, so they keep their own colours: white
+         while nothing is charged, then blue, orange and purple as each tier
+         comes up, which is exactly how you read a drift in Mario Kart without
+         looking away from the road. */
+      const tier = driftTier(k);
+      const SPARK = [0xdfe6ef, 0x8fd3ff, 0xff9b2f, 0xc06bff];
+      spark(back, SPARK[tier], 1.2 + tier * 0.4,
+            k.trail && k.trail.shape, (k.trail ? k.trail.size : 1) * (1 + tier * 0.22));
     }
     /* The boost trail, out of the exhausts this car actually has rather than
        out of a point behind it, in whichever style it was built with. A star
@@ -976,12 +999,9 @@ function drawHud(dt) {
   el('placesfx').textContent = ord(pl).replace(/^\d+/, '');
   el('place').className = 'p' + Math.min(3, pl);
   el('speedn').textContent = Math.round(Math.abs(watch.speed) * 3.6);
-  const ch = el('charge');
-  if (watch.drift !== 0) {
-    ch.classList.add('on');
-    ch.classList.toggle('hot', watch.driftT > 1.0);
-    el('chargei').style.width = clamp(watch.driftT / 1.0, 0, 1) * 100 + '%';
-  } else ch.classList.remove('on');
+  /* No charge bar. The sparks off the back wheels are the meter, the way they
+     are in Mario Kart: white, then blue, then orange, then purple, and you read
+     them out of the corner of your eye without taking them off the road. */
   drawBoard();
   drawMini();
 }
@@ -1235,11 +1255,6 @@ function buildGarage() {
   garage = makeGarage(canvas);
   garage.show(RACERS[myCast], myBuild);
   for (const part of PARTS) {
-    if (part.group) {
-      const h = document.createElement('h3');
-      h.textContent = part.group;
-      rows.appendChild(h);
-    }
     const row = document.createElement('div');
     row.className = 'opt';
     const name = document.createElement('b');
@@ -1253,6 +1268,7 @@ function buildGarage() {
       saveBuild();
       garage.show(RACERS[myCast], myBuild);
       tellLook();
+      drawBars();
       snd.tick();
     };
     const arrow = (txt, d) => {
@@ -1266,6 +1282,31 @@ function buildGarage() {
     name.textContent = (part.list.find(x => x.id === myBuild[part.key]) || part.list[0]).name;
     row.append(label, arrow('‹', -1), name, arrow('›', 1));
     rows.appendChild(row);
+  }
+  drawBars();
+}
+
+/* What the build is worth to drive. Bars rather than numbers, because nobody
+   reads 1.08 and nobody needs to: what matters is that picking the heavy body
+   moved two of them up and two of them down. */
+function drawBars() {
+  const box = el('gbars');
+  if (!box) return;
+  const st = statsOf(myBuild);
+  box.textContent = '';
+  for (const b of BARS) {
+    const row = document.createElement('div');
+    row.className = 'bar';
+    const nm = document.createElement('span');
+    nm.textContent = b.name;
+    const track = document.createElement('i');
+    const fill = document.createElement('u');
+    // a build sits somewhere between about two thirds and about a half again,
+    // so that is the range the bar covers
+    fill.style.width = clamp((st[b.key] - 0.7) / 0.9, 0.04, 1) * 100 + '%';
+    track.appendChild(fill);
+    row.append(nm, track);
+    box.appendChild(row);
   }
 }
 

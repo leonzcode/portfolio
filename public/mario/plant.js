@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Leon Cart - the Snapper.
+   Leon Kart - the Snapper.
 
    A carnivorous vine in a drum, bolted to the nose of your kart for a few
    seconds. It does not get thrown and it does not get aimed: it waits, and when

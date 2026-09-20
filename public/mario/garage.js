@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Leon Cart - the garage.
+   Leon Kart - the garage.
 
    The car you are about to drive, on a turntable, before you drive it. Pick a
    racer and it is their car; change a part and it changes in front of you; drag
@@ -15,19 +15,29 @@
 const THREE = window.THREE;
 
 import { makeKart, apply } from './kart.js?v=28';
-import { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS, normalise } from './parts.js?v=28';
+import { CHASSIS, WHEELS, TRAILS, normalise, statsOf } from './parts.js?v=28';
 
-/* The rows under the turntable, in two groups: the car, then the person in it.
-   Grouping them matters more than it sounds - six unlabelled rows of arrows is
-   a settings screen, and two groups of three is a garage. */
+/* The rows under the turntable. Three of them, and every one changes how the
+   car drives as well as how it looks, so the bars underneath are the reason to
+   look at any of it. */
 export const PARTS = [
-  { group: 'Kart', key: 'chassis', label: 'Body', list: CHASSIS },
+  { key: 'chassis', label: 'Body', list: CHASSIS },
   { key: 'wheels', label: 'Wheels', list: WHEELS },
   { key: 'trail', label: 'Trail', list: TRAILS },
-  { group: 'Racer', key: 'hat', label: 'Hat', list: HATS },
-  { key: 'face', label: 'Face', list: FACES },
-  { key: 'suit', label: 'Outfit', list: SUITS },
 ];
+
+/* What the bars show. Weight is what you can shove somebody with and how
+   little they can shove you, which is one number doing two jobs because in a
+   kart game it always is. */
+export const BARS = [
+  { key: 'top', name: 'Top speed' },
+  { key: 'accel', name: 'Acceleration' },
+  { key: 'grip', name: 'Handling' },
+  { key: 'weight', name: 'Weight' },
+  { key: 'jump', name: 'Jump' },
+  { key: 'charge', name: 'Mini turbo' },
+];
+export { statsOf };
 
 export function makeGarage(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });

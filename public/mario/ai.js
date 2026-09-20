@@ -153,7 +153,10 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
   // The root of it, not the whole of it: cornering speed goes with the root of
   // the grip, and lifting in proportion made a lap of Glacier Pass take three
   // times as long as a lap of anywhere else.
-  const cap = 1 - Math.min(0.58, bend * 0.42 / Math.sqrt(R.grip)) * (1.25 - br.skill * 0.45);
+  /* How much it lifts for what is coming. The whole game is a quarter quicker
+     than it was and a corner does not care: at the old numbers the field
+     arrived at everything a quarter too fast and spent the race in the scenery. */
+  const cap = 1 - Math.min(0.68, bend * 0.55 / Math.sqrt(R.grip)) * (1.25 - br.skill * 0.45);
   // off its own top end, so a quicker field stays quick round the corners too
   const wantSpeed = topSpeed(k) * (0.72 + br.skill * 0.3) * cap;
   const gas = k.speed < wantSpeed ? 1 : 0;
@@ -188,7 +191,14 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
     }
   } else br.itemWait = 0.5 + br.rnd() * 1.2;
 
-  // a gentle elastic, so the pack stays a pack
+  /* The elastic.
+
+     Two of them, actually. The old one is a nudge for anybody a long way off
+     the leader, which keeps the pack a pack. The new one watches the person at
+     the keyboard: run away at the front and the whole field slowly finds a bit
+     more, fall back and it slowly gives it up again. It moves at a few per cent
+     a second and is capped either side, so it is something you feel as the race
+     closing up rather than something you can see happening. */
   const behind = leaderProg - lapProg(k, track);
   br.boostBias = behind > 120 ? 1.06 : behind < -80 ? 0.96 : 1;
 

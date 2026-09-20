@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Leon Cart - the cones.
+   Leon Kart - the cones.
 
    Things in the way that do not simply stop you. A cone gets knocked along the
    road, skids, slows down and settles wherever it ends up, so the line through a

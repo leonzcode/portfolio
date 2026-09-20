@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Leon Cart - the furniture round the circuit.
+   Leon Kart - the furniture round the circuit.
 
    Kenney's Racing Kit, CC0, loaded once and then instanced: barriers down both
    edges, stands and banner towers where a crowd would stand, cones on the apex
