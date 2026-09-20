@@ -475,17 +475,18 @@
     overflow: hidden;
   }
   .p-head { display: flex; align-items: baseline; gap: 16px; flex: none; }
-  .p-head h1 { font: 400 clamp(22px, 3.2vw, 44px)/1.1 var(--disp); margin: 0; flex: 1; min-width: 0;
+  .p-head h1 { font: 400 clamp(22px, 3.6vw, 64px)/1.1 var(--disp); margin: 0; flex: 1; min-width: 0;
                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .p-head .n { font: 400 clamp(13px, 1.5vw, 20px)/1.2 var(--sans); color: var(--dim); }
-  .p-close { flex: none; width: 44px; height: 44px; border: 0; background: none; border-radius: 50%;
+  .p-head .n { font: 400 clamp(13px, 1.7vw, 28px)/1.2 var(--sans); color: var(--dim); }
+  .p-close { flex: none; width: clamp(40px, 4vw, 64px); height: clamp(40px, 4vw, 64px); border: 0; background: none; border-radius: 50%;
              display: grid; place-items: center; color: var(--ink-2); cursor: pointer; }
   .p-close:hover { background: #f1f3f4; }
-  .p-body { flex: 1; min-height: 0; display: flex; gap: 20px; }
-  .p-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-  .p-chart { flex: none; }
+  .p-close .svg { width: 60%; height: 60%; }
+  .p-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+  .p-top { flex: none; display: flex; gap: 24px; align-items: center; min-height: 0; }
+  .p-chart { flex: 1; min-width: 0; }
   .p-chart svg { display: block; width: 100%; height: auto; }
-  .p-list { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+  .p-list { flex: none; display: flex; flex-direction: column; justify-content: flex-end; }
   .p-row {
     display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line);
   }
@@ -497,15 +498,15 @@
   .p-row .tm { flex: none; font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; }
   .p-row .tm.done { color: var(--ok); }
   .p-row.fin .nm { color: var(--ok); }
-  .p-side { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  .p-side { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
   .p-side svg { display: block; shape-rendering: crispEdges; }
   .p-side .cap { text-align: center; color: var(--ink-2); line-height: 1.3; }
   .p-side .url { color: var(--dim); word-break: break-all; }
   .p-none { color: var(--dim); display: grid; place-items: center; height: 100%; }
   @media (max-width: 760px) {
     .p-wrap { padding: 12px 14px; gap: 10px; }
-    .p-body { flex-direction: column; gap: 12px; }
-    .p-side { flex-direction: row; justify-content: flex-start; gap: 14px; }
+    .p-top { flex-direction: column; gap: 10px; height: auto !important; }
+    .p-side { flex-direction: row; justify-content: flex-start; align-items: center; gap: 14px; }
     .p-side .cap { text-align: left; }
   }
   @media (max-width: 720px) {
@@ -1004,11 +1005,7 @@
 
     // footer
     var foot = el("div", "f-foot");
-    foot.appendChild(document.createTextNode("Never submit passwords through this form."));
-    foot.appendChild(el("br"));
-    var line2 = el("div");
-    line2.innerHTML = "A page on leonzhao.dev, built in the style of Google Forms. Not a Google product." ;
-    foot.appendChild(line2);
+    foot.appendChild(el("div", null, "leonzhao.dev"));
     var line3 = el("div");
     line3.style.marginTop = "6px";
     var eLink = el("a", null, "Editor");
@@ -1529,13 +1526,13 @@
     // blown up for a room keeps the same air around its labels as one on a card.
     var fs = Math.round(11 * Math.max(1, Math.min(2.4, Math.min(H / 200, (W / 640) * 1.6))));
     var padL = Math.round(fs * 2.2), padR = Math.round(fs * 1.1);
-    var padT = Math.round(fs * 2), padB = Math.round(fs * 2.8);
+    var padT = Math.round(fs * 1.1), padB = Math.round(fs * 2.8);
     var plotW = W - padL - padR, plotH = H - padT - padB;
     var band = plotW / Math.max(1, n);
     // A bar is capped so it never fills its slot, but the cap grows with the graph:
     // 24px is right on a card and spindly on a projector.
-    var barCap = Math.max(narrow ? 20 : 24, Math.round(H * 0.11));
-    var barW = Math.max(6, Math.min(barCap, band - 12));
+    var barCap = Math.max(narrow ? 22 : 30, Math.round(H * 0.16));
+    var barW = Math.max(6, Math.min(barCap, Math.round(band * 0.6), band - 10));
     var y = function (v) { return padT + (1 - (total ? v / total : 0)) * plotH; };
     var y0 = y(0);
 
@@ -1564,15 +1561,6 @@
       lab.textContent = String(v);
       svg.appendChild(lab);
     });
-    // what the two axes are: the count up the side, the teams along the bottom
-    var cap = sEl("text", { x: padL - Math.round(fs * 0.5), y: Math.round(fs * 1.1), "text-anchor": "start", class: "b-axis" });
-    cap.textContent = "questions answered";
-    svg.appendChild(cap);
-    if (W > 460) {
-      var fin = sEl("text", { x: W - padR, y: Math.round(fs * 1.1), "text-anchor": "end", class: "b-axis" });
-      fin.textContent = "all " + total + " to find";
-      svg.appendChild(fin);
-    }
 
     var tip = el("div", "b-tip");
     tip.style.display = "none";
@@ -1663,6 +1651,22 @@
     return fmtClock(ms);
   }
 
+  // The code to join, at whatever size the screen it is on can spare.
+  function joinCode(size) {
+    var box = document.createDocumentFragment();
+    var q = qrSvg();
+    q.style.width = size + "px";
+    q.style.height = size + "px";
+    box.appendChild(q);
+    var cap = el("div", "cap", "Scan to join");
+    cap.style.fontSize = Math.round(size * 0.1) + "px";
+    box.appendChild(cap);
+    var url = el("div", "url", "leonzhao.dev/form");
+    url.style.fontSize = Math.round(size * 0.075) + "px";
+    box.appendChild(url);
+    return box;
+  }
+
   function presentOn() { presenting = true; paintPresent(); }
   function presentOff() {
     presenting = false;
@@ -1684,8 +1688,7 @@
     wrap.id = "present";
     var head = el("div", "p-head");
     head.appendChild(el("h1", null, (E.form && E.form.title) || S.head.title || "Scavenger Hunt"));
-    head.appendChild(el("div", "n", (rows.length === 1 ? "1 player" : rows.length + " players") +
-                                   (total ? (" " + String.fromCharCode(183) + " " + total + " to find") : "")));
+    head.appendChild(el("div", "n", rows.length === 1 ? "1 player" : rows.length + " players"));
     var x = el("button", "p-close");
     x.type = "button";
     x.title = "Close (Esc)";
@@ -1694,46 +1697,40 @@
     head.appendChild(x);
     wrap.appendChild(head);
 
+    // The graph takes the room and the players sit under it: the bars are what a
+    // room reads from the back, the names and times are what they check up close.
     var body = el("div", "p-body");
-    var left = el("div", "p-left");
-    var side = el("div", "p-side");
-
-    // the code to join, sized to the room
-    var qs = Math.round(Math.max(120, Math.min(260, Math.min(window.innerWidth, window.innerHeight) * 0.24)));
-    var q = qrSvg();
-    q.style.width = qs + "px";
-    q.style.height = qs + "px";
-    side.appendChild(q);
-    var cap = el("div", "cap", "Scan to join");
-    cap.style.fontSize = Math.round(qs * 0.09) + "px";
-    side.appendChild(cap);
-    var url = el("div", "url", "leonzhao.dev/form");
-    url.style.fontSize = Math.round(qs * 0.072) + "px";
-    side.appendChild(url);
-
+    var top = el("div", "p-top");
     var chartWrap = el("div", "p-chart");
-    left.appendChild(chartWrap);
+    var side = el("div", "p-side");
+    top.appendChild(chartWrap);
+    top.appendChild(side);
     var list = el("div", "p-list");
-    left.appendChild(list);
-    body.appendChild(left);
-    body.appendChild(side);
+    body.appendChild(top);
+    body.appendChild(list);
     wrap.appendChild(body);
     document.body.appendChild(wrap);
     document.body.style.overflow = "hidden";
 
     if (!rows.length) {
-      list.appendChild(el("div", "p-none", "Nobody has joined yet. The code is up there when they are ready."));
+      var qs0 = Math.round(Math.max(140, Math.min(300, Math.min(window.innerWidth, window.innerHeight) * 0.3)));
+      side.appendChild(joinCode(qs0));
+      list.appendChild(el("div", "p-none", "Nobody has joined yet. The code is there when they are ready."));
       return;
     }
 
-    // how much room is left once the heading and the graph have had theirs
+    // The rows take what they need and no more; everything else is the graph's.
     var free = body.clientHeight;
-    var chartH = Math.round(Math.max(120, Math.min(free * 0.52, 420)));
-    chartInto(chartWrap, rows, total, -1, chartH);
-    var forList = Math.max(80, free - chartWrap.offsetHeight - 12);
     var wide = (body.clientWidth || 800) > 520;
-    var rowH = Math.max(22, Math.min(64, Math.floor(forList / rows.length)));
-    var fsize = Math.max(12, Math.min(30, Math.round(rowH * 0.5), Math.floor((body.clientWidth || 800) / 17)));
+    var rowH = Math.max(22, Math.min(72, Math.floor((free * 0.42) / rows.length)));
+    var listH = rowH * rows.length;
+    var chartH = Math.round(Math.max(150, free - listH - 14));
+    var fsize = Math.max(12, Math.min(44, Math.round(rowH * 0.6), Math.floor((body.clientWidth || 800) / 16)));
+
+    var qs = Math.round(Math.max(120, Math.min(320, chartH * 0.62, (body.clientWidth || 800) * 0.22)));
+    side.appendChild(joinCode(qs));
+    top.style.height = chartH + "px";
+    chartInto(chartWrap, rows, total, -1, chartH);
 
     rows.forEach(function (r, i) {
       var row = el("div", "p-row" + (r.done ? " fin" : ""));
