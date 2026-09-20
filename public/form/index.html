@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Scavenger Hunt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* Google Forms, near enough: its measurements, its type, its manners. Google Sans
+     is Google's own and not ours to ship, so the display stack falls back to Roboto,
+     which is what Forms itself falls back to and reads almost identically here.
+     The page tint, the button and every accent are derived from one theme colour,
+     the way a Forms theme works, so changing it in the editor changes the lot. */
+  :root {
+    --theme:   #673ab7;
+    --theme-d: #5b2ea3;   /* the same colour pressed */
+    --tint:    #f0ebf8;   /* the page behind the cards */
+    --ink:     #202124;
+    --ink-2:   #5f6368;
+    --dim:     #70757a;
+    --line:    #dadce0;
+    --err:     #d93025;
+    --ok:      #188038;
+    --card:    #fff;
+    --sans: Roboto, "Helvetica Neue", Arial, sans-serif;
+    --disp: "Google Sans", "Product Sans", Roboto, Arial, sans-serif;
+    --shadow: 0 1px 2px rgba(60,64,67,.30), 0 1px 3px 1px rgba(60,64,67,.15);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--tint);
+    color: var(--ink);
+    font: 400 14px/20px var(--sans);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+  a { color: var(--theme); }
+  :focus-visible { outline: 2px solid var(--theme); outline-offset: 2px; }
+  .hide { display: none !important; }
+  .svg { width: 24px; height: 24px; fill: currentColor; display: block; }
+
+  /* ============================== the form ============================== */
+
+  .f-wrap { max-width: 640px; margin: 0 auto; padding: 12px 12px 48px; }
+  .f-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+  /* the band rounds itself rather than being clipped by the card: a dropdown menu
+     has to be able to hang outside the card it opens in */
+  .f-band { height: 10px; background: var(--theme); border-radius: 7px 7px 0 0; }
+  .f-pad { padding: 24px; }
+  .f-title {
+    font: 400 32px/135% var(--disp);
+    letter-spacing: 0;
+    margin: 0;
+    word-break: break-word;
+  }
+  .f-desc { margin: 12px 0 0; font: 400 14px/20px var(--sans); color: var(--ink); white-space: pre-wrap; }
+  .f-rule { border-top: 1px solid var(--line); margin: 24px -24px 0; }
+  .f-req { margin-top: 12px; font-size: 12px; color: var(--err); }
+
+  .f-q-title { font: 400 16px/24px var(--sans); margin: 0; word-break: break-word; }
+  .f-star { color: var(--err); }
+  .f-help { margin: 2px 0 0; font-size: 12px; line-height: 16px; color: var(--dim); white-space: pre-wrap; }
+  .f-field { margin-top: 20px; }
+
+  /* short answer: an underline that thickens into the theme colour on focus */
+  .f-line { position: relative; max-width: 100%; }
+  .f-short { width: 100%; max-width: 340px; }
+  .f-para  { width: 100%; }
+  .f-input {
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    padding: 0 0 8px;
+    font: 400 14px/20px var(--sans);
+    resize: none;
+  }
+  .f-input::placeholder { color: var(--dim); }
+  .f-input:focus { outline: none; }
+  .f-line::after {
+    content: "";
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 2px; background: var(--theme);
+    transform: scaleX(0); transform-origin: center;
+    transition: transform .18s ease;
+  }
+  .f-line.on::after { transform: scaleX(1); }
+  .f-line.bad::after { background: var(--err); transform: scaleX(1); }
+
+  /* choices */
+  .f-opt {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 10px 0; cursor: pointer;
+    position: relative;
+  }
+  .f-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .f-mark {
+    flex: none; width: 20px; height: 20px; margin-top: 1px;
+    border: 2px solid var(--ink-2); border-radius: 50%;
+    position: relative; transition: border-color .12s ease;
+  }
+  .f-opt.box .f-mark { border-radius: 2px; }
+  .f-opt:hover .f-mark { border-color: var(--ink); }
+  .f-opt input:checked + .f-mark { border-color: var(--theme); }
+  .f-opt input:checked + .f-mark::after {
+    content: ""; position: absolute; inset: 2px;
+    border-radius: 50%; background: var(--theme);
+  }
+  .f-opt.box input:checked + .f-mark { background: var(--theme); }
+  .f-opt.box input:checked + .f-mark::after {
+    content: ""; position: absolute; left: 4px; top: 0px;
+    width: 6px; height: 11px; border: solid #fff; border-width: 0 2px 2px 0;
+    transform: rotate(45deg); border-radius: 0; background: none; inset: auto;
+  }
+  .f-opt input:focus-visible + .f-mark { outline: 2px solid var(--theme); outline-offset: 3px; }
+  .f-opt-txt { font: 400 14px/20px var(--sans); word-break: break-word; }
+
+  /* dropdown, built by hand so the menu matches the rest */
+  .f-drop { position: relative; max-width: 340px; }
+  .f-drop-btn {
+    width: 100%; text-align: left; background: transparent;
+    border: 0; border-bottom: 1px solid var(--line);
+    padding: 6px 28px 8px 0; cursor: pointer; color: var(--dim);
+    font: 400 14px/20px var(--sans);
+  }
+  .f-drop-btn.set { color: var(--ink); }
+  .f-caret { position: absolute; right: 0; bottom: 6px; color: var(--ink-2); pointer-events: none; }
+  .f-menu {
+    position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px);
+    background: #fff; border-radius: 4px; box-shadow: var(--shadow);
+    padding: 8px 0; max-height: 280px; overflow: auto;
+  }
+  .f-menu button {
+    display: block; width: 100%; text-align: left; background: none; border: 0;
+    padding: 10px 16px; font: 400 14px/20px var(--sans); cursor: pointer;
+  }
+  .f-menu button:hover, .f-menu button.on { background: #f1f3f4; }
+
+  /* the answer verdict */
+  .f-err { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--err); font-size: 12px; line-height: 16px; }
+  .f-err .svg { width: 18px; height: 18px; }
+  .f-hint { margin-top: 8px; font-size: 12px; line-height: 16px; color: var(--dim); }
+  .f-card.right { box-shadow: inset 0 0 0 2px var(--ok); }
+
+  /* the row under the card */
+  .f-row { display: flex; align-items: center; gap: 16px; padding: 0 0 4px; flex-wrap: wrap; }
+  .f-btn {
+    background: var(--theme); color: #fff; border: 0; border-radius: 4px;
+    height: 36px; padding: 0 24px; cursor: pointer;
+    font: 500 14px/36px var(--disp); letter-spacing: .25px;
+    transition: box-shadow .15s ease, background .15s ease;
+  }
+  .f-btn:hover { background: var(--theme-d); box-shadow: var(--shadow); }
+  .f-btn[disabled] { background: #e8eaed; color: #9aa0a6; cursor: default; box-shadow: none; }
+  .f-count { font-size: 14px; color: var(--ink); margin-left: auto; }
+  .f-clear { background: none; border: 0; color: var(--theme); font: 500 14px/36px var(--disp); cursor: pointer; padding: 0 8px; border-radius: 4px; }
+  .f-clear:hover { background: rgba(0,0,0,.04); background: color-mix(in srgb, var(--theme) 8%, transparent); }
+  .f-bar { height: 4px; background: rgba(0,0,0,.08); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+  .f-bar i { display: block; height: 100%; background: var(--theme); width: 0; transition: width .3s ease; }
+
+  .f-foot { margin-top: 28px; text-align: center; font-size: 11px; line-height: 16px; color: var(--dim); }
+  .f-foot a { color: var(--dim); text-decoration: underline; }
+  .f-foot .sep { margin: 0 6px; }
+
+  .f-note { text-align: center; font-size: 12px; color: var(--dim); padding: 8px 0; }
+
+  /* a question swapping for the next one */
+  @keyframes f-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .f-anim { animation: f-in .22s ease both; }
+
+  /* ============================= the editor ============================= */
+
+  .e-bar {
+    display: flex; align-items: center; gap: 12px;
+    background: #fff; padding: 8px 16px; border-bottom: 1px solid transparent;
+  }
+  .e-logo { width: 40px; height: 40px; flex: none; }
+  .e-name { flex: 1; min-width: 0; }
+  .e-name input {
+    border: 0; background: transparent; font: 400 18px/24px var(--disp);
+    padding: 2px 4px; border-radius: 4px; width: 100%; max-width: 420px;
+  }
+  .e-name input:hover { box-shadow: inset 0 0 0 1px var(--line); }
+  .e-name input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--theme); }
+  .e-saved { font-size: 12px; color: var(--dim); padding: 2px 4px; height: 16px; }
+  .e-acts { display: flex; align-items: center; gap: 4px; }
+  .e-icon {
+    width: 40px; height: 40px; border: 0; background: none; border-radius: 50%;
+    display: grid; place-items: center; color: var(--ink-2); cursor: pointer;
+  }
+  .e-icon:hover { background: #f1f3f4; }
+  .e-ghost {
+    border: 0; background: none; color: var(--theme); border-radius: 4px;
+    font: 500 14px/36px var(--disp); padding: 0 16px; cursor: pointer;
+  }
+  .e-ghost:hover { background: rgba(0,0,0,.04); background: color-mix(in srgb, var(--theme) 8%, transparent); }
+  .e-tabs { background: #fff; display: flex; justify-content: center; gap: 8px; box-shadow: 0 1px 2px rgba(60,64,67,.15); }
+  .e-tab {
+    border: 0; background: none; padding: 14px 20px 12px; cursor: pointer;
+    font: 500 14px/20px var(--disp); color: var(--ink-2); border-bottom: 3px solid transparent;
+  }
+  .e-tab:hover { background: #f8f9fa; }
+  .e-tab.on { color: var(--theme); border-bottom-color: var(--theme); }
+  .e-tab .pill {
+    display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px;
+    background: #f1f3f4; color: var(--ink-2); border-radius: 9px;
+    font-size: 11px; line-height: 18px; text-align: center;
+  }
+  .e-body { max-width: 770px; margin: 0 auto; padding: 24px 16px 96px; }
+
+  .e-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 12px; padding: 24px; position: relative;
+  }
+  .e-card.head { padding: 0; overflow: hidden; }
+  .e-card.head .in { padding: 24px; }
+  .e-card.sel { box-shadow: 0 2px 4px rgba(60,64,67,.15); }
+  .e-card.sel::before {
+    content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 6px;
+    background: var(--theme); border-radius: 8px 0 0 8px;
+  }
+  .e-grab { display: grid; place-items: center; color: #dadce0; height: 16px; margin: -16px 0 6px; cursor: grab; }
+  .e-card.drag { opacity: .4; }
+  .e-card.over { box-shadow: 0 -3px 0 var(--theme); }
+
+  .e-in {
+    width: 100%; border: 0; border-bottom: 1px solid transparent;
+    background: transparent; padding: 8px 12px; border-radius: 4px 4px 0 0;
+    font: 400 14px/20px var(--sans); resize: none; overflow: hidden;
+  }
+  .e-in:hover { border-bottom-color: var(--line); background: #f8f9fa; }
+  .e-in:focus { outline: none; background: #f8f9fa; border-bottom: 2px solid var(--theme); padding-bottom: 7px; }
+  .e-in.big { font: 400 24px/32px var(--disp); }
+  .e-in.q { font: 400 16px/24px var(--sans); }
+  .e-in.small { font-size: 12px; color: var(--dim); }
+
+  .e-top { display: flex; gap: 16px; align-items: flex-start; }
+  .e-top .l { flex: 1; min-width: 0; }
+  .e-sel {
+    flex: none; width: 210px; position: relative;
+  }
+  .e-sel-btn {
+    width: 100%; display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line); border-radius: 4px; background: #fff;
+    padding: 0 12px; height: 48px; cursor: pointer; text-align: left;
+    font: 400 14px/20px var(--sans);
+  }
+  .e-sel-btn:hover { background: #f8f9fa; }
+  .e-sel-btn .svg { width: 20px; height: 20px; color: var(--ink-2); flex: none; }
+  .e-sel-btn span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .e-menu {
+    position: absolute; z-index: 40; right: 0; top: calc(100% + 4px); width: 260px;
+    background: #fff; border-radius: 4px; box-shadow: var(--shadow); padding: 8px 0; overflow: hidden;
+  }
+  .e-menu button {
+    width: 100%; display: flex; align-items: center; gap: 12px; text-align: left;
+    background: none; border: 0; padding: 10px 16px; cursor: pointer; font: 400 14px/20px var(--sans);
+  }
+  .e-menu button:hover { background: #f1f3f4; }
+  .e-menu .svg { width: 20px; height: 20px; color: var(--ink-2); }
+  .e-menu hr { border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
+
+  .e-opt { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+  .e-opt .mk { flex: none; width: 20px; height: 20px; border: 2px solid #bdc1c6; border-radius: 50%; }
+  .e-opt.box .mk { border-radius: 2px; }
+  .e-opt .num { flex: none; width: 20px; color: var(--ink-2); font-size: 14px; text-align: center; }
+  .e-opt .e-in { flex: 1; }
+  .e-key {
+    flex: none; width: 32px; height: 32px; border-radius: 50%; border: 0; background: none;
+    display: grid; place-items: center; cursor: pointer; color: #bdc1c6;
+  }
+  .e-key:hover { background: #f1f3f4; color: var(--ok); }
+  .e-key.on { color: var(--ok); }
+  .e-x { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 0; background: none; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
+  .e-x:hover { background: #f1f3f4; }
+  .e-add { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .e-add .mk { flex: none; width: 20px; height: 20px; border: 2px solid #e0e0e0; border-radius: 50%; }
+  .e-add .mk.box { border-radius: 2px; }
+  .e-add button { border: 0; background: none; color: var(--dim); padding: 8px 12px; cursor: pointer; border-radius: 4px; font: 400 14px/20px var(--sans); }
+  .e-add button:hover { background: #f8f9fa; color: var(--ink); }
+
+  .e-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+  .e-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #e6f4ea; color: #137333; border-radius: 16px;
+    padding: 5px 6px 5px 12px; font-size: 13px; max-width: 100%;
+  }
+  .e-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .e-chip button { border: 0; background: none; color: #137333; cursor: pointer; display: grid; place-items: center; padding: 0; border-radius: 50%; width: 20px; height: 20px; }
+  .e-chip button:hover { background: rgba(19,115,51,.12); }
+  .e-chipin { border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 6px 4px; min-width: 160px; flex: 1; }
+  .e-chipin:focus { outline: none; border-bottom: 2px solid var(--theme); padding-bottom: 5px; }
+
+  .e-foot { display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--line); margin: 20px -24px -8px; padding: 8px 16px 0; }
+  .e-foot .spacer { flex: 1; }
+  .e-keyline.warn { color: var(--err); }
+  .e-keyline { font-size: 12px; color: var(--ok); padding-left: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .e-adv { border-top: 1px solid var(--line); margin: 16px -24px 0; padding: 16px 24px 0; display: grid; gap: 12px; }
+  .e-adv label { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+  .e-adv input[type=number] { width: 88px; border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+  .e-adv .wide { flex: 1; border: 0; border-bottom: 1px solid var(--line); padding: 6px 2px; }
+  .e-adv .wide:focus { outline: none; border-bottom: 2px solid var(--theme); padding-bottom: 5px; }
+
+  .e-fab {
+    position: fixed; right: max(16px, calc(50% - 470px)); top: 140px;
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    display: grid; padding: 4px; gap: 4px; box-shadow: 0 1px 2px rgba(60,64,67,.15);
+  }
+  .e-fab button { width: 40px; height: 40px; border: 0; background: none; border-radius: 50%; display: grid; place-items: center; color: var(--ink-2); cursor: pointer; }
+  .e-fab button:hover { background: #f1f3f4; }
+
+  /* settings + responses */
+  .e-sec { font: 500 16px/24px var(--disp); margin: 0 0 4px; }
+  .e-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; }
+  .e-set { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .e-set:first-of-type { border-top: 0; }
+  .e-set .t { flex: 1; min-width: 0; }
+  .e-set .t b { display: block; font-weight: 400; font-size: 14px; }
+  .e-set .t i { display: block; font-style: normal; font-size: 12px; color: var(--dim); margin-top: 2px; }
+  .e-tog { flex: none; width: 36px; height: 14px; border-radius: 7px; background: #bdc1c6; border: 0; position: relative; cursor: pointer; padding: 0; }
+  .e-tog::after { content: ""; position: absolute; left: -2px; top: -3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .15s ease, background .15s ease; }
+  .e-tog.on { background: rgba(103,58,183,.5); background: color-mix(in srgb, var(--theme) 45%, #fff); }
+  .e-tog.on::after { transform: translateX(22px); background: var(--theme); }
+  .e-num { display: flex; align-items: center; gap: 8px; }
+  .e-num input { width: 92px; border: 1px solid var(--line); border-radius: 4px; padding: 8px; }
+  .e-num select { border: 1px solid var(--line); border-radius: 4px; padding: 8px; background: #fff; }
+  .e-sw { display: flex; flex-wrap: wrap; gap: 10px; }
+  .e-sw button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+  .e-sw button.on { border-color: var(--ink); }
+
+  .e-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+  .e-stat { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  .e-stat b { display: block; font: 400 28px/34px var(--disp); }
+  .e-stat i { font-style: normal; font-size: 12px; color: var(--dim); }
+  .e-p { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .e-p:first-child { border-top: 0; }
+  .e-av { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: #fff; font: 500 14px/32px var(--disp); }
+  .e-p .who { flex: 1; min-width: 0; }
+  .e-p .who b { display: block; font-weight: 400; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .e-p .who i { font-style: normal; font-size: 12px; color: var(--dim); }
+  .e-prog { flex: none; width: 120px; }
+  .e-prog .rail { height: 4px; background: #e8eaed; border-radius: 2px; overflow: hidden; }
+  .e-prog .rail i { display: block; height: 100%; background: var(--theme); }
+  .e-prog small { font-size: 11px; color: var(--dim); }
+  .e-done { flex: none; background: #e6f4ea; color: #137333; border-radius: 12px; padding: 2px 10px; font-size: 12px; }
+  .e-trail { font-size: 12px; color: var(--ink-2); padding: 0 0 12px 44px; }
+  .e-trail div { padding: 2px 0; }
+  .e-empty { text-align: center; color: var(--dim); padding: 40px 16px; font-size: 14px; }
+
+  /* sign in */
+  .e-in-wrap { max-width: 450px; margin: 48px auto; padding: 0 16px; }
+  .e-signin { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 40px 40px 32px; text-align: center; }
+  .e-signin h2 { font: 400 24px/32px var(--disp); margin: 16px 0 8px; }
+  .e-signin p { color: var(--ink-2); font-size: 14px; margin: 0 0 28px; }
+  .e-signin .fld { position: relative; text-align: left; margin-bottom: 8px; }
+  .e-signin input {
+    width: 100%; height: 56px; border: 1px solid var(--line); border-radius: 4px;
+    padding: 0 15px; font-size: 16px; background: #fff;
+  }
+  .e-signin input:focus { outline: none; border: 2px solid var(--theme); padding: 0 14px; }
+  .e-signin .bad-msg { color: var(--err); font-size: 12px; text-align: left; min-height: 18px; padding: 4px 2px; }
+  .e-signin .go { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
+
+  .e-back { position: fixed; left: 16px; bottom: 16px; z-index: 50; }
+  .e-back button {
+    border: 0; background: var(--ink); color: #fff; border-radius: 20px;
+    height: 40px; padding: 0 20px; cursor: pointer; box-shadow: var(--shadow);
+    font: 500 14px/40px var(--disp);
+  }
+
+  @media (max-width: 620px) {
+    .f-title { font-size: 24px; }
+    .f-pad, .e-card { padding: 16px; }
+    .e-card.head .in { padding: 16px; }
+    .e-foot { margin: 16px -16px -4px; padding: 8px; }
+    .e-adv { margin: 12px -16px 0; padding: 12px 16px 0; }
+    .e-top { flex-direction: column; }
+    .e-sel { width: 100%; }
+    .e-fab { position: static; display: flex; justify-content: center; margin: 0 auto 16px; width: fit-content; }
+    .e-stats { grid-template-columns: 1fr; }
+    .e-prog { width: 76px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="view"></div>
+<div id="edit" class="hide"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- small helpers ---------- */
+  var $ = function (id) { return document.getElementById(id); };
+  function el(tag, cls, txt) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt !== undefined && txt !== null) n.textContent = txt;
+    return n;
+  }
+  function esc(s) {
+    return String(s === undefined || s === null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  var ICON = {
+    close:  "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+    copy:   "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z",
+    trash:  "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+    more:   "M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z",
+    add:    "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+    check:  "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+    down:   "M7 10l5 5 5-5z",
+    up:     "M7 14l5-5 5 5z",
+    bang:   "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z",
+    grab:   "M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z",
+    eye:    "M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zm0 12.5a5 5 0 110-10 5 5 0 010 10zm0-8a3 3 0 100 6 3 3 0 000-6z",
+    short:  "M4 9h16v2H4zm0 4h10v2H4z",
+    para:   "M4 5h16v2H4zm0 4h16v2H4zm0 4h16v2H4zm0 4h10v2H4z",
+    radio:  "M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zm0-13a5 5 0 100 10 5 5 0 000-10z",
+    box:    "M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
+    drop:   "M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zM8 10l4 4 4-4z"
+  };
+  function svg(path, cls) {
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("class", cls || "svg");
+    s.setAttribute("aria-hidden", "true");
+    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", path);
+    s.appendChild(p);
+    return s;
+  }
+  function iconBtn(path, title, cls) {
+    var b = el("button", cls || "e-icon");
+    b.type = "button";
+    b.title = title; b.setAttribute("aria-label", title);
+    b.appendChild(svg(path));
+    return b;
+  }
+  function mix(hex, amt) {                       // toward white when amt > 0
+    var n = parseInt(hex.slice(1), 16);
+    var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    r = Math.round(r + (255 - r) * amt); g = Math.round(g + (255 - g) * amt); b = Math.round(b + (255 - b) * amt);
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  }
+  function darken(hex, amt) {
+    var n = parseInt(hex.slice(1), 16);
+    var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    r = Math.round(r * (1 - amt)); g = Math.round(g * (1 - amt)); b = Math.round(b * (1 - amt));
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  }
+  function applyTheme(hex) {
+    if (!/^#[0-9a-f]{6}$/i.test(hex || "")) hex = "#673ab7";
+    var r = document.documentElement.style;
+    r.setProperty("--theme", hex);
+    r.setProperty("--theme-d", darken(hex, .12));
+    r.setProperty("--tint", mix(hex, .91));
+  }
+  function ago(t) {
+    if (!t) return "";
+    var s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 86400) return Math.floor(s / 3600) + " hr ago";
+    return Math.floor(s / 86400) + " days ago";
+  }
+  function human(ms) {
+    if (!ms) return "no wait";
+    if (ms % 60000 === 0) { var m = ms / 60000; return m + (m === 1 ? " minute" : " minutes"); }
+    var s = Math.round(ms / 1000);
+    return s + (s === 1 ? " second" : " seconds");
+  }
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+
+  var TYPE_NAMES = { short: "Short answer", para: "Paragraph", mc: "Multiple choice", check: "Checkboxes", drop: "Dropdown" };
+  var TYPE_ICONS = { short: ICON.short, para: ICON.para, mc: ICON.radio, check: ICON.box, drop: ICON.drop };
+  var SWATCHES = ["#db4437", "#e67c73", "#f4b400", "#ff5722", "#0f9d58", "#009688",
+                  "#00bcd4", "#4285f4", "#3f51b5", "#673ab7", "#795548", "#607d8b"];
+
+  /* ---------- state ---------- */
+  var S = {
+    head: { title: "", description: "", theme: "#673ab7" },
+    settings: { cooldownMs: 5000, askName: true, showCount: true, showHints: true, finishTitle: "", finishNote: "" },
+    total: 0, q: null, here: 1, v: 0,
+    you: { name: "", solved: 0, wrong: 0, done: false, until: 0, log: [] }
+  };
+  var mode = "view";                 // view | signin | editor
+  var live = false;
+  var draft = {};                    // qid -> what is typed or ticked, so a repaint keeps it
+  var verdict = null;                // { bad: true, until, hint } for the question on screen
+  var nameDone = store("form_named") === "1";
+  var holdState = null;              // a state held back while the right-answer flash plays
+  var tick = null;
+  var uid = store("form_uid") || "";
+  var myName = store("form_name") || "";
+
+  var E = { form: null, players: [], tab: "q", sel: null, adv: {}, dirty: false, saving: false, queued: null, menu: null };
+
+  /* ---------- the socket ---------- */
+  var ws = null, tries = 0;
+  function wsUrl() {
+    var h = location.hostname || "localhost";
+    var q = new URLSearchParams(location.search).get("mp");
+    var tail = "?mode=form" + (uid ? "&uid=" + encodeURIComponent(uid) : "");
+    if (q) return q + tail;
+    if (/leonzhao\.dev$/.test(h)) return "wss://apps.leonzhao.dev/mc/ws" + tail;
+    return "ws://" + h + ":8600/ws" + tail;
+  }
+  function send(o) {
+    if (!ws || ws.readyState !== 1) return false;
+    try { ws.send(JSON.stringify(o)); return true; } catch (e) { return false; }
+  }
+  function connect() {
+    try { ws = new WebSocket(wsUrl()); } catch (e) { retry(); return; }
+    ws.onopen = function () {
+      tries = 0; live = true;
+      var pw = sessionStorage.getItem("form_pw");
+      if (pw) send({ type: "login", pw: pw });     // an editor who reloaded stays an editor
+      paint();
+    };
+    ws.onmessage = function (ev) {
+      var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      handle(m);
+    };
+    ws.onclose = function () { ws = null; live = false; paint(); retry(); };
+    ws.onerror = function () {};
+  }
+  function retry() { tries++; setTimeout(connect, Math.min(8000, 500 * tries)); }
+
+  function handle(m) {
+    if (m.type === "hello") {
+      if (m.uid && m.uid !== uid) { uid = m.uid; store("form_uid", uid); }
+      return;
+    }
+    if (m.type === "state") {
+      if (holdState) { holdState = m; return; }       // the green flash is still playing
+      applyState(m);
+      return;
+    }
+    if (m.type === "wrong") {
+      verdict = { bad: true, until: m.until, hint: m.hint || "" };
+      startTick();
+      paintQuestion();
+      return;
+    }
+    if (m.type === "wait") {
+      verdict = { bad: true, until: m.until, hint: (verdict && verdict.hint) || "" };
+      startTick();
+      paintQuestion();
+      return;
+    }
+    if (m.type === "empty") {
+      verdict = { bad: true, until: 0, empty: true };
+      paintQuestion();
+      return;
+    }
+    if (m.type === "right") {
+      verdict = null;
+      flashRight();
+      return;
+    }
+    if (m.type === "name") { myName = m.name; store("form_name", myName); return; }
+    if (m.type === "here") { S.here = m.here; var h = $("here"); if (h) h.textContent = m.here; return; }
+    if (m.type === "full") { alert("This form has as many people on it as it can hold right now. Try again in a minute."); return; }
+
+    if (m.type === "edit") {                          // the editor's own copy of everything
+      if (pendingPw) { try { sessionStorage.setItem("form_pw", pendingPw); } catch (e) {} pendingPw = ""; }
+      E.players = m.players || [];
+      var first = !E.form;
+      // Mid-edit, a repaint would tear out the field being typed in or the menu
+      // being clicked, so anything that arrives then waits until the editor is idle.
+      var busy = E.dirty || E.saving || typingInEditor();
+      E.saving = false;
+      if (first) { E.form = clone(m.form); mode = "editor"; paint(); return; }
+      if (busy || sameForm(E.form, m.form)) {
+        if (!sameForm(E.form, m.form)) E.queued = m.form;
+        else { E.form.version = m.form.version; E.queued = null; }
+        if (mode === "editor") paintTabsOnly();
+        return;
+      }
+      E.form = clone(m.form);
+      if (mode === "editor") paintEditor(); else paint();
+      return;
+    }
+    if (m.type === "players") {
+      E.players = m.players || [];
+      if (mode === "editor" && E.tab === "r") paintEditor();
+      if (mode === "editor" && E.tab !== "r") paintTabsOnly();
+      return;
+    }
+    if (m.type === "nope") {
+      signinError = m.locked ? "Too many tries. Reload the page to try again."
+                  : m.slow ? "Slow down a moment, then try again."
+                  : "Wrong password.";
+      pendingPw = "";
+      paint();
+      return;
+    }
+    if (m.type === "loggedout") { mode = "view"; E.form = null; paint(); return; }
+  }
+
+  function applyState(m) {
+    var wasQ = S.q ? S.q.id : null;
+    S.head = m.head; S.settings = m.settings; S.total = m.total; S.you = m.you; S.q = m.q; S.v = m.v;
+    if (typeof m.here === "number") S.here = m.here;
+    applyTheme(S.head.theme);
+    document.title = S.head.title || "Form";
+    if (S.you.until > Date.now()) { verdict = { bad: true, until: S.you.until, hint: (verdict && verdict.hint) || "" }; startTick(); }
+    if (S.q && S.q.id !== wasQ) verdict = null;
+    if (S.you.name) myName = S.you.name;
+    // The editor is a viewer too, so its own saves come back here. Repainting then
+    // would tear down whatever it has open, and the editor repaints itself anyway.
+    if (mode === "view") paint();
+  }
+
+  function flashRight() {
+    var card = $("qcard");
+    if (!card) return;
+    card.classList.add("right");
+    holdState = true;
+    setTimeout(function () {
+      var held = holdState;
+      holdState = null;
+      card.classList.remove("right");
+      if (held && held !== true) applyState(held);
+    }, 420);
+  }
+
+  function startTick() {
+    if (tick) return;
+    tick = setInterval(function () {
+      if (!verdict || !verdict.until || verdict.until <= Date.now()) {
+        clearInterval(tick); tick = null;
+        if (verdict && verdict.until) { verdict.until = 0; paintQuestion(); }
+        return;
+      }
+      paintCountdown();
+    }, 250);
+  }
+  function left() {
+    if (!verdict || !verdict.until) return 0;
+    return Math.max(0, Math.ceil((verdict.until - Date.now()) / 1000));
+  }
+
+  /* ====================================================================== */
+  /*  the form                                                              */
+  /* ====================================================================== */
+
+  function paint() {
+    if (mode === "editor") { $("view").classList.add("hide"); $("edit").classList.remove("hide"); paintEditor(); return; }
+    if (mode === "signin") { $("view").classList.add("hide"); $("edit").classList.remove("hide"); paintSignin(); return; }
+    $("edit").classList.add("hide");
+    $("view").classList.remove("hide");
+    paintForm();
+  }
+
+  function paintForm() {
+    var root = $("view");
+    root.innerHTML = "";
+    var wrap = el("div", "f-wrap");
+
+    // header card
+    var head = el("div", "f-card");
+    head.appendChild(el("div", "f-band"));
+    var pad = el("div", "f-pad");
+    var h1 = el("h1", "f-title", S.head.title || (live ? "Untitled form" : "Loading"));
+    pad.appendChild(h1);
+    if (S.head.description) pad.appendChild(el("p", "f-desc", S.head.description));
+    if (!S.you.done && S.total) {
+      pad.appendChild(el("div", "f-rule"));
+      pad.appendChild(el("div", "f-req", "* Required"));
+    }
+    head.appendChild(pad);
+    wrap.appendChild(head);
+
+    var stage = el("div");
+    stage.id = "stage";
+    wrap.appendChild(stage);
+
+    // footer
+    var foot = el("div", "f-foot");
+    foot.appendChild(document.createTextNode("Never submit passwords through this form."));
+    foot.appendChild(el("br"));
+    var line2 = el("div");
+    line2.innerHTML = "A page on leonzhao.dev, built in the style of Google Forms. Not a Google product." ;
+    foot.appendChild(line2);
+    var line3 = el("div");
+    line3.style.marginTop = "6px";
+    var eLink = el("a", null, "Editor");
+    eLink.href = "?edit=1";
+    eLink.addEventListener("click", function (ev) { ev.preventDefault(); openEditor(); });
+    line3.appendChild(eLink);
+    line3.appendChild(el("span", "sep", "·"));
+    var here = el("span", null, String(S.here || 1));
+    here.id = "here";
+    line3.appendChild(here);
+    line3.appendChild(document.createTextNode(" on this form now"));
+    foot.appendChild(line3);
+    wrap.appendChild(foot);
+
+    root.appendChild(wrap);
+
+    if (mode === "editor" || previewing) {
+      var back = el("div", "e-back");
+      var b = el("button", null, "Back to editing");
+      b.type = "button";
+      b.addEventListener("click", function () { previewing = false; mode = "editor"; paint(); });
+      back.appendChild(b);
+      root.appendChild(back);
+    }
+    paintStage();
+  }
+
+  function paintStage() {
+    var stage = $("stage");
+    if (!stage) return;
+    stage.innerHTML = "";
+    if (!live && !S.total) { stage.appendChild(noteCard("Connecting to the form...")); return; }
+    if (!S.total) { stage.appendChild(noteCard("This form has no questions yet.")); return; }
+    if (S.settings.askName && !S.you.name && !nameDone && S.you.solved === 0) { stage.appendChild(nameCard()); return; }
+    if (S.you.done) { stage.appendChild(doneCard()); return; }
+    stage.appendChild(questionBlock());
+  }
+  function paintQuestion() { paintStage(); }
+
+  function noteCard(text) {
+    var c = el("div", "f-card");
+    var p = el("div", "f-pad");
+    p.appendChild(el("div", "f-note", text));
+    c.appendChild(p);
+    return c;
+  }
+
+  function nameCard() {
+    var frag = document.createDocumentFragment();
+    var c = el("div", "f-card f-anim");
+    var pad = el("div", "f-pad");
+    pad.appendChild(el("div", "f-q-title", "Your name"));
+    pad.appendChild(el("p", "f-help", "So the hunt knows who got there. Leave it blank to stay anonymous."));
+    var f = el("div", "f-field");
+    var line = el("div", "f-line f-short");
+    var inp = el("input", "f-input");
+    inp.type = "text"; inp.maxLength = 24; inp.placeholder = "Your answer"; inp.value = myName || "";
+    inp.addEventListener("focus", function () { line.classList.add("on"); });
+    inp.addEventListener("blur", function () { line.classList.remove("on"); });
+    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); go(); } });
+    line.appendChild(inp);
+    f.appendChild(line);
+    pad.appendChild(f);
+    c.appendChild(pad);
+    frag.appendChild(c);
+
+    var row = el("div", "f-row");
+    var btn = el("button", "f-btn", "Start");
+    btn.type = "button";
+    btn.addEventListener("click", go);
+    row.appendChild(btn);
+    frag.appendChild(row);
+
+    function go() {
+      myName = inp.value.trim();
+      store("form_name", myName);
+      store("form_named", "1");
+      send({ type: "name", name: myName });
+      nameDone = true;
+      paintStage();
+    }
+    setTimeout(function () { inp.focus(); }, 30);
+    return frag;
+  }
+
+  function doneCard() {
+    var frag = document.createDocumentFragment();
+    var c = el("div", "f-card f-anim");
+    var pad = el("div", "f-pad");
+    pad.appendChild(el("div", "f-title", S.settings.finishTitle || "Your response has been recorded."));
+    if (S.settings.finishNote) pad.appendChild(el("p", "f-desc", S.settings.finishNote));
+    if (S.you.log && S.you.log.length) {
+      pad.appendChild(el("div", "f-rule"));
+      var list = el("div");
+      list.style.marginTop = "16px";
+      S.you.log.forEach(function (e, i) {
+        var r = el("div");
+        r.style.cssText = "display:flex;gap:10px;padding:6px 0;font-size:13px;";
+        var n = el("span", null, (i + 1) + ".");
+        n.style.color = "var(--dim)";
+        var t = el("span");
+        t.innerHTML = esc(e.title) + " &#183; <b style='font-weight:500'>" + esc(e.given) + "</b>";
+        r.appendChild(n); r.appendChild(t);
+        list.appendChild(r);
+      });
+      pad.appendChild(list);
+    }
+    var again = el("div");
+    again.style.marginTop = "20px";
+    var a = el("a", null, "Submit another response");
+    a.href = "#";
+    a.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      nameDone = false; draft = {}; verdict = null;
+      send({ type: "restart" });
+    });
+    again.appendChild(a);
+    pad.appendChild(again);
+    c.appendChild(pad);
+    frag.appendChild(c);
+    return frag;
+  }
+
+  function questionBlock() {
+    var q = S.q;
+    var frag = document.createDocumentFragment();
+    var c = el("div", "f-card f-anim");
+    c.id = "qcard";
+    var pad = el("div", "f-pad");
+
+    var t = el("div", "f-q-title");
+    t.appendChild(document.createTextNode(q.title));
+    t.appendChild(el("span", "f-star", " *"));
+    pad.appendChild(t);
+    if (q.help) pad.appendChild(el("p", "f-help", q.help));
+
+    var field = el("div", "f-field");
+    var current = draft[q.id];
+    var getValue;
+
+    if (q.type === "short" || q.type === "para") {
+      var line = el("div", "f-line " + (q.type === "para" ? "f-para" : "f-short"));
+      var inp = q.type === "para" ? el("textarea", "f-input") : el("input", "f-input");
+      if (q.type === "para") { inp.rows = 3; } else { inp.type = "text"; }
+      inp.maxLength = 300;
+      inp.placeholder = "Your answer";
+      inp.value = typeof current === "string" ? current : "";
+      inp.addEventListener("focus", function () { line.classList.add("on"); });
+      inp.addEventListener("blur", function () { line.classList.remove("on"); });
+      inp.addEventListener("input", function () { draft[q.id] = inp.value; });
+      if (q.type === "short") {
+        inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+      }
+      if (verdict && verdict.bad) line.classList.add("bad");
+      line.appendChild(inp);
+      field.appendChild(line);
+      getValue = function () { return inp.value; };
+      setTimeout(function () { if (!verdict || !verdict.until) inp.focus(); }, 30);
+
+    } else if (q.type === "drop") {
+      var picked = (Array.isArray(current) && current.length) ? current[0] : -1;
+      var wrapD = el("div", "f-drop");
+      var btn = el("button", "f-drop-btn" + (picked >= 0 ? " set" : ""));
+      btn.type = "button";
+      btn.setAttribute("aria-haspopup", "listbox");
+      btn.setAttribute("aria-expanded", "false");
+      btn.textContent = picked >= 0 ? q.options[picked] : "Choose";
+      var caret = el("span", "f-caret");
+      caret.appendChild(svg(ICON.down));
+      wrapD.appendChild(btn); wrapD.appendChild(caret);
+      var menu = null;
+      function close() { if (menu) { menu.remove(); menu = null; btn.setAttribute("aria-expanded", "false"); } }
+      btn.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        if (menu) { close(); return; }
+        menu = el("div", "f-menu");
+        menu.setAttribute("role", "listbox");
+        q.options.forEach(function (o, i) {
+          var b = el("button", picked === i ? "on" : "", o);
+          b.type = "button";
+          b.setAttribute("role", "option");
+          b.addEventListener("click", function () {
+            picked = i; draft[q.id] = [i];
+            btn.textContent = o; btn.classList.add("set");
+            close();
+          });
+          menu.appendChild(b);
+        });
+        wrapD.appendChild(menu);
+        btn.setAttribute("aria-expanded", "true");
+        var first = menu.querySelector("button");
+        if (first) first.focus();
+        document.addEventListener("click", close, { once: true });
+      });
+      // Escape shuts the menu and puts the focus back where it came from, so a
+      // keyboard is not trapped in a list it cannot leave.
+      wrapD.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape" && menu) { ev.stopPropagation(); close(); btn.focus(); }
+      });
+      field.appendChild(wrapD);
+      getValue = function () { return picked >= 0 ? [picked] : []; };
+
+    } else {
+      var multi = q.type === "check";
+      var chosen = Array.isArray(current) ? current.slice() : [];
+      q.options.forEach(function (o, i) {
+        var lab = el("label", "f-opt" + (multi ? " box" : ""));
+        var inp2 = el("input");
+        inp2.type = multi ? "checkbox" : "radio";
+        inp2.name = "q_" + q.id;
+        inp2.checked = chosen.indexOf(i) >= 0;
+        inp2.addEventListener("change", function () {
+          if (multi) {
+            var at = chosen.indexOf(i);
+            if (inp2.checked && at < 0) chosen.push(i);
+            if (!inp2.checked && at >= 0) chosen.splice(at, 1);
+          } else {
+            chosen = [i];
+          }
+          draft[q.id] = chosen.slice();
+        });
+        lab.appendChild(inp2);
+        lab.appendChild(el("span", "f-mark"));
+        lab.appendChild(el("span", "f-opt-txt", o));
+        field.appendChild(lab);
+      });
+      getValue = function () { return chosen.slice(); };
+    }
+    pad.appendChild(field);
+
+    // the verdict, in the place Forms puts its errors
+    if (verdict && verdict.bad) {
+      var e2 = el("div", "f-err");
+      e2.id = "verdict";
+      e2.appendChild(svg(ICON.bang));
+      e2.appendChild(el("span", null, verdictText()));
+      pad.appendChild(e2);
+      if (verdict.hint) pad.appendChild(el("div", "f-hint", "Hint: " + verdict.hint));
+    }
+    c.appendChild(pad);
+    frag.appendChild(c);
+
+    // the button row, then the counter and the bar
+    var row = el("div", "f-row");
+    var last = q.n >= S.total;
+    var go = el("button", "f-btn", last ? "Submit" : "Next");
+    go.type = "button";
+    go.id = "gobtn";
+    go.addEventListener("click", submit);
+    row.appendChild(go);
+    var clear = el("button", "f-clear", "Clear form");
+    clear.type = "button";
+    clear.addEventListener("click", function () { delete draft[q.id]; verdict = null; paintStage(); });
+    row.appendChild(clear);
+    if (S.settings.showCount) row.appendChild(el("div", "f-count", "Question " + q.n + " of " + S.total));
+    frag.appendChild(row);
+
+    var bar = el("div", "f-bar");
+    var fill = el("i");
+    fill.style.width = (S.total ? Math.round((S.you.solved / S.total) * 100) : 0) + "%";
+    bar.appendChild(fill);
+    frag.appendChild(bar);
+
+    if (verdict && verdict.until > Date.now()) go.disabled = true;
+
+    function submit() {
+      if (verdict && verdict.until > Date.now()) return;
+      send({ type: "answer", qid: q.id, value: getValue() });
+    }
+    return frag;
+  }
+
+  function verdictText() {
+    if (verdict.empty) return "This is a required question";
+    var s = left();
+    if (s > 0) return "Not quite. Try again in " + s + "s";
+    return "Not quite. Try again";
+  }
+  function paintCountdown() {
+    var v = $("verdict");
+    if (!v) return;
+    v.lastChild.textContent = verdictText();
+    var b = $("gobtn");
+    if (b) b.disabled = left() > 0;
+  }
+
+  /* ====================================================================== */
+  /*  the editor                                                            */
+  /* ====================================================================== */
+
+  var previewing = false;
+  var signinError = "";
+  var pendingPw = "";
+
+  function openEditor() {
+    if (E.form) { mode = "editor"; paint(); return; }
+    mode = "signin"; signinError = ""; paint();
+  }
+  function typingInEditor() {
+    var a = document.activeElement;
+    return !!(a && $("edit").contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName));
+  }
+  function formsMark(size) {
+    var box = el("div");
+    box.style.cssText = "width:" + size + "px;height:" + size + "px;border-radius:" + Math.round(size / 5) +
+      "px;background:var(--theme);display:grid;place-items:center;flex:none;";
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("width", String(Math.round(size * .62)));
+    s.setAttribute("height", String(Math.round(size * .62)));
+    s.setAttribute("aria-hidden", "true");
+    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("fill", "#fff");
+    p.setAttribute("d", "M17 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2zm-6.6 13.1L7.5 13.2l1.1-1.1 1.8 1.8 4.1-4.1 1.1 1.1-5.2 5.2zM16 8H8V6.6h8V8z");
+    s.appendChild(p);
+    box.appendChild(s);
+    return box;
+  }
+
+  function paintSignin() {
+    var root = $("edit");
+    root.innerHTML = "";
+    var wrap = el("div", "e-in-wrap");
+    var card = el("div", "e-signin");
+    var mark = formsMark(48);
+    mark.style.margin = "0 auto";
+    card.appendChild(mark);
+    card.appendChild(el("h2", null, "Editor sign-in"));
+    card.appendChild(el("p", null, "The editor password opens the questions, the answers and the settings for everybody at once."));
+    var fld = el("div", "fld");
+    var inp = el("input");
+    inp.type = "password"; inp.placeholder = "Password"; inp.autocomplete = "current-password";
+    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+    fld.appendChild(inp);
+    card.appendChild(fld);
+    card.appendChild(el("div", "bad-msg", signinError));
+    var go2 = el("div", "go");
+    var back = el("button", "e-ghost", "Back to the form");
+    back.type = "button";
+    back.addEventListener("click", function () { mode = "view"; paint(); });
+    var next = el("button", "f-btn", "Sign in");
+    next.type = "button";
+    next.addEventListener("click", go);
+    go2.appendChild(back); go2.appendChild(next);
+    card.appendChild(go2);
+    wrap.appendChild(card);
+    root.appendChild(wrap);
+    setTimeout(function () { inp.focus(); }, 30);
+
+    function go() {
+      var pw = inp.value;
+      if (!pw) { signinError = "Type the password first."; paintSignin(); return; }
+      pendingPw = pw;
+      signinError = "";
+      if (!send({ type: "login", pw: pw })) { signinError = "Not connected yet. Try again in a moment."; paintSignin(); }
+    }
+  }
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  // Two forms are the same when the questions, the settings and the wording are the
+  // same. The version and the timestamp move on every save and say nothing.
+  function sameForm(a, b) {
+    if (!a || !b) return false;
+    var x = clone(a), y = clone(b);
+    x.version = y.version = 0; x.updatedAt = y.updatedAt = 0;
+    return JSON.stringify(x) === JSON.stringify(y);
+  }
+
+  // A change that arrived while the editor was busy lands as soon as it goes quiet.
+  function applyQueued() {
+    if (!E.queued || E.dirty || E.saving || typingInEditor()) return;
+    if (sameForm(E.form, E.queued)) { E.queued = null; return; }
+    E.form = clone(E.queued);
+    E.queued = null;
+    if (mode === "editor") paintEditor();
+  }
+  setInterval(function () { if (mode === "editor") applyQueued(); }, 2500);
+
+  function markDirty() {
+    E.dirty = true;
+    var s = $("esave");
+    if (s) s.textContent = "Saving...";
+    clearTimeout(markDirty.t);
+    markDirty.t = setTimeout(saveNow, 700);
+  }
+  function saveNow() {
+    if (!E.form) return;
+    E.dirty = false; E.saving = true;
+    send({ type: "save", form: E.form });
+    var s = $("esave");
+    if (s) s.textContent = "All changes saved";
+    // if the acknowledgement never lands (a dropped socket), stop treating the
+    // editor as busy for ever
+    setTimeout(function () { E.saving = false; }, 3000);
+    // anything that arrived while we were typing gets applied once we stop
+    setTimeout(applyQueued, 1200);
+  }
+
+  function paintTabsOnly() {
+    var t = $("tab-r");
+    if (t) t.querySelector(".pill").textContent = String(E.players.length);
+  }
+
+  function paintEditor() {
+    if (previewing) { previewing = false; }
+    var root = $("edit");
+    if (!E.form) { paintSignin(); return; }
+    applyTheme(E.form.theme);
+    var keep = document.activeElement && document.activeElement.id;
+    var keepPos = null;
+    if (keep && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) {
+      try { keepPos = document.activeElement.selectionStart; } catch (e) {}
+    }
+    root.innerHTML = "";
+
+    /* --- app bar --- */
+    var bar = el("div", "e-bar");
+    var logo = formsMark(40);
+    bar.appendChild(logo);
+    var nameBox = el("div", "e-name");
+    var ti = el("input");
+    ti.id = "edoctitle";
+    ti.value = E.form.title;
+    ti.setAttribute("aria-label", "Form title");
+    ti.addEventListener("input", function () { E.form.title = ti.value; markDirty(); });
+    nameBox.appendChild(ti);
+    var saved = el("div", "e-saved", E.dirty ? "Saving..." : "All changes saved");
+    saved.id = "esave";
+    nameBox.appendChild(saved);
+    bar.appendChild(nameBox);
+    var acts = el("div", "e-acts");
+    var prev = iconBtn(ICON.eye, "Preview the form");
+    prev.addEventListener("click", function () { previewing = true; mode = "view"; paint(); });
+    acts.appendChild(prev);
+    var out = el("button", "e-ghost", "Sign out");
+    out.type = "button";
+    out.addEventListener("click", function () {
+      sessionStorage.removeItem("form_pw");
+      send({ type: "logout" });
+      E.form = null; mode = "view"; paint();
+    });
+    acts.appendChild(out);
+    bar.appendChild(acts);
+    root.appendChild(bar);
+
+    /* --- tabs --- */
+    var tabs = el("div", "e-tabs");
+    [["q", "Questions", 0], ["r", "Responses", E.players.length], ["s", "Settings", 0]].forEach(function (t) {
+      var b = el("button", "e-tab" + (E.tab === t[0] ? " on" : ""), t[1]);
+      b.type = "button";
+      b.id = "tab-" + t[0];
+      if (t[0] === "r") { var pill = el("span", "pill", String(t[2])); b.appendChild(pill); }
+      b.addEventListener("click", function () { E.tab = t[0]; paintEditor(); });
+      tabs.appendChild(b);
+    });
+    root.appendChild(tabs);
+
+    var body = el("div", "e-body");
+    if (E.tab === "q") paintQuestionsTab(body);
+    else if (E.tab === "r") paintResponsesTab(body);
+    else paintSettingsTab(body);
+    root.appendChild(body);
+
+    if (keep) {
+      var again = $(keep);
+      if (again && again.focus) {
+        again.focus();
+        if (keepPos !== null && again.setSelectionRange) { try { again.setSelectionRange(keepPos, keepPos); } catch (e) {} }
+      }
+    }
+  }
+
+  /* ---------- questions tab ---------- */
+
+  function autogrow(t) {
+    t.style.height = "auto";
+    t.style.height = (t.scrollHeight) + "px";
+  }
+  function growInput(cls, id, value, placeholder, onInput) {
+    var t = el("textarea", "e-in " + cls);
+    t.rows = 1;
+    t.id = id;
+    t.value = value || "";
+    t.placeholder = placeholder;
+    t.addEventListener("input", function () { autogrow(t); onInput(t.value); });
+    setTimeout(function () { autogrow(t); }, 0);
+    return t;
+  }
+
+  function paintQuestionsTab(body) {
+    var f = E.form;
+
+    // header card
+    var head = el("div", "e-card head");
+    head.appendChild(el("div", "f-band"));
+    var inner = el("div", "in");
+    inner.appendChild(growInput("big", "ehtitle", f.title, "Form title", function (v) { f.title = v; var d = $("edoctitle"); if (d) d.value = v; markDirty(); }));
+    inner.appendChild(growInput("", "ehdesc", f.description, "Form description", function (v) { f.description = v; markDirty(); }));
+    head.appendChild(inner);
+    body.appendChild(head);
+
+    if (!f.questions.length) {
+      var empty = el("div", "e-card");
+      empty.appendChild(el("div", "e-empty", "No questions yet. Use the + button to add the first one."));
+      body.appendChild(empty);
+    }
+
+    f.questions.forEach(function (q, i) { body.appendChild(questionCard(q, i)); });
+
+    var fab = el("div", "e-fab");
+    var add = iconBtn(ICON.add, "Add question");
+    add.addEventListener("click", function () { addQuestion(); });
+    fab.appendChild(add);
+    body.appendChild(fab);
+  }
+
+  function newId() { return "q" + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36); }
+  function addQuestion(after) {
+    var q = { id: newId(), type: "short", title: "", help: "", hint: "",
+              options: [], answers: [], correct: [], cooldownMs: null, caseSensitive: null };
+    var at = (after === undefined || after < 0) ? E.form.questions.length : after + 1;
+    E.form.questions.splice(at, 0, q);
+    E.sel = q.id;
+    markDirty();
+    paintEditor();
+    setTimeout(function () { var n = $("t_" + q.id); if (n) n.focus(); }, 40);
+  }
+
+  function questionCard(q, i) {
+    var card = el("div", "e-card" + (E.sel === q.id ? " sel" : ""));
+    card.id = "qc_" + q.id;
+    // Selecting a card only moves the accent bar. It must not repaint the editor:
+    // the repaint would tear out the very textarea or menu button the click was
+    // landing on, and the click would go nowhere.
+    card.addEventListener("mousedown", function () {
+      if (E.sel === q.id) return;
+      E.sel = q.id;
+      var all = document.querySelectorAll("#edit .e-card.sel");
+      for (var i2 = 0; i2 < all.length; i2++) all[i2].classList.remove("sel");
+      card.classList.add("sel");
+    });
+    card.draggable = false;
+
+    var grab = el("div", "e-grab");
+    grab.appendChild(svg(ICON.grab));
+    grab.title = "Drag to reorder";
+    grab.addEventListener("mousedown", function () { card.draggable = true; });
+    grab.addEventListener("mouseup", function () { card.draggable = false; });
+    card.appendChild(grab);
+    card.addEventListener("dragstart", function (ev) {
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", String(i));
+      card.classList.add("drag");
+    });
+    card.addEventListener("dragend", function () { card.classList.remove("drag"); card.draggable = false; });
+    card.addEventListener("dragover", function (ev) { ev.preventDefault(); card.classList.add("over"); });
+    card.addEventListener("dragleave", function () { card.classList.remove("over"); });
+    card.addEventListener("drop", function (ev) {
+      ev.preventDefault();
+      card.classList.remove("over");
+      var from = parseInt(ev.dataTransfer.getData("text/plain"), 10);
+      if (isNaN(from) || from === i) return;
+      var moved = E.form.questions.splice(from, 1)[0];
+      E.form.questions.splice(i, 0, moved);
+      markDirty(); paintEditor();
+    });
+
+    // title + type
+    var top = el("div", "e-top");
+    var l = el("div", "l");
+    l.appendChild(growInput("q", "t_" + q.id, q.title, "Question", function (v) { q.title = v; markDirty(); }));
+    l.appendChild(growInput("small", "h_" + q.id, q.help, "Description (optional)", function (v) { q.help = v; markDirty(); }));
+    top.appendChild(l);
+    top.appendChild(typeSelect(q));
+    card.appendChild(top);
+
+    // the answer area
+    var area = el("div");
+    area.style.marginTop = "16px";
+    if (q.type === "short" || q.type === "para") area.appendChild(acceptedAnswers(q));
+    else area.appendChild(optionList(q));
+    card.appendChild(area);
+
+    // advanced strip
+    if (E.adv[q.id]) card.appendChild(advanced(q));
+
+    // footer
+    var foot = el("div", "e-foot");
+    // A question nobody can get right is worth saying out loud: the hunt stops dead
+    // on it, and the only place that shows is here.
+    var hasKey = (q.type === "short" || q.type === "para") ? q.answers.length > 0 : q.correct.length > 0;
+    var key = el("div", "e-keyline" + (hasKey ? "" : " warn"), keyLine(q));
+    foot.appendChild(key);
+    foot.appendChild(el("div", "spacer"));
+    var up = iconBtn(ICON.up, "Move up");
+    up.disabled = i === 0;
+    up.addEventListener("click", function () { if (i === 0) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i - 1, 0, m); markDirty(); paintEditor(); });
+    var dn = iconBtn(ICON.down, "Move down");
+    dn.disabled = i === E.form.questions.length - 1;
+    dn.addEventListener("click", function () { if (i >= E.form.questions.length - 1) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i + 1, 0, m); markDirty(); paintEditor(); });
+    var dup = iconBtn(ICON.copy, "Duplicate");
+    dup.addEventListener("click", function () {
+      var c = JSON.parse(JSON.stringify(q));
+      c.id = newId();
+      E.form.questions.splice(i + 1, 0, c);
+      E.sel = c.id; markDirty(); paintEditor();
+    });
+    var del = iconBtn(ICON.trash, "Delete");
+    del.addEventListener("click", function () {
+      E.form.questions.splice(i, 1);
+      markDirty(); paintEditor();
+    });
+    var adv = iconBtn(ICON.more, "More settings for this question");
+    adv.addEventListener("click", function () { E.adv[q.id] = !E.adv[q.id]; paintEditor(); });
+    [up, dn, dup, del, adv].forEach(function (b) { foot.appendChild(b); });
+    card.appendChild(foot);
+    return card;
+  }
+
+  function keyLine(q) {
+    if (q.type === "short" || q.type === "para") {
+      if (!q.answers.length) return "No accepted answer yet";
+      return q.answers.length === 1 ? "Answer: " + q.answers[0] : q.answers.length + " accepted answers";
+    }
+    if (!q.correct.length) return "No correct option picked yet";
+    return "Correct: " + q.correct.map(function (n) { return q.options[n]; }).join(", ");
+  }
+
+  function typeSelect(q) {
+    var wrap = el("div", "e-sel");
+    var btn = el("button", "e-sel-btn");
+    btn.type = "button";
+    btn.setAttribute("aria-haspopup", "true");
+    btn.appendChild(svg(TYPE_ICONS[q.type]));
+    btn.appendChild(el("span", null, TYPE_NAMES[q.type]));
+    btn.appendChild(svg(ICON.down));
+    var menu = null;
+    function close() { if (menu) { menu.remove(); menu = null; } }
+    btn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (menu) { close(); return; }
+      menu = el("div", "e-menu");
+      Object.keys(TYPE_NAMES).forEach(function (t, idx) {
+        if (idx === 2) menu.appendChild(el("hr"));
+        var b = el("button");
+        b.type = "button";
+        b.appendChild(svg(TYPE_ICONS[t]));
+        b.appendChild(el("span", null, TYPE_NAMES[t]));
+        b.addEventListener("click", function () { changeType(q, t); close(); });
+        menu.appendChild(b);
+      });
+      wrap.appendChild(menu);
+      document.addEventListener("click", close, { once: true });
+    });
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
+  function changeType(q, t) {
+    var wasChoice = q.type !== "short" && q.type !== "para";
+    var isChoice = t !== "short" && t !== "para";
+    q.type = t;
+    if (isChoice && !q.options.length) { q.options = ["Option 1"]; q.correct = []; }
+    if (isChoice && !wasChoice) q.correct = [];
+    if (t !== "check" && q.correct.length > 1) q.correct = [q.correct[0]];
+    markDirty(); paintEditor();
+  }
+
+  function optionList(q) {
+    var box = el("div");
+    q.options.forEach(function (o, i) {
+      var row = el("div", "e-opt" + (q.type === "check" ? " box" : ""));
+      if (q.type === "drop") row.appendChild(el("div", "num", (i + 1) + "."));
+      else row.appendChild(el("div", "mk"));
+      row.appendChild(growInput("", "o_" + q.id + "_" + i, o, "Option " + (i + 1), function (v) { q.options[i] = v; markDirty(); }));
+      var k = el("button", "e-key" + (q.correct.indexOf(i) >= 0 ? " on" : ""));
+      k.type = "button";
+      k.title = "Mark as the correct answer";
+      k.setAttribute("aria-pressed", q.correct.indexOf(i) >= 0 ? "true" : "false");
+      k.appendChild(svg(ICON.check));
+      k.addEventListener("click", function () {
+        var at = q.correct.indexOf(i);
+        if (q.type === "check") { if (at >= 0) q.correct.splice(at, 1); else q.correct.push(i); q.correct.sort(function (a, b) { return a - b; }); }
+        else q.correct = at >= 0 ? [] : [i];
+        markDirty(); paintEditor();
+      });
+      row.appendChild(k);
+      var x = el("button", "e-x");
+      x.type = "button";
+      x.title = "Remove option";
+      x.appendChild(svg(ICON.close));
+      x.addEventListener("click", function () {
+        q.options.splice(i, 1);
+        q.correct = q.correct.filter(function (n) { return n !== i; }).map(function (n) { return n > i ? n - 1 : n; });
+        markDirty(); paintEditor();
+      });
+      if (q.options.length > 1) row.appendChild(x);
+      box.appendChild(row);
+    });
+    var add = el("div", "e-add");
+    if (q.type === "drop") add.appendChild(el("div", "num", (q.options.length + 1) + "."));
+    else add.appendChild(el("div", "mk" + (q.type === "check" ? " box" : "")));
+    var b = el("button", null, "Add option");
+    b.type = "button";
+    b.addEventListener("click", function () {
+      q.options.push("Option " + (q.options.length + 1));
+      markDirty(); paintEditor();
+      setTimeout(function () { var n = $("o_" + q.id + "_" + (q.options.length - 1)); if (n) { n.focus(); n.select(); } }, 40);
+    });
+    add.appendChild(b);
+    box.appendChild(add);
+    return box;
+  }
+
+  function acceptedAnswers(q) {
+    var box = el("div");
+    var lab = el("div", "e-sub", q.answers.length ? "Accepted answers" : "Accepted answers (any one of them counts as right)");
+    lab.style.margin = "0 0 6px";
+    box.appendChild(lab);
+    var chips = el("div", "e-chips");
+    q.answers.forEach(function (a, i) {
+      var chip = el("div", "e-chip");
+      chip.appendChild(el("span", null, a));
+      var x = el("button");
+      x.type = "button";
+      x.title = "Remove this answer";
+      x.appendChild(svg(ICON.close));
+      x.addEventListener("click", function () { q.answers.splice(i, 1); markDirty(); paintEditor(); });
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    });
+    var inp = el("input", "e-chipin");
+    inp.id = "a_" + q.id;
+    inp.placeholder = q.answers.length ? "Add another accepted answer" : "Type the answer, then press Enter";
+    inp.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      var v = inp.value.trim();
+      if (!v) return;
+      if (q.answers.indexOf(v) < 0) q.answers.push(v);
+      inp.value = "";
+      markDirty(); paintEditor();
+      setTimeout(function () { var n = $("a_" + q.id); if (n) n.focus(); }, 40);
+    });
+    inp.addEventListener("blur", function () {
+      var v = inp.value.trim();
+      if (!v) return;
+      if (q.answers.indexOf(v) < 0) { q.answers.push(v); markDirty(); paintEditor(); }
+    });
+    chips.appendChild(inp);
+    box.appendChild(chips);
+    return box;
+  }
+
+  function advanced(q) {
+    var box = el("div", "e-adv");
+    var r1 = el("label");
+    r1.appendChild(el("span", null, "Wait after a wrong answer"));
+    var n = el("input");
+    n.type = "number"; n.min = "0"; n.max = "600"; n.step = "1";
+    n.id = "cd_" + q.id;
+    n.value = q.cooldownMs === null ? "" : String(Math.round(q.cooldownMs / 1000));
+    n.placeholder = String(Math.round((E.form.settings.cooldownMs || 0) / 1000));
+    n.addEventListener("input", function () {
+      q.cooldownMs = n.value === "" ? null : Math.max(0, Math.min(600, parseInt(n.value, 10) || 0)) * 1000;
+      markDirty();
+      var k = $("cdnote_" + q.id);
+      if (k) k.textContent = q.cooldownMs === null ? "using the form default" : "just this question";
+    });
+    r1.appendChild(n);
+    r1.appendChild(el("span", null, "seconds"));
+    var note = el("span", null, q.cooldownMs === null ? "using the form default" : "just this question");
+    note.id = "cdnote_" + q.id;
+    note.style.color = "var(--dim)";
+    r1.appendChild(note);
+    box.appendChild(r1);
+
+    var r2 = el("label");
+    r2.appendChild(el("span", null, "Hint after a wrong answer"));
+    var h = el("input", "wide");
+    h.id = "hint_" + q.id;
+    h.value = q.hint || "";
+    h.placeholder = "Shown under the question once they get it wrong";
+    h.addEventListener("input", function () { q.hint = h.value; markDirty(); });
+    r2.appendChild(h);
+    box.appendChild(r2);
+
+    if (q.type === "short" || q.type === "para") {
+      var r3 = el("label");
+      var cb = el("input");
+      cb.type = "checkbox";
+      cb.checked = q.caseSensitive === true;
+      cb.addEventListener("change", function () { q.caseSensitive = cb.checked ? true : null; markDirty(); });
+      r3.appendChild(cb);
+      r3.appendChild(el("span", null, "Capital letters have to match on this question"));
+      box.appendChild(r3);
+    }
+    return box;
+  }
+
+  /* ---------- responses tab ---------- */
+
+  function paintResponsesTab(body) {
+    var total = E.form.questions.length;
+    var done = E.players.filter(function (p) { return p.doneAt; }).length;
+    var solved = E.players.reduce(function (a, p) { return a + p.solved; }, 0);
+
+    var stats = el("div", "e-stats");
+    [[E.players.length, "started"], [done, "finished"],
+     [E.players.length ? (solved / E.players.length).toFixed(1) : "0", "questions solved on average"]
+    ].forEach(function (s) {
+      var c = el("div", "e-stat");
+      c.appendChild(el("b", null, String(s[0])));
+      c.appendChild(el("i", null, s[1]));
+      stats.appendChild(c);
+    });
+    body.appendChild(stats);
+
+    var card = el("div", "e-card");
+    var top = el("div");
+    top.style.cssText = "display:flex;align-items:center;gap:12px;margin-bottom:8px;";
+    var h = el("div");
+    h.appendChild(el("div", "e-sec", "Who is hunting"));
+    h.appendChild(el("p", "e-sub", "One row per browser. Progress is kept per browser, not per person."));
+    h.style.flex = "1";
+    top.appendChild(h);
+    var clearAll = el("button", "e-ghost", "Delete all responses");
+    clearAll.type = "button";
+    clearAll.addEventListener("click", function () {
+      if (confirm("Delete every response? Everyone goes back to question 1.")) send({ type: "clearall" });
+    });
+    top.appendChild(clearAll);
+    card.appendChild(top);
+
+    if (!E.players.length) {
+      card.appendChild(el("div", "e-empty", "Nobody has opened the form yet."));
+    }
+    E.players.forEach(function (p) {
+      var row = el("div", "e-p");
+      var av = el("div", "e-av", (p.name || "?").charAt(0).toUpperCase());
+      av.style.background = SWATCHES[Math.abs(hash(p.uid)) % SWATCHES.length];
+      row.appendChild(av);
+      var who = el("div", "who");
+      who.appendChild(el("b", null, p.name || "Anonymous"));
+      who.appendChild(el("i", null, (p.wrong ? p.wrong + " wrong so far" : "no wrong answers") + " · " + ago(p.lastAt)));
+      row.appendChild(who);
+      var prog = el("div", "e-prog");
+      var rail = el("div", "rail");
+      var fill = el("i");
+      fill.style.width = (total ? Math.round(p.solved / total * 100) : 0) + "%";
+      rail.appendChild(fill);
+      prog.appendChild(rail);
+      prog.appendChild(el("small", null, p.solved + " of " + total));
+      row.appendChild(prog);
+      if (p.doneAt) row.appendChild(el("div", "e-done", "Finished"));
+      var x = iconBtn(ICON.trash, "Delete this response");
+      x.addEventListener("click", function () { send({ type: "clear", uid: p.uid }); });
+      row.appendChild(x);
+      card.appendChild(row);
+      if (p.log && p.log.length) {
+        var trail = el("div", "e-trail");
+        p.log.forEach(function (e, i) {
+          var d = el("div");
+          d.innerHTML = (i + 1) + ". " + esc(e.title) + " &#183; <b style='font-weight:500'>" + esc(e.given) + "</b>";
+          trail.appendChild(d);
+        });
+        card.appendChild(trail);
+      }
+    });
+    body.appendChild(card);
+  }
+  function hash(s) { var h = 0; s = String(s); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+
+  /* ---------- settings tab ---------- */
+
+  function toggleRow(title, note, val, onChange) {
+    var row = el("div", "e-set");
+    var t = el("div", "t");
+    t.appendChild(el("b", null, title));
+    if (note) t.appendChild(el("i", null, note));
+    row.appendChild(t);
+    var b = el("button", "e-tog" + (val ? " on" : ""));
+    b.type = "button";
+    b.setAttribute("role", "switch");
+    b.setAttribute("aria-checked", val ? "true" : "false");
+    b.setAttribute("aria-label", title);
+    b.addEventListener("click", function () { onChange(!val); });
+    row.appendChild(b);
+    return row;
+  }
+
+  function paintSettingsTab(body) {
+    var f = E.form, s = f.settings;
+
+    var c1 = el("div", "e-card");
+    c1.appendChild(el("div", "e-sec", "The hunt"));
+    c1.appendChild(el("p", "e-sub", "How the form behaves while somebody is working through it."));
+
+    var cdRow = el("div", "e-set");
+    var cdT = el("div", "t");
+    cdT.appendChild(el("b", null, "Wait after a wrong answer"));
+    cdT.appendChild(el("i", null, "The cooldown before the next try. A question can override this in its own settings."));
+    cdRow.appendChild(cdT);
+    var num = el("div", "e-num");
+    var cdIn = el("input");
+    cdIn.id = "s_cool";
+    cdIn.type = "number"; cdIn.min = "0"; cdIn.max = "600";
+    cdIn.value = String(Math.round((s.cooldownMs || 0) / 1000));
+    cdIn.addEventListener("input", function () {
+      s.cooldownMs = Math.max(0, Math.min(600, parseInt(cdIn.value, 10) || 0)) * 1000;
+      markDirty();
+    });
+    num.appendChild(cdIn);
+    num.appendChild(el("span", null, "seconds"));
+    cdRow.appendChild(num);
+    c1.appendChild(cdRow);
+
+    c1.appendChild(toggleRow("Capital letters have to match", "Off means SCIENCE, Science and science are all the same answer.",
+      s.caseSensitive, function (v) { s.caseSensitive = v; markDirty(); paintEditor(); }));
+    c1.appendChild(toggleRow("Show a hint after a wrong answer", "Only questions that have a hint written will show one.",
+      s.showHints, function (v) { s.showHints = v; markDirty(); paintEditor(); }));
+    c1.appendChild(toggleRow("Ask for a name first", "The name shows up on the Responses tab.",
+      s.askName, function (v) { s.askName = v; markDirty(); paintEditor(); }));
+    c1.appendChild(toggleRow("Show the question counter", "Question 3 of 6, under the answer.",
+      s.showCount, function (v) { s.showCount = v; markDirty(); paintEditor(); }));
+    body.appendChild(c1);
+
+    var c2 = el("div", "e-card");
+    c2.appendChild(el("div", "e-sec", "Theme"));
+    c2.appendChild(el("p", "e-sub", "The colour runs through the header band, the buttons and the page behind them."));
+    var sw = el("e-sw");
+    sw = el("div", "e-sw");
+    SWATCHES.forEach(function (hex) {
+      var b = el("button", f.theme === hex ? "on" : "");
+      b.type = "button";
+      b.style.background = hex;
+      b.title = hex;
+      b.setAttribute("aria-label", "Theme colour " + hex);
+      b.addEventListener("click", function () { f.theme = hex; applyTheme(hex); markDirty(); paintEditor(); });
+      sw.appendChild(b);
+    });
+    c2.appendChild(sw);
+    body.appendChild(c2);
+
+    var c3 = el("div", "e-card");
+    c3.appendChild(el("div", "e-sec", "When they finish"));
+    c3.appendChild(el("p", "e-sub", "The last screen, once every question is right."));
+    var t1 = growInput("q", "s_ftitle", s.finishTitle, "Confirmation heading", function (v) { s.finishTitle = v; markDirty(); });
+    var t2 = growInput("", "s_fnote", s.finishNote, "Anything else they should see", function (v) { s.finishNote = v; markDirty(); });
+    c3.appendChild(t1); c3.appendChild(t2);
+    body.appendChild(c3);
+
+    var c4 = el("div", "e-card");
+    c4.appendChild(el("div", "e-sec", "Sharing"));
+    c4.appendChild(el("p", "e-sub", "One form for the whole site. Everyone sees the same questions, and an edit here reaches open pages straight away."));
+    var link = el("div");
+    link.style.cssText = "font:14px/20px var(--sans);color:var(--ink-2);word-break:break-all;";
+    link.textContent = location.origin + "/form";
+    c4.appendChild(link);
+    body.appendChild(c4);
+  }
+
+  /* ---------- boot ---------- */
+  applyTheme("#673ab7");
+  paint();
+  connect();
+  if (new URLSearchParams(location.search).get("edit") === "1") openEditor();
+
+  window.addEventListener("keydown", function (e) {
+    if (mode === "editor" && (e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); saveNow(); }
+  });
+  window.__form = { state: function () { return S; }, editor: function () { return E; } };
+})();
+</script>
+</body>
+</html>

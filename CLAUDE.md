@@ -36,6 +36,10 @@ portfolio/
     apps/                        self-hosted AI projects (Leon June 2026): aihiring/ + wordle/.
                                  Served at leonzhao.dev/apps/<slug>/ and iframed on their detail
                                  pages. (avalanche/ai-art/litterbot stay on Hetzner, not here.)
+    form/index.html              the scavenger hunt at leonzhao.dev/form (2026-09-19). One shared
+                                 form, Google Forms styling, standalone page like claire/ — not an
+                                 Astro route, not in the nav. Talks to the mc server over
+                                 wss://apps.leonzhao.dev/mc/ws?mode=form (mlhub apps/mc/form.js).
   src/
     styles/global.css            @import "tailwindcss" + dark variant + theme vars
     layouts/BaseLayout.astro     html shell, font load, no-flash theme script, header/footer
@@ -105,6 +109,15 @@ portfolio/
 | Wordle Solver | `https://leonzhao.dev/apps/wordle/` | Cloudflare static (self-hosted in `public/apps/wordle/`) | embedded iframe + "Open full screen" (no public repo, so no "View code") |
 
 Evolution: avalanche + ai-art moved from Streamlit Cloud → Hetzner on 2026-05-26. `aihiring` added 2026-05-27. `chatgpt` removed 2026-05-28. **June 2026 (Leon):** added `litterbot` (Hetzner); moved `aihiring` and `wordle` off `github.io` to self-hosted static files under `public/apps/` (served from Cloudflare at `leonzhao.dev/apps/...`); removed `docs`; rebranded GitHub handle to `leonzcode`. Net effect: all 5 AI demos now live on a `leonzhao.dev` domain and are all iframe-embedded on their detail pages — there are no off-domain (new-tab) AI demos left.
+
+## The scavenger hunt at `/form` (2026-09-19)
+`public/form/index.html` is a recreation of Google Forms: one form, the same one for every visitor, not linked from the nav. It is a standalone page (like `public/claire/`), not an Astro route.
+
+- **The answer key never reaches the browser.** A page is only sent the question it is on, stripped of its answers; the next one arrives only after the server has marked the last one right. Reading ahead in devtools gets you nothing.
+- **A wrong answer starts a cooldown** before the next try. The editor sets it for the form and can override it per question.
+- **Editor**: the footer's "Editor" link (or `/form?edit=1`) asks for a password — `314159`, overridable on the VPS with `FORM_PW`. It opens a Forms-style editor: Questions, Responses and Settings tabs, five question types (short answer, paragraph, multiple choice, checkboxes, dropdown), answer keys, per-question hints and cooldowns, theme colours, and the confirmation screen. It autosaves, and every open page updates live.
+- **Backend**: `mlhub/apps/mc/form.js`, reached at `wss://apps.leonzhao.dev/mc/ws?mode=form`. The form and everyone's progress live in `apps/mc/data/form.json` on the VPS volume, so both survive a redeploy. Progress is per browser (a uid in `localStorage`).
+- Local testing: run the mc server (`PORT=8600 node server.js` in `mlhub/apps/mc`) and serve `public/` statically; the page falls back to `ws://<host>:8600/ws` off `leonzhao.dev`. `window.__form.state()` / `.editor()` expose the live state.
 
 ## Always do first
 - **Invoke the `frontend-design` skill** before writing any front-end code, every session, no exceptions. The skill is the source of truth for craft level; following it is what keeps this site out of generic-AI-aesthetic territory.
