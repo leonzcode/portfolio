@@ -102,6 +102,27 @@ aiProjects.forEach((p) => {
 
 export const gameProjects: Project[] = [
   {
+    slug: "leon-kart",
+    title: "Leon Kart",
+    description:
+      "An original kart racer with five circuits that are drawn fresh every race, drift mini-turbos, gliders, items, and a server so you can race other people.",
+    href: "/mario/",
+    image: "/cards/mario.png",
+    tag: "Multiplayer",
+    story: [
+      "A kart racer written from scratch with Three.js. None of it is anybody else's: the cars, the circuits, the items and the music are all either generated in code or built from CC0 art, and the five places you race are laid out by the game rather than drawn by hand. Each round picks a seed and builds a closed circuit from it, then hangs ten sections off that lap, so Sunfield Loop is recognisably Sunfield Loop every time while never being quite the same lap twice.",
+      "The places do not just look different, they drive differently. Glacier Pass takes the grip away and puts ice down one side of a straight, Redrock Dunes is the narrowest road on the calendar with two canyon gaps you have to be launched over, Neon Mile is half boost pad and has an anti-gravity stretch where running into somebody throws you both forward, and Ember Hollow has the biggest jumps and ground that erupts under you. Falling into a gap gets you fished out by a balloon and set back down where you went in.",
+      "Most of the work went into how it feels rather than what it does. A drift charges in tiers you can hear as well as see, and the boost it pays is worth what you held it for. Leaving a ramp is a projectile problem and nothing else, so the arc is real and there is no bounce on the way down. Sitting in somebody's air for a few seconds drags you along with them. You can hold an item behind the car instead of throwing it, where it shields your back. Everything bolted to the kart changes how it drives, and the multiplayer runs against a small Node server on my own VPS.",
+    ],
+    tech: [
+      "Three.js (WebGL), no build step, plain ES modules",
+      "Circuits generated per race from a seed: Catmull-Rom spline, ten placed sections, smoothing and gradient passes",
+      "Kart physics: projectile jumps, tiered drift charge, slipstream, gliders, per-part handling stats",
+      "Instanced scenery and merged geometry to hold the draw calls down",
+      "Node + ws lobby server on a Hetzner VPS for multiplayer rounds",
+    ],
+  },
+  {
     slug: "minecraft",
     title: "Leoncraft",
     description:
