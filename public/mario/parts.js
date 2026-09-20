@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Leon Cart - what a kart is made of.
+   Leon Kart - what a kart is made of.
 
    Five bodies, four sets of wheels and five exhaust trails, and any of them go
    with any of them. None of them carries a colour of its own: every panel is
@@ -295,11 +295,19 @@ function hauler(r) {
 }
 
 export const CHASSIS = [
-  { id: 'formula', name: 'Formula', make: formula },
-  { id: 'roadster', name: 'Roadster', make: roadster },
-  { id: 'buggy', name: 'Buggy', make: buggy },
-  { id: 'speeder', name: 'Speeder', make: speeder },
-  { id: 'hauler', name: 'Hauler', make: hauler },
+  { id: 'formula', name: 'Formula', make: formula,
+    // light and quick, and it will not shove anybody
+    stats: { top: 1.06, accel: 1.04, grip: 1.04, weight: 0.82, jump: 1, charge: 1.05, boost: 1 } },
+  { id: 'roadster', name: 'Roadster', make: roadster,
+    stats: { top: 0.98, accel: 1.12, grip: 1.1, weight: 0.9, jump: 1.05, charge: 1.15, boost: 1.05 } },
+  { id: 'buggy', name: 'Buggy', make: buggy,
+    // tall springs and a lot of it: it jumps best and shoves hardest
+    stats: { top: 0.96, accel: 1, grip: 0.96, weight: 1.22, jump: 1.3, charge: 0.95, boost: 1 } },
+  { id: 'speeder', name: 'Speeder', make: speeder,
+    stats: { top: 1.12, accel: 0.9, grip: 0.98, weight: 0.86, jump: 0.9, charge: 1, boost: 1.12 } },
+  { id: 'hauler', name: 'Hauler', make: hauler,
+    // it will move anything it hits and take nothing back
+    stats: { top: 0.94, accel: 0.94, grip: 0.9, weight: 1.45, jump: 0.85, charge: 0.9, boost: 1 } },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -388,10 +396,15 @@ function turbines(r) {
 }
 
 export const WHEELS = [
-  { id: 'slick', name: 'Slicks', make: slicks },
-  { id: 'knobbly', name: 'Knobblies', make: knobblies },
-  { id: 'wire', name: 'Wires', make: wires },
-  { id: 'turbine', name: 'Turbines', make: turbines },
+  { id: 'slick', name: 'Slicks', make: slicks,
+    stats: { top: 1.04, accel: 1, grip: 1.08, weight: 1, jump: 1, charge: 1, boost: 1 } },
+  { id: 'knobbly', name: 'Knobblies', make: knobblies,
+    // they hardly notice the rough, and they are heavy
+    stats: { top: 0.94, accel: 1.02, grip: 1, weight: 1.16, jump: 1.15, charge: 0.96, boost: 1, rough: 1.4 } },
+  { id: 'wire', name: 'Wires', make: wires,
+    stats: { top: 1.02, accel: 1.1, grip: 1.02, weight: 0.84, jump: 1.08, charge: 1.12, boost: 1 } },
+  { id: 'turbine', name: 'Turbines', make: turbines,
+    stats: { top: 1.08, accel: 0.94, grip: 1.12, weight: 0.96, jump: 0.95, charge: 1, boost: 1.1 } },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -400,145 +413,41 @@ export const WHEELS = [
    colours; the racer's own colour is mixed in so it still reads as yours.
 --------------------------------------------------------------------------- */
 export const TRAILS = [
-  { id: 'spark', name: 'Sparks', shape: 'spark', hot: 0xffd233, cool: 0xff8a1f, size: 1 },
-  { id: 'flame', name: 'Flames', shape: 'flame', hot: 0xfff0a8, cool: 0xff3d18, size: 1.35 },
-  { id: 'bubble', name: 'Bubbles', shape: 'bubble', hot: 0xdff2ff, cool: 0x8fd3ff, size: 1.15 },
-  { id: 'star', name: 'Stars', shape: 'star', hot: 0xfff6e2, cool: 0xffd233, size: 1.2 },
-  { id: 'bolt', name: 'Bolts', shape: 'bolt', hot: 0xd8f0ff, cool: 0x7a5cff, size: 0.95 },
+  { id: 'spark', name: 'Sparks', shape: 'spark', hot: 0xffd233, cool: 0xff8a1f, size: 1,
+    stats: { charge: 1.05 } },
+  { id: 'flame', name: 'Flames', shape: 'flame', hot: 0xfff0a8, cool: 0xff3d18, size: 1.35,
+    stats: { boost: 1.12, top: 1.02 } },
+  { id: 'bubble', name: 'Bubbles', shape: 'bubble', hot: 0xdff2ff, cool: 0x8fd3ff, size: 1.15,
+    stats: { jump: 1.18, grip: 1.02 } },
+  { id: 'star', name: 'Stars', shape: 'star', hot: 0xfff6e2, cool: 0xffd233, size: 1.2,
+    stats: { accel: 1.1, charge: 1.08 } },
+  { id: 'bolt', name: 'Bolts', shape: 'bolt', hot: 0xd8f0ff, cool: 0x7a5cff, size: 0.95,
+    stats: { weight: 1.12, boost: 1.06 } },
 ];
 
 /* ---------------------------------------------------------------------------
-   The driver. A hat, a face and what they are wearing, and the same rule
-   applies as to the car: nothing carries a colour of its own, so a crown on
-   Juno is pink and a crown on Tock is teal, and everybody is still
-   recognisable at the far end of a straight.
-
-   The head is built around its own origin with the neck at y=0, because the
-   body it sits on decides where that is.
+   The driver. One look, not a choice: what you build is the car, and the person
+   in it is whoever you picked off the grid. Every piece is painted out of the
+   racer, so it is still their helmet and their colours.
 --------------------------------------------------------------------------- */
-
-function hatCap(r) {
+export function driverHead(r) {
   return [
-    { g: box(0.6, 0.14, 0.6, 0, 0.48, -0.02), c: r.cap },
-    { g: box(0.42, 0.1, 0.32, 0, 0.39, 0.32), c: r.cap },
-    { g: box(0.62, 0.05, 0.1, 0, 0.42, -0.02), c: r.trim },
-  ];
-}
-function hatHelmet(r) {
-  return [
-    { g: ball(0.4, 0, 0.3, 0), c: r.cap },
-    { g: box(0.84, 0.1, 0.5, 0, 0.5, -0.05), c: r.trim },
-    { g: box(0.5, 0.12, 0.14, 0, 0.16, 0.36), c: r.trim },
+    { g: ball(0.4, 0, 0.3, 0), c: r.cap },                        // helmet
+    { g: box(0.84, 0.1, 0.5, 0, 0.5, -0.05), c: r.trim },         // a stripe over it
+    { g: box(0.5, 0.12, 0.14, 0, 0.16, 0.36), c: r.trim },        // chin bar
     { g: cyl(0.09, 0.09, 0.16, 8, 'x', 0.38, 0.28, 0), c: r.trim },
     { g: cyl(0.09, 0.09, 0.16, 8, 'x', -0.38, 0.28, 0), c: r.trim },
-  ];
-}
-function hatBeanie(r) {
-  return [
-    { g: ball(0.38, 0, 0.32, 0), c: r.shirt },
-    { g: cyl(0.4, 0.4, 0.16, 12, 'y', 0, 0.2, 0), c: r.trim },
-    { g: ball(0.12, 0, 0.66, 0), c: r.trim },
-  ];
-}
-function hatCrown(r) {
-  const pts = [];
-  for (let n = 0; n < 6; n++) {
-    const a = (n / 6) * Math.PI * 2;
-    pts.push({ g: box(0.1, 0.24, 0.1, Math.sin(a) * 0.3, 0.58, Math.cos(a) * 0.3), c: 0xffd233 });
-  }
-  return [
-    { g: cyl(0.34, 0.34, 0.22, 12, 'y', 0, 0.46, 0), c: 0xffd233 },
-    { g: cyl(0.36, 0.36, 0.06, 12, 'y', 0, 0.36, 0), c: r.trim },
-  ].concat(pts);
-}
-function hatHair(r) {
-  return [
-    { g: ball(0.37, 0, 0.3, -0.02), c: r.hair || 0x4a3325 },
-    { g: box(0.5, 0.18, 0.2, 0, 0.34, 0.3), c: r.hair || 0x4a3325 },
-  ];
-}
-export const HATS = [
-  { id: 'cap', name: 'Cap', make: hatCap },
-  { id: 'helmet', name: 'Helmet', make: hatHelmet },
-  { id: 'beanie', name: 'Beanie', make: hatBeanie },
-  { id: 'crown', name: 'Crown', make: hatCrown },
-  { id: 'hair', name: 'Bare head', make: hatHair },
-];
-
-function facePlain(r) {
-  return [
-    { g: box(0.1, 0.07, 0.05, -0.13, 0.22, 0.31), c: INK },
-    { g: box(0.1, 0.07, 0.05, 0.13, 0.22, 0.31), c: INK },
-    { g: box(0.2, 0.05, 0.05, 0, 0.36, 0.3), c: 0x5a4030 },
-  ];
-}
-function faceGoggles(r) {
-  return [
-    { g: box(0.62, 0.16, 0.08, 0, 0.24, 0.3), c: DARK },
-    { g: cyl(0.11, 0.11, 0.08, 10, 'z', -0.14, 0.24, 0.34), c: GLASS },
-    { g: cyl(0.11, 0.11, 0.08, 10, 'z', 0.14, 0.24, 0.34), c: GLASS },
-    { g: box(0.74, 0.08, 0.06, 0, 0.24, -0.06), c: r.trim },
-  ];
-}
-function faceShades(r) {
-  return [
-    { g: box(0.24, 0.12, 0.06, -0.15, 0.24, 0.33), c: INK },
-    { g: box(0.24, 0.12, 0.06, 0.15, 0.24, 0.33), c: INK },
-    { g: box(0.1, 0.05, 0.05, 0, 0.26, 0.33), c: INK },
-    { g: box(0.05, 0.05, 0.3, 0.32, 0.26, 0.16), c: INK },
-    { g: box(0.05, 0.05, 0.3, -0.32, 0.26, 0.16), c: INK },
-    { g: box(0.16, 0.05, 0.04, 0, 0.1, 0.33), c: 0xc2705c },
-  ];
-}
-function faceVisor(r) {
-  return [
-    { g: box(0.6, 0.26, 0.1, 0, 0.24, 0.29), c: 0x12203a },
+    { g: box(0.6, 0.26, 0.1, 0, 0.24, 0.29), c: 0x12203a },       // visor
     { g: box(0.62, 0.06, 0.09, 0, 0.38, 0.3), c: r.trim },
-    { g: box(0.5, 0.05, 0.08, 0, 0.11, 0.31), c: r.trim },
   ];
 }
-export const FACES = [
-  { id: 'plain', name: 'Plain', make: facePlain },
-  { id: 'goggles', name: 'Goggles', make: faceGoggles },
-  { id: 'shades', name: 'Shades', make: faceShades },
-  { id: 'visor', name: 'Visor', make: faceVisor },
-];
-
-function suitRace(r, st) {
+export function driverBody(r, st) {
   return [
     { g: box(0.52, 0.44, 0.34, 0, st.y + 0.48, st.z), c: r.shirt },
     { g: box(0.42, 0.14, 0.3, 0, st.y + 0.3, st.z + 0.04), c: r.trim },
     { g: box(0.2, 0.1, 0.32, 0, st.y + 0.58, st.z + 0.03), c: r.trim },
   ];
 }
-function suitJacket(r, st) {
-  return [
-    { g: box(0.56, 0.46, 0.36, 0, st.y + 0.48, st.z), c: r.trim },
-    { g: box(0.16, 0.44, 0.35, 0, st.y + 0.48, st.z + 0.01), c: r.shirt },
-    { g: box(0.58, 0.1, 0.36, 0, st.y + 0.68, st.z), c: 0xfff6e2 },
-  ];
-}
-function suitOverall(r, st) {
-  return [
-    { g: box(0.54, 0.44, 0.34, 0, st.y + 0.48, st.z), c: 0x3f5fa8 },
-    { g: box(0.13, 0.5, 0.06, -0.17, st.y + 0.5, st.z + 0.17), c: 0x3f5fa8 },
-    { g: box(0.13, 0.5, 0.06, 0.17, st.y + 0.5, st.z + 0.17), c: 0x3f5fa8 },
-    { g: box(0.26, 0.2, 0.05, 0, st.y + 0.4, st.z + 0.18), c: r.trim },
-  ];
-}
-function suitTee(r, st) {
-  return [
-    { g: box(0.5, 0.42, 0.32, 0, st.y + 0.47, st.z), c: r.shirt },
-    { g: box(0.3, 0.2, 0.05, 0, st.y + 0.5, st.z + 0.16), c: r.trim },
-    { g: box(0.52, 0.06, 0.33, 0, st.y + 0.66, st.z), c: 0xfff6e2 },
-  ];
-}
-export const SUITS = [
-  { id: 'race', name: 'Race suit', make: suitRace },
-  { id: 'jacket', name: 'Jacket', make: suitJacket },
-  { id: 'overall', name: 'Overalls', make: suitOverall },
-  { id: 'tee', name: 'Tee', make: suitTee },
-];
 
 /* ---- what a build is ----------------------------------------------------- */
 const pick = (list, id, n) => {
@@ -551,17 +460,30 @@ export function normalise(build) {
     chassis: pick(CHASSIS, b.chassis, 0).id,
     wheels: pick(WHEELS, b.wheels, 0).id,
     trail: pick(TRAILS, b.trail, 0).id,
-    hat: pick(HATS, b.hat, 0).id,
-    face: pick(FACES, b.face, 0).id,
-    suit: pick(SUITS, b.suit, 0).id,
   };
+}
+
+/* What a build is worth to drive.
+
+   Every part carries a handful of multipliers and they are simply multiplied
+   together, so a light body on wire wheels is quick to get going and will be
+   shoved around, and a hauler on knobblies is slow, sure footed and will move
+   anything it touches. There is no best build: everything that is up somewhere
+   is down somewhere else. */
+export function statsOf(build) {
+  const b = normalise(build);
+  const out = { top: 1, accel: 1, grip: 1, weight: 1, jump: 1, charge: 1, boost: 1, rough: 1 };
+  for (const part of [chassisOf(b.chassis), wheelsOf(b.wheels), trailOf(b.trail)]) {
+    const st = part && part.stats;
+    if (!st) continue;
+    for (const k in out) if (st[k] !== undefined) out[k] *= st[k];
+  }
+  return out;
 }
 export const chassisOf = id => pick(CHASSIS, id, 0);
 export const wheelsOf = id => pick(WHEELS, id, 0);
 export const trailOf = id => pick(TRAILS, id, 0);
-export const hatOf = id => pick(HATS, id, 0);
-export const faceOf = id => pick(FACES, id, 0);
-export const suitOf = id => pick(SUITS, id, 0);
+
 
 /* ---------------------------------------------------------------------------
    Putting a look on the wire. The lobby already relays one number per player
@@ -570,10 +492,7 @@ export const suitOf = id => pick(SUITS, id, 0);
    times five trails is eight hundred values, which fits in the integer that was
    already being sent. Nothing on the server had to learn about any of this.
 --------------------------------------------------------------------------- */
-const ORDER = [
-  ['chassis', CHASSIS], ['wheels', WHEELS], ['trail', TRAILS],
-  ['hat', HATS], ['face', FACES], ['suit', SUITS],
-];
+const ORDER = [['chassis', CHASSIS], ['wheels', WHEELS], ['trail', TRAILS]];
 export function packLook(cast, build) {
   const b = normalise(build);
   let n = 0;

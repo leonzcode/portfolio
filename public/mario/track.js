@@ -219,21 +219,45 @@ function sampleLoop(seed, th) {
   // over the fifty odd metres either side of it, which keeps the long climbs and
   // takes out the short bumps that were being felt through the wheels.
   {
-    const raw = out.map(a => a.p.y);
-    const n = out.length, W = 12;
-    for (let i = 0; i < n; i++) {
-      let sum = 0;
-      for (let d = -W; d <= W; d++) sum += raw[(i + d + n) % n];
-      // graded, but never so far under the ground it spans that the field
-      // closes over it. The quarter metre of slack is what the kerb blends away.
-      out[i].p.y = Math.max(sum / (W * 2 + 1), raw[i] - 0.25);
+    /* Twice as long a window as it was, and run twice. The ground rolls at a
+        scale of tens of metres and the road should not feel any of it: what is
+        left after this is the long climbs and nothing you can feel through the
+        wheels. */
+    let raw = out.map(a => a.p.y);
+    const n = out.length, W = 22;
+    for (let pass = 0; pass < 2; pass++) {
+      const next = new Array(n);
+      for (let i = 0; i < n; i++) {
+        let sum = 0;
+        for (let d = -W; d <= W; d++) sum += raw[(i + d + n) % n];
+        // graded, but never so far under the ground it spans that the field
+        // closes over it. The quarter metre of slack is what the kerb blends away.
+        next[i] = Math.max(sum / (W * 2 + 1), raw[i] - 0.25);
+      }
+      raw = next;
     }
-    // and one light pass over that, so the clamp does not leave a step in it
+    for (let i = 0; i < n; i++) out[i].p.y = raw[i];
+    // and a light three tap over that, so the clamp leaves no step in it
     const fix = out.map(a => a.p.y);
     for (let i = 0; i < n; i++) {
       out[i].p.y = (fix[(i - 1 + n) % n] + fix[i] * 2 + fix[(i + 1) % n]) / 4;
     }
   }
+
+  /* The width gets the same treatment. Sections change it by a lot and a
+     step in the width is a step in where the barrier is, which is a car
+     bouncing off nothing. Done after the sections have had their say. */
+  const smoothW = () => {
+    const m = out.length;
+    for (let pass = 0; pass < 2; pass++) {
+      const w0 = out.map(a => a.w);
+      for (let i = 0; i < m; i++) {
+        let sum = 0;
+        for (let d = -5; d <= 5; d++) sum += w0[(i + d + m) % m];
+        out[i].w = sum / 11;
+      }
+    }
+  };
 
   /* ---- the lean of the corners ------------------------------------------- */
   // Measure the bend a little way ahead of each sample and smooth it, or the
@@ -354,8 +378,16 @@ function sampleLoop(seed, th) {
         if (k % 2 === 0) basins.push({ x: a.p.x, z: a.p.z, r: a.w + 22, drop: f.drop });
         return;
       }
-      if (t <= f.gapFrom) a.p.y += f.lip * ease(Math.min(1, t / f.gapFrom));
-      else a.p.y += f.lip * 0.45 * (1 - ease(Math.min(1, (t - f.gapTo) / (1 - f.gapTo) * 1.4)));
+      if (t <= f.gapFrom) {
+        a.p.y += f.lip * ease(Math.min(1, t / f.gapFrom));
+        /* And the last stretch before the hole is a kicker rather than a hill.
+           `launch` is how far there is to clear; the car works out for itself
+           how hard it has to leave, so a gap is a jump you are thrown off
+           rather than a hole you have to be going fast enough to miss. */
+        if (t > f.gapFrom - 0.1) a.launch = (f.gapTo - f.gapFrom) * f.len * 2.2;
+      } else {
+        a.p.y += f.lip * 0.45 * (1 - ease(Math.min(1, (t - f.gapTo) / (1 - f.gapTo) * 1.4)));
+      }
     } },
 
     /* A crest steep enough to throw a car at racing speed, then away again. */
@@ -659,6 +691,17 @@ function sampleLoop(seed, th) {
       const g = hill(e.x, e.z);
       if (g <= low - 0.6) continue;
       basins.push({ x: e.x, z: e.z, r: a.w * 1.6, drop: g - low + 1.8 });
+    }
+  }
+
+  // the sections have all had their say; take the steps out of what they did
+  smoothW();
+  {
+    const y0 = out.map(a => a.p.y), m = out.length;
+    for (let i = 0; i < m; i++) {
+      // never across a hole: the two lips of a chasm are meant to be a step
+      if (out[i].gap || out[(i + 1) % m].gap || out[(i - 1 + m) % m].gap) continue;
+      out[i].p.y = (y0[(i - 1 + m) % m] + y0[i] * 2 + y0[(i + 1) % m]) / 4;
     }
   }
 
@@ -1000,12 +1043,16 @@ export function buildTrack(scene, seed, themeId) {
           const big = 0.45 + 0.55 * Math.sin(Math.PI * Math.min(1, Math.max(0, t)));
           const bore = a.w + KERB;
           const r = bore * 0.95 * big;
+          /* Every one of these is pushed out far enough that its NEAR face
+             clears the bore. At a shorter offset the rock's centre is outside
+             the tunnel but half of it is inside, which is a boulder in the
+             middle of the road you cannot see past. */
           const spots = [
-            { x: bore + r * 0.62, y: bore * 0.1 },
-            { x: -(bore + r * 0.62), y: bore * 0.1 },
-            { x: 0, y: bore * 0.58 + r * 0.55 },
-            { x: bore * 0.66, y: bore * 0.5 + r * 0.4 },
-            { x: -bore * 0.66, y: bore * 0.5 + r * 0.4 },
+            { x: bore + r * 1.08, y: bore * 0.1 },
+            { x: -(bore + r * 1.08), y: bore * 0.1 },
+            { x: 0, y: bore * 0.58 + r * 1.05 },
+            { x: bore * 0.8 + r * 0.7, y: bore * 0.5 + r * 0.8 },
+            { x: -(bore * 0.8 + r * 0.7), y: bore * 0.5 + r * 0.8 },
           ];
           for (const sp of spots) {
             const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), mat);
@@ -1431,6 +1478,34 @@ export function buildTrack(scene, seed, themeId) {
   }
 
   /* ---- the two questions -------------------------------------------------- */
+  /* ---------------------------------------------------------------------------
+     Where you are on the road.
+
+     This used to answer every question about the nearest sample: its width, its
+     camber, its normal, the height difference to the next one. Samples are two
+     metres apart, so every one of those answers stepped. A road that steps in
+     width lets you through the barrier on the outside of a corner and stops you
+     short of it on the inside; a road that steps in height reads as a crest to
+     the launch code and throws the car into the air for nothing; and a frame
+     taken from one sample measures your position across a corner from the wrong
+     place, which is the rest of it.
+
+     So everything here is interpolated along the segment you are actually on.
+     The frame is the lerp of the two ends, renormalised; the width, the camber,
+     the island and the rest come along with it; and the slope is a central
+     difference over three segments rather than one, which is what stops a
+     perfectly smooth hill registering as a lip.
+  --------------------------------------------------------------------------- */
+
+  // the road surface at one sample, at one offset across it
+  function heightAt(a, lat) {
+    const lt = Math.max(-a.w, Math.min(a.w, lat));
+    const ramp = a.ramp ? a.ramp * Math.max(0, Math.min(1, (lt * a.rampSide) / a.w)) : 0;
+    const tilt = a.splitLift && a.island
+      ? a.splitLift * Math.max(-1, Math.min(1, lt / a.island)) : 0;
+    return a.p.y + lt * a.bank + a.w * Math.abs(a.bank) + ramp + tilt;
+  }
+
   function project(x, z, hint) {
     let best = -1, bestD = Infinity;
     const scan = (lo, hi) => {
@@ -1446,65 +1521,135 @@ export function buildTrack(scene, seed, themeId) {
       scan(hint - 26, hint + 26);
       if (bestD > 1600) { bestD = Infinity; scan(0, N - 1); }     // lost: look everywhere
     }
-    const a = samples[best];
-    const dx = x - a.p.x, dz = z - a.p.z;
-    const along = dx * a.t.x + dz * a.t.z;
-    const lateral = dx * a.n.x + dz * a.n.z;
-    // Height between samples, not at them. Handing back the nearest sample's own
-    // y made the kart step up and down every couple of metres, which reads as a
-    // bumpy ride on a road that is meant to be smooth.
-    const nb = samples[(best + (along >= 0 ? 1 : samples.length - 1)) % samples.length];
-    const span = Math.abs(nb.s - a.s) || 1;
-    const f = Math.min(1, Math.abs(along) / span);
-    // the lean, held flat once you are off the tarmac so the kerb does not
-    // launch anybody, and the ramps come along for the ride in p.y already
-    const bank = a.bank + ((nb.bank - a.bank) * f);
-    const lt = Math.max(-a.w, Math.min(a.w, lateral));
-    // the same pivot the road is built on: lifted by what the low side would
-    // otherwise have dropped, so the tarmac never sinks under the field
-    // and the half of a ramp you are actually on, if you are on one
-    const ramp = a.ramp ? a.ramp * Math.max(0, Math.min(1, (lt * a.rampSide) / a.w)) : 0;
-    const tilt = a.splitLift && a.island
-      ? a.splitLift * Math.max(-1, Math.min(1, lt / a.island)) : 0;
-    let y = a.p.y + (nb.p.y - a.p.y) * f + lt * bank + a.w * Math.abs(bank) + ramp + tilt;
-    // Off the tarmac the ground takes over. The kerb is drawn from the road edge
-    // down to the grass, so the height has to follow it down: keeping the road's
-    // own height out there put a kart nearly two metres under the field on the
-    // inside of a banked corner, with the camera below the surface and the road
-    // hidden behind ground it was looking at from underneath.
-    const over = Math.abs(lateral) - a.w;
-    if (over > 0) {
-      const g = groundY(x, z);
-      const m = Math.min(1, over / KERB);
-      y += (g - y) * m;
+
+    /* The segment you are actually on.
+
+       Taking the one that starts or ends at the nearest sample is not enough.
+       Offset out towards the edge of the road on a bend, the nearest sample is
+       often one further round than the one you are level with, so the segment
+       chosen hops as you drive and the width, the height and the wall hop with
+       it. That hop is what let a car through a barrier on the outside of a
+       corner and stopped it short of one on the inside.
+
+       So look at the four segments around the nearest sample and take whichever
+       one the point genuinely sits against: the foot of the perpendicular
+       inside it, and nearest if more than one qualifies. It is sixteen extra
+       multiplies and it makes the road continuous. */
+    let i0 = best, f = 0, bestSeg = Infinity;
+    for (let k = -2; k <= 1; k++) {
+      const s0 = ((best + k) % N + N) % N, s1 = (s0 + 1) % N;
+      const p = samples[s0], q = samples[s1];
+      const ux = q.p.x - p.p.x, uz = q.p.z - p.p.z;
+      const u2 = ux * ux + uz * uz || 1;
+      let t = ((x - p.p.x) * ux + (z - p.p.z) * uz) / u2;
+      const inside = t >= 0 && t <= 1;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const fx = p.p.x + ux * t - x, fz = p.p.z + uz * t - z;
+      // a segment the point is level with beats one it is past the end of
+      const d = fx * fx + fz * fz + (inside ? 0 : 1e4);
+      if (d < bestSeg) { bestSeg = d; i0 = s0; f = t; }
     }
+    const i1 = (i0 + 1) % N;
+    const a = samples[i0], b = samples[i1];
+    const pv = samples[(i0 - 1 + N) % N], nx2 = samples[(i1 + 1) % N];
+    const ex = b.p.x - a.p.x, ez = b.p.z - a.p.z;
+    const mix = (u, v) => u + (v - u) * f;
+    /* Everything that varies along the road is read off a curve through four
+       samples rather than off the straight line between two.
+
+       A straight line between samples is continuous but its slope is not: there
+       is a kink at every sample, two metres apart, and a kink in the height is a
+       bump you feel through the wheels while a kink in the width is a step in
+       where the barrier is. One extra multiply each and the whole surface is
+       smooth instead. */
+    const ff = f * f, fff = ff * f;
+    const curve = (q0, q1, q2, q3) => 0.5 * ((2 * q1) + (-q0 + q2) * f
+      + (2 * q0 - 5 * q1 + 4 * q2 - q3) * ff + (-q0 + 3 * q1 - 3 * q2 + q3) * fff);
+
+    // the frame at that point: position, the way the road is going, and across it
+    const px = a.p.x + ex * f, pz = a.p.z + ez * f;
+    let tx = mix(a.t.x, b.t.x), tz = mix(a.t.z, b.t.z);
+    const tl = Math.hypot(tx, tz) || 1;
+    tx /= tl; tz /= tl;
+    const nx = -tz, nz = tx;                       // left of travel, as everywhere
+    const rx = x - px, rz = z - pz;
+    const lateral = rx * nx + rz * nz;
+    const along = rx * tx + rz * tz;
+
+    const w = curve(pv.w, a.w, b.w, nx2.w);
+    const bank = curve(pv.bank, a.bank, b.bank, nx2.bank);
+    const island = mix(a.island || 0, b.island || 0);
+    const causeway = mix(a.causeway || 0, b.causeway || 0);
+    const lt = Math.max(-w, Math.min(w, lateral));
+
+    /* Height. The two ends are evaluated at the same offset across the road and
+       then mixed, rather than the offset being applied to a mixed sample, which
+       is what keeps a one sided ramp from smearing across the middle. */
+    let y = curve(heightAt(pv, lt), heightAt(a, lt), heightAt(b, lt), heightAt(nx2, lt));
+
+    /* Off the tarmac the ground takes over. The kerb is drawn from the road edge
+       down to the grass, so the height has to follow it down: keeping the road's
+       own height out there put a kart nearly two metres under the field on the
+       inside of a banked corner. */
+    const over = Math.abs(lateral) - w;
+    if (over > 0) {
+      /* Over a longer run than it was, and never falling away faster than a
+         slope you could drive down. Blended over a metre and a half, the edge
+         of a road standing on an embankment dropped several metres in one car
+         length, which the physics reads as a cliff and throws you off. */
+      const g = groundY(x, z);
+      const m = Math.min(1, over / (KERB * 2.6));
+      const want = y + (g - y) * m * m;
+      y = Math.max(want, y - over * 0.6);
+    }
+
+    /* How steeply the road is climbing under you. Over three segments rather
+       than one: measured across a single pair of samples this is a staircase,
+       and the launch code reads any step down in it as the lip of a ramp. */
+    const p0 = samples[(i0 - 1 + N) % N], p3 = samples[(i1 + 1) % N];
+    let slope;
+    if (a.gap || b.gap || p0.gap || p3.gap) {
+      /* Never across the edge of a hole. The samples inside a gap keep the
+         height the road had before the lip was built on it, so a difference
+         taken across one reads as a four metre cliff in six metres of road,
+         and the launch that comes out of that throws a car twenty metres up. */
+      slope = 0;
+    } else {
+      const run = (p0.len || STEP) + (a.len || STEP) + (b.len || STEP);
+      slope = (heightAt(p3, lt) - heightAt(p0, lt)) / run;
+    }
+
+    const sideOf = k => (a[k] && Math.sign(lateral) === Math.sign(a[k])) ? a[k]
+                      : (b[k] && Math.sign(lateral) === Math.sign(b[k])) ? b[k] : 0;
+
     return {
-      i: best, s: a.s + along, lateral, half: a.w,
-      onRoad: Math.abs(lateral) <= a.w + 0.4,
+      i: best, s: a.s + f * (a.len || STEP) + along, lateral, half: w,
+      onRoad: Math.abs(lateral) <= w + 0.4,
       // the red and white is the outer strip of the road, so riding it is riding
       // the edge rather than being off the track
-      onKerb: Math.abs(lateral) > a.w - KERB && Math.abs(lateral) <= a.w + 0.4,
-      wall: a.w + SHOULDER,
-      y, bank, t: a.t, n: a.n,
-      // How steeply the road is climbing under you, which is what throws a car.
-      // Under you, not down the middle: a ramp covers one half of the road, so
-      // the centreline is flat through it and reading the slope there would mean
-      // nothing ever took off.
-      slope: ((nb.p.y + rampAt(nb, lt)) - (a.p.y + rampAt(a, lt))) / (Math.abs(nb.s - a.s) || 1),
+      onKerb: Math.abs(lateral) > w - KERB && Math.abs(lateral) <= w + 0.4,
+      wall: w + SHOULDER,
+      y, bank, slope,
+      t: { x: tx, y: 0, z: tz }, n: { x: nx, y: 0, z: nz },
       // the island up the middle of a split: inside this, laterally, is not road
-      island: a.island ? a.island + ((nb.island || 0) - a.island) * f : 0,
-      // there is no road here at all, and nothing under it either
-      gap: !!(a.gap && nb.gap),
+      island,
+      /* No road here at all. Either end of the segment being a hole is enough,
+         because that is exactly the test the ribbon uses when it decides not to
+         draw a quad: the physics and the picture have to agree about where the
+         edge is or you fall through tarmac you can see. */
+      gap: !!(a.gap || b.gap),
       // a strip of something that is not tarmac down one side, and what of
-      strip: a.strip && Math.sign(lateral) === Math.sign(a.strip) && Math.abs(lateral) > a.w * 0.25
-             ? a.stripKind : null,
+      strip: sideOf('strip') ? (a.stripKind || b.stripKind) : null,
       // a road with the ground taken away either side of it: over the edge is a fall
-      causeway: a.causeway || 0,
+      causeway,
       // boosters down one half of it
-      boostlane: a.boostlane && Math.sign(lateral) === Math.sign(a.boostlane) ? 1 : 0,
+      boostlane: sideOf('boostlane') ? 1 : 0,
+      // the lip of a gap says how far there is to clear, so the car can work
+      // out for itself how hard it has to leave
+      launch: a.launch || b.launch || 0,
       // the surface above you, when there is one
-      waterY: a.waterY === undefined ? null : a.waterY,
-      tunnel: !!a.tunnel,
+      waterY: a.waterY === undefined ? (b.waterY === undefined ? null : b.waterY) : a.waterY,
+      tunnel: !!(a.tunnel || b.tunnel),
     };
   }
 

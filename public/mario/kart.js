@@ -44,10 +44,10 @@ const SHADOW_TEX = (() => {
 })();
 const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
-import { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS,
-         chassisOf, wheelsOf, trailOf, hatOf, faceOf, suitOf, normalise,
+import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
+         driverHead, driverBody,
          box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=28';
-export { CHASSIS, WHEELS, TRAILS, HATS, FACES, SUITS, normalise };
+export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
 /* A kart is a body, a set of wheels, a driver and a trail, and the four are
@@ -70,8 +70,8 @@ export function makeKart(who, build) {
   const shirt = r.shirt, skin = r.skin, cap = r.cap;
   const st = spec.seat;
 
-  // the torso, which stays with the car, wearing whatever was chosen
-  const torso = suitOf(b.suit).make(r, st).concat([
+  // the torso, which stays with the car
+  const torso = driverBody(r, st).concat([
     { g: cyl(0.1, 0.1, 0.1, 8, 'y', 0, st.y + 0.74, st.z), c: skin },
   ]);
   body.add(merge(spec.parts.concat(torso), BODY_MAT));
@@ -81,8 +81,8 @@ export function makeKart(who, build) {
      with the wheel is most of what makes a kart look alive at speed. */
   const head = new THREE.Group();
   head.position.set(0, st.y + 0.8, -st.z);
-  head.add(merge([{ g: ball(0.34, 0, 0.26, 0), c: skin }]
-    .concat(hatOf(b.hat).make(r), faceOf(b.face).make(r)), BODY_MAT));
+  head.add(merge([{ g: ball(0.3, 0, 0.27, 0), c: skin }]
+    .concat(driverHead(r)), BODY_MAT));
   body.add(head);
 
   const arms = new THREE.Group();
@@ -105,6 +105,11 @@ export function makeKart(who, build) {
     const hub = new THREE.Group();
     hub.position.set(sx * WX, tyre.r, -sz * WZ);
     const m = merge(tyre.parts.map(q => ({ g: q.g.clone(), c: q.c })), TYRE_MAT);
+    /* A wheel is not symmetric: the rim face, the holes and the hub nut are all
+       on its outside. Built once and used four times, the two on the left ended
+       up showing the game their inside faces, so the left pair is turned about
+       its own axle to put its outside out. */
+    if (sx < 0) m.rotation.y = Math.PI;
     hub.add(m);
     body.add(hub);
     wheels.push({ hub, spin: m, steers, y0: tyre.r });
@@ -125,6 +130,8 @@ export function makeKart(who, build) {
   const kart = {
     who: r, group, body, wheels, shade, head, arms,
     build: b, trail: trailOf(b.trail), exhaust: spec.exhaust || [],
+    // what the parts bolted to it are worth, worked out once when it is built
+    parts: statsOf(b),
     // how far the suspension is compressed, and how far it has left to go
     squat: 0, squatV: 0,
     pos: new THREE.Vector3(), yaw: 0, speed: 0,
@@ -140,6 +147,10 @@ export function makeKart(who, build) {
     boost: 0, spin: 0, slow: 0, star: 0,
     // over nothing: how long for, and how far down
     falling: 0, fallV: 0, fallY: 0, overEdge: 0, rescue: 0,
+    // a trick: whether one is running, which one, and how far through it is
+    trick: 0, trickKind: 0, trickSpin: 0, trickWin: 0, hopped: 0,
+    // what the parts bolted to it are worth
+    parts: null,
     lap: 1, cpi: 0, prog: 0, place: 1, finished: 0,
     item: null, itemN: 0, roulette: 0,
     // what is queued behind the one in the slot, oldest first
@@ -187,7 +198,17 @@ export function apply(k) {
     k.shade.material.opacity = 0.85 * f * f;
     k.shade.visible = up < 9;
   }
-  k.body.rotation.z = k.lean;
+  /* The trick. Three of them, cycled so the same jump twice does not look the
+     same twice: a barrel roll, a backflip and a twist. They are drawn on the
+     body rather than on the whole car so the contact patch below stays flat. */
+  if (k.trick) {
+    const a = k.trickSpin;
+    if (k.trickKind === 0) k.body.rotation.z = k.lean + a;
+    else if (k.trickKind === 1) k.body.rotation.x = -k.speed * 0.0012 + k.pitch - a;
+    else { k.body.rotation.z = k.lean + a * 0.6; k.body.rotation.x = -a * 0.5; }
+  } else {
+    k.body.rotation.z = k.lean;
+  }
   // nose up on the way up, nose down on the way down
   k.body.rotation.x = -k.speed * 0.0012 + k.pitch;
   void 0;
@@ -221,7 +242,7 @@ export function apply(k) {
 /* ---- how it drives ------------------------------------------------------- */
 export const TUNE = {
   accel: 15,
-  top: 27,                 // metres a second on tarmac, before boosts
+  top: 33.75,              // metres a second on tarmac, before boosts
   reverse: 9,
   brake: 26,
   drag: 5,
@@ -247,13 +268,29 @@ export const PLAIN = {
   driftCharge: 1, boost: 1, hop: 1,
 };
 
+/* The three mini turbo tiers, and what each is worth.
+
+   Mario Kart runs them as blue, orange and purple: a short kick, a useful one,
+   and one you plan a corner around. MT_AT is how much charge each needs, in
+   seconds of holding a wide slide, and MT is how long the boost it pays lasts.
+   A shallow drift charges at less than half the rate, which is the whole of
+   what makes holding a wider line through a corner worth doing. */
+export const MT_AT = [0.62, 1.35, 2.3];
+const MT = [0.55, 1.05, 1.9];
+export function driftTier(k) {
+  const c = k.driftT || 0;
+  return c >= MT_AT[2] ? 3 : c >= MT_AT[1] ? 2 : c >= MT_AT[0] ? 1 : 0;
+}
+
 export function topSpeed(k) {
   const R = k.rules || PLAIN;
+  const P = k.parts;
   // topMul is the computer drivers' handicap, 1 for anyone at a keyboard
-  let t = TUNE.top * R.top * (k.topMul || 1);
+  let t = TUNE.top * R.top * (k.topMul || 1) * (P ? P.top : 1);
   if (k.boost > 0) t *= TUNE.boostTop;
   if (k.star > 0) t *= TUNE.starTop;
-  if (k.offroad && k.star <= 0) t *= R.offTop;
+  // and knobblies hardly notice the rough, which is what they are for
+  if (k.offroad && k.star <= 0) t *= Math.min(0.95, R.offTop * (P ? P.rough : 1));
   if (k.slow > 0) t *= 0.55;
   return t;
 }
@@ -283,7 +320,8 @@ export function stepKart(k, input, track, dt) {
     // makes the jump worth taking.
     const flying = k.hop > 0.05;
     k.bash = !!input.hop;          // leaning on it as you make contact
-    const acc = TUNE.accel * R.accel * (k.offroad && k.star <= 0 ? TUNE.offAccel : 1);
+    const acc = TUNE.accel * R.accel * (k.parts ? k.parts.accel : 1)
+              * (k.offroad && k.star <= 0 ? TUNE.offAccel : 1);
     if (flying) { /* airborne: the throttle and the brake are not connected to anything */ }
     else if (gas) k.speed += acc * dt * (k.speed < 0 ? 2.2 : 1);
     else if (brake) k.speed -= TUNE.brake * dt;
@@ -291,28 +329,40 @@ export function stepKart(k, input, track, dt) {
     if (!gas && brake && !flying) k.speed = Math.max(k.speed, -TUNE.reverse);
     if (k.speed > top) k.speed -= (k.speed - top) * Math.min(1, dt * 4.5);
 
-    // the hop, and the drift that follows it
-    if (input.hop && k.hop <= 0.001 && k.drift === 0 && k.speed > 6) {
-      k.hopV = TUNE.hopV * R.hop;
+    /* ---- the hop, and the drift that follows it --------------------------
+       Built the way Mario Kart 8 builds it.
+
+       You hop, the back steps out, and the drift holds until you let the
+       button go. Turning costs a little speed, as turning does, but the drift
+       itself costs nothing: a kart that dropped speed the moment you committed
+       and then wound back up is a kart that punishes you for using the one
+       mechanic the whole game is about.
+
+       The charge is a counter rather than a clock, and it fills faster the
+       wider you are holding the stick: five a frame at full lock against two a
+       frame at a shallow angle, which is what makes a deliberately wide slide
+       worth taking and what "soft drifting" means. Three tiers come out of it,
+       blue, orange and purple, each worth a longer boost than the last. */
+    if (input.hop && k.hop <= 0.001 && k.drift === 0 && k.speed > 6 && !k.launched) {
+      k.hopV = TUNE.hopV * R.hop * (k.parts ? k.parts.jump : 1);
       k.pendingDrift = Math.abs(input.steer) > 0.2 ? Math.sign(input.steer) : 0;
+      k.hopped = 1;
     }
-    if (k.hop > 0.05 && k.pendingDrift && k.drift === 0) { k.drift = k.pendingDrift; k.driftT = 0; }
-    if (!input.hop && k.drift !== 0) {
-      // let go: whatever was charged comes out as a boost
-      // The walls are on the tarmac edge now and the road is eighteen metres
-      // across, so a full lock slide runs out of room in about half a second.
-      // A mini turbo you cannot physically hold long enough for is not a mini
-      // turbo, so the marks come down to meet the circuit.
-      // how long it takes to charge and how much it pays are both the circuit's
-      // to set: Neon Mile charges in three quarters of the time, Ember Hollow
-      // pays a quarter more for the same slide
-      if (k.driftT * R.driftCharge > 1.0) k.boost = Math.max(k.boost, 1.15 * R.boost);
-      else if (k.driftT * R.driftCharge > 0.5) k.boost = Math.max(k.boost, 0.7 * R.boost);
-      k.drift = 0; k.driftT = 0; k.pendingDrift = 0;
-    }
+    if (k.hop > 0.02 && k.pendingDrift && k.drift === 0) { k.drift = k.pendingDrift; k.driftT = 0; }
     if (k.drift !== 0) {
       if (k.speed < 5) { k.drift = 0; k.driftT = 0; }
-      else k.driftT += dt;
+      else {
+        // how far into the corner you are holding it, which is the whole of the
+        // difference between a tidy drift and a quick one
+        const wide = Math.abs(input.steer) > 0.55 || Math.sign(input.steer) === k.drift;
+        k.driftT += dt * (wide ? 1 : 0.42) * R.driftCharge * (k.parts ? k.parts.charge : 1);
+      }
+    }
+    if (!input.hop && k.drift !== 0) {
+      // let go and whatever tier was reached comes out
+      const tier = driftTier(k);
+      if (tier) k.boost = Math.max(k.boost, MT[tier - 1] * R.boost * (k.parts ? k.parts.boost : 1));
+      k.drift = 0; k.driftT = 0; k.pendingDrift = 0;
     }
 
     // steering: less lock at speed, more of it while sliding
@@ -322,13 +372,14 @@ export function stepKart(k, input, track, dt) {
     if (k.drift !== 0) steer = k.drift * 0.55 + input.steer * 0.55;    // you can tighten or open the slide
     // in the air you can shift the nose, not steer
     // ice: the wheels turn, the kart does not
-    k.yaw += steer * lock * grip * R.grip * dt * (k.speed < -0.3 ? -1 : 1) * (flying ? 0.28 : 1) * (k.onIce ? 0.34 : 1);
+    k.yaw += steer * lock * grip * R.grip * (k.parts ? k.parts.grip : 1)
+           * dt * (k.speed < -0.3 ? -1 : 1) * (flying ? 0.28 : 1) * (k.onIce ? 0.34 : 1);
     k.steerVis += (steer * 0.55 - k.steerVis) * Math.min(1, dt * 10);
     // and what slide there is hangs on longer, because nothing is scrubbing it off
     /* What the back end does when you are not asking it to. On a loose or icy
        circuit a slide does not simply stop when the drift does: it hangs on and
        has to be caught, which is the whole character of the place. */
-    const wantSlide = k.drift !== 0 ? -k.drift * 0.42
+    const wantSlide = k.drift !== 0 ? -k.drift * (0.3 + Math.abs(input.steer) * 0.22)
                     : (k.onIce ? k.slide * 0.9 : k.slide * R.slide);
     k.slide += (wantSlide - k.slide) * Math.min(1, dt * 6);
     // and it rolls to the outside of the corner, drifting or not
@@ -354,6 +405,15 @@ export function stepKart(k, input, track, dt) {
       // the springs take the landing: a kick into the dampers that settles out
       if (k.hopV < -2) k.squatV = Math.max(-9, k.hopV * 0.5);
       if (k.hopV < -4) k.landed = 1;        // a real landing, not the end of a flick
+      /* A trick pulled in the air pays out here, the way it does in Mario Kart:
+         land it and you get a boost worth about a blue mini turbo. It is also
+         the only thing that ends the trick, so a car that never pressed the
+         button simply lands. */
+      if (k.trick) {
+        k.boost = Math.max(k.boost, 0.62 * (k.parts ? k.parts.boost : 1));
+        k.trick = 0; k.trickSpin = 0;
+      }
+      k.trickWin = 0;
       k.hop = 0; k.hopV = 0; k.launched = 0;
       // Forget what the road was doing when you left it. Holding on to it meant
       // the first frame back on the ground compared a stale climb against the
@@ -362,6 +422,15 @@ export function stepKart(k, input, track, dt) {
       k.roadRise = 0;
     }
   }
+
+  /* A trick. Press the same button in the window after leaving a ramp and the
+     car throws a roll; it costs nothing to try and pays a boost on landing, so
+     the answer is always to try, which is the point of it. */
+  if (k.trickWin > 0) {
+    k.trickWin -= dt;
+    if (input.hop && !k.trick && k.hop > 0.2) { k.trick = 1; k.trickKind = (k.trickKind + 1) % 3; }
+  }
+  if (k.trick) k.trickSpin += dt * 7.4;
 
   // a spring and a damper on the body, which is all a suspension has to be
   k.squatV += (-k.squat * 46 - k.squatV * 9) * dt;
@@ -465,8 +534,11 @@ export function stepKart(k, input, track, dt) {
   // A drift flick only lifts the kart a couple of hand widths, so it must not
   // be able to block a ramp: pressing the button on the way up should add to
   // the launch, not cancel it.
-  if (k.hop <= 0.35 && k.spin <= 0 && !k.launched) {
-    const rise = pr.slope * k.speed;
+  /* And only from the road. Half off the tarmac on a banked corner the blend
+     down to the field is steep, and reading that as a ramp threw the car
+     skyward for putting two wheels on the kerb, which is the single most
+     annoying thing a kart game can do to you. */
+  if (k.hop <= 0.35 && k.spin <= 0 && !k.launched && pr.onRoad && !pr.onKerb) {
     /* Leaving a ramp is a projectile problem and nothing else. The road was
        climbing at an angle th = atan(slope); a kart travelling at v along it has
        a vertical component v*sin(th) and a horizontal one v*cos(th). Take the
@@ -483,18 +555,49 @@ export function stepKart(k, input, track, dt) {
        frame. That is why coming out of the water, or off any ramp back onto the
        flat, catches a little air, while the long rise and fall of the ground
        catches none. */
-    if (k.roadRise > 2.0 && rise < k.roadRise - 0.9) {
+    /* Leaving the ground is about the road, not about you.
+
+       This used to test the climb rate times your speed, which meant driving
+       over a booster threw the car into the air: the speed jumped, the product
+       jumped with it, and the next frame read the drop back as the lip of a
+       ramp. It is the slope alone now, so a crest is a crest whatever speed you
+       arrive at it. */
+    if (k.roadSlope > 0.075 && pr.slope < k.roadSlope * 0.5) {
       k.launched = 1;          // and not again until the wheels are back down
       const th = Math.atan(k.roadSlope);
       let up = Math.abs(k.speed) * Math.sin(th);
       // pulling up on it as you leave adds a little, the way a hop does
-      if (input.hop) up += 1.1;
-      k.hopV = Math.max(k.hopV, up);
+      // pulling up on it is worth something, not worth everything: a fifth
+      // more and a little off the bottom, so a hop cannot dwarf the ramp
+      // pulling up on it is worth a third more, and nothing on its own: a hop
+      // that adds a fixed amount dwarfs a gentle ramp and does nothing to a
+      // steep one, which is backwards
+      if (input.hop) up *= 1.35;
+      /* And a ceiling on it. Mario Kart throws you a car length or two into the
+         air off a ramp, never over the scenery: anything past about four metres
+         is the surface having said something it did not mean. */
+      k.hopV = Math.max(k.hopV, Math.min(9, up * (k.parts ? k.parts.jump : 1)));
       k.speed *= Math.cos(th);              // that lift came out of your road speed
+      k.trickWin = 0.28;                    // the window to pull a trick in
     }
-    k.roadRise = rise;
-    k.roadSlope = pr.slope;
+    // remembered smoothed, so one noisy frame cannot look like a crest
+    k.roadSlope = k.roadSlope + (pr.slope - k.roadSlope) * Math.min(1, dt * 14);
   }
+  /* A gap has to be cleared, not attempted. The lip before one says how far
+     there is to go and the car works out how hard it has to leave from its
+     own speed, so arriving slowly means a slow, high jump rather than a fall:
+     the ramp does the throwing, which is what a ramp is for. */
+  if (pr.launch && !k.falling && k.hopV >= -0.1) {
+    const v = Math.max(9, Math.abs(k.speed));
+    const need = (pr.launch * TUNE.G) / (2 * v) * 1.35;
+    /* Topping up rather than replacing, and allowed to do so even if the slope
+       already launched the car: the lip flattens before the edge, so the slope
+       launch fires early and weakly, and a weak launch off a kicker is a car in
+       the hole. It also sits outside the check that a launch only happens on
+       the road, because the last thing before a gap is the edge of the road. */
+    if (k.hopV < need) { k.hopV = need; k.launched = 1; k.trickWin = 0.3; }
+  }
+
   // the nose follows the arc
   const want = k.hop > 0.05 ? Math.atan2(k.hopV, Math.max(8, Math.abs(k.speed))) * 0.85 : 0;
   k.pitch += (want - k.pitch) * Math.min(1, dt * 7);
@@ -622,7 +725,12 @@ export function bump(a, b) {
   const d = Math.hypot(dx, dz);
   if (d > 1.9 || d < 1e-4) return false;
   const nx = dx / d, nz = dz / d;
-  const ma = a.bash ? 3 : 1, mb = b.bash ? 3 : 1;
+  /* Mass. What the car is built out of decides how much of a shunt it takes
+     and how much it hands out: a hauler on knobblies is nearly twice the kart a
+     formula car on wires is, and the impulse below does the rest by itself.
+     Leaning on the hop button as you make contact is worth three of you. */
+  const ma = (a.bash ? 3 : 1) * (a.parts ? a.parts.weight : 1);
+  const mb = (b.bash ? 3 : 1) * (b.parts ? b.parts.weight : 1);
 
   // out of each other first, the heavier one giving less ground
   const over = 1.9 - d;

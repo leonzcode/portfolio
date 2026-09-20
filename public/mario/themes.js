@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Leon Cart - the five places you can race.
+   Leon Kart - the five places you can race.
 
    A theme is not a palette. It is a palette *and* a set of rules: what the road
    does to the tyres, how much the rough costs you, how wide the circuit is, how
@@ -30,8 +30,6 @@
 export const THEMES = [
   {
     id: 'meadow',
-    // the two lanes of its split are not level with each other
-    splitStyle: 'updown',
     /* What the sections are made of here. The same tunnel is a timber barn on
        Sunfield Loop and a cave through a mountain at Redrock Dunes, and it is
        the same forty lines of code either way. */
@@ -62,8 +60,9 @@ export const THEMES = [
        generator so no two land on each other, and this is the set that makes
        Sunfield Loop the one you learn on: a river, a causeway over it, a long
        open arena to overtake in, and nothing on it that can drop you. */
-    features: ['bridge', 'tunnel', 'water', 'arena', 'causeway', 'moguls',
-               'hump', 'whoops', 'narrows', { kind: 'boostlane', side: 1 }],
+    features: ['bridge', 'tunnel', 'water', 'arena', 'causeway', 'hump',
+               'narrows', { kind: 'boostlane', side: 1 },
+               { kind: 'arena', by: 1.45 }, { kind: 'hump', rise: 2.6 }],
     split: true,
     signature: null,
     music: 'race',
@@ -107,8 +106,8 @@ export const THEMES = [
        through a mountain, a banked bowl, a shelf that drops away, and sand
        across one side of a straight. */
     features: ['chasm', { kind: 'chasm', len: 26 }, 'tunnel', 'bowl', 'shelf',
-               'whoops', { kind: 'strip', of: 'sand', side: -1 }, 'arena',
-               'bridge', 'narrows'],
+               { kind: 'strip', of: 'sand', side: -1 }, 'arena', 'bridge',
+               'narrows', { kind: 'bowl', lean: 0.34 }],
     split: true,
     signature: 'rocks',
     music: 'race',
@@ -152,9 +151,10 @@ export const THEMES = [
     /* A frozen lake to cross, a crevasse to jump, a shelf of ice with the
        ground gone either side of it, rollers that will not let you put the
        power down, and a run of bare ice across one half of the road. */
-    features: ['water', 'causeway', 'chasm', 'moguls', 'narrows',
+    features: ['water', 'causeway', 'chasm', 'narrows',
                { kind: 'strip', of: 'ice', side: 1 }, 'tunnel', 'bridge',
-               'bowl', { kind: 'hump', rise: 2.4 }],
+               'bowl', { kind: 'hump', rise: 2.4 },
+               { kind: 'strip', of: 'ice', side: -1 }],
     split: true,
     signature: 'ice',
     music: 'race',
@@ -174,8 +174,6 @@ export const THEMES = [
   },
   {
     id: 'neon',
-    // the two lanes of its split are not level with each other
-    splitStyle: 'updown',
     look: {
       tunnel: { kind: 'pipe', colour: 0x141c34, rough: 0.35, lamp: 0x39d0ff, ring: 0xff2f6e },
       bridge: { kind: 'skyway', deck: 0x1b2340, pier: 0x232d52, edge: 0x39d0ff },
@@ -214,7 +212,7 @@ export const THEMES = [
       items: { turbo: 1.8, bolt: 1.6, surge: 1.3, peel: 0.7 },
       hazards: [
         { kind: 'gate', n: 5, period: 6.8, open: 0.55 },
-        { kind: 'spring', n: 5, up: 11 },
+        { kind: 'spring', n: 5, up: 7.5 },
       ],
     },
   },
@@ -244,7 +242,8 @@ export const THEMES = [
        side of the road where you would most like to be. */
     features: ['chasm', { kind: 'chasm', len: 26 }, 'shelf',
                { kind: 'shelf', drop: 7 }, 'spiral', 'tunnel',
-               { kind: 'strip', of: 'ash', side: -1 }, 'bridge', 'whoops', 'narrows'],
+               { kind: 'strip', of: 'ash', side: -1 }, 'bridge', 'narrows',
+               { kind: 'bowl', lean: 0.32 }],
     split: true,
     signature: 'lava',
     music: 'race',
@@ -257,7 +256,10 @@ export const THEMES = [
       boxRows: 5, pads: 5, coneEvery: 21, coneBig: 0.22,
       items: { bomb: 1.6, seeker: 1.5, star: 1.6, turbo: 1.2, peel: 0.6 },
       hazards: [
-        { kind: 'geyser', n: 6, period: 5.8, up: 15, warn: 1.3 },
+        // eight and a half is three metres of air and about a second of it;
+        // fifteen was eleven metres and four seconds, and a circuit whose
+        // field spends the race in the sky is not a circuit
+        { kind: 'geyser', n: 6, period: 5.8, up: 8.5, warn: 1.3 },
         { kind: 'faller', n: 8, look: 'ember', period: 3.4, warn: 0.8 },
       ],
     },

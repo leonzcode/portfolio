@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Leon Cart - getting you out of a hole.
+   Leon Kart - getting you out of a hole.
 
    Some circuits have gaps in them with nothing underneath. Miss the jump, or go
    over the edge of a causeway, and you fall; a balloon comes down after you,
