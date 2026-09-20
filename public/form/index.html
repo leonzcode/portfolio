@@ -471,7 +471,11 @@
   /* ---- the big screen: the standings for a room to read ---- */
   .p-wrap {
     position: fixed; inset: 0; z-index: 60; background: var(--card);
-    display: flex; flex-direction: column; padding: 20px 24px 16px; gap: 14px;
+    display: flex; flex-direction: column; gap: 14px;
+    /* A projector or a wide monitor gets a margin rather than running the graph
+       into the bezel; the gutter grows with the screen and stops growing once it
+       is generous. A phone keeps the small padding set further down. */
+    padding: clamp(16px, 2.4vh, 34px) clamp(24px, 5.5vw, 160px) clamp(14px, 2vh, 30px);
     overflow: hidden;
   }
   .p-head { display: flex; align-items: baseline; gap: 16px; flex: none; }
