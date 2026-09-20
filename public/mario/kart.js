@@ -46,7 +46,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=30';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=31';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -84,6 +84,29 @@ export function makeKart(who, build) {
   head.add(merge([{ g: ball(0.3, 0, 0.27, 0), c: skin }]
     .concat(driverHead(r)), BODY_MAT));
   body.add(head);
+
+  /* The glider, stowed. It lives above the driver and is scaled to nothing
+     until a ramp throws the car high enough to want it, which is the whole of
+     the deploy animation: a wing that snaps open is a wing that reads at
+     forty metres a second, and anything more elaborate would not. */
+  const glider = new THREE.Group();
+  glider.add(merge([
+    // a shallow V rather than a flat plate: a centre panel, a lower panel each
+    // side and a tip below that, which is a hang glider in four boxes
+    { g: box(2.5, 0.09, 1.5, 0, 0.16, 0), c: r.trim },
+    { g: box(1.2, 0.08, 1.2, -1.7, 0.03, -0.12), c: r.trim },
+    { g: box(1.2, 0.08, 1.2, 1.7, 0.03, -0.12), c: r.trim },
+    { g: box(0.42, 0.07, 0.72, -2.32, -0.1, -0.26), c: shirt },
+    { g: box(0.42, 0.07, 0.72, 2.32, -0.1, -0.26), c: shirt },
+    { g: cyl(0.05, 0.05, 4.7, 6, 'x', 0, 0.22, 0.56), c: DARK },
+    { g: cyl(0.04, 0.04, 0.95, 5, 'y', -0.6, -0.4, 0.12), c: DARK },
+    { g: cyl(0.04, 0.04, 0.95, 5, 'y', 0.6, -0.4, 0.12), c: DARK },
+  ], BODY_MAT));
+  glider.position.set(0, st.y + 2.02, -st.z + 0.12);
+  glider.userData.y0 = glider.position.y;
+  glider.rotation.x = -0.14;
+  glider.visible = false;
+  body.add(glider);
 
   const arms = new THREE.Group();
   arms.position.set(0, st.y + 0.55, -(st.z + 0.1));
@@ -128,7 +151,7 @@ export function makeKart(who, build) {
   group.add(shade);
 
   const kart = {
-    who: r, group, body, wheels, shade, head, arms,
+    who: r, group, body, wheels, shade, head, arms, glider,
     build: b, trail: trailOf(b.trail), exhaust: spec.exhaust || [],
     // what the parts bolted to it are worth, worked out once when it is built
     parts: statsOf(b),
@@ -137,7 +160,7 @@ export function makeKart(who, build) {
     pos: new THREE.Vector3(), yaw: 0, speed: 0,
     drift: 0,            // -1 left, 1 right, 0 none
     driftT: 0, slide: 0, hop: 0, hopV: 0,
-    pitch: 0, roadRise: 0, bash: false, hitBy: 0, launched: 0, onIce: 0,
+    pitch: 0, roadRise: 0, bash: false, hitBy: 0, launched: 0, onIce: 0, reslope: 0,
     // the tumble: how far it is tipped, and how fast that is changing
     tumbleX: 0, tumbleZ: 0, wobX: 0, wobZ: 0, spinRate: 11,
     // velocity across the wheels, from being shoved: it decays as they bite
@@ -151,6 +174,10 @@ export function makeKart(who, build) {
     falling: 0, fallV: 0, fallY: 0, overEdge: 0, rescue: 0,
     // a trick: whether one is running, which one, and how far through it is
     trick: 0, trickKind: 0, trickSpin: 0, trickWin: 0, hopped: 0,
+    // the glider: out or not, and how far through opening it is
+    glide: 0, glideOut: 0,
+    // over an anti-gravity rail, and how much of a spin boost is still playing
+    agrav: 0, spinB: 0,
     // what the parts bolted to it are worth
     parts: null,
     lap: 1, cpi: 0, prog: 0, place: 1, finished: 0,
@@ -211,6 +238,28 @@ export function apply(k) {
   } else {
     k.body.rotation.z = k.lean;
   }
+  /* Anti-gravity: the car lifts off the rail rather than rolling along it, and
+     a spin boost throws it through a full turn on the way out of the contact
+     that caused it. body.rotation.y is free, so the spin is drawn there and
+     the car keeps pointing where it is going. */
+  k.hover = (k.hover || 0) + ((k.agrav ? 0.22 : 0) - (k.hover || 0)) * 0.12;
+  if (k.hover > 0.004) k.group.position.y += k.hover;
+  k.body.rotation.y = k.spinB > 0 ? (1 - k.spinB / 0.45) * Math.PI * 2 : 0;
+
+  /* The wing, opening. It grows out of the tail and swings up over the driver
+     rather than appearing, and it tilts with whatever the car is being asked
+     to do in the air, so a dive looks like a dive. */
+  if (k.glider) {
+    const out = k.glideOut || 0;
+    k.glider.visible = out > 0.02;
+    if (k.glider.visible) {
+      k.glider.scale.set(out, out, 0.45 + out * 0.55);
+      k.glider.position.y = k.glider.userData.y0 - (1 - out) * 0.75;
+      k.glider.rotation.x = -0.14 - k.pitch * 0.5;
+      k.glider.rotation.z = -k.lean * 0.7;
+    }
+  }
+
   // nose up on the way up, nose down on the way down
   k.body.rotation.x = -k.speed * 0.0012 + k.pitch;
   void 0;
@@ -439,9 +488,23 @@ export function stepKart(k, input, track, dt) {
 
   // the hop arc
   if (k.hopV !== 0 || k.hop > 0) {
-    // y += vy*dt, vy -= G*dt. The whole of it.
+    /* y += vy*dt, vy -= G*dt. The whole of it, until the glider is out, and
+       then the wing is carrying most of the weight. Hold nothing and it sinks
+       slowly; hold the throttle and it flares and stays up longer; hold the
+       brake and it puts the nose down, drops fast and turns the height it
+       gives up into ground speed. That trade is the whole of a glider, and it
+       is the only part of Mario Kart where the brake makes you quicker. */
+    let g = TUNE.G;
+    /* And only on the way down. A wing does not throw you higher, it stops you
+       coming back: left over the whole arc it tripled the height of every jump,
+       which is a trampoline and not a glider. Up is a plain projectile; past
+       the apex the wing catches and the car sinks instead of falling. */
+    if (k.glide && k.hopV < 0) {
+      g *= input.brake ? 1 : input.gas ? 0.24 : 0.34;
+      if (input.brake) k.speed = Math.min(top * 1.15, k.speed + 7 * dt);
+    }
     k.hop += k.hopV * dt;
-    k.hopV -= TUNE.G * dt;
+    k.hopV -= g * dt;
     if (k.hop <= 0) {
       // the springs take the landing: a kick into the dampers that settles out
       if (k.hopV < -2) k.squatV = Math.max(-9, k.hopV * 0.5);
@@ -455,12 +518,21 @@ export function stepKart(k, input, track, dt) {
         k.trick = 0; k.trickSpin = 0;
       }
       k.trickWin = 0;
-      k.hop = 0; k.hopV = 0; k.launched = 0;
-      // Forget what the road was doing when you left it. Holding on to it meant
-      // the first frame back on the ground compared a stale climb against the
-      // flat you had just landed on, read that as a crest, and threw the kart
-      // straight back into the air: a jump, then a bounce, then a bigger bounce.
-      k.roadRise = 0;
+      k.hop = 0; k.hopV = 0; k.launched = 0; k.glide = 0;
+      /* Forget what the road was doing when you left it. Holding on to it meant
+         the first frame back on the ground compared a stale climb against the
+         flat it had just landed on, read that as a crest, and threw the kart
+         straight back into the air: a jump, then a bounce, then another.
+
+         Both of them, which is the half that was missing. The launch test reads
+         roadSlope and only roadRise was being cleared, so the smoothed climb
+         the car left the ramp carrying was still sitting there on the way down.
+         One real jump off one real ramp came back as five, each a little
+         smaller than the last as the stale number decayed: 0.84, 0.68, 0.48,
+         0.35, and the car spent half the lap in the air for no reason anybody
+         driving it could see. Cleared, it refills from the road in about a
+         fifth of a second, so a ramp straight after a landing still works. */
+      k.roadRise = 0; k.reslope = 1;
     }
   }
 
@@ -486,6 +558,7 @@ export function stepKart(k, input, track, dt) {
   if (k.draft > 0) k.draft = Math.max(0, k.draft - dt);
   if (k.wallHit || k.spin > 0) { k.draftT = 0; k.draft = 0; }
 
+  if (k.spinB > 0) k.spinB = Math.max(0, k.spinB - dt);
   if (k.boost > 0) k.boost = Math.max(0, k.boost - dt);
   if (k.star > 0) k.star = Math.max(0, k.star - dt);
   if (k.slow > 0) k.slow = Math.max(0, k.slow - dt);
@@ -611,7 +684,17 @@ export function stepKart(k, input, track, dt) {
        jumped with it, and the next frame read the drop back as the lip of a
        ramp. It is the slope alone now, so a crest is a crest whatever speed you
        arrive at it. */
-    if (k.roadSlope > 0.075 && pr.slope < k.roadSlope * 0.5) {
+    /* First frame back on the ground: take the road as it is, and do not
+       launch off it. Carried across a landing, the climb the car left the ramp
+       with was still sitting in here on the way down, read as a crest against
+       the flat it had just landed on, and threw the car straight back up - one
+       jump off one ramp coming back as five, each smaller than the last, which
+       is the bounce nobody asked for. Forgetting it outright cost a fifth of a
+       second of refill and missed a ramp taken straight after a hop; adopting
+       it outright let a single raw sample decide a launch, which is the noise
+       the smoothing is here to ignore. So it adopts and sits the frame out. */
+    if (k.reslope) { k.roadSlope = pr.slope; k.reslope = 0; }
+    else if (k.roadSlope > 0.075 && pr.slope < k.roadSlope * 0.5) {
       k.launched = 1;          // and not again until the wheels are back down
       const th = Math.atan(k.roadSlope);
       let up = Math.abs(k.speed) * Math.sin(th);
@@ -629,8 +712,8 @@ export function stepKart(k, input, track, dt) {
       k.speed *= Math.cos(th);              // that lift came out of your road speed
       k.trickWin = 0.28;                    // the window to pull a trick in
     }
-    // remembered smoothed, so one noisy frame cannot look like a crest
-    k.roadSlope = k.roadSlope + (pr.slope - k.roadSlope) * Math.min(1, dt * 14);
+    // and remembered smoothed, so one noisy frame cannot look like a crest
+    else k.roadSlope = k.roadSlope + (pr.slope - k.roadSlope) * Math.min(1, dt * 14);
   }
   /* A gap has to be cleared, not attempted. The lip before one says how far
      there is to go and the car works out how hard it has to leave from its
@@ -646,6 +729,16 @@ export function stepKart(k, input, track, dt) {
        the road, because the last thing before a gap is the edge of the road. */
     if (k.hopV < need) { k.hopV = need; k.launched = 1; k.trickWin = 0.3; }
   }
+
+  /* When the wing comes out. Anything that throws the car two metres or more
+     is worth gliding; the flick off a drift hop, which clears about a fifth of
+     one, is not. Working it from the launch speed rather than from the height
+     reached means it opens as the car leaves the ramp, the way it does in
+     Mario Kart, instead of halfway up. */
+  if (!k.glide && k.spin <= 0 && k.hopV > 0
+      && (k.hopV * k.hopV) / (2 * TUNE.G) > 2) k.glide = 1;
+  if (k.spin > 0) k.glide = 0;
+  k.glideOut += ((k.glide ? 1 : 0) - k.glideOut) * Math.min(1, dt * (k.glide ? 13 : 18));
 
   // the nose follows the arc
   const want = k.hop > 0.05 ? Math.atan2(k.hopV, Math.max(8, Math.abs(k.speed))) * 0.85 : 0;
@@ -680,11 +773,12 @@ export function stepKart(k, input, track, dt) {
     k.pos.y = k.fallY;
     k.speed *= Math.exp(-0.6 * dt);
     k.falling += dt;
-    k.hop = 0; k.hopV = 0; k.launched = 0; k.roadRise = 0;
+    k.hop = 0; k.hopV = 0; k.launched = 0; k.roadRise = 0; k.reslope = 1; k.glide = 0;
     k.prog = pr.s;
     return pr;
   }
   k.pos.y = pr.y;
+  k.agrav = pr.agrav ? 1 : 0;
   // ease onto the camber rather than snapping to it
   k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);
   /* A causeway has no fence on it. Everywhere else the edge of the tarmac is a
