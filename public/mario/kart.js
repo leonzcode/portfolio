@@ -46,7 +46,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=35';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=36';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -142,12 +142,22 @@ export function makeKart(who, build) {
 
   // the contact patch, which lives outside the body group so it stays flat on
   // the road while the car above it leans, pitches and tumbles
+  /* The car casts. Every kart in the game was drawing no shadow at all, which
+     is most of why one sat on the road looking pasted onto it rather than
+     standing on it: the scenery cast, the trees cast, and the one thing you
+     spend the whole race looking at did not. The wheels are inside the body
+     group, so this is all of it. */
+  body.traverse(o => { if (o.isMesh) o.castShadow = true; });
+
   const shade = new THREE.Mesh(SHADOW_GEO, new THREE.MeshBasicMaterial({
     map: SHADOW_TEX, transparent: true, depthWrite: false, opacity: 0.85,
   }));
-  /* No renderOrder games here. A transparent mesh forced to draw before the
-     opaque world is a transparent mesh the road then paints straight over,
-     which is exactly what happened: the patch was there and invisible. */
+  /* No renderOrder games here: a transparent mesh forced to draw before the
+     opaque world is one the road then paints straight over. It is worth saying
+     that renderOrder was not what was wrong with this. The patch sat three
+     centimetres over the surface project() reports and the road ribbon is
+     drawn at six, so it has been under the tarmac all along - the draw order
+     was a symptom that made sense and a cause that was not there. */
   group.add(shade);
 
   const kart = {
@@ -220,7 +230,11 @@ export function apply(k) {
      against once the horizon has gone. */
   if (k.shade) {
     const up = Math.max(0, k.hop);
-    k.shade.position.set(0, 0.03 - k.hop, 0);
+    /* Above the tarmac, not under it. The road ribbon is drawn six centimetres
+       over the surface project() reports and the kerb seven, and this was sat
+       at three: the contact patch every kart has had all along has been buried
+       in the road the entire time and nobody has ever seen one. */
+    k.shade.position.set(0, 0.09 - k.hop, 0);
     k.shade.rotation.y = -k.group.rotation.y;             // square to the world
     const f = 1 / (1 + up * 0.5);
     k.shade.scale.set(f, 1, f);

@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=35';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=35';
-import { packLook, unpackLook, normalise } from './parts.js?v=35';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=35';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=35';
-import { makeRescue } from './rescue.js?v=35';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=35';
-import { makeBrain, driveBrain } from './ai.js?v=35';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=35';
-import { makeCones } from './cones.js?v=35';
-import { makeHazards } from './hazards.js?v=35';
-import { THEMES, themeById } from './themes.js?v=35';
-import * as snd from './audio.js?v=35';
+import { buildTrack } from './track.js?v=36';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=36';
+import { packLook, unpackLook, normalise } from './parts.js?v=36';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=36';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=36';
+import { makeRescue } from './rescue.js?v=36';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=36';
+import { makeBrain, driveBrain } from './ai.js?v=36';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=36';
+import { makeCones } from './cones.js?v=36';
+import { makeHazards } from './hazards.js?v=36';
+import { THEMES, themeById } from './themes.js?v=36';
+import * as snd from './audio.js?v=36';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -346,7 +346,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=35')
+  import('./props.js?v=36')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -962,9 +962,16 @@ const CAM = [
   { name: 'Overhead', d: 2.2,  h: 15,   fov: 52 },
 ];
 function stepCamera(dt) {
-  if (camPinned) return;
   const watch = spectating ? (order()[0] || me) : me;
   if (!watch) return;
+  /* The sun's shadow box goes where the racing is, and it does that whether or
+     not a test has parked the camera somewhere to take a picture. It used to
+     sit below the early return: park the camera and the box stayed wherever it
+     was last left, which on any circuit bigger than the box itself meant
+     nothing in shot cast a shadow at all. */
+  sun.position.set(watch.pos.x + 120, 190, watch.pos.z + 80);
+  sun.target.position.set(watch.pos.x, 0, watch.pos.z);
+  if (camPinned) return;
   const c = CAM[camMode];
   const back = down('look') ? -1 : 1;
   // sit behind where the kart is going, not where it is pointing, so a drift
@@ -1018,9 +1025,6 @@ function stepCamera(dt) {
   }
   camera.rotation.z += camRoll;
   camera.updateProjectionMatrix();
-  // keep the sun's shadow box on the action
-  sun.position.set(watch.pos.x + 120, 190, watch.pos.z + 80);
-  sun.target.position.set(watch.pos.x, 0, watch.pos.z);
 }
 
 /* ----------------------------------------------------------------- the HUD -- */
@@ -1533,7 +1537,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=35');
+    const mod = await import('./net.js?v=36');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
