@@ -198,7 +198,7 @@ export const THEMES = [
        the road pinching twice where it threads between blocks. */
     features: ['spiral', 'tunnel', { kind: 'boostlane', side: 1 },
                { kind: 'boostlane', side: -1 }, 'narrows',
-               { kind: 'narrows', to: 0.62 }, 'bowl', 'bridge', 'hump', 'arena'],
+               { kind: 'narrows', to: 0.62 }, 'bowl', 'bridge', 'agrav', 'arena'],
     split: true,
     signature: 'towers',
     music: 'race',
@@ -243,7 +243,7 @@ export const THEMES = [
     features: ['chasm', { kind: 'chasm', len: 26 }, 'shelf',
                { kind: 'shelf', drop: 7 }, 'spiral', 'tunnel',
                { kind: 'strip', of: 'ash', side: -1 }, 'bridge', 'narrows',
-               { kind: 'bowl', lean: 0.32 }],
+               'agrav'],
     split: true,
     signature: 'lava',
     music: 'race',

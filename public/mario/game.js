@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=30';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=30';
-import { packLook, unpackLook, normalise } from './parts.js?v=30';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=30';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=30';
-import { makeRescue } from './rescue.js?v=30';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=30';
-import { makeBrain, driveBrain } from './ai.js?v=30';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=30';
-import { makeCones } from './cones.js?v=30';
-import { makeHazards } from './hazards.js?v=30';
-import { THEMES, themeById } from './themes.js?v=30';
-import * as snd from './audio.js?v=30';
+import { buildTrack } from './track.js?v=31';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=31';
+import { packLook, unpackLook, normalise } from './parts.js?v=31';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=31';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=31';
+import { makeRescue } from './rescue.js?v=31';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=31';
+import { makeBrain, driveBrain } from './ai.js?v=31';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=31';
+import { makeCones } from './cones.js?v=31';
+import { makeHazards } from './hazards.js?v=31';
+import { THEMES, themeById } from './themes.js?v=31';
+import * as snd from './audio.js?v=31';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -338,7 +338,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=30')
+  import('./props.js?v=31')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -754,7 +754,21 @@ function stepWorld(dt) {
       const a = karts[i], b = karts[j];
       if (a.remote && b.remote) continue;
       if (bump(a, b)) {
-        // a star ploughs straight through anybody else
+        /* On an anti-gravity rail a collision is a favour. Both cars spin and
+           both are thrown forward, so the quick line through the section is
+           straight through whoever is on it: the one place in the game where
+           the thing you spend the rest of the lap avoiding is worth hunting. */
+        if (track.project(a.pos.x, a.pos.z, a.hint).agrav) {
+          for (const k of [a, b]) {
+            if (k.remote) continue;
+            k.boost = Math.max(k.boost, 0.75);
+            k.spinB = 0.45;
+          }
+          if (a === me || b === me) {
+            snd.boost();
+            spark(me.pos.clone().setY(me.pos.y + 0.7), 0x8fe4ff, 1, 'star', 1.1);
+          }
+        }
         // a star, or a bullet, ploughs straight through anybody else
         if (a.star > 0 && b.star <= 0 && !b.remote) spinOut(b, false);
         if (b.star > 0 && a.star <= 0 && !a.remote) spinOut(a, false);
@@ -1437,7 +1451,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=30');
+    const mod = await import('./net.js?v=31');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1733,6 +1747,9 @@ window.__mk = {
     notified = 0;
     placeOnGrid();
     phase = 'race';
+    // and whatever was on the screen when the last one ended comes off it
+    el('count').classList.remove('on', 'go');
+    el('results').classList.remove('on');
     return true;
   },
   // giveItem sets what is in your hand, addItem lands one behind it the way a

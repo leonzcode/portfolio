@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=30';
+import { themeById, rulesOf, lookOf } from './themes.js?v=31';
 
 /* The lap.
 
@@ -419,7 +419,7 @@ function sampleLoop(seed, th) {
        lap does, so the outside of it is something you ride rather than fall
        off. It only leans the way the corner already goes. */
     bowl: { len: 28, lean: 0.3, shape(a, t, f) {
-      const want = a.bend >= 0 ? -f.lean : f.lean;
+      const want = f.leanSign * f.lean;
       a.bank += (want - a.bank) * bump(t);
       a.w *= 1 + 0.25 * bump(t);
     } },
@@ -443,7 +443,7 @@ function sampleLoop(seed, th) {
       a.w *= 1 - (1 - f.to) * bump(t);
       a.p.y += f.lift * bump(t);
       a.causeway = bump(t);
-      a.bank = 0;
+      a.bank *= Math.max(0, 1 - bump(t) * 2.2);
       if (bump(t) > 0.4) a.noFence = 1;
     } },
 
@@ -451,7 +451,7 @@ function sampleLoop(seed, th) {
        kart holds a curve that steep. It comes back down the other side. */
     spiral: { len: 46, rise: 13, lean: 0.24, shape(a, t, f) {
       a.p.y += f.rise * Math.sin(Math.PI * t) ** 1.3;
-      const want = a.bend >= 0 ? -f.lean : f.lean;
+      const want = f.leanSign * f.lean;
       a.bank += (want - a.bank) * Math.sin(Math.PI * t);
       a.spiral = 1;
     } },
@@ -473,6 +473,17 @@ function sampleLoop(seed, th) {
     /* Boosters, the length of a straight, down one half of the road. */
     boostlane: { len: 26, shape(a, t, f) {
       if (bump(t) > 0.3) a.boostlane = f.side || 1;
+    } },
+
+    /* Anti-gravity. The road turns into a lit rail and the cars hover over it,
+       and for as long as they do, running into somebody is worth doing: both
+       of you spin and both of you come out the other side quicker than you
+       went in. It changes nothing about the shape of the road on purpose. A
+       section that also climbed or banked would be two ideas at once, and the
+       one worth having here is that the racing line goes straight through the
+       car in front. */
+    agrav: { len: 36, shape(a, t) {
+      if (bump(t) > 0.22) a.agrav = 1;
     } },
   };
 
@@ -555,14 +566,32 @@ function sampleLoop(seed, th) {
     let sum = 0;
     for (let k = 0; k < f.len; k++) sum += out[(f.i0 + k) % M].p.y;
     f.surfaceY = sum / f.len + 0.4;
+    /* And which way a banked section leans, settled once for the whole of it.
+       Read off each sample's own curvature it flips wherever the road stops
+       turning one way and starts turning the other, and a bowl laid across an
+       S bend came out banked left at one sample and right at the next: at four
+       metres from the middle of the road that is a two metre step in two
+       metres of road. You cannot see it, and it throws the car straight into
+       the air. The average over the section is the bend the section is on. */
+    let bendSum = 0;
+    for (let k = 0; k < f.len; k++) bendSum += out[(f.i0 + k) % M].bend;
+    f.leanSign = bendSum >= 0 ? -1 : 1;
     for (let k = 0; k < f.len; k++) {
       const i = (f.i0 + k) % M;
       const t = k / (f.len - 1);
       const a = out[i];
       f.ids.push(i);
-      // a section that is built square to the road is flat through it, because
-      // camber under a deck or a tube is camber nobody can use
-      if (f.flat) a.bank = 0;
+      /* A section built square to the road is flat through it, because camber
+         under a deck or inside a tube is camber nobody can use.
+
+         Faded in and out rather than switched off. Snapping it to zero left a
+         step in the camber at each end the size of whatever the road was doing
+         there, and at eight metres from the middle of the road a step in the
+         camber is a step in the tarmac: driving into a tunnel put a metre of
+         cliff across the entrance, which you cannot see and which throws the
+         car. It is flat through the middle three quarters and hands back to
+         the road's own camber over the ends. */
+      if (f.flat) a.bank *= Math.max(0, 1 - bump(t) * 2.2);
       f.shape(a, t, f, k);
     }
     f.s = out[(f.i0 + (f.len >> 1)) % M].s;
@@ -657,7 +686,9 @@ function sampleLoop(seed, th) {
       // and the lanes come out wider than the road they replace, because two of
       // them have to hold a field that was queueing up in one
       a.w += ISLE * 1.35 * bump(u);
-      a.bank = 0;
+      // and level, handed back to the road's camber over the ends of it rather
+      // than switched off, for the same reason a tunnel is
+      a.bank *= Math.max(0, 1 - bump(u) * 2.2);
       a.split = 1;
       if (k === 0) first = a;
       if (k === len - 1) last = a;
@@ -1428,6 +1459,38 @@ export function buildTrack(scene, seed, themeId) {
   }
 
 
+  /* The anti-gravity stretches, lit. A rail of light down each edge and a run
+     of chevrons up the middle: two instanced meshes for however many sections
+     the circuit has, and emissive rather than lit, so they read at the far end
+     of a straight and cost the lighting pass nothing. */
+  {
+    const chev = [], rail = [];
+    for (const f of features) {
+      if (f.kind !== 'agrav') continue;
+      for (let k = 0; k < f.ids.length; k++) {
+        const a = samples[f.ids[k]];
+        if (!a.agrav) continue;
+        const ry = Math.atan2(a.t.x, a.t.z);
+        if (k % 2 === 0) {
+          chev.push({ p: a.p.clone().setY(surf(a, 0) + 0.04), ry, sx: a.w * 0.44 });
+        }
+        for (const side of [1, -1]) {
+          rail.push({
+            p: a.p.clone().addScaledVector(a.n, side * (a.w - 0.4)).setY(surf(a, 0) + 0.06),
+            ry,
+          });
+        }
+      }
+    }
+    if (chev.length || rail.length) {
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: 0x6fdcff, transparent: true, opacity: 0.8, depthWrite: false,
+      });
+      many(new THREE.BoxGeometry(1, 0.05, 1.05), glowMat, chev);
+      many(new THREE.BoxGeometry(0.46, 0.07, 2.2), glowMat, rail);
+    }
+  }
+
   /* their meshes */
   /* The boxes: a blue crystal with a question mark on every face and a brighter
      core turning inside it. Two instanced meshes between the lot of them, and
@@ -1673,6 +1736,8 @@ export function buildTrack(scene, seed, themeId) {
       causeway,
       // boosters down one half of it
       boostlane: sideOf('boostlane') ? 1 : 0,
+      // a stretch where contact pays instead of costing
+      agrav: !!(a.agrav && b.agrav),
       // the lip of a gap says how far there is to clear, so the car can work
       // out for itself how hard it has to leave
       launch: a.launch || b.launch || 0,
