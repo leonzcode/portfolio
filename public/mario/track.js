@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=32';
+import { themeById, rulesOf, lookOf } from './themes.js?v=33';
 
 /* The lap.
 
@@ -911,6 +911,86 @@ export function buildTrack(scene, seed, themeId) {
   tm.receiveShadow = lm.receiveShadow = true;
   tm.frustumCulled = lm.frustumCulled = false;
   group.add(tm); group.add(lm);
+
+  /* ---- the horizon -------------------------------------------------------
+     The course sits in a bowl and the rim of that bowl used to be a smooth
+     green berm the whole way round: from the road it reads as a wall rather
+     than as country, and it is the single biggest thing between this and
+     looking like somewhere. So the rim gets a ridgeline standing on it, in
+     whatever this place is made of - hills, buttes, mountains, towers, cinder
+     cones - in two rings at different distances.
+
+     The fog does the work. The near ring is close enough to keep some of its
+     own colour and the far ring is most of the way to the sky already, which
+     is the whole of why a horizon reads as far away. Two instanced meshes for
+     the lot of them, no shadows: a shadow map draw for a mountain four hundred
+     metres away is a shadow nobody will ever be standing in.
+  -------------------------------------------------------------------------- */
+  if (th.skyline) {
+    const S = th.skyline;
+    const GEO = {
+      hill: () => new THREE.ConeGeometry(1, 1, 9),
+      mesa: () => new THREE.CylinderGeometry(0.66, 1, 1, 6),
+      peak: () => new THREE.ConeGeometry(1, 1, 5),
+      tower: () => new THREE.BoxGeometry(1, 1, 1),
+      volcano: () => new THREE.CylinderGeometry(0.24, 1, 1, 7),
+    };
+    const make = GEO[S.kind] || GEO.hill;
+    // the geometry is built standing on the ground rather than centred on it,
+    // so a height is a height and not half of one
+    const lift = g => { g.translate(0, 0.5, 0); return g; };
+    for (const [ring, colour, r0, r1] of [['near', S.near, 318, 372], ['far', S.far, 396, 452]]) {
+      const spots = [];
+      const n = ring === 'far' ? Math.round(S.n * 0.8) : S.n;
+      for (let k = 0; k < n; k++) {
+        // evenly round, then jittered, so it is a ridge and not a fence
+        const ang = (k / n) * Math.PI * 2 + (rnd() - 0.5) * (Math.PI * 2 / n) * 0.9;
+        const d = r0 + rnd() * (r1 - r0);
+        const x = Math.cos(ang) * d, z = Math.sin(ang) * d;
+        const w = S.w[0] + rnd() * (S.w[1] - S.w[0]);
+        const h = (S.h[0] + rnd() * (S.h[1] - S.h[0])) * (ring === 'far' ? 0.86 : 1);
+        // sunk a little, so the base is never a visible seam on the rim
+        spots.push({ x, y: groundY(x, z) - h * 0.06, z, w, h, ry: rnd() * Math.PI * 2 });
+      }
+      const geo = lift(make());
+      const mat = new THREE.MeshLambertMaterial({ color: colour, flatShading: true });
+      /* A city at night is windows. Without them the towers are black slabs cut
+         out of the sky, which is a skyline in silhouette rather than a place
+         with anybody in it. One sheet of lit squares, most of them out, tiled
+         up each face: it lights nothing and costs one texture. */
+      if (S.kind === 'tower') {
+        const lit = canvasTex(64, 128, (g, W, H) => {
+          g.fillStyle = '#000';
+          g.fillRect(0, 0, W, H);
+          for (let row = 0; row < 16; row++) {
+            for (let col = 0; col < 4; col++) {
+              if (rnd() > 0.42) continue;
+              g.fillStyle = rnd() < 0.24 ? '#ffd9a0' : '#cfe6ff';
+              g.fillRect(6 + col * 14, 4 + row * 8, 7, 4);
+            }
+          }
+        }, [2, ring === 'far' ? 5 : 4]);
+        mat.emissive = new THREE.Color(0xffffff);
+        mat.emissiveMap = lit;
+        mat.emissiveIntensity = ring === 'far' ? 0.5 : 0.85;
+      }
+      const im = new THREE.InstancedMesh(geo, mat, spots.length);
+      const e2 = new THREE.Euler(), q2 = new THREE.Quaternion(), s2 = new THREE.Vector3(), p2 = new THREE.Vector3();
+      spots.forEach((sp, k) => {
+        e2.set(0, sp.ry, 0);
+        q2.setFromEuler(e2);
+        p2.set(sp.x, sp.y, sp.z);
+        s2.set(sp.w, sp.h, sp.w * (S.kind === 'tower' ? 0.8 : 1));
+        m4.compose(p2, q2, s2);
+        im.setMatrixAt(k, m4);
+      });
+      im.instanceMatrix.needsUpdate = true;
+      im.castShadow = false;
+      im.receiveShadow = false;
+      im.frustumCulled = false;
+      group.add(im);
+    }
+  }
 
   /* the stands, the barriers and the rest of the furniture are real models now,
      and they live in props.js */
