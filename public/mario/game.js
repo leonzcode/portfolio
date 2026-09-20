@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=36';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=36';
-import { packLook, unpackLook, normalise } from './parts.js?v=36';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=36';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=36';
-import { makeRescue } from './rescue.js?v=36';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=36';
-import { makeBrain, driveBrain } from './ai.js?v=36';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=36';
-import { makeCones } from './cones.js?v=36';
-import { makeHazards } from './hazards.js?v=36';
-import { THEMES, themeById } from './themes.js?v=36';
-import * as snd from './audio.js?v=36';
+import { buildTrack } from './track.js?v=37';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=37';
+import { packLook, unpackLook, normalise } from './parts.js?v=37';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=37';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=37';
+import { makeRescue } from './rescue.js?v=37';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=37';
+import { makeBrain, driveBrain } from './ai.js?v=37';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=37';
+import { makeCones } from './cones.js?v=37';
+import { makeHazards } from './hazards.js?v=37';
+import { THEMES, themeById } from './themes.js?v=37';
+import * as snd from './audio.js?v=37';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -161,6 +161,8 @@ let me = null;                        // the player's kart
 let karts = [];                       // everything on the grid, in no order
 let brains = [];                      // the computer drivers
 let spectating = false;
+let watchId = null;              // whose race you are watching, while spectating
+let specKey = '';                // what the switcher is currently showing
 let raceTime = 0, results = [], notified = 0;
 let net = null, myName = 'Player', myCast = 0;
 let started = false, paused = false, chatting = false;
@@ -227,6 +229,12 @@ addEventListener('keydown', e => {
   if (paused) return;                       // the menu has the keyboard while it is up
   if (hit('chat', k) && started) { openChat(); e.preventDefault(); }
   if (hit('item', k) && started) itemDown(me);
+  /* Steering does nothing at all while you are watching somebody else drive,
+     so it moves down the field instead. */
+  if (spectating && started) {
+    if (hit('left', k)) { watchStep(-1); e.preventDefault(); }
+    if (hit('right', k)) { watchStep(1); e.preventDefault(); }
+  }
   if (phase === 'wait' && k >= '1' && k <= '5') castVote(THEMES[+k - 1].id);
   if (hit('go', k) && started && phase === 'wait' && net && net.alive) net.go();
   if (hit('view', k) && started) { camMode = (camMode + 1) % CAM.length; notice(CAM[camMode].name + ' view'); }
@@ -346,7 +354,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=36')
+  import('./props.js?v=37')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -450,6 +458,8 @@ function startRound(field, seed, asPhase, themeId) {
   placeOnGrid();
   snapCamera();
   spectating = !me;
+  watchId = null;
+  specKey = '';
   const lobby = asPhase === 'wait';
   phase = lobby ? 'wait' : 'count';
   phaseT = lobby ? 0 : 4.2;
@@ -496,6 +506,73 @@ function finishKart(k) {
     showResults(false);
   }
   if (k === me && net) net.finish(raceTime, results.length);
+}
+
+/* Who the camera, the HUD and the engine note are all following.
+
+   Spectating used to mean "whoever is leading", worked out fresh from the
+   running order every single frame. Two cars swapping places swapped the
+   camera with them, mid corner, with no warning: you were not watching a
+   driver, you were watching a position. It follows one car now until you pick
+   another, and only falls back to the leader when the car you picked has left
+   the race. */
+function watched() {
+  if (!spectating) return me;
+  if (watchId) {
+    const k = karts.find(q => q.id === watchId);
+    if (k) return k;
+  }
+  const lead = order()[0] || me || null;
+  watchId = lead ? lead.id : null;
+  return lead;
+}
+/* Switching. The camera is cut rather than flown: a chase camera lerping two
+   hundred metres across the infield to catch up with somebody else is a second
+   and a half of looking at the scenery. */
+function watchWho(id) {
+  if (!spectating) return;
+  if (!karts.some(q => q.id === id)) return;
+  watchId = id;
+  specKey = '';
+  snapCamera();
+  drawWatchBar();
+}
+function watchStep(d) {
+  const list = order();
+  if (!spectating || !list.length) return;
+  const at = list.findIndex(k => k.id === watchId);
+  watchWho(list[((at < 0 ? 0 : at) + d + list.length) % list.length].id);
+}
+/* The switcher along the bottom: one button a driver, in running order, the
+   one you are watching lit. Rebuilt only when the order or the pick actually
+   changes, because replacing the markup every frame throws away the click you
+   are in the middle of making. */
+function drawWatchBar() {
+  const box = el('spec');
+  if (!box) return;
+  const on = spectating && (phase === 'race' || phase === 'count');
+  box.classList.toggle('on', on);
+  if (!on) { specKey = ''; box.innerHTML = ''; return; }
+  const list = order();
+  const cur = watched();
+  const key = list.map(k => k.id + ':' + k.place).join(',') + '|' + (cur ? cur.id : '');
+  if (key === specKey) return;
+  specKey = key;
+  /* The two arrows are always in the markup and only shown where there is no
+     room for the full strip, which on a phone is everywhere: the standings
+     panel takes three quarters of the screen. There the driver buttons other
+     than the one you are on are hidden, so what is left reads as previous,
+     who you are watching, next. */
+  box.innerHTML =
+    '<button type="button" class="step" data-step="-1" aria-label="Watch the driver ahead">&#8249;</button>'
+    + list.map(k => {
+      const col = k.who ? ('#' + k.who.kart.toString(16).padStart(6, '0')) : '#ffffff';
+      return '<button type="button" data-id="' + esc(String(k.id)) + '"'
+        + (cur && k.id === cur.id ? ' class="on"' : '') + '>'
+        + '<i style="background:' + col + '"></i>'
+        + '<b>' + k.place + '</b><span class="nm">' + esc(k.name) + '</span></button>';
+    }).join('')
+    + '<button type="button" class="step" data-step="1" aria-label="Watch the driver behind">&#8250;</button>';
 }
 
 function order() {
@@ -616,6 +693,21 @@ function botItem(k) {
     itemDown(k);
     k.holdFor = 1 + Math.random() * 2.6;
   } else useItem(k);
+}
+
+/* What the wheels are throwing up. The strip sections carry their own stuff
+   down one side of the road; everywhere else it is whatever this place's ground
+   is made of, which the theme already knows as a CSS colour. */
+const STRIP_DUST = { sand: 0xd9a25e, ice: 0xe8f4ff, ash: 0x5a4a4e, snow: 0xf2f8ff };
+let dustCol = 0xa8b0a0, dustFor = '';
+function roughColour(pr) {
+  if (pr && pr.strip && STRIP_DUST[pr.strip] !== undefined) return STRIP_DUST[pr.strip];
+  if (dustFor !== worldTheme) {
+    const g = themeById(worldTheme).ground;
+    dustCol = /^#[0-9a-f]{6}$/i.test(g) ? parseInt(g.slice(1), 16) : 0xa8b0a0;
+    dustFor = worldTheme;
+  }
+  return dustCol;
 }
 
 /* --------------------------------------------------------------- the world -- */
@@ -747,6 +839,21 @@ function stepWorld(dt) {
       spark(back, SPARK[tier], 1.2 + tier * 0.4,
             k.trail && k.trail.shape, (k.trail ? k.trail.size : 1) * (1 + tier * 0.22));
     }
+    /* The tyres throw up whatever they are standing on. Mostly that is a strip:
+       the barrier stands on the edge of the tarmac all the way round, so the
+       grass beyond it is not somewhere a car can get to, and the rough on
+       these circuits is the band of sand, ice or ash laid down one side of a
+       straight instead. Driving onto one costs you half your speed and until
+       now said nothing at all about it, which on Redrock is a strip of sand
+       the same colour as the desert behind it. */
+    if ((pr.strip || k.offroad) && Math.abs(k.speed) > 6 && Math.random() < 0.5) {
+      const at = k.pos.clone().setY(k.pos.y + 0.16);
+      const sx = (Math.random() < 0.5 ? 1 : -1) * 0.72;
+      at.x += Math.sin(k.yaw) * 1.05 + Math.cos(k.yaw) * sx;
+      at.z += Math.cos(k.yaw) * 1.05 - Math.sin(k.yaw) * sx;
+      puff(at, roughColour(pr));
+    }
+
     /* And each tier arriving says so. The sparks change colour behind you,
        which is no use at all at forty metres a second with a corner to look
        at, so the useful half of it is the note. */
@@ -943,7 +1050,8 @@ let camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
 let camRoll = 0;                  // how far the picture leans into a slide
 let shake = 0;                    // and how hard the last thing hit it
 function snapCamera() {
-  const watch = me || karts[0];
+  // whoever is being watched, which when spectating is not me and never was
+  const watch = watched() || karts[0];
   if (!watch) return;
   const c = CAM[camMode];
   camPos.set(watch.pos.x + Math.sin(watch.yaw) * c.d, watch.pos.y + c.h, watch.pos.z + Math.cos(watch.yaw) * c.d);
@@ -962,7 +1070,7 @@ const CAM = [
   { name: 'Overhead', d: 2.2,  h: 15,   fov: 52 },
 ];
 function stepCamera(dt) {
-  const watch = spectating ? (order()[0] || me) : me;
+  const watch = watched();
   if (!watch) return;
   /* The sun's shadow box goes where the racing is, and it does that whether or
      not a test has parked the camera somewhere to take a picture. It used to
@@ -1192,7 +1300,8 @@ function drawHud(dt) {
   hintStep(dt);
   drawTags();
   if (noticeT > 0) { noticeT -= dt; if (noticeT <= 0) el('notice').classList.remove('on'); }
-  const watch = spectating ? (order()[0] || me) : me;
+  const watch = watched();
+  drawWatchBar();
   if (watch) speedLines(watch, dt);
   // under the surface, if that is where whoever we are watching happens to be
   el('wet').classList.toggle('on', !!(watch && watch.wet));
@@ -1414,7 +1523,7 @@ function frame() {
 /* ------------------------------------------------------------------ sound --- */
 function stepSound() {
   if (!snd.isOn()) return;
-  const k = spectating ? (order()[0] || me) : me;
+  const k = watched();
   if (!k) return;
   snd.engine(phase === 'race' || phase === 'count', k.speed, topSpeed(k), k.offroad,
              k.hop > 0.35 || !!k.falling);
@@ -1537,7 +1646,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=36');
+    const mod = await import('./net.js?v=37');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1551,7 +1660,13 @@ async function start(online) {
           if (p === 'race' && !extra) goRace();
           if (p === 'results') endRace();
         },
-        setSpectating(v) { spectating = v; el('watch').classList.toggle('on', v); },
+        setSpectating(v) {
+          spectating = v;
+          watchId = null;
+          specKey = '';
+          el('watch').classList.toggle('on', v);
+          drawWatchBar();
+        },
         hitBy, nameOf,
         oil: oilSplat,
         setVotes(v, mine) { voteCount = v || {}; if (mine !== undefined) myVote = mine; drawVote(); },
@@ -1609,6 +1724,16 @@ function buildMaps() {
 
 buildMaps();
 buildCast();
+/* One listener on the strip rather than one a button: the buttons are rebuilt
+   whenever the running order changes, and listeners bound to them would go with
+   them. */
+el('spec').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.hasAttribute('data-step')) watchStep(+b.getAttribute('data-step') || 1);
+  else if (b.hasAttribute('data-id')) watchWho(b.getAttribute('data-id'));
+});
+
 el('solo').addEventListener('click', () => start(false));
 el('online').addEventListener('click', () => start(true));
 frame();
@@ -1730,6 +1855,17 @@ window.__mk = {
   get items() { return items; },
   get results() { return results; },
   get spectating() { return spectating; },
+  // a test cannot join a lobby to be put in the stands, so it says so directly
+  spectate(on) {
+    spectating = !!on;
+    watchId = null;
+    specKey = '';
+    el('watch').classList.toggle('on', spectating);
+    drawWatchBar();
+    if (spectating) snapCamera();
+    return spectating;
+  },
+  get watching() { const w = watched(); return w ? w.id : null; },
   get camera() { return camera; },
   get props() { return scene.getObjectByName('props'); },
   get cones() { return cones; },
