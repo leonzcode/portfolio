@@ -170,6 +170,27 @@
   }
   #tags .tag.me{ color:var(--gold); font-size:15px; }
 
+  /* What speed looks like. Two cones of streaks from the edges of the screen,
+     brought in by opacity rather than by being created and destroyed, so the
+     whole effect is one style write a frame. */
+  #speedlines{
+    position:fixed; inset:0; z-index:22; pointer-events:none; opacity:0;
+    background:
+      repeating-conic-gradient(from 0deg at 50% 52%,
+        rgba(255,255,255,0) 0deg 2.4deg, rgba(255,255,255,.42) 2.4deg 3.1deg);
+    /* Only at the edges. Over the middle of the screen they are something you
+       look through rather than at, which is the opposite of what they are for. */
+    -webkit-mask-image:radial-gradient(92% 86% at 50% 52%, transparent 54%, #000 100%);
+    mask-image:radial-gradient(92% 86% at 50% 52%, transparent 54%, #000 100%);
+    transition:none;
+  }
+  #speedlines.hot{
+    background:
+      repeating-conic-gradient(from 0deg at 50% 52%,
+        rgba(255,214,120,0) 0deg 2deg, rgba(255,232,170,.6) 2deg 2.9deg);
+  }
+  @media (prefers-reduced-motion: reduce){ #speedlines{ display:none; } }
+
   /* Pointing back down the road. Middle of the screen and flashing, because it
      is the one message in the game you need to act on immediately rather than
      read. It sits above the notices, which are things that have already
@@ -578,6 +599,7 @@
   <div id="mini"><canvas id="minic" width="380" height="232"></canvas></div>
   <div id="speed"><span class="n out" id="speedn">0</span><em>km/h</em></div>
   <div id="notice"></div>
+  <div id="speedlines"></div>
   <div id="wrong">Wrong way</div>
 </div>
 
@@ -652,5 +674,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=28');
+await import('./game.js?v=29');
 </script>

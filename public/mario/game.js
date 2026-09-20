@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=28';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=28';
-import { packLook, unpackLook, normalise } from './parts.js?v=28';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=28';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=28';
-import { makeRescue } from './rescue.js?v=28';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=28';
-import { makeBrain, driveBrain } from './ai.js?v=28';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=28';
-import { makeCones } from './cones.js?v=28';
-import { makeHazards } from './hazards.js?v=28';
-import { THEMES, themeById } from './themes.js?v=28';
-import * as snd from './audio.js?v=28';
+import { buildTrack } from './track.js?v=29';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=29';
+import { packLook, unpackLook, normalise } from './parts.js?v=29';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=29';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=29';
+import { makeRescue } from './rescue.js?v=29';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=29';
+import { makeBrain, driveBrain } from './ai.js?v=29';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=29';
+import { makeCones } from './cones.js?v=29';
+import { makeHazards } from './hazards.js?v=29';
+import { THEMES, themeById } from './themes.js?v=29';
+import * as snd from './audio.js?v=29';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -308,7 +308,12 @@ function buildWorld(seed, themeId) {
   if (track) {
     if (items) items.clear();
     shredGroup(track.group);
-    shredGroup(scene.getObjectByName('props'));
+    /* Every one of them, not the first one found. buildProps is fired and
+       forgotten, and in a lobby the rounds come close enough together that two
+       of them can be in flight at once: the second world shredded the first
+       set of scenery and then both builds finished, which is why a multiplayer
+       circuit ended up with two runs of barriers down every edge. */
+    for (let o = scene.getObjectByName('props'); o; o = scene.getObjectByName('props')) shredGroup(o);
     if (cones) for (const m of cones.meshes) shredGroup(m);
     if (hazards) shredGroup(hazards.group);
   }
@@ -321,7 +326,13 @@ function buildWorld(seed, themeId) {
   hazards = makeHazards(scene, track, seed);
   rescue = makeRescue(scene, track);
   // the scenery turns up when it turns up; the circuit is drivable without it
-  import('./props.js?v=28').then(m => m.buildProps(scene, THREE, track)).catch(() => {});
+  /* And the build is told which world it was started for. By the time the
+     models have loaded the lobby may have moved on, and scenery for a circuit
+     that no longer exists is scenery standing in the middle of this one. */
+  const forWorld = track;
+  import('./props.js?v=29')
+    .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
+    .catch(() => {});
 }
 
 /* --------------------------------------------------------------- the field -- */
@@ -368,7 +379,7 @@ function placeOnGrid() {
     k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0;
     k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0;
     k.item = null; k.itemN = 0; k.roulette = 0; k.queue = [];
-    k.falling = 0; k.fallV = 0; k.overEdge = 0; k.rescue = 0;
+    k.falling = 0; k.fallV = 0; k.overEdge = 0; k.rescue = 0; k.bullet = 0;
     k.hint = null;
     // and nobody is stuck on the grid; they simply have not been let go yet
     const b = brains.find(q => q.kart === k);
@@ -515,6 +526,12 @@ function useItem(k) {
       if (k === me) notice('Oil can!');
       else oilSplat();                      // a computer driver got you
       puff(k.pos.clone().setY(k.pos.y + 1.2), 0x1b2030);
+    }
+    if (id === 'bullet') {
+      k.bullet = 6.5;
+      k.star = Math.max(k.star, 6.5);      // nothing touches you while it runs
+      if (k === me) { notice('Bullet!'); snd.boost(); }
+      for (let i = 0; i < 10; i++) spark(k.pos.clone().setY(k.pos.y + 0.5), 0x8fd3ff, 3);
     }
     if (id === 'plant') {
       plantOn(k);
@@ -694,6 +711,7 @@ function stepWorld(dt) {
       if (a.remote && b.remote) continue;
       if (bump(a, b)) {
         // a star ploughs straight through anybody else
+        // a star, or a bullet, ploughs straight through anybody else
         if (a.star > 0 && b.star <= 0 && !b.remote) spinOut(b, false);
         if (b.star > 0 && a.star <= 0 && !a.remote) spinOut(a, false);
       }
@@ -783,7 +801,8 @@ function dressTrack() {
 
 /* -------------------------------------------------------------- the camera -- */
 let camMode = 0, camHidden = null;
-const camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
+let camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
+let camRoll = 0;                  // how far the picture leans into a slide
 function snapCamera() {
   const watch = me || karts[0];
   if (!watch) return;
@@ -830,8 +849,22 @@ function stepCamera(dt) {
   camAim.lerp(look, 1 - Math.exp(-11 * dt));
   camera.position.copy(camPos);
   camera.lookAt(camAim);
-  const fov = c.fov + (watch.boost > 0 ? 6 : 0) + (watch.star > 0 ? 3 : 0);
-  if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = lerp(camera.fov, fov, 1 - Math.exp(-6 * dt)); camera.updateProjectionMatrix(); }
+
+  /* Where the sense of speed comes from.
+
+     The field of view opens as you go faster and snaps wider again on a boost,
+     which is the single thing that makes thirty miles an hour and sixty feel
+     different rather than just look different. The camera rolls a little into a
+     drift, so a slide is something the whole picture does rather than something
+     the car does in front of you. Both are small numbers; both are the
+     difference between a racing game and a driving one. */
+  const fast = Math.min(1, Math.abs(watch.speed) / (TUNE.top * 1.15));
+  const fov = c.fov + fast * 7
+    + (watch.boost > 0 ? 9 : 0) + (watch.star > 0 ? 3 : 0) + (watch.bullet > 0 ? 13 : 0);
+  camera.fov = lerp(camera.fov, fov, 1 - Math.exp(-(watch.boost > 0 ? 12 : 5) * dt));
+  camRoll = lerp(camRoll, -watch.slide * 0.22 - watch.drift * 0.035, 1 - Math.exp(-7 * dt));
+  camera.rotation.z += camRoll;
+  camera.updateProjectionMatrix();
   // keep the sun's shadow box on the action
   sun.position.set(watch.pos.x + 120, 190, watch.pos.z + 80);
   sun.target.position.set(watch.pos.x, 0, watch.pos.z);
@@ -982,12 +1015,28 @@ function notice(text) {
   el('notice').classList.add('on');
   noticeT = 1.6;
 }
+/* Speed lines. They only turn up when you are genuinely quick, and they get
+   out of the way the moment you are not, so what they mark is the boost rather
+   than the driving. Drawn in CSS because a full screen effect that costs one
+   opacity write a frame is the right kind of cheap. */
+function speedLines(watch, dt) {
+  const el0 = el('speedlines');
+  if (!el0) return;
+  const fast = Math.max(0, Math.abs(watch.speed) / TUNE.top - 0.82);
+  const want = Math.min(1, fast * 2.2 + (watch.boost > 0 ? 0.75 : 0) + (watch.bullet > 0 ? 1 : 0));
+  linesAt = lerp(linesAt, want, 1 - Math.exp(-9 * dt));
+  el0.style.opacity = linesAt < 0.02 ? '0' : (Math.min(1, linesAt) * 0.62).toFixed(3);
+  el0.classList.toggle('hot', watch.boost > 0 || watch.bullet > 0);
+}
+let linesAt = 0;
+
 function drawHud(dt) {
   oilStep(dt);
   hintStep(dt);
   drawTags();
   if (noticeT > 0) { noticeT -= dt; if (noticeT <= 0) el('notice').classList.remove('on'); }
   const watch = spectating ? (order()[0] || me) : me;
+  if (watch) speedLines(watch, dt);
   // under the surface, if that is where whoever we are watching happens to be
   el('wet').classList.toggle('on', !!(watch && watch.wet));
   wetGlass(!!(watch && watch.wet), dt);
@@ -1329,7 +1378,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=28');
+    const mod = await import('./net.js?v=29');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },

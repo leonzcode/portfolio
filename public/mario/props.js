@@ -16,28 +16,41 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
-import { dressOf } from './themes.js?v=28';
+import { dressOf } from './themes.js?v=29';
 
 /* Which part of a place's palette each model wears. The kit is one kit, so
    without this every circuit has the same green trees and the same red barriers
    standing round it and the theme stops at the kerb. */
 const WEARS = {
-  treeLarge: 'tree', treeSmall: 'tree',
+  treeLarge: 'tree', treeSmall: 'tree', grass: 'tree',
   barrierRed: 'barrier', barrierWhite: 'barrier',
+  rail: 'barrier', railDouble: 'barrier', fenceStraight: 'metal', fenceCurved: 'metal',
   grandStandCovered: 'metal', grandStand: 'metal',
-  lightPostModern: 'metal', flagCheckers: 'cloth',
+  grandStandAwning: 'metal', grandStandRound: 'metal', grandStandCoveredRound: 'metal',
+  lightPostModern: 'metal', lightPostLarge: 'metal', overheadLights: 'metal',
+  pitsGarage: 'metal', pitsGarageClosed: 'metal', pitsOffice: 'metal', pitsOfficeRoof: 'metal',
+  radarEquipment: 'metal', pylon: 'cloth',
+  flagCheckers: 'cloth', flagCheckersSmall: 'cloth', flagGreen: 'cloth', flagRed: 'cloth',
   bannerTowerRed: 'cloth', bannerTowerGreen: 'cloth',
-  tentLong: 'cloth', tent: 'cloth',
+  billboard: 'cloth', billboardLow: 'cloth', billboardLower: 'cloth',
+  tentLong: 'cloth', tent: 'cloth', tentClosed: 'cloth', tentRoof: 'cloth',
 };
 
 const DIR = 'models/';
 const SCALE = {
   grandStandCovered: 9, grandStand: 9,
+  grandStandAwning: 9, grandStandRound: 9, grandStandCoveredRound: 9,
   bannerTowerRed: 7, bannerTowerGreen: 7,
   barrierRed: 9, barrierWhite: 9,
   treeLarge: 6, treeSmall: 6,
-  tentLong: 7, tent: 7,
-  lightPostModern: 9, flagCheckers: 7,
+  tentLong: 7, tent: 7, tentClosed: 7, tentRoof: 7,
+  lightPostModern: 9, flagCheckers: 7, flagCheckersSmall: 7,
+  flagGreen: 7, flagRed: 7,
+  billboard: 8, billboardLow: 8, billboardLower: 8,
+  fenceStraight: 9, fenceCurved: 9,
+  pitsGarage: 9, pitsGarageClosed: 9, pitsOffice: 9, pitsOfficeRoof: 9,
+  pylon: 6, lightPostLarge: 9, lightColored: 8, lightRed: 8, lightRedDouble: 8,
+  overheadLights: 9, radarEquipment: 7, rail: 9, railDouble: 9, grass: 6,
 };
 
 /* one load per model, however many times it is asked for */
@@ -80,7 +93,8 @@ function parts(root, THREE) {
   return { list: out, size };
 }
 
-export async function buildProps(scene, THREE, track) {
+export async function buildProps(scene, THREE, track, current) {
+  const still = () => !current || current();
   const dress = dressOf(track.theme);
   const glow = track.theme.glow || 0;
   const loader = new GLTFLoader();
@@ -96,6 +110,9 @@ export async function buildProps(scene, THREE, track) {
     if (!spots.length) return;
     let gltf;
     try { gltf = await load(loader, name); } catch (e) { return; }
+    // the lobby moved on while this was loading; this scenery is for a circuit
+    // that is not there any more
+    if (!still()) { if (group.parent) scene.remove(group); return; }
     const base = SCALE[name] || 1;
     const model = parts(gltf.scene, THREE);
     // a model that is meant to stand ON a line rather than straddle it gets
@@ -141,9 +158,16 @@ export async function buildProps(scene, THREE, track) {
         im.setMatrixAt(i, m4);
       });
       im.instanceMatrix.needsUpdate = true;
-      // the same rule as the track's own trees: the wood and the crowd are too
-      // far from the road for their shadows to be worth a shadow map pass
-      im.castShadow = name !== 'treeLarge' && name !== 'treeSmall';
+      /* Only the things close enough to the road for their shadow to land on
+         it. Everything in the band behind the barrier - the wood, the catch
+         fencing, the billboards, the floodlights, the marshal posts, several
+         thousand tufts of grass - is a second pass through the shadow map for a
+         shadow that falls in a field nobody drives on. */
+      const FAR = ['treeLarge', 'treeSmall', 'grass', 'fenceStraight', 'fenceCurved',
+                   'billboard', 'billboardLow', 'billboardLower', 'lightPostLarge',
+                   'flagGreen', 'flagRed', 'radarEquipment', 'pitsGarage', 'pitsOffice',
+                   'tent', 'tentLong', 'grandStand', 'grandStandCovered'];
+      im.castShadow = FAR.indexOf(name) < 0;
       im.receiveShadow = true;
       im.frustumCulled = false;            // one box round the whole circuit is useless
       im.matrixWorldAutoUpdate = false;
@@ -362,6 +386,95 @@ export async function buildProps(scene, THREE, track) {
   }
   put('tent', tents);
   put('tentLong', longTents);
+
+  /* ---- what fills the middle distance ------------------------------------
+     Everything above is at the edge of the road. What makes a circuit read as
+     a place rather than a ribbon is the band behind that: catch fencing, the
+     backs of billboards, floodlights, a pit lane, marshal posts, radar dishes.
+     All of it is from the same kit as the barriers and all of it is instanced,
+     so a hundred and fifty new objects cost about a dozen draw calls.
+  -------------------------------------------------------------------------- */
+  {
+    let sseed = 20260920;
+    const rnd = () => { sseed = (sseed * 1103515245 + 12345) & 0x7fffffff; return sseed / 0x7fffffff; };
+    const fence = [], boards = [], boardsLow = [], flood = [], marshalG = [], marshalR = [];
+    const rails = [], dishes = [], pylons = [], tufts = [];
+    for (let s = 0; s < L; s += 4.4) {
+      const a = track.at(s);
+      // catch fencing stands back behind the barrier, both sides, all the way
+      for (const sgn of [1, -1]) {
+        fence.push({ pos: side(a, sgn * (a.w + 5.2)), yaw: withRoad(a) });
+      }
+    }
+    for (let s = 6; s < L; s += 26) {
+      const a = track.at(s);
+      const sgn = ((s / 26) | 0) % 2 ? 1 : -1;
+      // a guard rail in front of the fence on the outside of things
+      rails.push({ pos: side(a, sgn * (a.w + 3.4)), yaw: withRoad(a) });
+    }
+    for (let s = 20; s < L; s += 61) {
+      const a = track.at(s);
+      const sgn = ((s / 61) | 0) % 2 ? 1 : -1;
+      boards.push({ pos: side(a, sgn * (a.w + 12)), yaw: facingRoad(a, sgn) });
+    }
+    for (let s = 44; s < L; s += 73) {
+      const a = track.at(s);
+      const sgn = ((s / 73) | 0) % 2 ? -1 : 1;
+      boardsLow.push({ pos: side(a, sgn * (a.w + 10)), yaw: facingRoad(a, sgn) });
+    }
+    for (let s = 12; s < L; s += 88) {
+      const a = track.at(s);
+      flood.push({ pos: side(a, (a.w + 15)), yaw: facingRoad(a, 1) });
+    }
+    for (let s = 34; s < L; s += 96) {
+      const a = track.at(s);
+      const sgn = ((s / 96) | 0) % 2 ? 1 : -1;
+      (sgn > 0 ? marshalG : marshalR).push({ pos: side(a, sgn * (a.w + 6.4)), yaw: facingRoad(a, sgn) });
+    }
+    for (let s = 70; s < L; s += 180) {
+      const a = track.at(s);
+      dishes.push({ pos: side(a, -(a.w + 19)), yaw: rnd() * 6.28 });
+    }
+    // markers on the apex of things, and tufts of grass anywhere there is room
+    for (let s = 0; s < L; s += 17) {
+      const a = track.at(s);
+      const sgn = rnd() < 0.5 ? 1 : -1;
+      pylons.push({ pos: side(a, sgn * (a.w + 1.6)), yaw: withRoad(a) });
+    }
+    for (let s = 0; s < L; s += 3.2) {
+      const a = track.at(s);
+      for (const sgn of [1, -1]) {
+        if (rnd() > 0.55) continue;
+        tufts.push({ pos: side(a, sgn * (a.w + 7 + rnd() * 24)),
+                     yaw: rnd() * 6.28, scale: 0.7 + rnd() * 0.9 });
+      }
+    }
+    /* Anything placed face on has to take its height again after it has been
+       pushed back by half its depth, or it ends up standing at the height of
+       the ground it used to be over. */
+    const onGround = p => track.groundY(p.x, p.z);
+    put('fenceStraight', fence, true, onGround);
+    put('railDouble', rails, true, onGround);
+    put('billboard', boards, true, onGround);
+    put('billboardLow', boardsLow, true, onGround);
+    put('lightPostLarge', flood);
+    put('flagGreen', marshalG);
+    put('flagRed', marshalR);
+    put('radarEquipment', dishes);
+    put('pylon', pylons);
+    put('grass', tufts);
+
+    // a pit lane, once, on the straight before the line
+    const pit = track.at((L - 150 + L) % L);
+    const garages = [], offices = [];
+    for (let k = 0; k < 6; k++) {
+      const a = track.at(((L - 150 + k * 11) % L + L) % L);
+      (k % 3 === 2 ? offices : garages).push({ pos: side(a, -(a.w + 16)), yaw: facingRoad(a, -1) });
+    }
+    put('pitsGarage', garages, true, onGround);
+    put('pitsOffice', offices, true, onGround);
+    void pit;
+  }
 
   /* ---- the start line ----------------------------------------------------- */
   // No gantry from the kit here: track.js already builds one over the line, in
