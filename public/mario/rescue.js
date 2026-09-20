@@ -16,7 +16,7 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { merge, vertexMat, box, cyl, ball } from './parts.js?v=29';
+import { merge, vertexMat, box, cyl, ball } from './parts.js?v=30';
 
 const DROP = 0.85;        // how long it lets you fall before it turns up
 const LIFT = 1.0;         // how long the lift itself takes
@@ -150,8 +150,13 @@ export function makeRescue(scene, track) {
 
   function clear() {
     for (const r of live) {
-      r.k.falling = 0; r.k.rescue = 0;
+      // whatever state the carry was in, the car is its own again
+      r.k.falling = 0; r.k.fallV = 0; r.k.overEdge = 0; r.k.rescue = 0;
       scene.remove(r.g);
+      r.g.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
     }
     live.length = 0;
   }

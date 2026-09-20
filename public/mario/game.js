@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=29';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=29';
-import { packLook, unpackLook, normalise } from './parts.js?v=29';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=29';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=29';
-import { makeRescue } from './rescue.js?v=29';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=29';
-import { makeBrain, driveBrain } from './ai.js?v=29';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=29';
-import { makeCones } from './cones.js?v=29';
-import { makeHazards } from './hazards.js?v=29';
-import { THEMES, themeById } from './themes.js?v=29';
-import * as snd from './audio.js?v=29';
+import { buildTrack } from './track.js?v=30';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=30';
+import { packLook, unpackLook, normalise } from './parts.js?v=30';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=30';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=30';
+import { makeRescue } from './rescue.js?v=30';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=30';
+import { makeBrain, driveBrain } from './ai.js?v=30';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=30';
+import { makeCones } from './cones.js?v=30';
+import { makeHazards } from './hazards.js?v=30';
+import { THEMES, themeById } from './themes.js?v=30';
+import * as snd from './audio.js?v=30';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -316,6 +316,14 @@ function buildWorld(seed, themeId) {
     for (let o = scene.getObjectByName('props'); o; o = scene.getObjectByName('props')) shredGroup(o);
     if (cones) for (const m of cones.meshes) shredGroup(m);
     if (hazards) shredGroup(hazards.group);
+    /* And let go of anybody the balloon still has hold of. The rescue keeps a
+       list of cars it is carrying and sets k.rescue on each, and a car with
+       that flag is skipped by the physics until the balloon puts it down. Drop
+       the manager while it is mid-lift and the flag is never cleared: the car
+       sits wherever it was for the rest of the race, cannot be driven, and
+       cannot be fished out again either. Rounds change maps mid-fall often
+       enough for this to be somebody's whole race. */
+    if (rescue) rescue.clear();
   }
   worldSeed = seed;
   worldTheme = th.id;
@@ -330,7 +338,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=29')
+  import('./props.js?v=30')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -585,6 +593,12 @@ function stepWorld(dt) {
      not, so the list is rebuilt every frame rather than placed once. */
   const dodge = items.hazards.concat(hazards.threats(raceTime));
 
+  /* The autopilot follows whoever the player is, not whoever they were. A new
+     round builds a new field, and the old car it was driving is finished and
+     parked: left bound to that, the autopilot asks for no throttle at all and
+     the new car sits on the line for the rest of the race. */
+  if (autoBrain && me && autoBrain.kart !== me) autoBrain = makeBrain(me, 0.95, 4242);
+
   // the computer drivers, and the autopilot when a test is driving
   if (autoBrain) {
     autoBrain.hazards = dodge;
@@ -662,7 +676,7 @@ function stepWorld(dt) {
     if (k.landed) {
       k.landed = 0;
       puff(k.pos.clone().setY(k.pos.y + 0.2), 0xcfd6e0);
-      if (k === me) snd.land();
+      if (k === me) { snd.land(); shake = Math.min(1, shake + 0.45); }
     }
 
     // the roulette landing
@@ -701,7 +715,37 @@ function stepWorld(dt) {
       spark(back, k.star > 0 ? 0xffd233 : (Math.random() < 0.5 ? tr.hot : tr.cool), 1.5,
             k.star > 0 ? 'star' : tr.shape, tr.size);
     }
-    if (k.wallHit) { k.wallHit = 0; puff(k.pos.clone().setY(k.pos.y + 0.6), 0xfff6e2); if (k === me) snd.bump(); }
+    if (k.wallHit) {
+      k.wallHit = 0;
+      puff(k.pos.clone().setY(k.pos.y + 0.6), 0xfff6e2);
+      if (k === me) { snd.bump(); shake = Math.min(1, shake + 0.3); }
+    }
+  }
+
+  /* Who is sitting in whose air. Directly behind, close, and going about the
+     same way: hold it and the car ahead drags you along with it. */
+  for (const k of karts) {
+    // A slipstream is a hole in the air somebody punched at speed. Sitting
+    // behind a car at walking pace is not drafting, it is queueing.
+    if (k.finished || k.spin > 0 || k.speed < TUNE.top * 0.6) { k.draftT = 0; continue; }
+    let inAir = false;
+    const fx = -Math.sin(k.yaw), fz = -Math.cos(k.yaw);
+    for (const o of karts) {
+      if (o === k || o.finished) continue;
+      const dx = o.pos.x - k.pos.x, dz = o.pos.z - k.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 2.4 || d > 13) continue;
+      if ((dx * fx + dz * fz) / d < 0.93) continue;         // not straight ahead
+      if (Math.abs(o.speed - k.speed) > 16) continue;       // not travelling with them
+      inAir = true;
+      break;
+    }
+    k.draftT = inAir ? k.draftT + dt : 0;
+    if (k === me && k.draftT > 0.5 && Math.random() < 0.5) {
+      const nose = k.pos.clone().setY(k.pos.y + 0.8);
+      nose.x += fx * 1.6; nose.z += fz * 1.6;
+      spark(nose, 0x8fd3ff, 0.6, 'bubble', 0.7);
+    }
   }
 
   // karts touching karts
@@ -803,6 +847,7 @@ function dressTrack() {
 let camMode = 0, camHidden = null;
 let camPos = new THREE.Vector3(), camAim = new THREE.Vector3();
 let camRoll = 0;                  // how far the picture leans into a slide
+let shake = 0;                    // and how hard the last thing hit it
 function snapCamera() {
   const watch = me || karts[0];
   if (!watch) return;
@@ -831,10 +876,15 @@ function stepCamera(dt) {
   // sit behind where the kart is going, not where it is pointing, so a drift
   // reads as the kart cocked across a view that still follows the road
   const yaw = watch.yaw + watch.slide * 0.35;
+  /* The camera drops back when you are quick and drops back further on a
+     boost. Widening the lens alone makes the world stretch; pulling the camera
+     with it makes the car pull away from you, which is what speed feels like. */
+  const pull = c.d * (1 + Math.min(0.18, Math.abs(watch.speed) / TUNE.top * 0.12)
+    + (watch.boost > 0 ? 0.16 : 0) + (watch.bullet > 0 ? 0.3 : 0));
   const want = new THREE.Vector3(
-    watch.pos.x + Math.sin(yaw) * c.d * back,
+    watch.pos.x + Math.sin(yaw) * pull * back,
     watch.pos.y + c.h + watch.hop * 0.4,
-    watch.pos.z + Math.cos(yaw) * c.d * back
+    watch.pos.z + Math.cos(yaw) * pull * back
   );
   const look = new THREE.Vector3(watch.pos.x, watch.pos.y + 1.25, watch.pos.z);
   if (c.aim) {
@@ -863,6 +913,15 @@ function stepCamera(dt) {
     + (watch.boost > 0 ? 9 : 0) + (watch.star > 0 ? 3 : 0) + (watch.bullet > 0 ? 13 : 0);
   camera.fov = lerp(camera.fov, fov, 1 - Math.exp(-(watch.boost > 0 ? 12 : 5) * dt));
   camRoll = lerp(camRoll, -watch.slide * 0.22 - watch.drift * 0.035, 1 - Math.exp(-7 * dt));
+  /* And a kick when something happens to you. It decays in about a third of a
+     second, so it reads as an impact rather than as a camera fault. */
+  if (shake > 0.002) {
+    const t = performance.now() * 0.001;
+    camera.position.x += Math.sin(t * 61) * shake * 0.22;
+    camera.position.y += Math.sin(t * 47) * shake * 0.16;
+    camRoll += Math.sin(t * 53) * shake * 0.04;
+    shake = Math.max(0, shake - dt * 3.2);
+  }
   camera.rotation.z += camRoll;
   camera.updateProjectionMatrix();
   // keep the sun's shadow box on the action
@@ -1378,7 +1437,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=29');
+    const mod = await import('./net.js?v=30');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1575,6 +1634,7 @@ window.__mk = {
   get props() { return scene.getObjectByName('props'); },
   get cones() { return cones; },
   get garage() { return garage; },
+  tier: k => driftTier(k || me),
   plantOn,
   // which quality step it has settled on, and a way to pin one for a test
   quality(n) { if (n !== undefined) { level = Math.max(0, Math.min(LEVELS.length - 1, n | 0)); applyLevel(); } return level; },
@@ -1657,6 +1717,23 @@ window.__mk = {
   autopilot(on) {
     autoBrain = on && me ? makeBrain(me, 0.95, 4242) : null;
     return !!autoBrain;
+  },
+  // what the autopilot is asking for, so a test can see why a car is not moving
+  get brain() { return autoBrain; },
+  /* The field back on the grid and the flag dropped again, on the circuit that
+     is already built. rebuild() changes the road under the race but leaves the
+     race itself running, so a test that drives five circuits back to back is
+     really driving one race with the scenery swapped: lap counters, finishing
+     times and the clock all carry, and somewhere in the fourth or fifth the
+     race it is measuring quietly ends underneath it. */
+  restart() {
+    results.length = 0;
+    raceTime = 0;
+    phaseT = 0;
+    notified = 0;
+    placeOnGrid();
+    phase = 'race';
+    return true;
   },
   // giveItem sets what is in your hand, addItem lands one behind it the way a
   // box does. A test wants both, and confusing them makes it ask for one thing
