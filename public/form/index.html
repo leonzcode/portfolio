@@ -1527,7 +1527,7 @@
     var H = wantH ? Math.round(wantH) : ((narrow ? 172 : 200) + 8);
     // Everything around the plot is measured in the type it has to hold, so a graph
     // blown up for a room keeps the same air around its labels as one on a card.
-    var fs = Math.round(11 * Math.max(1, Math.min(2.4, H / 200)));
+    var fs = Math.round(11 * Math.max(1, Math.min(2.4, Math.min(H / 200, (W / 640) * 1.6))));
     var padL = Math.round(fs * 2.2), padR = Math.round(fs * 1.1);
     var padT = Math.round(fs * 2), padB = Math.round(fs * 2.8);
     var plotW = W - padL - padR, plotH = H - padT - padB;
@@ -1568,9 +1568,11 @@
     var cap = sEl("text", { x: padL - Math.round(fs * 0.5), y: Math.round(fs * 1.1), "text-anchor": "start", class: "b-axis" });
     cap.textContent = "questions answered";
     svg.appendChild(cap);
-    var fin = sEl("text", { x: W - padR, y: Math.round(fs * 1.1), "text-anchor": "end", class: "b-axis" });
-    fin.textContent = "all " + total + " to find";
-    svg.appendChild(fin);
+    if (W > 460) {
+      var fin = sEl("text", { x: W - padR, y: Math.round(fs * 1.1), "text-anchor": "end", class: "b-axis" });
+      fin.textContent = "all " + total + " to find";
+      svg.appendChild(fin);
+    }
 
     var tip = el("div", "b-tip");
     tip.style.display = "none";
@@ -1729,8 +1731,9 @@
     var chartH = Math.round(Math.max(120, Math.min(free * 0.52, 420)));
     chartInto(chartWrap, rows, total, -1, chartH);
     var forList = Math.max(80, free - chartWrap.offsetHeight - 12);
+    var wide = (body.clientWidth || 800) > 520;
     var rowH = Math.max(22, Math.min(64, Math.floor(forList / rows.length)));
-    var fsize = Math.max(12, Math.min(30, Math.round(rowH * 0.5)));
+    var fsize = Math.max(12, Math.min(30, Math.round(rowH * 0.5), Math.floor((body.clientWidth || 800) / 17)));
 
     rows.forEach(function (r, i) {
       var row = el("div", "p-row" + (r.done ? " fin" : ""));
@@ -1743,7 +1746,7 @@
                          "px;background:" + colorOf(r.name) + ";border-radius:3px;";
       row.appendChild(sw);
       row.appendChild(el("div", "nm", r.name));
-      var sc = el("div", "sc", r.solved + " of " + total);
+      var sc = el("div", "sc", wide ? (r.solved + " of " + total) : String(r.solved));
       row.appendChild(sc);
       var tm = el("div", "tm" + (r.done ? " done" : ""));
       tm.id = "pp_" + i;
