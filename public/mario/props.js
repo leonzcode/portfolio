@@ -16,13 +16,13 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
-import { dressOf } from './themes.js?v=32';
+import { dressOf } from './themes.js?v=33';
 
 /* Which part of a place's palette each model wears. The kit is one kit, so
    without this every circuit has the same green trees and the same red barriers
    standing round it and the theme stops at the kerb. */
 const WEARS = {
-  treeLarge: 'tree', treeSmall: 'tree', grass: 'tree',
+  treeLarge: 'tree', treeSmall: 'tree',
   barrierRed: 'barrier', barrierWhite: 'barrier',
   rail: 'barrier', railDouble: 'barrier', fenceStraight: 'metal', fenceCurved: 'metal',
   grandStandCovered: 'metal', grandStand: 'metal',
@@ -84,7 +84,7 @@ const SCALE = {
   fenceStraight: 9, fenceCurved: 9,
   pitsGarage: 9, pitsGarageClosed: 9, pitsOffice: 9, pitsOfficeRoof: 9,
   pylon: 6, lightPostLarge: 9, lightColored: 8, lightRed: 8, lightRedDouble: 8,
-  overheadLights: 9, radarEquipment: 7, rail: 9, railDouble: 9, grass: 6,
+  overheadLights: 9, radarEquipment: 7, rail: 9, railDouble: 9,
 };
 
 /* one load per model, however many times it is asked for */
@@ -209,7 +209,7 @@ export async function buildProps(scene, THREE, track, current) {
          fencing, the billboards, the floodlights, the marshal posts, several
          thousand tufts of grass - is a second pass through the shadow map for a
          shadow that falls in a field nobody drives on. */
-      const FAR = ['treeLarge', 'treeSmall', 'grass', 'fenceStraight', 'fenceCurved',
+      const FAR = ['treeLarge', 'treeSmall', 'fenceStraight', 'fenceCurved',
                    'billboard', 'billboardLow', 'billboardLower', 'lightPostLarge',
                    'flagGreen', 'flagRed', 'radarEquipment', 'pitsGarage', 'pitsOffice',
                    'tent', 'tentLong', 'grandStand', 'grandStandCovered'];
@@ -410,6 +410,18 @@ export async function buildProps(scene, THREE, track, current) {
       (rnd() > 0.45 ? big : small).push({ pos, yaw: rnd() * Math.PI * 2, scale: 0.8 + rnd() * 0.5 });
     }
   }
+  /* And scrub, further out and much smaller, in the same list as the small
+     trees rather than a list of its own. It is the same model, so a second
+     instanced mesh of it would be a second set of draw calls for no reason,
+     and two meshes sharing a name is a thing that reads as one. */
+  for (let s = 0; s < L; s += 3.2) {
+    const a = track.at(s);
+    for (const sgn of [1, -1]) {
+      if (rnd() > 0.55) continue;
+      small.push({ pos: side(a, sgn * (a.w + 7 + rnd() * 24)),
+                   yaw: rnd() * 6.28, scale: 0.16 + rnd() * 0.17 });
+    }
+  }
   put('treeLarge', big);
   put('treeSmall', small);
 
@@ -444,7 +456,7 @@ export async function buildProps(scene, THREE, track, current) {
     let sseed = 20260920;
     const rnd = () => { sseed = (sseed * 1103515245 + 12345) & 0x7fffffff; return sseed / 0x7fffffff; };
     const fence = [], boards = [], boardsLow = [], flood = [], marshalG = [], marshalR = [];
-    const rails = [], dishes = [], pylons = [], tufts = [];
+    const rails = [], dishes = [], pylons = [];
     for (let s = 0; s < L; s += 4.4) {
       const a = track.at(s);
       // catch fencing stands back behind the barrier, both sides, all the way
@@ -481,19 +493,15 @@ export async function buildProps(scene, THREE, track, current) {
       const a = track.at(s);
       dishes.push({ pos: side(a, -(a.w + 19)), yaw: rnd() * 6.28 });
     }
-    // markers on the apex of things, and tufts of grass anywhere there is room
+    /* Markers on the apex of things. The scrub that used to be here as well
+       went up with the small trees: the kit does have a piece called grass, but
+       it is a flat one metre square with no height at all - a ground decal, not
+       a tuft - and scaled up to read from the road it became green wedges lying
+       across the sand at Redrock Dunes, z fighting with the ground under them. */
     for (let s = 0; s < L; s += 17) {
       const a = track.at(s);
       const sgn = rnd() < 0.5 ? 1 : -1;
       pylons.push({ pos: side(a, sgn * (a.w + 1.6)), yaw: withRoad(a) });
-    }
-    for (let s = 0; s < L; s += 3.2) {
-      const a = track.at(s);
-      for (const sgn of [1, -1]) {
-        if (rnd() > 0.55) continue;
-        tufts.push({ pos: side(a, sgn * (a.w + 7 + rnd() * 24)),
-                     yaw: rnd() * 6.28, scale: 0.7 + rnd() * 0.9 });
-      }
     }
     /* Anything placed face on has to take its height again after it has been
        pushed back by half its depth, or it ends up standing at the height of
@@ -508,7 +516,6 @@ export async function buildProps(scene, THREE, track, current) {
     put('flagRed', marshalR);
     put('radarEquipment', dishes);
     put('pylon', pylons);
-    put('grass', tufts);
 
     // a pit lane, once, on the straight before the line
     const pit = track.at((L - 150 + L) % L);

@@ -56,6 +56,12 @@ export const THEMES = [
     tarmac: '#5c616b', tarmacGrit: [88, 34, 6],
     kerbA: '#e8402a', kerbB: '#fff6e2',
     trunk: 0x8a5a36, leaf: 0x2f9440, treeShape: 'cone', treeCount: 420,
+    /* What the horizon is made of. The course sits in a bowl whose rim used to
+       be a smooth green berm the whole way round, which reads as a wall rather
+       than as country. Two rings of low shapes standing on that rim give it a
+       ridgeline, and the fog does the rest: the near ring keeps some of its own
+       colour, the far one is most of the way to the sky already. */
+    skyline: { kind: 'hill', near: 0x6aa85c, far: 0x8fc07e, n: 30, w: [40, 92], h: [22, 54] },
     /* What the lap does on the way round. Ten sections, laid out by the
        generator so no two land on each other, and this is the set that makes
        Sunfield Loop the one you learn on: a river, a causeway over it, a long
@@ -102,6 +108,8 @@ export const THEMES = [
     tarmac: '#8a7358', tarmacGrit: [140, 40, -12],
     kerbA: '#c9452f', kerbB: '#ffe7c2',
     trunk: 0x9a6b3c, leaf: 0x7aa05a, treeShape: 'cactus', treeCount: 260,
+    // flat topped buttes, which is what the country either side of a canyon is
+    skyline: { kind: 'mesa', near: 0xb07a4a, far: 0xd4a374, n: 26, w: [46, 104], h: [26, 66] },
     /* Canyon country: two gaps in the road with nothing under them, a cave
        through a mountain, a banked bowl, a shelf that drops away, and sand
        across one side of a straight. */
@@ -148,6 +156,8 @@ export const THEMES = [
     tarmac: '#6d7580', tarmacGrit: [120, 30, 10],
     kerbA: '#2b56d6', kerbB: '#fff6e2',
     trunk: 0x6b4a30, leaf: 0x2c6b4a, treeShape: 'cone', treeCount: 380,
+    // and here they are mountains, which is the point of a pass
+    skyline: { kind: 'peak', near: 0x9db8cc, far: 0xc8dcea, n: 32, w: [38, 86], h: [40, 104] },
     /* A frozen lake to cross, a crevasse to jump, a shelf of ice with the
        ground gone either side of it, rollers that will not let you put the
        power down, and a run of bare ice across one half of the road. */
@@ -193,6 +203,8 @@ export const THEMES = [
     tarmac: '#31384a', tarmacGrit: [70, 26, 14],
     kerbA: '#ff2f6e', kerbB: '#8fe9ff',
     trunk: 0x2a3350, leaf: 0x39d0ff, treeShape: 'post', treeCount: 200,
+    // a city, seen from the middle of it
+    skyline: { kind: 'tower', near: 0x1b2340, far: 0x2b3960, n: 44, w: [16, 40], h: [34, 118] },
     /* A city: a climb round the outside of a tower with the camber wound up
        to hold it, a glass pipe through a building, two lanes of boosters, and
        the road pinching twice where it threads between blocks. */
@@ -237,6 +249,8 @@ export const THEMES = [
     tarmac: '#3c3438', tarmacGrit: [74, 26, 8],
     kerbA: '#ff7a1a', kerbB: '#2b2226',
     trunk: 0x2e2226, leaf: 0x6b3430, treeShape: 'spire', treeCount: 240,
+    // cinder cones, flat topped where the top has gone
+    skyline: { kind: 'volcano', near: 0x5a2f2c, far: 0x7d4740, n: 24, w: [44, 100], h: [32, 86] },
     /* The dangerous one: two fire pits with no road over them, two shelves
        that drop away, a climb round a spire, a lava tube, and ash across one
        side of the road where you would most like to be. */
