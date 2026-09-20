@@ -46,7 +46,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=29';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=30';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -145,6 +145,8 @@ export function makeKart(who, build) {
     // how hard you are revving on the grid, which everybody can see
     rev: 0,
     boost: 0, spin: 0, slow: 0, star: 0, bullet: 0,
+    // how long you have been sitting in somebody's air, and the shove it buys
+    draftT: 0, draft: 0,
     // over nothing: how long for, and how far down
     falling: 0, fallV: 0, fallY: 0, overEdge: 0, rescue: 0,
     // a trick: whether one is running, which one, and how far through it is
@@ -416,8 +418,13 @@ export function stepKart(k, input, track, dt) {
     const wantSlide = k.drift !== 0 ? -k.drift * (0.3 + Math.abs(input.steer) * 0.22)
                     : (k.onIce ? k.slide * 0.9 : k.slide * R.slide);
     k.slide += (wantSlide - k.slide) * Math.min(1, dt * 6);
-    // and it rolls to the outside of the corner, drifting or not
-    k.lean += ((k.drift !== 0 ? -k.drift * 0.16 : -steer * 0.05) - k.lean) * Math.min(1, dt * 8);
+    /* And it rolls. Hard, in a drift: the whole car is thrown over onto its
+       outside wheels and held there, which is most of what a Mario Kart drift
+       looks like from behind. Out of one it is a light lean on the steering. */
+    const wantLean = k.drift !== 0
+      ? -k.drift * (0.2 + Math.min(0.14, k.driftT * 0.12)) - steer * 0.05
+      : -steer * 0.06;
+    k.lean += (wantLean - k.lean) * Math.min(1, dt * 8);
   }
 
   // Back onto its wheels once the spin is done. It always lands face up: a kart
@@ -470,6 +477,14 @@ export function stepKart(k, input, track, dt) {
   k.squatV += (-k.squat * 46 - k.squatV * 9) * dt;
   k.squat += k.squatV * dt;
   if (Math.abs(k.squat) < 0.001 && Math.abs(k.squatV) < 0.01) { k.squat = 0; k.squatV = 0; }
+
+  /* The slipstream. Sit in somebody's air for a few seconds and the car finds
+     a shove worth about a mushroom, and it is gone the moment you touch
+     anything. It is the one thing in a kart game that rewards patience, and
+     without it a train of cars never breaks up. */
+  if (k.draftT >= 2.6 && k.draft <= 0) { k.draft = 0.9; k.boost = Math.max(k.boost, 0.9); k.draftT = 0; }
+  if (k.draft > 0) k.draft = Math.max(0, k.draft - dt);
+  if (k.wallHit || k.spin > 0) { k.draftT = 0; k.draft = 0; }
 
   if (k.boost > 0) k.boost = Math.max(0, k.boost - dt);
   if (k.star > 0) k.star = Math.max(0, k.star - dt);
