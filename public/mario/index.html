@@ -536,6 +536,54 @@
   #watch.on{ display:block; }
   #watch span{ color:var(--gold); }
 
+  /* Who you are watching, and how to watch somebody else. One button a driver
+     in running order along the bottom, between the lap counter on one side and
+     the speed on the other. It wraps rather than scrolls, because a grid of
+     eight has to be readable on a phone without anybody hunting for a driver
+     that is off the end of a strip. */
+  #spec{
+    position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:24;
+    display:none; flex-wrap:wrap; justify-content:center; gap:6px;
+    max-width:min(790px, calc(100vw - 400px));
+  }
+  #spec.on{ display:flex; }
+  #spec button{
+    display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+    font-family:var(--display); font-weight:800; font-size:13px; letter-spacing:.02em;
+    color:var(--ink); background:var(--cream); border:var(--key); border-radius:11px;
+    box-shadow:var(--drop); padding:5px 10px 6px; line-height:1;
+    transition:transform .08s ease, background .12s ease;
+  }
+  #spec button:hover{ transform:translateY(-1px); }
+  #spec button:active{ transform:translateY(2px); box-shadow:0 2px 0 var(--ink); }
+  #spec button:focus-visible{ outline:3px solid var(--gold); outline-offset:2px; }
+  #spec button.on{ background:var(--gold); }
+  #spec button i{
+    width:11px; height:11px; border-radius:50%; border:2px solid var(--ink); flex:none;
+  }
+  #spec button b{ opacity:.55; font-size:12px; }
+  /* the arrows are the narrow-screen version of the whole strip */
+  #spec button.step{ display:none; padding:5px 10px 6px; font-size:16px; }
+  /* There is no room along the bottom of a phone: the standings panel runs
+     from under the banner nearly to the floor, the map has one corner and the
+     speed has the other. So it collapses to the driver you are on with an
+     arrow either side, and goes where there is actually space, under the
+     banner on the left. */
+  @media (max-width: 860px){
+    #spec{
+      left:12px; right:auto; bottom:auto; top:128px; transform:none;
+      max-width:none; flex-wrap:nowrap; justify-content:flex-start;
+    }
+    #spec button.step{ display:inline-flex; }
+    #spec button[data-id]:not(.on){ display:none; }
+    #spec button{ font-size:12px; padding:4px 8px 5px; }
+    #spec button .nm{ display:none; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    #spec button{ transition:none; }
+    #spec button:hover{ transform:none; }
+  }
+
   /* ---------- chat ---------- */
   #chat{ position:fixed; left:26px; top:140px; width:320px; z-index:22; pointer-events:none; }
   #log{ display:flex; flex-direction:column; gap:4px; }
@@ -613,6 +661,7 @@
 <div id="count"><div class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></div><div class="word">GO!</div></div>
 
 <div id="watch" class="">Watching this race &middot; <span>you start the next one</span></div>
+<div id="spec"></div>
 
 <div id="menu">
   <div class="panel">
@@ -674,5 +723,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=36');
+await import('./game.js?v=37');
 </script>
