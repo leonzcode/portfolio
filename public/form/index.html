@@ -358,6 +358,17 @@
   .e-prog .rail i { display: block; height: 100%; background: var(--theme); }
   .e-prog small { font-size: 11px; color: var(--dim); }
   .e-done { flex: none; background: #e6f4ea; color: #137333; border-radius: 12px; padding: 2px 10px; font-size: 12px; }
+  .e-time {
+    flex: none; min-width: 56px; text-align: right;
+    font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink-2);
+  }
+  .e-time.done { color: var(--ok); font-weight: 500; }
+  .e-card.e-pin::before {
+    content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 6px;
+    background: #dadce0; border-radius: 8px 0 0 8px;
+  }
+  .e-sel-btn.e-fixed { cursor: default; background: #f8f9fa; color: var(--ink-2); }
+  .e-sel-btn.e-fixed:hover { background: #f8f9fa; }
   .e-trail { font-size: 12px; color: var(--ink-2); padding: 0 0 12px 44px; }
   .e-trail div { padding: 2px 0; }
   .e-empty { text-align: center; color: var(--dim); padding: 40px 16px; font-size: 14px; }
@@ -410,13 +421,13 @@
   .b-chart { margin-top: 12px; position: relative; }
   .b-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
   .b-grid { stroke: #e8eaed; stroke-width: 1; }
-  .b-axis { fill: var(--dim); font: 400 11px/14px var(--sans); }
+  .b-axis { fill: var(--dim); font: 400 var(--bfs, 11px)/1.25 var(--sans); }
   .b-bar { transition: opacity .12s ease; }
   .b-band:hover .b-bar, .b-band:focus-visible .b-bar { opacity: .8; }
   .b-band:focus { outline: none; }
   .b-band:focus-visible .b-hit { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
-  .b-val { fill: var(--ink); font: 500 11px/14px var(--sans); }
-  .b-name { fill: var(--ink-2); font: 400 11px/14px var(--sans); }
+  .b-val { fill: var(--ink); font: 500 var(--bfs, 11px)/1.25 var(--sans); }
+  .b-name { fill: var(--ink-2); font: 400 var(--bfs, 11px)/1.25 var(--sans); }
   .b-name.mine { fill: var(--ink); font-weight: 500; }
   .b-hit { fill: transparent; }
   .b-tip {
@@ -456,6 +467,47 @@
   .e-up { font-size: 12px; color: var(--dim); margin-top: 8px; }
   .e-up.bad { color: var(--err); }
 
+
+  /* ---- the big screen: the standings for a room to read ---- */
+  .p-wrap {
+    position: fixed; inset: 0; z-index: 60; background: var(--card);
+    display: flex; flex-direction: column; padding: 20px 24px 16px; gap: 14px;
+    overflow: hidden;
+  }
+  .p-head { display: flex; align-items: baseline; gap: 16px; flex: none; }
+  .p-head h1 { font: 400 clamp(22px, 3.2vw, 44px)/1.1 var(--disp); margin: 0; flex: 1; min-width: 0;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p-head .n { font: 400 clamp(13px, 1.5vw, 20px)/1.2 var(--sans); color: var(--dim); }
+  .p-close { flex: none; width: 44px; height: 44px; border: 0; background: none; border-radius: 50%;
+             display: grid; place-items: center; color: var(--ink-2); cursor: pointer; }
+  .p-close:hover { background: #f1f3f4; }
+  .p-body { flex: 1; min-height: 0; display: flex; gap: 20px; }
+  .p-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .p-chart { flex: none; }
+  .p-chart svg { display: block; width: 100%; height: auto; }
+  .p-list { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+  .p-row {
+    display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line);
+  }
+  .p-row:first-child { border-top: 0; }
+  .p-row .rank { color: var(--dim); text-align: right; flex: none; width: 2.2em; }
+  .p-row .sw { flex: none; border-radius: 3px; }
+  .p-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .p-row .sc { flex: none; font-variant-numeric: tabular-nums; }
+  .p-row .tm { flex: none; font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; }
+  .p-row .tm.done { color: var(--ok); }
+  .p-row.fin .nm { color: var(--ok); }
+  .p-side { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  .p-side svg { display: block; shape-rendering: crispEdges; }
+  .p-side .cap { text-align: center; color: var(--ink-2); line-height: 1.3; }
+  .p-side .url { color: var(--dim); word-break: break-all; }
+  .p-none { color: var(--dim); display: grid; place-items: center; height: 100%; }
+  @media (max-width: 760px) {
+    .p-wrap { padding: 12px 14px; gap: 10px; }
+    .p-body { flex-direction: column; gap: 12px; }
+    .p-side { flex-direction: row; justify-content: flex-start; gap: 14px; }
+    .p-side .cap { text-align: left; }
+  }
   @media (max-width: 720px) {
     .b-split { flex-direction: column; gap: 20px; }
     .b-qr { width: 100%; }
@@ -601,7 +653,7 @@
                   "#00bcd4", "#4285f4", "#3f51b5", "#673ab7", "#795548", "#607d8b"];
 
   /* ---------- the standings graph ----------
-     Eight hues in a fixed order, handed out to hunters in the order they first
+     Eight hues in a fixed order, handed out to players in the order they first
      appear and never re-shuffled, so a team keeps its colour as it moves up and
      down the board. Past eight, the rest of the field is drawn in grey rather
      than in invented hues. The set is validated for colour-blind separation on a
@@ -626,15 +678,15 @@
   /* ---------- state ---------- */
   var S = {
     head: { title: "", description: "", theme: "#673ab7" },
-    settings: { cooldownMs: 5000, askName: true, showCount: true, showHints: true, finishTitle: "", finishNote: "" },
+    settings: { cooldownMs: 5000, showCount: true, showHints: true, finishTitle: "", finishNote: "" },
     total: 0, q: null, here: 1, v: 0,
+    nameQ: { title: "What is your group name?", help: "" },
     you: { name: "", solved: 0, wrong: 0, done: false, until: 0, log: [] }
   };
   var mode = "view";                 // view | signin | editor
   var live = false;
   var draft = {};                    // qid -> what is typed or ticked, so a repaint keeps it
   var verdict = null;                // { bad: true, until, hint } for the question on screen
-  var nameDone = store("form_named") === "1";
   var viewAt = null;                 // which earlier question is being looked at, null for the live one
   var lastSent = null;               // what went out last, so a right answer can be kept
   var restoreTried = false;
@@ -660,7 +712,7 @@
   var uid = store("form_uid") || "";
   var myName = store("form_name") || "";
 
-  var B = { total: 0, you: -1, rows: [] };      // the standings, as everyone may see them
+  var B = { total: 0, you: -1, rows: [], at: 0 };   // the standings, and when they arrived
   var E = { form: null, players: [], tab: "q", sel: null, adv: {}, dirty: false, saving: false, queued: null, menu: null, editors: 1 };
 
   /* ---------- the socket ---------- */
@@ -776,9 +828,10 @@
       return;
     }
     if (m.type === "board") {
-      B = { total: m.total || 0, you: typeof m.you === "number" ? m.you : -1, rows: m.rows || [] };
+      B = { total: m.total || 0, you: typeof m.you === "number" ? m.you : -1, rows: m.rows || [], at: Date.now() };
       if (typeof m.here === "number") { S.here = m.here; var h2 = $("here"); if (h2) h2.textContent = m.here; }
       paintBoard();
+      if (presenting) paintPresent();
       return;
     }
     // the organiser cleared this browser on purpose, so the copy it keeps goes too
@@ -790,6 +843,11 @@
       return;
     }
     if (m.type === "name") { myName = m.name; store("form_name", myName); return; }
+    if (m.type === "noname") {
+      var ne = $("nameerr");
+      if (ne) { ne.style.display = ""; ne.lastChild.textContent = "That name will not do. Try letters and numbers."; }
+      return;
+    }
     if (m.type === "here") { S.here = m.here; var h = $("here"); if (h) h.textContent = m.here; return; }
     if (m.type === "full") { alert("This form has as many people on it as it can hold right now. Try again in a minute."); return; }
 
@@ -853,6 +911,7 @@
     var wasQ = S.q ? S.q.id : null;
     var wasSolved = S.you ? S.you.solved : -1;
     S.head = m.head; S.settings = m.settings; S.total = m.total; S.you = m.you; S.q = m.q; S.v = m.v;
+    if (m.nameQ) S.nameQ = m.nameQ;
     S.past = m.past || [];
     // a newly opened question puts you back on the live one
     if (S.you.solved !== wasSolved) viewAt = null;
@@ -983,25 +1042,12 @@
     stage.innerHTML = "";
     if (!live && !S.total) { stage.appendChild(noteCard("Connecting to the form...")); return; }
     if (!S.total) { stage.appendChild(noteCard("This form has no questions yet.")); return; }
-    if (S.settings.askName && !S.you.name && !nameDone && S.you.solved === 0) { stage.appendChild(nameCard()); return; }
+    if (!S.you.name && S.you.solved === 0) { stage.appendChild(nameCard()); return; }
     if (viewAt !== null && S.past && S.past[viewAt]) stage.appendChild(pastBlock(S.past[viewAt]));
     else if (S.you.done) stage.appendChild(doneCard());
     else stage.appendChild(questionBlock());
-    if (S.settings.showBoard !== false) {
-      stage.appendChild(boardCard());
-      paintBoard();          // filled once it is in the document: the graph measures itself
-    }
   }
 
-  function boardCard() {
-    var c = el("div", "f-card");
-    var pad = el("div", "f-pad");
-    var node = el("div");
-    node.id = "board";
-    pad.appendChild(node);
-    c.appendChild(pad);
-    return c;
-  }
   function paintQuestion() { paintStage(); }
 
   function noteCard(text) {
@@ -1012,12 +1058,17 @@
     return c;
   }
 
+  // The first question every form has. The wording is the editor's, the job it does
+  // is fixed: what gets typed here is the name everybody else is shown.
   function nameCard() {
     var frag = document.createDocumentFragment();
     var c = el("div", "f-card f-anim");
     var pad = el("div", "f-pad");
-    pad.appendChild(el("div", "f-q-title", "Your name"));
-    pad.appendChild(el("p", "f-help", "So the hunt knows who got there. Leave it blank to stay anonymous."));
+    var t = el("div", "f-q-title");
+    t.appendChild(document.createTextNode((S.nameQ && S.nameQ.title) || "What is your group name?"));
+    t.appendChild(el("span", "f-star", " *"));
+    pad.appendChild(t);
+    if (S.nameQ && S.nameQ.help) pad.appendChild(el("p", "f-help", S.nameQ.help));
     var f = el("div", "f-field");
     var line = el("div", "f-line f-short");
     var inp = el("input", "f-input");
@@ -1028,23 +1079,31 @@
     line.appendChild(inp);
     f.appendChild(line);
     pad.appendChild(f);
+    var err = el("div", "f-err");
+    err.id = "nameerr";
+    err.style.display = "none";
+    err.appendChild(svg(ICON.bang));
+    err.appendChild(el("span", null, "This is a required question"));
+    pad.appendChild(err);
     c.appendChild(pad);
     frag.appendChild(c);
 
     var row = el("div", "f-row");
-    var btn = el("button", "f-btn", "Start");
+    var btn = el("button", "f-btn", "Next");
     btn.type = "button";
     btn.addEventListener("click", go);
     row.appendChild(btn);
+    if (S.settings.showCount) row.appendChild(el("div", "f-count", "Question 1 of " + (S.total + 1)));
     frag.appendChild(row);
 
     function go() {
-      myName = inp.value.trim();
+      var v = inp.value.trim();
+      if (!v) { err.style.display = ""; line.classList.add("bad"); inp.focus(); return; }
+      err.style.display = "none";
+      line.classList.remove("bad");
+      myName = v;
       store("form_name", myName);
-      store("form_named", "1");
       send({ type: "name", name: myName });
-      nameDone = true;
-      paintStage();
     }
     setTimeout(function () { inp.focus(); }, 30);
     return frag;
@@ -1085,7 +1144,7 @@
     a.href = "#";
     a.addEventListener("click", function (ev) {
       ev.preventDefault();
-      nameDone = false; draft = {}; verdict = null; viewAt = null;
+      draft = {}; verdict = null; viewAt = null;
       forgetAnswers();
       send({ type: "restart" });
     });
@@ -1168,7 +1227,7 @@
       paintStage();
     });
     row.appendChild(fwd);
-    if (S.settings.showCount) row.appendChild(el("div", "f-count", "Question " + pq.n + " of " + S.total));
+    if (S.settings.showCount) row.appendChild(el("div", "f-count", "Question " + (pq.n + 1) + " of " + (S.total + 1)));
     frag.appendChild(row);
 
     var bar = el("div", "f-bar");
@@ -1388,7 +1447,7 @@
     clear.type = "button";
     clear.addEventListener("click", function () { delete draft[q.id]; verdict = null; paintStage(); });
     row.appendChild(clear);
-    if (S.settings.showCount) row.appendChild(el("div", "f-count", "Question " + q.n + " of " + S.total));
+    if (S.settings.showCount) row.appendChild(el("div", "f-count", "Question " + (q.n + 1) + " of " + (S.total + 1)));
     frag.appendChild(row);
 
     var bar = el("div", "f-bar");
@@ -1450,7 +1509,7 @@
 
   // One bar per team, as tall as the number of questions they have found. Sorted
   // by who is furthest along, so the shape of the race reads left to right.
-  function chartInto(wrap, rows, total, youIdx) {
+  function chartInto(wrap, rows, total, youIdx, wantH) {
     // The viewBox is measured in real pixels rather than a fixed width, so the axis
     // text is never scaled up on a phone or down on a wide screen.
     var W = Math.max(300, Math.round(wrap.clientWidth || 640));
@@ -1465,16 +1524,24 @@
     if (youIdx >= 0 && youIdx >= cap) { shown[shown.length - 1] = { r: rows[youIdx], i: youIdx }; }
     var n = shown.length;
 
-    var padL = 26, padR = 12, padT = 20, padB = 34;
-    var H = (narrow ? 172 : 200) + padB - 26;
+    var H = wantH ? Math.round(wantH) : ((narrow ? 172 : 200) + 8);
+    // Everything around the plot is measured in the type it has to hold, so a graph
+    // blown up for a room keeps the same air around its labels as one on a card.
+    var fs = Math.round(11 * Math.max(1, Math.min(2.4, H / 200)));
+    var padL = Math.round(fs * 2.2), padR = Math.round(fs * 1.1);
+    var padT = Math.round(fs * 2), padB = Math.round(fs * 2.8);
     var plotW = W - padL - padR, plotH = H - padT - padB;
     var band = plotW / Math.max(1, n);
-    var barW = Math.max(6, Math.min(narrow ? 20 : 24, band - 12));   // never fill the slot
+    // A bar is capped so it never fills its slot, but the cap grows with the graph:
+    // 24px is right on a card and spindly on a projector.
+    var barCap = Math.max(narrow ? 20 : 24, Math.round(H * 0.11));
+    var barW = Math.max(6, Math.min(barCap, band - 12));
     var y = function (v) { return padT + (1 - (total ? v / total : 0)) * plotH; };
     var y0 = y(0);
 
     var svg = sEl("svg", { viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "xMidYMid meet" });
     svg.setAttribute("aria-hidden", "true");
+    svg.style.setProperty("--bfs", fs + "px");
 
     // A gridline per question while they still read as separate lines, and only
     // three of them wear a number: the floor, the middle and the finish.
@@ -1493,15 +1560,15 @@
       var yy = y(v);
       svg.appendChild(sEl("line", { x1: padL, x2: W - padR, y1: yy, y2: yy, class: "b-grid" }));
       if (!labelled[v]) return;
-      var lab = sEl("text", { x: padL - 6, y: yy + 4, "text-anchor": "end", class: "b-axis" });
+      var lab = sEl("text", { x: padL - Math.round(fs * 0.5), y: yy + Math.round(fs * 0.36), "text-anchor": "end", class: "b-axis" });
       lab.textContent = String(v);
       svg.appendChild(lab);
     });
     // what the two axes are: the count up the side, the teams along the bottom
-    var cap = sEl("text", { x: padL - 6, y: 10, "text-anchor": "start", class: "b-axis" });
+    var cap = sEl("text", { x: padL - Math.round(fs * 0.5), y: Math.round(fs * 1.1), "text-anchor": "start", class: "b-axis" });
     cap.textContent = "questions answered";
     svg.appendChild(cap);
-    var fin = sEl("text", { x: W - padR, y: 10, "text-anchor": "end", class: "b-axis" });
+    var fin = sEl("text", { x: W - padR, y: Math.round(fs * 1.1), "text-anchor": "end", class: "b-axis" });
     fin.textContent = "all " + total + " to find";
     svg.appendChild(fin);
 
@@ -1530,14 +1597,14 @@
         g.appendChild(sEl("path", { d: d, fill: colorOf(r.name), class: "b-bar" }));
       }
       // the count sits above the bar, or just above the floor when there is no bar yet
-      if (band >= 22) {
-        var val = sEl("text", { x: cx, y: (r.solved > 0 ? top : y0) - 6, "text-anchor": "middle", class: "b-val" });
+      if (band >= fs * 2) {
+        var val = sEl("text", { x: cx, y: (r.solved > 0 ? top : y0) - Math.round(fs * 0.55), "text-anchor": "middle", class: "b-val" });
         val.textContent = String(r.solved);
         svg.appendChild(val);
       }
-      var room = Math.max(3, Math.floor(band / 6.2));
+      var room = Math.max(3, Math.floor(band / (fs * 0.56)));
       var nm = mine ? "You" : r.name;
-      var nameLab = sEl("text", { x: cx, y: y0 + 16, "text-anchor": "middle",
+      var nameLab = sEl("text", { x: cx, y: y0 + Math.round(fs * 1.5), "text-anchor": "middle",
                                   class: "b-name" + (mine ? " mine" : "") });
       nameLab.textContent = nm.length > room ? nm.slice(0, room - 1) + String.fromCharCode(8230) : nm;
       svg.appendChild(nameLab);
@@ -1583,13 +1650,117 @@
     return n;                            // how many bars the graph could show
   }
 
+
+  /* ---------- the big screen ---------- */
+  var presenting = false;
+
+  // The standings carry how long each player has been going; between pushes the
+  // page keeps counting on its own so the clock does not stutter.
+  function clockOf(r) {
+    var ms = (r.since | 0) + (r.done ? 0 : Math.max(0, Date.now() - (B.at || Date.now())));
+    return fmtClock(ms);
+  }
+
+  function presentOn() { presenting = true; paintPresent(); }
+  function presentOff() {
+    presenting = false;
+    var n = $("present");
+    if (n) n.remove();
+    document.body.style.overflow = "";
+  }
+  // Laid out for a room: the graph across the top of the space it has, the table
+  // underneath at whatever size fits the number of people playing, and the code to
+  // join beside them. It re-measures whenever the window does, so it reads the same
+  // on a laptop as it does thrown up on a projector.
+  function paintPresent() {
+    if (!presenting) return;
+    var old = $("present");
+    if (old) old.remove();
+    var rows = B.rows || [], total = B.total || 0;
+
+    var wrap = el("div", "p-wrap");
+    wrap.id = "present";
+    var head = el("div", "p-head");
+    head.appendChild(el("h1", null, (E.form && E.form.title) || S.head.title || "Scavenger Hunt"));
+    head.appendChild(el("div", "n", (rows.length === 1 ? "1 player" : rows.length + " players") +
+                                   (total ? (" " + String.fromCharCode(183) + " " + total + " to find") : "")));
+    var x = el("button", "p-close");
+    x.type = "button";
+    x.title = "Close (Esc)";
+    x.appendChild(svg(ICON.close));
+    x.addEventListener("click", presentOff);
+    head.appendChild(x);
+    wrap.appendChild(head);
+
+    var body = el("div", "p-body");
+    var left = el("div", "p-left");
+    var side = el("div", "p-side");
+
+    // the code to join, sized to the room
+    var qs = Math.round(Math.max(120, Math.min(260, Math.min(window.innerWidth, window.innerHeight) * 0.24)));
+    var q = qrSvg();
+    q.style.width = qs + "px";
+    q.style.height = qs + "px";
+    side.appendChild(q);
+    var cap = el("div", "cap", "Scan to join");
+    cap.style.fontSize = Math.round(qs * 0.09) + "px";
+    side.appendChild(cap);
+    var url = el("div", "url", "leonzhao.dev/form");
+    url.style.fontSize = Math.round(qs * 0.072) + "px";
+    side.appendChild(url);
+
+    var chartWrap = el("div", "p-chart");
+    left.appendChild(chartWrap);
+    var list = el("div", "p-list");
+    left.appendChild(list);
+    body.appendChild(left);
+    body.appendChild(side);
+    wrap.appendChild(body);
+    document.body.appendChild(wrap);
+    document.body.style.overflow = "hidden";
+
+    if (!rows.length) {
+      list.appendChild(el("div", "p-none", "Nobody has joined yet. The code is up there when they are ready."));
+      return;
+    }
+
+    // how much room is left once the heading and the graph have had theirs
+    var free = body.clientHeight;
+    var chartH = Math.round(Math.max(120, Math.min(free * 0.52, 420)));
+    chartInto(chartWrap, rows, total, -1, chartH);
+    var forList = Math.max(80, free - chartWrap.offsetHeight - 12);
+    var rowH = Math.max(22, Math.min(64, Math.floor(forList / rows.length)));
+    var fsize = Math.max(12, Math.min(30, Math.round(rowH * 0.5)));
+
+    rows.forEach(function (r, i) {
+      var row = el("div", "p-row" + (r.done ? " fin" : ""));
+      row.style.height = rowH + "px";
+      row.style.font = "400 " + fsize + "px/1.1 var(--sans)";
+      var rank = el("div", "rank", String(i + 1));
+      row.appendChild(rank);
+      var sw = el("div", "sw");
+      sw.style.cssText = "width:" + Math.round(fsize * 0.62) + "px;height:" + Math.round(fsize * 0.62) +
+                         "px;background:" + colorOf(r.name) + ";border-radius:3px;";
+      row.appendChild(sw);
+      row.appendChild(el("div", "nm", r.name));
+      var sc = el("div", "sc", r.solved + " of " + total);
+      row.appendChild(sc);
+      var tm = el("div", "tm" + (r.done ? " done" : ""));
+      tm.id = "pp_" + i;
+      tm.style.minWidth = (fsize * 3.4) + "px";
+      tm.textContent = clockOf(r);
+      row.appendChild(tm);
+      list.appendChild(row);
+    });
+  }
+
   function boardInto(node) {
     node.innerHTML = "";
     var rows = B.rows || [], total = B.total || S.total || 0;
 
     var top = el("div", "b-top");
     top.appendChild(el("h2", null, "How everyone is doing"));
-    var count = el("div", "n", rows.length === 1 ? "1 hunter" : rows.length + " hunters");
+    var count = el("div", "n", rows.length === 1 ? "1 player" : rows.length + " players");
     top.appendChild(count);
     node.appendChild(top);
 
@@ -1599,9 +1770,9 @@
       // Each bar carries its own name, so nothing here needs a legend to say
       // which is which; the table underneath holds everybody either way.
       var drawn = chartInto(wrap, rows, total, B.you);
-      if (drawn < rows.length) count.textContent = "top " + drawn + " of " + rows.length + " hunters";
+      if (drawn < rows.length) count.textContent = "top " + drawn + " of " + rows.length + " players";
     } else {
-      node.appendChild(el("div", "b-none", "Nobody has answered anything yet. The graph fills in as people go."));
+      node.appendChild(el("div", "b-none", "Nobody has joined yet. Everyone who does turns up here."));
     }
 
     var split = el("div", "b-split");
@@ -1609,7 +1780,7 @@
     var table = el("table", "b-table");
     var thead = el("thead");
     var hr = el("tr");
-    ["", "Hunter", "Found", "Last one"].forEach(function (h, i) {
+    ["", "Player", "Found", "Last one"].forEach(function (h, i) {
       var th = el("th", i >= 2 ? "num" : null, h);
       if (i >= 2) th.style.textAlign = "right";
       hr.appendChild(th);
@@ -1637,7 +1808,7 @@
     });
     if (!rows.length) {
       var tr0 = el("tr");
-      var td0 = el("td", null, "No hunters yet.");
+      var td0 = el("td", null, "No players yet.");
       td0.colSpan = 4;
       td0.style.color = "var(--dim)";
       tr0.appendChild(td0);
@@ -1991,6 +2162,8 @@
     head.appendChild(inner);
     body.appendChild(head);
 
+    body.appendChild(nameQCard());
+
     if (!f.questions.length) {
       var empty = el("div", "e-card");
       empty.appendChild(el("div", "e-empty", "No questions yet. Use the + button to add the first one."));
@@ -2004,6 +2177,40 @@
     add.addEventListener("click", function () { addQuestion(); });
     fab.appendChild(add);
     body.appendChild(fab);
+  }
+
+  // The group-name question, shown where it lives: first, above everything, with no
+  // way to move it, delete it or turn it into something else. Only its wording is
+  // the editor's to change.
+  function nameQCard() {
+    var f = E.form;
+    if (!f.nameQ) f.nameQ = { title: "What is your group name?", help: "" };
+    var card = el("div", "e-card e-pin");
+    var top = el("div", "e-top");
+    var l = el("div", "l");
+    l.appendChild(growInput("q", "nq_title", f.nameQ.title, "Question", function (v) {
+      f.nameQ.title = v;
+      typed(["nameQ", "title"], function () { return f.nameQ.title; });
+    }));
+    l.appendChild(growInput("small", "nq_help", f.nameQ.help, "Description (optional)", function (v) {
+      f.nameQ.help = v;
+      typed(["nameQ", "help"], function () { return f.nameQ.help; });
+    }));
+    top.appendChild(l);
+    var fixed = el("div", "e-sel");
+    var chip = el("div", "e-sel-btn e-fixed");
+    chip.appendChild(svg(ICON.short));
+    chip.appendChild(el("span", null, "Group name"));
+    fixed.appendChild(chip);
+    top.appendChild(fixed);
+    card.appendChild(top);
+
+    var note = el("div", "e-photo");
+    note.appendChild(svg(ICON.check));
+    note.appendChild(el("span", null, "Always the first question. Whatever they type here is the name everyone sees on the standings, and any name counts as an answer."));
+    note.style.marginTop = "16px";
+    card.appendChild(note);
+    return card;
   }
 
   function newId() { return "q" + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36); }
@@ -2096,7 +2303,7 @@
     if (q.type === "photo") {
       var pn = el("div", "e-photo");
       pn.appendChild(svg(ICON.photo));
-      pn.appendChild(el("span", null, "The hunter sends a photo. Any photo counts as the answer, and it turns up on the Responses tab."));
+      pn.appendChild(el("span", null, "The player sends a photo. Any photo counts as the answer, and it turns up on the Responses tab."));
       area.appendChild(pn);
     } else if (q.type === "short" || q.type === "para") {
       area.appendChild(acceptedAnswers(q));
@@ -2358,7 +2565,7 @@
   /* ---------- responses tab ---------- */
 
   // The shell is built once; the parts that change while you are looking at them
-  // are refilled in place, so a hunter answering something does not throw the page
+  // are refilled in place, so a player answering something does not throw the page
   // about under the pointer.
   function paintResponsesTab(body) {
     var stats = el("div", "e-stats");
@@ -2375,9 +2582,14 @@
     var top = el("div");
     top.style.cssText = "display:flex;align-items:center;gap:12px;margin-bottom:8px;";
     var h = el("div", null);
-    h.appendChild(el("div", "e-sec", "Who is hunting"));
+    h.appendChild(el("div", "e-sec", "Who is playing"));
     h.style.flex = "1";
     top.appendChild(h);
+    var big = el("button", "e-ghost", "Full screen");
+    big.type = "button";
+    big.title = "Put the standings up for the room";
+    big.addEventListener("click", presentOn);
+    top.appendChild(big);
     var clearAll = el("button", "e-ghost", "Delete all responses");
     clearAll.type = "button";
     clearAll.addEventListener("click", function () {
@@ -2424,6 +2636,12 @@
       who.appendChild(el("b", null, p.name || "Anonymous"));
       who.appendChild(el("i", null, (p.wrong ? p.wrong + " wrong so far" : "no wrong answers") + " " + String.fromCharCode(183) + " " + ago(p.lastAt)));
       row.appendChild(who);
+      // running since they gave their name, stopped the moment they finished
+      var clock = el("div", "e-time" + (p.doneAt ? " done" : ""));
+      clock.id = "pt_" + p.uid;
+      clock.title = p.doneAt ? "How long the whole hunt took them" : "Running since they gave their name";
+      clock.textContent = elapsedOf(p);
+      row.appendChild(clock);
       var prog = el("div", "e-prog");
       var rail = el("div", "rail");
       var fill = el("i");
@@ -2455,6 +2673,36 @@
       }
     });
   }
+  function fmtClock(ms) {
+    var t = Math.max(0, Math.floor(ms / 1000));
+    var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    var two = function (n) { return n < 10 ? "0" + n : "" + n; };
+    return h ? (h + ":" + two(m) + ":" + two(sec)) : (m + ":" + two(sec));
+  }
+  function elapsedOf(p) {
+    var from = p.startedAt || 0;
+    if (!from) return "0:00";
+    return fmtClock((p.doneAt || Date.now()) - from);
+  }
+  // The clocks tick on their own rather than through a repaint, so the list does not
+  // rebuild itself under the pointer once a second.
+  setInterval(function () {
+    if (mode !== "editor") return;
+    if (E.tab === "r") {
+      for (var i = 0; i < E.players.length; i++) {
+        var p = E.players[i], n = $("pt_" + p.uid);
+        if (n && !p.doneAt) n.textContent = elapsedOf(p);
+      }
+    }
+    if (presenting) {
+      var rows = B.rows || [];
+      for (var k = 0; k < rows.length; k++) {
+        var t = $("pp_" + k);
+        if (t) t.textContent = clockOf(rows[k]);
+      }
+    }
+  }, 1000);
+
   function hash(s) { var h = 0; s = String(s); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
 
   /* ---------- settings tab ---------- */
@@ -2505,12 +2753,9 @@
       s.caseSensitive, function (v) { s.caseSensitive = v; setOp(["settings", "caseSensitive"], v); paintEditor(); }));
     c1.appendChild(toggleRow("Show a hint after a wrong answer", "Only questions that have a hint written will show one.",
       s.showHints, function (v) { s.showHints = v; setOp(["settings", "showHints"], v); paintEditor(); }));
-    c1.appendChild(toggleRow("Ask for a name first", "The name shows up on the Responses tab.",
-      s.askName, function (v) { s.askName = v; setOp(["settings", "askName"], v); paintEditor(); }));
     c1.appendChild(toggleRow("Show the question counter", "Question 3 of 6, under the answer.",
       s.showCount, function (v) { s.showCount = v; setOp(["settings", "showCount"], v); paintEditor(); }));
-    c1.appendChild(toggleRow("Show the standings", "The graph of who has found what, and the QR code for joining. Everyone on the form can see it.",
-      s.showBoard !== false, function (v) { s.showBoard = v; setOp(["settings", "showBoard"], v); paintEditor(); }));
+    c1.appendChild(el("p", "e-sub", "The group name is always the first question, and it always asks for a name. Its wording is yours to change at the top of the Questions tab."));
     body.appendChild(c1);
 
     var c2 = el("div", "e-card");
@@ -2562,7 +2807,10 @@
   var reflow = null;
   window.addEventListener("resize", function () {
     clearTimeout(reflow);
-    reflow = setTimeout(paintBoard, 200);
+    reflow = setTimeout(function () { paintBoard(); if (presenting) paintPresent(); }, 200);
+  });
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && presenting) { e.preventDefault(); presentOff(); }
   });
   window.__form = { state: function () { return S; }, editor: function () { return E; } };
 })();
