@@ -46,7 +46,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=33';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=34';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -444,9 +444,20 @@ export function stepKart(k, input, track, dt) {
       }
     }
     if (!input.hop && k.drift !== 0) {
-      // let go and whatever tier was reached comes out
+      /* Let go and whatever tier was reached comes out, for as long as it was
+         held. Mario Kart does not pay a flat amount per colour: the boost runs
+         anywhere from about a second to about three depending on how far into
+         the charge you were when you released, which is why holding a purple
+         a moment longer is worth doing rather than letting it go the instant
+         it turns. A third again across a tier is the span of it. */
       const tier = driftTier(k);
-      if (tier) k.boost = Math.max(k.boost, MT[tier - 1] * R.boost * (k.parts ? k.parts.boost : 1));
+      if (tier) {
+        const from = MT_AT[tier - 1];
+        const to = MT_AT[tier] === undefined ? from + 1.3 : MT_AT[tier];
+        const into = Math.max(0, Math.min(1, (k.driftT - from) / (to - from)));
+        const dur = MT[tier - 1] * (1 + into * 0.34);
+        k.boost = Math.max(k.boost, dur * R.boost * (k.parts ? k.parts.boost : 1));
+      }
       k.drift = 0; k.driftT = 0; k.pendingDrift = 0;
     }
 
