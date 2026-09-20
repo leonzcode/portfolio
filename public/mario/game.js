@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=31';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=31';
-import { packLook, unpackLook, normalise } from './parts.js?v=31';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=31';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=31';
-import { makeRescue } from './rescue.js?v=31';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=31';
-import { makeBrain, driveBrain } from './ai.js?v=31';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=31';
-import { makeCones } from './cones.js?v=31';
-import { makeHazards } from './hazards.js?v=31';
-import { THEMES, themeById } from './themes.js?v=31';
-import * as snd from './audio.js?v=31';
+import { buildTrack } from './track.js?v=32';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=32';
+import { packLook, unpackLook, normalise } from './parts.js?v=32';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=32';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=32';
+import { makeRescue } from './rescue.js?v=32';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=32';
+import { makeBrain, driveBrain } from './ai.js?v=32';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=32';
+import { makeCones } from './cones.js?v=32';
+import { makeHazards } from './hazards.js?v=32';
+import { THEMES, themeById } from './themes.js?v=32';
+import * as snd from './audio.js?v=32';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -226,15 +226,23 @@ addEventListener('keydown', e => {
   if (k === 'escape' && started) { menu(!paused); e.preventDefault(); return; }
   if (paused) return;                       // the menu has the keyboard while it is up
   if (hit('chat', k) && started) { openChat(); e.preventDefault(); }
-  if (hit('item', k) && started) useItem(me);
+  if (hit('item', k) && started) itemDown(me);
   if (phase === 'wait' && k >= '1' && k <= '5') castVote(THEMES[+k - 1].id);
   if (hit('go', k) && started && phase === 'wait' && net && net.alive) net.go();
   if (hit('view', k) && started) { camMode = (camMode + 1) % CAM.length; notice(CAM[camMode].name + ' view'); }
   if (hit('mute', k) && started) { snd.mute(!snd.muted_()); notice(snd.muted_() ? 'Sound off' : 'Sound on'); }
   if (bound(k)) e.preventDefault();
 });
-addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
-addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = false;
+  if (hit('item', k) && started && !paused) itemUp(me);
+});
+addEventListener('blur', () => {
+  for (const k in keys) keys[k] = false;
+  // the window going away is not a reason to keep holding a shell out
+  if (me && me.holdKind) itemUp(me);
+});
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -338,7 +346,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=31')
+  import('./props.js?v=32')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -563,6 +571,12 @@ function useItem(k) {
     items.spawn(id, k, karts);
   }
   if (net && k === me) net.fire(id);
+  spendItem(k);
+}
+
+/* One of whatever is in the slot is gone, however it went: thrown, dropped, or
+   taken off you by the shell it was shielding you from. */
+function spendItem(k) {
   k.itemN--;
   if (k.itemN <= 0) {
     const next = k.queue.shift();
@@ -570,6 +584,38 @@ function useItem(k) {
     else { k.item = null; k.itemN = 0; }
   }
   if (k === me) { hudItem(); useHint(false); }
+}
+
+/* Tap to throw, hold to trail.
+
+   Everything you can throw or drop can be held behind the car instead, which
+   is the Mario Kart control: press and it comes out onto your tail, let go and
+   it goes. A tap is a press and a release a frame apart, so throwing still
+   works exactly as it did without a threshold anywhere. */
+const CAN_TRAIL = { peel: 1, slick: 1, bolt: 1, seeker: 1, bomb: 1 };
+function itemDown(k) {
+  if (!k || !k.item || k.finished || phase !== 'race') return;
+  if (k.holdKind) return;                       // already out there
+  if (!CAN_TRAIL[k.item]) { useItem(k); return; }
+  items.hold(k.item, k);
+  if (k === me) snd.tick();
+}
+function itemUp(k) {
+  if (!k || !k.holdKind) return;
+  k.holdFor = 0;
+  items.drop(k);
+  useItem(k);
+}
+
+/* The computer drivers hold things too, for a second or three before they let
+   go. Without it the shield only ever works one way, and running up the back
+   of a car carrying a shell is free. */
+function botItem(k) {
+  if (!k || k.holdKind) return;
+  if (CAN_TRAIL[k.item] && Math.random() < 0.55) {
+    itemDown(k);
+    k.holdFor = 1 + Math.random() * 2.6;
+  } else useItem(k);
 }
 
 /* --------------------------------------------------------------- the world -- */
@@ -607,7 +653,7 @@ function stepWorld(dt) {
   }
   for (const b of brains) {
     b.hazards = dodge;
-    const inp = driveBrain(b, track, dt, karts, leader, useItem);
+    const inp = driveBrain(b, track, dt, karts, leader, botItem);
     b.input = inp;
   }
 
@@ -824,7 +870,27 @@ function stepWorld(dt) {
     if (kind === 'bomb' && Math.hypot(k.pos.x - (me ? me.pos.x : 0), k.pos.z - (me ? me.pos.z : 0)) < 22) snd.bang();
     // my shell, their kart: their browser has to be told, it owns that kart
     if (k.remote && me && by === me.id && net) net.hitThem(k.id, kind);
+  }, k => {
+    // it took the hit instead of you, and went with it
+    if (k === me) { notice('Blocked!'); snd.bump(); }
+    puff(k.pos.clone().setY(k.pos.y + 0.7), 0xfff6e2);
+    spendItem(k);
   });
+
+  /* And it is not yours any more once you have been spun round, finished, or
+     left the road: a car cartwheeling down the circuit is not holding
+     anything, whatever the picture says. */
+  for (const k of karts) {
+    if (!k.holdKind) continue;
+    if (k.spin > 0 || k.finished || k.rescue || phase !== 'race') {
+      k.holdFor = 0;
+      items.drop(k);
+      spendItem(k);
+      continue;
+    }
+    // and a computer driver lets go of it when it has held it long enough
+    if (k.holdFor > 0) { k.holdFor -= dt; if (k.holdFor <= 0) itemUp(k); }
+  }
 
   // the boxes come back
   for (const b of track.itemBoxes) if (b.taken > 0) b.taken -= dt;
@@ -1451,7 +1517,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=31');
+    const mod = await import('./net.js?v=32');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1764,6 +1830,10 @@ window.__mk = {
   },
   get held() { return me ? [me.item && { id: me.item, n: me.itemN }].filter(Boolean).concat(me.queue) : []; },
   use() { useItem(me); },
+  /* Tap to throw, hold to trail. key() sets the key map rather than going
+     through the keyboard listeners, and both halves of this live in those, so
+     a test drives them directly. */
+  hold(on) { if (on) itemDown(me); else itemUp(me); return me ? (me.holdKind || null) : null; },
   get brains() { return brains; },
   tp(s, lateral) { return window.__mk.tpKart(me, s, lateral); },
   tpKart(k, s, lateral) {

@@ -11,7 +11,7 @@
    little SVG for the slot in the corner of the screen.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { spinOut } from './kart.js?v=31';
+import { spinOut } from './kart.js?v=32';
 
 const svg = (inner) => '<svg viewBox="0 0 64 64" width="100%" height="100%">' + inner + '</svg>';
 const K = 'stroke="#17223b" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';
@@ -199,7 +199,40 @@ export function makeItemWorld(scene, track, fx) {
     return best;
   }
 
-  function step(dt, karts, onHit) {
+  /* ---- held behind you ---------------------------------------------------
+     In Mario Kart you hold the button rather than tapping it, and the shell or
+     the banana sits a couple of metres off your tail. It is a threat and a
+     shield at the same time: anything coming up behind hits that instead of
+     you, which is most of why holding a green shell is worth more than
+     throwing one, and why the car in front of you dawdling with a banana out
+     is a car you cannot simply drive into.
+
+     It hangs off the kart's own group, so it follows the car round corners for
+     free and needs nothing per frame. Local +z is behind here, the same
+     convention the rest of the car is built in. */
+  function hold(kind, owner) {
+    if (!owner || owner.holdMesh) return;
+    const g = shapeFor(kind);
+    g.position.set(0, 0.6, 2.7);
+    g.scale.setScalar(0.85);
+    owner.group.add(g);
+    owner.holdKind = kind;
+    owner.holdMesh = g;
+  }
+  function drop(owner) {
+    if (!owner || !owner.holdMesh) return null;
+    const kind = owner.holdKind;
+    owner.group.remove(owner.holdMesh);
+    owner.holdMesh.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) o.material.dispose();
+    });
+    owner.holdMesh = null;
+    owner.holdKind = null;
+    return kind;
+  }
+
+  function step(dt, karts, onHit, onBlock) {
     for (let i = live.length - 1; i >= 0; i--) {
       const p = live[i];
       p.t += dt;
@@ -238,6 +271,19 @@ export function makeItemWorld(scene, track, fx) {
       for (const k of (p.ghost ? [] : karts)) {
         if (k.finished || (p.t < 0.25 && k.id === p.owner)) continue;
         if (Math.hypot(k.pos.x - p.x, k.pos.z - p.z) > 1.7) continue;
+        /* Whatever is being trailed takes it, if it came from behind. A shell
+           that bounced round and arrived at the nose does not, because the
+           thing shielding you is not there: the point of holding one is that
+           it covers your back and nothing else. */
+        if (k.holdMesh && p.kind !== 'bomb') {
+          const bx = Math.sin(k.yaw), bz = Math.cos(k.yaw);   // behind the kart
+          if ((p.x - k.pos.x) * bx + (p.z - k.pos.z) * bz > 0) {
+            drop(k);
+            if (onBlock) onBlock(k, p.kind);
+            struck = true;
+            break;
+          }
+        }
         if (p.kind === 'bomb') boom(p, karts, onHit);
         // where it came from and how fast, so the kart tumbles the right way
         else if (spinOut(k, false, { x: p.x - k.pos.x, z: p.z - k.pos.z, speed: p.speed }) && onHit) onHit(k, p.kind, p.owner);
@@ -296,7 +342,7 @@ export function makeItemWorld(scene, track, fx) {
     return true;
   }
 
-  return { spawn, step, clear, live, hazards, eat };
+  return { spawn, step, clear, live, hazards, eat, hold, drop };
 }
 
 export function lapProg(k, track) {

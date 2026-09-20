@@ -16,7 +16,7 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
-import { dressOf } from './themes.js?v=31';
+import { dressOf } from './themes.js?v=32';
 
 /* Which part of a place's palette each model wears. The kit is one kit, so
    without this every circuit has the same green trees and the same red barriers
@@ -37,6 +37,40 @@ const WEARS = {
 };
 
 const DIR = 'models/';
+
+/* The hoarding at the side of the road. The kit's billboard comes with a made
+   up company printed on it, and this is Leon's circuit, so it carries his
+   address instead. One canvas, drawn once and shared by every board on the
+   lap; the material it replaces is the only one in the kit with a picture on
+   it, which is what makes it safe to find by name. */
+let adTex = null;
+function billboardTex(THREE) {
+  if (adTex) return adTex;
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#17223b'; g.fillRect(0, 0, 512, 256);
+  g.fillStyle = '#ffd233';
+  g.fillRect(0, 0, 512, 16);
+  g.fillRect(0, 240, 512, 16);
+  g.fillStyle = '#fff6e2';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  /* Sized to the board rather than guessed at. The panel takes the whole of
+     this canvas, so a line set at a fixed size and found to be wider than it
+     is simply loses its first and last letters, which is a hoarding reading
+     eonzhao.de. */
+  const TEXT = 'leonzhao.dev';
+  let px = 88;
+  do {
+    g.font = 'bold ' + px + 'px Verdana, Geneva, sans-serif';
+    px -= 2;
+  } while (px > 20 && g.measureText(TEXT).width > 448);
+  g.fillText(TEXT, 256, 132);
+  adTex = new THREE.CanvasTexture(c);
+  adTex.anisotropy = 4;
+  return adTex;
+}
 const SCALE = {
   grandStandCovered: 9, grandStand: 9,
   grandStandAwning: 9, grandStandRound: 9, grandStandCoveredRound: 9,
@@ -135,6 +169,18 @@ export async function buildProps(scene, THREE, track, current) {
          trunk keeps the bark colour and everything else takes the model's, so
          a tinted tree does not end up with a green trunk. */
       const mat = part.material.clone();
+      // the one material in the kit that carries a printed sign
+      if (part.material.name === 'tankco') {
+        const t = billboardTex(THREE);
+        if (mat.map) {
+          t.wrapS = mat.map.wrapS;
+          t.wrapT = mat.map.wrapT;
+          t.flipY = mat.map.flipY;
+          if (mat.map.colorSpace) t.colorSpace = mat.map.colorSpace;
+        }
+        t.needsUpdate = true;
+        mat.map = t;
+      }
       const key = WEARS[name];
       if (key) {
         const brown = mat.color && mat.color.r > mat.color.b * 1.15 && mat.color.g < mat.color.r * 0.85;
