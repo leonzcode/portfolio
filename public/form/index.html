@@ -1383,8 +1383,11 @@
           if (Math.abs(placed[k].y - e.y) < 16 && Math.abs(placed[k].x - e.x) < 120) return;
         }
         placed.push(e);
+        // A line always arrives at its end running left to right, so a label put
+        // back along it would sit on top of it. Only the one with room to the
+        // right sits level; the other lifts clear.
         var right = e.x < W - padR - 76;
-        var lab = sEl("text", { x: e.x + (right ? 9 : -9), y: e.y + 4,
+        var lab = sEl("text", { x: e.x + (right ? 9 : -9), y: e.y + (right ? 4 : -8),
                                 "text-anchor": right ? "start" : "end", class: "b-end" });
         lab.textContent = e.name.length > 14 ? e.name.slice(0, 13) + String.fromCharCode(8230) : e.name;
         svg.appendChild(lab);
