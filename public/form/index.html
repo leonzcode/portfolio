@@ -378,17 +378,118 @@
     font: 500 14px/40px var(--disp);
   }
 
+  /* ---- pictures: on a question, and as an answer ---- */
+  .f-qimg { display: block; max-width: 100%; height: auto; border-radius: 4px; margin: 16px 0 0; }
+  .f-file { margin-top: 16px; }
+  .f-file input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .f-pick {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line); background: #fff; border-radius: 4px;
+    height: 36px; padding: 0 16px; cursor: pointer; color: var(--theme);
+    font: 500 14px/36px var(--disp);
+  }
+  .f-pick:hover { background: rgba(0,0,0,.03); }
+  .f-pick .svg { width: 20px; height: 20px; }
+  .f-shot { margin-top: 12px; display: flex; align-items: flex-start; gap: 12px; }
+  .f-shot img { width: 120px; height: 120px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+  .f-shot .meta { font-size: 12px; color: var(--dim); }
+  .f-shot button {
+    border: 0; background: none; color: var(--theme); cursor: pointer;
+    padding: 4px 0; font: 500 13px/18px var(--disp); display: block;
+  }
+
+  /* ---- the standings ---- */
+  .b-top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .b-top h2 { font: 400 16px/24px var(--sans); margin: 0; flex: 1; min-width: 0; }
+  .b-top .n { font-size: 12px; color: var(--dim); }
+  .b-chart { margin-top: 12px; position: relative; }
+  .b-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .b-grid { stroke: #e8eaed; stroke-width: 1; }
+  .b-axis { fill: var(--dim); font: 400 11px/14px var(--sans); }
+  .b-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .b-line.rest { stroke: #c9cdd2; stroke-width: 1.5; }
+  .b-line.mine { stroke-width: 3; }
+  .b-dot { stroke: #fff; stroke-width: 2; }
+  .b-end { fill: var(--ink); font: 500 11px/14px var(--sans); }
+  .b-hair { stroke: #9aa0a6; stroke-width: 1; }
+  .b-hit { fill: transparent; }
+  .b-tip {
+    position: absolute; z-index: 20; pointer-events: none;
+    background: #202124; color: #fff; border-radius: 4px; padding: 8px 10px;
+    font: 400 12px/17px var(--sans); box-shadow: var(--shadow); max-width: 220px;
+  }
+  .b-tip b { font-weight: 500; }
+  .b-tip .row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .b-tip .sw { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .b-tip .when { color: #bdc1c6; margin-bottom: 4px; }
+  .b-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; }
+  .b-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+  .b-legend i { width: 10px; height: 10px; border-radius: 2px; display: block; }
+  .b-split { display: flex; gap: 24px; margin-top: 16px; align-items: flex-start; }
+  .b-table { flex: 1; min-width: 0; border-collapse: collapse; width: 100%; font-size: 13px; }
+  .b-table th {
+    text-align: left; font: 500 11px/16px var(--sans); color: var(--dim);
+    text-transform: uppercase; letter-spacing: .5px; padding: 0 8px 6px 0; border-bottom: 1px solid var(--line);
+  }
+  .b-table td { padding: 7px 8px 7px 0; border-bottom: 1px solid #f1f3f4; color: var(--ink); }
+  .b-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .b-table tr.mine td { font-weight: 500; }
+  .b-table .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: baseline; }
+  .b-table .who { display: flex; align-items: center; gap: 0; }
+  .b-fin { color: var(--ok); font-size: 11px; margin-left: 6px; }
+  .b-qr { flex: none; width: 168px; text-align: center; }
+  .b-qr svg { width: 132px; height: 132px; display: block; margin: 0 auto; shape-rendering: crispEdges; }
+  .b-qr .cap { font-size: 12px; color: var(--ink-2); margin-top: 8px; line-height: 16px; }
+  .b-qr .url { font: 400 11px/16px var(--mono, var(--sans)); color: var(--dim); word-break: break-all; }
+  .b-none { color: var(--dim); font-size: 13px; padding: 16px 0 4px; }
+
+  /* the picture on a question card in the editor */
+  .e-qimg { margin-top: 16px; display: flex; align-items: flex-start; gap: 12px; }
+  .e-qimg img { max-width: 220px; max-height: 160px; border-radius: 4px; border: 1px solid var(--line); }
+  .e-qimg button { border: 0; background: none; color: var(--theme); cursor: pointer; font: 500 13px/18px var(--disp); padding: 2px 0; }
+  .e-photo { margin-top: 12px; font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+  .e-photo .svg { width: 20px; height: 20px; }
+  .e-trail img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); vertical-align: middle; margin: 4px 0; }
+  .e-up { font-size: 12px; color: var(--dim); margin-top: 8px; }
+  .e-up.bad { color: var(--err); }
+
+  @media (max-width: 720px) {
+    .b-split { flex-direction: column; gap: 20px; }
+    .b-qr { width: 100%; }
+    .b-qr svg { width: 120px; height: 120px; }
+  }
   @media (max-width: 620px) {
     .f-title { font-size: 24px; }
     .f-pad, .e-card { padding: 16px; }
+    .f-rule { margin: 20px -16px 0; }
     .e-card.head .in { padding: 16px; }
     .e-foot { margin: 16px -16px -4px; padding: 8px; }
     .e-adv { margin: 12px -16px 0; padding: 12px 16px 0; }
     .e-top { flex-direction: column; }
     .e-sel { width: 100%; }
     .e-fab { position: static; display: flex; justify-content: center; margin: 0 auto 16px; width: fit-content; }
-    .e-stats { grid-template-columns: 1fr; }
+    .e-stats { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .e-stat { padding: 10px; }
+    .e-stat b { font-size: 20px; line-height: 26px; }
+    .e-stat i { font-size: 11px; }
     .e-prog { width: 76px; }
+    /* a phone gets the whole row: the name and how far they got, nothing squeezed */
+    .e-p { flex-wrap: wrap; row-gap: 6px; }
+    .e-p .who { flex: 1 1 60%; }
+    .e-prog { flex: 1 1 100%; order: 5; width: auto; }
+    .e-trail { padding-left: 0; }
+    .e-bar { padding: 8px; gap: 8px; }
+    .e-name input { font-size: 16px; }             /* 16px stops iOS zooming on focus */
+    .e-tabs { overflow-x: auto; justify-content: flex-start; }
+    .e-tab { padding: 14px 14px 12px; white-space: nowrap; }
+    .e-body { padding: 16px 12px 96px; }
+    .e-in, .e-chipin, .e-adv .wide, .e-adv input[type=number], .e-num input { font-size: 16px; }
+    .e-in.q { font-size: 16px; }
+    .e-adv label { flex-wrap: wrap; }
+    .f-input { font-size: 16px; }
+    .f-wrap { padding: 8px 8px 40px; }
+    .b-table th:nth-child(4), .b-table td:nth-child(4) { display: none; }
+    .f-shot img { width: 88px; height: 88px; }
   }
   @media (prefers-reduced-motion: reduce) {
     * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
@@ -432,7 +533,10 @@
     para:   "M4 5h16v2H4zm0 4h16v2H4zm0 4h16v2H4zm0 4h10v2H4z",
     radio:  "M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zm0-13a5 5 0 100 10 5 5 0 000-10z",
     box:    "M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
-    drop:   "M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zM8 10l4 4 4-4z"
+    drop:   "M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zM8 10l4 4 4-4z",
+    image:  "M21 19V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z",
+    photo:  "M9 2L7.17 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2h-3.17L15 2H9zm3 15a5 5 0 110-10 5 5 0 010 10z",
+    upload: "M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"
   };
   function svg(path, cls) {
     var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -486,10 +590,35 @@
   }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 
-  var TYPE_NAMES = { short: "Short answer", para: "Paragraph", mc: "Multiple choice", check: "Checkboxes", drop: "Dropdown" };
-  var TYPE_ICONS = { short: ICON.short, para: ICON.para, mc: ICON.radio, check: ICON.box, drop: ICON.drop };
+  var TYPE_NAMES = { short: "Short answer", para: "Paragraph", mc: "Multiple choice",
+                     check: "Checkboxes", drop: "Dropdown", photo: "Photo upload" };
+  var TYPE_ICONS = { short: ICON.short, para: ICON.para, mc: ICON.radio,
+                     check: ICON.box, drop: ICON.drop, photo: ICON.photo };
   var SWATCHES = ["#db4437", "#e67c73", "#f4b400", "#ff5722", "#0f9d58", "#009688",
                   "#00bcd4", "#4285f4", "#3f51b5", "#673ab7", "#795548", "#607d8b"];
+
+  /* ---------- the standings graph ----------
+     Eight hues in a fixed order, handed out to hunters in the order they first
+     appear and never re-shuffled, so a team keeps its colour as it moves up and
+     down the board. Past eight, the rest of the field is drawn in grey rather
+     than in invented hues. The set is validated for colour-blind separation on a
+     white surface; three of them sit under 3:1 contrast, which is why the table
+     underneath the chart is not optional.                                      */
+  var SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+  var REST = "#c9cdd2";
+  var seriesOf = {};       // name -> hue, first come first served
+  var seriesUsed = 0;
+  function colorOf(name) {
+    if (!(name in seriesOf)) seriesOf[name] = seriesUsed < SERIES.length ? SERIES[seriesUsed++] : REST;
+    return seriesOf[name];
+  }
+
+  // The QR for https://leonzhao.dev/form, 25 modules square, packed row by row.
+  // Generated with the qrcode package and read back with a scanner (jsQR) to be
+  // sure it resolves; the URL is fixed, so the matrix can be too.
+  var QR_URL = "https://leonzhao.dev/form";
+  var QR_SIZE = 25;
+  var QR_BITS = "/ki/wSWQbqwrt1fF26qC7BcdB/qq/gE1AL5+Pi6ZSLn1+WyeLxw71r0kJKrqfXcJZrGyHvoAVMY/karwWBG7r/+l1a9+6j4bBHW5/qYfgA==";
 
   /* ---------- state ---------- */
   var S = {
@@ -508,6 +637,7 @@
   var uid = store("form_uid") || "";
   var myName = store("form_name") || "";
 
+  var B = { total: 0, you: -1, rows: [] };      // the standings, as everyone may see them
   var E = { form: null, players: [], tab: "q", sel: null, adv: {}, dirty: false, saving: false, queued: null, menu: null };
 
   /* ---------- the socket ---------- */
@@ -520,6 +650,54 @@
     if (/leonzhao\.dev$/.test(h)) return "wss://apps.leonzhao.dev/mc/ws" + tail;
     return "ws://" + h + ":8600/ws" + tail;
   }
+  function httpBase() {
+    var h = location.hostname || "localhost";
+    var q = new URLSearchParams(location.search).get("mp");
+    if (q) return q.replace(/^ws/, "http").replace(/\/ws$/, "");
+    if (/leonzhao\.dev$/.test(h)) return "https://apps.leonzhao.dev";
+    return "http://" + h + ":8600";
+  }
+  function imgUrl(id) { return httpBase() + "/mc/form/img?id=" + encodeURIComponent(id); }
+
+  // A phone camera writes four thousand pixels across and several megabytes. None
+  // of that survives being shown at 500px, so the browser shrinks it before it
+  // goes anywhere: it keeps the upload quick on a phone signal and the store small.
+  function shrink(file, done) {
+    if (!/^image\//.test(file.type)) { done(null, "That file is not an image."); return; }
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      URL.revokeObjectURL(url);
+      var max = 1400;
+      var w = img.naturalWidth, h = img.naturalHeight;
+      if (!w || !h) { done(null, "That image would not open."); return; }
+      var scale = Math.min(1, max / Math.max(w, h));
+      var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+      var cv = document.createElement("canvas");
+      cv.width = cw; cv.height = ch;
+      cv.getContext("2d").drawImage(img, 0, 0, cw, ch);
+      var keepPng = /png/i.test(file.type) && cw * ch < 400000;   // screenshots stay sharp
+      var data;
+      try { data = cv.toDataURL(keepPng ? "image/png" : "image/jpeg", 0.85); }
+      catch (e) { done(null, "That image could not be read."); return; }
+      done({ data: data, ar: cw / ch });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); done(null, "That image would not open."); };
+    img.src = url;
+  }
+  function uploadImage(payload, done) {
+    var body = { data: payload.data };
+    var pw = sessionStorage.getItem("form_pw");
+    if (mode === "editor" && pw) body.pw = pw; else body.uid = uid;
+    fetch(httpBase() + "/mc/form/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(function (r) { return r.json(); })
+      .then(function (j) { if (j && j.id) done({ id: j.id, ar: payload.ar }); else done(null, (j && j.error) || "That upload did not land."); })
+      .catch(function () { done(null, "Could not reach the server. Try again?"); });
+  }
+
   function send(o) {
     if (!ws || ws.readyState !== 1) return false;
     try { ws.send(JSON.stringify(o)); return true; } catch (e) { return false; }
@@ -573,6 +751,12 @@
       flashRight();
       return;
     }
+    if (m.type === "board") {
+      B = { total: m.total || 0, you: typeof m.you === "number" ? m.you : -1, rows: m.rows || [] };
+      if (typeof m.here === "number") { S.here = m.here; var h2 = $("here"); if (h2) h2.textContent = m.here; }
+      paintBoard();
+      return;
+    }
     if (m.type === "name") { myName = m.name; store("form_name", myName); return; }
     if (m.type === "here") { S.here = m.here; var h = $("here"); if (h) h.textContent = m.here; return; }
     if (m.type === "full") { alert("This form has as many people on it as it can hold right now. Try again in a minute."); return; }
@@ -589,7 +773,7 @@
       if (busy || sameForm(E.form, m.form)) {
         if (!sameForm(E.form, m.form)) E.queued = m.form;
         else { E.form.version = m.form.version; E.queued = null; }
-        if (mode === "editor") paintTabsOnly();
+        if (mode === "editor") { paintTabsOnly(); if (E.tab === "r") fillResponses(); }
         return;
       }
       E.form = clone(m.form);
@@ -598,8 +782,7 @@
     }
     if (m.type === "players") {
       E.players = m.players || [];
-      if (mode === "editor" && E.tab === "r") paintEditor();
-      if (mode === "editor" && E.tab !== "r") paintTabsOnly();
+      if (mode === "editor") { paintTabsOnly(); if (E.tab === "r") fillResponses(); }
       return;
     }
     if (m.type === "nope") {
@@ -732,8 +915,22 @@
     if (!live && !S.total) { stage.appendChild(noteCard("Connecting to the form...")); return; }
     if (!S.total) { stage.appendChild(noteCard("This form has no questions yet.")); return; }
     if (S.settings.askName && !S.you.name && !nameDone && S.you.solved === 0) { stage.appendChild(nameCard()); return; }
-    if (S.you.done) { stage.appendChild(doneCard()); return; }
-    stage.appendChild(questionBlock());
+    if (S.you.done) stage.appendChild(doneCard());
+    else stage.appendChild(questionBlock());
+    if (S.settings.showBoard !== false) {
+      stage.appendChild(boardCard());
+      paintBoard();          // filled once it is in the document: the graph measures itself
+    }
+  }
+
+  function boardCard() {
+    var c = el("div", "f-card");
+    var pad = el("div", "f-pad");
+    var node = el("div");
+    node.id = "board";
+    pad.appendChild(node);
+    c.appendChild(pad);
+    return c;
   }
   function paintQuestion() { paintStage(); }
 
@@ -801,6 +998,13 @@
         var t = el("span");
         t.innerHTML = esc(e.title) + " &#183; <b style='font-weight:500'>" + esc(e.given) + "</b>";
         r.appendChild(n); r.appendChild(t);
+        if (e.img) {
+          var th = el("img");
+          th.src = imgUrl(e.img);
+          th.alt = "The photo you sent";
+          th.style.cssText = "width:44px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--line);margin-left:auto;";
+          r.appendChild(th);
+        }
         list.appendChild(r);
       });
       pad.appendChild(list);
@@ -833,6 +1037,15 @@
     t.appendChild(el("span", "f-star", " *"));
     pad.appendChild(t);
     if (q.help) pad.appendChild(el("p", "f-help", q.help));
+    if (q.image) {
+      var qim = el("img", "f-qimg");
+      qim.src = imgUrl(q.image);
+      qim.alt = "Picture for this question";
+      if (q.imgAr) qim.style.aspectRatio = String(q.imgAr);
+      // a picture that will not load leaves no hole where it would have been
+      qim.addEventListener("error", function () { qim.style.display = "none"; });
+      pad.appendChild(qim);
+    }
 
     var field = el("div", "f-field");
     var current = draft[q.id];
@@ -856,6 +1069,66 @@
       field.appendChild(line);
       getValue = function () { return inp.value; };
       setTimeout(function () { if (!verdict || !verdict.until) inp.focus(); }, 30);
+
+    } else if (q.type === "photo") {
+      // A photo is the answer. Nothing can mark it automatically, so sending one
+      // counts, and the editor looks at what arrived on the Responses tab.
+      var got = (current && current.id) ? current : null;
+      var box = el("div", "f-file");
+      var input = el("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.id = "photo_" + q.id;
+      var pick = el("label", "f-pick");
+      pick.setAttribute("for", input.id);
+      pick.appendChild(svg(ICON.upload));
+      pick.appendChild(document.createTextNode(got ? "Choose a different photo" : "Add photo"));
+      var note = el("div", "f-hint");
+      var shot = el("div", "f-shot");
+      box.appendChild(input);
+      box.appendChild(pick);
+      box.appendChild(note);
+      box.appendChild(shot);
+
+      function showShot() {
+        shot.innerHTML = "";
+        if (!got) return;
+        var im = el("img");
+        im.src = imgUrl(got.id);
+        im.alt = "The photo you are sending";
+        var side = el("div");
+        side.appendChild(el("div", "meta", "Ready to send"));
+        var drop = el("button", null, "Remove");
+        drop.type = "button";
+        drop.addEventListener("click", function () {
+          got = null; delete draft[q.id]; showShot();
+          pick.lastChild.textContent = "Add photo";
+        });
+        side.appendChild(drop);
+        shot.appendChild(im);
+        shot.appendChild(side);
+      }
+      input.addEventListener("change", function () {
+        var f = input.files && input.files[0];
+        input.value = "";
+        if (!f) return;
+        note.textContent = "Getting that photo ready...";
+        shrink(f, function (payload, err) {
+          if (!payload) { note.textContent = err; return; }
+          note.textContent = "Sending...";
+          uploadImage(payload, function (res, err2) {
+            if (!res) { note.textContent = err2; return; }
+            got = { id: res.id };
+            draft[q.id] = got;
+            note.textContent = "";
+            pick.lastChild.textContent = "Choose a different photo";
+            showShot();
+          });
+        });
+      });
+      showShot();
+      field.appendChild(box);
+      getValue = function () { return got ? [got.id] : []; };
 
     } else if (q.type === "drop") {
       var picked = (Array.isArray(current) && current.length) ? current[0] : -1;
@@ -985,6 +1258,289 @@
   }
 
   /* ====================================================================== */
+  /*  the standings                                                         */
+  /* ====================================================================== */
+
+  function sEl(tag, attrs) {
+    var n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+  function qrSvg() {
+    var raw = atob(QR_BITS), n = QR_SIZE, quiet = 3, side = n + quiet * 2;
+    var svg = sEl("svg", { viewBox: "0 0 " + side + " " + side, role: "img" });
+    var t = sEl("title", {});
+    t.textContent = "QR code for " + QR_URL;
+    svg.appendChild(t);
+    svg.appendChild(sEl("rect", { x: 0, y: 0, width: side, height: side, fill: "#fff" }));
+    var d = "";
+    for (var i = 0; i < n * n; i++) {
+      var byte = raw.charCodeAt(i >> 3);
+      if (!((byte >> (7 - (i & 7))) & 1)) continue;
+      d += "M" + ((i % n) + quiet) + " " + (Math.floor(i / n) + quiet) + "h1v1h-1z";
+    }
+    svg.appendChild(sEl("path", { d: d, fill: "#202124" }));
+    return svg;
+  }
+
+  // How far along somebody was at a given number of minutes in.
+  function atMinute(row, t) {
+    var k = 0;
+    while (k < row.ts.length && row.ts[k] <= t) k++;
+    return k;
+  }
+  function niceTop(v) {
+    if (v <= 5) return Math.max(1, Math.ceil(v));
+    var pow = Math.pow(10, Math.floor(Math.log(v) / Math.LN10));
+    return Math.ceil(v / (pow / 2)) * (pow / 2);
+  }
+
+  function chartInto(wrap, rows, total, youIdx) {
+    // The viewBox is measured in real pixels rather than a fixed 640, so the axis
+    // text is never scaled up on a phone or down on a wide screen.
+    var W = Math.max(300, Math.round(wrap.clientWidth || 640));
+    var H = W < 420 ? 190 : (rows.length > 6 ? 240 : 210);
+    var padL = 26, padR = 14, padT = 10, padB = 26;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var maxT = 1;
+    rows.forEach(function (r) {
+      maxT = Math.max(maxT, r.now || 0, r.ts.length ? r.ts[r.ts.length - 1] : 0);
+    });
+    maxT = niceTop(maxT);
+    var x = function (t) { return padL + (t / maxT) * plotW; };
+    var y = function (v) { return padT + (1 - (total ? v / total : 0)) * plotH; };
+
+    var svg = sEl("svg", { viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "xMidYMid meet" });
+    svg.setAttribute("aria-hidden", "true");
+
+    // A gridline per question while they still read as separate lines, and only
+    // three of them wear a number: the floor, the middle and the finish.
+    var each = total <= 12 && plotH / Math.max(1, total) >= 12;
+    var marks = [];
+    if (each) { for (var i = 0; i <= total; i++) marks.push(i); }
+    else {
+      var step = Math.max(1, Math.round(total / 4));
+      for (var i = 0; i <= total; i += step) marks.push(i);
+      if (marks[marks.length - 1] !== total) marks.push(total);
+    }
+    var labelled = { 0: 1 };
+    labelled[total] = 1;
+    if (total >= 4) labelled[marks[Math.floor(marks.length / 2)]] = 1;
+    marks.forEach(function (v) {
+      var yy = y(v);
+      svg.appendChild(sEl("line", { x1: padL, x2: W - padR, y1: yy, y2: yy, class: "b-grid" }));
+      if (!labelled[v]) return;
+      var lab = sEl("text", { x: padL - 6, y: yy + 4, "text-anchor": "end", class: "b-axis" });
+      lab.textContent = String(v);
+      svg.appendChild(lab);
+    });
+    // the finish line is the top gridline; say so once, on the right
+    var fin = sEl("text", { x: W - padR, y: y(total) - 6, "text-anchor": "end", class: "b-axis" });
+    fin.textContent = "all " + total + " found";
+    svg.appendChild(fin);
+
+    var t0 = sEl("text", { x: padL, y: H - 8, class: "b-axis" });
+    t0.textContent = "0 min";
+    svg.appendChild(t0);
+    var t1 = sEl("text", { x: W - padR, y: H - 8, "text-anchor": "end", class: "b-axis" });
+    t1.textContent = maxT + " min since each team started";
+    svg.appendChild(t1);
+
+    // grey field first, then the named hues, then yours, so yours is never buried
+    var order = [];
+    rows.forEach(function (r, i) { order.push({ r: r, i: i, c: colorOf(r.name) }); });
+    order.sort(function (a, b) {
+      var ar = (a.c === REST ? 0 : 1) + (a.i === youIdx ? 1 : 0);
+      var br = (b.c === REST ? 0 : 1) + (b.i === youIdx ? 1 : 0);
+      return ar - br;
+    });
+    var ends = [];
+    order.forEach(function (o) {
+      var r = o.r, mine = o.i === youIdx;
+      var d = "M" + x(0) + " " + y(0);
+      for (var k = 0; k < r.ts.length; k++) {
+        d += "L" + x(r.ts[k]) + " " + y(k) + "L" + x(r.ts[k]) + " " + y(k + 1);
+      }
+      var endT = Math.max(r.now || 0, r.ts.length ? r.ts[r.ts.length - 1] : 0);
+      d += "L" + x(endT) + " " + y(r.ts.length);
+      svg.appendChild(sEl("path", { d: d, class: "b-line" + (o.c === REST ? " rest" : "") + (mine ? " mine" : ""), stroke: o.c }));
+      if (o.c !== REST) {
+        svg.appendChild(sEl("circle", { cx: x(endT), cy: y(r.ts.length), r: mine ? 5 : 4, fill: o.c, class: "b-dot" }));
+        ends.push({ name: mine ? "You" : r.name, x: x(endT), y: y(r.ts.length), mine: mine });
+      }
+    });
+
+    // Direct labels, but only where one actually fits. Teams sitting on the same
+    // number is the normal case in a race, and stacking their names apart would
+    // detach them from their lines, so a label that would land on top of one
+    // already placed is simply left out. The legend and the table still name
+    // everybody. Yours goes down first, because that is the one you look for.
+    if (ends.length && ends.length <= 5) {
+      var placed = [];
+      ends.sort(function (a, b) { return (b.mine ? 1 : 0) - (a.mine ? 1 : 0); });
+      ends.forEach(function (e) {
+        for (var k = 0; k < placed.length; k++) {
+          if (Math.abs(placed[k].y - e.y) < 16 && Math.abs(placed[k].x - e.x) < 120) return;
+        }
+        placed.push(e);
+        var right = e.x < W - padR - 76;
+        var lab = sEl("text", { x: e.x + (right ? 9 : -9), y: e.y + 4,
+                                "text-anchor": right ? "start" : "end", class: "b-end" });
+        lab.textContent = e.name.length > 14 ? e.name.slice(0, 13) + String.fromCharCode(8230) : e.name;
+        svg.appendChild(lab);
+      });
+    }
+
+    // the hover layer: a hairline that snaps to where the pointer is, and one
+    // readout listing everybody at that minute
+    var hair = sEl("line", { x1: 0, x2: 0, y1: padT, y2: padT + plotH, class: "b-hair" });
+    hair.style.display = "none";
+    svg.appendChild(hair);
+    var hit = sEl("rect", { x: padL, y: padT, width: plotW, height: plotH, class: "b-hit" });
+    svg.appendChild(hit);
+    wrap.appendChild(svg);
+
+    var tip = el("div", "b-tip");
+    tip.style.display = "none";
+    wrap.appendChild(tip);
+
+    function move(ev) {
+      var box = svg.getBoundingClientRect();
+      var px = ((ev.clientX - box.left) / box.width) * W;
+      if (px < padL || px > W - padR) return hide();
+      var t = ((px - padL) / plotW) * maxT;
+      hair.setAttribute("x1", px); hair.setAttribute("x2", px);
+      hair.style.display = "";
+      tip.innerHTML = "";
+      var when = el("div", "when", (Math.round(t * 10) / 10) + " min in");
+      tip.appendChild(when);
+      var list = rows.map(function (r, i) { return { name: i === youIdx ? "You" : r.name, v: atMinute(r, t), c: colorOf(r.name) }; })
+                     .sort(function (p, q) { return q.v - p.v; }).slice(0, 8);
+      list.forEach(function (r) {
+        var row = el("div", "row");
+        var sw = el("i", "sw");
+        sw.style.background = r.c;
+        row.appendChild(sw);
+        var v = el("b", null, String(r.v));
+        row.appendChild(v);
+        row.appendChild(document.createTextNode(" " + (r.name.length > 16 ? r.name.slice(0, 15) + String.fromCharCode(8230) : r.name)));
+        tip.appendChild(row);
+      });
+      tip.style.display = "";
+      var left = (px / W) * wrap.clientWidth + 12;
+      if (left + tip.offsetWidth > wrap.clientWidth) left = (px / W) * wrap.clientWidth - tip.offsetWidth - 12;
+      tip.style.left = Math.max(0, left) + "px";
+      tip.style.top = "8px";
+    }
+    function hide() { hair.style.display = "none"; tip.style.display = "none"; }
+    svg.addEventListener("pointermove", move);
+    svg.addEventListener("pointerdown", move);
+    svg.addEventListener("pointerleave", hide);
+    svg.addEventListener("pointercancel", hide);
+  }
+
+  function boardInto(node) {
+    node.innerHTML = "";
+    var rows = B.rows || [], total = B.total || S.total || 0;
+
+    var top = el("div", "b-top");
+    top.appendChild(el("h2", null, "How everyone is doing"));
+    top.appendChild(el("div", "n", rows.length === 1 ? "1 hunter" : rows.length + " hunters"));
+    node.appendChild(top);
+
+    if (rows.length && total) {
+      var wrap = el("div", "b-chart");
+      node.appendChild(wrap);
+      chartInto(wrap, rows, total, B.you);
+
+      var leg = el("div", "b-legend");
+      var shown = {};
+      rows.forEach(function (r, i) {
+        var c = colorOf(r.name);
+        if (c === REST || shown[r.name]) return;
+        shown[r.name] = 1;
+        var s = el("span");
+        var sw = el("i");
+        sw.style.background = c;
+        s.appendChild(sw);
+        s.appendChild(document.createTextNode(i === B.you ? r.name + " (you)" : r.name));
+        leg.appendChild(s);
+      });
+      var greys = rows.filter(function (r) { return colorOf(r.name) === REST; }).length;
+      if (greys) {
+        var g = el("span");
+        var gs = el("i");
+        gs.style.background = REST;
+        g.appendChild(gs);
+        g.appendChild(document.createTextNode("everyone else (" + greys + ")"));
+        leg.appendChild(g);
+      }
+      if (leg.childNodes.length > 1) node.appendChild(leg);
+    } else {
+      node.appendChild(el("div", "b-none", "Nobody has answered anything yet. The graph fills in as people go."));
+    }
+
+    var split = el("div", "b-split");
+
+    var table = el("table", "b-table");
+    var thead = el("thead");
+    var hr = el("tr");
+    ["", "Hunter", "Found", "Last one"].forEach(function (h, i) {
+      var th = el("th", i >= 2 ? "num" : null, h);
+      if (i >= 2) th.style.textAlign = "right";
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+    var tb = el("tbody");
+    rows.forEach(function (r, i) {
+      var tr = el("tr", i === B.you ? "mine" : null);
+      var rank = el("td", "num", String(i + 1));
+      rank.style.color = "var(--dim)";
+      rank.style.width = "1%";
+      tr.appendChild(rank);
+      var who = el("td");
+      var sw = el("span", "sw");
+      sw.style.background = colorOf(r.name);
+      who.appendChild(sw);
+      who.appendChild(document.createTextNode(i === B.you ? r.name + " (you)" : r.name));
+      if (r.done) who.appendChild(el("span", "b-fin", "finished"));
+      tr.appendChild(who);
+      tr.appendChild(el("td", "num", r.solved + " of " + total));
+      var last = r.ts.length ? (Math.round(r.ts[r.ts.length - 1] * 10) / 10) + " min" : "not yet";
+      tr.appendChild(el("td", "num", last));
+      tb.appendChild(tr);
+    });
+    if (!rows.length) {
+      var tr0 = el("tr");
+      var td0 = el("td", null, "No hunters yet.");
+      td0.colSpan = 4;
+      td0.style.color = "var(--dim)";
+      tr0.appendChild(td0);
+      tb.appendChild(tr0);
+    }
+    table.appendChild(tb);
+    split.appendChild(table);
+
+    var qr = el("div", "b-qr");
+    qr.appendChild(qrSvg());
+    qr.appendChild(el("div", "cap", "Scan to join the hunt on a phone"));
+    qr.appendChild(el("div", "url", "leonzhao.dev/form"));
+    split.appendChild(qr);
+
+    node.appendChild(split);
+  }
+
+  // The standings live in two places, and both are refreshed the moment the
+  // server says anything changed.
+  function paintBoard() {
+    var a = $("board");
+    if (a) boardInto(a);
+    var b = $("eboard");
+    if (b) boardInto(b);
+  }
+
+  /* ====================================================================== */
   /*  the editor                                                            */
   /* ====================================================================== */
 
@@ -1085,6 +1641,7 @@
   }
   function saveNow() {
     if (!E.form) return;
+    clearTimeout(markDirty.t);
     E.dirty = false; E.saving = true;
     send({ type: "save", form: E.form });
     var s = $("esave");
@@ -1160,6 +1717,7 @@
     else if (E.tab === "r") paintResponsesTab(body);
     else paintSettingsTab(body);
     root.appendChild(body);
+    if (E.tab === "r") { fillResponses(); paintBoard(); }
 
     if (keep) {
       var again = $(keep);
@@ -1216,12 +1774,12 @@
 
   function newId() { return "q" + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36); }
   function addQuestion(after) {
-    var q = { id: newId(), type: "short", title: "", help: "", hint: "",
+    var q = { id: newId(), type: "short", title: "", help: "", hint: "", image: "", imgAr: 0,
               options: [], answers: [], correct: [], cooldownMs: null, caseSensitive: null };
     var at = (after === undefined || after < 0) ? E.form.questions.length : after + 1;
     E.form.questions.splice(at, 0, q);
     E.sel = q.id;
-    markDirty();
+    saveNow();
     paintEditor();
     setTimeout(function () { var n = $("t_" + q.id); if (n) n.focus(); }, 40);
   }
@@ -1262,7 +1820,7 @@
       if (isNaN(from) || from === i) return;
       var moved = E.form.questions.splice(from, 1)[0];
       E.form.questions.splice(i, 0, moved);
-      markDirty(); paintEditor();
+      saveNow(); paintEditor();
     });
 
     // title + type
@@ -1274,11 +1832,38 @@
     top.appendChild(typeSelect(q));
     card.appendChild(top);
 
+    // a picture on the question, if it has one
+    if (q.image) {
+      var shot = el("div", "e-qimg");
+      var im = el("img");
+      im.src = imgUrl(q.image);
+      im.alt = "Picture on this question";
+      var side = el("div");
+      var drop = el("button", null, "Remove picture");
+      drop.type = "button";
+      drop.addEventListener("click", function () { q.image = ""; q.imgAr = 0; saveNow(); paintEditor(); });
+      side.appendChild(drop);
+      shot.appendChild(im);
+      shot.appendChild(side);
+      card.appendChild(shot);
+    }
+    var upNote = el("div", "e-up");
+    upNote.id = "up_" + q.id;
+    card.appendChild(upNote);
+
     // the answer area
     var area = el("div");
     area.style.marginTop = "16px";
-    if (q.type === "short" || q.type === "para") area.appendChild(acceptedAnswers(q));
-    else area.appendChild(optionList(q));
+    if (q.type === "photo") {
+      var pn = el("div", "e-photo");
+      pn.appendChild(svg(ICON.photo));
+      pn.appendChild(el("span", null, "The hunter sends a photo. Any photo counts as the answer, and it turns up on the Responses tab."));
+      area.appendChild(pn);
+    } else if (q.type === "short" || q.type === "para") {
+      area.appendChild(acceptedAnswers(q));
+    } else {
+      area.appendChild(optionList(q));
+    }
     card.appendChild(area);
 
     // advanced strip
@@ -1288,36 +1873,64 @@
     var foot = el("div", "e-foot");
     // A question nobody can get right is worth saying out loud: the hunt stops dead
     // on it, and the only place that shows is here.
-    var hasKey = (q.type === "short" || q.type === "para") ? q.answers.length > 0 : q.correct.length > 0;
+    var hasKey = q.type === "photo" ? true
+               : (q.type === "short" || q.type === "para") ? q.answers.length > 0
+               : q.correct.length > 0;
     var key = el("div", "e-keyline" + (hasKey ? "" : " warn"), keyLine(q));
     foot.appendChild(key);
     foot.appendChild(el("div", "spacer"));
     var up = iconBtn(ICON.up, "Move up");
     up.disabled = i === 0;
-    up.addEventListener("click", function () { if (i === 0) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i - 1, 0, m); markDirty(); paintEditor(); });
+    up.addEventListener("click", function () { if (i === 0) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i - 1, 0, m); saveNow(); paintEditor(); });
     var dn = iconBtn(ICON.down, "Move down");
     dn.disabled = i === E.form.questions.length - 1;
-    dn.addEventListener("click", function () { if (i >= E.form.questions.length - 1) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i + 1, 0, m); markDirty(); paintEditor(); });
+    dn.addEventListener("click", function () { if (i >= E.form.questions.length - 1) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i + 1, 0, m); saveNow(); paintEditor(); });
+    var pic = iconBtn(ICON.image, q.image ? "Replace the picture" : "Add a picture");
+    var picker = el("input");
+    picker.type = "file";
+    picker.accept = "image/*";
+    picker.style.cssText = "position:absolute;width:1px;height:1px;opacity:0;";
+    pic.addEventListener("click", function () { picker.click(); });
+    picker.addEventListener("change", function () {
+      var f = picker.files && picker.files[0];
+      picker.value = "";
+      if (!f) return;
+      var note = $("up_" + q.id);
+      if (note) { note.className = "e-up"; note.textContent = "Getting that picture ready..."; }
+      shrink(f, function (payload, err) {
+        if (!payload) { if (note) { note.className = "e-up bad"; note.textContent = err; } return; }
+        if (note) note.textContent = "Uploading...";
+        uploadImage(payload, function (res, err2) {
+          if (!res) { if (note) { note.className = "e-up bad"; note.textContent = err2; } return; }
+          q.image = res.id;
+          q.imgAr = Math.round(res.ar * 1000) / 1000;
+          saveNow();
+          paintEditor();
+        });
+      });
+    });
     var dup = iconBtn(ICON.copy, "Duplicate");
     dup.addEventListener("click", function () {
       var c = JSON.parse(JSON.stringify(q));
       c.id = newId();
       E.form.questions.splice(i + 1, 0, c);
-      E.sel = c.id; markDirty(); paintEditor();
+      E.sel = c.id; saveNow(); paintEditor();
     });
     var del = iconBtn(ICON.trash, "Delete");
     del.addEventListener("click", function () {
       E.form.questions.splice(i, 1);
-      markDirty(); paintEditor();
+      saveNow(); paintEditor();
     });
     var adv = iconBtn(ICON.more, "More settings for this question");
     adv.addEventListener("click", function () { E.adv[q.id] = !E.adv[q.id]; paintEditor(); });
-    [up, dn, dup, del, adv].forEach(function (b) { foot.appendChild(b); });
+    [pic, up, dn, dup, del, adv].forEach(function (b) { foot.appendChild(b); });
+    foot.appendChild(picker);
     card.appendChild(foot);
     return card;
   }
 
   function keyLine(q) {
+    if (q.type === "photo") return "Any photo counts";
     if (q.type === "short" || q.type === "para") {
       if (!q.answers.length) return "No accepted answer yet";
       return q.answers.length === 1 ? "Answer: " + q.answers[0] : q.answers.length + " accepted answers";
@@ -1357,13 +1970,14 @@
   }
 
   function changeType(q, t) {
-    var wasChoice = q.type !== "short" && q.type !== "para";
-    var isChoice = t !== "short" && t !== "para";
+    var CHOICE = { mc: 1, check: 1, drop: 1 };
+    var wasChoice = !!CHOICE[q.type];
+    var isChoice = !!CHOICE[t];
     q.type = t;
     if (isChoice && !q.options.length) { q.options = ["Option 1"]; q.correct = []; }
     if (isChoice && !wasChoice) q.correct = [];
     if (t !== "check" && q.correct.length > 1) q.correct = [q.correct[0]];
-    markDirty(); paintEditor();
+    saveNow(); paintEditor();
   }
 
   function optionList(q) {
@@ -1382,7 +1996,7 @@
         var at = q.correct.indexOf(i);
         if (q.type === "check") { if (at >= 0) q.correct.splice(at, 1); else q.correct.push(i); q.correct.sort(function (a, b) { return a - b; }); }
         else q.correct = at >= 0 ? [] : [i];
-        markDirty(); paintEditor();
+        saveNow(); paintEditor();
       });
       row.appendChild(k);
       var x = el("button", "e-x");
@@ -1392,7 +2006,7 @@
       x.addEventListener("click", function () {
         q.options.splice(i, 1);
         q.correct = q.correct.filter(function (n) { return n !== i; }).map(function (n) { return n > i ? n - 1 : n; });
-        markDirty(); paintEditor();
+        saveNow(); paintEditor();
       });
       if (q.options.length > 1) row.appendChild(x);
       box.appendChild(row);
@@ -1404,7 +2018,7 @@
     b.type = "button";
     b.addEventListener("click", function () {
       q.options.push("Option " + (q.options.length + 1));
-      markDirty(); paintEditor();
+      saveNow(); paintEditor();
       setTimeout(function () { var n = $("o_" + q.id + "_" + (q.options.length - 1)); if (n) { n.focus(); n.select(); } }, 40);
     });
     add.appendChild(b);
@@ -1425,7 +2039,7 @@
       x.type = "button";
       x.title = "Remove this answer";
       x.appendChild(svg(ICON.close));
-      x.addEventListener("click", function () { q.answers.splice(i, 1); markDirty(); paintEditor(); });
+      x.addEventListener("click", function () { q.answers.splice(i, 1); saveNow(); paintEditor(); });
       chip.appendChild(x);
       chips.appendChild(chip);
     });
@@ -1439,13 +2053,13 @@
       if (!v) return;
       if (q.answers.indexOf(v) < 0) q.answers.push(v);
       inp.value = "";
-      markDirty(); paintEditor();
+      saveNow(); paintEditor();
       setTimeout(function () { var n = $("a_" + q.id); if (n) n.focus(); }, 40);
     });
     inp.addEventListener("blur", function () {
       var v = inp.value.trim();
       if (!v) return;
-      if (q.answers.indexOf(v) < 0) { q.answers.push(v); markDirty(); paintEditor(); }
+      if (q.answers.indexOf(v) < 0) { q.answers.push(v); saveNow(); paintEditor(); }
     });
     chips.appendChild(inp);
     box.appendChild(chips);
@@ -1490,7 +2104,7 @@
       var cb = el("input");
       cb.type = "checkbox";
       cb.checked = q.caseSensitive === true;
-      cb.addEventListener("change", function () { q.caseSensitive = cb.checked ? true : null; markDirty(); });
+      cb.addEventListener("change", function () { q.caseSensitive = cb.checked ? true : null; saveNow(); });
       r3.appendChild(cb);
       r3.appendChild(el("span", null, "Capital letters have to match on this question"));
       box.appendChild(r3);
@@ -1500,28 +2114,25 @@
 
   /* ---------- responses tab ---------- */
 
+  // The shell is built once; the parts that change while you are looking at them
+  // are refilled in place, so a hunter answering something does not throw the page
+  // about under the pointer.
   function paintResponsesTab(body) {
-    var total = E.form.questions.length;
-    var done = E.players.filter(function (p) { return p.doneAt; }).length;
-    var solved = E.players.reduce(function (a, p) { return a + p.solved; }, 0);
-
     var stats = el("div", "e-stats");
-    [[E.players.length, "started"], [done, "finished"],
-     [E.players.length ? (solved / E.players.length).toFixed(1) : "0", "questions solved on average"]
-    ].forEach(function (s) {
-      var c = el("div", "e-stat");
-      c.appendChild(el("b", null, String(s[0])));
-      c.appendChild(el("i", null, s[1]));
-      stats.appendChild(c);
-    });
+    stats.id = "estats";
     body.appendChild(stats);
+
+    var chartCard = el("div", "e-card");
+    var boardNode = el("div");
+    boardNode.id = "eboard";
+    chartCard.appendChild(boardNode);
+    body.appendChild(chartCard);
 
     var card = el("div", "e-card");
     var top = el("div");
     top.style.cssText = "display:flex;align-items:center;gap:12px;margin-bottom:8px;";
-    var h = el("div");
+    var h = el("div", null);
     h.appendChild(el("div", "e-sec", "Who is hunting"));
-    h.appendChild(el("p", "e-sub", "One row per browser. Progress is kept per browser, not per person."));
     h.style.flex = "1";
     top.appendChild(h);
     var clearAll = el("button", "e-ghost", "Delete all responses");
@@ -1531,9 +2142,35 @@
     });
     top.appendChild(clearAll);
     card.appendChild(top);
+    var list = el("div");
+    list.id = "elist";
+    card.appendChild(list);
+    body.appendChild(card);
+    // the rows go in once this is actually in the document: fillResponses finds its
+    // containers by id, and nothing is findable while the tab is still detached
+  }
 
+  function fillResponses() {
+    var stats = $("estats"), list = $("elist");
+    if (!stats || !list || !E.form) return;
+    var total = E.form.questions.length;
+    var done = E.players.filter(function (p) { return p.doneAt; }).length;
+    var solved = E.players.reduce(function (a, p) { return a + p.solved; }, 0);
+
+    stats.innerHTML = "";
+    [[E.players.length, "started"], [done, "finished"],
+     [E.players.length ? (solved / E.players.length).toFixed(1) : "0", "questions solved on average"]
+    ].forEach(function (s) {
+      var c = el("div", "e-stat");
+      c.appendChild(el("b", null, String(s[0])));
+      c.appendChild(el("i", null, s[1]));
+      stats.appendChild(c);
+    });
+
+    list.innerHTML = "";
     if (!E.players.length) {
-      card.appendChild(el("div", "e-empty", "Nobody has opened the form yet."));
+      list.appendChild(el("div", "e-empty", "Nobody has opened the form yet."));
+      return;
     }
     E.players.forEach(function (p) {
       var row = el("div", "e-p");
@@ -1542,7 +2179,7 @@
       row.appendChild(av);
       var who = el("div", "who");
       who.appendChild(el("b", null, p.name || "Anonymous"));
-      who.appendChild(el("i", null, (p.wrong ? p.wrong + " wrong so far" : "no wrong answers") + " · " + ago(p.lastAt)));
+      who.appendChild(el("i", null, (p.wrong ? p.wrong + " wrong so far" : "no wrong answers") + " " + String.fromCharCode(183) + " " + ago(p.lastAt)));
       row.appendChild(who);
       var prog = el("div", "e-prog");
       var rail = el("div", "rail");
@@ -1556,18 +2193,24 @@
       var x = iconBtn(ICON.trash, "Delete this response");
       x.addEventListener("click", function () { send({ type: "clear", uid: p.uid }); });
       row.appendChild(x);
-      card.appendChild(row);
+      list.appendChild(row);
       if (p.log && p.log.length) {
         var trail = el("div", "e-trail");
         p.log.forEach(function (e, i) {
           var d = el("div");
           d.innerHTML = (i + 1) + ". " + esc(e.title) + " &#183; <b style='font-weight:500'>" + esc(e.given) + "</b>";
+          if (e.img) {
+            var th = el("img");
+            th.src = imgUrl(e.img);
+            th.alt = "Photo sent for " + e.title;
+            th.style.marginLeft = "8px";
+            d.appendChild(th);
+          }
           trail.appendChild(d);
         });
-        card.appendChild(trail);
+        list.appendChild(trail);
       }
     });
-    body.appendChild(card);
   }
   function hash(s) { var h = 0; s = String(s); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
 
@@ -1616,13 +2259,15 @@
     c1.appendChild(cdRow);
 
     c1.appendChild(toggleRow("Capital letters have to match", "Off means SCIENCE, Science and science are all the same answer.",
-      s.caseSensitive, function (v) { s.caseSensitive = v; markDirty(); paintEditor(); }));
+      s.caseSensitive, function (v) { s.caseSensitive = v; saveNow(); paintEditor(); }));
     c1.appendChild(toggleRow("Show a hint after a wrong answer", "Only questions that have a hint written will show one.",
-      s.showHints, function (v) { s.showHints = v; markDirty(); paintEditor(); }));
+      s.showHints, function (v) { s.showHints = v; saveNow(); paintEditor(); }));
     c1.appendChild(toggleRow("Ask for a name first", "The name shows up on the Responses tab.",
-      s.askName, function (v) { s.askName = v; markDirty(); paintEditor(); }));
+      s.askName, function (v) { s.askName = v; saveNow(); paintEditor(); }));
     c1.appendChild(toggleRow("Show the question counter", "Question 3 of 6, under the answer.",
-      s.showCount, function (v) { s.showCount = v; markDirty(); paintEditor(); }));
+      s.showCount, function (v) { s.showCount = v; saveNow(); paintEditor(); }));
+    c1.appendChild(toggleRow("Show the standings", "The graph of who has found what, and the QR code for joining. Everyone on the form can see it.",
+      s.showBoard !== false, function (v) { s.showBoard = v; saveNow(); paintEditor(); }));
     body.appendChild(c1);
 
     var c2 = el("div", "e-card");
@@ -1636,7 +2281,7 @@
       b.style.background = hex;
       b.title = hex;
       b.setAttribute("aria-label", "Theme colour " + hex);
-      b.addEventListener("click", function () { f.theme = hex; applyTheme(hex); markDirty(); paintEditor(); });
+      b.addEventListener("click", function () { f.theme = hex; applyTheme(hex); saveNow(); paintEditor(); });
       sw.appendChild(b);
     });
     c2.appendChild(sw);
@@ -1668,6 +2313,13 @@
 
   window.addEventListener("keydown", function (e) {
     if (mode === "editor" && (e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); saveNow(); }
+  });
+  // The graph is drawn at the width it actually has, so turning a phone on its side
+  // has to redraw it rather than stretch it.
+  var reflow = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(reflow);
+    reflow = setTimeout(paintBoard, 200);
   });
   window.__form = { state: function () { return S; }, editor: function () { return E; } };
 })();
