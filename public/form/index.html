@@ -147,6 +147,10 @@
   .f-menu button:hover, .f-menu button.on { background: #f1f3f4; }
 
   /* the answer verdict */
+  .f-past .f-opt { cursor: default; }
+  .f-past .f-input:disabled { color: var(--ink); -webkit-text-fill-color: var(--ink); opacity: 1; }
+  .f-got { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--ok); font-size: 12px; line-height: 16px; }
+  .f-got .svg { width: 18px; height: 18px; }
   .f-err { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--err); font-size: 12px; line-height: 16px; }
   .f-err .svg { width: 18px; height: 18px; }
   .f-hint { margin-top: 8px; font-size: 12px; line-height: 16px; color: var(--dim); }
@@ -192,7 +196,8 @@
   }
   .e-name input:hover { box-shadow: inset 0 0 0 1px var(--line); }
   .e-name input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--theme); }
-  .e-saved { font-size: 12px; color: var(--dim); padding: 2px 4px; height: 16px; }
+  .e-saved { font-size: 12px; color: var(--dim); padding: 2px 4px; height: 16px; display: flex; gap: 10px; }
+  .e-who { color: var(--theme); }
   .e-acts { display: flex; align-items: center; gap: 4px; }
   .e-icon {
     width: 40px; height: 40px; border: 0; background: none; border-radius: 50%;
@@ -406,12 +411,13 @@
   .b-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
   .b-grid { stroke: #e8eaed; stroke-width: 1; }
   .b-axis { fill: var(--dim); font: 400 11px/14px var(--sans); }
-  .b-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-  .b-line.rest { stroke: #c9cdd2; stroke-width: 1.5; }
-  .b-line.mine { stroke-width: 3; }
-  .b-dot { stroke: #fff; stroke-width: 2; }
-  .b-end { fill: var(--ink); font: 500 11px/14px var(--sans); }
-  .b-hair { stroke: #9aa0a6; stroke-width: 1; }
+  .b-bar { transition: opacity .12s ease; }
+  .b-band:hover .b-bar, .b-band:focus-visible .b-bar { opacity: .8; }
+  .b-band:focus { outline: none; }
+  .b-band:focus-visible .b-hit { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
+  .b-val { fill: var(--ink); font: 500 11px/14px var(--sans); }
+  .b-name { fill: var(--ink-2); font: 400 11px/14px var(--sans); }
+  .b-name.mine { fill: var(--ink); font-weight: 500; }
   .b-hit { fill: transparent; }
   .b-tip {
     position: absolute; z-index: 20; pointer-events: none;
@@ -422,9 +428,6 @@
   .b-tip .row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
   .b-tip .sw { width: 8px; height: 8px; border-radius: 2px; flex: none; }
   .b-tip .when { color: #bdc1c6; margin-bottom: 4px; }
-  .b-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; }
-  .b-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
-  .b-legend i { width: 10px; height: 10px; border-radius: 2px; display: block; }
   .b-split { display: flex; gap: 24px; margin-top: 16px; align-items: flex-start; }
   .b-table { flex: 1; min-width: 0; border-collapse: collapse; width: 100%; font-size: 13px; }
   .b-table th {
@@ -632,13 +635,33 @@
   var draft = {};                    // qid -> what is typed or ticked, so a repaint keeps it
   var verdict = null;                // { bad: true, until, hint } for the question on screen
   var nameDone = store("form_named") === "1";
+  var viewAt = null;                 // which earlier question is being looked at, null for the live one
+  var lastSent = null;               // what went out last, so a right answer can be kept
+  var restoreTried = false;
+
+  /* ---------- the copy this browser keeps ----------
+     Every answer that was marked right is written down here, so closing the tab,
+     losing the connection or the organiser wiping the board does not cost anybody
+     their afternoon. It is not a way past the questions: the server walks the list
+     back through the marking from the first question, so a hand-edited copy is
+     worth exactly as much as a wrong answer.                                    */
+  function myAnswers() {
+    try { var a = JSON.parse(store("form_answers") || "[]"); return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+  }
+  function rememberAnswer(qid, value) {
+    var list = myAnswers().filter(function (a) { return a.qid !== qid; });
+    list.push({ qid: qid, value: value });
+    store("form_answers", JSON.stringify(list.slice(-80)));
+  }
+  function forgetAnswers() { store("form_answers", "[]"); }
   var holdState = null;              // a state held back while the right-answer flash plays
   var tick = null;
   var uid = store("form_uid") || "";
   var myName = store("form_name") || "";
 
   var B = { total: 0, you: -1, rows: [] };      // the standings, as everyone may see them
-  var E = { form: null, players: [], tab: "q", sel: null, adv: {}, dirty: false, saving: false, queued: null, menu: null };
+  var E = { form: null, players: [], tab: "q", sel: null, adv: {}, dirty: false, saving: false, queued: null, menu: null, editors: 1 };
 
   /* ---------- the socket ---------- */
   var ws = null, tries = 0;
@@ -748,6 +771,7 @@
     }
     if (m.type === "right") {
       verdict = null;
+      if (lastSent) { rememberAnswer(lastSent.qid, lastSent.value); lastSent = null; }
       flashRight();
       return;
     }
@@ -755,6 +779,14 @@
       B = { total: m.total || 0, you: typeof m.you === "number" ? m.you : -1, rows: m.rows || [] };
       if (typeof m.here === "number") { S.here = m.here; var h2 = $("here"); if (h2) h2.textContent = m.here; }
       paintBoard();
+      return;
+    }
+    // the organiser cleared this browser on purpose, so the copy it keeps goes too
+    if (m.type === "wiped") {
+      forgetAnswers();
+      restoreTried = true;
+      viewAt = null;
+      draft = {};
       return;
     }
     if (m.type === "name") { myName = m.name; store("form_name", myName); return; }
@@ -780,6 +812,27 @@
       if (mode === "editor") paintEditor(); else paint();
       return;
     }
+    // somebody else's edit landing
+    if (m.type === "opok") {
+      if (E.form) E.form.version = m.v;
+      inflight = Math.max(0, inflight - 1);
+      saveNote();
+      return;
+    }
+    if (m.type === "op") {
+      if (!E.form) return;
+      // Out of step with the server means guessing, so ask for the whole thing.
+      if (m.v !== (E.form.version | 0) + 1) { E.form.version = m.v; send({ type: "resync" }); return; }
+      E.form.version = m.v;
+      if (!applyRemote(m)) send({ type: "resync" });
+      return;
+    }
+    if (m.type === "editors") {
+      E.editors = m.n | 0;
+      var ep = $("epeople");
+      if (ep) ep.textContent = E.editors > 1 ? (E.editors + " people editing") : "";
+      return;
+    }
     if (m.type === "players") {
       E.players = m.players || [];
       if (mode === "editor") { paintTabsOnly(); if (E.tab === "r") fillResponses(); }
@@ -798,7 +851,12 @@
 
   function applyState(m) {
     var wasQ = S.q ? S.q.id : null;
+    var wasSolved = S.you ? S.you.solved : -1;
     S.head = m.head; S.settings = m.settings; S.total = m.total; S.you = m.you; S.q = m.q; S.v = m.v;
+    S.past = m.past || [];
+    // a newly opened question puts you back on the live one
+    if (S.you.solved !== wasSolved) viewAt = null;
+    if (viewAt !== null && !S.past[viewAt]) viewAt = S.past.length ? S.past.length - 1 : null;
     if (typeof m.here === "number") S.here = m.here;
     applyTheme(S.head.theme);
     document.title = S.head.title || "Form";
@@ -808,6 +866,17 @@
     // The editor is a viewer too, so its own saves come back here. Repainting then
     // would tear down whatever it has open, and the editor repaints itself anyway.
     if (mode === "view") paint();
+
+    // Nothing on the board for this browser, but it remembers answering things:
+    // hand the list to the server and let it mark them again.
+    if (!restoreTried && S.total && S.you.solved === 0 && !S.you.done) {
+      restoreTried = true;
+      var mine = myAnswers();
+      if (mine.length) {
+        if (myName) send({ type: "name", name: myName });
+        send({ type: "restore", answers: mine });
+      }
+    }
   }
 
   function flashRight() {
@@ -915,7 +984,8 @@
     if (!live && !S.total) { stage.appendChild(noteCard("Connecting to the form...")); return; }
     if (!S.total) { stage.appendChild(noteCard("This form has no questions yet.")); return; }
     if (S.settings.askName && !S.you.name && !nameDone && S.you.solved === 0) { stage.appendChild(nameCard()); return; }
-    if (S.you.done) stage.appendChild(doneCard());
+    if (viewAt !== null && S.past && S.past[viewAt]) stage.appendChild(pastBlock(S.past[viewAt]));
+    else if (S.you.done) stage.appendChild(doneCard());
     else stage.appendChild(questionBlock());
     if (S.settings.showBoard !== false) {
       stage.appendChild(boardCard());
@@ -1015,14 +1085,105 @@
     a.href = "#";
     a.addEventListener("click", function (ev) {
       ev.preventDefault();
-      nameDone = false; draft = {}; verdict = null;
+      nameDone = false; draft = {}; verdict = null; viewAt = null;
+      forgetAnswers();
       send({ type: "restart" });
     });
     again.appendChild(a);
     pad.appendChild(again);
     c.appendChild(pad);
     frag.appendChild(c);
+    // a way back through the questions, now that there is no next one
+    if (S.past && S.past.length) {
+      var row = el("div", "f-row");
+      row.appendChild(backBtn(function () { viewAt = S.past.length - 1; paintStage(); }));
+      frag.appendChild(row);
+    }
     return frag;
+  }
+
+  // A question already got right, shown the way it was answered. Nothing here can
+  // be changed: it is a look back, not a second go.
+  function pastBlock(pq) {
+    var frag = document.createDocumentFragment();
+    var c = el("div", "f-card f-past f-anim");
+    var pad = el("div", "f-pad");
+    pad.appendChild(el("div", "f-q-title", pq.title));
+    if (pq.help) pad.appendChild(el("p", "f-help", pq.help));
+    if (pq.image) {
+      var im = el("img", "f-qimg");
+      im.src = imgUrl(pq.image);
+      im.alt = "Picture for this question";
+      im.addEventListener("error", function () { im.style.display = "none"; });
+      pad.appendChild(im);
+    }
+
+    var field = el("div", "f-field");
+    var picked = Array.isArray(pq.pick) ? pq.pick : [];
+    var givenBits = ("" + (pq.given || "")).split(", ");
+    if (pq.type === "mc" || pq.type === "check" || pq.type === "drop") {
+      (pq.options || []).forEach(function (o, i) {
+        var on = picked.length ? picked.indexOf(i) >= 0 : givenBits.indexOf(o) >= 0;
+        var lab = el("label", "f-opt" + (pq.type === "check" ? " box" : ""));
+        var inp = el("input");
+        inp.type = pq.type === "check" ? "checkbox" : "radio";
+        inp.checked = on;
+        inp.disabled = true;
+        lab.appendChild(inp);
+        lab.appendChild(el("span", "f-mark"));
+        lab.appendChild(el("span", "f-opt-txt", o));
+        field.appendChild(lab);
+      });
+    } else if (pq.type === "photo" && pq.img) {
+      var shot = el("div", "f-shot");
+      var th = el("img");
+      th.src = imgUrl(pq.img);
+      th.alt = "The photo you sent";
+      shot.appendChild(th);
+      field.appendChild(shot);
+    } else {
+      var line = el("div", "f-line f-short");
+      var box = el("input", "f-input");
+      box.type = "text";
+      box.value = pq.given || "";
+      box.disabled = true;
+      line.appendChild(box);
+      field.appendChild(line);
+    }
+    pad.appendChild(field);
+
+    var got = el("div", "f-got");
+    got.appendChild(svg(ICON.check));
+    got.appendChild(el("span", null, "You got this one"));
+    pad.appendChild(got);
+    c.appendChild(pad);
+    frag.appendChild(c);
+
+    var row = el("div", "f-row");
+    if (viewAt > 0) row.appendChild(backBtn(function () { viewAt = viewAt - 1; paintStage(); }));
+    var fwd = el("button", "f-btn", "Next");
+    fwd.type = "button";
+    fwd.addEventListener("click", function () {
+      viewAt = (viewAt + 1 >= S.you.solved) ? null : viewAt + 1;
+      paintStage();
+    });
+    row.appendChild(fwd);
+    if (S.settings.showCount) row.appendChild(el("div", "f-count", "Question " + pq.n + " of " + S.total));
+    frag.appendChild(row);
+
+    var bar = el("div", "f-bar");
+    var fill = el("i");
+    fill.style.width = (S.total ? Math.round((S.you.solved / S.total) * 100) : 0) + "%";
+    bar.appendChild(fill);
+    frag.appendChild(bar);
+    return frag;
+  }
+
+  function backBtn(onClick) {
+    var b = el("button", "f-clear", "Back");
+    b.type = "button";
+    b.addEventListener("click", onClick);
+    return b;
   }
 
   function questionBlock() {
@@ -1215,6 +1376,8 @@
 
     // the button row, then the counter and the bar
     var row = el("div", "f-row");
+    // a way back to what they have already found, without a way forward past it
+    if (S.you.solved > 0) row.appendChild(backBtn(function () { viewAt = S.you.solved - 1; paintStage(); }));
     var last = q.n >= S.total;
     var go = el("button", "f-btn", last ? "Submit" : "Next");
     go.type = "button";
@@ -1238,7 +1401,9 @@
 
     function submit() {
       if (verdict && verdict.until > Date.now()) return;
-      send({ type: "answer", qid: q.id, value: getValue() });
+      var v = getValue();
+      lastSent = { qid: q.id, value: v };
+      send({ type: "answer", qid: q.id, value: v });
     }
     return frag;
   }
@@ -1283,32 +1448,30 @@
     return svg;
   }
 
-  // How far along somebody was at a given number of minutes in.
-  function atMinute(row, t) {
-    var k = 0;
-    while (k < row.ts.length && row.ts[k] <= t) k++;
-    return k;
-  }
-  function niceTop(v) {
-    if (v <= 5) return Math.max(1, Math.ceil(v));
-    var pow = Math.pow(10, Math.floor(Math.log(v) / Math.LN10));
-    return Math.ceil(v / (pow / 2)) * (pow / 2);
-  }
-
+  // One bar per team, as tall as the number of questions they have found. Sorted
+  // by who is furthest along, so the shape of the race reads left to right.
   function chartInto(wrap, rows, total, youIdx) {
-    // The viewBox is measured in real pixels rather than a fixed 640, so the axis
+    // The viewBox is measured in real pixels rather than a fixed width, so the axis
     // text is never scaled up on a phone or down on a wide screen.
     var W = Math.max(300, Math.round(wrap.clientWidth || 640));
-    var H = W < 420 ? 190 : (rows.length > 6 ? 240 : 210);
-    var padL = 26, padR = 14, padT = 10, padB = 26;
+    var narrow = W < 420;
+
+    // Past a dozen bars nobody can read the names under them, so the graph keeps the
+    // leaders and the table underneath keeps everybody. Your own bar stays on it
+    // whatever position you are in.
+    var cap = narrow ? 7 : 12;
+    var shown = [];
+    for (var i = 0; i < rows.length && shown.length < cap; i++) shown.push({ r: rows[i], i: i });
+    if (youIdx >= 0 && youIdx >= cap) { shown[shown.length - 1] = { r: rows[youIdx], i: youIdx }; }
+    var n = shown.length;
+
+    var padL = 26, padR = 12, padT = 20, padB = 34;
+    var H = (narrow ? 172 : 200) + padB - 26;
     var plotW = W - padL - padR, plotH = H - padT - padB;
-    var maxT = 1;
-    rows.forEach(function (r) {
-      maxT = Math.max(maxT, r.now || 0, r.ts.length ? r.ts[r.ts.length - 1] : 0);
-    });
-    maxT = niceTop(maxT);
-    var x = function (t) { return padL + (t / maxT) * plotW; };
+    var band = plotW / Math.max(1, n);
+    var barW = Math.max(6, Math.min(narrow ? 20 : 24, band - 12));   // never fill the slot
     var y = function (v) { return padT + (1 - (total ? v / total : 0)) * plotH; };
+    var y0 = y(0);
 
     var svg = sEl("svg", { viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "xMidYMid meet" });
     svg.setAttribute("aria-hidden", "true");
@@ -1317,10 +1480,10 @@
     // three of them wear a number: the floor, the middle and the finish.
     var each = total <= 12 && plotH / Math.max(1, total) >= 12;
     var marks = [];
-    if (each) { for (var i = 0; i <= total; i++) marks.push(i); }
+    if (each) { for (var k = 0; k <= total; k++) marks.push(k); }
     else {
       var step = Math.max(1, Math.round(total / 4));
-      for (var i = 0; i <= total; i += step) marks.push(i);
+      for (var k2 = 0; k2 <= total; k2 += step) marks.push(k2);
       if (marks[marks.length - 1] !== total) marks.push(total);
     }
     var labelled = { 0: 1 };
@@ -1334,112 +1497,90 @@
       lab.textContent = String(v);
       svg.appendChild(lab);
     });
-    // the finish line is the top gridline; say so once, on the right
-    var fin = sEl("text", { x: W - padR, y: y(total) - 6, "text-anchor": "end", class: "b-axis" });
-    fin.textContent = "all " + total + " found";
+    // what the two axes are: the count up the side, the teams along the bottom
+    var cap = sEl("text", { x: padL - 6, y: 10, "text-anchor": "start", class: "b-axis" });
+    cap.textContent = "questions answered";
+    svg.appendChild(cap);
+    var fin = sEl("text", { x: W - padR, y: 10, "text-anchor": "end", class: "b-axis" });
+    fin.textContent = "all " + total + " to find";
     svg.appendChild(fin);
-
-    var t0 = sEl("text", { x: padL, y: H - 8, class: "b-axis" });
-    t0.textContent = "0 min";
-    svg.appendChild(t0);
-    var t1 = sEl("text", { x: W - padR, y: H - 8, "text-anchor": "end", class: "b-axis" });
-    t1.textContent = maxT + " min since each team started";
-    svg.appendChild(t1);
-
-    // grey field first, then the named hues, then yours, so yours is never buried
-    var order = [];
-    rows.forEach(function (r, i) { order.push({ r: r, i: i, c: colorOf(r.name) }); });
-    order.sort(function (a, b) {
-      var ar = (a.c === REST ? 0 : 1) + (a.i === youIdx ? 1 : 0);
-      var br = (b.c === REST ? 0 : 1) + (b.i === youIdx ? 1 : 0);
-      return ar - br;
-    });
-    var ends = [];
-    order.forEach(function (o) {
-      var r = o.r, mine = o.i === youIdx;
-      var d = "M" + x(0) + " " + y(0);
-      for (var k = 0; k < r.ts.length; k++) {
-        d += "L" + x(r.ts[k]) + " " + y(k) + "L" + x(r.ts[k]) + " " + y(k + 1);
-      }
-      var endT = Math.max(r.now || 0, r.ts.length ? r.ts[r.ts.length - 1] : 0);
-      d += "L" + x(endT) + " " + y(r.ts.length);
-      svg.appendChild(sEl("path", { d: d, class: "b-line" + (o.c === REST ? " rest" : "") + (mine ? " mine" : ""), stroke: o.c }));
-      if (o.c !== REST) {
-        svg.appendChild(sEl("circle", { cx: x(endT), cy: y(r.ts.length), r: mine ? 5 : 4, fill: o.c, class: "b-dot" }));
-        ends.push({ name: mine ? "You" : r.name, x: x(endT), y: y(r.ts.length), mine: mine });
-      }
-    });
-
-    // Direct labels, but only where one actually fits. Teams sitting on the same
-    // number is the normal case in a race, and stacking their names apart would
-    // detach them from their lines, so a label that would land on top of one
-    // already placed is simply left out. The legend and the table still name
-    // everybody. Yours goes down first, because that is the one you look for.
-    if (ends.length && ends.length <= 5) {
-      var placed = [];
-      ends.sort(function (a, b) { return (b.mine ? 1 : 0) - (a.mine ? 1 : 0); });
-      ends.forEach(function (e) {
-        for (var k = 0; k < placed.length; k++) {
-          if (Math.abs(placed[k].y - e.y) < 16 && Math.abs(placed[k].x - e.x) < 120) return;
-        }
-        placed.push(e);
-        // A line always arrives at its end running left to right, so a label put
-        // back along it would sit on top of it. Only the one with room to the
-        // right sits level; the other lifts clear.
-        var right = e.x < W - padR - 76;
-        var lab = sEl("text", { x: e.x + (right ? 9 : -9), y: e.y + (right ? 4 : -8),
-                                "text-anchor": right ? "start" : "end", class: "b-end" });
-        lab.textContent = e.name.length > 14 ? e.name.slice(0, 13) + String.fromCharCode(8230) : e.name;
-        svg.appendChild(lab);
-      });
-    }
-
-    // the hover layer: a hairline that snaps to where the pointer is, and one
-    // readout listing everybody at that minute
-    var hair = sEl("line", { x1: 0, x2: 0, y1: padT, y2: padT + plotH, class: "b-hair" });
-    hair.style.display = "none";
-    svg.appendChild(hair);
-    var hit = sEl("rect", { x: padL, y: padT, width: plotW, height: plotH, class: "b-hit" });
-    svg.appendChild(hit);
-    wrap.appendChild(svg);
 
     var tip = el("div", "b-tip");
     tip.style.display = "none";
-    wrap.appendChild(tip);
 
-    function move(ev) {
-      var box = svg.getBoundingClientRect();
-      var px = ((ev.clientX - box.left) / box.width) * W;
-      if (px < padL || px > W - padR) return hide();
-      var t = ((px - padL) / plotW) * maxT;
-      hair.setAttribute("x1", px); hair.setAttribute("x2", px);
-      hair.style.display = "";
-      tip.innerHTML = "";
-      var when = el("div", "when", (Math.round(t * 10) / 10) + " min in");
-      tip.appendChild(when);
-      var list = rows.map(function (r, i) { return { name: i === youIdx ? "You" : r.name, v: atMinute(r, t), c: colorOf(r.name) }; })
-                     .sort(function (p, q) { return q.v - p.v; }).slice(0, 8);
-      list.forEach(function (r) {
-        var row = el("div", "row");
-        var sw = el("i", "sw");
-        sw.style.background = r.c;
-        row.appendChild(sw);
-        var v = el("b", null, String(r.v));
-        row.appendChild(v);
-        row.appendChild(document.createTextNode(" " + (r.name.length > 16 ? r.name.slice(0, 15) + String.fromCharCode(8230) : r.name)));
-        tip.appendChild(row);
-      });
-      tip.style.display = "";
-      var left = (px / W) * wrap.clientWidth + 12;
-      if (left + tip.offsetWidth > wrap.clientWidth) left = (px / W) * wrap.clientWidth - tip.offsetWidth - 12;
-      tip.style.left = Math.max(0, left) + "px";
-      tip.style.top = "8px";
-    }
-    function hide() { hair.style.display = "none"; tip.style.display = "none"; }
-    svg.addEventListener("pointermove", move);
-    svg.addEventListener("pointerdown", move);
-    svg.addEventListener("pointerleave", hide);
-    svg.addEventListener("pointercancel", hide);
+    shown.forEach(function (s, idx) {
+      var r = s.r, mine = s.i === youIdx;
+      var cx = padL + band * (idx + 0.5);
+      var x0 = cx - barW / 2, x1 = cx + barW / 2;
+      var top = y(r.solved);
+      var g = sEl("g", { class: "b-band", tabindex: "0", role: "img" });
+      var title = sEl("title", {});
+      title.textContent = (mine ? r.name + " (you)" : r.name) + ": " + r.solved + " of " + total + " found";
+      g.appendChild(title);
+
+      if (r.solved > 0) {
+        // square where it meets the baseline, rounded where the data ends
+        var rad = Math.min(4, barW / 2, (y0 - top) / 2);
+        var d = "M" + x0 + " " + y0 +
+                "L" + x0 + " " + (top + rad) +
+                "Q" + x0 + " " + top + " " + (x0 + rad) + " " + top +
+                "L" + (x1 - rad) + " " + top +
+                "Q" + x1 + " " + top + " " + x1 + " " + (top + rad) +
+                "L" + x1 + " " + y0 + "Z";
+        g.appendChild(sEl("path", { d: d, fill: colorOf(r.name), class: "b-bar" }));
+      }
+      // the count sits above the bar, or just above the floor when there is no bar yet
+      if (band >= 22) {
+        var val = sEl("text", { x: cx, y: (r.solved > 0 ? top : y0) - 6, "text-anchor": "middle", class: "b-val" });
+        val.textContent = String(r.solved);
+        svg.appendChild(val);
+      }
+      var room = Math.max(3, Math.floor(band / 6.2));
+      var nm = mine ? "You" : r.name;
+      var nameLab = sEl("text", { x: cx, y: y0 + 16, "text-anchor": "middle",
+                                  class: "b-name" + (mine ? " mine" : "") });
+      nameLab.textContent = nm.length > room ? nm.slice(0, room - 1) + String.fromCharCode(8230) : nm;
+      svg.appendChild(nameLab);
+
+      // the hit area is the whole column, which is a much bigger target than the bar
+      var hit = sEl("rect", { x: padL + band * idx + 1, y: padT, width: Math.max(1, band - 2),
+                              height: plotH + padB - 12, class: "b-hit" });
+      g.appendChild(hit);
+      svg.appendChild(g);
+
+      function show() {
+        tip.innerHTML = "";
+        var who = el("div", "when", mine ? r.name + " (you)" : r.name);
+        tip.appendChild(who);
+        var line = el("div", "row");
+        line.appendChild(el("b", null, String(r.solved)));
+        line.appendChild(document.createTextNode(" of " + total + " found"));
+        tip.appendChild(line);
+        var last = r.ts && r.ts.length ? ("last one " + (Math.round(r.ts[r.ts.length - 1] * 10) / 10) + " min in")
+                                       : (r.done ? "" : "nothing found yet");
+        if (last) {
+          var l2 = el("div", "row");
+          l2.appendChild(document.createTextNode(last));
+          tip.appendChild(l2);
+        }
+        tip.style.display = "";
+        var boxW = wrap.clientWidth || W;
+        var left = (cx / W) * boxW - tip.offsetWidth / 2;
+        left = Math.max(0, Math.min(boxW - tip.offsetWidth, left));
+        tip.style.left = left + "px";
+        tip.style.top = "0px";
+      }
+      function hide() { tip.style.display = "none"; }
+      g.addEventListener("pointerenter", show);
+      g.addEventListener("pointerdown", show);
+      g.addEventListener("pointerleave", hide);
+      g.addEventListener("focus", show);
+      g.addEventListener("blur", hide);
+    });
+
+    wrap.appendChild(svg);
+    wrap.appendChild(tip);
+    return n;                            // how many bars the graph could show
   }
 
   function boardInto(node) {
@@ -1448,37 +1589,17 @@
 
     var top = el("div", "b-top");
     top.appendChild(el("h2", null, "How everyone is doing"));
-    top.appendChild(el("div", "n", rows.length === 1 ? "1 hunter" : rows.length + " hunters"));
+    var count = el("div", "n", rows.length === 1 ? "1 hunter" : rows.length + " hunters");
+    top.appendChild(count);
     node.appendChild(top);
 
     if (rows.length && total) {
       var wrap = el("div", "b-chart");
       node.appendChild(wrap);
-      chartInto(wrap, rows, total, B.you);
-
-      var leg = el("div", "b-legend");
-      var shown = {};
-      rows.forEach(function (r, i) {
-        var c = colorOf(r.name);
-        if (c === REST || shown[r.name]) return;
-        shown[r.name] = 1;
-        var s = el("span");
-        var sw = el("i");
-        sw.style.background = c;
-        s.appendChild(sw);
-        s.appendChild(document.createTextNode(i === B.you ? r.name + " (you)" : r.name));
-        leg.appendChild(s);
-      });
-      var greys = rows.filter(function (r) { return colorOf(r.name) === REST; }).length;
-      if (greys) {
-        var g = el("span");
-        var gs = el("i");
-        gs.style.background = REST;
-        g.appendChild(gs);
-        g.appendChild(document.createTextNode("everyone else (" + greys + ")"));
-        leg.appendChild(g);
-      }
-      if (leg.childNodes.length > 1) node.appendChild(leg);
+      // Each bar carries its own name, so nothing here needs a legend to say
+      // which is which; the table underneath holds everybody either way.
+      var drawn = chartInto(wrap, rows, total, B.you);
+      if (drawn < rows.length) count.textContent = "top " + drawn + " of " + rows.length + " hunters";
     } else {
       node.appendChild(el("div", "b-none", "Nobody has answered anything yet. The graph fills in as people go."));
     }
@@ -1625,6 +1746,87 @@
     return JSON.stringify(x) === JSON.stringify(y);
   }
 
+  /* ---------- somebody else's edit, applied here ---------- */
+
+  function qById(id) {
+    var qs = (E.form && E.form.questions) || [];
+    for (var i = 0; i < qs.length; i++) if (qs[i].id === id) return { q: qs[i], i: i };
+    return null;
+  }
+  // Put the new text straight into the box rather than rebuilding the page, so a
+  // remote change to one question does not move the cursor in another. A box
+  // somebody is typing in is left alone; theirs is the copy that counts.
+  function setVal(id, value) {
+    var n = $(id);
+    if (!n || n === document.activeElement) return;
+    n.value = value === null || value === undefined ? "" : value;
+    if (n.tagName === "TEXTAREA") autogrow(n);
+  }
+  function patchText(path, value) {
+    if (path.length === 1 && path[0] === "title") { setVal("ehtitle", value); setVal("edoctitle", value); return true; }
+    if (path.length === 1 && path[0] === "description") { setVal("ehdesc", value); return true; }
+    if (path[0] === "q" && path.length === 3) {
+      if (path[2] === "title") { setVal("t_" + path[1], value); return true; }
+      if (path[2] === "help") { setVal("h_" + path[1], value); return true; }
+      if (path[2] === "hint") { setVal("hint_" + path[1], value); return true; }
+    }
+    if (path[0] === "q" && path.length === 4 && path[2] === "options") {
+      setVal("o_" + path[1] + "_" + path[3], value);
+      return true;
+    }
+    return false;
+  }
+  function applyRemote(m) {
+    var f = E.form, path = m.path;
+    if (m.op === "set") {
+      if (!Array.isArray(path) || !path.length) return false;
+      var head = path[0];
+      if (path.length === 1 && (head === "title" || head === "description" || head === "theme")) f[head] = m.value;
+      else if (head === "settings" && path.length === 2) f.settings[path[1]] = m.value;
+      else if (head === "q" && path.length >= 3) {
+        var hit = qById(path[1]);
+        if (!hit) return false;
+        if (path.length === 3) hit.q[path[2]] = m.value;
+        else if (path.length === 4 && path[2] === "options") hit.q.options[path[3] | 0] = m.value;
+        else return false;
+      } else return false;
+      if (head === "theme") applyTheme(f.theme);
+      // a plain text change slots in; anything else changes more than one box
+      if (!patchText(path, m.value) && mode === "editor") paintEditor();
+      return true;
+    }
+    if (m.op === "setq") {
+      var at = qById(m.id);
+      if (!at) return false;
+      f.questions[at.i] = m.q;
+      f.questions[at.i].id = m.id;
+      if (mode === "editor") paintEditor();
+      return true;
+    }
+    if (m.op === "addq") {
+      if (!m.q) return false;
+      f.questions.splice(Math.max(0, Math.min(f.questions.length, m.at | 0)), 0, m.q);
+      if (mode === "editor") paintEditor();
+      return true;
+    }
+    if (m.op === "delq") {
+      var gone = qById(m.id);
+      if (!gone) return false;
+      f.questions.splice(gone.i, 1);
+      if (mode === "editor") paintEditor();
+      return true;
+    }
+    if (m.op === "moveq") {
+      var mv = qById(m.id);
+      if (!mv) return false;
+      f.questions.splice(mv.i, 1);
+      f.questions.splice(Math.max(0, Math.min(f.questions.length, m.to | 0)), 0, mv.q);
+      if (mode === "editor") paintEditor();
+      return true;
+    }
+    return false;
+  }
+
   // A change that arrived while the editor was busy lands as soon as it goes quiet.
   function applyQueued() {
     if (!E.queued || E.dirty || E.saving || typingInEditor()) return;
@@ -1635,26 +1837,49 @@
   }
   setInterval(function () { if (mode === "editor") applyQueued(); }, 2500);
 
-  function markDirty() {
-    E.dirty = true;
+  /* ---------- edits go out one at a time ----------
+     The editor used to save by sending the whole form, which meant two people
+     editing at once overwrote each other: whoever saved last posted a copy of
+     everything, including a stale version of what the other one had just done.
+     Every change is now addressed to the thing it changes, so an edit to
+     question three leaves question five alone. Typing in the same box at the
+     same time still comes down to whoever stopped last, which is as far as this
+     needs to go.                                                              */
+
+  var pend = {};            // path key -> the latest value waiting to go out
+  var pendTimer = null;
+  var inflight = 0;
+
+  function saveNote() {
     var s = $("esave");
-    if (s) s.textContent = "Saving...";
-    clearTimeout(markDirty.t);
-    markDirty.t = setTimeout(saveNow, 700);
+    if (!s) return;
+    s.textContent = (inflight > 0 || pendTimer) ? "Saving..." : "All changes saved";
   }
-  function saveNow() {
-    if (!E.form) return;
-    clearTimeout(markDirty.t);
-    E.dirty = false; E.saving = true;
-    send({ type: "save", form: E.form });
-    var s = $("esave");
-    if (s) s.textContent = "All changes saved";
-    // if the acknowledgement never lands (a dropped socket), stop treating the
-    // editor as busy for ever
-    setTimeout(function () { E.saving = false; }, 3000);
-    // anything that arrived while we were typing gets applied once we stop
-    setTimeout(applyQueued, 1200);
+  function opSend(o) {
+    o.type = "op";
+    inflight++;
+    if (!send(o)) inflight = Math.max(0, inflight - 1);   // offline: the reconnect resyncs
+    saveNote();
   }
+  // A keystroke does not go out on its own. The latest value of each field is sent
+  // once typing pauses, one message per field.
+  function typed(path, get) {
+    pend[path.join(".")] = { path: path, get: get };
+    if (!pendTimer) pendTimer = setTimeout(flushOps, 500);
+    saveNote();
+  }
+  function flushOps() {
+    clearTimeout(pendTimer);
+    pendTimer = null;
+    var keys = Object.keys(pend), waiting = pend;
+    pend = {};
+    for (var i = 0; i < keys.length; i++) opSend({ op: "set", path: waiting[keys[i]].path, value: waiting[keys[i]].get() });
+    saveNote();
+  }
+  // A click is deliberate and goes at once, after anything half-typed has landed.
+  function setOp(path, value) { flushOps(); opSend({ op: "set", path: path, value: value }); }
+  function structOp(o) { flushOps(); opSend(o); }
+  function saveNow() { flushOps(); }
 
   function paintTabsOnly() {
     var t = $("tab-r");
@@ -1682,11 +1907,17 @@
     ti.id = "edoctitle";
     ti.value = E.form.title;
     ti.setAttribute("aria-label", "Form title");
-    ti.addEventListener("input", function () { E.form.title = ti.value; markDirty(); });
+    ti.addEventListener("input", function () { E.form.title = ti.value; typed(["title"], function () { return E.form.title; }); });
     nameBox.appendChild(ti);
-    var saved = el("div", "e-saved", E.dirty ? "Saving..." : "All changes saved");
+    var status = el("div", "e-saved");
+    var saved = el("span", null, (inflight > 0 || pendTimer) ? "Saving..." : "All changes saved");
     saved.id = "esave";
-    nameBox.appendChild(saved);
+    status.appendChild(saved);
+    // who else has this open, so two people editing at once know it
+    var people = el("span", "e-who", E.editors > 1 ? (E.editors + " people editing") : "");
+    people.id = "epeople";
+    status.appendChild(people);
+    nameBox.appendChild(status);
     bar.appendChild(nameBox);
     var acts = el("div", "e-acts");
     var prev = iconBtn(ICON.eye, "Preview the form");
@@ -1755,8 +1986,8 @@
     var head = el("div", "e-card head");
     head.appendChild(el("div", "f-band"));
     var inner = el("div", "in");
-    inner.appendChild(growInput("big", "ehtitle", f.title, "Form title", function (v) { f.title = v; var d = $("edoctitle"); if (d) d.value = v; markDirty(); }));
-    inner.appendChild(growInput("", "ehdesc", f.description, "Form description", function (v) { f.description = v; markDirty(); }));
+    inner.appendChild(growInput("big", "ehtitle", f.title, "Form title", function (v) { f.title = v; var d = $("edoctitle"); if (d) d.value = v; typed(["title"], function () { return f.title; }); }));
+    inner.appendChild(growInput("", "ehdesc", f.description, "Form description", function (v) { f.description = v; typed(["description"], function () { return f.description; }); }));
     head.appendChild(inner);
     body.appendChild(head);
 
@@ -1782,7 +2013,7 @@
     var at = (after === undefined || after < 0) ? E.form.questions.length : after + 1;
     E.form.questions.splice(at, 0, q);
     E.sel = q.id;
-    saveNow();
+    structOp({ op: "addq", at: at, q: q });
     paintEditor();
     setTimeout(function () { var n = $("t_" + q.id); if (n) n.focus(); }, 40);
   }
@@ -1823,14 +2054,14 @@
       if (isNaN(from) || from === i) return;
       var moved = E.form.questions.splice(from, 1)[0];
       E.form.questions.splice(i, 0, moved);
-      saveNow(); paintEditor();
+      structOp({ op: "moveq", id: moved.id, to: i }); paintEditor();
     });
 
     // title + type
     var top = el("div", "e-top");
     var l = el("div", "l");
-    l.appendChild(growInput("q", "t_" + q.id, q.title, "Question", function (v) { q.title = v; markDirty(); }));
-    l.appendChild(growInput("small", "h_" + q.id, q.help, "Description (optional)", function (v) { q.help = v; markDirty(); }));
+    l.appendChild(growInput("q", "t_" + q.id, q.title, "Question", function (v) { q.title = v; typed(["q", q.id, "title"], function () { return q.title; }); }));
+    l.appendChild(growInput("small", "h_" + q.id, q.help, "Description (optional)", function (v) { q.help = v; typed(["q", q.id, "help"], function () { return q.help; }); }));
     top.appendChild(l);
     top.appendChild(typeSelect(q));
     card.appendChild(top);
@@ -1844,7 +2075,12 @@
       var side = el("div");
       var drop = el("button", null, "Remove picture");
       drop.type = "button";
-      drop.addEventListener("click", function () { q.image = ""; q.imgAr = 0; saveNow(); paintEditor(); });
+      drop.addEventListener("click", function () {
+        q.image = ""; q.imgAr = 0;
+        setOp(["q", q.id, "image"], "");
+        setOp(["q", q.id, "imgAr"], 0);
+        paintEditor();
+      });
       side.appendChild(drop);
       shot.appendChild(im);
       shot.appendChild(side);
@@ -1884,10 +2120,10 @@
     foot.appendChild(el("div", "spacer"));
     var up = iconBtn(ICON.up, "Move up");
     up.disabled = i === 0;
-    up.addEventListener("click", function () { if (i === 0) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i - 1, 0, m); saveNow(); paintEditor(); });
+    up.addEventListener("click", function () { if (i === 0) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i - 1, 0, m); structOp({ op: "moveq", id: m.id, to: i - 1 }); paintEditor(); });
     var dn = iconBtn(ICON.down, "Move down");
     dn.disabled = i === E.form.questions.length - 1;
-    dn.addEventListener("click", function () { if (i >= E.form.questions.length - 1) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i + 1, 0, m); saveNow(); paintEditor(); });
+    dn.addEventListener("click", function () { if (i >= E.form.questions.length - 1) return; var m = E.form.questions.splice(i, 1)[0]; E.form.questions.splice(i + 1, 0, m); structOp({ op: "moveq", id: m.id, to: i + 1 }); paintEditor(); });
     var pic = iconBtn(ICON.image, q.image ? "Replace the picture" : "Add a picture");
     var picker = el("input");
     picker.type = "file";
@@ -1907,7 +2143,8 @@
           if (!res) { if (note) { note.className = "e-up bad"; note.textContent = err2; } return; }
           q.image = res.id;
           q.imgAr = Math.round(res.ar * 1000) / 1000;
-          saveNow();
+          setOp(["q", q.id, "image"], q.image);
+          setOp(["q", q.id, "imgAr"], q.imgAr);
           paintEditor();
         });
       });
@@ -1917,12 +2154,12 @@
       var c = JSON.parse(JSON.stringify(q));
       c.id = newId();
       E.form.questions.splice(i + 1, 0, c);
-      E.sel = c.id; saveNow(); paintEditor();
+      E.sel = c.id; structOp({ op: "addq", at: i + 1, q: c }); paintEditor();
     });
     var del = iconBtn(ICON.trash, "Delete");
     del.addEventListener("click", function () {
-      E.form.questions.splice(i, 1);
-      saveNow(); paintEditor();
+      var gone = E.form.questions.splice(i, 1)[0];
+      structOp({ op: "delq", id: gone.id }); paintEditor();
     });
     var adv = iconBtn(ICON.more, "More settings for this question");
     adv.addEventListener("click", function () { E.adv[q.id] = !E.adv[q.id]; paintEditor(); });
@@ -1980,7 +2217,7 @@
     if (isChoice && !q.options.length) { q.options = ["Option 1"]; q.correct = []; }
     if (isChoice && !wasChoice) q.correct = [];
     if (t !== "check" && q.correct.length > 1) q.correct = [q.correct[0]];
-    saveNow(); paintEditor();
+    structOp({ op: "setq", id: q.id, q: q }); paintEditor();
   }
 
   function optionList(q) {
@@ -1989,7 +2226,7 @@
       var row = el("div", "e-opt" + (q.type === "check" ? " box" : ""));
       if (q.type === "drop") row.appendChild(el("div", "num", (i + 1) + "."));
       else row.appendChild(el("div", "mk"));
-      row.appendChild(growInput("", "o_" + q.id + "_" + i, o, "Option " + (i + 1), function (v) { q.options[i] = v; markDirty(); }));
+      row.appendChild(growInput("", "o_" + q.id + "_" + i, o, "Option " + (i + 1), function (v) { q.options[i] = v; typed(["q", q.id, "options", i], function () { return q.options[i]; }); }));
       var k = el("button", "e-key" + (q.correct.indexOf(i) >= 0 ? " on" : ""));
       k.type = "button";
       k.title = "Mark as the correct answer";
@@ -1999,7 +2236,7 @@
         var at = q.correct.indexOf(i);
         if (q.type === "check") { if (at >= 0) q.correct.splice(at, 1); else q.correct.push(i); q.correct.sort(function (a, b) { return a - b; }); }
         else q.correct = at >= 0 ? [] : [i];
-        saveNow(); paintEditor();
+        setOp(["q", q.id, "correct"], q.correct.slice()); paintEditor();
       });
       row.appendChild(k);
       var x = el("button", "e-x");
@@ -2009,7 +2246,8 @@
       x.addEventListener("click", function () {
         q.options.splice(i, 1);
         q.correct = q.correct.filter(function (n) { return n !== i; }).map(function (n) { return n > i ? n - 1 : n; });
-        saveNow(); paintEditor();
+        setOp(["q", q.id, "options"], q.options.slice());
+        setOp(["q", q.id, "correct"], q.correct.slice()); paintEditor();
       });
       if (q.options.length > 1) row.appendChild(x);
       box.appendChild(row);
@@ -2021,7 +2259,7 @@
     b.type = "button";
     b.addEventListener("click", function () {
       q.options.push("Option " + (q.options.length + 1));
-      saveNow(); paintEditor();
+      setOp(["q", q.id, "options"], q.options.slice()); paintEditor();
       setTimeout(function () { var n = $("o_" + q.id + "_" + (q.options.length - 1)); if (n) { n.focus(); n.select(); } }, 40);
     });
     add.appendChild(b);
@@ -2031,7 +2269,9 @@
 
   function acceptedAnswers(q) {
     var box = el("div");
-    var lab = el("div", "e-sub", q.answers.length ? "Accepted answers" : "Accepted answers (any one of them counts as right)");
+    var lab = el("div", "e-sub", q.answers.length
+      ? "Accepted answers. Capitals, spacing and 3-or-three are all forgiven."
+      : "Accepted answers (any one of them counts as right). Capitals, spacing and 3-or-three are forgiven.");
     lab.style.margin = "0 0 6px";
     box.appendChild(lab);
     var chips = el("div", "e-chips");
@@ -2042,7 +2282,7 @@
       x.type = "button";
       x.title = "Remove this answer";
       x.appendChild(svg(ICON.close));
-      x.addEventListener("click", function () { q.answers.splice(i, 1); saveNow(); paintEditor(); });
+      x.addEventListener("click", function () { q.answers.splice(i, 1); setOp(["q", q.id, "answers"], q.answers.slice()); paintEditor(); });
       chip.appendChild(x);
       chips.appendChild(chip);
     });
@@ -2056,13 +2296,13 @@
       if (!v) return;
       if (q.answers.indexOf(v) < 0) q.answers.push(v);
       inp.value = "";
-      saveNow(); paintEditor();
+      setOp(["q", q.id, "answers"], q.answers.slice()); paintEditor();
       setTimeout(function () { var n = $("a_" + q.id); if (n) n.focus(); }, 40);
     });
     inp.addEventListener("blur", function () {
       var v = inp.value.trim();
       if (!v) return;
-      if (q.answers.indexOf(v) < 0) { q.answers.push(v); saveNow(); paintEditor(); }
+      if (q.answers.indexOf(v) < 0) { q.answers.push(v); setOp(["q", q.id, "answers"], q.answers.slice()); paintEditor(); }
     });
     chips.appendChild(inp);
     box.appendChild(chips);
@@ -2080,7 +2320,7 @@
     n.placeholder = String(Math.round((E.form.settings.cooldownMs || 0) / 1000));
     n.addEventListener("input", function () {
       q.cooldownMs = n.value === "" ? null : Math.max(0, Math.min(600, parseInt(n.value, 10) || 0)) * 1000;
-      markDirty();
+      typed(["q", q.id, "cooldownMs"], function () { return q.cooldownMs; });
       var k = $("cdnote_" + q.id);
       if (k) k.textContent = q.cooldownMs === null ? "using the form default" : "just this question";
     });
@@ -2098,7 +2338,7 @@
     h.id = "hint_" + q.id;
     h.value = q.hint || "";
     h.placeholder = "Shown under the question once they get it wrong";
-    h.addEventListener("input", function () { q.hint = h.value; markDirty(); });
+    h.addEventListener("input", function () { q.hint = h.value; typed(["q", q.id, "hint"], function () { return q.hint; }); });
     r2.appendChild(h);
     box.appendChild(r2);
 
@@ -2107,7 +2347,7 @@
       var cb = el("input");
       cb.type = "checkbox";
       cb.checked = q.caseSensitive === true;
-      cb.addEventListener("change", function () { q.caseSensitive = cb.checked ? true : null; saveNow(); });
+      cb.addEventListener("change", function () { q.caseSensitive = cb.checked ? true : null; setOp(["q", q.id, "caseSensitive"], q.caseSensitive); });
       r3.appendChild(cb);
       r3.appendChild(el("span", null, "Capital letters have to match on this question"));
       box.appendChild(r3);
@@ -2254,7 +2494,7 @@
     cdIn.value = String(Math.round((s.cooldownMs || 0) / 1000));
     cdIn.addEventListener("input", function () {
       s.cooldownMs = Math.max(0, Math.min(600, parseInt(cdIn.value, 10) || 0)) * 1000;
-      markDirty();
+      typed(["settings", "cooldownMs"], function () { return s.cooldownMs; });
     });
     num.appendChild(cdIn);
     num.appendChild(el("span", null, "seconds"));
@@ -2262,15 +2502,15 @@
     c1.appendChild(cdRow);
 
     c1.appendChild(toggleRow("Capital letters have to match", "Off means SCIENCE, Science and science are all the same answer.",
-      s.caseSensitive, function (v) { s.caseSensitive = v; saveNow(); paintEditor(); }));
+      s.caseSensitive, function (v) { s.caseSensitive = v; setOp(["settings", "caseSensitive"], v); paintEditor(); }));
     c1.appendChild(toggleRow("Show a hint after a wrong answer", "Only questions that have a hint written will show one.",
-      s.showHints, function (v) { s.showHints = v; saveNow(); paintEditor(); }));
+      s.showHints, function (v) { s.showHints = v; setOp(["settings", "showHints"], v); paintEditor(); }));
     c1.appendChild(toggleRow("Ask for a name first", "The name shows up on the Responses tab.",
-      s.askName, function (v) { s.askName = v; saveNow(); paintEditor(); }));
+      s.askName, function (v) { s.askName = v; setOp(["settings", "askName"], v); paintEditor(); }));
     c1.appendChild(toggleRow("Show the question counter", "Question 3 of 6, under the answer.",
-      s.showCount, function (v) { s.showCount = v; saveNow(); paintEditor(); }));
+      s.showCount, function (v) { s.showCount = v; setOp(["settings", "showCount"], v); paintEditor(); }));
     c1.appendChild(toggleRow("Show the standings", "The graph of who has found what, and the QR code for joining. Everyone on the form can see it.",
-      s.showBoard !== false, function (v) { s.showBoard = v; saveNow(); paintEditor(); }));
+      s.showBoard !== false, function (v) { s.showBoard = v; setOp(["settings", "showBoard"], v); paintEditor(); }));
     body.appendChild(c1);
 
     var c2 = el("div", "e-card");
@@ -2284,7 +2524,7 @@
       b.style.background = hex;
       b.title = hex;
       b.setAttribute("aria-label", "Theme colour " + hex);
-      b.addEventListener("click", function () { f.theme = hex; applyTheme(hex); saveNow(); paintEditor(); });
+      b.addEventListener("click", function () { f.theme = hex; applyTheme(hex); setOp(["theme"], hex); paintEditor(); });
       sw.appendChild(b);
     });
     c2.appendChild(sw);
@@ -2293,8 +2533,8 @@
     var c3 = el("div", "e-card");
     c3.appendChild(el("div", "e-sec", "When they finish"));
     c3.appendChild(el("p", "e-sub", "The last screen, once every question is right."));
-    var t1 = growInput("q", "s_ftitle", s.finishTitle, "Confirmation heading", function (v) { s.finishTitle = v; markDirty(); });
-    var t2 = growInput("", "s_fnote", s.finishNote, "Anything else they should see", function (v) { s.finishNote = v; markDirty(); });
+    var t1 = growInput("q", "s_ftitle", s.finishTitle, "Confirmation heading", function (v) { s.finishTitle = v; typed(["settings", "finishTitle"], function () { return s.finishTitle; }); });
+    var t2 = growInput("", "s_fnote", s.finishNote, "Anything else they should see", function (v) { s.finishNote = v; typed(["settings", "finishNote"], function () { return s.finishNote; }); });
     c3.appendChild(t1); c3.appendChild(t2);
     body.appendChild(c3);
 
