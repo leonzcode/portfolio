@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=28';
+import { themeById, rulesOf, lookOf } from './themes.js?v=29';
 
 /* The lap.
 
@@ -884,6 +884,31 @@ export function buildTrack(scene, seed, themeId) {
   /* the stands, the barriers and the rest of the furniture are real models now,
      and they live in props.js */
 
+  /* Many of one thing, drawn once. Every repeated piece of a section - the
+     piers under a bridge, the lamps in a tunnel, the rocks of the mountain a
+     cave is bored through, the lit rings of a pipe - used to be its own mesh,
+     and on Redrock Dunes that was a hundred extra draw calls for one tunnel. */
+  function many(geo, mat, spots) {
+    if (!spots.length) return null;
+    const im = new THREE.InstancedMesh(geo, mat, spots.length);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+    const e = new THREE.Euler(), sc = new THREE.Vector3();
+    spots.forEach((sp, i) => {
+      e.set(sp.rx || 0, sp.ry || 0, sp.rz || 0, sp.order || 'XYZ');
+      q.setFromEuler(e);
+      sc.set(sp.sx === undefined ? 1 : sp.sx, sp.sy === undefined ? 1 : sp.sy,
+             sp.sz === undefined ? 1 : sp.sz);
+      m.compose(sp.p, q, sc);
+      im.setMatrixAt(i, m);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    im.castShadow = true;
+    im.receiveShadow = true;
+    im.frustumCulled = false;
+    group.add(im);
+    return im;
+  }
+
   /* ---- the bridge, the tunnel and the water, built ------------------------ */
   for (const f of features) {
     const ids = f.ids;
@@ -938,6 +963,7 @@ export function buildTrack(scene, seed, themeId) {
       }
 
       const every = L.kind === 'rope' ? 3 : 5;
+      const piers = [], posts = [];
       for (let k = 2; k < ids.length - 2; k += every) {
         const a = samples[ids[k]];
         for (const side of [1, -1]) {
@@ -947,18 +973,15 @@ export function buildTrack(scene, seed, themeId) {
           if (L.kind === 'rope') {
             // posts up from the deck rather than piers down to the ground: a
             // rope bridge hangs, it does not stand on anything
-            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 2.2, 7), pierMat);
-            post.position.set(top.x, top.y + 0.2, top.z);
-            post.castShadow = true;
-            group.add(post);
+            posts.push({ p: new THREE.Vector3(top.x, top.y + 0.2, top.z) });
           } else {
-            const pier = new THREE.Mesh(new THREE.BoxGeometry(1.5, h, 1.5), pierMat);
-            pier.position.set(top.x, foot + h / 2, top.z);
-            pier.castShadow = true;
-            group.add(pier);
+            // one box, scaled: a pier is only ever a box of a different height
+            piers.push({ p: new THREE.Vector3(top.x, foot + h / 2, top.z), sy: h });
           }
         }
       }
+      many(new THREE.CylinderGeometry(0.22, 0.26, 2.2, 7), pierMat, posts);
+      many(new THREE.BoxGeometry(1.5, 1, 1.5), pierMat, piers);
       // and the ropes themselves, slung between the posts
       if (L.kind === 'rope') {
         const ropeMat = new THREE.MeshStandardMaterial({ color: L.rope, roughness: 1 });
@@ -1035,6 +1058,7 @@ export function buildTrack(scene, seed, themeId) {
            every rock here is pushed out far enough that its near face clears
            the tube, so what you drive at is a hole in a hill. */
         const mat = new THREE.MeshStandardMaterial({ color: L.mount, roughness: 1, flatShading: true });
+        const rocks = [];
         for (let k = 0; k < ids.length; k += 3) {
           const a = samples[ids[k]];
           const t = k / (ids.length - 1);
@@ -1055,57 +1079,62 @@ export function buildTrack(scene, seed, themeId) {
             { x: -(bore * 0.8 + r * 0.7), y: bore * 0.5 + r * 0.8 },
           ];
           for (const sp of spots) {
-            const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), mat);
             const at = a.p.clone().addScaledVector(a.n, sp.x);
-            rock.position.set(at.x, a.p.y + sp.y - 0.4, at.z);
-            rock.rotation.set(wr() * 3, wr() * 3, wr() * 3);
-            rock.scale.set(1.25, 0.95, 1.25);
-            rock.castShadow = true; rock.receiveShadow = true;
-            group.add(rock);
+            rocks.push({
+              p: new THREE.Vector3(at.x, a.p.y + sp.y - 0.4, at.z),
+              rx: wr() * 3, ry: wr() * 3, rz: wr() * 3,
+              sx: r * 1.25, sy: r * 0.95, sz: r * 1.25,
+            });
           }
         }
+        // one rock, however many of it the hill is made of
+        many(new THREE.DodecahedronGeometry(1, 0), mat, rocks);
       }
 
       const lampMat = new THREE.MeshStandardMaterial({
         color: 0xfff6e2, emissive: L.lamp, emissiveIntensity: 1.2,
       });
+      const lamps = [];
       for (let k = 2; k < ids.length - 2; k += 4) {
         const a = samples[ids[k]];
-        const lamp = new THREE.Mesh(new THREE.BoxGeometry(a.w * 0.5, 0.25, 1.1), lampMat);
-        lamp.position.set(a.p.x, a.p.y + (a.w + KERB) * 0.58 - 0.65, a.p.z);
-        lamp.rotation.y = Math.atan2(a.t.x, a.t.z);
-        group.add(lamp);
+        lamps.push({
+          p: new THREE.Vector3(a.p.x, a.p.y + (a.w + KERB) * 0.58 - 0.65, a.p.z),
+          ry: Math.atan2(a.t.x, a.t.z), sx: a.w * 0.5,
+        });
       }
+      many(new THREE.BoxGeometry(1, 0.25, 1.1), lampMat, lamps);
       // a lit ring every few metres, which is what makes a pipe a pipe
       /* Cracks, for a tube bored through rock that is still cooling. Thin lit
          bands round the inside, which is the one thing that tells you a black
          tunnel on a black circuit is there at all. */
       if (L.crack !== undefined) {
         const crackMat = new THREE.MeshBasicMaterial({ color: L.crack, side: THREE.DoubleSide });
+        const cracks = [];
         for (let k = 1; k < ids.length - 1; k += 2) {
           const a = samples[ids[k]];
           const rad = (a.w + KERB) * (0.86 + wr() * 0.1);
-          const arc = 0.5 + wr() * 1.5;
-          const band = new THREE.Mesh(
-            new THREE.TorusGeometry(rad, 0.1 + wr() * 0.1, 4, 10, arc), crackMat);
-          band.position.set(a.p.x, a.p.y - 0.2, a.p.z);
-          band.rotation.y = Math.atan2(a.n.x, a.n.z) + Math.PI / 2;
-          band.rotation.z = wr() * 2;
-          band.scale.set(1, 0.62, 1);
-          group.add(band);
+          cracks.push({
+            p: new THREE.Vector3(a.p.x, a.p.y - 0.2, a.p.z),
+            ry: Math.atan2(a.n.x, a.n.z) + Math.PI / 2, rz: wr() * 2, order: 'YZX',
+            sx: rad, sy: rad * 0.62, sz: rad,
+          });
         }
+        // one arc of a torus, at whatever radius each crack wants
+        many(new THREE.TorusGeometry(1, 0.06, 4, 10, 1.4), crackMat, cracks);
       }
       if (L.ring !== undefined) {
         const ringMat = new THREE.MeshBasicMaterial({ color: L.ring, side: THREE.DoubleSide });
+        const rings = [];
         for (let k = 1; k < ids.length - 1; k += 3) {
           const a = samples[ids[k]];
-          const rad = a.w + KERB;
-          const ring = new THREE.Mesh(new THREE.TorusGeometry(rad * 0.82, 0.16, 5, 18, Math.PI), ringMat);
-          ring.position.set(a.p.x, a.p.y - 0.2, a.p.z);
-          ring.rotation.y = Math.atan2(a.n.x, a.n.z) + Math.PI / 2;
-          ring.scale.set(1, 0.7, 1);
-          group.add(ring);
+          const rad = (a.w + KERB) * 0.82;
+          rings.push({
+            p: new THREE.Vector3(a.p.x, a.p.y - 0.2, a.p.z),
+            ry: Math.atan2(a.n.x, a.n.z) + Math.PI / 2,
+            sx: rad, sy: rad * 0.7, sz: rad,
+          });
         }
+        many(new THREE.TorusGeometry(1, 0.05, 5, 18, Math.PI), ringMat, rings);
       }
     }
 

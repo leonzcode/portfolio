@@ -11,7 +11,7 @@
    little SVG for the slot in the corner of the screen.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { spinOut } from './kart.js?v=28';
+import { spinOut } from './kart.js?v=29';
 
 const svg = (inner) => '<svg viewBox="0 0 64 64" width="100%" height="100%">' + inner + '</svg>';
 const K = 'stroke="#17223b" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';
@@ -53,6 +53,18 @@ export const ITEMS = {
             + '<path d="M44 30 q10 -8 14 -2" fill="none" stroke="#17223b" stroke-width="5" stroke-linecap="round"/>'
             + '<circle cx="52" cy="18" r="5" fill="#17223b" stroke="none"/>'),
   },
+  bullet: {
+    /* The comeback item. It takes the wheel off you for a few seconds and drives
+       the car down the racing line at a speed you cannot otherwise reach,
+       knocking over anything in the way. You only get it a long way back, and
+       it stops the moment you are not. */
+    name: 'Bullet', self: true,
+    face: svg('<path d="M32 6 q13 12 13 28 v14 a4 4 0 0 1 -4 4 H23 a4 4 0 0 1 -4 -4 V34 Q19 18 32 6 Z" fill="#8fd3ff" ' + K + '/>'
+            + '<path d="M22 50 l-6 10 h12 z" fill="#ffd233" ' + K + '/>'
+            + '<path d="M42 50 l6 10 H36 z" fill="#ffd233" ' + K + '/>'
+            + '<circle cx="25" cy="28" r="4" fill="#17223b" stroke="none"/>'
+            + '<circle cx="39" cy="28" r="4" fill="#17223b" stroke="none"/>'),
+  },
   star: {
     name: 'Star', self: true,
     face: svg('<path d="M32 6 L40 26 L62 26 L44 39 L51 59 L32 46 L13 59 L20 39 L2 26 L24 26 Z" fill="#ffd233" ' + K + '/>'),
@@ -82,9 +94,9 @@ const TABLE = [
   [['peel', 5], ['slick', 3], ['bolt', 4], ['turbo', 3], ['seeker', 1]],
   [['peel', 3], ['bolt', 3], ['turbo', 4], ['seeker', 3], ['slick', 2], ['bomb', 1], ['oil', 1], ['plant', 1]],
   [['peel', 2], ['turbo', 4], ['seeker', 4], ['bomb', 2], ['bolt', 2], ['star', 1], ['oil', 2], ['plant', 2]],
-  [['turbo', 3], ['seeker', 4], ['bomb', 2], ['star', 2], ['surge', 2], ['oil', 2], ['plant', 2]],
+  [['turbo', 3], ['seeker', 4], ['bomb', 2], ['star', 2], ['surge', 2], ['oil', 2], ['plant', 2], ['bullet', 1]],
   // last rows
-  [['turbo', 3], ['seeker', 3], ['star', 3], ['surge', 3], ['bomb', 2], ['oil', 2], ['plant', 2]],
+  [['turbo', 2], ['seeker', 3], ['star', 3], ['surge', 3], ['bomb', 2], ['oil', 2], ['plant', 2], ['bullet', 3]],
 ];
 
 /* Where you are in the order decides the row; where you are racing bends it.

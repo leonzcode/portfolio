@@ -46,7 +46,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=28';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=29';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -144,7 +144,7 @@ export function makeKart(who, build) {
     pushX: 0, pushZ: 0,
     // how hard you are revving on the grid, which everybody can see
     rev: 0,
-    boost: 0, spin: 0, slow: 0, star: 0,
+    boost: 0, spin: 0, slow: 0, star: 0, bullet: 0,
     // over nothing: how long for, and how far down
     falling: 0, fallV: 0, fallY: 0, overEdge: 0, rescue: 0,
     // a trick: whether one is running, which one, and how far through it is
@@ -301,6 +301,40 @@ export function stepKart(k, input, track, dt) {
   k.rules = (track && track.rules) || PLAIN;
   const R = k.rules;
   const top = topSpeed(k);
+
+  /* ---- the bullet --------------------------------------------------------
+     It takes the wheel off you. For as long as it lasts the car is driven down
+     the middle of the road at a speed nothing else reaches, it cannot be
+     steered and it cannot be stopped, and anything it touches is knocked flat.
+     That is the whole of the item: the only decision is when to use it. */
+  if (k.bullet > 0 && track) {
+    k.bullet -= dt;
+    k.spin = 0; k.drift = 0; k.driftT = 0; k.slide *= 0.85;
+    const pr0 = track.project(k.pos.x, k.pos.z, k.hint);
+    k.hint = pr0.i;
+    // aimed a little way up the road, which is what keeps it on the line
+    const look = track.at((pr0.s + 16) % track.length);
+    const want = Math.atan2(-(look.p.x - k.pos.x), -(look.p.z - k.pos.z));
+    let d = want - k.yaw;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    k.yaw += d * Math.min(1, dt * 6);
+    // and pulled back to the middle of the road, so it never leaves it
+    const pull = -pr0.lateral * Math.min(1, dt * 2.4);
+    k.pos.x += pr0.n.x * pull; k.pos.z += pr0.n.z * pull;
+    k.speed += (TUNE.top * 1.85 - k.speed) * Math.min(1, dt * 2.2);
+    k.pos.x += -Math.sin(k.yaw) * k.speed * dt;
+    k.pos.z += -Math.cos(k.yaw) * k.speed * dt;
+    const pr = track.project(k.pos.x, k.pos.z, k.hint);
+    k.hint = pr.i;
+    k.pos.y = pr.y;
+    k.hop = 0; k.hopV = 0; k.launched = 0; k.falling = 0;
+    k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);
+    k.wheelSpin += k.speed * dt / 0.38;
+    k.prog = pr.s;
+    if (k.bullet <= 0) { k.bullet = 0; k.boost = Math.max(k.boost, 0.5); }
+    return pr;
+  }
 
   if (k.spin > 0) {
     // spun out: no control, just the tumble it was given
