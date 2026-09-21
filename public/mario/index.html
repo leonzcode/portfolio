@@ -528,22 +528,30 @@
   #board .rows .r{ font-size:13px; padding:4px 8px; grid-template-columns:28px 1fr auto; }
   #board .rows .r .p{ font-size:15px; }
 
-  /* the fastest laps, under the finishing order on the results panel */
-  #times{ margin-top:12px; border-top:3px solid var(--ink); padding-top:10px; }
-  #times h3{
-    margin:0 0 7px; font-family:var(--display); font-size:13px; letter-spacing:.1em;
-    text-transform:uppercase; color:var(--ink); opacity:.6;
+  /* The record board, on the menu beside the racer and the kart. Ten rows and
+     then you: your best, the race you just drove, and where that best places
+     you when it is not one of the ten. */
+  #times{ width:236px; flex:0 0 236px; }
+  /* the card centres its heading; a list of names reads down the left */
+  #times .rows .r span:not(.p):not(.t){ text-align:left; }
+  #times .mine span{ text-align:left; }
+  #times .sub{
+    margin:-4px 0 9px; font-size:12px; opacity:.6; font-weight:700;
   }
-  #times .rows{ display:flex; flex-direction:column; gap:3px; max-height:210px; overflow-y:auto; }
-  #times .rows .r{ font-size:13px; padding:4px 8px; grid-template-columns:28px 1fr auto; }
+  #times .rows{ display:flex; flex-direction:column; gap:3px; }
+  #times .rows .r{ font-size:13px; padding:4px 8px; grid-template-columns:26px 1fr auto; }
   #times .rows .r .p{ font-size:14px; }
+  #times .rows .r .t{ font-variant-numeric:tabular-nums; }
   #times .none{ margin:2px 0 0; font-size:13px; opacity:.6; }
   #times .mine{
-    margin-top:9px; font-family:var(--display); font-weight:800; font-size:14px;
-    letter-spacing:.04em; color:var(--ink); display:flex; justify-content:space-between;
-    background:var(--gold); border:var(--key); border-radius:11px; padding:6px 11px;
+    margin-top:7px; font-family:var(--display); font-weight:800; font-size:13px;
+    letter-spacing:.03em; color:var(--ink); display:flex; justify-content:space-between;
+    gap:10px; background:var(--gold); border:var(--key); border-radius:11px; padding:6px 10px;
   }
+  #times .mine.last{ background:var(--cream); }
+  #times .mine.place{ background:#8fd3ff; }
   #times .mine b{ font-variant-numeric:tabular-nums; }
+  @media (max-width: 900px){ #times{ width:100%; flex:1 1 100%; } }
 
   #watch{
     position:fixed; left:50%; top:22px; transform:translateX(-50%); z-index:36; display:none;
@@ -636,6 +644,7 @@
   <label>Who</label>
   <div id="cast"></div>
   </div>
+  <div class="card" id="times"></div>
   <div class="card" id="garage">
     <h2>Your kart</h2>
     <div id="gstage"><canvas id="gcan"></canvas><span id="ghint">drag to turn</span></div>
@@ -706,7 +715,6 @@
     <div class="panel">
       <h2 id="restitle">Race over</h2>
       <div class="rows" id="resrows"></div>
-      <div id="times"></div>
       <div class="foot" id="resfoot">Next race in <b>10</b></div>
     </div>
     <div id="cup"><div class="panel"><h2>Cup</h2><div class="rows" id="cuprows"></div></div></div>
@@ -741,5 +749,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=38');
+await import('./game.js?v=39');
 </script>
