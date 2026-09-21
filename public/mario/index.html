@@ -137,17 +137,6 @@
   #maps button:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
   #mapnote{ font-weight:700; font-size:12px; color:var(--ink); opacity:.62; margin:-6px 0 10px; min-height:1.2em; }
 
-
-  #cast{ display:flex; gap:9px; justify-content:center; margin:14px 0 4px; flex-wrap:wrap; }
-  #cast button{
-    width:78px; padding:8px 4px 9px; cursor:pointer; font-family:var(--display); font-weight:700;
-    font-size:12px; letter-spacing:.06em; color:var(--ink); background:#fff;
-    border:var(--key); border-radius:13px; box-shadow:0 4px 0 var(--ink);
-    display:flex; flex-direction:column; align-items:center; gap:6px;
-  }
-  #cast button i{ width:34px; height:34px; border-radius:50%; border:var(--key); display:block; }
-  #cast button.on{ background:var(--gold); transform:translateY(2px); box-shadow:0 2px 0 var(--ink); }
-  #cast button:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
   #play{ display:flex; gap:14px; flex-wrap:wrap; justify-content:center; }
   .big{
     font-family:var(--display); font-weight:800; font-size:21px; letter-spacing:.08em;
@@ -163,6 +152,64 @@
   #keys b{ background:var(--ink); border-radius:6px; padding:2px 7px; margin:0 1px; }
   #load{ font-family:var(--display); font-weight:700; font-size:13px; letter-spacing:.18em; text-transform:uppercase; color:#fff; opacity:.85; }
   #title.gone{ display:none; }
+
+  /* hidden from the eye, still read out: the name box and the slider are
+     labelled for a screen reader without a visible caption over each */
+  .sr{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+  /* The name is the heading of the car it belongs to. It reads as a title
+     until you click it, and the placeholder says what to do with it. */
+  #garage #nick{
+    font-size:21px; text-align:center; letter-spacing:.03em; margin:0 0 12px;
+    padding:8px 12px; background:#fff;
+  }
+  #garage #nick::placeholder{ color:var(--ink); opacity:.4; }
+
+  /* The paint. A disc for hue and how strong it is, and a slider for how light,
+     because a disc on its own cannot make a black car or a white one. */
+  #paint{
+    display:flex; align-items:center; justify-content:center; gap:14px;
+    margin:12px 0 4px; padding-top:11px; border-top:3px solid var(--ink);
+  }
+  #paint em{
+    font-style:normal; font-weight:800; font-size:9.5px; letter-spacing:.11em;
+    text-transform:uppercase; opacity:.55; writing-mode:vertical-rl; transform:rotate(180deg);
+  }
+  #wheel{
+    width:112px; height:112px; border-radius:50%; border:var(--key); cursor:crosshair;
+    box-shadow:0 3px 0 var(--ink); touch-action:none; background:#fff;
+  }
+  #wheel:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
+  #paintside{ display:flex; flex-direction:column; align-items:center; gap:10px; width:96px; }
+  #swatch{
+    width:52px; height:52px; border-radius:14px; border:var(--key); box-shadow:0 3px 0 var(--ink);
+    background:#e8402a;
+  }
+  #light{ width:96px; accent-color:var(--ink); }
+
+  /* Where to race. Singleplayer asks this before it builds anything, because
+     the place decides the circuit and the circuit is the first thing built. */
+  #mapsel{
+    position:fixed; inset:0; z-index:61; display:none;
+    align-items:center; justify-content:center; padding:18px 14px; overflow-y:auto;
+    background:
+      repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 26px, transparent 26px 52px),
+      radial-gradient(120% 90% at 50% 18%, #7fd0ff 0%, #4fb7ff 42%, #2b56d6 100%);
+  }
+  #mapsel.on{ display:flex; }
+  #mapsel .card{
+    background:var(--cream); color:var(--ink); border:var(--key); border-radius:18px;
+    box-shadow:0 8px 0 var(--ink); padding:22px 24px; width:min(820px,94vw); text-align:center;
+  }
+  #mapsel h2{ font-family:var(--display); font-weight:800; font-size:26px; margin:0 0 16px; letter-spacing:.04em; }
+  #mapsel #maps{ gap:12px; margin:0 0 14px; }
+  #mapsel #maps button{ width:142px; font-size:13px; padding-bottom:10px; gap:9px; }
+  #mapsel #maps button i{ height:70px; }
+  #mapsel #mapnote{ font-size:14px; margin:0 0 18px; min-height:1.3em; }
+  #mapsel .go{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+  @media (max-width: 600px){
+    #mapsel #maps button{ width:calc(50% - 8px); }
+  }
 
   /* ---------- names over the karts ----------
      Yours in gold, everybody else's in white, so you can find yourself in a
@@ -641,33 +688,45 @@
 <div id="title">
   <div class="wm"><img src="logo.png?v=1" alt="Leon Kart" decoding="async"><small>Fastest one wins</small></div>
   <div class="row">
-  <div class="card">
-    <h2>Pick a racer</h2>
-    <label for="nick">Name</label>
-    <input id="nick" maxlength="12" placeholder="Player" autocomplete="off" spellcheck="false">
-    <label>Where</label>
-  <div id="maps"></div>
-  <div id="mapnote"></div>
-  <label>Who</label>
-  <div id="cast"></div>
-  </div>
-  <div class="card" id="times"></div>
   <div class="card" id="garage">
-    <h2>Your kart</h2>
+    <label class="sr" for="nick">Your name</label>
+    <input id="nick" maxlength="12" placeholder="Type your name" autocomplete="off" spellcheck="false">
     <div id="gstage"><canvas id="gcan"></canvas><span id="ghint">drag to turn</span></div>
     <div id="gparts"></div>
+    <div id="paint">
+      <em>Colour</em>
+      <canvas id="wheel" width="132" height="132" aria-label="Pick a colour" role="slider"></canvas>
+      <div id="paintside">
+        <span id="swatch"></span>
+        <label class="sr" for="light">Brightness</label>
+        <input id="light" type="range" min="18" max="82" value="50">
+      </div>
+    </div>
     <div id="gbars"></div>
   </div>
+  <div class="card" id="times"></div>
   </div>
   <div id="play">
     <button class="big alt" id="solo">Singleplayer<small>you and seven others</small></button>
-    <button class="big" id="online">Multiplayer<small>one lobby, everybody in it</small></button>
+    <button class="big" id="online">Multiplayer<small id="onlinecount">one lobby, everybody in it</small></button>
   </div>
   <div id="keys">
     <b>&#8593;</b> <b>W</b> go &middot; <b>&#8595;</b> <b>S</b> brake &middot; <b>&#8592;&#8594;</b> <b>A D</b> steer<br>
     <b>Space</b> hop and drift &middot; <b>E</b> use item &middot; <b>Q</b> view &middot; <b>M</b> sound &middot; <b>T</b> chat &middot; <b>Esc</b> menu
   </div>
   <div id="load">building the circuit&hellip;</div>
+</div>
+
+<div id="mapsel">
+  <div class="card">
+    <h2>Where to?</h2>
+    <div id="maps"></div>
+    <div id="mapnote"></div>
+    <div class="go">
+      <button class="big alt" id="mapback">Back</button>
+      <button class="big" id="mapgo">Race</button>
+    </div>
+  </div>
 </div>
 
 <div id="tags"></div>
@@ -756,5 +815,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=41');
+await import('./game.js?v=42');
 </script>

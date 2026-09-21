@@ -23,6 +23,25 @@ export const RACERS = [
   { id: 'tock', name: 'Tock', shirt: 0x1fb6a6, skin: 0xb07a4e, cap: 0x17223b, kart: 0x1fb6a6, trim: 0xffd233 },
 ];
 
+/* A car painted from one colour off the wheel. The body and the driver take it
+   as it is; the trim is the same colour pushed towards white if it is dark and
+   towards black if it is light, so the stripes and the wing still read against
+   the bodywork whatever was picked. The racer underneath supplies everything
+   the wheel does not decide, which is the driver's skin. */
+function accentOf(c) {
+  const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  const to = lum < 140 ? 255 : 0, k = lum < 140 ? 0.62 : 0.55;
+  const mix = v => Math.round(v + (to - v) * k);
+  return (mix(r) << 16) | (mix(g) << 8) | mix(b);
+}
+export function racerOf(cast, colour) {
+  const base = RACERS[Math.max(0, Math.min(RACERS.length - 1, cast | 0))];
+  if (colour === null || colour === undefined) return base;
+  const c = colour & 0xffffff;
+  return Object.assign({}, base, { kart: c, shirt: c, cap: c, trim: accentOf(c) });
+}
+
 const BODY_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.08 });
 const TYRE_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
 
@@ -46,7 +65,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=41';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=42';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */

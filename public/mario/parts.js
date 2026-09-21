@@ -493,17 +493,31 @@ export const trailOf = id => pick(TRAILS, id, 0);
    already being sent. Nothing on the server had to learn about any of this.
 --------------------------------------------------------------------------- */
 const ORDER = [['chassis', CHASSIS], ['wheels', WHEELS], ['trail', TRAILS]];
-export function packLook(cast, build) {
+/* How many different looks the parts alone make, times eight for the racer.
+   Everything above that is the paint. Worked out from the lists rather than
+   written down, so adding a wheel does not quietly shift the colour into the
+   part numbers. */
+const SPAN = 8 * ORDER.reduce((n, pair) => n * pair[1].length, 1);
+
+/* One number for the whole car: which racer, which parts, and a colour off the
+   wheel if one was picked. Colour 0 means "the racer's own", so a car sent
+   before there was a wheel still decodes to exactly what it was. It stays well
+   inside the integers a double holds exactly, and it is never put through | 0,
+   which would cut it to 32 bits and lose the paint. */
+export function packLook(cast, build, colour) {
   const b = normalise(build);
   let n = 0;
   for (let i = ORDER.length - 1; i >= 0; i--) {
     const list = ORDER[i][1];
     n = n * list.length + Math.max(0, list.findIndex(x => x.id === b[ORDER[i][0]]));
   }
-  return (cast & 7) + 8 * n;
+  const paint = colour === null || colour === undefined ? 0 : (colour & 0xffffff) + 1;
+  return (cast & 7) + 8 * n + SPAN * paint;
 }
 export function unpackLook(n) {
-  let r = Math.max(0, n | 0);
+  let r = Math.max(0, Math.floor(+n) || 0);
+  const paint = Math.floor(r / SPAN);
+  r = r % SPAN;
   const cast = r & 7;
   r = Math.floor(r / 8);
   const build = {};
@@ -511,5 +525,5 @@ export function unpackLook(n) {
     build[pair[0]] = pair[1][r % pair[1].length].id;
     r = Math.floor(r / pair[1].length);
   }
-  return { cast, build };
+  return { cast, build, colour: paint > 0 ? paint - 1 : null };
 }
