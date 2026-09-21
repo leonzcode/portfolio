@@ -42,15 +42,22 @@
       repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 26px, transparent 26px 52px),
       radial-gradient(120% 90% at 50% 18%, #7fd0ff 0%, #4fb7ff 42%, #2b56d6 100%);
   }
+  /* The wordmark is a picture now rather than set type, so the size that used
+     to be a font size is a width. The strapline under it keeps the drawn look
+     the rest of the menu has, and is sized off the same clamp so the two stay
+     in proportion at any width. */
   #title .wm{
     font-family:var(--display); font-weight:800; font-size:clamp(40px,9vw,112px);
-    line-height:.92; letter-spacing:-.01em; color:var(--gold);
-    -webkit-text-stroke:9px var(--ink); paint-order:stroke fill;
-    text-shadow:0 10px 0 var(--ink); transform:rotate(-2.5deg);
+    line-height:.92; transform:rotate(-2.5deg);
+  }
+  #title .wm img{
+    display:block; width:min(560px, 78vw); height:auto; margin:0 auto;
+    filter:drop-shadow(0 9px 0 rgba(23,34,59,.55));
   }
   #title .wm small{
     display:block; font-size:.26em; color:#fff; -webkit-text-stroke:5px var(--ink);
-    letter-spacing:.18em; text-transform:uppercase; margin-top:.22em;
+    paint-order:stroke fill;
+    letter-spacing:.18em; text-transform:uppercase; margin-top:.1em;
   }
   #title .card{
     background:var(--cream); color:var(--ink); border:var(--key); border-radius:18px;
@@ -632,7 +639,7 @@
 </style>
 
 <div id="title">
-  <div class="wm">LEON KART<small>Fastest one wins</small></div>
+  <div class="wm"><img src="logo.png?v=1" alt="Leon Kart" decoding="async"><small>Fastest one wins</small></div>
   <div class="row">
   <div class="card">
     <h2>Pick a racer</h2>
@@ -749,5 +756,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=40');
+await import('./game.js?v=41');
 </script>

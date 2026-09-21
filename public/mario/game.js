@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=40';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=40';
-import { packLook, unpackLook, normalise } from './parts.js?v=40';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=40';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=40';
-import { makeRescue } from './rescue.js?v=40';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=40';
-import { makeBrain, driveBrain } from './ai.js?v=40';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=40';
-import { makeCones } from './cones.js?v=40';
-import { makeHazards } from './hazards.js?v=40';
-import { THEMES, themeById } from './themes.js?v=40';
-import * as snd from './audio.js?v=40';
+import { buildTrack } from './track.js?v=41';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=41';
+import { packLook, unpackLook, normalise } from './parts.js?v=41';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=41';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=41';
+import { makeRescue } from './rescue.js?v=41';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=41';
+import { makeBrain, driveBrain } from './ai.js?v=41';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=41';
+import { makeCones } from './cones.js?v=41';
+import { makeHazards } from './hazards.js?v=41';
+import { THEMES, themeById } from './themes.js?v=41';
+import * as snd from './audio.js?v=41';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -354,7 +354,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=40')
+  import('./props.js?v=41')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1762,7 +1762,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=40');
+    const mod = await import('./net.js?v=41');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
