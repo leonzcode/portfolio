@@ -528,6 +528,23 @@
   #board .rows .r{ font-size:13px; padding:4px 8px; grid-template-columns:28px 1fr auto; }
   #board .rows .r .p{ font-size:15px; }
 
+  /* the fastest laps, under the finishing order on the results panel */
+  #times{ margin-top:12px; border-top:3px solid var(--ink); padding-top:10px; }
+  #times h3{
+    margin:0 0 7px; font-family:var(--display); font-size:13px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ink); opacity:.6;
+  }
+  #times .rows{ display:flex; flex-direction:column; gap:3px; max-height:210px; overflow-y:auto; }
+  #times .rows .r{ font-size:13px; padding:4px 8px; grid-template-columns:28px 1fr auto; }
+  #times .rows .r .p{ font-size:14px; }
+  #times .none{ margin:2px 0 0; font-size:13px; opacity:.6; }
+  #times .mine{
+    margin-top:9px; font-family:var(--display); font-weight:800; font-size:14px;
+    letter-spacing:.04em; color:var(--ink); display:flex; justify-content:space-between;
+    background:var(--gold); border:var(--key); border-radius:11px; padding:6px 11px;
+  }
+  #times .mine b{ font-variant-numeric:tabular-nums; }
+
   #watch{
     position:fixed; left:50%; top:22px; transform:translateX(-50%); z-index:36; display:none;
     background:var(--red); color:#fff; border:var(--key); border-radius:14px; box-shadow:var(--drop);
@@ -689,6 +706,7 @@
     <div class="panel">
       <h2 id="restitle">Race over</h2>
       <div class="rows" id="resrows"></div>
+      <div id="times"></div>
       <div class="foot" id="resfoot">Next race in <b>10</b></div>
     </div>
     <div id="cup"><div class="panel"><h2>Cup</h2><div class="rows" id="cuprows"></div></div></div>
@@ -723,5 +741,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=37');
+await import('./game.js?v=38');
 </script>
