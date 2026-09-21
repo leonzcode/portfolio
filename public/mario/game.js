@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=39';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=39';
-import { packLook, unpackLook, normalise } from './parts.js?v=39';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=39';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=39';
-import { makeRescue } from './rescue.js?v=39';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=39';
-import { makeBrain, driveBrain } from './ai.js?v=39';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=39';
-import { makeCones } from './cones.js?v=39';
-import { makeHazards } from './hazards.js?v=39';
-import { THEMES, themeById } from './themes.js?v=39';
-import * as snd from './audio.js?v=39';
+import { buildTrack } from './track.js?v=40';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=40';
+import { packLook, unpackLook, normalise } from './parts.js?v=40';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=40';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=40';
+import { makeRescue } from './rescue.js?v=40';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=40';
+import { makeBrain, driveBrain } from './ai.js?v=40';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=40';
+import { makeCones } from './cones.js?v=40';
+import { makeHazards } from './hazards.js?v=40';
+import { THEMES, themeById } from './themes.js?v=40';
+import * as snd from './audio.js?v=40';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -354,7 +354,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=39')
+  import('./props.js?v=40')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -402,6 +402,7 @@ function placeOnGrid() {
     k.speed = 0; k.drift = 0; k.driftT = 0; k.slide = 0; k.hop = 0; k.hopV = 0;
     k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0;
     k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0; k.dnf = 0;
+    if (k === me) postedRace = false;
     k.item = null; k.itemN = 0; k.roulette = 0; k.queue = [];
     k.falling = 0; k.fallV = 0; k.overEdge = 0; k.rescue = 0; k.bullet = 0;
     k.hint = null;
@@ -1378,6 +1379,11 @@ try {
   myLastTime = +localStorage.getItem('mkLastTime') || 0;
 } catch (e) {}
 let raceBoard = null;
+/* One row a race. The results panel is drawn twice - once the moment you come
+   home, which is what puts "You finished 3rd" up while the others are still out
+   there, and again when the flag falls on the race as a whole - and both of
+   them were putting the same time on the board. */
+let postedRace = false;
 
 // where you stand, when you are not on the ten being shown
 function rankOf(board, secs) {
@@ -1466,8 +1472,10 @@ function drawCup() {
 
 function showResults(final) {
   const live = order();
-  // a race you finished goes on the board
-  if (me && !me.dnf && me.time > 0) {
+  /* A race you actually finished goes on the board: all three laps, under your
+     own power, not the flag falling on you while you were still out there. */
+  if (me && !postedRace && !me.dnf && me.lap >= LAPS && me.time > 0) {
+    postedRace = true;
     myLastTime = me.time;
     if (!myBestTime || me.time < myBestTime) myBestTime = me.time;
     try {
@@ -1754,7 +1762,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=39');
+    const mod = await import('./net.js?v=40');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
