@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=41';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=41';
-import { packLook, unpackLook, normalise } from './parts.js?v=41';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=41';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=41';
-import { makeRescue } from './rescue.js?v=41';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=41';
-import { makeBrain, driveBrain } from './ai.js?v=41';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=41';
-import { makeCones } from './cones.js?v=41';
-import { makeHazards } from './hazards.js?v=41';
-import { THEMES, themeById } from './themes.js?v=41';
-import * as snd from './audio.js?v=41';
+import { buildTrack } from './track.js?v=42';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=42';
+import { packLook, unpackLook, normalise } from './parts.js?v=42';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=42';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=42';
+import { makeRescue } from './rescue.js?v=42';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=42';
+import { makeBrain, driveBrain } from './ai.js?v=42';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=42';
+import { makeCones } from './cones.js?v=42';
+import { makeHazards } from './hazards.js?v=42';
+import { THEMES, themeById } from './themes.js?v=42';
+import * as snd from './audio.js?v=42';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -183,6 +183,24 @@ try {
 function saveBuild() {
   try { localStorage.setItem('mkBuild', JSON.stringify(myBuild)); } catch (e) {}
 }
+
+/* The paint, off the wheel: hue and strength from where you touched the disc,
+   lightness from the slider. Kept as those three rather than as the colour they
+   make, so the marker goes back exactly where you left it. Nothing picked yet
+   means the car wears the first racer's red. */
+let myPaint = null, myColour = null;
+function hsl(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255);
+}
+try {
+  const p = JSON.parse(localStorage.getItem('mkPaint') || 'null');
+  if (p && isFinite(p.h) && isFinite(p.s) && isFinite(p.l)) { myPaint = p; myColour = hsl(p.h, p.s, p.l); }
+} catch (e) {}
+function myRacer() { return racerOf(myCast, myColour); }
 
 /* ------------------------------------------------------------------- input -- */
 // Every action carries its own keys so the pause menu can change them. Esc is
@@ -354,7 +372,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=41')
+  import('./props.js?v=42')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -432,15 +450,16 @@ function startRound(field, seed, asPhase, themeId) {
   if (field && field.length) {
     for (const p of field) {
       // one number carries who they picked and what they built it out of
-      const look = unpackLook(p.cast | 0);
-      grid.push(addKart(RACERS[clamp(look.cast, 0, RACERS.length - 1)], {
+      // never through | 0: that cuts the number to 32 bits and drops the paint
+      const look = unpackLook(p.cast);
+      grid.push(addKart(racerOf(look.cast, look.colour), {
         id: p.id, name: p.name, remote: p.id !== (net && net.id), build: look.build,
       }));
     }
     me = karts.find(k => k.id === (net && net.id)) || null;
     if (!me) spectating = true;
   } else {
-    me = addKart(RACERS[myCast], { id: 'me', name: myName || 'You', build: myBuild });
+    me = addKart(myRacer(), { id: 'me', name: myName || 'You', build: myBuild });
   }
   // Fill the grid with computer drivers, but only when you are racing on your
   // own. A lobby with one person in it is still a lobby: the next person to turn
@@ -1650,7 +1669,6 @@ function stepSound() {
 
 /* ------------------------------------------------------------------ start --- */
 function buildCast() {
-  const box = el('cast');
   const input = el('nick');
   input.value = myName;
   input.addEventListener('input', () => {
@@ -1661,32 +1679,100 @@ function buildCast() {
      finish typing a name, and being dropped into a lobby for it is startling:
      the two buttons underneath are how you say you are ready. */
   input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
-  RACERS.forEach((r, i) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.innerHTML = '<i style="background:#' + r.shirt.toString(16).padStart(6, '0') + '"></i>' + r.name;
-    b.onclick = () => {
-      myCast = i;
-      try { localStorage.setItem('mkCast', String(i)); } catch (e) {}
-      [...box.children].forEach((c, j) => c.classList.toggle('on', j === i));
-      tellLook();
-      if (garage) garage.show(RACERS[myCast], myBuild);
-    };
-    box.appendChild(b);
-  });
-  [...box.children].forEach((c, j) => c.classList.toggle('on', j === myCast));
   buildGarage();
+  buildPaint();
+}
+
+/* The colour wheel. Angle round the disc is the hue, distance out from the
+   middle is how strong it is, and the slider underneath is how light. The disc
+   is redrawn at whatever lightness the slider is on, so what you see on it is
+   what the car will be. Dragging paints as you go; letting go tells the lobby. */
+function buildPaint() {
+  const cv = el('wheel'), sl = el('light'), sw = el('swatch');
+  if (!cv || !sl || !sw) return;
+  const g = cv.getContext('2d');
+  const W = cv.width, R = W / 2 - 2;
+  if (!myPaint) myPaint = { h: 8, s: 80, l: 50 };
+  sl.value = String(myPaint.l);
+  function draw() {
+    const img = g.createImageData(W, W);
+    const d = img.data;
+    for (let y = 0; y < W; y++) {
+      for (let x = 0; x < W; x++) {
+        const dx = x - W / 2, dy = y - W / 2, r = Math.hypot(dx, dy);
+        const o = (y * W + x) * 4;
+        if (r > R + 1) { d[o + 3] = 0; continue; }
+        const h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+        const c = hsl(h, Math.min(100, r / R * 100), myPaint.l);
+        d[o] = (c >> 16) & 255; d[o + 1] = (c >> 8) & 255; d[o + 2] = c & 255;
+        d[o + 3] = r > R ? Math.round(255 * (R + 1 - r)) : 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    // where the paint is now: a ring, dark or light against what is under it
+    const a = myPaint.h * Math.PI / 180, rr = myPaint.s / 100 * R;
+    const mx = W / 2 + Math.cos(a) * rr, my = W / 2 + Math.sin(a) * rr;
+    g.lineWidth = 3;
+    g.strokeStyle = myPaint.l > 60 ? '#17223b' : '#fff';
+    g.beginPath(); g.arc(mx, my, 7, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = 1.5; g.strokeStyle = myPaint.l > 60 ? '#fff' : '#17223b';
+    g.beginPath(); g.arc(mx, my, 9.5, 0, Math.PI * 2); g.stroke();
+    sw.style.background = '#' + (myColour === null ? 0xe8402a : myColour).toString(16).padStart(6, '0');
+  }
+  function paint(save) {
+    myColour = hsl(myPaint.h, myPaint.s, myPaint.l);
+    draw();
+    if (garage) garage.show(myRacer(), myBuild);
+    if (save) {
+      try { localStorage.setItem('mkPaint', JSON.stringify(myPaint)); } catch (e) {}
+      tellLook();
+    }
+  }
+  function pick(e) {
+    const r = cv.getBoundingClientRect();
+    // the canvas is drawn at its own size and shown at the size CSS gives it
+    const x = (e.clientX - r.left) / r.width * W - W / 2;
+    const y = (e.clientY - r.top) / r.height * W - W / 2;
+    myPaint.h = Math.round((Math.atan2(y, x) * 180 / Math.PI + 360) % 360);
+    myPaint.s = Math.round(Math.min(100, Math.hypot(x, y) / R * 100));
+    paint(false);
+  }
+  let dragging = false;
+  cv.addEventListener('pointerdown', e => {
+    dragging = true;
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    pick(e);
+  });
+  cv.addEventListener('pointermove', e => { if (dragging) pick(e); });
+  const done = () => { if (!dragging) return; dragging = false; paint(true); snd.tick(); };
+  cv.addEventListener('pointerup', done);
+  cv.addEventListener('pointercancel', done);
+  // and from the keyboard: left and right go round, up and down go in and out
+  cv.tabIndex = 0;
+  cv.addEventListener('keydown', e => {
+    const k = e.key;
+    if (k === 'ArrowLeft') myPaint.h = (myPaint.h + 352) % 360;
+    else if (k === 'ArrowRight') myPaint.h = (myPaint.h + 8) % 360;
+    else if (k === 'ArrowUp') myPaint.s = Math.min(100, myPaint.s + 8);
+    else if (k === 'ArrowDown') myPaint.s = Math.max(0, myPaint.s - 8);
+    else return;
+    e.preventDefault();
+    paint(true);
+  });
+  sl.addEventListener('input', () => { myPaint.l = +sl.value; paint(false); });
+  sl.addEventListener('change', () => paint(true));
+  paint(false);
 }
 
 /* The garage. Three rows of arrows, and the car on the turntable next to them
    changes as you press them. */
 let garage = null;
-function tellLook() { if (net) net.setCast(packLook(myCast, myBuild)); }
+function tellLook() { if (net) net.setCast(packLook(myCast, myBuild, myColour)); }
 function buildGarage() {
   const canvas = el('gcan'), rows = el('gparts');
   if (!canvas || !rows || garage) return;
   garage = makeGarage(canvas);
-  garage.show(RACERS[myCast], myBuild);
+  garage.show(myRacer(), myBuild);
   for (const part of PARTS) {
     const row = document.createElement('div');
     row.className = 'opt';
@@ -1699,7 +1785,7 @@ function buildGarage() {
       myBuild[part.key] = n.id;
       name.textContent = n.name;
       saveBuild();
-      garage.show(RACERS[myCast], myBuild);
+      garage.show(myRacer(), myBuild);
       tellLook();
       drawBars();
       snd.tick();
@@ -1762,11 +1848,11 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=41');
+    const mod = await import('./net.js?v=42');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
-      get cast() { return packLook(myCast, myBuild); },
+      get cast() { return packLook(myCast, myBuild, myColour); },
       world: {
         startRound, get karts() { return karts; }, get me() { return me; },
         setPhase(p, t, extra) {
@@ -1854,7 +1940,45 @@ el('spec').addEventListener('click', e => {
   else if (b.hasAttribute('data-id')) watchWho(b.getAttribute('data-id'));
 });
 
-el('solo').addEventListener('click', () => start(false));
+/* Singleplayer asks where first. The place decides the circuit, and the
+   circuit is the first thing a race builds, so the choice has to be made before
+   anything is - and it is its own screen now rather than a row of swatches on
+   the menu that most people never noticed they could change. */
+function mapScreen(on) {
+  el('mapsel').classList.toggle('on', on);
+  if (on) {
+    const cur = el('maps').querySelector('button.on') || el('maps').querySelector('button');
+    if (cur) cur.focus();
+  }
+}
+el('solo').addEventListener('click', () => mapScreen(true));
+el('mapback').addEventListener('click', () => mapScreen(false));
+el('mapgo').addEventListener('click', () => { mapScreen(false); start(false); });
+addEventListener('keydown', e => {
+  if (!el('mapsel').classList.contains('on')) return;
+  if (e.key === 'Escape') { mapScreen(false); e.preventDefault(); }
+});
+
+/* How many people are in the lobby right now, on the Multiplayer button, so you
+   can see whether there is anybody to race before you go in. Asked for while the
+   menu is up and not otherwise. */
+function onlineCount() {
+  if (started) return;
+  fetch(MC + '/mk/count', { cache: 'no-store' })
+    .then(r => r.json())
+    .then(j => {
+      const box = el('onlinecount');
+      if (!box || !j || typeof j.players !== 'number') return;
+      const n = j.players;
+      box.textContent = n === 0 ? 'nobody online yet'
+        : n + ' online' + (j.phase === 'race' || j.phase === 'count' ? ' \u00b7 racing now' : '');
+      box.parentNode.classList.toggle('live', n > 0);
+    })
+    .catch(() => {});
+}
+onlineCount();
+setInterval(onlineCount, 10000);
+
 el('online').addEventListener('click', () => start(true));
 frame();
 
