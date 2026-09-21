@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=38';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=38';
-import { packLook, unpackLook, normalise } from './parts.js?v=38';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=38';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=38';
-import { makeRescue } from './rescue.js?v=38';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=38';
-import { makeBrain, driveBrain } from './ai.js?v=38';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=38';
-import { makeCones } from './cones.js?v=38';
-import { makeHazards } from './hazards.js?v=38';
-import { THEMES, themeById } from './themes.js?v=38';
-import * as snd from './audio.js?v=38';
+import { buildTrack } from './track.js?v=39';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE } from './kart.js?v=39';
+import { packLook, unpackLook, normalise } from './parts.js?v=39';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=39';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=39';
+import { makeRescue } from './rescue.js?v=39';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=39';
+import { makeBrain, driveBrain } from './ai.js?v=39';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=39';
+import { makeCones } from './cones.js?v=39';
+import { makeHazards } from './hazards.js?v=39';
+import { THEMES, themeById } from './themes.js?v=39';
+import * as snd from './audio.js?v=39';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -354,7 +354,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=38')
+  import('./props.js?v=39')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -401,8 +401,7 @@ function placeOnGrid() {
     k.yaw = slot.yaw;
     k.speed = 0; k.drift = 0; k.driftT = 0; k.slide = 0; k.hop = 0; k.hopV = 0;
     k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0;
-    k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0;
-    k.lapAt = 0; k.lapBest = 0;
+    k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0; k.dnf = 0;
     k.item = null; k.itemN = 0; k.roulette = 0; k.queue = [];
     k.falling = 0; k.fallV = 0; k.overEdge = 0; k.rescue = 0; k.bullet = 0;
     k.hint = null;
@@ -484,11 +483,6 @@ function lapLogic(k, pr) {
     k.cpi = c;
     if (c === 0) {
       k.lap++;
-      /* The split that just closed. Three seconds is not a lap, it is the line
-         being crossed twice by a car sitting on it. */
-      const split = raceTime - (k.lapAt || 0);
-      k.lapAt = raceTime;
-      if (split > 3 && (!k.lapBest || split < k.lapBest)) k.lapBest = split;
       if (k.lap > LAPS) finishKart(k);
       else if (k === me) {
         snd.lapChime();
@@ -1362,16 +1356,15 @@ function drawMini() {
   }
 }
 
-/* ---- the lap board -------------------------------------------------------
-   Best lap rather than race time. A race is three laps of a circuit drawn from
-   that round's seed and no two rounds are the same length, so a finishing time
-   says as much about which lap it drew as about the driving. A lap is the
-   smallest thing that is still a whole thing, and every circuit comes off the
-   same recipe, so one lap is worth putting beside another - the same reason a
-   run of Slope is worth comparing to the next one.
+/* ---- the record board ----------------------------------------------------
+   A whole race, all three laps, however you drove it: the board does not care
+   whether the other seven were people or the computer, because the circuit does
+   not change and neither does the distance. Only a race you actually finished
+   goes up - the flag falling on you while you are still out there is not a time.
 
-   The board lives on the same server as everything else and keeps every run,
-   sorted the way this board runs, which is upwards. */
+   It lives on the same server board as Slope and the rest, which keeps every
+   run rather than one row a name, so beating your own time does not quietly
+   delete the old one. */
 const MC = (function () {
   if (location.hostname.endsWith('leonzhao.dev')) return 'https://apps.leonzhao.dev/mc';
   try {
@@ -1379,42 +1372,73 @@ const MC = (function () {
     return (u.protocol === 'wss:' ? 'https://' : 'http://') + u.host + '/mc';
   } catch (e) { return 'https://apps.leonzhao.dev/mc'; }
 })();
-let myBestLap = 0;
-try { myBestLap = +localStorage.getItem('mkBestLap') || 0; } catch (e) {}
-let lapBoard = null;
+let myBestTime = 0, myLastTime = 0, myRank = 0;
+try {
+  myBestTime = +localStorage.getItem('mkBestTime') || 0;
+  myLastTime = +localStorage.getItem('mkLastTime') || 0;
+} catch (e) {}
+let raceBoard = null;
 
+// where you stand, when you are not on the ten being shown
+function rankOf(board, secs) {
+  if (!secs || !board) return 0;
+  let n = 1;
+  for (const r of board) if (r.score < secs - 0.005) n++;
+  return n;
+}
 function fetchBoard() {
   fetch(MC + '/scores?game=leon-kart')
     .then(r => r.json())
-    .then(j => { if (j && j.board) { lapBoard = j.board; drawTimes(); } })
+    .then(j => {
+      if (!j || !j.board) return;
+      raceBoard = j.board;
+      if (!myRank) myRank = rankOf(raceBoard, myBestTime);
+      drawTimes();
+    })
     .catch(() => {});
 }
-function postLap(secs) {
+function postTime(secs) {
   fetch(MC + '/scores', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ game: 'leon-kart', name: (myName || 'You').slice(0, 14), score: +secs.toFixed(2) }),
   })
     .then(r => r.json())
-    .then(j => { if (j && j.board) { lapBoard = j.board; drawTimes(); } })
+    .then(j => {
+      if (!j || !j.board) return;
+      raceBoard = j.board;
+      // the server ranks the run it was just handed; off the end of the board
+      // it hands back nothing, and the local count is the honest fallback
+      myRank = j.rank || rankOf(raceBoard, myBestTime);
+      drawTimes();
+    })
     .catch(() => {});
 }
-/* The top ten and your own best, which is kept in this browser as well as on the
-   board: a board you cannot reach is no reason not to know your own time. */
+/* The ten, and then you: your best, the one you just did, and where that best
+   places you when it is not one of the ten. */
 function drawTimes() {
   const box = el('times');
   if (!box) return;
-  const rows = (lapBoard || []).slice(0, 10);
+  const rows = (raceBoard || []).slice(0, 10);
   const mineKey = (myName || 'You').toLowerCase();
-  box.innerHTML = '<h3>Fastest laps</h3>'
+  const onTop = rows.some(r => String(r.name).toLowerCase() === mineKey
+    && myBestTime && Math.abs(r.score - myBestTime) < 0.005);
+  let mine = '<div class="mine"><span>Your best</span><b>'
+    + (myBestTime ? time(myBestTime) : '&mdash;') + '</b></div>';
+  mine += '<div class="mine last"><span>Last race</span><b>'
+    + (myLastTime ? time(myLastTime) : '&mdash;') + '</b></div>';
+  if (myBestTime && !onTop && myRank) {
+    mine += '<div class="mine place"><span>You place</span><b>' + ord(myRank) + '</b></div>';
+  }
+  box.innerHTML = '<h2>Best times</h2>'
+    + '<p class="sub">Three laps, single or multiplayer</p>'
     + (rows.length
       ? '<div class="rows">' + rows.map((r, i) =>
-          '<div class="r' + (String(r.name).toLowerCase() === mineKey ? ' me' : '')
-          + (i === 0 ? ' p1' : '') + '">'
+          '<div class="r' + (i === 0 ? ' p1' : '') + '">'
           + '<span class="p">' + (i + 1) + '</span><span>' + esc(r.name) + '</span>'
           + '<span class="t">' + time(r.score) + '</span></div>').join('') + '</div>'
-      : '<p class="none">No laps on the board yet.</p>')
-    + '<div class="mine">Your best lap <b>' + (myBestLap ? time(myBestLap) : '&mdash;') + '</b></div>';
+      : '<p class="none">Nobody has finished a race yet.</p>')
+    + mine;
 }
 
 function time(t) {
@@ -1442,14 +1466,16 @@ function drawCup() {
 
 function showResults(final) {
   const live = order();
-  // your quickest lap of that race goes up, if you set one
-  if (me && me.lapBest > 0) {
-    if (!myBestLap || me.lapBest < myBestLap) {
-      myBestLap = me.lapBest;
-      try { localStorage.setItem('mkBestLap', String(myBestLap)); } catch (e) {}
-    }
-    postLap(me.lapBest);
-  } else fetchBoard();
+  // a race you finished goes on the board
+  if (me && !me.dnf && me.time > 0) {
+    myLastTime = me.time;
+    if (!myBestTime || me.time < myBestTime) myBestTime = me.time;
+    try {
+      localStorage.setItem('mkLastTime', String(myLastTime));
+      localStorage.setItem('mkBestTime', String(myBestTime));
+    } catch (e) {}
+    postTime(me.time);
+  }
   drawTimes();
   el('restitle').textContent = final ? 'Race over' : 'You finished ' + ord(me ? me.place : 1);
   el('resrows').innerHTML = live.map(k =>
@@ -1493,7 +1519,15 @@ el('sayin').addEventListener('keydown', e => {
 /* ---------------------------------------------------------- the round clock -- */
 function stepPhase(dt) {
   // when the server is in charge it sends the phase; otherwise run it here
-  if (net && net.alive) return;
+  if (net && net.alive) {
+    /* It owns which phase it is, but it only says so when the phase changes,
+       and the ten seconds on the results panel is a number somebody is sitting
+       there watching. Left alone it was set once and never moved again. Run it
+       down here between messages; the next one the server sends sets it right. */
+    phaseT = Math.max(0, phaseT - dt);
+    if (phase === 'results') resCount();
+    return;
+  }
   phaseT -= dt;
   if (phase === 'count') {
     // revving on the grid: hold the throttle or the drift button and the kart
@@ -1549,7 +1583,11 @@ function endRace() {
   phase = 'results';
   phaseT = RESULTS;
   snd.music(false);
-  for (const k of karts) if (!k.finished) { k.finished = 1; k.time = raceTime; results.push(k); k.place = results.length; }
+  for (const k of karts) if (!k.finished) {
+    // still out there when the flag fell: a place, but not a time
+    k.finished = 1; k.dnf = 1; k.time = raceTime;
+    results.push(k); k.place = results.length;
+  }
   order();
   showResults(true);
   el('board').classList.remove('on');
@@ -1716,7 +1754,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=38');
+    const mod = await import('./net.js?v=39');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -1794,6 +1832,10 @@ function buildMaps() {
 
 buildMaps();
 buildCast();
+// the board on the menu, drawn from what this browser remembers and then
+// brought up to date from the server
+drawTimes();
+fetchBoard();
 /* One listener on the strip rather than one a button: the buttons are rebuilt
    whenever the running order changes, and listeners bound to them would go with
    them. */
@@ -2005,6 +2047,8 @@ window.__mk = {
   pause(v) { frozen = !!v; return frozen; },
   // the clock the hazards run off, so a test can wind one to the moment it goes
   clock(t) { if (t !== undefined) raceTime = t; return raceTime; },
+  // bring yourself home, so a test can finish a race without driving three laps
+  finish() { if (me) finishKart(me); return me ? +me.time.toFixed(2) : 0; },
   // Park the camera somewhere and stop the follow camera fighting it, which is
   // the only way to photograph a whole section of the lap at once. Call it with
   // nothing to give the camera back.
@@ -2080,7 +2124,7 @@ window.__mk = {
   },
   stats() {
     return {
-      phase, spectating, laps: LAPS, lap: me ? me.lap : 0, place: me ? me.place : 0,
+      phase, phaseT: +phaseT.toFixed(2), spectating, laps: LAPS, lap: me ? me.lap : 0, place: me ? me.place : 0,
       speed: me ? +me.speed.toFixed(2) : 0,
       item: me ? me.item : null, itemN: me ? me.itemN : 0,
       queued: me ? me.queue.length : 0,
