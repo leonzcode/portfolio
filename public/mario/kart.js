@@ -65,7 +65,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=42';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=43';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -190,6 +190,7 @@ export function makeKart(who, build) {
     drift: 0,            // -1 left, 1 right, 0 none
     driftT: 0, slide: 0, hop: 0, hopV: 0,
     pitch: 0, roadRise: 0, bash: false, hitBy: 0, launched: 0, onIce: 0, reslope: 0,
+    straighten: 0,
     // the tumble: how far it is tipped, and how fast that is changing
     tumbleX: 0, tumbleZ: 0, wobX: 0, wobZ: 0, spinRate: 11,
     // velocity across the wheels, from being shoved: it decays as they bite
@@ -423,6 +424,8 @@ export function stepKart(k, input, track, dt) {
   if (k.spin > 0) {
     // spun out: no control, just the tumble it was given
     k.spin -= dt;
+    // and when it stops, half a second to find the way round again
+    if (k.spin <= 0) k.straighten = 0.5;
     k.yaw += dt * (k.spinRate || 11);
     k.tumbleX += k.wobX * dt;
     k.tumbleZ += k.wobZ * dt;
@@ -823,6 +826,19 @@ export function stepKart(k, input, track, dt) {
     return pr;
   }
   k.pos.y = pr.y;
+  /* On your feet again, pointing where the road goes. A spin leaves the car
+     facing wherever it happened to stop, which is as often backwards as not,
+     and the first thing anybody should have to do after being hit is drive,
+     not a three point turn. It eases rather than snaps, so it reads as the car
+     gathering itself rather than as the game turning it for you. */
+  if (k.straighten > 0) {
+    k.straighten -= dt;
+    const want = Math.atan2(-pr.t.x, -pr.t.z);
+    let d = want - k.yaw;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    k.yaw += d * Math.min(1, dt * 9);
+  }
   k.agrav = pr.agrav ? 1 : 0;
   // ease onto the camber rather than snapping to it
   k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);

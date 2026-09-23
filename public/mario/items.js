@@ -11,7 +11,7 @@
    little SVG for the slot in the corner of the screen.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { spinOut } from './kart.js?v=42';
+import { spinOut } from './kart.js?v=43';
 
 const svg = (inner) => '<svg viewBox="0 0 64 64" width="100%" height="100%">' + inner + '</svg>';
 const K = 'stroke="#17223b" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';
@@ -269,7 +269,10 @@ export function makeItemWorld(scene, track, fx) {
       // who it touches. A ghost is somebody else's shell, shown but not judged.
       let struck = false;
       for (const k of (p.ghost ? [] : karts)) {
-        if (k.finished || (p.t < 0.25 && k.id === p.owner)) continue;
+        // never your own. A shell that bounced off the fence and came back, or
+        // one you drove into the moment after you let it go, was your own shell
+        // taking you out of your own race.
+        if (k.finished || k.id === p.owner) continue;
         if (Math.hypot(k.pos.x - p.x, k.pos.z - p.z) > 1.7) continue;
         /* Whatever is being trailed takes it, if it came from behind. A shell
            that bounced round and arrived at the nose does not, because the
@@ -301,7 +304,8 @@ export function makeItemWorld(scene, track, fx) {
       h.t += dt;
       h.g.rotation.y += dt * 0.6;
       for (const k of (h.ghost ? [] : karts)) {
-        if (k.finished || (h.t < 0.6 && k.id === h.owner)) continue;
+        // and nothing you dropped, however long ago you dropped it
+        if (k.finished || k.id === h.owner) continue;
         if (Math.hypot(k.pos.x - h.x, k.pos.z - h.z) > h.r) continue;
         // a thing lying on the road throws you off the way you drove onto it
         if (spinOut(k, false, { x: h.x - k.pos.x, z: h.z - k.pos.z, speed: Math.abs(k.speed) }) && onHit) onHit(k, h.kind, h.owner);

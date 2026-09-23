@@ -16,7 +16,7 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { merge, vertexMat, box, cyl, ball } from './parts.js?v=42';
+import { merge, vertexMat, box, cyl, ball } from './parts.js?v=43';
 
 const DROP = 0.85;        // how long it lets you fall before it turns up
 const LIFT = 1.0;         // how long the lift itself takes
@@ -61,9 +61,23 @@ export function makeRescue(scene, track) {
   function safeSpot(k) {
     const N = track.samples.length;
     const i = k.hint || 0;
+    /* Clear here means clear of its neighbours too. project() calls a stretch a
+       hole when EITHER end of it is one, because that is the same test the
+       ribbon uses when it decides not to draw a quad - so a sample that is not
+       itself a hole but sits next to one still reads as no road at all. Putting
+       a car down there dropped it straight back in, which is a balloon lifting
+       you out of a hole and posting you into it again for the rest of the race.
+       Checking one sample was the whole of the bug. */
+    const clear = j => {
+      for (let d = -1; d <= 1; d++) {
+        const q = track.samples[(j + d + N * 2) % N];
+        if (q.gap || q.causeway > 0.02) return false;
+      }
+      return true;
+    };
     for (let n = 0; n < N; n++) {
       const a = track.samples[(i - n + N * 2) % N];
-      if (a.gap || a.causeway > 0.02) continue;
+      if (!clear((i - n + N * 2) % N)) continue;
       /* Well back from whatever they fell into, not on the lip of it. Set down
          on the edge of a gap with no speed, a car simply drives into it again,
          and again, for the rest of the race. Twenty six samples is about sixty
@@ -71,9 +85,9 @@ export function makeRescue(scene, track) {
          hole comes round again even from a dead stop on the slowest circuit. */
       let at = a;
       for (let b = 1; b <= 26; b++) {
-        const q = track.samples[(i - n - b + N * 2) % N];
-        if (q.gap || q.causeway > 0.02) break;
-        at = q;
+        const j = (i - n - b + N * 2) % N;
+        if (!clear(j)) break;
+        at = track.samples[j];
       }
       return {
         x: at.p.x, z: at.p.z, y: track.project(at.p.x, at.p.z, at.i).y,
