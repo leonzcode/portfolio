@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=42';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=42';
-import { packLook, unpackLook, normalise } from './parts.js?v=42';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=42';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=42';
-import { makeRescue } from './rescue.js?v=42';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=42';
-import { makeBrain, driveBrain } from './ai.js?v=42';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=42';
-import { makeCones } from './cones.js?v=42';
-import { makeHazards } from './hazards.js?v=42';
-import { THEMES, themeById } from './themes.js?v=42';
-import * as snd from './audio.js?v=42';
+import { buildTrack } from './track.js?v=43';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=43';
+import { packLook, unpackLook, normalise } from './parts.js?v=43';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=43';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=43';
+import { makeRescue } from './rescue.js?v=43';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=43';
+import { makeBrain, driveBrain } from './ai.js?v=43';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=43';
+import { makeCones } from './cones.js?v=43';
+import { makeHazards } from './hazards.js?v=43';
+import { THEMES, themeById } from './themes.js?v=43';
+import * as snd from './audio.js?v=43';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -372,7 +372,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=42')
+  import('./props.js?v=43')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1643,11 +1643,14 @@ function frame() {
     stepPhase(dt);
     if (phase === 'race' || phase === 'count' || phase === 'wait') stepWorld(dt);
     else for (const k of karts) apply(k);
-    if (net && net.alive) {
-      if (phase === 'race') raceTime += dt;
-      net.tick(dt);
-    }
+    if (net && net.alive && phase === 'race') raceTime += dt;
   }
+  /* Outside the pause, deliberately. The lobby drops a player it has not heard
+     from, because a browser that goes away without its socket closing used to
+     stand on the grid for ever and come back as a second person; somebody
+     sitting in the menu for a minute is not that, and should not be cleared out
+     as though they were. */
+  if (net && net.alive && !frozen) net.tick(dt);
   stepCamera(dt);
   stepFx(dt, camera);
   stepSound(dt);
@@ -1848,7 +1851,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=42');
+    const mod = await import('./net.js?v=43');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },

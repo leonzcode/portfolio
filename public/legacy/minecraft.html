@@ -1867,6 +1867,24 @@ const ART_FRAME_D = '#4a3419', ART_FRAME_L = '#7b5c32';
    smudge with a face-shaped area in it. At sixty-four you can tell who it is.       */
 const ART_RES = 64;
 function artRect(g, c, x, y, w, h) { g.fillStyle = c; g.fillRect(x | 0, y | 0, Math.max(1, w | 0), Math.max(1, h | 0)); }
+/* A filled circle, drawn a pixel at a time so its edge steps the way everything
+   else in here does rather than being smoothed by the canvas. */
+function artDisc(g, c, cx, cy, r) {
+  g.fillStyle = c;
+  for (let y = Math.floor(cy - r); y <= cy + r; y++)
+    for (let x = Math.floor(cx - r); x <= cx + r; x++)
+      if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r) g.fillRect(x, y, 1, 1);
+}
+// a wash that changes down the picture, one row at a time so it stays pixelly
+function artSky(g, x, y, w, h, top, bot) {
+  for (let i = 0; i < h; i++) {
+    const t = i / Math.max(1, h - 1);
+    g.fillStyle = 'rgb(' + [0, 1, 2].map(function (k) {
+      return Math.round(top[k] + (bot[k] - top[k]) * t);
+    }).join(',') + ')';
+    g.fillRect(x, y + i, w, 1);
+  }
+}
 const ART_GLYPHS = {
   L: ['100', '100', '100', '100', '111'],
   E: ['111', '100', '111', '100', '111'],
@@ -1905,7 +1923,24 @@ const ART = [
   { id: 'night_watch',  label: 'The Night Watch',                w: 4, h: 3, tint: '#4a3a22' },
   { id: 'hay_wain',     label: 'The Hay Wain',                   w: 4, h: 3, tint: '#6e6a4a' },
   { id: 'delights',     label: 'The Garden of Earthly Delights', w: 4, h: 4, tint: '#8a8264' },
-  // the one nobody has painted
+  /* The two nobody has painted, drawn here rather than photographed. eKirby has
+     been a block id in the list above all along; only the picture had gone, so
+     placing one hung an empty frame. */
+  { id: 'ekirby', label: 'eKirby', w: 2, h: 2, draw(g, W, H) {
+      artSky(g, 0, 0, W, H, [120, 200, 236], [188, 232, 246]);
+      artRect(g, '#7cc46a', 0, H * 0.80, W, H * 0.20);                  // a bit of ground
+      artDisc(g, '#f19ac0', W * 0.50, H * 0.48, W * 0.30);              // the pink one
+      artDisc(g, '#f19ac0', W * 0.22, H * 0.66, W * 0.10);              // arms
+      artDisc(g, '#f19ac0', W * 0.78, H * 0.66, W * 0.10);
+      artDisc(g, '#e0508a', W * 0.34, H * 0.76, W * 0.11);              // and the red feet
+      artDisc(g, '#e0508a', W * 0.66, H * 0.76, W * 0.11);
+      artRect(g, '#1a2a4a', W * 0.42, H * 0.38, W * 0.05, H * 0.12);    // eyes
+      artRect(g, '#1a2a4a', W * 0.54, H * 0.38, W * 0.05, H * 0.12);
+      artRect(g, '#ffffff', W * 0.42, H * 0.38, W * 0.05, H * 0.04);
+      artRect(g, '#ffffff', W * 0.54, H * 0.38, W * 0.05, H * 0.04);
+      artDisc(g, '#ef7fa8', W * 0.34, H * 0.52, W * 0.05);              // blush
+      artDisc(g, '#ef7fa8', W * 0.66, H * 0.52, W * 0.05);
+    } },
   { id: 'leon_tag', label: 'LEON', w: 4, h: 2, draw(g, W, H) {
       artRect(g, '#2b2f36', 0, 0, W, H);
       for (let i = 0; i < 160; i++) {
