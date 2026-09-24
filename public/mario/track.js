@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=43';
+import { themeById, rulesOf, lookOf } from './themes.js?v=44';
 
 /* The lap.
 
@@ -1136,7 +1136,13 @@ export function buildTrack(scene, seed, themeId) {
           const ang = Math.PI * (j / RINGS);
           // rock is not a half pipe: the radius wanders, but it never comes in
           // far enough to touch the road
-          const knock = cave ? 1 + (wr() - 0.35) * 0.3 : 1;
+          /* It wanders, but never in past the road. The wander is a fraction of
+             the bore, and the bore is the road plus a kerb: on a narrow road a
+             tenth of that is well clear of the tarmac, and on a wide one it is
+             less than the kerb, so the wall came in over the road itself. The
+             floor is worked out from the width rather than guessed at. */
+          const minK = (a.w + 0.9) / rad;
+          const knock = cave ? Math.max(minK, 1 + (wr() - 0.35) * 0.3) : 1;
           const p = a.p.clone().addScaledVector(a.n, Math.cos(ang) * rad * knock);
           R.push(p.x, a.p.y + Math.sin(ang) * rad * 0.58 * knock - 0.2, p.z);
           RU.push(j / RINGS, k * 0.5);
@@ -1157,6 +1163,7 @@ export function buildTrack(scene, seed, themeId) {
         emissiveIntensity: L.crack ? 0.22 : 0,
       });
       const tube = new THREE.Mesh(ribbon(R, RU, RI), tubeMat);
+      tube.name = 'tunnel-bore';
       tube.castShadow = true; tube.receiveShadow = true;
       group.add(tube);
 
@@ -1182,12 +1189,31 @@ export function buildTrack(scene, seed, themeId) {
              clears the bore. At a shorter offset the rock's centre is outside
              the tunnel but half of it is inside, which is a boulder in the
              middle of the road you cannot see past. */
+          /* Far enough out that the rock's NEAR face clears the bore, worked
+             from the size it is actually drawn at. It was pushed out by 1.08
+             of its radius and then instanced at 1.25 of it, so the last 0.17
+             hung inside the tunnel - on a narrow road that is under the kerb
+             and invisible, and on a wide one it is a boulder in the middle of
+             the road you cannot see past. Which is what made this come and go.
+
+             The bore is an ellipse, wider than it is tall, so how far out is
+             far enough depends on which way the rock sits from the middle of
+             it. This asks the ellipse. */
+          const reach = r * 1.25 + 0.6;          // the rock, plus room to spare
+          const hx = bore * 1.2, hy = bore * 0.58 * 1.2;   // the bore at its widest wander
+          const out = (dx, dy) => {
+            const d = Math.hypot(dx, dy) || 1;
+            const ux = dx / d, uy = dy / d;
+            // where the ray leaves the ellipse
+            const t = 1 / Math.sqrt((ux * ux) / (hx * hx) + (uy * uy) / (hy * hy));
+            return { x: ux * (t + reach), y: uy * (t + reach) };
+          };
           const spots = [
-            { x: bore + r * 1.08, y: bore * 0.1 },
-            { x: -(bore + r * 1.08), y: bore * 0.1 },
-            { x: 0, y: bore * 0.58 + r * 1.05 },
-            { x: bore * 0.8 + r * 0.7, y: bore * 0.5 + r * 0.8 },
-            { x: -(bore * 0.8 + r * 0.7), y: bore * 0.5 + r * 0.8 },
+            out(1, 0.08),
+            out(-1, 0.08),
+            out(0, 1),
+            out(0.82, 0.72),
+            out(-0.82, 0.72),
           ];
           for (const sp of spots) {
             const at = a.p.clone().addScaledVector(a.n, sp.x);
@@ -1199,7 +1225,8 @@ export function buildTrack(scene, seed, themeId) {
           }
         }
         // one rock, however many of it the hill is made of
-        many(new THREE.DodecahedronGeometry(1, 0), mat, rocks);
+        const hill = many(new THREE.DodecahedronGeometry(1, 0), mat, rocks);
+        if (hill) hill.name = 'tunnel-hill';
       }
 
       const lampMat = new THREE.MeshStandardMaterial({
@@ -1218,16 +1245,40 @@ export function buildTrack(scene, seed, themeId) {
       /* Cracks, for a tube bored through rock that is still cooling. Thin lit
          bands round the inside, which is the one thing that tells you a black
          tunnel on a black circuit is there at all. */
+      /* How wide a squashed ring has to be to miss the road. The floor used to
+         be set on the ring's widest point, which is level with the road and so
+         the easy case; a ring is an ellipse, and by the height a driver's head
+         is it has already curved back in. At a bore of ten metres that is most
+         of a metre of glowing rock inside the lane, which is why a wide tunnel
+         looked blocked and a narrow one did not. Ask the ellipse instead: given
+         the road half-width, how tall the ring is against how wide, and how
+         thick its tube, what radius clears the road at head height. */
+      const HEAD = 1.9;               // over a driver, not level with one
+      const boreRad = (w, squash, tube) => {
+        const k = 1 - tube;           // the inner face of the tube
+        const want = w + 0.6;         // the road, and a little daylight
+        return Math.sqrt(want * want + Math.pow(HEAD / squash, 2)) / k;
+      };
+
       if (L.crack !== undefined) {
         const crackMat = new THREE.MeshBasicMaterial({ color: L.crack, side: THREE.DoubleSide });
         const cracks = [];
         for (let k = 1; k < ids.length - 1; k += 2) {
           const a = samples[ids[k]];
-          const rad = (a.w + KERB) * (0.86 + wr() * 0.1);
+          // on the wall, not across the road
+          const rad = Math.max(boreRad(a.w, 0.62, 0.06),
+                               (a.w + KERB) * (0.86 + wr() * 0.1));
           cracks.push({
             p: new THREE.Vector3(a.p.x, a.p.y - 0.2, a.p.z),
-            ry: Math.atan2(a.n.x, a.n.z) + Math.PI / 2, rz: wr() * 2, order: 'YZX',
-            sx: rad, sy: rad * 0.62, sz: rad,
+            /* Rolled a little, not spun. The arc starts at the wall and climbs;
+               rolled a whole radian or two its lower end swings off the wall and
+               sweeps down across the road, which on a wide stretch is a glowing
+               band through the lane at head height. A tenth of a turn either way
+               keeps every crack on the rock and still makes no two alike, and
+               the sign of the scale decides which wall it is on. */
+            ry: Math.atan2(a.n.x, a.n.z) + Math.PI / 2,
+            rz: (wr() - 0.5) * 0.3, order: 'YZX',
+            sx: rad * (wr() < 0.5 ? 1 : -1), sy: rad * 0.62, sz: rad,
           });
         }
         // one arc of a torus, at whatever radius each crack wants
@@ -1238,7 +1289,8 @@ export function buildTrack(scene, seed, themeId) {
         const rings = [];
         for (let k = 1; k < ids.length - 1; k += 3) {
           const a = samples[ids[k]];
-          const rad = (a.w + KERB) * 0.82;
+          // and the same for the lit rings of a pipe, for the same reason
+          const rad = Math.max(boreRad(a.w, 0.7, 0.05), (a.w + KERB) * 0.82);
           rings.push({
             p: new THREE.Vector3(a.p.x, a.p.y - 0.2, a.p.z),
             ry: Math.atan2(a.n.x, a.n.z) + Math.PI / 2,
