@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=51';
+import { themeById, rulesOf, lookOf } from './themes.js?v=52';
 
 /* The lap.
 
@@ -627,8 +627,14 @@ function sampleLoop(seed, th) {
      as a half width per sample: the road is widened by exactly that much, so
      each lane keeps the width it had, and the middle of it is not road. */
   const splits = [];
-  if (th.split !== false) {
-    const len = 34;
+  {
+    /* Several of these on a lap rather than one, each somewhere else and each
+       with something different standing in the middle of it, so a circuit asks
+       you to choose a line three or four times instead of once. What a place
+       gets is written down with the place: how many, how long, and what is on
+       the island. A stretch that has been used is claimed like any other
+       feature, so the next one goes and finds its own bend. */
+    const PLAN = th.split === false ? [] : (th.splits || [{ len: 34, mid: 'house' }]);
     /* Where it goes: the openest stretch of lap that is clear of the ramps and
        of the bridge, the tunnel and the water. A split is a decision, and a
        decision belongs somewhere you are not already busy.
@@ -639,89 +645,132 @@ function sampleLoop(seed, th) {
        bend on the lap wins, and the split is then built only as big as that bend
        will take. On a generous circuit that is the full size; on a twisty one it
        is a narrower island between narrower lanes, which is still a split. */
+    /* Not every section is in the way. A split needs room across the road and
+       a bend open enough to take it; it does not care what the tarmac is made
+       of or what is painted on it. So the sections that only change the
+       surface or the width - an arena is a wide open stretch, which is exactly
+       what this wants - are shared rather than avoided, and only the ones that
+       reshape the road underneath are kept clear. Refusing all of them left
+       one clear gap on a lap and so one split, however many a place asked for. */
+    const SHARE = { arena: 1, boostlane: 1, strip: 1, agrav: 1, bowl: 1, hump: 1 };
+    // narrower than this and the island is not drawn, so it would not be a split
+    const MIN_ISLE = 2.2;
     const taken = new Set();
-    for (const f of features) for (const i of f.ids) taken.add(i);
-    for (const r of ramps) for (let k = -18; k <= 18; k++) taken.add((r.i + k + M) % M);
+    for (const f of features) if (!SHARE[f.kind]) for (const i of f.ids) taken.add(i);
+    for (const r of ramps) for (let k = -12; k <= 12; k++) taken.add((r.i + k + M) % M);
     // and not over the line, where the grid stands and the lap is counted
-    for (let k = -34; k <= 34; k++) taken.add((k + M * 2) % M);
+    for (let k = -26; k <= 26; k++) taken.add((k + M * 2) % M);
     const radius = i => {
       const u = out[i].t, v = out[(i + 1) % M].t;
       const d = Math.abs(u.x * v.z - u.z * v.x);
       return d < 1e-5 ? 1e6 : STEP / d;
     };
-    let i0 = -1, openest = 0;
-    for (let c = 0; c < M; c++) {
-      let tight = 1e9, clear = true;
-      for (let k = -4; k < len + 4 && clear; k++) {
-        const i = (c + k + M * 2) % M;
-        if (taken.has(i)) clear = false;
-        else tight = Math.min(tight, radius(i));
-      }
-      if (clear && tight > openest) { openest = tight; i0 = c; }
-    }
-    if (i0 < 0) { i0 = Math.floor(0.70 * M); openest = 1e9; }
-    // 1.35 lanes' worth of extra width, or as much of it as the bend allows
-    const grow = Math.max(0, Math.min(12.2, openest / 1.9 - out[i0].w));
-    const ISLE = grow / 1.35;
-    const ids = [];
-    let mid = null, first = null, last = null;
-    for (let k = 0; k < len; k++) {
-      const i = (i0 + k) % M;
-      const a = out[i];
-      const u = k / (len - 1);
-      /* The road opens out before the island appears in it, and closes again
-         after it has gone. If the two grew together the divider would come up
-         out of the middle of the tarmac underneath whoever was driving down it,
-         with nowhere already made to go; opening first means the lane you pick
-         is there to be picked, and it is never narrower than the road you came
-         in on. */
-      /* A blunt nose at each end rather than a knife edge. Tapered to nothing,
-         the last couple of metres of island are narrower than the kerb drawn
-         round them, so the two flanks meet and paint a kerb straight down the
-         middle of a road that has not divided yet. Below a width worth having,
-         there is no island. */
-      const raw = ISLE * bump(Math.max(0, Math.min(1, (u - 0.16) / 0.68)));
-      a.island = raw < 1.6 ? 0 : raw;
-      /* And on the circuits that ask for it, the two lanes do not stay level
-         with each other: one climbs over while the other dips under, so a split
-         is a choice about where you come out as well as which side you take.
-         It is applied across the island rather than as a step at the middle, so
-         the road surface stays continuous where it is still road. */
-      if (th.splitStyle === 'updown') {
-        /* Tied to the island's own width rather than to the distance along the
-           section. The tilt is applied across the island, so if it exists where
-           the island does not yet, the road steps by three metres at the exact
-           sample the island appears, and the whole field is thrown across it. */
-        a.splitLift = a.island * 0.38;
-        /* The low lane is a cutting, so the ground has to come down to meet
-           it, and by more than the lane drops: the hollow has to clear the far
-           edge of the tarmac as well as the middle of it, or the field closes
-           over the outside of the road. */
-        if (a.splitLift > 0.3) {
-          const at = a.p.clone().addScaledVector(a.n, -(a.w * 0.85));
-          basins.push({ x: at.x, z: at.z, r: a.w * 2.2, drop: a.splitLift * 2 + 4.5 });
+    for (const plan of PLAN) {
+      /* As long as it asked for, or as much of that as there is room for. A
+         forty six sample divide wants fifty clear in a row and a lap that has
+         already had two of these taken out of it may not have them, in which
+         case a shorter one in the right place is worth a great deal more than
+         none at all. */
+      const want = plan.len || 34;
+      let len = want, i0 = -1, openest = 0;
+      for (const tryLen of [want, Math.round(want * 0.78), Math.round(want * 0.6), 22]) {
+        if (tryLen < 20 || (len !== want && tryLen >= len)) continue;
+        for (let c = 0; c < M; c++) {
+          let tight = 1e9, clear = true;
+          for (let k = -4; k < tryLen + 4 && clear; k++) {
+            const i = (c + k + M * 2) % M;
+            if (taken.has(i)) clear = false;
+            else tight = Math.min(tight, radius(i));
+          }
+          /* And open enough to actually hold an island. Below a width worth
+             having there is no island drawn at all, so a bend that scores best
+             of a bad lot gives a "split" that is just a wide piece of road -
+             no divider, nothing to go round, no choice. Rather than take the
+             openest bend there is, take the openest bend that can carry one. */
+          if (!clear || tight <= openest) continue;
+          const isleHere = Math.max(0, Math.min(12.2, tight / 1.9 - out[c].w)) / 1.35;
+          if (isleHere < MIN_ISLE) continue;
+          openest = tight; i0 = c; len = tryLen;
         }
+        if (i0 >= 0) break;
       }
-      // and the lanes come out wider than the road they replace, because two of
-      // them have to hold a field that was queueing up in one
-      a.w += ISLE * 1.35 * bump(u);
-      // and level, handed back to the road's camber over the ends of it rather
-      // than switched off, for the same reason a tunnel is
-      a.bank *= Math.max(0, 1 - bump(u) * 2.2);
-      a.split = 1;
-      if (k === 0) first = a;
-      if (k === len - 1) last = a;
-      if (k === Math.floor(len / 2)) mid = a;
-      if (a.island) ids.push(i);
+      /* Nowhere left. The first one on a lap is worth forcing - a circuit
+         with no split at all is a circuit with no decision on it - but the
+         second and third are extras, and an extra laid over a bridge is
+         worse than no extra. */
+      if (i0 < 0) {
+        if (splits.length) continue;
+        i0 = Math.floor(0.70 * M); openest = 1e9;
+      }
+      // 1.35 lanes' worth of extra width, or as much of it as the bend allows
+      const grow = Math.max(0, Math.min(12.2, openest / 1.9 - out[i0].w));
+      const ISLE = grow / 1.35;
+      const ids = [];
+      let mid = null, first = null, last = null;
+      for (let k = 0; k < len; k++) {
+        const i = (i0 + k) % M;
+        const a = out[i];
+        const u = k / (len - 1);
+        /* The road opens out before the island appears in it, and closes again
+           after it has gone. If the two grew together the divider would come up
+           out of the middle of the tarmac underneath whoever was driving down it,
+           with nowhere already made to go; opening first means the lane you pick
+           is there to be picked, and it is never narrower than the road you came
+           in on. */
+        /* A blunt nose at each end rather than a knife edge. Tapered to nothing,
+           the last couple of metres of island are narrower than the kerb drawn
+           round them, so the two flanks meet and paint a kerb straight down the
+           middle of a road that has not divided yet. Below a width worth having,
+           there is no island. */
+        const raw = ISLE * bump(Math.max(0, Math.min(1, (u - 0.16) / 0.68)));
+        a.island = raw < 1.6 ? 0 : raw;
+        /* And on the circuits that ask for it, the two lanes do not stay level
+           with each other: one climbs over while the other dips under, so a split
+           is a choice about where you come out as well as which side you take.
+           It is applied across the island rather than as a step at the middle, so
+           the road surface stays continuous where it is still road. */
+        if (plan.lift) {
+          /* Tied to the island's own width rather than to the distance along the
+             section. The tilt is applied across the island, so if it exists where
+             the island does not yet, the road steps by three metres at the exact
+             sample the island appears, and the whole field is thrown across it. */
+          a.splitLift = a.island * 0.38;
+          /* The low lane is a cutting, so the ground has to come down to meet
+             it, and by more than the lane drops: the hollow has to clear the far
+             edge of the tarmac as well as the middle of it, or the field closes
+             over the outside of the road. */
+          if (a.splitLift > 0.3) {
+            const at = a.p.clone().addScaledVector(a.n, -(a.w * 0.85));
+            basins.push({ x: at.x, z: at.z, r: a.w * 2.2, drop: a.splitLift * 2 + 4.5 });
+          }
+        }
+        // and the lanes come out wider than the road they replace, because two of
+        // them have to hold a field that was queueing up in one
+        a.w += ISLE * 1.35 * bump(u);
+        // and level, handed back to the road's camber over the ends of it rather
+        // than switched off, for the same reason a tunnel is
+        a.bank *= Math.max(0, 1 - bump(u) * 2.2);
+        a.split = 1;
+        if (k === 0) first = a;
+        if (k === len - 1) last = a;
+        if (k === Math.floor(len / 2)) mid = a;
+        if (a.island) ids.push(i);
+      }
+      if (mid) splits.push({
+        i: (i0 + Math.floor(len / 2)) % M, s: mid.s, s0: first.s, s1: last.s,
+        x: mid.p.x, y: mid.p.y, z: mid.p.z, yaw: Math.atan2(mid.t.x, mid.t.z),
+        isle: ISLE, lane: mid.w - ISLE,
+        // what stands on this one, and whether its lanes part company vertically
+        mid: plan.mid || 'house', lift: !!plan.lift,
+        // in the order you meet them, which a sort by distance cannot promise when
+        // the island happens to straddle the start line
+        ids,
+      });
+
+      /* Claimed, with room either side, so the next split on the lap goes and
+         finds its own bend instead of growing out of this one. */
+      for (let k = -10; k < len + 10; k++) taken.add((i0 + k + M * 4) % M);
     }
-    if (mid) splits.push({
-      i: (i0 + Math.floor(len / 2)) % M, s: mid.s, s0: first.s, s1: last.s,
-      x: mid.p.x, y: mid.p.y, z: mid.p.z, yaw: Math.atan2(mid.t.x, mid.t.z),
-      isle: ISLE, lane: mid.w - ISLE,
-      // in the order you meet them, which a sort by distance cannot promise when
-      // the island happens to straddle the start line
-      ids,
-    });
   }
 
   /* ---- and the ground gets out of the way --------------------------------
@@ -1562,21 +1611,112 @@ export function buildTrack(scene, seed, themeId) {
     const glass = new THREE.MeshStandardMaterial({ color: 0x8fd3ff, roughness: 0.25, metalness: 0.2 });
     const h = new THREE.Group();
     const r = sp.isle * 0.72;
-    const W = r * 1.5, D = r * 1.25, H = r * 0.95;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), wall);
-    body.position.y = H / 2; h.add(body);
-    // a pitched roof, which is a four sided pyramid squashed along the ridge
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(W * 0.78, H * 0.62, 4), roof);
-    cap.position.y = H + H * 0.31;
-    cap.rotation.y = Math.PI / 4;
-    cap.scale.set(1, 1, D / W);
-    h.add(cap);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(W * 0.16, H * 0.46, 0.3), ink);
-    door.position.set(0, H * 0.23, D / 2 + 0.1); h.add(door);
-    for (const sx of [-1, 1]) {
-      const win = new THREE.Mesh(new THREE.BoxGeometry(W * 0.17, H * 0.22, 0.25), glass);
-      win.position.set(sx * W * 0.28, H * 0.58, D / 2 + 0.08); h.add(win);
-    }
+    /* What is standing on this one. Three divides on a lap with the same
+       cottage on each of them is one divide drawn three times: you cannot tell
+       from the cockpit which part of the circuit you are on, which is most of
+       what a landmark is for. The place says what each of its islands holds.
+       A ridge holds nothing - it IS the thing, a bank of ground between two
+       lanes at different heights, and putting a house on top of it would only
+       hide the one part of it worth seeing. */
+    const th2 = th.dress || {};
+    const groundMat = new THREE.MeshStandardMaterial({ color: th.ground, roughness: 1, flatShading: true });
+    const build = {
+      /* a pond: a sheet of water in a dish of its own ground */
+      pond() {
+        const pool = new THREE.Mesh(new THREE.CircleGeometry(r * 1.15, 18),
+          new THREE.MeshStandardMaterial({ color: 0x2e86c8, roughness: 0.15, metalness: 0.2,
+            transparent: true, opacity: 0.72 }));
+        pool.rotation.x = -Math.PI / 2; pool.position.y = 0.26; h.add(pool);
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(r * 1.2, r * 0.13, 5, 16), groundMat);
+        rim.rotation.x = Math.PI / 2; rim.position.y = 0.14; h.add(rim);
+        for (let k = 0; k < 5; k++) {
+          const a2 = (k / 5) * 6.28 + 0.4;
+          const reed = new THREE.Mesh(new THREE.ConeGeometry(r * 0.1, r * 0.8, 5),
+            new THREE.MeshStandardMaterial({ color: 0x6ea832, roughness: 1, flatShading: true }));
+          reed.position.set(Math.cos(a2) * r * 1.05, r * 0.4, Math.sin(a2) * r * 1.05);
+          h.add(reed);
+        }
+      },
+      /* a copse: a handful of conifers off the same kit the circuit uses */
+      trees() {
+        const bark = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 1 });
+        const leaf = new THREE.MeshStandardMaterial({ color: th2.tree || 0x3f8f45, roughness: 1, flatShading: true });
+        for (let k = 0; k < 5; k++) {
+          const a2 = (k / 5) * 6.28, d = r * (k ? 0.7 : 0);
+          const tall = r * (0.9 + (k % 3) * 0.32);
+          const tr = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.09, r * 0.12, tall * 0.4, 6), bark);
+          tr.position.set(Math.cos(a2) * d, tall * 0.2, Math.sin(a2) * d); h.add(tr);
+          const top = new THREE.Mesh(new THREE.ConeGeometry(r * 0.45, tall, 7), leaf);
+          top.position.set(Math.cos(a2) * d, tall * 0.62, Math.sin(a2) * d); h.add(top);
+        }
+      },
+      /* a hedgerow: a long low run of it, the length of the island */
+      hedge() {
+        const leaf = new THREE.MeshStandardMaterial({ color: th2.tree || 0x3f8f45, roughness: 1, flatShading: true });
+        const run = new THREE.Mesh(new THREE.BoxGeometry(r * 1.1, r * 0.8, r * 5.5), leaf);
+        run.position.y = r * 0.4; h.add(run);
+        for (let k = -2; k <= 2; k++) {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.07, r * 0.07, r * 1.1, 5),
+            new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 1 }));
+          post.position.set(r * 0.62, r * 0.55, k * r * 1.2); h.add(post);
+        }
+      },
+      /* a mesa: one big flat topped block of the country it stands in */
+      mesa() {
+        const rock = new THREE.MeshStandardMaterial({ color: th.ground, roughness: 1, flatShading: true });
+        const b1 = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.05, r * 1.35, r * 2.1, 7), rock);
+        b1.position.y = r * 1.05; b1.rotation.y = 0.4; h.add(b1);
+        const b2 = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.72, r * 0.98, r * 0.9, 6), rock);
+        b2.position.y = r * 2.4; b2.rotation.y = 1.1; h.add(b2);
+      },
+      /* loose rock: a few boulders, no two the same way up */
+      rocks() {
+        const rock = new THREE.MeshStandardMaterial({ color: th.ground, roughness: 1, flatShading: true });
+        for (let k = 0; k < 4; k++) {
+          const a2 = (k / 4) * 6.28 + 0.7, d = r * 0.6 * (k % 2);
+          const rr = r * (0.55 + (k % 3) * 0.22);
+          const b1 = new THREE.Mesh(new THREE.DodecahedronGeometry(rr, 0), rock);
+          b1.position.set(Math.cos(a2) * d, rr * 0.75, Math.sin(a2) * d);
+          b1.rotation.set(k * 1.1, k * 2.3, k * 0.7);
+          h.add(b1);
+        }
+      },
+      /* a mast, for a circuit that is lit rather than grown */
+      tower() {
+        const steel = new THREE.MeshStandardMaterial({ color: 0x39425c, roughness: 0.6, metalness: 0.3 });
+        const lit = new THREE.MeshStandardMaterial({ color: 0x0f1428,
+          emissive: th.look && th.look.tunnel && th.look.tunnel.lamp ? th.look.tunnel.lamp : 0x39d0ff,
+          emissiveIntensity: 0.9, roughness: 0.4 });
+        const mast = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.16, r * 0.3, r * 3.4, 6), steel);
+        mast.position.y = r * 1.7; h.add(mast);
+        for (let k = 0; k < 3; k++) {
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(r * (0.5 - k * 0.1), r * 0.06, 5, 12), lit);
+          ring.rotation.x = Math.PI / 2; ring.position.y = r * (1.2 + k * 0.9); h.add(ring);
+        }
+        const head = new THREE.Mesh(new THREE.BoxGeometry(r * 1.1, r * 0.3, r * 0.3), lit);
+        head.position.y = r * 3.5; h.add(head);
+      },
+      // a bank of ground is the whole point of this one; nothing goes on it
+      ridge() {},
+      house() {
+        const W = r * 1.5, D = r * 1.25, H = r * 0.95;
+        const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), wall);
+        body.position.y = H / 2; h.add(body);
+        // a pitched roof, which is a four sided pyramid squashed along the ridge
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(W * 0.78, H * 0.62, 4), roof);
+        cap.position.y = H + H * 0.31;
+        cap.rotation.y = Math.PI / 4;
+        cap.scale.set(1, 1, D / W);
+        h.add(cap);
+        const door = new THREE.Mesh(new THREE.BoxGeometry(W * 0.16, H * 0.46, 0.3), ink);
+        door.position.set(0, H * 0.23, D / 2 + 0.1); h.add(door);
+        for (const sx of [-1, 1]) {
+          const win = new THREE.Mesh(new THREE.BoxGeometry(W * 0.17, H * 0.22, 0.25), glass);
+          win.position.set(sx * W * 0.28, H * 0.58, D / 2 + 0.08); h.add(win);
+        }
+      },
+    };
+    (build[sp.mid] || build.house)();
     for (const o of h.children) { o.castShadow = true; o.receiveShadow = true; }
     h.position.set(sp.x, sp.y, sp.z);
     h.rotation.y = sp.yaw;
@@ -1934,6 +2074,11 @@ export function buildTrack(scene, seed, themeId) {
     // the patches that change how the ground under you behaves
     ice, lava,
     // where the road divides, which the cars need in order to pick a side
+    /* Every place the road divides, in the order you meet them. It was only
+       ever the first of them, which was fine while there was only one; with
+       three on a lap it meant a driver went round the first island and straight
+       into the second. */
+    splits,
     splitAt: splits[0] || null,
     // how far past the tarmac the wall is, so the barriers can stand on it
     shoulder: SHOULDER,

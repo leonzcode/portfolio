@@ -9,8 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=51';
-import { topSpeed } from './kart.js?v=51';
+import { ITEMS, lapProg } from './items.js?v=52';
+import { topSpeed } from './kart.js?v=52';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
@@ -63,6 +63,20 @@ export function pacePulse(dt, leading, trailing) {
 export function paceOf() { return pace; }
 export function resetPace() { pace = 1; leadT = tailT = 0; }
 
+/* Which divide is next. Measured forward round the lap from where the car is,
+   so it wraps at the line like everything else does. */
+function nextSplit(track, prog) {
+  const list = track.splits && track.splits.length ? track.splits : (track.splitAt ? [track.splitAt] : null);
+  if (!list) return null;
+  const L = track.length;
+  let best = null, near = 1e9;
+  for (const s of list) {
+    const to = (((s.s1 - prog) % L) + L) % L;
+    if (to < near) { near = to; best = s; }
+  }
+  return best;
+}
+
 /* look along the road and find the tightest bend within reach */
 function curveAhead(track, i, n) {
   const N = track.samples.length;
@@ -111,7 +125,11 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
      the lane it chose rather than at some fraction of a width that is half kerb.
      The aim point is pulled in through the split too, because an aim point past
      the far end of it is a line back across the island. */
-  const sp = track.splitAt;
+  /* The one coming up, not the first one on the lap. A circuit divides three
+     times now, and a driver that only knew about the first island went round
+     that one and drove straight into the next. Whichever is nearest ahead is
+     the one worth thinking about. */
+  const sp = nextSplit(track, k.prog);
   let side = 0;
   if (sp) {
     const L = track.length;
