@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=45';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=45';
-import { packLook, unpackLook, normalise } from './parts.js?v=45';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=45';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=45';
-import { makeRescue } from './rescue.js?v=45';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=45';
-import { makeBrain, driveBrain } from './ai.js?v=45';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=45';
-import { makeCones } from './cones.js?v=45';
-import { makeHazards } from './hazards.js?v=45';
-import { THEMES, themeById } from './themes.js?v=45';
-import * as snd from './audio.js?v=45';
+import { buildTrack } from './track.js?v=46';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=46';
+import { packLook, unpackLook, normalise } from './parts.js?v=46';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=46';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=46';
+import { makeRescue } from './rescue.js?v=46';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=46';
+import { makeBrain, driveBrain } from './ai.js?v=46';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=46';
+import { makeCones } from './cones.js?v=46';
+import { makeHazards } from './hazards.js?v=46';
+import { THEMES, themeById } from './themes.js?v=46';
+import * as snd from './audio.js?v=46';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -372,7 +372,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=45')
+  import('./props.js?v=46')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1265,17 +1265,59 @@ function makeTags() {
   }
 }
 const tagV = new THREE.Vector3();
+const tagLit = [], tagPut = [];
 function drawTags() {
   if (!tagFor.size) return;
   const w = innerWidth, h = innerHeight;
+  tagLit.length = 0;
   for (const [k, d] of tagFor) {
     if (k === me && camMode === 3) { d.style.opacity = '0'; continue; }
     tagV.set(k.pos.x, k.pos.y + k.hop + 2.5, k.pos.z).project(camera);
     const far = k === me ? 0 : Math.hypot(k.pos.x - camPos.x, k.pos.z - camPos.z);
-    if (tagV.z > 1 || far > 150) { d.style.opacity = '0'; continue; }
-    d.style.opacity = far > 110 ? String(1 - (far - 110) / 40) : '1';
-    d.style.transform = 'translate(-50%,-100%) translate('
-      + ((tagV.x * 0.5 + 0.5) * w).toFixed(1) + 'px,' + ((-tagV.y * 0.5 + 0.5) * h).toFixed(1) + 'px)';
+    const x = (tagV.x * 0.5 + 0.5) * w, y = (-tagV.y * 0.5 + 0.5) * h;
+    if (tagV.z > 1 || far > 150 || y < 0 || y > h) { d.style.opacity = '0'; continue; }
+    tagLit.push({ k, d, x, y, far });
+  }
+  // nearest last onto the screen means nearest wins the space it wants
+  tagLit.sort((a, b) => a.far - b.far);
+  tagPut.length = 0;
+  /* The standings sit over the top right and a name that slides under them is
+     worse than no name: you get half a word and a guess. Read once, before any
+     tag is touched, so this does not cost a layout per tag. */
+  const bd = el('board');
+  /* Its own box, not offsetParent: that is null for anything fixed whether it
+     is on screen or not, so asking it quietly turned this check off. */
+  const br = bd ? bd.getBoundingClientRect() : null;
+  const panel = br && br.width > 0 ? br : null;
+  for (const t of tagLit) {
+    /* Smaller the further away, which is how a name behaves in the world
+       rather than on the glass, and it is what stops a distant pack reading
+       as one long word. */
+    const size = Math.max(10, (t.k === me ? 15 : 14) * (1 - Math.min(1, t.far / 150) * 0.42));
+    const half = t.k.name.length * size * 0.32 + 4;
+    // off the side of the screen it is half a name hanging on the bezel
+    if (t.x - half < 2 || t.x + half > w - 2) { t.d.style.opacity = '0'; continue; }
+    /* Covered, not merely touching. A name that clips the corner of the card
+       still reads; one that is mostly behind it is half a word and a guess. */
+    if (panel && t.y > panel.top && t.y - size < panel.bottom) {
+      const lap = Math.min(t.x + half, panel.right) - Math.max(t.x - half, panel.left);
+      if (lap > half * 0.8) { t.d.style.opacity = '0'; continue; }
+    }
+    /* And where two still land on each other, the far one gives way. Six karts
+       at the vanishing point are a few pixels apart and their names ran into
+       one another; "WreJuno Coco" is not a name, and the three you can read
+       are worth more than the six you cannot. */
+    let hit = 0;
+    for (const q of tagPut) {
+      if (Math.abs(t.x - q.x) < half + q.half && Math.abs(t.y - q.y) < (size + q.size) * 0.62) { hit = 1; break; }
+    }
+    if (hit) { t.d.style.opacity = '0'; continue; }
+    tagPut.push({ x: t.x, y: t.y, half, size });
+    t.d.style.fontSize = size.toFixed(1) + 'px';
+    t.d.style.webkitTextStrokeWidth = (size * 0.27).toFixed(1) + 'px';
+    t.d.style.opacity = t.far > 110 ? String(1 - (t.far - 110) / 40) : '1';
+    t.d.style.transform = 'translate(-50%,-100%) translate('
+      + t.x.toFixed(1) + 'px,' + t.y.toFixed(1) + 'px)';
   }
 }
 
@@ -1851,7 +1893,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=45');
+    const mod = await import('./net.js?v=46');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2115,6 +2157,9 @@ window.__mk = {
   get watching() { const w = watched(); return w ? w.id : null; },
   get camera() { return camera; },
   get props() { return scene.getObjectByName('props'); },
+  // the scene and the camera, so a test can ask what is on a given pixel
+  get scene() { return scene; },
+  get camera() { return camera; },
   get cones() { return cones; },
   get garage() { return garage; },
   tier: k => driftTier(k || me),
