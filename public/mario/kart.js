@@ -65,7 +65,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=50';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=51';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -220,6 +220,10 @@ export function makeKart(who, build) {
     // what is queued behind the one in the slot, oldest first
     queue: [],
     hint: 0, offroad: false, wheelSpin: 0, steerVis: 0, lean: 0, topMul: 1, roll: 0, wet: false,
+    /* Seconds of a flooded engine left to serve. Hold the throttle from the
+       first light and the motor is still coughing when the flag drops, which
+       is the price of trying to buy the start rather than time it. */
+    stall: 0, revHold: 0,
     // the vertical half of the velocity while airborne, and the slope that put
     // it there
     airG: 9.81, roadSlope: 0,
@@ -377,6 +381,7 @@ export function topSpeed(k) {
   const P = k.parts;
   // topMul is the computer drivers' handicap, 1 for anyone at a keyboard
   let t = TUNE.top * R.top * (k.topMul || 1) * (P ? P.top : 1);
+  if (k.stall > 0) t *= 0.5;                  // a coughing engine will not pull
   if (k.boost > 0) t *= TUNE.boostTop;
   if (k.star > 0) t *= TUNE.starTop;
   // and knobblies hardly notice the rough, which is what they are for
@@ -447,7 +452,8 @@ export function stepKart(k, input, track, dt) {
     const flying = k.hop > 0.05;
     k.bash = !!input.hop;          // leaning on it as you make contact
     const acc = TUNE.accel * R.accel * (k.parts ? k.parts.accel : 1)
-              * (k.offroad && k.star <= 0 ? TUNE.offAccel : 1);
+              * (k.offroad && k.star <= 0 ? TUNE.offAccel : 1)
+              * (k.stall > 0 ? 0.3 : 1);
     if (flying) { /* airborne: the throttle and the brake are not connected to anything */ }
     else if (gas) k.speed += acc * dt * (k.speed < 0 ? 2.2 : 1);
     else if (brake) k.speed -= TUNE.brake * dt;
@@ -613,6 +619,7 @@ export function stepKart(k, input, track, dt) {
 
   if (k.spinB > 0) k.spinB = Math.max(0, k.spinB - dt);
   if (k.boost > 0) k.boost = Math.max(0, k.boost - dt);
+  if (k.stall > 0) k.stall = Math.max(0, k.stall - dt);
   if (k.star > 0) k.star = Math.max(0, k.star - dt);
   if (k.slow > 0) k.slow = Math.max(0, k.slow - dt);
 

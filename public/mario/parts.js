@@ -98,6 +98,86 @@ export function hoop(r, thick, arc, start, axis, x, y, z) {
 }
 
 /* ---------------------------------------------------------------------------
+   Three more bodies, each one a decision rather than a shade of the same car.
+   The five above are all reasonable; these are not meant to be. A bullet will
+   not go round a corner, a dart will not go anywhere fast in a straight line,
+   and a tank will not do either but nothing moves it. Picking one should cost
+   you something you notice on the first lap.
+--------------------------------------------------------------------------- */
+
+/* a land speed car: long, low, pointed, and hopeless at turning */
+function bullet(r) {
+  return {
+    seat: { y: 0.46, z: -0.3, lean: 0.22 }, ride: 0.3, wheelbase: 1.06, track: 0.78,
+    parts: [
+      { g: taper(0.42, 1.02, 0.5, 0.2, 3.5, 0, 0.44, 0.1), c: r.kart },
+      { g: taper(0.3, 0.72, 0.16, 0.08, 3.4, 0, 0.72, 0.12), c: r.trim },
+      { g: box(1.06, 0.12, 2.9, 0, 0.2, -0.1), c: INK },
+      { g: cyl(0.2, 0.06, 1.1, 10, 'z', 0, 0.5, 1.9), c: r.trim },
+      { g: box(0.7, 0.44, 0.7, 0, 0.78, -0.46), c: DARK },
+      { g: box(0.5, 0.2, 0.24, 0, 1.04, -0.52), c: INK },
+      { g: box(0.12, 0.86, 1.0, 0, 1.0, -1.44), c: r.trim },
+      { g: box(0.9, 0.08, 0.34, 0, 1.36, -1.62), c: r.kart },
+      { g: taper(0.9, 0.64, 0.4, 0.34, 0.9, 0, 0.5, -1.5), c: r.kart },
+      { g: cyl(0.12, 0.14, 0.5, 8, 'z', 0.2, 0.44, -1.96), c: STEEL },
+      { g: cyl(0.12, 0.14, 0.5, 8, 'z', -0.2, 0.44, -1.96), c: STEEL },
+      { g: box(0.16, 0.1, 0.9, 0.62, 0.34, 0.5), c: DARK },
+      { g: box(0.16, 0.1, 0.9, -0.62, 0.34, 0.5), c: DARK },
+    ],
+    exhaust: [{ x: 0.2, y: 0.44, z: -2.2 }, { x: -0.2, y: 0.44, z: -2.2 }],
+  };
+}
+
+/* a shopping trolley with an engine: tiny, upright, and gone before you look */
+function dart(r) {
+  return {
+    seat: { y: 0.62, z: 0.04, lean: -0.08 }, ride: 0.34, wheelbase: 0.68, track: 0.8,
+    parts: [
+      { g: box(1.12, 0.36, 1.5, 0, 0.44, 0), c: r.kart },
+      { g: box(0.96, 0.14, 1.56, 0, 0.66, 0), c: r.trim },
+      { g: box(1.2, 0.1, 1.3, 0, 0.24, 0), c: INK },
+      { g: taper(0.5, 1.06, 0.3, 0.2, 0.8, 0, 0.5, 0.86), c: r.kart },
+      { g: box(0.76, 0.42, 0.14, 0, 0.92, -0.42), c: r.trim },
+      { g: cyl(0.06, 0.06, 0.5, 6, 'y', 0.3, 1.1, -0.44), c: STEEL },
+      { g: cyl(0.06, 0.06, 0.5, 6, 'y', -0.3, 1.1, -0.44), c: STEEL },
+      { g: box(0.84, 0.08, 0.1, 0, 1.34, -0.44), c: DARK },
+      { g: box(0.5, 0.3, 0.4, 0, 0.72, -0.78), c: DARK },
+      { g: cyl(0.09, 0.09, 0.42, 7, 'z', 0.22, 0.6, -0.96), c: STEEL },
+      { g: box(0.16, 0.18, 0.5, 0.58, 0.44, 0.1), c: DARK },
+      { g: box(0.16, 0.18, 0.5, -0.58, 0.44, 0.1), c: DARK },
+    ],
+    exhaust: [{ x: 0.22, y: 0.6, z: -1.16 }],
+  };
+}
+
+/* a brick with wheels: nothing shifts it and it shifts everything */
+function tank(r) {
+  return {
+    seat: { y: 0.92, z: 0.06, lean: -0.04 }, ride: 0.5, wheelbase: 0.98, track: 1.06,
+    parts: [
+      { g: box(2.0, 0.7, 2.5, 0, 0.62, 0), c: r.kart },
+      { g: box(2.08, 0.18, 2.3, 0, 0.98, 0), c: r.trim },
+      { g: box(2.14, 0.2, 2.6, 0, 0.26, 0), c: INK },
+      { g: box(1.5, 0.64, 0.2, 0, 1.3, -0.5), c: DARK },
+      { g: box(1.62, 0.16, 0.5, 0, 1.64, -0.52), c: r.trim },
+      { g: cyl(0.09, 0.09, 0.9, 7, 'y', 0.66, 1.4, -0.5), c: STEEL },
+      { g: cyl(0.09, 0.09, 0.9, 7, 'y', -0.66, 1.4, -0.5), c: STEEL },
+      { g: cyl(0.09, 0.09, 1.4, 7, 'x', 0, 1.82, -0.5), c: STEEL },
+      { g: box(2.16, 0.42, 0.5, 0, 0.7, 1.24), c: DARK },
+      { g: box(1.9, 0.2, 0.2, 0, 1.0, 1.38), c: r.trim },
+      { g: box(2.16, 0.46, 0.44, 0, 0.7, -1.26), c: DARK },
+      { g: box(0.46, 0.3, 0.16, 0.7, 0.96, 1.3), c: 0xffd233 },
+      { g: box(0.46, 0.3, 0.16, -0.7, 0.96, 1.3), c: 0xffd233 },
+      { g: cyl(0.16, 0.18, 0.7, 8, 'z', 0.5, 0.98, -1.5), c: STEEL },
+      { g: cyl(0.16, 0.18, 0.7, 8, 'z', -0.5, 0.98, -1.5), c: STEEL },
+      { g: box(0.3, 0.5, 0.9, 1.06, 0.62, 0.3), c: r.trim },
+      { g: box(0.3, 0.5, 0.9, -1.06, 0.62, 0.3), c: r.trim },
+    ],
+    exhaust: [{ x: 0.5, y: 1.3, z: -1.7 }, { x: -0.5, y: 1.3, z: -1.7 }],
+  };
+}
+
+/* ---------------------------------------------------------------------------
    The bodies. Each returns its parts plus where the driver sits on it and how
    far off the ground its floor is, so the same driver fits every one of them.
 --------------------------------------------------------------------------- */
@@ -308,6 +388,19 @@ export const CHASSIS = [
   { id: 'hauler', name: 'Hauler', make: hauler,
     // it will move anything it hits and take nothing back
     stats: { top: 0.94, accel: 0.94, grip: 0.9, weight: 1.45, jump: 0.85, charge: 0.9, boost: 1 } },
+  /* And three that are not compromises. The five above trade a little of one
+     thing for a little of another; these give up a great deal of something to
+     be very good at one thing, so which you pick is a plan for the circuit
+     rather than a shade of taste. */
+  { id: 'bullet', name: 'Bullet', make: bullet,
+    // the fastest thing here in a straight line and hopeless everywhere else
+    stats: { top: 1.32, accel: 0.7, grip: 0.74, weight: 0.92, jump: 0.8, charge: 0.86, boost: 1.18 } },
+  { id: 'dart', name: 'Dart', make: dart,
+    // off the line and out of a corner before anything; gone on a straight
+    stats: { top: 0.86, accel: 1.38, grip: 1.16, weight: 0.62, jump: 1.12, charge: 1.26, boost: 0.88 } },
+  { id: 'tank', name: 'Tank', make: tank,
+    // slow at all of it, and nothing on the circuit will move it off its line
+    stats: { top: 0.9, accel: 0.84, grip: 0.82, weight: 2, jump: 0.66, charge: 0.86, boost: 1 } },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -395,6 +488,55 @@ function turbines(r) {
   ].concat(vanes) };
 }
 
+/* balloons: fat, soft and round. They bounce and they float over anything. */
+function balloons(r) {
+  return { r: 0.62, parts: [
+    { g: cyl(0.62, 0.62, 0.52, 14, 'x', 0, 0, 0), c: RUBBER },
+    { g: cyl(0.58, 0.58, 0.62, 14, 'x', 0, 0, 0), c: 0x2a3140 },
+    { g: cyl(0.3, 0.3, 0.56, 10, 'x', 0, 0, 0), c: r.trim },
+    { g: cyl(0.14, 0.14, 0.6, 8, 'x', 0, 0, 0), c: STEEL },
+    { g: cyl(0.34, 0.34, 0.08, 10, 'x', 0.28, 0, 0), c: r.kart },
+    { g: cyl(0.34, 0.34, 0.08, 10, 'x', -0.28, 0, 0), c: r.kart },
+  ] };
+}
+
+/* blades: a razor with a rim, all grip and nothing under it off the tarmac */
+function blades(r) {
+  const spokes = [];
+  for (let n = 0; n < 5; n++) {
+    const a = (n / 5) * Math.PI;
+    const g = box(0.06, 0.94, 0.06, 0, 0, 0);
+    g.rotateX(a);
+    spokes.push({ g, c: CHROME });
+  }
+  return { r: 0.5, parts: [
+    { g: cyl(0.5, 0.5, 0.16, 20, 'x', 0, 0, 0), c: RUBBER },
+    { g: cyl(0.46, 0.46, 0.18, 20, 'x', 0, 0, 0), c: 0x1b2230 },
+    { g: cyl(0.42, 0.42, 0.1, 20, 'x', 0, 0, 0), c: r.trim },
+    { g: cyl(0.12, 0.12, 0.22, 8, 'x', 0, 0, 0), c: STEEL },
+    { g: cyl(0.2, 0.2, 0.05, 10, 'x', 0.1, 0, 0), c: r.kart },
+  ].concat(spokes) };
+}
+
+/* rollers: drums off a steamroller. They hold a speed and not a line. */
+function rollers(r) {
+  const ribs = [];
+  for (let n = 0; n < 8; n++) {
+    const a = (n / 8) * Math.PI;
+    const g = box(0.62, 0.1, 0.1, 0, 0, 0);
+    g.rotateX(a);
+    g.translate(0, Math.sin(a) * 0.46, Math.cos(a) * 0.46);
+    ribs.push({ g, c: STEEL });
+  }
+  return { r: 0.5, parts: [
+    { g: cyl(0.5, 0.5, 0.66, 12, 'x', 0, 0, 0), c: 0x5d636e },
+    { g: cyl(0.52, 0.52, 0.12, 12, 'x', 0.3, 0, 0), c: r.trim },
+    { g: cyl(0.52, 0.52, 0.12, 12, 'x', -0.3, 0, 0), c: r.trim },
+    { g: cyl(0.15, 0.15, 0.72, 8, 'x', 0, 0, 0), c: STEEL },
+    { g: cyl(0.3, 0.3, 0.1, 10, 'x', 0, 0, 0), c: r.kart },
+  ].concat(ribs) };
+}
+
 export const WHEELS = [
   { id: 'slick', name: 'Slicks', make: slicks,
     stats: { top: 1.04, accel: 1, grip: 1.08, weight: 1, jump: 1, charge: 1, boost: 1 } },
@@ -405,6 +547,15 @@ export const WHEELS = [
     stats: { top: 1.02, accel: 1.1, grip: 1.02, weight: 0.84, jump: 1.08, charge: 1.12, boost: 1 } },
   { id: 'turbine', name: 'Turbines', make: turbines,
     stats: { top: 1.08, accel: 0.94, grip: 1.12, weight: 0.96, jump: 0.95, charge: 1, boost: 1.1 } },
+  { id: 'balloon', name: 'Balloons', make: balloons,
+    // they float over the rough and they will not hold a fast corner
+    stats: { top: 0.88, accel: 1.06, grip: 0.92, weight: 1.12, jump: 1.5, charge: 1, boost: 1, rough: 1.8 } },
+  { id: 'blade', name: 'Blades', make: blades,
+    // all the grip there is on tarmac, and nothing at all off it
+    stats: { top: 1, accel: 1.08, grip: 1.34, weight: 0.78, jump: 0.82, charge: 1.18, boost: 1, rough: 0.55 } },
+  { id: 'roller', name: 'Rollers', make: rollers,
+    // they hold a speed rather than a line
+    stats: { top: 1.16, accel: 0.9, grip: 0.76, weight: 1.08, jump: 0.88, charge: 0.9, boost: 1.1 } },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -423,6 +574,12 @@ export const TRAILS = [
     stats: { accel: 1.1, charge: 1.08 } },
   { id: 'bolt', name: 'Bolts', shape: 'bolt', hot: 0xd8f0ff, cool: 0x7a5cff, size: 0.95,
     stats: { weight: 1.12, boost: 1.06 } },
+  { id: 'ember', name: 'Embers', shape: 'flame', hot: 0xffb066, cool: 0x8c2410, size: 1.5,
+    stats: { boost: 1.22, grip: 0.92 } },
+  { id: 'frost', name: 'Frost', shape: 'bubble', hot: 0xffffff, cool: 0x7fd4f0, size: 1.1,
+    stats: { grip: 1.16, top: 0.95 } },
+  { id: 'ghost', name: 'Ghost', shape: 'spark', hot: 0xe8e2ff, cool: 0x6a5acd, size: 1.25,
+    stats: { weight: 0.78, accel: 1.14 } },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -494,10 +651,15 @@ export const trailOf = id => pick(TRAILS, id, 0);
 --------------------------------------------------------------------------- */
 const ORDER = [['chassis', CHASSIS], ['wheels', WHEELS], ['trail', TRAILS]];
 /* How many different looks the parts alone make, times eight for the racer.
-   Everything above that is the paint. Worked out from the lists rather than
-   written down, so adding a wheel does not quietly shift the colour into the
-   part numbers. */
-const SPAN = 8 * ORDER.reduce((n, pair) => n * pair[1].length, 1);
+   Everything above that is the paint.
+
+   Fixed room per list rather than however many there happen to be. Worked out
+   from the live lengths, the whole number shifts every time a part is added:
+   every look ever saved or sent decodes to a different car, and two people in
+   a lobby on either side of a deploy see each other in the wrong ones. Sixteen
+   slots each is room to keep adding without any of that happening again. */
+const SLOTS = 16;
+const SPAN = 8 * Math.pow(SLOTS, ORDER.length);
 
 /* One number for the whole car: which racer, which parts, and a colour off the
    wheel if one was picked. Colour 0 means "the racer's own", so a car sent
@@ -509,7 +671,7 @@ export function packLook(cast, build, colour) {
   let n = 0;
   for (let i = ORDER.length - 1; i >= 0; i--) {
     const list = ORDER[i][1];
-    n = n * list.length + Math.max(0, list.findIndex(x => x.id === b[ORDER[i][0]]));
+    n = n * SLOTS + Math.max(0, list.findIndex(x => x.id === b[ORDER[i][0]]));
   }
   const paint = colour === null || colour === undefined ? 0 : (colour & 0xffffff) + 1;
   return (cast & 7) + 8 * n + SPAN * paint;
@@ -522,8 +684,9 @@ export function unpackLook(n) {
   r = Math.floor(r / 8);
   const build = {};
   for (const pair of ORDER) {
-    build[pair[0]] = pair[1][r % pair[1].length].id;
-    r = Math.floor(r / pair[1].length);
+    // a slot nothing has been put in yet reads as the first of its list
+    build[pair[0]] = (pair[1][r % SLOTS] || pair[1][0]).id;
+    r = Math.floor(r / SLOTS);
   }
   return { cast, build, colour: paint > 0 ? paint - 1 : null };
 }
