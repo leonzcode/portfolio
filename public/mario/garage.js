@@ -14,8 +14,8 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { makeKart, apply } from './kart.js?v=50';
-import { CHASSIS, WHEELS, TRAILS, normalise, statsOf } from './parts.js?v=50';
+import { makeKart, apply } from './kart.js?v=51';
+import { CHASSIS, WHEELS, TRAILS, normalise, statsOf } from './parts.js?v=51';
 
 /* The rows under the turntable. Three of them, and every one changes how the
    car drives as well as how it looks, so the bars underneath are the reason to
@@ -36,6 +36,12 @@ export const BARS = [
   { key: 'weight', name: 'Weight' },
   { key: 'jump', name: 'Jump' },
   { key: 'charge', name: 'Mini turbo' },
+  /* Both of these were computed, both were used by the car, and neither was
+     ever shown - so a set of knobblies that keeps most of your speed on the
+     dirt and a trail that lengthens every boost you get both looked like they
+     did nothing at all. */
+  { key: 'boost', name: 'Boost length' },
+  { key: 'rough', name: 'Off-road' },
 ];
 export { statsOf };
 

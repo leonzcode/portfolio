@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=50';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=50';
-import { packLook, unpackLook, normalise } from './parts.js?v=50';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=50';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=50';
-import { makeRescue } from './rescue.js?v=50';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=50';
-import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=50';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=50';
-import { makeCones } from './cones.js?v=50';
-import { makeHazards } from './hazards.js?v=50';
-import { THEMES, themeById, seedOf } from './themes.js?v=50';
-import * as snd from './audio.js?v=50';
+import { buildTrack } from './track.js?v=51';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=51';
+import { packLook, unpackLook, normalise } from './parts.js?v=51';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=51';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=51';
+import { makeRescue } from './rescue.js?v=51';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=51';
+import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=51';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=51';
+import { makeCones } from './cones.js?v=51';
+import { makeHazards } from './hazards.js?v=51';
+import { THEMES, themeById, seedOf } from './themes.js?v=51';
+import * as snd from './audio.js?v=51';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -375,7 +375,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=50')
+  import('./props.js?v=51')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -916,6 +916,22 @@ function stepWorld(dt) {
       back.z += -e.x * sn + e.z * cs;
       spark(back, k.star > 0 ? 0xffd233 : (Math.random() < 0.5 ? tr.hot : tr.cool), 1.5,
             k.star > 0 ? 'star' : tr.shape, tr.size);
+    }
+    /* A flooded engine, out of the same pipes the boost comes from. Thick grey
+       smoke rather than sparks, and a lot of it at first, thinning as the
+       motor picks up - so you can see whose start went wrong from behind them
+       as well as reading it on your own screen. */
+    if (k.stall > 0) {
+      const pipes = k.exhaust && k.exhaust.length ? k.exhaust : [{ x: 0, y: 0.3, z: -1.3 }];
+      const cs = Math.cos(k.yaw), sn = Math.sin(k.yaw);
+      const n = k.stall > 1.4 ? 2 : 1;
+      for (let q = 0; q < n; q++) {
+        const e = pipes[(Math.random() * pipes.length) | 0];
+        const back = k.pos.clone().setY(k.pos.y + k.hop + e.y + 0.1);
+        back.x += e.x * cs + e.z * sn;
+        back.z += -e.x * sn + e.z * cs;
+        puff(back, Math.random() < 0.5 ? 0x6b6f78 : 0x3c414c);
+      }
     }
     if (k.wallHit) {
       k.wallHit = 0;
@@ -1690,6 +1706,12 @@ function stepPhase(dt) {
     // change. Let go and it winds back down.
     if (me && !spectating && !paused) {
       const on = down('gas') || down('hop');
+      /* How long it has been held without letting go, which is the whole of
+         the start. Hold it from the second light and the car goes; hold it
+         from the first and the engine is flooded by the time the flag drops.
+         Letting go puts it back to nothing, so an early grab can be taken
+         back - which is the decision the start is made of. */
+      me.revHold = on ? me.revHold + dt : 0;
       me.rev = Math.max(0, Math.min(1, me.rev + (on ? 1.05 : -2.2) * dt));
     }
     for (const b of brains) b.kart.rev = Math.min(1, b.kart.rev + b.skill * 0.9 * dt);
@@ -1705,6 +1727,10 @@ function stepPhase(dt) {
   }
 }
 let litWas = -1;
+/* Two seconds of held throttle before the flag is a flooded engine. The lights
+   are the guide: the second one lands a second and a half out, so holding from
+   it is safe and holding from the first one is not. */
+const FLOOD_AT = 2;
 function setLights(t) {
   const c = el('count');
   c.classList.add('on');
@@ -1725,13 +1751,23 @@ function goRace() {
   // the other two go out, the way a real one does
   [...c.querySelectorAll('.lights i')].forEach((i, n) => i.classList.toggle('lit', n === 2));
   setTimeout(() => c.classList.remove('on'), 900);
-  // a rocket start for anyone already on the throttle
-  // whatever was wound up on the grid comes out here
-  if (me && !spectating && me.rev > 0.15) {
-    me.boost = 0.75 + me.rev * 0.75;
-    notice(me.rev > 0.85 ? 'Rocket start!' : 'Good launch');
+  /* Whatever was wound up on the grid comes out here - or does not. Held from
+     the first light, which is a good two seconds before the flag, the engine
+     floods: no launch at all, and it coughs for a couple of seconds while
+     everybody else drives away. Held from the second light it is a rocket
+     start. That window is the point of the countdown. */
+  if (me && !spectating) {
+    if (me.revHold > FLOOD_AT) {
+      me.boost = 0;
+      me.stall = 2.1;
+      notice('Engine flooded!');
+      snd.bump && snd.bump();
+    } else if (me.rev > 0.15) {
+      me.boost = 0.75 + me.rev * 0.75;
+      notice(me.rev > 0.85 ? 'Rocket start!' : 'Good launch');
+    }
   }
-  for (const k of karts) k.rev = 0;
+  for (const k of karts) { k.rev = 0; k.revHold = 0; }
   for (const b of brains) if (Math.random() < b.skill * 0.7) b.kart.boost = 0.8;
 }
 function endRace() {
@@ -1980,7 +2016,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=50');
+    const mod = await import('./net.js?v=51');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2361,6 +2397,14 @@ window.__mk = {
      race it is measuring quietly ends underneath it. */
   // what the field is currently trying, for a test that wants to watch the elastic
   get pace() { return paceOf(); },
+  /* Back on the grid with the lights running, which is the only way to drive
+     a start more than once without reloading the page. */
+  countdown() {
+    window.__mk.restart();
+    phase = 'count'; phaseT = 4.2; litWas = -1;
+    for (const k of karts) { k.rev = 0; k.revHold = 0; k.stall = 0; k.boost = 0; k.speed = 0; }
+    return true;
+  },
   restart() {
     results.length = 0;
     resetPace();
