@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=47';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=47';
-import { packLook, unpackLook, normalise } from './parts.js?v=47';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=47';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=47';
-import { makeRescue } from './rescue.js?v=47';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=47';
-import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=47';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=47';
-import { makeCones } from './cones.js?v=47';
-import { makeHazards } from './hazards.js?v=47';
-import { THEMES, themeById } from './themes.js?v=47';
-import * as snd from './audio.js?v=47';
+import { buildTrack } from './track.js?v=48';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=48';
+import { packLook, unpackLook, normalise } from './parts.js?v=48';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=48';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=48';
+import { makeRescue } from './rescue.js?v=48';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=48';
+import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=48';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=48';
+import { makeCones } from './cones.js?v=48';
+import { makeHazards } from './hazards.js?v=48';
+import { THEMES, themeById, seedOf } from './themes.js?v=48';
+import * as snd from './audio.js?v=48';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -319,13 +319,16 @@ function dressSky(th) {
   // a new sky replaces the fog, so the quality step has to be put back on it
   applyLevel();
 }
-/* A race on your own gets a new lap too, and a new one on the first race of the
-   session rather than the same opening circuit every time you load the page. */
+/* A place is always the same lap. Racing somewhere used to draw a fresh number
+   every time, which made every visit to Sunfield Loop a different circuit and
+   every time on the board a time on a track nobody else had driven. Now the
+   place decides, so the board compares like with like and learning a corner is
+   worth something. */
 let soloSeed = 0;
 // which place Singleplayer races in, remembered between sessions
 let pickedTheme = THEMES[0].id;
 try { const t = localStorage.getItem('mkTheme'); if (t && themeById(t).id === t) pickedTheme = t; } catch (e) {}
-function newSoloSeed() { soloSeed = ((Math.random() * 0x7ffffffe) | 0) + 1; return soloSeed; }
+function newSoloSeed() { soloSeed = seedOf(pickedTheme); return soloSeed; }
 function shredGroup(g) {
   if (!g) return;
   g.traverse(o => {
@@ -372,7 +375,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=47')
+  import('./props.js?v=48')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -439,8 +442,12 @@ function placeOnGrid() {
 /* start a round. `field` is either null (solo, filled with computer drivers) or
    the list of humans the server says are racing this round. */
 function startRound(field, seed, asPhase, themeId) {
-  // a fresh circuit for the round, in whichever place the room settled on
-  buildWorld((seed | 0) || 4321, themeId);
+  /* The circuit the place is, not the one the room's counter happened to land
+     on. The server still sends a seed and still moves it every round; taking
+     it from the place instead means every client lays out the same track
+     without the server having to be told, and a lap of Neon Mile in a room is
+     the same lap of Neon Mile you practised on your own. */
+  buildWorld(seedOf(themeId), themeId);
   clearField();
   results = [];
   raceTime = 0; notified = 0;
@@ -473,7 +480,9 @@ function startRound(field, seed, asPhase, themeId) {
       const r = pool[(n - 1 + pool.length) % pool.length];
       const k = addKart(r, { id: 'bot' + n, name: r.name, bot: true });
       k.topMul = BOT_TOP;
-      brains.push(makeBrain(k, 0.52 + rnd() * 0.42, 99 + n * 17));
+      const br = makeBrain(k, 0.52 + rnd() * 0.42, 99 + n * 17);
+      br.bot = true;                    // the grid carries the elastic; the autopilot does not
+      brains.push(br);
     }
   }
   placeOnGrid();
@@ -1899,7 +1908,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=47');
+    const mod = await import('./net.js?v=48');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2187,6 +2196,13 @@ window.__mk = {
   get hazards() { return hazards; },
   rebuild: (seed, theme) => buildWorld(seed | 0, theme),
   get theme() { return worldTheme; },
+  // which place the next race is at, the way the map screen sets it
+  get picked() { return pickedTheme; },
+  pick(id) { pickedTheme = themeById(id).id; return pickedTheme; },
+  // the next round on your own, exactly as the results screen starts one
+  restartSolo() { soloRound++; startRound(null, newSoloSeed(), undefined, pickedTheme); return true; },
+  // a round at a named place, with whatever seed a lobby might have sent
+  startAt(id, seed) { startRound(null, seed, undefined, themeById(id).id); return worldSeed; },
   sky: () => scene.background,
   get themes() { return THEMES.map(t => t.id); },
   get worldSeed() { return worldSeed; },

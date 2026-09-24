@@ -14,8 +14,8 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { makeKart, apply } from './kart.js?v=47';
-import { CHASSIS, WHEELS, TRAILS, normalise, statsOf } from './parts.js?v=47';
+import { makeKart, apply } from './kart.js?v=48';
+import { CHASSIS, WHEELS, TRAILS, normalise, statsOf } from './parts.js?v=48';
 
 /* The rows under the turntable. Three of them, and every one changes how the
    car drives as well as how it looks, so the bars underneath are the reason to
