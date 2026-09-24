@@ -16,7 +16,7 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
-import { dressOf } from './themes.js?v=49';
+import { dressOf } from './themes.js?v=50';
 
 /* Which part of a place's palette each model wears. The kit is one kit, so
    without this every circuit has the same green trees and the same red barriers
@@ -162,6 +162,14 @@ export async function buildProps(scene, THREE, track, current) {
         if (reheight) sp.pos.y = reheight(sp.pos);
       }
     }
+    /* The last word on where a thing is, taken after it has been pushed back
+       onto its own face rather than when it was listed. That push moves a deep
+       model - a hoarding is several metres front to back - and it happens here,
+       long after the list was vetted, so a billboard checked out in the open
+       could still come to rest inside a hillside. Asked again, at the end, of
+       the position that is actually used. */
+    spots = spots.filter(sp => !inHill(sp.pos));
+    if (!spots.length) return;
     for (const part of model.list) {
       /* The kit's own material, tinted to this place. It has to be a copy: the
          materials are shared between models inside a glb, and painting the
@@ -241,6 +249,54 @@ export async function buildProps(scene, THREE, track, current) {
     return p;
   };
 
+  /* Nothing roadside where the road is inside a mountain. A tunnel already has
+     walls - the bore is the barrier - and everything that usually lines a road
+     is placed off the tarmac by a few metres, which inside a tunnel is a few
+     metres into solid rock. A barrier runs through the wall, a lamp post
+     stands in it, a tree grows out of the hillside: all of it reads as the
+     mountain and the track passing through each other, which is exactly what
+     it is. */
+  const inTunnel = a => !!(a && a.tunnel);
+  /* And the same asked of where a thing actually ends up rather than of the
+     sample it was measured from. A tree placed twenty metres off a corner can
+     come to rest nearest a stretch of road half a bend further round, and on a
+     circuit with a tunnel in that bend that is a tree standing inside a
+     mountain. The mountain is built out to about the bore plus the rocks that
+     make it, so anything within that of a tunnel's centreline is inside it.
+
+     The tunnel centrelines are gathered once and this is a distance check, not
+     a search of the whole lap for every object on it. */
+  const tunPts = track.samples.filter(a => a.tunnel).map(a => a.p);
+  const NEAR = 54, WIDE = 46;
+  const inHill = p => {
+    if (!tunPts.length) return false;
+    /* A cheap bound first: almost nothing on a circuit is anywhere near a
+       tunnel, and asking the road where a point is costs a search of the whole
+       lap. Only the handful that pass this are asked properly. */
+    let close = false;
+    for (let i = 0; i < tunPts.length; i++) {
+      const dx = p.x - tunPts[i].x, dz = p.z - tunPts[i].z;
+      if (dx * dx + dz * dz < NEAR * NEAR) { close = true; break; }
+    }
+    if (!close) return false;
+    /* And then along the road rather than as the crow flies. A hill is built
+       over the bored stretch and no further, so a barrier forty metres before
+       a mouth is out in the open and belongs there - a plain distance test
+       took those out too and left a gap in the fence on the approach. */
+    const q = track.project(p.x, p.z, null);
+    /* A sample or two either side of the nearest one as well. Right at a mouth
+       the road can hand back a segment that skips the sample the point is
+       actually closest to, and a billboard slips through on that. Four metres
+       of slack is a post or two of fence, and it is inside the rock anyway. */
+    const N = track.samples.length;
+    for (let d = -2; d <= 2; d++) {
+      if (track.samples[(q.i + d + N) % N].tunnel) return Math.abs(q.lateral) < WIDE;
+    }
+    return false;
+  };
+  // placed, then checked: the list only ever gets what is actually out in the open
+  const clear = (list, o) => { if (!inHill(o.pos)) list.push(o); };
+
   /* ---- barriers down both edges ------------------------------------------ */
   /* The barrier has to stand on the surface the physics actually stops you at,
      and that surface is not a neat 3.2m offset from the tarmac.
@@ -299,7 +355,11 @@ export async function buildProps(scene, THREE, track, current) {
          at all; fencing either turns the one place on the circuit you can
          actually fall off into a corridor. */
       const here = track.samples[i % track.samples.length];
-      const open = here.gap || here.noFence;
+      const prev = track.samples[(i - 1 + track.samples.length) % track.samples.length];
+      /* Either end of the segment, not just the far one. A barrier is placed
+         somewhere along the run between two samples, so testing only one of
+         them left a post or two standing just inside each mouth. */
+      const open = here.gap || here.noFence || inTunnel(here) || inTunnel(prev);
       while (next <= walked + seg) {
         const at = next - walked;
         next += STEP;
@@ -308,7 +368,7 @@ export async function buildProps(scene, THREE, track, current) {
         // on the road, like the ring points it sits between: asking the ground
         // here put the barrier back under the tarmac on every banked corner
         pos.y = track.project(pos.x, pos.z, null).y;
-        (n++ % 2 ? red : white).push({ pos, yaw });
+        clear(n++ % 2 ? red : white, { pos, yaw });
       }
       walked += seg;
     }
@@ -324,8 +384,9 @@ export async function buildProps(scene, THREE, track, current) {
   for (const at of [0.02, 0.42, 0.72]) {
     for (let k = -1; k <= 1; k++) {
       const b = track.at((at * L + k * 10.5 + L) % L);
+      if (inTunnel(b)) continue;
       const pos = side(b, -(b.w + 16));
-      (at < 0.1 ? covered : stands).push({ pos, yaw: facingRoad(b, -1) });
+      clear(at < 0.1 ? covered : stands, { pos, yaw: facingRoad(b, -1) });
     }
   }
   put('grandStandCovered', covered);
@@ -392,8 +453,9 @@ export async function buildProps(scene, THREE, track, current) {
   const towersR = [], towersG = [];
   for (let k = 0; k < 10; k++) {
     const a = track.at((k / 10) * L);
+    if (inTunnel(a)) continue;
     const pos = side(a, (k % 2 ? 1 : -1) * (a.w + 8));
-    (k % 2 ? towersR : towersG).push({ pos, yaw: facingRoad(a, k % 2 ? 1 : -1) });
+    clear(k % 2 ? towersR : towersG, { pos, yaw: facingRoad(a, k % 2 ? 1 : -1) });
   }
   put('bannerTowerRed', towersR);
   put('bannerTowerGreen', towersG);
@@ -406,8 +468,9 @@ export async function buildProps(scene, THREE, track, current) {
     const a = track.at(s);
     for (const sgn of [1, -1]) {
       if (rnd() > 0.45) continue;
+      if (inTunnel(a)) continue;
       const pos = side(a, sgn * (a.w + 9 + rnd() * 16));
-      (rnd() > 0.45 ? big : small).push({ pos, yaw: rnd() * Math.PI * 2, scale: 0.8 + rnd() * 0.5 });
+      clear(rnd() > 0.45 ? big : small, { pos, yaw: rnd() * Math.PI * 2, scale: 0.8 + rnd() * 0.5 });
     }
   }
   /* And scrub, further out and much smaller, in the same list as the small
@@ -418,8 +481,9 @@ export async function buildProps(scene, THREE, track, current) {
     const a = track.at(s);
     for (const sgn of [1, -1]) {
       if (rnd() > 0.55) continue;
-      small.push({ pos: side(a, sgn * (a.w + 7 + rnd() * 24)),
-                   yaw: rnd() * 6.28, scale: 0.16 + rnd() * 0.17 });
+      if (inTunnel(a)) continue;
+      clear(small, { pos: side(a, sgn * (a.w + 7 + rnd() * 24)),
+                     yaw: rnd() * 6.28, scale: 0.16 + rnd() * 0.17 });
     }
   }
   put('treeLarge', big);
@@ -429,7 +493,8 @@ export async function buildProps(scene, THREE, track, current) {
   const lamps = [];
   for (let s = 0; s < L; s += 34) {
     const a = track.at(s);
-    lamps.push({ pos: side(a, -(a.w + 5.4)), yaw: facingRoad(a, -1) });
+    if (inTunnel(a)) continue;
+    clear(lamps, { pos: side(a, -(a.w + 5.4)), yaw: facingRoad(a, -1) });
   }
   put('lightPostModern', lamps);
 
@@ -440,7 +505,7 @@ export async function buildProps(scene, THREE, track, current) {
     pos.x += Math.cos(k * 1.9) * 11;
     pos.z += Math.sin(k * 1.9) * 11;
     pos.y = track.groundY(pos.x, pos.z);
-    (k % 2 ? tents : longTents).push({ pos, yaw: withRoad(pad) });
+    clear(k % 2 ? tents : longTents, { pos, yaw: withRoad(pad) });
   }
   put('tent', tents);
   put('tentLong', longTents);
@@ -459,39 +524,46 @@ export async function buildProps(scene, THREE, track, current) {
     const rails = [], dishes = [], pylons = [];
     for (let s = 0; s < L; s += 4.4) {
       const a = track.at(s);
+      if (inTunnel(a)) continue;
       // catch fencing stands back behind the barrier, both sides, all the way
       for (const sgn of [1, -1]) {
-        fence.push({ pos: side(a, sgn * (a.w + 5.2)), yaw: withRoad(a) });
+        clear(fence, { pos: side(a, sgn * (a.w + 5.2)), yaw: withRoad(a) });
       }
     }
     for (let s = 6; s < L; s += 26) {
       const a = track.at(s);
+      if (inTunnel(a)) continue;
       const sgn = ((s / 26) | 0) % 2 ? 1 : -1;
       // a guard rail in front of the fence on the outside of things
-      rails.push({ pos: side(a, sgn * (a.w + 3.4)), yaw: withRoad(a) });
+      clear(rails, { pos: side(a, sgn * (a.w + 3.4)), yaw: withRoad(a) });
     }
     for (let s = 20; s < L; s += 61) {
       const a = track.at(s);
+      if (inTunnel(a)) continue;
       const sgn = ((s / 61) | 0) % 2 ? 1 : -1;
-      boards.push({ pos: side(a, sgn * (a.w + 12)), yaw: facingRoad(a, sgn) });
+      clear(boards, { pos: side(a, sgn * (a.w + 12)), yaw: facingRoad(a, sgn) });
     }
     for (let s = 44; s < L; s += 73) {
       const a = track.at(s);
+      if (inTunnel(a)) continue;
       const sgn = ((s / 73) | 0) % 2 ? -1 : 1;
-      boardsLow.push({ pos: side(a, sgn * (a.w + 10)), yaw: facingRoad(a, sgn) });
+      clear(boardsLow, { pos: side(a, sgn * (a.w + 10)), yaw: facingRoad(a, sgn) });
     }
     for (let s = 12; s < L; s += 88) {
       const a = track.at(s);
-      flood.push({ pos: side(a, (a.w + 15)), yaw: facingRoad(a, 1) });
+      if (inTunnel(a)) continue;
+      clear(flood, { pos: side(a, (a.w + 15)), yaw: facingRoad(a, 1) });
     }
     for (let s = 34; s < L; s += 96) {
       const a = track.at(s);
+      if (inTunnel(a)) continue;
       const sgn = ((s / 96) | 0) % 2 ? 1 : -1;
-      (sgn > 0 ? marshalG : marshalR).push({ pos: side(a, sgn * (a.w + 6.4)), yaw: facingRoad(a, sgn) });
+      clear(sgn > 0 ? marshalG : marshalR, { pos: side(a, sgn * (a.w + 6.4)), yaw: facingRoad(a, sgn) });
     }
     for (let s = 70; s < L; s += 180) {
       const a = track.at(s);
-      dishes.push({ pos: side(a, -(a.w + 19)), yaw: rnd() * 6.28 });
+      if (inTunnel(a)) continue;
+      clear(dishes, { pos: side(a, -(a.w + 19)), yaw: rnd() * 6.28 });
     }
     /* Markers on the apex of things. The scrub that used to be here as well
        went up with the small trees: the kit does have a piece called grass, but
@@ -500,8 +572,9 @@ export async function buildProps(scene, THREE, track, current) {
        across the sand at Redrock Dunes, z fighting with the ground under them. */
     for (let s = 0; s < L; s += 17) {
       const a = track.at(s);
+      if (inTunnel(a)) continue;
       const sgn = rnd() < 0.5 ? 1 : -1;
-      pylons.push({ pos: side(a, sgn * (a.w + 1.6)), yaw: withRoad(a) });
+      clear(pylons, { pos: side(a, sgn * (a.w + 1.6)), yaw: withRoad(a) });
     }
     /* Anything placed face on has to take its height again after it has been
        pushed back by half its depth, or it ends up standing at the height of
@@ -522,7 +595,7 @@ export async function buildProps(scene, THREE, track, current) {
     const garages = [], offices = [];
     for (let k = 0; k < 6; k++) {
       const a = track.at(((L - 150 + k * 11) % L + L) % L);
-      (k % 3 === 2 ? offices : garages).push({ pos: side(a, -(a.w + 16)), yaw: facingRoad(a, -1) });
+      clear(k % 3 === 2 ? offices : garages, { pos: side(a, -(a.w + 16)), yaw: facingRoad(a, -1) });
     }
     put('pitsGarage', garages, true, onGround);
     put('pitsOffice', offices, true, onGround);

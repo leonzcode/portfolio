@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=49';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=49';
-import { packLook, unpackLook, normalise } from './parts.js?v=49';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=49';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=49';
-import { makeRescue } from './rescue.js?v=49';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=49';
-import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=49';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=49';
-import { makeCones } from './cones.js?v=49';
-import { makeHazards } from './hazards.js?v=49';
-import { THEMES, themeById, seedOf } from './themes.js?v=49';
-import * as snd from './audio.js?v=49';
+import { buildTrack } from './track.js?v=50';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=50';
+import { packLook, unpackLook, normalise } from './parts.js?v=50';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=50';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=50';
+import { makeRescue } from './rescue.js?v=50';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=50';
+import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=50';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=50';
+import { makeCones } from './cones.js?v=50';
+import { makeHazards } from './hazards.js?v=50';
+import { THEMES, themeById, seedOf } from './themes.js?v=50';
+import * as snd from './audio.js?v=50';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -375,7 +375,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=49')
+  import('./props.js?v=50')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1442,6 +1442,44 @@ function drawMini() {
    It lives on the same server board as Slope and the rest, which keeps every
    run rather than one row a name, so beating your own time does not quietly
    delete the old one. */
+/* The note on the front about what changed. Shown once per browser and keyed
+   to the stamp below, so bumping the stamp is what brings it back for
+   everybody - and a browser that has read this one never sees it again. Making
+   people dismiss the same note every time they came back to race would be a
+   worse thing than not telling them at all.
+
+   It closes on a click anywhere, on the cross, or on Escape. A note you cannot
+   get out of the way of is a door, not a note. */
+const NEWS_STAMP = 'maps-fixed-2026-09';
+let newsKey = null;
+/* Gone the moment a race begins, whether anybody read it or not. A note that
+   outlives the menu it was written for is a pane of glass over the track: it
+   sat there through the whole race swallowing the first Escape, so the pause
+   menu would not open until you had dismissed a notice you could no longer
+   see the point of. */
+function closeNews() {
+  const box = el('news');
+  if (!box || box.hidden) return;
+  box.classList.remove('on');
+  box.hidden = true;
+  try { localStorage.setItem('mkNews', NEWS_STAMP); } catch (e) {}
+  if (newsKey) { removeEventListener('keydown', newsKey, true); newsKey = null; }
+}
+function showNews() {
+  const box = el('news');
+  if (!box) return;
+  // ?news=0 skips it, so a test driving the menu is not driving a notice first
+  try { if (new URLSearchParams(location.search).get('news') === '0') return; } catch (e) {}
+  try { if (localStorage.getItem('mkNews') === NEWS_STAMP) return; } catch (e) {}
+  box.hidden = false;
+  box.classList.add('on');
+  newsKey = e => { if (e.key === 'Escape') { e.stopPropagation(); closeNews(); } };
+  box.addEventListener('click', closeNews);
+  addEventListener('keydown', newsKey, true);
+  const x = box.querySelector('.x');
+  if (x) x.focus({ preventScroll: true });
+}
+
 const MC = (function () {
   if (location.hostname.endsWith('leonzhao.dev')) return 'https://apps.leonzhao.dev/mc';
   try {
@@ -1926,6 +1964,7 @@ function drawBars() {
 
 async function start(online) {
   if (started) return;
+  closeNews();                          // no pane of glass over the track
   // the garage has done its job; give the context back before a race wants it
   if (garage) { garage.dispose(); garage = null; }
   const wantLobby = online === undefined ? true : !!online;
@@ -1941,7 +1980,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=49');
+    const mod = await import('./net.js?v=50');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2023,6 +2062,7 @@ buildCast();
 // brought up to date from the server
 drawTimes();
 fetchBoard();
+showNews();
 /* One listener on the strip rather than one a button: the buttons are rebuilt
    whenever the running order changes, and listeners bound to them would go with
    them. */
@@ -2277,6 +2317,7 @@ window.__mk = {
   startSolo() { return start(false); },
   startOnline() { return start(true); },
   key(k, on) { keys[k] = !!on; },
+  closeNews() { closeNews(); return true; },
   /* Bolt a build onto the player's kart, the way the garage does when a race
      starts, so a test can ask what a hauler drives like against a formula car
      without clicking through the garage to get there. */
