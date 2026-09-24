@@ -31,6 +31,16 @@ export const THEMES = [
   {
     id: 'meadow',
     seed: 8920,
+    /* Sunfield Loop asks you to choose four times: past the farm, round the
+       pond, either side of the copse, and a long one down the back with the
+       hedgerow up the middle. Nothing here parts company vertically - it is
+       the gentle circuit, and the choices are about line and length. */
+    splits: [
+      { len: 34, mid: 'house' },
+      { len: 30, mid: 'pond' },
+      { len: 26, mid: 'trees' },
+      { len: 44, mid: 'hedge' },
+    ],
     /* What the sections are made of here. The same tunnel is a timber barn on
        Sunfield Loop and a cave through a mountain at Redrock Dunes, and it is
        the same forty lines of code either way. */
@@ -90,6 +100,14 @@ export const THEMES = [
   {
     id: 'dunes',
     seed: 96029,
+    /* Redrock is rock. Round the mesa, past the outcrop, and one long
+       divide with a low ridge down the middle of it that you can see over
+       but not through. */
+    splits: [
+      { len: 38, mid: 'mesa' },
+      { len: 28, mid: 'rocks' },
+      { len: 46, mid: 'ridge', lift: 1 },
+    ],
     look: {
       // a cave, bored through a mountain that is put there for it to go through
       tunnel: { kind: 'cave', colour: 0x9a6f47, rough: 1, lamp: 0xffb04a, mount: 0xa97a4e },
@@ -139,6 +157,14 @@ export const THEMES = [
   {
     id: 'frost',
     seed: 32677,
+    /* Glacier Pass parts round the lodge and round a frozen tarn, and once
+       it sends one lane up over the other on a snow bank. */
+    splits: [
+      { len: 34, mid: 'house' },
+      { len: 32, mid: 'pond' },
+      { len: 40, mid: 'ridge', lift: 1 },
+      { len: 26, mid: 'trees' },
+    ],
     look: {
       tunnel: { kind: 'ice', colour: 0xbfe8ff, rough: 0.1, lamp: 0xdff2ff, clear: 0.72 },
       bridge: { kind: 'ice', deck: 0xd8eefc, pier: 0xa9c8dd },
@@ -188,6 +214,14 @@ export const THEMES = [
   {
     id: 'neon',
     seed: 119786,
+    /* Neon Mile divides round a block and round a lit pylon, and its long
+       one is a flyover: one lane climbs over the other under the lights. */
+    splits: [
+      { len: 36, mid: 'house' },
+      { len: 44, mid: 'ridge', lift: 1 },
+      { len: 28, mid: 'tower' },
+      { len: 30, mid: 'trees' },
+    ],
     look: {
       tunnel: { kind: 'pipe', colour: 0x141c34, rough: 0.35, lamp: 0x39d0ff, ring: 0xff2f6e },
       bridge: { kind: 'skyway', deck: 0x1b2340, pier: 0x232d52, edge: 0x39d0ff },
@@ -235,6 +269,13 @@ export const THEMES = [
   {
     id: 'ember',
     seed: 40596,
+    /* Ember Hollow splits round a cinder cone and round a stack, and its
+       long one drops one lane into a cutting beside the other. */
+    splits: [
+      { len: 40, mid: 'mesa' },
+      { len: 46, mid: 'ridge', lift: 1 },
+      { len: 30, mid: 'rocks' },
+    ],
     look: {
       tunnel: { kind: 'lavatube', colour: 0x2a2024, rough: 0.95, lamp: 0xff7a1a, crack: 0xff5a18, mount: 0x322528 },
       bridge: { kind: 'basalt', deck: 0x2e2a2e, pier: 0x241e22 },

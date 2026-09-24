@@ -16,7 +16,7 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
-import { dressOf } from './themes.js?v=51';
+import { dressOf } from './themes.js?v=52';
 
 /* Which part of a place's palette each model wears. The kit is one kit, so
    without this every circuit has the same green trees and the same red barriers
@@ -248,6 +248,19 @@ export async function buildProps(scene, THREE, track, current) {
     p.y = track.groundY(p.x, p.z);
     return p;
   };
+  /* The same, but measured against the road where the thing lands rather than
+     the road it was measured from. Beside a divide the tarmac is half as wide
+     again a few metres further along, so a hoarding put twelve metres off a
+     normal stretch comes to rest on the wide one - a billboard standing in the
+     road. Asked once and corrected, which is enough: the road does not change
+     width twice in the few metres this moves anything. */
+  const clearOf = (a, off) => {
+    const want = Math.abs(off) - a.w;          // how far off the road it asked to be
+    let p = side(a, off);
+    const q = track.project(p.x, p.z, null);
+    const over = q.half + want - Math.abs(q.lateral);
+    return over > 0.05 ? side(a, off + Math.sign(off) * over) : p;
+  };
 
   /* Nothing roadside where the road is inside a mountain. A tunnel already has
      walls - the bore is the barrier - and everything that usually lines a road
@@ -385,7 +398,7 @@ export async function buildProps(scene, THREE, track, current) {
     for (let k = -1; k <= 1; k++) {
       const b = track.at((at * L + k * 10.5 + L) % L);
       if (inTunnel(b)) continue;
-      const pos = side(b, -(b.w + 16));
+      const pos = clearOf(b, -(b.w + 16));
       clear(at < 0.1 ? covered : stands, { pos, yaw: facingRoad(b, -1) });
     }
   }
@@ -454,7 +467,7 @@ export async function buildProps(scene, THREE, track, current) {
   for (let k = 0; k < 10; k++) {
     const a = track.at((k / 10) * L);
     if (inTunnel(a)) continue;
-    const pos = side(a, (k % 2 ? 1 : -1) * (a.w + 8));
+    const pos = clearOf(a, (k % 2 ? 1 : -1) * (a.w + 8));
     clear(k % 2 ? towersR : towersG, { pos, yaw: facingRoad(a, k % 2 ? 1 : -1) });
   }
   put('bannerTowerRed', towersR);
@@ -469,7 +482,7 @@ export async function buildProps(scene, THREE, track, current) {
     for (const sgn of [1, -1]) {
       if (rnd() > 0.45) continue;
       if (inTunnel(a)) continue;
-      const pos = side(a, sgn * (a.w + 9 + rnd() * 16));
+      const pos = clearOf(a, sgn * (a.w + 9 + rnd() * 16));
       clear(rnd() > 0.45 ? big : small, { pos, yaw: rnd() * Math.PI * 2, scale: 0.8 + rnd() * 0.5 });
     }
   }
@@ -482,7 +495,7 @@ export async function buildProps(scene, THREE, track, current) {
     for (const sgn of [1, -1]) {
       if (rnd() > 0.55) continue;
       if (inTunnel(a)) continue;
-      clear(small, { pos: side(a, sgn * (a.w + 7 + rnd() * 24)),
+      clear(small, { pos: clearOf(a, sgn * (a.w + 7 + rnd() * 24)),
                      yaw: rnd() * 6.28, scale: 0.16 + rnd() * 0.17 });
     }
   }
@@ -494,14 +507,14 @@ export async function buildProps(scene, THREE, track, current) {
   for (let s = 0; s < L; s += 34) {
     const a = track.at(s);
     if (inTunnel(a)) continue;
-    clear(lamps, { pos: side(a, -(a.w + 5.4)), yaw: facingRoad(a, -1) });
+    clear(lamps, { pos: clearOf(a, -(a.w + 5.4)), yaw: facingRoad(a, -1) });
   }
   put('lightPostModern', lamps);
 
   const tents = [], longTents = [];
   const pad = track.at(0.11 * L);
   for (let k = 0; k < 5; k++) {
-    const pos = side(pad, -(pad.w + 20 + (k % 2) * 9));
+    const pos = clearOf(pad, -(pad.w + 20 + (k % 2) * 9));
     pos.x += Math.cos(k * 1.9) * 11;
     pos.z += Math.sin(k * 1.9) * 11;
     pos.y = track.groundY(pos.x, pos.z);
@@ -527,7 +540,7 @@ export async function buildProps(scene, THREE, track, current) {
       if (inTunnel(a)) continue;
       // catch fencing stands back behind the barrier, both sides, all the way
       for (const sgn of [1, -1]) {
-        clear(fence, { pos: side(a, sgn * (a.w + 5.2)), yaw: withRoad(a) });
+        clear(fence, { pos: clearOf(a, sgn * (a.w + 5.2)), yaw: withRoad(a) });
       }
     }
     for (let s = 6; s < L; s += 26) {
@@ -535,35 +548,35 @@ export async function buildProps(scene, THREE, track, current) {
       if (inTunnel(a)) continue;
       const sgn = ((s / 26) | 0) % 2 ? 1 : -1;
       // a guard rail in front of the fence on the outside of things
-      clear(rails, { pos: side(a, sgn * (a.w + 3.4)), yaw: withRoad(a) });
+      clear(rails, { pos: clearOf(a, sgn * (a.w + 3.4)), yaw: withRoad(a) });
     }
     for (let s = 20; s < L; s += 61) {
       const a = track.at(s);
       if (inTunnel(a)) continue;
       const sgn = ((s / 61) | 0) % 2 ? 1 : -1;
-      clear(boards, { pos: side(a, sgn * (a.w + 12)), yaw: facingRoad(a, sgn) });
+      clear(boards, { pos: clearOf(a, sgn * (a.w + 12)), yaw: facingRoad(a, sgn) });
     }
     for (let s = 44; s < L; s += 73) {
       const a = track.at(s);
       if (inTunnel(a)) continue;
       const sgn = ((s / 73) | 0) % 2 ? -1 : 1;
-      clear(boardsLow, { pos: side(a, sgn * (a.w + 10)), yaw: facingRoad(a, sgn) });
+      clear(boardsLow, { pos: clearOf(a, sgn * (a.w + 10)), yaw: facingRoad(a, sgn) });
     }
     for (let s = 12; s < L; s += 88) {
       const a = track.at(s);
       if (inTunnel(a)) continue;
-      clear(flood, { pos: side(a, (a.w + 15)), yaw: facingRoad(a, 1) });
+      clear(flood, { pos: clearOf(a, (a.w + 15)), yaw: facingRoad(a, 1) });
     }
     for (let s = 34; s < L; s += 96) {
       const a = track.at(s);
       if (inTunnel(a)) continue;
       const sgn = ((s / 96) | 0) % 2 ? 1 : -1;
-      clear(sgn > 0 ? marshalG : marshalR, { pos: side(a, sgn * (a.w + 6.4)), yaw: facingRoad(a, sgn) });
+      clear(sgn > 0 ? marshalG : marshalR, { pos: clearOf(a, sgn * (a.w + 6.4)), yaw: facingRoad(a, sgn) });
     }
     for (let s = 70; s < L; s += 180) {
       const a = track.at(s);
       if (inTunnel(a)) continue;
-      clear(dishes, { pos: side(a, -(a.w + 19)), yaw: rnd() * 6.28 });
+      clear(dishes, { pos: clearOf(a, -(a.w + 19)), yaw: rnd() * 6.28 });
     }
     /* Markers on the apex of things. The scrub that used to be here as well
        went up with the small trees: the kit does have a piece called grass, but
@@ -574,7 +587,7 @@ export async function buildProps(scene, THREE, track, current) {
       const a = track.at(s);
       if (inTunnel(a)) continue;
       const sgn = rnd() < 0.5 ? 1 : -1;
-      clear(pylons, { pos: side(a, sgn * (a.w + 1.6)), yaw: withRoad(a) });
+      clear(pylons, { pos: clearOf(a, sgn * (a.w + 1.6)), yaw: withRoad(a) });
     }
     /* Anything placed face on has to take its height again after it has been
        pushed back by half its depth, or it ends up standing at the height of
@@ -595,7 +608,7 @@ export async function buildProps(scene, THREE, track, current) {
     const garages = [], offices = [];
     for (let k = 0; k < 6; k++) {
       const a = track.at(((L - 150 + k * 11) % L + L) % L);
-      clear(k % 3 === 2 ? offices : garages, { pos: side(a, -(a.w + 16)), yaw: facingRoad(a, -1) });
+      clear(k % 3 === 2 ? offices : garages, { pos: clearOf(a, -(a.w + 16)), yaw: facingRoad(a, -1) });
     }
     put('pitsGarage', garages, true, onGround);
     put('pitsOffice', offices, true, onGround);
