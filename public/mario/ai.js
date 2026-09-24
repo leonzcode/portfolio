@@ -9,8 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=46';
-import { topSpeed } from './kart.js?v=46';
+import { ITEMS, lapProg } from './items.js?v=47';
+import { topSpeed } from './kart.js?v=47';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
@@ -28,6 +28,40 @@ export function makeBrain(kart, skill, seed) {
     rnd,
   };
 }
+
+/* ---------------------------------------------------------------------------
+   The elastic, stretched over a race rather than a corner.
+
+   A grid that drives its own pace and nothing else turns a race into a
+   procession: get clear on the first lap and the last two are a lap of an
+   empty circuit, which is the least interesting thing a race can be. So the
+   field watches the player. Hold the lead for more than a few seconds and it
+   starts finding a little more, slowly, and keeps finding it for as long as
+   the lead holds; lose the lead and it gives the same back at the same rate.
+
+   Small numbers and a slow rate on purpose. The point is that a race stays a
+   race, not that the field lands on your bumper the moment you get ahead - a
+   player who is simply quicker still wins, they just have to keep driving. At
+   a fortieth per second it takes most of a lap to find its ten percent, which
+   is slow enough that what you notice is the gap not growing rather than the
+   car behind speeding up.
+--------------------------------------------------------------------------- */
+const PACE_MIN = 0.94, PACE_MAX = 1.1, PACE_RATE = 0.025, GRACE = 5;
+let pace = 1, leadT = 0, tailT = 0;
+export function pacePulse(dt, leading, trailing) {
+  leadT = leading ? leadT + dt : 0;
+  tailT = trailing ? tailT + dt : 0;
+  /* Level is where it wants to be, and a close race leaves it there. It only
+     goes looking for the extra once the lead has held for a while, so a lap
+     one scrap or a lead you hold into the first corner and lose out of it
+     does not set the whole grid off. */
+  const want = leadT > GRACE ? PACE_MAX : tailT > GRACE ? PACE_MIN : 1;
+  const step = PACE_RATE * dt;
+  pace += Math.max(-step, Math.min(step, want - pace));
+  return pace;
+}
+export function paceOf() { return pace; }
+export function resetPace() { pace = 1; leadT = tailT = 0; }
 
 /* look along the road and find the tightest bend within reach */
 function curveAhead(track, i, n) {
@@ -158,7 +192,7 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
      arrived at everything a quarter too fast and spent the race in the scenery. */
   const cap = 1 - Math.min(0.68, bend * 0.55 / Math.sqrt(R.grip)) * (1.25 - br.skill * 0.45);
   // off its own top end, so a quicker field stays quick round the corners too
-  const wantSpeed = topSpeed(k) * (0.72 + br.skill * 0.3) * cap;
+  const wantSpeed = topSpeed(k) * (0.72 + br.skill * 0.3) * cap * pace;
   const gas = k.speed < wantSpeed ? 1 : 0;
   const brake = k.speed > wantSpeed * 1.22 ? 1 : 0;
   const hop = br.skill > 0.45 && Math.abs(err) > 0.42 && k.speed > 13 && bend > 0.55;

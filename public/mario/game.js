@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=46';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=46';
-import { packLook, unpackLook, normalise } from './parts.js?v=46';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=46';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=46';
-import { makeRescue } from './rescue.js?v=46';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=46';
-import { makeBrain, driveBrain } from './ai.js?v=46';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=46';
-import { makeCones } from './cones.js?v=46';
-import { makeHazards } from './hazards.js?v=46';
-import { THEMES, themeById } from './themes.js?v=46';
-import * as snd from './audio.js?v=46';
+import { buildTrack } from './track.js?v=47';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=47';
+import { packLook, unpackLook, normalise } from './parts.js?v=47';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=47';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=47';
+import { makeRescue } from './rescue.js?v=47';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=47';
+import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=47';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=47';
+import { makeCones } from './cones.js?v=47';
+import { makeHazards } from './hazards.js?v=47';
+import { THEMES, themeById } from './themes.js?v=47';
+import * as snd from './audio.js?v=47';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -372,7 +372,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=46')
+  import('./props.js?v=47')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -408,6 +408,7 @@ function clearField() {
   for (const k of karts) { dropPlant(k); scene.remove(k.group); }
   karts = [];
   brains = [];
+  resetPace();                        // every race starts with the field on its own pace
   if (items) items.clear();
 }
 
@@ -757,6 +758,11 @@ function stepWorld(dt) {
      the new car sits on the line for the rest of the race. */
   if (autoBrain && me && autoBrain.kart !== me) autoBrain = makeBrain(me, 0.95, 4242);
 
+  /* How hard the field is trying, which depends on how the player is doing.
+     Once a frame for the whole grid rather than per driver: it is one race's
+     worth of elastic, not eight drivers each with their own idea. */
+  const racing = phase === 'race' && !!me && !me.finished;
+  pacePulse(dt, racing && me.place === 1, racing && me.place === karts.length);
   // the computer drivers, and the autopilot when a test is driving
   if (autoBrain) {
     autoBrain.hazards = dodge;
@@ -1893,7 +1899,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=46');
+    const mod = await import('./net.js?v=47');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2259,8 +2265,11 @@ window.__mk = {
      really driving one race with the scenery swapped: lap counters, finishing
      times and the clock all carry, and somewhere in the fourth or fifth the
      race it is measuring quietly ends underneath it. */
+  // what the field is currently trying, for a test that wants to watch the elastic
+  get pace() { return paceOf(); },
   restart() {
     results.length = 0;
+    resetPace();
     raceTime = 0;
     phaseT = 0;
     notified = 0;
