@@ -73,6 +73,24 @@
     box-shadow:inset 0 4px 0 rgba(23,34,59,.12);
   }
   #gcan{ display:block; width:100%; height:186px; cursor:grab; }
+  /* On a short screen the garage is most of two screens of scrolling before
+     you reach the button that starts a race. A phone held sideways is 390
+     tall and the card was 752, so the turntable, the colour wheel and the
+     stat bars all give up some room and the whole thing fits in one. */
+  @media (max-height: 560px){
+    #gcan{ height:104px; }
+    #garage{ width:min(300px,86vw); }
+    #gparts{ margin-top:7px; gap:4px; }
+    #gbars{ margin-top:7px; gap:3px; }
+    #gbars .bar i{ height:7px; }
+    #gbars .bar span{ font-size:9px; }
+    #wheel{ width:84px; height:84px; }
+    #garage #nick{ padding:8px 10px; font-size:15px; }
+  }
+  @media (max-height: 420px){
+    #gcan{ height:78px; }
+    #gbars .bar span{ font-size:8.5px; }
+  }
   #gcan:active{ cursor:grabbing; }
   #ghint{
     position:absolute; left:0; right:0; bottom:5px; text-align:center; pointer-events:none;
@@ -902,5 +920,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=52');
+await import('./game.js?v=53');
 </script>
