@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=48';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=48';
-import { packLook, unpackLook, normalise } from './parts.js?v=48';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=48';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=48';
-import { makeRescue } from './rescue.js?v=48';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=48';
-import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=48';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=48';
-import { makeCones } from './cones.js?v=48';
-import { makeHazards } from './hazards.js?v=48';
-import { THEMES, themeById, seedOf } from './themes.js?v=48';
-import * as snd from './audio.js?v=48';
+import { buildTrack } from './track.js?v=49';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=49';
+import { packLook, unpackLook, normalise } from './parts.js?v=49';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=49';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=49';
+import { makeRescue } from './rescue.js?v=49';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=49';
+import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=49';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=49';
+import { makeCones } from './cones.js?v=49';
+import { makeHazards } from './hazards.js?v=49';
+import { THEMES, themeById, seedOf } from './themes.js?v=49';
+import * as snd from './audio.js?v=49';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -375,7 +375,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=48')
+  import('./props.js?v=49')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1468,6 +1468,12 @@ function rankOf(board, secs) {
   for (const r of board) if (r.score < secs - 0.005) n++;
   return n;
 }
+/* Two boards. The live one is times on the fixed circuits; the other is the
+   board exactly as it stood on the day the circuits were pinned, when every
+   race laid out a different track and no two of those times were run on the
+   same one. They are not comparable, so they are not mixed - the old one is
+   kept whole, behind a switch, and nothing is ever added to it. */
+let oldBoard = null, showingOld = false;
 function fetchBoard() {
   fetch(MC + '/scores?game=leon-kart')
     .then(r => r.json())
@@ -1475,6 +1481,14 @@ function fetchBoard() {
       if (!j || !j.board) return;
       raceBoard = j.board;
       if (!myRank) myRank = rankOf(raceBoard, myBestTime);
+      drawTimes();
+    })
+    .catch(() => {});
+  fetch(MC + '/scores?game=leon-kart-classic')
+    .then(r => r.json())
+    .then(j => {
+      if (!j || !j.board || !j.board.length) return;
+      oldBoard = j.board;
       drawTimes();
     })
     .catch(() => {});
@@ -1501,6 +1515,9 @@ function postTime(secs) {
 function drawTimes() {
   const box = el('times');
   if (!box) return;
+  if (showingOld && !(oldBoard && oldBoard.length)) showingOld = false;
+  if (showingOld) return drawOldTimes(box);
+  box.classList.remove('old');
   const rows = (raceBoard || []).slice(0, 10);
   const mineKey = (myName || 'You').toLowerCase();
   const onTop = rows.some(r => String(r.name).toLowerCase() === mineKey
@@ -1512,15 +1529,31 @@ function drawTimes() {
   if (myBestTime && !onTop && myRank) {
     mine += '<div class="mine place"><span>You place</span><b>' + ord(myRank) + '</b></div>';
   }
-  box.innerHTML = '<h2>Best times</h2>'
+  box.innerHTML = head('Best times', oldBoard && oldBoard.length ? 'Before update' : '')
     + '<p class="sub">Three laps, single or multiplayer</p>'
     + (rows.length
-      ? '<div class="rows">' + rows.map((r, i) =>
-          '<div class="r' + (i === 0 ? ' p1' : '') + '">'
-          + '<span class="p">' + (i + 1) + '</span><span>' + esc(r.name) + '</span>'
-          + '<span class="t">' + time(r.score) + '</span></div>').join('') + '</div>'
+      ? list(rows)
       : '<p class="none">Nobody has finished a race yet.</p>')
     + mine;
+  wireWas(box);
+}
+// the board as it stood before the circuits were pinned, kept whole
+function drawOldTimes(box) {
+  box.classList.add('old');
+  box.innerHTML = head('Before update', 'Back to now')
+    + '<p class="sub">Random circuits. Not comparable.</p>'
+    + list(oldBoard.slice(0, 10));
+  wireWas(box);
+}
+const head = (title, btn) => '<div class="head"><h2>' + title + '</h2>'
+  + (btn ? '<button type="button" class="was">' + btn + '</button>' : '') + '</div>';
+const list = rows => '<div class="rows">' + rows.map((r, i) =>
+  '<div class="r' + (i === 0 ? ' p1' : '') + '">'
+  + '<span class="p">' + (i + 1) + '</span><span>' + esc(r.name) + '</span>'
+  + '<span class="t">' + time(r.score) + '</span></div>').join('') + '</div>';
+function wireWas(box) {
+  const b = box.querySelector('.was');
+  if (b) b.addEventListener('click', () => { showingOld = !showingOld; drawTimes(); });
 }
 
 function time(t) {
@@ -1908,7 +1941,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=48');
+    const mod = await import('./net.js?v=49');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2244,6 +2277,10 @@ window.__mk = {
   startSolo() { return start(false); },
   startOnline() { return start(true); },
   key(k, on) { keys[k] = !!on; },
+  /* Bolt a build onto the player's kart, the way the garage does when a race
+     starts, so a test can ask what a hauler drives like against a formula car
+     without clicking through the garage to get there. */
+  setBuild(build) { if (!me) return null; me.build = normalise(build); me.parts = statsOf(me.build); return me.parts; },
   // a test can freeze the loop and run the world by hand, which makes the
   // countdown and the finish deterministic instead of a race with the renderer
   pause(v) { frozen = !!v; return frozen; },

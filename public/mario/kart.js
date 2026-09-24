@@ -65,7 +65,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=48';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=49';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -182,7 +182,14 @@ export function makeKart(who, build) {
   const kart = {
     who: r, group, body, wheels, shade, head, arms, glider,
     build: b, trail: trailOf(b.trail), exhaust: spec.exhaust || [],
-    // what the parts bolted to it are worth, worked out once when it is built
+    /* What the parts bolted to it are worth, worked out once when it is built.
+
+       This was set twice in this one object - here, and again as `parts: null`
+       two dozen lines down - and the second one won, the way the second of any
+       two keys in an object literal does. So `k.parts` was null for every kart
+       in the game, every guard reading it took its `: 1` fallback, and not one
+       of the numbers on the garage's stat bars did anything at all. A hauler on
+       knobblies drove exactly like a formula car on wires. */
     parts: statsOf(b),
     // how far the suspension is compressed, and how far it has left to go
     squat: 0, squatV: 0,
@@ -208,8 +215,6 @@ export function makeKart(who, build) {
     glide: 0, glideOut: 0,
     // over an anti-gravity rail, and how much of a spin boost is still playing
     agrav: 0, spinB: 0,
-    // what the parts bolted to it are worth
-    parts: null,
     lap: 1, cpi: 0, prog: 0, place: 1, finished: 0,
     item: null, itemN: 0, roulette: 0,
     // what is queued behind the one in the slot, oldest first

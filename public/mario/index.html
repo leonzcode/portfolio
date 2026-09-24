@@ -597,6 +597,27 @@
   #times .rows .r .p{ font-size:14px; }
   #times .rows .r .t{ font-variant-numeric:tabular-nums; }
   #times .none{ margin:2px 0 0; font-size:13px; opacity:.6; }
+  /* The switch to the board as it stood before the circuits were pinned. It
+     sits with the heading rather than under the list: it is a way of reading
+     the same card, not another thing the card does. */
+  /* The heading and the switch share a line while the card is wide enough for
+     both, and the switch drops under it when it is not, rather than squeezing
+     "Best times" onto two lines. */
+  #times .head{
+    display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:4px 8px; margin:0 0 10px;
+  }
+  #times .head h2{ margin:0; font-size:17px; }
+  #times .was{
+    flex:0 0 auto; border:2px solid var(--ink); background:var(--cream); color:var(--ink);
+    font-family:var(--display); font-weight:800; font-size:9.5px; letter-spacing:.05em;
+    text-transform:uppercase; padding:4px 8px; border-radius:999px; cursor:pointer;
+    line-height:1; white-space:nowrap;
+  }
+  #times .was:hover{ background:var(--ink); color:var(--cream); }
+  #times .was:focus-visible{ outline:3px solid var(--gold); outline-offset:2px; }
+  #times.old .rows .r{ opacity:.82; }
+  #times.old .rows .r.p1{ opacity:1; }
   #times .mine{
     margin-top:7px; font-family:var(--display); font-weight:800; font-size:13px;
     letter-spacing:.03em; color:var(--ink); display:flex; justify-content:space-between;
@@ -815,5 +836,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=48');
+await import('./game.js?v=49');
 </script>
