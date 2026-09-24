@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=44';
+import { themeById, rulesOf, lookOf } from './themes.js?v=45';
 
 /* The lap.
 
@@ -819,6 +819,7 @@ export function buildTrack(scene, seed, themeId) {
     ribbon(pos, uv, idx),
     new THREE.MeshStandardMaterial({ map: tarmacTex(th), roughness: 0.82, metalness: 0.02 })
   );
+  road.name = 'road';
   road.receiveShadow = true;
   group.add(road);
 
@@ -836,6 +837,7 @@ export function buildTrack(scene, seed, themeId) {
     emissiveIntensity: th.glow || 0,
   });
   const kerb = new THREE.Mesh(ribbon(kpos, kuv, kidx), kerbMat());
+  kerb.name = 'road-kerb';
   kerb.receiveShadow = true;
   group.add(kerb);
 
@@ -1049,6 +1051,7 @@ export function buildTrack(scene, seed, themeId) {
         di.push(aa, bb, cc, bb, dd, cc);
       }
       const deck = new THREE.Mesh(ribbon(dp, du, di), deckMat);
+      deck.name = 'road-deck';
       deck.receiveShadow = true;
       group.add(deck);
 
@@ -1068,6 +1071,7 @@ export function buildTrack(scene, seed, themeId) {
             ei.push(aa, bb, cc, bb, dd, cc);
           }
           const strip = new THREE.Mesh(ribbon(ep, eu, ei), glow);
+          strip.name = 'road-edge';
           strip.material.side = THREE.DoubleSide;
           group.add(strip);
         }
@@ -1143,8 +1147,16 @@ export function buildTrack(scene, seed, themeId) {
              floor is worked out from the width rather than guessed at. */
           const minK = (a.w + 0.9) / rad;
           const knock = cave ? Math.max(minK, 1 + (wr() - 0.35) * 0.3) : 1;
-          const p = a.p.clone().addScaledVector(a.n, Math.cos(ang) * rad * knock);
-          R.push(p.x, a.p.y + Math.sin(ang) * rad * 0.58 * knock - 0.2, p.z);
+          const lat = Math.cos(ang) * rad * knock;
+          const p = a.p.clone().addScaledVector(a.n, lat);
+          /* Stood on the road rather than on the centreline's height. A banked
+             corner raises its outside edge by the better part of a metre and
+             the tube was built level, so the road climbed towards a wall that
+             had not moved and the rock came down to head height on the outside
+             of every banked bend. Reading the surface at the point the wall
+             meets it rolls the whole tube with the track, which is also what a
+             banked tunnel ought to look like. */
+          R.push(p.x, surf(a, lat) + Math.sin(ang) * rad * 0.58 * knock - 0.2, p.z);
           RU.push(j / RINGS, k * 0.5);
         }
       });
@@ -1254,10 +1266,16 @@ export function buildTrack(scene, seed, themeId) {
          the road half-width, how tall the ring is against how wide, and how
          thick its tube, what radius clears the road at head height. */
       const HEAD = 1.9;               // over a driver, not level with one
-      const boreRad = (w, squash, tube) => {
+      const ROLL = 0.15;              // how far a crack is allowed to lie over
+      const boreRad = (w, squash, tube, roll) => {
         const k = 1 - tube;           // the inner face of the tube
         const want = w + 0.6;         // the road, and a little daylight
-        return Math.sqrt(want * want + Math.pow(HEAD / squash, 2)) / k;
+        /* A roll of a tenth of a radian sounds like nothing and is nothing in
+           the middle of the road, but out at the kerb it is eight metres of
+           lever and drops the ring over a metre. Ask for that much more height
+           than a driver needs, so a rolled ring still clears one. */
+        const head = HEAD + (roll || 0) * want;
+        return Math.sqrt(want * want + Math.pow(head / squash, 2)) / k;
       };
 
       if (L.crack !== undefined) {
@@ -1266,10 +1284,10 @@ export function buildTrack(scene, seed, themeId) {
         for (let k = 1; k < ids.length - 1; k += 2) {
           const a = samples[ids[k]];
           // on the wall, not across the road
-          const rad = Math.max(boreRad(a.w, 0.62, 0.06),
+          const rad = Math.max(boreRad(a.w, 0.62, 0.06, ROLL),
                                (a.w + KERB) * (0.86 + wr() * 0.1));
           cracks.push({
-            p: new THREE.Vector3(a.p.x, a.p.y - 0.2, a.p.z),
+            p: new THREE.Vector3(a.p.x, surf(a, 0) - 0.2, a.p.z),
             /* Rolled a little, not spun. The arc starts at the wall and climbs;
                rolled a whole radian or two its lower end swings off the wall and
                sweeps down across the road, which on a wide stretch is a glowing
@@ -1277,7 +1295,7 @@ export function buildTrack(scene, seed, themeId) {
                keeps every crack on the rock and still makes no two alike, and
                the sign of the scale decides which wall it is on. */
             ry: Math.atan2(a.n.x, a.n.z) + Math.PI / 2,
-            rz: (wr() - 0.5) * 0.3, order: 'YZX',
+            rz: a.bank + (wr() - 0.5) * 2 * ROLL, order: 'YZX',
             sx: rad * (wr() < 0.5 ? 1 : -1), sy: rad * 0.62, sz: rad,
           });
         }
@@ -1292,8 +1310,9 @@ export function buildTrack(scene, seed, themeId) {
           // and the same for the lit rings of a pipe, for the same reason
           const rad = Math.max(boreRad(a.w, 0.7, 0.05), (a.w + KERB) * 0.82);
           rings.push({
-            p: new THREE.Vector3(a.p.x, a.p.y - 0.2, a.p.z),
+            p: new THREE.Vector3(a.p.x, surf(a, 0) - 0.2, a.p.z),
             ry: Math.atan2(a.n.x, a.n.z) + Math.PI / 2,
+            rz: a.bank, order: 'YZX',
             sx: rad, sy: rad * 0.7, sz: rad,
           });
         }
@@ -1328,6 +1347,7 @@ export function buildTrack(scene, seed, themeId) {
         emissive: L.glow ? new THREE.Color(L.glow) : 0x000000,
         emissiveIntensity: L.glow ? 0.5 : 0,
       }));
+      sheet.name = 'water-sheet';       // you drive through it, it is not in the way
       sheet.renderOrder = 2;
       group.add(sheet);
     }
@@ -1404,9 +1424,12 @@ export function buildTrack(scene, seed, themeId) {
       for (let k = 0; k < 120; k++) {
         const a = samples[Math.floor(rr() * N)];
         const side = rr() < 0.5 ? 1 : -1;
-        const off = a.w + 9 + rr() * 34;
-        const p = a.p.clone().addScaledVector(a.n, side * off);
         const w = 7 + rr() * 11, h = 16 + rr() * 54;
+        /* Cleared by its own half-width. Nine metres out reads as plenty until
+           you notice the widest of these is eighteen across, so its near face
+           came back to the kerb and a tower stood on the edge of the road. */
+        const off = a.w + 2 + w / 2 + rr() * 34;
+        const p = a.p.clone().addScaledVector(a.n, side * off);
         const foot = groundY(p.x, p.z);
         e.set(0, Math.atan2(a.t.x, a.t.z), 0); q.setFromEuler(e);
         sc.set(w, h, w * (0.7 + rr() * 0.6));
@@ -1431,8 +1454,9 @@ export function buildTrack(scene, seed, themeId) {
       for (let k = 0; k < 90; k++) {
         const a = samples[Math.floor(rr() * N)];
         const side = rr() < 0.5 ? 1 : -1;
-        const p = a.p.clone().addScaledVector(a.n, side * (a.w + 4 + rr() * 26));
         const r = 1.6 + rr() * 4.2;
+        // and the same for a boulder: four metres out, but up to six across
+        const p = a.p.clone().addScaledVector(a.n, side * (a.w + 1.2 + r + rr() * 26));
         e.set(rr() * 3, rr() * 6, rr() * 3); q.setFromEuler(e);
         sc.set(r, r * (0.7 + rr() * 0.7), r);
         m.compose(new THREE.Vector3(p.x, groundY(p.x, p.z) + r * 0.45, p.z), q, sc);
@@ -1473,11 +1497,14 @@ export function buildTrack(scene, seed, themeId) {
       ki.push(kc, jc, kd, kd, jc, jd);
     }
     if (ids.length > 1) {
+      // the splitter island, which is road furniture rather than scenery
       const isle = new THREE.Mesh(ribbon(ip, iu, ii),
         new THREE.MeshStandardMaterial({ map: grassTex(th), roughness: 1 }));
+      isle.name = 'road-island';
       isle.receiveShadow = true;
       group.add(isle);
       const rim = new THREE.Mesh(ribbon(kp, ku, ki), kerbMat());
+      rim.name = 'road-kerb';
       rim.receiveShadow = true;
       group.add(rim);
     }
@@ -1503,6 +1530,7 @@ export function buildTrack(scene, seed, themeId) {
           si.push(aa, bb, cc, bb, dd, cc);
         }
         const skirt = new THREE.Mesh(ribbon(sp2, su, si), skirtMat);
+        skirt.name = 'road-skirt';
         skirt.material.side = THREE.DoubleSide;
         skirt.receiveShadow = true;
         group.add(skirt);
