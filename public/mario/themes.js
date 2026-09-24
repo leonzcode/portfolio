@@ -30,6 +30,7 @@
 export const THEMES = [
   {
     id: 'meadow',
+    seed: 8920,
     /* What the sections are made of here. The same tunnel is a timber barn on
        Sunfield Loop and a cave through a mountain at Redrock Dunes, and it is
        the same forty lines of code either way. */
@@ -88,6 +89,7 @@ export const THEMES = [
   },
   {
     id: 'dunes',
+    seed: 96029,
     look: {
       // a cave, bored through a mountain that is put there for it to go through
       tunnel: { kind: 'cave', colour: 0x9a6f47, rough: 1, lamp: 0xffb04a, mount: 0xa97a4e },
@@ -136,6 +138,7 @@ export const THEMES = [
   },
   {
     id: 'frost',
+    seed: 32677,
     look: {
       tunnel: { kind: 'ice', colour: 0xbfe8ff, rough: 0.1, lamp: 0xdff2ff, clear: 0.72 },
       bridge: { kind: 'ice', deck: 0xd8eefc, pier: 0xa9c8dd },
@@ -184,6 +187,7 @@ export const THEMES = [
   },
   {
     id: 'neon',
+    seed: 119786,
     look: {
       tunnel: { kind: 'pipe', colour: 0x141c34, rough: 0.35, lamp: 0x39d0ff, ring: 0xff2f6e },
       bridge: { kind: 'skyway', deck: 0x1b2340, pier: 0x232d52, edge: 0x39d0ff },
@@ -230,6 +234,7 @@ export const THEMES = [
   },
   {
     id: 'ember',
+    seed: 40596,
     look: {
       tunnel: { kind: 'lavatube', colour: 0x2a2024, rough: 0.95, lamp: 0xff7a1a, crack: 0xff5a18, mount: 0x322528 },
       bridge: { kind: 'basalt', deck: 0x2e2a2e, pier: 0x241e22 },
@@ -304,4 +309,19 @@ export const BASE_RULES = {
 export const rulesOf = th => Object.assign({}, BASE_RULES, (th && th.rules) || {});
 
 export const themeById = id => THEMES.find(t => t.id === id) || THEMES[0];
+/* The circuit a place is always laid out from.
+
+   Every race used to draw a fresh number, so Sunfield Loop was a different
+   lap every time you went there and two times on the board were two times on
+   two different tracks. A leaderboard that compares those is not a
+   leaderboard, it is a list. Now a place is a place: the same corners in the
+   same order for everyone, every time, and a time means something.
+
+   The numbers are not arbitrary. Every seed in a spread was built and
+   measured, and these are the ones that came back with nothing standing in
+   the road, the widest spread of sections, the smallest step between one
+   sample and the next, and a lap length within a hundred metres of the
+   others - so no place is a quicker board than another for the sake of being
+   shorter. */
+export const seedOf = id => themeById(id).seed;
 export const themeAt = i => THEMES[((i % THEMES.length) + THEMES.length) % THEMES.length];

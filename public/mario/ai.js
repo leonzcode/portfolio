@@ -9,8 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=47';
-import { topSpeed } from './kart.js?v=47';
+import { ITEMS, lapProg } from './items.js?v=48';
+import { topSpeed } from './kart.js?v=48';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
@@ -192,7 +192,11 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
      arrived at everything a quarter too fast and spent the race in the scenery. */
   const cap = 1 - Math.min(0.68, bend * 0.55 / Math.sqrt(R.grip)) * (1.25 - br.skill * 0.45);
   // off its own top end, so a quicker field stays quick round the corners too
-  const wantSpeed = topSpeed(k) * (0.72 + br.skill * 0.3) * cap * pace;
+  /* The elastic is the grid reacting to the player, so it is the grid that
+     carries it. The autopilot is the player's own car being driven for him by
+     a test, and handing it the field's pace made a measurement of the game
+     into a measurement of how long the harness had been in front. */
+  const wantSpeed = topSpeed(k) * (0.72 + br.skill * 0.3) * cap * (br.bot ? pace : 1);
   const gas = k.speed < wantSpeed ? 1 : 0;
   const brake = k.speed > wantSpeed * 1.22 ? 1 : 0;
   const hop = br.skill > 0.45 && Math.abs(err) > 0.42 && k.speed > 13 && bend > 0.55;

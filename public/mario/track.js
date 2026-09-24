@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=47';
+import { themeById, rulesOf, lookOf } from './themes.js?v=48';
 
 /* The lap.
 
@@ -370,7 +370,7 @@ function sampleLoop(seed, th) {
        simply drove off the end without ever leaving the ground. The lip is now
        steep enough that anything doing eighteen is thrown, and the hole short
        enough that being thrown clears it. */
-    chasm: { len: 26, flat: 1, gapFrom: 0.52, gapTo: 0.62, drop: 26, lip: 4.2, shape(a, t, f, k) {
+    chasm: { len: 26, flat: 1, gapFrom: 0.52, gapTo: 0.62, drop: 26, lip: 4.2, kick: 0.1, shape(a, t, f, k) {
       a.chasm = 1;
       if (t > f.gapFrom && t < f.gapTo) {
         a.gap = 1;
@@ -383,8 +383,27 @@ function sampleLoop(seed, th) {
         /* And the last stretch before the hole is a kicker rather than a hill.
            `launch` is how far there is to clear; the car works out for itself
            how hard it has to leave, so a gap is a jump you are thrown off
-           rather than a hole you have to be going fast enough to miss. */
-        if (t > f.gapFrom - 0.1) a.launch = (f.gapTo - f.gapFrom) * f.len * 2.2;
+           rather than a hole you have to be going fast enough to miss.
+
+           How far there really is, which is more than the flagged samples.
+           The ribbon will not draw a surface with one end hanging over
+           nothing, so it drops the quad on each side of the hole too and the
+           tarmac is missing for two segments more than the flags say. Sized
+           off the flags alone the kicker put the car down exactly on the far
+           lip, which is the one piece of lip that is not there, and a jump you
+           had cleared came out as a fall.
+
+           And the kicker fires over the last stretch of run up rather than
+           at the edge itself, which is what makes it a ramp instead of a
+           trapdoor - so the car leaves the ground several metres before the
+           hole, and those metres are part of the jump. Counting only the hole
+           sized the throw as if it began at the lip, and the car was already
+           coming down by the time it got there. It cleared anyway on the
+           strength of the raised lip alone, which is a margin of nothing: one
+           run at a canyon in three or four ended in it. */
+        if (t > f.gapFrom - f.kick) {
+          a.launch = ((f.gapTo - f.gapFrom + f.kick) * f.len + 2) * STEP;
+        }
       } else {
         a.p.y += f.lip * 0.45 * (1 - ease(Math.min(1, (t - f.gapTo) / (1 - f.gapTo) * 1.4)));
       }
