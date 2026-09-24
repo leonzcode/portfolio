@@ -537,6 +537,58 @@
   .mfoot{ display:flex; gap:9px; margin-top:12px; }
   .mrow.sm{ font-size:13px; padding:9px 12px; margin:0; justify-content:center; flex:1; }
 
+  /* ---------- what changed ----------
+     A note on the front of the game the first time somebody opens it after a
+     change big enough to be worth a sentence. Read once and gone: it is keyed
+     to the version below, so a browser that has seen this one never sees it
+     again, and nobody has to dismiss the same note every time they come back
+     to race. Over everything, because it is the first thing to read. */
+  #news{
+    position:fixed; inset:0; z-index:95; display:none;
+    align-items:center; justify-content:center; padding:20px;
+    background:rgba(9,14,28,.62); backdrop-filter:blur(2px);
+    cursor:pointer;
+  }
+  #news.on{ display:flex; animation:newsIn .18s ease-out; }
+  @keyframes newsIn{ from{ opacity:0 } to{ opacity:1 } }
+  #news .card{
+    position:relative; width:min(420px, 100%); max-height:86vh; overflow:auto;
+    background:var(--cream); color:var(--ink); border:var(--key); border-radius:20px;
+    box-shadow:0 8px 0 var(--ink); padding:18px 20px 20px;
+  }
+  #news h2{
+    font-family:var(--display); font-weight:800; font-size:21px; margin:0 0 4px;
+    letter-spacing:.04em; text-transform:uppercase; padding-right:34px;
+  }
+  #news .when{ margin:0 0 14px; font-size:12px; font-weight:800; opacity:.55; }
+  #news ul{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
+  #news li{
+    display:grid; grid-template-columns:30px 1fr; gap:11px; align-items:center;
+    background:#fff; border:2px solid var(--ink); border-radius:12px; padding:9px 11px;
+    font-weight:800; font-size:14.5px; line-height:1.3;
+  }
+  #news li i{ font-style:normal; font-size:21px; text-align:center; line-height:1; }
+  #news li div{ min-width:0; }
+  #news li b{ display:block; }
+  #news li span{ display:block; font-weight:700; font-size:12.5px; opacity:.62; }
+  #news .x{
+    position:absolute; top:10px; right:10px; width:30px; height:30px;
+    display:grid; place-items:center; padding:0; cursor:pointer;
+    background:var(--cream); color:var(--ink); border:2px solid var(--ink);
+    border-radius:999px; font-family:var(--display); font-weight:800; font-size:15px;
+    line-height:1;
+  }
+  #news .x:hover{ background:var(--ink); color:var(--cream); }
+  #news .x:focus-visible{ outline:3px solid var(--gold); outline-offset:2px; }
+  #news .tap{ margin:13px 0 0; text-align:center; font-size:11.5px; font-weight:800; opacity:.5; }
+  @media (max-width: 430px){
+    #news{ padding:14px; }
+    #news .card{ padding:16px 15px 17px; }
+    #news h2{ font-size:18px; }
+    #news li{ font-size:13.5px; grid-template-columns:26px 1fr; gap:9px; }
+    #news li i{ font-size:19px; }
+  }
+
   /* ---------- standings, results, spectating ---------- */
   .panel{
     background:var(--cream); color:var(--ink); border:var(--key); border-radius:20px;
@@ -750,6 +802,20 @@
   </div>
 </div>
 
+<div id="news" hidden>
+  <div class="card">
+    <button type="button" class="x" aria-label="Close">&#10005;</button>
+    <h2>What&rsquo;s new</h2>
+    <p class="when">September 2026</p>
+    <ul>
+      <li><i>&#128506;&#65039;</i><div><b>Same 5 tracks every time</b><span>No more random maps</span></div></li>
+      <li><i>&#127942;</i><div><b>Leaderboard reset</b><span>Old times under &ldquo;Before update&rdquo;</span></div></li>
+      <li><i>&#128295;</i><div><b>Kart parts change how you drive</b><span>Speed, turning, weight</span></div></li>
+      <li><i>&#128739;&#65039;</i><div><b>Fewer bumps, no stuck spots</b><span>Caves and canyons fixed</span></div></li>
+    </ul>
+    <p class="tap">Click anywhere to close</p>
+  </div>
+</div>
 <div id="tags"></div>
 <div id="hud">
   <div id="slot" class="empty"><div class="face" id="face"></div></div>
@@ -836,5 +902,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=49');
+await import('./game.js?v=50');
 </script>
