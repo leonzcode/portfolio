@@ -65,7 +65,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=54';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=55';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -702,6 +702,7 @@ export function stepKart(k, input, track, dt) {
     k.yaw += d * 0.35;
     k.drift = 0; k.driftT = 0;
     k.wallHit = 1;
+    k.walls = (k.walls || 0) + 1;        // frames spent against a wall, for measuring drivers
   }
 
   // over the grass but not on it: a jump is not a trip through the rough
@@ -893,6 +894,7 @@ export function stepKart(k, input, track, dt) {
     k.yaw += d * 0.35;
     k.drift = 0; k.driftT = 0;
     k.wallHit = 1;
+    k.walls = (k.walls || 0) + 1;        // frames spent against a wall, for measuring drivers
   }
   // progress round the lap, for the running order
   k.prog = pr.s;

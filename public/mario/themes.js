@@ -107,6 +107,8 @@ export const THEMES = [
       { len: 38, mid: 'mesa' },
       { len: 28, mid: 'rocks' },
       { len: 46, mid: 'ridge', lift: 1 },
+      // a spare, for when the long one will not fit
+      { len: 26, mid: 'house' },
     ],
     look: {
       // a cave, bored through a mountain that is put there for it to go through
@@ -275,6 +277,7 @@ export const THEMES = [
       { len: 40, mid: 'mesa' },
       { len: 46, mid: 'ridge', lift: 1 },
       { len: 30, mid: 'rocks' },
+      { len: 24, mid: 'mesa' },
     ],
     look: {
       tunnel: { kind: 'lavatube', colour: 0x2a2024, rough: 0.95, lamp: 0xff7a1a, crack: 0xff5a18, mount: 0x322528 },

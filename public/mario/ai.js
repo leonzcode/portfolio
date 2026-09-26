@@ -9,8 +9,8 @@
    the hairpin and throws items, which is what a grid is for.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { ITEMS, lapProg } from './items.js?v=54';
-import { topSpeed } from './kart.js?v=54';
+import { ITEMS } from './items.js?v=55';
+import { topSpeed, TUNE } from './kart.js?v=55';
 
 export function makeBrain(kart, skill, seed) {
   let s = (seed | 0) || 1;
@@ -30,38 +30,51 @@ export function makeBrain(kart, skill, seed) {
 }
 
 /* ---------------------------------------------------------------------------
-   The elastic, stretched over a race rather than a corner.
+   How fast the road ahead can be taken.
 
-   A grid that drives its own pace and nothing else turns a race into a
-   procession: get clear on the first lap and the last two are a lap of an
-   empty circuit, which is the least interesting thing a race can be. So the
-   field watches the player. Hold the lead for more than a few seconds and it
-   starts finding a little more, slowly, and keeps finding it for as long as
-   the lead holds; lose the lead and it gives the same back at the same rate.
+   The field used to lift for the largest change of heading anywhere in the
+   next hundred and fifty metres. That reads an S bend as a hairpin and two
+   gentle curves as one sharp one, so the computer drivers took corners at
+   sixteen to thirty metres a second that a person takes at thirty seven, and
+   spent every race behind wondering why.
 
-   Small numbers and a slow rate on purpose. The point is that a race stays a
-   race, not that the field lands on your bumper the moment you get ahead - a
-   player who is simply quicker still wins, they just have to keep driving. At
-   a fortieth per second it takes most of a lap to find its ten percent, which
-   is slow enough that what you notice is the gap not growing rather than the
-   car behind speeding up.
+   Now each stretch ahead is asked what it actually needs: its radius, and how
+   tightly this car can turn at the speed it would be doing there - the steering
+   gives up lock as the speed rises, so the radius and the speed are solved for
+   together - and then how much road there is between here and there to slow
+   down in. The lowest of those is the fastest it can be going now. A better
+   driver uses more of the car's lock, so it can carry more speed into the same
+   bend; that is most of what skill is now.
 --------------------------------------------------------------------------- */
-const PACE_MIN = 0.94, PACE_MAX = 1.1, PACE_RATE = 0.025, GRACE = 5;
-let pace = 1, leadT = 0, tailT = 0;
-export function pacePulse(dt, leading, trailing) {
-  leadT = leading ? leadT + dt : 0;
-  tailT = trailing ? tailT + dt : 0;
-  /* Level is where it wants to be, and a close race leaves it there. It only
-     goes looking for the extra once the lead has held for a while, so a lap
-     one scrap or a lead you hold into the first corner and lose out of it
-     does not set the whole grid off. */
-  const want = leadT > GRACE ? PACE_MAX : tailT > GRACE ? PACE_MIN : 1;
-  const step = PACE_RATE * dt;
-  pace += Math.max(-step, Math.min(step, want - pace));
-  return pace;
+const PLAN_BRAKE = 13;       // m/s^2 it plans to slow at: a lift and a dab, not a stamp
+function cornerLimit(track, k, commit) {
+  const S = track.samples, N = S.length;
+  const R = track.rules || { grip: 1 };
+  const grip = (R.grip || 1) * (k.parts ? k.parts.grip : 1);
+  /* The car's own top end, not a boosted one. The steering's lock goes with
+     the speed as a share of the top end, so a boost lends a car more turn, but
+     only for the second it lasts, and the bend this is planning for is usually
+     further off than that. Planned on the boost, the field left every boost
+     lane committed to a corner it could only make with the boost still on,
+     and a third of its time against the wall on Neon was the bend after one. */
+  const top = Math.max(1, topSpeed(k) / (k.boost > 0 ? TUNE.boostTop : 1));
+  const w = TUNE.steer * grip * (0.52 + commit * 0.33);
+  const v = Math.max(10, Math.abs(k.speed));
+  // far enough ahead to stop for anything, and a little more
+  const reach = Math.min(120, 10 + Math.ceil((v * v) / (2 * PLAN_BRAKE) / 2.2));
+  let lim = Infinity;
+  for (let j = 2; j < reach; j += 2) {
+    const a = S[(k.hint + j - 2) % N].t, b = S[(k.hint + j + 2) % N].t;
+    const turn = Math.atan2(Math.abs(a.x * b.z - a.z * b.x), a.x * b.x + a.z * b.z);
+    if (turn < 0.006) continue;
+    const rad = 8.8 / turn;                       // four samples of road bent by that much
+    const vc = (rad * w) / (1 + (rad * w * 0.42) / top);
+    const d = (j - 2) * 2.2;
+    const va = Math.sqrt(vc * vc + 2 * PLAN_BRAKE * d);
+    if (va < lim) lim = va;
+  }
+  return lim;
 }
-export function paceOf() { return pace; }
-export function resetPace() { pace = 1; leadT = tailT = 0; }
 
 /* Which divide is next. Measured forward round the lap from where the car is,
    so it wraps at the line like everything else does. */
@@ -146,7 +159,13 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
            field arriving together is a field on one racing line, and reading
            the side off position alone sent all seven of them down the same
            lane and left the other empty. */
-        br.side = Math.abs(q.lateral) > q.half * 0.55 ? (q.lateral > 0 ? 1 : -1) : br.side0;
+        /* The clean lane, when one of them is sand or ice or ash. A split with
+           a strip down one side is a choice with a right answer, and the field
+           was tossing a coin for it: half of them took the strip, slid into the
+           island and lost seconds. Otherwise its own side, as before. */
+        const clean = -(track.samples[sp.i % N].strip || 0);
+        br.side = clean ? clean
+          : Math.abs(q.lateral) > q.half * 0.55 ? (q.lateral > 0 ? 1 : -1) : br.side0;
       }
       /* And once the island is actually under the car, the side is settled by
          where the car is, not by what it decided thirty metres ago. Shoved
@@ -160,11 +179,35 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
     } else br.side = 0;
   }
 
+  /* How well it is driving right now: its own skill, raised when the field
+     asks it to push and lowered when it is asked to ease off. Everything that
+     makes one driver quicker than another reads this - how far ahead it looks,
+     how much of the car's lock it uses in a bend, how close to the top end it
+     runs on a straight - so a car told to push drives like a better driver in
+     every way at once. Asked only to go faster, a weak driver found the extra
+     on the straights and gave it all back in the corners. */
+  const push = br.bot ? (br.mul || 1) : 1;
+  const drive = Math.max(0, Math.min(1.08, br.skill + (push - 1) * 2));
+
   // where to aim: up the road, but pulled in close when there is a bend coming,
   // or the aim point ends up across the grass on the inside of a hairpin
   const soon = curveAhead(track, k.hint, 18);
-  let look = Math.round((5 + k.speed * 0.5 * (0.8 + br.skill * 0.4)) / (1 + soon * 1.6));
+  let look = Math.round((5 + k.speed * 0.5 * (0.8 + drive * 0.4)) / (1 + soon * 1.6));
   if (side) look = Math.min(look, 9);
+  /* And no further round a bend than the bend allows. The aim point is a
+     straight line from here, and through a long bend a straight line crosses
+     the inside of it: a car asked to push, doing fifty, looked forty metres up
+     the road, drew a chord three metres inside the kerb and followed it along
+     the wall for the length of the corner. An arc of length L bent through an
+     angle a sags L*a/8 from its chord, so it looks no further than a metre
+     and a half of that. */
+  const t0 = track.samples[k.hint % N].t;
+  while (look > 6) {
+    const t1 = track.samples[(k.hint + look) % N].t;
+    const a = Math.acos(Math.max(-1, Math.min(1, t0.x * t1.x + t0.z * t1.z)));
+    if (look * 2.2 * a / 8 <= 1.5) break;
+    look -= 2;
+  }
   const tgt = track.samples[(k.hint + Math.max(3, look)) % N];
   br.wobble += dt * 0.7;
   let lane = Math.max(-0.62, Math.min(0.62, br.line * 0.5 + Math.sin(br.wobble) * 0.1));
@@ -172,6 +215,12 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
      line a metre off the kerb is holding it a metre off the kerb on a causeway
      too, and there is no kerb there: the whole field walked off the side of the
      first one of these ever built. */
+  /* Off the strip. Sand, ice and ash run down one whole half of the road, and
+     the field did not know they were there: it drove through them as often as
+     not, which on a lap with two of them is most of why it was slow and most of
+     why it was in the wall. Any half of the road without one will do. */
+  const strip = tgt.strip || track.samples[k.hint % N].strip || 0;
+  if (strip && !side) lane = -strip * Math.max(0.34, Math.min(0.62, Math.abs(lane) + 0.2));
   const edge = Math.max(tgt.causeway || 0, track.samples[k.hint % N].causeway || 0);
   if (edge > 0.1) lane *= Math.max(0.12, 1 - edge);
   if (side) {
@@ -197,7 +246,21 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
   while (err < -Math.PI) err += Math.PI * 2;
   // a slippery circuit needs more lock for the same change of direction, and
   // a grippy one needs less or the car saws at the wheel all the way round
-  let steer = Math.max(-1, Math.min(1, err * 2.1 / R.grip));
+  /* And enough lock for the speed. A fixed gain on the angle to the aim point
+     asks for the same turn at fifty metres a second as at twenty, when at fifty
+     the car needs two and a half times the rate of turn to hold the same arc,
+     and has less lock to find it with. So a fast car ran wide until the angle
+     had grown enough to make up the difference, which on a long bend is the
+     whole width of the road: the field spent its quickest corners on the
+     outside wall. The arc from here through the aim point says what rate of
+     turn it needs, and that over the lock the car has at this speed is the
+     least it steers. Slow, the old gain is the larger and nothing changes. */
+  const v = Math.abs(k.speed);
+  const lockNow = TUNE.steer * (1 - Math.min(0.42, v / Math.max(1, topSpeed(k)) * 0.42))
+                * Math.min(1, v / 7) * R.grip * (k.parts ? k.parts.grip : 1);
+  const reachAim = Math.max(4, Math.hypot(dx, dz));
+  const gain = Math.max(2.1 / R.grip, lockNow > 0.05 ? (2 * v) / (reachAim * lockNow) : 0);
+  let steer = Math.max(-1, Math.min(1, err * gain));
 
   // lift and drift for the tight stuff
   const bend = curveAhead(track, k.hint, Math.round(14 + k.speed * 0.8));
@@ -208,15 +271,27 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
   /* How much it lifts for what is coming. The whole game is a quarter quicker
      than it was and a corner does not care: at the old numbers the field
      arrived at everything a quarter too fast and spent the race in the scenery. */
-  const cap = 1 - Math.min(0.68, bend * 0.55 / Math.sqrt(R.grip)) * (1.25 - br.skill * 0.45);
-  // off its own top end, so a quicker field stays quick round the corners too
-  /* The elastic is the grid reacting to the player, so it is the grid that
-     carries it. The autopilot is the player's own car being driven for him by
-     a test, and handing it the field's pace made a measurement of the game
-     into a measurement of how long the harness had been in front. */
-  const wantSpeed = topSpeed(k) * (0.72 + br.skill * 0.3) * cap * (br.bot ? pace : 1);
+  /* The fastest the road ahead allows, and on a straight a touch under the
+     car's top end for a driver who is not the best. br.mul is how hard the
+     field is asking this one to try to hold its distance from the player; it
+     raises the top end through the car's own topMul, and asks for a little
+     more commitment into a corner when it is behind and a little less when it
+     is ahead. The autopilot is the player's own car and carries none of it. */
+  /* Pushing a driver does not mean asking it to go through a corner faster
+     than the corner allows - that is a car in the wall. It means asking it to
+     drive like a better driver: use more of the lock it has, carry more speed
+     in. So a car told to try harder corners like a more skilful one, up to a
+     little past the best in the field, and a car told to ease off corners like
+     a more careful one. */
+  const straight = topSpeed(k) * (0.9 + Math.min(1, drive) * 0.1);
+  const wantSpeed = Math.min(straight, cornerLimit(track, k, drive));
+  /* On the brakes as soon as it is properly over, not a fifth over. The speed
+     asked for used to be a rough guess, so coasting until well past it cost
+     nothing; now it is the speed the corner can actually be taken at, and a
+     car that only coasts down to it arrives a fifth too quick and finds the
+     wall. */
   const gas = k.speed < wantSpeed ? 1 : 0;
-  const brake = k.speed > wantSpeed * 1.22 ? 1 : 0;
+  const brake = k.speed > wantSpeed * 1.05 ? 1 : 0;
   const hop = br.skill > 0.45 && Math.abs(err) > 0.42 && k.speed > 13 && bend > 0.55;
 
   // steer round anything lying on the road
@@ -246,17 +321,6 @@ export function driveBrain(br, track, dt, karts, leaderProg, useItem) {
       if (fire) { useItem(k); br.itemWait = 0.8 + br.rnd() * 1.6; }
     }
   } else br.itemWait = 0.5 + br.rnd() * 1.2;
-
-  /* The elastic.
-
-     Two of them, actually. The old one is a nudge for anybody a long way off
-     the leader, which keeps the pack a pack. The new one watches the person at
-     the keyboard: run away at the front and the whole field slowly finds a bit
-     more, fall back and it slowly gives it up again. It moves at a few per cent
-     a second and is capped either side, so it is something you feel as the race
-     closing up rather than something you can see happening. */
-  const behind = leaderProg - lapProg(k, track);
-  br.boostBias = behind > 120 ? 1.06 : behind < -80 ? 0.96 : 1;
 
   return { gas, brake, steer, hop };
 }

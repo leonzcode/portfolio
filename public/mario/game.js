@@ -11,19 +11,20 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=54';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=54';
-import { packLook, unpackLook, normalise } from './parts.js?v=54';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=54';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=54';
-import { makeRescue } from './rescue.js?v=54';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=54';
-import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=54';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=54';
-import { makeCones } from './cones.js?v=54';
-import { makeHazards } from './hazards.js?v=54';
-import { THEMES, themeById, seedOf } from './themes.js?v=54';
-import * as snd from './audio.js?v=54';
+import { buildTrack } from './track.js?v=55';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=55';
+import { packLook, unpackLook, normalise } from './parts.js?v=55';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=55';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=55';
+import { makeRescue } from './rescue.js?v=55';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=55';
+import { makeBrain, driveBrain } from './ai.js?v=55';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=55';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=55';
+import { makeCones } from './cones.js?v=55';
+import { makeHazards } from './hazards.js?v=55';
+import { THEMES, themeById, seedOf } from './themes.js?v=55';
+import * as snd from './audio.js?v=55';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -299,6 +300,88 @@ function readInput() {
    wire. Everything that hangs off the track - the scenery, the cones, the
    hazards lying about - goes with the old one. */
 let worldSeed = 0, worldTheme = '';
+/* ---- ghosts ----------------------------------------------------------------
+   Every race you finish is recorded. The best on each track is kept in this
+   browser, and the best ten on each track are kept on the server beside the
+   times they set. Racing one puts it on the grid inside your car. */
+const recorder = makeRecorder();
+let ghost = null;          // the one in the world this race, if there is one
+let ghostWant = null;      // the one asked for, raced again each round on its own track
+let trackPrint = '';       // this layout, so a ghost set on a different one is not replayed on it
+let runReady = null, runToken = null;   // this race's recording, and the token it is sent with
+/* A fingerprint of the road itself. A ghost is a list of places, and replayed
+   on a layout that has since changed it drives through fields and hangs over
+   gaps, so a ghost only plays on the layout it was set on. */
+function printOf(tr) {
+  let h = 2166136261;
+  const S = tr.samples;
+  for (let i = 0; i < S.length; i += 4) {
+    const v = (Math.round(S[i].p.x * 10) * 31 + Math.round(S[i].p.z * 10) * 17 + Math.round(S[i].p.y * 10)) | 0;
+    h = Math.imul(h ^ v, 16777619);
+  }
+  return (h >>> 0).toString(36) + S.length.toString(36);
+}
+function bestGhost(theme) {
+  try {
+    const g = JSON.parse(localStorage.getItem('mkGhost:' + theme) || 'null');
+    return g && g.v === 1 && g.theme === theme ? g : null;
+  } catch (e) { return null; }
+}
+// the quickest of your own, on whichever track it was
+function bestGhostAny() {
+  let best = null;
+  for (const t of THEMES) { const g = bestGhost(t.id); if (g && (!best || g.time < best.time)) best = g; }
+  return best;
+}
+function keepBest(run) {
+  const was = bestGhost(run.theme);
+  if (was && was.time <= run.time) return;
+  try { localStorage.setItem('mkGhost:' + run.theme, JSON.stringify(run)); } catch (e) {}
+}
+/* The recording, done: kept here if it is your best on the track, and sent to
+   the board once the board has said the time made it and handed back the
+   token to send it with. Whichever of the two arrives second sends it. */
+function finishRun() {
+  if (runReady || !me || me.dnf || !me.finished) return;
+  const run = recorder.finish({
+    theme: worldTheme, track: trackPrint, time: +me.time.toFixed(2),
+    // never through | 0: that cuts the number to 32 bits and drops the paint
+    look: packLook(myCast, myBuild, myColour),
+  });
+  if (!run) return;
+  runReady = run;
+  keepBest(run);
+  sendGhost();
+}
+function sendGhost() {
+  if (!runReady || !runToken) return;
+  const body = JSON.stringify({ game: 'leon-kart', gt: runToken, ghost: runReady });
+  runToken = null;
+  fetch(MC + '/scores/ghost', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+    .then(r => r.json())
+    .then(j => { if (j && j.board) { raceBoard = j.board; drawTimes(); } })
+    .catch(() => {});
+}
+/* How you stand against the ghost at the end of a lap, in the few words a
+   notice has room for. Its own time for that lap is in the recording. */
+function ghostSplit(i) {
+  if (!ghost || !ghost.meta.laps || !(ghost.meta.laps[i] > 0)) return '';
+  const d = raceTime - ghost.meta.laps[i];
+  return '   ' + (d <= 0 ? '\u2212' : '+') + Math.abs(d).toFixed(2) + ' vs ghost';
+}
+function fetchGhost(id) {
+  return fetch(MC + '/scores/ghost?id=' + encodeURIComponent(id))
+    .then(r => (r.ok ? r.json() : null)).catch(() => null);
+}
+/* Race this one. On its own track, from the grid slot it started in, with
+   the rest of the field behind you as usual. */
+function raceGhost(g, label) {
+  if (started || !g || g.v !== 1 || !THEMES.some(t => t.id === g.theme)) return false;
+  ghostWant = Object.assign({}, g, { label: label || 'Ghost' });
+  pickedTheme = g.theme;
+  start(false);
+  return true;
+}
 /* The sky, the light and the haze belong to the place, so they move with it.
    Everything else about a theme is baked into the track when it is built. */
 function dressSky(th) {
@@ -370,28 +453,35 @@ function buildWorld(seed, themeId) {
   cones = makeCones(scene, track);
   hazards = makeHazards(scene, track, seed);
   rescue = makeRescue(scene, track);
+  trackPrint = th.id + ':' + printOf(track);
   // the scenery turns up when it turns up; the circuit is drivable without it
   /* And the build is told which world it was started for. By the time the
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=54')
+  import('./props.js?v=55')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
 
 /* --------------------------------------------------------------- the field -- */
-/* How much more top end the computer drivers get than you do, and how far that
-   is allowed to move during a race.
+/* The computer drivers drive the same car you do. They used to get twice your
+   top end, to make up for taking every corner at half the speed a person does;
+   now they corner properly, and the top end is yours.
 
-   Rubber banding, and it watches you rather than the field. Lead for more than
-   a few seconds and the number climbs; drop back and it falls again. It moves
-   at a few per cent a second and is held between three quarters and a quarter
-   over, so what you feel is the race closing up behind you rather than the
-   computer cheating in front of you. */
-const BOT_TOP = 2.02;
-const BAND_LO = 0.78, BAND_HI = 1.22;
-let band = 1, leadT = 0;
+   And each of them keeps its own distance from you. Some run ahead and some
+   behind, spread through the field by how good a driver each one is, and each
+   one eases its pace up or down to hold its place - a few per cent a second at
+   most, so what you see is a car finding a bit more on the straight or backing
+   off into a corner, never one lurching. The place each one wants drifts
+   slowly over a race, so the running order still changes. Drive better than
+   the field can answer and you get away; drive worse and you have company. */
+const BOT_TOP = 1;
+const MUL_LO = 0.8, MUL_HI = 1.3;         // how far any one of them will ease off or push
+const MUL_RATE = 0.06;                    // per second, at most
+const GAP_GAIN = 0.0045;                  // per metre it is out of place
+// where each keeps itself, best driver first: metres ahead of you, or behind
+const GAPS = [55, 36, 20, 7, -8, -24, -42];
 // how long the results stand before the next race, matching the lobby server
 const RESULTS = 10;
 
@@ -411,14 +501,18 @@ function clearField() {
   for (const k of karts) { dropPlant(k); scene.remove(k.group); }
   karts = [];
   brains = [];
-  resetPace();                        // every race starts with the field on its own pace
   if (items) items.clear();
+  if (ghost) { dropGhost(scene, ghost); ghost = null; }
 }
 
-function placeOnGrid() {
+/* From slot `first` back. A ghost starts in the slot its run started in, so
+   when you race one you are put in that slot and the field lines up behind
+   you - the ghost is then exactly where you are when the lights go. */
+function placeOnGrid(first = 0) {
   // the running order of the last race sets the grid for the next one
   karts.forEach((k, n) => {
-    const slot = track.gridSlot(n);
+    const slot = track.gridSlot(first + n);
+    k.slot = first + n;
     k.pos.copy(slot.pos);
     k.yaw = slot.yaw;
     k.speed = 0; k.drift = 0; k.driftT = 0; k.slide = 0; k.hop = 0; k.hopV = 0;
@@ -451,7 +545,6 @@ function startRound(field, seed, asPhase, themeId) {
   clearField();
   results = [];
   raceTime = 0; notified = 0;
-  band = 1; leadT = 0;
   wrongT = 0;
   el('wrong').classList.remove('on');
   const grid = [];
@@ -481,11 +574,25 @@ function startRound(field, seed, asPhase, themeId) {
       const k = addKart(r, { id: 'bot' + n, name: r.name, bot: true });
       k.topMul = BOT_TOP;
       const br = makeBrain(k, 0.52 + rnd() * 0.42, 99 + n * 17);
-      br.bot = true;                    // the grid carries the elastic; the autopilot does not
+      br.bot = true;                    // the grid keeps its distance; the autopilot does not
+      br.mul = 1;
+      br.wob = rnd() * Math.PI * 2;
       brains.push(br);
     }
+    // the best drivers keep the places furthest up the road
+    brains.slice().sort((a, b) => b.skill - a.skill)
+      .forEach((br, i) => { br.gap0 = GAPS[Math.min(i, GAPS.length - 1)]; });
   }
-  placeOnGrid();
+  // a ghost you asked for, on its own track, when you are racing on your own
+  const ghostHere = !(field && field.length) && !!ghostWant && ghostWant.theme === themeId;
+  placeOnGrid(ghostHere ? Math.max(0, Math.min(15, ghostWant.slot | 0)) : 0);
+  if (ghostHere) {
+    if (ghostWant.track && ghostWant.track !== trackPrint) {
+      say('That ghost was set on an older layout of this track, so it sits this one out.', 'sys');
+    } else {
+      ghost = makeGhost(scene, ghostWant, ghostWant.label);
+    }
+  }
   snapCamera();
   spectating = !me;
   watchId = null;
@@ -516,7 +623,7 @@ function lapLogic(k, pr) {
       if (k.lap > LAPS) finishKart(k);
       else if (k === me) {
         snd.lapChime();
-        notice(k.lap === LAPS ? 'Final lap' : 'Lap ' + k.lap);
+        notice((k.lap === LAPS ? 'Final lap' : 'Lap ' + k.lap) + ghostSplit(k.lap - 2));
         if (k.lap === LAPS) say('Final lap.', 'sys');
       }
     }
@@ -531,7 +638,7 @@ function finishKart(k) {
   results.push(k);
   k.place = results.length;
   if (k === me) {
-    notice(ord(results.length) + '!');
+    notice(ord(results.length) + '!' + ghostSplit(LAPS - 1));
     snd.fanfare(results.length <= 3);
     showResults(false);
   }
@@ -745,14 +852,29 @@ function stepWorld(dt) {
   const live = order();
   const leader = live[0] ? lapProg(live[0], track) : 0;
 
-  /* The elastic. How long you have been in front decides which way it moves,
-     and it only moves while a race is actually running. */
+  /* Each driver holding its distance. How far up the road it is from you,
+     against how far it wants to be, sets how hard it tries - and it only ever
+     changes that slowly. The place it wants wanders a car length or three
+     either way over most of a minute, so the order is not fixed for the race. */
   if (phase === 'race' && me && !me.finished) {
-    const first = (me.place || 9) === 1;
-    leadT = first ? Math.min(12, leadT + dt) : Math.max(-12, leadT - dt);
-    const want = leadT > 5 ? BAND_HI : leadT < -5 ? BAND_LO : 1;
-    band += (want - band) * Math.min(1, dt * 0.22);
-    for (const b of brains) b.kart.topMul = BOT_TOP * band;
+    const at = lapProg(me, track);
+    for (const b of brains) {
+      const k = b.kart;
+      if (k.finished || b.gap0 === undefined) continue;
+      const want = b.gap0 + 14 * Math.sin(raceTime * 0.085 + (b.wob || 0));
+      const off = (lapProg(k, track) - at) - want;          // + : further ahead than it wants to be
+      /* Held to small changes where you can see it, and given more rope where
+         you cannot. A car a few lengths away that suddenly finds a third more
+         speed is a car you watched cheat; the same car two hundred metres back,
+         round a corner you will not see for eight seconds, is one you never
+         saw at all - and it is the car an item or a pile-up put there, which
+         a few per cent would never bring back. */
+      const far = Math.max(0, Math.min(1, (Math.abs(off) - 40) / 100));
+      const aim = Math.max(MUL_LO - far * 0.2, Math.min(MUL_HI + far * 0.22, 1 - off * GAP_GAIN));
+      const step = MUL_RATE * dt;
+      b.mul = (b.mul || 1) + Math.max(-step, Math.min(step, aim - (b.mul || 1)));
+      k.topMul = BOT_TOP * b.mul;
+    }
   }
 
   /* What a computer driver is trying to miss: whatever anybody has dropped on
@@ -767,11 +889,6 @@ function stepWorld(dt) {
      the new car sits on the line for the rest of the race. */
   if (autoBrain && me && autoBrain.kart !== me) autoBrain = makeBrain(me, 0.95, 4242);
 
-  /* How hard the field is trying, which depends on how the player is doing.
-     Once a frame for the whole grid rather than per driver: it is one race's
-     worth of elastic, not eight drivers each with their own idea. */
-  const racing = phase === 'race' && !!me && !me.finished;
-  pacePulse(dt, racing && me.place === 1, racing && me.place === karts.length);
   // the computer drivers, and the autopilot when a test is driving
   if (autoBrain) {
     autoBrain.hazards = dodge;
@@ -1069,6 +1186,13 @@ function stepWorld(dt) {
   dressTrack();
 
   for (const k of karts) apply(k);
+  /* The run being recorded, from the pose it was just drawn in, and the one
+     being raced against. The ghost sits on the grid until the lights go. */
+  if (phase === 'race' && me && !spectating) {
+    recorder.tick(raceTime, me);
+    if (me.finished && !recorder.active) finishRun();
+  }
+  if (ghost) poseGhost(ghost, phase === 'race' ? raceTime : 0, dt);
 }
 
 /* the item boxes spin and bob, and hide for a moment after being taken */
@@ -1294,6 +1418,13 @@ function makeTags() {
     box.appendChild(d);
     tagFor.set(k, d);
   }
+  if (ghost) {
+    const d = document.createElement('div');
+    d.className = 'tag ghost';
+    d.textContent = '\u{1F47B} ' + ghost.k.name;
+    box.appendChild(d);
+    tagFor.set(ghost.k, d);
+  }
 }
 const tagV = new THREE.Vector3();
 const tagLit = [], tagPut = [];
@@ -1303,6 +1434,7 @@ function drawTags() {
   tagLit.length = 0;
   for (const [k, d] of tagFor) {
     if (k === me && camMode === 3) { d.style.opacity = '0'; continue; }
+    if (k.ghost && !k.group.visible) { d.style.opacity = '0'; continue; }
     tagV.set(k.pos.x, k.pos.y + k.hop + 2.5, k.pos.z).project(camera);
     const far = k === me ? 0 : Math.hypot(k.pos.x - camPos.x, k.pos.z - camPos.z);
     const x = (tagV.x * 0.5 + 0.5) * w, y = (-tagV.y * 0.5 + 0.5) * h;
@@ -1310,7 +1442,11 @@ function drawTags() {
     tagLit.push({ k, d, x, y, far });
   }
   // nearest last onto the screen means nearest wins the space it wants
-  tagLit.sort((a, b) => a.far - b.far);
+  /* The ghost's name before anybody else's but your own. It sits inside or
+     beside your car for most of a close race, so its name is always the one
+     colliding with somebody's, and it is the one you are racing. */
+  const tagRank = x => (x.k === me ? -2 : x.k.ghost ? -1 : x.far);
+  tagLit.sort((a, b) => tagRank(a) - tagRank(b));
   tagPut.length = 0;
   /* The standings sit over the top right and a name that slides under them is
      worse than no name: you get half a word and a guess. Read once, before any
@@ -1513,7 +1649,8 @@ function postTime(secs) {
   fetch(MC + '/scores', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ game: 'leon-kart', name: (myName || 'You').slice(0, 14), score: +secs.toFixed(2) }),
+    body: JSON.stringify({ game: 'leon-kart', name: (myName || 'You').slice(0, 14), score: +secs.toFixed(2),
+                           theme: worldTheme }),
   })
     .then(r => r.json())
     .then(j => {
@@ -1523,6 +1660,8 @@ function postTime(secs) {
       // it hands back nothing, and the local count is the honest fallback
       myRank = j.rank || rankOf(raceBoard, myBestTime);
       drawTimes();
+      // the board kept the time; the ghost can follow it
+      if (j.gt) { runToken = j.gt; sendGhost(); }
     })
     .catch(() => {});
 }
@@ -1543,8 +1682,13 @@ function drawTimes() {
   const mineKey = (myName || 'You').toLowerCase();
   const onTop = rows.some(r => String(r.name).toLowerCase() === mineKey
     && myBestTime && Math.abs(r.score - myBestTime) < 0.005);
-  let mine = '<div class="mine"><span>Your best</span><b>'
-    + (myBestTime ? time(myBestTime) : '&mdash;') + '</b></div>';
+  const own = bestGhostAny();
+  let mine = '<div class="mine' + (own ? ' hg' : '') + '"><span>Your best</span><b>'
+    + (myBestTime ? time(myBestTime) : '&mdash;') + '</b>'
+    + (own ? '<button type="button" class="gh" data-own="1" title="Race your best, on '
+      + esc(themeById(own.theme).name) + '" aria-label="Race your best, on '
+      + esc(themeById(own.theme).name) + '">\u{1F47B}</button>' : '')
+    + '</div>';
   mine += '<div class="mine last"><span>Last race</span><b>'
     + (myLastTime ? time(myLastTime) : '&mdash;') + '</b></div>';
   if (myBestTime && !onTop && myRank) {
@@ -1576,17 +1720,39 @@ function drawOldTimes(box) {
 }
 const head = (title, btn) => '<div class="head"><h2>' + title + '</h2>'
   + (btn ? '<button type="button" class="was">' + btn + '</button>' : '') + '</div>';
-const list = rows => '<div class="rows' + (adminPw ? ' adm' : '') + '">' + rows.map((r, i) =>
+/* A ghost button on a row with a ghost, and a gap where the others would put
+   one, so the times still line up down the card. Only the live board has
+   them: the archive's times were set on circuits that no longer exist. */
+const list = rows => {
+  const hg = !showingOld && rows.some(r => r.g);
+  return '<div class="rows' + (adminPw ? ' adm' : '') + (hg ? ' hg' : '') + '">' + rows.map((r, i) =>
   '<div class="r' + (i === 0 ? ' p1' : '') + (adminPw ? ' adm' : '') + '">'
   + '<span class="p">' + (i + 1) + '</span><span>' + esc(r.name) + '</span>'
   + '<span class="t">' + time(r.score) + '</span>'
+  + (hg ? (r.g ? '<button type="button" class="gh" data-g="' + esc(r.g) + '" data-i="' + i + '" title="Race '
+      + esc(r.name) + '\'s ghost on ' + esc(themeById(r.t).name) + '" aria-label="Race ' + esc(r.name)
+      + '\'s ghost on ' + esc(themeById(r.t).name) + '">\u{1F47B}</button>' : '<span class="gh"></span>') : '')
   + (adminPw ? '<button type="button" class="x" data-i="' + i + '" aria-label="Remove '
     + esc(r.name) + ' ' + time(r.score) + '">&times;</button>' : '')
   + '</div>').join('') + '</div>';
+};
 function wireWas(box, rows) {
   const b = box.querySelector('.was');
   /* A message about one board says nothing about the other, and neither does a
      half typed time: it was meant for the board it was typed on. */
+  /* Racing a ghost from the board: the row's ghost is fetched and the race
+     starts on its track. Your own best comes straight from this browser. */
+  box.querySelectorAll('.gh[data-g]').forEach(bt => bt.addEventListener('click', () => {
+    const r = rows[+bt.dataset.i];
+    if (!r || bt.disabled) return;
+    bt.disabled = true;
+    fetchGhost(bt.dataset.g).then(g => {
+      bt.disabled = false;
+      if (!g || !raceGhost(g, r.name + ' ' + time(r.score))) say('That ghost could not be loaded.', 'sys');
+    });
+  }));
+  const ownBt = box.querySelector('.gh[data-own]');
+  if (ownBt) ownBt.addEventListener('click', () => raceGhost(bestGhostAny(), 'Your best'));
   if (b) b.addEventListener('click', () => {
     showingOld = !showingOld;
     adminMsg = '';
@@ -1878,6 +2044,8 @@ function setLights(t) {
 function goRace() {
   phase = 'race';
   raceTime = 0;
+  runReady = null; runToken = null;
+  if (me && !spectating) recorder.begin(me, me.slot || 0);
   litWas = -1;
   snd.beep(true);
   snd.music(true, 'race');
@@ -1906,6 +2074,7 @@ function goRace() {
   for (const b of brains) if (Math.random() < b.skill * 0.7) b.kart.boost = 0.8;
 }
 function endRace() {
+  finishRun();                          // the tail may not have run yet; keep what there is
   phase = 'results';
   phaseT = RESULTS;
   snd.music(false);
@@ -2150,7 +2319,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=54');
+    const mod = await import('./net.js?v=55');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2215,6 +2384,7 @@ function buildMaps() {
       + t.ground + ' 55% 100%)"></i>' + t.name;
     b.addEventListener('click', () => {
       pickedTheme = t.id;
+      drawMapGhost();
       try { localStorage.setItem('mkTheme', t.id); } catch (e) {}
       [...box.children].forEach(c => c.classList.remove('on'));
       b.classList.add('on');
@@ -2248,6 +2418,7 @@ el('spec').addEventListener('click', e => {
    the menu that most people never noticed they could change. */
 function mapScreen(on) {
   el('mapsel').classList.toggle('on', on);
+  if (on) drawMapGhost();
   if (on) {
     const cur = el('maps').querySelector('button.on') || el('maps').querySelector('button');
     if (cur) cur.focus();
@@ -2255,7 +2426,26 @@ function mapScreen(on) {
 }
 el('solo').addEventListener('click', () => mapScreen(true));
 el('mapback').addEventListener('click', () => mapScreen(false));
-el('mapgo').addEventListener('click', () => { mapScreen(false); start(false); });
+/* Race your own best on the track you have picked, if you have one there.
+   A switch rather than a second button, so Race still starts the race. */
+let mapGhostOn = false;
+function drawMapGhost() {
+  const b = el('mapghost');
+  if (!b) return;
+  const g = bestGhost(pickedTheme);
+  b.hidden = !g;
+  if (!g) { mapGhostOn = false; return; }
+  b.setAttribute('aria-pressed', mapGhostOn ? 'true' : 'false');
+  b.classList.toggle('on', mapGhostOn);
+  b.innerHTML = '<i>\u{1F47B}</i><span>Race my best</span><b>' + time(g.time) + '</b>';
+}
+el('mapghost').addEventListener('click', () => { mapGhostOn = !mapGhostOn; drawMapGhost(); });
+el('mapgo').addEventListener('click', () => {
+  const g = mapGhostOn ? bestGhost(pickedTheme) : null;
+  ghostWant = g ? Object.assign({}, g, { label: 'Your best' }) : null;
+  mapScreen(false);
+  start(false);
+});
 addEventListener('keydown', e => {
   if (!el('mapsel').classList.contains('on')) return;
   if (e.key === 'Escape') { mapScreen(false); e.preventDefault(); }
@@ -2440,6 +2630,15 @@ window.__mk = {
   get theme() { return worldTheme; },
   // which place the next race is at, the way the map screen sets it
   get picked() { return pickedTheme; },
+  // the ghost in the world, the recorder, and a way to race one without a board
+  get ghost() { return ghost; },
+  get recorder() { return recorder; },
+  get trackPrint() { return trackPrint; },
+  get runReady() { return runReady; },
+  raceGhost(g, label) { return raceGhost(g, label); },
+  // the ghost for the next round, without going back to the title for it
+  setGhost(g, label) { ghostWant = g ? Object.assign({}, g, { label: label || 'Ghost' }) : null; return !!ghostWant; },
+  bestGhost(t) { return bestGhost(t); },
   pick(id) { pickedTheme = themeById(id).id; return pickedTheme; },
   // the next round on your own, exactly as the results screen starts one
   restartSolo() { soloRound++; startRound(null, newSoloSeed(), undefined, pickedTheme); return true; },
@@ -2528,7 +2727,8 @@ window.__mk = {
      times and the clock all carry, and somewhere in the fourth or fifth the
      race it is measuring quietly ends underneath it. */
   // what the field is currently trying, for a test that wants to watch the elastic
-  get pace() { return paceOf(); },
+  // how hard each driver is being asked to try, and where it wants to be
+  get pace() { return brains.map(b => ({ id: b.kart.id, mul: b.mul, gap0: b.gap0, skill: b.skill })); },
   /* Back on the grid with the lights running, which is the only way to drive
      a start more than once without reloading the page. */
   countdown() {
@@ -2539,7 +2739,7 @@ window.__mk = {
   },
   restart() {
     results.length = 0;
-    resetPace();
+    for (const b of brains) b.mul = 1;
     raceTime = 0;
     phaseT = 0;
     notified = 0;
