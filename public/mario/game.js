@@ -11,20 +11,20 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=59';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=59';
-import { packLook, unpackLook, normalise } from './parts.js?v=59';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=59';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=59';
-import { makeRescue } from './rescue.js?v=59';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=59';
-import { makeBrain, driveBrain } from './ai.js?v=59';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=59';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=59';
-import { makeCones } from './cones.js?v=59';
-import { makeHazards } from './hazards.js?v=59';
-import { THEMES, themeById, seedOf } from './themes.js?v=59';
-import * as snd from './audio.js?v=59';
+import { buildTrack, setAniso } from './track.js?v=60';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=60';
+import { packLook, unpackLook, normalise } from './parts.js?v=60';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=60';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=60';
+import { makeRescue } from './rescue.js?v=60';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=60';
+import { makeBrain, driveBrain } from './ai.js?v=60';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=60';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=60';
+import { makeCones } from './cones.js?v=60';
+import { makeHazards } from './hazards.js?v=60';
+import { THEMES, themeById, seedOf } from './themes.js?v=60';
+import * as snd from './audio.js?v=60';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -312,7 +312,22 @@ const recorder = makeRecorder();
 let ghost = null;          // the one in the world this race, if there is one
 let ghostWant = null;      // the one asked for, raced again each round on its own track
 let trackPrint = '';       // this layout, so a ghost set on a different one is not replayed on it
-let runReady = null, runToken = null, runKept = false;   // this race's recording, and the token it is sent with
+let runReady = null, runKept = false;
+/* The game's modes. A race is you and seven others with everything on the
+   road; a time trial is you and the clock - no computer drivers, no item
+   boxes, no cones, no hazards - on its own board. A replay is a ghost from the
+   board driving its run on its own while the camera follows it. */
+let mode = 'race';
+let replay = false;
+let quietRound = false;       // this round has nothing on the road but the road
+let boardTab = 'race';        // which board the title card is showing
+let ttBoard = null;
+let pendingPost = 0;          // a finished time waiting for the recording that proves it
+/* Logged in: a token from the server and the name it belongs to. Only a
+   logged in race goes on a board, one row an account. */
+let session = null;
+try { session = JSON.parse(localStorage.getItem('mkSession') || 'null'); } catch (e) {}
+if (session && (!session.token || !session.name)) session = null;   // this race's recording, and the token it is sent with
 /* A fingerprint of the road itself. A ghost is a list of places, and replayed
    on a layout that has since changed it drives through fields and hangs over
    gaps, so a ghost only plays on the layout it was set on. */
@@ -362,7 +377,14 @@ function keepEarly() {
   if (runKept || !me || me.dnf || !me.finished) return;
   runKept = true;
   const run = recorder.finish(runMeta());
-  if (run) { keepBest(run); drawTimes(); }
+  if (!run) return;
+  keepBest(run); drawTimes();
+  /* And the time goes to the board from here, with this recording in the same
+     request: the server checks the run before it takes the time, and keeps
+     the run as that row's ghost. Sent the moment the line is crossed, so
+     going straight into the next race or closing the tab loses nothing. */
+  runReady = run;
+  if (pendingPost) postTime(pendingPost, run);
 }
 function finishRun() {
   if (runReady || !me || me.dnf || !me.finished) return;
@@ -370,16 +392,6 @@ function finishRun() {
   if (!run) return;
   runReady = run;
   keepBest(run);
-  sendGhost();
-}
-function sendGhost() {
-  if (!runReady || !runToken) return;
-  const body = JSON.stringify({ game: 'leon-kart', gt: runToken, ghost: runReady });
-  runToken = null;
-  fetch(MC + '/scores/ghost', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
-    .then(r => r.json())
-    .then(j => { if (j && j.board) { raceBoard = j.board; drawTimes(); } })
-    .catch(() => {});
 }
 /* How you stand against the ghost at the end of a lap, in the few words a
    notice has room for. Its own time for that lap is in the recording. */
@@ -394,12 +406,38 @@ function fetchGhost(id) {
 }
 /* Race this one. On its own track, from the grid slot it started in, with
    the rest of the field behind you as usual. */
-function raceGhost(g, label) {
+function raceGhost(g, label, trial) {
   if (started || !g || g.v !== 1 || !THEMES.some(t => t.id === g.theme)) return false;
   ghostWant = Object.assign({}, g, { label: label || 'Ghost' });
   pickedTheme = g.theme;
+  replay = false;
+  if (trial !== undefined) mode = trial ? 'tt' : 'race';
   start(false);
   return true;
+}
+/* Watching one: the same ghost on the same track, with nobody driving but it
+   and the camera on it the whole way round. */
+function watchGhost(g, label) {
+  if (started || !g || g.v !== 1 || !THEMES.some(t => t.id === g.theme)) return false;
+  ghostWant = Object.assign({}, g, { label: label || 'Ghost' });
+  pickedTheme = g.theme;
+  replay = true;
+  start(false);
+  return true;
+}
+/* No item boxes, no cones and no hazards in a time trial or a replay, and no
+   standings or place either: there is nobody to be placed against. Undone for
+   the next race, since the track itself is kept between rounds. */
+function dressQuiet() {
+  const q = quietRound;
+  if (track) {
+    track.boxMesh.visible = track.coreMesh.visible = !q;
+    for (const b of track.itemBoxes) b.taken = q ? 1e9 : 0;
+  }
+  if (cones) for (const m of cones.meshes) m.visible = !q;
+  if (hazards) hazards.group.visible = !q;
+  el('hud').classList.toggle('tt', q);
+  document.body.classList.toggle('tt', q);
 }
 /* The sky, the light and the haze belong to the place, so they move with it.
    Everything else about a theme is baked into the track when it is built. */
@@ -478,7 +516,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=59')
+  import('./props.js?v=60')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -578,13 +616,22 @@ function startRound(field, seed, asPhase, themeId) {
     }
     me = karts.find(k => k.id === (net && net.id)) || null;
     if (!me) spectating = true;
+  } else if (replay) {
+    // watching: nobody on the grid at all, only the ghost
+    me = null;
+    spectating = true;
   } else {
+    spectating = false;
     me = addKart(myRacer(), { id: 'me', name: myName || 'You', build: myBuild });
   }
+  const solo = !field || !field.length;
+  quietRound = solo && (mode === 'tt' || replay);
+  dressQuiet();
   // Fill the grid with computer drivers, but only when you are racing on your
   // own. A lobby with one person in it is still a lobby: the next person to turn
-  // up should find a grid of people rather than a field of robots.
-  if (!field || !field.length) {
+  // up should find a grid of people rather than a field of robots. Not in a
+  // time trial, and not while watching a replay.
+  if (solo && !quietRound) {
     let s = (seed | 0) || 1234;
     const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
     const pool = RACERS.filter(r => !(me && me.who === r));
@@ -673,6 +720,7 @@ function finishKart(k) {
    another, and only falls back to the leader when the car you picked has left
    the race. */
 function watched() {
+  if (replay && ghost) return ghost.k;
   if (!spectating) return me;
   if (watchId) {
     const k = karts.find(q => q.id === watchId);
@@ -748,6 +796,70 @@ function order() {
 const SLOTS = 3;
 function heldCount(k) { return (k.item ? 1 : 0) + k.queue.length; }
 
+/* ------------------------------------------------------------- the rails ---
+   On: in the air, within a metre and a bit of a rail sideways, pointing along
+   it and moving. The kart locks onto it at the height of its top. Along it:
+   pulled along the rail at a little over its own top speed, with sparks off the
+   wheels, steering doing nothing. Off: at the end of the rail, or the moment
+   you press hop again, with a small hop off and a boost for having ridden it. */
+function tryRail(k, pr) {
+  const R = track.rails;
+  /* A straight hop, not a drift: the hop that starts a drift is the same
+     button, and a slide through a corner that happened to pass a rail should
+     stay a slide. */
+  if (!R || !R.length || !pr || k.hop < 0.25 || k.drift !== 0 || k.speed < 10 || k.spin > 0 || k.rescue || k.falling) return;
+  const N = track.samples.length;
+  for (const r of R) {
+    const j = ((pr.i - r.i0) % N + N) % N;
+    if (j > r.len - 6) continue;
+    const q = r.pts[j];
+    if (Math.abs(pr.lateral - q.lat) > 1.4) continue;
+    const a = r.pts[j], b = r.pts[j + 1];
+    const tx = b.x - a.x, tz = b.z - a.z, tl = Math.hypot(tx, tz) || 1;
+    const fx = -Math.sin(k.yaw), fz = -Math.cos(k.yaw);
+    if ((fx * tx + fz * tz) / tl < 0.88) continue;
+    k.rail = { r, s: j * r.step, hopWas: true };
+    k.drift = 0; k.driftT = 0; k.slide = 0;
+    if (k === me) { notice('Rail grind!'); snd.boost(); }
+    return;
+  }
+}
+function rideRail(k, inp, dt) {
+  const G = k.rail, r = G.r;
+  const top = topSpeed(k);
+  k.speed = Math.min(top * 1.12, Math.max(k.speed, 14) + 7 * dt);
+  G.s += k.speed * dt;
+  const hopNow = !!inp.hop && !G.hopWas;
+  G.hopWas = !!inp.hop;
+  const f = G.s / r.step, j = Math.floor(f);
+  if (j >= r.pts.length - 1 || hopNow || k.spin > 0 || k.rescue) {
+    k.rail = null;
+    k.boost = Math.max(k.boost, 0.75);
+    k.hopV = Math.max(k.hopV || 0, 4.2);
+    if (hopNow) {
+      // off to the road side of it
+      const q = r.pts[Math.min(j, r.pts.length - 1)];
+      const a = track.samples[q.i];
+      k.pos.x -= a.n.x * r.side * 1.6; k.pos.z -= a.n.z * r.side * 1.6;
+    }
+    if (k === me) snd.boost();
+    return stepKart(k, { gas: 1, brake: 0, steer: 0, hop: false }, track, dt);
+  }
+  const a = r.pts[j], b = r.pts[j + 1], t = f - j;
+  k.pos.set(a.x + (b.x - a.x) * t, a.gy + (b.gy - a.gy) * t, a.z + (b.z - a.z) * t);
+  k.yaw = Math.atan2(-(b.x - a.x), -(b.z - a.z));
+  k.hop = r.h + 0.18; k.hopV = 0;
+  k.drift = 0; k.slide = 0; k.roll = 0; k.lean = 0;
+  if (Math.random() < 0.8) {
+    const back = k.pos.clone().setY(k.pos.y + r.h);
+    spark(back, Math.random() < 0.5 ? 0xffe28a : 0xffffff, 1.2);
+  }
+  const pr = track.project(k.pos.x, k.pos.z, k.hint);
+  k.hint = pr.i;
+  k.prog = pr.s;
+  return pr;
+}
+
 function pickupBox(k, b) {
   // one roulette at a time, but it can land behind whatever you already have
   if (k.roulette > 0 || heldCount(k) >= SLOTS) return;
@@ -755,7 +867,12 @@ function pickupBox(k, b) {
   k.roulette = 1.05;
   k.rollTo = rollItem(k.place, karts.length, track.rules.items);
   k.rollN = rollCount(k.rollTo, k.place, karts.length);
-  if (k === me) { el('slot').classList.add('spin'); el('slot').classList.remove('empty'); }
+  // a gold box is two items, the second landing behind the first
+  k.rollExtra = b.double ? 1 : 0;
+  if (k === me) {
+    el('slot').classList.add('spin'); el('slot').classList.remove('empty');
+    if (b.double) notice('Double item box!');
+  }
 }
 
 function useItem(k) {
@@ -933,7 +1050,8 @@ function stepWorld(dt) {
     // being carried back is not being driven: the balloon owns the car until it
     // puts it down, and a physics step in the middle of that fights it
     if (k.rescue) continue;
-    const pr = stepKart(k, inp, track, dt);
+    const pr = k.rail ? rideRail(k, inp, dt) : stepKart(k, inp, track, dt);
+    if (!k.rail) tryRail(k, pr);
     if (phase === 'race') lapLogic(k, pr);
 
     // a lane of boosters down one half of a straight
@@ -994,6 +1112,11 @@ function stepWorld(dt) {
       if (k.roulette <= 0) {
         if (k.item) k.queue.push({ id: k.rollTo, n: k.rollN });
         else { k.item = k.rollTo; k.itemN = k.rollN; }
+        if (k.rollExtra && heldCount(k) < SLOTS) {
+          const id2 = rollItem(k.place, karts.length, track.rules.items);
+          k.queue.push({ id: id2, n: rollCount(id2, k.place, karts.length) });
+        }
+        k.rollExtra = 0;
         if (k === me) { el('slot').classList.remove('spin'); el('slot').classList.add('land'); setTimeout(() => el('slot').classList.remove('land'), 300); hudItem(); snd.land(); useHint(true); }
       }
     }
@@ -1161,14 +1284,14 @@ function stepWorld(dt) {
   /* Whatever this place does that the others do not. It runs off the race
      clock rather than off dt, so every browser in the room has the gates shut
      and the geysers blowing at the same moment without anybody saying so. */
-  hazards.step(dt, raceTime, karts, (k, what) => {
+  if (!quietRound) hazards.step(dt, raceTime, karts, (k, what) => {
     if (k !== me || !what) return;
     notice('HIT BY ' + what.toUpperCase());
     snd.bump();
   });
 
   // the cones, which go where they are knocked and stay there
-  cones.step(dt, karts, (k, i, vx, vz) => {
+  if (!quietRound) cones.step(dt, karts, (k, i, vx, vz) => {
     if (k === me && net && net.alive) net.cone(i, vx, vz);
     if (k === me) snd.bump();
   });
@@ -1212,18 +1335,23 @@ function stepWorld(dt) {
     if (me.finished) { if (recorder.active) keepEarly(); else finishRun(); }
   }
   if (ghost) poseGhost(ghost, phase === 'race' ? raceTime : 0, dt);
+  if (ghost && replay) {
+    ghost.k.lap = Math.min(LAPS, 1 + (ghost.meta.laps || []).filter(t => t <= raceTime).length);
+    ghost.k.place = 1;
+  }
 }
 
 /* the item boxes spin and bob, and hide for a moment after being taken */
 let dressT = 0;
+const dM = new THREE.Matrix4(), dQ = new THREE.Quaternion(), dE = new THREE.Euler(), dS = new THREE.Vector3(), dP = new THREE.Vector3();
 function dressTrack() {
   dressT += 0.016;
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  const m = dM, q = dQ, e = dE, s = dS, p = dP;
   track.itemBoxes.forEach((b, i) => {
     const on = b.taken <= 0;
     e.set(dressT * 0.8 + i, dressT * 1.3 + i, 0);
     q.setFromEuler(e);
-    s.setScalar(on ? 1 : 0.001);
+    s.setScalar(on ? (b.double ? 1.18 : 1) : 0.001);
     p.set(b.pos.x, b.pos.y + Math.sin(dressT * 2 + i) * 0.16, b.pos.z);
     m.compose(p, q, s);
     track.boxMesh.setMatrixAt(i, m);
@@ -1577,6 +1705,9 @@ function drawHud(dt) {
   hudText('placesfx', ord(pl).replace(/^\d+/, ''));
   if (hudLast.placeCls !== pl) { hudLast.placeCls = pl; el('place').className = 'p' + Math.min(3, pl); }
   hudText('speedn', Math.round(Math.abs(watch.speed) * 3.6));
+  const clk = replay && ghost ? Math.min(raceTime, ghost.meta.time)
+    : watch.finished ? (watch.time || 0) : (phase === 'race' ? raceTime : 0);
+  hudText('clockn', time(clk));
   /* No charge bar. The sparks off the back wheels are the meter, the way they
      are in Mario Kart: white, then blue, then orange, then purple, and you read
      them out of the corner of your eye without taking them off the road. */
@@ -1682,6 +1813,10 @@ function fetchBoard() {
       drawTimes();
     })
     .catch(() => {});
+  fetch(MC + '/scores?game=leon-kart-tt')
+    .then(r => r.json())
+    .then(j => { if (j && j.board) { ttBoard = j.board; drawTimes(); } })
+    .catch(() => {});
   fetch(MC + '/scores?game=leon-kart-classic')
     .then(r => r.json())
     .then(j => {
@@ -1691,25 +1826,37 @@ function fetchBoard() {
     })
     .catch(() => {});
 }
-function postTime(secs) {
+function postTime(secs, run) {
+  pendingPost = 0;
+  if (!session) { say('Log in on the title screen to put your times on the board.', 'sys'); return; }
+  if (!run) return;
+  const game = quietRound ? 'leon-kart-tt' : 'leon-kart';
   fetch(MC + '/scores', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ game: 'leon-kart', name: (myName || 'You').slice(0, 14), score: +secs.toFixed(2),
-                           theme: worldTheme }),
+    body: JSON.stringify({ game, token: session.token, score: +secs.toFixed(2), theme: worldTheme, ghost: run }),
   })
     .then(r => r.json())
     .then(j => {
-      if (!j || !j.board) return;
-      raceBoard = j.board;
-      // the server ranks the run it was just handed; off the end of the board
-      // it hands back nothing, and the local count is the honest fallback
-      myRank = j.rank || rankOf(raceBoard, myBestTime);
+      if (!j) return;
+      if (j.out) { logoutLocal('Your login ran out. Log in again to keep your times.'); return; }
+      if (j.error) { say(j.error, 'sys'); return; }
+      if (!j.board) return;
+      if (game === 'leon-kart-tt') ttBoard = j.board; else raceBoard = j.board;
+      if (j.beat === false) say('Your best on the board is still ' + time(j.best) + '.', 'sys');
+      else if (j.rank) say('On the board in ' + ord(j.rank) + (j.ghost ? ', ghost and all.' : '.'), 'sys');
       drawTimes();
-      // the board kept the time; the ghost can follow it
-      if (j.gt) { runToken = j.gt; sendGhost(); }
     })
-    .catch(() => {});
+    .catch(() => say('The board could not be reached, so that time was not saved.', 'sys'));
+}
+// every race a logged in player finishes or leaves, for their stats
+function reportRace(finished) {
+  if (!session || replay || !me) return;
+  fetch(MC + '/kart/race', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: session.token, theme: worldTheme, mode: quietRound ? 'tt' : 'race',
+                           place: me.place || 0, time: +(me.time || 0).toFixed(2), finished: !!finished }),
+  }).then(r => r.json()).then(j => { if (j && j.out) logoutLocal(); }).catch(() => {});
 }
 /* The twenty, and then you: your best, the one you just did, and where that best
    places you when it is not one of the twenty. */
@@ -1731,32 +1878,51 @@ function fitTimes() {
 }
 if (window.ResizeObserver) new ResizeObserver(fitTimes).observe(el('garage'));
 addEventListener('resize', fitTimes);
+/* While an admin's cross is asking "Sure?", the card is not redrawn under it.
+   A board arriving from the server - there are three of them now - used to
+   rebuild the card and quietly take the question away mid-decision. The
+   redraw waits and happens when the question is answered or lapses. */
+let boardHeld = false, boardStale = false;
+function holdBoard(on) {
+  boardHeld = on;
+  if (!on && boardStale) { boardStale = false; drawTimes(); }
+}
 function drawTimes() {
   const box = el('times');
   if (!box) return;
+  if (boardHeld) { boardStale = true; return; }
   const kept = keepAdminInput(box);
   if (showingOld && !hasOld()) showingOld = false;
   if (showingOld) { drawOldTimes(box); return putAdminInput(box, kept); }
   box.classList.remove('old');
-  // the twenty, or for an admin the whole board, which is where the tidying is
-  const rows = adminPw ? (raceBoard || []) : (raceBoard || []).slice(0, 20);
-  const mineKey = (myName || 'You').toLowerCase();
-  const onTop = rows.some(r => String(r.name).toLowerCase() === mineKey
-    && myBestTime && Math.abs(r.score - myBestTime) < 0.005);
-  const own = bestGhostAny();
+  const tt = boardTab === 'tt';
+  const full = (tt ? ttBoard : raceBoard) || [];
+  // the ten, or for an admin the whole board, which is where the tidying is
+  const rows = adminPw ? full : full.slice(0, 10);
+  /* One row an account, so where you are is your own row, found by name. A
+     guest has no row and is told what logging in is for. */
+  const mineKey = session ? session.name.toLowerCase() : null;
+  const at = mineKey ? full.findIndex(r => String(r.name).toLowerCase() === mineKey) : -1;
+  const onTop = at >= 0 && at < rows.length;
+  const bestShown = at >= 0 ? full[at].score : (!session && !tt ? myBestTime : 0);
+  const own = tt ? null : bestGhostAny();
   let mine = '<div class="mine' + (own ? ' hg' : '') + '"><span>Your best</span><b>'
-    + (myBestTime ? time(myBestTime) : '&mdash;') + '</b>'
+    + (bestShown ? time(bestShown) : '&mdash;') + '</b>'
     + (own ? '<button type="button" class="gh" data-own="1" title="Race your best, on '
       + esc(themeById(own.theme).name) + '" aria-label="Race your best, on '
       + esc(themeById(own.theme).name) + '">\u{1F47B}</button>' : '')
     + '</div>';
   mine += '<div class="mine last"><span>Last race</span><b>'
     + (myLastTime ? time(myLastTime) : '&mdash;') + '</b></div>';
-  if (myBestTime && !onTop && myRank) {
-    mine += '<div class="mine place"><span>You place</span><b>' + ord(myRank) + '</b></div>';
+  if (at >= 0 && !onTop) {
+    mine += '<div class="mine place"><span>You place</span><b>' + ord(at + 1) + '</b></div>';
   }
-  box.innerHTML = head('Best times', hasOld() ? 'Before update' : '')
-    + '<p class="sub">Three laps, single or multiplayer</p>'
+  if (!session) mine += '<p class="none">Log in to get on the board.</p>';
+  box.innerHTML = head('Best times', !tt && hasOld() ? 'Before update' : '')
+    + '<div class="tabs" role="tablist">'
+    + '<button type="button" role="tab" data-tab="race" aria-selected="' + !tt + '">Race</button>'
+    + '<button type="button" role="tab" data-tab="tt" aria-selected="' + tt + '">Time trial</button></div>'
+    + '<p class="sub">' + (tt ? 'No items, no cones, no other cars' : 'Three laps, one best each') + '</p>'
     + (adminNote && !adminPw ? '<p class="adm-msg" role="status">' + esc(adminNote) + '</p>' : '')
     + adminBar()
     + (rows.length
@@ -1805,12 +1971,32 @@ function wireWas(box, rows) {
      starts on its track. Your own best comes straight from this browser. */
   box.querySelectorAll('.gh[data-g]').forEach(bt => bt.addEventListener('click', () => {
     const r = rows[+bt.dataset.i];
-    if (!r || bt.disabled) return;
-    bt.disabled = true;
-    fetchGhost(bt.dataset.g).then(g => {
-      bt.disabled = false;
-      if (!g || !raceGhost(g, r.name + ' ' + time(r.score))) say('That ghost could not be loaded.', 'sys');
-    });
+    if (!r) return;
+    const row = bt.closest('.r');
+    const open = row.nextElementSibling && row.nextElementSibling.classList.contains('gact');
+    box.querySelectorAll('.gact').forEach(x => x.remove());
+    if (open) return;
+    const strip = document.createElement('div');
+    strip.className = 'gact';
+    strip.innerHTML = '<button type="button" data-a="race">\u{1F47B} Race it</button>'
+      + '<button type="button" data-a="watch">\u{1F441} Watch it</button>';
+    row.after(strip);
+    strip.querySelectorAll('button').forEach(b2 => b2.addEventListener('click', () => {
+      if (b2.disabled) return;
+      strip.querySelectorAll('button').forEach(x => { x.disabled = true; });
+      fetchGhost(bt.dataset.g).then(g => {
+        strip.querySelectorAll('button').forEach(x => { x.disabled = false; });
+        const label = r.name + ' ' + time(r.score);
+        const go = b2.dataset.a === 'watch' ? watchGhost(g, label) : raceGhost(g, label, boardTab === 'tt');
+        if (!g || !go) say('That ghost could not be loaded.', 'sys');
+      });
+    }));
+    strip.querySelector('button').focus();
+  }));
+  box.querySelectorAll('.tabs [data-tab]').forEach(t => t.addEventListener('click', () => {
+    boardTab = t.dataset.tab;
+    showingOld = false;
+    drawTimes();
   }));
   const ownBt = box.querySelector('.gh[data-own]');
   if (ownBt) ownBt.addEventListener('click', () => raceGhost(bestGhostAny(), 'Your best'));
@@ -1897,6 +2083,7 @@ function parseTime(txt) {
 function adminDone(game, j) {
   if (j && j.board) {
     if (game === 'leon-kart') { raceBoard = j.board; myRank = rankOf(raceBoard, myBestTime); }
+    else if (game === 'leon-kart-tt') ttBoard = j.board;
     else oldBoard = j.board;
   }
   adminMsg = j && j.error ? j.error : '';
@@ -1904,7 +2091,7 @@ function adminDone(game, j) {
   drawTimes();
 }
 function wireAdmin(box, rows) {
-  const game = showingOld ? 'leon-kart-classic' : 'leon-kart';
+  const game = showingOld ? 'leon-kart-classic' : (boardTab === 'tt' ? 'leon-kart-tt' : 'leon-kart');
   const ex = box.querySelector('.adm-exit');
   if (ex) ex.addEventListener('click', () => { adminPw = null; adminMsg = ''; drawTimes(); });
   /* A cross takes two presses: the first says what it is about to do, the
@@ -1916,8 +2103,12 @@ function wireAdmin(box, rows) {
       const r = rows[+bt.dataset.i];
       if (!r) return;
       if (!armed) {
-        armed = setTimeout(() => { armed = 0; bt.classList.remove('armed'); bt.innerHTML = '&times;'; }, 3000);
+        armed = setTimeout(() => {
+          armed = 0; bt.classList.remove('armed'); bt.innerHTML = '&times;';
+          holdBoard(false);
+        }, 3000);
         armedAt = performance.now();
+        holdBoard(true);
         bt.classList.add('armed');
         bt.textContent = 'Sure?';
         return;
@@ -1926,6 +2117,7 @@ function wireAdmin(box, rows) {
          before anybody could have read the question it answered. */
       if (performance.now() - armedAt < 400) return;
       clearTimeout(armed); armed = 0;
+      boardHeld = false; boardStale = false;
       bt.disabled = true;
       adminCall({ op: 'remove', pw: adminPw, game, name: r.name, score: r.score, at: r.at })
         .then(j => adminDone(game, j));
@@ -2007,10 +2199,21 @@ function showResults(final) {
       localStorage.setItem('mkLastTime', String(myLastTime));
       localStorage.setItem('mkBestTime', String(myBestTime));
     } catch (e) {}
-    postTime(me.time);
+    /* Posted once the recording of it is done, which is later this same frame:
+       the line is crossed in the lap logic and the recorder hears about it
+       after. The time goes up with the run that proves it. */
+    pendingPost = me.time;
+    if (runReady) postTime(pendingPost, runReady);
+    reportRace(true);
   }
   drawTimes();
-  el('restitle').textContent = final ? 'Race over' : 'You finished ' + ord(me ? me.place : 1);
+  el('restitle').textContent = replay ? 'Replay over'
+    : quietRound && me ? 'Time trial: ' + time(me.time)
+    : final ? 'Race over' : 'You finished ' + ord(me ? me.place : 1);
+  /* On your own you can go again straight away, without waiting for the
+     field to finish or the clock to run down. */
+  el('resbtns').hidden = !!(net && net.alive);
+  el('again').textContent = replay ? 'Watch again' : 'Race again';
   el('resrows').innerHTML = live.map(k =>
     '<div class="r' + (k === me ? ' me' : '') + (k.bot ? ' bot' : '') + (k.place === 1 ? ' p1' : '') + '">'
     + '<span class="p">' + k.place + '</span><span>' + esc(k.name) + '</span>'
@@ -2081,7 +2284,7 @@ function stepPhase(dt) {
     if (phaseT <= 0) goRace();
   } else if (phase === 'race') {
     raceTime += dt;
-    const done = karts.every(k => k.finished);
+    const done = replay ? (!ghost || raceTime > ghost.meta.time + 2) : karts.every(k => k.finished);
     if (done || (results.length && raceTime - results[0].time > 22) || raceTime > 400) endRace();
   } else if (phase === 'results') {
     resCount();
@@ -2105,7 +2308,7 @@ function setLights(t) {
 function goRace() {
   phase = 'race';
   raceTime = 0;
-  runReady = null; runToken = null; runKept = false;
+  runReady = null; runKept = false; pendingPost = 0;
   if (me && !spectating) recorder.begin(me, me.slot || 0);
   litWas = -1;
   snd.beep(true);
@@ -2136,8 +2339,10 @@ function goRace() {
 }
 function endRace() {
   finishRun();                          // the tail may not have run yet; keep what there is
+  if (me && !me.finished && !replay) reportRace(false);
   phase = 'results';
-  phaseT = RESULTS;
+  // a replay waits for you to choose; a race rolls on to the next
+  phaseT = replay ? 1e9 : RESULTS;
   snd.music(false);
   for (const k of karts) if (!k.finished) {
     // still out there when the flag fell: a place, but not a time
@@ -2148,6 +2353,7 @@ function endRace() {
   showResults(true);
   el('board').classList.remove('on');
   el('resfoot').innerHTML = 'Next race in <b>10</b>'; resCount();
+  el('resfoot').hidden = replay;
 
 }
 
@@ -2199,10 +2405,128 @@ function stepSound() {
   snd.musicTick();
 }
 
+/* ---------------------------------------------------------------- accounts --
+   A name and a password. A new name makes an account on the spot; a name from
+   before accounts existed is claimed by whoever logs in with it first, and
+   its best old time comes with it. Logged in, the name box is your account's
+   name, your races count towards your stats, and your times go on the board. */
+function saveSession() {
+  try {
+    if (session) localStorage.setItem('mkSession', JSON.stringify(session));
+    else localStorage.removeItem('mkSession');
+  } catch (e) {}
+}
+function acctMsg(text, bad) {
+  const m = el('acctmsg');
+  if (!m) return;
+  m.textContent = text;
+  m.classList.toggle('bad', !!bad);
+}
+function drawAcct() {
+  const on = !!session;
+  el('acctout').hidden = on;
+  el('acctin').hidden = !on;
+  if (on) el('acctname').textContent = session.name;
+}
+function logoutLocal(why) {
+  session = null;
+  saveSession();
+  drawAcct();
+  drawTimes();
+  acctMsg(why || 'Logged out. Log in to put your times on the board.', !!why);
+  if (why) say(why, 'sys');
+}
+function buildAcct() {
+  drawAcct();
+  const nick = el('nick'), pw = el('pw'), go = el('login');
+  const login = () => {
+    const name = nick.value.trim(), password = pw.value;
+    if (!name) { acctMsg('Type a name first.', true); nick.focus(); return; }
+    if (password.length < 4) { acctMsg('Passwords are at least 4 characters.', true); pw.focus(); return; }
+    go.disabled = true;
+    acctMsg('Logging in...');
+    fetch(MC + '/kart/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name, password }) })
+      .then(r => r.json())
+      .then(j => {
+        go.disabled = false;
+        if (!j || !j.ok) { acctMsg((j && j.error) || 'That did not work.', true); return; }
+        session = { token: j.token, name: j.user.name };
+        saveSession();
+        myName = j.user.name;
+        nick.value = myName;
+        try { localStorage.setItem('mkName', myName); } catch (e) {}
+        pw.value = '';
+        drawAcct();
+        drawTimes();
+        acctMsg('');
+        say(j.claimed ? 'Welcome back, ' + myName + '. Your best from before is yours now.'
+          : j.made ? 'Account made. Welcome, ' + myName + '.' : 'Logged in as ' + myName + '.', 'sys');
+      })
+      .catch(() => { go.disabled = false; acctMsg('The server could not be reached.', true); });
+  };
+  go.addEventListener('click', login);
+  pw.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); login(); } });
+  el('logout').addEventListener('click', () => {
+    if (session) fetch(MC + '/kart/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ token: session.token }) }).catch(() => {});
+    logoutLocal();
+  });
+  el('statsbtn').addEventListener('click', openStats);
+  el('statsclose').addEventListener('click', () => el('stats').classList.remove('on'));
+  el('stats').addEventListener('click', e => { if (e.target === el('stats')) el('stats').classList.remove('on'); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && el('stats').classList.contains('on')) el('stats').classList.remove('on'); });
+  // a saved login is checked once, quietly, when the page opens
+  if (session) {
+    fetch(MC + '/kart/me', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                             body: JSON.stringify({ token: session.token }) })
+      .then(r => r.json())
+      .then(j => { if (j && j.out) logoutLocal('Your login ran out. Log in again.'); })
+      .catch(() => {});
+  }
+}
+/* Your stats: races, finishes, wins and podiums, your best on each track in
+   a race and in the time trial, and where you stand on both boards. */
+function openStats() {
+  if (!session) return;
+  const body = el('statsbody');
+  body.innerHTML = '<p class="none">Loading...</p>';
+  el('stats').classList.add('on');
+  el('statsclose').focus();
+  fetch(MC + '/kart/me', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                           body: JSON.stringify({ token: session.token }) })
+    .then(r => r.json())
+    .then(j => {
+      if (!j || j.out) { el('stats').classList.remove('on'); logoutLocal('Your login ran out. Log in again.'); return; }
+      const st = j.user.stats || {};
+      const tile = (n, label) => '<div class="tile"><b>' + n + '</b><span>' + label + '</span></div>';
+      const avg = st.finished ? time(st.time / st.finished) : '&mdash;';
+      const place = j.place || {};
+      const rank = g => place[g] ? ord(place[g].rank) + ' (' + time(place[g].score) + ')' : '&mdash;';
+      const bests = (m, label) => {
+        const keys = THEMES.filter(t => m && m[t.id]);
+        if (!keys.length) return '<h3>' + label + '</h3><p class="none">Nothing yet.</p>';
+        return '<h3>' + label + '</h3><table><tr><th>Track</th><th class="t">Best</th></tr>'
+          + keys.map(t => '<tr><td>' + esc(t.name) + '</td><td class="t">' + time(m[t.id]) + '</td></tr>').join('')
+          + '</table>';
+      };
+      body.innerHTML = '<p class="none">' + esc(j.user.name) + '</p>'
+        + '<div class="grid">' + tile(st.races || 0, 'Races') + tile(st.finished || 0, 'Finished')
+        + tile(st.wins || 0, 'Wins') + tile(st.podiums || 0, 'Podiums') + tile(st.trials || 0, 'Trials')
+        + tile(avg, 'Avg race') + '</div>'
+        + '<table><tr><td>Race board</td><td class="t">' + rank('leon-kart') + '</td></tr>'
+        + '<tr><td>Time trial board</td><td class="t">' + rank('leon-kart-tt') + '</td></tr></table>'
+        + bests(st.best, 'Best race times') + bests(st.tt, 'Best time trials');
+    })
+    .catch(() => { body.innerHTML = '<p class="none">The server could not be reached.</p>'; });
+}
+
 /* ------------------------------------------------------------------ start --- */
 function buildCast() {
   const input = el('nick');
+  if (session) myName = session.name;
   input.value = myName;
+  buildAcct();
   input.addEventListener('input', () => {
     myName = input.value.slice(0, 12);
     try { localStorage.setItem('mkName', myName); } catch (e) {}
@@ -2380,7 +2704,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=59');
+    const mod = await import('./net.js?v=60');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2501,7 +2825,14 @@ function drawMapGhost() {
   b.innerHTML = '<i>\u{1F47B}</i><span>Race my best</span><b>' + time(g.time) + '</b>';
 }
 el('mapghost').addEventListener('click', () => { mapGhostOn = !mapGhostOn; drawMapGhost(); });
+el('mapmode').addEventListener('click', e => {
+  const b = e.target.closest('button[data-m]');
+  if (!b) return;
+  mode = b.dataset.m;
+  el('mapmode').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+});
 el('mapgo').addEventListener('click', () => {
+  replay = false;
   const g = mapGhostOn ? bestGhost(pickedTheme) : null;
   ghostWant = g ? Object.assign({}, g, { label: 'Your best' }) : null;
   mapScreen(false);
@@ -2581,6 +2912,7 @@ function menu(on) {
   el('menu').classList.toggle('on', paused);
   if (!paused) return;
   menuPage('main');
+  el('restart').hidden = !!(net && net.alive);
   el('vol').value = String(Math.round(snd.volume_() * 100));
   el('voln').textContent = el('vol').value;
   el('resume').focus();
@@ -2620,6 +2952,18 @@ function bindTo(k) {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
 }
 el('resume').addEventListener('click', () => menu(false));
+/* Straight into the same race again, on your own: same track, same mode, the
+   same ghost if there was one. Not in a lobby, where the room decides. */
+function restartRace() {
+  if (net && net.alive) return;
+  menu(false);
+  el('results').classList.remove('on');
+  soloRound++;
+  startRound(null, newSoloSeed(), undefined, pickedTheme);
+}
+el('restart').addEventListener('click', restartRace);
+el('again').addEventListener('click', restartRace);
+el('reshome').addEventListener('click', () => { location.href = location.pathname; });
 el('tocontrols').addEventListener('click', () => menuPage('keys'));
 // back to the title card, which is a fresh page rather than an unpicking of
 // everything a race has set up
@@ -2696,6 +3040,12 @@ window.__mk = {
   get recorder() { return recorder; },
   get trackPrint() { return trackPrint; },
   get runReady() { return runReady; },
+  get mode() { return mode; },
+  setMode(m) { mode = m === 'tt' ? 'tt' : 'race'; return mode; },
+  get replay() { return replay; },
+  get quiet() { return quietRound; },
+  get session() { return session; },
+  get boards() { return { race: raceBoard, tt: ttBoard }; },
   raceGhost(g, label) { return raceGhost(g, label); },
   // the ghost for the next round, without going back to the title for it
   setGhost(g, label) { ghostWant = g ? Object.assign({}, g, { label: label || 'Ghost' }) : null; return !!ghostWant; },

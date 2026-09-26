@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=59';
+import { themeById, rulesOf, lookOf } from './themes.js?v=60';
 
 /* The lap.
 
@@ -1887,10 +1887,16 @@ export function buildTrack(scene, seed, themeId) {
     let i = Math.floor(((0.1 + k * (0.9 / ROWS) + brnd() * 0.04) % 1) * N);
     for (let n = 0; n < N && busy(i); n++) i = (i + 5) % N;
     const a = samples[i];
-    for (const off of [-0.55, 0, 0.55]) {
+    /* Every other row has a double box in it: gold, and two items instead of
+       one. Which box of the three it is walks along from row to row, so it is
+       not always the same line that pays. Worked out from the row number
+       rather than drawn from the circuit's random numbers, which would move
+       everything placed after it on circuits whose times are on the board. */
+    const dbl = k % 2 === 1 ? (k >> 1) % 3 : -1;
+    [-0.55, 0, 0.55].forEach((off, j) => {
       const p = a.p.clone().addScaledVector(a.n, off * a.w);
-      itemBoxes.push({ pos: p.clone().setY(surf(a, off * a.w) + 1.35), i, taken: 0 });
-    }
+      itemBoxes.push({ pos: p.clone().setY(surf(a, off * a.w) + 1.35), i, taken: 0, double: j === dbl });
+    });
   }
 
   // twice as many as there were, spread round the lap and set off to one side or
@@ -1918,6 +1924,78 @@ export function buildTrack(scene, seed, themeId) {
   for (const r of ramps) {
     const a = samples[(r.i - 3 + N) % N];
     boostPads.push({ pos: a.p.clone().setY(surf(a, 0)), i: (r.i - 3 + N) % N, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.8, ramp: true });
+  }
+
+  /* ---- rails -------------------------------------------------------------
+     A grind rail down the edge of a quiet stretch, twice a lap. Hop onto one
+     lined up with it and the kart locks on and rides it, gaining speed, until
+     it runs out or you hop off, and either way you leave it with a boost. They
+     go where nothing else is - no section, no split, no ramp, no hole, not the
+     start - on the straightest run of road that is left, and which side they
+     are on alternates. Found by looking, not drawn from the circuit's random
+     numbers, so nothing else on a pinned circuit moves for them. */
+  const rails = [];
+  {
+    const RLEN = 34;
+    const busyAt = new Uint8Array(N);
+    // sections that leave the road flat and where it was are fine to run a rail beside
+    const FLAT = { boostlane: 1, strip: 1, agrav: 1, arena: 1, narrows: 1, bridge: 1, tunnel: 1, water: 1 };
+    for (const f of features) if (!FLAT[f.kind]) for (const i of f.ids) busyAt[i] = 1;
+    for (const sp of splits) for (const i of sp.ids) busyAt[i] = 1;
+    for (const r of ramps) for (let d = -16; d <= 16; d++) busyAt[(r.i + d + N) % N] = 1;
+    for (let i = 0; i < N; i++) if (samples[i].gap || (samples[i].island || 0) > 0) busyAt[i] = 1;
+    for (let d = -30; d <= 30; d++) busyAt[(d + N) % N] = 1;
+    const turnOver = i0 => {
+      let t = 0;
+      for (let j = 0; j < RLEN - 1; j++) {
+        const a = samples[(i0 + j) % N].t, b = samples[(i0 + j + 1) % N].t;
+        t += Math.abs(Math.atan2(a.x * b.z - a.z * b.x, a.x * b.x + a.z * b.z));
+      }
+      return t;
+    };
+    const free = i0 => { for (let j = -2; j < RLEN + 2; j++) if (busyAt[(i0 + j + N) % N]) return false; return true; };
+    const cand = [];
+    for (let i0 = 0; i0 < N; i0 += 3) if (free(i0)) cand.push({ i0, turn: turnOver(i0) });
+    cand.sort((a, b) => a.turn - b.turn);
+    for (const c of cand) {
+      if (rails.length >= 2) break;
+      if (c.turn > 1.2) break;
+      if (rails.some(r => Math.abs(((c.i0 - r.i0 + N) % N + N / 2) % N - N / 2) < N / 4)) continue;
+      const side = rails.length % 2 ? -1 : 1;
+      const pts = [];
+      for (let j = 0; j < RLEN; j++) {
+        const a = samples[(c.i0 + j) % N];
+        const lat = side * Math.max(2.5, a.w - 2.2);
+        const q = a.p.clone().addScaledVector(a.n, lat);
+        pts.push({ x: q.x, z: q.z, gy: surf(a, lat), i: (c.i0 + j) % N, lat });
+      }
+      let run = 0;
+      for (let j = 1; j < pts.length; j++) run += Math.hypot(pts[j].x - pts[j - 1].x, pts[j].z - pts[j - 1].z);
+      rails.push({ i0: c.i0, len: RLEN, side, pts, step: run / (pts.length - 1), h: 0.62 });
+    }
+    // drawn: a steel tube on posts, with a painted end at each end so it reads as a rail at speed
+    const steel = new THREE.MeshStandardMaterial({ color: 0xe4ebf3, metalness: 0.55, roughness: 0.3 });
+    const cap = new THREE.MeshStandardMaterial({ color: 0xffc233, roughness: 0.5 });
+    for (const r of rails) {
+      const curve = new THREE.CatmullRomCurve3(r.pts.map(q => new THREE.Vector3(q.x, q.gy + r.h, q.z)));
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, r.pts.length * 3, 0.13, 8, false), steel);
+      tube.castShadow = true;
+      group.add(tube);
+      const posts = [];
+      for (let j = 0; j < r.pts.length; j += 3) posts.push(r.pts[j]);
+      const pm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.07, 0.09, 1, 6), steel, posts.length);
+      const m = new THREE.Matrix4();
+      posts.forEach((q, n) => {
+        m.makeScale(1, r.h, 1); m.setPosition(q.x, q.gy + r.h / 2, q.z);
+        pm.setMatrixAt(n, m);
+      });
+      group.add(pm);
+      for (const q of [r.pts[0], r.pts[r.pts.length - 1]]) {
+        const e = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), cap);
+        e.position.set(q.x, q.gy + r.h, q.z);
+        group.add(e);
+      }
+    }
   }
 
 
@@ -1990,6 +2068,13 @@ export function buildTrack(scene, seed, themeId) {
   );
   coreMesh.frustumCulled = false;
   group.add(coreMesh);
+  // the double boxes in gold, shell and core both
+  {
+    const gold = new THREE.Color(0xffc233), plain = new THREE.Color(0xffffff);
+    itemBoxes.forEach((b, i) => { boxMesh.setColorAt(i, b.double ? gold : plain); coreMesh.setColorAt(i, b.double ? gold : plain); });
+    if (boxMesh.instanceColor) boxMesh.instanceColor.needsUpdate = true;
+    if (coreMesh.instanceColor) coreMesh.instanceColor.needsUpdate = true;
+  }
 
 
   const padTex = canvasTex(128, 128, (g, W, H) => {
@@ -2210,7 +2295,7 @@ export function buildTrack(scene, seed, themeId) {
   }
 
   return {
-    group, samples, length, ramps, features, splits, project, at, gridSlot, groundY,
+    group, samples, length, ramps, features, splits, project, at, gridSlot, groundY, rails,
     theme: th,
     // what this place does to a kart: read by the physics every frame
     rules: R,

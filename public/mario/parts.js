@@ -396,8 +396,9 @@ export const CHASSIS = [
     // the fastest thing here in a straight line and hopeless everywhere else
     stats: { top: 1.32, accel: 0.7, grip: 0.74, weight: 0.92, jump: 0.8, charge: 0.86, boost: 1.18 } },
   { id: 'dart', name: 'Dart', make: dart,
-    // off the line and out of a corner before anything; gone on a straight
-    stats: { top: 0.86, accel: 1.38, grip: 1.16, weight: 0.62, jump: 1.12, charge: 1.26, boost: 0.88 } },
+    // off the line and out of a corner before anything. It used to be gone on
+    // a straight as well, by fourteen per cent, and nobody could win in it
+    stats: { top: 0.94, accel: 1.4, grip: 1.2, weight: 0.66, jump: 1.12, charge: 1.3, boost: 0.96 } },
   { id: 'tank', name: 'Tank', make: tank,
     // slow at all of it, and nothing on the circuit will move it off its line
     stats: { top: 0.9, accel: 0.84, grip: 0.82, weight: 2, jump: 0.66, charge: 0.86, boost: 1 } },
@@ -635,6 +636,13 @@ export function statsOf(build) {
     if (!st) continue;
     for (const k in out) if (st[k] !== undefined) out[k] *= st[k];
   }
+  /* Acceleration and the mini turbo go together, the way they do in Mario
+     Kart 8: a car that gets off the line well charges its drifts well. Every
+     part still counts towards both - the one they share is the middle of the
+     two the parts added up to - but they no longer pull apart, so the two
+     bars always sit level. */
+  const both = Math.sqrt(out.accel * out.charge);
+  out.accel = out.charge = both;
   return out;
 }
 export const chassisOf = id => pick(CHASSIS, id, 0);

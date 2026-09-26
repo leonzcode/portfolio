@@ -808,14 +808,107 @@
   @media (prefers-reduced-motion:reduce){
     #slot.spin .face, #slot.land, #count.go .word, #lobby b, #usehint{ animation:none; }
   }
+
+  /* ---- accounts: the name box, a password beside a button, and a line saying
+     what logging in is for. Logged in, it is your name and two buttons. */
+  #acct{ margin:0 0 12px; }
+  #acct .pwrow{ display:flex; gap:8px; margin-top:8px; }
+  #acct #pw{ flex:1; min-width:0; font-size:16px; padding:8px 10px; background:#fff; }
+  #acct button{
+    font-family:var(--display); font-weight:800; font-size:14px; letter-spacing:.03em;
+    color:var(--ink); background:var(--gold); border:2px solid var(--ink); border-radius:12px;
+    box-shadow:0 3px 0 var(--ink); padding:7px 14px; cursor:pointer; min-height:40px;
+  }
+  #acct button:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--ink); }
+  #acct button:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
+  #acct button:disabled{ opacity:.55; cursor:wait; }
+  #acctmsg{ margin:7px 2px 0; font-size:12px; font-weight:700; opacity:.7; text-align:center; min-height:15px; }
+  #acctmsg.bad{ color:var(--red); opacity:1; }
+  #acctin .who{ margin:0; text-align:center; font-family:var(--display); font-weight:800; font-size:19px; }
+  #acctin .acctbtns{ display:flex; gap:8px; justify-content:center; margin-top:8px; }
+  #acctin #logout{ background:#fff; }
+  #garage #acct #nick{ margin:0; width:100%; }
+
+  /* ---- the stats card */
+  #stats{ position:fixed; inset:0; z-index:45; display:none; place-items:center; background:rgba(23,34,59,.45); }
+  #stats.on{ display:grid; }
+  #stats .panel{ width:min(420px,92vw); max-height:88vh; overflow-y:auto; }
+  #stats .grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:4px 0 12px; }
+  #stats .tile{ border:2px solid var(--ink); border-radius:12px; background:#fff; padding:8px 6px; text-align:center; }
+  #stats .tile b{ display:block; font-family:var(--display); font-size:22px; font-variant-numeric:tabular-nums; }
+  #stats .tile span{ font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; opacity:.6; }
+  #stats h3{ margin:10px 0 6px; font-size:14px; font-family:var(--display); }
+  #stats table{ width:100%; border-collapse:collapse; font-size:14px; margin-bottom:12px; }
+  #stats td, #stats th{ padding:5px 4px; border-bottom:1px solid rgba(23,34,59,.15); text-align:left; }
+  #stats td.t, #stats th.t{ text-align:right; font-variant-numeric:tabular-nums; }
+  #stats .none{ opacity:.6; font-size:13px; margin:0 0 10px; }
+
+  /* ---- the race clock, top and centre, clear of the standings and the item */
+  #clock{ position:absolute; left:50%; top:16px; transform:translateX(-50%); text-align:center;
+          font-family:var(--display); font-weight:800; font-size:28px; color:#fff; letter-spacing:.02em;
+          -webkit-text-stroke:5px var(--ink); paint-order:stroke fill; font-variant-numeric:tabular-nums; }
+  @media (max-width: 600px){ #clock{ top:10px; font-size:20px; } }
+  #hud.tt #place, body.tt #board{ display:none !important; }
+
+  /* ---- race again */
+  #results .resbtns{ display:flex; gap:10px; margin-top:12px; }
+  #results .resbtns[hidden]{ display:none; }
+  #results .resbtns .mrow{ margin:0; justify-content:center; }
+
+  /* ---- race or time trial */
+  #mapmode{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0 0; }
+  #mapmode button{
+    display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 10px;
+    border:var(--key); border-radius:14px; background:#fff; color:var(--ink); cursor:pointer;
+    font-family:var(--display); font-weight:800; font-size:15px; box-shadow:0 4px 0 var(--ink);
+  }
+  #mapmode button small{ font-family:var(--body); font-weight:700; font-size:11px; opacity:.6; }
+  #mapmode button[aria-pressed="true"]{ background:var(--gold); }
+  #mapmode button:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
+
+  /* ---- the board's two tabs */
+  #times .tabs{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:0 0 8px; }
+  #times .tabs button{
+    font-family:var(--display); font-weight:800; font-size:12px; letter-spacing:.03em;
+    border:2px solid var(--ink); border-radius:999px; background:var(--cream); color:var(--ink);
+    padding:5px 6px; cursor:pointer; min-height:30px;
+  }
+  #times .tabs button[aria-selected="true"]{ background:var(--ink); color:var(--cream); }
+  #times .tabs button:focus-visible{ outline:3px solid var(--gold); outline-offset:2px; }
+  /* A ghost button opens two choices under its row: race it, or watch it. */
+  #times .gact{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:-1px 0 3px; }
+  #times .gact button{
+    font-family:var(--display); font-weight:800; font-size:12px; border:2px solid var(--ink);
+    border-radius:10px; background:#dff2ff; color:var(--ink); padding:5px 4px; cursor:pointer; min-height:30px;
+  }
+  #times .gact button:hover{ background:#bfe6ff; }
+  #times .gact button:focus-visible{ outline:3px solid var(--gold); outline-offset:2px; }
+  #times .rows .r span:nth-child(2){ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 </style>
 
 <div id="title">
   <div class="wm"><img src="logo.png?v=1" alt="Leon Kart" decoding="async"><small>Fastest one wins</small></div>
   <div class="row">
   <div class="card" id="garage">
-    <label class="sr" for="nick">Your name</label>
-    <input id="nick" maxlength="12" placeholder="Type your name" autocomplete="off" spellcheck="false">
+    <div id="acct">
+      <div id="acctout">
+        <label class="sr" for="nick">Your name</label>
+        <input id="nick" maxlength="12" placeholder="Type your name" autocomplete="username" spellcheck="false">
+        <div class="pwrow">
+          <label class="sr" for="pw">Password</label>
+          <input id="pw" type="password" maxlength="64" placeholder="Password" autocomplete="current-password">
+          <button type="button" id="login">Log in</button>
+        </div>
+        <p id="acctmsg" role="status">Log in to put your times on the board. A new name makes a new account.</p>
+      </div>
+      <div id="acctin" hidden>
+        <p class="who">Racing as <b id="acctname"></b></p>
+        <div class="acctbtns">
+          <button type="button" id="statsbtn">My stats</button>
+          <button type="button" id="logout">Log out</button>
+        </div>
+      </div>
+    </div>
     <div id="gstage"><canvas id="gcan"></canvas><span id="ghint">drag to turn</span></div>
     <div id="gparts"></div>
     <div id="paint">
@@ -847,6 +940,10 @@
     <h2>Where to?</h2>
     <div id="maps"></div>
     <div id="mapnote"></div>
+    <div id="mapmode" role="group" aria-label="Game mode">
+      <button type="button" data-m="race" aria-pressed="true">Race<small>seven others, items</small></button>
+      <button type="button" data-m="tt" aria-pressed="false">Time trial<small>just you and the clock</small></button>
+    </div>
     <button type="button" id="mapghost" aria-pressed="false" hidden></button>
     <div class="go">
       <button class="big alt" id="mapback">Back</button>
@@ -864,6 +961,7 @@
   <div id="place" class="p1"><span class="n out" id="placen">1</span><span class="sfx" id="placesfx">st</span></div>
   <div id="mini"><canvas id="minic" width="380" height="232"></canvas></div>
   <div id="speed"><span class="n out" id="speedn">0</span><em>km/h</em></div>
+  <div id="clock"><span id="clockn">0:00.00</span></div>
   <div id="notice"></div>
   <div id="speedlines"></div>
   <div id="wrong">Wrong way</div>
@@ -886,6 +984,7 @@
     <h2>Paused</h2>
     <div id="menumain">
       <button class="mrow go" id="resume">Resume race</button>
+      <button class="mrow" id="restart">Restart race<i>&#8635;</i></button>
       <div class="mrow vol"><span>Volume</span><input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume"><b id="voln">50</b></div>
       <button class="mrow" id="tocontrols">Controls<i>&rsaquo;</i></button>
       <button class="mrow" id="tostart">Home<i>&rsaquo;</i></button>
@@ -902,11 +1001,23 @@
   </div>
 </div>
 
+<div id="stats" role="dialog" aria-modal="true" aria-labelledby="statstitle">
+  <div class="panel">
+    <h2 id="statstitle">My stats</h2>
+    <div id="statsbody"></div>
+    <button class="mrow go" id="statsclose">Done</button>
+  </div>
+</div>
+
 <div id="results">
   <div class="wrap">
     <div class="panel">
       <h2 id="restitle">Race over</h2>
       <div class="rows" id="resrows"></div>
+      <div class="resbtns" id="resbtns" hidden>
+        <button class="mrow go" id="again">Race again</button>
+        <button class="mrow" id="reshome">Home</button>
+      </div>
       <div class="foot" id="resfoot">Next race in <b>10</b></div>
     </div>
     <div id="cup"><div class="panel"><h2>Cup</h2><div class="rows" id="cuprows"></div></div></div>
@@ -941,5 +1052,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=59');
+await import('./game.js?v=60');
 </script>
