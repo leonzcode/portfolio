@@ -11,20 +11,20 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=55';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=55';
-import { packLook, unpackLook, normalise } from './parts.js?v=55';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=55';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=55';
-import { makeRescue } from './rescue.js?v=55';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=55';
-import { makeBrain, driveBrain } from './ai.js?v=55';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=55';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=55';
-import { makeCones } from './cones.js?v=55';
-import { makeHazards } from './hazards.js?v=55';
-import { THEMES, themeById, seedOf } from './themes.js?v=55';
-import * as snd from './audio.js?v=55';
+import { buildTrack } from './track.js?v=56';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=56';
+import { packLook, unpackLook, normalise } from './parts.js?v=56';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=56';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=56';
+import { makeRescue } from './rescue.js?v=56';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=56';
+import { makeBrain, driveBrain } from './ai.js?v=56';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=56';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=56';
+import { makeCones } from './cones.js?v=56';
+import { makeHazards } from './hazards.js?v=56';
+import { THEMES, themeById, seedOf } from './themes.js?v=56';
+import * as snd from './audio.js?v=56';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -308,7 +308,7 @@ const recorder = makeRecorder();
 let ghost = null;          // the one in the world this race, if there is one
 let ghostWant = null;      // the one asked for, raced again each round on its own track
 let trackPrint = '';       // this layout, so a ghost set on a different one is not replayed on it
-let runReady = null, runToken = null;   // this race's recording, and the token it is sent with
+let runReady = null, runToken = null, runKept = false;   // this race's recording, and the token it is sent with
 /* A fingerprint of the road itself. A ghost is a list of places, and replayed
    on a layout that has since changed it drives through fields and hangs over
    gaps, so a ghost only plays on the layout it was set on. */
@@ -335,19 +335,34 @@ function bestGhostAny() {
 }
 function keepBest(run) {
   const was = bestGhost(run.theme);
-  if (was && was.time <= run.time) return;
+  // an equal time is the same run with its run-out added, so it replaces
+  if (was && was.time < run.time) return;
   try { localStorage.setItem('mkGhost:' + run.theme, JSON.stringify(run)); } catch (e) {}
 }
 /* The recording, done: kept here if it is your best on the track, and sent to
    the board once the board has said the time made it and handed back the
    token to send it with. Whichever of the two arrives second sends it. */
-function finishRun() {
-  if (runReady || !me || me.dnf || !me.finished) return;
-  const run = recorder.finish({
+function runMeta() {
+  return {
     theme: worldTheme, track: trackPrint, time: +me.time.toFixed(2),
     // never through | 0: that cuts the number to 32 bits and drops the paint
     look: packLook(myCast, myBuild, myColour),
-  });
+  };
+}
+/* Kept the moment you cross the line, not only once the run-out past it has
+   been recorded. Leave straight after the flag - back to the menu, a new race,
+   closing the tab - and the run used to go with you: the run-out was never
+   finished, so the recording never was either. The full one replaces this
+   copy a couple of seconds later if you are still there. */
+function keepEarly() {
+  if (runKept || !me || me.dnf || !me.finished) return;
+  runKept = true;
+  const run = recorder.finish(runMeta());
+  if (run) { keepBest(run); drawTimes(); }
+}
+function finishRun() {
+  if (runReady || !me || me.dnf || !me.finished) return;
+  const run = recorder.finish(runMeta());
   if (!run) return;
   runReady = run;
   keepBest(run);
@@ -459,7 +474,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=55')
+  import('./props.js?v=56')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1190,7 +1205,7 @@ function stepWorld(dt) {
      being raced against. The ghost sits on the grid until the lights go. */
   if (phase === 'race' && me && !spectating) {
     recorder.tick(raceTime, me);
-    if (me.finished && !recorder.active) finishRun();
+    if (me.finished) { if (recorder.active) keepEarly(); else finishRun(); }
   }
   if (ghost) poseGhost(ghost, phase === 'race' ? raceTime : 0, dt);
 }
@@ -2044,7 +2059,7 @@ function setLights(t) {
 function goRace() {
   phase = 'race';
   raceTime = 0;
-  runReady = null; runToken = null;
+  runReady = null; runToken = null; runKept = false;
   if (me && !spectating) recorder.begin(me, me.slot || 0);
   litWas = -1;
   snd.beep(true);
@@ -2319,7 +2334,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=55');
+    const mod = await import('./net.js?v=56');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
