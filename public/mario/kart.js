@@ -42,8 +42,44 @@ export function racerOf(cast, colour) {
   return Object.assign({}, base, { kart: c, shirt: c, cap: c, trim: accentOf(c) });
 }
 
-const BODY_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.08 });
-const TYRE_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+/* Something for the paint to reflect. A car lit only by a sun and a flat
+   ambient is a car made of coloured clay: the bodywork has no sky in it, no
+   bright line along the top of a panel, nothing to say it is lacquered metal.
+   This is a sky drawn by hand into a panorama - pale overhead, a bright band
+   at the horizon, the ground darker below, and two soft bright patches for
+   the sun and the sky opposite it - and three.js blurs it to suit each
+   surface's roughness, per renderer, so the garage and the race both get it
+   from the same small canvas. */
+const KART_ENV = (() => {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  const sky = g.createLinearGradient(0, 0, 0, 128);
+  sky.addColorStop(0, '#6f9fd2');
+  sky.addColorStop(0.42, '#c9ddef');
+  sky.addColorStop(0.5, '#fff8ea');
+  sky.addColorStop(0.53, '#8c9486');
+  sky.addColorStop(1, '#3d4238');
+  g.fillStyle = sky; g.fillRect(0, 0, 256, 128);
+  for (const [x, y, rad, a] of [[70, 34, 26, 0.95], [190, 44, 40, 0.45]]) {
+    const r = g.createRadialGradient(x, y, 0, x, y, rad);
+    r.addColorStop(0, 'rgba(255,255,255,' + a + ')');
+    r.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = r; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+/* A shade glossier than it was, so the reflection has somewhere to show, and
+   not so much that the drivers look varnished: they share the material. */
+const BODY_MAT = new THREE.MeshStandardMaterial({
+  vertexColors: true, roughness: 0.42, metalness: 0.12, envMap: KART_ENV, envMapIntensity: 0.42,
+});
+const TYRE_MAT = new THREE.MeshStandardMaterial({
+  vertexColors: true, roughness: 0.9, envMap: KART_ENV, envMapIntensity: 0.25,
+});
 
 /* The patch of dark a car sits in. The sun casts a real shadow, but a single
    directional light throws it off to one side, so at a glance nothing looks
@@ -65,7 +101,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=58';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=59';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */

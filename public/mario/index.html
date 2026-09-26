@@ -235,12 +235,14 @@
   #tags{ position:fixed; inset:0; z-index:19; pointer-events:none; }
   #tags .tag{
     position:absolute; left:0; top:0; white-space:nowrap;
-    font-family:var(--display); font-weight:800; font-size:14px; letter-spacing:.02em;
+    font-family:var(--display); font-weight:800; font-size:15px; letter-spacing:.02em;
     color:#fff; -webkit-text-stroke:4px var(--ink); paint-order:stroke fill;
     text-shadow:0 2px 0 var(--ink);
     opacity:0; transition:opacity .12s linear;
+    /* sized by a scale from its bottom middle, which is the point it hangs from */
+    transform-origin:50% 100%; will-change:transform;
   }
-  #tags .tag.me{ color:var(--gold); font-size:15px; }
+  #tags .tag.me{ color:var(--gold); }
 
   /* What speed looks like. Two cones of streaks from the edges of the screen,
      brought in by opacity rather than by being created and destroyed, so the
@@ -939,5 +941,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=58');
+await import('./game.js?v=59');
 </script>
