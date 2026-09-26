@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=54';
+import { themeById, rulesOf, lookOf } from './themes.js?v=55';
 
 /* The lap.
 
@@ -652,7 +652,11 @@ function sampleLoop(seed, th) {
        what this wants - are shared rather than avoided, and only the ones that
        reshape the road underneath are kept clear. Refusing all of them left
        one clear gap on a lap and so one split, however many a place asked for. */
-    const SHARE = { arena: 1, boostlane: 1, strip: 1, agrav: 1, bowl: 1, hump: 1 };
+    /* Not a bowl, though. A bowl banks hard into a tight bend, and an island
+       laid down the middle of one is a kerb in the way of the line every car
+       wants: on Redrock that one stretch was a fifteenth of the lap and a
+       quarter of all the time the field spent against a wall. */
+    const SHARE = { arena: 1, boostlane: 1, strip: 1, agrav: 1, hump: 1 };
     // narrower than this and the island is not drawn, so it would not be a split
     const MIN_ISLE = 2.2;
     const taken = new Set();
@@ -673,8 +677,11 @@ function sampleLoop(seed, th) {
          none at all. */
       const want = plan.len || 34;
       let len = want, i0 = -1, openest = 0;
-      for (const tryLen of [want, Math.round(want * 0.78), Math.round(want * 0.6), 22]) {
-        if (tryLen < 20 || (len !== want && tryLen >= len)) continue;
+      for (const tryLen of [want, Math.round(want * 0.78), Math.round(want * 0.6), 22, 18]) {
+        /* One lane climbing over the other needs the length to climb in: cut
+           short, the two lanes part company by a metre in a few car lengths,
+           which is a step, not a rise. */
+        if (tryLen < (plan.lift ? 32 : 18) || (len !== want && tryLen >= len)) continue;
         for (let c = 0; c < M; c++) {
           let tight = 1e9, clear = true;
           for (let k = -4; k < tryLen + 4 && clear; k++) {

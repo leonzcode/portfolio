@@ -11,7 +11,7 @@
    little SVG for the slot in the corner of the screen.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { spinOut } from './kart.js?v=54';
+import { spinOut } from './kart.js?v=55';
 
 const svg = (inner) => '<svg viewBox="0 0 64 64" width="100%" height="100%">' + inner + '</svg>';
 const K = 'stroke="#17223b" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';
@@ -349,6 +349,21 @@ export function makeItemWorld(scene, track, fx) {
   return { spawn, step, clear, live, hazards, eat, hold, drop };
 }
 
+/* How far round the race a kart is, in metres. The grid sits behind the line,
+   so a car there reads almost a whole lap in - and the first time it crosses
+   the line it does not count a lap, because it has not been round one. So for
+   the first second of every race everybody still behind the line was ranked
+   ahead of everybody who had crossed it, and a car sitting on the line could
+   lead the standings without moving. Behind the line on the first lap is
+   behind the start, not nearly at the finish. */
 export function lapProg(k, track) {
-  return (k.lap - 1) * track.length + k.prog;
+  const L = track.length;
+  /* Any lap, not just the first. The last checkpoint a car passed being the
+     line means it has just crossed it, and so is a few metres round - unless
+     it is more than half a lap round, which it can only be by being behind
+     the line: on the grid, or having backed over it. A car that reverses back
+     across the line keeps the lap it counted, and without this it jumped a
+     whole lap up the order, past everybody, for as long as it sat there. */
+  const behind = k.cpi === 0 && k.prog > L / 2;
+  return (k.lap - 1) * L + k.prog - (behind ? L : 0);
 }
