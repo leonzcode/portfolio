@@ -11,19 +11,19 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=53';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=53';
-import { packLook, unpackLook, normalise } from './parts.js?v=53';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=53';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=53';
-import { makeRescue } from './rescue.js?v=53';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=53';
-import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=53';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=53';
-import { makeCones } from './cones.js?v=53';
-import { makeHazards } from './hazards.js?v=53';
-import { THEMES, themeById, seedOf } from './themes.js?v=53';
-import * as snd from './audio.js?v=53';
+import { buildTrack } from './track.js?v=54';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=54';
+import { packLook, unpackLook, normalise } from './parts.js?v=54';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=54';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=54';
+import { makeRescue } from './rescue.js?v=54';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=54';
+import { makeBrain, driveBrain, pacePulse, resetPace, paceOf } from './ai.js?v=54';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=54';
+import { makeCones } from './cones.js?v=54';
+import { makeHazards } from './hazards.js?v=54';
+import { THEMES, themeById, seedOf } from './themes.js?v=54';
+import * as snd from './audio.js?v=54';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -375,7 +375,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=53')
+  import('./props.js?v=54')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1458,44 +1458,6 @@ function drawMini() {
    It lives on the same server board as Slope and the rest, which keeps every
    run rather than one row a name, so beating your own time does not quietly
    delete the old one. */
-/* The note on the front about what changed. Shown once per browser and keyed
-   to the stamp below, so bumping the stamp is what brings it back for
-   everybody - and a browser that has read this one never sees it again. Making
-   people dismiss the same note every time they came back to race would be a
-   worse thing than not telling them at all.
-
-   It closes on a click anywhere, on the cross, or on Escape. A note you cannot
-   get out of the way of is a door, not a note. */
-const NEWS_STAMP = 'maps-fixed-2026-09';
-let newsKey = null;
-/* Gone the moment a race begins, whether anybody read it or not. A note that
-   outlives the menu it was written for is a pane of glass over the track: it
-   sat there through the whole race swallowing the first Escape, so the pause
-   menu would not open until you had dismissed a notice you could no longer
-   see the point of. */
-function closeNews() {
-  const box = el('news');
-  if (!box || box.hidden) return;
-  box.classList.remove('on');
-  box.hidden = true;
-  try { localStorage.setItem('mkNews', NEWS_STAMP); } catch (e) {}
-  if (newsKey) { removeEventListener('keydown', newsKey, true); newsKey = null; }
-}
-function showNews() {
-  const box = el('news');
-  if (!box) return;
-  // ?news=0 skips it, so a test driving the menu is not driving a notice first
-  try { if (new URLSearchParams(location.search).get('news') === '0') return; } catch (e) {}
-  try { if (localStorage.getItem('mkNews') === NEWS_STAMP) return; } catch (e) {}
-  box.hidden = false;
-  box.classList.add('on');
-  newsKey = e => { if (e.key === 'Escape') { e.stopPropagation(); closeNews(); } };
-  box.addEventListener('click', closeNews);
-  addEventListener('keydown', newsKey, true);
-  const x = box.querySelector('.x');
-  if (x) x.focus({ preventScroll: true });
-}
-
 const MC = (function () {
   if (location.hostname.endsWith('leonzhao.dev')) return 'https://apps.leonzhao.dev/mc';
   try {
@@ -1541,7 +1503,7 @@ function fetchBoard() {
   fetch(MC + '/scores?game=leon-kart-classic')
     .then(r => r.json())
     .then(j => {
-      if (!j || !j.board || !j.board.length) return;
+      if (!j || !j.board) return;
       oldBoard = j.board;
       drawTimes();
     })
@@ -1566,13 +1528,18 @@ function postTime(secs) {
 }
 /* The ten, and then you: your best, the one you just did, and where that best
    places you when it is not one of the ten. */
+/* Whether the archive is worth a switch: when it has anything in it, or when
+   somebody who can put something in it is looking. */
+const hasOld = () => !!(oldBoard && (oldBoard.length || adminPw));
 function drawTimes() {
   const box = el('times');
   if (!box) return;
-  if (showingOld && !(oldBoard && oldBoard.length)) showingOld = false;
-  if (showingOld) return drawOldTimes(box);
+  const kept = keepAdminInput(box);
+  if (showingOld && !hasOld()) showingOld = false;
+  if (showingOld) { drawOldTimes(box); return putAdminInput(box, kept); }
   box.classList.remove('old');
-  const rows = (raceBoard || []).slice(0, 10);
+  // the ten, or for an admin the whole board, which is where the tidying is
+  const rows = adminPw ? (raceBoard || []) : (raceBoard || []).slice(0, 10);
   const mineKey = (myName || 'You').toLowerCase();
   const onTop = rows.some(r => String(r.name).toLowerCase() === mineKey
     && myBestTime && Math.abs(r.score - myBestTime) < 0.005);
@@ -1583,31 +1550,199 @@ function drawTimes() {
   if (myBestTime && !onTop && myRank) {
     mine += '<div class="mine place"><span>You place</span><b>' + ord(myRank) + '</b></div>';
   }
-  box.innerHTML = head('Best times', oldBoard && oldBoard.length ? 'Before update' : '')
+  box.innerHTML = head('Best times', hasOld() ? 'Before update' : '')
     + '<p class="sub">Three laps, single or multiplayer</p>'
+    + (adminNote && !adminPw ? '<p class="adm-msg" role="status">' + esc(adminNote) + '</p>' : '')
+    + adminBar()
     + (rows.length
       ? list(rows)
       : '<p class="none">Nobody has finished a race yet.</p>')
+    + adminAdd()
     + mine;
-  wireWas(box);
+  wireWas(box, rows);
+  putAdminInput(box, kept);
 }
 // the board as it stood before the circuits were pinned, kept whole
 function drawOldTimes(box) {
   box.classList.add('old');
+  const rows = adminPw ? oldBoard : oldBoard.slice(0, 10);
   box.innerHTML = head('Before update', 'Back to now')
     + '<p class="sub">Random circuits. Not comparable.</p>'
-    + list(oldBoard.slice(0, 10));
-  wireWas(box);
+    + (adminNote && !adminPw ? '<p class="adm-msg" role="status">' + esc(adminNote) + '</p>' : '')
+    + adminBar()
+    + (rows.length ? list(rows) : '<p class="none">Nothing on it.</p>')
+    + adminAdd();
+  wireWas(box, rows);
 }
 const head = (title, btn) => '<div class="head"><h2>' + title + '</h2>'
   + (btn ? '<button type="button" class="was">' + btn + '</button>' : '') + '</div>';
-const list = rows => '<div class="rows">' + rows.map((r, i) =>
-  '<div class="r' + (i === 0 ? ' p1' : '') + '">'
+const list = rows => '<div class="rows' + (adminPw ? ' adm' : '') + '">' + rows.map((r, i) =>
+  '<div class="r' + (i === 0 ? ' p1' : '') + (adminPw ? ' adm' : '') + '">'
   + '<span class="p">' + (i + 1) + '</span><span>' + esc(r.name) + '</span>'
-  + '<span class="t">' + time(r.score) + '</span></div>').join('') + '</div>';
-function wireWas(box) {
+  + '<span class="t">' + time(r.score) + '</span>'
+  + (adminPw ? '<button type="button" class="x" data-i="' + i + '" aria-label="Remove '
+    + esc(r.name) + ' ' + time(r.score) + '">&times;</button>' : '')
+  + '</div>').join('') + '</div>';
+function wireWas(box, rows) {
   const b = box.querySelector('.was');
-  if (b) b.addEventListener('click', () => { showingOld = !showingOld; drawTimes(); });
+  /* A message about one board says nothing about the other, and neither does a
+     half typed time: it was meant for the board it was typed on. */
+  if (b) b.addEventListener('click', () => {
+    showingOld = !showingOld;
+    adminMsg = '';
+    const f = box.querySelector('.adm-add');
+    if (f) f.reset();
+    drawTimes();
+  });
+  if (adminPw) wireAdmin(box, rows);
+}
+
+/* ---------------------------------------------------------- the board's admin --
+   Six digits typed on the title screen - not into the name box, not in a race,
+   not on the map screen - go to the server, which says whether they are the
+   code. The page never knows what the code is, so reading this file tells you
+   nothing about it, and a wrong guess shows nothing at all.
+
+   What it opens is on the record card itself: every row on the board rather
+   than ten, a cross beside each, and a line to put a time on. Whichever board
+   the card is showing is the one it edits, the archive included. */
+let adminPw = null, adminBuf = '', adminAt = 0, adminBusy = false, adminMsg = '';
+let adminNote = '', adminNoteT = 0;     // a lockout, said on the card for a few seconds
+const onTitle = () => !started && phase === 'title' && !el('mapsel').classList.contains('on');
+addEventListener('keydown', e => {
+  if (adminPw || !onTitle()) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  /* A key held down is one key, not a stream of them. Auto-repeat used to top
+     the buffer up to six of the same digit and fire a check every time the
+     last one came back, which spent this address's wrong guesses in about a
+     second and then locked out the right code as well. */
+  if (e.repeat) return;
+  if (!/^[0-9]$/.test(e.key)) { adminBuf = ''; return; }
+  const now = performance.now();
+  if (now - adminAt > 2500) adminBuf = '';          // a pause starts it again
+  adminAt = now;
+  adminBuf = (adminBuf + e.key).slice(-6);
+  if (adminBuf.length < 6 || adminBusy) return;
+  const code = adminBuf;
+  adminBuf = '';
+  adminBusy = true;
+  adminCall({ op: 'check', pw: code }).then(j => {
+    adminBusy = false;
+    if (j && j.ok) { adminPw = code; adminMsg = ''; adminNote = ''; drawTimes(); return; }
+    /* A wrong guess shows nothing. Being locked out, or not reaching the
+       server at all, does say so: otherwise an admin who mistyped a few times
+       types the right code and watches nothing happen, with no way to tell
+       that waiting is the answer. */
+    if (j && j.error && j.error !== 'Nope.') {
+      adminNote = j.error;
+      drawTimes();
+      clearTimeout(adminNoteT);
+      adminNoteT = setTimeout(() => { adminNote = ''; drawTimes(); }, 6000);
+    }
+  });
+});
+function adminCall(body) {
+  return fetch(MC + '/scores/admin', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }).then(r => r.json()).catch(() => ({ error: 'Could not reach the server.' }));
+}
+const adminBar = () => adminPw
+  ? '<div class="adm-bar"><b>Admin</b><button type="button" class="adm-exit">Exit</button></div>' : '';
+const adminAdd = () => adminPw
+  ? '<form class="adm-add" autocomplete="off">'
+    + '<input class="an" maxlength="14" placeholder="Name" aria-label="Name">'
+    + '<input class="at" inputmode="decimal" placeholder="1:23.45" aria-label="Time">'
+    + '<button type="submit">Add</button></form>'
+    + '<p class="adm-msg" role="status">' + esc(adminMsg) + '</p>'
+  : '';
+// minutes and seconds, or seconds alone: 1:26.71, 86.71 and 86 are all a time
+function parseTime(txt) {
+  const t = String(txt).trim();
+  let m = /^(\d{1,2}):(\d{1,2}(?:\.\d{1,3})?)$/.exec(t);
+  if (m) return +m[2] < 60 ? +m[1] * 60 + +m[2] : NaN;
+  m = /^\d{1,4}(?:\.\d{1,3})?$/.exec(t);
+  return m ? +t : NaN;
+}
+/* What the server sent back goes straight onto the board it came from, and the
+   card is drawn again from that. If the code stopped working - changed on the
+   server since it was typed - the admin view goes with it. */
+function adminDone(game, j) {
+  if (j && j.board) {
+    if (game === 'leon-kart') { raceBoard = j.board; myRank = rankOf(raceBoard, myBestTime); }
+    else oldBoard = j.board;
+  }
+  adminMsg = j && j.error ? j.error : '';
+  if (j && j.error === 'Nope.') { adminPw = null; adminMsg = ''; }
+  drawTimes();
+}
+function wireAdmin(box, rows) {
+  const game = showingOld ? 'leon-kart-classic' : 'leon-kart';
+  const ex = box.querySelector('.adm-exit');
+  if (ex) ex.addEventListener('click', () => { adminPw = null; adminMsg = ''; drawTimes(); });
+  /* A cross takes two presses: the first says what it is about to do, the
+     second does it. A time is somebody's afternoon, and one stray click on a
+     list of small buttons should not be enough to take it off. */
+  box.querySelectorAll('.rows .x').forEach(bt => {
+    let armed = 0, armedAt = 0;
+    bt.addEventListener('click', () => {
+      const r = rows[+bt.dataset.i];
+      if (!r) return;
+      if (!armed) {
+        armed = setTimeout(() => { armed = 0; bt.classList.remove('armed'); bt.innerHTML = '&times;'; }, 3000);
+        armedAt = performance.now();
+        bt.classList.add('armed');
+        bt.textContent = 'Sure?';
+        return;
+      }
+      /* A double click is one decision, not two: the second half of it lands
+         before anybody could have read the question it answered. */
+      if (performance.now() - armedAt < 400) return;
+      clearTimeout(armed); armed = 0;
+      bt.disabled = true;
+      adminCall({ op: 'remove', pw: adminPw, game, name: r.name, score: r.score, at: r.at })
+        .then(j => adminDone(game, j));
+    });
+  });
+  const form = box.querySelector('.adm-add');
+  if (form) form.addEventListener('submit', e => {
+    e.preventDefault();
+    const name = form.querySelector('.an').value.trim();
+    const secs = parseTime(form.querySelector('.at').value);
+    if (!name) { adminMsg = 'Give it a name.'; return drawTimes(); }
+    if (!(secs >= 1 && secs <= 3600)) { adminMsg = 'Type the time like 1:23.45'; return drawTimes(); }
+    form.querySelector('button').disabled = true;
+    adminCall({ op: 'add', pw: adminPw, game, name, score: +secs.toFixed(2) }).then(j => {
+      if (j && j.ok) {
+        /* The form in the card now, not the one captured when Add was pressed:
+           a redraw in between - another row taken off, the board switched -
+           replaces it, and emptying the old detached copy left the live one
+           full, so the next press put the same time on twice. */
+        const live = el('times').querySelector('.adm-add');
+        if (live) live.reset();
+      }
+      adminDone(game, j);
+    });
+  });
+}
+/* The card is drawn again whenever the board changes, which can be while
+   somebody is half way through typing a time into it. Whatever was in the
+   two boxes, and which one had the cursor, is carried across the redraw. */
+function keepAdminInput(box) {
+  const f = box.querySelector('.adm-add');
+  if (!f) return null;
+  const an = f.querySelector('.an'), at = f.querySelector('.at');
+  return { an: an.value, at: at.value,
+           focus: document.activeElement === an ? 'an' : document.activeElement === at ? 'at' : null };
+}
+function putAdminInput(box, kept) {
+  if (!kept) return;
+  const f = box.querySelector('.adm-add');
+  if (!f) return;
+  const an = f.querySelector('.an'), at = f.querySelector('.at');
+  if (an.value === '' && kept.an) an.value = kept.an;
+  if (at.value === '' && kept.at) at.value = kept.at;
+  if (kept.focus) f.querySelector('.' + kept.focus).focus({ preventScroll: true });
 }
 
 function time(t) {
@@ -2000,7 +2135,6 @@ function drawBars() {
 
 async function start(online) {
   if (started) return;
-  closeNews();                          // no pane of glass over the track
   // the garage has done its job; give the context back before a race wants it
   if (garage) { garage.dispose(); garage = null; }
   const wantLobby = online === undefined ? true : !!online;
@@ -2016,7 +2150,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=53');
+    const mod = await import('./net.js?v=54');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2098,7 +2232,6 @@ buildCast();
 // brought up to date from the server
 drawTimes();
 fetchBoard();
-showNews();
 /* One listener on the strip rather than one a button: the buttons are rebuilt
    whenever the running order changes, and listeners bound to them would go with
    them. */
@@ -2353,7 +2486,6 @@ window.__mk = {
   startSolo() { return start(false); },
   startOnline() { return start(true); },
   key(k, on) { keys[k] = !!on; },
-  closeNews() { closeNews(); return true; },
   /* Bolt a build onto the player's kart, the way the garage does when a race
      starts, so a test can ask what a hauler drives like against a formula car
      without clicking through the garage to get there. */
