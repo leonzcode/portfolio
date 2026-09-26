@@ -11,20 +11,20 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=58';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=58';
-import { packLook, unpackLook, normalise } from './parts.js?v=58';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=58';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=58';
-import { makeRescue } from './rescue.js?v=58';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=58';
-import { makeBrain, driveBrain } from './ai.js?v=58';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=58';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=58';
-import { makeCones } from './cones.js?v=58';
-import { makeHazards } from './hazards.js?v=58';
-import { THEMES, themeById, seedOf } from './themes.js?v=58';
-import * as snd from './audio.js?v=58';
+import { buildTrack, setAniso } from './track.js?v=59';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=59';
+import { packLook, unpackLook, normalise } from './parts.js?v=59';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=59';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=59';
+import { makeRescue } from './rescue.js?v=59';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=59';
+import { makeBrain, driveBrain } from './ai.js?v=59';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=59';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=59';
+import { makeCones } from './cones.js?v=59';
+import { makeHazards } from './hazards.js?v=59';
+import { THEMES, themeById, seedOf } from './themes.js?v=59';
+import * as snd from './audio.js?v=59';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -35,6 +35,10 @@ const GRID = 8;                       // how big a field the circuit is set up f
 
 /* ------------------------------------------------------------------ renderer */
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+/* What the card will do about a surface seen almost edge on. A road is looked
+   at from a metre above it and half a kilometre away in the same frame, which
+   is the exact case this is for, and it costs nothing worth measuring. */
+setAniso(renderer.capabilities.getMaxAnisotropy());
 
 /* ---------------------------------------------------------------------------
    How hard to work.
@@ -474,7 +478,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=58')
+  import('./props.js?v=59')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1443,17 +1447,19 @@ function makeTags() {
 }
 const tagV = new THREE.Vector3();
 const tagLit = [], tagPut = [];
+// only touch the style when it changes: an unchanged write still dirties the element
+function tagOp(d, v) { if (d._op !== v) { d._op = v; d.style.opacity = v; } }
 function drawTags() {
   if (!tagFor.size) return;
   const w = innerWidth, h = innerHeight;
   tagLit.length = 0;
   for (const [k, d] of tagFor) {
-    if (k === me && camMode === 3) { d.style.opacity = '0'; continue; }
-    if (k.ghost && !k.group.visible) { d.style.opacity = '0'; continue; }
+    if (k === me && camMode === 3) { tagOp(d, '0'); continue; }
+    if (k.ghost && !k.group.visible) { tagOp(d, '0'); continue; }
     tagV.set(k.pos.x, k.pos.y + k.hop + 2.5, k.pos.z).project(camera);
     const far = k === me ? 0 : Math.hypot(k.pos.x - camPos.x, k.pos.z - camPos.z);
     const x = (tagV.x * 0.5 + 0.5) * w, y = (-tagV.y * 0.5 + 0.5) * h;
-    if (tagV.z > 1 || far > 150 || y < 0 || y > h) { d.style.opacity = '0'; continue; }
+    if (tagV.z > 1 || far > 150 || y < 0 || y > h) { tagOp(d, '0'); continue; }
     tagLit.push({ k, d, x, y, far });
   }
   // nearest last onto the screen means nearest wins the space it wants
@@ -1478,12 +1484,12 @@ function drawTags() {
     const size = Math.max(10, (t.k === me ? 15 : 14) * (1 - Math.min(1, t.far / 150) * 0.42));
     const half = t.k.name.length * size * 0.32 + 4;
     // off the side of the screen it is half a name hanging on the bezel
-    if (t.x - half < 2 || t.x + half > w - 2) { t.d.style.opacity = '0'; continue; }
+    if (t.x - half < 2 || t.x + half > w - 2) { tagOp(t.d, '0'); continue; }
     /* Covered, not merely touching. A name that clips the corner of the card
        still reads; one that is mostly behind it is half a word and a guess. */
     if (panel && t.y > panel.top && t.y - size < panel.bottom) {
       const lap = Math.min(t.x + half, panel.right) - Math.max(t.x - half, panel.left);
-      if (lap > half * 0.8) { t.d.style.opacity = '0'; continue; }
+      if (lap > half * 0.8) { tagOp(t.d, '0'); continue; }
     }
     /* And where two still land on each other, the far one gives way. Six karts
        at the vanishing point are a few pixels apart and their names ran into
@@ -1493,13 +1499,15 @@ function drawTags() {
     for (const q of tagPut) {
       if (Math.abs(t.x - q.x) < half + q.half && Math.abs(t.y - q.y) < (size + q.size) * 0.62) { hit = 1; break; }
     }
-    if (hit) { t.d.style.opacity = '0'; continue; }
+    if (hit) { tagOp(t.d, '0'); continue; }
     tagPut.push({ x: t.x, y: t.y, half, size });
-    t.d.style.fontSize = size.toFixed(1) + 'px';
-    t.d.style.webkitTextStrokeWidth = (size * 0.27).toFixed(1) + 'px';
-    t.d.style.opacity = t.far > 110 ? String(1 - (t.far - 110) / 40) : '1';
-    t.d.style.transform = 'translate(-50%,-100%) translate('
-      + t.x.toFixed(1) + 'px,' + t.y.toFixed(1) + 'px)';
+    /* Scaled, not resized. A new font size every frame is a new text layout
+       and a repaint of every tag, every frame; a scale is the compositor's job
+       and costs nothing. The stroke scales with it, so it keeps its weight. */
+    tagOp(t.d, t.far > 110 ? (1 - (t.far - 110) / 40).toFixed(2) : '1');
+    const tf = 'translate(' + t.x.toFixed(1) + 'px,' + t.y.toFixed(1) + 'px) translate(-50%,-100%) scale('
+      + (size / 15).toFixed(3) + ')';
+    if (t.d._tf !== tf) { t.d._tf = tf; t.d.style.transform = tf; }
   }
 }
 
@@ -1539,6 +1547,17 @@ function speedLines(watch, dt) {
 }
 let linesAt = 0;
 
+/* The HUD writes only what has changed. Setting the same text again is not
+   free: it replaces the text node, and the page lays that part out again. Sixty
+   times a second, for numbers that change a few times a lap, it was most of the
+   work the page did outside the 3D. */
+const hudLast = {};
+function hudText(id, v) {
+  v = String(v);
+  if (hudLast[id] === v) return;
+  hudLast[id] = v;
+  el(id).textContent = v;
+}
 function drawHud(dt) {
   oilStep(dt);
   hintStep(dt);
@@ -1551,13 +1570,13 @@ function drawHud(dt) {
   el('wet').classList.toggle('on', !!(watch && watch.wet));
   wetGlass(!!(watch && watch.wet), dt);
   if (!watch) return;
-  el('lapn').textContent = Math.min(LAPS, watch.lap);
-  el('lapof').textContent = '/' + LAPS;
+  hudText('lapn', Math.min(LAPS, watch.lap));
+  hudText('lapof', '/' + LAPS);
   const pl = watch.place || 1;
-  el('placen').textContent = pl;
-  el('placesfx').textContent = ord(pl).replace(/^\d+/, '');
-  el('place').className = 'p' + Math.min(3, pl);
-  el('speedn').textContent = Math.round(Math.abs(watch.speed) * 3.6);
+  hudText('placen', pl);
+  hudText('placesfx', ord(pl).replace(/^\d+/, ''));
+  if (hudLast.placeCls !== pl) { hudLast.placeCls = pl; el('place').className = 'p' + Math.min(3, pl); }
+  hudText('speedn', Math.round(Math.abs(watch.speed) * 3.6));
   /* No charge bar. The sparks off the back wheels are the meter, the way they
      are in Mario Kart: white, then blue, then orange, then purple, and you read
      them out of the corner of your eye without taking them off the road. */
@@ -1572,10 +1591,14 @@ function drawBoard() {
     + '<span class="p">' + k.place + '</span>'
     + '<span>' + esc(k.name) + '</span>'
     + '<span class="t">' + (k.finished ? time(k.time) : 'L' + Math.min(LAPS, k.lap)) + '</span></div>').join('');
+  // rebuilt only when the order or a lap has actually changed
+  if (hudLast.board === rows) return;
+  hudLast.board = rows;
   el('boardrows').innerHTML = rows;
 }
 
 const minic = el('minic'), mg = minic.getContext('2d');
+let miniBack = null;
 function drawMini() {
   const W = minic.width, H = minic.height;
   const b = track.bounds;
@@ -1586,11 +1609,19 @@ function drawMini() {
   const oz = pad + ((H - pad * 2) - (b.maxz - b.minz) * s) / 2;
   const X = x => ox + (x - b.minx) * s, Z = z => oz + (z - b.minz) * s;
   mg.clearRect(0, 0, W, H);
-  mg.lineWidth = 10; mg.lineJoin = 'round'; mg.strokeStyle = '#17223b';
-  mg.beginPath();
-  track.outline.forEach((p, i) => { i ? mg.lineTo(X(p[0]), Z(p[1])) : mg.moveTo(X(p[0]), Z(p[1])); });
-  mg.closePath(); mg.stroke();
-  mg.lineWidth = 6; mg.strokeStyle = '#9aa3b2'; mg.stroke();
+  /* The circuit does not move, so it is drawn once per track into a canvas
+     of its own and copied in; only the dots are drawn fresh each frame. */
+  if (!miniBack || miniBack.track !== track || miniBack.c.width !== W || miniBack.c.height !== H) {
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.lineWidth = 10; g.lineJoin = 'round'; g.strokeStyle = '#17223b';
+    g.beginPath();
+    track.outline.forEach((p, i) => { i ? g.lineTo(X(p[0]), Z(p[1])) : g.moveTo(X(p[0]), Z(p[1])); });
+    g.closePath(); g.stroke();
+    g.lineWidth = 6; g.strokeStyle = '#9aa3b2'; g.stroke();
+    miniBack = { track, c };
+  }
+  mg.drawImage(miniBack.c, 0, 0);
   for (const k of karts) {
     mg.beginPath();
     mg.arc(X(k.pos.x), Z(k.pos.z), k === me ? 7 : 5, 0, 7);
@@ -2349,7 +2380,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=58');
+    const mod = await import('./net.js?v=59');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },

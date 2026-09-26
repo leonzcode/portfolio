@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=58';
+import { themeById, rulesOf, lookOf } from './themes.js?v=59';
 
 /* The lap.
 
@@ -88,6 +88,14 @@ export function groundY(x, z) {
   return y - dig;
 }
 
+/* How much the card is willing to do about a surface seen almost edge on,
+   which a road always is. Eight was a guess; the number the card actually
+   offers is usually sixteen, and a road is the one thing in a racing game that
+   is looked at from a metre above it and half a kilometre away at once. Set
+   from the renderer at start-up and clamped by it if it is more than it can
+   do. */
+let MAX_ANISO = 8;
+export function setAniso(n) { MAX_ANISO = Math.max(1, n | 0) || 8; }
 function canvasTex(w, h, draw, rep) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
@@ -95,7 +103,7 @@ function canvasTex(w, h, draw, rep) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
+  t.anisotropy = MAX_ANISO;
   if (rep) t.repeat.set(rep[0], rep[1]);
   return t;
 }
@@ -105,54 +113,156 @@ function canvasTex(w, h, draw, rep) {
    thirds of the width are the racing line worn into it, and the pale bands at
    the very edges are the white line painted down them. That alone does more for
    the look of a circuit than any amount of grit, because it tells you where the
-   road goes before you can see the corner. */
+   road goes before you can see the corner.
+
+   Three maps, drawn from the same features so they line up. The colour, with
+   the grit at a strength between the old static and the flat grey that tried
+   to replace it. The surface, a height field turned into a normal map: stones
+   standing proud of the binder, cracks sealed with tar and the seams round a
+   resurfaced patch sitting below it, so the road catches the sun the way
+   asphalt does instead of being paint on a sheet. And the gloss: the worn
+   line and the tar in the cracks are smoother than the rest. */
 function tarmacTex(th) {
   const [base, spread, tint] = th.tarmacGrit;
-  return canvasTex(256, 256, (g, W, H) => {
-    g.fillStyle = th.tarmac; g.fillRect(0, 0, W, H);
-    // the worn line, darker and softened at its edges
-    for (const at of [0.3, 0.7]) {
-      const grad = g.createLinearGradient((at - 0.16) * W, 0, (at + 0.16) * W, 0);
-      grad.addColorStop(0, 'rgba(20,22,26,0)');
-      grad.addColorStop(0.5, 'rgba(20,22,26,.30)');
-      grad.addColorStop(1, 'rgba(20,22,26,0)');
-      g.fillStyle = grad;
-      g.fillRect((at - 0.16) * W, 0, 0.32 * W, H);
+  const W = 512, H = 512;
+  const sheet = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const colC = sheet(), hC = sheet(), rC = sheet();
+  const g = colC.getContext('2d'), h = hC.getContext('2d'), r = rC.getContext('2d');
+  const grey = (v, a) => 'rgba(' + (v | 0) + ',' + (v | 0) + ',' + ((v + tint) | 0) + ',' + a + ')';
+  // anything that might cross the top or bottom edge is drawn again a sheet
+  // away, so the texture repeats down the lap without a seam
+  const wrapY = fn => { fn(0); fn(-H); fn(H); };
+
+  g.fillStyle = th.tarmac; g.fillRect(0, 0, W, H);
+  h.fillStyle = 'rgb(128,128,128)'; h.fillRect(0, 0, W, H);
+  r.fillStyle = 'rgb(214,214,214)'; r.fillRect(0, 0, W, H);
+
+  // slow variation, so the grit sits on something rather than on flat paint
+  for (let i = 0; i < 24; i++) {
+    const rad = 50 + Math.random() * 140;
+    const x = Math.random() * W, y = Math.random() * H, v = base + Math.random() * spread;
+    wrapY(dy => {
+      const grd = g.createRadialGradient(x, y + dy, 0, x, y + dy, rad);
+      grd.addColorStop(0, grey(v, 0.2)); grd.addColorStop(1, grey(v, 0));
+      g.fillStyle = grd; g.fillRect(x - rad, y + dy - rad, rad * 2, rad * 2);
+    });
+  }
+  // the worn line: darker, and polished smoother by the tyres
+  for (const at of [0.3, 0.7]) {
+    const band = (ctx, edge, mid) => {
+      const grad = ctx.createLinearGradient((at - 0.16) * W, 0, (at + 0.16) * W, 0);
+      grad.addColorStop(0, edge); grad.addColorStop(0.5, mid); grad.addColorStop(1, edge);
+      ctx.fillStyle = grad; ctx.fillRect((at - 0.16) * W, 0, 0.32 * W, H);
+    };
+    band(g, 'rgba(20,22,26,0)', 'rgba(20,22,26,.32)');
+    band(r, 'rgba(150,150,150,0)', 'rgba(150,150,150,.8)');
+  }
+  // resurfaced patches: a shade off the rest, a touch proud, a dark seam round them
+  for (let i = 0; i < 3; i++) {
+    const pw = 60 + Math.random() * 150, ph = 30 + Math.random() * 90;
+    const x = W * 0.14 + Math.random() * (W * 0.72 - pw), y = Math.random() * H;
+    const v = base + (Math.random() < 0.5 ? -14 : 12);
+    wrapY(dy => {
+      g.fillStyle = grey(v, 0.34); g.fillRect(x, y + dy, pw, ph);
+      g.strokeStyle = 'rgba(16,17,20,.26)'; g.lineWidth = 2; g.strokeRect(x, y + dy, pw, ph);
+      h.fillStyle = 'rgb(140,140,140)'; h.fillRect(x, y + dy, pw, ph);
+      h.strokeStyle = 'rgb(96,96,96)'; h.lineWidth = 2; h.strokeRect(x, y + dy, pw, ph);
+      r.strokeStyle = 'rgb(130,130,130)'; r.lineWidth = 3; r.strokeRect(x, y + dy, pw, ph);
+    });
+  }
+  // the grit: stones in the binder, lighter and darker, each standing a little proud
+  for (let i = 0; i < 20000; i++) {
+    const x = Math.random() * W, y = Math.random() * H, sz = Math.random() < 0.8 ? 2 : 3;
+    g.fillStyle = grey(base + Math.random() * spread, 0.26);
+    g.fillRect(x, y, sz, sz);
+    h.fillStyle = Math.random() < 0.6 ? 'rgba(200,200,200,.55)' : 'rgba(70,70,70,.45)';
+    h.fillRect(x, y, sz, sz);
+  }
+  // cracks, sealed with tar: dark, sunk and shiny, wandering the way cracks do
+  for (let i = 0; i < 7; i++) {
+    let x = W * 0.14 + Math.random() * W * 0.72, y = Math.random() * H;
+    let ang = Math.random() * Math.PI * 2;
+    const pts = [[x, y]];
+    const n = 8 + (Math.random() * 14 | 0);
+    for (let k = 0; k < n; k++) {
+      ang += (Math.random() - 0.5) * 1.1;
+      x = Math.max(W * 0.13, Math.min(W * 0.87, x + Math.cos(ang) * 9));
+      y += Math.sin(ang) * 9;
+      pts.push([x, y]);
     }
-    for (let i = 0; i < 7000; i++) {
-      const v = base + Math.random() * spread;
-      g.fillStyle = 'rgba(' + (v | 0) + ',' + (v | 0) + ',' + ((v + tint) | 0) + ',.45)';
-      g.fillRect(Math.random() * W, Math.random() * H, 2, 2);
+    const lw = 1.5 + Math.random() * 1.8;
+    wrapY(dy => {
+      for (const [ctx, style, w] of [[g, 'rgba(14,15,18,.42)', lw], [h, 'rgb(78,78,78)', lw + 1], [r, 'rgb(100,100,100)', lw]]) {
+        ctx.strokeStyle = style; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1] + dy);
+        for (const q of pts) ctx.lineTo(q[0], q[1] + dy);
+        ctx.stroke();
+      }
+    });
+  }
+  /* And the white line down each edge, scuffed rather than crisp. Inboard of
+     the very edge, because the outer metre and a half of the ribbon is under
+     the kerb: painted at u=0 the line was there and nobody ever saw it. Paint
+     sits a little proud of the road and is smoother than it. */
+  const LX = Math.round(W * 0.105), LW = 10;
+  g.fillStyle = 'rgba(244,246,250,.62)';
+  g.fillRect(LX, 0, LW, H); g.fillRect(W - LX - LW, 0, LW, H);
+  h.fillStyle = 'rgb(150,150,150)'; h.fillRect(LX, 0, LW, H); h.fillRect(W - LX - LW, 0, LW, H);
+  r.fillStyle = 'rgb(150,150,150)'; r.fillRect(LX, 0, LW, H); r.fillRect(W - LX - LW, 0, LW, H);
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 90; i++) {
+    g.fillStyle = 'rgba(0,0,0,.5)';
+    g.fillRect(Math.random() < 0.5 ? LX : W - LX - LW, Math.random() * H, LW, 4 + Math.random() * 10);
+  }
+  g.globalCompositeOperation = 'source-over';
+
+  // the height field into a normal map, wrapping at every edge as the texture does
+  const src = h.getImageData(0, 0, W, H).data;
+  const nC = sheet(), nx = nC.getContext('2d');
+  const out = nx.createImageData(W, H), o = out.data;
+  const hAt = (x, y) => src[((((y + H) % H) * W + ((x + W) % W)) * 4)];
+  const STR = 2.2 / 255;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const dx = (hAt(x + 1, y) - hAt(x - 1, y)) * STR, dy = (hAt(x, y + 1) - hAt(x, y - 1)) * STR;
+      const l = 1 / Math.sqrt(dx * dx + dy * dy + 1), k = (y * W + x) * 4;
+      o[k] = (-dx * l * 0.5 + 0.5) * 255;
+      o[k + 1] = (dy * l * 0.5 + 0.5) * 255;
+      o[k + 2] = (l * 0.5 + 0.5) * 255;
+      o[k + 3] = 255;
     }
-    // patches, as if it had been resurfaced in places
-    for (let i = 0; i < 18; i++) {
-      g.fillStyle = 'rgba(80,84,92,.5)';
-      g.fillRect(Math.random() * W, Math.random() * H, 20 + Math.random() * 70, 8 + Math.random() * 26);
-    }
-    /* And the white line down each edge, scuffed rather than crisp. Inboard of
-       the very edge, because the outer metre and a half of the ribbon is under
-       the kerb: painted at u=0 the line was there and nobody ever saw it. */
-    const LX = Math.round(W * 0.105), LW = 5;
-    g.fillStyle = 'rgba(244,246,250,.6)';
-    g.fillRect(LX, 0, LW, H);
-    g.fillRect(W - LX - LW, 0, LW, H);
-    g.globalCompositeOperation = 'destination-out';
-    for (let i = 0; i < 90; i++) {
-      g.fillStyle = 'rgba(0,0,0,.5)';
-      g.fillRect(Math.random() < 0.5 ? LX : W - LX - LW, Math.random() * H, LW, 2 + Math.random() * 5);
-    }
-    g.globalCompositeOperation = 'source-over';
-  }, [1, 1]);
+  }
+  nx.putImageData(out, 0, 0);
+
+  const tex = (c, srgb) => {
+    const t = new THREE.CanvasTexture(c);
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = MAX_ANISO;
+    return t;
+  };
+  return { map: tex(colC, true), normal: tex(nC, false), rough: tex(rC, false) };
 }
 function grassTex(th) {
-  return canvasTex(256, 256, (g, W, H) => {
+  // and the same again for the ground it runs through
+  return canvasTex(512, 512, (g, W, H) => {
     g.fillStyle = th.ground; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 4200; i++) {
+    for (let i = 0; i < 22; i++) {
+      const r = 60 + Math.random() * 150;
+      const x = Math.random() * W, y = Math.random() * H;
+      const grd = g.createRadialGradient(x, y, 0, x, y, r);
+      grd.addColorStop(0, th.groundFleck[Math.random() < 0.5 ? 0 : 1]);
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
+      g.globalAlpha = 0.22; g.fillStyle = grd;
+      g.fillRect(x - r, y - r, r * 2, r * 2);
+      g.globalAlpha = 1;
+    }
+    for (let i = 0; i < 9000; i++) {
       const v = Math.random();
       g.fillStyle = v < 0.5 ? th.groundFleck[0] : th.groundFleck[1];
       g.fillRect(Math.random() * W, Math.random() * H, 3, 3);
     }
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 260; i++) {
       g.strokeStyle = th.blade; g.lineWidth = 2;
       const x = Math.random() * W, y = Math.random() * H;
       g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() - 0.5) * 12, y - 8 - Math.random() * 10); g.stroke();
@@ -850,7 +960,26 @@ export function buildTrack(scene, seed, themeId) {
     gp.setY(i, groundY(x, z));
   }
   gg.computeVertexNormals();
-  const ground = new THREE.Mesh(gg, new THREE.MeshStandardMaterial({ map: grassTex(th), roughness: 1 }));
+  /* Patches, at the scale you actually see from a car. The texture's own
+     detail is a few centimetres across and at thirty metres it has averaged
+     away to one flat colour, so the field read as a painted board. A slow
+     pattern baked into the vertices - lighter and darker by a seventh either
+     way, and a little drier in places - gives it the variation a real field
+     has from a distance. Fixed, not random, so every visit looks the same. */
+  const gcol = new Float32Array(gp.count * 3);
+  for (let i = 0; i < gp.count; i++) {
+    const x = gp.getX(i), z = gp.getZ(i);
+    const n = 0.5 * Math.sin(x * 0.021 + 1.3) * Math.sin(z * 0.017 - 0.4)
+            + 0.3 * Math.sin(x * 0.047 - z * 0.039 + 2.1)
+            + 0.2 * Math.sin(x * 0.09 + z * 0.071 + 0.7);
+    const dry = Math.max(0, Math.sin(x * 0.013 - z * 0.019 + 0.9) * Math.sin(z * 0.031 + 1.7));
+    const lit = 0.92 + 0.14 * n;
+    gcol[i * 3] = lit * (1 + 0.1 * dry);
+    gcol[i * 3 + 1] = lit * (1 + 0.02 * dry);
+    gcol[i * 3 + 2] = lit * (1 - 0.14 * dry);
+  }
+  gg.setAttribute('color', new THREE.BufferAttribute(gcol, 3));
+  const ground = new THREE.Mesh(gg, new THREE.MeshStandardMaterial({ map: grassTex(th), roughness: 1, vertexColors: true }));
   ground.receiveShadow = true;
   group.add(ground);
 
@@ -892,7 +1021,14 @@ export function buildTrack(scene, seed, themeId) {
   }
   const road = new THREE.Mesh(
     ribbon(pos, uv, idx),
-    new THREE.MeshStandardMaterial({ map: tarmacTex(th), roughness: 0.82, metalness: 0.02 })
+    (() => {
+      const t = tarmacTex(th);
+      // roughness 1 because the gloss map carries it: 214 of 255 is the 0.84 it was
+      return new THREE.MeshStandardMaterial({
+        map: t.map, normalMap: t.normal, normalScale: new THREE.Vector2(0.85, 0.85),
+        roughnessMap: t.rough, roughness: 1, metalness: 0.02,
+      });
+    })()
   );
   road.name = 'road';
   road.receiveShadow = true;
