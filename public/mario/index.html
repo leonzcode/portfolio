@@ -611,6 +611,15 @@
     margin:-4px 0 9px; font-size:12px; opacity:.6; font-weight:700;
   }
   #times .rows{ display:flex; flex-direction:column; gap:3px; }
+  /* Twenty rows, in a box that scrolls like the admin one rather than a card
+     that grows down the page. Beside the kart the card is exactly the height
+     of the garage card (game.js sets it) and the list takes whatever is left
+     of it; stacked on a phone the list is simply capped. */
+  #times{ display:flex; flex-direction:column; }
+  #times > *{ flex-shrink:0; }
+  #times .rows{ min-height:0; overflow-y:auto; padding-right:3px; overscroll-behavior:contain; }
+  #times.fit .rows, #times.fit .rows.adm{ flex:1 1 auto; max-height:none; }
+  #times:not(.fit) .rows{ max-height:min(420px, 60vh); }
   #times .rows .r{ font-size:13px; padding:4px 8px; grid-template-columns:26px 1fr auto; }
   #times .rows .r .p{ font-size:14px; }
   #times .rows .r .t{ font-variant-numeric:tabular-nums; }
@@ -930,5 +939,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=57');
+await import('./game.js?v=58');
 </script>
