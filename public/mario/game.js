@@ -11,20 +11,20 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack } from './track.js?v=56';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=56';
-import { packLook, unpackLook, normalise } from './parts.js?v=56';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=56';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=56';
-import { makeRescue } from './rescue.js?v=56';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=56';
-import { makeBrain, driveBrain } from './ai.js?v=56';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=56';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=56';
-import { makeCones } from './cones.js?v=56';
-import { makeHazards } from './hazards.js?v=56';
-import { THEMES, themeById, seedOf } from './themes.js?v=56';
-import * as snd from './audio.js?v=56';
+import { buildTrack } from './track.js?v=57';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=57';
+import { packLook, unpackLook, normalise } from './parts.js?v=57';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=57';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=57';
+import { makeRescue } from './rescue.js?v=57';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=57';
+import { makeBrain, driveBrain } from './ai.js?v=57';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=57';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=57';
+import { makeCones } from './cones.js?v=57';
+import { makeHazards } from './hazards.js?v=57';
+import { THEMES, themeById, seedOf } from './themes.js?v=57';
+import * as snd from './audio.js?v=57';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -302,7 +302,7 @@ function readInput() {
 let worldSeed = 0, worldTheme = '';
 /* ---- ghosts ----------------------------------------------------------------
    Every race you finish is recorded. The best on each track is kept in this
-   browser, and the best ten on each track are kept on the server beside the
+   browser, and the best twenty on each track are kept on the server beside the
    times they set. Racing one puts it on the grid inside your car. */
 const recorder = makeRecorder();
 let ghost = null;          // the one in the world this race, if there is one
@@ -474,7 +474,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=56')
+  import('./props.js?v=57')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1628,7 +1628,7 @@ let raceBoard = null;
    them were putting the same time on the board. */
 let postedRace = false;
 
-// where you stand, when you are not on the ten being shown
+// where you stand, when you are not on the twenty being shown
 function rankOf(board, secs) {
   if (!secs || !board) return 0;
   let n = 1;
@@ -1680,8 +1680,8 @@ function postTime(secs) {
     })
     .catch(() => {});
 }
-/* The ten, and then you: your best, the one you just did, and where that best
-   places you when it is not one of the ten. */
+/* The twenty, and then you: your best, the one you just did, and where that best
+   places you when it is not one of the twenty. */
 /* Whether the archive is worth a switch: when it has anything in it, or when
    somebody who can put something in it is looking. */
 const hasOld = () => !!(oldBoard && (oldBoard.length || adminPw));
@@ -1692,8 +1692,8 @@ function drawTimes() {
   if (showingOld && !hasOld()) showingOld = false;
   if (showingOld) { drawOldTimes(box); return putAdminInput(box, kept); }
   box.classList.remove('old');
-  // the ten, or for an admin the whole board, which is where the tidying is
-  const rows = adminPw ? (raceBoard || []) : (raceBoard || []).slice(0, 10);
+  // the twenty, or for an admin the whole board, which is where the tidying is
+  const rows = adminPw ? (raceBoard || []) : (raceBoard || []).slice(0, 20);
   const mineKey = (myName || 'You').toLowerCase();
   const onTop = rows.some(r => String(r.name).toLowerCase() === mineKey
     && myBestTime && Math.abs(r.score - myBestTime) < 0.005);
@@ -2334,7 +2334,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=56');
+    const mod = await import('./net.js?v=57');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
