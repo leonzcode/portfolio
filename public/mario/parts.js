@@ -19,6 +19,7 @@
    part list can be written the way you would sketch it, nose forward.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
+import { kitModel, kitPart } from './models.js?v=67';
 
 export const INK = 0x17223b, STEEL = 0xb8bcc4, DARK = 0x3a3f4a, RUBBER = 0x1d2430;
 export const GLASS = 0x9fd8ff, CHROME = 0xd8dde4;
@@ -73,8 +74,11 @@ export function merge(parts, mat) {
     const count = p.g.attributes.position.count;
     pos.set(p.g.attributes.position.array, o * 3);
     nor.set(p.g.attributes.normal.array, o * 3);
-    c.setHex(p.c);
-    for (let i = 0; i < count; i++) { col[(o + i) * 3] = c.r; col[(o + i) * 3 + 1] = c.g; col[(o + i) * 3 + 2] = c.b; }
+    if (p.cols) col.set(p.cols, o * 3);
+    else {
+      c.setHex(p.c);
+      for (let i = 0; i < count; i++) { col[(o + i) * 3] = c.r; col[(o + i) * 3 + 1] = c.g; col[(o + i) * 3 + 2] = c.b; }
+    }
     o += count;
     p.g.dispose();
   }
@@ -374,6 +378,42 @@ function hauler(r) {
   };
 }
 
+
+/* ---------------------------------------------------------------------------
+   Bodies from the kit. Three of the chassis are drawn with a model from
+   Kenney's Car Kit once it has loaded: the Formula as its race car, the
+   Speeder as its future racer, the Roadster as its go-kart. Each is scaled so
+   its wheelbase is the chassis's own, sat so its wheel centres are where the
+   chassis hangs its wheels, and painted from the racer: its main colour
+   becomes the kart colour and its second the trim. Everything that makes the
+   chassis drive the way it does - its stats, its ride height, its exhaust -
+   is the chassis's, so a model body changes the look and nothing else.
+--------------------------------------------------------------------------- */
+const KIT_BODY = {
+  formula: { model: 'race', node: 'body', seat: { y: 0.46, z: 0.14 } },
+  speeder: { model: 'race-future', node: 'body', seat: { y: 0.5, z: 0.2 } },
+  roadster: { model: 'kart-oobi', node: 'kart-oobi' },
+};
+const HUB_Y = 0.4;            // where the wheel sets put their axle, give or take a few centimetres
+function fromKit(id, spec, r) {
+  const K = KIT_BODY[id];
+  const M = K && kitModel(K.model);
+  if (!M || M.wheels.length < 4) return spec;
+  const zs = M.wheels.map(w => w.z), xs = M.wheels.map(w => Math.abs(w.x));
+  const zF = Math.min(...zs), zB = Math.max(...zs);
+  const s = spec.wheelbase / ((zB - zF) / 2);
+  const dy = HUB_Y - M.wheels[0].y * s, dz = -((zB + zF) / 2) * s;
+  const body = kitPart(K.model, K.node, { scale: s, dy, dz, paint: r.kart, trim: r.trim });
+  if (!body) return spec;
+  // the model's wheels hang outboard of their node by about half their width
+  const track = (Math.max(...xs) + 0.12) * s;
+  let seat = spec.seat;
+  if (M.char) seat = { y: M.char.y * s + dy - 0.05, z: -(M.char.z * s + dz), lean: 0 };
+  else if (K.seat) seat = Object.assign({}, spec.seat, K.seat);
+  for (const q of spec.parts) q.g.dispose();
+  return Object.assign({}, spec, { parts: [body], track, seat });
+}
+
 export const CHASSIS = [
   { id: 'formula', name: 'Formula', make: formula,
     // light and quick, and it will not shove anybody
@@ -410,6 +450,10 @@ export const CHASSIS = [
 --------------------------------------------------------------------------- */
 
 function slicks(r) {
+  const kitWheel = kitPart('wheel-racing', 'wheel-racing', { scale: 0.41 / 0.3, paint: r.trim });
+  // turned back round: the kit is read facing the other way for its bodies,
+  // which would leave a wheel's rim on its inside face
+  if (kitWheel) { kitWheel.g.rotateY(Math.PI); return { r: 0.41, parts: [kitWheel] }; }
   const holes = [];
   for (let n = 0; n < 5; n++) {
     const a = (n / 5) * Math.PI * 2;
@@ -645,7 +689,10 @@ export function statsOf(build) {
   out.accel = out.charge = both;
   return out;
 }
-export const chassisOf = id => pick(CHASSIS, id, 0);
+export const chassisOf = id => {
+  const c = pick(CHASSIS, id, 0);
+  return KIT_BODY[c.id] ? Object.assign({}, c, { make: r => fromKit(c.id, c.make(r), r) }) : c;
+};
 export const wheelsOf = id => pick(WHEELS, id, 0);
 export const trailOf = id => pick(TRAILS, id, 0);
 

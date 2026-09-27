@@ -16,7 +16,7 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
-import { dressOf } from './themes.js?v=66';
+import { dressOf } from './themes.js?v=67';
 
 /* Which part of a place's palette each model wears. The kit is one kit, so
    without this every circuit has the same green trees and the same red barriers
@@ -37,6 +37,60 @@ const WEARS = {
 };
 
 const DIR = 'models/';
+/* What grows where. [model, weight, share of the height range]. */
+const SCENERY = {
+  meadow: {
+    tree: [['nature/tree_default', 3], ['nature/tree_oak', 3], ['nature/tree_detailed', 2], ['nature/tree_fat', 2],
+           ['nature/tree_pineRoundA', 2], ['nature/tree_pineTallA_detailed', 2, 1.2]],
+    treeH: [7, 14],
+    // the kit's leaves are a sea green; a meadow's are grass green
+    tint: { 'nature/tree_default': 0xc8ff8a, 'nature/tree_oak': 0xc8ff8a, 'nature/tree_detailed': 0xd8ff90,
+            'nature/tree_fat': 0xc0f080, 'nature/tree_pineRoundA': 0xb0e090, 'nature/tree_pineTallA_detailed': 0xa8d890,
+            'nature/plant_bushLarge': 0xc8ff8a },
+    scrub: [['nature/flower_redA', 2], ['nature/flower_yellowA', 2], ['nature/flower_purpleA', 2],
+            ['nature/grass_large', 4], ['nature/plant_bushLarge', 2, 1.6], ['nature/rock_smallA', 1],
+            ['nature/mushroom_redGroup', 1]],
+    scrubH: [0.5, 1.2],
+  },
+  dunes: {
+    tree: [['nature/cactus_tall', 4], ['nature/cactus_short', 3, 0.6], ['nature/rock_tallA', 2], ['nature/rock_tallB', 2],
+           ['nature/rock_largeA', 2, 0.6], ['nature/tree_palmTall', 1, 1.2]],
+    treeH: [5, 11],
+    tint: { 'nature/rock_tallA': 0xe0955e, 'nature/rock_tallB': 0xd88a55, 'nature/rock_largeA': 0xe0955e,
+            'nature/rock_smallC': 0xe0a070, 'nature/grass_large': 0xe8c878 },
+    scrub: [['nature/rock_smallC', 3], ['nature/cactus_short', 1, 1.8], ['nature/grass_large', 2]],
+    scrubH: [0.5, 1.2],
+  },
+  frost: {
+    tree: [['holiday/tree-snow-a', 3], ['holiday/tree-snow-b', 3], ['holiday/tree-snow-c', 3], ['holiday/rocks-large', 1, 0.4]],
+    treeH: [8, 15],
+    scrub: [['holiday/snow-pile', 4], ['holiday/rocks-small', 2], ['holiday/snowman', 1, 2.2], ['holiday/present-a-cube', 0.3]],
+    scrubH: [0.7, 1.5],
+  },
+  neon: {
+    tree: [['city/low-detail-building-a', 2], ['city/low-detail-building-b', 2], ['city/low-detail-building-c', 2],
+           ['city/low-detail-building-d', 2], ['city/low-detail-building-e', 2], ['city/low-detail-building-f', 2],
+           ['city/low-detail-building-g', 2], ['city/low-detail-building-h', 2],
+           ['city/building-skyscraper-a', 1, 1.8], ['city/building-skyscraper-b', 1, 1.8], ['city/building-skyscraper-c', 1, 2],
+           ['city/building-skyscraper-d', 1, 2], ['city/building-skyscraper-e', 1, 2.2]],
+    treeH: [16, 34],
+    nearH: 0.45,                // a street by the kerb, not a canyon
+    glow: 0.4,
+    scrub: [['holiday/lantern', 2], ['city/detail-parasol-a', 1, 1.4]],
+    scrubH: [1.6, 2.4],
+  },
+  ember: {
+    tree: [['nature/tree_thin_dark', 2], ['nature/tree_blocks_dark', 1], ['nature/rock_tallC', 3], ['nature/rock_tallE', 3],
+           ['nature/stone_tallA', 2], ['nature/stump_oldTall', 1, 0.35]],
+    treeH: [6, 13],
+    tint: { 'nature/tree_thin_dark': 0x6a5a55, 'nature/tree_blocks_dark': 0x6a5048, 'nature/rock_tallC': 0x6a4a44,
+            'nature/rock_tallE': 0x5a4040, 'nature/stone_tallA': 0x6a4a44, 'nature/rock_smallC': 0x5a4040,
+            'nature/stump_oldTall': 0x5a4a44, 'nature/log_large': 0x5a4a44 },
+    scrub: [['nature/rock_smallC', 3], ['nature/log_large', 1], ['nature/stump_oldTall', 1]],
+    scrubH: [0.4, 1.1],
+  },
+};
+
 
 /* The hoarding at the side of the road. The kit's billboard comes with a made
    up company printed on it, and this is Leon's circuit, so it carries his
@@ -140,7 +194,7 @@ export async function buildProps(scene, THREE, track, current) {
   const euler = new THREE.Euler(), scl = new THREE.Vector3();
 
   // spots are { pos, yaw, scale }; one model, however many of them
-  async function put(name, spots, faceOn, reheight) {
+  async function put(name, spots, faceOn, reheight, opts = {}) {
     if (!spots.length) return;
     let gltf;
     try { gltf = await load(loader, name); } catch (e) { return; }
@@ -189,6 +243,22 @@ export async function buildProps(scene, THREE, track, current) {
         t.needsUpdate = true;
         mat.map = t;
       }
+      /* The Nature kit leaves its materials at glTF's default of fully metallic,
+         and a metal with nothing to reflect is black: the whole wood came out as
+         silhouettes. Scenery is painted wood and stone, so it is made matte. */
+      if (name.indexOf('/') > 0 && mat.metalness !== undefined) {
+        mat.metalness = 0;
+        mat.roughness = Math.max(0.75, mat.roughness || 0);
+      }
+      // a place's own colour on a model from another kit: red rock, ash, dry grass
+      if (opts.tint !== undefined && mat.color) mat.color.multiply(new THREE.Color(opts.tint));
+      /* A city after dark: the buildings' own colours, faintly lit from inside,
+         so they read as a street rather than as black blocks. */
+      if (opts.glow && mat.map) {
+        mat.emissive = new THREE.Color(0xffffff);
+        mat.emissiveMap = mat.map;
+        mat.emissiveIntensity = opts.glow;
+      }
       const key = WEARS[name];
       if (key) {
         const brown = mat.color && mat.color.r > mat.color.b * 1.15 && mat.color.g < mat.color.r * 0.85;
@@ -207,7 +277,9 @@ export async function buildProps(scene, THREE, track, current) {
       spots.forEach((sp, i) => {
         euler.set(0, sp.yaw || 0, 0);
         quat.setFromEuler(euler);
-        scl.setScalar(base * (sp.scale || 1));
+        // a spot can ask for a height instead of a scale: models from other kits
+        // are all sorts of sizes, and a tree is a tree height however it was drawn
+        scl.setScalar(sp.h ? sp.h / Math.max(0.01, model.size.y) : base * (sp.scale || 1));
         m4.compose(sp.pos, quat, scl);
         im.setMatrixAt(i, m4);
       });
@@ -221,7 +293,7 @@ export async function buildProps(scene, THREE, track, current) {
                    'billboard', 'billboardLow', 'billboardLower', 'lightPostLarge',
                    'flagGreen', 'flagRed', 'radarEquipment', 'pitsGarage', 'pitsOffice',
                    'tent', 'tentLong', 'grandStand', 'grandStandCovered'];
-      im.castShadow = FAR.indexOf(name) < 0;
+      im.castShadow = FAR.indexOf(name) < 0 && !opts.far;
       im.receiveShadow = true;
       im.frustumCulled = false;            // one box round the whole circuit is useless
       im.matrixWorldAutoUpdate = false;
@@ -499,8 +571,56 @@ export async function buildProps(scene, THREE, track, current) {
                      yaw: rnd() * 6.28, scale: 0.16 + rnd() * 0.17 });
     }
   }
-  put('treeLarge', big);
-  put('treeSmall', small);
+  /* ---- the country, in what each place grows ----------------------------
+     The racing kit has one tree, tinted per circuit, and a tinted tree is
+     still the same tree in every place. So each place draws its own from the
+     Nature, Holiday and City kits (all CC0, kenney.nl): leafy trees, pines and
+     flowers in the meadow; cacti, red rock and a palm or two on the dunes;
+     snowy pines, snowmen and drifts on the glacier; streets of buildings round
+     Neon Mile; burnt trees, stumps and scorched rock at Ember Hollow. Each
+     spot keeps the place it was given above and takes a model and a height
+     from its place's list; the far wood that track.js plants is swapped the
+     same way once the models are in. */
+  const set = SCENERY[track.theme.id];
+  if (set) {
+    const pickFrom = (list, r) => {
+      const total = list.reduce((a, x) => a + x[1], 0);
+      let v = r * total;
+      for (const x of list) { v -= x[1]; if (v <= 0) return x; }
+      return list[list.length - 1];
+    };
+    const deal = (spots, list, [h0, h1], near) => {
+      const by = new Map();
+      for (const sp of spots) {
+        const m = pickFrom(list, rnd());
+        const f = m[2] || 1;                  // a model's own share of the height range
+        const one = { pos: sp.pos, yaw: rnd() * Math.PI * 2, h: (h0 + rnd() * (h1 - h0)) * f * (near ? set.nearH || 0.8 : 1) };
+        if (!by.has(m[0])) by.set(m[0], []);
+        by.get(m[0]).push(one);
+      }
+      return by;
+    };
+    // one mesh a model, whichever band its spots came from: fewer draws, and no
+    // two meshes of the same thing to be told apart
+    const all = new Map();
+    const add = by => { for (const [name, spots] of by) all.set(name, (all.get(name) || []).concat(spots)); };
+    add(deal(big.concat(small.filter(sp => (sp.scale || 1) > 0.4)), set.tree, set.treeH, true));
+    add(deal(small.filter(sp => (sp.scale || 1) <= 0.4), set.scrub, set.scrubH));
+    // the far wood
+    const wood = (track.trees || []).map(t => ({ pos: new THREE.Vector3(t.x, t.y, t.z) }));
+    add(deal(wood, set.tree, set.treeH));
+    const jobs = [];
+    for (const [name, spots] of all) {
+      jobs.push(put(name, spots, false, null, { tint: set.tint && set.tint[name], glow: set.glow, far: true }));
+    }
+    Promise.all(jobs).then(() => {
+      if (!still()) return;
+      for (const m of track.treeMeshes || []) m.visible = false;
+    });
+  } else {
+    put('treeLarge', big);
+    put('treeSmall', small);
+  }
 
   /* ---- lamps, and a paddock ---------------------------------------------- */
   const lamps = [];
