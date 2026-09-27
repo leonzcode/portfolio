@@ -24,12 +24,6 @@ Also CC0, also Kenney, also unmodified, each folder with its own licence:
 - kit/      Car Kit (https://kenney.nl/assets/car-kit): the race car, the future
             racer and the go-kart bodies, and the racing wheel. models.js reads
             their colours into the vertices so a racer's paint can replace them.
-- nature/   Nature Kit (https://kenney.nl/assets/nature-kit): the trees, cacti,
-            rocks, flowers and logs round the meadow, dunes and ember circuits.
-- holiday/  Holiday Kit (https://kenney.nl/assets/holiday-kit): the snowy pines,
-            snowmen, drifts and lanterns.
-- city/     City Kit Commercial (https://kenney.nl/assets/city-kit-commercial):
-            the buildings round Neon Mile.
 
 The karts themselves are not from here. They are built in code in parts.js and
 kart.js out of bodies, wheels and trails, so every part can be painted from the
