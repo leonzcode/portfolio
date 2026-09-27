@@ -107,7 +107,7 @@ export const gameProjects: Project[] = [
     description:
       "An original kart racer with five circuits that are drawn fresh every race, drift mini-turbos, gliders, items, and a server so you can race other people.",
     href: "/mario/",
-    image: "/cards/mario.png",
+    image: "/cards/mario1.png",
     tag: "Multiplayer",
     story: [
       "A kart racer written from scratch with Three.js. None of it is anybody else's: the cars, the circuits, the items and the music are all either generated in code or built from CC0 art, and the five places you race are laid out by the game rather than drawn by hand. Each round picks a seed and builds a closed circuit from it, then hangs ten sections off that lap, so Sunfield Loop is recognisably Sunfield Loop every time while never being quite the same lap twice.",
