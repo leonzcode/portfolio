@@ -7,7 +7,7 @@
    music is four bars of bass, arpeggio and hats scheduled a fraction of a second
    ahead of the clock so it does not depend on the frame rate.
 --------------------------------------------------------------------------- */
-let ac = null, master = null, musicGain = null, noiseBuf = null;
+let ac = null, master = null, musicGain = null, sfx = null, noiseBuf = null;
 let eng = null, ready = false, muted = false, level = 0.5;
 
 function noise(sec) {
@@ -29,6 +29,11 @@ export function start() {
   musicGain = ac.createGain();
   musicGain.gain.value = 0.30;
   musicGain.connect(master);
+  // the kart and everything it does, at half the level it was: the engine,
+  // skids, boosts and items were louder than the music and tiring over a race
+  sfx = ac.createGain();
+  sfx.gain.value = 0.5;
+  sfx.connect(master);
   noiseBuf = noise(2);
   loadTracks();
 
@@ -39,7 +44,7 @@ export function start() {
   const lp = ac.createBiquadFilter();
   lp.type = 'lowpass'; lp.frequency.value = 500; lp.Q.value = 5;
   const g = ac.createGain(); g.gain.value = 0;
-  a.connect(lp); b.connect(lp); lp.connect(g); g.connect(master);
+  a.connect(lp); b.connect(lp); lp.connect(g); g.connect(sfx);
   a.start(); b.start();
   eng = { a, b, lp, g };
   ready = true;
@@ -60,7 +65,7 @@ function tone(wave, hz, at, life, vol, dest) {
   g.gain.setValueAtTime(0.0001, at);
   g.gain.exponentialRampToValueAtTime(vol, at + 0.012);
   g.gain.exponentialRampToValueAtTime(0.0001, at + life);
-  o.connect(g); g.connect(dest || master);
+  o.connect(g); g.connect(dest || sfx);
   o.start(at); o.stop(at + life + 0.02);
 }
 function sweep(wave, from, to, life, vol) {
@@ -72,7 +77,7 @@ function sweep(wave, from, to, life, vol) {
   o.frequency.exponentialRampToValueAtTime(to, t + life);
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + life);
-  o.connect(g); g.connect(master);
+  o.connect(g); g.connect(sfx);
   o.start(t); o.stop(t + life + 0.02);
 }
 function hit(freq, life, vol, type, q) {
@@ -85,7 +90,7 @@ function hit(freq, life, vol, type, q) {
   const t = ac.currentTime;
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + life);
-  src.connect(f); f.connect(g); g.connect(master);
+  src.connect(f); f.connect(g); g.connect(sfx);
   src.start(t, Math.random(), life + 0.05);
 }
 
@@ -179,7 +184,7 @@ export function skid(on) {
     src.buffer = noiseBuf; src.loop = true;
     const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1500; f.Q.value = 1.4;
     const g = ac.createGain(); g.gain.value = 0;
-    src.connect(f); f.connect(g); g.connect(master);
+    src.connect(f); f.connect(g); g.connect(sfx);
     src.start();
     skid.node = { g };
   }
