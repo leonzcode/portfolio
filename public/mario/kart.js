@@ -11,7 +11,7 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=65';
+import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=66';
 // the drivers are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 
@@ -104,7 +104,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=65';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=66';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
