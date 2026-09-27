@@ -16,7 +16,7 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { merge, vertexMat, box, cyl, ball } from './parts.js?v=64';
+import { merge, vertexMat, box, cyl, ball } from './parts.js?v=65';
 
 const DROP = 0.85;        // how long it lets you fall before it turns up
 const LIFT = 1.0;         // how long the lift itself takes

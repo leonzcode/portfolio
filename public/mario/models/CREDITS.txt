@@ -15,6 +15,11 @@ Free for personal, educational and commercial use. Crediting Kenney is not
 required; it is here so anyone reading this knows what these files are and where
 they came from.
 
+The drivers are Kenney's Mini Characters, in chars/, also CC0 and also taken
+unmodified, from https://kenney.nl/assets/mini-characters (their licence is
+chars/License.txt). Eight of the twelve are used, one per racer; drivers.js
+poses each one at the wheel and bakes the pose when the page loads.
+
 The karts themselves are not from here. They are built in code in parts.js and
 kart.js out of bodies, wheels and trails, so every part can be painted from the
 racer driving it and every part can change how the car handles.

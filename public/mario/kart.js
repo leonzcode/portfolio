@@ -11,6 +11,9 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
+import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=65';
+// the drivers are fetched once, as soon as anything builds a kart
+loadDrivers('models/chars/');
 
 export const RACERS = [
   { id: 'pip',  name: 'Pip',  shirt: 0xe8402a, skin: 0xffd9b0, cap: 0xe8402a, kart: 0xe8402a, trim: 0xffd233 },
@@ -101,7 +104,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=64';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=65';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -129,7 +132,10 @@ export function makeKart(who, build) {
   const torso = driverBody(r, st).concat([
     { g: cyl(0.1, 0.1, 0.1, 8, 'y', 0, st.y + 0.74, st.z), c: skin },
   ]);
-  body.add(merge(spec.parts.concat(torso), BODY_MAT));
+  body.add(merge(spec.parts, BODY_MAT));
+  // the driver's body on its own, so the character can take its place
+  const torsoMesh = merge(torso, BODY_MAT);
+  body.add(torsoMesh);
 
   /* The head and the arms move, so they are their own little groups rather than
      part of the merge. A driver who looks into the corner and turns the wheel
@@ -217,6 +223,7 @@ export function makeKart(who, build) {
 
   const kart = {
     who: r, group, body, wheels, shade, head, arms, glider,
+    driverParts: { torsoMesh, st },
     build: b, trail: trailOf(b.trail), exhaust: spec.exhaust || [],
     /* What the parts bolted to it are worth, worked out once when it is built.
 
@@ -265,7 +272,48 @@ export function makeKart(who, build) {
     airG: 9.81, roadSlope: 0,
   };
   apply(kart);
+  if (!dressDriver(kart)) whenDrivers(() => dressDriver(kart));
   return kart;
+}
+
+/* The character in the seat. Scaled so it sits as tall as the driver built in
+   code did, hips on the seat, facing up the car; the head and the arms go
+   into the groups the kart already turns for looking and steering. A ghost is
+   left as it was built: its materials were made see-through when it was, and
+   a character dropped in afterwards would not be. */
+const SIT_HEIGHT = 1.2;       // hip to the top of the head, in metres
+function dressDriver(k) {
+  if (k.dressed || k.ghost || !k.driverParts) return !!k.dressed;
+  const D = driverFor(k.who && k.who.id);
+  if (!D) return false;
+  const { torsoMesh, st } = k.driverParts;
+  const sc = SIT_HEIGHT / Math.max(0.2, D.top - D.hipAt.y);
+  const seat = new THREE.Vector3(0, st.y + 0.14, -st.z);
+  const put = (geo, at) => {
+    const m = new THREE.Mesh(geo, D.mat);
+    m.scale.setScalar(sc);
+    m.castShadow = true;
+    return m;
+  };
+  k.body.remove(torsoMesh);
+  const torso = put(D.torso);
+  torso.position.copy(seat);
+  k.body.add(torso);
+  // the head turns about its neck: the group sits at the neck, the head in it
+  const h = D.headAt.clone().sub(D.hipAt).multiplyScalar(sc);
+  k.head.clear();
+  k.head.position.set(0, seat.y + h.y, 0);
+  const head = put(D.head);
+  head.position.set(h.x, 0, seat.z + h.z);
+  k.head.add(head);
+  // and the arms about the shoulders
+  const a = D.armsAt.clone().sub(D.hipAt).multiplyScalar(sc);
+  k.arms.clear();
+  k.arms.rotation.x = 0;
+  k.arms.position.set(seat.x + a.x, seat.y + a.y, seat.z + a.z);
+  k.arms.add(put(D.arms));
+  k.dressed = true;
+  return true;
 }
 
 export function apply(k) {

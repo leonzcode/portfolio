@@ -11,20 +11,20 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=64';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=64';
-import { packLook, unpackLook, normalise } from './parts.js?v=64';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=64';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=64';
-import { makeRescue } from './rescue.js?v=64';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=64';
-import { makeBrain, driveBrain } from './ai.js?v=64';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=64';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=64';
-import { makeCones } from './cones.js?v=64';
-import { makeHazards } from './hazards.js?v=64';
-import { THEMES, themeById, seedOf } from './themes.js?v=64';
-import * as snd from './audio.js?v=64';
+import { buildTrack, setAniso } from './track.js?v=65';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=65';
+import { packLook, unpackLook, normalise } from './parts.js?v=65';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=65';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=65';
+import { makeRescue } from './rescue.js?v=65';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=65';
+import { makeBrain, driveBrain } from './ai.js?v=65';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=65';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=65';
+import { makeCones } from './cones.js?v=65';
+import { makeHazards } from './hazards.js?v=65';
+import { THEMES, themeById, seedOf } from './themes.js?v=65';
+import * as snd from './audio.js?v=65';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -514,7 +514,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=64')
+  import('./props.js?v=65')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -2627,7 +2627,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=64');
+    const mod = await import('./net.js?v=65');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
