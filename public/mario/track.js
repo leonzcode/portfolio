@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=66';
+import { themeById, rulesOf, lookOf } from './themes.js?v=67';
 
 /* The lap.
 
@@ -1965,7 +1965,9 @@ export function buildTrack(scene, seed, themeId) {
       const pts = [];
       for (let j = 0; j < RLEN; j++) {
         const a = samples[(c.i0 + j) % N];
-        const lat = side * Math.max(2.5, a.w - 2.2);
+        // on the kerb line, not the tarmac: nobody drives through a rail by
+        // running wide, and the field, which keeps off the kerbs, never meets one
+        const lat = side * (a.w + 0.15);
         const q = a.p.clone().addScaledVector(a.n, lat);
         pts.push({ x: q.x, z: q.z, gy: surf(a, lat), i: (c.i0 + j) % N, lat });
       }
@@ -2296,6 +2298,8 @@ export function buildTrack(scene, seed, themeId) {
 
   return {
     group, samples, length, ramps, features, splits, project, at, gridSlot, groundY, rails,
+    // where the far wood stands, and the meshes that draw it, so props.js can swap it
+    trees: trunks, treeMeshes: [tm, lm],
     theme: th,
     // what this place does to a kart: read by the physics every frame
     rules: R,

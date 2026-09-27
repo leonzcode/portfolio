@@ -11,9 +11,11 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=66';
-// the drivers are fetched once, as soon as anything builds a kart
+import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=67';
+import { loadKit } from './models.js?v=67';
+// the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
+loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
 
 export const RACERS = [
   { id: 'pip',  name: 'Pip',  shirt: 0xe8402a, skin: 0xffd9b0, cap: 0xe8402a, kart: 0xe8402a, trim: 0xffd233 },
@@ -104,7 +106,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=66';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=67';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -188,7 +190,7 @@ export function makeKart(who, build) {
   for (const [sx, sz, steers] of [[-1, 1, true], [1, 1, true], [-1, -1, false], [1, -1, false]]) {
     const hub = new THREE.Group();
     hub.position.set(sx * WX, tyre.r, -sz * WZ);
-    const m = merge(tyre.parts.map(q => ({ g: q.g.clone(), c: q.c })), TYRE_MAT);
+    const m = merge(tyre.parts.map(q => ({ g: q.g.clone(), c: q.c, cols: q.cols })), TYRE_MAT);
     /* A wheel is not symmetric: the rim face, the holes and the hub nut are all
        on its outside. Built once and used four times, the two on the left ended
        up showing the game their inside faces, so the left pair is turned about
