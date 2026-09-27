@@ -11,20 +11,20 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=62';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=62';
-import { packLook, unpackLook, normalise } from './parts.js?v=62';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=62';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=62';
-import { makeRescue } from './rescue.js?v=62';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=62';
-import { makeBrain, driveBrain } from './ai.js?v=62';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=62';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=62';
-import { makeCones } from './cones.js?v=62';
-import { makeHazards } from './hazards.js?v=62';
-import { THEMES, themeById, seedOf } from './themes.js?v=62';
-import * as snd from './audio.js?v=62';
+import { buildTrack, setAniso } from './track.js?v=63';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=63';
+import { packLook, unpackLook, normalise } from './parts.js?v=63';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=63';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=63';
+import { makeRescue } from './rescue.js?v=63';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=63';
+import { makeBrain, driveBrain } from './ai.js?v=63';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=63';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=63';
+import { makeCones } from './cones.js?v=63';
+import { makeHazards } from './hazards.js?v=63';
+import { THEMES, themeById, seedOf } from './themes.js?v=63';
+import * as snd from './audio.js?v=63';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -335,9 +335,9 @@ function printOf(tr) {
   }
   return (h >>> 0).toString(36) + S.length.toString(36);
 }
-function bestGhost(theme) {
+function bestGhost(theme, tt) {
   try {
-    const g = JSON.parse(localStorage.getItem('mkGhost:' + theme) || 'null');
+    const g = JSON.parse(localStorage.getItem((tt ? 'mkGhostTT:' : 'mkGhost:') + theme) || 'null');
     return g && g.v === 1 && g.theme === theme ? g : null;
   } catch (e) { return null; }
 }
@@ -347,17 +347,21 @@ function bestGhostAny() {
   for (const t of THEMES) { const g = bestGhost(t.id); if (g && (!best || g.time < best.time)) best = g; }
   return best;
 }
+/* A race and a time trial keep their own best: a trial with nothing on the
+   road is not the same run as a race through seven others and their shells. */
 function keepBest(run) {
-  const was = bestGhost(run.theme);
+  const tt = run.mode === 'tt';
+  const was = bestGhost(run.theme, tt);
   // an equal time is the same run with its run-out added, so it replaces
   if (was && was.time < run.time) return;
-  try { localStorage.setItem('mkGhost:' + run.theme, JSON.stringify(run)); } catch (e) {}
+  try { localStorage.setItem((tt ? 'mkGhostTT:' : 'mkGhost:') + run.theme, JSON.stringify(run)); } catch (e) {}
 }
 /* The recording, done: kept here if it is your best on the track, and sent to
    the board with the time it proves, in the same request. */
 function runMeta() {
   return {
     theme: worldTheme, track: trackPrint, time: +me.time.toFixed(2),
+    mode: quietRound ? 'tt' : 'race', name: (myName || 'You').slice(0, 14),
     // never through | 0: that cuts the number to 32 bits and drops the paint
     look: packLook(myCast, myBuild, myColour),
   };
@@ -510,7 +514,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=62')
+  import('./props.js?v=63')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -845,7 +849,15 @@ function rideRail(k, inp, dt) {
   k.pos.set(a.x + (b.x - a.x) * t, a.gy + (b.gy - a.gy) * t, a.z + (b.z - a.z) * t);
   k.yaw = Math.atan2(-(b.x - a.x), -(b.z - a.z));
   k.hop = r.h + 0.18; k.hopV = 0;
-  k.drift = 0; k.slide = 0; k.roll = 0; k.lean = 0;
+  /* Ridden like a skateboard grinds one: the car turned a little across the
+     rail and leaning over onto it, eased in over the first sixth of a second
+     rather than snapped to. The slide only turns the body; the kart still runs
+     straight along the rail. */
+  G.tilt = Math.min(1, (G.tilt || 0) + dt * 6);
+  k.drift = 0;
+  k.slide = r.side * 0.5 * G.tilt;
+  k.roll = -r.side * 0.3 * G.tilt;
+  k.lean = -r.side * 0.12 * G.tilt;
   if (Math.random() < 0.8) {
     const back = k.pos.clone().setY(k.pos.y + r.h);
     spark(back, Math.random() < 0.5 ? 0xffe28a : 0xffffff, 1.2);
@@ -1808,33 +1820,89 @@ function fetchBoard() {
       raceBoard = j.board;
       if (!myRank) myRank = rankOf(raceBoard, myBestTime);
       drawTimes();
+      syncTimes();
     })
     .catch(() => {});
   fetch(MC + '/scores?game=leon-kart-tt')
     .then(r => r.json())
-    .then(j => { if (j && j.board) { ttBoard = j.board; drawTimes(); } })
+    .then(j => { if (j && j.board) { ttBoard = j.board; drawTimes(); syncTimes(); } })
     .catch(() => {});
+}
+/* The outbox. A finished time and its recording are written into this
+   browser before they are sent, and only taken out once the server has
+   answered for them. Leaving the page the moment you cross the line - Home,
+   a reload, closing the tab - cancels the request in flight, and the time used
+   to be lost with it; now whatever is still in the outbox is sent again the
+   next time the page opens. */
+const OUTBOX = 'mkOutbox';
+function outbox() {
+  try { const o = JSON.parse(localStorage.getItem(OUTBOX) || '[]'); return Array.isArray(o) ? o : []; }
+  catch (e) { return []; }
+}
+function outboxSet(list) {
+  // a handful at most: the quickest per board and name is all that can matter
+  try { localStorage.setItem(OUTBOX, JSON.stringify(list.slice(-4))); } catch (e) {}
+}
+function outboxKey(it) { return it.game + '|' + String(it.name).toLowerCase(); }
+function outboxAdd(it) {
+  const list = outbox().filter(x => !(outboxKey(x) === outboxKey(it) && x.score <= it.score));
+  if (list.some(x => outboxKey(x) === outboxKey(it))) return list;   // a quicker one is already waiting
+  list.push(it);
+  outboxSet(list);
+  return list;
+}
+function outboxDrop(it) {
+  outboxSet(outbox().filter(x => !(outboxKey(x) === outboxKey(it) && x.score === it.score)));
+}
+function sendTime(it, quiet) {
+  return fetch(MC + '/scores', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(it),
+  })
+    .then(r => r.json())
+    .then(j => {
+      // an answer either way settles it; only a failure to reach the server keeps it waiting
+      if (!j) return;
+      outboxDrop(it);
+      if (j.error) { if (!quiet) say(j.error, 'sys'); return; }
+      if (!j.board) return;
+      if (it.game === 'leon-kart-tt') ttBoard = j.board; else raceBoard = j.board;
+      if (j.beat === false) { if (!quiet) say('Your best on the board is still ' + time(j.best) + '.', 'sys'); }
+      else if (j.rank) say((quiet ? 'Saved from last time: ' : 'On the board in ') + (quiet ? time(it.score) + ', ' : '')
+        + ord(j.rank) + (j.ghost ? ', ghost and all.' : '.'), 'sys');
+      drawTimes();
+    })
+    .catch(() => { if (!quiet) say('The board could not be reached. The time will be sent next time.', 'sys'); });
 }
 function postTime(secs, run) {
   pendingPost = 0;
   if (!run) return;
-  const game = quietRound ? 'leon-kart-tt' : 'leon-kart';
-  fetch(MC + '/scores', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ game, name: (myName || 'You').slice(0, 14), score: +secs.toFixed(2), theme: worldTheme, ghost: run }),
-  })
-    .then(r => r.json())
-    .then(j => {
-      if (!j) return;
-      if (j.error) { say(j.error, 'sys'); return; }
-      if (!j.board) return;
-      if (game === 'leon-kart-tt') ttBoard = j.board; else raceBoard = j.board;
-      if (j.beat === false) say('Your best on the board is still ' + time(j.best) + '.', 'sys');
-      else if (j.rank) say('On the board in ' + ord(j.rank) + (j.ghost ? ', ghost and all.' : '.'), 'sys');
-      drawTimes();
-    })
-    .catch(() => say('The board could not be reached, so that time was not saved.', 'sys'));
+  const it = { game: quietRound ? 'leon-kart-tt' : 'leon-kart', name: (myName || 'You').slice(0, 14),
+               score: +secs.toFixed(2), theme: worldTheme, ghost: run };
+  outboxAdd(it);
+  sendTime(it, false);
+}
+/* When the page opens: anything left in the outbox goes, and so does your own
+   best from this browser on any track where it beats what the board has for
+   your name - a run that never made it for any other reason still counts. */
+let synced = false;
+function syncTimes() {
+  if (synced || !raceBoard || !ttBoard) return;
+  synced = true;
+  for (const it of outbox()) sendTime(it, true);
+  const me2 = (myName || '').trim().toLowerCase();
+  if (!me2) return;
+  for (const [tt, game, board] of [[false, 'leon-kart', raceBoard], [true, 'leon-kart-tt', ttBoard]]) {
+    const row = board.find(r => String(r.name).toLowerCase() === me2);
+    for (const t of THEMES) {
+      const g = bestGhost(t.id, tt);
+      if (!g || !g.name || String(g.name).toLowerCase() !== me2 || (tt && g.mode !== 'tt')) continue;
+      if (row && row.score <= g.time + 0.005) continue;
+      if (outbox().some(x => x.game === game && x.score <= g.time)) continue;
+      const it = { game, name: g.name, score: g.time, theme: g.theme, ghost: g };
+      outboxAdd(it);
+      sendTime(it, true);
+    }
+  }
 }
 /* The ten, and then you: your best, the one you just did, and where that best
    places you when it is not one of the ten. */
@@ -2547,7 +2615,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=62');
+    const mod = await import('./net.js?v=63');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2675,7 +2743,8 @@ el('mapmode').addEventListener('click', e => {
   if (!b) return;
   mode = b.dataset.m;
   replay = false;
-  const g = mapGhostOn ? bestGhost(pickedTheme) : null;
+  // your best for the way you chose to drive it, or your race best if there is no trial yet
+  const g = mapGhostOn ? (bestGhost(pickedTheme, mode === 'tt') || bestGhost(pickedTheme)) : null;
   ghostWant = g ? Object.assign({}, g, { label: 'Your best' }) : null;
   mapScreen(false);
   start(false);
