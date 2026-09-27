@@ -3,7 +3,7 @@ import type { Project } from "../data/projects";
 
 interface Props extends Project {}
 
-const { title, description, href, image, tag, detailHref } = Astro.props;
+const { title, description, href, image, imagePosition, tag, detailHref } = Astro.props;
 const linkHref = detailHref ?? href;
 const isInternalDetail = !!detailHref;
 const isExternal = !isInternalDetail && linkHref.startsWith("http");
@@ -29,7 +29,7 @@ const isPlaceholder = linkHref === "#";
           <img
             src={image}
             alt={title}
-            class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+            class:list={["w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]", imagePosition === "top" ? "object-top origin-top" : ""]}
           />
         ) : (
           <div class="w-full h-full flex items-center justify-center">

@@ -6,6 +6,8 @@ export interface Project {
   repo?: string;
   localHref?: string;
   image?: string;
+  /** crop anchor for the card image; "top" keeps the top and crops the bottom */
+  imagePosition?: "top" | "center";
   tag?: string;
   story?: string[];
   tech?: string[];
@@ -108,6 +110,7 @@ export const gameProjects: Project[] = [
       "An original kart racer with five circuits that are drawn fresh every race, drift mini-turbos, gliders, items, and a server so you can race other people.",
     href: "/mario/",
     image: "/cards/mario2.png?v=2",
+    imagePosition: "top",
     tag: "Multiplayer",
     story: [
       "A kart racer written from scratch with Three.js. None of it is anybody else's: the cars, the circuits, the items and the music are all either generated in code or built from CC0 art, and the five places you race are laid out by the game rather than drawn by hand. Each round picks a seed and builds a closed circuit from it, then hangs ten sections off that lap, so Sunfield Loop is recognisably Sunfield Loop every time while never being quite the same lap twice.",
