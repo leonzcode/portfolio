@@ -16,7 +16,7 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
-import { dressOf } from './themes.js?v=67';
+import { dressOf } from './themes.js?v=68';
 
 /* Which part of a place's palette each model wears. The kit is one kit, so
    without this every circuit has the same green trees and the same red barriers
@@ -34,6 +34,49 @@ const WEARS = {
   bannerTowerRed: 'cloth', bannerTowerGreen: 'cloth',
   billboard: 'cloth', billboardLow: 'cloth', billboardLower: 'cloth',
   tentLong: 'cloth', tent: 'cloth', tentClosed: 'cloth', tentRoof: 'cloth',
+};
+
+
+/* ---- landmarks --------------------------------------------------------------
+   A few small scenes out in each place's country, the kind of thing you catch
+   out of the corner of your eye on the way past: a wheat field and a campsite
+   in the meadow, a camp and a stand of cacti on the dunes, a Christmas tree
+   with presents, a reindeer and a toy train on the glacier, fire pits at Ember
+   Hollow. Each is a list of [model, across, along, height, turn] in metres
+   from its middle; the middle is found at run time, somewhere open. */
+function wheatField(cols, rows, gap) {
+  const out = [];
+  for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
+    out.push(['nature/crops_wheatStageB', (c - (cols - 1) / 2) * gap, (r - (rows - 1) / 2) * gap, 1.5, (c + r) * 0.7]);
+  }
+  for (let c = 0; c < cols + 1; c++) {
+    out.push(['nature/fence_simple', (c - cols / 2) * gap, -((rows + 1) / 2) * gap, 1.2, 0]);
+    out.push(['nature/fence_simple', (c - cols / 2) * gap, ((rows + 1) / 2) * gap, 1.2, 0]);
+  }
+  return out;
+}
+const CAMP = [
+  ['nature/tent_detailedOpen', 0, 0, 3.4, 0.3], ['nature/tent_smallClosed', 7, 3, 2.4, -0.5], ['nature/campfire_stones', 3, -4, 0.6, 0],
+  ['nature/campfire_logs', 3, -4, 0.7, 0], ['nature/log_stack', -5, -3, 1.2, 1.2], ['nature/log_stack', -6, 1, 1.1, 0.4],
+];
+const LANDMARKS = {
+  meadow: [wheatField(6, 5, 2.6), CAMP, wheatField(4, 7, 2.6)],
+  dunes: [
+    CAMP,
+    [['nature/cactus_tall', 0, 0, 9, 0], ['nature/cactus_tall', 5, 3, 7, 1], ['nature/cactus_short', -4, 2, 3, 2],
+     ['nature/cactus_tall', -3, -5, 8, 3], ['nature/cactus_short', 6, -4, 2.5, 4], ['nature/rock_largeA', 1, 6, 3, 0]],
+  ],
+  frost: [
+    [['holiday/tree-decorated-snow', 0, 0, 9, 0], ['holiday/present-a-round', 2.4, 1, 0.9, 0.3], ['holiday/present-b-cube', -2.2, 1.5, 0.8, 0.9],
+     ['holiday/present-a-round', 1, -2.6, 0.7, 1.4], ['holiday/present-b-cube', -1.6, -2.2, 1, 0.2], ['holiday/reindeer', 7, 2, 2.4, -1.2],
+     ['holiday/reindeer', 8, -1, 2.2, -1.6], ['holiday/sled', 5, -4, 1.1, 0.5], ['holiday/snowman', -7, 3, 2.6, 0.8]],
+    [['holiday/train-locomotive', 0, 0, 3.2, 0], ['holiday/train-tender', 0, -5.2, 2.8, 0], ['holiday/train-wagon', 0, -10.4, 2.8, 0],
+     ['holiday/train-wagon', 0, -15.6, 2.8, 0], ['holiday/snow-pile', 4, -6, 1.4, 0], ['holiday/snowman', -4, 3, 2.4, 2]],
+  ],
+  ember: [
+    [['nature/campfire_stones', 0, 0, 1, 0], ['nature/log_stack', 3, 1, 1.2, 0.5], ['nature/stump_oldTall', -3, 2, 1.4, 1]],
+    [['nature/campfire_stones', 0, 0, 1, 0.4], ['nature/rock_tallC', 5, 2, 6, 0], ['nature/rock_tallE', -4, 4, 7, 1]],
+  ],
 };
 
 const DIR = 'models/';
@@ -62,9 +105,9 @@ const SCENERY = {
     scrubH: [0.5, 1.2],
   },
   frost: {
-    tree: [['holiday/tree-snow-a', 3], ['holiday/tree-snow-b', 3], ['holiday/tree-snow-c', 3], ['holiday/rocks-large', 1, 0.4]],
+    tree: [['holiday/tree-snow-a', 3], ['holiday/tree-snow-b', 3], ['holiday/tree-snow-c', 4], ['holiday/rocks-large', 0.5, 0.4]],
     treeH: [8, 15],
-    scrub: [['holiday/snow-pile', 4], ['holiday/rocks-small', 2], ['holiday/snowman', 1, 2.2], ['holiday/present-a-cube', 0.3]],
+    scrub: [['holiday/snow-pile', 5], ['holiday/rocks-small', 1], ['holiday/snowman', 0.7, 2.2], ['holiday/present-a-cube', 0.3]],
     scrubH: [0.7, 1.5],
   },
   neon: {
@@ -75,6 +118,11 @@ const SCENERY = {
            ['city/building-skyscraper-d', 1, 2], ['city/building-skyscraper-e', 1, 2.2]],
     treeH: [16, 34],
     nearH: 0.45,                // a street by the kerb, not a canyon
+    skyline: [['city/building-skyscraper-a', 1], ['city/building-skyscraper-b', 1], ['city/building-skyscraper-c', 1],
+              ['city/building-skyscraper-d', 1], ['city/building-skyscraper-e', 1]],
+    skyGlow: 1.6,
+    skylineFar: [['city/low-detail-building-a', 1, 2.4], ['city/low-detail-building-c', 1, 2.4],
+                 ['city/low-detail-building-e', 1, 2.4], ['city/low-detail-building-g', 1, 2.4]],
     glow: 0.4,
     scrub: [['holiday/lantern', 2], ['city/detail-parasol-a', 1, 1.4]],
     scrubH: [1.6, 2.4],
@@ -140,6 +188,36 @@ const SCALE = {
   pylon: 6, lightPostLarge: 9, lightColored: 8, lightRed: 8, lightRedDouble: 8,
   overheadLights: 9, radarEquipment: 7, rail: 9, railDouble: 9,
 };
+
+/* The lit windows of a city palette, worked out once per texture: every
+   window-blue square becomes a light, everything else goes dark. */
+const glowCache = new Map();
+function windowGlow(tex, THREE) {
+  if (glowCache.has(tex)) return glowCache.get(tex);
+  const img = tex.image;
+  if (!img || !img.width) return tex;
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i], gg = px[i + 1], b = px[i + 2];
+    const window_ = b > 140 && b > r + 25 && b >= gg;
+    if (window_) {
+      // most lit warm, some cool, in blocks of the palette rather than per pixel
+      const warm = ((i >> 6) % 5) !== 0;
+      px[i] = warm ? 255 : 190; px[i + 1] = warm ? 214 : 225; px[i + 2] = warm ? 150 : 255;
+    } else { px[i] = px[i + 1] = px[i + 2] = 0; }
+  }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.flipY = tex.flipY;
+  t.wrapS = tex.wrapS; t.wrapT = tex.wrapT;
+  glowCache.set(tex, t);
+  return t;
+}
 
 /* one load per model, however many times it is asked for */
 const cache = new Map();
@@ -249,15 +327,24 @@ export async function buildProps(scene, THREE, track, current) {
       if (name.indexOf('/') > 0 && mat.metalness !== undefined) {
         mat.metalness = 0;
         mat.roughness = Math.max(0.75, mat.roughness || 0);
+        /* The kit's colours are given as linear numbers, and with the metal
+           taken off they come out washed pale - a pink tent, beige logs. A
+           little more depth puts them back near what the kit shows. */
+        if (!mat.map && mat.color) mat.color.multiplyScalar(0.82);
       }
       // a place's own colour on a model from another kit: red rock, ash, dry grass
       if (opts.tint !== undefined && mat.color) mat.color.multiply(new THREE.Color(opts.tint));
       /* A city after dark: the buildings' own colours, faintly lit from inside,
          so they read as a street rather than as black blocks. */
       if (opts.glow && mat.map) {
+        /* After dark a building is its windows. The facade is darkened and a
+           glow map made from the palette lights only its window squares - the
+           blue ones - warm or cool, so the street reads as night with people
+           in it rather than as white blocks under a floodlight. */
+        mat.color.multiply(new THREE.Color(0x5a6088));
         mat.emissive = new THREE.Color(0xffffff);
-        mat.emissiveMap = mat.map;
-        mat.emissiveIntensity = opts.glow;
+        mat.emissiveMap = windowGlow(mat.map, THREE);
+        mat.emissiveIntensity = opts.glow * 2.2;
       }
       const key = WEARS[name];
       if (key) {
@@ -607,15 +694,85 @@ export async function buildProps(scene, THREE, track, current) {
     add(deal(big.concat(small.filter(sp => (sp.scale || 1) > 0.4)), set.tree, set.treeH, true));
     add(deal(small.filter(sp => (sp.scale || 1) <= 0.4), set.scrub, set.scrubH));
     // the far wood
-    const wood = (track.trees || []).map(t => ({ pos: new THREE.Vector3(t.x, t.y, t.z) }));
+    /* Seven in ten of them. A kit tree is a few hundred triangles where the
+       cone it replaces was twenty, and a wood two hundred metres off reads as a
+       wood at seventy per cent as well as at a hundred. */
+    const wood = (track.trees || []).filter(() => rnd() < 0.7).map(t => ({ pos: new THREE.Vector3(t.x, t.y, t.z) }));
     add(deal(wood, set.tree, set.treeH));
     const jobs = [];
     for (const [name, spots] of all) {
       jobs.push(put(name, spots, false, null, { tint: set.tint && set.tint[name], glow: set.glow, far: true }));
     }
+
+    /* The landmarks: somewhere open for each, fifty to eighty metres off the
+       road, well clear of every part of the lap and of each other. */
+    const scenes = LANDMARKS[track.theme.id];
+    if (scenes && scenes.length) {
+      const S = track.samples, N = S.length;
+      const gap = (x, z) => {
+        let m = 1e18;
+        for (let i = 0; i < N; i += 3) { const dx = S[i].p.x - x, dz = S[i].p.z - z; m = Math.min(m, dx * dx + dz * dz); }
+        return Math.sqrt(m);
+      };
+      const sites = [];
+      for (let k = 0; k < 90 && sites.length < scenes.length; k++) {
+        const a = S[(k * 37 + 11) % N], sgn = k % 2 ? 1 : -1, d = a.w + 50 + rnd() * 30;
+        const x = a.p.x + a.n.x * sgn * d, z = a.p.z + a.n.z * sgn * d;
+        if (gap(x, z) < 40 || inHill({ x, y: 0, z })) continue;
+        if (sites.some(t => Math.hypot(t.x - x, t.z - z) < 150)) continue;
+        sites.push({ x, z, yaw: rnd() * Math.PI * 2 });
+      }
+      const lm = new Map();
+      sites.forEach((site, n) => {
+        const c = Math.cos(site.yaw), sn = Math.sin(site.yaw);
+        for (const [name, dx, dz, h, turn] of scenes[n]) {
+          const x = site.x + dx * c - dz * sn, z = site.z + dx * sn + dz * c;
+          if (!lm.has(name)) lm.set(name, []);
+          lm.get(name).push({ pos: new THREE.Vector3(x, track.groundY(x, z), z), yaw: -site.yaw + (turn || 0), h });
+        }
+      });
+      for (const [name, spots] of lm) put(name, spots, false, null, { tint: set.tint && set.tint[name], far: true });
+    }
+    /* The horizon too, where a place has models for it: Neon Mile's towers
+       become the city kit's skyscrapers, at the height each tower was. */
+    const sky = track.skyline;
+    const skyJobs = [];
+    if (set.skyline && sky && sky.spots.length) {
+      const by = new Map();
+      for (const sp of sky.spots) {
+        // the far ring, most of the way into the haze, is built from the plain blocks
+        const m = pickFrom(sp.ring === 'far' && set.skylineFar ? set.skylineFar : set.skyline, rnd());
+        if (!by.has(m[0])) by.set(m[0], []);
+        by.get(m[0]).push({ pos: new THREE.Vector3(sp.x, sp.y, sp.z), yaw: sp.ry, h: sp.h * (m[2] || 1) });
+      }
+      for (const [name, spots] of by) {
+        skyJobs.push(put(name, spots, false, null, { glow: set.glow ? set.glow * (set.skyGlow || 1) : 0, far: true }));
+      }
+    }
+    /* The copses on the split islands, the same way: each cone and trunk
+       becomes one of the place's trees, standing where it stood. */
+    const isle = [];
+    track.group.traverse(o => { if (o.name === 'isleTree') isle.push(o); });
+    if (isle.length) {
+      track.group.updateMatrixWorld(true);
+      const by = new Map(), v = new THREE.Vector3();
+      for (const top of isle) {
+        top.getWorldPosition(v);
+        const tall = top.userData.tall || 6;
+        const m = pickFrom(set.tree.filter(x => !/rock|stone|building/.test(x[0])), rnd());
+        if (!by.has(m[0])) by.set(m[0], []);
+        by.get(m[0]).push({ pos: new THREE.Vector3(v.x, v.y - tall * 0.56, v.z), yaw: rnd() * 6.28, h: tall });
+      }
+      for (const [name, spots] of by) jobs.push(put(name, spots, false, null, { tint: set.tint && set.tint[name] }));
+    }
     Promise.all(jobs).then(() => {
       if (!still()) return;
       for (const m of track.treeMeshes || []) m.visible = false;
+      for (const top of isle) { top.visible = false; if (top.userData.trunk) top.userData.trunk.visible = false; }
+    });
+    if (skyJobs.length) Promise.all(skyJobs).then(() => {
+      if (!still()) return;
+      for (const m of sky.meshes) m.visible = false;
     });
   } else {
     put('treeLarge', big);
