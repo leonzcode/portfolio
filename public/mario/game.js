@@ -11,20 +11,20 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=61';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=61';
-import { packLook, unpackLook, normalise } from './parts.js?v=61';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=61';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=61';
-import { makeRescue } from './rescue.js?v=61';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=61';
-import { makeBrain, driveBrain } from './ai.js?v=61';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=61';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=61';
-import { makeCones } from './cones.js?v=61';
-import { makeHazards } from './hazards.js?v=61';
-import { THEMES, themeById, seedOf } from './themes.js?v=61';
-import * as snd from './audio.js?v=61';
+import { buildTrack, setAniso } from './track.js?v=62';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=62';
+import { packLook, unpackLook, normalise } from './parts.js?v=62';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=62';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=62';
+import { makeRescue } from './rescue.js?v=62';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=62';
+import { makeBrain, driveBrain } from './ai.js?v=62';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=62';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=62';
+import { makeCones } from './cones.js?v=62';
+import { makeHazards } from './hazards.js?v=62';
+import { THEMES, themeById, seedOf } from './themes.js?v=62';
+import * as snd from './audio.js?v=62';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -323,11 +323,6 @@ let quietRound = false;       // this round has nothing on the road but the road
 let boardTab = 'race';        // which board the title card is showing
 let ttBoard = null;
 let pendingPost = 0;          // a finished time waiting for the recording that proves it
-/* Logged in: a token from the server and the name it belongs to. Only a
-   logged in race goes on a board, one row an account. */
-let session = null;
-try { session = JSON.parse(localStorage.getItem('mkSession') || 'null'); } catch (e) {}
-if (session && (!session.token || !session.name)) session = null;   // this race's recording, and the token it is sent with
 /* A fingerprint of the road itself. A ghost is a list of places, and replayed
    on a layout that has since changed it drives through fields and hangs over
    gaps, so a ghost only plays on the layout it was set on. */
@@ -359,8 +354,7 @@ function keepBest(run) {
   try { localStorage.setItem('mkGhost:' + run.theme, JSON.stringify(run)); } catch (e) {}
 }
 /* The recording, done: kept here if it is your best on the track, and sent to
-   the board once the board has said the time made it and handed back the
-   token to send it with. Whichever of the two arrives second sends it. */
+   the board with the time it proves, in the same request. */
 function runMeta() {
   return {
     theme: worldTheme, track: trackPrint, time: +me.time.toFixed(2),
@@ -516,7 +510,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=61')
+  import('./props.js?v=62')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -587,7 +581,9 @@ function placeOnGrid(first = 0) {
     k.pos.y = pr.y;
     apply(k);
   });
-  for (const b of track.itemBoxes) b.taken = 0;
+  // back on the road for the next race, but never in a time trial or a replay:
+  // hidden and still there to be driven through is not the same as gone
+  for (const b of track.itemBoxes) b.taken = quietRound ? 1e9 : 0;
 }
 
 /* start a round. `field` is either null (solo, filled with computer drivers) or
@@ -861,6 +857,7 @@ function rideRail(k, inp, dt) {
 }
 
 function pickupBox(k, b) {
+  if (quietRound) return;
   // one roulette at a time, but it can land behind whatever you already have
   if (k.roulette > 0 || heldCount(k) >= SLOTS) return;
   b.taken = 6;
@@ -876,7 +873,7 @@ function pickupBox(k, b) {
 }
 
 function useItem(k) {
-  if (!k || !k.item || k.finished || phase !== 'race') return;
+  if (!k || !k.item || k.finished || phase !== 'race' || quietRound) return;
   const id = k.item;
   const def = ITEMS[id];
   if (def.self) {
@@ -1817,29 +1814,19 @@ function fetchBoard() {
     .then(r => r.json())
     .then(j => { if (j && j.board) { ttBoard = j.board; drawTimes(); } })
     .catch(() => {});
-  fetch(MC + '/scores?game=leon-kart-classic')
-    .then(r => r.json())
-    .then(j => {
-      if (!j || !j.board) return;
-      oldBoard = j.board;
-      drawTimes();
-    })
-    .catch(() => {});
 }
 function postTime(secs, run) {
   pendingPost = 0;
-  if (!session) { say('Log in on the title screen to put your times on the board.', 'sys'); return; }
   if (!run) return;
   const game = quietRound ? 'leon-kart-tt' : 'leon-kart';
   fetch(MC + '/scores', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ game, token: session.token, score: +secs.toFixed(2), theme: worldTheme, ghost: run }),
+    body: JSON.stringify({ game, name: (myName || 'You').slice(0, 14), score: +secs.toFixed(2), theme: worldTheme, ghost: run }),
   })
     .then(r => r.json())
     .then(j => {
       if (!j) return;
-      if (j.out) { logoutLocal('Your login ran out. Log in again to keep your times.'); return; }
       if (j.error) { say(j.error, 'sys'); return; }
       if (!j.board) return;
       if (game === 'leon-kart-tt') ttBoard = j.board; else raceBoard = j.board;
@@ -1849,20 +1836,11 @@ function postTime(secs, run) {
     })
     .catch(() => say('The board could not be reached, so that time was not saved.', 'sys'));
 }
-// every race a logged in player finishes or leaves, for their stats
-function reportRace(finished) {
-  if (!session || replay || !me) return;
-  fetch(MC + '/kart/race', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: session.token, theme: worldTheme, mode: quietRound ? 'tt' : 'race',
-                           place: me.place || 0, time: +(me.time || 0).toFixed(2), finished: !!finished }),
-  }).then(r => r.json()).then(j => { if (j && j.out) logoutLocal(); }).catch(() => {});
-}
-/* The twenty, and then you: your best, the one you just did, and where that best
-   places you when it is not one of the twenty. */
-/* Whether the archive is worth a switch: when it has anything in it, or when
-   somebody who can put something in it is looking. */
-const hasOld = () => !!(oldBoard && (oldBoard.length || adminPw));
+/* The ten, and then you: your best, the one you just did, and where that best
+   places you when it is not one of the ten. */
+/* The board from before the circuits were pinned is not shown any more. Its
+   times are still on the server; the card just never offers the switch. */
+const hasOld = () => false;
 /* While an admin's cross is asking "Sure?", the card is not redrawn under it.
    A board arriving from the server - there are three of them now - used to
    rebuild the card and quietly take the question away mid-decision. The
@@ -1884,12 +1862,12 @@ function drawTimes() {
   const full = (tt ? ttBoard : raceBoard) || [];
   // the ten, or for an admin the whole board, which is where the tidying is
   const rows = adminPw ? full : full.slice(0, 10);
-  /* One row an account, so where you are is your own row, found by name. A
-     guest has no row and is told what logging in is for. */
-  const mineKey = session ? session.name.toLowerCase() : null;
+  /* One row a name, so where you are is the row with your name on it, in
+     whatever capitals. Before you have one, your own best from this browser. */
+  const mineKey = (myName || '').trim().toLowerCase();
   const at = mineKey ? full.findIndex(r => String(r.name).toLowerCase() === mineKey) : -1;
   const onTop = at >= 0 && at < rows.length;
-  const bestShown = at >= 0 ? full[at].score : (!session && !tt ? myBestTime : 0);
+  const bestShown = at >= 0 ? full[at].score : (!tt ? myBestTime : 0);
   const own = tt ? null : bestGhostAny();
   let mine = '<div class="mine' + (own ? ' hg' : '') + '"><span>Your best</span><b>'
     + (bestShown ? time(bestShown) : '&mdash;') + '</b>'
@@ -1902,7 +1880,6 @@ function drawTimes() {
   if (at >= 0 && !onTop) {
     mine += '<div class="mine place"><span>You place</span><b>' + ord(at + 1) + '</b></div>';
   }
-  if (!session) mine += '<p class="none">Log in to get on the board.</p>';
   box.innerHTML = head('Best times', !tt && hasOld() ? 'Before update' : '')
     + '<div class="tabs" role="tablist">'
     + '<button type="button" role="tab" data-tab="race" aria-selected="' + !tt + '">Race</button>'
@@ -2189,7 +2166,6 @@ function showResults(final) {
        after. The time goes up with the run that proves it. */
     pendingPost = me.time;
     if (runReady) postTime(pendingPost, runReady);
-    reportRace(true);
   }
   drawTimes();
   el('restitle').textContent = replay ? 'Replay over'
@@ -2324,7 +2300,6 @@ function goRace() {
 }
 function endRace() {
   finishRun();                          // the tail may not have run yet; keep what there is
-  if (me && !me.finished && !replay) reportRace(false);
   phase = 'results';
   // a replay waits for you to choose; a race rolls on to the next
   phaseT = replay ? 1e9 : RESULTS;
@@ -2390,131 +2365,14 @@ function stepSound() {
   snd.musicTick();
 }
 
-/* ---------------------------------------------------------------- accounts --
-   A name and a password. A new name makes an account on the spot; a name from
-   before accounts existed is claimed by whoever logs in with it first, and
-   its best old time comes with it. Logged in, the name box is your account's
-   name, your races count towards your stats, and your times go on the board. */
-function saveSession() {
-  try {
-    if (session) localStorage.setItem('mkSession', JSON.stringify(session));
-    else localStorage.removeItem('mkSession');
-  } catch (e) {}
-}
-function acctMsg(text, bad) {
-  const m = el('acctmsg');
-  if (!m) return;
-  m.textContent = text;
-  m.classList.toggle('bad', !!bad);
-}
-function drawAcct() {
-  const on = !!session;
-  el('acctout').hidden = on;
-  el('acctin').hidden = !on;
-  if (on) el('acctname').textContent = session.name;
-}
-function logoutLocal(why) {
-  session = null;
-  saveSession();
-  drawAcct();
-  drawTimes();
-  acctMsg(why || 'Logged out. Log in to put your times on the board.', !!why);
-  if (why) say(why, 'sys');
-}
-function buildAcct() {
-  drawAcct();
-  const nick = el('nick'), pw = el('pw'), go = el('login');
-  const login = () => {
-    const name = nick.value.trim(), password = pw.value;
-    if (!name) { acctMsg('Type a name first.', true); nick.focus(); return; }
-    if (password.length < 4) { acctMsg('Passwords are at least 4 characters.', true); pw.focus(); return; }
-    go.disabled = true;
-    acctMsg('Logging in...');
-    fetch(MC + '/kart/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ name, password }) })
-      .then(r => r.json())
-      .then(j => {
-        go.disabled = false;
-        if (!j || !j.ok) { acctMsg((j && j.error) || 'That did not work.', true); return; }
-        session = { token: j.token, name: j.user.name };
-        saveSession();
-        myName = j.user.name;
-        nick.value = myName;
-        try { localStorage.setItem('mkName', myName); } catch (e) {}
-        pw.value = '';
-        drawAcct();
-        drawTimes();
-        acctMsg('');
-        say(j.claimed ? 'Welcome back, ' + myName + '. Your best from before is yours now.'
-          : j.made ? 'Account made. Welcome, ' + myName + '.' : 'Logged in as ' + myName + '.', 'sys');
-      })
-      .catch(() => { go.disabled = false; acctMsg('The server could not be reached.', true); });
-  };
-  go.addEventListener('click', login);
-  pw.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); login(); } });
-  el('logout').addEventListener('click', () => {
-    if (session) fetch(MC + '/kart/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                              body: JSON.stringify({ token: session.token }) }).catch(() => {});
-    logoutLocal();
-  });
-  el('statsbtn').addEventListener('click', openStats);
-  el('statsclose').addEventListener('click', () => el('stats').classList.remove('on'));
-  el('stats').addEventListener('click', e => { if (e.target === el('stats')) el('stats').classList.remove('on'); });
-  addEventListener('keydown', e => { if (e.key === 'Escape' && el('stats').classList.contains('on')) el('stats').classList.remove('on'); });
-  // a saved login is checked once, quietly, when the page opens
-  if (session) {
-    fetch(MC + '/kart/me', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                             body: JSON.stringify({ token: session.token }) })
-      .then(r => r.json())
-      .then(j => { if (j && j.out) logoutLocal('Your login ran out. Log in again.'); })
-      .catch(() => {});
-  }
-}
-/* Your stats: races, finishes, wins and podiums, your best on each track in
-   a race and in the time trial, and where you stand on both boards. */
-function openStats() {
-  if (!session) return;
-  const body = el('statsbody');
-  body.innerHTML = '<p class="none">Loading...</p>';
-  el('stats').classList.add('on');
-  el('statsclose').focus();
-  fetch(MC + '/kart/me', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                           body: JSON.stringify({ token: session.token }) })
-    .then(r => r.json())
-    .then(j => {
-      if (!j || j.out) { el('stats').classList.remove('on'); logoutLocal('Your login ran out. Log in again.'); return; }
-      const st = j.user.stats || {};
-      const tile = (n, label) => '<div class="tile"><b>' + n + '</b><span>' + label + '</span></div>';
-      const avg = st.finished ? time(st.time / st.finished) : '&mdash;';
-      const place = j.place || {};
-      const rank = g => place[g] ? ord(place[g].rank) + ' (' + time(place[g].score) + ')' : '&mdash;';
-      const bests = (m, label) => {
-        const keys = THEMES.filter(t => m && m[t.id]);
-        if (!keys.length) return '<h3>' + label + '</h3><p class="none">Nothing yet.</p>';
-        return '<h3>' + label + '</h3><table><tr><th>Track</th><th class="t">Best</th></tr>'
-          + keys.map(t => '<tr><td>' + esc(t.name) + '</td><td class="t">' + time(m[t.id]) + '</td></tr>').join('')
-          + '</table>';
-      };
-      body.innerHTML = '<p class="none">' + esc(j.user.name) + '</p>'
-        + '<div class="grid">' + tile(st.races || 0, 'Races') + tile(st.finished || 0, 'Finished')
-        + tile(st.wins || 0, 'Wins') + tile(st.podiums || 0, 'Podiums') + tile(st.trials || 0, 'Trials')
-        + tile(avg, 'Avg race') + '</div>'
-        + '<table><tr><td>Race board</td><td class="t">' + rank('leon-kart') + '</td></tr>'
-        + '<tr><td>Time trial board</td><td class="t">' + rank('leon-kart-tt') + '</td></tr></table>'
-        + bests(st.best, 'Best race times') + bests(st.tt, 'Best time trials');
-    })
-    .catch(() => { body.innerHTML = '<p class="none">The server could not be reached.</p>'; });
-}
-
 /* ------------------------------------------------------------------ start --- */
 function buildCast() {
   const input = el('nick');
-  if (session) myName = session.name;
   input.value = myName;
-  buildAcct();
   input.addEventListener('input', () => {
     myName = input.value.slice(0, 12);
     try { localStorage.setItem('mkName', myName); } catch (e) {}
+    drawTimes();
   });
   /* Enter does not start a race. Typing a name and pressing it is how you
      finish typing a name, and being dropped into a lobby for it is startling:
@@ -2689,7 +2547,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=61');
+    const mod = await import('./net.js?v=62');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2810,13 +2668,12 @@ function drawMapGhost() {
   b.innerHTML = '<i>\u{1F47B}</i><span>Race my best</span><b>' + time(g.time) + '</b>';
 }
 el('mapghost').addEventListener('click', () => { mapGhostOn = !mapGhostOn; drawMapGhost(); });
+/* Race or Time trial is the start button: pick the track, then pick how to
+   drive it, and you are on the grid. */
 el('mapmode').addEventListener('click', e => {
   const b = e.target.closest('button[data-m]');
   if (!b) return;
   mode = b.dataset.m;
-  el('mapmode').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-});
-el('mapgo').addEventListener('click', () => {
   replay = false;
   const g = mapGhostOn ? bestGhost(pickedTheme) : null;
   ghostWant = g ? Object.assign({}, g, { label: 'Your best' }) : null;
@@ -3029,7 +2886,6 @@ window.__mk = {
   setMode(m) { mode = m === 'tt' ? 'tt' : 'race'; return mode; },
   get replay() { return replay; },
   get quiet() { return quietRound; },
-  get session() { return session; },
   get boards() { return { race: raceBoard, tt: ttBoard }; },
   raceGhost(g, label) { return raceGhost(g, label); },
   // the ghost for the next round, without going back to the title for it
