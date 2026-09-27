@@ -172,7 +172,7 @@ export const gameProjects: Project[] = [
   },
   {
     slug: "blackjoy",
-    title: "Black Joy",
+    title: "Double Dutch",
     description: "A 3D double dutch game about rhythm, community, and Black joy.",
     href: "https://leonzcode.github.io/blackjoy/",
     image: "/cards/card_blackjoy.png",
