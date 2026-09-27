@@ -11,21 +11,21 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=71';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=71';
-import { packLook, unpackLook, normalise } from './parts.js?v=71';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=71';
-import { whenKit } from './models.js?v=71';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=71';
-import { makeRescue } from './rescue.js?v=71';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=71';
-import { makeBrain, driveBrain } from './ai.js?v=71';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=71';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=71';
-import { makeCones } from './cones.js?v=71';
-import { makeHazards } from './hazards.js?v=71';
-import { THEMES, themeById, seedOf } from './themes.js?v=71';
-import * as snd from './audio.js?v=71';
+import { buildTrack, setAniso } from './track.js?v=72';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=72';
+import { packLook, unpackLook, normalise } from './parts.js?v=72';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=72';
+import { whenKit } from './models.js?v=72';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=72';
+import { makeRescue } from './rescue.js?v=72';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=72';
+import { makeBrain, driveBrain } from './ai.js?v=72';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=72';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=72';
+import { makeCones } from './cones.js?v=72';
+import { makeHazards } from './hazards.js?v=72';
+import { THEMES, themeById, seedOf } from './themes.js?v=72';
+import * as snd from './audio.js?v=72';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -224,6 +224,7 @@ const BINDS = {
   look:  { name: 'Look behind',   keys: ['r'] },
   chat:  { name: 'Chat',          keys: ['t'] },
   mute:  { name: 'Mute',          keys: ['m'] },
+  reset: { name: 'Restart race',  keys: ['z'] },
 };
 let bind = {};
 function bindDefaults() { for (const a in BINDS) bind[a] = BINDS[a].keys.slice(); }
@@ -263,6 +264,8 @@ addEventListener('keydown', e => {
   if (hit('go', k) && started && phase === 'wait' && net && net.alive) net.go();
   if (hit('view', k) && started) { camMode = (camMode + 1) % CAM.length; notice(CAM[camMode].name + ' view'); }
   if (hit('mute', k) && started) { snd.mute(!snd.muted_()); notice(snd.muted_() ? 'Sound off' : 'Sound on'); }
+  // the pause menu's Restart race, on a key; held down it restarts once, not every repeat
+  if (hit('reset', k) && started && !e.repeat) restartRace();
   if (bound(k)) e.preventDefault();
 });
 addEventListener('keyup', e => {
@@ -515,7 +518,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=71')
+  import('./props.js?v=72')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -2660,7 +2663,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=71');
+    const mod = await import('./net.js?v=72');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
