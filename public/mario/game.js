@@ -11,21 +11,21 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=72';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=72';
-import { packLook, unpackLook, normalise } from './parts.js?v=72';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=72';
-import { whenKit } from './models.js?v=72';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=72';
-import { makeRescue } from './rescue.js?v=72';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=72';
-import { makeBrain, driveBrain } from './ai.js?v=72';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=72';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=72';
-import { makeCones } from './cones.js?v=72';
-import { makeHazards } from './hazards.js?v=72';
-import { THEMES, themeById, seedOf } from './themes.js?v=72';
-import * as snd from './audio.js?v=72';
+import { buildTrack, setAniso } from './track.js?v=73';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=73';
+import { packLook, unpackLook, normalise } from './parts.js?v=73';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=73';
+import { whenKit } from './models.js?v=73';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=73';
+import { makeRescue } from './rescue.js?v=73';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=73';
+import { makeBrain, driveBrain } from './ai.js?v=73';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=73';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=73';
+import { makeCones } from './cones.js?v=73';
+import { makeHazards } from './hazards.js?v=73';
+import { THEMES, themeById, seedOf } from './themes.js?v=73';
+import * as snd from './audio.js?v=73';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -251,6 +251,8 @@ addEventListener('keydown', e => {
   if (chatting) { if (k === 'escape') closeChat(false); return; }
   keys[k] = true;
   if (k === 'escape' && started) { menu(!paused); e.preventDefault(); return; }
+  // on the title screen too, but not over the track picker, where Esc is Back
+  if (k === 'escape' && !started && !el('mapsel').classList.contains('on')) { menu(!paused); e.preventDefault(); return; }
   if (paused) return;                       // the menu has the keyboard while it is up
   if (hit('chat', k) && started) { openChat(); e.preventDefault(); }
   if (hit('item', k) && started) itemDown(me);
@@ -518,7 +520,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=72')
+  import('./props.js?v=73')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -2061,7 +2063,7 @@ function wireWas(box, rows) {
    the card is showing is the one it edits, the archive included. */
 let adminPw = null, adminBuf = '', adminAt = 0, adminBusy = false, adminMsg = '';
 let adminNote = '', adminNoteT = 0;     // a lockout, said on the card for a few seconds
-const onTitle = () => !started && phase === 'title' && !el('mapsel').classList.contains('on');
+const onTitle = () => !started && !paused && phase === 'title' && !el('mapsel').classList.contains('on');
 addEventListener('keydown', e => {
   if (adminPw || !onTitle()) return;
   const t = e.target;
@@ -2663,7 +2665,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=72');
+    const mod = await import('./net.js?v=73');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2871,7 +2873,11 @@ function menu(on) {
   el('menu').classList.toggle('on', paused);
   if (!paused) return;
   menuPage('main');
-  el('restart').hidden = !!(net && net.alive);
+  // the same menu from the title screen: nothing to resume, restart or leave
+  el('menu').querySelector('h2').textContent = started ? 'Paused' : 'Settings';
+  el('resume').textContent = started ? 'Resume race' : 'Back';
+  el('restart').hidden = !started || !!(net && net.alive);
+  el('tostart').hidden = !started;
   el('vol').value = String(Math.round(snd.volume_() * 100));
   el('voln').textContent = el('vol').value;
   el('resume').focus();
@@ -2911,6 +2917,7 @@ function bindTo(k) {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
 }
 el('resume').addEventListener('click', () => menu(false));
+el('setbtn').addEventListener('click', () => menu(true));
 /* Straight into the same race again, on your own: same track, same mode, the
    same ghost if there was one. Not in a lobby, where the room decides. */
 function restartRace() {
