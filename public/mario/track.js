@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=79';
+import { themeById, rulesOf, lookOf } from './themes.js?v=80';
 
 /* The lap.
 
@@ -490,6 +490,8 @@ function sampleLoop(seed, th) {
       }
       if (t <= f.gapFrom) {
         a.p.y += f.lip * ease(Math.min(1, t / f.gapFrom));
+        // the run up to a gap is a ramp: it throws you like one
+        a.jump = 2;
         /* And the last stretch before the hole is a kicker rather than a hill.
            `launch` is how far there is to clear; the car works out for itself
            how hard it has to leave, so a gap is a jump you are thrown off
@@ -1918,6 +1920,12 @@ export function buildTrack(scene, seed, themeId) {
   for (const f of features) {
     if (f.kind !== 'chasm') continue;
     const i = f.ids[Math.max(0, Math.floor(f.len * 0.3))];
+    /* And a launch booster on the lip itself, where the kicker is: bright,
+       across the whole road, so the jump is something you see coming and aim
+       at, and it hands you the speed that carries you clear. */
+    const li = f.ids[Math.max(0, Math.floor(f.len * (f.gapFrom - f.kick)) - 1)];
+    const la = samples[li];
+    boostPads.push({ pos: la.p.clone().setY(surf(la, 0)), i: li, n: la.n.clone(), t: la.t.clone(), w: la.w * 0.95, ramp: true, lip: true });
     const a = samples[i];
     boostPads.push({ pos: a.p.clone().setY(surf(a, 0)), i, n: a.n.clone(), t: a.t.clone(), w: a.w * 0.9, ramp: true });
   }
