@@ -498,6 +498,14 @@
      Same furniture as the results panel, because it is the same kind of object:
      a card that stops the race. Rows are buttons with the keyline and the drop,
      so the menu reads as a stack of the things you can press. */
+  /* Settings from the title screen: a gear in the corner, or Esc */
+  #setbtn{
+    position:absolute; top:14px; right:14px; z-index:2; width:48px; height:48px;
+    font-size:26px; line-height:1; color:var(--ink); background:#fff; cursor:pointer;
+    border:3px solid var(--ink); border-radius:14px; box-shadow:0 4px 0 var(--ink);
+  }
+  #setbtn:active{ transform:translateY(2px); box-shadow:0 2px 0 var(--ink); }
+  #setbtn:focus-visible{ outline:4px solid var(--gold); outline-offset:3px; }
   #menu{
     position:fixed; inset:0; z-index:70; display:none;
     background:rgba(23,34,59,.72); padding:16px; overflow-y:auto;
@@ -519,6 +527,7 @@
     cursor:pointer; text-align:left; text-decoration:none;
   }
   .mrow:last-child{ margin-bottom:0; }
+  .mrow[hidden]{ display:none; }
   .mrow.go{ background:var(--gold); }
   .mrow:active{ transform:translateY(2px); box-shadow:0 2px 0 var(--ink); }
   .mrow:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
@@ -849,6 +858,7 @@
 </style>
 
 <div id="title">
+  <button type="button" id="setbtn" aria-label="Settings" title="Settings (Esc)">&#9881;</button>
   <div class="wm"><img src="logo.png?v=1" alt="Leon Kart" decoding="async"><small>Fastest one wins</small></div>
   <div class="row">
   <div class="card" id="garage">
@@ -988,5 +998,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=72');
+await import('./game.js?v=73');
 </script>
