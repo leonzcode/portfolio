@@ -11,21 +11,21 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=76';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=76';
-import { packLook, unpackLook, normalise } from './parts.js?v=76';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=76';
-import { whenKit } from './models.js?v=76';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=76';
-import { makeRescue } from './rescue.js?v=76';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=76';
-import { makeBrain, driveBrain } from './ai.js?v=76';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=76';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=76';
-import { makeCones } from './cones.js?v=76';
-import { makeHazards } from './hazards.js?v=76';
-import { THEMES, themeById, seedOf } from './themes.js?v=76';
-import * as snd from './audio.js?v=76';
+import { buildTrack, setAniso } from './track.js?v=77';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=77';
+import { packLook, unpackLook, normalise } from './parts.js?v=77';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=77';
+import { whenKit } from './models.js?v=77';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=77';
+import { makeRescue } from './rescue.js?v=77';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=77';
+import { makeBrain, driveBrain } from './ai.js?v=77';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=77';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=77';
+import { makeCones } from './cones.js?v=77';
+import { makeHazards } from './hazards.js?v=77';
+import { THEMES, themeById, seedOf } from './themes.js?v=77';
+import * as snd from './audio.js?v=77';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -535,7 +535,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=76')
+  import('./props.js?v=77')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1981,8 +1981,17 @@ function drawTimes() {
   box.classList.remove('old');
   const tt = boardTab === 'tt';
   // the track picked on the map screen until one is chosen here
-  if (!boardMap || !THEMES.some(t => t.id === boardMap)) boardMap = pickedTheme;
-  const full = ((tt ? ttBoard : raceBoard) || []).filter(r => r.t === boardMap);
+  if (!boardMap || (boardMap !== 'all' && !THEMES.some(t => t.id === boardMap))) boardMap = pickedTheme;
+  const everyMap = boardMap === 'all';
+  /* All: each name once, at its best on any track - the board is sorted, so
+     the first row a name has is its quickest. One track: that track's rows. */
+  const seenName = new Set();
+  const full = ((tt ? ttBoard : raceBoard) || []).filter(r => {
+    if (!everyMap) return r.t === boardMap;
+    const k = String(r.name).toLowerCase();
+    if (seenName.has(k)) return false;
+    seenName.add(k); return true;
+  });
   // the ten, or for an admin the whole board, which is where the tidying is
   const rows = adminPw ? full : full.slice(0, 10);
   /* One row a name, so where you are is the row with your name on it, in
@@ -1993,7 +2002,7 @@ function drawTimes() {
   const bestShown = at >= 0 ? full[at].score : (tt ? myBestTT : myBestTime);
   const lastShown = tt ? myLastTT : myLastTime;
   // your own best here, from this browser, to race as a ghost
-  const own = tt ? null : bestGhost(boardMap);
+  const own = tt ? null : everyMap ? bestGhostAny() : bestGhost(boardMap);
   let mine = '<div class="mine' + (own ? ' hg' : '') + '"><span>Your best</span><b>'
     + (bestShown ? time(bestShown) : '&mdash;') + '</b>'
     + (own ? '<button type="button" class="gh" data-own="1" title="Race your best, on '
@@ -2009,10 +2018,13 @@ function drawTimes() {
     + '<div class="tabs" role="tablist">'
     + '<button type="button" role="tab" data-tab="race" aria-selected="' + !tt + '">Race</button>'
     + '<button type="button" role="tab" data-tab="tt" aria-selected="' + tt + '">Time trial</button></div>'
-    + '<div class="maptabs" role="tablist" aria-label="Track">' + THEMES.map(t =>
+    + '<div class="maptabs" role="tablist" aria-label="Track">'
+    + '<button type="button" role="tab" data-map="all" aria-selected="' + everyMap + '" title="Best on any track">All</button>'
+    + THEMES.map(t =>
         '<button type="button" role="tab" data-map="' + t.id + '" aria-selected="' + (t.id === boardMap)
         + '" title="' + esc(t.name) + '">' + esc(t.name.split(' ')[0]) + '</button>').join('') + '</div>'
-    + '<p class="sub">' + esc(themeById(boardMap).name) + ' \u00b7 ' + (tt ? 'no items, no cones, no other cars' : 'three laps, one best each') + '</p>'
+    + '<p class="sub">' + (everyMap ? 'All tracks \u00b7 each driver\u2019s best anywhere'
+      : esc(themeById(boardMap).name) + ' \u00b7 ' + (tt ? 'no items, no cones, no other cars' : 'three laps, one best each')) + '</p>'
     + (adminNote && !adminPw ? '<p class="adm-msg" role="status">' + esc(adminNote) + '</p>' : '')
     + adminBar()
     + (rows.length
@@ -2044,7 +2056,9 @@ const list = rows => {
   const hg = !showingOld && rows.some(r => r.g);
   return '<div class="rows' + (adminPw ? ' adm' : '') + (hg ? ' hg' : '') + '">' + rows.map((r, i) =>
   '<div class="r' + (i === 0 ? ' p1' : '') + (adminPw ? ' adm' : '') + '">'
-  + '<span class="p">' + (i + 1) + '</span><span>' + esc(r.name) + '</span>'
+  + '<span class="p">' + (i + 1) + '</span><span>' + esc(r.name)
+    // on All, which track each best was set on
+    + (boardMap === 'all' && r.t ? '<small class="mp">' + esc(themeById(r.t).name.split(' ')[0]) + '</small>' : '') + '</span>'
   + '<span class="t">' + time(r.score) + '</span>'
   + (hg ? (r.g ? '<button type="button" class="gh" data-g="' + esc(r.g) + '" data-i="' + i + '" title="Race '
       + esc(r.name) + '\'s ghost on ' + esc(themeById(r.t).name) + '" aria-label="Race ' + esc(r.name)
@@ -2225,7 +2239,7 @@ function wireAdmin(box, rows) {
     if (!name) { adminMsg = 'Give it a name.'; return drawTimes(); }
     if (!(secs >= 1 && secs <= 3600)) { adminMsg = 'Type the time like 1:23.45'; return drawTimes(); }
     form.querySelector('button').disabled = true;
-    adminCall({ op: 'add', pw: adminPw, game, name, score: +secs.toFixed(2), theme: boardMap }).then(j => {
+    adminCall({ op: 'add', pw: adminPw, game, name, score: +secs.toFixed(2), theme: boardMap === 'all' ? pickedTheme : boardMap }).then(j => {
       if (j && j.ok) {
         /* The form in the card now, not the one captured when Add was pressed:
            a redraw in between - another row taken off, the board switched -
@@ -2718,7 +2732,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=76');
+    const mod = await import('./net.js?v=77');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
