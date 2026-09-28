@@ -11,21 +11,21 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=74';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=74';
-import { packLook, unpackLook, normalise } from './parts.js?v=74';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=74';
-import { whenKit } from './models.js?v=74';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=74';
-import { makeRescue } from './rescue.js?v=74';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=74';
-import { makeBrain, driveBrain } from './ai.js?v=74';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=74';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=74';
-import { makeCones } from './cones.js?v=74';
-import { makeHazards } from './hazards.js?v=74';
-import { THEMES, themeById, seedOf } from './themes.js?v=74';
-import * as snd from './audio.js?v=74';
+import { buildTrack, setAniso } from './track.js?v=75';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=75';
+import { packLook, unpackLook, normalise } from './parts.js?v=75';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=75';
+import { whenKit } from './models.js?v=75';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=75';
+import { makeRescue } from './rescue.js?v=75';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=75';
+import { makeBrain, driveBrain } from './ai.js?v=75';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=75';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=75';
+import { makeCones } from './cones.js?v=75';
+import { makeHazards } from './hazards.js?v=75';
+import { THEMES, themeById, seedOf } from './themes.js?v=75';
+import * as snd from './audio.js?v=75';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -534,7 +534,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=74')
+  import('./props.js?v=75')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -571,6 +571,21 @@ function addKart(racer, opts) {
   return k;
 }
 
+/* Somebody changed their look while their kart is on the road: build it again
+   in the new look and swap the model in, keeping where it is and how it is
+   moving. */
+function restyleKart(id, cast) {
+  const k = karts.find(q => q.id === id);
+  if (!k || k === me) return;
+  const look = unpackLook(cast);
+  const nk = makeKart(racerOf(look.cast, look.colour), look.build);
+  dropPlant(k);
+  scene.remove(k.group);
+  for (const f of ['who', 'group', 'body', 'wheels', 'shade', 'head', 'arms', 'glider', 'build', 'trail',
+                   'exhaust', 'parts', 'driverParts', 'dressed']) k[f] = nk[f];
+  scene.add(k.group);
+  apply(k);
+}
 function clearField() {
   if (rescue) rescue.clear();
   for (const k of karts) { dropPlant(k); scene.remove(k.group); }
@@ -629,9 +644,14 @@ function startRound(field, seed, asPhase, themeId) {
     for (const p of field) {
       // one number carries who they picked and what they built it out of
       // never through | 0: that cuts the number to 32 bits and drops the paint
+      /* Your own kart is built from what you picked, not from the lobby's copy
+         of it. The lobby hands over the grid the moment you join, before it has
+         heard your look, so its copy of you is still the default and your
+         driver, body and paint all came out as Pip in a formula car. */
+      const mine = p.id === (net && net.id);
       const look = unpackLook(p.cast);
-      grid.push(addKart(racerOf(look.cast, look.colour), {
-        id: p.id, name: p.name, remote: p.id !== (net && net.id), build: look.build,
+      grid.push(addKart(mine ? myRacer() : racerOf(look.cast, look.colour), {
+        id: p.id, name: p.name, remote: !mine, build: mine ? myBuild : look.build,
       }));
     }
     me = karts.find(k => k.id === (net && net.id)) || null;
@@ -2686,13 +2706,14 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=74');
+    const mod = await import('./net.js?v=75');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
       get cast() { return packLook(myCast, myBuild, myColour); },
       world: {
         startRound, get karts() { return karts; }, get me() { return me; },
+        restyle: restyleKart,
         setPhase(p, t, extra) {
           phase = p; phaseT = t;
           lobbyShow(p === 'wait');

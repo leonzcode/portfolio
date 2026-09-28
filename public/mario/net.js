@@ -59,7 +59,12 @@ export function connect(ctx) {
       return;
     }
     if (m.type === 'leave') { seen.delete(m.id); return; }
-    if (m.type === 'cast') { const p = seen.get(m.id); if (p) p.cast = m.cast; return; }
+    if (m.type === 'cast') {
+      const p = seen.get(m.id); if (p) p.cast = m.cast;
+      // their kart, redrawn now rather than at the next round
+      if (world.restyle) world.restyle(m.id, m.cast);
+      return;
+    }
 
     if (m.type === 'pos') {
       got++;
