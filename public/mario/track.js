@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=78';
+import { themeById, rulesOf, lookOf } from './themes.js?v=79';
 
 /* The lap.
 
@@ -522,6 +522,7 @@ function sampleLoop(seed, th) {
     /* A crest steep enough to throw a car at racing speed, then away again. */
     hump: { len: 18, rise: 3.4, flat: 1, shape(a, t, f) {
       a.p.y += f.rise * Math.sin(Math.PI * t) ** 1.6;
+      a.jump = 1;                 // a crest meant to be jumped, gently
     } },
 
     /* A run of small crests. Nothing here throws you on its own; taken
@@ -2288,6 +2289,11 @@ export function buildTrack(scene, seed, themeId) {
       // the lip of a gap says how far there is to clear, so the car can work
       // out for itself how hard it has to leave
       launch: a.launch || b.launch || 0,
+      /* Whether a crest here is meant to throw you: 2 on a ramp, 1 over a hump,
+         0 anywhere else. Everywhere else the car keeps to the road however the
+         ground rolls - a bridge, a bank, a hill or the edge of an island used to
+         throw it as hard as any ramp. */
+      jump: (a.ramp || b.ramp) ? 2 : (a.jump || b.jump) ? 1 : 0,
       // the surface above you, when there is one
       waterY: a.waterY === undefined ? (b.waterY === undefined ? null : b.waterY) : a.waterY,
       tunnel: !!(a.tunnel || b.tunnel),
