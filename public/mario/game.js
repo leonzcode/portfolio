@@ -11,21 +11,21 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=75';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=75';
-import { packLook, unpackLook, normalise } from './parts.js?v=75';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=75';
-import { whenKit } from './models.js?v=75';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=75';
-import { makeRescue } from './rescue.js?v=75';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=75';
-import { makeBrain, driveBrain } from './ai.js?v=75';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=75';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=75';
-import { makeCones } from './cones.js?v=75';
-import { makeHazards } from './hazards.js?v=75';
-import { THEMES, themeById, seedOf } from './themes.js?v=75';
-import * as snd from './audio.js?v=75';
+import { buildTrack, setAniso } from './track.js?v=76';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=76';
+import { packLook, unpackLook, normalise } from './parts.js?v=76';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=76';
+import { whenKit } from './models.js?v=76';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=76';
+import { makeRescue } from './rescue.js?v=76';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=76';
+import { makeBrain, driveBrain } from './ai.js?v=76';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=76';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=76';
+import { makeCones } from './cones.js?v=76';
+import { makeHazards } from './hazards.js?v=76';
+import { THEMES, themeById, seedOf } from './themes.js?v=76';
+import * as snd from './audio.js?v=76';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -327,6 +327,7 @@ let mode = 'race';
 let replay = false;
 let quietRound = false;       // this round has nothing on the road but the road
 let boardTab = 'race';        // which board the title card is showing
+let boardMap = null;          // and which track's: each track is its own board
 let ttBoard = null;
 let pendingPost = 0;          // a finished time waiting for the recording that proves it
 /* A fingerprint of the road itself. A ghost is a list of places, and replayed
@@ -534,7 +535,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=75')
+  import('./props.js?v=76')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1979,7 +1980,9 @@ function drawTimes() {
   if (showingOld) { drawOldTimes(box); return putAdminInput(box, kept); }
   box.classList.remove('old');
   const tt = boardTab === 'tt';
-  const full = (tt ? ttBoard : raceBoard) || [];
+  // the track picked on the map screen until one is chosen here
+  if (!boardMap || !THEMES.some(t => t.id === boardMap)) boardMap = pickedTheme;
+  const full = ((tt ? ttBoard : raceBoard) || []).filter(r => r.t === boardMap);
   // the ten, or for an admin the whole board, which is where the tidying is
   const rows = adminPw ? full : full.slice(0, 10);
   /* One row a name, so where you are is the row with your name on it, in
@@ -1989,7 +1992,8 @@ function drawTimes() {
   const onTop = at >= 0 && at < rows.length;
   const bestShown = at >= 0 ? full[at].score : (tt ? myBestTT : myBestTime);
   const lastShown = tt ? myLastTT : myLastTime;
-  const own = tt ? null : bestGhostAny();
+  // your own best here, from this browser, to race as a ghost
+  const own = tt ? null : bestGhost(boardMap);
   let mine = '<div class="mine' + (own ? ' hg' : '') + '"><span>Your best</span><b>'
     + (bestShown ? time(bestShown) : '&mdash;') + '</b>'
     + (own ? '<button type="button" class="gh" data-own="1" title="Race your best, on '
@@ -2005,7 +2009,10 @@ function drawTimes() {
     + '<div class="tabs" role="tablist">'
     + '<button type="button" role="tab" data-tab="race" aria-selected="' + !tt + '">Race</button>'
     + '<button type="button" role="tab" data-tab="tt" aria-selected="' + tt + '">Time trial</button></div>'
-    + '<p class="sub">' + (tt ? 'No items, no cones, no other cars' : 'Three laps, one best each') + '</p>'
+    + '<div class="maptabs" role="tablist" aria-label="Track">' + THEMES.map(t =>
+        '<button type="button" role="tab" data-map="' + t.id + '" aria-selected="' + (t.id === boardMap)
+        + '" title="' + esc(t.name) + '">' + esc(t.name.split(' ')[0]) + '</button>').join('') + '</div>'
+    + '<p class="sub">' + esc(themeById(boardMap).name) + ' \u00b7 ' + (tt ? 'no items, no cones, no other cars' : 'three laps, one best each') + '</p>'
     + (adminNote && !adminPw ? '<p class="adm-msg" role="status">' + esc(adminNote) + '</p>' : '')
     + adminBar()
     + (rows.length
@@ -2075,6 +2082,10 @@ function wireWas(box, rows) {
       });
     }));
     strip.querySelector('button').focus();
+  }));
+  box.querySelectorAll('.maptabs [data-map]').forEach(t => t.addEventListener('click', () => {
+    boardMap = t.dataset.map;
+    drawTimes();
   }));
   box.querySelectorAll('.tabs [data-tab]').forEach(t => t.addEventListener('click', () => {
     boardTab = t.dataset.tab;
@@ -2214,7 +2225,7 @@ function wireAdmin(box, rows) {
     if (!name) { adminMsg = 'Give it a name.'; return drawTimes(); }
     if (!(secs >= 1 && secs <= 3600)) { adminMsg = 'Type the time like 1:23.45'; return drawTimes(); }
     form.querySelector('button').disabled = true;
-    adminCall({ op: 'add', pw: adminPw, game, name, score: +secs.toFixed(2) }).then(j => {
+    adminCall({ op: 'add', pw: adminPw, game, name, score: +secs.toFixed(2), theme: boardMap }).then(j => {
       if (j && j.ok) {
         /* The form in the card now, not the one captured when Add was pressed:
            a redraw in between - another row taken off, the board switched -
@@ -2274,6 +2285,7 @@ function showResults(final) {
   const live = order();
   /* A race you actually finished goes on the board: all three laps, under your
      own power, not the flag falling on you while you were still out there. */
+  if (worldTheme) boardMap = worldTheme;
   if (me && !postedRace && !me.dnf && me.lap >= LAPS && me.time > 0) {
     postedRace = true;
     try {
@@ -2706,7 +2718,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=75');
+    const mod = await import('./net.js?v=76');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
