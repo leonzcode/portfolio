@@ -848,6 +848,15 @@
   }
   #times .tabs button[aria-selected="true"]{ background:var(--ink); color:var(--cream); }
   #times .tabs button:focus-visible{ outline:3px solid var(--gold); outline-offset:2px; }
+  /* one board a track: five small tabs under Race and Time trial */
+  #times .maptabs{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:3px; margin:0 0 8px; }
+  #times .maptabs button{
+    font-family:var(--display); font-weight:800; font-size:9.5px; letter-spacing:0;
+    border:2px solid var(--ink); border-radius:8px; background:#fff; color:var(--ink);
+    padding:4px 0; cursor:pointer; min-height:28px; min-width:0; white-space:nowrap;
+  }
+  #times .maptabs button[aria-selected="true"]{ background:var(--gold); }
+  #times .maptabs button:focus-visible{ outline:3px solid var(--blue); outline-offset:2px; }
   /* A ghost button opens two choices under its row: race it, or watch it. */
   #times .gact{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:-1px 0 3px; }
   #times .gact button{
@@ -1001,5 +1010,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=75');
+await import('./game.js?v=76');
 </script>
