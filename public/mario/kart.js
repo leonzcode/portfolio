@@ -11,8 +11,8 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=79';
-import { loadKit } from './models.js?v=79';
+import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=80';
+import { loadKit } from './models.js?v=80';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -106,7 +106,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=79';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=80';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -841,7 +841,9 @@ export function stepKart(k, input, track, dt) {
        it outright let a single raw sample decide a launch, which is the noise
        the smoothing is here to ignore. So it adopts and sits the frame out. */
     if (k.reslope) { k.roadSlope = pr.slope; k.reslope = 0; }
-    else if (pr.jump && k.roadSlope > 0.075 && pr.slope < k.roadSlope * 0.5) {
+    /* A crest throws you if it is a ramp, a hump or the run up to a gap; any
+       other crest only if it is a sharp one, and then only a hop. */
+    else if ((pr.jump ? k.roadSlope > 0.075 : k.roadSlope > 0.13) && pr.slope < k.roadSlope * 0.5) {
       k.launched = 1;          // and not again until the wheels are back down
       const th = Math.atan(k.roadSlope);
       let up = Math.abs(k.speed) * Math.sin(th);
@@ -856,7 +858,7 @@ export function stepKart(k, input, track, dt) {
          air off a ramp, never over the scenery: anything past about four metres
          is the surface having said something it did not mean. */
       // a ramp can throw you as high as it likes up to that; a hump only a hop
-      k.hopV = Math.max(k.hopV, Math.min(pr.jump === 2 ? 9 : 4.5, up * (k.parts ? k.parts.jump : 1)));
+      k.hopV = Math.max(k.hopV, Math.min(pr.jump === 2 ? 9 : pr.jump === 1 ? 4.5 : 3.2, up * (k.parts ? k.parts.jump : 1)));
       k.speed *= Math.cos(th);              // that lift came out of your road speed
       k.trickWin = 0.28;                    // the window to pull a trick in
     }
@@ -867,9 +869,11 @@ export function stepKart(k, input, track, dt) {
      there is to go and the car works out how hard it has to leave from its
      own speed, so arriving slowly means a slow, high jump rather than a fall:
      the ramp does the throwing, which is what a ramp is for. */
-  if (pr.launch && !k.falling && k.hopV >= -0.1) {
+  /* Even coming down from a hop: a drift hop timed onto the lip used to leave
+     the car falling, which skipped the kicker and dropped it in the hole. */
+  if (pr.launch && !k.falling) {
     const v = Math.max(9, Math.abs(k.speed));
-    const need = (pr.launch * TUNE.G) / (2 * v) * 1.35;
+    const need = (pr.launch * TUNE.G) / (2 * v) * 1.7;
     /* Topping up rather than replacing, and allowed to do so even if the slope
        already launched the car: the lip flattens before the edge, so the slope
        launch fires early and weakly, and a weak launch off a kicker is a car in
