@@ -11,21 +11,21 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=73';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=73';
-import { packLook, unpackLook, normalise } from './parts.js?v=73';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=73';
-import { whenKit } from './models.js?v=73';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=73';
-import { makeRescue } from './rescue.js?v=73';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=73';
-import { makeBrain, driveBrain } from './ai.js?v=73';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=73';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=73';
-import { makeCones } from './cones.js?v=73';
-import { makeHazards } from './hazards.js?v=73';
-import { THEMES, themeById, seedOf } from './themes.js?v=73';
-import * as snd from './audio.js?v=73';
+import { buildTrack, setAniso } from './track.js?v=74';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=74';
+import { packLook, unpackLook, normalise } from './parts.js?v=74';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=74';
+import { whenKit } from './models.js?v=74';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=74';
+import { makeRescue } from './rescue.js?v=74';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=74';
+import { makeBrain, driveBrain } from './ai.js?v=74';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=74';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=74';
+import { makeCones } from './cones.js?v=74';
+import { makeHazards } from './hazards.js?v=74';
+import { THEMES, themeById, seedOf } from './themes.js?v=74';
+import * as snd from './audio.js?v=74';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -404,6 +404,20 @@ function ghostSplit(i) {
   const d = raceTime - ghost.meta.laps[i];
   return '   ' + (d <= 0 ? '\u2212' : '+') + Math.abs(d).toFixed(2) + ' vs ghost';
 }
+/* Your speed across the line, in the HUD's km/h, and the ghost's at the moment
+   it crossed the same line: read out of its recording, which keeps its speed
+   twenty times a second. Green if you were carrying more. */
+function speedSplit(i) {
+  const mine = Math.round(Math.abs(me ? me.speed : 0) * 3.6);
+  const out = { text: mine + ' km/h' };
+  if (ghost && ghost.T && ghost.meta.laps && ghost.meta.laps[i] > 0) {
+    const T = ghost.T, at = Math.max(0, Math.min(T.n - 1, Math.round(ghost.meta.laps[i] * T.rate)));
+    const d = mine - Math.round(T.speed[at] * 3.6);
+    out.text += '   ' + (d >= 0 ? '+' : '−') + Math.abs(d) + ' km/h vs ghost';
+    out.cls = d >= 0 ? 'up' : 'down';
+  }
+  return out;
+}
 function fetchGhost(id) {
   return fetch(MC + '/scores/ghost?id=' + encodeURIComponent(id))
     .then(r => (r.ok ? r.json() : null)).catch(() => null);
@@ -520,7 +534,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=73')
+  import('./props.js?v=74')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -695,7 +709,7 @@ function lapLogic(k, pr) {
       if (k.lap > LAPS) finishKart(k);
       else if (k === me) {
         snd.lapChime();
-        notice((k.lap === LAPS ? 'Final lap' : 'Lap ' + k.lap) + ghostSplit(k.lap - 2));
+        notice((k.lap === LAPS ? 'Final lap' : 'Lap ' + k.lap) + ghostSplit(k.lap - 2), speedSplit(k.lap - 2));
         if (k.lap === LAPS) say('Final lap.', 'sys');
       }
     }
@@ -710,7 +724,7 @@ function finishKart(k) {
   results.push(k);
   k.place = results.length;
   if (k === me) {
-    notice(ord(results.length) + '!' + ghostSplit(LAPS - 1));
+    notice(ord(results.length) + '!' + ghostSplit(LAPS - 1), speedSplit(LAPS - 1));
     snd.fanfare(results.length <= 3);
     showResults(false);
   }
@@ -1670,8 +1684,15 @@ function hitBy(by, kind) {
 let wrongT = 0;
 
 let noticeT = 0;
-function notice(text) {
+function notice(text, sub) {
   el('notice').textContent = text;
+  // a second, smaller line under it: the speed through the line, and against the ghost
+  if (sub) {
+    const s = document.createElement('small');
+    s.textContent = sub.text;
+    if (sub.cls) s.className = sub.cls;
+    el('notice').appendChild(s);
+  }
   el('notice').classList.add('on');
   noticeT = 1.6;
 }
@@ -2665,7 +2686,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=73');
+    const mod = await import('./net.js?v=74');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
