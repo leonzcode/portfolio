@@ -11,8 +11,8 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=78';
-import { loadKit } from './models.js?v=78';
+import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=79';
+import { loadKit } from './models.js?v=79';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -106,7 +106,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=78';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=79';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -841,7 +841,7 @@ export function stepKart(k, input, track, dt) {
        it outright let a single raw sample decide a launch, which is the noise
        the smoothing is here to ignore. So it adopts and sits the frame out. */
     if (k.reslope) { k.roadSlope = pr.slope; k.reslope = 0; }
-    else if (k.roadSlope > 0.075 && pr.slope < k.roadSlope * 0.5) {
+    else if (pr.jump && k.roadSlope > 0.075 && pr.slope < k.roadSlope * 0.5) {
       k.launched = 1;          // and not again until the wheels are back down
       const th = Math.atan(k.roadSlope);
       let up = Math.abs(k.speed) * Math.sin(th);
@@ -855,7 +855,8 @@ export function stepKart(k, input, track, dt) {
       /* And a ceiling on it. Mario Kart throws you a car length or two into the
          air off a ramp, never over the scenery: anything past about four metres
          is the surface having said something it did not mean. */
-      k.hopV = Math.max(k.hopV, Math.min(9, up * (k.parts ? k.parts.jump : 1)));
+      // a ramp can throw you as high as it likes up to that; a hump only a hop
+      k.hopV = Math.max(k.hopV, Math.min(pr.jump === 2 ? 9 : 4.5, up * (k.parts ? k.parts.jump : 1)));
       k.speed *= Math.cos(th);              // that lift came out of your road speed
       k.trickWin = 0.28;                    // the window to pull a trick in
     }
