@@ -20,8 +20,8 @@
    and a little more once it is written as text to go over the wire.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { makeKart, apply, racerOf } from './kart.js?v=74';
-import { unpackLook } from './parts.js?v=74';
+import { makeKart, apply, racerOf } from './kart.js?v=75';
+import { unpackLook } from './parts.js?v=75';
 
 export const GHOST_RATE = 20;
 export const GHOST_BYTES = 21;

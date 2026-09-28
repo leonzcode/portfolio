@@ -19,7 +19,7 @@
    part list can be written the way you would sketch it, nose forward.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { kitModel, kitPart } from './models.js?v=74';
+import { kitModel, kitPart } from './models.js?v=75';
 
 export const INK = 0x17223b, STEEL = 0xb8bcc4, DARK = 0x3a3f4a, RUBBER = 0x1d2430;
 export const GLASS = 0x9fd8ff, CHROME = 0xd8dde4;
