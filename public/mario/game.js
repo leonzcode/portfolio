@@ -11,21 +11,22 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=80';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=80';
-import { packLook, unpackLook, normalise } from './parts.js?v=80';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=80';
-import { whenKit } from './models.js?v=80';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=80';
-import { makeRescue } from './rescue.js?v=80';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=80';
-import { makeBrain, driveBrain } from './ai.js?v=80';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=80';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=80';
-import { makeCones } from './cones.js?v=80';
-import { makeHazards } from './hazards.js?v=80';
-import { THEMES, themeById, seedOf } from './themes.js?v=80';
-import * as snd from './audio.js?v=80';
+import { buildTrack, setAniso } from './track.js?v=81';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=81';
+import { packLook, unpackLook, normalise } from './parts.js?v=81';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=81';
+import { whenKit } from './models.js?v=81';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=81';
+import { makeRescue } from './rescue.js?v=81';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=81';
+import { makeBrain, driveBrain } from './ai.js?v=81';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=81';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=81';
+import { makeRanked } from './rk.js?v=81';
+import { makeCones } from './cones.js?v=81';
+import { makeHazards } from './hazards.js?v=81';
+import { THEMES, themeById, seedOf } from './themes.js?v=81';
+import * as snd from './audio.js?v=81';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -326,6 +327,13 @@ let runReady = null, runKept = false;
 let mode = 'race';
 let replay = false;
 let quietRound = false;       // this round has nothing on the road but the road
+/* Ranked. Null outside it. In a battle: { watch: false, id, me, opp, left,
+   oppLeft, done, oppDone, res }. Watching one: { watch: true, id, players, res }.
+   `res` is the server's verdict once there is one. */
+let rk = null;
+let rkFirst = null;            // what start() runs in place of a solo round, when ranked started it
+const rkSeen = new Map();      // id -> the last place that kart's driver said it was
+let rkNet = null;              // the line to the ranked lobby, made once the page is built
 let boardTab = 'race';        // which board the title card is showing
 let boardMap = 'all';         // and which track's: each track is its own board; the page opens on All
 let ttBoard = null;
@@ -535,7 +543,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=80')
+  import('./props.js?v=81')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -649,13 +657,15 @@ function startRound(field, seed, asPhase, themeId) {
          of it. The lobby hands over the grid the moment you join, before it has
          heard your look, so its copy of you is still the default and your
          driver, body and paint all came out as Pip in a formula car. */
-      const mine = p.id === (net && net.id);
+      const mine = rk ? (!rk.watch && p.id === rk.me) : p.id === (net && net.id);
       const look = unpackLook(p.cast);
       grid.push(addKart(mine ? myRacer() : racerOf(look.cast, look.colour), {
         id: p.id, name: p.name, remote: !mine, build: mine ? myBuild : look.build,
       }));
     }
-    me = karts.find(k => k.id === (net && net.id)) || null;
+    me = karts.find(k => k.id === (rk ? (rk.watch ? -1 : rk.me) : (net && net.id))) || null;
+    // the other driver in a ranked battle is there to race, not to hit
+    if (rk && !rk.watch) for (const k of karts) if (k !== me) ghostKart(k);
     if (!me) spectating = true;
   } else if (replay) {
     // watching: nobody on the grid at all, only the ghost
@@ -666,7 +676,7 @@ function startRound(field, seed, asPhase, themeId) {
     me = addKart(myRacer(), { id: 'me', name: myName || 'You', build: myBuild });
   }
   const solo = !field || !field.length;
-  quietRound = solo && (mode === 'tt' || replay);
+  quietRound = !!rk || (solo && (mode === 'tt' || replay));
   dressQuiet();
   // Fill the grid with computer drivers, but only when you are racing on your
   // own. A lobby with one person in it is still a lobby: the next person to turn
@@ -693,6 +703,7 @@ function startRound(field, seed, asPhase, themeId) {
   // a ghost you asked for, on its own track, when you are racing on your own
   const ghostHere = !(field && field.length) && !!ghostWant && ghostWant.theme === themeId;
   placeOnGrid(ghostHere ? Math.max(0, Math.min(15, ghostWant.slot | 0)) : 0);
+  if (rk) rkGrid();
   if (ghostHere) {
     if (ghostWant.track && ghostWant.track !== trackPrint) {
       say('That ghost was set on an older layout of this track, so it sits this one out.', 'sys');
@@ -713,7 +724,9 @@ function startRound(field, seed, asPhase, themeId) {
   hudItem();
   lobbyShow(lobby);
   makeTags();
-  say(lobby ? 'In the lobby. Drive about, and press ' + keyName(bind.go[0]) + ' when everybody is here.'
+  if (rk) say(rk.watch ? 'Watching a ranked battle.' : 'Ranked against <b>' + esc(rk.opp.name) + '</b>. Three laps, '
+    + rk.left + (rk.left === 1 ? ' restart' : ' restarts') + ' left.', 'sys');
+  else say(lobby ? 'In the lobby. Drive about, and press ' + keyName(bind.go[0]) + ' when everybody is here.'
             : (spectating ? 'Watching this race. You are in the next one.' : 'Three laps. Good luck.'), 'sys');
 }
 
@@ -745,11 +758,12 @@ function finishKart(k) {
   results.push(k);
   k.place = results.length;
   if (k === me) {
-    notice(ord(results.length) + '!' + ghostSplit(LAPS - 1), speedSplit(LAPS - 1));
+    notice((rk ? 'Finished! ' + time(raceTime) : ord(results.length) + '!') + ghostSplit(LAPS - 1), speedSplit(LAPS - 1));
     snd.fanfare(results.length <= 3);
     showResults(false);
   }
   if (k === me && net) net.finish(raceTime, results.length);
+  if (k === me && rk && !rk.watch && !rk.res) { rk.done = true; rkNet.finish(+raceTime.toFixed(2)); rkHud(true); }
 }
 
 /* Who the camera, the HUD and the engine note are all following.
@@ -1280,6 +1294,7 @@ function stepWorld(dt) {
     for (let j = i + 1; j < karts.length; j++) {
       const a = karts[i], b = karts[j];
       if (a.remote && b.remote) continue;
+      if (a.ghost || b.ghost) continue;
       if (bump(a, b)) {
         /* On an anti-gravity rail a collision is a favour. Both cars spin and
            both are thrown forward, so the quick line through the section is
@@ -1610,7 +1625,7 @@ function makeTags() {
   tagFor = new Map();
   for (const k of karts) {
     const d = document.createElement('div');
-    d.className = 'tag' + (k === me ? ' me' : '');
+    d.className = 'tag' + (k === me ? ' me' : '') + (k.ghost ? ' ghost' : '');
     d.textContent = k.name;
     box.appendChild(d);
     tagFor.set(k, d);
@@ -1979,6 +1994,7 @@ function drawTimes() {
   if (showingOld && !hasOld()) showingOld = false;
   if (showingOld) { drawOldTimes(box); return putAdminInput(box, kept); }
   box.classList.remove('old');
+  if (boardTab === 'rk') { drawRankedTimes(box); return putAdminInput(box, kept); }
   const tt = boardTab === 'tt';
   // the track picked on the map screen until one is chosen here
   if (!boardMap || (boardMap !== 'all' && !THEMES.some(t => t.id === boardMap))) boardMap = pickedTheme;
@@ -2017,7 +2033,8 @@ function drawTimes() {
   box.innerHTML = head('Best times', !tt && hasOld() ? 'Before update' : '')
     + '<div class="tabs" role="tablist">'
     + '<button type="button" role="tab" data-tab="race" aria-selected="' + !tt + '">Race</button>'
-    + '<button type="button" role="tab" data-tab="tt" aria-selected="' + tt + '">Time trial</button></div>'
+    + '<button type="button" role="tab" data-tab="tt" aria-selected="' + tt + '">Time trial</button>'
+    + '<button type="button" role="tab" data-tab="rk" aria-selected="false">Ranked</button></div>'
     + '<div class="maptabs" role="tablist" aria-label="Track">'
     + '<button type="button" role="tab" data-map="all" aria-selected="' + everyMap + '" title="Best on any track">All</button>'
     + THEMES.map(t =>
@@ -2101,11 +2118,7 @@ function wireWas(box, rows) {
     boardMap = t.dataset.map;
     drawTimes();
   }));
-  box.querySelectorAll('.tabs [data-tab]').forEach(t => t.addEventListener('click', () => {
-    boardTab = t.dataset.tab;
-    showingOld = false;
-    drawTimes();
-  }));
+  wireTabs(box);
   const ownBt = box.querySelector('.gh[data-own]');
   if (ownBt) ownBt.addEventListener('click', () => raceGhost(bestGhostAny(), 'Your best'));
   if (b) b.addEventListener('click', () => {
@@ -2334,6 +2347,7 @@ function showResults(final) {
     + '<span class="p">' + k.place + '</span><span>' + esc(k.name) + '</span>'
     + '<span class="t">' + (k.finished ? time(k.time) : '-') + '</span></div>').join('');
   drawCup();
+  if (rk) rkPanel();
   el('results').classList.add('on');
 }
 
@@ -2399,8 +2413,10 @@ function stepPhase(dt) {
     if (phaseT <= 0) goRace();
   } else if (phase === 'race') {
     raceTime += dt;
-    const done = replay ? (!ghost || raceTime > ghost.meta.time + 2) : karts.every(k => k.finished);
-    if (done || (results.length && raceTime - results[0].time > 22) || raceTime > 400) endRace();
+    const done = replay ? (!ghost || raceTime > ghost.meta.time + 2) : karts.every(k => k.finished || k.ghost);
+    // watching ranked, the server says when the battle is over
+    if (rk && rk.watch) { /* nothing */ }
+    else if (done || (results.length && raceTime - results[0].time > 22) || raceTime > 400) endRace();
   } else if (phase === 'results') {
     resCount();
     if (phaseT <= 0) { soloRound++; startRound(null, newSoloSeed(), undefined, pickedTheme); }
@@ -2456,9 +2472,9 @@ function endRace() {
   finishRun();                          // the tail may not have run yet; keep what there is
   phase = 'results';
   // a replay waits for you to choose; a race rolls on to the next
-  phaseT = replay ? 1e9 : RESULTS;
+  phaseT = replay || rk ? 1e9 : RESULTS;
   snd.music(false);
-  for (const k of karts) if (!k.finished) {
+  for (const k of karts) if (!k.finished && !k.ghost) {
     // still out there when the flag fell: a place, but not a time
     k.finished = 1; k.dnf = 1; k.time = raceTime;
     results.push(k); k.place = results.length;
@@ -2467,8 +2483,10 @@ function endRace() {
   showResults(true);
   el('board').classList.remove('on');
   el('resfoot').innerHTML = 'Next race in <b>10</b>'; resCount();
-  el('resfoot').hidden = replay;
-
+  el('resfoot').hidden = replay || !!rk;
+  // out of time before the line, in a battle still going: that is a run that did not finish
+  if (rk && !rk.watch && !rk.res && me && me.dnf && !rk.done) { rk.done = true; rkNet.forfeit(); }
+  if (rk) rkPanel();
 }
 
 /* -------------------------------------------------------------- the loop ---- */
@@ -2484,6 +2502,7 @@ function frame() {
     // the title screen is a panel over the world, so the world behind it barely
     // matters; the turntable is the thing anybody is actually looking at
     if (garage) garage.frame(dt);
+    if (rkNet) rkNet.tick();
     renderer.render(scene, camera);
     return;
   }
@@ -2500,6 +2519,7 @@ function frame() {
      sitting in the menu for a minute is not that, and should not be cleared out
      as though they were. */
   if (net && net.alive && !frozen) net.tick(dt);
+  if (rk && !frozen) rkTick(dt);
   stepCamera(dt);
   stepFx(dt, camera);
   stepSound(dt);
@@ -2732,7 +2752,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=80');
+    const mod = await import('./net.js?v=81');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -2778,7 +2798,8 @@ async function start(online) {
 
   started = true;
   el('title').classList.add('gone');
-  if (!net || !net.alive) startRound(null, soloSeed, undefined, pickedTheme);
+  if (rkFirst) { const f = rkFirst; rkFirst = null; f(); }
+  else if (!net || !net.alive) startRound(null, soloSeed, undefined, pickedTheme);
   el('hud').classList.add('on');
 }
 
@@ -2944,7 +2965,9 @@ function menu(on) {
   // the same menu from the title screen: nothing to resume, restart or leave
   el('menu').querySelector('h2').textContent = started ? 'Paused' : 'Settings';
   el('resume').textContent = started ? 'Resume race' : 'Back';
-  el('restart').hidden = !started || !!(net && net.alive);
+  el('restart').hidden = !started || !!(net && net.alive) || !!(rk && (rk.watch || rk.res || rk.done));
+  el('restart').firstChild.textContent = rk ? 'Restart (' + rk.left + ' left)' : 'Restart race';
+  el('tostart').firstChild.textContent = rk && !rk.watch && !rk.res ? 'Forfeit and go home' : 'Home';
   el('tostart').hidden = !started;
   el('vol').value = String(Math.round(snd.volume_() * 100));
   el('voln').textContent = el('vol').value;
@@ -2989,6 +3012,7 @@ el('setbtn').addEventListener('click', () => menu(true));
 /* Straight into the same race again, on your own: same track, same mode, the
    same ghost if there was one. Not in a lobby, where the room decides. */
 function restartRace() {
+  if (rk) { rkRestart(); return; }
   if (net && net.alive) return;
   menu(false);
   el('results').classList.remove('on');
@@ -2996,12 +3020,12 @@ function restartRace() {
   startRound(null, newSoloSeed(), undefined, pickedTheme);
 }
 el('restart').addEventListener('click', restartRace);
-el('again').addEventListener('click', restartRace);
-el('reshome').addEventListener('click', () => { location.href = location.pathname; });
+el('again').addEventListener('click', () => { if (rk && rk.res) { if (rk.res.lost) goHome(); else rkLobby(); } else restartRace(); });
+el('reshome').addEventListener('click', goHome);
 el('tocontrols').addEventListener('click', () => menuPage('keys'));
 // back to the title card, which is a fresh page rather than an unpicking of
 // everything a race has set up
-el('tostart').addEventListener('click', () => { location.href = location.pathname; });
+el('tostart').addEventListener('click', goHome);
 el('bindback').addEventListener('click', () => menuPage('main'));
 el('bindreset').addEventListener('click', () => { bindDefaults(); bindSave(); drawBinds(); });
 el('bindrows').addEventListener('click', e => {
@@ -3022,6 +3046,335 @@ try {
   if (v !== null) snd.volume(+v / 100);
 } catch (e) {}
 
+/* ------------------------------------------------------------- ranked ------- */
+/* One on one. The race is the time trial: your run, their run as a ghost you
+   can see but not touch, three restarts each. The server keeps the count and
+   settles the result; this side drives, reports, and shows what it said. */
+function goHome() {
+  // back to the title card, keeping a test's server if there was one
+  const ws = new URLSearchParams(location.search).get('ws');
+  location.href = location.pathname + (ws ? '?ws=' + encodeURIComponent(ws) : '');
+}
+rkNet = makeRanked({
+  el, esc, time,
+  themes: () => THEMES.map(t => t.id),
+  themeName: id => themeById(id).name,
+  name: () => myName,
+  cast: () => packLook(myCast, myBuild, myColour),
+  started: () => started,
+  inBattle: () => !!(rk && !rk.watch && !rk.res),
+  home: goHome,
+  ding() { try { snd.beep(false); } catch (e) {} },
+  lost() {
+    // the line went: whatever was going on cannot be settled from here
+    if (rk && !rk.res) { rk.res = { lost: true }; if (phase !== 'results') endRace(); else rkPanel(); }
+  },
+  beginMatch(m) {
+    rkSeen.clear();
+    rk = { watch: false, id: m.id, me: m.me, theme: m.theme, opp: m.opp, left: m.restarts, oppLeft: m.restarts,
+           done: false, oppDone: 0, res: null };
+    rkBegin(() => startRound(rkField(), 0, undefined, rk.theme));
+  },
+  beginWatch(w) {
+    rkSeen.clear();
+    rk = { watch: true, id: w.id, theme: w.theme, players: w.players, res: null };
+    for (const p of w.players) if (p.time) rkSeen.set(p.id, { fin: p.time });
+    rkBegin(() => {
+      startRound(w.players.map(p => ({ id: p.id, name: p.name, cast: p.cast })), 0, undefined, rk.theme);
+      // no lights: the battle is already running
+      phase = 'race'; phaseT = 0;
+      el('count').classList.remove('on');
+      el('watch').classList.remove('on');
+      snd.music(true, 'race');
+      for (const k of karts) { const p = rkSeen.get(k.id); if (p && p.fin) { k.finished = 1; k.time = p.fin; } }
+    });
+  },
+  restartOk(ok, left) {
+    if (!rk || rk.watch) return;
+    rk.left = left;
+    if (!ok) notice('No restarts left');
+    rkHud(true);
+  },
+  pos(m) {
+    if (!rk || rk.res) return;
+    let p = rkSeen.get(m.id);
+    if (!p) { p = {}; rkSeen.set(m.id, p); }
+    const k = karts.find(q => q.id === m.id);
+    // a restart puts them back on the grid: cut to it rather than slide there
+    const jump = p.tx === undefined || Math.hypot(m.x - p.tx, m.z - p.tz) > 30;
+    p.tx = m.x; p.ty = m.y; p.tz = m.z; p.tyaw = m.yaw; p.sp = m.sp; p.lap = m.lap; p.t = m.t;
+    p.prog = m.prog || 0; p.cpi = m.cpi || 0;
+    if (k && jump) { k.pos.set(p.tx, p.ty, p.tz); k.yaw = p.tyaw; }
+  },
+  oppRestart(m) {
+    if (!rk) return;
+    if (rk.watch) { const p = rk.players.find(q => q.id === m.id); if (p) p.left = m.left; }
+    else rk.oppLeft = m.left;
+    const k = karts.find(q => q.id === m.id);
+    if (k) { k.finished = 0; k.time = 0; }
+    say('<b>' + esc(m.name) + '</b> restarted, ' + m.left + ' left.', 'sys');
+    rkHud(true);
+  },
+  oppFinish(m) {
+    if (!rk) return;
+    const k = karts.find(q => q.id === m.id);
+    if (k) { k.finished = 1; k.time = m.time; k.lap = LAPS; }
+    const p = rkSeen.get(m.id) || {};
+    // home: it stops where it crossed rather than being dead reckoned on into the scenery
+    p.fin = m.time; p.sp = 0; rkSeen.set(m.id, p);
+    if (!rk.watch) {
+      rk.oppDone = m.time;
+      if (!rk.done) notice(m.name + ' finished in ' + time(m.time), { text: 'beat it to win' });
+      else rkPanel();
+    }
+    say('<b>' + esc(m.name) + '</b> finished in ' + time(m.time) + '.', 'sys');
+    rkHud(true);
+  },
+  result(m) {
+    // a battle you had already finished, settled after you moved on: news, not the verdict on this one
+    if (!rk || m.id !== rk.id) {
+      if (m.winner) say('<b>' + esc(m.winner) + '</b> won an earlier battle, +' + (+m.gain).toFixed(2) + '.', 'sys');
+      return;
+    }
+    rk.res = m;
+    rkHud(true);
+    if (phase !== 'results') { phase = 'results'; phaseT = 1e9; snd.music(false); showResults(true); }
+    else rkPanel();
+    el('results').classList.add('on');
+  },
+});
+function rkField() {
+  return [{ id: rk.me, name: rkNet.name || myName, cast: packLook(myCast, myBuild, myColour) },
+          { id: rk.opp.id, name: rk.opp.name, cast: rk.opp.cast }];
+}
+function rkBegin(fn) {
+  mode = 'tt'; replay = false; ghostWant = null;
+  pickedTheme = rk.theme;
+  if (paused) menu(false);
+  el('results').classList.remove('on');
+  el('mapsel').classList.remove('on');
+  const go = () => { fn(); rkHud(true); };
+  if (started) go();
+  else { rkFirst = go; start(false); }
+}
+// your kart in the first slot, and theirs on top of it, the way a ghost starts
+function rkGrid() {
+  const s0 = track.gridSlot(0);
+  for (const k of karts) {
+    if (k === me) continue;
+    const p = rkSeen.get(k.id);
+    if (p && p.tx !== undefined) { k.pos.set(p.tx, p.ty, p.tz); k.yaw = p.tyaw; }
+    else {
+      k.pos.copy(s0.pos); k.yaw = s0.yaw;
+      const pr = track.project(k.pos.x, k.pos.z, null);
+      k.hint = pr.i; k.pos.y = pr.y;
+    }
+    apply(k);
+  }
+}
+function rkRestart() {
+  if (!rk || rk.watch || rk.res || rk.done) return;
+  if (rk.left <= 0) { notice('No restarts left', { text: 'this run counts' }); return; }
+  rk.left--;
+  rkNet.restart();
+  if (paused) menu(false);
+  el('results').classList.remove('on');
+  soloRound++;
+  startRound(rkField(), 0, undefined, rk.theme);
+  rkHud(true);
+}
+// back to the list, with the last battle's track still standing behind it
+function rkLobby() {
+  el('results').classList.remove('on');
+  if (rk && rk.watch && !rk.res) { rkNet.unwatch(); rk.res = { stopped: true }; }
+  phase = 'results'; phaseT = 1e9;
+  snd.music(false);
+  el('rkhud').classList.remove('on');
+  el('spec').classList.remove('on');
+  rkNet.show(true);
+}
+let rkSendAt = 0, rkHudAt = 0;
+function rkTick(dt) {
+  const now = performance.now();
+  // yours, to the other driver and anybody watching
+  if (!rk.watch && !rk.res && me && (phase === 'race' || phase === 'count') && now - rkSendAt > 80) {
+    rkSendAt = now;
+    rkNet.pos({
+      x: +me.pos.x.toFixed(2), y: +me.pos.y.toFixed(2), z: +me.pos.z.toFixed(2), yaw: +me.yaw.toFixed(3),
+      lap: me.lap, t: +(phase === 'race' ? raceTime : 0).toFixed(2), sp: +me.speed.toFixed(2),
+      prog: +me.prog.toFixed(1), cpi: me.cpi,
+    });
+  }
+  // theirs, eased towards the last thing they said
+  if (!rk.res && !paused) {
+    for (const k of karts) {
+      if (!k.remote) continue;
+      const p = rkSeen.get(k.id);
+      if (!p || p.tx === undefined) continue;
+      const a = 1 - Math.exp(-12 * dt);
+      k.pos.x += (p.tx - k.pos.x) * a;
+      k.pos.y += (p.ty - k.pos.y) * a;
+      k.pos.z += (p.tz - k.pos.z) * a;
+      let d = p.tyaw - k.yaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      k.yaw += d * (1 - Math.exp(-10 * dt));
+      k.speed = p.sp || 0;
+      if (!k.finished) { k.lap = p.lap || 1; k.prog = p.prog || 0; k.cpi = p.cpi || 0; }
+      k.wheelSpin = (k.wheelSpin || 0) + k.speed * dt / 0.38;
+      // between packets it keeps going the way it was going
+      p.tx += -Math.sin(p.tyaw) * (p.sp || 0) * dt;
+      p.tz += -Math.cos(p.tyaw) * (p.sp || 0) * dt;
+      if (p.t > 0) p.t += dt;
+    }
+  }
+  // watching, the clock is the driver's own clock
+  if (rk.watch && !rk.res && phase === 'race') {
+    const w = watched();
+    const p = w && rkSeen.get(w.id);
+    if (p && p.t !== undefined) raceTime = p.t;
+  }
+  if (now - rkHudAt > 250) { rkHudAt = now; rkHud(); }
+}
+/* The strip under the clock: who you are up against, how many restarts are
+   left on each side, and where they are. */
+let rkHudKey = '';
+function rkHud(force) {
+  const box = el('rkhud');
+  if (!rk || rk.res || !started) { box.classList.remove('on'); rkHudKey = ''; return; }
+  box.classList.add('on');
+  const where = k => {
+    if (!k) return '';
+    if (k.finished) return 'finished ' + time(k.time);
+    return 'lap ' + Math.min(LAPS, k.lap || 1) + '/' + LAPS;
+  };
+  let html;
+  if (rk.watch) {
+    html = '<span class="lbl">Watching</span>' + rk.players.map(p => {
+      const k = karts.find(q => q.id === p.id);
+      return '<span class="who"><b>' + esc(p.name) + '</b><small>' + where(k) + ' · '
+        + (p.left === undefined ? 3 : p.left) + ' restarts</small></span>';
+    }).join('<span class="vs">vs</span>')
+      + '<button type="button" id="rkstop">Stop watching</button>';
+  } else {
+    const o = karts.find(q => q.id === rk.opp.id);
+    html = '<span class="who"><b>You</b><small>' + rk.left + (rk.left === 1 ? ' restart' : ' restarts') + ' left</small></span>'
+      + '<span class="vs">vs</span>'
+      + '<span class="who"><b>' + esc(rk.opp.name) + '</b><small>' + (rk.oppDone ? 'finished ' + time(rk.oppDone) : where(o))
+      + ' · ' + rk.oppLeft + ' left</small></span>';
+  }
+  if (!force && html === rkHudKey) return;
+  rkHudKey = html;
+  box.innerHTML = html;
+}
+el('rkhud').addEventListener('click', e => { if (e.target.id === 'rkstop') rkLobby(); });
+
+/* The results card, in a battle. Before the verdict: your time, and theirs or
+   that they are still out there. After it: who won and what it was worth. */
+function rkPanel() {
+  if (!rk) return;
+  const r = rk.res;
+  el('cup').classList.remove('on');
+  el('resfoot').hidden = true;
+  el('resbtns').hidden = !r;
+  el('again').textContent = 'Ranked lobby';
+  const row = (i, name, t, mine) => '<div class="r' + (mine ? ' me' : '') + (i === 0 ? ' p1' : '') + '">'
+    + '<span class="p">' + (i + 1) + '</span><span>' + esc(name) + '</span>'
+    + '<span class="t">' + t + '</span></div>';
+  if (!r) {
+    const mine = me && me.finished && !me.dnf ? me.time : 0;
+    el('restitle').textContent = mine ? 'Your time: ' + time(mine) : 'Did not finish';
+    const opp = rk.oppDone ? time(rk.oppDone) : 'still driving';
+    const rows = rk.oppDone && rk.oppDone < mine
+      ? [[rk.opp.name, opp, false], [rkNet.name || myName, time(mine), true]]
+      : [[rkNet.name || myName, mine ? time(mine) : 'DNF', true], [rk.opp.name, opp, false]];
+    el('resrows').innerHTML = rows.map((x, i) => row(i, x[0], x[1], x[2])).join('')
+      + '<p class="rkline">' + (rk.oppDone ? 'Settling up…'
+        : 'Waiting for ' + esc(rk.opp.name) + ' to finish. They have up to two minutes.') + '</p>';
+    return;
+  }
+  if (r.lost) {
+    el('restitle').textContent = 'Connection lost';
+    el('resrows').innerHTML = '<p class="rkline">The connection to ranked dropped, so this battle could not be settled here.</p>';
+    el('again').textContent = 'Home';
+    return;
+  }
+  if (r.stopped) return;
+  const mine = rkNet.name || myName;
+  const names = Object.keys(r.times || {});
+  names.sort((a, b) => (a === r.winner ? -1 : b === r.winner ? 1 : 0));
+  el('restitle').textContent = rk.watch
+    ? (r.winner ? r.winner + ' wins' : 'A draw')
+    : r.winner === mine ? 'You win!' : r.loser === mine ? 'You lose' : 'A draw';
+  const why = r.why === 'forfeit' ? ' (forfeited)' : r.why === 'left' ? ' (left)' : r.why === 'time' ? ' (out of time)' : '';
+  let line;
+  if (!r.winner) line = 'Nobody gains anything.';
+  else if (r.dnf) line = '<b>' + esc(r.winner) + ' +' + r.gain.toFixed(2) + '</b> · ' + esc(r.loser) + ' did not finish' + why;
+  else line = '<b>' + esc(r.winner) + ' +' + r.gain.toFixed(2) + '</b> · ' + time(r.times[r.loser]) + ' ÷ ' + time(r.times[r.winner]);
+  el('resrows').innerHTML = names.map((n, i) => row(i, n, r.times[n] ? time(r.times[n]) : n === r.winner ? '—' : 'DNF', n === mine)).join('')
+    + '<p class="rkline">' + line + '</p>'
+    + (!rk.watch && r.points && r.points[mine] !== undefined
+      ? '<p class="rkline sm">You have ' + (+r.points[mine]).toFixed(2) + ' ranked points. Losing never takes any away.</p>' : '');
+  fetchRanked();
+}
+
+/* ---- on the title screen: the button, the count on it, and the board ---- */
+let rankedBoard = null;
+function fetchRanked() {
+  fetch(MC + '/kart/ranked', { cache: 'no-store' })
+    .then(r => r.json())
+    .then(j => { if (j && j.board) { rankedBoard = j.board; if (boardTab === 'rk') drawTimes(); } })
+    .catch(() => {});
+}
+function drawRankedTimes(box) {
+  box.classList.remove('old');
+  const full = rankedBoard || [];
+  const rows = full.slice(0, 10);
+  const key = (myName || '').trim().toLowerCase();
+  const at = key ? full.findIndex(r => String(r.name).toLowerCase() === key) : -1;
+  box.innerHTML = head('Best times', '')
+    + '<div class="tabs" role="tablist">'
+    + '<button type="button" role="tab" data-tab="race" aria-selected="false">Race</button>'
+    + '<button type="button" role="tab" data-tab="tt" aria-selected="false">Time trial</button>'
+    + '<button type="button" role="tab" data-tab="rk" aria-selected="true">Ranked</button></div>'
+    + '<p class="sub">Points from 1v1 battles · won and lost</p>'
+    + (rows.length
+      ? '<div class="rows rk">' + rows.map((r, i) =>
+          '<div class="r' + (i === 0 ? ' p1' : '') + (i === at ? ' me' : '') + '"><span class="p">' + (i + 1) + '</span>'
+          + '<span>' + esc(r.name) + '</span><span class="wl">' + r.wins + '–' + r.losses + '</span>'
+          + '<span class="t">' + r.points.toFixed(2) + '</span></div>').join('') + '</div>'
+      : '<p class="none">Nobody has played a ranked battle yet.</p>')
+    + '<div class="mine"><span>Your points</span><b>' + (at >= 0 ? full[at].points.toFixed(2) : '&mdash;') + '</b></div>'
+    + (at >= 10 ? '<div class="mine place"><span>You place</span><b>' + ord(at + 1) + '</b></div>' : '');
+  wireTabs(box);
+}
+function wireTabs(box) {
+  box.querySelectorAll('.tabs [data-tab]').forEach(t => t.addEventListener('click', () => {
+    boardTab = t.dataset.tab;
+    showingOld = false;
+    if (boardTab === 'rk') fetchRanked();
+    drawTimes();
+  }));
+}
+function rankedCount() {
+  if (started) return;
+  fetch(MC + '/kart/ranked/count', { cache: 'no-store' })
+    .then(r => r.json())
+    .then(j => {
+      const box = el('rkcount');
+      if (!box || !j || typeof j.players !== 'number') return;
+      const n = j.players;
+      box.textContent = n === 0 ? 'nobody in ranked yet'
+        : n + ' in ranked' + (j.battles ? ' · ' + j.battles + (j.battles === 1 ? ' battle' : ' battles') : '');
+      box.parentNode.classList.toggle('live', n > 0);
+    })
+    .catch(() => {});
+}
+rankedCount();
+setInterval(rankedCount, 10000);
+fetchRanked();
+el('ranked').addEventListener('click', () => rkNet.show(true));
+
 window.__mk = {
   get phase() { return phase; },
   get karts() { return karts; },
@@ -3030,6 +3383,8 @@ window.__mk = {
   get items() { return items; },
   get results() { return results; },
   get spectating() { return spectating; },
+  get rk() { return rk; },
+  get rkNet() { return rkNet; },
   // a test cannot join a lobby to be put in the stands, so it says so directly
   spectate(on) {
     spectating = !!on;
