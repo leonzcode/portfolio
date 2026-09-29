@@ -72,17 +72,16 @@ export const aiProjects: Project[] = [
   },
   {
     slug: "aihiring",
-    title: "Bias in AI Hiring Systems",
+    title: "Racial Bias in AI Hiring Systems",
     description:
-      "The effects of bias and discrimination within new AI hiring systems on marginalized communities.",
+      "How AI hiring systems can disadvantage applicants because of their race: the effects, causes, and possible solutions.",
     href: "https://leonzhao.dev/apps/aihiring/",
     image: "/cards/card_aihiring.png",
     tag: "Research",
     story: [
-      "This research paper raises awareness about how people of color are being discriminated against by AI hiring systems. It talks about the effects, causes, and solutions to the issue. Research also includes an overview of different machine learning algorithms, such as Gradient Boosting, HistGBM, and neural networks, used to replicate AI hiring models to simulate bias.",
-      "The argument leans on two real studies: the Bertrand & Mullainathan 2004 labor-market audit (the original \"Jamal vs. Greg\" résumé experiment) and a 2025 Brookings analysis showing that 98.4% of Fortune 500 companies now use AI somewhere in hiring.",
+      "This research paper examines how AI hiring systems can disadvantage applicants because of their race, including the effects, causes, and possible solutions. It builds on the Bertrand & Mullainathan 2004 audit study (the original \"Jamal vs. Greg\" résumé experiment) and a 2025 Brookings article that cites estimates that as many as 98.4% of Fortune 500 companies use AI in hiring. A supplementary appendix reports a machine-learning analysis of the original audit data.",
     ],
-    tech: ["HTML/CSS/JS scrollytelling", "Custom data visualizations", "GitHub Pages"],
+    tech: ["HTML/CSS/JS research-paper layout", "Chart.js and D3 figures"],
   },
   {
     slug: "wordle",
