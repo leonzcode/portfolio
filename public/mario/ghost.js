@@ -20,8 +20,8 @@
    and a little more once it is written as text to go over the wire.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { makeKart, apply, racerOf } from './kart.js?v=80';
-import { unpackLook } from './parts.js?v=80';
+import { makeKart, apply, racerOf } from './kart.js?v=81';
+import { unpackLook } from './parts.js?v=81';
 
 export const GHOST_RATE = 20;
 export const GHOST_BYTES = 21;
@@ -235,6 +235,10 @@ function ghostify(k) {
   });
   return mats;
 }
+
+/* A live kart made see-through the same way: ranked draws the other driver
+   like this, so they are there to race without being there to hit. */
+export function ghostKart(k) { k.ghost = true; return ghostify(k); }
 
 /* ---- a ghost in the world ------------------------------------------------ */
 export function makeGhost(scene, g, label) {
