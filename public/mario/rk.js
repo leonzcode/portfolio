@@ -5,6 +5,11 @@
    knows who is online, who invited whom, and what the server said about the
    battle; the game hands it a few hooks for starting a battle, watching one,
    and moving the other car.
+
+   The line is open from the moment the page is, whatever you are doing: on
+   the menu, in a race on your own, in multiplayer. So the ranked list shows
+   everybody playing, a challenge reaches you wherever you are, and anybody can
+   watch you race.
 --------------------------------------------------------------------------- */
 const WS = (location.hostname.endsWith('leonzhao.dev'))
   ? 'wss://apps.leonzhao.dev/mc/ws'
@@ -27,42 +32,46 @@ export function makeRanked(g) {
   let ws = null, alive = false, myId = 0, myPoints = 0, myName = '';
   let players = [], sent = null, pickTheme = '';
   const invites = new Map();           // id -> invite shown to me
-  let open = false, pingAt = 0;
+  let open = false, refusedWhy = '', wantName = '', retry = null;
+  let gameSt = { mode: 'title', theme: null, round: 0 }, sentSt = '';
 
   /* ---- the socket ---- */
   function connect() {
     if (ws) return;
     const uid = browserId();
     const name = (g.name() || '').trim();
-    msg('Connecting…');
+    if (!name) return;
+    wantName = name;
+    clearTimeout(retry); retry = null;
     const url = WS + (WS.indexOf('?') >= 0 ? '&' : '?') + 'mode=rk&name=' + encodeURIComponent(name)
       + '&uid=' + encodeURIComponent(uid) + '&cast=' + encodeURIComponent(g.cast());
     try { ws = new WebSocket(url); } catch (e) { ws = null; msg('Ranked could not be reached.'); return; }
-    ws.onopen = () => { alive = true; };
+    ws.onopen = () => { alive = true; sentSt = ''; report(); };
     ws.onclose = () => {
       const was = alive;
       alive = false; ws = null;
       invites.clear(); drawInvites();
-      if (was) {
-        msg('Lost the connection to ranked.');
-        g.lost();
-      }
+      if (was && g.inBattle()) { msg('Lost the connection to ranked.'); g.lost(); }
       drawList();
+      // back on as soon as it can be: a second tab waits for the first to close
+      clearTimeout(retry);
+      retry = setTimeout(connect, refusedWhy ? 20000 : 4000);
     };
-    ws.onerror = () => { if (!alive) msg('Ranked could not be reached.'); };
+    ws.onerror = () => {};
     ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } on(m); };
   }
   function send(o) { if (alive) { try { ws.send(JSON.stringify(o)); } catch (e) {} } }
 
   function on(m) {
     const t = m.type;
-    if (t === 'refused') { msg(m.why); alive = false; return; }
-    if (t === 'hello') { myId = m.id; myName = m.name; myPoints = m.points || 0; players = m.players || []; msg(''); drawList(); return; }
+    if (t === 'refused') { refusedWhy = m.why; msg(m.why); alive = false; drawList(); return; }
+    if (t === 'hello') { refusedWhy = ''; myId = m.id; myName = m.name; myPoints = m.points || 0; players = m.players || []; msg(''); drawList(); counted(); return; }
     if (t === 'lobby') {
       players = m.players || [];
       const mine = players.find(p => p.id === myId);
       if (mine) myPoints = mine.points;
       drawList();
+      counted();
       return;
     }
     if (t === 'invite') { invites.set(m.id, m); drawInvites(); g.ding && g.ding(); return; }
@@ -90,6 +99,9 @@ export function makeRanked(g) {
       return;
     }
     if (t === 'watching') { show(false); g.beginWatch(m); return; }
+    if (t === 'fans') { g.fans(m.n | 0); return; }
+    if (t === 'watchstatus') { g.watchStatus(m); return; }
+    if (t === 'watchend') { g.watchEnd(m); msg(m.name + ' left the game.'); return; }
     if (t === 'restart') { g.restartOk(m.ok, m.left); return; }
     if (t === 'pos') { g.pos(m); return; }
     if (t === 'oppRestart') { g.oppRestart(m); return; }
@@ -116,25 +128,45 @@ export function makeRanked(g) {
     el('rkme').textContent = (g.name() || 'You') + ' · ' + pts(myPoints) + ' pts';
     const others = players.filter(p => p.id !== myId);
     el('rkn').textContent = players.length ? players.length + ' online' : '';
-    if (!alive) { box.innerHTML = ''; return; }
+    if (!alive) { box.innerHTML = refusedWhy ? '<p class="none">' + esc(refusedWhy) + '</p>' : ''; return; }
     if (!others.length) {
-      box.innerHTML = '<p class="none">Nobody else is in ranked right now. Stay here and they will show up in this list.</p>';
+      box.innerHTML = '<p class="none">Nobody else is playing right now. Stay here and they will show up in this list.</p>';
       return;
     }
     const busy = g.inBattle();
-    box.innerHTML = others.map(p => {
+    // the ranked lobby first, then battles, then everybody else playing
+    const rank = p => p.status === 'lobby' ? 0 : p.status === 'battle' ? 1 : 2;
+    box.innerHTML = others.slice().sort((a, b) => rank(a) - rank(b)).map(p => {
       const fight = p.status === 'battle';
       const invited = sent && sent.to.id === p.id;
       const vs = fight ? players.find(q => q.id !== p.id && q.match === p.match) : null;
+      const where = p.theme ? ' \u00b7 ' + esc(themeName(p.theme).split(' ')[0]) : '';
+      const doing = fight ? 'battling' + (vs ? ' ' + esc(vs.name) : '') + where
+        : p.status === 'lobby' ? 'in the ranked lobby'
+        : p.status === 'solo' ? 'racing, singleplayer' + where
+        : p.status === 'tt' ? 'time trial' + where
+        : p.status === 'multi' ? 'in multiplayer' + where
+        : p.status === 'replay' ? 'watching a replay'
+        : p.status === 'watch' ? 'watching a battle'
+        : 'on the menu';
+      const canWatch = fight || ['solo', 'tt', 'multi', 'replay'].indexOf(p.status) >= 0;
       return '<div class="r' + (fight ? ' fight' : '') + '"><span class="nm">' + esc(p.name)
-        + '<small>' + pts(p.points) + ' pts' + (fight ? ' · battling' + (vs ? ' ' + esc(vs.name) : '') : ' · in the lobby') + '</small></span>'
+        + '<small>' + pts(p.points) + ' pts \u00b7 ' + doing + '</small></span>'
         + '<span class="acts">'
-        + (fight ? '<button type="button" data-watch="' + p.match + '">Watch</button>' : '')
+        + (canWatch ? '<button type="button" data-watch="' + p.id + '">Watch</button>' : '')
         + (invited
           ? '<button type="button" class="go" data-cancel="' + sent.id + '">Cancel</button>'
           : '<button type="button" class="go" data-ask="' + p.id + '"' + (busy || sent ? ' disabled' : '') + '>Challenge</button>')
         + '</span></div>';
     }).join('');
+  }
+  // the count on the home button, straight from the list rather than waiting for the next poll
+  function counted() {
+    if (!g.counted) return;
+    let ranked = 0;
+    const fights = new Set();
+    for (const p of players) { if (p.status === 'lobby' || p.status === 'battle') ranked++; if (p.match) fights.add(p.match); }
+    g.counted({ players: players.length, ranked, battles: fights.size });
   }
   const pts = n => (Math.round((+n || 0) * 100) / 100).toFixed(2);
 
@@ -142,12 +174,24 @@ export function makeRanked(g) {
     open = !!on;
     el('rk').classList.toggle('on', open);
     el('rk').classList.toggle('over', open && g.started());
+    report();
     if (open) {
       if (!(g.name() || '').trim()) { msg('Type a name on the title screen first, it is the name the other player sees.'); return; }
+      msg(refusedWhy);
       drawMaps(); drawList();
       connect();
     }
   }
+  // what this page is doing, for everybody else's list
+  function report() {
+    const st = open ? { mode: 'lobby', theme: null, round: gameSt.round } : gameSt;
+    const key = st.mode + '|' + st.theme + '|' + st.round;
+    if (!alive || key === sentSt) return;
+    sentSt = key;
+    send({ type: 'status', mode: st.mode, theme: st.theme, round: st.round });
+  }
+  // kept alive in the background too, where the animation loop is paused
+  setInterval(() => { if (alive) send({ type: 'ping' }); }, 20000);
 
   el('rkmaps').addEventListener('click', e => {
     const b = e.target.closest('button[data-t]');
@@ -160,13 +204,11 @@ export function makeRanked(g) {
     if (!b || b.disabled) return;
     if (b.dataset.ask) send({ type: 'invite', to: +b.dataset.ask, theme: pickTheme || null });
     else if (b.dataset.cancel) { send({ type: 'cancel', id: +b.dataset.cancel }); sent = null; msg(''); drawList(); }
-    else if (b.dataset.watch) send({ type: 'watch', id: +b.dataset.watch });
+    else if (b.dataset.watch) send({ type: 'watch', pid: +b.dataset.watch });
   });
   el('rkback').addEventListener('click', () => {
     if (g.started()) { g.home(); return; }
     show(false);
-    // nobody sits in the list after they have walked away from it
-    if (ws) { try { ws.close(); } catch (e) {} }
   });
 
   /* ---- invites: over whatever is on the screen, in a battle too ---- */
@@ -177,7 +219,8 @@ export function makeRanked(g) {
     box.innerHTML = list.map(m =>
       '<div class="inv" data-id="' + m.id + '"><p><b>' + esc(m.from.name) + '</b> (' + pts(m.from.points) + ' pts) challenges you'
       + ' · ' + (m.theme ? esc(themeName(m.theme)) : 'random track') + '</p>'
-      + (g.inBattle() ? '<p class="warn">Accepting ends the battle you are in as a loss.</p>' : '')
+      + (g.inBattle() ? '<p class="warn">Accepting ends the battle you are in as a loss.</p>'
+        : g.racing() ? '<p class="warn">Accepting leaves the race you are in.</p>' : '')
       + '<div class="btns"><button type="button" class="go" data-yes="' + m.id + '">Accept</button>'
       + '<button type="button" data-no="' + m.id + '">Decline</button></div>'
       + '<i style="animation-duration:' + Math.max(1, 30 - (Date.now() - (m.at || Date.now())) / 1000) + 's"></i></div>').join('');
@@ -197,10 +240,18 @@ export function makeRanked(g) {
     get alive() { return alive; },
     get id() { return myId; },
     get name() { return myName; },
-    tick() {
-      const now = performance.now();
-      if (alive && now - pingAt > 15000) { pingAt = now; send({ type: 'ping' }); }
+    tick() {},
+    // the page is up: on the list from now on, if there is a name to be on it under
+    presence() { connect(); },
+    // the name was changed on the title screen: come back under the new one
+    rename() {
+      const n = (g.name() || '').trim();
+      if (n === wantName || g.inBattle()) return;
+      refusedWhy = '';
+      if (ws) { try { ws.close(); } catch (e) {} } else connect();
     },
+    status(st) { gameSt = st; report(); },
+    msg,
     send,
     pos(o) { send(Object.assign({ type: 'pos' }, o)); },
     restart() { send({ type: 'restart' }); },
