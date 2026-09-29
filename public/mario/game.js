@@ -11,22 +11,22 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=81';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=81';
-import { packLook, unpackLook, normalise } from './parts.js?v=81';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=81';
-import { whenKit } from './models.js?v=81';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=81';
-import { makeRescue } from './rescue.js?v=81';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=81';
-import { makeBrain, driveBrain } from './ai.js?v=81';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=81';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=81';
-import { makeRanked } from './rk.js?v=81';
-import { makeCones } from './cones.js?v=81';
-import { makeHazards } from './hazards.js?v=81';
-import { THEMES, themeById, seedOf } from './themes.js?v=81';
-import * as snd from './audio.js?v=81';
+import { buildTrack, setAniso } from './track.js?v=82';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=82';
+import { packLook, unpackLook, normalise } from './parts.js?v=82';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=82';
+import { whenKit } from './models.js?v=82';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=82';
+import { makeRescue } from './rescue.js?v=82';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=82';
+import { makeBrain, driveBrain } from './ai.js?v=82';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=82';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=82';
+import { makeRanked } from './rk.js?v=82';
+import { makeCones } from './cones.js?v=82';
+import { makeHazards } from './hazards.js?v=82';
+import { THEMES, themeById, seedOf } from './themes.js?v=82';
+import * as snd from './audio.js?v=82';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -543,7 +543,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=81')
+  import('./props.js?v=82')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -2752,7 +2752,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=81');
+    const mod = await import('./net.js?v=82');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
