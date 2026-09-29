@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=80';
+import { themeById, rulesOf, lookOf } from './themes.js?v=82';
 
 /* The lap.
 
