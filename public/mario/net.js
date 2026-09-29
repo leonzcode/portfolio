@@ -21,6 +21,7 @@ export function connect(ctx) {
   let ws = null, alive = false, settled = false, myId = 0, myName = '';
   let lastPhase = '', lastRound = -1, sendAt = 0;
   let sent = 0, got = 0;                 // counted, so a test can see which side went quiet
+  let quitting = false;                  // left on purpose, for a ranked battle: nothing was lost
   const seen = new Map();            // id -> the last thing they said
 
   const url = WS + (WS.indexOf('?') >= 0 ? '&' : '?') + 'mode=mk'
@@ -34,7 +35,7 @@ export function connect(ctx) {
   ws.onclose = () => {
     const was = alive;
     alive = false; settled = true;
-    if (was) say('Lost the lobby. Racing on your own from here.', 'sys');
+    if (was && !quitting) say('Lost the lobby. Racing on your own from here.', 'sys');
   };
   ws.onerror = () => { settled = true; };
   ws.onmessage = ev => {
@@ -172,6 +173,7 @@ export function connect(ctx) {
 
   return {
     go() { send({ type: 'go' }); },
+    close() { quitting = true; alive = false; try { ws.close(); } catch (e) {} },
     get alive() { return alive; },
     get settled() { return settled; },
     get traffic() { return { sent, got }; },
