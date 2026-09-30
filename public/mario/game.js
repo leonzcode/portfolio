@@ -11,22 +11,22 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=83';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=83';
-import { packLook, unpackLook, normalise } from './parts.js?v=83';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=83';
-import { whenKit } from './models.js?v=83';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=83';
-import { makeRescue } from './rescue.js?v=83';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=83';
-import { makeBrain, driveBrain } from './ai.js?v=83';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=83';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=83';
-import { makeRanked } from './rk.js?v=83';
-import { makeCones } from './cones.js?v=83';
-import { makeHazards } from './hazards.js?v=83';
-import { THEMES, themeById, seedOf } from './themes.js?v=83';
-import * as snd from './audio.js?v=83';
+import { buildTrack, setAniso } from './track.js?v=84';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=84';
+import { packLook, unpackLook, normalise } from './parts.js?v=84';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=84';
+import { whenKit } from './models.js?v=84';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=84';
+import { makeRescue } from './rescue.js?v=84';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=84';
+import { makeBrain, driveBrain } from './ai.js?v=84';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=84';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=84';
+import { makeRanked } from './rk.js?v=84';
+import { makeCones } from './cones.js?v=84';
+import { makeHazards } from './hazards.js?v=84';
+import { THEMES, themeById, seedOf } from './themes.js?v=84';
+import * as snd from './audio.js?v=84';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -549,7 +549,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=83')
+  import('./props.js?v=84')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -2761,7 +2761,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=83');
+    const mod = await import('./net.js?v=84');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3375,17 +3375,19 @@ function rkPanel() {
   }
   if (r.stopped) return;
   const mine = rkNet.name || myName;
-  const names = Object.keys(r.times || {});
-  names.sort((a, b) => (a === r.winner ? -1 : b === r.winner ? 1 : 0));
+  /* By connection, not by name: two tabs under one name can battle each
+     other, and then the names say nothing about which side is you. */
+  const rows = (r.rows || []).slice().sort((a, b) => (a.id === r.wid ? -1 : b.id === r.wid ? 1 : 0));
+  const tOf = id => { const x = rows.find(q => q.id === id); return x ? x.time : null; };
   el('restitle').textContent = rk.watch
     ? (r.winner ? r.winner + ' wins' : 'A draw')
-    : r.winner === mine ? 'You win!' : r.loser === mine ? 'You lose' : 'A draw';
+    : r.wid === rk.me ? 'You win!' : r.lid === rk.me ? 'You lose' : 'A draw';
   const why = r.why === 'forfeit' ? ' (forfeited)' : r.why === 'left' ? ' (left)' : r.why === 'time' ? ' (out of time)' : '';
   let line;
   if (!r.winner) line = 'Nobody gains anything.';
   else if (r.dnf) line = '<b>' + esc(r.winner) + ' +' + r.gain.toFixed(2) + '</b> · ' + esc(r.loser) + ' did not finish' + why;
-  else line = '<b>' + esc(r.winner) + ' +' + r.gain.toFixed(2) + '</b> · ' + time(r.times[r.loser]) + ' ÷ ' + time(r.times[r.winner]);
-  el('resrows').innerHTML = names.map((n, i) => row(i, n, r.times[n] ? time(r.times[n]) : n === r.winner ? '—' : 'DNF', n === mine)).join('')
+  else line = '<b>' + esc(r.winner) + ' +' + r.gain.toFixed(2) + '</b> · ' + time(tOf(r.lid)) + ' ÷ ' + time(tOf(r.wid));
+  el('resrows').innerHTML = rows.map((x, i) => row(i, x.name, x.time ? time(x.time) : x.id === r.wid ? '—' : 'DNF', !rk.watch && x.id === rk.me)).join('')
     + '<p class="rkline">' + line + '</p>'
     + (!rk.watch && r.points && r.points[mine] !== undefined
       ? '<p class="rkline sm">You have ' + (+r.points[mine]).toFixed(2) + ' ranked points. Losing never takes any away.</p>' : '');
