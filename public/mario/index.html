@@ -1025,8 +1025,8 @@
   <div class="card">
     <div class="rkhead"><h2 id="rktitle">Ranked</h2><span id="rkn"></span></div>
     <p class="rkme" id="rkme"></p>
-    <p class="rkhow">One on one, three laps of a time trial. You get 3 attempts every round: press Z or use the menu to start your run again. The quicker time wins, and if the other driver does not finish, you win. Your score counts how many battles you have won and your win rate equally.</p>
-    <div class="rkf" aria-label="How the ranked score is worked out"><b>Score</b> = 50 &times; (your wins &divide; most wins on the board) + 50 &times; win rate<br><b>Win rate</b> = (wins + 1) &divide; (wins + losses + 2)</div>
+    <p class="rkhow">One on one, three laps of a time trial. You get 3 attempts every round: press Z or use the menu to start your run again. The quicker time wins, and if the other driver does not finish, you win. Your score counts how many battles you have won and your win rate equally, and each loss takes 0.1 off.</p>
+    <div class="rkf" aria-label="How the ranked score is worked out"><b>Score</b> = 50 &times; (your wins &divide; most wins on the board) + 50 &times; win rate &minus; 0.1 &times; losses<br><b>Win rate</b> = (wins + 1) &divide; (wins + losses + 2)</div>
     <p class="rklbl">Track for your challenges</p>
     <div id="rkmaps"></div>
     <p class="rklbl">Online now</p>
@@ -1130,5 +1130,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=87');
+await import('./game.js?v=88');
 </script>
