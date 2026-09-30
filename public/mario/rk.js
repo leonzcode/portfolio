@@ -125,7 +125,7 @@ export function makeRanked(g) {
   function drawList() {
     const box = el('rkplayers');
     if (!box) return;
-    el('rkme').textContent = (g.name() || 'You') + ' · ' + pts(myPoints) + ' pts';
+    el('rkme').textContent = (g.name() || 'You') + ' · score ' + pts(myPoints);
     const others = players.filter(p => p.id !== myId);
     el('rkn').textContent = players.length ? players.length + ' online' : '';
     if (!alive) { box.innerHTML = (away || refusedWhy) ? '<p class="none">' + esc(away ? AWAY_TEXT : refusedWhy) + '</p>' : ''; return; }
@@ -151,7 +151,7 @@ export function makeRanked(g) {
         : 'on the menu';
       const canWatch = fight || ['solo', 'tt', 'multi', 'replay'].indexOf(p.status) >= 0;
       return '<div class="r' + (fight ? ' fight' : '') + '"><span class="nm">' + esc(p.name)
-        + '<small>' + pts(p.points) + ' pts \u00b7 ' + doing + '</small></span>'
+        + '<small>score ' + pts(p.points) + ' \u00b7 ' + doing + '</small></span>'
         + '<span class="acts">'
         + (canWatch ? '<button type="button" data-watch="' + p.id + '">Watch</button>' : '')
         + (invited
@@ -168,7 +168,8 @@ export function makeRanked(g) {
     for (const p of players) { if (p.status === 'lobby' || p.status === 'battle') ranked++; if (p.match) fights.add(p.match); }
     g.counted({ players: players.length, ranked, battles: fights.size });
   }
-  const pts = n => (Math.round((+n || 0) * 100) / 100).toFixed(2);
+  // the ranked score, out of 100, to one place
+  const pts = n => (Math.round((+n || 0) * 10) / 10).toFixed(1);
 
   function show(on) {
     open = !!on;
@@ -244,7 +245,7 @@ export function makeRanked(g) {
     const list = [...invites.values()];
     box.classList.toggle('on', list.length > 0);
     box.innerHTML = list.map(m =>
-      '<div class="inv" data-id="' + m.id + '"><p><b>' + esc(m.from.name) + '</b> (' + pts(m.from.points) + ' pts) challenges you'
+      '<div class="inv" data-id="' + m.id + '"><p><b>' + esc(m.from.name) + '</b> (score ' + pts(m.from.points) + ') challenges you'
       + ' · ' + (m.theme ? esc(themeName(m.theme)) : 'random track') + '</p>'
       + (g.inBattle() ? '<p class="warn">Accepting ends the battle you are in as a loss.</p>'
         : g.racing() ? '<p class="warn">Accepting leaves the race you are in.</p>' : '')
