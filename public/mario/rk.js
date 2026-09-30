@@ -53,7 +53,7 @@ export function makeRanked(g) {
       invites.clear(); drawInvites();
       if (was && g.inBattle()) { msg('Lost the connection to ranked.'); g.lost(); }
       drawList();
-      // back on as soon as it can be: a second tab waits for the first to close
+      // back on as soon as it can be
       clearTimeout(retry);
       retry = setTimeout(connect, refusedWhy ? 20000 : 4000);
     };
