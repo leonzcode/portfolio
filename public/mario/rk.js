@@ -40,7 +40,7 @@ export function makeRanked(g) {
     if (ws) return;
     const uid = browserId();
     const name = (g.name() || '').trim();
-    if (!name) return;
+    if (!name || away) return;
     wantName = name;
     clearTimeout(retry); retry = null;
     const url = WS + (WS.indexOf('?') >= 0 ? '&' : '?') + 'mode=rk&name=' + encodeURIComponent(name)
@@ -55,7 +55,7 @@ export function makeRanked(g) {
       drawList();
       // back on as soon as it can be
       clearTimeout(retry);
-      retry = setTimeout(connect, refusedWhy ? 20000 : 4000);
+      if (!away) retry = setTimeout(connect, refusedWhy ? 20000 : 4000);
     };
     ws.onerror = () => {};
     ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } on(m); };
@@ -128,7 +128,7 @@ export function makeRanked(g) {
     el('rkme').textContent = (g.name() || 'You') + ' · ' + pts(myPoints) + ' pts';
     const others = players.filter(p => p.id !== myId);
     el('rkn').textContent = players.length ? players.length + ' online' : '';
-    if (!alive) { box.innerHTML = refusedWhy ? '<p class="none">' + esc(refusedWhy) + '</p>' : ''; return; }
+    if (!alive) { box.innerHTML = (away || refusedWhy) ? '<p class="none">' + esc(away ? AWAY_TEXT : refusedWhy) + '</p>' : ''; return; }
     if (!others.length) {
       box.innerHTML = '<p class="none">Nobody else is playing right now. Stay here and they will show up in this list.</p>';
       return;
@@ -193,6 +193,33 @@ export function makeRanked(g) {
   // kept alive in the background too, where the animation loop is paused
   setInterval(() => { if (alive) send({ type: 'ping' }); }, 20000);
 
+  /* Away. Five minutes without a key, a click or a touch and this page stops
+     being online: the line closes, so it leaves everybody's list and the
+     count. Never in the middle of a battle (leaving one is a forfeit) or while
+     watching one, which is sitting still on purpose. The next key or click
+     brings it straight back. */
+  let awayAfter = 5 * 60 * 1000, lastInput = Date.now(), away = false;
+  const AWAY_TEXT = 'You were away for 5 minutes, so you are not shown as online. Press a key or click to come back.';
+  function poke() {
+    lastInput = Date.now();
+    if (!away) return;
+    away = false;
+    msg('');
+    connect();
+    drawList();
+  }
+  for (const t of ['keydown', 'pointerdown', 'touchstart', 'wheel']) addEventListener(t, poke, { capture: true, passive: true });
+  function checkAway() {
+    if (away || Date.now() - lastInput < awayAfter || g.inBattle() || g.watching()) return;
+    away = true;
+    clearTimeout(retry); retry = null;
+    sent = null;
+    if (ws) { try { ws.close(); } catch (e) {} }
+    msg(AWAY_TEXT);
+    drawList();
+  }
+  setInterval(checkAway, 5000);
+
   el('rkmaps').addEventListener('click', e => {
     const b = e.target.closest('button[data-t]');
     if (!b) return;
@@ -243,6 +270,9 @@ export function makeRanked(g) {
     tick() {},
     // the page is up: on the list from now on, if there is a name to be on it under
     presence() { connect(); },
+    get away() { return away; },
+    // for a test: how long counts as away, and a clock that has already run
+    setAway(ms, idleFor) { awayAfter = ms; if (idleFor !== undefined) lastInput = Date.now() - idleFor; checkAway(); },
     // the name was changed on the title screen: come back under the new one
     rename() {
       const n = (g.name() || '').trim();

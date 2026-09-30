@@ -11,22 +11,22 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=85';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=85';
-import { packLook, unpackLook, normalise } from './parts.js?v=85';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=85';
-import { whenKit } from './models.js?v=85';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=85';
-import { makeRescue } from './rescue.js?v=85';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=85';
-import { makeBrain, driveBrain } from './ai.js?v=85';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=85';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=85';
-import { makeRanked } from './rk.js?v=85';
-import { makeCones } from './cones.js?v=85';
-import { makeHazards } from './hazards.js?v=85';
-import { THEMES, themeById, seedOf } from './themes.js?v=85';
-import * as snd from './audio.js?v=85';
+import { buildTrack, setAniso } from './track.js?v=86';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=86';
+import { packLook, unpackLook, normalise } from './parts.js?v=86';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=86';
+import { whenKit } from './models.js?v=86';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=86';
+import { makeRescue } from './rescue.js?v=86';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=86';
+import { makeBrain, driveBrain } from './ai.js?v=86';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=86';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=86';
+import { makeRanked } from './rk.js?v=86';
+import { makeCones } from './cones.js?v=86';
+import { makeHazards } from './hazards.js?v=86';
+import { THEMES, themeById, seedOf } from './themes.js?v=86';
+import * as snd from './audio.js?v=86';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -549,7 +549,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=85')
+  import('./props.js?v=86')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -2761,7 +2761,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=85');
+    const mod = await import('./net.js?v=86');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3072,6 +3072,7 @@ rkNet = makeRanked({
   cast: () => packLook(myCast, myBuild, myColour),
   started: () => started,
   inBattle: () => !!(rk && !rk.watch && !rk.res),
+  watching: () => !!(rk && rk.watch && !rk.res),
   // driving something else: accepting a challenge leaves it
   racing: () => started && !(rk && !rk.res),
   fans(n) { rkFans = n; },
@@ -3413,7 +3414,7 @@ function drawRankedTimes(box) {
     + '<button type="button" role="tab" data-tab="race" aria-selected="false">Race</button>'
     + '<button type="button" role="tab" data-tab="tt" aria-selected="false">Time trial</button>'
     + '<button type="button" role="tab" data-tab="rk" aria-selected="true">Ranked</button></div>'
-    + '<p class="sub">Score: battle points, lifted up to 20% by win rate · won and lost</p>'
+    + '<p class="sub">Ranked score · won and lost</p>'
     + (rows.length
       ? '<div class="rows rk">' + rows.map((r, i) =>
           '<div class="r' + (i === 0 ? ' p1' : '') + (i === at ? ' me' : '') + '"><span class="p">' + (i + 1) + '</span>'
@@ -3421,7 +3422,8 @@ function drawRankedTimes(box) {
           + '<span class="t" title="' + r.points.toFixed(2) + ' points">' + (r.score !== undefined ? r.score : r.points).toFixed(2) + '</span></div>').join('') + '</div>'
       : '<p class="none">Nobody has played a ranked battle yet.</p>')
     + '<div class="mine"><span>Your score</span><b>' + (at >= 0 ? (full[at].score !== undefined ? full[at].score : full[at].points).toFixed(2) : '&mdash;') + '</b></div>'
-    + (at >= 10 ? '<div class="mine place"><span>You place</span><b>' + ord(at + 1) + '</b></div>' : '');
+    + (at >= 10 ? '<div class="mine place"><span>You place</span><b>' + ord(at + 1) + '</b></div>' : '')
+    + '<div class="rkf" aria-label="How the ranked score is worked out"><b>Score</b> = points &times; (1 + 0.5 &times; win rate)<br><b>Win rate</b> = (wins + 1) &divide; (wins + losses + 2)<br><b>Points</b> for a win = their time &divide; your time, or 1 if they do not finish</div>';
   wireTabs(box);
 }
 function wireTabs(box) {
