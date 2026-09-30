@@ -624,6 +624,14 @@
   #times .sub{
     margin:-4px 0 9px; font-size:12px; opacity:.6; font-weight:700;
   }
+  /* the ranked score, written out: on the board and in the ranked lobby */
+  .rkf{
+    margin:10px 0 0; padding:8px 10px; text-align:left; font-size:12px; font-weight:700; line-height:1.55;
+    background:#fff; border:2px solid var(--ink); border-radius:10px; color:var(--ink);
+    font-variant-numeric:tabular-nums;
+  }
+  .rkf b{ font-family:var(--display); font-weight:800; }
+  #rk .rkf{ margin:-6px 0 14px; }
   #times .rows{ display:flex; flex-direction:column; gap:3px; }
   #times .rows .r{ font-size:13px; padding:4px 8px; grid-template-columns:26px 1fr auto; }
   #times .rows .r .p{ font-size:14px; }
@@ -1017,7 +1025,8 @@
   <div class="card">
     <div class="rkhead"><h2 id="rktitle">Ranked</h2><span id="rkn"></span></div>
     <p class="rkme" id="rkme"></p>
-    <p class="rkhow">One on one, three laps of a time trial. You get 3 attempts every round: press Z or use the menu to start your run again. The winner gains the loser&rsquo;s time divided by their own in points, or 1 point if the other does not finish. Losing never costs you points. Your ranked score is your points lifted by up to 20% for a good win rate.</p>
+    <p class="rkhow">One on one, three laps of a time trial. You get 3 attempts every round: press Z or use the menu to start your run again. The winner gains the loser&rsquo;s time divided by their own in points, or 1 point if the other does not finish. Losing never costs you points, and a good win rate lifts your score by up to half again.</p>
+    <div class="rkf" aria-label="How the ranked score is worked out"><b>Score</b> = points &times; (1 + 0.5 &times; win rate)<br><b>Win rate</b> = (wins + 1) &divide; (wins + losses + 2)<br><b>Points</b> for a win = their time &divide; your time, or 1 if they do not finish</div>
     <p class="rklbl">Track for your challenges</p>
     <div id="rkmaps"></div>
     <p class="rklbl">Online now</p>
@@ -1121,5 +1130,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=85');
+await import('./game.js?v=86');
 </script>
