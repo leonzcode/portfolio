@@ -11,22 +11,22 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=86';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=86';
-import { packLook, unpackLook, normalise } from './parts.js?v=86';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=86';
-import { whenKit } from './models.js?v=86';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=86';
-import { makeRescue } from './rescue.js?v=86';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=86';
-import { makeBrain, driveBrain } from './ai.js?v=86';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=86';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=86';
-import { makeRanked } from './rk.js?v=86';
-import { makeCones } from './cones.js?v=86';
-import { makeHazards } from './hazards.js?v=86';
-import { THEMES, themeById, seedOf } from './themes.js?v=86';
-import * as snd from './audio.js?v=86';
+import { buildTrack, setAniso } from './track.js?v=87';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=87';
+import { packLook, unpackLook, normalise } from './parts.js?v=87';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=87';
+import { whenKit } from './models.js?v=87';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=87';
+import { makeRescue } from './rescue.js?v=87';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=87';
+import { makeBrain, driveBrain } from './ai.js?v=87';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=87';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=87';
+import { makeRanked } from './rk.js?v=87';
+import { makeCones } from './cones.js?v=87';
+import { makeHazards } from './hazards.js?v=87';
+import { THEMES, themeById, seedOf } from './themes.js?v=87';
+import * as snd from './audio.js?v=87';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -549,7 +549,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=86')
+  import('./props.js?v=87')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -2761,7 +2761,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=86');
+    const mod = await import('./net.js?v=87');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3386,12 +3386,12 @@ function rkPanel() {
   const why = r.why === 'forfeit' ? ' (forfeited)' : r.why === 'left' ? ' (left)' : r.why === 'time' ? ' (out of time)' : '';
   let line;
   if (!r.winner) line = 'Nobody gains anything.';
-  else if (r.dnf) line = '<b>' + esc(r.winner) + ' +' + r.gain.toFixed(2) + '</b> · ' + esc(r.loser) + ' did not finish' + why;
-  else line = '<b>' + esc(r.winner) + ' +' + r.gain.toFixed(2) + '</b> · ' + time(tOf(r.lid)) + ' ÷ ' + time(tOf(r.wid));
+  else if (r.dnf) line = '<b>' + esc(r.winner) + ' wins</b> · ' + esc(r.loser) + ' did not finish' + why;
+  else line = '<b>' + esc(r.winner) + ' wins</b> by ' + (tOf(r.lid) - tOf(r.wid)).toFixed(2) + ' s';
   el('resrows').innerHTML = rows.map((x, i) => row(i, x.name, x.time ? time(x.time) : x.id === r.wid ? '—' : 'DNF', !rk.watch && x.id === rk.me)).join('')
     + '<p class="rkline">' + line + '</p>'
     + (!rk.watch && r.points && r.points[mine] !== undefined
-      ? '<p class="rkline sm">Your ranked score is now ' + (+r.points[mine]).toFixed(2) + '. Losing never takes points away.</p>' : '');
+      ? '<p class="rkline sm">Your ranked score is now ' + (+r.points[mine]).toFixed(1) + ' out of 100.</p>' : '');
   fetchRanked();
 }
 
@@ -3419,11 +3419,11 @@ function drawRankedTimes(box) {
       ? '<div class="rows rk">' + rows.map((r, i) =>
           '<div class="r' + (i === 0 ? ' p1' : '') + (i === at ? ' me' : '') + '"><span class="p">' + (i + 1) + '</span>'
           + '<span>' + esc(r.name) + '</span><span class="wl">' + r.wins + '–' + r.losses + '</span>'
-          + '<span class="t" title="' + r.points.toFixed(2) + ' points">' + (r.score !== undefined ? r.score : r.points).toFixed(2) + '</span></div>').join('') + '</div>'
+          + '<span class="t">' + (r.score !== undefined ? r.score : r.points).toFixed(1) + '</span></div>').join('') + '</div>'
       : '<p class="none">Nobody has played a ranked battle yet.</p>')
-    + '<div class="mine"><span>Your score</span><b>' + (at >= 0 ? (full[at].score !== undefined ? full[at].score : full[at].points).toFixed(2) : '&mdash;') + '</b></div>'
+    + '<div class="mine"><span>Your score</span><b>' + (at >= 0 ? (full[at].score !== undefined ? full[at].score : full[at].points).toFixed(1) : '&mdash;') + '</b></div>'
     + (at >= 10 ? '<div class="mine place"><span>You place</span><b>' + ord(at + 1) + '</b></div>' : '')
-    + '<div class="rkf" aria-label="How the ranked score is worked out"><b>Score</b> = points &times; (1 + 0.5 &times; win rate)<br><b>Win rate</b> = (wins + 1) &divide; (wins + losses + 2)<br><b>Points</b> for a win = their time &divide; your time, or 1 if they do not finish</div>';
+    + '<div class="rkf" aria-label="How the ranked score is worked out"><b>Score</b> = 50 &times; (your wins &divide; most wins on the board) + 50 &times; win rate<br><b>Win rate</b> = (wins + 1) &divide; (wins + losses + 2)</div>';
   wireTabs(box);
 }
 function wireTabs(box) {
