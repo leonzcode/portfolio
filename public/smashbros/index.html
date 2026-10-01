@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blast Zone · a platform fighter</title>
+<meta name="description" content="Blast Zone, a platform fighter in the browser: damage percent, knockback, stocks, ledges, shields and smash attacks. Up to four players with keyboards, controllers or CPUs.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700;1,800;1,900&family=Barlow:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --void: #0a0d1f;
+    --deep: #141a3c;
+    --ember: #ff5a1f;
+    --gold: #ffd23f;
+    --ice: #74e0ff;
+    --violet: #9b5cff;
+    --ink: #eef0ff;
+    --mute: #9aa0c8;
+    --p1: #ff3b4f; --p2: #3b8cff; --p3: #ffc531; --p4: #2fd16f;
+    --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+    --body: "Barlow", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--void); color: var(--ink); font-family: var(--body); overflow: hidden; }
+  canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+  .screen { position: fixed; inset: 0; display: none; }
+  .screen.on { display: flex; }
+
+  /* ---------- title ---------- */
+  #title { flex-direction: column; justify-content: center; padding: 0 7vw; background: linear-gradient(90deg, rgba(10,13,31,0.92) 0%, rgba(10,13,31,0.55) 45%, rgba(10,13,31,0) 75%); }
+  .mark { font-family: var(--display); font-style: italic; font-weight: 900; line-height: 0.82; letter-spacing: -0.01em; text-transform: uppercase; margin: 0; transform: skewX(-6deg); }
+  .mark span { display: block; font-size: clamp(76px, 15vw, 210px); }
+  .mark .w1 { color: var(--ink); }
+  .mark .w2 { color: var(--ember); text-shadow: 0.045em 0.045em 0 #4a1203; }
+  .tag { font-family: var(--display); font-weight: 700; font-size: clamp(18px, 2.2vw, 26px); letter-spacing: 0.04em; color: var(--mute); margin: 22px 0 0; }
+  .start { margin-top: 38px; display: inline-flex; align-items: center; gap: 14px; align-self: flex-start;
+    font-family: var(--display); font-weight: 900; font-style: italic; font-size: 30px; letter-spacing: 0.03em;
+    background: var(--ember); color: #1a0700; border: 0; padding: 12px 34px 12px 26px; clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%); }
+  .start:hover { background: var(--gold); }
+  .start kbd { font-family: var(--body); font-style: normal; font-weight: 700; font-size: 13px; background: rgba(0,0,0,0.25); padding: 3px 7px; border-radius: 3px; }
+  .hint { margin-top: 18px; color: var(--mute); font-size: 14px; max-width: 520px; line-height: 1.5; }
+  .corner { position: fixed; right: 18px; top: 14px; display: flex; gap: 8px; z-index: 5; }
+  .chip { background: rgba(10,13,31,0.7); border: 1px solid rgba(238,240,255,0.18); color: var(--ink); padding: 7px 12px; border-radius: 4px; font-size: 13px; font-weight: 600; text-decoration: none; }
+  .chip:hover { border-color: var(--gold); }
+
+  /* ---------- select ---------- */
+  #select { flex-direction: column; padding: 22px 3vw 18px; background: radial-gradient(ellipse at 20% 0%, #2a1a5c 0%, transparent 55%), radial-gradient(ellipse at 90% 100%, #3a1408 0%, transparent 55%), var(--void); overflow-y: auto; }
+  .bar { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .h { font-family: var(--display); font-weight: 900; font-style: italic; font-size: clamp(30px, 4vw, 50px); text-transform: uppercase; margin: 0; letter-spacing: 0.01em; }
+  .h small { font-size: 0.42em; color: var(--mute); font-weight: 700; letter-spacing: 0.06em; margin-left: 10px; }
+  .grow { flex: 1; }
+  .rule { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 800; font-size: 20px; text-transform: uppercase; }
+  .step { width: 34px; height: 34px; border: 0; background: var(--deep); font-weight: 900; font-size: 20px; border-radius: 4px; }
+  .step:hover { background: #222a5c; }
+  .rule b { min-width: 26px; text-align: center; font-size: 28px; color: var(--gold); }
+  .next { font-family: var(--display); font-weight: 900; font-style: italic; font-size: 24px; border: 0; background: var(--ember); color: #1a0700; padding: 10px 26px 10px 22px; clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
+  .next:hover { background: var(--gold); }
+  .next[disabled] { background: #444a70; color: #9aa0c8; cursor: not-allowed; }
+  .ghost { font-family: var(--display); font-weight: 800; font-size: 18px; background: none; border: 0; color: var(--mute); text-transform: uppercase; }
+  .ghost:hover { color: var(--ink); }
+
+  .roster { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0 16px; }
+  .tile { position: relative; border: 0; padding: 0; background: linear-gradient(160deg, var(--c2) 0%, var(--deep) 75%); height: clamp(150px, 24vh, 230px); overflow: hidden; clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%); text-align: left; }
+  .tile canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .tile .nm { position: absolute; left: 20px; bottom: 30px; font-family: var(--display); font-weight: 900; font-style: italic; font-size: clamp(28px, 3.2vw, 44px); text-transform: uppercase; text-shadow: 0 3px 0 rgba(0,0,0,0.6); }
+  .tile .tt { position: absolute; left: 22px; bottom: 12px; font-size: 13px; font-weight: 600; color: rgba(238,240,255,0.78); }
+  .tile .chips { position: absolute; right: 18px; top: 10px; display: flex; gap: 4px; }
+  .tile .chips i { font-style: normal; font-family: var(--display); font-weight: 900; font-size: 15px; padding: 2px 7px; color: #0a0d1f; }
+  .tile:hover { filter: brightness(1.15); }
+
+  .slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .slot { background: rgba(20,26,60,0.85); border-top: 6px solid var(--pc); padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 240px; position: relative; }
+  .slot.focus { box-shadow: inset 0 0 0 2px var(--pc); }
+  .slot.off { opacity: 0.55; }
+  .slot .top { display: flex; align-items: center; gap: 8px; }
+  .slot .pl { font-family: var(--display); font-weight: 900; font-style: italic; font-size: 28px; color: var(--pc); }
+  .seg { display: flex; margin-left: auto; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden; }
+  .seg button { border: 0; background: none; padding: 5px 9px; font-size: 13px; font-weight: 700; color: var(--mute); }
+  .seg button[aria-pressed="true"] { background: var(--pc); color: #0a0d1f; }
+  .slot .pick { position: relative; height: 120px; background: radial-gradient(ellipse at 50% 85%, rgba(255,255,255,0.08), transparent 60%); }
+  .slot .pick canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .slot .pick .arr { position: absolute; top: 50%; transform: translateY(-50%); border: 0; background: rgba(0,0,0,0.35); width: 28px; height: 44px; font-size: 18px; font-weight: 900; }
+  .slot .pick .arr:hover { background: var(--pc); color: #0a0d1f; }
+  .slot .pick .l { left: 0; } .slot .pick .r { right: 0; }
+  .slot .who { font-family: var(--display); font-weight: 900; font-style: italic; font-size: 24px; text-transform: uppercase; text-align: center; margin-top: -4px; }
+  .slot label { font-size: 12px; font-weight: 600; color: var(--mute); display: flex; align-items: center; gap: 8px; }
+  .slot select { flex: 1; background: #0a0d1f; color: var(--ink); border: 1px solid rgba(238,240,255,0.2); padding: 5px 6px; border-radius: 3px; font: inherit; font-size: 13px; }
+  .slot input[type=range] { flex: 1; accent-color: var(--pc); }
+  .slot .lv { font-family: var(--display); font-weight: 900; font-size: 20px; color: var(--ink); min-width: 18px; }
+  .keys { margin-top: 14px; color: var(--mute); font-size: 13px; line-height: 1.7; }
+  .keys b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- stage ---------- */
+  #stage { flex-direction: column; padding: 22px 3vw; background: var(--void); }
+  .stages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; flex: 1; max-height: 64vh; }
+  .stagecard { position: relative; border: 0; padding: 0; overflow: hidden; background: var(--deep); clip-path: polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%); }
+  .stagecard canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .stagecard .nm { position: absolute; left: 30px; bottom: 22px; font-family: var(--display); font-weight: 900; font-style: italic; font-size: clamp(34px, 4vw, 60px); text-transform: uppercase; text-shadow: 0 3px 0 rgba(0,0,0,0.6); }
+  .stagecard .tt { position: absolute; left: 32px; bottom: 8px; font-size: 14px; color: rgba(238,240,255,0.8); }
+  .stagecard:hover { filter: brightness(1.12); }
+
+  /* ---------- pause & results ---------- */
+  #pause { align-items: center; justify-content: center; background: rgba(5,6,15,0.66); }
+  .panel { background: rgba(20,26,60,0.96); padding: 28px 34px; min-width: 300px; display: flex; flex-direction: column; gap: 10px; border-top: 6px solid var(--gold); }
+  .panel .h { margin-bottom: 6px; }
+  .menuitem { border: 0; text-align: left; background: rgba(255,255,255,0.05); padding: 10px 14px; font-family: var(--display); font-weight: 800; font-size: 22px; text-transform: uppercase; }
+  .menuitem:hover { background: var(--ember); color: #1a0700; }
+
+  #results { flex-direction: column; padding: 4vh 6vw; background: linear-gradient(115deg, rgba(10,13,31,0.94) 40%, rgba(10,13,31,0.6)); }
+  .winner { font-family: var(--display); font-weight: 900; font-style: italic; text-transform: uppercase; font-size: clamp(54px, 9vw, 130px); line-height: 0.9; margin: 0; transform: skewX(-6deg); }
+  .winner em { font-style: inherit; color: var(--wc); }
+  .board { margin-top: 24px; border-collapse: collapse; font-size: 16px; max-width: 760px; width: 100%; }
+  .board th { text-align: left; font-family: var(--display); font-weight: 800; font-size: 15px; text-transform: uppercase; color: var(--mute); letter-spacing: 0.05em; padding: 6px 10px; border-bottom: 2px solid rgba(238,240,255,0.15); }
+  .board td { padding: 9px 10px; border-bottom: 1px solid rgba(238,240,255,0.08); font-variant-numeric: tabular-nums; }
+  .board td.pl { font-family: var(--display); font-weight: 900; font-style: italic; font-size: 22px; }
+  .board td.place { font-family: var(--display); font-weight: 900; font-size: 26px; }
+  .acts { display: flex; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
+
+  .toast { position: fixed; left: 50%; top: 16px; transform: translateX(-50%); background: rgba(20,26,60,0.95); padding: 8px 16px; border-radius: 4px; font-size: 14px; font-weight: 600; display: none; z-index: 9; }
+
+  @media (max-width: 820px) {
+    .roster, .slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stages { grid-template-columns: 1fr; max-height: none; }
+    .stagecard { min-height: 180px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .start { transition: none; } }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Game view"></canvas>
+
+<div class="corner">
+  <button class="chip" id="mute" type="button" aria-pressed="false">Sound on</button>
+  <a class="chip" href="/">leonzhao.dev</a>
+</div>
+
+<section class="screen on" id="title" aria-label="Title">
+  <h1 class="mark"><span class="w1">Blast</span><span class="w2">Zone</span></h1>
+  <p class="tag">A platform fighter · knock them past the edge of the screen</p>
+  <button class="start" id="go" type="button">Play <kbd>Enter</kbd></button>
+  <p class="hint">Up to four players on keyboards, controllers or as CPUs. Damage raises your percent, and the higher it climbs, the farther hits send you flying.</p>
+</section>
+
+<section class="screen" id="select" aria-label="Choose fighters">
+  <div class="bar">
+    <h2 class="h">Choose fighters<small>Click a fighter to give it to the highlighted player</small></h2>
+    <div class="grow"></div>
+    <div class="rule">Stocks <button class="step" data-stock="-1" aria-label="Fewer stocks">&minus;</button><b id="stocks">3</b><button class="step" data-stock="1" aria-label="More stocks">+</button></div>
+    <button class="ghost" id="toTitle" type="button">Back</button>
+    <button class="next" id="toStage" type="button">Choose stage</button>
+  </div>
+  <div class="roster" id="roster"></div>
+  <div class="slots" id="slots"></div>
+  <div class="keys" id="keys"></div>
+</section>
+
+<section class="screen" id="stage" aria-label="Choose a stage">
+  <div class="bar">
+    <h2 class="h">Choose a stage</h2>
+    <div class="grow"></div>
+    <button class="ghost" id="stageBack" type="button">Back</button>
+  </div>
+  <div class="stages" id="stages"></div>
+</section>
+
+<section class="screen" id="pause" aria-label="Paused">
+  <div class="panel" role="dialog" aria-modal="true">
+    <h2 class="h">Paused</h2>
+    <button class="menuitem" id="resume" type="button">Resume</button>
+    <button class="menuitem" id="boxes" type="button" aria-pressed="false">Show hitboxes</button>
+    <button class="menuitem" id="restart" type="button">Restart match</button>
+    <button class="menuitem" id="quit" type="button">Quit to fighter select</button>
+  </div>
+</section>
+
+<section class="screen" id="results" aria-label="Results">
+  <h2 class="winner" id="winner"></h2>
+  <table class="board"><thead><tr><th>Place</th><th>Player</th><th>KOs</th><th>Falls</th><th>Damage dealt</th><th>Self-destructs</th></tr></thead><tbody id="board"></tbody></table>
+  <div class="acts">
+    <button class="next" id="again" type="button">Play again</button>
+    <button class="ghost" id="change" type="button">Change fighters</button>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
