@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=91';
+import { themeById, rulesOf, lookOf } from './themes.js?v=92';
 
 /* The lap.
 
@@ -2302,6 +2302,8 @@ export function buildTrack(scene, seed, themeId) {
          ground rolls - a bridge, a bank, a hill or the edge of an island used to
          throw it as hard as any ramp. */
       jump: (a.ramp || b.ramp) ? 2 : (a.jump || b.jump) ? 1 : 0,
+      // the run up to a canyon, the hole and the landing
+      chasm: !!(a.chasm || b.chasm),
       // the surface above you, when there is one
       waterY: a.waterY === undefined ? (b.waterY === undefined ? null : b.waterY) : a.waterY,
       tunnel: !!(a.tunnel || b.tunnel),
