@@ -20,8 +20,8 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { spinOut } from './kart.js?v=88';
-import { merge, vertexMat, box, cyl } from './parts.js?v=88';
+import { spinOut } from './kart.js?v=89';
+import { merge, vertexMat, box, cyl } from './parts.js?v=89';
 
 const TAU = Math.PI * 2;
 
