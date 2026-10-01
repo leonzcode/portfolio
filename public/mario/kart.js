@@ -11,8 +11,8 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=90';
-import { loadKit } from './models.js?v=90';
+import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=91';
+import { loadKit } from './models.js?v=91';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -107,7 +107,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=90';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=91';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -115,57 +115,74 @@ export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
    chosen separately. Nothing that comes out of the garage carries a colour of
    its own: every panel is painted out of the racer, so however anybody has
    built theirs, a grid of eight is still eight recognisable cars. */
-/* Brayden's name, along both sides of his car, whatever body it is. The body
-   is measured once it is built and a ray is fired at it from each side at
-   half its height, so the plate sits on the panel it hits rather than out at
-   the widest point of a wheel arch or a wing. One canvas texture, shared by
-   every plate. */
+/* Brayden's car carries his name on a number plate, front and back, whatever
+   body it is. The body is measured once it is built and a ray is fired at it
+   from straight ahead and from straight behind, low down on the centre line,
+   so each plate sits on the panel it hits. If the middle of a body is open
+   (a buggy's frame), it goes on the end of the bounding box instead. One
+   canvas texture, shared by every plate. */
 const NAMEPLATE = { pip: true };
 const plateTex = {};
 function plateTexture(text) {
   if (plateTex[text]) return plateTex[text];
   const c = document.createElement('canvas');
-  c.width = 512; c.height = 128;
+  c.width = 512; c.height = 256;
   const g = c.getContext('2d');
-  g.font = '900 86px "Arial Black", "Helvetica Neue", Arial, sans-serif';
+  const round = (x, y, w, h, r) => {
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  };
+  // the plate: cream, with a navy rim and a bolt in each top corner
+  round(6, 6, 500, 244, 30);
+  g.fillStyle = '#f6f1e2'; g.fill();
+  g.lineWidth = 14; g.strokeStyle = '#17223b'; g.stroke();
+  g.fillStyle = '#9aa3b5';
+  for (const x of [70, 442]) { g.beginPath(); g.arc(x, 44, 11, 0, Math.PI * 2); g.fill(); }
+  const word = String(text).toUpperCase();
+  let size = 112;
+  g.font = '900 ' + size + 'px "Arial Black", "Helvetica Neue", Arial, sans-serif';
+  const w = g.measureText(word).width;
+  if (w > 440) { size = Math.floor(size * 440 / w); g.font = '900 ' + size + 'px "Arial Black", "Helvetica Neue", Arial, sans-serif'; }
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  // shrink to fit, then an ink outline under white letters, the way the HUD letters its numbers
-  let w = g.measureText(text).width;
-  if (w > 470) { g.font = '900 ' + Math.floor(86 * 470 / w) + 'px "Arial Black", "Helvetica Neue", Arial, sans-serif'; }
-  g.lineJoin = 'round'; g.lineWidth = 16; g.strokeStyle = '#17223b';
-  g.strokeText(text, 256, 68);
-  g.fillStyle = '#ffffff';
-  g.fillText(text, 256, 68);
+  g.fillStyle = '#17223b';
+  g.fillText(word, 256, 146);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   return (plateTex[text] = t);
 }
 const plateRay = new THREE.Raycaster();
-function nameplates(body, mesh, text, wz, wr) {
+function nameplates(body, mesh, text) {
   const geo = mesh.geometry;
   geo.computeBoundingBox();
   const bb = geo.boundingBox;
-  const len = bb.max.z - bb.min.z, h = bb.max.y - bb.min.y;
-  /* Between the wheels, which stand at plus and minus the wheelbase: a plate
-     wider than that gap has a tyre over each end of the name. */
-  const zc = 0, y = bb.min.y + h * 0.5;
-  let w = Math.min(len * 0.72, 1.7);
-  w = Math.min(w, h * 0.7 * 4);
-  if (wz > 0) w = Math.min(w, Math.max(0.7, 2 * (wz - wr) - 0.1));
+  const wide = bb.max.x - bb.min.x, h = bb.max.y - bb.min.y;
+  const pw = Math.min(0.6, wide * 0.45), ph = pw / 2;
+  const lowest = bb.min.y + ph * 0.6;
   const mat = new THREE.MeshBasicMaterial({
     map: plateTexture(text), transparent: true, depthWrite: false,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
-  const plane = new THREE.PlaneGeometry(w, w / 4);
-  for (const side of [1, -1]) {
-    plateRay.set(new THREE.Vector3(side * 10, y, zc), new THREE.Vector3(-side, 0, 0));
-    const hit = plateRay.intersectObject(mesh, false)[0];
-    const x = hit ? hit.point.x : (side > 0 ? bb.max.x : bb.min.x);
+  const plane = new THREE.PlaneGeometry(pw, ph);
+  // the front of a kart is -z
+  for (const end of [-1, 1]) {
+    /* Tried at a few heights, and put on whichever panel stands furthest out
+       at that end: one fixed height went over a pickup's tailgate and hung the
+       plate inside the bed. A tie goes to the higher one, clear of exhausts. */
+    let y = 0, z = null;
+    for (const f of [0.22, 0.32, 0.42, 0.52]) {
+      const yy = Math.max(lowest, bb.min.y + h * f);
+      plateRay.set(new THREE.Vector3(0, yy, end * 10), new THREE.Vector3(0, 0, -end));
+      const hit = plateRay.intersectObject(mesh, false)[0];
+      if (!hit) continue;
+      if (z === null || end * (hit.point.z - z) > -0.04) { z = hit.point.z; y = yy; }
+    }
+    if (z === null) { z = end < 0 ? bb.min.z : bb.max.z; y = Math.max(lowest, bb.min.y + h * 0.42); }
     const m = new THREE.Mesh(plane, mat);
-    m.position.set(x + side * 0.012, y, zc);
-    // reads from the back of the car to the front on both sides
-    m.rotation.y = side * Math.PI / 2;
+    m.position.set(0, y, z + end * 0.015);
+    // facing out of its own end of the car, the right way up and readable
+    m.rotation.y = end < 0 ? Math.PI : 0;
     m.renderOrder = 2;
     m.name = 'nameplate';
     body.add(m);
@@ -194,7 +211,7 @@ export function makeKart(who, build) {
   ]);
   const chassisMesh = merge(spec.parts, BODY_MAT);
   body.add(chassisMesh);
-  if (NAMEPLATE[r.id]) nameplates(body, chassisMesh, r.name, spec.wheelbase, tyre.r);
+  if (NAMEPLATE[r.id]) nameplates(body, chassisMesh, r.name);
   // the driver's body on its own, so the character can take its place
   const torsoMesh = merge(torso, BODY_MAT);
   body.add(torsoMesh);
