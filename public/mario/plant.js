@@ -17,8 +17,8 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { spinOut } from './kart.js?v=88';
-import { merge, vertexMat, cyl, ball } from './parts.js?v=88';
+import { spinOut } from './kart.js?v=89';
+import { merge, vertexMat, cyl, ball } from './parts.js?v=89';
 
 const LIFE = 8.5;              // how long it stays bolted on
 const REACH = 5.2;             // how far in front it can get at something

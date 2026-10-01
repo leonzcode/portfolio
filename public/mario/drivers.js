@@ -17,9 +17,10 @@
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
 const THREE = window.THREE;
 
-// which character each racer is, by racer id
+// which character each racer is, by racer id. A '#noglasses' after the file
+// is the same character with the glasses taken off its face.
 export const DRIVER_OF = {
-  pip: 'character-male-a', nib: 'character-female-a', wren: 'character-male-b', bram: 'character-female-b',
+  pip: 'character-male-a#noglasses', nib: 'character-female-a', wren: 'character-male-b', bram: 'character-female-b',
   coco: 'character-male-c', mox: 'character-female-c', juno: 'character-male-e', tock: 'character-female-e',
 };
 const baked = {};             // file -> { torso, head, arms, headAt, armsAt, hipAt, top, mat }
@@ -36,14 +37,27 @@ export function loadDrivers(base) {
   const files = [...new Set(Object.values(DRIVER_OF))];
   let left = files.length;
   for (const f of files) {
-    loader.load(base + f + '.glb', gltf => {
-      try { baked[f] = bake(gltf); } catch (e) { console.warn('driver', f, e); }
+    const [file, mod] = f.split('#');
+    loader.load(base + file + '.glb', gltf => {
+      try { baked[f] = bake(gltf, mod); } catch (e) { console.warn('driver', f, e); }
       if (--left === 0) for (const fn of waiting.splice(0)) { try { fn(); } catch (e) { console.warn(e); } }
     }, undefined, () => { if (--left === 0) for (const fn of waiting.splice(0)) { try { fn(); } catch (e) {} } });
   }
 }
 
-function bake(gltf) {
+/* The glasses on character-male-a are part of its head, not a piece of their
+   own: they are the head's faces painted from two columns of the shared colour
+   strip, the frame and arms at u 0.469 and the lenses at u 0.594. Nothing else
+   on that head uses either, so dropping those faces takes the glasses off and
+   leaves the face, the ears and the hair as they were. Checked by rendering
+   the head with and without each set. */
+const GLASSES_U = [0.469, 0.594];
+function isGlasses(U, a, b, c) {
+  const u = (U.getX(a) + U.getX(b) + U.getX(c)) / 3;
+  return GLASSES_U.some(g => Math.abs(u - g) < 0.02);
+}
+
+function bake(gltf, mod) {
   const scene = gltf.scene;
   const clip = gltf.animations.find(a => a.name === 'drive') || gltf.animations.find(a => a.name === 'sit');
   if (clip) {
@@ -90,6 +104,7 @@ function bake(gltf) {
     const tris = idx ? idx.length : P.count;
     for (let t = 0; t < tris; t += 3) {
       const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, c = idx ? idx[t + 2] : t + 2;
+      if (mod === 'noglasses' && o.name === 'head-mesh' && U && isGlasses(U, a, b, c)) continue;
       const into = out[part[a]];
       for (const i of [a, b, c]) {
         into.pos.push(world[i * 3], world[i * 3 + 1], world[i * 3 + 2]);
