@@ -11,22 +11,22 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=91';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=91';
-import { packLook, unpackLook, normalise } from './parts.js?v=91';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=91';
-import { whenKit } from './models.js?v=91';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=91';
-import { makeRescue } from './rescue.js?v=91';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=91';
-import { makeBrain, driveBrain } from './ai.js?v=91';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=91';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=91';
-import { makeRanked } from './rk.js?v=91';
-import { makeCones } from './cones.js?v=91';
-import { makeHazards } from './hazards.js?v=91';
-import { THEMES, themeById, seedOf } from './themes.js?v=91';
-import * as snd from './audio.js?v=91';
+import { buildTrack, setAniso } from './track.js?v=92';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=92';
+import { packLook, unpackLook, normalise } from './parts.js?v=92';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=92';
+import { whenKit } from './models.js?v=92';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=92';
+import { makeRescue } from './rescue.js?v=92';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=92';
+import { makeBrain, driveBrain } from './ai.js?v=92';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=92';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=92';
+import { makeRanked } from './rk.js?v=92';
+import { makeCones } from './cones.js?v=92';
+import { makeHazards } from './hazards.js?v=92';
+import { THEMES, themeById, seedOf } from './themes.js?v=92';
+import * as snd from './audio.js?v=92';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -549,7 +549,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=91')
+  import('./props.js?v=92')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1484,14 +1484,19 @@ function stepCamera(dt) {
      with it makes the car pull away from you, which is what speed feels like. */
   const pull = c.d * (1 + Math.min(0.18, Math.abs(watch.speed) / TUNE.top * 0.12)
     + (watch.boost > 0 ? 0.16 : 0) + (watch.bullet > 0 ? 0.3 : 0));
+  /* A small hop the camera barely notices. A real flight - a car sailing over
+     a canyon several metres up - it climbs with and looks at, or the car and
+     its wing go out of the top of the screen while the camera stares at the
+     road it left. */
+  const air = Math.max(0, (watch.hop || 0) - 1);
   const want = new THREE.Vector3(
     watch.pos.x + Math.sin(yaw) * pull * back,
-    watch.pos.y + c.h + watch.hop * 0.4,
+    watch.pos.y + c.h + watch.hop * 0.4 + air * 0.5,
     watch.pos.z + Math.cos(yaw) * pull * back
   );
-  const look = new THREE.Vector3(watch.pos.x, watch.pos.y + 1.25, watch.pos.z);
+  const look = new THREE.Vector3(watch.pos.x, watch.pos.y + 1.25 + air * 0.85, watch.pos.z);
   if (c.aim) {
-    look.set(watch.pos.x - Math.sin(yaw) * c.aim * back, watch.pos.y + 1.1,
+    look.set(watch.pos.x - Math.sin(yaw) * c.aim * back, watch.pos.y + 1.1 + air * 0.85,
              watch.pos.z - Math.cos(yaw) * c.aim * back);
   }
   // from the driver's seat the kart is only in the way
@@ -2761,7 +2766,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=91');
+    const mod = await import('./net.js?v=92');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },

@@ -11,8 +11,8 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=91';
-import { loadKit } from './models.js?v=91';
+import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=92';
+import { loadKit } from './models.js?v=92';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -107,7 +107,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=91';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=92';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -740,7 +740,7 @@ export function stepKart(k, input, track, dt) {
         k.trick = 0; k.trickSpin = 0;
       }
       k.trickWin = 0;
-      k.hop = 0; k.hopV = 0; k.launched = 0; k.glide = 0;
+      k.hop = 0; k.hopV = 0; k.launched = 0; k.glide = 0; k.airKeep = 0;
       /* Forget what the road was doing when you left it. Holding on to it meant
          the first frame back on the ground compared a stale climb against the
          flat it had just landed on, read that as a crest, and threw the kart
@@ -936,6 +936,10 @@ export function stepKart(k, input, track, dt) {
          is the surface having said something it did not mean. */
       // a ramp can throw you as high as it likes up to that; a hump only a hop
       k.hopV = Math.max(k.hopV, Math.min(pr.jump === 2 ? 9 : pr.jump === 1 ? 4.5 : 3.2, up * (k.parts ? k.parts.jump : 1)));
+      // off a ramp, or off the run up to a canyon, the wing comes out as you leave
+      if (pr.jump === 2 || pr.chasm) k.glide = 1;
+      // a jump meant as one keeps its height over whatever falls away beneath it
+      if (pr.jump || pr.chasm) k.airKeep = 1;
       k.speed *= Math.cos(th);              // that lift came out of your road speed
       k.trickWin = 0.28;                    // the window to pull a trick in
     }
@@ -957,6 +961,9 @@ export function stepKart(k, input, track, dt) {
        the hole. It also sits outside the check that a launch only happens on
        the road, because the last thing before a gap is the edge of the road. */
     if (k.hopV < need) { k.hopV = need; k.launched = 1; k.trickWin = 0.3; }
+    // a canyon is what the wing is for
+    if (k.spin <= 0) k.glide = 1;
+    k.airKeep = 1;
   }
 
   /* When the wing comes out. Anything that throws the car two metres or more
@@ -966,6 +973,8 @@ export function stepKart(k, input, track, dt) {
      Mario Kart, instead of halfway up. */
   if (!k.glide && k.spin <= 0 && k.hopV > 0
       && (k.hopV * k.hopV) / (2 * TUNE.G) > 2) k.glide = 1;
+  // and over a drop: two metres of nothing under the car is worth a wing too
+  if (!k.glide && k.spin <= 0 && k.hop > 2) k.glide = 1;
   if (k.spin > 0) k.glide = 0;
   k.glideOut += ((k.glide ? 1 : 0) - k.glideOut) * Math.min(1, dt * (k.glide ? 13 : 18));
 
@@ -1002,10 +1011,21 @@ export function stepKart(k, input, track, dt) {
     k.pos.y = k.fallY;
     k.speed *= Math.exp(-0.6 * dt);
     k.falling += dt;
-    k.hop = 0; k.hopV = 0; k.launched = 0; k.roadRise = 0; k.reslope = 1; k.glide = 0;
+    k.hop = 0; k.hopV = 0; k.launched = 0; k.roadRise = 0; k.reslope = 1; k.glide = 0; k.airKeep = 0;
     k.prog = pr.s;
     return pr;
   }
+  /* In the air the car keeps its height in the world, not its height above
+     whatever is under it. The hop is measured from the road, so when the road
+     fell away beneath a car in flight - the floor of a canyon, the far side of
+     a crest - the car fell with it, all the way down into the canyon and back
+     up the other side, instead of sailing across. Now the hop takes up the
+     difference: road drops, the car is that much higher above it. */
+  /* Only for a real jump, or over an actual hole. A drift hop on an ordinary
+     downhill still comes back to the road, as it should: the road keeps you on
+     it everywhere that is not meant to be jumped. */
+  if (k.hop > 0 && (k.airKeep || pr.gap) && k.groundY !== undefined) k.hop = Math.max(0, k.hop + (k.groundY - pr.y));
+  k.groundY = pr.y;
   k.pos.y = pr.y;
   /* On your feet again, pointing where the road goes. A spin leaves the car
      facing wherever it happened to stop, which is as often backwards as not,
@@ -1052,8 +1072,10 @@ export function stepKart(k, input, track, dt) {
       v.z = tz * WALL_SCRAPE - nz * vn * WALL_BOUNCE;
       setVel(k, v);
     }
-    // a heavy one throws you, and it throws you the way you hit it
-    if (vn > 17) spinOut(k, vn > 27, { x: -nx, z: -nz, speed: vn });
+    /* a heavy one throws you, and it throws you the way you hit it - on the
+       ground. A barrier is a metre tall; a car sailing over a canyon several
+       metres up has nothing to hit, and is only steered back over the road. */
+    if (vn > 17 && k.hop < 1.2) spinOut(k, vn > 27, { x: -nx, z: -nz, speed: vn });
     // and the nose comes back round to the road, because a kart is not a puck
     const wallYaw = Math.atan2(-pr.t.x, -pr.t.z);
     let d = wallYaw - k.yaw;
