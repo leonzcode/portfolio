@@ -13,9 +13,9 @@
    Nothing here touches the race itself; the game hands in what it knows
    through `g` and is told what to do through the callbacks.
 --------------------------------------------------------------------------- */
-import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, PRIZE_ROWS, owns, itemById } from './cosmetics.js?v=96';
-import { icon, KIND_ICON, fillIcons } from './icons.js?v=96';
-import { thumbFor, portraitFor } from './thumbs.js?v=96';
+import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, PRIZE_ROWS, owns, itemById } from './cosmetics.js?v=97';
+import { icon, KIND_ICON, fillIcons } from './icons.js?v=97';
+import { thumbFor, portraitFor } from './thumbs.js?v=97';
 
 export function makeHub(g) {
   const { el, esc, MC } = g;
@@ -156,8 +156,9 @@ export function makeHub(g) {
       + (maps.length ? '<div class="rows mapstats">' + maps.sort().map(m => {
         const r = s.maps[m];
         return '<div class="r"><span>' + esc(nameOfMap(m)) + '<small>' + r.runs + ' runs</small></span>'
-          + '<span class="t">lap ' + (r.bestLap ? fmt(r.bestLap) : '—') + '</span>'
-          + '<span class="t">best ' + (r.bestTime ? fmt(r.bestTime) : '—') + '</span></div>';
+          + '<span class="t"><em>Best lap</em>' + (r.bestLap ? fmt(r.bestLap) : '—') + '</span>'
+          + '<span class="t"><em>Race</em>' + (r.raceBest ? fmt(r.raceBest) : '—') + '</span>'
+          + '<span class="t"><em>Time trial</em>' + (r.ttBest ? fmt(r.ttBest) : '—') + '</span></div>';
       }).join('') + '</div>' : '<p class="none">No laps yet.</p>')
       + '<h4>Build and character</h4>'
       + '<div class="build"><p><b>Driver</b> ' + esc(R ? R.name : '—') + ' '
