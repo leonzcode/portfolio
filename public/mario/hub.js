@@ -13,9 +13,9 @@
    Nothing here touches the race itself; the game hands in what it knows
    through `g` and is told what to do through the callbacks.
 --------------------------------------------------------------------------- */
-import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, owns, itemById } from './cosmetics.js?v=95';
-import { icon, KIND_ICON, fillIcons } from './icons.js?v=95';
-import { thumbFor } from './thumbs.js?v=95';
+import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, PRIZE_ROWS, owns, itemById } from './cosmetics.js?v=96';
+import { icon, KIND_ICON, fillIcons } from './icons.js?v=96';
+import { thumbFor, portraitFor } from './thumbs.js?v=96';
 
 export function makeHub(g) {
   const { el, esc, MC } = g;
@@ -45,25 +45,42 @@ export function makeHub(g) {
     const box = el('invbody');
     const owned = CATALOG.filter(c => c.tier !== 'free' && inv[c.id]).length;
     const total = CATALOG.filter(c => c.tier !== 'free').length;
-    el('invcount').textContent = owned + ' of ' + total + ' won';
+    el('invcount').textContent = owned + ' of ' + total + ' unlocked';
+    el('invnote').textContent = '';
+    const heldWhy = g.held() || {};
+    const slotOf = kind => (KINDS.find(K => K.id === kind) || KINDS[0]).slot;
+    const wornIn = slot => (st[slot[0]] || {})[slot[1]] || null;
+    // one tile; a prize says what it takes, or that you hold it and why
+    const tile = c => {
+      const slot = slotOf(c.kind);
+      const have = owns(inv, c.id);
+      const label = c.src ? (have && heldWhy[c.id] ? 'Held' : have ? 'Yours' : c.need) : TIER_NAME[c.tier];
+      const why = c.src ? (have && heldWhy[c.id] ? heldWhy[c.id] : c.how) : (have ? TIER_NAME[c.tier] : HOW_TO_WIN[c.tier] || '');
+      return '<button type="button" class="tile ' + c.tier + (have ? '' : ' locked') + (wornIn(slot) === c.id ? ' on' : '') + '"'
+        + ' data-slot="' + slot.join('.') + '" data-id="' + c.id + '" title="' + esc(why) + '" style="--t:' + TIER_COLOUR[c.tier] + '">'
+        + '<i class="pic" data-th="' + c.id + '">' + icon(KIND_ICON[c.kind]) + '</i><b>' + esc(c.name) + '</b><small>'
+        + (have ? '' : icon('lock') + ' ') + esc(label) + '</small></button>';
+    };
     const legend = ['common', 'rare', 'epic', 'legendary'].map(t =>
       '<span class="lg"><i style="background:' + TIER_COLOUR[t] + '"></i><b>' + TIER_NAME[t] + '</b> ' + esc(HOW_TO_WIN[t]) + '</span>').join('');
     el('invlegend').innerHTML = legend;
     if (!(g.name() || '').trim()) { box.innerHTML = '<p class="none">Type a name on the title screen first: it is your account, and what you win is kept under it.</p>'; return; }
-    box.innerHTML = KINDS.map(K => {
-      const items = CATALOG.filter(c => c.kind === K.id);
+    /* The prizes first, a row for each place they come from: every track,
+       all tracks, ranked, and ranked wins. 1st holds the 1st, 2nd, 3rd and
+       top 10 prizes; 2nd the last three; 3rd the last two; the rest of the
+       top 10 the last one. */
+    const prizes = '<section class="prizes"><h3>Prizes</h3>'
+      + '<p class="hsub">For where you stand. A place prize is yours while you hold the place and goes if somebody takes it. '
+      + '1st gets every prize in its row, 2nd the last three, 3rd the last two, and the rest of the top 10 the last one.</p>'
+      + PRIZE_ROWS.map(R => '<div class="prow"><h4>' + esc(R.name) + '<small>' + esc(R.note) + '</small></h4><div class="tiles">'
+        + CATALOG.filter(c => c.src === R.src).map(tile).join('') + '</div></div>').join('') + '</section>';
+    box.innerHTML = prizes + KINDS.map(K => {
+      const items = CATALOG.filter(c => c.kind === K.id && !c.src);
       const worn = (st[K.slot[0]] || {})[K.slot[1]] || null;
       return '<section><h3>' + esc(K.name) + '</h3><div class="tiles">'
         + '<button type="button" class="tile none' + (!worn ? ' on' : '') + '" data-slot="' + K.slot.join('.') + '" data-id="">'
         + '<i>' + icon('none') + '</i><b>None</b></button>'
-        + items.map(c => {
-          const have = owns(inv, c.id);
-          return '<button type="button" class="tile ' + c.tier + (have ? '' : ' locked') + (worn === c.id ? ' on' : '') + '"'
-            + ' data-slot="' + K.slot.join('.') + '" data-id="' + c.id + '"'
-            + (have ? '' : ' title="' + esc(HOW_TO_WIN[c.tier] || '') + '"') + ' style="--t:' + TIER_COLOUR[c.tier] + '">'
-            + '<i class="pic" data-th="' + c.id + '">' + icon(KIND_ICON[c.kind]) + '</i><b>' + esc(c.name) + '</b><small>'
-            + (have ? TIER_NAME[c.tier] : icon('lock') + ' ' + TIER_NAME[c.tier]) + '</small></button>';
-        }).join('') + '</div></section>';
+        + items.map(tile).join('') + '</div></section>';
     }).join('');
     // and each one's own picture, drawn in your colours, as each is ready
     const racer = g.racer(), build = g.build();
@@ -78,7 +95,7 @@ export function makeHub(g) {
     const id = b.dataset.id;
     if (id && !owns(g.inv(), id)) {
       const it = itemById(id);
-      g.notice(it ? HOW_TO_WIN[it.tier] + ' to win this.' : 'Not won yet.');
+      el('invnote').textContent = it ? (it.how || HOW_TO_WIN[it.tier]) + ' to unlock ' + it.name + '.' : 'Not unlocked yet.';
       return;
     }
     const [a, k] = b.dataset.slot.split('.');
@@ -291,6 +308,7 @@ export function makeHub(g) {
     get open() { return open; },
     refresh(p) { profile = p; if (open === 'inv') drawInv(); },
     thumb: (it, racer, build) => thumbFor(it, racer, build),
+    portrait: i => portraitFor(i),
     reloadMaps: loadMaps,
   };
 }
