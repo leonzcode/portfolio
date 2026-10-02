@@ -28,12 +28,12 @@
    can play it, only somebody with its password (or an admin) can change it.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { merge, vertexMat } from './parts.js?v=93';
-import { THEMES, themeById, registerTheme } from './themes.js?v=93';
+import { merge, vertexMat } from './parts.js?v=94';
+import { THEMES, themeById, registerTheme } from './themes.js?v=94';
 
 let OBJ = null;                 // the object library, fetched with the builder
 function objects() {
-  if (!OBJ) OBJ = import('./mapobjects.js?v=93').then(m => m).catch(e => { console.warn('map objects', e); return { OBJECTS: [], CATEGORIES: [], objectById: () => null }; });
+  if (!OBJ) OBJ = import('./mapobjects.js?v=94').then(m => m).catch(e => { console.warn('map objects', e); return { OBJECTS: [], CATEGORIES: [], objectById: () => null }; });
   return OBJ;
 }
 
@@ -216,7 +216,8 @@ export function playMap(ctx, map, mode) {
   const id = 'c:' + map.id;
   const th = themeFor(data, id);
   ctx.registerCustom(id, specFor(data), th, data);
-  ctx.drive(id, mode === 'race' ? 'race' : 'tt', { map: { id: map.id, name: map.name, laps: map.laps || data.laps || 3 } });
+  // the builder's own lap count, unless there is none
+  ctx.drive(id, mode === 'race' ? 'race' : 'tt', { map: { id: map.id, name: map.name, laps: data.laps || map.laps || 3 } });
 }
 
 /* ---- building one ------------------------------------------------------------ */

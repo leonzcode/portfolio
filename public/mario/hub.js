@@ -13,7 +13,7 @@
    Nothing here touches the race itself; the game hands in what it knows
    through `g` and is told what to do through the callbacks.
 --------------------------------------------------------------------------- */
-import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, owns, itemById } from './cosmetics.js?v=93';
+import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, owns, itemById } from './cosmetics.js?v=94';
 
 export function makeHub(g) {
   const { el, esc, MC } = g;
@@ -78,14 +78,21 @@ export function makeHub(g) {
 
   /* ---- stats ---------------------------------------------------------------- */
   const fmt = t => g.time(t);
+  // built maps by their own names, for the stats page
+  const mapNames = {};
+  function knowMaps() {
+    return fetch(MC + '/kart/maps', { cache: 'no-store' }).then(r => r.json())
+      .then(j => { for (const m of (j && j.maps) || []) mapNames['c:' + m.id] = m.name; }).catch(() => {});
+  }
+  const nameOfMap = id => mapNames[id] || g.mapName(id);
   function loadStats(name) {
     const n = (name || '').trim();
     el('statsname').value = n;
     const box = el('statsbody');
     if (!n) { box.innerHTML = '<p class="none">Type a name to look somebody up, or put your own on the title screen.</p>'; return; }
     box.innerHTML = '<p class="none">Loading…</p>';
-    fetch(MC + '/kart/profile?name=' + encodeURIComponent(n), { cache: 'no-store' })
-      .then(r => r.json()).then(p => drawStats(p, n)).catch(() => { box.innerHTML = '<p class="none">The server could not be reached.</p>'; });
+    Promise.all([fetch(MC + '/kart/profile?name=' + encodeURIComponent(n), { cache: 'no-store' }).then(r => r.json()), knowMaps()])
+      .then(([p]) => drawStats(p, n)).catch(() => { box.innerHTML = '<p class="none">The server could not be reached.</p>'; });
   }
   function drawStats(p, asked) {
     const box = el('statsbody');
@@ -114,14 +121,14 @@ export function makeHub(g) {
       + tile('Total runs', s.runs || 0) + tile('Finished', s.finished || 0)
       + tile('Average lap', avgLap ? fmt(avgLap) : '—') + tile('Average speed', avgSpeed ? Math.round(avgSpeed) + ' km/h' : '—')
       + tile('Top speed', s.topSpeed ? Math.round(s.topSpeed) + ' km/h' : '—')
-      + tile('Fastest map', fastest ? esc(g.mapName(fastest)) : '—')
+      + tile('Fastest map', fastest ? esc(nameOfMap(fastest)) : '—')
       + tile('Ranked win rate', rate === null ? '—' : rate + '%') + tile('Ranked', rk.matches ? rk.wins + '–' + rk.losses : '—')
       + tile('Races won', s.raceWins || 0) + tile('Podiums', s.podiums || 0)
       + '</div>'
       + '<h4>Every map</h4>'
       + (maps.length ? '<div class="rows mapstats">' + maps.sort().map(m => {
         const r = s.maps[m];
-        return '<div class="r"><span>' + esc(g.mapName(m)) + '<small>' + r.runs + ' runs</small></span>'
+        return '<div class="r"><span>' + esc(nameOfMap(m)) + '<small>' + r.runs + ' runs</small></span>'
           + '<span class="t">lap ' + (r.bestLap ? fmt(r.bestLap) : '—') + '</span>'
           + '<span class="t">best ' + (r.bestTime ? fmt(r.bestTime) : '—') + '</span></div>';
       }).join('') + '</div>' : '<p class="none">No laps yet.</p>')

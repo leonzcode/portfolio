@@ -11,24 +11,24 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso, setCustomTrack } from './track.js?v=93';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=93';
-import { packLook, unpackLook, normalise } from './parts.js?v=93';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=93';
-import { whenKit } from './models.js?v=93';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=93';
-import { makeRescue } from './rescue.js?v=93';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=93';
-import { makeBrain, driveBrain } from './ai.js?v=93';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=93';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=93';
-import { makeRanked } from './rk.js?v=93';
-import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=93';
-import { makeHub } from './hub.js?v=93';
-import { makeCones } from './cones.js?v=93';
-import { makeHazards } from './hazards.js?v=93';
-import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=93';
-import * as snd from './audio.js?v=93';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=94';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=94';
+import { packLook, unpackLook, normalise } from './parts.js?v=94';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=94';
+import { whenKit } from './models.js?v=94';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=94';
+import { makeRescue } from './rescue.js?v=94';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=94';
+import { makeBrain, driveBrain } from './ai.js?v=94';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=94';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=94';
+import { makeRanked } from './rk.js?v=94';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=94';
+import { makeHub } from './hub.js?v=94';
+import { makeCones } from './cones.js?v=94';
+import { makeHazards } from './hazards.js?v=94';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=94';
+import * as snd from './audio.js?v=94';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -224,6 +224,7 @@ function myRacer() { return racerOf(myCast, myColour); }
    What you have won (the inventory) only ever comes from the server. */
 let myStyle = { char: {}, kart: {} };
 let profileT = 0;
+let profileSeen = '';                  // the name whose inventory has been seen once this session
 let myInv = {};
 let profileName = '';
 try {
@@ -274,10 +275,12 @@ function loadProfile(adopt) {
         delete myStyle.kart.paint;
         try { localStorage.setItem('mkStyle', JSON.stringify(myStyle)); } catch (e) {}
       }
-      // anything new since last time is news
-      if (before && Object.keys(before).length + (adopt ? 0 : 1) > 0) {
-        for (const id of Object.keys(myInv)) if (!before[id] && !adopt) announceItem(id);
+      /* Anything new since the last look is news, but only once there has been
+         a last look: the first load of a session is what you already had. */
+      if (profileSeen && profileSeen === name) {
+        for (const id of Object.keys(myInv)) if (!before[id]) announceItem(id);
       }
+      profileSeen = name;
       showGarage();
       if (hub) hub.refresh(p);
       return p;
@@ -682,7 +685,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=93')
+  import('./props.js?v=94')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -3038,7 +3041,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=93');
+    const mod = await import('./net.js?v=94');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3391,7 +3394,7 @@ function editorCtx() {
   };
 }
 function editorModule() {
-  if (!editorMod) editorMod = import('./editor.js?v=93');
+  if (!editorMod) editorMod = import('./editor.js?v=94');
   return editorMod;
 }
 function playCustomMap(id, mode) {

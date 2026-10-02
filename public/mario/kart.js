@@ -11,18 +11,18 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=93';
-import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=93';
+import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=94';
+import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=94';
 /* The geometry of the cosmetics - themed bodies, hats, gliders, decorations -
    is fetched with everything else but is not needed to draw a car, so a kart
    built before it arrives simply goes without until it is next built. */
 let ART = null;
 const artWaiting = [];
-import('./cosmetics-art.js?v=93').then(m => { ART = m; for (const f of artWaiting.splice(0)) { try { f(); } catch (e) {} } })
+import('./cosmetics-art.js?v=94').then(m => { ART = m; for (const f of artWaiting.splice(0)) { try { f(); } catch (e) {} } })
   .catch(e => console.warn('cosmetics art', e));
 export function whenArt(f) { if (ART) f(); else artWaiting.push(f); }
 export const artReady = () => !!ART;
-import { loadKit } from './models.js?v=93';
+import { loadKit } from './models.js?v=94';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -120,7 +120,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=93';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=94';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
