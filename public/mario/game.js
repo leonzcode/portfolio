@@ -11,24 +11,25 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso, setCustomTrack } from './track.js?v=94';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=94';
-import { packLook, unpackLook, normalise } from './parts.js?v=94';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=94';
-import { whenKit } from './models.js?v=94';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=94';
-import { makeRescue } from './rescue.js?v=94';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=94';
-import { makeBrain, driveBrain } from './ai.js?v=94';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=94';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=94';
-import { makeRanked } from './rk.js?v=94';
-import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=94';
-import { makeHub } from './hub.js?v=94';
-import { makeCones } from './cones.js?v=94';
-import { makeHazards } from './hazards.js?v=94';
-import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=94';
-import * as snd from './audio.js?v=94';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=95';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=95';
+import { packLook, unpackLook, normalise } from './parts.js?v=95';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=95';
+import { whenKit } from './models.js?v=95';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=95';
+import { makeRescue } from './rescue.js?v=95';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=95';
+import { makeBrain, driveBrain } from './ai.js?v=95';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=95';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=95';
+import { makeRanked } from './rk.js?v=95';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=95';
+import { makeHub } from './hub.js?v=95';
+import { icon, KIND_ICON } from './icons.js?v=95';
+import { makeCones } from './cones.js?v=95';
+import { makeHazards } from './hazards.js?v=95';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=95';
+import * as snd from './audio.js?v=95';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -295,9 +296,11 @@ function announceItem(id) {
   if (!box) return;
   const d = document.createElement('div');
   d.className = 'unlock ' + it.tier;
-  d.innerHTML = '<i>' + it.icon + '</i><span><small style="color:' + TIER_COLOUR[it.tier] + '">New ' + TIER_NAME[it.tier]
+  d.innerHTML = '<i>' + icon(KIND_ICON[it.kind]) + '</i><span><small style="color:' + TIER_COLOUR[it.tier] + '">New ' + TIER_NAME[it.tier]
     + '</small><b>' + esc(it.name) + '</b></span>';
   box.appendChild(d);
+  // and the thing itself, once its picture is drawn
+  if (hub) hub.thumb(it, myRacer(), myBuild).then(url => { if (url && d.isConnected) d.querySelector('i').innerHTML = '<img alt="" src="' + url + '">'; });
   try { snd.fanfare(true); } catch (e) {}
   setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 600); }, 5200);
 }
@@ -685,7 +688,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=94')
+  import('./props.js?v=95')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1800,7 +1803,7 @@ function makeTags() {
   if (ghost) {
     const d = document.createElement('div');
     d.className = 'tag ghost';
-    d.textContent = '\u{1F47B} ' + ghost.k.name;
+    d.innerHTML = icon('ghost') + ' ' + esc(ghost.k.name);
     box.appendChild(d);
     tagFor.set(ghost.k, d);
   }
@@ -2196,7 +2199,7 @@ function drawTimes() {
     + (bestShown ? time(bestShown) : '&mdash;') + '</b>'
     + (own ? '<button type="button" class="gh" data-own="1" title="Race your best, on '
       + esc(themeById(own.theme).name) + '" aria-label="Race your best, on '
-      + esc(themeById(own.theme).name) + '">\u{1F47B}</button>' : '')
+      + esc(themeById(own.theme).name) + '">' + icon('ghost') + '</button>' : '')
     + '</div>';
   mine += '<div class="mine last"><span>' + (tt ? 'Last trial' : 'Last race') + '</span><b>'
     + (lastShown ? time(lastShown) : '&mdash;') + '</b></div>';
@@ -2252,7 +2255,7 @@ const list = rows => {
   + '<span class="t">' + time(r.score) + '</span>'
   + (hg ? (r.g ? '<button type="button" class="gh" data-g="' + esc(r.g) + '" data-i="' + i + '" title="Race '
       + esc(r.name) + '\'s ghost on ' + esc(themeById(r.t).name) + '" aria-label="Race ' + esc(r.name)
-      + '\'s ghost on ' + esc(themeById(r.t).name) + '">\u{1F47B}</button>' : '<span class="gh"></span>') : '')
+      + '\'s ghost on ' + esc(themeById(r.t).name) + '">' + icon('ghost') + '</button>' : '<span class="gh"></span>') : '')
   + (adminPw ? '<button type="button" class="x" data-i="' + i + '" aria-label="Remove '
     + esc(r.name) + ' ' + time(r.score) + '">&times;</button>' : '')
   + '</div>').join('') + '</div>';
@@ -2272,8 +2275,8 @@ function wireWas(box, rows) {
     if (open) return;
     const strip = document.createElement('div');
     strip.className = 'gact';
-    strip.innerHTML = '<button type="button" data-a="race">\u{1F47B} Race it</button>'
-      + '<button type="button" data-a="watch">\u{1F441} Watch it</button>';
+    strip.innerHTML = '<button type="button" data-a="race">' + icon('ghost') + ' Race it</button>'
+      + '<button type="button" data-a="watch">' + icon('eye') + ' Watch it</button>';
     row.after(strip);
     strip.querySelectorAll('button').forEach(b2 => b2.addEventListener('click', () => {
       if (b2.disabled) return;
@@ -3041,7 +3044,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=94');
+    const mod = await import('./net.js?v=95');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3161,7 +3164,7 @@ function drawMapGhost() {
   if (!g) { mapGhostOn = false; return; }
   b.setAttribute('aria-pressed', mapGhostOn ? 'true' : 'false');
   b.classList.toggle('on', mapGhostOn);
-  b.innerHTML = '<i>\u{1F47B}</i><span>Race my best</span><b>' + time(g.time) + '</b>';
+  b.innerHTML = '<i>' + icon('ghost') + '</i><span>Race my best</span><b>' + time(g.time) + '</b>';
 }
 el('mapghost').addEventListener('click', () => { mapGhostOn = !mapGhostOn; drawMapGhost(); });
 /* Race or Time trial is the start button: pick the track, then pick how to
@@ -3394,7 +3397,7 @@ function editorCtx() {
   };
 }
 function editorModule() {
-  if (!editorMod) editorMod = import('./editor.js?v=94');
+  if (!editorMod) editorMod = import('./editor.js?v=95');
   return editorMod;
 }
 function playCustomMap(id, mode) {
@@ -3815,6 +3818,8 @@ hub = makeHub({
   el, esc, MC, time,
   name: () => (myName || '').trim(),
   inv: () => myInv,
+  racer: () => myRacer(),
+  build: () => myBuild,
   style: () => myStyle,
   setStyle(fn) { fn(myStyle); restyle(); },
   admin: () => adminPw,

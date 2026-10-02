@@ -13,10 +13,13 @@
    Nothing here touches the race itself; the game hands in what it knows
    through `g` and is told what to do through the callbacks.
 --------------------------------------------------------------------------- */
-import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, owns, itemById } from './cosmetics.js?v=94';
+import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, owns, itemById } from './cosmetics.js?v=95';
+import { icon, KIND_ICON, fillIcons } from './icons.js?v=95';
+import { thumbFor } from './thumbs.js?v=95';
 
 export function makeHub(g) {
   const { el, esc, MC } = g;
+  fillIcons();
   let profile = null;            // the last profile the server sent for you
   let open = null;
 
@@ -52,15 +55,22 @@ export function makeHub(g) {
       const worn = (st[K.slot[0]] || {})[K.slot[1]] || null;
       return '<section><h3>' + esc(K.name) + '</h3><div class="tiles">'
         + '<button type="button" class="tile none' + (!worn ? ' on' : '') + '" data-slot="' + K.slot.join('.') + '" data-id="">'
-        + '<i>∅</i><b>None</b></button>'
+        + '<i>' + icon('none') + '</i><b>None</b></button>'
         + items.map(c => {
           const have = owns(inv, c.id);
           return '<button type="button" class="tile ' + c.tier + (have ? '' : ' locked') + (worn === c.id ? ' on' : '') + '"'
             + ' data-slot="' + K.slot.join('.') + '" data-id="' + c.id + '"'
             + (have ? '' : ' title="' + esc(HOW_TO_WIN[c.tier] || '') + '"') + ' style="--t:' + TIER_COLOUR[c.tier] + '">'
-            + '<i>' + c.icon + '</i><b>' + esc(c.name) + '</b><small>' + (have ? TIER_NAME[c.tier] : '🔒 ' + TIER_NAME[c.tier]) + '</small></button>';
+            + '<i class="pic" data-th="' + c.id + '">' + icon(KIND_ICON[c.kind]) + '</i><b>' + esc(c.name) + '</b><small>'
+            + (have ? TIER_NAME[c.tier] : icon('lock') + ' ' + TIER_NAME[c.tier]) + '</small></button>';
         }).join('') + '</div></section>';
     }).join('');
+    // and each one's own picture, drawn in your colours, as each is ready
+    const racer = g.racer(), build = g.build();
+    box.querySelectorAll('[data-th]').forEach(e => {
+      const it = itemById(e.dataset.th);
+      if (it) thumbFor(it, racer, build).then(url => { if (url && e.isConnected) e.innerHTML = '<img alt="" src="' + url + '">'; });
+    });
   }
   el('invbody').addEventListener('click', e => {
     const b = e.target.closest('button.tile');
@@ -198,11 +208,11 @@ export function makeHub(g) {
     if (!mapList.length) { box.innerHTML = '<p class="none">No maps yet. Build the first one!</p>'; return; }
     box.innerHTML = mapList.map(m =>
       '<div class="cm' + (m.featured ? ' feat' : '') + '" data-id="' + m.id + '">'
-      + '<div class="th">' + (m.hasThumb ? '<img loading="lazy" alt="" src="' + MC + '/kart/maps/thumb?id=' + m.id + '&v=' + m.updated + '">' : '<span>🏁</span>')
+      + '<div class="th">' + (m.hasThumb ? '<img loading="lazy" alt="" src="' + MC + '/kart/maps/thumb?id=' + m.id + '&v=' + m.updated + '">' : '<span>' + icon('flag') + '</span>')
       + (m.featured ? '<em>Featured</em>' : '') + '</div>'
       + '<div class="inf"><h4>' + esc(m.name) + '</h4><p>by ' + esc(m.author) + ' · ' + (m.plays || 0) + ' plays</p>'
-      + '<div class="vote"><button type="button" data-v="1" aria-label="Like">👍 <b>' + (m.likes || 0) + '</b></button>'
-      + '<button type="button" data-v="-1" aria-label="Dislike">👎 <b>' + (m.dislikes || 0) + '</b></button></div>'
+      + '<div class="vote"><button type="button" data-v="1" aria-label="Like">' + icon('thumbup') + ' <b>' + (m.likes || 0) + '</b></button>'
+      + '<button type="button" data-v="-1" aria-label="Dislike">' + icon('thumbdown') + ' <b>' + (m.dislikes || 0) + '</b></button></div>'
       + '<div class="acts"><button type="button" class="go" data-a="tt">Time trial</button><button type="button" data-a="race">Race</button>'
       + '<button type="button" data-a="edit">Edit</button>' + (g.admin() ? '<button type="button" data-a="del" class="bad">Delete</button>' : '') + '</div></div>'
       + '<div class="lb"><h5>Best times</h5>' + (m.top && m.top.length ? m.top.map((r, i) =>
@@ -280,6 +290,7 @@ export function makeHub(g) {
     show, hide,
     get open() { return open; },
     refresh(p) { profile = p; if (open === 'inv') drawInv(); },
+    thumb: (it, racer, build) => thumbFor(it, racer, build),
     reloadMaps: loadMaps,
   };
 }

@@ -22,7 +22,7 @@ const THREE = window.THREE;
 export const DRIVER_OF = {
   pip: 'character-male-a#noglasses', nib: 'character-female-a', wren: 'character-male-b', bram: 'character-female-b',
   coco: 'character-male-c', mox: 'character-female-c', juno: 'character-male-e', tock: 'character-female-e',
-  thomas: 'character-male-b',
+  thomas: 'character-male-b#buzz',
 };
 const baked = {};             // file -> { torso, head, arms, headAt, armsAt, hipAt, top, mat }
 const waiting = [];           // callbacks for karts built before the models were in
@@ -44,6 +44,42 @@ export function loadDrivers(base) {
       if (--left === 0) for (const fn of waiting.splice(0)) { try { fn(); } catch (e) { console.warn(e); } }
     }, undefined, () => { if (--left === 0) for (const fn of waiting.splice(0)) { try { fn(); } catch (e) {} } });
   }
+}
+
+/* A buzz cut: the skin on the top of the head, the band round the crown and
+   the back of the head painted near black, so the
+   bald character reads as having very short hair. Nothing is added or moved;
+   only which texel those faces are coloured from. */
+const BUZZ_UV = [0.094, 0.9];
+function buzzFaces(o, P, U, idx, tris) {
+  const out = new Set();
+  if (!U) return out;
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), N = new THREE.Vector3();
+  const cellOf = t => Math.floor(((U.getX(t[0]) + U.getX(t[1]) + U.getX(t[2])) / 3) * 8) + (U.getY(t[0]) < 0.7 ? 8 : 0);
+  const list = [];
+  let top = -1e9;
+  for (let t = 0; t < tris; t += 3) {
+    const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, c = idx ? idx[t + 2] : t + 2;
+    A.fromBufferAttribute(P, a); B.fromBufferAttribute(P, b); C.fromBufferAttribute(P, c);
+    N.subVectors(C, B).cross(A.clone().sub(B));
+    const area = N.length() / 2;
+    N.normalize();
+    const cy = (A.y + B.y + C.y) / 3;
+    top = Math.max(top, A.y, B.y, C.y);
+    list.push({ t, tri: [a, b, c], area, n: N.clone(), cy });
+  }
+  // the skin is the colour covering the most of the head
+  const area = {};
+  for (const f of list) { const k = cellOf(f.tri); area[k] = (area[k] || 0) + f.area; }
+  let skin = -1, best = 0;
+  for (const k in area) if (area[k] > best) { best = area[k]; skin = +k; }
+  for (const f of list) {
+    if (cellOf(f.tri) !== skin) continue;            // the beard, the eyes, the ears' insides stay
+    // the model looks down +z: the top, the crown band all round, and the back
+    const crown = f.cy > top - 0.065;
+    if (f.n.y > 0.7 || crown || (f.n.z < -0.7 && f.cy > top - 0.27)) out.add(f.t);
+  }
+  return out;
 }
 
 /* The glasses on character-male-a are part of its head, not a piece of their
@@ -104,13 +140,15 @@ function bake(gltf, mod) {
     }
     const idx = g.index ? g.index.array : null;
     const tris = idx ? idx.length : P.count;
+    const buzz = mod === 'buzz' && o.name === 'head-mesh' ? buzzFaces(o, P, U, idx, tris) : null;
     for (let t = 0; t < tris; t += 3) {
       const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, c = idx ? idx[t + 2] : t + 2;
       if (mod === 'noglasses' && o.name === 'head-mesh' && U && isGlasses(U, a, b, c)) continue;
       const into = out[part[a]];
+      const hair = buzz && buzz.has(t);
       for (const i of [a, b, c]) {
         into.pos.push(world[i * 3], world[i * 3 + 1], world[i * 3 + 2]);
-        if (U) into.uv.push(U.getX(i), U.getY(i));
+        if (U) { if (hair) into.uv.push(BUZZ_UV[0], BUZZ_UV[1]); else into.uv.push(U.getX(i), U.getY(i)); }
         into.leg.push(legOf[i]);
       }
     }
