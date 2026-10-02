@@ -8,14 +8,14 @@
    seconds after the last one so it is not holding a GPU context for nothing.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { makeKart } from './kart.js?v=95';
-import { merge } from './parts.js?v=95';
+import { makeKart, artLoaded, racerOf } from './kart.js?v=96';
+import { driverFor } from './drivers.js?v=96';
+import { merge } from './parts.js?v=96';
 
 const SIZE = 192;
 const cache = new Map();           // key -> data URL (or null when it could not be drawn)
 let R = null, scene = null, cam = null, idleT = 0;
-let ART = null;
-const art = () => ART || (ART = import('./cosmetics-art.js?v=95').catch(() => null));
+const art = () => artLoaded();
 const PART_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.08 });
 
 function setup() {
@@ -112,6 +112,36 @@ async function draw(item, racer, build) {
   return null;
 }
 
+// the characters arrive a moment after the page; a face drawn before then is the stand-in helmet
+function driversReady() {
+  return new Promise(res => {
+    const t0 = performance.now();
+    const look = () => (driverFor('pip') || performance.now() - t0 > 15000) ? res() : setTimeout(look, 200);
+    look();
+  });
+}
+/* A driver's face, for the picker: each racer in their own colours. */
+export function portraitFor(i) {
+  const key = 'portrait|' + i;
+  if (cache.has(key)) return Promise.resolve(cache.get(key));
+  const job = queue.then(() => new Promise(res => requestAnimationFrame(res))).then(async () => {
+    if (cache.has(key)) return cache.get(key);
+    await driversReady();
+    if (!setup()) { cache.set(key, null); return null; }
+    let url = null;
+    try {
+      const k = makeKart(racerOf(i, null), null, null);
+      if (k.shade) k.shade.visible = false;
+      url = shoot(k.group, [-0.55, 0.2, -1.2], 1.0, g => seenBox(k.head).expandByScalar(0.05));
+    } catch (e) { console.warn('portrait', i, e); }
+    cache.set(key, url);
+    letGo();
+    return url;
+  });
+  queue = job.catch(() => null);
+  return job;
+}
+
 /* The picture for one thing, in these colours. Resolves to a data URL, or to
    null when it cannot be drawn here (no WebGL), so the icon stays. */
 let queue = Promise.resolve();
@@ -121,6 +151,7 @@ export function thumbFor(item, racer, build) {
   // one at a time, each in its own frame, so opening the inventory never stalls the menu
   const job = queue.then(() => new Promise(res => requestAnimationFrame(res))).then(async () => {
     if (cache.has(key)) return cache.get(key);
+    await driversReady();
     if (!setup()) { cache.set(key, null); return null; }
     let url = null;
     try { url = await draw(item, racer, build); } catch (e) { console.warn('thumb', item.id, e); }

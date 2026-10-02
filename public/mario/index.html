@@ -979,6 +979,30 @@
   #times .gh .ic, #mapghost .ic{ width:1.05em; height:1.05em; }
   #tags .tag .ic{ width:.95em; height:.95em; vertical-align:-0.12em; }
 
+  /* ---- the prizes on the inventory page */
+  #invnote{ min-height:1.2em; margin:4px 0 0; font-weight:800; font-size:13px; color:#b3261e; }
+  .prizes{ background:#fff8e1; border:2px solid var(--ink); border-radius:14px; padding:4px 12px 12px; margin-top:12px; }
+  .prizes .prow h4{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin:12px 0 6px; font-size:14px; }
+  .prizes .prow h4 small{ font-family:var(--body); font-weight:700; font-size:11px; opacity:.55; letter-spacing:0; text-transform:none; }
+  .prizes .tiles{ grid-template-columns:repeat(auto-fill, minmax(104px, 1fr)); }
+
+  /* ---- the driver picker: the faces, three across */
+  #gdriver .opt[hidden]{ display:none !important; }
+  #gdrivers{ display:grid; grid-template-columns:repeat(3, 1fr); gap:7px; }
+  #gdrivers button{ display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px 4px 5px; cursor:pointer;
+    background:#fff; border:2px solid var(--ink); border-radius:12px; box-shadow:0 3px 0 var(--ink); color:var(--ink);
+    font-family:var(--display); font-weight:800; font-size:12.5px; min-height:44px; }
+  #gdrivers button i{ display:grid; place-items:center; width:58px; height:58px; font-style:normal; border-radius:10px;
+    background:linear-gradient(#dff2ff, #bfe6ff); overflow:hidden; }
+  #gdrivers button i img{ width:58px; height:58px; object-fit:cover; display:block; }
+  #gdrivers button i .ic{ width:28px; height:28px; opacity:.5; }
+  #gdrivers button[aria-pressed="true"]{ background:var(--gold); }
+  #gdrivers button:hover{ transform:translateY(-1px); }
+  #gdrivers button:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--ink); }
+  #gdrivers button:focus-visible{ outline:4px solid var(--blue); outline-offset:2px; }
+  /* and the arrows on the part rows, bigger and easier to hit */
+  #gparts .opt button{ min-width:40px !important; min-height:40px !important; font-size:20px !important; }
+
   /* ---- the garage tabs */
   #gtabs{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:10px 0 0; }
   #gtabs button{ font-family:var(--display); font-weight:800; font-size:12px; border:2px solid var(--ink); border-radius:999px;
@@ -1194,6 +1218,7 @@
   <div class="card wide">
     <div class="hhead"><h2 id="invh">Inventory</h2><span id="invcount"></span><button type="button" class="hubback big alt">Back</button></div>
     <div id="invlegend"></div>
+    <p id="invnote" role="status"></p>
     <div id="invbody"></div>
   </div>
 </div>
@@ -1320,5 +1345,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=95');
+await import('./game.js?v=96');
 </script>

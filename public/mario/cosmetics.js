@@ -95,7 +95,6 @@ export const CATALOG = [
   L('decor', 'decor_trophy', 'Trophy', 'legendary'),
   // number plates
   L('plate', 'plate_name', 'Your name plates', 'rare'),
-  L('plate', 'plate_brayden', 'BRAYDEN plates', 'rare'),
   // a whole different driver
   L('driver', 'driver_robot', 'Robot', 'epic'),
   L('driver', 'driver_alien', 'Alien', 'epic'),
@@ -106,6 +105,56 @@ export const CATALOG = [
   L('aura', 'aura_gold', 'Golden glow', 'legendary'),
   L('aura', 'aura_rainbow', 'Rainbow aura', 'legendary'),
 ];
+/* ---- prizes ----------------------------------------------------------------
+   Held for a place (on each track, across all tracks, in ranked) and lost
+   with it, or kept for a number of ranked wins. The server decides who holds
+   what (mlhub apps/mc/kartprofile.js PLACE_SETS and MILESTONES); these are
+   the same ids. `src` groups them on the inventory page and `need` is what it
+   takes, in the few words a tile has room for. */
+export const MAP_PRIZES = [
+  ['meadow', 'Sunfield Loop', ['Sunflower aura', 'Sunfield fields paint', 'Straw farmer hat', 'Sunfield pennant']],
+  ['dunes', 'Redrock Dunes', ['Sandstorm aura', 'Sandstone paint', 'Explorer helmet', 'Redrock pennant']],
+  ['frost', 'Glacier Pass', ['Snowfall aura', 'Glacier ice paint', 'Trapper hat', 'Glacier pennant']],
+  ['neon', 'Neon Mile', ['Neon glow aura', 'Neon grid paint', 'Cyber visor', 'Neon Mile pennant']],
+  ['ember', 'Ember Hollow', ['Ember sparks aura', 'Magma rock paint', 'Obsidian horned helm', 'Ember pennant']],
+];
+const SET_KINDS = [['aura', 'p1', '1st', 'legendary'], ['skin', 'p2', '2nd', 'epic'], ['hat', 'p3', '3rd', 'rare'], ['decor', 't10', 'Top 10', 'common']];
+for (const [m, mapName, names] of MAP_PRIZES) {
+  const ids = ['aura_' + m, 'skin_' + m, 'hat_' + m, 'decor_' + m + 'flag'];
+  SET_KINDS.forEach(([kind, , place, tier], i) =>
+    CATALOG.push({ kind, id: ids[i], name: names[i], tier, src: 'map:' + m, srcName: mapName, need: place,
+                   how: (place === 'Top 10' ? 'Be in the top 10' : 'Hold ' + place) + ' on ' + mapName + ' (race or time trial)' }));
+}
+const SETS = [
+  ['all', 'All tracks', ['aura_champion', 'skin_chrome', 'hat_laurel', 'decor_laurels'], ['Champion aura', 'Chrome paint', 'Laurel crown', 'Grand Prix laurels'],
+   'across all tracks (race or time trial)'],
+  ['ranked', 'Ranked', ['aura_rkcrown', 'skin_rkdiamond', 'hat_rkhelm', 'decor_rkshield'], ['Ranked crown aura', 'Diamond plate paint', 'Knight helm', 'Ranked shield'],
+   'in ranked'],
+];
+for (const [src, srcName, ids, names, where] of SETS) {
+  SET_KINDS.forEach(([kind, , place, tier], i) =>
+    CATALOG.push({ kind, id: ids[i], name: names[i], tier, src, srcName, need: place,
+                   how: (place === 'Top 10' ? 'Be in the top 10 ' : 'Hold ' + place + ' ') + where }));
+}
+export const MILESTONES = [
+  [1, 'decor', 'decor_star', 'Star antenna', 'common'], [5, 'hat', 'hat_headband', 'Winner headband', 'common'],
+  [10, 'skin', 'skin_bronze', 'Bronze paint', 'rare'], [25, 'glider', 'glider_jet', 'Jet wings', 'rare'],
+  [50, 'hat', 'hat_goldhelm', 'Gold racing helmet', 'epic'], [75, 'skin', 'skin_platinum', 'Platinum paint', 'epic'],
+  [100, 'aura', 'aura_centurion', 'Centurion aura', 'legendary'], [150, 'glider', 'glider_phoenix', 'Phoenix wings', 'legendary'],
+  [200, 'body', 'body_trophy', 'Trophy kart', 'legendary'],
+];
+for (const [n, kind, id, name, tier] of MILESTONES) {
+  CATALOG.push({ kind, id, name, tier, src: 'wins', srcName: 'Ranked wins', need: n + (n === 1 ? ' win' : ' wins'),
+                 how: 'Win ' + n + ' ranked ' + (n === 1 ? 'battle' : 'battles') + ' (kept for good)' });
+}
+// the order the prizes are shown in, a row each
+export const PRIZE_ROWS = [
+  ...MAP_PRIZES.map(([m, name]) => ({ src: 'map:' + m, name, note: 'Held while you are in the top 10 on this track' })),
+  { src: 'all', name: 'All tracks', note: 'Held while you are in the top 10 across every track' },
+  { src: 'ranked', name: 'Ranked', note: 'Held while you are in the top 10 of the ranked board' },
+  { src: 'wins', name: 'Ranked wins', note: 'Kept for good' },
+];
+
 const BY_ID = {};
 for (const c of CATALOG) BY_ID[c.id] = c;
 export const itemById = id => BY_ID[id] || null;
@@ -148,6 +197,8 @@ const PATTERN = {
   none: 0, grad: 1, skin_stripes: 2, skin_checker: 3, skin_dots: 4, skin_camo: 5, skin_flames: 6,
   skin_zebra: 7, skin_carbon: 8, skin_tiger: 9, skin_galaxy: 10, skin_lava: 11, skin_circuit: 12,
   skin_rainbow: 13, skin_gold: 14, skin_aurora: 15,
+  skin_meadow: 16, skin_dunes: 17, skin_frost: 18, skin_neon: 19, skin_ember: 20,
+  skin_chrome: 21, skin_rkdiamond: 22, skin_bronze: 23, skin_platinum: 24,
 };
 const GRAD_AXIS = { front: 0, side: 1, top: 2 };
 const PAINT_GLSL = /* glsl */`
@@ -190,6 +241,37 @@ vec3 paintAt(vec3 p, vec3 base) {
   else if (uPattern == 13) { c = hue(fract(p.z * 0.22 + p.y * 0.1 + uTime * 0.25)) * 0.95 + 0.05; }
   else if (uPattern == 14) { float sh = 0.75 + 0.35 * sin(p.z * 4.0 + p.y * 6.0 - uTime * 2.0); c = vec3(1.0, 0.76, 0.2) * sh; }
   else if (uPattern == 15) { float w = sin(p.z * 2.0 + uTime * 0.9 + sin(p.x * 3.0 + uTime * 0.6)); c = mix(vec3(0.1, 0.9, 0.55), vec3(0.55, 0.2, 0.95), 0.5 + 0.5 * w) * (0.8 + 0.3 * noise3(p * 2.0 + uTime * 0.2)); }
+  // Sunfield: rows of field, green and gold, with a sunflower here and there
+  else if (uPattern == 16) { float row = fract(p.z * 1.4 + sin(p.x * 2.5) * 0.15);
+    c = mix(vec3(0.22, 0.62, 0.2), vec3(0.95, 0.78, 0.2), step(0.55, row));
+    vec3 q = fract(p * 2.6) - 0.5; float fl = step(length(q.xz), 0.16) * step(0.72, hash3(floor(p * 2.6)));
+    c = mix(c, vec3(1.0, 0.85, 0.1), fl); c = mix(c, vec3(0.35, 0.2, 0.08), fl * step(length(q.xz), 0.07)); }
+  // Redrock: sandstone in layers
+  else if (uPattern == 17) { float band = p.y * 5.0 + noise3(p * 1.7) * 1.4 + sin(p.z * 1.3) * 0.4;
+    float k = fract(band); c = k < 0.33 ? vec3(0.78, 0.36, 0.18) : k < 0.66 ? vec3(0.93, 0.62, 0.36) : vec3(0.98, 0.86, 0.66); }
+  // Glacier: cracked ice, a glint running along it
+  else if (uPattern == 18) { float n = noise3(p * 3.4); float crack = smoothstep(0.06, 0.0, abs(n - 0.5));
+    float glint = pow(max(0.0, sin(p.z * 1.5 - uTime * 1.6)), 18.0);
+    c = mix(vec3(0.72, 0.88, 0.98), vec3(0.95, 0.99, 1.0), noise3(p * 1.3)) - crack * vec3(0.3, 0.18, 0.05) + glint * 0.6; }
+  // Neon Mile: black with a pink and cyan grid that pulses
+  else if (uPattern == 19) { vec3 q = fract(p * 3.0); float lx = step(q.x, 0.06), lz = step(q.z, 0.06), ly = step(q.y, 0.06);
+    float pulse = 0.7 + 0.3 * sin(uTime * 3.0 + p.z * 2.0);
+    c = vec3(0.04, 0.03, 0.08) + (lx + ly) * vec3(1.0, 0.2, 0.75) * pulse + lz * vec3(0.1, 0.95, 1.0) * pulse; }
+  // Ember Hollow: obsidian with glowing seams and embers
+  else if (uPattern == 20) { float n = noise3(p * 2.4 + vec3(0.0, uTime * 0.12, 0.0)); float seam = smoothstep(0.05, 0.0, abs(n - 0.5));
+    float ember = step(0.97, hash3(floor(p * 9.0 + vec3(0.0, floor(uTime * 2.0), 0.0))));
+    c = vec3(0.07, 0.05, 0.06) + seam * vec3(1.0, 0.42, 0.06) * (1.1 + 0.4 * sin(uTime * 3.0)) + ember * vec3(1.0, 0.7, 0.2); }
+  // chrome: a bright mirror with light sweeping along it
+  else if (uPattern == 21) { float s = 0.55 + 0.45 * sin(p.y * 7.0 + p.z * 1.5 - uTime * 2.2); c = mix(vec3(0.62, 0.66, 0.72), vec3(1.0), s * s); }
+  // ranked diamond plate in purple, catching the light
+  else if (uPattern == 22) { vec2 q = fract(vec2(p.x + p.z, p.x - p.z) * 3.0) - 0.5; float d = step(abs(q.x) + abs(q.y), 0.22);
+    float glint = pow(max(0.0, sin((p.x + p.z) * 2.0 - uTime * 2.5)), 12.0);
+    c = mix(vec3(0.28, 0.12, 0.48), vec3(0.62, 0.4, 0.9), d) + glint * vec3(0.9, 0.8, 1.0); }
+  // bronze, brushed
+  else if (uPattern == 23) { float streak = noise3(vec3(p.x * 40.0, p.y * 2.0, p.z * 2.0)); c = vec3(0.72, 0.45, 0.2) * (0.8 + 0.35 * streak); }
+  // platinum, with sparkles
+  else if (uPattern == 24) { float sp = step(0.985, hash3(floor(p * 14.0))) * (0.5 + 0.5 * sin(uTime * 5.0 + hash3(floor(p * 14.0)) * 30.0));
+    c = vec3(0.86, 0.88, 0.92) * (0.85 + 0.2 * sin(p.z * 2.0 - uTime)) + sp; }
   return c;
 }
 `;
@@ -209,6 +291,10 @@ export function paintMaterial(base, paint, trim, kart) {
   m.userData.paintKey = key;
   if (skin === 'skin_gold') { m.metalness = 0.85; m.roughness = 0.28; }
   if (skin === 'skin_carbon') { m.roughness = 0.35; }
+  if (skin === 'skin_chrome') { m.metalness = 0.9; m.roughness = 0.12; }
+  if (skin === 'skin_bronze') { m.metalness = 0.7; m.roughness = 0.35; }
+  if (skin === 'skin_platinum') { m.metalness = 0.8; m.roughness = 0.2; }
+  if (skin === 'skin_rkdiamond' || skin === 'skin_frost') { m.metalness = 0.4; m.roughness = 0.25; }
   const U = {
     uPaint: { value: new THREE.Color(paint) },
     uPaint2: { value: new THREE.Color(grad ? kart.paint2 : paint) },
@@ -244,6 +330,16 @@ const AURA = {
   aura_sparkle: { n: 26, size: 0.32, colours: [0xffffff, 0xfff1a8, 0xbfe6ff], radius: 1.7, rise: 1.2 },
   aura_gold: { n: 46, size: 0.5, colours: [0xffd233, 0xffb300, 0xfff6c8], radius: 2.1, rise: 1.8, ring: true },
   aura_rainbow: { n: 60, size: 0.5, colours: [0xff4d4d, 0xffa64d, 0xffff4d, 0x4dff88, 0x4db8ff, 0xb84dff], radius: 2.3, rise: 2.0, ring: true },
+  // the tracks' own, for 1st on one
+  aura_meadow: { n: 40, size: 0.5, colours: [0xffd233, 0x8bdc4a, 0xfff1a8, 0xff8fb0], radius: 2.0, rise: 1.5, ring: true },
+  aura_dunes: { n: 44, size: 0.45, colours: [0xe58a3a, 0xf4c27a, 0xffe2b0], radius: 2.1, rise: 1.0, ring: true },
+  aura_frost: { n: 44, size: 0.45, colours: [0xffffff, 0xbfe6ff, 0x8fd3ff], radius: 2.0, rise: 1.8, ring: true },
+  aura_neon: { n: 44, size: 0.5, colours: [0xff3fb4, 0x2ef2ff, 0xb84dff], radius: 2.1, rise: 1.6, ring: true },
+  aura_ember: { n: 50, size: 0.45, colours: [0xff6a00, 0xffb000, 0xff2a00], radius: 1.9, rise: 2.6, ring: true },
+  // across all tracks, in ranked, and a hundred wins: the biggest there are
+  aura_champion: { n: 80, size: 0.62, colours: [0xffd233, 0xffffff, 0xffb300, 0xfff1a8], radius: 2.7, rise: 2.6, ring: true },
+  aura_rkcrown: { n: 66, size: 0.56, colours: [0xa35cff, 0xffd233, 0xe0c8ff], radius: 2.5, rise: 2.2, ring: true },
+  aura_centurion: { n: 70, size: 0.58, colours: [0xff3b30, 0xffd233, 0xffffff], radius: 2.6, rise: 2.4, ring: true },
 };
 export function makeAura(id) {
   const A = AURA[id];
