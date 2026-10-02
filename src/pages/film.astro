@@ -7,32 +7,39 @@ interface FilmVideo {
   description?: string;
   /** "1" | "2" | "3" = frame at ~25/50/75% through video; "max" = official maxresdefault */
   thumbFrame?: "1" | "2" | "3" | "max";
+  /** the video's view count on YouTube, copied by hand (last taken 2026-10-02) */
+  views?: number;
 }
 
 const videos: FilmVideo[] = [
   {
     id: "onrw-sMbfig",
     title: "I made an AI image detector",
+    views: 46,
     description: "Short film walking through how I built an AI vs. human image classifier.",
   },
   {
     id: "dKQ-MyMoOFw",
     title: "Chinese AR Museum",
+    views: 24,
     description: "Short film exploring an AR-augmented museum experience.",
   },
   {
     id: "37L_2FuWDPA",
     title: "Depression PSA",
+    views: 195,
     description: "Public service announcement on mental health.",
   },
   {
     id: "YHpfBjYjG5o",
     title: "Litterbot, 2026 Diamond Challenge Round One",
+    views: 206,
     description: "DSWA Innovation Topical Prize winning team. Round one pitch.",
   },
   {
     id: "8LC43hSfHzU",
     title: "Litterbot, 2026 Diamond Challenge Round Two",
+    views: 148,
     description: "DSWA Innovation Topical Prize winning team. Round two pitch.",
   },
 ];
@@ -121,6 +128,11 @@ const thumbUrl = (v: FilmVideo) => {
             {v.description && (
               <p class="mt-1.5 text-[14.5px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
                 {v.description}
+              </p>
+            )}
+            {typeof v.views === "number" && (
+              <p class="mt-1.5 text-[12px] text-neutral-400 dark:text-neutral-500 tabular-nums">
+                {v.views.toLocaleString("en-US")} {v.views === 1 ? "view" : "views"}
               </p>
             )}
           </article>
