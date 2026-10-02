@@ -27,7 +27,7 @@
    so it can be split off into its own mesh and turned if anyone wants to.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { box, cyl, ball, taper, hoop, INK, STEEL, DARK, RUBBER, GLASS, CHROME } from './parts.js?v=93';
+import { box, cyl, ball, taper, hoop, INK, STEEL, DARK, RUBBER, GLASS, CHROME } from './parts.js?v=94';
 
 const TAU = Math.PI * 2;
 const WHITE = 0xf7f6f1, CREAM = 0xfff1d6, GOLD = 0xffd233, GOLD_DK = 0xd9a520, GOLD_LT = 0xffe98a;
