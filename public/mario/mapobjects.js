@@ -27,7 +27,7 @@
    and the game is free to add emissive on top.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { box, cyl, ball, taper, hoop, merge, vertexMat, INK, STEEL, DARK, GLASS, CHROME } from './parts.js?v=94';
+import { box, cyl, ball, taper, hoop, merge, vertexMat, INK, STEEL, DARK, GLASS, CHROME } from './parts.js?v=95';
 
 /* ---- the palette ------------------------------------------------------- */
 const RED = 0xe8402a, YEL = 0xffd233, BLUE = 0x2b56d6, GREEN = 0x43d94f;

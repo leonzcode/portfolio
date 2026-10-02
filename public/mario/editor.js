@@ -28,12 +28,13 @@
    can play it, only somebody with its password (or an admin) can change it.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { merge, vertexMat } from './parts.js?v=94';
-import { THEMES, themeById, registerTheme } from './themes.js?v=94';
+import { merge, vertexMat } from './parts.js?v=95';
+import { THEMES, themeById, registerTheme } from './themes.js?v=95';
+import { icon } from './icons.js?v=95';
 
 let OBJ = null;                 // the object library, fetched with the builder
 function objects() {
-  if (!OBJ) OBJ = import('./mapobjects.js?v=94').then(m => m).catch(e => { console.warn('map objects', e); return { OBJECTS: [], CATEGORIES: [], objectById: () => null }; });
+  if (!OBJ) OBJ = import('./mapobjects.js?v=95').then(m => m).catch(e => { console.warn('map objects', e); return { OBJECTS: [], CATEGORIES: [], objectById: () => null }; });
   return OBJ;
 }
 
@@ -236,6 +237,8 @@ const CSS = `
 #ed button.on{ background:var(--gold); }
 #ed button.go{ background:var(--gold); }
 #ed .tool{ display:flex; flex-direction:column; align-items:center; min-width:62px; font-size:12px; }
+#ed .ic{ width:15px; height:15px; vertical-align:-3px; }
+#ed .tool .ic{ width:18px; height:18px; }
 #ed .tool kbd{ font-size:10px; opacity:.6; }
 #ed .side{ pointer-events:auto; position:absolute; right:10px; top:70px; bottom:80px; width:min(300px,44vw); overflow-y:auto;
   background:var(--cream); border:3px solid var(--ink); border-radius:14px; box-shadow:0 5px 0 var(--ink); padding:10px 12px; }
@@ -291,16 +294,16 @@ export function openEditor(ctx, map, pw) {
     <div class="bar top">
       <input type="text" id="edname" maxlength="40" placeholder="Map name" value="">
       <button type="button" id="edsave" class="go">Save</button>
-      <button type="button" id="edshot" title="Take the picture shown for this map (P)">📷 Picture</button>
-      <button type="button" id="eddrive" title="Drive it (Y)">🏎️ Drive <kbd>Y</kbd></button>
-      <button type="button" id="edset">⚙️ Map settings</button>
+      <button type="button" id="edshot" title="Take the picture shown for this map (P)">${icon('camera')} Picture</button>
+      <button type="button" id="eddrive" title="Drive it (Y)">${icon('wheel')} Drive <kbd>Y</kbd></button>
+      <button type="button" id="edset">${icon('sliders')} Map settings</button>
       <button type="button" id="edexit">Exit</button>
     </div>
     <div class="bar bottom">
-      <button type="button" class="tool" data-tool="track">🛣️ Track<kbd>1</kbd></button>
-      <button type="button" class="tool" data-tool="select">👆 Select<kbd>2</kbd></button>
-      <button type="button" class="tool" data-tool="object">🌲 Objects<kbd>3</kbd></button>
-      <button type="button" class="tool" data-tool="erase">🧽 Erase<kbd>4</kbd></button>
+      <button type="button" class="tool" data-tool="track">${icon('road')} Track<kbd>1</kbd></button>
+      <button type="button" class="tool" data-tool="select">${icon('pointer')} Select<kbd>2</kbd></button>
+      <button type="button" class="tool" data-tool="object">${icon('tree')} Objects<kbd>3</kbd></button>
+      <button type="button" class="tool" data-tool="erase">${icon('eraser')} Erase<kbd>4</kbd></button>
     </div>
     <div class="side" id="edside"></div>
     <div class="cross"></div>
@@ -588,10 +591,10 @@ export function openEditor(ctx, map, pw) {
       const cats = lib.CATEGORIES || [];
       const list = lib.OBJECTS.filter(o => o.cat === st.cat);
       side.innerHTML = '<h3>Objects</h3><div class="cats">' + cats.map(c => '<button type="button" data-cat="' + c.id + '"' + (c.id === st.cat ? ' class="on"' : '') + '>' + ctx.esc(c.name) + '</button>').join('') + '</div>'
-        + '<div class="objs">' + list.map(o => '<button type="button" data-obj="' + o.id + '"' + (o.id === st.objType ? ' class="on"' : '') + '>' + ctx.esc(o.name) + (o.func ? ' ⚡' : '') + '</button>').join('') + '</div>'
+        + '<div class="objs">' + list.map(o => '<button type="button" data-obj="' + o.id + '"' + (o.id === st.objType ? ' class="on"' : '') + '>' + ctx.esc(o.name) + (o.func ? ' ' + icon('bolt') : '') + '</button>').join('') + '</div>'
         + '<h4>Colour</h4><div class="sws">' + [null, 0xe8402a, 0xff8a1f, 0xffd233, 0x43d94f, 0x1fb6a6, 0x2b56d6, 0x7a3fb0, 0xff5fa2, 0xffffff, 0x3a3f4a].map(c =>
           '<button type="button" data-col="' + (c === null ? '' : c) + '" style="background:' + (c === null ? 'repeating-linear-gradient(45deg,#fff 0 4px,#d9dde6 4px 8px)' : hex(c)) + '"' + (c === st.objColour ? ' class="on"' : '') + '></button>').join('') + '</div>'
-        + '<p style="font-size:12px;font-weight:700;opacity:.7">Click to place · right click removes · Q/E turn · Z/X size (' + st.objScale.toFixed(2) + '×)<br>⚡ does something: boosters, springs, item boxes, coins</p>'
+        + '<p style="font-size:12px;font-weight:700;opacity:.7">Click to place · right click removes · Q/E turn · Z/X size (' + st.objScale.toFixed(2) + '×)<br>' + icon('bolt') + ' does something: boosters, springs, item boxes, coins</p>'
         + '<p style="font-size:12px;font-weight:700;opacity:.7">' + st.data.objects.length + ' things on this map</p>';
       side.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { st.cat = b.dataset.cat; drawPanel(); });
       side.querySelectorAll('[data-obj]').forEach(b => b.onclick = () => { st.objType = b.dataset.obj; ghostDraw(); drawPanel(); });
@@ -665,7 +668,7 @@ export function openEditor(ctx, map, pw) {
       if (st.data.nodes.length < 4) { say('A track needs at least four points.'); return; }
       st.driving = true;
       root.classList.add('driving');
-      $('eddrive').innerHTML = '🛠️ Build <kbd>Y</kbd>';
+      $('eddrive').innerHTML = icon('wrench') + ' Build <kbd>Y</kbd>';
       if (locked()) document.exitPointerLock();
       group.visible = false;
       ctx.setEditor(null);
@@ -677,7 +680,7 @@ export function openEditor(ctx, map, pw) {
     } else {
       st.driving = false;
       root.classList.remove('driving');
-      $('eddrive').innerHTML = '🏎️ Drive <kbd>Y</kbd>';
+      $('eddrive').innerHTML = icon('wheel') + ' Drive <kbd>Y</kbd>';
       const me = ctx.me();
       ctx.stopDrive();
       group.visible = true;

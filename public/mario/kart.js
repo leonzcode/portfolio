@@ -11,18 +11,18 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=94';
-import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=94';
+import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=95';
+import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=95';
 /* The geometry of the cosmetics - themed bodies, hats, gliders, decorations -
    is fetched with everything else but is not needed to draw a car, so a kart
    built before it arrives simply goes without until it is next built. */
 let ART = null;
 const artWaiting = [];
-import('./cosmetics-art.js?v=94').then(m => { ART = m; for (const f of artWaiting.splice(0)) { try { f(); } catch (e) {} } })
+import('./cosmetics-art.js?v=95').then(m => { ART = m; for (const f of artWaiting.splice(0)) { try { f(); } catch (e) {} } })
   .catch(e => console.warn('cosmetics art', e));
 export function whenArt(f) { if (ART) f(); else artWaiting.push(f); }
 export const artReady = () => !!ART;
-import { loadKit } from './models.js?v=94';
+import { loadKit } from './models.js?v=95';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -37,9 +37,9 @@ export const RACERS = [
   { id: 'mox',  name: 'Mox',  shirt: 0x17223b, skin: 0xe8c39a, cap: 0xe8402a, kart: 0x3a3f4a, trim: 0xe8402a },
   { id: 'juno', name: 'Juno', shirt: 0xff5fa2, skin: 0xffd9b0, cap: 0xfff6e2, kart: 0xff5fa2, trim: 0x8fd3ff },
   { id: 'tock', name: 'Tock', shirt: 0x1fb6a6, skin: 0xb07a4e, cap: 0x17223b, kart: 0x1fb6a6, trim: 0xffd233 },
-  // a guy with cool sunglasses; his character's own clothes are a black jacket and dark jeans
+  // very short hair, a black jacket and dark jeans. Sunglasses are his to put on, like anybody's.
   { id: 'thomas', name: 'Thomas', shirt: 0x1d2433, skin: 0xe0a878, cap: 0x1d2433, kart: 0x2b3a67, trim: 0x9fd8ff,
-    face: 'sunglasses', look: { shirt: 0x22252c, pants: 0x2b3a67 } },
+    look: { shirt: 0x22252c, pants: 0x2b3a67 } },
 ];
 
 /* A car painted from one colour off the wheel. The body and the driver take it
@@ -120,7 +120,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=94';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=95';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */

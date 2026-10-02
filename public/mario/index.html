@@ -967,6 +967,18 @@
   #times .rows.rk .r{ grid-template-columns:26px 1fr auto auto; }
   #times .rows.rk .wl{ font-size:11px; font-weight:700; opacity:.55; font-variant-numeric:tabular-nums; }
 
+  /* ---- line icons, in the text colour, at the size of the text */
+  .ic{ width:1.15em; height:1.15em; vertical-align:-0.2em; flex:0 0 auto; }
+  #hubnav button i{ display:inline-flex; }
+  .tile i.pic{ display:grid; place-items:center; width:72px; height:72px; font-size:30px; color:var(--t); }
+  .tile i.pic img{ width:72px; height:72px; object-fit:contain; display:block; }
+  .tile small .ic{ width:11px; height:11px; vertical-align:-1px; }
+  .unlock i .ic{ width:30px; height:30px; }
+  .unlock i img{ width:56px; height:56px; object-fit:contain; display:block; }
+  .cm .th span .ic{ width:42px; height:42px; color:#fff; opacity:.7; }
+  #times .gh .ic, #mapghost .ic{ width:1.05em; height:1.05em; }
+  #tags .tag .ic{ width:.95em; height:.95em; vertical-align:-0.12em; }
+
   /* ---- the garage tabs */
   #gtabs{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:10px 0 0; }
   #gtabs button{ font-family:var(--display); font-weight:800; font-size:12px; border:2px solid var(--ink); border-radius:999px;
@@ -1133,10 +1145,10 @@
     <button class="big rkb" id="ranked">Ranked<small id="rkcount">1v1 time trials</small></button>
   </div>
   <nav id="hubnav" aria-label="More">
-    <button type="button" id="hubinv"><i>🎒</i>Inventory</button>
-    <button type="button" id="hubstats"><i>📊</i>Stats</button>
-    <button type="button" id="hubmaps"><i>🗺️</i>Custom maps</button>
-    <button type="button" id="hubreq"><i>✉️</i>Requests</button>
+    <button type="button" id="hubinv"><i data-icon="backpack"></i>Inventory</button>
+    <button type="button" id="hubstats"><i data-icon="chart"></i>Stats</button>
+    <button type="button" id="hubmaps"><i data-icon="map"></i>Custom maps</button>
+    <button type="button" id="hubreq"><i data-icon="mail"></i>Requests</button>
   </nav>
   <div id="keys">
     <b>&#8593;</b> <b>W</b> go &middot; <b>&#8595;</b> <b>S</b> brake &middot; <b>&#8592;&#8594;</b> <b>A D</b> steer<br>
@@ -1308,5 +1320,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=94');
+await import('./game.js?v=95');
 </script>
