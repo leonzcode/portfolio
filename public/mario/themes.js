@@ -352,7 +352,12 @@ export const BASE_RULES = {
 
 export const rulesOf = th => Object.assign({}, BASE_RULES, (th && th.rules) || {});
 
-export const themeById = id => THEMES.find(t => t.id === id) || THEMES[0];
+/* Places people built: registered while one is being built or driven, looked
+   up by the same id as any other place. */
+const CUSTOM_THEMES = new Map();
+export function registerTheme(th) { CUSTOM_THEMES.set(th.id, th); return th; }
+export const isCustom = id => typeof id === 'string' && id.indexOf('c:') === 0;
+export const themeById = id => CUSTOM_THEMES.get(id) || THEMES.find(t => t.id === id) || THEMES[0];
 /* The circuit a place is always laid out from.
 
    Every race used to draw a fresh number, so Sunfield Loop was a different

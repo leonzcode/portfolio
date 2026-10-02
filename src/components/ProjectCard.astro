@@ -8,6 +8,8 @@ const linkHref = detailHref ?? href;
 const isInternalDetail = !!detailHref;
 const isExternal = !isInternalDetail && linkHref.startsWith("http");
 const isPlaceholder = linkHref === "#";
+// "games/ski" from "/games/ski": which project's views and likes this card shows
+const socialKey = isInternalDetail ? detailHref!.replace(/^\//, "").replace(/\/$/, "") : null;
 ---
 
 <article class="group">
@@ -75,5 +77,6 @@ const isPlaceholder = linkHref === "#";
     <p class="mt-2 text-[14.5px] leading-relaxed text-neutral-600 dark:text-neutral-400">
       {description}
     </p>
+    {socialKey && <p class="mt-1.5 text-[12px] text-neutral-400 dark:text-neutral-500 tabular-nums" data-social-key={socialKey} hidden></p>}
   </a>
 </article>

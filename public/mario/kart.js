@@ -11,8 +11,18 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers } from './drivers.js?v=92';
-import { loadKit } from './models.js?v=92';
+import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=93';
+import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=93';
+/* The geometry of the cosmetics - themed bodies, hats, gliders, decorations -
+   is fetched with everything else but is not needed to draw a car, so a kart
+   built before it arrives simply goes without until it is next built. */
+let ART = null;
+const artWaiting = [];
+import('./cosmetics-art.js?v=93').then(m => { ART = m; for (const f of artWaiting.splice(0)) { try { f(); } catch (e) {} } })
+  .catch(e => console.warn('cosmetics art', e));
+export function whenArt(f) { if (ART) f(); else artWaiting.push(f); }
+export const artReady = () => !!ART;
+import { loadKit } from './models.js?v=93';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -27,6 +37,9 @@ export const RACERS = [
   { id: 'mox',  name: 'Mox',  shirt: 0x17223b, skin: 0xe8c39a, cap: 0xe8402a, kart: 0x3a3f4a, trim: 0xe8402a },
   { id: 'juno', name: 'Juno', shirt: 0xff5fa2, skin: 0xffd9b0, cap: 0xfff6e2, kart: 0xff5fa2, trim: 0x8fd3ff },
   { id: 'tock', name: 'Tock', shirt: 0x1fb6a6, skin: 0xb07a4e, cap: 0x17223b, kart: 0x1fb6a6, trim: 0xffd233 },
+  // a guy with cool sunglasses; his character's own clothes are a black jacket and dark jeans
+  { id: 'thomas', name: 'Thomas', shirt: 0x1d2433, skin: 0xe0a878, cap: 0x1d2433, kart: 0x2b3a67, trim: 0x9fd8ff,
+    face: 'sunglasses', look: { shirt: 0x22252c, pants: 0x2b3a67 } },
 ];
 
 /* A car painted from one colour off the wheel. The body and the driver take it
@@ -107,7 +120,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=92';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=93';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
@@ -121,7 +134,6 @@ export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
    so each plate sits on the panel it hits. If the middle of a body is open
    (a buggy's frame), it goes on the end of the bounding box instead. One
    canvas texture, shared by every plate. */
-const NAMEPLATE = { pip: true };
 const plateTex = {};
 function plateTexture(text) {
   if (plateTex[text]) return plateTex[text];
@@ -189,10 +201,17 @@ function nameplates(body, mesh, text) {
   }
 }
 
-export function makeKart(who, build) {
+export function makeKart(who, build, style) {
   const r = who || RACERS[0];
   const b = normalise(build);
-  const spec = chassisOf(b.chassis).make(r);
+  const S = normaliseStyle(style);
+  /* A themed body (a boat, a pencil, a house) is a different shape on the same
+     chassis: it looks like the theme and drives like the body picked. */
+  const themed = S.kart.body && ART && ART.THEMED_BODIES && ART.THEMED_BODIES[S.kart.body.replace(/^body_/, '')];
+  let spec = null;
+  if (themed) { try { spec = themed(r); } catch (e) { console.warn('themed body', e); } }
+  if (!spec) spec = chassisOf(b.chassis).make(r);
+  if (!spec.exhaust) spec.exhaust = [];
   const tyre = wheelsOf(b.wheels).make(r);
   const group = new THREE.Group();
   const body = new THREE.Group();
@@ -209,9 +228,30 @@ export function makeKart(who, build) {
   const torso = driverBody(r, st).concat([
     { g: cyl(0.1, 0.1, 0.1, 8, 'y', 0, st.y + 0.74, st.z), c: skin },
   ]);
-  const chassisMesh = merge(spec.parts, BODY_MAT);
+  // the paint: the shared material, or a skin or gradient of this car's own
+  const paintMat = paintMaterial(BODY_MAT, r.kart, r.trim, S.kart) || BODY_MAT;
+  const chassisMesh = merge(spec.parts, paintMat);
   body.add(chassisMesh);
-  if (NAMEPLATE[r.id]) nameplates(body, chassisMesh, r.name);
+  // number plates, front and back, when they are worn
+  if (S.kart.plate === 'plate_name') nameplates(body, chassisMesh, S.name || r.name);
+  else if (S.kart.plate === 'plate_brayden') nameplates(body, chassisMesh, 'Brayden');
+  // something bolted on the back, stood on the bodywork where it is
+  if (S.kart.decor && ART && ART.DECOR) {
+    const make = ART.DECOR[S.kart.decor.replace(/^decor_/, '')];
+    if (make) {
+      try {
+        const d = merge(make(r), BODY_MAT);
+        chassisMesh.geometry.computeBoundingBox();
+        const bb = chassisMesh.geometry.boundingBox;
+        const z = bb.min.z + (bb.max.z - bb.min.z) * 0.78;
+        plateRay.set(new THREE.Vector3(0, 20, z), new THREE.Vector3(0, -1, 0));
+        const hit = plateRay.intersectObject(chassisMesh, false)[0];
+        d.position.set(0, hit ? hit.point.y : bb.max.y, z);
+        d.name = 'decor';
+        body.add(d);
+      } catch (e) { console.warn('decor', e); }
+    }
+  }
   // the driver's body on its own, so the character can take its place
   const torsoMesh = merge(torso, BODY_MAT);
   body.add(torsoMesh);
@@ -230,7 +270,11 @@ export function makeKart(who, build) {
      the deploy animation: a wing that snaps open is a wing that reads at
      forty metres a second, and anything more elaborate would not. */
   const glider = new THREE.Group();
-  glider.add(merge([
+  const gliderArt = S.kart.glider && ART && ART.GLIDERS && ART.GLIDERS[S.kart.glider.replace(/^glider_/, '')];
+  let gliderParts = null;
+  if (gliderArt) { try { gliderParts = gliderArt(r); } catch (e) { console.warn('glider', e); } }
+  if (gliderParts) glider.add(merge(gliderParts, BODY_MAT));
+  else glider.add(merge([
     // a shallow V rather than a flat plate: a centre panel, a lower panel each
     // side and a tip below that, which is a hang glider in four boxes
     { g: box(2.5, 0.09, 1.5, 0, 0.16, 0), c: r.trim },
@@ -301,7 +345,7 @@ export function makeKart(who, build) {
   group.add(shade);
 
   const kart = {
-    who: r, group, body, wheels, shade, head, arms, glider,
+    who: r, group, body, wheels, shade, head, arms, glider, style: S,
     driverParts: { torsoMesh, st },
     build: b, trail: trailOf(b.trail), exhaust: spec.exhaust || [],
     /* What the parts bolted to it are worth, worked out once when it is built.
@@ -350,6 +394,8 @@ export function makeKart(who, build) {
     // it there
     airG: 9.81, roadSlope: 0,
   };
+  // an aura round the whole car, for the ones that were hard to win
+  if (S.kart.aura) { const a = makeAura(S.kart.aura); if (a) group.add(a); }
   apply(kart);
   if (!dressDriver(kart)) whenDrivers(() => dressDriver(kart));
   return kart;
@@ -375,22 +421,49 @@ function dressDriver(k) {
     return m;
   };
   k.body.remove(torsoMesh);
-  const torso = put(D.torso);
+  /* The character's colours. A unique driver is the whole character redone;
+     otherwise any of skin, shirt and trousers the look sets, over whatever the
+     racer's own are (Thomas's jacket and jeans), over the model's. */
+  const S = k.style || normaliseStyle(null);
+  const who = k.who || {};
+  const DS = S.char.driver ? DRIVER_STYLE[S.char.driver] : null;
+  const pick = (a, b) => (a !== null && a !== undefined ? a : b);
+  const base = who.look || {};
+  const look = DS ? { skin: DS.skin, shirt: DS.shirt, pants: DS.pants, hair: DS.hair }
+    : { skin: pick(S.char.skin, base.skin), shirt: pick(S.char.shirt, base.shirt), pants: pick(S.char.pants, base.pants) };
+  const custom = Object.keys(look).some(q => look[q] !== null && look[q] !== undefined);
+  const G = custom ? tintDriver(D, look, who.id || '') : D;
+  const mat = custom ? tintMaterial(DS ? { metal: DS.metal, glow: DS.glow, ghost: DS.ghost, skin: DS.skin } : null) : D.mat;
+  const putT = geo => { const m = new THREE.Mesh(geo, mat); m.scale.setScalar(sc); m.castShadow = !(DS && DS.ghost); return m; };
+  const torso = putT(G.torso);
   torso.position.copy(seat);
   k.body.add(torso);
   // the head turns about its neck: the group sits at the neck, the head in it
   const h = D.headAt.clone().sub(D.hipAt).multiplyScalar(sc);
   k.head.clear();
   k.head.position.set(0, seat.y + h.y, 0);
-  const head = put(D.head);
+  const head = putT(G.head);
   head.position.set(h.x, 0, seat.z + h.z);
   k.head.add(head);
+  // a hat on top of the head, and sunglasses on the face, sized to the head
+  const hb = headBox(D);
+  const fit = (parts, name) => {
+    const m = merge(parts, BODY_MAT);
+    m.name = name;
+    m.scale.setScalar((hb.w * sc) / 0.55);
+    m.position.set(head.position.x + hb.cx * sc, hb.top * sc, head.position.z + hb.cz * sc);
+    k.head.add(m);
+  };
+  const hatId = S.char.hat ? S.char.hat.replace(/^hat_/, '') : null;
+  if (hatId && ART && ART.HATS && ART.HATS[hatId]) { try { fit(ART.HATS[hatId](who), 'hat'); } catch (e) { console.warn('hat', e); } }
+  const face = S.char.face || who.face;
+  if (face === 'sunglasses' && ART && ART.sunglasses) { try { fit(ART.sunglasses(), 'shades'); } catch (e) { console.warn('shades', e); } }
   // and the arms about the shoulders
   const a = D.armsAt.clone().sub(D.hipAt).multiplyScalar(sc);
   k.arms.clear();
   k.arms.rotation.x = 0;
   k.arms.position.set(seat.x + a.x, seat.y + a.y, seat.z + a.z);
-  k.arms.add(put(D.arms));
+  k.arms.add(putT(G.arms));
   k.dressed = true;
   return true;
 }
@@ -992,7 +1065,8 @@ export function stepKart(k, input, track, dt) {
      the hole on a floor that is not drawn. */
   /* Clearly off, not brushing it. Half a metre past the edge is a wheel over
      the line; two and a half is a car that has left. */
-  const nothing = pr.gap || (pr.causeway > 0.4 && Math.abs(pr.lateral) > pr.wall + 2.4);
+  const nothing = pr.gap || (pr.causeway > 0.4 && Math.abs(pr.lateral) > pr.wall + 2.4)
+    || (pr.edgeOpen && Math.abs(pr.lateral) > pr.wall + 1.6);
   /* Airborne counts as airborne even on the frame the launch happens. hop is
      integrated at the top of the next step, so on the frame a ramp fires it is
      still zero while hopV is already several metres a second: testing hop alone
@@ -1045,7 +1119,9 @@ export function stepKart(k, input, track, dt) {
   k.roll += (Math.atan(pr.bank || 0) - k.roll) * Math.min(1, dt * 7);
   /* A causeway has no fence on it. Everywhere else the edge of the tarmac is a
      barrier; here it is an edge, and going over it is the point. */
-  if (Math.abs(pr.lateral) > pr.wall && pr.causeway > 0.4) {
+  if (pr.edgeOpen && Math.abs(pr.lateral) > pr.wall) {
+    // no barrier here: nothing stops you going over
+  } else if (Math.abs(pr.lateral) > pr.wall && pr.causeway > 0.4) {
     k.overEdge = 1;
   } else if (Math.abs(pr.lateral) > pr.wall) {
     /* A barrier is a collision like any other, so it is resolved like one. The
