@@ -14,8 +14,8 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-import { makeKart, apply } from './kart.js?v=92';
-import { CHASSIS, WHEELS, TRAILS, normalise, statsOf } from './parts.js?v=92';
+import { makeKart, apply } from './kart.js?v=93';
+import { CHASSIS, WHEELS, TRAILS, normalise, statsOf } from './parts.js?v=93';
 
 /* The rows under the turntable. Three of them, and every one changes how the
    car drives as well as how it looks, so the bars underneath are the reason to
@@ -103,10 +103,13 @@ export function makeGarage(canvas) {
   // have to wait eight seconds to recognise.
   let yaw = -2.5, spin = 0.3, drag = null, t = 0;
 
-  function show(who, b) {
+  let lookKey = '';
+  function show(who, b, style) {
     const next = normalise(b);
-    if (kart && racer === who && build
+    const key = JSON.stringify(style || null);
+    if (kart && racer === who && build && key === lookKey
         && Object.keys(next).every(k => next[k] === build[k])) return;
+    lookKey = key;
     if (kart) {
       turn.remove(kart.group);
       kart.group.traverse(o => {
@@ -115,7 +118,7 @@ export function makeGarage(canvas) {
       });
     }
     racer = who; build = next;
-    kart = makeKart(who, next);
+    kart = makeKart(who, next, style || null);
     kart.pos.set(0, 0, 0);
     apply(kart);
     kart.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });

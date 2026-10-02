@@ -967,6 +967,131 @@
   #times .rows.rk .r{ grid-template-columns:26px 1fr auto auto; }
   #times .rows.rk .wl{ font-size:11px; font-weight:700; opacity:.55; font-variant-numeric:tabular-nums; }
 
+  /* ---- the garage tabs */
+  #gtabs{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:10px 0 0; }
+  #gtabs button{ font-family:var(--display); font-weight:800; font-size:12px; border:2px solid var(--ink); border-radius:999px;
+    background:var(--cream); color:var(--ink); padding:5px 6px; cursor:pointer; min-height:30px; }
+  #gtabs button[aria-selected="true"]{ background:var(--ink); color:var(--cream); }
+  #gtabs button:focus-visible{ outline:3px solid var(--gold); outline-offset:2px; }
+  .gpane[hidden]{ display:none !important; }
+  #gdriver{ margin-top:11px; display:flex; flex-direction:column; gap:7px; }
+  .swrow{ display:flex; align-items:center; gap:7px; }
+  .swrow em{ font-style:normal; font-weight:800; font-size:10px; letter-spacing:.12em; text-transform:uppercase; opacity:.55; width:58px; flex:0 0 58px; text-align:left; }
+  .sws{ display:flex; flex-wrap:wrap; gap:4px; }
+  .sws button{ width:22px; height:22px; border-radius:7px; border:2px solid var(--ink); cursor:pointer; padding:0; }
+  .sws button.on{ outline:3px solid var(--gold); outline-offset:1px; }
+  .sws button.def{ background:repeating-linear-gradient(45deg,#fff 0 4px,#d9dde6 4px 8px); }
+  .sws button:focus-visible{ outline:3px solid var(--blue); outline-offset:1px; }
+  #gradient{ display:flex; flex-direction:column; gap:7px; margin:9px 0 2px; }
+  .seg{ display:flex; gap:4px; flex-wrap:wrap; }
+  .seg button{ font-family:var(--display); font-weight:800; font-size:11px; border:2px solid var(--ink); border-radius:8px; background:#fff;
+    color:var(--ink); padding:4px 8px; cursor:pointer; }
+  .seg button.on{ background:var(--gold); }
+  .gnote{ font-size:11px; font-weight:700; opacity:.6; margin:0; text-align:left; }
+  .gnote button{ font:inherit; text-decoration:underline; background:none; border:0; color:var(--blue); cursor:pointer; padding:0; }
+
+  /* ---- the row of pages under the play buttons: small, so the menu stays the car, the board and the buttons */
+  #hubnav{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+  #hubnav button{ display:flex; align-items:center; gap:6px; font-family:var(--display); font-weight:800; font-size:14px; letter-spacing:.03em;
+    color:var(--ink); background:#fff; border:3px solid var(--ink); border-radius:999px; box-shadow:0 4px 0 var(--ink); padding:7px 14px; cursor:pointer; }
+  #hubnav button i{ font-style:normal; }
+  #hubnav button:active{ transform:translateY(3px); box-shadow:0 1px 0 var(--ink); }
+  #hubnav button:focus-visible{ outline:4px solid #fff; outline-offset:3px; }
+
+  /* ---- the pages */
+  .hubpage{ position:fixed; inset:0; z-index:63; display:none; flex-direction:column; align-items:center; justify-content:safe center;
+    padding:18px 14px; overflow-y:auto;
+    background: repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 26px, transparent 26px 52px),
+      radial-gradient(120% 90% at 50% 18%, #7fd0ff 0%, #4fb7ff 42%, #2b56d6 100%); }
+  .hubpage.on{ display:flex; }
+  .hubpage .card{ background:var(--cream); color:var(--ink); border:var(--key); border-radius:18px; box-shadow:0 8px 0 var(--ink);
+    padding:18px 20px; width:min(560px,94vw); text-align:left; }
+  .hubpage .card.wide{ width:min(980px,96vw); }
+  .hhead{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 8px; }
+  .hhead h2{ font-family:var(--display); font-weight:800; font-size:26px; margin:0; letter-spacing:.04em; flex:1 1 auto; }
+  .hhead .big{ font-size:15px; padding:8px 16px; box-shadow:0 4px 0 var(--ink); }
+  .hsub{ font-size:13px; font-weight:600; opacity:.7; margin:0 0 12px; }
+  .hubpage h3, .hubpage h4{ font-family:var(--display); font-weight:800; margin:16px 0 8px; letter-spacing:.03em; }
+  .hubpage .none{ font-size:13px; font-weight:700; opacity:.6; }
+  #invcount{ font-weight:800; font-size:13px; opacity:.6; }
+  #invlegend{ display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; font-weight:700; margin:0 0 4px; }
+  #invlegend .lg i{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
+  #invlegend b{ margin-right:2px; }
+  .tiles{ display:grid; grid-template-columns:repeat(auto-fill, minmax(104px, 1fr)); gap:8px; }
+  .tile{ --t:#8a93a6; position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:9px 6px 7px;
+    background:#fff; border:2px solid var(--ink); border-bottom:5px solid var(--t); border-radius:12px; cursor:pointer; color:var(--ink); font-family:var(--body); }
+  .tile i{ font-style:normal; font-size:24px; line-height:1.1; }
+  .tile b{ font-size:12px; font-weight:800; line-height:1.15; text-align:center; }
+  .tile small{ font-size:10px; font-weight:800; color:var(--t); letter-spacing:.04em; }
+  .tile.on{ background:#fff6c2; box-shadow:0 0 0 3px var(--gold); }
+  .tile.locked{ opacity:.45; filter:grayscale(.7); cursor:help; }
+  .tile.legendary:not(.locked){ background:linear-gradient(160deg,#fff 0%,#fff3cf 100%); }
+  .tile.legendary:not(.locked) i{ filter:drop-shadow(0 0 6px #ffcf4a); }
+  .tile:focus-visible{ outline:3px solid var(--blue); outline-offset:2px; }
+  .tile.none i{ opacity:.5; }
+  /* stats */
+  .find{ display:flex; gap:6px; }
+  .find input{ font-family:var(--body); font-weight:700; font-size:14px; padding:7px 10px; border:2px solid var(--ink); border-radius:10px; width:150px; }
+  .find button, #cmlist button, #reqlist button, #cmadmin button{ font-family:var(--display); font-weight:800; font-size:13px; border:2px solid var(--ink);
+    border-radius:10px; background:#dff2ff; color:var(--ink); padding:6px 11px; cursor:pointer; box-shadow:0 3px 0 var(--ink); }
+  #cmlist button.go, #cmadmin button.go{ background:var(--gold); }
+  #cmlist button.bad{ background:#ffd6d0; }
+  .who{ font-size:22px; margin:6px 0 10px !important; }
+  .who small{ font-size:13px; opacity:.6; }
+  .sts{ display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:8px; }
+  .st{ background:#fff; border:2px solid var(--ink); border-radius:12px; padding:9px 11px; }
+  .st b{ display:block; font-family:var(--display); font-size:20px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .st span{ font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; opacity:.55; }
+  .mapstats .r{ grid-template-columns:1fr auto auto !important; font-size:13px; }
+  .mapstats .r small{ display:block; font-size:11px; opacity:.55; font-weight:700; }
+  .build p{ margin:4px 0; font-weight:700; font-size:13px; }
+  .build .sw{ display:inline-block; width:14px; height:14px; border-radius:4px; border:2px solid var(--ink); vertical-align:-3px; }
+  .chip{ display:inline-block; background:#fff; border:2px solid var(--ink); border-radius:999px; padding:2px 9px; margin:0 5px 5px 0; font-size:12px; }
+  .chip em{ font-style:normal; opacity:.55; }
+  /* custom maps */
+  #cmlist{ display:flex; flex-direction:column; gap:10px; }
+  .cm{ display:grid; grid-template-columns:200px 1fr 220px; gap:12px; background:#fff; border:2px solid var(--ink); border-radius:14px; padding:10px; align-items:start; }
+  .cm.feat{ box-shadow:0 0 0 3px var(--gold); }
+  .cm .th{ position:relative; width:200px; aspect-ratio:16/9; border-radius:10px; overflow:hidden; background:#17223b; display:grid; place-items:center; }
+  .cm .th img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .cm .th span{ font-size:40px; }
+  .cm .th em{ position:absolute; left:6px; top:6px; font-style:normal; font-weight:800; font-size:11px; background:var(--gold); border:2px solid var(--ink); border-radius:999px; padding:1px 7px; }
+  .cm h4{ margin:0 0 2px !important; font-size:18px; overflow-wrap:anywhere; }
+  .cm .inf p{ margin:0 0 8px; font-size:12px; font-weight:700; opacity:.65; }
+  .cm .vote, .cm .acts{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+  .cm .lb h5{ margin:0 0 6px; font-family:var(--display); font-size:13px; letter-spacing:.06em; text-transform:uppercase; opacity:.65; }
+  .cm .lb p{ display:flex; align-items:center; gap:6px; margin:0 0 3px; font-size:13px; font-weight:800; }
+  .cm .lb p span{ width:18px; text-align:center; opacity:.6; }
+  .cm .lb p b{ margin-left:auto; font-variant-numeric:tabular-nums; }
+  .cm .lb .x{ padding:0 6px !important; box-shadow:none !important; }
+  .cm .lb .more{ margin-top:4px; font-size:11px !important; padding:3px 8px !important; }
+  @media (max-width: 760px){ .cm{ grid-template-columns:1fr; } .cm .th{ width:100%; } }
+  #cmadmin[hidden], #reqadmin[hidden]{ display:none !important; }
+  #cmadmin{ margin-top:14px; padding-top:10px; border-top:2px dashed var(--ink); display:flex; flex-direction:column; gap:7px; font-weight:700; font-size:13px; }
+  #cmadmin input[type=number], #cmadmin select{ font:inherit; border:2px solid var(--ink); border-radius:8px; padding:3px 6px; margin-left:6px; }
+  /* requests */
+  #reqkind, #reqtext{ width:100%; font-family:var(--body); font-weight:700; font-size:16px; border:2px solid var(--ink); border-radius:10px; padding:8px 10px; margin:0 0 8px; background:#fff; color:var(--ink); }
+  #reqtext{ resize:vertical; min-height:110px; }
+  .reqrow{ display:flex; align-items:center; gap:12px; }
+  .reqrow .big{ font-size:16px; padding:8px 22px; }
+  #reqmsg{ font-weight:800; font-size:13px; }
+  .rq{ background:#fff; border:2px solid var(--ink); border-radius:10px; padding:8px 10px; margin-bottom:6px; font-size:13px; }
+  .rq.done{ opacity:.55; }
+  .rq p{ margin:0 0 4px; }
+  .rq em{ font-style:normal; font-weight:800; font-size:11px; background:#dff2ff; border-radius:999px; padding:0 6px; }
+  .rq button{ margin-right:6px; font-size:11px !important; padding:3px 8px !important; }
+  /* something won */
+  #toast{ position:fixed; right:16px; top:16px; z-index:95; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+  .unlock{ display:flex; align-items:center; gap:10px; background:var(--cream); color:var(--ink); border:3px solid var(--ink); border-radius:14px;
+    box-shadow:0 5px 0 var(--ink); padding:9px 14px; animation:unlockIn .45s cubic-bezier(.2,1.6,.4,1); transition:opacity .5s, transform .5s; }
+  .unlock.out{ opacity:0; transform:translateX(30px); }
+  .unlock i{ font-style:normal; font-size:30px; }
+  .unlock small{ display:block; font-weight:800; font-size:11px; letter-spacing:.1em; text-transform:uppercase; }
+  .unlock b{ font-family:var(--display); font-size:17px; }
+  .unlock.legendary{ background:linear-gradient(120deg,#fff6cf,#ffe28a); box-shadow:0 5px 0 var(--ink), 0 0 24px #ffcf4a; }
+  @keyframes unlockIn{ from{ transform:translateY(-20px) scale(.8); opacity:0; } }
+  @media (prefers-reduced-motion: reduce){ .unlock{ animation:none; } }
+
   /* the whole name, on a second line if it needs one, never cut short */
   #times .rows .r span:nth-child(2){ overflow-wrap:anywhere; line-height:1.15; }
 </style>
@@ -979,7 +1104,14 @@
     <label class="sr" for="nick">Your name</label>
     <input id="nick" maxlength="12" placeholder="Type your name" autocomplete="off" spellcheck="false">
     <div id="gstage"><canvas id="gcan"></canvas><span id="ghint">drag to turn</span></div>
-    <div id="gparts"></div>
+    <div id="gtabs" role="tablist" aria-label="Garage">
+      <button type="button" role="tab" data-gt="kart" aria-selected="true">Kart</button>
+      <button type="button" role="tab" data-gt="paint" aria-selected="false">Paint</button>
+      <button type="button" role="tab" data-gt="driver" aria-selected="false">Driver</button>
+    </div>
+    <div class="gpane" data-pane="driver" hidden><div id="gdriver"></div></div>
+    <div class="gpane" data-pane="kart"><div id="gparts"></div></div>
+    <div class="gpane" data-pane="paint" hidden>
     <div id="paint">
       <em>Colour</em>
       <canvas id="wheel" width="132" height="132" aria-label="Pick a colour" role="slider"></canvas>
@@ -989,7 +1121,9 @@
         <input id="light" type="range" min="18" max="82" value="50">
       </div>
     </div>
-    <div id="gbars"></div>
+    <div id="gradient"></div>
+    </div>
+    <div class="gpane" data-pane="kart"><div id="gbars"></div></div>
   </div>
   <div class="card" id="times"></div>
   </div>
@@ -998,6 +1132,12 @@
     <button class="big" id="online">Multiplayer<small id="onlinecount">one lobby, everybody in it</small></button>
     <button class="big rkb" id="ranked">Ranked<small id="rkcount">1v1 time trials</small></button>
   </div>
+  <nav id="hubnav" aria-label="More">
+    <button type="button" id="hubinv"><i>🎒</i>Inventory</button>
+    <button type="button" id="hubstats"><i>📊</i>Stats</button>
+    <button type="button" id="hubmaps"><i>🗺️</i>Custom maps</button>
+    <button type="button" id="hubreq"><i>✉️</i>Requests</button>
+  </nav>
   <div id="keys">
     <b>&#8593;</b> <b>W</b> go &middot; <b>&#8595;</b> <b>S</b> brake &middot; <b>&#8592;&#8594;</b> <b>A D</b> steer<br>
     <b>Space</b> hop and drift &middot; <b>E</b> use item &middot; <b>Q</b> view &middot; <b>M</b> sound &middot; <b>T</b> chat &middot; <b>Esc</b> menu
@@ -1037,6 +1177,44 @@
 </div>
 <div id="rkinv" aria-live="polite"></div>
 <div id="rkhud"></div>
+
+<div id="inv" class="hubpage" role="dialog" aria-modal="true" aria-labelledby="invh">
+  <div class="card wide">
+    <div class="hhead"><h2 id="invh">Inventory</h2><span id="invcount"></span><button type="button" class="hubback big alt">Back</button></div>
+    <div id="invlegend"></div>
+    <div id="invbody"></div>
+  </div>
+</div>
+<div id="stats" class="hubpage" role="dialog" aria-modal="true" aria-labelledby="statsh">
+  <div class="card wide">
+    <div class="hhead"><h2 id="statsh">Stats</h2>
+      <span class="find"><input id="statsname" maxlength="14" placeholder="Any name" autocomplete="off" spellcheck="false"><button type="button" id="statsgo">Look up</button></span>
+      <button type="button" class="hubback big alt">Back</button></div>
+    <div id="statsbody"></div>
+  </div>
+</div>
+<div id="cmaps" class="hubpage" role="dialog" aria-modal="true" aria-labelledby="cmh">
+  <div class="card wide">
+    <div class="hhead"><h2 id="cmh">Custom maps</h2><button type="button" id="cmnew" class="big">Build a map</button><button type="button" class="hubback big alt">Back</button></div>
+    <p class="hsub">Maps people built. Play one, rate it, set a time on its board. Changing a map takes its password.</p>
+    <div id="cmlist"></div>
+    <div id="cmadmin" hidden></div>
+  </div>
+</div>
+<div id="req" class="hubpage" role="dialog" aria-modal="true" aria-labelledby="reqh">
+  <div class="card">
+    <div class="hhead"><h2 id="reqh">Requests</h2><button type="button" class="hubback big alt">Back</button></div>
+    <p class="hsub">Something you would like in Leon Kart, or something that is broken? Say so here.</p>
+    <label class="sr" for="reqkind">What kind</label>
+    <select id="reqkind"><option value="feature">A new feature</option><option value="map">A map idea</option>
+      <option value="cosmetic">A cosmetic</option><option value="bug">Something broken</option><option value="other">Something else</option></select>
+    <label class="sr" for="reqtext">Your request</label>
+    <textarea id="reqtext" maxlength="600" rows="5" placeholder="What would you like?"></textarea>
+    <div class="reqrow"><button type="button" id="reqsend" class="big">Send</button><span id="reqmsg" role="status"></span></div>
+    <div id="reqadmin" hidden><h4>Everybody's requests</h4><div id="reqlist"></div></div>
+  </div>
+</div>
+<div id="toast" aria-live="polite"></div>
 
 <div id="tags"></div>
 <div id="hud">
@@ -1130,5 +1308,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=92');
+await import('./game.js?v=93');
 </script>

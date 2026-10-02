@@ -1,0 +1,165 @@
+---
+/* Views, likes and comments for one project, under its title.
+
+   The counts and the thread live on the mlhub server (apps/mc/sitesocial.js),
+   reached from the page itself, so the site stays static. A view is counted
+   once a day for each visitor; a like is one each and the same button takes
+   it back; the comments open from a button and hold replies and likes.
+   Names and text go through the server's filter, and an admin can delete. */
+interface Props {
+  /** "games/ski", "ai/avalanche": the category and the project's slug */
+  slugKey: string;
+}
+const { slugKey } = Astro.props;
+---
+
+<div class="mt-5" data-social data-key={slugKey}>
+  <div class="flex flex-wrap items-center gap-2 text-[13px]">
+    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400" title="Views">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+      <b data-views class="font-medium tabular-nums">–</b> <span class="sr-only">views</span>
+    </span>
+    <button type="button" data-like aria-pressed="false"
+      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors aria-pressed:text-rose-600 aria-pressed:border-rose-300 dark:aria-pressed:border-rose-800">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 2.9 4.5 6.7 4.5c2.1 0 3.6 1.2 5.3 3.1 1.7-1.9 3.2-3.1 5.3-3.1 3.8 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21Z"/></svg>
+      <b data-likes class="font-medium tabular-nums">–</b> <span class="sr-only">likes</span>
+    </button>
+    <button type="button" data-open aria-expanded="false"
+      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      Comments <b data-ccount class="font-medium tabular-nums"></b>
+    </button>
+  </div>
+
+  <section data-panel hidden class="mt-5 max-w-2xl rounded-lg border border-neutral-200 dark:border-neutral-800 p-4 sm:p-5">
+    <h2 class="text-[16px] font-semibold text-neutral-900 dark:text-neutral-100 mb-3">Comments</h2>
+    <form data-form class="flex flex-col gap-2 mb-5">
+      <label class="sr-only" for={`c-name-${slugKey}`}>Your name</label>
+      <input id={`c-name-${slugKey}`} data-name maxlength="30" placeholder="Your name (optional)"
+        class="w-full sm:w-64 px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-[14px] text-neutral-900 dark:text-neutral-100" />
+      <label class="sr-only" for={`c-text-${slugKey}`}>Your comment</label>
+      <textarea id={`c-text-${slugKey}`} data-text maxlength="800" rows="3" placeholder="Leave a comment"
+        class="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-950 text-[14px] text-neutral-900 dark:text-neutral-100"></textarea>
+      <div class="flex items-center gap-3">
+        <button type="submit" class="px-4 py-2 rounded-md bg-neutral-900 dark:bg-neutral-50 text-white dark:text-neutral-900 text-[14px] font-medium hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors">Post</button>
+        <span data-msg role="status" class="text-[13px] text-neutral-500"></span>
+      </div>
+    </form>
+    <div data-list class="flex flex-col gap-4 text-[14px]"></div>
+  </section>
+</div>
+
+<script>
+  const API = "https://apps.leonzhao.dev/mc/site";
+  // one id a browser: what stops a like being counted twice. Not a login.
+  function visitor(): string {
+    try {
+      let v = localStorage.getItem("siteVid");
+      if (!v || !/^[a-z0-9]{8,40}$/.test(v)) {
+        v = Array.from(crypto.getRandomValues(new Uint8Array(10)), (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 20);
+        localStorage.setItem("siteVid", v);
+      }
+      return v;
+    } catch { return "anon" + Math.random().toString(36).slice(2, 12); }
+  }
+  // an admin can delete; the code is checked on the server, never here
+  function admin(): string | null {
+    try {
+      if (location.hash === "#admin") {
+        const c = prompt("Admin code");
+        if (c) localStorage.setItem("siteAdmin", c);
+        history.replaceState(null, "", location.pathname);
+      }
+      return localStorage.getItem("siteAdmin");
+    } catch { return null; }
+  }
+  const post = (path: string, body: object) =>
+    fetch(API + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+  const ago = (t: number) => {
+    const s = (Date.now() - t) / 1000;
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 86400) return Math.floor(s / 3600) + " h ago";
+    return new Date(t).toLocaleDateString();
+  };
+
+  for (const root of document.querySelectorAll<HTMLElement>("[data-social]")) {
+    const key = root.dataset.key!;
+    const vid = visitor();
+    const adm = admin();
+    const $ = <T extends HTMLElement>(s: string) => root.querySelector(s) as T;
+    const likeBtn = $<HTMLButtonElement>("[data-like]");
+    const panel = $<HTMLElement>("[data-panel]");
+    const openBtn = $<HTMLButtonElement>("[data-open]");
+    let replyTo: string | null = null;
+
+    const setCounts = (j: any) => {
+      if (typeof j.views === "number") $("[data-views]").textContent = String(j.views);
+      if (typeof j.likes === "number") $("[data-likes]").textContent = String(j.likes);
+      if (typeof j.liked === "boolean") likeBtn.setAttribute("aria-pressed", String(j.liked));
+      if (typeof j.comments === "number") $("[data-ccount]").textContent = j.comments ? "(" + j.comments + ")" : "";
+    };
+    post("/view", { slug: key, vid }).then(setCounts).catch(() => {});
+
+    likeBtn.addEventListener("click", () => {
+      const on = likeBtn.getAttribute("aria-pressed") !== "true";
+      likeBtn.setAttribute("aria-pressed", String(on));
+      post("/like", { slug: key, vid, on }).then(setCounts).catch(() => {});
+    });
+
+    function draw(list: any[]) {
+      const box = $("[data-list]");
+      const one = (c: any, isReply: boolean) =>
+        '<div class="' + (isReply ? "ml-6 pl-3 border-l border-neutral-200 dark:border-neutral-800" : "") + '" data-c="' + c.id + '">'
+        + '<p class="text-[13px] text-neutral-500"><b class="font-medium text-neutral-800 dark:text-neutral-200">' + esc(c.deleted ? "Removed" : c.name) + "</b> · " + ago(c.at) + "</p>"
+        + '<p class="mt-1 whitespace-pre-wrap text-neutral-700 dark:text-neutral-300">' + (c.deleted ? '<i class="text-neutral-400">This comment was removed.</i>' : esc(c.text)) + "</p>"
+        + (c.deleted ? "" : '<p class="mt-1 flex gap-3 text-[12px] text-neutral-500">'
+          + '<button type="button" data-cl="' + c.id + '" class="hover:text-rose-600' + (c.liked ? " text-rose-600" : "") + '">♥ ' + c.likes + "</button>"
+          + (isReply ? "" : '<button type="button" data-reply="' + c.id + '" class="hover:text-neutral-900 dark:hover:text-neutral-100">Reply</button>')
+          + (adm ? '<button type="button" data-del="' + c.id + '" class="hover:text-red-600">Delete</button>' : "") + "</p>")
+        + "</div>";
+      box.innerHTML = list.length
+        ? list.map((t) => one(t, false) + (t.replies || []).map((r: any) => one(r, true)).join("")).join("")
+        : '<p class="text-neutral-500">No comments yet. Be the first.</p>';
+    }
+    function load() {
+      fetch(API + "/comments?slug=" + encodeURIComponent(key) + "&vid=" + vid, { cache: "no-store" })
+        .then((r) => r.json()).then((j) => { if (j && j.comments) draw(j.comments); }).catch(() => {});
+    }
+    openBtn.addEventListener("click", () => {
+      const open = panel.hidden;
+      panel.hidden = !open;
+      openBtn.setAttribute("aria-expanded", String(open));
+      if (open) load();
+    });
+    $("[data-list]").addEventListener("click", (e) => {
+      const t = e.target as HTMLElement;
+      const cl = t.closest<HTMLElement>("[data-cl]"), rp = t.closest<HTMLElement>("[data-reply]"), dl = t.closest<HTMLElement>("[data-del]");
+      if (cl) post("/comment/like", { slug: key, id: cl.dataset.cl, vid }).then(load);
+      if (rp) {
+        replyTo = rp.dataset.reply!;
+        const name = rp.closest("[data-c]")?.querySelector("b")?.textContent || "";
+        $("[data-msg]").textContent = "Replying to " + name + " · ";
+        const cancel = document.createElement("button");
+        cancel.type = "button"; cancel.textContent = "cancel"; cancel.className = "underline";
+        cancel.onclick = () => { replyTo = null; $("[data-msg]").textContent = ""; };
+        $("[data-msg]").appendChild(cancel);
+        $<HTMLTextAreaElement>("[data-text]").focus();
+      }
+      if (dl && adm && confirm("Delete this comment?")) post("/comment/delete", { slug: key, id: dl.dataset.del, admin: adm }).then((j) => { if (j && j.error) alert(j.error); load(); });
+    });
+    $<HTMLFormElement>("[data-form]").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = $<HTMLTextAreaElement>("[data-text]").value.trim();
+      const name = $<HTMLInputElement>("[data-name]").value.trim();
+      if (text.length < 2) { $("[data-msg]").textContent = "Write a little more first."; return; }
+      try { localStorage.setItem("siteName", name); } catch {}
+      post("/comment", { slug: key, vid, name, text, parent: replyTo }).then((j) => {
+        if (j && j.ok) { $<HTMLTextAreaElement>("[data-text]").value = ""; replyTo = null; $("[data-msg]").textContent = "Posted."; load(); }
+        else $("[data-msg]").textContent = (j && j.error) || "That did not go through.";
+      }).catch(() => { $("[data-msg]").textContent = "The server could not be reached."; });
+    });
+    try { const n = localStorage.getItem("siteName"); if (n) $<HTMLInputElement>("[data-name]").value = n; } catch {}
+  }
+</script>

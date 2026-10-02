@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import ProjectSocial from "../../components/ProjectSocial.astro";
 import { gameProjects } from "../../data/projects";
 
 export function getStaticPaths() {
@@ -81,6 +82,7 @@ const tech = project.tech ?? [];
           </div>
         )
       }
+      <ProjectSocial slugKey={`games/${project.slug}`} />
     </header>
 
     {

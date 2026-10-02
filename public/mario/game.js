@@ -11,32 +11,40 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso } from './track.js?v=92';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=92';
-import { packLook, unpackLook, normalise } from './parts.js?v=92';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=92';
-import { whenKit } from './models.js?v=92';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=92';
-import { makeRescue } from './rescue.js?v=92';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=92';
-import { makeBrain, driveBrain } from './ai.js?v=92';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=92';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=92';
-import { makeRanked } from './rk.js?v=92';
-import { makeCones } from './cones.js?v=92';
-import { makeHazards } from './hazards.js?v=92';
-import { THEMES, themeById, seedOf } from './themes.js?v=92';
-import * as snd from './audio.js?v=92';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=93';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=93';
+import { packLook, unpackLook, normalise } from './parts.js?v=93';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=93';
+import { whenKit } from './models.js?v=93';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=93';
+import { makeRescue } from './rescue.js?v=93';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=93';
+import { makeBrain, driveBrain } from './ai.js?v=93';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=93';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=93';
+import { makeRanked } from './rk.js?v=93';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=93';
+import { makeHub } from './hub.js?v=93';
+import { makeCones } from './cones.js?v=93';
+import { makeHazards } from './hazards.js?v=93';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=93';
+import * as snd from './audio.js?v=93';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
-const LAPS = 3;
+// three, or however many a built map asks for
+let LAPS = 3;
 const CPN = 8;
 const GRID = 8;                       // how big a field the circuit is set up for
 
 /* ------------------------------------------------------------------ renderer */
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+/* Reading back every shader's compile log stalls the frame a new material
+   first appears in (measured: two thirds of the CPU time on Ember Hollow while
+   its effects came in). A shader that does not compile still shows as
+   missing, so the log is not worth the stall on the live page. */
+renderer.debug.checkShaderErrors = location.hostname === 'localhost' && /[?&]shaders=1/.test(location.search);
 /* What the card will do about a surface seen almost edge on. A road is looked
    at from a metre above it and half a kilometre away in the same frame, which
    is the exact case this is for, and it costs nothing worth measuring. */
@@ -209,6 +217,112 @@ try {
 } catch (e) {}
 function myRacer() { return racerOf(myCast, myColour); }
 
+/* ---- your look, beyond the driver, the parts and the paint --------------
+   The character's colours, the gradient, and every cosmetic worn. Kept in
+   this browser, and on the server under your name, which is the account:
+   open the game anywhere under the same name and you are dressed the same.
+   What you have won (the inventory) only ever comes from the server. */
+let myStyle = { char: {}, kart: {} };
+let profileT = 0;
+let myInv = {};
+let profileName = '';
+try {
+  const s = JSON.parse(localStorage.getItem('mkStyle') || 'null');
+  if (s && typeof s === 'object') myStyle = { char: s.char || {}, kart: s.kart || {} };
+} catch (e) {}
+// the look with only what is owned in it, which is what anybody else sees
+function styleNow() {
+  const c = Object.assign({}, myStyle.char), k = Object.assign({}, myStyle.kart);
+  for (const key of ['hat', 'face', 'driver']) if (c[key] && !owns(myInv, c[key])) delete c[key];
+  for (const key of ['skin', 'body', 'decor', 'glider', 'plate', 'aura']) if (k[key] && !owns(myInv, k[key])) delete k[key];
+  return { char: c, kart: k, name: myName };
+}
+let styleSaveT = 0;
+function saveStyle() {
+  try { localStorage.setItem('mkStyle', JSON.stringify(myStyle)); } catch (e) {}
+  clearTimeout(styleSaveT);
+  styleSaveT = setTimeout(pushLook, 900);
+}
+function pushLook() {
+  const name = (myName || '').trim();
+  if (!name) return;
+  const s = styleNow();
+  fetch(MC + '/kart/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, look: { cast: myCast, build: myBuild, char: s.char, kart: Object.assign({ paint: myColour }, s.kart) } }) })
+    .catch(() => {});
+}
+/* Your profile from the server: what you have won, and the look saved there.
+   The first time a name is seen on a new browser the saved look is put on;
+   after that this browser's own changes win, and go back up. */
+let profileAt = 0;
+function loadProfile(adopt) {
+  const name = (myName || '').trim();
+  if (!name) return Promise.resolve(null);
+  profileName = name;
+  return fetch(MC + '/kart/profile?name=' + encodeURIComponent(name), { cache: 'no-store' })
+    .then(r => r.json())
+    .then(p => {
+      if (!p || (myName || '').trim() !== name) return null;
+      const before = myInv;
+      myInv = p.inv || {};
+      profileAt = Date.now();
+      if (adopt && p.look) {
+        const L = p.look;
+        if (typeof L.cast === 'number' && L.cast < RACERS.length) { myCast = L.cast; try { localStorage.setItem('mkCast', String(myCast)); } catch (e) {} }
+        if (L.build) { myBuild = normalise(Object.assign({}, myBuild, L.build)); saveBuild(); }
+        myStyle = { char: L.char || {}, kart: Object.assign({}, L.kart || {}) };
+        delete myStyle.kart.paint;
+        try { localStorage.setItem('mkStyle', JSON.stringify(myStyle)); } catch (e) {}
+      }
+      // anything new since last time is news
+      if (before && Object.keys(before).length + (adopt ? 0 : 1) > 0) {
+        for (const id of Object.keys(myInv)) if (!before[id] && !adopt) announceItem(id);
+      }
+      showGarage();
+      if (hub) hub.refresh(p);
+      return p;
+    })
+    .catch(() => null);
+}
+// something just won, said where it will be seen
+function announceItem(id) {
+  const it = itemById(id);
+  if (!it) return;
+  const box = el('toast');
+  if (!box) return;
+  const d = document.createElement('div');
+  d.className = 'unlock ' + it.tier;
+  d.innerHTML = '<i>' + it.icon + '</i><span><small style="color:' + TIER_COLOUR[it.tier] + '">New ' + TIER_NAME[it.tier]
+    + '</small><b>' + esc(it.name) + '</b></span>';
+  box.appendChild(d);
+  try { snd.fanfare(true); } catch (e) {}
+  setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 600); }, 5200);
+}
+// after anything that might have won something, look again in a moment
+function checkWins() { setTimeout(() => loadProfile(false), 2500); }
+
+/* Everybody else's look, by name, fetched once a minute at most and put on
+   their kart the moment it arrives. */
+const styleCache = new Map();
+function styleFor(name, then) {
+  const key = String(name || '').trim().toLowerCase();
+  if (!key) return null;
+  const c = styleCache.get(key);
+  if (c && Date.now() - c.at < 60000) return c.style;
+  if (!c || !c.loading) {
+    styleCache.set(key, { at: c ? c.at : 0, style: c ? c.style : null, loading: true });
+    fetch(MC + '/kart/profile?name=' + encodeURIComponent(name), { cache: 'no-store' })
+      .then(r => r.json())
+      .then(p => {
+        const st = p && p.look ? { char: p.look.char || {}, kart: p.look.kart || {}, name: p.name } : null;
+        styleCache.set(key, { at: Date.now(), style: st });
+        if (st && then) then(st);
+      })
+      .catch(() => styleCache.set(key, { at: Date.now(), style: null }));
+  }
+  return c ? c.style : null;
+}
+
 /* ------------------------------------------------------------------- input -- */
 // Every action carries its own keys so the pause menu can change them. Esc is
 // not in here on purpose: it is the way back out of a menu you have just bound
@@ -334,6 +448,16 @@ let rk = null;
 let rkFirst = null;            // what start() runs in place of a solo round, when ranked started it
 const rkSeen = new Map();      // id -> the last place that kart's driver said it was
 let rkNet = null;              // the line to the ranked lobby, made once the page is built
+// the pages behind the home screen, and the maps people build
+let hub = null;
+let customMap = null;                  // the built map being driven, for its board: { id, name, laps }
+let editorMod = null;
+let editorFrame = null;                // the builder's own frame, while it is building
+const customSpecs = new Map();         // theme id -> what track.js builds a built map from
+const customData = new Map();          // theme id -> the map, for its things
+let customWorld = null;                // the things on the built map being driven
+let customLaps = 0;
+let builderHidden = [];
 let rkFans = 0;               // how many are watching you race outside a battle
 let rkRound = 0, rkRenameT = null;
 let boardTab = 'race';        // which board the title card is showing
@@ -535,10 +659,19 @@ function buildWorld(seed, themeId) {
        enough for this to be somebody's whole race. */
     if (rescue) rescue.clear();
   }
+  if (customWorld) { customWorld.dispose(); customWorld = null; }
   worldSeed = seed;
   worldTheme = th.id;
   dressSky(th);
+  // a map somebody built: its points go to the track builder, its things go down after
+  setCustomTrack(isCustom(th.id) ? (customSpecs.get(th.id) || null) : null);
   track = buildTrack(scene, seed, th.id);
+  if (isCustom(th.id) && customData.get(th.id)) {
+    const forTrack = track;
+    editorModule().then(E => E.buildExtras(scene, forTrack, customData.get(th.id), k => pickupBox(k, { taken: 0 })))
+      .then(w => { if (track === forTrack) customWorld = w; else w.dispose(); })
+      .catch(e => console.warn('custom map things', e));
+  }
   items = makeItemWorld(scene, track, { blast });
   cones = makeCones(scene, track);
   hazards = makeHazards(scene, track, seed);
@@ -549,7 +682,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=92')
+  import('./props.js?v=93')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -576,7 +709,8 @@ const GAPS = [55, 36, 20, 7, -8, -24, -42];
 const RESULTS = 10;
 
 function addKart(racer, opts) {
-  const k = makeKart(racer, opts.build);
+  const k = makeKart(racer, opts.build, opts.style || null);
+  k.castNum = opts.cast;
   k.id = opts.id;
   k.name = opts.name || racer.name;
   k.bot = !!opts.bot;
@@ -589,14 +723,17 @@ function addKart(racer, opts) {
 /* Somebody changed their look while their kart is on the road: build it again
    in the new look and swap the model in, keeping where it is and how it is
    moving. */
-function restyleKart(id, cast) {
+function restyleKart(id, cast, style) {
   const k = karts.find(q => q.id === id);
   if (!k || k === me) return;
+  if (cast === undefined || cast === null) cast = k.castNum || 0;
+  k.castNum = cast;
+  if (style === undefined) style = styleFor(k.name, st => restyleKart(id, cast, st));
   const look = unpackLook(cast);
-  const nk = makeKart(racerOf(look.cast, look.colour), look.build);
+  const nk = makeKart(racerOf(look.cast, look.colour), look.build, style || null);
   dropPlant(k);
   scene.remove(k.group);
-  for (const f of ['who', 'group', 'body', 'wheels', 'shade', 'head', 'arms', 'glider', 'build', 'trail',
+  for (const f of ['who', 'group', 'body', 'wheels', 'shade', 'head', 'arms', 'glider', 'build', 'trail', 'style',
                    'exhaust', 'parts', 'driverParts', 'dressed']) k[f] = nk[f];
   scene.add(k.group);
   apply(k);
@@ -623,7 +760,7 @@ function placeOnGrid(first = 0) {
     k.speed = 0; k.drift = 0; k.driftT = 0; k.slide = 0; k.hop = 0; k.hopV = 0;
     k.boost = 0; k.star = 0; k.slow = 0; k.spin = 0;
     k.lap = 1; k.cpi = 0; k.prog = 0; k.finished = 0; k.time = 0; k.dnf = 0;
-    if (k === me) postedRace = false;
+    if (k === me) { postedRace = false; k.lapTimes = []; k.lapStart = 0; k.topRun = 0; k.distRun = 0; k.runSent = false; }
     k.item = null; k.itemN = 0; k.roulette = 0; k.queue = [];
     k.falling = 0; k.fallV = 0; k.overEdge = 0; k.rescue = 0; k.bullet = 0;
     k.hint = null;
@@ -643,6 +780,8 @@ function placeOnGrid(first = 0) {
 /* start a round. `field` is either null (solo, filled with computer drivers) or
    the list of humans the server says are racing this round. */
 function startRound(field, seed, asPhase, themeId) {
+  LAPS = isCustom(themeId) ? Math.max(1, Math.min(9, customLaps || 3)) : 3;
+  if (!isCustom(themeId)) customMap = null;
   /* The circuit the place is, not the one the room's counter happened to land
      on. The server still sends a seed and still moves it every round; taking
      it from the place instead means every client lays out the same track
@@ -665,8 +804,11 @@ function startRound(field, seed, asPhase, themeId) {
          driver, body and paint all came out as Pip in a formula car. */
       const mine = rk ? (!rk.watch && p.id === rk.me) : p.id === (net && net.id);
       const look = unpackLook(p.cast);
+      // everybody else's cosmetics come from their profile, by name
+      const theirs = mine ? null : styleFor(p.name, st => restyleKart(p.id, p.cast, st));
       grid.push(addKart(mine ? myRacer() : racerOf(look.cast, look.colour), {
         id: p.id, name: p.name, remote: !mine, build: mine ? myBuild : look.build,
+        style: mine ? styleNow() : theirs, cast: p.cast,
       }));
     }
     me = karts.find(k => k.id === (rk ? (rk.watch ? -1 : rk.me) : (net && net.id))) || null;
@@ -679,7 +821,7 @@ function startRound(field, seed, asPhase, themeId) {
     spectating = true;
   } else {
     spectating = false;
-    me = addKart(myRacer(), { id: 'me', name: myName || 'You', build: myBuild });
+    me = addKart(myRacer(), { id: 'me', name: myName || 'You', build: myBuild, style: styleNow() });
   }
   const solo = !field || !field.length;
   quietRound = !!rk || (solo && (mode === 'tt' || replay));
@@ -718,6 +860,8 @@ function startRound(field, seed, asPhase, themeId) {
     }
   }
   snapCamera();
+  // every material in the world compiled now, behind the countdown, instead of the first time each is seen
+  try { if (renderer.compileAsync) renderer.compileAsync(scene, camera).catch(() => {}); } catch (e) {}
   spectating = !me;
   watchId = null;
   specKey = '';
@@ -747,6 +891,7 @@ function lapLogic(k, pr) {
     k.cpi = c;
     if (c === 0) {
       k.lap++;
+      if (k === me) { me.lapTimes = me.lapTimes || []; me.lapTimes.push(+(raceTime - (me.lapStart || 0)).toFixed(2)); me.lapStart = raceTime; }
       if (k.lap > LAPS) finishKart(k);
       else if (k === me) {
         snd.lapChime();
@@ -770,6 +915,7 @@ function finishKart(k) {
     showResults(false);
   }
   if (k === me && net) net.finish(raceTime, results.length);
+  if (k === me) postRun(true);
   if (k === me && rk && !rk.watch && !rk.res) { rk.done = true; rkNet.finish(+raceTime.toFixed(2)); rkHud(true); }
 }
 
@@ -1397,11 +1543,17 @@ function stepWorld(dt) {
 
   // the boxes come back
   for (const b of track.itemBoxes) if (b.taken > 0) b.taken -= dt;
+  if (customWorld) customWorld.step(karts, dt);
   dressTrack();
 
   for (const k of karts) apply(k);
   /* The run being recorded, from the pose it was just drawn in, and the one
      being raced against. The ghost sits on the grid until the lights go. */
+  if (phase === 'race' && me && !spectating && !me.finished) {
+    const v = Math.abs(me.speed);
+    if (v > (me.topRun || 0)) me.topRun = v;
+    me.distRun = (me.distRun || 0) + v * dt;
+  }
   if (phase === 'race' && me && !spectating) {
     recorder.tick(raceTime, me);
     if (me.finished) { if (recorder.active) keepEarly(); else finishRun(); }
@@ -1680,7 +1832,13 @@ function drawTags() {
   const bd = el('board');
   /* Its own box, not offsetParent: that is null for anything fixed whether it
      is on screen or not, so asking it quietly turned this check off. */
-  const br = bd ? bd.getBoundingClientRect() : null;
+  /* Its box, read every half second rather than every frame: reading layout
+     here forced the page to lay itself out again each frame (measured at a
+     quarter of the game's CPU time), and the standings panel only moves when
+     the window does. */
+  const nowT = performance.now();
+  if (!drawTags.box || nowT - drawTags.at > 500) { drawTags.box = bd ? bd.getBoundingClientRect() : null; drawTags.at = nowT; }
+  const br = drawTags.box;
   const panel = br && br.width > 0 ? br : null;
   for (const t of tagLit) {
     /* Smaller the further away, which is how a name behaves in the world
@@ -2343,8 +2501,8 @@ function showResults(final) {
     /* Posted once the recording of it is done, which is later this same frame:
        the line is crossed in the lap logic and the recorder hears about it
        after. The time goes up with the run that proves it. */
-    pendingPost = me.time;
-    if (runReady) postTime(pendingPost, runReady);
+    pendingPost = customMap ? 0 : me.time;
+    if (runReady && pendingPost) postTime(pendingPost, runReady);
   }
   drawTimes();
   el('restitle').textContent = replay ? 'Replay over'
@@ -2480,7 +2638,25 @@ function goRace() {
   for (const k of karts) { k.rev = 0; k.revHold = 0; }
   for (const b of brains) if (Math.random() < b.skill * 0.7) b.kart.boost = 0.8;
 }
+/* The end of your race or trial, for the stats page: the laps, how fast,
+   and whether you finished. A replay or a watched race is nobody's run. */
+function postRun(finished) {
+  if (!me || me.runSent || spectating || replay) return;
+  me.runSent = true;
+  const name = (myName || '').trim();
+  if (!name) return;
+  const t = finished ? me.time : raceTime;
+  const body = {
+    name, map: customMap ? 'c:' + customMap.id : worldTheme, mode: quietRound ? 'tt' : (net && net.alive) ? 'multi' : rk ? 'ranked' : 'race',
+    time: +(t || 0).toFixed(2), finished: !!finished, laps: (me.lapTimes || []).slice(0, LAPS),
+    avgSpeed: t > 0 ? +((me.distRun || 0) / t * 3.6).toFixed(1) : 0, topSpeed: +((me.topRun || 0) * 3.6).toFixed(1),
+  };
+  fetch(MC + '/kart/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(() => checkWins()).catch(() => {});
+  if (customMap && finished && quietRound) postCustomTime(me.time);
+}
 function endRace() {
+  if (me && !me.finished && !spectating && !replay) postRun(false);
   finishRun();                          // the tail may not have run yet; keep what there is
   phase = 'results';
   // a replay waits for you to choose; a race rolls on to the next
@@ -2509,6 +2685,8 @@ function frame() {
   const raw = now - last;
   const dt = Math.min(0.05, raw / 1000);
   last = now;
+  tickCosmetics(now / 1000);
+  if (editorFrame) { editorFrame(dt); renderer.render(scene, camera); return; }
   if (started) watchFrame(raw, now);
   if (!started) {
     // the title screen is a panel over the world, so the world behind it barely
@@ -2557,6 +2735,8 @@ function buildCast() {
   input.value = myName;
   input.addEventListener('input', () => {
     myName = input.value.slice(0, 12);
+    clearTimeout(profileT);
+    profileT = setTimeout(() => loadProfile(true), 900);
     clearTimeout(rkRenameT);
     rkRenameT = setTimeout(() => { if (rkNet) rkNet.rename(); }, 1200);
     try { localStorage.setItem('mkName', myName); } catch (e) {}
@@ -2609,7 +2789,7 @@ function buildPaint() {
   function paint(save) {
     myColour = hsl(myPaint.h, myPaint.s, myPaint.l);
     draw();
-    if (garage) garage.show(myRacer(), myBuild);
+    if (garage) garage.show(myRacer(), myBuild, styleNow());
     if (save) {
       try { localStorage.setItem('mkPaint', JSON.stringify(myPaint)); } catch (e) {}
       tellLook();
@@ -2654,14 +2834,15 @@ function buildPaint() {
 /* The garage. Three rows of arrows, and the car on the turntable next to them
    changes as you press them. */
 let garage = null;
-function tellLook() { if (net) net.setCast(packLook(myCast, myBuild, myColour)); }
+function tellLook() { if (net) net.setCast(packLook(myCast, myBuild, myColour)); saveStyle(); }
+function showGarage() { if (garage) garage.show(myRacer(), myBuild, styleNow()); }
 function buildGarage() {
   const canvas = el('gcan'), rows = el('gparts');
   if (!canvas || !rows || garage) return;
   garage = makeGarage(canvas);
-  garage.show(myRacer(), myBuild);
+  garage.show(myRacer(), myBuild, styleNow());
   // built again with the kit's bodies once they are in, if they were not yet
-  whenKit(() => garage.show(myRacer(), myBuild));
+  whenKit(() => garage.show(myRacer(), myBuild, styleNow()));
   /* Who is driving: any of the eight, picked the same way as the parts. The
      choice is the "cast" the lobby already passes round with your build, so
      everybody else sees the same person in your seat. */
@@ -2675,7 +2856,7 @@ function buildGarage() {
       myCast = ((myCast + d) % RACERS.length + RACERS.length) % RACERS.length;
       name.textContent = RACERS[myCast].name;
       try { localStorage.setItem('mkCast', String(myCast)); } catch (e) {}
-      garage.show(myRacer(), myBuild);
+      garage.show(myRacer(), myBuild, styleNow());
       tellLook();
       snd.tick();
     };
@@ -2689,8 +2870,17 @@ function buildGarage() {
     };
     name.textContent = RACERS[myCast].name;
     row.append(label, arrow('‹', -1), name, arrow('›', 1));
-    rows.appendChild(row);
+    el('gdriver').appendChild(row);
   }
+  buildCharacter();
+  buildGradient();
+  // the three tabs of the garage card
+  const tabs = [...document.querySelectorAll('#gtabs [data-gt]')];
+  const pick = which => {
+    for (const t of tabs) t.setAttribute('aria-selected', String(t.dataset.gt === which));
+    document.querySelectorAll('.gpane').forEach(p => { p.hidden = p.dataset.pane !== which; });
+  };
+  tabs.forEach(t => t.addEventListener('click', () => { pick(t.dataset.gt); snd.tick(); }));
   for (const part of PARTS) {
     const row = document.createElement('div');
     row.className = 'opt';
@@ -2703,7 +2893,7 @@ function buildGarage() {
       myBuild[part.key] = n.id;
       name.textContent = n.name;
       saveBuild();
-      garage.show(myRacer(), myBuild);
+      garage.show(myRacer(), myBuild, styleNow());
       tellLook();
       drawBars();
       snd.tick();
@@ -2721,6 +2911,88 @@ function buildGarage() {
     rows.appendChild(row);
   }
   drawBars();
+}
+
+/* The character: a skin tone, a shirt and trousers, and the hat and the
+   sunglasses everybody has. Everything else to wear is in the inventory. */
+function swatchRow(label, list, current, set) {
+  const row = document.createElement('div');
+  row.className = 'swrow';
+  const em = document.createElement('em');
+  em.textContent = label;
+  const box = document.createElement('div');
+  box.className = 'sws';
+  const draw = () => {
+    box.innerHTML = '';
+    const def = document.createElement('button');
+    def.type = 'button'; def.className = 'def' + (current() === undefined || current() === null ? ' on' : '');
+    def.title = 'As the driver comes'; def.setAttribute('aria-label', label + ': as the driver comes');
+    def.onclick = () => { set(null); draw(); };
+    box.appendChild(def);
+    for (const c of list) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.style.background = '#' + c.toString(16).padStart(6, '0');
+      b.className = current() === c ? 'on' : '';
+      b.setAttribute('aria-label', label + ' #' + c.toString(16).padStart(6, '0'));
+      b.onclick = () => { set(c); draw(); };
+      box.appendChild(b);
+    }
+  };
+  draw();
+  row.append(em, box);
+  return row;
+}
+function segRow(label, opts, current, set) {
+  const row = document.createElement('div');
+  row.className = 'swrow';
+  const em = document.createElement('em');
+  em.textContent = label;
+  const box = document.createElement('div');
+  box.className = 'seg';
+  const draw = () => {
+    box.innerHTML = '';
+    for (const [v, txt] of opts) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = txt;
+      b.className = (current() || null) === v ? 'on' : '';
+      b.onclick = () => { set(v); draw(); };
+      box.appendChild(b);
+    }
+  };
+  draw();
+  row.append(em, box);
+  return row;
+}
+function restyle() { saveStyle(); showGarage(); snd.tick(); }
+function buildCharacter() {
+  const box = el('gdriver');
+  const C = () => myStyle.char || (myStyle.char = {});
+  box.appendChild(swatchRow('Skin', SKIN_TONES, () => C().skin, v => { if (v === null) delete C().skin; else C().skin = v; restyle(); }));
+  box.appendChild(swatchRow('Shirt', CLOTH, () => C().shirt, v => { if (v === null) delete C().shirt; else C().shirt = v; restyle(); }));
+  box.appendChild(swatchRow('Trousers', CLOTH, () => C().pants, v => { if (v === null) delete C().pants; else C().pants = v; restyle(); }));
+  box.appendChild(segRow('Hat', [[null, 'None'], ['hat_cap', 'Cap']], () => (C().hat === 'hat_cap' || !C().hat) ? (C().hat || null) : '__',
+    v => { if (v) C().hat = v; else delete C().hat; restyle(); }));
+  box.appendChild(segRow('Face', [[null, 'None'], ['sunglasses', 'Sunglasses']], () => C().face || null,
+    v => { if (v) C().face = v; else delete C().face; restyle(); }));
+  const note = document.createElement('p');
+  note.className = 'gnote';
+  note.innerHTML = 'More hats, unique drivers and the rest are in your <button type="button">Inventory</button>.';
+  note.querySelector('button').onclick = () => hub && hub.show('inv');
+  box.appendChild(note);
+}
+/* A second colour and which way it runs, for a gradient over the paint. */
+function buildGradient() {
+  const box = el('gradient');
+  const K = () => myStyle.kart || (myStyle.kart = {});
+  box.appendChild(segRow('Gradient', [['none', 'Off'], ['front', 'Front'], ['side', 'Side'], ['top', 'Top']], () => K().grad || 'none',
+    v => { K().grad = v; if (v !== 'none' && (K().paint2 === undefined || K().paint2 === null)) K().paint2 = 0x2b56d6; restyle(); }));
+  box.appendChild(swatchRow('To', CLOTH, () => K().paint2, v => { if (v === null) delete K().paint2; else K().paint2 = v; if (K().grad === 'none' || !K().grad) K().grad = 'front'; restyle(); }));
+  const note = document.createElement('p');
+  note.className = 'gnote';
+  note.innerHTML = 'Kart skins (stripes, flames, galaxy…) are in your <button type="button">Inventory</button>.';
+  note.querySelector('button').onclick = () => hub && hub.show('inv');
+  box.appendChild(note);
 }
 
 /* What the build is worth to drive. Bars rather than numbers, because nobody
@@ -2766,7 +3038,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=92');
+    const mod = await import('./net.js?v=93');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3059,6 +3331,83 @@ try {
   const v = localStorage.getItem('mkVol');
   if (v !== null) snd.volume(+v / 100);
 } catch (e) {}
+
+/* ------------------------------------------------------------ custom maps --- */
+/* The map being driven when it is somebody's built map: { id, name, data }.
+   Its times go on its own board, never on the circuits' boards. */
+function postCustomTime(t) {
+  if (!customMap || !customMap.id) return;
+  fetch(MC + '/kart/maps/time', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: customMap.id, name: (myName || '').trim(), time: +(+t).toFixed(2) }) })
+    .then(r => r.json()).then(j => {
+      if (j && j.ok) say(j.beat ? 'On ' + esc(customMap.name) + "'s board in " + ord(j.rank) + '.' : 'Your best on ' + esc(customMap.name) + ' still stands.', 'sys');
+    }).catch(() => {});
+}
+/* What the builder and a played map are allowed to reach of the game. */
+function editorCtx() {
+  return {
+    THREE, scene, camera, renderer, el, esc, MC,
+    name: () => (myName || '').trim(),
+    admin: () => adminPw,
+    me: () => me,
+    registerCustom(id, spec, theme, data) { customSpecs.set(id, spec); customData.set(id, data); registerTheme(theme); },
+    dressSky: th => dressSky(th),
+    renderNow() { renderer.render(scene, camera); return renderer.domElement; },
+    setEditor(fn) { editorFrame = fn; },
+    goHome,
+    // building: the title and the race furniture away, and the world hidden behind the builder's own
+    enterBuilder() {
+      el('title').classList.add('gone');
+      if (hub) hub.hide();
+      el('hud').classList.remove('on');
+      el('results').classList.remove('on');
+      el('board').classList.remove('on');
+      for (const o of scene.children) if (o.visible && !o.isLight && o !== sky && o.name !== 'editor') { o.visible = false; builderHidden.push(o); }
+    },
+    // into a car on it: a time trial or a race, on the place just registered
+    drive(id, how, opts) {
+      customMap = opts && opts.map ? opts.map : null;
+      customLaps = (opts && (opts.laps || (opts.map && opts.map.laps))) || 3;
+      mode = how === 'race' ? 'race' : 'tt';
+      replay = false; ghostWant = null;
+      pickedTheme = id;
+      editorFrame = null;
+      for (const o of builderHidden) o.visible = true;
+      builderHidden = [];
+      el('title').classList.add('gone');
+      if (hub) hub.hide();
+      if (!started) start(false);
+      else { paused = false; el('menu').classList.remove('on'); el('results').classList.remove('on'); startRound(null, seedOf(id), undefined, id); }
+    },
+    // out of the car and back to building
+    stopDrive() {
+      phase = 'edit';
+      snd.music(false);
+      el('hud').classList.remove('on');
+      el('results').classList.remove('on');
+      el('count').classList.remove('on');
+      for (const o of scene.children) if (o.visible && !o.isLight && o !== sky && o.name !== 'editor') { o.visible = false; builderHidden.push(o); }
+    },
+  };
+}
+function editorModule() {
+  if (!editorMod) editorMod = import('./editor.js?v=93');
+  return editorMod;
+}
+function playCustomMap(id, mode) {
+  fetch(MC + '/kart/maps/get?id=' + encodeURIComponent(id) + '&name=' + encodeURIComponent((myName || '').trim()), { cache: 'no-store' })
+    .then(r => r.json()).then(j => {
+      if (!j || !j.map) { alert((j && j.error) || 'That map could not be loaded.'); return; }
+      editorModule().then(E => E.playMap(editorCtx(), j.map, mode));
+    }).catch(() => alert('The server could not be reached.'));
+}
+function openEditor(id, pw) {
+  const go = map => editorModule().then(E => E.openEditor(editorCtx(), map, pw));
+  if (!id) { go(null); return; }
+  fetch(MC + '/kart/maps/get?id=' + encodeURIComponent(id), { cache: 'no-store' }).then(r => r.json())
+    .then(j => { if (j && j.map) go(j.map); else alert((j && j.error) || 'That map could not be loaded.'); })
+    .catch(() => alert('The server could not be reached.'));
+}
 
 /* ------------------------------------------------------------- ranked ------- */
 /* One on one. The race is the time trial: your run, their run as a ghost you
@@ -3458,6 +3807,22 @@ rankedCount();
 setInterval(rankedCount, 10000);
 fetchRanked();
 el('ranked').addEventListener('click', () => rkNet.show(true));
+/* ---- the pages behind the home screen ---- */
+hub = makeHub({
+  el, esc, MC, time,
+  name: () => (myName || '').trim(),
+  inv: () => myInv,
+  style: () => myStyle,
+  setStyle(fn) { fn(myStyle); restyle(); },
+  admin: () => adminPw,
+  racers: RACERS,
+  typing: () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'); },
+  notice: t => { const n = el('hubnote'); if (n) n.textContent = t; else alert(t); },
+  mapName: id => (String(id).indexOf('c:') === 0 ? 'Custom map' : themeById(id).name),
+  playMap: (id, mode) => playCustomMap(id, mode),
+  editMap: (id, pw) => openEditor(id, pw),
+});
+loadProfile(!localStorage.getItem('mkStyle'));
 // on the list from the moment the page opens, whatever you go on to play
 rkNet.presence();
 
@@ -3498,6 +3863,8 @@ window.__mk = {
   // which quality step it has settled on, and a way to pin one for a test
   quality(n) { if (n !== undefined) { level = Math.max(0, Math.min(LEVELS.length - 1, n | 0)); applyLevel(); } return level; },
   // what the renderer is actually being asked to do, for a performance run
+  // one frame drawn on demand, so a test can time the render on its own
+  renderOnce() { renderer.render(scene, camera); },
   draw() {
     const i = renderer.info;
     return { calls: i.render.calls, tris: i.render.triangles,

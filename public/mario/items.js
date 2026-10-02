@@ -11,7 +11,7 @@
    little SVG for the slot in the corner of the screen.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { spinOut } from './kart.js?v=92';
+import { spinOut } from './kart.js?v=93';
 
 const svg = (inner) => '<svg viewBox="0 0 64 64" width="100%" height="100%">' + inner + '</svg>';
 const K = 'stroke="#17223b" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';

@@ -63,6 +63,28 @@ const buildSearchIndex = (p: Project) =>
 </div>
 
 <script>
+  // every card's views and likes, from one request for the whole page
+  {
+    const cards = [...document.querySelectorAll<HTMLElement>("[data-social-key]")];
+    const keys = [...new Set(cards.map((c) => c.dataset.socialKey!))];
+    if (keys.length) {
+      fetch("https://apps.leonzhao.dev/mc/site/stats?slugs=" + encodeURIComponent(keys.join(",")), { cache: "no-store" })
+        .then((r) => r.json())
+        .then((j) => {
+          for (const c of cards) {
+            const s = j && j[c.dataset.socialKey!];
+            if (!s) continue;
+            const bits = [s.views + (s.views === 1 ? " view" : " views"), s.likes + (s.likes === 1 ? " like" : " likes")];
+            if (s.comments) bits.push(s.comments + (s.comments === 1 ? " comment" : " comments"));
+            c.textContent = bits.join(" · ");
+            c.hidden = false;
+          }
+        })
+        .catch(() => {});
+    }
+  }
+</script>
+<script>
   document.querySelectorAll<HTMLElement>("[data-project-section]").forEach((section) => {
     const cards = Array.from(section.querySelectorAll<HTMLElement>("[data-card]"));
     const input = section.querySelector<HTMLInputElement>("[data-search-input]");

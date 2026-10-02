@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=92';
+import { themeById, rulesOf, lookOf } from './themes.js?v=93';
 
 /* The lap.
 
@@ -25,6 +25,7 @@ import { themeById, rulesOf, lookOf } from './themes.js?v=92';
    Both browsers in a lobby build from the same seed, so both get the same lap
    without a byte of it going over the wire. */
 function makeCP(seed) {
+  if (CUSTOM) return CUSTOM.nodes.map((n, i) => ({ x: +n.x || 0, z: +n.z || 0, w: Math.max(3, Math.min(30, +n.w || 9)), y: +n.y || 0, ni: i }));
   let s = (seed | 0) || 1;
   const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
   const n = 15 + Math.floor(rnd() * 5);
@@ -63,7 +64,18 @@ const KERB = 1.5;                 // the red and white, the outer strip of the r
 // it is, so the barriers follow it wherever it goes, camber and all.
 const SHOULDER = 0;
 
+/* A map somebody built: the points they put down, in order, each with its
+   height, width, section and barrier, and what the ground is (flat, hills, or
+   nothing at all for a road in the sky). Null for the circuits. */
+let CUSTOM = null;
+export function setCustomTrack(spec) { CUSTOM = spec || null; basins.length = 0; }
 function hill(x, z) {
+  if (CUSTOM) {
+    if (CUSTOM.ground === 'void') return -400;
+    const lvl = CUSTOM.groundY || 0;
+    return CUSTOM.ground === 'hills'
+      ? lvl + Math.sin(x * 0.0075) * 3.4 + Math.cos(z * 0.0091) * 3.0 + Math.sin((x + z) * 0.004) * 2.2 : lvl;
+  }
   // gentle ground, so the circuit sits in country rather than on a table
   return Math.sin(x * 0.0075) * 3.4 + Math.cos(z * 0.0091) * 3.0 + Math.sin((x + z) * 0.004) * 2.2;
 }
@@ -72,7 +84,8 @@ function hill(x, z) {
 // is simply buried under a flat field.
 const basins = [];
 export function groundY(x, z) {
-  const rim = Math.max(0, (Math.max(Math.abs(x), Math.abs(z)) - 210) / 240);
+  // a built map is as big as its builder made it, so it has no bowl round it
+  const rim = CUSTOM ? 0 : Math.max(0, (Math.max(Math.abs(x), Math.abs(z)) - 210) / 240);
   const y = hill(x, z) + rim * rim * 46;
   // The deepest hollow that reaches here, not the sum of them. Adding them up
   // meant a dozen overlapping basins along the channel dug a seventeen metre pit
@@ -284,18 +297,22 @@ function sampleLoop(seed, th) {
   // how wide the road is here. Sunfield Loop is the broadest thing on the
   // calendar and Neon Mile is a corridor, and that alone changes how a corner
   // has to be taken more than any amount of paint would.
-  for (const c of CP) c.w *= R.width;
+  if (!CUSTOM) for (const c of CP) c.w *= R.width;
   const fine = [];
   const n = CP.length;
+  const nodeAt = [];                 // where each of a built map's points starts, in samples
   for (let i = 0; i < n; i++) {
     const p0 = CP[(i - 1 + n) % n], p1 = CP[i], p2 = CP[(i + 1) % n], p3 = CP[(i + 2) % n];
     const seg = Math.max(2, Math.round(Math.hypot(p2.x - p1.x, p2.z - p1.z) / STEP));
+    nodeAt.push(fine.length);
     for (let k = 0; k < seg; k++) {
       const t = k / seg;
       fine.push({
         x: catmull(p0, p1, p2, p3, t, 'x'),
         z: catmull(p0, p1, p2, p3, t, 'z'),
         w: catmull(p0, p1, p2, p3, t, 'w'),
+        y: CUSTOM ? catmull(p0, p1, p2, p3, t, 'y') : 0,
+        ni: i,
       });
     }
   }
@@ -311,11 +328,13 @@ function sampleLoop(seed, th) {
        one cuts into the hill, and Sunfield Loop, which is the widest thing on
        the calendar, had its tarmac buried under the field for it. */
     const m = a.w + 1.6;                               // out past the kerb
-    const top = Math.max(
+    // a built map's road is exactly as high as its builder put it
+    const top = CUSTOM ? a.y : Math.max(
       hill(a.x, a.z),
       hill(a.x - (dz / len) * m, a.z + (dx / len) * m),
       hill(a.x + (dz / len) * m, a.z - (dx / len) * m));
     out.push({
+      ni: a.ni,
       p: new THREE.Vector3(a.x, top, a.z),
       t: new THREE.Vector3(dx / len, 0, dz / len),
       n: new THREE.Vector3(-dz / len, 0, dx / len),      // left of travel
@@ -334,15 +353,15 @@ function sampleLoop(seed, th) {
         left after this is the long climbs and nothing you can feel through the
         wheels. */
     let raw = out.map(a => a.p.y);
-    const n = out.length, W = 22;
-    for (let pass = 0; pass < 2; pass++) {
+    const n = out.length, W = CUSTOM ? 3 : 22;
+    for (let pass = 0; pass < (CUSTOM ? 1 : 2); pass++) {
       const next = new Array(n);
       for (let i = 0; i < n; i++) {
         let sum = 0;
         for (let d = -W; d <= W; d++) sum += raw[(i + d + n) % n];
         // graded, but never so far under the ground it spans that the field
         // closes over it. The quarter metre of slack is what the kerb blends away.
-        next[i] = Math.max(sum / (W * 2 + 1), raw[i] - 0.25);
+        next[i] = CUSTOM ? sum / (W * 2 + 1) : Math.max(sum / (W * 2 + 1), raw[i] - 0.25);
       }
       raw = next;
     }
@@ -389,6 +408,26 @@ function sampleLoop(seed, th) {
     // camber you cannot hold on ice is a cliff rather than a corner.
     out[i].bank = Math.max(-0.08, Math.min(0.08, -out[i].bend * 0.62)) * R.bank;
   }
+  /* A built map can lean a stretch itself, as far as a bowl does; it blends in
+     over a dozen samples so a change of camber is a slope, not a step. */
+  if (CUSTOM) {
+    const want = out.map(a => { const nb = CUSTOM.nodes[a.ni] && CUSTOM.nodes[a.ni].bank; return typeof nb === 'number' ? Math.max(-0.35, Math.min(0.35, nb)) : null; });
+    if (want.some(v => v !== null)) {
+      const raw = out.map((a, i) => want[i] === null ? a.bank : want[i]);
+      for (let i = 0; i < M; i++) {
+        let sum = 0;
+        for (let d = -6; d <= 6; d++) sum += raw[(i + d + M) % M];
+        out[i].bank = sum / 13;
+      }
+    }
+    // barriers, a stretch at a time: none at all, or a different kind put down by the map
+    for (const a of out) {
+      const b = (CUSTOM.nodes[a.ni] && CUSTOM.nodes[a.ni].barrier) || 'wall';
+      a.barrier = b;
+      if (b !== 'wall') a.noFence = 1;
+      if (b === 'none') a.edgeOpen = 1;
+    }
+  }
   // the start straight stays flat, so the line, the gantry and the grid all sit
   // where they are drawn
   const FLAT = 26;
@@ -405,7 +444,9 @@ function sampleLoop(seed, th) {
   // how many, and where. They are spread evenly round the lap, alternating
   // sides, so a circuit with four of them gives you a jump every quarter.
   const rampAts = [];
-  for (let k = 0; k < R.ramps; k++) rampAts.push(0.235 + k / R.ramps);
+  // on a built map the ramps are wherever a point was made one
+  if (CUSTOM) { CUSTOM.nodes.forEach((nd, j) => { if (nd.seg === 'ramp') rampAts.push((nodeAt[j] + 2) / M); }); }
+  else for (let k = 0; k < R.ramps; k++) rampAts.push(0.235 + k / R.ramps);
   for (const raw of rampAts) {
     const at = raw % 1;
     const side = (rside++ % 2) ? 1 : -1;        // one each way round the lap
@@ -650,7 +691,22 @@ function sampleLoop(seed, th) {
      The over and under is in the split instead, where it is real: on the
      circuits that ask for it the two lanes leave the island at different
      heights, so one of them is a deck and the other runs underneath it. */
-  const order = wanted.map((f, n) => ({ f, n }))
+  /* A built map puts each section exactly where its point was, as long as it
+     would fit before the next one; the generator's spreading is for circuits. */
+  if (CUSTOM) {
+    CUSTOM.nodes.forEach((nd, j) => {
+      const kind = nd.seg === 'icestrip' ? 'strip' : nd.seg === 'sandstrip' ? 'strip' : nd.seg;
+      const def = FEATURES[kind];
+      if (!def) return;
+      const span = (j + 1 < nodeAt.length ? nodeAt[j + 1] : M) - nodeAt[j];
+      const len = Math.max(8, Math.min(def.len * (nd.len || 1), span + Math.floor(def.len / 2)));
+      const f = { kind, len, side: nd.side || 1, of: nd.seg === 'icestrip' ? 'ice' : nd.seg === 'sandstrip' ? 'sand' : undefined };
+      if (nd.rise !== undefined) f.rise = +nd.rise;
+      if (nd.drop !== undefined) f.drop = +nd.drop;
+      features.push(Object.assign({}, def, f, { len, i0: nodeAt[j], order: j, ids: [] }));
+    });
+  }
+  const order = CUSTOM ? [] : wanted.map((f, n) => ({ f, n }))
     .sort((a, b) => FEATURES[b.f.kind].len - FEATURES[a.f.kind].len);
   let spread = 0;
   for (const { f, n } of order) {
@@ -747,7 +803,7 @@ function sampleLoop(seed, th) {
        gets is written down with the place: how many, how long, and what is on
        the island. A stretch that has been used is claimed like any other
        feature, so the next one goes and finds its own bend. */
-    const PLAN = th.split === false ? [] : (th.splits || [{ len: 34, mid: 'house' }]);
+    const PLAN = (CUSTOM || th.split === false) ? [] : (th.splits || [{ len: 34, mid: 'house' }]);
     /* Where it goes: the openest stretch of lap that is clear of the ramps and
        of the bridge, the tunnel and the water. A split is a decision, and a
        decision belongs somewhere you are not already busy.
@@ -984,6 +1040,9 @@ export function buildTrack(scene, seed, themeId) {
   gg.setAttribute('color', new THREE.BufferAttribute(gcol, 3));
   const ground = new THREE.Mesh(gg, new THREE.MeshStandardMaterial({ map: grassTex(th), roughness: 1, vertexColors: true }));
   ground.receiveShadow = true;
+  ground.name = 'ground';
+  // a road in the sky has nothing under it
+  if (CUSTOM && CUSTOM.ground === 'void') ground.visible = false;
   group.add(ground);
 
   /* the road ribbon */
@@ -2286,6 +2345,8 @@ export function buildTrack(scene, seed, themeId) {
          draw a quad: the physics and the picture have to agree about where the
          edge is or you fall through tarmac you can see. */
       gap: !!(a.gap || b.gap),
+      // a built map's stretch with nothing at its edge: over it is a fall
+      edgeOpen: !!(a.edgeOpen || b.edgeOpen),
       // a strip of something that is not tarmac down one side, and what of
       strip: sideOf('strip') ? (a.stripKind || b.stripKind) : null,
       // a road with the ground taken away either side of it: over the edge is a fall

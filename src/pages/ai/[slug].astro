@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import ProjectSocial from "../../components/ProjectSocial.astro";
 import { aiProjects } from "../../data/projects";
 
 export function getStaticPaths() {
@@ -153,6 +154,7 @@ const hasExternalSource = !!project.href && !!playableHref;
           </div>
         )
       }
+      <ProjectSocial slugKey={`ai/${project.slug}`} />
     </header>
 
     {

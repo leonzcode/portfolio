@@ -19,7 +19,7 @@
    part list can be written the way you would sketch it, nose forward.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { kitModel, kitPart } from './models.js?v=92';
+import { kitModel, kitPart } from './models.js?v=93';
 
 export const INK = 0x17223b, STEEL = 0xb8bcc4, DARK = 0x3a3f4a, RUBBER = 0x1d2430;
 export const GLASS = 0x9fd8ff, CHROME = 0xd8dde4;
@@ -729,13 +729,19 @@ export function packLook(cast, build, colour) {
     n = n * SLOTS + Math.max(0, list.findIndex(x => x.id === b[ORDER[i][0]]));
   }
   const paint = colour === null || colour === undefined ? 0 : (colour & 0xffffff) + 1;
-  return (cast & 7) + 8 * n + SPAN * paint;
+  /* Racers past the eighth (Thomas was the ninth) ride above the paint, so
+     every number sent before there were nine still means what it did. */
+  return (cast & 7) + 8 * n + SPAN * paint + HI * Math.floor(cast / 8);
 }
+// one more than the largest the paint can reach, times the span
+const HI = SPAN * 0x2000000;
 export function unpackLook(n) {
   let r = Math.max(0, Math.floor(+n) || 0);
+  const hi = Math.floor(r / HI);
+  r = r - hi * HI;
   const paint = Math.floor(r / SPAN);
   r = r % SPAN;
-  const cast = r & 7;
+  const cast = (r & 7) + hi * 8;
   r = Math.floor(r / 8);
   const build = {};
   for (const pair of ORDER) {
