@@ -16,8 +16,8 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=6';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=6';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=7';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=7';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
@@ -471,7 +471,7 @@ export class Post {
     this.expoDt = (this.expoDt || 0) + dt;
     u.uDt.value = this.expoDt;
     // light shafts
-    this.run(this.mVL, this.vl);
+    if (!this.halfClouds || ((this.cloudTick || 0) & 1)) this.run(this.mVL, this.vl);   // light rays: on the faster setting, the frames the clouds skip
     // clouds, over the last frame's
     // they blend into the last frame's anyway: on the faster setting they are worked out every other frame
     this.cloudTick = (this.cloudTick || 0) + 1;
