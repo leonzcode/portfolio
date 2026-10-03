@@ -16,8 +16,8 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=4';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=4';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=5';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=5';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
@@ -465,7 +465,9 @@ export class Post {
     const u = this.u;
     u.uInvViewProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
     u.uDepth.value = main.depthTexture;
-    u.uDt.value = dt;
+    // the eye adjusts slowly: measuring the brightness every other frame is plenty
+    this.expoDt = (this.expoDt || 0) + dt;
+    u.uDt.value = this.expoDt;
     // light shafts
     this.run(this.mVL, this.vl);
     // clouds, over the last frame's
@@ -496,10 +498,14 @@ export class Post {
     }
     }
     // how bright it all is, and the eye adjusting to it
-    u.uSrc.value = this.comp.texture; this.run(this.mLum, this.lum);
-    u.uLum.value = this.lum.texture; u.uPrev.value = this.expo[this.expoI].texture;
-    this.run(this.mExpo, this.expo[1 - this.expoI]);
-    this.expoI = 1 - this.expoI;
+    this.expoTick = (this.expoTick || 0) + 1;
+    if (this.expoTick & 1) {
+      u.uSrc.value = this.comp.texture; this.run(this.mLum, this.lum);
+      u.uLum.value = this.lum.texture; u.uPrev.value = this.expo[this.expoI].texture;
+      this.run(this.mExpo, this.expo[1 - this.expoI]);
+      this.expoI = 1 - this.expoI;
+      this.expoDt = 0;
+    }
     // tone map, then smooth the edges onto the screen
     u.uColor.value = this.comp.texture; u.uBloom.value = upSrc; u.uExpo.value = this.expo[this.expoI].texture;
     this.run(this.mFinal, this.ldr);
