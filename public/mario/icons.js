@@ -27,6 +27,7 @@ const P = {
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   none: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>',
   // one for each kind of cosmetic, while its picture is being drawn
   brush: '<path d="M9.06 11.9 18 3a2.1 2.1 0 0 1 3 3l-8.94 8.94"/><path d="M7 14a3 3 0 0 0-3 3c0 1.31-2 2-2 2 1.06 1.42 2.62 2 4 2a4 4 0 0 0 4-4 3 3 0 0 0-3-3Z"/>',
   car: '<path d="M3 15v-3l2-5h11l4 5h1v3"/><circle cx="7" cy="16" r="2"/><circle cx="17" cy="16" r="2"/><path d="M9 16h6"/>',
