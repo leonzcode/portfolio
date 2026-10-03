@@ -106,6 +106,7 @@ export function makeRanked(g) {
     if (t === 'pos') { g.pos(m); return; }
     if (t === 'oppRestart') { g.oppRestart(m); return; }
     if (t === 'oppFinish') { g.oppFinish(m); return; }
+    if (t === 'go') { g.go(m); return; }
     if (t === 'result') {
       const mine = m.points && Object.prototype.hasOwnProperty.call(m.points, myName) ? m.points[myName] : null;
       if (mine !== null) myPoints = mine;
@@ -287,6 +288,8 @@ export function makeRanked(g) {
     pos(o) { send(Object.assign({ type: 'pos' }, o)); },
     restart() { send({ type: 'restart' }); },
     finish(t) { send({ type: 'finish', time: t }); },
+    // the track is built and the grid is set: the lights can start when the other driver is too
+    ready(id) { send({ type: 'ready', id }); },
     forfeit() { send({ type: 'forfeit' }); },
     unwatch() { send({ type: 'unwatch' }); },
     redraw() { drawList(); drawInvites(); },

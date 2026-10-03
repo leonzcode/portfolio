@@ -11,25 +11,25 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso, setCustomTrack } from './track.js?v=100';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=100';
-import { packLook, unpackLook, normalise } from './parts.js?v=100';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=100';
-import { whenKit } from './models.js?v=100';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=100';
-import { makeRescue } from './rescue.js?v=100';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=100';
-import { makeBrain, driveBrain } from './ai.js?v=100';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=100';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=100';
-import { makeRanked } from './rk.js?v=100';
-import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=100';
-import { makeHub } from './hub.js?v=100';
-import { icon, KIND_ICON } from './icons.js?v=100';
-import { makeCones } from './cones.js?v=100';
-import { makeHazards } from './hazards.js?v=100';
-import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=100';
-import * as snd from './audio.js?v=100';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=101';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=101';
+import { packLook, unpackLook, normalise } from './parts.js?v=101';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=101';
+import { whenKit } from './models.js?v=101';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=101';
+import { makeRescue } from './rescue.js?v=101';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=101';
+import { makeBrain, driveBrain } from './ai.js?v=101';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=101';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=101';
+import { makeRanked } from './rk.js?v=101';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=101';
+import { makeHub } from './hub.js?v=101';
+import { icon, KIND_ICON } from './icons.js?v=101';
+import { makeCones } from './cones.js?v=101';
+import { makeHazards } from './hazards.js?v=101';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=101';
+import * as snd from './audio.js?v=101';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -702,7 +702,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=100')
+  import('./props.js?v=101')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -832,8 +832,10 @@ function startRound(field, seed, asPhase, themeId) {
       }));
     }
     me = karts.find(k => k.id === (rk ? (rk.watch ? -1 : rk.me) : (net && net.id))) || null;
-    // the other driver in a ranked battle is there to race, not to hit
-    if (rk && !rk.watch) for (const k of karts) if (k !== me) ghostKart(k);
+    /* The other driver in a ranked battle is there to race, not to hit: not
+       solid, but drawn as they are, in their own kart and colours (Leon,
+       2026-10-02; it used to be a see-through ghost). */
+    if (rk && !rk.watch) for (const k of karts) if (k !== me) k.phantom = true;
     if (!me) spectating = true;
   } else if (replay) {
     // watching: nobody on the grid at all, only the ghost
@@ -1467,7 +1469,7 @@ function stepWorld(dt) {
     for (let j = i + 1; j < karts.length; j++) {
       const a = karts[i], b = karts[j];
       if (a.remote && b.remote) continue;
-      if (a.ghost || b.ghost) continue;
+      if (a.ghost || b.ghost || a.phantom || b.phantom) continue;
       if (bump(a, b)) {
         /* On an anti-gravity rail a collision is a favour. Both cars spin and
            both are thrown forward, so the quick line through the section is
@@ -2647,13 +2649,18 @@ function stepPhase(dt) {
       me.rev = Math.max(0, Math.min(1, me.rev + (on ? 1.05 : -2.2) * dt));
     }
     for (const b of brains) b.kart.rev = Math.min(1, b.kart.rev + b.skill * 0.9 * dt);
+    /* A ranked battle's first start waits on the grid, lights out, until the
+       server says both drivers are in, so the one whose track built quicker
+       does not get away first (Leon, 2026-10-02). Restarts are your own. */
+    if (rk && !rk.watch && rk.hold) phaseT = 4.2;
     setLights(phaseT);
     if (phaseT <= 0) goRace();
   } else if (phase === 'race') {
     raceTime += dt;
-    const done = replay ? (!ghost || raceTime > ghost.meta.time + 2) : karts.every(k => k.finished || k.ghost);
-    // watching ranked, the server says when the battle is over
-    if (rk && rk.watch) { /* nothing */ }
+    const done = replay ? (!ghost || raceTime > ghost.meta.time + 2) : karts.every(k => k.finished || k.ghost || k.phantom);
+    /* In ranked the server says when the battle is over, so a driver who has
+       finished stays on the track and can watch the other one home. */
+    if (rk) { if (!rk.res && raceTime > 600) endRace(); }
     else if (done || (results.length && raceTime - results[0].time > 22) || raceTime > 400) endRace();
   } else if (phase === 'results') {
     resCount();
@@ -2730,7 +2737,7 @@ function endRace() {
   // a replay waits for you to choose; a race rolls on to the next
   phaseT = replay || rk ? 1e9 : RESULTS;
   snd.music(false);
-  for (const k of karts) if (!k.finished && !k.ghost) {
+  for (const k of karts) if (!k.finished && !k.ghost && !k.phantom) {
     // still out there when the flag fell: a place, but not a time
     k.finished = 1; k.dnf = 1; k.time = raceTime;
     results.push(k); k.place = results.length;
@@ -3136,7 +3143,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=100');
+    const mod = await import('./net.js?v=101');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3489,7 +3496,7 @@ function editorCtx() {
   };
 }
 function editorModule() {
-  if (!editorMod) editorMod = import('./editor.js?v=100');
+  if (!editorMod) editorMod = import('./editor.js?v=101');
   return editorMod;
 }
 function playCustomMap(id, mode) {
@@ -3564,8 +3571,12 @@ rkNet = makeRanked({
       spectating = false;
     }
     rk = { watch: false, id: m.id, me: m.me, theme: m.theme, opp: m.opp, left: m.restarts, oppLeft: m.restarts,
-           done: false, oppDone: 0, res: null };
-    rkBegin(() => startRound(rkField(), 0, undefined, rk.theme));
+           done: false, oppDone: 0, res: null, hold: true, spec: false };
+    rkBegin(() => {
+      startRound(rkField(), 0, undefined, rk.theme);
+      if (rk.hold) notice('Waiting for ' + rk.opp.name, { text: 'the lights start when you are both in' });
+      rkNet.ready(rk.id);
+    });
   },
   beginWatch(w) {
     rkSeen.clear();
@@ -3601,6 +3612,13 @@ rkNet = makeRanked({
     say('<b>' + esc(m.name) + '</b> restarted, ' + m.left + ' left.', 'sys');
     rkHud(true);
   },
+  // both drivers are in: the lights start, on both screens at once
+  go(m) {
+    if (!rk || rk.watch || m.id !== rk.id || !rk.hold) return;
+    rk.hold = false;
+    if (phase === 'count') phaseT = 4.2;
+    rkHud(true);
+  },
   oppFinish(m) {
     if (!rk) return;
     const k = karts.find(q => q.id === m.id);
@@ -3623,6 +3641,7 @@ rkNet = makeRanked({
       return;
     }
     rk.res = m;
+    if (!rk.watch && rk.spec) { rk.spec = false; spectating = !me; watchId = null; }
     rkHud(true);
     /* The verdict can land in the same moment as your own finish, before the
        race has been ended here: end it properly, so your time still goes to
@@ -3717,7 +3736,8 @@ function rkTick(dt) {
     return;
   }
   // yours, to the other driver and anybody watching
-  if (!rk.watch && !rk.res && me && (phase === 'race' || phase === 'count') && now - rkSendAt > 80) {
+  // (not after your finish: there your kart stays where it crossed, for them)
+  if (!rk.watch && !rk.res && !rk.done && me && (phase === 'race' || phase === 'count') && now - rkSendAt > 80) {
     rkSendAt = now;
     rkNet.pos({
       x: +me.pos.x.toFixed(2), y: +me.pos.y.toFixed(2), z: +me.pos.z.toFixed(2), yaw: +me.yaw.toFixed(3),
@@ -3785,16 +3805,37 @@ function rkHud(force) {
       + '<button type="button" id="rkstop">Stop watching</button>';
   } else {
     const o = karts.find(q => q.id === rk.opp.id);
-    html = '<span class="who"><b>You</b><small>' + rk.left + (rk.left === 1 ? ' restart' : ' restarts') + ' left</small></span>'
+    if (rk.spec) html = '<span class="lbl">Watching</span><span class="who"><b>' + esc(rk.opp.name) + '</b><small>'
+      + (rk.oppDone ? 'finished ' + time(rk.oppDone) : where(o)) + ' · ' + rk.oppLeft + ' left · you finished ' + (me ? time(me.time) : '') + '</small></span>'
+      + '<button type="button" id="rkback">Your results</button>';
+    else html = '<span class="who"><b>You</b><small>' + (rk.hold ? 'on the grid' : rk.left + (rk.left === 1 ? ' restart' : ' restarts') + ' left') + '</small></span>'
       + '<span class="vs">vs</span>'
-      + '<span class="who"><b>' + esc(rk.opp.name) + '</b><small>' + (rk.oppDone ? 'finished ' + time(rk.oppDone) : where(o))
+      + '<span class="who"><b>' + esc(rk.opp.name) + '</b><small>' + (rk.hold ? 'getting ready…' : rk.oppDone ? 'finished ' + time(rk.oppDone) : where(o))
       + ' · ' + rk.oppLeft + ' left</small></span>';
   }
   if (!force && html === rkHudKey) return;
   rkHudKey = html;
   box.innerHTML = html;
 }
-el('rkhud').addEventListener('click', e => { if (e.target.id === 'rkstop') rkLobby(); });
+el('rkhud').addEventListener('click', e => {
+  if (e.target.id === 'rkstop') rkLobby();
+  if (e.target.id === 'rkback') rkSpectate(false);
+});
+/* Finished, and the other driver is still out there: watch them home from
+   behind their kart (Leon, 2026-10-02), and back to your results whenever. */
+function rkSpectate(on) {
+  if (!rk || rk.watch || rk.res) return;
+  const k = karts.find(q => q.id === rk.opp.id);
+  if (on && !k) return;
+  rk.spec = !!on;
+  spectating = !!on;
+  watchId = on ? k.id : null;
+  specKey = '';
+  el('results').classList.toggle('on', !on);
+  if (!on) rkPanel();
+  rkHud(true);
+}
+el('resrows').addEventListener('click', e => { if (e.target.closest('#rkwatch')) rkSpectate(true); });
 
 /* The results card, in a battle. Before the verdict: your time, and theirs or
    that they are still out there. After it: who won and what it was worth. */
@@ -3817,7 +3858,8 @@ function rkPanel() {
       : [[rkNet.name || myName, mine ? time(mine) : 'DNF', true], [rk.opp.name, opp, false]];
     el('resrows').innerHTML = rows.map((x, i) => row(i, x[0], x[1], x[2])).join('')
       + '<p class="rkline">' + (rk.oppDone ? 'Settling up…'
-        : 'Waiting for ' + esc(rk.opp.name) + ' to finish. They have up to two minutes.') + '</p>';
+        : 'Waiting for ' + esc(rk.opp.name) + ' to finish. They have up to two minutes.') + '</p>'
+      + (!rk.oppDone && mine ? '<button type="button" class="mrow" id="rkwatch">Watch ' + esc(rk.opp.name) + '</button>' : '');
     return;
   }
   if (r.lost) {
