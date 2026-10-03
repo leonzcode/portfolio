@@ -26,8 +26,8 @@
      const icons = new ItemIcons(albedoImage, { grassMap, foliageMap });
      icons.draw(gui, blockId, x, y);      // GUI pixels, top-left of the slot
 --------------------------------------------------------------------------- */
-import { BLOCKS } from '../blocks.js?v=2';
-import { boxesOf } from '../models.js?v=2';
+import { BLOCKS } from '../blocks.js?v=3';
+import { boxesOf } from '../models.js?v=3';
 
 // face order and texture axes, exactly as the mesher lays textures on faces
 const FACES = [

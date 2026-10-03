@@ -14,16 +14,16 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Sky, SUN_I } from './sky.js?v=2';
-import { Post } from './post.js?v=2';
-import { Interaction } from './interaction.js?v=2';
-import { makeMaterials, makeLayerInfo } from './materials.js?v=2';
-import { makeWaterMaterial } from './water.js?v=2';
-import { makeNoise2D, makeNoise3D } from './noisetex.js?v=2';
-import { makeLdrSky } from './ldrsky.js?v=2';
-import { FullScreen } from './sky.js?v=2';
-import { blockGeometry } from './blockmesh.js?v=2';
-import { Avatar } from './avatar.js?v=2';
+import { Sky, SUN_I } from './sky.js?v=3';
+import { Post } from './post.js?v=3';
+import { Interaction } from './interaction.js?v=3';
+import { makeMaterials, makeLayerInfo } from './materials.js?v=3';
+import { makeWaterMaterial } from './water.js?v=3';
+import { makeNoise2D, makeNoise3D } from './noisetex.js?v=3';
+import { makeLdrSky } from './ldrsky.js?v=3';
+import { FullScreen } from './sky.js?v=3';
+import { blockGeometry } from './blockmesh.js?v=3';
+import { Avatar } from './avatar.js?v=3';
 const THREE = window.THREE;
 
 export class Renderer {
@@ -67,7 +67,7 @@ export class Renderer {
       uWaterTint: { value: new THREE.Vector3(0.05, 0.18, 0.78) }, uCover: { value: 0.42 }, uCamPos: { value: new THREE.Vector3() },
       uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uInvViewProj: { value: new THREE.Matrix4() },
       // the light in your hand (level, faded in and out) and where it is; torches' flicker; how dark cloud shadows are
-      uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow === 0 ? 0 : 0.8 },
+      uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.8 : 0 },
     };
     this.mats = makeMaterials(this.U, this.opts);
     this.mats.fluid = makeWaterMaterial(this.U, this.opts);

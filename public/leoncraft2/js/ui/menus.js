@@ -26,7 +26,8 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=2';
+} from './gui.js?v=3';
+import { Packs } from './pack.js?v=3';
 
 const PI = Math.PI;
 
@@ -86,6 +87,8 @@ let logoPromise = null;
 /* Builds the 256 x 44 LEONCRAFT logo and the 128 x 14 BROWSER EDITION plate:
    stone faces lit from above, a darker stone side going down, a near-black
    outline, like a block-carved title. Done once; later calls share it. */
+// a resource pack's own logo and edition plate (see pack.js), drawn instead of ours
+export function setLogoArt(art) { if (art) logoPromise = Promise.resolve(art); }
 export function loadLogo(gui) {
   if (logoPromise) return logoPromise;
   logoPromise = new Promise(resolve => {
@@ -255,8 +258,12 @@ export class TitleScreen extends Screen {
     }
     ctx.globalAlpha = a;
     if (this.art) {
-      g.blit(this.art.logo, 0, 0, 256, 44, Math.floor(W / 2 - 128), 30);
-      g.blit(this.art.edition, 0, 0, 128, 14, Math.floor(W / 2 - 64), 30 + 44 - 7);
+      const L = this.art.logo, E = this.art.edition;
+      // a pack's logo is drawn at four times the size: let it filter down rather than drop rows
+      ctx.imageSmoothingEnabled = L.width > 256 * g.scale;
+      g.blit(L, 0, 0, L.width, L.height, Math.floor(W / 2 - 128), 30, 256, 44);
+      if (E) g.blit(E, 0, 0, E.width, E.height, Math.floor(W / 2 - 64), 30 + 44 - 7, 128, 14);
+      ctx.imageSmoothingEnabled = false;
     }
     if (!this.options.get('hideSplash') && this.splash) {
       ctx.save();
@@ -607,7 +614,7 @@ export class OptionsScreen extends Screen {
       ['Controls...', () => new ControlsScreen()],
       ['Language...', () => new LanguageScreen()],
       ['Chat Settings...', null],
-      ['Resource Packs...', null],
+      ['Resource Packs...', () => new ResourcePacksScreen()],
       ['Accessibility Settings...', () => new AccessibilitySettingsScreen()],
       ['Telemetry Data...', null],
       ['Credits & Attribution...', () => new CreditsScreen()],
@@ -629,7 +636,7 @@ const QUALITY_NAMES = { auto: 'Auto', potato: 'Potato', low: 'Low', medium: 'Med
 const QUALITY_TIPS = {
   auto: 'Picks a level from your graphics chip and adjusts the render scale to keep the frame rate up.',
   potato: 'Fastest: one pass, no shadows, a short view and fast leaves. For old Chromebooks.',
-  low: 'Simple soft shadows and a short view.',
+  low: 'The full look, sun rays and all, at a lower setting and a shorter view.',
   medium: 'Shadows, light shafts, clouds and water reflections.',
   high: 'Everything on, and a longer view.',
   ultra: 'Everything at its best, the longest view. Needs a strong graphics card.',
@@ -935,6 +942,140 @@ export class CreditsScreen extends OptionsListScreen {
     for (const [t, c, url] of CREDITS) {
       for (const line of url ? [t] : g.font.wrap(t, Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, c || WHITE, url || null));
     }
+  }
+}
+
+/* ------------------------------ resource packs ------------------------------
+   The game's Select Resource Packs screen: Available on the left, Selected
+   (top wins) on the right, Open Pack Folder and Done below. Here the packs
+   come from the player's own computer (a resource pack .zip, or their own
+   Minecraft .jar for the original look) and stay in this browser; see
+   pack.js. Done reloads, as the game reloads its resources. */
+class PackEntry {
+  constructor(pack, side, screen) { this.pack = pack; this.side = side; this.screen = screen; }
+  render(g, list, i, top, left, width, h, mx, my, hovered) {
+    const p = this.pack, s = this.screen;
+    const icon = s.icons.get(p.id);
+    if (icon) { g.ctx.imageSmoothingEnabled = true; g.blit(icon, 0, 0, icon.width, icon.height, left, top, 32, 32); g.ctx.imageSmoothingEnabled = false; }
+    else { g.fill(left, top, left + 32, top + 32, 0xFF3A3A3A); g.centered('?', left + 16, top + 12, 0xA0A0A0); }
+    g.text(g.font.trim(p.name, width - 44), left + 35, top + 1, p.builtin ? 0xA0A0A0 : WHITE, false);
+    const lines = g.font.wrap(p.desc || (p.builtin ? 'Leoncraft\'s own textures (CC BY-SA)' : ''), width - 44).slice(0, 2);
+    lines.forEach((l, k) => g.text(l, left + 35, top + 12 + k * 9, 0x808080, false));
+    if (!hovered || p.builtin) return;
+    // the arrows over the picture, as in the game
+    g.fill(left, top, left + 32, top + 32, 0xA0909090);
+    const lx = mx - left, ly = my - top;
+    const arrow = (txt, x, y, on) => g.text(txt, x, y, on ? 0xFFFFA0 : WHITE);
+    if (this.side === 'available') arrow('>', left + 13, top + 12, lx < 32);
+    else {
+      arrow('<', left + 4, top + 12, lx < 16);
+      const k = s.selected.indexOf(p);
+      if (k > 0) arrow('^', left + 20, top + 3, lx >= 16 && ly < 16);
+      if (k < s.selected.length - 1) arrow('v', left + 20, top + 19, lx >= 16 && ly >= 16);
+    }
+    if (this.side === 'available') g.text('x', left + width - 10, top + 1, mx > left + width - 14 && my < top + 10 ? 0xFF5555 : 0x808080, false);
+  }
+  mouseClicked(mx, my, button, list) {
+    if (button !== 0 || this.pack.builtin) return true;
+    const i = list.entries.indexOf(this), top = list.rowTop(i), left = list.rowLeft;
+    const lx = mx - left, ly = my - top, s = this.screen;
+    if (this.side === 'available') {
+      if (mx > left + list.rowWidth - 14 && ly < 10) { s.forget(this.pack); return true; }
+      s.move(this.pack, true);
+      return true;
+    }
+    if (lx < 16 && lx >= 0) s.move(this.pack, false);
+    else if (lx < 32 && ly < 16) s.shift(this.pack, -1);
+    else if (lx < 32) s.shift(this.pack, 1);
+    return true;
+  }
+}
+
+export class ResourcePacksScreen extends Screen {
+  constructor() {
+    super('Select Resource Packs');
+    this.icons = new Map();
+    this.changed = false;
+    this.packs = Packs.list();
+    this.message = '';
+  }
+  get selected() { return this.packs.filter(p => p.enabled); }
+  init() {
+    const W = this.width, H = this.height, g = this.gui;
+    this.left = this.add(new ScrollList(W / 2 - 204, 48, 200, H - 48 - 58, 36, { rowWidth: 200 - 22 }));
+    this.right = this.add(new ScrollList(W / 2 + 4, 48, 200, H - 48 - 58, 36, { rowWidth: 200 - 22 }));
+    this.add(new Button(W / 2 - 154, H - 48, 150, 20, 'Open Pack Folder', () => this.pick()));
+    this.add(new Button(W / 2 + 4, H - 48, 150, 20, 'Done', () => this.done()));
+    this.refresh();
+    for (const p of this.packs) if (!this.icons.has(p.id)) { this.icons.set(p.id, null); Packs.icon(p.id).then(i => { if (i) { this.icons.set(p.id, i); g.markDirty(); } }); }
+    // files dropped on the window are added too
+    if (!this.onDrop) {
+      this.onDragOver = e => { e.preventDefault(); };
+      this.onDrop = e => { e.preventDefault(); this.addFiles([...(e.dataTransfer && e.dataTransfer.files || [])]); };
+      window.addEventListener('dragover', this.onDragOver);
+      window.addEventListener('drop', this.onDrop);
+    }
+  }
+  onClose() {
+    if (this.onDrop) { window.removeEventListener('dragover', this.onDragOver); window.removeEventListener('drop', this.onDrop); this.onDrop = null; }
+  }
+  refresh() {
+    const sel = this.selected, avail = this.packs.filter(p => !p.enabled);
+    this.left.entries = avail.map(p => new PackEntry(p, 'available', this));
+    this.right.entries = sel.map(p => new PackEntry(p, 'selected', this))
+      .concat([new PackEntry({ id: 'builtin', name: 'Default', desc: 'Leoncraft\'s own art, CC BY-SA', builtin: true }, 'selected', this)]);
+    this.gui.markDirty();
+  }
+  save() { Packs.save(this.packs); this.changed = true; this.refresh(); }
+  move(p, on) {
+    p.enabled = on;
+    // a pack switched on goes to the top
+    if (on) { this.packs.splice(this.packs.indexOf(p), 1); this.packs.unshift(p); }
+    this.save();
+  }
+  shift(p, d) {
+    const sel = this.selected, k = sel.indexOf(p), other = sel[k + d];
+    if (!other) return;
+    const a = this.packs.indexOf(p), b = this.packs.indexOf(other);
+    this.packs[a] = other; this.packs[b] = p;
+    this.save();
+  }
+  forget(p) {
+    this.gui.open(new ConfirmScreen('Remove this pack from Leoncraft?', "'" + p.name + "' will be deleted from this browser (not from your computer).", 'Remove', 'Cancel', async yes => {
+      if (yes) { await Packs.remove(p.id); this.packs = Packs.list(); this.changed = true; }
+      this.gui.back();
+    }));
+  }
+  pick() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.zip,.jar'; inp.multiple = true;
+    inp.onchange = () => this.addFiles([...inp.files]);
+    inp.click();
+  }
+  async addFiles(files) {
+    for (const f of files) {
+      if (!/\.(zip|jar)$/i.test(f.name)) { this.message = f.name + ' is not a .zip or .jar'; continue; }
+      this.message = 'Reading ' + f.name + '...';
+      this.gui.markDirty();
+      try { const id = await Packs.add(f); this.message = f.name + ' added'; this.changed = true; Packs.icon(id).then(i => { if (i) { this.icons.set(id, i); this.gui.markDirty(); } }); }
+      catch (e) { this.message = e.message || 'That file could not be read'; }
+    }
+    this.packs = Packs.list();
+    this.refresh();
+  }
+  done() {
+    if (this.changed && this.hooks.reloadResources) this.hooks.reloadResources();
+    else this.gui.back();
+  }
+  onEscape() { this.done(); return true; }
+  render(g, mx, my, dt) {
+    super.render(g, mx, my, dt);
+    const W = this.width;
+    g.centered(this.title, W / 2, 8, WHITE);
+    g.centered(this.message || 'Drag and drop files into this window to add packs', W / 2, 20, 0xA0A0A0);
+    g.centered('§l§nAvailable', W / 2 - 104, 38, WHITE);
+    g.centered('§l§nSelected', W / 2 + 104, 38, WHITE);
+    g.centered('Packs stay on this computer and are never uploaded. A .jar from your own copy of the game gives its original look.', W / 2, this.height - 20, 0x808080);
   }
 }
 

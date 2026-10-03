@@ -14,10 +14,10 @@
      hand.got(id)     a broken block to keep (survival only)
      hand.swing()     start the arm swing
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=2';
-import { selectionBoxes } from './models.js?v=2';
-import { placement, use, breakAt } from './place.js?v=2';
-import { breakTime, dropOf } from './survival.js?v=2';
+import { B, BLOCKS, FLUID } from './blocks.js?v=3';
+import { selectionBoxes } from './models.js?v=3';
+import { placement, use, breakAt } from './place.js?v=3';
+import { breakTime, dropOf } from './survival.js?v=3';
 
 export class Interactor {
   constructor(o) {

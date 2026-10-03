@@ -36,10 +36,10 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=2';
-import { lightDefines } from './materials.js?v=2';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=2';
-import { H, idx } from '../world-const.js?v=2';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=3';
+import { lightDefines } from './materials.js?v=3';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=3';
+import { H, idx } from '../world-const.js?v=3';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -50,7 +50,9 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=2', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=3', import.meta.url).href;
+// the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
+let defaultSkin = DEFAULT_SKIN;
 
 /* ---- what the player chose, kept in the browser ---- */
 const KEY = 'lc2_skin';
@@ -69,7 +71,13 @@ export function setSkin(urlOrImage, slim) {
   settings.skin = typeof urlOrImage === 'string' ? urlOrImage : null; settings.slim = slim === undefined ? null : slim; saveSettings();
   return Promise.resolve();
 }
-export function resetSkin() { return setSkin(DEFAULT_SKIN, false); }
+export function resetSkin() { return setSkin(defaultSkin, false); }
+// a pack's own default skin; worn unless the player chose a skin of their own
+export function useDefaultSkin(url) {
+  defaultSkin = url || DEFAULT_SKIN;
+  if (current && !settings.skin) return current.setSkin(defaultSkin, false);
+  return Promise.resolve();
+}
 export function setSkinPart(name, on) {
   const names = name === 'sleeves' ? ['leftSleeve', 'rightSleeve'] : name === 'pants' ? ['leftPants', 'rightPants'] : [name];
   for (const n of names) {
@@ -85,7 +93,7 @@ export function getSkinParts() {
   for (const n of SKIN_PARTS) o[n] = !!(settings.show & (1 << BIT[n]));
   return o;
 }
-export function getSkinSettings() { return { skin: settings.skin || DEFAULT_SKIN, slim: !!settings.slim, parts: getSkinParts() }; }
+export function getSkinSettings() { return { skin: settings.skin || defaultSkin, slim: !!settings.slim, parts: getSkinParts() }; }
 
 /* ---- the geometry ----
    Each box: [part, layer bit, centre from the part's pivot (model pixels, y up,
@@ -349,7 +357,7 @@ export class Avatar {
     // scratch
     this.m = new THREE.Matrix4(); this.t = new THREE.Matrix4(); this.root = new THREE.Matrix4();
     this.e = new THREE.Euler(); this.handPos = new THREE.Vector3(); this.vs = new THREE.Vector3(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
-    this.setSkin(settings.skin || DEFAULT_SKIN, settings.slim === null ? undefined : settings.slim).catch(() => this.setSkin(DEFAULT_SKIN, false));
+    this.setSkin(settings.skin || defaultSkin, settings.slim === null ? undefined : settings.slim).catch(() => this.setSkin(defaultSkin, false));
   }
 
   /* ---- skins ----
@@ -370,7 +378,7 @@ export class Avatar {
     this.ready = true;
     // keep it for next time: the default by name, anything else as a picture
     settings.slim = s;
-    settings.skin = urlOrImage === DEFAULT_SKIN ? null : (() => { try { return this.canvas.toDataURL('image/png'); } catch (e) { return null; } })();
+    settings.skin = urlOrImage === DEFAULT_SKIN || urlOrImage === defaultSkin ? null : (() => { try { return this.canvas.toDataURL('image/png'); } catch (e) { return null; } })();
     saveSettings();
   }
   setPart(name, on) { setSkinPart(name, on); }

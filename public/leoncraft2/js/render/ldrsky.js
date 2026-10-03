@@ -7,8 +7,8 @@
    lit from the sun's side) instead of the marched volumetric ones. Exposure
    and tone mapping happen here too, so nothing runs after it.
 --------------------------------------------------------------------------- */
-import { COMMON, TONEMAP } from './glsl.js?v=2';
-import { rawMat } from './sky.js?v=2';
+import { COMMON, TONEMAP } from './glsl.js?v=3';
+import { rawMat } from './sky.js?v=3';
 const THREE = window.THREE;
 
 const FS = COMMON + TONEMAP + /* glsl */`

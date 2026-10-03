@@ -51,7 +51,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=2';
+import { Font, cssRGB } from './font.js?v=3';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -177,7 +177,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=2';
+    this.version = version || '?v=3';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();
@@ -244,6 +244,12 @@ export class Gui {
     });
   }
 
+  // a sheet from a resource pack the player opened, in place of ours (see pack.js)
+  setSheet(name, img) {
+    this.sheets.set(name, img);
+    if (name === 'font_ascii') this.font = new Font(img);
+    this.dirty = true;
+  }
   // a sheet by name, or null while it is still on its way (it redraws when it lands)
   sheet(name) {
     const s = this.sheets.get(name);

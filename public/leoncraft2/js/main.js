@@ -18,24 +18,25 @@
    middle click pick block, F1 hide the HUD, F3 details, [ and ] the clock,
    F7 render scale, F8 quality.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=2';
-import { BIOMES, biomeColours } from './biomes.js?v=2';
-import { pickBiome } from './worldgen.js?v=2';
-import { World } from './world.js?v=2';
-import { Fluids } from './fluids.js?v=2';
-import { Player } from './player.js?v=2';
-import { Renderer } from './render/renderer.js?v=2';
-import { Overlay } from './render/overlay.js?v=2';
-import { setSkin, setSkinPart } from './render/avatar.js?v=2';
-import { SEA, Y0 } from './world-const.js?v=2';
-import { Gui, Options } from './ui/gui.js?v=2';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds } from './ui/menus.js?v=2';
-import { ItemIcons } from './ui/icons.js?v=2';
-import { Inventory, inventoryScreen } from './ui/inventory.js?v=2';
-import { Hud } from './ui/hud.js?v=2';
-import { Interactor } from './interact.js?v=2';
-import { Survival } from './survival.js?v=2';
-import { Save } from './save.js?v=2';
+import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=3';
+import { BIOMES, biomeColours } from './biomes.js?v=3';
+import { pickBiome } from './worldgen.js?v=3';
+import { World } from './world.js?v=3';
+import { Fluids } from './fluids.js?v=3';
+import { Player } from './player.js?v=3';
+import { Renderer } from './render/renderer.js?v=3';
+import { Overlay } from './render/overlay.js?v=3';
+import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=3';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=3';
+import { SEA, Y0 } from './world-const.js?v=3';
+import { Gui, Options } from './ui/gui.js?v=3';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=3';
+import { ItemIcons } from './ui/icons.js?v=3';
+import { Inventory, inventoryScreen } from './ui/inventory.js?v=3';
+import { Hud } from './ui/hud.js?v=3';
+import { Interactor } from './interact.js?v=3';
+import { Survival } from './survival.js?v=3';
+import { Save } from './save.js?v=3';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -48,8 +49,8 @@ const MENU_SEED = 20261002;
 const PRESETS = {
   // one pass straight to the screen, no shadow map, Minecraft's fast leaves: for old Chromebooks
   potato: { rd: 4, scale: 0.55, ldr: true, shadows: 0, normals: false, fastLeaves: true, interSize: 128, uploadMs: 2, sky: 4, plantDist: 40, plantShadows: false },
-  // one pass, a one-tap shadow map redrawn every other frame
-  low: { rd: 6, scale: 0.7, ldr: true, shadows: 1, shadowRes: 1024, shadowDist: 64, shadowEvery: 2, normals: true, interSize: 128, uploadMs: 3, sky: 2, plantDist: 56, plantShadows: false, leafInDist: 24, leafInShadows: false },
+  // the full look (sun rays, clouds, reflections) at a lower setting
+  low: { rd: 6, shadowRes: 1024, shadowDist: 64, shadows: 2, scale: 0.67, vlSteps: 8, cloudSteps: 10, ssrSteps: 12, plantDist: 56, plantShadows: false, leafInDist: 24, leafInShadows: false, uploadMs: 3 },
   medium: { rd: 8, shadowRes: 2048, shadowDist: 96, shadows: 2, scale: 0.85, vlSteps: 10, cloudSteps: 14, ssrSteps: 18, plantDist: 80, leafInDist: 40, leafInShadows: false },
   high: { rd: 10, shadowRes: 2048, shadowDist: 112, shadows: 2, scale: 1, vlSteps: 14, cloudSteps: 20, ssrSteps: 28, plantDist: 112, leafInDist: 64 },
   ultra: { rd: 14, shadowRes: 4096, shadowDist: 160, shadows: 2, scale: 1, vlSteps: 20, cloudSteps: 28, ssrSteps: 36, plantDist: 176, leafInDist: 112 },
@@ -126,6 +127,64 @@ function uploadArray(r, t) {
   t.pieces = null;
   r.resetState();
 }
+/* A resource pack's textures over ours, layer by layer: the albedo from the
+   pack, a flat normal map and a plain material map (the generated ones were
+   made for our textures), light from the pixels of blocks that glow. Returns
+   a copy of the albedo strip with the same changes, for the item icons. */
+function applyPackTextures(r, textures, manifest, packTex, alb) {
+  const gl = r.getContext();
+  const glow = new Set(), soft = new Set();
+  for (const d of BLOCKS) {
+    if (!d || !d.faces) continue;
+    if (d.light) for (const l of d.faces.concat(d.front !== undefined ? [d.front] : [])) glow.add(l);
+    if (d.leaves || d.shape === 'cross') for (const l of d.faces) soft.add(l);
+  }
+  const strip = document.createElement('canvas');
+  strip.width = 16; strip.height = alb.height;
+  const sg = strip.getContext('2d');
+  sg.drawImage(alb, 0, 0);
+  const cell = document.createElement('canvas'); cell.width = cell.height = 16;
+  const cg = cell.getContext('2d', { willReadFrequently: true });
+  const flat = new Uint8Array(16 * 16 * 4);
+  for (let i = 0; i < 256; i++) flat.set([128, 128, 255, 255], i * 4);
+  const spec = new Uint8Array(16 * 16 * 4);
+  const put = (tex, layer, data) => {
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, r.properties.get(tex).__webglTexture);
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, 16, 16, 1, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  };
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  for (const [name, frames] of packTex) {
+    const e = manifest.textures[name];
+    const layers = [];
+    for (let f = 0; f < frames.length; f++) layers.push([e.layer + f, frames[f]]);
+    for (const v of e.variants || []) layers.push([v, frames[0]]);
+    for (const [layer, bmp] of layers) {
+      put(textures.albedo, layer, bmp);
+      sg.clearRect(0, layer * 16, 16, 16);
+      sg.drawImage(bmp, 0, layer * 16);
+      if (textures.normal.image && textures.normal.image.depth > 1) put(textures.normal, layer, flat);
+      cg.clearRect(0, 0, 16, 16); cg.drawImage(bmp, 0, 0);
+      const px = cg.getImageData(0, 0, 16, 16).data;
+      const lit = glow.has(e.layer), sss = soft.has(e.layer) ? 190 : 0;
+      for (let i = 0; i < 256; i++) {
+        const lum = (px[i * 4] * 0.3 + px[i * 4 + 1] * 0.59 + px[i * 4 + 2] * 0.11) / 255;
+        spec[i * 4] = 40; spec[i * 4 + 1] = 10; spec[i * 4 + 2] = sss;
+        spec[i * 4 + 3] = lit ? Math.round(Math.max(0, Math.min(1, (lum - 0.35) * 2.2)) * 255) : 0;
+      }
+      put(textures.spec, layer, spec);
+    }
+  }
+  for (const t of [textures.albedo, textures.normal, textures.spec]) {
+    if (!t.image || t.image.depth <= 1) continue;
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, r.properties.get(t).__webglTexture);
+    gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+  }
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+  r.resetState();
+  return strip;
+}
 // one flat normal-map layer, for the tier that never reads them
 function flatNormals() {
   const t = new THREE.DataArrayTexture(new Uint8Array([128, 128, 255, 128]), 1, 1, 1);
@@ -171,15 +230,28 @@ async function boot() {
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
-  const TEX_V = '?v=2';
+  const TEX_V = '?v=3';
   const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
-  const [alb, grass, foliage, moon] = await Promise.all(
+  let [alb, grass, foliage, moon] = await Promise.all(
     ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png'].map(f => loadImg(base + f + TEX_V)));
   // the potato tier draws no normal maps: it skips that file altogether (a third of the download)
   const withNormals = QP.normals !== false;
   const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, 'terrain_spec.png']
     .map(f => f ? strip(base + f + TEX_V, manifest.layers) : null));
   resolveTextures(manifest);
+  // resource packs the player opened from their own computer (ui/pack.js): theirs first, ours underneath
+  let find = null, packTex = null;
+  try {
+    const packs = await Packs.active();
+    if (packs.length) {
+      status('Loading resource packs…', 0.3);
+      find = resolver(packs);
+      const cm = await colormaps(find);
+      if (cm.grass) grass = cm.grass;
+      if (cm.foliage) foliage = cm.foliage;
+      packTex = await blockTextures(find, manifest);
+    }
+  } catch (e) { console.warn('resource packs', e); find = null; packTex = null; }
   const colours = biomeColours(pixels(grass), pixels(foliage));
   const moonTex = new THREE.Texture(moon);
   moonTex.magFilter = THREE.NearestFilter; moonTex.minFilter = THREE.NearestFilter; moonTex.needsUpdate = true;
@@ -195,6 +267,7 @@ async function boot() {
   const rs = options.get('renderScale');
   const renderer = new Renderer(canvas, textures, Object.assign({}, QP, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : QP.scale)) }));
   for (const t of [textures.albedo, textures.normal, textures.spec]) if (t.pieces) uploadArray(renderer.r, t);
+  if (packTex && packTex.size) alb = applyPackTextures(renderer.r, textures, manifest, packTex, alb);
   const overlay = new Overlay(renderer.U, manifest);
   renderer.overlay = overlay;
   const fit = () => { renderer.resize(window.innerWidth, window.innerHeight); gui.resize(); };
@@ -211,11 +284,25 @@ async function boot() {
     respawn: () => respawn(),
     loadingProgress: () => loading || { text: 'Loading terrain...', progress: 0 },
     quit: () => { location.href = '/'; },
+    // Done on the resource pack screen after a change: load everything again, back into the same world
+    reloadResources: () => {
+      saveGame().then(() => { try { sessionStorage.setItem('lc2_resume', game ? game.entry.id : ''); } catch (e) {} location.reload(); });
+    },
     // the last screen closed in the game: take the mouse back
     closed: () => { if (game && !game.survival.dead) lock(); },
   };
   const gui = new Gui($('#gui'), { base: base + 'gui/', options, hooks, version: TEX_V });
   await gui.load();
+  if (find) {
+    try {
+      await gui.loadSheet('container/creative_inventory/tabs').catch(() => null);
+      const sheets = await guiSheets(find, { widgets: gui.sheets.get('widgets'), icons: gui.sheets.get('icons'), tabs: gui.sheets.get('container/creative_inventory/tabs') });
+      for (const k in sheets) gui.setSheet(k, sheets[k]);
+      setLogoArt(await logoArt(find));
+      const sk = await skinUrl(find);
+      if (sk) useDefaultSkin(sk);
+    } catch (e) { console.warn('resource pack GUI', e); }
+  }
   gui.lowEnd = QNAME === 'potato';
   window.addEventListener('resize', fit);
   fit();
@@ -482,7 +569,7 @@ async function boot() {
     applyOptions();
     if (k === 'renderDistance' && v) { if (game) game.world.renderDist = v; }
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
-    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=2', import.meta.url).href : v);
+    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=3', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
     if (k === 'quality') {
       try { localStorage.setItem('lc2_quality', v === 'auto' ? '' : v); } catch (e) {}
