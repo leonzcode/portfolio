@@ -1,0 +1,1040 @@
+/* ---------------------------------------------------------------------------
+   Leoncraft 2 - the menu screens.
+
+   Laid out with the classic block game's 1.21 numbers (button sizes, rows
+   24 apart, the title menu a quarter of the way down, the options grid in two
+   150-wide columns), drawn with the GUI framework in gui.js.
+
+     TitleScreen, SelectWorldScreen, CreateWorldScreen, EditWorldScreen,
+     ConfirmScreen, NoticeScreen, MessageScreen, OptionsScreen and its pages
+     (Video, Controls, Mouse, Key Binds, Skin, Music & Sounds, Accessibility,
+     Language, Credits), PauseScreen, LoadingScreen, DeathScreen.
+
+   The game talks to them through gui.hooks:
+     play(world, { isNew })   start (or create) a world from the world list
+     deleteWorld(world)       a world was deleted (drop its saved chunks)
+     quitToTitle()            Save and Quit to Title / Title Screen
+     resume()                 Back to Game
+     respawn()                Respawn on the death screen
+     loadingProgress()        -> { text, progress 0-1, chunks: [[dx, dz, state]] }
+     quit()                   Quit Game on the title screen
+   Worlds are kept in localStorage 'lc2_worlds' (see Worlds below).
+
+   The LEONCRAFT wordmark is drawn here at load from the game's own stone
+   texture (Pixel Perfection CE, CC BY-SA 4.0) and our own letter shapes.
+--------------------------------------------------------------------------- */
+import {
+  Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
+  WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
+} from './gui.js?v=2';
+
+const PI = Math.PI;
+
+/* ------------------------------ worlds ------------------------------ */
+
+const WORLDS_KEY = 'lc2_worlds';
+export const Worlds = {
+  list() {
+    try { const a = JSON.parse(localStorage.getItem(WORLDS_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  },
+  saveAll(list) { try { localStorage.setItem(WORLDS_KEY, JSON.stringify(list)); } catch (e) { /* blocked */ } },
+  get(id) { return this.list().find(w => w.id === id) || null; },
+  add(w) { const l = this.list(); l.push(w); this.saveAll(l); return w; },
+  update(id, patch) { const l = this.list(); const w = l.find(x => x.id === id); if (w) { Object.assign(w, patch); this.saveAll(l); } return w; },
+  remove(id) { this.saveAll(this.list().filter(w => w.id !== id)); },
+  // a folder-style name, made unique the way the game adds " (1)"
+  folderName(name) {
+    let base = (name || 'World').replace(/[\\/:*?"<>|.]/g, '_').trim() || 'World';
+    const used = new Set(this.list().map(w => w.folder || w.name));
+    let f = base, n = 1;
+    while (used.has(f)) f = base + ' (' + n++ + ')';
+    return f;
+  },
+};
+
+// text seeds hash the way Java's String.hashCode does, so a seed word always gives the same world
+export function seedFrom(text) {
+  const t = String(text || '').trim();
+  if (!t) return (Math.random() * 4294967296 | 0);
+  if (/^-?\d{1,19}$/.test(t)) { const n = Number(t); if (Number.isFinite(n)) return n; }
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (Math.imul(31, h) + t.charCodeAt(i)) | 0;
+  return h;
+}
+
+const fmtDate = ms => {
+  try { return new Date(ms).toLocaleString('en-US', { year: '2-digit', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
+};
+const MODES = { survival: 'Survival', creative: 'Creative' };
+
+/* ------------------------------ the wordmark ------------------------------ */
+
+// our own letter shapes, 5 cells wide and 6 tall
+const LETTERS = {
+  L: ['##...', '##...', '##...', '##...', '##...', '#####'],
+  E: ['#####', '##...', '####.', '##...', '##...', '#####'],
+  O: ['.###.', '##.##', '##.##', '##.##', '##.##', '.###.'],
+  N: ['##..#', '###.#', '#####', '##.##', '##..#', '##..#'],
+  C: ['.####', '##...', '##...', '##...', '##...', '.####'],
+  R: ['####.', '##.##', '##.##', '####.', '##.#.', '##.##'],
+  A: ['.###.', '##.##', '##.##', '#####', '##.##', '##.##'],
+  F: ['#####', '##...', '####.', '##...', '##...', '##...'],
+  T: ['#####', '.##..', '.##..', '.##..', '.##..', '.##..'],
+};
+let logoPromise = null;
+
+/* Builds the 256 x 44 LEONCRAFT logo and the 128 x 14 BROWSER EDITION plate:
+   stone faces lit from above, a darker stone side going down, a near-black
+   outline, like a block-carved title. Done once; later calls share it. */
+export function loadLogo(gui) {
+  if (logoPromise) return logoPromise;
+  logoPromise = new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(buildLogo(img, gui.font));
+    img.onerror = () => resolve(buildLogo(null, gui.font));
+    img.src = new URL('../terrain_albedo.png', gui.base).href + gui.version;
+  });
+  return logoPromise;
+}
+
+function buildLogo(terrain, font) {
+  // the stone layer (layer 0, the top 16 x 16 of the strip)
+  let stone = null;
+  if (terrain) {
+    const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+    const g = c.getContext('2d'); g.drawImage(terrain, 0, 0, 16, 16, 0, 0, 16, 16);
+    try { stone = g.getImageData(0, 0, 16, 16).data; } catch (e) { stone = null; }
+  }
+  // the stone toned down to a calm grey, so the letters read before the texture does
+  let mean = 128;
+  if (stone) { let t = 0; for (let i = 0; i < 256; i++) t += stone[i * 4] * 0.3 + stone[i * 4 + 1] * 0.59 + stone[i * 4 + 2] * 0.11; mean = t / 256; }
+  const tone = [0, 0, 0];
+  const stc = (x, y) => {
+    let v = 140;
+    if (stone) { const o = (((y & 15) * 16) + (x & 15)) * 4; v = 140 + ((stone[o] * 0.3 + stone[o + 1] * 0.59 + stone[o + 2] * 0.11) - mean) * 0.6; }
+    tone[0] = v; tone[1] = v; tone[2] = v * 1.03;
+    return tone;
+  };
+
+  const W = 256, H = 44, CW = 5, CH = 6, GAP = 3, DEPTH = 4;
+  const word = 'LEONCRAFT';
+  const face = new Uint8Array(W * H), top = new Int16Array(W * H).fill(-1);
+  const total = word.length * 5 * CW + (word.length - 1) * GAP;
+  const ox = Math.floor((W - total) / 2), oy = 1;
+  for (let i = 0; i < word.length; i++) {
+    const rows = LETTERS[word[i]];
+    const lx = ox + i * (5 * CW + GAP);
+    for (let r = 0; r < 6; r++) for (let c = 0; c < 5; c++) {
+      if (rows[r][c] !== '#') continue;
+      for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+        const px = lx + c * CW + x, py = oy + r * CH + y;
+        face[py * W + px] = 1;
+        top[py * W + px] = r * CH + y;
+      }
+    }
+  }
+  const at = (a, x, y) => x >= 0 && y >= 0 && x < W && y < H ? a[y * W + x] : 0;
+  // the side: straight down from the face, DEPTH deep
+  const side = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (face[y * W + x]) continue;
+    for (let d = 1; d <= DEPTH; d++) if (at(face, x, y - d)) { side[y * W + x] = d; break; }
+  }
+  const logo = document.createElement('canvas'); logo.width = W; logo.height = H;
+  const lg = logo.getContext('2d');
+  const out = lg.createImageData(W, H), p = out.data;
+  const put = (x, y, rgb, k) => {
+    const o = (y * W + x) * 4;
+    p[o] = Math.min(255, rgb[0] * k); p[o + 1] = Math.min(255, rgb[1] * k); p[o + 2] = Math.min(255, rgb[2] * k); p[o + 3] = 255;
+  };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (face[i]) {
+      let k = 1.2 - 0.3 * (top[i] / 35);
+      if (!at(face, x, y - 1)) k = 1.55;
+      else if (!at(face, x - 1, y)) k *= 1.15;
+      else if (!at(face, x + 1, y)) k *= 0.8;
+      else if (!at(face, x, y + 1)) k *= 0.85;
+      put(x, y, stc(x, y), k);
+    } else if (side[i]) {
+      put(x, y, stc(x + 7, y + 3), 0.5 - 0.05 * side[i]);
+    } else {
+      // a one-pixel outline round the carved shape
+      let near = false;
+      for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) if (at(face, x + dx, y + dy) || at(side, x + dx, y + dy)) { near = true; break; }
+      if (near) { const o = i * 4; p[o] = 18; p[o + 1] = 16; p[o + 2] = 16; p[o + 3] = 255; }
+    }
+  }
+  lg.putImageData(out, 0, 0);
+
+  // BROWSER EDITION: the GUI font in bold, light grey with a dark outline and a darker lower lip
+  const EW = 128, EH = 14;
+  const tmp = document.createElement('canvas'); tmp.width = EW; tmp.height = EH;
+  const tg = tmp.getContext('2d');
+  const label = '§lBROWSER EDITION';
+  font.draw(tg, label, Math.floor((EW - font.width(label)) / 2), 3, 0xFFFFFF, false);
+  const mask = tg.getImageData(0, 0, EW, EH).data;
+  const m = (x, y) => x >= 0 && y >= 0 && x < EW && y < EH && mask[(y * EW + x) * 4 + 3] > 0;
+  const edition = document.createElement('canvas'); edition.width = EW; edition.height = EH;
+  const eg = edition.getContext('2d');
+  const eo = eg.createImageData(EW, EH), q = eo.data;
+  for (let y = 0; y < EH; y++) for (let x = 0; x < EW; x++) {
+    const o = (y * EW + x) * 4;
+    if (m(x, y)) {
+      const v = Math.min(255, stc(x, y)[0] * (m(x, y - 1) ? 1.55 - (y - 3) * 0.05 : 1.8));
+      q[o] = v; q[o + 1] = v; q[o + 2] = v; q[o + 3] = 255;
+    } else if (m(x, y - 1)) {
+      q[o] = 70; q[o + 1] = 70; q[o + 2] = 72; q[o + 3] = 255;
+    } else {
+      let near = false;
+      for (let dy = -2; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) if (m(x + dx, y + dy)) { near = true; break; }
+      if (near) { q[o] = 18; q[o + 1] = 16; q[o + 2] = 16; q[o + 3] = 255; }
+    }
+  }
+  eg.putImageData(eo, 0, 0);
+  return { logo, edition };
+}
+
+/* ------------------------------ title ------------------------------ */
+
+// our own splash lines (never the original game's list)
+export const SPLASHES = [
+  'Every block!', 'Runs on a Chromebook!', 'Made by Leon!', 'Now in your browser!', 'No install needed!',
+  'Shaders included!', 'Volumetric!', 'Look at those clouds!', 'Water that reflects!', 'Grass that sways!',
+  'Try the cherry groves!', 'Also try Leon Kart!', 'One block at a time!', 'Sixteen by sixteen!', 'Pixel Perfection inside!',
+  'Shared textures, shared love!', 'Twenty ticks a second!', 'Infinite-ish!', 'Mountains to 240!', 'Dig carefully!',
+  'Fresh from the workers!', 'WebGL2!', 'Hand-placed pixels!', 'Sunsets included!', 'Snowboard not included!',
+  'Now with flowing water!', 'Press F3 for numbers!', 'Bring a torch!', 'Best viewed at sunrise!', 'Zero ads!',
+  'Homemade!', 'Also try the Games tab!', 'Seeds welcome!', 'Coded after school!', 'Smooth on a potato!',
+  'Watch out for caves!', 'Stacks to 64!', 'Ray-marched clouds!', 'Try typing a seed!', 'Keep exploring!',
+  'Soft shadows!', 'Leon approved!',
+];
+
+export class TitleScreen extends Screen {
+  constructor(opts = {}) {
+    super('');
+    this.background = 'panorama';
+    this.closeOnEsc = false;
+    this.animates = true;
+    this.splash = SPLASHES[Math.random() * SPLASHES.length | 0];
+    this.fadeIn = !!opts.fadeIn;
+    this.t0 = -1;
+    this.art = null;
+  }
+  init() {
+    const g = this.gui, W = this.width, H = this.height;
+    if (!this.art) loadLogo(g).then(a => { this.art = a; g.markDirty(); });
+    const l = Math.floor(H / 4) + 48;
+    this.add(new Button(W / 2 - 100, l, 200, 20, 'Singleplayer', () => {
+      g.open(Worlds.list().length ? new SelectWorldScreen() : new CreateWorldScreen());
+    }));
+    this.add(new Button(W / 2 - 100, l + 24, 200, 20, 'Multiplayer', () => g.open(new NoticeScreen('Multiplayer', 'Multiplayer is not available in Leoncraft 2 yet.'))));
+    const realms = this.add(new Button(W / 2 - 100, l + 48, 200, 20, 'Leoncraft Realms', null, 'Not available in Leoncraft'));
+    realms.active = false;
+    this.add(new IconButton(W / 2 - 124, l + 84, 'language', () => g.open(new LanguageScreen()), 'Language'));
+    this.add(new Button(W / 2 - 100, l + 84, 98, 20, 'Options...', () => g.open(new OptionsScreen())));
+    this.add(new Button(W / 2 + 2, l + 84, 98, 20, 'Quit Game', () => {
+      if (this.hooks.quit) this.hooks.quit();
+      else if (history.length > 1) history.back(); else location.href = '/';
+    }));
+    this.add(new IconButton(W / 2 + 104, l + 84, 'accessibility', () => g.open(new AccessibilitySettingsScreen()), 'Accessibility Settings'));
+    const credit = 'Made by Leon Zhao. Not affiliated with Mojang.';
+    const cw = g.textWidth(credit);
+    this.add(new TextLink(W - cw - 2, H - 10, cw, credit, () => g.open(new CreditsScreen())));
+  }
+  render(g, mx, my, dt) {
+    const ctx = g.ctx, W = this.width, H = this.height;
+    if (this.t0 < 0) this.t0 = g.now;
+    let a = 1;
+    if (this.fadeIn) {
+      // as in the game: a second of picture, then the menu fades in over a second
+      const f = (g.now - this.t0) / 1000;
+      a = Math.max(0, Math.min(1, f - 1));
+      if (f < 1) g.fill(0, 0, W, H, (Math.round((1 - f) * 255) << 24) >>> 0);
+      if (a <= 0) return;
+    }
+    ctx.globalAlpha = a;
+    if (this.art) {
+      g.blit(this.art.logo, 0, 0, 256, 44, Math.floor(W / 2 - 128), 30);
+      g.blit(this.art.edition, 0, 0, 128, 14, Math.floor(W / 2 - 64), 30 + 44 - 7);
+    }
+    if (!this.options.get('hideSplash') && this.splash) {
+      ctx.save();
+      ctx.translate(W / 2 + 123, 69);
+      ctx.rotate(-20 * PI / 180);
+      let f = 1.8 - Math.abs(Math.sin((g.now % 1000) / 1000 * PI * 2) * 0.1);
+      f = f * 100 / (g.textWidth(this.splash) + 32);
+      ctx.scale(f, f);
+      // drawn once into its own padded canvas: rotating glyphs straight from the
+      // font sheet would pick up stray pixels from the neighbouring cells
+      if (!this.splashArt) {
+        const c = this.splashArt = document.createElement('canvas');
+        const tw = g.textWidth(this.splash);
+        c.width = tw + 3; c.height = 11;
+        const cg = c.getContext('2d');
+        g.font.draw(cg, this.splash, 1, 1, 0xFFFF00, true);
+        this.splashX = -Math.floor(tw / 2) - 1;
+      }
+      ctx.drawImage(this.splashArt, this.splashX, -9);
+      ctx.restore();
+    }
+    g.text('Leoncraft 2', 2, H - 10, WHITE);
+    super.render(g, mx, my, dt);
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ------------------------------ world list ------------------------------ */
+
+class WorldEntry {
+  constructor(world) { this.world = world; }
+  render(g, list, i, top, left, width, h, mx, my, hovered) {
+    const w = this.world;
+    g.text(w.name || 'World', left + 35, top + 1, WHITE, false);
+    g.text(g.font.trim((w.folder || w.name) + ' (' + fmtDate(w.lastPlayed || w.created) + ')', width - 40), left + 35, top + 12, 0x808080, false);
+    g.text((MODES[w.mode] || 'Survival') + ' Mode', left + 35, top + 21, 0x808080, false);
+    // the world's picture if the game saved one, otherwise a dirt tile
+    if (w.icon) {
+      if (!this.icon) { this.icon = new Image(); this.icon.onload = () => g.markDirty(); this.icon.src = w.icon; }
+      if (this.icon.complete && this.icon.naturalWidth) { g.ctx.imageSmoothingEnabled = true; g.blit(this.icon, 0, 0, this.icon.naturalWidth, this.icon.naturalHeight, left, top, 32, 32); g.ctx.imageSmoothingEnabled = false; }
+    } else {
+      g.fill(left, top, left + 32, top + 32, 0xFF5B3F2B);
+      g.fill(left, top, left + 32, top + 8, 0xFF5E8C32);
+      g.fill(left, top + 8, left + 32, top + 10, 0xFF4A7027);
+      g.fill(left + 4, top + 16, left + 8, top + 20, 0xFF7A5639);
+      g.fill(left + 20, top + 22, left + 24, top + 26, 0xFF46301F);
+      g.fill(left + 12, top + 26, left + 14, top + 28, 0xFF7A5639);
+    }
+    if (hovered || list.selected === this) {
+      if (hovered) {
+        g.fill(left, top, left + 32, top + 32, 0xA0909090);
+        const onIcon = mx - left < 32;
+        g.blit('world_selection', 0, onIcon ? 32 : 0, 32, 32, left, top);
+      }
+    }
+  }
+  mouseClicked(mx, my, button, list) {
+    // a click on the picture plays straight away
+    if (button === 0 && mx - list.rowLeft < 32 && list.onActivate) { list.setSelected(this); list.onActivate(this); return true; }
+    return false;
+  }
+}
+
+export class SelectWorldScreen extends Screen {
+  constructor() {
+    super('Select World');
+    this.search = new TextField(0, 22, 200, 20, { maxLength: 64, hint: 'Search...', onChange: () => this.refresh() });
+    this.selectedId = null;
+  }
+  init() {
+    const W = this.width, H = this.height, g = this.gui;
+    this.search.x = W / 2 - 100;
+    this.add(this.search);
+    this.list = this.add(new ScrollList(0, 48, W, H - 112, 36, {
+      rowWidth: 270, selectable: true,
+      onSelect: e => { this.selectedId = e ? e.world.id : null; this.updateButtons(); },
+      onActivate: e => this.play(e.world),
+    }));
+    this.playB = this.add(new Button(W / 2 - 154, H - 52, 150, 20, 'Play Selected World', () => { const w = this.sel(); if (w) this.play(w); }));
+    this.add(new Button(W / 2 + 4, H - 52, 150, 20, 'Create New World', () => g.open(new CreateWorldScreen())));
+    this.editB = this.add(new Button(W / 2 - 154, H - 28, 72, 20, 'Edit', () => { const w = this.sel(); if (w) g.open(new EditWorldScreen(w)); }));
+    this.delB = this.add(new Button(W / 2 - 76, H - 28, 72, 20, 'Delete', () => {
+      const w = this.sel();
+      if (!w) return;
+      g.open(new ConfirmScreen('Are you sure you want to delete this world?',
+        "'" + w.name + "' and everything built in it will be gone for good.", 'Delete', 'Cancel', yes => {
+          if (yes) { Worlds.remove(w.id); this.selectedId = null; if (this.hooks.deleteWorld) this.hooks.deleteWorld(w); }
+          g.back();
+        }));
+    }));
+    this.reB = this.add(new Button(W / 2 + 4, H - 28, 72, 20, 'Re-Create', () => { const w = this.sel(); if (w) g.open(new CreateWorldScreen({ from: w })); }));
+    this.add(new Button(W / 2 + 82, H - 28, 72, 20, 'Cancel', () => g.back()));
+    this.refresh();
+  }
+  sel() { const e = this.list.selected; return e ? e.world : null; }
+  refresh() {
+    const q = this.search.value.trim().toLowerCase();
+    const worlds = Worlds.list().sort((a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0));
+    this.list.entries = worlds.filter(w => !q || (w.name || '').toLowerCase().includes(q) || (w.folder || '').toLowerCase().includes(q)).map(w => new WorldEntry(w));
+    this.list.selected = this.list.entries.find(e => e.world.id === this.selectedId) || null;
+    this.list.setScroll(this.list.scroll);
+    this.updateButtons();
+    this.gui.markDirty();
+  }
+  updateButtons() {
+    const on = !!this.list.selected;
+    this.playB.active = this.editB.active = this.delB.active = this.reB.active = on;
+  }
+  play(w) {
+    Worlds.update(w.id, { lastPlayed: Date.now() });
+    if (this.hooks.play) this.hooks.play(Worlds.get(w.id) || w, { isNew: false });
+  }
+  keyPressed(e) {
+    if (super.keyPressed(e)) return true;
+    const L = this.list, n = L.entries.length;
+    if (!n) return false;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      let i = L.entries.indexOf(L.selected);
+      i = e.key === 'ArrowDown' ? Math.min(n - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1);
+      L.setSelected(L.entries[i]); L.ensureVisible(L.entries[i]);
+      return true;
+    }
+    if (e.key === 'Enter' && L.selected) { this.play(L.selected.world); return true; }
+    return false;
+  }
+  render(g, mx, my, dt) {
+    super.render(g, mx, my, dt);
+    g.centered(this.title, this.width / 2, 8, WHITE);
+  }
+}
+
+/* ------------------------------ create world ------------------------------ */
+
+const DIFFS = ['peaceful', 'easy', 'normal', 'hard'];
+const DIFF_NAMES = { peaceful: 'Peaceful', easy: 'Easy', normal: 'Normal', hard: 'Hard' };
+const MODE_INFO = {
+  survival: 'Gather what you need, craft, and look after your health and hunger',
+  creative: 'Every block at hand, free flight, and blocks that break at once',
+};
+
+export class CreateWorldScreen extends Screen {
+  constructor(opts = {}) {
+    super('Create New World');
+    const from = opts.from || null;
+    this.mode = from ? from.mode || 'survival' : 'survival';
+    this.difficulty = from ? from.difficulty || 'normal' : 'normal';
+    this.tab = 0;
+    this.nameField = new TextField(0, 0, 208, 20, { value: from ? from.name : 'New World', maxLength: 32, onEnter: () => this.create() });
+    this.seedField = new TextField(0, 0, 308, 20, { value: from ? String(from.seed) : '', maxLength: 32, hint: 'Leave blank for a random seed', onEnter: () => this.create() });
+  }
+  init() {
+    const W = this.width, H = this.height, g = this.gui;
+    this.tabs = this.add(new Tabs(['Game', 'World', 'More'], this.tab, i => { this.tab = i; g._blurText(); g._initScreen(this); }));
+    this.tabs.layout(W);
+    const areaTop = 24, areaBottom = H - 33;
+    const place = (contentH) => areaTop + Math.max(0, Math.floor((areaBottom - areaTop - contentH) / 6));
+    this.labels = [];
+    if (this.tab === 0) {
+      const x = Math.floor(W / 2 - 105);
+      let y = place(119);
+      this.labels.push(['World Name', x + 1, y]);
+      this.nameField.x = x + 1; this.nameField.y = y + 14;
+      this.add(this.nameField);
+      y += 35 + 8;
+      this.add(new CycleButton(x, y, 210, 20, 'Game Mode', {
+        values: ['survival', 'creative'], value: this.mode, format: v => MODES[v],
+        tooltip: v => MODE_INFO[v], onChange: v => { this.mode = v; },
+      }));
+      y += 28;
+      this.add(new CycleButton(x, y, 210, 20, 'Difficulty', {
+        values: DIFFS, value: this.difficulty, format: v => DIFF_NAMES[v], onChange: v => { this.difficulty = v; },
+        tooltip: () => 'How hard the world is. Only Peaceful and Normal play differently for now.',
+      }));
+      y += 28;
+      const cmd = this.add(new CycleButton(x, y, 210, 20, 'Allow Commands', { values: [false, true], value: false, format: onOff }));
+      cmd.active = false; cmd.tooltip = 'Commands are not in Leoncraft 2 yet';
+    } else if (this.tab === 1) {
+      const x = Math.floor(W / 2 - 154);
+      let y = place(20 + 8 + 13 + 20 + 8 + 20 + 8 + 20);
+      const type = this.add(new CycleButton(x, y, 150, 20, 'World Type', { values: ['default'], value: 'default', format: () => 'Default' }));
+      type.tooltip = 'The only world type for now';
+      const cust = this.add(new Button(x + 158, y, 150, 20, 'Customize', null));
+      cust.active = false;
+      y += 28;
+      this.labels.push(['Seed for the World Generator', x + 1, y, GREY]);
+      this.seedField.x = x + 1; this.seedField.y = y + 13; this.seedField.w = 306;
+      this.add(this.seedField);
+      y += 13 + 20 + 8;
+      this.switchRow(x, y, 'Generate Structures', true, 'Villages, ruins and other buildings: not in Leoncraft 2 yet');
+      y += 28;
+      this.switchRow(x, y, 'Bonus Chest', false, 'Not in Leoncraft 2 yet');
+    } else {
+      const x = Math.floor(W / 2 - 105);
+      let y = place(20 * 3 + 8 * 2);
+      for (const name of ['Game Rules', 'Experiments', 'Data Packs']) {
+        const b = this.add(new Button(x, y, 210, 20, name, null, 'Not in Leoncraft 2 yet'));
+        b.active = false;
+        y += 28;
+      }
+    }
+    this.add(new Button(W / 2 - 154, H - 27, 150, 20, 'Create New World', () => this.create()));
+    this.add(new Button(W / 2 + 4, H - 27, 150, 20, 'Cancel', () => g.back()));
+  }
+  // a label on the left and a small ON / OFF button on the right, the 1.21 switch row
+  switchRow(x, y, label, value, tip) {
+    this.labels.push([label, x + 1, y + 6, GREY]);
+    const b = this.add(new CycleButton(x + 308 - 44, y, 44, 20, label, { values: [false, true], value, format: onOff, valueOnly: true }));
+    b.active = false; b.tooltip = tip;
+  }
+  create() {
+    const name = this.nameField.value.trim() || 'New World';
+    const now = Date.now();
+    const world = {
+      id: 'w' + now.toString(36) + (Math.random() * 1e6 | 0).toString(36),
+      name, folder: Worlds.folderName(name), seed: seedFrom(this.seedField.value),
+      mode: this.mode, difficulty: this.difficulty, created: now, lastPlayed: now,
+    };
+    Worlds.add(world);
+    if (this.hooks.play) this.hooks.play(world, { isNew: true });
+  }
+  render(g, mx, my, dt) {
+    const W = this.width, H = this.height;
+    g.headerSeparator(0, W, 22);
+    g.footerSeparator(0, W, H - 35);
+    for (const [t, x, y, c] of this.labels) g.text(t, x, y, c || WHITE);
+    super.render(g, mx, my, dt);
+  }
+  keyPressed(e) {
+    if (e.ctrlKey && e.key === 'Tab') { this.tab = (this.tab + (e.shiftKey ? 2 : 1)) % 3; this.gui._blurText(); this.gui._initScreen(this); return true; }
+    return super.keyPressed(e);
+  }
+}
+
+export class EditWorldScreen extends Screen {
+  constructor(world) {
+    super('Edit World');
+    this.world = world;
+    this.nameField = new TextField(0, 0, 200, 20, { value: world.name, maxLength: 32, onEnter: () => this.save() });
+  }
+  init() {
+    const W = this.width, H = this.height, g = this.gui;
+    const x = W / 2 - 100;
+    let y = Math.max(28, Math.floor(H / 4) - 8);
+    this.top = y;
+    this.nameField.x = x; this.nameField.y = y + 13;
+    this.add(this.nameField);
+    y += 13 + 20 + 12;
+    const icon = this.add(new Button(x, y, 200, 20, 'Reset Icon', () => { Worlds.update(this.world.id, { icon: null }); this.world.icon = null; icon.active = false; }));
+    icon.active = !!this.world.icon;
+    y += 24;
+    for (const name of ['Make Backup', 'Optimize World']) { const b = this.add(new Button(x, y, 200, 20, name, null, 'Not in Leoncraft 2 yet')); b.active = false; y += 24; }
+    y += 8;
+    this.add(new Button(x, y, 98, 20, 'Save', () => this.save()));
+    this.add(new Button(x + 102, y, 98, 20, 'Cancel', () => g.back()));
+  }
+  save() {
+    const n = this.nameField.value.trim();
+    if (n) Worlds.update(this.world.id, { name: n });
+    this.gui.back();
+  }
+  render(g, mx, my, dt) {
+    g.centered(this.title, this.width / 2, this.top - 20, WHITE);
+    g.text('World Name', this.width / 2 - 100, this.top, GREY);
+    super.render(g, mx, my, dt);
+  }
+}
+
+/* ------------------------------ simple screens ------------------------------ */
+
+/* A question with two answers: the title, the message wrapped below it, and
+   the buttons under that (the game's confirm screen). callback(yes). */
+export class ConfirmScreen extends Screen {
+  constructor(title, message, yes, no, callback) {
+    super(title);
+    this.message = message; this.yes = yes || 'Yes'; this.no = no || 'No'; this.callback = callback;
+  }
+  layout() {
+    const g = this.gui, W = this.width, H = this.height;
+    this.lines = this.message ? g.font.wrap(this.message, W - 50) : [];
+    const mh = this.lines.length * 9;
+    this.titleTop = Math.max(10, Math.min(80, Math.floor((H - mh) / 2) - 20 - 9));
+    this.msgTop = this.titleTop + 20;
+    return Math.max(Math.floor(H / 6) + 96, Math.min(H - 24, this.msgTop + mh + 20));
+  }
+  init() {
+    const by = this.layout(), W = this.width;
+    this.add(new Button(W / 2 - 155, by, 150, 20, this.yes, () => this.callback(true)));
+    this.add(new Button(W / 2 + 5, by, 150, 20, this.no, () => this.callback(false)));
+  }
+  onEscape() { this.callback(false); }
+  render(g, mx, my, dt) {
+    g.centered(this.title, this.width / 2, this.titleTop, WHITE);
+    for (let i = 0; i < this.lines.length; i++) g.centered(this.lines[i], this.width / 2, this.msgTop + i * 9, WHITE);
+    super.render(g, mx, my, dt);
+  }
+}
+
+// a message with one Back button (the multiplayer notice, a bad skin file)
+export class NoticeScreen extends ConfirmScreen {
+  constructor(title, message, button = 'Back', onDone = null) {
+    super(title, message, button, null, null);
+    this.onDone = onDone;
+  }
+  init() {
+    const by = this.layout();
+    this.add(new Button(this.width / 2 - 100, by, 200, 20, this.yes, () => this.done()));
+  }
+  done() { if (this.onDone) this.onDone(); else this.gui.back(); }
+  onEscape() { this.done(); }
+}
+
+// one line of text, nothing to press ("Saving world")
+export class MessageScreen extends Screen {
+  constructor(title) { super(title); this.closeOnEsc = false; }
+  render(g, mx, my, dt) { g.centered(this.title, this.width / 2, 70, WHITE); super.render(g, mx, my, dt); }
+}
+
+/* ------------------------------ options ------------------------------ */
+
+const pct = v => Math.round(v * 100) + '%';
+const fovLabel = v => v === 70 ? 'FOV: Normal' : v === 110 ? 'FOV: Quake Pro' : 'FOV: ' + v;
+
+function optSlider(o, key, min, max, step, label, extra = {}) {
+  return new Slider(0, 0, 150, 20, Object.assign({ min, max, step, value: o.get(key), label, onChange: v => o.set(key, v) }, extra));
+}
+function optToggle(o, key, label, tip) {
+  const b = new CycleButton(0, 0, 150, 20, label, { values: [false, true], value: !!o.get(key), format: onOff, onChange: v => o.set(key, v) });
+  if (tip) b.tooltip = tip;
+  return b;
+}
+const off = (w, tip) => { w.active = false; if (tip) w.tooltip = tip; return w; };
+
+export class OptionsScreen extends Screen {
+  constructor() { super('Options'); }
+  init() {
+    const W = this.width, H = this.height, g = this.gui, o = this.options;
+    const x0 = Math.floor(W / 2 - 154), x1 = Math.floor(W / 2 + 4);
+    const fov = this.add(optSlider(o, 'fov', 30, 110, 1, fovLabel));
+    fov.x = x0; fov.y = 29;
+    if (g.inGame) {
+      this.add(new CycleButton(x1, 29, 150, 20, 'Difficulty', { values: DIFFS, value: o.get('difficulty'), format: v => DIFF_NAMES[v], onChange: v => o.set('difficulty', v) }));
+    } else off(this.add(new Button(x1, 29, 150, 20, 'Online...', null)), 'Not available in Leoncraft');
+    const y0 = Math.min(61 + 30, H - 33 - 120);
+    const items = [
+      ['Skin Customization...', () => new SkinCustomizationScreen()],
+      ['Music & Sounds...', () => new MusicSoundsScreen()],
+      ['Video Settings...', () => new VideoSettingsScreen()],
+      ['Controls...', () => new ControlsScreen()],
+      ['Language...', () => new LanguageScreen()],
+      ['Chat Settings...', null],
+      ['Resource Packs...', null],
+      ['Accessibility Settings...', () => new AccessibilitySettingsScreen()],
+      ['Telemetry Data...', null],
+      ['Credits & Attribution...', () => new CreditsScreen()],
+    ];
+    items.forEach(([label, make], i) => {
+      const b = this.add(new Button(i % 2 ? x1 : x0, y0 + (i >> 1) * 24, 150, 20, label, make ? () => g.open(make()) : null));
+      if (!make) off(b, 'Not in Leoncraft 2 yet');
+    });
+    this.add(new Button(W / 2 - 100, H - 27, 200, 20, 'Done', () => g.back()));
+  }
+  render(g, mx, my, dt) {
+    g.centered(this.title, this.width / 2, 12, WHITE);
+    super.render(g, mx, my, dt);
+  }
+}
+
+const QUALITY = ['auto', 'potato', 'low', 'medium', 'high', 'ultra'];
+const QUALITY_NAMES = { auto: 'Auto', potato: 'Potato', low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' };
+const QUALITY_TIPS = {
+  auto: 'Picks a level from your graphics chip and adjusts the render scale to keep the frame rate up.',
+  potato: 'Fastest: one pass, no shadows, a short view and fast leaves. For old Chromebooks.',
+  low: 'Simple soft shadows and a short view.',
+  medium: 'Shadows, light shafts, clouds and water reflections.',
+  high: 'Everything on, and a longer view.',
+  ultra: 'Everything at its best, the longest view. Needs a strong graphics card.',
+};
+
+export class VideoSettingsScreen extends OptionsListScreen {
+  constructor() { super('Video Settings'); }
+  rows(list) {
+    const o = this.options, g = this.gui;
+    const rdMax = (g.limits && g.limits.renderDistanceMax) || 32;
+    const graphics = new CycleButton(0, 0, 150, 20, 'Graphics', {
+      values: QUALITY, value: o.get('quality'), format: v => QUALITY_NAMES[v], tooltip: v => QUALITY_TIPS[v],
+      onChange: v => o.set('quality', v),
+    });
+    const rd = new Slider(0, 0, 150, 20, {
+      min: 1, max: rdMax, step: 1, value: o.get('renderDistance') || 1,
+      label: v => v <= 1 ? 'Render Distance: Auto' : 'Render Distance: ' + v + ' chunks',
+      onChange: v => o.set('renderDistance', v <= 1 ? null : v),
+    });
+    const rs0 = o.get('renderScale');
+    const rs = new Slider(0, 0, 150, 20, {
+      min: 35, max: 100, step: 5, value: rs0 === 'auto' ? 35 : Math.round(rs0 * 100),
+      label: v => v <= 35 ? 'Render Scale: Auto' : 'Render Scale: ' + v + '%',
+      onChange: v => o.set('renderScale', v <= 35 ? 'auto' : v / 100),
+    });
+    rs.tooltip = 'How many pixels the 3D view draws. Lower is faster and blurrier. Auto follows the frame rate.';
+    const fps0 = o.get('maxFps');
+    const fps = new Slider(0, 0, 150, 20, {
+      min: 10, max: 260, step: 10, value: fps0 ? fps0 : 260,
+      label: v => v >= 260 ? 'Max Framerate: Unlimited' : 'Max Framerate: ' + v + ' fps',
+      onChange: v => o.set('maxFps', v >= 260 ? 0 : v),
+    });
+    const gs = new Slider(0, 0, 150, 20, {
+      min: 0, max: g.maxScale, step: 1, value: Math.min(o.get('guiScale') | 0, g.maxScale),
+      label: v => 'GUI Scale: ' + (v ? v : 'Auto'),
+      // applied when the handle is let go, so the screen does not jump under the pointer
+      onRelease: v => o.set('guiScale', v),
+    });
+    const br = optSlider(o, 'brightness', 0, 1, 0.01, v => 'Brightness: ' + (v <= 0 ? 'Moody' : v >= 1 ? 'Bright' : pct(v)));
+    const clouds = new CycleButton(0, 0, 150, 20, 'Clouds', {
+      values: ['fancy', 'fast', 'off'], value: o.get('clouds'), format: v => ({ fancy: 'Fancy', fast: 'Fast', off: 'OFF' })[v],
+      onChange: v => o.set('clouds', v),
+    });
+    const fe = optSlider(o, 'fovEffects', 0, 1, 0.01, v => 'FOV Effects: ' + (v <= 0 ? 'OFF' : pct(v)));
+    fe.tooltip = 'How much the view widens when you sprint or fly.';
+    const blur = optSlider(o, 'menuBlur', 0, 10, 1, v => 'Menu Background Blurriness: ' + (v ? v : 'OFF'));
+    list.entries = [
+      new WidgetRow(graphics, rd),
+      new WidgetRow(rs, fps),
+      new WidgetRow(optToggle(o, 'bobbing', 'View Bobbing'), gs),
+      new WidgetRow(br, clouds),
+      new WidgetRow(fe, blur),
+    ];
+  }
+}
+
+export class ControlsScreen extends OptionsListScreen {
+  constructor() { super('Controls'); }
+  rows(list) {
+    const g = this.gui, o = this.options;
+    list.entries = [
+      new WidgetRow(new Button(0, 0, 150, 20, 'Mouse Settings...', () => g.open(new MouseSettingsScreen())),
+        new Button(0, 0, 150, 20, 'Key Binds...', () => g.open(new KeyBindsScreen()))),
+      new WidgetRow(optToggle(o, 'autoJump', 'Auto-Jump'),
+        off(new CycleButton(0, 0, 150, 20, 'Sneak', { values: ['hold'], value: 'hold', format: () => 'Hold' }), 'Hold only for now')),
+    ];
+  }
+}
+
+export class MouseSettingsScreen extends OptionsListScreen {
+  constructor() { super('Mouse Settings'); }
+  rows(list) {
+    const o = this.options;
+    const sens = optSlider(o, 'sensitivity', 0, 1, 0.005, v => 'Sensitivity: ' + (v <= 0 ? '*yawn*' : v >= 1 ? 'HYPERSPEED!!!' : Math.round(v * 200) + '%'));
+    list.entries = [new WidgetRow(sens, optToggle(o, 'invertY', 'Invert Mouse'))];
+  }
+}
+
+/* Key binds: categories, each action's name on the left, the key button
+   (75 wide) and Reset (50) on the right. Click a key button, then press a key
+   or a mouse button; Escape leaves it unbound. Clashes show in red. */
+const BINDS = [
+  ['Movement', [['jump', 'Jump'], ['sneak', 'Sneak'], ['sprint', 'Sprint'], ['left', 'Strafe Left'], ['right', 'Strafe Right'], ['back', 'Walk Backwards'], ['forward', 'Walk Forwards']]],
+  ['Gameplay', [['attack', 'Attack/Destroy'], ['pickBlock', 'Pick Block'], ['use', 'Use Item/Place Block']]],
+  ['Inventory', [['drop', 'Drop Selected Item']].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ['hotbar' + n, 'Hotbar Slot ' + n]), [['inventory', 'Open/Close Inventory']])],
+  ['Miscellaneous', [['debug', 'Debug Screen'], ['hideGui', 'Hide GUI'], ['perspective', 'Toggle Perspective']]],
+];
+
+class CategoryRow {
+  constructor(name) { this.name = name; }
+  render(g, list, i, top, left, width, h) { g.centered(this.name, list.x + list.w / 2, top + h - 9 - 1 + 4, WHITE); }
+}
+class KeyRow {
+  constructor(screen, action, name) {
+    this.screen = screen; this.action = action; this.name = name;
+    this.change = new Button(0, 0, 75, 20, '', () => { screen.waiting = action; });
+    this.reset = new Button(0, 0, 50, 20, 'Reset', () => screen.options.setKey(action, DEFAULT_KEYS[action]));
+    this.children = [this.change, this.reset];
+  }
+  render(g, list, i, top, left, width, h, mx, my) {
+    const o = this.screen.options, keys = o.get('keys'), code = keys[this.action];
+    const cx = Math.floor(list.x + list.w / 2);
+    this.reset.x = cx + 155 - 50; this.reset.y = top - 2;
+    this.change.x = this.reset.x - 5 - 75; this.change.y = top - 2;
+    let clash = false;
+    if (code) for (const a in keys) if (a !== this.action && keys[a] === code) { clash = true; break; }
+    const label = keyLabel(code);
+    if (this.screen.waiting === this.action) this.change.message = '§e> §f§n' + label + '§r§e <';
+    else this.change.message = clash ? '§c' + label : label;
+    this.reset.active = code !== DEFAULT_KEYS[this.action];
+    g.text(this.name, cx - 155, top + ((h - 8) >> 1), WHITE);
+    if (clash) g.fill(this.change.x - 6, top - 2, this.change.x - 3, top + 18, 0xFFFF5555);
+    this.change.render(g, mx, my);
+    this.reset.render(g, mx, my);
+  }
+}
+
+export class KeyBindsScreen extends OptionsListScreen {
+  constructor() { super('Key Binds'); this.itemHeight = 20; this.waiting = null; }
+  rows(list) {
+    list.entries = [];
+    for (const [cat, acts] of BINDS) {
+      list.entries.push(new CategoryRow(cat));
+      for (const [a, n] of acts) list.entries.push(new KeyRow(this, a, n));
+    }
+  }
+  footer() {
+    const W = this.width, H = this.height, o = this.options;
+    this.resetAll = this.add(new Button(W / 2 - 155, H - 27, 150, 20, 'Reset Keys', () => { o.set('keys', Object.assign({}, DEFAULT_KEYS)); this.waiting = null; }));
+    this.add(new Button(W / 2 + 5, H - 27, 150, 20, 'Done', () => this.gui.back()));
+  }
+  bind(code) { this.options.setKey(this.waiting, code); this.waiting = null; }
+  keyPressed(e) {
+    if (this.waiting) { this.bind(e.code === 'Escape' ? null : e.code); return true; }
+    return super.keyPressed(e);
+  }
+  mouseClicked(mx, my, button) {
+    if (this.waiting) { this.bind('Mouse' + button); return true; }
+    return super.mouseClicked(mx, my, button);
+  }
+  render(g, mx, my, dt) {
+    const keys = this.options.get('keys');
+    let changed = false;
+    for (const a in DEFAULT_KEYS) if (keys[a] !== DEFAULT_KEYS[a]) { changed = true; break; }
+    this.resetAll.active = changed;
+    super.render(g, mx, my, dt);
+  }
+}
+
+export class SkinCustomizationScreen extends OptionsListScreen {
+  constructor() { super('Skin Customization'); }
+  rows(list) {
+    const o = this.options, g = this.gui;
+    const part = (key, label) => new CycleButton(0, 0, 150, 20, label, { values: [true, false], value: o.get('skinParts')[key] !== false, format: onOff, onChange: v => o.setPart(key, v) });
+    const hand = new CycleButton(0, 0, 150, 20, 'Main Hand', { values: ['left', 'right'], value: o.get('mainHand'), format: v => v === 'left' ? 'Left' : 'Right', onChange: v => o.set('mainHand', v) });
+    const model = new CycleButton(0, 0, 150, 20, 'Model', { values: ['classic', 'slim'], value: o.get('skinModel'), format: v => v === 'slim' ? 'Slim' : 'Classic', onChange: v => o.set('skinModel', v) });
+    model.tooltip = 'Classic arms are 4 pixels wide, slim arms 3.';
+    const choose = new Button(0, 0, 150, 20, 'Choose Skin File...', () => this.pick());
+    choose.tooltip = 'A 64 x 64 PNG skin, kept in this browser.';
+    const reset = new Button(0, 0, 150, 20, 'Reset to Default', () => { o.set('skin', 'default'); o.set('skinModel', 'classic'); g._initScreen(this); });
+    reset.active = o.get('skin') !== 'default';
+    list.entries = [
+      new WidgetRow(part('hat', 'Hat'), part('jacket', 'Jacket')),
+      new WidgetRow(part('leftSleeve', 'Left Sleeve'), part('rightSleeve', 'Right Sleeve')),
+      new WidgetRow(part('leftPants', 'Left Pants Leg'), part('rightPants', 'Right Pants Leg')),
+      new WidgetRow(hand, model),
+      new WidgetRow(choose, reset),
+    ];
+  }
+  pick() {
+    const g = this.gui, o = this.options;
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/png';
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          if (img.width === 64 && (img.height === 64 || img.height === 32)) { o.set('skin', r.result); g._initScreen(this); g.markDirty(); }
+          else g.open(new NoticeScreen('Skin not used', 'A skin has to be a 64 x 64 (or 64 x 32) PNG. That file is ' + img.width + ' x ' + img.height + '.'));
+        };
+        img.onerror = () => g.open(new NoticeScreen('Skin not used', 'That file could not be read as a PNG picture.'));
+        img.src = r.result;
+      };
+      r.readAsDataURL(f);
+    };
+    inp.click();
+  }
+  render(g, mx, my, dt) {
+    super.render(g, mx, my, dt);
+    const s = this.options.get('skin');
+    g.centered(s === 'default' ? 'Skin: Default' : 'Skin: Your own file', this.width / 2, 22, GREY);
+  }
+}
+
+export class MusicSoundsScreen extends OptionsListScreen {
+  constructor() { super('Music & Sound Options'); }
+  rows(list) {
+    const tip = 'No sound in this preview';
+    const s = label => off(new Slider(0, 0, 150, 20, { min: 0, max: 1, value: 1, label: v => label + ': ' + pct(v) }), tip);
+    const master = s('Master Volume'); master.wide = true;
+    list.entries = [
+      new WidgetRow(master),
+      new WidgetRow(s('Music'), s('Jukebox/Note Blocks')),
+      new WidgetRow(s('Weather'), s('Blocks')),
+      new WidgetRow(s('Hostile Creatures'), s('Friendly Creatures')),
+      new WidgetRow(s('Players'), s('Ambient/Environment')),
+      new WidgetRow(s('Voice/Speech')),
+      new WidgetRow(off(new CycleButton(0, 0, 150, 20, 'Show Subtitles', { values: [false], value: false, format: onOff }), tip),
+        off(new CycleButton(0, 0, 150, 20, 'Directional Audio', { values: [false], value: false, format: onOff }), tip)),
+    ];
+    list.entries[5].children[0].wide = false;
+  }
+}
+
+export class AccessibilitySettingsScreen extends OptionsListScreen {
+  constructor() { super('Accessibility Settings'); }
+  rows(list) {
+    const o = this.options;
+    const na = 'Not in Leoncraft 2 yet';
+    const text = optSlider(o, 'textBgOpacity', 0, 1, 0.01, v => 'Text Background Opacity: ' + pct(v));
+    const fe = optSlider(o, 'fovEffects', 0, 1, 0.01, v => 'FOV Effects: ' + (v <= 0 ? 'OFF' : pct(v)));
+    const blur = optSlider(o, 'menuBlur', 0, 10, 1, v => 'Menu Background Blurriness: ' + (v ? v : 'OFF'));
+    list.entries = [
+      new WidgetRow(off(new CycleButton(0, 0, 150, 20, 'Narrator', { values: [false], value: false, format: onOff }), na),
+        off(new CycleButton(0, 0, 150, 20, 'Show Subtitles', { values: [false], value: false, format: onOff }), na)),
+      new WidgetRow(text, off(new CycleButton(0, 0, 150, 20, 'High Contrast', { values: [false], value: false, format: onOff }), na)),
+      new WidgetRow(optToggle(o, 'autoJump', 'Auto-Jump'), optToggle(o, 'bobbing', 'View Bobbing')),
+      new WidgetRow(fe, optToggle(o, 'hideSplash', 'Hide Splash Texts', 'Hides the yellow line on the title screen.')),
+      new WidgetRow(blur),
+    ];
+    list.entries[4].children[0].wide = false;
+  }
+  footer() {
+    const W = this.width, H = this.height;
+    off(this.add(new Button(W / 2 - 155, H - 27, 150, 20, 'Accessibility Guide', null)), 'Not in Leoncraft 2 yet');
+    this.add(new Button(W / 2 + 5, H - 27, 150, 20, 'Done', () => this.gui.back()));
+  }
+}
+
+class TextRow {
+  constructor(text, colour = WHITE, url = null, centred = true) { this.text = text; this.colour = colour; this.url = url; this.centred = centred; }
+  render(g, list, i, top, left, width, h, mx, my, hovered) {
+    const cx = list.x + list.w / 2;
+    const w = g.textWidth(this.text);
+    const x = this.centred ? Math.floor(cx - w / 2) : left;
+    const hot = this.url && hovered && mx >= x && mx < x + w;
+    g.text(this.text, x, top, this.url ? 0x7FB0FF : this.colour);
+    if (hot) g.fill(x, top + 9, x + w, top + 10, 0xFF7FB0FF);
+  }
+  mouseClicked(mx, my, button) {
+    if (this.url && button === 0) { window.open(this.url, '_blank', 'noopener'); return true; }
+    return false;
+  }
+}
+
+export class LanguageScreen extends OptionsListScreen {
+  constructor() { super('Language'); this.itemHeight = 18; this.rowWidth = 220; }
+  rows(list) {
+    list.selectable = true;
+    const en = new TextRow('English (US)');
+    list.entries = [en];
+    list.selected = en;
+  }
+  render(g, mx, my, dt) {
+    super.render(g, mx, my, dt);
+    g.centered('(More languages may come later)', this.width / 2, this.height - 33 - 12, 0x808080);
+  }
+}
+
+const CREDITS = [
+  ['Leoncraft 2', 0xFFFF55], ['Made by Leon Zhao.'], [''],
+  ['Textures', 0xFFFF55],
+  ['Block textures, GUI art and the font:'],
+  ['Pixel Perfection by XSSheep, in its Community Edition,'], ['by XSSheep and contributors.'],
+  ['github.com/Athemis/PixelPerfectionCE', 0, 'https://github.com/Athemis/PixelPerfectionCE'],
+  ['Newer blocks: Pixel Perfection Legacy, by Nova_Wostra.'],
+  ['modrinth.com/resourcepack/pixel-perfection-legacy', 0, 'https://modrinth.com/resourcepack/pixel-perfection-legacy'],
+  ['Both are licensed CC BY-SA 4.0:'],
+  ['creativecommons.org/licenses/by-sa/4.0', 0, 'https://creativecommons.org/licenses/by-sa/4.0/'],
+  ['Leoncraft packs, recolours and extends them, and shares'], ['those changes under the same licence.'],
+  ['The title logo is drawn from the pack\'s stone texture.'], [''],
+  ['Code', 0xFFFF55],
+  ['three.js, MIT License'],
+  ['threejs.org', 0, 'https://threejs.org/'],
+  ['Player model: skinview3d, MIT License'],
+  ['github.com/bs-community/skinview3d', 0, 'https://github.com/bs-community/skinview3d'],
+  ['Block list and hardness: minecraft-data, MIT License'],
+  ['github.com/PrismarineJS/minecraft-data', 0, 'https://github.com/PrismarineJS/minecraft-data'],
+  ['The player skin, the grey buttons and a few textures are original drawings.'],
+  ['Everything else: written for Leoncraft by Leon Zhao.'], [''],
+  ['Not an official Minecraft product.', 0xA0A0A0],
+  ['Not approved by or associated with Mojang or Microsoft.', 0xA0A0A0],
+];
+
+export class CreditsScreen extends OptionsListScreen {
+  constructor() { super('Credits & Attribution'); this.itemHeight = 12; this.rowWidth = 300; }
+  rows(list) {
+    list.entries = [];
+    const g = this.gui;
+    for (const [t, c, url] of CREDITS) {
+      for (const line of url ? [t] : g.font.wrap(t, Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, c || WHITE, url || null));
+    }
+  }
+}
+
+/* ------------------------------ in game ------------------------------ */
+
+/* The pause menu: a 212-wide grid a quarter of the way down, Back to Game
+   and Save and Quit across both columns, 98-wide pairs between. */
+export class PauseScreen extends Screen {
+  constructor() { super('Game Menu'); this.background = 'world'; }
+  init() {
+    const W = this.width, H = this.height, g = this.gui;
+    const top = Math.floor((H - 166) * 0.25);
+    const xl = Math.floor(W / 2 - 102), xr = Math.floor(W / 2 + 4);
+    this.add(new Button(xl, top + 50, 204, 20, 'Back to Game', () => this.resume()));
+    const row = (y, a, b) => {
+      for (const [x, [label, fn]] of [[xl, a], [xr, b]]) {
+        const btn = this.add(new Button(x, y, 98, 20, label, fn));
+        if (!fn) off(btn, 'Not in Leoncraft 2 yet');
+      }
+    };
+    row(top + 74, ['Advancements', null], ['Statistics', null]);
+    row(top + 98, ['Send Feedback', null], ['Report Bugs', null]);
+    row(top + 122, ['Options...', () => g.open(new OptionsScreen())], ['Open to LAN', null]);
+    this.add(new Button(xl, top + 146, 204, 20, 'Save and Quit to Title', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); }));
+  }
+  resume() { this.gui.closeAll(); if (this.hooks.resume) this.hooks.resume(); }
+  onEscape() { this.resume(); }
+  render(g, mx, my, dt) {
+    g.centered(this.title, this.width / 2, 40, WHITE);
+    super.render(g, mx, my, dt);
+  }
+}
+
+// the world-loading screen's chunk colours, empty to done
+export const CHUNK_COLOURS = [0x545454, 0x999999, 0x80B252, 0xD1D1D1, 0x726809, 0x21C600, 0xFFE0A0, 0xFFFFFF];
+
+/* World loading: the percentage over a grid of chunk squares, each coloured
+   by how far along it is (state 0 empty ... 7 done, or an 0xRRGGBB colour). */
+export class LoadingScreen extends Screen {
+  constructor(text = 'Loading terrain...') {
+    super(text);
+    this.animates = true;
+    this.closeOnEsc = false;
+  }
+  render(g, mx, my, dt) {
+    const p = (this.hooks.loadingProgress && this.hooks.loadingProgress()) || {};
+    const cx = Math.floor(this.width / 2), cy = Math.floor(this.height / 2);
+    const prog = Math.max(0, Math.min(1, p.progress || 0));
+    g.centered(p.text || this.title, cx, cy - 4 - 30 - 12, WHITE);
+    g.centered(Math.floor(prog * 100) + '%', cx, cy - 4 - 30, WHITE);
+    const ch = p.chunks;
+    if (ch && ch.length) {
+      let r = 0;
+      for (let i = 0; i < ch.length; i++) r = Math.max(r, Math.abs(ch[i][0]), Math.abs(ch[i][1]));
+      const size = (2 * r + 1) * 2, x0 = cx - (size >> 1), y0 = cy + 30 - (size >> 1);
+      g.fill(x0 - 1, y0 - 1, x0 + size + 1, y0 + size + 1, 0xFF000000);
+      const ctx = g.ctx;
+      for (let i = 0; i < ch.length; i++) {
+        const c = ch[i], s = c[2];
+        const rgb = s > 255 ? s : CHUNK_COLOURS[Math.max(0, Math.min(CHUNK_COLOURS.length - 1, s | 0))];
+        ctx.fillStyle = '#' + rgb.toString(16).padStart(6, '0');
+        ctx.fillRect(x0 + (c[0] + r) * 2, y0 + (c[1] + r) * 2, 2, 2);
+      }
+    } else {
+      // no chunk list: a plain bar
+      g.fill(cx - 50, cy + 28, cx + 50, cy + 30, 0xFF808080);
+      g.fill(cx - 50, cy + 28, cx - 50 + Math.round(100 * prog), cy + 30, 0xFF80FF80);
+    }
+    super.render(g, mx, my, dt);
+  }
+}
+
+export class DeathScreen extends Screen {
+  constructor(opts = {}) {
+    super('You Died!');
+    this.background = 'death';
+    this.closeOnEsc = false;
+    this.cause = opts.message || '';
+    this.score = opts.score || 0;
+    this.t0 = -1;
+    this.animates = true;
+  }
+  init() {
+    const W = this.width, H = this.height, g = this.gui;
+    this.buttons = [
+      this.add(new Button(W / 2 - 100, Math.floor(H / 4) + 72, 200, 20, 'Respawn', () => { g.closeAll(); if (this.hooks.respawn) this.hooks.respawn(); })),
+      this.add(new Button(W / 2 - 100, Math.floor(H / 4) + 96, 200, 20, 'Title Screen', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); })),
+    ];
+    for (const b of this.buttons) b.active = this.t0 >= 0 && this.gui.now - this.t0 >= 1000;
+  }
+  render(g, mx, my, dt) {
+    if (this.t0 < 0) this.t0 = g.now;
+    // the buttons wake after a second, as in the game, so a held click does not respawn by accident
+    if (this.animates && g.now - this.t0 >= 1000) { for (const b of this.buttons) b.active = true; this.animates = false; }
+    const ctx = g.ctx;
+    ctx.save(); ctx.scale(2, 2);
+    g.centered(this.title, this.width / 4, 30, WHITE);
+    ctx.restore();
+    if (this.cause) g.centered(this.cause, this.width / 2, 85, WHITE);
+    g.centered('Score: §e' + this.score, this.width / 2, 100, WHITE);
+    super.render(g, mx, my, dt);
+  }
+}

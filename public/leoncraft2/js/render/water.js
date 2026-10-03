@@ -17,7 +17,8 @@
 
    Lava: its own animated texture streaming along the flow, glowing.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, WAVES } from './glsl.js?v=1';
+import { COMMON, SHADOW, WIND, WAVES, TONEMAP, LDR, LIGHTS } from './glsl.js?v=2';
+import { lightDefines } from './materials.js?v=2';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
 
@@ -68,7 +69,7 @@ vec3 skyRadiance(vec3 d) {
   float az = atan(d.z, d.x); if (az < 0.0) az += TAU;
   return texture(uView, vec2(az / TAU, v)).rgb;
 }
-float linDepth(vec2 uv) { return texture(uSceneDepth, uv).r; }
+float linDepth(vec2 uv) { return textureLod(uSceneDepth, uv, 0.0).r; }
 vec3 viewPos(vec2 uv, float d) {
   vec2 ndc = uv * 2.0 - 1.0;
   return vec3(ndc.x / projectionMatrix[0][0] * d, ndc.y / projectionMatrix[1][1] * d, -d);
@@ -102,7 +103,7 @@ vec4 ssr(vec3 vp, vec3 vn, float jitter) {
       if (linDepth(huv) > uFar * 0.98) break;           // that was the sky
       vec2 e = abs(huv * 2.0 - 1.0);
       float fade = (1.0 - pow(max(e.x, e.y), 8.0)) * sat(1.0 - float(i) / float(SSR_STEPS) * 0.5);
-      return vec4(texture(uSceneColor, huv).rgb, fade);
+      return vec4(textureLod(uSceneColor, huv, 0.0).rgb, fade);
     }
   }
   return vec4(0.0);
@@ -126,7 +127,11 @@ void main() {
     vec3 l = mix(texture(uAlbedo, vec3(fract(uv), vLayer + fa)).rgb, texture(uAlbedo, vec3(fract(uv), vLayer + fb)).rgb, fract(f));
     l = toLinear(l);
     float glow = 1.0 + 0.4 * sin(uTime * 1.3 + vWorld.x * 0.7 + vWorld.z * 0.5);
+#ifdef LDR
+    outColor = vec4(finishLDR(l * (5.0 + 3.0 * lum(l)) * glow, vWorld), 1.0);
+#else
     outColor = vec4(l * (5.0 + 3.0 * lum(l)) * glow, 1.0);
+#endif
     return;
   }
 
@@ -157,6 +162,41 @@ void main() {
   }
   bool below = !gl_FrontFacing && top;           // looking up at the surface from under it
   if (below) N = -N;
+#ifdef LDR
+  {
+    // the single-pass water: no screen copies, blended over what is behind it
+    vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, ambUp = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
+    float gate = smoothstep(0.03, 0.2, sky);
+#if SHADOWS > 0
+    float shadow = shadowHard(shadowCoord(vWorld, vec3(0.0, 1.0, 0.0), 1.0, dist)) * gate;
+#else
+    float shadow = smoothstep(0.8, 0.95, sky) * gate;
+#endif
+    if (shadow > 0.0) shadow *= cloudShade(vWorld, uLightDir);
+    float block = max(vLight.y, heldLight(vWorld, N));
+    vec3 blockL = block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) * (tint * 0.6 + 0.4) * 0.35 : vec3(0.0);
+    vec3 body = (sunC * shadow * 0.55 + ambUp * sky * sky * 0.5) / PI * tint * 0.9 + blockL / PI;
+    float NoV = sat(dot(N, V));
+    float F = 0.02 + 0.98 * pow(1.0 - NoV, 5.0);
+    bool pour = !top || falling;
+    if (pour) F *= 0.35;
+    vec3 col;
+    float alpha;
+    if (below) { col = body * 0.6; alpha = 0.85; }
+    else {
+      vec3 skyR = skyDir(reflect(-V, N)) * pow(sat(sky * 1.15), 6.0);
+      vec3 H = normalize(V + uLightDir);
+      float NoH = sat(dot(N, H)), NoL = sat(dot(N, uLightDir));
+      float D = 0.0016 / (PI * sqr(NoH * NoH * (0.0016 - 1.0) + 1.0));
+      col = mix(body, skyR, F) + sunC * shadow * min(D * 0.25, 60.0) * NoL * F * 4.0;
+      alpha = mix(0.66, 0.97, F);
+      if (pour) { float st = texture(uNoise, vec2((vWorld.x + vWorld.z) * 0.45, vWorld.y * 0.12 + uTime * 0.9)).g;
+        float fo = sat(st * 1.6 - 0.6); col = mix(col, vec3(0.9) * (sunC * (shadow * 0.8 + 0.1) + ambUp * sky * sky) / PI, fo); alpha = max(alpha, 0.8); }
+    }
+    outColor = vec4(finishLDR(col, vWorld), alpha);
+    return;
+  }
+#endif
 
   vec2 suv = gl_FragCoord.xy / uRes;
   vec3 vp = (viewMatrix * vec4(vWorld, 1.0)).xyz;
@@ -176,7 +216,11 @@ void main() {
   float gate = smoothstep(0.03, 0.2, sky);
   float shadow = 0.0;
   if (gate > 0.0) shadow = shadowSoft(shadowCoord(vWorld, vec3(0.0, 1.0, 0.0), 1.0, dist), ign(gl_FragCoord.xy, uFrame), 1.0) * gate;
-  vec3 scatterC = (sunC * shadow * 0.55 + ambUp * sky * sky * 0.5) / PI * tint * 0.9;
+  if (shadow > 0.0) shadow *= cloudShade(vWorld, uLightDir);
+  // torches and the light in your hand, lighting up the water around them
+  float block = max(vLight.y, heldLight(vWorld, N));
+  vec3 blockL = block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) * (tint * 0.6 + 0.4) * 0.35 : vec3(0.0);
+  vec3 scatterC = (sunC * shadow * 0.55 + ambUp * sky * sky * 0.5) / PI * tint * 0.9 + blockL / PI;
   vec3 ext = absorb + 0.02;
   vec3 Tr = exp(-ext * thick);
   vec3 refr = under * Tr + scatterC * (1.0 - Tr);
@@ -224,7 +268,7 @@ void main() {
     refr = mix(refr, scatterC * 2.0, 0.45);
   }
   if (top && dot(vFlow, vFlow) > 0.04) foam = max(foam, sat(texture(uNoise, vWorld.xz * 0.35 - vFlow * uTime * 0.9).b * 1.5 - 1.05) * 0.6);
-  vec3 lit = (sunC * (shadow * 0.8 + 0.1) + ambUp * sky * sky) / PI;
+  vec3 lit = (sunC * (shadow * 0.8 + 0.1) + ambUp * sky * sky + blockL) / PI;
   col = mix(col, vec3(0.9) * lit, foam);
   outColor = vec4(col, 1.0);
 }`;
@@ -233,9 +277,10 @@ export function makeWaterMaterial(shared, opts) {
   return new THREE.RawShaderMaterial({
     glslVersion: THREE.GLSL3,
     vertexShader: HEAD + COMMON + WIND + VS,
-    fragmentShader: HEAD + COMMON + SHADOW + WIND + WAVES + FS,
+    fragmentShader: HEAD + COMMON + SHADOW + WIND + WAVES + TONEMAP + FS.replace('void main() {', (opts && opts.ldr ? LDR : '') + LIGHTS + '\nvoid main() {'),
     uniforms: Object.assign({ uMeshTime: { value: 0 } }, shared),
     side: THREE.DoubleSide,
-    defines: { SSR_STEPS: (opts && opts.ssrSteps) || 28 },
+    defines: Object.assign({ SSR_STEPS: (opts && opts.ssrSteps) || 28, SHADOWS: opts && opts.shadows !== undefined ? opts.shadows : 2 }, lightDefines(opts), opts && opts.ldr ? { LDR: 1 } : {}),
+    transparent: !!(opts && opts.ldr), depthWrite: true,
   });
 }

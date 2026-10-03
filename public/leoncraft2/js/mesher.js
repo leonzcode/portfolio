@@ -28,10 +28,11 @@
    flags: bits 0-1 ambient occlusion, 2-3 texture rotation, 4 overlay
    (grass block sides), 5 plant, 6 tinted.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID } from './blocks.js?v=1';
-import { CH, H, LEVEL, FALLING } from './world-const.js?v=1';
-import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=1';
-import { hash3 } from './noise.js?v=1';
+import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=2';
+import { CH, H, LEVEL, FALLING } from './world-const.js?v=2';
+import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=2';
+import { hash3 } from './noise.js?v=2';
+import { boxesOf, MODEL_SHAPES } from './models.js?v=2';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
@@ -43,6 +44,7 @@ class Buf {
     this.cap = n; this.n = 0; this.kinds = kinds;
     this.arrs = kinds.map(k => new k.T(n * 4));
     this.idx = new Uint32Array(n * 1.5 | 0); this.ni = 0;
+    this.marks = new Int32Array(25);   // where each 16-block section's indices start
   }
   grow() {
     this.cap *= 2;
@@ -57,7 +59,7 @@ class Buf {
   }
   out() {
     if (!this.n) return null;
-    return { count: this.n, attrs: this.arrs.map(a => a.slice(0, this.n * 4)), index: this.idx.slice(0, this.ni) };
+    return { count: this.n, attrs: this.arrs.map(a => a.slice(0, this.n * 4)), index: this.idx.slice(0, this.ni), marks: this.marks };
   }
 }
 const TERRAIN = [{ T: Uint16Array }, { T: Uint8Array }, { T: Uint8Array }, { T: Uint8Array }];
@@ -82,6 +84,25 @@ const SHADE = FACES.map(F => CORNERS.map(([u, v]) => {
   return [t1, t2, t1 + t2];
 }));
 const NSTEP = FACES.map(F => step(F.n));
+const FACING_FACE = [5, 0, 4, 1];                    // north, east, south, west -> the face it points out of
+
+/* Lookup tables over every block, made once (after the textures are known). */
+let TABLES = null;
+function tables() {
+  if (TABLES) return TABLES;
+  const LEAF = new Uint8Array(MAX_ID), WL = new Uint8Array(MAX_ID);
+  // blocks drawn from boxes (stairs, fences, doors...), and the small ones that can drop out at a distance
+  const MODEL = new Uint8Array(MAX_ID), SMALL = new Uint8Array(MAX_ID), ORIENT = new Uint8Array(MAX_ID);
+  for (const d of BLOCKS) {
+    if (!d) continue;
+    if (d.leaves) LEAF[d.id] = 1;
+    if (d.waterlogged) WL[d.id] = 1;
+    if (MODEL_SHAPES.has(d.shape) && d.shape !== 'cactus') MODEL[d.id] = 1;
+    if (/^(button|rail|wire|candle|wall_torch|crop|vine|plate|pot|lantern|chain|rod)$/.test(d.shape)) SMALL[d.id] = 1;
+    ORIENT[d.id] = d.orient === 'axis' ? 1 : d.orient === 'horizontal' ? 2 : d.orient === 'facing' ? 3 : 0;
+  }
+  return (TABLES = { LEAF, MODEL, SMALL, ORIENT, WL });
+}
 
 /* ======================================================================== */
 export function meshColumn(job) {
@@ -91,7 +112,7 @@ export function meshColumn(job) {
   for (const t of tops) top = Math.max(top, t);
   const ny = Math.min(H, top + 2);
   const N = A * ny;
-  const rb = new Uint8Array(N), rm = new Uint8Array(N);
+  const rb = new Uint16Array(N), rm = new Uint8Array(N);
   const bio = new Uint8Array(W * W);
   for (let c = 0; c < 9; c++) {
     const ch = chunks[c];
@@ -171,6 +192,21 @@ export function meshColumn(job) {
   const out = {
     opaque: new Buf(4096, TERRAIN), cutout: new Buf(2048, TERRAIN),
     translucent: new Buf(256, TERRAIN), fluid: new Buf(1024, FLUIDF),
+    plants: new Buf(1024, TERRAIN),      // crossed sprites: grass, flowers, torches (hidden far away)
+    leafIn: new Buf(1024, TERRAIN),      // faces between two leaf blocks (only drawn close up)
+  };
+  /* Smart leaves: a face between two leaf blocks is kept only when one of
+     them is on the outside of the canopy. You cannot see the faces deep
+     inside a tree anyway, and in a jungle they are most of the triangles. */
+  const { LEAF, MODEL, SMALL, ORIENT, WL } = tables();
+  const outer = new Int8Array(N);
+  const onSurface = j => {
+    let v = outer[j];
+    if (v) return v > 0;
+    v = -1;
+    for (let f = 0; f < 6; f++) { const nb = rb[j + NSTEP[f]]; if (!LEAF[nb] && !OPAQUE[nb]) { v = 1; break; } }
+    outer[j] = v;
+    return v > 0;
   };
   const seed = job.seed | 0;
   const wx0 = job.cx * 16, wz0 = job.cz * 16;
@@ -249,10 +285,97 @@ export function meshColumn(job) {
     buf.quad(v0, false);
   }
 
+  /* ---- one face of a box in a shaped block ----
+     Lit like a cube face: the light and occlusion at the face's four
+     corners (from the cell it looks into when it is on the block's edge,
+     else from the block's own cell), then each vertex takes the value at
+     its own spot on the face, so half a slab's side shades like half a cube. */
+  const BAO = [0, 0, 0, 0], BLS = [0, 0, 0, 0], BLB = [0, 0, 0, 0], PB = [0, 0, 0];
+  function boxFace(buf, f, x, y, z, i, bx, layer, uvr, flags, tint, rnd, edge) {
+    const F = FACES[f];
+    const fi = edge ? i + NSTEP[f] : i;
+    const wd = waterDepth(fi, y + (edge ? F.n[1] : 0));
+    for (let c = 0; c < 4; c++) {
+      const S = SHADE[f][c];
+      const s1 = fi + S[0], s2 = fi + S[1], cc = fi + S[2];
+      const o1 = OPAQUE[rb[s1]] || 0, o2 = OPAQUE[rb[s2]] || 0, oc = OPAQUE[rb[cc]] || 0;
+      BAO[c] = o1 && o2 ? 0 : 3 - (o1 + o2 + oc);
+      let sl = sky[fi], bl = blk[fi], n = 1;
+      if (!o1) { sl += sky[s1]; bl += blk[s1]; n++; }
+      if (!o2) { sl += sky[s2]; bl += blk[s2]; n++; }
+      if (!oc && !(o1 && o2)) { sl += sky[cc]; bl += blk[cc]; n++; }
+      BLS[c] = sl / n; BLB[c] = bl / n;
+    }
+    const b0 = bx.f, b1 = bx.t;
+    let kt = 0, kb = 0;
+    for (let k = 0; k < 3; k++) { if (F.t[k]) kt = k; if (F.b[k]) kb = k; }
+    const v0 = buf.n;
+    let a0 = 0, a1 = 0, a2 = 0, a3 = 0;
+    for (let c = 0; c < 4; c++) {
+      const u = CORNERS[c][0], v = CORNERS[c][1];
+      for (let k = 0; k < 3; k++) {
+        if (F.n[k]) PB[k] = F.n[k] > 0 ? b1[k] : b0[k];
+        else if (k === kt) PB[k] = (F.t[k] > 0) === (u === 1) ? b1[k] : b0[k];
+        else PB[k] = (F.b[k] > 0) === (v === 1) ? b1[k] : b0[k];
+      }
+      // where on the full face this corner is (0..16), which is also its texture spot
+      const fu = F.t[kt] > 0 ? PB[kt] : 16 - PB[kt], fv = F.b[kb] > 0 ? PB[kb] : 16 - PB[kb];
+      let tu = fu, tv = fv;
+      if (uvr) { tu = u ? uvr[2] : uvr[0]; tv = v ? uvr[3] : uvr[1]; }
+      // corners are (0,1) (1,1) (1,0) (0,0): blend them for this spot
+      const s = Math.min(1, Math.max(0, fu / 16)), t = Math.min(1, Math.max(0, fv / 16));
+      const w00 = (1 - s) * (1 - t), w10 = s * (1 - t), w01 = (1 - s) * t, w11 = s * t;
+      const ao = BAO[3] * w00 + BAO[2] * w10 + BAO[0] * w01 + BAO[1] * w11;
+      const ls = BLS[3] * w00 + BLS[2] * w10 + BLS[0] * w01 + BLS[1] * w11;
+      const lb = BLB[3] * w00 + BLB[2] * w10 + BLB[0] * w01 + BLB[1] * w11;
+      const aq = Math.round(ao);
+      if (c === 0) a0 = aq; else if (c === 1) a1 = aq; else if (c === 2) a2 = aq; else a3 = aq;
+      const k = buf.vert(), [P, Aa, L, C] = buf.arrs;
+      P[k * 4] = Math.round((x + PB[0] / 16 + 8) * 32); P[k * 4 + 1] = Math.round((y + PB[1] / 16) * 32); P[k * 4 + 2] = Math.round((z + PB[2] / 16 + 8) * 32); P[k * 4 + 3] = layer;
+      Aa[k * 4] = tu; Aa[k * 4 + 1] = tv; Aa[k * 4 + 2] = f; Aa[k * 4 + 3] = aq | flags;
+      L[k * 4] = Math.round(ls * 17); L[k * 4 + 1] = Math.round(lb * 17); L[k * 4 + 2] = wd * 17; L[k * 4 + 3] = rnd;
+      C[k * 4] = tint >> 16; C[k * 4 + 1] = (tint >> 8) & 255; C[k * 4 + 2] = tint & 255; C[k * 4 + 3] = 255;
+    }
+    buf.quad(v0, a0 + a2 < a1 + a3);
+  }
+  const QP = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], QUV = [[0, 0], [0, 0], [0, 0], [0, 0]];
+  function drawModel(x, y, z, i, d, k2, rnd) {
+    const nb = (dx, dy, dz) => {
+      const yy = y + dy;
+      if (yy < 0 || yy >= ny) return null;
+      const j = i + dx + dz * W + dy * A, b2 = rb[j];
+      return b2 ? { d: BLOCKS[b2], m: rm[j] } : null;
+    };
+    const list = boxesOf(d, rm[i], nb);
+    if (!list) return;
+    const tint = tintFor(d, k2), tinted = d.tint ? 64 : 0;
+    const buf = d.pass === 'translucent' ? out.translucent : d.pass === 'opaque' ? out.opaque : out.cutout;
+    const small = SMALL[d.id];
+    for (const bx of list) {
+      if (bx.q) {
+        // a free quad: crossed planes and things lying flat
+        for (let c = 0; c < 4; c++) { QP[c][0] = x + bx.q[c][0] / 16; QP[c][1] = y + bx.q[c][1] / 16; QP[c][2] = z + bx.q[c][2] / 16; }
+        const uv = bx.uv;
+        QUV[0][0] = uv[0]; QUV[0][1] = uv[3]; QUV[1][0] = uv[2]; QUV[1][1] = uv[3];
+        QUV[2][0] = uv[2]; QUV[2][1] = uv[1]; QUV[3][0] = uv[0]; QUV[3][1] = uv[1];
+        quad(small ? out.plants : out.cutout, QP, QUV, bx.layer, 2, (bx.up ? 0 : 32) | tinted, tint, d.wave || 0, rnd, sky[i], blk[i], waterDepth(i, y));
+        continue;
+      }
+      const faces = bx.faces || d.faces;
+      for (let f = 0; f < 6; f++) {
+        if (bx.skip && (bx.skip & (1 << f))) continue;
+        const F = FACES[f];
+        let ax = 0; for (let k = 0; k < 3; k++) if (F.n[k]) ax = k;
+        const edge = F.n[ax] > 0 ? bx.t[ax] >= 16 : bx.f[ax] <= 0;
+        // on the block's edge against a full cube: never seen
+        if (edge && OPAQUE[rb[i + NSTEP[f]]]) continue;
+        boxFace(small ? out.plants : buf, f, x, y, z, i, bx, faces[f], bx.uv ? bx.uv[f] : null, tinted, tint, rnd, edge);
+      }
+    }
+  }
+
   /* ---- fluids ---- */
   // a waterlogged plant (seagrass, kelp) counts as a still water source
-  const WL = new Uint8Array(256);
-  for (const d of BLOCKS) if (d && d.waterlogged) WL[d.id] = 1;
   const fluidOf = b => FLUID[b] || (WL[b] ? 1 : 0);
   const fluidHeight = (i, kind) => {
     const b = rb[i];
@@ -334,7 +457,10 @@ export function meshColumn(job) {
   }
 
   /* ---- walk the middle chunk ---- */
+  const bufs = [out.opaque, out.cutout, out.translucent, out.fluid, out.plants, out.leafIn];
+  const fast = !!job.fast;              // Minecraft's "fast" leaves: solid, with no faces between them
   for (let y = 0; y < ny - 1; y++) {
+    if ((y & 15) === 0) for (const bb of bufs) bb.marks[y >> 4] = bb.ni;
     for (let z = 0; z < 16; z++) {
       for (let x = 0; x < 16; x++) {
         const i = y * A + (16 + z) * W + 16 + x;
@@ -346,8 +472,10 @@ export function meshColumn(job) {
         const rnd = (hash3(seed, wx, y, wz) * 255) | 0;
         if (d.shape === 'fluid') { fluidCell(x, y, z, i, FLUID[b]); continue; }
         if (d.waterlogged) fluidCell(x, y, z, i, 1);     // the water around a sea plant
+        if (MODEL[b]) { drawModel(x, y, z, i, d, k2, rnd); continue; }
         if (d.shape === 'cube' || d.shape === 'snow' || d.shape === 'cactus') {
-          const buf = d.pass === 'opaque' ? out.opaque : d.pass === 'translucent' ? out.translucent : out.cutout;
+          const fastLeaf = fast && d.leaves;
+          const buf = d.pass === 'opaque' || fastLeaf ? out.opaque : d.pass === 'translucent' ? out.translucent : out.cutout;
           const tint = tintFor(d, k2);
           const tinted = d.tint ? 64 : 0;
           const box = d.shape === 'snow' ? { h: d.height } : d.shape === 'cactus' ? { in: 1 / 16 } : null;
@@ -357,6 +485,8 @@ export function meshColumn(job) {
             if (box && box.h !== undefined) { if (f === 3 && OPAQUE[nb]) continue; if (f !== 2 && f !== 3 && OPAQUE[nb]) continue; }
             else {
               if (OPAQUE[nb]) continue;
+              if (fastLeaf && LEAF[nb]) continue;
+              if (d.leaves && LEAF[nb] && !onSurface(i) && !onSurface(i + NSTEP[f])) continue;
               if (nb === b && d.pass !== 'cutout') continue;            // glass to glass, ice to ice
               if (nb === b && d.pass === 'cutout' && !d.leaves) continue;
               if (d.shape === 'cactus' && (f === 2 || f === 3) && nb === b) continue;
@@ -366,12 +496,30 @@ export function meshColumn(job) {
             const h = hash3(seed ^ 0x51ed, wx, y, wz);
             if (f === 2 && d.topVariantLayers) { layer = d.topVariantLayers[(h * d.topVariantLayers.length) | 0]; flags |= ((h * 997) & 3) << 2; }
             else if (d.variantLayers) { layer = d.variantLayers[(h * d.variantLayers.length) | 0]; if (f === 2 || f === 3) flags |= ((h * 997) & 3) << 2; }
-            if (d.front && f === 4) layer = d.front;
+            const or = ORIENT[b];
+            if (or) {
+              const m = rm[i];
+              if (or === 1 && m) {
+                // a log on its side: the rings on the ends, the bark turned to run along it
+                const ax = m === 1 ? 0 : 2;
+                const end = ax === 0 ? (f === 0 || f === 1) : (f === 4 || f === 5);
+                layer = end ? d.faces[2] : d.faces[0];
+                if (!end && (ax === 0 || f === 0 || f === 1)) flags |= 1 << 2;
+              } else if (or >= 2) {
+                const fm = or === 2 ? m & 3 : m & 7;
+                const front = fm < 4 ? FACING_FACE[fm] : fm === 4 ? 2 : 3;
+                if (f === front) { if (d.front !== undefined) layer = d.front; }
+                else if (f === (front ^ 1) && d.back !== undefined) layer = d.back;
+                else if (fm >= 4) layer = d.faces[0];          // pointing up or down: the rest show the side
+              }
+            } else if (d.front !== undefined && f === 5) layer = d.front;
             if (d.overlay !== undefined && f !== 2 && f !== 3) {
               if (snowy) { layer = d.snowy; ftinted = 0; fTint = 0xffffff; }
               else flags |= 16;                       // grass on the dirt: the overlay, tinted
             } else if (d.overlay !== undefined && f === 3) { ftinted = 0; fTint = 0xffffff; }
-            face(buf, f, x, y, z, i, layer, flags | ftinted, fTint, d.wave || 0, rnd, box);
+            // a face between two leaf blocks goes where it can be left out at a distance
+            const fb = d.leaves && !fastLeaf && LEAF[rb[i + NSTEP[f]]] ? out.leafIn : buf;
+            face(fb, f, x, y, z, i, layer, flags | ftinted | (fastLeaf ? 128 : 0), fTint, fastLeaf ? 0 : (d.wave || 0), rnd, box);
           }
           continue;
         }
@@ -383,22 +531,24 @@ export function meshColumn(job) {
           if (d.offset) { ox = (hash3(seed ^ 0x1f, wx, 0, wz) - 0.5) * 0.5; oz = (hash3(seed ^ 0x2f, wx, 0, wz) - 0.5) * 0.5; }
           // a tall plant's two halves sway as one stem: the lower half less
           let wave = d.wave;
-          if (wave === 1 && d.upper) wave = 6;
+          const upperHalf = d.tall && (rm[i] & 8);
+          if (wave === 1 && (d.upper || (d.tall && !upperHalf))) wave = 6;
+          if (upperHalf && wave === 1) wave = 3;
           const s = 0.45, cx = x + 0.5 + ox, cz = z + 0.5 + oz;
-          const layer = d.faces[2];
+          const layer = upperHalf && d.facesUpper ? d.facesUpper[2] : d.faces[2];
           const pts1 = [[cx - s, y, cz - s], [cx + s, y, cz + s], [cx + s, y + 1, cz + s], [cx - s, y + 1, cz - s]];
           const pts2 = [[cx - s, y, cz + s], [cx + s, y, cz - s], [cx + s, y + 1, cz - s], [cx - s, y + 1, cz + s]];
           const uvs = [[0, 16], [16, 16], [16, 0], [0, 0]];
-          quad(out.cutout, pts1, uvs, layer, 2, 32 | tinted, tint, wave, rnd, sl, bl, wd);
-          quad(out.cutout, pts2, uvs, layer, 2, 32 | tinted, tint, wave, rnd, sl, bl, wd);
+          quad(out.plants, pts1, uvs, layer, 2, 32 | tinted, tint, wave, rnd, sl, bl, wd);
+          quad(out.plants, pts2, uvs, layer, 2, 32 | tinted, tint, wave, rnd, sl, bl, wd);
           continue;
         }
         if (d.shape === 'torch') {
           // the pack draws its torch as a little iron cage with the flame in it: a sprite, crossed
           const layer = d.faces[2], s2 = 0.38, cx = x + 0.5, cz = z + 0.5;
           const uvs = [[0, 16], [16, 16], [16, 0], [0, 0]];
-          quad(out.cutout, [[cx - s2, y, cz - s2], [cx + s2, y, cz + s2], [cx + s2, y + 1, cz + s2], [cx - s2, y + 1, cz - s2]], uvs, layer, 2, 32, 0xffffff, 0, rnd, sl, bl, wd);
-          quad(out.cutout, [[cx - s2, y, cz + s2], [cx + s2, y, cz - s2], [cx + s2, y + 1, cz - s2], [cx - s2, y + 1, cz + s2]], uvs, layer, 2, 32, 0xffffff, 0, rnd, sl, bl, wd);
+          quad(out.plants, [[cx - s2, y, cz - s2], [cx + s2, y, cz + s2], [cx + s2, y + 1, cz + s2], [cx - s2, y + 1, cz - s2]], uvs, layer, 2, 32, 0xffffff, 0, rnd, sl, bl, wd);
+          quad(out.plants, [[cx - s2, y, cz + s2], [cx + s2, y, cz - s2], [cx + s2, y + 1, cz - s2], [cx - s2, y + 1, cz + s2]], uvs, layer, 2, 32, 0xffffff, 0, rnd, sl, bl, wd);
           continue;
         }
         if (d.shape === 'pad') {
@@ -412,6 +562,50 @@ export function meshColumn(job) {
       }
     }
   }
+  for (let s = ((ny - 1) >> 4) + 1; s <= 24; s++) for (const bb of bufs) bb.marks[s] = bb.ni;
+  for (const bb of bufs) for (let s = 1; s <= 24; s++) if (bb.marks[s] < bb.marks[s - 1]) bb.marks[s] = bb.marks[s - 1];
+
+  /* ---- which faces of each 16-block section can see each other ----
+     Sodium's cave culling: flood the open cells of a section; every region
+     that touches two faces connects them. The game walks these from the
+     camera and never draws a section no line of sight can reach (most caves,
+     when you stand on the surface). vis[s*6 + entry] = the faces you can
+     leave by, having come in through entry. */
+  const vis = new Uint8Array(24 * 6);
+  const seen = new Uint8Array(4096), stack = new Int32Array(4096);
+  for (let s = 0; s < 24; s++) {
+    const y0 = s * 16;
+    if (y0 >= ny - 1) { vis.fill(63, s * 6, s * 6 + 6); continue; }
+    seen.fill(0);
+    for (let c = 0; c < 4096; c++) {
+      if (seen[c]) continue;
+      const cy = c >> 8, cz = (c >> 4) & 15, cx = c & 15;
+      const ri = (y0 + cy) * A + (16 + cz) * W + 16 + cx;
+      if (y0 + cy >= ny || OPAQUE[rb[ri]]) { seen[c] = 1; continue; }
+      let sp = 0, faces = 0;
+      stack[sp++] = c; seen[c] = 1;
+      while (sp) {
+        const q = stack[--sp];
+        const qy = q >> 8, qz = (q >> 4) & 15, qx = q & 15;
+        if (qx === 0) faces |= 2; if (qx === 15) faces |= 1;
+        if (qy === 0) faces |= 8; if (qy === 15) faces |= 4;
+        if (qz === 0) faces |= 32; if (qz === 15) faces |= 16;
+        const nbs = [qx > 0 ? q - 1 : -1, qx < 15 ? q + 1 : -1, qz > 0 ? q - 16 : -1, qz < 15 ? q + 16 : -1, qy > 0 ? q - 256 : -1, qy < 15 ? q + 256 : -1];
+        for (const n of nbs) {
+          if (n < 0 || seen[n]) continue;
+          const ny2 = n >> 8, nz = (n >> 4) & 15, nx = n & 15;
+          const nri = (y0 + ny2) * A + (16 + nz) * W + 16 + nx;
+          seen[n] = 1;
+          if (y0 + ny2 >= ny || !OPAQUE[rb[nri]]) stack[sp++] = n;
+        }
+      }
+      for (let f = 0; f < 6; f++) if (faces & (1 << f)) vis[s * 6 + f] |= faces;
+    }
+  }
+  // the lowest cell the sky reaches: nothing under it can shade anything the sun lights
+  let skyLow = ny;
+  for (let y = 0; y < ny && skyLow === ny; y++) for (let z = 16; z < 32 && skyLow === ny; z++) for (let x = 16; x < 32; x++) if (sky[y * A + z * W + x] > 0 && !OPAQUE[rb[y * A + z * W + x]]) { skyLow = y; break; }
+
   /* ---- where the fluid surface was a moment ago ----
      The cells the flow has changed since the last mesh come with what they
      were. Put them back, see where each top corner would have been, and give
@@ -439,5 +633,5 @@ export function meshColumn(job) {
     }
     for (let p = 0; p < save.length; p += 3) { rb[save[p]] = save[p + 1]; rm[save[p]] = save[p + 2]; }
   }
-  return { opaque: out.opaque.out(), cutout: out.cutout.out(), translucent: out.translucent.out(), fluid: out.fluid.out() };
+  return { opaque: out.opaque.out(), cutout: out.cutout.out(), translucent: out.translucent.out(), fluid: out.fluid.out(), plants: out.plants.out(), leafIn: out.leafIn.out(), vis, skyLow };
 }

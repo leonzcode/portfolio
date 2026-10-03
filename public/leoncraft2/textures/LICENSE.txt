@@ -1,24 +1,97 @@
 Leoncraft 2 - block textures
 
 The block textures in this folder (terrain_albedo.png, terrain_normal.png,
-terrain_spec.png, the colour maps, the sun and the moon) are made from
-"Pixel Perfection Community Edition", by XSSheep and its contributors:
-https://github.com/Athemis/PixelPerfectionCE
+terrain_spec.png, manifest.json, the colour maps, the sun and the moon) are
+made from two resource packs:
 
-Pixel Perfection CE is licensed under Creative Commons Attribution-ShareAlike
-4.0 International (CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
+- "Pixel Perfection Community Edition", by XSSheep and its contributors
+  (block, item and entity textures for blocks up to Minecraft 1.16):
+  https://github.com/Athemis/PixelPerfectionCE
+- "Pixel Perfection Legacy", by Nova_Wostra, continuing XSSheep's Pixel
+  Perfection (block textures for blocks added since 1.17: deepslate, tuff,
+  calcite, copper, cherry, mangrove, bamboo, pale oak, mud, sculk, resin,
+  sulfur, cinnabar, poplar and the rest):
+  https://modrinth.com/resourcepack/pixel-perfection-legacy
+  https://github.com/NovaWostra/Pixel-Perfection-Chorus-Eddit
+
+Both are licensed under Creative Commons Attribution-ShareAlike 4.0
+International (CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
+Only the block textures of Pixel Perfection Legacy are used.
 
 Changes made for Leoncraft 2:
-- the 16x16 textures are packed into vertical strips (one layer per texture);
+- the textures are packed into vertical strips of 16x16 layers (one layer per
+  texture, or per animation frame); textures wider than 16 pixels are
+  downscaled (nearest neighbour), and only a few keep their animation;
+- a few blocks drawn from small atlases (sniffer egg) use a 16x16 piece of
+  them;
+- chests, beds, shulker boxes, signs and mob heads are drawn by the game as
+  boxes, so their faces are cut out of Pixel Perfection CE's entity textures
+  and composed into 16x16 layers (chest, trapped chest, ender chest, the 16
+  beds and shulker boxes, eight sign woods, five mob heads); the player head
+  is taken from the game's own original skin (below);
+- copper chests are the wooden chest recoloured to each copper stage; signs
+  for mangrove, cherry, pale oak, poplar and bamboo are the oak sign
+  recoloured to their planks; pointed dripstone is Legacy's sulfur spike
+  recoloured to dripstone; the dragon head is a stand-in made from obsidian;
+- door icons the packs do not have are made from the door's own two halves;
 - normal, ambient-occlusion, height, smoothness, reflectance, subsurface and
   emission maps are generated from each texture (terrain_normal.png and
-  terrain_spec.png);
-- textures for blocks the pack does not have (deepslate and its ores, tuff,
-  calcite, copper ore, cherry and mangrove wood and leaves, moss, mud, packed
-  mud, powder snow, smooth basalt) are recoloured from the pack's own.
+  terrain_spec.png).
+
+Checked against the game's own files. A pixel-by-pixel comparison with
+Minecraft's textures (October 2026) found that a few files in the packs are
+Mojang's pixels, copied or traced, although the packs carry an open licence.
+None of those are used:
+- the nether portal and the wither rose come from Pixel Perfection Legacy,
+  whose versions are original, instead of Pixel Perfection CE;
+- the tripwire, the end portal, the jigsaw and structure blocks and the grass
+  colour map are our own drawings (tools/leoncraft2/art/);
+- the conduit, bamboo, honey block, dried ghast, seven of the glazed
+  terracottas and parts of the loom, grindstone, lectern, cherry log top, bee
+  nest, beehive, bell, smithing table, chiseled bookshelf and TNT are
+  replaced by the packs' own original textures, recoloured or reused.
+After that, no layer of the atlas matches a Mojang texture, in whole or in
+part. Like any texture pack, many textures still follow the layout of the
+block they show (a log's rings, a lantern's frame).
 
 These textures, including the changes above, are shared under the same
-licence, CC BY-SA 4.0. They are not Mojang's textures.
+licence, CC BY-SA 4.0.
 
-The script that builds them: tools/leoncraft2/build_textures.py in the
-portfolio repository.
+The scripts that build them: tools/leoncraft2/build_textures.py and
+tools/leoncraft2/build_blocks.py in the portfolio repository.
+
+
+Player skin (skin/default.png)
+
+The default player skin is original work drawn for Leoncraft 2 (pixel by
+pixel, from scratch). It is not based on, traced from or recoloured from any
+Mojang skin or any other existing skin. It may be used under the same
+licence as the rest of this folder, CC BY-SA 4.0.
+
+
+GUI art (gui/)
+
+The menu and inventory art in gui/ (icons.png, options_background.png,
+world_selection.png, checkbox.png,
+container/inventory.png, container/creative_inventory/, and widgets.png
+apart from the parts named below) is copied unchanged from
+"Pixel Perfection Community Edition", by XSSheep and its contributors:
+https://github.com/Athemis/PixelPerfectionCE
+licensed CC BY-SA 4.0: https://creativecommons.org/licenses/by-sa/4.0/
+The pack's title art (its logo and edition wordmarks), presets and panorama
+are not used.
+
+gui/font_ascii.png is that pack's font sheet (font/ascii.png), recoloured from
+its cream colour to white so the game can tint it; it stays CC BY-SA 4.0.
+
+In widgets.png the hotbar, the hotbar selector, the buttons and the language
+button, and all of accessibility.png, are our own grey drawings
+(tools/leoncraft2/build_gui.py), not the pack's gold ones.
+
+The LEONCRAFT title and its BROWSER EDITION plate are drawn by the game at load
+(js/ui/menus.js) from our own letter shapes, the stone texture above and the
+font sheet above, so they are adapted material under CC BY-SA 4.0 as well.
+
+
+Not an official Minecraft product. Not approved by or associated with Mojang
+or Microsoft.

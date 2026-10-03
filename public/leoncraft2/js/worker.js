@@ -1,7 +1,7 @@
 /* Leoncraft 2 - a worker: makes chunks and meshes them, off the main thread. */
-import { Gen } from './worldgen.js?v=1';
-import { meshColumn, setColours } from './mesher.js?v=1';
-import { resolveTextures } from './blocks.js?v=1';
+import { Gen } from './worldgen.js?v=2';
+import { meshColumn, setColours } from './mesher.js?v=2';
+import { resolveTextures } from './blocks.js?v=2';
 
 let gen = null;
 
@@ -23,7 +23,7 @@ self.onmessage = e => {
   if (m.type === 'mesh') {
     const out = meshColumn(m);
     const transfer = [];
-    for (const k of ['opaque', 'cutout', 'translucent', 'fluid']) {
+    for (const k of ['opaque', 'cutout', 'translucent', 'fluid', 'plants', 'leafIn']) {
       const g = out[k];
       if (!g) continue;
       for (const a of g.attrs) transfer.push(a.buffer);

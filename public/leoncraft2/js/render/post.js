@@ -16,8 +16,8 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS } from './glsl.js?v=1';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=1';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=2';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=2';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
@@ -66,10 +66,11 @@ float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * p
 float caustic(vec3 p) {
   vec2 q = p.xz - uLightDir.xz / max(uLightDir.y, 0.2) * p.y * 0.2;
   float t = uTime * 0.35;
-  float a = texture(uNoise, q * 0.045 + vec2(t * 0.3, t * 0.17)).r;
-  float b = texture(uNoise, q * 0.071 - vec2(t * 0.21, -t * 0.26)).g;
+  float a = textureLod(uNoise, q * 0.045 + vec2(t * 0.3, t * 0.17), 0.0).r;
+  float b = textureLod(uNoise, q * 0.071 - vec2(t * 0.21, -t * 0.26), 0.0).g;
   return pow(sat(1.0 - abs(a - b) * 3.2), 3.0) * 1.4 + 0.4;
 }
+` + LIGHTS + /* glsl */`
 void main() {
   float d = texture(uDepth, vUv).r;
   vec3 wp = worldAt(vUv, d);
@@ -109,7 +110,8 @@ void main() {
     L += T * sigS * vis * phase * (1.0 - stepT) / max(sigT, 1e-5);
     T *= stepT;
   }
-  o = vec4(L * sunC * uSkyAtEye, 1.0);
+  // the shafts fade while a cloud is over the sun where you stand (the far haze keeps some of its light)
+  o = vec4(L * sunC * uSkyAtEye * (water ? 1.0 : 0.35 + 0.65 * cloudShade(uCamPos, uLightDir)), 1.0);
 }`;
 
 /* ---- clouds ---- */
@@ -125,7 +127,7 @@ float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * p
 float density(vec3 p, bool cheap) {
   vec2 wind = vec2(uTime * 2.2, uTime * 0.9);
   float h = (p.y - C0) / (C1 - C0);
-  float cov = texture(uNoise, (p.xz + wind) * 0.00018).a * 0.65 + texture(uNoise, (p.xz + wind * 1.3) * 0.0007).r * 0.35;
+  float cov = textureLod(uNoise, (p.xz + wind) * 0.00018, 0.0).a * 0.65 + textureLod(uNoise, (p.xz + wind * 1.3) * 0.0007, 0.0).r * 0.35;
   cov = sat((cov - (1.0 - uCover)) * 2.6);
   // fat at the bottom, thin at the top: a cumulus profile
   float prof = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.45, h);
@@ -133,7 +135,7 @@ float density(vec3 p, bool cheap) {
   if (d < 0.02) return 0.0;
   if (cheap) return d;
   vec3 q = (p + vec3(wind.x, 0.0, wind.y) * 1.2) * 0.012;
-  vec4 n = texture(uNoise3, q);
+  vec4 n = textureLod(uNoise3, q, 0.0);
   float erosion = n.r * 0.6 + n.g * 0.3 + n.b * 0.1;
   return sat(d - erosion * 0.45 * (1.0 - h * 0.3)) * 1.6;
 }
@@ -384,8 +386,8 @@ void main() {
   for (int i = 0; i < 10; i++) {
     if (r1 && r2) break;
     float q = i < 2 ? 1.0 : i < 5 ? 1.5 : i < 8 ? 2.0 : 4.0;
-    if (!r1) { u1 -= off * q; e1 = texture(uSrc, u1).a - lAvg; r1 = abs(e1) >= gScaled; }
-    if (!r2) { u2 += off * q; e2 = texture(uSrc, u2).a - lAvg; r2 = abs(e2) >= gScaled; }
+    if (!r1) { u1 -= off * q; e1 = textureLod(uSrc, u1, 0.0).a - lAvg; r1 = abs(e1) >= gScaled; }
+    if (!r2) { u2 += off * q; e2 = textureLod(uSrc, u2, 0.0).a - lAvg; r2 = abs(e2) >= gScaled; }
   }
   float d1 = horz ? vUv.x - u1.x : vUv.y - u1.y, d2 = horz ? u2.x - vUv.x : u2.y - vUv.y;
   bool closer1 = d1 < d2;

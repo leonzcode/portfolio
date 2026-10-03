@@ -1,9 +1,8 @@
 """
 Leoncraft 2 - texture build.
 
-Turns the Pixel Perfection CE resource pack (CC BY-SA 4.0, a Minecraft-style
-16x pack made from scratch by XSSheep and the community, not Mojang's art)
-into the three texture arrays the game's shaders read:
+Turns two free resource packs into the three texture arrays the game's
+shaders read:
 
   terrain_albedo.png   colour + alpha, one 16x16 layer per texture, stacked
   terrain_normal.png   RG = tangent-space normal xy, B = ambient occlusion, A = height
@@ -12,54 +11,174 @@ into the three texture arrays the game's shaders read:
 
 and manifest.json, which names every layer and says how animated ones run.
 
+Sources, in the order they are tried (both CC BY-SA 4.0, see textures/LICENSE.txt):
+  1. Pixel Perfection CE (XSSheep and contributors), Minecraft 1.16 names
+  2. Pixel Perfection Legacy (Nova_Wostra), blocks added since 1.17
+  3. a logged fallback: a similar texture from the two packs (never magenta)
+Chests, beds, shulker boxes, signs and mob heads are drawn by the game as
+boxes, so their faces are cut out of Pixel Perfection CE's entity textures
+and laid out so a box in sixteenths of a block maps 1:1 to pixels.
+Flat item icons (doors, signs, seeds, buckets...) come from Pixel Perfection
+CE's item folder. Nothing else from either pack is used.
+
+The texture names are every name js/blockdata.js uses (written by
+build_blocks.py), every name the older js/blocks.js used
+(data/legacy_names.json), the block-breaking stages and the icons.
+
 The normal, specular and emission maps are generated here from each texture
-and the kind of material it is, the way the "LabPBR" add-on packs for
-Minecraft shaders work, so stone is bumpy and dull, ores glint, metal blocks
-are metal and leaves let light through.
+and the kind of material it is (the way the "LabPBR" add-on packs work), so
+stone is bumpy and dull, ores glint, metal is metal and leaves let light through.
 
-Blocks the 1.16 pack has no texture for (deepslate, tuff, copper, cherry,
-mangrove...) are derived from its own textures by recolouring, which the
-licence allows; the results stay CC BY-SA 4.0.
-
-Run:  python tools/leoncraft2/build_textures.py <path to PixelPerfectionCE-master>
+Run:  python tools/leoncraft2/build_textures.py <PixelPerfectionCE-master> <PixelPerfectionLegacy root>
+      (the second is the folder holding assets/minecraft/textures/block)
 """
-import json, os, sys, colorsys
+import json, os, re, sys, colorsys
 import numpy as np
 from PIL import Image
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = sys.argv[1] if len(sys.argv) > 1 else 'PixelPerfectionCE-master'
-BLOCK = os.path.join(SRC, 'assets', 'minecraft', 'textures', 'block')
-OUT = os.path.join(os.path.dirname(__file__), '..', '..', 'public', 'leoncraft2', 'textures')
+PPL = sys.argv[2] if len(sys.argv) > 2 else 'PixelPerfectionLegacy'
+TEX = os.path.join(SRC, 'assets', 'minecraft', 'textures')
+BLOCK = os.path.join(TEX, 'block')
+ITEM = os.path.join(TEX, 'item')
+ENTITY = os.path.join(TEX, 'entity')
+PPL_BLOCK = os.path.join(PPL, 'assets', 'minecraft', 'textures', 'block')
+GAME = os.path.join(HERE, '..', '..', 'public', 'leoncraft2')
+OUT = os.path.join(GAME, 'textures')
 os.makedirs(OUT, exist_ok=True)
 
+COLOURS = ['white', 'light_gray', 'gray', 'black', 'brown', 'red', 'orange', 'yellow', 'lime', 'green', 'cyan',
+           'light_blue', 'blue', 'purple', 'magenta', 'pink']
 
-def load(name, frame=0):
-    """One 16x16 RGBA frame of a pack texture (float 0..1)."""
-    im = Image.open(os.path.join(BLOCK, name + '.png')).convert('RGBA')
+# Pixel Perfection CE is a 1.16 pack: a few files are under their old names
+RENAME = {'short_grass': 'grass', 'iron_chain': 'chain', 'dirt_path_side': 'grass_path_side',
+          'dirt_path_top': 'grass_path_top'}
+# textures neither pack has: the nearest thing that does exist (logged)
+FALLBACK = {'decorated_pot_side': 'terracotta', 'vault_top': 'vault_top_off', 'bamboo_fence': 'bamboo_fence_side',
+            'pitcher_crop_top_stage_3': 'pitcher_crop_head_stage_3', 'pitcher_crop_top_stage_4': 'pitcher_crop_head_stage_4',
+            'sulfur_spike_up_tip': 'sulfur_spike'}
+# Pixel Perfection Legacy draws a few blocks as one small atlas: the 16x16 piece each face uses
+CROPS = {'sniffer_egg_not_cracked_top': ('sniffer_egg_not_cracked', (0, 0, 16, 16)),
+         'sniffer_egg_not_cracked_bottom': ('sniffer_egg_not_cracked', (0, 0, 16, 16)),
+         'sniffer_egg_not_cracked_east': ('sniffer_egg_not_cracked', (0, 16, 16, 32)),
+         'sniffer_egg_not_cracked_north': ('sniffer_egg_not_cracked', (0, 16, 16, 32)),
+         'sniffer_egg_not_cracked_south': ('sniffer_egg_not_cracked', (0, 16, 16, 32)),
+         'dried_ghast_hydration_0_top': ('dried_ghast', (0, 0, 16, 16)),
+         'dried_ghast_hydration_0_bottom': ('dried_ghast', (0, 0, 16, 16)),
+         'dried_ghast_hydration_0_east': ('dried_ghast', (16, 16, 32, 32)),
+         'dried_ghast_hydration_0_south': ('dried_ghast', (16, 16, 32, 32)),
+         'dried_ghast_hydration_0_north': ('dried_ghast', (8, 10, 24, 26)),
+         'straw_bed': ('straw_bed', (16, 26, 32, 42)),
+         'shelf_mushroom_stage0': ('shelf_mushroom_stage0', (0, 0, 16, 16))}
+# kept animated (all frames); everything else uses its first frame
+ANIMATED = {'water_still', 'water_flow', 'lava_still', 'lava_flow', 'sea_lantern', 'magma', 'prismarine', 'fire_0',
+            'soul_fire_0', 'nether_portal', 'seagrass', 'kelp', 'kelp_plant', 'tall_seagrass_bottom',
+            'tall_seagrass_top', 'sculk', 'sculk_vein', 'sculk_catalyst_top', 'sculk_catalyst_side'}
+# extra random-looking copies of a texture (the world picks one per block)
+VARIANTS = {'stone': ['stone1', 'stone2', 'stone3'], 'granite': ['granite1'], 'diorite': ['diorite1'],
+            'andesite': ['andesite1'], 'dirt': ['dirt1', 'dirt2'], 'grass_block_top': ['grass_block_top1', 'grass_block_top2'],
+            'sand': ['sand1', 'sand2'], 'red_sand': ['red_sand1'], 'cobblestone': ['cobblestone1'],
+            'stone_bricks': ['stone_bricks1']}
+
+log_fallback, log_ppl, log_resized = [], [], []
+
+
+# ---------------------------------------------------------------- loading
+def to_f(im):
+    return np.asarray(im.convert('RGBA'), dtype=np.float32) / 255.0
+
+
+def norm16(im):
+    """Width 16 (nearest), height a multiple of 16."""
     w, h = im.size
-    if w != 16:  # some flow textures are 32 wide: take one 16x16 quarter
-        im = im.resize((16, int(h * 16 / w)), Image.NEAREST)
+    if w != 16:
+        nh = max(16, int(round(h * 16 / w)))
+        im = im.resize((16, nh), Image.NEAREST)
         w, h = im.size
-    n = h // 16
-    f = frame % n
-    return np.asarray(im.crop((0, f * 16, 16, f * 16 + 16)), dtype=np.float32) / 255.0
+    if h % 16:
+        im = im.resize((16, max(16, (h // 16) * 16)), Image.NEAREST)
+    return im
 
 
-def frames_of(name):
-    im = Image.open(os.path.join(BLOCK, name + '.png'))
-    w, h = im.size
-    return max(1, h // w)
+# ---------------------------------------------------------------- provenance
+# A pixel audit against the game's own files (2026-10-03) found that a few
+# textures in the packs are Mojang's pixels, copied or traced, despite the
+# packs' licence. None of them ship. They come from the other pack when its
+# version is original, from our own drawings in art/, or from an original
+# texture recoloured. Re-run the audit before adding anything from a pack.
+ART = os.path.join(HERE, 'art')
+NOT_FROM_CE = {'conduit', 'debug', 'debug2', 'jigsaw_top', 'jigsaw_side', 'jigsaw_bottom', 'jigsaw_lock', 'nether_portal',
+               'portal', 'structure_block', 'structure_block_load', 'structure_block_save', 'structure_block_corner',
+               'structure_block_data', 'tripwire', 'trip_wire', 'wither_rose'}
+NOT_FROM_PPL = {'bamboo_stage0', 'pitcher_crop_bottom', 'debug', 'trip_wire'}
+
+
+def find(name):
+    """Path of a block texture, or None: Pixel Perfection CE first, then Legacy."""
+    if name not in NOT_FROM_CE:
+        for n in (RENAME.get(name, name), name):
+            p = os.path.join(BLOCK, n + '.png')
+            if os.path.exists(p):
+                return p, 'ce'
+    p = os.path.join(PPL_BLOCK, name + '.png')
+    if os.path.exists(p) and name not in NOT_FROM_PPL:
+        return p, 'legacy'
+    return None, None
+
+
+def frames_of(path, animated):
+    """List of 16x16 float frames (one unless the texture is kept animated) and its frametime."""
+    im = Image.open(path).convert('RGBA')
+    if im.size[0] != 16:
+        log_resized.append('%s %dx%d' % (os.path.basename(path), im.size[0], im.size[1]))
+    im = norm16(im)
+    n = im.size[1] // 16
+    tiles = [to_f(im.crop((0, i * 16, 16, i * 16 + 16))) for i in range(n)]
+    meta = path + '.mcmeta'
+    ft, order, interp = 1, list(range(n)), False
+    if os.path.exists(meta):
+        try:
+            a = json.load(open(meta, encoding='utf-8')).get('animation', {})
+            ft = a.get('frametime', 1)
+            interp = bool(a.get('interpolate'))
+            fr = a.get('frames')
+            if fr:
+                order = [f if isinstance(f, int) else f.get('index', 0) for f in fr]
+                order = [i for i in order if i < n] or [0]
+        except Exception:
+            pass
+    if not animated or n == 1:
+        return [tiles[order[0] if order else 0]], None
+    return [tiles[i] for i in order], dict(frametime=ft, interpolate=interp)
+
+
+def block_tex(name):
+    if name in CROPS:
+        f, box = CROPS[name]
+        log_ppl.append(name)
+        return [to_f(Image.open(os.path.join(PPL_BLOCK, f + '.png')).convert('RGBA').crop(box))], None
+    p, src = find(name)
+    if p is None:
+        return None
+    if src == 'legacy':
+        log_ppl.append(name)
+    return frames_of(p, name in ANIMATED)
+
+
+def ent(path):
+    return Image.open(os.path.join(ENTITY, path)).convert('RGBA')
 
 
 def lum(a):
     return a[..., 0] * 0.299 + a[..., 1] * 0.587 + a[..., 2] * 0.114
 
 
-def palette_map(a, dark, light, gamma=1.0, contrast=1.0):
+def palette_map(a, dark, light, contrast=1.0):
     """Recolour by luminance onto a two-colour ramp (keeps the pack's shading)."""
     l = lum(a)
-    m = l.mean()
-    l = np.clip((l - m) * contrast + 0.5, 0, 1) ** gamma
+    m = l[a[..., 3] > 0.5].mean() if (a[..., 3] > 0.5).any() else 0.5
+    l = np.clip((l - m) * contrast + 0.5, 0, 1)
     d = np.array(dark, np.float32) / 255.0
     li = np.array(light, np.float32) / 255.0
     out = a.copy()
@@ -67,206 +186,294 @@ def palette_map(a, dark, light, gamma=1.0, contrast=1.0):
     return out
 
 
-def hue_shift(a, mask, target_rgb, keep_light=True):
-    """Recolour the masked pixels towards a hue, keeping their lightness."""
-    out = a.copy()
-    t = np.array(target_rgb, np.float32) / 255.0
-    th, ts, tv = colorsys.rgb_to_hsv(*t)
-    for y in range(16):
-        for x in range(16):
-            if not mask[y, x]:
-                continue
-            r, g, b = a[y, x, :3]
-            h, s, v = colorsys.rgb_to_hsv(r, g, b)
-            nr, ng, nb = colorsys.hsv_to_rgb(th, max(ts * 0.85, s), v if keep_light else tv)
-            out[y, x, :3] = (nr, ng, nb)
+def ramp_of(a):
+    """Dark and light colours of a texture (10th and 90th luminance percentile)."""
+    l = lum(a)
+    m = a[..., 3] > 0.5
+    px, ll = a[m][:, :3], l[m]
+    lo = px[ll <= np.percentile(ll, 15)].mean(0) * 255
+    hi = px[ll >= np.percentile(ll, 85)].mean(0) * 255
+    return tuple(lo), tuple(hi)
+
+
+def blank():
+    return np.zeros((16, 16, 4), np.float32)
+
+
+def paste(dst, img, x, y):
+    a = to_f(img)
+    h, w = a.shape[:2]
+    m = a[..., 3:4] > 0.01
+    region = dst[y:y + h, x:x + w]
+    region[:] = np.where(m, a, region)
+    return dst
+
+
+# --------------------------------------------- composed entity faces
+# Minecraft's box UV layout: a box w x h x d at (u, v) has its two big faces at
+# (u+d, v) and (u+d+w, v), and its four sides along v+d. For chests the y axis
+# points up, so the side strips are upside down in the file.
+def chest_faces(file):
+    im = ent('chest/' + file)
+    flip = lambda c: c.transpose(Image.FLIP_TOP_BOTTOM)
+    out = {}
+    lid_top = im.crop((28, 0, 42, 14))
+    base_bot = im.crop((14, 19, 28, 33))
+    top = blank(); paste(top, lid_top, 1, 1); out['top'] = top
+    bot = blank(); paste(bot, base_bot, 1, 1); out['bottom'] = bot
+    # the box is x 1..15, y 0..14: rows 2..16 of the layer; the lid (y 9..14) over the base (y 0..9)
+    for face, (lu, bu) in {'front': (42, 42), 'side': (0, 0)}.items():
+        t = blank()
+        paste(t, flip(im.crop((bu, 33, bu + 14, 43))).crop((0, 1, 14, 10)), 1, 7)
+        paste(t, flip(im.crop((lu, 14, lu + 14, 19))), 1, 2)
+        if face == 'front':   # the latch, y 7..11 at x 7..9
+            paste(t, flip(im.crop((1, 1, 3, 5))), 7, 5)
+        out[face] = t
     return out
 
 
-def ore_mask(ore, base):
-    d = np.abs(ore[..., :3] - base[..., :3]).sum(-1)
-    return d > 0.12
-
-
-# ---------------------------------------------------------------- derived art
-def deepslate():
-    s = np.rot90(load('stone'), 1).copy()
-    return palette_map(s, (38, 38, 44), (110, 110, 120), 1.0, 1.35)
-
-
-def deepslate_top():
-    return palette_map(load('stone', 0)[::-1].copy(), (40, 40, 46), (106, 106, 116), 1.0, 1.3)
-
-
-def tuff():
-    return palette_map(load('andesite'), (70, 72, 64), (138, 140, 128), 1.0, 1.1)
-
-
-def calcite():
-    return palette_map(load('diorite'), (196, 198, 194), (240, 241, 238), 1.0, 0.75)
-
-
-def copper_ore():
-    ore, st = load('iron_ore'), load('stone')
-    m = ore_mask(ore, st)
-    out = hue_shift(ore, m, (224, 128, 80))
-    # a few greenish (oxidised) pixels, the way copper ore reads
-    ys, xs = np.nonzero(m)
-    for i in range(0, len(ys), 5):
-        out[ys[i], xs[i], :3] = np.array((96, 168, 140)) / 255.0
+def bed_faces(colour):
+    """Head and foot of a bed: top (row 0 = the head end), side (x 0 = the head end), end."""
+    im = ent('bed/' + colour + '.png')
+    leg = im.crop((53, 3, 56, 6))
+    out = {}
+    for part, v in (('head', 0), ('foot', 22)):
+        top = im.crop((6, v + 6, 22, v + 22))
+        out[part + '_top'] = to_f(top)
+        # the 6-deep side strip runs along the bed: turn it so the mattress top is up
+        side = im.crop((0, v + 6, 6, v + 22)).transpose(Image.ROTATE_90)   # 16 wide, 6 tall
+        s = blank()
+        paste(s, side, 0, 7)                     # y 3..9
+        legx = 0 if part == 'head' else 13       # legs stand at the outer end of each half
+        paste(s, leg, legx, 13)
+        out[part + '_side'] = s
+        if part == 'head':
+            end = im.crop((6, 0, 22, 6)).transpose(Image.FLIP_TOP_BOTTOM)
+        else:
+            end = im.crop((22, 22, 38, 28)).transpose(Image.FLIP_TOP_BOTTOM)
+        e = blank()
+        paste(e, end, 0, 7)
+        paste(e, leg, 0, 13); paste(e, leg, 13, 13)
+        out[part + '_end'] = e
     return out
 
 
-def deep_ore(ore_name):
-    ore, st = load(ore_name), load('stone')
-    m = ore_mask(ore, st)
-    base = deepslate()
-    out = base.copy()
-    out[m] = ore[m]
+def shulker_faces(file):
+    im = ent('shulker/' + file)
+    side = blank()
+    paste(side, im.crop((16, 44 + 4, 32, 52)), 0, 12)   # the base below the lid
+    paste(side, im.crop((16, 16, 32, 28)), 0, 0)        # the lid, 12 tall
+    return {'top': to_f(im.crop((16, 0, 32, 16))), 'bottom': to_f(im.crop((32, 28, 48, 44))), 'side': side}
+
+
+def sign_faces(img):
+    """sign_<wood>: the board (y 8..16) on its post (y 0..8); wall_sign_<wood>: the board at y 4..12."""
+    board = img.crop((2, 2, 26, 14)).resize((16, 8), Image.NEAREST)
+    post = img.crop((2, 16, 4, 30)).resize((2, 8), Image.NEAREST)
+    s = blank(); paste(s, board, 0, 0); paste(s, post, 7, 8)
+    w = blank(); paste(w, board, 0, 4)
+    return s, w
+
+
+def head_faces(img, kind):
+    """The 8x8x8 head of a mob texture, placed where a head box (x 4..12, y 0..8) samples it."""
+    if kind == 'piglin':   # piglin heads are 10 wide: take the middle 8
+        r = {'top': (9, 0, 17, 8), 'front': (9, 8, 17, 16), 'side': (0, 8, 8, 16), 'back': (27, 8, 35, 16)}
+    else:
+        r = {'top': (8, 0, 16, 8), 'front': (8, 8, 16, 16), 'side': (0, 8, 8, 16), 'back': (24, 8, 32, 16)}
+    out = {}
+    for k, box in r.items():
+        t = blank()
+        paste(t, img.crop(box), 4, 4 if k == 'top' else 8)
+        out[k] = t
     return out
 
 
-def deep_copper():
-    ore, st = copper_ore(), load('stone')
-    m = ore_mask(load('iron_ore'), st)
-    out = deepslate().copy()
-    out[m] = ore[m]
-    return out
+COMPOSED = {}
 
 
-def cherry_log():
-    return palette_map(load('dark_oak_log'), (40, 22, 28), (92, 60, 66), 1.0, 1.1)
+def compose_all():
+    chests = {'chest': 'normal.png', 'trapped_chest': 'trapped.png', 'ender_chest': 'ender.png'}
+    for k, f in chests.items():
+        for face, a in chest_faces(f).items():
+            COMPOSED[k + '_' + face] = a
+    # copper chests: the wooden chest recoloured to each copper stage
+    for age in ('', 'exposed_', 'weathered_', 'oxidized_'):
+        base = block_tex(age + 'copper' if age else 'copper_block')[0][0]
+        dark, light = ramp_of(base)
+        for face in ('top', 'bottom', 'side', 'front'):
+            a = palette_map(COMPOSED['chest_' + face], dark, light, 1.2)
+            a[..., 3] = COMPOSED['chest_' + face][..., 3]
+            COMPOSED[age + 'copper_chest_' + face] = a
+    for c in COLOURS:
+        for k, a in bed_faces(c).items():
+            COMPOSED['bed_%s_%s' % (c, k)] = a
+        for k, a in shulker_faces('shulker_%s.png' % c).items():
+            COMPOSED['shulker_box_%s_%s' % (c, k)] = a
+    for k, a in shulker_faces('shulker.png').items():
+        COMPOSED['shulker_box_' + k] = a
+    # signs: the eight woods Pixel Perfection CE has; the newer woods are the oak sign recoloured to their planks
+    oak = ent('signs/oak.png')
+    for w in ('oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'crimson', 'warped', 'mangrove', 'cherry',
+              'pale_oak', 'poplar', 'bamboo'):
+        p = os.path.join(ENTITY, 'signs', w + '.png')
+        if os.path.exists(p):
+            img = Image.open(p).convert('RGBA')
+        else:
+            planks = block_tex(w + '_planks')[0][0]
+            dark, light = ramp_of(planks)
+            a = palette_map(to_f(oak), dark, light, 1.1)
+            a[..., 3] = to_f(oak)[..., 3]
+            img = Image.fromarray(np.clip(a * 255 + 0.5, 0, 255).astype(np.uint8), 'RGBA')
+            log_fallback.append('sign_%s: oak sign recoloured to %s_planks' % (w, w))
+        s, wl = sign_faces(img)
+        COMPOSED['sign_' + w], COMPOSED['wall_sign_' + w] = s, wl
+    heads = {'skeleton': 'skeleton/skeleton.png', 'wither_skeleton': 'skeleton/wither_skeleton.png',
+             'zombie': 'zombie/zombie.png', 'creeper': 'creeper/creeper.png',
+             'piglin': 'piglin/piglin.png'}
+    for k, f in heads.items():
+        for face, a in head_faces(ent(f), k).items():
+            COMPOSED['head_%s_%s' % (k, face)] = a
+    # the player head is the game's own default skin (original art), not the pack's
+    skin = Image.open(os.path.join(GAME, 'textures', 'skin', 'default.png')).convert('RGBA')
+    for face, a in head_faces(skin, 'player').items():
+        COMPOSED['head_player_' + face] = a
+    # the dragon head is a stand-in: obsidian with the dragon's purple eyes
+    ob = block_tex('obsidian')[0][0]
+    for face in ('top', 'side', 'back', 'front'):
+        t = blank(); t[4 if face == 'top' else 8:12 if face == 'top' else 16, 4:12] = ob[0:8, 0:8]
+        if face == 'front':
+            t[10:12, 5:7, :3] = (0.8, 0.3, 0.95); t[10:12, 9:11, :3] = (0.8, 0.3, 0.95)
+        COMPOSED['head_dragon_' + face] = t
+    log_fallback.append('head_dragon_*: stand-in (obsidian with purple eyes)')
+    # pointed dripstone: Legacy has no spike of its own, so its sulfur spike recoloured to dripstone
+    spike = block_tex('sulfur_spike')[0][0]
+    dark, light = ramp_of(block_tex('dripstone_block')[0][0])
+    a = palette_map(spike, dark, light, 1.2); a[..., 3] = spike[..., 3]
+    COMPOSED['pointed_dripstone_up_tip'] = a
+    log_fallback.append('pointed_dripstone_up_tip: sulfur_spike recoloured to dripstone_block')
+    # the end portal: our own star field (the pack's is a copy of the game's)
+    COMPOSED['end_portal'] = to_f(Image.open(os.path.join(ART, 'end_portal.png')).convert('RGBA'))
 
 
-def cherry_log_top():
-    return palette_map(load('dark_oak_log_top'), (80, 48, 52), (190, 140, 140), 1.0, 1.0)
+def item_tex(name):
+    """item_<x>: a flat icon. Pixel Perfection CE's item folder, else a door made from its block halves."""
+    x = name[5:]
+    p = os.path.join(ITEM, x + '.png')
+    if os.path.exists(p):
+        return [to_f(norm16(Image.open(p).convert('RGBA')).crop((0, 0, 16, 16)))]
+    if x.endswith('_door'):
+        top, bot = block_tex(x + '_top'), block_tex(x + '_bottom')
+        if top and bot:
+            t = blank()
+            t[0:8, 4:12] = top[0][0][::2, ::2]
+            t[8:16, 4:12] = bot[0][0][::2, ::2]
+            return [t]
+    return None
 
 
-def cherry_leaves():
-    a = load('oak_leaves')
-    out = palette_map(a, (200, 110, 150), (255, 196, 220), 1.0, 1.2)
-    out[..., 3] = a[..., 3]
-    return out
+# ---------------------------------------------------------------- names
+def names_from_blockdata():
+    src = open(os.path.join(GAME, 'js', 'blockdata.js'), encoding='utf-8').read()
+    body = src.split('export const DATA = [', 1)[1].rsplit('];', 1)[0]
+    data = json.loads('[' + body + ']')
+    out = {}
+    def add(n, d, role):
+        if isinstance(n, str) and n:
+            out.setdefault(n, (d, role))
+    for d in data:
+        t = d.get('tex')
+        if isinstance(t, dict):
+            for k, v in t.items():
+                add(v, d, k)
+        else:
+            add(t, d, 'all')
+        for k in ('texUpper', 'texLit', 'texFlow', 'texLine', 'texFire', 'texBase', 'texLever', 'plant', 'candle',
+                  'content'):
+            add(d.get(k), d, k)
+        add(d.get('icon'), d, 'icon')
+    return data, out
 
 
-def cherry_planks():
-    return palette_map(load('birch_planks'), (170, 110, 110), (232, 190, 180), 1.0, 1.1)
+DATA, USED = names_from_blockdata()
+LEGACY = json.load(open(os.path.join(HERE, 'data', 'legacy_names.json'), encoding='utf-8'))
 
 
-def mangrove_log():
-    return palette_map(load('jungle_log'), (60, 30, 22), (124, 70, 52), 1.0, 1.1)
+# ---------------------------------------------------------------- materials
+def cls_of(name):
+    """Material class for the generated normal and specular maps, by name (and the block using it)."""
+    n = name
+    d, role = USED.get(n, (None, None))
+    shape = d['shape'] if d else None
+    if n.startswith('item_') or n.startswith('destroy_stage'):
+        return 'item'
+    if n in ('water_still', 'water_flow'):
+        return 'water'
+    if n.startswith('lava'):
+        return 'lava'
+    if n == 'magma':
+        return 'magma'
+    if n == 'jack_o_lantern':
+        return 'pumpkin_lit'
+    if re.search(r'(^fire_|soul_fire|campfire_fire|nether_portal|end_portal$|glowstone|sea_lantern|froglight|shroomlight|'
+                 r'redstone_lamp_on|copper_bulb_lit|respawn_anchor_top$|beacon|end_rod|_lit$|lit_log|log_lit)', n):
+        return 'emissive'
+    if re.search(r'torch', n) and 'torchflower' not in n:
+        return 'torch'
+    if re.search(r'lantern', n):
+        return 'lantern'
+    if re.search(r'(_ore$|ancient_debris|gilded_blackstone)', n):
+        return 'ore'
+    if re.search(r'(^iron_|^gold_block|copper|netherite_block|^chain$|iron_chain|anvil|rail|hopper|cauldron|heavy_core|'
+                 r'lightning_rod|^bell_|smithing_table|lodestone)', n) and 'raw_' not in n and 'ore' not in n:
+        return 'metal'
+    if re.search(r'(diamond_block|emerald_block|lapis_block|amethyst|redstone_block|_bud$|crying_obsidian_x)', n):
+        return 'gem'
+    if re.search(r'(glass|^ice$|honey_block|slime_block)', n):
+        return 'glass' if 'glass' in n else 'ice'
+    if re.search(r'(packed_ice|blue_ice|frosted_ice)', n):
+        return 'ice'
+    if re.search(r'(^snow$|powder_snow|grass_block_snow)', n):
+        return 'snow'
+    if re.search(r'(obsidian)', n):
+        return 'glassy'
+    if re.search(r'(_leaves|azalea_top|azalea_side|^vine$|_vines|hanging_moss|hanging_roots|leaf_litter)', n):
+        return 'leaves'
+    if shape in ('cross', 'crop', 'pad') or role in ('texUpper', 'plant') or re.search(
+            r'(sapling|_tulip|^poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily|_rose$|^rose_bush|peony|lilac|'
+            r'sunflower|fern|short_grass|tall_grass|dead_bush|_coral$|_coral_fan|seagrass|^kelp|sugar_cane|_stage\d|'
+            r'_stem$|fungus|_roots$|sprouts|mushroom$|petals|wildflowers|dripleaf|spore_blossom|eyeblossom|propagule|'
+            r'bush|_shrub|cobweb|glow_lichen|sculk_vein|lily_pad|cactus_flower|pitcher|torchflower)', n):
+        return 'plant'
+    if re.search(r'(_wool$|^bed_|carpet)', n):
+        return 'cloth'
+    if re.search(r'(^sand|red_sand|suspicious_sand|concrete_powder|soul_sand)', n):
+        return 'sand'
+    if re.search(r'(gravel)', n):
+        return 'gravel'
+    if re.search(r'(grass_block_top|grass_block_side_overlay|moss_block|pale_moss|moss_carpet|nylium$|_nylium_top)', n):
+        return 'grass_top'
+    if re.search(r'(^mud$|^clay$|muddy|sculk)', n):
+        return 'soil_wet'
+    if re.search(r'(dirt|podzol|mycelium|farmland|grass_block_side|soul_soil|packed_mud|grass_path|dirt_path|nylium)', n):
+        return 'soil'
+    if re.search(r'(_log$|_stem$|_hyphae$|^mushroom_stem|_log\d$|bamboo_block$)', n) and 'stripped' not in n:
+        return 'bark'
+    if re.search(r'(planks|_log_top|stripped|bookshelf|crafting_table|barrel|composter|ladder|_door_|_trapdoor$|^chest_|'
+                 r'trapped_chest|_sign|lectern|loom|beehive|bee_nest|note_block|jukebox|scaffolding|cartography|'
+                 r'fletching|_shelf$|bamboo|campfire_log$|mosaic|^lever$|tripwire_hook)', n):
+        return 'wood'
+    if re.search(r'(bricks|tiles|brick$)', n):
+        return 'brick'
+    if re.search(r'(pumpkin|melon|hay_block|cactus|dried_kelp|sponge|wart_block|honeycomb|mushroom_block|target|'
+                 r'cake|chorus|turtle_egg|sniffer_egg|dried_ghast|creaking_heart|resin)', n):
+        return 'plant_solid'
+    if re.search(r'(smooth|polished|terracotta|concrete|quartz|sandstone|purpur|calcite|chiseled|cut_|shulker|'
+                 r'head_|decorated_pot|wall_sign|flower_pot)', n):
+        return 'stone_smooth'
+    return 'stone'
 
 
-def mangrove_log_top():
-    return palette_map(load('jungle_log_top'), (90, 40, 34), (160, 80, 64), 1.0, 1.0)
-
-
-def mangrove_planks():
-    return palette_map(load('acacia_planks'), (100, 40, 36), (170, 80, 66), 1.0, 1.0)
-
-
-def moss_block():
-    return palette_map(load('grass_block_top'), (70, 96, 34), (120, 150, 56), 1.0, 1.2)
-
-
-def mud():
-    return palette_map(load('dirt'), (40, 36, 38), (78, 72, 74), 1.0, 1.0)
-
-
-def packed_mud():
-    return palette_map(load('dirt'), (120, 88, 66), (160, 122, 92), 1.0, 0.9)
-
-
-def powder_snow():
-    return palette_map(load('snow'), (226, 236, 244), (250, 252, 255), 1.0, 0.7)
-
-
-def smooth_basalt():
-    return palette_map(load('stone'), (52, 50, 54), (84, 82, 86), 1.0, 0.8)
-
-
-DERIVED = {
-    'deepslate': deepslate, 'deepslate_top': deepslate_top, 'tuff': tuff, 'calcite': calcite,
-    'copper_ore': copper_ore, 'deepslate_copper_ore': deep_copper,
-    'deepslate_coal_ore': lambda: deep_ore('coal_ore'), 'deepslate_iron_ore': lambda: deep_ore('iron_ore'),
-    'deepslate_gold_ore': lambda: deep_ore('gold_ore'), 'deepslate_redstone_ore': lambda: deep_ore('redstone_ore'),
-    'deepslate_lapis_ore': lambda: deep_ore('lapis_ore'), 'deepslate_diamond_ore': lambda: deep_ore('diamond_ore'),
-    'deepslate_emerald_ore': lambda: deep_ore('emerald_ore'),
-    'cherry_log': cherry_log, 'cherry_log_top': cherry_log_top, 'cherry_leaves': cherry_leaves, 'cherry_planks': cherry_planks,
-    'mangrove_log': mangrove_log, 'mangrove_log_top': mangrove_log_top, 'mangrove_planks': mangrove_planks,
-    'moss_block': moss_block, 'mud': mud, 'packed_mud': packed_mud, 'powder_snow': powder_snow, 'smooth_basalt': smooth_basalt,
-}
-
-# ------------------------------------------------------------------ the list
-# name -> (source or None for derived, material class, variants, frames)
-# Classes drive the generated PBR maps (see MAT below).
-T = []
-def add(name, cls, src=None, variants=(), anim=None):
-    T.append(dict(name=name, cls=cls, src=src or name, variants=list(variants), anim=anim))
-
-# terrain
-add('stone', 'stone', variants=['stone1', 'stone2', 'stone3'])
-add('deepslate', 'stone'); add('deepslate_top', 'stone')
-add('granite', 'stone', variants=['granite1']); add('diorite', 'stone', variants=['diorite1']); add('andesite', 'stone', variants=['andesite1'])
-add('tuff', 'stone'); add('calcite', 'stone_smooth'); add('smooth_basalt', 'stone_smooth')
-add('bedrock', 'stone'); add('obsidian', 'glassy')
-add('dirt', 'soil', variants=['dirt1', 'dirt2']); add('coarse_dirt', 'soil')
-add('grass_block_top', 'grass_top', variants=['grass_block_top1', 'grass_block_top2'])
-add('grass_block_side', 'soil'); add('grass_block_side_overlay', 'grass_top'); add('grass_block_snow', 'snow')
-add('podzol_top', 'soil'); add('podzol_side', 'soil'); add('mycelium_top', 'soil'); add('mycelium_side', 'soil')
-add('moss_block', 'grass_top'); add('mud', 'soil_wet'); add('packed_mud', 'soil')
-add('sand', 'sand', variants=['sand1', 'sand2']); add('red_sand', 'sand', variants=['red_sand1'])
-add('sandstone', 'stone_smooth'); add('sandstone_top', 'stone_smooth'); add('sandstone_bottom', 'stone_smooth')
-add('red_sandstone', 'stone_smooth'); add('red_sandstone_top', 'stone_smooth'); add('red_sandstone_bottom', 'stone_smooth')
-add('gravel', 'gravel'); add('clay', 'soil_wet')
-for c in ['terracotta', 'white_terracotta', 'orange_terracotta', 'yellow_terracotta', 'brown_terracotta', 'red_terracotta', 'light_gray_terracotta']:
-    add(c, 'stone_smooth')
-add('snow', 'snow'); add('powder_snow', 'snow'); add('ice', 'ice'); add('packed_ice', 'ice'); add('blue_ice', 'ice')
-# ores
-for o in ['coal', 'iron', 'copper', 'gold', 'redstone', 'lapis', 'diamond', 'emerald']:
-    add(o + '_ore', 'ore'); add('deepslate_' + o + '_ore', 'ore')
-# wood
-for w in ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'cherry', 'mangrove']:
-    add(w + '_log', 'bark'); add(w + '_log_top', 'wood'); add(w + '_planks', 'wood')
-for w in ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'cherry']:
-    add(w + '_leaves', 'leaves')
-add('mangrove_leaves', 'leaves', src='jungle_leaves')
-# plants
-add('short_grass', 'plant', src='grass'); add('fern', 'plant')
-add('tall_grass_bottom', 'plant'); add('tall_grass_top', 'plant')
-add('large_fern_bottom', 'plant'); add('large_fern_top', 'plant')
-for f in ['dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet', 'red_tulip', 'orange_tulip', 'white_tulip',
-          'pink_tulip', 'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'dead_bush', 'brown_mushroom', 'red_mushroom',
-          'sugar_cane', 'sweet_berry_bush_stage3', 'oak_sapling', 'vine', 'lily_pad']:
-    add(f, 'plant')
-for f in ['sunflower_bottom', 'sunflower_front', 'sunflower_top', 'lilac_bottom', 'lilac_top', 'rose_bush_bottom',
-          'rose_bush_top', 'peony_bottom', 'peony_top']:
-    add(f, 'plant')
-add('cactus_side', 'plant_solid'); add('cactus_top', 'plant_solid'); add('cactus_bottom', 'plant_solid')
-add('seagrass', 'plant', anim=dict(frametime=2, frames=1))
-add('tall_seagrass_bottom', 'plant'); add('tall_seagrass_top', 'plant')
-add('kelp', 'plant'); add('kelp_plant', 'plant')
-add('pumpkin_side', 'plant_solid'); add('pumpkin_top', 'plant_solid'); add('melon_side', 'plant_solid'); add('melon_top', 'plant_solid')
-# building blocks
-add('cobblestone', 'stone', variants=['cobblestone1']); add('mossy_cobblestone', 'stone')
-add('stone_bricks', 'stone', variants=['stone_bricks1']); add('mossy_stone_bricks', 'stone'); add('cracked_stone_bricks', 'stone')
-add('bricks', 'brick'); add('smooth_stone', 'stone_smooth')
-add('glass', 'glass'); add('white_stained_glass', 'glass'); add('blue_stained_glass', 'glass'); add('red_stained_glass', 'glass')
-add('glowstone', 'emissive'); add('sea_lantern', 'emissive', anim=dict(frametime=5)); add('jack_o_lantern', 'pumpkin_lit')
-add('torch', 'torch'); add('lantern', 'lantern', anim=dict(frametime=8))
-add('bookshelf', 'wood'); add('crafting_table_top', 'wood'); add('crafting_table_side', 'wood'); add('crafting_table_front', 'wood')
-add('iron_block', 'metal'); add('gold_block', 'metal'); add('diamond_block', 'gem'); add('emerald_block', 'gem')
-add('quartz_block_side', 'stone_smooth'); add('quartz_block_top', 'stone_smooth')
-for c in ['white', 'red', 'blue', 'yellow', 'green', 'black']:
-    add(c + '_wool', 'cloth')
-add('hay_block_side', 'plant_solid'); add('hay_block_top', 'plant_solid')
-add('magma', 'magma', anim=dict(frametime=8))
-# fluids (the shaders draw most of the look; the texture adds a little detail)
-add('water_still', 'water', anim=dict(frametime=2))
-add('lava_still', 'lava', anim=dict(frametime=3))
-
-# ------------------------------------------------------------ material maps
-# per class: normal strength, smoothness (base, from-luminance), F0 byte, SSS, emission rule
 MAT = {
     'stone':        dict(n=2.4, s=(0.10, 0.18), f0=10, sss=0.0),
     'stone_smooth': dict(n=1.2, s=(0.25, 0.15), f0=10, sss=0.0),
@@ -296,40 +503,47 @@ MAT = {
     'magma':        dict(n=2.0, s=(0.30, 0.20), f0=10, sss=0.0),
     'water':        dict(n=0.6, s=(0.95, 0.0), f0=5, sss=0.0),
     'lava':         dict(n=1.0, s=(0.40, 0.10), f0=10, sss=0.0),
+    'item':         dict(n=0.0, s=(0.20, 0.0), f0=9, sss=0.0),
 }
+
+ORE_BASE = {}
+
+
+def ore_base(name):
+    b = 'deepslate' if name.startswith('deepslate_') else 'netherrack' if name.startswith('nether_') else 'stone'
+    if b not in ORE_BASE:
+        ORE_BASE[b] = block_tex(b)[0][0]
+    return ORE_BASE[b]
 
 
 def gen_maps(a, name, cls):
     m = MAT[cls]
     l = lum(a)
     alpha = a[..., 3]
-    # height: brightness, with the mortar and the cracks (darker) lower
     h = l.copy()
-    if cls in ('brick',):
+    if cls == 'brick':
         h = np.where(l < l.mean() * 0.85, 0.15, 0.85) * 0.6 + l * 0.4
-    if cls in ('bark',):
+    if cls == 'bark':
         h = l ** 0.8
     hmin, hmax = h.min(), h.max()
     h = (h - hmin) / max(1e-4, hmax - hmin)
-    # normals from the height (wrapping: every tile tiles)
     dx = np.roll(h, -1, 1) - np.roll(h, 1, 1)
     dy = np.roll(h, -1, 0) - np.roll(h, 1, 0)
     s = m['n']
     nx, ny, nz = -dx * s, -dy * s, np.ones_like(h) * 2.0
     ln = np.sqrt(nx * nx + ny * ny + nz * nz)
     nx, ny = nx / ln, ny / ln
-    # occlusion: the low spots a little darker
     ao = np.clip(0.55 + 0.45 * h + 0.15, 0, 1)
+    if cls == 'item':
+        h = np.full_like(h, 0.5); ao = np.ones_like(h)
     normal = np.stack([nx * 0.5 + 0.5, ny * 0.5 + 0.5, ao, h], -1)
-    # specular
     base, var = m['s']
     smooth = np.clip(base + (l - l.mean()) * var * 2.0, 0, 1)
     f0 = np.full_like(l, m['f0'] / 255.0)
     sss = np.full_like(l, m['sss'])
     emit = np.zeros_like(l)
     if cls == 'ore':
-        st = load('stone') if not name.startswith('deepslate') else DERIVED['deepslate']()
-        mask = ore_mask(a, st)
+        mask = np.abs(a[..., :3] - ore_base(name)[..., :3]).sum(-1) > 0.12
         smooth = np.where(mask, 0.82, smooth)
         f0 = np.where(mask, 60 / 255.0, f0)
         if 'redstone' in name:
@@ -341,66 +555,197 @@ def gen_maps(a, name, cls):
         emit = np.where((hsv[..., 1] > 0.5) & (hsv[..., 2] > 0.7) & (hsv[..., 0] < 0.18), 0.9, 0)
     if cls == 'torch':
         emit = np.where((a[..., 0] > 0.6) & (a[..., 0] > a[..., 1] * 1.25) & (a[..., 3] > 0.5), 1.0, 0)
+        if 'soul' in name:
+            emit = np.where((a[..., 2] > 0.6) & (a[..., 3] > 0.5) & (a[..., 2] > a[..., 0]), 1.0, emit)
     if cls == 'lantern':
         emit = np.where((a[..., 0] > 0.75) & (a[..., 1] > 0.55), 1.0, 0)
+        if 'soul' in name:
+            emit = np.where((a[..., 2] > 0.7) & (a[..., 1] > 0.6), 1.0, emit)
         f0 = np.where(emit > 0, 10 / 255.0, f0)
     if cls == 'magma':
         emit = np.clip((a[..., 0] - a[..., 2] - 0.35) * 2.2, 0, 1)
     if cls == 'lava':
         emit = np.clip(l * 1.4, 0.6, 1.0)
-    if cls == 'leaves' or cls == 'plant':
+    if cls in ('leaves', 'plant'):
         smooth = np.where(alpha < 0.5, 0, smooth)
     spec = np.stack([smooth, f0, sss, emit], -1)
     return normal, spec
 
 
 # ------------------------------------------------------------------ assemble
+compose_all()
+
+names = []
+for n in list(LEGACY) + sorted(USED) + ['destroy_stage_%d' % i for i in range(10)]:
+    if n not in names:
+        names.append(n)
+
+
+def similar(name):
+    """A stand-in for a texture neither pack has: strip suffixes until something exists."""
+    cands = []
+    if name in FALLBACK:
+        cands.append(FALLBACK[name])
+    n = name
+    for pat, rep in [(r'_lit$', ''), (r'_on$', ''), (r'_top$', ''), (r'_side$', ''), (r'_bottom$', ''),
+                     (r'_front$', ''), (r'_end$', ''), (r'_up_tip$', ''), (r'_stage_?\d+$', ''), (r'\d+$', '')]:
+        n2 = re.sub(pat, rep, n)
+        if n2 != n:
+            cands.append(n2)
+            n = n2
+    cands += [name + '_side', name + '_top', name.replace('waxed_', ''), re.sub(r'^(exposed|weathered|oxidized)_', '', name)]
+    for c in cands:
+        if c in COMPOSED:
+            return c, [COMPOSED[c]], None
+        r = block_tex(c)
+        if r:
+            return c, r[0], r[1]
+    return None, None, None
+
+
 layers_a, layers_n, layers_s = [], [], []
 manifest = {}
 
+
 def push(name, arr, cls):
     n, s = gen_maps(arr, name, cls)
-    idx = len(layers_a)
     layers_a.append(arr); layers_n.append(n); layers_s.append(s)
-    return idx
+    return len(layers_a) - 1
 
-for t in T:
-    name, cls = t['name'], t['cls']
-    if name in DERIVED:
-        arr = DERIVED[name]()
-        manifest[name] = dict(layer=push(name, arr, cls))
-        continue
-    src = t['src']
-    anim = t['anim']
-    if anim and anim.get('frames', 0) != 1:
-        nf = frames_of(src)
-        first = None
-        for f in range(nf):
-            i = push(name, load(src, f), cls)
-            first = i if first is None else first
-        manifest[name] = dict(layer=first, frames=nf, frametime=anim.get('frametime', 2))
+
+def recoloured(src, ramp=None, dark=None, light=None, contrast=1.1):
+    a = block_tex(src)[0][0]
+    if ramp:
+        dark, light = ramp_of(block_tex(ramp)[0][0])
+    out = palette_map(a, dark, light, contrast)
+    out[..., 3] = a[..., 3]
+    return [out]
+
+
+def art(f):
+    return [to_f(Image.open(os.path.join(ART, f)).convert('RGBA'))]
+
+
+def ppl(name, animated=False):
+    return frames_of(os.path.join(PPL_BLOCK, name + '.png'), animated)
+
+
+# glazed terracottas whose design traced the game's: each takes one of the pack's own designs, in its colour
+GLAZED = {'green': 'white', 'light_blue': 'magenta', 'purple': 'orange', 'red': 'black', 'yellow': 'light_gray',
+          'lime': 'cyan', 'pink': 'gray'}
+REPLACE = {
+    'tripwire': lambda: (art('tripwire.png'), None),
+    'nether_portal': lambda: ppl('nether_portal', True),
+    'wither_rose': lambda: ppl('wither_rose'),
+    'conduit': lambda: (recoloured('prismarine_bricks', dark=(70, 52, 30), light=(200, 170, 120)), None),
+    'bamboo_stage0': lambda: (recoloured('sugar_cane', dark=(50, 92, 22), light=(150, 190, 70)), None),
+    'bamboo_stalk': lambda: (recoloured('sugar_cane', dark=(60, 100, 24), light=(170, 200, 80)), None),
+    'honey_block_top': lambda: (recoloured('slime_block', dark=(190, 110, 20), light=(252, 196, 70)), None),
+    'honey_block_side': lambda: (recoloured('slime_block', dark=(180, 104, 18), light=(246, 186, 60)), None),
+    'honey_block_bottom': lambda: (recoloured('slime_block', dark=(170, 98, 16), light=(240, 176, 52)), None),
+    'loom_side': lambda: (block_tex('spruce_planks')[0], None),
+    'loom_bottom': lambda: (block_tex('oak_planks')[0], None),
+    'grindstone_side': lambda: (block_tex('smooth_stone')[0], None),
+    'grindstone_pivot': lambda: (block_tex('spruce_planks')[0], None),
+    'lectern_sides': lambda: (block_tex('oak_planks')[0], None),
+    'cherry_log_top': lambda: (recoloured('oak_log_top', ramp='cherry_log'), None),
+    'bee_nest_top': lambda: (recoloured('hay_block_top', dark=(150, 96, 30), light=(236, 196, 92)), None),
+    'bee_nest_side': lambda: (recoloured('hay_block_side', dark=(150, 96, 30), light=(236, 196, 92)), None),
+    'bee_nest_front': lambda: (recoloured('hay_block_side', dark=(120, 74, 24), light=(226, 184, 84)), None),
+    'beehive_front': lambda: (block_tex('beehive_side')[0], None),
+    'bell_bottom': lambda: (block_tex('gold_block')[0], None),
+    'smithing_table_front': lambda: (recoloured('dark_oak_planks', dark=(30, 30, 36), light=(110, 96, 90)), None),
+    'smithing_table_side': lambda: (recoloured('dark_oak_planks', dark=(34, 32, 36), light=(116, 100, 92)), None),
+    'chiseled_bookshelf_empty': lambda: (block_tex('chiseled_bookshelf_side')[0], None),
+    'tnt_bottom': lambda: (block_tex('tnt_top')[0], None),
+}
+for c, design in GLAZED.items():
+    REPLACE[c + '_glazed_terracotta'] = (lambda c=c, design=design:
+        (recoloured(design + '_glazed_terracotta', ramp=c + '_concrete', contrast=1.25), None))
+for n in ('jigsaw_top', 'jigsaw_side', 'jigsaw_bottom', 'jigsaw_lock', 'structure_block', 'structure_block_load',
+          'structure_block_save', 'structure_block_corner', 'structure_block_data'):
+    REPLACE[n] = lambda: (art('tech_block.png'), None)
+# the dried ghast was partly copied: the soul soil it is found on stands in
+for f in ('top', 'bottom', 'north', 'south', 'east', 'west'):
+    REPLACE['dried_ghast_hydration_0_' + f] = lambda: (recoloured('soul_soil', dark=(56, 50, 48), light=(150, 140, 132)), None)
+
+missing = []
+for name in names:
+    cls = cls_of(name)
+    frames, anim = None, None
+    if name in REPLACE:
+        frames, anim = REPLACE[name]()
+        log_fallback.append('%s: audited copy, replaced' % name)
+    elif name in COMPOSED:
+        frames = [COMPOSED[name]]
+    elif name.startswith('item_'):
+        frames = item_tex(name)
+        if frames is None:
+            # no icon in the pack: the block's own texture stands in
+            base = name[5:]
+            sub, fr, _ = similar(base)
+            if fr:
+                frames = [fr[0]]
+                log_fallback.append('%s: no item sprite, uses %s' % (name, sub))
     else:
-        manifest[name] = dict(layer=push(name, load(src, 0), cls))
-    if t['variants']:
-        manifest[name]['variants'] = [push(v, load(v, 0), cls) for v in t['variants']]
+        r = block_tex(name)
+        if r:
+            frames, anim = r
+        else:
+            sub, fr, an = similar(name)
+            if fr:
+                frames, anim = fr, an
+                log_fallback.append('%s: missing, uses %s' % (name, sub))
+    if frames is None:
+        missing.append(name)
+        frames = [block_tex('stone')[0][0]]
+        log_fallback.append('%s: NOTHING found, uses stone' % name)
+    first = None
+    for f in frames:
+        i = push(name, f, cls)
+        first = i if first is None else first
+    e = dict(layer=first)
+    if len(frames) > 1:
+        e['frames'] = len(frames)
+        e['frametime'] = anim['frametime'] if anim else 2
+        if anim and anim.get('interpolate'):
+            e['interpolate'] = True
+    if name in VARIANTS:
+        e['variants'] = []
+        for v in VARIANTS[name]:
+            p, _ = find(v)
+            if p:
+                e['variants'].append(push(v, frames_of(p, False)[0][0], cls))
+    manifest[name] = e
 
 N = len(layers_a)
-print('layers:', N)
-assert N <= 256, 'too many layers for a guaranteed WebGL2 texture array'
+
 
 def save(layers, fname):
     strip = np.concatenate(layers, 0)
     img = Image.fromarray(np.clip(strip * 255 + 0.5, 0, 255).astype(np.uint8), 'RGBA')
     img.save(os.path.join(OUT, fname), optimize=True)
 
+
 save(layers_a, 'terrain_albedo.png')
 save(layers_n, 'terrain_normal.png')
 save(layers_s, 'terrain_spec.png')
 
-# the colour maps for grass and foliage, and the sun and the moon
-for f, sub in [('grass.png', 'colormap'), ('foliage.png', 'colormap'), ('sun.png', 'environment'), ('moon_phases.png', 'environment')]:
-    Image.open(os.path.join(SRC, 'assets', 'minecraft', 'textures', sub, f)).convert('RGBA').save(os.path.join(OUT, sub + '_' + f))
+for f, sub in [('foliage.png', 'colormap'), ('sun.png', 'environment'), ('moon_phases.png', 'environment')]:
+    Image.open(os.path.join(TEX, sub, f)).convert('RGBA').save(os.path.join(OUT, sub + '_' + f))
+# the grass colour map is our own (the pack's shares too many pixels with the game's)
+Image.open(os.path.join(ART, 'colormap_grass.png')).convert('RGBA').save(os.path.join(OUT, 'colormap_grass.png'))
 
-with open(os.path.join(OUT, 'manifest.json'), 'w') as fh:
+with open(os.path.join(OUT, 'manifest.json'), 'w', encoding='utf-8') as fh:
     json.dump(dict(size=16, layers=N, textures=manifest), fh, separators=(',', ':'))
-print('wrote', OUT)
+
+print('textures:', len(manifest), 'layers:', N, '(the game checks MAX_ARRAY_TEXTURE_LAYERS)')
+print('from Pixel Perfection Legacy:', len(set(log_ppl)))
+print('downscaled (%d):' % len(log_resized), ', '.join(log_resized))
+print('fallbacks (%d):' % len(log_fallback))
+for l in log_fallback:
+    print('  ', l)
+if missing:
+    print('MISSING:', missing)
+for f in ('terrain_albedo.png', 'terrain_normal.png', 'terrain_spec.png', 'manifest.json'):
+    print(f, os.path.getsize(os.path.join(OUT, f)), 'bytes')

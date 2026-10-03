@@ -15,7 +15,11 @@
      light   block light it gives off (0-15)
      opacity how much sky light it takes away (15 = all, leaves and water 1)
 --------------------------------------------------------------------------- */
+import { DATA } from './blockdata.js?v=2';
+import { MODEL_SHAPES } from './models.js?v=2';
+
 export const AIR = 0;
+export const MAX_ID = 4096;   // block ids are 16-bit in the world; this many fit the lookup tables
 
 const LIST = [];
 export const B = {};          // name -> id
@@ -135,16 +139,49 @@ def('magma_block', { tex: 'magma', light: 3 });
 def('water', { shape: 'fluid', pass: 'fluid', solid: false, opacity: 1, replaceable: true, fluid: 'water', tint: 'water', tex: 'water_still' });
 def('lava', { shape: 'fluid', pass: 'fluid', solid: false, opacity: 15, light: 15, replaceable: true, fluid: 'lava', tex: 'lava_still' });
 
+/* ------------------------------------------------- every other block
+   The rest of the game's blocks come from a generated list (built from the
+   MIT minecraft-data tables by tools/leoncraft2/build_blocks.py). A block
+   already made by hand above keeps its look and only takes the facts it is
+   missing: its name on screen, creative tab, hardness, stack size. */
+const TAKE = ['display', 'tab', 'order', 'item', 'stack', 'hardness', 'orient', 'icon', 'iconMeta', 'falls'];
+for (const e of DATA) {
+  const have = B[e.name];
+  if (have !== undefined) {
+    const d = BLOCKS[have];
+    for (const k of TAKE) if (e[k] !== undefined && d[k] === undefined) d[k] = e[k];
+    continue;
+  }
+  const o = Object.assign({}, e);
+  delete o.name;
+  const model = MODEL_SHAPES.has(o.shape) || o.shape === 'cross' || o.shape === 'torch' || o.shape === 'none';
+  if (o.opacity === undefined) o.opacity = o.shape === 'cube' && (o.pass || 'opaque') === 'opaque' ? 15 : o.leaves ? 1 : 0;
+  // a shaped block lets light through, or its own top would sit in the dark
+  if (model && o.shape !== 'cube') o.opacity = Math.min(o.opacity, o.leaves ? 1 : 0);
+  if (o.shape === 'none') { o.solid = false; o.pass = 'none'; if (!o.tex) o.tex = null; }
+  def(e.name, o);
+}
+for (const d of BLOCKS) {
+  if (!d) continue;
+  if (d.display === undefined) d.display = d.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  if (d.item === undefined) d.item = d.shape !== 'fluid' && d.shape !== 'none' && !d.lower;
+  if (d.stack === undefined) d.stack = 64;
+  if (d.hardness === undefined) d.hardness = d.shape === 'cross' ? 0 : 1;
+  if (d.log && !d.orient) d.orient = 'axis';
+  if ((d.shape === 'door' || d.shape === 'trapdoor' || d.shape === 'pane' || d.shape === 'ladder' || d.shape === 'rail'
+    || d.shape === 'wire' || d.shape === 'crop' || d.shape === 'vine' || d.shape === 'wall_torch') && d.pass === 'opaque') d.pass = 'cutout';
+}
+
 export const COUNT = LIST.length + 1;
 
 /* Flat lookup tables, which is what the hot loops in the mesher and the
    lighting want rather than objects. */
-export const OPAQUE = new Uint8Array(256);     // a full cube nothing can be seen through
-export const SOLID = new Uint8Array(256);      // you collide with it
-export const OPACITY = new Uint8Array(256);    // sky light it takes away
-export const EMIT = new Uint8Array(256);       // block light it gives off
-export const FLUID = new Uint8Array(256);      // 1 water, 2 lava
-export const PLANT = new Uint8Array(256);      // not a cube: drawn without occluding anything
+export const OPAQUE = new Uint8Array(MAX_ID);     // a full cube nothing can be seen through
+export const SOLID = new Uint8Array(MAX_ID);      // you collide with it
+export const OPACITY = new Uint8Array(MAX_ID);    // sky light it takes away
+export const EMIT = new Uint8Array(MAX_ID);       // block light it gives off
+export const FLUID = new Uint8Array(MAX_ID);      // 1 water, 2 lava
+export const PLANT = new Uint8Array(MAX_ID);      // not a cube: drawn without occluding anything
 for (const d of BLOCKS) {
   if (!d) continue;
   OPAQUE[d.id] = d.shape === 'cube' && d.pass === 'opaque' ? 1 : 0;
@@ -157,22 +194,41 @@ for (const d of BLOCKS) {
 
 /* Which texture layer each face of each block uses, once the manifest is in.
    faces: 0 +x, 1 -x, 2 +y (top), 3 -y (bottom), 4 +z, 5 -z. */
+// extra single textures some blocks carry, and the name the models look them up by
+const EXTRA = { plant: 'plant', texLine: 'line', texLit: 'lit', texFlow: 'flow', texFire: 'fire', texBase: 'base', texLever: 'lever', candle: 'candle', content: 'content' };
 export function resolveTextures(manifest) {
   const T = manifest.textures;
-  const layer = n => (T[n] ? T[n].layer : (console.warn('no texture', n), 0));
+  const missing = [];
+  const layer = n => (T[n] ? T[n].layer : (missing.push(n), 0));
   const variantsOf = n => (T[n] && T[n].variants ? [T[n].layer, ...T[n].variants] : null);
+  // a texture set: one name for every face, or names by role (top, bottom, side, end, front...)
+  const facesOf = tex => {
+    if (!tex) return { t: {}, f: [0, 0, 0, 0, 0, 0] };            // invisible blocks (barrier, light, air)
+    const t = typeof tex === 'string' ? { all: tex } : tex;
+    const side = t.side || t.all || t.top || t.end;
+    const top = t.top || t.end || t.all || side, bottom = t.bottom || t.end || t.top || t.all || side;
+    return { t, f: [layer(side), layer(side), layer(top), layer(bottom), layer(side), layer(side)] };
+  };
   for (const d of BLOCKS) {
     if (!d || d.id === 0) continue;
-    const t = typeof d.tex === 'string' ? { top: d.tex, bottom: d.tex, side: d.tex } : d.tex;
-    d.faces = [layer(t.side), layer(t.side), layer(t.top), layer(t.bottom), layer(t.side), layer(t.side)];
+    const { t, f } = facesOf(d.tex);
+    d.faces = f;
+    d.L = {};
+    for (const k in t) d.L[k] = layer(t[k]);
+    for (const k in EXTRA) if (typeof d[k] === 'string') d.L[EXTRA[k]] = layer(d[k]);
+    if (d.texUpper) d.facesUpper = facesOf(d.texUpper).f;
+    if (d.shape === 'rail' && T[d.name + '_corner']) d.L.corner = T[d.name + '_corner'].layer;
+    if (d.icon) d.iconLayer = layer(d.icon);
+    if (t.back) d.back = layer(t.back);
     if (t.front) d.front = layer(t.front);
     if (t.overlay) d.overlay = layer(t.overlay);
     if (d.snowySide) d.snowy = layer(d.snowySide);
-    if (d.variants) d.variantLayers = variantsOf(typeof d.tex === 'string' ? d.tex : t.side);
+    if (d.variants) d.variantLayers = variantsOf(t.all || t.side);
     if (d.topVariants) d.topVariantLayers = variantsOf(t.top);
-    const anim = T[typeof d.tex === 'string' ? d.tex : t.side];
+    const anim = T[t.all || t.side];
     if (anim && anim.frames) d.anim = { frames: anim.frames, frametime: anim.frametime };
   }
+  if (missing.length) console.warn('no texture for', [...new Set(missing)].join(', '));
   return BLOCKS;
 }
 
