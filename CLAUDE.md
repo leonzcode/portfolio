@@ -120,6 +120,14 @@ Evolution: avalanche + ai-art moved from Streamlit Cloud → Hetzner on 2026-05-
 - **Built maps** (`editor.js`, objects in `mapobjects.js`): fly-and-place builder, Y to drive / build, P for the list picture. Maps are built by the normal track generator from the builder's points (`setCustomTrack` in track.js). Stored by `mlhub/apps/mc/kartmaps.js`: password to edit (an admin needs none and can change the list's settings), likes/dislikes, a board per map. Custom map times never go on the circuits' boards.
 - **Physics stays in the browser.** Measured 26-40 ms round trip (median 36) to the server from the Bay Area; server-side physics would add that to every input, which fails Leon's "only if it does not increase lag" condition.
 
+## Leoncraft 2 at `/leoncraft2` (2026-10-03)
+A separate single-player engine (not built on `legacy/minecraft.html`), for "realistic shader" graphics and Minecraft 1.18+ style terrain. Not linked from the nav; the page has `noindex`.
+- **Layout**: `public/leoncraft2/index.html` loads Three from `/legacy/vendor/` then `js/main.js`. `js/`: `blocks.js` (one block table for everything), `worldgen.js` + `noise.js` + `biomes.js` (generator), `mesher.js` (light flood fill + meshing), `worker.js` (both run in workers), `world.js` (chunk store, worker pool), `fluids.js` (Minecraft flow rules), `player.js` (Minecraft movement at 20 ticks a second), `hud.js`. `js/render/`: `renderer.js` (frame order), `sky.js` (Hillaire atmosphere LUTs), `materials.js` (terrain + shadow pass), `water.js`, `post.js` (light shafts, clouds, composite, bloom, exposure, AgX, FXAA), `interaction.js` (ripples + trampled grass), `noisetex.js`, `glsl.js`.
+- **Textures** are Pixel Perfection CE (CC BY-SA 4.0), not Mojang's: rebuild with `python tools/leoncraft2/build_textures.py <PixelPerfectionCE-master>`; credit in `textures/LICENSE.txt` must stay.
+- **Every import, the worker and the textures carry `?v=N`** (Pages ignores Cache-Control). Bump all of them together after a change: `sed -i 's/?v=1\b/?v=2/g' js/*.js js/render/*.js index.html` and the `TEX_V` constant in `main.js`.
+- **Worldgen** follows the game's biome slice tables and is calibrated to its height statistics (median 63, peaks to about 240); seeds do not match real Minecraft (different noise permutation).
+- **Testing**: headless swiftshader runs about 1 fps, so tick-based things barely advance; drive them through `window.__lc2` (world, player, fluids, renderer). `?q=low|medium|high|ultra`, `?seed=`, `?at=x,z`, `?rd=`, `?scale=` are URL options.
+
 ## The scavenger hunt at `/form` (2026-09-19)
 `public/form/index.html` is a recreation of Google Forms: one form, the same one for every visitor, not linked from the nav. It is a standalone page (like `public/claire/`), not an Astro route.
 

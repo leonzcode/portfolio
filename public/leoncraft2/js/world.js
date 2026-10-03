@@ -1,0 +1,226 @@
+/* ---------------------------------------------------------------------------
+   Leoncraft 2 - the world on the main thread.
+
+   Holds every loaded chunk (blocks, fluid levels, biomes), hands generation
+   and meshing to a pool of workers nearest-first, meshes a column only once
+   all eight around it exist (so its edges are right), drops chunks that fall
+   out of range, and takes edits: a changed block remeshes its column, and
+   the neighbouring one too when it sits on an edge.
+--------------------------------------------------------------------------- */
+import { CH, H, idx } from './world-const.js?v=1';
+import { BLOCKS, FLUID } from './blocks.js?v=1';
+
+export class World {
+  constructor(opts) {
+    this.seed = opts.seed;
+    this.renderDist = opts.renderDist;
+    this.chunks = new Map();          // "cx,cz" -> chunk
+    this.onMesh = opts.onMesh;
+    this.onDrop = opts.onDrop;
+    const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+    this.workers = [];
+    this.busy = [];
+    this.nextId = 1;
+    this.waiting = new Map();          // job id -> resolver
+    this.ready = Promise.all(Array.from({ length: n }, (_, i) => new Promise(res => {
+      const w = new Worker(new URL('./worker.js?v=1', import.meta.url), { type: 'module' });
+      w.onmessage = e => this.onMessage(i, e.data, res);
+      w.onerror = e => console.error('worker', e.message || e);
+      w.postMessage({ type: 'init', seed: this.seed, manifest: opts.manifest, colours: opts.colours });
+      this.workers.push(w);
+      this.busy.push(0);
+    })));
+    this.genQueue = new Set();
+    this.meshQueue = new Set();
+    this.inFlight = new Set();
+    this.meshVersion = new Map();
+    this.stats = { gen: 0, mesh: 0 };
+  }
+  key(cx, cz) { return cx + ',' + cz; }
+
+  onMessage(i, m, initRes) {
+    if (m.type === 'ready') { initRes(); return; }
+    this.busy[i]--;
+    if (m.type === 'gen') {
+      const k = this.key(m.cx, m.cz);
+      this.inFlight.delete('g' + k);
+      if (!this.wanted(m.cx, m.cz)) return;
+      this.chunks.set(k, { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, biome: m.biome, top: m.top, meshed: false });
+      this.stats.gen++;
+      // this chunk, and every neighbour it completes, can now be meshed
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) this.queueMesh(m.cx + dx, m.cz + dz);
+      return;
+    }
+    if (m.type === 'mesh') {
+      const k = this.key(m.cx, m.cz);
+      this.inFlight.delete('m' + k);
+      const c = this.chunks.get(k);
+      if (!c) return;
+      if ((this.meshVersion.get(k) || 0) !== m.version) return;     // something changed since: a newer one is coming
+      c.meshed = true;
+      this.stats.mesh++;
+      this.onMesh(m.cx, m.cz, m.mesh);
+      return;
+    }
+    const r = this.waiting.get(m.id);
+    if (r) { this.waiting.delete(m.id); r(m); }
+  }
+  ask(msg) {
+    return new Promise(res => {
+      const id = this.nextId++;
+      this.waiting.set(id, res);
+      const i = this.idlest();
+      this.busy[i]++;
+      this.workers[i].postMessage(Object.assign({ id }, msg));
+    });
+  }
+  idlest() { let b = 0; for (let i = 1; i < this.busy.length; i++) if (this.busy[i] < this.busy[b]) b = i; return b; }
+
+  wanted(cx, cz) {
+    const dx = cx - this.pcx, dz = cz - this.pcz;
+    return dx * dx + dz * dz <= (this.renderDist + 2) * (this.renderDist + 2);
+  }
+  queueMesh(cx, cz) {
+    const k = this.key(cx, cz);
+    if (!this.chunks.has(k)) return;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!this.chunks.has(this.key(cx + dx, cz + dz))) return;
+    this.meshQueue.add(k);
+  }
+
+  /* ---- each frame: what to make next ---- */
+  update(px, pz) {
+    const pcx = Math.floor(px / CH), pcz = Math.floor(pz / CH);
+    const moved = pcx !== this.pcx || pcz !== this.pcz;
+    this.pcx = pcx; this.pcz = pcz;
+    const R = this.renderDist + 1;
+    if (moved) {
+      // forget what is too far, and line up what is missing, nearest first
+      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.onDrop(c.cx, c.cz); }
+      this.genList = [];
+      for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
+        if (dx * dx + dz * dz > R * R) continue;
+        const k = this.key(pcx + dx, pcz + dz);
+        if (!this.chunks.has(k)) this.genList.push([dx * dx + dz * dz, pcx + dx, pcz + dz]);
+      }
+      this.genList.sort((a, b) => a[0] - b[0]);
+    }
+    const cap = this.workers.length * 2;
+    // meshes first (they are what you see), nearest first
+    if (this.meshQueue.size) {
+      const list = [...this.meshQueue].map(k => { const [x, z] = k.split(',').map(Number); return [(x - pcx) ** 2 + (z - pcz) ** 2, x, z, k]; })
+        .sort((a, b) => a[0] - b[0]);
+      for (const [d, x, z, k] of list) {
+        if (this.inFlightCount() >= cap) break;
+        if (this.inFlight.has('m' + k)) continue;
+        if (d > this.renderDist * this.renderDist) { this.meshQueue.delete(k); continue; }
+        this.meshQueue.delete(k);
+        this.sendMesh(x, z);
+      }
+    }
+    while (this.genList && this.genList.length && this.inFlightCount() < cap) {
+      const [, x, z] = this.genList.shift();
+      const k = this.key(x, z);
+      if (this.chunks.has(k) || this.inFlight.has('g' + k)) continue;
+      this.inFlight.add('g' + k);
+      const i = this.idlest(); this.busy[i]++;
+      this.workers[i].postMessage({ type: 'gen', cx: x, cz: z });
+    }
+  }
+  inFlightCount() { return this.inFlight.size; }
+  sendMesh(cx, cz) {
+    const k = this.key(cx, cz);
+    const chunks = [], tops = [];
+    let top = 0;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) top = Math.max(top, this.chunks.get(this.key(cx + dx, cz + dz)).top);
+    const ny = Math.min(H, top + 2);
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const c = this.chunks.get(this.key(cx + dx, cz + dz));
+      // only the part with anything in it, copied
+      chunks.push({ blocks: c.blocks.slice(0, ny * 256), meta: c.meta.slice(0, ny * 256), biome: c.biome });
+      tops.push(c.top);
+    }
+    // what the flowing water was, in the region's own coordinates (see the mesher)
+    const prev = [];
+    let ci = 0;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++, ci++) {
+      const c = this.chunks.get(this.key(cx + dx, cz + dz));
+      if (!c.prev || !c.prev.size) continue;
+      const ox = (dx + 1) * 16, oz = (dz + 1) * 16;
+      for (const [i, [pb, pm]] of c.prev) {
+        const y = i >> 8, z = (i >> 4) & 15, x = i & 15;
+        if (y >= ny) continue;
+        prev.push(y * 2304 + (oz + z) * 48 + ox + x, pb, pm);
+      }
+    }
+    const own = this.chunks.get(k);
+    if (own.prev) own.prev.clear();
+    const v = (this.meshVersion.get(k) || 0) + 1;
+    this.meshVersion.set(k, v);
+    this.inFlight.add('m' + k);
+    const i = this.idlest(); this.busy[i]++;
+    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev) });
+  }
+
+  /* ---- blocks ---- */
+  chunkAt(x, z) { return this.chunks.get(this.key(Math.floor(x / CH), Math.floor(z / CH))); }
+  get(x, y, z) {
+    if (y < 0 || y >= H) return 0;
+    const c = this.chunkAt(x, z);
+    if (!c) return 0;
+    return c.blocks[idx(x - c.cx * CH, y, z - c.cz * CH)];
+  }
+  meta(x, y, z) {
+    if (y < 0 || y >= H) return 0;
+    const c = this.chunkAt(x, z);
+    if (!c) return 0;
+    return c.meta[idx(x - c.cx * CH, y, z - c.cz * CH)];
+  }
+  loaded(x, z) { return !!this.chunkAt(x, z); }
+  set(x, y, z, b, m, quiet) {
+    if (y < 0 || y >= H) return false;
+    const c = this.chunkAt(x, z);
+    if (!c) return false;
+    const i = idx(x - c.cx * CH, y, z - c.cz * CH);
+    if (c.blocks[i] === b && c.meta[i] === (m || 0)) return false;
+    // a fluid change: keep what was here before, until the next mesh shows the new state
+    if (FLUID[c.blocks[i]] || FLUID[b]) {
+      c.prev = c.prev || new Map();
+      if (!c.prev.has(i)) c.prev.set(i, [c.blocks[i], c.meta[i]]);
+    }
+    c.blocks[i] = b; c.meta[i] = m || 0;
+    if (b && y > c.top) c.top = y;
+    if (!quiet) this.touch(x, z);
+    return true;
+  }
+  // remesh the column a block is in, and any neighbour whose edge it sits on
+  touch(x, z) {
+    const cx = Math.floor(x / CH), cz = Math.floor(z / CH);
+    const lx = x - cx * CH, lz = z - cz * CH;
+    this.dirty = this.dirty || new Set();
+    this.dirty.add(this.key(cx, cz));
+    if (lx === 0) this.dirty.add(this.key(cx - 1, cz));
+    if (lx === 15) this.dirty.add(this.key(cx + 1, cz));
+    if (lz === 0) this.dirty.add(this.key(cx, cz - 1));
+    if (lz === 15) this.dirty.add(this.key(cx, cz + 1));
+  }
+  flush() {
+    if (!this.dirty || !this.dirty.size) return;
+    for (const k of this.dirty) {
+      const [x, z] = k.split(',').map(Number);
+      // a remesh while one is still out: the newer wins (see meshVersion)
+      for (let dz = -1, ok = true; dz <= 1 && ok; dz++) for (let dx = -1; dx <= 1; dx++) if (!this.chunks.has(this.key(x + dx, z + dz))) ok = false;
+      if (this.chunks.has(k)) this.sendMeshSoon(x, z);
+    }
+    this.dirty.clear();
+  }
+  sendMeshSoon(cx, cz) {
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!this.chunks.has(this.key(cx + dx, cz + dz))) return;
+    this.inFlight.delete('m' + this.key(cx, cz));
+    this.sendMesh(cx, cz);
+  }
+  biomeAt(x, z) {
+    const c = this.chunkAt(x, z);
+    return c ? c.biome[((z - c.cz * CH) << 4) | (x - c.cx * CH)] : 0;
+  }
+  solidAt(x, y, z) { const b = this.get(x, y, z); return b && BLOCKS[b].solid; }
+}
