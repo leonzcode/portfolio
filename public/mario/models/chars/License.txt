@@ -26,3 +26,6 @@
 	• Twitter:   twitter.com/KenneyNL
 	• Instagram: instagram.com/kenney_nl
 	• Mastodon:  mastodon.gamedev.place/@kenney
+
+	nubert.glb is not part of the pack: it is Leon's own Nubert, made in Blender from
+	Kenney's character-male-a (CC0) for Leon Kart's secret driver (2026-10-02).

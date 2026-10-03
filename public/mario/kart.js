@@ -11,15 +11,15 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=99';
-import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=99';
+import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=100';
+import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=100';
 /* The geometry of the cosmetics - themed bodies, hats, gliders, decorations -
    is fetched with everything else but is not needed to draw a car, so a kart
    built before it arrives simply goes without until it is next built. */
 let ART = null;
 const artWaiting = [];
 // two batches: the first set of cosmetics, and the prizes
-Promise.all([import('./cosmetics-art.js?v=99'), import('./cosmetics-art2.js?v=99').catch(() => ({}))]).then(([a, b]) => {
+Promise.all([import('./cosmetics-art.js?v=100'), import('./cosmetics-art2.js?v=100').catch(() => ({}))]).then(([a, b]) => {
   const both = k => Object.assign({}, a[k] || {}, b[k] || {});
   ART = { HATS: both('HATS'), DECOR: both('DECOR'), GLIDERS: both('GLIDERS'), THEMED_BODIES: both('THEMED_BODIES'), sunglasses: a.sunglasses };
   for (const f of artWaiting.splice(0)) { try { f(); } catch (e) {} }
@@ -27,7 +27,7 @@ Promise.all([import('./cosmetics-art.js?v=99'), import('./cosmetics-art2.js?v=99
 export function whenArt(f) { if (ART) f(); else artWaiting.push(f); }
 export const artLoaded = () => new Promise(res => whenArt(() => res(ART)));
 export const artReady = () => !!ART;
-import { loadKit } from './models.js?v=99';
+import { loadKit } from './models.js?v=100';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -45,6 +45,9 @@ export const RACERS = [
   // very short hair, a black jacket and dark jeans. Sunglasses are his to put on, like anybody's.
   { id: 'thomas', name: 'Thomas', shirt: 0x1d2433, skin: 0xe0a878, cap: 0x1d2433, kart: 0x2b3a67, trim: 0x9fd8ff,
     look: { shirt: 0x22252c, pants: 0x2b3a67 } },
+  /* Leon's secret driver (2026-10-02): hidden from the picker and never a
+     computer racer until "nubert" is typed on the title screen. */
+  { id: 'nubert', name: 'Nubert', shirt: 0xf26b4a, skin: 0xf26b4a, cap: 0xd9503a, kart: 0xf26b4a, trim: 0xffd233, secret: true },
 ];
 
 /* A car painted from one colour off the wheel. The body and the driver take it
@@ -125,7 +128,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=99';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=100';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
