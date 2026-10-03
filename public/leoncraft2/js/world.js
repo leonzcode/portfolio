@@ -7,8 +7,8 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=1';
-import { BLOCKS, FLUID } from './blocks.js?v=1';
+import { CH, H, idx } from './world-const.js?v=2';
+import { BLOCKS, FLUID } from './blocks.js?v=2';
 
 export class World {
   constructor(opts) {
@@ -16,14 +16,18 @@ export class World {
     this.renderDist = opts.renderDist;
     this.chunks = new Map();          // "cx,cz" -> chunk
     this.onMesh = opts.onMesh;
+    this.fastLeaves = !!opts.fastLeaves;
     this.onDrop = opts.onDrop;
+    // what changed from the generated terrain, kept so a saved world comes back (see save.js)
+    this.edits = opts.edits || new Map();       // "cx,cz" -> Map(cell index -> block * 256 + meta)
+    this.save = opts.save || null;
     const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
     this.workers = [];
     this.busy = [];
     this.nextId = 1;
     this.waiting = new Map();          // job id -> resolver
     this.ready = Promise.all(Array.from({ length: n }, (_, i) => new Promise(res => {
-      const w = new Worker(new URL('./worker.js?v=1', import.meta.url), { type: 'module' });
+      const w = new Worker(new URL('./worker.js?v=2', import.meta.url), { type: 'module' });
       w.onmessage = e => this.onMessage(i, e.data, res);
       w.onerror = e => console.error('worker', e.message || e);
       w.postMessage({ type: 'init', seed: this.seed, manifest: opts.manifest, colours: opts.colours });
@@ -45,7 +49,11 @@ export class World {
       const k = this.key(m.cx, m.cz);
       this.inFlight.delete('g' + k);
       if (!this.wanted(m.cx, m.cz)) return;
-      this.chunks.set(k, { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, biome: m.biome, top: m.top, meshed: false });
+      const c = { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, biome: m.biome, top: m.top, meshed: false };
+      // put back whatever was changed here before
+      const ed = this.edits.get(k);
+      if (ed) for (const [cell, v] of ed) { c.blocks[cell] = v >> 8; c.meta[cell] = v & 255; if (v >> 8 && (cell >> 8) > c.top) c.top = cell >> 8; }
+      this.chunks.set(k, c);
       this.stats.gen++;
       // this chunk, and every neighbour it completes, can now be meshed
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) this.queueMesh(m.cx + dx, m.cz + dz);
@@ -158,7 +166,7 @@ export class World {
     this.meshVersion.set(k, v);
     this.inFlight.add('m' + k);
     const i = this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev) });
+    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves });
   }
 
   /* ---- blocks ---- */
@@ -189,6 +197,11 @@ export class World {
     }
     c.blocks[i] = b; c.meta[i] = m || 0;
     if (b && y > c.top) c.top = y;
+    const ck = this.key(c.cx, c.cz);
+    let ed = this.edits.get(ck);
+    if (!ed) this.edits.set(ck, ed = new Map());
+    ed.set(i, b * 256 + (m || 0));
+    if (this.save) this.save.dirty.add(ck);
     if (!quiet) this.touch(x, z);
     return true;
   }
@@ -223,4 +236,22 @@ export class World {
     return c ? c.biome[((z - c.cz * CH) << 4) | (x - c.cx * CH)] : 0;
   }
   solidAt(x, y, z) { const b = this.get(x, y, z); return b && BLOCKS[b].solid; }
+  // take on a saved world's changes while its chunks are already loaded (the title screen's world, reused)
+  adoptEdits(edits, save) {
+    this.edits = edits; this.save = save;
+    for (const [k, ed] of edits) {
+      const c = this.chunks.get(k);
+      if (!c) continue;
+      for (const [cell, v] of ed) { c.blocks[cell] = v >> 8; c.meta[cell] = v & 255; if (v >> 8 && (cell >> 8) > c.top) c.top = cell >> 8; }
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) this.queueMesh(c.cx + dx, c.cz + dz);
+    }
+  }
+  // stop the workers and let everything go (leaving a world)
+  destroy() {
+    for (const w of this.workers) w.terminate();
+    this.workers = []; this.busy = [];
+    this.chunks.clear(); this.meshQueue.clear(); this.inFlight.clear();
+    this.genList = [];
+    this.dead = true;
+  }
 }

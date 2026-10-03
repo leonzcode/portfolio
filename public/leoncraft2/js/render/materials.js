@@ -13,7 +13,7 @@
              distorted shadow map (leaves alpha tested, so light shafts come
              through their gaps).
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND } from './glsl.js?v=1';
+import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS } from './glsl.js?v=2';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
@@ -42,6 +42,13 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * world;
 }`;
 
+const LDR_FN = /* glsl */`
+#ifdef LDR
+uniform sampler2D uView;
+uniform float uEyeInWater;
+` + LDR + `
+#endif
+`;
 const TERRAIN_FS = /* glsl */`
 uniform sampler2DArray uAlbedo, uNormalMap, uSpecMap;
 uniform sampler2D uLayerInfo, uAmbient, uNoise;
@@ -61,12 +68,15 @@ vec3 ambientAt(vec3 n) {
 }
 // an animated texture moves through its frames, blended so it never jumps
 vec4 tex(sampler2DArray s, vec2 uv, float layer, vec4 info) {
+  float la = layer, lb = layer, t = 0.0;
   if (info.x > 1.5) {
     float f = uTime * 20.0 / max(1.0, info.y);
-    float a = mod(floor(f), info.x), b = mod(a + 1.0, info.x);
-    return mix(texture(s, vec3(uv, layer + a)), texture(s, vec3(uv, layer + b)), fract(f));
+    float a = mod(floor(f), info.x);
+    la = layer + a; lb = layer + mod(a + 1.0, info.x); t = fract(f);
   }
-  return texture(s, vec3(uv, layer));
+  vec4 c = texture(s, vec3(uv, la));
+  if (t > 0.0) c = mix(c, texture(s, vec3(uv, lb)), t);
+  return c;
 }
 float ggx(float NoH, float a) { float a2 = a * a; float d = NoH * NoH * (a2 - 1.0) + 1.0; return a2 / (PI * d * d); }
 float smithV(float NoV, float NoL, float a) {
@@ -78,13 +88,18 @@ float smithV(float NoV, float NoL, float a) {
 float caustics(vec3 p) {
   vec2 q = p.xz - uLightDir.xz / max(uLightDir.y, 0.2) * p.y * 0.2;
   float t = uTime * 0.35;
-  float a = texture(uNoise, q * 0.045 + vec2(t * 0.3, t * 0.17)).r;
-  float b = texture(uNoise, q * 0.071 - vec2(t * 0.21, -t * 0.26)).g;
+  float a = textureLod(uNoise, q * 0.045 + vec2(t * 0.3, t * 0.17), 0.0).r;
+  float b = textureLod(uNoise, q * 0.071 - vec2(t * 0.21, -t * 0.26), 0.0).g;
   float c = 1.0 - abs(a - b) * 3.2;
   return pow(sat(c), 4.0) * 1.1 + 0.6;
 }
 
 void main() {
+#ifdef NORMALMAP
+  // which way the block light grows across the screen, taken while every pixel still runs together
+  vec2 dBlock = vec2(dFdx(vLight.y), dFdy(vLight.y));
+  vec3 dWx = dFdx(vWorld), dWy = dFdy(vWorld);
+#endif
   int rot = (vFlags >> 2) & 3;
   bool overlay = (vFlags & 16) != 0;
   bool plant = (vFlags & 32) != 0;
@@ -107,8 +122,14 @@ void main() {
     albedo = mix(albedo, ov.rgb * vTint, ov.a);
   } else if (tinted) albedo *= vTint;
   albedo = toLinear(albedo);
+#ifdef NORMALMAP
   vec4 nm = tex(uNormalMap, uv, vLayer, info);
+#else
+  vec4 nm = vec4(0.5, 0.5, 1.0, 0.5);
+#endif
   vec4 sp = tex(uSpecMap, uv, vLayer, info);
+  // Minecraft's fast leaves: solid blocks, the gaps a dark leafy shade
+  if ((vFlags & 128) != 0 && alb.a < 0.5) albedo = toLinear(vTint * 0.42);
 
   // the face's frame, turned with its texture
   vec3 Ng = uFaceRot * faceN(vNormal), T = uFaceRot * faceT(vNormal), Bt = uFaceRot * faceB(vNormal);
@@ -134,14 +155,25 @@ void main() {
   // the sun, through the shadow map; none at all deep under cover
   float gate = smoothstep(0.03, 0.2, sky);
   float shadow = 0.0;
+#if SHADOWS > 0
   if (gate > 0.0 && (NoLg > 0.0 || plant || sp.b > 0.3)) {
     vec3 sc = shadowCoord(vWorld, Ng, plant ? 1.0 : NoLg, dist);
+#if SHADOWS > 1
     shadow = shadowSoft(sc, ign(gl_FragCoord.xy, uFrame), 1.6);
+#else
+    shadow = shadowHard(sc);
+#endif
     // past the map, fall back on the light level
     float edge = max(abs(sc.x - 0.5), abs(sc.y - 0.5)) * 2.0;
     shadow = mix(shadow, smoothstep(0.85, 0.95, sky), linstep(0.85, 1.0, edge));
   }
+#else
+  // no shadow map: open sky is sunlit, anything under cover is not (vanilla's way)
+  shadow = smoothstep(0.8, 0.95, sky) * (plant ? 1.0 : step(0.0, NoLg));
+#endif
   shadow *= gate;
+  // and under the clouds as they drift over
+  if (shadow > 0.0) shadow *= cloudShade(vWorld, L);
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb;
   vec3 direct = sunC * shadow;
 
@@ -171,10 +203,19 @@ void main() {
   amb += sunC * 0.03;
   amb *= skyAmt * ao * (0.6 + 0.4 * nm.b);
   if (wd > 0.5) amb *= exp(-absorb * wd * 0.7);
-  // block light: a bright core near the torch and a long warm tail
-  vec3 torch = vec3(1.0, 0.58, 0.28);
-  float bl = pow(block, 5.0) * 2.0 + block * block * 0.1;
-  vec3 blockL = torch * bl * ao * 2.2;
+  // block light: a bright core near the torch and a long warm tail, and the
+  // light in your hand on top (the brighter of the two, as Dynamic Lights does)
+  block = max(block, heldLight(vWorld, N));
+#ifdef NORMALMAP
+  // the directional lightmap (Glimmer, MIT, Copyright (c) 2024 Josh Britain,
+  // after a snippet by NinjaMike): bumps turned towards where the light grows
+  // catch a little more of it, bumps turned away a little less
+  if (dot(dBlock, dBlock) > 1e-8 && block > 0.0) {
+    vec3 bdir = normalize(dWx * dBlock.x + dWy * dBlock.y);
+    block = sat(block + clamp((dot(bdir, N) - dot(bdir, Ng)) * block, -1.0, 1.0) * 0.25);
+  }
+#endif
+  vec3 blockL = block > 0.0 ? blockLight(block, skyAmt * sat(lum(sunC) * 0.3)) * ao : vec3(0.0);
   vec3 minimum = vec3(0.0035, 0.004, 0.006) * ao;
   vec3 col = albedo / PI * (diffuse * PI * (metal ? 0.25 : 1.0) + amb + blockL + minimum);
 
@@ -194,6 +235,9 @@ void main() {
   }
   // light of its own
   col += albedo * emit * 6.0;
+#ifdef LDR
+  col = finishLDR(col, vWorld);
+#endif
 #ifdef TRANSLUCENT
   float fres = pow(1.0 - sat(dot(N, V)), 5.0);
   outColor = vec4(col, mix(max(alb.a, 0.35), 1.0, fres * 0.6));
@@ -232,26 +276,37 @@ void main() {
 }`;
 
 export function makeLayerInfo(manifest) {
-  // per layer: how many frames it runs through and how many ticks each
-  const data = new Float32Array(256 * 4);
+  // per layer: how many frames it runs through and how many ticks each (one texel a layer, however many there are)
+  const W = Math.max(256, manifest.layers || 0);
+  const data = new Float32Array(W * 4);
   for (const name in manifest.textures) {
     const t = manifest.textures[name];
-    if (t.frames) for (let f = 0; f < t.frames; f++) {
-      const i = t.layer + f;
-      if (f === 0) { data[i * 4] = t.frames; data[i * 4 + 1] = t.frametime; }
-    }
+    if (t.frames && t.layer < W) { data[t.layer * 4] = t.frames; data[t.layer * 4 + 1] = t.frametime || 1; }
   }
-  const tex = new THREE.DataTexture(data, 256, 1, THREE.RGBAFormat, THREE.FloatType);
+  const tex = new THREE.DataTexture(data, W, 1, THREE.RGBAFormat, THREE.FloatType);
   tex.needsUpdate = true;
   return tex;
 }
 
-export function makeMaterials(shared) {
+// cloud shadows: one noise tap on the cheapest tier, two elsewhere, at the
+// height of the clouds that tier draws (the flat layer, or the middle of the marched one)
+export function lightDefines(q) {
+  q = q || {};
+  const cheap = q.ldr && !q.shadows;
+  return { CLOUD_SHADOW: q.cloudShadow !== undefined ? q.cloudShadow : cheap ? 1 : 2, CLOUD_Y: q.ldr ? '250.0' : '265.0' };
+}
+
+export function makeMaterials(shared, q) {
+  q = q || {};
+  const base = { SHADOWS: q.shadows === undefined ? 2 : q.shadows };
+  if (q.normals !== false) base.NORMALMAP = 1;
+  if (q.ldr) base.LDR = 1;
+  Object.assign(base, lightDefines(q));
   const mk = (defines, transparent, extra) => new THREE.RawShaderMaterial(Object.assign({
     glslVersion: THREE.GLSL3,
     vertexShader: HEAD + COMMON + WIND + TERRAIN_VS,
-    fragmentShader: HEAD + COMMON + SHADOW + WIND + TERRAIN_FS,
-    uniforms: shared, defines,
+    fragmentShader: HEAD + COMMON + SHADOW + WIND + TONEMAP + TERRAIN_FS.replace('void main() {', LDR_FN + LIGHTS + '\nvoid main() {'),
+    uniforms: shared, defines: Object.assign({}, base, defines),
     side: defines.CUTOUT || defines.TRANSLUCENT ? THREE.DoubleSide : THREE.FrontSide,
     transparent: !!transparent, depthWrite: !transparent,
   }, extra || {}));

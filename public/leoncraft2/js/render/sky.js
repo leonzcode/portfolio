@@ -17,7 +17,7 @@
    sky goes deep blue overhead and pale at the horizon, and the world takes
    its colour from the same sky it is under.
 --------------------------------------------------------------------------- */
-import { COMMON, ATMOS } from './glsl.js?v=1';
+import { COMMON, ATMOS } from './glsl.js?v=2';
 const THREE = window.THREE;
 
 export const SUN_I = 14.0;      // the sun's strength in the scene's units
@@ -82,7 +82,7 @@ void main() {
 const FS_MS = COMMON + ATMOS + /* glsl */`
 uniform sampler2D uTrans;
 in vec2 vUv; out vec4 o;
-vec3 trans(float h, float mu) { return texture(uTrans, transUV(h, mu)).rgb; }
+vec3 trans(float h, float mu) { return textureLod(uTrans, transUV(h, mu), 0.0).rgb; }
 void main() {
   float h = max(0.01, vUv.y * (RT - RG)), muS = vUv.x * 2.0 - 1.0;
   vec3 ro = vec3(0.0, RG + h, 0.0);
@@ -123,8 +123,8 @@ uniform sampler2D uTrans, uMS;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uCamH, uSunI, uMoonI;
 in vec2 vUv; out vec4 o;
-vec3 trans(float h, float mu) { return texture(uTrans, transUV(h, mu)).rgb; }
-vec3 ms(float h, float mu) { return texture(uMS, vec2(mu * 0.5 + 0.5, sat(h / (RT - RG)))).rgb; }
+vec3 trans(float h, float mu) { return textureLod(uTrans, transUV(h, mu), 0.0).rgb; }
+vec3 ms(float h, float mu) { return textureLod(uMS, vec2(mu * 0.5 + 0.5, sat(h / (RT - RG))), 0.0).rgb; }
 void main() {
   // more of the table at the horizon, where the colour changes fastest
   float v = vUv.y - 0.5;

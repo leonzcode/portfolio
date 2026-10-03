@@ -72,13 +72,13 @@ float shadowSoft(vec3 sc, float noise, float radius) {
     float r = sqrt((float(i) + 0.5) / 8.0) * radius;
     float a = float(i) * 2.39996 + a0;
     vec2 o = vec2(cos(a), sin(a)) * r / uShadowRes;
-    s += texture(uShadow, vec3(sc.xy + o, sc.z - bias));
+    s += textureLod(uShadow, vec3(sc.xy + o, sc.z - bias), 0.0);
   }
   return s / 8.0;
 }
 float shadowHard(vec3 sc) {
   if (sc.x <= 0.0 || sc.x >= 1.0 || sc.y <= 0.0 || sc.y >= 1.0 || sc.z >= 1.0) return 1.0;
-  return texture(uShadow, vec3(sc.xy, sc.z - 0.00004));
+  return textureLod(uShadow, vec3(sc.xy, sc.z - 0.00004), 0.0);
 }
 `;
 
@@ -194,6 +194,61 @@ vec3 waveNormal(vec2 p, float t, vec2 flow, float strength) {
 }
 `;
 
+/* ---- block light, the light in your hand, and the clouds' shadows ---------
+   needs uTime (from WIND) and uNoise declared by the host.
+
+   The torch ramp follows Miniature Shader (MIT, Copyright (c) 2022 Mateus A.
+   Kreuch, github.com/mateuskreuch/minecraft-miniature-shader): three colours,
+   outer to middle with the light level, then a quick turn to the inner one in
+   the last light levels. Its colours are taken here into linear light. */
+export const LIGHTS = /* glsl */`
+#ifndef CLOUD_SHADOW
+#define CLOUD_SHADOW 2
+#endif
+#ifndef CLOUD_Y
+#define CLOUD_Y 265.0
+#endif
+uniform float uHeldLight, uFlicker, uCloudShadow, uCover;
+uniform vec3 uHeldPos;
+// the light in your hand at p (0..1, like the vertex block light): one less a
+// block, as the game spreads it, and a little brighter on what faces it
+float heldLight(vec3 p, vec3 n) {
+  if (uHeldLight <= 0.0) return 0.0;
+  vec3 d = uHeldPos - p;
+  float l = length(d);
+  return sat((uHeldLight - l) / 15.0) * (0.8 + 0.2 * dot(n, d / max(l, 1e-3)));
+}
+// block light at level s (0..1): dim and deep orange far out, pale yellow at the
+// source, a slow flicker, and washed out by full daylight on open ground
+vec3 blockLight(float s, float day) {
+  vec3 c = mix(mix(vec3(1.0, 0.27, 0.035), vec3(1.0, 0.6, 0.32), s), vec3(1.0, 0.7, 0.46), max(0.0, s * 8.0 - 7.0));
+  float b = pow(s, 5.0) * 2.0 + s * s * 0.1;
+  return c * b * 2.2 * uFlicker * (1.0 - 0.6 * day);
+}
+// how much of the sun gets through the clouds overhead: the same coverage the
+// clouds are drawn from (post.js density(), ldrsky.js), one tap or two
+float cloudShade(vec3 p, vec3 L) {
+#if CLOUD_SHADOW == 0
+  return 1.0;
+#else
+  if (uCloudShadow <= 0.0 || L.y < 0.04) return 1.0;
+  vec2 xz = p.xz + L.xz * ((CLOUD_Y - p.y) / L.y);
+  vec2 wind = vec2(uTime * 2.2, uTime * 0.9);
+#if CLOUD_SHADOW > 1
+  float c = textureLod(uNoise, (xz + wind) * 0.00018, 0.0).a * 0.65 + textureLod(uNoise, (xz + wind * 1.3) * 0.0007, 0.0).r * 0.35;
+#else
+  float c = textureLod(uNoise, (xz + wind) * 0.00018, 0.0).a * 0.65 + 0.17;
+#endif
+  c = sat((c - (1.0 - uCover)) * 2.6);
+#ifndef LDR
+  // the marched clouds are eaten away at their thin edges, so their shadows start further in
+  c = smoothstep(0.15, 0.6, c);
+#endif
+  return 1.0 - c * uCloudShadow * smoothstep(0.04, 0.2, L.y);
+#endif
+}
+`;
+
 /* ---- tone mapping -------------------------------------------------------- */
 export const TONEMAP = /* glsl */`
 // AgX (Troy Sobotka), the base curve fitted by Benjamin Wrensch; keeps hue in bright light
@@ -223,5 +278,37 @@ vec3 agx(vec3 c) {
 vec3 toSRGB(vec3 c) {
   c = max(c, 0.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+`;
+
+/* ---- the single-pass finish, for the low tiers: fog, exposure, tone map ----
+   needs uView, uAmbient, uEyeInWater and cameraPosition declared by the host */
+export const LDR = /* glsl */`
+uniform float uExposure, uRender, uSkyAtEye;
+uniform vec3 uWaterTint;
+vec3 skyDir(vec3 d) {
+  float elev = asin(clamp(d.y, -1.0, 1.0));
+  float v = 0.5 + 0.5 * sign(elev) * sqrt(abs(elev) / (PI * 0.5));
+  float az = atan(d.z, d.x); if (az < 0.0) az += TAU;
+  return texture(uView, vec2(az / TAU, v)).rgb;
+}
+vec3 finishLDR(vec3 col, vec3 world) {
+  vec3 rd = world - cameraPosition;
+  float dist = length(rd); rd /= max(dist, 1e-4);
+  if (uEyeInWater > 0.5) {
+    vec3 absorb = -0.15 * log(max(uWaterTint, vec3(0.02))) + 0.03;
+    vec3 Tr = exp(-(absorb + 0.025) * min(dist, 96.0));
+    vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
+    col = col * Tr + amb * uWaterTint * 0.6 * uSkyAtEye * (1.0 - Tr);
+  } else {
+    float h0 = cameraPosition.y - 63.0, k = 1.0 / 60.0, dy = rd.y * dist;
+    float od = 0.0019 * exp(-h0 * k) * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
+    vec3 fogC = skyDir(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)));
+    float T = exp(-od);
+    col = col * T + fogC * (1.0 - T) * uSkyAtEye;
+    float hd = length((world - cameraPosition).xz);
+    col = mix(col, skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), smoothstep(uRender * 0.72, uRender, hd));
+  }
+  return toSRGB(agx(col * uExposure));
 }
 `;

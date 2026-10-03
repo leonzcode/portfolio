@@ -30,10 +30,10 @@
       badlands terracotta, snow on peaks, podzol, mycelium, gravel...), then
       deepslate, bedrock, stone blobs and ores, then trees and plants.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=1';
-import { BIO, BIOMES } from './biomes.js?v=1';
-import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=1';
-import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=1';
+import { B, BLOCKS } from './blocks.js?v=2';
+import { BIO, BIOMES } from './biomes.js?v=2';
+import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=2';
+import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=2';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -479,7 +479,7 @@ export class Gen {
     this.nIce = new NormalNoise(S, 'ice', -4, [1, 1, 1, 1]);
     // badlands bands: a fixed shuffle of colours by height, as the game does
     const r = rng(mix32(S ^ 0x5eed));
-    this.bands = new Uint8Array(192).fill(B.terracotta);
+    this.bands = new Uint16Array(192).fill(B.terracotta);
     const put = (blk, n, w) => { for (let i = 0; i < n; i++) { const y0 = r.int(192); for (let k = 0; k < w + r.int(2) && y0 + k < 192; k++) this.bands[y0 + k] = blk; } };
     put(B.orange_terracotta, 18, 1); put(B.yellow_terracotta, 6, 1); put(B.brown_terracotta, 6, 1);
     put(B.red_terracotta, 8, 1); put(B.white_terracotta, 4, 0); put(B.light_gray_terracotta, 4, 1);
@@ -590,7 +590,7 @@ export class Gen {
 
   /* ---- a whole chunk ---- */
   generate(cx, cz) {
-    const blocks = new Uint8Array(VOL), meta = new Uint8Array(VOL), biome = new Uint8Array(256);
+    const blocks = new Uint16Array(VOL), meta = new Uint8Array(VOL), biome = new Uint8Array(256);
     const x0 = cx * CH, z0 = cz * CH;
     // the coarse lattice: 5 x 5 columns, every 8 blocks up
     const NY = H / 8 + 1;

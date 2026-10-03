@@ -14,17 +14,22 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Sky, SUN_I } from './sky.js?v=1';
-import { Post } from './post.js?v=1';
-import { Interaction } from './interaction.js?v=1';
-import { makeMaterials, makeLayerInfo } from './materials.js?v=1';
-import { makeWaterMaterial } from './water.js?v=1';
-import { makeNoise2D, makeNoise3D } from './noisetex.js?v=1';
+import { Sky, SUN_I } from './sky.js?v=2';
+import { Post } from './post.js?v=2';
+import { Interaction } from './interaction.js?v=2';
+import { makeMaterials, makeLayerInfo } from './materials.js?v=2';
+import { makeWaterMaterial } from './water.js?v=2';
+import { makeNoise2D, makeNoise3D } from './noisetex.js?v=2';
+import { makeLdrSky } from './ldrsky.js?v=2';
+import { FullScreen } from './sky.js?v=2';
+import { blockGeometry } from './blockmesh.js?v=2';
+import { Avatar } from './avatar.js?v=2';
 const THREE = window.THREE;
 
 export class Renderer {
   constructor(canvas, textures, opts) {
-    this.opts = Object.assign({ renderDist: 10, shadowRes: 2048, shadowDist: 112, scale: 1 }, opts || {});
+    this.opts = Object.assign({ renderDist: 10, shadowRes: 2048, shadowDist: 112, scale: 1, shadows: 2, ldr: false }, opts || {});
+    const ldr = this.ldr = !!this.opts.ldr;
     const r = this.r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: true });
     r.setPixelRatio(1);
     r.autoClear = false;
@@ -37,20 +42,22 @@ export class Renderer {
     this.shadowScene = new THREE.Scene();
     this.shadowCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 400);
     this.sky = new Sky(r);
-    this.inter = new Interaction(r);
+    this.inter = new Interaction(r, this.opts.interSize || 256);
     // shadow map
-    const sr = this.opts.shadowRes;
+    const sr = this.opts.shadows ? this.opts.shadowRes : 4;   // no shadow map at all: a token one
     this.shadowRT = new THREE.WebGLRenderTarget(sr, sr, { depthBuffer: true, type: THREE.UnsignedByteType });
     this.shadowRT.depthTexture = new THREE.DepthTexture(sr, sr, THREE.FloatType);
     this.shadowRT.depthTexture.compareFunction = THREE.LessEqualCompare;
     this.shadowRT.depthTexture.minFilter = this.shadowRT.depthTexture.magFilter = THREE.LinearFilter;
+    // made now, cleared to "nothing in the way", so the shaders never sample a map that is not there yet
+    r.setRenderTarget(this.shadowRT); r.setClearColor(0xffffff, 1); r.clear(true, true, false); r.setRenderTarget(null);
     // the textures
     this.U = {
       uTime: { value: 0 }, uFrame: { value: 0 },
       uAlbedo: { value: textures.albedo }, uNormalMap: { value: textures.normal }, uSpecMap: { value: textures.spec },
       uLayerInfo: { value: makeLayerInfo(textures.manifest) },
       uAmbient: { value: this.sky.amb.texture }, uView: { value: this.sky.view.texture }, uTrans: { value: this.sky.trans.texture },
-      uNoise: { value: makeNoise2D() }, uNoise3: { value: makeNoise3D() },
+      uNoise: { value: makeNoise2D() }, uNoise3: { value: ldr ? null : makeNoise3D() },
       uShadow: { value: this.shadowRT.depthTexture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowRes: { value: sr },
       uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
       uInteract: { value: this.inter.texture }, uInteractRect: { value: this.inter.rect }, uPlayer: { value: new THREE.Vector3() },
@@ -58,16 +65,22 @@ export class Renderer {
       uEyeInWater: { value: 0 }, uNear: { value: 0.05 }, uFar: { value: 1000 }, uProjInv: { value: new THREE.Matrix4() },
       uRender: { value: 160 }, uMoon: { value: textures.moon }, uMoonPhase: { value: 0 }, uSkyAtEye: { value: 1 },
       uWaterTint: { value: new THREE.Vector3(0.05, 0.18, 0.78) }, uCover: { value: 0.42 }, uCamPos: { value: new THREE.Vector3() },
-      uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() },
+      uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uInvViewProj: { value: new THREE.Matrix4() },
+      // the light in your hand (level, faded in and out) and where it is; torches' flicker; how dark cloud shadows are
+      uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow === 0 ? 0 : 0.8 },
     };
-    this.mats = makeMaterials(this.U);
+    this.mats = makeMaterials(this.U, this.opts);
     this.mats.fluid = makeWaterMaterial(this.U, this.opts);
-    this.post = new Post(r, this.U, this.opts);
+    // the full tiers run the whole chain after the world; the low ones draw straight to the screen
+    this.post = ldr ? null : new Post(r, this.U, this.opts);
+    if (ldr) { this.skyFS = new FullScreen(makeLdrSky(this.U)); }
     // the block in your hand: drawn in the world just in front of the eye
     this.handScene = new THREE.Scene();
     this.hand = new THREE.Group();
     this.handScene.add(this.hand);
     this.swing = 0;
+    // the player's own model: third person, its shadow, and the bare arm in first person
+    this.avatar = new Avatar(this);
     this.columns = new Map();
     this.frame = 0;
     this.resize(canvas.clientWidth || 1280, canvas.clientHeight || 720);
@@ -77,9 +90,16 @@ export class Renderer {
     this.cw = w; this.ch = h;
     const s = this.opts.scale;
     const rw = Math.max(1, Math.round(w * s)), rh = Math.max(1, Math.round(h * s));
-    this.r.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.U.uRes.value.set(rw, rh);
+    this.rw = rw; this.rh = rh;
+    if (this.ldr) {
+      // drawn at the render scale and stretched by the browser: the cheapest upscale there is
+      this.r.setSize(rw, rh, false);
+      return;
+    }
+    this.r.setSize(w, h, false);
     if (this.main) this.main.dispose();
     this.main = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType, depthBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     this.main.depthTexture = new THREE.DepthTexture(rw, rh, THREE.FloatType);
@@ -90,10 +110,30 @@ export class Renderer {
     this.rw = rw; this.rh = rh;
   }
 
-  /* ---- chunk meshes ---- */
+  /* ---- chunk meshes ----
+     Meshes arriving from the workers are queued and put on the GPU a few a
+     frame, so a burst of them never stalls one frame. */
   setColumn(cx, cz, mesh) {
+    const k = cx + ',' + cz;
+    this.uploads = this.uploads || new Map();
+    this.uploads.set(k, [cx, cz, mesh]);
+  }
+  pumpUploads(budgetMs) {
+    if (!this.uploads || !this.uploads.size) return;
+    const t0 = performance.now();
+    // nearest first
+    const list = [...this.uploads.values()].sort((a, b) => ((a[0] - this.ccx) ** 2 + (a[1] - this.ccz) ** 2) - ((b[0] - this.ccx) ** 2 + (b[1] - this.ccz) ** 2));
+    for (const [cx, cz, mesh] of list) {
+      this.uploads.delete(cx + ',' + cz);
+      this.addColumn(cx, cz, mesh);
+      if (performance.now() - t0 > budgetMs) break;
+    }
+    this.visDirty = true;
+  }
+  addColumn(cx, cz, mesh) {
     this.dropColumn(cx, cz);
     const objs = [];
+    const col = { cx, cz, vis: mesh.vis, skyLow: mesh.skyLow, parts: [], shadows: [] };
     const add = (data, kind, scene, material, shadowMat) => {
       if (!data) return;
       const g = new THREE.BufferGeometry();
@@ -117,8 +157,16 @@ export class Renderer {
       m.matrixAutoUpdate = false; m.updateMatrix();
       scene.add(m);
       objs.push(m);
+      col.parts.push({ m, g, marks: data.marks });
       if (shadowMat) {
-        const s = new THREE.Mesh(g, shadowMat);
+        // the shadow pass needs nothing below where the sky reaches
+        const sg = new THREE.BufferGeometry();
+        for (const nm in g.attributes) sg.setAttribute(nm, g.attributes[nm]);
+        sg.setIndex(g.index);
+        sg.boundingSphere = g.boundingSphere; sg.boundingBox = g.boundingBox;
+        const from = data.marks[Math.max(0, Math.min(24, (mesh.skyLow >> 4) - 1))];
+        sg.setDrawRange(from, data.index.length - from);
+        const s = new THREE.Mesh(sg, shadowMat);
         s.position.copy(m.position); s.matrixAutoUpdate = false; s.updateMatrix();
         this.shadowScene.add(s);
         objs.push(s);
@@ -126,68 +174,96 @@ export class Renderer {
     };
     add(mesh.opaque, 'opaque', this.scene, this.mats.opaque, this.mats.shadowOpaque);
     add(mesh.cutout, 'cutout', this.scene, this.mats.cutout, this.mats.shadowCutout);
+    // plants: their own mesh, so far columns can leave them out (and the low tiers cast no shadow with them)
+    add(mesh.plants, 'plants', this.scene, this.mats.cutout, this.opts.plantShadows === false ? null : this.mats.shadowCutout);
+    col.plants = col.parts.length && mesh.plants ? col.parts[col.parts.length - 1].m : null;
+    add(mesh.leafIn, 'leafIn', this.scene, this.mats.cutout, this.opts.leafInShadows === false ? null : this.mats.shadowCutout);
+    col.leafIn = mesh.leafIn ? col.parts[col.parts.length - 1].m : null;
     add(mesh.fluid, 'fluid', this.trans, this.mats.fluid, null);
     add(mesh.translucent, 'translucent', this.trans, this.mats.translucent, null);
-    this.columns.set(cx + ',' + cz, objs);
+    col.objs = objs;
+    this.columns.set(cx + ',' + cz, col);
   }
   dropColumn(cx, cz) {
     const k = cx + ',' + cz;
-    const objs = this.columns.get(k);
-    if (!objs) return;
+    if (this.uploads) this.uploads.delete(k);
+    const col = this.columns.get(k);
+    if (!col) return;
     const seen = new Set();
-    for (const o of objs) {
+    for (const o of col.objs) {
       o.parent && o.parent.remove(o);
       if (!seen.has(o.geometry)) { seen.add(o.geometry); o.geometry.dispose(); }
     }
     this.columns.delete(k);
+    this.visDirty = true;
+  }
+
+  /* ---- cave culling ----
+     A walk outward from the camera's section, through the faces each
+     section's open space connects, never turning back towards the camera
+     (Sodium's method). Each column then draws only the run of sections the
+     walk reached; underground caves you cannot see are never drawn. */
+  updateVisibility(eye) {
+    const csx = Math.floor(eye.x / 16), csz = Math.floor(eye.z / 16), csy = Math.max(0, Math.min(23, Math.floor(eye.y / 16)));
+    const R = this.opts.renderDist + 1;
+    const span = 2 * R + 1;
+    const key = (x, y, z) => ((x - csx + R) * span + (z - csz + R)) * 24 + y;
+    const done = new Uint8Array(span * span * 24);      // entry faces already handled
+    const reach = new Map();                            // column -> [min, max] section
+    const q = [[csx, csy, csz, 63]];
+    done[key(csx, csy, csz)] = 63;
+    const DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    const OPP = [1, 0, 3, 2, 5, 4];
+    while (q.length) {
+      const [x, y, z, entries] = q.pop();
+      const col = this.columns.get(x + ',' + z);
+      const ck = x + ',' + z;
+      const r = reach.get(ck);
+      if (!r) reach.set(ck, [y, y]); else { if (y < r[0]) r[0] = y; if (y > r[1]) r[1] = y; }
+      // which faces can be left by, from the faces it was entered by
+      let exits = 0;
+      if (!col || !col.vis || (x === csx && y === csy && z === csz)) exits = 63;
+      else for (let f = 0; f < 6; f++) if (entries & (1 << f)) exits |= col.vis[y * 6 + f];
+      for (let f = 0; f < 6; f++) {
+        if (!(exits & (1 << f))) continue;
+        const [dx, dy, dz] = DIRS[f];
+        // never back towards the camera
+        if ((dx > 0 && x < csx) || (dx < 0 && x > csx) || (dy > 0 && y < csy) || (dy < 0 && y > csy) || (dz > 0 && z < csz) || (dz < 0 && z > csz)) continue;
+        const nx = x + dx, ny = y + dy, nz = z + dz;
+        if (ny < 0 || ny > 23 || Math.abs(nx - csx) > R || Math.abs(nz - csz) > R) continue;
+        const kk = key(nx, ny, nz), ent = 1 << OPP[f];
+        if (done[kk] & ent) continue;
+        done[kk] |= ent;
+        q.push([nx, ny, nz, ent]);
+      }
+    }
+    for (const [k, col] of this.columns) {
+      const r = reach.get(k);
+      for (const p of col.parts) {
+        if (!r) { p.m.visible = false; continue; }
+        p.m.visible = true;
+        const from = p.marks[r[0]], to = p.marks[Math.min(24, r[1] + 1)];
+        if (to <= from) { p.m.visible = false; continue; }
+        p.g.setDrawRange(from, to - from);
+      }
+    }
+    this.visKey = csx + ',' + csy + ',' + csz;
+    this.visDirty = false;
   }
 
   /* ---- the held block ----
-     A little cube (or a flat sprite for plants and torches) in the terrain's
-     own vertex format, so it takes the same light, shadow and fog. */
+     The block's own shape (or the flat item picture for plants, doors,
+     torches) in the terrain's own vertex format, so it takes the same light,
+     shadow and fog. See blockmesh.js. */
   setHeld(id, BLOCKS) {
     this.hand.clear();
     const d = BLOCKS[id];
-    if (!d || !d.faces) return;
-    const verts = [], A = [], L = [], C = [], idx = [];
-    const tint = d.tint === 'grass' ? 0x79c05a : d.tint === 'foliage' ? 0x59ae30 : d.tint === 'water' ? 0x3f76e4 : d.tint === 'spruce' ? 0x619961 : d.tint === 'birch' ? 0x80a755 : 0xffffff;
-    const quad = (pts, uvs, layer, n, flags) => {
-      const v0 = verts.length / 4;
-      for (let c = 0; c < 4; c++) {
-        verts.push(Math.round((pts[c][0] + 8) * 32), Math.round((pts[c][1] + 1) * 32), Math.round((pts[c][2] + 8) * 32), layer);
-        A.push(uvs[c][0], uvs[c][1], n, 3 | flags);
-        L.push(255, 0, 0, 0);
-        C.push(tint >> 16, (tint >> 8) & 255, tint & 255, 255);
-      }
-      idx.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);
-    };
-    const tinted = d.tint ? 64 : 0;
-    if (d.shape === 'cube' || d.shape === 'snow' || d.shape === 'cactus') {
-      // the mesher's faces: normal, then +u and +v directions
-      const F = [[[1, 0, 0], [0, 0, -1], [0, -1, 0]], [[-1, 0, 0], [0, 0, 1], [0, -1, 0]], [[0, 1, 0], [1, 0, 0], [0, 0, 1]],
-                 [[0, -1, 0], [1, 0, 0], [0, 0, -1]], [[0, 0, 1], [1, 0, 0], [0, -1, 0]], [[0, 0, -1], [-1, 0, 0], [0, -1, 0]]];
-      for (let f = 0; f < 6; f++) {
-        const [n, t, b] = F[f];
-        const pts = [[0, 1], [1, 1], [1, 0], [0, 0]].map(([u, v]) => [0, 1, 2].map(k => n[k] * 0.5 + t[k] * (u - 0.5) + b[k] * (v - 0.5)));
-        let layer = d.faces[f], flags = tinted;
-        if (d.overlay !== undefined && f !== 2 && f !== 3) flags = 16 | 64;
-        else if (d.overlay !== undefined && f === 3) flags = 0;
-        if (d.front && f === 4) layer = d.front;
-        quad(pts, [[0, 16], [16, 16], [16, 0], [0, 0]], layer, f, flags);
-      }
-    } else {
-      const layer = d.faces[2];
-      quad([[-0.5, -0.5, 0], [0.5, -0.5, 0], [0.5, 0.5, 0], [-0.5, 0.5, 0]], [[0, 16], [16, 16], [16, 0], [0, 0]], layer, 4, tinted | 32);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('aPos', new THREE.BufferAttribute(new Uint16Array(verts), 4));
-    g.setAttribute('aA', new THREE.BufferAttribute(new Uint8Array(A), 4));
-    g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(L), 4));
-    g.setAttribute('aC', new THREE.BufferAttribute(new Uint8Array(C), 4));
-    g.setIndex(idx);
-    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 2);
-    const flat = d.shape !== 'cube' && d.shape !== 'snow' && d.shape !== 'cactus';
-    const m = new THREE.Mesh(g, flat ? this.mats.handCutout : this.mats.handOpaque);
+    // a torch, lantern or glowstone in your hand lights the world around you (faded in render())
+    this.heldLight = d && d.light ? d.light : 0;
+    if (!d || !d.faces) { this.handMesh = null; this.avatar.setHeld(null); return; }
+    // the same boxes as the world draws (a held stair is a stair), or the item's flat picture
+    const { geometry: g, flat, cutout } = blockGeometry(d, d.iconMeta || 0);
+    const m = new THREE.Mesh(g, cutout ? this.mats.handCutout : this.mats.handOpaque);
     m.frustumCulled = false;
     // the shader's face frames turn with the hand
     const rot = new THREE.Matrix3();
@@ -196,6 +272,9 @@ export class Renderer {
     this.handMesh = m;
     this.hand.add(m);
     this.heldFlat = flat;
+    this.avatar.setHeld(m, flat);
+    // glass and leaves keep their holes in the model's hand too
+    if (cutout && this.avatar.held) this.avatar.held.material = this.mats.cutout;
   }
   placeHand(state, cam) {
     if (!this.handMesh) return;
@@ -210,6 +289,32 @@ export class Renderer {
     m.rotation.set(this.heldFlat ? sw * -0.6 : 0.42 - sw * 0.6, this.heldFlat ? -0.5 : 0.785 + sw * 0.4, 0, 'YXZ');
     m.scale.setScalar(this.heldFlat ? 0.55 : 0.4);
     this.hand.updateMatrixWorld(true);
+  }
+  // first person only: the held block, or the bare arm when the hand is empty
+  drawHand(state, cam, dt) {
+    this.swing = Math.max(0, this.swing - dt * 3.2);
+    if (state.showHand === false || this.avatar.view) return;
+    if (this.handMesh) this.placeHand(state, cam);
+    this.avatar.placeArm(state, cam, !this.handMesh);
+    this.r.render(this.handScene, cam);
+  }
+
+  /* ---- the light in your hand, and torch flicker ---- */
+  updateLights(state, dt) {
+    const U = this.U, t = U.uClock.value;
+    // the held light fades in and out rather than snapping
+    const want = this.heldLight || 0;
+    this.heldNow = (this.heldNow || 0) + (want - (this.heldNow || 0)) * (1 - Math.exp(-dt * 7));
+    if (this.heldNow < 0.05 && want === 0) this.heldNow = 0;
+    U.uHeldLight.value = this.heldNow * (1 + 0.025 * Math.sin(t * 6.1) + 0.015 * Math.sin(t * 13.7 + 2.0));
+    // at the player's right hand (state.handPos if the game knows better)
+    if (state.handPos) U.uHeldPos.value.copy(state.handPos);
+    else {
+      const y = state.yaw || 0, s = Math.sin(y), c = Math.cos(y), f = state.feet;
+      U.uHeldPos.value.set(f.x + c * 0.35 - s * 0.3, f.y + 1.2, f.z - s * 0.35 - c * 0.3);
+    }
+    // a slow, gentle flicker for every torch
+    U.uFlicker.value = 1 + 0.03 * Math.sin(t * 2.3) + 0.02 * Math.sin(t * 5.3 + 1.3) + 0.012 * Math.sin(t * 11.9 + 0.4);
   }
 
   /* ---- a frame ---- */
@@ -233,6 +338,8 @@ export class Renderer {
     const cam = this.camera;
     cam.position.copy(state.eye);
     cam.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
+    // the player's model posed for this frame (and, in third person, the camera pulled back)
+    this.avatar.update(state, dt, cam);
     cam.fov = state.fov;
     cam.far = this.opts.renderDist * 16 + 96;
     cam.updateProjectionMatrix();
@@ -240,21 +347,40 @@ export class Renderer {
     U.uNear.value = cam.near; U.uFar.value = cam.far;
     U.uCamPos.value.copy(cam.position);
     U.uProjInv.value.copy(cam.projectionMatrixInverse);
+    this.updateLights(state, dt);
+    this.ccx = Math.floor(cam.position.x / 16); this.ccz = Math.floor(cam.position.z / 16);
+    this.pumpUploads(this.opts.uploadMs || 4);
+    const vk = Math.floor(cam.position.x / 16) + ',' + Math.max(0, Math.min(23, Math.floor(cam.position.y / 16))) + ',' + Math.floor(cam.position.z / 16);
+    const now = performance.now();
+    if (vk !== this.visKey || (this.visDirty && now - (this.visAt || 0) > 200)) { this.updateVisibility(cam.position); this.visAt = now; }
+    // grass and flowers stop where you could not make them out anyway
+    const pd = (this.opts.plantDist || 96) / 16;
+    // and the inside of a tree's canopy only near enough to see into
+    const ld = (this.opts.leafInDist || 64) / 16;
+    for (const col of this.columns.values()) {
+      const d = Math.hypot(col.cx + 0.5 - cam.position.x / 16, col.cz + 0.5 - cam.position.z / 16);
+      if (col.plants && d >= pd) col.plants.visible = false;
+      if (col.leafIn && d >= ld) col.leafIn.visible = false;
+    }
 
-    this.sky.update(sun, moon, state.eye.y);
+    // the sky table: every frame on the full tiers, every few on the low ones (it changes slowly)
+    if (this.frame % (this.opts.sky || 1) === 0 || this.frame < 3) this.sky.update(sun, moon, state.eye.y);
     this.inter.update(dt, state.feet, state.trample);
     U.uInteract.value = this.inter.texture;
 
-    // the shadow map, from whichever light is up
+    // the shadow map, from whichever light is up (some tiers redraw it every other frame)
+    const doShadow = this.opts.shadows > 0 && (this.frame % (this.opts.shadowEvery || 1) === 0);
+    if (doShadow) {
     const D = this.opts.shadowDist;
     const sc = this.shadowCam;
     sc.left = -D; sc.right = D; sc.top = D; sc.bottom = -D; sc.near = -320; sc.far = 320;
     sc.updateProjectionMatrix();
-    const up = Math.abs(light.y) > 0.99 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-    const look = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 0, 0), light.clone().negate(), up);
+    const T = this.tmp || (this.tmp = { up: new THREE.Vector3(), o: new THREE.Vector3(), n: new THREE.Vector3(), look: new THREE.Matrix4(), inv: new THREE.Matrix4(), c: new THREE.Vector3() });
+    const up = Math.abs(light.y) > 0.99 ? T.up.set(0, 0, 1) : T.up.set(0, 1, 0);
+    const look = T.look.lookAt(T.o.set(0, 0, 0), T.n.copy(light).negate(), up);
     // snap the centre to whole texels in the light's own frame
-    const inv = look.clone().invert();
-    const centre = state.feet.clone().applyMatrix4(inv);
+    const inv = T.inv.copy(look).invert();
+    const centre = T.c.copy(state.feet).applyMatrix4(inv);
     const texel = 2 * D / this.opts.shadowRes * 0.25;
     centre.x = Math.round(centre.x / texel) * texel; centre.y = Math.round(centre.y / texel) * texel;
     centre.applyMatrix4(look);
@@ -266,21 +392,38 @@ export class Renderer {
     r.setClearColor(0xffffff, 1);
     r.clear(true, true, false);
     if (light.y > 0.0) r.render(this.shadowScene, sc);
+    }
+    U.uInvViewProj.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
+    if (this.ldr) {
+      // exposure worked out here: by day the sky, by night the moon, deeper in a cave
+      const day = Math.min(1, Math.max(0, (sun.y + 0.12) / 0.42));
+      let e = Math.exp(Math.log(4.2) + (Math.log(0.11) - Math.log(4.2)) * Math.sqrt(day));
+      if (state.skyAtEye < 1) e *= 2.2;
+      const ex = this.ldrExpo === undefined ? e : this.ldrExpo + (e - this.ldrExpo) * Math.min(1, dt * 1.5);
+      this.ldrExpo = ex;
+      U.uExposure.value = ex;
+      r.setRenderTarget(null);
+      r.setClearColor(0x000000, 1);
+      r.clear(true, true, false);
+      this.skyFS.render(r, null);
+      r.render(this.scene, cam);
+      if (this.overlay) this.overlay.render(r, cam);
+      r.render(this.trans, cam);
+      this.drawHand(state, cam, dt);
+      return;
+    }
 
     // the world
     r.setRenderTarget(this.main);
     r.setClearColor(0x000000, 1);
     r.clear(true, true, false);
     r.render(this.scene, cam);
+    if (this.overlay) this.overlay.render(r, cam);
     this.post.copies(this.main);
     r.setRenderTarget(this.main);
     r.render(this.trans, cam);
     // the hand, over everything, never inside a wall
-    if (this.handMesh && state.showHand !== false) {
-      this.swing = Math.max(0, this.swing - dt * 3.2);
-      this.placeHand(state, cam);
-      r.render(this.handScene, cam);
-    }
+    this.drawHand(state, cam, dt);
     // and all that comes after
     this.post.frame(this.main, cam, dt);
   }

@@ -13,12 +13,18 @@
      flying          double-tap Space; Space and Shift for up and down
 
    The body is 0.6 wide and 1.8 tall with eyes at 1.62, and moves into the
-   world one axis at a time (y, then x, then z), as the game does.
+   world one axis at a time (y, then x, then z), as the game does: every box
+   it could touch this tick (full blocks, and the boxes of slabs, stairs,
+   fences, doors...) is gathered, and the move along each axis is cut short
+   at the first one in the way. Walking into something up to 0.6 high steps
+   up onto it, which is how stairs and slabs are climbed.
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=1';
+import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=2';
+import { collisionBoxes, selectionBoxes } from './models.js?v=2';
 const THREE = window.THREE;
 
-const W = 0.3, HT = 1.8;
+const W = 0.3, HT = 1.8, STEP = 0.6;
+const EPS = 1e-7;
 
 export class Player {
   constructor(world) {
@@ -33,13 +39,17 @@ export class Player {
     this.walkDist = 0; this.prevWalk = 0;
     this.bob = 0;
     this.fov = 70;
+    this.baseFov = 70;            // the FOV option; sprinting widens it by fovEffects
+    this.fovEffects = 1;
+    this.canFly = true;           // creative mode
+    this.stepped = 0;
     this.lastSpace = 0;
     this.splashes = [];
   }
   setKey(k, on) {
     if (k === ' ' && on && !this.keys[' ']) {
       const now = performance.now();
-      if (now - this.lastSpace < 300) this.flying = !this.flying, this.vel.y = 0;
+      if (now - this.lastSpace < 300 && this.canFly) this.flying = !this.flying, this.vel.y = 0;
       this.lastSpace = now;
     }
     if ((k === 'w') && on && !this.keys.w) {
@@ -51,47 +61,83 @@ export class Player {
   }
 
   /* ---- collision ---- */
-  boxHits(x0, y0, z0, x1, y1, z1) {
-    for (let y = Math.floor(y0); y <= Math.floor(y1 - 1e-7); y++)
-      for (let z = Math.floor(z0); z <= Math.floor(z1 - 1e-7); z++)
-        for (let x = Math.floor(x0); x <= Math.floor(x1 - 1e-7); x++) {
-          const b = this.w.get(x, y, z);
-          if (b && SOLID[b]) return true;
-          if (!this.w.loaded(x, z)) return true;    // the edge of the loaded world is a wall
+  // every solid box overlapping a region, as flat [x0, y0, z0, x1, y1, z1] runs in this.bx
+  gather(x0, y0, z0, x1, y1, z1) {
+    const out = this.bx || (this.bx = []);
+    out.length = 0;
+    const w = this.w;
+    const nbAt = (x, y, z) => (dx, dy, dz) => { const b = w.get(x + dx, y + dy, z + dz); return b ? { d: BLOCKS[b], m: w.meta(x + dx, y + dy, z + dz) } : null; };
+    for (let y = Math.floor(y0) - 1; y <= Math.floor(y1); y++)
+      for (let z = Math.floor(z0); z <= Math.floor(z1); z++)
+        for (let x = Math.floor(x0); x <= Math.floor(x1); x++) {
+          if (!w.loaded(x, z)) { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }   // the edge of the loaded world is a wall
+          const b = w.get(x, y, z);
+          if (!b || !SOLID[b]) continue;
+          const d = BLOCKS[b];
+          if (d.shape === 'cube') { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }
+          const boxes = collisionBoxes(d, w.meta(x, y, z), nbAt(x, y, z));
+          if (boxes) for (const c of boxes) out.push(x + c[0], y + c[1], z + c[2], x + c[3], y + c[4], z + c[5]);
         }
+    return out;
+  }
+  // how far the body box can go along one axis before a box stops it (Minecraft's clip)
+  clip(bx, axis, d, x0, y0, z0, x1, y1, z1) {
+    if (d === 0) return 0;
+    const lo = [x0, y0, z0], hi = [x1, y1, z1];
+    const a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
+    for (let i = 0; i < bx.length; i += 6) {
+      if (bx[i + a1 + 3] <= lo[a1] + EPS || bx[i + a1] >= hi[a1] - EPS) continue;
+      if (bx[i + a2 + 3] <= lo[a2] + EPS || bx[i + a2] >= hi[a2] - EPS) continue;
+      if (d > 0 && bx[i + axis] >= hi[axis] - EPS) d = Math.min(d, bx[i + axis] - hi[axis]);
+      else if (d < 0 && bx[i + axis + 3] <= lo[axis] + EPS) d = Math.max(d, bx[i + axis + 3] - lo[axis]);
+    }
+    return d;
+  }
+  // the move itself: y, x, z, then the same again lifted by a step if that gets further
+  slide(px, py, pz, dx, dy, dz, bx) {
+    let x0 = px - W, y0 = py, z0 = pz - W, x1 = px + W, y1 = py + HT, z1 = pz + W;
+    const my = this.clip(bx, 1, dy, x0, y0, z0, x1, y1, z1); y0 += my; y1 += my;
+    const mx = this.clip(bx, 0, dx, x0, y0, z0, x1, y1, z1); x0 += mx; x1 += mx;
+    const mz = this.clip(bx, 2, dz, x0, y0, z0, x1, y1, z1); z0 += mz; z1 += mz;
+    return [mx, my, mz];
+  }
+  boxHits(x0, y0, z0, x1, y1, z1) {
+    const bx = this.gather(x0, y0, z0, x1, y1, z1);
+    for (let i = 0; i < bx.length; i += 6)
+      if (bx[i] < x1 - EPS && bx[i + 3] > x0 + EPS && bx[i + 1] < y1 - EPS && bx[i + 4] > y0 + EPS && bx[i + 2] < z1 - EPS && bx[i + 5] > z0 + EPS) return true;
     return false;
   }
   move(dx, dy, dz) {
     const p = this.pos;
-    // y first, then x, then z, stopping at whatever is solid
-    const tryAxis = (axis, d) => {
-      if (d === 0) return 0;
-      const n = Math.ceil(Math.abs(d) / 0.45);
-      const s = d / n;
-      let moved = 0;
-      for (let i = 0; i < n; i++) {
-        const q = p.clone(); q[axis] += s;
-        if (this.boxHits(q.x - W, q.y, q.z - W, q.x + W, q.y + HT, q.z + W)) {
-          // slide up against it as close as it allows
-          if (axis === 'y') p.y = s < 0 ? Math.floor(p.y + 1e-6) + 0.0 : Math.ceil(p.y + HT) - HT - 1e-4;
-          else if (s > 0) p[axis] = Math.ceil(p[axis] + W) - W - 1e-4;
-          else p[axis] = Math.floor(p[axis] - W) + W + 1e-4;
-          return moved + 1;   // hit
-        }
-        p[axis] = q[axis]; moved += s;
-      }
-      return 0;
-    };
-    const hy = tryAxis('y', dy);
-    if (hy) { if (dy < 0) this.onGround = true; this.vel.y = 0; } else if (dy !== 0) this.onGround = false;
-    // sneaking keeps you on the edge of a block
+    // sneaking keeps you on the edge of a block: no step that would leave nothing under you
     if (this.sneaking && this.onGround && !this.flying) {
-      const edge = (nx, nz) => !this.boxHits(nx - W, p.y - 0.6, nz - W, nx + W, p.y, nz + W);
-      if (edge(p.x + dx, p.z)) dx = 0;
-      if (edge(p.x, p.z + dz)) dz = 0;
+      const drop = (nx, nz) => !this.boxHits(nx - W, p.y - STEP, nz - W, nx + W, p.y, nz + W);
+      while (dx !== 0 && drop(p.x + dx, p.z)) dx = Math.abs(dx) < 0.05 ? 0 : dx - Math.sign(dx) * 0.05;
+      while (dz !== 0 && drop(p.x, p.z + dz)) dz = Math.abs(dz) < 0.05 ? 0 : dz - Math.sign(dz) * 0.05;
+      while (dx !== 0 && dz !== 0 && drop(p.x + dx, p.z + dz)) {
+        dx = Math.abs(dx) < 0.05 ? 0 : dx - Math.sign(dx) * 0.05;
+        dz = Math.abs(dz) < 0.05 ? 0 : dz - Math.sign(dz) * 0.05;
+      }
     }
-    if (tryAxis('x', dx)) this.vel.x = 0;
-    if (tryAxis('z', dz)) { this.vel.z = 0; }
+    const reach = Math.max(Math.abs(dx), Math.abs(dz)) + STEP + 1;
+    const bx = this.gather(p.x - W - reach, p.y - reach, p.z - W - reach, p.x + W + reach, p.y + HT + reach, p.z + W + reach);
+    let [mx, my, mz] = this.slide(p.x, p.y, p.z, dx, dy, dz, bx);
+    const landed = dy < 0 && my !== dy;
+    // blocked sideways while on (or landing on) the ground: try it a step higher
+    if ((this.onGround || landed) && !this.flying && (mx !== dx || mz !== dz)) {
+      const up = this.clip(bx, 1, STEP, p.x - W, p.y, p.z - W, p.x + W, p.y + HT, p.z + W);
+      const [sx, , sz] = this.slide(p.x, p.y + up, p.z, dx, 0, dz, bx);
+      if (sx * sx + sz * sz > mx * mx + mz * mz + 1e-9) {
+        // and back down onto whatever is there
+        const down = this.clip(bx, 1, -up, p.x + sx - W, p.y + up, p.z + sz - W, p.x + sx + W, p.y + up + HT, p.z + sz + W);
+        mx = sx; mz = sz; my = up + down;
+        this.stepped = (this.stepped || 0) + my;      // the camera eases up the step
+      }
+    }
+    p.x += mx; p.y += my; p.z += mz;
+    if (my !== dy) { if (dy < 0) this.onGround = true; this.vel.y = 0; } else if (dy !== 0) this.onGround = false;
+    if (mx !== dx) this.vel.x = 0;
+    if (mz !== dz) this.vel.z = 0;
   }
 
   /* ---- one tick ---- */
@@ -161,9 +207,11 @@ export class Player {
     if (this.onGround) this.walkDist += moved * 0.6;
     // wading and swimming push ripples out across the water
     if (this.inWater && moved > 0.02 && Math.random() < 0.6) this.splashes.push([this.pos.x, this.pos.z, 0.25 + moved * 1.2, 1.2]);
-    if (this.pos.y < -80) { this.pos.y = 200; this.vel.set(0, 0, 0); }
+    // creative: falling out of the world brings you back down from the sky (survival hurts instead)
+    if (this.canFly && this.pos.y < -80) { this.pos.y = 200; this.vel.set(0, 0, 0); }
+    if (!this.canFly) this.flying = false;
     // a little wider when sprinting, as the game does
-    const want = 70 * (this.sprinting ? 1.12 : 1) * (this.flying && this.sprinting ? 1.05 : 1);
+    const want = this.baseFov * (1 + ((this.sprinting ? 1.12 : 1) * (this.flying && this.sprinting ? 1.05 : 1) - 1) * this.fovEffects);
     this.fov += (want - this.fov) * 0.35;
   }
 
@@ -175,7 +223,7 @@ export class Player {
     eye.y += this.sneaking ? 1.27 : 1.62;
     // the game's head bob: a figure of eight as you walk
     const speed = Math.min(1, Math.hypot(this.vel.x, this.vel.z) * 4);
-    const bobAmt = this.onGround && !this.flying ? speed : 0;
+    const bobAmt = this.onGround && !this.flying && this.bobbing !== false ? speed : 0;
     this.bob += (bobAmt - this.bob) * 0.1;
     const bx = Math.sin(walk * Math.PI) * 0.05 * this.bob, by = -Math.abs(Math.cos(walk * Math.PI)) * 0.08 * this.bob;
     eye.x += Math.cos(this.yaw) * bx; eye.z += -Math.sin(this.yaw) * bx;
@@ -195,16 +243,53 @@ export class Player {
     let face = null, t = 0;
     while (t <= reach) {
       const b = this.w.get(x, y, z);
-      if (b && !FLUID[b] && b !== B.air) return { x, y, z, b, face };
+      if (b && !FLUID[b] && b !== B.air && BLOCKS[b].shape !== 'none') {
+        const d = BLOCKS[b];
+        if (d.shape === 'cube') return { x, y, z, b, face, t, hit: [eye.x + dir.x * t, eye.y + dir.y * t, eye.z + dir.z * t] };
+        // a shaped block: the nearest of its boxes the ray goes through, if any
+        const w = this.w, bx = x, by = y, bz = z;
+        const nb = (dx, dy, dz) => { const n = w.get(bx + dx, by + dy, bz + dz); return n ? { d: BLOCKS[n], m: w.meta(bx + dx, by + dy, bz + dz) } : null; };
+        const r = rayBoxes(eye, dir, x, y, z, selectionBoxes(d, w.meta(x, y, z), nb));
+        if (r && r.t <= reach) return { x, y, z, b, face: r.face, t: r.t, hit: r.hit, box: r.box };
+      }
       if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; face = [-sx, 0, 0]; }
       else if (ty < tz) { y += sy; t = ty; ty += tdy; face = [0, -sy, 0]; }
       else { z += sz; t = tz; tz += tdz; face = [0, 0, -sz]; }
     }
     return null;
   }
-  // would a block here overlap the player?
-  occupies(x, y, z) {
+  // would a block here overlap the player? (a whole cube, or the given boxes)
+  occupies(x, y, z, boxes) {
+    if (boxes) {
+      const p = this.pos;
+      return boxes.some(c => x + c[3] > p.x - W && x + c[0] < p.x + W && z + c[5] > p.z - W && z + c[2] < p.z + W && y + c[4] > p.y && y + c[1] < p.y + HT);
+    }
     const p = this.pos;
     return x + 1 > p.x - W && x < p.x + W && z + 1 > p.z - W && z < p.z + W && y + 1 > p.y && y < p.y + HT;
   }
+}
+
+// the nearest box a ray enters: where, through which face, and how far along
+function rayBoxes(o, dir, x, y, z, boxes) {
+  let best = null;
+  for (const c of boxes) {
+    let t0 = 0, t1 = 1e9, axis = -1, sgn = 0;
+    const lo = [x + c[0], y + c[1], z + c[2]], hi = [x + c[3], y + c[4], z + c[5]], O = [o.x, o.y, o.z], D = [dir.x, dir.y, dir.z];
+    let ok = true;
+    for (let k = 0; k < 3 && ok; k++) {
+      if (Math.abs(D[k]) < 1e-9) { if (O[k] < lo[k] || O[k] > hi[k]) ok = false; continue; }
+      let a = (lo[k] - O[k]) / D[k], b = (hi[k] - O[k]) / D[k];
+      let s = -1;
+      if (a > b) { const tmp = a; a = b; b = tmp; s = 1; }
+      if (a > t0) { t0 = a; axis = k; sgn = s; }
+      if (b < t1) t1 = b;
+      if (t0 > t1) ok = false;
+    }
+    if (!ok || axis < 0) continue;
+    if (!best || t0 < best.t) {
+      const face = [0, 0, 0]; face[axis] = sgn;
+      best = { t: t0, face, hit: [O[0] + D[0] * t0, O[1] + D[1] * t0, O[2] + D[2] * t0], box: c };
+    }
+  }
+  return best;
 }
