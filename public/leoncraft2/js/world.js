@@ -7,8 +7,8 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=2';
-import { BLOCKS, FLUID } from './blocks.js?v=2';
+import { CH, H, idx } from './world-const.js?v=3';
+import { BLOCKS, FLUID } from './blocks.js?v=3';
 
 export class World {
   constructor(opts) {
@@ -27,7 +27,7 @@ export class World {
     this.nextId = 1;
     this.waiting = new Map();          // job id -> resolver
     this.ready = Promise.all(Array.from({ length: n }, (_, i) => new Promise(res => {
-      const w = new Worker(new URL('./worker.js?v=2', import.meta.url), { type: 'module' });
+      const w = new Worker(new URL('./worker.js?v=3', import.meta.url), { type: 'module' });
       w.onmessage = e => this.onMessage(i, e.data, res);
       w.onerror = e => console.error('worker', e.message || e);
       w.postMessage({ type: 'init', seed: this.seed, manifest: opts.manifest, colours: opts.colours });

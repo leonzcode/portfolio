@@ -30,10 +30,10 @@
       badlands terracotta, snow on peaks, podzol, mycelium, gravel...), then
       deepslate, bedrock, stone blobs and ores, then trees and plants.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=2';
-import { BIO, BIOMES } from './biomes.js?v=2';
-import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=2';
-import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=2';
+import { B, BLOCKS } from './blocks.js?v=3';
+import { BIO, BIOMES } from './biomes.js?v=3';
+import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=3';
+import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=3';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -471,6 +471,7 @@ export class Gen {
     this.nLayer = new NormalNoise(S, 'cave_layer', -8, [1]);
     this.nNoodleThick = new NormalNoise(S, 'noodle_thickness', -8, [1]);
     this.lattice = new Map();             // lattice columns already worked out (for placing trees)
+    this.treeCache = new Map();           // each chunk's own trees, before its neighbours are counted
     // surfaces
     this.nSurf = new NormalNoise(S, 'surface', -6, [1, 1, 1]);
     this.nSurf2 = new NormalNoise(S, 'surface_secondary', -6, [1, 1, 0, 1]);
@@ -841,18 +842,11 @@ export class Gen {
     };
     // trees: where they stand is worked out the same way from every chunk
     // that can see them, so a canopy over an edge always has its trunk
-    let n = F.count || 0;
-    n = Math.floor(n) + (r() < n - Math.floor(n) ? 1 : 0);
-    if (F.trees && !F.count && r() < 0.02) n = 1;          // a lone tree now and then in open land
-    const wetOK = centre === 'mangrove_swamp' || centre === 'swamp';
-    for (let t = 0; t < n; t++) {
-      const tr = rng(mix32(S ^ Math.imul(cx, 0x1b873593) ^ Math.imul(cz, 0xcc9e2d51) ^ Math.imul(t + 1, 0x9e3779b9)));
-      const x = x0 + tr.int(16), z = z0 + tr.int(16);
-      const y = this.surfaceAt(x, z);
-      if (y < 0 || (y < SEA && !(wetOK && y >= SEA - 3))) continue;
-      const bh = BIOMES[pickBiome(this.climate(x, z))].name;
-      if (bh.indexOf('ocean') >= 0 || bh === 'river' || bh === 'beach' || bh === 'desert' || bh.indexOf('peaks') >= 0) continue;
-      this.tree(pickWeighted(tr, F.trees), set, tr, x, Math.max(y, wetOK ? SEA : y) + 1, z);
+    for (const t of this.treesOf(cx, cz)) {
+      // the same random stream the spot and the kind were drawn from, so the shape matches everywhere
+      const tr = this.treeRng(cx, cz, t.t);
+      tr.int(16); tr.int(16); pickWeighted(tr, F.trees);
+      this.tree(t.kind, set, tr, t.x, t.y, t.z);
     }
     if (F.spikes) for (let s = 0; s < F.spikes; s++) {
       const x = x0 + r.int(16), z = z0 + r.int(16), y = ground(x, z);
@@ -949,6 +943,50 @@ export class Gen {
       if (get(x, SEA, z) === B.water && get(x, SEA + 1, z) === 0) set(x, SEA + 1, z, B.lily_pad);
     }
   }
+  /* Where a chunk's trees go. The tries per chunk are the game's own counts
+     (FEAT), but as in the game a tree is planted on top of whatever is
+     already there, leaves too, and a sapling cannot grow on leaves: a try
+     that lands under an earlier tree's canopy comes to nothing. That is most
+     of what keeps a forest from being solid. Earlier means earlier in the
+     same chunk, or in a neighbour that comes before it (north, or west on
+     the same row), so every chunk works out the same list. */
+  ownTrees(cx, cz) {
+    const key = cx + ',' + cz;
+    const c = this.treeCache.get(key);
+    if (c) return c;
+    const S = this.seed, x0 = cx * CH, z0 = cz * CH;
+    const centre = BIOMES[pickBiome(this.climate(x0 + 8, z0 + 8))].name;
+    const F = FEAT[centre] || {};
+    const r = rng(mix32(S ^ Math.imul(cx, 0x632be5ab) ^ Math.imul(cz, 0xcc9e2d51 ^ 0x85157af5) ^ 0x7ee5));
+    const out = [];
+    if (F.trees) {
+      let n = F.count || 0;
+      n = Math.floor(n) + (r() < n - Math.floor(n) ? 1 : 0);
+      if (!F.count && r() < 0.02) n = 1;          // a lone tree now and then in open land
+      const wetOK = centre === 'mangrove_swamp' || centre === 'swamp';
+      for (let t = 0; t < n; t++) {
+        const tr = this.treeRng(cx, cz, t);
+        const x = x0 + tr.int(16), z = z0 + tr.int(16);
+        const kind = pickWeighted(tr, F.trees);
+        const y = this.surfaceAt(x, z);
+        if (y < 0 || (y < SEA && !(wetOK && y >= SEA - 3))) continue;
+        const bh = BIOMES[pickBiome(this.climate(x, z))].name;
+        if (bh.indexOf('ocean') >= 0 || bh === 'river' || bh === 'beach' || bh === 'desert' || bh.indexOf('peaks') >= 0) continue;
+        if (covered(out, x, z)) continue;
+        out.push({ t, x, z, y: Math.max(y, wetOK ? SEA : y) + 1, kind, R: CANOPY[kind] || 2 });
+      }
+    }
+    if (this.treeCache.size > 512) this.treeCache.clear();
+    this.treeCache.set(key, out);
+    return out;
+  }
+  treesOf(cx, cz) {
+    const before = [];
+    for (const [dx, dz] of [[-1, -1], [0, -1], [1, -1], [-1, 0]]) before.push(...this.ownTrees(cx + dx, cz + dz));
+    return this.ownTrees(cx, cz).filter(t => !covered(before, t.x, t.z));
+  }
+  treeRng(cx, cz, t) { return rng(mix32(this.seed ^ Math.imul(cx, 0x1b873593) ^ Math.imul(cz, 0xcc9e2d51) ^ Math.imul(t + 1, 0x9e3779b9))); }
+
   tree(kind, set, r, x, y, z) {
     switch (kind) {
       case 'oak': blobTree(set, r, x, y, z, B.oak_log, B.oak_leaves, 4 + r.int(3)); break;
@@ -990,6 +1028,13 @@ export class Gen {
       }
     }
   }
+}
+// how far each kind of tree's leaves reach from its trunk (the ground it shades from new saplings)
+const CANOPY = { oak: 2, swamp_oak: 3, birch: 2, tall_birch: 2, fancy_oak: 3, spruce: 2, pine: 1, mega_spruce: 4, jungle: 2,
+  mega_jungle: 4, jungle_bush: 2, acacia: 3, dark_oak: 3, cherry: 4, mangrove: 3, mushroom: 0 };
+function covered(trees, x, z) {
+  for (const t of trees) if (Math.abs(t.x - x) <= t.R && Math.abs(t.z - z) <= t.R) return true;
+  return false;
 }
 function OPAQUE_TOP(b) { const d = BLOCKS[b]; return d && d.shape === 'cube' && d.pass === 'opaque' && b !== B.ice && b !== B.packed_ice; }
 function pickWeighted(r, list) {

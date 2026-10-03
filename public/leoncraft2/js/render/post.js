@@ -16,8 +16,8 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=2';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=2';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=3';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=3';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
@@ -110,8 +110,7 @@ void main() {
     L += T * sigS * vis * phase * (1.0 - stepT) / max(sigT, 1e-5);
     T *= stepT;
   }
-  // the shafts fade while a cloud is over the sun where you stand (the far haze keeps some of its light)
-  o = vec4(L * sunC * uSkyAtEye * (water ? 1.0 : 0.35 + 0.65 * cloudShade(uCamPos, uLightDir)), 1.0);
+  o = vec4(L * sunC * uSkyAtEye, 1.0);
 }`;
 
 /* ---- clouds ---- */
