@@ -24,8 +24,8 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=6';
-import { Screen, TextField, WHITE } from './gui.js?v=6';
+import { BLOCKS, B } from '../blocks.js?v=7';
+import { Screen, TextField, WHITE } from './gui.js?v=7';
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
 const HIGHLIGHT = 0x80FFFFFF;         // a hovered slot
