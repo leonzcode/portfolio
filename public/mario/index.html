@@ -1028,6 +1028,7 @@
     background:linear-gradient(#dff2ff, #bfe6ff); overflow:hidden; }
   #gdrivers button i img{ width:58px; height:58px; object-fit:cover; display:block; }
   #gdrivers button i .ic{ width:28px; height:28px; opacity:.5; }
+  #gdrivers button[hidden]{ display:none; }
   #gdrivers button[aria-pressed="true"]{ background:var(--gold); }
   #gdrivers button:hover{ transform:translateY(-1px); }
   #gdrivers button:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--ink); }
@@ -1380,5 +1381,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=102');
+await import('./game.js?v=103');
 </script>

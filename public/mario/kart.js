@@ -11,15 +11,15 @@
    vertices, so a full grid of twelve costs a few dozen draw calls.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=102';
-import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=102';
+import { driverFor, whenDrivers, loadDrivers, tintDriver, tintMaterial, headBox } from './drivers.js?v=103';
+import { paintMaterial, makeAura, DRIVER_STYLE, normaliseStyle } from './cosmetics.js?v=103';
 /* The geometry of the cosmetics - themed bodies, hats, gliders, decorations -
    is fetched with everything else but is not needed to draw a car, so a kart
    built before it arrives simply goes without until it is next built. */
 let ART = null;
 const artWaiting = [];
 // two batches: the first set of cosmetics, and the prizes
-Promise.all([import('./cosmetics-art.js?v=102'), import('./cosmetics-art2.js?v=102').catch(() => ({}))]).then(([a, b]) => {
+Promise.all([import('./cosmetics-art.js?v=103'), import('./cosmetics-art2.js?v=103').catch(() => ({}))]).then(([a, b]) => {
   const both = k => Object.assign({}, a[k] || {}, b[k] || {});
   ART = { HATS: both('HATS'), DECOR: both('DECOR'), GLIDERS: both('GLIDERS'), THEMED_BODIES: both('THEMED_BODIES'), sunglasses: a.sunglasses };
   for (const f of artWaiting.splice(0)) { try { f(); } catch (e) {} }
@@ -27,7 +27,7 @@ Promise.all([import('./cosmetics-art.js?v=102'), import('./cosmetics-art2.js?v=1
 export function whenArt(f) { if (ART) f(); else artWaiting.push(f); }
 export const artLoaded = () => new Promise(res => whenArt(() => res(ART)));
 export const artReady = () => !!ART;
-import { loadKit } from './models.js?v=102';
+import { loadKit } from './models.js?v=103';
 // the drivers and the kit's bodies are fetched once, as soon as anything builds a kart
 loadDrivers('models/chars/');
 loadKit('models/kit/', ['race', 'race-future', 'kart-oobi', 'wheel-racing']);
@@ -128,7 +128,7 @@ const SHADOW_GEO = new THREE.PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2);
 
 import { CHASSIS, WHEELS, TRAILS, chassisOf, wheelsOf, trailOf, normalise, statsOf,
          driverHead, driverBody,
-         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=102';
+         box, cyl, ball, taper, merge, INK, STEEL, DARK } from './parts.js?v=103';
 export { CHASSIS, WHEELS, TRAILS, normalise, statsOf };
 
 /* ---- the model ----------------------------------------------------------- */
