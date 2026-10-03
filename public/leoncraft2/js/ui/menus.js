@@ -26,8 +26,8 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=4';
-import { Packs } from './pack.js?v=4';
+} from './gui.js?v=5';
+import { Packs } from './pack.js?v=5';
 
 const PI = Math.PI;
 

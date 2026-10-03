@@ -1,7 +1,7 @@
 /* Leoncraft 2 - a worker: makes chunks and meshes them, off the main thread. */
-import { Gen } from './worldgen.js?v=4';
-import { meshColumn, setColours } from './mesher.js?v=4';
-import { resolveTextures } from './blocks.js?v=4';
+import { Gen } from './worldgen.js?v=5';
+import { meshColumn, setColours } from './mesher.js?v=5';
+import { resolveTextures } from './blocks.js?v=5';
 
 let gen = null;
 
