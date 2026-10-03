@@ -16,8 +16,8 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=3';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=3';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=4';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=4';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
@@ -421,6 +421,7 @@ export class Post {
     this.mCopy = mat(FS_COPY, U);
     this.mLin = mat(FS_LINDEPTH, U);
     const Q = { VL_STEPS: opts.vlSteps || 14, CLOUD_STEPS: opts.cloudSteps || 20 };
+    this.bloom = opts.bloom !== false;    // the soft glow round bright things: eleven passes, left out where speed matters more
     this.mVL = mat(FS_VL, U, { defines: Q });
     this.mClouds = mat(FS_CLOUDS, U, { defines: Q });
     this.mComp = mat(FS_COMP, U);
@@ -478,17 +479,21 @@ export class Post {
     this.run(this.mComp, this.comp);
     // bloom: down, then back up
     let src = this.comp.texture, sw = this.w, sh = this.h;
+    let upSrc = this.comp.texture;
+    u.uBloomMix.value = this.bloom ? 0.045 : 0;
+    if (this.bloom) {
     for (let i = 0; i < this.down.length; i++) {
       u.uSrc.value = src; u.uTexel.value.set(1 / sw, 1 / sh); u.uFirst.value = i === 0 ? 1 : 0;
       this.run(this.mDown, this.down[i]);
       src = this.down[i].texture; sw = this.down[i].width; sh = this.down[i].height;
     }
-    let upSrc = this.down[this.down.length - 1].texture;
+    upSrc = this.down[this.down.length - 1].texture;
     for (let i = this.down.length - 2; i >= 0; i--) {
       const big = this.down[i + 1];
       u.uSrc.value = upSrc; u.uBase.value = this.down[i].texture; u.uTexel.value.set(1 / big.width, 1 / big.height); u.uMix.value = 1.0;
       this.run(this.mUp, this.up[i]);
       upSrc = this.up[i].texture;
+    }
     }
     // how bright it all is, and the eye adjusting to it
     u.uSrc.value = this.comp.texture; this.run(this.mLum, this.lum);

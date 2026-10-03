@@ -26,8 +26,8 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=3';
-import { Packs } from './pack.js?v=3';
+} from './gui.js?v=4';
+import { Packs } from './pack.js?v=4';
 
 const PI = Math.PI;
 
@@ -631,24 +631,23 @@ export class OptionsScreen extends Screen {
   }
 }
 
-const QUALITY = ['auto', 'potato', 'low', 'medium', 'high', 'ultra'];
-const QUALITY_NAMES = { auto: 'Auto', potato: 'Potato', low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' };
+const QUALITY = ['detailed', 'fast'];
+const QUALITY_NAMES = { detailed: 'Detailed', fast: 'Fast' };
 const QUALITY_TIPS = {
-  auto: 'Picks a level from your graphics chip and adjusts the render scale to keep the frame rate up.',
-  potato: 'Fastest: one pass, no shadows, a short view and fast leaves. For old Chromebooks.',
-  low: 'The full look, sun rays and all, at a lower setting and a shorter view.',
-  medium: 'Shadows, light shafts, clouds and water reflections.',
-  high: 'Everything on, and a longer view.',
-  ultra: 'Everything at its best, the longest view. Needs a strong graphics card.',
+  detailed: 'Sun rays, soft shadows, clouds and water reflections.',
+  fast: 'One pass, no shadows, a short view and fast leaves. For old Chromebooks.',
 };
+const QUALITY_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
 
 export class VideoSettingsScreen extends OptionsListScreen {
   constructor() { super('Video Settings'); }
+  // the graphics setting is put into effect on the way out, and only if it changed
+  onClose() { super.onClose && super.onClose(); if (this.hooks.applyGraphics) this.hooks.applyGraphics(); }
   rows(list) {
     const o = this.options, g = this.gui;
     const rdMax = (g.limits && g.limits.renderDistanceMax) || 32;
     const graphics = new CycleButton(0, 0, 150, 20, 'Graphics', {
-      values: QUALITY, value: o.get('quality'), format: v => QUALITY_NAMES[v], tooltip: v => QUALITY_TIPS[v],
+      values: QUALITY, value: QUALITY_OF[o.get('quality')] || 'detailed', format: v => QUALITY_NAMES[v], tooltip: v => QUALITY_TIPS[v],
       onChange: v => o.set('quality', v),
     });
     const rd = new Slider(0, 0, 150, 20, {
