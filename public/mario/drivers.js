@@ -24,7 +24,7 @@ export const DRIVER_OF = {
   coco: 'character-male-c', mox: 'character-female-c', juno: 'character-male-e', tock: 'character-female-e',
   thomas: 'character-male-b#buzz',
   // Leon's own model, one solid piece with no skeleton (see bakeStatic)
-  nubert: 'nubert',
+  nubert: 'nubert2',
 };
 const baked = {};             // file -> { torso, head, arms, headAt, armsAt, hipAt, top, mat }
 const waiting = [];           // callbacks for karts built before the models were in
