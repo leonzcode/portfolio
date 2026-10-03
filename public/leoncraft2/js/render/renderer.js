@@ -14,16 +14,16 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Sky, SUN_I } from './sky.js?v=5';
-import { Post } from './post.js?v=5';
-import { Interaction } from './interaction.js?v=5';
-import { makeMaterials, makeLayerInfo } from './materials.js?v=5';
-import { makeWaterMaterial } from './water.js?v=5';
-import { makeNoise2D, makeNoise3D } from './noisetex.js?v=5';
-import { makeLdrSky } from './ldrsky.js?v=5';
-import { FullScreen } from './sky.js?v=5';
-import { blockGeometry } from './blockmesh.js?v=5';
-import { Avatar } from './avatar.js?v=5';
+import { Sky, SUN_I } from './sky.js?v=6';
+import { Post } from './post.js?v=6';
+import { Interaction } from './interaction.js?v=6';
+import { makeMaterials, makeLayerInfo } from './materials.js?v=6';
+import { makeWaterMaterial } from './water.js?v=6';
+import { makeNoise2D, makeNoise3D } from './noisetex.js?v=6';
+import { makeLdrSky } from './ldrsky.js?v=6';
+import { FullScreen } from './sky.js?v=6';
+import { blockGeometry } from './blockmesh.js?v=6';
+import { Avatar } from './avatar.js?v=6';
 const THREE = window.THREE;
 
 export class Renderer {

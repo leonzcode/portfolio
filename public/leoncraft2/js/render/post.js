@@ -16,8 +16,8 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=5';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=5';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=6';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=6';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
@@ -421,7 +421,9 @@ export class Post {
     this.mCopy = mat(FS_COPY, U);
     this.mLin = mat(FS_LINDEPTH, U);
     const Q = { VL_STEPS: opts.vlSteps || 14, CLOUD_STEPS: opts.cloudSteps || 20 };
-    this.bloom = opts.bloom !== false;    // the soft glow round bright things: eleven passes, left out where speed matters more
+    this.bloom = opts.bloom !== false;
+    this.fxaa = opts.fxaa !== false;
+    this.halfClouds = !!opts.halfClouds;      // edge smoothing as the last pass, or the tone-mapped picture straight to the screen    // the soft glow round bright things: eleven passes, left out where speed matters more
     this.mVL = mat(FS_VL, U, { defines: Q });
     this.mClouds = mat(FS_CLOUDS, U, { defines: Q });
     this.mComp = mat(FS_COMP, U);
@@ -471,10 +473,14 @@ export class Post {
     // light shafts
     this.run(this.mVL, this.vl);
     // clouds, over the last frame's
-    const ci = this.cloudHist;
-    u.uHistory.value = this.clouds[ci].texture;
-    this.run(this.mClouds, this.clouds[1 - ci]);
-    this.cloudHist = 1 - ci;
+    // they blend into the last frame's anyway: on the faster setting they are worked out every other frame
+    this.cloudTick = (this.cloudTick || 0) + 1;
+    if (!this.halfClouds || (this.cloudTick & 1)) {
+      const ci = this.cloudHist;
+      u.uHistory.value = this.clouds[ci].texture;
+      this.run(this.mClouds, this.clouds[1 - ci]);
+      this.cloudHist = 1 - ci;
+    }
     u.uPrevViewProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     // the composite
     u.uColor.value = main.texture; u.uVL.value = this.vl.texture; u.uClouds.value = this.clouds[this.cloudHist].texture;
@@ -508,7 +514,8 @@ export class Post {
     }
     // tone map, then smooth the edges onto the screen
     u.uColor.value = this.comp.texture; u.uBloom.value = upSrc; u.uExpo.value = this.expo[this.expoI].texture;
-    this.run(this.mFinal, this.ldr);
+    this.run(this.mFinal, this.fxaa ? this.ldr : null);
+    if (!this.fxaa) return;
     u.uSrc.value = this.ldr.texture; u.uTexel.value.set(1 / this.w, 1 / this.h);
     this.run(this.mFxaa, null);
   }
