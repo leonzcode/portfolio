@@ -23,6 +23,8 @@ export const DRIVER_OF = {
   pip: 'character-male-a#noglasses', nib: 'character-female-a', wren: 'character-male-b', bram: 'character-female-b',
   coco: 'character-male-c', mox: 'character-female-c', juno: 'character-male-e', tock: 'character-female-e',
   thomas: 'character-male-b#buzz',
+  // Leon's own model, one solid piece with no skeleton (see bakeStatic)
+  nubert: 'nubert',
 };
 const baked = {};             // file -> { torso, head, arms, headAt, armsAt, hipAt, top, mat }
 const waiting = [];           // callbacks for karts built before the models were in
@@ -94,8 +96,65 @@ function isGlasses(U, a, b, c) {
   return GLASSES_U.some(g => Math.abs(u - g) < 0.02);
 }
 
+/* A model with no skeleton (Nubert, 2026-10-02): nothing to pose and no arms
+   to turn, so the whole of it is the head, which the kart already turns into
+   the corners, sat on the seat. The torso and arms are left empty. Its colours
+   are its own: the character colours and the unique drivers do not repaint it,
+   though a unique driver's metal, glow or ghost still goes on. */
+function bakeStatic(scene) {
+  scene.rotation.y = Math.PI;
+  scene.updateMatrixWorld(true);
+  const H = { pos: [], uv: [], leg: [] };
+  let mat = null, top = -Infinity, bot = Infinity;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  const v = new THREE.Vector3();
+  scene.traverse(o => {
+    if (!o.isMesh) return;
+    mat = mat || o.material;
+    const g = o.geometry, P = g.attributes.position, U = g.attributes.uv;
+    const idx = g.index ? g.index.array : null;
+    const n = idx ? idx.length : P.count;
+    for (let t = 0; t < n; t++) {
+      const i = idx ? idx[t] : t;
+      v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld);
+      H.pos.push(v.x, v.y, v.z);
+      if (U) H.uv.push(U.getX(i), U.getY(i));
+      H.leg.push(0);
+      top = Math.max(top, v.y); bot = Math.min(bot, v.y);
+      x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); z0 = Math.min(z0, v.z); z1 = Math.max(z1, v.z);
+    }
+  });
+  // sat a little down into the seat, the way a person's hips are
+  const hipAt = new THREE.Vector3((x0 + x1) / 2, bot + (top - bot) * 0.1, (z0 + z1) / 2);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(H.pos, 3));
+  if (H.uv.length) g.setAttribute('uv', new THREE.Float32BufferAttribute(H.uv, 2));
+  g.translate(-hipAt.x, -hipAt.y, -hipAt.z);
+  g.computeVertexNormals();
+  const empty = () => { const e = new THREE.BufferGeometry(); e.setAttribute('position', new THREE.Float32BufferAttribute([], 3)); return e; };
+  const m = new THREE.MeshStandardMaterial({ map: mat && mat.map, roughness: 0.62, metalness: 0 });
+  if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
+  // every vertex keeps the colour the texture gives it, whatever a look asks for
+  const px = pixelsOf(mat && mat.map && mat.map.image);
+  if (px && H.uv.length) {
+    const count = H.pos.length / 3, base = new Float32Array(count * 3), col = new THREE.Color();
+    for (let i = 0; i < count; i++) {
+      const x = Math.min(px.w - 1, Math.max(0, Math.floor(H.uv[i * 2] * px.w)));
+      const y = Math.min(px.h - 1, Math.max(0, Math.floor(H.uv[i * 2 + 1] * px.h)));
+      const o = (y * px.w + x) * 4;
+      col.setRGB(px.d[o] / 255, px.d[o + 1] / 255, px.d[o + 2] / 255, THREE.SRGBColorSpace);
+      base[i * 3] = col.r; base[i * 3 + 1] = col.g; base[i * 3 + 2] = col.b;
+    }
+    g.userData.base = base; g.userData.role = new Uint8Array(count); g.userData.shade = new Float32Array(count).fill(1);
+  }
+  return { torso: empty(), head: g, arms: empty(), headAt: hipAt.clone(), armsAt: hipAt.clone(), hipAt, top, mat: m };
+}
+
 function bake(gltf, mod) {
   const scene = gltf.scene;
+  let skinned = false;
+  scene.traverse(o => { if (o.isSkinnedMesh) skinned = true; });
+  if (!skinned) return bakeStatic(scene);
   const clip = gltf.animations.find(a => a.name === 'drive') || gltf.animations.find(a => a.name === 'sit');
   if (clip) {
     const mixer = new THREE.AnimationMixer(scene);

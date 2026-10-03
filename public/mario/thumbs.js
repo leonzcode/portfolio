@@ -8,9 +8,9 @@
    seconds after the last one so it is not holding a GPU context for nothing.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { makeKart, artLoaded, racerOf } from './kart.js?v=99';
-import { driverFor } from './drivers.js?v=99';
-import { merge } from './parts.js?v=99';
+import { makeKart, artLoaded, racerOf } from './kart.js?v=100';
+import { driverFor } from './drivers.js?v=100';
+import { merge } from './parts.js?v=100';
 
 const SIZE = 192;
 const cache = new Map();           // key -> data URL (or null when it could not be drawn)
@@ -113,10 +113,10 @@ async function draw(item, racer, build) {
 }
 
 // the characters arrive a moment after the page; a face drawn before then is the stand-in helmet
-function driversReady() {
+function driversReady(id) {
   return new Promise(res => {
     const t0 = performance.now();
-    const look = () => (driverFor('pip') || performance.now() - t0 > 15000) ? res() : setTimeout(look, 200);
+    const look = () => (driverFor(id || 'pip') || performance.now() - t0 > 15000) ? res() : setTimeout(look, 200);
     look();
   });
 }
@@ -126,7 +126,7 @@ export function portraitFor(i) {
   if (cache.has(key)) return Promise.resolve(cache.get(key));
   const job = queue.then(() => new Promise(res => requestAnimationFrame(res))).then(async () => {
     if (cache.has(key)) return cache.get(key);
-    await driversReady();
+    await driversReady(racerOf(i, null).id);
     if (!setup()) { cache.set(key, null); return null; }
     let url = null;
     try {

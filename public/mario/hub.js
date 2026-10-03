@@ -13,9 +13,9 @@
    Nothing here touches the race itself; the game hands in what it knows
    through `g` and is told what to do through the callbacks.
 --------------------------------------------------------------------------- */
-import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, PRIZE_ROWS, owns, itemById } from './cosmetics.js?v=99';
-import { icon, KIND_ICON, fillIcons } from './icons.js?v=99';
-import { thumbFor, portraitFor } from './thumbs.js?v=99';
+import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, PRIZE_ROWS, owns, itemById } from './cosmetics.js?v=100';
+import { icon, KIND_ICON, fillIcons } from './icons.js?v=100';
+import { thumbFor, portraitFor } from './thumbs.js?v=100';
 
 export function makeHub(g) {
   const { el, esc, MC } = g;

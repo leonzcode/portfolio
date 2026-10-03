@@ -11,25 +11,25 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso, setCustomTrack } from './track.js?v=99';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=99';
-import { packLook, unpackLook, normalise } from './parts.js?v=99';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=99';
-import { whenKit } from './models.js?v=99';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=99';
-import { makeRescue } from './rescue.js?v=99';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=99';
-import { makeBrain, driveBrain } from './ai.js?v=99';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=99';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=99';
-import { makeRanked } from './rk.js?v=99';
-import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=99';
-import { makeHub } from './hub.js?v=99';
-import { icon, KIND_ICON } from './icons.js?v=99';
-import { makeCones } from './cones.js?v=99';
-import { makeHazards } from './hazards.js?v=99';
-import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=99';
-import * as snd from './audio.js?v=99';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=100';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=100';
+import { packLook, unpackLook, normalise } from './parts.js?v=100';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=100';
+import { whenKit } from './models.js?v=100';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=100';
+import { makeRescue } from './rescue.js?v=100';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=100';
+import { makeBrain, driveBrain } from './ai.js?v=100';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=100';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=100';
+import { makeRanked } from './rk.js?v=100';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=100';
+import { makeHub } from './hub.js?v=100';
+import { icon, KIND_ICON } from './icons.js?v=100';
+import { makeCones } from './cones.js?v=100';
+import { makeHazards } from './hazards.js?v=100';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=100';
+import * as snd from './audio.js?v=100';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -188,11 +188,19 @@ let frozen = false;
 let camPinned = false;          // a test has parked the camera; leave it alone
 let soloRound = 0, autoBrain = null;
 
+/* The secret drivers this browser has opened with a code typed on the title
+   screen (Nubert), kept here and on the server under your name. */
+let myUnlocks = {};
+try { myUnlocks = JSON.parse(localStorage.getItem('mkUnlocks') || '{}') || {}; } catch (e) {}
+const canDrive = i => !!RACERS[i] && (!RACERS[i].secret || !!myUnlocks[RACERS[i].id]);
+function saveUnlocks() { try { localStorage.setItem('mkUnlocks', JSON.stringify(myUnlocks)); } catch (e) {} }
+
 // how your car is put together, which is yours and is remembered
 let myBuild = normalise(null);
 try {
   myName = (localStorage.getItem('mkName') || '').slice(0, 12);
   myCast = clamp(+(localStorage.getItem('mkCast') || 0), 0, RACERS.length - 1);
+  if (!canDrive(myCast)) myCast = 0;
   const saved = localStorage.getItem('mkBuild');
   if (saved) myBuild = normalise(JSON.parse(saved));
 } catch (e) {}
@@ -270,9 +278,13 @@ function loadProfile(adopt) {
       myInv = p.inv || {};
       myHeld = p.held || {};
       profileAt = Date.now();
+      // a secret driver opened under this name, on whatever device it was
+      if (p.unlocks && Object.keys(p.unlocks).some(id => !myUnlocks[id])) {
+        Object.assign(myUnlocks, p.unlocks); saveUnlocks(); showDriverChoices();
+      }
       if (adopt && p.look) {
         const L = p.look;
-        if (typeof L.cast === 'number' && L.cast < RACERS.length) { myCast = L.cast; try { localStorage.setItem('mkCast', String(myCast)); } catch (e) {} }
+        if (typeof L.cast === 'number' && L.cast < RACERS.length && canDrive(L.cast)) { myCast = L.cast; try { localStorage.setItem('mkCast', String(myCast)); } catch (e) {} }
         if (L.build) { myBuild = normalise(Object.assign({}, myBuild, L.build)); saveBuild(); }
         myStyle = { char: L.char || {}, kart: Object.assign({}, L.kart || {}) };
         delete myStyle.kart.paint;
@@ -690,7 +702,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=99')
+  import('./props.js?v=100')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -841,7 +853,7 @@ function startRound(field, seed, asPhase, themeId) {
   if (solo && !quietRound) {
     let s = (seed | 0) || 1234;
     const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
-    const pool = RACERS.filter(r => !(me && me.who === r));
+    const pool = RACERS.filter(r => !r.secret && !(me && me.who === r));
     for (let n = karts.length; n < GRID; n++) {
       const r = pool[(n - 1 + pool.length) % pool.length];
       const k = addKart(r, { id: 'bot' + n, name: r.name, bot: true });
@@ -2359,6 +2371,54 @@ function adminCall(body) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }).then(r => r.json()).catch(() => ({ error: 'Could not reach the server.' }));
 }
+
+/* ---------------------------------------------------------- secret codes --
+   The admin code's way in, with letters: six typed on the title screen, not
+   into a box, go to the server, which says what they open, if anything.
+   "nubert" opens Nubert (Leon, 2026-10-02). As with the admin code, the page
+   does not hold the words, and a wrong one shows nothing. What is opened is
+   kept in this browser and, when there is a name, on the server under it. */
+let codeBuf = '', codeAt = 0, codeBusy = false;
+addEventListener('keydown', e => {
+  if (!onTitle()) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = (e.key || '').toLowerCase();
+  if (!/^[a-z]$/.test(k)) { codeBuf = ''; return; }
+  const now = performance.now();
+  if (now - codeAt > 2500) codeBuf = '';          // a pause starts it again
+  codeAt = now;
+  codeBuf = (codeBuf + k).slice(-6);
+  if (codeBuf.length < 6 || codeBusy) return;
+  const code = codeBuf;
+  codeBuf = '';
+  codeBusy = true;
+  fetch(MC + '/kart/code', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name: (myName || '').trim() }),
+  }).then(r => r.json()).catch(() => null).then(j => {
+    codeBusy = false;
+    if (j && j.ok && j.unlock) unlockDriver(j.unlock);
+  });
+});
+function unlockDriver(id) {
+  const i = RACERS.findIndex(r => r.id === id);
+  if (i < 0) return;
+  myUnlocks[id] = Date.now();
+  saveUnlocks();
+  showDriverChoices();
+  // said the way a new cosmetic is, with the driver's own face once it is drawn
+  const box = el('toast');
+  if (!box) return;
+  const d = document.createElement('div');
+  d.className = 'unlock legendary';
+  d.innerHTML = '<i>' + icon('user') + '</i><span><small style="color:' + TIER_COLOUR.legendary + '">Secret driver unlocked</small><b>'
+    + esc(RACERS[i].name) + '</b></span>';
+  box.appendChild(d);
+  if (hub) hub.portrait(i).then(url => { if (url && d.isConnected) d.querySelector('i').innerHTML = '<img alt="" src="' + url + '">'; });
+  try { snd.fanfare(true); } catch (e) {}
+  setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 600); }, 5200);
+}
 const adminBar = () => adminPw
   ? '<div class="adm-bar"><b>Admin</b><button type="button" class="adm-exit">Exit</button></div>' : '';
 const adminAdd = () => adminPw
@@ -2844,6 +2904,11 @@ function buildPaint() {
 let garage = null;
 function tellLook() { if (net) net.setCast(packLook(myCast, myBuild, myColour)); saveStyle(); }
 function showGarage() { if (garage) garage.show(myRacer(), myBuild, styleNow()); }
+// the driver picker, with any secret driver that has been opened since it was built
+function showDriverChoices() {
+  const grid = el('gdrivers');
+  if (grid) grid.querySelectorAll('button').forEach((b, i) => { b.hidden = !canDrive(i); });
+}
 function buildGarage() {
   const canvas = el('gcan'), rows = el('gparts');
   if (!canvas || !rows || garage) return;
@@ -2860,8 +2925,12 @@ function buildGarage() {
     const name = document.createElement('b');
     const label = document.createElement('em');
     label.textContent = 'Driver';
+    // past any secret driver not opened yet
     const step = d => {
-      myCast = ((myCast + d) % RACERS.length + RACERS.length) % RACERS.length;
+      const L = RACERS.length;
+      let n = myCast;
+      for (let k = 0; k < L; k++) { n = ((n + d) % L + L) % L; if (canDrive(n)) break; d = Math.sign(d) || 1; }
+      myCast = n;
       name.textContent = RACERS[myCast].name;
       try { localStorage.setItem('mkCast', String(myCast)); } catch (e) {}
       garage.show(myRacer(), myBuild, styleNow());
@@ -2891,6 +2960,7 @@ function buildGarage() {
       const b = document.createElement('button');
       b.type = 'button';
       b.setAttribute('aria-pressed', String(i === myCast));
+      b.hidden = !canDrive(i);
       b.innerHTML = '<i>' + icon('user') + '</i><span>' + esc(r.name) + '</span>';
       b.onclick = () => {
         if (i === myCast) return;
@@ -3066,7 +3136,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=99');
+    const mod = await import('./net.js?v=100');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3419,7 +3489,7 @@ function editorCtx() {
   };
 }
 function editorModule() {
-  if (!editorMod) editorMod = import('./editor.js?v=99');
+  if (!editorMod) editorMod = import('./editor.js?v=100');
   return editorMod;
 }
 function playCustomMap(id, mode) {
