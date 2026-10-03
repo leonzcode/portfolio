@@ -11,25 +11,25 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso, setCustomTrack } from './track.js?v=97';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=97';
-import { packLook, unpackLook, normalise } from './parts.js?v=97';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=97';
-import { whenKit } from './models.js?v=97';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=97';
-import { makeRescue } from './rescue.js?v=97';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=97';
-import { makeBrain, driveBrain } from './ai.js?v=97';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=97';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=97';
-import { makeRanked } from './rk.js?v=97';
-import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=97';
-import { makeHub } from './hub.js?v=97';
-import { icon, KIND_ICON } from './icons.js?v=97';
-import { makeCones } from './cones.js?v=97';
-import { makeHazards } from './hazards.js?v=97';
-import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=97';
-import * as snd from './audio.js?v=97';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=98';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=98';
+import { packLook, unpackLook, normalise } from './parts.js?v=98';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=98';
+import { whenKit } from './models.js?v=98';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=98';
+import { makeRescue } from './rescue.js?v=98';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=98';
+import { makeBrain, driveBrain } from './ai.js?v=98';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=98';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost, ghostKart } from './ghost.js?v=98';
+import { makeRanked } from './rk.js?v=98';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=98';
+import { makeHub } from './hub.js?v=98';
+import { icon, KIND_ICON } from './icons.js?v=98';
+import { makeCones } from './cones.js?v=98';
+import { makeHazards } from './hazards.js?v=98';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=98';
+import * as snd from './audio.js?v=98';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -690,7 +690,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=97')
+  import('./props.js?v=98')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -3002,13 +3002,10 @@ function buildCharacter() {
   box.appendChild(swatchRow('Skin', SKIN_TONES, () => C().skin, v => { if (v === null) delete C().skin; else C().skin = v; restyle(); }));
   box.appendChild(swatchRow('Shirt', CLOTH, () => C().shirt, v => { if (v === null) delete C().shirt; else C().shirt = v; restyle(); }));
   box.appendChild(swatchRow('Trousers', CLOTH, () => C().pants, v => { if (v === null) delete C().pants; else C().pants = v; restyle(); }));
-  box.appendChild(segRow('Hat', [[null, 'None'], ['hat_cap', 'Cap']], () => (C().hat === 'hat_cap' || !C().hat) ? (C().hat || null) : '__',
-    v => { if (v) C().hat = v; else delete C().hat; restyle(); }));
-  box.appendChild(segRow('Face', [[null, 'None'], ['sunglasses', 'Sunglasses']], () => C().face || null,
-    v => { if (v) C().face = v; else delete C().face; restyle(); }));
+  // no hat or face rows here (Leon, 2026-10-02): those are worn from the inventory
   const note = document.createElement('p');
   note.className = 'gnote';
-  note.innerHTML = 'More hats, unique drivers and the rest are in your <button type="button">Inventory</button>.';
+  note.innerHTML = 'Hats, unique drivers and the rest are in your <button type="button">Inventory</button>.';
   note.querySelector('button').onclick = () => hub && hub.show('inv');
   box.appendChild(note);
 }
@@ -3069,7 +3066,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=97');
+    const mod = await import('./net.js?v=98');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3422,7 +3419,7 @@ function editorCtx() {
   };
 }
 function editorModule() {
-  if (!editorMod) editorMod = import('./editor.js?v=97');
+  if (!editorMod) editorMod = import('./editor.js?v=98');
   return editorMod;
 }
 function playCustomMap(id, mode) {
