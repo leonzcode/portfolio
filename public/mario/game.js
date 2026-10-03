@@ -11,25 +11,25 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso, setCustomTrack } from './track.js?v=101';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=101';
-import { packLook, unpackLook, normalise } from './parts.js?v=101';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=101';
-import { whenKit } from './models.js?v=101';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=101';
-import { makeRescue } from './rescue.js?v=101';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=101';
-import { makeBrain, driveBrain } from './ai.js?v=101';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=101';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=101';
-import { makeRanked } from './rk.js?v=101';
-import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=101';
-import { makeHub } from './hub.js?v=101';
-import { icon, KIND_ICON } from './icons.js?v=101';
-import { makeCones } from './cones.js?v=101';
-import { makeHazards } from './hazards.js?v=101';
-import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=101';
-import * as snd from './audio.js?v=101';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=102';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=102';
+import { packLook, unpackLook, normalise } from './parts.js?v=102';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=102';
+import { whenKit } from './models.js?v=102';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=102';
+import { makeRescue } from './rescue.js?v=102';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=102';
+import { makeBrain, driveBrain } from './ai.js?v=102';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=102';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=102';
+import { makeRanked } from './rk.js?v=102';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=102';
+import { makeHub } from './hub.js?v=102';
+import { icon, KIND_ICON } from './icons.js?v=102';
+import { makeCones } from './cones.js?v=102';
+import { makeHazards } from './hazards.js?v=102';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=102';
+import * as snd from './audio.js?v=102';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -702,7 +702,7 @@ function buildWorld(seed, themeId) {
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
   const forWorld = track;
-  import('./props.js?v=101')
+  import('./props.js?v=102')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -3143,7 +3143,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=101');
+    const mod = await import('./net.js?v=102');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3496,7 +3496,7 @@ function editorCtx() {
   };
 }
 function editorModule() {
-  if (!editorMod) editorMod = import('./editor.js?v=101');
+  if (!editorMod) editorMod = import('./editor.js?v=102');
   return editorMod;
 }
 function playCustomMap(id, mode) {
