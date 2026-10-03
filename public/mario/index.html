@@ -970,8 +970,8 @@
   /* ---- line icons, in the text colour, at the size of the text */
   .ic{ width:1.15em; height:1.15em; vertical-align:-0.2em; flex:0 0 auto; }
   #hubnav button i{ display:inline-flex; }
-  .tile i.pic{ display:grid; place-items:center; width:72px; height:72px; font-size:30px; color:var(--t); }
-  .tile i.pic img{ width:72px; height:72px; object-fit:contain; display:block; }
+  .tile i.pic{ display:grid; place-items:center; width:56px; height:56px; font-size:26px; color:var(--t); }
+  .tile i.pic img{ width:56px; height:56px; object-fit:contain; display:block; }
   .tile small .ic{ width:11px; height:11px; vertical-align:-1px; }
   .unlock i .ic{ width:30px; height:30px; }
   .unlock i img{ width:56px; height:56px; object-fit:contain; display:block; }
@@ -981,10 +981,42 @@
 
   /* ---- the prizes on the inventory page */
   #invnote{ min-height:1.2em; margin:4px 0 0; font-weight:800; font-size:13px; color:#b3261e; }
-  .prizes{ background:#fff8e1; border:2px solid var(--ink); border-radius:14px; padding:4px 12px 12px; margin-top:12px; }
-  .prizes .prow h4{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin:12px 0 6px; font-size:14px; }
+  .prizes{ background:#fff8e1; border:2px solid var(--ink); border-radius:14px; padding:10px 12px 12px; margin-top:4px; }
+  .prizes .hsub{ margin:0 0 4px; }
+  /* two rows of prizes across where there is room; the long ranked wins row takes the width */
+  .prizes .prows{ display:grid; grid-template-columns:repeat(auto-fit, minmax(min(390px, 100%), 1fr)); gap:0 18px; }
+  .prizes .prow.wide{ grid-column:1 / -1; }
+  .prizes .prow h4{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin:10px 0 5px; font-size:14px; }
   .prizes .prow h4 small{ font-family:var(--body); font-weight:700; font-size:11px; opacity:.55; letter-spacing:0; text-transform:none; }
-  .prizes .tiles{ grid-template-columns:repeat(auto-fill, minmax(104px, 1fr)); }
+
+  /* ---- the inventory's tabs, one kind of thing at a time */
+  #invtabs{ display:flex; gap:6px; overflow-x:auto; padding:2px 2px 4px; margin:10px 0 0; scrollbar-width:thin; }
+  #invtabs button{ flex:none; display:inline-flex; align-items:baseline; gap:6px; font-family:var(--body); font-weight:800; font-size:13px;
+    padding:6px 12px; border:2px solid var(--ink); border-radius:999px; background:#fff; color:var(--ink); cursor:pointer; white-space:nowrap; }
+  #invtabs button small{ font-size:11px; font-weight:800; opacity:.55; }
+  #invtabs button.on{ background:var(--ink); color:#fff; }
+  #invtabs button.on small{ opacity:.75; }
+  #invtabs button:focus-visible{ outline:3px solid var(--blue); outline-offset:2px; }
+  #invbody section h3{ margin:10px 0 6px; font-size:16px; }
+  #invbody .secs{ display:flex; flex-wrap:wrap; gap:0 22px; }
+  #invbody .secs > section{ flex:0 1 auto; min-width:0; }
+  #invbody .secs .tiles{ display:flex; flex-wrap:wrap; }
+  #invbody .secs .tiles > *{ width:94px; }
+
+  /* ---- a tile's info button and the tip it shows: how to get that one */
+  .tw{ position:relative; display:grid; }
+  .tw .info{ position:absolute; top:3px; right:3px; width:22px; height:22px; padding:0; display:grid; place-items:center;
+    border:0; border-radius:50%; background:transparent; color:var(--ink); opacity:.55; cursor:help; }
+  .tw .info .ic{ width:15px; height:15px; vertical-align:0; }
+  .tw .info:hover, .tw .info.on{ opacity:1; background:var(--ink); color:#fff; }
+  .tw .info:focus-visible{ opacity:1; outline:3px solid var(--blue); outline-offset:1px; }
+  #invtip{ position:fixed; z-index:200; max-width:min(260px, calc(100vw - 16px)); padding:9px 11px 10px; background:var(--ink); color:#fff;
+    border-radius:10px; font-family:var(--body); font-size:12.5px; line-height:1.4; pointer-events:none; box-shadow:0 4px 0 rgba(0,0,0,.25); }
+  #invtip b{ font-weight:800; font-size:13.5px; margin-right:7px; }
+  #invtip .tt{ font-weight:800; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; }
+  #invtip p{ margin:5px 0 0; font-weight:600; }
+  #invtip .tst{ opacity:.7; }
+  #invtip .tst.have{ opacity:1; color:#a6e3a1; }
 
   /* ---- the driver picker: the faces, three across */
   #gdriver .opt[hidden]{ display:none !important; }
@@ -1053,11 +1085,11 @@
   #invlegend{ display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; font-weight:700; margin:0 0 4px; }
   #invlegend .lg i{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
   #invlegend b{ margin-right:2px; }
-  .tiles{ display:grid; grid-template-columns:repeat(auto-fill, minmax(104px, 1fr)); gap:8px; }
-  .tile{ --t:#8a93a6; position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:9px 6px 7px;
+  .tiles{ display:grid; grid-template-columns:repeat(auto-fill, minmax(92px, 1fr)); gap:6px; }
+  .tile{ --t:#8a93a6; position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px 5px 5px;
     background:#fff; border:2px solid var(--ink); border-bottom:5px solid var(--t); border-radius:12px; cursor:pointer; color:var(--ink); font-family:var(--body); }
   .tile i{ font-style:normal; font-size:24px; line-height:1.1; }
-  .tile b{ font-size:12px; font-weight:800; line-height:1.15; text-align:center; }
+  .tile b{ font-size:11.5px; font-weight:800; line-height:1.15; text-align:center; }
   .tile small{ font-size:10px; font-weight:800; color:var(--t); letter-spacing:.04em; }
   .tile.on{ background:#fff6c2; box-shadow:0 0 0 3px var(--gold); }
   .tile.locked{ opacity:.45; filter:grayscale(.7); cursor:help; }
@@ -1220,6 +1252,7 @@
   <div class="card wide">
     <div class="hhead"><h2 id="invh">Inventory</h2><span id="invcount"></span><button type="button" class="hubback big alt">Back</button></div>
     <div id="invlegend"></div>
+    <div id="invtabs" role="tablist" aria-label="Kinds of cosmetic"></div>
     <p id="invnote" role="status"></p>
     <div id="invbody"></div>
   </div>
@@ -1347,5 +1380,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=98');
+await import('./game.js?v=99');
 </script>

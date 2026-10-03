@@ -13,9 +13,9 @@
    Nothing here touches the race itself; the game hands in what it knows
    through `g` and is told what to do through the callbacks.
 --------------------------------------------------------------------------- */
-import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, PRIZE_ROWS, owns, itemById } from './cosmetics.js?v=98';
-import { icon, KIND_ICON, fillIcons } from './icons.js?v=98';
-import { thumbFor, portraitFor } from './thumbs.js?v=98';
+import { CATALOG, KINDS, TIER_NAME, TIER_COLOUR, HOW_TO_WIN, PRIZE_ROWS, owns, itemById } from './cosmetics.js?v=99';
+import { icon, KIND_ICON, fillIcons } from './icons.js?v=99';
+import { thumbFor, portraitFor } from './thumbs.js?v=99';
 
 export function makeHub(g) {
   const { el, esc, MC } = g;
@@ -31,7 +31,7 @@ export function makeHub(g) {
     if (id === 'cmaps') loadMaps();
     if (id === 'req') drawReq();
   }
-  function hide() { if (open) el(open).classList.remove('on'); open = null; }
+  function hide() { if (open) el(open).classList.remove('on'); open = null; hideTip(); }
   for (const [btn, page] of [['hubinv', 'inv'], ['hubstats', 'stats'], ['hubmaps', 'cmaps'], ['hubreq', 'req']]) {
     el(btn).addEventListener('click', () => show(page));
   }
@@ -39,6 +39,20 @@ export function makeHub(g) {
   addEventListener('keydown', e => { if (e.key === 'Escape' && open && !g.typing()) { hide(); e.stopPropagation(); } }, true);
 
   /* ---- inventory ---------------------------------------------------------- */
+  const INV_TABS = [
+    { id: 'prizes', name: 'Prizes' },
+    { id: 'kart', name: 'Kart', kinds: ['skin', 'body'] },
+    { id: 'driver', name: 'Driver', kinds: ['hat', 'face', 'driver'] },
+    { id: 'extras', name: 'Extras', kinds: ['glider', 'plate', 'decor', 'aura'] },
+  ];
+  let invTab = 'prizes';
+  el('invtabs').addEventListener('click', e => {
+    const b = e.target.closest('button[data-tab]');
+    if (!b || b.dataset.tab === invTab) return;
+    invTab = b.dataset.tab;
+    el('invnote').textContent = '';
+    drawInv();
+  });
   function drawInv() {
     const inv = g.inv();
     const st = g.style();
@@ -50,38 +64,60 @@ export function makeHub(g) {
     const heldWhy = g.held() || {};
     const slotOf = kind => (KINDS.find(K => K.id === kind) || KINDS[0]).slot;
     const wornIn = slot => (st[slot[0]] || {})[slot[1]] || null;
-    // one tile; a prize says what it takes, or that you hold it and why
+    /* One tile; a prize says what it takes, or that you hold it and why. The
+       info button sits beside the tile rather than in it, so a locked tile's
+       fading does not fade it too. */
     const tile = c => {
       const slot = slotOf(c.kind);
       const have = owns(inv, c.id);
       const label = c.src ? (have && heldWhy[c.id] ? 'Held' : have ? 'Yours' : c.need) : TIER_NAME[c.tier];
-      const why = c.src ? (have && heldWhy[c.id] ? heldWhy[c.id] : c.how) : (have ? TIER_NAME[c.tier] : HOW_TO_WIN[c.tier] || '');
-      return '<button type="button" class="tile ' + c.tier + (have ? '' : ' locked') + (wornIn(slot) === c.id ? ' on' : '') + '"'
-        + ' data-slot="' + slot.join('.') + '" data-id="' + c.id + '" title="' + esc(why) + '" style="--t:' + TIER_COLOUR[c.tier] + '">'
+      return '<div class="tw"><button type="button" class="tile ' + c.tier + (have ? '' : ' locked') + (wornIn(slot) === c.id ? ' on' : '') + '"'
+        + ' data-slot="' + slot.join('.') + '" data-id="' + c.id + '" style="--t:' + TIER_COLOUR[c.tier] + '">'
         + '<i class="pic" data-th="' + c.id + '">' + icon(KIND_ICON[c.kind]) + '</i><b>' + esc(c.name) + '</b><small>'
-        + (have ? '' : icon('lock') + ' ') + esc(label) + '</small></button>';
+        + (have ? '' : icon('lock') + ' ') + esc(label) + '</small></button>'
+        + '<button type="button" class="info" data-info="' + c.id + '" aria-label="How to get ' + esc(c.name) + '">' + icon('info') + '</button></div>';
     };
     const legend = ['common', 'rare', 'epic', 'legendary'].map(t =>
       '<span class="lg"><i style="background:' + TIER_COLOUR[t] + '"></i><b>' + TIER_NAME[t] + '</b> ' + esc(HOW_TO_WIN[t]) + '</span>').join('');
     el('invlegend').innerHTML = legend;
-    if (!(g.name() || '').trim()) { box.innerHTML = '<p class="none">Type a name on the title screen first: it is your account, and what you win is kept under it.</p>'; return; }
-    /* The prizes first, a row for each place they come from: every track,
-       all tracks, ranked, and ranked wins. 1st holds the 1st, 2nd, 3rd and
-       top 10 prizes; 2nd the last three; 3rd the last two; the rest of the
-       top 10 the last one. */
-    const prizes = '<section class="prizes"><h3>Prizes</h3>'
-      + '<p class="hsub">For where you stand. A place prize is yours while you hold the place and goes if somebody takes it. '
-      + '1st gets every prize in its row, 2nd the last three, 3rd the last two, and the rest of the top 10 the last one.</p>'
-      + PRIZE_ROWS.map(R => '<div class="prow"><h4>' + esc(R.name) + '<small>' + esc(R.note) + '</small></h4><div class="tiles">'
-        + CATALOG.filter(c => c.src === R.src).map(tile).join('') + '</div></div>').join('') + '</section>';
-    box.innerHTML = prizes + KINDS.map(K => {
-      const items = CATALOG.filter(c => c.kind === K.id && !c.src);
-      const worn = (st[K.slot[0]] || {})[K.slot[1]] || null;
-      return '<section><h3>' + esc(K.name) + '</h3><div class="tiles">'
-        + '<button type="button" class="tile none' + (!worn ? ' on' : '') + '" data-slot="' + K.slot.join('.') + '" data-id="">'
-        + '<i>' + icon('none') + '</i><b>None</b></button>'
-        + items.map(tile).join('') + '</div></section>';
+    if (!(g.name() || '').trim()) {
+      el('invtabs').innerHTML = '';
+      box.innerHTML = '<p class="none">Type a name on the title screen first: it is your account, and what you win is kept under it.</p>';
+      return;
+    }
+    /* One tab at a time, so the page is never a long scroll (Leon asked for
+       it shorter on 2026-10-02). Each tab says how many of its own you have. */
+    const inTab = t => t.id === 'prizes' ? CATALOG.filter(c => c.src) : CATALOG.filter(c => !c.src && t.kinds.includes(c.kind));
+    el('invtabs').innerHTML = INV_TABS.map(t => {
+      const list = inTab(t).filter(c => c.tier !== 'free');
+      return '<button type="button" role="tab" data-tab="' + t.id + '" aria-selected="' + (invTab === t.id) + '"' + (invTab === t.id ? ' class="on"' : '') + '>'
+        + esc(t.name) + '<small>' + list.filter(c => owns(inv, c.id)).length + '/' + list.length + '</small></button>';
     }).join('');
+    const tab = INV_TABS.find(t => t.id === invTab) || INV_TABS[0];
+    /* The prizes, a row for each place they come from: every track, all
+       tracks, ranked, and ranked wins, two rows across where there is room.
+       1st holds the 1st, 2nd, 3rd and top 10 prizes; 2nd the last three; 3rd
+       the last two; the rest of the top 10 the last one. */
+    if (tab.id === 'prizes') {
+      box.innerHTML = '<section class="prizes">'
+        + '<p class="hsub">For where you stand. A place prize is yours while you hold the place and goes if somebody takes it. '
+        + '1st gets every prize in its row, 2nd the last three, 3rd the last two, and the rest of the top 10 the last one.</p><div class="prows">'
+        + PRIZE_ROWS.map(R => {
+          const items = CATALOG.filter(c => c.src === R.src);
+          return '<div class="prow' + (items.length > 4 ? ' wide' : '') + '"><h4>' + esc(R.name) + '<small>' + esc(R.note) + '</small></h4><div class="tiles">'
+            + items.map(tile).join('') + '</div></div>';
+        }).join('') + '</div></section>';
+    } else {
+      // small groups sit side by side, so a one-item group does not take a whole row
+      box.innerHTML = '<div class="secs">' + tab.kinds.map(id => KINDS.find(K => K.id === id)).filter(Boolean).map(K => {
+        const items = CATALOG.filter(c => c.kind === K.id && !c.src);
+        const worn = (st[K.slot[0]] || {})[K.slot[1]] || null;
+        return '<section><h3>' + esc(K.name) + '</h3><div class="tiles">'
+          + '<button type="button" class="tile none' + (!worn ? ' on' : '') + '" data-slot="' + K.slot.join('.') + '" data-id="">'
+          + '<i>' + icon('none') + '</i><b>None</b></button>'
+          + items.map(tile).join('') + '</div></section>';
+      }).join('') + '</div>';
+    }
     // and each one's own picture, drawn in your colours, as each is ready
     const racer = g.racer(), build = g.build();
     box.querySelectorAll('[data-th]').forEach(e => {
@@ -89,7 +125,57 @@ export function makeHub(g) {
       if (it) thumbFor(it, racer, build).then(url => { if (url && e.isConnected) e.innerHTML = '<img alt="" src="' + url + '">'; });
     });
   }
+  /* ---- how to get each one: the tip by the info button -------------------- */
+  const TIER_HOW = {
+    free: 'Free. Everyone has it.',
+    common: 'Win a multiplayer race against at least one other player. Each win unlocks a random common cosmetic you do not have yet.',
+    rare: 'Reach a new best place in the top 10 of a track\'s time trial board. Each one unlocks a random rare cosmetic you do not have yet.',
+    epic: 'Win a ranked battle. Each win unlocks a random epic cosmetic you do not have yet (every third win gives a legendary instead).',
+    legendary: 'Set the fastest time trial on a track, or win every third ranked battle (the 3rd, 6th, 9th and so on). Each one unlocks a random legendary cosmetic you do not have yet.',
+  };
+  function howToGet(c) {
+    if (!c.src) return TIER_HOW[c.tier] || HOW_TO_WIN[c.tier] || '';
+    if (c.src === 'wins') return c.how + '.';
+    return c.how + '. It is yours while you hold the place, and goes if somebody takes it.';
+  }
+  const tip = document.createElement('div');
+  tip.id = 'invtip';
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  document.body.appendChild(tip);
+  let tipFor = null;
+  function showTip(btn) {
+    const c = itemById(btn.dataset.info);
+    if (!c) return;
+    const have = owns(g.inv(), c.id), why = (g.held() || {})[c.id];
+    const status = c.tier === 'free' ? '' : have && why ? 'You hold it now: ' + why + '.' : have ? 'Unlocked.' : 'Not unlocked yet.';
+    tip.innerHTML = '<b>' + esc(c.name) + '</b><span class="tt" style="color:' + TIER_COLOUR[c.tier] + '">' + esc(TIER_NAME[c.tier] || '') + '</span>'
+      + '<p>' + esc(howToGet(c)) + '</p>' + (status ? '<p class="tst' + (have ? ' have' : '') + '">' + esc(status) + '</p>' : '');
+    tip.hidden = false;
+    if (tipFor) tipFor.classList.remove('on');
+    tipFor = btn; btn.classList.add('on');
+    // above the button if it fits, otherwise below, and never off the screen
+    const r = btn.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+    const x = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+    const y = r.top - h - 8 >= 8 ? r.top - h - 8 : Math.min(innerHeight - h - 8, r.bottom + 8);
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function hideTip() { tip.hidden = true; if (tipFor) tipFor.classList.remove('on'); tipFor = null; }
+  const invb = el('invbody');
+  invb.addEventListener('mouseover', e => { const b = e.target.closest('button.info'); if (b) showTip(b); });
+  invb.addEventListener('mouseout', e => { const b = e.target.closest('button.info'); if (b && !b.contains(e.relatedTarget)) hideTip(); });
+  invb.addEventListener('focusin', e => { const b = e.target.closest('button.info'); if (b) showTip(b); else hideTip(); });
+  invb.addEventListener('focusout', e => { if (e.target.closest('button.info')) hideTip(); });
+  addEventListener('pointerdown', e => { if (!tip.hidden && !e.target.closest('button.info')) hideTip(); }, true);
+  addEventListener('scroll', hideTip, true);
+  addEventListener('resize', hideTip);
   el('invbody').addEventListener('click', e => {
+    /* A tap on the info button shows the tip (there is no hover on a phone).
+       It only ever shows it: a tap sends a hover first, so a toggle would
+       open and shut it in one go. A tap anywhere else puts it away. */
+    const inf = e.target.closest('button.info');
+    if (inf) { showTip(inf); return; }
+    hideTip();
     const b = e.target.closest('button.tile');
     if (!b) return;
     const id = b.dataset.id;
@@ -98,8 +184,9 @@ export function makeHub(g) {
       el('invnote').textContent = it ? (it.how || HOW_TO_WIN[it.tier]) + ' to unlock ' + it.name + '.' : 'Not unlocked yet.';
       return;
     }
+    // the one you are wearing, clicked again, comes off (as if None were picked)
     const [a, k] = b.dataset.slot.split('.');
-    g.setStyle(s => { s[a] = s[a] || {}; if (id) s[a][k] = id; else delete s[a][k]; });
+    g.setStyle(s => { s[a] = s[a] || {}; if (id && s[a][k] !== id) s[a][k] = id; else delete s[a][k]; });
     drawInv();
   });
 
