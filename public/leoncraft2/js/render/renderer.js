@@ -14,16 +14,16 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Sky, SUN_I } from './sky.js?v=3';
-import { Post } from './post.js?v=3';
-import { Interaction } from './interaction.js?v=3';
-import { makeMaterials, makeLayerInfo } from './materials.js?v=3';
-import { makeWaterMaterial } from './water.js?v=3';
-import { makeNoise2D, makeNoise3D } from './noisetex.js?v=3';
-import { makeLdrSky } from './ldrsky.js?v=3';
-import { FullScreen } from './sky.js?v=3';
-import { blockGeometry } from './blockmesh.js?v=3';
-import { Avatar } from './avatar.js?v=3';
+import { Sky, SUN_I } from './sky.js?v=4';
+import { Post } from './post.js?v=4';
+import { Interaction } from './interaction.js?v=4';
+import { makeMaterials, makeLayerInfo } from './materials.js?v=4';
+import { makeWaterMaterial } from './water.js?v=4';
+import { makeNoise2D, makeNoise3D } from './noisetex.js?v=4';
+import { makeLdrSky } from './ldrsky.js?v=4';
+import { FullScreen } from './sky.js?v=4';
+import { blockGeometry } from './blockmesh.js?v=4';
+import { Avatar } from './avatar.js?v=4';
 const THREE = window.THREE;
 
 export class Renderer {
@@ -130,7 +130,26 @@ export class Renderer {
     }
     this.visDirty = true;
   }
+  /* The shadow map is kept from frame to frame and only drawn again when it
+     would look different: the sun has moved a quarter of a degree, you have
+     moved a few blocks from where it was centred, the world's meshes changed,
+     or your own body is moving (so its shadow keeps up). Standing still, it
+     costs nothing at all; it is most of what the full tiers spend a frame on. */
+  shadowNeeded(state, light) {
+    const S = this.shadowState || (this.shadowState = { x: 0, y: 0, z: 0, cx: 1e9, cy: 1e9, cz: 1e9, at: -1e9, dirty: true });
+    const grid = Math.max(2, this.opts.shadowDist / 24), f = state.feet;
+    const cx = Math.floor(f.x / grid), cy = Math.floor(f.y / grid), cz = Math.floor(f.z / grid);
+    const turned = light.x * S.x + light.y * S.y + light.z * S.z < 0.99999;
+    const P = state.player;
+    const body = this.avatar && this.avatar.ready && P && (Math.abs(P.vel.x) + Math.abs(P.vel.z) > 0.005 || this.swing > 0 || P.sneaking !== S.sneak);
+    const need = S.dirty || turned || cx !== S.cx || cy !== S.cy || cz !== S.cz || this.frame - S.at > 90 || (body && this.frame - S.at >= 3);
+    if (!need) return false;
+    S.x = light.x; S.y = light.y; S.z = light.z; S.cx = cx; S.cy = cy; S.cz = cz; S.at = this.frame; S.dirty = false;
+    S.sneak = P ? P.sneaking : false;
+    return true;
+  }
   addColumn(cx, cz, mesh) {
+    if (this.shadowState) this.shadowState.dirty = true;
     this.dropColumn(cx, cz);
     const objs = [];
     const col = { cx, cz, vis: mesh.vis, skyLow: mesh.skyLow, parts: [], shadows: [] };
@@ -185,6 +204,7 @@ export class Renderer {
     this.columns.set(cx + ',' + cz, col);
   }
   dropColumn(cx, cz) {
+    if (this.shadowState) this.shadowState.dirty = true;
     const k = cx + ',' + cz;
     if (this.uploads) this.uploads.delete(k);
     const col = this.columns.get(k);
@@ -369,7 +389,7 @@ export class Renderer {
     U.uInteract.value = this.inter.texture;
 
     // the shadow map, from whichever light is up (some tiers redraw it every other frame)
-    const doShadow = this.opts.shadows > 0 && (this.frame % (this.opts.shadowEvery || 1) === 0);
+    const doShadow = this.opts.shadows > 0 && (this.frame % (this.opts.shadowEvery || 1) === 0) && this.shadowNeeded(state, light);
     if (doShadow) {
     const D = this.opts.shadowDist;
     const sc = this.shadowCam;

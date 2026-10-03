@@ -18,64 +18,57 @@
    middle click pick block, F1 hide the HUD, F3 details, [ and ] the clock,
    F7 render scale, F8 quality.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=3';
-import { BIOMES, biomeColours } from './biomes.js?v=3';
-import { pickBiome } from './worldgen.js?v=3';
-import { World } from './world.js?v=3';
-import { Fluids } from './fluids.js?v=3';
-import { Player } from './player.js?v=3';
-import { Renderer } from './render/renderer.js?v=3';
-import { Overlay } from './render/overlay.js?v=3';
-import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=3';
-import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=3';
-import { SEA, Y0 } from './world-const.js?v=3';
-import { Gui, Options } from './ui/gui.js?v=3';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=3';
-import { ItemIcons } from './ui/icons.js?v=3';
-import { Inventory, inventoryScreen } from './ui/inventory.js?v=3';
-import { Hud } from './ui/hud.js?v=3';
-import { Interactor } from './interact.js?v=3';
-import { Survival } from './survival.js?v=3';
-import { Save } from './save.js?v=3';
+import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=4';
+import { BIOMES, biomeColours } from './biomes.js?v=4';
+import { pickBiome } from './worldgen.js?v=4';
+import { World } from './world.js?v=4';
+import { Fluids } from './fluids.js?v=4';
+import { Player } from './player.js?v=4';
+import { Renderer } from './render/renderer.js?v=4';
+import { Overlay } from './render/overlay.js?v=4';
+import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=4';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=4';
+import { SEA, Y0 } from './world-const.js?v=4';
+import { Gui, Options } from './ui/gui.js?v=4';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=4';
+import { ItemIcons } from './ui/icons.js?v=4';
+import { Inventory, inventoryScreen } from './ui/inventory.js?v=4';
+import { Hud } from './ui/hud.js?v=4';
+import { Interactor } from './interact.js?v=4';
+import { Survival } from './survival.js?v=4';
+import { Save } from './save.js?v=4';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
 const status = (t, f) => { const el = $('#status'); if (el) el.textContent = t; const b = $('#bar'); if (b && f !== undefined) b.style.width = Math.round(f * 100) + '%'; };
 const params = new URLSearchParams(location.search);
 const MENU_SEED = 20261002;
-/* Quality: how far you see and how much every effect works at. Video
-   Settings (or F8) changes it, which reloads; the render scale also follows
-   the frame rate on its own. */
+/* Graphics, as in the game's Video Settings: Detailed (the full look: sun
+   rays, soft shadows, clouds, reflections) or Fast (one pass, no shadow map,
+   Minecraft's fast leaves, for old Chromebooks). A change takes effect when
+   you leave Video Settings, and only if it really changed. The render scale
+   also follows the frame rate on its own. */
 const PRESETS = {
-  // one pass straight to the screen, no shadow map, Minecraft's fast leaves: for old Chromebooks
-  potato: { rd: 4, scale: 0.55, ldr: true, shadows: 0, normals: false, fastLeaves: true, interSize: 128, uploadMs: 2, sky: 4, plantDist: 40, plantShadows: false },
-  // the full look (sun rays, clouds, reflections) at a lower setting
-  low: { rd: 6, shadowRes: 1024, shadowDist: 64, shadows: 2, scale: 0.67, vlSteps: 8, cloudSteps: 10, ssrSteps: 12, plantDist: 56, plantShadows: false, leafInDist: 24, leafInShadows: false, uploadMs: 3 },
-  medium: { rd: 8, shadowRes: 2048, shadowDist: 96, shadows: 2, scale: 0.85, vlSteps: 10, cloudSteps: 14, ssrSteps: 18, plantDist: 80, leafInDist: 40, leafInShadows: false },
-  high: { rd: 10, shadowRes: 2048, shadowDist: 112, shadows: 2, scale: 1, vlSteps: 14, cloudSteps: 20, ssrSteps: 28, plantDist: 112, leafInDist: 64 },
-  ultra: { rd: 14, shadowRes: 4096, shadowDist: 160, shadows: 2, scale: 1, vlSteps: 20, cloudSteps: 28, ssrSteps: 36, plantDist: 176, leafInDist: 112 },
+  fast: { rd: 4, scale: 0.55, ldr: true, shadows: 0, normals: false, fastLeaves: true, interSize: 128, uploadMs: 2, sky: 4, plantDist: 40, plantShadows: false },
+  // water reflections, soft shadows, light rays and the sky kept whole; bloom off, a little less view, lighter clouds
+  detailed: { rd: 6, shadowRes: 2048, shadowDist: 80, shadows: 2, scale: 0.85, vlSteps: 10, cloudSteps: 10, ssrSteps: 18, plantDist: 64, leafInDist: 32, leafInShadows: false, plantShadows: false, sky: 2, bloom: false, uploadMs: 3 },
 };
-const ORDER = ['potato', 'low', 'medium', 'high', 'ultra'];
-/* With nothing chosen yet, a first guess from the graphics chip and the
-   machine: integrated and phone-class GPUs, or a small CPU, start low. */
-function guessQuality() {
+// what the older settings become
+const GRAPHICS_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
+// software rendering (no graphics chip at all) starts on Fast; everything else on Detailed
+function guessGraphics() {
   try {
     const gl = document.createElement('canvas').getContext('webgl2');
-    if (!gl) return 'potato';
+    if (!gl) return 'fast';
     const dbg = gl.getExtension('WEBGL_debug_renderer_info');
     const name = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
-    const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 8;
-    if (/SwiftShader|llvmpipe|Software|Mali-(T|4|G3|G5)|PowerVR|Adreno \(TM\) [345]|Intel.*HD Graphics( [2-6]\d\d)?$|Intel\(R\) HD Graphics \d{3}(?!\d)|Bay ?Trail|Celeron/i.test(name) || cores <= 2 || mem <= 2) return 'potato';
-    if (/Intel|Mali|Adreno|Apple GPU|Radeon\(TM\) (Vega|Graphics)/i.test(name) || cores <= 4 || mem <= 4) return 'low';
-    return 'high';
-  } catch (e) { return 'low'; }
+    return /SwiftShader|llvmpipe|Software/i.test(name) ? 'fast' : 'detailed';
+  } catch (e) { return 'detailed'; }
 }
 const options = new Options();
-const SAVED = (() => { try { return localStorage.getItem('lc2_quality'); } catch (e) { return null; } })();
-const chosen = options.get('quality');
-let QNAME = params.get('q') || (chosen && chosen !== 'auto' ? chosen : null) || SAVED || guessQuality();
-if (!PRESETS[QNAME]) QNAME = 'low';
-const chosenByUser = !!(params.get('q') || (chosen && chosen !== 'auto') || SAVED);
+const chosen = GRAPHICS_OF[options.get('quality')] && options.get('quality') !== 'auto' ? GRAPHICS_OF[options.get('quality')] : null;
+let QNAME = GRAPHICS_OF[params.get('q')] || chosen || guessGraphics();
+const chosenByUser = !!(params.get('q') || chosen);
 const QP = PRESETS[QNAME];
 const RD = +(params.get('rd') || options.get('renderDistance') || QP.rd);
 
@@ -230,7 +223,7 @@ async function boot() {
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
-  const TEX_V = '?v=3';
+  const TEX_V = '?v=4';
   const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
   let [alb, grass, foliage, moon] = await Promise.all(
     ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png'].map(f => loadImg(base + f + TEX_V)));
@@ -288,6 +281,12 @@ async function boot() {
     reloadResources: () => {
       saveGame().then(() => { try { sessionStorage.setItem('lc2_resume', game ? game.entry.id : ''); } catch (e) {} location.reload(); });
     },
+    // leaving Video Settings: Detailed or Fast takes effect now, if it really changed
+    applyGraphics: () => {
+      const want = GRAPHICS_OF[options.get('quality')] || 'detailed';
+      if (want === QNAME) return;
+      saveGame().then(() => { try { sessionStorage.setItem('lc2_resume', game ? game.entry.id : ''); } catch (e) {} location.reload(); });
+    },
     // the last screen closed in the game: take the mouse back
     closed: () => { if (game && !game.survival.dead) lock(); },
   };
@@ -303,7 +302,7 @@ async function boot() {
       if (sk) useDefaultSkin(sk);
     } catch (e) { console.warn('resource pack GUI', e); }
   }
-  gui.lowEnd = QNAME === 'potato';
+  gui.lowEnd = QNAME === 'fast';
   window.addEventListener('resize', fit);
   fit();
 
@@ -513,13 +512,6 @@ async function boot() {
   const bindingOf = code => options.actionFor(code);
   let showDebug = false, timeRuns = true, autoScale = options.get('renderScale') === 'auto' && !params.get('scale');
   document.addEventListener('keydown', e => {
-    if (e.code === 'F8') {
-      const next = ORDER[(ORDER.indexOf(QNAME) + 1) % ORDER.length];
-      try { localStorage.setItem('lc2_quality', next); } catch (err) {}
-      options.set('quality', next);
-      saveGame().then(() => { try { sessionStorage.setItem('lc2_resume', game ? game.entry.id : ''); } catch (err) {} location.reload(); });
-      e.preventDefault(); return;
-    }
     if (!game || gui.isOpen()) return;
     const a = bindingOf(e.code);
     if (a === 'debug' || e.code === 'F3') { showDebug = !showDebug; if (!showDebug && hud) hud.setDebug(null); e.preventDefault(); return; }
@@ -569,12 +561,8 @@ async function boot() {
     applyOptions();
     if (k === 'renderDistance' && v) { if (game) game.world.renderDist = v; }
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
-    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=3', import.meta.url).href : v);
+    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=4', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
-    if (k === 'quality') {
-      try { localStorage.setItem('lc2_quality', v === 'auto' ? '' : v); } catch (e) {}
-      saveGame().then(() => { try { sessionStorage.setItem('lc2_resume', game ? game.entry.id : ''); } catch (e) {} location.reload(); });
-    }
   });
 
   /* ---- the loop ---- */
@@ -660,15 +648,17 @@ async function boot() {
       // keep it smooth: give up resolution before frame rate, and take it back when there is room
       if (autoScale && now - startedAt > 6000 && ++scaleTick % 4 === 0) {
         const s = renderer.opts.scale;
-        const floor = QNAME === 'potato' ? 0.4 : 0.5;
+        const floor = QNAME === 'fast' ? 0.4 : 0.5;
         if (fps < 42 && s > floor) { renderer.opts.scale = Math.max(floor, +(s - 0.1).toFixed(2)); fit(); }
         else if (fps > 58 && s < QP.scale) { renderer.opts.scale = Math.min(QP.scale, +(s + 0.05).toFixed(2)); fit(); }
       }
       // the first half minute, on a guessed tier: still struggling at the lowest scale means one tier down, once
       slowFor = fps < 28 ? slowFor + 0.5 : 0;
-      if (!chosenByUser && !steppedDown && now - startedAt < 25000 && slowFor >= 4 && renderer.opts.scale <= 0.55 && QNAME !== 'potato') {
+      if (!chosenByUser && !steppedDown && now - startedAt < 25000 && slowFor >= 4 && renderer.opts.scale <= 0.55 && QNAME !== 'fast') {
+        // a machine that cannot keep up even at the lowest scale goes to Fast, once
         steppedDown = true;
-        try { localStorage.setItem('lc2_quality', ORDER[Math.max(0, ORDER.indexOf(QNAME) - 1)]); sessionStorage.setItem('lc2_resume', g.entry.id); } catch (e) {}
+        options.set('quality', 'fast');
+        try { sessionStorage.setItem('lc2_resume', g.entry.id); } catch (e) {}
         saveGame().then(() => location.reload());
       }
     }
@@ -689,7 +679,7 @@ async function boot() {
         'Day ' + Math.floor(g.time / 24000) + ', time ' + (g.time % 24000) + (timeRuns ? '' : ' (stopped)'),
       ], [
         'Render ' + renderer.rw + 'x' + renderer.rh + ' (F7 scale)',
-        'Distance ' + world.renderDist + ', quality ' + QNAME + ' (F8)',
+        'Distance ' + world.renderDist + ', graphics ' + QNAME,
         'Seed ' + (g.entry.seed | 0),
         'Fluids pending ' + fluids.pending.size,
         '',
