@@ -18,25 +18,25 @@
    middle click pick block, F1 hide the HUD, F3 details, [ and ] the clock,
    F7 render scale, F8 quality.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=5';
-import { BIOMES, biomeColours } from './biomes.js?v=5';
-import { pickBiome } from './worldgen.js?v=5';
-import { World } from './world.js?v=5';
-import { Fluids } from './fluids.js?v=5';
-import { Player } from './player.js?v=5';
-import { Renderer } from './render/renderer.js?v=5';
-import { Overlay } from './render/overlay.js?v=5';
-import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=5';
-import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=5';
-import { SEA, Y0 } from './world-const.js?v=5';
-import { Gui, Options } from './ui/gui.js?v=5';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=5';
-import { ItemIcons } from './ui/icons.js?v=5';
-import { Inventory, inventoryScreen } from './ui/inventory.js?v=5';
-import { Hud } from './ui/hud.js?v=5';
-import { Interactor } from './interact.js?v=5';
-import { Survival } from './survival.js?v=5';
-import { Save } from './save.js?v=5';
+import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=6';
+import { BIOMES, biomeColours } from './biomes.js?v=6';
+import { pickBiome } from './worldgen.js?v=6';
+import { World } from './world.js?v=6';
+import { Fluids } from './fluids.js?v=6';
+import { Player } from './player.js?v=6';
+import { Renderer } from './render/renderer.js?v=6';
+import { Overlay } from './render/overlay.js?v=6';
+import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=6';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=6';
+import { SEA, Y0 } from './world-const.js?v=6';
+import { Gui, Options } from './ui/gui.js?v=6';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=6';
+import { ItemIcons } from './ui/icons.js?v=6';
+import { Inventory, inventoryScreen } from './ui/inventory.js?v=6';
+import { Hud } from './ui/hud.js?v=6';
+import { Interactor } from './interact.js?v=6';
+import { Survival } from './survival.js?v=6';
+import { Save } from './save.js?v=6';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -51,7 +51,7 @@ const MENU_SEED = 20261002;
 const PRESETS = {
   fast: { rd: 4, scale: 0.55, ldr: true, shadows: 0, normals: false, fastLeaves: true, interSize: 128, uploadMs: 2, sky: 4, plantDist: 40, plantShadows: false },
   // water reflections, soft shadows, light rays and the sky kept whole; bloom off, a little less view, lighter clouds
-  detailed: { rd: 5, shadowRes: 2048, shadowDist: 72, shadows: 2, scale: 0.85, vlSteps: 10, cloudSteps: 10, ssrSteps: 18, plantDist: 64, leafInDist: 32, leafInShadows: false, plantShadows: false, sky: 2, bloom: false, uploadMs: 3 },
+  detailed: { rd: 4, shadowRes: 2048, shadowDist: 64, shadows: 2, scale: 0.85, vlSteps: 10, cloudSteps: 10, ssrSteps: 18, plantDist: 40, fastLeaves: true, plantShadows: false, sky: 4, bloom: false, fxaa: false, halfClouds: true, uploadMs: 3 },
 };
 // what the older settings become
 const GRAPHICS_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
@@ -223,7 +223,7 @@ async function boot() {
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
-  const TEX_V = '?v=5';
+  const TEX_V = '?v=6';
   const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
   let [alb, grass, foliage, moon] = await Promise.all(
     ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png'].map(f => loadImg(base + f + TEX_V)));
@@ -561,7 +561,7 @@ async function boot() {
     applyOptions();
     if (k === 'renderDistance' && v) { if (game) game.world.renderDist = v; }
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
-    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=5', import.meta.url).href : v);
+    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=6', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
   });
 

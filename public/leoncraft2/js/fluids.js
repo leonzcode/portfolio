@@ -17,8 +17,8 @@
    game. Cells are looked at only when a neighbour changes, so a still sea
    costs nothing.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, SOLID } from './blocks.js?v=5';
-import { LEVEL, FALLING } from './world-const.js?v=5';
+import { B, BLOCKS, FLUID, SOLID } from './blocks.js?v=6';
+import { LEVEL, FALLING } from './world-const.js?v=6';
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
