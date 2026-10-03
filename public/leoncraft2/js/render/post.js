@@ -1,0 +1,503 @@
+/* ---------------------------------------------------------------------------
+   Leoncraft 2 - everything after the world is drawn.
+
+     copies      the opaque scene's colour and linear depth, for the water
+     light       volumetric light at half resolution: a dithered march along
+                 every view ray through the shadow map, scattering forward
+                 (Henyey-Greenstein), so sunbeams come down through the gaps
+                 in the leaves; under water, shafts broken up by caustics
+     clouds      a volumetric cloud layer, marched at half resolution and
+                 blended over the last frame's so it settles smooth
+     composite   the sky (from the atmosphere), the sun's disc, the moon in
+                 its phase, stars; height fog in the sky's own colour; the
+                 render distance faded into the horizon; under water, the
+                 water's colour closing in
+     bloom       six halvings down and back up (13-tap down, tent up)
+     exposure    the scene's average brightness, adapted to over a second
+     final       AgX tone mapping, a little vignette, sRGB, then FXAA
+--------------------------------------------------------------------------- */
+import { COMMON, SHADOW, TONEMAP, ATMOS } from './glsl.js?v=1';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=1';
+const THREE = window.THREE;
+const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
+const mat = (fs, u, extra) => {
+  const m = rawMat(fs, u, extra);
+  m.fragmentShader = HEAD + m.fragmentShader.replace('precision highp float; precision highp int;\n', '');
+  return m;
+};
+
+const SKYFN = /* glsl */`
+uniform sampler2D uView;
+vec3 skyRadiance(vec3 d) {
+  float elev = asin(clamp(d.y, -1.0, 1.0));
+  float v = 0.5 + 0.5 * sign(elev) * sqrt(abs(elev) / (PI * 0.5));
+  float az = atan(d.z, d.x); if (az < 0.0) az += TAU;
+  return texture(uView, vec2(az / TAU, v)).rgb;
+}
+`;
+const RECON = /* glsl */`
+uniform mat4 uInvViewProj;
+uniform vec3 uCamPos;
+uniform float uNear, uFar;
+float linearize(float d) { float z = d * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
+vec3 worldAt(vec2 uv, float d) { vec4 p = uInvViewProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return p.xyz / p.w; }
+`;
+
+const FS_COPY = /* glsl */`
+uniform sampler2D uSrc; in vec2 vUv; out vec4 o;
+void main() { o = texture(uSrc, vUv); }`;
+const FS_LINDEPTH = /* glsl */`
+uniform sampler2D uDepth; uniform float uNear, uFar; in vec2 vUv; out vec4 o;
+void main() {
+  float d = texture(uDepth, vUv).r;
+  float z = d * 2.0 - 1.0;
+  float l = d >= 1.0 ? uFar : 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear));
+  o = vec4(l, 0.0, 0.0, 1.0);
+}`;
+
+/* ---- volumetric light ---- */
+const FS_VL = COMMON + SHADOW + RECON + /* glsl */`
+uniform sampler2D uDepth, uAmbient, uNoise;
+uniform vec3 uLightDir;
+uniform float uFrame, uEyeInWater, uTime, uSkyAtEye;
+uniform vec3 uWaterTint;
+in vec2 vUv; out vec4 o;
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+float caustic(vec3 p) {
+  vec2 q = p.xz - uLightDir.xz / max(uLightDir.y, 0.2) * p.y * 0.2;
+  float t = uTime * 0.35;
+  float a = texture(uNoise, q * 0.045 + vec2(t * 0.3, t * 0.17)).r;
+  float b = texture(uNoise, q * 0.071 - vec2(t * 0.21, -t * 0.26)).g;
+  return pow(sat(1.0 - abs(a - b) * 3.2), 3.0) * 1.4 + 0.4;
+}
+void main() {
+  float d = texture(uDepth, vUv).r;
+  vec3 wp = worldAt(vUv, d);
+  vec3 ro = uCamPos;
+  vec3 rd = wp - ro;
+  float len = length(rd); rd /= len;
+  bool water = uEyeInWater > 0.5;
+  float maxD = water ? 48.0 : 160.0;
+  len = min(len, maxD);
+  vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb;
+  float c = dot(rd, uLightDir);
+  float phase = water ? 0.7 * hg(c, 0.55) + 0.3 / (4.0 * PI) : 0.65 * hg(c, 0.62) + 0.35 * hg(c, -0.15);
+  const int N = VL_STEPS;
+  float jit = ign(gl_FragCoord.xy, uFrame);
+  vec3 T = vec3(1.0), L = vec3(0.0);
+  float prevT = 0.0;
+  vec3 absorb = -0.15 * log(max(uWaterTint, vec3(0.02))) + 0.03;
+  for (int i = 0; i < N; i++) {
+    float f = (float(i) + jit) / float(N);
+    float t = f * f * len;
+    float dt = t - prevT; prevT = t;
+    vec3 p = ro + rd * t;
+    vec4 sc = uShadowMat * vec4(p, 1.0);
+    sc.xy = distort(sc.xy); sc.z *= 0.2;
+    vec3 s = sc.xyz * 0.5 + 0.5;
+    float vis = shadowHard(s);
+    vec3 sigS, sigT;
+    if (water) {
+      sigS = vec3(0.045) * uWaterTint * 1.6; sigT = absorb * 0.9 + 0.03;
+      vis *= caustic(p);
+    } else {
+      float h = max(p.y - 63.0, -8.0);
+      float dens = 0.0045 * exp(-h / 45.0) + 0.0007;
+      sigS = vec3(dens); sigT = vec3(dens * 1.05);
+    }
+    vec3 stepT = exp(-sigT * dt);
+    L += T * sigS * vis * phase * (1.0 - stepT) / max(sigT, 1e-5);
+    T *= stepT;
+  }
+  o = vec4(L * sunC * uSkyAtEye, 1.0);
+}`;
+
+/* ---- clouds ---- */
+const FS_CLOUDS = COMMON + RECON + SKYFN + /* glsl */`
+uniform sampler2D uDepth, uAmbient, uNoise, uHistory;
+uniform sampler3D uNoise3;
+uniform vec3 uLightDir, uSunDir;
+uniform float uFrame, uTime, uCover;
+uniform mat4 uPrevViewProj;
+in vec2 vUv; out vec4 o;
+const float C0 = 250.0, C1 = 330.0;
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+float density(vec3 p, bool cheap) {
+  vec2 wind = vec2(uTime * 2.2, uTime * 0.9);
+  float h = (p.y - C0) / (C1 - C0);
+  float cov = texture(uNoise, (p.xz + wind) * 0.00018).a * 0.65 + texture(uNoise, (p.xz + wind * 1.3) * 0.0007).r * 0.35;
+  cov = sat((cov - (1.0 - uCover)) * 2.6);
+  // fat at the bottom, thin at the top: a cumulus profile
+  float prof = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.45, h);
+  float d = cov * prof;
+  if (d < 0.02) return 0.0;
+  if (cheap) return d;
+  vec3 q = (p + vec3(wind.x, 0.0, wind.y) * 1.2) * 0.012;
+  vec4 n = texture(uNoise3, q);
+  float erosion = n.r * 0.6 + n.g * 0.3 + n.b * 0.1;
+  return sat(d - erosion * 0.45 * (1.0 - h * 0.3)) * 1.6;
+}
+void main() {
+  float d = texture(uDepth, vUv).r;
+  vec3 wp = worldAt(vUv, d);
+  vec3 ro = uCamPos, rd = normalize(wp - ro);
+  float sceneT = d >= 1.0 ? 1e9 : length(wp - ro);
+  // where the ray is inside the slab
+  float t0, t1;
+  if (abs(rd.y) < 1e-4) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  float ta = (C0 - ro.y) / rd.y, tb = (C1 - ro.y) / rd.y;
+  t0 = max(min(ta, tb), 0.0); t1 = max(ta, tb);
+  t1 = min(t1, min(sceneT, 9000.0));
+  if (t1 <= t0) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  float span = t1 - t0;
+  const int N = CLOUD_STEPS;
+  float dt = span / float(N);
+  float jit = ign(gl_FragCoord.xy, uFrame);
+  vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb;
+  vec3 ambC = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
+  float c = dot(rd, uLightDir);
+  float ph = 0.6 * hg(c, 0.7) + 0.4 * hg(c, -0.2);
+  float T = 1.0; vec3 L = vec3(0.0);
+  for (int i = 0; i < N; i++) {
+    vec3 p = ro + rd * (t0 + (float(i) + jit) * dt);
+    float den = density(p, false);
+    if (den <= 0.0) continue;
+    // light reaching this point through the cloud above it
+    float od = 0.0;
+    for (int j = 1; j <= 4; j++) od += density(p + uLightDir * float(j * j) * 6.0, true) * 6.0 * float(2 * j - 1);
+    float sig = den * 0.045;
+    float beer = exp(-od * 0.012) * 0.7 + exp(-od * 0.003) * 0.3, powder = 1.0 - exp(-od * 0.05);
+    vec3 S = sunC * beer * mix(1.0, powder * 2.0, 0.5) * ph * 1.6 + ambC * (0.55 + 0.45 * (p.y - C0) / (C1 - C0));
+    float st = exp(-sig * dt);
+    L += T * S * (1.0 - st);
+    T *= st;
+    if (T < 0.03) break;
+  }
+  // far clouds melt into the haze
+  float fade = exp(-t0 * 0.00022);
+  L *= fade; T = mix(1.0, T, fade);
+  vec4 cur = vec4(L, T);
+  // settle over a few frames where the last frame saw the same sky
+  vec3 far = ro + rd * (t0 + span * 0.5);
+  vec4 pc = uPrevViewProj * vec4(far, 1.0);
+  vec2 puv = pc.xy / pc.w * 0.5 + 0.5;
+  if (pc.w > 0.0 && puv.x > 0.0 && puv.y > 0.0 && puv.x < 1.0 && puv.y < 1.0 && d >= 1.0) {
+    vec4 h = texture(uHistory, puv);
+    cur = mix(cur, h, 0.82);
+  }
+  o = cur;
+}`;
+
+/* ---- composite ---- */
+const FS_COMP = COMMON + RECON + SKYFN + /* glsl */`
+uniform sampler2D uColor, uDepth, uVL, uClouds, uAmbient, uMoon;
+uniform vec3 uSunDir, uMoonDir;
+uniform float uTime, uEyeInWater, uRender, uMoonPhase, uSkyAtEye;
+uniform vec3 uWaterTint;
+in vec2 vUv; out vec4 o;
+vec3 stars(vec3 d) {
+  vec3 p = d * 220.0;
+  vec3 i = floor(p), f = fract(p);
+  float h = hash13(i);
+  if (h < 0.9935) return vec3(0.0);
+  float b = hash13(i + 7.1);
+  float r = length(f - 0.5);
+  float tw = 0.7 + 0.3 * sin(uTime * (2.0 + b * 4.0) + h * 100.0);
+  vec3 col = mix(vec3(1.0, 0.82, 0.62), vec3(0.75, 0.85, 1.0), b);
+  return col * smoothstep(0.35, 0.0, r) * (0.004 + 0.02 * b * b) * tw;
+}
+void main() {
+  vec4 base = texture(uColor, vUv);
+  float d = texture(uDepth, vUv).r;
+  vec3 wp = worldAt(vUv, d);
+  vec3 rd = normalize(wp - uCamPos);
+  float dist = length(wp - uCamPos);
+  vec3 col = base.rgb;
+  vec3 sunC = texelFetch(uAmbient, ivec2(4, 0), 0).rgb;
+  vec3 moonC = texelFetch(uAmbient, ivec2(5, 0), 0).rgb;
+  bool water = uEyeInWater > 0.5;
+  if (d >= 1.0) {
+    // below the horizon there is only what has not loaded yet: the haze at the horizon
+    col = skyRadiance(vec3(rd.x, max(rd.y, 0.0), rd.z));
+    // the sun's disc, darker at its edge
+    float cs = dot(rd, uSunDir);
+    float r = acos(clamp(cs, -1.0, 1.0)) / radians(0.75);
+    if (r < 1.0) col += sunC * 260.0 * pow(1.0 - r * r, 0.25);
+    col += sunC * 0.6 * pow(sat(cs), 900.0);
+    // the moon, in its phase
+    vec3 md = uMoonDir;
+    vec3 mu = normalize(cross(md, vec3(0.0, 0.0, 1.0))), mv = cross(mu, md);
+    vec2 mp = vec2(dot(rd, mu), dot(rd, mv)) / radians(1.6);
+    if (dot(rd, md) > 0.0 && abs(mp.x) < 1.0 && abs(mp.y) < 1.0) {
+      vec2 cell = vec2(mod(uMoonPhase, 4.0), floor(uMoonPhase / 4.0));
+      vec2 muv = (cell + (mp * 0.5 + 0.5)) / vec2(4.0, 2.0);
+      vec4 m = texture(uMoon, vec2(muv.x, 1.0 - muv.y));
+      col += toLinear(m.rgb) * m.a * 2.2 * smoothstep(-0.05, 0.08, md.y);
+    }
+    float night = 1.0 - smoothstep(-0.12, 0.02, uSunDir.y);
+    col += stars(rd) * night * sat(rd.y * 4.0);
+  }
+  // clouds, in front of the sky and anything beyond them
+  vec4 cl = texture(uClouds, vUv);
+  if (!water) col = col * cl.a + cl.rgb;
+  if (water) {
+    // under water: the water closes in, losing red first
+    vec3 absorb = -0.15 * log(max(uWaterTint, vec3(0.02))) + 0.03;
+    vec3 Tr = exp(-(absorb + 0.025) * min(dist, 96.0));
+    vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
+    vec3 sc = (amb * 0.6 + texelFetch(uAmbient, ivec2(3, 0), 0).rgb * 0.25 / PI) * uWaterTint * uSkyAtEye * 0.9;
+    col = col * Tr + sc * (1.0 - Tr);
+  } else if (d < 1.0) {
+    // height fog, in the colour of the sky behind it
+    float h0 = uCamPos.y - 63.0;
+    float k = 1.0 / 60.0;
+    float dy = rd.y * dist;
+    float od = 0.0019 * exp(-h0 * k) * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
+    vec3 fogC = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)));
+    float T = exp(-od);
+    col = col * T + fogC * (1.0 - T) * uSkyAtEye;
+    // the edge of the loaded world melts into the horizon
+    float hd = length((wp - uCamPos).xz);
+    float edge = smoothstep(uRender * 0.72, uRender, hd);
+    col = mix(col, skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), edge);
+  }
+  col += texture(uVL, vUv).rgb;
+  o = vec4(col, 1.0);
+}`;
+
+/* ---- bloom ---- */
+const FS_DOWN = /* glsl */`
+uniform sampler2D uSrc; uniform vec2 uTexel; uniform float uFirst;
+in vec2 vUv; out vec4 o;
+vec3 s(vec2 off) { return texture(uSrc, vUv + off * uTexel).rgb; }
+vec3 karis(vec3 c) { return c / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722))); }
+void main() {
+  vec3 a = s(vec2(-2, -2)), b = s(vec2(0, -2)), c = s(vec2(2, -2));
+  vec3 d = s(vec2(-1, -1)), e = s(vec2(1, -1));
+  vec3 f = s(vec2(-2, 0)), g = s(vec2(0, 0)), h = s(vec2(2, 0));
+  vec3 i = s(vec2(-1, 1)), j = s(vec2(1, 1));
+  vec3 k = s(vec2(-2, 2)), l = s(vec2(0, 2)), m = s(vec2(2, 2));
+  vec3 r;
+  vec3 g0 = (d + e + i + j) * 0.25, g1 = (a + b + f + g) * 0.25, g2 = (b + c + g + h) * 0.25;
+  vec3 g3 = (f + g + k + l) * 0.25, g4 = (g + h + l + m) * 0.25;
+  if (uFirst > 0.5) {
+    // weighted by brightness, so one blazing pixel cannot flicker the whole glow
+    float w0 = 0.5 / (1.0 + dot(g0, vec3(0.2126, 0.7152, 0.0722)));
+    float w1 = 0.125 / (1.0 + dot(g1, vec3(0.2126, 0.7152, 0.0722)));
+    float w2 = 0.125 / (1.0 + dot(g2, vec3(0.2126, 0.7152, 0.0722)));
+    float w3 = 0.125 / (1.0 + dot(g3, vec3(0.2126, 0.7152, 0.0722)));
+    float w4 = 0.125 / (1.0 + dot(g4, vec3(0.2126, 0.7152, 0.0722)));
+    r = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4);
+  } else {
+    r = g0 * 0.5 + (g1 + g2 + g3 + g4) * 0.125;
+  }
+  o = vec4(r, 1.0);
+}`;
+const FS_UP = /* glsl */`
+uniform sampler2D uSrc, uBase; uniform vec2 uTexel; uniform float uMix;
+in vec2 vUv; out vec4 o;
+void main() {
+  vec3 s = texture(uSrc, vUv + uTexel * vec2(-1, -1)).rgb + texture(uSrc, vUv + uTexel * vec2(1, -1)).rgb
+         + texture(uSrc, vUv + uTexel * vec2(-1, 1)).rgb + texture(uSrc, vUv + uTexel * vec2(1, 1)).rgb
+         + 2.0 * (texture(uSrc, vUv + uTexel * vec2(0, -1)).rgb + texture(uSrc, vUv + uTexel * vec2(0, 1)).rgb
+                + texture(uSrc, vUv + uTexel * vec2(-1, 0)).rgb + texture(uSrc, vUv + uTexel * vec2(1, 0)).rgb)
+         + 4.0 * texture(uSrc, vUv).rgb;
+  o = vec4(texture(uBase, vUv).rgb + s / 16.0 * uMix, 1.0);
+}`;
+
+/* ---- exposure ---- */
+const FS_LUM = /* glsl */`
+uniform sampler2D uSrc; in vec2 vUv; out vec4 o;
+void main() {
+  float l = 0.0;
+  for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) {
+    vec3 c = texture(uSrc, vUv + (vec2(i, j) - 1.5) / vec2(256.0, 144.0)).rgb;
+    l += log2(max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-5));
+  }
+  // the middle of the screen counts for more
+  float w = 1.0 - 0.6 * length(vUv - 0.5);
+  o = vec4(l / 16.0 * w, w, 0.0, 1.0);
+}`;
+const FS_EXPO = /* glsl */`
+uniform sampler2D uLum, uPrev; uniform float uDt, uBias;
+in vec2 vUv; out vec4 o;
+void main() {
+  vec4 s = textureLod(uLum, vec2(0.5), 10.0);
+  float avg = exp2(s.x / max(s.y, 1e-4));
+  float target = clamp(0.115 / max(avg, 1e-5), 0.025, 5.5) * uBias;
+  float prev = texture(uPrev, vec2(0.5)).r;
+  if (prev <= 0.0) prev = target;
+  // brighter quickly, darker slowly, the way eyes go
+  float speed = target > prev ? 1.6 : 0.9;
+  float e = exp(mix(log(prev), log(target), 1.0 - exp(-uDt * speed)));
+  o = vec4(e, 0.0, 0.0, 1.0);
+}`;
+
+/* ---- final ---- */
+const FS_FINAL = COMMON + TONEMAP + /* glsl */`
+uniform sampler2D uColor, uBloom, uExpo;
+uniform float uEyeInWater, uTime, uBloomMix;
+in vec2 vUv; out vec4 o;
+void main() {
+  vec2 uv = vUv;
+  if (uEyeInWater > 0.5) uv += vec2(sin(uv.y * 24.0 + uTime * 2.1), cos(uv.x * 19.0 + uTime * 1.7)) * 0.0018;
+  vec3 c = texture(uColor, uv).rgb;
+  vec3 b = texture(uBloom, uv).rgb;
+  float e = texture(uExpo, vec2(0.5)).r;
+  c = mix(c, b / 6.0, uBloomMix);
+  c *= e;
+  // a soft vignette, kinder to bright pixels
+  vec2 q = uv - 0.5;
+  c *= 1.0 - dot(q, q) * 0.38 * (1.0 - sat(lum(c)));
+  c = agx(c);
+  c = toSRGB(c);
+  o = vec4(c, lum(c));
+}`;
+const FS_FXAA = /* glsl */`
+uniform sampler2D uSrc; uniform vec2 uTexel;
+in vec2 vUv; out vec4 o;
+void main() {
+  // FXAA 3.11 (quality preset 12-ish), on the luma in alpha
+  vec4 c = texture(uSrc, vUv);
+  float lM = c.a;
+  float lN = texture(uSrc, vUv + vec2(0, uTexel.y)).a, lS = texture(uSrc, vUv - vec2(0, uTexel.y)).a;
+  float lE = texture(uSrc, vUv + vec2(uTexel.x, 0)).a, lW = texture(uSrc, vUv - vec2(uTexel.x, 0)).a;
+  float lMin = min(lM, min(min(lN, lS), min(lE, lW))), lMax = max(lM, max(max(lN, lS), max(lE, lW)));
+  float range = lMax - lMin;
+  if (range < max(0.0312, lMax * 0.125)) { o = vec4(c.rgb, 1.0); return; }
+  float lNW = texture(uSrc, vUv + vec2(-uTexel.x, uTexel.y)).a, lNE = texture(uSrc, vUv + uTexel).a;
+  float lSW = texture(uSrc, vUv - uTexel).a, lSE = texture(uSrc, vUv + vec2(uTexel.x, -uTexel.y)).a;
+  float edgeH = abs(lNW + lNE - 2.0 * lN) + 2.0 * abs(lW + lE - 2.0 * lM) + abs(lSW + lSE - 2.0 * lS);
+  float edgeV = abs(lNW + lSW - 2.0 * lW) + 2.0 * abs(lN + lS - 2.0 * lM) + abs(lNE + lSE - 2.0 * lE);
+  bool horz = edgeH >= edgeV;
+  float l1 = horz ? lS : lW, l2 = horz ? lN : lE;
+  float g1 = abs(l1 - lM), g2 = abs(l2 - lM);
+  float stepL = horz ? uTexel.y : uTexel.x;
+  float lAvg;
+  if (g1 >= g2) { stepL = -stepL; lAvg = 0.5 * (l1 + lM); } else lAvg = 0.5 * (l2 + lM);
+  float gScaled = max(g1, g2) * 0.25;
+  vec2 cur = vUv; if (horz) cur.y += stepL * 0.5; else cur.x += stepL * 0.5;
+  vec2 off = horz ? vec2(uTexel.x, 0.0) : vec2(0.0, uTexel.y);
+  vec2 u1 = cur - off, u2 = cur + off;
+  float e1 = texture(uSrc, u1).a - lAvg, e2 = texture(uSrc, u2).a - lAvg;
+  bool r1 = abs(e1) >= gScaled, r2 = abs(e2) >= gScaled;
+  for (int i = 0; i < 10; i++) {
+    if (r1 && r2) break;
+    float q = i < 2 ? 1.0 : i < 5 ? 1.5 : i < 8 ? 2.0 : 4.0;
+    if (!r1) { u1 -= off * q; e1 = texture(uSrc, u1).a - lAvg; r1 = abs(e1) >= gScaled; }
+    if (!r2) { u2 += off * q; e2 = texture(uSrc, u2).a - lAvg; r2 = abs(e2) >= gScaled; }
+  }
+  float d1 = horz ? vUv.x - u1.x : vUv.y - u1.y, d2 = horz ? u2.x - vUv.x : u2.y - vUv.y;
+  bool closer1 = d1 < d2;
+  float dmin = min(d1, d2);
+  bool smaller = lM < lAvg;
+  bool ok = ((closer1 ? e1 : e2) < 0.0) != smaller;
+  float px = ok ? -dmin / (d1 + d2) + 0.5 : 0.0;
+  float sub = clamp(abs((2.0 * (lN + lS + lE + lW) + lNW + lNE + lSW + lSE) / 12.0 - lM) / range, 0.0, 1.0);
+  float sub2 = (-2.0 * sub + 3.0) * sub * sub;
+  px = max(px, sub2 * sub2 * 0.75);
+  vec2 fuv = vUv; if (horz) fuv.y += px * stepL; else fuv.x += px * stepL;
+  o = vec4(texture(uSrc, fuv).rgb, 1.0);
+}`;
+
+export class Post {
+  constructor(renderer, shared, opts) {
+    this.r = renderer;
+    this.fs = new FullScreen(null);
+    this.shared = shared;
+    this.opts = opts;
+    this.u = {
+      uSrc: { value: null }, uBase: { value: null }, uTexel: { value: new THREE.Vector2() }, uFirst: { value: 0 }, uMix: { value: 1 },
+      uColor: { value: null }, uDepth: { value: null }, uVL: { value: null }, uClouds: { value: null }, uBloom: { value: null },
+      uExpo: { value: null }, uLum: { value: null }, uPrev: { value: null }, uHistory: { value: null },
+      uInvViewProj: { value: new THREE.Matrix4() }, uPrevViewProj: { value: new THREE.Matrix4() },
+      uDt: { value: 0.016 }, uBias: { value: 1 }, uBloomMix: { value: 0.045 },
+    };
+    const U = Object.assign({}, shared, this.u);
+    // the same objects, so a value set here is seen by every pass
+    for (const k in this.u) U[k] = this.u[k];
+    this.U = U;
+    this.mCopy = mat(FS_COPY, U);
+    this.mLin = mat(FS_LINDEPTH, U);
+    const Q = { VL_STEPS: opts.vlSteps || 14, CLOUD_STEPS: opts.cloudSteps || 20 };
+    this.mVL = mat(FS_VL, U, { defines: Q });
+    this.mClouds = mat(FS_CLOUDS, U, { defines: Q });
+    this.mComp = mat(FS_COMP, U);
+    this.mDown = mat(FS_DOWN, U);
+    this.mUp = mat(FS_UP, U);
+    this.mLum = mat(FS_LUM, U);
+    this.mExpo = mat(FS_EXPO, U);
+    this.mFinal = mat(FS_FINAL, U);
+    this.mFxaa = mat(FS_FXAA, U);
+    this.expo = [floatTarget(1, 1), floatTarget(1, 1)];
+    this.expoI = 0;
+    this.lum = floatTarget(64, 64, { minFilter: THREE.LinearMipmapLinearFilter, generateMipmaps: true });
+    this.lum.texture.generateMipmaps = true;
+    this.cloudHist = 0;
+  }
+  resize(w, h) {
+    this.w = w; this.h = h;
+    const dispose = t => t && t.dispose();
+    [this.copyColor, this.linDepth, this.vl, this.comp, this.ldr, ...(this.clouds || []), ...(this.down || []), ...(this.up || [])].forEach(dispose);
+    this.copyColor = floatTarget(w, h);
+    this.linDepth = floatTarget(w, h, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    this.vl = floatTarget(Math.ceil(w / 2), Math.ceil(h / 2));
+    this.clouds = [floatTarget(Math.ceil(w / 2), Math.ceil(h / 2)), floatTarget(Math.ceil(w / 2), Math.ceil(h / 2))];
+    this.comp = floatTarget(w, h);
+    this.ldr = new THREE.WebGLRenderTarget(w, h, { type: THREE.UnsignedByteType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+    this.down = []; this.up = [];
+    let bw = w, bh = h;
+    for (let i = 0; i < 6; i++) {
+      bw = Math.max(1, Math.ceil(bw / 2)); bh = Math.max(1, Math.ceil(bh / 2));
+      this.down.push(floatTarget(bw, bh));
+      this.up.push(floatTarget(bw, bh));
+    }
+  }
+  run(m, target) { this.fs.material = m; this.fs.render(this.r, target); }
+  // the opaque scene's colour and linear depth, for the water to look through
+  copies(main) {
+    this.u.uSrc.value = main.texture; this.run(this.mCopy, this.copyColor);
+    this.u.uDepth.value = main.depthTexture; this.run(this.mLin, this.linDepth);
+  }
+  frame(main, camera, dt) {
+    const u = this.u;
+    u.uInvViewProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
+    u.uDepth.value = main.depthTexture;
+    u.uDt.value = dt;
+    // light shafts
+    this.run(this.mVL, this.vl);
+    // clouds, over the last frame's
+    const ci = this.cloudHist;
+    u.uHistory.value = this.clouds[ci].texture;
+    this.run(this.mClouds, this.clouds[1 - ci]);
+    this.cloudHist = 1 - ci;
+    u.uPrevViewProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    // the composite
+    u.uColor.value = main.texture; u.uVL.value = this.vl.texture; u.uClouds.value = this.clouds[this.cloudHist].texture;
+    this.run(this.mComp, this.comp);
+    // bloom: down, then back up
+    let src = this.comp.texture, sw = this.w, sh = this.h;
+    for (let i = 0; i < this.down.length; i++) {
+      u.uSrc.value = src; u.uTexel.value.set(1 / sw, 1 / sh); u.uFirst.value = i === 0 ? 1 : 0;
+      this.run(this.mDown, this.down[i]);
+      src = this.down[i].texture; sw = this.down[i].width; sh = this.down[i].height;
+    }
+    let upSrc = this.down[this.down.length - 1].texture;
+    for (let i = this.down.length - 2; i >= 0; i--) {
+      const big = this.down[i + 1];
+      u.uSrc.value = upSrc; u.uBase.value = this.down[i].texture; u.uTexel.value.set(1 / big.width, 1 / big.height); u.uMix.value = 1.0;
+      this.run(this.mUp, this.up[i]);
+      upSrc = this.up[i].texture;
+    }
+    // how bright it all is, and the eye adjusting to it
+    u.uSrc.value = this.comp.texture; this.run(this.mLum, this.lum);
+    u.uLum.value = this.lum.texture; u.uPrev.value = this.expo[this.expoI].texture;
+    this.run(this.mExpo, this.expo[1 - this.expoI]);
+    this.expoI = 1 - this.expoI;
+    // tone map, then smooth the edges onto the screen
+    u.uColor.value = this.comp.texture; u.uBloom.value = upSrc; u.uExpo.value = this.expo[this.expoI].texture;
+    this.run(this.mFinal, this.ldr);
+    u.uSrc.value = this.ldr.texture; u.uTexel.value.set(1 / this.w, 1 / this.h);
+    this.run(this.mFxaa, null);
+  }
+}

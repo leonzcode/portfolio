@@ -1,0 +1,24 @@
+Leoncraft 2 - block textures
+
+The block textures in this folder (terrain_albedo.png, terrain_normal.png,
+terrain_spec.png, the colour maps, the sun and the moon) are made from
+"Pixel Perfection Community Edition", by XSSheep and its contributors:
+https://github.com/Athemis/PixelPerfectionCE
+
+Pixel Perfection CE is licensed under Creative Commons Attribution-ShareAlike
+4.0 International (CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes made for Leoncraft 2:
+- the 16x16 textures are packed into vertical strips (one layer per texture);
+- normal, ambient-occlusion, height, smoothness, reflectance, subsurface and
+  emission maps are generated from each texture (terrain_normal.png and
+  terrain_spec.png);
+- textures for blocks the pack does not have (deepslate and its ores, tuff,
+  calcite, copper ore, cherry and mangrove wood and leaves, moss, mud, packed
+  mud, powder snow, smooth basalt) are recoloured from the pack's own.
+
+These textures, including the changes above, are shared under the same
+licence, CC BY-SA 4.0. They are not Mojang's textures.
+
+The script that builds them: tools/leoncraft2/build_textures.py in the
+portfolio repository.
