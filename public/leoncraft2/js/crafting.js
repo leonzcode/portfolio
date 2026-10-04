@@ -18,8 +18,8 @@
      m && m.result                   // { id, count, dmg? }
      consumeGrid(grid, m, giveBack)  // after the result is taken
 --------------------------------------------------------------------------- */
-import { RECIPES, ING } from './itemdata.js?v=9';
-import { I, ITEMS, maxDamage } from './items.js?v=9';
+import { RECIPES, ING } from './itemdata.js?v=10';
+import { I, ITEMS, maxDamage } from './items.js?v=10';
 
 // ingredient sets as sets of item ids
 const SETS = ING.map(names => { const s = new Set(); for (const n of names) if (I[n] !== undefined) s.add(I[n]); return s; });

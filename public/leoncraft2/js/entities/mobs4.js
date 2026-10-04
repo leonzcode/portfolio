@@ -20,14 +20,14 @@
 
    The player is the only owner there can be, so "tamed" means "yours".
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=9';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=10';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=9';
-import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=9';
-import { model } from './mobs2.js?v=9';
-import { addArt } from './mobart.js?v=9';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=9';
-import { use as useBlock } from '../place.js?v=9';
+  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=10';
+import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=10';
+import { model } from './mobs2.js?v=10';
+import { addArt } from './mobart.js?v=10';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=10';
+import { use as useBlock } from '../place.js?v=10';
 
 const PI = Math.PI;
 const R = () => Math.random();

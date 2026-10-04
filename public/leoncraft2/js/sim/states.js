@@ -34,8 +34,8 @@
      fire                          bits 0-3 age
      bed                           bit 2 occupied (as well as facing and the head bit)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from '../blocks.js?v=9';
-import { SHAPES, MODEL_SHAPES, turn } from '../models.js?v=9';
+import { B, BLOCKS, MAX_ID } from '../blocks.js?v=10';
+import { SHAPES, MODEL_SHAPES, turn } from '../models.js?v=10';
 
 export const STATEFUL = new Uint8Array(MAX_ID);    // its look depends on its meta
 export const SLIGHT = new Uint8Array(MAX_ID);      // so does its light

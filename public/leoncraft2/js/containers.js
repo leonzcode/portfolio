@@ -22,9 +22,9 @@
    fuel the progress runs back two ticks a tick. A lava bucket leaves its
    bucket in the fuel slot.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=9';
-import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=9';
-import { brewingTick, brewResult, isPotion, isIngredient } from './brewing.js?v=9';
+import { B, BLOCKS } from './blocks.js?v=10';
+import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=10';
+import { brewingTick, brewResult, isPotion, isIngredient } from './brewing.js?v=10';
 
 export const SIZES = { chest: 27, trapped_chest: 27, barrel: 27, furnace: 3, smoker: 3, blast_furnace: 3, dispenser: 9, dropper: 9, hopper: 5, brewing_stand: 5 };
 const isShulker = n => /shulker_box$/.test(n);

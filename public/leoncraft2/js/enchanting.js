@@ -23,8 +23,8 @@
    Grindstone: takes off every enchantment but curses, joins two worn items
    of a kind (plus 5%), and pays back experience for what it took off.
 --------------------------------------------------------------------------- */
-import { ENCHANTS } from './itemdata.js?v=9';
-import { ITEMS, I, maxDamage } from './items.js?v=9';
+import { ENCHANTS } from './itemdata.js?v=10';
+import { ITEMS, I, maxDamage } from './items.js?v=10';
 
 /* min and max cost: [base, per level above the first] for each */
 const COST = {

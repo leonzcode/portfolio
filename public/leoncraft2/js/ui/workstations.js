@@ -18,10 +18,10 @@
    Sheets and layouts are the game's (176 wide); the art is Pixel Perfection
    CE's. The smithing table's template slot is drawn over the older sheet.
 --------------------------------------------------------------------------- */
-import { ContainerScreen, SearchField, slot, range, TO_PLAYER, TO_PLAYER_REVERSED, stackTooltip } from './inventory.js?v=9';
-import { I, ITEMS, withCount, displayName } from '../items.js?v=9';
-import { tableOffers3, anvilResult, grindResult, enchName, enchantability } from '../enchanting.js?v=9';
-import { stonecutterRecipes } from '../crafting.js?v=9';
+import { ContainerScreen, SearchField, slot, range, TO_PLAYER, TO_PLAYER_REVERSED, stackTooltip } from './inventory.js?v=10';
+import { I, ITEMS, withCount, displayName } from '../items.js?v=10';
+import { tableOffers3, anvilResult, grindResult, enchName, enchantability } from '../enchanting.js?v=10';
+import { stonecutterRecipes } from '../crafting.js?v=10';
 
 const LABEL_GREY = 0x404040;
 const MAIN = range(9, 36), HOT = range(0, 9);

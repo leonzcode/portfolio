@@ -21,10 +21,10 @@
    come with the world: the first time a chunk is seen, there is a 10%
    chance of a group of the biome's animals in it.
 --------------------------------------------------------------------------- */
-import { TYPES } from './mobs.js?v=9';
-import { BIOMES } from '../biomes.js?v=9';
-import { B, BLOCKS, SOLID, FLUID, OPAQUE } from '../blocks.js?v=9';
-import { SEA, Y0 } from '../world-const.js?v=9';
+import { TYPES } from './mobs.js?v=10';
+import { BIOMES } from '../biomes.js?v=10';
+import { B, BLOCKS, SOLID, FLUID, OPAQUE } from '../blocks.js?v=10';
+import { SEA, Y0 } from '../world-const.js?v=10';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);
