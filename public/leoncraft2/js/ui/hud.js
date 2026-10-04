@@ -21,6 +21,7 @@
 --------------------------------------------------------------------------- */
 import { displayName } from './inventory.js?v=9';
 import { drawStack } from './inventory.js?v=9';
+import { drawBossBar } from '../dim/bossbar.js?v=9';
 
 const TICK = 50;
 
@@ -118,6 +119,8 @@ export class Hud {
     } else if (this._hlUntil && now < this._hlUntil + 100) this._wakeAt(now);
 
     if (this.debug) this._debugText(g, W);
+    // a boss's bar across the top (the Ender Dragon: js/dim/bossbar.js)
+    if (this.boss) drawBossBar(g, this.boss, cx);
   }
 
   _wakeAt(t) { if (t < this._wake) this._wake = t; }

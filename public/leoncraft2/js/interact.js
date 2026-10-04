@@ -62,6 +62,8 @@ export class Interactor {
     }
     if (button === 0 && !this.target && this.entities) this.entities.swung();
     if (button === 0) {
+      // the dragon or a crystal nearer than the block (js/dim/realms.js)
+      if (this.onAttack && this.onAttack(this.target)) { this.hand.swing(); return; }
       this.attack = true;
       this.hand.swing();
       if (this.creative) { this.breakTarget(); this.breakDelay = 5; }
@@ -124,6 +126,7 @@ export class Interactor {
         else { const drop = dropOf(b); if (drop) this.hand.got(drop); }
       }
       w.set(x, y, z, replace && x === h.x && y === h.y && z === h.z ? replace : 0, 0);
+      if (this.onBroken) this.onBroken(x, y, z, b);
       // a water plant leaves its water behind
       if (d && d.waterlogged) w.set(x, y, z, B.water, 0);
       this.fluids.around(x, y, z);
@@ -134,18 +137,24 @@ export class Interactor {
     // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities)
     if (this.entities && !this.entityTarget && this.entities.useHeld(this.target)) { this.hand.swing(); return; }
     const h = this.target;
-    // what the item does by itself (eating, armour, a bucket) works looking at nothing too
-    if ((!h || !h.face) && this.hand.useItem) { this.hand.useItem(null); return; }
-    if (!h || !h.face) return;
+    // at nothing: an item that is thrown (an eye of ender), or one that works by itself (eating, armour, a bucket)
+    if (!h || !h.face) {
+      const held = this.hand.id();
+      if (held && this.onUseAir && this.onUseAir(held)) { this.hand.swing(); return; }
+      if (this.hand.useItem) this.hand.useItem(null);
+      return;
+    }
     // chests, crafting tables, furnaces open; tools till and strip (hands.js)
     if (this.hand.useOn && this.hand.useOn(h)) { this.hand.swing(); return; }
+    // portals, eyes in frames, beds and anchors where they explode (js/dim/realms.js)
+    if (this.onUse && this.onUse(h, this.hand.id())) { this.hand.swing(); return; }
     // what the simulation does with a click: levers, beds, bone meal, flint and steel (sim/sim.js)
     if (this.sim && this.sim.use(h, this.hand.id(), this.player.sneaking)) { this.hand.swing(); if (this.sim.usedHeld) { this.sim.usedHeld = false; this.hand.used(); } return; }
     // doors, trapdoors and gates open instead, unless you sneak
     if (!this.player.sneaking && use(this.world, h.x, h.y, h.z)) { this.hand.swing(); return; }
     if (this.hand.useItem && this.hand.useItem(h)) return;
     const id = this.hand.id();
-    if (!id || !BLOCKS[id]) return;
+    if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return;
     let list = placement(this.world, h, id, this.player);
     if (list.length && this.sim) list = this.sim.placed(list, h, id);
     if (!list.length) return;

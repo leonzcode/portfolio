@@ -42,6 +42,7 @@ export const VANILLA = /* glsl */`
 uniform sampler2D uLightmap;
 uniform vec3 uFogColor;
 uniform vec3 uFog;              // start, end, shape (0 sphere, 1 cylinder)
+uniform float uConstAmb;        // the Nether: top and bottom faces both 0.9 (js/dims.js constAmb)
 vec3 lightmapAt(float sky, float block) {
   return texture(uLightmap, (vec2(block, sky) * 15.0 + 0.5) / 16.0).rgb;
 }
@@ -52,7 +53,7 @@ vec3 linearFog(vec3 c, float d) {
   return mix(c, uFogColor, f);
 }
 // the face shades the game gives each side of a block (0 +x, 1 -x, 2 +y, 3 -y, 4 +z, 5 -z)
-float faceShade(int f) { return f == 2 ? 1.0 : f == 3 ? 0.5 : f >= 4 ? 0.8 : 0.6; }
+float faceShade(int f) { return f == 2 ? mix(1.0, 0.9, uConstAmb) : f == 3 ? mix(0.5, 0.9, uConstAmb) : f >= 4 ? 0.8 : 0.6; }
 // how the game lights a mob or an item: two fixed lights and 0.4 everywhere
 float entityShade(vec3 n) {
   vec3 l0 = normalize(vec3(0.2, 1.0, -0.7)), l1 = normalize(vec3(-0.2, 1.0, 0.7));
@@ -218,14 +219,21 @@ uniform mat4 uInvViewProj;
 uniform vec3 uCamPos, uSkyColor, uFogColor, uVSun;
 uniform vec4 uSunrise;          // colour and strength of the sunrise fan
 uniform vec3 uSky;              // fog end for the sky, star brightness, under a fluid
-uniform float uMoonPhase, uRain;
-uniform sampler2D uSunTex, uMoon;
+uniform float uMoonPhase, uRain, uSkyMode;
+uniform sampler2D uSunTex, uMoon, uEndSky;
 in vec2 vUv; out vec4 o;
 void main() {
   vec4 p = uInvViewProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
   vec3 rd = normalize(p.xyz / p.w - uCamPos);
   vec3 col = uFogColor;
-  if (uSky.z > 0.5) { o = vec4(col, 1.0); return; }
+  if (uSky.z > 0.5 || uSkyMode > 0.5 && uSkyMode < 1.5) { o = vec4(col, 1.0); return; }
+  if (uSkyMode > 1.5) {
+    // the End: a box of our own dark speckled sky, sixteen tiles to a side, at 40/255 (js/dim/art.js)
+    vec3 a = abs(rd);
+    vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
+    o = vec4(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0), 1.0);
+    return;
+  }
   // the sky plane 16 blocks up, fogged at its corners (the game fogs it per corner of a 512 block fan)
   if (rd.y > 0.0313) {
     float r = 16.0 / max(rd.y, 1e-4) * length(rd.xz);
@@ -343,6 +351,7 @@ export class Vanilla {
       uSunTex: { value: textures.sun || null }, uCloudColor: { value: new THREE.Vector3(1, 1, 1) }, uCloudFog: { value: new THREE.Vector2(128, 256) },
       uFlowLayers: { value: new THREE.Vector2(man.water_flow ? man.water_flow.layer : 0, man.lava_flow ? man.lava_flow.layer : 0) },
       uLightLv: renderer.uHandLight || (renderer.uHandLight = { value: new THREE.Vector2(1, 0) }),
+      uConstAmb: { value: 0 }, uSkyMode: { value: 0 }, uEndSky: { value: textures.endSky || null },
     });
     this.skyFS = new FullScreen(new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: 'precision highp float;\n' + VS_FULL, fragmentShader: 'precision highp float; precision highp int;\n' + SKY_FS,
@@ -370,7 +379,11 @@ export class Vanilla {
   /* ---- once a frame: the clock, the colours, the lightmap and the fog ---- */
   update(state, opts, dt) {
     const U = this.R.U;
-    const dayTime = state.time * 20;
+    // the dimension (js/dims.js): a fixed clock, its ambient light, its kind of sky
+    const D = state.dim || null, other = !!(D && D.id !== 'overworld');
+    U.uConstAmb.value = D && D.constAmb ? 1 : 0;
+    U.uSkyMode.value = !D || D.sky === 'normal' ? 0 : D.sky === 'none' ? 1 : 2;
+    const dayTime = D && D.fixedTime !== null ? D.fixedTime : state.time * 20;
     const tod = timeOfDay(dayTime);
     const ang = tod * Math.PI * 2;
     const cosA = Math.cos(ang);
@@ -384,10 +397,10 @@ export class Vanilla {
     const daylight = clamp01(cosA * 2 + 0.5);
     this.flicker += (Math.random() - Math.random()) * Math.random() * Math.random() * 0.1 * Math.min(3, dt * 20);
     this.flicker *= Math.pow(0.9, Math.min(3, dt * 20));
-    this.makeLightmap(skyDarken, opts.brightness === undefined ? 0.5 : opts.brightness, state.dimension === 'nether' ? 0.1 : 0);
+    this.makeLightmap(skyDarken, opts.brightness === undefined ? 0.5 : opts.brightness, D ? D.ambient : 0, !!(D && D.brightLightmap));
     // the sky and fog colours of the biome you are in, eased so a border does not snap
     const b = state.biome;
-    skyColour(b ? b.temp : 0.8, this.tmp);
+    if (b && b.sky !== undefined) rgb(b.sky, this.tmp); else skyColour(b ? b.temp : 0.8, this.tmp);
     const k = this.colorsSet ? Math.min(1, dt * 2) : 1;
     this.skyC.lerp(this.tmp, k);
     rgb(b && b.fog ? b.fog : 0xc0d8ff, this.tmp2);
@@ -398,12 +411,14 @@ export class Vanilla {
     if (wx.flash) { const f = Math.min(1, wx.flash) * 0.45; sky.set(sky.x * (1 - f) + 0.8 * f, sky.y * (1 - f) + 0.8 * f, sky.z * (1 - f) + f); }
     // the fog colour: the biome's, darkened by the time of day, pulled towards the sky the further you can see
     const fog = U.uFogColor.value.copy(this.fogBase);
-    fog.x *= daylight * 0.94 + 0.06; fog.y *= daylight * 0.94 + 0.06; fog.z *= daylight * 0.91 + 0.09;
+    // the Nether keeps its biome's fog as it is; the End's is that times 0.15
+    if (D && D.sky === 'end') fog.multiplyScalar(0.15);
+    else if (!other) { fog.x *= daylight * 0.94 + 0.06; fog.y *= daylight * 0.94 + 0.06; fog.z *= daylight * 0.91 + 0.09; }
     const rdc = Math.max(2, opts.renderDist || 8);
     const f3 = 1 - Math.pow(0.25 + 0.75 * rdc / 32, 0.25);
     fog.lerp(sky, f3);
     // sunrise and sunset: the fan, and the fog towards it when you look that way
-    const sr = sunriseColour(tod);
+    const sr = other ? null : sunriseColour(tod);
     if (sr) {
       U.uSunrise.value.set(sr[0], sr[1], sr[2], sr[3]);
       const look = this.R.camera.getWorldDirection(this.tmp);
@@ -414,7 +429,7 @@ export class Vanilla {
     // stars come out as the sky darkens
     const sb = clamp01(1 - (cosA * 2 + 0.25));
     const R = rdc * 16;
-    U.uSky.value.set(R, sb * sb * 0.5, 0);
+    U.uSky.value.set(R, other ? 0 : sb * sb * 0.5, 0);
     U.uMoonPhase.value = state.moonPhase || 0;
     // rain greys the fog
     if (rain > 0) { fog.x *= 1 - rain * 0.5; fog.y *= 1 - rain * 0.5; fog.z *= 1 - rain * 0.4; }
@@ -440,20 +455,24 @@ export class Vanilla {
       if (b && (b.name === 'swamp' || b.name === 'mangrove_swamp')) end *= 0.85;
       U.uFog.value.set(-8, Math.min(end, R), 0);
       U.uSky.value.z = 1;
+    } else if ((D && D.foggy) || state.bossFog) {
+      // the Nether, and a boss fight's thick fog: a sphere from a twentieth of the distance to half of it
+      this.waterTime = 0; this.waterFogSet = false;
+      U.uFog.value.set(R * 0.05, Math.min(R, 192) * 0.5, 0);
     } else {
       this.waterTime = 0; this.waterFogSet = false;
       U.uFog.value.set(R - Math.max(4, Math.min(64, R / 10)), R, 1);
     }
-    // near the bottom of the world the fog fades to black
-    const above = (state.eye.y + 64 - 0) / 32;
+    // near the bottom of the world the fog fades to black (the other dimensions: within 32 blocks of their floor)
+    const above = other ? (state.eye.y - 64 - D.minY) / 32 : (state.eye.y + 64 - 0) / 32;
     if (above < 1) fog.multiplyScalar(Math.max(0, above) * Math.max(0, above));
     // clouds: white by day, grey at night
     U.uCloudColor.value.set(daylight * 0.9 + 0.1, daylight * 0.9 + 0.1, daylight * 0.85 + 0.15);
     greyTowards(U.uCloudColor.value, rain * 0.95, 0.6); greyTowards(U.uCloudColor.value, thunder * 0.95, 0.2);
     U.uCloudFog.value.set(R * 1.0, R * 2.0);
-    this.clouds = opts.clouds || 'fancy';
+    this.clouds = D && !D.clouds ? 'off' : opts.clouds || 'fancy';
   }
-  makeLightmap(skyDarken, gamma, ambient) {
+  makeLightmap(skyDarken, gamma, ambient, endBright) {
     const d = this.lmData;
     const f1 = skyDarken * 0.95 + 0.05;
     // sky light leans blue as it dims
@@ -468,6 +487,8 @@ export class Vanilla {
         let r = f9, g = f9 * ((f9 * 0.6 + 0.4) * 0.6 + 0.4), bl = f9 * (f9 * f9 * 0.6 + 0.4);
         r += tr * s; g += tr * s; bl += tb * s;
         r += (0.75 - r) * 0.04; g += (0.75 - g) * 0.04; bl += (0.75 - bl) * 0.04;
+        // the End: pulled a quarter of the way to (0.99, 1.12, 1.0)
+        if (endBright) { r += (0.99 - r) * 0.25; g += (1.12 - g) * 0.25; bl += (1.0 - bl) * 0.25; }
         r = clamp01(r); g = clamp01(g); bl = clamp01(bl);
         r += (notGamma(r) - r) * gamma; g += (notGamma(g) - g) * gamma; bl += (notGamma(bl) - bl) * gamma;
         r += (0.75 - r) * 0.04; g += (0.75 - g) * 0.04; bl += (0.75 - bl) * 0.04;

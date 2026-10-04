@@ -52,6 +52,9 @@ import { setLayerPixels } from './render/blockmesh.js?v=9';
 import { Entities } from './entities/manager.js?v=9';
 import { EntityStore } from './entities/store.js?v=9';
 import { Sim } from './sim/sim.js?v=9';
+import { DIMS } from './dims.js?v=9';
+import { Realms } from './dim/realms.js?v=9';
+import { addDimArt, endSkyTexture } from './dim/art.js?v=9';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -60,6 +63,8 @@ const params = new URLSearchParams(location.search);
 const MENU_SEED = 20261002;
 // a world's seed as its generator wants it: the vanilla one takes the whole
 // 64-bit seed (a decimal string), the first generator a 32-bit number
+// a dimension's mobs are kept under the world's id, with the dimension added for the Nether and the End
+const entityKey = (entry, dim) => entry.id + (!dim || dim === 'overworld' ? '' : '~' + dim);
 const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) : entry.seed | 0);
 /* Graphics, as in the game's Video Settings: Detailed (the full look: sun
    rays, soft shadows, clouds, reflections) or Fast (the game with no shaders
@@ -252,6 +257,8 @@ async function boot() {
   const withNormals = QP.normals !== false;
   const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, QP.spec !== false ? 'terrain_spec.png' : null]
     .map(f => f ? strip(base + f + TEX_V, manifest.layers) : null));
+  // our own art for the Nether and the End (the portal swirl, the frame's eye, item icons) on extra layers
+  const dimArt = addDimArt(manifest);
   resolveTextures(manifest);
   // the pictures of the items that are not blocks, after the last block layer (itemtex.js)
   const itemStrip = await loadItemStrip(base, TEX_V);
@@ -279,7 +286,7 @@ async function boot() {
     albedo: arrayTex(albP, LAYERS, THREE.LinearMipmapLinearFilter),
     normal: nrmP ? arrayTex(nrmP, LAYERS, THREE.LinearMipmapLinearFilter) : flatNormals(),
     spec: spcP ? arrayTex(spcP, LAYERS, THREE.LinearMipmapLinearFilter) : flatNormals(),
-    manifest, moon: moonTex, sun: sunTex,
+    manifest, moon: moonTex, sun: sunTex, endSky: endSkyTexture(),
   };
 
   status('Starting the renderer…', 0.5);
@@ -288,8 +295,10 @@ async function boot() {
   const renderer = new Renderer(canvas, textures, Object.assign({}, QP, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : QP.scale)),
     brightness: options.get('brightness'), clouds: options.get('clouds') }));
   for (const t of [textures.albedo, textures.normal, textures.spec]) if (t.pieces) uploadArray(renderer.r, t);
+  dimArt.upload(renderer.r, textures);
   if (packTex && packTex.size) alb = applyPackTextures(renderer.r, textures, manifest, packTex, alb);
   renderer.colours = colours;
+  alb = dimArt.extendStrip(alb);
   const overlay = new Overlay(renderer.U, manifest);
   renderer.overlay = overlay;
   const fit = () => { renderer.resize(window.innerWidth, window.innerHeight); gui.resize(); };
@@ -387,19 +396,23 @@ async function boot() {
     gui.setRoot(new LoadingScreen());
     const save = new Save(entry.id);
     await save.init();
-    const edits = isNew ? new Map() : await save.loadEdits();
     const st = isNew ? null : save.readState();
+    // the dimension you were in, and a save of its own for each (js/dims.js)
+    const dim = st && st.dimension && DIMS[st.dimension] ? st.dimension : 'overworld';
+    const saves = { overworld: save, the_nether: new Save(entry.id + DIMS.the_nether.suffix), the_end: new Save(entry.id + DIMS.the_end.suffix) };
+    await saves.the_nether.init(); await saves.the_end.init();
+    const edits = isNew ? new Map() : await saves[dim].loadEdits();
     let world;
     const generator = entry.generator === 'vanilla' ? 'vanilla' : 'classic';
     const seed = worldSeed(entry);
-    if (menu && menu.seed === seed && menu.generator === generator) {
+    if (menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim) {
       // the title screen's world is this one: keep what is already made
       world = menu.world;
-      world.adoptEdits(edits, save);
+      world.adoptEdits(edits, saves[dim]);
     } else {
       if (menu) dropWorld(menu.world);
       world = new World({
-        seed, generator, renderDist: RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save,
+        seed, generator, dim, renderDist: RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save: saves[dim],
         onMesh: (cx, cz, mesh) => renderer.setColumn(cx, cz, mesh),
         onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
       });
@@ -407,33 +420,11 @@ async function boot() {
     }
     menu = null;
     world.renderDist = RD;
-    const spawn = st && st.spawn ? st.spawn : (entry.spawn || await findSpawn(world));
+    const spawn = st && st.spawn ? st.spawn : (entry.spawn || (dim === 'overworld' ? await findSpawn(world) : { x: 0, z: 0 }));
     const at = st && st.player ? st.player : null;
     const cx = at ? at.x : spawn.x, cz = at ? at.z : spawn.z;
     // wait for the ground round where you will stand
-    await new Promise(res => {
-      const t0 = performance.now();
-      const wait = () => {
-        world.update(cx, cz);
-        world.flush();
-        renderer.pumpUploads(8);
-        let meshed = 0, need = 0;
-        const pcx = Math.floor(cx / 16), pcz = Math.floor(cz / 16), ch = [];
-        // only chunks inside the render distance are ever meshed: wait for those near you
-        const R = Math.min(3, world.renderDist - 1);
-        for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
-          if (dx * dx + dz * dz > R * R) { ch.push([dx, dz, 0]); continue; }
-          need++;
-          const c = world.chunks.get((pcx + dx) + ',' + (pcz + dz));
-          if (c && c.meshed) meshed++;
-          ch.push([dx, dz, c ? (c.meshed ? 7 : 4) : world.inFlight.has('g' + (pcx + dx) + ',' + (pcz + dz)) ? 1 : 0]);
-        }
-        loading.progress = meshed / need; loading.chunks = ch;
-        gui.markDirty();
-        if (meshed >= need || performance.now() - t0 > 60000) res(); else setTimeout(wait, 50);
-      };
-      wait();
-    });
+    await waitGround(world, cx, cz);
     const player = new Player(world);
     if (at) {
       player.pos.set(at.x, at.y, at.z); player.yaw = at.yaw || 0; player.pitch = at.pitch || 0; player.flying = !!at.flying;
@@ -463,16 +454,10 @@ async function boot() {
     const survival = new Survival();
     if (st && st.survival) survival.fromJSON(st.survival);
     survival.inv = inv;
-    // items on the ground and experience orbs (drops.js), chests and furnaces (containers.js)
-    const drops = new Drops(world, renderer);
-    renderer.scene.add(drops.group);
-    if (st && st.drops) drops.fromJSON(st.drops);
-    const containers = new Containers(world);
-    if (!isNew) containers.fromJSON(await save.readExtra('containers'));
-    // what the hands do with items: mining, drops, eating, opening things (hands.js)
-    const hands = new Hands({ world, player, inv, survival, drops, containers, fluids, gui, icons, mode, renderer, inter: null, open: s => openScreen(s) });
+    player.voidY = DIMS[dim].minY;
+    // what the hands do with items: mining, drops, eating, opening things (hands.js); its world's parts come from attach()
+    const hands = new Hands({ world, player, inv, survival, drops: null, containers: null, fluids, gui, icons, mode, renderer, inter: null, open: s => openScreen(s) });
     if (st && st.hands) hands.fromJSON(st.hands);
-    const entJson = isNew ? null : await EntityStore.load(entry.id);
     const inter = new Interactor({
       world, player, fluids, renderer, overlay,
       hand: hands.adapter(renderer),
@@ -499,20 +484,58 @@ async function boot() {
         return n - Math.ceil(fix / 2);
       },
     };
-    game = { entry, world, player, fluids, inv, survival, inter, save, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, drops, containers, hands, collector };
-    // mobs, boats and arrows (js/entities): ticked with the game, drawn in the world's scene
-    const entities = new Entities({ world, player, inv, survival, renderer, options, mode, fluids,
-      hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0),
-        // what mobs drop goes through the items (drops.js): things on the ground, orbs of experience
-        dropItem: (w, x, y, z, name, n) => dropItem(w, x, y, z, name, n), giveXp: (n, x, y, z) => giveXp(x, y, z, n) } });
-    entities.fromJSON(entJson);
-    renderer.scene.add(entities.group);
-    inter.entities = entities;
-    entities.inter = inter;
-    game.entities = entities;
-    // the world simulating itself: growth, fire, TNT, beds, weather, redstone (sim/sim.js)
-    game.sim = inter.sim = new Sim({ world, fluids, player, inv, renderer, gui, game });
-    if (st && st.sim) game.sim.fromJSON(st.sim);
+    game = { entry, world, player, fluids, inv, survival, inter, save, saves, dim, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, hands, collector };
+    /* The things that live in one world, one dimension: items lying about and
+       experience orbs (drops.js), chests and furnaces (containers.js), mobs,
+       boats and arrows (js/entities), the world simulating itself (sim/sim.js).
+       Made here for the world you start in, and again for the new one each
+       time you change dimension (travel); the ones you leave are kept for when
+       you come back (mobs and chests in that dimension's own save). */
+    game.attach = async (w, fl, d, first) => {
+      const g = game;
+      if (g.partsDim) {
+        g.dimKeep = g.dimKeep || {};
+        g.dimKeep[g.partsDim] = { drops: g.drops.toJSON(), sim: g.sim ? g.sim.toJSON() : null };
+        if (g.containers.dirty) { g.containers.dirty = false; await g.saves[g.partsDim].writeExtra('containers', g.containers.toJSON()); }
+        EntityStore.save(entityKey(g.entry, g.partsDim), g.entities.toJSON());
+        g.drops.dispose(); if (g.drops.group.parent) g.drops.group.parent.remove(g.drops.group);
+        g.entities.dispose();
+        g.sim.dispose();
+      }
+      const keep = (g.dimKeep && g.dimKeep[d]) || first || {};
+      const drops = new Drops(w, renderer);
+      renderer.scene.add(drops.group);
+      if (keep.drops) drops.fromJSON(keep.drops);
+      const containers = new Containers(w);
+      if (!isNew || g.partsDim) { try { const c = await g.saves[d].readExtra('containers'); if (c) containers.fromJSON(c); } catch (e) {} }
+      const entities = new Entities({ world: w, player, inv, survival, renderer, options, mode: g.mode, fluids: fl,
+        hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0),
+          // what mobs drop goes through the items (drops.js): things on the ground, orbs of experience
+          dropItem: (ww, x, y, z, name, n) => dropItem(ww, x, y, z, name, n), giveXp: (n, x, y, z) => giveXp(x, y, z, n) } });
+      entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));
+      renderer.scene.add(entities.group);
+      const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
+      if (keep.sim) sim.fromJSON(keep.sim);
+      Object.assign(g, { drops, containers, entities, sim });
+      g.partsDim = d;
+      Object.assign(hands, { world: w, drops, containers, fluids: fl });
+      containers.drops = drops;
+      inter.entities = entities; entities.inter = inter; inter.sim = sim;
+      if (renderer.particles) renderer.particles.setWorld(w);
+    };
+    await game.attach(world, fluids, dim, { drops: st && st.drops, sim: st && st.sim });
+    // portals, the End and its dragon (js/dim/realms.js)
+    const realms = new Realms({
+      game: () => game, renderer, travel, spawnPoint: w => spawnPoint(w),
+      give: (id, n) => inv.add(id, n),
+    });
+    realms.fromJSON(st && st.realms);
+    game.realms = realms;
+    realms.entered();
+    inter.onUse = (h, id) => game.realms.use(h, id);
+    inter.onUseAir = id => game.realms.useAir(id);
+    inter.onAttack = target => game.realms.attack(game.eye || player.view(0).eye, target);
+    inter.onBroken = (x, y, z, b) => game.realms.broken(x, y, z, b);
     hud = new Hud(inv, icons);
     gui.hud = hud;
     inv.on('held', id => renderer.setHeld(id, DRAW));
@@ -536,6 +559,90 @@ async function boot() {
     if (document.pointerLockElement) document.exitPointerLock();
     gui.open(screen);
   }
+  // wait for the ground round (cx, cz) to be made and drawn, showing it on the loading screen
+  function waitGround(world, cx, cz) {
+    return new Promise(res => {
+      const t0 = performance.now();
+      const wait = () => {
+        world.update(cx, cz);
+        world.flush();
+        renderer.pumpUploads(8);
+        let meshed = 0, need = 0;
+        const pcx = Math.floor(cx / 16), pcz = Math.floor(cz / 16), ch = [];
+        // only chunks inside the render distance are ever meshed: wait for those near you
+        const R = Math.min(3, world.renderDist - 1);
+        for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
+          if (dx * dx + dz * dz > R * R) { ch.push([dx, dz, 0]); continue; }
+          need++;
+          const c = world.chunks.get((pcx + dx) + ',' + (pcz + dz));
+          if (c && c.meshed) meshed++;
+          ch.push([dx, dz, c ? (c.meshed ? 7 : 4) : world.inFlight.has('g' + (pcx + dx) + ',' + (pcz + dz)) ? 1 : 0]);
+        }
+        if (loading) { loading.progress = meshed / need; loading.chunks = ch; }
+        gui.markDirty();
+        if (meshed >= need || performance.now() - t0 > 60000) res(); else setTimeout(wait, 50);
+      };
+      wait();
+    });
+  }
+  // where the world spawn puts you, on the ground
+  function spawnPoint(world) {
+    const g = game, gy = groundY(world, g.spawn.x, g.spawn.z);
+    return { x: g.spawn.x + 0.5, y: gy > 0 ? gy : 120, z: g.spawn.z + 0.5 };
+  }
+  /* Going to another dimension (or far within one): the loading screen, what
+     changed saved, the old world's meshes and workers let go, the new one's
+     World made with its own generator and save, the ground round `near`
+     loaded, then resolve(world) says where to stand ({ x, y, z, yaw }) and
+     you are put there with no speed. Inventory, health and the rest stay. */
+  let travelling = false;
+  async function travel(dim, resolve, near) {
+    const g = game;
+    if (!g || travelling) return false;
+    travelling = true;
+    try {
+      if (document.pointerLockElement) document.exitPointerLock();
+      for (const k in g.player.keys) g.player.keys[k] = false;
+      loading = { text: 'Loading terrain...', progress: 0, chunks: [] };
+      gui.open(new LoadingScreen());
+      await saveGame();
+      let world = g.world;
+      if (dim !== g.dim) {
+        dropWorld(g.world);
+        const save = g.saves[dim];
+        const edits = await save.loadEdits();
+        world = new World({
+          seed: worldSeed(g.entry), generator: g.entry.generator === 'vanilla' ? 'vanilla' : 'classic', dim,
+          renderDist: renderer.opts.renderDist || RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save,
+          onMesh: (cx, cz, mesh) => renderer.setColumn(cx, cz, mesh),
+          onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
+        });
+        await world.ready;
+        g.world = world; g.dim = dim;
+        g.player.w = world; g.inter.world = world;
+        g.fluids = new Fluids(world, (x, y, z, kind) => { if (kind === 1 && Math.random() < 0.3) renderer.inter.splash(x + 0.5, z + 0.5, 0.35, 1.5); });
+        g.inter.fluids = g.fluids;
+        g.player.voidY = DIMS[dim].minY;
+        // the items, chests, mobs and simulation of the new dimension
+        await g.attach(world, g.fluids, dim);
+        g.realms.entered();
+      }
+      await waitGround(world, near.x, near.z);
+      const pos = await resolve(world);
+      if (pos) {
+        if (Math.hypot(pos.x - near.x, pos.z - near.z) > 24) await waitGround(world, pos.x, pos.z);
+        const P = g.player;
+        P.pos.set(pos.x, pos.y, pos.z); P.prev.copy(P.pos); P.vel.set(0, 0, 0); P.fallDistance = 0;
+        if (pos.yaw !== undefined) P.yaw = pos.yaw;
+      }
+      world.flush();
+      return !!pos;
+    } finally {
+      loading = null;
+      travelling = false;
+      if (game === g) { gui.closeAll(); lock(); }
+    }
+  }
   function dropWorld(world) {
     for (const k of [...renderer.columns.keys()]) { const [x, z] = k.split(',').map(Number); renderer.dropColumn(x, z); }
     if (renderer.uploads) renderer.uploads.clear();
@@ -545,14 +652,15 @@ async function boot() {
     const g = game, p = g.player;
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
       inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
-      drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null };
+      drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null, dimension: g.dim, realms: g.realms ? g.realms.toJSON() : null };
   }
   async function saveGame() {
     if (!game) return;
     game.save.writeState(stateOf());
-    if (game.containers.dirty) { game.containers.dirty = false; game.save.writeExtra('containers', game.containers.toJSON()); }
-    if (game.entities) EntityStore.save(game.entry.id, game.entities.toJSON());
-    await game.save.flush(game.world.edits);
+    if (game.containers.dirty) { game.containers.dirty = false; game.saves[game.dim].writeExtra('containers', game.containers.toJSON()); }
+    if (game.entities) EntityStore.save(entityKey(game.entry, game.dim), game.entities.toJSON());
+    // the world's changes go to its own dimension's save
+    await game.saves[game.dim].flush(game.world.edits);
   }
   async function quitToTitle() {
     if (!game) return;
@@ -562,6 +670,7 @@ async function boot() {
     game = null;
     if (g.entities) g.entities.dispose();
     if (g.sim) g.sim.dispose();
+    if (g.realms) g.realms.dispose();
     if (document.pointerLockElement) document.exitPointerLock();
     // the world you left keeps turning behind the title screen
     menu = { world: g.world, x: g.player.pos.x, z: g.player.pos.z, y: null, yaw: g.player.yaw, seed: worldSeed(g.entry), generator: g.world.generator };
@@ -573,12 +682,19 @@ async function boot() {
     gui.inGame = false; gui.panorama = true;
     gui.setRoot(new TitleScreen());
   }
-  function respawn() {
+  async function respawn() {
     if (!game) return;
     const g = game;
     if (g.entities) g.entities.dismount();
     g.survival.reset();
     g.spilled = false;
+    // a charged respawn anchor in the Nether, else the world spawn, in whichever dimension that is
+    const plan = g.realms.respawnPlan();
+    if (plan.dim === 'the_nether') {
+      const ok = await travel('the_nether', w => g.realms.anchorSpot(w), plan.anchor);
+      if (ok) return;
+    }
+    if (g.dim !== 'overworld') { await travel('overworld', w => spawnPoint(w), g.spawn); return; }
     const gy = groundY(g.world, g.spawn.x, g.spawn.z);
     g.player.pos.set(g.spawn.x + 0.5, gy > 0 ? gy : 120, g.spawn.z + 0.5);
     g.player.prev.copy(g.player.pos); g.player.vel.set(0, 0, 0);
@@ -759,7 +875,7 @@ async function boot() {
   function loop(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    if (game) playFrame(now, dt);
+    if (game && !travelling) playFrame(now, dt);
     else if (menu) {
       // the title world turns slowly: half the frames are plenty, and the menus stay quick
       menuAcc += dt;
@@ -782,7 +898,7 @@ async function boot() {
     renderer.render({
       time: menuTime / 20, sunDir, moonDir, feet: eyeV, eye: eyeV, yaw: m.yaw, pitch: -0.16, fov: 85,
       eyeInWater: false, skyAtEye: 1, moonPhase: 0, trample: 0, showHand: false, bob: null, waterTint: tintAt(w, eyeV), player: null, alpha: 0,
-      biome: BIOMES[w.biomeAt(Math.floor(eyeV.x), Math.floor(eyeV.z))],
+      biome: BIOMES[w.biomeAt(Math.floor(eyeV.x), Math.floor(eyeV.z))], dim: DIMS[w.dim || 'overworld'],
     }, dt);
   }
   function playFrame(now, dt) {
@@ -799,6 +915,7 @@ async function boot() {
       g.hands.tick();
       g.containers.tick();
       if (g.entities) g.entities.tick();
+      g.realms.tick();
       if (g.mode === 'survival' || g.mode === 'adventure') {
         player.canSprint = survival.canSprint();
         player.effects = survival.effects;
@@ -823,7 +940,13 @@ async function boot() {
     g.hands.alpha = alpha;
     g.drops.update(dt, alpha, player, renderer.camera);
     if (g.entities) g.entities.render(alpha);
-    sunAt(g.time);
+    g.eye = v.eye;
+    // the other dimensions have no sun: Detailed's sky tables are left at midnight there
+    const D = DIMS[g.dim];
+    sunAt(D.fixedTime !== null ? 18000 : g.time);
+    g.realms.frame(alpha, dt);
+    const boss = g.realms.boss;
+    if ((boss ? boss.progress : -1) !== (hud.boss ? hud.boss.progress : -1)) { hud.boss = boss ? Object.assign({}, boss) : null; hud.markDirty(); }
     const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));
     const onGrass = player.onGround && !player.flying;
     renderer.render({
@@ -832,6 +955,7 @@ async function boot() {
       moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: g.hands.handBob(v.handBob),
       waterTint: tintAt(world, v.eye), player, alpha,
       biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
+      dim: D, bossFog: g.realms.bossFog,
     }, dt);
     if (g.mode === 'survival' || g.mode === 'adventure') hud.setStats(survival.stats());
     // no crosshair in third person, or with the HUD hidden
@@ -873,7 +997,7 @@ async function boot() {
         'Block: ' + Math.floor(p.x) + ' ' + Math.floor(p.y + Y0) + ' ' + Math.floor(p.z),
         'Chunk: ' + Math.floor(p.x / 16) + ' ' + Math.floor(p.z / 16) + ' (loaded ' + world.chunks.size + ', meshes ' + renderer.columns.size + ')',
         'Facing: ' + ['north', 'west', 'south', 'east'][((Math.round(player.yaw / (Math.PI / 2)) % 4) + 4) % 4],
-        'Biome: ' + (bn ? bn.name : '?'),
+        'Biome: ' + (bn ? bn.name : '?') + ' (' + g.dim + ')',
         'Day ' + Math.floor(g.time / 24000) + ', time ' + (g.time % 24000) + (timeRuns ? '' : ' (stopped)'),
         g.mode !== 'creative' ? 'Food ' + survival.food + ', saturation ' + survival.saturation.toFixed(1) + ', exhaustion ' + survival.exhaustion.toFixed(3) : '',
       ], [
@@ -919,6 +1043,7 @@ async function boot() {
       id: 'w' + Date.now().toString(36), name: 'Test World', folder: 'Test World',
       seed: generator === 'vanilla' ? parseSeed(seed == null ? '' : String(seed)) : (seed || MENU_SEED), generator,
       mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
+    get realms() { return game && game.realms; }, DIMS, travel: (dim, resolve, near) => travel(dim, resolve, near),
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
   };
   // after a quality change, straight back into the world you were in
