@@ -133,6 +133,21 @@ void main() {
   outColor = vec4(0.0, 0.0, 0.0, a);
 }`;
 
+/* ---- the patch over a boat's inside: depth only, so the water under it is not drawn there ---- */
+const MASK_VS = /* glsl */`
+uniform mat4 viewMatrix, projectionMatrix;
+in vec3 position; in vec4 aM;   // x, y, z, yaw
+in vec2 aS;                     // half size across, along
+void main() {
+  float c = cos(aM.w), s = sin(aM.w);
+  vec2 q = position.xz * aS;
+  vec3 w = aM.xyz + vec3(q.x * c + q.y * s, 0.0, -q.x * s + q.y * c);
+  gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+}`;
+const MASK_FS = /* glsl */`
+layout(location = 0) out vec4 outColor;
+void main() { outColor = vec4(0.0); }`;
+
 /* ---- particles: camera-facing squares out of a small sheet ---- */
 const PART_VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
@@ -281,6 +296,17 @@ export class EntityMeshes {
     }));
     this.parts.frustumCulled = false; this.parts.renderOrder = 6;
     this.group.add(this.parts);
+    // boats' water patches: after everything opaque, depth only
+    const mg = new THREE.InstancedBufferGeometry();
+    mg.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1], 3));
+    mg.setIndex([0, 2, 1, 0, 3, 2]);
+    this.maskGeo = mg; this.maskN = 0; this.maskCap = 16;
+    this.mM = new THREE.InstancedBufferAttribute(new Float32Array(64), 4).setUsage(THREE.DynamicDrawUsage);
+    this.mS = new THREE.InstancedBufferAttribute(new Float32Array(32), 2).setUsage(THREE.DynamicDrawUsage);
+    mg.setAttribute('aM', this.mM); mg.setAttribute('aS', this.mS);
+    this.mask = new THREE.Mesh(mg, new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: HEAD + MASK_VS, fragmentShader: HEAD + MASK_FS, colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
+    this.mask.frustumCulled = false; this.mask.renderOrder = 4;
+    this.group.add(this.mask);
     this.tmp = new THREE.Matrix4(); this.tmp2 = new THREE.Matrix4(); this.e = new THREE.Euler();
   }
   makeBoneTex() {
@@ -332,7 +358,7 @@ export class EntityMeshes {
 
   begin() {
     for (const m of this.models.values()) m.n = 0;
-    this.nBones = 0; this.blobN = 0; this.partN = 0;
+    this.nBones = 0; this.blobN = 0; this.partN = 0; this.maskN = 0;
   }
   // room for n more matrices; returns the first one's index
   allocBones(n) {
@@ -370,6 +396,20 @@ export class EntityMeshes {
     this.blobA.array[this.blobN] = a;
     this.blobN++;
   }
+  maskAt(x, y, z, yaw, hx, hz) {
+    if (this.maskN >= this.maskCap) {
+      const om = this.mM.array, os = this.mS.array;
+      this.maskCap *= 2;
+      this.mM = new THREE.InstancedBufferAttribute(new Float32Array(this.maskCap * 4), 4).setUsage(THREE.DynamicDrawUsage);
+      this.mS = new THREE.InstancedBufferAttribute(new Float32Array(this.maskCap * 2), 2).setUsage(THREE.DynamicDrawUsage);
+      this.mM.array.set(om); this.mS.array.set(os);
+      this.maskGeo.setAttribute('aM', this.mM); this.maskGeo.setAttribute('aS', this.mS);
+    }
+    const o = this.maskN * 4, M = this.mM.array, S = this.mS.array;
+    M[o] = x; M[o + 1] = y; M[o + 2] = z; M[o + 3] = yaw;
+    S[this.maskN * 2] = hx; S[this.maskN * 2 + 1] = hz;
+    this.maskN++;
+  }
   particle(x, y, z, size, r, g, b, a, frame, light, spin) {
     if (this.partN >= this.partCap) {
       const op = this.pP.array, oc = this.pC.array, ot = this.pT.array;
@@ -398,6 +438,9 @@ export class EntityMeshes {
     this.blobGeo.instanceCount = this.blobN;
     this.blob.visible = this.blobN > 0;
     if (this.blobN) { this.blobB.needsUpdate = true; this.blobA.needsUpdate = true; }
+    this.maskGeo.instanceCount = this.maskN;
+    this.mask.visible = this.maskN > 0;
+    if (this.maskN) { this.mM.needsUpdate = true; this.mS.needsUpdate = true; }
     this.partGeo.instanceCount = this.partN;
     this.parts.visible = this.partN > 0;
     if (this.partN) { this.pP.needsUpdate = true; this.pC.needsUpdate = true; this.pT.needsUpdate = true; }

@@ -82,7 +82,7 @@ addArt('boat_chest', [64, 64], p => {
 
 export class Boat extends Entity {
   static W = 1.375; static H = 0.5625; static STEP = 0; static SEATS = 2; static MODEL = 'boat'; static TEX = 'boat'; static SHADOW = 0;
-  static NO_PUSH = true; static PICK = 0;
+  static NO_PUSH = true; static PICK = 0; static WATER_MASK = 0.5;
   constructor(m, type) {
     super(m, type);
     this.wood = 'oak'; this.chest = false; this.raft = false;
