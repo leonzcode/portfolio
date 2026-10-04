@@ -576,7 +576,10 @@ def gen_maps(a, name, cls):
 compose_all()
 
 names = []
-for n in list(LEGACY) + sorted(USED) + ['destroy_stage_%d' % i for i in range(10)]:
+# the looks a block takes on with its state (crop stages, lit lamps, powered repeaters...), read by js/sim/states.js;
+# each was checked against the game's textures with the same copy audit as the rest (2026-10-04)
+STATES = json.load(open(os.path.join(HERE, 'data', 'state_textures.json'), encoding='utf-8'))
+for n in list(LEGACY) + sorted(USED) + ['destroy_stage_%d' % i for i in range(10)] + STATES:
     if n not in names:
         names.append(n)
 

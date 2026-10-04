@@ -86,7 +86,10 @@ export class Interactor {
     const w = this.world;
     for (const [x, y, z] of breakAt(w, h.x, h.y, h.z)) {
       const b = w.get(x, y, z), d = BLOCKS[b];
-      if (!this.creative) { const drop = dropOf(b); if (drop) this.hand.got(drop); }
+      // the simulation's loot (crops, leaves...: sim/sim.js), else the block itself
+      const loot = this.sim ? this.sim.broken(x, y, z, b, w.meta(x, y, z)) : null;
+      if (loot) { if (!this.creative) for (const [n, c] of loot) this.sim.dropItem(x + 0.5, y + 0.5, z + 0.5, n, c); }
+      else if (!this.creative) { const drop = dropOf(b); if (drop) this.hand.got(drop); }
       w.set(x, y, z, 0, 0);
       // a water plant leaves its water behind
       if (d && d.waterlogged) w.set(x, y, z, B.water, 0);
@@ -97,11 +100,14 @@ export class Interactor {
   useOnce() {
     const h = this.target;
     if (!h || !h.face) return;
+    // what the simulation does with a click: levers, beds, bone meal, a hoe, flint and steel (sim/sim.js)
+    if (this.sim && this.sim.use(h, this.hand.id(), this.player.sneaking)) { this.hand.swing(); if (this.sim.usedHeld) { this.sim.usedHeld = false; this.hand.used(); } return; }
     // doors, trapdoors and gates open instead, unless you sneak
     if (!this.player.sneaking && use(this.world, h.x, h.y, h.z)) { this.hand.swing(); return; }
     const id = this.hand.id();
     if (!id || !BLOCKS[id]) return;
-    const list = placement(this.world, h, id, this.player);
+    let list = placement(this.world, h, id, this.player);
+    if (list.length && this.sim) list = this.sim.placed(list, h, id);
     if (!list.length) return;
     for (const [x, y, z, b, m] of list) {
       const cur = this.world.get(x, y, z);

@@ -33,6 +33,7 @@ import { CH, H, LEVEL, FALLING } from './world-const.js?v=8';
 import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=8';
 import { hash3 } from './noise.js?v=8';
 import { boxesOf, MODEL_SHAPES } from './models.js?v=8';
+import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=8';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
@@ -168,7 +169,7 @@ export function meshColumn(job) {
   };
   spread(sky);
   qh = qt = 0;
-  for (let i = 0; i < N; i++) { const e = EMIT[rb[i]]; if (e) { blk[i] = e; Q[qt++ & QM] = i; } }
+  for (let i = 0; i < N; i++) { const e = SLIGHT[rb[i]] ? lightOf(rb[i], rm[i]) : EMIT[rb[i]]; if (e) { blk[i] = e; Q[qt++ & QM] = i; } }
   spread(blk);
 
   /* ---- biome colours, blended over 5 x 5 columns like Minecraft ---- */
@@ -226,7 +227,7 @@ export function meshColumn(job) {
       case 'spruce': return SPRUCE_LEAF;
       case 'birch': return BIRCH_LEAF;
       case 'water': return tintW[k];
-      default: return 0xffffff;
+      default: return d.rgb !== undefined ? d.rgb : 0xffffff;     // a state's own colour (redstone dust, stems)
     }
   };
 
@@ -466,10 +467,12 @@ export function meshColumn(job) {
         const i = y * A + (16 + z) * W + 16 + x;
         const b = rb[i];
         if (!b) continue;
-        const d = BLOCKS[b];
+        let d = BLOCKS[b];
         const k2 = (z << 4) | x;
         const wx = wx0 + x, wz = wz0 + z;
         const rnd = (hash3(seed, wx, y, wz) * 255) | 0;
+        // a block drawn by its state (a crop's stage, a lit lamp, an extended piston: sim/states.js)
+        if (STATEFUL[b]) { d = stateDef(d, rm[i]); if (d.asModel) { drawModel(x, y, z, i, d, k2, rnd); continue; } }
         if (d.shape === 'fluid') { fluidCell(x, y, z, i, FLUID[b]); continue; }
         if (d.waterlogged) fluidCell(x, y, z, i, 1);     // the water around a sea plant
         if (MODEL[b]) { drawModel(x, y, z, i, d, k2, rnd); continue; }
@@ -633,5 +636,11 @@ export function meshColumn(job) {
     }
     for (let p = 0; p < save.length; p += 3) { rb[save[p]] = save[p + 1]; rm[save[p]] = save[p + 2]; }
   }
-  return { opaque: out.opaque.out(), cutout: out.cutout.out(), translucent: out.translucent.out(), fluid: out.fluid.out(), plants: out.plants.out(), leafIn: out.leafIn.out(), vis, skyLow };
+  // the middle column's light (sky << 4 | block), for the game's own rules: crops, grass, saplings, mobs
+  const light = new Uint8Array(ny * 256);
+  for (let y = 0; y < ny; y++) for (let z = 0; z < 16; z++) {
+    const src = y * A + (16 + z) * W + 16, dst = (y << 8) | (z << 4);
+    for (let x = 0; x < 16; x++) light[dst + x] = (sky[src + x] << 4) | blk[src + x];
+  }
+  return { opaque: out.opaque.out(), cutout: out.cutout.out(), translucent: out.translucent.out(), fluid: out.fluid.out(), plants: out.plants.out(), leafIn: out.leafIn.out(), vis, skyLow, light };
 }
