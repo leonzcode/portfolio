@@ -529,6 +529,8 @@ async function boot() {
     const realms = new Realms({
       game: () => game, renderer, travel, spawnPoint: w => spawnPoint(w),
       give: (id, n) => inv.add(id, n),
+      // the player's hit on the dragon or a crystal, by the combat rules (combat/combat.js)
+      attackDamage: () => (game && game.entities ? game.entities.combat.strikeDamage() : 1),
     });
     realms.fromJSON(st && st.realms);
     game.realms = realms;
@@ -953,9 +955,11 @@ async function boot() {
     const onGrass = player.onGround && !player.flying;
     renderer.render({
       time: (g.time + alpha) / 20, sunDir, moonDir, feet: v.feet, eye: v.eye, yaw: player.yaw, pitch: player.pitch,
-      fov: player.fov, eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
+      fov: player.fov * (g.entities ? g.entities.combat.fovScale(alpha) : 1), eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
       moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: g.hands.handBob(v.handBob),
       waterTint: tintAt(world, v.eye), player, alpha,
+      // hurt: the camera tilts and the model flashes red (combat/combat.js)
+      tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
       biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
       dim: D, bossFog: g.realms.bossFog,
     }, dt);
@@ -964,7 +968,7 @@ async function boot() {
     const cross = renderer.avatar.view === 0 && !gui.hideHud;
     if (hud.crosshair !== cross) { hud.crosshair = cross; hud.markDirty(); }
     // the attack indicator under it (js/entities)
-    if (g.entities) { const at = g.entities.cooldown(); if (Math.floor(at * 17) !== Math.floor((hud.attack === null || hud.attack === undefined ? 1 : hud.attack) * 17)) { hud.attack = at; hud.markDirty(); } }
+    if (g.entities) { const at = g.entities.combat.indicator(); if (Math.floor(at * 17) !== Math.floor((hud.attack === null || hud.attack === undefined ? 1 : hud.attack) * 17)) { hud.attack = at; hud.markDirty(); } }
     frames++; fpsT += dt;
     if (fpsT > 0.5) {
       fps = Math.round(frames / fpsT); frames = 0; fpsT = 0;

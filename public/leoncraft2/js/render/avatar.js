@@ -175,6 +175,7 @@ uniform vec3 cameraPosition, uLightDir;
 uniform float uFrame;
 uniform vec2 uLightLv;   // sky and block light where the player stands, 0..1
 uniform float uTime;
+uniform float uHurt;     // 1 while hurt: the game's red overlay
 uniform sampler2D uNoise;
 #ifdef LDR
 uniform sampler2D uView;
@@ -195,6 +196,7 @@ void main() {
   // the base layer is solid and one-sided (a camera pushed into the head sees out); the outer layers are cut out
   if (vLayer == 0 ? !gl_FrontFacing : t.a < 0.5) discard;
   vec3 albedo = toLinear(t.rgb);
+  albedo = mix(albedo, vec3(0.75, 0.0, 0.0), uHurt * 0.55);
   vec3 N = normalize(vN);
   if (!gl_FrontFacing) N = -N;
   float sky = uLightLv.x, block = uLightLv.y;
@@ -319,7 +321,8 @@ export class Avatar {
     this.armParts = Array.from({ length: 6 }, () => new THREE.Matrix4());
     this.uShow = { value: settings.show | 1 };
     this.uLight = { value: new THREE.Vector2(1, 0) };
-    const uni = Object.assign({}, U, { uSkin: { value: tex }, uParts: { value: this.parts }, uShow: this.uShow, uLightLv: this.uLight });
+    this.uHurt = { value: 0 };
+    const uni = Object.assign({}, U, { uSkin: { value: tex }, uParts: { value: this.parts }, uShow: this.uShow, uLightLv: this.uLight, uHurt: this.uHurt });
     const defines = { SHADOWS: opts.shadows === undefined ? 2 : opts.shadows };
     if (opts.ldr) defines.LDR = 1;
     Object.assign(defines, lightDefines(opts));
@@ -330,7 +333,7 @@ export class Avatar {
     }, extra || {}));
     this.mat = mk(VS, FS, uni);
     // the first-person arm: over whatever it is pushed into, like the held block
-    this.armMat = mk(VS, FS, Object.assign({}, uni, { uParts: { value: this.armParts } }), { side: THREE.FrontSide, depthFunc: THREE.AlwaysDepth });
+    this.armMat = mk(VS, FS, Object.assign({}, uni, { uParts: { value: this.armParts }, uHurt: { value: 0 } }), { side: THREE.FrontSide, depthFunc: THREE.AlwaysDepth });
     this.shadowMat = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: HEAD + SHADOW_VS, fragmentShader: HEAD + SHADOW_FS, uniforms: uni, side: THREE.DoubleSide,
     });
@@ -449,6 +452,7 @@ export class Avatar {
   /* ---- every frame: ticks since the last one, light, pose, camera ---- */
   update(state, dt, cam) {
     const P = state.player, R = this.R;
+    this.uHurt.value = state.hurt ? 1 : 0;
     if (R.swing >= 1) { this.startSwing(); R.swing = 0.999; }
     if (!P) { this.mesh.visible = this.shadowMesh.visible = false; if (this.held) this.held.visible = false; return; }
     this.world = P.w;
