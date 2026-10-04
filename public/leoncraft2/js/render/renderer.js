@@ -24,6 +24,7 @@ import { makeLdrSky } from './ldrsky.js?v=8';
 import { FullScreen } from './sky.js?v=8';
 import { blockGeometry } from './blockmesh.js?v=8';
 import { Avatar } from './avatar.js?v=8';
+import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=8';
 const THREE = window.THREE;
 
 export class Renderer {
@@ -41,7 +42,8 @@ export class Renderer {
     this.trans = new THREE.Scene();          // fluids and translucent
     this.shadowScene = new THREE.Scene();
     this.shadowCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 400);
-    this.sky = new Sky(r);
+    // Fast graphics is the game with no shaders (vanilla.js): no atmosphere tables at all
+    this.sky = this.opts.vanilla ? null : new Sky(r);
     this.inter = new Interaction(r, this.opts.interSize || 256);
     // shadow map
     const sr = this.opts.shadows ? this.opts.shadowRes : 4;   // no shadow map at all: a token one
@@ -56,7 +58,7 @@ export class Renderer {
       uTime: { value: 0 }, uFrame: { value: 0 },
       uAlbedo: { value: textures.albedo }, uNormalMap: { value: textures.normal }, uSpecMap: { value: textures.spec },
       uLayerInfo: { value: makeLayerInfo(textures.manifest) },
-      uAmbient: { value: this.sky.amb.texture }, uView: { value: this.sky.view.texture }, uTrans: { value: this.sky.trans.texture },
+      uAmbient: { value: this.sky ? this.sky.amb.texture : null }, uView: { value: this.sky ? this.sky.view.texture : null }, uTrans: { value: this.sky ? this.sky.trans.texture : null },
       uNoise: { value: makeNoise2D() }, uNoise3: { value: ldr ? null : makeNoise3D() },
       uShadow: { value: this.shadowRT.depthTexture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowRes: { value: sr },
       uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
@@ -69,11 +71,16 @@ export class Renderer {
       // the light in your hand (level, faded in and out) and where it is; torches' flicker; how dark cloud shadows are
       uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.8 : 0 },
     };
-    this.mats = makeMaterials(this.U, this.opts);
-    this.mats.fluid = makeWaterMaterial(this.U, this.opts);
+    if (this.opts.vanilla) {
+      this.vanilla = new Vanilla(this, textures);
+      this.mats = makeVanillaMaterials(this.U);
+    } else {
+      this.mats = makeMaterials(this.U, this.opts);
+      this.mats.fluid = makeWaterMaterial(this.U, this.opts);
+    }
     // the full tiers run the whole chain after the world; the low ones draw straight to the screen
     this.post = ldr ? null : new Post(r, this.U, this.opts);
-    if (ldr) { this.skyFS = new FullScreen(makeLdrSky(this.U)); }
+    if (ldr && !this.vanilla) { this.skyFS = new FullScreen(makeLdrSky(this.U)); }
     // the block in your hand: drawn in the world just in front of the eye
     this.handScene = new THREE.Scene();
     this.hand = new THREE.Group();
@@ -88,7 +95,10 @@ export class Renderer {
 
   resize(w, h) {
     this.cw = w; this.ch = h;
-    const s = this.opts.scale;
+    // drawn in the screen's own pixels (a sharp laptop screen has two or more to each CSS pixel)
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.dpr = dpr;
+    const s = this.opts.scale * dpr;
     const rw = Math.max(1, Math.round(w * s)), rh = Math.max(1, Math.round(h * s));
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -99,7 +109,7 @@ export class Renderer {
       this.r.setSize(rw, rh, false);
       return;
     }
-    this.r.setSize(w, h, false);
+    this.r.setSize(Math.round(w * dpr), Math.round(h * dpr), false);
     if (this.main) this.main.dispose();
     this.main = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType, depthBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     this.main.depthTexture = new THREE.DepthTexture(rw, rh, THREE.FloatType);
@@ -158,8 +168,11 @@ export class Renderer {
       if (!data) return;
       const g = new THREE.BufferGeometry();
       const names = kind === 'fluid' ? ['aPos', 'aA', 'aF', 'aC'] : ['aPos', 'aA', 'aL', 'aC'];
-      data.attrs.forEach((a, i) => g.setAttribute(names[i], new THREE.BufferAttribute(a, 4, false)));
-      g.setIndex(new THREE.BufferAttribute(data.index, 1));
+      // once the arrays are on the graphics card the page lets go of its own copy (half the memory, less for the collector)
+      const free = attr => attr.onUpload(() => { attr.array = null; });
+      data.attrs.forEach((a, i) => { const at = new THREE.BufferAttribute(a, 4, false); free(at); g.setAttribute(names[i], at); });
+      const ix = new THREE.BufferAttribute(data.index, 1); free(ix);
+      g.setIndex(ix);
       // how tall the mesh actually is, for culling
       const P = data.attrs[0];
       let y0 = 1e9, y1 = -1e9;
@@ -227,44 +240,54 @@ export class Renderer {
   updateVisibility(eye) {
     const csx = Math.floor(eye.x / 16), csz = Math.floor(eye.z / 16), csy = Math.max(0, Math.min(23, Math.floor(eye.y / 16)));
     const R = this.opts.renderDist + 1;
-    const span = 2 * R + 1;
-    const key = (x, y, z) => ((x - csx + R) * span + (z - csz + R)) * 24 + y;
-    const done = new Uint8Array(span * span * 24);      // entry faces already handled
-    const reach = new Map();                            // column -> [min, max] section
-    const q = [[csx, csy, csz, 63]];
-    done[key(csx, csy, csz)] = 63;
-    const DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-    const OPP = [1, 0, 3, 2, 5, 4];
-    while (q.length) {
-      const [x, y, z, entries] = q.pop();
-      const col = this.columns.get(x + ',' + z);
-      const ck = x + ',' + z;
-      const r = reach.get(ck);
-      if (!r) reach.set(ck, [y, y]); else { if (y < r[0]) r[0] = y; if (y > r[1]) r[1] = y; }
+    const span = 2 * R + 1, cells = span * span * 24;
+    // everything in flat typed arrays, kept from walk to walk: no strings, nothing for the collector
+    const V = this.visBuf && this.visBuf.span === span ? this.visBuf : (this.visBuf = {
+      span, done: new Uint8Array(cells), q: new Int32Array(cells * 12 + 16), cols: new Array(span * span),
+      lo: new Int8Array(span * span), hi: new Int8Array(span * span),
+    });
+    const done = V.done, q = V.q, cols = V.cols, lo = V.lo, hi = V.hi;
+    done.fill(0); lo.fill(127); hi.fill(-1); cols.fill(null);
+    for (const col of this.columns.values()) {
+      const ix = col.cx - csx + R, iz = col.cz - csz + R;
+      if (ix >= 0 && iz >= 0 && ix < span && iz < span) cols[ix * span + iz] = col;
+    }
+    const OPP = [1, 0, 3, 2, 5, 4], DX = [1, -1, 0, 0, 0, 0], DY = [0, 0, 1, -1, 0, 0], DZ = [0, 0, 0, 0, 1, -1];
+    let qn = 0;
+    const start = ((R * span) + R) * 24 + csy;
+    q[qn++] = start; q[qn++] = 63; done[start] = 63;
+    while (qn > 0) {
+      const entries = q[--qn], cell = q[--qn];
+      const y = cell % 24, ci = (cell - y) / 24, ix = (ci / span) | 0, iz = ci - ix * span;
+      if (y < lo[ci]) lo[ci] = y;
+      if (y > hi[ci]) hi[ci] = y;
+      const col = cols[ci];
       // which faces can be left by, from the faces it was entered by
       let exits = 0;
-      if (!col || !col.vis || (x === csx && y === csy && z === csz)) exits = 63;
-      else for (let f = 0; f < 6; f++) if (entries & (1 << f)) exits |= col.vis[y * 6 + f];
+      if (!col || !col.vis || cell === start) exits = 63;
+      else { const vis = col.vis, o = y * 6; for (let f = 0; f < 6; f++) if (entries & (1 << f)) exits |= vis[o + f]; }
       for (let f = 0; f < 6; f++) {
         if (!(exits & (1 << f))) continue;
-        const [dx, dy, dz] = DIRS[f];
+        const dx = DX[f], dy = DY[f], dz = DZ[f];
         // never back towards the camera
-        if ((dx > 0 && x < csx) || (dx < 0 && x > csx) || (dy > 0 && y < csy) || (dy < 0 && y > csy) || (dz > 0 && z < csz) || (dz < 0 && z > csz)) continue;
-        const nx = x + dx, ny = y + dy, nz = z + dz;
-        if (ny < 0 || ny > 23 || Math.abs(nx - csx) > R || Math.abs(nz - csz) > R) continue;
-        const kk = key(nx, ny, nz), ent = 1 << OPP[f];
+        if ((dx > 0 && ix < R) || (dx < 0 && ix > R) || (dy > 0 && y < csy) || (dy < 0 && y > csy) || (dz > 0 && iz < R) || (dz < 0 && iz > R)) continue;
+        const nx = ix + dx, ny = y + dy, nz = iz + dz;
+        if (ny < 0 || ny > 23 || nx < 0 || nz < 0 || nx >= span || nz >= span) continue;
+        const kk = (nx * span + nz) * 24 + ny, ent = 1 << OPP[f];
         if (done[kk] & ent) continue;
         done[kk] |= ent;
-        q.push([nx, ny, nz, ent]);
+        q[qn++] = kk; q[qn++] = ent;
       }
     }
-    for (const [k, col] of this.columns) {
-      const r = reach.get(k);
+    for (const col of this.columns.values()) {
+      const ix = col.cx - csx + R, iz = col.cz - csz + R;
+      const ci = ix >= 0 && iz >= 0 && ix < span && iz < span ? ix * span + iz : -1;
+      const reached = ci >= 0 && hi[ci] >= 0;
       for (const p of col.parts) {
-        if (!r) { p.m.visible = false; continue; }
-        p.m.visible = true;
-        const from = p.marks[r[0]], to = p.marks[Math.min(24, r[1] + 1)];
+        if (!reached) { p.m.visible = false; continue; }
+        const from = p.marks[lo[ci]], to = p.marks[Math.min(24, hi[ci] + 1)];
         if (to <= from) { p.m.visible = false; continue; }
+        p.m.visible = true;
         p.g.setDrawRange(from, to - from);
       }
     }
@@ -361,6 +384,8 @@ export class Renderer {
     cam.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
     // the player's model posed for this frame (and, in third person, the camera pulled back)
     this.avatar.update(state, dt, cam);
+    // the held block takes the light where you stand, as the model does
+    if (this.uHandLight && this.avatar.uLight) this.uHandLight.value.copy(this.avatar.uLight.value);
     cam.fov = state.fov;
     cam.far = this.opts.renderDist * 16 + 96;
     cam.updateProjectionMatrix();
@@ -385,9 +410,11 @@ export class Renderer {
     }
 
     // the sky table: every frame on the full tiers, every few on the low ones (it changes slowly)
-    if (this.frame % (this.opts.sky || 1) === 0 || this.frame < 3) this.sky.update(sun, moon, state.eye.y);
-    this.inter.update(dt, state.feet, state.trample);
-    U.uInteract.value = this.inter.texture;
+    if (this.sky && (this.frame % (this.opts.sky || 1) === 0 || this.frame < 3)) this.sky.update(sun, moon, state.eye.y);
+    if (!this.vanilla) {
+      this.inter.update(dt, state.feet, state.trample);
+      U.uInteract.value = this.inter.texture;
+    }
 
     // the shadow map, from whichever light is up (some tiers redraw it every other frame)
     const doShadow = this.opts.shadows > 0 && (this.frame % (this.opts.shadowEvery || 1) === 0) && this.shadowNeeded(state, light);
@@ -415,6 +442,20 @@ export class Renderer {
     if (light.y > 0.0) r.render(this.shadowScene, sc);
     }
     U.uInvViewProj.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
+    if (this.vanilla) {
+      // the game with no shaders: sky, blocks, water, clouds, hand, straight to the screen
+      this.vanilla.update(state, this.opts, dt);
+      r.setRenderTarget(null);
+      r.setClearColor(0x000000, 1);
+      r.clear(true, true, false);
+      this.vanilla.drawSky(r);
+      r.render(this.scene, cam);
+      if (this.overlay) this.overlay.render(r, cam);
+      r.render(this.trans, cam);
+      this.vanilla.drawClouds(r, cam, state.time);
+      this.drawHand(state, cam, dt);
+      return;
+    }
     if (this.ldr) {
       // exposure worked out here: by day the sky, by night the moon, deeper in a cave
       const day = Math.min(1, Math.max(0, (sun.y + 0.12) / 0.42));

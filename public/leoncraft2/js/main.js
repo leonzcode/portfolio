@@ -44,13 +44,13 @@ const status = (t, f) => { const el = $('#status'); if (el) el.textContent = t; 
 const params = new URLSearchParams(location.search);
 const MENU_SEED = 20261002;
 /* Graphics, as in the game's Video Settings: Detailed (the full look: sun
-   rays, soft shadows, clouds, reflections) or Fast (one pass, no shadow map,
-   Minecraft's fast leaves, for old Chromebooks). A change takes effect when
-   you leave Video Settings, and only if it really changed. The render scale
-   also follows the frame rate on its own. */
+   rays, soft shadows, clouds, reflections) or Fast (the game with no shaders
+   at all, as Minecraft itself draws it: render/vanilla.js). Both draw at the
+   screen's full resolution. A change takes effect when you leave Video
+   Settings, and only if it really changed. */
 const PRESETS = {
-  fast: { rd: 4, scale: 0.55, ldr: true, shadows: 0, normals: false, fastLeaves: true, interSize: 128, uploadMs: 2, sky: 4, plantDist: 40, plantShadows: false },
-  detailed: { rd: 8, shadowRes: 2048, shadowDist: 96, shadows: 2, scale: 0.85, vlSteps: 10, cloudSteps: 14, ssrSteps: 18, plantDist: 80, leafInDist: 40, leafInShadows: false },
+  fast: { rd: 8, scale: 1, ldr: true, vanilla: true, shadows: 0, normals: false, spec: false, fastLeaves: false, interSize: 32, uploadMs: 3, plantDist: 136, leafInDist: 64, plantShadows: false },
+  detailed: { rd: 8, shadowRes: 2048, shadowDist: 96, shadows: 2, scale: 1, fxaa: false, vlSteps: 10, cloudSteps: 14, ssrSteps: 18, plantDist: 80, leafInDist: 40, leafInShadows: false },
 };
 // what the older settings become
 const GRAPHICS_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
@@ -165,7 +165,7 @@ function applyPackTextures(r, textures, manifest, packTex, alb) {
         spec[i * 4] = 40; spec[i * 4 + 1] = 10; spec[i * 4 + 2] = sss;
         spec[i * 4 + 3] = lit ? Math.round(Math.max(0, Math.min(1, (lum - 0.35) * 2.2)) * 255) : 0;
       }
-      put(textures.spec, layer, spec);
+      if (textures.spec.image && textures.spec.image.depth > 1) put(textures.spec, layer, spec);
     }
   }
   for (const t of [textures.albedo, textures.normal, textures.spec]) {
@@ -224,11 +224,11 @@ async function boot() {
   // stamped like the code, so a rebuilt texture set always reaches the browser
   const TEX_V = '?v=8';
   const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
-  let [alb, grass, foliage, moon] = await Promise.all(
-    ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png'].map(f => loadImg(base + f + TEX_V)));
+  let [alb, grass, foliage, moon, sunImg] = await Promise.all(
+    ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png', 'environment_sun.png'].map(f => loadImg(base + f + TEX_V)));
   // the potato tier draws no normal maps: it skips that file altogether (a third of the download)
   const withNormals = QP.normals !== false;
-  const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, 'terrain_spec.png']
+  const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, QP.spec !== false ? 'terrain_spec.png' : null]
     .map(f => f ? strip(base + f + TEX_V, manifest.layers) : null));
   resolveTextures(manifest);
   // resource packs the player opened from their own computer (ui/pack.js): theirs first, ours underneath
@@ -247,17 +247,20 @@ async function boot() {
   const colours = biomeColours(pixels(grass), pixels(foliage));
   const moonTex = new THREE.Texture(moon);
   moonTex.magFilter = THREE.NearestFilter; moonTex.minFilter = THREE.NearestFilter; moonTex.needsUpdate = true;
+  const sunTex = new THREE.Texture(sunImg);
+  sunTex.magFilter = THREE.NearestFilter; sunTex.minFilter = THREE.NearestFilter; sunTex.generateMipmaps = false; sunTex.needsUpdate = true;
   const textures = {
     albedo: arrayTex(albP, manifest.layers, THREE.LinearMipmapLinearFilter),
     normal: nrmP ? arrayTex(nrmP, manifest.layers, THREE.LinearMipmapLinearFilter) : flatNormals(),
-    spec: arrayTex(spcP, manifest.layers, THREE.LinearMipmapLinearFilter),
-    manifest, moon: moonTex,
+    spec: spcP ? arrayTex(spcP, manifest.layers, THREE.LinearMipmapLinearFilter) : flatNormals(),
+    manifest, moon: moonTex, sun: sunTex,
   };
 
   status('Starting the renderer…', 0.5);
   const canvas = $('#c');
   const rs = options.get('renderScale');
-  const renderer = new Renderer(canvas, textures, Object.assign({}, QP, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : QP.scale)) }));
+  const renderer = new Renderer(canvas, textures, Object.assign({}, QP, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : QP.scale)),
+    brightness: options.get('brightness'), clouds: options.get('clouds') }));
   for (const t of [textures.albedo, textures.normal, textures.spec]) if (t.pieces) uploadArray(renderer.r, t);
   if (packTex && packTex.size) alb = applyPackTextures(renderer.r, textures, manifest, packTex, alb);
   const overlay = new Overlay(renderer.U, manifest);
@@ -574,7 +577,9 @@ async function boot() {
   };
   options.onChange((k, v) => {
     applyOptions();
-    if (k === 'renderDistance' && v) { if (game) game.world.renderDist = v; }
+    if (k === 'renderDistance' && v) { if (game) game.world.renderDist = v; renderer.opts.renderDist = v; }
+    if (k === 'brightness') renderer.opts.brightness = v;
+    if (k === 'clouds') renderer.opts.clouds = v;
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
     if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=8', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
@@ -617,6 +622,7 @@ async function boot() {
     renderer.render({
       time: menuTime / 20, sunDir, moonDir, feet: eyeV, eye: eyeV, yaw: m.yaw, pitch: -0.16, fov: 85,
       eyeInWater: false, skyAtEye: 1, moonPhase: 0, trample: 0, showHand: false, bob: null, waterTint: tintAt(w, eyeV), player: null, alpha: 0,
+      biome: BIOMES[w.biomeAt(Math.floor(eyeV.x), Math.floor(eyeV.z))],
     }, dt);
   }
   function playFrame(now, dt) {
@@ -652,6 +658,7 @@ async function boot() {
       fov: player.fov, eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
       moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: v.handBob,
       waterTint: tintAt(world, v.eye), player, alpha,
+      biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
     }, dt);
     if (g.mode !== 'creative') hud.setStats(survival.stats());
     // no crosshair in third person, or with the HUD hidden
@@ -663,7 +670,8 @@ async function boot() {
       // keep it smooth: give up resolution before frame rate, and take it back when there is room
       if (autoScale && now - startedAt > 6000 && ++scaleTick % 4 === 0) {
         const s = renderer.opts.scale;
-        const floor = QNAME === 'fast' ? 0.4 : 0.5;
+        // never so low it blurs: three quarters of the screen, or half of a very sharp one
+        const floor = (renderer.dpr || 1) > 1.4 ? 0.5 : 0.75;
         if (fps < 42 && s > floor) { renderer.opts.scale = Math.max(floor, +(s - 0.1).toFixed(2)); fit(); }
         else if (fps > 58 && s < QP.scale) { renderer.opts.scale = Math.min(QP.scale, +(s + 0.05).toFixed(2)); fit(); }
       }
