@@ -17,9 +17,9 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=8';
-import { VANILLA } from './vanilla.js?v=8';
-import { lightDefines } from './materials.js?v=8';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=9';
+import { VANILLA } from './vanilla.js?v=9';
+import { lightDefines } from './materials.js?v=9';
 const THREE = window.THREE;
 
 export const ATLAS = 1024;           // the mob texture atlas, in pixels a side

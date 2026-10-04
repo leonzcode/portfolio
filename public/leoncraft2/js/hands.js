@@ -23,12 +23,12 @@
    Q throws one of the selected stack, Ctrl+Q all of it. Dying spills the
    inventory and up to 100 points of experience (7 a level).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=8';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON } from './items.js?v=8';
-import { breakTicks, wearFor } from './mining.js?v=8';
-import { blockDrops } from './loot.js?v=8';
-import { containerKind } from './containers.js?v=8';
-import { CraftingScreen, ChestScreen, FurnaceScreen } from './ui/containers.js?v=8';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=9';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON } from './items.js?v=9';
+import { breakTicks, wearFor } from './mining.js?v=9';
+import { blockDrops } from './loot.js?v=9';
+import { containerKind } from './containers.js?v=9';
+import { CraftingScreen, ChestScreen, FurnaceScreen } from './ui/containers.js?v=9';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 const STRIP = {};

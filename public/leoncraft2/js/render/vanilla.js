@@ -25,8 +25,8 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON } from './glsl.js?v=8';
-import { FullScreen, VS_FULL } from './sky.js?v=8';
+import { COMMON } from './glsl.js?v=9';
+import { FullScreen, VS_FULL } from './sky.js?v=9';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray;\n`;

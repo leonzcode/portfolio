@@ -7,7 +7,7 @@
    Positions are centred on the block, lifted by one so they stay positive
    in the unsigned vertex format (the shader takes off 8, 0, 8).
 --------------------------------------------------------------------------- */
-import { boxesOf } from '../models.js?v=8';
+import { boxesOf } from '../models.js?v=9';
 const THREE = window.THREE;
 
 const FACES = [

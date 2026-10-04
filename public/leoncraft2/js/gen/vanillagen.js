@@ -19,14 +19,14 @@
    extensions, carvers, features) is written from the game's observable
    behaviour and checked against chunks the real 26.3 server made.
 --------------------------------------------------------------------------- */
-import { VDATA } from './vdata.js?v=8';
-import { DensityState, Compiler, tri, children } from './density.js?v=8';
-import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=8';
-import { Xoroshiro } from './random.js?v=8';
-import { B } from '../blocks.js?v=8';
-import { BIO, BIOMES } from '../biomes.js?v=8';
-import { H, Y0, VOL } from '../world-const.js?v=8';
-import { Decorator } from './features.js?v=8';
+import { VDATA } from './vdata.js?v=9';
+import { DensityState, Compiler, tri, children } from './density.js?v=9';
+import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=9';
+import { Xoroshiro } from './random.js?v=9';
+import { B } from '../blocks.js?v=9';
+import { BIO, BIOMES } from '../biomes.js?v=9';
+import { H, Y0, VOL } from '../world-const.js?v=9';
+import { Decorator } from './features.js?v=9';
 
 const MIN_Y = -64, SEA_LEVEL = 63;
 const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
