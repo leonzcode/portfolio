@@ -32,6 +32,9 @@ export const yawTo = (dx, dz) => Math.atan2(-dx, -dz);
 let NEXT_ID = 1;
 const WATERLOGGED = new Uint8Array(4096);
 for (const d of BLOCKS) if (d && d.waterlogged) WATERLOGGED[d.id] = 1;
+// 1 cactus, 2 sweet berry bush, 3 fire, 4 magma
+const TOUCH = new Uint8Array(4096);
+for (const d of BLOCKS) if (d) TOUCH[d.id] = d.name === 'cactus' ? 1 : d.name === 'sweet_berry_bush' ? 2 : (d.name === 'fire' || d.name === 'soul_fire') ? 3 : d.name === 'magma_block' ? 4 : 0;
 
 export class Entity {
   constructor(m, type) {
@@ -77,7 +80,8 @@ export class Entity {
     if (this.inWater) { this.fallDist = 0; if (this.fire > 0) this.fire = 0; }
     if (this.inLava) { this.fallDist *= 0.5; this.lavaHurt(); }
     if (this.fire > 0) this.burnTick();
-    if (p.y < -64 - 64 + 0) this.hurt(4, { type: 'void' });
+    if (p.y < -64) this.hurt(4, { type: 'void' });
+    if (this.age % 2 === 0) this.touchBlocks();
   }
   // any water, lava or waterlogged block at the corners of the box, from the feet to the head? (a cheap test first)
   nearFluid() {
@@ -89,6 +93,21 @@ export class Entity {
       if (b && (FLUID[b] || WATERLOGGED[b])) return true;
     }
     return false;
+  }
+  // blocks that hurt to touch: cactus, berry bushes, fire, standing on magma
+  touchBlocks() {
+    if (!this.maxHealth || this.dead) return;
+    const T = this.m.t, p = this.pos, hw = this.hw + 0.07;
+    const x0 = Math.floor(p.x - hw), x1 = Math.floor(p.x + hw), z0 = Math.floor(p.z - hw), z1 = Math.floor(p.z + hw);
+    const y0 = Math.floor(p.y - 0.01), y1 = Math.floor(p.y + this.h - 0.01);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+      const k = TOUCH[T.get(x, y, z)];
+      if (!k) continue;
+      if (k === 1) this.hurt(1, { type: 'cactus' });
+      else if (k === 2 && y >= Math.floor(p.y) && (Math.abs(this.vel.x) > 0.003 || Math.abs(this.vel.z) > 0.003) && !this.constructor.BERRY_SAFE) { this.hurt(1, { type: 'berry' }); this.vel.x *= 0.8; this.vel.z *= 0.75; }
+      else if (k === 3 && y >= Math.floor(p.y)) { if (this.setFire) this.setFire(8); this.hurt(1, { type: 'fire' }); }
+      else if (k === 4 && y === Math.floor(p.y - 0.01) && y < p.y && !this.constructor.FIRE_IMMUNE) this.hurt(1, { type: 'magma' });
+    }
   }
   lavaHurt() {}
   burnTick() { this.fire--; }

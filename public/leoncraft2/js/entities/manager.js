@@ -34,6 +34,9 @@ import './mobs3.js?v=9';
 import './mobs4.js?v=9';
 import { explode } from './explosion.js?v=9';
 import { placeBoat } from './boat.js?v=9';
+import { splitXp } from './xporb.js?v=9';
+import { placeMinecart, isRail } from './minecart.js?v=9';
+import { FALLS, free } from './fallingblock.js?v=9';
 import { Spawner } from './spawner.js?v=9';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=9';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=9';
@@ -84,6 +87,9 @@ export class Entities {
     this.effects = {};               // the player's effects: name -> ticks left
     this.budget = 0;
     this.spawner = new Spawner(this);
+    // blocks that fall, checked two ticks after something changes next to them
+    this.fallChecks = [];
+    this.world.onSet = (x, y, z, b) => { if (FALLS[b] || FALLS[this.t.get(x, y + 1, z)]) this.fallChecks.push(x, y, z, this.age + 2); };
     // drawing
     this.atlas = buildAtlas();
     this.meshes = new EntityMeshes(this.R, this.atlas, buildSheet());
@@ -238,9 +244,11 @@ export class Entities {
     const held = this.inv ? this.inv.heldId() : 0;
     if (held !== this.lastHeld) { this.lastHeld = held; this.ticksSinceSwing = 0; }
     if (this.pInvul > 0) this.pInvul--;
+    this.shieldTick();
     this.effectsTick();
     if (this.difficulty === 'peaceful') this.peaceful();
     this.spawner.tick();
+    if (this.fallChecks.length) this.fallTick();
     const n = this.list.length;
     for (let i = 0; i < n; i++) {
       const e = this.list[i];
@@ -265,6 +273,23 @@ export class Entities {
     if (e.vehicle) { const v = e.vehicle; v.passengers.splice(v.passengers.indexOf(e), 1); e.vehicle = null; }
     for (const p of e.passengers) { if (p !== this.player) p.vehicle = null; }
     if (this.riding === e) this.dismount();
+  }
+  // sand over a gap becomes a falling block (and whatever was resting on it after)
+  fallTick() {
+    const q = this.fallChecks, keep = [];
+    for (let i = 0; i < q.length; i += 4) {
+      if (q[i + 3] > this.age) { keep.push(q[i], q[i + 1], q[i + 2], q[i + 3]); continue; }
+      for (const y of [q[i + 1], q[i + 1] + 1]) {
+        const x = q[i], z = q[i + 2], b = this.t.get(x, y, z);
+        if (!FALLS[b] || !free(this.t.get(x, y - 1, z)) || y <= 0) continue;
+        const meta = this.t.meta(x, y, z);
+        this.world.set(x, y, z, 0, 0);
+        if (this.fluids) this.fluids.around(x, y, z);
+        const e = this.spawn('falling_block', x + 0.5, y, z + 0.5, { natural: false });
+        if (e) { e.block = b; e.meta = meta; }
+      }
+    }
+    this.fallChecks = keep;
   }
   // the light where a mob's eyes are, eased when drawn
   sampleLight(e, now) {
@@ -493,6 +518,15 @@ export class Entities {
       else if (diff === 'hard') amount = amount * 1.5;
     }
     if (amount <= 0) return false;
+    if (this.blocks(src)) {
+      // blocked: no damage; a mob that hit the shield is knocked back, an axe puts it down for 5 seconds
+      const a = src.attacker;
+      if (src.type === 'mob' && a && a.knockback) a.knockback(0.5, this.P.pos.x - a.pos.x, this.P.pos.z - a.pos.z);
+      if (src.axe) this.shieldCool = 100;
+      if (this.hooks.damageHeld && amount >= 3) this.hooks.damageHeld(1 + Math.floor(amount), 'shield');
+      this.lastBlocked = { amount, src: src.type };
+      return false;
+    }
     // the 10 tick window
     if (this.pInvul > 10) {
       if (amount <= this.pLast) return false;
@@ -513,6 +547,29 @@ export class Entities {
     this.lastPlayerHurt = { amount, before, after: this.survival.health, src: src.type };
     if (this.riding && this.survival.dead) this.dismount();
     return true;
+  }
+  /* ---- the shield ----
+     Held in either hand with the use button down, it is up after 5 ticks
+     (the game's delay) and stops all damage from in front: anything whose
+     source is on the side the player faces. A melee attacker is pushed
+     back. Walking is slowed to a fifth while it is raised. */
+  shieldTick() {
+    const using = !!(this.inter && this.inter.useHeld) && (this.heldName() === 'shield' || this.offhandName() === 'shield') && !this.riding;
+    this.shieldT = using ? (this.shieldT || 0) + 1 : 0;
+    if (this.shieldCool > 0) { this.shieldCool--; this.shieldT = 0; }
+    const up = this.shieldT >= 5;
+    if (up !== this.shieldUp) { this.shieldUp = up; if (this.P) this.P.usingItem = up ? 'shield' : (this.P.usingItem === 'shield' ? false : this.P.usingItem); }
+  }
+  blocks(src) {
+    if (!this.shieldUp || !src) return false;
+    if (src.type === 'fall' || src.type === 'drown' || src.type === 'magic' || src.type === 'fire' || src.type === 'void' || src.type === 'cactus' || src.type === 'lava') return false;
+    const from = src.direct || src.attacker;
+    const sx = from && from.pos ? from.pos.x : src.x, sz = from && from.pos ? from.pos.z : src.z;
+    if (sx === undefined) return false;
+    const P = this.P, lx = -Math.sin(P.yaw), lz = -Math.cos(P.yaw);
+    const dx = P.pos.x - sx, dz = P.pos.z - sz;
+    // the source's direction to the player against the look: blocked if it comes from in front
+    return dx * lx + dz * lz < 0;
   }
   knockPlayer(strength, dx, dz) {
     const l = Math.hypot(dx, dz);
@@ -552,10 +609,26 @@ export class Entities {
   }
   dropXp(e) {
     if (!e.byPlayer) return;
-    const n = e.xp !== undefined ? e.xp : e.constructor.XP || 0;
-    if (!n) return;
-    this.xpEarned += n;
-    if (this.hooks.giveXp) this.hooks.giveXp(n, e.pos.x, e.pos.y, e.pos.z);
+    this.xpAt(e.pos.x, e.pos.y + 0.3, e.pos.z, e.xp !== undefined ? e.xp : e.constructor.XP || 0);
+  }
+  // experience as orbs, split into the game's sizes
+  xpAt(x, y, z, n) {
+    while (n > 0) {
+      const v = splitXp(n);
+      n -= v;
+      const o = this.spawn('xp_orb', x, y, z, { natural: false });
+      if (!o) return;
+      o.value = v;
+      o.vel.set((R() * 0.2 - 0.1) * 2, R() * 0.2 * 2, (R() * 0.2 - 0.1) * 2);
+    }
+  }
+  // the player picks an orb up (one every two ticks)
+  takeOrb(o) {
+    if (this.orbDelay > this.age) return false;
+    this.orbDelay = this.age + 2;
+    this.xpEarned += o.value;
+    if (this.hooks.giveXp) this.hooks.giveXp(o.value, o.pos.x, o.pos.y, o.pos.z);
+    return true;
   }
   pickupArrow() {
     if (this.mode === 'creative') return true;
@@ -573,8 +646,7 @@ export class Entities {
     const baby = this.spawn(a.type, (a.pos.x + b.pos.x) / 2, a.pos.y, (a.pos.z + b.pos.z) / 2, { natural: false });
     if (baby) { baby.ageT = -24000; if (baby.inherit) baby.inherit(a, b); }
     this.particles('heart', baby.pos.x, baby.pos.y + 0.6, baby.pos.z, 7, 0.6);
-    this.xpEarned += 1 + Math.floor(R() * 7);
-    if (this.hooks.giveXp) this.hooks.giveXp(1 + Math.floor(R() * 7), baby.pos.x, baby.pos.y, baby.pos.z);
+    this.xpAt(baby.pos.x, baby.pos.y + 0.3, baby.pos.z, 1 + Math.floor(R() * 7));
   }
   explode(x, y, z, power, src, o) { return explode(this, x, y, z, power, src, o); }
   // a block broken by a mob (a zombie through a door, an enderman's pick)
@@ -630,6 +702,10 @@ export class Entities {
       take();
       return true;
     }
+    if (name === 'minecart' && target && isRail(target.b)) {
+      if (placeMinecart(this, target.x, target.y, target.z)) take();
+      return true;
+    }
     if (/_spawn_egg$/.test(name)) {
       const type = name.slice(0, -10);
       if (!TYPES[type] || !target) return false;
@@ -673,6 +749,13 @@ export class Entities {
     const P = this.P;
     const eye = this.lookEye || P.pos, dir = this.lookDir;
     if (!dir) return null;
+    // looking at a rail: a minecart instead
+    const tr = this.t.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 8, false);
+    for (let k = 0; k <= 12; k++) {
+      const d = k * 0.5, x = Math.floor(eye.x + dir.x * d), y = Math.floor(eye.y + dir.y * d), z = Math.floor(eye.z + dir.z * d);
+      if (d > tr + 0.5) break;
+      if (isRail(this.t.get(x, y, z))) return placeMinecart(this, x, y, z);
+    }
     const t = this.t.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 8, true);
     if (t >= 8) return null;
     const bx = this.t.rayX, by = this.t.rayY, bz = this.t.rayZ;
@@ -692,7 +775,7 @@ export class Entities {
     for (const e of this.list) {
       if (e.removed) continue;
       const c = e.constructor;
-      if (!c.MODEL) continue;
+      if (!c.MODEL && !c.PARTICLE && !c.BLOCK) continue;
       const x = e.prev.x + (e.pos.x - e.prev.x) * alpha, y = e.prev.y + (e.pos.y - e.prev.y) * alpha, z = e.prev.z + (e.pos.z - e.prev.z) * alpha;
       const dx = x - P.pos.x, dz = z - P.pos.z;
       if (dx * dx + dz * dz > far2) continue;
@@ -700,7 +783,8 @@ export class Entities {
       e.lS += (e.lightS / 15 - e.lS) * k; e.lB += (e.lightB / 15 - e.lB) * k;
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
       const seen = this.frustum.intersectsSphere(this.sphere);
-      if (seen) this.drawOne(e, alpha, x, y, z);
+      if (c.BLOCK) { e.draw(this.group, this.R, alpha); continue; }
+      if (seen) { if (c.PARTICLE) e.particle(this.meshes, alpha, x, y, z); else this.drawOne(e, alpha, x, y, z); }
       // a boat keeps the water out of its inside
       if (seen && c.WATER_MASK) this.meshes.maskAt(x, y + c.WATER_MASK, z, e.prevYaw + wrap(e.yaw - e.prevYaw) * alpha, 0.55, 0.74);
       // its round shadow on the ground
@@ -819,7 +903,9 @@ export class Entities {
   // leaving the world: drop everything
   dispose() {
     this.gone = true;
+    for (const e of this.list) if (e.mesh) e.remove();
     this.list.length = 0;
+    if (this.world.onSet) this.world.onSet = null;
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }

@@ -507,6 +507,7 @@ async function boot() {
     entities.fromJSON(entJson);
     renderer.scene.add(entities.group);
     inter.entities = entities;
+    entities.inter = inter;
     game.entities = entities;
     hud = new Hud(inv, icons);
     gui.hud = hud;
