@@ -265,6 +265,9 @@ export class Hands {
     if (!s) return false;
     const it = ITEMS[s.id];
     if (!it) return false;
+    // bows, crossbows and tridents draw while the button is held (combat/combat.js)
+    const cb = this.inter && this.inter.entities && this.inter.entities.combat;
+    if (cb && !this.using && cb.useItem(s)) return true;
     const food = foodOf(s.id);
     if (food && !this.using) {
       // food that is also a block (a carrot, sweet berries) is planted when clicked on a block it can go on
@@ -396,7 +399,7 @@ export class Hands {
   // the held item moves to the mouth and bobs while eating (an offset for the hand's sway)
   handBob(bob) {
     const u = this.using;
-    if (!u || u.off) return bob;
+    if (!u || u.off) { const cb = this.inter && this.inter.entities && this.inter.entities.combat; return cb ? cb.handPose(bob, this.alpha || 0) : bob; }
     const t = u.t + (this.alpha || 0), k = Math.min(1, t / 6);
     const out = this._bob || (this._bob = { x: 0, y: 0 });
     out.x = (bob ? bob.x : 0) - 0.42 * k;

@@ -7,12 +7,9 @@
      render(a)     the frame: each mob posed between ticks into the bone
                    texture, instanced by model (render/entitymesh.js)
      raycast()     what the crosshair is on, for attacking and using
-     attack(e)     the player's hit, by the 1.9 combat rules: the cooldown
-                   scales the damage (0.2 + 0.8 x charge squared), a full
-                   charge while falling is a critical (x1.5), sprinting adds
-                   knockback, a sword on the ground sweeps
-     hurtPlayer()  a mob's hit on the player: difficulty scaling, the 10 tick
-                   window, knockback, then survival.hurt(amount, source)
+     attack(e)     the player's hit, and hurtPlayer() a hit on the player:
+                   both by the game's combat rules (combat/combat.js, which
+                   also has the shield, bows, crossbows and tridents)
      spawn(type, x, y, z), toJSON(), fromJSON()
 
    The game passes hooks for what other parts own:
@@ -28,45 +25,30 @@ import { Particles } from './particles.js?v=10';
 import { Living, Mob, wrap, DEG } from './entity.js?v=10';
 import { TYPES } from './mobs.js?v=10';
 import './projectiles.js?v=10';
-import './boat.js?v=10';
+import { placeBoat } from './boat.js?v=10';
 import './mobs2.js?v=10';
 import './mobs3.js?v=10';
 import './mobs4.js?v=10';
-import './nether.js?v=10';
 import { explode } from './explosion.js?v=10';
-import { placeBoat } from './boat.js?v=10';
 import { splitXp } from './xporb.js?v=10';
 import { placeMinecart, isRail } from './minecart.js?v=10';
 import { FALLS, free } from './fallingblock.js?v=10';
 import { Spawner, DESPAWN } from './spawner.js?v=10';
-import { DIMS } from '../dims.js?v=10';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=10';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=10';
 import { EntityMeshes } from '../render/entitymesh.js?v=10';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=10';
 import { breakAt } from '../place.js?v=10';
 import { dropOf } from '../survival.js?v=10';
-import { ITEMS, I } from '../items.js?v=10';
+import { itemName, ITEMS, I } from '../items.js?v=10';
+import { Combat } from '../combat/combat.js?v=10';
+import './nether.js?v=10';
+import { DIMS } from '../dims.js?v=10';
 const THREE = window.THREE;
 
 const R = () => Math.random();
 const CELL = 8;
 const DIFF = { peaceful: 0, easy: 1, normal: 2, hard: 3 };
-
-// weapons: [damage, attack speed]; anything else is a fist (1, 4)
-function weaponOf(name) {
-  if (!name) return [1, 4, ''];
-  const tier = /^(wooden|stone|iron|golden|diamond|netherite)_/.exec(name);
-  const t = tier ? tier[1] : null;
-  if (/_sword$/.test(name)) return [{ wooden: 4, stone: 5, iron: 6, golden: 4, diamond: 7, netherite: 8 }[t] || 4, 1.6, 'sword'];
-  if (/_axe$/.test(name)) return [{ wooden: 7, stone: 9, iron: 9, golden: 7, diamond: 9, netherite: 10 }[t] || 7, { wooden: 0.8, stone: 0.8, iron: 0.9 }[t] || 1, 'axe'];
-  if (/_pickaxe$/.test(name)) return [{ wooden: 2, stone: 3, iron: 4, golden: 2, diamond: 5, netherite: 6 }[t] || 2, 1.2, 'pickaxe'];
-  if (/_shovel$/.test(name)) return [{ wooden: 2.5, stone: 3.5, iron: 4.5, golden: 2.5, diamond: 5.5, netherite: 6.5 }[t] || 2.5, 1, 'shovel'];
-  if (/_hoe$/.test(name)) return [1, { wooden: 1, stone: 2, iron: 3, golden: 1, diamond: 4, netherite: 4 }[t] || 1, 'hoe'];
-  if (name === 'trident') return [9, 1.1, 'trident'];
-  if (name === 'mace') return [6, 0.6, 'mace'];
-  return [1, 4, ''];
-}
 
 export class Entities {
   constructor(o) {
@@ -118,6 +100,8 @@ export class Entities {
       dist2: (x, y, z) => (P.pos.x - x) ** 2 + (P.pos.y - y) ** 2 + (P.pos.z - z) ** 2,
       heal: n => { self.survival.health = Math.min(20, self.survival.health + n); },
     };
+    // the player's fights: hits, the shield, bows, crossbows, tridents (combat/combat.js)
+    this.combat = new Combat(this);
   }
   get difficulty() { return (this.options && this.options.get('difficulty')) || 'normal'; }
   get time() { return this.hooks.time ? this.hooks.time() : 6000; }
@@ -260,7 +244,7 @@ export class Entities {
     if (held !== this.lastHeld) { this.lastHeld = held; this.ticksSinceSwing = 0; }
     if (this.pInvul > 0) this.pInvul--;
     if (this.pFire > 0) this.playerFireTick();
-    this.shieldTick();
+    this.combat.tick();
     this.effectsTick();
     if (this.difficulty === 'peaceful') this.peaceful();
     this.spawner.tick();
@@ -284,6 +268,7 @@ export class Entities {
     this.rebuildGrid();
     if (this.age % 20 === 0) this.chunks();
     this.particlesP.tick();
+    this.combat.lateTick();
   }
   forget(e) {
     if (e.vehicle) { const v = e.vehicle; v.passengers.splice(v.passengers.indexOf(e), 1); e.vehicle = null; }
@@ -474,56 +459,14 @@ export class Entities {
     return true;
   }
   // how charged the next hit is (0..1): ticks since the last swing over 20 / attack speed
-  cooldown() {
-    const [, speed] = weaponOf(this.heldName());
-    const delay = 20 / speed;
-    return Math.max(0, Math.min(1, (this.ticksSinceSwing + 0.5) / delay));
-  }
-  // a click in the air (or on a block) starts the cooldown again, as the game does
+  cooldown() { return this.combat.cooldown(); }
+  // a click in the air (or a block broken) starts the cooldown again, as the game does
   swung() { this.ticksSinceSwing = 0; }
-  /* The player hits an entity. */
+  /* The player hits an entity (combat/combat.js). */
   attack(e) {
-    const P = this.P;
-    if (!e || e.removed) return false;
-    const [base, , kind] = weaponOf(this.heldName());
-    const c = this.cooldown();
-    let dmg = base * (0.2 + c * c * 0.8);
-    // not alive (a boat, a minecart): it just takes the hit
-    if (!(e instanceof Living)) { this.ticksSinceSwing = 0; return e.hurt ? e.hurt(dmg, { type: 'player', attacker: this.player, player: true }) : false; }
-    if (e.dead) { this.ticksSinceSwing = 0; return false; }
-    const strong = c > 0.9;
-    let knock = 0, sprintHit = false;
-    if (P.sprinting && strong) { knock++; sprintHit = true; }
-    const falling = this.survival && this.survival.fallFrom !== null && this.survival.fallFrom > P.pos.y;
-    const crit = strong && falling && !P.onGround && !P.inWater && !this.riding && !P.flying && !P.sprinting && !this.climbing();
-    if (crit) dmg *= 1.5;
-    const walked = Math.abs(P.walkDist - P.prevWalk) / 0.6;
-    const sweep = strong && !crit && !sprintHit && P.onGround && walked < 0.1 * 1.0 + 0.01 && kind === 'sword';
-    if (this.mode === 'creative' && false) dmg = 1e9;
-    const hpBefore = e.health;
-    const ok = e.hurt(dmg, { type: 'player', attacker: this.player, player: true, x: P.pos.x, z: P.pos.z });
-    this.ticksSinceSwing = 0;
-    if (!ok) return false;
-    e.lastHurtByPlayer = this.age;
-    if (knock > 0) {
-      e.knockback(knock * 0.5, Math.sin(P.yaw), Math.cos(P.yaw));
-      P.vel.x *= 0.6; P.vel.z *= 0.6; P.sprinting = false;
-    }
-    if (sweep) {
-      this.forNear(e.pos.x, e.pos.z, 3, o => {
-        if (o === e || o.removed || o.dead || !(o instanceof Living) || o === this.riding) return;
-        if (Math.abs(o.pos.x - e.pos.x) > e.hw + 1 + o.hw || Math.abs(o.pos.z - e.pos.z) > e.hw + 1 + o.hw || Math.abs(o.pos.y - e.pos.y) > 0.5) return;
-        if (o.dist2(P.pos.x, P.pos.y, P.pos.z) >= 9) return;
-        o.knockback(0.4, Math.sin(P.yaw), Math.cos(P.yaw));
-        o.hurt(1, { type: 'player', attacker: this.player, player: true, noKnock: true });
-      });
-      const s = Math.sin(P.yaw), co = Math.cos(P.yaw);
-      this.particlesP.add('sweep', P.pos.x - s, P.pos.y + 0.9, P.pos.z - co, 1, 0);
-    }
-    if (crit) this.particles('crit', e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, 12, e.w * 0.5);
-    if (kind) this.damageHeld(kind === 'sword' || kind === 'trident' ? 1 : 2);
-    this.lastHit = { dmg, crit, sweep, knock, cooldown: c, before: hpBefore, after: e.health };
-    return true;
+    const ok = this.combat.attack(e);
+    this.lastHit = this.combat.lastHit;
+    return ok;
   }
   climbing() {
     const b = this.t.get(Math.floor(this.P.pos.x), Math.floor(this.P.pos.y), Math.floor(this.P.pos.z));
@@ -541,84 +484,11 @@ export class Entities {
     return true;
   }
 
-  /* ---- the player being hit ---- */
-  hurtPlayer(amount, src) {
-    if (!this.player.alive() || this.mode === 'creative' || !this.survival) return false;
-    const diff = this.difficulty;
-    // the game scales mob and explosion damage to the player by difficulty
-    if (src.type === 'mob' || src.type === 'explosion' || src.type === 'arrow' || src.type === 'thrown' || src.type === 'fireball') {
-      if (diff === 'peaceful') amount = src.type === 'explosion' ? amount : 0;
-      else if (diff === 'easy') amount = Math.min(amount / 2 + 1, amount);
-      else if (diff === 'hard') amount = amount * 1.5;
-    }
-    if (amount <= 0) return false;
-    if (this.blocks(src)) {
-      // blocked: no damage; a mob that hit the shield is knocked back, an axe puts it down for 5 seconds
-      const a = src.attacker;
-      if (src.type === 'mob' && a && a.knockback) a.knockback(0.5, this.P.pos.x - a.pos.x, this.P.pos.z - a.pos.z);
-      if (src.axe) this.shieldCool = 100;
-      if (this.hooks.damageHeld && amount >= 3) this.hooks.damageHeld(1 + Math.floor(amount), 'shield');
-      this.lastBlocked = { amount, src: src.type };
-      return false;
-    }
-    // the 10 tick window
-    if (this.pInvul > 10) {
-      if (amount <= this.pLast) return false;
-      const extra = amount - this.pLast;
-      this.pLast = amount;
-      amount = extra;
-    } else {
-      this.pLast = amount; this.pInvul = 20;
-      if (!src.noKnock && src.x !== undefined) {
-        this.knockPlayer(0.4, src.x - this.P.pos.x, src.z - this.P.pos.z);
-        // a mob with knockback of its own (iron golems, ravagers) adds to it
-        if (src.knock) this.knockPlayer(src.knock * 0.5, Math.sin(src.yaw), Math.cos(src.yaw));
-      }
-    }
-    if (this.effects.resistance) amount *= 0.8;
-    // fire resistance keeps fireballs off (they are fire)
-    if (src.type === 'fireball' && this.survival.effects && this.survival.effects.fire_resistance) return false;
-    const before = this.survival.health;
-    // survival.js takes the kind of damage by name (armour, protection, fire resistance go by it)
-    this.survival.hurt(amount, src.type === 'thrown' ? 'projectile' : src.type || 'generic');
-    this.lastPlayerHurt = { amount, before, after: this.survival.health, src: src.type };
-    if (this.riding && this.survival.dead) this.dismount();
-    return true;
-  }
-  /* ---- the shield ----
-     Held in either hand with the use button down, it is up after 5 ticks
-     (the game's delay) and stops all damage from in front: anything whose
-     source is on the side the player faces. A melee attacker is pushed
-     back. Walking is slowed to a fifth while it is raised. */
-  shieldTick() {
-    const using = !!(this.inter && this.inter.useHeld) && (this.heldName() === 'shield' || this.offhandName() === 'shield') && !this.riding;
-    this.shieldT = using ? (this.shieldT || 0) + 1 : 0;
-    if (this.shieldCool > 0) { this.shieldCool--; this.shieldT = 0; }
-    const up = this.shieldT >= 5;
-    if (up !== this.shieldUp) { this.shieldUp = up; if (this.P) this.P.usingItem = up ? 'shield' : (this.P.usingItem === 'shield' ? false : this.P.usingItem); }
-  }
-  blocks(src) {
-    if (!this.shieldUp || !src) return false;
-    if (src.type === 'fall' || src.type === 'drown' || src.type === 'magic' || src.type === 'fire' || src.type === 'void' || src.type === 'cactus' || src.type === 'lava') return false;
-    const from = src.direct || src.attacker;
-    const sx = from && from.pos ? from.pos.x : src.x, sz = from && from.pos ? from.pos.z : src.z;
-    if (sx === undefined) return false;
-    const P = this.P, lx = -Math.sin(P.yaw), lz = -Math.cos(P.yaw);
-    const dx = P.pos.x - sx, dz = P.pos.z - sz;
-    // the source's direction to the player against the look: blocked if it comes from in front
-    return dx * lx + dz * lz < 0;
-  }
-  knockPlayer(strength, dx, dz) {
-    const l = Math.hypot(dx, dz);
-    if (l < 1e-4) return;
-    const v = this.P.vel;
-    v.x = v.x / 2 - dx / l * strength;
-    v.z = v.z / 2 - dz / l * strength;
-    if (this.P.onGround) v.y = Math.min(0.4, v.y / 2 + strength);
-    this.P.onGround = false;
-  }
-  /* Set alight (a blaze's fireball): survival.js's own burning when it has
-     one; otherwise kept here, a point every second, out in water or rain. */
+  /* ---- the player being hit (combat/combat.js: difficulty, the shield, the 10 tick window, knockback) ---- */
+  hurtPlayer(amount, src) { return this.combat.hurtPlayer(amount, src); }
+  get shieldUp() { return this.combat.shieldUp; }
+  set shieldUp(v) { }
+  knockPlayer(strength, dx, dz) { this.combat.knockPlayer(strength, dx, dz); }
   setPlayerFire(seconds) {
     const S = this.survival;
     if (!S || this.mode === 'creative') return;
@@ -635,12 +505,11 @@ export class Entities {
   /* Effects mobs put on you (poison, wither, hunger from husks, slowness
      from strays, mining fatigue from elder guardians): they go to the
      player's own effects (survival.js), which do the harm and show them. */
+  // a few effects mobs put on you (poison, hunger from husks, slowness from strays)
   effectPlayer(name, ticks, level = 1) {
-    if (this.mode === 'creative') return;
-    const S = this.survival;
-    if (S && typeof S.addEffect === 'function') { S.addEffect(name, level, ticks); return; }
-    this.effects[name] = Math.max(this.effects[name] || 0, ticks);
-    if (this.hooks.effect) this.hooks.effect(name, ticks);
+    // the survival effects when there are some (they move the player and hurt as the game's do)
+    if (this.survival && this.survival.addEffect) { if (this.mode !== 'creative') this.survival.addEffect(name, level, ticks); return; }
+    this.effects[name] = Math.max(this.effects[name] || 0, ticks); if (this.hooks.effect) this.hooks.effect(name, ticks);
   }
   effectsTick() {
     for (const k in this.effects) {
@@ -696,12 +565,8 @@ export class Entities {
     if (this.hooks.giveXp) this.hooks.giveXp(o.value, o.pos.x, o.pos.y, o.pos.z);
     return true;
   }
-  pickupArrow() {
-    if (this.mode === 'creative') return true;
-    if (this.hooks.dropItem) { this.hooks.dropItem(this.world, this.P.pos.x, this.P.pos.y + 0.5, this.P.pos.z, 'arrow', 1); return true; }
-    if (this.inv && B.arrow !== undefined) return this.inv.add(B.arrow, 1) === 0;
-    return true;
-  }
+  // an arrow walked over goes into the inventory (combat/combat.js knows which kind and who may take it)
+  pickupArrow(a) { return this.combat.pickupArrow(a || {}); }
   poof(e) {
     for (let i = 0; i < 20; i++) this.particlesP.add('poof', e.pos.x + (R() - 0.5) * e.w * 2, e.pos.y + R() * e.h, e.pos.z + (R() - 0.5) * e.w * 2, 1, 0, null, Math.max(e.lS || 0, e.lB || 0));
   }
@@ -770,7 +635,7 @@ export class Entities {
     const P = this.P, dir = this.lookDir || (this.lookDir = new THREE.Vector3());
     dir.set(-Math.sin(P.yaw) * Math.cos(P.pitch), Math.sin(P.pitch), -Math.cos(P.yaw) * Math.cos(P.pitch));
     (this.lookEye || (this.lookEye = new THREE.Vector3())).copy(eye);
-    const reach = this.mode === 'creative' ? 5 : 3;
+    const reach = this.combat.reach();
     const h = this.raycast(eye, dir, Math.min(reach, blockT === undefined ? reach : blockT));
     return h ? h.entity : null;
   }

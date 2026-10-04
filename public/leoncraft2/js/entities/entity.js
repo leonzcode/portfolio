@@ -202,8 +202,7 @@ export class Living extends Entity {
     if (this.dead || this.removed || amount <= 0) return false;
     if (this.m.difficulty === 'peaceful' && this.constructor.HOSTILE && source.type !== 'void' && !source.player) { /* still hurtable by the player */ }
     if (source.type === 'fire' && this.constructor.FIRE_IMMUNE) return false;
-    // armour: each point takes 4% off, as the game does (without toughness)
-    if (this.armor > 0 && source.type !== 'fall' && source.type !== 'drown' && source.type !== 'void' && source.type !== 'fire') amount = amount * (1 - Math.min(20, this.armor) / 25);
+    // the 10 tick window, on the hit as it comes (armour then takes its share of what counts)
     let full = true;
     if (this.invul > 10) {
       if (amount <= this.lastHurt) return false;
@@ -215,6 +214,13 @@ export class Living extends Entity {
       this.lastHurt = amount;
       this.invul = 20;
       this.hurtTime = 10;
+    }
+    /* armour, the game's formula: max(points / 5, points - 4 x damage / (toughness + 8)),
+       at most 20, takes 4% a point (a zombie's natural 2 takes 1.6% off a 6 point hit);
+       a mace's Breach leaves 15% less of it working a level */
+    if (this.armor > 0 && source.type !== 'fall' && source.type !== 'drown' && source.type !== 'void' && source.type !== 'fire' && source.type !== 'magic') {
+      const f = Math.min(20, Math.max(this.armor / 5, this.armor - 4 * amount / ((this.toughness || 0) + 8))) / 25;
+      amount = amount * (1 - f * Math.max(0, 1 - 0.15 * (source.breach || 0)));
     }
     this.health -= amount;
     if (source.attacker) { this.lastHurtBy = source.attacker; this.lastHurtByTime = 100; }

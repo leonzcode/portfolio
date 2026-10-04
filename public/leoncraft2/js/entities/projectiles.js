@@ -5,13 +5,17 @@
    and falls 0.05; it hits the first block or mob along its path that tick.
    Damage is the speed it hits at times its base damage (2), rounded up, so
    a skeleton's arrow does 1 to 4 (5 on Hard) depending on how far it flew;
-   a critical arrow adds a random amount. Stuck in a block it stays for a
+   a critical arrow adds a random 0 to damage / 2 + 1. Punch pushes 0.6 a
+   level along the flight (and 0.1 up); Piercing goes through that many
+   mobs and one more; a tipped arrow gives an eighth of its potion, a
+   spectral one 10 seconds of Glowing. Stuck in a block it stays for a
    minute (1200 ticks). Thrown things fall 0.03 a tick and drag 0.99.
 --------------------------------------------------------------------------- */
 import { Entity, r3 } from './entity.js?v=10';
 import { rayBox } from './terrain.js?v=10';
 import { register } from './mobs.js?v=10';
 import { FLUID } from '../blocks.js?v=10';
+import { POTIONS } from '../brewing.js?v=10';
 
 const R = () => Math.random();
 const gauss = () => { let u = 0, v = 0; while (!u) u = R(); while (!v) v = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
@@ -40,12 +44,12 @@ export class Projectile extends Entity {
       // and the first mob (or the player), its box grown by 0.3
       let hit = null, te = tb;
       this.m.forNear(p.x, p.z, sp + 3, e => {
-        if (e === this || e === this.owner && this.age < 5 || e.removed || e.dead || e instanceof Projectile || !e.hurt || e.vehicle === this.owner) return;
+        if (e === this || e === this.owner && this.age < 5 || e.removed || e.dead || e instanceof Projectile || !e.hurt || e.vehicle === this.owner || (this.skip && this.skip(e))) return;
         const t = rayBox(p.x, p.y, p.z, dx, dy, dz, e.pos.x - e.hw - 0.3, e.pos.y - 0.3, e.pos.z - e.hw - 0.3, e.pos.x + e.hw + 0.3, e.pos.y + e.h + 0.3, e.pos.z + e.hw + 0.3);
         if (t < te) { te = t; hit = e; }
       });
       const P = this.m.player;
-      if (P && P.alive() && (this.owner !== P || this.age >= 5)) {
+      if (P && P.alive() && (this.owner !== P || this.age >= 5) && !(this.skip && this.skip(P))) {
         const t = rayBox(p.x, p.y, p.z, dx, dy, dz, P.pos.x - 0.6, P.pos.y - 0.3, P.pos.z - 0.6, P.pos.x + 0.6, P.pos.y + 2.1, P.pos.z + 0.6);
         if (t < te) { te = t; hit = P; }
       }
@@ -104,19 +108,36 @@ export class Arrow extends Projectile {
     }
     super.stuckTick();
   }
+  // a piercing arrow passes the mobs it has already gone through
+  skip(e) { return !!(this.pierced && this.pierced.has(e.id === undefined ? 'player' : e.id)); }
   hitEntity(e, speed) {
     let dmg = Math.ceil(Math.max(0, Math.min(speed * this.base, 2147483647)));
-    if (this.crit) dmg += Math.floor(R() * (dmg / 2 + 2));
-    const src = { type: 'arrow', attacker: this.owner || null, direct: this, x: this.pos.x - this.vel.x, z: this.pos.z - this.vel.z };
+    if (this.crit) dmg += Math.floor(R() * (Math.floor(dmg / 2) + 2));
+    const src = { type: 'arrow', attacker: this.owner || null, direct: this, player: !!(this.owner && this.owner.isPlayer), x: this.pos.x - this.vel.x, z: this.pos.z - this.vel.z };
     if (e.type === 'enderman') { if (e.teleportAway) e.teleportAway(); return false; }
+    if (this.pierce > 0) {
+      const k = e.id === undefined ? 'player' : e.id;
+      this.pierced = this.pierced || new Set();
+      if (this.pierced.size >= this.pierce + 1) { this.remove(); return true; }
+      this.pierced.add(k);
+    }
+    // on fire itself, it sets what it hits alight for 5 seconds (an enderman aside)
+    if (this.fire > 0 && e.setFire && !e.isPlayer) e.setFire(5);
     const ok = e.isPlayer ? this.m.hurtPlayer(dmg, src) : e.hurt(dmg, src);
     if (ok) {
-      if (this.knock > 0 && e.knockback) { const l = Math.hypot(this.vel.x, this.vel.z) || 1; e.knockback(this.knock * 0.6, -this.vel.x / l, -this.vel.z / l); }
+      if (src.player && !e.isPlayer) e.lastHurtByPlayer = this.m.age;
+      // Punch: a push along the flight, 0.6 a level, less by the target's knockback resistance
+      if (this.knock > 0) {
+        const l = Math.hypot(this.vel.x, this.vel.z) || 1, k = this.knock * 0.6 * Math.max(0, 1 - (e.kbResist || 0));
+        if (e.isPlayer) e.push(this.vel.x / l * k, 0.1, this.vel.z / l * k); else { e.vel.x += this.vel.x / l * k; e.vel.y += 0.1; e.vel.z += this.vel.z / l * k; }
+      }
       if (this.effect && e.isPlayer) this.m.effectPlayer(this.effect, 600);
-      if (this.fire > 0 && e.setFire) e.setFire(5);
-      this.remove();
+      if (e.isPlayer && this.item === 'spectral_arrow') this.m.effectPlayer('glowing', 200);
+      if (e.isPlayer && this.potion) tippedOnPlayer(this.m.survival, this.potion);
+      if (!(this.pierce > 0)) this.remove();
       return true;
     }
+    if (this.pierce > 0) return true;
     // bounced off (an entity still in its hurt window): back the way it came, slowly
     this.vel.multiplyScalar(-0.1);
     this.yaw += Math.PI;
@@ -126,6 +147,17 @@ export class Arrow extends Projectile {
   fromJSON(o) { super.fromJSON(o); this.stuck = !!o.st; this.pickup = o.pk || 0; this.pitch = this.prevPitch = o.pi || 0; this.life = o.l || 0; this.stuckAt = o.sa || null; }
 }
 register('arrow', Arrow);
+
+// a tipped arrow's potion on the player: an eighth of each effect's time (instant ones in full)
+function tippedOnPlayer(sv, potion) {
+  const p = POTIONS[potion];
+  if (!sv || !p) return;
+  for (const [e, lv, t] of p.effects) {
+    if (e === 'instant_health') sv.heal(4 << (lv - 1));
+    else if (e === 'instant_damage') sv.hurtEffect(6 << (lv - 1), 'magic');
+    else sv.addEffect(e, lv, Math.max(1, Math.floor(t / 8)));
+  }
+}
 
 /* ---- thrown things ---- */
 export class Snowball extends Projectile {
