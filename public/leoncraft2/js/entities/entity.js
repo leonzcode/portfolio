@@ -280,7 +280,9 @@ export class Living extends Entity {
       else if (this.onGround && this.jumpDelay === 0) { this.jumpFromGround(); this.jumpDelay = 10; }
       else if (this.inWater) v.y += 0.04;
     } else this.jumpDelay = 0;
-    this.xxa *= 0.98; this.zza *= 0.98;
+    // a rider's keys are a full step of input; the mob's own input is damped (the game's 0.98)
+    if (!this.ridden) { this.xxa *= 0.98; this.zza *= 0.98; }
+    this.ridden = false;
     this.travel();
     this.m.pushOthers(this);
   }
@@ -360,8 +362,19 @@ export class Living extends Entity {
     this.walkAmt += (f - this.walkAmt) * 0.4;
     this.walk += this.walkAmt;
   }
-  toJSON() { const o = super.toJSON(); o.h = r3(this.health); if (this.persistent) o.pp = 1; return o; }
-  fromJSON(o) { super.fromJSON(o); if (o.h !== undefined) this.health = o.h; this.bodyYaw = this.prevBodyYaw = this.headYaw = this.prevHeadYaw = this.yaw; this.persistent = !!o.pp; }
+  toJSON() {
+    const o = super.toJSON(); o.h = r3(this.health); if (this.persistent) o.pp = 1;
+    if (this.maxHealth !== (this.constructor.HEALTH || 20)) o.mh = this.maxHealth;
+    if (this.customName) o.cn = this.customName;
+    if (this.equip && Object.keys(this.equip).length) o.eq = this.equip;
+    return o;
+  }
+  fromJSON(o) {
+    super.fromJSON(o); if (o.mh) this.maxHealth = o.mh; if (o.h !== undefined) this.health = o.h;
+    this.bodyYaw = this.prevBodyYaw = this.headYaw = this.prevHeadYaw = this.yaw; this.persistent = !!o.pp;
+    if (o.cn) this.customName = o.cn;
+    if (o.eq && this.equip) Object.assign(this.equip, o.eq);
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -382,9 +395,23 @@ export class Mob extends Living {
     // body control
     this.headStableT = 0; this.lastStableHead = 0;
     this.extra = {};                  // per mob animation state
+    /* What it holds and wears, by slot (mainhand, offhand, head, chest,
+       legs, feet): item names. Killed by a player, each piece drops 8.5%
+       of the time, and each adds 1 to 3 to the experience. */
+    this.equip = {};
     this.registerGoals();
   }
   registerGoals() {}
+  holding(name) { return this.equip.mainhand === name || this.equip.offhand === name; }
+  equipXp() { let n = 0; for (const k in this.equip) if (this.equip[k]) n += 1 + Math.floor(Math.random() * 3); return n; }
+  dropEquipment(drop, byPlayer) {
+    for (const k in this.equip) {
+      const it = this.equip[k];
+      if (!it) continue;
+      const ch = this.dropChance && this.dropChance[k] !== undefined ? this.dropChance[k] : 0.085;
+      if (ch >= 1 || (byPlayer && Math.random() < ch)) drop(it, 1);
+    }
+  }
   zzaScale() { return this.moveSpeedNow || this.speed; }
   serverAi() {
     this.noActionTime++;
@@ -393,6 +420,7 @@ export class Mob extends Living {
     // ridden by the player: the rider steers (horses, a pig with a carrot on a stick)
     const rider = this.passengers[0];
     if (rider && rider.isPlayer && this.rideControl && this.rideControl(this.m.P.keys, this.m.P)) {
+      this.ridden = true;
       if (this.nav) this.nav.stop();
       this.headYaw = this.bodyYaw = this.yaw;
       return;
