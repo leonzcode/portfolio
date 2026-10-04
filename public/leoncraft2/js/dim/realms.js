@@ -107,9 +107,10 @@ export class Realms {
   playerInvulnerable() { return this.game.mode === 'creative'; }
   hurtPlayer(n, source) {
     const g = this.game;
-    if (g.mode === 'creative' || this.hurtCool > 0) return;
-    g.survival.hurt(n);
-    this.hurtCool = 10;
+    if (g.mode === 'creative') return;
+    // the dragon's wings and head are its own hits, its breath too (survival.js keeps the hurt window)
+    const d = this.fight && this.fight.dragon, by = d && !d.dead ? { type: 'ender_dragon', pos: d.pos, hurt() {} } : null;
+    g.survival.hurt(n, { type: source === 'dragon' ? 'mob' : source || 'generic', attacker: by, x: d ? d.pos.x : undefined, z: d ? d.pos.z : undefined });
   }
   pushPlayer(x, y, z) { const v = this.game.player.vel; v.x += x; v.y += y; v.z += z; }
   give(id, n) { if (this.o.give) this.o.give(id, n); }
@@ -128,7 +129,7 @@ export class Realms {
   // an explosion here: blocks, the player, the dragon's parts and other crystals
   explode(x, y, z, power, o) {
     const g = this.game, targets = [];
-    if (g.player && g.mode !== 'creative') targets.push({ box: this.playerBox(), hurt: n => { g.survival.hurt(n); }, push: (a, b, c) => this.pushPlayer(a, b, c) });
+    if (g.player && g.mode !== 'creative') targets.push({ box: this.playerBox(), hurt: n => { g.survival.hurt(n, { type: (o && o.source) === 'bad_respawn_point' ? 'bad_respawn_point' : 'explosion', x, z }); }, push: (a, b, c) => this.pushPlayer(a, b, c) });
     for (const e of this.entities) {
       if (e.dead) continue;
       if (e instanceof EndCrystal) targets.push({ box: e.box(), hurt: () => e.hurt(1, 'explosion') });
@@ -317,7 +318,14 @@ export class Realms {
       const m = w.meta(hit.x, hit.y, hit.z) & 7;
       if (id === B.glowstone && m < 4) { w.set(hit.x, hit.y, hit.z, B.respawn_anchor, m + 1); if (g.mode !== 'creative') g.inv.takeSelected(1); return true; }
       if (m > 0) {
-        if (DIMS[this.dim].anchorsWork) { this.spawnDim = 'the_nether'; this.anchor = { x: hit.x, y: hit.y, z: hit.z }; this.o.message && this.o.message('Respawn point set'); return true; }
+        if (DIMS[this.dim].anchorsWork) {
+          this.spawnDim = 'the_nether'; this.anchor = { x: hit.x, y: hit.y, z: hit.z };
+          // the player's respawn point (survival.js keeps it; life.js brings you back to it)
+          const was = g.survival.spawnPoint;
+          g.survival.spawnPoint = { dim: this.dim, x: hit.x, y: hit.y, z: hit.z, kind: 'anchor' };
+          if (!was || was.dim !== this.dim || was.x !== hit.x || was.y !== hit.y || was.z !== hit.z) { if (g.sim && g.sim.msg) g.sim.msg.show('Respawn point set'); }
+          return true;
+        }
         w.set(hit.x, hit.y, hit.z, 0, 0);
         this.explode(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5, 5, { fire: true, source: 'bad_respawn_point' });
         return true;

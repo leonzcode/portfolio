@@ -113,7 +113,7 @@ export class Entities {
       knockback: (s, dx, dz) => self.knockPlayer(s, dx, dz),
       push: (x, y, z) => { P.vel.x += x; P.vel.y += y; P.vel.z += z; },
       dist2: (x, y, z) => (P.pos.x - x) ** 2 + (P.pos.y - y) ** 2 + (P.pos.z - z) ** 2,
-      heal: n => { self.survival.health = Math.min(20, self.survival.health + n); },
+      heal: n => { self.survival.heal(n); },
     };
   }
   get difficulty() { return (this.options && this.options.get('difficulty')) || 'normal'; }
@@ -297,10 +297,9 @@ export class Entities {
     e.lightS = this.t.sky(x, y, z); e.lightB = this.t.block(x, y, z);
     if (now) { e.lS = e.lightS / 15; e.lB = e.lightB / 15; }
   }
-  // Peaceful: monsters vanish, and you heal a point a second
+  // Peaceful: monsters vanish (the healing is survival.js's)
   peaceful() {
     for (const e of this.list) if (e.constructor.HOSTILE && !e.removed) e.remove();
-    if (this.age % 20 === 0 && this.mode !== 'creative' && !this.survival.dead && this.survival.health < 20) this.survival.health = Math.min(20, this.survival.health + 1);
   }
   /* Despawning (the game's): beyond 128 blocks a monster goes at once; beyond
      32, after 30 seconds with nothing happening, a 1 in 800 chance a tick. */
@@ -510,13 +509,6 @@ export class Entities {
   /* ---- the player being hit ---- */
   hurtPlayer(amount, src) {
     if (!this.player.alive() || this.mode === 'creative' || !this.survival) return false;
-    const diff = this.difficulty;
-    // the game scales mob and explosion damage to the player by difficulty
-    if (src.type === 'mob' || src.type === 'explosion' || src.type === 'arrow' || src.type === 'thrown') {
-      if (diff === 'peaceful') amount = src.type === 'explosion' ? amount : 0;
-      else if (diff === 'easy') amount = Math.min(amount / 2 + 1, amount);
-      else if (diff === 'hard') amount = amount * 1.5;
-    }
     if (amount <= 0) return false;
     if (this.blocks(src)) {
       // blocked: no damage; a mob that hit the shield is knocked back, an axe puts it down for 5 seconds
@@ -527,23 +519,17 @@ export class Entities {
       this.lastBlocked = { amount, src: src.type };
       return false;
     }
-    // the 10 tick window
-    if (this.pInvul > 10) {
-      if (amount <= this.pLast) return false;
-      const extra = amount - this.pLast;
-      this.pLast = amount;
-      amount = extra;
-    } else {
-      this.pLast = amount; this.pInvul = 20;
-      if (!src.noKnock && src.x !== undefined) {
-        this.knockPlayer(0.4, src.x - this.P.pos.x, src.z - this.P.pos.z);
-        // a mob with knockback of its own (iron golems, ravagers) adds to it
-        if (src.knock) this.knockPlayer(src.knock * 0.5, Math.sin(src.yaw), Math.cos(src.yaw));
-      }
-    }
-    if (this.effects.resistance) amount *= 0.8;
+    /* survival.js does the rest as the game does: difficulty, the 10 tick
+       window, armour, Resistance, Protection, absorption, the totem */
     const before = this.survival.health;
     this.survival.hurt(amount, src);
+    const res = this.survival.hitResult;
+    if (res !== 'fresh' && res !== 'extra') return false;
+    if (res === 'fresh' && !src.noKnock && src.x !== undefined) {
+      this.knockPlayer(0.4, src.x - this.P.pos.x, src.z - this.P.pos.z);
+      // a mob with knockback of its own (iron golems, ravagers) adds to it
+      if (src.knock) this.knockPlayer(src.knock * 0.5, Math.sin(src.yaw), Math.cos(src.yaw));
+    }
     this.lastPlayerHurt = { amount, before, after: this.survival.health, src: src.type };
     if (this.riding && this.survival.dead) this.dismount();
     return true;
@@ -581,14 +567,15 @@ export class Entities {
     this.P.onGround = false;
   }
   // a few effects mobs put on you (poison, hunger from husks, slowness from strays)
-  effectPlayer(name, ticks) { this.effects[name] = Math.max(this.effects[name] || 0, ticks); if (this.hooks.effect) this.hooks.effect(name, ticks); }
+  // they go on the player's own effects (survival.js), which do the harm and show in the HUD
+  effectPlayer(name, ticks, level = 1) {
+    if (this.mode === 'creative') return;
+    this.effects[name] = Math.max(this.effects[name] || 0, ticks);
+    if (this.survival && this.survival.addEffect) this.survival.addEffect(name, level, ticks);
+    if (this.hooks.effect) this.hooks.effect(name, ticks);
+  }
   effectsTick() {
-    for (const k in this.effects) {
-      const t = --this.effects[k];
-      if (k === 'poison' && t % 25 === 0 && this.survival && this.survival.health > 1 && this.mode !== 'creative') this.survival.hurt(1, { type: 'magic' });
-      if (k === 'slowness' && this.P) { this.P.vel.x *= 0.85; this.P.vel.z *= 0.85; }
-      if (t <= 0) delete this.effects[k];
-    }
+    for (const k in this.effects) if (--this.effects[k] <= 0) delete this.effects[k];
   }
 
   /* ---- death, drops, experience ---- */

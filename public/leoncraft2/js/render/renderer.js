@@ -469,7 +469,8 @@ export class Renderer {
     if (state.waterTint) U.uWaterTint.value.copy(state.waterTint);
     const cam = this.camera;
     cam.position.copy(state.eye);
-    cam.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
+    // roll and tiltPitch: the tip of the view when hurt (survival.js viewTilt)
+    cam.rotation.set(state.pitch + (state.tiltPitch || 0), state.yaw, state.roll || 0, 'YXZ');
     // the player's model posed for this frame (and, in third person, the camera pulled back)
     this.avatar.update(state, dt, cam);
     // the held block takes the light where you stand, as the model does
