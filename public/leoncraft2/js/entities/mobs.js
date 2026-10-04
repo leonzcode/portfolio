@@ -171,6 +171,7 @@ register('zombie_villager', ZombieVillager);
 export class Skeleton extends Monster {
   static W = 0.6; static H = 1.99; static HEALTH = 20; static SPEED = 0.25; static ATTACK = 2; static FOLLOW = 16;
   static UNDEAD = true; static MODEL = 'skeleton'; static TEX = 'skeleton'; static SHADOW = 0.5;
+  constructor(m, type) { super(m, type); this.equip.mainhand = 'bow'; this.snowT = 0; this.convertT = -1; }
   registerGoals() {
     this.goals.add(3, new AvoidGoal(this, e => e.type === 'wolf' && !e.dead, 6, 1, 1.2));
     this.goals.add(4, new BowAttackGoal(this, 1, 15));
@@ -202,8 +203,20 @@ export class Skeleton extends Monster {
     this.swing();
   }
   loot(drop) { drop('bone', RI(3)); drop('arrow', RI(3)); }
-  anim(A) { A.aiming = this.aiming; }
-  layers(out) { out.push(['held_bow', 'held_items', null]); }
+  /* Seven seconds in powder snow and a skeleton starts to shake; fifteen
+     more and it is a stray. */
+  aiStep() {
+    super.aiStep();
+    if (this.dead || this.removed || this.constructor !== Skeleton) return;
+    const T = this.m.t, x = Math.floor(this.pos.x), z = Math.floor(this.pos.z);
+    const ps = B.powder_snow;
+    const inSnow = ps !== undefined && (T.get(x, Math.floor(this.pos.y), z) === ps || T.get(x, Math.floor(this.pos.y + 1), z) === ps);
+    if (this.convertT >= 0) { if (--this.convertT < 0) this.m.convertMob(this, 'stray'); return; }
+    if (inSnow) { if (++this.snowT >= 140) this.convertT = 300; } else this.snowT = 0;
+  }
+  anim(A) { A.aiming = this.aiming; A.shake = this.convertT >= 0; }
+  rootPose(root, t, a) { if (this.convertT >= 0) root.multiply(t.makeRotationY(Math.cos((this.age + a) * 3.25) * Math.PI * 0.01)); }
+  layers(out) { if (this.equip.mainhand === 'bow') out.push(['held_bow', 'held_items', null]); }
 }
 register('skeleton', Skeleton);
 export class Stray extends Skeleton {
@@ -301,13 +314,13 @@ register('cave_spider', CaveSpider);
    hit, and never despawn.
 --------------------------------------------------------------------------- */
 export class Animal extends Mob {
-  static CATEGORY = 'creature'; static SHADOW = 0.5;
+  // animals never despawn, but (not being "persistent") they count towards the creature cap, as in the game
+  static CATEGORY = 'creature'; static SHADOW = 0.5; static NO_DESPAWN = true;
   static FOOD = ['wheat'];
   constructor(m, type) {
     super(m, type);
     this.ageT = 0;          // below 0: a baby, counting up to grown; above 0: time before it can breed again
     this.inLove = 0;
-    this.persistent = true;
   }
   registerGoals() {
     const c = this.constructor;

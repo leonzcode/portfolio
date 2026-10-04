@@ -37,7 +37,8 @@ import { placeBoat } from './boat.js?v=9';
 import { splitXp } from './xporb.js?v=9';
 import { placeMinecart, isRail } from './minecart.js?v=9';
 import { FALLS, free } from './fallingblock.js?v=9';
-import { Spawner } from './spawner.js?v=9';
+import { Spawner, DESPAWN } from './spawner.js?v=9';
+import { DIMS } from '../dims.js?v=9';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=9';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=9';
 import { EntityMeshes } from '../render/entitymesh.js?v=9';
@@ -118,13 +119,21 @@ export class Entities {
   }
   get difficulty() { return (this.options && this.options.get('difficulty')) || 'normal'; }
   get time() { return this.hooks.time ? this.hooks.time() : 6000; }
+  // the world simulating itself (weather, the sky's darkening): sim/sim.js, when it is there
+  get sim() { return (this.inter && this.inter.sim) || null; }
+  get dim() { return this.world.dim || 'overworld'; }
+  get D() { return DIMS[this.dim] || DIMS.overworld; }
+  raining() { const s = this.sim; return this.dim === 'overworld' && !!(s && s.weather && s.weather.raining); }
+  thundering() { const s = this.sim; return this.dim === 'overworld' && !!(s && s.weather && s.weather.thundering); }
 
   /* ---- light and the time of day, the game's way ---- */
-  // how much the sky light is taken down at this time of day (0 at noon, 11 at midnight)
+  // how much the sky light is taken down at this time of day (0 at noon, 11 at midnight; rain and storms darken it more)
   skyDarken() {
     if (this.sdAge === this.age && this.age > 0) return this.sd;
     this.sdAge = this.age;
-    return (this.sd = this.skyDarkenAt(this.time));
+    const s = this.sim;
+    if (s && typeof s.skyDarken === 'function' && this.D.fixedTime === null) { try { return (this.sd = s.skyDarken()); } catch (e) { /* the clock below */ } }
+    return (this.sd = this.skyDarkenAt(this.D.fixedTime !== null ? this.D.fixedTime : this.time));
   }
   skyDarkenAt(time) {
     const t = time % 24000;
@@ -135,9 +144,13 @@ export class Entities {
     d = Math.max(0, Math.min(1, d));
     return Math.floor(d * 11);
   }
-  isDay() { return this.skyDarken() < 4; }
-  rawBrightness(x, y, z) { return Math.max(this.t.sky(x, y, z) - this.skyDarken(), this.t.block(x, y, z)); }
-  brightness(x, y, z) { const f = this.rawBrightness(x, y, z) / 15; return f / (4 - 3 * f); }
+  // never day where the clock stands still (the Nether, the End)
+  isDay() { return this.D.fixedTime === null && this.skyDarken() < 4; }
+  // sky light as the rules see it: the Nether and the End have none in the game
+  skyLight(x, y, z) { return this.D.hasSky && this.dim !== 'the_end' ? this.t.sky(x, y, z) : 0; }
+  rawBrightness(x, y, z) { return Math.max(this.skyLight(x, y, z) - this.skyDarken(), this.t.block(x, y, z)); }
+  // the game's light-dependent brightness: the curve f / (4 - 3f), lifted by the dimension's ambient light (the Nether's 0.1)
+  brightness(x, y, z) { const f = this.rawBrightness(x, y, z) / 15, g = f / (4 - 3 * f), a = this.D.ambient || 0; return a + (1 - a) * g; }
   seesSky(x, y, z) { return y >= this.t.motionTop(x, z) - 0; }
 
   /* ---- finding neighbours ---- */
@@ -294,7 +307,7 @@ export class Entities {
   // the light where a mob's eyes are, eased when drawn
   sampleLight(e, now) {
     const x = Math.floor(e.pos.x), y = Math.floor(e.pos.y + Math.min(e.h, 1.6) * 0.85), z = Math.floor(e.pos.z);
-    e.lightS = this.t.sky(x, y, z); e.lightB = this.t.block(x, y, z);
+    e.lightS = this.t.sky(x, y, z); e.lightB = e.constructor.BRIGHT ? 15 : this.t.block(x, y, z);
     if (now) { e.lS = e.lightS / 15; e.lB = e.lightB / 15; }
   }
   // Peaceful: monsters vanish, and you heal a point a second
@@ -302,13 +315,15 @@ export class Entities {
     for (const e of this.list) if (e.constructor.HOSTILE && !e.removed) e.remove();
     if (this.age % 20 === 0 && this.mode !== 'creative' && !this.survival.dead && this.survival.health < 20) this.survival.health = Math.min(20, this.survival.health + 1);
   }
-  /* Despawning (the game's): beyond 128 blocks a monster goes at once; beyond
-     32, after 30 seconds with nothing happening, a 1 in 800 chance a tick. */
+  /* Despawning (the game's): beyond 128 blocks (64 for fish) a mob goes at
+     once; beyond 32, after 30 seconds with nothing happening, a 1 in 800
+     chance a tick. Animals, villagers, pets and anything named, on a lead
+     or from a structure never go. */
   despawnCheck(e) {
-    if (e.persistent || e.passengers.length || e.vehicle) { e.noActionTime = 0; return; }
+    if (e.persistent || e.constructor.NO_DESPAWN || e.passengers.length || e.vehicle || e.leashedTo || e.customName) { e.noActionTime = 0; return; }
     const c = e.constructor, P = this.P;
     const d2 = e.dist2(P.pos.x, P.pos.y, P.pos.z);
-    const far = c.DESPAWN || 128, near = 32;
+    const far = c.DESPAWN || DESPAWN[c.CATEGORY] || 128, near = 32;
     if (d2 > far * far) { e.remove(); return; }
     if (e.noActionTime > 600 && R() * 800 < 1 && d2 > near * near) { e.remove(); return; }
     if (d2 < near * near) e.noActionTime = 0;
@@ -338,7 +353,9 @@ export class Entities {
     for (const [k, c] of W.chunks) {
       if (this.populated.has(k)) continue;
       this.populated.add(k);
-      if (this.difficulty !== 'peaceful' || true) this.spawner.populate(c.cx, c.cz);
+      // the animals that come with the world (the Overworld's), and a structure's own mobs
+      this.spawner.populate(c.cx, c.cz);
+      this.spawner.structureMobs(c);
     }
   }
 
@@ -512,7 +529,7 @@ export class Entities {
     if (!this.player.alive() || this.mode === 'creative' || !this.survival) return false;
     const diff = this.difficulty;
     // the game scales mob and explosion damage to the player by difficulty
-    if (src.type === 'mob' || src.type === 'explosion' || src.type === 'arrow' || src.type === 'thrown') {
+    if (src.type === 'mob' || src.type === 'explosion' || src.type === 'arrow' || src.type === 'thrown' || src.type === 'fireball') {
       if (diff === 'peaceful') amount = src.type === 'explosion' ? amount : 0;
       else if (diff === 'easy') amount = Math.min(amount / 2 + 1, amount);
       else if (diff === 'hard') amount = amount * 1.5;
@@ -580,8 +597,16 @@ export class Entities {
     if (this.P.onGround) v.y = Math.min(0.4, v.y / 2 + strength);
     this.P.onGround = false;
   }
-  // a few effects mobs put on you (poison, hunger from husks, slowness from strays)
-  effectPlayer(name, ticks) { this.effects[name] = Math.max(this.effects[name] || 0, ticks); if (this.hooks.effect) this.hooks.effect(name, ticks); }
+  /* Effects mobs put on you (poison, wither, hunger from husks, slowness
+     from strays, mining fatigue from elder guardians): they go to the
+     player's own effects (survival.js), which do the harm and show them. */
+  effectPlayer(name, ticks, level = 1) {
+    if (this.mode === 'creative') return;
+    const S = this.survival;
+    if (S && typeof S.addEffect === 'function') { S.addEffect(name, level, ticks); return; }
+    this.effects[name] = Math.max(this.effects[name] || 0, ticks);
+    if (this.hooks.effect) this.hooks.effect(name, ticks);
+  }
   effectsTick() {
     for (const k in this.effects) {
       const t = --this.effects[k];
@@ -595,7 +620,11 @@ export class Entities {
   onDeath(e, src) {
     const byPlayer = !!(src && src.player) || (e.lastHurtByPlayer !== undefined && this.age - e.lastHurtByPlayer < 100);
     e.byPlayer = byPlayer;
-    if (e.loot && !e.isBaby && !(e.baby && e.type === 'zombie' && false)) e.loot((name, n) => { if (n > 0) this.dropAt(e, name, n, byPlayer); }, byPlayer);
+    const drop = (name, n) => { if (n > 0) this.dropAt(e, name, n, byPlayer); };
+    if (e.loot && !e.isBaby && !(e.baby && e.type === 'zombie' && false)) e.loot(drop, byPlayer);
+    // what it held or wore, and the experience that adds
+    if (e.dropEquipment) e.dropEquipment(drop, byPlayer);
+    e.xpExtra = e.equipXp ? e.equipXp() : 0;
     if (this.riding === e) this.dismount();
   }
   dropAt(e, name, n, byPlayer) { this.dropItemAt(e.pos.x, e.pos.y + Math.min(e.h, 1) * 0.5, e.pos.z, name, n, false, byPlayer !== false); }
@@ -609,7 +638,8 @@ export class Entities {
   }
   dropXp(e) {
     if (!e.byPlayer) return;
-    this.xpAt(e.pos.x, e.pos.y + 0.3, e.pos.z, e.xp !== undefined ? e.xp : e.constructor.XP || 0);
+    const base = e.xp !== undefined ? e.xp : e.constructor.XP || 0;
+    this.xpAt(e.pos.x, e.pos.y + 0.3, e.pos.z, base + (base > 0 ? e.xpExtra || 0 : 0));
   }
   // experience as orbs, split into the game's sizes
   xpAt(x, y, z, n) {
@@ -649,6 +679,32 @@ export class Entities {
     this.xpAt(baby.pos.x, baby.pos.y + 0.3, baby.pos.z, 1 + Math.floor(R() * 7));
   }
   explode(x, y, z, power, src, o) { return explode(this, x, y, z, power, src, o); }
+  /* Lightning (sim/weather.js calls this; the player's share it does
+     itself): everything within 3 blocks takes 5 and burns for 8 seconds,
+     and some change: a creeper is charged, a pig becomes a zombified
+     piglin and a villager a witch (not on Peaceful), a mooshroom turns
+     brown or red. */
+  lightning(x, y, z) {
+    for (const e of this.near(x, y, z, 8)) {
+      if (e.removed || e.dead || Math.abs(e.pos.x - x) > 3 + e.hw || Math.abs(e.pos.z - z) > 3 + e.hw || e.pos.y > y + 9 || e.pos.y + e.h < y - 3) continue;
+      if (e.thunderHit && e.thunderHit(this) === false) continue;
+      if (!(e instanceof Living)) continue;
+      e.fire = e.fire > 0 ? e.fire + 1 : 0;
+      if (!e.fire && e.setFire) e.setFire(8);
+      e.hurt(5, { type: 'lightning' });
+    }
+  }
+  // a mob that becomes another (a pig struck by lightning, a piglin in the Overworld): the new one where it stood, keeping its name
+  convertMob(e, type, keep) {
+    const n = this.spawn(type, e.pos.x, e.pos.y, e.pos.z, { natural: true, yaw: e.yaw, converted: true });
+    if (!n) return null;
+    if (e.baby || e.ageT < 0) { if (n.setBaby) n.setBaby(true); else if (n.ageT !== undefined) n.ageT = -24000; }
+    if (e.customName) n.customName = e.customName;
+    n.persistent = e.persistent || !!e.customName;
+    if (keep) keep(n);
+    e.remove();
+    return n;
+  }
   // a block broken by a mob (a zombie through a door, an enderman's pick)
   breakBlock(x, y, z, drop) {
     const W = this.world;
@@ -710,8 +766,8 @@ export class Entities {
       const type = name.slice(0, -10);
       if (!TYPES[type] || !target) return false;
       const f = target.face || [0, 1, 0];
-      const e = this.spawn(type, target.x + 0.5 + f[0] * 0.5, target.y + (f[1] > 0 ? 1 : f[1] < 0 ? -TYPES[type].H || -1 : 0), target.z + 0.5 + f[2] * 0.5, { natural: true });
-      if (e) e.persistent = true;
+      // (a mob from an egg is not kept for good: like any other it goes when you are far off, unless named)
+      this.spawn(type, target.x + 0.5 + f[0] * 0.5, target.y + (f[1] > 0 ? 1 : f[1] < 0 ? -TYPES[type].H || -1 : 0), target.z + 0.5 + f[2] * 0.5, { natural: true, egg: true });
       take();
       return true;
     }
