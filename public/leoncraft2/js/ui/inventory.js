@@ -33,10 +33,10 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=8';
-import { Screen, TextField, WHITE } from './gui.js?v=8';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf } from '../items.js?v=8';
-import { matchGrid, consumeGrid } from '../crafting.js?v=8';
+import { BLOCKS, B } from '../blocks.js?v=9';
+import { Screen, TextField, WHITE } from './gui.js?v=9';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf } from '../items.js?v=9';
+import { matchGrid, consumeGrid } from '../crafting.js?v=9';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles

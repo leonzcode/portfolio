@@ -16,8 +16,8 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=8';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=8';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=9';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=9';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {

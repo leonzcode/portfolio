@@ -22,25 +22,25 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=8';
-import { PathFinder, Navigation } from './path.js?v=8';
-import { Particles } from './particles.js?v=8';
-import { Living, Mob, wrap, DEG } from './entity.js?v=8';
-import { TYPES } from './mobs.js?v=8';
-import './projectiles.js?v=8';
-import './boat.js?v=8';
-import './mobs2.js?v=8';
-import './mobs3.js?v=8';
-import './mobs4.js?v=8';
-import { explode } from './explosion.js?v=8';
-import { placeBoat } from './boat.js?v=8';
-import { Spawner } from './spawner.js?v=8';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=8';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=8';
-import { EntityMeshes } from '../render/entitymesh.js?v=8';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=8';
-import { breakAt } from '../place.js?v=8';
-import { dropOf } from '../survival.js?v=8';
+import { Terrain } from './terrain.js?v=9';
+import { PathFinder, Navigation } from './path.js?v=9';
+import { Particles } from './particles.js?v=9';
+import { Living, Mob, wrap, DEG } from './entity.js?v=9';
+import { TYPES } from './mobs.js?v=9';
+import './projectiles.js?v=9';
+import './boat.js?v=9';
+import './mobs2.js?v=9';
+import './mobs3.js?v=9';
+import './mobs4.js?v=9';
+import { explode } from './explosion.js?v=9';
+import { placeBoat } from './boat.js?v=9';
+import { Spawner } from './spawner.js?v=9';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=9';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=9';
+import { EntityMeshes } from '../render/entitymesh.js?v=9';
+import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=9';
+import { breakAt } from '../place.js?v=9';
+import { dropOf } from '../survival.js?v=9';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -823,4 +823,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=8';
+import { rayBox } from './terrain.js?v=9';

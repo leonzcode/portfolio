@@ -26,9 +26,9 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=8';
-import { Packs } from './pack.js?v=8';
-import { parseSeed } from '../gen/random.js?v=8';
+} from './gui.js?v=9';
+import { Packs } from './pack.js?v=9';
+import { parseSeed } from '../gen/random.js?v=9';
 
 const PI = Math.PI;
 
@@ -445,8 +445,10 @@ export class CreateWorldScreen extends Screen {
     } else if (this.tab === 1) {
       const x = Math.floor(W / 2 - 154);
       let y = place(20 + 8 + 13 + 20 + 8 + 20 + 8 + 20);
-      const type = this.add(new CycleButton(x, y, 150, 20, 'World Type', { values: ['default'], value: 'default', format: () => 'Default' }));
-      type.tooltip = 'The only world type for now';
+      // Default: the first generator (trees, plants and all); Vanilla Seed: the game's own terrain from a real seed (no trees or plants yet)
+      const type = this.add(new CycleButton(x, y, 150, 20, 'World Type', { values: ['default', 'vanilla'], value: this.worldType || 'default',
+        format: v => v === 'vanilla' ? 'Vanilla Seed' : 'Default', onChange: v => { this.worldType = v; } }));
+      type.tooltip = 'Vanilla Seed builds the same terrain as Minecraft from a real seed (caves and ores, no trees or plants yet)';
       const cust = this.add(new Button(x + 158, y, 150, 20, 'Customize', null));
       cust.active = false;
       y += 28;
@@ -482,7 +484,9 @@ export class CreateWorldScreen extends Screen {
       id: 'w' + now.toString(36) + (Math.random() * 1e6 | 0).toString(36),
       // Minecraft's seeds: a number that fits a long is that long, other text its hash,
       // blank a random 64-bit seed; made by the vanilla generator from now on
-      name, folder: Worlds.folderName(name), seed: parseSeed(this.seedField.value), generator: 'vanilla',
+      name, folder: Worlds.folderName(name),
+      seed: this.worldType === 'vanilla' ? parseSeed(this.seedField.value) : seedFrom(this.seedField.value),
+      generator: this.worldType === 'vanilla' ? 'vanilla' : 'classic',
       mode: this.mode, difficulty: this.difficulty, cheats: this.cheats, created: now, lastPlayed: now,
     };
     Worlds.add(world);

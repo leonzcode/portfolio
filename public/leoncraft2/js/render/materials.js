@@ -13,7 +13,7 @@
              distorted shadow map (leaves alpha tested, so light shafts come
              through their gaps).
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS } from './glsl.js?v=8';
+import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS } from './glsl.js?v=9';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
