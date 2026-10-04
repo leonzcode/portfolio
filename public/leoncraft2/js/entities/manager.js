@@ -240,6 +240,7 @@ export class Entities {
     const held = this.inv ? this.inv.heldId() : 0;
     if (held !== this.lastHeld) { this.lastHeld = held; this.ticksSinceSwing = 0; }
     if (this.pInvul > 0) this.pInvul--;
+    this.shieldTick();
     this.effectsTick();
     if (this.difficulty === 'peaceful') this.peaceful();
     this.spawner.tick();
@@ -495,6 +496,15 @@ export class Entities {
       else if (diff === 'hard') amount = amount * 1.5;
     }
     if (amount <= 0) return false;
+    if (this.blocks(src)) {
+      // blocked: no damage; a mob that hit the shield is knocked back, an axe puts it down for 5 seconds
+      const a = src.attacker;
+      if (src.type === 'mob' && a && a.knockback) a.knockback(0.5, this.P.pos.x - a.pos.x, this.P.pos.z - a.pos.z);
+      if (src.axe) this.shieldCool = 100;
+      if (this.hooks.damageHeld && amount >= 3) this.hooks.damageHeld(1 + Math.floor(amount), 'shield');
+      this.lastBlocked = { amount, src: src.type };
+      return false;
+    }
     // the 10 tick window
     if (this.pInvul > 10) {
       if (amount <= this.pLast) return false;
@@ -515,6 +525,29 @@ export class Entities {
     this.lastPlayerHurt = { amount, before, after: this.survival.health, src: src.type };
     if (this.riding && this.survival.dead) this.dismount();
     return true;
+  }
+  /* ---- the shield ----
+     Held in either hand with the use button down, it is up after 5 ticks
+     (the game's delay) and stops all damage from in front: anything whose
+     source is on the side the player faces. A melee attacker is pushed
+     back. Walking is slowed to a fifth while it is raised. */
+  shieldTick() {
+    const using = !!(this.inter && this.inter.useHeld) && (this.heldName() === 'shield' || this.offhandName() === 'shield') && !this.riding;
+    this.shieldT = using ? (this.shieldT || 0) + 1 : 0;
+    if (this.shieldCool > 0) { this.shieldCool--; this.shieldT = 0; }
+    const up = this.shieldT >= 5;
+    if (up !== this.shieldUp) { this.shieldUp = up; if (this.P) this.P.usingItem = up ? 'shield' : (this.P.usingItem === 'shield' ? false : this.P.usingItem); }
+  }
+  blocks(src) {
+    if (!this.shieldUp || !src) return false;
+    if (src.type === 'fall' || src.type === 'drown' || src.type === 'magic' || src.type === 'fire' || src.type === 'void' || src.type === 'cactus' || src.type === 'lava') return false;
+    const from = src.direct || src.attacker;
+    const sx = from && from.pos ? from.pos.x : src.x, sz = from && from.pos ? from.pos.z : src.z;
+    if (sx === undefined) return false;
+    const P = this.P, lx = -Math.sin(P.yaw), lz = -Math.cos(P.yaw);
+    const dx = P.pos.x - sx, dz = P.pos.z - sz;
+    // the source's direction to the player against the look: blocked if it comes from in front
+    return dx * lx + dz * lz < 0;
   }
   knockPlayer(strength, dx, dz) {
     const l = Math.hypot(dx, dz);
