@@ -28,6 +28,9 @@ import { BIO, BIOMES } from '../biomes.js?v=8';
 import { H, Y0, VOL } from '../world-const.js?v=8';
 import { Decorator } from './features.js?v=8';
 import { Carvers } from './carvers.js?v=8';
+import { stateOf } from './states.js?v=8';
+import './trees.js?v=8';
+import './misc.js?v=8';
 
 const MIN_Y = -64, SEA_LEVEL = 63;
 const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
@@ -36,33 +39,7 @@ const map = (v, a, b, c, d) => lerp((v - a) / (b - a), c, d);
 const clampedMap = (v, a, b, c, d) => { const t = (v - a) / (b - a); return t < 0 ? c : t > 1 ? d : lerp(t, c, d); };
 const WAIT = -2032 * 2;   // an aquifer with no fluid at all
 
-/* ------------------------------------------------ vanilla block states --
-   A vanilla state ("minecraft:snow[layers=2]" or { Name, Properties })
-   to this game's block id and meta byte. */
-const STATE = new Map();
-export function stateOf(s) {
-  let name, props = null;
-  if (typeof s === 'string') {
-    const i = s.indexOf('[');
-    name = strip(i < 0 ? s : s.slice(0, i));
-    if (i >= 0) { props = {}; for (const kv of s.slice(i + 1, -1).split(',')) { const [k, v] = kv.split('='); props[k] = v; } }
-  } else { name = strip(s.Name); props = s.Properties || null; }
-  const key = name + (props ? JSON.stringify(props) : '');
-  let st = STATE.get(key);
-  if (st) return st;
-  let id = B[name];
-  if (id === undefined) { id = B.stone; }
-  let meta = 0;
-  if (props) {
-    if (props.axis) meta = props.axis === 'x' ? 1 : props.axis === 'z' ? 2 : 0;
-    if (props.layers) meta = (+props.layers - 1) & 7;
-    if (props.level && (name === 'water' || name === 'lava')) { const l = +props.level; meta = l >= 8 ? 8 | (l - 8) : l; }
-    if (props.half === 'upper') meta |= 8;
-  }
-  st = { id, meta, name, props };
-  STATE.set(key, st);
-  return st;
-}
+export { stateOf };
 
 /* ============================================================ aquifers == */
 const SURFACE_SAMPLING = [[-2, -1], [-1, -1], [0, -1], [1, -1], [-3, 0], [-2, 0], [-1, 0], [0, 0], [1, 0], [-2, 1], [-1, 1], [0, 1], [1, 1]];
@@ -304,9 +281,15 @@ export class VanillaGen {
     for (const v of this.veins) v.fn = C.block([v.density, v.richness, v.gap], this.lattice);
     this.lats = latNodes.map(() => new Float64Array(5 * 5 * 49));
     this.ctx.L = this.lats;
+    this.data = D;
+    this.B = B;
     this.decorator = new Decorator(this);
     this.carvers = new Carvers(this, D);
-    this.B = B;
+    // chunks with terrain and carvers done (neighbours of what is being made
+    // are needed for decoration), and each chunk's own feature writes
+    this.protoCache = new Map();
+    this.writeCache = new Map();
+    this.protoMax = 100; this.writeMax = 64;
     // a carver cuts through anything but bedrock (26.3's "uncarvable" tag)
     this.carveMode = 0;
   }
@@ -377,8 +360,61 @@ export class VanillaGen {
     return -1;
   }
 
-  /* ---- a whole chunk ---- */
+  /* ---- a whole chunk: its terrain, then the features of it and the eight
+     chunks around (each kept, as the neighbours will want them too) ---- */
   generate(cx, cz) {
+    const p = this.proto(cx, cz);
+    const blocks = p.blocks.slice(), meta = p.meta.slice();
+    if (this.decorator.features) {
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const w = this.writes(cx + dx, cz + dz);
+        const mine = w.get((cz - (cz + dz) + 1) * 3 + (cx - (cx + dx) + 1));
+        if (!mine) continue;
+        for (let k = 0; k < mine.length; k += 2) { const i = mine[k], v = mine[k + 1]; blocks[i] = v >> 8; meta[i] = v & 255; }
+      }
+    }
+    const x0 = cx * 16, z0 = cz * 16, grid = p.grid;
+    // each column's biome, where it shows: at its top block
+    const biome = new Uint8Array(256);
+    for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
+      let iy = H - 1;
+      while (iy > 0 && !blocks[(iy << 8) | (z << 4) | x]) iy--;
+      biome[(z << 4) | x] = this.biomeAt(grid, x0 + x, iy + MIN_Y + 1, z0 + z);
+    }
+    let top = 0;
+    for (let i = VOL - 1; i >= 0; i--) if (blocks[i]) { top = i >> 8; break; }
+    return { blocks, meta, biome, top };
+  }
+  // a chunk's feature writes, by the chunk they land in (0..8 around it)
+  writes(cx, cz) {
+    const key = cx + ',' + cz;
+    let w = this.writeCache.get(key);
+    if (w) { this.writeCache.delete(key); this.writeCache.set(key, w); return w; }
+    const R = this.decorator.decorateSource(cx, cz);
+    w = new Map();
+    R.chunks.forEach((c, k) => {
+      if (!c.writes) return;
+      const a = new Int32Array(c.writes.size * 2);
+      let o = 0;
+      for (const [i, v] of c.writes) { a[o++] = i; a[o++] = v; }
+      w.set(k, a);
+    });
+    this.writeCache.set(key, w);
+    if (this.writeCache.size > this.writeMax) this.writeCache.delete(this.writeCache.keys().next().value);
+    return w;
+  }
+  proto(cx, cz) {
+    const key = cx + ',' + cz;
+    let p = this.protoCache.get(key);
+    if (p) { this.protoCache.delete(key); this.protoCache.set(key, p); return p; }
+    p = this.terrain(cx, cz);
+    this.protoCache.set(key, p);
+    if (this.protoCache.size > this.protoMax) this.protoCache.delete(this.protoCache.keys().next().value);
+    return p;
+  }
+
+  /* ---- a chunk's terrain: noise, aquifers, materials and carvers ---- */
+  terrain(cx, cz) {
     const blocks = new Uint16Array(VOL), meta = new Uint8Array(VOL);
     const x0 = cx * 16, z0 = cz * 16;
     // the coarse lattices
@@ -414,19 +450,9 @@ export class VanillaGen {
     // materials (bedrock, ore veins, the surface, deepslate)
     const grid = this.biomeGrid(cx, cz);
     this.materials(blocks, meta, x0, z0, surfH, grid);
-    // carvers and features
+    // carvers
     if (this.decorator.carve) this.carvers.carve(blocks, meta, cx, cz, aq, grid);
-    if (this.decorator.features) this.decorator.decorate(blocks, meta, cx, cz, grid);
-    // each column's biome, where it shows: at its top block
-    const biome = new Uint8Array(256);
-    for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
-      let iy = H - 1;
-      while (iy > 0 && !blocks[(iy << 8) | (z << 4) | x]) iy--;
-      biome[(z << 4) | x] = this.biomeAt(grid, x0 + x, iy + MIN_Y + 1, z0 + z);
-    }
-    let top = 0;
-    for (let i = VOL - 1; i >= 0; i--) if (blocks[i]) { top = i >> 8; break; }
-    return { blocks, meta, biome, top };
+    return { blocks, meta, grid, cx, cz };
   }
 
   /* ---- the material rules ---- */
