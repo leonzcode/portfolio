@@ -57,6 +57,8 @@ export class Interactor {
     return hit;
   }
   down(button) {
+    // while something is in use (eating, a drawn bow, a raised shield) the attack button does nothing, as in the game
+    if (button === 0 && this.player.usingItem) return;
     // an entity under the crosshair: hit it, or use it (js/entities)
     const e = this.entityTarget;
     if (e && this.entities) {
@@ -115,6 +117,8 @@ export class Interactor {
     if (!h) return;
     const w = this.world;
     const cells = breakAt(w, h.x, h.y, h.z);
+    // a block broken starts the attack cooldown again
+    if (this.entities) this.entities.swung();
     // the hand's rules decide the drops (and what is left behind: ice leaves water)
     const replace = this.hand.broke ? this.hand.broke(h, cells) : 0;
     for (const [x, y, z] of cells) {
