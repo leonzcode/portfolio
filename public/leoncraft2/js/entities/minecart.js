@@ -82,11 +82,8 @@ export class Minecart extends Entity {
     for (let k = 0; k < 4; k++) if (up[k] && (ew ? (k & 1) : !(k & 1))) return [[DIRS[k][0], DIRS[k][1], 1], [DIRS[(k + 2) & 3][0], DIRS[(k + 2) & 3][1], 0], b];
     return ew ? [[1, 0, 0], [-1, 0, 0], b] : [[0, -1, 0], [0, 1, 0], b];
   }
-  powered(x, y, z) {
-    const T = this.m.t;
-    for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (SOURCE[T.get(x + dx, y + dy, z + dz)]) return true;
-    return false;
-  }
+  // a powered rail's power is its own (meta bit 3, set by the redstone in sim/rsparts.js)
+  powered(x, y, z) { return (this.m.t.meta(x, y, z) & 8) !== 0; }
 
   tick() {
     this.prev.copy(this.pos); this.prevYaw = this.yaw; this.prevPitch = this.pitch;
