@@ -619,6 +619,7 @@ export const AVATAR_FS = /* glsl */`
 uniform sampler2D uSkin;
 uniform vec3 cameraPosition;
 uniform vec2 uLightLv;
+uniform float uHurt;
 in vec3 vWorld; in vec3 vN; in vec2 vUv; flat in int vLayer;
 layout(location = 0) out vec4 outColor;
 void main() {
@@ -626,6 +627,6 @@ void main() {
   if (vLayer == 0 ? !gl_FrontFacing : t.a < 0.1) discard;
   vec3 N = normalize(vN);
   if (!gl_FrontFacing) N = -N;
-  vec3 c = t.rgb * entityShade(N) * lightmapAt(uLightLv.x, uLightLv.y);
+  vec3 c = mix(t.rgb, vec3(1.0, 0.0, 0.0), uHurt * 0.3) * entityShade(N) * lightmapAt(uLightLv.x, uLightLv.y);
   outColor = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;

@@ -38,6 +38,7 @@ const ATTACK = {
   pickaxe: { wooden: [2, 1.2], golden: [2, 1.2], stone: [3, 1.2], copper: [3, 1.2], iron: [4, 1.2], diamond: [5, 1.2], netherite: [6, 1.2] },
   shovel: { wooden: [2.5, 1], golden: [2.5, 1], stone: [3.5, 1], copper: [3.5, 1], iron: [4.5, 1], diamond: [5.5, 1], netherite: [6.5, 1] },
   hoe: { wooden: [1, 1], golden: [1, 1], stone: [1, 2], copper: [1, 2], iron: [1, 3], diamond: [1, 4], netherite: [1, 4] },
+  spear: { wooden: [1, 1.54], golden: [1, 1.05], stone: [2, 1.33], copper: [2, 1.18], iron: [3.5, 1.05], diamond: [4, 0.95], netherite: [5, 0.87] },
 };
 /* ---- armour: points per piece (head, chest, legs, feet), toughness, knockback resistance ---- */
 const ARMOR = {
@@ -225,6 +226,7 @@ export function withCount(s, count) {
   if (s.name) o.name = s.name;
   if (s.trim) o.trim = s.trim.slice();
   if (s.potion) o.potion = s.potion;
+  if (s.charged) o.charged = s.charged.slice();
   return o;
 }
 export function enchLevel(s, name) { return s && s.ench && s.ench[name] ? s.ench[name] : 0; }
@@ -233,10 +235,10 @@ export function enchLevel(s, name) { return s && s.ench && s.ench[name] ? s.ench
 export function stackToJSON(s) {
   if (!s) return null;
   const a = [itemName(s.id), s.count];
-  const more = s.rep || s.name || s.trim || s.potion;
+  const more = s.rep || s.name || s.trim || s.potion || s.charged;
   if (s.dmg || s.ench || more) a.push(s.dmg | 0);
   if (s.ench || more) a.push(s.ench || 0);
-  if (more) a.push({ rep: s.rep || 0, name: s.name || '', trim: s.trim || 0, potion: s.potion || '' });
+  if (more) a.push({ rep: s.rep || 0, name: s.name || '', trim: s.trim || 0, potion: s.potion || '', charged: s.charged || 0 });
   return a;
 }
 export function stackFromJSON(a) {
@@ -247,7 +249,7 @@ export function stackFromJSON(a) {
   if (a[2]) s.dmg = a[2] | 0;
   if (a[3] && typeof a[3] === 'object') s.ench = a[3];
   const m = a[4];
-  if (m && typeof m === 'object') { if (m.rep) s.rep = m.rep | 0; if (m.name) s.name = String(m.name); if (Array.isArray(m.trim)) s.trim = m.trim; if (m.potion) s.potion = String(m.potion); }
+  if (m && typeof m === 'object') { if (m.rep) s.rep = m.rep | 0; if (m.name) s.name = String(m.name); if (Array.isArray(m.trim)) s.trim = m.trim; if (m.potion) s.potion = String(m.potion); if (Array.isArray(m.charged)) s.charged = m.charged; }
   return s;
 }
 

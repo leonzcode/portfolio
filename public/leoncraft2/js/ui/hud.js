@@ -291,20 +291,34 @@ export class Hud {
     this._syncAttack(g, x, y);
   }
   /* The attack indicator (combat since 1.9): a little bar under the
-     crosshair filling as the next hit charges, gone once it is full.
-     hud.attack is the charge (0..1), or null for none (js/entities). */
+     crosshair filling as the next hit charges, gone once it is full; at a
+     full charge with a mob in reach, a small sword there instead.
+     hud.attack is the charge (0..1), 2 for the sword, or null for none
+     (combat/combat.js indicator()). */
   _syncAttack(g, x, y) {
     const a = this.attack;
-    if (a === null || a === undefined || a >= 1) { if (this._atk) this._atk.style.display = 'none'; return; }
+    if (a === null || a === undefined || (a >= 1 && a !== 2)) { if (this._atk) this._atk.style.display = 'none'; return; }
     if (!this._atk) {
       const c = this._atk = document.createElement('canvas');
       Object.assign(c.style, { position: 'fixed', pointerEvents: 'none', mixBlendMode: 'difference', imageRendering: 'pixelated', zIndex: '4' });
       document.body.appendChild(c);
     }
     const c = this._atk, s = g.scale, dpr = g.dpr || window.devicePixelRatio || 1;
-    const n = Math.floor(a * 17);
+    const n = a === 2 ? 99 : Math.floor(a * 17);
     const key = s + ',' + dpr + ',' + x + ',' + y + ',' + n;
-    if (key !== this._atkKey) {
+    if (key !== this._atkKey && n === 99) {
+      // our own little sword: a blade from the lower left to the upper right, a guard and a grip
+      this._atkKey = key;
+      c.width = 16 * s; c.height = 16 * s;
+      c.style.width = (16 * s / dpr) + 'px'; c.style.height = (16 * s / dpr) + 'px';
+      c.style.left = ((x - 1) * s / dpr) + 'px'; c.style.top = ((y + 16) * s / dpr) + 'px';
+      const cx = c.getContext('2d');
+      cx.clearRect(0, 0, c.width, c.height);
+      cx.fillStyle = 'rgb(255,255,255)';
+      const px = (u, v) => cx.fillRect(u * s, v * s, s, s);
+      for (let i = 0; i < 8; i++) { px(5 + i, 9 - i); px(6 + i, 9 - i); }
+      for (const [u, v] of [[3, 8], [4, 9], [5, 10], [6, 11], [4, 11], [3, 12], [2, 13]]) px(u, v);
+    } else if (key !== this._atkKey) {
       this._atkKey = key;
       c.width = 16 * s; c.height = 4 * s;
       c.style.width = (16 * s / dpr) + 'px'; c.style.height = (4 * s / dpr) + 'px';

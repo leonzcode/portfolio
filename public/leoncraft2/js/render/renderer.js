@@ -472,6 +472,8 @@ export class Renderer {
     cam.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
     // the player's model posed for this frame (and, in third person, the camera pulled back)
     this.avatar.update(state, dt, cam);
+    // hurt: the view tilts away from the hit (combat/combat.js)
+    if (state.tilt) cam.quaternion.multiply(state.tilt);
     // the held block takes the light where you stand, as the model does
     if (this.uHandLight && this.avatar.uLight) this.uHandLight.value.copy(this.avatar.uLight.value);
     cam.fov = state.fov;
