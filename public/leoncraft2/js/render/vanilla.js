@@ -29,6 +29,12 @@ import { COMMON } from './glsl.js?v=8';
 import { FullScreen, VS_FULL } from './sky.js?v=8';
 const THREE = window.THREE;
 
+// the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k
+function greyTowards(c, f, k) {
+  if (f <= 0) return;
+  const g = (c.x * 0.3 + c.y * 0.59 + c.z * 0.11) * k, a = 1 - f;
+  c.set(c.x * a + g * f, c.y * a + g * f, c.z * a + g * f);
+}
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray;\n`;
 
 /* ---- shared by every vanilla shader ---- */
@@ -370,7 +376,9 @@ export class Vanilla {
     U.uVSun.value.set(-Math.sin(ang), cosA, 0);
     // how bright the sky is, for the lightmap (0.2 at night, 1 by day)
     let dark = 1 - clamp01(cosA * 2 + 0.2);
-    const skyDarken = (1 - dark) * 0.8 + 0.2;
+    // rain and storms dim the sky and its light by the game's own factors (sim/weather.js sets weatherState)
+    const wx = this.R.weatherState || {}, rain = wx.rain || 0, thunder = wx.thunder || 0;
+    const skyDarken = (1 - dark) * (1 - rain * 5 / 16) * (1 - thunder * 5 / 16) * 0.8 + 0.2;
     const daylight = clamp01(cosA * 2 + 0.5);
     this.flicker += (Math.random() - Math.random()) * Math.random() * Math.random() * 0.1 * Math.min(3, dt * 20);
     this.flicker *= Math.pow(0.9, Math.min(3, dt * 20));
@@ -384,6 +392,8 @@ export class Vanilla {
     this.fogBase.lerp(this.tmp2, k);
     this.colorsSet = true;
     const sky = U.uSkyColor.value.copy(this.skyC).multiplyScalar(daylight);
+    greyTowards(sky, rain * 0.75, 0.6); greyTowards(sky, thunder * 0.75, 0.2);
+    if (wx.flash) { const f = Math.min(1, wx.flash) * 0.45; sky.set(sky.x * (1 - f) + 0.8 * f, sky.y * (1 - f) + 0.8 * f, sky.z * (1 - f) + f); }
     // the fog colour: the biome's, darkened by the time of day, pulled towards the sky the further you can see
     const fog = U.uFogColor.value.copy(this.fogBase);
     fog.x *= daylight * 0.94 + 0.06; fog.y *= daylight * 0.94 + 0.06; fog.z *= daylight * 0.91 + 0.09;
@@ -404,6 +414,11 @@ export class Vanilla {
     const R = rdc * 16;
     U.uSky.value.set(R, sb * sb * 0.5, 0);
     U.uMoonPhase.value = state.moonPhase || 0;
+    // rain greys the fog
+    if (rain > 0) { fog.x *= 1 - rain * 0.5; fog.y *= 1 - rain * 0.5; fog.z *= 1 - rain * 0.4; }
+    if (thunder > 0) fog.multiplyScalar(1 - thunder * 0.5);
+    U.uRain.value = rain;
+    U.uSky.value.y *= 1 - rain;
     // the fog itself
     if (state.eyeInLava) {
       fog.set(0.6, 0.1, 0); U.uFog.value.set(0.25, 1, 0); U.uSky.value.z = 1;
@@ -432,6 +447,7 @@ export class Vanilla {
     if (above < 1) fog.multiplyScalar(Math.max(0, above) * Math.max(0, above));
     // clouds: white by day, grey at night
     U.uCloudColor.value.set(daylight * 0.9 + 0.1, daylight * 0.9 + 0.1, daylight * 0.85 + 0.15);
+    greyTowards(U.uCloudColor.value, rain * 0.95, 0.6); greyTowards(U.uCloudColor.value, thunder * 0.95, 0.2);
     U.uCloudFog.value.set(R * 1.0, R * 2.0);
     this.clouds = opts.clouds || 'fancy';
   }
