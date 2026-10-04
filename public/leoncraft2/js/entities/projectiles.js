@@ -58,6 +58,8 @@ export class Projectile extends Entity {
         if (this.hitEntity(hit, sp) !== false) return;
       } else if (tb < sp) {
         p.set(p.x + dx * tb, p.y + dy * tb, p.z + dz * tb);
+        // the simulation hears of it (a target block, sim/rsparts.js)
+        if (this.m.onProjectileBlock) this.m.onProjectileBlock(this, T.rayX, T.rayY, T.rayZ);
         this.hitBlock(T.rayX, T.rayY, T.rayZ, sp);
         return;
       } else p.add(v);

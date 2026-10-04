@@ -36,9 +36,14 @@ import { Bodies } from './bodies.js?v=10';
 import { installBeds } from './beds.js?v=10';
 import { Weather } from './weather.js?v=10';
 import { installRedstone } from './redstone.js?v=10';
-import { installContainers } from '../containers.js?v=10';
+import { installParts } from './rsparts.js?v=10';
+import { installPistons } from './pistons.js?v=10';
+import { installDispensers } from './dispense.js?v=10';
 import { explode } from '../explosion.js?v=10';
+import { blockDrops } from '../loot.js?v=10';
+import { itemName as itemNameOf } from '../items.js?v=10';
 import { Messages } from './messages.js?v=10';
+import { installContainers } from '../containers.js?v=10';
 
 const SIN = new Float32Array(65536);
 for (let i = 0; i < 65536; i++) SIN[i] = Math.sin(i * Math.PI * 2 / 65536);
@@ -57,6 +62,8 @@ export class Sim {
     this.NBR = new Uint8Array(MAX_ID);    // listens to its neighbours
     this.queue = new Map();          // "x,y,z" -> { x, y, z, b, t, p, s }
     this.qseq = 0;
+    this.due = new Set();            // ticks taken off the queue to run this tick, not run yet (the game's willTickThisTick)
+    this.events = [];                // block events (a piston moving), run after the random ticks: [x, y, z, b, id, param]
     this.updates = [];               // block updates waiting, drained at once
     this.draining = false;
     this.randomTickSpeed = 3;
@@ -72,10 +79,14 @@ export class Sim {
     installBeds(this);
     installRedstone(this);
     installContainers(this);         // chests joining, spilling, droppers and dispensers firing (containers.js)
+    installParts(this);
+    installPistons(this);
+    // (sim/dispense.js has dispensers too; containers.js's run them, so they are not installed twice)
     this.w.onSet = (x, y, z, ob, om, nb, nm) => this.onSet(x, y, z, ob, om, nb, nm);
   }
   dispose() {
     if (this.w.onSet) this.w.onSet = null;
+    if (this.redstone) for (const f of this.redstone.disposers || []) f();
     this.bodies.dispose();
     this.weather.dispose();
     this.msg.dispose();
@@ -108,6 +119,8 @@ export class Sim {
     this.runScheduled();
     this.randomTicks();
     this.weather.precipitation();
+    this.runEvents();
+    if (this.redstone) this.redstone.tick();
     this.bodies.tick();
     this.afterTick && this.afterTick();
     for (const f of this.tickers || []) f();
@@ -130,12 +143,38 @@ export class Sim {
     for (const [k, e] of this.queue) if (e.t <= this.n) { due.push(e); this.queue.delete(k); }
     if (!due.length) return;
     due.sort((a, b) => a.t - b.t || a.p - b.p || a.s - b.s);
-    for (const e of due.slice(0, 65536)) {
-      if (!this.w.loaded(e.x, e.z)) continue;
-      const b = this.w.get(e.x, e.y, e.z);
-      if (b !== e.b) continue;                  // the block it was for is gone
+    const run = due.slice(0, 65536);
+    for (const e of run) this.due.add(e.x + ',' + e.y + ',' + e.z);
+    try {
+      for (const e of run) {
+        this.due.delete(e.x + ',' + e.y + ',' + e.z);
+        if (!this.w.loaded(e.x, e.z)) continue;
+        const b = this.w.get(e.x, e.y, e.z);
+        if (b !== e.b) continue;                  // the block it was for is gone
+        const h = this.beh[b];
+        if (h && h.tick) h.tick(this, e.x, e.y, e.z, this.w.meta(e.x, e.y, e.z));
+      }
+    } finally { this.due.clear(); }
+  }
+  // a tick for this cell is due this very tick and has not run yet
+  willTickThisTick(x, y, z) { return this.due.has(x + ',' + y + ',' + z); }
+  scheduledAt(x, y, z) { const e = this.queue.get(x + ',' + y + ',' + z); return e ? e.t : -1; }
+  unschedule(x, y, z) { this.queue.delete(x + ',' + y + ',' + z); }
+
+  /* ---- block events: what a piston does when it is told to move, after the tick's random ticks ----
+     The same event for the same block is only queued once; ones queued while
+     they run (a piston pushing a block that powers another) run this tick too. */
+  blockEvent(x, y, z, b, id, param) {
+    for (const e of this.events) if (e[0] === x && e[1] === y && e[2] === z && e[3] === b && e[4] === id && e[5] === param) return;
+    this.events.push([x, y, z, b, id, param]);
+  }
+  runEvents() {
+    let n = 0;
+    while (this.events.length && n++ < 65536) {
+      const [x, y, z, b, id, param] = this.events.shift();
+      if (this.w.get(x, y, z) !== b) continue;
       const h = this.beh[b];
-      if (h && h.tick) h.tick(this, e.x, e.y, e.z, this.w.meta(e.x, e.y, e.z));
+      if (h && h.event) h.event(this, x, y, z, this.w.meta(x, y, z), id, param);
     }
   }
 
@@ -211,10 +250,21 @@ export class Sim {
     if (this.fluids) this.fluids.around(x, y, z);
   }
   dropLoot(x, y, z, b, m, chance) {
-    const list = this.lootOf(b, m, null);
-    for (const [name, count] of list) {
+    const h = this.beh[b];
+    const list = h && h.loot ? this.lootOf(b, m, null) : null;
+    if (list) {
+      for (const [name, count] of list) {
+        if (chance < 1 && this.rng() >= chance) continue;
+        this.dropItem(x + 0.5, y + 0.5, z + 0.5, name, count);
+      }
+      return;
+    }
+    // the game's own loot table, as for a block that pops off (no tool needed)
+    const out = blockDrops(this.w, x, y, z, b, m, { popped: true });
+    const drops = this.game && this.game.drops;
+    for (const s of out.items) {
       if (chance < 1 && this.rng() >= chance) continue;
-      this.dropItem(x + 0.5, y + 0.5, z + 0.5, name, count);
+      if (drops) drops.popFrom(x, y, z, s);
     }
   }
   // what a block gives when it breaks: [[item name, count], ...]
@@ -225,12 +275,12 @@ export class Sim {
     if (!d || !d.item || FLUID[b]) return [];
     return [[d.name, 1]];
   }
-  // an item into the world: the items agent's dropped-item entities if there are any, else straight into the inventory
+  // an item into the world, as an item lying on the ground (drops.js)
   dropItem(x, y, z, name, count) {
     if (count <= 0) return;
-    const L = window.__lc2;
-    if (L && typeof L.dropItem === 'function') { L.dropItem(x, y, z, name, count); return; }
     const id = resolveItem(name);
+    const drops = this.game && this.game.drops;
+    if (id && drops) { drops.popFrom(Math.floor(x), Math.floor(y), Math.floor(z), { id, count }); return; }
     if (!id || !this.inv || this.creative) return;
     // only what lands within reach is picked up straight away (no item entities yet)
     const p = this.player.pos;
@@ -335,9 +385,11 @@ export class Sim {
   dimension() { return (this.game && (this.game.dimension || this.game.dim)) || 'overworld'; }
 
   /* ---- the player's hand, for the hooks in interact.js ---- */
-  use(hit, heldId, sneaking) {
+  use(hit, blockId, sneaking) {
     if (!hit) return false;
-    const held = heldId ? itemName(heldId) : '';
+    // what is really in the hand (the interactor passes the block it would place, which bone meal is not)
+    const heldId = this.inv ? this.inv.heldId() : blockId;
+    const held = heldId ? itemNameOf(heldId) : '';
     // what is in the hand first (bone meal, a hoe, flint and steel...), then the block itself
     if (this.useItem && this.useItem(held, hit, heldId, sneaking)) return true;
     if (sneaking && heldId) return false;
@@ -355,7 +407,7 @@ export class Sim {
   broken(x, y, z, b, m) {
     const h = this.beh[b];
     if (h && h.broken) h.broken(this, x, y, z, m);
-    if (h && h.loot) return this.lootOf(b, m, this.inv ? itemName(this.inv.heldId()) : '');
+    if (h && h.loot) return this.lootOf(b, m, this.inv ? itemNameOf(this.inv.heldId()) : '');
     return null;
   }
   explode(x, y, z, power, o) { return explode(this.w, x, y, z, power, Object.assign({ sim: this }, o || {})); }
@@ -365,7 +417,7 @@ export class Sim {
     const q = [];
     for (const e of this.queue.values()) q.push([e.x, e.y, e.z, e.t - this.n, e.p]);
     return { n: this.n, weather: this.weather.toJSON(), queue: q, state: [...this.state].filter(([, v]) => v && v.keep), bodies: this.bodies.toJSON(),
-      spawnBed: this.spawnBed || null };
+      spawnBed: this.spawnBed || null, moving: this.redstone && this.redstone.saveMoving ? this.redstone.saveMoving() : [] };
   }
   fromJSON(o) {
     if (!o) return;
@@ -375,6 +427,7 @@ export class Sim {
     for (const [k, v] of o.state || []) this.state.set(k, v);
     this.bodies.fromJSON(o.bodies);
     this.spawnBed = o.spawnBed || null;
+    if (this.redstone && this.redstone.loadMoving) this.redstone.loadMoving(o.moving);
     // the blocks those ticks were for are known once their chunks load
     this.fixQueue = true;
   }

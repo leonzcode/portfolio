@@ -33,6 +33,11 @@
      respawn_anchor                bits 0-2 charges
      fire                          bits 0-3 age
      bed                           bit 2 occupied (as well as facing and the head bit)
+     hopper                        bits 0-2 facing, bit 3 locked (powered)
+     lightning rod                 bits 0-2 facing, bit 3 powered
+     redstone ore                  bit 0 lit;  copper bulb bit 0 lit, bit 1 powered
+     bell                          bit 0 hanging, bit 4 powered
+     comparator output             kept in the simulation's state, not the meta
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, MAX_ID } from '../blocks.js?v=10';
 import { SHAPES, MODEL_SHAPES, turn } from '../models.js?v=10';
@@ -78,7 +83,8 @@ addTex('activator_rail', { on: 'activator_rail_on' });
 addTex('respawn_anchor', { lit: 'respawn_anchor_top', c1: 'respawn_anchor_side1', c2: 'respawn_anchor_side2', c3: 'respawn_anchor_side3', c4: 'respawn_anchor_side4' });
 for (const n of ['redstone_wire', 'melon_stem', 'pumpkin_stem']) if (has(n)) STATEFUL[B[n]] = 1;
 
-for (const n of ['redstone_lamp', 'redstone_torch', 'redstone_wall_torch', 'respawn_anchor']) if (has(n)) SLIGHT[B[n]] = 1;
+for (const n of ['redstone_lamp', 'redstone_torch', 'redstone_wall_torch', 'respawn_anchor', 'redstone_ore', 'deepslate_redstone_ore']) if (has(n)) SLIGHT[B[n]] = 1;
+for (const d of BLOCKS) if (d && /copper_bulb$/.test(d.name)) SLIGHT[d.id] = 1;
 
 // blocks dust joins up with (the game's "signal sources")
 const SOURCES = ['redstone_torch', 'redstone_wall_torch', 'lever', 'redstone_block', 'repeater', 'comparator', 'observer',
@@ -86,7 +92,7 @@ const SOURCES = ['redstone_torch', 'redstone_wall_torch', 'lever', 'redstone_blo
   'calibrated_sculk_sensor', 'light_weighted_pressure_plate', 'heavy_weighted_pressure_plate', 'redstone_wire'];
 for (const d of BLOCKS) {
   if (!d) continue;
-  if (SOURCES.includes(d.name) || /_button$|_pressure_plate$/.test(d.name)) d.redstone = true;
+  if (SOURCES.includes(d.name) || /_button$|_pressure_plate$|lightning_rod$/.test(d.name)) d.redstone = true;
 }
 
 /* the light a block gives off in a state */
@@ -96,7 +102,10 @@ export function lightOf(b, m) {
     case 'redstone_lamp': return m & 1 ? 15 : 0;
     case 'redstone_torch': case 'redstone_wall_torch': return m & 8 ? 0 : 7;
     case 'respawn_anchor': return [0, 3, 7, 11, 15][Math.min(4, m & 7)];
+    case 'redstone_ore': case 'deepslate_redstone_ore': return m & 1 ? 9 : 0;
   }
+  // copper bulbs, lit: 15, 12, 8 or 4 as the copper ages
+  if (/copper_bulb$/.test(d.name)) return m & 1 ? (/oxidized/.test(d.name) ? 4 : /weathered/.test(d.name) ? 8 : /exposed/.test(d.name) ? 12 : 15) : 0;
   return d.light || 0;
 }
 
