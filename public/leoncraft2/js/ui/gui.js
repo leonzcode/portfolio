@@ -84,6 +84,7 @@ export const DEFAULT_OPTIONS = {
   textBgOpacity: 0.5,
   hideSplash: false,
   mainHand: 'right',
+  advancedTooltips: false, // F3 + H: durability and the item's id under its name
   skin: 'default',         // or a 64 x 64 PNG data URL
   skinModel: 'classic',    // classic slim
   skinParts: { hat: true, jacket: true, leftSleeve: true, rightSleeve: true, leftPants: true, rightPants: true },
