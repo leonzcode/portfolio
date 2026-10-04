@@ -59,7 +59,7 @@ export const DEFAULT_KEYS = {
   forward: 'KeyW', left: 'KeyA', back: 'KeyS', right: 'KeyD',
   jump: 'Space', sneak: 'ShiftLeft', sprint: 'ControlLeft',
   attack: 'Mouse0', use: 'Mouse2', pickBlock: 'Mouse1',
-  inventory: 'KeyE', drop: null, perspective: 'KeyQ',
+  inventory: 'KeyE', drop: 'KeyQ', perspective: 'F5', swapOffhand: 'KeyF',
   hotbar1: 'Digit1', hotbar2: 'Digit2', hotbar3: 'Digit3', hotbar4: 'Digit4', hotbar5: 'Digit5',
   hotbar6: 'Digit6', hotbar7: 'Digit7', hotbar8: 'Digit8', hotbar9: 'Digit9',
   hideGui: 'F1', debug: 'F3',

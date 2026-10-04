@@ -17,6 +17,11 @@
    And two the renderer listens to for particles (either may be absent):
      onBreak(x, y, z, block, boxes)        a block broke
      onHit(x, y, z, face, block, box)      a tick of mining it
+   and, when the game gives them (hands.js), the item rules:
+     hand.progress(hit)      the share of the block one tick of mining wears away
+     hand.broke(hit, cells)  the block is going: drops, wear (returns what replaces it)
+     hand.useOn(hit)         right click on a block (chests, tables); true if it did something
+     hand.useItem(hit)       right click with the item (eat, armour, buckets); true if it did
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from './blocks.js?v=8';
 import { selectionBoxes } from './models.js?v=8';
@@ -72,31 +77,37 @@ export class Interactor {
   startMining() {
     const h = this.target;
     if (!h) { this.mining = null; return; }
-    const total = breakTime(BLOCKS[h.b]);
-    this.mining = { x: h.x, y: h.y, z: h.z, b: h.b, t: 0, total };
-    if (total === 0) this.breakTarget();
+    // with the hand's rules, t runs from 0 to 1 by the tool's progress a tick; without, seconds by hand
+    const total = this.hand.progress ? 1 : breakTime(BLOCKS[h.b]);
+    this.mining = { x: h.x, y: h.y, z: h.z, b: h.b, t: 0, total, ticks: 0 };
+    if (this.hand.progress ? this.hand.progress(h) >= 1 : total === 0) { this.breakTarget(); this.mining = null; this.breakDelay = 5; }
   }
   mineTick() {
+    // after a block breaks, five ticks before the next one starts (as the game does)
+    if (this.breakDelay > 0) { this.breakDelay--; return; }
     const h = this.target, m = this.mining;
     if (!h) { this.mining = null; return; }
     if (!m || m.x !== h.x || m.y !== h.y || m.z !== h.z || m.b !== h.b) { this.startMining(); return; }
-    m.t += 0.05;
-    if ((m.t * 20 | 0) % 4 === 0) this.hand.swing();
+    m.t += this.hand.progress ? this.hand.progress(h) : 0.05;
+    if (++m.ticks % 4 === 0) this.hand.swing();
     if (this.onHit) this.onHit(h.x, h.y, h.z, h.face, h.b, h.box);
-    if (m.t >= m.total) { this.breakTarget(); this.mining = null; this.breakDelay = 5; }
+    if (m.t >= m.total - 1e-9) { this.breakTarget(); this.mining = null; this.breakDelay = 5; }
   }
   breakTarget() {
     const h = this.target;
     if (!h) return;
     const w = this.world;
-    for (const [x, y, z] of breakAt(w, h.x, h.y, h.z)) {
+    const cells = breakAt(w, h.x, h.y, h.z);
+    // the hand's rules decide the drops (and what is left behind: ice leaves water)
+    const replace = this.hand.broke ? this.hand.broke(h, cells) : 0;
+    for (const [x, y, z] of cells) {
       const b = w.get(x, y, z), d = BLOCKS[b];
       if (this.onBreak && d && d.shape !== 'fluid') {
         const nb = (dx, dy, dz) => { const n = w.get(x + dx, y + dy, z + dz); return n ? { d: BLOCKS[n], m: w.meta(x + dx, y + dy, z + dz) } : null; };
         this.onBreak(x, y, z, b, d.shape === 'cube' ? null : selectionBoxes(d, w.meta(x, y, z), nb));
       }
-      if (!this.creative) { const drop = dropOf(b); if (drop) this.hand.got(drop); }
-      w.set(x, y, z, 0, 0);
+      if (!this.creative && !this.hand.broke) { const drop = dropOf(b); if (drop) this.hand.got(drop); }
+      w.set(x, y, z, replace && x === h.x && y === h.y && z === h.z ? replace : 0, 0);
       // a water plant leaves its water behind
       if (d && d.waterlogged) w.set(x, y, z, B.water, 0);
       this.fluids.around(x, y, z);
@@ -105,9 +116,14 @@ export class Interactor {
   }
   useOnce() {
     const h = this.target;
+    // what the item does by itself (eating, armour, a bucket) works looking at nothing too
+    if ((!h || !h.face) && this.hand.useItem) { this.hand.useItem(null); return; }
     if (!h || !h.face) return;
+    // chests, crafting tables, furnaces open; tools till and strip
+    if (this.hand.useOn && this.hand.useOn(h)) { this.hand.swing(); return; }
     // doors, trapdoors and gates open instead, unless you sneak
     if (!this.player.sneaking && use(this.world, h.x, h.y, h.z)) { this.hand.swing(); return; }
+    if (this.hand.useItem && this.hand.useItem(h)) return;
     const id = this.hand.id();
     if (!id || !BLOCKS[id]) return;
     const list = placement(this.world, h, id, this.player);
