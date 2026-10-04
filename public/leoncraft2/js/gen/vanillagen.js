@@ -342,7 +342,14 @@ export class VanillaGen {
     }
     return { g, qx0, qz0, qy0: -17 };
   }
-  biomeAt(grid, x, y, z) {
+  /* The biome at a block, as the game reads it (the zoom over the 4 x 4 x 4
+     biome cells): an index into BIOMES. For anything that needs a biome
+     outside chunk generation (structure starts, the spawn search). */
+  biomeAt(x, y, z) {
+    const c = this.zoom.cell(x, y, z, this._cell2 || (this._cell2 = [0, 0, 0]));
+    return this.noiseBiome(c[0], c[1], c[2]);
+  }
+  gridBiome(grid, x, y, z) {
     const c = this.zoom.cell(x, y, z, this._cell || (this._cell = [0, 0, 0]));
     const i = c[0] - grid.qx0, j = c[2] - grid.qz0, k = c[1] - grid.qy0;
     if (i < 0 || i > 5 || j < 0 || j > 5 || k < 0 || k > 97) return this.noiseBiome(c[0], c[1], c[2]);
@@ -379,7 +386,7 @@ export class VanillaGen {
     for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
       let iy = H - 1;
       while (iy > 0 && !blocks[(iy << 8) | (z << 4) | x]) iy--;
-      biome[(z << 4) | x] = this.biomeAt(grid, x0 + x, iy + MIN_Y + 1, z0 + z);
+      biome[(z << 4) | x] = this.gridBiome(grid, x0 + x, iy + MIN_Y + 1, z0 + z);
     }
     let top = 0;
     for (let i = VOL - 1; i >= 0; i--) if (blocks[i]) { top = i >> 8; break; }
@@ -476,7 +483,7 @@ export class VanillaGen {
       M.secondary = NaN; M.minSurf = NaN;
       const col = (z << 4) | x;
       let height = surfH[col] + MIN_Y;    // first air above the column, in world y
-      const hb = this.biomeAt(grid, bx, height, bz);   // the game asks one above the top block
+      const hb = this.gridBiome(grid, bx, height, bz);   // the game asks one above the top block
       if (hb === ERODED && present[ERODED]) this.erodedBadlands(blocks, x, z, bx, bz, height);
       height = this.colHeight(blocks, x, z) + MIN_Y;
       if ((hb === FROZEN || hb === DFROZEN) && (present[FROZEN] || present[DFROZEN])) this.frozenOcean(blocks, x, z, bx, bz, height, hb);
@@ -560,7 +567,7 @@ export class VanillaGen {
     const anchor = a => (a.absolute !== undefined ? a.absolute : a.above_bottom !== undefined ? MIN_Y + a.above_bottom
       : a.below_top !== undefined ? MIN_Y + H - 1 - a.below_top : SEA_LEVEL + (a.relative_to_sea_level || 0));
     const biomeAt = () => {
-      if (M.biome < 0) M.biome = gen.biomeAt(M.grid, M.x, M.y, M.z);
+      if (M.biome < 0) M.biome = gen.gridBiome(M.grid, M.x, M.y, M.z);
       return M.biome;
     };
     const perY = f => { let last = -1, v = false; return () => { if (M.yi !== last) { last = M.yi; v = f(); } return v; }; };

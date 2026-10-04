@@ -70,7 +70,8 @@ export const FeatureData = { tags: {}, placed: {}, configured: {}, biome: {} };
 
 /* ---- what a block needs under it to stay (Block.canSurvive), for the
    blocks features place ---- */
-const DIRTLIKE = () => tag('dirt');
+// 26.3 says which blocks hold plants up with tags (supports_vegetation and friends)
+const DIRTLIKE = () => tag('supports_vegetation');
 export function survives(R, st, x, y, z) {
   const n = BLOCKS[st.id].name;
   const below = R.get(x, y - 1, z), bn = BLOCKS[below] ? BLOCKS[below].name : 'air';
@@ -79,7 +80,7 @@ export function survives(R, st, x, y, z) {
   switch (n) {
     case 'sugar_cane': {
       if (below === B.sugar_cane) return true;
-      if (!(dirt[below] || tag('sand')[below])) return false;
+      if (!tag('supports_sugar_cane')[below]) return false;
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const b = R.get(x + dx, y - 1, z + dz);
         if (fluidOf(b) === 1 || b === B.frosted_ice) return true;
@@ -91,19 +92,19 @@ export function survives(R, st, x, y, z) {
         const b = R.get(x + dx, y, z + dz);
         if ((b !== 0 && BLOCKS[b].solid) || fluidOf(b) === 2) return false;
       }
-      return below === B.cactus || tag('sand')[below] === 1;
+      return below === B.cactus || tag('supports_cactus')[below] === 1;
     }
     case 'cactus_flower': return below === B.cactus || fullTop(below);
     case 'dead_bush': case 'short_dry_grass': case 'tall_dry_grass':
-      return tag('dry_vegetation_may_place_on')[below] === 1 || tag('sand')[below] === 1 || tag('terracotta')[below] === 1 || dirt[below] === 1;
-    case 'lily_pad': return fluidOf(below) === 1 && below === B.water;
+      return tag('supports_dry_vegetation')[below] === 1;
+    case 'lily_pad': return (below === B.water && R.meta(x, y - 1, z) === 0) || tag('supports_lily_pad')[below] === 1;
     case 'brown_mushroom': case 'red_mushroom':
       return tag('mushroom_grow_block')[below] === 1 || fullTop(below);
     case 'seagrass': case 'kelp': case 'kelp_plant': case 'tall_seagrass':
       return fullTop(below) && below !== B.magma_block;
     case 'snow': {
-      if (below === B.ice || below === B.packed_ice || below === B.barrier) return false;
-      if (below === B.honey_block || below === B.soul_sand) return true;
+      if (tag('cannot_support_snow_layer')[below]) return false;
+      if (tag('support_override_snow_layer')[below]) return true;
       return (below !== 0 && BLOCKS[below].solid && (BLOCKS[below].shape === 'cube' || BLOCKS[below].leaves));
     }
     case 'sweet_berry_bush': case 'firefly_bush': case 'bush': case 'leaf_litter': case 'wildflowers': case 'pink_petals':
@@ -113,7 +114,10 @@ export function survives(R, st, x, y, z) {
     case 'pale_hanging_moss': return R.get(x, y + 1, z) !== 0;
   }
   const d = BLOCKS[st.id];
-  if (n.endsWith('_sapling') || n === 'mangrove_propagule') return dirt[below] === 1 || below === B.farmland || (n === 'mangrove_propagule' && below === B.clay);
+  if (n === 'mangrove_propagule') return tag('supports_mangrove_propagule')[below] === 1;
+  if (n === 'azalea' || n === 'flowering_azalea') return tag('supports_azalea')[below] === 1;
+  if (n === 'bamboo' || n === 'bamboo_sapling') return tag('supports_bamboo')[below] === 1;
+  if (n.endsWith('_sapling')) return dirt[below] === 1;
   if (d.shape === 'cross' || d.upper || d.lower || d.shape === 'crop') {
     if (d.lower && (st.meta & 8)) return true;
     return dirt[below] === 1 || below === B.farmland;
@@ -323,6 +327,34 @@ export function ruleTest(p) {
    writes in world coordinates, the heightmaps, and the biomes. Writes are
    kept per chunk so they can be laid onto each chunk later. */
 const HM = { WORLD_SURFACE_WG: 0, OCEAN_FLOOR_WG: 1, WORLD_SURFACE: 2, OCEAN_FLOOR: 3, MOTION_BLOCKING: 4, MOTION_BLOCKING_NO_LEAVES: 5 };
+// a terrain chunk's six heightmaps, kept with it
+function protoHeights(p) {
+  if (p.heights) return p.heights;
+  const hm = [];
+  for (let k = 0; k < 6; k++) hm.push(new Int16Array(256).fill(MIN_Y));
+  const blocks = p.blocks;
+  let topI = VOLI - 1;
+  while (topI > 0 && blocks[topI] === 0) topI--;
+  const topY = topI >> 8;
+  for (let col = 0; col < 256; col++) {
+    let found = 0;
+    for (let iy = topY; iy >= 0 && found !== 63; iy--) {
+      const b = blocks[(iy << 8) | col];
+      if (b === 0) continue;
+      const y = iy + MIN_Y + 1;
+      const d = BLOCKS[b];
+      const solid = d.solid && b !== B.cobweb;
+      const fl = fluidOf(b) !== 0;
+      if (!(found & 1)) { hm[0][col] = y; hm[2][col] = y; found |= 1 | 4; }
+      if (!(found & 2) && solid) { hm[1][col] = y; hm[3][col] = y; found |= 2 | 8; }
+      if (!(found & 16) && (solid || fl)) { hm[4][col] = y; found |= 16; }
+      if (!(found & 32) && (solid || fl) && !d.leaves) { hm[5][col] = y; found |= 32; }
+    }
+  }
+  p.heights = hm;
+  return hm;
+}
+const VOLI = 16 * 16 * 384;
 export class Region {
   constructor(gen, cx, cz) {
     this.gen = gen;
@@ -335,25 +367,16 @@ export class Region {
       this.protos.push(p);
       this.chunks.push({ blocks: p.blocks, meta: p.meta, own: false, writes: null });
     }
-    // heightmaps over the 48 x 48 columns: first free y (world y)
+    // heightmaps over the 48 x 48 columns: first free y (world y), from each
+    // chunk's own (worked out once per chunk)
     this.hm = [];
     for (let k = 0; k < 6; k++) this.hm.push(new Int16Array(48 * 48));
-    for (let z = 0; z < 48; z++) for (let x = 0; x < 48; x++) {
-      const c = this.chunks[(z >> 4) * 3 + (x >> 4)];
-      const col = ((z & 15) << 4) | (x & 15);
-      for (let k = 0; k < 6; k++) this.hm[k][z * 48 + x] = MIN_Y;
-      let found = 0;
-      for (let iy = 383; iy >= 0 && found !== 63; iy--) {
-        const b = c.blocks[(iy << 8) | col];
-        if (b === 0) continue;
-        const y = iy + MIN_Y + 1;
-        const d = BLOCKS[b];
-        const solid = d.solid && b !== B.cobweb;
-        const fl = fluidOf(b) !== 0;
-        if (!(found & 1)) { this.hm[0][z * 48 + x] = y; this.hm[2][z * 48 + x] = y; found |= 1 | 4; }
-        if (!(found & 2) && solid) { this.hm[1][z * 48 + x] = y; this.hm[3][z * 48 + x] = y; found |= 2 | 8; }
-        if (!(found & 16) && (solid || fl)) { this.hm[4][z * 48 + x] = y; found |= 16; }
-        if (!(found & 32) && (solid || fl) && !d.leaves) { this.hm[5][z * 48 + x] = y; found |= 32; }
+    for (let c = 0; c < 9; c++) {
+      const h = protoHeights(this.protos[c]);
+      const ox = (c % 3) * 16, oz = Math.floor(c / 3) * 16;
+      for (let k = 0; k < 6; k++) {
+        const src = h[k], dst = this.hm[k];
+        for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) dst[(oz + z) * 48 + ox + x] = src[(z << 4) | x];
       }
     }
   }
@@ -409,7 +432,7 @@ export class Region {
   biome(x, y, z) {
     const lx = x - this.x0, lz = z - this.z0;
     const c = (lx >= 0 && lx < 48 && lz >= 0 && lz < 48) ? this.protos[(lz >> 4) * 3 + (lx >> 4)] : this.protos[4];
-    return this.gen.biomeAt(c.grid, x, y, z);
+    return this.gen.gridBiome(c.grid, x, y, z);
   }
   canWrite(x, y, z) { return this.inside(x, z) && y >= MIN_Y && y <= MAX_Y; }
 }
@@ -601,6 +624,34 @@ const coldEnoughToSnow = (bn, x, y, z) => temperatureAt(bn, x, y, z) < F(0.15);
 
 /* ============================================================ features == */
 FEATURES.no_op = () => false;
+
+/* A stand-in for trees until trees.js has the game's own trunk and foliage
+   placers (it replaces this): a trunk of the configured height and a ball
+   of leaves of the configured radius, from the configured blocks, where
+   there is room. */
+FEATURES.tree = (D, c, r, x, y, z) => {
+  const R = D.region;
+  const tp = c.trunk_placer || {}, fp = c.foliage_placer || {};
+  const h = (tp.base_height || 5) + r.nextInt((tp.height_rand_a || 0) + 1) + r.nextInt((tp.height_rand_b || 0) + 1);
+  const rad = typeof fp.radius === 'number' ? fp.radius : (fp.radius && (fp.radius.min_inclusive ?? fp.radius.value)) || 2;
+  const log = provider(c.trunk_provider)(r, x, y, z, R), leaf = provider(c.foliage_provider)(r, x, y, z, R);
+  if (!log || !leaf) return false;
+  const below = R.get(x, y - 1, z);
+  if (!tag('dirt')[below] && below !== B.grass_block && below !== B.sand && below !== B.mud) return false;
+  for (let k = 0; k <= h; k++) { const b = R.get(x, y + k, z); if (!(isAirId(b) || BLOCKS[b].replaceable || BLOCKS[b].leaves)) return false; }
+  if (below === B.grass_block || below === B.mycelium || below === B.podzol) R.set(x, y - 1, z, B.dirt, 0);
+  const top = y + h;
+  for (let dy = -2; dy <= 1; dy++) {
+    const rr = dy >= 0 ? rad - 1 : rad;
+    for (let dx = -rr; dx <= rr; dx++) for (let dz = -rr; dz <= rr; dz++) {
+      if (Math.abs(dx) === rr && Math.abs(dz) === rr && (dy >= 0 || r.nextInt(2) === 0)) continue;
+      const b = R.get(x + dx, top + dy, z + dz);
+      if (isAirId(b) || BLOCKS[b].replaceable) R.set(x + dx, top + dy, z + dz, leaf.id, leaf.meta);
+    }
+  }
+  for (let k = 0; k < h; k++) R.set(x, y + k, z, log.id, log.meta);
+  return true;
+};
 
 FEATURES.simple_block = (D, c, r, x, y, z) => {
   const R = D.region;
