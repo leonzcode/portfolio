@@ -720,7 +720,7 @@ export class MouseSettingsScreen extends OptionsListScreen {
 const BINDS = [
   ['Movement', [['jump', 'Jump'], ['sneak', 'Sneak'], ['sprint', 'Sprint'], ['left', 'Strafe Left'], ['right', 'Strafe Right'], ['back', 'Walk Backwards'], ['forward', 'Walk Forwards']]],
   ['Gameplay', [['attack', 'Attack/Destroy'], ['pickBlock', 'Pick Block'], ['use', 'Use Item/Place Block']]],
-  ['Inventory', [['drop', 'Drop Selected Item']].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ['hotbar' + n, 'Hotbar Slot ' + n]), [['inventory', 'Open/Close Inventory']])],
+  ['Inventory', [['drop', 'Drop Selected Item'], ['swapOffhand', 'Swap Item With Offhand']].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ['hotbar' + n, 'Hotbar Slot ' + n]), [['inventory', 'Open/Close Inventory']])],
   ['Miscellaneous', [['debug', 'Debug Screen'], ['hideGui', 'Hide GUI'], ['perspective', 'Toggle Perspective']]],
 ];
 

@@ -54,7 +54,7 @@ export class Player {
     }
     if ((k === 'w') && on && !this.keys.w) {
       const now = performance.now();
-      if (now - (this.lastW || 0) < 280) this.sprinting = true;
+      if (now - (this.lastW || 0) < 280 && this.canSprint !== false) this.sprinting = true;
       this.lastW = now;
     }
     this.keys[k] = on;
@@ -147,8 +147,9 @@ export class Player {
     const k = this.keys;
     let fwd = (k.w ? 1 : 0) - (k.s ? 1 : 0), str = (k.d ? 1 : 0) - (k.a ? 1 : 0);
     this.sneaking = !!k.shift && !this.flying;
-    if (fwd <= 0 || this.sneaking) this.sprinting = false;
-    if (k.control && fwd > 0) this.sprinting = true;
+    // survival sets canSprint (hunger above 6) and usingItem (eating: a fifth of the speed, no sprinting)
+    if (fwd <= 0 || this.sneaking || this.canSprint === false || this.usingItem) this.sprinting = false;
+    if (k.control && fwd > 0 && this.canSprint !== false && !this.usingItem) this.sprinting = true;
     const feetB = this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y + 0.4), Math.floor(this.pos.z));
     const eyeB = this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y + 1.62), Math.floor(this.pos.z));
     const wasIn = this.inWater;
@@ -168,6 +169,7 @@ export class Player {
       if (this.sprinting) accel *= 1.3;
     } else accel = this.sprinting ? 0.026 : 0.02;
     if (this.sneaking) { fwd *= 0.3; str *= 0.3; }
+    if (this.usingItem) { fwd *= 0.2; str *= 0.2; }
     // move relative to where you are looking (only round, not up)
     let len = Math.hypot(fwd, str);
     if (len > 0.0001) {
@@ -184,6 +186,7 @@ export class Player {
       if (k[' ']) this.vel.y += 0.04;
     } else if (k[' '] && this.onGround) {
       this.vel.y = 0.42;
+      this.jumped = true;           // survival.js takes a jump's exhaustion
       if (this.sprinting) { this.vel.x += -Math.sin(this.yaw) * 0.2; this.vel.z += -Math.cos(this.yaw) * 0.2; }
       this.onGround = false;
     }
