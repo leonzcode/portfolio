@@ -1,0 +1,481 @@
+/* ---------------------------------------------------------------------------
+   Leoncraft 2 - drawing the mobs.
+
+   Every kind of model is one draw, however many of it there are: the model's
+   boxes are one geometry (each vertex knows its part), each mob is an
+   instance, and every part of every mob gets its own matrix in one float
+   texture, filled on the CPU each frame. A zombie and a husk share the
+   humanoid geometry and differ only in where their texture sits in the atlas
+   (an offset per instance); a sheep's wool takes its dye colour per instance.
+
+   Lit as the player's model is (avatar.js): the sun through the shadow map,
+   the sky, block light and the light in your hand, with each mob's own sky
+   and block light levels from where it stands. Hurt mobs flash red, a
+   swelling creeper flashes white.
+
+   Also here: the round shadow under each mob (the game's "entity shadows"),
+   and the particles (smoke puffs, crits, hearts, flames, explosions), each
+   one instanced draw.
+--------------------------------------------------------------------------- */
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=8';
+import { VANILLA } from './vanilla.js?v=8';
+import { lightDefines } from './materials.js?v=8';
+const THREE = window.THREE;
+
+export const ATLAS = 1024;           // the mob texture atlas, in pixels a side
+const BONE_W = 256;                  // matrices per row of the bone texture
+
+const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow;\n`;
+const VS = /* glsl */`
+uniform mat4 viewMatrix, projectionMatrix;
+uniform highp sampler2D uBones;
+in vec3 position; in vec3 normal; in vec2 uv; in vec2 aPart;
+in vec4 aI0;   // first bone, atlas offset u, v, (unused)
+in vec4 aI1;   // sky, block light (0..1), hurt red, white flash
+in vec4 aI2;   // tint colour (rgb), (unused)
+out vec3 vWorld; out vec3 vN; out vec2 vUv; out vec4 vL; out vec3 vTint;
+mat4 bone(int i) {
+  ivec2 p = ivec2((i % ${BONE_W}) * 4, i / ${BONE_W});
+  return mat4(texelFetch(uBones, p, 0), texelFetch(uBones, p + ivec2(1, 0), 0), texelFetch(uBones, p + ivec2(2, 0), 0), texelFetch(uBones, p + ivec2(3, 0), 0));
+}
+void main() {
+  mat4 M = bone(int(aI0.x + 0.5) + int(aPart.x + 0.5));
+  vec4 w = M * vec4(position, 1.0);
+  vWorld = w.xyz;
+  vN = normalize(mat3(M) * normal);
+  vUv = (uv + aI0.yz) / ${ATLAS}.0;
+  vL = aI1;
+  // a tinted part (wool, a collar) takes the instance colour
+  vTint = aPart.y > 0.5 ? aI2.rgb : vec3(1.0);
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+const FS = /* glsl */`
+uniform sampler2D uAtlas, uAmbient;
+uniform vec3 cameraPosition, uLightDir;
+uniform float uFrame;
+uniform float uTime;
+uniform sampler2D uNoise;
+#ifdef LDR
+uniform sampler2D uView;
+uniform float uEyeInWater;
+` + LDR + `
+#endif
+` + LIGHTS + `
+in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint;
+layout(location = 0) out vec4 outColor;
+vec3 ambientAt(vec3 n) {
+  vec3 up = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
+  vec3 side = texelFetch(uAmbient, ivec2(1, 0), 0).rgb;
+  vec3 down = texelFetch(uAmbient, ivec2(2, 0), 0).rgb;
+  return n.y > 0.0 ? mix(side, up, n.y) : mix(side, down, -n.y);
+}
+void main() {
+  vec4 t = texture(uAtlas, vUv);
+  if (t.a < 0.5) discard;
+  vec3 albedo = toLinear(t.rgb * vTint);
+  // hurt: the game's red overlay; a creeper about to go: white
+  albedo = mix(albedo, vec3(0.75, 0.0, 0.0), vL.z * 0.55);
+  albedo = mix(albedo, vec3(1.0), vL.w);
+  vec3 N = normalize(vN);
+  if (!gl_FrontFacing) N = -N;
+  float sky = vL.x, block = vL.y;
+  vec3 L = uLightDir;
+  float NoL = dot(N, L);
+  float gate = smoothstep(0.03, 0.2, sky);
+  float shadow = 0.0;
+#if SHADOWS > 0
+  if (gate > 0.0 && NoL > 0.0) {
+    vec3 sc = shadowCoord(vWorld, N, NoL, length(cameraPosition - vWorld));
+    shadow = shadowHard(sc);
+    float edge = max(abs(sc.x - 0.5), abs(sc.y - 0.5)) * 2.0;
+    shadow = mix(shadow, smoothstep(0.85, 0.95, sky), linstep(0.85, 1.0, edge));
+  }
+#else
+  shadow = smoothstep(0.8, 0.95, sky) * step(0.0, NoL);
+#endif
+  shadow *= gate;
+  if (shadow > 0.0) shadow *= cloudShade(vWorld, L);
+  vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb;
+  vec3 diffuse = sunC * shadow * sat(NoL);
+  vec3 amb = ambientAt(N);
+  amb = mix(amb, vec3(lum(amb)), 0.22);
+  amb += sunC * 0.03;
+  amb *= sky * sky * 0.8;
+  block = max(block, heldLight(vWorld, N));
+  vec3 blockL = block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
+  vec3 col = albedo / PI * (diffuse * PI + amb + blockL + vec3(0.0035, 0.004, 0.006));
+#ifdef LDR
+  col = finishLDR(col, vWorld);
+#endif
+  outColor = vec4(col, 1.0);
+}`;
+
+/* Fast graphics (the game with no shaders): a mob is its skin, the game's two
+   fixed lights on its faces, the lightmap where it stands and the fog; hurt
+   is the game's red overlay (30% red), a creeper about to go flashes white. */
+const FS_VANILLA = VANILLA + /* glsl */`
+uniform sampler2D uAtlas;
+uniform vec3 cameraPosition;
+in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint;
+layout(location = 0) out vec4 outColor;
+void main() {
+  vec4 t = texture(uAtlas, vUv);
+  if (t.a < 0.5) discard;
+  vec3 c = t.rgb * vTint;
+  c = mix(c, vec3(1.0, 0.0, 0.0), vL.z * 0.3);
+  c = mix(c, vec3(1.0), vL.w);
+  vec3 N = normalize(vN);
+  if (!gl_FrontFacing) N = -N;
+  c *= entityShade(N) * lightmapAt(vL.x, vL.y);
+  outColor = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
+}`;
+const PART_FS_VANILLA = VANILLA + /* glsl */`
+uniform sampler2D uSheet;
+in vec2 vUv; in vec4 vC; in float vLight;
+layout(location = 0) out vec4 outColor;
+void main() {
+  vec4 t = texture(uSheet, vUv);
+  if (t.a * vC.a < 0.1) discard;
+  vec3 c = t.rgb * vC.rgb * (vLight > 0.99 ? vec3(1.0) : lightmapAt(vLight, 0.0));
+  outColor = vec4(c, t.a * vC.a);
+}`;
+
+/* ---- the round shadow under a mob ---- */
+const BLOB_VS = /* glsl */`
+uniform mat4 viewMatrix, projectionMatrix;
+in vec3 position; in vec4 aB;   // centre x, y, z, radius
+in float aA;                    // darkness
+out vec2 vP; out float vA;
+void main() {
+  vP = position.xz;
+  vA = aA;
+  vec3 w = aB.xyz + vec3(position.x * aB.w, 0.0, position.z * aB.w);
+  gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+}`;
+const BLOB_FS = /* glsl */`
+in vec2 vP; in float vA;
+layout(location = 0) out vec4 outColor;
+void main() {
+  float d = length(vP);
+  if (d > 1.0) discard;
+  // a soft-edged disc in fat pixels, like the game's shadow picture
+  vec2 q = floor(vP * 4.0) / 4.0;
+  float a = vA * (1.0 - smoothstep(0.55, 1.0, length(q + 0.125)));
+  outColor = vec4(0.0, 0.0, 0.0, a);
+}`;
+
+/* ---- the patch over a boat's inside: depth only, so the water under it is not drawn there ---- */
+const MASK_VS = /* glsl */`
+uniform mat4 viewMatrix, projectionMatrix;
+in vec3 position; in vec4 aM;   // x, y, z, yaw
+in vec2 aS;                     // half size across, along
+void main() {
+  float c = cos(aM.w), s = sin(aM.w);
+  vec2 q = position.xz * aS;
+  vec3 w = aM.xyz + vec3(q.x * c + q.y * s, 0.0, -q.x * s + q.y * c);
+  gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+}`;
+const MASK_FS = /* glsl */`
+layout(location = 0) out vec4 outColor;
+void main() { outColor = vec4(0.0); }`;
+
+/* ---- particles: camera-facing squares out of a small sheet ---- */
+const PART_VS = /* glsl */`
+uniform mat4 viewMatrix, projectionMatrix;
+in vec3 position; in vec4 aP;   // x, y, z, size
+in vec4 aC;                     // colour rgb, alpha
+in vec4 aT;                     // frame, light (0..1), spin, (unused)
+out vec2 vUv; out vec4 vC; out float vLight;
+void main() {
+  vec4 v = viewMatrix * vec4(aP.xyz, 1.0);
+  float c = cos(aT.z), s = sin(aT.z);
+  vec2 q = vec2(position.x * c - position.y * s, position.x * s + position.y * c);
+  v.xy += q * aP.w;
+  float f = aT.x;
+  vUv = (vec2(mod(f, 8.0), floor(f / 8.0)) + (position.xy * vec2(1.0, -1.0) + 0.5)) / 8.0;
+  vC = aC; vLight = aT.y;
+  gl_Position = projectionMatrix * v;
+}`;
+const PART_FS = /* glsl */`
+uniform sampler2D uSheet, uAmbient;
+in vec2 vUv; in vec4 vC; in float vLight;
+layout(location = 0) out vec4 outColor;
+void main() {
+  vec4 t = texture(uSheet, vUv);
+  if (t.a * vC.a < 0.1) discard;
+  vec3 c = pow(t.rgb * vC.rgb, vec3(2.2));
+  // lit by the sky's light where it is (glowing ones carry a light of 1)
+  vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb + texelFetch(uAmbient, ivec2(3, 0), 0).rgb * 0.6;
+  vec3 lit = mix(amb / 3.14159 * 1.4, vec3(1.0), vLight > 0.99 ? 1.0 : 0.0);
+  c *= max(lit * max(vLight, 0.06), vec3(0.004));
+#ifdef LDR
+  c = pow(c, vec3(1.0 / 2.2));
+#endif
+  outColor = vec4(c, t.a * vC.a);
+}`;
+
+/* ---------------------------------------------------------------------------
+   A model's geometry: boxes on parts, from the definitions in
+   entities/mobmodels.js. Coordinates are the game's (pixels, y down, -z the
+   front); they are turned here to y up, +z the front, as avatar.js does.
+--------------------------------------------------------------------------- */
+function faceList(u, v, w, h, d) {
+  return [
+    [[0, 0, 1], [[-1, 1, 1], [1, 1, 1], [1, -1, 1], [-1, -1, 1]], [u + d, v + d, u + d + w, v + d + h]],                  // front
+    [[0, 0, -1], [[1, 1, -1], [-1, 1, -1], [-1, -1, -1], [1, -1, -1]], [u + 2 * d + w, v + d, u + 2 * d + 2 * w, v + d + h]], // back
+    [[-1, 0, 0], [[-1, 1, -1], [-1, 1, 1], [-1, -1, 1], [-1, -1, -1]], [u, v + d, u + d, v + d + h]],                    // its right
+    [[1, 0, 0], [[1, 1, 1], [1, 1, -1], [1, -1, -1], [1, -1, 1]], [u + d + w, v + d, u + 2 * d + w, v + d + h]],          // its left
+    [[0, 1, 0], [[-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]], [u + d, v, u + d + w, v + d]],                          // top
+    [[0, -1, 0], [[-1, -1, 1], [1, -1, 1], [1, -1, -1], [-1, -1, -1]], [u + d + w, v, u + d + 2 * w, v + d]],              // bottom
+  ];
+}
+export function modelGeometry(model) {
+  const P = [], N = [], T = [], A = [], I = [];
+  model.parts.forEach((part, pi) => {
+    for (const bx of part.boxes) {
+      // [x, y, z, w, h, d, u, v, inflate, mirror, tinted]
+      const [x0, y0, z0, w, h, d, u, v] = bx;
+      const inf = bx[8] || 0, mirror = !!bx[9], tint = bx[10] ? 1 : 0;
+      // the box's centre in the turned space (y and z flip)
+      const cx = x0 + w / 2, cy = -(y0 + h / 2), cz = -(z0 + d / 2);
+      const hx = w / 2 + inf, hy = h / 2 + inf, hz = d / 2 + inf;
+      const faces = faceList(u, v, w, h, d);
+      if (mirror) { const t = faces[2][2]; faces[2][2] = faces[3][2]; faces[3][2] = t; }
+      for (const [n, corners, r] of faces) {
+        if (w === 0 && n[0] === 0 || h === 0 && n[1] === 0 && false) { /* keep */ }
+        const v0 = P.length / 3;
+        let UV = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
+        if (mirror) UV = [UV[1], UV[0], UV[3], UV[2]];
+        for (let k = 0; k < 4; k++) {
+          const s = corners[k];
+          P.push(cx + s[0] * hx, cy + s[1] * hy, cz + s[2] * hz);
+          N.push(n[0], n[1], n[2]);
+          T.push(UV[k][0], UV[k][1]);
+          A.push(pi, tint);
+        }
+        I.push(v0, v0 + 2, v0 + 1, v0, v0 + 3, v0 + 2);
+      }
+    }
+  });
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(T, 2));
+  g.setAttribute('aPart', new THREE.Float32BufferAttribute(A, 2));
+  g.setIndex(I);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+  return g;
+}
+
+/* ---------------------------------------------------------------------------
+   The renderer side. Per frame: begin(), then add() each mob, then end().
+--------------------------------------------------------------------------- */
+export class EntityMeshes {
+  constructor(R, atlasCanvas, sheetCanvas) {
+    this.R = R;
+    const U = R.U, opts = R.opts;
+    this.group = new THREE.Group();
+    this.group.name = 'entities';
+    // the atlas and the particle sheet
+    const tex = this.atlas = new THREE.CanvasTexture(atlasCanvas);
+    tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false; tex.flipY = false;
+    tex.colorSpace = THREE.NoColorSpace;
+    const sheet = this.sheet = new THREE.CanvasTexture(sheetCanvas);
+    sheet.magFilter = THREE.NearestFilter; sheet.minFilter = THREE.NearestFilter;
+    sheet.generateMipmaps = false; sheet.flipY = false;
+    sheet.colorSpace = THREE.NoColorSpace;
+    // the bone matrices
+    this.boneRows = 4;
+    this.bones = new Float32Array(BONE_W * 4 * this.boneRows * 4);
+    this.boneTex = this.makeBoneTex();
+    this.nBones = 0;
+    const defines = { SHADOWS: opts.shadows === undefined ? 2 : opts.shadows };
+    if (opts.ldr) defines.LDR = 1;
+    Object.assign(defines, lightDefines(opts));
+    this.uBones = { value: this.boneTex };
+    const uni = Object.assign({}, U, { uAtlas: { value: tex }, uBones: this.uBones });
+    this.mat = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + COMMON + VS,
+      fragmentShader: opts.vanilla ? HEAD + FS_VANILLA : HEAD + COMMON + SHADOW + TONEMAP + FS,
+      uniforms: uni, defines, side: THREE.DoubleSide,
+    });
+    this.models = new Map();        // name -> { mesh, geo, inst arrays, n, cap }
+    // round shadows
+    const bg = new THREE.InstancedBufferGeometry();
+    bg.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1], 3));
+    bg.setIndex([0, 2, 1, 0, 3, 2]);
+    this.blobCap = 0; this.blobN = 0;
+    this.blobGeo = bg;
+    this.growBlobs(64);
+    this.blob = new THREE.Mesh(bg, new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + BLOB_VS, fragmentShader: HEAD + BLOB_FS,
+      transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    }));
+    this.blob.frustumCulled = false; this.blob.renderOrder = 5;
+    this.group.add(this.blob);
+    // particles
+    const pg = new THREE.InstancedBufferGeometry();
+    pg.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0], 3));
+    pg.setIndex([0, 1, 2, 0, 2, 3]);
+    this.partGeo = pg; this.partCap = 0; this.partN = 0;
+    this.growParts(256);
+    const pdef = {};
+    if (opts.ldr) pdef.LDR = 1;
+    this.parts = new THREE.Mesh(pg, new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + PART_VS, fragmentShader: HEAD + (opts.vanilla ? PART_FS_VANILLA : PART_FS), defines: pdef,
+      uniforms: { uSheet: { value: sheet }, uAmbient: U.uAmbient, uLightmap: U.uLightmap || { value: null }, uFogColor: U.uFogColor || { value: null }, uFog: U.uFog || { value: null } },
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    this.parts.frustumCulled = false; this.parts.renderOrder = 6;
+    this.group.add(this.parts);
+    // boats' water patches: after everything opaque, depth only
+    const mg = new THREE.InstancedBufferGeometry();
+    mg.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1], 3));
+    mg.setIndex([0, 2, 1, 0, 3, 2]);
+    this.maskGeo = mg; this.maskN = 0; this.maskCap = 16;
+    this.mM = new THREE.InstancedBufferAttribute(new Float32Array(64), 4).setUsage(THREE.DynamicDrawUsage);
+    this.mS = new THREE.InstancedBufferAttribute(new Float32Array(32), 2).setUsage(THREE.DynamicDrawUsage);
+    mg.setAttribute('aM', this.mM); mg.setAttribute('aS', this.mS);
+    this.mask = new THREE.Mesh(mg, new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: HEAD + MASK_VS, fragmentShader: HEAD + MASK_FS, colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
+    this.mask.frustumCulled = false; this.mask.renderOrder = 4;
+    this.group.add(this.mask);
+    this.tmp = new THREE.Matrix4(); this.tmp2 = new THREE.Matrix4(); this.e = new THREE.Euler();
+  }
+  makeBoneTex() {
+    const t = new THREE.DataTexture(this.bones, BONE_W * 4, this.boneRows, THREE.RGBAFormat, THREE.FloatType);
+    t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
+    return t;
+  }
+  // a model, made once, by name
+  model(name, def) {
+    let m = this.models.get(name);
+    if (m) return m;
+    const geo = modelGeometry(def);
+    m = { name, geo, n: 0, cap: 0, mesh: new THREE.Mesh(geo, this.mat) };
+    m.mesh.frustumCulled = false;
+    m.mesh.matrixAutoUpdate = false;
+    this.grow(m, 16);
+    this.group.add(m.mesh);
+    this.models.set(name, m);
+    return m;
+  }
+  grow(m, cap) {
+    m.cap = cap;
+    for (const k of ['aI0', 'aI1', 'aI2']) {
+      const old = m[k];
+      const a = new Float32Array(cap * 4);
+      if (old) a.set(old.array.subarray(0, Math.min(old.array.length, a.length)));
+      const attr = new THREE.InstancedBufferAttribute(a, 4);
+      attr.setUsage(THREE.DynamicDrawUsage);
+      m[k] = attr;
+      m.geo.setAttribute(k, attr);
+    }
+  }
+  growBlobs(cap) {
+    this.blobCap = cap;
+    this.blobB = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage);
+    this.blobA = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage);
+    this.blobGeo.setAttribute('aB', this.blobB);
+    this.blobGeo.setAttribute('aA', this.blobA);
+  }
+  growParts(cap) {
+    this.partCap = cap;
+    this.pP = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage);
+    this.pC = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage);
+    this.pT = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage);
+    this.partGeo.setAttribute('aP', this.pP);
+    this.partGeo.setAttribute('aC', this.pC);
+    this.partGeo.setAttribute('aT', this.pT);
+  }
+
+  begin() {
+    for (const m of this.models.values()) m.n = 0;
+    this.nBones = 0; this.blobN = 0; this.partN = 0; this.maskN = 0;
+  }
+  // room for n more matrices; returns the first one's index
+  allocBones(n) {
+    const need = this.nBones + n;
+    if (need > BONE_W * this.boneRows) {
+      let rows = this.boneRows;
+      while (BONE_W * rows < need) rows *= 2;
+      const b = new Float32Array(BONE_W * 4 * rows * 4);
+      b.set(this.bones);
+      this.bones = b; this.boneRows = rows;
+      this.boneTex.dispose();
+      this.boneTex = this.makeBoneTex();
+      this.uBones.value = this.boneTex;
+    }
+    const i = this.nBones;
+    this.nBones = need;
+    return i;
+  }
+  setBone(i, m4) { this.bones.set(m4.elements, i * 16); }
+  /* One mob: its model, its first bone, where its texture is in the atlas,
+     its light and flashes, and its tint. */
+  add(m, bone, u, v, sky, block, hurt, white, r, g, b) {
+    if (m.n >= m.cap) this.grow(m, m.cap * 2);
+    const o = m.n * 4;
+    const a0 = m.aI0.array, a1 = m.aI1.array, a2 = m.aI2.array;
+    a0[o] = bone; a0[o + 1] = u; a0[o + 2] = v; a0[o + 3] = 0;
+    a1[o] = sky; a1[o + 1] = block; a1[o + 2] = hurt; a1[o + 3] = white;
+    a2[o] = r; a2[o + 1] = g; a2[o + 2] = b; a2[o + 3] = 1;
+    m.n++;
+  }
+  blobAt(x, y, z, r, a) {
+    if (this.blobN >= this.blobCap) { const ob = this.blobB.array, oa = this.blobA.array; this.growBlobs(this.blobCap * 2); this.blobB.array.set(ob); this.blobA.array.set(oa); }
+    const o = this.blobN * 4, B = this.blobB.array;
+    B[o] = x; B[o + 1] = y; B[o + 2] = z; B[o + 3] = r;
+    this.blobA.array[this.blobN] = a;
+    this.blobN++;
+  }
+  maskAt(x, y, z, yaw, hx, hz) {
+    if (this.maskN >= this.maskCap) {
+      const om = this.mM.array, os = this.mS.array;
+      this.maskCap *= 2;
+      this.mM = new THREE.InstancedBufferAttribute(new Float32Array(this.maskCap * 4), 4).setUsage(THREE.DynamicDrawUsage);
+      this.mS = new THREE.InstancedBufferAttribute(new Float32Array(this.maskCap * 2), 2).setUsage(THREE.DynamicDrawUsage);
+      this.mM.array.set(om); this.mS.array.set(os);
+      this.maskGeo.setAttribute('aM', this.mM); this.maskGeo.setAttribute('aS', this.mS);
+    }
+    const o = this.maskN * 4, M = this.mM.array, S = this.mS.array;
+    M[o] = x; M[o + 1] = y; M[o + 2] = z; M[o + 3] = yaw;
+    S[this.maskN * 2] = hx; S[this.maskN * 2 + 1] = hz;
+    this.maskN++;
+  }
+  particle(x, y, z, size, r, g, b, a, frame, light, spin) {
+    if (this.partN >= this.partCap) {
+      const op = this.pP.array, oc = this.pC.array, ot = this.pT.array;
+      this.growParts(this.partCap * 2);
+      this.pP.array.set(op); this.pC.array.set(oc); this.pT.array.set(ot);
+    }
+    const o = this.partN * 4, P = this.pP.array, C = this.pC.array, T = this.pT.array;
+    P[o] = x; P[o + 1] = y; P[o + 2] = z; P[o + 3] = size;
+    C[o] = r; C[o + 1] = g; C[o + 2] = b; C[o + 3] = a;
+    T[o] = frame; T[o + 1] = light; T[o + 2] = spin || 0; T[o + 3] = 0;
+    this.partN++;
+  }
+  end() {
+    for (const m of this.models.values()) {
+      m.geo.instanceCount = m.n;
+      m.mesh.visible = m.n > 0;
+      if (m.n) for (const k of ['aI0', 'aI1', 'aI2']) { const at = m[k]; at.needsUpdate = true; at.clearUpdateRanges && at.clearUpdateRanges(); at.addUpdateRange && at.addUpdateRange(0, m.n * 4); }
+    }
+    if (this.nBones) {
+      // only the rows in use go up
+      const rows = Math.ceil(this.nBones / BONE_W);
+      const img = this.boneTex.image;
+      if (img.height !== rows) { /* the texture keeps its size; the shader reads only the rows it needs */ }
+      this.boneTex.needsUpdate = true;
+    }
+    this.blobGeo.instanceCount = this.blobN;
+    this.blob.visible = this.blobN > 0;
+    if (this.blobN) { this.blobB.needsUpdate = true; this.blobA.needsUpdate = true; }
+    this.maskGeo.instanceCount = this.maskN;
+    this.mask.visible = this.maskN > 0;
+    if (this.maskN) { this.mM.needsUpdate = true; this.mS.needsUpdate = true; }
+    this.partGeo.instanceCount = this.partN;
+    this.parts.visible = this.partN > 0;
+    if (this.partN) { this.pP.needsUpdate = true; this.pC.needsUpdate = true; this.pT.needsUpdate = true; }
+  }
+}

@@ -13,6 +13,7 @@ import { BLOCKS, FLUID } from './blocks.js?v=8';
 export class World {
   constructor(opts) {
     this.seed = opts.seed;
+    this.generator = opts.generator || 'classic';    // 'vanilla' (Minecraft's own worlds) or 'classic' (the first generator)
     this.renderDist = opts.renderDist;
     this.chunks = new Map();          // "cx,cz" -> chunk
     this.onMesh = opts.onMesh;
@@ -30,7 +31,7 @@ export class World {
       const w = new Worker(new URL('./worker.js?v=8', import.meta.url), { type: 'module' });
       w.onmessage = e => this.onMessage(i, e.data, res);
       w.onerror = e => console.error('worker', e.message || e);
-      w.postMessage({ type: 'init', seed: this.seed, manifest: opts.manifest, colours: opts.colours });
+      w.postMessage({ type: 'init', seed: this.seed, generator: this.generator, manifest: opts.manifest, colours: opts.colours });
       this.workers.push(w);
       this.busy.push(0);
     })));
@@ -66,6 +67,7 @@ export class World {
       if (!c) return;
       if ((this.meshVersion.get(k) || 0) !== m.version) return;     // something changed since: a newer one is coming
       c.meshed = true;
+      if (m.mesh.light) { c.light = m.mesh.light; c.lightH = m.mesh.lightH; }    // for mobs (js/entities)
       this.stats.mesh++;
       this.onMesh(m.cx, m.cz, m.mesh);
       return;
@@ -113,13 +115,15 @@ export class World {
       this.genList.sort((a, b) => a[0] - b[0]);
     }
     const cap = this.workers.length * 2;
-    // meshes first (they are what you see), nearest first
+    // meshes first (they are what you see), nearest first; a few a frame, so packing them never stalls one
+    let sends = 0;
     if (this.meshQueue.size) {
       const list = [...this.meshQueue].map(k => { const [x, z] = k.split(',').map(Number); return [(x - pcx) ** 2 + (z - pcz) ** 2, x, z, k]; })
         .sort((a, b) => a[0] - b[0]);
       for (const [d, x, z, k] of list) {
-        if (this.inFlightCount() >= cap) break;
+        if (this.inFlightCount() >= cap || sends >= 2) break;
         if (this.inFlight.has('m' + k)) continue;
+        sends++;
         if (d > this.renderDist * this.renderDist) { this.meshQueue.delete(k); continue; }
         this.meshQueue.delete(k);
         this.sendMesh(x, z);

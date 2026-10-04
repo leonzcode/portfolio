@@ -89,7 +89,7 @@ export class Player {
     }
     if ((k === 'w') && on && !this.keys.w) {
       const now = performance.now();
-      if (now - (this.lastW || 0) < 280) this.sprinting = true;
+      if (now - (this.lastW || 0) < 280 && this.canSprint !== false) this.sprinting = true;
       this.lastW = now;
     }
     this.keys[k] = on;
@@ -144,6 +144,8 @@ export class Player {
   }
   move(dx, dy, dz) {
     const p = this.pos;
+    // spectators pass through everything
+    if (this.noclip) { p.x += dx; p.y += dy; p.z += dz; this.onGround = false; this.hCollide = false; this.moved[0] = dx; this.moved[1] = dy; this.moved[2] = dz; return; }
     // sneaking keeps you on the edge of a block: no step that would leave nothing under you
     if (this.sneaking && this.onGround && !this.flying) {
       const drop = (nx, nz) => !this.boxHits(nx - W, p.y - STEP, nz - W, nx + W, p.y, nz + W);
@@ -310,11 +312,13 @@ export class Player {
     if (this.inWater && !wasIn && this.vel.y < -0.15) this.splashes.push([this.pos.x, this.pos.z, Math.min(1.6, -this.vel.y * 3), 2.6]);
     // sprinting stops when you let go of forward, sneak, run straight into a wall, or wade (not swim)
     const slowPose = this.pose === 'crouch' || (this.pose === 'swim' && !this.inWater);
-    if (fwd <= 0 || this.sneaking || this.noSprint) this.sprinting = false;
+    // survival sets canSprint (hunger above 6) and usingItem (eating: no sprinting)
+    const mayRun = !this.noSprint && this.canSprint !== false && !this.usingItem;
+    if (fwd <= 0 || this.sneaking || !mayRun) this.sprinting = false;
     if (this.hCollide && !this.minorCollide) this.sprinting = false;
     if (this.swimming) { if (!this.inWater) this.sprinting = false; }
     else if (this.inWater && !this.eyeInWater && !this.flying) this.sprinting = false;
-    if (k.control && fwd > 0 && !this.noSprint && (!slowPose || this.eyeInWater) && (!this.inWater || this.eyeInWater || this.flying)) this.sprinting = true;
+    if (k.control && fwd > 0 && mayRun && (!slowPose || this.eyeInWater) && (!this.inWater || this.eyeInWater || this.flying)) this.sprinting = true;
     // swimming: sprinting under water, and it lasts while you sprint in water
     if (this.flying) this.swimming = false;
     else if (this.swimming) this.swimming = this.sprinting && this.inWater;
@@ -331,6 +335,8 @@ export class Player {
       accel = (this.sprinting ? 0.13 : 0.1) * (0.216 / (slip * slip * slip));
     } else accel = this.sprinting ? 0.026 : 0.02;
     if (slowPose) { fwd *= 0.3; str *= 0.3; }
+    // eating or drawing a bow: a fifth of the speed
+    if (this.usingItem) { fwd *= 0.2; str *= 0.2; }
     // move relative to where you are looking (only round, not up)
     let len = Math.hypot(fwd, str);
     if (len > 0.0001) {
@@ -352,6 +358,7 @@ export class Player {
       const px = Math.floor(this.pos.x), pz = Math.floor(this.pos.z);
       const j = JUMP.get(this.w.get(px, Math.floor(this.pos.y), pz)) || JUMP.get(this.w.get(px, Math.floor(this.pos.y - 0.5), pz)) || 1;
       this.vel.y = 0.42 * j;
+      this.jumped = true;           // survival.js takes a jump's exhaustion
       if (this.sprinting) { this.vel.x += -Math.sin(this.yaw) * 0.2; this.vel.z += -Math.cos(this.yaw) * 0.2; }
       this.onGround = false;
     }
