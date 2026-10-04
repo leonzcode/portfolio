@@ -11,25 +11,26 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso, setCustomTrack } from './track.js?v=103';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=103';
-import { packLook, unpackLook, normalise } from './parts.js?v=103';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=103';
-import { whenKit } from './models.js?v=103';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=103';
-import { makeRescue } from './rescue.js?v=103';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=103';
-import { makeBrain, driveBrain } from './ai.js?v=103';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=103';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=103';
-import { makeRanked } from './rk.js?v=103';
-import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=103';
-import { makeHub } from './hub.js?v=103';
-import { icon, KIND_ICON } from './icons.js?v=103';
-import { makeCones } from './cones.js?v=103';
-import { makeHazards } from './hazards.js?v=103';
-import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=103';
-import * as snd from './audio.js?v=103';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=104';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=104';
+import { packLook, unpackLook, normalise } from './parts.js?v=104';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=104';
+import { whenKit } from './models.js?v=104';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=104';
+import { makeRescue } from './rescue.js?v=104';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=104';
+import { makeBrain, driveBrain } from './ai.js?v=104';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=104';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=104';
+import { makeRanked } from './rk.js?v=104';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=104';
+import { makeHub } from './hub.js?v=104';
+import { icon, KIND_ICON } from './icons.js?v=104';
+import { makeCones } from './cones.js?v=104';
+import { makeHazards } from './hazards.js?v=104';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=104';
+import * as snd from './audio.js?v=104';
+import { PERF_LEVELS, perfId, perfLevel, setPerf, applyToTrack } from './perf.js?v=104';
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -686,6 +687,7 @@ function buildWorld(seed, themeId) {
   // a map somebody built: its points go to the track builder, its things go down after
   setCustomTrack(isCustom(th.id) ? (customSpecs.get(th.id) || null) : null);
   track = buildTrack(scene, seed, th.id);
+  applyToTrack(track.group);
   if (isCustom(th.id) && customData.get(th.id)) {
     const forTrack = track;
     editorModule().then(E => E.buildExtras(scene, forTrack, customData.get(th.id), k => pickupBox(k, { taken: 0 })))
@@ -701,8 +703,14 @@ function buildWorld(seed, themeId) {
   /* And the build is told which world it was started for. By the time the
      models have loaded the lobby may have moved on, and scenery for a circuit
      that no longer exists is scenery standing in the middle of this one. */
+  buildScenery();
+}
+// the props, for the world as it is now; again whenever the performance level changes
+function buildScenery() {
   const forWorld = track;
-  import('./props.js?v=103')
+  if (!forWorld) return;
+  for (let o = scene.getObjectByName('props'); o; o = scene.getObjectByName('props')) shredGroup(o);
+  import('./props.js?v=104')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -3143,7 +3151,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=103');
+    const mod = await import('./net.js?v=104');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3367,8 +3375,29 @@ function menu(on) {
 function menuPage(which) {
   el('menumain').hidden = which !== 'main';
   el('menukeys').hidden = which !== 'keys';
+  el('menuperf').hidden = which !== 'perf';
   if (which === 'keys') drawBinds();
+  if (which === 'perf') drawPerf();
+  el('perfnow').textContent = perfLevel().name;
 }
+/* How much scenery stands round the circuit (perf.js). A choice takes effect
+   at once: the track's own woods and skyline are trimmed where they stand and
+   the props are built again, which takes a moment and leaves the race as it
+   was. Nothing here touches what you can drive into. */
+function drawPerf() {
+  const now = perfId();
+  el('perfrows').innerHTML = PERF_LEVELS.map(l =>
+    '<button type="button" class="prow' + (l.id === now ? ' on' : '') + '" data-p="' + l.id + '">'
+    + '<b>' + l.name + '</b><span>' + esc(l.note) + '</span></button>').join('');
+}
+el('perfrows').addEventListener('click', e => {
+  const b = e.target.closest('[data-p]');
+  if (!b || b.dataset.p === perfId()) return;
+  setPerf(b.dataset.p);
+  drawPerf();
+  el('perfnow').textContent = perfLevel().name;
+  if (track) { applyToTrack(track.group); buildScenery(); }
+});
 const KEYNAME = { ' ': 'Space', arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→' };
 function keyName(k) {
   if (KEYNAME[k]) return KEYNAME[k];
@@ -3414,6 +3443,8 @@ el('restart').addEventListener('click', restartRace);
 el('again').addEventListener('click', () => { if (rk && rk.res) { if (rk.res.lost) goHome(); else rkLobby(); } else restartRace(); });
 el('reshome').addEventListener('click', goHome);
 el('tocontrols').addEventListener('click', () => menuPage('keys'));
+el('toperf').addEventListener('click', () => menuPage('perf'));
+el('perfback').addEventListener('click', () => menuPage('main'));
 // back to the title card, which is a fresh page rather than an unpicking of
 // everything a race has set up
 el('tostart').addEventListener('click', goHome);
@@ -3496,7 +3527,7 @@ function editorCtx() {
   };
 }
 function editorModule() {
-  if (!editorMod) editorMod = import('./editor.js?v=103');
+  if (!editorMod) editorMod = import('./editor.js?v=104');
   return editorMod;
 }
 function playCustomMap(id, mode) {

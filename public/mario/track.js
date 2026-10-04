@@ -11,7 +11,7 @@
    Coordinates: x/z is the ground, y is up, one unit is one metre.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { themeById, rulesOf, lookOf } from './themes.js?v=103';
+import { themeById, rulesOf, lookOf } from './themes.js?v=104';
 
 /* The lap.
 
@@ -1185,6 +1185,9 @@ export function buildTrack(scene, seed, themeId) {
   tm.castShadow = lm.castShadow = false;
   tm.receiveShadow = lm.receiveShadow = true;
   tm.frustumCulled = lm.frustumCulled = false;
+  // they are in random order, so any first part of them is an even share (see perf.js)
+  tm.userData.perf = lm.userData.perf = 'worldTrees';
+  tm.userData.full = trunks.length; lm.userData.full = leaves.length;
   group.add(tm); group.add(lm);
 
   /* ---- the horizon -------------------------------------------------------
@@ -1251,7 +1254,10 @@ export function buildTrack(scene, seed, themeId) {
       }
       const im = new THREE.InstancedMesh(geo, mat, spots.length);
       const e2 = new THREE.Euler(), q2 = new THREE.Quaternion(), s2 = new THREE.Vector3(), p2 = new THREE.Vector3();
-      spots.forEach((sp, k) => {
+      /* every other one first, then the rest, so a level that draws half of a
+         ring draws every other hill rather than half the horizon */
+      const order = spots.filter((_, k) => k % 2 === 0).concat(spots.filter((_, k) => k % 2 === 1));
+      order.forEach((sp, k) => {
         e2.set(0, sp.ry, 0);
         q2.setFromEuler(e2);
         p2.set(sp.x, sp.y, sp.z);
@@ -1263,6 +1269,8 @@ export function buildTrack(scene, seed, themeId) {
       im.castShadow = false;
       im.receiveShadow = false;
       im.frustumCulled = false;
+      im.userData.perf = ring === 'far' ? 'skylineFar' : 'skylineNear';
+      im.userData.full = spots.length;
       group.add(im);
     }
   }
@@ -1715,6 +1723,8 @@ export function buildTrack(scene, seed, themeId) {
       body.instanceMatrix.needsUpdate = true;
       glow.instanceMatrix.needsUpdate = true;
       body.castShadow = true;
+      body.userData.perf = glow.userData.perf = 'towers';
+      body.userData.full = glow.userData.full = 120;
       group.add(body); group.add(glow);
     }
 
