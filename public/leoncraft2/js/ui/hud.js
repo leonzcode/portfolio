@@ -262,7 +262,7 @@ export class Hud {
   _syncCross(g) {
     const show = this._drawn && this.crosshair && !(this.debug && this.camera);
     this._drawn = false;
-    if (!show) { if (this._cross) this._cross.style.display = 'none'; return; }
+    if (!show) { if (this._cross) this._cross.style.display = 'none'; if (this._atk) this._atk.style.display = 'none'; return; }
     const img = g.sheet('icons');
     if (!img) return;
     if (!this._cross) {
@@ -285,10 +285,40 @@ export class Hud {
       cx.drawImage(img, 0, 0, 15, 15, 0, 0, 15 * s, 15 * s);
     }
     c.style.display = '';
+    this._syncAttack(g, x, y);
+  }
+  /* The attack indicator (combat since 1.9): a little bar under the
+     crosshair filling as the next hit charges, gone once it is full.
+     hud.attack is the charge (0..1), or null for none (js/entities). */
+  _syncAttack(g, x, y) {
+    const a = this.attack;
+    if (a === null || a === undefined || a >= 1) { if (this._atk) this._atk.style.display = 'none'; return; }
+    if (!this._atk) {
+      const c = this._atk = document.createElement('canvas');
+      Object.assign(c.style, { position: 'fixed', pointerEvents: 'none', mixBlendMode: 'difference', imageRendering: 'pixelated', zIndex: '4' });
+      document.body.appendChild(c);
+    }
+    const c = this._atk, s = g.scale, dpr = g.dpr || window.devicePixelRatio || 1;
+    const n = Math.floor(a * 17);
+    const key = s + ',' + dpr + ',' + x + ',' + y + ',' + n;
+    if (key !== this._atkKey) {
+      this._atkKey = key;
+      c.width = 16 * s; c.height = 4 * s;
+      c.style.width = (16 * s / dpr) + 'px'; c.style.height = (4 * s / dpr) + 'px';
+      c.style.left = ((x - 1) * s / dpr) + 'px'; c.style.top = ((y + 16) * s / dpr) + 'px';
+      const cx = c.getContext('2d');
+      cx.clearRect(0, 0, c.width, c.height);
+      cx.fillStyle = 'rgb(110,110,110)';
+      cx.fillRect(0, s, 16 * s, 2 * s);
+      cx.fillStyle = 'rgb(255,255,255)';
+      cx.fillRect(0, s, Math.min(16, n) * s, 2 * s);
+    }
+    c.style.display = '';
   }
   // take the crosshair off the page (leaving the game)
   dispose() {
     if (this._cross) { this._cross.remove(); this._cross = null; }
+    if (this._atk) { this._atk.remove(); this._atk = null; }
   }
 }
 

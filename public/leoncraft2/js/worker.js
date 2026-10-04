@@ -31,6 +31,7 @@ self.onmessage = e => {
       for (const a of g.attrs) transfer.push(a.buffer);
       transfer.push(g.index.buffer);
     }
+    if (out.light) transfer.push(out.light.buffer);
     self.postMessage({ type: 'mesh', id: m.id, cx: m.cx, cz: m.cz, version: m.version, mesh: out }, transfer);
     return;
   }

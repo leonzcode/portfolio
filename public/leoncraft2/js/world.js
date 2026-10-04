@@ -67,6 +67,7 @@ export class World {
       if (!c) return;
       if ((this.meshVersion.get(k) || 0) !== m.version) return;     // something changed since: a newer one is coming
       c.meshed = true;
+      if (m.mesh.light) { c.light = m.mesh.light; c.lightH = m.mesh.lightH; }    // for mobs (js/entities)
       this.stats.mesh++;
       this.onMesh(m.cx, m.cz, m.mesh);
       return;
