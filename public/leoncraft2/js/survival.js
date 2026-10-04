@@ -45,7 +45,7 @@ const NO_EXHAUSTION = new Set(['starve', 'void', 'kill', 'poison', 'magic', 'wit
 export function xpForLevel(level) { return level >= 30 ? 9 * level - 158 : level >= 15 ? 5 * level - 38 : 2 * level + 7; }
 
 export class Survival {
-  constructor() { this.inv = null; this.reset(); this.level = 0; this.xpProgress = 0; this.xpTotal = 0; }
+  constructor() { this.inv = null; this.reset(); this.level = 0; this.xpProgress = 0; this.xpTotal = 0; this.enchantSeed = (Math.random() * 2147483647) | 0; }
   reset() {
     this.health = 20; this.food = 20; this.saturation = 5; this.exhaustion = 0; this.air = 300;
     this.fallFrom = null; this.foodTimer = 0; this.burn = 0; this.voidT = 0;
@@ -69,11 +69,14 @@ export class Survival {
     if (epf > 0) dmg *= 1 - Math.min(20, epf) / 25;
     return Math.max(0, dmg);
   }
+  // armour points, toughness and knockback resistance worn (one object, reused)
   armorValues() {
     let points = 0, toughness = 0, knockback = 0;
     const a = this.inv ? this.inv.armor : null;
-    if (a) for (const s of a) { const ar = s && armorOf(s.id); if (ar) { points += ar.points; toughness += ar.toughness; knockback += ar.knockback; } }
-    return { points, toughness, knockback };
+    if (a) for (let i = 0; i < 4; i++) { const s = a[i], ar = s && armorOf(s.id); if (ar) { points += ar.points; toughness += ar.toughness; knockback += ar.knockback; } }
+    const o = this._av || (this._av = { points: 0, toughness: 0, knockback: 0 });
+    o.points = points; o.toughness = toughness; o.knockback = knockback;
+    return o;
   }
   // the armour's protection enchantments against a kind of damage
   protectionPoints(source) {
@@ -204,6 +207,8 @@ export class Survival {
       if (player.jumped) { this.exhaust(player.sprinting ? 0.2 : 0.05); }
     }
     player.jumped = false;
+    // Slow Falling never hurts
+    if (this.effects.slow_falling) { player.fallDistance = 0; player.landed = null; }
     /* falling: the distance the player counted on the way down (player.js),
        spent when it lands; hay and honey take 80% of it, a bed half, and
        slime all of it unless you land sneaking; Jump Boost takes a block a level */
@@ -264,17 +269,17 @@ export class Survival {
     } else this.foodTimer = 0;
   }
 
+  // what the HUD shows (one object, refilled every frame: nothing new is made)
   stats() {
-    const ef = this.effects;
-    return {
-      health: this.health, food: this.food, saturation: this.saturation, air: Math.max(0, this.air),
-      xp: this.xpProgress, level: this.level, armor: this.armorValues().points, hurt: this.hurtTime,
-      absorption: this.absorption, poison: !!ef.poison, wither: !!ef.wither, hungerEffect: !!ef.hunger, regen: !!ef.regeneration,
-    };
+    const ef = this.effects, o = this._st || (this._st = {});
+    o.health = this.health; o.food = this.food; o.saturation = this.saturation; o.air = Math.max(0, this.air);
+    o.xp = this.xpProgress; o.level = this.level; o.armor = this.armorValues().points; o.hurt = this.hurtTime;
+    o.absorption = this.absorption; o.poison = !!ef.poison; o.wither = !!ef.wither; o.hungerEffect = !!ef.hunger; o.regen = !!ef.regeneration;
+    return o;
   }
   toJSON() {
     return { health: this.health, food: this.food, saturation: this.saturation, exhaustion: this.exhaustion, air: this.air,
-      level: this.level, xp: this.xpProgress, xpTotal: this.xpTotal, absorption: this.absorption, effects: this.effects };
+      level: this.level, xp: this.xpProgress, xpTotal: this.xpTotal, absorption: this.absorption, effects: this.effects, enchantSeed: this.enchantSeed };
   }
   fromJSON(o) {
     if (!o) return;
@@ -282,6 +287,7 @@ export class Survival {
     this.saturation = o.saturation ?? 5; this.exhaustion = o.exhaustion ?? 0;
     this.level = o.level | 0; this.xpProgress = o.xp || 0; this.xpTotal = o.xpTotal | 0;
     this.absorption = o.absorption || 0; this.effects = o.effects && typeof o.effects === 'object' ? o.effects : {};
+    if (o.enchantSeed) this.enchantSeed = o.enchantSeed | 0;
     this.dead = this.health <= 0;
   }
 }

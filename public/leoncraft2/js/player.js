@@ -333,6 +333,9 @@ export class Player {
       const under = this.under();
       const slip = (BLOCKS[under] && BLOCKS[under].slippery) || 0.6;
       accel = (this.sprinting ? 0.13 : 0.1) * (0.216 / (slip * slip * slip));
+      // Speed and Slowness (survival.js effects): +20% and -15% a level
+      const fx = this.effects;
+      if (fx && (fx.speed || fx.slowness)) accel *= Math.max(0, (1 + 0.2 * (fx.speed ? fx.speed.level : 0)) * (1 - 0.15 * (fx.slowness ? fx.slowness.level : 0)));
     } else accel = this.sprinting ? 0.026 : 0.02;
     if (slowPose) { fwd *= 0.3; str *= 0.3; }
     // eating or drawing a bow: a fifth of the speed
@@ -357,7 +360,7 @@ export class Player {
       // a jump, from the ground or from water too shallow to swim in
       const px = Math.floor(this.pos.x), pz = Math.floor(this.pos.z);
       const j = JUMP.get(this.w.get(px, Math.floor(this.pos.y), pz)) || JUMP.get(this.w.get(px, Math.floor(this.pos.y - 0.5), pz)) || 1;
-      this.vel.y = 0.42 * j;
+      this.vel.y = 0.42 * j + (this.effects && this.effects.jump_boost ? 0.1 * this.effects.jump_boost.level : 0);
       this.jumped = true;           // survival.js takes a jump's exhaustion
       if (this.sprinting) { this.vel.x += -Math.sin(this.yaw) * 0.2; this.vel.z += -Math.cos(this.yaw) * 0.2; }
       this.onGround = false;
@@ -412,7 +415,8 @@ export class Player {
     } else {
       const under = this.under();
       const slip = this.onGround ? ((BLOCKS[under] && BLOCKS[under].slippery) || 0.6) : 1.0;
-      this.vel.y = (this.vel.y - 0.08) * 0.98;
+      // Slow Falling: a tenth of the gravity on the way down
+      this.vel.y = (this.vel.y - (this.effects && this.effects.slow_falling && this.vel.y < 0 ? 0.01 : 0.08)) * 0.98;
       this.vel.x *= slip * 0.91; this.vel.z *= slip * 0.91;
       // walking on slime: slowed unless you are bouncing
       if (this.onGround && BLOCKS[under] && BLOCKS[under].name === 'slime_block' && Math.abs(this.vel.y) < 0.1 && !this.sneaking) {

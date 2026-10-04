@@ -18,8 +18,9 @@
    Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
 import { ContainerScreen, slot, range, TO_PLAYER, TO_PLAYER_REVERSED } from './inventory.js?v=9';
-import { I, fuelTicks } from '../items.js?v=9';
+import { I, ITEMS, fuelTicks } from '../items.js?v=9';
 import { smeltResult } from '../containers.js?v=9';
+import { isPotion, isIngredient } from '../brewing.js?v=9';
 
 const LABEL_GREY = 0x404040;
 const MAIN = range(9, 36), HOT = range(0, 9);
@@ -100,6 +101,83 @@ export class ChestScreen extends ContainerScreen {
     g.blit('container/generic_54', 0, 126, 176, 96, L, T + h);
     g.text(this.title, L + 8, T + 6, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + this.imageHeight - 94, LABEL_GREY, false);
+    const prev = this.drawSlots(g, mx, my);
+    this.drawCarried(g, mx, my, prev);
+  }
+}
+
+/* ------------------------------ hoppers ------------------------------ */
+
+export class HopperScreen extends ChestScreen {
+  constructor(inv, icons, box, onChange) { super(inv, icons, box, 'Item Hopper', onChange); this.imageHeight = 133; }
+  makeSlots() {
+    const L = this.left, T = this.top, out = [];
+    for (let i = 0; i < 5; i++) out.push(slot(L + 44 + i * 18, T + 20, 'box', i));
+    return out.concat(playerSlots(L, T, 51));
+  }
+  render(g, mx, my) {
+    this.drawBackdrop(g);
+    const L = this.left, T = this.top;
+    g.blit('container/hopper', 0, 0, 176, 133, L, T);
+    g.text(this.title, L + 8, T + 6, LABEL_GREY, false);
+    g.text('Inventory', L + 8, T + 39, LABEL_GREY, false);
+    const prev = this.drawSlots(g, mx, my);
+    this.drawCarried(g, mx, my, prev);
+  }
+}
+
+/* ------------------------------ brewing stand ------------------------------ */
+
+const BUBBLES = [29, 24, 20, 16, 11, 6, 0];
+export class BrewingScreen extends ContainerScreen {
+  /* c: the stand's record ({ slots: 3 bottles, ingredient, blaze powder; fuel, brew }); hooks: { changed() } */
+  constructor(inv, icons, c, hooks) {
+    super(inv, icons, 176, 166);
+    this.c = c; this.box = c.slots; this.fh = hooks || {};
+    this.title = 'Brewing Stand';
+    this.animates = true;
+  }
+  boxChanged() { if (this.fh.changed) this.fh.changed(); }
+  makeSlots() {
+    const L = this.left, T = this.top;
+    return [slot(L + 56, T + 51, 'box', 0), slot(L + 79, T + 58, 'box', 1), slot(L + 102, T + 51, 'box', 2), slot(L + 79, T + 17, 'box', 3), slot(L + 17, T + 17, 'box', 4)]
+      .concat(playerSlots(L, T, 84));
+  }
+  isBottle(st) { return isPotion(st) || st.id === I.glass_bottle; }
+  mayPlace(s, st) {
+    if (s.kind === 'box' && st) {
+      if (s.i <= 2) return this.isBottle(st);
+      if (s.i === 3) return isIngredient(st);
+      return ITEMS[st.id] && ITEMS[st.id].name === 'blaze_powder';
+    }
+    return super.mayPlace(s, st);
+  }
+  limit(s, id) { return s.kind === 'box' && s.i <= 2 ? 1 : super.limit(s, id); }
+  quickMove(s) {
+    const st = this.getStack(s);
+    if (!st) return;
+    if (s.kind === 'box') { this.moveInto(st, TO_PLAYER_REVERSED); this.setStack(s, st.count ? st : null); return; }
+    if (ITEMS[st.id] && ITEMS[st.id].name === 'blaze_powder' && (!this.box[4] || this.box[4].id === st.id)) this.moveIntoBox(st, [4]);
+    else if (isIngredient(st)) this.moveIntoBox(st, [3]);
+    else if (this.isBottle(st)) {
+      for (let i = 0; i < 3 && st.count; i++) if (!this.box[i]) { this.box[i] = { ...st, count: 1 }; st.count--; this.boxChanged(i); }
+    } else this.moveInto(st, s.i >= 9 ? HOT : MAIN);
+    if (!st.count) this.setStack(s, null);
+  }
+  render(g, mx, my) {
+    this.drawBackdrop(g);
+    const L = this.left, T = this.top, c = this.c;
+    g.blit('container/brewing_stand', 0, 0, 176, 166, L, T);
+    const fw = Math.max(0, Math.min(18, Math.floor((18 * c.fuel + 19) / 20)));
+    if (fw > 0) g.blit('container/brewing_stand', 176, 29, fw, 4, L + 60, T + 44);
+    if (c.brew > 0) {
+      const h = Math.floor(28 * (1 - c.brew / 400));
+      if (h > 0) g.blit('container/brewing_stand', 176, 0, 9, h, L + 97, T + 16);
+      const b = BUBBLES[Math.floor(c.brew / 2) % 7];
+      if (b > 0) g.blit('container/brewing_stand', 185, 29 - b, 12, b, L + 63, T + 14 + 29 - b);
+    }
+    g.centered(this.title, L + 88, T + 6, LABEL_GREY, false);
+    g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
     const prev = this.drawSlots(g, mx, my);
     this.drawCarried(g, mx, my, prev);
   }

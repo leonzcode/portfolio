@@ -794,6 +794,7 @@ async function boot() {
       if (g.entities) g.entities.tick();
       if (g.mode === 'survival' || g.mode === 'adventure') {
         player.canSprint = survival.canSprint();
+        player.effects = survival.effects;
         survival.tick(player);
         if (survival.dead && !g.spilled) { g.spilled = true; g.hands.spillAll(); }
         if (survival.dead && !gui.isOpen()) {

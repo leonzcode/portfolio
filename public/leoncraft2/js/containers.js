@@ -10,7 +10,10 @@
      furnace                input, fuel, output; 200 ticks an item
      smoker                 food only, twice as fast (fuel too burns twice as fast)
      blast furnace          ores, raw metal and metal tools and armour, twice as fast
-     shulker box, dispenser, dropper, hopper: their slots (no machinery)
+     hopper                 5 slots; every 8 ticks it passes an item on to what it
+                            points at and takes one from what is above it (or a
+                            stack lying on top of it)
+     shulker box, dispenser, dropper: their slots (no machinery)
 
    A furnace (the Minecraft Wiki, Furnace and Smelting): with something it
    can smelt and room in the output, it burns a fuel item (its burn time,
@@ -21,8 +24,9 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS } from './blocks.js?v=9';
 import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=9';
+import { brewingTick, brewResult, isPotion, isIngredient } from './brewing.js?v=9';
 
-export const SIZES = { chest: 27, trapped_chest: 27, barrel: 27, furnace: 3, smoker: 3, blast_furnace: 3, dispenser: 9, dropper: 9, hopper: 5 };
+export const SIZES = { chest: 27, trapped_chest: 27, barrel: 27, furnace: 3, smoker: 3, blast_furnace: 3, dispenser: 9, dropper: 9, hopper: 5, brewing_stand: 5 };
 const isShulker = n => /shulker_box$/.test(n);
 // the kind of container a block is, or null
 export function containerKind(b) {
@@ -86,6 +90,8 @@ export class Containers {
     this.world = world;
     this.map = new Map();            // "x,y,z" -> { kind, slots, ...furnace }
     this.lit = new Set();            // furnaces that are doing something
+    this.hoppers = new Set();
+    this.drops = null;               // (drops.js) so hoppers can take items lying on them
     this.dirty = false;
   }
   key(x, y, z) { return x + ',' + y + ',' + z; }
@@ -98,10 +104,14 @@ export class Containers {
     if (!c || c.kind !== kind) {
       c = { kind, slots: new Array(SIZES[kind] || 27).fill(null), x, y, z };
       if (COOK_TIME[kind]) Object.assign(c, { burn: 0, burnMax: 0, cook: 0, cookMax: COOK_TIME[kind], xp: 0 });
+      if (kind === 'hopper') { c.cool = 0; this.hoppers.add(c); }
+      if (kind === 'brewing_stand') Object.assign(c, { fuel: 0, brew: 0, ingredient: 0 });
       this.map.set(k, c);
     }
     return c;
   }
+  // a block was placed: hoppers start working at once (others wait until opened)
+  placed(x, y, z) { const k = containerKind(this.world.get(x, y, z)); if (k === 'hopper') this.at(x, y, z); }
   peek(x, y, z) { return this.map.get(this.key(x, y, z)) || null; }
   // the chest beside this one that makes a double chest with it (same block, same facing, to its side)
   partner(x, y, z) {
@@ -114,7 +124,7 @@ export class Containers {
   }
   changed(c) {
     this.dirty = true;
-    if (c && COOK_TIME[c.kind]) this.lit.add(c);
+    if (c && (COOK_TIME[c.kind] || c.kind === 'brewing_stand')) this.lit.add(c);
   }
   // the block is gone: what it held, to be dropped
   remove(x, y, z) {
@@ -122,6 +132,7 @@ export class Containers {
     if (!c) return [];
     this.map.delete(k);
     this.lit.delete(c);
+    this.hoppers.delete(c);
     this.dirty = true;
     return c.slots.filter(Boolean);
   }
@@ -131,8 +142,73 @@ export class Containers {
     if (this.lit.size) this.dirty = true;          // their progress is saved too
     for (const c of this.lit) {
       if (!this.map.has(this.key(c.x, c.y, c.z))) { this.lit.delete(c); continue; }
-      if (!this.furnaceTick(c)) this.lit.delete(c);
+      if (!(c.kind === 'brewing_stand' ? brewingTick(c) : this.furnaceTick(c))) this.lit.delete(c);
     }
+    for (const h of this.hoppers) {
+      if (containerKind(this.world.get(h.x, h.y, h.z)) !== 'hopper') { this.remove(h.x, h.y, h.z); continue; }
+      if (h.cool > 0) { h.cool--; continue; }
+      if (this.hopperTick(h)) { h.cool = 8; this.dirty = true; }
+    }
+  }
+
+  /* ---- hoppers ---- */
+  // the slots an item may go into from a side ('up' = from above), and the slots one may be taken from
+  slotsIn(c, from, st) {
+    if (c.kind === 'brewing_stand') return from === 'up' ? (isIngredient(st) ? [3] : []) : ITEMS[st.id] && ITEMS[st.id].name === 'blaze_powder' ? [4] : isPotion(st) ? [0, 1, 2] : [];
+    if (COOK_TIME[c.kind]) return from === 'up' ? (smeltResult(st.id, c.kind) ? [0] : []) : (fuelTicks(st.id) > 0 || st.id === I.bucket ? [1] : []);
+    return c.slots.map((_, i) => i);
+  }
+  slotsOut(c) { return COOK_TIME[c.kind] ? [2] : c.kind === 'brewing_stand' ? [0, 1, 2] : c.slots.map((_, i) => i); }
+  // one item from a stack into a container's slots; true when it went in
+  insertOne(c, st, slots) {
+    for (const i of slots) { const t = c.slots[i]; if (t && sameItem(t, st) && t.count < maxStack(t.id)) { t.count++; return true; } }
+    for (const i of slots) if (!c.slots[i]) { c.slots[i] = withCount(st, 1); return true; }
+    return false;
+  }
+  hopperTick(h) {
+    let moved = false;
+    // out: down (meta 4 or 5) or to the side it points
+    const m = this.world.meta(h.x, h.y, h.z) & 7;
+    const D = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];
+    const [ox, oy, oz] = m >= 4 ? [0, -1, 0] : D[m & 3];
+    const to = this.at(h.x + ox, h.y + oy, h.z + oz);
+    if (to) {
+      for (let i = 0; i < h.slots.length && !moved; i++) {
+        const s = h.slots[i];
+        if (!s) continue;
+        if (this.insertOne(to, s, this.slotsIn(to, oy < 0 ? 'up' : 'side', s))) {
+          s.count--; if (s.count <= 0) h.slots[i] = null;
+          moved = true;
+          this.changed(to);
+        }
+      }
+    }
+    // in: from a container above, else whatever lies on top
+    const from = this.at(h.x, h.y + 1, h.z);
+    if (from) {
+      for (const i of this.slotsOut(from)) {
+        const s = from.slots[i];
+        if (!s) continue;
+        if (this.insertOne(h, s, [0, 1, 2, 3, 4])) {
+          s.count--; if (s.count <= 0) from.slots[i] = null;
+          if (COOK_TIME[from.kind]) this.takeXp(from, 1);
+          this.changed(from);
+          moved = true;
+          break;
+        }
+      }
+    } else if (this.drops && !(BLOCKS[this.world.get(h.x, h.y + 1, h.z)] || {}).solid) {
+      for (const e of this.drops.items) {
+        if (e.gone || e.fly > 0) continue;
+        const p = e.pos;
+        if (p.x < h.x || p.x >= h.x + 1 || p.z < h.z || p.z >= h.z + 1 || p.y < h.y + 0.6 || p.y > h.y + 2) continue;
+        // as much of the stack as fits
+        let took = 0;
+        while (e.stack.count > 0 && this.insertOne(h, e.stack, [0, 1, 2, 3, 4])) { e.stack.count--; took++; }
+        if (took) { moved = true; if (e.stack.count <= 0) this.drops._remove(e, -1); break; }
+      }
+    }
+    return moved;
   }
   // returns true while it is still doing something
   furnaceTick(c) {
@@ -183,21 +259,24 @@ export class Containers {
   toJSON() {
     const out = [];
     for (const c of this.map.values()) {
-      if (!c.slots.some(Boolean) && !c.xp) continue;
+      if (!c.slots.some(Boolean) && !c.xp && c.kind !== 'hopper') continue;
       const o = { k: c.kind, p: [c.x, c.y, c.z], s: c.slots.map(stackToJSON) };
       if (COOK_TIME[c.kind]) Object.assign(o, { b: c.burn, bm: c.burnMax, c: c.cook, x: +c.xp.toFixed(3) });
+      if (c.kind === 'brewing_stand') Object.assign(o, { f: c.fuel, w: c.brew, g: c.ingredient });
       out.push(o);
     }
     return out;
   }
   fromJSON(list) {
-    this.map.clear(); this.lit.clear();
+    this.map.clear(); this.lit.clear(); this.hoppers.clear();
     if (!Array.isArray(list)) return;
     for (const o of list) {
       const [x, y, z] = o.p;
       const c = { kind: o.k, slots: (o.s || []).map(stackFromJSON), x, y, z };
       while (c.slots.length < (SIZES[o.k] || 27)) c.slots.push(null);
       if (COOK_TIME[o.k]) { Object.assign(c, { burn: o.b | 0, burnMax: o.bm | 0, cook: o.c | 0, cookMax: COOK_TIME[o.k], xp: o.x || 0, lastInput: c.slots[0] ? c.slots[0].id : 0 }); this.lit.add(c); }
+      if (o.k === 'hopper') { c.cool = 0; this.hoppers.add(c); }
+      if (o.k === 'brewing_stand') { Object.assign(c, { fuel: o.f | 0, brew: o.w | 0, ingredient: o.g | 0 }); this.lit.add(c); }
       this.map.set(this.key(x, y, z), c);
     }
   }

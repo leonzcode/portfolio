@@ -53,9 +53,13 @@ def refresh(src, blocks_file):
     items = json.load(open(os.path.join(src, 'pc_26.1_items.json'), encoding='utf-8'))
     foods = json.load(open(os.path.join(src, 'pc_26.1_foods.json'), encoding='utf-8'))
     recipes = json.load(open(os.path.join(src, 'pc_26.1_recipes.json'), encoding='utf-8'))
+    enchants = json.load(open(os.path.join(src, 'pc_26.1_enchantments.json'), encoding='utf-8'))
     blocks = json.load(open(blocks_file, encoding='utf-8'))
     name = {i['id']: i['name'] for i in items}
-    out = {'items': [], 'foods': {}, 'blocks': {}, 'recipes': []}
+    out = {'items': [], 'foods': {}, 'blocks': {}, 'recipes': [], 'enchants': []}
+    for e in enchants:
+        out['enchants'].append([e['name'], e['displayName'], e['maxLevel'], e['minCost']['a'], e['minCost']['b'], e['maxCost']['a'], e['maxCost']['b'],
+                                e['weight'], 1 if e['treasureOnly'] else 0, 1 if e['curse'] else 0, e['exclude'], e['category'], 1 if e.get('discoverable', True) else 0])
     for i in items:
         if i['name'] == 'air': continue
         e = {'n': i['name'], 'd': i['displayName'], 's': i['stackSize']}
@@ -300,6 +304,9 @@ def main():
     tex = [e['n'] for e in items if not is_block(e['n'])]
     # and the experience orb's eleven sizes (Pixel Perfection CE's entity texture, black is clear)
     tex += ['xp_orb_%d' % i for i in range(11)]
+    # the untinted layers of pictures the game colours per item (a potion's liquid, an arrow's tip)
+    RAW = ['potion_overlay', 'potion', 'splash_potion', 'lingering_potion', 'tipped_arrow_head', 'tipped_arrow_base']
+    tex += ['layer_' + n for n in RAW]
     # the pictures
     if ce:
         from PIL import Image
@@ -310,6 +317,9 @@ def main():
             if n.startswith('xp_orb_'):
                 k = int(n[7:])
                 strip.paste(orbs.crop(((k % 4) * 16, (k // 4) * 16, (k % 4) * 16 + 16, (k // 4) * 16 + 16)), (0, i * 16))
+                continue
+            if n.startswith('layer_'):
+                strip.paste(load16(find(n[6:], ce, ppl)), (0, i * 16))
                 continue
             im = picture(n, ce, ppl)
             if im is None:
@@ -346,6 +356,8 @@ def main():
         fh.write('// block: [material, tools that can harvest it (bits: pickaxe, axe, shovel, hoe, sword, shears; 0 = anything), lowest tier]\n')
         fh.write('export const BLOCK_TOOLS = ' + json.dumps(D['blocks'], separators=(',', ':')) + ';\n')
         fh.write('// ingredient sets (any one of the names)\nexport const ING = ' + json.dumps(ing, separators=(',', ':')) + ';\n')
+        fh.write('// [name, on screen, max level, min cost a, b, max cost a, b (a * level + b), weight, treasure, curse, excludes, category, discoverable]\n')
+        fh.write('export const ENCHANTS = [\n' + ',\n'.join(json.dumps(e, separators=(',', ':')) for e in D['enchants']) + '\n];\n')
         fh.write('// [result, count, width, height, cells (ING index, -1 empty)]; width 0 = shapeless\n')
         fh.write('export const RECIPES = [\n' + ',\n'.join(json.dumps(r, separators=(',', ':')) for r in rec) + '\n];\n')
     print('itemdata.js:', len(items), 'items,', len(rec), 'recipes (from', len(D['recipes']), '),', len(ing), 'ingredient sets')
