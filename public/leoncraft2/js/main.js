@@ -680,6 +680,7 @@ async function boot() {
       g.containers.tick();
       if (g.mode !== 'creative') {
         player.canSprint = survival.canSprint();
+        player.effects = survival.effects;
         survival.tick(player);
         if (survival.dead && !g.spilled) { g.spilled = true; g.hands.spillAll(); }
         if (survival.dead && !gui.isOpen()) {

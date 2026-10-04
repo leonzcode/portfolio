@@ -207,7 +207,8 @@ export class Survival {
       if (player.jumped) { this.exhaust(player.sprinting ? 0.2 : 0.05); }
     }
     player.jumped = false;
-    // falling: the highest point since you left the ground
+    // falling: the highest point since you left the ground (Slow Falling never hurts)
+    if (this.effects.slow_falling) this.fallFrom = null;
     const soft = this.landedOn(player);
     if (player.onGround || player.inWater || player.flying || player.climbing) {
       if (this.fallFrom !== null && player.onGround && !player.inWater && !player.climbing) {

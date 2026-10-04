@@ -304,6 +304,9 @@ def main():
     tex = [e['n'] for e in items if not is_block(e['n'])]
     # and the experience orb's eleven sizes (Pixel Perfection CE's entity texture, black is clear)
     tex += ['xp_orb_%d' % i for i in range(11)]
+    # the untinted layers of pictures the game colours per item (a potion's liquid, an arrow's tip)
+    RAW = ['potion_overlay', 'potion', 'splash_potion', 'lingering_potion', 'tipped_arrow_head', 'tipped_arrow_base']
+    tex += ['layer_' + n for n in RAW]
     # the pictures
     if ce:
         from PIL import Image
@@ -314,6 +317,9 @@ def main():
             if n.startswith('xp_orb_'):
                 k = int(n[7:])
                 strip.paste(orbs.crop(((k % 4) * 16, (k // 4) * 16, (k % 4) * 16 + 16, (k // 4) * 16 + 16)), (0, i * 16))
+                continue
+            if n.startswith('layer_'):
+                strip.paste(load16(find(n[6:], ce, ppl)), (0, i * 16))
                 continue
             im = picture(n, ce, ppl)
             if im is None:

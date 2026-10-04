@@ -38,6 +38,7 @@ import { Screen, TextField, WHITE } from './gui.js?v=8';
 import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf } from '../items.js?v=8';
 import { matchGrid, consumeGrid } from '../crafting.js?v=8';
 import { enchName } from '../enchanting.js?v=8';
+import { isPotion, potionName, potionLines } from '../brewing.js?v=8';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -305,7 +306,8 @@ export function drawOutline(g, kind, x, y) {
 // an item and its count, the count in the slot's bottom-right corner, and the wear bar, as in the game
 export function drawStack(g, icons, st, x, y, countText, countColour) {
   if (!st) return;
-  icons.draw(g, st.id, x, y);
+  if (st.potion && icons.drawTinted) icons.drawTinted(g, st, x, y);
+  else icons.draw(g, st.id, x, y);
   if (st.dmg > 0) {
     const max = maxDamage(st.id);
     if (max) {
@@ -328,7 +330,8 @@ function hsv(h, s, v) {
 // the lines of a stack's tooltip: name, enchantments, what it does in the hand
 export function stackTooltip(st) {
   const it = ITEMS[st.id];
-  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : displayName(st.id))];
+  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) ? potionName(st) : displayName(st.id))];
+  if (isPotion(st) || (st.potion && ITEMS[st.id] && ITEMS[st.id].name === 'tipped_arrow')) lines.push(...potionLines(st));
   const title = n => n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   if (st.trim) lines.push('§7Upgrade:', '§9 ' + title(st.trim[0]) + ' Armor Trim', '§9 ' + title(st.trim[1]) + ' Material');
   if (st.ench) for (const k in st.ench) lines.push((/curse/.test(k) ? '§c' : '§7') + enchName(k, st.ench[k]));

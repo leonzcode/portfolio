@@ -167,6 +167,9 @@ export class Player {
       const f = slip * 0.91;
       accel = 0.1 * (0.16277136 / (f * f * f));
       if (this.sprinting) accel *= 1.3;
+      // Speed and Slowness (survival.js effects): +20% and -15% a level
+      const fx = this.effects;
+      if (fx && (fx.speed || fx.slowness)) accel *= Math.max(0, (1 + 0.2 * (fx.speed ? fx.speed.level : 0)) * (1 - 0.15 * (fx.slowness ? fx.slowness.level : 0)));
     } else accel = this.sprinting ? 0.026 : 0.02;
     if (this.sneaking) { fwd *= 0.3; str *= 0.3; }
     if (this.usingItem) { fwd *= 0.2; str *= 0.2; }
@@ -185,7 +188,7 @@ export class Player {
     } else if (this.inWater || this.inLava) {
       if (k[' ']) this.vel.y += 0.04;
     } else if (k[' '] && this.onGround) {
-      this.vel.y = 0.42;
+      this.vel.y = 0.42 + (this.effects && this.effects.jump_boost ? 0.1 * this.effects.jump_boost.level : 0);
       this.jumped = true;           // survival.js takes a jump's exhaustion
       if (this.sprinting) { this.vel.x += -Math.sin(this.yaw) * 0.2; this.vel.z += -Math.cos(this.yaw) * 0.2; }
       this.onGround = false;
@@ -203,7 +206,8 @@ export class Player {
     } else {
       const under = this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y - 0.1), Math.floor(this.pos.z));
       const slip = this.onGround ? ((BLOCKS[under] && BLOCKS[under].slippery) || 0.6) : 1.0;
-      this.vel.y = (this.vel.y - 0.08) * 0.98;
+      // Slow Falling: a tenth of the gravity on the way down
+      this.vel.y = (this.vel.y - (this.effects && this.effects.slow_falling && this.vel.y < 0 ? 0.01 : 0.08)) * 0.98;
       this.vel.x *= slip * 0.91; this.vel.z *= slip * 0.91;
     }
     const moved = Math.hypot(this.pos.x - was.x, this.pos.z - was.z);
