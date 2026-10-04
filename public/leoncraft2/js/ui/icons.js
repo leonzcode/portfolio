@@ -26,7 +26,7 @@
      const icons = new ItemIcons(albedoImage, { grassMap, foliageMap });
      icons.draw(gui, blockId, x, y);      // GUI pixels, top-left of the slot
 --------------------------------------------------------------------------- */
-import { BLOCKS } from '../blocks.js?v=8';
+import { DRAW } from '../items.js?v=8';
 import { boxesOf } from '../models.js?v=8';
 
 // face order and texture axes, exactly as the mesher lays textures on faces
@@ -160,6 +160,13 @@ export class ItemIcons {
   constructor(albedo, opts = {}) {
     this.layers = Math.floor(albedo.height / 16);
     this.px = readStrip(albedo, this.layers);
+    // the item pictures go on after the blocks, as in the texture array (see itemtex.js)
+    if (opts.extra) {
+      const n = Math.floor(opts.extra.height / 16), both = new Uint8ClampedArray((this.layers + n) * 1024);
+      both.set(this.px, 0);
+      both.set(readStrip(opts.extra, n), this.layers * 1024);
+      this.px = both; this.layers += n;
+    }
     const c = opts.colours || {};
     this.tints = {
       grass: c.grass ?? sampleMap(opts.grassMap) ?? 0x79C05A,
@@ -255,7 +262,7 @@ export class ItemIcons {
   }
 
   _make(id) {
-    const d = BLOCKS[id];
+    const d = DRAW[id];
     if (!d || !d.faces) return null;
     const m = modelFor(d);
     if (!m) return null;

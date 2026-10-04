@@ -28,6 +28,7 @@ import {
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
 } from './gui.js?v=8';
 import { Packs } from './pack.js?v=8';
+import { parseSeed } from '../gen/random.js?v=8';
 
 const PI = Math.PI;
 
@@ -299,7 +300,7 @@ class WorldEntry {
     const w = this.world;
     g.text(w.name || 'World', left + 35, top + 1, WHITE, false);
     g.text(g.font.trim((w.folder || w.name) + ' (' + fmtDate(w.lastPlayed || w.created) + ')', width - 40), left + 35, top + 12, 0x808080, false);
-    g.text((MODES[w.mode] || 'Survival') + ' Mode', left + 35, top + 21, 0x808080, false);
+    g.text(g.font.trim((MODES[w.mode] || 'Survival') + ' Mode' + (w.seed !== undefined ? ', Seed: ' + w.seed : ''), width - 40), left + 35, top + 21, 0x808080, false);
     // the world's picture if the game saved one, otherwise a dirt tile
     if (w.icon) {
       if (!this.icon) { this.icon = new Image(); this.icon.onload = () => g.markDirty(); this.icon.src = w.icon; }
@@ -410,6 +411,7 @@ export class CreateWorldScreen extends Screen {
     const from = opts.from || null;
     this.mode = from ? from.mode || 'survival' : 'survival';
     this.difficulty = from ? from.difficulty || 'normal' : 'normal';
+    this.cheats = from && from.cheats !== undefined ? !!from.cheats : this.mode === 'creative';
     this.tab = 0;
     this.nameField = new TextField(0, 0, 208, 20, { value: from ? from.name : 'New World', maxLength: 32, onEnter: () => this.create() });
     this.seedField = new TextField(0, 0, 308, 20, { value: from ? String(from.seed) : '', maxLength: 32, hint: 'Leave blank for a random seed', onEnter: () => this.create() });
@@ -430,7 +432,7 @@ export class CreateWorldScreen extends Screen {
       y += 35 + 8;
       this.add(new CycleButton(x, y, 210, 20, 'Game Mode', {
         values: ['survival', 'creative'], value: this.mode, format: v => MODES[v],
-        tooltip: v => MODE_INFO[v], onChange: v => { this.mode = v; },
+        tooltip: v => MODE_INFO[v], onChange: v => { this.mode = v; this.cheats = v === 'creative'; g._initScreen(this); },
       }));
       y += 28;
       this.add(new CycleButton(x, y, 210, 20, 'Difficulty', {
@@ -438,8 +440,8 @@ export class CreateWorldScreen extends Screen {
         tooltip: () => 'How hard the world is. Only Peaceful and Normal play differently for now.',
       }));
       y += 28;
-      const cmd = this.add(new CycleButton(x, y, 210, 20, 'Allow Commands', { values: [false, true], value: false, format: onOff }));
-      cmd.active = false; cmd.tooltip = 'Commands are not in Leoncraft 2 yet';
+      const cmd = this.add(new CycleButton(x, y, 210, 20, 'Allow Commands', { values: [false, true], value: this.cheats, format: onOff, onChange: v => { this.cheats = v; } }));
+      cmd.tooltip = 'Whether to allow commands like /gamemode, /experience';
     } else if (this.tab === 1) {
       const x = Math.floor(W / 2 - 154);
       let y = place(20 + 8 + 13 + 20 + 8 + 20 + 8 + 20);
@@ -478,8 +480,10 @@ export class CreateWorldScreen extends Screen {
     const now = Date.now();
     const world = {
       id: 'w' + now.toString(36) + (Math.random() * 1e6 | 0).toString(36),
-      name, folder: Worlds.folderName(name), seed: seedFrom(this.seedField.value),
-      mode: this.mode, difficulty: this.difficulty, created: now, lastPlayed: now,
+      // Minecraft's seeds: a number that fits a long is that long, other text its hash,
+      // blank a random 64-bit seed; made by the vanilla generator from now on
+      name, folder: Worlds.folderName(name), seed: parseSeed(this.seedField.value), generator: 'vanilla',
+      mode: this.mode, difficulty: this.difficulty, cheats: this.cheats, created: now, lastPlayed: now,
     };
     Worlds.add(world);
     if (this.hooks.play) this.hooks.play(world, { isNew: true });
@@ -720,7 +724,7 @@ export class MouseSettingsScreen extends OptionsListScreen {
 const BINDS = [
   ['Movement', [['jump', 'Jump'], ['sneak', 'Sneak'], ['sprint', 'Sprint'], ['left', 'Strafe Left'], ['right', 'Strafe Right'], ['back', 'Walk Backwards'], ['forward', 'Walk Forwards']]],
   ['Gameplay', [['attack', 'Attack/Destroy'], ['pickBlock', 'Pick Block'], ['use', 'Use Item/Place Block']]],
-  ['Inventory', [['drop', 'Drop Selected Item']].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ['hotbar' + n, 'Hotbar Slot ' + n]), [['inventory', 'Open/Close Inventory']])],
+  ['Inventory', [['drop', 'Drop Selected Item'], ['swapOffhand', 'Swap Item With Offhand']].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ['hotbar' + n, 'Hotbar Slot ' + n]), [['inventory', 'Open/Close Inventory']])],
   ['Miscellaneous', [['debug', 'Debug Screen'], ['hideGui', 'Hide GUI'], ['perspective', 'Toggle Perspective']]],
 ];
 

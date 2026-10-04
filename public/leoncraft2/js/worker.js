@@ -1,5 +1,6 @@
 /* Leoncraft 2 - a worker: makes chunks and meshes them, off the main thread. */
 import { Gen } from './worldgen.js?v=8';
+import { VanillaGen } from './gen/vanillagen.js?v=8';
 import { meshColumn, setColours } from './mesher.js?v=8';
 import { resolveTextures } from './blocks.js?v=8';
 import { worldStructures, structureMessage } from './struct/hook.js?v=8';
@@ -9,8 +10,10 @@ let gen = null, structs = null;
 self.onmessage = e => {
   const m = e.data;
   if (m.type === 'init') {
-    gen = new Gen(m.seed);
-    structs = worldStructures(m.seed, gen);
+    // worlds made since the vanilla generator came in say so; older ones keep the first generator
+    gen = m.generator === 'vanilla' ? new VanillaGen(String(m.seed)) : new Gen(m.seed | 0);
+    // structures read their biomes and heights from whichever generator this is
+    structs = worldStructures(m.generator === 'vanilla' ? String(m.seed) : m.seed | 0, gen);
     resolveTextures(m.manifest);
     setColours(m.colours);
     self.postMessage({ type: 'ready' });
@@ -32,6 +35,7 @@ self.onmessage = e => {
       for (const a of g.attrs) transfer.push(a.buffer);
       transfer.push(g.index.buffer);
     }
+    if (out.light) transfer.push(out.light.buffer);
     self.postMessage({ type: 'mesh', id: m.id, cx: m.cx, cz: m.cz, version: m.version, mesh: out }, transfer);
     return;
   }

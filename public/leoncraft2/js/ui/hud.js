@@ -54,7 +54,8 @@ export class Hud {
 
   setStats(s) {
     const o = this.stats;
-    if (s && o && s.health === o.health && s.food === o.food && s.air === o.air && s.xp === o.xp && s.level === o.level && s.armor === o.armor && s.absorption === o.absorption) return;
+    if (s && o && s.health === o.health && s.food === o.food && s.air === o.air && s.xp === o.xp && s.level === o.level && s.armor === o.armor && s.absorption === o.absorption
+      && s.poison === o.poison && s.wither === o.wither && s.hungerEffect === o.hungerEffect && s.regen === o.regen && (s.saturation > 0) === (o.saturation > 0)) return;
     if (s && this._lastHealth >= 0 && s.health < this._lastHealth) {
       // hurt: the hearts blink for a second, the lost ones shown white
       this._blinkUntil = performance.now() + 1000;
@@ -152,11 +153,16 @@ export class Hud {
     const lowHealth = health + absorb <= 4;
     if (lowHealth) this._wakeAt((tick + 1) * TICK);
     const hearts = Math.ceil(maxHealth / 2), total = hearts + Math.ceil(absorb / 2);
+    // poisoned hearts are green, withered ones black; with regeneration a wave runs along them
+    const hx = s.poison ? 36 : s.wither ? 72 : 0;
+    const wave = s.regen ? tick % Math.ceil(maxHealth + 5) : -1;
+    if (s.regen) this._wakeAt((tick + 1) * TICK);
     for (let i = total - 1; i >= 0; i--) {
       const row = Math.floor(i / 10);
       const x = left + (i % 10) * 8;
       let y = top - row * rowH;
       if (lowHealth) y += hash(tick * 31 + i) & 1;
+      if (i === wave) y -= 2;
       g.blit('icons', 16 + (blink ? 9 : 0), 0, 9, 9, x, y);
       if (i >= hearts) {
         // absorption hearts, gold
@@ -164,9 +170,9 @@ export class Hud {
         g.blit('icons', a >= 2 ? 160 : 169, 0, 9, 9, x, y);
         continue;
       }
-      if (blink && i * 2 < lost) g.blit('icons', i * 2 + 1 < lost ? 70 : 79, 0, 9, 9, x, y);
-      if (i * 2 + 1 < health) g.blit('icons', 52, 0, 9, 9, x, y);
-      else if (i * 2 + 1 === health) g.blit('icons', 61, 0, 9, 9, x, y);
+      if (blink && i * 2 < lost) g.blit('icons', (i * 2 + 1 < lost ? 70 : 79) + hx, 0, 9, 9, x, y);
+      if (i * 2 + 1 < health) g.blit('icons', 52 + hx, 0, 9, 9, x, y);
+      else if (i * 2 + 1 === health) g.blit('icons', 61 + hx, 0, 9, 9, x, y);
     }
 
     // armour, above the hearts
@@ -182,12 +188,20 @@ export class Hud {
     }
 
     // hunger, right to left
-    const food = s.food ?? 20;
+    // green with the hunger effect; with no saturation left the bar trembles now and then
+    const food = s.food ?? 20, fx = s.hungerEffect ? 36 : 0, bg = s.hungerEffect ? 133 : 16;
+    const shake = s.saturation !== undefined && s.saturation <= 0 && tick % (food * 3 + 1) === 0;
+    if (s.saturation !== undefined && s.saturation <= 0) {
+      // redraw only for the tremble and the tick after it
+      const period = food * 3 + 1, next = shake ? tick + 1 : tick + (period - tick % period);
+      this._wakeAt(next * TICK);
+    }
     for (let i = 0; i < 10; i++) {
       const x = right - i * 8 - 9;
-      g.blit('icons', 16, 27, 9, 9, x, top);
-      if (i * 2 + 1 < food) g.blit('icons', 52, 27, 9, 9, x, top);
-      else if (i * 2 + 1 === food) g.blit('icons', 61, 27, 9, 9, x, top);
+      const y = top + (shake ? (hash(tick * 7 + i) % 3) - 1 : 0);
+      g.blit('icons', bg, 27, 9, 9, x, y);
+      if (i * 2 + 1 < food) g.blit('icons', 52 + fx, 27, 9, 9, x, y);
+      else if (i * 2 + 1 === food) g.blit('icons', 61 + fx, 27, 9, 9, x, y);
     }
 
     // air, above the hunger, while there is less than a full breath
@@ -248,7 +262,7 @@ export class Hud {
   _syncCross(g) {
     const show = this._drawn && this.crosshair && !(this.debug && this.camera);
     this._drawn = false;
-    if (!show) { if (this._cross) this._cross.style.display = 'none'; return; }
+    if (!show) { if (this._cross) this._cross.style.display = 'none'; if (this._atk) this._atk.style.display = 'none'; return; }
     const img = g.sheet('icons');
     if (!img) return;
     if (!this._cross) {
@@ -271,10 +285,40 @@ export class Hud {
       cx.drawImage(img, 0, 0, 15, 15, 0, 0, 15 * s, 15 * s);
     }
     c.style.display = '';
+    this._syncAttack(g, x, y);
+  }
+  /* The attack indicator (combat since 1.9): a little bar under the
+     crosshair filling as the next hit charges, gone once it is full.
+     hud.attack is the charge (0..1), or null for none (js/entities). */
+  _syncAttack(g, x, y) {
+    const a = this.attack;
+    if (a === null || a === undefined || a >= 1) { if (this._atk) this._atk.style.display = 'none'; return; }
+    if (!this._atk) {
+      const c = this._atk = document.createElement('canvas');
+      Object.assign(c.style, { position: 'fixed', pointerEvents: 'none', mixBlendMode: 'difference', imageRendering: 'pixelated', zIndex: '4' });
+      document.body.appendChild(c);
+    }
+    const c = this._atk, s = g.scale, dpr = g.dpr || window.devicePixelRatio || 1;
+    const n = Math.floor(a * 17);
+    const key = s + ',' + dpr + ',' + x + ',' + y + ',' + n;
+    if (key !== this._atkKey) {
+      this._atkKey = key;
+      c.width = 16 * s; c.height = 4 * s;
+      c.style.width = (16 * s / dpr) + 'px'; c.style.height = (4 * s / dpr) + 'px';
+      c.style.left = ((x - 1) * s / dpr) + 'px'; c.style.top = ((y + 16) * s / dpr) + 'px';
+      const cx = c.getContext('2d');
+      cx.clearRect(0, 0, c.width, c.height);
+      cx.fillStyle = 'rgb(110,110,110)';
+      cx.fillRect(0, s, 16 * s, 2 * s);
+      cx.fillStyle = 'rgb(255,255,255)';
+      cx.fillRect(0, s, Math.min(16, n) * s, 2 * s);
+    }
+    c.style.display = '';
   }
   // take the crosshair off the page (leaving the game)
   dispose() {
     if (this._cross) { this._cross.remove(); this._cross = null; }
+    if (this._atk) { this._atk.remove(); this._atk = null; }
   }
 }
 

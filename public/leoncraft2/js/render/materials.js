@@ -20,12 +20,13 @@ const HEAD = `precision highp float; precision highp int; precision highp sample
 
 const TERRAIN_VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
-in vec4 aPos; in vec4 aA; in vec4 aL; in vec4 aC;
+layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL; layout(location = 3) in vec4 aC;
+uniform vec3 uChunk;
 out vec3 vWorld; out vec2 vUv; out vec4 vLight; out vec3 vTint; out float vRnd;
 flat out float vLayer; flat out int vNormal; flat out int vFlags;
 void main() {
   vec3 local = aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0);
-  vec4 world = modelMatrix * vec4(local, 1.0);
+  vec4 world = modelMatrix * vec4(local + uChunk, 1.0);
   int nw = int(aA.z + 0.5);
   int flags = int(aA.w + 0.5);
   int wave = nw >> 3;
@@ -248,11 +249,12 @@ void main() {
 
 const SHADOW_VS = /* glsl */`
 uniform mat4 modelMatrix, uShadowMat;
-in vec4 aPos; in vec4 aA; in vec4 aL;
+layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL;
+uniform vec3 uChunk;
 out vec2 vUv; flat out float vLayer;
 const float SHADOW_B = 0.85;
 void main() {
-  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0), 1.0);
+  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
   int nw = int(aA.z + 0.5);
   vec4 L = aL / 255.0;
   world.xyz += windOffset(world.xyz, nw >> 3, aA.y / 16.0, L.x, L.w);
