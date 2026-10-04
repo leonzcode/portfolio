@@ -45,6 +45,7 @@ import { EntityMeshes } from '../render/entitymesh.js?v=9';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=9';
 import { breakAt } from '../place.js?v=9';
 import { dropOf } from '../survival.js?v=9';
+import { ITEMS, I } from '../items.js?v=9';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -444,17 +445,31 @@ export class Entities {
   }
 
   /* ---- the player's side of a fight ---- */
-  heldName() {
-    const id = this.inv ? this.inv.heldId() : 0;
+  // the name of an inventory id: the item's (a carrot, not the carrots crop it plants)
+  itemName(id) {
     if (!id) return '';
     if (this.hooks.itemName) return this.hooks.itemName(id) || '';
-    return BLOCKS[id] ? BLOCKS[id].name : '';
+    const it = ITEMS[id];
+    return it ? it.name : BLOCKS[id] ? BLOCKS[id].name : '';
   }
-  offhandName() {
-    const id = this.inv && this.inv.offhandId ? this.inv.offhandId() : 0;
-    if (!id) return '';
-    if (this.hooks.itemName) return this.hooks.itemName(id) || '';
-    return BLOCKS[id] ? BLOCKS[id].name : '';
+  heldName() { return this.itemName(this.inv ? this.inv.heldId() : 0); }
+  offhandName() { return this.itemName(this.inv && this.inv.offhandId ? this.inv.offhandId() : 0); }
+  // wear on the held item (a sword's hit, shears, a carrot on a stick)
+  damageHeld(n, what) {
+    if (this.hooks.damageHeld) return this.hooks.damageHeld(n, what);
+    if (this.mode === 'creative' || !this.inv || !this.inv.damageSelected) return false;
+    return this.inv.damageSelected(n);
+  }
+  // the held bucket (or bottle) filled: one of the stack becomes the full one
+  fillHeld(name) {
+    if (this.hooks.fillBucket) return this.hooks.fillBucket(name);
+    const inv = this.inv, id = I[name];
+    if (!inv || id === undefined) return false;
+    if (this.mode === 'creative') { if (!inv.count(id)) inv.add(id, 1); return true; }
+    const s = inv.slots[inv.selected];
+    if (s && s.count === 1) { inv.slots[inv.selected] = { id, count: 1 }; inv.changed(); }
+    else { inv.takeSelected(1); if (inv.add(id, 1) > 0) this.dropItemAt(this.P.pos.x, this.P.pos.y + 1, this.P.pos.z, name, 1); }
+    return true;
   }
   // how charged the next hit is (0..1): ticks since the last swing over 20 / attack speed
   cooldown() {
@@ -504,7 +519,7 @@ export class Entities {
       this.particlesP.add('sweep', P.pos.x - s, P.pos.y + 0.9, P.pos.z - co, 1, 0);
     }
     if (crit) this.particles('crit', e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, 12, e.w * 0.5);
-    if (this.hooks.damageHeld && kind) this.hooks.damageHeld(kind === 'sword' || kind === 'trident' ? 1 : 2);
+    if (kind) this.damageHeld(kind === 'sword' || kind === 'trident' ? 1 : 2);
     this.lastHit = { dmg, crit, sweep, knock, cooldown: c, before: hpBefore, after: e.health };
     return true;
   }
@@ -519,8 +534,8 @@ export class Entities {
     const r = e.interact ? e.interact(held, this.player) : false;
     if (!r) return false;
     if (r === 'consume' && this.mode !== 'creative' && this.inv) this.inv.takeSelected(1);
-    if (r === 'milk') { if (this.hooks.fillBucket) this.hooks.fillBucket('milk_bucket'); }
-    if (r === 'damage' && this.hooks.damageHeld) this.hooks.damageHeld(1);
+    if (r === 'milk') this.fillHeld('milk_bucket');
+    if (r === 'damage') this.damageHeld(1);
     return true;
   }
 
