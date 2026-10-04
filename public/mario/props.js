@@ -16,7 +16,8 @@
    sixteen to twenty-two metres wide.
 --------------------------------------------------------------------------- */
 import { GLTFLoader } from '/legacy/vendor/three-addons-0.163.0/loaders/GLTFLoader.js';
-import { dressOf } from './themes.js?v=103';
+import { dressOf } from './themes.js?v=104';
+import { thin, share } from './perf.js?v=104';
 
 /* Which part of a place's palette each model wears. The kit is one kit, so
    without this every circuit has the same green trees and the same red barriers
@@ -459,8 +460,10 @@ export async function buildProps(scene, THREE, track, current) {
       group.add(im);
     }
   }
-  crowd(covered, 10, 10.2, 10.7);
-  crowd(stands, 9, 9, 8.1);
+  if (share('crowd') > 0) {
+    crowd(covered, 10, 10.2, 10.7);
+    crowd(stands, 9, 9, 8.1);
+  }
 
   /* ---- banner towers, tall enough to see a corner coming ----------------- */
   const towersR = [], towersG = [];
@@ -474,7 +477,7 @@ export async function buildProps(scene, THREE, track, current) {
   put('bannerTowerGreen', towersG);
 
   /* ---- trees, close enough to flick past --------------------------------- */
-  const big = [], small = [];
+  const big = [], small = [], scrub = [];
   let seed = 99;
   const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
   for (let s = 0; s < L; s += 7) {
@@ -495,12 +498,12 @@ export async function buildProps(scene, THREE, track, current) {
     for (const sgn of [1, -1]) {
       if (rnd() > 0.55) continue;
       if (inTunnel(a)) continue;
-      clear(small, { pos: clearOf(a, sgn * (a.w + 7 + rnd() * 24)),
+      clear(scrub, { pos: clearOf(a, sgn * (a.w + 7 + rnd() * 24)),
                      yaw: rnd() * 6.28, scale: 0.16 + rnd() * 0.17 });
     }
   }
-  put('treeLarge', big);
-  put('treeSmall', small);
+  put('treeLarge', thin(big, 'trees'));
+  put('treeSmall', thin(small, 'trees').concat(thin(scrub, 'scrub')));
 
   /* ---- lamps, and a paddock ---------------------------------------------- */
   const lamps = [];
@@ -509,7 +512,7 @@ export async function buildProps(scene, THREE, track, current) {
     if (inTunnel(a)) continue;
     clear(lamps, { pos: clearOf(a, -(a.w + 5.4)), yaw: facingRoad(a, -1) });
   }
-  put('lightPostModern', lamps);
+  put('lightPostModern', thin(lamps, 'lamps'));
 
   const tents = [], longTents = [];
   const pad = track.at(0.11 * L);
@@ -520,8 +523,8 @@ export async function buildProps(scene, THREE, track, current) {
     pos.y = track.groundY(pos.x, pos.z);
     clear(k % 2 ? tents : longTents, { pos, yaw: withRoad(pad) });
   }
-  put('tent', tents);
-  put('tentLong', longTents);
+  put('tent', thin(tents, 'tents'));
+  put('tentLong', thin(longTents, 'tents'));
 
   /* ---- what fills the middle distance ------------------------------------
      Everything above is at the edge of the road. What makes a circuit read as
@@ -535,11 +538,12 @@ export async function buildProps(scene, THREE, track, current) {
     const rnd = () => { sseed = (sseed * 1103515245 + 12345) & 0x7fffffff; return sseed / 0x7fffffff; };
     const fence = [], boards = [], boardsLow = [], flood = [], marshalG = [], marshalR = [];
     const rails = [], dishes = [], pylons = [];
-    for (let s = 0; s < L; s += 4.4) {
+    const fenceSides = share('fence') >= 1 ? [1, -1] : share('fence') > 0 ? [1] : [];
+    for (let s = 0; fenceSides.length && s < L; s += 4.4) {
       const a = track.at(s);
       if (inTunnel(a)) continue;
       // catch fencing stands back behind the barrier, both sides, all the way
-      for (const sgn of [1, -1]) {
+      for (const sgn of fenceSides) {
         clear(fence, { pos: clearOf(a, sgn * (a.w + 5.2)), yaw: withRoad(a) });
       }
     }
@@ -594,14 +598,14 @@ export async function buildProps(scene, THREE, track, current) {
        the ground it used to be over. */
     const onGround = p => track.groundY(p.x, p.z);
     put('fenceStraight', fence, true, onGround);
-    put('railDouble', rails, true, onGround);
-    put('billboard', boards, true, onGround);
-    put('billboardLow', boardsLow, true, onGround);
-    put('lightPostLarge', flood);
-    put('flagGreen', marshalG);
-    put('flagRed', marshalR);
-    put('radarEquipment', dishes);
-    put('pylon', pylons);
+    put('railDouble', thin(rails, 'rails'), true, onGround);
+    put('billboard', thin(boards, 'boards'), true, onGround);
+    put('billboardLow', thin(boardsLow, 'boardsLow'), true, onGround);
+    put('lightPostLarge', thin(flood, 'flood'));
+    put('flagGreen', thin(marshalG, 'flags'));
+    put('flagRed', thin(marshalR, 'flags'));
+    put('radarEquipment', thin(dishes, 'dishes'));
+    put('pylon', thin(pylons, 'pylons'));
 
     // a pit lane, once, on the straight before the line
     const pit = track.at((L - 150 + L) % L);
@@ -610,8 +614,8 @@ export async function buildProps(scene, THREE, track, current) {
       const a = track.at(((L - 150 + k * 11) % L + L) % L);
       clear(k % 3 === 2 ? offices : garages, { pos: clearOf(a, -(a.w + 16)), yaw: facingRoad(a, -1) });
     }
-    put('pitsGarage', garages, true, onGround);
-    put('pitsOffice', offices, true, onGround);
+    put('pitsGarage', thin(garages, 'pits'), true, onGround);
+    put('pitsOffice', thin(offices, 'pits'), true, onGround);
     void pit;
   }
 

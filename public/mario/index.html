@@ -551,6 +551,19 @@
   }
   #vol:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
   #voln{ font-variant-numeric:tabular-nums; min-width:36px; text-align:right; opacity:.6; font-size:15px; }
+  /* the performance levels: one card each, the one in use in gold */
+  #toperf small{ margin-left:auto; font-family:var(--body); font-weight:800; font-size:13px; opacity:.55; }
+  #perfrows{ display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+  .prow{
+    display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%; text-align:left;
+    background:#fff; color:var(--ink); border:2px solid var(--ink); border-radius:12px;
+    box-shadow:0 3px 0 var(--ink); padding:9px 12px; cursor:pointer;
+  }
+  .prow b{ font-family:var(--display); font-weight:800; font-size:16px; }
+  .prow span{ font-family:var(--body); font-weight:700; font-size:12.5px; opacity:.7; line-height:1.35; }
+  .prow.on{ background:var(--gold); }
+  .prow:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--ink); }
+  .prow:focus-visible{ outline:4px solid var(--blue); outline-offset:3px; }
   #bindrows{ gap:6px; }
   #bindrows .b{
     display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center;
@@ -1324,8 +1337,16 @@
       <button class="mrow" id="restart">Restart race<i>&#8635;</i></button>
       <div class="mrow vol"><span>Volume</span><input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume"><b id="voln">50</b></div>
       <button class="mrow" id="tocontrols">Controls<i>&rsaquo;</i></button>
+      <button class="mrow" id="toperf">Performance<small id="perfnow">Full</small><i>&rsaquo;</i></button>
       <button class="mrow" id="tostart">Home<i>&rsaquo;</i></button>
       <a class="mrow" id="tohome" href="/">Back to leonzhao.dev<i>&rsaquo;</i></a>
+    </div>
+    <div id="menuperf" hidden>
+      <p class="sub">Less scenery round the circuit: faster on slow machines, less memory</p>
+      <div class="rows" id="perfrows"></div>
+      <div class="mfoot">
+        <button class="mrow sm go" id="perfback">Done</button>
+      </div>
     </div>
     <div id="menukeys" hidden>
       <p class="sub">Click a key, then press the one you want</p>
@@ -1381,5 +1402,5 @@ load.textContent = 'warming the tyres…';
 // carries the same ?v= stamp instead, and the page can only load the modules it
 // shipped with. Bump them together:
 //   grep -o '\.js?v=[0-9]*' public/mario/*.js public/mario/index.html | sort -u
-await import('./game.js?v=103');
+await import('./game.js?v=104');
 </script>
