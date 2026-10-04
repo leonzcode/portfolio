@@ -139,7 +139,16 @@ export class Sim {
     const c = this.w.chunkAt(x, z);
     if (c && c.rtc) { const s = y >> 4; if (this.RT[ob]) c.rtc[s]--; if (this.RT[nb]) c.rtc[s]++; }
     if (this.quiet) return;
-    if (ob !== nb) { const h = this.beh[ob]; if (h && h.removed) h.removed(this, x, y, z, om, nb); }
+    if (ob !== nb) {
+      const h = this.beh[ob]; if (h && h.removed) h.removed(this, x, y, z, om, nb);
+      const hn = this.beh[nb]; if (hn && hn.onPlace) hn.onPlace(this, x, y, z, nm, ob);
+      // a log gone: the leaves round it may decay now (plants.js)
+      if (this.LOGS && this.LOGS[ob] && !this.LOGS[nb]) {
+        const k = Math.floor(x / 16) + ',' + Math.floor(z / 16);
+        let l = this.logsGone.get(k); if (!l) this.logsGone.set(k, l = []);
+        if (l.length < 4096) l.push([x, y, z]);
+      }
+    }
     for (const [dx, dy, dz] of NB6) this.updates.push(x + dx, y + dy, z + dz, x, y, z);
     if (this.redstone) this.redstone.changed(x, y, z, ob, nb);
     this.drain();
@@ -167,8 +176,9 @@ export class Sim {
       this.draining = false;
     }
   }
-  // set a block as the game does (with updates), quietly if asked
+  // set a block as the game does (with updates); quietSet tells no neighbours (a fire ageing)
   set(x, y, z, b, m) { return this.w.set(x, y, z, b, m || 0); }
+  quietSet(x, y, z, b, m) { const q = this.quiet; this.quiet = true; try { return this.w.set(x, y, z, b, m || 0); } finally { this.quiet = q; } }
   get(x, y, z) { return this.w.get(x, y, z); }
   meta(x, y, z) { return this.w.meta(x, y, z); }
   name(x, y, z) { const b = this.w.get(x, y, z); return b ? BLOCKS[b].name : 'air'; }
