@@ -34,6 +34,7 @@ import './mobs3.js?v=8';
 import './mobs4.js?v=8';
 import { explode } from './explosion.js?v=8';
 import { placeBoat } from './boat.js?v=8';
+import { splitXp } from './xporb.js?v=8';
 import { Spawner } from './spawner.js?v=8';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=8';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=8';
@@ -552,10 +553,26 @@ export class Entities {
   }
   dropXp(e) {
     if (!e.byPlayer) return;
-    const n = e.xp !== undefined ? e.xp : e.constructor.XP || 0;
-    if (!n) return;
-    this.xpEarned += n;
-    if (this.hooks.giveXp) this.hooks.giveXp(n, e.pos.x, e.pos.y, e.pos.z);
+    this.xpAt(e.pos.x, e.pos.y + 0.3, e.pos.z, e.xp !== undefined ? e.xp : e.constructor.XP || 0);
+  }
+  // experience as orbs, split into the game's sizes
+  xpAt(x, y, z, n) {
+    while (n > 0) {
+      const v = splitXp(n);
+      n -= v;
+      const o = this.spawn('xp_orb', x, y, z, { natural: false });
+      if (!o) return;
+      o.value = v;
+      o.vel.set((R() * 0.2 - 0.1) * 2, R() * 0.2 * 2, (R() * 0.2 - 0.1) * 2);
+    }
+  }
+  // the player picks an orb up (one every two ticks)
+  takeOrb(o) {
+    if (this.orbDelay > this.age) return false;
+    this.orbDelay = this.age + 2;
+    this.xpEarned += o.value;
+    if (this.hooks.giveXp) this.hooks.giveXp(o.value, o.pos.x, o.pos.y, o.pos.z);
+    return true;
   }
   pickupArrow() {
     if (this.mode === 'creative') return true;
@@ -573,8 +590,7 @@ export class Entities {
     const baby = this.spawn(a.type, (a.pos.x + b.pos.x) / 2, a.pos.y, (a.pos.z + b.pos.z) / 2, { natural: false });
     if (baby) { baby.ageT = -24000; if (baby.inherit) baby.inherit(a, b); }
     this.particles('heart', baby.pos.x, baby.pos.y + 0.6, baby.pos.z, 7, 0.6);
-    this.xpEarned += 1 + Math.floor(R() * 7);
-    if (this.hooks.giveXp) this.hooks.giveXp(1 + Math.floor(R() * 7), baby.pos.x, baby.pos.y, baby.pos.z);
+    this.xpAt(baby.pos.x, baby.pos.y + 0.3, baby.pos.z, 1 + Math.floor(R() * 7));
   }
   explode(x, y, z, power, src, o) { return explode(this, x, y, z, power, src, o); }
   // a block broken by a mob (a zombie through a door, an enderman's pick)
@@ -692,7 +708,7 @@ export class Entities {
     for (const e of this.list) {
       if (e.removed) continue;
       const c = e.constructor;
-      if (!c.MODEL) continue;
+      if (!c.MODEL && !c.PARTICLE) continue;
       const x = e.prev.x + (e.pos.x - e.prev.x) * alpha, y = e.prev.y + (e.pos.y - e.prev.y) * alpha, z = e.prev.z + (e.pos.z - e.prev.z) * alpha;
       const dx = x - P.pos.x, dz = z - P.pos.z;
       if (dx * dx + dz * dz > far2) continue;
@@ -700,7 +716,7 @@ export class Entities {
       e.lS += (e.lightS / 15 - e.lS) * k; e.lB += (e.lightB / 15 - e.lB) * k;
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
       const seen = this.frustum.intersectsSphere(this.sphere);
-      if (seen) this.drawOne(e, alpha, x, y, z);
+      if (seen) { if (c.PARTICLE) e.particle(this.meshes, alpha, x, y, z); else this.drawOne(e, alpha, x, y, z); }
       // a boat keeps the water out of its inside
       if (seen && c.WATER_MASK) this.meshes.maskAt(x, y + c.WATER_MASK, z, e.prevYaw + wrap(e.yaw - e.prevYaw) * alpha, 0.55, 0.74);
       // its round shadow on the ground
