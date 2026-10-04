@@ -81,6 +81,7 @@ export class Hands {
       // the item and everything about it but the count: mining starts again when this changes
       key: () => { const s = self.held; return s ? s.id + '/' + (s.dmg | 0) + '/' + (s.ench ? JSON.stringify(s.ench) : '') + '/' + (s.name || '') : ''; },
       withOffhand: fn => self.withOffhand(fn),
+      wear: n => self.wearHeld(n),
     };
   }
   /* The off hand's turn at a right click, when the main hand did nothing (a
