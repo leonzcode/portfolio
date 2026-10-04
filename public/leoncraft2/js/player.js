@@ -168,6 +168,8 @@ export class Player {
       if (this.sprinting) accel *= 1.3;
     } else accel = this.sprinting ? 0.026 : 0.02;
     if (this.sneaking) { fwd *= 0.3; str *= 0.3; }
+    // using an item (a raised shield, a drawn bow, eating) walks at a fifth, as the game does
+    if (this.usingItem) { fwd *= 0.2; str *= 0.2; this.sprinting = false; }
     // move relative to where you are looking (only round, not up)
     let len = Math.hypot(fwd, str);
     if (len > 0.0001) {
