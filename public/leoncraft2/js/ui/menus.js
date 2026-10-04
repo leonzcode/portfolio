@@ -410,6 +410,7 @@ export class CreateWorldScreen extends Screen {
     const from = opts.from || null;
     this.mode = from ? from.mode || 'survival' : 'survival';
     this.difficulty = from ? from.difficulty || 'normal' : 'normal';
+    this.cheats = from && from.cheats !== undefined ? !!from.cheats : this.mode === 'creative';
     this.tab = 0;
     this.nameField = new TextField(0, 0, 208, 20, { value: from ? from.name : 'New World', maxLength: 32, onEnter: () => this.create() });
     this.seedField = new TextField(0, 0, 308, 20, { value: from ? String(from.seed) : '', maxLength: 32, hint: 'Leave blank for a random seed', onEnter: () => this.create() });
@@ -430,7 +431,7 @@ export class CreateWorldScreen extends Screen {
       y += 35 + 8;
       this.add(new CycleButton(x, y, 210, 20, 'Game Mode', {
         values: ['survival', 'creative'], value: this.mode, format: v => MODES[v],
-        tooltip: v => MODE_INFO[v], onChange: v => { this.mode = v; },
+        tooltip: v => MODE_INFO[v], onChange: v => { this.mode = v; this.cheats = v === 'creative'; g._initScreen(this); },
       }));
       y += 28;
       this.add(new CycleButton(x, y, 210, 20, 'Difficulty', {
@@ -438,8 +439,8 @@ export class CreateWorldScreen extends Screen {
         tooltip: () => 'How hard the world is. Only Peaceful and Normal play differently for now.',
       }));
       y += 28;
-      const cmd = this.add(new CycleButton(x, y, 210, 20, 'Allow Commands', { values: [false, true], value: false, format: onOff }));
-      cmd.active = false; cmd.tooltip = 'Commands are not in Leoncraft 2 yet';
+      const cmd = this.add(new CycleButton(x, y, 210, 20, 'Allow Commands', { values: [false, true], value: this.cheats, format: onOff, onChange: v => { this.cheats = v; } }));
+      cmd.tooltip = 'Whether to allow commands like /gamemode, /experience';
     } else if (this.tab === 1) {
       const x = Math.floor(W / 2 - 154);
       let y = place(20 + 8 + 13 + 20 + 8 + 20 + 8 + 20);
@@ -479,7 +480,7 @@ export class CreateWorldScreen extends Screen {
     const world = {
       id: 'w' + now.toString(36) + (Math.random() * 1e6 | 0).toString(36),
       name, folder: Worlds.folderName(name), seed: seedFrom(this.seedField.value),
-      mode: this.mode, difficulty: this.difficulty, created: now, lastPlayed: now,
+      mode: this.mode, difficulty: this.difficulty, cheats: this.cheats, created: now, lastPlayed: now,
     };
     Worlds.add(world);
     if (this.hooks.play) this.hooks.play(world, { isNew: true });

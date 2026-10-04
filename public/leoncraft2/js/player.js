@@ -144,6 +144,8 @@ export class Player {
   }
   move(dx, dy, dz) {
     const p = this.pos;
+    // spectators pass through everything
+    if (this.noclip) { p.x += dx; p.y += dy; p.z += dz; this.onGround = false; this.hCollide = false; this.moved[0] = dx; this.moved[1] = dy; this.moved[2] = dz; return; }
     // sneaking keeps you on the edge of a block: no step that would leave nothing under you
     if (this.sneaking && this.onGround && !this.flying) {
       const drop = (nx, nz) => !this.boxHits(nx - W, p.y - STEP, nz - W, nx + W, p.y, nz + W);
