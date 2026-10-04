@@ -13,6 +13,10 @@
      hand.used()      one was placed (survival takes it from the stack)
      hand.got(id)     a broken block to keep (survival only)
      hand.swing()     start the arm swing
+
+   And two the renderer listens to for particles (either may be absent):
+     onBreak(x, y, z, block, boxes)        a block broke
+     onHit(x, y, z, face, block, box)      a tick of mining it
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from './blocks.js?v=8';
 import { selectionBoxes } from './models.js?v=8';
@@ -78,6 +82,7 @@ export class Interactor {
     if (!m || m.x !== h.x || m.y !== h.y || m.z !== h.z || m.b !== h.b) { this.startMining(); return; }
     m.t += 0.05;
     if ((m.t * 20 | 0) % 4 === 0) this.hand.swing();
+    if (this.onHit) this.onHit(h.x, h.y, h.z, h.face, h.b, h.box);
     if (m.t >= m.total) { this.breakTarget(); this.mining = null; this.breakDelay = 5; }
   }
   breakTarget() {
@@ -86,6 +91,10 @@ export class Interactor {
     const w = this.world;
     for (const [x, y, z] of breakAt(w, h.x, h.y, h.z)) {
       const b = w.get(x, y, z), d = BLOCKS[b];
+      if (this.onBreak && d && d.shape !== 'fluid') {
+        const nb = (dx, dy, dz) => { const n = w.get(x + dx, y + dy, z + dz); return n ? { d: BLOCKS[n], m: w.meta(x + dx, y + dy, z + dz) } : null; };
+        this.onBreak(x, y, z, b, d.shape === 'cube' ? null : selectionBoxes(d, w.meta(x, y, z), nb));
+      }
       if (!this.creative) { const drop = dropOf(b); if (drop) this.hand.got(drop); }
       w.set(x, y, z, 0, 0);
       // a water plant leaves its water behind

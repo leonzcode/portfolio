@@ -39,6 +39,7 @@ import { Survival } from './survival.js?v=8';
 import { Save } from './save.js?v=8';
 import { Chat, ChatScreen } from './ui/chat.js?v=8';
 import { displayName } from './commands.js?v=8';
+import { Particles } from './render/particles.js?v=8';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -265,6 +266,7 @@ async function boot() {
     brightness: options.get('brightness'), clouds: options.get('clouds') }));
   for (const t of [textures.albedo, textures.normal, textures.spec]) if (t.pieces) uploadArray(renderer.r, t);
   if (packTex && packTex.size) alb = applyPackTextures(renderer.r, textures, manifest, packTex, alb);
+  renderer.colours = colours;
   const overlay = new Overlay(renderer.U, manifest);
   renderer.overlay = overlay;
   const fit = () => { renderer.resize(window.innerWidth, window.innerHeight); gui.resize(); };
@@ -443,6 +445,11 @@ async function boot() {
     });
     inter.creative = mode === 'creative';
     inter.adventure = mode === 'adventure' || mode === 'spectator';
+    // block pieces when something breaks, and chips while mining
+    if (!renderer.particles) renderer.particles = new Particles(renderer, world);
+    else renderer.particles.setWorld(world);
+    inter.onBreak = (x, y, z, b, boxes) => renderer.particles.blockBreak(x, y, z, b, boxes);
+    inter.onHit = (x, y, z, face, b, box) => renderer.particles.blockHit(x, y, z, face, b, box);
     game = { entry, world, player, fluids, inv, survival, inter, save, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0 };
     hud = new Hud(inv, icons);
     gui.hud = hud;
@@ -485,6 +492,7 @@ async function boot() {
     overlay.set(0, 0, 0, null, -1);
     if (hud) { hud.dispose(); hud = null; gui.hud = null; }
     chat.lines.length = 0; chat.dirty = true;
+    if (renderer.particles) renderer.particles.list.length = 0;
     gui.inGame = false; gui.panorama = true;
     gui.setRoot(new TitleScreen());
   }
@@ -701,6 +709,7 @@ async function boot() {
       player.tick();
       fluids.step();
       inter.tick();
+      if (renderer.particles) renderer.particles.tick();
       if (g.mode === 'survival' || g.mode === 'adventure') {
         survival.tick(player);
         if (survival.dead && !gui.isOpen()) {
