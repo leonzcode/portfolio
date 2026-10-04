@@ -132,8 +132,9 @@ export function meshColumn(job) {
   const sky = new Uint8Array(N), blk = new Uint8Array(N);
   const Q = new Int32Array(1 << 20); const QM = Q.length - 1;
   let qh = 0, qt = 0;
+  const skyTop = job.noSky ? 0 : 15;      // the Nether: no sky light anywhere
   for (let z = 0; z < W; z++) for (let x = 0; x < W; x++) {
-    let v = 15;
+    let v = skyTop;
     for (let y = ny - 1; y >= 0; y--) {
       const i = y * A + z * W + x;
       const op = OPACITY[rb[i]];

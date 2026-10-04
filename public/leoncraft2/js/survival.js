@@ -21,7 +21,9 @@ export class Survival {
     this.health = 20; this.food = 20; this.air = 300;
     this.fallFrom = null; this.regen = 0; this.burn = 0; this.voidT = 0;
     this.dead = false; this.hurtTime = 0; this.lastHealth = 20;
+    this.xp = 0;                  // experience points in all (the level and bar come from it: xpLevel)
   }
+  addXp(n) { this.xp += Math.max(0, n | 0); }
   hurt(n) {
     if (this.dead || n <= 0) return;
     this.health = Math.max(0, this.health - n);
@@ -50,15 +52,28 @@ export class Survival {
     } else this.air = Math.min(300, this.air + 4);
     // lava and the void
     if (player.inLava) { if (++this.burn % 10 === 1) this.hurt(4); } else this.burn = 0;
-    if (y < -64 - 0) { if (++this.voidT % 10 === 1) this.hurt(4); } else this.voidT = 0;
+    // the void: 64 below the dimension's floor (player.voidY, set per dimension by main.js)
+    if (y < (player.voidY ?? -64)) { if (++this.voidT % 10 === 1) this.hurt(4); } else this.voidT = 0;
     // getting better, with a full stomach
     if (this.food >= 18 && this.health < 20) { if (++this.regen >= 80) { this.regen = 0; this.health = Math.min(20, this.health + 1); } } else this.regen = 0;
   }
   stats() {
-    return { health: this.health, food: this.food, air: Math.max(0, this.air), xp: 0, level: 0, armor: 0, hurt: this.hurtTime };
+    const L = xpLevel(this.xp);
+    return { health: this.health, food: this.food, air: Math.max(0, this.air), xp: L.progress, level: L.level, armor: 0, hurt: this.hurtTime };
   }
-  toJSON() { return { health: this.health, food: this.food, air: this.air }; }
-  fromJSON(o) { if (!o) return; this.health = o.health ?? 20; this.food = o.food ?? 20; this.air = o.air ?? 300; this.dead = this.health <= 0; }
+  toJSON() { return { health: this.health, food: this.food, air: this.air, xp: this.xp }; }
+  fromJSON(o) { if (!o) return; this.health = o.health ?? 20; this.food = o.food ?? 20; this.air = o.air ?? 300; this.xp = o.xp ?? 0; this.dead = this.health <= 0; }
+}
+
+/* The level and how far through it, from points in all (the Minecraft
+   Wiki's formulas: to reach level L takes L^2 + 6L up to 16, 2.5L^2 - 40.5L
+   + 360 up to 31, 4.5L^2 - 162.5L + 2220 beyond). */
+export function xpTotal(L) { return L <= 16 ? L * L + 6 * L : L <= 31 ? 2.5 * L * L - 40.5 * L + 360 : 4.5 * L * L - 162.5 * L + 2220; }
+export function xpLevel(points) {
+  let L = 0;
+  while (xpTotal(L + 1) <= points) L++;
+  const a = xpTotal(L), b = xpTotal(L + 1);
+  return { level: L, progress: (points - a) / (b - a) };
 }
 
 // seconds to break by hand; 0 is at once, Infinity never

@@ -43,6 +43,8 @@ export class Interactor {
   }
   down(button) {
     if (button === 0) {
+      // the dragon or a crystal nearer than the block (js/dim/realms.js)
+      if (this.onAttack && this.onAttack(this.target)) { this.hand.swing(); return; }
       this.attack = true;
       this.hand.swing();
       if (this.creative) { this.breakTarget(); this.breakDelay = 5; }
@@ -88,6 +90,7 @@ export class Interactor {
       const b = w.get(x, y, z), d = BLOCKS[b];
       if (!this.creative) { const drop = dropOf(b); if (drop) this.hand.got(drop); }
       w.set(x, y, z, 0, 0);
+      if (this.onBroken) this.onBroken(x, y, z, b);
       // a water plant leaves its water behind
       if (d && d.waterlogged) w.set(x, y, z, B.water, 0);
       this.fluids.around(x, y, z);
@@ -96,11 +99,14 @@ export class Interactor {
   }
   useOnce() {
     const h = this.target;
-    if (!h || !h.face) return;
+    // at nothing: an item that is thrown (an eye of ender)
+    if (!h || !h.face) { const held = this.hand.id(); if (held && this.onUseAir && this.onUseAir(held)) this.hand.swing(); return; }
     // doors, trapdoors and gates open instead, unless you sneak
     if (!this.player.sneaking && use(this.world, h.x, h.y, h.z)) { this.hand.swing(); return; }
     const id = this.hand.id();
-    if (!id || !BLOCKS[id]) return;
+    // items and blocks with a use of their own (js/dim/realms.js: flint and steel, eyes, crystals, beds and anchors there)
+    if (this.onUse && this.onUse(h, id)) { this.hand.swing(); return; }
+    if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return;
     const list = placement(this.world, h, id, this.player);
     if (!list.length) return;
     for (const [x, y, z, b, m] of list) {

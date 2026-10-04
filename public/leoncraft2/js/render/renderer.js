@@ -25,6 +25,7 @@ import { FullScreen } from './sky.js?v=8';
 import { blockGeometry } from './blockmesh.js?v=8';
 import { Avatar } from './avatar.js?v=8';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=8';
+import { dimLook } from '../dim/look.js?v=8';
 const THREE = window.THREE;
 
 export class Renderer {
@@ -70,6 +71,9 @@ export class Renderer {
       uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uInvViewProj: { value: new THREE.Matrix4() },
       // the light in your hand (level, faded in and out) and where it is; torches' flicker; how dark cloud shadows are
       uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.8 : 0 },
+      // the dimension being drawn (js/dims.js; js/dim/look.js sets these each frame)
+      uDim: { value: 0 }, uDimAmb: { value: new THREE.Vector3() }, uDimFog: { value: new THREE.Vector3() }, uDimFogRange: { value: new THREE.Vector2(0, 1) },
+      uEndSky: { value: textures.endSky || null },
     };
     if (this.opts.vanilla) {
       this.vanilla = new Vanilla(this, textures);
@@ -417,7 +421,9 @@ export class Renderer {
     }
 
     // the shadow map, from whichever light is up (some tiers redraw it every other frame)
-    const doShadow = this.opts.shadows > 0 && (this.frame % (this.opts.shadowEvery || 1) === 0) && this.shadowNeeded(state, light);
+    if (!this.vanilla) dimLook(this, state, dt);
+    const sunless = !!(state.dim && state.dim.sky !== 'normal');
+    const doShadow = this.opts.shadows > 0 && !sunless && (this.frame % (this.opts.shadowEvery || 1) === 0) && this.shadowNeeded(state, light);
     if (doShadow) {
     const D = this.opts.shadowDist;
     const sc = this.shadowCam;

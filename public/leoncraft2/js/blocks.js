@@ -17,6 +17,7 @@
 --------------------------------------------------------------------------- */
 import { DATA } from './blockdata.js?v=8';
 import { MODEL_SHAPES } from './models.js?v=8';
+import { dimBlocks } from './dim/blocks.js?v=8';
 
 export const AIR = 0;
 export const MAX_ID = 4096;   // block ids are 16-bit in the world; this many fit the lookup tables
@@ -161,6 +162,8 @@ for (const e of DATA) {
   if (o.shape === 'none') { o.solid = false; o.pass = 'none'; if (!o.tex) o.tex = null; }
   def(e.name, o);
 }
+// the Nether's and the End's own blocks and items (portals, frames, flint and steel, eyes of ender)
+dimBlocks(def, B, BLOCKS);
 for (const d of BLOCKS) {
   if (!d) continue;
   if (d.display === undefined) d.display = d.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
