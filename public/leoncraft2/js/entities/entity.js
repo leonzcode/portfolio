@@ -355,6 +355,13 @@ export class Mob extends Living {
     this.noActionTime++;
     this.m.despawnCheck(this);
     if (this.removed) return;
+    // ridden by the player: the rider steers (horses, a pig with a carrot on a stick)
+    const rider = this.passengers[0];
+    if (rider && rider.isPlayer && this.rideControl && this.rideControl(this.m.P.keys, this.m.P)) {
+      if (this.nav) this.nav.stop();
+      this.headYaw = this.bodyYaw = this.yaw;
+      return;
+    }
     this.targets.tick();
     this.goals.tick();
     if (this.nav) this.nav.tick();
@@ -435,7 +442,6 @@ export class Mob extends Living {
       const off = wrap(this.headYaw - this.bodyYaw);
       if (Math.abs(off) > max) this.bodyYaw = this.headYaw - Math.sign(off) * max;
     }
-    this.yaw = this.bodyYaw;
   }
   // can it see an entity (nothing solid between their eyes)?
   canSee(e) {
