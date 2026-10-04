@@ -98,7 +98,7 @@ export class Entities {
       knockback: (s, dx, dz) => self.knockPlayer(s, dx, dz),
       push: (x, y, z) => { P.vel.x += x; P.vel.y += y; P.vel.z += z; },
       dist2: (x, y, z) => (P.pos.x - x) ** 2 + (P.pos.y - y) ** 2 + (P.pos.z - z) ** 2,
-      heal: n => { self.survival.health = Math.min(20, self.survival.health + n); },
+      heal: n => { self.survival.heal(n); },
     };
     // the player's fights: hits, the shield, bows, crossbows, tridents (combat/combat.js)
     this.combat = new Combat(this);
@@ -298,10 +298,9 @@ export class Entities {
     e.lightS = this.t.sky(x, y, z); e.lightB = e.constructor.BRIGHT ? 15 : this.t.block(x, y, z);
     if (now) { e.lS = e.lightS / 15; e.lB = e.lightB / 15; }
   }
-  // Peaceful: monsters vanish, and you heal a point a second
+  // Peaceful: monsters vanish (the healing is survival.js's)
   peaceful() {
     for (const e of this.list) if (e.constructor.HOSTILE && !e.removed) e.remove();
-    if (this.age % 20 === 0 && this.mode !== 'creative' && !this.survival.dead && this.survival.health < 20) this.survival.health = Math.min(20, this.survival.health + 1);
   }
   /* Despawning (the game's): beyond 128 blocks (64 for fish) a mob goes at
      once; beyond 32, after 30 seconds with nothing happening, a 1 in 800
@@ -506,18 +505,15 @@ export class Entities {
      from strays, mining fatigue from elder guardians): they go to the
      player's own effects (survival.js), which do the harm and show them. */
   // a few effects mobs put on you (poison, hunger from husks, slowness from strays)
+  // they go on the player's own effects (survival.js), which do the harm and show in the HUD
   effectPlayer(name, ticks, level = 1) {
-    // the survival effects when there are some (they move the player and hurt as the game's do)
-    if (this.survival && this.survival.addEffect) { if (this.mode !== 'creative') this.survival.addEffect(name, level, ticks); return; }
-    this.effects[name] = Math.max(this.effects[name] || 0, ticks); if (this.hooks.effect) this.hooks.effect(name, ticks);
+    if (this.mode === 'creative') return;
+    this.effects[name] = Math.max(this.effects[name] || 0, ticks);
+    if (this.survival && this.survival.addEffect) this.survival.addEffect(name, level, ticks);
+    if (this.hooks.effect) this.hooks.effect(name, ticks);
   }
   effectsTick() {
-    for (const k in this.effects) {
-      const t = --this.effects[k];
-      if (k === 'poison' && t % 25 === 0 && this.survival && this.survival.health > 1 && this.mode !== 'creative') this.survival.hurt(1, { type: 'magic' });
-      if (k === 'slowness' && this.P) { this.P.vel.x *= 0.85; this.P.vel.z *= 0.85; }
-      if (t <= 0) delete this.effects[k];
-    }
+    for (const k in this.effects) if (--this.effects[k] <= 0) delete this.effects[k];
   }
 
   /* ---- death, drops, experience ---- */

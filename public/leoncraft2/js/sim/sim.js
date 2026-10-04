@@ -332,7 +332,7 @@ export class Sim {
     return b.temp - Math.max(0, ymc - 80) * 0.05 / 40;
   }
   coldAt(x, y, z) { return this.tempAt(x, y, z) < 0.15; }
-  dimension() { return (this.game && this.game.dimension) || 'overworld'; }
+  dimension() { return (this.game && (this.game.dimension || this.game.dim)) || 'overworld'; }
 
   /* ---- the player's hand, for the hooks in interact.js ---- */
   use(hit, heldId, sneaking) {

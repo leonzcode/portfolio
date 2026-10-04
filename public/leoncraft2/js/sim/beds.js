@@ -28,7 +28,17 @@ import { B, BLOCKS } from '../blocks.js?v=10';
 
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];      // north east south west, as the bed's facing bits
 export const bedsWork = dim => !dim || dim === 'overworld';
-export const anchorsWork = dim => dim === 'nether';
+export const anchorsWork = dim => dim === 'nether' || dim === 'the_nether';
+
+/* The player's respawn point (one for the whole game, kept by survival.js):
+   true when it moved. */
+function setSpawn(sim, x, y, z, kind) {
+  const g = sim.game, sv = g && g.survival;
+  if (!sv) return true;
+  const dim = g.dim || 'overworld', was = sv.spawnPoint;
+  sv.spawnPoint = { dim, x, y, z, kind };
+  return !was || was.dim !== dim || was.x !== x || was.y !== y || was.z !== z;
+}
 
 export function installBeds(sim) {
   const msg = t => sim.msg.show(t);
@@ -63,7 +73,7 @@ export function installBeds(sim) {
       if (!bedsWork(s.dimension())) {
         s.set(hx, hy, hz, 0, 0);
         if (isBed(s.get(fx, hy, fz))) s.set(fx, hy, fz, 0, 0);
-        s.explode(hx + 0.5, hy + 0.5, hz + 0.5, 5, { fire: true, decay: true });
+        s.explode(hx + 0.5, hy + 0.5, hz + 0.5, 5, { fire: true, decay: true, source: 'bad_respawn_point' });
         return true;
       }
       if (hm & 4) { msg('This bed is occupied'); return true; }
@@ -71,7 +81,7 @@ export function installBeds(sim) {
       if (suffocating(s.get(hx, hy + 1, hz))) { msg('This bed is obstructed'); return true; }
       const was = s.spawnBed;
       s.spawnBed = { x: hx, y: hy, z: hz, kind: 'bed' };
-      if (!was || was.x !== hx || was.y !== hy || was.z !== hz) msg('Respawn point set');
+      if (setSpawn(s, hx, hy, hz, 'bed')) msg('Respawn point set');
       if (s.skyDarken() < 4) { setTimeout(() => msg('You can sleep only at night and during thunderstorms'), was && was.x === hx && was.y === hy && was.z === hz ? 0 : 900); return true; }
       if (!s.creative && monstersNear(hx, hy, hz)) { msg('You may not rest now; there are monsters nearby'); return true; }
       s.sleep(hx, hy, hz, hm);
@@ -134,37 +144,10 @@ export function installBeds(sim) {
     }
   });
 
-  /* ---- respawning by the bed or anchor ---- */
+  /* ---- dying wakes you; where you come back is the player's respawn point (life.js) ---- */
   (sim.tickers = sim.tickers || []).push(() => {
     const g = sim.game;
-    if (!g || !g.survival) return;
-    if (g.survival.dead) {
-      if (!sim.wasDead) {
-        sim.wasDead = true;
-        if (sim.sleeping) sim.wake(false);
-        // where the respawn will be: beside the bed, or the world's spawn if it has gone
-        const sb = sim.spawnBed;
-        if (sb) {
-          const b = sim.get(sb.x, sb.y, sb.z);
-          const ok = sb.kind === 'anchor' ? b === B.respawn_anchor && (sim.meta(sb.x, sb.y, sb.z) & 7) > 0 && anchorsWork(sim.dimension()) : isBed(b);
-          const spot = ok && sim.standUpNear(sb.x, sb.y, sb.z);
-          if (spot) sim.respawnAt = spot;
-          else { sim.respawnAt = null; sim.spawnBed = null; sim.noBed = true; }
-        }
-      }
-      return;
-    }
-    if (sim.wasDead) {
-      sim.wasDead = false;
-      const p = sim.player;
-      if (sim.respawnAt) {
-        p.pos.set(sim.respawnAt[0], sim.respawnAt[1], sim.respawnAt[2]); p.prev.copy(p.pos); p.vel.set(0, 0, 0);
-        const sb = sim.spawnBed;
-        if (sb && sb.kind === 'anchor') { const m = sim.meta(sb.x, sb.y, sb.z); sim.set(sb.x, sb.y, sb.z, B.respawn_anchor, Math.max(0, (m & 7) - 1)); }
-      }
-      if (sim.noBed) { sim.noBed = false; msg('You have no home bed or charged respawn anchor, or it was obstructed'); }
-      sim.respawnAt = null;
-    }
+    if (g && g.survival && g.survival.dead && sim.sleeping) sim.wake(false);
   });
 
   /* ---- respawn anchors ---- */
@@ -178,12 +161,11 @@ export function installBeds(sim) {
         // water beside it stops the blast breaking blocks (the game's own exception)
         let wet = false;
         for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) if (s.get(x + dx, y + dy, z + dz) === B.water) wet = true;
-        s.explode(x + 0.5, y + 0.5, z + 0.5, 5, { fire: !wet, decay: true, breaks: !wet });
+        s.explode(x + 0.5, y + 0.5, z + 0.5, 5, { fire: !wet, decay: true, breaks: !wet, source: 'bad_respawn_point' });
         return true;
       }
-      const was = s.spawnBed;
       s.spawnBed = { x, y, z, kind: 'anchor' };
-      if (!was || was.x !== x || was.y !== y || was.z !== z) msg('Respawn point set');
+      if (setSpawn(s, x, y, z, 'anchor')) msg('Respawn point set');
       return true;
     },
   });

@@ -214,13 +214,7 @@ export class Combat {
     const m = this.m, sv = this.sv;
     if (!m.player.alive() || this.creative || m.mode === 'spectator' || !sv) return false;
     const cause = src.attacker;
-    // what a mob causes is scaled by difficulty
-    if (cause && !cause.isPlayer && src.type !== 'fall') {
-      const diff = m.difficulty;
-      if (diff === 'peaceful') amount = 0;
-      else if (diff === 'easy') amount = Math.min(amount / 2 + 1, amount);
-      else if (diff === 'hard') amount *= 1.5;
-    }
+    // difficulty scales a mob's hit in survival.js (hurt), with the 10 tick window; not here as well
     if (amount <= 0) return false;
     if (this.blocks(src)) { this.blocked(amount, src); return false; }
     // the 10 tick window (survival.js keeps it): only a harder hit counts, and only by the difference
