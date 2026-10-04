@@ -161,11 +161,12 @@ export function installFire(sim) {
     if (prev && prev(held, hit, heldId, sneaking)) return true;
     if (held !== 'flint_and_steel' && held !== 'fire_charge') return false;
     const b = sim.get(hit.x, hit.y, hit.z), n = b ? BLOCKS[b].name : '';
-    if (n === 'tnt') { sim.set(hit.x, hit.y, hit.z, 0, 0); sim.primeTnt(hit.x, hit.y, hit.z, sim.player, 80); if (held === 'fire_charge') sim.usedHeld = true; return true; }
+    // a fire charge is used up; flint and steel wears by 1 (interact.js passes wornHeld to the hand)
+    if (n === 'tnt') { sim.set(hit.x, hit.y, hit.z, 0, 0); sim.primeTnt(hit.x, hit.y, hit.z, sim.player, 80); if (held === 'fire_charge') sim.usedHeld = true; else sim.wornHeld = 1; return true; }
     const f = hit.face, x = hit.x + f[0], y = hit.y + f[1], z = hit.z + f[2];
     if (!isAir(sim.get(x, y, z))) return false;
     if (!sim.lightFire(x, y, z, 0)) return false;
-    if (held === 'fire_charge') sim.usedHeld = true;
+    if (held === 'fire_charge') sim.usedHeld = true; else sim.wornHeld = 1;
     return true;
   };
 

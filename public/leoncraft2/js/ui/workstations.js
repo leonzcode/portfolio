@@ -381,7 +381,7 @@ export class StonecutterScreen extends StationScreen {
     g.text(this.title, L + 8, T + 4, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
     const prev = this.drawSlots(g, mx, my);
-    if (over >= 0 && !this.inv.carried) g.setTooltip(stackTooltip(this.recipes[over]));
+    if (over >= 0 && !this.inv.carried) g.setTooltip(stackTooltip(this.recipes[over], this.advancedTips));
     this.drawCarried(g, mx, my, prev);
   }
 }

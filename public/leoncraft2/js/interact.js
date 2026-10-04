@@ -13,6 +13,8 @@
      hand.used()      one was placed (survival takes it from the stack)
      hand.got(id)     a broken block to keep (survival only)
      hand.swing()     start the arm swing
+     hand.key()       what is held, as a string (a different item starts the mining again)
+     hand.withOffhand(fn)  run fn with the off hand's stack in the main hand's place
 
    And two the renderer listens to for particles (either may be absent):
      onBreak(x, y, z, block, boxes)        a block broke
@@ -49,7 +51,8 @@ export class Interactor {
     const nb = (dx, dy, dz) => { const n = w.get(hit.x + dx, hit.y + dy, hit.z + dz); return n ? { d: BLOCKS[n], m: w.meta(hit.x + dx, hit.y + dy, hit.z + dz) } : null; };
     let stage = -1;
     const mm = this.mining;
-    if (mm && mm.x === hit.x && mm.y === hit.y && mm.z === hit.z && mm.total > 0) stage = Math.min(9, Math.floor(mm.t / mm.total * 10));
+    // the cracks: none until some of the block is worn away, then a stage for each tenth
+    if (mm && mm.x === hit.x && mm.y === hit.y && mm.z === hit.z && mm.total > 0 && mm.t > 0) stage = Math.min(9, Math.floor(mm.t / mm.total * 10));
     if (this.overlay) this.overlay.set(hit.x, hit.y, hit.z, selectionBoxes(d, w.meta(hit.x, hit.y, hit.z), nb), stage);
     return hit;
   }
@@ -91,15 +94,17 @@ export class Interactor {
     if (!h) { this.mining = null; return; }
     // with the hand's rules, t runs from 0 to 1 by the tool's progress a tick; without, seconds by hand
     const total = this.hand.progress ? 1 : breakTime(BLOCKS[h.b]);
-    this.mining = { x: h.x, y: h.y, z: h.z, b: h.b, t: 0, total, ticks: 0 };
-    if (this.hand.progress ? this.hand.progress(h) >= 1 : total === 0) { this.breakTarget(); this.mining = null; this.breakDelay = 5; }
+    this.mining = { x: h.x, y: h.y, z: h.z, b: h.b, t: 0, total, ticks: 0, key: this.hand.key ? this.hand.key() : '' };
+    // a block that goes at once leaves no delay, so holding the button mows grass or insta-mines stone a block a tick
+    if (this.hand.progress ? this.hand.progress(h) >= 1 : total === 0) { this.breakTarget(); this.mining = null; }
   }
   mineTick() {
-    // after a block breaks, five ticks before the next one starts (as the game does)
+    // after a block that took time breaks, five ticks before the next one starts (as the game does)
     if (this.breakDelay > 0) { this.breakDelay--; return; }
     const h = this.target, m = this.mining;
     if (!h) { this.mining = null; return; }
-    if (!m || m.x !== h.x || m.y !== h.y || m.z !== h.z || m.b !== h.b) { this.startMining(); return; }
+    // another block, or another item in the hand: start again from nothing
+    if (!m || m.x !== h.x || m.y !== h.y || m.z !== h.z || m.b !== h.b || (this.hand.key && m.key !== this.hand.key())) { this.startMining(); return; }
     m.t += this.hand.progress ? this.hand.progress(h) : 0.05;
     if (++m.ticks % 4 === 0) this.hand.swing();
     if (this.onHit) this.onHit(h.x, h.y, h.z, h.face, h.b, h.box);
@@ -134,30 +139,40 @@ export class Interactor {
     this.target = null;
   }
   useOnce() {
+    if (this.useWith()) return;
+    // the main hand had nothing to do: the off hand has its turn (a torch beside the pickaxe, food), as in the game
+    if (this.hand.withOffhand) this.hand.withOffhand(() => this.useWith());
+  }
+  // one right click with what is in the hand (hands.js swaps the off hand in for its turn); true when it did something
+  useWith() {
     // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities)
-    if (this.entities && !this.entityTarget && this.entities.useHeld(this.target)) { this.hand.swing(); return; }
+    if (this.entities && !this.entityTarget && this.entities.useHeld(this.target)) { this.hand.swing(); return true; }
     const h = this.target;
     // at nothing: an item that is thrown (an eye of ender), or one that works by itself (eating, armour, a bucket)
     if (!h || !h.face) {
       const held = this.hand.id();
-      if (held && this.onUseAir && this.onUseAir(held)) { this.hand.swing(); return; }
-      if (this.hand.useItem) this.hand.useItem(null);
-      return;
+      if (held && this.onUseAir && this.onUseAir(held)) { this.hand.swing(); return true; }
+      return !!(this.hand.useItem && this.hand.useItem(null));
     }
     // chests, crafting tables, furnaces open; tools till and strip (hands.js)
-    if (this.hand.useOn && this.hand.useOn(h)) { this.hand.swing(); return; }
+    if (this.hand.useOn && this.hand.useOn(h)) { this.hand.swing(); return true; }
     // portals, eyes in frames, beds and anchors where they explode (js/dim/realms.js)
-    if (this.onUse && this.onUse(h, this.hand.id())) { this.hand.swing(); return; }
+    if (this.onUse && this.onUse(h, this.hand.id())) { this.hand.swing(); return true; }
     // what the simulation does with a click: levers, beds, bone meal, flint and steel (sim/sim.js)
-    if (this.sim && this.sim.use(h, this.hand.id(), this.player.sneaking)) { this.hand.swing(); if (this.sim.usedHeld) { this.sim.usedHeld = false; this.hand.used(); } return; }
+    if (this.sim && this.sim.use(h, this.hand.id(), this.player.sneaking)) {
+      this.hand.swing();
+      if (this.sim.usedHeld) { this.sim.usedHeld = false; this.hand.used(); }
+      if (this.sim.wornHeld) { const n = this.sim.wornHeld; this.sim.wornHeld = 0; if (this.hand.wear) this.hand.wear(n); }
+      return true;
+    }
     // doors, trapdoors and gates open instead, unless you sneak
-    if (!this.player.sneaking && use(this.world, h.x, h.y, h.z)) { this.hand.swing(); return; }
-    if (this.hand.useItem && this.hand.useItem(h)) return;
+    if (!this.player.sneaking && use(this.world, h.x, h.y, h.z)) { this.hand.swing(); return true; }
+    if (this.hand.useItem && this.hand.useItem(h)) return true;
     const id = this.hand.id();
-    if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return;
+    if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return false;
     let list = placement(this.world, h, id, this.player);
     if (list.length && this.sim) list = this.sim.placed(list, h, id);
-    if (!list.length) return;
+    if (!list.length) return false;
     for (const [x, y, z, b, m] of list) {
       const cur = this.world.get(x, y, z);
       this.world.set(x, y, z, b, m);
@@ -166,5 +181,6 @@ export class Interactor {
     }
     this.hand.swing();
     this.hand.used(list);           // (what was placed, for blocks that hold things)
+    return true;
   }
 }

@@ -18,7 +18,8 @@
 
    CreativeInventoryScreen and InventoryScreen work like the game's: click to
    pick up and put down, right click to halve or place one, shift-click to
-   move across, a double click to gather, drag to spread (left evenly, right
+   move across (shift and a double click, with a chest or the like open:
+   every stack of that item), a double click to gather, drag to spread (left evenly, right
    one each), 1-9 over a slot to swap with the hotbar, F for the off hand,
    middle click (creative) for a full stack, Q over a slot to throw one
    (Ctrl+Q the stack). The 2 x 2 grid crafts (js/crafting.js): a click on
@@ -327,8 +328,9 @@ function hsv(h, s, v) {
   return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
 }
 
-// the lines of a stack's tooltip: name, enchantments, what it does in the hand
-export function stackTooltip(st) {
+// the lines of a stack's tooltip: name, enchantments, what it does in the hand; with advanced
+// tooltips on (F3 + H) the durability and the item's id as well, as in the game
+export function stackTooltip(st, advanced) {
   const it = ITEMS[st.id];
   const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) ? potionName(st) : displayName(st.id))];
   if (isPotion(st) || (st.potion && ITEMS[st.id] && ITEMS[st.id].name === 'tipped_arrow')) lines.push(...potionLines(st));
@@ -343,7 +345,11 @@ export function stackTooltip(st) {
     if (it.armor.toughness) lines.push('§9+' + it.armor.toughness + ' Armor Toughness');
     if (it.armor.knockback) lines.push('§9+' + Math.round(it.armor.knockback * 10) + ' Knockback Resistance');
   }
-  if (st.dmg > 0) { const max = maxDamage(st.id); lines.push('§7Durability: ' + (max - st.dmg) + ' / ' + max); }
+  if (advanced) {
+    if (st.dmg > 0) { const max = maxDamage(st.id); lines.push('Durability: ' + (max - st.dmg) + ' / ' + max); }
+    const it2 = ITEMS[st.id], n = it2 ? it2.name : BLOCKS[st.id] ? BLOCKS[st.id].name : '';
+    if (n) lines.push('§8minecraft:' + n);
+  }
   return lines;
 }
 
@@ -575,6 +581,16 @@ export class ContainerScreen extends Screen {
       }
     }
   }
+  // shift + double click: quick-move every stack like `like` on the same side as slot s (the container's or the player's)
+  quickMoveAll(s, like) {
+    const box = s.kind === 'box';
+    for (const q of this.slots) {
+      if ((q.kind === 'box') !== box || this.special(q) || q.output || !this.slotShown(q)) continue;
+      if (!box && q.kind !== 'inv') continue;
+      const st = this.getStack(q);
+      if (st && same(withCount(st, 1), like)) this.quickMove(q);
+    }
+  }
   // 1-9 over a slot: trade places with that hotbar slot
   swapHotbar(s, n) {
     const hs = { kind: 'inv', i: n };
@@ -665,8 +681,11 @@ export class ContainerScreen extends Screen {
       // middle: a full stack of it on the mouse, in creative; or spread full stacks
       if (this.creative && !c) { const st = this.getStack(s); if (st) this.setCarried(withCount(st, maxStack(st.id))); }
       else if (this.creative && c && this.canDrag(s)) this.drag = { button: 1, slots: [s] };
-    } else if (shift && !c) this.shiftClick(s);
-    else if (s.kind === 'result' || s.output) this.click(s, button);
+    } else if (shift && !c) {
+      // shift and a double click with a container open: every stack like the one just moved goes across too
+      if (this.dbl && button === 0 && this.box && this.lastQuick && !this.special(s) && !s.output) this.quickMoveAll(s, this.lastQuick);
+      else { const st = this.getStack(s); this.lastQuick = st ? withCount(st, 1) : null; this.shiftClick(s); }
+    } else if (s.kind === 'result' || s.output) this.click(s, button);
     else if (c) this.drag = { button, slots: this.canDrag(s) ? [s] : [] };
     else this.click(s, button);
     this.after();
@@ -766,7 +785,8 @@ export class ContainerScreen extends Screen {
     return prev;
   }
   slotStack(s) { return this.getStack(s); }
-  tooltipFor(st) { return stackTooltip(st); }
+  tooltipFor(st) { return stackTooltip(st, this.advancedTips); }
+  get advancedTips() { return !!(this.gui && this.gui.options && this.gui.options.get('advancedTooltips')); }
   // the stack on the mouse, over everything
   drawCarried(g, mx, my, prev) {
     const c = this.inv.carried;
@@ -1010,7 +1030,7 @@ export class CreativeInventoryScreen extends ContainerScreen {
     return super.keyPressed(e);
   }
   tooltipFor(st, s) {
-    const lines = stackTooltip(st);
+    const lines = stackTooltip(st, this.advancedTips);
     if (s && s.kind === 'grid' && this.T.search) {
       const k = creativeItems().tabOf.get(st.id);
       const t = TABS.find(x => x.key === k);
