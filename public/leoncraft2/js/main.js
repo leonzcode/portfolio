@@ -37,6 +37,12 @@ import { Hud } from './ui/hud.js?v=8';
 import { Interactor } from './interact.js?v=8';
 import { Survival } from './survival.js?v=8';
 import { Save } from './save.js?v=8';
+import { DRAW, setItemLayers } from './items.js?v=8';
+import { loadItemStrip, addItemPieces } from './itemtex.js?v=8';
+import { Drops } from './drops.js?v=8';
+import { Containers } from './containers.js?v=8';
+import { Hands } from './hands.js?v=8';
+import { setLayerPixels } from './render/blockmesh.js?v=8';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -65,6 +71,8 @@ function guessGraphics() {
   } catch (e) { return 'detailed'; }
 }
 const options = new Options();
+// Q throws and F5 turns the view, as in the game (older settings had the view on Q)
+{ const k = options.get('keys'); if (k && k.perspective === 'KeyQ' && !k.drop) { options.setKey('drop', 'KeyQ'); options.setKey('perspective', 'F5'); } }
 const chosen = GRAPHICS_OF[options.get('quality')] && options.get('quality') !== 'auto' ? GRAPHICS_OF[options.get('quality')] : null;
 let QNAME = GRAPHICS_OF[params.get('q')] || chosen || guessGraphics();
 const chosenByUser = !!(params.get('q') || chosen);
@@ -231,6 +239,10 @@ async function boot() {
   const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, 'terrain_spec.png']
     .map(f => f ? strip(base + f + TEX_V, manifest.layers) : null));
   resolveTextures(manifest);
+  // the pictures of the items that are not blocks, after the last block layer (itemtex.js)
+  const itemStrip = await loadItemStrip(base, TEX_V);
+  const LAYERS = manifest.layers + await addItemPieces(itemStrip, manifest.layers, albP, nrmP, spcP);
+  setItemLayers(manifest.layers);
   // resource packs the player opened from their own computer (ui/pack.js): theirs first, ours underneath
   let find = null, packTex = null;
   try {
@@ -248,9 +260,9 @@ async function boot() {
   const moonTex = new THREE.Texture(moon);
   moonTex.magFilter = THREE.NearestFilter; moonTex.minFilter = THREE.NearestFilter; moonTex.needsUpdate = true;
   const textures = {
-    albedo: arrayTex(albP, manifest.layers, THREE.LinearMipmapLinearFilter),
-    normal: nrmP ? arrayTex(nrmP, manifest.layers, THREE.LinearMipmapLinearFilter) : flatNormals(),
-    spec: arrayTex(spcP, manifest.layers, THREE.LinearMipmapLinearFilter),
+    albedo: arrayTex(albP, LAYERS, THREE.LinearMipmapLinearFilter),
+    normal: nrmP ? arrayTex(nrmP, LAYERS, THREE.LinearMipmapLinearFilter) : flatNormals(),
+    spec: arrayTex(spcP, LAYERS, THREE.LinearMipmapLinearFilter),
     manifest, moon: moonTex,
   };
 
@@ -306,7 +318,9 @@ async function boot() {
   fit();
 
   /* ---- item icons for the inventory and the hotbar (made a few at a time) ---- */
-  const icons = new ItemIcons(alb, { grassMap: grass, foliageMap: foliage });
+  const icons = new ItemIcons(alb, { grassMap: grass, foliageMap: foliage, extra: itemStrip.bmp });
+  setLayerPixels(icons.px);          // flat items in the hand and on the ground get their thickness from these
+
   let hud = null;                   // the hotbar, hearts and F3, made per world (js/ui/hud.js)
 
   /* ---- the world behind the title screen ---- */
@@ -418,21 +432,40 @@ async function boot() {
     }
     const survival = new Survival();
     if (st && st.survival) survival.fromJSON(st.survival);
+    survival.inv = inv;
+    // items on the ground and experience orbs (drops.js), chests and furnaces (containers.js)
+    const drops = new Drops(world, renderer);
+    renderer.scene.add(drops.group);
+    if (st && st.drops) drops.fromJSON(st.drops);
+    const containers = new Containers(world);
+    if (!isNew) containers.fromJSON(await save.readExtra('containers'));
+    // what the hands do with items: mining, drops, eating, opening things (hands.js)
+    const hands = new Hands({ world, player, inv, survival, drops, containers, fluids, gui, icons, mode, renderer, inter: null, open: s => openScreen(s) });
+    if (st && st.hands) hands.fromJSON(st.hands);
     const inter = new Interactor({
       world, player, fluids, renderer, overlay,
-      hand: {
-        id: () => inv.heldId(),
-        used: () => { if (mode !== 'creative') inv.takeSelected(1); },
-        got: id => inv.add(id, 1),
-        swing: () => { renderer.swing = 1; },
-      },
+      hand: hands.adapter(renderer),
       onSplash: (x, z) => renderer.inter.splash(x, z, 0.8, 2.0),
     });
     inter.creative = mode === 'creative';
-    game = { entry, world, player, fluids, inv, survival, inter, save, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0 };
+    hands.inter = inter;
+    inv.on('drop', s => hands.throwStack(s));
+    // picking things up: into the inventory, experience into the bar (Mending repairs first)
+    const collector = {
+      inv, get alive() { return !survival.dead; },
+      addXp: n => survival.addXp(n),
+      mendingRepair: n => {
+        const worn = [inv.slots[inv.selected], inv.offhand].concat(inv.armor).filter(x => x && x.dmg > 0 && x.ench && x.ench.mending);
+        if (!worn.length) return n;
+        const it = worn[Math.floor(Math.random() * worn.length)], fix = Math.min(n * 2, it.dmg);
+        it.dmg -= fix; inv.changed();
+        return n - Math.ceil(fix / 2);
+      },
+    };
+    game = { entry, world, player, fluids, inv, survival, inter, save, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, drops, containers, hands, collector };
     hud = new Hud(inv, icons);
     gui.hud = hud;
-    inv.on('held', id => renderer.setHeld(id, BLOCKS));
+    inv.on('held', id => renderer.setHeld(id, DRAW));
     held();
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     loading = null;
@@ -443,7 +476,16 @@ async function boot() {
     // no mouse yet (the click that started this is long gone): the game menu, as when the window loses focus
     setTimeout(() => { if (game && !locked() && !gui.isOpen()) gui.open(new PauseScreen()); }, 600);
   }
-  function held() { if (game) renderer.setHeld(game.inv.heldId(), BLOCKS); }
+  function held() { if (game) renderer.setHeld(game.inv.heldId(), DRAW); }
+  // a screen opened from the world (a chest, a crafting table): the mouse is let go without the game menu
+  function openScreen(screen) {
+    if (!game) return;
+    wantInv = true;
+    for (const k in game.player.keys) game.player.keys[k] = false;
+    game.inter.up(0); game.inter.up(2);
+    if (document.pointerLockElement) document.exitPointerLock();
+    gui.open(screen);
+  }
   function dropWorld(world) {
     for (const k of [...renderer.columns.keys()]) { const [x, z] = k.split(',').map(Number); renderer.dropColumn(x, z); }
     if (renderer.uploads) renderer.uploads.clear();
@@ -452,17 +494,20 @@ async function boot() {
   function stateOf() {
     const g = game, p = g.player;
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
-      inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode };
+      inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
+      drops: g.drops.toJSON(), hands: g.hands.toJSON() };
   }
   async function saveGame() {
     if (!game) return;
     game.save.writeState(stateOf());
+    if (game.containers.dirty) { game.containers.dirty = false; game.save.writeExtra('containers', game.containers.toJSON()); }
     await game.save.flush(game.world.edits);
   }
   async function quitToTitle() {
     if (!game) return;
     const g = game;
     await saveGame();
+    g.drops.dispose();
     game = null;
     if (document.pointerLockElement) document.exitPointerLock();
     // the world you left keeps turning behind the title screen
@@ -477,6 +522,7 @@ async function boot() {
     if (!game) return;
     const g = game;
     g.survival.reset();
+    g.spilled = false;
     const gy = groundY(g.world, g.spawn.x, g.spawn.z);
     g.player.pos.set(g.spawn.x + 0.5, gy > 0 ? gy : 120, g.spawn.z + 0.5);
     g.player.prev.copy(g.player.pos); g.player.vel.set(0, 0, 0);
@@ -543,6 +589,9 @@ async function boot() {
     }
     if (!locked()) return;
     if (a && a.startsWith('hotbar')) { game.inv.select(+a.slice(6) - 1); return; }
+    // Q throws one of the selected stack (Ctrl+Q all of it), F swaps it with the off hand
+    if (a === 'drop') { game.hands.dropSelected(e.ctrlKey || e.metaKey); e.preventDefault(); return; }
+    if (a === 'swapOffhand') { const inv = game.inv, t = inv.slots[inv.selected]; inv.slots[inv.selected] = inv.offhand; inv.offhand = t; inv.changed(); e.preventDefault(); return; }
     if (e.code === 'BracketLeft') game.time -= 1000;
     if (e.code === 'BracketRight') game.time += 1000;
     if (e.code === 'KeyP' && !a) timeRuns = !timeRuns;
@@ -627,13 +676,18 @@ async function boot() {
       player.tick();
       fluids.step();
       inter.tick();
+      g.hands.tick();
+      g.containers.tick();
       if (g.mode !== 'creative') {
+        player.canSprint = survival.canSprint();
         survival.tick(player);
+        if (survival.dead && !g.spilled) { g.spilled = true; g.hands.spillAll(); }
         if (survival.dead && !gui.isOpen()) {
           if (document.pointerLockElement) document.exitPointerLock();
           gui.open(new DeathScreen());
         }
       }
+      g.drops.tick(player, g.collector);
       if (timeRuns) g.time += 1;
       for (const s of player.splashes.splice(0)) renderer.inter.splash(s[0], s[1], s[2], s[3]);
       // every ten seconds, what changed goes into the browser's storage
@@ -644,13 +698,15 @@ async function boot() {
     world.flush();
     const v = player.view(alpha);
     inter.look(v.eye);
+    g.hands.alpha = alpha;
+    g.drops.update(dt, alpha, player, renderer.camera);
     sunAt(g.time);
     const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));
     const onGrass = player.onGround && !player.flying;
     renderer.render({
       time: (g.time + alpha) / 20, sunDir, moonDir, feet: v.feet, eye: v.eye, yaw: player.yaw, pitch: player.pitch,
       fov: player.fov, eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
-      moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: v.handBob,
+      moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: g.hands.handBob(v.handBob),
       waterTint: tintAt(world, v.eye), player, alpha,
     }, dt);
     if (g.mode !== 'creative') hud.setStats(survival.stats());
@@ -692,6 +748,7 @@ async function boot() {
         'Facing: ' + ['north', 'west', 'south', 'east'][((Math.round(player.yaw / (Math.PI / 2)) % 4) + 4) % 4],
         'Biome: ' + (bn ? bn.name : '?'),
         'Day ' + Math.floor(g.time / 24000) + ', time ' + (g.time % 24000) + (timeRuns ? '' : ' (stopped)'),
+        g.mode !== 'creative' ? 'Food ' + survival.food + ', saturation ' + survival.saturation.toFixed(1) + ', exhaustion ' + survival.exhaustion.toFixed(3) : '',
       ], [
         'Render ' + renderer.rw + 'x' + renderer.rh + ' (F7 scale)',
         'Distance ' + world.renderDist + ', graphics ' + QNAME,
@@ -724,6 +781,8 @@ async function boot() {
     renderer, gui, options, B, BLOCKS,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud,
+    get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
+    get survival() { return game && game.survival; },
     get time() { return game ? game.time : menuTime; }, set time(t) { if (game) game.time = t; else menuTime = t; },
     play: (seed, mode) => startGame(Worlds.add({ id: 'w' + Date.now().toString(36), name: 'Test World', folder: 'Test World', seed: seed || MENU_SEED, mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
