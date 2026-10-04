@@ -27,6 +27,7 @@ import { B } from '../blocks.js?v=8';
 import { BIO, BIOMES } from '../biomes.js?v=8';
 import { H, Y0, VOL } from '../world-const.js?v=8';
 import { Decorator } from './features.js?v=8';
+import { Carvers } from './carvers.js?v=8';
 
 const MIN_Y = -64, SEA_LEVEL = 63;
 const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
@@ -304,7 +305,26 @@ export class VanillaGen {
     this.lats = latNodes.map(() => new Float64Array(5 * 5 * 49));
     this.ctx.L = this.lats;
     this.decorator = new Decorator(this);
-    this.surfaceChunk = null;
+    this.carvers = new Carvers(this, D);
+    this.B = B;
+    // a carver cuts through anything but bedrock (26.3's "uncarvable" tag)
+    this.carveMode = 0;
+  }
+  biomeName(id) { return BIOMES[id].name; }
+  carvable(b) {
+    if (b === B.bedrock) return false;
+    if (this.carveMode === 1) return b !== 0 && b !== B.water && b !== B.lava;
+    return true;
+  }
+  /* the surface rules asked about a single block (a carver uncovering dirt
+     under grass asks what the top block should be) */
+  topMaterial(x, y, z, lx, lz, fluid, grid) {
+    const M = this.mctx;
+    M.x = x; M.z = z; M.lx = lx; M.lz = lz; M.xz++; M.grid = grid;
+    M.surfaceDepth = Math.trunc(this.surfaceNoise.sample(x, 0, z) * 2.75 + 3 + this.posRandom.at(x, 0, z).nextDouble() * 0.25);
+    M.secondary = NaN; M.minSurf = NaN;
+    M.y = y; M.yi++; M.stoneAbove = 1; M.stoneBelow = 1; M.waterH = fluid ? y + 1 : -2147483648; M.biome = -1;
+    return this.rule();
   }
 
   /* ---- climate and biomes ---- */
@@ -395,7 +415,8 @@ export class VanillaGen {
     const grid = this.biomeGrid(cx, cz);
     this.materials(blocks, meta, x0, z0, surfH, grid);
     // carvers and features
-    this.decorator.decorate(blocks, meta, cx, cz, grid);
+    if (this.decorator.carve) this.carvers.carve(blocks, meta, cx, cz, aq, grid);
+    if (this.decorator.features) this.decorator.decorate(blocks, meta, cx, cz, grid);
     // each column's biome, where it shows: at its top block
     const biome = new Uint8Array(256);
     for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
