@@ -650,6 +650,24 @@ export class Entities {
     }
     return false;
   }
+  /* The player's bow, for the items module: drawn for so many ticks, an
+     arrow at 3 x power (power = (f^2 + 2f) / 3 of f = ticks / 20, at most 1),
+     critical at full draw. Returns the arrow, or null if barely drawn. */
+  shootArrow(ticks, o = {}) {
+    const f = ticks / 20;
+    const power = Math.min(1, (f * f + f * 2) / 3);
+    if (power < 0.1) return null;
+    const P = this.P, eye = P.pos.clone(); eye.y += 1.62 - 0.1;
+    const dir = new THREE.Vector3(-Math.sin(P.yaw) * Math.cos(P.pitch), Math.sin(P.pitch), -Math.cos(P.yaw) * Math.cos(P.pitch));
+    const a = this.spawn('arrow', eye.x, eye.y, eye.z, { natural: false });
+    a.owner = this.player; a.crit = power >= 1; a.pickup = this.mode === 'creative' ? 0 : 1;
+    if (o.power) a.base += o.power * 0.5 + 0.5;          // the Power enchantment
+    if (o.punch) a.knock = o.punch;
+    if (o.flame) a.fire = 100;
+    a.shoot(dir.x, dir.y, dir.z, power * 3, 1);
+    a.vel.x += P.vel.x; a.vel.z += P.vel.z; if (!P.onGround) a.vel.y += P.vel.y;
+    return a;
+  }
   // creative, before there are boat items: B puts an oak boat where you look
   placeBoatAtCrosshair() {
     const P = this.P;

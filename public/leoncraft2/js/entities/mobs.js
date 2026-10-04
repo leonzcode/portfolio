@@ -9,7 +9,7 @@
 --------------------------------------------------------------------------- */
 import { Mob, Living, DEG, wrap, yawTo, rotTowards } from './entity.js?v=8';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal, EatGrassGoal,
-  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal } from './ai.js?v=8';
+  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=8';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=8';
 
 const R = () => Math.random();
@@ -55,6 +55,9 @@ export class Zombie extends Monster {
     this.goals.add(8, new LookAroundGoal(this));
     this.targets.add(1, new HurtByTargetGoal(this, true));
     this.targets.add(2, new NearestPlayerTargetGoal(this, true));
+    // villagers (and wandering traders), then iron golems
+    this.targets.add(3, new NearestMobTargetGoal(this, e => e.type === 'villager' || e.type === 'wandering_trader', false));
+    this.targets.add(3, new NearestMobTargetGoal(this, e => e.type === 'iron_golem', true));
   }
   // a baby zombie: half the size, half again as fast, more experience
   setBaby(b) {
@@ -72,6 +75,26 @@ export class Zombie extends Monster {
     super.serverAi();
     if (this.breaksDoors && this.m.difficulty === 'hard') this.doorBreak();
   }
+  /* Under water for 30 seconds a zombie starts to drown, shakes for 15
+     more, and comes up a drowned (a husk becomes a zombie the same way). */
+  aiStep() {
+    super.aiStep();
+    if (this.dead || this.removed || !this.constructor.CONVERTS_TO) return;
+    if (this.eyeInWater) {
+      if (!(this.convertT >= 0)) this.waterT = (this.waterT || 0) + 1;
+      if (this.waterT >= 600 && !(this.convertT >= 0)) this.convertT = 300;
+    } else if (!(this.convertT >= 0)) this.waterT = 0;
+    if (this.convertT >= 0 && --this.convertT < 0) this.convert(this.constructor.CONVERTS_TO);
+  }
+  convert(type) {
+    const n = this.m.spawn(type, this.pos.x, this.pos.y, this.pos.z, { natural: false, yaw: this.yaw });
+    if (!n) return;
+    if (this.baby && n.setBaby) n.setBaby(true);
+    n.persistent = this.persistent;
+    this.remove();
+  }
+  anim(A) { A.aggressive = this.aggressive; A.shake = this.convertT >= 0; }
+  rootPose(root, t, a) { if (this.convertT >= 0) root.multiply(t.makeRotationY(Math.cos((this.age + a) * 3.25) * Math.PI * 0.01)); }
   /* Breaking a door: standing at a closed wooden door in its path, it beats
      on it for 240 ticks (Hard) and the door breaks. */
   doorBreak() {
@@ -93,21 +116,30 @@ export class Zombie extends Monster {
     drop('rotten_flesh', RI(3));
     if (byPlayer && R() < 0.025) drop(['iron_ingot', 'carrot', 'potato'][RI(3)], 1);
   }
-  anim(A) { A.aggressive = this.aggressive; }
+  doHurtTarget(t) {
+    const ok = super.doHurtTarget(t);
+    // a villager killed by a zombie: half the time on Normal, always on Hard, it gets up a zombie villager
+    if (ok && t.type === 'villager' && t.dead) {
+      const d = this.m.difficulty;
+      if (d === 'hard' || (d === 'normal' && R() < 0.5)) { t.removed = true; const z = this.m.spawn('zombie_villager', t.pos.x, t.pos.y, t.pos.z, { natural: false, yaw: t.yaw }); if (z) z.persistent = true; }
+    }
+    return ok;
+  }
   toJSON() { const o = super.toJSON(); if (this.baby) o.baby = 1; return o; }
   fromJSON(o) { super.fromJSON(o); if (o.baby) this.setBaby(true); }
 }
+Zombie.CONVERTS_TO = 'drowned';
 register('zombie', Zombie);
 // a husk: does not burn, and its hit makes you hungry
 export class Husk extends Zombie {
-  static UNDEAD = false; static TEX = 'husk';
+  static UNDEAD = false; static TEX = 'husk'; static CONVERTS_TO = 'zombie';
   loot(drop) { drop('rotten_flesh', RI(3)); }
   doHurtTarget(t) { const ok = super.doHurtTarget(t); if (ok && t.isPlayer) this.m.effectPlayer('hunger', 140 * 2); return ok; }
 }
 register('husk', Husk);
 // a drowned: lives in water, swims after you
 export class Drowned extends Zombie {
-  static TEX = 'drowned'; static WATER_BREATHER = true;
+  static TEX = 'drowned'; static WATER_BREATHER = true; static CONVERTS_TO = null;
   constructor(m, type) { super(m, type); this.waterCost = 0; }
   registerGoals() {
     this.goals.add(2, new MeleeAttackGoal(this, 1, false));
@@ -131,7 +163,7 @@ register('drowned', Drowned);
 
 /* ---- Zombie villager: a zombie with a villager's face ---- */
 export class ZombieVillager extends Zombie {
-  static MODEL = 'zombie_villager'; static TEX = 'zombie_villager';
+  static MODEL = 'zombie_villager'; static TEX = 'zombie_villager'; static CONVERTS_TO = null;
 }
 register('zombie_villager', ZombieVillager);
 

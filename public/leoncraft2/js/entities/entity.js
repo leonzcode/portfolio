@@ -117,6 +117,7 @@ export class Entity {
   landed() {}
   hurt() { return false; }
   isAlive() { return !this.removed; }
+  alive() { return !this.removed && !this.dead; }
   // what the rider sits on, relative to the feet
   ridingOffset() { return this.h * 0.75; }
   // saving
