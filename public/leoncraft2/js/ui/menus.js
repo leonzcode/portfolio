@@ -26,8 +26,8 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=7';
-import { Packs } from './pack.js?v=7';
+} from './gui.js?v=8';
+import { Packs } from './pack.js?v=8';
 
 const PI = Math.PI;
 
@@ -1083,7 +1083,7 @@ export class ResourcePacksScreen extends Screen {
 /* The pause menu: a 212-wide grid a quarter of the way down, Back to Game
    and Save and Quit across both columns, 98-wide pairs between. */
 export class PauseScreen extends Screen {
-  constructor() { super('Game Menu'); this.background = 'world'; }
+  constructor() { super('Game Menu'); this.background = 'world'; this.openedAt = performance.now(); }
   init() {
     const W = this.width, H = this.height, g = this.gui;
     const top = Math.floor((H - 166) * 0.25);
@@ -1101,7 +1101,8 @@ export class PauseScreen extends Screen {
     this.add(new Button(xl, top + 146, 204, 20, 'Save and Quit to Title', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); }));
   }
   resume() { this.gui.closeAll(); if (this.hooks.resume) this.hooks.resume(); }
-  onEscape() { this.resume(); }
+  // the Esc that let the mouse go (and so opened this menu) must not close it again at once
+  onEscape() { if (performance.now() - this.openedAt > 400) this.resume(); }
   render(g, mx, my, dt) {
     g.centered(this.title, this.width / 2, 40, WHITE);
     super.render(g, mx, my, dt);

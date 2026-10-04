@@ -18,25 +18,25 @@
    middle click pick block, F1 hide the HUD, F3 details, [ and ] the clock,
    F7 render scale, F8 quality.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=7';
-import { BIOMES, biomeColours } from './biomes.js?v=7';
-import { pickBiome } from './worldgen.js?v=7';
-import { World } from './world.js?v=7';
-import { Fluids } from './fluids.js?v=7';
-import { Player } from './player.js?v=7';
-import { Renderer } from './render/renderer.js?v=7';
-import { Overlay } from './render/overlay.js?v=7';
-import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=7';
-import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=7';
-import { SEA, Y0 } from './world-const.js?v=7';
-import { Gui, Options } from './ui/gui.js?v=7';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=7';
-import { ItemIcons } from './ui/icons.js?v=7';
-import { Inventory, inventoryScreen } from './ui/inventory.js?v=7';
-import { Hud } from './ui/hud.js?v=7';
-import { Interactor } from './interact.js?v=7';
-import { Survival } from './survival.js?v=7';
-import { Save } from './save.js?v=7';
+import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=8';
+import { BIOMES, biomeColours } from './biomes.js?v=8';
+import { pickBiome } from './worldgen.js?v=8';
+import { World } from './world.js?v=8';
+import { Fluids } from './fluids.js?v=8';
+import { Player } from './player.js?v=8';
+import { Renderer } from './render/renderer.js?v=8';
+import { Overlay } from './render/overlay.js?v=8';
+import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=8';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=8';
+import { SEA, Y0 } from './world-const.js?v=8';
+import { Gui, Options } from './ui/gui.js?v=8';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=8';
+import { ItemIcons } from './ui/icons.js?v=8';
+import { Inventory, inventoryScreen } from './ui/inventory.js?v=8';
+import { Hud } from './ui/hud.js?v=8';
+import { Interactor } from './interact.js?v=8';
+import { Survival } from './survival.js?v=8';
+import { Save } from './save.js?v=8';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -50,8 +50,7 @@ const MENU_SEED = 20261002;
    also follows the frame rate on its own. */
 const PRESETS = {
   fast: { rd: 4, scale: 0.55, ldr: true, shadows: 0, normals: false, fastLeaves: true, interSize: 128, uploadMs: 2, sky: 4, plantDist: 40, plantShadows: false },
-  // water reflections, soft shadows, light rays and the sky kept whole; bloom off, a little less view, lighter clouds
-  detailed: { rd: 4, shadowRes: 2048, shadowDist: 64, shadows: 2, scale: 0.85, vlSteps: 10, cloudSteps: 10, ssrSteps: 18, plantDist: 40, fastLeaves: true, plantShadows: false, sky: 4, bloom: false, fxaa: false, halfClouds: true, uploadMs: 3 },
+  detailed: { rd: 8, shadowRes: 2048, shadowDist: 96, shadows: 2, scale: 0.85, vlSteps: 10, cloudSteps: 14, ssrSteps: 18, plantDist: 80, leafInDist: 40, leafInShadows: false },
 };
 // what the older settings become
 const GRAPHICS_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
@@ -223,7 +222,7 @@ async function boot() {
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
-  const TEX_V = '?v=7';
+  const TEX_V = '?v=8';
   const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
   let [alb, grass, foliage, moon] = await Promise.all(
     ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png'].map(f => loadImg(base + f + TEX_V)));
@@ -488,11 +487,27 @@ async function boot() {
 
   /* ---- input ---- */
   const locked = () => document.pointerLockElement === canvas;
-  function lock() { if (game && !locked()) { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {} } }
+  /* Taking the mouse back. Chrome refuses for about a second after Esc let
+     it go, and a second request while one is pending fails too, so: one at a
+     time, held back until that second has passed, and if it still fails the
+     game menu comes back so a click on Back to Game can try again. */
+  let unlockedAt = -1e9, lockPending = false;
+  function lockFailed() { if (game && !locked() && !gui.isOpen() && !game.survival.dead) gui.open(new PauseScreen()); }
+  function lock() {
+    if (!game || locked() || lockPending) return;
+    lockPending = true;
+    setTimeout(() => {
+      lockPending = false;
+      if (!game || locked() || gui.isOpen()) return;
+      try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(lockFailed); } catch (e) { lockFailed(); }
+    }, Math.max(0, 1100 - (performance.now() - unlockedAt)));
+  }
+  document.addEventListener('pointerlockerror', lockFailed);
   canvas.addEventListener('click', () => { if (game && !gui.isOpen()) lock(); });
   let wantInv = false;
   document.addEventListener('pointerlockchange', () => {
     if (locked()) return;
+    unlockedAt = performance.now();
     for (const k in game ? game.player.keys : {}) game.player.keys[k] = false;
     if (game && game.inter) { game.inter.up(0); game.inter.up(2); }
     // losing the mouse in the game is Esc: the game menu (not when it went to the inventory)
@@ -561,7 +576,7 @@ async function boot() {
     applyOptions();
     if (k === 'renderDistance' && v) { if (game) game.world.renderDist = v; }
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
-    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=7', import.meta.url).href : v);
+    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=8', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
   });
 
