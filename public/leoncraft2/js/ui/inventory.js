@@ -328,8 +328,9 @@ function hsv(h, s, v) {
   return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
 }
 
-// the lines of a stack's tooltip: name, enchantments, what it does in the hand
-export function stackTooltip(st) {
+// the lines of a stack's tooltip: name, enchantments, what it does in the hand; with advanced
+// tooltips on (F3 + H) the durability and the item's id as well, as in the game
+export function stackTooltip(st, advanced) {
   const it = ITEMS[st.id];
   const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) ? potionName(st) : displayName(st.id))];
   if (isPotion(st) || (st.potion && ITEMS[st.id] && ITEMS[st.id].name === 'tipped_arrow')) lines.push(...potionLines(st));
@@ -344,7 +345,11 @@ export function stackTooltip(st) {
     if (it.armor.toughness) lines.push('§9+' + it.armor.toughness + ' Armor Toughness');
     if (it.armor.knockback) lines.push('§9+' + Math.round(it.armor.knockback * 10) + ' Knockback Resistance');
   }
-  if (st.dmg > 0) { const max = maxDamage(st.id); lines.push('§7Durability: ' + (max - st.dmg) + ' / ' + max); }
+  if (advanced) {
+    if (st.dmg > 0) { const max = maxDamage(st.id); lines.push('Durability: ' + (max - st.dmg) + ' / ' + max); }
+    const it2 = ITEMS[st.id], n = it2 ? it2.name : BLOCKS[st.id] ? BLOCKS[st.id].name : '';
+    if (n) lines.push('§8minecraft:' + n);
+  }
   return lines;
 }
 
@@ -780,7 +785,8 @@ export class ContainerScreen extends Screen {
     return prev;
   }
   slotStack(s) { return this.getStack(s); }
-  tooltipFor(st) { return stackTooltip(st); }
+  tooltipFor(st) { return stackTooltip(st, this.advancedTips); }
+  get advancedTips() { return !!(this.gui && this.gui.options && this.gui.options.get('advancedTooltips')); }
   // the stack on the mouse, over everything
   drawCarried(g, mx, my, prev) {
     const c = this.inv.carried;
@@ -1024,7 +1030,7 @@ export class CreativeInventoryScreen extends ContainerScreen {
     return super.keyPressed(e);
   }
   tooltipFor(st, s) {
-    const lines = stackTooltip(st);
+    const lines = stackTooltip(st, this.advancedTips);
     if (s && s.kind === 'grid' && this.T.search) {
       const k = creativeItems().tabOf.get(st.id);
       const t = TABS.find(x => x.key === k);

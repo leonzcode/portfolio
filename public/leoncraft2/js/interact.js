@@ -51,7 +51,8 @@ export class Interactor {
     const nb = (dx, dy, dz) => { const n = w.get(hit.x + dx, hit.y + dy, hit.z + dz); return n ? { d: BLOCKS[n], m: w.meta(hit.x + dx, hit.y + dy, hit.z + dz) } : null; };
     let stage = -1;
     const mm = this.mining;
-    if (mm && mm.x === hit.x && mm.y === hit.y && mm.z === hit.z && mm.total > 0) stage = Math.min(9, Math.floor(mm.t / mm.total * 10));
+    // the cracks: none until some of the block is worn away, then a stage for each tenth
+    if (mm && mm.x === hit.x && mm.y === hit.y && mm.z === hit.z && mm.total > 0 && mm.t > 0) stage = Math.min(9, Math.floor(mm.t / mm.total * 10));
     if (this.overlay) this.overlay.set(hit.x, hit.y, hit.z, selectionBoxes(d, w.meta(hit.x, hit.y, hit.z), nb), stage);
     return hit;
   }
@@ -158,7 +159,12 @@ export class Interactor {
     // portals, eyes in frames, beds and anchors where they explode (js/dim/realms.js)
     if (this.onUse && this.onUse(h, this.hand.id())) { this.hand.swing(); return true; }
     // what the simulation does with a click: levers, beds, bone meal, flint and steel (sim/sim.js)
-    if (this.sim && this.sim.use(h, this.hand.id(), this.player.sneaking)) { this.hand.swing(); if (this.sim.usedHeld) { this.sim.usedHeld = false; this.hand.used(); } return true; }
+    if (this.sim && this.sim.use(h, this.hand.id(), this.player.sneaking)) {
+      this.hand.swing();
+      if (this.sim.usedHeld) { this.sim.usedHeld = false; this.hand.used(); }
+      if (this.sim.wornHeld) { const n = this.sim.wornHeld; this.sim.wornHeld = 0; if (this.hand.wear) this.hand.wear(n); }
+      return true;
+    }
     // doors, trapdoors and gates open instead, unless you sneak
     if (!this.player.sneaking && use(this.world, h.x, h.y, h.z)) { this.hand.swing(); return true; }
     if (this.hand.useItem && this.hand.useItem(h)) return true;

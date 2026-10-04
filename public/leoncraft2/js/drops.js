@@ -64,6 +64,42 @@ function fireResistant(id) {
   if (v === undefined) { const n = ITEMS[id] ? ITEMS[id].name : ''; v = /^netherite_(?!upgrade)/.test(n) || n === 'ancient_debris'; fireproof.set(id, v); }
   return v;
 }
+// how many copies of an item are drawn for a stack of n (the wiki's Item (entity) page)
+export const copiesFor = n => (n > 48 ? 5 : n > 32 ? 4 : n > 16 ? 3 : n > 1 ? 2 : 1);
+/* A geometry holding n copies of an item's: a block's scattered up to 0.15
+   of a block each way, a flat picture's stacked behind it and a little
+   askew, the same for every stack of that item. Positions keep the vertex
+   format's units (1/32 of a block) and are lifted one more block, so the
+   copies below the first stay positive (the mesh is lowered again). */
+function copiesOf(src, n, flat, id, sc) {
+  const P = src.attributes.aPos.array, A = src.attributes.aA.array, C = src.attributes.aC.array, I = src.index.array;
+  const nv = P.length / 4, pos = new Uint16Array(P.length * n), aa = new Uint8Array(A.length * n), cc = new Uint8Array(C.length * n), idx = [];
+  let s = (id * 7919 + 13) % 2147483647 || 1;
+  const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const u = 32 / sc;                       // world blocks to mesh units
+  for (let k = 0; k < n; k++) {
+    let ox = 0, oy = 0, oz = 0;
+    if (k > 0) {
+      if (flat) { ox = (rnd() * 2 - 1) * 0.075; oy = (rnd() * 2 - 1) * 0.075; oz = -0.09375 * k; }
+      else { ox = (rnd() * 2 - 1) * 0.15; oy = (rnd() * 2 - 1) * 0.15; oz = (rnd() * 2 - 1) * 0.15; }
+    }
+    const dx = Math.round(ox * u), dy = Math.round(oy * u) + 32, dz = Math.round(oz * u);
+    for (let v = 0; v < nv; v++) {
+      const o = (k * nv + v) * 4, i = v * 4;
+      pos[o] = P[i] + dx; pos[o + 1] = Math.max(0, P[i + 1] + dy); pos[o + 2] = P[i + 2] + dz; pos[o + 3] = P[i + 3];
+    }
+    aa.set(A, k * A.length); cc.set(C, k * C.length);
+    for (let j = 0; j < I.length; j++) idx.push(I[j] + k * nv);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('aPos', new THREE.BufferAttribute(pos, 4));
+  g.setAttribute('aA', new THREE.BufferAttribute(aa, 4));
+  g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(nv * n * 4), 4));
+  g.setAttribute('aC', new THREE.BufferAttribute(cc, 4));
+  g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
+  return g;
+}
 // what touching a block does to an item or an orb a tick: fire 1, soul fire 2, a cactus 1
 const HURTS = new Map();
 for (const [n, d] of [['fire', 1], ['soul_fire', 2], ['cactus', 1]]) if (B[n] !== undefined) HURTS.set(B[n], d);
@@ -84,6 +120,7 @@ export class Drops {
     this.onXp = null;                // (points) the orb sound
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._p = new THREE.Vector3();
     this._lift = new THREE.Matrix4().makeTranslation(0, -1, 0);
+    this._lift2 = new THREE.Matrix4().makeTranslation(0, -2, 0);      // for the copies' geometry, a block higher
     this._rot = new THREE.Matrix3();
     this._y = new THREE.Vector3(0, 1, 0);
     active = this;
@@ -389,6 +426,18 @@ export class Drops {
     }
     return g;
   }
+  // the geometry for n copies of an item (a bigger stack), made once per item and count
+  _copies(id, n) {
+    const one = this._base(id);
+    if (!one || n <= 1) return one;
+    const key = id + ':' + n;
+    let g = this.geo.get(key);
+    if (!g) {
+      g = { geometry: copiesOf(one.geometry, n, one.flat, id, one.flat ? 0.5 : 0.25), flat: one.flat, cutout: one.cutout, lifted: true };
+      this.geo.set(key, g);
+    }
+    return g;
+  }
   // a mesh of its own (its own light), sharing the item's geometry
   _makeMesh(src, cutout) {
     const R = this.R, g = new THREE.BufferGeometry();
@@ -431,11 +480,14 @@ export class Drops {
   update(dt, alpha, player, cam) {
     const P = player ? player.pos : null, m = this._m, q = this._q, s = this._s, p = this._p;
     for (const e of this.items) {
+      // a stack that grew or shrank past a step is drawn with more or fewer copies
+      const n = copiesFor(e.stack.count);
+      if (e.mesh && e.copies !== n) this._unmesh(e);
       if (!e.mesh) {
-        const g = this._base(e.stack.id);
+        const g = this._copies(e.stack.id, n);
         if (!g) continue;
         e.mesh = this._makeMesh(g.geometry, g.cutout);
-        e.flat = g.flat;
+        e.flat = g.flat; e.copies = n; e.lifted = !!g.lifted;
         e.light = -1;
       }
       // the light, now and then
@@ -458,7 +510,7 @@ export class Drops {
       q.setFromAxisAngle(this._y, t / 20 + e.spin);
       s.set(sc, sc, sc);
       p.y += bob + (e.flat ? 0.25 : sc * 0.5);
-      m.compose(p, q, s).multiply(this._lift);
+      m.compose(p, q, s).multiply(e.lifted ? this._lift2 : this._lift);
       e.mesh.matrix.copy(m);
       e.mesh.matrixWorld.copy(m);
     }

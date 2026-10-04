@@ -370,7 +370,8 @@ export class Realms {
   usedItem(id) {
     const g = this.game;
     if (g.mode === 'creative') return;
-    if (BLOCKS[id] && BLOCKS[id].name === 'flint_and_steel') return;      // (no durability yet)
+    // flint and steel wears by 1 a use (hands.js)
+    if (BLOCKS[id] && BLOCKS[id].name === 'flint_and_steel') { if (g.hands) g.hands.wearHeld(1); return; }
     g.inv.takeSelected(1);
   }
   // an eye of ender thrown: towards the nearest stronghold, in the Overworld only; 1 in 5 break

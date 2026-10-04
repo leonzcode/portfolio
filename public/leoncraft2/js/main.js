@@ -794,11 +794,19 @@ async function boot() {
   // the player's own key names, from the bindings in Options
   const MOVE = { forward: 'w', left: 'a', back: 's', right: 'd', jump: ' ', sneak: 'shift', sprint: 'control' };
   const bindingOf = code => options.actionFor(code);
-  let showDebug = false, timeRuns = true, autoScale = options.get('renderScale') === 'auto' && !params.get('scale');
+  let showDebug = false, f3Held = false, f3Combo = false, timeRuns = true, autoScale = options.get('renderScale') === 'auto' && !params.get('scale');
   document.addEventListener('keydown', e => {
     if (!game || gui.isOpen()) return;
     const a = bindingOf(e.code);
-    if (a === 'debug' || e.code === 'F3') { showDebug = !showDebug; if (!showDebug && hud) hud.setDebug(null); e.preventDefault(); return; }
+    // F3 opens the debug screen when it is let go, unless a key was pressed with it (F3 + H: advanced tooltips)
+    if (a === 'debug' || e.code === 'F3') { if (!e.repeat) { f3Held = true; f3Combo = false; } e.preventDefault(); return; }
+    if (f3Held && e.code === 'KeyH') {
+      f3Combo = true;
+      const v = !options.get('advancedTooltips');
+      options.set('advancedTooltips', v);
+      chat.add('§e§l[Debug]:§r Advanced tooltips: ' + (v ? 'shown' : 'hidden'));
+      e.preventDefault(); return;
+    }
     if (a === 'hideGui' || e.code === 'F1') { gui.hideHud = !gui.hideHud; gui.markDirty(); e.preventDefault(); return; }
     if (e.code === 'F7') { autoScale = false; renderer.opts.scale = renderer.opts.scale >= 1 ? 0.75 : renderer.opts.scale >= 0.75 ? 0.5 : 1; fit(); e.preventDefault(); return; }
     if (a === 'perspective' || e.code === 'F5') { if (!e.repeat) renderer.avatar.cycleView(); e.preventDefault(); return; }
@@ -827,6 +835,7 @@ async function boot() {
   document.addEventListener('keyup', e => {
     if (!game) return;
     const a = bindingOf(e.code);
+    if (a === 'debug' || e.code === 'F3') { if (f3Held && !f3Combo && !gui.isOpen()) { showDebug = !showDebug; if (!showDebug && hud) hud.setDebug(null); } f3Held = false; return; }
     if (a && MOVE[a]) game.player.setKey(MOVE[a], false);
   });
   canvas.addEventListener('wheel', e => { if (game && locked()) game.inv.scroll(e.deltaY); }, { passive: true });
