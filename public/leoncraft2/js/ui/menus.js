@@ -1158,7 +1158,8 @@ export class LoadingScreen extends Screen {
 
 export class DeathScreen extends Screen {
   constructor(opts = {}) {
-    super('You Died!');
+    // hardcore worlds end here
+    super(opts.hardcore ? 'Game Over!' : 'You Died!');
     this.background = 'death';
     this.closeOnEsc = false;
     this.cause = opts.message || '';

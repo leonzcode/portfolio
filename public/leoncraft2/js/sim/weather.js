@@ -211,7 +211,7 @@ export class Weather {
     const L = window.__lc2, p = sim.player.pos;
     if ((p.x - x - 0.5) ** 2 + (p.z - z - 0.5) ** 2 < 9 && Math.abs(p.y - y) < 6) {
       const g = sim.game;
-      if (g && g.mode !== 'creative' && g.survival) g.survival.hurt(5);
+      if (g && g.mode !== 'creative' && g.survival) { if (g.survival.struckByLightning) g.survival.struckByLightning(); else g.survival.hurt(5, 'lightning_bolt'); }
     }
     if (L && L.entities && typeof L.entities.lightning === 'function') L.entities.lightning(x + 0.5, y, z + 0.5);
     if (sim.onLightning) sim.onLightning(x, y, z);
