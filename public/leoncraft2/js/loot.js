@@ -14,7 +14,8 @@
      table bonus     chance per level                              saplings, sticks and
                      apples from leaves, flint from gravel
 
-   Experience comes with ores and a few blocks, never with Silk Touch.
+   Experience comes with ores and a few blocks (a spawner 15-43, sculk),
+   never with Silk Touch.
 
      const out = blockDrops(world, x, y, z, b, meta, { stack, popped });
      out.items   [{ id, count }]
@@ -48,7 +49,6 @@ const ORES = {
   iron_ore: ['raw_iron', 1, 1, 'ore', 0, 0], deepslate_iron_ore: ['raw_iron', 1, 1, 'ore', 0, 0],
   gold_ore: ['raw_gold', 1, 1, 'ore', 0, 0], deepslate_gold_ore: ['raw_gold', 1, 1, 'ore', 0, 0],
   nether_gold_ore: ['gold_nugget', 2, 6, 'ore', 0, 1], nether_quartz_ore: ['quartz', 1, 1, 'ore', 2, 5],
-  amethyst_cluster: ['amethyst_shard', 4, 4, 'ore', 0, 0],
   gilded_blackstone: null,
 };
 // blocks that become something else without Silk Touch
@@ -57,13 +57,15 @@ const TURNS_INTO = {
   dirt_path: 'dirt', farmland: 'dirt', crimson_nylium: 'netherrack', warped_nylium: 'netherrack', reinforced_deepslate: null,
 };
 // only with Silk Touch (glass, ice...): nothing otherwise
-const SILK_ONLY = /^(glass|glass_pane|tinted_glass|.*_stained_glass|.*_stained_glass_pane|ice|packed_ice|blue_ice|budding_amethyst|sculk_catalyst_x|turtle_egg|sculk_vein|sculk_shrieker_x|.*_coral|.*_coral_fan|.*_coral_wall_fan|spawner|trial_spawner|vault|infested_.*|suspicious_sand|suspicious_gravel|frogspawn|reinforced_deepslate|bee_nest|beehive|sculk_sensor_x|chorus_plant_x)$/;
+const SILK_ONLY = /^(glass|glass_pane|tinted_glass|.*_stained_glass|.*_stained_glass_pane|ice|packed_ice|blue_ice|turtle_egg|sculk_vein|.*_coral|.*_coral_fan|.*_coral_wall_fan|infested_.*|bee_nest|chiseled_bookshelf|small_amethyst_bud|medium_amethyst_bud|large_amethyst_bud)$/;
 // only with shears (or Silk Touch where the game allows it): nothing otherwise
 const SHEARS_ONLY = /^(vine|glow_lichen|seagrass|tall_seagrass|hanging_roots|nether_sprouts|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines_x|pale_hanging_moss|small_dripleaf|tripwire)$/;
+// nothing at all, Silk Touch or not
 const NEVER = new Set(['fire', 'soul_fire', 'nether_portal', 'end_portal', 'end_gateway', 'moving_piston', 'piston_head', 'bubble_column',
   'frosted_ice', 'cake', 'candle_cake', 'water', 'lava', 'powder_snow', 'air', 'cave_air', 'void_air', 'barrier', 'light', 'structure_void',
-  'budding_amethyst', 'spawner', 'trial_spawner', 'farmland_x']);
-const EXPERIENCE = { spawner: [15, 43], sculk: [1, 1], sculk_vein: [1, 1], sculk_catalyst: [5, 5], sculk_shrieker: [5, 5], sculk_sensor: [5, 5], calibrated_sculk_sensor: [5, 5] };
+  'budding_amethyst', 'trial_spawner', 'vault', 'reinforced_deepslate', 'suspicious_sand', 'suspicious_gravel', 'frogspawn', 'farmland_x']);
+// experience without Silk Touch (the Experience page): the spawner only with a pickaxe, as it only breaks properly with one
+const EXPERIENCE = { spawner: [15, 43], sculk: [1, 1], sculk_catalyst: [5, 5], sculk_shrieker: [5, 5], sculk_sensor: [5, 5], calibrated_sculk_sensor: [5, 5] };
 
 const add = (out, name, count) => {
   if (count <= 0) return;
@@ -111,6 +113,13 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
     if (ore[5]) out.xp = between(ore[4], ore[5]);
     return out;
   }
+  // a spawner gives only experience, and none with Silk Touch
+  if (n === 'spawner') { if (!silk) out.xp = between(15, 43); return out; }
+  if (silk) {
+    // snow keeps its layers (all eight: a snow block); an infested block gives the plain one
+    if (n === 'snow') { if ((meta & 7) === 7) add(out, 'snow_block', 1); else add(out, 'snow', (meta & 7) + 1); return out; }
+    if (/^infested_/.test(n)) { add(out, n.replace(/^infested_/, ''), 1); return out; }
+  }
   if (silk && !/^(.*_leaves|short_grass|fern|tall_grass|large_fern)$/.test(n) && ITEMS[d.id]) { add(out, d.id, slabCount(d, meta)); return out; }
   if (TURNS_INTO[n] !== undefined) { if (TURNS_INTO[n]) add(out, TURNS_INTO[n], 1); return out; }
   if (SILK_ONLY.test(n)) {
@@ -152,7 +161,10 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
     case 'ender_chest': add(out, 'obsidian', 8); return out;
     case 'campfire': add(out, 'charcoal', 2); return out;
     case 'soul_campfire': add(out, 'soul_soil', 1); return out;
-    case 'brown_mushroom_block': case 'red_mushroom_block': add(out, n.replace('_block', ''), Math.max(0, between(-7, 2))); return out;
+    // -6 to 2, never below 0: none 7 times in 9, one or two once in 9 each (Fortune does nothing)
+    case 'brown_mushroom_block': case 'red_mushroom_block': add(out, n.replace('_block', ''), Math.max(0, between(-6, 2))); return out;
+    // 4 shards with a pickaxe (Fortune multiplies, as with ores), 2 with anything else
+    case 'amethyst_cluster': add(out, 'amethyst_shard', tool && tool.kind === 'pickaxe' ? oreBonus(4, fortune) : 2); return out;
     case 'mushroom_stem': return out;
     case 'gilded_blackstone': if (table(fortune, [0.1, 0.14285715, 0.25, 1])) add(out, 'gold_nugget', between(2, 5)); else add(out, n, 1); return out;
     case 'wheat': crop(out, meta, 7, 'wheat', 'wheat_seeds', fortune); return out;
@@ -166,7 +178,7 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
     case 'cocoa': add(out, 'cocoa_beans', (meta >> 2 & 3) >= 2 ? 3 : 1); return out;
     case 'sweet_berry_bush': { const age = meta & 3; if (age >= 2) add(out, 'sweet_berries', uniformBonus(age === 3 ? between(2, 3) : between(1, 2), fortune, 1)); return out; }
     case 'melon_stem': case 'pumpkin_stem': case 'attached_melon_stem': case 'attached_pumpkin_stem': add(out, n.indexOf('melon') >= 0 ? 'melon_seeds' : 'pumpkin_seeds', 0); return out;
-    case 'sculk': case 'sculk_vein': out.xp = 1; break;
+    case 'sculk': out.xp = 1; break;
     case 'sculk_catalyst': case 'sculk_shrieker': case 'sculk_sensor': case 'calibrated_sculk_sensor': out.xp = 5; break;
   }
   // flower pots give the pot and the plant

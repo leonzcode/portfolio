@@ -22,6 +22,11 @@
 
    Q throws one of the selected stack, Ctrl+Q all of it. Dying spills the
    inventory and up to 100 points of experience (7 a level).
+
+   The off hand gets its turn at a right click when the main hand did
+   nothing with it (withOffhand): a torch beside the pickaxe, food. Weapons
+   wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
+   takes collected experience first (mend).
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=9';
 import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON } from './items.js?v=9';
@@ -29,6 +34,7 @@ import { breakTicks, wearFor } from './mining.js?v=9';
 import { blockDrops } from './loot.js?v=9';
 import { containerKind } from './containers.js?v=9';
 import { CraftingScreen, ChestScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=9';
+import { wear } from './ui/inventory.js?v=9';
 import { isPotion, drinkPotion } from './brewing.js?v=9';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=9';
 import { countShelves } from './enchanting.js?v=9';
@@ -50,6 +56,9 @@ export class Hands {
     this.ender = new Array(27).fill(null);
     this.onEat = null;               // (id) the eating sound, every 4 ticks
     this.onBurp = null;
+    this.onToolBreak = null;         // (stack) the breaking sound
+    // a tool or a piece of armour that wears out breaks into pieces
+    if (this.inv && this.inv.on) this.inv.on('broke', s => this.toolBroke(s));
     // the screens' sheets, fetched now so a chest never opens on an empty frame
     if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter'])
       this.gui.loadSheet('container/' + n).catch(() => {});
@@ -69,7 +78,27 @@ export class Hands {
       broke: (hit, cells) => self.broke(hit, cells),
       useOn: hit => self.useOn(hit),
       useItem: hit => self.useItem(hit),
+      // the item and everything about it but the count: mining starts again when this changes
+      key: () => { const s = self.held; return s ? s.id + '/' + (s.dmg | 0) + '/' + (s.ench ? JSON.stringify(s.ench) : '') + '/' + (s.name || '') : ''; },
+      withOffhand: fn => self.withOffhand(fn),
     };
+  }
+  /* The off hand's turn at a right click, when the main hand did nothing (a
+     pickaxe in the hand, torches in the off hand): its stack stands in the
+     selected slot while fn runs, so placing, eating and the rest use it, and
+     whatever is left of it goes back to the off hand. */
+  withOffhand(fn) {
+    const inv = this.inv, i = inv.selected;
+    if (!inv.offhand) return false;
+    const main = inv.slots[i];
+    inv.slots[i] = inv.offhand; inv.offhand = main;
+    this.offTurn = true;
+    try { return fn(); } finally {
+      this.offTurn = false;
+      const now = inv.slots[i];
+      inv.slots[i] = inv.offhand; inv.offhand = now;
+      inv.changed();
+    }
   }
   // a block was placed from the selected stack: one fewer, and a bucket leaves its bucket
   placed(list) {
@@ -108,8 +137,8 @@ export class Hands {
         const o = blockDrops(w, x, y, z, ob, w.meta(x, y, z), { popped: true });
         for (const s of o.items) this.drops.popFrom(x, y, z, s);
       }
-      // ice without Silk Touch melts into water if something is under it
-      if (d.name === 'ice' && !(held && held.ench && held.ench.silk_touch)) {
+      // ice without Silk Touch melts into water if something is under it (in the Nether it is simply gone)
+      if (d.name === 'ice' && !(held && held.ench && held.ench.silk_touch) && w.dim !== 'the_nether') {
         const under = w.get(hit.x, hit.y - 1, hit.z);
         if (under && (BLOCKS[under].solid || FLUID[under])) replace = B.water;
       }
@@ -239,8 +268,9 @@ export class Hands {
     if (food && !this.using) {
       // food that is also a block (a carrot, sweet berries) is planted when clicked on a block it can go on
       if (it.block && hit && hit.face && this.canPlant(it, hit)) return false;
-      if (!(this.creative || this.survival.wantsFood(food.always))) return !it.block;
-      this.using = { slot: this.inv.selected, id: s.id, t: 0, total: food.ticks };
+      // not hungry: nothing happens, and the other hand may still have its go
+      if (!(this.creative || this.survival.wantsFood(food.always))) return false;
+      this.using = { slot: this.inv.selected, id: s.id, t: 0, total: food.ticks, off: !!this.offTurn };
       this.player.usingItem = true;
       return true;
     }
@@ -309,12 +339,15 @@ export class Hands {
   }
 
   /* ---- once a tick ---- */
+  // the stack being eaten or drunk: the selected one, or the off hand's
+  usedStack(u) { return u && u.off ? this.inv.offhand : this.held; }
+  setUsedStack(u, st) { if (u && u.off) this.inv.offhand = st; else this.inv.slots[this.inv.selected] = st; }
   tick() {
     const u = this.using;
     if (!u) return;
-    const s = this.held;
-    // let go, switched slot or item: stop
-    if (!this.inter.useHeld || this.inv.selected !== u.slot || !s || s.id !== u.id) { this.stopUsing(); return; }
+    const s = this.usedStack(u);
+    // let go, switched slot (for the main hand) or item: stop
+    if (!this.inter.useHeld || (!u.off && this.inv.selected !== u.slot) || !s || s.id !== u.id) { this.stopUsing(); return; }
     u.t++;
     if (u.t > 7 && (u.total - u.t) % 4 === 0) {
       this.crumbs(u.id);
@@ -324,19 +357,19 @@ export class Hands {
   }
   stopUsing() { this.using = null; this.player.usingItem = false; }
   finish(id) {
-    const it = ITEMS[id], food = it.food, sv = this.survival;
+    const it = ITEMS[id], food = it.food, sv = this.survival, u = this.using;
+    const s = this.usedStack(u);
     this.stopUsing();
     if (food.hunger || food.saturation) sv.eat(food.hunger, food.saturation);
     if (food.effects) for (const [name, level, secs, chance] of food.effects) if (Math.random() < chance) sv.addEffect(name, level, secs * 20);
     if (it.name === 'milk_bucket') sv.clearEffects();
     if (it.name === 'honey_bottle') delete sv.effects.poison;
     if (it.name === 'chorus_fruit') this.chorusTeleport();
-    if (isPotion(this.held)) drinkPotion(this.held, sv);
-    if (!this.creative) {
-      const s = this.held;
+    if (isPotion(s)) drinkPotion(s, sv);
+    if (!this.creative && s) {
       s.count--;
       const left = food.leaves ? I[food.leaves] : 0;
-      if (s.count <= 0) this.inv.slots[this.inv.selected] = left ? { id: left, count: 1 } : null;
+      if (s.count <= 0) this.setUsedStack(u, left ? { id: left, count: 1 } : null);
       else if (left) this.inv.placeBack({ id: left, count: 1 });
       this.inv.changed();
     }
@@ -362,12 +395,67 @@ export class Hands {
   // the held item moves to the mouth and bobs while eating (an offset for the hand's sway)
   handBob(bob) {
     const u = this.using;
-    if (!u) return bob;
+    if (!u || u.off) return bob;
     const t = u.t + (this.alpha || 0), k = Math.min(1, t / 6);
     const out = this._bob || (this._bob = { x: 0, y: 0 });
     out.x = (bob ? bob.x : 0) - 0.42 * k;
     out.y = (bob ? bob.y : 0) + 0.2 * k + (t > 6 ? Math.abs(Math.cos(t / 4 * Math.PI)) * 0.06 : 0);
     return out;
+  }
+
+  /* ---- wear from use away from blocks ---- */
+  // pieces of a worn-out tool or armour fly out in front of the face, as in the game
+  toolBroke(s) {
+    const p = this.player;
+    if (!s || !p || !this.drops || !this.drops.crumbs) return;
+    const dx = -Math.sin(p.yaw), dz = -Math.cos(p.yaw);
+    this.drops.crumbs(p.pos.x + dx * 0.4, p.pos.y + (p.sneaking ? 1.27 : 1.62) - 0.3, p.pos.z + dz * 0.4, s.id, 5, dx, dz);
+    if (this.onToolBreak) this.onToolBreak(s);
+  }
+  /* The held item used on a mob (js/entities): a sword wears 1 a hit, other
+     tools 2, shears and the like 1. A shield wears where it is held, main
+     hand or off hand. Unbreaking applies (ui/inventory.js wear). */
+  wearHeld(n, kind) {
+    if (this.creative || !n) return;
+    const inv = this.inv;
+    if (kind === 'shield') {
+      const isShield = st => st && ITEMS[st.id] && ITEMS[st.id].name === 'shield';
+      if (isShield(this.held)) { inv.damageSelected(n); return; }
+      const off = inv.offhand;
+      if (!isShield(off)) return;
+      if (wear(off, n, false)) { inv.offhand = null; inv.emit('broke', off); }
+      inv.changed();
+      return;
+    }
+    const s = this.held;
+    if (s && ITEMS[s.id] && ITEMS[s.id].dur) inv.damageSelected(n);
+  }
+  // a bucket that took something from a mob (milk from a cow): one empty bucket becomes it
+  fillHeld(name) {
+    const s = this.held, full = I[name];
+    if (!s || full === undefined || !ITEMS[s.id] || ITEMS[s.id].name !== 'bucket') return false;
+    if (this.creative) { if (this.inv.findSlot(full) < 0) this.inv.add(full, 1); return true; }
+    if (s.count <= 1) this.inv.slots[this.inv.selected] = { id: full, count: 1 };
+    else { s.count--; this.inv.placeBack({ id: full, count: 1 }); }
+    this.inv.changed();
+    return true;
+  }
+  /* Mending: an orb of n points mends a worn item with Mending held or worn
+     (one picked at random), two durability a point, and takes one point for
+     every two it mended. While points are left and such an item is still
+     worn, they go to it before the bar. Returns the points left for the bar. */
+  mend(n) {
+    const inv = this.inv;
+    let guard = 0;
+    while (n > 0 && guard++ < 16) {
+      const worn = [inv.slots[inv.selected], inv.offhand].concat(inv.armor).filter(x => x && x.dmg > 0 && x.ench && x.ench.mending);
+      if (!worn.length) break;
+      const it = worn[Math.floor(Math.random() * worn.length)], fix = Math.min(n * 2, it.dmg);
+      it.dmg -= fix;
+      n -= Math.floor(fix / 2);
+    }
+    inv.changed();
+    return n;
   }
 
   /* ---- Q ---- */

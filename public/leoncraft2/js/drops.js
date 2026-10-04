@@ -8,14 +8,21 @@
    thrown items fly where you look. They can be picked up after 10 ticks
    (40 for one you threw), by walking within a block of them (half a block
    up and down); stacks of the same item lying within half a block join
-   into one; after five minutes (6000 ticks) they are gone; lava burns them.
-   They spin and bob as they lie there: a block is drawn as a small block,
-   anything else as its flat picture.
+   into one (checked every 2 ticks when one crosses into another block,
+   every 40 otherwise); after five minutes (6000 ticks) they are gone.
+   They have 5 health: fire takes 1 a tick (soul fire 2), a cactus 1, lava
+   4, so an item lasts five ticks in fire and two in lava. Netherite (and
+   ancient debris) does not burn and floats up through lava as other items
+   do through water. They spin and bob as they lie there: a block is drawn
+   as a small block, anything else as its flat picture, and a bigger stack
+   as more copies (2 from 2, 3 from 17, 4 from 33, 5 from 49).
 
    Experience orbs: split into the game's sizes (1, 3, 7, 17, 37, 73, 149,
    307, 617, 1237, 2477 points), gravity 0.03, drawn as their picture
    always facing you, pulsing green and yellow; within 8 blocks they fly to
-   you, faster the closer they are; one is collected every 2 ticks.
+   you, faster the closer they are; they are taken within the same reach as
+   items, one every 2 ticks. Fire, cactus and lava destroy them as they do
+   items.
 
      const drops = new Drops(world, renderer);
      scene.add(drops.group)             (main.js does this)
@@ -24,14 +31,15 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { BLOCKS, SOLID, FLUID, OPACITY } from './blocks.js?v=9';
+import { B, BLOCKS, SOLID, FLUID, OPACITY } from './blocks.js?v=9';
 import { collisionBoxes } from './models.js?v=9';
+import { LEVEL, FALLING } from './world-const.js?v=9';
 import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=9';
 import { blockGeometry } from './render/blockmesh.js?v=9';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height
-const ORB_W = 0.25, ORB_H = 0.5;
+const ORB_W = 0.5, ORB_H = 0.5;                 // full width and height
 const ORB_SIZES = [2477, 1237, 617, 307, 149, 73, 37, 17, 7, 3, 1];
 const MAX_ITEMS = 400;
 
@@ -49,6 +57,16 @@ export function giveXp(x, y, z, amount) { if (active) active.xp(x, y, z, amount)
 export function activeDrops() { return active; }
 
 export function orbValue(amount) { for (const v of ORB_SIZES) if (amount >= v) return v; return 1; }
+// items fire and lava cannot hurt (the game's netherite)
+const fireproof = new Map();
+function fireResistant(id) {
+  let v = fireproof.get(id);
+  if (v === undefined) { const n = ITEMS[id] ? ITEMS[id].name : ''; v = /^netherite_(?!upgrade)/.test(n) || n === 'ancient_debris'; fireproof.set(id, v); }
+  return v;
+}
+// what touching a block does to an item or an orb a tick: fire 1, soul fire 2, a cactus 1
+const HURTS = new Map();
+for (const [n, d] of [['fire', 1], ['soul_fire', 2], ['cactus', 1]]) if (B[n] !== undefined) HURTS.set(B[n], d);
 function orbIcon(v) { for (let i = 0; i < ORB_SIZES.length; i++) if (v >= ORB_SIZES[i]) return 10 - i; return 0; }
 
 export class Drops {
@@ -89,7 +107,7 @@ export class Drops {
     const e = {
       stack: withCount(stack, stack.count), pos: new THREE.Vector3(x, y, z), prev: new THREE.Vector3(x, y, z),
       vel: new THREE.Vector3(), age: opts.age | 0, delay: opts.delay === undefined ? 10 : opts.delay, onGround: false,
-      spin: Math.random() * Math.PI * 2, mesh: null, light: -1, lightT: 0, mergeT: 0, gone: false, fly: 0,
+      spin: Math.random() * Math.PI * 2, mesh: null, light: -1, lightT: 0, gone: false, fly: 0, hp: 5,
     };
     if (opts.vel) e.vel.set(opts.vel[0], opts.vel[1], opts.vel[2]);
     else if (opts.pop !== false) e.vel.set(Math.random() * 0.2 - 0.1, 0.2, Math.random() * 0.2 - 0.1);
@@ -119,7 +137,7 @@ export class Drops {
       this.orbs.push({
         value: v, pos: new THREE.Vector3(x, y, z), prev: new THREE.Vector3(x, y, z),
         vel: new THREE.Vector3((Math.random() * 0.2 - 0.1) * 2, Math.random() * 0.2 * 2, (Math.random() * 0.2 - 0.1) * 2),
-        age: 0, onGround: false, mesh: null, follow: false, gone: false, phase: Math.random() * 100,
+        age: 0, onGround: false, mesh: null, follow: false, gone: false, phase: Math.random() * 100, hp: 5,
       });
     }
   }
@@ -183,7 +201,43 @@ export class Drops {
     if (b && SOLID[b] && BLOCKS[b].shape === 'cube') { e.vel.y = 0.1; e.pos.y = Math.max(e.pos.y, y + 1 - 0.05); return true; }
     return false;
   }
-  _fluid(e) { const b = this.world.get(Math.floor(e.pos.x), Math.floor(e.pos.y + 0.1), Math.floor(e.pos.z)); return FLUID[b] || 0; }
+  /* Water (1) or lava (2) round the box, measured from the fluid's surface
+     as the player's is (player.js): a still block is 8/9 deep. Sets e.depth,
+     how far the surface is over the bottom of the box (-1 out of it). */
+  _fluid(e, hw = ITEM_W, h = ITEM_H) {
+    const w = this.world, p = e.pos, f = Math.floor, k = 1e-3;
+    let kind = 0, depth = -1;
+    for (let y = f(p.y + k); y <= f(p.y + h - k); y++)
+      for (let z = f(p.z - hw + k); z <= f(p.z + hw - k); z++)
+        for (let x = f(p.x - hw + k); x <= f(p.x + hw - k); x++) {
+          const b = w.get(x, y, z);
+          const fk = FLUID[b] || (BLOCKS[b] && BLOCKS[b].waterlogged ? 1 : 0);
+          if (!fk) continue;
+          const above = w.get(x, y + 1, z), m = w.meta(x, y, z);
+          const top = (FLUID[above] === fk || (fk === 1 && BLOCKS[above] && BLOCKS[above].waterlogged)) ? y + 1
+            : y + (!FLUID[b] ? 8 / 9 : ((m & FALLING) ? 8 : 8 - (m & LEVEL)) / 9);
+          if (top > p.y && top - p.y > depth) { depth = top - p.y; kind = fk; }
+        }
+    e.depth = depth;
+    return kind;
+  }
+  /* The harm a tick from fire and cactus in any block the box (half width
+     hw, height h) is in. A cactus is a sixteenth smaller than its block, so
+     lying on it or against its side is being in it. noFire: only the cactus counts. */
+  _touchDamage(e, hw, h, noFire) {
+    const w = this.world, p = e.pos, g = 1 / 16, f = Math.floor, k = 1e-7;
+    const x0 = f(p.x - hw + k), x1 = f(p.x + hw - k), z0 = f(p.z - hw + k), z1 = f(p.z + hw - k), y0 = f(p.y + k);
+    let dmg = 0;
+    for (let y = f(p.y - g + k); y <= f(p.y + h - k); y++)
+      for (let z = f(p.z - hw - g + k); z <= f(p.z + hw + g - k); z++)
+        for (let x = f(p.x - hw - g + k); x <= f(p.x + hw + g - k); x++) {
+          const b = w.get(x, y, z), d = HURTS.get(b);
+          if (!d) continue;
+          if (b !== B.cactus && (noFire || x < x0 || x > x1 || z < z0 || z > z1 || y < y0)) continue;
+          dmg += d;
+        }
+    return dmg;
+  }
   _slip(e) {
     const b = this.world.get(Math.floor(e.pos.x), Math.floor(e.pos.y - 0.5), Math.floor(e.pos.z));
     return (BLOCKS[b] && BLOCKS[b].slippery) || 0.6;
@@ -203,9 +257,14 @@ export class Drops {
       if (e.delay > 0) e.delay--;
       if (e.age >= 6000) { this._remove(e, i); continue; }
       const fl = this._fluid(e);
-      if (fl === 2) { this._remove(e, i); continue; }          // lava burns it
-      if (fl === 1) {
-        e.vel.multiplyScalar(0.99);
+      // fire, lava and cactus wear its 5 health away (netherite does not burn)
+      const proof = fireResistant(e.stack.id);
+      const harm = (fl === 2 && !proof ? 4 : 0) + this._touchDamage(e, ITEM_W, ITEM_H, proof);
+      if (harm > 0 && (e.hp -= harm) <= 0) { this._remove(e, i); continue; }
+      // more than a tenth of a block into water (or lava, for what survives it) it floats up; otherwise it falls
+      if (fl && e.depth > 0.1) {
+        const drag = fl === 1 ? 0.99 : 0.95;
+        e.vel.x *= drag; e.vel.z *= drag;
         if (e.vel.y < 0.06) e.vel.y += 5e-4;
       } else e.vel.y -= 0.04;
       if (!this._unstick(e) && (!e.onGround || e.vel.x * e.vel.x + e.vel.z * e.vel.z > 1e-5 || (this.ticks + i) % 4 === 0)) {
@@ -216,9 +275,10 @@ export class Drops {
         if (e.hitY && !e.onGround) e.vel.y = 0;
       }
       if (e.pos.y < -130) { this._remove(e, i); continue; }
-      // join a stack of the same item close by (every 2 ticks while moving, every 40 at rest)
-      const moving = Math.abs(e.pos.x - e.prev.x) + Math.abs(e.pos.y - e.prev.y) + Math.abs(e.pos.z - e.prev.z) > 1e-4;
-      if (++e.mergeT >= (moving ? 2 : 40)) { e.mergeT = 0; this._merge(e); }
+      // join a stack of the same item close by: every 2 ticks of its age when it crossed into another block, else every 40
+      const f = Math.floor;
+      const crossed = f(e.pos.x) !== f(e.prev.x) || f(e.pos.y) !== f(e.prev.y) || f(e.pos.z) !== f(e.prev.z);
+      if (e.age % (crossed ? 2 : 40) === 0) this._merge(e);
       if (e.gone) continue;
       // picked up
       if (P && collector && collector.alive && e.delay <= 0) {
@@ -247,8 +307,12 @@ export class Drops {
       o.prev.copy(o.pos);
       o.age++;
       if (o.age >= 6000) { this._removeOrb(o, i); continue; }
-      const fl = this._fluid(o);
-      if (fl === 1) { o.vel.multiplyScalar(0.99); if (o.vel.y < 0.06) o.vel.y += 5e-4; }
+      const fl = this._fluid(o, ORB_W / 2, ORB_H);
+      // lava, fire and cactus wear an orb's 5 health away as they do an item's
+      const harm = (fl === 2 ? 4 : 0) + this._touchDamage(o, ORB_W / 2, ORB_H);
+      if (harm > 0 && (o.hp -= harm) <= 0) { this._removeOrb(o, i); continue; }
+      // it floats once the water is over its eyes (0.85 of its height up); lava throws it up
+      if (fl === 1 && o.depth > ORB_H * 0.85) { o.vel.x *= 0.99; o.vel.z *= 0.99; if (o.vel.y < 0.06) o.vel.y += 5e-4; }
       else o.vel.y -= 0.03;
       if (fl === 2) { o.vel.set((Math.random() - Math.random()) * 0.2, 0.2, (Math.random() - Math.random()) * 0.2); }
       this._unstick(o);
@@ -265,9 +329,9 @@ export class Drops {
       o.vel.x *= f; o.vel.y *= 0.98; o.vel.z *= f;
       if (o.onGround && o.vel.y < 0) o.vel.y *= -0.9;
       if (o.pos.y < -130) { this._removeOrb(o, i); continue; }
-      // touching the player: one orb every two ticks
+      // within the player's reach for things on the ground (a block out to the sides, half a block up and down): one orb every two ticks
       if (P && collector && collector.alive && this.takeXpDelay === 0) {
-        if (Math.abs(o.pos.x - P.x) < 0.3 + ORB_W / 2 && Math.abs(o.pos.z - P.z) < 0.3 + ORB_W / 2 && o.pos.y + ORB_H > P.y && o.pos.y < P.y + 1.8) {
+        if (Math.abs(o.pos.x - P.x) < 0.3 + 1 + ORB_W / 2 && Math.abs(o.pos.z - P.z) < 0.3 + 1 + ORB_W / 2 && o.pos.y + ORB_H > P.y - 0.5 && o.pos.y < P.y + 1.8 + 0.5) {
           this.takeXpDelay = 2;
           let pts = o.value;
           if (collector.mendingRepair) pts = collector.mendingRepair(pts);

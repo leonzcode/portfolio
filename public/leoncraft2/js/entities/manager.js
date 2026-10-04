@@ -611,8 +611,9 @@ export class Entities {
     if (!e.byPlayer) return;
     this.xpAt(e.pos.x, e.pos.y + 0.3, e.pos.z, e.xp !== undefined ? e.xp : e.constructor.XP || 0);
   }
-  // experience as orbs, split into the game's sizes
+  // experience as orbs, split into the game's sizes (the items' orbs, drops.js, when the game gives them)
   xpAt(x, y, z, n) {
+    if (this.hooks.giveXp) { if (n > 0) this.hooks.giveXp(n, x, y, z); return; }
     while (n > 0) {
       const v = splitXp(n);
       n -= v;

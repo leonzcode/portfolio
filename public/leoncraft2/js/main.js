@@ -44,7 +44,7 @@ import { Particles } from './render/particles.js?v=9';
 import { DRAW, setItemLayers } from './items.js?v=9';
 import { loadItemStrip, addItemPieces } from './itemtex.js?v=9';
 import { Drops, dropItem, giveXp } from './drops.js?v=9';
-import { ITEMS, itemId, displayName as itemDisplay } from './items.js?v=9';
+import { ITEMS, itemId, itemName, displayName as itemDisplay } from './items.js?v=9';
 import { setItemNames, register } from './commands.js?v=9';
 import { Containers } from './containers.js?v=9';
 import { Hands } from './hands.js?v=9';
@@ -477,13 +477,7 @@ async function boot() {
     const collector = {
       inv, get alive() { return !survival.dead; },
       addXp: n => survival.addXp(n),
-      mendingRepair: n => {
-        const worn = [inv.slots[inv.selected], inv.offhand].concat(inv.armor).filter(x => x && x.dmg > 0 && x.ench && x.ench.mending);
-        if (!worn.length) return n;
-        const it = worn[Math.floor(Math.random() * worn.length)], fix = Math.min(n * 2, it.dmg);
-        it.dmg -= fix; inv.changed();
-        return n - Math.ceil(fix / 2);
-      },
+      mendingRepair: n => hands.mend(n),
     };
     game = { entry, world, player, fluids, inv, survival, inter, save, saves, dim, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, hands, collector };
     /* The things that live in one world, one dimension: items lying about and
@@ -512,7 +506,9 @@ async function boot() {
       const entities = new Entities({ world: w, player, inv, survival, renderer, options, mode: g.mode, fluids: fl,
         hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0),
           // what mobs drop goes through the items (drops.js): things on the ground, orbs of experience
-          dropItem: (ww, x, y, z, name, n) => dropItem(ww, x, y, z, name, n), giveXp: (n, x, y, z) => giveXp(x, y, z, n) } });
+          dropItem: (ww, x, y, z, name, n) => dropItem(ww, x, y, z, name, n), giveXp: (n, x, y, z) => giveXp(x, y, z, n),
+          // what is in the hands, and its wear from hits, blocking and shearing (hands.js)
+          itemName: id => itemName(id), damageHeld: (n, kind) => hands.wearHeld(n, kind), fillBucket: name => hands.fillHeld(name) } });
       entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));
       renderer.scene.add(entities.group);
       const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
