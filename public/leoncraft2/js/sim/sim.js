@@ -137,13 +137,19 @@ export class Sim {
     }
   }
 
-  /* ---- block updates ---- */
+  /* ---- block updates ----
+     Three kinds, as the game has them: 0 a block changed (its neighbours
+     re-check their shape and their power), 1 a neighbour update only (a
+     button let go: power may have changed, nothing was placed), 2 a shape
+     update only (a crop grew, a fire aged: observers see it, redstone does
+     not need to). */
   onSet(x, y, z, ob, om, nb, nm) {
     // section counts for random ticks
     const c = this.w.chunkAt(x, z);
     if (c && c.rtc) { const s = y >> 4; if (this.RT[ob]) c.rtc[s]--; if (this.RT[nb]) c.rtc[s]++; }
-    if (this.quiet) return;
-    if (ob !== nb) {
+    if (this.silent) return;
+    const kind = this.quiet ? 2 : 0;
+    if (ob !== nb && !this.quiet) {
       const h = this.beh[ob]; if (h && h.removed) h.removed(this, x, y, z, om, nb);
       const hn = this.beh[nb]; if (hn && hn.onPlace) hn.onPlace(this, x, y, z, nm, ob);
       // a log gone: the leaves round it may decay now (plants.js)
@@ -153,13 +159,12 @@ export class Sim {
         if (l.length < 4096) l.push([x, y, z]);
       }
     }
-    for (const [dx, dy, dz] of NB6) this.updates.push(x + dx, y + dy, z + dz, x, y, z);
-    if (this.redstone) this.redstone.changed(x, y, z, ob, nb);
+    for (const [dx, dy, dz] of NB6) this.updates.push(x + dx, y + dy, z + dz, x, y, z, kind);
     this.drain();
   }
-  // tell the six neighbours of a cell that it changed, without changing it (a button let go)
-  updateAround(x, y, z) {
-    for (const [dx, dy, dz] of NB6) this.updates.push(x + dx, y + dy, z + dz, x, y, z);
+  // tell the six neighbours of a cell that its power may have changed (the game's updateNeighborsAt)
+  updateAround(x, y, z, kind) {
+    for (const [dx, dy, dz] of NB6) this.updates.push(x + dx, y + dy, z + dz, x, y, z, kind === undefined ? 1 : kind);
     this.drain();
   }
   drain() {
@@ -168,13 +173,18 @@ export class Sim {
     let n = 0;
     try {
       const u = this.updates;
-      for (let i = 0; i < u.length && n < 200000; i += 6, n++) {
-        const x = u[i], y = u[i + 1], z = u[i + 2];
-        if (y < 0 || y >= H) continue;
-        const b = this.w.get(x, y, z);
-        if (!this.NBR[b]) continue;
-        this.beh[b].neighbor(this, x, y, z, this.w.meta(x, y, z), u[i + 3], u[i + 4], u[i + 5]);
-      }
+      do {
+        for (let i = 0; i < u.length && n < 400000; i += 7, n++) {
+          const x = u[i], y = u[i + 1], z = u[i + 2];
+          if (y < 0 || y >= H) continue;
+          const b = this.w.get(x, y, z);
+          if (!this.NBR[b]) continue;
+          this.beh[b].neighbor(this, x, y, z, this.w.meta(x, y, z), u[i + 3], u[i + 4], u[i + 5], u[i + 6]);
+        }
+        u.length = 0;
+        // dust works out its power once the updates settle (redstone.js), which may make more
+        if (this.redstone) this.redstone.flush();
+      } while (u.length && n < 400000);
     } finally {
       this.updates.length = 0;
       this.draining = false;
@@ -183,6 +193,8 @@ export class Sim {
   // set a block as the game does (with updates); quietSet tells no neighbours (a fire ageing)
   set(x, y, z, b, m) { return this.w.set(x, y, z, b, m || 0); }
   quietSet(x, y, z, b, m) { const q = this.quiet; this.quiet = true; try { return this.w.set(x, y, z, b, m || 0); } finally { this.quiet = q; } }
+  // no updates at all (dust setting its own power: redstone.js sends the right ones itself)
+  silentSet(x, y, z, b, m) { const q = this.silent; this.silent = true; try { return this.w.set(x, y, z, b, m || 0); } finally { this.silent = q; } }
   get(x, y, z) { return this.w.get(x, y, z); }
   meta(x, y, z) { return this.w.meta(x, y, z); }
   name(x, y, z) { const b = this.w.get(x, y, z); return b ? BLOCKS[b].name : 'air'; }
