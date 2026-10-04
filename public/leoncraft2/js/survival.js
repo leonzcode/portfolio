@@ -34,15 +34,15 @@ export class Survival {
     this.lastHealth = this.health;
     if (this.hurtTime > 0) this.hurtTime--;
     const y = player.pos.y;
-    // falling: the highest point since you left the ground
-    if (player.onGround || player.inWater || player.flying) {
-      if (this.fallFrom !== null && player.onGround && !player.inWater) {
-        const fell = this.fallFrom - y;
-        if (fell > 3) this.hurt(Math.ceil(fell - 3));
-      }
-      this.fallFrom = player.onGround || player.inWater ? null : this.fallFrom;
-      if (player.inWater) this.fallFrom = null;
-    } else this.fallFrom = this.fallFrom === null ? y : Math.max(this.fallFrom, y);
+    /* falling: the distance the player counted on the way down (player.js),
+       spent when it lands; hay and honey take 80% of it, a bed half, and
+       slime all of it unless you land sneaking */
+    if (player.landed) {
+      const l = player.landed; player.landed = null;
+      const name = BLOCKS[l.block] ? BLOCKS[l.block].name : '';
+      const k = name === 'slime_block' ? (player.sneaking ? 1 : 0) : name === 'hay_block' || name === 'honey_block' ? 0.2 : /_bed$/.test(name) ? 0.5 : 1;
+      if (!player.flying && !player.inWater && l.dist > 3) this.hurt(Math.ceil((l.dist - 3) * k));
+    }
     // air
     if (player.eyeInWater) {
       this.air--;

@@ -9,10 +9,23 @@
                      adds 0.2 forward)
      in the air      acceleration 0.02, gravity 0.08, drag 0.98 up and down,
                      0.91 across
-     in water        acceleration 0.02, drag 0.8, sinking 0.02, Space swims up
+     in water        acceleration 0.02, drag 0.8 (0.9 sprint-swimming),
+                     sinking 0.005, Space swims up 0.04, Shift down 0.04;
+                     swimming into a wall with clear air 0.6 above lifts
+                     you 0.3, which is how you climb out onto the bank
      flying          double-tap Space; Space and Shift for up and down
 
-   The body is 0.6 wide and 1.8 tall with eyes at 1.62, and moves into the
+   The keys give 0.98 of a step each way (the game's own factor, which is
+   what makes walking 4.317 m/s and sprinting 5.612). Water depth is read
+   from the water's surface, not its block: a still pool is 8/9 of a block
+   deep. Moving water pushes you along its current. Ladders and vines hold
+   you at 0.15 down (none sneaking) and climb at 0.2; cobwebs, berry bushes
+   and powder snow slow you inside them; soul sand and honey slow you on
+   them; slime bounces you back up and beds a little.
+
+   The body is 0.6 wide and 1.8 tall with eyes at 1.62 (1.5 and 1.27
+   crouching, 0.6 and 0.4 swimming or crawling, with the camera easing
+   between them), and moves into the
    world one axis at a time (y, then x, then z), as the game does: every box
    it could touch this tick (full blocks, and the boxes of slabs, stairs,
    fences, doors...) is gathered, and the move along each axis is cut short
@@ -21,10 +34,25 @@
 --------------------------------------------------------------------------- */
 import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=8';
 import { collisionBoxes, selectionBoxes } from './models.js?v=8';
+import { LEVEL, FALLING } from './world-const.js?v=8';
 const THREE = window.THREE;
 
 const W = 0.3, HT = 1.8, STEP = 0.6;
 const EPS = 1e-7;
+// the body's poses: height and eye height
+const POSE = { stand: [1.8, 1.62], crouch: [1.5, 1.27], swim: [0.6, 0.4] };
+const ids = list => new Set(list.map(n => B[n]).filter(v => v !== undefined));
+const CLIMB = ids(['ladder', 'vine', 'scaffolding', 'weeping_vines', 'weeping_vines_plant', 'twisting_vines', 'twisting_vines_plant', 'cave_vines', 'cave_vines_plant']);
+const byName = list => new Map(list.filter(e => B[e[0]] !== undefined).map(e => [B[e[0]], e[1]]));
+// standing on these: how much of your speed (and jump) is left
+const SPEED = byName([['soul_sand', 0.4], ['honey_block', 0.4]]);
+const JUMP = byName([['honey_block', 0.5]]);
+// inside these: what is left of a move across and up and down
+const STUCK = byName([['cobweb', [0.25, 0.05]], ['sweet_berry_bush', [0.8, 0.75]], ['powder_snow', [0.9, 1.5]]]);
+const isBed = b => !!(BLOCKS[b] && /_bed$/.test(BLOCKS[b].name));
+const isWater = b => FLUID[b] === 1 || !!(BLOCKS[b] && BLOCKS[b].waterlogged);
+const isFluid = (b, kind) => kind === 1 ? isWater(b) : FLUID[b] === kind;
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 export class Player {
   constructor(world) {
@@ -35,6 +63,13 @@ export class Player {
     this.yaw = 0; this.pitch = 0;
     this.onGround = false; this.inWater = false; this.eyeInWater = false; this.inLava = false;
     this.flying = false; this.sprinting = false; this.sneaking = false;
+    this.swimming = false; this.pose = 'stand'; this.h = HT;
+    this.eyeH = 1.62; this.prevEyeH = 1.62;
+    this.waterDepth = -1; this.lavaDepth = -1;
+    this.hCollide = false; this.minorCollide = false; this.moved = [0, 0, 0];
+    this.fallDistance = 0; this.landed = null;   // { dist, block }: the last landing, for fall damage
+    this.stuck = null; this.climbing = false;
+    this.noSprint = false;        // set while too hungry to sprint
     this.keys = {};
     this.walkDist = 0; this.prevWalk = 0;
     this.bob = 0;
@@ -95,7 +130,7 @@ export class Player {
   }
   // the move itself: y, x, z, then the same again lifted by a step if that gets further
   slide(px, py, pz, dx, dy, dz, bx) {
-    let x0 = px - W, y0 = py, z0 = pz - W, x1 = px + W, y1 = py + HT, z1 = pz + W;
+    let x0 = px - W, y0 = py, z0 = pz - W, x1 = px + W, y1 = py + this.h, z1 = pz + W;
     const my = this.clip(bx, 1, dy, x0, y0, z0, x1, y1, z1); y0 += my; y1 += my;
     const mx = this.clip(bx, 0, dx, x0, y0, z0, x1, y1, z1); x0 += mx; x1 += mx;
     const mz = this.clip(bx, 2, dz, x0, y0, z0, x1, y1, z1); z0 += mz; z1 += mz;
@@ -120,54 +155,182 @@ export class Player {
       }
     }
     const reach = Math.max(Math.abs(dx), Math.abs(dz)) + STEP + 1;
-    const bx = this.gather(p.x - W - reach, p.y - reach, p.z - W - reach, p.x + W + reach, p.y + HT + reach, p.z + W + reach);
+    const bx = this.gather(p.x - W - reach, p.y - reach, p.z - W - reach, p.x + W + reach, p.y + this.h + reach, p.z + W + reach);
     let [mx, my, mz] = this.slide(p.x, p.y, p.z, dx, dy, dz, bx);
     const landed = dy < 0 && my !== dy;
     // blocked sideways while on (or landing on) the ground: try it a step higher
     if ((this.onGround || landed) && !this.flying && (mx !== dx || mz !== dz)) {
-      const up = this.clip(bx, 1, STEP, p.x - W, p.y, p.z - W, p.x + W, p.y + HT, p.z + W);
+      const up = this.clip(bx, 1, STEP, p.x - W, p.y, p.z - W, p.x + W, p.y + this.h, p.z + W);
       const [sx, , sz] = this.slide(p.x, p.y + up, p.z, dx, 0, dz, bx);
       if (sx * sx + sz * sz > mx * mx + mz * mz + 1e-9) {
         // and back down onto whatever is there
-        const down = this.clip(bx, 1, -up, p.x + sx - W, p.y + up, p.z + sz - W, p.x + sx + W, p.y + up + HT, p.z + sz + W);
+        const down = this.clip(bx, 1, -up, p.x + sx - W, p.y + up, p.z + sz - W, p.x + sx + W, p.y + up + this.h, p.z + sz + W);
         mx = sx; mz = sz; my = up + down;
         this.stepped = (this.stepped || 0) + my;      // the camera eases up the step
       }
     }
     p.x += mx; p.y += my; p.z += mz;
-    if (my !== dy) { if (dy < 0) this.onGround = true; this.vel.y = 0; } else if (dy !== 0) this.onGround = false;
+    this.hCollide = mx !== dx || mz !== dz;
+    this.moved[0] = mx; this.moved[1] = my; this.moved[2] = mz;
+    // falling: the distance builds while going down, and is spent on landing
+    if (my < 0) this.fallDistance -= my;
+    if (my !== dy) {
+      if (dy < 0) {
+        this.onGround = true;
+        const under = this.under();
+        if (this.fallDistance > 0) this.landed = { dist: this.fallDistance, block: under };
+        this.fallDistance = 0;
+        // slime throws you back up (not sneaking), a bed a little
+        if (BLOCKS[under] && BLOCKS[under].name === 'slime_block' && !this.sneaking && this.vel.y < 0) this.vel.y = -this.vel.y;
+        else if (isBed(under) && !this.sneaking && this.vel.y < 0) this.vel.y = -this.vel.y * 0.66;
+        else this.vel.y = 0;
+      } else this.vel.y = 0;
+    } else if (dy !== 0) this.onGround = false;
     if (mx !== dx) this.vel.x = 0;
     if (mz !== dz) this.vel.z = 0;
+  }
+  // the block you are standing on (just under the feet, as the game looks for it)
+  under() { return this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y - 0.2), Math.floor(this.pos.z)); }
+
+  /* ---- fluids ---- */
+  /* Where a fluid's surface is in a block (-1e9: no fluid of that kind). A
+     source or still water is 8/9 of a block deep, flowing water
+     (8 - level)/9, and water with more of it above a whole block. */
+  fluidTop(x, y, z, kind) {
+    const b = this.w.get(x, y, z);
+    if (!isFluid(b, kind)) return -1e9;
+    if (isFluid(this.w.get(x, y + 1, z), kind)) return y + 1;
+    return y + this.ownHeight(x, y, z);
+  }
+  ownHeight(x, y, z) {
+    const b = this.w.get(x, y, z);
+    if (!FLUID[b]) return isWater(b) ? 8 / 9 : 0;
+    const m = this.w.meta(x, y, z);
+    return ((m & FALLING) ? 8 : 8 - (m & LEVEL)) / 9;
+  }
+  // how far a fluid's surface is above the bottom of the body (-1: not in it)
+  fluidDepth(kind) {
+    const p = this.pos;
+    const minY = p.y + 0.001;
+    let depth = -1;
+    for (let y = Math.floor(minY); y <= Math.floor(p.y + this.h - 0.001); y++)
+      for (let z = Math.floor(p.z - W + 0.001); z <= Math.floor(p.z + W - 0.001); z++)
+        for (let x = Math.floor(p.x - W + 0.001); x <= Math.floor(p.x + W - 0.001); x++) {
+          const top = this.fluidTop(x, y, z, kind);
+          if (top >= minY) depth = Math.max(depth, top - minY);
+        }
+    return depth;
+  }
+  // the way water runs at a block: towards lower water beside it, or over an edge
+  flow(x, y, z, out) {
+    const own = this.ownHeight(x, y, z);
+    let fx = 0, fz = 0;
+    for (const [dx, dz] of DIRS) {
+      const b = this.w.get(x + dx, y, z + dz);
+      let d = 0;
+      if (isWater(b)) { const f = this.ownHeight(x + dx, y, z + dz); if (f > 0) d = own - f; }
+      else if (!b || !SOLID[b]) {
+        if (isWater(this.w.get(x + dx, y - 1, z + dz))) { const f = this.ownHeight(x + dx, y - 1, z + dz); if (f > 0) d = own - (f - 8 / 9); }
+      } else continue;
+      fx += dx * d; fz += dz * d;
+    }
+    const len = Math.hypot(fx, fz);
+    out[0] = len > 1e-9 ? fx / len : 0; out[1] = len > 1e-9 ? fz / len : 0;
+    return out;
+  }
+  // moving water pushes whatever is in it (0.014 a tick, averaged over the blocks you are in)
+  pushByWater() {
+    const p = this.pos, minY = p.y + 0.001, f = this.fl || (this.fl = [0, 0]);
+    let sx = 0, sz = 0, n = 0;
+    for (let y = Math.floor(minY); y <= Math.floor(p.y + this.h - 0.001); y++)
+      for (let z = Math.floor(p.z - W + 0.001); z <= Math.floor(p.z + W - 0.001); z++)
+        for (let x = Math.floor(p.x - W + 0.001); x <= Math.floor(p.x + W - 0.001); x++) {
+          if (FLUID[this.w.get(x, y, z)] !== 1) continue;
+          const top = this.fluidTop(x, y, z, 1);
+          if (top < minY) continue;
+          this.flow(x, y, z, f);
+          const k = top - minY < 0.4 ? top - minY : 1;
+          sx += f[0] * k; sz += f[1] * k; n++;
+        }
+    if (!n) return;
+    sx /= n; sz /= n;
+    const len = Math.hypot(sx, sz);
+    if (len < 1e-9) return;
+    let s = 0.014;
+    if (Math.abs(this.vel.x) < 0.003 && Math.abs(this.vel.z) < 0.003 && len * s < 0.0045) s = 0.0045 / len;
+    this.vel.x += sx * s; this.vel.z += sz * s;
+  }
+  // nothing solid and no fluid in the body box moved by (dx, dy, dz): the game's isFree
+  freeAt(dx, dy, dz) {
+    const p = this.pos;
+    const x0 = p.x - W + dx, y0 = p.y + dy, z0 = p.z - W + dz, x1 = p.x + W + dx, y1 = p.y + this.h + dy, z1 = p.z + W + dz;
+    if (this.boxHits(x0, y0, z0, x1, y1, z1)) return false;
+    for (let y = Math.floor(y0); y < Math.ceil(y1); y++)
+      for (let z = Math.floor(z0); z < Math.ceil(z1); z++)
+        for (let x = Math.floor(x0); x < Math.ceil(x1); x++) {
+          const b = this.w.get(x, y, z);
+          if (FLUID[b] || isWater(b)) return false;
+        }
+    return true;
+  }
+  // would the body fit here in a pose? (for standing up from a crouch or a crawl)
+  fits(pose) {
+    const p = this.pos, h = POSE[pose][0];
+    return !this.boxHits(p.x - W + 1e-4, p.y + 1e-4, p.z - W + 1e-4, p.x + W - 1e-4, p.y + h - 1e-4, p.z + W - 1e-4);
+  }
+  // the blocks the body is inside: cobwebs and the like, and ladders
+  insideBlocks() {
+    const p = this.pos;
+    this.stuck = null;
+    for (let y = Math.floor(p.y + 1e-5); y <= Math.floor(p.y + this.h - 1e-5); y++)
+      for (let z = Math.floor(p.z - W + 1e-5); z <= Math.floor(p.z + W - 1e-5); z++)
+        for (let x = Math.floor(p.x - W + 1e-5); x <= Math.floor(p.x + W - 1e-5); x++) {
+          const st = STUCK.get(this.w.get(x, y, z));
+          if (st) this.stuck = st;
+        }
+    this.climbing = CLIMB.has(this.w.get(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)));
   }
 
   /* ---- one tick ---- */
   tick() {
     this.prev.copy(this.pos);
     this.prevWalk = this.walkDist;
+    this.prevEyeH = this.eyeH;
     const k = this.keys;
-    let fwd = (k.w ? 1 : 0) - (k.s ? 1 : 0), str = (k.d ? 1 : 0) - (k.a ? 1 : 0);
+    // the keys: 0.98 of a step each way, as the game reads them
+    let fwd = ((k.w ? 1 : 0) - (k.s ? 1 : 0)) * 0.98, str = ((k.d ? 1 : 0) - (k.a ? 1 : 0)) * 0.98;
     this.sneaking = !!k.shift && !this.flying;
-    if (fwd <= 0 || this.sneaking) this.sprinting = false;
-    if (k.control && fwd > 0) this.sprinting = true;
-    const feetB = this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y + 0.4), Math.floor(this.pos.z));
-    const eyeB = this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y + 1.62), Math.floor(this.pos.z));
+    // water and lava, measured from their surfaces
     const wasIn = this.inWater;
-    this.inWater = FLUID[feetB] === 1 || FLUID[this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y + 1.0), Math.floor(this.pos.z))] === 1;
-    this.inLava = FLUID[feetB] === 2;
-    this.eyeInWater = FLUID[eyeB] === 1 || !!(BLOCKS[eyeB] && BLOCKS[eyeB].waterlogged);
+    this.waterDepth = this.fluidDepth(1); this.lavaDepth = this.fluidDepth(2);
+    this.inWater = this.waterDepth >= 0; this.inLava = this.lavaDepth >= 0;
+    const ex = Math.floor(this.pos.x), ez = Math.floor(this.pos.z), ey = this.pos.y + this.eyeH;
+    this.eyeInWater = this.fluidTop(ex, Math.floor(ey), ez, 1) > ey;
+    if (this.inWater) this.fallDistance = 0;
     if (this.inWater && !wasIn && this.vel.y < -0.15) this.splashes.push([this.pos.x, this.pos.z, Math.min(1.6, -this.vel.y * 3), 2.6]);
+    // sprinting stops when you let go of forward, sneak, run straight into a wall, or wade (not swim)
+    const slowPose = this.pose === 'crouch' || (this.pose === 'swim' && !this.inWater);
+    if (fwd <= 0 || this.sneaking || this.noSprint) this.sprinting = false;
+    if (this.hCollide && !this.minorCollide) this.sprinting = false;
+    if (this.swimming) { if (!this.inWater) this.sprinting = false; }
+    else if (this.inWater && !this.eyeInWater && !this.flying) this.sprinting = false;
+    if (k.control && fwd > 0 && !this.noSprint && (!slowPose || this.eyeInWater) && (!this.inWater || this.eyeInWater || this.flying)) this.sprinting = true;
+    // swimming: sprinting under water, and it lasts while you sprint in water
+    if (this.flying) this.swimming = false;
+    else if (this.swimming) this.swimming = this.sprinting && this.inWater;
+    else this.swimming = this.sprinting && this.eyeInWater && isWater(this.w.get(ex, Math.floor(this.pos.y), ez));
+    this.insideBlocks();
+    if (this.climbing || this.stuck) this.fallDistance = 0;
 
     let accel;
     if (this.flying) accel = this.sprinting ? 0.1 : 0.05;
     else if (this.inWater || this.inLava) accel = 0.02;
     else if (this.onGround) {
-      const under = this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y - 0.1), Math.floor(this.pos.z));
+      const under = this.under();
       const slip = (BLOCKS[under] && BLOCKS[under].slippery) || 0.6;
-      const f = slip * 0.91;
-      accel = 0.1 * (0.16277136 / (f * f * f));
-      if (this.sprinting) accel *= 1.3;
+      accel = (this.sprinting ? 0.13 : 0.1) * (0.216 / (slip * slip * slip));
     } else accel = this.sprinting ? 0.026 : 0.02;
-    if (this.sneaking) { fwd *= 0.3; str *= 0.3; }
+    if (slowPose) { fwd *= 0.3; str *= 0.3; }
     // move relative to where you are looking (only round, not up)
     let len = Math.hypot(fwd, str);
     if (len > 0.0001) {
@@ -177,32 +340,94 @@ export class Player {
       this.vel.x += -sin * f + cos * s;
       this.vel.z += -cos * f - sin * s;
     }
+    // Space and Shift
+    const fluidDepth = this.inWater ? this.waterDepth : this.lavaDepth;
     if (this.flying) {
       if (k[' ']) this.vel.y += 0.15 * 0.25 * 3;
       if (k.shift) this.vel.y -= 0.15 * 0.25 * 3;
-    } else if (this.inWater || this.inLava) {
-      if (k[' ']) this.vel.y += 0.04;
+    } else if (k[' '] && (this.inWater || this.inLava) && (!this.onGround || fluidDepth > 0.4)) {
+      this.vel.y += 0.04;                       // swimming up
     } else if (k[' '] && this.onGround) {
-      this.vel.y = 0.42;
+      // a jump, from the ground or from water too shallow to swim in
+      const px = Math.floor(this.pos.x), pz = Math.floor(this.pos.z);
+      const j = JUMP.get(this.w.get(px, Math.floor(this.pos.y), pz)) || JUMP.get(this.w.get(px, Math.floor(this.pos.y - 0.5), pz)) || 1;
+      this.vel.y = 0.42 * j;
       if (this.sprinting) { this.vel.x += -Math.sin(this.yaw) * 0.2; this.vel.z += -Math.cos(this.yaw) * 0.2; }
       this.onGround = false;
     }
-    const was = this.pos.clone();
-    this.move(this.vel.x, this.vel.y, this.vel.z);
+    if (this.inWater && k.shift && !this.flying) this.vel.y -= 0.04;
+    // swimming follows where you look, up and down
+    if (this.swimming) {
+      const look = Math.sin(this.pitch), d4 = look < -0.2 ? 0.085 : 0.06;
+      if (look <= 0 || k[' '] || isWater(this.w.get(ex, Math.floor(this.pos.y + 0.9), ez))) this.vel.y += (look - this.vel.y) * d4;
+    }
+    // ladders and vines: slow to slide down them, none at all sneaking
+    if (this.climbing && !this.flying) {
+      this.vel.x = Math.max(-0.15, Math.min(0.15, this.vel.x));
+      this.vel.z = Math.max(-0.15, Math.min(0.15, this.vel.z));
+      this.vel.y = Math.max(-0.15, this.vel.y);
+      if (this.vel.y < 0 && this.sneaking) this.vel.y = 0;
+    }
+    if (this.inWater && !this.flying) this.pushByWater();
+    const was = this.pos.clone(), startY = this.pos.y;
+    // inside a cobweb or a bush: only part of the move happens, and the speed is lost
+    if (this.stuck && !this.flying) {
+      const st = this.stuck;
+      this.move(this.vel.x * st[0], this.vel.y * st[1], this.vel.z * st[0]);
+      this.vel.set(0, 0, 0);
+    } else this.move(this.vel.x, this.vel.y, this.vel.z);
+    // a run along a wall at a slant is not a crash into it (the game's 8 degrees)
+    this.minorCollide = false;
+    if (this.hCollide && len > 0.0001) {
+      const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
+      const ix = -sin * fwd + cos * str, iz = -cos * fwd - sin * str;
+      const mx = this.moved[0], mz = this.moved[2];
+      const d4 = ix * ix + iz * iz, d5 = mx * mx + mz * mz;
+      if (d4 > 1e-5 && d5 > 1e-5) this.minorCollide = Math.acos(Math.max(-1, Math.min(1, (ix * mx + iz * mz) / Math.sqrt(d4 * d5)))) < 0.13962634;
+    }
+    // climbing: pushing into the ladder, or Space, goes up
+    if (this.climbing && !this.flying && (this.hCollide || k[' '])) this.vel.y = 0.2;
     // drag and gravity
     if (this.flying) {
       this.vel.x *= 0.91 * 0.6 / 0.546 * 0.91; this.vel.z *= 0.91 * 0.6 / 0.546 * 0.91; this.vel.y *= 0.6;
       if (this.onGround) this.flying = false;
     } else if (this.inWater) {
-      this.vel.x *= 0.8; this.vel.y *= 0.8; this.vel.z *= 0.8; this.vel.y -= 0.02;
+      const f = this.sprinting ? 0.9 : 0.8;
+      this.vel.x *= f; this.vel.y *= 0.8; this.vel.z *= f;
+      if (!this.sprinting) this.vel.y -= 0.005;
+      // out onto the bank: against a wall with nothing but air 0.6 higher
+      if (this.hCollide && this.freeAt(this.vel.x, this.vel.y + 0.6 - this.pos.y + startY, this.vel.z)) this.vel.y = 0.3;
     } else if (this.inLava) {
-      this.vel.multiplyScalar(0.5); this.vel.y -= 0.02;
+      if (this.lavaDepth <= 0.4) { this.vel.x *= 0.5; this.vel.y *= 0.8; this.vel.z *= 0.5; this.vel.y -= 0.005; }
+      else this.vel.multiplyScalar(0.5);
+      this.vel.y -= 0.02;
+      if (this.hCollide && this.freeAt(this.vel.x, this.vel.y + 0.6 - this.pos.y + startY, this.vel.z)) this.vel.y = 0.3;
     } else {
-      const under = this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y - 0.1), Math.floor(this.pos.z));
+      const under = this.under();
       const slip = this.onGround ? ((BLOCKS[under] && BLOCKS[under].slippery) || 0.6) : 1.0;
       this.vel.y = (this.vel.y - 0.08) * 0.98;
       this.vel.x *= slip * 0.91; this.vel.z *= slip * 0.91;
+      // walking on slime: slowed unless you are bouncing
+      if (this.onGround && BLOCKS[under] && BLOCKS[under].name === 'slime_block' && Math.abs(this.vel.y) < 0.1 && !this.sneaking) {
+        const d = 0.4 + Math.abs(this.vel.y) * 0.2; this.vel.x *= d; this.vel.z *= d;
+      }
     }
+    // soul sand and honey keep only part of the speed
+    if (!this.flying) {
+      const px = Math.floor(this.pos.x), pz = Math.floor(this.pos.z);
+      const here = this.w.get(px, Math.floor(this.pos.y), pz);
+      const sf = isWater(here) ? 1 : SPEED.get(here) || SPEED.get(this.w.get(px, Math.floor(this.pos.y - 0.500001), pz)) || 1;
+      if (sf !== 1) { this.vel.x *= sf; this.vel.z *= sf; }
+    }
+    // the game drops speeds too small to see
+    if (Math.abs(this.vel.x) < 0.003) this.vel.x = 0;
+    if (Math.abs(this.vel.y) < 0.003) this.vel.y = 0;
+    if (Math.abs(this.vel.z) < 0.003) this.vel.z = 0;
+    // the pose for next tick: swimming lies down, sneaking crouches, and a low gap keeps you crawling
+    let pose = this.swimming ? 'swim' : this.sneaking ? 'crouch' : 'stand';
+    if (!this.fits(pose)) pose = this.fits('crouch') ? 'crouch' : 'swim';
+    this.pose = pose; this.h = POSE[pose][0];
+    this.eyeH += (POSE[pose][1] - this.eyeH) * 0.5;
     const moved = Math.hypot(this.pos.x - was.x, this.pos.z - was.z);
     if (this.onGround) this.walkDist += moved * 0.6;
     // wading and swimming push ripples out across the water
@@ -220,7 +445,7 @@ export class Player {
     const p = this.prev.clone().lerp(this.pos, alpha);
     const walk = this.prevWalk + (this.walkDist - this.prevWalk) * alpha;
     const eye = p.clone();
-    eye.y += this.sneaking ? 1.27 : 1.62;
+    eye.y += this.prevEyeH + (this.eyeH - this.prevEyeH) * alpha;
     // the game's head bob: a figure of eight as you walk
     const speed = Math.min(1, Math.hypot(this.vel.x, this.vel.z) * 4);
     const bobAmt = this.onGround && !this.flying && this.bobbing !== false ? speed : 0;
@@ -262,10 +487,10 @@ export class Player {
   occupies(x, y, z, boxes) {
     if (boxes) {
       const p = this.pos;
-      return boxes.some(c => x + c[3] > p.x - W && x + c[0] < p.x + W && z + c[5] > p.z - W && z + c[2] < p.z + W && y + c[4] > p.y && y + c[1] < p.y + HT);
+      return boxes.some(c => x + c[3] > p.x - W && x + c[0] < p.x + W && z + c[5] > p.z - W && z + c[2] < p.z + W && y + c[4] > p.y && y + c[1] < p.y + this.h);
     }
     const p = this.pos;
-    return x + 1 > p.x - W && x < p.x + W && z + 1 > p.z - W && z < p.z + W && y + 1 > p.y && y < p.y + HT;
+    return x + 1 > p.x - W && x < p.x + W && z + 1 > p.z - W && z < p.z + W && y + 1 > p.y && y < p.y + this.h;
   }
 }
 

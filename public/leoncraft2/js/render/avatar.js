@@ -439,7 +439,7 @@ export class Avatar {
     this.attack = this.swingT / 6;
     // swimming: sprinting in water lays the body down
     this.oSwim = this.swim;
-    const sw = P.inWater && P.sprinting && !P.flying ? 1 : 0;
+    const sw = P.pose === 'swim' && !P.flying ? 1 : 0;
     this.swim = sw > this.swim ? Math.min(1, this.swim + 0.09) : Math.max(0, this.swim - 0.09);
     this.age++;
   }
