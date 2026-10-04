@@ -37,6 +37,8 @@ import { Hud } from './ui/hud.js?v=8';
 import { Interactor } from './interact.js?v=8';
 import { Survival } from './survival.js?v=8';
 import { Save } from './save.js?v=8';
+import { Chat, ChatScreen } from './ui/chat.js?v=8';
+import { displayName } from './commands.js?v=8';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -308,6 +310,10 @@ async function boot() {
   window.addEventListener('resize', fit);
   fit();
 
+  // chat, over everything (js/ui/chat.js) and the commands typed into it (js/commands.js)
+  const chat = new Chat();
+  gui.overlays.push(chat);
+
   /* ---- item icons for the inventory and the hotbar (made a few at a time) ---- */
   const icons = new ItemIcons(alb, { grassMap: grass, foliageMap: foliage });
   let hud = null;                   // the hotbar, hearts and F3, made per world (js/ui/hud.js)
@@ -406,12 +412,16 @@ async function boot() {
       player.yaw = Math.PI * 0.75;
     }
     player.prev.copy(player.pos);
-    const mode = entry.mode === 'creative' ? 'creative' : 'survival';
-    player.canFly = mode === 'creative';
+    // the game mode you were in when you left (a /gamemode lasts), or the world's own
+    const want = st && st.mode ? st.mode : entry.mode;
+    const mode = ['creative', 'adventure', 'spectator'].includes(want) ? want : 'survival';
+    player.canFly = mode === 'creative' || mode === 'spectator';
+    player.noclip = mode === 'spectator';
+    if (mode === 'spectator') player.flying = true;
     const fluids = new Fluids(world, (x, y, z, kind) => {
       if (kind === 1 && Math.random() < 0.3) renderer.inter.splash(x + 0.5, z + 0.5, 0.35, 1.5);
     });
-    const inv = new Inventory({ mode });
+    const inv = new Inventory({ mode: mode === 'creative' ? 'creative' : 'survival' });
     if (st && st.inventory) inv.fromJSON(st.inventory);
     else if (mode === 'creative') {
       // a new creative world starts with a few blocks to hand (the rest are under E)
@@ -432,6 +442,7 @@ async function boot() {
       onSplash: (x, z) => renderer.inter.splash(x, z, 0.8, 2.0),
     });
     inter.creative = mode === 'creative';
+    inter.adventure = mode === 'adventure' || mode === 'spectator';
     game = { entry, world, player, fluids, inv, survival, inter, save, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0 };
     hud = new Hud(inv, icons);
     gui.hud = hud;
@@ -473,6 +484,7 @@ async function boot() {
     g.world.save = null;
     overlay.set(0, 0, 0, null, -1);
     if (hud) { hud.dispose(); hud = null; gui.hud = null; }
+    chat.lines.length = 0; chat.dirty = true;
     gui.inGame = false; gui.panorama = true;
     gui.setRoot(new TitleScreen());
   }
@@ -508,6 +520,59 @@ async function boot() {
   document.addEventListener('pointerlockerror', lockFailed);
   canvas.addEventListener('click', () => { if (game && !gui.isOpen()) lock(); });
   let wantInv = false;
+  /* ---- chat and commands ---- */
+  function setMode(m) {
+    const g = game;
+    g.mode = m;
+    const p = g.player;
+    p.canFly = m === 'creative' || m === 'spectator';
+    p.noclip = m === 'spectator';
+    if (m === 'spectator') p.flying = true; else if (!p.canFly) p.flying = false;
+    g.inv.setMode(m === 'creative' ? 'creative' : 'survival');
+    g.inter.creative = m === 'creative';
+    g.inter.adventure = m === 'adventure' || m === 'spectator';
+    if (m === 'survival' || m === 'adventure') hud.setStats(g.survival.stats()); else hud.setStats(null);
+    hud.markDirty();
+  }
+  const chatCtx = () => {
+    const g = game;
+    return {
+      game: g, playerName: 'Player',
+      // Allow Commands: as set when the world was made (creative worlds have it on unless turned off)
+      cheats: !!(window.__lc2.cheats || (g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
+      say: (t, c) => chat.add(t, c),
+      setMode,
+      teleport: (x, y, z) => { const p = g.player; p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; },
+      give: (name, count) => {
+        const id = B[name];
+        if (id === undefined || !BLOCKS[id] || BLOCKS[id].item === false) return null;
+        g.inv.add(id, count);
+        return displayName(id);
+      },
+      clearInventory: name => {
+        let n = 0;
+        const want = name ? B[name] : undefined;
+        const take = (arr) => { for (let i = 0; i < arr.length; i++) { const s = arr[i]; if (s && (want === undefined || s.id === want)) { n += s.count || 1; arr[i] = null; } } };
+        take(g.inv.slots); if (g.inv.armor) take(g.inv.armor);
+        if (g.inv.offhand && (want === undefined || g.inv.offhand.id === want)) { n += g.inv.offhand.count || 1; g.inv.offhand = null; }
+        g.inv.changed();
+        return n;
+      },
+      kill: () => { if (g.mode === 'survival' || g.mode === 'adventure') g.survival.hurt(1e9); else respawn(); },
+      seed: () => g.entry.seed,
+      blockChanged: () => {},
+      setWeather: (w, ticks) => { g.weather = { kind: w, ticks: ticks === null ? 6000 + Math.floor(Math.random() * 12000) : ticks }; },
+      setDifficulty: d => { g.entry.difficulty = d; Worlds.update(g.entry.id, { difficulty: d }); },
+      dimension: () => g.dimension || 'overworld',
+      xp: null,
+    };
+  };
+  function openChat(start) {
+    wantInv = true;
+    for (const k in game.player.keys) game.player.keys[k] = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+    gui.open(new ChatScreen(chat, chatCtx, start));
+  }
   document.addEventListener('pointerlockchange', () => {
     if (locked()) return;
     unlockedAt = performance.now();
@@ -545,6 +610,9 @@ async function boot() {
       return;
     }
     if (!locked()) return;
+    // chat: T, or / with the slash already typed
+    if ((a === 'chat' || (!a && e.code === 'KeyT')) && !e.repeat) { e.preventDefault(); openChat(''); return; }
+    if ((a === 'command' || e.key === '/') && !e.repeat) { e.preventDefault(); openChat('/'); return; }
     if (a && a.startsWith('hotbar')) { game.inv.select(+a.slice(6) - 1); return; }
     if (e.code === 'BracketLeft') game.time -= 1000;
     if (e.code === 'BracketRight') game.time += 1000;
@@ -633,7 +701,7 @@ async function boot() {
       player.tick();
       fluids.step();
       inter.tick();
-      if (g.mode !== 'creative') {
+      if (g.mode === 'survival' || g.mode === 'adventure') {
         survival.tick(player);
         if (survival.dead && !gui.isOpen()) {
           if (document.pointerLockElement) document.exitPointerLock();
@@ -660,7 +728,7 @@ async function boot() {
       waterTint: tintAt(world, v.eye), player, alpha,
       biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
     }, dt);
-    if (g.mode !== 'creative') hud.setStats(survival.stats());
+    if (g.mode === 'survival' || g.mode === 'adventure') hud.setStats(survival.stats());
     // no crosshair in third person, or with the HUD hidden
     const cross = renderer.avatar.view === 0 && !gui.hideHud;
     if (hud.crosshair !== cross) { hud.crosshair = cross; hud.markDirty(); }
@@ -731,7 +799,8 @@ async function boot() {
   window.__lc2 = {
     renderer, gui, options, B, BLOCKS,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
-    get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud,
+    get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
+    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=8').then(m => m.execute(line, ctx)); },
     get time() { return game ? game.time : menuTime; }, set time(t) { if (game) game.time = t; else menuTime = t; },
     play: (seed, mode) => startGame(Worlds.add({ id: 'w' + Date.now().toString(36), name: 'Test World', folder: 'Test World', seed: seed || MENU_SEED, mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
