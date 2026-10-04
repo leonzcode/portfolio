@@ -336,6 +336,24 @@ export function stackTooltip(st, advanced) {
   if (isPotion(st) || (st.potion && ITEMS[st.id] && ITEMS[st.id].name === 'tipped_arrow')) lines.push(...potionLines(st));
   const title = n => n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   if (st.trim) lines.push('§7Upgrade:', '§9 ' + title(st.trim[0]) + ' Armor Trim', '§9 ' + title(st.trim[1]) + ' Material');
+  // what a shulker box holds: the first five stacks, then how many more
+  if (Array.isArray(st.items)) {
+    const inside = st.items.filter(Boolean);
+    for (const s of inside.slice(0, 5)) lines.push('§f' + (s.name || displayName(s.id)) + ' x' + s.count);
+    if (inside.length > 5) lines.push('§o§7and ' + (inside.length - 5) + ' more...');
+  }
+  if (st.color !== undefined) lines.push('§o§7Dyed');
+  if (st.flight) lines.push('§7Flight Duration: ' + st.flight);
+  const fwLines = fw => {
+    const out = ['§7  ' + title(fw.shape === 'small_ball' ? 'small_ball' : fw.shape)];
+    if (fw.colors && fw.colors.length) out.push('§7  ' + fw.colors.map(title).join(', '));
+    if (fw.fade && fw.fade.length) out.push('§7  Fade to ' + fw.fade.map(title).join(', '));
+    if (fw.trail) out.push('§7  Trail');
+    if (fw.twinkle) out.push('§7  Twinkle');
+    return out;
+  };
+  if (st.firework) lines.push(...fwLines(st.firework));
+  if (st.explosions) for (const e of st.explosions) lines.push(...fwLines(e));
   if (st.ench) for (const k in st.ench) lines.push((/curse/.test(k) ? '§c' : '§7') + enchName(k, st.ench[k]));
   if (it && it.attack) {
     const fmt = n => (Math.round(n * 10) / 10).toString();

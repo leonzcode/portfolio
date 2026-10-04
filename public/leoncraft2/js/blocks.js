@@ -175,6 +175,9 @@ for (const d of BLOCKS) {
     || d.shape === 'wire' || d.shape === 'crop' || d.shape === 'vine' || d.shape === 'wall_torch') && d.pass === 'opaque') d.pass = 'cutout';
 }
 
+// a crafter faces the way it outputs, like a dispenser (meta bits 0-2)
+if (B.crafter !== undefined && !BLOCKS[B.crafter].orient) BLOCKS[B.crafter].orient = 'facing';
+
 // the end portal frame is not a full block, and shows its eye (see models.js portal_frame)
 if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], { shape: 'portal_frame', opacity: 0, content: 'dark_prismarine' });
 
