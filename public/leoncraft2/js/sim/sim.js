@@ -39,6 +39,10 @@ import { installRedstone } from './redstone.js?v=8';
 import { explode } from '../explosion.js?v=8';
 import { Messages } from './messages.js?v=8';
 
+const SIN = new Float32Array(65536);
+for (let i = 0; i < 65536; i++) SIN[i] = Math.sin(i * Math.PI * 2 / 65536);
+const mcCos = x => SIN[(Math.trunc(Math.fround(Math.fround(x * 10430.378) + 16384)) & 65535)];
+
 // the game's neighbour order for block updates
 export const NB6 = [[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]];
 
@@ -294,15 +298,17 @@ export class Sim {
   }
 
   /* ---- the time of day as the game's rules see it ---- */
+  // as the game works it out: in doubles, then cut to a float
   celestial() {
     const d = ((this.time / 24000 - 0.25) % 1 + 1) % 1;
     const e = 0.5 - Math.cos(d * Math.PI) / 2;
-    return (d * 2 + e) / 3;
+    return Math.fround(Math.fround(d * 2 + e) / 3);
   }
-  // 0 by day, up to 11 at night (less again in rain and storms): what sky light loses
+  // 0 by day, up to 11 at night (less again in rain and storms): what sky light loses.
+  // The game's cosine is a 65 536-step table in floats, which decides the exact tick night starts
   skyDarken() {
     const d0 = 1 - this.weather.rain * 5 / 16, d1 = 1 - this.weather.thunder * 5 / 16;
-    const d2 = 0.5 + 2 * Math.max(-0.25, Math.min(0.25, Math.cos(this.celestial() * Math.PI * 2)));
+    const d2 = 0.5 + 2 * Math.max(-0.25, Math.min(0.25, mcCos(Math.fround(this.celestial() * Math.fround(Math.PI * 2)))));
     return Math.floor((1 - d2 * d0 * d1) * 11);
   }
   biomeAt(x, z) { return BIOMES[this.w.biomeAt(x, z)] || BIOMES[0]; }
