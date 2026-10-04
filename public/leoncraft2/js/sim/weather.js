@@ -205,8 +205,7 @@ export class Weather {
       }
     }
     // a lightning rod lights up and gives a signal (redstone.js)
-    const under = sim.get(x, y - 1, z);
-    if (under === B.lightning_rod && sim.redstone) sim.redstone.pulseRod(x, y - 1, z);
+    if (sim.redstone && sim.redstone.pulseRod) sim.redstone.pulseRod(x, y - 1, z);
     // what stands within 3 blocks: 5 damage and set alight
     const L = window.__lc2, p = sim.player.pos;
     if ((p.x - x - 0.5) ** 2 + (p.z - z - 0.5) ** 2 < 9 && Math.abs(p.y - y) < 6) {
