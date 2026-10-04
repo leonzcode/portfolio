@@ -36,6 +36,7 @@ import { explode } from './explosion.js?v=8';
 import { placeBoat } from './boat.js?v=8';
 import { splitXp } from './xporb.js?v=8';
 import { placeMinecart, isRail } from './minecart.js?v=8';
+import { FALLS, free } from './fallingblock.js?v=8';
 import { Spawner } from './spawner.js?v=8';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=8';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=8';
@@ -86,6 +87,9 @@ export class Entities {
     this.effects = {};               // the player's effects: name -> ticks left
     this.budget = 0;
     this.spawner = new Spawner(this);
+    // blocks that fall, checked two ticks after something changes next to them
+    this.fallChecks = [];
+    this.world.onSet = (x, y, z, b) => { if (FALLS[b] || FALLS[this.t.get(x, y + 1, z)]) this.fallChecks.push(x, y, z, this.age + 2); };
     // drawing
     this.atlas = buildAtlas();
     this.meshes = new EntityMeshes(this.R, this.atlas, buildSheet());
@@ -244,6 +248,7 @@ export class Entities {
     this.effectsTick();
     if (this.difficulty === 'peaceful') this.peaceful();
     this.spawner.tick();
+    if (this.fallChecks.length) this.fallTick();
     const n = this.list.length;
     for (let i = 0; i < n; i++) {
       const e = this.list[i];
@@ -268,6 +273,23 @@ export class Entities {
     if (e.vehicle) { const v = e.vehicle; v.passengers.splice(v.passengers.indexOf(e), 1); e.vehicle = null; }
     for (const p of e.passengers) { if (p !== this.player) p.vehicle = null; }
     if (this.riding === e) this.dismount();
+  }
+  // sand over a gap becomes a falling block (and whatever was resting on it after)
+  fallTick() {
+    const q = this.fallChecks, keep = [];
+    for (let i = 0; i < q.length; i += 4) {
+      if (q[i + 3] > this.age) { keep.push(q[i], q[i + 1], q[i + 2], q[i + 3]); continue; }
+      for (const y of [q[i + 1], q[i + 1] + 1]) {
+        const x = q[i], z = q[i + 2], b = this.t.get(x, y, z);
+        if (!FALLS[b] || !free(this.t.get(x, y - 1, z)) || y <= 0) continue;
+        const meta = this.t.meta(x, y, z);
+        this.world.set(x, y, z, 0, 0);
+        if (this.fluids) this.fluids.around(x, y, z);
+        const e = this.spawn('falling_block', x + 0.5, y, z + 0.5, { natural: false });
+        if (e) { e.block = b; e.meta = meta; }
+      }
+    }
+    this.fallChecks = keep;
   }
   // the light where a mob's eyes are, eased when drawn
   sampleLight(e, now) {
@@ -753,7 +775,7 @@ export class Entities {
     for (const e of this.list) {
       if (e.removed) continue;
       const c = e.constructor;
-      if (!c.MODEL && !c.PARTICLE) continue;
+      if (!c.MODEL && !c.PARTICLE && !c.BLOCK) continue;
       const x = e.prev.x + (e.pos.x - e.prev.x) * alpha, y = e.prev.y + (e.pos.y - e.prev.y) * alpha, z = e.prev.z + (e.pos.z - e.prev.z) * alpha;
       const dx = x - P.pos.x, dz = z - P.pos.z;
       if (dx * dx + dz * dz > far2) continue;
@@ -761,6 +783,7 @@ export class Entities {
       e.lS += (e.lightS / 15 - e.lS) * k; e.lB += (e.lightB / 15 - e.lB) * k;
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
       const seen = this.frustum.intersectsSphere(this.sphere);
+      if (c.BLOCK) { e.draw(this.group, this.R, alpha); continue; }
       if (seen) { if (c.PARTICLE) e.particle(this.meshes, alpha, x, y, z); else this.drawOne(e, alpha, x, y, z); }
       // a boat keeps the water out of its inside
       if (seen && c.WATER_MASK) this.meshes.maskAt(x, y + c.WATER_MASK, z, e.prevYaw + wrap(e.yaw - e.prevYaw) * alpha, 0.55, 0.74);
@@ -880,7 +903,9 @@ export class Entities {
   // leaving the world: drop everything
   dispose() {
     this.gone = true;
+    for (const e of this.list) if (e.mesh) e.remove();
     this.list.length = 0;
+    if (this.world.onSet) this.world.onSet = null;
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }

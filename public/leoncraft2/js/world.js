@@ -204,6 +204,7 @@ export class World {
     ed.set(i, b * 256 + (m || 0));
     if (this.save) this.save.dirty.add(ck);
     if (!quiet) this.touch(x, z);
+    if (this.onSet) this.onSet(x, y, z, b);       // falling sand and the like (js/entities)
     return true;
   }
   // remesh the column a block is in, and any neighbour whose edge it sits on
