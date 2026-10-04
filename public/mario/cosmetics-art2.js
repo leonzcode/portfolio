@@ -24,7 +24,7 @@
      the wheels at (+-track, axle, +-wheelbase) and the driver at the seat.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { box, cyl, ball, taper, hoop, INK, STEEL, DARK, RUBBER, GLASS, CHROME } from './parts.js?v=104';
+import { box, cyl, ball, taper, hoop, INK, STEEL, DARK, RUBBER, GLASS, CHROME } from './parts.js?v=105';
 
 const TAU = Math.PI * 2;
 const WHITE = 0xf7f6f1, GOLD = 0xffd233, GOLD_DK = 0xd9a520, GOLD_LT = 0xffe98a;

@@ -11,26 +11,28 @@
    and you watch this one from the grid and start the next.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { buildTrack, setAniso, setCustomTrack } from './track.js?v=104';
-import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=104';
-import { packLook, unpackLook, normalise } from './parts.js?v=104';
-import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=104';
-import { whenKit } from './models.js?v=104';
-import { plantOn, dropPlant, stepPlants } from './plant.js?v=104';
-import { makeRescue } from './rescue.js?v=104';
-import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=104';
-import { makeBrain, driveBrain } from './ai.js?v=104';
-import { initFx, spark, puff, blast, stepFx } from './fx.js?v=104';
-import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=104';
-import { makeRanked } from './rk.js?v=104';
-import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=104';
-import { makeHub } from './hub.js?v=104';
-import { icon, KIND_ICON } from './icons.js?v=104';
-import { makeCones } from './cones.js?v=104';
-import { makeHazards } from './hazards.js?v=104';
-import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=104';
-import * as snd from './audio.js?v=104';
-import { PERF_LEVELS, perfId, perfLevel, setPerf, applyToTrack } from './perf.js?v=104';
+import { buildTrack, setAniso, setCustomTrack } from './track.js?v=105';
+import { makeKart, stepKart, apply, bump, spinOut, topSpeed, driftTier, RACERS, TUNE, racerOf } from './kart.js?v=105';
+import { packLook, unpackLook, normalise } from './parts.js?v=105';
+import { makeGarage, PARTS, BARS, statsOf } from './garage.js?v=105';
+import { whenKit } from './models.js?v=105';
+import { plantOn, dropPlant, stepPlants } from './plant.js?v=105';
+import { makeRescue } from './rescue.js?v=105';
+import { ITEMS, rollItem, rollCount, makeItemWorld, lapProg } from './items.js?v=105';
+import { makeBrain, driveBrain } from './ai.js?v=105';
+import { initFx, spark, puff, blast, stepFx } from './fx.js?v=105';
+import { makeRecorder, makeGhost, pose as poseGhost, dropGhost } from './ghost.js?v=105';
+import { makeRanked } from './rk.js?v=105';
+import { tickCosmetics, normaliseStyle, owns, itemById, TIER_NAME, TIER_COLOUR, SKIN_TONES, CLOTH } from './cosmetics.js?v=105';
+import { makeHub } from './hub.js?v=105';
+import { icon, KIND_ICON } from './icons.js?v=105';
+import { makeCones } from './cones.js?v=105';
+import { makeHazards } from './hazards.js?v=105';
+import { THEMES, themeById, seedOf, registerTheme, isCustom } from './themes.js?v=105';
+import * as snd from './audio.js?v=105';
+import { PERF_LEVELS, perfId, perfLevel, setPerf, applyToTrack } from './perf.js?v=105';
+import { record as recordPose, pose as posePast } from './smooth.js?v=105';
+const drawnPose = { x: 0, y: 0, z: 0, yaw: 0 };
 
 const el = id => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -710,7 +712,7 @@ function buildScenery() {
   const forWorld = track;
   if (!forWorld) return;
   for (let o = scene.getObjectByName('props'); o; o = scene.getObjectByName('props')) shredGroup(o);
-  import('./props.js?v=104')
+  import('./props.js?v=105')
     .then(m => m.buildProps(scene, THREE, forWorld, () => track === forWorld))
     .catch(() => {});
 }
@@ -1706,10 +1708,14 @@ function stepCamera(dt) {
   /* And a kick when something happens to you. It decays in about a third of a
      second, so it reads as an impact rather than as a camera fault. */
   if (shake > 0.002) {
-    const t = performance.now() * 0.001;
-    camera.position.x += Math.sin(t * 61) * shake * 0.22;
-    camera.position.y += Math.sin(t * 47) * shake * 0.16;
-    camRoll += Math.sin(t * 53) * shake * 0.04;
+    /* Only on your own kart. The kick comes from things that happen to you,
+       and while you watch somebody else it shook their view with your bumps. */
+    if (watch === me && !spectating) {
+      const t = performance.now() * 0.001;
+      camera.position.x += Math.sin(t * 61) * shake * 0.22;
+      camera.position.y += Math.sin(t * 47) * shake * 0.16;
+      camRoll += Math.sin(t * 53) * shake * 0.04;
+    }
     shake = Math.max(0, shake - dt * 3.2);
   }
   camera.rotation.z += camRoll;
@@ -3151,7 +3157,7 @@ async function start(online) {
   // the lobby decides the round, when you asked for one
   try {
     if (!wantLobby) throw new Error('solo');
-    const mod = await import('./net.js?v=104');
+    const mod = await import('./net.js?v=105');
     net = mod.connect({
       scene, THREE, say, esc,
       get name() { return myName; },
@@ -3527,7 +3533,7 @@ function editorCtx() {
   };
 }
 function editorModule() {
-  if (!editorMod) editorMod = import('./editor.js?v=104');
+  if (!editorMod) editorMod = import('./editor.js?v=105');
   return editorMod;
 }
 function playCustomMap(id, mode) {
@@ -3631,6 +3637,7 @@ rkNet = makeRanked({
     // a restart puts them back on the grid: cut to it rather than slide there
     const jump = p.tx === undefined || Math.hypot(m.x - p.tx, m.z - p.tz) > 30;
     p.tx = m.x; p.ty = m.y; p.tz = m.z; p.tyaw = m.yaw; p.sp = m.sp; p.lap = m.lap; p.t = m.t;
+    recordPose(p, m, performance.now());
     p.prog = m.prog || 0; p.cpi = m.cpi || 0;
     if (k && jump) { k.pos.set(p.tx, p.ty, p.tz); k.yaw = p.tyaw; }
   },
@@ -3782,20 +3789,11 @@ function rkTick(dt) {
       if (!k.remote) continue;
       const p = rkSeen.get(k.id);
       if (!p || p.tx === undefined) continue;
-      const a = 1 - Math.exp(-12 * dt);
-      k.pos.x += (p.tx - k.pos.x) * a;
-      k.pos.y += (p.ty - k.pos.y) * a;
-      k.pos.z += (p.tz - k.pos.z) * a;
-      let d = p.tyaw - k.yaw;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      k.yaw += d * (1 - Math.exp(-10 * dt));
+      // drawn a little in the past, between places it really was (smooth.js)
+      if (posePast(p, now, drawnPose)) { k.pos.set(drawnPose.x, drawnPose.y, drawnPose.z); k.yaw = drawnPose.yaw; }
       k.speed = p.sp || 0;
       if (!k.finished) { k.lap = p.lap || 1; k.prog = p.prog || 0; k.cpi = p.cpi || 0; }
       k.wheelSpin = (k.wheelSpin || 0) + k.speed * dt / 0.38;
-      // between packets it keeps going the way it was going
-      p.tx += -Math.sin(p.tyaw) * (p.sp || 0) * dt;
-      p.tz += -Math.cos(p.tyaw) * (p.sp || 0) * dt;
       if (p.t > 0) p.t += dt;
     }
   }

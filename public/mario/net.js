@@ -11,6 +11,8 @@
    easing towards the last thing its owner said rather than snapping to it.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
+import { record, pose, clear } from './smooth.js?v=105';
+const drawn = { x: 0, y: 0, z: 0, yaw: 0 };
 
 const WS = (location.hostname.endsWith('leonzhao.dev'))
   ? 'wss://apps.leonzhao.dev/mc/ws'
@@ -72,6 +74,7 @@ export function connect(ctx) {
       let p = seen.get(m.id);
       if (!p) { p = {}; seen.set(m.id, p); }
       p.tx = m.x; p.ty = m.y; p.tz = m.z; p.tyaw = m.yaw;
+      record(p, m, performance.now());
       p.sp = m.sp; p.lap = m.lap; p.prog = m.prog;
       p.spin = m.spin; p.drift = m.drift; p.boost = m.boost;
       p.rev = +m.rev || 0;
@@ -145,7 +148,7 @@ export function connect(ctx) {
     if (typeof m.round === 'number' && m.round !== lastRound && m.racers && m.racers.length) {
       lastRound = m.round;
       lastPhase = '';
-      for (const [, p] of seen) { p.tx = undefined; }
+      for (const [, p] of seen) { p.tx = undefined; clear(p); }
       world.startRound(m.racers.map(r => ({ id: r.id, name: r.name, cast: r.cast })), m.seed, m.phase, m.theme);
     }
     if (m.phase !== lastPhase) {
@@ -209,14 +212,8 @@ export function connect(ctx) {
         if (!k.remote) continue;
         const p = seen.get(k.id);
         if (!p || p.tx === undefined) continue;
-        const a = 1 - Math.exp(-12 * dt);
-        k.pos.x += (p.tx - k.pos.x) * a;
-        k.pos.y += (p.ty - k.pos.y) * a;
-        k.pos.z += (p.tz - k.pos.z) * a;
-        let d = p.tyaw - k.yaw;
-        while (d > Math.PI) d -= Math.PI * 2;
-        while (d < -Math.PI) d += Math.PI * 2;
-        k.yaw += d * (1 - Math.exp(-10 * dt));
+        // a little in the past, between places it really was (smooth.js)
+        if (pose(p, now, drawn)) { k.pos.set(drawn.x, drawn.y, drawn.z); k.yaw = drawn.yaw; }
         k.speed = p.sp || 0;
         k.lap = p.lap || 1;
         k.prog = p.prog || 0;
@@ -226,9 +223,6 @@ export function connect(ctx) {
         if (p.boost) k.boost = Math.max(k.boost, 0.2);
         if (p.spin) k.spin = Math.max(k.spin, 0.2);
         k.rev = p.rev || 0;              // so their grid shake is on your screen too
-        // dead reckoning between packets, so a kart never stands still mid-corner
-        p.tx += -Math.sin(p.tyaw) * (p.sp || 0) * dt;
-        p.tz += -Math.cos(p.tyaw) * (p.sp || 0) * dt;
       }
     },
   };

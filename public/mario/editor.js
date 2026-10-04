@@ -28,13 +28,13 @@
    can play it, only somebody with its password (or an admin) can change it.
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
-import { merge, vertexMat } from './parts.js?v=104';
-import { THEMES, themeById, registerTheme } from './themes.js?v=104';
-import { icon } from './icons.js?v=104';
+import { merge, vertexMat } from './parts.js?v=105';
+import { THEMES, themeById, registerTheme } from './themes.js?v=105';
+import { icon } from './icons.js?v=105';
 
 let OBJ = null;                 // the object library, fetched with the builder
 function objects() {
-  if (!OBJ) OBJ = import('./mapobjects.js?v=104').then(m => m).catch(e => { console.warn('map objects', e); return { OBJECTS: [], CATEGORIES: [], objectById: () => null }; });
+  if (!OBJ) OBJ = import('./mapobjects.js?v=105').then(m => m).catch(e => { console.warn('map objects', e); return { OBJECTS: [], CATEGORIES: [], objectById: () => null }; });
   return OBJ;
 }
 
