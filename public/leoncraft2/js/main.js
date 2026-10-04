@@ -21,6 +21,7 @@
 import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=8';
 import { BIOMES, biomeColours } from './biomes.js?v=8';
 import { pickBiome } from './worldgen.js?v=8';
+import { parseSeed } from './gen/random.js?v=8';
 import { World } from './world.js?v=8';
 import { Fluids } from './fluids.js?v=8';
 import { Player } from './player.js?v=8';
@@ -43,6 +44,9 @@ const $ = s => document.querySelector(s);
 const status = (t, f) => { const el = $('#status'); if (el) el.textContent = t; const b = $('#bar'); if (b && f !== undefined) b.style.width = Math.round(f * 100) + '%'; };
 const params = new URLSearchParams(location.search);
 const MENU_SEED = 20261002;
+// a world's seed as its generator wants it: the vanilla one takes the whole
+// 64-bit seed (a decimal string), the first generator a 32-bit number
+const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) : entry.seed | 0);
 /* Graphics, as in the game's Video Settings: Detailed (the full look: sun
    rays, soft shadows, clouds, reflections) or Fast (one pass, no shadow map,
    Minecraft's fast leaves, for old Chromebooks). A change takes effect when
@@ -204,7 +208,9 @@ async function findSpawn(world) {
     for (let i = 0; i < tries.length; i++) {
       const r = res[i];
       if (r.y < SEA + 1 || r.y > SEA + 30) continue;
-      if (GOOD.indexOf(BIOMES[pickBiome(r.biome)].name) < 0) continue;
+      // the vanilla generator answers with the biome itself, the first one with its climate
+      const bid = typeof r.biome === 'number' ? r.biome : pickBiome(r.biome);
+      if (GOOD.indexOf(BIOMES[bid].name) < 0) continue;
       const [x, z] = tries[i];
       const near = await Promise.all([[28, 0], [-28, 0], [0, 28], [0, -28], [20, 20], [-20, -20]].map(([dx, dz]) => world.ask({ type: 'surface', x: x + dx, z: z + dz })));
       if (near.some(n => n.y >= 0 && n.y < SEA) || ring > 25) return { x, z };
@@ -318,7 +324,7 @@ async function boot() {
     });
     await world.ready;
     const spawn = await findSpawn(world);
-    menu = { world, x: spawn.x + 0.5, z: spawn.z + 0.5, y: null, yaw: Math.PI * 0.75, seed };
+    menu = { world, x: spawn.x + 0.5, z: spawn.z + 0.5, y: null, yaw: Math.PI * 0.75, seed, generator: 'classic' };
     // the ground round it first, so the title never opens on an empty sky
     await new Promise(res => {
       const t0 = performance.now();
@@ -352,14 +358,16 @@ async function boot() {
     const edits = isNew ? new Map() : await save.loadEdits();
     const st = isNew ? null : save.readState();
     let world;
-    if (menu && menu.seed === (entry.seed | 0)) {
+    const generator = entry.generator === 'vanilla' ? 'vanilla' : 'classic';
+    const seed = worldSeed(entry);
+    if (menu && menu.seed === seed && menu.generator === generator) {
       // the title screen's world is this one: keep what is already made
       world = menu.world;
       world.adoptEdits(edits, save);
     } else {
       if (menu) dropWorld(menu.world);
       world = new World({
-        seed: entry.seed | 0, renderDist: RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save,
+        seed, generator, renderDist: RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save,
         onMesh: (cx, cz, mesh) => renderer.setColumn(cx, cz, mesh),
         onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
       });
@@ -466,7 +474,7 @@ async function boot() {
     game = null;
     if (document.pointerLockElement) document.exitPointerLock();
     // the world you left keeps turning behind the title screen
-    menu = { world: g.world, x: g.player.pos.x, z: g.player.pos.z, y: null, yaw: g.player.yaw, seed: g.entry.seed | 0 };
+    menu = { world: g.world, x: g.player.pos.x, z: g.player.pos.z, y: null, yaw: g.player.yaw, seed: worldSeed(g.entry), generator: g.world.generator };
     g.world.save = null;
     overlay.set(0, 0, 0, null, -1);
     if (hud) { hud.dispose(); hud = null; gui.hud = null; }
@@ -695,7 +703,7 @@ async function boot() {
       ], [
         'Render ' + renderer.rw + 'x' + renderer.rh + ' (F7 scale)',
         'Distance ' + world.renderDist + ', graphics ' + QNAME,
-        'Seed ' + (g.entry.seed | 0),
+        'Seed ' + worldSeed(g.entry) + (g.world.generator === 'vanilla' ? '' : ' (classic)'),
         'Fluids pending ' + fluids.pending.size,
         '',
         t ? 'Targeted Block: ' + t.x + ', ' + (t.y + Y0) + ', ' + t.z : '',
@@ -725,7 +733,11 @@ async function boot() {
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud,
     get time() { return game ? game.time : menuTime; }, set time(t) { if (game) game.time = t; else menuTime = t; },
-    play: (seed, mode) => startGame(Worlds.add({ id: 'w' + Date.now().toString(36), name: 'Test World', folder: 'Test World', seed: seed || MENU_SEED, mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
+    // a test world without the menus; generator 'vanilla' (the default) or 'classic'
+    play: (seed, mode, generator = 'vanilla') => startGame(Worlds.add({
+      id: 'w' + Date.now().toString(36), name: 'Test World', folder: 'Test World',
+      seed: generator === 'vanilla' ? parseSeed(seed == null ? '' : String(seed)) : (seed || MENU_SEED), generator,
+      mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
   };
   // after a quality change, straight back into the world you were in

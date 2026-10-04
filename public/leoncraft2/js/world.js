@@ -13,6 +13,7 @@ import { BLOCKS, FLUID } from './blocks.js?v=8';
 export class World {
   constructor(opts) {
     this.seed = opts.seed;
+    this.generator = opts.generator || 'classic';    // 'vanilla' (Minecraft's own worlds) or 'classic' (the first generator)
     this.renderDist = opts.renderDist;
     this.chunks = new Map();          // "cx,cz" -> chunk
     this.onMesh = opts.onMesh;
@@ -30,7 +31,7 @@ export class World {
       const w = new Worker(new URL('./worker.js?v=8', import.meta.url), { type: 'module' });
       w.onmessage = e => this.onMessage(i, e.data, res);
       w.onerror = e => console.error('worker', e.message || e);
-      w.postMessage({ type: 'init', seed: this.seed, manifest: opts.manifest, colours: opts.colours });
+      w.postMessage({ type: 'init', seed: this.seed, generator: this.generator, manifest: opts.manifest, colours: opts.colours });
       this.workers.push(w);
       this.busy.push(0);
     })));

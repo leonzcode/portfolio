@@ -28,6 +28,7 @@ import {
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
 } from './gui.js?v=8';
 import { Packs } from './pack.js?v=8';
+import { parseSeed } from '../gen/random.js?v=8';
 
 const PI = Math.PI;
 
@@ -299,7 +300,7 @@ class WorldEntry {
     const w = this.world;
     g.text(w.name || 'World', left + 35, top + 1, WHITE, false);
     g.text(g.font.trim((w.folder || w.name) + ' (' + fmtDate(w.lastPlayed || w.created) + ')', width - 40), left + 35, top + 12, 0x808080, false);
-    g.text((MODES[w.mode] || 'Survival') + ' Mode', left + 35, top + 21, 0x808080, false);
+    g.text(g.font.trim((MODES[w.mode] || 'Survival') + ' Mode' + (w.seed !== undefined ? ', Seed: ' + w.seed : ''), width - 40), left + 35, top + 21, 0x808080, false);
     // the world's picture if the game saved one, otherwise a dirt tile
     if (w.icon) {
       if (!this.icon) { this.icon = new Image(); this.icon.onload = () => g.markDirty(); this.icon.src = w.icon; }
@@ -478,7 +479,9 @@ export class CreateWorldScreen extends Screen {
     const now = Date.now();
     const world = {
       id: 'w' + now.toString(36) + (Math.random() * 1e6 | 0).toString(36),
-      name, folder: Worlds.folderName(name), seed: seedFrom(this.seedField.value),
+      // Minecraft's seeds: a number that fits a long is that long, other text its hash,
+      // blank a random 64-bit seed; made by the vanilla generator from now on
+      name, folder: Worlds.folderName(name), seed: parseSeed(this.seedField.value), generator: 'vanilla',
       mode: this.mode, difficulty: this.difficulty, created: now, lastPlayed: now,
     };
     Worlds.add(world);
