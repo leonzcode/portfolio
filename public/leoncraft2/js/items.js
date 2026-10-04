@@ -47,17 +47,17 @@ const ARMOR = {
 };
 const PIECES = ['helmet', 'chestplate', 'leggings', 'boots'];
 
-/* ---- fuel: ticks a furnace burns for each (the wiki's Smelting/Fuel table) ---- */
+/* ---- fuel: ticks a furnace burns for each (the wiki's Smelting page, its Fuel
+   table, Java Edition; anything not in that table is not a fuel) ---- */
 const FUEL_NAMED = {
-  lava_bucket: 20000, coal_block: 16000, dried_kelp_block: 4001, blaze_rod: 2400, coal: 1600, charcoal: 1600,
+  lava_bucket: 20000, coal_block: 16000, dried_kelp_block: 4000, blaze_rod: 2400, coal: 1600, charcoal: 1600,
   bamboo_raft: 1200, bamboo_chest_raft: 1200, bookshelf: 300, chiseled_bookshelf: 300, lectern: 300, jukebox: 300,
   note_block: 300, chest: 300, trapped_chest: 300, crafting_table: 300, cartography_table: 300, fletching_table: 300,
-  smithing_table: 300, loom: 300, barrel: 300, composter: 300, beehive: 300, bee_nest: 300, daylight_detector: 300,
+  smithing_table: 300, loom: 300, barrel: 300, composter: 300, daylight_detector: 300,
   ladder: 300, bow: 300, crossbow: 300, fishing_rod: 300, mangrove_roots: 300, bamboo_mosaic: 300, bamboo_mosaic_stairs: 300,
   bamboo_block: 300, stripped_bamboo_block: 300, bamboo_mosaic_slab: 150, bowl: 100, stick: 100, bamboo: 50, scaffolding: 50,
   azalea: 100, flowering_azalea: 100, dead_bush: 100, short_dry_grass: 100, tall_dry_grass: 100, leaf_litter: 100,
   wooden_sword: 200, wooden_pickaxe: 200, wooden_shovel: 200, wooden_axe: 200, wooden_hoe: 200, wooden_spear: 200,
-  carrot_on_a_stick: 300, warped_fungus_on_a_stick: 300, shield: 300,
 };
 const WOODS = 'oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak|bamboo|crimson|warped|poplar';
 const WOOD_RE = new RegExp('^(' + WOODS + ')_');
@@ -65,18 +65,18 @@ function fuelOf(n) {
   if (FUEL_NAMED[n] !== undefined) return FUEL_NAMED[n];
   const nether = /^(crimson|warped)_/.test(n);          // nether wood does not burn
   if (nether) return 0;
-  if (/_(log|wood|stem|hyphae)$/.test(n) || /^stripped_.*_(log|wood)$/.test(n)) return 300;
+  if (/_(log|wood)$/.test(n)) return 300;               // stripped too (stems and hyphae are the Nether's, and a mushroom stem is no log)
   if (WOOD_RE.test(n)) {
     if (/_planks$|_stairs$|_fence$|_fence_gate$|_trapdoor$|_pressure_plate$|_shelf$/.test(n)) return 300;
     if (/_slab$/.test(n)) return 150;
-    if (/_door$|_sign$/.test(n) && !/_hanging_sign$/.test(n)) return 200;
-    if (/_hanging_sign$/.test(n)) return 800;
+    if (/_door$|_sign$/.test(n)) return 200;            // hanging signs too
     if (/_button$/.test(n)) return 100;
     if (/_boat$|_chest_boat$/.test(n)) return 1200;
   }
   if (/_sapling$|^mangrove_propagule$/.test(n)) return 100;
-  if (/_wool$/.test(n)) return 100;
+  if (/_wool$|_wool_stairs$/.test(n)) return 100;
   if (/_carpet$/.test(n)) return 67;
+  if (/_wool_slab$|_cushion$/.test(n)) return 50;
   if (/_banner$/.test(n)) return 300;
   return 0;
 }
@@ -205,18 +205,29 @@ export function foodOf(id) { const it = ITEMS[id]; return it && it.food ? it.foo
 export function armorOf(id) { const it = ITEMS[id]; return it && it.armor ? it.armor : null; }
 export function fuelTicks(id) { const it = ITEMS[id]; return it && it.fuel ? it.fuel : 0; }
 
-/* ---- stacks: { id, count, dmg?, ench?, rep?, name?, trim? } ----
+/* ---- stacks: { id, count, dmg?, ench?, rep?, name?, trim?, potion?, ... } ----
    dmg: wear; ench: enchantments (stored ones on an enchanted book);
-   rep: the anvil's prior work cost; name: given on an anvil; trim: [pattern, material] */
-// two stacks that can go on one another (same item, same wear, enchantments, name)
+   rep: the anvil's prior work cost; name: given on an anvil; trim: [pattern, material];
+   and what a few items carry (EXTRA): items, a shulker box's 27 slots (or a
+   bundle's); color, dyed leather; flight and explosions, a firework rocket;
+   firework, a firework star; sherds, a decorated pot's four sides */
+const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged'];
+const hasExtra = s => { for (const k of EXTRA) if (s[k] !== undefined) return true; return false; };
+// two stacks that can go on one another (same item, same wear, enchantments, name, contents)
 export function sameItem(a, b) {
   if (!a || !b || a.id !== b.id) return false;
   if ((a.dmg | 0) !== (b.dmg | 0) || (a.rep | 0) !== (b.rep | 0) || (a.name || '') !== (b.name || '')) return false;
   if ((a.trim ? a.trim.join() : '') !== (b.trim ? b.trim.join() : '') || (a.potion || '') !== (b.potion || '')) return false;
+  if ((hasExtra(a) || hasExtra(b)) && extraKey(a) !== extraKey(b)) return false;
   return enchKey(a) === enchKey(b);
 }
 function enchKey(s) { if (!s.ench) return ''; let k = ''; for (const n in s.ench) k += n + s.ench[n] + ','; return k; }
-// a copy of a stack with another count, keeping its wear and enchantments
+function extraKey(s) {
+  let k = '';
+  for (const n of EXTRA) if (s[n] !== undefined) k += n + ':' + (n === 'items' ? JSON.stringify(s.items.map(stackToJSON)) : JSON.stringify(s[n])) + ';';
+  return k;
+}
+// a copy of a stack with another count, keeping its wear, enchantments and contents
 export function withCount(s, count) {
   if (!s) return null;
   const o = { id: s.id, count };
@@ -226,7 +237,8 @@ export function withCount(s, count) {
   if (s.name) o.name = s.name;
   if (s.trim) o.trim = s.trim.slice();
   if (s.potion) o.potion = s.potion;
-  if (s.charged) o.charged = s.charged.slice();
+  if (s.items) o.items = s.items.map(x => (x ? withCount(x, x.count) : null));
+  for (const k of EXTRA) if (k !== 'items' && s[k] !== undefined) o[k] = typeof s[k] === 'object' ? JSON.parse(JSON.stringify(s[k])) : s[k];
   return o;
 }
 export function enchLevel(s, name) { return s && s.ench && s.ench[name] ? s.ench[name] : 0; }
@@ -235,10 +247,15 @@ export function enchLevel(s, name) { return s && s.ench && s.ench[name] ? s.ench
 export function stackToJSON(s) {
   if (!s) return null;
   const a = [itemName(s.id), s.count];
-  const more = s.rep || s.name || s.trim || s.potion || s.charged;
+  const extra = hasExtra(s);
+  const more = s.rep || s.name || s.trim || s.potion || extra;
   if (s.dmg || s.ench || more) a.push(s.dmg | 0);
   if (s.ench || more) a.push(s.ench || 0);
-  if (more) a.push({ rep: s.rep || 0, name: s.name || '', trim: s.trim || 0, potion: s.potion || '', charged: s.charged || 0 });
+  if (more) {
+    const m = { rep: s.rep || 0, name: s.name || '', trim: s.trim || 0, potion: s.potion || '' };
+    for (const k of EXTRA) if (s[k] !== undefined) m[k] = k === 'items' ? s.items.map(stackToJSON) : s[k];
+    a.push(m);
+  }
   return a;
 }
 export function stackFromJSON(a) {
@@ -249,9 +266,14 @@ export function stackFromJSON(a) {
   if (a[2]) s.dmg = a[2] | 0;
   if (a[3] && typeof a[3] === 'object') s.ench = a[3];
   const m = a[4];
-  if (m && typeof m === 'object') { if (m.rep) s.rep = m.rep | 0; if (m.name) s.name = String(m.name); if (Array.isArray(m.trim)) s.trim = m.trim; if (m.potion) s.potion = String(m.potion); if (Array.isArray(m.charged)) s.charged = m.charged; }
+  if (m && typeof m === 'object') {
+    if (m.rep) s.rep = m.rep | 0; if (m.name) s.name = String(m.name); if (Array.isArray(m.trim)) s.trim = m.trim; if (m.potion) s.potion = String(m.potion);
+    for (const k of EXTRA) if (m[k] !== undefined && m[k] !== null) s[k] = k === 'items' && Array.isArray(m.items) ? m.items.map(stackFromJSON) : m[k];
+  }
   return s;
 }
+// a shulker box (or anything holding items) with something in it
+export function contentsOf(s) { return s && Array.isArray(s.items) ? s.items.filter(Boolean) : []; }
 
 export const items = {
   ITEMS, I, DRAW, ITEM_BASE,

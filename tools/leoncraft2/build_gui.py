@@ -14,7 +14,7 @@ GUI code cuts them the same way:
 and textures/gui/accessibility.png (20 x 40, a figure on a button).
 
 It also draws the container screens (inventory, crafting table, furnaces,
-chests, dispenser, hopper, shulker box) in the classic light grey: a panel
+chests, dispenser, hopper, shulker box, crafter) in the classic light grey: a panel
 of 198 grey with a black rounded outline, a two-pixel white bevel along the
 top and left and a dark one along the bottom and right, and sunken slots.
 Only the slot positions follow the game's screens (they are where its
@@ -139,6 +139,7 @@ CONTAINERS = {
     'dispenser': ((176, 166), [(62, 17, 3), (62, 35, 3), (62, 53, 3)] + ROWS_INV, [], [], []),
     'hopper': ((176, 133), [(44, 20, 5), (8, 51, 9), (8, 69, 9), (8, 87, 9), (8, 109, 9)], [], [], []),
     'shulker_box': ((176, 166), [(8, 18, 9), (8, 36, 9), (8, 54, 9)] + ROWS_INV, [], [], []),
+    'crafter': ((176, 166), [(26, 17, 3), (26, 35, 3), (26, 53, 3)] + ROWS_INV, [(130, 31)], [], [('arrow', 93, 35, 22, 15)]),
 }
 CONTAINERS['blast_furnace'] = CONTAINERS['smoker'] = CONTAINERS['furnace']
 

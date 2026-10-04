@@ -32,14 +32,30 @@ import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=10';
 import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON } from './items.js?v=10';
 import { breakTicks, wearFor } from './mining.js?v=10';
 import { blockDrops } from './loot.js?v=10';
-import { containerKind } from './containers.js?v=10';
-import { CraftingScreen, ChestScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=10';
-import { wear } from './ui/inventory.js?v=10';
+import { containerKind, spill } from './containers.js?v=10';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=10';
 import { isPotion, drinkPotion } from './brewing.js?v=10';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=10';
 import { countShelves } from './enchanting.js?v=10';
+import { wear } from './ui/inventory.js?v=10';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
+// two slot arrays seen as one (a large chest): reads and writes go straight to the halves
+function joinSlots(a, b) {
+  const n = a.length + b.length;
+  return new Proxy([], {
+    get(t, k) {
+      if (k === 'length') return n;
+      if (typeof k === 'string' && /^\d+$/.test(k)) { const i = +k; return i < a.length ? a[i] : b[i - a.length]; }
+      return Reflect.get(Array.prototype, k) || t[k];
+    },
+    set(t, k, v) {
+      if (typeof k === 'string' && /^\d+$/.test(k)) { const i = +k; if (i < a.length) a[i] = v; else b[i - a.length] = v; return true; }
+      t[k] = v; return true;
+    },
+    has(t, k) { if (typeof k === 'string' && /^\d+$/.test(k)) return +k < n; return k in t; },
+  });
+}
 const STRIP = {};
 for (const w of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'cherry', 'pale_oak', 'poplar']) { STRIP[w + '_log'] = 'stripped_' + w + '_log'; STRIP[w + '_wood'] = 'stripped_' + w + '_wood'; }
 for (const w of ['crimson', 'warped']) { STRIP[w + '_stem'] = 'stripped_' + w + '_stem'; STRIP[w + '_hyphae'] = 'stripped_' + w + '_hyphae'; }
@@ -60,7 +76,7 @@ export class Hands {
     // a tool or a piece of armour that wears out breaks into pieces
     if (this.inv && this.inv.on) this.inv.on('broke', s => this.toolBroke(s));
     // the screens' sheets, fetched now so a chest never opens on an empty frame
-    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter'])
+    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter'])
       this.gui.loadSheet('container/' + n).catch(() => {});
   }
   get creative() { return this.mode === 'creative'; }
@@ -103,7 +119,8 @@ export class Hands {
   }
   // a block was placed from the selected stack: one fewer, and a bucket leaves its bucket
   placed(list) {
-    if (list) for (const [x, y, z] of list) this.containers.placed(x, y, z);
+    // the first cell is the block from the hand (a shulker box brings its contents); the rest are its other parts
+    if (list) list.forEach(([x, y, z], i) => this.containers.placed(x, y, z, i === 0 ? this.held || {} : null));
     if (this.creative) return;
     const s = this.held;
     if (!s) return;
@@ -125,10 +142,20 @@ export class Hands {
     const w = this.world, b = w.get(hit.x, hit.y, hit.z), m = w.meta(hit.x, hit.y, hit.z), d = BLOCKS[b];
     if (!d) return 0;
     let replace = 0;
+    // a shulker box keeps what it holds: it goes inside the box that drops (in creative too, when it holds anything)
+    const kind = containerKind(b);
+    const inBox = kind === 'shulker_box' ? this.containers.takeShulker(hit.x, hit.y, hit.z) : null;
+    if (this.creative && inBox) this.drops.popFrom(hit.x, hit.y, hit.z, { id: b, count: 1, items: inBox });
+    // a furnace's stored experience comes out with it
+    const fc = kind && this.containers.peek(hit.x, hit.y, hit.z);
+    if (fc && fc.used) { const xp = this.containers.xpOf(fc); if (xp) this.drops.xp(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5, xp); }
     if (!this.creative) {
       const held = this.held;
       const out = blockDrops(w, hit.x, hit.y, hit.z, b, m, { stack: held });
-      for (const s of out.items) this.drops.popFrom(hit.x, hit.y, hit.z, s);
+      for (const s of out.items) {
+        if (inBox && s.id === b && !s.items) s.items = inBox;
+        this.drops.popFrom(hit.x, hit.y, hit.z, s);
+      }
       if (out.xp) this.drops.xp(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5, out.xp);
       // the rest: what stood on it or hung from it pops off (not the other half of the same block)
       for (const [x, y, z] of cells) {
@@ -147,19 +174,8 @@ export class Hands {
       if (wr) this.inv.damageSelected(wr);
       this.survival.exhaust(0.005);
     }
-    // a container's contents spill (in creative too, as in the game)
-    for (const [x, y, z] of cells) {
-      for (const s of this.containers.remove(x, y, z)) {
-        // the game throws them out in parts of 10-30
-        let left = s.count;
-        while (left > 0) {
-          const n = Math.min(left, 10 + Math.floor(Math.random() * 21));
-          left -= n;
-          this.drops.spawn(x + 0.15 + Math.random() * 0.7, y + 0.15 + Math.random() * 0.7, z + 0.15 + Math.random() * 0.7, withCount(s, n),
-            { vel: [(Math.random() - 0.5) * 0.1, 0.2 * Math.random() + 0.05, (Math.random() - 0.5) * 0.1] });
-        }
-      }
-    }
+    // a container's contents spill (in creative too, as in the game), thrown out in parts of 10-30
+    for (const [x, y, z] of cells) spill(this.drops, x, y, z, this.containers.remove(x, y, z));
     return replace;
   }
 
@@ -178,35 +194,32 @@ export class Hands {
     }
     const kind = containerKind(b);
     if (kind) {
-      const C = this.containers;
+      const C = this.containers, x = hit.x, y = hit.y, z = hit.z;
+      // the click still counts (the item is not used) when the lid cannot open
+      if (C.blocked(x, y, z)) return true;
       if (kind === 'furnace' || kind === 'smoker' || kind === 'blast_furnace') {
-        const c = C.at(hit.x, hit.y, hit.z);
+        const c = C.at(x, y, z);
         this.open(new FurnaceScreen(this.inv, this.icons, c, {
           changed: () => C.changed(c),
-          tookXp: n => { const x = C.takeXp(c, n); if (x > 0) this.drops.xp(this.player.pos.x, this.player.pos.y + 0.5, this.player.pos.z, x); },
+          // anything taken out of the output by hand brings all the experience the furnace holds
+          tookXp: () => { const xp = C.takeXp(c); if (xp > 0) this.drops.xp(this.player.pos.x, this.player.pos.y + 0.5, this.player.pos.z, xp); },
         }));
         return true;
       }
-      if ((kind === 'chest' || kind === 'trapped_chest') && OPAQUE[w.get(hit.x, hit.y + 1, hit.z)]) return true;
-      const c = C.at(hit.x, hit.y, hit.z);
-      const p = kind === 'chest' || kind === 'trapped_chest' ? C.partner(hit.x, hit.y, hit.z) : null;
-      if (p && !OPAQUE[w.get(p[0], p[1] + 1, p[2])]) {
-        // a double chest: the one further west (or north) is the top half
-        const c2 = C.at(p[0], p[1], p[2]);
-        const first = p[0] < hit.x || p[2] < hit.z ? [c2, c] : [c, c2];
-        const box = first[0].slots.concat(first[1].slots);
-        this.open(new ChestScreen(this.inv, this.icons, box, 'Large Chest', i => {
-          const half = i < 27 ? first[0] : first[1];
-          half.slots[i % 27] = box[i];
-          C.changed(half);
-        }));
+      const c = C.at(x, y, z);
+      const two = C.large(x, y, z);
+      if (two) {
+        // a large chest: the half on your left as you face it holds the top three rows; one live view of both
+        const box = joinSlots(two[0].slots, two[1].slots);
+        this.open(new ChestScreen(this.inv, this.icons, box, 'Large Chest', i => C.changed(i < 27 ? two[0] : two[1])));
         return true;
       }
       if (kind === 'hopper') { this.open(new HopperScreen(this.inv, this.icons, c.slots, () => C.changed(c))); return true; }
       if (kind === 'brewing_stand') { this.open(new BrewingScreen(this.inv, this.icons, c, { changed: () => C.changed(c) })); return true; }
-      const title = kind === 'barrel' ? 'Barrel' : kind === 'trapped_chest' ? 'Chest' : kind === 'shulker_box' ? 'Shulker Box'
-        : kind === 'dispenser' ? 'Dispenser' : kind === 'dropper' ? 'Dropper' : kind === 'hopper' ? 'Item Hopper' : 'Chest';
-      this.open(new ChestScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)));
+      if (kind === 'dispenser' || kind === 'dropper') { this.open(new DispenserScreen(this.inv, this.icons, c.slots, kind === 'dropper' ? 'Dropper' : 'Dispenser', () => C.changed(c))); return true; }
+      if (kind === 'crafter') { this.open(new CrafterScreen(this.inv, this.icons, c, { changed: () => C.changed(c), powered: () => !!(w.meta(x, y, z) & 8) })); return true; }
+      const title = kind === 'barrel' ? 'Barrel' : kind === 'shulker_box' ? 'Shulker Box' : 'Chest';
+      this.open(kind === 'shulker_box' ? new ShulkerScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)) : new ChestScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)));
       return true;
     }
     // tools on the ground and on logs
