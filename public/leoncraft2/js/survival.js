@@ -13,7 +13,7 @@
    block is mined at the hand rate and drops itself (or what it turns into:
    stone gives cobblestone, grass gives dirt).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=7';
+import { B, BLOCKS, FLUID } from './blocks.js?v=8';
 
 export class Survival {
   constructor() { this.reset(); }

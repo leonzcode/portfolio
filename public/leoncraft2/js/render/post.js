@@ -16,8 +16,8 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=7';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=7';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=8';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=8';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
@@ -505,7 +505,7 @@ export class Post {
     }
     // how bright it all is, and the eye adjusting to it
     this.expoTick = (this.expoTick || 0) + 1;
-    if (this.expoTick & 1) {
+    if (!this.halfClouds || (this.expoTick & 1)) {
       u.uSrc.value = this.comp.texture; this.run(this.mLum, this.lum);
       u.uLum.value = this.lum.texture; u.uPrev.value = this.expo[this.expoI].texture;
       this.run(this.mExpo, this.expo[1 - this.expoI]);

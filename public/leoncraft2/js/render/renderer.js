@@ -14,16 +14,16 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Sky, SUN_I } from './sky.js?v=7';
-import { Post } from './post.js?v=7';
-import { Interaction } from './interaction.js?v=7';
-import { makeMaterials, makeLayerInfo } from './materials.js?v=7';
-import { makeWaterMaterial } from './water.js?v=7';
-import { makeNoise2D, makeNoise3D } from './noisetex.js?v=7';
-import { makeLdrSky } from './ldrsky.js?v=7';
-import { FullScreen } from './sky.js?v=7';
-import { blockGeometry } from './blockmesh.js?v=7';
-import { Avatar } from './avatar.js?v=7';
+import { Sky, SUN_I } from './sky.js?v=8';
+import { Post } from './post.js?v=8';
+import { Interaction } from './interaction.js?v=8';
+import { makeMaterials, makeLayerInfo } from './materials.js?v=8';
+import { makeWaterMaterial } from './water.js?v=8';
+import { makeNoise2D, makeNoise3D } from './noisetex.js?v=8';
+import { makeLdrSky } from './ldrsky.js?v=8';
+import { FullScreen } from './sky.js?v=8';
+import { blockGeometry } from './blockmesh.js?v=8';
+import { Avatar } from './avatar.js?v=8';
 const THREE = window.THREE;
 
 export class Renderer {
@@ -139,11 +139,11 @@ export class Renderer {
     const S = this.shadowState || (this.shadowState = { x: 0, y: 0, z: 0, cx: 1e9, cy: 1e9, cz: 1e9, at: -1e9, dirty: true });
     const grid = Math.max(2, this.opts.shadowDist / 24), f = state.feet;
     const cx = Math.floor(f.x / grid), cy = Math.floor(f.y / grid), cz = Math.floor(f.z / grid);
-    const turned = light.x * S.x + light.y * S.y + light.z * S.z < 0.99997;
+    const turned = light.x * S.x + light.y * S.y + light.z * S.z < 0.99999;
     const P = state.player;
-    // your own shadow keeps up with you only where you can see yourself (third person)
-    const body = this.avatar && this.avatar.ready && this.avatar.view !== 0 && P && (Math.abs(P.vel.x) + Math.abs(P.vel.z) > 0.005 || this.swing > 0 || P.sneaking !== S.sneak);
-    const need = S.dirty || turned || cx !== S.cx || cy !== S.cy || cz !== S.cz || this.frame - S.at > 90 || (body && this.frame - S.at >= 3);
+    // your own shadow keeps up with you
+    const body = this.avatar && this.avatar.ready && P && (Math.abs(P.vel.x) + Math.abs(P.vel.z) > 0.005 || Math.abs(P.vel.y) > 0.01 || this.swing > 0 || P.sneaking !== S.sneak);
+    const need = S.dirty || turned || cx !== S.cx || cy !== S.cy || cz !== S.cz || this.frame - S.at > 60 || body;
     if (!need) return false;
     S.x = light.x; S.y = light.y; S.z = light.z; S.cx = cx; S.cy = cy; S.cz = cz; S.at = this.frame; S.dirty = false;
     S.sneak = P ? P.sneaking : false;
