@@ -29,6 +29,8 @@ import { breakTicks, wearFor } from './mining.js?v=8';
 import { blockDrops } from './loot.js?v=8';
 import { containerKind } from './containers.js?v=8';
 import { CraftingScreen, ChestScreen, FurnaceScreen } from './ui/containers.js?v=8';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=8';
+import { countShelves } from './enchanting.js?v=8';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 const STRIP = {};
@@ -46,6 +48,9 @@ export class Hands {
     this.ender = new Array(27).fill(null);
     this.onEat = null;               // (id) the eating sound, every 4 ticks
     this.onBurp = null;
+    // the screens' sheets, fetched now so a chest never opens on an empty frame
+    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter'])
+      this.gui.loadSheet('container/' + n).catch(() => {});
   }
   get creative() { return this.mode === 'creative'; }
   get held() { return this.inv.slots[this.inv.selected]; }
@@ -132,6 +137,7 @@ export class Hands {
     const holding = !!this.held || !!this.inv.offhand;
     if (this.player.sneaking && holding) return false;
     if (d.name === 'crafting_table') { this.open(new CraftingScreen(this.inv, this.icons)); return true; }
+    if (this.openStation(d, hit)) return true;
     if (d.name === 'ender_chest') {
       if (OPAQUE[w.get(hit.x, hit.y + 1, hit.z)]) return true;
       this.open(new ChestScreen(this.inv, this.icons, this.ender, 'Ender Chest'));
@@ -182,6 +188,39 @@ export class Hands {
         return true;
       }
     }
+    return false;
+  }
+
+  // the work blocks: enchanting table, anvils, grindstone, smithing table, stonecutter
+  openStation(d, hit) {
+    const sv = this.survival, w = this.world, n = d.name;
+    const levels = { level: () => sv.level, spend: k => sv.addLevels(-k) };
+    if (n === 'enchanting_table') {
+      const shelves = countShelves(w, hit.x, hit.y, hit.z, b => BLOCKS[b] && BLOCKS[b].name === 'bookshelf');
+      this.open(new EnchantScreen(this.inv, this.icons, Object.assign({ shelves, seed: () => sv.enchantSeed, reseed: () => { sv.enchantSeed = (Math.random() * 2147483647) | 0; } }, levels)));
+      return true;
+    }
+    if (n === 'anvil' || n === 'chipped_anvil' || n === 'damaged_anvil') {
+      const x = hit.x, y = hit.y, z = hit.z;
+      this.open(new AnvilScreen(this.inv, this.icons, Object.assign({
+        // 12% a use, in survival: anvil -> chipped -> damaged -> gone
+        used: () => {
+          if (this.creative || Math.random() >= 0.12) return;
+          const cur = BLOCKS[w.get(x, y, z)];
+          if (!cur) return;
+          const next = cur.name === 'anvil' ? 'chipped_anvil' : cur.name === 'chipped_anvil' ? 'damaged_anvil' : null;
+          if (next && B[next] !== undefined) w.set(x, y, z, B[next], w.meta(x, y, z));
+          else { w.set(x, y, z, 0, 0); this.gui.back(); }
+        },
+      }, levels)));
+      return true;
+    }
+    if (n === 'grindstone') {
+      this.open(new GrindstoneScreen(this.inv, this.icons, { xp: k => this.drops.xp(hit.x + 0.5, hit.y + 1, hit.z + 0.5, k) }));
+      return true;
+    }
+    if (n === 'smithing_table') { this.open(new SmithingScreen(this.inv, this.icons)); return true; }
+    if (n === 'stonecutter') { this.open(new StonecutterScreen(this.inv, this.icons)); return true; }
     return false;
   }
 
