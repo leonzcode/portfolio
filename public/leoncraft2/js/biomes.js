@@ -74,6 +74,13 @@ bio('snowy_slopes', -0.3, 0.9, { snowy: true });
 bio('frozen_peaks', -0.7, 0.9, { snowy: true });
 bio('jagged_peaks', -0.7, 0.9, { snowy: true });
 bio('stony_peaks', 1.0, 0.3);
+// the rest of the game's overworld biomes (the vanilla generator makes them all)
+bio('pale_garden', 0.7, 0.8, { water: 0x76889d, grass: 0x778272, leaf: 0x878d76 });
+bio('dappled_forest', 0.6, 0.6, { water: 0x375154, grass: 0xdf6827, leaf: 0xe68e30 });
+bio('lush_caves', 0.5, 0.5);
+bio('dripstone_caves', 0.8, 0.4);
+bio('deep_dark', 0.8, 0.4);
+bio('sulfur_caves', 0.8, 0.4, { water: 0x34bf89, grass: 0xaba64f });
 
 export const SPRUCE_LEAF = 0x619961, BIRCH_LEAF = 0x80a755;
 
