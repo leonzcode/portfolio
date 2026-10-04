@@ -23,11 +23,11 @@
    Blocks in motion are "moving_piston" in the world until they land; they
    are drawn here as meshes sliding between the two cells.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=10';
-import { H } from '../world-const.js?v=10';
-import { F6, FACE6, COND, WEAK } from './redstone.js?v=10';
-import { blockGeometry } from '../render/blockmesh.js?v=10';
-import { containerKind } from '../containers.js?v=10';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=11';
+import { H } from '../world-const.js?v=11';
+import { F6, FACE6, COND, WEAK } from './redstone.js?v=11';
+import { blockGeometry } from '../render/blockmesh.js?v=11';
+import { containerKind } from '../containers.js?v=11';
 const THREE = window.THREE;
 
 const LIMIT = 12;

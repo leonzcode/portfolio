@@ -28,16 +28,16 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=10';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON } from './items.js?v=10';
-import { breakTicks, wearFor } from './mining.js?v=10';
-import { blockDrops } from './loot.js?v=10';
-import { containerKind, spill } from './containers.js?v=10';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=10';
-import { isPotion, drinkPotion } from './brewing.js?v=10';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=10';
-import { countShelves } from './enchanting.js?v=10';
-import { wear } from './ui/inventory.js?v=10';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=11';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON } from './items.js?v=11';
+import { breakTicks, wearFor } from './mining.js?v=11';
+import { blockDrops } from './loot.js?v=11';
+import { containerKind, spill } from './containers.js?v=11';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=11';
+import { isPotion, drinkPotion } from './brewing.js?v=11';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=11';
+import { countShelves } from './enchanting.js?v=11';
+import { wear } from './ui/inventory.js?v=11';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // two slot arrays seen as one (a large chest): reads and writes go straight to the halves

@@ -26,15 +26,15 @@
      const icons = new ItemIcons(albedoImage, { grassMap, foliageMap });
      icons.draw(gui, blockId, x, y);      // GUI pixels, top-left of the slot
 --------------------------------------------------------------------------- */
-import { DRAW, textureLayer } from '../items.js?v=10';
-import { potionColour } from '../brewing.js?v=10';
+import { DRAW, textureLayer } from '../items.js?v=11';
+import { potionColour } from '../brewing.js?v=11';
 
 // pictures coloured per stack: the tinted layer under the plain one (a potion's liquid under its bottle)
 const TINTED_PARTS = {
   potion: ['layer_potion_overlay', 'layer_potion'], splash_potion: ['layer_potion_overlay', 'layer_splash_potion'],
   lingering_potion: ['layer_potion_overlay', 'layer_lingering_potion'], tipped_arrow: ['layer_tipped_arrow_head', 'layer_tipped_arrow_base'],
 };
-import { boxesOf } from '../models.js?v=10';
+import { boxesOf } from '../models.js?v=11';
 
 // face order and texture axes, exactly as the mesher lays textures on faces
 const FACES = [

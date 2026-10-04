@@ -19,31 +19,31 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=10';
-import { PathFinder, Navigation } from './path.js?v=10';
-import { Particles } from './particles.js?v=10';
-import { Living, Mob, wrap, DEG } from './entity.js?v=10';
-import { TYPES } from './mobs.js?v=10';
-import './projectiles.js?v=10';
-import { placeBoat } from './boat.js?v=10';
-import './mobs2.js?v=10';
-import './mobs3.js?v=10';
-import './mobs4.js?v=10';
-import { explode } from './explosion.js?v=10';
-import { splitXp } from './xporb.js?v=10';
-import { placeMinecart, isRail } from './minecart.js?v=10';
-import { FALLS, free } from './fallingblock.js?v=10';
-import { Spawner, DESPAWN } from './spawner.js?v=10';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=10';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=10';
-import { EntityMeshes } from '../render/entitymesh.js?v=10';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=10';
-import { breakAt } from '../place.js?v=10';
-import { dropOf } from '../survival.js?v=10';
-import { itemName, ITEMS, I } from '../items.js?v=10';
-import { Combat } from '../combat/combat.js?v=10';
-import './nether.js?v=10';
-import { DIMS } from '../dims.js?v=10';
+import { Terrain } from './terrain.js?v=11';
+import { PathFinder, Navigation } from './path.js?v=11';
+import { Particles } from './particles.js?v=11';
+import { Living, Mob, wrap, DEG } from './entity.js?v=11';
+import { TYPES } from './mobs.js?v=11';
+import './projectiles.js?v=11';
+import { placeBoat } from './boat.js?v=11';
+import './mobs2.js?v=11';
+import './mobs3.js?v=11';
+import './mobs4.js?v=11';
+import { explode } from './explosion.js?v=11';
+import { splitXp } from './xporb.js?v=11';
+import { placeMinecart, isRail } from './minecart.js?v=11';
+import { FALLS, free } from './fallingblock.js?v=11';
+import { Spawner, DESPAWN } from './spawner.js?v=11';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=11';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=11';
+import { EntityMeshes } from '../render/entitymesh.js?v=11';
+import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=11';
+import { breakAt } from '../place.js?v=11';
+import { dropOf } from '../survival.js?v=11';
+import { itemName, ITEMS, I } from '../items.js?v=11';
+import { Combat } from '../combat/combat.js?v=11';
+import './nether.js?v=11';
+import { DIMS } from '../dims.js?v=11';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -862,4 +862,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=10';
+import { rayBox } from './terrain.js?v=11';
