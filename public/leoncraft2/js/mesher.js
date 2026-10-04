@@ -633,5 +633,12 @@ export function meshColumn(job) {
     }
     for (let p = 0; p < save.length; p += 3) { rb[save[p]] = save[p + 1]; rm[save[p]] = save[p + 2]; }
   }
-  return { opaque: out.opaque.out(), cutout: out.cutout.out(), translucent: out.translucent.out(), fluid: out.fluid.out(), plants: out.plants.out(), leafIn: out.leafIn.out(), vis, skyLow };
+  /* ---- the middle chunk's light, kept by the main thread for mobs ----
+     sky * 16 + block, in the chunk's own cell order (js/entities reads it). */
+  const light = new Uint8Array(256 * ny);
+  for (let y = 0; y < ny; y++) for (let z = 0; z < 16; z++) {
+    const r = y * A + (16 + z) * W + 16, o = (y << 8) | (z << 4);
+    for (let x = 0; x < 16; x++) light[o + x] = (sky[r + x] << 4) | blk[r + x];
+  }
+  return { opaque: out.opaque.out(), cutout: out.cutout.out(), translucent: out.translucent.out(), fluid: out.fluid.out(), plants: out.plants.out(), leafIn: out.leafIn.out(), vis, skyLow, light, lightH: ny };
 }

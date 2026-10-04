@@ -30,7 +30,10 @@ export class Interactor {
   }
   // what the crosshair is on, from the eye this frame
   look(eye) {
-    const hit = this.player.pick(eye, this.creative ? 5 : 4.5);
+    let hit = this.player.pick(eye, this.creative ? 5 : 4.5);
+    // a mob or a boat in front of the block is what you are looking at (js/entities)
+    this.entityTarget = this.entities ? this.entities.pickFor(eye, hit ? hit.t : undefined) : null;
+    if (this.entityTarget) hit = null;
     this.target = hit;
     if (!hit) { this.overlay && this.overlay.set(0, 0, 0, null, -1); return null; }
     const w = this.world, d = BLOCKS[hit.b];
@@ -42,6 +45,13 @@ export class Interactor {
     return hit;
   }
   down(button) {
+    // an entity under the crosshair: hit it, or use it (js/entities)
+    const e = this.entityTarget;
+    if (e && this.entities) {
+      if (button === 0) { this.attack = true; this.hand.swing(); this.entities.attack(e); return; }
+      if (button === 2 && this.entities.interact(e)) { this.useHeld = true; this.useDelay = 4; this.hand.swing(); return; }
+    }
+    if (button === 0 && !this.target && this.entities) this.entities.swung();
     if (button === 0) {
       this.attack = true;
       this.hand.swing();
@@ -95,6 +105,8 @@ export class Interactor {
     this.target = null;
   }
   useOnce() {
+    // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities)
+    if (this.entities && !this.entityTarget && this.entities.useHeld(this.target)) { this.hand.swing(); return; }
     const h = this.target;
     if (!h || !h.face) return;
     // doors, trapdoors and gates open instead, unless you sneak
