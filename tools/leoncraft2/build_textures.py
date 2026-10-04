@@ -1,7 +1,7 @@
 """
 Leoncraft 2 - texture build.
 
-Turns two free resource packs into the three texture arrays the game's
+Turns four free resource packs into the three texture arrays the game's
 shaders read:
 
   terrain_albedo.png   colour + alpha, one 16x16 layer per texture, stacked
@@ -11,10 +11,20 @@ shaders read:
 
 and manifest.json, which names every layer and says how animated ones run.
 
-Sources, in the order they are tried (both CC BY-SA 4.0, see textures/LICENSE.txt):
-  1. Pixel Perfection CE (XSSheep and contributors), Minecraft 1.16 names
-  2. Pixel Perfection Legacy (Nova_Wostra), blocks added since 1.17
-  3. a logged fallback: a similar texture from the two packs (never magenta)
+Sources, in the order they are tried (all CC BY-SA 4.0, see textures/LICENSE.txt):
+  1. REFI Textures (MysticTempest) and Bauniclonia (Mirtilo), for the textures
+     listed in data/open_pack_map.json: the terrain, wood, ores, glass and
+     farm blocks whose pixel patterns Pixel Perfection draws differently from
+     the game (they are original drawings that follow the game's look)
+  2. Pixel Perfection Legacy (Nova_Wostra), for the textures in
+     data/legacy_preferred.json (its own redraws, nearer the game's than CE's)
+  3. Pixel Perfection CE (XSSheep and contributors), Minecraft 1.16 names
+  4. Pixel Perfection Legacy for everything else, blocks added since 1.17
+  5. a logged fallback: a similar texture from the packs (never magenta)
+Whatever the source, each texture is then colour-corrected: its mean colour and
+its spread are moved to the game's own (data/vanilla_colour_stats.json, six
+numbers per texture, colour averages only, no pixels). That is why the packs'
+different palettes read as one set, and it never copies a pixel.
 Chests, beds, shulker boxes, signs and mob heads are drawn by the game as
 boxes, so their faces are cut out of Pixel Perfection CE's entity textures
 and laid out so a box in sixteenths of a block maps 1:1 to pixels.
@@ -29,16 +39,23 @@ The normal, specular and emission maps are generated here from each texture
 and the kind of material it is (the way the "LabPBR" add-on packs work), so
 stone is bumpy and dull, ores glint, metal is metal and leaves let light through.
 
-Run:  python tools/leoncraft2/build_textures.py <PixelPerfectionCE-master> <PixelPerfectionLegacy root>
-      (the second is the folder holding assets/minecraft/textures/block)
+Run:  python tools/leoncraft2/build_textures.py <PixelPerfectionCE-master> <PixelPerfectionLegacy root> <REFI_Textures> <Bauniclonia>
+      (the second is the folder holding assets/minecraft/textures/block; the third and fourth are the packs'
+      own folders, searched for the file names in data/open_pack_map.json. The packs are not in the repo:
+      keep them anywhere, for example D:\\code\\personal\\texture_sources\\. Without the last two the build
+      uses Pixel Perfection only.)
 """
 import json, os, re, sys, colorsys
 import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from labcolour import correct
 SRC = sys.argv[1] if len(sys.argv) > 1 else 'PixelPerfectionCE-master'
 PPL = sys.argv[2] if len(sys.argv) > 2 else 'PixelPerfectionLegacy'
+REFI = sys.argv[3] if len(sys.argv) > 3 else 'REFI_Textures'
+BAUN = sys.argv[4] if len(sys.argv) > 4 else 'Bauniclonia'
 TEX = os.path.join(SRC, 'assets', 'minecraft', 'textures')
 BLOCK = os.path.join(TEX, 'block')
 ITEM = os.path.join(TEX, 'item')
@@ -112,11 +129,41 @@ NOT_FROM_CE = {'conduit', 'debug', 'debug2', 'jigsaw_top', 'jigsaw_side', 'jigsa
                'portal', 'structure_block', 'structure_block_load', 'structure_block_save', 'structure_block_corner',
                'structure_block_data', 'tripwire', 'trip_wire', 'wither_rose'}
 NOT_FROM_PPL = {'bamboo_stage0', 'pitcher_crop_bottom', 'debug', 'trip_wire'}
+# The same audit, run on every texture REFI and Bauniclonia supply (2026-10-03): none shares even a quarter of its
+# pixels with the game's, and the few layouts that follow the game's (TNT's lettering, brick rows) are drawn in
+# other pixels and other colours.
 
 
-def find(name):
-    """Path of a block texture, or None: Pixel Perfection CE first, then Legacy."""
-    if name not in NOT_FROM_CE:
+def _walk(root, sub):
+    """{file name without .png: path} of every png under root/sub (or root); {} if the folder is not there."""
+    base = os.path.join(root, sub)
+    if not os.path.isdir(base):
+        base = root
+    idx = {}
+    if os.path.isdir(base):
+        for dp, dn, fn in os.walk(base):
+            for f in sorted(fn):
+                if f.endswith('.png'):
+                    idx.setdefault(f[:-4], os.path.join(dp, f))
+    return idx
+
+
+OPEN = json.load(open(os.path.join(HERE, 'data', 'open_pack_map.json'), encoding='utf-8'))
+OPEN_IDX = {'refi': _walk(REFI, 'textures'), 'baun': _walk(BAUN, 'mineclonia')}
+for _k, _p in (('refi', REFI), ('baun', BAUN)):
+    if not OPEN_IDX[_k]:
+        print('NOTE: no %s pack found at %s, the build uses Pixel Perfection for its textures' % (_k, _p))
+LEGACY_FIRST = set(json.load(open(os.path.join(HERE, 'data', 'legacy_preferred.json'), encoding='utf-8'))['names'])
+# six colour numbers per game texture: mean and spread of its Lab colours. Averages only, no pixels.
+STATS = json.load(open(os.path.join(HERE, 'data', 'vanilla_colour_stats.json'), encoding='utf-8'))['stats']
+SRC_OF = {}              # texture -> 'refi' | 'baun' | 'legacy' | 'ce'
+NO_CORRECT = set()       # textures that keep the colours they are drawn in (filled in below)
+n_corrected = [0]
+
+
+def find_pp(name):
+    """Path of a block texture in Pixel Perfection, or None: CE first, then Legacy."""
+    if name not in NOT_FROM_CE and name not in LEGACY_FIRST:
         for n in (RENAME.get(name, name), name):
             p = os.path.join(BLOCK, n + '.png')
             if os.path.exists(p):
@@ -124,7 +171,22 @@ def find(name):
     p = os.path.join(PPL_BLOCK, name + '.png')
     if os.path.exists(p) and name not in NOT_FROM_PPL:
         return p, 'legacy'
+    if name not in NOT_FROM_CE:
+        for n in (RENAME.get(name, name), name):
+            p = os.path.join(BLOCK, n + '.png')
+            if os.path.exists(p):
+                return p, 'ce'
     return None, None
+
+
+def find(name):
+    """Path of a block texture, or None: REFI / Bauniclonia for the textures in the map, then Legacy's own redraws,
+    then Pixel Perfection CE, then Legacy."""
+    for key in ('refi', 'baun'):
+        n = OPEN[key].get(name)
+        if n and n in OPEN_IDX[key]:
+            return OPEN_IDX[key][n], key
+    return find_pp(name)
 
 
 def frames_of(path, animated):
@@ -153,7 +215,18 @@ def frames_of(path, animated):
     return [tiles[i] for i in order], dict(frametime=ft, interpolate=interp)
 
 
-def block_tex(name):
+def finish(name, frames):
+    """Colour-correct a texture's frames to the game's mean colour and spread (alpha stays as drawn).
+    Textures the game tints at run time (grass, leaves, water...) are grey in the game: corrected the same way, and the
+    colour channels flattened, so the biome tint lands on them as it does there."""
+    t = STATS.get(name)
+    if t is None or name in NO_CORRECT:
+        return frames
+    n_corrected[0] += 1
+    return correct(frames, t, name in TINTED and abs(t[1]) < 3 and abs(t[2]) < 3)
+
+
+def block_tex(name, raw=False):
     if name in CROPS:
         f, box = CROPS[name]
         log_ppl.append(name)
@@ -163,7 +236,9 @@ def block_tex(name):
         return None
     if src == 'legacy':
         log_ppl.append(name)
-    return frames_of(p, name in ANIMATED)
+    SRC_OF[name] = src
+    frames, anim = frames_of(p, name in ANIMATED)
+    return (frames if raw else finish(name, frames)), anim
 
 
 def ent(path):
@@ -397,6 +472,14 @@ def names_from_blockdata():
 
 DATA, USED = names_from_blockdata()
 LEGACY = json.load(open(os.path.join(HERE, 'data', 'legacy_names.json'), encoding='utf-8'))
+# textures the game multiplies by a biome colour (grass, leaves, water, vines, lily pads, stems...)
+TINTED = set()
+for _d in DATA:
+    if _d.get('tint'):
+        _t = _d.get('tex')
+        for _n in (list(_t.values()) if isinstance(_t, dict) else [_t]) + [_d.get('overlay'), _d.get('texUpper'), _d.get('plant')]:
+            if isinstance(_n, str):
+                TINTED.add(_n)
 
 
 # ---------------------------------------------------------------- materials
@@ -506,14 +589,25 @@ MAT = {
     'item':         dict(n=0.0, s=(0.20, 0.0), f0=9, sss=0.0),
 }
 
-ORE_BASE = {}
+ORE_MASK = {}
 
 
-def ore_base(name):
+def ore_mask(name, a):
+    """Which pixels of an ore are ore and not rock: the difference from the plain stone the same pack draws it on
+    (compared before the colour correction, so a texture moved to another palette still lines up). a: the finished texture,
+    used when the texture is a stand-in with no source of its own."""
     b = 'deepslate' if name.startswith('deepslate_') else 'netherrack' if name.startswith('nether_') else 'stone'
-    if b not in ORE_BASE:
-        ORE_BASE[b] = block_tex(b)[0][0]
-    return ORE_BASE[b]
+    src = SRC_OF.get(name)
+    if src in OPEN_IDX:
+        n = OPEN['bases'][src].get(b)
+        path = OPEN_IDX[src].get(n) if n else None
+    else:
+        path = find_pp(b)[0]
+    r = block_tex(name, raw=True) if path else None
+    if r is None:
+        return np.abs(a[..., :3] - block_tex(b)[0][0][..., :3]).sum(-1) > 0.12
+    base = frames_of(path, False)[0][0]
+    return np.abs(r[0][0][..., :3] - base[..., :3]).sum(-1) > 0.12
 
 
 def gen_maps(a, name, cls):
@@ -543,7 +637,9 @@ def gen_maps(a, name, cls):
     sss = np.full_like(l, m['sss'])
     emit = np.zeros_like(l)
     if cls == 'ore':
-        mask = np.abs(a[..., :3] - ore_base(name)[..., :3]).sum(-1) > 0.12
+        mask = ORE_MASK.get(name)
+        if mask is None:
+            mask = ORE_MASK[name] = ore_mask(name, a)
         smooth = np.where(mask, 0.82, smooth)
         f0 = np.where(mask, 60 / 255.0, f0)
         if 'redstone' in name:
@@ -669,6 +765,13 @@ for n in ('jigsaw_top', 'jigsaw_side', 'jigsaw_bottom', 'jigsaw_lock', 'structur
 for f in ('top', 'bottom', 'north', 'south', 'east', 'west'):
     REPLACE['dried_ghast_hydration_0_' + f] = lambda: (recoloured('soul_soil', dark=(56, 50, 48), light=(150, 140, 132)), None)
 
+NO_CORRECT |= set(REPLACE)          # these are already recoloured by hand
+NO_CORRECT.add('grass_block_side')   # the side of a grass block is built from the finished dirt below
+# the side of a grass block: the finished dirt, with the tinted grass fringe laid over it in the shader (as MineClone does).
+# Pixel Perfection's own side carries its fringe baked in, and no colour correction suits a texture that is half dirt and
+# half grass
+DIRT_OPEN = bool(block_tex('dirt')) and SRC_OF.get('dirt') in OPEN_IDX
+
 missing = []
 for name in names:
     cls = cls_of(name)
@@ -676,6 +779,9 @@ for name in names:
     if name in REPLACE:
         frames, anim = REPLACE[name]()
         log_fallback.append('%s: audited copy, replaced' % name)
+    elif name == 'grass_block_side' and DIRT_OPEN:
+        frames, anim = block_tex('dirt')
+        log_fallback.append('grass_block_side: the finished dirt (the tinted fringe is the overlay)')
     elif name in COMPOSED:
         frames = [COMPOSED[name]]
     elif name.startswith('item_'):
@@ -712,10 +818,13 @@ for name in names:
             e['interpolate'] = True
     if name in VARIANTS:
         e['variants'] = []
-        for v in VARIANTS[name]:
-            p, _ = find(v)
-            if p:
-                e['variants'].append(push(v, frames_of(p, False)[0][0], cls))
+        # a texture from REFI or Bauniclonia has no alternates of its own: the game still turns it at random (an empty list
+        # is enough to switch that on)
+        if SRC_OF.get(name) not in OPEN_IDX:
+            for v in VARIANTS[name]:
+                p, _ = find(v)
+                if p:
+                    e['variants'].append(push(v, finish(name, frames_of(p, False)[0])[0], cls))
     manifest[name] = e
 
 N = len(layers_a)
@@ -741,6 +850,8 @@ with open(os.path.join(OUT, 'manifest.json'), 'w', encoding='utf-8') as fh:
 
 print('textures:', len(manifest), 'layers:', N, '(the game checks MAX_ARRAY_TEXTURE_LAYERS)')
 print('from Pixel Perfection Legacy:', len(set(log_ppl)))
+print('from REFI:', sum(1 for s in SRC_OF.values() if s == 'refi'), ' from Bauniclonia:', sum(1 for s in SRC_OF.values() if s == 'baun'),
+      ' colour-corrected:', n_corrected[0], 'calls')
 print('downscaled (%d):' % len(log_resized), ', '.join(log_resized))
 print('fallbacks (%d):' % len(log_fallback))
 for l in log_fallback:
