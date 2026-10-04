@@ -20,7 +20,7 @@
      redstone makes it last longer, glowstone stronger, gunpowder makes it
      a splash potion, dragon's breath a lingering one.
 --------------------------------------------------------------------------- */
-import { I, ITEMS } from './items.js?v=10';
+import { I, ITEMS } from './items.js?v=11';
 
 const S = s => Math.round(s * 20);
 // name -> { effects: [[effect, level, ticks]], colour (0xRRGGBB), long?, strong? }
