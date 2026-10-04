@@ -52,7 +52,7 @@ export class World {
       const k = this.key(m.cx, m.cz);
       this.inFlight.delete('g' + k);
       if (!this.wanted(m.cx, m.cz)) return;
-      const c = { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, biome: m.biome, top: m.top, meshed: false };
+      const c = { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, biome: m.biome, top: m.top, meshed: false, structs: m.structs || null };
       // put back whatever was changed here before
       const ed = this.edits.get(k);
       if (ed) for (const [cell, v] of ed) { c.blocks[cell] = v >> 8; c.meta[cell] = v & 255; if (v >> 8 && (cell >> 8) > c.top) c.top = cell >> 8; }

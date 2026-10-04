@@ -175,6 +175,9 @@ for (const d of BLOCKS) {
     || d.shape === 'wire' || d.shape === 'crop' || d.shape === 'vine' || d.shape === 'wall_torch') && d.pass === 'opaque') d.pass = 'cutout';
 }
 
+// the end portal frame is not a full block, and shows its eye (see models.js portal_frame)
+if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], { shape: 'portal_frame', opacity: 0, content: 'dark_prismarine' });
+
 export const COUNT = LIST.length + 1;
 
 /* Flat lookup tables, which is what the hot loops in the mesher and the

@@ -133,6 +133,7 @@ export const FAMILY = {
   shipwrecks: ['shipwreck', 'shipwreck_beached'],
   mineshafts: ['mineshaft', 'mineshaft_mesa'],
   ruined_portals: SETS.ruined_portals.list.map(e => e[0]),
+  abandoned_camp: SETS.abandoned_camp.list.map(e => e[0]),
 };
 
 /* =================================================== the biome source ==
@@ -160,6 +161,7 @@ export function potentialChunk(seed, S, rx, rz) {
 }
 const fdiv = (a, b) => Math.floor(a / b);
 export function isPlacementChunk(seed, S, cx, cz) {
+  if (S.spacing - S.separation === 1 && S.spacing === 1) return true;        // every chunk is its own region's only spot
   const [px, pz] = potentialChunk(seed, S, fdiv(cx, S.spacing), fdiv(cz, S.spacing));
   return px === cx && pz === cz;
 }

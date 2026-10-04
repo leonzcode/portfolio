@@ -46,17 +46,23 @@ const ROT = [[1, 1], [-1, 1], [-1, -1], [1, -1]];      // where a turned templat
 /* Make the source structures read the land from, out of a world generator:
    the vanilla one (noiseBiome on 4 x 4 x 4 cells) where it is plugged in,
    else this game's own (one biome per column from the climate). Biome ids
-   are turned into names with the BIOMES table. */
-export function makeSource(gen, BIOMES, pickBiome, Y0) {
+   are turned into names with the BIOMES table. For the Nether and the End
+   the same generator calls answer netherBiome / endBiome / endGround, so a
+   dimension's generator only needs noiseBiome (or climate) and surfaceAt. */
+export function makeSource(gen, BIOMES, pickBiome, Y0, dim) {
   const name = id => (BIOMES[id] ? BIOMES[id].name : undefined);
   const ground = (x, z) => {
-    const y = gen.surfaceAt(x, z);
+    const y = gen.surfaceAt ? gen.surfaceAt(x, z) : 64 - Y0;
     return y < 0 ? -64 : y + Y0;
   };
-  if (typeof gen.noiseBiome === 'function') {
-    return { vanilla: true, biome: (x, y, z) => name(gen.noiseBiome(x >> 2, y >> 2, z >> 2)), ground };
-  }
-  return { vanilla: false, biome: (x, y, z) => name(pickBiome(gen.climate(x & ~3, z & ~3))), ground };
+  let biome;
+  if (typeof gen.noiseBiome === 'function') biome = (x, y, z) => name(gen.noiseBiome(x >> 2, y >> 2, z >> 2));
+  else if (pickBiome && typeof gen.climate === 'function') biome = (x, y, z) => name(pickBiome(gen.climate(x & ~3, z & ~3)));
+  else biome = () => undefined;
+  const src = { vanilla: typeof gen.noiseBiome === 'function', biome, ground };
+  if (dim === 'nether') { src.netherBiome = biome; src.biome = () => undefined; }
+  if (dim === 'end') { src.endBiome = (x, z) => biome(x, 64, z); src.endGround = ground; src.biome = () => undefined; }
+  return src;
 }
 
 /* ========================================================= Structures == */
@@ -191,7 +197,7 @@ export class Structures {
         }
       }
     }
-    if (this.starts.size > 4000) this.starts.clear();
+    if (this.starts.size > 60000) this.starts.clear();
     this.starts.set(key, out);
     return out;
   }

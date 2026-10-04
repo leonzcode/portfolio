@@ -45,7 +45,7 @@ import { DRAW, setItemLayers } from './items.js?v=9';
 import { loadItemStrip, addItemPieces } from './itemtex.js?v=9';
 import { Drops, dropItem, giveXp } from './drops.js?v=9';
 import { ITEMS, itemId, displayName as itemDisplay } from './items.js?v=9';
-import { setItemNames } from './commands.js?v=9';
+import { setItemNames, register } from './commands.js?v=9';
 import { Containers } from './containers.js?v=9';
 import { Hands } from './hands.js?v=9';
 import { setLayerPixels } from './render/blockmesh.js?v=9';
@@ -55,6 +55,7 @@ import { Sim } from './sim/sim.js?v=9';
 import { DIMS } from './dims.js?v=9';
 import { Realms } from './dim/realms.js?v=9';
 import { addDimArt, endSkyTexture } from './dim/art.js?v=9';
+import { structuresApi } from './struct/spawners.js?v=9';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -929,6 +930,7 @@ async function boot() {
       g.drops.tick(player, g.collector);
       if (timeRuns) g.time += 1;
       for (const s of player.splashes.splice(0)) renderer.inter.splash(s[0], s[1], s[2], s[3]);
+      structures.spawners.tick(world, player);
       // every ten seconds, what changed goes into the browser's storage
       if (++g.saveT >= 200) { g.saveT = 0; saveGame(); }
     }
@@ -1027,8 +1029,26 @@ async function boot() {
     tintCache.set(lin(c >> 16), lin((c >> 8) & 255), lin(c & 255));
     return tintCache;
   }
+  // structures: /locate, strongholds for eyes of ender, chest loot, spawners (struct/spawners.js)
+  const structures = structuresApi(() => (game ? game.world : menu && menu.world), () => game && game.player);
+  // /locate structure <kind>: the game's search and its reply
+  register('locate', {
+    usage: 'structure <structure>',
+    suggest: i => i === 0 ? ['structure'] : ['village', 'stronghold', 'fortress', 'mineshaft', 'monument', 'mansion', 'desert_pyramid', 'jungle_pyramid', 'swamp_hut', 'igloo', 'pillager_outpost', 'shipwreck', 'ocean_ruin', 'ruined_portal', 'buried_treasure', 'ancient_city', 'trial_chambers', 'bastion_remnant', 'end_city', 'trail_ruins'],
+    run(args, ctx) {
+      const kind = (args[0] === 'structure' ? args[1] : args[0] || '').replace(/^minecraft:/, '');
+      if (!kind) throw new Error('Incomplete command');
+      const p = ctx.game.player, x = Math.floor(p.pos.x), z = Math.floor(p.pos.z);
+      structures.locate(kind, x, z).then(f => {
+        if (!f) { ctx.say(`Could not find a structure of type "${kind}" nearby`, 0xFF5555); return; }
+        const fx = f.x !== undefined ? f.x : f.bx !== undefined ? f.bx : f[0], fz = f.z !== undefined ? f.z : f.bz !== undefined ? f.bz : f[1];
+        ctx.say(`The nearest minecraft:${f.type || kind} is at [${fx}, ~, ${fz}] (${Math.round(Math.hypot(fx - x, fz - z))} blocks away)`);
+      }, e => ctx.say(`Could not find a structure of type "${kind}" nearby`, 0xFF5555));
+    },
+  });
   requestAnimationFrame(loop);
   window.__lc2 = {
+    structures,
     renderer, gui, options, B, BLOCKS,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
