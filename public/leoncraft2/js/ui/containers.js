@@ -116,11 +116,11 @@ export class FurnaceScreen extends ContainerScreen {
     super(inv, icons, 176, 166);
     this.c = c;
     this.box = c.slots;
-    this.hooks = hooks || {};
+    this.fh = hooks || {};
     this.title = FURNACE_TITLE[c.kind] || 'Furnace';
     this.animates = true;                  // the flame and the arrow move
   }
-  boxChanged() { if (this.hooks.changed) this.hooks.changed(); }
+  boxChanged() { if (this.fh.changed) this.fh.changed(); }
   makeSlots() {
     const L = this.left, T = this.top;
     return [
@@ -134,7 +134,7 @@ export class FurnaceScreen extends ContainerScreen {
     if (s.fuel && st) return fuelTicks(st.id) > 0 || st.id === I.bucket;
     return super.mayPlace(s, st);
   }
-  tookOutput(s, n) { if (this.hooks.tookXp) this.hooks.tookXp(n); }
+  tookOutput(s, n) { if (this.fh.tookXp) this.fh.tookXp(n); }
   quickMove(s) {
     const st = this.getStack(s);
     if (!st) return;
