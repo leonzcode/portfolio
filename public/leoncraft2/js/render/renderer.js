@@ -24,6 +24,7 @@ import { makeLdrSky } from './ldrsky.js?v=8';
 import { FullScreen } from './sky.js?v=8';
 import { blockGeometry } from './blockmesh.js?v=8';
 import { Avatar } from './avatar.js?v=8';
+import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=8';
 const THREE = window.THREE;
 
 export class Renderer {
@@ -41,7 +42,8 @@ export class Renderer {
     this.trans = new THREE.Scene();          // fluids and translucent
     this.shadowScene = new THREE.Scene();
     this.shadowCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 400);
-    this.sky = new Sky(r);
+    // Fast graphics is the game with no shaders (vanilla.js): no atmosphere tables at all
+    this.sky = this.opts.vanilla ? null : new Sky(r);
     this.inter = new Interaction(r, this.opts.interSize || 256);
     // shadow map
     const sr = this.opts.shadows ? this.opts.shadowRes : 4;   // no shadow map at all: a token one
@@ -56,7 +58,7 @@ export class Renderer {
       uTime: { value: 0 }, uFrame: { value: 0 },
       uAlbedo: { value: textures.albedo }, uNormalMap: { value: textures.normal }, uSpecMap: { value: textures.spec },
       uLayerInfo: { value: makeLayerInfo(textures.manifest) },
-      uAmbient: { value: this.sky.amb.texture }, uView: { value: this.sky.view.texture }, uTrans: { value: this.sky.trans.texture },
+      uAmbient: { value: this.sky ? this.sky.amb.texture : null }, uView: { value: this.sky ? this.sky.view.texture : null }, uTrans: { value: this.sky ? this.sky.trans.texture : null },
       uNoise: { value: makeNoise2D() }, uNoise3: { value: ldr ? null : makeNoise3D() },
       uShadow: { value: this.shadowRT.depthTexture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowRes: { value: sr },
       uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
@@ -68,12 +70,21 @@ export class Renderer {
       uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uInvViewProj: { value: new THREE.Matrix4() },
       // the light in your hand (level, faded in and out) and where it is; torches' flicker; how dark cloud shadows are
       uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.8 : 0 },
+      // where a chunk mesh sits (set per draw by drawParts; 0 for everything three.js draws itself)
+      uChunk: { value: new THREE.Vector3() },
     };
-    this.mats = makeMaterials(this.U, this.opts);
-    this.mats.fluid = makeWaterMaterial(this.U, this.opts);
+    if (this.opts.vanilla) {
+      this.vanilla = new Vanilla(this, textures);
+      this.mats = makeVanillaMaterials(this.U);
+    } else {
+      this.mats = makeMaterials(this.U, this.opts);
+      this.mats.fluid = makeWaterMaterial(this.U, this.opts);
+    }
+    this.gl = r.getContext();
+    this.makeStandIns();
     // the full tiers run the whole chain after the world; the low ones draw straight to the screen
     this.post = ldr ? null : new Post(r, this.U, this.opts);
-    if (ldr) { this.skyFS = new FullScreen(makeLdrSky(this.U)); }
+    if (ldr && !this.vanilla) { this.skyFS = new FullScreen(makeLdrSky(this.U)); }
     // the block in your hand: drawn in the world just in front of the eye
     this.handScene = new THREE.Scene();
     this.hand = new THREE.Group();
@@ -88,7 +99,10 @@ export class Renderer {
 
   resize(w, h) {
     this.cw = w; this.ch = h;
-    const s = this.opts.scale;
+    // drawn in the screen's own pixels (a sharp laptop screen has two or more to each CSS pixel)
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.dpr = dpr;
+    const s = this.opts.scale * dpr;
     const rw = Math.max(1, Math.round(w * s)), rh = Math.max(1, Math.round(h * s));
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -99,7 +113,7 @@ export class Renderer {
       this.r.setSize(rw, rh, false);
       return;
     }
-    this.r.setSize(w, h, false);
+    this.r.setSize(Math.round(w * dpr), Math.round(h * dpr), false);
     if (this.main) this.main.dispose();
     this.main = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType, depthBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     this.main.depthTexture = new THREE.DepthTexture(rw, rh, THREE.FloatType);
@@ -128,6 +142,8 @@ export class Renderer {
       this.addColumn(cx, cz, mesh);
       if (performance.now() - t0 > budgetMs) break;
     }
+    // buffers and vertex arrays were bound behind three.js's back
+    this.r.resetState();
     this.visDirty = true;
   }
   /* The shadow map is kept from frame to frame and only drawn again when it
@@ -149,60 +165,142 @@ export class Renderer {
     S.sneak = P ? P.sneaking : false;
     return true;
   }
+  /* ---- chunk meshes, drawn in one loop ----
+     A column's meshes are plain vertex arrays on the graphics card, each in
+     its own vertex array object. Every kind (opaque, cut-out, plants, the
+     inside of canopies, water, glass) is drawn in one tight loop from inside
+     a stand-in mesh that three.js renders first, so the shader, its uniforms,
+     textures, blending and depth test are already set: per chunk only its
+     offset and one draw call. Hundreds of three.js meshes cost more in
+     bookkeeping than in drawing (8 ms a frame on a slow laptop); this costs
+     almost nothing. Opaque chunks go nearest first, so hidden pixels are
+     never shaded; water and glass furthest first, so they blend right. */
+  makeStandIns() {
+    const g = new THREE.BufferGeometry();
+    for (const nm of ['aPos', 'aA', 'aL', 'aF', 'aC']) g.setAttribute(nm, new THREE.BufferAttribute(nm === 'aPos' ? new Uint16Array(12) : nm === 'aF' ? new Int8Array(12) : new Uint8Array(12), 4));
+    g.setIndex([0, 1, 2]);
+    this.standGeo = g;
+    this.locs = new Map();
+    this.frustum = new THREE.Frustum(); this.fm = new THREE.Matrix4(); this.box = new THREE.Box3();
+    const stand = (scene, material, kinds, order, shadow) => {
+      if (!material) return;
+      const m = new THREE.Mesh(g, material);
+      m.frustumCulled = false; m.renderOrder = order; m.matrixAutoUpdate = false;
+      m.onAfterRender = (r, sc, cam) => this.drawParts(material, kinds, cam, shadow);
+      scene.add(m);
+    };
+    stand(this.scene, this.mats.opaque, ['opaque'], -10, false);
+    stand(this.scene, this.mats.cutout, ['cutout', 'plants', 'leafIn'], -9, false);
+    stand(this.trans, this.mats.fluid, ['fluid'], -10, false);
+    stand(this.trans, this.mats.translucent, ['translucent'], -9, false);
+    if (this.opts.shadows) {
+      stand(this.shadowScene, this.mats.shadowOpaque, ['opaque'], -10, true);
+      stand(this.shadowScene, this.mats.shadowCutout, ['cutout'].concat(this.opts.plantShadows === false ? [] : ['plants']).concat(this.opts.leafInShadows === false ? [] : ['leafIn']), -9, true);
+    }
+  }
+  drawParts(material, kinds, cam, shadow) {
+    const gl = this.gl;
+    const prog = this.r.properties.get(material).currentProgram;
+    if (!prog) return;
+    const P = prog.program;
+    let L = this.locs.get(P);
+    if (!L) { L = { chunk: gl.getUniformLocation(P, 'uChunk'), meshTime: gl.getUniformLocation(P, 'uMeshTime') }; this.locs.set(P, L); }
+    if (!L.chunk) return;
+    const list = this.inView(cam);
+    const back = !!material.transparent, n = list.length;
+    const prevVao = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
+    for (let j = 0; j < n; j++) {
+      const col = list[back ? n - 1 - j : j];
+      gl.uniform3f(L.chunk, col.cx * 16, 0, col.cz * 16);
+      for (let k = 0; k < kinds.length; k++) {
+        const p = col.byKind[kinds[k]];
+        if (!p) continue;
+        let from, to;
+        if (shadow) { from = p.shadowFrom; to = p.count; }
+        else { if (!p.visible || p.hidden) continue; from = p.from; to = p.to; }
+        if (to <= from) continue;
+        if (L.meshTime && p.t0 !== undefined) gl.uniform1f(L.meshTime, p.t0);
+        gl.bindVertexArray(p.vao);
+        gl.drawElements(gl.TRIANGLES, to - from, p.type, from * p.bytes);
+      }
+    }
+    // back as three.js left it
+    gl.uniform3f(L.chunk, 0, 0, 0);
+    if (L.meshTime && material.uniforms.uMeshTime) gl.uniform1f(L.meshTime, material.uniforms.uMeshTime.value);
+    gl.bindVertexArray(prevVao);
+  }
+  // the columns a camera can see this frame, nearest first (worked out once per camera per frame)
+  inView(cam) {
+    const C = this.cull || (this.cull = new Map());
+    let e = C.get(cam);
+    if (e && e.frame === this.frame) return e.list;
+    if (!e) { e = { frame: -1, list: [] }; C.set(cam, e); }
+    e.frame = this.frame;
+    const list = e.list;
+    list.length = 0;
+    this.fm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.fm);
+    const ex = cam.position.x, ez = cam.position.z, b = this.box;
+    for (const col of this.columns.values()) {
+      b.min.set(col.cx * 16, col.y0, col.cz * 16); b.max.set(col.cx * 16 + 16, col.y1, col.cz * 16 + 16);
+      if (!this.frustum.intersectsBox(b)) continue;
+      col.dist = (col.cx * 16 + 8 - ex) ** 2 + (col.cz * 16 + 8 - ez) ** 2;
+      list.push(col);
+    }
+    list.sort((a, b) => a.dist - b.dist);
+    return list;
+  }
   addColumn(cx, cz, mesh) {
     if (this.shadowState) this.shadowState.dirty = true;
     this.dropColumn(cx, cz);
-    const objs = [];
-    const col = { cx, cz, vis: mesh.vis, skyLow: mesh.skyLow, parts: [], shadows: [] };
-    const add = (data, kind, scene, material, shadowMat) => {
-      if (!data) return;
-      const g = new THREE.BufferGeometry();
-      const names = kind === 'fluid' ? ['aPos', 'aA', 'aF', 'aC'] : ['aPos', 'aA', 'aL', 'aC'];
-      data.attrs.forEach((a, i) => g.setAttribute(names[i], new THREE.BufferAttribute(a, 4, false)));
-      g.setIndex(new THREE.BufferAttribute(data.index, 1));
-      // how tall the mesh actually is, for culling
-      const P = data.attrs[0];
-      let y0 = 1e9, y1 = -1e9;
-      for (let i = 1; i < P.length; i += 4) { const y = P[i]; if (y < y0) y0 = y; if (y > y1) y1 = y; }  // (x and z carry an 8 block bias; y does not)
-      y0 /= 32; y1 /= 32;
-      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(8, (y0 + y1) / 2, 8), Math.hypot(8, 8, (y1 - y0) / 2) + 1);
-      g.boundingBox = new THREE.Box3(new THREE.Vector3(0, y0, 0), new THREE.Vector3(16, y1, 16));
-      const m = new THREE.Mesh(g, material);
-      m.position.set(cx * 16, 0, cz * 16);
-      if (kind === 'fluid') {
-        // each fluid mesh glides from the moment it arrived
-        const t0 = this.U.uClock.value;
-        m.onBeforeRender = () => { material.uniforms.uMeshTime.value = t0; material.uniformsNeedUpdate = true; };
+    const gl = this.gl;
+    const col = { cx, cz, vis: mesh.vis, skyLow: mesh.skyLow, parts: [], byKind: {}, y0: 1e9, y1: -1e9, dist: 0 };
+    const add = (data, kind) => {
+      if (!data || !data.index.length) return;
+      // how tall the mesh is, for culling: from the first section with anything in it to the last
+      const mk = data.marks;
+      for (let sct = 0; sct < 24; sct++) if (mk[sct + 1] > mk[sct]) { col.y0 = Math.min(col.y0, sct * 16); col.y1 = Math.max(col.y1, sct * 16 + 17); }
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      const bufs = [];
+      for (let i = 0; i < data.attrs.length; i++) {
+        const a = data.attrs[i], buf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(gl.ARRAY_BUFFER, a, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(i);
+        gl.vertexAttribPointer(i, 4, a instanceof Uint16Array ? gl.UNSIGNED_SHORT : a instanceof Int8Array ? gl.BYTE : gl.UNSIGNED_BYTE, false, 0, 0);
+        bufs.push(buf);
       }
-      m.matrixAutoUpdate = false; m.updateMatrix();
-      scene.add(m);
-      objs.push(m);
-      col.parts.push({ m, g, marks: data.marks });
-      if (shadowMat) {
+      const ib = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data.index, gl.STATIC_DRAW);
+      bufs.push(ib);
+      gl.bindVertexArray(null);
+      const wide = data.index instanceof Uint32Array;
+      const count = data.index.length;
+      const p = {
+        kind, vao, bufs, count, marks: data.marks, from: 0, to: count, visible: true, hidden: false,
+        type: wide ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, bytes: wide ? 4 : 2,
         // the shadow pass needs nothing below where the sky reaches
-        const sg = new THREE.BufferGeometry();
-        for (const nm in g.attributes) sg.setAttribute(nm, g.attributes[nm]);
-        sg.setIndex(g.index);
-        sg.boundingSphere = g.boundingSphere; sg.boundingBox = g.boundingBox;
-        const from = data.marks[Math.max(0, Math.min(24, (mesh.skyLow >> 4) - 1))];
-        sg.setDrawRange(from, data.index.length - from);
-        const s = new THREE.Mesh(sg, shadowMat);
-        s.position.copy(m.position); s.matrixAutoUpdate = false; s.updateMatrix();
-        this.shadowScene.add(s);
-        objs.push(s);
-      }
+        shadowFrom: data.marks[Math.max(0, Math.min(24, (mesh.skyLow >> 4) - 1))],
+      };
+      // each water mesh glides from the moment it arrived
+      if (kind === 'fluid') p.t0 = this.U.uClock.value;
+      col.parts.push(p);
+      col.byKind[kind] = p;
     };
-    add(mesh.opaque, 'opaque', this.scene, this.mats.opaque, this.mats.shadowOpaque);
-    add(mesh.cutout, 'cutout', this.scene, this.mats.cutout, this.mats.shadowCutout);
-    // plants: their own mesh, so far columns can leave them out (and the low tiers cast no shadow with them)
-    add(mesh.plants, 'plants', this.scene, this.mats.cutout, this.opts.plantShadows === false ? null : this.mats.shadowCutout);
-    col.plants = col.parts.length && mesh.plants ? col.parts[col.parts.length - 1].m : null;
-    add(mesh.leafIn, 'leafIn', this.scene, this.mats.cutout, this.opts.leafInShadows === false ? null : this.mats.shadowCutout);
-    col.leafIn = mesh.leafIn ? col.parts[col.parts.length - 1].m : null;
-    add(mesh.fluid, 'fluid', this.trans, this.mats.fluid, null);
-    add(mesh.translucent, 'translucent', this.trans, this.mats.translucent, null);
-    col.objs = objs;
+    add(mesh.opaque, 'opaque');
+    add(mesh.cutout, 'cutout');
+    // plants and the inside of canopies: their own meshes, so far columns can leave them out
+    add(mesh.plants, 'plants');
+    add(mesh.leafIn, 'leafIn');
+    add(mesh.fluid, 'fluid');
+    add(mesh.translucent, 'translucent');
+    col.plants = col.byKind.plants || null;
+    col.leafIn = col.byKind.leafIn || null;
+    if (col.y0 > col.y1) { col.y0 = 0; col.y1 = 1; }
     this.columns.set(cx + ',' + cz, col);
+    this.glDirty = true;
   }
   dropColumn(cx, cz) {
     if (this.shadowState) this.shadowState.dirty = true;
@@ -210,11 +308,8 @@ export class Renderer {
     if (this.uploads) this.uploads.delete(k);
     const col = this.columns.get(k);
     if (!col) return;
-    const seen = new Set();
-    for (const o of col.objs) {
-      o.parent && o.parent.remove(o);
-      if (!seen.has(o.geometry)) { seen.add(o.geometry); o.geometry.dispose(); }
-    }
+    const gl = this.gl;
+    for (const p of col.parts) { gl.deleteVertexArray(p.vao); for (const b of p.bufs) gl.deleteBuffer(b); }
     this.columns.delete(k);
     this.visDirty = true;
   }
@@ -223,49 +318,61 @@ export class Renderer {
      A walk outward from the camera's section, through the faces each
      section's open space connects, never turning back towards the camera
      (Sodium's method). Each column then draws only the run of sections the
-     walk reached; underground caves you cannot see are never drawn. */
+     walk reached; underground caves you cannot see are never drawn. Every
+     step goes one section further from the camera, so walking in rings
+     (first in, first out) reaches a section only after everything that can
+     lead into it: each is visited once, with all the faces it was entered
+     by already gathered. */
   updateVisibility(eye) {
     const csx = Math.floor(eye.x / 16), csz = Math.floor(eye.z / 16), csy = Math.max(0, Math.min(23, Math.floor(eye.y / 16)));
     const R = this.opts.renderDist + 1;
-    const span = 2 * R + 1;
-    const key = (x, y, z) => ((x - csx + R) * span + (z - csz + R)) * 24 + y;
-    const done = new Uint8Array(span * span * 24);      // entry faces already handled
-    const reach = new Map();                            // column -> [min, max] section
-    const q = [[csx, csy, csz, 63]];
-    done[key(csx, csy, csz)] = 63;
-    const DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-    const OPP = [1, 0, 3, 2, 5, 4];
-    while (q.length) {
-      const [x, y, z, entries] = q.pop();
-      const col = this.columns.get(x + ',' + z);
-      const ck = x + ',' + z;
-      const r = reach.get(ck);
-      if (!r) reach.set(ck, [y, y]); else { if (y < r[0]) r[0] = y; if (y > r[1]) r[1] = y; }
+    const span = 2 * R + 1, cells = span * span * 24;
+    // everything in flat typed arrays, kept from walk to walk: no strings, nothing for the collector
+    const V = this.visBuf && this.visBuf.span === span ? this.visBuf : (this.visBuf = {
+      span, done: new Uint8Array(cells), q: new Int32Array(cells + 1), cols: new Array(span * span),
+      lo: new Int8Array(span * span), hi: new Int8Array(span * span),
+    });
+    const done = V.done, q = V.q, cols = V.cols, lo = V.lo, hi = V.hi;
+    done.fill(0); lo.fill(127); hi.fill(-1); cols.fill(null);
+    for (const col of this.columns.values()) {
+      const ix = col.cx - csx + R, iz = col.cz - csz + R;
+      if (ix >= 0 && iz >= 0 && ix < span && iz < span) cols[ix * span + iz] = col;
+    }
+    const OPP = [1, 0, 3, 2, 5, 4], DX = [1, -1, 0, 0, 0, 0], DY = [0, 0, 1, -1, 0, 0], DZ = [0, 0, 0, 0, 1, -1];
+    let head = 0, tail = 0;
+    const start = ((R * span) + R) * 24 + csy;
+    q[tail++] = start; done[start] = 63;
+    while (head < tail) {
+      const cell = q[head++], entries = done[cell];
+      const y = cell % 24, ci = (cell - y) / 24, ix = (ci / span) | 0, iz = ci - ix * span;
+      if (y < lo[ci]) lo[ci] = y;
+      if (y > hi[ci]) hi[ci] = y;
+      const col = cols[ci];
       // which faces can be left by, from the faces it was entered by
       let exits = 0;
-      if (!col || !col.vis || (x === csx && y === csy && z === csz)) exits = 63;
-      else for (let f = 0; f < 6; f++) if (entries & (1 << f)) exits |= col.vis[y * 6 + f];
+      if (!col || !col.vis || cell === start) exits = 63;
+      else { const vis = col.vis, o = y * 6; for (let f = 0; f < 6; f++) if (entries & (1 << f)) exits |= vis[o + f]; }
       for (let f = 0; f < 6; f++) {
         if (!(exits & (1 << f))) continue;
-        const [dx, dy, dz] = DIRS[f];
+        const dx = DX[f], dy = DY[f], dz = DZ[f];
         // never back towards the camera
-        if ((dx > 0 && x < csx) || (dx < 0 && x > csx) || (dy > 0 && y < csy) || (dy < 0 && y > csy) || (dz > 0 && z < csz) || (dz < 0 && z > csz)) continue;
-        const nx = x + dx, ny = y + dy, nz = z + dz;
-        if (ny < 0 || ny > 23 || Math.abs(nx - csx) > R || Math.abs(nz - csz) > R) continue;
-        const kk = key(nx, ny, nz), ent = 1 << OPP[f];
-        if (done[kk] & ent) continue;
+        if ((dx > 0 && ix < R) || (dx < 0 && ix > R) || (dy > 0 && y < csy) || (dy < 0 && y > csy) || (dz > 0 && iz < R) || (dz < 0 && iz > R)) continue;
+        const nx = ix + dx, ny = y + dy, nz = iz + dz;
+        if (ny < 0 || ny > 23 || nx < 0 || nz < 0 || nx >= span || nz >= span) continue;
+        const kk = (nx * span + nz) * 24 + ny, ent = 1 << OPP[f];
+        if (!done[kk]) q[tail++] = kk;
         done[kk] |= ent;
-        q.push([nx, ny, nz, ent]);
       }
     }
-    for (const [k, col] of this.columns) {
-      const r = reach.get(k);
+    for (const col of this.columns.values()) {
+      const ix = col.cx - csx + R, iz = col.cz - csz + R;
+      const ci = ix >= 0 && iz >= 0 && ix < span && iz < span ? ix * span + iz : -1;
+      const reached = ci >= 0 && hi[ci] >= 0;
       for (const p of col.parts) {
-        if (!r) { p.m.visible = false; continue; }
-        p.m.visible = true;
-        const from = p.marks[r[0]], to = p.marks[Math.min(24, r[1] + 1)];
-        if (to <= from) { p.m.visible = false; continue; }
-        p.g.setDrawRange(from, to - from);
+        if (!reached) { p.visible = false; continue; }
+        const from = p.marks[lo[ci]], to = p.marks[Math.min(24, hi[ci] + 1)];
+        if (to <= from) { p.visible = false; continue; }
+        p.visible = true; p.from = from; p.to = to;
       }
     }
     this.visKey = csx + ',' + csy + ',' + csz;
@@ -361,11 +468,15 @@ export class Renderer {
     cam.rotation.set(state.pitch, state.yaw, 0, 'YXZ');
     // the player's model posed for this frame (and, in third person, the camera pulled back)
     this.avatar.update(state, dt, cam);
+    // the held block takes the light where you stand, as the model does
+    if (this.uHandLight && this.avatar.uLight) this.uHandLight.value.copy(this.avatar.uLight.value);
     cam.fov = state.fov;
     cam.far = this.opts.renderDist * 16 + 96;
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     U.uNear.value = cam.near; U.uFar.value = cam.far;
+    // block pieces and the like, placed for this frame (render/particles.js)
+    if (this.particles) this.particles.render(cam, state.alpha || 0);
     U.uCamPos.value.copy(cam.position);
     U.uProjInv.value.copy(cam.projectionMatrixInverse);
     this.updateLights(state, dt);
@@ -373,21 +484,23 @@ export class Renderer {
     this.pumpUploads(this.opts.uploadMs || 4);
     const vk = Math.floor(cam.position.x / 16) + ',' + Math.max(0, Math.min(23, Math.floor(cam.position.y / 16))) + ',' + Math.floor(cam.position.z / 16);
     const now = performance.now();
-    if (vk !== this.visKey || (this.visDirty && now - (this.visAt || 0) > 200)) { this.updateVisibility(cam.position); this.visAt = now; }
+    if (vk !== this.visKey || (this.visDirty && now - (this.visAt || 0) > 1000)) { this.updateVisibility(cam.position); this.visAt = now; }
     // grass and flowers stop where you could not make them out anyway
     const pd = (this.opts.plantDist || 96) / 16;
     // and the inside of a tree's canopy only near enough to see into
     const ld = (this.opts.leafInDist || 64) / 16;
     for (const col of this.columns.values()) {
       const d = Math.hypot(col.cx + 0.5 - cam.position.x / 16, col.cz + 0.5 - cam.position.z / 16);
-      if (col.plants && d >= pd) col.plants.visible = false;
-      if (col.leafIn && d >= ld) col.leafIn.visible = false;
+      if (col.plants) col.plants.hidden = d >= pd;
+      if (col.leafIn) col.leafIn.hidden = d >= ld;
     }
 
     // the sky table: every frame on the full tiers, every few on the low ones (it changes slowly)
-    if (this.frame % (this.opts.sky || 1) === 0 || this.frame < 3) this.sky.update(sun, moon, state.eye.y);
-    this.inter.update(dt, state.feet, state.trample);
-    U.uInteract.value = this.inter.texture;
+    if (this.sky && (this.frame % (this.opts.sky || 1) === 0 || this.frame < 3)) this.sky.update(sun, moon, state.eye.y);
+    if (!this.vanilla) {
+      this.inter.update(dt, state.feet, state.trample);
+      U.uInteract.value = this.inter.texture;
+    }
 
     // the shadow map, from whichever light is up (some tiers redraw it every other frame)
     const doShadow = this.opts.shadows > 0 && (this.frame % (this.opts.shadowEvery || 1) === 0) && this.shadowNeeded(state, light);
@@ -415,6 +528,20 @@ export class Renderer {
     if (light.y > 0.0) r.render(this.shadowScene, sc);
     }
     U.uInvViewProj.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
+    if (this.vanilla) {
+      // the game with no shaders: sky, blocks, water, clouds, hand, straight to the screen
+      this.vanilla.update(state, this.opts, dt);
+      r.setRenderTarget(null);
+      r.setClearColor(0x000000, 1);
+      r.clear(true, true, false);
+      this.vanilla.drawSky(r);
+      r.render(this.scene, cam);
+      if (this.overlay) this.overlay.render(r, cam);
+      r.render(this.trans, cam);
+      this.vanilla.drawClouds(r, cam, state.time);
+      this.drawHand(state, cam, dt);
+      return;
+    }
     if (this.ldr) {
       // exposure worked out here: by day the sky, by night the moon, deeper in a cave
       const day = Math.min(1, Math.max(0, (sun.y + 0.12) / 0.42));

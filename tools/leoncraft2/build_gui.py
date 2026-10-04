@@ -13,6 +13,15 @@ GUI code cuts them the same way:
 
 and textures/gui/accessibility.png (20 x 40, a figure on a button).
 
+It also draws the container screens (inventory, crafting table, furnaces,
+chests, dispenser, hopper, shulker box) in the classic light grey: a panel
+of 198 grey with a black rounded outline, a two-pixel white bevel along the
+top and left and a dark one along the bottom and right, and sunken slots.
+Only the slot positions follow the game's screens (they are where its
+screens put them, the same layout every inventory mod expects); the pixels
+are drawn here. Everything to the right of and below the panel in each
+sheet (the progress arrows and flames, the recipe book button) is kept.
+
 Run:  python tools/leoncraft2/build_gui.py
 """
 import os
@@ -116,7 +125,109 @@ def selector(img):
             elif ring == 3: px[x, 22 + y] = (0, 0, 0, 150)
 
 
+FILL, WHITE, SHADE, LINE = (198, 198, 198, 255), (255, 255, 255, 255), (85, 85, 85, 255), (0, 0, 0, 255)
+SLOT, SLOT_DARK = (139, 139, 139, 255), (55, 55, 55, 255)
+# per screen: panel size, rows of slots (x of the first, y, how many; x and y where the item sits),
+# big result slots, dark boxes (the player's picture), and arrows/flame outlines
+ROWS_INV = [(8, 84, 9), (8, 102, 9), (8, 120, 9), (8, 142, 9)]
+CONTAINERS = {
+    'inventory': ((176, 166), [(8, 8, 1), (8, 26, 1), (8, 44, 1), (8, 62, 1), (77, 62, 1), (98, 18, 2), (98, 36, 2), (154, 28, 1)] + ROWS_INV,
+                  [], [(26, 8, 49, 70)], [('arrow', 135, 29, 16, 13)]),
+    'crafting_table': ((176, 166), [(30, 17, 3), (30, 35, 3), (30, 53, 3)] + ROWS_INV, [(120, 31)], [], [('arrow', 90, 35, 22, 15)]),
+    'furnace': ((176, 166), [(56, 17, 1), (56, 53, 1)] + ROWS_INV, [(112, 31)], [], [('arrow', 80, 35, 22, 15), ('flame', 56, 36, 14, 14)]),
+    'generic_54': ((176, 222), [(8, 18 + 18 * r, 9) for r in range(6)] + [(8, 140, 9), (8, 158, 9), (8, 176, 9), (8, 198, 9)], [], [], []),
+    'dispenser': ((176, 166), [(62, 17, 3), (62, 35, 3), (62, 53, 3)] + ROWS_INV, [], [], []),
+    'hopper': ((176, 133), [(44, 20, 5), (8, 51, 9), (8, 69, 9), (8, 87, 9), (8, 109, 9)], [], [], []),
+    'shulker_box': ((176, 166), [(8, 18, 9), (8, 36, 9), (8, 54, 9)] + ROWS_INV, [], [], []),
+}
+CONTAINERS['blast_furnace'] = CONTAINERS['smoker'] = CONTAINERS['furnace']
+
+
+def panel(img, w, h):
+    """The rounded light grey panel with its bevels, at 0, 0."""
+    px = img.load()
+    cut = lambda x, y: (x + y < 2) or ((w - 1 - x) + y < 3) or (x + (h - 1 - y) < 3) or ((w - 1 - x) + (h - 1 - y) < 3)
+    for y in range(h):
+        for x in range(w):
+            if cut(x, y):
+                px[x, y] = (0, 0, 0, 0)
+                continue
+            edge = any(cut(x + dx, y + dy) or not (0 <= x + dx < w and 0 <= y + dy < h) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+            if edge:
+                px[x, y] = LINE
+                continue
+            top = y <= 2 or x <= 2 or (x == 3 and y == 3)
+            bot = y >= h - 3 or x >= w - 3 or (x == w - 4 and y == h - 4)
+            px[x, y] = FILL if (top and bot) else WHITE if top else SHADE if bot else FILL
+
+
+def sunken(img, x, y, w, h, inside):
+    """A sunken box (a slot is 18 x 18): dark top and left, white bottom and right."""
+    px = img.load()
+    for j in range(h):
+        for i in range(w):
+            if (i == w - 1 and j == 0) or (i == 0 and j == h - 1):
+                c = SLOT
+            elif j == 0 or i == 0:
+                c = SLOT_DARK
+            elif j == h - 1 or i == w - 1:
+                c = WHITE
+            else:
+                c = inside
+            px[x + i, y + j] = c
+
+
+def arrow(img, x, y, w, h):
+    """An empty progress arrow pointing right, in slot grey."""
+    px = img.load()
+    head = (h + 1) // 2
+    shaft = max(3, h // 3)
+    for j in range(h):
+        for i in range(w):
+            in_shaft = i < w - head and abs(j - (h - 1) / 2) <= shaft / 2
+            k = i - (w - head)
+            in_head = k >= 0 and abs(j - (h - 1) / 2) <= (head - k) * (h / 2) / head
+            if in_shaft or in_head:
+                px[x + i, y + j] = SLOT
+
+
+def flame(img, x, y, w, h):
+    """The empty fuel flame's outline, in slot grey."""
+    px = img.load()
+    shape = ['......##......', '.....####.....', '.....####.....', '....######....', '...##.##.##...', '..##..##..##..', '..##.####.##..',
+             '.##.##..##.##.', '.##.#....#.##.', '.##.#....#.##.', '.##..#..#..##.', '..##..##..##..', '...##....##...', '....######....']
+    for j, row in enumerate(shape[:h]):
+        for i, ch in enumerate(row[:w]):
+            if ch == '#':
+                px[x + i, y + j] = SLOT
+
+
+def containers():
+    for name, ((w, h), rows, big, dark, marks) in CONTAINERS.items():
+        path = os.path.join(OUT, 'container', name + '.png')
+        img = Image.open(path).convert('RGBA') if os.path.exists(path) else Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+        if img.size != (256, 256):
+            full = Image.new('RGBA', (256, 256), (0, 0, 0, 0)); full.paste(img, (0, 0)); img = full
+        # the panel's own area is drawn fresh; the sprites beside and below it stay
+        for yy in range(h):
+            for xx in range(w):
+                img.putpixel((xx, yy), (0, 0, 0, 0))
+        panel(img, w, h)
+        for (x0, y, n) in rows:
+            for k in range(n):
+                sunken(img, x0 + 18 * k - 1, y - 1, 18, 18, SLOT)
+        for (x, y) in big:
+            sunken(img, x - 1, y - 1, 26, 26, SLOT)
+        for (x, y, bw, bh) in dark:
+            sunken(img, x - 1, y - 1, bw + 2, bh + 2, LINE)
+        for kind, x, y, bw, bh in marks:
+            (arrow if kind == 'arrow' else flame)(img, x, y, bw, bh)
+        img.save(path, optimize=True)
+        print('wrote', path)
+
+
 def main():
+    containers()
     path = os.path.join(OUT, 'widgets.png')
     img = Image.open(path).convert('RGBA')
     # clear what we redraw, then draw it

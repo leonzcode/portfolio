@@ -21,6 +21,7 @@
 import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=8';
 import { BIOMES, biomeColours } from './biomes.js?v=8';
 import { pickBiome } from './worldgen.js?v=8';
+import { parseSeed } from './gen/random.js?v=8';
 import { World } from './world.js?v=8';
 import { Fluids } from './fluids.js?v=8';
 import { Player } from './player.js?v=8';
@@ -37,6 +38,17 @@ import { Hud } from './ui/hud.js?v=8';
 import { Interactor } from './interact.js?v=8';
 import { Survival } from './survival.js?v=8';
 import { Save } from './save.js?v=8';
+import { Chat, ChatScreen } from './ui/chat.js?v=8';
+import { displayName } from './commands.js?v=8';
+import { Particles } from './render/particles.js?v=8';
+import { DRAW, setItemLayers } from './items.js?v=8';
+import { loadItemStrip, addItemPieces } from './itemtex.js?v=8';
+import { Drops, dropItem, giveXp } from './drops.js?v=8';
+import { ITEMS, itemId, displayName as itemDisplay } from './items.js?v=8';
+import { setItemNames } from './commands.js?v=8';
+import { Containers } from './containers.js?v=8';
+import { Hands } from './hands.js?v=8';
+import { setLayerPixels } from './render/blockmesh.js?v=8';
 import { Entities } from './entities/manager.js?v=8';
 import { EntityStore } from './entities/store.js?v=8';
 const THREE = window.THREE;
@@ -45,14 +57,17 @@ const $ = s => document.querySelector(s);
 const status = (t, f) => { const el = $('#status'); if (el) el.textContent = t; const b = $('#bar'); if (b && f !== undefined) b.style.width = Math.round(f * 100) + '%'; };
 const params = new URLSearchParams(location.search);
 const MENU_SEED = 20261002;
+// a world's seed as its generator wants it: the vanilla one takes the whole
+// 64-bit seed (a decimal string), the first generator a 32-bit number
+const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) : entry.seed | 0);
 /* Graphics, as in the game's Video Settings: Detailed (the full look: sun
-   rays, soft shadows, clouds, reflections) or Fast (one pass, no shadow map,
-   Minecraft's fast leaves, for old Chromebooks). A change takes effect when
-   you leave Video Settings, and only if it really changed. The render scale
-   also follows the frame rate on its own. */
+   rays, soft shadows, clouds, reflections) or Fast (the game with no shaders
+   at all, as Minecraft itself draws it: render/vanilla.js). Both draw at the
+   screen's full resolution. A change takes effect when you leave Video
+   Settings, and only if it really changed. */
 const PRESETS = {
-  fast: { rd: 4, scale: 0.55, ldr: true, shadows: 0, normals: false, fastLeaves: true, interSize: 128, uploadMs: 2, sky: 4, plantDist: 40, plantShadows: false },
-  detailed: { rd: 8, shadowRes: 2048, shadowDist: 96, shadows: 2, scale: 0.85, vlSteps: 10, cloudSteps: 14, ssrSteps: 18, plantDist: 80, leafInDist: 40, leafInShadows: false },
+  fast: { rd: 8, scale: 1, ldr: true, vanilla: true, shadows: 0, normals: false, spec: false, fastLeaves: false, interSize: 32, uploadMs: 3, plantDist: 136, leafInDist: 64, plantShadows: false },
+  detailed: { rd: 8, shadowRes: 2048, shadowDist: 96, shadows: 2, scale: 1, fxaa: false, vlSteps: 10, cloudSteps: 14, ssrSteps: 18, plantDist: 80, leafInDist: 40, leafInShadows: false },
 };
 // what the older settings become
 const GRAPHICS_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
@@ -67,6 +82,8 @@ function guessGraphics() {
   } catch (e) { return 'detailed'; }
 }
 const options = new Options();
+// Q throws and F5 turns the view, as in the game (older settings had the view on Q)
+{ const k = options.get('keys'); if (k && k.perspective === 'KeyQ' && !k.drop) { options.setKey('drop', 'KeyQ'); options.setKey('perspective', 'F5'); } }
 const chosen = GRAPHICS_OF[options.get('quality')] && options.get('quality') !== 'auto' ? GRAPHICS_OF[options.get('quality')] : null;
 let QNAME = GRAPHICS_OF[params.get('q')] || chosen || guessGraphics();
 const chosenByUser = !!(params.get('q') || chosen);
@@ -167,7 +184,7 @@ function applyPackTextures(r, textures, manifest, packTex, alb) {
         spec[i * 4] = 40; spec[i * 4 + 1] = 10; spec[i * 4 + 2] = sss;
         spec[i * 4 + 3] = lit ? Math.round(Math.max(0, Math.min(1, (lum - 0.35) * 2.2)) * 255) : 0;
       }
-      put(textures.spec, layer, spec);
+      if (textures.spec.image && textures.spec.image.depth > 1) put(textures.spec, layer, spec);
     }
   }
   for (const t of [textures.albedo, textures.normal, textures.spec]) {
@@ -206,7 +223,9 @@ async function findSpawn(world) {
     for (let i = 0; i < tries.length; i++) {
       const r = res[i];
       if (r.y < SEA + 1 || r.y > SEA + 30) continue;
-      if (GOOD.indexOf(BIOMES[pickBiome(r.biome)].name) < 0) continue;
+      // the vanilla generator answers with the biome itself, the first one with its climate
+      const bid = typeof r.biome === 'number' ? r.biome : pickBiome(r.biome);
+      if (GOOD.indexOf(BIOMES[bid].name) < 0) continue;
       const [x, z] = tries[i];
       const near = await Promise.all([[28, 0], [-28, 0], [0, 28], [0, -28], [20, 20], [-20, -20]].map(([dx, dz]) => world.ask({ type: 'surface', x: x + dx, z: z + dz })));
       if (near.some(n => n.y >= 0 && n.y < SEA) || ring > 25) return { x, z };
@@ -226,13 +245,17 @@ async function boot() {
   // stamped like the code, so a rebuilt texture set always reaches the browser
   const TEX_V = '?v=8';
   const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
-  let [alb, grass, foliage, moon] = await Promise.all(
-    ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png'].map(f => loadImg(base + f + TEX_V)));
+  let [alb, grass, foliage, moon, sunImg] = await Promise.all(
+    ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png', 'environment_sun.png'].map(f => loadImg(base + f + TEX_V)));
   // the potato tier draws no normal maps: it skips that file altogether (a third of the download)
   const withNormals = QP.normals !== false;
-  const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, 'terrain_spec.png']
+  const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, QP.spec !== false ? 'terrain_spec.png' : null]
     .map(f => f ? strip(base + f + TEX_V, manifest.layers) : null));
   resolveTextures(manifest);
+  // the pictures of the items that are not blocks, after the last block layer (itemtex.js)
+  const itemStrip = await loadItemStrip(base, TEX_V);
+  const LAYERS = manifest.layers + await addItemPieces(itemStrip, manifest.layers, albP, nrmP, spcP);
+  setItemLayers(manifest.layers);
   // resource packs the player opened from their own computer (ui/pack.js): theirs first, ours underneath
   let find = null, packTex = null;
   try {
@@ -249,19 +272,23 @@ async function boot() {
   const colours = biomeColours(pixels(grass), pixels(foliage));
   const moonTex = new THREE.Texture(moon);
   moonTex.magFilter = THREE.NearestFilter; moonTex.minFilter = THREE.NearestFilter; moonTex.needsUpdate = true;
+  const sunTex = new THREE.Texture(sunImg);
+  sunTex.magFilter = THREE.NearestFilter; sunTex.minFilter = THREE.NearestFilter; sunTex.generateMipmaps = false; sunTex.needsUpdate = true;
   const textures = {
-    albedo: arrayTex(albP, manifest.layers, THREE.LinearMipmapLinearFilter),
-    normal: nrmP ? arrayTex(nrmP, manifest.layers, THREE.LinearMipmapLinearFilter) : flatNormals(),
-    spec: arrayTex(spcP, manifest.layers, THREE.LinearMipmapLinearFilter),
-    manifest, moon: moonTex,
+    albedo: arrayTex(albP, LAYERS, THREE.LinearMipmapLinearFilter),
+    normal: nrmP ? arrayTex(nrmP, LAYERS, THREE.LinearMipmapLinearFilter) : flatNormals(),
+    spec: spcP ? arrayTex(spcP, LAYERS, THREE.LinearMipmapLinearFilter) : flatNormals(),
+    manifest, moon: moonTex, sun: sunTex,
   };
 
   status('Starting the renderer…', 0.5);
   const canvas = $('#c');
   const rs = options.get('renderScale');
-  const renderer = new Renderer(canvas, textures, Object.assign({}, QP, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : QP.scale)) }));
+  const renderer = new Renderer(canvas, textures, Object.assign({}, QP, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : QP.scale)),
+    brightness: options.get('brightness'), clouds: options.get('clouds') }));
   for (const t of [textures.albedo, textures.normal, textures.spec]) if (t.pieces) uploadArray(renderer.r, t);
   if (packTex && packTex.size) alb = applyPackTextures(renderer.r, textures, manifest, packTex, alb);
+  renderer.colours = colours;
   const overlay = new Overlay(renderer.U, manifest);
   renderer.overlay = overlay;
   const fit = () => { renderer.resize(window.innerWidth, window.innerHeight); gui.resize(); };
@@ -307,8 +334,16 @@ async function boot() {
   window.addEventListener('resize', fit);
   fit();
 
+  // chat, over everything (js/ui/chat.js) and the commands typed into it (js/commands.js)
+  const chat = new Chat();
+  gui.overlays.push(chat);
+  // /give offers every item and block by name
+  setItemNames(() => ITEMS.filter(Boolean).map(it => it.name).concat(BLOCKS.filter(d => d && d.name && d.item !== false).map(d => d.name)));
+
   /* ---- item icons for the inventory and the hotbar (made a few at a time) ---- */
-  const icons = new ItemIcons(alb, { grassMap: grass, foliageMap: foliage });
+  const icons = new ItemIcons(alb, { grassMap: grass, foliageMap: foliage, extra: itemStrip.bmp });
+  setLayerPixels(icons.px);          // flat items in the hand and on the ground get their thickness from these
+
   let hud = null;                   // the hotbar, hearts and F3, made per world (js/ui/hud.js)
 
   /* ---- the world behind the title screen ---- */
@@ -320,7 +355,7 @@ async function boot() {
     });
     await world.ready;
     const spawn = await findSpawn(world);
-    menu = { world, x: spawn.x + 0.5, z: spawn.z + 0.5, y: null, yaw: Math.PI * 0.75, seed };
+    menu = { world, x: spawn.x + 0.5, z: spawn.z + 0.5, y: null, yaw: Math.PI * 0.75, seed, generator: 'classic' };
     // the ground round it first, so the title never opens on an empty sky
     await new Promise(res => {
       const t0 = performance.now();
@@ -354,14 +389,16 @@ async function boot() {
     const edits = isNew ? new Map() : await save.loadEdits();
     const st = isNew ? null : save.readState();
     let world;
-    if (menu && menu.seed === (entry.seed | 0)) {
+    const generator = entry.generator === 'vanilla' ? 'vanilla' : 'classic';
+    const seed = worldSeed(entry);
+    if (menu && menu.seed === seed && menu.generator === generator) {
       // the title screen's world is this one: keep what is already made
       world = menu.world;
       world.adoptEdits(edits, save);
     } else {
       if (menu) dropWorld(menu.world);
       world = new World({
-        seed: entry.seed | 0, renderDist: RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save,
+        seed, generator, renderDist: RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save,
         onMesh: (cx, cz, mesh) => renderer.setColumn(cx, cz, mesh),
         onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
       });
@@ -405,12 +442,16 @@ async function boot() {
       player.yaw = Math.PI * 0.75;
     }
     player.prev.copy(player.pos);
-    const mode = entry.mode === 'creative' ? 'creative' : 'survival';
-    player.canFly = mode === 'creative';
+    // the game mode you were in when you left (a /gamemode lasts), or the world's own
+    const want = st && st.mode ? st.mode : entry.mode;
+    const mode = ['creative', 'adventure', 'spectator'].includes(want) ? want : 'survival';
+    player.canFly = mode === 'creative' || mode === 'spectator';
+    player.noclip = mode === 'spectator';
+    if (mode === 'spectator') player.flying = true;
     const fluids = new Fluids(world, (x, y, z, kind) => {
       if (kind === 1 && Math.random() < 0.3) renderer.inter.splash(x + 0.5, z + 0.5, 0.35, 1.5);
     });
-    const inv = new Inventory({ mode });
+    const inv = new Inventory({ mode: mode === 'creative' ? 'creative' : 'survival' });
     if (st && st.inventory) inv.fromJSON(st.inventory);
     else if (mode === 'creative') {
       // a new creative world starts with a few blocks to hand (the rest are under E)
@@ -420,22 +461,49 @@ async function boot() {
     }
     const survival = new Survival();
     if (st && st.survival) survival.fromJSON(st.survival);
+    survival.inv = inv;
+    // items on the ground and experience orbs (drops.js), chests and furnaces (containers.js)
+    const drops = new Drops(world, renderer);
+    renderer.scene.add(drops.group);
+    if (st && st.drops) drops.fromJSON(st.drops);
+    const containers = new Containers(world);
+    if (!isNew) containers.fromJSON(await save.readExtra('containers'));
+    // what the hands do with items: mining, drops, eating, opening things (hands.js)
+    const hands = new Hands({ world, player, inv, survival, drops, containers, fluids, gui, icons, mode, renderer, inter: null, open: s => openScreen(s) });
+    if (st && st.hands) hands.fromJSON(st.hands);
     const entJson = isNew ? null : await EntityStore.load(entry.id);
     const inter = new Interactor({
       world, player, fluids, renderer, overlay,
-      hand: {
-        id: () => inv.heldId(),
-        used: () => { if (mode !== 'creative') inv.takeSelected(1); },
-        got: id => inv.add(id, 1),
-        swing: () => { renderer.swing = 1; },
-      },
+      hand: hands.adapter(renderer),
       onSplash: (x, z) => renderer.inter.splash(x, z, 0.8, 2.0),
     });
     inter.creative = mode === 'creative';
-    game = { entry, world, player, fluids, inv, survival, inter, save, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0 };
+    inter.adventure = mode === 'adventure' || mode === 'spectator';
+    // block pieces when something breaks, and chips while mining
+    if (!renderer.particles) renderer.particles = new Particles(renderer, world);
+    else renderer.particles.setWorld(world);
+    inter.onBreak = (x, y, z, b, boxes) => renderer.particles.blockBreak(x, y, z, b, boxes);
+    inter.onHit = (x, y, z, face, b, box) => renderer.particles.blockHit(x, y, z, face, b, box);
+    hands.inter = inter;
+    inv.on('drop', s => hands.throwStack(s));
+    // picking things up: into the inventory, experience into the bar (Mending repairs first)
+    const collector = {
+      inv, get alive() { return !survival.dead; },
+      addXp: n => survival.addXp(n),
+      mendingRepair: n => {
+        const worn = [inv.slots[inv.selected], inv.offhand].concat(inv.armor).filter(x => x && x.dmg > 0 && x.ench && x.ench.mending);
+        if (!worn.length) return n;
+        const it = worn[Math.floor(Math.random() * worn.length)], fix = Math.min(n * 2, it.dmg);
+        it.dmg -= fix; inv.changed();
+        return n - Math.ceil(fix / 2);
+      },
+    };
+    game = { entry, world, player, fluids, inv, survival, inter, save, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, drops, containers, hands, collector };
     // mobs, boats and arrows (js/entities): ticked with the game, drawn in the world's scene
     const entities = new Entities({ world, player, inv, survival, renderer, options, mode, fluids,
-      hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0) } });
+      hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0),
+        // what mobs drop goes through the items (drops.js): things on the ground, orbs of experience
+        dropItem: (w, x, y, z, name, n) => dropItem(w, x, y, z, name, n), giveXp: (n, x, y, z) => giveXp(x, y, z, n) } });
     entities.fromJSON(entJson);
     renderer.scene.add(entities.group);
     inter.entities = entities;
@@ -443,7 +511,7 @@ async function boot() {
     game.entities = entities;
     hud = new Hud(inv, icons);
     gui.hud = hud;
-    inv.on('held', id => renderer.setHeld(id, BLOCKS));
+    inv.on('held', id => renderer.setHeld(id, DRAW));
     held();
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     loading = null;
@@ -454,7 +522,16 @@ async function boot() {
     // no mouse yet (the click that started this is long gone): the game menu, as when the window loses focus
     setTimeout(() => { if (game && !locked() && !gui.isOpen()) gui.open(new PauseScreen()); }, 600);
   }
-  function held() { if (game) renderer.setHeld(game.inv.heldId(), BLOCKS); }
+  function held() { if (game) renderer.setHeld(game.inv.heldId(), DRAW); }
+  // a screen opened from the world (a chest, a crafting table): the mouse is let go without the game menu
+  function openScreen(screen) {
+    if (!game) return;
+    wantInv = true;
+    for (const k in game.player.keys) game.player.keys[k] = false;
+    game.inter.up(0); game.inter.up(2);
+    if (document.pointerLockElement) document.exitPointerLock();
+    gui.open(screen);
+  }
   function dropWorld(world) {
     for (const k of [...renderer.columns.keys()]) { const [x, z] = k.split(',').map(Number); renderer.dropColumn(x, z); }
     if (renderer.uploads) renderer.uploads.clear();
@@ -463,11 +540,13 @@ async function boot() {
   function stateOf() {
     const g = game, p = g.player;
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
-      inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode };
+      inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
+      drops: g.drops.toJSON(), hands: g.hands.toJSON() };
   }
   async function saveGame() {
     if (!game) return;
     game.save.writeState(stateOf());
+    if (game.containers.dirty) { game.containers.dirty = false; game.save.writeExtra('containers', game.containers.toJSON()); }
     if (game.entities) EntityStore.save(game.entry.id, game.entities.toJSON());
     await game.save.flush(game.world.edits);
   }
@@ -475,14 +554,17 @@ async function boot() {
     if (!game) return;
     const g = game;
     await saveGame();
+    g.drops.dispose();
     game = null;
     if (g.entities) g.entities.dispose();
     if (document.pointerLockElement) document.exitPointerLock();
     // the world you left keeps turning behind the title screen
-    menu = { world: g.world, x: g.player.pos.x, z: g.player.pos.z, y: null, yaw: g.player.yaw, seed: g.entry.seed | 0 };
+    menu = { world: g.world, x: g.player.pos.x, z: g.player.pos.z, y: null, yaw: g.player.yaw, seed: worldSeed(g.entry), generator: g.world.generator };
     g.world.save = null;
     overlay.set(0, 0, 0, null, -1);
     if (hud) { hud.dispose(); hud = null; gui.hud = null; }
+    chat.lines.length = 0; chat.dirty = true;
+    if (renderer.particles) renderer.particles.list.length = 0;
     gui.inGame = false; gui.panorama = true;
     gui.setRoot(new TitleScreen());
   }
@@ -491,6 +573,7 @@ async function boot() {
     const g = game;
     if (g.entities) g.entities.dismount();
     g.survival.reset();
+    g.spilled = false;
     const gy = groundY(g.world, g.spawn.x, g.spawn.z);
     g.player.pos.set(g.spawn.x + 0.5, gy > 0 ? gy : 120, g.spawn.z + 0.5);
     g.player.prev.copy(g.player.pos); g.player.vel.set(0, 0, 0);
@@ -519,6 +602,60 @@ async function boot() {
   document.addEventListener('pointerlockerror', lockFailed);
   canvas.addEventListener('click', () => { if (game && !gui.isOpen()) lock(); });
   let wantInv = false;
+  /* ---- chat and commands ---- */
+  function setMode(m) {
+    const g = game;
+    g.mode = m;
+    const p = g.player;
+    p.canFly = m === 'creative' || m === 'spectator';
+    p.noclip = m === 'spectator';
+    if (m === 'spectator') p.flying = true; else if (!p.canFly) p.flying = false;
+    g.inv.setMode(m === 'creative' ? 'creative' : 'survival');
+    g.inter.creative = m === 'creative';
+    g.inter.adventure = m === 'adventure' || m === 'spectator';
+    if (m === 'survival' || m === 'adventure') hud.setStats(g.survival.stats()); else hud.setStats(null);
+    hud.markDirty();
+  }
+  const chatCtx = () => {
+    const g = game;
+    return {
+      game: g, playerName: 'Player',
+      // Allow Commands: as set when the world was made (creative worlds have it on unless turned off)
+      cheats: !!(window.__lc2.cheats || (g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
+      say: (t, c) => chat.add(t, c),
+      setMode,
+      teleport: (x, y, z) => { const p = g.player; p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; },
+      give: (name, count) => {
+        // any item or block by its name (items.js knows both)
+        const id = itemId(name) || (B[name] !== undefined && BLOCKS[B[name]] && BLOCKS[B[name]].item !== false ? B[name] : 0);
+        if (!id) return null;
+        g.inv.add(id, count);
+        return itemDisplay(id) || displayName(id);
+      },
+      clearInventory: name => {
+        let n = 0;
+        const want = name ? B[name] : undefined;
+        const take = (arr) => { for (let i = 0; i < arr.length; i++) { const s = arr[i]; if (s && (want === undefined || s.id === want)) { n += s.count || 1; arr[i] = null; } } };
+        take(g.inv.slots); if (g.inv.armor) take(g.inv.armor);
+        if (g.inv.offhand && (want === undefined || g.inv.offhand.id === want)) { n += g.inv.offhand.count || 1; g.inv.offhand = null; }
+        g.inv.changed();
+        return n;
+      },
+      kill: () => { if (g.mode === 'survival' || g.mode === 'adventure') g.survival.hurt(1e9); else respawn(); },
+      seed: () => g.entry.seed,
+      blockChanged: () => {},
+      setWeather: (w, ticks) => { g.weather = { kind: w, ticks: ticks === null ? 6000 + Math.floor(Math.random() * 12000) : ticks }; },
+      setDifficulty: d => { g.entry.difficulty = d; Worlds.update(g.entry.id, { difficulty: d }); },
+      dimension: () => g.dimension || 'overworld',
+      xp: null,
+    };
+  };
+  function openChat(start) {
+    wantInv = true;
+    for (const k in game.player.keys) game.player.keys[k] = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+    gui.open(new ChatScreen(chat, chatCtx, start));
+  }
   document.addEventListener('pointerlockchange', () => {
     if (locked()) return;
     unlockedAt = performance.now();
@@ -556,7 +693,13 @@ async function boot() {
       return;
     }
     if (!locked()) return;
+    // chat: T, or / with the slash already typed
+    if ((a === 'chat' || (!a && e.code === 'KeyT')) && !e.repeat) { e.preventDefault(); openChat(''); return; }
+    if ((a === 'command' || e.key === '/') && !e.repeat) { e.preventDefault(); openChat('/'); return; }
     if (a && a.startsWith('hotbar')) { game.inv.select(+a.slice(6) - 1); return; }
+    // Q throws one of the selected stack (Ctrl+Q all of it), F swaps it with the off hand
+    if (a === 'drop') { game.hands.dropSelected(e.ctrlKey || e.metaKey); e.preventDefault(); return; }
+    if (a === 'swapOffhand') { const inv = game.inv, t = inv.slots[inv.selected]; inv.slots[inv.selected] = inv.offhand; inv.offhand = t; inv.changed(); e.preventDefault(); return; }
     if (e.code === 'BracketLeft') game.time -= 1000;
     if (e.code === 'BracketRight') game.time += 1000;
     if (e.code === 'KeyP' && !a) timeRuns = !timeRuns;
@@ -589,7 +732,9 @@ async function boot() {
   };
   options.onChange((k, v) => {
     applyOptions();
-    if (k === 'renderDistance' && v) { if (game) game.world.renderDist = v; }
+    if (k === 'renderDistance' && v) { if (game) game.world.renderDist = v; renderer.opts.renderDist = v; }
+    if (k === 'brightness') renderer.opts.brightness = v;
+    if (k === 'clouds') renderer.opts.clouds = v;
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
     if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=8', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
@@ -632,6 +777,7 @@ async function boot() {
     renderer.render({
       time: menuTime / 20, sunDir, moonDir, feet: eyeV, eye: eyeV, yaw: m.yaw, pitch: -0.16, fov: 85,
       eyeInWater: false, skyAtEye: 1, moonPhase: 0, trample: 0, showHand: false, bob: null, waterTint: tintAt(w, eyeV), player: null, alpha: 0,
+      biome: BIOMES[w.biomeAt(Math.floor(eyeV.x), Math.floor(eyeV.z))],
     }, dt);
   }
   function playFrame(now, dt) {
@@ -643,14 +789,20 @@ async function boot() {
       if (!(g.entities && g.entities.rideTick())) player.tick();
       fluids.step();
       inter.tick();
+      if (renderer.particles) renderer.particles.tick();
+      g.hands.tick();
+      g.containers.tick();
       if (g.entities) g.entities.tick();
-      if (g.mode !== 'creative') {
+      if (g.mode === 'survival' || g.mode === 'adventure') {
+        player.canSprint = survival.canSprint();
         survival.tick(player);
+        if (survival.dead && !g.spilled) { g.spilled = true; g.hands.spillAll(); }
         if (survival.dead && !gui.isOpen()) {
           if (document.pointerLockElement) document.exitPointerLock();
           gui.open(new DeathScreen());
         }
       }
+      g.drops.tick(player, g.collector);
       if (timeRuns) g.time += 1;
       for (const s of player.splashes.splice(0)) renderer.inter.splash(s[0], s[1], s[2], s[3]);
       // every ten seconds, what changed goes into the browser's storage
@@ -661,6 +813,8 @@ async function boot() {
     world.flush();
     const v = player.view(alpha);
     inter.look(v.eye);
+    g.hands.alpha = alpha;
+    g.drops.update(dt, alpha, player, renderer.camera);
     if (g.entities) g.entities.render(alpha);
     sunAt(g.time);
     const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));
@@ -668,10 +822,11 @@ async function boot() {
     renderer.render({
       time: (g.time + alpha) / 20, sunDir, moonDir, feet: v.feet, eye: v.eye, yaw: player.yaw, pitch: player.pitch,
       fov: player.fov, eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
-      moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: v.handBob,
+      moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: g.hands.handBob(v.handBob),
       waterTint: tintAt(world, v.eye), player, alpha,
+      biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
     }, dt);
-    if (g.mode !== 'creative') hud.setStats(survival.stats());
+    if (g.mode === 'survival' || g.mode === 'adventure') hud.setStats(survival.stats());
     // no crosshair in third person, or with the HUD hidden
     const cross = renderer.avatar.view === 0 && !gui.hideHud;
     if (hud.crosshair !== cross) { hud.crosshair = cross; hud.markDirty(); }
@@ -683,7 +838,8 @@ async function boot() {
       // keep it smooth: give up resolution before frame rate, and take it back when there is room
       if (autoScale && now - startedAt > 6000 && ++scaleTick % 4 === 0) {
         const s = renderer.opts.scale;
-        const floor = QNAME === 'fast' ? 0.4 : 0.5;
+        // never so low it blurs: three quarters of the screen, or half of a very sharp one
+        const floor = (renderer.dpr || 1) > 1.4 ? 0.5 : 0.75;
         if (fps < 42 && s > floor) { renderer.opts.scale = Math.max(floor, +(s - 0.1).toFixed(2)); fit(); }
         else if (fps > 58 && s < QP.scale) { renderer.opts.scale = Math.min(QP.scale, +(s + 0.05).toFixed(2)); fit(); }
       }
@@ -712,10 +868,11 @@ async function boot() {
         'Facing: ' + ['north', 'west', 'south', 'east'][((Math.round(player.yaw / (Math.PI / 2)) % 4) + 4) % 4],
         'Biome: ' + (bn ? bn.name : '?'),
         'Day ' + Math.floor(g.time / 24000) + ', time ' + (g.time % 24000) + (timeRuns ? '' : ' (stopped)'),
+        g.mode !== 'creative' ? 'Food ' + survival.food + ', saturation ' + survival.saturation.toFixed(1) + ', exhaustion ' + survival.exhaustion.toFixed(3) : '',
       ], [
         'Render ' + renderer.rw + 'x' + renderer.rh + ' (F7 scale)',
         'Distance ' + world.renderDist + ', graphics ' + QNAME,
-        'Seed ' + (g.entry.seed | 0),
+        'Seed ' + worldSeed(g.entry) + (g.world.generator === 'vanilla' ? '' : ' (classic)'),
         'Fluids pending ' + fluids.pending.size,
         '',
         t ? 'Targeted Block: ' + t.x + ', ' + (t.y + Y0) + ', ' + t.z : '',
@@ -743,10 +900,17 @@ async function boot() {
   window.__lc2 = {
     renderer, gui, options, B, BLOCKS,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
-    get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud,
+    get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
+    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=8').then(m => m.execute(line, ctx)); },
+    get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
+    get survival() { return game && game.survival; },
     get entities() { return game && game.entities; },
     get time() { return game ? game.time : menuTime; }, set time(t) { if (game) game.time = t; else menuTime = t; },
-    play: (seed, mode) => startGame(Worlds.add({ id: 'w' + Date.now().toString(36), name: 'Test World', folder: 'Test World', seed: seed || MENU_SEED, mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
+    // a test world without the menus; generator 'vanilla' (the default) or 'classic'
+    play: (seed, mode, generator = 'vanilla') => startGame(Worlds.add({
+      id: 'w' + Date.now().toString(36), name: 'Test World', folder: 'Test World',
+      seed: generator === 'vanilla' ? parseSeed(seed == null ? '' : String(seed)) : (seed || MENU_SEED), generator,
+      mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
   };
   // after a quality change, straight back into the world you were in

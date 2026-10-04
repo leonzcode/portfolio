@@ -4,28 +4,40 @@
    Inventory is the model: 36 slots (0-8 the hotbar, 9-35 the rest), four
    armour slots (head, chest, legs, feet), the off hand, the 2 x 2 crafting
    grid and its result, the stack on the mouse while a screen is open, and
-   which hotbar slot is selected. A stack is { id, count } or null; ids are
-   block ids. In creative, blocks never run out.
+   which hotbar slot is selected. A stack is { id, count, dmg?, ench? } or
+   null; ids are item ids (js/items.js: a block's item id is its block id),
+   dmg is the wear on a tool or a piece of armour. In creative, blocks never
+   run out.
 
      const inv = new Inventory({ mode: 'creative' });
-     inv.on('held', id => renderer.setHeld(id, BLOCKS));   // the selected stack changed
+     inv.on('held', id => renderer.setHeld(id, DRAW));     // the selected stack changed
      inv.on('change', () => ...);                           // anything changed
      inv.on('drop', stack => ...);                          // thrown out of a screen
+     inv.on('broke', stack => ...);                         // a tool wore out
      gui.open(inventoryScreen(inv, icons));                 // E: creative or survival
 
    CreativeInventoryScreen and InventoryScreen work like the game's: click to
    pick up and put down, right click to halve or place one, shift-click to
    move across, a double click to gather, drag to spread (left evenly, right
    one each), 1-9 over a slot to swap with the hotbar, F for the off hand,
-   middle click (creative) for a full stack. The creative screen has the
-   game's tab rows, a scrolling 9 x 5 grid, a search box and the Survival
-   Inventory tab with its destroy-item slot.
+   middle click (creative) for a full stack, Q over a slot to throw one
+   (Ctrl+Q the stack). The 2 x 2 grid crafts (js/crafting.js): a click on
+   the result takes one craft, shift-click crafts as many as fit. The
+   creative screen has the game's tab rows, a scrolling 9 x 5 grid, a search
+   box and the Survival Inventory tab with its destroy-item slot.
+
+   ContainerScreen is shared with the crafting table, chests and furnaces
+   (js/ui/containers.js): slots of kind 'craft' read this.grid, 'box' reads
+   this.box (the container's own slots).
 
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
 import { BLOCKS, B } from '../blocks.js?v=8';
 import { Screen, TextField, WHITE } from './gui.js?v=8';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf } from '../items.js?v=8';
+import { matchGrid, consumeGrid } from '../crafting.js?v=8';
+export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
 const HIGHLIGHT = 0x80FFFFFF;         // a hovered slot
@@ -33,19 +45,29 @@ const YELLOW = 0xFFFF55;
 
 /* ------------------------------ the model ------------------------------ */
 
-const same = (a, b) => a && b && a.id === b.id;
-const copy = s => (s ? { id: s.id, count: s.count } : null);
-export function maxStack(id) { const d = BLOCKS[id]; return d && d.stack ? d.stack : 64; }
-export function displayName(id) {
-  const d = BLOCKS[id];
-  if (!d) return '';
-  return d.display || d.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
-// which armour slot a block can be worn in (0 head), or -1
+const same = sameItem;
+// which armour slot an item can be worn in (0 head ... 3 feet), or -1
 export function armourSlotOf(id) {
-  const d = BLOCKS[id];
-  if (!d) return -1;
-  return d.name === 'carved_pumpkin' || /_(head|skull)$/.test(d.name) ? 0 : -1;
+  const a = armorOf(id);
+  return a ? a.slot : -1;
+}
+/* Wear on a stack: n points, each one skipped with chance level/(level+1)
+   for Unbreaking (armour: 60% + 40%/(level+1) of the time it still wears).
+   Returns true when the stack wore out. */
+export function wear(s, n, isArmor) {
+  const max = maxDamage(s.id);
+  if (!max) return false;
+  const ub = s.ench && s.ench.unbreaking ? s.ench.unbreaking : 0;
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    if (ub > 0) {
+      const keep = isArmor ? 0.6 + 0.4 / (ub + 1) : 1 / (ub + 1);
+      if (Math.random() >= keep) continue;
+    }
+    k++;
+  }
+  s.dmg = (s.dmg | 0) + k;
+  return s.dmg >= max;
 }
 
 export class Inventory {
@@ -55,13 +77,13 @@ export class Inventory {
     this.armor = [null, null, null, null];
     this.offhand = null;
     this.craft = [null, null, null, null];
-    this.craftResult = null;          // no recipes yet: always empty
+    this.craftResult = null;          // what the 2 x 2 grid makes (worked out by the screen)
     this.carried = null;              // on the mouse in a screen
     this.selected = 0;
     /* The integrator's hook for the figure in the inventory box:
        drawPlayer(g, x, y, w, h, mx, my), all in GUI pixels. Unset, the box stays empty. */
     this.drawPlayer = null;
-    this._on = { change: [], held: [], drop: [] };
+    this._on = { change: [], held: [], drop: [], broke: [] };
     this._heldId = 0;
   }
 
@@ -73,7 +95,7 @@ export class Inventory {
     return () => { const i = list.indexOf(fn); if (i >= 0) list.splice(i, 1); };
   }
   emit(type, arg) { for (const fn of this._on[type].slice()) { try { fn(arg, this); } catch (e) { console.error(e); } } }
-  // call after changing slots by hand; fires 'change', and 'held' when the selected block is different
+  // call after changing slots by hand; fires 'change', and 'held' when the selected item is different
   changed() {
     this.emit('change');
     const h = this.heldId();
@@ -93,31 +115,40 @@ export class Inventory {
   select(i) { i = ((i % 9) + 9) % 9; if (i !== this.selected) { this.selected = i; this.changed(); } }
   // the wheel: down (positive) moves right, as in the game
   scroll(delta) { if (delta) this.select(this.selected + (delta > 0 ? 1 : -1)); }
-  set(i, stack) { this.slots[i] = stack && stack.count > 0 && stack.id ? { id: stack.id, count: Math.min(stack.count, maxStack(stack.id)) } : null; this.changed(); }
+  set(i, stack) { this.slots[i] = stack && stack.count > 0 && stack.id ? withCount(stack, Math.min(stack.count, maxStack(stack.id))) : null; this.changed(); }
 
-  /* Puts count of a block into the inventory the way the game does: onto a
+  /* Puts count of an item into the inventory the way the game does: onto a
      matching stack with room (the selected one first, then the off hand, then
      slot order), then into the first empty slot. Returns what did not fit. */
-  add(id, count = 1) {
-    if (!id || count <= 0) return 0;
-    const max = maxStack(id);
+  add(id, count = 1) { return id && count > 0 ? this.addStack({ id, count }) : 0; }
+  // the same for a whole stack (keeping its wear and enchantments); returns what did not fit
+  addStack(st) {
+    if (!st || !st.id || st.count <= 0) return 0;
+    const max = maxStack(st.id), count = st.count;
     let left = count;
     const fill = s => { const n = Math.min(max - s.count, left); s.count += n; left -= n; };
     const sel = this.slots[this.selected];
-    if (sel && sel.id === id && sel.count < max) fill(sel);
-    if (left && this.offhand && this.offhand.id === id && this.offhand.count < max) fill(this.offhand);
-    for (let i = 0; i < 36 && left; i++) { const s = this.slots[i]; if (s && s.id === id && s.count < max) fill(s); }
+    if (same(sel, st) && sel.count < max) fill(sel);
+    if (left && same(this.offhand, st) && this.offhand.count < max) fill(this.offhand);
+    for (let i = 0; i < 36 && left; i++) { const s = this.slots[i]; if (same(s, st) && s.count < max) fill(s); }
     for (let i = 0; i < 36 && left; i++) {
-      if (!this.slots[i]) { const n = Math.min(max, left); this.slots[i] = { id, count: n }; left -= n; }
+      if (!this.slots[i]) { const n = Math.min(max, left); this.slots[i] = withCount(st, n); left -= n; }
     }
     if (left !== count) this.changed();
     return left;
   }
+  // how many of a stack's item would fit, without putting any anywhere
+  roomFor(st) {
+    const max = maxStack(st.id);
+    let room = 0;
+    for (let i = 0; i < 36; i++) { const s = this.slots[i]; room += !s ? max : same(s, st) ? max - s.count : 0; }
+    return room;
+  }
   // a stack back into the inventory (closing a screen); what does not fit is dropped
   placeBack(stack) {
     if (!stack || !stack.count) return;
-    const left = this.add(stack.id, stack.count);
-    if (left > 0) this.emit('drop', { id: stack.id, count: left });
+    const left = this.addStack(stack);
+    if (left > 0) this.emit('drop', withCount(stack, left));
   }
   /* One (or n) from the selected stack, after placing a block. Creative
      never runs out. Returns false when there was nothing to take. */
@@ -129,6 +160,16 @@ export class Inventory {
     if (s.count <= 0) this.slots[this.selected] = null;
     this.changed();
     return true;
+  }
+  /* Wear on the selected item (a tool used): n points, fewer with
+     Unbreaking. A tool that wears out breaks. Returns true when it broke. */
+  damageSelected(n = 1) {
+    const s = this.slots[this.selected];
+    if (!s || this.mode === 'creative') return false;
+    const broke = wear(s, n, false);
+    if (broke) { this.slots[this.selected] = null; this.emit('broke', s); }
+    this.changed();
+    return broke;
   }
   /* Pick block (middle click on the world), as the game does it: already in
      the hotbar selects it; elsewhere in the inventory swaps it into the
@@ -161,18 +202,14 @@ export class Inventory {
     this.changed();
   }
 
-  /* Saved by block name, so a save survives the block list being renumbered. */
+  /* Saved by item name, so a save survives the lists being renumbered. */
   toJSON() {
-    const out = s => (s ? [BLOCKS[s.id] ? BLOCKS[s.id].name : '', s.count] : null);
-    return { v: 1, mode: this.mode, selected: this.selected, slots: this.slots.map(out), armor: this.armor.map(out), offhand: out(this.offhand), craft: this.craft.map(out) };
+    const out = stackToJSON;
+    return { v: 2, mode: this.mode, selected: this.selected, slots: this.slots.map(out), armor: this.armor.map(out), offhand: out(this.offhand), craft: this.craft.map(out) };
   }
   fromJSON(o) {
     if (!o || typeof o !== 'object') return this;
-    const inn = a => {
-      if (!Array.isArray(a)) return null;
-      const id = B[a[0]];
-      return id ? { id, count: Math.max(1, Math.min(maxStack(id), a[1] | 0)) } : null;
-    };
+    const inn = stackFromJSON;
     if (o.mode) this.mode = o.mode === 'survival' ? 'survival' : 'creative';
     this.selected = Math.max(0, Math.min(8, o.selected | 0));
     for (let i = 0; i < 36; i++) this.slots[i] = o.slots ? inn(o.slots[i]) : null;
@@ -193,10 +230,16 @@ export const TABS = [
   { key: 'natural', name: 'Natural Blocks', icon: ['grass_block'], col: 2, top: true },
   { key: 'functional', name: 'Functional Blocks', icon: ['oak_sign', 'crafting_table'], col: 3, top: true },
   { key: 'redstone', name: 'Redstone Blocks', icon: ['redstone_wire', 'redstone_block'], col: 4, top: true },
-  { key: 'search', name: 'Search Items', icon: ['lodestone', 'spyglass', 'glass'], col: 5, top: true, right: true, search: true },
+  { key: 'search', name: 'Search Items', icon: ['compass', 'lodestone', 'glass'], col: 5, top: true, right: true, search: true },
+  { key: 'tools', name: 'Tools & Utilities', icon: ['diamond_pickaxe'], col: 0, top: false },
+  { key: 'combat', name: 'Combat', icon: ['netherite_sword', 'golden_sword'], col: 1, top: false },
+  { key: 'food', name: 'Food & Drinks', icon: ['golden_apple', 'apple'], col: 2, top: false },
+  { key: 'ingredients', name: 'Ingredients', icon: ['iron_ingot'], col: 3, top: false },
+  { key: 'spawn_eggs', name: 'Spawn Eggs', icon: ['pig_spawn_egg'], col: 4, top: false },
   { key: 'inventory', name: 'Survival Inventory', icon: ['chest'], col: 5, top: false, right: true, inventory: true },
 ];
-const TAB_KEYS = ['building', 'colored', 'natural', 'functional', 'redstone'];
+const BLOCK_TABS = ['building', 'colored', 'natural', 'functional', 'redstone'];
+const ITEM_TABS = ['tools', 'combat', 'food', 'ingredients', 'spawn_eggs'];
 let lastTab = 0;                       // the game remembers the tab between openings
 
 // a creative tab for blocks the generated list has not placed yet
@@ -205,11 +248,11 @@ function guessTab(d) {
   return 'building';
 }
 let itemsCache = null, itemsFor = -1;
-// the blocks in each creative tab, in tab order; .all is the search tab's list
+// the items in each creative tab, in tab order; .all is the search tab's list
 export function creativeItems() {
   if (itemsCache && itemsFor === BLOCKS.length) return itemsCache;
   const lists = {};
-  for (const k of TAB_KEYS) lists[k] = [];
+  for (const k of BLOCK_TABS.concat(ITEM_TABS)) lists[k] = [];
   for (const d of BLOCKS) {
     if (!d || !d.id || d.item === false || d.lower || d.shape === 'none' && d.iconLayer === undefined && !d.icon) continue;
     if (d.tab === null) continue;
@@ -217,15 +260,18 @@ export function creativeItems() {
     if (lists[tab]) lists[tab].push(d);
   }
   const out = { all: [], tabOf: new Map() };
-  for (const k of TAB_KEYS) {
+  for (const k of BLOCK_TABS) {
     lists[k].sort((a, b) => (a.order ?? 1e6 + a.id) - (b.order ?? 1e6 + b.id));
     out[k] = lists[k].map(d => d.id);
-    for (const id of out[k]) { out.all.push(id); out.tabOf.set(id, k); }
   }
+  // the items that are not blocks, in the game's list order
+  for (const k of ITEM_TABS) out[k] = [];
+  for (let id = ITEM_BASE; id < ITEMS.length; id++) { const it = ITEMS[id]; if (it && out[it.tab] && it.texIndex >= 0) out[it.tab].push(id); }
+  for (const k of BLOCK_TABS.concat(ITEM_TABS)) for (const id of out[k]) { out.all.push(id); out.tabOf.set(id, k); }
   itemsCache = out; itemsFor = BLOCKS.length;
   return out;
 }
-const tabIconId = t => { for (const n of t.icon) if (B[n] !== undefined) return B[n]; return B.stone || 1; };
+const tabIconId = t => { for (const n of t.icon) if (I[n] !== undefined) return I[n]; return B.stone || 1; };
 
 /* ------------------------------ the empty-slot outlines ------------------------------ */
 
@@ -237,8 +283,9 @@ const OUTLINES = [
   ['', '', '', '', '', '', '...###....###', '...###....###', '...###....###', '...###....###', '..####...####', '..####...####', '.#####..#####'],
   ['', '', '...##########', '...##########', '...##########', '...##########', '...##########', '...##########', '....########', '....########', '.....######', '......####', '.......##'],
 ];
-function drawOutline(g, kind, x, y) {
+export function drawOutline(g, kind, x, y) {
   const rows = OUTLINES[kind];
+  if (!rows) return;
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r];
     let c = 0;
@@ -254,20 +301,60 @@ function drawOutline(g, kind, x, y) {
 
 /* ------------------------------ drawing a stack ------------------------------ */
 
-// an item and its count, the count in the slot's bottom-right corner as in the game
+// an item and its count, the count in the slot's bottom-right corner, and the wear bar, as in the game
 export function drawStack(g, icons, st, x, y, countText, countColour) {
   if (!st) return;
   icons.draw(g, st.id, x, y);
+  if (st.dmg > 0) {
+    const max = maxDamage(st.id);
+    if (max) {
+      const left = Math.max(0, 1 - st.dmg / max), w = Math.round(13 * left);
+      // green when new, through yellow, to red
+      const h = left / 3, rgb = hsv(h, 1, 1);
+      g.fill(x + 2, y + 13, x + 15, y + 15, 0xFF000000);
+      g.fill(x + 2, y + 13, x + 2 + w, y + 14, 0xFF000000 | rgb);
+    }
+  }
   const text = countText !== undefined ? countText : st.count > 1 ? String(st.count) : '';
   if (text) g.text(text, x + 19 - 2 - g.textWidth(text), y + 6 + 3, countColour || WHITE, true);
+}
+function hsv(h, s, v) {
+  const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  const [r, g, b] = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i % 6];
+  return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+}
+
+// the lines of a stack's tooltip: name, enchantments, what it does in the hand
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+export function stackTooltip(st) {
+  const it = ITEMS[st.id];
+  const lines = [(st.ench ? '§b' : '') + displayName(st.id)];
+  if (st.ench) for (const k in st.ench) {
+    const nm = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    lines.push((/curse/.test(k) ? '§c' : '§7') + nm + (st.ench[k] > 1 || !/^(mending|silk_touch|infinity|aqua_affinity|flame|channeling|multishot|binding_curse|vanishing_curse)$/.test(k) ? ' ' + (ROMAN[st.ench[k]] || st.ench[k]) : ''));
+  }
+  if (it && it.attack) {
+    const fmt = n => (Math.round(n * 10) / 10).toString();
+    lines.push('', '§7When in Main Hand:', '§2 ' + fmt(it.attack + (st.ench && st.ench.sharpness ? 0.5 * st.ench.sharpness + 0.5 : 0)) + ' Attack Damage', '§2 ' + fmt(it.attackSpeed) + ' Attack Speed');
+  } else if (it && it.armor && it.armor.points) {
+    lines.push('', '§7When on ' + ['Head', 'Body', 'Legs', 'Feet'][it.armor.slot] + ':', '§9+' + it.armor.points + ' Armor');
+    if (it.armor.toughness) lines.push('§9+' + it.armor.toughness + ' Armor Toughness');
+    if (it.armor.knockback) lines.push('§9+' + Math.round(it.armor.knockback * 10) + ' Knockback Resistance');
+  }
+  if (st.dmg > 0) { const max = maxDamage(st.id); lines.push('§7Durability: ' + (max - st.dmg) + ' / ' + max); }
+  return lines;
 }
 
 /* ------------------------------ the shared container screen ------------------------------ */
 
 /* A slot on a screen: x, y (GUI pixels, the 16 x 16 item area), kind
-   ('inv' i 0-35, 'armor' i 0-3, 'offhand', 'craft' i 0-3, 'result',
+   ('inv' i 0-35, 'armor' i 0-3, 'offhand', 'craft' i, 'result', 'box' i,
    'grid' i 0-44, 'destroy'), an empty outline to draw, and a stack limit. */
-const slot = (x, y, kind, i, extra) => Object.assign({ x, y, kind, i: i || 0 }, extra || null);
+export const slot = (x, y, kind, i, extra) => Object.assign({ x, y, kind, i: i || 0 }, extra || null);
+export const range = (a, b) => { const r = []; for (let i = a; i < b; i++) r.push(i); return r; };
+// the player's inventory in the order the game fills it from a container: hotbar right to left, then the rest from the bottom
+export const TO_PLAYER_REVERSED = range(0, 9).reverse().concat(range(9, 36).reverse());
+export const TO_PLAYER = range(9, 36).concat(range(0, 9));
 
 // the last pointer press, read before the GUI handles it (shift-click, which button)
 const press = { shift: false, ctrl: false };
@@ -278,7 +365,7 @@ function watchPointer(canvas) {
   canvas.addEventListener('pointerdown', e => { press.shift = e.shiftKey; press.ctrl = e.ctrlKey || e.metaKey; }, true);
 }
 
-class ContainerScreen extends Screen {
+export class ContainerScreen extends Screen {
   constructor(inv, icons, imageWidth, imageHeight) {
     super('');
     this.inv = inv; this.icons = icons;
@@ -289,6 +376,9 @@ class ContainerScreen extends Screen {
     this.drag = null;                  // { button, slots: [] } while spreading a stack
     this.dbl = false; this.lastSlot = null; this.lastTime = 0; this.lastButton = -1;
     this._anim = false;
+    this.grid = null; this.gridW = 0;  // the crafting grid, if the screen has one
+    this.result = null;                // and what it makes: { stack, match }
+    this.box = null;                   // a container's own slots
   }
   // keep redrawing while icons are still being made
   get animates() { return this._anim || !!(this.icons && this.icons.pending); }
@@ -300,6 +390,7 @@ class ContainerScreen extends Screen {
     this.top = Math.floor((this.height - this.imageHeight) / 2);
     if (this.gui) watchPointer(this.gui.canvas);
     this.slots = this.makeSlots();
+    this.updateResult();
   }
   makeSlots() { return []; }
 
@@ -310,8 +401,9 @@ class ContainerScreen extends Screen {
       case 'inv': return inv.slots[s.i];
       case 'armor': return inv.armor[s.i];
       case 'offhand': return inv.offhand;
-      case 'craft': return inv.craft[s.i];
-      case 'result': return inv.craftResult;
+      case 'craft': return this.grid ? this.grid[s.i] : null;
+      case 'result': return this.result ? this.result.stack : null;
+      case 'box': return this.box ? this.box[s.i] : null;
       default: return null;
     }
   }
@@ -322,18 +414,21 @@ class ContainerScreen extends Screen {
       case 'inv': inv.slots[s.i] = st; break;
       case 'armor': inv.armor[s.i] = st; break;
       case 'offhand': inv.offhand = st; break;
-      case 'craft': inv.craft[s.i] = st; break;
-      case 'result': inv.craftResult = st; break;
+      case 'craft': if (this.grid) this.grid[s.i] = st; break;
+      case 'box': if (this.box) this.box[s.i] = st; this.boxChanged(s.i); break;
     }
   }
+  boxChanged() {}
   mayPlace(s, st) {
     if (!st) return true;
-    if (s.kind === 'result' || s.kind === 'grid' || s.kind === 'destroy') return false;
+    if (s.kind === 'result' || s.kind === 'grid' || s.kind === 'destroy' || s.output) return false;
     if (s.kind === 'armor') return armourSlotOf(st.id) === s.i;
     return true;
   }
   limit(s, id) { return Math.min(maxStack(id), s.kind === 'armor' ? 1 : 64); }
   setCarried(st) { this.inv.carried = st && st.count > 0 ? st : null; }
+  // a slot the drag, the double click and spreading leave alone
+  special(s) { return s.kind === 'result' || s.kind === 'grid' || s.kind === 'destroy'; }
 
   // the slot under the pointer (the 18 x 18 square around its item)
   slotAt(mx, my) {
@@ -343,12 +438,56 @@ class ContainerScreen extends Screen {
   slotShown() { return true; }
   isOutside(mx, my) { return mx < this.left || my < this.top || mx >= this.left + this.imageWidth || my >= this.top + this.imageHeight; }
 
+  /* ---- crafting ---- */
+  // what the grid makes now (called after anything changed)
+  updateResult() {
+    if (!this.grid) return;
+    const m = matchGrid(this.grid, this.gridW);
+    this.result = m ? { stack: m.result, match: m } : null;
+    if (this.grid === this.inv.craft) this.inv.craftResult = this.result ? this.result.stack : null;
+  }
+  // take one craft's result away: the grid gives up one of each
+  craftOnce() {
+    const r = this.result;
+    if (!r) return null;
+    const out = withCount(r.stack, r.stack.count);
+    consumeGrid(this.grid, st => this.inv.placeBack(st));
+    this.updateResult();
+    this.crafted(out);
+    return out;
+  }
+  crafted() {}                          // a hook: the result was taken (stats, sounds)
+  clickResult(button) {
+    const r = this.result, c = this.inv.carried;
+    if (!r) return;
+    if (!c) { this.setCarried(this.craftOnce()); return; }
+    // the same item on the mouse with room for a whole result: take it on top
+    if (same(c, r.stack) && c.count + r.stack.count <= maxStack(c.id)) { const o = this.craftOnce(); c.count += o.count; }
+  }
+  // shift-click on the result: craft while it stays the same and fits
+  shiftResult() {
+    let guard = 0;
+    while (this.result && guard++ < 64) {
+      const st = this.result.stack;
+      if (this.inv.roomFor(st) < st.count) break;
+      const first = st.id;
+      const o = this.craftOnce();
+      this.moveInto(o, TO_PLAYER_REVERSED);
+      if (o.count) { this.inv.placeBack(o); break; }
+      if (!this.result || this.result.stack.id !== first) break;
+    }
+  }
+
   /* ---- clicks: the game's rules ---- */
   // a plain left (0) or right (2) click on a slot
   click(s, button) {
+    if (s.kind === 'result') { this.clickResult(button); return; }
     const st = this.getStack(s), c = this.inv.carried;
-    if (s.kind === 'result') {
-      if (!c && st) { this.setCarried(st); this.setStack(s, null); }
+    if (s.output) {
+      // an output slot (a furnace's) only gives
+      if (!st) return;
+      if (!c) { const take = button === 2 ? Math.ceil(st.count / 2) : st.count; this.setCarried(withCount(st, take)); st.count -= take; this.setStack(s, st.count ? st : null); this.tookOutput(s, take); }
+      else if (same(st, c)) { const n = Math.min(maxStack(c.id) - c.count, st.count); if (n > 0) { c.count += n; st.count -= n; this.setStack(s, st.count ? st : null); this.tookOutput(s, n); } }
       return;
     }
     if (button === 0) {
@@ -356,11 +495,11 @@ class ContainerScreen extends Screen {
       else if (!st) {
         if (!this.mayPlace(s, c)) return;
         const n = Math.min(c.count, this.limit(s, c.id));
-        this.setStack(s, { id: c.id, count: n }); c.count -= n;
+        this.setStack(s, withCount(c, n)); c.count -= n;
         if (c.count <= 0) this.setCarried(null);
       } else if (same(st, c)) {
         const n = Math.min(this.limit(s, c.id) - st.count, c.count);
-        if (n > 0) { st.count += n; c.count -= n; if (c.count <= 0) this.setCarried(null); }
+        if (n > 0) { st.count += n; c.count -= n; if (c.count <= 0) this.setCarried(null); this.setStack(s, st); }
       } else if (this.mayPlace(s, c) && c.count <= this.limit(s, c.id)) {
         this.setStack(s, c); this.setCarried(st);
       }
@@ -368,38 +507,50 @@ class ContainerScreen extends Screen {
       if (!c) {
         if (st) {
           const take = Math.ceil(st.count / 2);
-          this.setCarried({ id: st.id, count: take }); st.count -= take;
-          if (st.count <= 0) this.setStack(s, null);
+          this.setCarried(withCount(st, take)); st.count -= take;
+          this.setStack(s, st.count > 0 ? st : null);
         }
       } else if (!st) {
         if (!this.mayPlace(s, c)) return;
-        this.setStack(s, { id: c.id, count: 1 }); c.count--;
+        this.setStack(s, withCount(c, 1)); c.count--;
         if (c.count <= 0) this.setCarried(null);
       } else if (same(st, c)) {
-        if (st.count < this.limit(s, c.id)) { st.count++; c.count--; if (c.count <= 0) this.setCarried(null); }
+        if (st.count < this.limit(s, c.id)) { st.count++; c.count--; if (c.count <= 0) this.setCarried(null); this.setStack(s, st); }
       } else if (this.mayPlace(s, c) && c.count <= this.limit(s, c.id)) {
         this.setStack(s, c); this.setCarried(st);
       }
     }
   }
-  // merge a stack into inventory slots (indices), matching stacks first, then the first empty one
+  tookOutput() {}                       // a hook: items taken from an output slot (furnace experience)
+  // merge a stack into inventory slots (indices, in order), matching stacks first, then empty ones
   moveInto(st, indices) {
     const max = maxStack(st.id), inv = this.inv;
     for (const i of indices) {
       const t = inv.slots[i];
-      if (t && t.id === st.id && t.count < max) { const n = Math.min(max - t.count, st.count); t.count += n; st.count -= n; if (!st.count) return; }
+      if (same(t, st) && t.count < max) { const n = Math.min(max - t.count, st.count); t.count += n; st.count -= n; if (!st.count) return; }
     }
-    for (const i of indices) if (!inv.slots[i]) { inv.slots[i] = { id: st.id, count: st.count }; st.count = 0; return; }
+    for (const i of indices) if (!inv.slots[i]) { inv.slots[i] = withCount(st, Math.min(max, st.count)); st.count -= inv.slots[i].count; if (!st.count) return; }
+  }
+  // the same into a container's own slots
+  moveIntoBox(st, indices) {
+    const max = maxStack(st.id), box = this.box;
+    for (const i of indices) {
+      const t = box[i];
+      if (same(t, st) && t.count < max) { const n = Math.min(max - t.count, st.count); t.count += n; st.count -= n; this.boxChanged(i); if (!st.count) return; }
+    }
+    for (const i of indices) if (!box[i]) { box[i] = withCount(st, Math.min(max, st.count)); st.count -= box[i].count; this.boxChanged(i); if (!st.count) return; }
   }
   // shift-click: the survival inventory's quick move
   quickMove(s) {
+    if (s.kind === 'result') { this.shiftResult(); return; }
     const st = this.getStack(s);
     if (!st) return;
     const MAIN = range(9, 36), HOT = range(0, 9);
-    if (s.kind === 'craft' || s.kind === 'armor' || s.kind === 'offhand' || s.kind === 'result') this.moveInto(st, MAIN.concat(HOT));
+    if (s.kind === 'craft' || s.kind === 'armor' || s.kind === 'offhand') this.moveInto(st, MAIN.concat(HOT));
     else if (s.kind === 'inv') {
       const a = armourSlotOf(st.id);
-      if (a >= 0 && !this.inv.armor[a]) { this.inv.armor[a] = { id: st.id, count: 1 }; st.count--; }
+      if (a >= 0 && !this.inv.armor[a] && armorOf(st.id).points >= 0) { this.inv.armor[a] = withCount(st, 1); st.count--; }
+      else if (ITEMS[st.id] && ITEMS[st.id].name === 'shield' && !this.inv.offhand) { this.inv.offhand = withCount(st, 1); st.count--; }
       else this.moveInto(st, s.i >= 9 ? HOT : MAIN);
     }
     if (!st.count) this.setStack(s, null);
@@ -411,12 +562,12 @@ class ContainerScreen extends Screen {
     const max = maxStack(c.id);
     for (let pass = 0; pass < 2 && c.count < max; pass++) {
       for (const s of this.slots) {
-        if (s.kind === 'result' || s.kind === 'grid' || s.kind === 'destroy' || !this.slotShown(s)) continue;
+        if (this.special(s) || !this.slotShown(s)) continue;
         const st = this.getStack(s);
         if (!same(st, c) || (pass === 0 && st.count >= max)) continue;
         const n = Math.min(max - c.count, st.count);
         c.count += n; st.count -= n;
-        if (!st.count) this.setStack(s, null);
+        this.setStack(s, st.count ? st : null);
         if (c.count >= max) break;
       }
     }
@@ -425,13 +576,14 @@ class ContainerScreen extends Screen {
   swapHotbar(s, n) {
     const hs = { kind: 'inv', i: n };
     const a = this.getStack(s), b = this.inv.slots[n];
-    if (s.kind === 'result') { if (a && !b) { this.inv.slots[n] = a; this.setStack(s, null); } return; }
+    if (s.kind === 'result') { if (this.result && !b) this.inv.slots[n] = this.craftOnce(); return; }
+    if (s.output) { if (a && !b) { this.inv.slots[n] = a; this.setStack(s, null); this.tookOutput(s, a.count); } return; }
     if (b && !this.mayPlace(s, b)) return;
     if (b && b.count > this.limit(s, b.id)) return;
     this.setStack(s, b); this.setStack(hs, a);
   }
   swapOffhand(s) {
-    if (s.kind === 'offhand' || s.kind === 'result') return;
+    if (s.kind === 'offhand' || s.kind === 'result' || s.output) return;
     const a = this.getStack(s), b = this.inv.offhand;
     if (b && !this.mayPlace(s, b)) return;
     this.setStack(s, b); this.inv.offhand = a;
@@ -439,7 +591,7 @@ class ContainerScreen extends Screen {
   // what can be spread over by a drag
   canDrag(s) {
     const c = this.inv.carried;
-    if (!c || !this.mayPlace(s, c) || s.kind === 'result' || s.kind === 'grid' || s.kind === 'destroy') return false;
+    if (!c || !this.mayPlace(s, c) || this.special(s)) return false;
     const st = this.getStack(s);
     return !st || same(st, c);
   }
@@ -469,14 +621,14 @@ class ContainerScreen extends Screen {
   spread() {
     const p = this.dragPreview(), c = this.inv.carried;
     if (!p) return;
-    for (const [s, v] of p.counts) this.setStack(s, { id: c.id, count: v.count });
+    for (const [s, v] of p.counts) this.setStack(s, withCount(c, v.count));
     if (this.drag.button !== 1) { c.count = p.left; if (!c.count) this.setCarried(null); }
   }
   drop(button) {
     const c = this.inv.carried;
     if (!c) return;
     const n = button === 2 ? 1 : c.count;
-    this.inv.emit('drop', { id: c.id, count: n });
+    this.inv.emit('drop', withCount(c, n));
     c.count -= n;
     if (!c.count) this.setCarried(null);
   }
@@ -485,6 +637,8 @@ class ContainerScreen extends Screen {
   // the screen's own controls (tabs, scrollbar); true when it took the click
   extraClick() { return false; }
   gridClick() {}
+  // after any click or key: the grid's result again, and everyone told
+  after() { this.updateResult(); this.inv.changed(); }
 
   mouseClicked(mx, my, button) {
     const shift = press.shift;
@@ -495,10 +649,10 @@ class ContainerScreen extends Screen {
     this.pressButton = button;
     this.drag = null;
     const hit = this.extraClick(mx, my, button);
-    if (hit) { this.inv.changed(); return hit; }
+    if (hit) { this.after(); return hit; }
     if (!s) {
       if (this.isOutside(mx, my) && this.inv.carried && button !== 1) this.drop(button);
-      this.inv.changed();
+      this.after();
       return this.keepFocus();
     }
     const c = this.inv.carried;
@@ -506,12 +660,13 @@ class ContainerScreen extends Screen {
     else if (s.kind === 'destroy') this.destroyClick(shift);
     else if (button === 1) {
       // middle: a full stack of it on the mouse, in creative; or spread full stacks
-      if (this.creative && !c) { const st = this.getStack(s); if (st) this.setCarried({ id: st.id, count: maxStack(st.id) }); }
+      if (this.creative && !c) { const st = this.getStack(s); if (st) this.setCarried(withCount(st, maxStack(st.id))); }
       else if (this.creative && c && this.canDrag(s)) this.drag = { button: 1, slots: [s] };
     } else if (shift && !c) this.shiftClick(s);
+    else if (s.kind === 'result' || s.output) this.click(s, button);
     else if (c) this.drag = { button, slots: this.canDrag(s) ? [s] : [] };
     else this.click(s, button);
-    this.inv.changed();
+    this.after();
     return this.keepFocus();
   }
   keepFocus() { return true; }
@@ -529,7 +684,7 @@ class ContainerScreen extends Screen {
     if (!d) {
       // a double click that picked a stack up on its second press gathers the rest on release
       const s = this.slotAt(mx, my);
-      if (this.dbl && button === 0 && this.inv.carried && s && s.kind !== 'grid' && s.kind !== 'destroy' && s.kind !== 'result') { this.pickAll(); this.dbl = false; this.inv.changed(); }
+      if (this.dbl && button === 0 && this.inv.carried && s && !this.special(s)) { this.pickAll(); this.dbl = false; this.after(); }
       return;
     }
     if (this.dbl && d.button === 0) { this.pickAll(); this.dbl = false; }
@@ -538,7 +693,7 @@ class ContainerScreen extends Screen {
       const s = d.slots[0] || this.slotAt(mx, my);
       if (s && d.button !== 1) this.click(s, d.button);
     }
-    this.inv.changed();
+    this.after();
   }
   keyPressed(e) {
     if (e.key === 'Escape') { this.gui.back(); return true; }
@@ -547,27 +702,37 @@ class ContainerScreen extends Screen {
     const s = this.slotAt(this.gui.mx, this.gui.my);
     if (!this.inv.carried && s) {
       for (let n = 1; n <= 9; n++) {
-        if (e.code === keys['hotbar' + n]) { this.numberKey(s, n - 1); this.inv.changed(); return true; }
+        if (e.code === keys['hotbar' + n]) { this.numberKey(s, n - 1); this.after(); return true; }
       }
-      if (e.code === (keys.swapOffhand || 'KeyF')) { if (s.kind !== 'grid' && s.kind !== 'destroy') this.swapOffhand(s); this.inv.changed(); return true; }
-      if (keys.drop && e.code === keys.drop) { this.throwFrom(s, e.ctrlKey || e.metaKey); this.inv.changed(); return true; }
+      if (e.code === (keys.swapOffhand || 'KeyF')) { if (s.kind !== 'grid' && s.kind !== 'destroy') this.swapOffhand(s); this.after(); return true; }
+      if (e.code === (keys.drop || 'KeyQ')) { this.throwFrom(s, e.ctrlKey || e.metaKey); this.after(); return true; }
     }
     return false;
   }
   numberKey(s, n) { if (s.kind !== 'grid' && s.kind !== 'destroy') this.swapHotbar(s, n); }
   throwFrom(s, all) {
+    if (s.kind === 'grid' || s.kind === 'destroy') return;
+    if (s.kind === 'result') {
+      // Q crafts once and throws it; Ctrl+Q crafts all there is and throws them
+      let guard = 0;
+      do { const o = this.craftOnce(); if (!o) break; this.inv.emit('drop', o); } while (all && this.result && guard++ < 64);
+      return;
+    }
     const st = this.getStack(s);
-    if (!st || s.kind === 'grid' || s.kind === 'destroy') return;
+    if (!st) return;
     const n = all ? st.count : 1;
-    this.inv.emit('drop', { id: st.id, count: n });
+    this.inv.emit('drop', withCount(st, n));
     st.count -= n;
-    if (!st.count) this.setStack(s, null);
+    this.setStack(s, st.count ? st : null);
+    if (s.output) this.tookOutput(s, n);
   }
   // closing: what was on the mouse and in the crafting grid goes back into the inventory
   onClose() {
     const inv = this.inv;
     if (inv.carried) { const c = inv.carried; inv.carried = null; inv.placeBack(c); }
-    for (let i = 0; i < 4; i++) if (inv.craft[i]) { const c = inv.craft[i]; inv.craft[i] = null; inv.placeBack(c); }
+    if (this.grid) for (let i = 0; i < this.grid.length; i++) if (this.grid[i]) { const c = this.grid[i]; this.grid[i] = null; inv.placeBack(c); }
+    this.result = null;
+    if (this.grid === inv.craft) inv.craftResult = null;
     this.drag = null;
     inv.changed();
   }
@@ -583,7 +748,7 @@ class ContainerScreen extends Screen {
       const st = this.slotStack(s);
       const pv = prev && prev.counts.get(s);
       if (pv) {
-        drawStack(g, this.icons, { id: this.inv.carried.id, count: pv.count }, s.x, s.y, pv.capped ? '§e' + pv.count : pv.count > 1 ? String(pv.count) : '');
+        drawStack(g, this.icons, withCount(this.inv.carried, pv.count), s.x, s.y, pv.capped ? '§e' + pv.count : pv.count > 1 ? String(pv.count) : '');
         g.fill(s.x, s.y, s.x + 16, s.y + 16, HIGHLIGHT);
         continue;
       }
@@ -598,7 +763,7 @@ class ContainerScreen extends Screen {
     return prev;
   }
   slotStack(s) { return this.getStack(s); }
-  tooltipFor(st) { return [displayName(st.id)]; }
+  tooltipFor(st) { return stackTooltip(st); }
   // the stack on the mouse, over everything
   drawCarried(g, mx, my, prev) {
     const c = this.inv.carried;
@@ -607,12 +772,11 @@ class ContainerScreen extends Screen {
     else drawStack(g, this.icons, c, mx - 8, my - 8);
   }
 }
-const range = (a, b) => { const r = []; for (let i = a; i < b; i++) r.push(i); return r; };
 
 /* ------------------------------ survival inventory ------------------------------ */
 
 export class InventoryScreen extends ContainerScreen {
-  constructor(inv, icons) { super(inv, icons, 176, 166); this.title = 'Crafting'; }
+  constructor(inv, icons) { super(inv, icons, 176, 166); this.title = 'Crafting'; this.grid = inv.craft; this.gridW = 2; }
   makeSlots() {
     const L = this.left, T = this.top, out = [];
     out.push(slot(L + 154, T + 28, 'result'));
@@ -723,8 +887,8 @@ export class CreativeInventoryScreen extends ContainerScreen {
     if (t.search) {
       const q = this.search.value.trim().toLowerCase();
       this.items = q ? all.all.filter(id => {
-        const d = BLOCKS[id];
-        return displayName(id).toLowerCase().indexOf(q) >= 0 || d.name.replace(/_/g, ' ').indexOf(q) >= 0 || d.name.indexOf(q) >= 0;
+        const n = ITEMS[id] ? ITEMS[id].name : BLOCKS[id].name;
+        return displayName(id).toLowerCase().indexOf(q) >= 0 || n.replace(/_/g, ' ').indexOf(q) >= 0 || n.indexOf(q) >= 0;
       }) : all.all;
     } else if (t.inventory) this.items = [];
     else this.items = all[t.key] || [];
@@ -791,12 +955,12 @@ export class CreativeInventoryScreen extends ContainerScreen {
     const id = this.gridItem(s.i), c = this.inv.carried;
     const max = id ? maxStack(id) : 64;
     if (button === 1) { if (!c && id) this.setCarried({ id, count: max }); return; }
-    if (c && id && c.id === id) {
+    if (c && id && c.id === id && !c.dmg && !c.ench) {
       if (button === 0) { if (shift) c.count = max; else if (c.count < max) c.count++; }
       else { c.count--; if (!c.count) this.setCarried(null); }
     } else if (id && !c) {
       if (shift) {
-        // a full stack straight into the hotbar: onto the same block, else the first empty slot
+        // a full stack straight into the hotbar: onto the same item, else the first empty slot
         const hot = this.inv.slots;
         let at = -1;
         for (let i = 0; i < 9 && at < 0; i++) if (hot[i] && hot[i].id === id) at = i;
@@ -808,7 +972,7 @@ export class CreativeInventoryScreen extends ContainerScreen {
     else if (c) { c.count--; if (!c.count) this.setCarried(null); }
   }
   shiftClick(s) {
-    // on a block tab, shift-clicking the hotbar row clears that slot, as in the game
+    // on an item tab, shift-clicking the hotbar row clears that slot, as in the game
     if (!this.T.inventory && s.kind === 'inv') { this.setStack(s, null); return; }
     this.quickMove(s);
   }
@@ -843,7 +1007,7 @@ export class CreativeInventoryScreen extends ContainerScreen {
     return super.keyPressed(e);
   }
   tooltipFor(st, s) {
-    const lines = [displayName(st.id)];
+    const lines = stackTooltip(st);
     if (s && s.kind === 'grid' && this.T.search) {
       const k = creativeItems().tabOf.get(st.id);
       const t = TABS.find(x => x.key === k);
