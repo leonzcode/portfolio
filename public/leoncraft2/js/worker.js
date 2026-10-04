@@ -5,8 +5,9 @@ import { meshColumn, setColours } from './mesher.js?v=9';
 import { resolveTextures } from './blocks.js?v=9';
 import { NetherGen } from './gen/nether.js?v=9';
 import { EndGen } from './gen/end.js?v=9';
+import { worldStructures, structureMessage } from './struct/hook.js?v=9';
 
-let gen = null;
+let gen = null, structs = null;
 
 self.onmessage = e => {
   const m = e.data;
@@ -15,6 +16,9 @@ self.onmessage = e => {
     // made as Vanilla Seed, the first generator for the rest
     gen = m.dim === 'the_nether' ? new NetherGen(m.seed) : m.dim === 'the_end' ? new EndGen(m.seed)
       : m.generator === 'vanilla' ? new VanillaGen(String(m.seed)) : new Gen(m.seed | 0);
+    // structures read their biomes and heights from whichever generator this is (fortresses and
+    // bastions in the Nether, end cities in the End)
+    structs = worldStructures(m.generator === 'vanilla' ? String(m.seed) : m.seed | 0, gen, m.dim || 'overworld');
     resolveTextures(m.manifest);
     setColours(m.colours);
     self.postMessage({ type: 'ready' });
@@ -22,7 +26,8 @@ self.onmessage = e => {
   }
   if (m.type === 'gen') {
     const c = gen.generate(m.cx, m.cz);
-    self.postMessage({ type: 'gen', id: m.id, cx: m.cx, cz: m.cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top },
+    const extra = structs ? structs.build(c, m.cx, m.cz) : null;      // the structures reaching into this chunk
+    self.postMessage({ type: 'gen', id: m.id, cx: m.cx, cz: m.cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: extra },
       [c.blocks.buffer, c.meta.buffer, c.biome.buffer]);
     return;
   }
@@ -37,6 +42,10 @@ self.onmessage = e => {
     }
     if (out.light) transfer.push(out.light.buffer);
     self.postMessage({ type: 'mesh', id: m.id, cx: m.cx, cz: m.cz, version: m.version, mesh: out }, transfer);
+    return;
+  }
+  if (m.type === 'structures') {
+    self.postMessage(Object.assign({ type: 'structures', id: m.id }, structureMessage(structs, m)));
     return;
   }
   if (m.type === 'surface') {

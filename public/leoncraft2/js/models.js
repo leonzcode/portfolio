@@ -394,6 +394,16 @@ SHAPES.vine = function (d, m, nb) {
   return r;
 };
 
+// the end portal frame: 13/16 tall, and the eye on top once one is in (bit 2 of the meta)
+SHAPES.portal_frame = function (d, m) {
+  const r = [box(0, 0, 0, 16, 13, 16)];
+  if (m & 4) {
+    const e = d.L && d.L.content !== undefined ? d.L.content : d.faces[2];
+    r.push(box(4, 13, 4, 12, 16, 12, { faces: [e, e, e, e, e, e] }));
+  }
+  return turn(r, m & 3);
+};
+
 export const MODEL_SHAPES = new Set(Object.keys(SHAPES));
 
 // the boxes (and quads) of a block in a given state; nb(dx, dy, dz) returns { d, m } or null
