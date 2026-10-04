@@ -28,7 +28,8 @@ import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJS
 import { breakTicks, wearFor } from './mining.js?v=8';
 import { blockDrops } from './loot.js?v=8';
 import { containerKind } from './containers.js?v=8';
-import { CraftingScreen, ChestScreen, FurnaceScreen } from './ui/containers.js?v=8';
+import { CraftingScreen, ChestScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=8';
+import { isPotion, drinkPotion } from './brewing.js?v=8';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=8';
 import { countShelves } from './enchanting.js?v=8';
 
@@ -45,11 +46,12 @@ export class Hands {
   constructor(g) {
     Object.assign(this, g);
     this.using = null;               // { slot, id, t, total } while eating or drinking
+    if (this.containers) this.containers.drops = this.drops;
     this.ender = new Array(27).fill(null);
     this.onEat = null;               // (id) the eating sound, every 4 ticks
     this.onBurp = null;
     // the screens' sheets, fetched now so a chest never opens on an empty frame
-    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter'])
+    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter'])
       this.gui.loadSheet('container/' + n).catch(() => {});
   }
   get creative() { return this.mode === 'creative'; }
@@ -60,7 +62,7 @@ export class Hands {
     const self = this;
     return {
       id: () => { const s = self.held; return s ? blockOf(s.id) : 0; },
-      used: () => self.placed(),
+      used: list => self.placed(list),
       got: id => self.inv.add(id, 1),
       swing: () => { renderer.swing = 1; },
       progress: hit => self.progress(hit),
@@ -70,7 +72,8 @@ export class Hands {
     };
   }
   // a block was placed from the selected stack: one fewer, and a bucket leaves its bucket
-  placed() {
+  placed(list) {
+    if (list) for (const [x, y, z] of list) this.containers.placed(x, y, z);
     if (this.creative) return;
     const s = this.held;
     if (!s) return;
@@ -169,6 +172,8 @@ export class Hands {
         }));
         return true;
       }
+      if (kind === 'hopper') { this.open(new HopperScreen(this.inv, this.icons, c.slots, () => C.changed(c))); return true; }
+      if (kind === 'brewing_stand') { this.open(new BrewingScreen(this.inv, this.icons, c, { changed: () => C.changed(c) })); return true; }
       const title = kind === 'barrel' ? 'Barrel' : kind === 'trapped_chest' ? 'Chest' : kind === 'shulker_box' ? 'Shulker Box'
         : kind === 'dispenser' ? 'Dispenser' : kind === 'dropper' ? 'Dropper' : kind === 'hopper' ? 'Item Hopper' : 'Chest';
       this.open(new ChestScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)));
@@ -251,6 +256,7 @@ export class Hands {
       return true;
     }
     if (it.name === 'bucket') return this.fillBucket();
+    if (it.name === 'glass_bottle') return this.fillBucket(true);
     return false;
   }
   // seeds and berries go in the ground when the block clicked takes them
@@ -263,7 +269,7 @@ export class Hands {
     return d.name === 'farmland';
   }
   // the bucket ray: the first source of water or lava along the view, within reach
-  fillBucket() {
+  fillBucket(bottle) {
     const p = this.player, eye = { x: p.pos.x, y: p.pos.y + (p.sneaking ? 1.27 : 1.62), z: p.pos.z };
     const dx = -Math.sin(p.yaw) * Math.cos(p.pitch), dy = Math.sin(p.pitch), dz = -Math.cos(p.yaw) * Math.cos(p.pitch);
     const reach = this.creative ? 5 : 4.5;
@@ -274,6 +280,19 @@ export class Hands {
       const k = FLUID[b];
       if (!k) { if (BLOCKS[b].solid) return false; continue; }
       if (!this.fluids.isSource(x, y, z, k)) continue;
+      // a glass bottle takes a drink of water and leaves the water where it is
+      if (bottle) {
+        if (k !== 1) return false;
+        const water = { id: I.potion, count: 1, potion: 'water' };
+        if (!this.creative) {
+          const s = this.held;
+          if (s.count <= 1) this.inv.slots[this.inv.selected] = water;
+          else { s.count--; this.inv.placeBack(water); }
+          this.inv.changed();
+        } else this.inv.placeBack(water);
+        if (this.renderer) this.renderer.swing = 1;
+        return true;
+      }
       this.world.set(x, y, z, 0, 0);
       this.fluids.around(x, y, z);
       const full = I[k === 1 ? BUCKETS.water : BUCKETS.lava];
@@ -312,6 +331,7 @@ export class Hands {
     if (it.name === 'milk_bucket') sv.clearEffects();
     if (it.name === 'honey_bottle') delete sv.effects.poison;
     if (it.name === 'chorus_fruit') this.chorusTeleport();
+    if (isPotion(this.held)) drinkPotion(this.held, sv);
     if (!this.creative) {
       const s = this.held;
       s.count--;

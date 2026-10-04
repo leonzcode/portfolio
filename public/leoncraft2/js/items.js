@@ -211,7 +211,7 @@ export function fuelTicks(id) { const it = ITEMS[id]; return it && it.fuel ? it.
 export function sameItem(a, b) {
   if (!a || !b || a.id !== b.id) return false;
   if ((a.dmg | 0) !== (b.dmg | 0) || (a.rep | 0) !== (b.rep | 0) || (a.name || '') !== (b.name || '')) return false;
-  if ((a.trim ? a.trim.join() : '') !== (b.trim ? b.trim.join() : '')) return false;
+  if ((a.trim ? a.trim.join() : '') !== (b.trim ? b.trim.join() : '') || (a.potion || '') !== (b.potion || '')) return false;
   return enchKey(a) === enchKey(b);
 }
 function enchKey(s) { if (!s.ench) return ''; let k = ''; for (const n in s.ench) k += n + s.ench[n] + ','; return k; }
@@ -224,6 +224,7 @@ export function withCount(s, count) {
   if (s.rep) o.rep = s.rep;
   if (s.name) o.name = s.name;
   if (s.trim) o.trim = s.trim.slice();
+  if (s.potion) o.potion = s.potion;
   return o;
 }
 export function enchLevel(s, name) { return s && s.ench && s.ench[name] ? s.ench[name] : 0; }
@@ -232,10 +233,10 @@ export function enchLevel(s, name) { return s && s.ench && s.ench[name] ? s.ench
 export function stackToJSON(s) {
   if (!s) return null;
   const a = [itemName(s.id), s.count];
-  const more = s.rep || s.name || s.trim;
+  const more = s.rep || s.name || s.trim || s.potion;
   if (s.dmg || s.ench || more) a.push(s.dmg | 0);
   if (s.ench || more) a.push(s.ench || 0);
-  if (more) a.push({ rep: s.rep || 0, name: s.name || '', trim: s.trim || 0 });
+  if (more) a.push({ rep: s.rep || 0, name: s.name || '', trim: s.trim || 0, potion: s.potion || '' });
   return a;
 }
 export function stackFromJSON(a) {
@@ -246,7 +247,7 @@ export function stackFromJSON(a) {
   if (a[2]) s.dmg = a[2] | 0;
   if (a[3] && typeof a[3] === 'object') s.ench = a[3];
   const m = a[4];
-  if (m && typeof m === 'object') { if (m.rep) s.rep = m.rep | 0; if (m.name) s.name = String(m.name); if (Array.isArray(m.trim)) s.trim = m.trim; }
+  if (m && typeof m === 'object') { if (m.rep) s.rep = m.rep | 0; if (m.name) s.name = String(m.name); if (Array.isArray(m.trim)) s.trim = m.trim; if (m.potion) s.potion = String(m.potion); }
   return s;
 }
 

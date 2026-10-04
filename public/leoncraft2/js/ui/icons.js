@@ -26,7 +26,14 @@
      const icons = new ItemIcons(albedoImage, { grassMap, foliageMap });
      icons.draw(gui, blockId, x, y);      // GUI pixels, top-left of the slot
 --------------------------------------------------------------------------- */
-import { DRAW } from '../items.js?v=8';
+import { DRAW, textureLayer } from '../items.js?v=8';
+import { potionColour } from '../brewing.js?v=8';
+
+// pictures coloured per stack: the tinted layer under the plain one (a potion's liquid under its bottle)
+const TINTED_PARTS = {
+  potion: ['layer_potion_overlay', 'layer_potion'], splash_potion: ['layer_potion_overlay', 'layer_splash_potion'],
+  lingering_potion: ['layer_potion_overlay', 'layer_lingering_potion'], tipped_arrow: ['layer_tipped_arrow_head', 'layer_tipped_arrow_base'],
+};
 import { boxesOf } from '../models.js?v=8';
 
 // face order and texture axes, exactly as the mesher lays textures on faces
@@ -235,6 +242,25 @@ export class ItemIcons {
       e = this.map.get(id);
     }
     if (!e.c) return true;      // nothing to show for this block
+    g.ctx.drawImage(e.c, e.x, e.y, e.w, e.w, x, y, 16, 16);
+    return true;
+  }
+
+  /* A stack whose picture is coloured by what it holds (potions, tipped
+     arrows): made once per colour, kept with the flat icons. */
+  drawTinted(g, st, x, y) {
+    const d = DRAW[st.id], parts = d && TINTED_PARTS[d.name];
+    if (!parts) return this.draw(g, st.id, x, y);
+    const col = potionColour(st), key = 't:' + d.name + ':' + col;
+    let e = this.map.get(key);
+    if (!e) {
+      const under = textureLayer(parts[0]), over = textureLayer(parts[1]);
+      if (under < 0 || over < 0) return this.draw(g, st.id, x, y);
+      e = this.flat.alloc();
+      this._fill(under, col, 1, over, -1);
+      e.c.getContext('2d').putImageData(this.fimg, e.x, e.y);
+      this.map.set(key, e);
+    }
     g.ctx.drawImage(e.c, e.x, e.y, e.w, e.w, x, y, 16, 16);
     return true;
   }
