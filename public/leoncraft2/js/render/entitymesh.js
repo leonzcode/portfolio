@@ -18,6 +18,7 @@
    one instanced draw.
 --------------------------------------------------------------------------- */
 import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=8';
+import { VANILLA } from './vanilla.js?v=8';
 import { lightDefines } from './materials.js?v=8';
 const THREE = window.THREE;
 
@@ -107,6 +108,36 @@ void main() {
   col = finishLDR(col, vWorld);
 #endif
   outColor = vec4(col, 1.0);
+}`;
+
+/* Fast graphics (the game with no shaders): a mob is its skin, the game's two
+   fixed lights on its faces, the lightmap where it stands and the fog; hurt
+   is the game's red overlay (30% red), a creeper about to go flashes white. */
+const FS_VANILLA = VANILLA + /* glsl */`
+uniform sampler2D uAtlas;
+uniform vec3 cameraPosition;
+in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint;
+layout(location = 0) out vec4 outColor;
+void main() {
+  vec4 t = texture(uAtlas, vUv);
+  if (t.a < 0.5) discard;
+  vec3 c = t.rgb * vTint;
+  c = mix(c, vec3(1.0, 0.0, 0.0), vL.z * 0.3);
+  c = mix(c, vec3(1.0), vL.w);
+  vec3 N = normalize(vN);
+  if (!gl_FrontFacing) N = -N;
+  c *= entityShade(N) * lightmapAt(vL.x, vL.y);
+  outColor = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
+}`;
+const PART_FS_VANILLA = VANILLA + /* glsl */`
+uniform sampler2D uSheet;
+in vec2 vUv; in vec4 vC; in float vLight;
+layout(location = 0) out vec4 outColor;
+void main() {
+  vec4 t = texture(uSheet, vUv);
+  if (t.a * vC.a < 0.1) discard;
+  vec3 c = t.rgb * vC.rgb * (vLight > 0.99 ? vec3(1.0) : lightmapAt(vLight, 0.0));
+  outColor = vec4(c, t.a * vC.a);
 }`;
 
 /* ---- the round shadow under a mob ---- */
@@ -265,7 +296,8 @@ export class EntityMeshes {
     this.uBones = { value: this.boneTex };
     const uni = Object.assign({}, U, { uAtlas: { value: tex }, uBones: this.uBones });
     this.mat = new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: HEAD + COMMON + VS, fragmentShader: HEAD + COMMON + SHADOW + TONEMAP + FS,
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + COMMON + VS,
+      fragmentShader: opts.vanilla ? HEAD + FS_VANILLA : HEAD + COMMON + SHADOW + TONEMAP + FS,
       uniforms: uni, defines, side: THREE.DoubleSide,
     });
     this.models = new Map();        // name -> { mesh, geo, inst arrays, n, cap }
@@ -291,8 +323,9 @@ export class EntityMeshes {
     const pdef = {};
     if (opts.ldr) pdef.LDR = 1;
     this.parts = new THREE.Mesh(pg, new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: HEAD + PART_VS, fragmentShader: HEAD + PART_FS, defines: pdef,
-      uniforms: { uSheet: { value: sheet }, uAmbient: U.uAmbient }, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + PART_VS, fragmentShader: HEAD + (opts.vanilla ? PART_FS_VANILLA : PART_FS), defines: pdef,
+      uniforms: { uSheet: { value: sheet }, uAmbient: U.uAmbient, uLightmap: U.uLightmap || { value: null }, uFogColor: U.uFogColor || { value: null }, uFog: U.uFog || { value: null } },
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
     }));
     this.parts.frustumCulled = false; this.parts.renderOrder = 6;
     this.group.add(this.parts);
