@@ -43,6 +43,7 @@ export class PathFinder {
     this.t = terrain;
     this.pool = []; this.used = 0;
     this.map = new Map();
+    this.costs = new Map();
     this.heap = [];
     kinds();
   }
@@ -91,8 +92,14 @@ export class PathFinder {
     }
     return 0;
   }
-  // the cost of standing at (x, y, z): BLOCKED, or the extra on top of the distance
+  // the cost of standing at (x, y, z): BLOCKED, or the extra on top of the distance (remembered for one search)
   cost(x, y, z, mob) {
+    const k = ((x & 0xfff) * 4096 + (z & 0xfff)) * 512 + (y & 511);
+    let c = this.costs.get(k);
+    if (c === undefined) { c = this.cost0(x, y, z, mob); this.costs.set(k, c); }
+    return c;
+  }
+  cost0(x, y, z, mob) {
     if (this.open(x, y, z, mob) === BLOCKED) return BLOCKED;
     const T = this.t, b = T.get(x, y, z);
     if (FLUID[b] === 1) return mob.waterCost !== undefined ? mob.waterCost : 8;
@@ -148,7 +155,7 @@ export class PathFinder {
      from the mob's feet to (tx, ty, tz); within reach blocks counts as there.
      Returns a list of [x, y, z] or null. */
   find(mob, tx, ty, tz, reach, maxNodes) {
-    this.used = 0; this.map.clear(); this.heap.length = 0;
+    this.used = 0; this.map.clear(); this.heap.length = 0; this.costs.clear();
     const T = this.t;
     let sx = Math.floor(mob.pos.x), sy = Math.floor(mob.pos.y + 0.01), sz = Math.floor(mob.pos.z);
     // in water, stand on the surface

@@ -44,7 +44,7 @@ import { dropOf } from '../survival.js?v=8';
 const THREE = window.THREE;
 
 const R = () => Math.random();
-const CELL = 16;
+const CELL = 8;
 const DIFF = { peaceful: 0, easy: 1, normal: 2, hard: 3 };
 
 // weapons: [damage, attack speed]; anything else is a fist (1, 4)
@@ -116,7 +116,12 @@ export class Entities {
   /* ---- light and the time of day, the game's way ---- */
   // how much the sky light is taken down at this time of day (0 at noon, 11 at midnight)
   skyDarken() {
-    const t = this.time % 24000;
+    if (this.sdAge === this.age && this.age > 0) return this.sd;
+    this.sdAge = this.age;
+    return (this.sd = this.skyDarkenAt(this.time));
+  }
+  skyDarkenAt(time) {
+    const t = time % 24000;
     let f = t / 24000 - 0.25;
     f = f - Math.floor(f);
     const c = (f * 2 + (0.5 - Math.cos(f * Math.PI) / 2)) / 3;
@@ -164,18 +169,22 @@ export class Entities {
   // living things push each other apart a little (0.05 a tick), the player too
   pushOthers(e) {
     if (e.vehicle || e.constructor.NO_PUSH) return;
-    const p = e.pos;
-    this.forNear(p.x, p.z, 2, o => {
-      if (o === e || o.removed || o.dead || !(o instanceof Living) || o.vehicle || o.constructor.NO_PUSH) return;
-      if (o.id < e.id && this.age % 1 === 0 && o.pushedWith === this.age) return;
-      if (Math.abs(o.pos.x - p.x) >= o.hw + e.hw || Math.abs(o.pos.z - p.z) >= o.hw + e.hw || o.pos.y >= p.y + e.h || o.pos.y + o.h <= p.y) return;
-      // an empty boat takes a mob in
-      if (o.takesPassenger && o.takesPassenger(e)) { o.addPassenger(e); return; }
-      this.pushPair(e, o);
-    });
-    e.pushedWith = this.age;
+    const p = e.pos, hw = e.hw, h = e.h;
+    const x0 = Math.floor((p.x - hw - 1) / CELL), x1 = Math.floor((p.x + hw + 1) / CELL), z0 = Math.floor((p.z - hw - 1) / CELL), z1 = Math.floor((p.z + hw + 1) / CELL);
+    for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) {
+      const a = this.grid.get((cx + 4096) * 8192 + cz + 4096);
+      if (!a) continue;
+      for (let i = 0; i < a.length; i++) {
+        const o = a[i];
+        if (o === e) continue;
+        const ow = o.hw + hw;
+        if (Math.abs(o.pos.x - p.x) >= ow || Math.abs(o.pos.z - p.z) >= ow || o.pos.y >= p.y + h || o.pos.y + o.h <= p.y) continue;
+        if (o.removed || o.dead || !(o instanceof Living) || o.vehicle || o.constructor.NO_PUSH) continue;
+        this.pushPair(e, o);
+      }
+    }
     const P = this.P;
-    if (this.player.alive() && !this.riding && e !== this.riding && Math.abs(P.pos.x - p.x) < 0.3 + e.hw && Math.abs(P.pos.z - p.z) < 0.3 + e.hw && P.pos.y < p.y + e.h && P.pos.y + 1.8 > p.y) {
+    if (!this.riding && Math.abs(P.pos.x - p.x) < 0.3 + hw && Math.abs(P.pos.z - p.z) < 0.3 + hw && P.pos.y < p.y + h && P.pos.y + 1.8 > p.y && this.player.alive()) {
       let dx = P.pos.x - p.x, dz = P.pos.z - p.z, f = Math.max(Math.abs(dx), Math.abs(dz));
       if (f >= 0.01) {
         f = Math.sqrt(f); dx /= f; dz /= f;
@@ -358,6 +367,9 @@ export class Entities {
     P.prev.copy(P.pos);
     if (P.keys.shift && !v.constructor.NO_DISMOUNT_SHIFT) { this.dismount(); return true; }
     P.onGround = true; P.inWater = false; P.flying = false; P.sprinting = false; P.sneaking = false;
+    // the eyes: under water only if the boat went under
+    const ex = Math.floor(P.pos.x), ey = P.pos.y + 1.62, ez = Math.floor(P.pos.z);
+    P.eyeInWater = FLUID[this.t.get(ex, Math.floor(ey), ez)] === 1 && ey < Math.floor(ey) + this.t.fluidHeight(ex, Math.floor(ey), ez);
     P.vel.set(0, 0, 0);
     if (this.survival) this.survival.fallFrom = null;
     return true;
@@ -671,6 +683,8 @@ export class Entities {
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
       const seen = this.frustum.intersectsSphere(this.sphere);
       if (seen) this.drawOne(e, alpha, x, y, z);
+      // a boat keeps the water out of its inside
+      if (seen && c.WATER_MASK) this.meshes.maskAt(x, y + c.WATER_MASK, z, e.prevYaw + wrap(e.yaw - e.prevYaw) * alpha, 0.55, 0.74);
       // its round shadow on the ground
       if (seen && c.SHADOW && !e.vehicle) this.shadowOf(e, x, y, z, c.SHADOW * (e.baby || e.ageT < 0 ? 0.5 : 1) * (c.SCALE || 1));
     }

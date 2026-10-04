@@ -136,12 +136,15 @@ export class Spawner {
     for (const e of m.list) { if (e.removed || e.dead) continue; const c = e.constructor.CATEGORY; if (c && c in cnt) cnt[c]++; }
     const pcx = Math.floor(P.pos.x / 16), pcz = Math.floor(P.pos.z / 16);
     const R0 = Math.min(8, W.renderDist || 8);
-    // the chunks in range
+    // the chunks in range (looked up again when you move to another chunk, or every second)
     const chunks = this.chunkList || (this.chunkList = []);
-    chunks.length = 0;
-    for (let dz = -R0; dz <= R0; dz++) for (let dx = -R0; dx <= R0; dx++) {
-      const c = W.chunks.get((pcx + dx) + ',' + (pcz + dz));
-      if (c) chunks.push(c);
+    if (pcx !== this.lcx || pcz !== this.lcz || m.age % 20 === 0) {
+      this.lcx = pcx; this.lcz = pcz;
+      chunks.length = 0;
+      for (let dz = -R0; dz <= R0; dz++) for (let dx = -R0; dx <= R0; dx++) {
+        const c = W.chunks.get((pcx + dx) + ',' + (pcz + dz));
+        if (c) chunks.push(c);
+      }
     }
     if (!chunks.length) return;
     const scale = chunks.length / 289;

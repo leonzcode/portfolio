@@ -30,6 +30,8 @@ export const rotTowards = (a, b, max) => { const d = wrap(b - a); return a + Mat
 export const yawTo = (dx, dz) => Math.atan2(-dx, -dz);
 
 let NEXT_ID = 1;
+const WATERLOGGED = new Uint8Array(4096);
+for (const d of BLOCKS) if (d && d.waterlogged) WATERLOGGED[d.id] = 1;
 
 export class Entity {
   constructor(m, type) {
@@ -63,9 +65,11 @@ export class Entity {
     this.age++;
     const T = this.m.t, p = this.pos;
     const wasIn = this.inWater;
-    this.waterDepth = T.fluidDepth(p.x - this.hw + 0.001, p.y + 0.001, p.z - this.hw + 0.001, p.x + this.hw - 0.001, p.y + this.h - 0.001, p.z + this.hw - 0.001, 1);
-    this.inWater = this.waterDepth > 0;
-    this.inLava = T.boxFluid(p.x - this.hw + 0.001, p.y + 0.001, p.z - this.hw + 0.001, p.x + this.hw - 0.001, p.y + this.h - 0.001, p.z + this.hw - 0.001, 2);
+    if (this.nearFluid()) {
+      this.waterDepth = T.fluidDepth(p.x - this.hw + 0.001, p.y + 0.001, p.z - this.hw + 0.001, p.x + this.hw - 0.001, p.y + this.h - 0.001, p.z + this.hw - 0.001, 1);
+      this.inWater = this.waterDepth > 0;
+      this.inLava = T.boxFluid(p.x - this.hw + 0.001, p.y + 0.001, p.z - this.hw + 0.001, p.x + this.hw - 0.001, p.y + this.h - 0.001, p.z + this.hw - 0.001, 2);
+    } else { this.waterDepth = 0; this.inWater = false; this.inLava = false; }
     const ey = p.y + this.eyeH;
     const eb = T.get(Math.floor(p.x), Math.floor(ey), Math.floor(p.z));
     this.eyeInWater = (FLUID[eb] === 1 && ey < Math.floor(ey) + T.fluidHeight(Math.floor(p.x), Math.floor(ey), Math.floor(p.z))) || !!(BLOCKS[eb] && BLOCKS[eb].waterlogged);
@@ -74,6 +78,17 @@ export class Entity {
     if (this.inLava) { this.fallDist *= 0.5; this.lavaHurt(); }
     if (this.fire > 0) this.burnTick();
     if (p.y < -64 - 64 + 0) this.hurt(4, { type: 'void' });
+  }
+  // any water, lava or waterlogged block at the corners of the box, from the feet to the head? (a cheap test first)
+  nearFluid() {
+    const T = this.m.t, p = this.pos, hw = this.hw;
+    const x0 = Math.floor(p.x - hw), x1 = Math.floor(p.x + hw), z0 = Math.floor(p.z - hw), z1 = Math.floor(p.z + hw);
+    const y0 = Math.floor(p.y), y1 = Math.floor(p.y + this.h);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+      const b = T.get(x, y, z);
+      if (b && (FLUID[b] || WATERLOGGED[b])) return true;
+    }
+    return false;
   }
   lavaHurt() {}
   burnTick() { this.fire--; }

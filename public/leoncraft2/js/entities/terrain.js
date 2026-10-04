@@ -20,6 +20,9 @@ import { collisionBoxes } from '../models.js?v=8';
 import { H } from '../world-const.js?v=8';
 
 const EPS = 1e-7;
+// full solid cubes, which a box can rest on without looking at shapes
+const FULL = new Uint8Array(4096);
+for (const d of BLOCKS) if (d && d.solid && d.shape === 'cube') FULL[d.id] = 1;
 
 export class Terrain {
   constructor(world) {
@@ -133,6 +136,14 @@ export class Terrain {
     this.nb = n;
     return n;
   }
+  // feet exactly on top of full cubes under every corner (the common case of a mob at rest)
+  restsOn(x, y, z, hw) {
+    if (y !== Math.floor(y)) return false;
+    const by = y - 1;
+    const a = this.get(Math.floor(x - hw), by, Math.floor(z - hw)), b = this.get(Math.floor(x + hw - 1e-6), by, Math.floor(z - hw));
+    const c = this.get(Math.floor(x - hw), by, Math.floor(z + hw - 1e-6)), d = this.get(Math.floor(x + hw - 1e-6), by, Math.floor(z + hw - 1e-6));
+    return FULL[a] === 1 && FULL[b] === 1 && FULL[c] === 1 && FULL[d] === 1 && this.loaded(x, z);
+  }
   // how far a box can go along one axis before a gathered box stops it
   clip(axis, d, x0, y0, z0, x1, y1, z1) {
     if (d === 0) return 0;
@@ -186,9 +197,16 @@ export class Terrain {
      game does: y, x, z, then a step up and back down if that gets further.
      Returns the move made in this.out, and fills e's collision flags. */
   move(e, dx, dy, dz) {
-    const hw = e.hw, h = e.h, p = e.pos, step = e.onGround || (dy < 0 && e.stepH > 0) ? e.stepH : 0;
-    const reach = Math.max(Math.abs(dx), Math.abs(dz)) + step + 1;
-    this.gather(p.x - hw - reach, p.y - Math.abs(dy) - 1, p.z - hw - reach, p.x + hw + reach, p.y + h + Math.abs(dy) + step + 1, p.z + hw + reach);
+    const hw = e.hw, h = e.h, p = e.pos, step = e.stepH;
+    // standing still on full blocks: nothing to work out
+    if (dx === 0 && dz === 0 && dy <= 0 && dy > -0.2 && e.onGround && this.restsOn(p.x, p.y, p.z, hw)) {
+      e.hCollide = false; e.vCollide = dy !== 0; if (dy !== 0) e.vel.y = 0;
+      const o = this.out; o[0] = 0; o[1] = 0; o[2] = 0;
+      return o;
+    }
+    // the boxes the move could meet: the box swept by the move, and lifted by a step
+    this.gather(p.x - hw + Math.min(0, dx) - 0.01, p.y + Math.min(0, dy) - 0.01, p.z - hw + Math.min(0, dz) - 0.01,
+      p.x + hw + Math.max(0, dx) + 0.01, p.y + h + Math.max(0, dy) + step + 0.01, p.z + hw + Math.max(0, dz) + 0.01);
     let x0 = p.x - hw, y0 = p.y, z0 = p.z - hw, x1 = p.x + hw, y1 = p.y + h, z1 = p.z + hw;
     const my = this.clip(1, dy, x0, y0, z0, x1, y1, z1); y0 += my; y1 += my;
     // the larger horizontal move first, as the game does

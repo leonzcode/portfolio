@@ -526,6 +526,12 @@ export class Avatar {
       armR.ry += body.ry * 2;
       armR.rz += Math.sin(att * PI) * -0.4;
     }
+    // riding (a boat, a horse: js/entities): sitting, legs forward and a little apart, arms down
+    if (P.riding) {
+      armR.rx = -PI / 5 + (this.held ? -PI / 10 : 0); armL.rx = -PI / 5;
+      legR.rx = -1.4137167; legR.ry = PI / 10; legR.rz = 0.07853982;
+      legL.rx = -1.4137167; legL.ry = -PI / 10; legL.rz = -0.07853982;
+    }
     // sneaking: lean in, legs back, everything lower
     if (sneak) {
       body.rx = 0.5; body.y = 3.2;
