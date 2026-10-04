@@ -18,12 +18,12 @@
    cities then come out of the same code (fortress.js has the exact
    layout; bastions and end cities are our own designs, builds/).
 --------------------------------------------------------------------------- */
-import { Structures, makeSource } from './starts.js?v=11';
-import { SETS, FAMILY } from './placement.js?v=11';
-import { dungeons } from './dungeon.js?v=11';
-import { BIOMES } from '../biomes.js?v=11';
-import { pickBiome } from '../worldgen.js?v=11';
-import { Y0, VOL } from '../world-const.js?v=11';
+import { Structures, makeSource } from './starts.js?v=12';
+import { SETS, FAMILY } from './placement.js?v=12';
+import { dungeons } from './dungeon.js?v=12';
+import { BIOMES } from '../biomes.js?v=12';
+import { pickBiome } from '../worldgen.js?v=12';
+import { Y0, VOL } from '../world-const.js?v=12';
 
 export function worldStructures(seed, gen, dim) {
   dim = dim || 'overworld';

@@ -14,18 +14,18 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Sky, SUN_I } from './sky.js?v=11';
-import { Post } from './post.js?v=11';
-import { Interaction } from './interaction.js?v=11';
-import { makeMaterials, makeLayerInfo } from './materials.js?v=11';
-import { makeWaterMaterial } from './water.js?v=11';
-import { makeNoise2D, makeNoise3D } from './noisetex.js?v=11';
-import { makeLdrSky } from './ldrsky.js?v=11';
-import { FullScreen } from './sky.js?v=11';
-import { blockGeometry } from './blockmesh.js?v=11';
-import { Avatar } from './avatar.js?v=11';
-import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=11';
-import { dimLook } from '../dim/look.js?v=11';
+import { Sky, SUN_I } from './sky.js?v=12';
+import { Post } from './post.js?v=12';
+import { Interaction } from './interaction.js?v=12';
+import { makeMaterials, makeLayerInfo } from './materials.js?v=12';
+import { makeWaterMaterial } from './water.js?v=12';
+import { makeNoise2D, makeNoise3D } from './noisetex.js?v=12';
+import { makeLdrSky } from './ldrsky.js?v=12';
+import { FullScreen } from './sky.js?v=12';
+import { blockGeometry } from './blockmesh.js?v=12';
+import { Avatar } from './avatar.js?v=12';
+import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=12';
+import { dimLook } from '../dim/look.js?v=12';
 const THREE = window.THREE;
 
 export class Renderer {

@@ -17,8 +17,8 @@
 
    Lava: its own animated texture streaming along the flow, glowing.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, WAVES, TONEMAP, LDR, LIGHTS } from './glsl.js?v=11';
-import { lightDefines } from './materials.js?v=11';
+import { COMMON, SHADOW, WIND, WAVES, TONEMAP, LDR, LIGHTS } from './glsl.js?v=12';
+import { lightDefines } from './materials.js?v=12';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
 

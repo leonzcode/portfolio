@@ -13,8 +13,8 @@
    Chests in structures hold their loot as data (a loot table and a seed)
    until something opens them: lootAt(x, y, z) rolls it (struct/loot.js).
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=11';
-import { Y0 } from '../world-const.js?v=11';
+import { B } from '../blocks.js?v=12';
+import { Y0 } from '../world-const.js?v=12';
 
 const RANGE = 16, SPAWN_RANGE = 4, COUNT = 4, MAX_NEAR = 6, MIN_DELAY = 200, MAX_DELAY = 800;
 
@@ -72,7 +72,7 @@ function nearby(E, s) {
 
 /* window.__lc2.structures: ask the workers (they hold the generator). */
 let roll = null;
-const loadLoot = () => roll || (roll = import('./loot.js?v=11').then(m => m.rollLoot).catch(() => null));
+const loadLoot = () => roll || (roll = import('./loot.js?v=12').then(m => m.rollLoot).catch(() => null));
 export function structuresApi(getWorld, getPlayer) {
   const ask = (msg) => {
     const w = getWorld();

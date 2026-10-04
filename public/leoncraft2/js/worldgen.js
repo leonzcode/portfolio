@@ -30,10 +30,10 @@
       badlands terracotta, snow on peaks, podzol, mycelium, gravel...), then
       deepslate, bedrock, stone blobs and ores, then trees and plants.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=11';
-import { BIO, BIOMES } from './biomes.js?v=11';
-import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=11';
-import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=11';
+import { B, BLOCKS } from './blocks.js?v=12';
+import { BIO, BIOMES } from './biomes.js?v=12';
+import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=12';
+import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=12';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
