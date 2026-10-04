@@ -81,6 +81,19 @@ bio('lush_caves', 0.5, 0.5);
 bio('dripstone_caves', 0.8, 0.4);
 bio('deep_dark', 0.8, 0.4);
 bio('sulfur_caves', 0.8, 0.4, { water: 0x34bf89, grass: 0xaba64f });
+/* the other dimensions (js/dims.js): their own fog colours, read by the
+   renderers; the climate numbers only pick colour-map colours nothing there
+   uses. sky: a fixed sky colour (the End's is black). */
+bio('nether_wastes', 2.0, 0.0, { fog: 0x330808, dim: 'the_nether' });
+bio('soul_sand_valley', 2.0, 0.0, { fog: 0x1b4745, dim: 'the_nether' });
+bio('crimson_forest', 2.0, 0.0, { fog: 0x330303, dim: 'the_nether' });
+bio('warped_forest', 2.0, 0.0, { fog: 0x1a051a, dim: 'the_nether' });
+bio('basalt_deltas', 2.0, 0.0, { fog: 0x685f70, dim: 'the_nether' });
+bio('the_end', 0.5, 0.5, { fog: 0xa080a0, sky: 0x000000, dim: 'the_end' });
+bio('end_highlands', 0.5, 0.5, { fog: 0xa080a0, sky: 0x000000, dim: 'the_end' });
+bio('end_midlands', 0.5, 0.5, { fog: 0xa080a0, sky: 0x000000, dim: 'the_end' });
+bio('small_end_islands', 0.5, 0.5, { fog: 0xa080a0, sky: 0x000000, dim: 'the_end' });
+bio('end_barrens', 0.5, 0.5, { fog: 0xa080a0, sky: 0x000000, dim: 'the_end' });
 
 export const SPRUCE_LEAF = 0x619961, BIRCH_LEAF = 0x80a755;
 

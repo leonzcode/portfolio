@@ -3,14 +3,18 @@ import { Gen } from './worldgen.js?v=9';
 import { VanillaGen } from './gen/vanillagen.js?v=9';
 import { meshColumn, setColours } from './mesher.js?v=9';
 import { resolveTextures } from './blocks.js?v=9';
+import { NetherGen } from './gen/nether.js?v=9';
+import { EndGen } from './gen/end.js?v=9';
 
 let gen = null;
 
 self.onmessage = e => {
   const m = e.data;
   if (m.type === 'init') {
-    // worlds made since the vanilla generator came in say so; older ones keep the first generator
-    gen = m.generator === 'vanilla' ? new VanillaGen(String(m.seed)) : new Gen(m.seed | 0);
+    // each dimension has its own generator (js/dims.js); the Overworld is Minecraft's own for worlds
+    // made as Vanilla Seed, the first generator for the rest
+    gen = m.dim === 'the_nether' ? new NetherGen(m.seed) : m.dim === 'the_end' ? new EndGen(m.seed)
+      : m.generator === 'vanilla' ? new VanillaGen(String(m.seed)) : new Gen(m.seed | 0);
     resolveTextures(m.manifest);
     setColours(m.colours);
     self.postMessage({ type: 'ready' });

@@ -14,6 +14,8 @@ export class World {
   constructor(opts) {
     this.seed = opts.seed;
     this.generator = opts.generator || 'classic';    // 'vanilla' (Minecraft's own worlds) or 'classic' (the first generator)
+    this.dim = opts.dim || 'overworld';        // js/dims.js: which generator the workers run
+    this.noSky = this.dim === 'the_nether';     // no sky light at all there
     this.renderDist = opts.renderDist;
     this.chunks = new Map();          // "cx,cz" -> chunk
     this.onMesh = opts.onMesh;
@@ -31,7 +33,7 @@ export class World {
       const w = new Worker(new URL('./worker.js?v=9', import.meta.url), { type: 'module' });
       w.onmessage = e => this.onMessage(i, e.data, res);
       w.onerror = e => console.error('worker', e.message || e);
-      w.postMessage({ type: 'init', seed: this.seed, generator: this.generator, manifest: opts.manifest, colours: opts.colours });
+      w.postMessage({ type: 'init', seed: this.seed, generator: this.generator, dim: this.dim, manifest: opts.manifest, colours: opts.colours });
       this.workers.push(w);
       this.busy.push(0);
     })));
@@ -172,7 +174,7 @@ export class World {
     this.meshVersion.set(k, v);
     this.inFlight.add('m' + k);
     const i = this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves }, transfer);
+    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky }, transfer);
   }
 
   /* ---- blocks ---- */

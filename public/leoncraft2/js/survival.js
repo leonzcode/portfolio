@@ -227,7 +227,8 @@ export class Survival {
     } else this.air = Math.min(300, this.air + 4);
     // lava and the void
     if (player.inLava) { if (++this.burn % 10 === 1) this.hurt(4, 'lava'); } else this.burn = 0;
-    if (y < -64 - 64) { if (++this.voidT % 10 === 1) this.hurt(4, 'void'); } else this.voidT = 0;
+    // the void: 64 below the dimension's floor (player.voidY, set per dimension by main.js)
+    if (y < (player.voidY ?? -64)) { if (++this.voidT % 10 === 1) this.hurt(4, 'void'); } else this.voidT = 0;
     this.tickEffects();
     this.tickFood();
   }

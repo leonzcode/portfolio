@@ -76,20 +76,22 @@ export class Save {
       } catch (e) { res(); }
     });
   }
-  // forget a whole world
+  // forget a whole world (and its Nether and End, kept as "<id>~the_nether" and "<id>~the_end")
   static async remove(worldId) {
     let db;
     try { db = await open(); } catch (e) { return; }
-    const prefix = worldId + ':';
-    await new Promise(res => {
-      try {
-        const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).delete(IDBKeyRange.bound(prefix, prefix + '￿'));
-        tx.objectStore(STORE).delete('#containers:' + worldId);
-        tx.oncomplete = () => res(); tx.onerror = () => res();
-      } catch (e) { res(); }
-    });
-    try { localStorage.removeItem('lc2_world_' + worldId); } catch (e) {}
+    for (const id of [worldId, worldId + '~the_nether', worldId + '~the_end']) {
+      const prefix = id + ':';
+      await new Promise(res => {
+        try {
+          const tx = db.transaction(STORE, 'readwrite');
+          tx.objectStore(STORE).delete(IDBKeyRange.bound(prefix, prefix + '￿'));
+          tx.objectStore(STORE).delete('#containers:' + id);
+          tx.oncomplete = () => res(); tx.onerror = () => res();
+        } catch (e) { res(); }
+      });
+      try { localStorage.removeItem('lc2_world_' + id); } catch (e) {}
+    }
   }
   /* A world's other records by name (the chests' and furnaces' contents),
      as JSON in the same store under '#name:world' (outside the chunk keys). */

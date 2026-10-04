@@ -61,6 +61,7 @@ uniform sampler2D uDepth, uAmbient, uNoise;
 uniform vec3 uLightDir;
 uniform float uFrame, uEyeInWater, uTime, uSkyAtEye;
 uniform vec3 uWaterTint;
+uniform float uDim;
 in vec2 vUv; out vec4 o;
 float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
 float caustic(vec3 p) {
@@ -72,6 +73,7 @@ float caustic(vec3 p) {
 }
 ` + LIGHTS + /* glsl */`
 void main() {
+  if (uDim > 0.5) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }     // no sun to make shafts of
   float d = texture(uDepth, vUv).r;
   vec3 wp = worldAt(vUv, d);
   vec3 ro = uCamPos;
@@ -195,6 +197,11 @@ uniform sampler2D uColor, uDepth, uVL, uClouds, uAmbient, uMoon;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uTime, uEyeInWater, uRender, uMoonPhase, uSkyAtEye;
 uniform vec3 uWaterTint;
+// the other dimensions (js/dims.js): their fog colour and range, and the End's sky
+uniform float uDim;
+uniform vec3 uDimFog;
+uniform vec2 uDimFogRange;
+uniform sampler2D uEndSky;
 in vec2 vUv; out vec4 o;
 vec3 stars(vec3 d) {
   vec3 p = d * 220.0;
@@ -214,6 +221,18 @@ void main() {
   vec3 rd = normalize(wp - uCamPos);
   float dist = length(wp - uCamPos);
   vec3 col = base.rgb;
+  if (uDim > 0.5) {
+    // no atmosphere: the Nether's sky is its fog, the End's a dark speckled box; fog closes in linearly
+    if (d >= 1.0) {
+      if (uDim > 1.5) {
+        vec3 a = abs(rd);
+        vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
+        col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16);
+      } else col = uDimFog;
+    } else col = mix(col, uDimFog, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
+    o = vec4(col, 1.0);
+    return;
+  }
   vec3 sunC = texelFetch(uAmbient, ivec2(4, 0), 0).rgb;
   vec3 moonC = texelFetch(uAmbient, ivec2(5, 0), 0).rgb;
   bool water = uEyeInWater > 0.5;
@@ -471,11 +490,12 @@ export class Post {
     this.expoDt = (this.expoDt || 0) + dt;
     u.uDt.value = this.expoDt;
     // light shafts
-    if (!this.halfClouds || ((this.cloudTick || 0) & 1)) this.run(this.mVL, this.vl);   // light rays: on the faster setting, the frames the clouds skip
+    const other = this.shared.uDim && this.shared.uDim.value > 0;    // the Nether and the End: no shafts, no clouds
+    if (!other && (!this.halfClouds || ((this.cloudTick || 0) & 1))) this.run(this.mVL, this.vl);   // light rays: on the faster setting, the frames the clouds skip
     // clouds, over the last frame's
     // they blend into the last frame's anyway: on the faster setting they are worked out every other frame
     this.cloudTick = (this.cloudTick || 0) + 1;
-    if (!this.halfClouds || (this.cloudTick & 1)) {
+    if (!other && (!this.halfClouds || (this.cloudTick & 1))) {
       const ci = this.cloudHist;
       u.uHistory.value = this.clouds[ci].texture;
       this.run(this.mClouds, this.clouds[1 - ci]);
