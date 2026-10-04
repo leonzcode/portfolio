@@ -191,7 +191,7 @@ export class Structures {
         }
       }
     }
-    if (this.starts.size > 4000) this.starts.clear();
+    if (this.starts.size > 60000) this.starts.clear();
     this.starts.set(key, out);
     return out;
   }

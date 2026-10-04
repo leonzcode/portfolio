@@ -37,6 +37,7 @@ import { Hud } from './ui/hud.js?v=8';
 import { Interactor } from './interact.js?v=8';
 import { Survival } from './survival.js?v=8';
 import { Save } from './save.js?v=8';
+import { structuresApi } from './struct/spawners.js?v=8';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -642,6 +643,7 @@ async function boot() {
       }
       if (timeRuns) g.time += 1;
       for (const s of player.splashes.splice(0)) renderer.inter.splash(s[0], s[1], s[2], s[3]);
+      structures.spawners.tick(world, player);
       // every ten seconds, what changed goes into the browser's storage
       if (++g.saveT >= 200) { g.saveT = 0; saveGame(); }
     }
@@ -727,8 +729,11 @@ async function boot() {
     tintCache.set(lin(c >> 16), lin((c >> 8) & 255), lin(c & 255));
     return tintCache;
   }
+  // structures: /locate, strongholds for eyes of ender, chest loot, spawners (struct/spawners.js)
+  const structures = structuresApi(() => (game ? game.world : menu && menu.world), () => game && game.player);
   requestAnimationFrame(loop);
   window.__lc2 = {
+    structures,
     renderer, gui, options, B, BLOCKS,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud,
