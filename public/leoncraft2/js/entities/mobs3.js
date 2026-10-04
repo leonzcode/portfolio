@@ -595,7 +595,7 @@ export class Slime extends Monster {
       const sp = this.wantSpeed * this.speed;
       if (this.onGround) {
         if (this.hopT-- <= 0) {
-          this.hopT = 10 + RI(20);
+          this.hopT = this.hopDelay();
           if (this.slimeAggro) this.hopT = Math.floor(this.hopT / 3);
           jump = true; this.moveSpeedNow = sp; this.zza = sp;
         } else { this.zza = 0; this.xxa = 0; this.moveSpeedNow = 0; }
@@ -604,6 +604,8 @@ export class Slime extends Monster {
     if (this.hopNow) { jump = true; this.hopNow = false; }
     this.jumping = jump;
   }
+  // ticks between hops (a magma cube waits four times as long)
+  hopDelay() { return 10 + RI(20); }
   lookControl() {}
   bodyControl() { this.bodyYaw = this.headYaw = this.yaw; }
   // turning towards its target, 10 degrees a tick
@@ -1117,6 +1119,8 @@ export class Fish extends Mob {
       if (d < 0.5) this.want = null;
     } else { this.swimSpeed = 0; this.zza = 0; }
   }
+  // ticks between hops (a magma cube waits four times as long)
+  hopDelay() { return 10 + RI(20); }
   lookControl() {}
   bodyControl() { this.bodyYaw = this.headYaw = this.yaw; }
   travel() {
