@@ -475,6 +475,8 @@ export class Renderer {
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     U.uNear.value = cam.near; U.uFar.value = cam.far;
+    // block pieces and the like, placed for this frame (render/particles.js)
+    if (this.particles) this.particles.render(cam, state.alpha || 0);
     U.uCamPos.value.copy(cam.position);
     U.uProjInv.value.copy(cam.projectionMatrixInverse);
     this.updateLights(state, dt);
