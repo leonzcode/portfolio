@@ -147,6 +147,6 @@ export class Interactor {
       this.fluids.around(x, y, z);
     }
     this.hand.swing();
-    this.hand.used();
+    this.hand.used(list);           // (what was placed, for blocks that hold things)
   }
 }

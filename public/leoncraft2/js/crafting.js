@@ -141,3 +141,57 @@ export function consumeGrid(grid, giveBack) {
 
 // for tests and the recipe book: every recipe that makes an item
 export function recipesFor(id) { return LIST.filter(r => r.id === id); }
+
+/* ---- the stonecutter ----
+   Not in the data: worked out from the crafting recipes the way the game's
+   own list reads. Every stone-like block cuts into what it crafts into one
+   for one (polished, bricks, tiles, pillars, cut, stairs, walls), slabs two
+   at a time, and on through those (stone -> stone brick stairs); chiseled
+   blocks come from the block their slabs are cut from; copper blocks cut
+   into four cut copper. */
+const STONE_RE = /stone|cobble|andesite|diorite|granite|deepslate|blackstone|basalt|brick|sandstone|prismarine|purpur|quartz|copper|tuff|resin|cinnabar|sulfur|mud|amethyst/;
+const CUT_OUT = /(_slab|_stairs|_wall|_bricks|_tiles|_pillar|_brick)$|^(polished_|chiseled_|cut_)/;
+let CUT = null;
+function buildCut() {
+  CUT = new Map();
+  const direct = new Map(), slabOf = new Map();
+  const add = (m, a, b, n) => { let x = m.get(a); if (!x) m.set(a, x = new Map()); if (!x.has(b)) x.set(b, n); };
+  for (const R of LIST) {
+    const cells = R.cells.filter(Boolean);
+    if (!cells.length || cells[0].size !== 1) continue;
+    const inId = cells[0].values().next().value;
+    if (!cells.every(c => c.size === 1 && c.has(inId))) continue;
+    const inName = ITEMS[inId] && ITEMS[inId].name, outName = ITEMS[R.id] && ITEMS[R.id].name;
+    if (!inName || !outName || !STONE_RE.test(inName) || /planks|_log|wood|wool|glass|concrete|carpet|stairs$|wall$|button|pressure_plate/.test(inName)) continue;
+    if (/_slab$/.test(inName)) {
+      // two slabs make the chiseled block: it is cut from the slab's own block
+      if (cells.length === 2 && /^chiseled_/.test(outName)) slabOf.set(inId, R.id);
+      continue;
+    }
+    if (!CUT_OUT.test(outName) || /_ore$|^waxed_/.test(outName) || inId === R.id) continue;
+    add(direct, inId, R.id, /_slab$/.test(outName) ? 2 : /^(exposed_|weathered_|oxidized_)?cut_copper$/.test(outName) ? 4 : 1);
+  }
+  // chiseled from the block its slab is cut from
+  for (const [a, outs] of direct) for (const [b] of [...outs]) if (slabOf.has(b)) add(direct, a, slabOf.get(b), 1);
+  // and on through every one-for-one step
+  for (const a of direct.keys()) {
+    const out = new Map(), queue = [[a, 1]], seen = new Set([a]);
+    while (queue.length) {
+      const [x, k] = queue.shift();
+      const next = direct.get(x);
+      if (!next) continue;
+      for (const [y, n] of next) {
+        if (seen.has(y)) continue;
+        seen.add(y);
+        out.set(y, n * k);
+        if (n === 1 || ITEMS[y].name.indexOf('cut_') >= 0) queue.push([y, n * k]);
+      }
+    }
+    CUT.set(a, [...out].map(([id, count]) => ({ id, count })).sort((p, q) => p.id - q.id));
+  }
+}
+// what one of an item cuts into: [{ id, count }]
+export function stonecutterRecipes(id) {
+  if (!CUT) buildCut();
+  return CUT.get(id) || [];
+}
