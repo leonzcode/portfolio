@@ -19,7 +19,8 @@
 --------------------------------------------------------------------------- */
 import { ContainerScreen, slot, range, TO_PLAYER, TO_PLAYER_REVERSED } from './inventory.js?v=9';
 import { I, ITEMS, fuelTicks } from '../items.js?v=9';
-import { smeltResult } from '../containers.js?v=9';
+import { isShulkerBox } from '../containers.js?v=9';
+import { cookingRecipe, matchGrid } from '../crafting.js?v=9';
 import { isPotion, isIngredient } from '../brewing.js?v=9';
 
 const LABEL_GREY = 0x404040;
@@ -59,7 +60,7 @@ export class CraftingScreen extends ContainerScreen {
     this.drawBackdrop(g);
     const L = this.left, T = this.top;
     g.blit('container/crafting_table', 0, 0, 176, 166, L, T);
-    g.text(this.title, L + 28, T + 6, LABEL_GREY, false);
+    g.text(this.title, L + 29, T + 6, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
     const prev = this.drawSlots(g, mx, my);
     this.drawCarried(g, mx, my, prev);
@@ -102,6 +103,114 @@ export class ChestScreen extends ContainerScreen {
     g.text(this.title, L + 8, T + 6, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + this.imageHeight - 94, LABEL_GREY, false);
     const prev = this.drawSlots(g, mx, my);
+    this.drawCarried(g, mx, my, prev);
+  }
+}
+
+/* ------------------------------ shulker boxes ------------------------------ */
+
+// a chest's screen on the shulker box sheet; no shulker box goes inside another
+export class ShulkerScreen extends ChestScreen {
+  mayPlace(s, st) { if (s.kind === 'box' && st && isShulkerBox(st.id)) return false; return super.mayPlace(s, st); }
+  quickMove(s) {
+    const st = this.getStack(s);
+    if (st && s.kind !== 'box' && isShulkerBox(st.id)) return;
+    super.quickMove(s);
+  }
+  render(g, mx, my) {
+    this.drawBackdrop(g);
+    const L = this.left, T = this.top;
+    g.blit('container/shulker_box', 0, 0, 176, 166, L, T);
+    g.text(this.title, L + 8, T + 6, LABEL_GREY, false);
+    g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
+    const prev = this.drawSlots(g, mx, my);
+    this.drawCarried(g, mx, my, prev);
+  }
+}
+
+/* ------------------------------ dispensers and droppers ------------------------------ */
+
+export class DispenserScreen extends ChestScreen {
+  constructor(inv, icons, box, title, onChange) { super(inv, icons, box, title, onChange); this.imageHeight = 166; }
+  makeSlots() {
+    const L = this.left, T = this.top, out = [];
+    for (let i = 0; i < 9; i++) out.push(slot(L + 62 + (i % 3) * 18, T + 17 + Math.floor(i / 3) * 18, 'box', i));
+    return out.concat(playerSlots(L, T, 84));
+  }
+  render(g, mx, my) {
+    this.drawBackdrop(g);
+    const L = this.left, T = this.top;
+    g.blit('container/dispenser', 0, 0, 176, 166, L, T);
+    g.centered(this.title, L + 88, T + 6, LABEL_GREY, false);
+    g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
+    const prev = this.drawSlots(g, mx, my);
+    this.drawCarried(g, mx, my, prev);
+  }
+}
+
+/* ------------------------------ crafters ------------------------------ */
+
+/* The crafter's 3 x 3 grid, the result it would make, and its slots turned
+   off and on by clicking them empty-handed (a slot turned off takes nothing).
+   c: the crafter's record ({ slots, off }); hooks: { changed(), powered() } */
+export class CrafterScreen extends ContainerScreen {
+  constructor(inv, icons, c, hooks) {
+    super(inv, icons, 176, 166);
+    this.c = c; this.box = c.slots; this.fh = hooks || {};
+    this.title = 'Crafter';
+    this.animates = true;
+  }
+  boxChanged() { if (this.fh.changed) this.fh.changed(); }
+  makeSlots() {
+    const L = this.left, T = this.top, out = [];
+    for (let i = 0; i < 9; i++) out.push(slot(L + 26 + (i % 3) * 18, T + 17 + Math.floor(i / 3) * 18, 'box', i));
+    out.push(slot(L + 134, T + 35, 'preview'));
+    return out.concat(playerSlots(L, T, 84));
+  }
+  getStack(s) { return s.kind === 'preview' ? this.preview() : super.getStack(s); }
+  preview() {
+    const m = matchGrid(this.c.slots.map((st, i) => (this.c.off[i] ? null : st)), 3);
+    return m ? m.result : null;
+  }
+  special(s) { return s.kind === 'preview' || super.special(s); }
+  mayPlace(s, st) {
+    if (s.kind === 'preview') return false;
+    if (s.kind === 'box' && st && this.c.off[s.i]) return false;
+    return super.mayPlace(s, st);
+  }
+  click(s, button) {
+    if (s.kind === 'preview') return;
+    // an empty slot clicked with nothing on the mouse turns off (or back on)
+    if (s.kind === 'box' && !this.inv.carried && !this.c.slots[s.i]) { this.c.off[s.i] = !this.c.off[s.i]; this.boxChanged(); return; }
+    super.click(s, button);
+  }
+  canDrag(s) { return s.kind !== 'preview' && super.canDrag(s); }
+  swapHotbar(s, n) { if (s.kind !== 'preview') super.swapHotbar(s, n); }
+  quickMove(s) {
+    if (s.kind === 'preview') return;
+    const st = this.getStack(s);
+    if (!st) return;
+    if (s.kind === 'box') { this.moveInto(st, TO_PLAYER); this.setStack(s, st.count ? st : null); return; }
+    this.moveIntoBox(st, range(0, 9).filter(i => !this.c.off[i]));
+    if (!st.count) this.setStack(s, null);
+  }
+  render(g, mx, my) {
+    this.drawBackdrop(g);
+    const L = this.left, T = this.top;
+    g.blit('container/crafter', 0, 0, 176, 166, L, T);
+    // a slot that is off: dark, with a cross
+    for (let i = 0; i < 9; i++) {
+      if (!this.c.off[i]) continue;
+      const x = L + 26 + (i % 3) * 18, y = T + 17 + Math.floor(i / 3) * 18;
+      g.fill(x, y, x + 16, y + 16, 0xFF5A5A5A);
+      for (let k = 2; k < 14; k++) { g.fill(x + k, y + k, x + k + 1, y + k + 1, 0xFF3A3A3A); g.fill(x + 15 - k, y + k, x + 16 - k, y + k + 1, 0xFF3A3A3A); }
+    }
+    // the arrow turns red while a signal reaches it
+    if (this.fh.powered && this.fh.powered()) g.fill(L + 95, T + 40, L + 113, T + 45, 0xFFC81414);
+    g.centered(this.title, L + 88, T + 6, LABEL_GREY, false);
+    g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
+    const prev = this.drawSlots(g, mx, my);
+    if (this.hover && this.hover.kind === 'box' && !this.inv.carried && !this.c.slots[this.hover.i]) g.setTooltip([this.c.off[this.hover.i] ? 'Click to enable slot' : 'Click to disable slot']);
     this.drawCarried(g, mx, my, prev);
   }
 }
@@ -208,7 +317,7 @@ export class FurnaceScreen extends ContainerScreen {
     ].concat(playerSlots(L, T, 84));
   }
   mayPlace(s, st) {
-    // fuel, or an empty bucket (where a lava bucket's bucket goes)
+    // fuel, or an empty bucket (where a lava bucket's bucket goes, or a wet sponge's water)
     if (s.fuel && st) return fuelTicks(st.id) > 0 || st.id === I.bucket;
     return super.mayPlace(s, st);
   }
@@ -223,7 +332,8 @@ export class FurnaceScreen extends ContainerScreen {
       this.setStack(s, st.count ? st : null);
       return;
     }
-    if (smeltResult(st.id, this.c.kind)) this.moveIntoBox(st, [0]);
+    // from the inventory: what this furnace can cook to the input, fuel to the fuel slot, else across the inventory
+    if (cookingRecipe(st.id, this.c.kind)) this.moveIntoBox(st, [0]);
     else if (fuelTicks(st.id) > 0) this.moveIntoBox(st, [1]);
     else this.moveInto(st, s.i >= 9 ? HOT : MAIN);
     if (!st.count) this.setStack(s, null);

@@ -36,6 +36,7 @@ import { Bodies } from './bodies.js?v=9';
 import { installBeds } from './beds.js?v=9';
 import { Weather } from './weather.js?v=9';
 import { installRedstone } from './redstone.js?v=9';
+import { installContainers } from '../containers.js?v=9';
 import { explode } from '../explosion.js?v=9';
 import { Messages } from './messages.js?v=9';
 
@@ -70,6 +71,7 @@ export class Sim {
     installFire(this);
     installBeds(this);
     installRedstone(this);
+    installContainers(this);         // chests joining, spilling, droppers and dispensers firing (containers.js)
     this.w.onSet = (x, y, z, ob, om, nb, nm) => this.onSet(x, y, z, ob, om, nb, nm);
   }
   dispose() {
