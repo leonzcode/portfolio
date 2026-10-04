@@ -37,6 +37,7 @@ import { Inventory, inventoryScreen } from './ui/inventory.js?v=9';
 import { Hud } from './ui/hud.js?v=9';
 import { Interactor } from './interact.js?v=9';
 import { Survival } from './survival.js?v=9';
+import { survivalHooks, respawnPlayer } from './life.js?v=9';
 import { Save } from './save.js?v=9';
 import { Chat, ChatScreen } from './ui/chat.js?v=9';
 import { displayName } from './commands.js?v=9';
@@ -45,7 +46,7 @@ import { DRAW, setItemLayers } from './items.js?v=9';
 import { loadItemStrip, addItemPieces } from './itemtex.js?v=9';
 import { Drops, dropItem, giveXp } from './drops.js?v=9';
 import { ITEMS, itemId, displayName as itemDisplay } from './items.js?v=9';
-import { setItemNames, register } from './commands.js?v=9';
+import { setItemNames, register, gameRule } from './commands.js?v=9';
 import { Containers } from './containers.js?v=9';
 import { Hands } from './hands.js?v=9';
 import { setLayerPixels } from './render/blockmesh.js?v=9';
@@ -455,6 +456,9 @@ async function boot() {
     const survival = new Survival();
     if (st && st.survival) survival.fromJSON(st.survival);
     survival.inv = inv;
+    // difficulty, game rules, rain, the death message and the totem (life.js); the world's difficulty is the option's
+    survival.hooks = survivalHooks(() => game, { options, chat, renderer });
+    if (entry.difficulty && options.get('difficulty') !== entry.difficulty) options.set('difficulty', entry.difficulty);
     player.voidY = DIMS[dim].minY;
     // what the hands do with items: mining, drops, eating, opening things (hands.js); its world's parts come from attach()
     const hands = new Hands({ world, player, inv, survival, drops: null, containers: null, fluids, gui, icons, mode, renderer, inter: null, open: s => openScreen(s) });
@@ -684,21 +688,16 @@ async function boot() {
     gui.setRoot(new TitleScreen());
   }
   async function respawn() {
-    if (!game) return;
+    if (!game || game.respawning) return;
     const g = game;
     if (g.entities) g.entities.dismount();
-    g.survival.reset();
+    // full health and food; experience kept only with keepInventory (survival.js)
+    g.survival.respawn(gameRule(g, 'keepInventory'));
     g.spilled = false;
-    // a charged respawn anchor in the Nether, else the world spawn, in whichever dimension that is
-    const plan = g.realms.respawnPlan();
-    if (plan.dim === 'the_nether') {
-      const ok = await travel('the_nether', w => g.realms.anchorSpot(w), plan.anchor);
-      if (ok) return;
-    }
-    if (g.dim !== 'overworld') { await travel('overworld', w => spawnPoint(w), g.spawn); return; }
-    const gy = groundY(g.world, g.spawn.x, g.spawn.z);
-    g.player.pos.set(g.spawn.x + 0.5, gy > 0 ? gy : 120, g.spawn.z + 0.5);
-    g.player.prev.copy(g.player.pos); g.player.vel.set(0, 0, 0);
+    // the player's bed or charged anchor if it still works, else the world spawn (life.js)
+    g.respawning = true;
+    try { await respawnPlayer(g, travel, { groundY, say: t => { if (g.sim && g.sim.msg) g.sim.msg.show(t); else chat.add(t); } }); }
+    finally { g.respawning = false; }
     lock();
   }
   window.addEventListener('pagehide', () => { saveGame(); });
@@ -763,11 +762,11 @@ async function boot() {
         g.inv.changed();
         return n;
       },
-      kill: () => { if (g.mode === 'survival' || g.mode === 'adventure') g.survival.hurt(1e9); else respawn(); },
+      kill: () => { if (g.mode === 'survival' || g.mode === 'adventure') g.survival.hurt(3.4e38, 'generic_kill'); else respawn(); },
       seed: () => g.entry.seed,
       blockChanged: () => {},
       setWeather: (w, ticks) => { g.weather = { kind: w, ticks: ticks === null ? 6000 + Math.floor(Math.random() * 12000) : ticks }; },
-      setDifficulty: d => { g.entry.difficulty = d; Worlds.update(g.entry.id, { difficulty: d }); },
+      setDifficulty: d => { g.entry.difficulty = d; Worlds.update(g.entry.id, { difficulty: d }); options.set('difficulty', d); },
       dimension: () => g.dimension || 'overworld',
       xp: null,
     };
@@ -856,6 +855,8 @@ async function boot() {
     applyOptions();
     if (k === 'renderDistance' && v) { if (game) game.world.renderDist = v; renderer.opts.renderDist = v; }
     if (k === 'brightness') renderer.opts.brightness = v;
+    // the difficulty button changes the world you are in
+    if (k === 'difficulty' && game && v && game.entry.difficulty !== v) { game.entry.difficulty = v; Worlds.update(game.entry.id, { difficulty: v }); }
     if (k === 'clouds') renderer.opts.clouds = v;
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
     if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=9', import.meta.url).href : v);
@@ -864,6 +865,7 @@ async function boot() {
 
   /* ---- the loop ---- */
   let acc = 0, last = performance.now(), fps = 0, fpsT = 0, frames = 0, scaleTick = 0, slowFor = 0, steppedDown = false;
+  const TILT = { roll: 0, tiltPitch: 0 }, NO_TILT = { roll: 0, tiltPitch: 0 };
   let startedAt = performance.now();
   const sunDir = new THREE.Vector3(), moonDir = new THREE.Vector3(), eyeV = new THREE.Vector3();
   const tilt = 0.42;              // the sun's path leans south, so shadows are never straight down
@@ -921,10 +923,14 @@ async function boot() {
         player.canSprint = survival.canSprint();
         player.effects = survival.effects;
         survival.tick(player);
-        if (survival.dead && !g.spilled) { g.spilled = true; g.hands.spillAll(); }
-        if (survival.dead && !gui.isOpen()) {
-          if (document.pointerLockElement) document.exitPointerLock();
-          gui.open(new DeathScreen());
+        // a death: everything spills (not with keepInventory), then the death screen (or straight back, doImmediateRespawn)
+        if (survival.dead && !g.spilled) { g.spilled = true; if (!gameRule(g, 'keepInventory')) g.hands.spillAll(); }
+        if (survival.dead && !gui.isOpen() && !g.respawning) {
+          if (gameRule(g, 'doImmediateRespawn')) respawn();
+          else {
+            if (document.pointerLockElement) document.exitPointerLock();
+            gui.open(new DeathScreen({ message: survival.deathMessage, score: survival.score, hardcore: !!g.entry.hardcore }));
+          }
         }
       }
       g.drops.tick(player, g.collector);
@@ -958,6 +964,8 @@ async function boot() {
       waterTint: tintAt(world, v.eye), player, alpha,
       biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
       dim: D, bossFog: g.realms.bossFog,
+      // the screen tips when hurt and rolls a little in death (survival.js)
+      ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha)) : NO_TILT),
     }, dt);
     if (g.mode === 'survival' || g.mode === 'adventure') hud.setStats(survival.stats());
     // no crosshair in third person, or with the HUD hidden
@@ -1013,6 +1021,7 @@ async function boot() {
       ]);
     }
   }
+  function tiltState(t) { TILT.roll = t.roll; TILT.tiltPitch = t.pitch; return TILT; }
   // how open to the sky the eye is (light level), for fog and light shafts underground
   function skyAt(world, eye) {
     let y = Math.floor(eye.y) + 1;

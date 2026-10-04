@@ -174,7 +174,7 @@ export class Player {
     p.x += mx; p.y += my; p.z += mz;
     this.hCollide = mx !== dx || mz !== dz;
     this.moved[0] = mx; this.moved[1] = my; this.moved[2] = mz;
-    // falling: the distance builds while going down, and is spent on landing
+    // falling: the distance builds while going down (the landing move too, as the game counts it since 1.21.5), and is spent on landing
     if (my < 0) this.fallDistance -= my;
     if (my !== dy) {
       if (dy < 0) {
@@ -402,7 +402,8 @@ export class Player {
       this.vel.x *= 0.91 * 0.6 / 0.546 * 0.91; this.vel.z *= 0.91 * 0.6 / 0.546 * 0.91; this.vel.y *= 0.6;
       if (this.onGround) this.flying = false;
     } else if (this.inWater) {
-      const f = this.sprinting ? 0.9 : 0.8;
+      // Dolphin's Grace: hardly any drag across the water
+      const f = this.effects && this.effects.dolphins_grace ? 0.96 : this.sprinting ? 0.9 : 0.8;
       this.vel.x *= f; this.vel.y *= 0.8; this.vel.z *= f;
       if (!this.sprinting) this.vel.y -= 0.005;
       // out onto the bank: against a wall with nothing but air 0.6 higher
@@ -415,8 +416,10 @@ export class Player {
     } else {
       const under = this.under();
       const slip = this.onGround ? ((BLOCKS[under] && BLOCKS[under].slippery) || 0.6) : 1.0;
-      // Slow Falling: a tenth of the gravity on the way down
-      this.vel.y = (this.vel.y - (this.effects && this.effects.slow_falling && this.vel.y < 0 ? 0.01 : 0.08)) * 0.98;
+      // Levitation: drawn up towards 0.05 a tick a level; Slow Falling: a tenth of the gravity on the way down
+      const lev = this.effects && this.effects.levitation;
+      if (lev) this.vel.y = (this.vel.y + (0.05 * lev.level - this.vel.y) * 0.2) * 0.98;
+      else this.vel.y = (this.vel.y - (this.effects && this.effects.slow_falling && this.vel.y < 0 ? 0.01 : 0.08)) * 0.98;
       this.vel.x *= slip * 0.91; this.vel.z *= slip * 0.91;
       // walking on slime: slowed unless you are bouncing
       if (this.onGround && BLOCKS[under] && BLOCKS[under].name === 'slime_block' && Math.abs(this.vel.y) < 0.1 && !this.sneaking) {

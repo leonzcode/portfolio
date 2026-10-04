@@ -165,7 +165,7 @@ export function explode(world, x, y, z, power, o) {
     const box = [p.pos.x - 0.3, p.pos.y, p.pos.z - 0.3, p.pos.x + 0.3, p.pos.y + (p.h || 1.8), p.pos.z + 0.3];
     hurtOne(box, dmg => {
       const g = L.game;
-      if (g && g.mode !== 'creative' && g.survival) g.survival.hurt(dmg);
+      if (g && g.mode !== 'creative' && g.survival) g.survival.hurt(dmg, { type: o.source === 'bad_respawn_point' ? 'bad_respawn_point' : 'explosion', x, z, attacker: o.source && o.source.hurt ? o.source : null });
     }, (vx, vy, vz) => { if (!p.flying) { p.vel.x += vx; p.vel.y += vy; p.vel.z += vz; } }, true);
   }
   // mobs and other bodies (window.__lc2.entities from the mobs code; our TNT and falling blocks)
@@ -191,7 +191,7 @@ export function explode(world, x, y, z, power, o) {
     if (b === B.tnt && sim && sim.primeTnt) {
       // caught in a blast: lit with a short fuse
       world.set(bx, by, bz, 0, 0);
-      sim.primeTnt(bx, by, bz, o.source || null, 10 + Math.floor(rnd() * 20));
+      sim.primeTnt(bx, by, bz, o.source && typeof o.source === 'object' ? o.source : null, 10 + Math.floor(rnd() * 20));
       continue;
     }
     if (sim) {

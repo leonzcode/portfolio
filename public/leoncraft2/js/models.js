@@ -415,11 +415,14 @@ export function boxesOf(d, m, nb) {
 /* ---- what you bump into, and what the crosshair outlines ----
    Boxes as [x0, y0, z0, x1, y1, z1] in blocks, relative to the block. */
 const FULL = [[0, 0, 0, 1, 1, 1]];
+const CACTUS = [[1 / 16, 0, 1 / 16, 15 / 16, 15 / 16, 15 / 16]];
 const toBlocks = list => list.filter(b => !b.q).map(b => [b.f[0] / 16, b.f[1] / 16, b.f[2] / 16, b.t[0] / 16, b.t[1] / 16, b.t[2] / 16]);
 export function collisionBoxes(d, m, nb) {
   if (!d.solid) return null;
   const s = d.shape;
-  if (s === 'cube' || s === 'cactus') return FULL;
+  if (s === 'cube') return FULL;
+  // a cactus is a sixteenth narrower each side and 15/16 tall, so whatever leans on it is in its block (and hurt)
+  if (s === 'cactus') return CACTUS;
   if (s === 'gate' && (m & 4)) return null;
   if (!SHAPES[s] || s === 'rail' || s === 'wire' || s === 'vine' || s === 'chain') return s === 'chain' ? [[6.5 / 16, 0, 6.5 / 16, 9.5 / 16, 1, 9.5 / 16]] : FULL;
   let b = toBlocks(SHAPES[s](d, m | 0, nb || (() => null)));

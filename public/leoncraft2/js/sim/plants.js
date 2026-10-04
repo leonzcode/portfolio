@@ -346,7 +346,7 @@ export function installPlants(sim) {
   sim.on('ice', {
     random(s, x, y, z) {
       if (s.blockLight(x, y, z) <= 10) return;
-      if (s.dimension() === 'nether') { s.set(x, y, z, 0, 0); return; }
+      if (/nether$/.test(s.dimension())) { s.set(x, y, z, 0, 0); return; }
       s.set(x, y, z, B.water, 0);
       s.fluids && s.fluids.around(x, y, z);
     },

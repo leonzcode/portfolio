@@ -56,7 +56,7 @@ export function installFire(sim) {
   const isAir = b => !b || BLOCKS[b].name === 'cave_air';
   const sturdyTop = b => b && BLOCKS[b].solid && (BLOCKS[b].shape === 'cube' || BLOCKS[b].shape === 'slab' || BLOCKS[b].shape === 'stairs');
   const nextToFuel = (x, y, z) => { for (const [dx, dy, dz] of NB6) if (flammable(sim.get(x + dx, y + dy, z + dz))) return true; return false; };
-  const infiniburn = b => b === B.netherrack || b === B.magma_block || (sim.dimension() === 'end' && b === B.bedrock);
+  const infiniburn = b => b === B.netherrack || b === B.magma_block || (/end$/.test(sim.dimension()) && b === B.bedrock);
   const soulBase = b => b === B.soul_sand || b === B.soul_soil;
   // can a fire stand here?
   sim.fireCanStay = (x, y, z) => sturdyTop(sim.get(x, y - 1, z)) || nextToFuel(x, y, z);
@@ -169,12 +169,5 @@ export function installFire(sim) {
     return true;
   };
 
-  /* ---- standing in fire hurts (1 every half second in survival) ---- */
-  (sim.tickers = sim.tickers || []).push(() => {
-    const g = sim.game;
-    if (!g || g.mode === 'creative' || !g.survival) return;
-    const p = sim.player.pos, b = sim.get(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z));
-    const b2 = sim.get(Math.floor(p.x), Math.floor(p.y + 1), Math.floor(p.z));
-    if (b === fire || b === soul || b2 === fire || b2 === soul) { if (sim.n % 10 === 0) g.survival.hurt(b === soul || b2 === soul ? 2 : 1); }
-  });
+  /* standing in fire hurts the player, and sets them burning: survival.js (with every other block that hurts) */
 }
