@@ -54,7 +54,7 @@ export class World {
       // put back whatever was changed here before
       const ed = this.edits.get(k);
       if (ed) for (const [cell, v] of ed) { c.blocks[cell] = v >> 8; c.meta[cell] = v & 255; if (v >> 8 && (cell >> 8) > c.top) c.top = cell >> 8; }
-      this.chunks.set(k, c);
+      this.chunks.set(k, c); this.cgen = (this.cgen || 0) + 1;
       this.stats.gen++;
       // this chunk, and every neighbour it completes, can now be meshed
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) this.queueMesh(m.cx + dx, m.cz + dz);
@@ -105,7 +105,7 @@ export class World {
     const R = this.renderDist + 1;
     if (moved) {
       // forget what is too far, and line up what is missing, nearest first
-      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.onDrop(c.cx, c.cz); }
+      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
       this.genList = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
         if (dx * dx + dz * dz > R * R) continue;
@@ -176,7 +176,15 @@ export class World {
   }
 
   /* ---- blocks ---- */
-  chunkAt(x, z) { return this.chunks.get(this.key(Math.floor(x / CH), Math.floor(z / CH))); }
+  /* The chunk a column is in. The last one asked for is remembered (almost
+     every lookup is next to the one before), and forgotten whenever a chunk
+     comes or goes, so no string key is built for it. */
+  chunkAt(x, z) {
+    const cx = Math.floor(x / CH), cz = Math.floor(z / CH);
+    if (cx === this._cx && cz === this._cz && this._cg === this.cgen) return this._c;
+    this._cx = cx; this._cz = cz; this._cg = this.cgen;
+    return (this._c = this.chunks.get(cx + ',' + cz));
+  }
   get(x, y, z) {
     if (y < 0 || y >= H) return 0;
     const c = this.chunkAt(x, z);
@@ -256,7 +264,7 @@ export class World {
   destroy() {
     for (const w of this.workers) w.terminate();
     this.workers = []; this.busy = [];
-    this.chunks.clear(); this.meshQueue.clear(); this.inFlight.clear();
+    this.chunks.clear(); this.cgen = (this.cgen || 0) + 1; this.meshQueue.clear(); this.inFlight.clear();
     this.genList = [];
     this.dead = true;
   }
