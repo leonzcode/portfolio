@@ -34,9 +34,9 @@
    resistance, fire resistance, water breathing, haste and mining fatigue
    (read by mining.js), and the rest kept so others can read them.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=9';
-import { ITEMS, armorOf } from './items.js?v=9';
-import { wear } from './ui/inventory.js?v=9';
+import { B, BLOCKS, FLUID } from './blocks.js?v=10';
+import { ITEMS, armorOf } from './items.js?v=10';
+import { wear } from './ui/inventory.js?v=10';
 
 const BYPASS_ARMOR = new Set(['fall', 'drown', 'starve', 'void', 'magic', 'poison', 'wither', 'suffocation', 'generic', 'freeze', 'kill']);
 const FIRE = new Set(['lava', 'fire', 'on_fire', 'hot_floor']);

@@ -26,18 +26,18 @@
    The light the rules need (a crop wants 9) is the light the mesher worked
    out for the chunk, kept by world.js.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID, FLUID } from '../blocks.js?v=9';
-import { CH, H, idx } from '../world-const.js?v=9';
-import { BIOMES } from '../biomes.js?v=9';
-import { installPlants } from './plants.js?v=9';
-import { installFarming, resolveItem, itemName } from './farming.js?v=9';
-import { installFire } from './fire.js?v=9';
-import { Bodies } from './bodies.js?v=9';
-import { installBeds } from './beds.js?v=9';
-import { Weather } from './weather.js?v=9';
-import { installRedstone } from './redstone.js?v=9';
-import { explode } from '../explosion.js?v=9';
-import { Messages } from './messages.js?v=9';
+import { B, BLOCKS, MAX_ID, FLUID } from '../blocks.js?v=10';
+import { CH, H, idx } from '../world-const.js?v=10';
+import { BIOMES } from '../biomes.js?v=10';
+import { installPlants } from './plants.js?v=10';
+import { installFarming, resolveItem, itemName } from './farming.js?v=10';
+import { installFire } from './fire.js?v=10';
+import { Bodies } from './bodies.js?v=10';
+import { installBeds } from './beds.js?v=10';
+import { Weather } from './weather.js?v=10';
+import { installRedstone } from './redstone.js?v=10';
+import { explode } from '../explosion.js?v=10';
+import { Messages } from './messages.js?v=10';
 
 const SIN = new Float32Array(65536);
 for (let i = 0; i < 65536; i++) SIN[i] = Math.sin(i * Math.PI * 2 / 65536);

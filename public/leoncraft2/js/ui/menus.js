@@ -26,9 +26,9 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=9';
-import { Packs } from './pack.js?v=9';
-import { parseSeed } from '../gen/random.js?v=9';
+} from './gui.js?v=10';
+import { Packs } from './pack.js?v=10';
+import { parseSeed } from '../gen/random.js?v=10';
 
 const PI = Math.PI;
 
