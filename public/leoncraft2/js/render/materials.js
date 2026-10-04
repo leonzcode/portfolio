@@ -56,6 +56,8 @@ uniform vec3 cameraPosition;
 uniform vec3 uLightDir;
 uniform float uFrame, uWet;
 uniform mat3 uFaceRot;
+uniform float uDim;             // 0 the Overworld, 1 the Nether, 2 the End (js/dims.js)
+uniform vec3 uDimAmb;           // the light everything gets there instead of the sky's
 in vec3 vWorld; in vec2 vUv; in vec4 vLight; in vec3 vTint; in float vRnd;
 flat in float vLayer; flat in int vNormal; flat in int vFlags;
 layout(location = 0) out vec4 outColor;
@@ -215,7 +217,12 @@ void main() {
     block = sat(block + clamp((dot(bdir, N) - dot(bdir, Ng)) * block, -1.0, 1.0) * 0.25);
   }
 #endif
-  vec3 blockL = block > 0.0 ? blockLight(block, skyAmt * sat(lum(sunC) * 0.3)) * ao : vec3(0.0);
+  if (uDim > 0.5) {
+    // no sun or moon in the other dimensions: the Nether's even ambient light, the End's dim sky light
+    diffuse = vec3(0.0); shadow = 0.0;
+    amb = uDimAmb * ao * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * skyAmt);
+  }
+  vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : skyAmt * sat(lum(sunC) * 0.3)) * ao : vec3(0.0);
   vec3 minimum = vec3(0.0035, 0.004, 0.006) * ao;
   vec3 col = albedo / PI * (diffuse * PI * (metal ? 0.25 : 1.0) + amb + blockL + minimum);
 

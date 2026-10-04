@@ -2,13 +2,16 @@
 import { Gen } from './worldgen.js?v=8';
 import { meshColumn, setColours } from './mesher.js?v=8';
 import { resolveTextures } from './blocks.js?v=8';
+import { NetherGen } from './gen/nether.js?v=8';
+import { EndGen } from './gen/end.js?v=8';
 
 let gen = null;
 
 self.onmessage = e => {
   const m = e.data;
   if (m.type === 'init') {
-    gen = new Gen(m.seed);
+    // each dimension has its own generator (js/dims.js), all with Gen's interface
+    gen = m.dim === 'the_nether' ? new NetherGen(m.seed) : m.dim === 'the_end' ? new EndGen(m.seed) : new Gen(m.seed);
     resolveTextures(m.manifest);
     setColours(m.colours);
     self.postMessage({ type: 'ready' });

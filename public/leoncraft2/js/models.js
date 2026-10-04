@@ -204,6 +204,19 @@ export const SHAPES = {
     return [top ? box(0, 13, 0, 16, 16, 16) : box(0, 0, 0, 16, 3, 16)];
   },
   thin(d) { return [box(0, 0, 0, 16, d.h || 1, 16)]; },
+  // a nether portal: a sheet four pixels thick across its axis (1 along x, 2 along z), no faces against itself or its frame
+  portal(d, m, nb) {
+    const shut = n => n && (n.d.shape === 'portal' || full(n));
+    let skip = (shut(nb(0, 1, 0)) ? 4 : 0) | (shut(nb(0, -1, 0)) ? 8 : 0);
+    if (m === 2) return [box(6, 0, 0, 10, 16, 16, { skip: skip | (shut(nb(0, 0, 1)) ? 16 : 0) | (shut(nb(0, 0, -1)) ? 32 : 0) })];
+    return [box(0, 0, 6, 16, 16, 10, { skip: skip | (shut(nb(1, 0, 0)) ? 1 : 0) | (shut(nb(-1, 0, 0)) ? 2 : 0) })];
+  },
+  // an end portal frame, 13 pixels tall, with the eye of ender on top once one is put in (meta bit 2)
+  end_frame(d, m) {
+    const out = [box(0, 0, 0, 16, 13, 16)];
+    if (m & 4) { const e = d.L && d.L.eye !== undefined ? d.L.eye : d.faces[2]; out.push(box(4, 13, 4, 12, 16, 12, { faces: [e, e, e, e, e, e] })); }
+    return out;
+  },
   plate(d) { return [box(1, 0, 1, 15, 1, 15)]; },
   button(d, m) {
     const f = m & 7;
