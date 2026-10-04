@@ -28,3 +28,25 @@ model('ball', [{ name: 'ball', pivot: [0, 22, 0], boxes: [[-2, -2, -2, 4, 4, 4, 
 addArt('snowball', [64, 32], p => { p.box(0, 0, 4, 4, 4, 0xf4f8ff, 0.06); });
 addArt('egg', [64, 32], p => { p.box(0, 0, 4, 4, 4, 0xe8dcc0, 0.06); });
 addArt('splash_potion', [64, 32], p => { p.box(0, 0, 4, 4, 4, 0x6a2a8a, 0.1); });
+
+/* ---- things held in a humanoid's right hand: a flat picture on the arm's bone ----
+   The layer has the humanoid's six parts (so it shares their bones) with a
+   single plane on the right arm, edge on to the arm, past the fist. */
+function heldLayer(name, base, box) {
+  const b = MODELS[base];
+  model(name, b.parts.map((p, i) => ({ name: p.name, pivot: p.pivot.slice(), rot: p.rot.slice(), parent: p.parent, boxes: i === b.index.rightArm ? [box] : [] })));
+}
+heldLayer('held_bow', 'skeleton', [0, 6, -7, 0, 7, 14, 0, 0]);
+addArt('held_items', [64, 32], p => {
+  // a bow seen side on: the limbs curving forward from the grip, the string straight behind
+  const wood = 0x7a5530, dark = 0x4e3519, str = 0xd8d8d8;
+  for (const ox of [0, 14]) {
+    for (let i = 0; i < 14; i++) {
+      const t = (i - 6.5) / 6.5;
+      const row = Math.round(1 + 4.2 * (1 - t * t));
+      p.px(ox + i, 14 + Math.min(6, row), Math.abs(t) > 0.85 ? dark : wood);
+      if (row > 1) p.px(ox + i, 14 + Math.min(6, row) - 1, Math.abs(t) < 0.3 ? 0x5a3c20 : wood);
+      p.px(ox + i, 14, str);
+    }
+  }
+});

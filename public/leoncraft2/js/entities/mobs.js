@@ -203,6 +203,7 @@ export class Skeleton extends Monster {
   }
   loot(drop) { drop('bone', RI(3)); drop('arrow', RI(3)); }
   anim(A) { A.aiming = this.aiming; }
+  layers(out) { out.push(['held_bow', 'held_items', null]); }
 }
 register('skeleton', Skeleton);
 export class Stray extends Skeleton {
