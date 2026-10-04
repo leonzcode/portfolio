@@ -37,6 +37,8 @@ import { Hud } from './ui/hud.js?v=8';
 import { Interactor } from './interact.js?v=8';
 import { Survival } from './survival.js?v=8';
 import { Save } from './save.js?v=8';
+import { Entities } from './entities/manager.js?v=8';
+import { EntityStore } from './entities/store.js?v=8';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -270,7 +272,7 @@ async function boot() {
   let loading = null;               // { text, progress, chunks } while a world loads
   const hooks = {
     play: (entry, o) => startGame(entry, o && o.isNew),
-    deleteWorld: w => Save.remove(w.id),
+    deleteWorld: w => { EntityStore.remove(w.id); return Save.remove(w.id); },
     quitToTitle: () => quitToTitle(),
     resume: () => lock(),
     respawn: () => respawn(),
@@ -430,6 +432,13 @@ async function boot() {
     });
     inter.creative = mode === 'creative';
     game = { entry, world, player, fluids, inv, survival, inter, save, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0 };
+    // mobs, boats and arrows (js/entities): ticked with the game, drawn in the world's scene
+    const entities = new Entities({ world, player, inv, survival, renderer, options, mode, fluids,
+      hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0) } });
+    entities.fromJSON(isNew ? null : await EntityStore.load(entry.id));
+    renderer.scene.add(entities.group);
+    inter.entities = entities;
+    game.entities = entities;
     hud = new Hud(inv, icons);
     gui.hud = hud;
     inv.on('held', id => renderer.setHeld(id, BLOCKS));
@@ -457,6 +466,7 @@ async function boot() {
   async function saveGame() {
     if (!game) return;
     game.save.writeState(stateOf());
+    if (game.entities) EntityStore.save(game.entry.id, game.entities.toJSON());
     await game.save.flush(game.world.edits);
   }
   async function quitToTitle() {
@@ -464,6 +474,7 @@ async function boot() {
     const g = game;
     await saveGame();
     game = null;
+    if (g.entities) g.entities.dispose();
     if (document.pointerLockElement) document.exitPointerLock();
     // the world you left keeps turning behind the title screen
     menu = { world: g.world, x: g.player.pos.x, z: g.player.pos.z, y: null, yaw: g.player.yaw, seed: g.entry.seed | 0 };
@@ -476,6 +487,7 @@ async function boot() {
   function respawn() {
     if (!game) return;
     const g = game;
+    if (g.entities) g.entities.dismount();
     g.survival.reset();
     const gy = groundY(g.world, g.spawn.x, g.spawn.z);
     g.player.pos.set(g.spawn.x + 0.5, gy > 0 ? gy : 120, g.spawn.z + 0.5);
@@ -546,6 +558,7 @@ async function boot() {
     if (e.code === 'BracketLeft') game.time -= 1000;
     if (e.code === 'BracketRight') game.time += 1000;
     if (e.code === 'KeyP' && !a) timeRuns = !timeRuns;
+    if (e.code === 'KeyB' && !a && game.mode === 'creative' && game.entities) game.entities.placeBoatAtCrosshair();
     if (a && MOVE[a]) { game.player.setKey(MOVE[a], true); e.preventDefault(); }
   });
   document.addEventListener('keyup', e => {
@@ -624,9 +637,11 @@ async function boot() {
     acc += dt;
     while (acc >= 0.05) {
       acc -= 0.05;
-      player.tick();
+      // riding: the keys go to the vehicle instead (js/entities)
+      if (!(g.entities && g.entities.rideTick())) player.tick();
       fluids.step();
       inter.tick();
+      if (g.entities) g.entities.tick();
       if (g.mode !== 'creative') {
         survival.tick(player);
         if (survival.dead && !gui.isOpen()) {
@@ -644,6 +659,7 @@ async function boot() {
     world.flush();
     const v = player.view(alpha);
     inter.look(v.eye);
+    if (g.entities) g.entities.render(alpha);
     sunAt(g.time);
     const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));
     const onGrass = player.onGround && !player.flying;
@@ -724,6 +740,7 @@ async function boot() {
     renderer, gui, options, B, BLOCKS,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud,
+    get entities() { return game && game.entities; },
     get time() { return game ? game.time : menuTime; }, set time(t) { if (game) game.time = t; else menuTime = t; },
     play: (seed, mode) => startGame(Worlds.add({ id: 'w' + Date.now().toString(36), name: 'Test World', folder: 'Test World', seed: seed || MENU_SEED, mode: mode || 'creative', created: Date.now(), lastPlayed: Date.now() }), true),
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
