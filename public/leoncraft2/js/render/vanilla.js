@@ -58,11 +58,12 @@ const TERRAIN_VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
 uniform vec3 cameraPosition;
 uniform vec2 uLightLv;
-in vec4 aPos; in vec4 aA; in vec4 aL; in vec4 aC;
+layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL; layout(location = 3) in vec4 aC;
+uniform vec3 uChunk;
 out vec2 vUv; out vec3 vShade; out float vFogD; out vec3 vTint;
 flat out float vLayer; flat out int vFlags;
 void main() {
-  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0), 1.0);
+  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
   int nw = int(aA.z + 0.5);
   int flags = int(aA.w + 0.5);
   vec4 L = aL / 255.0;
@@ -132,11 +133,12 @@ const FLUID_VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
 uniform vec3 cameraPosition;
 uniform float uMeshTime, uClock;
-in vec4 aPos; in vec4 aA; in vec4 aF; in vec4 aC;
+layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aF; layout(location = 3) in vec4 aC;
+uniform vec3 uChunk;
 out vec3 vWorld; out vec3 vLight; out float vFogD; out vec3 vCol; out vec2 vFlow;
 flat out int vNormal; flat out int vFlags; flat out float vLayer;
 void main() {
-  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0), 1.0);
+  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
   // from where the surface was before the flow last moved, to where it is now
   world.y += aF.z / 32.0 * (1.0 - smoothstep(0.0, 0.32, uClock - uMeshTime));
   vWorld = world.xyz;
@@ -470,37 +472,52 @@ export class Vanilla {
     const fx = (cam.position.x + scroll) / S, fz = cam.position.z / S;
     const cx = Math.floor(fx), cz = Math.floor(fz);
     const flat = this.clouds === 'fast';
-    const key = cx + ',' + cz + ',' + flat;
-    const R = Math.max(16, Math.ceil(this.R.U.uCloudFog.value.y / S) + 1);
-    if (key !== this.cloudKey) { this.cloudKey = key; this.buildClouds(cx, cz, R, flat); }
-    // the mesh is laid out in cloud cells round (cx, cz); slide it with the wind
+    const R = Math.max(16, Math.ceil(this.R.U.uCloudFog.value.y / S) + 1) + 8;
+    const B = this.cloudAt;
+    if (!B || B.flat !== flat || B.R !== R || Math.abs(cx - B.cx) > 8 || Math.abs(cz - B.cz) > 8) {
+      this.cloudAt = { cx, cz, flat, R };
+      this.buildClouds(cx, cz, R, flat);
+    }
+    // the mesh is laid out in cloud cells round where it was built; slide it with the wind
+    const at = this.cloudAt;
     for (const m of [this.cloudDepth, this.cloudColour]) {
-      m.position.set(cx * S - scroll, H, cz * S);
+      m.position.set(at.cx * S - scroll, H, at.cz * S);
       m.updateMatrix(); m.matrixWorld.copy(m.matrix);
     }
     r.render(this.cloudScene, cam);
   }
   buildClouds(cx, cz, R, flat) {
     const cells = this.cloudCells, S = 12, T = flat ? 0 : 4;
-    const pos = [], sh = [];
     const on = (x, z) => cells[(((cz + z) & 255) << 8) | ((cx + x) & 255)];
-    const quad = (a, b, c, d, s) => { pos.push(...a, ...b, ...c, ...a, ...c, ...d); for (let i = 0; i < 6; i++) sh.push(s); };
+    // counted first, then written straight into typed arrays
+    let quads = 0;
+    for (let z = -R; z <= R; z++) for (let x = -R; x <= R; x++) {
+      if (!on(x, z)) continue;
+      quads += flat ? 1 : 2 + !on(x - 1, z) + !on(x + 1, z) + !on(x, z - 1) + !on(x, z + 1);
+    }
+    const pos = new Float32Array(quads * 18), sh = new Float32Array(quads * 6);
+    let n = 0, m = 0;
+    const v = (x, y, z) => { pos[n++] = x; pos[n++] = y; pos[n++] = z; };
+    const quad = (ax, ay, az, bx, by, bz, cx2, cy, cz2, dx, dy, dz, s) => {
+      v(ax, ay, az); v(bx, by, bz); v(cx2, cy, cz2); v(ax, ay, az); v(cx2, cy, cz2); v(dx, dy, dz);
+      for (let i = 0; i < 6; i++) sh[m++] = s;
+    };
     for (let z = -R; z <= R; z++) for (let x = -R; x <= R; x++) {
       if (!on(x, z)) continue;
       const x0 = x * S, x1 = x0 + S, z0 = z * S, z1 = z0 + S;
-      quad([x0, T, z0], [x0, T, z1], [x1, T, z1], [x1, T, z0], 1.0);
+      quad(x0, T, z0, x0, T, z1, x1, T, z1, x1, T, z0, 1.0);
       if (flat) continue;
-      quad([x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1], 0.7);
-      if (!on(x - 1, z)) quad([x0, 0, z0], [x0, 0, z1], [x0, T, z1], [x0, T, z0], 0.9);
-      if (!on(x + 1, z)) quad([x1, 0, z1], [x1, 0, z0], [x1, T, z0], [x1, T, z1], 0.9);
-      if (!on(x, z - 1)) quad([x1, 0, z0], [x0, 0, z0], [x0, T, z0], [x1, T, z0], 0.8);
-      if (!on(x, z + 1)) quad([x0, 0, z1], [x1, 0, z1], [x1, T, z1], [x0, T, z1], 0.8);
+      quad(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1, 0.7);
+      if (!on(x - 1, z)) quad(x0, 0, z0, x0, 0, z1, x0, T, z1, x0, T, z0, 0.9);
+      if (!on(x + 1, z)) quad(x1, 0, z1, x1, 0, z0, x1, T, z0, x1, T, z1, 0.9);
+      if (!on(x, z - 1)) quad(x1, 0, z0, x0, 0, z0, x0, T, z0, x1, T, z0, 0.8);
+      if (!on(x, z + 1)) quad(x0, 0, z1, x1, 0, z1, x1, T, z1, x0, T, z1, 0.8);
     }
     const g = this.cloudGeo;
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
-    g.setAttribute('shade', new THREE.BufferAttribute(new Float32Array(sh), 1));
-    g.setDrawRange(0, pos.length / 3);
-    g.attributes.position.needsUpdate = true;
+    g.dispose();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('shade', new THREE.BufferAttribute(sh, 1));
+    g.setDrawRange(0, quads * 6);
   }
 }
 

@@ -25,11 +25,12 @@ const HEAD = `precision highp float; precision highp int; precision highp sample
 const VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
 uniform float uMeshTime, uClock;
-in vec4 aPos; in vec4 aA; in vec4 aF; in vec4 aC;
+layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aF; layout(location = 3) in vec4 aC;
+uniform vec3 uChunk;
 out vec3 vWorld; out vec4 vLight; out vec2 vFlow; out vec4 vCol; out float vFoam;
 flat out int vNormal; flat out int vFlags; flat out float vLayer;
 void main() {
-  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0), 1.0);
+  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
   // from where the surface was before the flow last moved, to where it is now
   world.y += aF.z / 32.0 * (1.0 - smoothstep(0.0, 0.32, uClock - uMeshTime));
   int flags = int(aA.y + 0.5);

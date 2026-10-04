@@ -113,13 +113,15 @@ export class World {
       this.genList.sort((a, b) => a[0] - b[0]);
     }
     const cap = this.workers.length * 2;
-    // meshes first (they are what you see), nearest first
+    // meshes first (they are what you see), nearest first; a few a frame, so packing them never stalls one
+    let sends = 0;
     if (this.meshQueue.size) {
       const list = [...this.meshQueue].map(k => { const [x, z] = k.split(',').map(Number); return [(x - pcx) ** 2 + (z - pcz) ** 2, x, z, k]; })
         .sort((a, b) => a[0] - b[0]);
       for (const [d, x, z, k] of list) {
-        if (this.inFlightCount() >= cap) break;
+        if (this.inFlightCount() >= cap || sends >= 2) break;
         if (this.inFlight.has('m' + k)) continue;
+        sends++;
         if (d > this.renderDist * this.renderDist) { this.meshQueue.delete(k); continue; }
         this.meshQueue.delete(k);
         this.sendMesh(x, z);
