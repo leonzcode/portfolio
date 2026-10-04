@@ -20,6 +20,12 @@ const TINTS = { grass: 0x79c05a, foliage: 0x59ae30, water: 0x3f76e4, spruce: 0x6
 // shapes that are held as a flat picture
 const FLAT = new Set(['cross', 'torch', 'wall_torch', 'rail', 'wire', 'crop', 'vine', 'pad', 'door', 'ladder', 'fluid', 'none', 'sign', 'wall_sign', 'candle', 'chain', 'lantern', 'bed', 'pot']);
 
+/* The pixels of every texture layer (16 x 16 RGBA, 1024 bytes a layer), from
+   the item icons: with them a flat item is drawn the game's way, its picture
+   given a sixteenth of thickness, every pixel's edge a little side face. */
+let PIX = null;
+export function setLayerPixels(px) { PIX = px; }
+
 export function isFlatItem(d) { return !!d && (FLAT.has(d.shape) || (d.iconLayer !== undefined && d.shape !== 'cube' && d.shape !== 'slab' && d.shape !== 'stairs')); }
 
 export function blockGeometry(d, meta) {
@@ -35,10 +41,31 @@ export function blockGeometry(d, meta) {
   if (flat) {
     // the item picture: its own sprite when it has one, else the block's texture
     const layer = d.iconLayer !== undefined ? d.iconLayer : d.faces[2];
-    const v0 = verts.length / 4;
-    put(-0.5, -0.5, 0, layer, 0, 16, 4, tinted | 32); put(0.5, -0.5, 0, layer, 16, 16, 4, tinted | 32);
-    put(0.5, 0.5, 0, layer, 16, 0, 4, tinted | 32); put(-0.5, 0.5, 0, layer, 0, 0, 4, tinted | 32);
-    idx.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);
+    if (PIX && PIX.length >= (layer + 1) * 1024) {
+      // the picture with a sixteenth of thickness: front, back, and the edge of every solid pixel
+      const o = layer * 1024, h = 1 / 32, solid = (x, y) => x >= 0 && y >= 0 && x < 16 && y < 16 && PIX[o + (y * 16 + x) * 4 + 3] >= 128;
+      const quad = (a, b, c, e, n, u0, v0t, u1, v1) => {
+        const k = verts.length / 4;
+        put(a[0], a[1], a[2], layer, u0, v1, n, tinted | 3); put(b[0], b[1], b[2], layer, u1, v1, n, tinted | 3);
+        put(c[0], c[1], c[2], layer, u1, v0t, n, tinted | 3); put(e[0], e[1], e[2], layer, u0, v0t, n, tinted | 3);
+        idx.push(k, k + 1, k + 2, k, k + 2, k + 3);
+      };
+      quad([-0.5, -0.5, h], [0.5, -0.5, h], [0.5, 0.5, h], [-0.5, 0.5, h], 4, 0, 0, 16, 16);
+      quad([0.5, -0.5, -h], [-0.5, -0.5, -h], [-0.5, 0.5, -h], [0.5, 0.5, -h], 5, 16, 0, 0, 16);
+      for (let py = 0; py < 16; py++) for (let px = 0; px < 16; px++) {
+        if (!solid(px, py)) continue;
+        const x0 = -0.5 + px / 16, x1 = x0 + 1 / 16, y1 = 0.5 - py / 16, y0 = y1 - 1 / 16;
+        if (!solid(px - 1, py)) quad([x0, y0, -h], [x0, y0, h], [x0, y1, h], [x0, y1, -h], 1, px, py, px + 1, py + 1);
+        if (!solid(px + 1, py)) quad([x1, y0, h], [x1, y0, -h], [x1, y1, -h], [x1, y1, h], 0, px, py, px + 1, py + 1);
+        if (!solid(px, py - 1)) quad([x0, y1, h], [x1, y1, h], [x1, y1, -h], [x0, y1, -h], 2, px, py, px + 1, py + 1);
+        if (!solid(px, py + 1)) quad([x0, y0, -h], [x1, y0, -h], [x1, y0, h], [x0, y0, h], 3, px, py, px + 1, py + 1);
+      }
+    } else {
+      const v0 = verts.length / 4;
+      put(-0.5, -0.5, 0, layer, 0, 16, 4, tinted | 32); put(0.5, -0.5, 0, layer, 16, 16, 4, tinted | 32);
+      put(0.5, 0.5, 0, layer, 16, 0, 4, tinted | 32); put(-0.5, 0.5, 0, layer, 0, 0, 4, tinted | 32);
+      idx.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);
+    }
   } else {
     let boxes = boxesOf(d, meta || d.iconMeta || 0, () => null);
     if (!boxes) {
