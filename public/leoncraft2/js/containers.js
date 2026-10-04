@@ -128,6 +128,7 @@ export class Containers {
 
   /* ---- furnaces, once a tick ---- */
   tick() {
+    if (this.lit.size) this.dirty = true;          // their progress is saved too
     for (const c of this.lit) {
       if (!this.map.has(this.key(c.x, c.y, c.z))) { this.lit.delete(c); continue; }
       if (!this.furnaceTick(c)) this.lit.delete(c);
@@ -196,7 +197,7 @@ export class Containers {
       const [x, y, z] = o.p;
       const c = { kind: o.k, slots: (o.s || []).map(stackFromJSON), x, y, z };
       while (c.slots.length < (SIZES[o.k] || 27)) c.slots.push(null);
-      if (COOK_TIME[o.k]) { Object.assign(c, { burn: o.b | 0, burnMax: o.bm | 0, cook: o.c | 0, cookMax: COOK_TIME[o.k], xp: o.x || 0 }); this.lit.add(c); }
+      if (COOK_TIME[o.k]) { Object.assign(c, { burn: o.b | 0, burnMax: o.bm | 0, cook: o.c | 0, cookMax: COOK_TIME[o.k], xp: o.x || 0, lastInput: c.slots[0] ? c.slots[0].id : 0 }); this.lit.add(c); }
       this.map.set(this.key(x, y, z), c);
     }
   }

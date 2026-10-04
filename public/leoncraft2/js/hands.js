@@ -128,7 +128,7 @@ export class Hands {
   /* ---- right click on a block ---- */
   useOn(hit) {
     const w = this.world, b = hit.b, d = BLOCKS[b];
-    if (!d) return false;
+    if (!d || w.get(hit.x, hit.y, hit.z) !== b) return false;
     const holding = !!this.held || !!this.inv.offhand;
     if (this.player.sneaking && holding) return false;
     if (d.name === 'crafting_table') { this.open(new CraftingScreen(this.inv, this.icons)); return true; }
