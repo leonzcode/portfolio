@@ -227,7 +227,7 @@ void main() {
       if (uDim > 1.5) {
         vec3 a = abs(rd);
         vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
-        col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16) * 3.0;
+        col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16);
       } else col = uDimFog;
     } else col = mix(col, uDimFog, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
     o = vec4(col, 1.0);

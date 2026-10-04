@@ -14,8 +14,10 @@ const target = new THREE.Vector3();
 
 export function dimLook(R, state, dt) {
   const U = R.U, D = state.dim;
-  if (!D || D.id === 'overworld') { U.uDim.value = 0; return; }
+  if (!D || D.id === 'overworld') { U.uDim.value = 0; if (R.post && R.post.u.uBias) R.post.u.uBias.value = 1; return; }
   U.uDim.value = D.code;
+  // the eye adjusts less far in the dark there, so the Nether stays dim and the End's sky stays black
+  if (R.post && R.post.u.uBias) R.post.u.uBias.value = D.id === 'the_nether' ? 0.4 : 0.7;
   if (D.id === 'the_nether') U.uDimAmb.value.set(0.34, 0.22, 0.18);
   else U.uDimAmb.value.set(0.62, 0.56, 0.72);
   const b = state.biome, c = b && b.fog !== undefined ? b.fog : 0x330808;
