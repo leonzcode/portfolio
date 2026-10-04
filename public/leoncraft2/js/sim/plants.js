@@ -94,9 +94,23 @@ export function installPlants(sim) {
     }
     return 7;
   };
+  /* Generated trees are not all built to the game's distance rule (a few
+     spruce leaves sit 7 from the trunk), so decay waits for a log to have
+     been taken away within reach: that is when the game's leaves start to go. */
+  sim.LOGS = LOGS;
+  sim.logsGone = new Map();          // "cx,cz" -> [[x, y, z], ...] logs broken or burnt this visit
+  sim.logGoneNear = (x, y, z) => {
+    for (const k of [Math.floor((x - 7) / 16) + ',' + Math.floor((z - 7) / 16), Math.floor((x + 7) / 16) + ',' + Math.floor((z - 7) / 16),
+      Math.floor((x - 7) / 16) + ',' + Math.floor((z + 7) / 16), Math.floor((x + 7) / 16) + ',' + Math.floor((z + 7) / 16)]) {
+      const l = sim.logsGone.get(k);
+      if (l) for (const [lx, ly, lz] of l) if (Math.abs(lx - x) <= 7 && Math.abs(ly - y) <= 7 && Math.abs(lz - z) <= 7) return true;
+    }
+    return false;
+  };
   sim.onAll(d => d.leaves, {
     random(s, x, y, z, m) {
       if (m & PERSISTENT) return;
+      if (!s.logGoneNear(x, y, z)) return;
       if (!s.w.loaded(x + 7, z + 7) || !s.w.loaded(x - 7, z - 7) || !s.w.loaded(x + 7, z - 7) || !s.w.loaded(x - 7, z + 7)) return;
       if (s.leafDistance(x, y, z) >= 7) s.destroy(x, y, z);
     },
