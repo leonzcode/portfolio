@@ -1,0 +1,7 @@
+["wheat_stage1", "wheat_stage2", "wheat_stage3", "wheat_stage4", "wheat_stage5", "wheat_stage6", "wheat_stage7",
+ "carrots_stage1", "carrots_stage2", "carrots_stage3", "potatoes_stage1", "potatoes_stage2", "potatoes_stage3",
+ "beetroots_stage1", "beetroots_stage2", "beetroots_stage3", "nether_wart_stage1", "nether_wart_stage2",
+ "cocoa_stage0", "cocoa_stage1", "sweet_berry_bush_stage1", "sweet_berry_bush_stage2", "farmland_moist",
+ "redstone_lamp_on", "redstone_torch_off", "repeater_on", "comparator_on", "observer_back_on", "piston_inner",
+ "daylight_detector_inverted_top", "powered_rail_on", "detector_rail_on", "activator_rail_on",
+ "respawn_anchor_top", "respawn_anchor_side1", "respawn_anchor_side2", "respawn_anchor_side3", "respawn_anchor_side4"]

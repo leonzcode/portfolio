@@ -51,6 +51,7 @@ import { Hands } from './hands.js?v=9';
 import { setLayerPixels } from './render/blockmesh.js?v=9';
 import { Entities } from './entities/manager.js?v=9';
 import { EntityStore } from './entities/store.js?v=9';
+import { Sim } from './sim/sim.js?v=9';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -509,6 +510,9 @@ async function boot() {
     inter.entities = entities;
     entities.inter = inter;
     game.entities = entities;
+    // the world simulating itself: growth, fire, TNT, beds, weather, redstone (sim/sim.js)
+    game.sim = inter.sim = new Sim({ world, fluids, player, inv, renderer, gui, game });
+    if (st && st.sim) game.sim.fromJSON(st.sim);
     hud = new Hud(inv, icons);
     gui.hud = hud;
     inv.on('held', id => renderer.setHeld(id, DRAW));
@@ -541,7 +545,7 @@ async function boot() {
     const g = game, p = g.player;
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
       inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
-      drops: g.drops.toJSON(), hands: g.hands.toJSON() };
+      drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null };
   }
   async function saveGame() {
     if (!game) return;
@@ -557,6 +561,7 @@ async function boot() {
     g.drops.dispose();
     game = null;
     if (g.entities) g.entities.dispose();
+    if (g.sim) g.sim.dispose();
     if (document.pointerLockElement) document.exitPointerLock();
     // the world you left keeps turning behind the title screen
     menu = { world: g.world, x: g.player.pos.x, z: g.player.pos.z, y: null, yaw: g.player.yaw, seed: worldSeed(g.entry), generator: g.world.generator };
@@ -788,6 +793,7 @@ async function boot() {
       // riding: the keys go to the vehicle instead (js/entities)
       if (!(g.entities && g.entities.rideTick())) player.tick();
       fluids.step();
+      g.sim.tick();
       inter.tick();
       if (renderer.particles) renderer.particles.tick();
       g.hands.tick();
@@ -906,6 +912,7 @@ async function boot() {
     get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
     get survival() { return game && game.survival; },
     get entities() { return game && game.entities; },
+    get sim() { return game && game.sim; },
     get time() { return game ? game.time : menuTime; }, set time(t) { if (game) game.time = t; else menuTime = t; },
     // a test world without the menus; generator 'vanilla' (the default) or 'classic'
     play: (seed, mode, generator = 'vanilla') => startGame(Worlds.add({

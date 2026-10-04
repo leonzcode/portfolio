@@ -33,6 +33,7 @@ import { CH, H, LEVEL, FALLING } from './world-const.js?v=9';
 import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=9';
 import { hash3 } from './noise.js?v=9';
 import { boxesOf, MODEL_SHAPES } from './models.js?v=9';
+import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=9';
 
 const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
@@ -168,7 +169,7 @@ export function meshColumn(job) {
   };
   spread(sky);
   qh = qt = 0;
-  for (let i = 0; i < N; i++) { const e = EMIT[rb[i]]; if (e) { blk[i] = e; Q[qt++ & QM] = i; } }
+  for (let i = 0; i < N; i++) { const e = SLIGHT[rb[i]] ? lightOf(rb[i], rm[i]) : EMIT[rb[i]]; if (e) { blk[i] = e; Q[qt++ & QM] = i; } }
   spread(blk);
 
   /* ---- biome colours, blended over 5 x 5 columns like Minecraft ---- */
@@ -226,7 +227,7 @@ export function meshColumn(job) {
       case 'spruce': return SPRUCE_LEAF;
       case 'birch': return BIRCH_LEAF;
       case 'water': return tintW[k];
-      default: return 0xffffff;
+      default: return d.rgb !== undefined ? d.rgb : 0xffffff;     // a state's own colour (redstone dust, stems)
     }
   };
 
@@ -466,10 +467,12 @@ export function meshColumn(job) {
         const i = y * A + (16 + z) * W + 16 + x;
         const b = rb[i];
         if (!b) continue;
-        const d = BLOCKS[b];
+        let d = BLOCKS[b];
         const k2 = (z << 4) | x;
         const wx = wx0 + x, wz = wz0 + z;
         const rnd = (hash3(seed, wx, y, wz) * 255) | 0;
+        // a block drawn by its state (a crop's stage, a lit lamp, an extended piston: sim/states.js)
+        if (STATEFUL[b]) { d = stateDef(d, rm[i]); if (d.asModel) { drawModel(x, y, z, i, d, k2, rnd); continue; } }
         if (d.shape === 'fluid') { fluidCell(x, y, z, i, FLUID[b]); continue; }
         if (d.waterlogged) fluidCell(x, y, z, i, 1);     // the water around a sea plant
         if (MODEL[b]) { drawModel(x, y, z, i, d, k2, rnd); continue; }

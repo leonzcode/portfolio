@@ -209,6 +209,7 @@ export class World {
       c.prev = c.prev || new Map();
       if (!c.prev.has(i)) c.prev.set(i, [c.blocks[i], c.meta[i]]);
     }
+    const was = c.blocks[i], wasM = c.meta[i];
     c.blocks[i] = b; c.meta[i] = m || 0;
     if (b && y > c.top) c.top = y;
     const ck = this.key(c.cx, c.cz);
@@ -217,7 +218,10 @@ export class World {
     ed.set(i, b * 256 + (m || 0));
     if (this.save) this.save.dirty.add(ck);
     if (!quiet) this.touch(x, z);
-    if (this.onSet) this.onSet(x, y, z, b);       // falling sand and the like (js/entities)
+    // everyone listening hears of every change: the simulation (sim/sim.js: block updates,
+    // redstone, what grows) and the mobs (js/entities: falling sand and the like)
+    if (this.onSet) this.onSet(x, y, z, was, wasM, b, m || 0);
+    if (this.onSetE) this.onSetE(x, y, z, b);
     return true;
   }
   // remesh the column a block is in, and any neighbour whose edge it sits on

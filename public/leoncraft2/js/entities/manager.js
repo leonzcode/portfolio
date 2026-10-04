@@ -89,7 +89,7 @@ export class Entities {
     this.spawner = new Spawner(this);
     // blocks that fall, checked two ticks after something changes next to them
     this.fallChecks = [];
-    this.world.onSet = (x, y, z, b) => { if (FALLS[b] || FALLS[this.t.get(x, y + 1, z)]) this.fallChecks.push(x, y, z, this.age + 2); };
+    this.world.onSetE = (x, y, z, b) => { if (FALLS[b] || FALLS[this.t.get(x, y + 1, z)]) this.fallChecks.push(x, y, z, this.age + 2); };
     // drawing
     this.atlas = buildAtlas();
     this.meshes = new EntityMeshes(this.R, this.atlas, buildSheet());
@@ -905,7 +905,7 @@ export class Entities {
     this.gone = true;
     for (const e of this.list) if (e.mesh) e.remove();
     this.list.length = 0;
-    if (this.world.onSet) this.world.onSet = null;
+    if (this.world.onSetE) this.world.onSetE = null;
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
