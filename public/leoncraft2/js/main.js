@@ -510,7 +510,7 @@ async function boot() {
       const containers = new Containers(w);
       if (!isNew || g.partsDim) { try { const c = await g.saves[d].readExtra('containers'); if (c) containers.fromJSON(c); } catch (e) {} }
       const entities = new Entities({ world: w, player, inv, survival, renderer, options, mode: g.mode, fluids: fl,
-        hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0),
+        hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0), spawnPoint: () => game && game.spawn,
           // what mobs drop goes through the items (drops.js): things on the ground, orbs of experience
           dropItem: (ww, x, y, z, name, n) => dropItem(ww, x, y, z, name, n), giveXp: (n, x, y, z) => giveXp(x, y, z, n) } });
       entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));

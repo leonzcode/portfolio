@@ -284,7 +284,8 @@ class BegGoal extends Goal {
 
 export class Wolf extends Tamable {
   static W = 0.6; static H = 0.85; static HEALTH = 8; static SPEED = 0.3; static ATTACK = 4; static FOLLOW = 16;
-  static MODEL = 'wolf'; static TEX = 'wolf_pale'; static SHADOW = 0.5; static TAMABLE = true;
+  static MODEL = 'wolf'; static TEX = 'wolf_pale'; static SHADOW = 0.5; static TAMABLE = true; static MAX_PER_CHUNK = 8;
+  static SPAWN_ON = ['grass_block', 'snow', 'snow_block', 'coarse_dirt', 'podzol'];
   static FOOD = Object.keys(WOLF_FOOD);
   constructor(m, type) {
     super(m, type);
@@ -1450,7 +1451,7 @@ export class Rabbit extends Animal {
   get eyeH() { return 0.35; }
   static checkSpawn(S, x, y, z) {
     const T = S.m.t, b = T.get(x, y - 1, z);
-    return (b === B.grass_block || b === B.snow_block || b === B.sand || b === B.snow || T.get(x, y, z) === B.snow) && S.m.rawBrightness(x, y, z) > 8 && S.onGround(Rabbit, x, y, z);
+    return (b === B.grass_block || b === B.snow_block || b === B.sand || b === B.snow || T.get(x, y, z) === B.snow) && S.brightEnough(x, y, z) && S.onGround(Rabbit, x, y, z);
   }
   registerGoals() {
     this.goals.add(1, new FloatGoal(this));
@@ -1575,7 +1576,7 @@ for (const k of RABBIT_COATS) addArt('rabbit_' + k, [64, 32], p => paintRabbit(p
 --------------------------------------------------------------------------- */
 export class Mooshroom extends Cow {
   static TEX = 'mooshroom';
-  static checkSpawn(S, x, y, z) { return S.m.t.get(x, y - 1, z) === B.mycelium && S.m.rawBrightness(x, y, z) > 8 && S.onGround(Mooshroom, x, y, z); }
+  static checkSpawn(S, x, y, z) { return S.m.t.get(x, y - 1, z) === B.mycelium && S.brightEnough(x, y, z) && S.onGround(Mooshroom, x, y, z); }
   walkValue(x, y, z) { return this.m.t.get(x, y - 1, z) === B.mycelium ? 10 : this.m.brightness(x, y, z) - 0.5; }
   interact(held, player) {
     if (held === 'shears' && this.ageT >= 0) {
@@ -1680,7 +1681,7 @@ class FoxPounceGoal extends Goal {
 export class Fox extends Animal {
   static W = 0.6; static H = 0.7; static HEALTH = 10; static SPEED = 0.3; static ATTACK = 2; static FOLLOW = 32;
   static MODEL = 'fox'; static TEX = 'fox_red'; static SHADOW = 0.4; static PANIC = 2.2;
-  static FOOD = ['sweet_berries', 'glow_berries'];
+  static FOOD = ['sweet_berries', 'glow_berries']; static SPAWN_ON = ['grass_block', 'snow', 'snow_block', 'podzol', 'coarse_dirt'];
   constructor(m, type) { super(m, type); this.kind = 'red'; this.sleeping = false; this.trusts = false; this.crouch = 0; this.oCrouch = 0; }
   get eyeH() { return 0.4; }
   registerGoals() {
@@ -1872,7 +1873,7 @@ class GoatLongJumpGoal extends Goal {
 export class Goat extends Animal {
   static W = 0.9; static H = 1.3; static HEALTH = 10; static SPEED = 0.2; static ATTACK = 2; static SAFE_FALL = 10;
   static MODEL = 'goat'; static TEX = 'goat'; static SHADOW = 0.6; static PANIC = 2;
-  static checkSpawn(S, x, y, z) { const b = S.m.t.get(x, y - 1, z); return (b === B.stone || b === B.snow_block || b === B.snow || b === B.packed_ice || b === B.grass_block) && S.m.rawBrightness(x, y, z) > 8 && S.onGround(Goat, x, y, z); }
+  static checkSpawn(S, x, y, z) { const b = S.m.t.get(x, y - 1, z); return (b === B.stone || b === B.snow_block || b === B.snow || b === B.packed_ice || b === B.grass_block) && S.brightEnough(x, y, z) && S.onGround(Goat, x, y, z); }
   constructor(m, type) { super(m, type); this.ramCool = 600 + RI(5400); this.horns = 2; this.screaming = false; this.ramming = false; }
   registerGoals() {
     super.registerGoals();
@@ -1965,7 +1966,7 @@ export class PolarBear extends Animal {
   static W = 1.4; static H = 1.4; static HEALTH = 30; static SPEED = 0.25; static ATTACK = 6; static FOLLOW = 20;
   static MODEL = 'polar_bear'; static TEX = 'polar_bear'; static SHADOW = 0.9; static FOOD = [];
   static WATER_SPEED = 0.04; static WATER_DRAG = 0.98 * 0.92;
-  static checkSpawn(S, x, y, z) { const b = S.m.t.get(x, y - 1, z); return (b === B.ice || b === B.packed_ice || b === B.snow_block || b === B.snow || b === B.grass_block) && S.m.rawBrightness(x, y, z) > 8 && S.onGround(PolarBear, x, y, z); }
+  static checkSpawn(S, x, y, z) { const b = S.m.t.get(x, y - 1, z); return (b === B.ice || b === B.packed_ice || b === B.snow_block || b === B.snow || b === B.grass_block) && S.brightEnough(x, y, z) && S.onGround(PolarBear, x, y, z); }
   constructor(m, type) { super(m, type); this.standT = 0; this.stand = 0; this.oStand = 0; this.angerT = 0; this.angryAt = null; }
   registerGoals() {
     this.goals.add(0, new FloatGoal(this));
