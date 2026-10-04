@@ -66,6 +66,7 @@ export class World {
       if (!c) return;
       if ((this.meshVersion.get(k) || 0) !== m.version) return;     // something changed since: a newer one is coming
       c.meshed = true;
+      if (m.mesh.light) c.light = m.mesh.light;      // what the mesher lit it with (sim/light.js reads it)
       this.stats.mesh++;
       this.onMesh(m.cx, m.cz, m.mesh);
       return;
@@ -197,6 +198,7 @@ export class World {
       c.prev = c.prev || new Map();
       if (!c.prev.has(i)) c.prev.set(i, [c.blocks[i], c.meta[i]]);
     }
+    const was = c.blocks[i], wasM = c.meta[i];
     c.blocks[i] = b; c.meta[i] = m || 0;
     if (b && y > c.top) c.top = y;
     const ck = this.key(c.cx, c.cz);
@@ -205,6 +207,8 @@ export class World {
     ed.set(i, b * 256 + (m || 0));
     if (this.save) this.save.dirty.add(ck);
     if (!quiet) this.touch(x, z);
+    // the simulation hears of every change (sim/sim.js): block updates, redstone, what grows
+    if (this.onSet) this.onSet(x, y, z, was, wasM, b, m || 0);
     return true;
   }
   // remesh the column a block is in, and any neighbour whose edge it sits on
