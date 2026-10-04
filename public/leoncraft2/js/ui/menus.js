@@ -445,10 +445,10 @@ export class CreateWorldScreen extends Screen {
     } else if (this.tab === 1) {
       const x = Math.floor(W / 2 - 154);
       let y = place(20 + 8 + 13 + 20 + 8 + 20 + 8 + 20);
-      // Default: the first generator (trees, plants and all); Vanilla Seed: the game's own terrain from a real seed (no trees or plants yet)
-      const type = this.add(new CycleButton(x, y, 150, 20, 'World Type', { values: ['default', 'vanilla'], value: this.worldType || 'default',
-        format: v => v === 'vanilla' ? 'Vanilla Seed' : 'Default', onChange: v => { this.worldType = v; } }));
-      type.tooltip = 'Vanilla Seed builds the same terrain as Minecraft from a real seed (caves and ores, no trees or plants yet)';
+      // Default: Minecraft's own worlds from a real seed (js/gen); Classic: the first generator
+      const type = this.add(new CycleButton(x, y, 150, 20, 'World Type', { values: ['vanilla', 'classic'], value: this.worldType || 'vanilla',
+        format: v => v === 'classic' ? 'Classic' : 'Default', onChange: v => { this.worldType = v; } }));
+      type.tooltip = 'Default builds the same world as Minecraft from the seed; Classic is the first Leoncraft generator';
       const cust = this.add(new Button(x + 158, y, 150, 20, 'Customize', null));
       cust.active = false;
       y += 28;
@@ -485,8 +485,8 @@ export class CreateWorldScreen extends Screen {
       // Minecraft's seeds: a number that fits a long is that long, other text its hash,
       // blank a random 64-bit seed; made by the vanilla generator from now on
       name, folder: Worlds.folderName(name),
-      seed: this.worldType === 'vanilla' ? parseSeed(this.seedField.value) : seedFrom(this.seedField.value),
-      generator: this.worldType === 'vanilla' ? 'vanilla' : 'classic',
+      seed: this.worldType === 'classic' ? seedFrom(this.seedField.value) : parseSeed(this.seedField.value),
+      generator: this.worldType === 'classic' ? 'classic' : 'vanilla',
       mode: this.mode, difficulty: this.difficulty, cheats: this.cheats, created: now, lastPlayed: now,
     };
     Worlds.add(world);
