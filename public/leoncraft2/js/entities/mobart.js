@@ -461,6 +461,10 @@ export function buildSheet() {
   disc(20, 3, [255, 255, 255]); for (let y = 2; y < 10; y++) put(20, 10, y, [255, 255, 255]);
   for (let i = -3; i <= 3; i++) { put(21, 7 + i, 7, [255, 255, 255]); put(21, 7, 7 + i, [255, 255, 255]); }
   disc(22, 2.5, [255, 255, 255]);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const l = Math.hypot(x - 7.5, y - 7.5);
+    if (l <= 4.6) put(23, x, y, l > 3.4 ? [70, 90, 20] : l < 1.6 ? [255, 255, 255] : [230, 255, 140]);
+  }
   g.putImageData(img, 0, 0);
   return c;
 }
