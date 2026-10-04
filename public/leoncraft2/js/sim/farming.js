@@ -16,23 +16,18 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from '../blocks.js?v=9';
 import { isDirt } from './plants.js?v=9';
+import { I, itemName as itemNameOf } from '../items.js?v=9';
 
 const RI = (sim, n) => Math.floor(sim.rng() * n);
 const binom = (sim, n, p) => { let k = 0; for (let i = 0; i < n; i++) if (sim.rng() < p) k++; return k; };
 const between = (sim, a, b) => a + RI(sim, b - a + 1);
 
 // the name of an item or block id
-export function itemName(id) {
-  const L = window.__lc2;
-  if (L && typeof L.itemName === 'function') { const n = L.itemName(id); if (n) return n; }
-  const d = BLOCKS[id];
-  return d ? d.name : '';
-}
+export function itemName(id) { return itemNameOf(id); }
 // an item's id from its name: the items code's, else a block that is that item (wheat is the seeds), else a block
 const byItemOf = new Map();
 export function resolveItem(name) {
-  const L = window.__lc2;
-  if (L && typeof L.itemId === 'function') { const id = L.itemId(name); if (id) return id; }
+  if (I[name] !== undefined) return I[name];
   if (!byItemOf.size) for (const d of BLOCKS) if (d && d.itemOf) byItemOf.set(d.itemOf, d.id);
   if (byItemOf.has(name)) return byItemOf.get(name);
   return B[name] !== undefined && BLOCKS[B[name]].item !== false ? B[name] : 0;

@@ -144,9 +144,13 @@ export class Containers {
       if (!this.map.has(this.key(c.x, c.y, c.z))) { this.lit.delete(c); continue; }
       if (!(c.kind === 'brewing_stand' ? brewingTick(c) : this.furnaceTick(c))) this.lit.delete(c);
     }
+    this.ticks = (this.ticks || 0) + 1;
     for (const h of this.hoppers) {
       if (containerKind(this.world.get(h.x, h.y, h.z)) !== 'hopper') { this.remove(h.x, h.y, h.z); continue; }
-      if (h.cool > 0) { h.cool--; continue; }
+      // the game counts the cooldown down first, so an item goes every 8 ticks; powered, a hopper is locked (meta bit 3)
+      h.ticked = this.ticks;
+      if (h.cool > 0) { h.cool--; if (h.cool > 0) continue; }
+      if (this.world.meta(h.x, h.y, h.z) & 8) continue;
       if (this.hopperTick(h)) { h.cool = 8; this.dirty = true; }
     }
   }
@@ -176,8 +180,11 @@ export class Containers {
       for (let i = 0; i < h.slots.length && !moved; i++) {
         const s = h.slots[i];
         if (!s) continue;
+        const wasEmpty = to.kind === 'hopper' && !to.slots.some(Boolean);
         if (this.insertOne(to, s, this.slotsIn(to, oy < 0 ? 'up' : 'side', s))) {
           s.count--; if (s.count <= 0) h.slots[i] = null;
+          // an empty hopper that is passed an item waits its 8 ticks before passing it on
+          if (wasEmpty) to.cool = 8 - ((to.ticked || 0) >= (h.ticked || 0) ? 1 : 0);
           moved = true;
           this.changed(to);
         }
