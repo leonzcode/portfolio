@@ -37,6 +37,7 @@ import { BLOCKS, B } from '../blocks.js?v=8';
 import { Screen, TextField, WHITE } from './gui.js?v=8';
 import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf } from '../items.js?v=8';
 import { matchGrid, consumeGrid } from '../crafting.js?v=8';
+import { enchName } from '../enchanting.js?v=8';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -325,14 +326,12 @@ function hsv(h, s, v) {
 }
 
 // the lines of a stack's tooltip: name, enchantments, what it does in the hand
-const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 export function stackTooltip(st) {
   const it = ITEMS[st.id];
-  const lines = [(st.ench ? '§b' : '') + displayName(st.id)];
-  if (st.ench) for (const k in st.ench) {
-    const nm = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    lines.push((/curse/.test(k) ? '§c' : '§7') + nm + (st.ench[k] > 1 || !/^(mending|silk_touch|infinity|aqua_affinity|flame|channeling|multishot|binding_curse|vanishing_curse)$/.test(k) ? ' ' + (ROMAN[st.ench[k]] || st.ench[k]) : ''));
-  }
+  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : displayName(st.id))];
+  const title = n => n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  if (st.trim) lines.push('§7Upgrade:', '§9 ' + title(st.trim[0]) + ' Armor Trim', '§9 ' + title(st.trim[1]) + ' Material');
+  if (st.ench) for (const k in st.ench) lines.push((/curse/.test(k) ? '§c' : '§7') + enchName(k, st.ench[k]));
   if (it && it.attack) {
     const fmt = n => (Math.round(n * 10) / 10).toString();
     lines.push('', '§7When in Main Hand:', '§2 ' + fmt(it.attack + (st.ench && st.ench.sharpness ? 0.5 * st.ench.sharpness + 0.5 : 0)) + ' Attack Damage', '§2 ' + fmt(it.attackSpeed) + ' Attack Speed');
@@ -462,7 +461,7 @@ export class ContainerScreen extends Screen {
     if (!r) return;
     if (!c) { this.setCarried(this.craftOnce()); return; }
     // the same item on the mouse with room for a whole result: take it on top
-    if (same(c, r.stack) && c.count + r.stack.count <= maxStack(c.id)) { const o = this.craftOnce(); c.count += o.count; }
+    if (same(c, r.stack) && c.count + r.stack.count <= maxStack(c.id)) { const o = this.craftOnce(); if (o) c.count += o.count; }
   }
   // shift-click on the result: craft while it stays the same and fits
   shiftResult() {
@@ -472,6 +471,7 @@ export class ContainerScreen extends Screen {
       if (this.inv.roomFor(st) < st.count) break;
       const first = st.id;
       const o = this.craftOnce();
+      if (!o) break;
       this.moveInto(o, TO_PLAYER_REVERSED);
       if (o.count) { this.inv.placeBack(o); break; }
       if (!this.result || this.result.stack.id !== first) break;
@@ -576,7 +576,7 @@ export class ContainerScreen extends Screen {
   swapHotbar(s, n) {
     const hs = { kind: 'inv', i: n };
     const a = this.getStack(s), b = this.inv.slots[n];
-    if (s.kind === 'result') { if (this.result && !b) this.inv.slots[n] = this.craftOnce(); return; }
+    if (s.kind === 'result') { if (this.result && !b) this.inv.slots[n] = this.craftOnce(); return; }   // (null when it cannot be taken)
     if (s.output) { if (a && !b) { this.inv.slots[n] = a; this.setStack(s, null); this.tookOutput(s, a.count); } return; }
     if (b && !this.mayPlace(s, b)) return;
     if (b && b.count > this.limit(s, b.id)) return;
@@ -805,7 +805,7 @@ export class InventoryScreen extends ContainerScreen {
 /* ------------------------------ creative inventory ------------------------------ */
 
 // the creative search box: no frame of its own (the sheet has one), white text
-class SearchField extends TextField {
+export class SearchField extends TextField {
   draw(g) {
     const { x, y, w } = this;
     this.gui = g;
