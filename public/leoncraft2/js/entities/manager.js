@@ -35,6 +35,7 @@ import './mobs4.js?v=8';
 import { explode } from './explosion.js?v=8';
 import { placeBoat } from './boat.js?v=8';
 import { splitXp } from './xporb.js?v=8';
+import { placeMinecart, isRail } from './minecart.js?v=8';
 import { Spawner } from './spawner.js?v=8';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=8';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=8';
@@ -646,6 +647,10 @@ export class Entities {
       take();
       return true;
     }
+    if (name === 'minecart' && target && isRail(target.b)) {
+      if (placeMinecart(this, target.x, target.y, target.z)) take();
+      return true;
+    }
     if (/_spawn_egg$/.test(name)) {
       const type = name.slice(0, -10);
       if (!TYPES[type] || !target) return false;
@@ -689,6 +694,13 @@ export class Entities {
     const P = this.P;
     const eye = this.lookEye || P.pos, dir = this.lookDir;
     if (!dir) return null;
+    // looking at a rail: a minecart instead
+    const tr = this.t.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 8, false);
+    for (let k = 0; k <= 12; k++) {
+      const d = k * 0.5, x = Math.floor(eye.x + dir.x * d), y = Math.floor(eye.y + dir.y * d), z = Math.floor(eye.z + dir.z * d);
+      if (d > tr + 0.5) break;
+      if (isRail(this.t.get(x, y, z))) return placeMinecart(this, x, y, z);
+    }
     const t = this.t.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 8, true);
     if (t >= 8) return null;
     const bx = this.t.rayX, by = this.t.rayY, bz = this.t.rayZ;
