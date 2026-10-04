@@ -43,10 +43,14 @@ import { displayName } from './commands.js?v=8';
 import { Particles } from './render/particles.js?v=8';
 import { DRAW, setItemLayers } from './items.js?v=8';
 import { loadItemStrip, addItemPieces } from './itemtex.js?v=8';
-import { Drops } from './drops.js?v=8';
+import { Drops, dropItem, giveXp } from './drops.js?v=8';
+import { ITEMS, itemId, displayName as itemDisplay } from './items.js?v=8';
+import { setItemNames } from './commands.js?v=8';
 import { Containers } from './containers.js?v=8';
 import { Hands } from './hands.js?v=8';
 import { setLayerPixels } from './render/blockmesh.js?v=8';
+import { Entities } from './entities/manager.js?v=8';
+import { EntityStore } from './entities/store.js?v=8';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -295,7 +299,7 @@ async function boot() {
   let loading = null;               // { text, progress, chunks } while a world loads
   const hooks = {
     play: (entry, o) => startGame(entry, o && o.isNew),
-    deleteWorld: w => Save.remove(w.id),
+    deleteWorld: w => { EntityStore.remove(w.id); return Save.remove(w.id); },
     quitToTitle: () => quitToTitle(),
     resume: () => lock(),
     respawn: () => respawn(),
@@ -333,6 +337,8 @@ async function boot() {
   // chat, over everything (js/ui/chat.js) and the commands typed into it (js/commands.js)
   const chat = new Chat();
   gui.overlays.push(chat);
+  // /give offers every item and block by name
+  setItemNames(() => ITEMS.filter(Boolean).map(it => it.name).concat(BLOCKS.filter(d => d && d.name && d.item !== false).map(d => d.name)));
 
   /* ---- item icons for the inventory and the hotbar (made a few at a time) ---- */
   const icons = new ItemIcons(alb, { grassMap: grass, foliageMap: foliage, extra: itemStrip.bmp });
@@ -465,6 +471,7 @@ async function boot() {
     // what the hands do with items: mining, drops, eating, opening things (hands.js)
     const hands = new Hands({ world, player, inv, survival, drops, containers, fluids, gui, icons, mode, renderer, inter: null, open: s => openScreen(s) });
     if (st && st.hands) hands.fromJSON(st.hands);
+    const entJson = isNew ? null : await EntityStore.load(entry.id);
     const inter = new Interactor({
       world, player, fluids, renderer, overlay,
       hand: hands.adapter(renderer),
@@ -492,6 +499,15 @@ async function boot() {
       },
     };
     game = { entry, world, player, fluids, inv, survival, inter, save, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, drops, containers, hands, collector };
+    // mobs, boats and arrows (js/entities): ticked with the game, drawn in the world's scene
+    const entities = new Entities({ world, player, inv, survival, renderer, options, mode, fluids,
+      hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0),
+        // what mobs drop goes through the items (drops.js): things on the ground, orbs of experience
+        dropItem: (w, x, y, z, name, n) => dropItem(w, x, y, z, name, n), giveXp: (n, x, y, z) => giveXp(x, y, z, n) } });
+    entities.fromJSON(entJson);
+    renderer.scene.add(entities.group);
+    inter.entities = entities;
+    game.entities = entities;
     hud = new Hud(inv, icons);
     gui.hud = hud;
     inv.on('held', id => renderer.setHeld(id, DRAW));
@@ -530,6 +546,7 @@ async function boot() {
     if (!game) return;
     game.save.writeState(stateOf());
     if (game.containers.dirty) { game.containers.dirty = false; game.save.writeExtra('containers', game.containers.toJSON()); }
+    if (game.entities) EntityStore.save(game.entry.id, game.entities.toJSON());
     await game.save.flush(game.world.edits);
   }
   async function quitToTitle() {
@@ -538,6 +555,7 @@ async function boot() {
     await saveGame();
     g.drops.dispose();
     game = null;
+    if (g.entities) g.entities.dispose();
     if (document.pointerLockElement) document.exitPointerLock();
     // the world you left keeps turning behind the title screen
     menu = { world: g.world, x: g.player.pos.x, z: g.player.pos.z, y: null, yaw: g.player.yaw, seed: worldSeed(g.entry), generator: g.world.generator };
@@ -552,6 +570,7 @@ async function boot() {
   function respawn() {
     if (!game) return;
     const g = game;
+    if (g.entities) g.entities.dismount();
     g.survival.reset();
     g.spilled = false;
     const gy = groundY(g.world, g.spawn.x, g.spawn.z);
@@ -606,10 +625,11 @@ async function boot() {
       setMode,
       teleport: (x, y, z) => { const p = g.player; p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; },
       give: (name, count) => {
-        const id = B[name];
-        if (id === undefined || !BLOCKS[id] || BLOCKS[id].item === false) return null;
+        // any item or block by its name (items.js knows both)
+        const id = itemId(name) || (B[name] !== undefined && BLOCKS[B[name]] && BLOCKS[B[name]].item !== false ? B[name] : 0);
+        if (!id) return null;
         g.inv.add(id, count);
-        return displayName(id);
+        return itemDisplay(id) || displayName(id);
       },
       clearInventory: name => {
         let n = 0;
@@ -682,6 +702,7 @@ async function boot() {
     if (e.code === 'BracketLeft') game.time -= 1000;
     if (e.code === 'BracketRight') game.time += 1000;
     if (e.code === 'KeyP' && !a) timeRuns = !timeRuns;
+    if (e.code === 'KeyB' && !a && game.mode === 'creative' && game.entities) game.entities.placeBoatAtCrosshair();
     if (a && MOVE[a]) { game.player.setKey(MOVE[a], true); e.preventDefault(); }
   });
   document.addEventListener('keyup', e => {
@@ -763,12 +784,14 @@ async function boot() {
     acc += dt;
     while (acc >= 0.05) {
       acc -= 0.05;
-      player.tick();
+      // riding: the keys go to the vehicle instead (js/entities)
+      if (!(g.entities && g.entities.rideTick())) player.tick();
       fluids.step();
       inter.tick();
       if (renderer.particles) renderer.particles.tick();
       g.hands.tick();
       g.containers.tick();
+      if (g.entities) g.entities.tick();
       if (g.mode === 'survival' || g.mode === 'adventure') {
         player.canSprint = survival.canSprint();
         survival.tick(player);
@@ -791,6 +814,7 @@ async function boot() {
     inter.look(v.eye);
     g.hands.alpha = alpha;
     g.drops.update(dt, alpha, player, renderer.camera);
+    if (g.entities) g.entities.render(alpha);
     sunAt(g.time);
     const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));
     const onGrass = player.onGround && !player.flying;
@@ -805,6 +829,8 @@ async function boot() {
     // no crosshair in third person, or with the HUD hidden
     const cross = renderer.avatar.view === 0 && !gui.hideHud;
     if (hud.crosshair !== cross) { hud.crosshair = cross; hud.markDirty(); }
+    // the attack indicator under it (js/entities)
+    if (g.entities) { const at = g.entities.cooldown(); if (Math.floor(at * 17) !== Math.floor((hud.attack === null || hud.attack === undefined ? 1 : hud.attack) * 17)) { hud.attack = at; hud.markDirty(); } }
     frames++; fpsT += dt;
     if (fpsT > 0.5) {
       fps = Math.round(frames / fpsT); frames = 0; fpsT = 0;
@@ -877,6 +903,7 @@ async function boot() {
     command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=8').then(m => m.execute(line, ctx)); },
     get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
     get survival() { return game && game.survival; },
+    get entities() { return game && game.entities; },
     get time() { return game ? game.time : menuTime; }, set time(t) { if (game) game.time = t; else menuTime = t; },
     // a test world without the menus; generator 'vanilla' (the default) or 'classic'
     play: (seed, mode, generator = 'vanilla') => startGame(Worlds.add({
