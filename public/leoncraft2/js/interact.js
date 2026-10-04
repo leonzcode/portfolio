@@ -116,7 +116,13 @@ export class Interactor {
         const nb = (dx, dy, dz) => { const n = w.get(x + dx, y + dy, z + dz); return n ? { d: BLOCKS[n], m: w.meta(x + dx, y + dy, z + dz) } : null; };
         this.onBreak(x, y, z, b, d.shape === 'cube' ? null : selectionBoxes(d, w.meta(x, y, z), nb));
       }
-      if (!this.creative && !this.hand.broke) { const drop = dropOf(b); if (drop) this.hand.got(drop); }
+      // the simulation hears of it (sim/sim.js); drops come from the loot tables (hands.js), or the
+      // simulation's loot, or the block itself
+      const loot = this.sim ? this.sim.broken(x, y, z, b, w.meta(x, y, z)) : null;
+      if (!this.creative && !this.hand.broke) {
+        if (loot) for (const [n, c] of loot) this.sim.dropItem(x + 0.5, y + 0.5, z + 0.5, n, c);
+        else { const drop = dropOf(b); if (drop) this.hand.got(drop); }
+      }
       w.set(x, y, z, replace && x === h.x && y === h.y && z === h.z ? replace : 0, 0);
       // a water plant leaves its water behind
       if (d && d.waterlogged) w.set(x, y, z, B.water, 0);
@@ -131,14 +137,17 @@ export class Interactor {
     // what the item does by itself (eating, armour, a bucket) works looking at nothing too
     if ((!h || !h.face) && this.hand.useItem) { this.hand.useItem(null); return; }
     if (!h || !h.face) return;
-    // chests, crafting tables, furnaces open; tools till and strip
+    // chests, crafting tables, furnaces open; tools till and strip (hands.js)
     if (this.hand.useOn && this.hand.useOn(h)) { this.hand.swing(); return; }
+    // what the simulation does with a click: levers, beds, bone meal, flint and steel (sim/sim.js)
+    if (this.sim && this.sim.use(h, this.hand.id(), this.player.sneaking)) { this.hand.swing(); if (this.sim.usedHeld) { this.sim.usedHeld = false; this.hand.used(); } return; }
     // doors, trapdoors and gates open instead, unless you sneak
     if (!this.player.sneaking && use(this.world, h.x, h.y, h.z)) { this.hand.swing(); return; }
     if (this.hand.useItem && this.hand.useItem(h)) return;
     const id = this.hand.id();
     if (!id || !BLOCKS[id]) return;
-    const list = placement(this.world, h, id, this.player);
+    let list = placement(this.world, h, id, this.player);
+    if (list.length && this.sim) list = this.sim.placed(list, h, id);
     if (!list.length) return;
     for (const [x, y, z, b, m] of list) {
       const cur = this.world.get(x, y, z);
