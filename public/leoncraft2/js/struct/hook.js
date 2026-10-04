@@ -11,6 +11,12 @@
 
    structureMessage answers the main thread's questions (/locate, what
    starts here, where the strongholds are).
+
+   For the other dimensions: a Nether or End generator in a worker calls
+   worldStructures(seed, netherGen, 'nether') (or 'end') once and
+   build(chunk, cx, cz) after each chunk; fortresses, bastions and end
+   cities then come out of the same code (fortress.js has the exact
+   layout; bastions and end cities are our own designs, builds/).
 --------------------------------------------------------------------------- */
 import { Structures, makeSource } from './starts.js?v=8';
 import { SETS, FAMILY } from './placement.js?v=8';
@@ -20,9 +26,9 @@ import { pickBiome } from '../worldgen.js?v=8';
 import { Y0, VOL } from '../world-const.js?v=8';
 
 export function worldStructures(seed, gen, dim) {
-  let S;
-  try { S = new Structures(seed, makeSource(gen, BIOMES, pickBiome, Y0)); } catch (e) { console.error('structures', e); return null; }
   dim = dim || 'overworld';
+  let S;
+  try { S = new Structures(seed, makeSource(gen, BIOMES, dim === 'overworld' ? pickBiome : null, Y0, dim)); } catch (e) { console.error('structures', e); return null; }
   return {
     S,
     build(c, cx, cz) {
