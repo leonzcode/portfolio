@@ -85,10 +85,33 @@ export class Save {
       try {
         const tx = db.transaction(STORE, 'readwrite');
         tx.objectStore(STORE).delete(IDBKeyRange.bound(prefix, prefix + '￿'));
+        tx.objectStore(STORE).delete('#containers:' + worldId);
         tx.oncomplete = () => res(); tx.onerror = () => res();
       } catch (e) { res(); }
     });
     try { localStorage.removeItem('lc2_world_' + worldId); } catch (e) {}
+  }
+  /* A world's other records by name (the chests' and furnaces' contents),
+     as JSON in the same store under '#name:world' (outside the chunk keys). */
+  async readExtra(name) {
+    if (!this.db) return null;
+    return new Promise(res => {
+      try {
+        const req = this.db.transaction(STORE, 'readonly').objectStore(STORE).get('#' + name + ':' + this.id);
+        req.onsuccess = () => { try { res(req.result ? JSON.parse(req.result) : null); } catch (e) { res(null); } };
+        req.onerror = () => res(null);
+      } catch (e) { res(null); }
+    });
+  }
+  async writeExtra(name, value) {
+    if (!this.db) return;
+    await new Promise(res => {
+      try {
+        const tx = this.db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(JSON.stringify(value), '#' + name + ':' + this.id);
+        tx.oncomplete = () => res(); tx.onerror = () => res();
+      } catch (e) { res(); }
+    });
   }
   // the small record: where you are, the time, the inventory
   readState() { try { return JSON.parse(localStorage.getItem('lc2_world_' + this.id) || 'null'); } catch (e) { return null; } }

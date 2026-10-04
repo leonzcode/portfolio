@@ -1,0 +1,140 @@
+/* ---------------------------------------------------------------------------
+   Leoncraft 2 - chat.
+
+   The game's chat: lines in the bottom left over a half-dark band, each
+   fading out ten seconds after it arrived (the last second a fade), the
+   last ten shown while you play and the last twenty with chat open. T opens
+   it, / opens it with a slash already typed; Enter sends, Esc closes, Up and
+   Down walk back through what you sent, Tab finishes a command's name.
+--------------------------------------------------------------------------- */
+import { Screen } from './gui.js?v=8';
+import { execute, complete } from '../commands.js?v=8';
+
+const LINE = 9, KEEP = 100, WIDTH = 320;
+
+export class Chat {
+  constructor() {
+    this.lines = [];        // newest last: { text, colour, at }
+    this.sent = [];         // what you typed, for Up and Down
+    this.open = false;
+    this.dirty = true;
+  }
+  add(text, colour = 0xFFFFFF) {
+    for (const part of String(text).split('\n')) this.lines.push({ text: part, colour, at: performance.now() });
+    if (this.lines.length > KEEP) this.lines.splice(0, this.lines.length - KEEP);
+    this.dirty = true;
+  }
+  // redrawn while any line is still fading
+  get animates() {
+    const now = performance.now();
+    for (let i = this.lines.length - 1; i >= 0 && i >= this.lines.length - 10; i--) if (now - this.lines[i].at < 10000) return true;
+    if (this.dirty) { this.dirty = false; return true; }
+    return false;
+  }
+  draw(g) {
+    if (!this.lines.length || (g.hideHud && !this.open)) return;
+    const f = g.font, now = performance.now();
+    const bottom = g.height - (this.open ? 16 : 40);
+    const max = this.open ? 20 : 10;
+    const ctx = g.ctx;
+    let y = bottom;
+    // long lines wrap onto more than one row, as in the game
+    const rows = [];
+    for (let i = this.lines.length - 1; i >= 0 && rows.length < max; i--) {
+      const l = this.lines[i];
+      const age = (now - l.at) / 50;     // in ticks
+      let a = 1;
+      if (!this.open) { a = Math.max(0, Math.min(1, (1 - age / 200) * 10)); a *= a; }
+      if (a <= 0.02) { if (!this.open) break; else continue; }
+      const parts = f.wrap(l.text, WIDTH);
+      for (let k = parts.length - 1; k >= 0 && rows.length < max; k--) rows.push([parts[k], l.colour, a]);
+    }
+    for (const [t, c, a] of rows) {
+      ctx.globalAlpha = a * 0.5;
+      g.fill(0, y - LINE, WIDTH + 8, y, 0xFF000000);
+      ctx.globalAlpha = a;
+      g.text(t, 2, y - LINE + 1, c);
+      y -= LINE;
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* The open chat: the line you are typing at the very bottom, the game still
+   running behind it (no menu background). */
+export class ChatScreen extends Screen {
+  constructor(chat, ctxOf, start = '') {
+    super('Chat');
+    this.chat = chat; this.ctxOf = ctxOf;
+    this.background = 'none';
+    this.value = start;
+    this.histAt = chat.sent.length;
+    this.suggestions = [];
+    this.animates = true;
+  }
+  init() {
+    const g = this.gui, inp = g.input;
+    this.chat.open = true;
+    // the hidden input does the typing, as for the game's other text boxes
+    this.field = { maxLength: 256, value: this.value, cursor: this.value.length, selEnd: this.value.length, focused: true, focusTime: performance.now(),
+      _syncFrom: i => { this.value = i.value.slice(0, 256); this.field.value = this.value; this.field.cursor = i.selectionEnd ?? this.value.length; this.suggest(); g.dirty = true; },
+      keyPressed: () => false, isMouseOver: () => true };
+    g.textFocus = null;
+    g.focusText(this.field);
+    inp.value = this.value;
+    try { inp.setSelectionRange(this.value.length, this.value.length); } catch (e) { /* hidden */ }
+    this.suggest();
+  }
+  suggest() { this.suggestions = this.value.startsWith('/') ? complete(this.value).slice(0, 10) : []; }
+  setValue(v) {
+    this.value = v; this.field.value = v; this.field.cursor = v.length;
+    const inp = this.gui.input; inp.value = v;
+    try { inp.setSelectionRange(v.length, v.length); } catch (e) { /* hidden */ }
+    this.suggest();
+    this.gui.dirty = true;
+  }
+  keyPressed(e) {
+    if (e.key === 'Escape') { this.gui.back(); return true; }
+    if (e.key === 'Enter') {
+      const v = this.value.trim();
+      this.gui.back();
+      if (v) this.send(v);
+      return true;
+    }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const s = this.chat.sent;
+      this.histAt = Math.max(0, Math.min(s.length, this.histAt + (e.key === 'ArrowUp' ? -1 : 1)));
+      this.setValue(this.histAt < s.length ? s[this.histAt] : '');
+      return true;
+    }
+    if (e.key === 'Tab') {
+      if (this.suggestions.length) this.setValue(this.suggestions[0] + (this.suggestions.length === 1 ? ' ' : ''));
+      return true;
+    }
+    return false;
+  }
+  send(v) {
+    const chat = this.chat;
+    if (chat.sent[chat.sent.length - 1] !== v) chat.sent.push(v);
+    const ctx = this.ctxOf();
+    if (v.startsWith('/')) execute(v, ctx);
+    else chat.add(`<${ctx.playerName}> ${v}`);
+  }
+  onClose() { this.chat.open = false; this.chat.dirty = true; this.gui._blurText && this.gui._blurText(); }
+  render(g, mx, my, dt) {
+    const W = this.width, H = this.height, f = g.font;
+    g.fill(2, H - 14, W - 2, H - 2, 0x80000000);
+    const shown = f.trim(this.value, W - 12, true);
+    const x = g.text(shown, 4, H - 12, 0xFFFFFF);
+    if ((((g.now - this.field.focusTime) / 300) | 0) % 2 === 0) g.text('_', x, H - 12, 0xFFFFFF);
+    // what Tab would finish, listed above the line
+    if (this.suggestions.length > 1 || (this.suggestions.length === 1 && this.suggestions[0] !== this.value.trim())) {
+      const w = Math.max(...this.suggestions.map(s => f.width(s))) + 4;
+      let y = H - 16 - this.suggestions.length * 12;
+      for (let i = 0; i < this.suggestions.length; i++, y += 12) {
+        g.fill(2, y, 2 + w, y + 12, 0xD0000000);
+        g.text(this.suggestions[i], 4, y + 2, i === 0 ? 0xFFFF55 : 0xAAAAAA);
+      }
+    }
+  }
+}

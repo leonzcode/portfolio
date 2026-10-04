@@ -1,5 +1,6 @@
 /* Leoncraft 2 - a worker: makes chunks and meshes them, off the main thread. */
 import { Gen } from './worldgen.js?v=8';
+import { VanillaGen } from './gen/vanillagen.js?v=8';
 import { meshColumn, setColours } from './mesher.js?v=8';
 import { resolveTextures } from './blocks.js?v=8';
 
@@ -8,7 +9,8 @@ let gen = null;
 self.onmessage = e => {
   const m = e.data;
   if (m.type === 'init') {
-    gen = new Gen(m.seed);
+    // worlds made since the vanilla generator came in say so; older ones keep the first generator
+    gen = m.generator === 'vanilla' ? new VanillaGen(String(m.seed)) : new Gen(m.seed | 0);
     resolveTextures(m.manifest);
     setColours(m.colours);
     self.postMessage({ type: 'ready' });
