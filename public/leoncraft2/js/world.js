@@ -137,14 +137,16 @@ export class World {
   inFlightCount() { return this.inFlight.size; }
   sendMesh(cx, cz) {
     const k = this.key(cx, cz);
-    const chunks = [], tops = [];
+    const chunks = [], tops = [], transfer = [];
     let top = 0;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) top = Math.max(top, this.chunks.get(this.key(cx + dx, cz + dz)).top);
     const ny = Math.min(H, top + 2);
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const c = this.chunks.get(this.key(cx + dx, cz + dz));
       // only the part with anything in it, copied
-      chunks.push({ blocks: c.blocks.slice(0, ny * 256), meta: c.meta.slice(0, ny * 256), biome: c.biome });
+      const blocks = c.blocks.slice(0, ny * 256), meta = c.meta.slice(0, ny * 256);
+      chunks.push({ blocks, meta, biome: c.biome });
+      transfer.push(blocks.buffer, meta.buffer);      // handed over, not copied a second time
       tops.push(c.top);
     }
     // what the flowing water was, in the region's own coordinates (see the mesher)
@@ -166,7 +168,7 @@ export class World {
     this.meshVersion.set(k, v);
     this.inFlight.add('m' + k);
     const i = this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves });
+    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves }, transfer);
   }
 
   /* ---- blocks ---- */
