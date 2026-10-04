@@ -32,6 +32,7 @@ import './boat.js?v=9';
 import './mobs2.js?v=9';
 import './mobs3.js?v=9';
 import './mobs4.js?v=9';
+import './nether.js?v=9';
 import { explode } from './explosion.js?v=9';
 import { placeBoat } from './boat.js?v=9';
 import { splitXp } from './xporb.js?v=9';
@@ -108,7 +109,7 @@ export class Entities {
     this.player = {
       isPlayer: true, type: 'player', get pos() { return P.pos; }, get vel() { return P.vel; }, w: 0.6, hw: 0.3, h: 1.8, eyeH: 1.62,
       alive: () => !self.survival.dead && !self.gone,
-      creative: () => self.mode === 'creative',
+      creative: () => self.mode === 'creative' || self.mode === 'spectator',
       sneaking: () => P.sneaking,
       inWater: () => P.inWater,
       hurt: (n, src) => self.hurtPlayer(n, src),
@@ -258,6 +259,7 @@ export class Entities {
     const held = this.inv ? this.inv.heldId() : 0;
     if (held !== this.lastHeld) { this.lastHeld = held; this.ticksSinceSwing = 0; }
     if (this.pInvul > 0) this.pInvul--;
+    if (this.pFire > 0) this.playerFireTick();
     this.shieldTick();
     this.effectsTick();
     if (this.difficulty === 'peaceful') this.peaceful();
@@ -574,8 +576,11 @@ export class Entities {
       }
     }
     if (this.effects.resistance) amount *= 0.8;
+    // fire resistance keeps fireballs off (they are fire)
+    if (src.type === 'fireball' && this.survival.effects && this.survival.effects.fire_resistance) return false;
     const before = this.survival.health;
-    this.survival.hurt(amount, src);
+    // survival.js takes the kind of damage by name (armour, protection, fire resistance go by it)
+    this.survival.hurt(amount, src.type === 'thrown' ? 'projectile' : src.type || 'generic');
     this.lastPlayerHurt = { amount, before, after: this.survival.health, src: src.type };
     if (this.riding && this.survival.dead) this.dismount();
     return true;
@@ -611,6 +616,21 @@ export class Entities {
     v.z = v.z / 2 - dz / l * strength;
     if (this.P.onGround) v.y = Math.min(0.4, v.y / 2 + strength);
     this.P.onGround = false;
+  }
+  /* Set alight (a blaze's fireball): survival.js's own burning when it has
+     one; otherwise kept here, a point every second, out in water or rain. */
+  setPlayerFire(seconds) {
+    const S = this.survival;
+    if (!S || this.mode === 'creative') return;
+    if (typeof S.setFire === 'function') { S.setFire(seconds); return; }
+    this.pFire = Math.max(this.pFire || 0, seconds * 20);
+  }
+  playerFireTick() {
+    const P = this.P;
+    if (P.inWater || this.raining() && this.seesSky(Math.floor(P.pos.x), Math.floor(P.pos.y + 1.8), Math.floor(P.pos.z))) { this.pFire = 0; return; }
+    if (this.pFire % 20 === 0 && !this.survival.dead) this.survival.hurt(1, 'on_fire');
+    if (this.age % 2 === 0) this.particlesP.add('flame', P.pos.x + (R() - 0.5) * 0.6, P.pos.y + R() * 1.8, P.pos.z + (R() - 0.5) * 0.6, 1, 0);
+    this.pFire--;
   }
   /* Effects mobs put on you (poison, wither, hunger from husks, slowness
      from strays, mining fatigue from elder guardians): they go to the

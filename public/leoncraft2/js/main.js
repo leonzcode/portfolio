@@ -733,6 +733,7 @@ async function boot() {
     p.noclip = m === 'spectator';
     if (m === 'spectator') p.flying = true; else if (!p.canFly) p.flying = false;
     g.inv.setMode(m === 'creative' ? 'creative' : 'survival');
+    if (g.entities) g.entities.mode = m;           // mobs leave a creative or spectating player alone
     g.inter.creative = m === 'creative';
     g.inter.adventure = m === 'adventure' || m === 'spectator';
     if (m === 'survival' || m === 'adventure') hud.setStats(g.survival.stats()); else hud.setStats(null);
