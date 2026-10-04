@@ -402,3 +402,28 @@ export class SwimGoal extends Goal {
   tick() { this.t--; const m = this.mob; m.swimTo(this.p[0], this.p[1], this.p[2], this.speed); }
   stop() { this.mob.swimStop && this.mob.swimStop(); }
 }
+
+/* ---- going after another kind of mob (zombies after villagers, golems after monsters) ---- */
+export class NearestMobTargetGoal extends Goal {
+  constructor(mob, test, mustSee = true, chance = 10) { super(mob, TARGET); this.test = test; this.mustSee = mustSee; this.chance = chance; }
+  range() { return this.mob.constructor.FOLLOW || 16; }
+  canUse() {
+    const m = this.mob;
+    if (RI(this.chance) !== 0) return false;
+    const r = this.range();
+    const t = m.m.nearest(m, r, e => e !== m && !e.dead && !e.removed && this.test(e) && (!this.mustSee || m.canSee(e)));
+    if (!t) return false;
+    this.t = t;
+    return true;
+  }
+  start() { this.mob.target = this.t; this.unseen = 0; }
+  canContinue() {
+    const m = this.mob, t = m.target;
+    if (!t || t.dead || t.removed || !t.alive()) return false;
+    const r = this.range();
+    if (m.dist2(t.pos.x, t.pos.y, t.pos.z) > r * r) return false;
+    if (this.mustSee) { if (m.canSee(t)) this.unseen = 0; else if (++this.unseen > 60) return false; }
+    return true;
+  }
+  stop() { this.mob.target = null; }
+}

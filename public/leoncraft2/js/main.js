@@ -420,6 +420,7 @@ async function boot() {
     }
     const survival = new Survival();
     if (st && st.survival) survival.fromJSON(st.survival);
+    const entJson = isNew ? null : await EntityStore.load(entry.id);
     const inter = new Interactor({
       world, player, fluids, renderer, overlay,
       hand: {
@@ -435,7 +436,7 @@ async function boot() {
     // mobs, boats and arrows (js/entities): ticked with the game, drawn in the world's scene
     const entities = new Entities({ world, player, inv, survival, renderer, options, mode, fluids,
       hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0) } });
-    entities.fromJSON(isNew ? null : await EntityStore.load(entry.id));
+    entities.fromJSON(entJson);
     renderer.scene.add(entities.group);
     inter.entities = entities;
     game.entities = entities;
@@ -673,6 +674,8 @@ async function boot() {
     // no crosshair in third person, or with the HUD hidden
     const cross = renderer.avatar.view === 0 && !gui.hideHud;
     if (hud.crosshair !== cross) { hud.crosshair = cross; hud.markDirty(); }
+    // the attack indicator under it (js/entities)
+    if (g.entities) { const at = g.entities.cooldown(); if (Math.floor(at * 17) !== Math.floor((hud.attack === null || hud.attack === undefined ? 1 : hud.attack) * 17)) { hud.attack = at; hud.markDirty(); } }
     frames++; fpsT += dt;
     if (fpsT > 0.5) {
       fps = Math.round(frames / fpsT); frames = 0; fpsT = 0;
