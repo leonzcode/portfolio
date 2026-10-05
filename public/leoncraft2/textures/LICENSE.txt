@@ -110,7 +110,7 @@ Item pictures (items.png)
 items.png holds one 16x16 picture for every item that is not a block (in the
 order of ITEM_TEX in js/itemdata.js), the eleven sizes of the experience orb,
 and the separate layers of the potion and tipped arrow pictures. Made by
-tools/leoncraft2/build_items.py from four resource packs:
+tools/leoncraft2/build_items.py from six resource packs:
 
 - "REFI Textures", by MysticTempest (drawn from scratch for Luanti games,
   Mineclonia among them): dyes, gems, coal, food, the compass, the mace, the
@@ -118,15 +118,24 @@ tools/leoncraft2/build_items.py from four resource packs:
   https://content.luanti.org/packages/MysticTempest/refi_textures/
   https://github.com/MysticTempest/REFI_Textures
 - "Bauniclonia", by Mirtilo (the Baunilha pack made for Mineclonia): every
-  tool and armour piece, ingots, meat, buckets, books and others:
+  tool and armour piece, meat, buckets, books and others:
   https://content.luanti.org/packages/Mirtilo/bauniclonia/
   https://codeberg.org/mirtilo/Bauniclonia
+- "Pixel ImPerfection", by bramaudi (Pixel Perfection reworked for
+  Mineclonia): the blaze rod, the totem of undying, the heart of the sea and
+  magma cream:
+  https://content.luanti.org/packages/bramaudi/pixel_imperfection/
+  https://codeberg.org/mineclonia/pixel_imperfection
+- "Miner 16px", by WINNIE (for Minetest Game): the iron, gold and copper
+  ingots:
+  https://content.luanti.org/packages/WINNIE/miner16px/
+  https://github.com/winniepee/Miner16px
 - Pixel Perfection Community Edition (the experience orb, from its entity
   textures, and items up to 1.16), and
 - Pixel Perfection Legacy (spawn eggs, boats, harnesses, bundles, music
   discs, smithing templates, pottery sherds, spears and the rest),
 
-all four CC BY-SA 4.0 (links above). tools/leoncraft2/data/item_sources.json
+all six CC BY-SA 4.0 (links above). tools/leoncraft2/data/item_sources.json
 names the pack and file of every picture. Changes: each picture's colours are
 moved towards the game's own average and spread (six numbers per picture,
 colour statistics only, no pixels), fully or by half for some; animated
@@ -147,8 +156,12 @@ Perfection CE, dried kelp, leather horse armour, the turtle scute, the
 pufferfish and the trident, and the compass (from both packs). Nothing
 turtle is taken from Pixel Perfection CE (its turtle armour texture is the
 game's own), and the FamiliarCraft pack was not used at all (its tools are
-the game's, recoloured). The shield (no pack has an item picture of it) is our own
-drawing (tools/leoncraft2/build_items.py). Like any texture pack, many
+the game's, recoloured). Pixel ImPerfection's book follows the game's detail,
+so no book is taken from that pack. Where a full colour pull would raise a
+drawing's detail past the limit (iron, diamond and golden leggings, the
+tipped arrow), it is pulled by half or not at all. The shield (no pack has an
+item picture of it) is our own drawing (tools/leoncraft2/build_items.py).
+Like any texture pack, many
 pictures still follow the layout of the object they show (a sword is a
 diagonal blade over a guard and grip).
 
@@ -167,10 +180,10 @@ textures (by Mirtilo, CC BY-SA 4.0, link above). Changes: each piece's own
 box to the head box; the colours are moved towards the game's own average and
 spread (colour statistics only); leather_layer_N.png is Bauniclonia's grey
 leather, to be multiplied by the dye colour (or by undyed leather's brown),
-and leather_layer_2_overlay.png the leggings' waist band in undyed leather,
-drawn over the dyed leggings untinted; the turtle shell is the leather cap
-recoloured green. A pixel comparison with the game's own
-armour textures found none of these to be copies. Pixel Perfection CE's turtle
+and leather_layer_2_overlay.png the leggings' waist band in Bauniclonia's
+undyed leather (not recoloured), drawn over the dyed leggings untinted; the
+turtle shell is the leather cap recoloured green. A pixel comparison with the
+game's own armour textures found none of these to be copies. Pixel Perfection CE's turtle
 texture is identical to the game's, and Pixel Perfection Legacy's turtle and
 REFI Textures' iron, gold and diamond armour follow the game's too closely, so
 none of those are used.

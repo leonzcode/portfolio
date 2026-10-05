@@ -17,9 +17,13 @@ recipes. minecraft-data writes a recipe with a tag ("any planks") once per
 item of the tag; recipes for the same result with the same layout are put
 back together here, so a chest can be made of mixed planks as in the game.
 
-Pictures, from four open resource packs (all CC BY-SA 4.0, never Mojang's):
-Pixel Perfection CE, Pixel Perfection Legacy, REFI Textures and Bauniclonia
-(the last two are drawn for Mineclonia, so their files have its names).
+Pictures, from six open resource packs (all CC BY-SA 4.0, never Mojang's):
+Pixel Perfection CE, Pixel Perfection Legacy, REFI Textures, Bauniclonia,
+Pixel ImPerfection and Miner 16px (the last four are drawn for Luanti games,
+Mineclonia and Minetest Game, so their files have those games' names).
+Pixel ImPerfection gives the blaze rod, the totem, the heart of the sea and
+magma cream; Miner 16px the iron, gold and copper ingots (one shape for the
+three, as in the game).
 data/item_sources.json says which pack's drawing each picture is: the one
 nearest the game's own picture, judged on a local copy of the game's item
 textures (October 2026, 26.1.2) once its colours are pulled to the game's,
@@ -46,13 +50,16 @@ pack files to be Mojang's pixels, copied or traced, so they are never used:
   Legacy's turtle armour model and REFI's iron, gold and diamond armour
   models (traced); FamiliarCraft, another Mineclonia pack, was not used at
   all (its tools are the game's, recoloured).
+  Pixel ImPerfection's book follows the game's detail (0.81), so no book is
+  taken from that pack (its written book is at the limit too).
 The turtle helmet (picture and model) is Bauniclonia's leather cap
 recoloured. The shield has no picture in the game to compare with and stays
 our own drawing; the compass and the mace drawings below are used only when
 REFI Textures is not given.
 
-Run:  python tools/leoncraft2/build_items.py <PixelPerfectionCE root> <Pixel Perfection Legacy root> <REFI_Textures> <Bauniclonia>
-      (without the last two the pictures come from Pixel Perfection only and no armour textures are written)
+Run:  python tools/leoncraft2/build_items.py <PixelPerfectionCE root> <Pixel Perfection Legacy root> <REFI_Textures> <Bauniclonia> <pixel_imperfection> <Miner16px>
+      (without REFI and Bauniclonia the pictures come from Pixel Perfection only and no armour textures are
+      written; a picture whose pack is not given falls back to Pixel Perfection, and the build says which)
       python tools/leoncraft2/build_items.py --refresh <minecraft-data folder> <blocks.26.1.json>
 """
 import json, os, re, sys, collections
@@ -246,6 +253,7 @@ ALIASES = {'compass': None, 'recovery_compass': 'recovery_compass_16', 'clock': 
 NOT_FROM_CE = {'dried_kelp', 'leather_horse_armor', 'scute', 'turtle_scute', 'compass_16', 'fish_pufferfish_raw', 'trident',
                'turtle_helmet'}
 NOT_FROM_PPL = {'compass_16'}
+NOT_FROM_LUANTI = {'pimp': {'default_book', 'mcl_books_book_written', 'mcl_books_book_writable', 'mcl_enchanting_book_enchanted'}}
 DRAWN = {'shield'}
 OWN_ART = {'compass', 'shield', 'mace'}     # drawn here, used when the chosen drawing cannot be loaded
 LEATHER = 0xA06540                          # undyed leather
@@ -346,10 +354,14 @@ def from_pack(pack, file, packs):
         skip = NOT_FROM_CE if pack == 'ce' else NOT_FROM_PPL
         paths = [None if f in skip else os.path.join(packs[pack], f + '.png') for f in file.split('+')]
     else:
-        paths = [packs.get(pack, {}).get(f) for f in file.split('+')]
+        skip = NOT_FROM_LUANTI.get(pack, ())
+        paths = [None if f in skip else packs.get(pack, {}).get(f) for f in file.split('+')]
     if not all(p and os.path.exists(p) for p in paths):
         return None
     return [load16(p) for p in paths]
+
+
+FELL_BACK = []      # pictures whose chosen pack was not given
 
 
 def picture(name, ce, ppl, packs=None):
@@ -360,6 +372,7 @@ def picture(name, ce, ppl, packs=None):
         if got:
             im = tint_over(got[0], got[1], TINTED[name][0]) if len(got) == 2 else got[0]
             return pull(im, ITEM_STATS.get(name), src[2])
+        FELL_BACK.append(name)
     if name in OWN_ART: return own_art(name)
     im = None
     if name in TINTED:
@@ -451,12 +464,13 @@ def build_armour(baun):
         done.append(key)
     # The leggings' waist band stays leather brown whatever the dye, as in the game: leather_layer_2_overlay is
     # drawn untinted over the dyed leggings. It is Bauniclonia's undyed leggings where they sit on the body box,
-    # pulled to the game's undyed leather. Without it, blue leggings come out blue all over.
+    # in Bauniclonia's own brown: pulled to the game's colours, the band alone follows the game's band too closely
+    # for the copy audit (0.77; 0.67 as drawn). Without it, blue leggings come out blue all over.
     im = armour_sheet(baun, 'leather', 2)
     if im is not None:
         from PIL import Image
         band = Image.new('RGBA', (64, 32), (0, 0, 0, 0))
-        band.paste(pull(im, ARMOR_STATS.get('leather_layer_2'), 1.0).crop((16, 16, 40, 32)), (16, 16))
+        band.paste(im.crop((16, 16, 40, 32)), (16, 16))
         band.save(os.path.join(out_dir, 'leather_layer_2_overlay.png'), optimize=True)
         done.append('leather_layer_2_overlay')
     return done
@@ -493,7 +507,9 @@ def main():
         sys.path.insert(0, HERE)
         refi = pack_index(sys.argv[3], 'textures') if len(sys.argv) > 3 else {}
         baun = pack_index(sys.argv[4], 'mineclonia') if len(sys.argv) > 4 else {}
-        packs = {'ce': ce, 'ppl': ppl, 'refi': refi, 'baun': baun} if refi and baun else None
+        pimp = pack_index(sys.argv[5], 'textures') if len(sys.argv) > 5 else {}
+        m16 = pack_index(sys.argv[6], 'mtg') if len(sys.argv) > 6 else {}
+        packs = {'ce': ce, 'ppl': ppl, 'refi': refi, 'baun': baun, 'pimp': pimp, 'm16': m16} if refi and baun else None
         if not packs:
             print('NOTE: REFI Textures and Bauniclonia not given: pictures from Pixel Perfection only, no armour textures')
         strip = Image.new('RGBA', (16, 16 * len(tex)), (0, 0, 0, 0))
@@ -516,6 +532,8 @@ def main():
             strip.paste(im, (0, i * 16))
         strip.save(os.path.join(TEX, 'items.png'), optimize=True)
         print('items.png:', len(tex), 'pictures', ('missing ' + ', '.join(missing)) if missing else '')
+        if FELL_BACK:
+            print('NOTE: from Pixel Perfection instead, as their pack was not given:', ', '.join(FELL_BACK))
         if packs:
             print('armor/:', ', '.join(build_armour(baun)))
     recipes = merge_recipes(D['recipes'])
