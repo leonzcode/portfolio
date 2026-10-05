@@ -28,7 +28,7 @@
    picture is asked for when the mouse moves, and 20 times a second for the
    arms' sway, only while the screen showing it is open.
 --------------------------------------------------------------------------- */
-import { AVATAR_HEAD, AVATAR_VS } from './avatar.js?v=14';
+import { AVATAR_HEAD, AVATAR_VS, ARMOR_OVERLAY } from './avatar.js?v=14';
 import { GLINT, SHEET_W, SHEET_H } from './armor.js?v=14';
 import { setGlint } from './glint.js?v=14';
 const THREE = window.THREE;
@@ -45,10 +45,10 @@ uniform sampler2D uSkin;
 uniform float uHurt;
 in vec3 vWorld; in vec3 vN; in vec2 vUv; flat in int vLayer;
 #ifdef ARMOR
-in vec3 vTint; in vec3 vG;
+in vec3 vTint; in vec3 vG; in vec2 vUv2;
 uniform sampler2D uNoise;
 uniform float uClock;
-` + GLINT + `
+` + GLINT + ARMOR_OVERLAY + `
 #endif
 layout(location = 0) out vec4 outColor;
 ` + LIGHTS + `
@@ -57,8 +57,9 @@ void main() {
   vec3 N = normalize(vN);
   if (!gl_FrontFacing) N = -N;
 #ifdef ARMOR
+  t = armorColour(t);
   if (t.a < 0.1) discard;
-  vec3 c = t.rgb * vTint * guiShade(N);
+  vec3 c = t.rgb * guiShade(N);
   if (vG.z > 0.5) c += glintAt(vG.xy, uClock);
 #else
   if (vLayer == 0 ? !gl_FrontFacing : t.a < 0.5) discard;

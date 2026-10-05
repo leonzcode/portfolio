@@ -4,15 +4,18 @@
      textures   textures/armor/<material>_layer_1.png (helmet, chestplate,
                 boots) and <material>_layer_2.png (leggings), 64 x 32 in the
                 usual humanoid layout, gathered into one sheet: a 64 x 64
-                row per material, layer 1 over layer 2. Until they load (or
-                if a file is missing) a plain stand-in of our own is drawn in
-                its place, so armour always shows.
+                row per material, layer 1 over layer 2, and a last row for
+                leather's undyed parts (leather_layer_2_overlay.png, the
+                leggings' waist band, when the pack has it). Until they load
+                (or if a file is missing) a plain stand-in of our own is drawn
+                in its place, so armour always shows.
      shape      the game's armour model: the humanoid's boxes puffed out by
                 a pixel on layer 1 (the helmet's outer hat box half a pixel
                 more), by half a pixel for the leggings on layer 2; the left
                 arm and leg mirror the right ones' picture.
-     colour     leather takes its dye (undyed, the game's brown); every
-                other material is drawn as it is.
+     colour     leather takes its dye (undyed, the game's brown), with its
+                overlay on top as it is; every other material is drawn as it
+                is.
      glint      an enchanted piece shimmers: two layers of soft violet
                 streaks drifting across at different angles, made from the
                 noise texture (our own, not the game's glint picture).
@@ -28,7 +31,10 @@ export const ARMOR_MATS = ['leather', 'chainmail', 'iron', 'golden', 'diamond', 
 const FILE = { golden: 'gold' };
 export const ROW = {};
 ARMOR_MATS.forEach((m, i) => { ROW[m] = i; });
-export const SHEET_W = 64, SHEET_H = 64 * ARMOR_MATS.length;
+// the row after the materials: the undyed parts of leather, drawn over the dyed piece
+export const OVERLAY_ROW = ARMOR_MATS.length;
+const OVERLAYS = { leather: [2] };
+export const SHEET_W = 64, SHEET_H = 64 * (ARMOR_MATS.length + 1);
 // leather with no dye on it
 export const LEATHER = 0xa06540;
 
@@ -67,15 +73,16 @@ export function glints(stack) {
   return !!(it && ALWAYS_GLINT.has(it.name));
 }
 
-/* What one worn stack looks like: its row in the sheet, its colour and
-   whether it shimmers; null for nothing, or for what is worn but is not
-   armour to draw (a carved pumpkin, a mob head, an elytra). */
+/* What one worn stack looks like: its row in the sheet, its colour, the row
+   of its undyed overlay (or -1) and whether it shimmers; null for nothing, or
+   for what is worn but is not armour to draw (a carved pumpkin, a mob head,
+   an elytra). */
 export function pieceLook(stack) {
   if (!stack) return null;
   const a = armorOf(stack.id);
   if (!a || ROW[a.material] === undefined) return null;
   const tint = a.material === 'leather' ? (typeof stack.color === 'number' ? stack.color : LEATHER) : 0xffffff;
-  return { row: ROW[a.material], material: a.material, tint, glint: glints(stack) };
+  return { row: ROW[a.material], material: a.material, tint, overlay: OVERLAYS[a.material] ? OVERLAY_ROW : -1, glint: glints(stack) };
 }
 
 /* ---- the sheet: one canvas, drawn once and again as each file lands ---- */
@@ -105,6 +112,14 @@ export function armorSheet() {
       }));
     }
   });
+  for (const m in OVERLAYS) for (const layer of OVERLAYS[m]) {
+    jobs.push(load(base + m + '_layer_' + layer + '_overlay.png?v=14').then(im => {
+      if (!im) return;
+      g.imageSmoothingEnabled = false;
+      g.drawImage(im, 0, 0, im.naturalWidth, im.naturalHeight, 0, OVERLAY_ROW * 64 + (layer - 1) * 32, 64, 32);
+      sheet.version++;
+    }));
+  }
   Promise.all(jobs).then(() => { sheet.loaded = true; });
   return sheet;
 }
