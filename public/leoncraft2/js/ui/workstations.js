@@ -18,7 +18,7 @@
    Layouts are the game's (176 wide, the smithing table's since 1.20); the
    sheets are our own (tools/leoncraft2/build_stations.py).
 --------------------------------------------------------------------------- */
-import { ContainerScreen, SearchField, slot, range, TO_PLAYER, TO_PLAYER_REVERSED, stackTooltip } from './inventory.js?v=14';
+import { ContainerScreen, SearchField, slot, range, TO_PLAYER, TO_PLAYER_REVERSED, stackTooltip, drawOutline } from './inventory.js?v=14';
 import { I, ITEMS, withCount, displayName } from '../items.js?v=14';
 import { tableOffers3, anvilResult, grindResult, grindable, enchName, enchantability } from '../enchanting.js?v=14';
 import { isPotion, potionName } from '../brewing.js?v=14';
@@ -75,6 +75,35 @@ export class EnchantScreen extends StationScreen {
     this.offers = [null, null, null];
     this.key = '';
     this.animates = true;
+    this.book = { open: 0, flip: 0, flipTo: 0, t: 0 };
+  }
+  /* The book above the slots: shut until something to enchant goes in, then
+     open, its pages turning now and then (drawn flat here, our own). */
+  drawBook(g, dt) {
+    const b = this.book, it = this.grid[0], k = Math.min(1, (dt || 16) / 50);
+    b.open += ((it ? 1 : 0) - b.open) * 0.2 * k;
+    if (it && b.open > 0.5 && Math.random() < 0.02 * k) b.flipTo += Math.random() < 0.5 ? 1 : -1;
+    b.flip += Math.max(-0.08, Math.min(0.08, (b.flipTo - b.flip) * 0.3)) * k;
+    const cx = this.left + 33, cy = this.top + 30, o = Math.sin(b.open * Math.PI / 2);
+    const ctx = g.ctx, quad = (pts, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]); ctx.closePath(); ctx.fill(); };
+    const W = 13, H = 8, lean = 4;
+    if (o < 0.05) {
+      // shut: the cover, a little turned
+      quad([cx - 7, cy - H, cx + 7, cy - H - 2, cx + 7, cy + H - 2, cx - 7, cy + H], '#6e3a1e');
+      quad([cx - 7, cy - H, cx - 5, cy - H, cx - 5, cy + H, cx - 7, cy + H], '#55291a');
+      quad([cx - 4, cy - H + 2, cx + 5, cy - H, cx + 5, cy - H + 1, cx - 4, cy - H + 3], '#d8b04a');
+      return;
+    }
+    const w = W * o, up = lean * o;
+    // the covers, then the pages on them, then the page in the air
+    quad([cx, cy - H - 1, cx - w - 1, cy - H - 1 + up, cx - w - 1, cy + H + 1 + up, cx, cy + H + 1], '#6e3a1e');
+    quad([cx, cy - H - 1, cx + w + 1, cy - H - 1 + up, cx + w + 1, cy + H + 1 + up, cx, cy + H + 1], '#6e3a1e');
+    quad([cx, cy - H, cx - w, cy - H + up, cx - w, cy + H + up, cx, cy + H], '#eee6cf');
+    quad([cx, cy - H, cx + w, cy - H + up, cx + w, cy + H + up, cx, cy + H], '#e6dcc2');
+    ctx.fillStyle = '#8a7f6a';
+    for (let r = -H + 3; r < H - 1; r += 3) { ctx.fillRect(cx - w * 0.8, cy + r + up * 0.5, w * 0.6, 1); ctx.fillRect(cx + w * 0.2, cy + r + up * 0.5, w * 0.6, 1); }
+    const f = b.flip - Math.floor(b.flip), pw = w * Math.cos(f * Math.PI);
+    if (Math.abs(pw) > 0.5 && f > 0.02 && f < 0.98) quad([cx, cy - H, cx + pw, cy - H + up - 2, cx + pw, cy + H + up - 2, cx, cy + H], '#f6f0de');
   }
   makeSlots() {
     const L = this.left, T = this.top;
@@ -127,10 +156,11 @@ export class EnchantScreen extends StationScreen {
     this.key = '';
     return true;
   }
-  render(g, mx, my) {
+  render(g, mx, my, dt) {
     this.drawBackdrop(g);
     const L = this.left, T = this.top;
     g.blit('container/enchanting_table', 0, 0, 176, 166, L, T);
+    this.drawBook(g, dt);
     g.text(this.title, L + 12, T + 5, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
     const hover = this.buttonAt(mx, my);
@@ -313,8 +343,48 @@ export class GrindstoneScreen extends StationScreen {
 
 const TRIM_MATERIALS = { amethyst_shard: 'amethyst', copper_ingot: 'copper', diamond: 'diamond', emerald: 'emerald', gold_ingot: 'gold', iron_ingot: 'iron',
   lapis_lazuli: 'lapis', netherite_ingot: 'netherite', quartz: 'quartz', redstone: 'redstone', resin_brick: 'resin' };
+/* The faint pictures in the empty slots, as in the game: the template slot
+   shows the two kinds of template in turn; with a template in, the base slot
+   shows what it takes (armour for a trim; armour and tools for the netherite
+   upgrade) and the addition slot what goes with it, a new one every second
+   and a half. Drawn here (our own shapes). */
+const GHOSTS = {
+  trim: ['', '', '...##########', '...#........#', '...#.######.#', '...#.#....#.#', '...#.#.##.#.#', '...#.#.##.#.#', '...#.#....#.#', '...#.######.#', '...#........#', '...##########'],
+  upgrade: ['', '', '...##########', '...#........#', '...#...##...#', '...#..####..#', '...#.##..##.#', '...#...##...#', '...#...##...#', '...#........#', '...##########'],
+  sword: ['', '', '............###', '...........###', '..........###', '.........###', '........###', '..##...###', '...##.###', '....####', '....###', '...##.##', '..##', '.##'],
+  pickaxe: ['', '', '....########', '...##########', '..###..##..###', '..##...##...##', '.......##', '.......##', '.......##', '.......##', '.......##', '.......##', '.......##'],
+  axe: ['', '', '......####', '.....######', '....#######', '....###.##', '.......##', '.......##', '.......##', '.......##', '.......##', '.......##'],
+  hoe: ['', '', '.....######', '.....######', '..........#', '..........##', '.........##', '........##', '.......##', '......##', '.....##', '....##'],
+  shovel: ['', '', '..........###', '.........#####', '.........#####', '..........###', '.........##', '........##', '.......##', '......##', '.....##', '....##'],
+  ingot: ['', '', '', '', '', '', '......######', '....##########', '..##############', '.##############', '..############'],
+  dust: ['', '', '', '', '', '.......#', '......###..#', '...#..####.##', '..####.######', '.############', '..##########'],
+  gem: ['', '', '', '....########', '...##########', '..############', '...##########', '....########', '.....######', '......####', '.......##'],
+  shard: ['', '', '.......##', '......####', '......####', '.....######', '.....######', '....########', '....########', '.....######', '......####'],
+};
+const ARMOUR = [0, 1, 2, 3];      // helmet, chestplate, leggings, boots (the inventory's outlines)
 export class SmithingScreen extends StationScreen {
-  constructor(inv, icons) { super(inv, icons, 176, 166, 3); this.title = 'Upgrade Gear'; }
+  constructor(inv, icons) { super(inv, icons, 176, 166, 3); this.title = 'Upgrade Gear'; this.ghostT = 0; }
+  ghost(g, x, y, k) {
+    if (typeof k === 'number') { drawOutline(g, k, x, y); return; }
+    const rows = GHOSTS[k];
+    for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) if (rows[r][c] === '#') g.fill(x + c, y + r, x + c + 1, y + r + 1, 0x2CFFFFFF);
+  }
+  drawGhosts(g) {
+    const now = performance.now(), t = Math.floor(now / 1500), L = this.left, T = this.top, tpl = this.grid[0];
+    // drawn again when the next picture is due (not every frame)
+    if (!this.ghostT) this.ghostT = setTimeout(() => { this.ghostT = 0; if (this.gui) this.gui.markDirty(); }, 1500 - (now % 1500) + 5);
+    const tn = tpl && ITEMS[tpl.id] ? ITEMS[tpl.id].name : '';
+    const up = tn === 'netherite_upgrade_smithing_template', trim = /_armor_trim_smithing_template$/.test(tn);
+    if (!tpl) this.ghost(g, L + 8, T + 48, ['trim', 'upgrade'][t % 2]);
+    if (!this.grid[1] && (up || trim)) {
+      const list = up ? [0, 'sword', 1, 'pickaxe', 2, 'axe', 3, 'hoe', 'shovel'] : ARMOUR;
+      this.ghost(g, L + 26, T + 48, list[t % list.length]);
+    }
+    if (!this.grid[2] && (up || trim)) {
+      const list = up ? ['ingot'] : ['ingot', 'dust', 'gem', 'gem', 'shard', 'gem', 'shard'];
+      this.ghost(g, L + 44, T + 48, list[t % list.length]);
+    }
+  }
   makeSlots() {
     const L = this.left, T = this.top;
     return [slot(L + 8, T + 48, 'craft', 0), slot(L + 26, T + 48, 'craft', 1), slot(L + 44, T + 48, 'craft', 2), slot(L + 98, T + 48, 'result')].concat(playerSlots(L, T, 84));
@@ -346,6 +416,7 @@ export class SmithingScreen extends StationScreen {
     g.blit('container/smithing', 0, 0, 176, 166, L, T);
     // the red cross: all three in, and nothing they make
     if (this.grid[0] && this.grid[1] && this.grid[2] && !this.result) g.blit('container/smithing', 176, 0, 28, 21, L + 65, T + 46);
+    this.drawGhosts(g);
     g.text(this.title, L + 44, T + 15, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
     const prev = this.drawSlots(g, mx, my);
