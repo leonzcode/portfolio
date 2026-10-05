@@ -69,6 +69,7 @@ export const DEFAULT_OPTIONS = {
   fov: 70,                 // degrees, 30-110
   sensitivity: 0.5,        // 0-1, 0.5 shows as 100%
   invertY: false,
+  rawInput: true,          // the mouse's own movement while it is held, no pointer acceleration (the game's Raw Input)
   autoJump: false,
   renderDistance: null,    // chunks, null = the quality tier's own
   quality: 'auto',         // auto potato low medium high ultra

@@ -482,6 +482,8 @@ async function boot() {
       mendingRepair: n => hands.mend(n),
     };
     game = { entry, world, player, fluids, inv, survival, inter, save, saves, dim, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, hands, collector };
+    // FOV, FOV Effects and View Bobbing as set in Options, from the first frame
+    applyOptions();
     /* The things that live in one world, one dimension: items lying about and
        experience orbs (drops.js), chests and furnaces (containers.js), mobs,
        boats and arrows (js/entities), the world simulating itself (sim/sim.js).
@@ -560,7 +562,7 @@ async function boot() {
     wantInv = true;
     for (const k in game.player.keys) game.player.keys[k] = false;
     game.inter.up(0); game.inter.up(2);
-    if (document.pointerLockElement) document.exitPointerLock();
+    letGo();
     gui.open(screen);
   }
   // wait for the ground round (cx, cz) to be made and drawn, showing it on the loading screen
@@ -605,7 +607,7 @@ async function boot() {
     if (!g || travelling) return false;
     travelling = true;
     try {
-      if (document.pointerLockElement) document.exitPointerLock();
+      letGo();
       for (const k in g.player.keys) g.player.keys[k] = false;
       loading = { text: 'Loading terrain...', progress: 0, chunks: [] };
       gui.open(new LoadingScreen());
@@ -675,7 +677,7 @@ async function boot() {
     if (g.entities) g.entities.dispose();
     if (g.sim) g.sim.dispose();
     if (g.realms) g.realms.dispose();
-    if (document.pointerLockElement) document.exitPointerLock();
+    letGo();
     // the world you left keeps turning behind the title screen
     menu = { world: g.world, x: g.player.pos.x, z: g.player.pos.z, y: null, yaw: g.player.yaw, seed: worldSeed(g.entry), generator: g.world.generator };
     g.world.save = null;
@@ -704,22 +706,43 @@ async function boot() {
 
   /* ---- input ---- */
   const locked = () => document.pointerLockElement === canvas;
-  /* Taking the mouse back. Chrome refuses for about a second after Esc let
-     it go, and a second request while one is pending fails too, so: one at a
-     time, held back until that second has passed, and if it still fails the
-     game menu comes back so a click on Back to Game can try again. */
-  let unlockedAt = -1e9, lockPending = false;
-  function lockFailed() { if (game && !locked() && !gui.isOpen() && !game.survival.dead) gui.open(new PauseScreen()); }
+  /* Taking the mouse back. When the game let it go itself (the inventory, a
+     chest, chat, a dimension loading) it is taken back the moment the screen
+     closes, as in the game. Only after you let it go (Esc, or the window
+     losing it) does Chrome refuse it for a while, 1.25 seconds: then the
+     request waits that long. A second request while one is pending fails, so
+     one at a time, and if one still fails the game menu comes back so a click
+     on Back to Game can try again. Raw Input (Mouse Settings, on by default as
+     in the game) asks for the mouse's own movement, with no acceleration. */
+  let unlockedAt = -1e9, lockPending = false, letGoOurselves = false, noRaw = false, promised = false;
+  function letGo() { if (document.pointerLockElement) { letGoOurselves = true; document.exitPointerLock(); } }
+  function lockFailed() { lockPending = false; if (game && !locked() && !gui.isOpen() && !game.survival.dead) gui.open(new PauseScreen()); }
+  function requestLock() {
+    const raw = options.get('rawInput') !== false && !noRaw;
+    lockPending = true;
+    let p = null;
+    try { p = canvas.requestPointerLock(raw ? { unadjustedMovement: true } : undefined); } catch (e) { lockFailed(); return; }
+    // an older browser answers with pointerlockchange or pointerlockerror only
+    if (!p || !p.then) return;
+    promised = true;
+    p.then(() => { lockPending = false; }, err => {
+      // no raw movement here: the ordinary lock, from now on
+      if (raw && err && err.name === 'NotSupportedError') { noRaw = true; requestLock(); return; }
+      lockFailed();
+    });
+  }
   function lock() {
     if (!game || locked() || lockPending) return;
+    const wait = Math.max(0, 1300 - (performance.now() - unlockedAt));
+    if (!wait) { if (!gui.isOpen()) requestLock(); return; }
     lockPending = true;
     setTimeout(() => {
       lockPending = false;
       if (!game || locked() || gui.isOpen()) return;
-      try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(lockFailed); } catch (e) { lockFailed(); }
-    }, Math.max(0, 1100 - (performance.now() - unlockedAt)));
+      requestLock();
+    }, wait);
   }
-  document.addEventListener('pointerlockerror', lockFailed);
+  document.addEventListener('pointerlockerror', () => { if (!promised) lockFailed(); });
   canvas.addEventListener('click', () => { if (game && !gui.isOpen()) lock(); });
   let wantInv = false;
   // zoom (C held): the view narrows to a quarter, easing in and out, and the mouse turns slower to match
@@ -776,12 +799,14 @@ async function boot() {
   function openChat(start) {
     wantInv = true;
     for (const k in game.player.keys) game.player.keys[k] = false;
-    if (document.pointerLockElement) document.exitPointerLock();
+    letGo();
     gui.open(new ChatScreen(chat, chatCtx, start));
   }
   document.addEventListener('pointerlockchange', () => {
-    if (locked()) return;
-    unlockedAt = performance.now();
+    if (locked()) { lockPending = false; return; }
+    // let go by you or the browser, not by the game: Chrome will not give it back for a moment
+    if (!letGoOurselves) unlockedAt = performance.now();
+    letGoOurselves = false;
     zoomHeld = false;
     for (const k in game ? game.player.keys : {}) game.player.keys[k] = false;
     if (game && game.inter) { game.inter.up(0); game.inter.up(2); }
@@ -789,13 +814,13 @@ async function boot() {
     if (game && !gui.isOpen() && !wantInv && !game.survival.dead) gui.open(new PauseScreen());
     wantInv = false;
   });
-  // MC's mouse: sensitivity s gives (0.6 s + 0.2)^3 x 8 x 0.15 degrees a pixel
+  // MC's mouse: sensitivity s gives (0.6 s + 0.2)^3 x 8 x 0.15 degrees a pixel, and you can look straight up or down
   document.addEventListener('mousemove', e => {
     if (!locked() || !game) return;
     const s = options.get('sensitivity'), f = s * 0.6 + 0.2, k = f * f * f * 8 * 0.15 * Math.PI / 180 * zoomF;
     const inv = options.get('invertY') ? -1 : 1;
     game.player.yaw -= e.movementX * k;
-    game.player.pitch = Math.max(-1.5605, Math.min(1.5605, game.player.pitch - e.movementY * k * inv));
+    game.player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, game.player.pitch - e.movementY * k * inv));
   });
   // the player's own key names, from the bindings in Options
   const MOVE = { forward: 'w', left: 'a', back: 's', right: 'd', jump: ' ', sneak: 'shift', sprint: 'control' };
@@ -820,7 +845,7 @@ async function boot() {
       e.preventDefault();
       wantInv = true;
       for (const k in game.player.keys) game.player.keys[k] = false;
-      if (document.pointerLockElement) document.exitPointerLock();
+      letGo();
       gui.open(inventoryScreen(game.inv, icons));
       return;
     }
@@ -890,17 +915,40 @@ async function boot() {
     moonDir.copy(sunDir).negate();
   };
   let menuTime = 2000, menuAcc = 0;
+  /* Frames the graphics card has not finished. When it falls even a little
+     behind the screen (Detailed on a modest card), the browser keeps handing
+     it more and they queue up: everything you do then shows six or seven
+     frames late, a tenth of a second and more. So no more than two frames
+     are left with the card: while it is still busy with both, this one is
+     not drawn (the game goes on all the same, and the next frame drawn shows
+     it). One would leave the card idle between frames and halve the frame
+     rate of a card that only just keeps up; two keeps it busy and the
+     picture right behind your hands. ?frames=N tries another depth. */
+  const gl = renderer.r.getContext();
+  const fences = [];               // [fence, when it was set]
+  const inFlight = Math.max(1, +params.get('frames') || 2);
+  let drawDt = 0;
+  function cardBusy(now) {
+    while (fences.length && gl.getSyncParameter(fences[0][0], gl.SYNC_STATUS) === gl.SIGNALED) gl.deleteSync(fences.shift()[0]);
+    // a fence that never comes back (the context lost, a driver hiccup) must not stop the drawing
+    if (fences.length && (now - fences[0][1] > 250 || gl.isContextLost())) { for (const f of fences) gl.deleteSync(f[0]); fences.length = 0; }
+    return fences.length >= inFlight;
+  }
+  function drawn() { const s = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); if (s) fences.push([s, performance.now()]); }
   function loop(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     // the next frame is asked for first, so one that goes wrong never stops the game
     requestAnimationFrame(loop);
     try {
-      if (game && game.ready && !travelling) playFrame(now, dt);
-      else if (menu) {
+      const draw = !cardBusy(performance.now());
+      drawDt += dt;
+      if (game && game.ready && !travelling) playFrame(now, dt, draw);
+      else {
+        drawDt = 0;
         // the title world turns slowly: half the frames are plenty, and the menus stay quick
         menuAcc += dt;
-        if (menuAcc >= 1 / 31) { menuFrame(menuAcc); menuAcc = 0; }
+        if (menu && menuAcc >= 1 / 31 && draw) { menuFrame(menuAcc); menuAcc = 0; drawn(); }
       }
     } catch (e) {
       if (!loop.warned) { loop.warned = true; console.error(e); }
@@ -924,7 +972,7 @@ async function boot() {
       biome: BIOMES[w.biomeAt(Math.floor(eyeV.x), Math.floor(eyeV.z))], dim: DIMS[w.dim || 'overworld'],
     }, dt);
   }
-  function playFrame(now, dt) {
+  function playFrame(now, dt, draw) {
     const g = game, { world, player, fluids, inter, survival } = g;
     acc += dt;
     while (acc >= 0.05) {
@@ -948,7 +996,7 @@ async function boot() {
         if (survival.dead && !gui.isOpen() && !g.respawning) {
           if (gameRule(g, 'doImmediateRespawn')) respawn();
           else {
-            if (document.pointerLockElement) document.exitPointerLock();
+            letGo();
             gui.open(new DeathScreen({ message: survival.deathMessage, score: survival.score, hardcore: !!g.entry.hardcore }));
           }
         }
@@ -975,27 +1023,32 @@ async function boot() {
     g.realms.frame(alpha, dt);
     const boss = g.realms.boss;
     if ((boss ? boss.progress : -1) !== (hud.boss ? hud.boss.progress : -1)) { hud.boss = boss ? Object.assign({}, boss) : null; hud.markDirty(); }
-    const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));
-    const onGrass = player.onGround && !player.flying;
-    renderer.render({
-      time: (g.time + alpha) / 20, sunDir, moonDir, feet: v.feet, eye: v.eye, yaw: player.yaw, pitch: player.pitch,
-      fov: player.fov * (g.entities ? g.entities.combat.fovScale(alpha) : 1) * (zoomF += ((zoomHeld ? 0.25 : 1) - zoomF) * Math.min(1, dt * 12)), eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
-      moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: g.hands.handBob(v.handBob),
-      waterTint: tintAt(world, v.eye), player, alpha,
-      // hurt: the camera tilts and the model flashes red (combat/combat.js)
-      tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
-      biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
-      dim: D, bossFog: g.realms.bossFog,
-      // the screen tips when hurt and rolls a little in death (survival.js)
-      ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha)) : NO_TILT),
-    }, dt);
+    zoomF += ((zoomHeld ? 0.25 : 1) - zoomF) * Math.min(1, dt * 12);
+    // the card still busy with the frames before: this one is not drawn (see cardBusy)
+    if (draw) {
+      const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));
+      const onGrass = player.onGround && !player.flying;
+      renderer.render({
+        time: (g.time + alpha) / 20, sunDir, moonDir, feet: v.feet, eye: v.eye, yaw: player.yaw, pitch: player.pitch,
+        fov: v.fov * (g.entities ? g.entities.combat.fovScale(alpha) : 1) * zoomF, eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
+        moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: g.hands.handBob(v.handBob),
+        waterTint: tintAt(world, v.eye), player, alpha,
+        // hurt: the camera tilts and the model flashes red (combat/combat.js)
+        tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
+        biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
+        dim: D, bossFog: g.realms.bossFog,
+        // the screen tips when hurt and rolls a little in death (survival.js)
+        ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha)) : NO_TILT),
+      }, Math.min(0.25, drawDt));
+      drawDt = 0; drawn(); frames++;
+    }
     if (g.mode === 'survival' || g.mode === 'adventure') hud.setStats(survival.stats());
     // no crosshair in third person, or with the HUD hidden
     const cross = renderer.avatar.view === 0 && !gui.hideHud;
     if (hud.crosshair !== cross) { hud.crosshair = cross; hud.markDirty(); }
     // the attack indicator under it (js/entities)
     if (g.entities) { const at = g.entities.combat.indicator(); if (Math.floor(at * 17) !== Math.floor((hud.attack === null || hud.attack === undefined ? 1 : hud.attack) * 17)) { hud.attack = at; hud.markDirty(); } }
-    frames++; fpsT += dt;
+    fpsT += dt;
     if (fpsT > 0.5) {
       fps = Math.round(frames / fpsT); frames = 0; fpsT = 0;
       // keep it smooth: give up resolution before frame rate, and take it back when there is room

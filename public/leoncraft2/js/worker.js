@@ -41,6 +41,7 @@ self.onmessage = e => {
       transfer.push(g.index.buffer);
     }
     if (out.light) transfer.push(out.light.buffer);
+    if (out.region) transfer.push(out.region.buffer);
     self.postMessage({ type: 'mesh', id: m.id, cx: m.cx, cz: m.cz, version: m.version, mesh: out, urgent: m.urgent }, transfer);
     return;
   }

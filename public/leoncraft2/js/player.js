@@ -76,6 +76,7 @@ export class Player {
     this.fov = 70;
     this.baseFov = 70;            // the FOV option; sprinting widens it by fovEffects
     this.fovEffects = 1;
+    this.fovMod = 1; this.prevFovMod = 1;   // how much wider than the FOV option the view is, this tick and the last
     this.canFly = true;           // creative mode
     this.stepped = 0;
     this.lastSpace = 0;
@@ -449,9 +450,19 @@ export class Player {
     // creative: falling out of the world brings you back down from the sky (survival hurts instead)
     if (this.canFly && this.pos.y < -80) { this.pos.y = 200; this.vel.set(0, 0, 0); }
     if (!this.canFly) this.flying = false;
-    // a little wider when sprinting, as the game does
-    const want = this.baseFov * (1 + ((this.sprinting ? 1.12 : 1) * (this.flying && this.sprinting ? 1.05 : 1) - 1) * this.fovEffects);
-    this.fov += (want - this.fov) * 0.35;
+    /* The view widens with your speed, as the game works it out: half way
+       between walking speed and how fast you could go (sprinting 30% faster
+       gives 15% wider, Speed and Slowness count too), 10% more flying,
+       scaled by FOV Effects. It eases half way there each tick and is drawn
+       between ticks (view), so it never steps. */
+    const fx = this.effects;
+    let speed = this.sprinting ? 1.3 : 1;
+    if (fx && fx.speed) speed *= 1 + 0.2 * fx.speed.level;
+    if (fx && fx.slowness) speed *= Math.max(0, 1 - 0.15 * fx.slowness.level);
+    const fm = (this.flying ? 1.1 : 1) * (speed + 1) / 2;
+    this.prevFovMod = this.fovMod;
+    this.fovMod = Math.max(0.1, Math.min(1.5, this.fovMod + (1 + (fm - 1) * this.fovEffects - this.fovMod) * 0.5));
+    this.fov = this.baseFov * this.fovMod;
   }
 
   /* ---- where the camera is, between ticks ---- */
@@ -469,7 +480,8 @@ export class Player {
     eye.y += by;
     // the held block sways a little against the step
     const handBob = { x: Math.sin(walk * Math.PI) * 0.025 * this.bob, y: -Math.abs(Math.cos(walk * Math.PI)) * 0.03 * this.bob };
-    return { feet: p, eye, roll: Math.sin(walk * Math.PI) * 0.006 * this.bob, handBob };
+    const fov = this.baseFov * (this.prevFovMod + (this.fovMod - this.prevFovMod) * alpha);
+    return { feet: p, eye, roll: Math.sin(walk * Math.PI) * 0.006 * this.bob, handBob, fov };
   }
 
   /* ---- what the crosshair is on: a voxel walk along the view ray ---- */
