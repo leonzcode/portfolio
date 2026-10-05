@@ -482,7 +482,7 @@ export class Entities {
      sat), then all are put in their seats, then whatever rides them in turn */
   tickRiders(v) {
     for (const p of v.passengers.slice()) {
-      if (p === this.player || p.removed || p.vehicle !== v) continue;
+      if (p === this.player || p === this.P || !p.baseTick || p.removed || p.vehicle !== v) continue;
       this.ridingTick(p);
       if (!p.removed && (this.age + p.id) % 4 === 0) this.sampleLight(p);
     }
