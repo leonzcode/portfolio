@@ -36,6 +36,7 @@ import { containerKind, spill } from './containers.js?v=14';
 import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=14';
 import { isPotion, drinkPotion } from './brewing.js?v=14';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=14';
+import { MerchantScreen } from './ui/merchant.js?v=14';
 import { countShelves } from './enchanting.js?v=14';
 import { wear } from './ui/inventory.js?v=14';
 
@@ -76,7 +77,7 @@ export class Hands {
     // a tool or a piece of armour that wears out breaks into pieces
     if (this.inv && this.inv.on) this.inv.on('broke', s => this.toolBroke(s));
     // the screens' sheets, fetched now so a chest never opens on an empty frame
-    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter'])
+    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter', 'villager', 'loom', 'cartography_table'])
       this.gui.loadSheet('container/' + n).catch(() => {});
   }
   get creative() { return this.mode === 'creative'; }
@@ -272,6 +273,12 @@ export class Hands {
     return false;
   }
 
+  // a villager's trades (entities/merchant.js): Hero of the Village takes its price off
+  trade(v) {
+    const fx = this.survival.effects && this.survival.effects.hero_of_the_village;
+    this.open(new MerchantScreen(this.inv, this.icons, v, { player: this.player, hero: () => (fx && fx.ticks !== 0 ? fx.level : 0) }));
+  }
+
   /* ---- right click with the item itself ---- */
   useItem(hit) {
     const s = this.held;
@@ -383,6 +390,8 @@ export class Hands {
     if (it.name === 'honey_bottle') delete sv.effects.poison;
     if (it.name === 'chorus_fruit') this.chorusTeleport();
     if (isPotion(s)) drinkPotion(s, sv);
+    // a suspicious stew's effect (a farmer's, or one from flowers)
+    if (s && s.stew) sv.addEffect(s.stew[0], 1, s.stew[1]);
     if (!this.creative && s) {
       s.count--;
       const left = food.leaves ? I[food.leaves] : 0;

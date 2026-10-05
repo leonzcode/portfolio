@@ -29,6 +29,7 @@ import { placeBoat } from './boat.js?v=14';
 import './mobs2.js?v=14';
 import './mobs3.js?v=14';
 import './mobs4.js?v=14';
+import './merchant.js?v=14';
 import { explode } from './explosion.js?v=14';
 import { splitXp } from './xporb.js?v=14';
 import { placeMinecart, isRail } from './minecart.js?v=14';
@@ -224,6 +225,7 @@ export class Entities {
     if (e instanceof Mob) e.nav = new Navigation(e);
     if (o.natural !== false && e.finalizeSpawn && !o.json) e.finalizeSpawn(o);
     if (o.json) e.fromJSON(o.json);
+    if (e.spawnData) e.spawnData(o);
     if (o.persistent) e.persistent = true;
     e.lightS = 15; e.lightB = 0; e.lS = 1; e.lB = 0;
     this.sampleLight(e, true);
@@ -480,6 +482,8 @@ export class Entities {
     if (r === 'consume' && this.mode !== 'creative' && this.inv) this.inv.takeSelected(1);
     if (r === 'milk') this.fillHeld('milk_bucket');
     if (r === 'damage') this.damageHeld(1);
+    // a villager's trades (hands.js opens the screen)
+    if (r === 'trade' && this.hooks.trade) this.hooks.trade(e);
     return true;
   }
 
