@@ -42,7 +42,8 @@ export class Renderer {
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.05, 1000);
     this.scene = new THREE.Scene();          // opaque and cutout
     this.trans = new THREE.Scene();          // fluids and translucent
-    this.shadowScene = new THREE.Scene();
+    this.shadowScene = new THREE.Scene();    // what moves: your own body (render/avatar.js)
+    this.shadowTerrain = new THREE.Scene();  // the world's blocks, drawn into their own map and kept
     this.shadowCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 400);
     // Fast graphics is the game with no shaders (vanilla.js): no atmosphere tables at all
     this.sky = this.opts.vanilla ? null : new Sky(r);
@@ -53,8 +54,12 @@ export class Renderer {
     this.shadowRT.depthTexture = new THREE.DepthTexture(sr, sr, THREE.FloatType);
     this.shadowRT.depthTexture.compareFunction = THREE.LessEqualCompare;
     this.shadowRT.depthTexture.minFilter = this.shadowRT.depthTexture.magFilter = THREE.LinearFilter;
+    // the blocks alone, kept from frame to frame; the map above is a copy of it with your body drawn in
+    this.shadowTerrainRT = new THREE.WebGLRenderTarget(sr, sr, { depthBuffer: true, type: THREE.UnsignedByteType });
+    this.shadowTerrainRT.depthTexture = new THREE.DepthTexture(sr, sr, THREE.FloatType);
     // made now, cleared to "nothing in the way", so the shaders never sample a map that is not there yet
-    r.setRenderTarget(this.shadowRT); r.setClearColor(0xffffff, 1); r.clear(true, true, false); r.setRenderTarget(null);
+    for (const t of [this.shadowRT, this.shadowTerrainRT]) { r.setRenderTarget(t); r.setClearColor(0xffffff, 1); r.clear(true, true, false); }
+    r.setRenderTarget(null);
     // the textures
     this.U = {
       uTime: { value: 0 }, uFrame: { value: 0 },
@@ -152,24 +157,41 @@ export class Renderer {
     this.r.resetState();
     this.visDirty = true;
   }
-  /* The shadow map is kept from frame to frame and only drawn again when it
-     would look different: the sun has moved a quarter of a degree, you have
-     moved a few blocks from where it was centred, the world's meshes changed,
-     or your own body is moving (so its shadow keeps up). Standing still, it
-     costs nothing at all; it is most of what the full tiers spend a frame on. */
+  /* The shadow map is kept from frame to frame, in two layers. The blocks
+     are drawn into their own map only when they would look different: the
+     sun has moved a quarter of a degree, you have moved a few blocks from
+     where it was centred, or the world's meshes changed (then at most six
+     times a second, as chunks stream in all the time while you travel).
+     Your own body is added by copying that map and drawing just the body
+     into the copy, when it has moved, turned or swung (or the blocks were
+     drawn again). Standing still costs nothing; walking costs one copy. */
   shadowNeeded(state, light) {
-    const S = this.shadowState || (this.shadowState = { x: 0, y: 0, z: 0, cx: 1e9, cy: 1e9, cz: 1e9, at: -1e9, dirty: true });
-    const grid = Math.max(2, this.opts.shadowDist / 24), f = state.feet;
+    const S = this.shadowState || (this.shadowState = { x: 0, y: 0, z: 0, cx: 1e9, cy: 1e9, cz: 1e9, at: -1e9, dirty: true, fx: 1e9, fy: 0, fz: 0, yaw: 0 });
+    const grid = Math.max(2, this.opts.shadowDist / 16), f = state.feet;
     const cx = Math.floor(f.x / grid), cy = Math.floor(f.y / grid), cz = Math.floor(f.z / grid);
     const turned = light.x * S.x + light.y * S.y + light.z * S.z < 0.99999;
-    const P = state.player;
+    const terrain = turned || cx !== S.cx || cy !== S.cy || cz !== S.cz || (S.dirty && this.frame - S.at >= 10);
+    if (terrain) {
+      S.x = light.x; S.y = light.y; S.z = light.z; S.cx = cx; S.cy = cy; S.cz = cz; S.at = this.frame; S.dirty = false;
+    }
     // your own shadow keeps up with you
-    const body = this.avatar && this.avatar.ready && P && (Math.abs(P.vel.x) + Math.abs(P.vel.z) > 0.005 || Math.abs(P.vel.y) > 0.01 || this.swing > 0 || P.sneaking !== S.sneak);
-    const need = S.dirty || turned || cx !== S.cx || cy !== S.cy || cz !== S.cz || this.frame - S.at > 60 || body;
-    if (!need) return false;
-    S.x = light.x; S.y = light.y; S.z = light.z; S.cx = cx; S.cy = cy; S.cz = cz; S.at = this.frame; S.dirty = false;
-    S.sneak = P ? P.sneaking : false;
-    return true;
+    const P = state.player;
+    const body = !!(this.avatar && this.avatar.ready && P) && (Math.abs(f.x - S.fx) + Math.abs(f.y - S.fy) + Math.abs(f.z - S.fz) > 0.003 ||
+      Math.abs(P.yaw - S.yaw) > 0.003 || this.swing > 0 || S.swung || P.sneaking !== S.sneak);
+    if (body || terrain) { S.fx = f.x; S.fy = f.y; S.fz = f.z; S.yaw = P ? P.yaw : 0; S.sneak = P ? P.sneaking : false; S.swung = this.swing > 0; }
+    return terrain ? 2 : body ? 1 : 0;
+  }
+  // the blocks' map into the one the shaders read (the same depth format), then your body over it
+  drawBodyShadow() {
+    const r = this.r, gl = this.gl, sr = this.shadowRT.width;
+    r.setRenderTarget(this.shadowRT);
+    const props = r.properties;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, props.get(this.shadowTerrainRT).__webglFramebuffer);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, props.get(this.shadowRT).__webglFramebuffer);
+    gl.blitFramebuffer(0, 0, sr, sr, 0, 0, sr, sr, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
+    r.resetState();
+    r.setRenderTarget(this.shadowRT);
+    if (this.shadowLightUp) r.render(this.shadowScene, this.shadowCam);
   }
   /* ---- chunk meshes, drawn in one loop ----
      A column's meshes are plain vertex arrays on the graphics card, each in
@@ -200,8 +222,8 @@ export class Renderer {
     stand(this.trans, this.mats.fluid, ['fluid'], -10, false);
     stand(this.trans, this.mats.translucent, ['translucent'], -9, false);
     if (this.opts.shadows) {
-      stand(this.shadowScene, this.mats.shadowOpaque, ['opaque'], -10, true);
-      stand(this.shadowScene, this.mats.shadowCutout, ['cutout'].concat(this.opts.plantShadows === false ? [] : ['plants']).concat(this.opts.leafInShadows === false ? [] : ['leafIn']), -9, true);
+      stand(this.shadowTerrain, this.mats.shadowOpaque, ['opaque'], -10, true);
+      stand(this.shadowTerrain, this.mats.shadowCutout, ['cutout'].concat(this.opts.plantShadows === false ? [] : ['plants']).concat(this.opts.leafInShadows === false ? [] : ['leafIn']), -9, true);
     }
   }
   drawParts(material, kinds, cam, shadow) {
@@ -515,8 +537,8 @@ export class Renderer {
     // the shadow map, from whichever light is up (some tiers redraw it every other frame)
     if (!this.vanilla) dimLook(this, state, dt);
     const sunless = !!(state.dim && state.dim.sky !== 'normal');
-    const doShadow = this.opts.shadows > 0 && !sunless && (this.frame % (this.opts.shadowEvery || 1) === 0) && this.shadowNeeded(state, light);
-    if (doShadow) {
+    const doShadow = this.opts.shadows > 0 && !sunless ? this.shadowNeeded(state, light) : 0;
+    if (doShadow === 2) {
     const D = this.opts.shadowDist;
     const sc = this.shadowCam;
     sc.left = -D; sc.right = D; sc.top = D; sc.bottom = -D; sc.near = -320; sc.far = 320;
@@ -534,11 +556,13 @@ export class Renderer {
     sc.quaternion.setFromRotationMatrix(look);
     sc.updateMatrixWorld();
     U.uShadowMat.value.multiplyMatrices(sc.projectionMatrix, sc.matrixWorldInverse);
-    r.setRenderTarget(this.shadowRT);
+    r.setRenderTarget(this.shadowTerrainRT);
     r.setClearColor(0xffffff, 1);
     r.clear(true, true, false);
-    if (light.y > 0.0) r.render(this.shadowScene, sc);
+    this.shadowLightUp = light.y > 0.0;
+    if (this.shadowLightUp) r.render(this.shadowTerrain, sc);
     }
+    if (doShadow) this.drawBodyShadow();
     U.uInvViewProj.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
     if (this.vanilla) {
       // the game with no shaders: sky, blocks, water, clouds, hand, straight to the screen
