@@ -578,6 +578,8 @@ export class Avatar {
   update(state, dt, cam) {
     const P = state.player, R = this.R;
     this.uHurt.value = state.hurt ? 1 : 0;
+    // what the use button is doing with your hands, for the poses (hands.js handBob)
+    this.useNow = state.bob && state.bob.use || null;
     if (R.swing >= 1) { this.startSwing(); R.swing = 0.999; }
     if (!P) {
       this.mesh.visible = this.shadowMesh.visible = this.armor.visible = this.armorShadow.visible = false;
@@ -678,6 +680,32 @@ export class Avatar {
     // holding something: the arm comes up a little
     if (this.held[0]) armR.rx = armR.rx * 0.5 - PI / 10;
     if (this.held[1]) armL.rx = armL.rx * 0.5 - PI / 10;
+    /* what the use button is doing (state.bob.use): a bow drawn or a loaded
+       crossbow aimed with both arms out where the head looks, the other arm
+       across to the string; a crossbow loading held forward and down while
+       the other hand pulls; a shield arm up across the chest; a trident arm
+       raised over the head to throw */
+    const use = this.useNow;
+    let still = false;
+    if (use) {
+      const s = use.side ? -1 : 1, main = use.side ? armL : armR, other = use.side ? armR : armL;
+      if (use.kind === 'bow' || use.kind === 'aim') {
+        const across = use.kind === 'aim' ? 0.6 : 0.5;
+        main.rx = other.rx = -PI / 2 + head.rx;
+        main.ry = -0.1 * s + head.ry; other.ry = (across - 0.1) * s + head.ry;
+        if (use.kind === 'aim') { main.ry = -0.3 * s + head.ry; main.rx -= 0.05; other.rx -= 0.1; }
+        still = true;
+      } else if (use.kind === 'crossbow') {
+        const p = Math.min(1, use.t / use.total);
+        main.rx = -0.97; main.ry = -0.4 * s;
+        other.rx = mix(-0.97, -0.6, p); other.ry = mix(0.4, 0.85, p) * s;
+        still = true;
+      } else if (use.kind === 'block') {
+        main.rx = main.rx * 0.5 - 0.94; main.ry = -PI / 6 * s;
+      } else if (use.kind === 'trident') {
+        main.rx = main.rx * 0.5 - PI; main.ry = 0;
+      }
+    }
     // the swing: the body twists and the right arm comes over and down
     if (att > 0) {
       body.ry = Math.sin(Math.sqrt(att) * 2 * PI) * 0.2;
@@ -692,7 +720,7 @@ export class Avatar {
     }
     // riding (a boat, a horse: js/entities): sitting, legs forward and a little apart, arms down
     if (P.riding) {
-      armR.rx = -PI / 5 + (this.held[0] ? -PI / 10 : 0); armL.rx = -PI / 5 + (this.held[1] ? -PI / 10 : 0);
+      if (!use) { armR.rx = -PI / 5 + (this.held[0] ? -PI / 10 : 0); armL.rx = -PI / 5 + (this.held[1] ? -PI / 10 : 0); }
       legR.rx = -1.4137167; legR.ry = PI / 10; legR.rz = 0.07853982;
       legL.rx = -1.4137167; legL.ry = -PI / 10; legL.rz = -0.07853982;
     }
@@ -703,9 +731,11 @@ export class Avatar {
       legR.z = legL.z = 4; legR.y = legL.y = 12.2;
       head.y = 4.2;
     }
-    // the arms' idle sway
-    const sz = Math.cos(age * 0.09) * 0.05 + 0.05, sx = Math.sin(age * 0.067) * 0.05;
-    armR.rz += sz; armL.rz -= sz; armR.rx += sx; armL.rx -= sx;
+    // the arms' idle sway (not while aiming)
+    if (!still) {
+      const sz = Math.cos(age * 0.09) * 0.05 + 0.05, sx = Math.sin(age * 0.067) * 0.05;
+      armR.rz += sz; armL.rz -= sz; armR.rx += sx; armL.rx -= sx;
+    }
     // swimming: arms reach past the head and pull back, legs flutter, the head looks ahead
     if (swim > 0) {
       const st = 0.5 + 0.5 * Math.cos(ls * 0.22);

@@ -422,6 +422,9 @@ export class Renderer {
     // enchanted things shimmer, in either hand
     const gm = glints(inv.slots[inv.selected]), go = glints(inv.offhand);
     this.held.glint(0, gm); this.held.glint(1, go); this.avatar.glintHeld(0, gm); this.avatar.glintHeld(1, go);
+    // a loaded crossbow shows what it is loaded with
+    const load = s => s && s.charged && s.charged.length ? (s.charged[0][0] === 'firework_rocket' ? 'rocket' : 'arrow') : null;
+    this.held.loaded(0, load(inv.slots[inv.selected])); this.held.loaded(1, load(inv.offhand));
     // per piece: the stack, its id, enchanted or not, its dye
     const W = this.worn || (this.worn = [null, null, null, null, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]);
     let changed = false;
