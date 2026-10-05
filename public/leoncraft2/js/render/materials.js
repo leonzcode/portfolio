@@ -58,6 +58,7 @@ uniform vec3 uLightDir;
 uniform float uFrame, uWet;
 uniform mat3 uFaceRot;
 uniform float uDim;             // 0 the Overworld, 1 the Nether, 2 the End (js/dims.js)
+#define HAS_DIM
 uniform vec3 uDimAmb;           // the light everything gets there instead of the sky's
 in vec3 vWorld; in vec2 vUv; in vec4 vLight; in vec3 vTint; in float vRnd;
 flat in float vLayer; flat in int vNormal; flat in int vFlags;

@@ -24,10 +24,11 @@ export class Chat {
     if (this.lines.length > KEEP) this.lines.splice(0, this.lines.length - KEEP);
     this.dirty = true;
   }
-  // redrawn while any line is still fading
+  // redrawn when a line comes in and while one is fading (its last second); for the nine
+  // seconds in between nothing about it changes, so the HUD is not drawn again for it
   get animates() {
     const now = performance.now();
-    for (let i = this.lines.length - 1; i >= 0 && i >= this.lines.length - 10; i--) if (now - this.lines[i].at < 10000) return true;
+    for (let i = this.lines.length - 1; i >= 0 && i >= this.lines.length - 10; i--) { const age = now - this.lines[i].at; if (age >= 8950 && age < 10100) return true; }
     if (this.dirty) { this.dirty = false; return true; }
     return false;
   }
