@@ -419,7 +419,9 @@ export class Pig extends Animal {
     return true;
   }
   layers(out) { if (this.saddled) out.push(['pig_saddle', 'pig_saddle', null]); }
-  ridingOffset() { return 0.85; }
+  // the seat on its back, 0.86875 up; a player's own seat is 0.6 above its feet
+  seat(i, p) { return [0, 0.86875 - (p && p.isPlayer ? 0.6 : 0), 0]; }
+  ridingOffset() { return 0.86875; }
   toJSON() { const o = super.toJSON(); if (this.saddled) o.sad = 1; return o; }
   fromJSON(o) { super.fromJSON(o); this.saddled = !!o.sad; }
 }
