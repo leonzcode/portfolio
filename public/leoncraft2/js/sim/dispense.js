@@ -95,7 +95,9 @@ export function installDispensers(sim) {
       if (!E) return 'drop';
       const e = E.spawn(type, x + 0.5 + 0.7 * v[0], y + 0.5 + 0.7 * v[1], z + 0.5 + 0.7 * v[2], { natural: false });
       if (!e) return 'drop';
-      if (type === 'arrow') e.pickup = 1;
+      if (type === 'arrow') { e.pickup = 1; e.item = n; if (st.potion) e.potion = st.potion; }
+      // a thrown potion carries what was in the bottle
+      if (type === 'potion') { e.potion = st.potion || 'water'; e.lingering = n === 'lingering_potion'; }
       e.shoot(v[0], v[1] + 0.1, v[2], speed, inacc);
       return 'used';
     };

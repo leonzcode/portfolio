@@ -16,6 +16,7 @@ import { rayBox } from './terrain.js?v=14';
 import { register } from './mobs.js?v=14';
 import { FLUID } from '../blocks.js?v=14';
 import { POTIONS } from '../brewing.js?v=14';
+import { applyPotion, splashPotion, lingeringPotion } from './mobfx.js?v=14';
 
 const R = () => Math.random();
 const gauss = () => { let u = 0, v = 0; while (!u) u = R(); while (!v) v = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
@@ -136,6 +137,10 @@ export class Arrow extends Projectile {
       if (this.effect && e.isPlayer) this.m.effectPlayer(this.effect, 600);
       if (e.isPlayer && this.item === 'spectral_arrow') this.m.effectPlayer('glowing', 200);
       if (e.isPlayer && this.potion) tippedOnPlayer(this.m.survival, this.potion);
+      // on a mob: an eighth of each effect's time (at least a tick), instant ones in full
+      else if (this.potion && !e.isPlayer) applyPotion(this.m, e, this.potion, 0.125, 1, this.owner, 0);
+      if (this.effect && !e.isPlayer && e.addEffect) e.addEffect(this.effect, 1, 600, this.owner);
+      if (!e.isPlayer && this.item === 'spectral_arrow' && e.addEffect) e.addEffect('glowing', 1, 200, this.owner);
       if (!(this.pierce > 0)) this.remove();
       return true;
     }
@@ -186,25 +191,24 @@ export class Egg extends Snowball {
   }
 }
 register('egg', Egg);
-/* A witch's splash potion: breaks where it lands and puts its effect on
-   everyone within 4 blocks, weaker further away. Harming hurts 6 (3 hearts)
-   at the middle. */
+/* A thrown potion (splash or lingering): it falls 0.05 a tick and breaks on
+   the first block or mob it meets (entities/mobfx.js has what it does).
+   potion: its name (harming, long_swiftness...); a witch sets kind. */
 export class Potion extends Snowball {
   static TEX = 'splash_potion';
-  constructor(m, type) { super(m, type); this.gravity = 0.05; this.kind = 'harming'; }
+  constructor(m, type) { super(m, type); this.gravity = 0.05; this.potion = 'harming'; this.lingering = false; this.direct = null; }
+  set kind(k) { this.potion = k; }
+  get kind() { return this.potion; }
+  hitEntity(e) { this.direct = e; this.splat(); this.remove(); }
   splat() {
-    const p = this.pos, col = { harming: [0.26, 0.04, 0.04], poison: [0.31, 0.58, 0.19], slowness: [0.35, 0.42, 0.5], weakness: [0.28, 0.29, 0.28], healing: [0.97, 0.14, 0.14] }[this.kind] || [0.5, 0.2, 0.5];
-    this.m.particles('poof', p.x, p.y, p.z, 20, 0.25, col);
-    const P = this.m.player;
-    const hit = (e, isP) => {
-      const d2 = (e.pos.x - p.x) ** 2 + (e.pos.y - p.y) ** 2 + (e.pos.z - p.z) ** 2;
-      if (d2 >= 16) return;
-      const k = 1 - Math.sqrt(d2) / 4;
-      if (this.kind === 'harming') { const dmg = Math.floor(6 * k + 0.5); if (isP) this.m.hurtPlayer(dmg, { type: 'magic', attacker: this.owner, noKnock: true }); else if (!e.constructor.UNDEAD) e.hurt(dmg, { type: 'magic', attacker: this.owner, noKnock: true }); else e.heal(dmg); }
-      else if (isP) this.m.effectPlayer(this.kind, Math.floor((this.kind === 'poison' ? 900 : this.kind === 'slowness' ? 1800 : 1800) * 0.75 * k));
-    };
-    if (P && P.alive()) hit(P, true);
-    this.m.forNear(p.x, p.z, 5, e => { if (e.hurt && !(e instanceof Projectile) && !e.dead) hit(e, false); });
+    const p = this.pos, pp = POTIONS[this.potion] || POTIONS.water;
+    const c = pp.colour;
+    this.m.particles('magic', p.x, p.y, p.z, 24, 0.5, [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255]);
+    this.m.particles('poof', p.x, p.y, p.z, 6, 0.2, [0.9, 0.9, 0.95]);
+    if (this.lingering) lingeringPotion(this.m, p.x, p.y, p.z, this.potion, this.owner);
+    else splashPotion(this.m, p.x, p.y, p.z, this.potion, this.owner, this.direct);
   }
+  toJSON() { const o = super.toJSON(); o.po = this.potion; if (this.lingering) o.li = 1; return o; }
+  fromJSON(o) { super.fromJSON(o); if (o.po) this.potion = o.po; this.lingering = !!o.li; }
 }
 register('potion', Potion);

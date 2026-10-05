@@ -98,9 +98,9 @@ function dispense(sim, C, c, i, st, x, y, z, f, fx, fy, fz) {
     return one();
   };
   // arrows, snowballs, eggs, splash potions: shot along the facing
-  if (n === 'arrow' || n === 'tipped_arrow' || n === 'spectral_arrow') return shoot('arrow', 1.1, 6, a => { a.pickup = 1; if (st.potion) a.potion = st.potion; });
+  if (n === 'arrow' || n === 'tipped_arrow' || n === 'spectral_arrow') return shoot('arrow', 1.1, 6, a => { a.pickup = 1; a.item = n; if (st.potion) a.potion = st.potion; });
   if (n === 'snowball' || n === 'egg') return shoot(n, 1.1, 6);
-  if (n === 'splash_potion') return shoot('potion', 1.375, 3, p => { if (st.potion) p.kind = st.potion.replace(/^(long_|strong_)/, ''); });
+  if (n === 'splash_potion' || n === 'lingering_potion') return shoot('potion', 1.375, 3, p => { p.potion = st.potion || 'water'; p.lingering = n === 'lingering_potion'; });
   // buckets
   const replaceable = !front || (fd && fd.replaceable);
   if (n === 'water_bucket' || n === 'lava_bucket') {

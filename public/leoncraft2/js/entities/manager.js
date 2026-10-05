@@ -668,11 +668,19 @@ export class Entities {
       take();
       return true;
     }
-    if (name === 'egg' || name === 'snowball' || name === 'splash_potion') {
-      const e = this.spawn(name === 'splash_potion' ? 'potion' : name, eye.x, eye.y - 0.1, eye.z, { natural: false });
+    if (name === 'egg' || name === 'snowball' || name === 'splash_potion' || name === 'lingering_potion') {
+      const thrown = name === 'splash_potion' || name === 'lingering_potion';
+      const e = this.spawn(thrown ? 'potion' : name, eye.x, eye.y - 0.1, eye.z, { natural: false });
       if (!e) return false;
       e.owner = this.player;
-      e.shoot(dir.x, dir.y, dir.z, name === 'splash_potion' ? 0.5 : 1.5, 1);
+      if (thrown) {
+        // the potion it carries; thrown at 0.5, aimed 20 degrees above the look (the game's)
+        const st = this.inv && this.inv.slots[this.inv.selected];
+        e.potion = (st && st.potion) || 'water'; e.lingering = name === 'lingering_potion';
+        // (the game lifts only the upward part: across it keeps the look's own pitch)
+        const yaw = P.yaw, c = Math.cos(P.pitch);
+        e.shoot(-Math.sin(yaw) * c, Math.sin(P.pitch + 20 * DEG), -Math.cos(yaw) * c, 0.5, 1);
+      } else e.shoot(dir.x, dir.y, dir.z, 1.5, 1);
       e.vel.x += P.vel.x; e.vel.z += P.vel.z; if (!P.onGround) e.vel.y += P.vel.y;
       take();
       return true;
