@@ -23,9 +23,9 @@
    The item model numbers (where and how far round each kind sits) are the
    game's display settings for its block, flat, handheld and rod items.
 --------------------------------------------------------------------------- */
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=14';
+import { blockGeometry, isFlatItem, shieldGeometry } from './blockmesh.js?v=14';
 import { setGlint } from './glint.js?v=14';
-import { textureLayer } from '../items.js?v=14';
+import { textureLayer, DRAW, itemId } from '../items.js?v=14';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
@@ -44,6 +44,7 @@ const BLOCK_TP = [[0, 2.5, 0], [75, 45, 0], 0.375], BLOCK_TPL = [[0, 2.5, 0], [7
 const BLOCK_FP = [[0, 0, 0], [0, 45, 0], 0.4], BLOCK_FPL = [[0, 0, 0], [0, -225, 0], 0.4];
 const FLAT_FP = [[1.13, 3.2, 1.13], [0, -90, 25], 0.68], FLAT_FPL = [[-1.13, 3.2, 1.13], [0, 90, -25], 0.68];
 const TOOL_FP = FLAT_FP, TOOL_FPL = [[-1.13, 3.2, 1.13], [0, -90, 25], 0.68];
+const SHIELD_LIFT = [0, -0.5, 0];
 export const DISPLAY = {
   // a block (block/block), and anything flat (item/generated)
   block: K(BLOCK_FP, BLOCK_FPL, BLOCK_TP, BLOCK_TPL, 'block'),
@@ -73,11 +74,19 @@ export const DISPLAY = {
   endRod: K(BLOCK_FP, BLOCK_FPL, [[0, 0, 0], [0, 0, 0], 0.375], [[0, 0, 0], [0, 0, 0], 0.375], 'block'),
   skull: K(BLOCK_FP, BLOCK_FPL, [[0, 3, 0], [45, 45, 0], 0.5], [[0, 3, 0], [45, -45, 0], 0.5], 'block'),
   sensor: K(BLOCK_FP, BLOCK_FPL, BLOCK_TP, BLOCK_TP, 'block'),
+  /* the shield, held as its model (blockmesh.js shieldGeometry), and the
+     same while it is up blocking; the fourth number takes back the half
+     block the model is lifted by */
+  shield: K([[-10, 1.75, -10], [0, 180, 5], 1.25, SHIELD_LIFT], [[-10, 0, -10], [0, -180, -5], 1.25, SHIELD_LIFT],
+    [[10, 6, -4], [0, 90, 0], 1, SHIELD_LIFT], [[-10, 6, 12], [0, -90, 0], 1, SHIELD_LIFT], 'shield'),
+  shieldBlock: K([[-15, 3.25, -11], [0, 180, -5], 1.25, SHIELD_LIFT], [[-5, 5, -11], [0, -180, 5], 1.25, SHIELD_LIFT],
+    [[-3.49, 11, -2], [45, 155, 0], 1, SHIELD_LIFT], [[-11.51, 7, 2.5], [45, -155, 0], 1, SHIELD_LIFT], 'shield'),
 };
 /* Which things are which. A kind only applies where our own shape is the
-   game's (a chest is a chest here too; a shield or a bed is held as its flat
-   picture, so it keeps the flat numbers). */
+   game's (a chest is a chest here too, and the shield is its model; a bed
+   is held as its flat picture, so it keeps the flat numbers). */
 const FLAT_KINDS = [
+  ['shield', /^shield$/],
   ['handheld', /_(sword|pickaxe|axe|shovel|hoe|spear)$|^(stick|blaze_rod|breeze_rod|bone|bamboo|debug_stick|trident)$/],
   ['rod', /^(fishing_rod|carrot_on_a_stick|warped_fungus_on_a_stick)$/],
   ['mace', /^mace$/], ['bow', /^bow$/], ['crossbow', /^crossbow$/], ['horn', /^goat_horn$/], ['brush', /^brush$/],
@@ -137,10 +146,24 @@ export function placeOnHead(m, head, skull, t) {
 }
 // one of the DISPLAY entries onto m (t, e: scratch)
 export function applyDisplay(m, spec, t, e) {
-  const [tr, r, s] = spec;
+  const [tr, r, s, post] = spec;
   m.multiply(t.makeTranslation(tr[0] / 16, tr[1] / 16, tr[2] / 16));
   m.multiply(t.makeRotationFromEuler(e.set(r[0] * DEG, r[1] * DEG, r[2] * DEG, 'XYZ')));
   m.multiply(t.makeScale(s, s, s));
+  if (post) m.multiply(t.makeTranslation(post[0], post[1], post[2]));
+}
+/* The mesh for something in a hand: the shield's model, or the block or
+   picture (blockmesh.js). */
+let shieldLayers = null;
+export function heldGeometry(d) {
+  if (d.name === 'shield') {
+    if (!shieldLayers) {
+      const top = n => { const b = DRAW[itemId(n)]; return b && b.faces ? b.faces[2] : 0; };
+      shieldLayers = { wood: top('spruce_planks'), rim: top('iron_block'), handle: top('dark_oak_planks') };
+    }
+    return shieldGeometry(shieldLayers);
+  }
+  return blockGeometry(d, d.iconMeta || 0);
 }
 
 /* Where the fist closes on each base kind, in the item's own space (a block
@@ -151,18 +174,18 @@ export function applyDisplay(m, spec, t, e) {
    holds it wherever that puts it (a carpet lies on the fist). */
 const GRIP = {
   block: [0, -0.85, 0], flat: [0, -0.42, 0], handheld: [-0.3, -0.3, 0], rod: [-0.3, -0.3, 0], mace: [-0.3, -0.3, 0],
-  bow: [-0.05, -0.05, 0], crossbow: [-0.15, -0.15, 0],
+  bow: [-0.05, -0.05, 0], crossbow: [-0.15, -0.15, 0], shield: [-0.5, 0, -0.625],
 };
 /* and a nudge from the grip, in the camera's space (blocks) */
 const NUDGE = {
-  block: [-0.07, 0.02, -0.08], flat: [-0.02, 0, 0], handheld: [0, 0, 0], rod: [0, 0, 0], mace: [0, 0, 0], bow: [0, 0, 0], crossbow: [0, 0, 0],
+  block: [-0.07, 0.02, -0.08], flat: [-0.02, 0, 0], handheld: [0, 0, 0], rod: [0, 0, 0], mace: [0, 0, 0], bow: [0, 0, 0], crossbow: [0, 0, 0], shield: [0, 0, 0],
 };
 /* Holding something, the arm sits a little lower than the bare arm (so the
    item is about where the game shows it, and still in a hand you can see),
    in blocks; and a block leans its top towards you a little, so you see it
    from above as the game's lower held block is seen. */
-const DROP = { block: 0.14, flat: 0.07, handheld: 0.1, rod: 0.08, mace: 0.1, bow: 0.07, crossbow: 0.08 };
-const TILT = { block: 22, flat: 0, handheld: 0, rod: 0, mace: 0, bow: 0, crossbow: 0 };
+const DROP = { block: 0.14, flat: 0.07, handheld: 0.1, rod: 0.08, mace: 0.1, bow: 0.07, crossbow: 0.08, shield: 0 };
+const TILT = { block: 22, flat: 0, handheld: 0, rod: 0, mace: 0, bow: 0, crossbow: 0, shield: 0 };
 // the fist: the middle of the bottom of the arm (the skin's arm, model pixels, y up)
 const FIST_Y = -10;
 
@@ -209,7 +232,7 @@ export class Held {
   make(d) {
     if (!d || !d.faces) return null;
     const R = this.R;
-    const { geometry: g, cutout } = blockGeometry(d, d.iconMeta || 0);
+    const { geometry: g, cutout } = heldGeometry(d);
     const m = new THREE.Mesh(g, cutout ? R.mats.handCutout : R.mats.handOpaque);
     m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false;
     // the shader's face frames turn with the item
@@ -325,9 +348,12 @@ export class Held {
     const arm = A.armMatrix(new THREE.Matrix4(), null, side, 0, 0, 0, 0);
     // where the grip is in the game's first person place for this kind, and the shift that puts it in the fist
     const J = this.place(kind, base, side), g = GRIP[base], n = NUDGE[base];
-    const grip = new THREE.Vector3(f * g[0], g[1], g[2]).applyMatrix4(J);
+    /* the shield stays where the game puts it, the arm brought to its
+       handle (the model is the same either hand: its grip is not mirrored) */
+    const own = base === 'shield';
+    const grip = new THREE.Vector3(own ? g[0] : f * g[0], g[1], g[2]).applyMatrix4(J);
     const nudge = new THREE.Vector3(f * n[0], n[1], n[2]);
-    const fist = this.fistOf(arm, side, new THREE.Vector3()).add(nudge);
+    const fist = own ? grip.clone() : this.fistOf(arm, side, new THREE.Vector3()).add(nudge);
     const shift = fist.clone().sub(grip);
     // moved so the grip is in the fist (the geometry's block is centred one block up)
     const K = new THREE.Matrix4().makeTranslation(shift.x, shift.y, shift.z).multiply(J).multiply(t.makeTranslation(0, -1, 0));
@@ -401,14 +427,16 @@ export class Held {
       const sp = side === 0 ? A.cur.attack : 0, sq = Math.sqrt(sp);
       const arm = A.armMatrix(this.arms[side], null, side, sp, 0, 0, eq);
       if (!m) { arm.premultiply(B); continue; }
-      const C = this.rest(m.userData.kind, side), P = C.pivot, M = this.m;
+      // the use button: a shield goes up to block (its own place), anything else moves below
+      const use = bob && bob.use && bob.use.side === side ? bob.use : null;
+      const kind = m.userData.kind === 'shield' && use && use.kind === 'block' ? 'shieldBlock' : m.userData.kind;
+      const C = this.rest(kind, side), P = C.pivot, M = this.m;
       // the item: where the game has it, swinging the game's way about its own point
       M.makeTranslation(f * -0.4 * Math.sin(sq * PI) + P.x, 0.2 * Math.sin(sq * 2 * PI) - 0.6 * eq + P.y, -0.2 * Math.sin(sp * PI) + P.z);
       M.multiply(this.attackTurn(this.m2, f, sp));
       M.multiply(t.makeTranslation(-P.x, -P.y, -P.z));
       // what the use button is doing with it (eating, a bow drawn...), about the item's middle at rest
-      const use = bob && bob.use && bob.use.side === side ? bob.use : null;
-      if (use && this.useMove(this.u, use, f, this.c.set(0, 1, 0).applyMatrix4(C.K))) M.premultiply(this.u);
+      if (use && kind !== 'shieldBlock' && this.useMove(this.u, use, f, this.c.set(0, 1, 0).applyMatrix4(C.K))) M.premultiply(this.u);
       // the picture for it (a bow drawn back), when the pack has one
       const pl = this.pictureFor(H, use);
       if (pl >= 0) { m.visible = false; m = this.variant(H, pl); }

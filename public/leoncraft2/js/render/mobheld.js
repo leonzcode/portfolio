@@ -15,8 +15,8 @@
    seconds after it is not; entities/manager.js calls begin(), hold() for each
    mob it draws and end().
 --------------------------------------------------------------------------- */
-import { blockGeometry, isFlatItem } from './blockmesh.js?v=14';
-import { heldKind, placeInHand, placeOnHead, setLight } from './held.js?v=14';
+import { isFlatItem } from './blockmesh.js?v=14';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=14';
 import { setGlint } from './glint.js?v=14';
 import { glints, pieceLook } from './armor.js?v=14';
 import { DRAW, itemId } from '../items.js?v=14';
@@ -64,7 +64,7 @@ export class MobHeld {
   }
   make(key, id, d) {
     const R = this.R;
-    const { geometry: g, cutout } = blockGeometry(d, d.iconMeta || 0);
+    const { geometry: g, cutout } = heldGeometry(d);
     const m = new THREE.Mesh(g, cutout ? R.mats.cutout : R.mats.opaque);
     m.frustumCulled = false; m.matrixAutoUpdate = false;
     // the shader's face frames turn with the item (as in your hand)

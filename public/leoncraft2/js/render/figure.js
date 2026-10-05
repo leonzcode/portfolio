@@ -207,7 +207,7 @@ export class Figure {
         m.frustumCulled = false; m.matrixAutoUpdate = false;
         this.scene.add(m);
       }
-      A.placeHeld(side, src.kind, this.parts, m.matrix);
+      A.placeHeld(side, A.heldKindNow(side), this.parts, m.matrix);
       m.matrixWorldNeedsUpdate = true;
       setGlint(m, A.heldGlint[side], this.R, true);
     }
