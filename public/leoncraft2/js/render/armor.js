@@ -20,7 +20,7 @@
    The player's armour is drawn by render/avatar.js with these boxes, the
    mobs' by entities/armorlayer.js through the mob atlas.
 --------------------------------------------------------------------------- */
-import { armorOf } from '../items.js?v=14';
+import { armorOf, ITEMS } from '../items.js?v=14';
 const THREE = window.THREE;
 
 /* the materials, in sheet order, with the file name each one's pictures go by */
@@ -57,6 +57,16 @@ export const PIECE_BOXES = [
 // the player model's parts, in render/avatar.js order
 const AVATAR_PARTS = ['head', 'body', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg'];
 
+/* Does a stack shimmer: enchanted, or one of the things the game always
+   shows with the glint. */
+const ALWAYS_GLINT = new Set(['enchanted_golden_apple', 'experience_bottle', 'nether_star', 'end_crystal', 'written_book', 'debug_stick', 'enchanted_book']);
+export function glints(stack) {
+  if (!stack) return false;
+  if (stack.ench) for (const k in stack.ench) return true;
+  const it = ITEMS[stack.id];
+  return !!(it && ALWAYS_GLINT.has(it.name));
+}
+
 /* What one worn stack looks like: its row in the sheet, its colour and
    whether it shimmers; null for nothing, or for what is worn but is not
    armour to draw (a carved pumpkin, a mob head, an elytra). */
@@ -65,7 +75,7 @@ export function pieceLook(stack) {
   const a = armorOf(stack.id);
   if (!a || ROW[a.material] === undefined) return null;
   const tint = a.material === 'leather' ? (typeof stack.color === 'number' ? stack.color : LEATHER) : 0xffffff;
-  return { row: ROW[a.material], material: a.material, tint, glint: !!(stack.ench && Object.keys(stack.ench).length) };
+  return { row: ROW[a.material], material: a.material, tint, glint: glints(stack) };
 }
 
 /* ---- the sheet: one canvas, drawn once and again as each file lands ---- */

@@ -24,6 +24,7 @@ import { makeLdrSky } from './ldrsky.js?v=14';
 import { FullScreen } from './sky.js?v=14';
 import { Avatar } from './avatar.js?v=14';
 import { Held } from './held.js?v=14';
+import { glints } from './armor.js?v=14';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=14';
 import { dimLook } from '../dim/look.js?v=14';
 const THREE = window.THREE;
@@ -415,6 +416,9 @@ export class Renderer {
     if (!inv || !DRAW) return;
     const off = inv.offhand ? inv.offhand.id : 0;
     if (off !== this.offId) { this.offId = off; this.held.set(1, off, DRAW); this.avatar.setHeld(1, DRAW[off]); }
+    // enchanted things shimmer, in either hand
+    const gm = glints(inv.slots[inv.selected]), go = glints(inv.offhand);
+    this.held.glint(0, gm); this.held.glint(1, go); this.avatar.glintHeld(0, gm); this.avatar.glintHeld(1, go);
     // per piece: the stack, its id, enchanted or not, its dye
     const W = this.worn || (this.worn = [null, null, null, null, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]);
     let changed = false;

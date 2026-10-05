@@ -24,6 +24,7 @@
    game's display settings for its block, flat, handheld and rod items.
 --------------------------------------------------------------------------- */
 import { blockGeometry, isFlatItem } from './blockmesh.js?v=14';
+import { setGlint } from './glint.js?v=14';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
@@ -99,6 +100,14 @@ export function heldKind(d) {
   kindCache.set(key, k);
   return k;
 }
+/* A held mesh's light (sky level << 8 | block level, 0..255 each) into its
+   vertices: Detailed reads it there (Fast takes the player's from a uniform),
+   so a block in your hand is as dark as your arm in a cave. */
+export function setLight(g, lv) {
+  const L = g.attributes.aL, a = L.array, sky = lv >> 8, bl = lv & 255;
+  for (let i = 0; i < L.count; i++) { a[i * 4] = sky; a[i * 4 + 1] = bl; }
+  L.needsUpdate = true;
+}
 // one of the DISPLAY entries onto m (t, e: scratch)
 export function applyDisplay(m, spec, t, e) {
   const [tr, r, s] = spec;
@@ -139,7 +148,7 @@ export class Held {
     // drawn with an ordinary depth test now (the hand is put in front by its camera instead)
     for (const k of ['handOpaque', 'handCutout']) if (R.mats[k]) R.mats[k].depthFunc = THREE.LessEqualDepth;
     // per hand (0 main, 1 off): what it should hold, what it shows, how far up it is (1 up, 0 out of sight)
-    this.hands = [0, 1].map(side => ({ side, wantId: 0, want: null, showId: 0, show: null, h: 1 }));
+    this.hands = [0, 1].map(side => ({ side, wantId: 0, want: null, showId: 0, show: null, h: 1, glint: false }));
     this.started = false;
     this.rests = new Map();
     this.arms = [new THREE.Matrix4(), new THREE.Matrix4()];
@@ -156,8 +165,16 @@ export class Held {
     if (H.want && H.want !== H.show) this.drop(H.want);
     H.wantId = id;
     H.want = this.make(DRAW[id]);
+    if (H.want) setGlint(H.want, H.glint, this.R);
     // the very first thing held is just there
     if (!this.started) this.swap(H);
+  }
+  /* whether what a hand should hold shimmers (renderer.js reads it from the stack every frame) */
+  glint(side, on) {
+    const H = this.hands[side];
+    if (H.glint === on) return;
+    H.glint = on;
+    setGlint(H.want, on, this.R);
   }
   make(d) {
     if (!d || !d.faces) return null;
@@ -269,6 +286,8 @@ export class Held {
     B.makeTranslation(bob ? bob.x : 0, bob ? bob.y : 0, 0);
     if (bob && bob.rz) B.multiply(t.makeRotationZ(bob.rz));
     if (bob && bob.rx) B.multiply(t.makeRotationX(bob.rx));
+    // the light they are in: the sky and block light where you stand, as your arm has
+    const lv = (Math.round(A.sky * 255) << 8) | Math.round(A.block * 255);
     for (const H of this.hands) {
       const side = H.side, f = side ? -1 : 1, m = H.show;
       // how far down the arm is: the drop of what it holds, and the dip while it changes (0.6 a block for all the way)
@@ -289,6 +308,7 @@ export class Held {
       m.matrix.multiplyMatrices(cam.matrixWorld, M);
       m.visible = true;
       m.matrixWorldNeedsUpdate = true;
+      if (m.userData.light !== lv) { m.userData.light = lv; setLight(m.geometry, lv); }
     }
     // the right arm is always there; the left only to hold something
     A.setArms(cam.matrixWorld, this.arms[0], this.arms[1], true, !!this.hands[1].show);

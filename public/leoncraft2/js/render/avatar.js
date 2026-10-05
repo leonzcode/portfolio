@@ -49,7 +49,8 @@ import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=14';
 import { H, idx } from '../world-const.js?v=14';
 import { armorSheet, avatarArmorGeometry, pieceLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=14';
 import { blockGeometry } from './blockmesh.js?v=14';
-import { DISPLAY, heldKind, applyDisplay } from './held.js?v=14';
+import { DISPLAY, heldKind, applyDisplay, setLight } from './held.js?v=14';
+import { setGlint } from './glint.js?v=14';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -436,6 +437,7 @@ export class Avatar {
     renderer.handScene.add(this.arm);
     // what is in each hand (0 main, 1 off), in the model's hand in third person
     this.held = [null, null];
+    this.heldGlint = [false, false];
     this.heldRot = new THREE.Matrix3();
     // pose state, per tick (o... is the tick before)
     this.started = false;
@@ -499,6 +501,13 @@ export class Avatar {
     m.onBeforeRender = () => { rot.setFromMatrix4(m.matrixWorld); rot.multiplyScalar(1 / m.matrixWorld.getMaxScaleOnAxis()); U.uFaceRot.value.copy(rot); m.material.uniformsNeedUpdate = true; };
     m.onAfterRender = () => { U.uFaceRot.value.identity(); m.material.uniformsNeedUpdate = true; };
     R.scene.add(m);
+    setGlint(m, this.heldGlint[side], R);
+  }
+  // whether what a hand holds shimmers (enchanted)
+  glintHeld(side, on) {
+    if (this.heldGlint[side] === on) return;
+    this.heldGlint[side] = on;
+    if (this.held[side]) setGlint(this.held[side].mesh, on, this.R);
   }
 
   /* ---- what is worn: the four armour stacks, helmet to boots ---- */
@@ -594,12 +603,7 @@ export class Avatar {
     for (const h of this.held) {
       if (!h) continue;
       h.mesh.visible = third;
-      if (third && lv !== h.light) {
-        h.light = lv;
-        const L = h.mesh.geometry.attributes.aL;
-        for (let i = 0; i < L.count; i++) { L.array[i * 4] = lv >> 8; L.array[i * 4 + 1] = lv & 255; }
-        L.needsUpdate = true;
-      }
+      if (third && lv !== h.light) { h.light = lv; setLight(h.mesh.geometry, lv); }
     }
     // in third person the light in your hand is where the model's hand is (the renderer reads state.handPos)
     if (third && !state.handPos) state.handPos = this.handPos.set(-1, -10, 0).applyMatrix4(this.parts[2]);
