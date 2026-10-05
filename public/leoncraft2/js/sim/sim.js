@@ -26,24 +26,24 @@
    The light the rules need (a crop wants 9) is the light the mesher worked
    out for the chunk, kept by world.js.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID, FLUID } from '../blocks.js?v=12';
-import { CH, H, idx } from '../world-const.js?v=12';
-import { BIOMES } from '../biomes.js?v=12';
-import { installPlants } from './plants.js?v=12';
-import { installFarming, resolveItem, itemName } from './farming.js?v=12';
-import { installFire } from './fire.js?v=12';
-import { Bodies } from './bodies.js?v=12';
-import { installBeds } from './beds.js?v=12';
-import { Weather } from './weather.js?v=12';
-import { installRedstone } from './redstone.js?v=12';
-import { installParts } from './rsparts.js?v=12';
-import { installPistons } from './pistons.js?v=12';
-import { installDispensers } from './dispense.js?v=12';
-import { explode } from '../explosion.js?v=12';
-import { blockDrops } from '../loot.js?v=12';
-import { itemName as itemNameOf } from '../items.js?v=12';
-import { Messages } from './messages.js?v=12';
-import { installContainers } from '../containers.js?v=12';
+import { B, BLOCKS, MAX_ID, FLUID } from '../blocks.js?v=13';
+import { CH, H, idx } from '../world-const.js?v=13';
+import { BIOMES } from '../biomes.js?v=13';
+import { installPlants } from './plants.js?v=13';
+import { installFarming, resolveItem, itemName } from './farming.js?v=13';
+import { installFire } from './fire.js?v=13';
+import { Bodies } from './bodies.js?v=13';
+import { installBeds } from './beds.js?v=13';
+import { Weather } from './weather.js?v=13';
+import { installRedstone } from './redstone.js?v=13';
+import { installParts } from './rsparts.js?v=13';
+import { installPistons } from './pistons.js?v=13';
+import { installDispensers } from './dispense.js?v=13';
+import { explode } from '../explosion.js?v=13';
+import { blockDrops } from '../loot.js?v=13';
+import { itemName as itemNameOf } from '../items.js?v=13';
+import { Messages } from './messages.js?v=13';
+import { installContainers } from '../containers.js?v=13';
 
 const SIN = new Float32Array(65536);
 for (let i = 0; i < 65536; i++) SIN[i] = Math.sin(i * Math.PI * 2 / 65536);

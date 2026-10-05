@@ -13,48 +13,48 @@
    behind it. What changed in a world is kept in the browser (save.js).
 
    Keys (Controls in Options changes them): WASD, Space (twice to fly in
-   creative), Shift sneak, Ctrl sprint, E inventory, Q or F5 the view, 1-9
+   creative), Shift sneak, Ctrl or R sprint, C zoom, E inventory, Q or F5 the view, 1-9
    and the wheel for the hotbar, left click mine, right click place or use,
    middle click pick block, F1 hide the HUD, F3 details, [ and ] the clock,
    F7 render scale, F8 quality.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=12';
-import { BIOMES, biomeColours } from './biomes.js?v=12';
-import { pickBiome } from './worldgen.js?v=12';
-import { parseSeed } from './gen/random.js?v=12';
-import { World } from './world.js?v=12';
-import { Fluids } from './fluids.js?v=12';
-import { Player } from './player.js?v=12';
-import { Renderer } from './render/renderer.js?v=12';
-import { Overlay } from './render/overlay.js?v=12';
-import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=12';
-import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=12';
-import { SEA, Y0 } from './world-const.js?v=12';
-import { Gui, Options } from './ui/gui.js?v=12';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=12';
-import { ItemIcons } from './ui/icons.js?v=12';
-import { Inventory, inventoryScreen } from './ui/inventory.js?v=12';
-import { Hud } from './ui/hud.js?v=12';
-import { Interactor } from './interact.js?v=12';
-import { Survival } from './survival.js?v=12';
-import { survivalHooks, respawnPlayer } from './life.js?v=12';
-import { Save } from './save.js?v=12';
-import { Chat, ChatScreen } from './ui/chat.js?v=12';
-import { displayName, setItemNames, register, gameRule } from './commands.js?v=12';
-import { Particles } from './render/particles.js?v=12';
-import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=12';
-import { loadItemStrip, addItemPieces } from './itemtex.js?v=12';
-import { Drops, dropItem, giveXp } from './drops.js?v=12';
-import { Containers } from './containers.js?v=12';
-import { Hands } from './hands.js?v=12';
-import { setLayerPixels } from './render/blockmesh.js?v=12';
-import { Entities } from './entities/manager.js?v=12';
-import { EntityStore } from './entities/store.js?v=12';
-import { Sim } from './sim/sim.js?v=12';
-import { DIMS } from './dims.js?v=12';
-import { Realms } from './dim/realms.js?v=12';
-import { addDimArt, endSkyTexture } from './dim/art.js?v=12';
-import { structuresApi } from './struct/spawners.js?v=12';
+import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=13';
+import { BIOMES, biomeColours } from './biomes.js?v=13';
+import { pickBiome } from './worldgen.js?v=13';
+import { parseSeed } from './gen/random.js?v=13';
+import { World } from './world.js?v=13';
+import { Fluids } from './fluids.js?v=13';
+import { Player } from './player.js?v=13';
+import { Renderer } from './render/renderer.js?v=13';
+import { Overlay } from './render/overlay.js?v=13';
+import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=13';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=13';
+import { SEA, Y0 } from './world-const.js?v=13';
+import { Gui, Options } from './ui/gui.js?v=13';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=13';
+import { ItemIcons } from './ui/icons.js?v=13';
+import { Inventory, inventoryScreen } from './ui/inventory.js?v=13';
+import { Hud } from './ui/hud.js?v=13';
+import { Interactor } from './interact.js?v=13';
+import { Survival } from './survival.js?v=13';
+import { survivalHooks, respawnPlayer } from './life.js?v=13';
+import { Save } from './save.js?v=13';
+import { Chat, ChatScreen } from './ui/chat.js?v=13';
+import { displayName, setItemNames, register, gameRule } from './commands.js?v=13';
+import { Particles } from './render/particles.js?v=13';
+import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=13';
+import { loadItemStrip, addItemPieces } from './itemtex.js?v=13';
+import { Drops, dropItem, giveXp } from './drops.js?v=13';
+import { Containers } from './containers.js?v=13';
+import { Hands } from './hands.js?v=13';
+import { setLayerPixels } from './render/blockmesh.js?v=13';
+import { Entities } from './entities/manager.js?v=13';
+import { EntityStore } from './entities/store.js?v=13';
+import { Sim } from './sim/sim.js?v=13';
+import { DIMS } from './dims.js?v=13';
+import { Realms } from './dim/realms.js?v=13';
+import { addDimArt, endSkyTexture } from './dim/art.js?v=13';
+import { structuresApi } from './struct/spawners.js?v=13';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -249,7 +249,7 @@ async function boot() {
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
-  const TEX_V = '?v=12';
+  const TEX_V = '?v=13';
   const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
   let [alb, grass, foliage, moon, sunImg] = await Promise.all(
     ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png', 'environment_sun.png'].map(f => loadImg(base + f + TEX_V)));
@@ -722,6 +722,8 @@ async function boot() {
   document.addEventListener('pointerlockerror', lockFailed);
   canvas.addEventListener('click', () => { if (game && !gui.isOpen()) lock(); });
   let wantInv = false;
+  // zoom (C held): the view narrows to a quarter, easing in and out, and the mouse turns slower to match
+  let zoomHeld = false, zoomF = 1;
   /* ---- chat and commands ---- */
   function setMode(m) {
     const g = game;
@@ -780,6 +782,7 @@ async function boot() {
   document.addEventListener('pointerlockchange', () => {
     if (locked()) return;
     unlockedAt = performance.now();
+    zoomHeld = false;
     for (const k in game ? game.player.keys : {}) game.player.keys[k] = false;
     if (game && game.inter) { game.inter.up(0); game.inter.up(2); }
     // losing the mouse in the game is Esc: the game menu (not when it went to the inventory)
@@ -789,7 +792,7 @@ async function boot() {
   // MC's mouse: sensitivity s gives (0.6 s + 0.2)^3 x 8 x 0.15 degrees a pixel
   document.addEventListener('mousemove', e => {
     if (!locked() || !game) return;
-    const s = options.get('sensitivity'), f = s * 0.6 + 0.2, k = f * f * f * 8 * 0.15 * Math.PI / 180;
+    const s = options.get('sensitivity'), f = s * 0.6 + 0.2, k = f * f * f * 8 * 0.15 * Math.PI / 180 * zoomF;
     const inv = options.get('invertY') ? -1 : 1;
     game.player.yaw -= e.movementX * k;
     game.player.pitch = Math.max(-1.5605, Math.min(1.5605, game.player.pitch - e.movementY * k * inv));
@@ -800,7 +803,7 @@ async function boot() {
   let showDebug = false, f3Held = false, f3Combo = false, timeRuns = true, autoScale = options.get('renderScale') === 'auto' && !params.get('scale');
   document.addEventListener('keydown', e => {
     if (!game || gui.isOpen()) return;
-    const a = bindingOf(e.code);
+    const a = bindingOf(e.code) || (e.code === 'KeyR' ? 'sprint' : null);
     // F3 opens the debug screen when it is let go, unless a key was pressed with it (F3 + H: advanced tooltips)
     if (a === 'debug' || e.code === 'F3') { if (!e.repeat) { f3Held = true; f3Combo = false; } e.preventDefault(); return; }
     if (f3Held && e.code === 'KeyH') {
@@ -822,6 +825,8 @@ async function boot() {
       return;
     }
     if (!locked()) return;
+    // C, held: zoom in
+    if (!a && e.code === 'KeyC') { zoomHeld = true; e.preventDefault(); return; }
     // chat: T, or / with the slash already typed
     if ((a === 'chat' || (!a && e.code === 'KeyT')) && !e.repeat) { e.preventDefault(); openChat(''); return; }
     if ((a === 'command' || e.key === '/') && !e.repeat) { e.preventDefault(); openChat('/'); return; }
@@ -836,8 +841,9 @@ async function boot() {
     if (a && MOVE[a]) { game.player.setKey(MOVE[a], true); e.preventDefault(); }
   });
   document.addEventListener('keyup', e => {
+    if (e.code === 'KeyC') zoomHeld = false;
     if (!game) return;
-    const a = bindingOf(e.code);
+    const a = bindingOf(e.code) || (e.code === 'KeyR' ? 'sprint' : null);
     if (a === 'debug' || e.code === 'F3') { if (f3Held && !f3Combo && !gui.isOpen()) { showDebug = !showDebug; if (!showDebug && hud) hud.setDebug(null); } f3Held = false; return; }
     if (a && MOVE[a]) game.player.setKey(MOVE[a], false);
   });
@@ -868,7 +874,7 @@ async function boot() {
     if (k === 'difficulty' && game && v && game.entry.difficulty !== v) { game.entry.difficulty = v; Worlds.update(game.entry.id, { difficulty: v }); }
     if (k === 'clouds') renderer.opts.clouds = v;
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
-    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=12', import.meta.url).href : v);
+    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=13', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
   });
 
@@ -973,7 +979,7 @@ async function boot() {
     const onGrass = player.onGround && !player.flying;
     renderer.render({
       time: (g.time + alpha) / 20, sunDir, moonDir, feet: v.feet, eye: v.eye, yaw: player.yaw, pitch: player.pitch,
-      fov: player.fov * (g.entities ? g.entities.combat.fovScale(alpha) : 1), eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
+      fov: player.fov * (g.entities ? g.entities.combat.fovScale(alpha) : 1) * (zoomF += ((zoomHeld ? 0.25 : 1) - zoomF) * Math.min(1, dt * 12)), eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
       moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: g.hands.handBob(v.handBob),
       waterTint: tintAt(world, v.eye), player, alpha,
       // hurt: the camera tilts and the model flashes red (combat/combat.js)
@@ -1077,7 +1083,7 @@ async function boot() {
     renderer, gui, options, B, BLOCKS,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
-    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=12').then(m => m.execute(line, ctx)); },
+    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=13').then(m => m.execute(line, ctx)); },
     get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
     get survival() { return game && game.survival; },
     get entities() { return game && game.entities; },

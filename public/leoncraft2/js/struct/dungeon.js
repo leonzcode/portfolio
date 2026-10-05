@@ -14,9 +14,9 @@
    own random, so dungeons are not where the real game would put them. Each
    room is kept inside its chunk, which the game does not need to do.
 --------------------------------------------------------------------------- */
-import { JRand, hash32 } from './rand.js?v=12';
-import { B, BLOCKS } from '../blocks.js?v=12';
-import { Y0, H, idx } from '../world-const.js?v=12';
+import { JRand, hash32 } from './rand.js?v=13';
+import { B, BLOCKS } from '../blocks.js?v=13';
+import { Y0, H, idx } from '../world-const.js?v=13';
 
 const MOBS = ['skeleton', 'zombie', 'zombie', 'spider'];
 const DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0];

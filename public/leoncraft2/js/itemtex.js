@@ -8,7 +8,7 @@
    or a door: the albedo from the strip, a flat normal map and a plain
    material map. The terrain files themselves are never changed.
 
-     const items = await loadItemStrip(base, '?v=12');
+     const items = await loadItemStrip(base, '?v=13');
      addItemPieces(items, manifest.layers, albPieces, nrmPieces, spcPieces);
      setItemLayers(manifest.layers);        // js/items.js
 --------------------------------------------------------------------------- */
