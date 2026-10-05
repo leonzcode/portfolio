@@ -37,6 +37,7 @@ import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScr
 import { isPotion, drinkPotion } from './brewing.js?v=14';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=14';
 import { MerchantScreen } from './ui/merchant.js?v=14';
+import { LoomScreen } from './ui/loom.js?v=14';
 import { countShelves } from './enchanting.js?v=14';
 import { wear } from './ui/inventory.js?v=14';
 
@@ -270,6 +271,7 @@ export class Hands {
     }
     if (n === 'smithing_table') { this.open(new SmithingScreen(this.inv, this.icons)); return true; }
     if (n === 'stonecutter') { this.open(new StonecutterScreen(this.inv, this.icons)); return true; }
+    if (n === 'loom') { this.open(new LoomScreen(this.inv, this.icons)); return true; }
     return false;
   }
 

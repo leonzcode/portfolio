@@ -40,6 +40,7 @@ import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCo
 import { matchGrid, consumeGrid } from '../crafting.js?v=14';
 import { enchName } from '../enchanting.js?v=14';
 import { isPotion, isTipped, potionName, potionLines } from '../brewing.js?v=14';
+import { patternLines, drawBannerIcon } from '../banners.js?v=14';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -356,6 +357,7 @@ function drawGlint(g, icons, st, x, y) {
 export function drawStack(g, icons, st, x, y, countText, countColour) {
   if (!st) return;
   if (st.potion && icons.drawTinted) icons.drawTinted(g, st, x, y);
+  else if (st.patterns && st.patterns.length) drawBannerIcon(g, st, x, y);
   else icons.draw(g, st.id, x, y);
   if (hasGlint(st)) drawGlint(g, icons, st, x, y);
   if (st.dmg > 0) {
@@ -391,6 +393,8 @@ export function stackTooltip(st, advanced) {
     for (const s of inside.slice(0, 5)) lines.push('§f' + (s.name || displayName(s.id)) + ' x' + s.count);
     if (inside.length > 5) lines.push('§o§7and ' + (inside.length - 5) + ' more...');
   }
+  // a banner's layers, the first six
+  if (st.patterns) lines.push(...patternLines(st));
   if (st.color !== undefined) lines.push('§o§7Dyed');
   if (st.flight) lines.push('§7Flight Duration: ' + st.flight);
   const fwLines = fw => {
