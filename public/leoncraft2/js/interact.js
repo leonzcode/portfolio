@@ -157,11 +157,12 @@ export class Interactor {
   }
   // one right click with what is in the hand (hands.js swaps the off hand in for its turn); true when it did something
   useWith() {
-    // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities)
-    if (this.entities && !this.entityTarget && this.entities.useHeld(this.target)) { this.hand.swing(); return true; }
+    // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities); on a block, only once the block has had its say
+    const makes = () => !!(this.entities && !this.entityTarget && this.entities.useHeld(this.target));
     const h = this.target;
     // at nothing: an item that is thrown (an eye of ender), or one that works by itself (eating, armour, a bucket)
     if (!h || !h.face) {
+      if (makes()) { this.hand.swing(); return true; }
       const held = this.hand.id();
       if (held && this.onUseAir && this.onUseAir(held)) { this.hand.swing(); return true; }
       return !!(this.hand.useItem && this.hand.useItem(null));
@@ -179,6 +180,8 @@ export class Interactor {
     }
     // doors, trapdoors and gates open instead, unless you sneak
     if (!this.player.sneaking && use(this.world, h.x, h.y, h.z)) { this.hand.swing(); return true; }
+    // (so a chest opens rather than taking a boat on its lid, as in the game)
+    if (makes()) { this.hand.swing(); return true; }
     if (this.hand.useItem && this.hand.useItem(h)) return true;
     const id = this.hand.id();
     if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return false;

@@ -510,7 +510,9 @@ async function boot() {
           // what mobs drop goes through the items (drops.js): things on the ground, orbs of experience
           dropItem: (ww, x, y, z, name, n) => dropItem(ww, x, y, z, name, n), giveXp: (n, x, y, z) => giveXp(x, y, z, n),
           // what is in the hands, and its wear from hits, blocking and shearing (hands.js)
-          itemName: id => itemName(id), damageHeld: (n, kind) => hands.wearHeld(n, kind), fillBucket: name => hands.fillHeld(name) } });
+          itemName: id => itemName(id), damageHeld: (n, kind) => hands.wearHeld(n, kind), fillBucket: name => hands.fillHeld(name),
+          // screens and spilled stacks (a chest boat's chest)
+          hands } });
       entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));
       renderer.scene.add(entities.group);
       const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
@@ -519,6 +521,8 @@ async function boot() {
       g.partsDim = d;
       Object.assign(hands, { world: w, drops, containers, fluids: fl });
       containers.drops = drops;
+      // hoppers and droppers fill and empty chest boats (js/entities)
+      containers.entityAt = (x, y, z) => entities.containerAt(x, y, z);
       inter.entities = entities; entities.inter = inter; inter.sim = sim;
       if (renderer.particles) renderer.particles.setWorld(w);
     };
@@ -751,7 +755,8 @@ async function boot() {
       cheats: !!(window.__lc2.cheats || (g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
       say: (t, c) => chat.add(t, c),
       setMode,
-      teleport: (x, y, z) => { const p = g.player; p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; },
+      // (a teleport takes you off what you ride, as in the game)
+      teleport: (x, y, z) => { const p = g.player; if (g.entities && g.entities.riding) g.entities.dismount(); p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; },
       give: (name, count) => {
         // any item or block by its name (items.js knows both)
         const id = itemId(name) || (B[name] !== undefined && BLOCKS[B[name]] && BLOCKS[B[name]].item !== false ? B[name] : 0);
@@ -822,6 +827,8 @@ async function boot() {
     if (a === 'perspective' || e.code === 'F5') { if (!e.repeat) renderer.avatar.cycleView(); e.preventDefault(); return; }
     if (a === 'inventory') {
       e.preventDefault();
+      // riding a chest boat: its chest (js/entities)
+      if (game.entities && game.entities.rideInventory()) return;
       wantInv = true;
       for (const k in game.player.keys) game.player.keys[k] = false;
       if (document.pointerLockElement) document.exitPointerLock();
@@ -841,7 +848,6 @@ async function boot() {
     if (e.code === 'BracketLeft') game.time -= 1000;
     if (e.code === 'BracketRight') game.time += 1000;
     if (e.code === 'KeyP' && !a) timeRuns = !timeRuns;
-    if (e.code === 'KeyB' && !a && game.mode === 'creative' && game.entities) game.entities.placeBoatAtCrosshair();
     if (a && MOVE[a]) { game.player.setKey(MOVE[a], true); e.preventDefault(); }
   });
   document.addEventListener('keyup', e => {
@@ -858,7 +864,9 @@ async function boot() {
     const g = game;
     if (e.button === 1) {
       e.preventDefault();
-      const hit = g.inter.target;
+      const hit = g.inter.target, ent = g.inter.entityTarget;
+      // an entity that has an item of its own (a boat: js/entities) gives that
+      if (ent && ent.pickItem) { const id = itemId(ent.pickItem()); if (id) g.inv.pickBlock(id); return; }
       if (hit) { const d = BLOCKS[hit.b]; g.inv.pickBlock(d.lower ? B[d.lower] : hit.b); }
       return;
     }

@@ -563,6 +563,8 @@ export class Avatar {
     this.body += wrap(want - this.body) * 0.3;
     const off = wrap(P.yaw - this.body);
     if (Math.abs(off) > 50 * DEG) this.body += off - Math.sign(off) * 50 * DEG;
+    // in a boat the body faces the way the boat does (the head turns up to 105 degrees from it)
+    if (P.riding && P.riding.constructor.RIDER_BODY) this.body = P.riding.yaw;
     // the arm swing: 6 ticks
     this.oAttack = this.attack;
     if (this.swinging) { if (++this.swingT >= 6) { this.swingT = 0; this.swinging = false; } } else this.swingT = 0;
@@ -661,7 +663,8 @@ export class Avatar {
     for (let i = 0; i < 6; i++) { const p = S[i], r = REST[i]; p.x = r[0]; p.y = r[1]; p.z = r[2]; p.rx = p.ry = p.rz = 0; }
     if (this.slim) S[2].y = S[3].y = 2.5;
     const head = S[0], body = S[1], armR = S[2], armL = S[3], legR = S[4], legL = S[5];
-    const amt = Math.min(1, this.oSpeed + (this.speed - this.oSpeed) * a);
+    // sitting on something, the legs do not walk however fast it goes
+    const amt = P.riding ? 0 : Math.min(1, this.oSpeed + (this.speed - this.oSpeed) * a);
     const ls = this.limb - this.speed * (1 - a);
     const age = this.age + a;
     let att = this.attack - this.oAttack;
@@ -677,6 +680,12 @@ export class Avatar {
     const c = Math.cos(ls * 0.6662);
     armR.rx = -c * amt; armL.rx = c * amt;
     legR.rx = c * 1.4 * amt; legL.rx = -c * 1.4 * amt;
+    // riding (a boat, a horse: js/entities): sitting, legs forward and a little apart, arms forward a little
+    if (P.riding) {
+      armR.rx -= PI / 5; armL.rx -= PI / 5;
+      legR.rx = -1.4137167; legR.ry = PI / 10; legR.rz = 0.07853982;
+      legL.rx = -1.4137167; legL.ry = -PI / 10; legL.rz = -0.07853982;
+    }
     // holding something: the arm comes up a little
     if (this.held[0]) armR.rx = armR.rx * 0.5 - PI / 10;
     if (this.held[1]) armL.rx = armL.rx * 0.5 - PI / 10;
@@ -717,12 +726,6 @@ export class Avatar {
       armR.rx -= lift * 1.2 + dip;
       armR.ry += body.ry * 2;
       armR.rz += Math.sin(att * PI) * -0.4;
-    }
-    // riding (a boat, a horse: js/entities): sitting, legs forward and a little apart, arms down
-    if (P.riding) {
-      if (!use) { armR.rx = -PI / 5 + (this.held[0] ? -PI / 10 : 0); armL.rx = -PI / 5 + (this.held[1] ? -PI / 10 : 0); }
-      legR.rx = -1.4137167; legR.ry = PI / 10; legR.rz = 0.07853982;
-      legL.rx = -1.4137167; legL.ry = -PI / 10; legL.rz = -0.07853982;
     }
     // sneaking: lean in, legs back, everything lower
     if (sneak) {

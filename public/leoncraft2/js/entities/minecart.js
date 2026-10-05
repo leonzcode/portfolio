@@ -22,6 +22,7 @@ import { register } from './mobs.js?v=14';
 import { MODELS } from './mobmodels.js?v=14';
 import { addArt } from './mobart.js?v=14';
 import { BLOCKS, B } from '../blocks.js?v=14';
+import { riderDrop } from './boat.js?v=14';
 
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];      // north, east, south, west (as models.js)
 const RAIL = new Uint8Array(4096), POWERED = new Uint8Array(4096), SOURCE = new Uint8Array(4096);
@@ -65,8 +66,10 @@ export class Minecart extends Entity {
     this.onRail = false; this.slope = 0;
     this.persistent = true;
   }
-  ridingOffset() { return 0.15; }
-  seat() { return [0, 0.15, 0]; }
+  /* the seat on its floor, 0.1875 up: a mob stands there, and anyone who
+     sits (the player, a zombie) has their own seat there, so sinks into it */
+  ridingOffset() { return 0.1875; }
+  seat(i, p) { return [0, 0.1875 - riderDrop(p), 0]; }
 
   /* the rail at a block: its two ends, [dx, dz, raised] each, or null */
   rail(x, y, z) {
