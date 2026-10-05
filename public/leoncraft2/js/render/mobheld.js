@@ -6,7 +6,8 @@
    placed the way the player's model holds things in third person
    (render/held.js placeInHand) from the mob's own arm, so it swings, aims and
    falls over with the arm, and grows and shrinks with the mob (a baby's
-   sword is half the size). The same shapes as in your hand (a block is its
+   sword is half the size). A carved pumpkin or a mob head worn on the head
+   goes on the mob's head the same way (render/held.js placeOnHead). The same shapes as in your hand (a block is its
    own small shape, anything flat its picture a pixel thick), lit where the
    mob stands, shimmering when enchanted.
 
@@ -14,10 +15,10 @@
    seconds after it is not; entities/manager.js calls begin(), hold() for each
    mob it draws and end().
 --------------------------------------------------------------------------- */
-import { blockGeometry } from './blockmesh.js?v=14';
-import { heldKind, placeInHand, setLight } from './held.js?v=14';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=14';
+import { heldKind, placeInHand, placeOnHead, setLight } from './held.js?v=14';
 import { setGlint } from './glint.js?v=14';
-import { glints } from './armor.js?v=14';
+import { glints, pieceLook } from './armor.js?v=14';
 import { DRAW, itemId } from '../items.js?v=14';
 const THREE = window.THREE;
 
@@ -36,21 +37,24 @@ export class MobHeld {
      part index, its light (0..1 sky and block). */
   hold(e, mdl, mats, sky, block) {
     const eq = e.equip;
-    for (let side = 0; side < 2; side++) {
-      const it = side ? eq.offhand : eq.mainhand;
+    // side 2 is the head: a carved pumpkin or a mob head (armour is entities/armorlayer.js)
+    for (let side = 0; side < 3; side++) {
+      const it = side === 2 ? eq.head : side ? eq.offhand : eq.mainhand;
       if (!it) continue;
-      const arm = mdl.index[side ? 'leftArm' : 'rightArm'];
-      if (arm === undefined) continue;
+      const part = mdl.index[side === 2 ? 'head' : side ? 'leftArm' : 'rightArm'];
+      if (part === undefined) continue;
       const id = typeof it === 'string' ? itemId(it) : it.id;
       const d = DRAW[id];
       if (!d || !d.faces) continue;
+      if (side === 2 && (isFlatItem(d) || pieceLook(typeof it === 'string' ? { id, count: 1 } : it))) continue;
       const key = e.id + ':' + side;
       let h = this.byKey.get(key);
       if (h && h.id !== id) { this.drop(h); h = null; }
       if (!h) h = this.make(key, id, d);
       h.seen = this.frame;
       const m = h.mesh;
-      placeInHand(m.matrix, mats[arm], side, h.kind, 0, this.t, this.e);
+      if (side === 2) placeOnHead(m.matrix, mats[part], d.shape === 'head', this.t);
+      else placeInHand(m.matrix, mats[part], side, h.kind, 0, this.t, this.e);
       m.matrixWorldNeedsUpdate = true;
       m.visible = true;
       const lv = (Math.round(sky * 255) << 8) | Math.round(block * 255);

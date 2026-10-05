@@ -926,7 +926,7 @@ export class Entities {
       M.setBone(bone + i, m);
     }
     // what it holds, in its hands
-    if (e.equip && (e.equip.mainhand || e.equip.offhand)) this.R.mobHeld.hold(e, mdl, mats, e.lS, e.lB);
+    if (e.equip && (e.equip.mainhand || e.equip.offhand || e.equip.head)) this.R.mobHeld.hold(e, mdl, mats, e.lS, e.lB);
     const slot = SLOTS[e.texName ? e.texName() : c.TEX] || [0, 0];
     const white = A.swell > 0 ? (Math.floor(A.swell * 10) % 2 ? Math.max(0.5, Math.min(1, A.swell)) * 0.7 : 0) : 0;
     const hurt = e.hurtTime > 0 || (living && e.dead) ? 1 : 0;

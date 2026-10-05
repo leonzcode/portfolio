@@ -51,7 +51,7 @@ import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=14';
 import { H, idx } from '../world-const.js?v=14';
 import { armorSheet, avatarArmorGeometry, pieceLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=14';
 import { blockGeometry, isFlatItem } from './blockmesh.js?v=14';
-import { heldKind, placeInHand, setLight } from './held.js?v=14';
+import { heldKind, placeInHand, placeOnHead, setLight } from './held.js?v=14';
 import { setGlint } from './glint.js?v=14';
 const THREE = window.THREE;
 
@@ -557,15 +557,8 @@ export class Avatar {
     this.headItem = { mesh: m, skull: d.shape === 'head', light: -1 };
     R.scene.add(m);
   }
-  // where the head item goes, from the parts' matrices into m (the block geometry is centred one block up)
-  placeHead(skull, parts, m) {
-    const t = this.t;
-    m.copy(parts[0]);
-    // a mob head's face is on its -z side as placed; the model's face is +z
-    if (skull) m.multiply(t.makeTranslation(0, -9.5, 0)).multiply(t.makeScale(19, 19, 19)).multiply(t.makeRotationY(PI));
-    else m.multiply(t.makeTranslation(0, 4, 0)).multiply(t.makeScale(10, 10, 10)).multiply(t.makeTranslation(0, -1, 0));
-    return m;
-  }
+  // where the head item goes, from the parts' matrices into m (held.js placeOnHead)
+  placeHead(skull, parts, m) { return placeOnHead(m, parts[0], skull, this.t); }
 
   startSwing() {
     // as the game: a click in the second half of a swing starts it again
