@@ -109,7 +109,9 @@ function hash(planes, layer, x0, x1, y0, y1) {
 }
 
 /* ---- who joins up with whom ---- */
-function full(n) { return n && n.d.shape === 'cube' && n.d.pass === 'opaque'; }
+// a full block fences, walls and panes join to: any solid cube (glass too), but not leaves and the game's exceptions
+const NO_JOIN = /^(barrier|pumpkin|carved_pumpkin|jack_o_lantern|melon)$|shulker_box$/;
+function full(n) { return n && n.d.shape === 'cube' && (n.d.pass === 'opaque' || (n.d.solid && !n.d.leaves)) && !NO_JOIN.test(n.d.name); }
 function joins(d, n, kind) {
   if (!n) return false;
   const s = n.d.shape;
