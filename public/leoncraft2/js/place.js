@@ -45,6 +45,19 @@ export function placement(world, hit, id, player) {
     if (d.shape === 'candle' && (hm & 3) < 3) return [[hit.x, hit.y, hit.z, id, hm + 1]];
     if ((d.shape === 'layer' || d.shape === 'snow') && (hm & 7) < 7) return [[hit.x, hit.y, hit.z, id, hm + 1]];
   }
+  // scaffolding on scaffolding (not sneaking): up the column, or along the way you face when you click its top,
+  // to the first free cell within 7 (the game's ScaffoldingBlockItem)
+  if (hit.b === id && d.name === 'scaffolding' && !player.sneaking) {
+    const dir = n[1] === 1 ? DIRS[lookFacing(player.yaw)] : [0, 1, 0];
+    for (let k = 1; k <= 7; k++) {
+      const cx = hit.x + dir[0] * k, cy = hit.y + dir[1] * k, cz = hit.z + dir[2] * k, c = world.get(cx, cy, cz);
+      if (c === id) continue;
+      if (c && !BLOCKS[c].replaceable) return out;
+      if (player.occupies(cx, cy, cz, [[0, 0, 0, 1, 1, 1]])) return out;
+      return [[cx, cy, cz, id, 0]];
+    }
+    return out;
+  }
   let x = hit.x, y = hit.y, z = hit.z;
   // clicking on grass or snow replaces it, as in the game
   // (only a single layer of snow gives way: two or more is built on)
