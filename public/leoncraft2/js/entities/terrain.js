@@ -36,6 +36,8 @@ export class Terrain {
       return b ? { d: BLOCKS[b], m: this.meta(this.nbx + dx, this.nby + dy, this.nbz + dz) } : null;
     };
     this.out = [0, 0, 0];
+    // solid entities (boats: the manager keeps the list), and the one moving now, which does not meet itself
+    this.solids = null; this.mover = null; this.except = null;
   }
   // forget the remembered chunk (chunks come and go between ticks)
   reset() { this.lcx = 1e9; this.lc = null; }
@@ -133,6 +135,16 @@ export class Terrain {
         if (boxes) for (const q of boxes) push(x + q[0], y + q[1], z + q[2], x + q[3], y + q[4], z + q[5]);
       }
     }
+    /* boats are solid: stood on and walked into by everything but themselves,
+       what rides them and what they ride */
+    const S = this.solids, mv = this.mover;
+    if (S && S.length) for (let i = 0; i < S.length; i++) {
+      const e = S[i];
+      if (e.removed || e === mv || e === this.except || (mv && (mv.vehicle === e || e.vehicle === mv))) continue;
+      const p = e.pos;
+      if (p.x + e.hw < x0 || p.x - e.hw > x1 + 1 || p.z + e.hw < z0 || p.z - e.hw > z1 + 1 || p.y + e.h < y0 - 1 || p.y > y1 + 1) continue;
+      push(p.x - e.hw, p.y, p.z - e.hw, p.x + e.hw, p.y + e.h, p.z + e.hw);
+    }
     this.nb = n;
     return n;
   }
@@ -162,8 +174,10 @@ export class Terrain {
     return d;
   }
   // does a box overlap anything solid?
-  boxHits(x0, y0, z0, x1, y1, z1) {
+  boxHits(x0, y0, z0, x1, y1, z1, except) {
+    this.except = except || null;
     const n = this.gather(x0, y0, z0, x1, y1, z1), bx = this.bx;
+    this.except = null;
     for (let i = 0; i < n * 6; i += 6)
       if (bx[i] < x1 - EPS && bx[i + 3] > x0 + EPS && bx[i + 1] < y1 - EPS && bx[i + 4] > y0 + EPS && bx[i + 2] < z1 - EPS && bx[i + 5] > z0 + EPS) return true;
     return false;
@@ -197,6 +211,12 @@ export class Terrain {
      game does: y, x, z, then a step up and back down if that gets further.
      Returns the move made in this.out, and fills e's collision flags. */
   move(e, dx, dy, dz) {
+    this.mover = e;
+    const o = this.moveBox(e, dx, dy, dz);
+    this.mover = null;
+    return o;
+  }
+  moveBox(e, dx, dy, dz) {
     const hw = e.hw, h = e.h, p = e.pos, step = e.stepH;
     // standing still on full blocks: nothing to work out
     if (dx === 0 && dz === 0 && dy <= 0 && dy > -0.2 && e.onGround && this.restsOn(p.x, p.y, p.z, hw)) {
