@@ -557,6 +557,33 @@ def frame_picture(name, k, ce, ppl, packs=None):
     return im if im is not None else Image.new('RGBA', (16, 16), (0, 0, 0, 0))
 
 
+# The pictures a bow and a crossbow change to while drawn or loaded, and a loaded crossbow's, named as the game names
+# them, from the pack the item's own picture is drawn from (Bauniclonia numbers its bow and crossbow frames), pulled
+# to the game's colours for that picture and placed as the item is. js/dials.js picks one.
+USE_FRAMES = ['bow_pulling_0', 'bow_pulling_1', 'bow_pulling_2', 'crossbow_pulling_0', 'crossbow_pulling_1',
+              'crossbow_pulling_2', 'crossbow_arrow', 'crossbow_firework']
+LUANTI_USE = {'bow_pulling_0': 'mcl_bows_bow_0', 'bow_pulling_1': 'mcl_bows_bow_1', 'bow_pulling_2': 'mcl_bows_bow_2',
+              'crossbow_pulling_0': 'mcl_bows_crossbow_0', 'crossbow_pulling_1': 'mcl_bows_crossbow_1',
+              'crossbow_pulling_2': 'mcl_bows_crossbow_2', 'crossbow_arrow': 'mcl_bows_crossbow_3'}
+
+
+def use_picture(frame, ce, ppl, packs=None):
+    from PIL import Image
+    item = frame.split('_')[0]
+    src = SOURCES.get(item)
+    if src and packs:
+        f = frame if src[0] in ('ce', 'ppl') else LUANTI_USE.get(frame)
+        got = from_pack(src[0], f, packs) if f else None
+        if got:
+            im = pull(got[0], ITEM_STATS.get(frame) or stats_of(item), src[2])
+            return place(im, src[3], src[4], len(src) > 5 and src[5]) if len(src) > 3 else im
+    p = find(frame, ce, ppl)
+    if p:
+        return pull(load16(p), ITEM_STATS.get(frame)) if packs else load16(p)
+    im = picture(item, ce, ppl, packs)
+    return im if im is not None else Image.new('RGBA', (16, 16), (0, 0, 0, 0))
+
+
 # ----------------------------------------------------------------- armour
 # The textures the armour model wears, 64 x 32 in the game's layout (the head box at 0,0, the body at 16,16, the
 # arms at 40,16, the legs at 0,16): layer 1 is the helmet, chestplate and boots, layer 2 the leggings. Named as the
@@ -662,6 +689,8 @@ def main():
     tex += ['layer_' + n for n in RAW_LAYERS]
     # and the frames of the pictures that move (js/dials.js picks one)
     tex += ['frame_%s_%02d' % (n, k) for n, count in DIAL_FRAMES.items() for k in range(count)]
+    # and a bow's and a crossbow's while in use or loaded
+    tex += ['frame_' + f for f in USE_FRAMES]
     # the pictures
     if ce:
         from PIL import Image
@@ -680,6 +709,9 @@ def main():
             if n.startswith('xp_orb_'):
                 k = int(n[7:])
                 strip.paste(orbs.crop(((k % 4) * 16, (k // 4) * 16, (k % 4) * 16 + 16, (k // 4) * 16 + 16)), (0, i * 16))
+                continue
+            if n[6:] in USE_FRAMES:
+                strip.paste(use_picture(n[6:], ce, ppl, packs), (0, i * 16))
                 continue
             if n.startswith('frame_'):
                 strip.paste(frame_picture(n[6:-3], int(n[-2:]), ce, ppl, packs), (0, i * 16))
