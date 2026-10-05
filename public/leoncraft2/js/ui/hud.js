@@ -93,6 +93,8 @@ export class Hud {
     // the axes in place of the crosshair while F3 is up and the camera is known
     if (this.debug && this.camera) this._axes(g, cx, Math.floor(H / 2));
 
+    // what is held up under the HUD (a map in the hand: js/maps.js), and when to draw again
+    if (this.under) { const w = this.under(g, now); if (w) this._wakeAt(w); }
     // the hotbar, the selected slot's frame and the off hand
     g.blit('widgets', 0, 0, 182, 22, cx - 91, H - 22);
     g.blit('widgets', 0, 22, 24, 23, cx - 91 - 1 + inv.selected * 20, H - 23);
