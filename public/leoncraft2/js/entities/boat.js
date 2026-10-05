@@ -26,19 +26,24 @@
    blue ice 72.7, on stone 2. The left paddle rows to turn right and the
    right paddle to turn left; both row going forward.
 
+   Placed from the item where the look first meets water or the top of a
+   block (not into a block, a mob or you), facing your way; a dispenser
+   puts one into the water in front of it, or into air over water.
+
    Two seats (one in a chest boat). A mob that touches a boat no player is
-   steering gets in (not fish or squid, nothing as wide as the boat), and
-   only leaves when the boat breaks or sinks; anything else that touches it
-   is pushed off, and pushes an empty boat back. The boat is solid: you can
-   stand on it and walk into it, and so can mobs. You sit facing the way
-   the boat does and can look 105 degrees either side.
+   steering gets in (not fish, squid or bats, nothing as wide as the boat),
+   and only leaves when the boat breaks or sinks, beside it; anything else
+   that touches it is pushed off, and pushes an empty boat back. The boat
+   is solid: you can stand on it and walk into it, and so can mobs. You sit
+   facing the way the boat does and can look 105 degrees either side.
 
    Hits add ten times the damage (which wears off a point a tick); past 40
-   the boat breaks and drops itself (in creative it just goes). A chest
-   boat keeps 27 slots: sneak and right click it, or press the inventory
-   key while riding it, to open them; they spill when it breaks. Shift gets
-   you out: beside the boat the way you look if there is ground there, or
-   on top of it (always, on water).
+   the boat breaks and drops itself (in creative it just goes). Cactus and
+   fire hurt it the same way. A chest boat keeps 27 slots: sneak and right
+   click it, or press the inventory key while riding it, to open them;
+   hoppers and droppers fill and empty it, and it spills when it breaks.
+   Shift gets you out: beside the boat the way you look if there is ground
+   there, or on top of it (always, on water).
 --------------------------------------------------------------------------- */
 import { Entity, Living, DEG, wrap, r3 } from './entity.js?v=14';
 import { register, Animal } from './mobs.js?v=14';
@@ -424,7 +429,14 @@ export class Boat extends Entity {
     const v = this.vel, p = this.pos;
     let gravity = -0.04, buoy = 0, inv = 0.05;
     if (this.oldStatus === IN_AIR && this.status !== IN_AIR && this.status !== ON_LAND) {
-      // coming down onto water: set on the surface (if there is room), its downward speed gone
+      // coming down onto water: a splash, then set on the surface (if there is room), its downward speed gone
+      if (v.y < -0.2 && this.age > 1) {
+        const H = this.m.hooks;
+        if (H.onSplash) H.onSplash(p.x, p.z, Math.min(1.4, -v.y * 3));
+        const n = 1 + Math.floor(this.w * 20), top = this.waterAbove();
+        this.m.particles('bubble', p.x, top - 0.2, p.z, n, this.w / 2);
+        this.m.particles('splash', p.x, top, p.z, n, this.w / 2);
+      }
       const y = this.waterAbove() - this.h + 0.101;
       if (!this.m.t.boxHits(p.x - this.hw, y, p.z - this.hw, p.x + this.hw, y + this.h, p.z + this.hw, this)) { p.y = y; v.y = 0; this.lastYd = 0; }
       this.status = IN_WATER;
