@@ -36,6 +36,7 @@ import { FALLS, free } from './fallingblock.js?v=14';
 import { Spawner, DESPAWN } from './spawner.js?v=14';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=14';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=14';
+import { armorLayers } from './armorlayer.js?v=14';
 import { EntityMeshes } from '../render/entitymesh.js?v=14';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=14';
 import { breakAt } from '../place.js?v=14';
@@ -826,15 +827,16 @@ export class Entities {
     const hurt = e.hurtTime > 0 || (living && e.dead) ? 1 : 0;
     const tint = e.tint ? e.tint() : 0xffffff;
     M.add(M.model(name, mdl), bone, slot[0], slot[1], e.lS, e.lB, hurt, white, ((tint >> 16) & 255) / 255, ((tint >> 8) & 255) / 255, (tint & 255) / 255);
-    // layers on the same bones: wool, saddles, armour
+    // layers on the same bones: wool, saddles, armour ([model, texture, colour, glint, no hurt flash])
     const L = this.layerList; L.length = 0;
     if (e.layers) e.layers(L);
-    for (const [ln, lt, col] of L) {
+    if (e.equip) armorLayers(this, e, name, L);
+    for (const [ln, lt, col, glint, steady] of L) {
       const lm = MODELS[ln];
       if (!lm) continue;
       const ls = SLOTS[lt] || slot;
       const cc = col === null || col === undefined ? 0xffffff : col;
-      M.add(M.model(ln, lm), bone, ls[0], ls[1], e.lS, e.lB, hurt, white, ((cc >> 16) & 255) / 255, ((cc >> 8) & 255) / 255, (cc & 255) / 255);
+      M.add(M.model(ln, lm), bone, ls[0], ls[1], e.lS, e.lB, steady ? 0 : hurt, white, ((cc >> 16) & 255) / 255, ((cc >> 8) & 255) / 255, (cc & 255) / 255, glint ? 1 : 0);
     }
   }
   v3(s) { return (this._v3 || (this._v3 = new THREE.Vector3())).set(s, s, s); }
