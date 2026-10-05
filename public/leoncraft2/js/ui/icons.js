@@ -276,6 +276,24 @@ export class ItemIcons {
     return true;
   }
 
+  /* One named picture of the item strip (a frame of a compass or a clock,
+     js/dials.js), made once and kept with the flat icons. False when the
+     strip has no such picture. */
+  drawLayer(g, name, x, y) {
+    const key = 'l:' + name;
+    let e = this.map.get(key);
+    if (!e) {
+      const layer = textureLayer(name);
+      if (layer < 0) return false;
+      e = this.flat.alloc();
+      this._fill(layer, -1, 1, -1, -1);
+      e.c.getContext('2d').putImageData(this.fimg, e.x, e.y);
+      this.map.set(key, e);
+    }
+    g.ctx.drawImage(e.c, e.x, e.y, e.w, e.w, x, y, 16, 16);
+    return true;
+  }
+
   // the canvas region of a ready icon, or null (for the integrator's own drawing)
   get(id) { const e = this.map.get(id); return e && !e.queued ? e : null; }
 

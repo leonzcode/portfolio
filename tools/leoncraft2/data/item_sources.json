@@ -164,7 +164,7 @@
   "egg": ["ppl", "egg", 1.0, 1, 0],
   "blue_egg": ["ppl", "blue_egg", 1.0, 1, 0],
   "brown_egg": ["ppl", "brown_egg", 1.0, 1, 0],
-  "compass": ["refi", "mcl_compass_compass_01", 0.5, 0, -1],
+  "compass": ["refi", "mcl_compass_compass_16", 0.75, 0, -1],
   "recovery_compass": ["ppl", "recovery_compass_16", 1.0],
   "bundle": ["ppl", "bundle", 1.0, 1, 0],
   "white_bundle": ["ppl", "white_bundle", 1.0, 1, 0],
