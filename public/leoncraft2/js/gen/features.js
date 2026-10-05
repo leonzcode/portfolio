@@ -23,7 +23,7 @@
 import { B, BLOCKS } from '../blocks.js?v=14';
 import { BIO, BIOMES } from '../biomes.js?v=14';
 import { Xoroshiro, WorldgenXoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=14';
-import { Simplex } from './noise.js?v=14';
+import { Simplex, normalNoise } from './noise.js?v=14';
 import { msin, mcos } from './carvers.js?v=14';
 import { stateOf } from './states.js?v=14';
 
@@ -214,33 +214,59 @@ export function stateFrom(j) {
 }
 /* The game names some of its block lists (worldgen/block_state_provider):
    "minecraft:flower_plain", "minecraft:soil_beneath_tree"... They are not
-   blocks, and read as one they came out as stone, the fallback for a name
-   it does not know, so stray stone stood on the surface wherever flowers
-   should have been. These are the lists, and anything else unknown places
-   nothing rather than stone. */
-const pickOf = names => {
-  const ss = names.filter(n => B[n] !== undefined).map(n => stateOf('minecraft:' + n));
-  return ss.length ? (r => ss[ss.length > 1 ? r.nextInt(ss.length) : 0]) : (() => stateOf('minecraft:air'));
+   blocks (read as one they came out as stone, the fallback for a name it
+   does not know). These are 26.3's own definitions, as its data has them:
+   the meadow and plains flowers are picked by noise, and the cave vines
+   draw from the random like any weighted list, so everything after them
+   draws what the game draws. Anything else unknown places nothing. */
+const NAMED_DATA = {
+  flower_plain: {
+    type: 'noise_threshold', default_state: 'minecraft:dandelion', high_chance: 0.33333334,
+    high_states: ['minecraft:poppy', 'minecraft:azure_bluet', 'minecraft:oxeye_daisy', 'minecraft:cornflower'],
+    low_states: ['minecraft:orange_tulip', 'minecraft:red_tulip', 'minecraft:pink_tulip', 'minecraft:white_tulip'],
+    noise: { base_amplitude: 0.955388882960065, base_octave: 0 }, scale: 0.005, seed: 2345, threshold: -0.8,
+  },
+  flower_meadow: {
+    type: 'dual_noise', noise: { base_amplitude: 0.955388882960065, base_octave: -3 }, scale: 1.0, seed: 2345,
+    slow_noise: { base_amplitude: 0.955388882960065, base_octave: -10 }, slow_scale: 1.0,
+    states: ['minecraft:tall_grass', 'minecraft:allium', 'minecraft:poppy', 'minecraft:azure_bluet', 'minecraft:dandelion', 'minecraft:cornflower', 'minecraft:oxeye_daisy', 'minecraft:short_grass'],
+    variety: [1, 3],
+  },
+  flower_flower_forest: {
+    type: 'noise', noise: { base_amplitude: 0.955388882960065, base_octave: 0 }, scale: 0.020833334, seed: 2345,
+    states: ['minecraft:dandelion', 'minecraft:poppy', 'minecraft:allium', 'minecraft:azure_bluet', 'minecraft:red_tulip', 'minecraft:orange_tulip', 'minecraft:white_tulip', 'minecraft:pink_tulip', 'minecraft:oxeye_daisy', 'minecraft:cornflower', 'minecraft:lily_of_the_valley'],
+  },
+  cave_vines_body: { type: 'weighted', entries: [{ data: 'minecraft:cave_vines_plant', weight: 4 }, { data: { id: 'minecraft:cave_vines_plant', properties: { berries: 'true' } }, weight: 1 }] },
+  cave_vines_head: {
+    type: 'randomized_int', property: 'age',
+    source: { type: 'weighted', entries: [{ data: 'minecraft:cave_vines', weight: 4 }, { data: { id: 'minecraft:cave_vines', properties: { age: '0', berries: 'true' } }, weight: 1 }] },
+    values: { type: 'uniform', max_inclusive: 25, min_inclusive: 23 },
+  },
+  soil_beneath_tree: { type: 'rule_based', rules: [{ if_true: { type: 'not', predicate: { type: 'matching_block_tag', tag: 'minecraft:cannot_replace_below_tree_trunk' } }, then: { id: 'minecraft:dirt' } }] },
+  podzol_beneath_tree: { type: 'rule_based', rules: [{ if_true: { type: 'matching_block_tag', tag: 'minecraft:beneath_tree_podzol_replaceable' }, then: { id: 'minecraft:podzol', properties: { snowy: 'false' } } }] },
+  mangrove_propagule: { type: 'randomized_int', property: 'age', source: { id: 'minecraft:mangrove_propagule', properties: { age: '0', hanging: 'true', stage: '0', waterlogged: 'false' } }, values: { type: 'uniform', max_inclusive: 4, min_inclusive: 0 } },
 };
-const NAMED = {
-  flower_default: pickOf(['dandelion', 'dandelion', 'poppy']),
-  flower_plain: pickOf(['dandelion', 'dandelion', 'poppy']),
-  flower_plains: pickOf(['dandelion', 'dandelion', 'poppy']),
-  flower_swamp: pickOf(['blue_orchid']),
-  flower_meadow: pickOf(['cornflower', 'allium', 'azure_bluet', 'oxeye_daisy', 'dandelion', 'poppy']),
-  flower_cherry: pickOf(['pink_petals']),
-  flower_flower_forest: pickOf(['dandelion', 'poppy', 'allium', 'azure_bluet', 'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower', 'lily_of_the_valley']),
-  flower_warm: pickOf(['dandelion', 'poppy']),
-  soil_beneath_tree: pickOf(['dirt']),
-  cave_vines_body: pickOf(['cave_vines_plant']),
-  cave_vines_head: pickOf(['cave_vines']),
-};
+const NAMED = {};
 function named(name) {
   if (NAMED[name]) return NAMED[name];
-  if (/flower/.test(name)) return NAMED.flower_default;
-  if (/soil|dirt/.test(name)) return NAMED.soil_beneath_tree;
-  return () => stateOf('minecraft:air');
+  return (NAMED[name] = NAMED_DATA[name] ? provider(NAMED_DATA[name]) : () => stateOf('minecraft:air'));
 }
+
+/* A noise for the noise-picked providers: the game makes it from a
+   java.util.Random seeded with the provider's seed (not the world's), so
+   the flower patterns are the same in every world. */
+const javaHash = s => { let h = 0; for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0; return h; };
+function providerNoise(def, seed) {
+  const r = new LegacyRandom(BigInt(seed));
+  const factory = { forkPositional() { const s = r.nextLong(); return { fromHashOf: n => new LegacyRandom(BigInt.asIntN(64, BigInt(javaHash(n)) ^ s)) }; } };
+  return normalNoise(def, factory);
+}
+// NoiseBasedStateProvider.getRandomState: the noise value picks from the list
+const pickByNoise = (list, v) => {
+  const d = Math.max(0, Math.min(0.9999, (1 + v) / 2));
+  return list[Math.trunc(d * list.length)];
+};
+const statesOf = a => (a || []).map(stateFrom);
 export function provider(p) {
   // a name that is not a block is one of the game's named lists
   if (typeof p === 'string' && B[strip(p.replace(/\[.*$/, ''))] === undefined) return named(strip(p.replace(/\[.*$/, '')));
@@ -270,10 +296,36 @@ export function provider(p) {
       };
       break;
     }
-    case 'noise_provider': case 'noise_threshold_provider': case 'dual_noise_provider': {
-      // noise-picked states (the flower forest, for one): an even pick stands in until written
-      const list = (p.states || [p.default_state, ...(p.low_states || []), ...(p.high_states || [])]).filter(Boolean).map(stateFrom);
-      f = r => list[r.nextInt(list.length)];
+    case 'noise': case 'noise_provider': {
+      const n = providerNoise(p.noise, p.seed), sc = p.scale, list = statesOf(p.states);
+      f = (r, x, y, z) => pickByNoise(list, n.sample(x * sc, y * sc, z * sc));
+      break;
+    }
+    case 'noise_threshold': case 'noise_threshold_provider': {
+      const n = providerNoise(p.noise, p.seed), sc = p.scale;
+      const def = stateFrom(p.default_state), low = statesOf(p.low_states), high = statesOf(p.high_states);
+      const hc = F(p.high_chance), th = F(p.threshold);
+      f = (r, x, y, z) => {
+        if (n.sample(x * sc, y * sc, z * sc) < th) return low[r.nextInt(low.length)];
+        if (r.nextFloat() < hc) return high[r.nextInt(high.length)];
+        return def;
+      };
+      break;
+    }
+    case 'dual_noise': case 'dual_noise_provider': {
+      // the slow noise decides how many of the states a spot chooses among
+      // (and which), the fast one picks from those
+      const n = providerNoise(p.noise, p.seed), slow = providerNoise(p.slow_noise, p.seed);
+      const sc = p.scale, ss = F(p.slow_scale), list = statesOf(p.states);
+      const v = p.variety, vmin = Array.isArray(v) ? v[0] : v.min_inclusive ?? v, vmax = Array.isArray(v) ? v[1] : v.max_inclusive ?? v;
+      const slowAt = (x, y, z) => slow.sample(F(x * ss), F(y * ss), F(z * ss));
+      f = (r, x, y, z) => {
+        const t = Math.max(0, Math.min(1, (slowAt(x, y, z) + 1) / 2));
+        const k = Math.trunc(vmin + t * (vmax + 1 - vmin));
+        const some = [];
+        for (let j = 0; j < k; j++) some.push(pickByNoise(list, slowAt(x + j * 54545, y, z + j * 34234)));
+        return pickByNoise(some, n.sample(x * sc, y * sc, z * sc));
+      };
       break;
     }
     case 'rule_based': case 'rule_based_state_provider': {
