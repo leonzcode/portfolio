@@ -174,7 +174,7 @@ addArt('boat_chest', [64, 64], p => {
 const isAnimal = e => e instanceof Animal;
 
 export class Boat extends Entity {
-  static W = 1.375; static H = 0.5625; static STEP = 0; static SEATS = 2; static MODEL = 'boat'; static TEX = 'boat'; static SHADOW = 0;
+  static W = 1.375; static H = 0.5625; static STEP = 0; static SEATS = 2; static MODEL = 'boat'; static TEX = 'boat'; static SHADOW = 0.8;
   static NO_PUSH = true; static PICK = 0; static WATER_MASK = 0.5;
   static MASK_HX = 0.5; static MASK_HZ = 0.875;   // the water kept out: the inside of the hull, between its sides and its boards
   static SOLID = true;              // stood on and walked into (entities/terrain.js, the player's collision)
@@ -562,9 +562,13 @@ export class Boat extends Entity {
     A.paddleR = this.rowing[1] ? this.paddle[1] - PI / 8 * (1 - a) : 0;
   }
   rootPose(root, t, a) {
-    // rocking bow and stern up and down when hit (about its width), less as the damage wears off
+    // rocking bow and stern up and down when hit (about its width, 0.375 up), less as the damage wears off
     const h = this.hurtTime - a, dm = Math.max(0, this.damage - a);
-    if (h > 0) root.multiply(t.makeRotationX(Math.sin(h) * h * dm / 10 * this.hurtDir * DEG));
+    if (h > 0) {
+      root.multiply(t.makeTranslation(0, 0.375, 0));
+      root.multiply(t.makeRotationX(Math.sin(h) * h * dm / 10 * this.hurtDir * DEG));
+      root.multiply(t.makeTranslation(0, -0.375, 0));
+    }
   }
   layers(out) { if (this.chest) out.push(this.raft ? ['raft_chest', 'boat_chest', null] : ['boat_chest', 'boat_chest', null]); }
   /* ---- keeping it ----

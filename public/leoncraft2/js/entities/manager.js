@@ -267,9 +267,11 @@ export class Entities {
     for (let i = 0; i < n; i++) {
       const e = this.list[i];
       if (e.removed) continue;
+      // a rider has its turn right after what it rides (below), as in the game, so it moves with it smoothly
+      if (e.vehicle && !e.vehicle.removed && e.vehicle.passengers.indexOf(e) >= 0) continue;
       if (e.vehicle) { this.ridingTick(e); continue; }
       e.tick();
-      if (e.passengers.length) this.positionRiders(e);
+      if (e.passengers.length) this.tickRiders(e);
       if (!e.removed && (this.age + e.id) % 4 === 0) this.sampleLight(e);
       // flames off anything burning
       if (e.fire > 0 && !e.removed && (this.age + e.id) % 2 === 0) this.particlesP.add('flame', e.pos.x + (R() - 0.5) * e.w, e.pos.y + R() * e.h, e.pos.z + (R() - 0.5) * e.w, 1, 0);
@@ -476,6 +478,18 @@ export class Entities {
   }
   // the inventory key while riding a chest boat opens its chest; true if it did
   rideInventory() { const v = this.riding; return !!(v && v.openInventory && v.openInventory(this.player)); }
+  /* After a vehicle's tick: each mob riding it has its own (from where it
+     sat), then all are put in their seats, then whatever rides them in turn */
+  tickRiders(v) {
+    for (const p of v.passengers.slice()) {
+      if (p === this.player || p.removed || p.vehicle !== v) continue;
+      this.ridingTick(p);
+      if (!p.removed && (this.age + p.id) % 4 === 0) this.sampleLight(p);
+    }
+    if (v.removed) return;
+    this.positionRiders(v);
+    for (const p of v.passengers) if (p !== this.player && p.passengers.length) this.tickRiders(p);
+  }
   // a mob riding something: no movement of its own
   ridingTick(e) {
     const v = e.vehicle;
