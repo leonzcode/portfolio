@@ -20,6 +20,7 @@
 import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=13';
 import { VANILLA } from './vanilla.js?v=13';
 import { lightDefines } from './materials.js?v=13';
+import { GLINT } from './armor.js?v=13';
 const THREE = window.THREE;
 
 export const ATLAS = 1024;           // the mob texture atlas, in pixels a side
@@ -30,10 +31,10 @@ const VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
 uniform highp sampler2D uBones;
 in vec3 position; in vec3 normal; in vec2 uv; in vec2 aPart;
-in vec4 aI0;   // first bone, atlas offset u, v, (unused)
+in vec4 aI0;   // first bone, atlas offset u, v, enchantment glint (armour: render/armor.js)
 in vec4 aI1;   // sky, block light (0..1), hurt red, white flash
 in vec4 aI2;   // tint colour (rgb), (unused)
-out vec3 vWorld; out vec3 vN; out vec2 vUv; out vec4 vL; out vec3 vTint;
+out vec3 vWorld; out vec3 vN; out vec2 vUv; out vec4 vL; out vec3 vTint; out vec3 vG;
 mat4 bone(int i) {
   ivec2 p = ivec2((i % ${BONE_W}) * 4, i / ${BONE_W});
   return mat4(texelFetch(uBones, p, 0), texelFetch(uBones, p + ivec2(1, 0), 0), texelFetch(uBones, p + ivec2(2, 0), 0), texelFetch(uBones, p + ivec2(3, 0), 0));
@@ -44,6 +45,7 @@ void main() {
   vWorld = w.xyz;
   vN = normalize(mat3(M) * normal);
   vUv = (uv + aI0.yz) / ${ATLAS}.0;
+  vG = vec3(uv / 16.0, aI0.w);
   vL = aI1;
   // a tinted part (wool, a collar) takes the instance colour
   vTint = aPart.y > 0.5 ? aI2.rgb : vec3(1.0);
@@ -61,7 +63,9 @@ uniform float uEyeInWater;
 ` + LDR + `
 #endif
 ` + LIGHTS + `
-in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint;
+uniform float uClock;
+` + GLINT + `
+in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint; in vec3 vG;
 layout(location = 0) out vec4 outColor;
 vec3 ambientAt(vec3 n) {
   vec3 up = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
@@ -103,7 +107,10 @@ void main() {
   amb *= sky * sky * 0.8;
   block = max(block, heldLight(vWorld, N));
   vec3 blockL = block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
-  vec3 col = albedo / PI * (diffuse * PI + amb + blockL + vec3(0.0035, 0.004, 0.006));
+  vec3 light = (diffuse * PI + amb + blockL + vec3(0.0035, 0.004, 0.006)) / PI;
+  vec3 col = albedo * light;
+  // enchanted armour: the glint, by the light it is in (as on the player, render/avatar.js)
+  if (vG.z > 0.5) col += glintAt(vG.xy, uClock) * (light + 0.02) * 1.5;
 #ifdef LDR
   col = finishLDR(col, vWorld);
 #endif
@@ -114,10 +121,12 @@ void main() {
    fixed lights on its faces, the lightmap where it stands and the fog; hurt
    is the game's red overlay (30% red), a creeper about to go flashes white. */
 const FS_VANILLA = VANILLA + /* glsl */`
-uniform sampler2D uAtlas;
+uniform sampler2D uAtlas, uNoise;
 uniform vec3 cameraPosition;
-in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint;
+uniform float uClock;
+in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint; in vec3 vG;
 layout(location = 0) out vec4 outColor;
+` + GLINT + `
 void main() {
   vec4 t = texture(uAtlas, vUv);
   if (t.a < 0.5) discard;
@@ -127,6 +136,8 @@ void main() {
   vec3 N = normalize(vN);
   if (!gl_FrontFacing) N = -N;
   c *= entityShade(N) * lightmapAt(vL.x, vL.y);
+  // enchanted armour: the glint on top, unlit, as the game draws it
+  if (vG.z > 0.5) c += glintAt(vG.xy, uClock);
   outColor = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;
 const PART_FS_VANILLA = VANILLA + /* glsl */`
@@ -412,12 +423,12 @@ export class EntityMeshes {
   }
   setBone(i, m4) { this.bones.set(m4.elements, i * 16); }
   /* One mob: its model, its first bone, where its texture is in the atlas,
-     its light and flashes, and its tint. */
-  add(m, bone, u, v, sky, block, hurt, white, r, g, b) {
+     its light and flashes, its tint, and (armour) whether it shimmers. */
+  add(m, bone, u, v, sky, block, hurt, white, r, g, b, glint) {
     if (m.n >= m.cap) this.grow(m, m.cap * 2);
     const o = m.n * 4;
     const a0 = m.aI0.array, a1 = m.aI1.array, a2 = m.aI2.array;
-    a0[o] = bone; a0[o + 1] = u; a0[o + 2] = v; a0[o + 3] = 0;
+    a0[o] = bone; a0[o + 1] = u; a0[o + 2] = v; a0[o + 3] = glint || 0;
     a1[o] = sky; a1[o + 1] = block; a1[o + 2] = hurt; a1[o + 3] = white;
     a2[o] = r; a2[o + 1] = g; a2[o + 2] = b; a2[o + 3] = 1;
     m.n++;
