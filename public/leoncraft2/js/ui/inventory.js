@@ -307,7 +307,8 @@ export function drawOutline(g, kind, x, y) {
 // an item and its count, the count in the slot's bottom-right corner, and the wear bar, as in the game
 export function drawStack(g, icons, st, x, y, countText, countColour) {
   if (!st) return;
-  if (st.potion && icons.drawTinted) icons.drawTinted(g, st, x, y);
+  // a potion's colour, or dyed leather's (icons.drawTinted)
+  if ((st.potion || st.color !== undefined) && icons.drawTinted) icons.drawTinted(g, st, x, y);
   else icons.draw(g, st.id, x, y);
   if (st.dmg > 0) {
     const max = maxDamage(st.id);
