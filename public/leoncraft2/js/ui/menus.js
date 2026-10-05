@@ -1128,7 +1128,8 @@ export class PauseScreen extends Screen {
   }
   resume() { this.gui.closeAll(); if (this.hooks.resume) this.hooks.resume(); }
   // the Esc that let the mouse go (and so opened this menu) must not close it again at once
-  onEscape() { if (performance.now() - this.openedAt > 400) this.resume(); }
+  // (and Esc stays in the menu when the browser would not give the mouse back for a key: main.js keyMayLock)
+  onEscape() { if (performance.now() - this.openedAt > 400 && (!this.hooks.keyResumes || this.hooks.keyResumes())) this.resume(); }
   render(g, mx, my, dt) {
     g.centered(this.title, this.width / 2, 40, WHITE);
     super.render(g, mx, my, dt);
