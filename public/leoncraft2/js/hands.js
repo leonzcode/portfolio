@@ -38,6 +38,7 @@ import { isPotion, drinkPotion } from './brewing.js?v=14';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=14';
 import { countShelves } from './enchanting.js?v=14';
 import { wear } from './ui/inventory.js?v=14';
+import { BookScreen } from './ui/book.js?v=14';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // two slot arrays seen as one (a large chest): reads and writes go straight to the halves
@@ -310,7 +311,20 @@ export class Hands {
     }
     if (it.name === 'bucket') return this.fillBucket();
     if (it.name === 'glass_bottle') return this.fillBucket(true);
+    if (it.name === 'writable_book' || it.name === 'written_book') return this.openBook(s, it.name === 'written_book');
     return false;
+  }
+  /* A book and quill opens to write in (what is written stays in it; signing makes it a written book by
+     its author); a written book opens to read. The stack is the one in the hand when it opened. */
+  openBook(s, written) {
+    const inv = this.inv, slot = inv.selected, off = !!this.offTurn;
+    const put = st => { if (off) inv.offhand = st; else if (inv.slots[slot] === s) inv.slots[slot] = st; inv.changed(); };
+    this.open(new BookScreen({
+      pages: s.pages || [], written, player: 'Player',
+      done: pages => { const st = withCount(s, s.count); st.pages = pages; if (!pages.some(Boolean)) delete st.pages; put(st); },
+      sign: (title, pages) => { if (I.written_book === undefined) return; put({ id: I.written_book, count: 1, pages, title, author: 'Player' }); },
+    }));
+    return true;
   }
   // seeds and berries go in the ground when the block clicked takes them
   canPlant(it, hit) {
