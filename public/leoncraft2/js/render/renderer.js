@@ -395,6 +395,22 @@ export class Renderer {
      The block's own shape (or the flat item picture for plants, doors,
      torches) in the terrain's own vertex format, so it takes the same light,
      shadow and fog. See blockmesh.js. */
+  /* Every shader the world, the hand and the player's model are drawn with,
+     compiled now (behind the loading screen) rather than in the frame that
+     first needs one: three.js builds a program the first time a material is
+     drawn, and that frame stalled for a tenth of a second or more (the first
+     F5, the first block in your hand, the first break). */
+  precompile() {
+    const r = this.r, cam = this.camera;
+    const extra = new THREE.Scene();
+    for (const k in this.mats) { const m = this.mats[k]; if (m && m.isMaterial) extra.add(new THREE.Mesh(this.standGeo, m)); }
+    try {
+      r.setRenderTarget(this.vanilla || this.ldr ? null : this.main);
+      for (const s of [this.scene, this.trans, this.handScene, extra]) r.compile(s, cam);
+      if (this.opts.shadows) { r.setRenderTarget(this.shadowRT); r.compile(this.shadowScene, this.shadowCam); }
+    } catch (e) { console.warn('precompile', e); }
+    r.setRenderTarget(null);
+  }
   setHeld(id, BLOCKS) {
     this.hand.clear();
     const d = BLOCKS[id];

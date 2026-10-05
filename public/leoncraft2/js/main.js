@@ -551,6 +551,8 @@ async function boot() {
     loading = null;
     gui.panorama = false; gui.inGame = true;
     gui.closeAll();
+    // every shader compiled now, not in the first frame that needs it (the first F5, the first drop)
+    renderer.precompile();
     startedAt = performance.now();
     // only now does the loop play it: until every part (items lying about, mobs, the
     // simulation, the dimensions) is in place, a frame would trip over the missing ones
@@ -749,7 +751,8 @@ async function boot() {
   document.addEventListener('pointerlockerror', () => { if (!promised) lockFailed(); });
   canvas.addEventListener('click', () => { if (game && !gui.isOpen()) lock(); });
   let wantInv = false;
-  // zoom (C held): the view narrows to a quarter, easing in and out, and the mouse turns slower to match
+  /* zoom (C held): the view narrows to a quarter and the mouse turns slower to match, at once,
+     the way OptiFine's zoom key does (eased, it took a fifth of a second to get there) */
   let zoomHeld = false, zoomF = 1;
   /* ---- chat and commands ---- */
   function setMode(m) {
@@ -857,8 +860,20 @@ async function boot() {
       return;
     }
     if (!locked()) return;
+    /* Esc reaches the page only in fullscreen, where the game keeps it (ui/menus.js setFullscreen):
+       the game menu, with the mouse let go by the game itself, so Back to Game or Esc again takes
+       it back at once, as in the game. */
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      if (!e.repeat) {
+        wantInv = true; for (const k in game.player.keys) game.player.keys[k] = false; letGo();
+        // (this Esc was the page's own, so the next one may close the menu straight away)
+        const ps = new PauseScreen(); ps.openedAt = -1e9; gui.open(ps);
+      }
+      return;
+    }
     // C, held: zoom in
-    if (!a && e.code === 'KeyC') { zoomHeld = true; e.preventDefault(); return; }
+    if (!a && e.code === 'KeyC') { zoomHeld = true; zoomF = 0.25; e.preventDefault(); return; }
     // chat: T, or / with the slash already typed
     if ((a === 'chat' || (!a && e.code === 'KeyT')) && !e.repeat) { e.preventDefault(); openChat(''); return; }
     if ((a === 'command' || e.key === '/') && !e.repeat) { e.preventDefault(); openChat('/'); return; }
@@ -872,7 +887,7 @@ async function boot() {
     if (a && MOVE[a]) { game.player.setKey(MOVE[a], true); e.preventDefault(); }
   });
   document.addEventListener('keyup', e => {
-    if (e.code === 'KeyC') zoomHeld = false;
+    if (e.code === 'KeyC') { zoomHeld = false; zoomF = 1; }
     if (!game) return;
     const a = bindingOf(e.code) || (e.code === 'KeyR' ? 'sprint' : null);
     if (a === 'debug' || e.code === 'F3') { if (f3Held && !f3Combo && !gui.isOpen()) { showDebug = !showDebug; if (!showDebug && hud) hud.setDebug(null); } f3Held = false; return; }
@@ -1031,7 +1046,7 @@ async function boot() {
     g.realms.frame(alpha, dt);
     const boss = g.realms.boss;
     if ((boss ? boss.progress : -1) !== (hud.boss ? hud.boss.progress : -1)) { hud.boss = boss ? Object.assign({}, boss) : null; hud.markDirty(); }
-    zoomF += ((zoomHeld ? 0.25 : 1) - zoomF) * Math.min(1, dt * 12);
+    zoomF = zoomHeld ? 0.25 : 1;
     // the card still busy with the frames before: this one is not drawn (see cardBusy)
     if (draw) {
       const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));

@@ -647,6 +647,21 @@ const QUALITY_TIPS = {
 };
 const QUALITY_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
 
+/* Fullscreen, as the game's own button. In a window the browser keeps Esc
+   for itself: it lets go of the mouse, and will not give it back for a
+   second and a quarter, nor at all for a key (Esc to leave the game menu)
+   rather than a click. In fullscreen the page may keep Esc (the keyboard
+   lock), so Esc opens and closes the game menu with the mouse taken back at
+   once, as in the game; holding Esc leaves fullscreen. */
+function setFullscreen(on) {
+  const d = document;
+  if (on && !d.fullscreenElement && d.documentElement.requestFullscreen) {
+    d.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+      if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {});
+    }, () => {});
+  } else if (!on && d.fullscreenElement) d.exitFullscreen().catch(() => {});
+}
+
 export class VideoSettingsScreen extends OptionsListScreen {
   constructor() { super('Video Settings'); }
   // the graphics setting is put into effect on the way out, and only if it changed
@@ -690,12 +705,15 @@ export class VideoSettingsScreen extends OptionsListScreen {
     const fe = optSlider(o, 'fovEffects', 0, 1, 0.01, v => 'FOV Effects: ' + (v <= 0 ? 'OFF' : pct(v)));
     fe.tooltip = 'How much the view widens when you sprint or fly.';
     const blur = optSlider(o, 'menuBlur', 0, 10, 1, v => 'Menu Background Blurriness: ' + (v ? v : 'OFF'));
+    const full = new CycleButton(0, 0, 150, 20, 'Fullscreen', { values: [false, true], value: !!document.fullscreenElement, format: onOff, onChange: v => setFullscreen(v) });
+    full.tooltip = 'In fullscreen Esc goes to the game menu and back at once. Hold Esc to leave fullscreen.';
     list.entries = [
       new WidgetRow(graphics, rd),
       new WidgetRow(rs, fps),
       new WidgetRow(optToggle(o, 'bobbing', 'View Bobbing'), gs),
       new WidgetRow(br, clouds),
-      new WidgetRow(fe, blur),
+      new WidgetRow(full, fe),
+      new WidgetRow(blur),
     ];
   }
 }
