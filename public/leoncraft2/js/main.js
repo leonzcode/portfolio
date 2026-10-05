@@ -694,6 +694,8 @@ async function boot() {
     const g = game;
     await saveGame();
     g.drops.dispose();
+    if (g.details) g.details.dispose();
+    scope(false);
     game = null;
     if (g.entities) g.entities.dispose();
     if (g.sim) g.sim.dispose();
@@ -747,6 +749,25 @@ async function boot() {
   let wantInv = false;
   // zoom (C held): the view narrows to a quarter, easing in and out, and the mouse turns slower to match
   let zoomHeld = false, zoomF = 1;
+  /* The spyglass, held to the eye with the use button: a tenth of the view and the mouse slowed with it, the
+     world seen through a round glass (everything outside it black), the hand put away. */
+  let scopeEl = null, scoped = false;
+  function spyglassUp() {
+    const g = game;
+    if (!g || gui.isOpen() || !g.inter.useHeld) return false;
+    return itemName(g.inv.heldId()) === 'spyglass' || (!g.inv.heldId() && g.inv.offhand && itemName(g.inv.offhand.id) === 'spyglass');
+  }
+  function scope(on) {
+    if (on === scoped) return;
+    scoped = on;
+    if (!scopeEl) {
+      scopeEl = document.createElement('div');
+      scopeEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;display:none;' +
+        'background:radial-gradient(circle at center, transparent 0, transparent calc(min(50vw, 50vh) - 3px), rgba(0,0,0,0.75) calc(min(50vw, 50vh) - 2px), #000 min(50vw, 50vh))';
+      canvas.parentNode.insertBefore(scopeEl, canvas.nextSibling);
+    }
+    scopeEl.style.display = on ? 'block' : 'none';
+  }
   /* ---- chat and commands ---- */
   function setMode(m) {
     const g = game;
@@ -1002,10 +1023,11 @@ async function boot() {
     if ((boss ? boss.progress : -1) !== (hud.boss ? hud.boss.progress : -1)) { hud.boss = boss ? Object.assign({}, boss) : null; hud.markDirty(); }
     const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));
     const onGrass = player.onGround && !player.flying;
+    scope(spyglassUp());
     renderer.render({
       time: (g.time + alpha) / 20, sunDir, moonDir, feet: v.feet, eye: v.eye, yaw: player.yaw, pitch: player.pitch,
-      fov: player.fov * (g.entities ? g.entities.combat.fovScale(alpha) : 1) * (zoomF += ((zoomHeld ? 0.25 : 1) - zoomF) * Math.min(1, dt * 12)), eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
-      moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: g.hands.handBob(v.handBob),
+      fov: player.fov * (g.entities ? g.entities.combat.fovScale(alpha) : 1) * (zoomF += ((scoped ? 0.1 : zoomHeld ? 0.25 : 1) - zoomF) * Math.min(1, dt * (scoped ? 30 : 12))), eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
+      moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud && !scoped, bob: g.hands.handBob(v.handBob),
       waterTint: tintAt(world, v.eye), player, alpha,
       // hurt: the camera tilts and the model flashes red (combat/combat.js)
       tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
