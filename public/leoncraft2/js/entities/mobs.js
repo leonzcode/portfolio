@@ -59,6 +59,18 @@ export function spawnArmor(mob) {
   }
 }
 
+/* On Halloween (31 October, by the player's own clock) a zombie or a
+   skeleton with nothing on its head has a 25% chance to appear in a carved
+   pumpkin, one in ten of those a jack o'lantern, which it never drops (the
+   game's rule). */
+export function halloweenHead(mob) {
+  if (mob.equip.head) return;
+  const d = new Date();
+  if (d.getMonth() !== 9 || d.getDate() !== 31 || R() >= 0.25) return;
+  mob.equip.head = R() < 0.1 ? 'jack_o_lantern' : 'carved_pumpkin';
+  mob.dropChance = Object.assign(mob.dropChance || {}, { head: 0 });
+}
+
 /* ---------------------------------------------------------------------------
    Monsters: they burn in daylight (the undead), prefer the dark when they
    wander, and go away when you are far off.
@@ -109,6 +121,7 @@ export class Zombie extends Monster {
     // 5% are babies (and some of those ride chickens, not here)
     if (R() < 0.05) this.setBaby(true);
     if (this.constructor.SPAWN_ARMOR) spawnArmor(this);
+    halloweenHead(this);
     // can break doors on Hard (a 10% chance per zombie, scaled by regional difficulty: about 10%)
     this.breaksDoors = this.m.difficulty === 'hard' && R() < 0.1;
   }
@@ -212,7 +225,7 @@ register('zombie_villager', ZombieVillager);
 export class Skeleton extends Monster {
   static W = 0.6; static H = 1.99; static HEALTH = 20; static SPEED = 0.25; static ATTACK = 2; static FOLLOW = 16;
   static UNDEAD = true; static MODEL = 'skeleton'; static TEX = 'skeleton'; static SHADOW = 0.5; static SPAWN_ARMOR = true;
-  finalizeSpawn() { if (this.constructor.SPAWN_ARMOR) spawnArmor(this); }
+  finalizeSpawn() { if (this.constructor.SPAWN_ARMOR) spawnArmor(this); halloweenHead(this); }
   constructor(m, type) { super(m, type); this.equip.mainhand = 'bow'; this.snowT = 0; this.convertT = -1; }
   registerGoals() {
     this.goals.add(3, new AvoidGoal(this, e => e.type === 'wolf' && !e.dead, 6, 1, 1.2));

@@ -124,6 +124,17 @@ export function placeInHand(m, arm, side, kind, inset, t, e) {
   m.multiply(t.makeTranslation(0, -1, 0));          // the hand geometry's cube is centred one block up
   return m;
 }
+/* A block worn on a head that is not armour, the game's head layer, into m
+   from the head's matrix (model pixels, y up, +z the face): a block 10
+   pixels a side (0.625 of a block) about the middle of the head; a mob head
+   (skull) 1.1875 times its size, standing on the neck, its face (the -z side
+   of our placed head) turned to the front. */
+export function placeOnHead(m, head, skull, t) {
+  m.copy(head);
+  if (skull) m.multiply(t.makeTranslation(0, -9.5, 0)).multiply(t.makeScale(19, 19, 19)).multiply(t.makeRotationY(PI));
+  else m.multiply(t.makeTranslation(0, 4, 0)).multiply(t.makeScale(10, 10, 10)).multiply(t.makeTranslation(0, -1, 0));
+  return m;
+}
 // one of the DISPLAY entries onto m (t, e: scratch)
 export function applyDisplay(m, spec, t, e) {
   const [tr, r, s] = spec;
