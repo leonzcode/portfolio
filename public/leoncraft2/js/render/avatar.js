@@ -166,9 +166,12 @@ function buildGeometry(slim, onlyParts) {
 /* armour's colour: the piece in its dye, and where it has an undyed overlay
    (leather's), the overlay on top as it is */
 const ARMOR_OVERLAY = /* glsl */`
+in vec2 vUv3; in vec3 vTrimC;
 vec4 armorColour(vec4 t) {
   vec4 c = vec4(t.rgb * vTint, t.a);
   if (vUv2.x >= 0.0) { vec4 o = texture(uSkin, vUv2); if (o.a >= 0.1) c = vec4(o.rgb, 1.0); }
+  // a trim, in its material's colour, wherever it lands on the armour
+  if (vUv3.x >= 0.0 && c.a >= 0.1) { vec4 m = texture(uSkin, vUv3); if (m.a >= 0.1) c = vec4(m.rgb * vTrimC, 1.0); }
   return c;
 }`;
 export { ARMOR_OVERLAY };
@@ -183,8 +186,9 @@ out vec3 vWorld; out vec3 vN; out vec2 vUv; flat out int vLayer;
 // per piece (helmet, chestplate, leggings, boots, an elytra): its row's first pixel in the sheet, worn, glint, its overlay's row (or -1); and its colour
 uniform vec4 uPiece[5];
 uniform vec3 uTint[5];
+uniform vec4 uTrim[5];   // per piece: its trim's row (or -1) and colour
 uniform vec2 uSheet;
-out vec3 vTint; out vec3 vG; out vec2 vUv2;
+out vec3 vTint; out vec3 vG; out vec2 vUv2; out vec2 vUv3; out vec3 vTrimC;
 #endif
 void main() {
   int layer = int(aPart.y + 0.5);
@@ -193,6 +197,8 @@ void main() {
   vLayer = 1; vUv = (uv + vec2(0.0, pc.x)) / uSheet;
   vTint = uTint[layer]; vG = vec3(uv, pc.z);
   vUv2 = pc.w < 0.0 ? vec2(-1.0) : (uv + vec2(0.0, pc.w)) / uSheet;
+  vec4 tr = uTrim[layer];
+  vUv3 = tr.x < 0.0 ? vec2(-1.0) : (uv + vec2(0.0, tr.x)) / uSheet; vTrimC = tr.yzw;
   // a piece not worn goes behind the far plane
   if (pc.y < 0.5) { vWorld = vec3(0.0); vN = vec3(0.0, 1.0, 0.0); gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
 #else
@@ -436,7 +442,8 @@ export class Avatar {
     this.armorV = sheet.version;
     this.uPiece = { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector4()) };
     this.uTint = { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector3(1, 1, 1)) };
-    const auni = Object.assign({}, uni, { uSkin: { value: atex }, uPiece: this.uPiece, uTint: this.uTint, uSheet: { value: new THREE.Vector2(SHEET_W, SHEET_H) } });
+    this.uTrim = { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector4(-1, 1, 1, 1)) };
+    const auni = Object.assign({}, uni, { uSkin: { value: atex }, uPiece: this.uPiece, uTint: this.uTint, uTrim: this.uTrim, uSheet: { value: new THREE.Vector2(SHEET_W, SHEET_H) } });
     const adefs = Object.assign({}, defines, { ARMOR: 1 });
     this.armorMat = mk(VS, FS, auni, null, ARMOR_FS_VANILLA, adefs);
     this.armorShadowMat = new THREE.RawShaderMaterial({
@@ -530,7 +537,8 @@ export class Avatar {
   setArmor(stacks) {
     let any = false;
     for (let i = 0; i < 4; i++) {
-      const look = pieceLook(stacks && stacks[i]), p = this.uPiece.value[i];
+      const look = pieceLook(stacks && stacks[i]), p = this.uPiece.value[i], tr = look && look.trim;
+      this.uTrim.value[i].set(tr ? tr.row * 64 : -1, tr ? ((tr.colour >> 16) & 255) / 255 : 1, tr ? ((tr.colour >> 8) & 255) / 255 : 1, tr ? (tr.colour & 255) / 255 : 1);
       if (!look) { p.set(0, 0, 0, 0); continue; }
       any = true;
       p.set(look.row * 64, 1, look.glint ? 1 : 0, look.overlay >= 0 ? look.overlay * 64 : -1);

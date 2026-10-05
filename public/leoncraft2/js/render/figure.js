@@ -124,7 +124,7 @@ export class Figure {
     // the armour: its own copy of what is worn (the model hides the helmet from a camera pulled right into the head)
     this.uPiece = { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector4()) };
     this.armor = new THREE.Mesh(A.armor.geometry, mk(SKIN_FS, {
-      uSkin: { value: A.armorTex }, uParts, uShow: A.uShow, uPiece: this.uPiece, uTint: A.uTint,
+      uSkin: { value: A.armorTex }, uParts, uShow: A.uShow, uPiece: this.uPiece, uTint: A.uTint, uTrim: A.uTrim,
       uSheet: { value: new THREE.Vector2(SHEET_W, SHEET_H) }, uNoise: R.U.uNoise, uClock: R.U.uClock,
     }, { ARMOR: 1 }));
     this.itemMat = new THREE.RawShaderMaterial({

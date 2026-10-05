@@ -36,7 +36,17 @@ export const OVERLAY_ROW = ARMOR_MATS.length;
 const OVERLAYS = { leather: [2] };
 // and the elytra's (our own drawing, see elytraArt)
 export const ELYTRA_ROW = OVERLAY_ROW + 1;
-export const SHEET_W = 64, SHEET_H = 64 * (ARMOR_MATS.length + 2);
+/* then one row per armour trim pattern (from a smithing table): our own
+   designs, white where the trim is, coloured by its material when drawn */
+export const TRIM_PATTERNS = ['sentry', 'dune', 'coast', 'wild', 'ward', 'eye', 'vex', 'tide', 'snout', 'rib', 'spire', 'wayfinder', 'shaper', 'silence', 'raiser', 'host', 'flow', 'bolt'];
+const TRIM_ROW = ELYTRA_ROW + 1;
+// each trim material's colour (an iron trim on iron armour, and so on, is drawn darker, as the game does)
+const TRIM_COLOURS = {
+  amethyst: 0x9a5cc6, copper: 0xb4684d, diamond: 0x6eecd2, emerald: 0x11a036, gold: 0xdeb12d, iron: 0xcecaca,
+  lapis: 0x416e97, netherite: 0x625859, quartz: 0xe3d4c4, redstone: 0xb02e26, resin: 0xfc7812,
+};
+const SAME = { iron: 'iron', gold: 'golden', diamond: 'diamond', netherite: 'netherite', copper: 'copper' };
+export const SHEET_W = 64, SHEET_H = 64 * (TRIM_ROW + TRIM_PATTERNS.length);
 // leather with no dye on it
 export const LEATHER = 0xa06540;
 
@@ -96,8 +106,15 @@ export function pieceLook(stack) {
   const a = armorOf(stack.id);
   if (!a || ROW[a.material] === undefined) return null;
   const tint = a.material === 'leather' ? (typeof stack.color === 'number' ? stack.color : LEATHER) : 0xffffff;
-  return { row: ROW[a.material], material: a.material, tint, overlay: OVERLAYS[a.material] ? OVERLAY_ROW : -1, glint: glints(stack) };
+  // a trim from a smithing table: its pattern's row and its material's colour
+  let trim = null;
+  if (stack.trim) {
+    const i = TRIM_PATTERNS.indexOf(stack.trim[0]), c = TRIM_COLOURS[stack.trim[1]];
+    if (i >= 0 && c !== undefined) trim = { row: TRIM_ROW + i, colour: SAME[stack.trim[1]] === a.material ? darker(c) : c };
+  }
+  return { row: ROW[a.material], material: a.material, tint, overlay: OVERLAYS[a.material] ? OVERLAY_ROW : -1, glint: glints(stack), trim };
 }
+const darker = c => (Math.round(((c >> 16) & 255) * 0.72) << 16) | (Math.round(((c >> 8) & 255) * 0.72) << 8) | Math.round((c & 255) * 0.72);
 
 /* What an elytra in the chest slot looks like (piece 4), or null. */
 export function elytraLook(stack) {
@@ -115,6 +132,7 @@ export function armorSheet() {
   const g = canvas.getContext('2d');
   ARMOR_MATS.forEach((m, i) => standIn(g, m, i * 64));
   elytraArt(g, ELYTRA_ROW * 64);
+  TRIM_PATTERNS.forEach((n, i) => trimArt(g, n, (TRIM_ROW + i) * 64));
   sheet.version++;
   const base = new URL('../../textures/armor/', import.meta.url).href;
   const load = src => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
@@ -205,6 +223,70 @@ function elytraArt(g, y0) {
   // ragged tips along the bottom
   g.clearRect(22, y0 + 21, 24, 1);
   for (let x = 24; x < 46; x += 3) g.clearRect(x, y0 + 20, 1, 1);
+}
+
+/* The trims, our own designs: each pattern a few strokes (bands, stripes,
+   waves, frames, a diamond, zigzags, chevrons...) on the armour's faces in
+   the humanoid layout, layer 1 (helmet, chestplate, boots) above layer 2
+   (leggings). Only the parts that land on armour are ever drawn. */
+const TRIMS = {
+  sentry: [['chestBand', 24], ['helmBand', 9], ['legBand', 26], ['bootBand', 28]],
+  dune: [['chestStripes'], ['helmBand', 14], ['legStripes', 0]],
+  coast: [['chestWave', 26], ['legWave', 24], ['helmBand', 9]],
+  wild: [['chestDiag'], ['legDiag', 0], ['helmDiag']],
+  ward: [['chestFrame'], ['chestBar'], ['helmFrame'], ['legStripes', 0]],
+  eye: [['chestDiamond'], ['helmDiamond'], ['bootBand', 29]],
+  vex: [['chestZig', 22], ['legZig', 28], ['helmZig', 10]],
+  tide: [['chestWave', 29], ['legWave', 28], ['bootBand', 30]],
+  snout: [['chestBand', 30], ['helmBand', 15], ['chestDots', 22]],
+  rib: [['chestRibs'], ['legRibs']],
+  spire: [['chestBar'], ['helmBar'], ['legStripes', 1]],
+  wayfinder: [['chestCross'], ['legDiag', 1]],
+  shaper: [['chestCorners'], ['helmCorners'], ['legBand', 22]],
+  silence: [['chestFrame'], ['chestDiamond'], ['helmFrame'], ['legBand', 22]],
+  raiser: [['chestChevrons'], ['legChevrons']],
+  host: [['chestFrame'], ['legFrame'], ['helmBand', 8]],
+  flow: [['chestWave', 22], ['chestWave', 28], ['legWave', 26]],
+  bolt: [['chestBolt'], ['legZig', 24], ['helmBand', 12]],
+};
+function trimArt(g, name, y0) {
+  const px = (x, y, v) => { g.fillStyle = `rgb(${v}, ${v}, ${v})`; g.fillRect(x, y0 + y, 1, 1); };
+  const P = (x, y) => px(x, y, 232), D = (x, y) => px(x, y, 176);
+  const L2 = 32;   // layer 2 (the leggings) is below layer 1
+  const both = (fx, y, f) => { f(fx, y); f(fx + 12, y); };   // the chest's front (20..27) and back (32..39)
+  const M = {
+    chestBand: r => { for (let x = 16; x < 40; x++) { P(x, r); D(x, r + 1); } },
+    helmBand: r => { for (let x = 0; x < 32; x++) P(x, r); },
+    legBand: r => { for (let x = 0; x < 16; x++) { P(x, L2 + r); D(x, L2 + r + 1); } },
+    bootBand: r => { for (let x = 0; x < 16; x++) P(x, r); },
+    chestStripes: () => { for (let y = 20; y < 32; y++) for (const x of [21, 24, 26]) both(x, y, P); },
+    legStripes: k => { for (let y = 20; y < 32; y++) for (const x of [1, 5 + k, 9, 13 + k]) P(x, L2 + y); },
+    chestWave: r => { for (let x = 16; x < 40; x++) P(x, r + Math.round(Math.sin(x * 0.8))); },
+    legWave: r => { for (let x = 0; x < 16; x++) P(x, L2 + r + Math.round(Math.sin(x * 1.1))); },
+    chestDiag: () => { for (let i = 0; i < 12; i++) both(20 + (i * 2 % 8), 20 + i, P); },
+    legDiag: k => { for (let y = 20; y < 32; y++) { P(4 + ((y + k) % 4), L2 + y); P(12 + ((y + k) % 4), L2 + y); } },
+    helmDiag: () => { for (let i = 0; i < 8; i++) { P(i, 8 + i); P(16 + i, 8 + i); P(24 + i, 8 + i); } },
+    chestFrame: () => { for (let x = 20; x < 28; x++) { both(x, 20, P); both(x, 31, P); } for (let y = 20; y < 32; y++) { both(20, y, P); both(27, y, P); } },
+    chestBar: () => { for (let y = 20; y < 32; y++) { both(23, y, P); both(24, y, D); } },
+    helmFrame: () => { for (let x = 0; x < 32; x++) { P(x, 8); P(x, 15); } },
+    helmBar: () => { for (let y = 0; y < 8; y++) P(12, y); for (let y = 8; y < 11; y++) { P(11, y); P(12, y); P(28, y); } },
+    chestDiamond: () => { for (let y = 20; y < 32; y++) for (let x = 20; x < 28; x++) { const d = Math.abs(x - 23.5) + Math.abs(y - 25.5); if (d > 2 && d < 3.6) both(x, y, P); } },
+    helmDiamond: () => { for (let y = 8; y < 12; y++) for (let x = 8; x < 16; x++) { const d = Math.abs(x - 11.5) + Math.abs(y - 9.5); if (d > 1 && d < 2.6) P(x, y); } },
+    chestZig: r => { for (let x = 16; x < 40; x++) P(x, r + Math.abs((x % 4) - 2)); },
+    legZig: r => { for (let x = 0; x < 16; x++) P(x, L2 + r + Math.abs((x % 4) - 2)); },
+    helmZig: r => { for (let x = 0; x < 32; x++) P(x, r + Math.abs((x % 4) - 2)); },
+    chestDots: r => { for (let x = 20; x < 28; x += 2) { both(x, r, P); both(x + 1, r + 2, P); } },
+    chestRibs: () => { for (const r of [22, 25, 28]) for (let x = 21; x < 27; x++) { both(x, r, P); both(x, r + 1, D); } },
+    legRibs: () => { for (const r of [23, 26, 29]) for (let x = 0; x < 16; x++) if (x % 4 !== 0) P(x, L2 + r); },
+    chestCross: () => { for (let i = 0; i < 8; i++) { both(20 + i, 22 + i, P); both(27 - i, 22 + i, P); } },
+    chestCorners: () => { for (const [x, y] of [[20, 20], [26, 20], [20, 30], [26, 30]]) for (const [a, b] of [[0, 0], [1, 0], [0, 1], [1, 1]]) both(x + a, y + b, P); },
+    helmCorners: () => { for (const [x, y] of [[8, 8], [14, 8], [0, 8], [22, 8]]) for (const [a, b] of [[0, 0], [1, 0], [0, 1]]) P(x + a, y + b); },
+    chestChevrons: () => { for (const k of [21, 25, 29]) for (let i = 0; i < 3; i++) { both(23 - i, k + i, P); both(24 + i, k + i, P); } },
+    legChevrons: () => { for (const k of [22, 27]) for (const o of [4, 12]) { P(o + 1, L2 + k); P(o + 2, L2 + k); P(o, L2 + k + 1); P(o + 3, L2 + k + 1); } },
+    legFrame: () => { for (let y = 20; y < 32; y++) for (const x of [4, 7, 12, 15]) P(x, L2 + y); },
+    chestBolt: () => { const z = [0, 1, 2, 1, 0, 1, 2, 3, 2, 1, 2, 3]; for (let i = 0; i < 12; i++) both(22 + z[i], 20 + i, P); },
+  };
+  for (const [m, a] of TRIMS[name]) M[m](a);
 }
 
 /* ---- the player's armour geometry: all four pieces, every vertex knowing
