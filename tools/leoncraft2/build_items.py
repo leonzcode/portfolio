@@ -28,9 +28,9 @@ data/item_sources.json says which pack's drawing each picture is, how
 strongly its colours are pulled and where it sits: the drawing nearest the
 game's own picture, judged on a local copy of the game's item textures
 (October 2026, 26.1.2) once its colours are pulled and it is placed, with
-whole families from one pack so they match (every tool and every armour
-piece from Bauniclonia, all spawn eggs from Legacy, the three ingots from one
-pack...). The colours are pulled towards the game's own average and spread
+whole families from one pack so they match (every tool, helmet, chestplate
+and boots from Bauniclonia, the leggings from Pixel Perfection, all spawn eggs
+from Legacy, the three ingots from one pack...). The colours are pulled towards the game's own average and spread
 (data/vanilla_item_colour_stats.json, six numbers per picture, no pixels), at
 the strength the sources file gives (1 full, 0.5 half, 0 not at all), the one
 that comes nearest once both the per-pixel distance and the distance between
@@ -69,9 +69,17 @@ wherever the outline is all but the same, which is how a trace shows. It
 found more, never used: CE's phantom membrane and nautilus shell (the 1.13
 pictures recoloured, interior 0.94 and 0.96 on the same outline) and Miner
 16px's ingots (the 1.8 ingot, 0.85 and 0.87; its apple has the 1.8 outline
-too), so nothing is taken from Miner 16px. The audit's other flags are shapes
-so simple that any drawing shares their outline (a stick, the leggings);
-those were looked at one by one and are drawn differently.
+too), so nothing is taken from Miner 16px.
+The same audit in all eight orientations (every picture turned a quarter at a
+time and mirrored, as well as moved; October 2026), with every leggings,
+helmet, boots, chestplate, stick, pickaxe and sword drawing of the packs put
+through it for comparison: Bauniclonia's leggings were the only leggings of
+more than forty to share the game's leggings outline exactly, with the inside
+detail following (0.83 to 0.88, the traced ingots' signature), so the leggings
+come from Pixel Perfection CE and Legacy. Still flagged, looked at and kept:
+the stick (the plain corner-to-corner stick of 1.8), and tools and helmets
+whose placed drawing lines up with another game picture along a handle or a
+rim (the pack drawings on their own score 0.6 to 0.76, as other packs' do).
 The turtle helmet (picture and model) is Bauniclonia's leather cap
 recoloured. The compass and mace drawings below are used only when REFI
 Textures is not given, and the shield drawing only without Pixel Perfection
