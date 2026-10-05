@@ -7,14 +7,14 @@
    this one gathers them. PLANS.abandoned_camp handles every
    abandoned_camp_<biome> type (ctx.type says which).
 --------------------------------------------------------------------------- */
-import { PLANS as VILLAGES } from './villages.js?v=12';
-import { PLANS as SMALL } from './small.js?v=12';
-import { PLANS as PORTALS } from './portals.js?v=12';
-import { PLANS as OCEAN } from './ocean.js?v=12';
-import { PLANS as MANSION } from './mansion.js?v=12';
-import { PLANS as TRAIL } from './trail.js?v=12';
-import { PLANS as TRIAL } from './trial.js?v=12';
-import { PLANS as ANCIENT } from './ancient_city.js?v=12';
-import { PLANS as NETHER_END } from './nether_end.js?v=12';
+import { PLANS as VILLAGES } from './villages.js?v=13';
+import { PLANS as SMALL } from './small.js?v=13';
+import { PLANS as PORTALS } from './portals.js?v=13';
+import { PLANS as OCEAN } from './ocean.js?v=13';
+import { PLANS as MANSION } from './mansion.js?v=13';
+import { PLANS as TRAIL } from './trail.js?v=13';
+import { PLANS as TRIAL } from './trial.js?v=13';
+import { PLANS as ANCIENT } from './ancient_city.js?v=13';
+import { PLANS as NETHER_END } from './nether_end.js?v=13';
 
 export const PLANS = Object.assign({}, VILLAGES, SMALL, PORTALS, OCEAN, MANSION, TRAIL, TRIAL, ANCIENT, NETHER_END);
