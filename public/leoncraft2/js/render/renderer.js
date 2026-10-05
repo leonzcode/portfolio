@@ -25,7 +25,8 @@ import { FullScreen } from './sky.js?v=14';
 import { Avatar } from './avatar.js?v=14';
 import { Held } from './held.js?v=14';
 import { Figure } from './figure.js?v=14';
-import { glints } from './armor.js?v=14';
+import { PumpkinView } from './pumpkin.js?v=14';
+import { glints, pieceLook } from './armor.js?v=14';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=14';
 import { dimLook } from '../dim/look.js?v=14';
 const THREE = window.THREE;
@@ -103,6 +104,8 @@ export class Renderer {
     // you in the inventory screen (figure.js): main.js gives it to the inventory as drawPlayer
     this.figure = new Figure(this);
     this.wearer = null;
+    // the view out of a carved pumpkin worn on the head (pumpkin.js)
+    this.pumpkin = new PumpkinView(this.r.domElement);
     this.columns = new Map();
     this.frame = 0;
     this.resize(canvas.clientWidth || 1280, canvas.clientHeight || 720);
@@ -433,10 +436,19 @@ export class Renderer {
       if (W[i] !== s || W[i + 4] !== id || W[i + 8] !== en || W[i + 12] !== col) { W[i] = s; W[i + 4] = id; W[i + 8] = en; W[i + 12] = col; changed = true; }
     }
     if (changed) this.avatar.setArmor(inv.armor);
+    // a block worn on the head that is not armour (a carved pumpkin, a mob head): the block itself
+    const hid = W[4];
+    if (hid !== this.headId) {
+      this.headId = hid;
+      const d = hid && !pieceLook(inv.armor[0]) ? DRAW[hid] : null;
+      this.avatar.setHeadItem(d);
+      this.headPumpkin = !!d && d.name === 'carved_pumpkin';
+    }
   }
   // first person only: your arm, and whatever it holds (held.js)
   drawHand(state, cam, dt) {
     this.swing = Math.max(0, this.swing - dt * 3.2);
+    this.pumpkin.show(this.headPumpkin && state.showHand !== false && !this.avatar.view);
     if (state.showHand === false || this.avatar.view) return;
     this.held.draw(state, cam, dt);
   }

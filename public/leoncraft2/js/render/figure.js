@@ -131,7 +131,7 @@ export class Figure {
       glslVersion: THREE.GLSL3, vertexShader: ITEM_HEAD + ITEM_VS, fragmentShader: ITEM_HEAD + ITEM_FS,
       uniforms: { uAlbedo: R.U.uAlbedo }, side: THREE.DoubleSide,
     });
-    this.items = [null, null];
+    this.items = [null, null]; this.headMesh = null;
     for (const m of [this.body, this.armor]) { m.frustumCulled = false; m.matrixAutoUpdate = false; this.scene.add(m); }
     // the picture, and reading it back
     this.rt = null; this.w = 0; this.h = 0;
@@ -210,6 +210,19 @@ export class Figure {
       A.placeHeld(side, src.kind, this.parts, m.matrix);
       m.matrixWorldNeedsUpdate = true;
       setGlint(m, A.heldGlint[side], this.R, true);
+    }
+    // a carved pumpkin or a mob head worn on the head
+    const hs = A.headItem;
+    let hm = this.headMesh;
+    if (hm && (!hs || hm.geometry !== hs.mesh.geometry)) { this.scene.remove(hm); hm = this.headMesh = null; }
+    if (hs) {
+      if (!hm) {
+        hm = this.headMesh = new THREE.Mesh(hs.mesh.geometry, this.itemMat);
+        hm.frustumCulled = false; hm.matrixAutoUpdate = false;
+        this.scene.add(hm);
+      }
+      A.placeHead(hs.skull, this.parts, hm.matrix);
+      hm.matrixWorldNeedsUpdate = true;
     }
   }
 
