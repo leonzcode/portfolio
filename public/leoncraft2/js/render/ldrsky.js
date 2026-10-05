@@ -71,6 +71,16 @@ void main() {
   o = vec4(toSRGB(agx(col * exposureNow())), 1.0);
 }`;
 
+/* Drawn after the blocks, at the far plane and depth tested, so only the
+   pixels where the sky really shows run this shader (most of a frame is
+   ground and trees). */
+const VS_FAR = /* glsl */`
+in vec3 position;
+out vec2 vUv;
+void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 1.0, 1.0); }
+`;
 export function makeLdrSky(U) {
-  return rawMat(FS, U, {});
+  const m = rawMat(FS, U, { depthTest: true, depthWrite: false, depthFunc: THREE.LessEqualDepth });
+  m.vertexShader = 'precision highp float; precision highp int;\n' + VS_FAR;
+  return m;
 }

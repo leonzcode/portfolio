@@ -9,9 +9,12 @@
              grass; GGX specular (metals use their albedo); emission for
              glowstone, lava and ore glints; caustics and absorption under
              water; plants and leaves moved by the wind and by you.
-   shadow    the same geometry and the same wind, from the sun, into the
+   shadow    the same geometry, standing still, from the sun, into the
              distorted shadow map (leaves alpha tested, so light shafts come
              through their gaps).
+
+   Detailed draws the terrain with lighter shaders that light per vertex
+   (LEAN_VS / LEAN_FS below); the rest is the full chain's.
 --------------------------------------------------------------------------- */
 import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS } from './glsl.js?v=14';
 const THREE = window.THREE;
@@ -255,6 +258,245 @@ void main() {
 #endif
 }`;
 
+/* ---- Detailed's terrain: the light worked out per vertex ----
+   Everything that is the same across a block face (or changes smoothly over
+   it) is worked out at its corners, as Minecraft itself lights a block: the
+   sky's light and the torches' by their levels and the corner shade, the
+   sun or moon on that side (and the glow through leaves and grass with the
+   sun behind them), the exposure and the fog. A pixel then only reads its
+   texture, looks up the shadow map and runs the tone curve, so Detailed
+   costs little more than Fast. No shine on blocks (the water has its own);
+   what glows (torch flames, glowstone, lanterns) reads the material map, and
+   only on those textures (uLayerMat, worked out once from the map itself). */
+const LEAN_VS = /* glsl */`
+uniform mat4 modelMatrix, viewMatrix, projectionMatrix, uShadowMat;
+uniform mat3 uFaceRot;
+uniform vec3 cameraPosition, uLightDir, uDimAmb;
+uniform sampler2D uAmbient, uLayerMat, uView, uNoise;
+uniform float uEyeInWater;
+// the light table's values for this frame, from the CPU (sky.js readLight, renderer.js):
+// sky light from above, the side and below (greyed a little, the sun's bounce in), the sun or moon,
+// and how much daylight washes out torch light
+uniform vec3 uAmbUp, uAmbSide, uAmbDown, uSunC;
+uniform float uDayK;
+layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL; layout(location = 3) in vec4 aC;
+uniform vec3 uChunk;
+` + LDR + LIGHTS + /* glsl */`
+out vec2 vUv; out vec3 vTint;
+out vec3 vAmb;       // sky, torch and held light (exposure and fog in)
+out vec4 vSun;       // the sun or moon on this side (rgb), and the glow through leaves (a)
+out vec4 vShadowP;   // the point in the light's view (xyz), and the light level's guess past the map (w)
+out vec3 vShadowO;   // the nudge off the face, in the same view (turned round for a back face)
+out vec4 vFog;       // the fog's own light (rgb), and how bright what glows is (a, 0 for most textures)
+out float vWet;      // under water: the sun comes through rippling caustics
+#ifdef TRANSLUCENT
+out float vFres;
+#endif
+flat out vec3 vLayers; flat out int vNormal; flat out int vFlags;
+vec3 ambientAt(vec3 n) { return n.y > 0.0 ? mix(uAmbSide, uAmbUp, n.y) : mix(uAmbSide, uAmbDown, -n.y); }
+void main() {
+  vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
+  int nw = int(aA.z + 0.5);
+  int flags = int(aA.w + 0.5);
+  vec4 L = aL / 255.0;
+  world.xyz += windOffset(world.xyz, nw >> 3, aA.y / 16.0, L.x, L.w);
+  gl_Position = projectionMatrix * viewMatrix * world;
+  vUv = aA.xy / 16.0;
+  vNormal = nw & 7;
+  vFlags = flags;
+  vTint = aC.rgb / 255.0;
+  // what the texture is made of (uLayerMat: see LAYER_MAT_FS), and its frames: an animated one blends from one into the next
+  int il = int(aPos.w + 0.5);
+  vec4 mat = texelFetch(uLayerMat, ivec2(il & 255, il >> 8), 0);
+  float frames = floor(mat.b * 255.0 + 0.5);
+  vLayers = vec3(aPos.w, aPos.w, 0.0);
+  if (frames > 1.5) {
+    float f = uTime * 20.0 / max(1.0, floor(mat.a * 255.0 + 0.5));
+    float a = mod(floor(f), frames);
+    vLayers = vec3(aPos.w + a, aPos.w + mod(a + 1.0, frames), fract(f));
+  }
+
+  bool plant = (flags & 32) != 0;
+  vec3 Ng = plant ? vec3(0.0, 1.0, 0.0) : uFaceRot * faceN(nw & 7);
+  float sky = L.x, block = L.y, ao = 0.35 + 0.65 * float(flags & 3) / 3.0, wd = L.z * 15.0;
+  vec3 toEye = cameraPosition - world.xyz;
+  float dist = length(toEye);
+  vec3 V = toEye / max(dist, 1e-4);
+  vec3 Lt = uLightDir;
+  vec3 sun = uSunC * smoothstep(0.03, 0.2, sky);
+  // the glow through leaves and grass, strongest looking into the sun
+  float sss = mat.r, glow = 0.0;
+  if (sss > 0.0) { float b = sat(dot(-V, Lt)), b2 = b * b; glow = (b2 * b2 * b2 * 2.4 + 0.35) * sss * 0.6; }
+  float skyAmt = sky * sky;
+  vec3 amb = ambientAt(Ng) * (skyAmt * ao);
+  // under water: light loses red first on its way down
+  vWet = 0.0;
+  if (wd > 0.5) {
+    vec3 absorb = vec3(0.32, 0.12, 0.05);
+    sun *= exp(-absorb * wd);
+    amb *= exp(-absorb * wd * 0.7);
+    vWet = 1.0;
+  }
+  // block light, and the light in your hand on top (the brighter of the two)
+  block = max(block, heldLight(world.xyz, Ng));
+  if (uDim > 0.5) {
+    // no sun or moon in the other dimensions: the Nether's even light, the End's dim sky light
+    sun = vec3(0.0);
+    amb = uDimAmb * ao * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * skyAmt);
+  }
+  vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : skyAmt * uDayK) * ao : vec3(0.0);
+  vec3 keep, add;
+  fogTerms(world.xyz, keep, add);
+  vAmb = (amb + blockL + vec3(0.0035, 0.004, 0.006) * ao) / PI * keep;
+  vSun = vec4(sun * keep, glow);
+  vFog = vec4(add, mat.g > 0.0 ? 6.0 * dot(keep, vec3(1.0 / 3.0)) : 0.0);
+  // the shadow map's view of this point; squeezed per pixel, since the squeeze is not straight
+  float NoL = plant ? 1.0 : dot(Ng, Lt);
+  vec4 c = uShadowMat * world;
+  vShadowP = vec4(c.xyz, smoothstep(0.85, 0.95, sky));
+  vShadowO = mat3(uShadowMat) * (Ng * 0.25 * clamp(0.12 + 0.01 * dist, 0.0, 1.0) * (2.0 - sat(NoL)));
+#ifdef TRANSLUCENT
+  vFres = pow(1.0 - abs(dot(Ng, V)), 5.0);
+#endif
+}`;
+const LEAN_FS = /* glsl */`
+uniform sampler2DArray uAlbedo, uSpecMap;
+uniform sampler2DShadow uBodyShadow;
+uniform sampler2D uNoise;
+uniform vec4 uBody;
+uniform vec3 uLightDir;
+uniform mat3 uFaceRot;
+uniform mat4 uShadowInv;     // back from the shadow map's view to the world
+uniform float uTime;
+in vec2 vUv; in vec3 vTint; in vec3 vAmb; in vec4 vSun; in vec4 vShadowP; in vec3 vShadowO; in vec4 vFog; in float vWet;
+#ifdef TRANSLUCENT
+in float vFres;
+#endif
+flat in vec3 vLayers; flat in int vNormal; flat in int vFlags;
+layout(location = 0) out vec4 outColor;
+// caustics under water: two scrolling layers of light netting, sharpened
+float caustics(vec3 p) {
+  vec2 q = p.xz - uLightDir.xz / max(uLightDir.y, 0.2) * p.y * 0.2;
+  float t = uTime * 0.35;
+  float a = textureLod(uNoise, q * 0.045 + vec2(t * 0.3, t * 0.17), 0.0).r;
+  float b = textureLod(uNoise, q * 0.071 - vec2(t * 0.21, -t * 0.26), 0.0).g;
+  float c = 1.0 - abs(a - b) * 3.2;
+  return pow(sat(c), 4.0) * 1.1 + 0.6;
+}
+void main() {
+  int rot = (vFlags >> 2) & 3;
+  bool overlay = (vFlags & 16) != 0;
+  bool plant = (vFlags & 32) != 0;
+  bool tinted = (vFlags & 64) != 0;
+  // a texture turned by its variant
+  vec2 uv = vUv;
+  if (rot == 1) uv = vec2(1.0 - vUv.y, vUv.x);
+  else if (rot == 2) uv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
+  else if (rot == 3) uv = vec2(vUv.y, 1.0 - vUv.x);
+  vec4 alb = texture(uAlbedo, vec3(uv, vLayers.x));
+  if (vLayers.z > 0.0) alb = mix(alb, texture(uAlbedo, vec3(uv, vLayers.y)), vLayers.z);
+#ifdef CUTOUT
+  // keep thin leaves and grass blades from vanishing in the distance
+  float a = (alb.a - 0.5) / max(fwidth(alb.a), 1e-4) + 0.5;
+  if (a < 0.5) discard;
+#endif
+  vec3 albedo = alb.rgb;
+  if (overlay) {
+    vec4 ov = texture(uAlbedo, vec3(uv, vLayers.x + 1.0));
+    albedo = mix(albedo, ov.rgb * vTint, ov.a);
+  } else if (tinted) albedo *= vTint;
+  // Minecraft's fast leaves: solid blocks, the gaps a dark leafy shade
+  if ((vFlags & 128) != 0 && alb.a < 0.5) albedo = vTint * 0.42;
+  albedo = toLinear(albedo);
+
+  vec3 light = vAmb;
+  // the sun, through the shadow map, on the side of the face that is showing
+  if (vSun.r + vSun.g + vSun.b > 0.0) {
+    float side = plant || gl_FrontFacing ? 1.0 : -1.0;
+    vec3 Ng = plant ? vec3(0.0, 1.0, 0.0) : uFaceRot * faceN(vNormal) * side;
+    float NoL = dot(Ng, uLightDir);
+    float k = (plant ? sat(NoL * 0.5 + 0.5) : sat(NoL)) + vSun.a;
+    if (k > 0.0) {
+      vec3 raw = vShadowP.xyz + vShadowO * side, sc = raw;
+      sc.xy = distort(sc.xy);
+      sc.z *= 0.2;
+      sc = sc * 0.5 + 0.5;
+#if SHADOWS > 1
+      float shadow = shadowSoft(sc, 0.0, 1.6);
+#elif SHADOWS > 0
+      float shadow = shadowHard(sc);
+#else
+      float shadow = vShadowP.w;
+#endif
+      // past the map, the light level's guess
+      float edge = max(abs(sc.x - 0.5), abs(sc.y - 0.5)) * 2.0;
+      shadow = mix(shadow, vShadowP.w, linstep(0.85, 1.0, edge));
+      // your own body, from its small map round where you stand (render/shadows.js)
+      if (uBody.w > 0.0) {
+        vec2 b = raw.xy * uBody.x + uBody.yz;
+        if (abs(b.x) < 1.0 && abs(b.y) < 1.0) shadow = min(shadow, textureLod(uBodyShadow, vec3(b * 0.5 + 0.5, raw.z * 0.1 + 0.5), 0.0));
+      }
+      if (vWet > 0.5 && shadow > 0.0) shadow *= caustics((uShadowInv * vec4(vShadowP.xyz, 1.0)).xyz);
+      light += vSun.rgb * k * shadow;
+    }
+  }
+  vec3 col = albedo * light;
+  // light of its own: torch flames, glowstone, lanterns (the material map's emission)
+  if (vFog.a > 0.0) col += albedo * texture(uSpecMap, vec3(uv, vLayers.x)).a * vFog.a;
+  col = toneLDR(col + vFog.rgb);
+#ifdef TRANSLUCENT
+  outColor = vec4(col, mix(max(alb.a, 0.35), 1.0, vFres * 0.6));
+#else
+  outColor = vec4(col, 1.0);
+#endif
+}`;
+
+/* What each texture layer is made of, from the material map itself: how
+   much light comes through it (r, its subsurface value) and whether any of
+   it glows (g); and with it, from the layer table, how many frames it runs
+   through (b) and how many ticks each (a), so a vertex reads one pixel. One
+   pixel a layer, 256 to a row, worked out once on the graphics card after
+   the textures are in. */
+const LAYER_MAT_FS = /* glsl */`
+uniform sampler2DArray uSpecMap;
+uniform sampler2D uLayerInfo;
+uniform float uLayers;
+out vec4 o;
+void main() {
+  int layer = int(gl_FragCoord.y) * 256 + int(gl_FragCoord.x);
+  if (float(layer) >= uLayers) { o = vec4(0.0); return; }
+  float sss = 0.0, emit = 0.0;
+  for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
+    vec4 s = texelFetch(uSpecMap, ivec3(x, y, layer), 0);
+    sss = max(sss, s.b); emit = max(emit, s.a);
+  }
+  vec4 info = layer < textureSize(uLayerInfo, 0).x ? texelFetch(uLayerInfo, ivec2(layer, 0), 0) : vec4(0.0);
+  o = vec4(sss, emit > 0.02 ? 1.0 : 0.0, min(info.x, 255.0) / 255.0, min(info.y, 255.0) / 255.0);
+}`;
+export function bakeLayerMaterials(r, specTex, layerInfo) {
+  const layers = specTex && specTex.image ? specTex.image.depth : 0;
+  const rows = Math.max(1, Math.ceil(layers / 256));
+  const rt = new THREE.WebGLRenderTarget(256, rows, { type: THREE.UnsignedByteType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
+  const mat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: 'precision highp float;\nin vec3 position;\nvoid main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: 'precision highp float; precision highp int; precision highp sampler2DArray;\n' + LAYER_MAT_FS,
+    uniforms: { uSpecMap: { value: specTex }, uLayerInfo: { value: layerInfo }, uLayers: { value: layers } }, depthTest: false, depthWrite: false,
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  const scene = new THREE.Scene();
+  scene.add(mesh);
+  const prev = r.getRenderTarget();
+  r.setRenderTarget(rt);
+  r.render(scene, new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1));
+  r.setRenderTarget(prev);
+  geo.dispose(); mat.dispose();
+  return rt.texture;
+}
+
 const SHADOW_VS = /* glsl */`
 uniform mat4 modelMatrix, uShadowMat;
 layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL;
@@ -262,10 +504,8 @@ uniform vec3 uChunk;
 out vec2 vUv; flat out float vLayer;
 const float SHADOW_B = 0.85;
 void main() {
+  // still: the map is kept for many frames, so leaves caught mid-sway would jump each time it is drawn again
   vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
-  int nw = int(aA.z + 0.5);
-  vec4 L = aL / 255.0;
-  world.xyz += windOffset(world.xyz, nw >> 3, aA.y / 16.0, L.x, L.w);
   vec4 c = uShadowMat * world;
   float f = length(c.xy) * SHADOW_B + (1.0 - SHADOW_B);
   c.xy /= f;
@@ -312,10 +552,13 @@ export function makeMaterials(shared, q) {
   if (q.normals !== false) base.NORMALMAP = 1;
   if (q.ldr) base.LDR = 1;
   Object.assign(base, lightDefines(q));
+  // Detailed (one pass to the screen) lights per vertex; the full chain per pixel
+  const vs = q.ldr ? HEAD + COMMON + WIND + TONEMAP + LEAN_VS : HEAD + COMMON + WIND + TERRAIN_VS;
+  const fs = q.ldr ? HEAD + COMMON + SHADOW + TONEMAP + LEAN_FS : HEAD + COMMON + SHADOW + WIND + TONEMAP + TERRAIN_FS.replace('void main() {', LDR_FN + LIGHTS + '\nvoid main() {');
   const mk = (defines, transparent, extra) => new THREE.RawShaderMaterial(Object.assign({
     glslVersion: THREE.GLSL3,
-    vertexShader: HEAD + COMMON + WIND + TERRAIN_VS,
-    fragmentShader: HEAD + COMMON + SHADOW + WIND + TONEMAP + TERRAIN_FS.replace('void main() {', LDR_FN + LIGHTS + '\nvoid main() {'),
+    vertexShader: vs,
+    fragmentShader: fs,
     uniforms: shared, defines: Object.assign({}, base, defines),
     side: defines.CUTOUT || defines.TRANSLUCENT ? THREE.DoubleSide : THREE.FrontSide,
     transparent: !!transparent, depthWrite: !transparent,

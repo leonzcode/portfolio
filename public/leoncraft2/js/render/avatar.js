@@ -235,19 +235,18 @@ void main() {
 #endif
   outColor = vec4(col, 1.0);
 }`;
+// into the body's own small shadow map (render/shadows.js): the blocks' view, a small window, no squeeze
 const SHADOW_VS = /* glsl */`
-uniform mat4 uShadowMat;
+uniform mat4 uBodyMat;
 uniform mat4 uParts[6];
 uniform int uShow;
 in vec3 position; in vec2 uv; in vec2 aPart;
 out vec2 vUv; flat out int vLayer;
-const float SHADOW_B = 0.85;
 void main() {
   int layer = int(aPart.y + 0.5);
   vLayer = layer; vUv = uv;
   if (((uShow >> layer) & 1) == 0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
-  vec4 c = uShadowMat * (uParts[int(aPart.x + 0.5)] * vec4(position, 1.0));
-  c.xy /= length(c.xy) * SHADOW_B + (1.0 - SHADOW_B);
+  vec4 c = uBodyMat * (uParts[int(aPart.x + 0.5)] * vec4(position, 1.0));
   c.z *= 0.2;
   gl_Position = c;
 }`;
