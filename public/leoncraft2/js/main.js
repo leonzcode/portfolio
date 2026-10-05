@@ -312,6 +312,8 @@ async function boot() {
     deleteWorld: w => { EntityStore.remove(w.id); return Save.remove(w.id); },
     quitToTitle: () => quitToTitle(),
     resume: () => lock(),
+    // whether Esc in the game menu can take the mouse back (see keyMayLock)
+    keyResumes: () => keyMayLock(),
     respawn: () => respawn(),
     loadingProgress: () => loading || { text: 'Loading terrain...', progress: 0 },
     quit: () => { location.href = '/'; },
@@ -721,6 +723,8 @@ async function boot() {
      on Back to Game can try again. Raw Input (Mouse Settings, on by default as
      in the game) asks for the mouse's own movement, with no acceleration. */
   let unlockedAt = -1e9, lockPending = false, letGoOurselves = false, noRaw = false, promised = false;
+  // the mouse was last let go by you or the browser, not the game (or never taken): Chrome wants a click for it then
+  let userUnlocked = true;
   function letGo() { if (document.pointerLockElement) { letGoOurselves = true; document.exitPointerLock(); } }
   function lockFailed() { lockPending = false; if (game && !locked() && !gui.isOpen() && !game.survival.dead) gui.open(new PauseScreen()); }
   function requestLock() {
@@ -750,6 +754,14 @@ async function boot() {
   }
   document.addEventListener('pointerlockerror', () => { if (!promised) lockFailed(); });
   canvas.addEventListener('click', () => { if (game && !gui.isOpen()) lock(); });
+  /* Whether a key (Esc in the game menu) can take the mouse back. Chrome gives it
+     back without a click only when the game let it go itself, in fullscreen, or
+     within a few seconds of the last click or key it counts (Esc is not one).
+     Otherwise the menu stays, rather than closing and coming back a moment later. */
+  function keyMayLock() {
+    const ua = navigator.userActivation;
+    return !userUnlocked || !!document.fullscreenElement || !ua || ua.isActive;
+  }
   let wantInv = false;
   /* zoom (C held): the view narrows to a quarter and the mouse turns slower to match, at once,
      the way OptiFine's zoom key does (eased, it took a fifth of a second to get there) */
@@ -814,6 +826,7 @@ async function boot() {
     if (locked()) { lockPending = false; return; }
     // let go by you or the browser, not by the game: Chrome will not give it back for a moment
     if (!letGoOurselves) unlockedAt = performance.now();
+    userUnlocked = !letGoOurselves;
     letGoOurselves = false;
     zoomHeld = false;
     for (const k in game ? game.player.keys : {}) game.player.keys[k] = false;
