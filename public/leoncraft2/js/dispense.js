@@ -162,7 +162,20 @@ function dispense(sim, C, c, i, st, x, y, z, f, fx, fy, fz) {
       if (!L.inv.armor[ar.slot]) { L.inv.armor[ar.slot] = withCount(st, 1); L.inv.changed(); return one(); }
     }
   }
-  // boats on water in front, minecarts on a rail in front, mobs from spawn eggs
+  /* a boat: 1.25 out from the middle of its face (1.125 up or down), facing
+     the way the dispenser does (east, from one facing up or down); a block
+     higher when there is water in front, and only into water or into air
+     over water (else thrown out) */
+  if (E && E.placeBoatAt && /_boat$|_raft$/.test(n)) {
+    const wet = id => !!id && (FLUID[id] === 1 || !!(BLOCKS[id] && BLOCKS[id].waterlogged));
+    let up = 0;
+    if (wet(front)) up = 1;
+    else if (front || !wet(w.get(fx, fy - 1, fz))) return throwOne();
+    if (!E.placeBoatAt(n, x + 0.5 + dx * 1.25, y + 0.5 + dy * 1.125 + up, z + 0.5 + dz * 1.25, dy ? -Math.PI / 2 : Math.atan2(-dx, -dz))) return throwOne();
+    sound(sim, 'click', x, y, z);
+    return one();
+  }
+  // mobs from spawn eggs
   if (E && /_spawn_egg$/.test(n)) {
     const e = E.spawn(n.slice(0, -10), fx + 0.5, fy, fz + 0.5, { natural: true });
     if (e) { e.persistent = true; return one(); }

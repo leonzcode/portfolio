@@ -114,6 +114,8 @@ export class Player {
           const boxes = collisionBoxes(d, w.meta(x, y, z), nbAt(x, y, z));
           if (boxes) for (const c of boxes) out.push(x + c[0], y + c[1], z + c[2], x + c[3], y + c[4], z + c[5]);
         }
+    // things in the world you can stand on and walk into: boats (js/entities)
+    if (this.extraBoxes) this.extraBoxes(out, x0, y0, z0, x1, y1, z1);
     return out;
   }
   // how far the body box can go along one axis before a box stops it (Minecraft's clip)
