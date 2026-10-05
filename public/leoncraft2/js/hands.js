@@ -121,6 +121,8 @@ export class Hands {
   placed(list) {
     // the first cell is the block from the hand (a shulker box brings its contents); the rest are its other parts
     if (list) list.forEach(([x, y, z], i) => this.containers.placed(x, y, z, i === 0 ? this.held || {} : null));
+    // a sign opens its editing screen
+    if (list && list.length && this.details) this.details.placed(list[0][0], list[0][1], list[0][2]);
     if (this.creative) return;
     const s = this.held;
     if (!s) return;
@@ -176,6 +178,8 @@ export class Hands {
     }
     // a container's contents spill (in creative too, as in the game), thrown out in parts of 10-30
     for (const [x, y, z] of cells) spill(this.drops, x, y, z, this.containers.remove(x, y, z));
+    // the food on a campfire spills too; a sign's words go with it
+    if (this.details) for (const [x, y, z] of cells) this.details.broken(x, y, z);
     return replace;
   }
 
@@ -185,6 +189,8 @@ export class Hands {
     if (!d || w.get(hit.x, hit.y, hit.z) !== b) return false;
     const holding = !!this.held || !!this.inv.offhand;
     if (this.player.sneaking && holding) return false;
+    // cauldrons, composters, campfires and signs (details.js)
+    if (this.details && this.details.use(this, hit)) return true;
     if (d.name === 'crafting_table') { this.open(new CraftingScreen(this.inv, this.icons)); return true; }
     if (this.openStation(d, hit)) return true;
     if (d.name === 'ender_chest') {

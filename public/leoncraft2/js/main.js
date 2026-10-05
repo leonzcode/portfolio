@@ -55,6 +55,8 @@ import { DIMS } from './dims.js?v=14';
 import { Realms } from './dim/realms.js?v=14';
 import { addDimArt, endSkyTexture } from './dim/art.js?v=14';
 import { structuresApi } from './struct/spawners.js?v=14';
+import { Details, isSign } from './details.js?v=14';
+import { SignEditScreen } from './ui/sign.js?v=14';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -494,6 +496,7 @@ async function boot() {
         g.dimKeep = g.dimKeep || {};
         g.dimKeep[g.partsDim] = { drops: g.drops.toJSON(), sim: g.sim ? g.sim.toJSON() : null };
         if (g.containers.dirty) { g.containers.dirty = false; await g.saves[g.partsDim].writeExtra('containers', g.containers.toJSON()); }
+        if (g.details) { if (g.details.dirty) { g.details.dirty = false; await g.saves[g.partsDim].writeExtra('details', g.details.toJSON()); } g.details.dispose(); }
         EntityStore.save(entityKey(g.entry, g.partsDim), g.entities.toJSON());
         g.drops.dispose(); if (g.drops.group.parent) g.drops.group.parent.remove(g.drops.group);
         g.entities.dispose();
@@ -515,7 +518,14 @@ async function boot() {
       renderer.scene.add(entities.group);
       const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
       if (keep.sim) sim.fromJSON(keep.sim);
-      Object.assign(g, { drops, containers, entities, sim });
+      // sign text and the food on campfires (details.js)
+      const details = new Details({ world: w, drops, renderer, gui });
+      if (!isNew || g.partsDim) { try { const dd = await g.saves[d].readExtra('details'); if (dd) details.fromJSON(dd); } catch (e) {} }
+      details.showAll();
+      details.onEdit = (x, y, z, front) => editSign(x, y, z, front);
+      details.daylight = () => { const t = (((game ? game.time : 6000) % 24000) + 24000) % 24000; return Math.min(1, Math.max(0.2, 0.5 + 2 * Math.cos(2 * Math.PI * (t / 24000 - 0.25)))); };
+      Object.assign(g, { drops, containers, entities, sim, details });
+      hands.details = details;
       g.partsDim = d;
       Object.assign(hands, { world: w, drops, containers, fluids: fl });
       containers.drops = drops;
@@ -555,6 +565,16 @@ async function boot() {
   }
   function held() { if (game) renderer.setHeld(game.inv.heldId(), DRAW); }
   // a screen opened from the world (a chest, a crafting table): the mouse is let go without the game menu
+  // writing on a sign: the screen with the side's words, then back into the sign (details.js)
+  function editSign(x, y, z, front) {
+    const g = game;
+    if (!g || !g.details) return;
+    const b = g.world.get(x, y, z), d = BLOCKS[b];
+    if (!isSign(d)) return;
+    const side = g.details.textOf(x, y, z, front) || { lines: ['', '', '', ''], colour: 'black' };
+    openScreen(new SignEditScreen({ lines: side.lines, layer: d.faces[0], wall: d.shape === 'wall_sign' && !d.hanging, hanging: !!d.hanging,
+      colour: 0, done: lines => { if (game === g) g.details.setText(x, y, z, front, lines); } }));
+  }
   function openScreen(screen) {
     if (!game) return;
     wantInv = true;
@@ -662,6 +682,7 @@ async function boot() {
     if (!game) return;
     game.save.writeState(stateOf());
     if (game.containers.dirty) { game.containers.dirty = false; game.saves[game.dim].writeExtra('containers', game.containers.toJSON()); }
+    if (game.details && game.details.dirty) { game.details.dirty = false; game.saves[game.dim].writeExtra('details', game.details.toJSON()); }
     if (game.entities) EntityStore.save(entityKey(game.entry, game.dim), game.entities.toJSON());
     // the world's changes go to its own dimension's save
     await game.saves[game.dim].flush(game.world.edits);
@@ -937,6 +958,7 @@ async function boot() {
       if (renderer.particles) renderer.particles.tick();
       g.hands.tick();
       g.containers.tick();
+      if (g.details) g.details.tick();
       if (g.entities) g.entities.tick();
       g.realms.tick();
       if (g.mode === 'survival' || g.mode === 'adventure') {
@@ -967,6 +989,7 @@ async function boot() {
     inter.look(v.eye);
     g.hands.alpha = alpha;
     g.drops.update(dt, alpha, player, renderer.camera);
+    if (g.details) g.details.update();
     if (g.entities) g.entities.render(alpha);
     g.eye = v.eye;
     // the other dimensions have no sun: Detailed's sky tables are left at midnight there
