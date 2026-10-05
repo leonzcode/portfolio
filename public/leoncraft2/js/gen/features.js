@@ -142,11 +142,17 @@ export function sampleInt(p, r) {
       return 0;
     }
     case 'trapezoid': {
+      // one draw up and one down from the foot of the slope, as the old
+      // patches spread (nextInt(n + 1) - nextInt(n + 1)): the same shape as
+      // adding two draws, but each spot comes from different numbers, and
+      // the real server's grass, flowers and seagrass sit where this puts them
+      // (a spread of nothing still draws both, as the seagrass's height does)
       const mn = p.min, mx = p.max, pl = p.plateau || 0;
       const k = mx - mn;
-      if (pl >= k) return r.nextInt(k + 1) + mn;
+      if (pl > 0 && pl >= k) return r.nextInt(k + 1) + mn;
       const l = Math.trunc((k - pl) / 2), m = k - l;
-      return mn + r.nextInt(m + 1) + r.nextInt(l + 1);
+      const up = r.nextInt(m + 1);
+      return mn + l + up - r.nextInt(l + 1);
     }
     case 'clamped_normal': {
       const v = p.mean + gaussian(r) * p.deviation;
