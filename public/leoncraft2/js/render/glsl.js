@@ -201,9 +201,10 @@ vec3 vnoiseD(vec2 p) {
 }
 /* The same waves as waveNormal, their slope worked out with them rather than
    by sampling the sum three times: one pass of five waves instead of
-   fifteen. The noise that bends the crests is taken into the slope too. */
-vec3 waveNormalD(vec2 p, float t, vec2 flow, float strength) {
-  float amp = 1.0, wl = 7.0, tot = 0.0;
+   fifteen. The noise that bends the crests is taken into the slope too.
+   Far off only the first few (n): the finest are smaller than a pixel there. */
+vec3 waveNormalD(vec2 p, float t, vec2 flow, float strength, int n) {
+  float amp = 1.0, wl = 7.0;
   float a = 0.52;
   vec3 wn = vnoiseD(p * 0.18 + t * 0.05);
   float warp = wn.x * 2.0;
@@ -211,6 +212,7 @@ vec3 waveNormalD(vec2 p, float t, vec2 flow, float strength) {
   bool flowing = dot(flow, flow) > 0.01;
   vec2 g = vec2(0.0);
   for (int i = 0; i < 5; i++) {
+    if (i >= n) break;
     vec2 dir = flowing ? normalize(flow) : vec2(cos(a), sin(a));
     float k = TAU / wl;
     float w = sqrt(9.8 * k) * (flowing ? 0.7 : 1.0);
@@ -218,10 +220,10 @@ vec3 waveNormalD(vec2 p, float t, vec2 flow, float strength) {
     float s = sin(x);
     // the slope of amp * sqr(sin(x) * 0.5 + 0.5)
     g += amp * (s * 0.5 + 0.5) * cos(x) * -k * (dir + dwarp);
-    tot += amp;
     amp *= 0.55; wl *= 0.62; a += 2.39996;
   }
-  g /= tot;
+  // over all five waves' heights (1 + 0.55 + 0.55^2 + ...), however many were summed
+  g /= 2.1109;
   return normalize(vec3(-g.x * strength, 1.0, -g.y * strength));
 }
 `;
@@ -311,9 +313,51 @@ vec3 toSRGB(vec3 c) {
   c = max(c, 0.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
-// Detailed's whole tone curve, exposure already applied: linear light in, the screen's colour out
+// Detailed's whole tone curve, exposure already applied: linear light in, the screen's colour out.
+// With TONE_LUT, everything after AgX's log step comes from a small table (makeToneLut below):
+// one look-up instead of a dozen powers a pixel, never more than two steps of 255 from the curve itself
+#ifdef TONE_LUT
+uniform highp sampler3D uToneLut;
+vec3 toneLDR(vec3 c) {
+  const mat3 inM = mat3(0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+                        0.0784335999999992, 0.878468636469772, 0.0784336,
+                        0.0792237451477643, 0.0791661274605434, 0.879142973793104);
+  vec3 x = (clamp(log2(max(inM * c, 1e-10)), -12.47393, 4.026069) + 12.47393) / 16.499999;
+  return textureLod(uToneLut, x * (31.0 / 32.0) + 0.5 / 32.0, 0.0).rgb;
+}
+#else
 vec3 toneLDR(vec3 c) { return toSRGB(agx(c)); }
+#endif
 `;
+
+/* The table for TONE_LUT: AgX from its log step on (the contrast curve, the
+   punch, the way out) and the sRGB step, 32 to a side, filtered. Indexed by
+   the log of the colour, as AgX itself works, so the dark end gets as many
+   entries as the bright. */
+export function makeToneLut() {
+  const THREE = window.THREE, N = 32;
+  const outM = [1.19687900512017, -0.0528968517574562, -0.0529716355144438, -0.0980208811401368, 1.15190312990417, -0.0980434501171241, -0.0990297440797205, -0.0989611768448433, 1.15107367264116];
+  const contrast = x => { const x2 = x * x, x4 = x2 * x2; return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232; };
+  const srgb = c => { c = Math.max(c, 0); return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
+  const data = new Uint8Array(N * N * N * 4);
+  for (let b = 0; b < N; b++) for (let g = 0; g < N; g++) for (let r = 0; r < N; r++) {
+    let c = [contrast(r / (N - 1)), contrast(g / (N - 1)), contrast(b / (N - 1))];
+    const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    c = c.map(v => Math.pow(Math.max(l + 1.12 * (v - l), 0), 1.06));
+    // outM * c, the matrix by columns as GLSL has it
+    const o = [0, 1, 2].map(k => outM[k] * c[0] + outM[3 + k] * c[1] + outM[6 + k] * c[2]);
+    const i = ((b * N + g) * N + r) * 4;
+    for (let k = 0; k < 3; k++) data[i + k] = Math.round(Math.min(1, Math.max(0, srgb(Math.pow(Math.max(o[k], 0), 2.2)))) * 255);
+    data[i + 3] = 255;
+  }
+  const t = new THREE.Data3DTexture(data, N, N, N);
+  t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
+  t.minFilter = t.magFilter = THREE.LinearFilter;
+  t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping;
+  t.generateMipmaps = false; t.unpackAlignment = 1;
+  t.needsUpdate = true;
+  return t;
+}
 
 /* ---- Detailed's exposure ----
    In the Overworld the sky table works out how much light there is and so

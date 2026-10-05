@@ -28,6 +28,7 @@ import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=14';
 import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=14';
 import { ShadowMaps } from './shadows.js?v=14';
 import { dimLook } from '../dim/look.js?v=14';
+import { makeToneLut } from './glsl.js?v=14';
 const THREE = window.THREE;
 // one black pixel, for a texture that is made later
 function blankTexture() {
@@ -86,6 +87,8 @@ export class Renderer {
       uAmbUp: { value: new THREE.Vector3() }, uAmbSide: { value: new THREE.Vector3() }, uAmbDown: { value: new THREE.Vector3() },
       uSunC: { value: new THREE.Vector3() }, uDayK: { value: 0 }, uExpo: { value: 1 }, uFogK: { value: 0.0019 },
       uFogTab: { value: this.sky ? this.sky.fog.texture : null }, uShadowInv: { value: new THREE.Matrix4() },
+      // Detailed's tone curve as a table (glsl.js TONE_LUT)
+      uToneLut: { value: this.opts.vanilla ? null : makeToneLut() },
     };
     if (this.opts.vanilla) {
       this.vanilla = new Vanilla(this, textures);
