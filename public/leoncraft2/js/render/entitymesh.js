@@ -45,7 +45,7 @@ void main() {
   vWorld = w.xyz;
   vN = normalize(mat3(M) * normal);
   vUv = (uv + aI0.yz) / ${ATLAS}.0;
-  vG = vec3(uv / 16.0, aI0.w);
+  vG = vec3(uv, aI0.w);   // the glint, in the texture's pixels
   vL = aI1;
   // a tinted part (wool, a collar) takes the instance colour
   vTint = aPart.y > 0.5 ? aI2.rgb : vec3(1.0);

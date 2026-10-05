@@ -180,7 +180,7 @@ void main() {
 #ifdef ARMOR
   vec4 pc = uPiece[layer];
   vLayer = 1; vUv = (uv + vec2(0.0, pc.x)) / uSheet;
-  vTint = uTint[layer]; vG = vec3(uv / 16.0, pc.z);
+  vTint = uTint[layer]; vG = vec3(uv, pc.z);
   // a piece not worn goes behind the far plane
   if (pc.y < 0.5) { vWorld = vec3(0.0); vN = vec3(0.0, 1.0, 0.0); gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
 #else
@@ -296,6 +296,8 @@ void main() {
   if (vG.z > 0.5) c += glintAt(vG.xy, uClock);
   outColor = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;
+// the model's vertex shader (with ARMOR, the armour's), for the figure in the inventory too (render/figure.js)
+export { HEAD as AVATAR_HEAD, VS as AVATAR_VS };
 const SHADOW_VS = /* glsl */`
 uniform mat4 uShadowMat;
 uniform mat4 uParts[6];
@@ -613,8 +615,34 @@ export class Avatar {
     this.uPiece.value[0].y = this.headWorn && !close ? 1 : 0;
   }
 
-  /* the pose, in the game's model space (y down, -z forward), then the matrices */
+  /* the pose for this frame, then the matrices: at the feet, turned with the
+     body, lowered when sneaking, laid down when swimming */
   posed(P, a, feet) {
+    const bodyYaw = this.oBody + wrap(this.body - this.oBody) * a;
+    this.poseFor(P, a, P.pitch, wrap(P.yaw - bodyYaw));
+    const root = this.root, t = this.t, swim = this.cur.swim;
+    root.makeRotationY(bodyYaw + PI);
+    root.setPosition(feet.x, feet.y - (this.cur.sneak ? 0.125 : 0), feet.z);
+    if (swim > 0) {
+      root.multiply(t.makeTranslation(0, 0.9, 0));
+      root.multiply(t.makeRotationX(swim * (PI / 2 - P.pitch)));
+      root.multiply(t.makeTranslation(0, -0.9, 0));
+    }
+    root.scale(this.vs);
+    this.matrices(root, this.parts);
+    for (let side = 0; side < 2; side++) {
+      const h = this.held[side];
+      if (!h) continue;
+      this.placeHeld(side, h.kind, this.parts, h.mesh.matrix);
+      h.mesh.matrixWorldNeedsUpdate = true;
+    }
+  }
+
+  /* The parts' turns and places, in the game's model space (y down, -z
+     forward), for a look: pitch (up positive) and the head's turn from the
+     body. Also used for the figure in the inventory (render/figure.js), which
+     looks at the mouse instead. */
+  poseFor(P, a, pitch, headYaw) {
     const S = this.pose;
     for (let i = 0; i < 6; i++) { const p = S[i], r = REST[i]; p.x = r[0]; p.y = r[1]; p.z = r[2]; p.rx = p.ry = p.rz = 0; }
     if (this.slim) S[2].y = S[3].y = 2.5;
@@ -622,16 +650,15 @@ export class Avatar {
     const amt = Math.min(1, this.oSpeed + (this.speed - this.oSpeed) * a);
     const ls = this.limb - this.speed * (1 - a);
     const age = this.age + a;
-    const bodyYaw = this.oBody + wrap(this.body - this.oBody) * a;
     let att = this.attack - this.oAttack;
     if (att < 0) att += 1;
     att = this.swinging || this.oAttack > 0 ? this.oAttack + att * a : 0;
     this.cur.attack = att;
-    const swim = this.oSwim + (this.swim - this.oSwim) * a;
-    const sneak = P.sneaking && !P.flying && swim === 0;
+    const swim = this.cur.swim = this.oSwim + (this.swim - this.oSwim) * a;
+    const sneak = this.cur.sneak = P.sneaking && !P.flying && swim === 0;
 
-    head.rx = -P.pitch;
-    head.ry = -wrap(P.yaw - bodyYaw);
+    head.rx = -pitch;
+    head.ry = -headYaw;
     // walking: opposite arm and leg together
     const c = Math.cos(ls * 0.6662);
     armR.rx = -c * amt; armL.rx = c * amt;
@@ -675,44 +702,35 @@ export class Avatar {
       legR.rx = mix(legR.rx, 0.3 * Math.cos(ls * 0.333), swim); legL.rx = mix(legL.rx, -0.3 * Math.cos(ls * 0.333), swim);
       head.rx = mix(head.rx, -PI / 4, swim);
     }
-
-    // the whole model: at the feet, turned with the body, lowered when sneaking, laid down when swimming
-    const root = this.root, t = this.t;
-    root.makeRotationY(bodyYaw + PI);
-    root.setPosition(feet.x, feet.y - (sneak ? 0.125 : 0), feet.z);
-    if (swim > 0) {
-      root.multiply(t.makeTranslation(0, 0.9, 0));
-      root.multiply(t.makeRotationX(swim * (PI / 2 - P.pitch)));
-      root.multiply(t.makeTranslation(0, -0.9, 0));
-    }
-    root.scale(this.vs);
+  }
+  // the parts' matrices from the pose, under a root (the model's own space to the world's)
+  matrices(root, out) {
+    const S = this.pose;
     for (let i = 0; i < 6; i++) {
-      const p = S[i], m = this.parts[i];
+      const p = S[i], m = out[i];
       // the game's model space to this one: y and z flip, so do the y and z turns
       m.makeRotationFromEuler(this.e.set(p.rx, -p.ry, -p.rz, 'ZYX'));
       m.setPosition(p.x, 24 - p.y, -p.z);
       m.premultiply(root);
     }
-    if (this.held[0]) this.placeHeld(0);
-    if (this.held[1]) this.placeHeld(1);
   }
 
   /* what is in a hand, in the model's hand: the game's third-person item
      placing (at the hand, turned down the arm, then the item model's own
      third-person turn: 75 and 45 degrees and 0.375 of a block for a block, a
-     tool leaning forward, a flat item upright) */
-  placeHeld(side) {
-    const h = this.held[side], m = h.mesh.matrix, t = this.t;
-    m.copy(this.parts[2 + side]);
+     tool leaning forward, a flat item upright), from the parts' matrices into m */
+  placeHeld(side, kind, parts, m) {
+    const t = this.t;
+    m.copy(parts[2 + side]);
     // a slim arm's hand is half a pixel further in, as the game holds it
     if (this.slim) m.multiply(t.makeTranslation(side ? -0.5 : 0.5, 0, 0));
     m.multiply(t.makeScale(16, -16, -16));            // back to the game's model space, in blocks
     m.multiply(t.makeRotationX(-PI / 2));
     m.multiply(t.makeRotationY(PI));
     m.multiply(t.makeTranslation((side ? -1 : 1) / 16, 0.125, -0.625));
-    applyDisplay(m, DISPLAY[h.kind][side ? 'tpL' : 'tp'], t, this.e);
+    applyDisplay(m, DISPLAY[kind][side ? 'tpL' : 'tp'], t, this.e);
     m.multiply(t.makeTranslation(0, -1, 0));          // the hand geometry's cube is centred one block up
-    h.mesh.matrixWorldNeedsUpdate = true;
+    return m;
   }
 
   /* ---- the first-person arms: the game's arm placing in front of the
