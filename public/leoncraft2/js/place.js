@@ -73,9 +73,17 @@ export function placement(world, hit, id, player) {
       break;
     case 'door': {
       if (!solidBelow || world.get(x, y + 1, z) && !BLOCKS[world.get(x, y + 1, z)].replaceable) return out;
-      // the hinge goes on the side of the click, the way the game breaks a tie
-      const r = DIRS[(look + 1) & 3], hx = hit.hit ? hit.hit[0] - x - 0.5 : 0, hz = hit.hit ? hit.hit[2] - z - 0.5 : 0;
-      const right = hx * r[0] + hz * r[2] > 0 ? 16 : 0;
+      // the hinge (the game's getHinge): beside a door of the same kind it pairs up into a double door; else
+      // towards the side with fewer full blocks beside it (below and above); a tie goes by the side clicked
+      const r = DIRS[(look + 1) & 3], l = DIRS[(look + 3) & 3], hx = hit.hit ? hit.hit[0] - x - 0.5 : 0, hz = hit.hit ? hit.hit[2] - z - 0.5 : 0;
+      const fullAt = (xx, yy, zz) => { const b = world.get(xx, yy, zz); return !!b && BLOCKS[b].solid && BLOCKS[b].shape === 'cube'; };
+      const lowerDoor = (xx, zz) => world.get(xx, y, zz) === id && !(world.meta(xx, y, zz) & 8);
+      const lean = -fullAt(x + l[0], y, z + l[2]) - fullAt(x + l[0], y + 1, z + l[2]) + fullAt(x + r[0], y, z + r[2]) + fullAt(x + r[0], y + 1, z + r[2]);
+      const leftDoor = lowerDoor(x + l[0], z + l[2]), rightDoor = lowerDoor(x + r[0], z + r[2]);
+      let right;
+      if ((leftDoor && !rightDoor) || lean > 0) right = 16;
+      else if ((rightDoor && !leftDoor) || lean < 0) right = 0;
+      else right = hx * r[0] + hz * r[2] > 0 ? 16 : 0;
       return [[x, y, z, id, look | right], [x, y + 1, z, id, look | 8 | right]];
     }
     case 'bed': {
