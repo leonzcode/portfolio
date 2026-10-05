@@ -11,15 +11,26 @@
      const items = await loadItemStrip(base, '?v=14');
      addItemPieces(items, manifest.layers, albPieces, nrmPieces, spcPieces);
      setItemLayers(manifest.layers);        // js/items.js
+
+   The frames at the end of the strip (a compass needle's 32, a clock's 64,
+   a bow's while drawn...) are only ever drawn by the inventory and the
+   hotbar, which read the strip's pixels themselves, so they stay out of the
+   texture array: GPUs allow 2048 layers in one, and the blocks, the
+   dimensions' art and every frame together would pass that, leaving the
+   whole array unmade and the world black.
 --------------------------------------------------------------------------- */
+import { ITEM_TEX } from './itemdata.js?v=14';
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
 const PIECE = 128;
+// how many pictures of the strip go into the texture array: everything before the first frame
+const FIRST_FRAME = ITEM_TEX.findIndex(n => n.startsWith('frame_'));
 
 export async function loadItemStrip(base, ver) {
   try {
     const blob = await (await fetch(base + 'items.png' + (ver || ''))).blob();
     const bmp = await createImageBitmap(blob, RAW);
-    return { bmp, layers: Math.floor(bmp.height / 16) };
+    const layers = Math.floor(bmp.height / 16);
+    return { bmp, layers, gpu: FIRST_FRAME >= 0 ? Math.min(layers, FIRST_FRAME) : layers };
   } catch (e) {
     console.warn('item pictures', e);
     return { bmp: null, layers: 0 };
@@ -41,11 +52,12 @@ function plain(n, rgba) {
    uploads) to the albedo, normal and material lists, from layer `first`. */
 export async function addItemPieces(strip, first, alb, nrm, spc) {
   if (!strip.bmp) return 0;
-  for (let z = 0; z < strip.layers; z += PIECE) {
-    const n = Math.min(PIECE, strip.layers - z);
+  const total = strip.gpu !== undefined ? strip.gpu : strip.layers;
+  for (let z = 0; z < total; z += PIECE) {
+    const n = Math.min(PIECE, total - z);
     alb.push([first + z, n, await createImageBitmap(strip.bmp, 0, z * 16, 16, n * 16, RAW)]);
     if (nrm) nrm.push([first + z, n, plain(n, [128, 128, 255, 255])]);
     if (spc) spc.push([first + z, n, plain(n, [40, 10, 0, 0])]);
   }
-  return strip.layers;
+  return total;
 }
