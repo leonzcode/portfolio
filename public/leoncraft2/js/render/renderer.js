@@ -446,6 +446,24 @@ export class Renderer {
     this.r.render(this.handScene, cam);
   }
 
+  /* ---- shaders built before they are needed ----
+     A shader is put together the first time something drawn with it comes
+     into view: the water's when you first turn to the sea, glass, a mob's,
+     the clouds'. Building one stops that frame for a tenth of a second or
+     more (Detailed's are the bigger ones), which is felt as a hitch. So every
+     material the world has (and any handed in, like the mobs') is built once
+     the world is loaded, in the background where the browser can, before it
+     is ever looked at. */
+  warmUp(extra) {
+    const r = this.r, cam = this.camera, more = new THREE.Scene();
+    const mats = [this.mats.handOpaque, this.mats.handCutout].concat(extra || []);
+    for (const m of mats) if (m) more.add(new THREE.Mesh(this.standGeo, m));
+    const scenes = [this.scene, this.trans, this.handScene, this.shadowTerrain, this.shadowScene, more,
+      this.blockClouds && this.blockClouds.scene, this.overlay && this.overlay.scene].filter(Boolean);
+    if (this.vanilla) for (const o of [this.vanilla.skyFS, this.vanilla.cloudMesh]) if (o && o.scene) scenes.push(o.scene);
+    for (const s of scenes) { try { r.compileAsync(s, cam).catch(() => {}); } catch (e) { /* drawn as before, built when first seen */ } }
+  }
+
   /* ---- the light in your hand, and torch flicker ---- */
   updateLights(state, dt) {
     const U = this.U, t = U.uClock.value;
