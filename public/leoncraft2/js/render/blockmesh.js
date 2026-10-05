@@ -28,18 +28,16 @@ export function setLayerPixels(px) { PIX = px; }
 
 export function isFlatItem(d) { return !!d && (FLAT.has(d.shape) || (d.iconLayer !== undefined && d.shape !== 'cube' && d.shape !== 'slab' && d.shape !== 'stairs')); }
 
-/* The shield in a hand, as the game's shield model: a board 12 x 22 x 1
-   pixels with a handle 2 x 6 x 6 behind it (its boxes, turned over as the
-   game turns the model into the item's space). Our own look, from block
-   textures: upright boards in an iron rim, a darker wooden handle.
-   layers: { wood, rim, handle }. It sits half a block higher than a block
-   would, so every corner stays in the unsigned vertex range; the shield's
-   DISPLAY entries in held.js take that back off. */
-export function shieldGeometry(layers) {
+/* A thing held as one of the game's entity models (the shield, the
+   trident): its boxes turned over as the game turns the model into the
+   item's space, lifted by lift pixels so every corner stays in the unsigned
+   vertex range (the DISPLAY entries in held.js take the lift back off).
+   Each box: the game's model numbers (pixels, y down, -z the front), a
+   texture layer, a tint and whether its texture is turned. */
+function modelGeometry(boxes, lift) {
   const verts = [], A = [], L = [], C = [], idx = [];
-  // a box from the game's model numbers (pixels, y down, -z the front), with a layer, a tint and a turn of its texture
   const box = (x, y, z, w, h, d, layer, tint, rot) => {
-    const f = [x, 8 - (y + h), -(z + d)], t = [x + w, 8 - y, -z];
+    const f = [x, lift - (y + h), -(z + d)], t = [x + w, lift - y, -z];
     const size = [w, h, d];
     for (let fi = 0; fi < 6; fi++) {
       const F = FACES[fi];
@@ -63,17 +61,7 @@ export function shieldGeometry(layers) {
       idx.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);
     }
   };
-  const W = 0xffffff, IRON = 0xb4b4bc;
-  // the boards, upright, in two parts so the texture is never stretched
-  box(-5, -10, -2, 10, 16, 1, layers.wood, W, 1);
-  box(-5, 6, -2, 10, 4, 1, layers.wood, W, 1);
-  // the rim: down both sides, across the top and the bottom
-  box(-6, -11, -2, 1, 22, 1, layers.rim, IRON, 0);
-  box(5, -11, -2, 1, 22, 1, layers.rim, IRON, 0);
-  box(-5, -11, -2, 10, 1, 1, layers.rim, IRON, 0);
-  box(-5, 10, -2, 10, 1, 1, layers.rim, IRON, 0);
-  // the handle behind
-  box(-1, -3, -1, 2, 6, 6, layers.handle, W, 0);
+  for (const b of boxes) box(...b);
   const g = new THREE.BufferGeometry();
   g.setAttribute('aPos', new THREE.BufferAttribute(new Uint16Array(verts), 4));
   g.setAttribute('aA', new THREE.BufferAttribute(new Uint8Array(A), 4));
@@ -82,6 +70,33 @@ export function shieldGeometry(layers) {
   g.setIndex(idx);
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
   return { geometry: g, flat: false, cutout: false };
+}
+/* The shield: a board 12 x 22 x 1 pixels with a handle 2 x 6 x 6 behind it
+   (the game's shield model), lifted 8 pixels. Our own look, from block
+   textures: upright boards in an iron rim, a darker wooden handle.
+   layers: { wood, rim, handle }. */
+export function shieldGeometry(layers) {
+  const W = 0xffffff, IRON = 0xb4b4bc;
+  return modelGeometry([
+    // the boards, upright, in two parts so the texture is never stretched
+    [-5, -10, -2, 10, 16, 1, layers.wood, W, 1], [-5, 6, -2, 10, 4, 1, layers.wood, W, 1],
+    // the rim: down both sides, across the top and the bottom
+    [-6, -11, -2, 1, 22, 1, layers.rim, IRON, 0], [5, -11, -2, 1, 22, 1, layers.rim, IRON, 0],
+    [-5, -11, -2, 10, 1, 1, layers.rim, IRON, 0], [-5, 10, -2, 10, 1, 1, layers.rim, IRON, 0],
+    // the handle behind
+    [-1, -3, -1, 2, 6, 6, layers.handle, W, 0],
+  ], 8);
+}
+/* The trident: a pole 25 pixels long, a crosspiece and three prongs (the
+   game's trident model), lifted 24 pixels. Our own look, from block
+   textures: a dark prismarine pole under a paler head. layers: { pole, head }. */
+export function tridentGeometry(layers) {
+  const W = 0xffffff;
+  return modelGeometry([
+    [-0.5, 2, -0.5, 1, 25, 1, layers.pole, W, 0],
+    [-1.5, 0, -0.5, 3, 2, 1, layers.head, W, 0],
+    [-2.5, -3, -0.5, 1, 4, 1, layers.head, W, 0], [-0.5, -4, -0.5, 1, 4, 1, layers.head, W, 0], [1.5, -3, -0.5, 1, 4, 1, layers.head, W, 0],
+  ], 24);
 }
 
 export function blockGeometry(d, meta) {
