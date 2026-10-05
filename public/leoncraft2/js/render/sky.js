@@ -268,13 +268,19 @@ export class Sky {
     this.lightRead = false;
   }
   update(sunDir, moonDir, eyeY) {
-    this.uniforms.uSunDir.value.copy(sunDir);
-    this.uniforms.uMoonDir.value.copy(moonDir);
-    this.uniforms.uCamH.value = Math.max(0.01, 0.2 + (eyeY - 63) / 1000);
-    this.fs.material = this.mView; this.fs.render(this.renderer, this.view);
-    this.fs.material = this.mFog; this.fs.render(this.renderer, this.fog);
-    this.fs.material = this.mAmb; this.fs.render(this.renderer, this.amb);
-    this.askLight();
+    for (let k = 0; k < 3; k++) this.part(k, sunDir, moonDir, eyeY);
+  }
+  /* The same, a third at a time (renderer.js spreads it over three frames, so
+     no one frame pays for the whole table): 0 the sky in every direction,
+     1 the fog's table from it, 2 the light it gives and its read-back. */
+  part(k, sunDir, moonDir, eyeY) {
+    if (k === 0) {
+      this.uniforms.uSunDir.value.copy(sunDir);
+      this.uniforms.uMoonDir.value.copy(moonDir);
+      this.uniforms.uCamH.value = Math.max(0.01, 0.2 + (eyeY - 63) / 1000);
+      this.fs.material = this.mView; this.fs.render(this.renderer, this.view);
+    } else if (k === 1) { this.fs.material = this.mFog; this.fs.render(this.renderer, this.fog); }
+    else { this.fs.material = this.mAmb; this.fs.render(this.renderer, this.amb); this.askLight(); }
   }
   /* The eight numbers of the light table (sky light from above, the side
      and below, the sun or moon, the exposure...) read back to the CPU, so

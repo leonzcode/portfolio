@@ -520,8 +520,14 @@ export class Renderer {
       if (col.leafIn) col.leafIn.hidden = d >= ld;
     }
 
-    // the sky table: every frame on the full tiers, every few on the low ones (it changes slowly)
-    if (this.sky && (this.frame % (this.opts.sky || 1) === 0 || this.frame < 3)) this.sky.update(sun, moon, state.eye.y);
+    // the sky table: every frame on the full tiers; on the light ones every few frames (it changes
+    // slowly), a third of it a frame, and all at once when the sun has jumped (/time set, a night's sleep)
+    // (nothing in the Nether or the End, which have no sky)
+    if (this.sky && (this.frame < 3 || !(state.dim && state.dim.sky !== 'normal'))) {
+      const n = this.opts.sky || 1, at = this.skySun || (this.skySun = new THREE.Vector3(0, -2, 0));
+      if (n < 3 || this.frame < 3 || at.dot(sun) < 0.9997) { this.sky.update(sun, moon, state.eye.y); at.copy(sun); }
+      else if (this.frame % n < 3) { this.sky.part(this.frame % n, sun, moon, state.eye.y); if (this.frame % n === 0) at.copy(sun); }
+    }
     if (!this.vanilla) {
       this.inter.update(dt, state.feet, state.trample);
       U.uInteract.value = this.inter.texture;

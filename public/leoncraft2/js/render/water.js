@@ -165,8 +165,11 @@ void main() {
 #else
     vec3 wn = waveNormal(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5));
 #endif
-    // ripples from the interaction map
+    // ripples from the interaction map (in Detailed only near you, where they are big enough to see)
     vec2 iuv = (vWorld.xz - uInteractRect.xy) / uInteractRect.zw;
+#ifdef LDR
+    if (dist > 40.0) iuv = vec2(-1.0);
+#endif
     if (top && iuv.x > 0.0 && iuv.y > 0.0 && iuv.x < 1.0 && iuv.y < 1.0) {
       vec2 px = 1.0 / vec2(textureSize(uInteract, 0));
       float hx = textureLod(uInteract, iuv + vec2(px.x, 0.0), 0.0).r - textureLod(uInteract, iuv - vec2(px.x, 0.0), 0.0).r;

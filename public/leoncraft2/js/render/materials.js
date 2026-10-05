@@ -284,15 +284,17 @@ uniform vec3 uChunk;
 ` + LDR + LIGHTS + /* glsl */`
 out vec2 vUv; out vec3 vTint;
 out vec3 vAmb;       // sky, torch and held light (exposure and fog in)
-out vec4 vSun;       // the sun or moon on this side (rgb), and the glow through leaves (a)
-out vec4 vShadowP;   // the point in the light's view (xyz), and the light level's guess past the map (w)
-out vec3 vShadowO;   // the nudge off the face, in the same view (turned round for a back face)
+out vec3 vSun;       // the sun or moon on the face, its angle and the glow through leaves in (a two-sided face: before its side's share)
+out vec4 vShadowP;   // the point in the light's view, nudged off the face (xyz), and the light level's guess past the map (w; 2 more under water)
 out vec4 vFog;       // the fog's own light (rgb), and how bright what glows is (a, 0 for most textures)
-out float vWet;      // under water: the sun comes through rippling caustics
+#if defined(CUTOUT) || defined(TRANSLUCENT)
+// a face seen from both sides: the sun's share on the front and on the back, and the nudge (the back is nudged the other way)
+out vec2 vK; out vec3 vShadowO;
+#endif
 #ifdef TRANSLUCENT
 out float vFres;
 #endif
-flat out vec3 vLayers; flat out int vNormal; flat out int vFlags;
+flat out vec3 vLayers; flat out int vFlags;
 vec3 ambientAt(vec3 n) { return n.y > 0.0 ? mix(uAmbSide, uAmbUp, n.y) : mix(uAmbSide, uAmbDown, -n.y); }
 void main() {
   vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
@@ -302,7 +304,6 @@ void main() {
   world.xyz += windOffset(world.xyz, nw >> 3, aA.y / 16.0, L.x, L.w);
   gl_Position = projectionMatrix * viewMatrix * world;
   vUv = aA.xy / 16.0;
-  vNormal = nw & 7;
   vFlags = flags;
   vTint = aC.rgb / 255.0;
   // what the texture is made of (uLayerMat: see LAYER_MAT_FS), and its frames: an animated one blends from one into the next
@@ -330,12 +331,11 @@ void main() {
   float skyAmt = sky * sky;
   vec3 amb = ambientAt(Ng) * (skyAmt * ao);
   // under water: light loses red first on its way down
-  vWet = 0.0;
-  if (wd > 0.5) {
+  bool wet = wd > 0.5;
+  if (wet) {
     vec3 absorb = vec3(0.32, 0.12, 0.05);
     sun *= exp(-absorb * wd);
     amb *= exp(-absorb * wd * 0.7);
-    vWet = 1.0;
   }
   // block light, and the light in your hand on top (the brighter of the two)
   block = max(block, heldLight(world.xyz, Ng));
@@ -348,13 +348,23 @@ void main() {
   vec3 keep, add;
   fogTerms(world.xyz, keep, add);
   vAmb = (amb + blockL + vec3(0.0035, 0.004, 0.006) * ao) / PI * keep;
-  vSun = vec4(sun * keep, glow);
   vFog = vec4(add, mat.g > 0.0 ? 6.0 * dot(keep, vec3(1.0 / 3.0)) : 0.0);
-  // the shadow map's view of this point; squeezed per pixel, since the squeeze is not straight
+  // how much of the sun the face takes: its angle to the light (a plant's from straight up, softened,
+  // the same from either side) and the glow. A face is flat, so this is the same all over it
+  // and never needs working out per pixel.
   float NoL = plant ? 1.0 : dot(Ng, Lt);
+  float kF = (plant ? sat(Lt.y * 0.5 + 0.5) : sat(NoL)) + glow;
+  // the shadow map's view of this point, nudged off the face; squeezed per pixel, since the squeeze is not straight
   vec4 c = uShadowMat * world;
-  vShadowP = vec4(c.xyz, smoothstep(0.85, 0.95, sky));
-  vShadowO = mat3(uShadowMat) * (Ng * 0.25 * clamp(0.12 + 0.01 * dist, 0.0, 1.0) * (2.0 - sat(NoL)));
+  vec3 off = mat3(uShadowMat) * (Ng * 0.25 * clamp(0.12 + 0.01 * dist, 0.0, 1.0) * (2.0 - sat(NoL)));
+  vShadowP = vec4(c.xyz + off, smoothstep(0.85, 0.95, sky) + (wet ? 2.0 : 0.0));
+#if defined(CUTOUT) || defined(TRANSLUCENT)
+  vSun = sun * keep;
+  vK = vec2(kF, plant ? kF : sat(-NoL) + glow);
+  vShadowO = plant ? vec3(0.0) : off;
+#else
+  vSun = sun * keep * kF;
+#endif
 #ifdef TRANSLUCENT
   vFres = pow(1.0 - abs(dot(Ng, V)), 5.0);
 #endif
@@ -368,11 +378,14 @@ uniform vec3 uLightDir;
 uniform mat3 uFaceRot;
 uniform mat4 uShadowInv;     // back from the shadow map's view to the world
 uniform float uTime;
-in vec2 vUv; in vec3 vTint; in vec3 vAmb; in vec4 vSun; in vec4 vShadowP; in vec3 vShadowO; in vec4 vFog; in float vWet;
+in vec2 vUv; in vec3 vTint; in vec3 vAmb; in vec3 vSun; in vec4 vShadowP; in vec4 vFog;
+#if defined(CUTOUT) || defined(TRANSLUCENT)
+in vec2 vK; in vec3 vShadowO;
+#endif
 #ifdef TRANSLUCENT
 in float vFres;
 #endif
-flat in vec3 vLayers; flat in int vNormal; flat in int vFlags;
+flat in vec3 vLayers; flat in int vFlags;
 layout(location = 0) out vec4 outColor;
 // caustics under water: two scrolling layers of light netting, sharpened
 float caustics(vec3 p) {
@@ -411,34 +424,43 @@ void main() {
 
   vec3 light = vAmb;
   // the sun, through the shadow map, on the side of the face that is showing
-  if (vSun.r + vSun.g + vSun.b > 0.0) {
-    float side = plant || gl_FrontFacing ? 1.0 : -1.0;
-    vec3 Ng = plant ? vec3(0.0, 1.0, 0.0) : uFaceRot * faceN(vNormal) * side;
-    float NoL = dot(Ng, uLightDir);
-    float k = (plant ? sat(NoL * 0.5 + 0.5) : sat(NoL)) + vSun.a;
-    if (k > 0.0) {
-      vec3 raw = vShadowP.xyz + vShadowO * side, sc = raw;
-      sc.xy = distort(sc.xy);
-      sc.z *= 0.2;
-      sc = sc * 0.5 + 0.5;
-#if SHADOWS > 1
-      float shadow = shadowSoft(sc, 0.0, 1.6);
-#elif SHADOWS > 0
-      float shadow = shadowHard(sc);
+  // (its angle and the glow were worked out at the corners: LEAN_VS)
+#if defined(CUTOUT) || defined(TRANSLUCENT)
+  bool front = plant || gl_FrontFacing;
+  vec3 sun = vSun * (front ? vK.x : vK.y);
 #else
-      float shadow = vShadowP.w;
+  vec3 sun = vSun;
 #endif
-      // past the map, the light level's guess
-      float edge = max(abs(sc.x - 0.5), abs(sc.y - 0.5)) * 2.0;
-      shadow = mix(shadow, vShadowP.w, linstep(0.85, 1.0, edge));
-      // your own body, from its small map round where you stand (render/shadows.js)
-      if (uBody.w > 0.0) {
-        vec2 b = raw.xy * uBody.x + uBody.yz;
-        if (abs(b.x) < 1.0 && abs(b.y) < 1.0) shadow = min(shadow, textureLod(uBodyShadow, vec3(b * 0.5 + 0.5, raw.z * 0.1 + 0.5), 0.0));
-      }
-      if (vWet > 0.5 && shadow > 0.0) shadow *= caustics((uShadowInv * vec4(vShadowP.xyz, 1.0)).xyz);
-      light += vSun.rgb * k * shadow;
+  if (sun.r + sun.g + sun.b > 0.0) {
+    vec3 raw = vShadowP.xyz;
+#if defined(CUTOUT) || defined(TRANSLUCENT)
+    if (!front) raw -= 2.0 * vShadowO;
+#endif
+    vec3 sc = raw;
+    sc.xy = distort(sc.xy);
+    sc.z *= 0.2;
+    sc = sc * 0.5 + 0.5;
+    bool wet = vShadowP.w > 1.5;
+    float guess = wet ? vShadowP.w - 2.0 : vShadowP.w;
+#if SHADOWS > 1
+    // four taps within 16 blocks of you, where a shadow's edge is big enough to see how soft it is;
+    // one further out, where the squeezed map's texels are several times larger and one is as soft
+    float shadow = dot(raw.xy, raw.xy) < 0.0625 ? shadowSoft(sc, 0.0, 1.6) : shadowHard(sc);
+#elif SHADOWS > 0
+    float shadow = shadowHard(sc);
+#else
+    float shadow = guess;
+#endif
+    // past the map, the light level's guess
+    float edge = max(abs(sc.x - 0.5), abs(sc.y - 0.5)) * 2.0;
+    shadow = mix(shadow, guess, linstep(0.85, 1.0, edge));
+    // your own body, from its small map round where you stand (render/shadows.js)
+    if (uBody.w > 0.0) {
+      vec2 b = raw.xy * uBody.x + uBody.yz;
+      if (abs(b.x) < 1.0 && abs(b.y) < 1.0) shadow = min(shadow, textureLod(uBodyShadow, vec3(b * 0.5 + 0.5, raw.z * 0.1 + 0.5), 0.0));
     }
+    if (wet && shadow > 0.0) shadow *= caustics((uShadowInv * vec4(raw, 1.0)).xyz);
+    light += sun * shadow;
   }
   vec3 col = albedo * light;
   // light of its own: torch flames, glowstone, lanterns (the material map's emission)

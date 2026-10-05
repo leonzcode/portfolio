@@ -76,7 +76,7 @@ const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) :
    takes effect when you leave Video Settings, and only if it really changed. */
 const PRESETS = {
   fast: { rd: 8, scale: 1, ldr: true, vanilla: true, shadows: 0, normals: false, spec: false, fastLeaves: false, interSize: 32, uploadMs: 3, plantDist: 136, leafInDist: 64, plantShadows: false },
-  detailed: { rd: 8, scale: 1, ldr: true, shadowRes: 1024, shadowDist: 64, shadows: 2, normals: false, cloudShadow: 0, sky: 4, interSize: 128, uploadMs: 3, plantDist: 96, leafInDist: 48, plantShadows: false, leafInShadows: false },
+  detailed: { rd: 8, scale: 1, ldr: true, shadowRes: 1024, shadowDist: 64, shadows: 2, normals: false, cloudShadow: 0, sky: 16, interSize: 128, uploadMs: 3, plantDist: 96, leafInDist: 48, plantShadows: false, leafInShadows: false },
 };
 // what the older settings become
 const GRAPHICS_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
