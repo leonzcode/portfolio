@@ -26,7 +26,8 @@ import { pickBiome } from '../worldgen.js?v=13';
 import { Y0, VOL } from '../world-const.js?v=13';
 
 export function worldStructures(seed, gen, dim) {
-  dim = dim || 'overworld';
+  // the worker names dimensions as js/dims.js does ('the_nether', 'the_end'); the structure sets say 'nether' and 'end'
+  dim = dim === 'the_nether' ? 'nether' : dim === 'the_end' ? 'end' : dim || 'overworld';
   let S;
   try { S = new Structures(seed, makeSource(gen, BIOMES, dim === 'overworld' ? pickBiome : null, Y0, dim)); } catch (e) { console.error('structures', e); return null; }
   return {
