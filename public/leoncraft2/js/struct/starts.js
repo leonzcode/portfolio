@@ -100,7 +100,10 @@ export class Structures {
   /* Where the structure would stand if built in chunk (cx, cz), checked as
      the game checks it (Structure.findValidGenerationPoint), or null. */
   point(type, cx, cz, dim) {
-    const x0 = cx * 16, z0 = cz * 16, xm = x0 + 7, zm = z0 + 7;
+    // the chunk's middle (ChunkPos.getMiddleBlockX, block 8), where most
+    // structures stand and are biome-checked; mansions and end cities measure
+    // from block 7 instead
+    const x0 = cx * 16, z0 = cz * 16, xm = x0 + 8, zm = z0 + 8, x7 = x0 + 7, z7 = z0 + 7;
     const r = largeFeature(new JRand(0), this.seed, cx, cz);
     let p = null;
     if (SINGLE[type]) {
@@ -132,9 +135,9 @@ export class Structures {
         const rot = r.nextInt(4);
         const i = rot === 1 || rot === 2 ? -5 : 5, j = rot === 2 || rot === 3 ? -5 : 5;
         const g = type === 'end_city' ? (x, z) => (this.src.endGround ? this.src.endGround(x, z) : 70) : (x, z) => this.occupied(x, z);
-        const y = Math.min(g(xm, zm), g(xm, zm + j), g(xm + i, zm), g(xm + i, zm + j));
+        const y = Math.min(g(x7, z7), g(x7, z7 + j), g(x7 + i, z7), g(x7 + i, z7 + j));
         if (y < 60) return null;
-        p = { x: xm, y, z: zm, rot };
+        p = { x: x7, y, z: z7, rot };
         break;
       }
       case 'monument': {
