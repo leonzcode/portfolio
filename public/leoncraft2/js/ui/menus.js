@@ -657,7 +657,10 @@ function setFullscreen(on) {
   const d = document;
   if (on && !d.fullscreenElement && d.documentElement.requestFullscreen) {
     d.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => {
-      if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {});
+      // Esc, and the keys played with Ctrl held to sprint (Ctrl+W would close the tab, Ctrl+1 change it)
+      const keys = ['Escape', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'];
+      for (let n = 1; n <= 9; n++) keys.push('Digit' + n);
+      if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(keys).catch(() => {});
     }, () => {});
   } else if (!on && d.fullscreenElement) d.exitFullscreen().catch(() => {});
 }
