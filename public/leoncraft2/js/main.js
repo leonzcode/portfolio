@@ -36,6 +36,7 @@ import { ItemIcons } from './ui/icons.js?v=14';
 import { Inventory, inventoryScreen } from './ui/inventory.js?v=14';
 import { Hud } from './ui/hud.js?v=14';
 import { Interactor } from './interact.js?v=14';
+import { enchantDebug } from './enchanting.js?v=14';
 import { Survival } from './survival.js?v=14';
 import { survivalHooks, respawnPlayer } from './life.js?v=14';
 import { Save } from './save.js?v=14';
@@ -1086,6 +1087,7 @@ async function boot() {
     command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=14').then(m => m.execute(line, ctx)); },
     get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
     get survival() { return game && game.survival; },
+    get enchanting() { return game && enchantDebug(game); },
     get entities() { return game && game.entities; },
     get sim() { return game && game.sim; },
     get time() { return game ? game.time : menuTime; }, set time(t) { if (game) game.time = t; else menuTime = t; },
