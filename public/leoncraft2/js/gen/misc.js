@@ -545,7 +545,9 @@ function vegetationPatch(D, c, r, ox, oy, oz, waterlogged) {
   const vc = F(c.vegetation_chance ?? 0);
   for (const [x, y, z] of placed) {
     if (!(vc > 0) || !(r.nextFloat() < vc)) continue;
-    const vy = waterlogged ? y + 1 : y - dir;
+    // on the ground (or under the ceiling); in a pool, in the water itself,
+    // as the dripleaves rise out of it
+    const vy = waterlogged ? y : y - dir;
     placePlaced(D, c.vegetation_feature, r, x, vy, z);
   }
   return placed.length > 0;
