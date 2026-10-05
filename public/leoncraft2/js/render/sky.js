@@ -224,6 +224,24 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
+/* The fog's colour in every direction above the horizon, for the shaders
+   that fog per vertex: the sky table again, laid out so a direction finds
+   its place without any angles (a hemi-octahedron: x + z and x - z over the
+   sum of the three, the horizon round the edge). */
+const FS_FOGTAB = COMMON + /* glsl */`
+uniform sampler2D uView;
+in vec2 vUv; out vec4 o;
+void main() {
+  vec2 p = vUv * 2.0 - 1.0;
+  vec2 xz = vec2(p.x + p.y, p.x - p.y) * 0.5;
+  vec3 d = normalize(vec3(xz.x, max(1.0 - abs(xz.x) - abs(xz.y), 0.0), xz.y));
+  d = normalize(vec3(d.x, max(d.y, 0.02), d.z));
+  float elev = asin(clamp(d.y, -1.0, 1.0));
+  float v = 0.5 + 0.5 * sign(elev) * sqrt(abs(elev) / (PI * 0.5));
+  float az = atan(d.z, d.x); if (az < 0.0) az += TAU;
+  o = vec4(texture(uView, vec2(az / TAU, v)).rgb, 1.0);
+}`;
+
 export class Sky {
   constructor(renderer) {
     this.renderer = renderer;
@@ -232,6 +250,7 @@ export class Sky {
     this.ms = floatTarget(32, 32);
     this.view = floatTarget(192, 108, { wrapS: THREE.RepeatWrapping });
     this.amb = floatTarget(8, 1, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    this.fog = floatTarget(64, 64);
     this.uniforms = {
       uTrans: { value: this.trans.texture }, uMS: { value: this.ms.texture }, uView: { value: this.view.texture },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
@@ -241,14 +260,81 @@ export class Sky {
     this.mMS = rawMat(FS_MS, this.uniforms);
     this.mView = rawMat(FS_VIEW, this.uniforms);
     this.mAmb = rawMat(FS_AMB, this.uniforms);
+    this.mFog = rawMat(FS_FOGTAB, this.uniforms);
     this.fs.material = this.mTrans; this.fs.render(renderer, this.trans);
     this.fs.material = this.mMS; this.fs.render(renderer, this.ms);
+    // the light table, as numbers the CPU can hand to the shaders (see readLight)
+    this.light = new Float32Array(32);
+    this.lightRead = false;
   }
   update(sunDir, moonDir, eyeY) {
     this.uniforms.uSunDir.value.copy(sunDir);
     this.uniforms.uMoonDir.value.copy(moonDir);
     this.uniforms.uCamH.value = Math.max(0.01, 0.2 + (eyeY - 63) / 1000);
     this.fs.material = this.mView; this.fs.render(this.renderer, this.view);
+    this.fs.material = this.mFog; this.fs.render(this.renderer, this.fog);
     this.fs.material = this.mAmb; this.fs.render(this.renderer, this.amb);
+    this.askLight();
+  }
+  /* The eight numbers of the light table (sky light from above, the side
+     and below, the sun or moon, the exposure...) read back to the CPU, so
+     the shaders that light per vertex take them as plain values instead of
+     reading the table at every vertex. The read is started after the table
+     is drawn and picked up a frame or two later, when the graphics card has
+     done it (a fence), so it never makes the CPU wait; the very first one is
+     read at once. The sky changes slowly, so a frame or two late is never
+     seen. */
+  askLight() {
+    const r = this.renderer, gl = r.getContext();
+    if (this.fence) return;
+    r.setRenderTarget(this.amb);
+    if (!this.lightRead) {
+      gl.readPixels(0, 0, 8, 1, gl.RGBA, gl.FLOAT, this.light);
+      this.lightRead = true;
+      return;
+    }
+    if (!this.pbo) {
+      this.pbo = gl.createBuffer();
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, this.light.byteLength, gl.STREAM_READ);
+    } else gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
+    gl.readPixels(0, 0, 8, 1, gl.RGBA, gl.FLOAT, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this.fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+  }
+  /* Once a frame, for Detailed: the table's values as the per-vertex shaders
+     take them (materials.js LEAN_VS, glsl.js fogTerms). The sky's light from
+     above, the side and below is greyed a little and has the sun's bounce off
+     the ground added, as the blocks' shader always did; the exposure is the
+     table's, eased over to the renderer's own in a cave, and the renderer's
+     alone in the Nether and the End (glsl.js EXPOSURE); the fog thickens
+     below the eye's height (uFogK). */
+  setUniforms(U, camY) {
+    this.readLight();
+    const a = this.light;
+    const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const sr = a[12], sg = a[13], sb = a[14];
+    const put = (v, i) => {
+      const r = a[i], g = a[i + 1], b = a[i + 2], m = lum(r, g, b);
+      v.set(r + (m - r) * 0.22 + sr * 0.03, g + (m - g) * 0.22 + sg * 0.03, b + (m - b) * 0.22 + sb * 0.03);
+    };
+    put(U.uAmbUp.value, 0); put(U.uAmbSide.value, 4); put(U.uAmbDown.value, 8);
+    U.uSunC.value.set(sr, sg, sb);
+    U.uDayK.value = Math.min(1, Math.max(0, lum(sr, sg, sb) * 0.3));
+    const e = Math.max(1e-4, a[24]), cave = U.uCave.value, ex = U.uExposure.value;
+    U.uExpo.value = U.uDim.value > 0.5 ? ex : cave > 0 ? Math.exp(Math.log(e) + (Math.log(ex) - Math.log(e)) * cave) : e;
+    U.uFogK.value = 0.0019 * Math.exp(-(camY - 63) / 60);
+  }
+  // once a frame: has the last read arrived?
+  readLight() {
+    if (!this.fence) return;
+    const gl = this.renderer.getContext();
+    if (gl.clientWaitSync(this.fence, 0, 0) === gl.TIMEOUT_EXPIRED) return;
+    gl.deleteSync(this.fence);
+    this.fence = null;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this.light);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   }
 }

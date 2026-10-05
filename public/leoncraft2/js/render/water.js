@@ -29,6 +29,14 @@ layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(locat
 uniform vec3 uChunk;
 out vec3 vWorld; out vec4 vLight; out vec2 vFlow; out vec4 vCol; out float vFoam;
 flat out int vNormal; flat out int vFlags; flat out float vLayer;
+#ifdef LDR
+// Detailed: the fog worked out per vertex (glsl.js fogTerms), as the blocks do
+uniform sampler2D uView, uAmbient;
+uniform vec3 cameraPosition;
+uniform float uEyeInWater;
+out vec3 vKeep; out vec3 vAdd;
+#endif
+LDR_HERE
 void main() {
   vec4 world = modelMatrix * vec4(aPos.xyz / 32.0 - vec3(8.0, 0.0, 8.0) + uChunk, 1.0);
   // from where the surface was before the flow last moved, to where it is now
@@ -50,6 +58,9 @@ void main() {
   vCol = aC / 255.0;
   vLayer = aPos.w;
   gl_Position = projectionMatrix * viewMatrix * world;
+#ifdef LDR
+  fogTerms(world.xyz, vKeep, vAdd);
+#endif
 }`;
 
 const FS = /* glsl */`
@@ -61,6 +72,9 @@ uniform vec2 uRes;
 uniform float uFrame, uEyeInWater, uNear, uFar;
 in vec3 vWorld; in vec4 vLight; in vec2 vFlow; in vec4 vCol; in float vFoam;
 flat in int vNormal; flat in int vFlags; flat in float vLayer;
+#ifdef LDR
+in vec3 vKeep; in vec3 vAdd;
+#endif
 layout(location = 0) out vec4 outColor;
 
 vec3 skyRadiance(vec3 d) {
@@ -129,7 +143,7 @@ void main() {
     l = toLinear(l);
     float glow = 1.0 + 0.4 * sin(uTime * 1.3 + vWorld.x * 0.7 + vWorld.z * 0.5);
 #ifdef LDR
-    outColor = vec4(finishLDR(l * (5.0 + 3.0 * lum(l)) * glow, vWorld), 1.0);
+    outColor = vec4(toneLDR(l * (5.0 + 3.0 * lum(l)) * glow * vKeep + vAdd), 1.0);
 #else
     outColor = vec4(l * (5.0 + 3.0 * lum(l)) * glow, 1.0);
 #endif
@@ -146,7 +160,11 @@ void main() {
     vec2 wp = top ? vWorld.xz : vec2(dot(vWorld, vec3(Ng.z, 0.0, -Ng.x)), vWorld.y * 0.6);
     if (!top) flow = vec2(0.0, -1.0);            // a waterfall's face streams downward
     float t = uTime * (falling || !top ? 1.8 : 1.0);
+#ifdef LDR
+    vec3 wn = waveNormalD(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5));
+#else
     vec3 wn = waveNormal(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5));
+#endif
     // ripples from the interaction map
     vec2 iuv = (vWorld.xz - uInteractRect.xy) / uInteractRect.zw;
     if (top && iuv.x > 0.0 && iuv.y > 0.0 && iuv.x < 1.0 && iuv.y < 1.0) {
@@ -194,7 +212,7 @@ void main() {
       if (pour) { float st = texture(uNoise, vec2((vWorld.x + vWorld.z) * 0.45, vWorld.y * 0.12 + uTime * 0.9)).g;
         float fo = sat(st * 1.6 - 0.6); col = mix(col, vec3(0.9) * (sunC * (shadow * 0.8 + 0.1) + ambUp * sky * sky) / PI, fo); alpha = max(alpha, 0.8); }
     }
-    outColor = vec4(finishLDR(col, vWorld), alpha);
+    outColor = vec4(toneLDR(col * vKeep + vAdd), alpha);
     return;
   }
 #endif
@@ -277,7 +295,7 @@ void main() {
 export function makeWaterMaterial(shared, opts) {
   return new THREE.RawShaderMaterial({
     glslVersion: THREE.GLSL3,
-    vertexShader: HEAD + COMMON + WIND + VS,
+    vertexShader: HEAD + COMMON + WIND + (opts && opts.ldr ? TONEMAP + VS.replace('LDR_HERE', LDR) : VS.replace('LDR_HERE', '')),
     fragmentShader: HEAD + COMMON + SHADOW + WIND + WAVES + TONEMAP + FS.replace('void main() {', (opts && opts.ldr ? LDR : '') + LIGHTS + '\nvoid main() {'),
     uniforms: Object.assign({ uMeshTime: { value: 0 } }, shared),
     side: THREE.DoubleSide,

@@ -191,6 +191,39 @@ vec3 waveNormal(vec2 p, float t, vec2 flow, float strength) {
   float hx = waveH(p + vec2(e, 0.0), t, flow), hz = waveH(p + vec2(0.0, e), t, flow);
   return normalize(vec3(-(hx - h0) / e * strength, 1.0, -(hz - h0) / e * strength));
 }
+// value noise and its slope
+vec3 vnoiseD(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f), du = 6.0 * f * (1.0 - f);
+  float a = hash12(i), b = hash12(i + vec2(1, 0)), c = hash12(i + vec2(0, 1)), d = hash12(i + vec2(1, 1));
+  float k = a - b - c + d;
+  return vec3(a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y, du * vec2((b - a) + k * u.y, (c - a) + k * u.x));
+}
+/* The same waves as waveNormal, their slope worked out with them rather than
+   by sampling the sum three times: one pass of five waves instead of
+   fifteen. The noise that bends the crests is taken into the slope too. */
+vec3 waveNormalD(vec2 p, float t, vec2 flow, float strength) {
+  float amp = 1.0, wl = 7.0, tot = 0.0;
+  float a = 0.52;
+  vec3 wn = vnoiseD(p * 0.18 + t * 0.05);
+  float warp = wn.x * 2.0;
+  vec2 dwarp = wn.yz * 0.36;
+  bool flowing = dot(flow, flow) > 0.01;
+  vec2 g = vec2(0.0);
+  for (int i = 0; i < 5; i++) {
+    vec2 dir = flowing ? normalize(flow) : vec2(cos(a), sin(a));
+    float k = TAU / wl;
+    float w = sqrt(9.8 * k) * (flowing ? 0.7 : 1.0);
+    float x = w * t - k * (dot(dir, p) + warp);
+    float s = sin(x);
+    // the slope of amp * sqr(sin(x) * 0.5 + 0.5)
+    g += amp * (s * 0.5 + 0.5) * cos(x) * -k * (dir + dwarp);
+    tot += amp;
+    amp *= 0.55; wl *= 0.62; a += 2.39996;
+  }
+  g /= tot;
+  return normalize(vec3(-g.x * strength, 1.0, -g.y * strength));
+}
 `;
 
 /* ---- block light, the light in your hand, and the clouds' shadows ---------
@@ -278,6 +311,8 @@ vec3 toSRGB(vec3 c) {
   c = max(c, 0.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
+// Detailed's whole tone curve, exposure already applied: linear light in, the screen's colour out
+vec3 toneLDR(vec3 c) { return toSRGB(agx(c)); }
 `;
 
 /* ---- Detailed's exposure ----
@@ -335,5 +370,40 @@ vec3 finishLDR(vec3 col, vec3 world) {
     col = mix(col, skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), smoothstep(uRender * 0.72, uRender, hd));
   }
   return toSRGB(agx(col * exposureNow()));
+}
+/* The same fog worked out once per vertex (as the game does its fog), for
+   the shaders that light per vertex: what is left of the surface (keep, a
+   colour, since water takes red first) and the light the fog adds in front
+   of it. finishLDR(col) is then toneLDR(col * keep + add), with the exposure
+   already in both. The renderer hands in what is the same for the whole
+   frame: the exposure (uExpo) and the fog's thickness at the eye's height
+   (uFogK); the fog's colour comes from a small table (sky.js FS_FOGTAB). */
+uniform float uExpo, uFogK;
+uniform sampler2D uFogTab;
+vec3 fogColour(vec3 rd) {
+  vec3 d = vec3(rd.x, max(rd.y, 0.02), rd.z);
+  vec2 uv = vec2(d.x + d.z, d.x - d.z) / (abs(d.x) + d.y + abs(d.z));
+  return textureLod(uFogTab, uv * 0.5 + 0.5, 0.0).rgb;
+}
+void fogTerms(vec3 world, out vec3 keep, out vec3 add) {
+  vec3 rd = world - cameraPosition;
+  float dist = length(rd); rd /= max(dist, 1e-4);
+  float E = uExpo;
+  if (uDim > 0.5) {
+    float f = sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x));
+    keep = vec3((1.0 - f) * E); add = uDimFog * f * E;
+  } else if (uEyeInWater > 0.5) {
+    vec3 absorb = -0.15 * log(max(uWaterTint, vec3(0.02))) + 0.03;
+    vec3 Tr = exp(-(absorb + 0.025) * min(dist, 96.0));
+    vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
+    keep = Tr * E; add = amb * uWaterTint * 0.6 * uSkyAtEye * (1.0 - Tr) * E;
+  } else {
+    float k = 1.0 / 60.0, dy = rd.y * dist;
+    float od = uFogK * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
+    float T = exp(-od);
+    float fade = smoothstep(uRender * 0.72, uRender, length(rd.xz) * dist);
+    keep = vec3(T * (1.0 - fade) * E);
+    add = fogColour(rd) * ((1.0 - T) * uSkyAtEye * (1.0 - fade) + fade) * E;
+  }
 }
 `;

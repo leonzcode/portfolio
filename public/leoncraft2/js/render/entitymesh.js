@@ -34,6 +34,14 @@ in vec4 aI0;   // first bone, atlas offset u, v, (unused)
 in vec4 aI1;   // sky, block light (0..1), hurt red, white flash
 in vec4 aI2;   // tint colour (rgb), (unused)
 out vec3 vWorld; out vec3 vN; out vec2 vUv; out vec4 vL; out vec3 vTint;
+#ifdef FOG_V
+// Detailed: the fog worked out per vertex (glsl.js fogTerms), as the blocks do
+uniform sampler2D uView, uAmbient;
+uniform vec3 cameraPosition;
+uniform float uEyeInWater;
+out vec3 vKeep; out vec3 vAdd;
+#endif
+LDR_HERE
 mat4 bone(int i) {
   ivec2 p = ivec2((i % ${BONE_W}) * 4, i / ${BONE_W});
   return mat4(texelFetch(uBones, p, 0), texelFetch(uBones, p + ivec2(1, 0), 0), texelFetch(uBones, p + ivec2(2, 0), 0), texelFetch(uBones, p + ivec2(3, 0), 0));
@@ -48,6 +56,9 @@ void main() {
   // a tinted part (wool, a collar) takes the instance colour
   vTint = aPart.y > 0.5 ? aI2.rgb : vec3(1.0);
   gl_Position = projectionMatrix * viewMatrix * w;
+#ifdef FOG_V
+  fogTerms(w.xyz, vKeep, vAdd);
+#endif
 }`;
 const FS = /* glsl */`
 uniform sampler2D uAtlas, uAmbient;
@@ -62,6 +73,9 @@ uniform float uEyeInWater;
 #endif
 ` + LIGHTS + `
 in vec3 vWorld; in vec3 vN; in vec2 vUv; in vec4 vL; in vec3 vTint;
+#ifdef LDR
+in vec3 vKeep; in vec3 vAdd;
+#endif
 layout(location = 0) out vec4 outColor;
 vec3 ambientAt(vec3 n) {
   vec3 up = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
@@ -105,7 +119,7 @@ void main() {
   vec3 blockL = block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
   vec3 col = albedo / PI * (diffuse * PI + amb + blockL + vec3(0.0035, 0.004, 0.006));
 #ifdef LDR
-  col = finishLDR(col, vWorld);
+  col = toneLDR(col * vKeep + vAdd);
 #endif
   outColor = vec4(col, 1.0);
 }`;
@@ -292,11 +306,12 @@ export class EntityMeshes {
     this.nBones = 0;
     const defines = { SHADOWS: opts.shadows === undefined ? 2 : opts.shadows };
     if (opts.ldr) defines.LDR = 1;
+    if (opts.ldr && !opts.vanilla) defines.FOG_V = 1;
     Object.assign(defines, lightDefines(opts));
     this.uBones = { value: this.boneTex };
     const uni = Object.assign({}, U, { uAtlas: { value: tex }, uBones: this.uBones });
     this.mat = new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: HEAD + COMMON + VS,
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + COMMON + (opts.ldr && !opts.vanilla ? TONEMAP + VS.replace('LDR_HERE', LDR) : VS.replace('LDR_HERE', '')),
       fragmentShader: opts.vanilla ? HEAD + FS_VANILLA : HEAD + COMMON + SHADOW + TONEMAP + FS,
       uniforms: uni, defines, side: THREE.DoubleSide,
     });

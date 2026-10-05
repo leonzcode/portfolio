@@ -19,41 +19,40 @@ export const CLOUD_H = 192, CLOUD_S = 12;
 
 /* Detailed's clouds: white, lit by the sun (or moon) from above and the sky
    all round, with the same face shades, melting into the sky's own colour
-   towards the horizon, then tone mapped like everything else. */
-const DETAILED_VS = /* glsl */`
+   towards the horizon, then tone mapped like everything else. A cloud's face
+   is one colour but for that melt, so all of it is worked out per vertex. */
+const DETAILED_VS = COMMON + TONEMAP + /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
-in vec3 position; in float shade;
-out float vShade; out vec3 vWorld;
-void main() {
-  vec4 w = modelMatrix * vec4(position, 1.0);
-  vShade = shade; vWorld = w.xyz;
-  gl_Position = projectionMatrix * viewMatrix * w;
-}`;
-const DETAILED_FS = COMMON + TONEMAP + /* glsl */`
 uniform sampler2D uView, uAmbient;
 uniform vec3 cameraPosition, uLightDir;
 uniform float uExposure, uRender, uDim;
 ` + EXPOSURE + /* glsl */`
-in float vShade; in vec3 vWorld;
-out vec4 o;
+in vec3 position; in float shade;
+out vec4 vCol;
 vec3 skyDir(vec3 d) {
   float elev = asin(clamp(d.y, -1.0, 1.0));
   float v = 0.5 + 0.5 * sign(elev) * sqrt(abs(elev) / (PI * 0.5));
   float az = atan(d.z, d.x); if (az < 0.0) az += TAU;
-  return texture(uView, vec2(az / TAU, v)).rgb;
+  return textureLod(uView, vec2(az / TAU, v), 0.0).rgb;
 }
 void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * viewMatrix * w;
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
-  vec3 c = 0.85 * (sunC * (0.2 + 0.45 * sat(uLightDir.y)) + amb * (1.3 / PI)) * vShade;
-  vec3 rel = vWorld - cameraPosition;
+  vec3 c = 0.85 * (sunC * (0.2 + 0.45 * sat(uLightDir.y)) + amb * (1.3 / PI)) * shade;
+  vec3 rel = w.xyz - cameraPosition;
   float f = smoothstep(uRender, uRender * 2.0, length(rel.xz));
   vec3 rd = normalize(rel);
   c = mix(c, skyDir(vec3(rd.x, max(rd.y, 0.0), rd.z)), f);
-  o = vec4(toSRGB(agx(c * exposureNow())), 0.8 * (1.0 - f * f));
+  vCol = vec4(toneLDR(c * exposureNow()), 0.8 * (1.0 - f * f));
 }`;
+const DETAILED_FS = /* glsl */`
+in vec4 vCol;
+out vec4 o;
+void main() { o = vCol; }`;
 export function detailedCloudMaterial(U) {
   return extra => new THREE.RawShaderMaterial(Object.assign({
-    glslVersion: THREE.GLSL3, vertexShader: 'precision highp float;\n' + DETAILED_VS, fragmentShader: 'precision highp float; precision highp int;\n' + DETAILED_FS,
+    glslVersion: THREE.GLSL3, vertexShader: 'precision highp float; precision highp int;\n' + DETAILED_VS, fragmentShader: 'precision highp float;\n' + DETAILED_FS,
     uniforms: U, side: THREE.DoubleSide,
   }, extra));
 }
