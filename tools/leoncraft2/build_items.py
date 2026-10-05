@@ -19,28 +19,38 @@ back together here, so a chest can be made of mixed planks as in the game.
 
 Pictures, from six open resource packs (all CC BY-SA 4.0, never Mojang's):
 Pixel Perfection CE, Pixel Perfection Legacy, REFI Textures, Bauniclonia,
-Pixel ImPerfection and Miner 16px (the last four are drawn for Luanti games,
-Mineclonia and Minetest Game, so their files have those games' names).
-Pixel ImPerfection gives the blaze rod, the totem, the heart of the sea and
-magma cream; Miner 16px the iron, gold and copper ingots (one shape for the
-three, as in the game).
-data/item_sources.json says which pack's drawing each picture is: the one
-nearest the game's own picture, judged on a local copy of the game's item
-textures (October 2026, 26.1.2) once its colours are pulled to the game's,
-with whole families from one pack so they match (every tool and every
-armour piece from Bauniclonia, all spawn eggs from Legacy...). The colours
-are then pulled towards the game's own average and spread
+Pixel ImPerfection and Refined Textures (the last four are drawn for Luanti
+games, Mineclonia and Minetest Game, so their files have those games' names;
+Refined Textures is a fork of REFI Textures). Pixel ImPerfection gives the
+blaze rod, the totem, the heart of the sea and magma cream; Refined Textures
+bread, cooked chicken and the glistering melon slice.
+data/item_sources.json says which pack's drawing each picture is, how
+strongly its colours are pulled and where it sits: the drawing nearest the
+game's own picture, judged on a local copy of the game's item textures
+(October 2026, 26.1.2) once its colours are pulled and it is placed, with
+whole families from one pack so they match (every tool and every armour
+piece from Bauniclonia, all spawn eggs from Legacy, the three ingots from one
+pack...). The colours are pulled towards the game's own average and spread
 (data/vanilla_item_colour_stats.json, six numbers per picture, no pixels), at
-the strength the sources file gives (1 full, 0.5 half, 0 not at all: a full
-pull can make a drawing of another shape look worse). The textures the
-armour model wears (textures/armor/, 64 x 32 in the game's layout) are
-Bauniclonia's, built the same way.
+the strength the sources file gives (1 full, 0.5 half, 0 not at all), the one
+that comes nearest once both the per-pixel distance and the distance between
+the mean colours count. The placement moves a drawing by up to two pixels,
+or mirrors it, so it sits in the slot where the game's picture does (the
+outlines compared; nothing is redrawn); the members of a family that share an
+outline (the swords, the chestplates, the bundles...) share one placement,
+unless it would cost one of them a weaker pull. The shield has no picture in
+the game: the inventory draws its model, and so does this (shield_view), from
+Pixel Perfection CE's shield texture. The textures the armour model wears
+(textures/armor/, 64 x 32 in the game's layout) are Bauniclonia's, built the
+same way. Dyed leather and wolf armour get extra layers (RAW_LAYERS): the
+grey picture the dye multiplies and the parts drawn over it.
 
 Every chosen drawing passed a copy audit against the game's own textures:
 identical pixels at any shift of up to two pixels or mirrored (at most 15%),
 and how closely the fine detail (each pixel minus its 3 x 3 blur) follows the
-game's (at most 0.75 where it stands, 0.9 at any shift). Traces keep the
-detail even when recoloured; independent drawings of the same object do not.
+game's (at most 0.75 where it stands, 0.9 at any shift), both where the pack
+drew it and where it is placed. Traces keep the detail even when recoloured;
+independent drawings of the same object do not.
 Earlier audits (every version from 1.16.5 to 26.3) and this one found these
 pack files to be Mojang's pixels, copied or traced, so they are never used:
   CE   dried_kelp, leather_horse_armor, scute (turtle_scute),
@@ -52,12 +62,22 @@ pack files to be Mojang's pixels, copied or traced, so they are never used:
   all (its tools are the game's, recoloured).
   Pixel ImPerfection's book follows the game's detail (0.81), so no book is
   taken from that pack (its written book is at the limit too).
+A wider audit (October 2026) compared every picture with every item picture
+of every game version from 1.8.9 to 26.1.2, whatever its name: identical
+pixels, and the interior detail (each pixel against its opaque neighbours)
+wherever the outline is all but the same, which is how a trace shows. It
+found more, never used: CE's phantom membrane and nautilus shell (the 1.13
+pictures recoloured, interior 0.94 and 0.96 on the same outline) and Miner
+16px's ingots (the 1.8 ingot, 0.85 and 0.87; its apple has the 1.8 outline
+too), so nothing is taken from Miner 16px. The audit's other flags are shapes
+so simple that any drawing shares their outline (a stick, the leggings);
+those were looked at one by one and are drawn differently.
 The turtle helmet (picture and model) is Bauniclonia's leather cap
-recoloured. The shield has no picture in the game to compare with and stays
-our own drawing; the compass and the mace drawings below are used only when
-REFI Textures is not given.
+recoloured. The compass and mace drawings below are used only when REFI
+Textures is not given, and the shield drawing only without Pixel Perfection
+CE's shield texture.
 
-Run:  python tools/leoncraft2/build_items.py <PixelPerfectionCE root> <Pixel Perfection Legacy root> <REFI_Textures> <Bauniclonia> <pixel_imperfection> <Miner16px>
+Run:  python tools/leoncraft2/build_items.py <PixelPerfectionCE root> <Pixel Perfection Legacy root> <REFI_Textures> <Bauniclonia> <pixel_imperfection> <Refined_Textures>
       (without REFI and Bauniclonia the pictures come from Pixel Perfection only and no armour textures are
       written; a picture whose pack is not given falls back to Pixel Perfection, and the build says which)
       python tools/leoncraft2/build_items.py --refresh <minecraft-data folder> <blocks.26.1.json>
@@ -247,6 +267,74 @@ def own_art(name):
     return im
 
 
+def shield_view(tex):
+    """The shield as the inventory shows it, from a 64 x 64 shield texture (RGBA array): the game draws the shield's
+    model there, not a flat picture, so this draws it the same way. The model is a 12 x 22 x 1 plate on a 2 x 6 x 6
+    handle (boxes in the usual entity texture layout, the plate at 0,0 and the handle at 26,0), turned over by the
+    item's own (1, -1, -1) scale, moved by the item's -0.5 offset, then put through the GUI display of the shield's
+    item model: scale 0.65, turned 15, -25 and -5 degrees about X, Y and Z (Z first), moved 2, 3, 0 pixels. One
+    sample at each pixel's centre of the 16 x 16 slot, the nearest face winning; the faces towards the slot are lit
+    fully and the edges 0.8. Returns a 16 x 16 RGBA array."""
+    import numpy as np
+    tex = np.asarray(tex)
+    k = tex.shape[1] / 64.0
+    a, b, c = np.radians([15, -25, -5])
+    RX = np.array([[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]])
+    RY = np.array([[np.cos(b), 0, np.sin(b)], [0, 1, 0], [-np.sin(b), 0, np.cos(b)]])
+    RZ = np.array([[np.cos(c), -np.sin(c), 0], [np.sin(c), np.cos(c), 0], [0, 0, 1]])
+    R = RX @ RY @ RZ
+
+    def slot(p):
+        q = np.array([p[0], -p[1], -p[2]]) / 16.0 - 0.5
+        return R @ (0.65 * q) + np.array([2, 3, 0]) / 16.0
+
+    def faces(x0, y0, z0, w, h, d, u, v):
+        x1, y1, z1 = x0 + w, y0 + h, z0 + d
+        P = np.array
+        return [(P([x1, y0, z0]), P([-w, 0, 0]), P([0, h, 0]), (u + d, v + d, w, h)),
+                (P([x0, y0, z1]), P([w, 0, 0]), P([0, h, 0]), (u + d + w + d, v + d, w, h)),
+                (P([x1, y0, z1]), P([0, 0, -d]), P([0, h, 0]), (u, v + d, d, h)),
+                (P([x0, y0, z0]), P([0, 0, d]), P([0, h, 0]), (u + d + w, v + d, d, h)),
+                (P([x0, y0, z1]), P([w, 0, 0]), P([0, 0, -d]), (u + d, v, w, d)),
+                (P([x0, y1, z0]), P([w, 0, 0]), P([0, 0, d]), (u + d + w, v, w, d))]
+    out = np.zeros((16, 16, 4), np.uint8)
+    depth = np.full((16, 16), -1e9)
+    py, px = np.mgrid[0:16, 0:16]
+    sx, sy = (px + 0.5 - 8) / 16, (8 - (py + 0.5)) / 16
+    for corner, eu, ev, (tu, tv, tw, th) in faces(-6, -11, -2, 12, 22, 1, 0, 0) + faces(-1, -3, -1, 2, 6, 6, 26, 0):
+        o = slot(corner)
+        du, dv = slot(corner + eu) - o, slot(corner + ev) - o
+        n = np.cross(du, dv)
+        det = du[0] * dv[1] - du[1] * dv[0]
+        if abs(det) < 1e-12:
+            continue
+        light = 1.0 if abs(n[2]) / np.linalg.norm(n) > 0.8 else 0.8
+        # where each pixel centre meets the face's plane, in the face's own 0..1 coordinates
+        rx, ry = sx - o[0], sy - o[1]
+        s = (rx * dv[1] - ry * dv[0]) / det
+        t = (du[0] * ry - du[1] * rx) / det
+        z = o[2] + s * du[2] + t * dv[2]
+        tx = np.minimum((tu + s * tw) * k, tex.shape[1] - 1).astype(int)
+        ty = np.minimum((tv + t * th) * k, tex.shape[0] - 1).astype(int)
+        hit = (s >= 0) & (s < 1) & (t >= 0) & (t < 1) & (z > depth)
+        col = tex[np.clip(ty, 0, None), np.clip(tx, 0, None)]
+        hit &= col[..., 3] >= 8
+        out[hit, :3] = np.clip(np.round(col[hit, :3] * light), 0, 255)
+        out[hit, 3] = 255
+        depth[hit] = z[hit]
+    return out
+
+
+def place(im, dx, dy, flip=False):
+    """The picture moved by dx, dy pixels (right, down), mirrored first if asked; nothing is pushed off it."""
+    from PIL import Image, ImageOps
+    if flip:
+        im = ImageOps.mirror(im)
+    out = Image.new('RGBA', im.size, (0, 0, 0, 0))
+    out.paste(im, (dx, dy))
+    return out
+
+
 ALIASES = {'compass': None, 'recovery_compass': 'recovery_compass_16', 'clock': 'clock_00', 'crossbow': 'crossbow_standby',
            'debug_stick': 'stick', 'turtle_scute': 'turtle_scute', 'pufferfish': 'pufferfish'}
 # never taken from that pack (see the audit above)
@@ -254,7 +342,7 @@ NOT_FROM_CE = {'dried_kelp', 'leather_horse_armor', 'scute', 'turtle_scute', 'co
                'turtle_helmet'}
 NOT_FROM_PPL = {'compass_16'}
 NOT_FROM_LUANTI = {'pimp': {'default_book', 'mcl_books_book_written', 'mcl_books_book_writable', 'mcl_enchanting_book_enchanted'}}
-DRAWN = {'shield'}
+DRAWN = {'shield'}                          # drawn from a model, not a picture (shield_view)
 OWN_ART = {'compass', 'shield', 'mace'}     # drawn here, used when the chosen drawing cannot be loaded
 LEATHER = 0xA06540                          # undyed leather
 # pictures made of a grey base tinted (as the game does) with an overlay on top
@@ -273,8 +361,17 @@ TINTED = {
 }
 # the untinted layers of pictures the game colours per item (a potion's liquid, an arrow's tip), and the item whose
 # drawing they come from
+# drawing they come from. Dyed leather and wolf armour too: the grey base the dye multiplies (GREY_LAYERS, pulled to
+# the game's grey) and the parts drawn over it, untinted for leather, tinted for the wolf armour's dyed part.
 RAW_LAYERS = {'potion_overlay': 'potion', 'potion': 'potion', 'splash_potion': 'splash_potion',
-              'lingering_potion': 'lingering_potion', 'tipped_arrow_head': 'tipped_arrow', 'tipped_arrow_base': 'tipped_arrow'}
+              'lingering_potion': 'lingering_potion', 'tipped_arrow_head': 'tipped_arrow', 'tipped_arrow_base': 'tipped_arrow',
+              'leather_helmet': 'leather_helmet', 'leather_helmet_overlay': 'leather_helmet',
+              'leather_chestplate': 'leather_chestplate', 'leather_chestplate_overlay': 'leather_chestplate',
+              'leather_leggings': 'leather_leggings', 'leather_leggings_overlay': 'leather_leggings',
+              'leather_boots': 'leather_boots', 'leather_boots_overlay': 'leather_boots',
+              'leather_horse_armor': 'leather_horse_armor', 'leather_horse_armor_overlay': 'leather_horse_armor',
+              'wolf_armor_overlay': 'wolf_armor'}
+GREY_LAYERS = {'leather_helmet', 'leather_chestplate', 'leather_leggings', 'leather_boots', 'leather_horse_armor'}
 
 
 def _json(name, key):
@@ -282,9 +379,21 @@ def _json(name, key):
     return json.load(open(p, encoding='utf-8'))[key] if os.path.exists(p) else {}
 
 
-SOURCES = _json('item_sources.json', 'sources')               # item -> [pack, file, strength]
+SOURCES = _json('item_sources.json', 'sources')               # item -> [pack, file, strength(, dx, dy(, mirrored))]
 ITEM_STATS = _json('vanilla_item_colour_stats.json', 'items')  # picture -> six Lab numbers of the game's own
 ARMOR_STATS = _json('vanilla_item_colour_stats.json', 'armor')
+# items whose picture in the game's files has another name: the frame the inventory shows, or the picture used
+STATS_ALIAS = {'clock': 'clock_00', 'crossbow': 'crossbow_standby', 'recovery_compass': 'recovery_compass_16',
+               'compass': 'compass_16', 'debug_stick': 'stick', 'enchanted_golden_apple': 'golden_apple'}
+
+
+def stats_of(name):
+    return ITEM_STATS.get(STATS_ALIAS.get(name, name))
+
+
+# the packs' alternative, menu and other-game folders, never searched
+SKIP_DIRS = {'alternate_textures', 'GUI_themes', 'main_menu', 'menu', 'character_player_skin_templates', '.git',
+             'custom_edition', 'skyfactory', 'mcimport', 'mcimport_mods', 'screenshots', 'HUD', 'hud'}
 
 
 def pack_index(root, sub):
@@ -294,7 +403,7 @@ def pack_index(root, sub):
     idx = {}
     if base and os.path.isdir(base):
         for dp, dn, fn in os.walk(base):
-            dn[:] = sorted(d for d in dn if d not in ('alternate_textures', 'GUI_themes', 'main_menu', '.git'))
+            dn[:] = sorted(d for d in dn if d not in SKIP_DIRS)
             for f in sorted(fn):
                 if f.endswith('.png'):
                     idx.setdefault(f[:-4], os.path.join(dp, f))
@@ -364,14 +473,29 @@ def from_pack(pack, file, packs):
 FELL_BACK = []      # pictures whose chosen pack was not given
 
 
+def shield_picture(ce):
+    """The shield's inventory picture from Pixel Perfection CE's shield texture (its entity folder), or None."""
+    from PIL import Image
+    p = os.path.join(ce, '..', 'entity', 'shield_base_nopattern.png') if ce else None
+    if not p or not os.path.exists(p):
+        return None
+    import numpy as np
+    return Image.fromarray(shield_view(np.asarray(Image.open(p).convert('RGBA'))), 'RGBA')
+
+
 def picture(name, ce, ppl, packs=None):
-    if name in DRAWN: return own_art(name)
+    if name in DRAWN:
+        im = shield_picture(ce)
+        if im is None: return own_art(name)
+        return pull(im, stats_of(name)) if packs else im
     src = SOURCES.get(name)
     if src and packs:
         got = from_pack(src[0], src[1], packs)
         if got:
             im = tint_over(got[0], got[1], TINTED[name][0]) if len(got) == 2 else got[0]
-            return pull(im, ITEM_STATS.get(name), src[2])
+            im = pull(im, stats_of(name), src[2])
+            # where it sits in the slot: moved (and mirrored) to sit where the game's picture does
+            return place(im, src[3], src[4], len(src) > 5 and src[5]) if len(src) > 3 else im
         FELL_BACK.append(name)
     if name in OWN_ART: return own_art(name)
     im = None
@@ -384,18 +508,27 @@ def picture(name, ce, ppl, packs=None):
         alias = ALIASES.get(name, name)
         p = find(alias, ce, ppl) if alias else None
         im = load16(p) if p else None
-    return pull(im, ITEM_STATS.get(name)) if im is not None and packs else im
+    return pull(im, stats_of(name)) if im is not None and packs else im
 
 
 def layer_picture(name, ce, ppl, packs=None):
-    """An untinted layer, from the pack the item it belongs to was drawn from, pulled as that item was."""
+    """An untinted layer, from the pack the item it belongs to was drawn from, pulled and placed as that item was.
+    A grey base comes from Pixel Perfection's own grey file, or Bauniclonia's grey ("_desat") drawing of the piece;
+    a pack with no separate parts to draw over the base gives an empty layer."""
+    from PIL import Image
     src = SOURCES.get(RAW_LAYERS[name])
-    if src and packs and src[0] in ('ce', 'ppl'):
-        got = from_pack(src[0], name, packs)
+    if src and packs:
+        if src[0] in ('ce', 'ppl'):
+            got = from_pack(src[0], name, packs)
+        elif name in GREY_LAYERS:
+            got = from_pack(src[0], src[1] + '_desat', packs)
+        else:
+            got = [Image.new('RGBA', (16, 16), (0, 0, 0, 0))]
         if got:
-            return pull(got[0], ITEM_STATS.get('layer_' + name), src[2])
+            im = pull(got[0], ITEM_STATS.get('layer_' + name), src[2], name in GREY_LAYERS)
+            return place(im, src[3], src[4], len(src) > 5 and src[5]) if len(src) > 3 else im
     p = find(name, ce, ppl)
-    return load16(p) if p else None
+    return load16(p) if p else Image.new('RGBA', (16, 16), (0, 0, 0, 0))
 
 
 # ----------------------------------------------------------------- armour
@@ -508,8 +641,8 @@ def main():
         refi = pack_index(sys.argv[3], 'textures') if len(sys.argv) > 3 else {}
         baun = pack_index(sys.argv[4], 'mineclonia') if len(sys.argv) > 4 else {}
         pimp = pack_index(sys.argv[5], 'textures') if len(sys.argv) > 5 else {}
-        m16 = pack_index(sys.argv[6], 'mtg') if len(sys.argv) > 6 else {}
-        packs = {'ce': ce, 'ppl': ppl, 'refi': refi, 'baun': baun, 'pimp': pimp, 'm16': m16} if refi and baun else None
+        rfd = pack_index(sys.argv[6], 'textures') if len(sys.argv) > 6 else {}
+        packs = {'ce': ce, 'ppl': ppl, 'refi': refi, 'baun': baun, 'pimp': pimp, 'rfd': rfd} if refi and baun else None
         if not packs:
             print('NOTE: REFI Textures and Bauniclonia not given: pictures from Pixel Perfection only, no armour textures')
         strip = Image.new('RGBA', (16, 16 * len(tex)), (0, 0, 0, 0))

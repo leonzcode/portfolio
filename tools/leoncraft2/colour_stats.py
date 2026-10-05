@@ -90,6 +90,12 @@ def items(root):
         p = os.path.join(item, name + '.png')
         if os.path.exists(p):
             stats['layer_' + name] = rounded(lab_stats([np.asarray(first(p), np.float32) / 255]))
+    # the shield has no item picture: the inventory draws its model, so its numbers are those of the game's shield
+    # texture drawn the way build_items.py draws ours (shield_view)
+    from build_items import shield_view
+    sh = os.path.join(tex, 'entity', 'shield', 'shield_base_nopattern.png')
+    if os.path.exists(sh):
+        stats['shield'] = rounded(lab_stats([shield_view(np.asarray(Image.open(sh).convert('RGBA'))).astype(np.float32) / 255]))
     stats = {k: v for k, v in stats.items() if v is not None}
     armor = {}
     eq = os.path.join(tex, 'entity', 'equipment')
