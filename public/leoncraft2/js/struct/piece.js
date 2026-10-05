@@ -114,8 +114,8 @@ export function kindOf(b) {
   if (d.shape === 'trapdoor') return 'trapdoor';
   if (d.shape === 'ladder' || d.shape === 'wall_torch' || d.shape === 'button' || d.shape === 'wall_sign') return 'wall';
   if (d.shape === 'bed') return 'bed';
-  if (d.shape === 'gate' || d.shape === 'chest' || d.shape === 'anvil' || d.orient === 'horizontal') return 'facing';
-  if (d.orient === 'facing') return 'facing6';
+  if (d.shape === 'gate' || d.shape === 'chest' || d.shape === 'anvil' || d.shape === 'campfire' || d.orient === 'horizontal') return 'facing';
+  if (d.orient === 'facing' || d.shape === 'hopper') return 'facing6';
   if (d.orient === 'axis' || d.log) return 'axis';
   return '';
 }

@@ -97,6 +97,17 @@ export function placement(world, hit, id, player) {
       m = support; break;
     case 'button': m = support; break;
     case 'lantern': m = n[1] === -1 ? 1 : 0; break;
+    // a hopper points into what you clicked, or down when you click a top or a bottom
+    case 'hopper': m = n[1] !== 0 ? 4 : horizOf([-n[0], 0, -n[2]]); break;
+    case 'campfire': m = look; break;
+    // a bell stands on the floor across your view, hangs from a ceiling, or from one wall (or two)
+    case 'bell': {
+      if (n[1] === 1) { m = look << 1; break; }
+      if (n[1] === -1) { m = 1; break; }
+      const F = { 5: 0, 0: 1, 4: 2, 1: 3 }[support], far = world.get(x + n[0], y, z + n[2]);
+      m = (F << 1) | (far && BLOCKS[far].solid && BLOCKS[far].shape === 'cube' ? 32 : 8);
+      break;
+    }
     case 'rod': m = n[1] === 1 ? 4 : n[1] === -1 ? 5 : horizOf(n); break;
     case 'chain': m = n[0] ? 1 : n[2] ? 2 : 0; break;
     case 'cross': case 'crop': case 'rail': case 'wire': case 'plate': case 'pot': case 'candle': case 'cake':

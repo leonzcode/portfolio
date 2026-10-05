@@ -310,7 +310,10 @@ export const SHAPES = {
     // hanging signs hang under a block; banners are a flag on a pole
     if (d.hanging) return turn([box(1, 0, 7, 15, 10, 9)], m & 3);
     if (d.banner) return turn([box(7.5, 0, 7.5, 8.5, 16, 8.5), box(2, 1, 7, 14, 16, 7.75)], m & 3);
-    return turn([box(0, 8, 7.25, 16, 16, 8.75), box(7.25, 0, 7.25, 8.75, 8, 8.75)], m & 3);
+    // the game's sign: a board 16 by 8 and 4/3 thick standing on a post, its top a little over the block
+    const bd = [0, 0, 16, 8], ps = [7, 8, 9, 16];
+    return turn([box(0, 9.33, 7.33, 16, 17.33, 8.67, { uv: [[7, 0, 8.5, 8], [7, 0, 8.5, 8], [0, 0, 16, 1.5], [0, 0, 16, 1.5], bd, bd] }),
+      box(7.33, 0, 7.33, 8.67, 9.33, 8.67, { uv: [ps, ps, ps, ps, ps, ps] })], m & 3);
   },
   wall_sign(d, m) {
     if (d.banner) return turn([box(2, 0, 0, 14, 15, 1)], sideFacing(m & 7) || 0);
@@ -404,6 +407,97 @@ SHAPES.portal_frame = function (d, m) {
   return turn(r, m & 3);
 };
 
+/* ---- the hollow blocks and the village things, from the game's own block models ---- */
+// four walls two pixels thick round a hole, from y0 to the top: outside, inside and the rim each their own texture
+function walls(y0, out, inn, rim, bottom) {
+  const w = (x0, z0, x1, z1, f) => box(x0, y0, z0, x1, 16, z1, { faces: f });
+  return [
+    w(0, 0, 2, 16, [inn, out, rim, bottom, out, out]),
+    w(14, 0, 16, 16, [out, inn, rim, bottom, out, out]),
+    w(2, 0, 14, 2, [out, out, rim, bottom, inn, out]),
+    w(2, 14, 14, 16, [out, out, rim, bottom, out, inn]),
+  ];
+}
+const LVL = { 1: 9, 2: 12, 3: 15 };
+SHAPES.cauldron = function (d, m) {
+  const L = d.L || {}, S = d.faces[0], T = d.faces[2], Bt = d.faces[3], I = L.inside !== undefined ? L.inside : S;
+  const r = walls(3, S, I, T, Bt).map(b => Object.assign(b, { plain: true }));
+  r.push(box(2, 3, 2, 14, 4, 14, { faces: [I, I, I, Bt, I, I], plain: true }));
+  // the four feet: two little blocks at each corner
+  for (const [x0, z0, x1, z1] of [[0, 0, 4, 2], [0, 2, 2, 4], [12, 0, 16, 2], [14, 2, 16, 4], [0, 14, 4, 16], [0, 12, 2, 14], [12, 14, 16, 16], [14, 12, 16, 14]])
+    r.push(box(x0, 0, z0, x1, 3, z1, { faces: [S, S, Bt, Bt, S, S], plain: true }));
+  // what it holds: water and powder snow by level (meta 1-3, 0 counts as full), lava always full
+  if (L.content !== undefined) {
+    const y = /lava/.test(d.name) ? 15 : LVL[(m & 3) || 3];
+    const c = L.content;
+    r.push(box(2, y, 2, 14, y, 14, { faces: [c, c, c, c, c, c], skip: 63 & ~(1 << 2) }));
+  }
+  return r;
+};
+SHAPES.composter = function (d, m) {
+  const L = d.L || {}, S = d.faces[0], T = d.faces[2], Bt = d.faces[3];
+  const r = walls(2, S, S, T, Bt);
+  r.push(box(0, 0, 0, 16, 2, 16, { faces: [S, S, Bt, Bt, S, S] }));
+  // the compost: a step of two pixels for each level, the finished heap nearly to the rim
+  const lv = Math.min(8, m & 15);
+  if (lv > 0) {
+    const c = lv === 8 ? (L.ready !== undefined ? L.ready : Bt) : (L.compost !== undefined ? L.compost : Bt);
+    const y = lv === 8 ? 15 : 1 + 2 * lv;
+    r.push(box(2, y, 2, 14, y, 14, { faces: [c, c, c, c, c, c], skip: 63 & ~(1 << 2) }));
+  }
+  return r;
+};
+SHAPES.hopper = function (d, m) {
+  const L = d.L || {}, O = d.faces[0], T = d.faces[2], I = L.inside !== undefined ? L.inside : O;
+  const r = walls(11, O, O, T, O);
+  r.push(box(0, 10, 0, 16, 11, 16, { faces: [O, O, I, O, O, O] }), box(4, 4, 4, 12, 10, 12, { faces: [O, O, O, O, O, O] }));
+  // the spout: straight down (meta 4 or more), or out of a side towards where it passes things
+  const f = m & 7;
+  if (f >= 4) r.push(box(6, 0, 6, 10, 4, 10, { faces: [O, O, O, O, O, O] }));
+  else r.push(...turn([box(6, 4, 0, 10, 8, 4, { faces: [O, O, O, O, O, O] })], f));
+  return r;
+};
+// a campfire: four logs crossed in two layers over the embers, and the flames in two crossed planes
+SHAPES.campfire = function (d, m) {
+  const L = d.L || {}, lit = !(m & 4);
+  const log = L.side !== undefined ? L.side : d.faces[0], top = lit && L.top !== undefined ? L.top : log;
+  const bark = [0, 0, 16, 4], end = [0, 4, 4, 8];
+  // a log along z: bark on its long sides, ends at both ends; the top of an upper log glows when lit
+  const alongZ = (x0, y0, ftop) => box(x0, y0, 0, x0 + 4, y0 + 4, 16, { faces: [log, log, ftop, log, log, log], uv: [bark, bark, bark.concat(1), bark.concat(1), end, end] });
+  const alongX = (z0, y0, ftop) => box(0, y0, z0, 16, y0 + 4, z0 + 4, { faces: [log, log, ftop, log, log, log], uv: [end, end, bark, bark, bark, bark] });
+  const r = [alongZ(1, 0, log), alongZ(11, 0, log), alongX(1, 3, top), alongX(11, 3, top),
+    box(5, 0, 0, 11, 1, 16, { faces: [log, log, top, log, log, log], uv: [[0, 15, 16, 16], [0, 15, 16, 16], [0, 8, 16, 14, 1], [0, 8, 16, 14, 1], [0, 15, 6, 16], [10, 15, 16, 16]] })];
+  if (lit && L.fire !== undefined) r.push(...crossed(0.8, 1, 0.8, 15.2, 17, 15.2, L.fire));
+  return turn(r, m & 3);
+};
+// a bell: the bell itself (body and lip) and what holds it, by meta: bit 0 from the ceiling, bits 1-2 facing,
+// bit 3 on one wall, bit 5 between two walls (bit 4 is power, kept by the redstone)
+SHAPES.bell = function (d, m) {
+  const L = d.L || {}, S = d.faces[0], T = d.faces[2], Bt = d.faces[3];
+  const post = L.post !== undefined ? L.post : S, bar = L.bar !== undefined ? L.bar : S;
+  const P = [post, post, post, post, post, post], R = [bar, bar, bar, bar, bar, bar];
+  const r = [
+    box(5, 6, 5, 11, 13, 11, { faces: [S, S, T, Bt, S, S], uv: [[1, 0, 7, 7], [1, 0, 7, 7], [1, 1, 7, 7], [1, 1, 7, 7], [1, 0, 7, 7], [1, 0, 7, 7]] }),
+    box(4, 4, 4, 12, 6, 12, { faces: [S, S, T, Bt, S, S], uv: [[0, 7, 8, 9], [0, 7, 8, 9], [0, 0, 8, 8], [0, 0, 8, 8], [0, 7, 8, 9], [0, 7, 8, 9]] }),
+  ];
+  const F = (m >> 1) & 3;
+  let hold;
+  if (m & 1) hold = [box(7, 13, 7, 9, 16, 9, { faces: R })];
+  else if (m & 32) hold = turn([box(7, 13, 0, 9, 15, 16, { faces: R })], F);
+  else if (m & 8) hold = turn([box(7, 13, 0, 9, 15, 9, { faces: R }), box(6, 12, 0, 10, 16, 1, { faces: R })], F);
+  else hold = turn([box(2, 13, 7, 14, 15, 9, { faces: R }), box(0, 0, 6, 2, 16, 10, { faces: P }), box(14, 0, 6, 16, 16, 10, { faces: P })], F);
+  return r.concat(hold);
+};
+// an enchanting table is twelve pixels tall
+SHAPES.table = function (d) { return [box(0, 0, 0, 16, d.h || 12, 16)]; };
+// a brewing stand: the rod, three stone feet, and the arms and bottles as crossed sprites
+SHAPES.brewing = function (d) {
+  const L = d.L || {}, S = d.faces[0], base = L.base !== undefined ? L.base : S;
+  const Bs = [base, base, base, base, base, base];
+  return [box(9, 0, 5, 15, 2, 11, { faces: Bs }), box(2, 0, 1, 8, 2, 7, { faces: Bs }), box(2, 0, 9, 8, 2, 15, { faces: Bs }),
+    ...crossed(1.5, 0, 1.5, 14.5, 16, 14.5, S)];
+};
+
 export const MODEL_SHAPES = new Set(Object.keys(SHAPES));
 
 // the boxes (and quads) of a block in a given state; nb(dx, dy, dz) returns { d, m } or null
@@ -416,7 +510,7 @@ export function boxesOf(d, m, nb) {
    Boxes as [x0, y0, z0, x1, y1, z1] in blocks, relative to the block. */
 const FULL = [[0, 0, 0, 1, 1, 1]];
 const CACTUS = [[1 / 16, 0, 1 / 16, 15 / 16, 15 / 16, 15 / 16]];
-const toBlocks = list => list.filter(b => !b.q).map(b => [b.f[0] / 16, b.f[1] / 16, b.f[2] / 16, b.t[0] / 16, b.t[1] / 16, b.t[2] / 16]);
+const toBlocks = list => list.filter(b => !b.q && b.f[1] !== b.t[1]).map(b => [b.f[0] / 16, b.f[1] / 16, b.f[2] / 16, b.t[0] / 16, b.t[1] / 16, b.t[2] / 16]);
 export function collisionBoxes(d, m, nb) {
   if (!d.solid) return null;
   const s = d.shape;
