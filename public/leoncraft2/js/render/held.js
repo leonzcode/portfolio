@@ -29,40 +29,75 @@ const PI = Math.PI, DEG = PI / 180;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 
 /* ---- the kinds of held thing, and how each is placed ----
-   [translation (pixels), turn (degrees: x, then y, then z), scale], for the
-   right hand and the left: first person (fp) and third person (tp). */
+   The game's own numbers, from the display settings of its item models
+   (measured from the game's files): [translation (pixels), turn (degrees: x,
+   then y, then z), scale] for first person (fp) and third person (tp), right
+   hand and left (L). The left hand's are given as the game ends up using
+   them: it takes the model's left-hand entry (or the right-hand one when the
+   model has none) and mirrors it, x moved the other way and the y and z turns
+   the other way round.
+   base: the kind whose grip the hand closes on in first person (below). */
+const K = (fp, fpL, tp, tpL, base) => ({ fp, fpL, tp, tpL, base });
+const BLOCK_TP = [[0, 2.5, 0], [75, 45, 0], 0.375], BLOCK_TPL = [[0, 2.5, 0], [75, -45, 0], 0.375];
+const BLOCK_FP = [[0, 0, 0], [0, 45, 0], 0.4], BLOCK_FPL = [[0, 0, 0], [0, -225, 0], 0.4];
+const FLAT_FP = [[1.13, 3.2, 1.13], [0, -90, 25], 0.68], FLAT_FPL = [[-1.13, 3.2, 1.13], [0, 90, -25], 0.68];
+const TOOL_FP = FLAT_FP, TOOL_FPL = [[-1.13, 3.2, 1.13], [0, -90, 25], 0.68];
 export const DISPLAY = {
-  block: {
-    fp: [[0, 0, 0], [0, 45, 0], 0.4], fpL: [[0, 0, 0], [0, -225, 0], 0.4],
-    tp: [[0, 2.5, 0], [75, 45, 0], 0.375], tpL: [[0, 2.5, 0], [75, -45, 0], 0.375],
-  },
-  flat: {
-    fp: [[1.13, 3.2, 1.13], [0, -90, 25], 0.68], fpL: [[-1.13, 3.2, 1.13], [0, 90, -25], 0.68],
-    tp: [[0, 3, 1], [0, 0, 0], 0.55], tpL: [[0, 3, 1], [0, 0, 0], 0.55],
-  },
-  handheld: {
-    fp: [[1.13, 3.2, 1.13], [0, -90, 25], 0.68], fpL: [[-1.13, 3.2, 1.13], [0, -90, 25], 0.68],
-    tp: [[0, 4, 0.5], [0, -90, 55], 0.85], tpL: [[0, 4, 0.5], [0, -90, 55], 0.85],
-  },
-  rod: {
-    fp: [[0, 1.6, 0.8], [0, 90, 25], 0.68], fpL: [[0, 1.6, 0.8], [0, 90, 25], 0.68],
-    tp: [[0, 4, 2.5], [0, 90, 55], 0.85], tpL: [[0, 4, 2.5], [0, 90, 55], 0.85],
-  },
-  bow: {
-    fp: [[1.13, 3.2, 1.13], [0, -90, 25], 0.68], fpL: [[-1.13, 3.2, 1.13], [0, -90, 25], 0.68],
-    tp: [[-1, -2, 2.5], [-80, 260, -40], 0.9], tpL: [[1, -2, 2.5], [-80, 280, -40], 0.9],
-  },
+  // a block (block/block), and anything flat (item/generated)
+  block: K(BLOCK_FP, BLOCK_FPL, BLOCK_TP, BLOCK_TPL, 'block'),
+  flat: K(FLAT_FP, FLAT_FPL, [[0, 3, 1], [0, 0, 0], 0.55], [[0, 3, 1], [0, 0, 0], 0.55], 'flat'),
+  // tools, swords, sticks, bones, bamboo, blaze and breeze rods (item/handheld)
+  handheld: K(TOOL_FP, TOOL_FPL, [[0, 4, 0.5], [0, -90, 55], 0.85], [[0, 4, 0.5], [0, -90, 55], 0.85], 'handheld'),
+  // fishing rods and the two things on a stick (item/handheld_rod)
+  rod: K([[0, 1.6, 0.8], [0, 90, 25], 0.68], [[0, 1.6, 0.8], [0, 90, 25], 0.68], [[0, 4, 2.5], [0, 90, 55], 0.85], [[0, 4, 2.5], [0, 90, 55], 0.85], 'rod'),
+  mace: K([[0, 3, 0.8], [0, -90, 25], 0.9], [[0, 3, 0.8], [0, -90, 25], 0.9], [[0, 4, 1], [0, -90, 55], 1], [[0, 4, 1], [0, -90, 55], 1], 'mace'),
+  bow: K(TOOL_FP, TOOL_FPL, [[-1, -2, 2.5], [-80, 260, -40], 0.9], [[1, -2, 2.5], [-80, 280, -40], 0.9], 'bow'),
+  crossbow: K([[1.13, 3.2, 1.13], [-90, 0, -55], 0.68], [[-1.13, 3.2, 1.13], [-90, 0, -35], 0.68], [[2, 0.1, -3], [-90, 0, -60], 0.9], [[-2, 0.1, -3], [-90, 0, -30], 0.9], 'crossbow'),
+  // the flat things with numbers of their own
+  horn: K(FLAT_FP, TOOL_FPL, [[0, 3, 1], [0, 180, 0], 0.55], [[0, 3, 1], [0, 0, 0], 0.55], 'flat'),
+  brush: K(FLAT_FP, [[-8, 0.5, -5.5], [55, 85, 0], 1], [[0, 4, 0], [0, 0, 45], 0.9], [[0, 4, 0], [0, 0, 45], 0.9], 'flat'),
+  bud: K([[0, 5, 0], [0, -90, 25], 0.68], [[0, 5, 0], [0, 90, -25], 0.68], [[0, 4, 1], [0, 0, 0], 0.55], [[0, 4, 1], [0, 0, 0], 0.55], 'flat'),
+  smallBud: K([[0, 6, 0], [0, -90, 25], 0.68], [[0, 6, 0], [0, 90, -25], 0.68], [[0, 4, 1], [0, 0, 0], 0.55], [[0, 4, 1], [0, 0, 0], 0.55], 'flat'),
+  roots: K([[1.13, 0, 1.13], [0, -90, 25], 0.68], [[-1.13, 0, 1.13], [0, 90, -25], 0.68], [[0, 0, 1], [0, 0, 0], 0.55], [[0, 0, 1], [0, 0, 0], 0.55], 'flat'),
+  // the blocks with numbers of their own
+  stairs: K(BLOCK_FP, BLOCK_FPL, BLOCK_TP, [[0, 2.5, 0], [75, 135, 0], 0.375], 'block'),
+  thin: K([[0, 4.2, 0], [0, 45, 0], 0.4], [[0, 4.2, 0], [0, -225, 0], 0.4], [[0, 2.5, 2], [75, 45, 0], 0.375], [[0, 2.5, 2], [75, -45, 0], 0.375], 'block'),
+  turned: K([[0, 0, 0], [0, 135, 0], 0.4], BLOCK_FPL, BLOCK_TP, BLOCK_TPL, 'block'),
+  chest: K([[0, 0, 0], [0, 315, 0], 0.4], [[0, 0, 0], [0, -315, 0], 0.4], [[0, 2.5, 0], [75, 315, 0], 0.375], [[0, 2.5, 0], [75, -315, 0], 0.375], 'block'),
+  conduit: K([[0, 0, 0], [0, 315, 0], 0.8], [[0, 0, 0], [0, -315, 0], 0.8], [[0, 2.5, 0], [75, 315, 0], 0.5], [[0, 2.5, 0], [75, -315, 0], 0.5], 'block'),
+  pot: K([[0, 0, 0], [0, 90, 0], 0.375], [[0, 0, 0], [0, -90, 0], 0.375], [[0, 2, 0.5], [0, 90, 0], 0.375], [[0, 2, 0.5], [0, -90, 0], 0.375], 'block'),
+  shelf: K([[0, -2, 0], [0, 135, 0], 0.5], BLOCK_FPL, [[-3, 1, 0], [75, 135, 0], 0.4], [[3, 1, 0], [75, -135, 0], 0.4], 'block'),
+  lightningRod: K(BLOCK_FP, BLOCK_FPL, [[0, 2, 0.5], [0, 0, 0], 0.4], [[0, 2, 0.5], [0, 0, 0], 0.4], 'block'),
+  endRod: K(BLOCK_FP, BLOCK_FPL, [[0, 0, 0], [0, 0, 0], 0.375], [[0, 0, 0], [0, 0, 0], 0.375], 'block'),
+  skull: K(BLOCK_FP, BLOCK_FPL, [[0, 3, 0], [45, 45, 0], 0.5], [[0, 3, 0], [45, -45, 0], 0.5], 'block'),
+  sensor: K(BLOCK_FP, BLOCK_FPL, BLOCK_TP, BLOCK_TP, 'block'),
 };
-const HANDHELD = /_(sword|pickaxe|axe|shovel|hoe|spear)$|^(stick|blaze_rod|breeze_rod|bone|mace|trident|debug_stick)$/;
-const ROD = /^(fishing_rod|carrot_on_a_stick|warped_fungus_on_a_stick)$/;
+/* Which things are which. A kind only applies where our own shape is the
+   game's (a chest is a chest here too; a shield or a bed is held as its flat
+   picture, so it keeps the flat numbers). */
+const FLAT_KINDS = [
+  ['handheld', /_(sword|pickaxe|axe|shovel|hoe|spear)$|^(stick|blaze_rod|breeze_rod|bone|bamboo|debug_stick|trident)$/],
+  ['rod', /^(fishing_rod|carrot_on_a_stick|warped_fungus_on_a_stick)$/],
+  ['mace', /^mace$/], ['bow', /^bow$/], ['crossbow', /^crossbow$/], ['horn', /^goat_horn$/], ['brush', /^brush$/],
+  ['bud', /^(large|medium)_amethyst_bud$/], ['smallBud', /^small_amethyst_bud$/], ['roots', /^hanging_roots$/],
+];
+const BLOCK_KINDS = [
+  ['stairs', /_stairs$/],
+  ['thin', /_(trapdoor|pressure_plate|carpet)$|^(moss_carpet|pale_moss_carpet|daylight_detector|snow)$/],
+  ['turned', /_glazed_terracotta$|^(bee_nest|beehive|blast_furnace|carved_pumpkin|dispenser|dropper|furnace|jack_o_lantern|lectern|loom|pumpkin|smoker)$/],
+  ['chest', /(^|_)chest$|shulker_box$/], ['conduit', /^conduit$/], ['pot', /^decorated_pot$/], ['shelf', /_shelf$/],
+  ['lightningRod', /lightning_rod$/], ['endRod', /^end_rod$/], ['skull', /_(head|skull)$|^heavy_core$/], ['sensor', /^calibrated_sculk_sensor$/],
+];
+const kindCache = new Map();
 export function heldKind(d) {
   if (!d) return null;
-  if (!isFlatItem(d)) return 'block';
-  const n = d.name || '';
-  if (n === 'bow' || n === 'crossbow') return 'bow';
-  if (ROD.test(n)) return 'rod';
-  if (HANDHELD.test(n)) return 'handheld';
-  return 'flat';
+  const flat = isFlatItem(d), n = d.name || '', key = n + (flat ? '|f' : '|b');
+  let k = kindCache.get(key);
+  if (k) return k;
+  k = flat ? 'flat' : 'block';
+  for (const [kind, re] of flat ? FLAT_KINDS : BLOCK_KINDS) if (re.test(n)) { k = kind; break; }
+  kindCache.set(key, k);
+  return k;
 }
 // one of the DISPLAY entries onto m (t, e: scratch)
 export function applyDisplay(m, spec, t, e) {
@@ -72,22 +107,26 @@ export function applyDisplay(m, spec, t, e) {
   m.multiply(t.makeScale(s, s, s));
 }
 
-/* Where the fist closes on each kind, in the item's own space (a block
+/* Where the fist closes on each base kind, in the item's own space (a block
    centred on the origin, a picture in the x-y plane): under a block, at a
-   tool's handle (bottom left of its picture), at the foot of anything else. */
+   tool's handle (bottom left of its picture), at the foot of anything else.
+   Every kind closes on its base kind's grip in its own place, so its turn and
+   size are the game's (a furnace has its front towards you) and the hand
+   holds it wherever that puts it (a carpet lies on the fist). */
 const GRIP = {
-  block: [0, -0.85, 0], flat: [0, -0.42, 0], handheld: [-0.3, -0.3, 0], rod: [-0.3, -0.3, 0], bow: [-0.05, -0.05, 0],
+  block: [0, -0.85, 0], flat: [0, -0.42, 0], handheld: [-0.3, -0.3, 0], rod: [-0.3, -0.3, 0], mace: [-0.3, -0.3, 0],
+  bow: [-0.05, -0.05, 0], crossbow: [-0.15, -0.15, 0],
 };
 /* and a nudge from the grip, in the camera's space (blocks) */
 const NUDGE = {
-  block: [-0.07, 0.02, -0.08], flat: [-0.02, 0, 0], handheld: [0, 0, 0], rod: [0, 0, 0], bow: [0, 0, 0],
+  block: [-0.07, 0.02, -0.08], flat: [-0.02, 0, 0], handheld: [0, 0, 0], rod: [0, 0, 0], mace: [0, 0, 0], bow: [0, 0, 0], crossbow: [0, 0, 0],
 };
 /* Holding something, the arm sits a little lower than the bare arm (so the
    item is about where the game shows it, and still in a hand you can see),
    in blocks; and a block leans its top towards you a little, so you see it
    from above as the game's lower held block is seen. */
-const DROP = { block: 0.14, flat: 0.07, handheld: 0.1, rod: 0.08, bow: 0.07 };
-const TILT = { block: 22, flat: 0, handheld: 0, rod: 0, bow: 0 };
+const DROP = { block: 0.14, flat: 0.07, handheld: 0.1, rod: 0.08, mace: 0.1, bow: 0.07, crossbow: 0.08 };
+const TILT = { block: 22, flat: 0, handheld: 0, rod: 0, mace: 0, bow: 0, crossbow: 0 };
 // the fist: the middle of the bottom of the arm (the skin's arm, model pixels, y up)
 const FIST_Y = -10;
 
@@ -107,6 +146,7 @@ export class Held {
     this.t = new THREE.Matrix4(); this.m = new THREE.Matrix4(); this.m2 = new THREE.Matrix4(); this.e = new THREE.Euler(); this.v = new THREE.Vector3(); this.w = new THREE.Vector3();
     this.q = new THREE.Quaternion();
     this.rot = new THREE.Matrix3();
+    this.bobM = new THREE.Matrix4();
   }
 
   /* what a hand holds: an id from the DRAW table, or 0 */
@@ -160,13 +200,10 @@ export class Held {
     const A = this.R.avatar, key = kind + side + (A.slim ? 's' : 'w');
     let C = this.rests.get(key);
     if (C) return C;
-    const t = this.t, e = this.e, f = side ? -1 : 1;
+    const t = this.t, f = side ? -1 : 1, base = DISPLAY[kind].base;
     const arm = A.armMatrix(new THREE.Matrix4(), null, side, 0, 0, 0, 0);
-    // the game's first person place for the item, at rest
-    const J = new THREE.Matrix4().makeTranslation(f * 0.56, -0.52, -0.72);
-    if (TILT[kind]) J.multiply(t.makeRotationX(TILT[kind] * DEG));
-    applyDisplay(J, DISPLAY[kind][side ? 'fpL' : 'fp'], t, e);
-    const g = GRIP[kind], n = NUDGE[kind];
+    // where the grip is in the game's first person place for this kind, and the shift that puts it in the fist
+    const J = this.place(kind, base, side), g = GRIP[base], n = NUDGE[base];
     const grip = new THREE.Vector3(f * g[0], g[1], g[2]).applyMatrix4(J);
     const nudge = new THREE.Vector3(f * n[0], n[1], n[2]);
     const fist = this.fistOf(arm, side, new THREE.Vector3()).add(nudge);
@@ -176,6 +213,14 @@ export class Held {
     C = { K, fist, nudge, pivot: new THREE.Vector3(f * 0.56, -0.52, -0.72).add(shift) };
     this.rests.set(key, C);
     return C;
+  }
+  // the game's first person place for a kind, at rest (with its base kind's lean)
+  place(kind, base, side) {
+    const t = this.t, f = side ? -1 : 1;
+    const J = new THREE.Matrix4().makeTranslation(f * 0.56, -0.52, -0.72);
+    if (TILT[base]) J.multiply(t.makeRotationX(TILT[base] * DEG));
+    applyDisplay(J, DISPLAY[kind][side ? 'fpL' : 'fp'], t, this.e);
+    return J;
   }
   // the middle of the bottom of an arm, from its matrix
   fistOf(arm, side, out) {
@@ -219,24 +264,28 @@ export class Held {
     for (let c = 0; c < 4; c++) pe[c * 4 + 2] = s * pe[c * 4 + 2] + (s - 1) * pe[c * 4 + 3];
     hc.projectionMatrixInverse.copy(hc.projectionMatrix).invert();
     hc.updateMatrixWorld();
-    const bob = state.bob, bx = bob ? bob.x : 0, by = bob ? bob.y : 0;
+    // the walking bob, as the game moves your hands: across and down with the step, and a little turn each way
+    const bob = state.bob, B = this.bobM;
+    B.makeTranslation(bob ? bob.x : 0, bob ? bob.y : 0, 0);
+    if (bob && bob.rz) B.multiply(t.makeRotationZ(bob.rz));
+    if (bob && bob.rx) B.multiply(t.makeRotationX(bob.rx));
     for (const H of this.hands) {
       const side = H.side, f = side ? -1 : 1, m = H.show;
       // how far down the arm is: the drop of what it holds, and the dip while it changes (0.6 a block for all the way)
-      const eq = (m ? DROP[m.userData.kind] / 0.6 : 0) + 1 - H.h;
+      const eq = (m ? DROP[DISPLAY[m.userData.kind].base] / 0.6 : 0) + 1 - H.h;
       // only the main hand swings
       const sp = side === 0 ? A.cur.attack : 0, sq = Math.sqrt(sp);
-      const arm = A.armMatrix(this.arms[side], null, side, sp, bx, by, eq);
-      if (!m) continue;
+      const arm = A.armMatrix(this.arms[side], null, side, sp, 0, 0, eq);
+      if (!m) { arm.premultiply(B); continue; }
       const C = this.rest(m.userData.kind, side), P = C.pivot, M = this.m;
       // the item: where the game has it, swinging the game's way about its own point
-      M.makeTranslation(f * -0.4 * Math.sin(sq * PI) + bx + P.x, 0.2 * Math.sin(sq * 2 * PI) + by - 0.6 * eq + P.y, -0.2 * Math.sin(sp * PI) + P.z);
+      M.makeTranslation(f * -0.4 * Math.sin(sq * PI) + P.x, 0.2 * Math.sin(sq * 2 * PI) - 0.6 * eq + P.y, -0.2 * Math.sin(sp * PI) + P.z);
       M.multiply(this.attackTurn(this.m2, f, sp));
       M.multiply(t.makeTranslation(-P.x, -P.y, -P.z));
       // the arm goes with it, its fist kept on the item's grip
       const grip = this.v.copy(C.fist).applyMatrix4(M), fist = this.fistOf(arm, side, this.w).add(C.nudge);
-      arm.premultiply(t.makeTranslation(grip.x - fist.x, grip.y - fist.y, grip.z - fist.z));
-      M.multiply(C.K);
+      arm.premultiply(t.makeTranslation(grip.x - fist.x, grip.y - fist.y, grip.z - fist.z)).premultiply(B);
+      M.multiply(C.K).premultiply(B);
       m.matrix.multiplyMatrices(cam.matrixWorld, M);
       m.visible = true;
       m.matrixWorldNeedsUpdate = true;
