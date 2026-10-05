@@ -30,6 +30,7 @@ import './mobs2.js?v=14';
 import './mobs3.js?v=14';
 import './mobs4.js?v=14';
 import { wandererTick } from './merchant.js?v=14';
+import { tableBooks } from './tablebook.js?v=14';
 import { explode } from './explosion.js?v=14';
 import { splitXp } from './xporb.js?v=14';
 import { placeMinecart, isRail } from './minecart.js?v=14';
@@ -251,6 +252,7 @@ export class Entities {
     if (this.difficulty === 'peaceful') this.peaceful();
     this.spawner.tick();
     wandererTick(this);
+    tableBooks(this);
     if (this.fallChecks.length) this.fallTick();
     const n = this.list.length;
     for (let i = 0; i < n; i++) {
