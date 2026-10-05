@@ -39,7 +39,7 @@ import { Screen, TextField, WHITE } from './gui.js?v=13';
 import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf } from '../items.js?v=13';
 import { matchGrid, consumeGrid } from '../crafting.js?v=13';
 import { enchName } from '../enchanting.js?v=13';
-import { isPotion, potionName, potionLines } from '../brewing.js?v=13';
+import { isPotion, isTipped, potionName, potionLines } from '../brewing.js?v=13';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -332,8 +332,8 @@ function hsv(h, s, v) {
 // tooltips on (F3 + H) the durability and the item's id as well, as in the game
 export function stackTooltip(st, advanced) {
   const it = ITEMS[st.id];
-  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) ? potionName(st) : displayName(st.id))];
-  if (isPotion(st) || (st.potion && ITEMS[st.id] && ITEMS[st.id].name === 'tipped_arrow')) lines.push(...potionLines(st));
+  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : displayName(st.id))];
+  if (isPotion(st) || (st.potion && isTipped(st))) lines.push(...potionLines(st));
   const title = n => n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   if (st.trim) lines.push('§7Upgrade:', '§9 ' + title(st.trim[0]) + ' Armor Trim', '§9 ' + title(st.trim[1]) + ' Material');
   // what a shulker box holds: the first five stacks, then how many more
