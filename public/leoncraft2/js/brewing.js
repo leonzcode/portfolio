@@ -62,6 +62,14 @@ export const POTIONS = {
   oozing: { effects: [['oozing', 1, S(180)]], colour: 0x99FFA3 }, infested: { effects: [['infested', 1, S(180)]], colour: 0x8C9B8C },
   luck: { effects: [['luck', 1, S(300)]], colour: 0x59C106 },
 };
+// the colour of one with more than one effect is the game's mix: each effect's colour weighed by its level
+for (const k in POTIONS) {
+  const p = POTIONS[k];
+  if (p.effects.length < 2) continue;
+  let r = 0, g = 0, b = 0, n = 0;
+  for (const [e, lv] of p.effects) { const c = EFFECTS[e] ? EFFECTS[e].colour : 0; r += lv * ((c >> 16) & 255); g += lv * ((c >> 8) & 255); b += lv * (c & 255); n += lv; }
+  p.colour = (Math.floor(r / n) << 16) | (Math.floor(g / n) << 8) | Math.floor(b / n);
+}
 // what the game calls each one ("Potion of the Turtle Master", "Arrow of Splashing")
 const TITLE = { night_vision: 'Night Vision', invisibility: 'Invisibility', leaping: 'Leaping', fire_resistance: 'Fire Resistance', swiftness: 'Swiftness',
   slowness: 'Slowness', turtle_master: 'the Turtle Master', water_breathing: 'Water Breathing', healing: 'Healing', harming: 'Harming', poison: 'Poison',
