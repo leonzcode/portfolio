@@ -197,6 +197,12 @@ export class Boat extends Entity {
     this.slots = null;               // a chest boat's 27 slots
     this.persistent = true;
     this.flowV = [0, 0];
+    // made by the game's own name for its kind ('birch_chest_boat', 'bamboo_raft'): that kind, kept as a boat
+    if (type !== 'boat') {
+      const mt = /^(.*?)(_chest)?_(boat|raft)$/.exec(type || '');
+      if (mt) { this.raft = mt[3] === 'raft'; this.wood = this.raft ? 'bamboo' : (WOODS[mt[1]] ? mt[1] : 'oak'); if (mt[2]) this.chestBoat = true; }
+      this.type = 'boat';
+    }
   }
   get eyeH() { return 0.5625; }
   modelName() { return this.raft ? 'raft' : 'boat'; }
@@ -234,7 +240,12 @@ export class Boat extends Entity {
     return e instanceof Living && !e.dead && !e.removed && !e.vehicle && e.w < this.w && !e.isPlayer
       && e.constructor.WATER_BREATHER !== 'only' && !e.constructor.NO_PUSH && !NO_BOAT.has(e.type);
   }
-  addPassenger(e) { e.vehicle = this; this.passengers.push(e); e.vel.set(0, 0, 0); if (e.nav) e.nav.stop(); }
+  addPassenger(e) {
+    // the player gets in the way the player does (manager.js mount: the front seat, the camera)
+    if (e === this.m.P || e === this.m.player) return this.m.mount(this);
+    e.vehicle = this; this.passengers.push(e); e.vel.set(0, 0, 0); if (e.nav) e.nav.stop();
+    return true;
+  }
 
   /* ---- the water round it ---- */
   // the surface of the water in a cell, from its bottom (0: none): water, and blocks full of it
@@ -605,6 +616,8 @@ export class Boat extends Entity {
   }
 }
 register('boat', Boat);
+// the game's names for each kind ('oak_boat', 'spruce_chest_boat', 'bamboo_raft'...), so spawning by name makes the right one
+for (const w of Object.keys(WOODS)) for (const n of w === 'bamboo' ? ['bamboo_raft', 'bamboo_chest_raft'] : [w + '_boat', w + '_chest_boat']) register(n, class extends Boat {});
 
 /* Placing a boat from its item name ('oak_boat', 'spruce_chest_boat',
    'bamboo_raft') at a point, facing the way the player looks. */
