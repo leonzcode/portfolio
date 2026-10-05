@@ -615,17 +615,28 @@ export class Combat {
   /* The held item while drawing (an offset on the hand's sway): a bow or
      crossbow comes in towards the middle and shakes once the pull is past a
      tenth; a trident is raised to throw. */
-  handPose(bob, alpha) {
-    const u = this.use;
-    if (!u) return bob;
-    const t = u.t + alpha;
-    const full = u.kind === 'bow' ? 20 : u.kind === 'trident' ? 10 : Math.max(1, this.crossbowTicks(this.held()));
-    const k = Math.min(1, t / 4), f = Math.min(1, t / full);
-    const out = this._pose || (this._pose = { x: 0, y: 0 });
-    const shake = f > 0.1 ? Math.sin((t - 0.1) * 1.3) * (f - 0.1) * 0.01 : 0;
-    out.x = (bob ? bob.x : 0) - (u.kind === 'trident' ? 0.12 : 0.3) * k;
-    out.y = (bob ? bob.y : 0) + (u.kind === 'trident' ? 0.18 * k + 0.06 * f : 0.12 * k - 0.04 * f) + shake;
-    return out;
+  /* What the use button is doing with a hand, for render/held.js: a bow
+     drawing, a crossbow loading, a trident ready to throw (total: the ticks
+     to full), a shield coming up, or a loaded crossbow held to aim; null for
+     nothing. side 0 is the main hand. */
+  useState(alpha) {
+    const u = this.use, o = this._use || (this._use = {});
+    if (u) {
+      o.kind = u.kind; o.side = 0; o.t = u.t + alpha;
+      o.total = u.kind === 'bow' ? 20 : u.kind === 'trident' ? 10 : Math.max(1, this.crossbowTicks(this.held()));
+      return o;
+    }
+    if (this.shieldT > 0) {
+      const inv = this.inv, s = this.shieldStack();
+      o.kind = 'block'; o.side = s && inv && s === inv.offhand && s !== inv.slots[inv.selected] ? 1 : 0; o.t = this.shieldT + alpha; o.total = 5;
+      return o;
+    }
+    const inv = this.inv;
+    if (inv) for (const side of [0, 1]) {
+      const s = side ? inv.offhand : inv.slots[inv.selected];
+      if (s && s.charged && s.charged.length && ITEMS[s.id] && ITEMS[s.id].name === 'crossbow') { o.kind = 'aim'; o.side = side; o.t = 0; o.total = 1; return o; }
+    }
+    return null;
   }
   // is the player's model red this frame (third person)?
   hurtFlash() { const sv = this.sv; return !!(sv && (sv.hurtTime > 0 || sv.dead)); }

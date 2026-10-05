@@ -25,6 +25,7 @@
 --------------------------------------------------------------------------- */
 import { blockGeometry, isFlatItem } from './blockmesh.js?v=14';
 import { setGlint } from './glint.js?v=14';
+import { textureLayer } from '../items.js?v=14';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
@@ -171,6 +172,7 @@ export class Held {
     this.q = new THREE.Quaternion();
     this.rot = new THREE.Matrix3();
     this.bobM = new THREE.Matrix4();
+    this.u = new THREE.Matrix4(); this.c = new THREE.Vector3();
   }
 
   /* what a hand holds: an id from the DRAW table, or 0 */
@@ -184,6 +186,8 @@ export class Held {
     // the very first thing held is just there
     if (!this.started) this.swap(H);
   }
+  /* a crossbow's load in a hand: 'arrow', 'rocket' or null (renderer.js, from the stack every frame) */
+  loaded(side, kind) { this.hands[side].loaded = kind; }
   /* whether what a hand should hold shimmers (renderer.js reads it from the stack every frame) */
   glint(side, on) {
     const H = this.hands[side];
@@ -202,6 +206,7 @@ export class Held {
     m.onBeforeRender = () => { rot.setFromMatrix4(m.matrixWorld); rot.multiplyScalar(1 / m.matrixWorld.getMaxScaleOnAxis()); U.uFaceRot.value.copy(rot); m.material.uniformsNeedUpdate = true; };
     m.onAfterRender = () => { U.uFaceRot.value.identity(); m.material.uniformsNeedUpdate = true; };
     m.userData.kind = heldKind(d);
+    m.userData.d = d;
     R.hand.add(m);
     return m;
   }
@@ -209,6 +214,79 @@ export class Held {
   swap(H) {
     if (H.show && H.show !== H.want) this.drop(H.show);
     H.show = H.want; H.showId = H.wantId;
+    this.dropVariants(H);
+  }
+  /* the same thing in another of its pictures (a bow drawn back, a crossbow
+     loading or loaded), made the first time it is needed */
+  variant(H, layer) {
+    const V = H.variants || (H.variants = new Map());
+    let m = V.get(layer);
+    if (!m) {
+      const d = H.show.userData.d;
+      m = this.make(Object.assign({}, d, { iconLayer: layer, faces: [layer, layer, layer, layer, layer, layer] }));
+      m.userData.kind = H.show.userData.kind;
+      V.set(layer, m);
+    }
+    setGlint(m, H.glint, this.R);
+    return m;
+  }
+  dropVariants(H) {
+    if (!H.variants) return;
+    for (const m of H.variants.values()) this.drop(m);
+    H.variants = null;
+  }
+  // which of its pictures a hand shows for what it is doing: a layer, or -1 for its own
+  pictureFor(H, use) {
+    const n = H.show && H.show.userData.d.name;
+    let name = null;
+    if (n === 'bow' && use && use.kind === 'bow') {
+      const p = use.t / 20;
+      name = p >= 0.9 ? 'bow_pulling_2' : p >= 0.65 ? 'bow_pulling_1' : 'bow_pulling_0';
+    } else if (n === 'crossbow' && use && use.kind === 'crossbow') {
+      const p = use.t / use.total;
+      name = p >= 1 ? 'crossbow_pulling_2' : p >= 0.58 ? 'crossbow_pulling_1' : 'crossbow_pulling_0';
+    } else if (n === 'crossbow' && H.loaded) name = H.loaded === 'rocket' ? 'crossbow_firework' : 'crossbow_arrow';
+    return name ? textureLayer(name) : -1;
+  }
+
+  /* What the use button does to a hand, as a turn and a shift in the
+     camera's space about the item's middle (c): eating and drinking bring it
+     to the mouth, turned to face you, bobbing a bite every 4 ticks; a bow
+     comes in towards the middle, turned to show its face, and draws back
+     with a shake as the pull gets strong; a crossbow tips back as it loads; a
+     trident is raised and pulled back to throw; a shield comes up across the
+     view; a loaded crossbow is held up to aim. f is 1 for the right hand, -1
+     for the left. */
+  useMove(U, use, f, c) {
+    const t = use.t, T = this.t, k = 1 - Math.pow(Math.max(0, 1 - t / 3), 3);
+    let dx = 0, dy = 0, dz = 0, ry = 0, rx = 0, rz = 0;
+    if (use.kind === 'eat' || use.kind === 'drink') {
+      dx = -0.42 * k; dy = 0.2 * k; ry = 90 * k; rx = 10 * k;
+      if (t > use.total * 0.2) dy += Math.abs(Math.cos(t / 4 * PI)) * 0.06;
+    } else if (use.kind === 'bow') {
+      const p = Math.min(1, t / use.total);
+      dx = -0.3 * k; dy = 0.12 * k - 0.04 * p; dz = 0.06 * p; ry = 35 * k; rz = -10 * k;
+      if (p > 0.1) dy += Math.sin((t - 0.1) * 1.3) * (p - 0.1) * 0.012;
+    } else if (use.kind === 'crossbow') {
+      const p = Math.min(1, t / use.total);
+      dx = -0.18 * k; dy = 0.2 * k; dz = 0.05 * p; rx = 30 * k; ry = 20 * k;
+      if (p > 0.1) dy += Math.sin((t - 0.1) * 1.3) * (p - 0.1) * 0.012;
+    } else if (use.kind === 'trident') {
+      const p = Math.min(1, t / use.total);
+      dx = -0.12 * k; dy = 0.18 * k + 0.06 * p; dz = 0.12 * p; rx = -55 * k; ry = 20 * k;
+      if (p > 0.1) dy += Math.sin((t - 0.1) * 1.3) * (p - 0.1) * 0.01;
+    } else if (use.kind === 'block') {
+      const b = Math.min(1, t / 2);
+      dx = -0.32 * b; dy = 0.2 * b; dz = 0.08 * b; ry = 75 * b;
+    } else if (use.kind === 'aim') {
+      dx = -0.26; dy = 0.26; ry = 45; rx = 22;
+    } else return false;
+    U.makeTranslation(c.x + f * dx, c.y + dy, c.z + dz);
+    if (ry) U.multiply(T.makeRotationY(f * ry * DEG));
+    if (rx) U.multiply(T.makeRotationX(rx * DEG));
+    if (rz) U.multiply(T.makeRotationZ(f * rz * DEG));
+    U.multiply(T.makeTranslation(-c.x, -c.y, -c.z));
+    return true;
   }
 
   /* how high each hand is: the game lowers it while what it shows is not what
@@ -304,7 +382,8 @@ export class Held {
     // the light they are in: the sky and block light where you stand, as your arm has
     const lv = (Math.round(A.sky * 255) << 8) | Math.round(A.block * 255);
     for (const H of this.hands) {
-      const side = H.side, f = side ? -1 : 1, m = H.show;
+      const side = H.side, f = side ? -1 : 1;
+      let m = H.show;
       // how far down the arm is: the drop of what it holds, and the dip while it changes (0.6 a block for all the way)
       const eq = (m ? DROP[DISPLAY[m.userData.kind].base] / 0.6 : 0) + 1 - H.h;
       // only the main hand swings
@@ -316,6 +395,13 @@ export class Held {
       M.makeTranslation(f * -0.4 * Math.sin(sq * PI) + P.x, 0.2 * Math.sin(sq * 2 * PI) - 0.6 * eq + P.y, -0.2 * Math.sin(sp * PI) + P.z);
       M.multiply(this.attackTurn(this.m2, f, sp));
       M.multiply(t.makeTranslation(-P.x, -P.y, -P.z));
+      // what the use button is doing with it (eating, a bow drawn...), about the item's middle at rest
+      const use = bob && bob.use && bob.use.side === side ? bob.use : null;
+      if (use && this.useMove(this.u, use, f, this.c.set(0, 1, 0).applyMatrix4(C.K))) M.premultiply(this.u);
+      // the picture for it (a bow drawn back), when the pack has one
+      const pl = this.pictureFor(H, use);
+      if (pl >= 0) { m.visible = false; m = this.variant(H, pl); }
+      if (H.variants) for (const v of H.variants.values()) if (v !== m) v.visible = false;
       // the arm goes with it, its fist kept on the item's grip
       const grip = this.v.copy(C.fist).applyMatrix4(M), fist = this.fistOf(arm, side, this.w).add(C.nudge);
       arm.premultiply(t.makeTranslation(grip.x - fist.x, grip.y - fist.y, grip.z - fist.z)).premultiply(B);
