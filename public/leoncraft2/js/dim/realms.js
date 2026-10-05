@@ -59,7 +59,8 @@ export class Realms {
   constructor(o) {
     this.o = o;                             // { game(), renderer, travel(dim, resolve, near), give(id, n), survival() }
     this.R = o.renderer;
-    this.linear = !this.R.vanilla;
+    // plain colours go through the post chain's exposure only when there is one; otherwise they are drawn as they are
+    this.linear = !!this.R.post;
     this.entities = [];
     this.portalTime = 0; this.cooldown = 0; this.busy = false;
     this.poi = { overworld: [], the_nether: [], the_end: [] };

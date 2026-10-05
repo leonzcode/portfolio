@@ -25,6 +25,7 @@ import { FullScreen } from './sky.js?v=12';
 import { blockGeometry } from './blockmesh.js?v=12';
 import { Avatar } from './avatar.js?v=12';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=12';
+import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=12';
 import { dimLook } from '../dim/look.js?v=12';
 const THREE = window.THREE;
 
@@ -68,7 +69,7 @@ export class Renderer {
       uEyeInWater: { value: 0 }, uNear: { value: 0.05 }, uFar: { value: 1000 }, uProjInv: { value: new THREE.Matrix4() },
       uRender: { value: 160 }, uMoon: { value: textures.moon }, uMoonPhase: { value: 0 }, uSkyAtEye: { value: 1 },
       uWaterTint: { value: new THREE.Vector3(0.05, 0.18, 0.78) }, uCover: { value: 0.42 }, uCamPos: { value: new THREE.Vector3() },
-      uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uInvViewProj: { value: new THREE.Matrix4() },
+      uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uCave: { value: 0 }, uInvViewProj: { value: new THREE.Matrix4() },
       // the light in your hand (level, faded in and out) and where it is; torches' flicker; how dark cloud shadows are
       uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.8 : 0 },
       // where a chunk mesh sits (set per draw by drawParts; 0 for everything three.js draws itself)
@@ -88,7 +89,8 @@ export class Renderer {
     this.makeStandIns();
     // the full tiers run the whole chain after the world; the low ones draw straight to the screen
     this.post = ldr ? null : new Post(r, this.U, this.opts);
-    if (ldr && !this.vanilla) { this.skyFS = new FullScreen(makeLdrSky(this.U)); }
+    // Detailed: the sky in one pass first, and the game's own blocks of cloud after the world
+    if (ldr && !this.vanilla) { this.skyFS = new FullScreen(makeLdrSky(this.U)); this.blockClouds = new BlockClouds(detailedCloudMaterial(this.U)); }
     // the block in your hand: drawn in the world just in front of the eye
     this.handScene = new THREE.Scene();
     this.hand = new THREE.Group();
@@ -478,7 +480,8 @@ export class Renderer {
     // the held block takes the light where you stand, as the model does
     if (this.uHandLight && this.avatar.uLight) this.uHandLight.value.copy(this.avatar.uLight.value);
     cam.fov = state.fov;
-    cam.far = this.opts.renderDist * 16 + 96;
+    // far enough for the clouds, which reach twice the render distance out at height 192
+    cam.far = this.opts.renderDist * 32 + 128;
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     U.uNear.value = cam.near; U.uFar.value = cam.far;
@@ -552,13 +555,13 @@ export class Renderer {
       return;
     }
     if (this.ldr) {
-      // exposure worked out here: by day the sky, by night the moon, deeper in a cave
-      const day = Math.min(1, Math.max(0, (sun.y + 0.12) / 0.42));
-      let e = Math.exp(Math.log(4.2) + (Math.log(0.11) - Math.log(4.2)) * Math.sqrt(day));
-      if (state.skyAtEye < 1) e *= 2.2;
-      const ex = this.ldrExpo === undefined ? e : this.ldrExpo + (e - this.ldrExpo) * Math.min(1, dt * 1.5);
-      this.ldrExpo = ex;
-      U.uExposure.value = ex;
+      // the exposure: under the sky the sky table works it out from the light there is (glsl.js EXPOSURE);
+      // in a cave or under a roof the eye eases over to one level, whatever the time of day;
+      // the Nether and the End have no sky and keep one level each (about where the eye used to settle there)
+      const cave = !sunless && state.skyAtEye < 1 ? 1 : 0;
+      this.caveNow = this.caveNow === undefined ? cave : this.caveNow + (cave - this.caveNow) * Math.min(1, dt * 1.5);
+      U.uCave.value = this.caveNow < 0.002 ? 0 : this.caveNow;
+      U.uExposure.value = sunless ? (state.dim.id === 'the_end' ? 2.0 : 4.2) : 2.4;
       r.setRenderTarget(null);
       r.setClearColor(0x000000, 1);
       r.clear(true, true, false);
@@ -566,6 +569,9 @@ export class Renderer {
       r.render(this.scene, cam);
       if (this.overlay) this.overlay.render(r, cam);
       r.render(this.trans, cam);
+      // the clouds, as Fast draws them (none where the dimension has none, or with Clouds off)
+      const clouds = state.dim && !state.dim.clouds ? 'off' : this.opts.clouds || 'fancy';
+      if (this.blockClouds && clouds !== 'off' && !state.eyeInWater) this.blockClouds.draw(r, cam, state.time, clouds, U.uRender.value * 2);
       this.drawHand(state, cam, dt);
       return;
     }

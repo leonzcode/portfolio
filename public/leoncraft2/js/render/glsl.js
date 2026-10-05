@@ -62,19 +62,18 @@ vec3 shadowCoord(vec3 world, vec3 n, float NoL, float dist) {
   c.z *= 0.2;
   return c.xyz * 0.5 + 0.5;
 }
-// soft shadows: a rotated Vogel disc of hardware-filtered taps
+// soft shadows, kept cheap: four hardware-filtered taps in a fixed square
+// (each tap already blends four texels), so the edge is soft and never
+// shimmers from frame to frame. The noise argument is no longer used.
 float shadowSoft(vec3 sc, float noise, float radius) {
   if (sc.x <= 0.0 || sc.x >= 1.0 || sc.y <= 0.0 || sc.y >= 1.0 || sc.z >= 1.0) return 1.0;
-  float s = 0.0;
-  float a0 = noise * TAU;
-  float bias = 0.00004;
-  for (int i = 0; i < 8; i++) {
-    float r = sqrt((float(i) + 0.5) / 8.0) * radius;
-    float a = float(i) * 2.39996 + a0;
-    vec2 o = vec2(cos(a), sin(a)) * r / uShadowRes;
-    s += textureLod(uShadow, vec3(sc.xy + o, sc.z - bias), 0.0);
-  }
-  return s / 8.0;
+  float bias = 0.00004, z = sc.z - bias;
+  vec2 o = vec2(0.5 * radius / uShadowRes);
+  float s = textureLod(uShadow, vec3(sc.xy + vec2(-o.x, -o.y), z), 0.0)
+          + textureLod(uShadow, vec3(sc.xy + vec2(o.x, -o.y), z), 0.0)
+          + textureLod(uShadow, vec3(sc.xy + vec2(-o.x, o.y), z), 0.0)
+          + textureLod(uShadow, vec3(sc.xy + vec2(o.x, o.y), z), 0.0);
+  return s * 0.25;
 }
 float shadowHard(vec3 sc) {
   if (sc.x <= 0.0 || sc.x >= 1.0 || sc.y <= 0.0 || sc.y >= 1.0 || sc.z >= 1.0) return 1.0;
@@ -281,11 +280,34 @@ vec3 toSRGB(vec3 c) {
 }
 `;
 
-/* ---- the single-pass finish, for the low tiers: fog, exposure, tone map ----
-   needs uView, uAmbient, uEyeInWater and cameraPosition declared by the host */
+/* ---- Detailed's exposure ----
+   In the Overworld the sky table works out how much light there is and so
+   how open the eye should be (render/sky.js, its seventh texel); in a cave
+   or under a roof the eye eases over (uCave, 0 to 1) to the renderer's
+   uExposure, the same at any time of day. The Nether and the End have no
+   sky, and uExposure is their whole exposure. Needs uDim, uExposure and
+   uAmbient declared by the host. */
+export const EXPOSURE = /* glsl */`
+uniform float uCave;
+float exposureNow() {
+  if (uDim > 0.5) return uExposure;
+  float e = texelFetch(uAmbient, ivec2(6, 0), 0).r;
+  return uCave > 0.0 ? exp(mix(log(e), log(uExposure), uCave)) : e;
+}
+`;
+
+/* ---- the single-pass finish, for Detailed: fog, exposure, tone map ----
+   needs uView, uAmbient, uEyeInWater and cameraPosition declared by the host
+   (and HAS_DIM defined if it declares uDim itself) */
 export const LDR = /* glsl */`
 uniform float uExposure, uRender, uSkyAtEye;
 uniform vec3 uWaterTint;
+#ifndef HAS_DIM
+uniform float uDim;
+#endif
+uniform vec3 uDimFog;           // the Nether's and the End's fog colour and range (js/dim/look.js)
+uniform vec2 uDimFogRange;
+` + EXPOSURE + /* glsl */`
 vec3 skyDir(vec3 d) {
   float elev = asin(clamp(d.y, -1.0, 1.0));
   float v = 0.5 + 0.5 * sign(elev) * sqrt(abs(elev) / (PI * 0.5));
@@ -295,7 +317,10 @@ vec3 skyDir(vec3 d) {
 vec3 finishLDR(vec3 col, vec3 world) {
   vec3 rd = world - cameraPosition;
   float dist = length(rd); rd /= max(dist, 1e-4);
-  if (uEyeInWater > 0.5) {
+  if (uDim > 0.5) {
+    // no sky to fog towards: the fog closes in on its own colour
+    col = mix(col, uDimFog, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
+  } else if (uEyeInWater > 0.5) {
     vec3 absorb = -0.15 * log(max(uWaterTint, vec3(0.02))) + 0.03;
     vec3 Tr = exp(-(absorb + 0.025) * min(dist, 96.0));
     vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
@@ -309,6 +334,6 @@ vec3 finishLDR(vec3 col, vec3 world) {
     float hd = length((world - cameraPosition).xz);
     col = mix(col, skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), smoothstep(uRender * 0.72, uRender, hd));
   }
-  return toSRGB(agx(col * uExposure));
+  return toSRGB(agx(col * exposureNow()));
 }
 `;

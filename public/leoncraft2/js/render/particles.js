@@ -19,7 +19,7 @@
 --------------------------------------------------------------------------- */
 import { BLOCKS, B, SOLID } from '../blocks.js?v=12';
 import { VANILLA } from './vanilla.js?v=12';
-import { COMMON, LIGHTS } from './glsl.js?v=12';
+import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=12';
 const THREE = window.THREE;
 
 const MAX = 1500;
@@ -46,13 +46,18 @@ void main() {
   vec3 c = t.rgb * vCol * lightmapAt(uLightLv.x, uLightLv.y);
   o = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;
-// Detailed graphics: lit like the player model (sky, sun, block light), in linear light for the post chain
-const FS_DETAILED = COMMON + /* glsl */`
+// Detailed graphics: lit like the player model (sky, sun, block light), then fogged and tone mapped like the blocks
+const FS_DETAILED = COMMON + TONEMAP + /* glsl */`
 uniform sampler2DArray uAlbedo;
 uniform sampler2D uAmbient, uNoise;
 uniform vec3 cameraPosition, uLightDir;
 uniform vec2 uLightLv;
 uniform float uTime, uFrame;
+#ifdef LDR
+uniform sampler2D uView;
+uniform float uEyeInWater;
+` + LDR + /* glsl */`
+#endif
 ` + LIGHTS + /* glsl */`
 in vec3 vUv; in vec3 vCol; in vec3 vWorld;
 out vec4 o;
@@ -63,7 +68,11 @@ void main() {
   float sky = uLightLv.x, block = uLightLv.y;
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
   vec3 light = sunC * smoothstep(0.8, 0.95, sky) * 0.5 + amb * sky * sky * 0.8 / PI + (block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) / PI : vec3(0.0)) + vec3(0.002);
-  o = vec4(albedo * light, 1.0);
+  vec3 c = albedo * light;
+#ifdef LDR
+  c = finishLDR(c, vWorld);
+#endif
+  o = vec4(c, 1.0);
 }`;
 
 export class Particles {
@@ -83,7 +92,7 @@ export class Particles {
     const uni = Object.assign({}, U, { uLightLv: renderer.avatar.uLight });
     this.mesh = new THREE.Mesh(g, new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: HEAD + VS, fragmentShader: HEAD + (renderer.vanilla ? FS_VANILLA : FS_DETAILED),
-      uniforms: uni, side: THREE.DoubleSide,
+      uniforms: uni, side: THREE.DoubleSide, defines: renderer.ldr && !renderer.vanilla ? { LDR: 1 } : {},
     }));
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 5;
