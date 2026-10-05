@@ -34,15 +34,19 @@ ARMOR_MATS.forEach((m, i) => { ROW[m] = i; });
 // the row after the materials: the undyed parts of leather, drawn over the dyed piece
 export const OVERLAY_ROW = ARMOR_MATS.length;
 const OVERLAYS = { leather: [2] };
-export const SHEET_W = 64, SHEET_H = 64 * (ARMOR_MATS.length + 1);
+// and the elytra's (our own drawing, see elytraArt)
+export const ELYTRA_ROW = OVERLAY_ROW + 1;
+export const SHEET_W = 64, SHEET_H = 64 * (ARMOR_MATS.length + 2);
 // leather with no dye on it
 export const LEATHER = 0xa06540;
 
 /* ---- the boxes ----
-   Per piece (0 helmet, 1 chestplate, 2 leggings, 3 boots), per humanoid part
-   by name: [x, y, z, w, h, d, u, v, inflate, mirror], in the game's model
-   units relative to the part's pivot (pixels, y down, -z the front), as in
-   entities/mobmodels.js. The leggings' v is already moved down to layer 2. */
+   Per piece (0 helmet, 1 chestplate, 2 leggings, 3 boots, 4 an elytra), per
+   humanoid part by name: [x, y, z, w, h, d, u, v, inflate, mirror, pose], in
+   the game's model units relative to the part's pivot (pixels, y down, -z
+   the front), as in entities/mobmodels.js; pose, when there is one, is a
+   box of its own pivot and turn on the part (the elytra's wings). The
+   leggings' v is already moved down to layer 2. */
 export const PIECE_BOXES = [
   { head: [[-4, -8, -4, 8, 8, 8, 0, 0, 1], [-4, -8, -4, 8, 8, 8, 32, 0, 1.5]] },
   {
@@ -58,6 +62,16 @@ export const PIECE_BOXES = [
   {
     rightLeg: [[-2, 0, -2, 4, 12, 4, 0, 16, 1]],
     leftLeg: [[-2, 0, -2, 4, 12, 4, 0, 16, 1, true]],
+  },
+  /* the elytra: the game's two wings, 10 x 20 x 2 puffed out a pixel, hung
+     from 5 pixels either side of the neck, 2 pixels behind the back, folded
+     the way they hang when standing (15 degrees out at the bottom and
+     15 back) */
+  {
+    body: [
+      [-10, 0, 0, 10, 20, 2, 22, 0, 1, false, { pivot: [5, 0, 2], rot: [0.2617994, 0, -0.2617994] }],
+      [0, 0, 0, 10, 20, 2, 22, 0, 1, true, { pivot: [-5, 0, 2], rot: [0.2617994, 0, 0.2617994] }],
+    ],
   },
 ];
 // the player model's parts, in render/avatar.js order
@@ -85,6 +99,12 @@ export function pieceLook(stack) {
   return { row: ROW[a.material], material: a.material, tint, overlay: OVERLAYS[a.material] ? OVERLAY_ROW : -1, glint: glints(stack) };
 }
 
+/* What an elytra in the chest slot looks like (piece 4), or null. */
+export function elytraLook(stack) {
+  const it = stack && ITEMS[stack.id];
+  return it && it.name === 'elytra' ? { row: ELYTRA_ROW, glint: glints(stack) } : null;
+}
+
 /* ---- the sheet: one canvas, drawn once and again as each file lands ---- */
 let sheet = null;
 export function armorSheet() {
@@ -94,6 +114,7 @@ export function armorSheet() {
   sheet = { canvas, version: 0, loaded: false };
   const g = canvas.getContext('2d');
   ARMOR_MATS.forEach((m, i) => standIn(g, m, i * 64));
+  elytraArt(g, ELYTRA_ROW * 64);
   sheet.version++;
   const base = new URL('../../textures/armor/', import.meta.url).href;
   const load = src => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
@@ -162,6 +183,30 @@ function standIn(g, mat, y0) {
   box(0, 48, 4, 12, 4, 0, 9, true);
 }
 
+/* The elytra's picture, our own: the wing box's faces (from 22, 0: 10 x 20,
+   2 deep) as a grey membrane with a faint violet cast, a lighter leading
+   edge along the top, darker veins fanning down from the shoulder and a
+   darker, ragged trailing edge. */
+function elytraArt(g, y0) {
+  const rnd = (() => { let s = 11; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
+  for (let y = 0; y < 22; y++) for (let x = 22; x < 46; x++) {
+    // where on the wing: across (0 at the body, 1 at the tip) and down
+    const fx = x < 34 ? (x - 22) / 12 : (x - 34) / 12, fy = Math.max(0, y - 2) / 20;
+    let v = 150 - fy * 34 - fx * 10 + (rnd() - 0.5) * 10;
+    if (y < 2 || (y === 2)) v += 26;                                 // the top edge
+    if (y >= 20) v -= 22;                                            // the trailing edge
+    // veins: lines fanning from the top inner corner
+    const vx = x < 34 ? x - 22 : 45 - x, a = Math.atan2(y + 1, vx + 1);
+    if (Math.abs(Math.sin(a * 7)) < 0.18 && y > 3) v -= 24;
+    const c = Math.max(40, Math.min(220, Math.round(v)));
+    g.fillStyle = `rgb(${c - 6}, ${c - 8}, ${c + 6})`;
+    g.fillRect(x, y0 + y, 1, 1);
+  }
+  // ragged tips along the bottom
+  g.clearRect(22, y0 + 21, 24, 1);
+  for (let x = 24; x < 46; x += 3) g.clearRect(x, y0 + 20, 1, 1);
+}
+
 /* ---- the player's armour geometry: all four pieces, every vertex knowing
    its part (avatar order) and its piece, uv in sheet pixels within a row ---- */
 function faceList(u, v, w, h, d) {
@@ -179,10 +224,13 @@ export function avatarArmorGeometry() {
   PIECE_BOXES.forEach((parts, piece) => {
     for (const name in parts) {
       const part = AVATAR_PARTS.indexOf(name);
-      for (const [x0, y0, z0, w, h, d, u, v, inf, mirror] of parts[name]) {
+      for (const [x0, y0, z0, w, h, d, u, v, inf, mirror, pose] of parts[name]) {
         // turned to y up, +z the front, as the skin's boxes are
         const cx = x0 + w / 2, cy = -(y0 + h / 2), cz = -(z0 + d / 2);
         const hx = w / 2 + inf, hy = h / 2 + inf, hz = d / 2 + inf;
+        // a box with a pose of its own: turned about its pivot the game's way (z, then y, then x), in the game's axes
+        const R = pose ? new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(pose.rot[0], pose.rot[1], pose.rot[2], 'ZYX')) : null;
+        const pv = new THREE.Vector3(), pn = new THREE.Vector3();
         const faces = faceList(u, v, w, h, d);
         if (mirror) { const t = faces[2][2]; faces[2][2] = faces[3][2]; faces[3][2] = t; }
         for (const [n, corners, r] of faces) {
@@ -191,8 +239,15 @@ export function avatarArmorGeometry() {
           if (mirror) UV = [UV[1], UV[0], UV[3], UV[2]];
           for (let k = 0; k < 4; k++) {
             const s = corners[k];
-            P.push(cx + s[0] * hx, cy + s[1] * hy, cz + s[2] * hz);
-            N.push(n[0], n[1], n[2]);
+            if (R) {
+              pv.set(cx + s[0] * hx, -(cy + s[1] * hy), -(cz + s[2] * hz)).applyMatrix4(R).add(pn.fromArray(pose.pivot));
+              P.push(pv.x, -pv.y, -pv.z);
+              pn.set(n[0], -n[1], -n[2]).applyMatrix4(R);
+              N.push(pn.x, -pn.y, -pn.z);
+            } else {
+              P.push(cx + s[0] * hx, cy + s[1] * hy, cz + s[2] * hz);
+              N.push(n[0], n[1], n[2]);
+            }
             T.push(UV[k][0], UV[k][1]);
             A.push(part, piece);
           }

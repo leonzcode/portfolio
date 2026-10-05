@@ -49,7 +49,7 @@ import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=14';
 import { lightDefines } from './materials.js?v=14';
 import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=14';
 import { H, idx } from '../world-const.js?v=14';
-import { armorSheet, avatarArmorGeometry, pieceLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=14';
+import { armorSheet, avatarArmorGeometry, pieceLook, elytraLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=14';
 import { blockGeometry, isFlatItem } from './blockmesh.js?v=14';
 import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=14';
 import { setGlint } from './glint.js?v=14';
@@ -180,9 +180,9 @@ uniform int uShow;
 in vec3 position; in vec3 normal; in vec2 uv; in vec2 aPart;
 out vec3 vWorld; out vec3 vN; out vec2 vUv; flat out int vLayer;
 #ifdef ARMOR
-// per piece (helmet, chestplate, leggings, boots): its row's first pixel in the sheet, worn, glint, its overlay's row (or -1); and its colour
-uniform vec4 uPiece[4];
-uniform vec3 uTint[4];
+// per piece (helmet, chestplate, leggings, boots, an elytra): its row's first pixel in the sheet, worn, glint, its overlay's row (or -1); and its colour
+uniform vec4 uPiece[5];
+uniform vec3 uTint[5];
 uniform vec2 uSheet;
 out vec3 vTint; out vec3 vG; out vec2 vUv2;
 #endif
@@ -320,7 +320,7 @@ in vec3 position; in vec2 uv; in vec2 aPart;
 out vec2 vUv; flat out int vLayer;
 const float SHADOW_B = 0.85;
 #ifdef ARMOR
-uniform vec4 uPiece[4];
+uniform vec4 uPiece[5];
 uniform vec2 uSheet;
 #endif
 void main() {
@@ -434,8 +434,8 @@ export class Avatar {
     atex.magFilter = atex.minFilter = THREE.NearestFilter;
     atex.generateMipmaps = false; atex.flipY = false; atex.needsUpdate = true;
     this.armorV = sheet.version;
-    this.uPiece = { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) };
-    this.uTint = { value: [0, 1, 2, 3].map(() => new THREE.Vector3(1, 1, 1)) };
+    this.uPiece = { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector4()) };
+    this.uTint = { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector3(1, 1, 1)) };
     const auni = Object.assign({}, uni, { uSkin: { value: atex }, uPiece: this.uPiece, uTint: this.uTint, uSheet: { value: new THREE.Vector2(SHEET_W, SHEET_H) } });
     const adefs = Object.assign({}, defines, { ARMOR: 1 });
     this.armorMat = mk(VS, FS, auni, null, ARMOR_FS_VANILLA, adefs);
@@ -537,7 +537,10 @@ export class Avatar {
       const c = look.tint;
       this.uTint.value[i].set(((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255);
     }
-    this.wearing = any;
+    // an elytra in the chest slot: its wings on the back
+    const el = elytraLook(stacks && stacks[1]);
+    this.uPiece.value[4].set(el ? el.row * 64 : 0, el ? 1 : 0, el && el.glint ? 1 : 0, -1);
+    this.wearing = any || !!el;
     this.headWorn = this.uPiece.value[0].y > 0;
   }
   /* ---- on the head but not armour: a carved pumpkin, a mob head, any
