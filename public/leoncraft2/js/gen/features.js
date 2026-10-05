@@ -22,7 +22,7 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS } from '../blocks.js?v=14';
 import { BIO, BIOMES } from '../biomes.js?v=14';
-import { Xoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=14';
+import { Xoroshiro, WorldgenXoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=14';
 import { Simplex } from './noise.js?v=14';
 import { msin, mcos } from './carvers.js?v=14';
 import { stateOf } from './states.js?v=14';
@@ -156,7 +156,7 @@ export function sampleInt(p, r) {
   throw new Error('int provider ' + t);
 }
 function gaussian(r) {
-  // java.util.Random's nextGaussian is not needed by the overworld; a plain one stands in
+  if (r.nextGaussian) return r.nextGaussian();
   let u = 0, v = 0;
   while (u === 0) u = r.nextDouble();
   v = r.nextDouble();
@@ -961,7 +961,7 @@ export class Decorator {
     // per biome id: which placed features it lists (for the biome filter)
     this.biomeSets = new Map();
     this.unknown = new Set();
-    this.r = new Xoroshiro(0, 0, 0, 0);
+    this.r = new WorldgenXoroshiro();
   }
   biomeHas(bid, name) {
     let s = this.biomeSets.get(bid);
