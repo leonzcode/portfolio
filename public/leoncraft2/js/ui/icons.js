@@ -28,6 +28,7 @@
 --------------------------------------------------------------------------- */
 import { DRAW, textureLayer } from '../items.js?v=14';
 import { potionColour } from '../brewing.js?v=14';
+import { trimPiece, applyTrim } from '../trims.js?v=14';
 
 /* pictures coloured per stack: [the layer under, the layer over, which of the two takes the colour (0 the one
    under, 1 the one over)]. A potion's liquid goes under its bottle; dyed leather is its grey picture times the dye
@@ -269,6 +270,34 @@ export class ItemIcons {
       if (under < 0 || over < 0) return this.draw(g, st.id, x, y);
       e = this.flat.alloc();
       this._fill(under, parts[2] ? -1 : col, 1, over, parts[2] ? col : -1);
+      e.c.getContext('2d').putImageData(this.fimg, e.x, e.y);
+      this.map.set(key, e);
+    }
+    g.ctx.drawImage(e.c, e.x, e.y, e.w, e.w, x, y, 16, 16);
+    return true;
+  }
+
+  /* A trimmed armour piece (js/trims.js): its picture (dyed, for leather)
+     with the trim over it in the trim material's colours, made once per
+     piece, trim and dye, kept with the flat icons. */
+  drawTrimmed(g, st, x, y) {
+    const d = DRAW[st.id];
+    if (!d || !st.trim || !trimPiece(d.name)) return this.draw(g, st.id, x, y);
+    const parts = TINTED_PARTS[d.name], col = typeof st.color === 'number' ? st.color : -1;
+    const key = 'r:' + d.name + ':' + st.trim.join(':') + ':' + col;
+    let e = this.map.get(key);
+    if (!e) {
+      if (parts && col >= 0) {
+        const under = textureLayer(parts[0]), over = textureLayer(parts[1]);
+        if (under < 0 || over < 0) return this.draw(g, st.id, x, y);
+        this._fill(under, parts[2] ? -1 : col, 1, over, parts[2] ? col : -1);
+      } else {
+        const layer = textureLayer(d.name);
+        if (layer < 0) return this.draw(g, st.id, x, y);
+        this._fill(layer, -1, 1, -1, -1);
+      }
+      applyTrim(this.fimg.data, d.name, st.trim);
+      e = this.flat.alloc();
       e.c.getContext('2d').putImageData(this.fimg, e.x, e.y);
       this.map.set(key, e);
     }

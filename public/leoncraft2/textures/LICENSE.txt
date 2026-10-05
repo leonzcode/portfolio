@@ -151,11 +151,18 @@ pictures are scaled down to 16x16;
 leather horse armour, potions, tipped arrows, firework stars and filled maps
 are their grey base tinted the default colour with their overlay on top (as
 the game draws them), and dyed leather is the grey leather (Bauniclonia's,
-or Pixel Perfection CE's for the leggings) times the dye; the shield is Pixel Perfection CE's shield texture drawn as the
-game draws the shield in the inventory (its model, turned and scaled the
-same way); the turtle helmet is Bauniclonia's leather cap recoloured; the
-enchanted golden apple and the debug stick use the golden apple and the
-stick.
+or Pixel Perfection CE's for the leggings) times the dye; the shield is
+Pixel Perfection CE's shield texture drawn as the game draws the shield in
+the inventory (its model, turned and scaled the same way); the turtle helmet
+is Bauniclonia's leather cap recoloured; the enchanted golden apple and the
+debug stick use the golden apple and the stick.
+
+Armour trims on the item pictures (js/trims.js) are coloured with Pixel
+Perfection Legacy's trim material palettes (eight colours a material, from
+its trims/color_palettes, CC BY-SA 4.0); where the trim sits on each piece is
+drawn for these pictures, not taken from a pack (Legacy's own boots trim
+picture is the game's, and its helmet trim shares a third of the game's
+pixels, so neither is used).
 
 Checked against the game's own files. Every chosen picture was compared with
 Minecraft's own item texture (26.1.2, October 2026): no more than 15% of its
@@ -170,8 +177,8 @@ CE (its turtle armour texture is the game's own), and the FamiliarCraft pack
 was not used at all (its tools are the game's, recoloured). Pixel
 ImPerfection's book follows the game's detail, so no book is taken from that
 pack. Where a full colour pull would raise a drawing's detail past the limit
-(the iron, diamond and golden leggings, the tipped arrow), it is pulled
-partly or not at all.
+(the tipped arrow, among others), it is pulled partly or not at all;
+item_sources.json gives the strength of every picture.
 
 A wider check (October 2026) compared every picture with every item picture
 of every game version from 1.8.9 to 26.1.2, whatever its name: identical
