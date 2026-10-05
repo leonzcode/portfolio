@@ -26,7 +26,6 @@ import { Avatar } from './avatar.js?v=14';
 import { Held } from './held.js?v=14';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=14';
 import { dimLook } from '../dim/look.js?v=14';
-import { blockGeometry } from './blockmesh.js?v=14';
 const THREE = window.THREE;
 
 export class Renderer {
