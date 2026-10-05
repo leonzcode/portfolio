@@ -59,60 +59,66 @@ const LILY = B.lily_pad;
 const SITS = /^(zombie|husk|drowned|zombie_villager|skeleton|stray|wither_skeleton|piglin|zombified_piglin|villager|witch|enderman)$/;
 
 /* ---- the boat's shape: a flat bottom, four sides, two paddles ----
-   (game model units, y down from 24, -z the bow, -x its right side) */
-// a paddle on the given side (-1 right, 1 left): the shaft runs out from the oarlock, the blade at its far end
-const paddle = (name, side, pivot) => ({
-  name, pivot, rot: [0, 0, 0], parent: -1,
-  boxes: side < 0
-    ? [[-12, -1, -1, 18, 2, 2, 40, 65, 0, false, 1], [-13, -3, -0.5, 7, 6, 1, 80, 65, 0, false, 1]]
-    : [[-6, -1, -1, 18, 2, 2, 40, 65, 0, true, 1], [6, -3, -0.5, 7, 6, 1, 80, 65, 0, true, 1]],
+   (game model units, y down from 24, -z the bow, -x its right side). The
+   game's proportions: two blocks from bow to stern, a block and a quarter
+   across, the sides 6 pixels tall over a bottom 3 thick, the stern board
+   a little wider than the bow's. */
+// an oarlock, 2 pixels above the side and 3 forward of the middle; it turns its paddle's frame to the boat's length
+const oarlock = (name, x, y) => ({ name, pivot: [x, y, -3], rot: [0, PI / 2, 0], parent: -1, boxes: [] });
+/* a paddle in its oarlock's frame (x along the boat, z out over the water):
+   an 18 pixel shaft from 5 inside the oarlock, the blade on its last 7 */
+const paddle = (name, parent, right) => ({
+  name, pivot: [0, 0, 0], rot: [0, right ? PI : 0, PI / 16], parent,
+  boxes: [[-1, 0, -5, 2, 2, 18, 40, 65, 0, false, 1], [right ? 0.001 : -1.001, -3, 8, 1, 6, 7, 80, 65, 0, false, 1]],
 });
-/* The paddles: at rest they trail back and down into the water; rowing,
-   each goes round once every 16 ticks, the blade deep in the water as it
-   sweeps back and lifted as it comes forward again (sweep 45 degrees
-   either way, dip between 15 and 60). */
+/* The paddles, the game's way: t goes round PI/8 a tick while rowing (0 at
+   rest); the blade dips between 15 and 60 degrees as sin(-t) and sweeps 45
+   either way as sin(1 - t), so it is deep going back and lifted coming
+   forward. The right paddle is the left one turned round. */
 function animatePaddles(m, P, A) {
-  for (const [part, side, t] of [[m.index.paddleR, -1, A.paddleR || 0], [m.index.paddleL, 1, A.paddleL || 0]]) {
+  for (const [part, t, right] of [[m.index.paddleL, A.paddleL || 0, false], [m.index.paddleR, A.paddleR || 0, true]]) {
     const o = part * 7;
-    const back = 45 * DEG * Math.sin(1 - t), dip = 37.5 * DEG - 22.5 * DEG * Math.sin(t);
-    P[o + 3] = 0;
-    P[o + 4] = side < 0 ? back : -back;
-    P[o + 5] = side < 0 ? -dip : dip;
+    const dip = -PI / 3 + (PI / 3 - PI / 12) * (Math.sin(-t) + 1) / 2;
+    const sweep = -PI / 4 + PI / 2 * (Math.sin(1 - t) + 1) / 2;
+    P[o + 3] = dip;
+    P[o + 4] = right ? PI - sweep : sweep;
+    P[o + 5] = PI / 16;
   }
 }
 const boatModel = {
   name: 'boat', size: [128, 128],
   parts: [
-    { name: 'bottom', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-11, 21, -14, 22, 3, 28, 0, 0, 0, false, 1]] },
-    { name: 'right', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-11, 15, -14, 2, 6, 28, 0, 31, 0, false, 1]] },
-    { name: 'left', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[9, 15, -14, 2, 6, 28, 60, 31, 0, false, 1]] },
-    { name: 'front', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-9, 15, -14, 18, 6, 2, 0, 65, 0, false, 1]] },
-    { name: 'back', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-9, 15, 12, 18, 6, 2, 0, 73, 0, false, 1]] },
-    paddle('paddleR', -1, [-11, 16, 1]),
-    paddle('paddleL', 1, [11, 16, 1]),
+    { name: 'bottom', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-8, 21, -14, 16, 3, 28, 0, 0, 0, false, 1]] },
+    { name: 'right', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-10, 15, -14, 2, 6, 28, 0, 31, 0, false, 1]] },
+    { name: 'left', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[8, 15, -14, 2, 6, 28, 60, 31, 0, false, 1]] },
+    { name: 'front', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-8, 15, -16, 16, 6, 2, 0, 65, 0, false, 1]] },
+    { name: 'back', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-9, 15, 14, 18, 6, 2, 0, 73, 0, false, 1]] },
+    oarlock('oarR', -9, 13), paddle('paddleR', 5, true),
+    oarlock('oarL', 9, 13), paddle('paddleL', 7, false),
   ],
   animate: animatePaddles,
 };
-/* The bamboo raft: a flat deck of poles on a lower layer, no sides, the
-   paddles at the deck's edges (its rider sits higher: on the deck). */
+/* The bamboo raft: a deck of poles 20 across over a narrower layer 16
+   across, no sides, its top half a block up (its rider sits on it); the
+   oarlocks a pixel higher than a boat's. */
 const raftModel = {
   name: 'raft', size: [128, 128],
   parts: [
-    { name: 'bottom', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-11, 20, -14, 22, 4, 28, 0, 0, 0, false, 1]] },
-    { name: 'deck', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-9, 16, -14, 18, 4, 28, 0, 32, 0, false, 1]] },
-    paddle('paddleR', -1, [-9, 17, 1]),
-    paddle('paddleL', 1, [9, 17, 1]),
+    { name: 'bottom', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-10, 15.9, -14, 20, 4, 28, 0, 0, 0, false, 1], [-8, 19.9, -14, 16, 4, 28, 0, 32, 0, false, 1]] },
+    oarlock('oarR', -9, 14), paddle('paddleR', 1, true),
+    oarlock('oarL', 9, 14), paddle('paddleL', 3, false),
   ],
   animate: animatePaddles,
 };
 for (const md of [boatModel, raftModel]) { md.index = {}; md.parts.forEach((p, i) => { md.index[p.name] = i; }); MODELS[md.name] = md; }
-// a chest in the back half (the chest boat), sitting on the floor of a boat or the deck of a raft
+/* a chest in the back half (the chest boat): 12 pixels each way, standing on
+   the floor of a boat or the deck of a raft, its lock facing the rider */
 const chestOn = (name, lift) => {
-  const md = { name, size: [64, 64], parts: [{ name: 'bottom', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-6, 9 - lift, 1, 12, 12, 10, 0, 0, 0, false, 0], [-1, 13 - lift, 0, 2, 3, 1, 0, 24, 0, false, 0]] }], animate() {} };
+  const md = { name, size: [64, 64], parts: [{ name: 'bottom', pivot: [0, 0, 0], rot: [0, 0, 0], parent: -1, boxes: [[-6, 9 - lift, 2, 12, 12, 12, 0, 0, 0, false, 0], [-1, 12 - lift, 1, 2, 4, 1, 0, 24, 0, false, 0]] }], animate() {} };
   md.index = { bottom: 0 };
   MODELS[name] = md;
 };
-chestOn('boat_chest', 0); chestOn('raft_chest', 5);
+chestOn('boat_chest', 0); chestOn('raft_chest', 5.1);
 
 // planks with a grain, in greys: the wood's colour multiplies it
 addArt('boat', [128, 128], p => {
@@ -127,7 +133,7 @@ addArt('boat', [128, 128], p => {
   };
   plank(0, 0, 100, 31, 1); plank(0, 31, 120, 34, 1); plank(0, 65, 40, 16, 1);
   // the paddles: a smooth shaft, a darker blade
-  plank(40, 65, 40, 4, 0.95); plank(80, 65, 16, 7, 0.88);
+  plank(40, 65, 40, 20, 0.95); plank(80, 65, 16, 13, 0.88);
 });
 // bamboo poles side by side, each with its knots, in greys (the bamboo's yellow multiplies it)
 addArt('raft', [128, 128], p => {
@@ -141,13 +147,13 @@ addArt('raft', [128, 128], p => {
     }
   };
   poles(0, 0, 100, 32); poles(0, 32, 92, 32);
-  poles(40, 65, 40, 4); poles(80, 65, 16, 7);
+  poles(40, 65, 40, 20); poles(80, 65, 16, 13);
 });
 addArt('boat_chest', [64, 64], p => {
-  p.box(0, 0, 12, 12, 10, { all: 0x9a6a2c, top: 0xa8763a }, 0.08);
-  // the lid's rim, a band round the middle
-  p.fill(10, 10 + 4, 44, 1, 0x4a3214);
-  p.box(0, 24, 2, 3, 1, 0xc8c8c8, 0.05);
+  p.box(0, 0, 12, 12, 12, { all: 0x9a6a2c, top: 0xa8763a }, 0.08);
+  // the lid's rim, a band round the chest under its top 4 pixels
+  p.fill(0, 12 + 4, 48, 1, 0x4a3214);
+  p.box(0, 24, 2, 4, 1, 0xc8c8c8, 0.05);
 });
 
 const isAnimal = e => e instanceof Animal;
@@ -155,6 +161,7 @@ const isAnimal = e => e instanceof Animal;
 export class Boat extends Entity {
   static W = 1.375; static H = 0.5625; static STEP = 0; static SEATS = 2; static MODEL = 'boat'; static TEX = 'boat'; static SHADOW = 0;
   static NO_PUSH = true; static PICK = 0; static WATER_MASK = 0.5;
+  static MASK_HX = 0.5; static MASK_HZ = 0.875;   // the water kept out: the inside of the hull, between its sides and its boards
   static SOLID = true;              // stood on and walked into (entities/terrain.js, the player's collision)
   static RIDER_BODY = true;         // its rider's body faces the way it does (render/avatar.js)
   static NO_EVICT = true;           // getting in never puts a mob out
@@ -523,9 +530,9 @@ export class Boat extends Entity {
     A.paddleR = this.rowing[1] ? this.paddle[1] - PI / 8 * (1 - a) : 0;
   }
   rootPose(root, t, a) {
-    // rocking side to side when hit, less as the damage wears off
+    // rocking bow and stern up and down when hit (about its width), less as the damage wears off
     const h = this.hurtTime - a, dm = Math.max(0, this.damage - a);
-    if (h > 0) root.multiply(t.makeRotationZ(Math.sin(h) * h * dm / 10 * this.hurtDir * DEG));
+    if (h > 0) root.multiply(t.makeRotationX(Math.sin(h) * h * dm / 10 * this.hurtDir * DEG));
   }
   layers(out) { if (this.chest) out.push(this.raft ? ['raft_chest', 'boat_chest', null] : ['boat_chest', 'boat_chest', null]); }
   /* ---- keeping it ----
