@@ -390,11 +390,11 @@ def layer_picture(name, ce, ppl, packs=None):
 # arms at 40,16, the legs at 0,16): layer 1 is the helmet, chestplate and boots, layer 2 the leggings. Named as the
 # game names its armour materials (gold, chainmail, turtle...). Bauniclonia draws each piece on its own 64 x 32
 # sheet, and the helmet on the hat box (32,0) because that is where the Luanti armour model puts it; the pieces are
-# laid together and the helmet moved to the head box. leather_layer_N is undyed leather, ready to draw;
-# leather_layer_N_dye is the grey to multiply by a dye colour (as the game tints leather). The turtle shell is
-# Bauniclonia's leather cap recoloured to the game's turtle shell (no open pack has a turtle shell that is not
-# the game's own).
-ARMOR_MATS = {'leather': 'leather', 'chainmail': 'chain', 'iron': 'iron', 'gold': 'gold', 'diamond': 'diamond',
+# laid together and the helmet moved to the head box. leather_layer_N is grey, as the game's own leather file is:
+# the game multiplies it by the dye colour, or by 0xA06540 (undyed leather) when there is none. It is Bauniclonia's
+# grey leather, pulled to the game's grey (the "_dye" numbers). The turtle shell is Bauniclonia's leather cap
+# recoloured to the game's turtle shell (no open pack has a turtle shell that is not the game's own).
+ARMOR_MATS = {'leather': 'leather_desat', 'chainmail': 'chain', 'iron': 'iron', 'gold': 'gold', 'diamond': 'diamond',
               'netherite': 'netherite', 'copper': 'copper'}
 
 
@@ -426,10 +426,12 @@ def build_armour(baun):
     jobs = []
     for mat, mcl in ARMOR_MATS.items():
         for layer in (1, 2):
-            jobs.append(('%s_layer_%d' % (mat, layer), mcl, layer, False))
-            if mat == 'leather':
-                jobs.append(('leather_layer_%d_dye' % layer, 'leather_desat', layer, True))
+            jobs.append(('%s_layer_%d' % (mat, layer), mcl, layer, mat == 'leather'))
     jobs.append(('turtle_layer_1', 'turtle', 1, False))
+    # the files of an earlier build that are no longer made (undyed leather as its own file)
+    for old in ('leather_layer_1_dye', 'leather_layer_2_dye'):
+        if os.path.exists(os.path.join(out_dir, old + '.png')):
+            os.remove(os.path.join(out_dir, old + '.png'))
     for key, mcl, layer, neutral in jobs:
         if mcl == 'turtle':
             im = armour_sheet(baun, 'leather_desat', 1)
@@ -444,9 +446,19 @@ def build_armour(baun):
         if im is None:
             print('armour: no Bauniclonia texture for', key)
             continue
-        im = pull(im, ARMOR_STATS.get(key), 1.0, neutral)
+        im = pull(im, ARMOR_STATS.get(key + '_dye' if neutral else key), 1.0, neutral)
         im.save(os.path.join(out_dir, key + '.png'), optimize=True)
         done.append(key)
+    # The leggings' waist band stays leather brown whatever the dye, as in the game: leather_layer_2_overlay is
+    # drawn untinted over the dyed leggings. It is Bauniclonia's undyed leggings where they sit on the body box,
+    # pulled to the game's undyed leather. Without it, blue leggings come out blue all over.
+    im = armour_sheet(baun, 'leather', 2)
+    if im is not None:
+        from PIL import Image
+        band = Image.new('RGBA', (64, 32), (0, 0, 0, 0))
+        band.paste(pull(im, ARMOR_STATS.get('leather_layer_2'), 1.0).crop((16, 16, 40, 32)), (16, 16))
+        band.save(os.path.join(out_dir, 'leather_layer_2_overlay.png'), optimize=True)
+        done.append('leather_layer_2_overlay')
     return done
 
 

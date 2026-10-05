@@ -165,9 +165,11 @@ shell), are made by tools/leoncraft2/build_items.py from Bauniclonia's armour
 textures (by Mirtilo, CC BY-SA 4.0, link above). Changes: each piece's own
 64x32 sheet is laid onto one sheet per layer, the helmet moved from the hat
 box to the head box; the colours are moved towards the game's own average and
-spread (colour statistics only); leather_layer_N.png is undyed leather and
-leather_layer_N_dye.png the grey to multiply by a dye colour; the turtle shell
-is the leather cap recoloured green. A pixel comparison with the game's own
+spread (colour statistics only); leather_layer_N.png is Bauniclonia's grey
+leather, to be multiplied by the dye colour (or by undyed leather's brown),
+and leather_layer_2_overlay.png the leggings' waist band in undyed leather,
+drawn over the dyed leggings untinted; the turtle shell is the leather cap
+recoloured green. A pixel comparison with the game's own
 armour textures found none of these to be copies. Pixel Perfection CE's turtle
 texture is identical to the game's, and Pixel Perfection Legacy's turtle and
 REFI Textures' iron, gold and diamond armour follow the game's too closely, so
