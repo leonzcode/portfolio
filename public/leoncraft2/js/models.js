@@ -511,6 +511,8 @@ SHAPES.bell = function (d, m) {
   else hold = turn([box(2, 13, 7, 14, 15, 9, { faces: R }), box(0, 0, 6, 2, 16, 10, { faces: P }), box(14, 0, 6, 16, 16, 10, { faces: P })], F);
   return r.concat(hold);
 };
+// an item frame: twelve pixels square and one thick against the face it hangs on (bits 0-2), drawn by details.js
+SHAPES.frame = function (d, m) { return hang([box(2, 0, 2, 14, 1, 14, { hide: true })], m & 7); };
 // an enchanting table is twelve pixels tall
 SHAPES.table = function (d) { return [box(0, 0, 0, 16, d.h || 12, 16)]; };
 // a brewing stand: the rod, three stone feet, and the arms and bottles as crossed sprites

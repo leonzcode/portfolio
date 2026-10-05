@@ -355,6 +355,7 @@ export function meshColumn(job) {
     const buf = d.pass === 'translucent' ? out.translucent : d.pass === 'opaque' ? out.opaque : out.cutout;
     const small = SMALL[d.id];
     for (const bx of list) {
+      if (bx.hide) continue;            // there to be picked, drawn elsewhere (item frames)
       if (bx.q) {
         // a free quad: crossed planes and things lying flat
         for (let c = 0; c < 4; c++) { QP[c][0] = x + bx.q[c][0] / 16; QP[c][1] = y + bx.q[c][1] / 16; QP[c][2] = z + bx.q[c][2] / 16; }
