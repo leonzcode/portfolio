@@ -102,6 +102,18 @@ export class Entities {
     };
     // the player's fights: hits, the shield, bows, crossbows, tridents (combat/combat.js)
     this.combat = new Combat(this);
+    // boats are solid, to mobs (terrain.js) and to the player (player.js), except the one you sit in
+    this.solids = []; this.t.solids = this.solids;
+    P.extraBoxes = this.boxFn = (out, x0, y0, z0, x1, y1, z1) => {
+      const S = this.solids;
+      for (let i = 0; i < S.length; i++) {
+        const e = S[i], p = e.pos;
+        if (e.removed || e === this.riding || p.x + e.hw < x0 || p.x - e.hw > x1 || p.z + e.hw < z0 || p.z - e.hw > z1 || p.y + e.h < y0 - 1 || p.y > y1) continue;
+        out.push(p.x - e.hw, p.y, p.z - e.hw, p.x + e.hw, p.y + e.h, p.z + e.hw);
+      }
+    };
+    // a boat's turn reaches the camera a frame at a time, not in a jump each tick
+    this.turnDue = 0; this.turnDone = 0;
   }
   get difficulty() { return (this.options && this.options.get('difficulty')) || 'normal'; }
   get time() { return this.hooks.time ? this.hooks.time() : 6000; }
@@ -142,8 +154,10 @@ export class Entities {
   /* ---- finding neighbours ---- */
   rebuildGrid() {
     for (const a of this.grid.values()) a.length = 0;
+    this.solids.length = 0;
     for (const e of this.list) {
       if (e.removed) continue;
+      if (e.constructor.SOLID) this.solids.push(e);
       const k = (Math.floor(e.pos.x / CELL) + 4096) * 8192 + Math.floor(e.pos.z / CELL) + 4096;
       let a = this.grid.get(k);
       if (!a) this.grid.set(k, a = []);
@@ -324,8 +338,9 @@ export class Entities {
       if (e.removed || e === this.riding || e.vehicle === this.player) continue;
       const k = Math.floor(e.pos.x / 16) + ',' + Math.floor(e.pos.z / 16);
       if (W.chunks.has(k)) continue;
-      // monsters that would despawn anyway are just gone
-      if (!(e.constructor.HOSTILE && !e.persistent) && e.toJSON) {
+      // monsters that would despawn anyway are just gone (and a boat keeps its riders with it)
+      const kept = e.vehicle && e.vehicle.constructor.KEEPS_RIDERS;
+      if (!(e.constructor.HOSTILE && !e.persistent) && e.toJSON && !kept) {
         let a = this.stored.get(k);
         if (!a) this.stored.set(k, a = []);
         a.push(e.toJSON());
@@ -337,6 +352,7 @@ export class Entities {
       this.stored.delete(k);
       for (const o of a) this.spawn(o.t, o.p[0], o.p[1], o.p[2], { json: o, natural: false });
     }
+    this.remount = null;
     for (const [k, c] of W.chunks) {
       if (this.populated.has(k)) continue;
       this.populated.add(k);
@@ -349,12 +365,14 @@ export class Entities {
   /* ---- riding ---- */
   mount(v) {
     if (this.riding) this.dismount();
-    if (v.passengers.length >= (v.constructor.SEATS || 1)) {
-      // a mob in your seat is put out
+    const seats = v.seats !== undefined ? v.seats : (v.constructor.SEATS || 1);
+    if (v.passengers.length >= seats) {
+      // a mob in your seat is put out (not from a boat)
       const mob = v.passengers.find(p => p !== this.player);
-      if (!mob || v.constructor.SEATS > 1) return false;
+      if (!mob || seats > 1 || v.constructor.NO_EVICT) return false;
       this.unseat(mob);
     }
+    this.turnDue = this.turnDone = 0;
     this.riding = v;
     v.passengers.unshift(this.player);
     this.P.riding = v;
@@ -369,10 +387,19 @@ export class Entities {
     this.riding = null; this.P.riding = null;
     const i = v.passengers.indexOf(this.player);
     if (i >= 0) v.passengers.splice(i, 1);
+    // what is left of the boat's turn this tick
+    this.P.yaw += this.turnDue - this.turnDone; this.turnDue = this.turnDone = 0;
     // somewhere to stand beside it (or on top)
     const P = this.P, T = this.t;
     const tries = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
     let placed = false;
+    // a boat says where: beside it the way you look, or on top (js/entities/boat.js)
+    if (v.dismountSpot) {
+      const s = v.dismountSpot(P);
+      if (s) P.pos.set(s[0], s[1], s[2]); else P.pos.set(v.pos.x, v.pos.y + v.h, v.pos.z);
+      placed = true;
+      tries.length = 0;
+    }
     for (const [dx, dz] of tries) {
       const s = Math.sin(v.yaw + Math.PI / 2), c = Math.cos(v.yaw + Math.PI / 2);
       const x = v.pos.x + (dx * c - dz * s) * (v.w / 2 + 0.5), z = v.pos.z + (dx * s + dz * c) * (v.w / 2 + 0.5);
@@ -396,6 +423,11 @@ export class Entities {
     P.prev.copy(P.pos);
     if (P.keys.shift && !v.constructor.NO_DISMOUNT_SHIFT) { this.dismount(); return true; }
     P.onGround = true; P.inWater = false; P.flying = false; P.sprinting = false; P.sneaking = false;
+    // sitting up: never in a swimming or crouching pose, no fall counted
+    P.swimming = false; P.pose = 'stand'; P.h = 1.8; P.fallDistance = 0; P.landed = null;
+    P.prevEyeH = P.eyeH; P.eyeH += (1.62 - P.eyeH) * 0.5;
+    // the rest of last tick's turn, before this tick's
+    P.yaw += this.turnDue - this.turnDone; this.turnDue = this.turnDone = 0;
     // the eyes: under water only if the boat went under
     const ex = Math.floor(P.pos.x), ey = P.pos.y + 1.62, ez = Math.floor(P.pos.z);
     P.eyeInWater = FLUID[this.t.get(ex, Math.floor(ey), ez)] === 1 && ey < Math.floor(ey) + this.t.fluidHeight(ex, Math.floor(ey), ez);
@@ -413,13 +445,29 @@ export class Entities {
       const x = v.pos.x - sn * s[0] - cs * s[2], z = v.pos.z - cs * s[0] + sn * s[2], y = v.pos.y + s[1];
       if (p === this.player) {
         this.P.pos.set(x, y, z);
-        if (v.yawDelta) this.P.yaw += v.yawDelta;
+        // the boat's turn goes to the camera over the frames to come (render), as the boat itself is drawn turning
+        if (v.yawDelta) { this.turnDue = v.yawDelta; this.turnDone = 0; }
       } else {
         p.pos.set(x, y, z);
         if (v.yawDelta) { p.yaw += v.yawDelta; p.bodyYaw = p.yaw; }
       }
+      if (v.riderPlaced) v.riderPlaced(p, i);
     }
   }
+  /* Each frame while riding: the part of this tick's turn the boat has made
+     by now, and a boat keeps your look within 105 degrees of its bow. */
+  rideFrame(alpha) {
+    const v = this.riding, P = this.P;
+    if (!v) return;
+    const want = this.turnDue * alpha;
+    P.yaw += want - this.turnDone; this.turnDone = want;
+    if (v.constructor.RIDER_BODY) {
+      const by = v.prevYaw + wrap(v.yaw - v.prevYaw) * alpha, off = wrap(P.yaw - by), max = 105 * DEG;
+      if (Math.abs(off) > max) P.yaw -= off - Math.sign(off) * max;
+    }
+  }
+  // the inventory key while riding a chest boat opens its chest; true if it did
+  rideInventory() { const v = this.riding; return !!(v && v.openInventory && v.openInventory(this.player)); }
   // a mob riding something: no movement of its own
   ridingTick(e) {
     const v = e.vehicle;
@@ -428,6 +476,8 @@ export class Entities {
     e.vel.set(0, 0, 0);
     if (e instanceof Mob) { e.serverAi(); e.animTick && e.animTick(); }
     e.fallDist = 0;
+    // after its own mind has had its say, the seat decides which way it faces (a boat: its way, or sideways)
+    if (v.riderPlaced) v.riderPlaced(e, v.passengers.indexOf(e));
   }
 
   /* ---- the player's side of a fight ---- */
@@ -644,14 +694,7 @@ export class Entities {
     const P = this.P, eye = this.lookEye, dir = this.lookDir;
     const take = () => { if (this.mode !== 'creative' && this.inv) this.inv.takeSelected(1); };
     if (/_boat$|_raft$/.test(name)) {
-      // the boat goes on the first water or block the look meets (within 5)
-      const t = this.t.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 5, true);
-      if (t >= 5) return false;
-      const x = eye.x + dir.x * t, z = eye.z + dir.z * t;
-      const bx = this.t.rayX, by = this.t.rayY, bz = this.t.rayZ;
-      const top = FLUID[this.t.get(bx, by, bz)] ? by + this.t.fluidHeight(bx, by, bz) - 0.4 : by + 1;
-      if (this.t.boxHits(x - 0.68, top + 0.01, z - 0.68, x + 0.68, top + 0.55, z + 0.68)) return false;
-      placeBoat(this, name, x, top, z, P.yaw);
+      if (!this.placeBoatLooking(name, this.mode === 'creative' ? 5 : 4.5)) return false;
       take();
       return true;
     }
@@ -709,15 +752,33 @@ export class Entities {
       if (d > tr + 0.5) break;
       if (isRail(this.t.get(x, y, z))) return placeMinecart(this, x, y, z);
     }
-    const t = this.t.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 8, true);
-    if (t >= 8) return null;
-    const bx = this.t.rayX, by = this.t.rayY, bz = this.t.rayZ;
-    const top = FLUID[this.t.get(bx, by, bz)] ? by + this.t.fluidHeight(bx, by, bz) - 0.4 : by + 1;
-    return placeBoat(this, 'oak_boat', eye.x + dir.x * t, top, eye.z + dir.z * t, P.yaw);
+    return this.placeBoatLooking('oak_boat', 8);
+  }
+  /* A boat from its item, the game's way: where the look first meets a block
+     or the surface of water (within reach), facing the way you look; not
+     if it would be inside a block or another boat (so not on the side of a
+     block). Returns the boat or null. */
+  placeBoatLooking(name, reach) {
+    const P = this.P, eye = this.lookEye, dir = this.lookDir, T = this.t;
+    if (!eye || !dir) return null;
+    const t = T.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, reach, true);
+    if (t >= reach) return null;
+    let x = eye.x + dir.x * t, y = eye.y + dir.y * t, z = eye.z + dir.z * t;
+    const bx = T.rayX, by = T.rayY, bz = T.rayZ;
+    if (FLUID[T.get(bx, by, bz)]) {
+      // water (or lava, where it burns): its surface, a little under the top of its cell
+      const surf = by + T.fluidHeight(bx, by, bz);
+      if (dir.y < -1e-6 && eye.y > surf) { const ts = (surf - eye.y) / dir.y; if (ts > reach) return null; x = eye.x + dir.x * ts; y = surf; z = eye.z + dir.z * ts; }
+      else y = Math.min(y, surf);
+    }
+    const hw = 0.6875;
+    if (T.boxHits(x - hw, y, z - hw, x + hw, y + 0.5625, z + hw)) return null;
+    return placeBoat(this, name, x, y, z, P.yaw);
   }
 
   /* ---- drawing, once a frame ---- */
   render(alpha) {
+    if (this.riding) this.rideFrame(alpha);
     const M = this.meshes;
     M.begin();
     const cam = this.R.camera;
@@ -842,7 +903,7 @@ export class Entities {
   /* ---- keeping them ---- */
   toJSON() {
     const list = [];
-    for (const e of this.list) if (!e.removed && !e.dead && e.toJSON && !(e.constructor.HOSTILE && !e.persistent && e.constructor.NO_SAVE)) list.push(e.toJSON());
+    for (const e of this.list) if (!e.removed && !e.dead && e.toJSON && !(e.constructor.HOSTILE && !e.persistent && e.constructor.NO_SAVE) && !(e.vehicle && e.vehicle.constructor.KEEPS_RIDERS)) list.push(e.toJSON());
     const stored = {};
     for (const [k, a] of this.stored) stored[k] = a;
     return { v: 1, list, stored, pop: [...this.populated] };
@@ -850,12 +911,16 @@ export class Entities {
   fromJSON(o) {
     if (!o) return;
     for (const e of o.list || []) if (TYPES[e.t]) this.spawn(e.t, e.p[0], e.p[1], e.p[2], { json: e, natural: false });
+    // saved sitting in a boat: back in it
+    if (this.remount && !this.remount.removed) this.mount(this.remount);
+    this.remount = null;
     for (const k in o.stored || {}) this.stored.set(k, o.stored[k]);
     for (const k of o.pop || []) this.populated.add(k);
   }
   // leaving the world: drop everything
   dispose() {
     this.gone = true;
+    if (this.P.extraBoxes === this.boxFn) this.P.extraBoxes = null;
     for (const e of this.list) if (e.mesh) e.remove();
     this.list.length = 0;
     if (this.world.onSetE) this.world.onSetE = null;

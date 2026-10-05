@@ -438,6 +438,8 @@ export class Avatar {
     this.body += wrap(want - this.body) * 0.3;
     const off = wrap(P.yaw - this.body);
     if (Math.abs(off) > 50 * DEG) this.body += off - Math.sign(off) * 50 * DEG;
+    // in a boat the body faces the way the boat does (the head turns up to 105 degrees from it)
+    if (P.riding && P.riding.constructor.RIDER_BODY) this.body = P.riding.yaw;
     // the arm swing: 6 ticks
     this.oAttack = this.attack;
     if (this.swinging) { if (++this.swingT >= 6) { this.swingT = 0; this.swinging = false; } } else this.swingT = 0;
