@@ -101,6 +101,7 @@ export class Details {
     if (!d) return false;
     const s = h.held, n = s ? itemName(s.id) : '';
     if (d.frame) return this.frameUse(h, hit, s);
+    if (/^(cod|salmon|tropical_fish|pufferfish|axolotl|tadpole)_bucket$/.test(n) && hit.face) return this.emptyCreature(h, hit, n);
     if ((n === 'item_frame' || n === 'glow_item_frame') && hit.face) return this.hangFrame(h, hit, n);
     if (d.shape === 'cauldron') return this.cauldron(h, hit, d, s, n);
     if (d.name === 'composter') return this.composter(h, hit, s, n);
@@ -157,6 +158,18 @@ export class Details {
     const id = I[plant] !== undefined ? I[plant] : B[plant];
     if (id !== undefined) h.inv.add(id, 1);
     w.set(x, y, z, B.flower_pot, 0);
+    return true;
+  }
+  // a bucket of a fish (an axolotl, a tadpole): its water goes where the click lands, and the creature into it, for good
+  emptyCreature(h, hit, n) {
+    const w = this.world, f = hit.face, b = w.get(hit.x, hit.y, hit.z);
+    const into = BLOCKS[b] && BLOCKS[b].replaceable && !BLOCKS[b].fluid ? [hit.x, hit.y, hit.z] : [hit.x + f[0], hit.y + f[1], hit.z + f[2]];
+    const [x, y, z] = into, cur = w.get(x, y, z);
+    if (cur && !BLOCKS[cur].replaceable) return false;
+    if (cur !== B.water || w.meta(x, y, z) !== 0) { w.set(x, y, z, B.water, 0); if (h.fluids) h.fluids.around(x, y, z); }
+    const E = this.entities && this.entities();
+    if (E) E.spawn(n.slice(0, -7), x + 0.5, y + 0.1, z + 0.5, { persistent: true });
+    if (!h.creative) { h.inv.slots[h.inv.selected] = { id: I.bucket, count: 1 }; h.inv.changed(); }
     return true;
   }
   // flint and steel wears, a fire charge is used up

@@ -524,6 +524,7 @@ async function boot() {
       details.showAll();
       details.onEdit = (x, y, z, front) => editSign(x, y, z, front);
       details.creative = () => !!(game && game.mode === 'creative');
+      details.entities = () => game && game.entities;
       inter.onPunch = hit => !!(game && game.details && game.details.punch(hit.x, hit.y, hit.z));
       details.daylight = () => { const t = (((game ? game.time : 6000) % 24000) + 24000) % 24000; return Math.min(1, Math.max(0.2, 0.5 + 2 * Math.cos(2 * Math.PI * (t / 24000 - 0.25)))); };
       Object.assign(g, { drops, containers, entities, sim, details });
