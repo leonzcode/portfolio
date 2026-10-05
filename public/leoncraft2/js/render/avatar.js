@@ -20,7 +20,13 @@
                single-pass finish (fog, exposure, tone map) as the terrain.
      views     Q (or F5) goes first person, third person behind, third person
                in front, with the camera pulled in so it never ends inside a
-               block; in first person an empty hand is the skin's own arm.
+               block; in first person your arm is the skin's own arm, empty
+               or holding what is in your hand (render/held.js).
+     armour    what you wear, drawn over the skin with the game's armour
+               model (render/armor.js): a second mesh on the same parts,
+               leather in its dye, enchanted pieces with the glint.
+     held      what is in either hand, in the model's hand in third person,
+               placed the way the game places that kind of item.
 
    The box sizes, pivots, overlay sizes and the skin's UV unwrapping follow
    skinview3d (https://github.com/bs-community/skinview3d), MIT licence:
@@ -41,6 +47,9 @@ import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=14';
 import { lightDefines } from './materials.js?v=14';
 import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=14';
 import { H, idx } from '../world-const.js?v=14';
+import { armorSheet, avatarArmorGeometry, pieceLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=14';
+import { blockGeometry } from './blockmesh.js?v=14';
+import { DISPLAY, heldKind, applyDisplay } from './held.js?v=14';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -121,10 +130,10 @@ function faceList(u, v, w, h, d) {
     [[0, -1, 0], [[-1, -1, 1], [1, -1, 1], [1, -1, -1], [-1, -1, -1]], [u + d + w, v, u + d + 2 * w, v + d]],             // bottom
   ];
 }
-function buildGeometry(slim, onlyPart) {
+function buildGeometry(slim, onlyParts) {
   const P = [], N = [], T = [], A = [], I = [];
   for (const [part, layer, c, size, uv, inf] of boxList(slim)) {
-    if (onlyPart !== undefined && part !== onlyPart) continue;
+    if (onlyParts && onlyParts.indexOf(part) < 0) continue;
     const [w, h, d] = size;
     const hx = w / 2 + inf, hy = h / 2 + inf, hz = d / 2 + inf;
     for (const [n, corners, r] of faceList(uv[0], uv[1], w, h, d)) {
@@ -158,11 +167,26 @@ uniform mat4 uParts[6];
 uniform int uShow;
 in vec3 position; in vec3 normal; in vec2 uv; in vec2 aPart;
 out vec3 vWorld; out vec3 vN; out vec2 vUv; flat out int vLayer;
+#ifdef ARMOR
+// per piece (helmet, chestplate, leggings, boots): its row's first pixel in the sheet, worn, glint; and its colour
+uniform vec4 uPiece[4];
+uniform vec3 uTint[4];
+uniform vec2 uSheet;
+out vec3 vTint; out vec3 vG;
+#endif
 void main() {
   int layer = int(aPart.y + 0.5);
+#ifdef ARMOR
+  vec4 pc = uPiece[layer];
+  vLayer = 1; vUv = (uv + vec2(0.0, pc.x)) / uSheet;
+  vTint = uTint[layer]; vG = vec3(uv / 16.0, pc.z);
+  // a piece not worn goes behind the far plane
+  if (pc.y < 0.5) { vWorld = vec3(0.0); vN = vec3(0.0, 1.0, 0.0); gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+#else
   vLayer = layer; vUv = uv;
   // a layer switched off goes behind the far plane
   if (((uShow >> layer) & 1) == 0) { vWorld = vec3(0.0); vN = vec3(0.0, 1.0, 0.0); gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+#endif
   mat4 M = uParts[int(aPart.x + 0.5)];
   vec4 w = M * vec4(position, 1.0);
   vWorld = w.xyz;
@@ -184,6 +208,11 @@ uniform float uEyeInWater;
 #endif
 ` + LIGHTS + `
 in vec3 vWorld; in vec3 vN; in vec2 vUv; flat in int vLayer;
+#ifdef ARMOR
+in vec3 vTint; in vec3 vG;
+uniform float uClock;
+` + GLINT + `
+#endif
 layout(location = 0) out vec4 outColor;
 vec3 ambientAt(vec3 n) {
   vec3 up = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
@@ -193,10 +222,16 @@ vec3 ambientAt(vec3 n) {
 }
 void main() {
   vec4 t = texture(uSkin, vUv);
+#ifdef ARMOR
+  // armour is cut out and seen from both sides (the inside of a helmet from below); leather takes its dye; it never flashes red
+  if (t.a < 0.1) discard;
+  vec3 albedo = toLinear(t.rgb * vTint);
+#else
   // the base layer is solid and one-sided (a camera pushed into the head sees out); the outer layers are cut out
   if (vLayer == 0 ? !gl_FrontFacing : t.a < 0.5) discard;
   vec3 albedo = toLinear(t.rgb);
   albedo = mix(albedo, vec3(0.75, 0.0, 0.0), uHurt * 0.55);
+#endif
   vec3 N = normalize(vN);
   if (!gl_FrontFacing) N = -N;
   float sky = uLightLv.x, block = uLightLv.y;
@@ -229,11 +264,36 @@ void main() {
   amb *= sky * sky * 0.8;
   block = max(block, heldLight(vWorld, N));
   vec3 blockL = block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
-  vec3 col = albedo / PI * (diffuse * PI + amb + blockL + vec3(0.0035, 0.004, 0.006));
+  vec3 light = (diffuse * PI + amb + blockL + vec3(0.0035, 0.004, 0.006)) / PI;
+  vec3 col = albedo * light;
+#ifdef ARMOR
+  // the glint shimmers by the light the piece is in, so the eye's adjusting keeps it about as bright by day as by night
+  if (vG.z > 0.5) col += glintAt(vG.xy, uClock) * (light + 0.02) * 1.5;
+#endif
 #ifdef LDR
   col = finishLDR(col, vWorld);
 #endif
   outColor = vec4(col, 1.0);
+}`;
+/* The armour in Fast graphics: as the skin there (render/vanilla.js
+   AVATAR_FS), cut out, dyed, and the glint added on top unlit, as the
+   game does it. */
+const ARMOR_FS_VANILLA = /* glsl */`
+uniform sampler2D uSkin, uNoise;
+uniform vec3 cameraPosition;
+uniform vec2 uLightLv;
+uniform float uClock;
+in vec3 vWorld; in vec3 vN; in vec2 vUv; flat in int vLayer; in vec3 vTint; in vec3 vG;
+layout(location = 0) out vec4 outColor;
+` + GLINT + `
+void main() {
+  vec4 t = texture(uSkin, vUv);
+  if (t.a < 0.1) discard;
+  vec3 N = normalize(vN);
+  if (!gl_FrontFacing) N = -N;
+  vec3 c = t.rgb * vTint * entityShade(N) * lightmapAt(uLightLv.x, uLightLv.y);
+  if (vG.z > 0.5) c += glintAt(vG.xy, uClock);
+  outColor = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;
 const SHADOW_VS = /* glsl */`
 uniform mat4 uShadowMat;
@@ -242,10 +302,20 @@ uniform int uShow;
 in vec3 position; in vec2 uv; in vec2 aPart;
 out vec2 vUv; flat out int vLayer;
 const float SHADOW_B = 0.85;
+#ifdef ARMOR
+uniform vec4 uPiece[4];
+uniform vec2 uSheet;
+#endif
 void main() {
   int layer = int(aPart.y + 0.5);
+#ifdef ARMOR
+  vec4 pc = uPiece[layer];
+  vLayer = 1; vUv = (uv + vec2(0.0, pc.x)) / uSheet;
+  if (pc.y < 0.5) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+#else
   vLayer = layer; vUv = uv;
   if (((uShow >> layer) & 1) == 0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+#endif
   vec4 c = uShadowMat * (uParts[int(aPart.x + 0.5)] * vec4(position, 1.0));
   c.xy /= length(c.xy) * SHADOW_B + (1.0 - SHADOW_B);
   c.z *= 0.2;
@@ -326,26 +396,46 @@ export class Avatar {
     const defines = { SHADOWS: opts.shadows === undefined ? 2 : opts.shadows };
     if (opts.ldr) defines.LDR = 1;
     Object.assign(defines, lightDefines(opts));
-    const mk = (vs, fs, uniforms, extra) => new THREE.RawShaderMaterial(Object.assign({
+    const mk = (vs, fs, uniforms, extra, fsVanilla, defs) => new THREE.RawShaderMaterial(Object.assign({
       glslVersion: THREE.GLSL3, vertexShader: HEAD + COMMON + vs,
-      fragmentShader: opts.vanilla ? HEAD + VANILLA + AVATAR_FS : HEAD + COMMON + SHADOW + TONEMAP + fs,
-      uniforms, defines, side: THREE.DoubleSide,
+      fragmentShader: opts.vanilla ? HEAD + VANILLA + (fsVanilla || AVATAR_FS) : HEAD + COMMON + SHADOW + TONEMAP + fs,
+      uniforms, defines: defs || defines, side: THREE.DoubleSide,
     }, extra || {}));
     this.mat = mk(VS, FS, uni);
-    // the first-person arm: over whatever it is pushed into, like the held block
-    this.armMat = mk(VS, FS, Object.assign({}, uni, { uParts: { value: this.armParts }, uHurt: { value: 0 } }), { side: THREE.FrontSide, depthFunc: THREE.AlwaysDepth });
+    // the first-person arm: drawn by the hand's own camera, in front of the world (render/held.js)
+    this.armMat = mk(VS, FS, Object.assign({}, uni, { uParts: { value: this.armParts }, uHurt: { value: 0 } }), { side: THREE.FrontSide });
     this.shadowMat = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: HEAD + SHADOW_VS, fragmentShader: HEAD + SHADOW_FS, uniforms: uni, side: THREE.DoubleSide,
     });
     this.mesh = new THREE.Mesh(buildGeometry(this.slim), this.mat);
     this.shadowMesh = new THREE.Mesh(this.mesh.geometry, this.shadowMat);
-    this.arm = new THREE.Mesh(buildGeometry(this.slim, 2), this.armMat);
-    for (const m of [this.mesh, this.shadowMesh, this.arm]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
+    // both arms: the right always, the left when it holds something
+    this.arm = new THREE.Mesh(buildGeometry(this.slim, [2, 3]), this.armMat);
+    // the armour: one more mesh on the same parts, its pieces switched on as they are worn
+    const sheet = armorSheet();
+    const atex = this.armorTex = new THREE.Texture(sheet.canvas);
+    atex.magFilter = atex.minFilter = THREE.NearestFilter;
+    atex.generateMipmaps = false; atex.flipY = false; atex.needsUpdate = true;
+    this.armorV = sheet.version;
+    this.uPiece = { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) };
+    this.uTint = { value: [0, 1, 2, 3].map(() => new THREE.Vector3(1, 1, 1)) };
+    const auni = Object.assign({}, uni, { uSkin: { value: atex }, uPiece: this.uPiece, uTint: this.uTint, uSheet: { value: new THREE.Vector2(SHEET_W, SHEET_H) } });
+    const adefs = Object.assign({}, defines, { ARMOR: 1 });
+    this.armorMat = mk(VS, FS, auni, null, ARMOR_FS_VANILLA, adefs);
+    this.armorShadowMat = new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + SHADOW_VS, fragmentShader: HEAD + SHADOW_FS, uniforms: auni, defines: { ARMOR: 1 }, side: THREE.DoubleSide,
+    });
+    const ageo = avatarArmorGeometry();
+    this.armor = new THREE.Mesh(ageo, this.armorMat);
+    this.armorShadow = new THREE.Mesh(ageo, this.armorShadowMat);
+    this.wearing = false;
+    for (const m of [this.mesh, this.shadowMesh, this.arm, this.armor, this.armorShadow]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
     renderer.scene.add(this.mesh);
-    if (opts.shadows) renderer.shadowScene.add(this.shadowMesh);
+    renderer.scene.add(this.armor);
+    if (opts.shadows) { renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow); }
     renderer.handScene.add(this.arm);
-    // the held block in the model's hand, in third person
-    this.held = null; this.heldFlat = false;
+    // what is in each hand (0 main, 1 off), in the model's hand in third person
+    this.held = [null, null];
     this.heldRot = new THREE.Matrix3();
     // pose state, per tick (o... is the tick before)
     this.started = false;
@@ -376,7 +466,7 @@ export class Avatar {
       this.slim = s;
       const old = this.mesh.geometry, oldArm = this.arm.geometry;
       this.mesh.geometry = this.shadowMesh.geometry = buildGeometry(s);
-      this.arm.geometry = buildGeometry(s, 2);
+      this.arm.geometry = buildGeometry(s, [2, 3]);
       old.dispose(); oldArm.dispose();
     }
     this.tex.needsUpdate = true;
@@ -393,25 +483,37 @@ export class Avatar {
   cycleView() { this.view = (this.view + 1) % 3; return this.view; }
   setView(v) { this.view = ((v | 0) % 3 + 3) % 3; }
 
-  /* ---- the held block, from the renderer's setHeld: the same geometry,
-     with its own light attribute so it darkens in a cave ---- */
-  setHeld(handMesh, flat) {
-    const R = this.R;
-    if (this.held) { R.scene.remove(this.held); this.held.geometry.dispose(); this.held = null; }
-    if (!handMesh) return;
-    const src = handMesh.geometry, g = new THREE.BufferGeometry();
-    for (const n of ['aPos', 'aA', 'aC']) g.setAttribute(n, src.attributes[n]);
-    g.setIndex(src.index);
-    g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(src.attributes.aL.count * 4), 4));
-    g.boundingSphere = src.boundingSphere;
-    const m = this.held = new THREE.Mesh(g, flat ? R.mats.cutout : R.mats.opaque);
+  /* ---- what is in a hand (0 main, 1 off), for third person: the block or
+     the item picture as in first person, with its own light attribute so
+     it darkens in a cave ---- */
+  setHeld(side, d) {
+    const R = this.R, old = this.held[side];
+    if (old) { R.scene.remove(old.mesh); old.mesh.geometry.dispose(); this.held[side] = null; }
+    if (!d || !d.faces) return;
+    const { geometry: g, cutout } = blockGeometry(d, d.iconMeta || 0);
+    const m = new THREE.Mesh(g, cutout ? R.mats.cutout : R.mats.opaque);
     m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false;
-    this.heldFlat = flat; this.heldLight = -1;
-    // the shader's face frames turn with the block (as the renderer's own hand does)
+    this.held[side] = { mesh: m, kind: heldKind(d), light: -1 };
+    // the shader's face frames turn with the block (as the hand in first person does)
     const U = R.U, rot = this.heldRot;
     m.onBeforeRender = () => { rot.setFromMatrix4(m.matrixWorld); rot.multiplyScalar(1 / m.matrixWorld.getMaxScaleOnAxis()); U.uFaceRot.value.copy(rot); m.material.uniformsNeedUpdate = true; };
     m.onAfterRender = () => { U.uFaceRot.value.identity(); m.material.uniformsNeedUpdate = true; };
     R.scene.add(m);
+  }
+
+  /* ---- what is worn: the four armour stacks, helmet to boots ---- */
+  setArmor(stacks) {
+    let any = false;
+    for (let i = 0; i < 4; i++) {
+      const look = pieceLook(stacks && stacks[i]), p = this.uPiece.value[i];
+      if (!look) { p.set(0, 0, 0, 0); continue; }
+      any = true;
+      p.set(look.row * 64, 1, look.glint ? 1 : 0, 0);
+      const c = look.tint;
+      this.uTint.value[i].set(((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255);
+    }
+    this.wearing = any;
+    this.headWorn = this.uPiece.value[0].y > 0;
   }
 
   startSwing() {
@@ -454,7 +556,11 @@ export class Avatar {
     const P = state.player, R = this.R;
     this.uHurt.value = state.hurt ? 1 : 0;
     if (R.swing >= 1) { this.startSwing(); R.swing = 0.999; }
-    if (!P) { this.mesh.visible = this.shadowMesh.visible = false; if (this.held) this.held.visible = false; return; }
+    if (!P) {
+      this.mesh.visible = this.shadowMesh.visible = this.armor.visible = this.armorShadow.visible = false;
+      for (const h of this.held) if (h) h.mesh.visible = false;
+      return;
+    }
     this.world = P.w;
     const a = state.alpha;
     if (!this.started) {
@@ -480,12 +586,17 @@ export class Avatar {
     const third = this.view !== 0 && this.ready;
     this.mesh.visible = third;
     this.shadowMesh.visible = this.ready;
-    if (this.held) {
-      this.held.visible = third;
-      const lv = (Math.round(this.sky * 255) << 8) | Math.round(this.block * 255);
-      if (third && lv !== this.heldLight) {
-        this.heldLight = lv;
-        const L = this.held.geometry.attributes.aL;
+    // the armour, its pictures taken up again whenever another file has landed in the sheet
+    this.armor.visible = third && this.wearing;
+    this.armorShadow.visible = this.ready && this.wearing;
+    if (this.wearing) { const sh = armorSheet(); if (sh.version !== this.armorV) { this.armorV = sh.version; this.armorTex.needsUpdate = true; } }
+    const lv = (Math.round(this.sky * 255) << 8) | Math.round(this.block * 255);
+    for (const h of this.held) {
+      if (!h) continue;
+      h.mesh.visible = third;
+      if (third && lv !== h.light) {
+        h.light = lv;
+        const L = h.mesh.geometry.attributes.aL;
         for (let i = 0; i < L.count; i++) { L.array[i * 4] = lv >> 8; L.array[i * 4 + 1] = lv & 255; }
         L.needsUpdate = true;
       }
@@ -493,6 +604,9 @@ export class Avatar {
     // in third person the light in your hand is where the model's hand is (the renderer reads state.handPos)
     if (third && !state.handPos) state.handPos = this.handPos.set(-1, -10, 0).applyMatrix4(this.parts[2]);
     if (this.view && cam) this.placeCamera(cam, state);
+    // a camera pulled right in to the head (a wall just behind you) would see the inside of the helmet: it is left off then
+    const close = this.view !== 0 && cam && cam.position.distanceToSquared(state.eye) < 0.36;
+    this.uPiece.value[0].y = this.headWorn && !close ? 1 : 0;
   }
 
   /* the pose, in the game's model space (y down, -z forward), then the matrices */
@@ -519,7 +633,8 @@ export class Avatar {
     armR.rx = -c * amt; armL.rx = c * amt;
     legR.rx = c * 1.4 * amt; legL.rx = -c * 1.4 * amt;
     // holding something: the arm comes up a little
-    if (this.held) armR.rx = armR.rx * 0.5 - PI / 10;
+    if (this.held[0]) armR.rx = armR.rx * 0.5 - PI / 10;
+    if (this.held[1]) armL.rx = armL.rx * 0.5 - PI / 10;
     // the swing: the body twists and the right arm comes over and down
     if (att > 0) {
       body.ry = Math.sin(Math.sqrt(att) * 2 * PI) * 0.2;
@@ -534,7 +649,7 @@ export class Avatar {
     }
     // riding (a boat, a horse: js/entities): sitting, legs forward and a little apart, arms down
     if (P.riding) {
-      armR.rx = -PI / 5 + (this.held ? -PI / 10 : 0); armL.rx = -PI / 5;
+      armR.rx = -PI / 5 + (this.held[0] ? -PI / 10 : 0); armL.rx = -PI / 5 + (this.held[1] ? -PI / 10 : 0);
       legR.rx = -1.4137167; legR.ry = PI / 10; legR.rz = 0.07853982;
       legL.rx = -1.4137167; legL.ry = -PI / 10; legL.rz = -0.07853982;
     }
@@ -574,50 +689,61 @@ export class Avatar {
       m.setPosition(p.x, 24 - p.y, -p.z);
       m.premultiply(root);
     }
-    if (this.held) this.placeHeld();
+    if (this.held[0]) this.placeHeld(0);
+    if (this.held[1]) this.placeHeld(1);
   }
 
-  /* the block in the model's right hand: the game's third-person item placing
-     (at the hand, turned 75 and 45 degrees, 0.375 of a block for a block) */
-  placeHeld() {
-    const m = this.held.matrix, t = this.t;
-    m.copy(this.parts[2]);
+  /* what is in a hand, in the model's hand: the game's third-person item
+     placing (at the hand, turned down the arm, then the item model's own
+     third-person turn: 75 and 45 degrees and 0.375 of a block for a block, a
+     tool leaning forward, a flat item upright) */
+  placeHeld(side) {
+    const h = this.held[side], m = h.mesh.matrix, t = this.t;
+    m.copy(this.parts[2 + side]);
+    // a slim arm's hand is half a pixel further in, as the game holds it
+    if (this.slim) m.multiply(t.makeTranslation(side ? -0.5 : 0.5, 0, 0));
     m.multiply(t.makeScale(16, -16, -16));            // back to the game's model space, in blocks
     m.multiply(t.makeRotationX(-PI / 2));
     m.multiply(t.makeRotationY(PI));
-    m.multiply(t.makeTranslation(1 / 16, 0.125, -0.625));
-    if (this.heldFlat) {
-      m.multiply(t.makeTranslation(0, 3 / 16, 1 / 16));
-      m.multiply(t.makeScale(0.55, 0.55, 0.55));
-    } else {
-      m.multiply(t.makeTranslation(0, 2.5 / 16, 0));
-      m.multiply(t.makeRotationFromEuler(this.e.set(75 * DEG, 45 * DEG, 0, 'XYZ')));
-      m.multiply(t.makeScale(0.375, 0.375, 0.375));
-    }
+    m.multiply(t.makeTranslation((side ? -1 : 1) / 16, 0.125, -0.625));
+    applyDisplay(m, DISPLAY[h.kind][side ? 'tpL' : 'tp'], t, this.e);
     m.multiply(t.makeTranslation(0, -1, 0));          // the hand geometry's cube is centred one block up
-    this.held.matrixWorldNeedsUpdate = true;
+    h.mesh.matrixWorldNeedsUpdate = true;
   }
 
-  /* ---- the first-person arm: the game's arm placing in front of the camera,
-     with its swing; drawn when the hand is empty ---- */
-  placeArm(state, cam, on) {
-    this.arm.visible = !!on && this.ready && this.started;
-    if (!this.arm.visible) return;
-    const sp = this.cur.attack, sq = Math.sqrt(sp);
-    const bob = state.bob, m = this.armParts[2], t = this.t;
-    m.copy(cam.matrixWorld);
-    m.multiply(t.makeTranslation(0.64 - 0.3 * Math.sin(sq * PI) + (bob ? bob.x : 0), -0.6 + 0.4 * Math.sin(sq * 2 * PI) + (bob ? bob.y : 0), -0.72 - 0.4 * Math.sin(sp * PI)));
-    m.multiply(t.makeRotationY(45 * DEG + Math.sin(sq * PI) * 70 * DEG));
-    m.multiply(t.makeRotationZ(Math.sin(sp * sp * PI) * -20 * DEG));
-    m.multiply(t.makeTranslation(-1, 3.6, 3.5));
-    m.multiply(t.makeRotationZ(120 * DEG));
+  /* ---- the first-person arms: the game's arm placing in front of the
+     camera, with its swing. side 0 is the right arm, 1 the left (the game's
+     placing mirrored); sp the swing (0..1), (bx, by) the bob, eq how far the
+     hand has dropped out of sight (0 up, 1 gone). camM null is the camera's
+     own space. ---- */
+  armMatrix(m, camM, side, sp, bx, by, eq) {
+    const f = side ? -1 : 1, sq = Math.sqrt(sp), t = this.t;
+    if (camM) m.copy(camM); else m.identity();
+    m.multiply(t.makeTranslation(f * (0.64 - 0.3 * Math.sin(sq * PI)) + bx, -0.6 + 0.4 * Math.sin(sq * 2 * PI) - 0.6 * eq + by, -0.72 - 0.4 * Math.sin(sp * PI)));
+    m.multiply(t.makeRotationY(f * (45 * DEG + Math.sin(sq * PI) * 70 * DEG)));
+    m.multiply(t.makeRotationZ(f * Math.sin(sp * sp * PI) * -20 * DEG));
+    m.multiply(t.makeTranslation(f * -1, 3.6, 3.5));
+    m.multiply(t.makeRotationZ(f * 120 * DEG));
     m.multiply(t.makeRotationX(200 * DEG));
-    m.multiply(t.makeRotationY(-135 * DEG));
-    m.multiply(t.makeTranslation(5.6, 0, 0));
+    m.multiply(t.makeRotationY(f * -135 * DEG));
+    m.multiply(t.makeTranslation(f * 5.6, 0, 0));
     // the arm at its shoulder, in the game's model space (pixels, y down)
-    m.multiply(t.makeTranslation(-5 / 16, (this.slim ? 2.5 : 2) / 16, 0));
-    m.multiply(t.makeRotationZ(0.1));
+    m.multiply(t.makeTranslation(f * -5 / 16, (this.slim ? 2.5 : 2) / 16, 0));
+    m.multiply(t.makeRotationZ(f * 0.1));
     m.multiply(t.makeScale(1 / 16, -1 / 16, -1 / 16));
+    return m;
+  }
+  /* both arms for this frame, from their places in the camera's space
+     (render/held.js works them out, the items with them); the left one is
+     drawn only when it holds something */
+  setArms(camW, armR, armL, right, left) {
+    const R = this.armParts[2], L = this.armParts[3];
+    R.multiplyMatrices(camW, armR);
+    L.multiplyMatrices(camW, armL);
+    this.arm.visible = (right || left) && this.ready && this.started;
+    // an arm with nothing to do is squeezed to nothing (only ever the empty left one)
+    if (!left) L.makeScale(0, 0, 0);
+    if (!right) R.makeScale(0, 0, 0);
   }
 
   /* ---- third person: 4 blocks back along the look (or in front, looking
