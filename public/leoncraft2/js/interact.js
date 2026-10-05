@@ -114,7 +114,7 @@ export class Interactor {
   }
   breakTarget() {
     this.world.urgent = true;
-    try { return this._breakTarget(); } finally { this.world.urgent = false; }
+    try { return this._breakTarget(); } finally { this.world.urgent = false; if (this.world.flushUrgent) this.world.flushUrgent(); }
   }
   _breakTarget() {
     const h = this.target;
@@ -148,7 +148,7 @@ export class Interactor {
   }
   useOnce() {
     this.world.urgent = true;
-    try { return this._useOnce(); } finally { this.world.urgent = false; }
+    try { return this._useOnce(); } finally { this.world.urgent = false; if (this.world.flushUrgent) this.world.flushUrgent(); }
   }
   _useOnce() {
     if (this.useWith()) return;

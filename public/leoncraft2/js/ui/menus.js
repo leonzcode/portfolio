@@ -718,7 +718,7 @@ export class MouseSettingsScreen extends OptionsListScreen {
   rows(list) {
     const o = this.options;
     const sens = optSlider(o, 'sensitivity', 0, 1, 0.005, v => 'Sensitivity: ' + (v <= 0 ? '*yawn*' : v >= 1 ? 'HYPERSPEED!!!' : Math.round(v * 200) + '%'));
-    list.entries = [new WidgetRow(sens, optToggle(o, 'invertY', 'Invert Mouse'))];
+    list.entries = [new WidgetRow(sens, optToggle(o, 'invertY', 'Invert Mouse')), new WidgetRow(optToggle(o, 'rawInput', 'Raw Input'))];
   }
 }
 

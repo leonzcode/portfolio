@@ -45,9 +45,12 @@ export class World {
     this.meshQueue = new Set();
     this.inFlight = new Set();
     this.meshVersion = new Map();
+    this.meshCache = new Map();       // "cx,cz" -> { version, mesh }: the last mesh of each column next to you
     this.stats = { gen: 0, mesh: 0 };
   }
   key(cx, cz) { return cx + ',' + cz; }
+  // the column you are in and the eight round it: the ones you can reach to build in
+  near(cx, cz) { return Math.abs(cx - this.pcx) <= 1 && Math.abs(cz - this.pcz) <= 1; }
 
   onMessage(i, m, initRes) {
     if (m.type === 'ready') { initRes(); return; }
@@ -81,6 +84,9 @@ export class World {
       if (m.mesh.light) { c.light = m.mesh.light; c.lightH = m.mesh.lightH; }    // for mobs (js/entities)
       this.stats.mesh++;
       this.onMesh(m.cx, m.cz, m.mesh, m.urgent);
+      // the columns round you keep their mesh (with the region's light), so an edit there remakes only its sections
+      if (m.mesh.region && this.near(m.cx, m.cz)) this.meshCache.set(k, { version: m.version, mesh: m.mesh });
+      else this.meshCache.delete(k);
       return;
     }
     const r = this.waiting.get(m.id);
@@ -116,7 +122,7 @@ export class World {
     const R = this.renderDist + 1;
     if (moved) {
       // forget what is too far, and line up what is missing, nearest first
-      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
+      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.meshCache.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
       this.genList = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
         if (dx * dx + dz * dz > R * R) continue;
@@ -124,6 +130,12 @@ export class World {
         if (!this.chunks.has(k)) this.genList.push([dx * dx + dz * dz, pcx + dx, pcz + dz]);
       }
       this.genList.sort((a, b) => a[0] - b[0]);
+      // the columns now next to you get their mesh made again to keep (meshCache); the rest let theirs go
+      for (const k of this.meshCache.keys()) { const [x, z] = k.split(',').map(Number); if (!this.near(x, z)) this.meshCache.delete(k); }
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const k = this.key(pcx + dx, pcz + dz), c = this.chunks.get(k);
+        if (c && c.meshed && !this.meshCache.has(k) && !this.inFlight.has('m' + k)) this.queueMesh(pcx + dx, pcz + dz);
+      }
     }
     const cap = this.workers.length * 2;
     // meshes first (they are what you see), nearest first; a few a frame, so packing them never stalls one
@@ -150,8 +162,16 @@ export class World {
     }
   }
   inFlightCount() { return this.inFlight.size; }
-  sendMesh(cx, cz, urgent) {
+  sendMesh(cx, cz, urgent, rows) {
     const k = this.key(cx, cz);
+    /* An edit of yours (rows: the lowest and highest row changed) in a column
+       whose kept mesh is the newest made and has nothing else waiting: only
+       the sections round it are made again, in place of the same ones in that
+       mesh (mesher.js). Copied, not handed over: it may still be on its way
+       to the graphics card. */
+    const kept = rows ? this.meshCache.get(k) : null;
+    const base = kept && kept.version === (this.meshVersion.get(k) || 0) ? kept.mesh : null;
+    this.meshCache.delete(k);
     const chunks = [], tops = [], transfer = [];
     let top = 0;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) top = Math.max(top, this.chunks.get(this.key(cx + dx, cz + dz)).top);
@@ -184,7 +204,8 @@ export class World {
     this.inFlight.add('m' + k);
     // your own edits to the worker kept for them, everything else to the least busy
     const i = urgent ? this.editW : this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky, urgent: !!urgent }, transfer);
+    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky, urgent: !!urgent,
+      keep: this.near(cx, cz), base, rows: base ? rows : null }, transfer);
   }
 
   /* ---- blocks ---- */
@@ -229,7 +250,7 @@ export class World {
     if (!ed) this.edits.set(ck, ed = new Map());
     ed.set(i, b * 256 + (m || 0));
     if (this.save) this.save.dirty.add(ck);
-    if (!quiet) this.touch(x, z);
+    if (!quiet) this.touch(x, z, y);
     // everyone listening hears of every change: the simulation (sim/sim.js: block updates,
     // redstone, what grows) and the mobs (js/entities: falling sand and the like)
     if (this.onSet) this.onSet(x, y, z, was, wasM, b, m || 0);
@@ -237,27 +258,43 @@ export class World {
     return true;
   }
   // remesh the column a block is in, and any neighbour whose edge it sits on
-  touch(x, z) {
+  touch(x, z, y) {
     const cx = Math.floor(x / CH), cz = Math.floor(z / CH);
     const lx = x - cx * CH, lz = z - cz * CH;
     this.dirty = this.dirty || new Set();
-    // your own edits (interact.js sets world.urgent while it works) go to the edit worker
-    const D = this.urgent ? (this.urgentDirty || (this.urgentDirty = new Set())) : this.dirty;
-    D.add(this.key(cx, cz));
-    if (lx === 0) D.add(this.key(cx - 1, cz));
-    if (lx === 15) D.add(this.key(cx + 1, cz));
-    if (lz === 0) D.add(this.key(cx, cz - 1));
-    if (lz === 15) D.add(this.key(cx, cz + 1));
+    // your own edits (interact.js sets world.urgent while it works) go to the edit worker, with the rows they changed
+    const urgent = this.urgent;
+    const D = urgent ? (this.urgentDirty || (this.urgentDirty = new Set())) : this.dirty;
+    const R = this.urgentRows || (this.urgentRows = new Map());
+    const add = k => {
+      D.add(k);
+      if (!urgent) return;
+      const r = R.get(k);
+      if (y === undefined) R.set(k, [0, H - 1]);
+      else if (!r) R.set(k, [y, y]);
+      else { r[0] = Math.min(r[0], y); r[1] = Math.max(r[1], y); }
+    };
+    add(this.key(cx, cz));
+    if (lx === 0) add(this.key(cx - 1, cz));
+    if (lx === 15) add(this.key(cx + 1, cz));
+    if (lz === 0) add(this.key(cx, cz - 1));
+    if (lz === 15) add(this.key(cx, cz + 1));
+  }
+  // your own edits go out the moment they are made (interact.js), not at the next frame
+  flushUrgent() {
+    if (!this.urgentDirty || !this.urgentDirty.size) return;
+    for (const k of this.urgentDirty) {
+      const [x, z] = k.split(',').map(Number);
+      // only the sections round the edit when nothing else in the column is waiting to be meshed
+      const rows = this.dirty && this.dirty.has(k) ? null : this.urgentRows.get(k);
+      if (this.dirty) this.dirty.delete(k);
+      if (this.chunks.has(k)) this.sendMeshSoon(x, z, true, rows);
+    }
+    this.urgentDirty.clear();
+    this.urgentRows.clear();
   }
   flush() {
-    if (this.urgentDirty && this.urgentDirty.size) {
-      for (const k of this.urgentDirty) {
-        const [x, z] = k.split(',').map(Number);
-        if (this.dirty) this.dirty.delete(k);
-        if (this.chunks.has(k)) this.sendMeshSoon(x, z, true);
-      }
-      this.urgentDirty.clear();
-    }
+    this.flushUrgent();
     if (!this.dirty || !this.dirty.size) return;
     for (const k of this.dirty) {
       const [x, z] = k.split(',').map(Number);
@@ -267,10 +304,10 @@ export class World {
     }
     this.dirty.clear();
   }
-  sendMeshSoon(cx, cz, urgent) {
+  sendMeshSoon(cx, cz, urgent, rows) {
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!this.chunks.has(this.key(cx + dx, cz + dz))) return;
     this.inFlight.delete('m' + this.key(cx, cz));
-    this.sendMesh(cx, cz, urgent);
+    this.sendMesh(cx, cz, urgent, rows);
   }
   biomeAt(x, z) {
     const c = this.chunkAt(x, z);
@@ -292,6 +329,7 @@ export class World {
     for (const w of this.workers) w.terminate();
     this.workers = []; this.busy = [];
     this.chunks.clear(); this.cgen = (this.cgen || 0) + 1; this.meshQueue.clear(); this.inFlight.clear();
+    this.meshCache.clear();
     this.genList = [];
     this.dead = true;
   }
