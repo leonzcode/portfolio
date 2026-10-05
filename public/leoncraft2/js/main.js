@@ -841,7 +841,6 @@ async function boot() {
     if (e.code === 'BracketLeft') game.time -= 1000;
     if (e.code === 'BracketRight') game.time += 1000;
     if (e.code === 'KeyP' && !a) timeRuns = !timeRuns;
-    if (e.code === 'KeyB' && !a && game.mode === 'creative' && game.entities) game.entities.placeBoatAtCrosshair();
     if (a && MOVE[a]) { game.player.setKey(MOVE[a], true); e.preventDefault(); }
   });
   document.addEventListener('keyup', e => {

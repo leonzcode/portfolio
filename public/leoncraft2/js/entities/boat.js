@@ -46,8 +46,9 @@ import { MODELS } from './mobmodels.js?v=14';
 import { addArt } from './mobart.js?v=14';
 import { BLOCKS, FLUID, SOLID, B } from '../blocks.js?v=14';
 import { collisionBoxes } from '../models.js?v=14';
-import { stackToJSON, stackFromJSON, withCount } from '../items.js?v=14';
+import { stackToJSON, stackFromJSON } from '../items.js?v=14';
 import { ChestScreen } from '../ui/containers.js?v=14';
+import { spill } from '../containers.js?v=14';
 
 const PI = Math.PI;
 export const WOODS = { oak: 0xb8945f, spruce: 0x7a5a36, birch: 0xd8c88c, jungle: 0xb88664, acacia: 0xc06a3c, dark_oak: 0x4f3420, mangrove: 0x84403a, cherry: 0xe6b4ac, bamboo: 0xd4c05a, pale_oak: 0xe8e0d8 };
@@ -55,8 +56,22 @@ const IN_WATER = 0, UNDER_WATER = 1, UNDER_FLOWING = 2, ON_LAND = 3, IN_AIR = 4;
 const WATERLOGGED = new Uint8Array(4096);
 for (const d of BLOCKS) if (d && d.waterlogged) WATERLOGGED[d.id] = 1;
 const LILY = B.lily_pad;
-// humanoids sit down into the boat (their seat is 0.7 above their feet), the rest stand on its floor
+// blocks that hurt a boat that touches them, a point a tick: cactus and fire (soul fire two)
+const SORE = new Uint8Array(4096);
+for (const d of BLOCKS) if (d) SORE[d.id] = d.name === 'cactus' || d.name === 'fire' ? 1 : d.name === 'soul_fire' ? 2 : 0;
+/* humanoids sit down into a seat (their seat is 0.7 above their feet, the
+   player's 0.6); the rest stand on the floor of what they ride */
 const SITS = /^(zombie|husk|drowned|zombie_villager|skeleton|stray|wither_skeleton|piglin|zombified_piglin|villager|witch|enderman)$/;
+export function riderDrop(p) {
+  if (!p) return 0;
+  if (p.isPlayer) return 0.6;
+  return SITS.test(p.type) ? 0.7 * (p.baby || p.ageT < 0 ? 0.5 : 1) : 0;
+}
+/* mobs that never get in, whatever their size (the wiki's list): fish,
+   squid, dolphins, tadpoles and nautiluses live in the water, bats and the
+   bosses do not ride, nor does the creaking or the warden */
+const NO_BOAT = new Set(['bat', 'cod', 'salmon', 'pufferfish', 'tropical_fish', 'squid', 'glow_squid', 'dolphin', 'tadpole', 'nautilus', 'zombie_nautilus',
+  'creaking', 'warden', 'wither', 'ender_dragon', 'ghast', 'happy_ghast', 'sulfur_cube', 'giant', 'elder_guardian']);
 
 /* ---- the boat's shape: a flat bottom, four sides, two paddles ----
    (game model units, y down from 24, -z the bow, -x its right side). The
@@ -192,10 +207,7 @@ export class Boat extends Entity {
   seat(i, p) {
     let fwd = this.chest ? 0.15 : 0;
     if (this.passengers.length > 1) { fwd = i === 0 ? 0.2 : -0.6; if (isAnimal(p)) fwd += 0.2; }
-    let drop = 0;
-    if (p && p.isPlayer) drop = 0.6;
-    else if (p && SITS.test(p.type)) drop = 0.7 * (p.baby || p.ageT < 0 ? 0.5 : 1);
-    return [fwd, this.ridingOffset() - drop, 0];
+    return [fwd, this.ridingOffset() - riderDrop(p), 0];
   }
   /* After a rider is put in its seat: a mob's body faces the boat's way, its
      head no more than 105 degrees off; in a full boat an animal sits
@@ -212,9 +224,10 @@ export class Boat extends Entity {
       p.bodyYaw += turn; p.headYaw += turn;
     }
   }
+  // narrower than the boat, alive, riding nothing, and a mob that can be pushed and rides boats
   takesPassenger(e) {
-    return e instanceof Living && !e.dead && !e.removed && !e.vehicle && e.w < this.w
-      && e.constructor.WATER_BREATHER !== 'only' && !e.isPlayer;
+    return e instanceof Living && !e.dead && !e.removed && !e.vehicle && e.w < this.w && !e.isPlayer
+      && e.constructor.WATER_BREATHER !== 'only' && !e.constructor.NO_PUSH && !NO_BOAT.has(e.type);
   }
   addPassenger(e) { e.vehicle = this; this.passengers.push(e); e.vel.set(0, 0, 0); if (e.nav) e.nav.stop(); }
 
@@ -253,17 +266,19 @@ export class Boat extends Entity {
     return IN_AIR;
   }
   /* The slipperiness under it: the average over the blocks whose shapes
-     touch a sliver just under its bottom (lily pads do not count). */
+     touch a sliver just under its bottom (lily pads do not count), the
+     block below too for shapes taller than a block (a fence, a wall). */
   groundFriction() {
-    const T = this.m.t, p = this.pos, hw = this.hw, y0 = p.y - 0.001, y = Math.floor(y0);
+    const T = this.m.t, p = this.pos, hw = this.hw, y0 = p.y - 0.001;
     const ax0 = p.x - hw, ax1 = p.x + hw, az0 = p.z - hw, az1 = p.z + hw;
     let sum = 0, n = 0;
+    for (let y = Math.floor(y0) - 1; y <= Math.floor(y0); y++)
     for (let x = Math.floor(ax0); x < Math.ceil(ax1); x++) for (let z = Math.floor(az0); z < Math.ceil(az1); z++) {
       const b = T.get(x, y, z);
       if (!b || !SOLID[b] || b === LILY) continue;
       const d = BLOCKS[b];
       let touch = false;
-      if (d.shape === 'cube') touch = y + 1 > y0;
+      if (d.shape === 'cube') touch = y + 1 > y0 && y < p.y;
       else {
         T.nbx = x; T.nby = y; T.nbz = z;
         const boxes = collisionBoxes(d, T.meta(x, y, z), T.nbFn);
@@ -335,7 +350,20 @@ export class Boat extends Entity {
     // the paddles go round while rowing, and rest when not
     for (let i = 0; i < 2; i++) this.paddle[i] = this.rowing[i] ? this.paddle[i] + PI / 8 : 0;
     this.lilyPads();
+    this.sore();
+    if (this.removed) return;
     this.touching();
+  }
+  /* Cactus and fire hurt it while it is in their block (a point a tick,
+     soul fire two: ten times that as damage, so about five ticks against
+     a cactus breaks it and drops it) */
+  sore() {
+    const T = this.m.t, p = this.pos, hw = this.hw - 1e-5;
+    for (let y = Math.floor(p.y + 1e-5); y <= Math.floor(p.y + this.h - 1e-5); y++)
+      for (let x = Math.floor(p.x - hw); x <= Math.floor(p.x + hw); x++) for (let z = Math.floor(p.z - hw); z <= Math.floor(p.z + hw); z++) {
+        const k = SORE[T.get(x, y, z)];
+        if (k) { this.hurt(k, { type: k === 1 ? 'cactus' : 'fire' }); if (this.removed) return; }
+      }
   }
   /* A landing: past 3 blocks onto land it would break into planks and
      sticks and hurt its riders, but the game only does that when it was on
@@ -374,16 +402,16 @@ export class Boat extends Entity {
       const boat = e instanceof Boat;
       if (!boat && !(e instanceof Living && !e.dead && !e.constructor.NO_PUSH)) return;
       if (boat ? e.pos.y >= p.y + this.h : e.pos.y > p.y) return;
-      this.push(e, e.vel, !e.passengers.length);
+      this.shove(e, e.vel, !e.passengers.length);
     });
     // the player
     const P = this.m.P, pl = this.m.player;
     if (P && !P.riding && pl.alive() && this.m.mode !== 'spectator' && !P.noclip
       && P.pos.x + 0.3 > gx0 && P.pos.x - 0.3 < gx1 && P.pos.z + 0.3 > gz0 && P.pos.z - 0.3 < gz1 && P.pos.y + (P.h || 1.8) > gy0 && P.pos.y < gy1 && P.pos.y <= p.y)
-      this.push({ pos: P.pos }, P.vel, true);
+      this.shove({ pos: P.pos }, P.vel, true);
   }
   // the game's push: 0.05 a tick apart, less the further apart they are
-  push(e, ev, moveIt) {
+  shove(e, ev, moveIt) {
     let dx = e.pos.x - this.pos.x, dz = e.pos.z - this.pos.z, d = Math.max(Math.abs(dx), Math.abs(dz));
     if (d < 0.01) return;
     d = Math.sqrt(d); dx /= d; dz /= d;
@@ -444,9 +472,10 @@ export class Boat extends Entity {
   }
   breakApart(fell, creative) {
     const p = this.pos;
+    // the item drops where the boat was, hopping up a little (planks and sticks one at a time)
     if (!creative) {
-      if (fell) { this.m.dropItemAt(p.x, p.y + 0.3, p.z, this.raft ? 'bamboo_planks' : this.wood + '_planks', 3); this.m.dropItemAt(p.x, p.y + 0.3, p.z, 'stick', 2); }
-      else this.m.dropItemAt(p.x, p.y + 0.3, p.z, this.itemName(), 1);
+      if (fell) { for (let i = 0; i < 3; i++) this.m.dropItemAt(p.x, p.y, p.z, this.raft ? 'bamboo_planks' : this.wood + '_planks', 1); for (let i = 0; i < 2; i++) this.m.dropItemAt(p.x, p.y, p.z, 'stick', 1); }
+      else this.m.dropItemAt(p.x, p.y, p.z, this.itemName(), 1);
     }
     // what the chest held spills (in creative too, as a chest's does)
     if (this.slots) { this.spill(); }
@@ -455,16 +484,13 @@ export class Boat extends Entity {
     this.m.particles('poof', p.x, p.y + 0.3, p.z, 10, 0.6);
     this.remove();
   }
+  // the chest's things thrown out as a broken chest's are: in parts of 10 to 30, from inside the block the boat is in
   spill() {
     const H = this.m.hooks.hands, D = H && H.drops, p = this.pos;
-    for (let i = 0; i < this.slots.length; i++) {
-      const s = this.slots[i];
-      if (!s) continue;
-      this.slots[i] = null;
-      if (D && D.spawn) D.spawn(p.x - 0.35 + Math.random() * 0.7, p.y + 0.3 + Math.random() * 0.4, p.z - 0.35 + Math.random() * 0.7, withCount(s, s.count),
-        { vel: [(Math.random() - 0.5) * 0.1, 0.2 * Math.random() + 0.05, (Math.random() - 0.5) * 0.1] });
-      else this.m.dropItemAt(p.x, p.y + 0.3, p.z, this.m.itemName(s.id), s.count);
-    }
+    const left = this.slots.filter(Boolean);
+    this.slots.fill(null);
+    if (D && D.spawn) spill(D, Math.floor(p.x), Math.floor(p.y), Math.floor(p.z), left);
+    else for (const s of left) this.m.dropItemAt(p.x, p.y, p.z, this.m.itemName(s.id), s.count);
   }
   // 'Dark Oak Boat with Chest', 'Bamboo Raft with Chest'
   displayName() {
