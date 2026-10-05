@@ -24,7 +24,9 @@
                or holding what is in your hand (render/held.js).
      armour    what you wear, drawn over the skin with the game's armour
                model (render/armor.js): a second mesh on the same parts,
-               leather in its dye, enchanted pieces with the glint.
+               leather in its dye, enchanted pieces with the glint. A carved
+               pumpkin, a mob head or any other block worn on the head is
+               that block, on the head as the game's head layer puts it.
      held      what is in either hand, in the model's hand in third person,
                placed the way the game places that kind of item.
 
@@ -48,7 +50,7 @@ import { lightDefines } from './materials.js?v=14';
 import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=14';
 import { H, idx } from '../world-const.js?v=14';
 import { armorSheet, avatarArmorGeometry, pieceLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=14';
-import { blockGeometry } from './blockmesh.js?v=14';
+import { blockGeometry, isFlatItem } from './blockmesh.js?v=14';
 import { heldKind, placeInHand, setLight } from './held.js?v=14';
 import { setGlint } from './glint.js?v=14';
 const THREE = window.THREE;
@@ -538,6 +540,32 @@ export class Avatar {
     this.wearing = any;
     this.headWorn = this.uPiece.value[0].y > 0;
   }
+  /* ---- on the head but not armour: a carved pumpkin, a mob head, any
+     block (renderer.js gives its draw data, or null). The game's head layer:
+     a block 10 pixels a side about the middle of the head (0.625 of a
+     block); a mob head 1.1875 times its size, standing on the neck. ---- */
+  setHeadItem(d) {
+    const R = this.R, old = this.headItem;
+    if (old) { R.scene.remove(old.mesh); old.mesh.geometry.dispose(); this.headItem = null; }
+    if (!d || !d.faces || isFlatItem(d)) return;
+    const { geometry: g, cutout } = blockGeometry(d, 0);
+    const m = new THREE.Mesh(g, cutout ? R.mats.cutout : R.mats.opaque);
+    m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false;
+    const U = R.U, rot = this.heldRot;
+    m.onBeforeRender = () => { rot.setFromMatrix4(m.matrixWorld); rot.multiplyScalar(1 / m.matrixWorld.getMaxScaleOnAxis()); U.uFaceRot.value.copy(rot); m.material.uniformsNeedUpdate = true; };
+    m.onAfterRender = () => { U.uFaceRot.value.identity(); m.material.uniformsNeedUpdate = true; };
+    this.headItem = { mesh: m, skull: d.shape === 'head', light: -1 };
+    R.scene.add(m);
+  }
+  // where the head item goes, from the parts' matrices into m (the block geometry is centred one block up)
+  placeHead(skull, parts, m) {
+    const t = this.t;
+    m.copy(parts[0]);
+    // a mob head's face is on its -z side as placed; the model's face is +z
+    if (skull) m.multiply(t.makeTranslation(0, -9.5, 0)).multiply(t.makeScale(19, 19, 19)).multiply(t.makeRotationY(PI));
+    else m.multiply(t.makeTranslation(0, 4, 0)).multiply(t.makeScale(10, 10, 10)).multiply(t.makeTranslation(0, -1, 0));
+    return m;
+  }
 
   startSwing() {
     // as the game: a click in the second half of a swing starts it again
@@ -586,6 +614,7 @@ export class Avatar {
     if (!P) {
       this.mesh.visible = this.shadowMesh.visible = this.armor.visible = this.armorShadow.visible = false;
       for (const h of this.held) if (h) h.mesh.visible = false;
+      if (this.headItem) this.headItem.mesh.visible = false;
       return;
     }
     this.world = P.w;
@@ -629,6 +658,11 @@ export class Avatar {
     // a camera pulled right in to the head (a wall just behind you) would see the inside of the helmet: it is left off then
     const close = this.view !== 0 && cam && cam.position.distanceToSquared(state.eye) < 0.36;
     this.uPiece.value[0].y = this.headWorn && !close ? 1 : 0;
+    const hi = this.headItem;
+    if (hi) {
+      hi.mesh.visible = third && !close;
+      if (hi.mesh.visible && lv !== hi.light) { hi.light = lv; setLight(hi.mesh.geometry, lv); }
+    }
   }
 
   /* the pose for this frame, then the matrices: at the feet, turned with the
@@ -652,6 +686,7 @@ export class Avatar {
       this.placeHeld(side, h.kind, this.parts, h.mesh.matrix);
       h.mesh.matrixWorldNeedsUpdate = true;
     }
+    if (this.headItem) { this.placeHead(this.headItem.skull, this.parts, this.headItem.mesh.matrix); this.headItem.mesh.matrixWorldNeedsUpdate = true; }
   }
 
   /* The parts' turns and places, in the game's model space (y down, -z
