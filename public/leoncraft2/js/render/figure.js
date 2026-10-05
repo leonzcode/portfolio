@@ -122,7 +122,7 @@ export class Figure {
     const uParts = { value: this.parts };
     this.body = new THREE.Mesh(A.mesh.geometry, mk(SKIN_FS, { uSkin: { value: A.tex }, uParts, uShow: A.uShow, uHurt: A.uHurt }));
     // the armour: its own copy of what is worn (the model hides the helmet from a camera pulled right into the head)
-    this.uPiece = { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) };
+    this.uPiece = { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector4()) };
     this.armor = new THREE.Mesh(A.armor.geometry, mk(SKIN_FS, {
       uSkin: { value: A.armorTex }, uParts, uShow: A.uShow, uPiece: this.uPiece, uTint: A.uTint,
       uSheet: { value: new THREE.Vector2(SHEET_W, SHEET_H) }, uNoise: R.U.uNoise, uClock: R.U.uClock,
@@ -193,7 +193,7 @@ export class Figure {
     // what is worn
     this.body.geometry = A.mesh.geometry;
     const wear = A.uPiece.value;
-    for (let k = 0; k < 4; k++) this.uPiece.value[k].copy(wear[k]);
+    for (let k = 0; k < 5; k++) this.uPiece.value[k].copy(wear[k]);
     if (A.headWorn) this.uPiece.value[0].y = 1;
     this.armor.visible = A.wearing;
     // what is held: the same shapes as in third person, on the figure's arms
