@@ -181,6 +181,20 @@ if (B.crafter !== undefined && !BLOCKS[B.crafter].orient) BLOCKS[B.crafter].orie
 // the end portal frame is not a full block, and shows its eye (see models.js portal_frame)
 if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], { shape: 'portal_frame', opacity: 0, content: 'dark_prismarine' });
 
+// the hollow and village blocks get the game's models (models.js) rather than a cube or a borrowed shape
+{
+  const shapeOf = (n, shape, more) => { if (B[n] === undefined) return; const d = BLOCKS[B[n]]; d.shape = shape; d.opacity = 0; if (more) more(d); };
+  const addTex = (d, extra) => { d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), extra); };
+  for (const n of ['cauldron', 'water_cauldron', 'lava_cauldron', 'powder_snow_cauldron']) shapeOf(n, 'cauldron');
+  shapeOf('composter', 'composter', d => addTex(d, { compost: 'coarse_dirt', ready: 'podzol_top' }));
+  shapeOf('hopper', 'hopper', d => { delete d.orient; });
+  shapeOf('campfire', 'campfire', d => { delete d.orient; });
+  shapeOf('soul_campfire', 'campfire', d => { delete d.orient; });
+  shapeOf('bell', 'bell', d => addTex(d, { post: 'stone', bar: 'dark_oak_planks' }));
+  shapeOf('enchanting_table', 'table');
+  shapeOf('brewing_stand', 'brewing');
+}
+
 export const COUNT = LIST.length + 1;
 
 /* Flat lookup tables, which is what the hot loops in the mesher and the
