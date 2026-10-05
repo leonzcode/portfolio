@@ -348,6 +348,8 @@ export class Details {
       if ((this.ticks + e.x + e.z) % 20 === 0) {
         const d = BLOCKS[w.get(e.x, e.y, e.z)];
         if (!d || (e.k === 'sign' ? !isSign(d) : e.k === 'frame' ? !d.frame : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
+        // loaded from the save before its chunk was there: drawn now
+        if (!e.meshes) this._show(e);
       }
       if (e.k !== 'campfire') continue;
       const lit = !(w.meta(e.x, e.y, e.z) & 4);
@@ -365,9 +367,9 @@ export class Details {
       }
     }
   }
-  // every frame: sign text follows the light
+  // every frame: sign text follows the light (looked at a few times a second, not every frame)
   update() {
-    if (!this.map.size) return;
+    if (!this.map.size || (this.frames = (this.frames || 0) + 1) % 12) return;
     const day = this.daylight ? this.daylight() : 1;
     for (const e of this.map.values()) {
       if (!e.meshes) continue;
@@ -399,6 +401,9 @@ export class Details {
   }
   _show(e) {
     this._unshow(e);
+    // not drawn until its chunk is in (tick tries again)
+    const d = BLOCKS[this.world.get(e.x, e.y, e.z)];
+    if (!d || !this.world.loaded(e.x, e.z)) return;
     e.meshes = [];
     if (e.k === 'campfire') this._showFood(e);
     else if (e.k === 'frame') this._showFrame(e);
@@ -518,7 +523,7 @@ export class Details {
     for (const e of this.map.values()) {
       if (e.k === 'sign') out.push({ k: 's', p: [e.x, e.y, e.z], f: e.front, b: e.back, w: e.waxed ? 1 : 0 });
       else if (e.k === 'frame') out.push({ k: 'f', p: [e.x, e.y, e.z], i: e.item ? stackToJSON(e.item) : null, r: e.rot });
-      else if (e.items.some(Boolean)) out.push({ k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? [s.id, s.count] : null)), t: e.t, n: e.total });
+      else if (e.items.some(Boolean)) out.push({ k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total });
     }
     return out;
   }
@@ -537,7 +542,7 @@ export class Details {
         e.item = o.i ? stackFromJSON(o.i) : null; e.rot = (o.r | 0) & 7;
       } else if (o.k === 'c') {
         const e = this.entry(x, y, z, 'campfire');
-        e.items = (o.i || []).concat([null, null, null, null]).slice(0, 4).map(a => (a && ITEMS[a[0]] !== undefined || (a && BLOCKS[a[0]]) ? { id: a[0], count: a[1] || 1 } : null));
+        e.items = (o.i || []).concat([null, null, null, null]).slice(0, 4).map(a => (a ? stackFromJSON(a) : null));
         e.t = (o.t || [0, 0, 0, 0]).slice(0, 4); e.total = (o.n || [600, 600, 600, 600]).slice(0, 4);
       }
     }
