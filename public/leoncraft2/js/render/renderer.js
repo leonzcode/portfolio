@@ -432,7 +432,7 @@ export class Renderer {
     const W = this.worn || (this.worn = [null, null, null, null, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]);
     let changed = false;
     for (let i = 0; i < 4; i++) {
-      const s = inv.armor[i], id = s ? s.id : 0, en = s && s.ench ? 1 : 0, col = s && typeof s.color === 'number' ? s.color : -1;
+      const s = inv.armor[i], id = s ? s.id : 0, en = (s && s.ench ? 1 : 0) | (s && s.trim ? 2 : 0), col = s && typeof s.color === 'number' ? s.color : -1;
       if (W[i] !== s || W[i + 4] !== id || W[i + 8] !== en || W[i + 12] !== col) { W[i] = s; W[i + 4] = id; W[i + 8] = en; W[i + 12] = col; changed = true; }
     }
     if (changed) this.avatar.setArmor(inv.armor);
