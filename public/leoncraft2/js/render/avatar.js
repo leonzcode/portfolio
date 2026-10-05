@@ -733,15 +733,13 @@ export class Avatar {
     m.multiply(t.makeScale(1 / 16, -1 / 16, -1 / 16));
     return m;
   }
-  /* both arms for this frame: the right one swings (the main hand), the
-     left one is drawn only when it holds something; eqR, eqL how far each
-     hand is out of sight */
-  placeArms(state, cam, right, left, eqR, eqL) {
-    const bob = state.bob, bx = bob ? bob.x : 0, by = bob ? bob.y : 0;
+  /* both arms for this frame, from their places in the camera's space
+     (render/held.js works them out, the items with them); the left one is
+     drawn only when it holds something */
+  setArms(camW, armR, armL, right, left) {
     const R = this.armParts[2], L = this.armParts[3];
-    // worked out even when not drawn: render/held.js hangs the items on them
-    this.armMatrix(R, cam.matrixWorld, 0, this.cur.attack, bx, by, eqR || 0);
-    this.armMatrix(L, cam.matrixWorld, 1, 0, bx, by, eqL || 0);
+    R.multiplyMatrices(camW, armR);
+    L.multiplyMatrices(camW, armL);
     this.arm.visible = (right || left) && this.ready && this.started;
     // an arm with nothing to do is squeezed to nothing (only ever the empty left one)
     if (!left) L.makeScale(0, 0, 0);
