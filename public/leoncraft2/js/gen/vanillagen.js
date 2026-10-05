@@ -332,14 +332,31 @@ export class VanillaGen {
   biomeGrid(cx, cz) {
     const g = new Uint8Array(6 * 6 * 98);
     const qx0 = cx * 4 - 1, qz0 = cz * 4 - 1;
-    const dep = new Float64Array(98);
+    const P = this._bp || (this._bp = { p: new Int32Array(36 * 5), d: new Int32Array(36 * 98), dep: new Float64Array(98) });
+    const dep = P.dep;
     for (let j = 0; j < 6; j++) for (let i = 0; i < 6; i++) {
-      const x = (qx0 + i) << 2, z = (qz0 + j) << 2;
-      const t = quantize(this.nTemp(x, 0, z)), h = quantize(this.nVeg(x, 0, z)), c = quantize(this.nCont(x, 0, z));
-      const e = quantize(this.nEro(x, 0, z)), w = quantize(this.nRidge(x, 0, z));
+      const x = (qx0 + i) << 2, z = (qz0 + j) << 2, o = (j * 6 + i) * 5;
+      P.p[o] = quantize(this.nTemp(x, 0, z)); P.p[o + 1] = quantize(this.nVeg(x, 0, z)); P.p[o + 2] = quantize(this.nCont(x, 0, z));
+      P.p[o + 3] = quantize(this.nEro(x, 0, z)); P.p[o + 4] = quantize(this.nRidge(x, 0, z));
       this.depthCol(x, z, (-17) << 2, 4, 98, dep, 0);
-      for (let k = 0; k < 98; k++) g[(j * 6 + i) * 98 + k] = this.table.find(t, h, c, e, quantize(dep[k]), w);
+      for (let k = 0; k < 98; k++) P.d[(j * 6 + i) * 98 + k] = quantize(dep[k]);
     }
+    const T = this.table;
+    const cell = (i, j, k) => {
+      const c = j * 6 + i, o = c * 5;
+      g[c * 98 + k] = T.find(P.p[o], P.p[o + 1], P.p[o + 2], P.p[o + 3], P.d[c * 98 + k], P.p[o + 4]);
+    };
+    // A point on the line between two biomes is a tie, and the game's lookup
+    // keeps the biome it found last. So the chunk's own cells are looked up in
+    // the game's order (section by section, x, then y, then z), and every
+    // chunk starts the same way whatever was made before it.
+    T.last = null;
+    for (let j = 0; j < 6; j++) for (let i = 0; i < 6; i++) for (let k = 0; k < 98; k++) {
+      if (i >= 1 && i <= 4 && j >= 1 && j <= 4 && k >= 1 && k <= 96) continue;
+      cell(i, j, k);
+    }
+    T.last = null;
+    for (let s = 0; s < 24; s++) for (let i = 1; i <= 4; i++) for (let y = 0; y < 4; y++) for (let j = 1; j <= 4; j++) cell(i, j, 1 + s * 4 + y);
     return { g, qx0, qz0, qy0: -17 };
   }
   /* The biome at a block, as the game reads it (the zoom over the 4 x 4 x 4
