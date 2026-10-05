@@ -522,6 +522,36 @@ SHAPES.bell = function (d, m) {
 };
 // an item frame: twelve pixels square and one thick against the face it hangs on (bits 0-2), drawn by details.js
 SHAPES.frame = function (d, m) { return hang([box(2, 0, 2, 14, 1, 14, { hide: true })], m & 7); };
+/* A lectern (the game's lectern model, facing north): a base two pixels thick, the post with its front, and the
+   reading top tilted 22.5 degrees about the middle so it leans down to the front. */
+SHAPES.lectern = function (d, m) {
+  const L = d.L || {}, P = d.faces[3], S = L.side !== undefined ? L.side : P, F = d.front !== undefined ? d.front : S, T = d.faces[2];
+  const r = [box(0, 0, 0, 16, 2, 16, { faces: [P, P, P, P, P, P] }),
+    box(4, 2, 4, 12, 15, 12, { faces: [S, S, S, S, F, F], uv: [null, null, null, null, [8, 0, 16, 13], [0, 0, 8, 13]] }),
+    // the tilted top: there to be bumped into and picked, drawn as the quads below
+    box(0, 12, 2, 16, 16, 16, { hide: true })];
+  const a = -Math.PI / 8, c = Math.cos(a), s = Math.sin(a);
+  const R = ([x, y, z]) => [x, 8 + (y - 8) * c - (z - 8) * s, 8 + (y - 8) * s + (z - 8) * c];
+  const x0 = 0.0125, x1 = 15.9875, y0 = 12, y1 = 16, z0 = 3, z1 = 16;
+  const q = (pts, uv, layer) => r.push({ q: pts.map(R), uv, layer });
+  q([[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], [0, 1, 16, 14], T);          // up
+  q([[x0, y0, z1], [x1, y0, z1], [x1, y0, z0], [x0, y0, z0]], [0, 0, 16, 13], P);          // down
+  q([[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], [0, 0, 16, 4], S);           // north (front)
+  q([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 16, 4], S);           // south
+  q([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], [0, 0, 13, 4], S);           // east
+  q([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [0, 0, 13, 4], S);           // west
+  return turn(r, m & 3);
+};
+// a grindstone on the floor (facing north): the wheel between two pivots on dark oak legs
+SHAPES.grindstone = function (d, m) {
+  const L = d.L || {}, side = d.faces[0], round = L.top !== undefined ? L.top : side, piv = d.front !== undefined ? d.front : side;
+  const leg = L.leg !== undefined ? L.leg : piv, Pv = [piv, piv, piv, piv, piv, piv], Lg = [leg, leg, leg, leg, leg, leg];
+  return turn([
+    box(4, 4, 2, 12, 16, 14, { faces: [side, side, round, round, round, round], uv: [[2, 0, 14, 12], [2, 0, 14, 12], [0, 0, 8, 12], [0, 0, 8, 12], [0, 0, 8, 12], [0, 0, 8, 12]] }),
+    box(2, 7, 5, 4, 13, 11, { faces: Pv }), box(12, 7, 5, 14, 13, 11, { faces: Pv }),
+    box(2, 0, 6, 4, 7, 10, { faces: Lg }), box(12, 0, 6, 14, 7, 10, { faces: Lg }),
+  ], m & 3);
+};
 // an enchanting table is twelve pixels tall
 SHAPES.table = function (d) { return [box(0, 0, 0, 16, d.h || 12, 16)]; };
 // a brewing stand: the rod, three stone feet, and the arms and bottles as crossed sprites
