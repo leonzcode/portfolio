@@ -68,6 +68,16 @@ const KINDS = ['opaque', 'cutout', 'translucent', 'fluid', 'plants', 'leafIn'];
 const NO_MARKS = new Int32Array(25);
 // the light's work queue, kept from column to column (4 MB is not worth making again each time)
 const Q = new Int32Array(1 << 20), QM = Q.length - 1;
+/* The region's working arrays (blocks, states, sky and block light, which
+   leaves are on the outside), kept from column to column too and cleared
+   for each one: made afresh, several megabytes a column kept the collector
+   busy, and a block you broke waited behind it. */
+let SCRATCH = null;
+function scratch(N) {
+  if (!SCRATCH || SCRATCH.n < N) SCRATCH = { n: N, rb: new Uint16Array(N), rm: new Uint8Array(N), sky: new Uint8Array(N), blk: new Uint8Array(N), outer: new Int8Array(N) };
+  const S = SCRATCH, take = a => { const v = a.subarray(0, N); v.fill(0); return v; };
+  return { rb: take(S.rb), rm: take(S.rm), sky: take(S.sky), blk: take(S.blk), outer: take(S.outer) };
+}
 
 /* A run of sections (c0 to c1) put in place of the same ones in a column's
    last mesh: the vertices and indices before and after are kept, the indices
@@ -191,7 +201,7 @@ function build(job, ny, c0, c1, base) {
   // the rows worked on: every one, or the sections being made and a section either side (light goes 15 blocks at most)
   const ya = part ? Math.max(0, c0 * 16 - 16) : 0, yb = part ? Math.min(ny, (c1 + 1) * 16 + 16) : ny;
   const N = A * ny;
-  const rb = new Uint16Array(N), rm = new Uint8Array(N);
+  const { rb, rm, sky, blk, outer } = scratch(N);
   const bio = new Uint8Array(W * W);
   for (let c = 0; c < 9; c++) {
     const ch = chunks[c];
@@ -209,7 +219,6 @@ function build(job, ny, c0, c1, base) {
   }
 
   /* ---- light ---- */
-  const sky = new Uint8Array(N), blk = new Uint8Array(N);
   let qh = 0, qt = 0;
   const skyTop = job.noSky ? 0 : 15;      // the Nether: no sky light anywhere
   // straight down from the sky, a row at a time; above the rows worked on, read from the chunks themselves
@@ -287,7 +296,6 @@ function build(job, ny, c0, c1, base) {
      them is on the outside of the canopy. You cannot see the faces deep
      inside a tree anyway, and in a jungle they are most of the triangles. */
   const { LEAF, MODEL, SMALL, ORIENT, WL } = tables();
-  const outer = new Int8Array(N);
   const onSurface = j => {
     let v = outer[j];
     if (v) return v > 0;

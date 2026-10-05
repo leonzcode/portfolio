@@ -46,6 +46,12 @@ export class World {
     this.inFlight = new Set();
     this.meshVersion = new Map();
     this.meshCache = new Map();       // "cx,cz" -> { version, mesh }: the last mesh of each column next to you
+    /* The rows changed in each column, with the newest mesh version sent
+       when they changed ("cx,cz" -> [[version, low row, high row], ...]): a
+       mesh of a later version has them, an earlier one does not. So any edit
+       next to you is made again on the kept mesh, from the rows changed since
+       it, even while other remeshes of the column are on their way. */
+    this.rowLog = new Map();
     this.stats = { gen: 0, mesh: 0 };
   }
   key(cx, cz) { return cx + ',' + cz; }
@@ -87,8 +93,13 @@ export class World {
       // the columns round you keep their mesh (with the region's light), so an edit there remakes only its sections
       if (m.mesh.region && this.near(m.cx, m.cz)) this.meshCache.set(k, { version: m.version, mesh: m.mesh });
       else this.meshCache.delete(k);
+      // what this mesh already has needs no remembering
+      const log = this.rowLog.get(k);
+      if (log) { let j = 0; for (const e of log) if (e[0] >= m.version) log[j++] = e; log.length = j; if (!j) this.rowLog.delete(k); }
+      if (!this.warmed && m.cx === this.pcx && m.cz === this.pcz && this.meshCache.has(k)) this.warmEditWorker(m.cx, m.cz);
       return;
     }
+    if (m.type === 'warmed') return;
     const r = this.waiting.get(m.id);
     if (r) { this.waiting.delete(m.id); r(m); }
   }
@@ -122,7 +133,7 @@ export class World {
     const R = this.renderDist + 1;
     if (moved) {
       // forget what is too far, and line up what is missing, nearest first
-      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.meshCache.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
+      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.meshCache.delete(k); this.rowLog.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
       this.genList = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
         if (dx * dx + dz * dz > R * R) continue;
@@ -162,16 +173,22 @@ export class World {
     }
   }
   inFlightCount() { return this.inFlight.size; }
-  sendMesh(cx, cz, urgent, rows) {
+  sendMesh(cx, cz, urgent, edit) {
     const k = this.key(cx, cz);
-    /* An edit of yours (rows: the lowest and highest row changed) in a column
-       whose kept mesh is the newest made and has nothing else waiting: only
-       the sections round it are made again, in place of the same ones in that
-       mesh (mesher.js). Copied, not handed over: it may still be on its way
-       to the graphics card. */
-    const kept = rows ? this.meshCache.get(k) : null;
-    const base = kept && kept.version === (this.meshVersion.get(k) || 0) ? kept.mesh : null;
-    this.meshCache.delete(k);
+    /* A block changed (edit) in a column next to you that has a kept mesh:
+       only the sections round the rows changed since that mesh are made
+       again, in place of the same ones in it (mesher.js). Copied, not handed
+       over: it may still be on its way to the graphics card. Anything else
+       (a neighbour arriving changes the column's edges) makes the whole
+       column again, and the kept mesh is no longer one to build on. */
+    const kept = edit ? this.meshCache.get(k) : null;
+    let base = null, rows = null;
+    if (kept) {
+      let lo = H, hi = -1;
+      for (const e of this.rowLog.get(k) || []) if (e[0] >= kept.version) { if (e[1] < lo) lo = e[1]; if (e[2] > hi) hi = e[2]; }
+      if (hi >= 0) { base = kept.mesh; rows = [lo, hi]; }
+    }
+    if (!edit) this.meshCache.delete(k);
     const chunks = [], tops = [], transfer = [];
     let top = 0;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) top = Math.max(top, this.chunks.get(this.key(cx + dx, cz + dz)).top);
@@ -202,10 +219,37 @@ export class World {
     const v = (this.meshVersion.get(k) || 0) + 1;
     this.meshVersion.set(k, v);
     this.inFlight.add('m' + k);
-    // your own edits to the worker kept for them, everything else to the least busy
-    const i = urgent ? this.editW : this.idlest(); this.busy[i]++;
+    /* Your own edits to the worker kept for them, everything else to the least
+       busy; but a small remesh next to you (the world changing by itself)
+       goes to the edit worker too when it has nothing to do, so its code is
+       always warm (cold, it took several times as long over your blocks). */
+    const i = urgent || (base && !this.busy[this.editW]) ? this.editW : this.idlest(); this.busy[i]++;
     this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky, urgent: !!urgent,
       keep: this.near(cx, cz), base, rows: base ? rows : null }, transfer);
+  }
+
+  /* The edit worker meshes only when something changes next to you, so for
+     your first blocks its code would still be cold (several times slower).
+     Once the column you stand in has its kept mesh, it remakes a few rows of
+     it a few times, for nothing but the practice. */
+  warmEditWorker(cx, cz) {
+    this.warmed = true;
+    const kept = this.meshCache.get(this.key(cx, cz));
+    let top = 0;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) { const c = this.chunks.get(this.key(cx + dx, cz + dz)); if (!c) return; top = Math.max(top, c.top); }
+    const ny = Math.min(H, top + 2);
+    for (let n = 0; n < 4; n++) {
+      const chunks = [], tops = [];
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const c = this.chunks.get(this.key(cx + dx, cz + dz));
+        chunks.push({ blocks: c.blocks.slice(0, ny * 256), meta: c.meta.slice(0, ny * 256), biome: c.biome });
+        tops.push(c.top);
+      }
+      const y = Math.max(0, ny - 24 - n * 16);
+      this.busy[this.editW]++;
+      this.workers[this.editW].postMessage({ type: 'mesh', warm: true, cx, cz, chunks, tops, version: 0, seed: this.seed, prev: new Int32Array(0),
+        fast: !!this.fastLeaves, noSky: this.noSky, keep: true, base: kept.mesh, rows: [y, y] });
+    }
   }
 
   /* ---- blocks ---- */
@@ -265,14 +309,16 @@ export class World {
     // your own edits (interact.js sets world.urgent while it works) go to the edit worker, with the rows they changed
     const urgent = this.urgent;
     const D = urgent ? (this.urgentDirty || (this.urgentDirty = new Set())) : this.dirty;
-    const R = this.urgentRows || (this.urgentRows = new Map());
+    const lo = y === undefined ? 0 : y, hi = y === undefined ? H - 1 : y;
     const add = k => {
       D.add(k);
-      if (!urgent) return;
-      const r = R.get(k);
-      if (y === undefined) R.set(k, [0, H - 1]);
-      else if (!r) R.set(k, [y, y]);
-      else { r[0] = Math.min(r[0], y); r[1] = Math.max(r[1], y); }
+      // the rows changed, against the newest mesh sent (see rowLog)
+      const v = this.meshVersion.get(k) || 0;
+      let log = this.rowLog.get(k);
+      if (!log) this.rowLog.set(k, log = []);
+      const e = log.length ? log[log.length - 1] : null;
+      if (e && e[0] === v) { if (lo < e[1]) e[1] = lo; if (hi > e[2]) e[2] = hi; }
+      else log.push([v, lo, hi]);
     };
     add(this.key(cx, cz));
     if (lx === 0) add(this.key(cx - 1, cz));
@@ -285,13 +331,11 @@ export class World {
     if (!this.urgentDirty || !this.urgentDirty.size) return;
     for (const k of this.urgentDirty) {
       const [x, z] = k.split(',').map(Number);
-      // only the sections round the edit when nothing else in the column is waiting to be meshed
-      const rows = this.dirty && this.dirty.has(k) ? null : this.urgentRows.get(k);
+      // whatever else changed in the column since its kept mesh goes in the same remesh (rowLog)
       if (this.dirty) this.dirty.delete(k);
-      if (this.chunks.has(k)) this.sendMeshSoon(x, z, true, rows);
+      if (this.chunks.has(k)) this.sendMeshSoon(x, z, true, true);
     }
     this.urgentDirty.clear();
-    this.urgentRows.clear();
   }
   flush() {
     this.flushUrgent();
@@ -299,15 +343,14 @@ export class World {
     for (const k of this.dirty) {
       const [x, z] = k.split(',').map(Number);
       // a remesh while one is still out: the newer wins (see meshVersion)
-      for (let dz = -1, ok = true; dz <= 1 && ok; dz++) for (let dx = -1; dx <= 1; dx++) if (!this.chunks.has(this.key(x + dx, z + dz))) ok = false;
-      if (this.chunks.has(k)) this.sendMeshSoon(x, z);
+      if (this.chunks.has(k)) this.sendMeshSoon(x, z, false, true);
     }
     this.dirty.clear();
   }
-  sendMeshSoon(cx, cz, urgent, rows) {
+  sendMeshSoon(cx, cz, urgent, edit) {
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!this.chunks.has(this.key(cx + dx, cz + dz))) return;
     this.inFlight.delete('m' + this.key(cx, cz));
-    this.sendMesh(cx, cz, urgent, rows);
+    this.sendMesh(cx, cz, urgent, edit);
   }
   biomeAt(x, z) {
     const c = this.chunkAt(x, z);

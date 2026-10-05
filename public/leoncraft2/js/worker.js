@@ -33,6 +33,8 @@ self.onmessage = e => {
   }
   if (m.type === 'mesh') {
     const out = meshColumn(m);
+    // practice only (world.js warmEditWorker): nothing to send back
+    if (m.warm) { self.postMessage({ type: 'warmed' }); return; }
     const transfer = [];
     for (const k of ['opaque', 'cutout', 'translucent', 'fluid', 'plants', 'leafIn']) {
       const g = out[k];
