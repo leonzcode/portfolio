@@ -199,6 +199,8 @@ if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], 
   shapeOf('brewing_stand', 'brewing');
   // hanging signs hang from iron chains; on a wall, from a bar of their wood's stripped log
   for (const d of BLOCKS) if (d && d.hanging && d.tex) d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), { chain: 'iron_chain', bar: typeof d.tex === 'string' ? d.tex : d.tex.all || d.tex.side });
+  // a banner's pole and crossbar are wood
+  for (const d of BLOCKS) if (d && d.banner && d.tex) d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), { pole: 'dark_oak_planks' });
   // a candle cake's candle can be lit: its candle's lit texture
   for (const d of BLOCKS) if (d && /candle_cake$/.test(d.name) && typeof d.candle === 'string') d.tex = Object.assign({}, d.tex, { candleLit: d.candle + '_lit' });
 }

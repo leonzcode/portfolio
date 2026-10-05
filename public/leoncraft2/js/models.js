@@ -317,14 +317,14 @@ export const SHAPES = {
   sign(d, m) {
     // hanging signs hang under a block on two chains; banners are a flag on a pole
     if (d.hanging) return turn([box(1, 0, 7, 15, 10, 9), ...signChains(d, [3, 13], 'x')], m & 3);
-    if (d.banner) return turn([box(7.5, 0, 7.5, 8.5, 16, 8.5), box(2, 1, 7, 14, 16, 7.75)], m & 3);
+    if (d.banner) return turn(bannerModel(d, 0), m & 3);
     // the game's sign: a board 16 by 8 and 4/3 thick standing on a post, its top a little over the block
     const bd = [0, 0, 16, 8], ps = [7, 8, 9, 16];
     return turn([box(0, 9.33, 7.33, 16, 17.33, 8.67, { uv: [[7, 0, 8.5, 8], [7, 0, 8.5, 8], [0, 0, 16, 1.5], [0, 0, 16, 1.5], bd, bd] }),
       box(7.33, 0, 7.33, 8.67, 9.33, 8.67, { uv: [ps, ps, ps, ps, ps, ps] })], m & 3);
   },
   wall_sign(d, m) {
-    if (d.banner) return turn([box(2, 0, 0, 14, 15, 1)], sideFacing(m & 7) || 0);
+    if (d.banner) return turn(bannerModel(d, 1), sideFacing(m & 7) || 0);
     // a hanging sign on a wall sticks out from it, under a bar that runs out from the wall
     if (d.hanging) {
       const L = d.L && d.L.chain !== undefined ? d.L.chain : d.faces[0], bar = d.L && d.L.bar !== undefined ? d.L.bar : d.faces[0];
@@ -346,6 +346,15 @@ export const SHAPES = {
   },
 };
 
+/* A banner at the game's size (its model is 2/3 scale): a flag 13 1/3 by 26 2/3 pixels on a crossbar, on a pole
+   1 3/4 blocks tall; on a wall the pole is left out and it all hangs 5 pixels lower, the bar against the wall. */
+function bannerModel(d, wall) {
+  const W = d.faces[0], P = d.L && d.L.pole !== undefined ? d.L.pole : W;
+  const pole = [P, P, P, P, P, P], flagUV = [[0, 0, 1, 16], [0, 0, 1, 16], [0, 0, 16, 1], [0, 0, 16, 1], [0, 0, 16, 16], [0, 0, 16, 16]];
+  if (wall) return [box(1.33, 23, 0.33, 14.67, 24.33, 1.67, { faces: pole }), box(1.33, -2.33, 1.67, 14.67, 24.33, 2.33, { uv: flagUV })];
+  return [box(7.33, 0, 7.33, 8.67, 28, 8.67, { faces: pole }), box(1.33, 28, 7.33, 14.67, 29.33, 8.67, { faces: pole }),
+    box(1.33, 2.67, 6.67, 14.67, 29.33, 7.33, { uv: flagUV })];
+}
 // the chains a hanging sign hangs from: a pair of crossed strips at each of two spots along the board
 function signChains(d, at, along, top = 16) {
   const L = d.L && d.L.chain !== undefined ? d.L.chain : d.faces[0], r = [];
