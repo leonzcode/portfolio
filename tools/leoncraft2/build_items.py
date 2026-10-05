@@ -531,6 +531,24 @@ def layer_picture(name, ce, ppl, packs=None):
     return load16(p) if p else Image.new('RGBA', (16, 16), (0, 0, 0, 0))
 
 
+# The pictures that move in the game: the compass needle (towards the world spawn), the recovery compass (towards the
+# last death) and the clock face (the sun). Every frame, from the pack the item's own picture is drawn from (which
+# numbers its frames as the game does), pulled and placed as the item is. Without that pack, the item's one picture.
+DIAL_FRAMES = {'compass': 32, 'recovery_compass': 32, 'clock': 64}
+
+
+def frame_picture(name, k, ce, ppl, packs=None):
+    from PIL import Image
+    src = SOURCES.get(name)
+    if src and packs and re.search(r'\d\d$', src[1]):
+        got = from_pack(src[0], src[1][:-2] + '%02d' % k, packs)
+        if got:
+            im = pull(got[0], stats_of(name), src[2])
+            return place(im, src[3], src[4], len(src) > 5 and src[5]) if len(src) > 3 else im
+    im = picture(name, ce, ppl, packs)
+    return im if im is not None else Image.new('RGBA', (16, 16), (0, 0, 0, 0))
+
+
 # ----------------------------------------------------------------- armour
 # The textures the armour model wears, 64 x 32 in the game's layout (the head box at 0,0, the body at 16,16, the
 # arms at 40,16, the legs at 0,16): layer 1 is the helmet, chestplate and boots, layer 2 the leggings. Named as the
@@ -634,6 +652,8 @@ def main():
     tex += ['xp_orb_%d' % i for i in range(11)]
     # the untinted layers of pictures the game colours per item (a potion's liquid, an arrow's tip)
     tex += ['layer_' + n for n in RAW_LAYERS]
+    # and the frames of the pictures that move (js/dials.js picks one)
+    tex += ['frame_%s_%02d' % (n, k) for n, count in DIAL_FRAMES.items() for k in range(count)]
     # the pictures
     if ce:
         from PIL import Image
@@ -652,6 +672,9 @@ def main():
             if n.startswith('xp_orb_'):
                 k = int(n[7:])
                 strip.paste(orbs.crop(((k % 4) * 16, (k // 4) * 16, (k % 4) * 16 + 16, (k // 4) * 16 + 16)), (0, i * 16))
+                continue
+            if n.startswith('frame_'):
+                strip.paste(frame_picture(n[6:-3], int(n[-2:]), ce, ppl, packs), (0, i * 16))
                 continue
             if n.startswith('layer_'):
                 strip.paste(layer_picture(n[6:], ce, ppl, packs), (0, i * 16))

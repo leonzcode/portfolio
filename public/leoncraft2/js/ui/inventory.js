@@ -40,6 +40,7 @@ import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCo
 import { matchGrid, consumeGrid } from '../crafting.js?v=14';
 import { enchName } from '../enchanting.js?v=14';
 import { isPotion, potionName, potionLines } from '../brewing.js?v=14';
+import { dialPicture } from '../dials.js?v=14';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -307,8 +308,10 @@ export function drawOutline(g, kind, x, y) {
 // an item and its count, the count in the slot's bottom-right corner, and the wear bar, as in the game
 export function drawStack(g, icons, st, x, y, countText, countColour) {
   if (!st) return;
-  // a potion's colour, or dyed leather's (icons.drawTinted)
-  if ((st.potion || st.color !== undefined) && icons.drawTinted) icons.drawTinted(g, st, x, y);
+  // a compass or a clock shows where it points now (js/dials.js); a potion its colour, dyed leather its dye
+  const dial = ITEMS[st.id] && dialPicture(ITEMS[st.id].name);
+  if (dial && icons.drawLayer && icons.drawLayer(g, dial, x, y)) { /* drawn */ }
+  else if ((st.potion || st.color !== undefined) && icons.drawTinted) icons.drawTinted(g, st, x, y);
   else icons.draw(g, st.id, x, y);
   if (st.dmg > 0) {
     const max = maxDamage(st.id);
