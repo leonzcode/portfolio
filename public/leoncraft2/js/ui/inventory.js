@@ -41,6 +41,7 @@ import { matchGrid, consumeGrid } from '../crafting.js?v=14';
 import { enchName } from '../enchanting.js?v=14';
 import { isPotion, isTipped, potionName, potionLines } from '../brewing.js?v=14';
 import { patternLines, drawBannerIcon } from '../banners.js?v=14';
+import { mapLines } from '../maps.js?v=14';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -393,6 +394,8 @@ export function stackTooltip(st, advanced) {
     for (const s of inside.slice(0, 5)) lines.push('§f' + (s.name || displayName(s.id)) + ' x' + s.count);
     if (inside.length > 5) lines.push('§o§7and ' + (inside.length - 5) + ' more...');
   }
+  // a filled map: locked, and with advanced tooltips its number and zoom
+  if (st.map !== undefined) lines.push(...mapLines(st, advanced));
   // a banner's layers, the first six
   if (st.patterns) lines.push(...patternLines(st));
   if (st.color !== undefined) lines.push('§o§7Dyed');

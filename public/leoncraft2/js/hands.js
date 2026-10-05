@@ -38,6 +38,8 @@ import { isPotion, drinkPotion } from './brewing.js?v=14';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=14';
 import { MerchantScreen } from './ui/merchant.js?v=14';
 import { LoomScreen } from './ui/loom.js?v=14';
+import { CartographyScreen } from './ui/cartography.js?v=14';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=14';
 import { countShelves } from './enchanting.js?v=14';
 import { wear } from './ui/inventory.js?v=14';
 
@@ -272,6 +274,7 @@ export class Hands {
     if (n === 'smithing_table') { this.open(new SmithingScreen(this.inv, this.icons)); return true; }
     if (n === 'stonecutter') { this.open(new StonecutterScreen(this.inv, this.icons)); return true; }
     if (n === 'loom') { this.open(new LoomScreen(this.inv, this.icons)); return true; }
+    if (n === 'cartography_table') { this.open(new CartographyScreen(this.inv, this.icons)); return true; }
     return false;
   }
 
@@ -312,6 +315,7 @@ export class Hands {
       return true;
     }
     if (it.name === 'bucket') return this.fillBucket();
+    if (it.name === 'map') return this.newMap();
     if (it.name === 'glass_bottle') return this.fillBucket(true);
     return false;
   }
@@ -364,11 +368,31 @@ export class Hands {
     return false;
   }
 
+  /* ---- maps (js/maps.js) ---- */
+  // an empty map used: a map of the square you stand in, in its place
+  newMap() {
+    const p = this.player, m = MAPS.create(Math.floor(p.pos.x), Math.floor(p.pos.z), 0, this.world.dim || 'overworld');
+    const st = { id: I.filled_map, count: 1, map: m.id };
+    if (this.creative) this.inv.placeBack(st);
+    else { const s = this.held; if (s.count <= 1) this.inv.slots[this.inv.selected] = st; else { s.count--; this.inv.placeBack(st); } }
+    this.inv.changed();
+    if (this.renderer) this.renderer.swing = 1;
+    MAPS.update(m.id, this.world, p);
+    return true;
+  }
+  // maps held in either hand fill in as you go, and the HUD shows them held up
+  mapsTick() {
+    for (const st of [this.held, this.inv.offhand]) if (isFilledMap(st)) MAPS.update(st.map, this.world, this.player);
+    const hud = this.gui && this.gui.hud;
+    if (hud && hud.under !== this.underHud) { hud.under = this.underHud || (this.underHud = (g, now) => drawHeldMaps(g, now, this.inv, this.player, this.world)); hud.markDirty(); }
+  }
+
   /* ---- once a tick ---- */
   // the stack being eaten or drunk: the selected one, or the off hand's
   usedStack(u) { return u && u.off ? this.inv.offhand : this.held; }
   setUsedStack(u, st) { if (u && u.off) this.inv.offhand = st; else this.inv.slots[this.inv.selected] = st; }
   tick() {
+    this.mapsTick();
     const u = this.using;
     if (!u) return;
     const s = this.usedStack(u);

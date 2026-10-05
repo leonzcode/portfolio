@@ -37,6 +37,7 @@ import { Inventory, inventoryScreen } from './ui/inventory.js?v=14';
 import { Hud } from './ui/hud.js?v=14';
 import { Interactor } from './interact.js?v=14';
 import { enchantDebug } from './enchanting.js?v=14';
+import { MAPS, isFilledMap } from './maps.js?v=14';
 import { Survival } from './survival.js?v=14';
 import { survivalHooks, respawnPlayer } from './life.js?v=14';
 import { Save } from './save.js?v=14';
@@ -483,6 +484,8 @@ async function boot() {
       mendingRepair: n => hands.mend(n),
     };
     game = { entry, world, player, fluids, inv, survival, inter, save, saves, dim, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, hands, collector };
+    // the world's maps (js/maps.js), kept with the Overworld's save
+    MAPS.open(saves.overworld, isNew);
     /* The things that live in one world, one dimension: items lying about and
        experience orbs (drops.js), chests and furnaces (containers.js), mobs,
        boats and arrows (js/entities), the world simulating itself (sim/sim.js).
@@ -540,7 +543,8 @@ async function boot() {
     inter.onBroken = (x, y, z, b) => game.realms.broken(x, y, z, b);
     hud = new Hud(inv, icons);
     gui.hud = hud;
-    inv.on('held', id => renderer.setHeld(id, DRAW));
+    // a map in the hand is drawn by the HUD, held up (js/maps.js): the arm shows bare
+    inv.on('held', id => renderer.setHeld(isFilledMap(inv.slots[inv.selected]) ? 0 : id, DRAW));
     held();
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     loading = null;
@@ -554,7 +558,7 @@ async function boot() {
     // no mouse yet (the click that started this is long gone): the game menu, as when the window loses focus
     setTimeout(() => { if (game && !locked() && !gui.isOpen()) gui.open(new PauseScreen()); }, 600);
   }
-  function held() { if (game) renderer.setHeld(game.inv.heldId(), DRAW); }
+  function held() { if (game) renderer.setHeld(isFilledMap(game.inv.slots[game.inv.selected]) ? 0 : game.inv.heldId(), DRAW); }
   // a screen opened from the world (a chest, a crafting table): the mouse is let go without the game menu
   function openScreen(screen) {
     if (!game) return;
@@ -662,6 +666,7 @@ async function boot() {
   async function saveGame() {
     if (!game) return;
     game.save.writeState(stateOf());
+    MAPS.save();
     if (game.containers.dirty) { game.containers.dirty = false; game.saves[game.dim].writeExtra('containers', game.containers.toJSON()); }
     if (game.entities) EntityStore.save(entityKey(game.entry, game.dim), game.entities.toJSON());
     // the world's changes go to its own dimension's save
