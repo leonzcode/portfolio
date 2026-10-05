@@ -740,27 +740,22 @@ export class Entities {
     a.vel.x += P.vel.x; a.vel.z += P.vel.z; if (!P.onGround) a.vel.y += P.vel.y;
     return a;
   }
-  // creative, before there are boat items: B puts an oak boat where you look
-  placeBoatAtCrosshair() {
-    const P = this.P;
-    const eye = this.lookEye || P.pos, dir = this.lookDir;
-    if (!dir) return null;
-    // looking at a rail: a minecart instead
-    const tr = this.t.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 8, false);
-    for (let k = 0; k <= 12; k++) {
-      const d = k * 0.5, x = Math.floor(eye.x + dir.x * d), y = Math.floor(eye.y + dir.y * d), z = Math.floor(eye.z + dir.z * d);
-      if (d > tr + 0.5) break;
-      if (isRail(this.t.get(x, y, z))) return placeMinecart(this, x, y, z);
-    }
-    return this.placeBoatLooking('oak_boat', 8);
-  }
+  // a boat from a dispenser (dispense.js): where it says, facing its way
+  placeBoatAt(name, x, y, z, yaw) { return placeBoat(this, name, x, y, z, yaw); }
   /* A boat from its item, the game's way: where the look first meets a block
      or the surface of water (within reach), facing the way you look; not
-     if it would be inside a block or another boat (so not on the side of a
-     block). Returns the boat or null. */
+     if it would be inside a block, a boat, a mob or you (so not on the side
+     of a block), nor while your eyes are inside a mob. Returns the boat or
+     null. */
   placeBoatLooking(name, reach) {
     const P = this.P, eye = this.lookEye, dir = this.lookDir, T = this.t;
     if (!eye || !dir) return null;
+    let inside = false;
+    this.forNear(eye.x, eye.z, 4, e => {
+      if (!inside && !e.removed && (e instanceof Living || e.constructor.SOLID || e.type === 'minecart') && e !== this.riding
+        && Math.abs(eye.x - e.pos.x) < e.hw && Math.abs(eye.z - e.pos.z) < e.hw && eye.y > e.pos.y && eye.y < e.pos.y + e.h) inside = true;
+    });
+    if (inside) return null;
     const t = T.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, reach, true);
     if (t >= reach) return null;
     let x = eye.x + dir.x * t, y = eye.y + dir.y * t, z = eye.z + dir.z * t;
@@ -771,8 +766,17 @@ export class Entities {
       if (dir.y < -1e-6 && eye.y > surf) { const ts = (surf - eye.y) / dir.y; if (ts > reach) return null; x = eye.x + dir.x * ts; y = surf; z = eye.z + dir.z * ts; }
       else y = Math.min(y, surf);
     }
-    const hw = 0.6875;
+    const hw = 0.6875, E = 1e-7;
     if (T.boxHits(x - hw, y, z - hw, x + hw, y + 0.5625, z + hw)) return null;
+    // nor into a mob (anything that can be pushed) or a minecart, nor into you
+    let blocked = false;
+    this.forNear(x, z, 3, e => {
+      if (blocked || e.removed || e.dead || e.vehicle) return;
+      if (!(e instanceof Living && !e.constructor.NO_PUSH) && !e.constructor.SOLID && e.type !== 'minecart') return;
+      if (e.pos.x + e.hw > x - hw + E && e.pos.x - e.hw < x + hw - E && e.pos.z + e.hw > z - hw + E && e.pos.z - e.hw < z + hw - E && e.pos.y + e.h > y + E && e.pos.y < y + 0.5625 - E) blocked = true;
+    });
+    if (blocked) return null;
+    if (this.mode !== 'spectator' && P.pos.x + 0.3 > x - hw + E && P.pos.x - 0.3 < x + hw - E && P.pos.z + 0.3 > z - hw + E && P.pos.z - 0.3 < z + hw - E && P.pos.y + (P.h || 1.8) > y + E && P.pos.y < y + 0.5625 - E) return null;
     return placeBoat(this, name, x, y, z, P.yaw);
   }
 
