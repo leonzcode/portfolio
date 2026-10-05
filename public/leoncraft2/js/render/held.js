@@ -108,6 +108,21 @@ export function setLight(g, lv) {
   for (let i = 0; i < L.count; i++) { a[i * 4] = sky; a[i * 4 + 1] = bl; }
   L.needsUpdate = true;
 }
+/* Something held in a model's hand, the game's third-person way, into m:
+   from the arm's matrix (a humanoid's arm, in model pixels), turned down the
+   arm to the fist, then the item's own third-person place and turn. side 0
+   is the right hand; inset moves the hand in (a slim arm's half pixel). */
+export function placeInHand(m, arm, side, kind, inset, t, e) {
+  m.copy(arm);
+  if (inset) m.multiply(t.makeTranslation(side ? -inset : inset, 0, 0));
+  m.multiply(t.makeScale(16, -16, -16));            // back to the game's model space, in blocks
+  m.multiply(t.makeRotationX(-PI / 2));
+  m.multiply(t.makeRotationY(PI));
+  m.multiply(t.makeTranslation((side ? -1 : 1) / 16, 0.125, -0.625));
+  applyDisplay(m, DISPLAY[kind][side ? 'tpL' : 'tp'], t, e);
+  m.multiply(t.makeTranslation(0, -1, 0));          // the hand geometry's cube is centred one block up
+  return m;
+}
 // one of the DISPLAY entries onto m (t, e: scratch)
 export function applyDisplay(m, spec, t, e) {
   const [tr, r, s] = spec;

@@ -49,7 +49,7 @@ import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=14';
 import { H, idx } from '../world-const.js?v=14';
 import { armorSheet, avatarArmorGeometry, pieceLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=14';
 import { blockGeometry } from './blockmesh.js?v=14';
-import { DISPLAY, heldKind, applyDisplay, setLight } from './held.js?v=14';
+import { heldKind, placeInHand, setLight } from './held.js?v=14';
 import { setGlint } from './glint.js?v=14';
 const THREE = window.THREE;
 
@@ -732,17 +732,8 @@ export class Avatar {
      third-person turn: 75 and 45 degrees and 0.375 of a block for a block, a
      tool leaning forward, a flat item upright), from the parts' matrices into m */
   placeHeld(side, kind, parts, m) {
-    const t = this.t;
-    m.copy(parts[2 + side]);
     // a slim arm's hand is half a pixel further in, as the game holds it
-    if (this.slim) m.multiply(t.makeTranslation(side ? -0.5 : 0.5, 0, 0));
-    m.multiply(t.makeScale(16, -16, -16));            // back to the game's model space, in blocks
-    m.multiply(t.makeRotationX(-PI / 2));
-    m.multiply(t.makeRotationY(PI));
-    m.multiply(t.makeTranslation((side ? -1 : 1) / 16, 0.125, -0.625));
-    applyDisplay(m, DISPLAY[kind][side ? 'tpL' : 'tp'], t, this.e);
-    m.multiply(t.makeTranslation(0, -1, 0));          // the hand geometry's cube is centred one block up
-    return m;
+    return placeInHand(m, parts[2 + side], side, kind, this.slim ? 0.5 : 0, this.t, this.e);
   }
 
   /* ---- the first-person arms: the game's arm placing in front of the

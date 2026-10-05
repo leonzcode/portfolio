@@ -258,7 +258,6 @@ export class Skeleton extends Monster {
   }
   anim(A) { A.aiming = this.aiming; A.shake = this.convertT >= 0; }
   rootPose(root, t, a) { if (this.convertT >= 0) root.multiply(t.makeRotationY(Math.cos((this.age + a) * 3.25) * Math.PI * 0.01)); }
-  layers(out) { if (this.equip.mainhand === 'bow') out.push(['held_bow', 'held_items', null]); }
 }
 register('skeleton', Skeleton);
 export class Stray extends Skeleton {

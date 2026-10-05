@@ -38,6 +38,7 @@ import { MODELS, POSE, restPose } from './mobmodels.js?v=14';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=14';
 import { armorLayers } from './armorlayer.js?v=14';
 import { EntityMeshes } from '../render/entitymesh.js?v=14';
+import { MobHeld } from '../render/mobheld.js?v=14';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=14';
 import { breakAt } from '../place.js?v=14';
 import { dropOf } from '../survival.js?v=14';
@@ -721,6 +722,9 @@ export class Entities {
   render(alpha) {
     const M = this.meshes;
     M.begin();
+    // what mobs hold (render/mobheld.js): one set for the renderer, whichever world is drawn
+    const held = this.R.mobHeld || (this.R.mobHeld = new MobHeld(this.R));
+    held.begin();
     const cam = this.R.camera;
     this.pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.pm);
@@ -746,6 +750,7 @@ export class Entities {
     }
     this.particlesP.draw(M, alpha);
     M.end();
+    held.end();
   }
   shadowOf(e, x, y, z, r) {
     const T = this.t;
@@ -822,6 +827,8 @@ export class Entities {
       else { m.setPosition(P[o], 24 - P[o + 1], -P[o + 2]); m.premultiply(root); }
       M.setBone(bone + i, m);
     }
+    // what it holds, in its hands
+    if (e.equip && (e.equip.mainhand || e.equip.offhand)) this.R.mobHeld.hold(e, mdl, mats, e.lS, e.lB);
     const slot = SLOTS[e.texName ? e.texName() : c.TEX] || [0, 0];
     const white = A.swell > 0 ? (Math.floor(A.swell * 10) % 2 ? Math.max(0.5, Math.min(1, A.swell)) * 0.7 : 0) : 0;
     const hurt = e.hurtTime > 0 || (living && e.dead) ? 1 : 0;
