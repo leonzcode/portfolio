@@ -306,7 +306,7 @@ export class EntityMeshes {
     this.nBones = 0;
     const defines = { SHADOWS: opts.shadows === undefined ? 2 : opts.shadows };
     if (opts.ldr) defines.LDR = 1;
-    if (opts.ldr && !opts.vanilla) defines.FOG_V = 1;
+    if (opts.ldr && !opts.vanilla) { defines.FOG_V = 1; defines.TONE_LUT = 1; }
     Object.assign(defines, lightDefines(opts));
     this.uBones = { value: this.boneTex };
     const uni = Object.assign({}, U, { uAtlas: { value: tex }, uBones: this.uBones });

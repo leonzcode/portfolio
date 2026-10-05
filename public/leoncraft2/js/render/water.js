@@ -161,7 +161,7 @@ void main() {
     if (!top) flow = vec2(0.0, -1.0);            // a waterfall's face streams downward
     float t = uTime * (falling || !top ? 1.8 : 1.0);
 #ifdef LDR
-    vec3 wn = waveNormalD(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5));
+    vec3 wn = waveNormalD(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5), dist < 32.0 ? 5 : 3);
 #else
     vec3 wn = waveNormal(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5));
 #endif
@@ -203,7 +203,9 @@ void main() {
     float alpha;
     if (below) { col = body * 0.6; alpha = 0.85; }
     else {
-      vec3 skyR = skyDir(reflect(-V, N)) * pow(sat(sky * 1.15), 6.0);
+      // the sky it mirrors, from the fog's table of the sky (glsl.js fogColour): no angles to work out
+      float sk = sat(sky * 1.15), sk2 = sk * sk;
+      vec3 skyR = fogColour(reflect(-V, N)) * (sk2 * sk2 * sk2);
       vec3 H = normalize(V + uLightDir);
       float NoH = sat(dot(N, H)), NoL = sat(dot(N, uLightDir));
       float D = 0.0016 / (PI * sqr(NoH * NoH * (0.0016 - 1.0) + 1.0));
@@ -299,7 +301,7 @@ export function makeWaterMaterial(shared, opts) {
     fragmentShader: HEAD + COMMON + SHADOW + WIND + WAVES + TONEMAP + FS.replace('void main() {', (opts && opts.ldr ? LDR : '') + LIGHTS + '\nvoid main() {'),
     uniforms: Object.assign({ uMeshTime: { value: 0 } }, shared),
     side: THREE.DoubleSide,
-    defines: Object.assign({ SSR_STEPS: (opts && opts.ssrSteps) || 28, SHADOWS: opts && opts.shadows !== undefined ? opts.shadows : 2 }, lightDefines(opts), opts && opts.ldr ? { LDR: 1 } : {}),
+    defines: Object.assign({ SSR_STEPS: (opts && opts.ssrSteps) || 28, SHADOWS: opts && opts.shadows !== undefined ? opts.shadows : 2 }, lightDefines(opts), opts && opts.ldr ? { LDR: 1, TONE_LUT: 1 } : {}),
     transparent: !!(opts && opts.ldr), depthWrite: true,
   });
 }

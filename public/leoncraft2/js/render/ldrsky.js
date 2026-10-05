@@ -68,7 +68,7 @@ void main() {
     }
     col += stars(rd) * (1.0 - smoothstep(-0.12, 0.02, uSunDir.y)) * sat(rd.y * 4.0);
   }
-  o = vec4(toSRGB(agx(col * exposureNow())), 1.0);
+  o = vec4(toneLDR(col * exposureNow()), 1.0);
 }`;
 
 /* Drawn after the blocks, at the far plane and depth tested, so only the
@@ -80,7 +80,7 @@ out vec2 vUv;
 void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 1.0, 1.0); }
 `;
 export function makeLdrSky(U) {
-  const m = rawMat(FS, U, { depthTest: true, depthWrite: false, depthFunc: THREE.LessEqualDepth });
+  const m = rawMat(FS, U, { depthTest: true, depthWrite: false, depthFunc: THREE.LessEqualDepth, defines: { TONE_LUT: 1 } });
   m.vertexShader = 'precision highp float; precision highp int;\n' + VS_FAR;
   return m;
 }

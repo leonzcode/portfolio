@@ -550,7 +550,7 @@ export function makeMaterials(shared, q) {
   q = q || {};
   const base = { SHADOWS: q.shadows === undefined ? 2 : q.shadows };
   if (q.normals !== false) base.NORMALMAP = 1;
-  if (q.ldr) base.LDR = 1;
+  if (q.ldr) { base.LDR = 1; base.TONE_LUT = 1; }
   Object.assign(base, lightDefines(q));
   // Detailed (one pass to the screen) lights per vertex; the full chain per pixel
   const vs = q.ldr ? HEAD + COMMON + WIND + TONEMAP + LEAN_VS : HEAD + COMMON + WIND + TERRAIN_VS;
