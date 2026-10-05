@@ -795,10 +795,13 @@ export class Avatar {
      placing (at the hand, turned down the arm, then the item model's own
      third-person turn: 75 and 45 degrees and 0.375 of a block for a block, a
      tool leaning forward, a flat item upright), from the parts' matrices into m */
-  // a shield up to block has a place of its own
+  // a shield up to block, and a trident raised to throw, have places of their own
   heldKindNow(side) {
     const h = this.held[side], u = this.useNow;
-    return h.kind === 'shield' && u && u.kind === 'block' && (u.side | 0) === side ? 'shieldBlock' : h.kind;
+    if (!u || (u.side | 0) !== side) return h.kind;
+    if (h.kind === 'shield' && u.kind === 'block') return 'shieldBlock';
+    if (h.kind === 'trident' && u.kind === 'trident') return 'tridentThrow';
+    return h.kind;
   }
   placeHeld(side, kind, parts, m) {
     // a slim arm's hand is half a pixel further in, as the game holds it
