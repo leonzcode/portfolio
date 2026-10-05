@@ -22,11 +22,16 @@
    on the board with the game's font, darker away from the light, as the
    game draws it.
 
-   What it remembers (sign text, food on campfires) is kept per dimension
+   Item frames (and glow item frames) go on any face of a block; a click
+   puts the held item in (one of it) and then turns it an eighth at a time;
+   a hit knocks the item out, the next hit takes the frame down. A glow
+   frame and what it holds are drawn at full light.
+
+   What it remembers (sign text, food on campfires, framed items) is kept per dimension
    (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, OPACITY } from './blocks.js?v=14';
-import { I, ITEMS, itemName, withCount } from './items.js?v=14';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON } from './items.js?v=14';
 import { cookingRecipe } from './crafting.js?v=14';
 const THREE = window.THREE;
 
@@ -95,6 +100,8 @@ export class Details {
     const w = this.world, b = w.get(hit.x, hit.y, hit.z), d = BLOCKS[b];
     if (!d) return false;
     const s = h.held, n = s ? itemName(s.id) : '';
+    if (d.frame) return this.frameUse(h, hit, s);
+    if ((n === 'item_frame' || n === 'glow_item_frame') && hit.face) return this.hangFrame(h, hit, n);
     if (d.shape === 'cauldron') return this.cauldron(h, hit, d, s, n);
     if (d.name === 'composter') return this.composter(h, hit, s, n);
     if (d.shape === 'campfire') return this.campfire(h, hit, d, s, n);
@@ -102,6 +109,37 @@ export class Details {
     if (d.shape === 'candle') return this.candle(h, hit, d, s, n);
     if (isSign(d)) return this.sign(h, hit, d, s, n);
     return false;
+  }
+  // an item frame on the face clicked: the face of its own cell that touches the block (models.js 'on a face')
+  hangFrame(h, hit, n) {
+    const w = this.world, f = hit.face, x = hit.x + f[0], y = hit.y + f[1], z = hit.z + f[2];
+    const cur = w.get(x, y, z);
+    if (cur && !BLOCKS[cur].replaceable) return false;
+    const b = B[n === 'glow_item_frame' ? 'lc2_glow_item_frame' : 'lc2_item_frame'];
+    if (b === undefined) return false;
+    const face = f[0] === 1 ? 1 : f[0] === -1 ? 0 : f[1] === 1 ? 3 : f[1] === -1 ? 2 : f[2] === 1 ? 5 : 4;
+    w.set(x, y, z, b, face);
+    const e = this.entry(x, y, z, 'frame');
+    e.item = null; e.rot = 0; this.changed(e);
+    if (!h.creative) h.inv.takeSelected(1);
+    return true;
+  }
+  frameUse(h, hit, s) {
+    const e = this.entry(hit.x, hit.y, hit.z, 'frame');
+    if (e.item) e.rot = (e.rot + 1) & 7;
+    else if (s) { e.item = withCount(s, 1); e.rot = 0; if (!h.creative) h.inv.takeSelected(1); }
+    else return false;
+    this.changed(e);
+    return true;
+  }
+  // a hit on a frame that holds something takes the item out (it drops in survival); true when it did
+  punch(x, y, z) {
+    const e = this.map.get(key(x, y, z));
+    if (!e || e.k !== 'frame' || !e.item) return false;
+    if (!(this.creative && this.creative()) && this.drops) this.drops.spawn(x + 0.5, y + 0.4, z + 0.5, e.item);
+    e.item = null; e.rot = 0;
+    this.changed(e);
+    return true;
   }
   // flint and steel wears, a fire charge is used up
   lighter(h, n) { if (h.creative) return; if (n === 'flint_and_steel') h.inv.damageSelected(1); else h.inv.takeSelected(1); }
@@ -269,6 +307,7 @@ export class Details {
     if (!e || e.k !== k) {
       if (e) this._unshow(e);
       e = k === 'sign' ? { k, x, y, z, front: { lines: ['', '', '', ''], colour: 'black', glow: false }, back: { lines: ['', '', '', ''], colour: 'black', glow: false }, waxed: false }
+        : k === 'frame' ? { k, x, y, z, item: null, rot: 0 }
         : { k, x, y, z, items: [null, null, null, null], t: [0, 0, 0, 0], total: [600, 600, 600, 600] };
       this.map.set(id, e);
     }
@@ -284,6 +323,12 @@ export class Details {
     this._unshow(e);
     this.dirty = true;
     if (e.k === 'campfire' && this.drops) for (const s of e.items) if (s) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, s);
+    // a frame comes down as its item, with what it held (nothing in creative)
+    if (e.k === 'frame' && this.drops && !(this.creative && this.creative())) {
+      if (e.item) this.drops.spawn(x + 0.5, y + 0.4, z + 0.5, e.item);
+      const fi = I[e.glow ? 'glow_item_frame' : 'item_frame'];
+      if (fi !== undefined) this.drops.spawn(x + 0.5, y + 0.4, z + 0.5, { id: fi, count: 1 });
+    }
   }
 
   /* ---- 20 times a second ---- */
@@ -302,7 +347,7 @@ export class Details {
       // now and then: a block that has gone (an explosion, a piston, its support) lets go of what it held
       if ((this.ticks + e.x + e.z) % 20 === 0) {
         const d = BLOCKS[w.get(e.x, e.y, e.z)];
-        if (!d || (e.k === 'sign' ? !isSign(d) : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
+        if (!d || (e.k === 'sign' ? !isSign(d) : e.k === 'frame' ? !d.frame : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
       }
       if (e.k !== 'campfire') continue;
       const lit = !(w.meta(e.x, e.y, e.z) & 4);
@@ -356,6 +401,7 @@ export class Details {
     this._unshow(e);
     e.meshes = [];
     if (e.k === 'campfire') this._showFood(e);
+    else if (e.k === 'frame') this._showFrame(e);
     else this._showText(e);
   }
   // the food lies flat on the logs, one item to each side, as the game's campfire renderer lays it
@@ -373,7 +419,8 @@ export class Details {
       const dir = (i + facing) & 3;
       M.makeTranslation(e.x + 0.5, e.y + 0.44921875, e.z + 0.5);
       M.multiply(T.makeRotationY(-dir * Math.PI / 2)).multiply(T.makeRotationX(Math.PI / 2));
-      M.multiply(T.makeTranslation(-0.3125, -0.3125, 0)).multiply(T.makeScale(0.375, 0.375, g.flat ? 0.375 : 0.375));
+      // (item geometry sits a block up, the way drops.js lifts it back)
+      M.multiply(T.makeTranslation(-0.3125, -0.3125, 0)).multiply(T.makeScale(0.375, 0.375, 0.375)).multiply(T.makeTranslation(0, -1, 0));
       mesh.matrix.copy(M); mesh.matrixWorld.copy(M);
       // lit by the fire beneath it
       const L = mesh.geometry.attributes.aL;
@@ -381,6 +428,48 @@ export class Details {
       L.needsUpdate = true;
       e.meshes.push(mesh);
     }
+  }
+  /* A frame: its picture (the item's own, 14 pixels of 16, drawn to the game's 12) flat against the face, and
+     what it holds in front, half size (a block a quarter), turned an eighth a step about the frame's middle. */
+  _showFrame(e) {
+    const D = this.drops, w = this.world, d = BLOCKS[w.get(e.x, e.y, e.z)];
+    if (!D || !d || !d.frame) return;
+    e.glow = !!d.glow;
+    const face = w.meta(e.x, e.y, e.z) & 7;
+    // out of the face: the opposite of the face's own direction
+    const N = [[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]][face];
+    const n = new THREE.Vector3(N[0], N[1], N[2]), up = Math.abs(N[1]) ? new THREE.Vector3(0, 0, -N[1]) : new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(up, n);
+    const basis = new THREE.Matrix4().makeBasis(right, up, n);
+    const c = new THREE.Vector3(e.x + 0.5, e.y + 0.5, e.z + 0.5);
+    const light = e.glow ? (15 * 17 << 8) | (15 * 17) : this._lightPacked(e);
+    const put = (id, depth, scale, spin) => {
+      const g = D._base(id);
+      if (!g) return;
+      const mesh = D._makeMesh(g.geometry, g.cutout);
+      const M = new THREE.Matrix4().makeTranslation(c.x + n.x * depth, c.y + n.y * depth, c.z + n.z * depth);
+      M.multiply(basis);
+      if (spin) M.multiply(new THREE.Matrix4().makeRotationZ(-spin * Math.PI / 4));
+      M.multiply(new THREE.Matrix4().makeScale(scale, scale, scale)).multiply(new THREE.Matrix4().makeTranslation(0, -1, 0));
+      mesh.matrix.copy(M); mesh.matrixWorld.copy(M);
+      const L = mesh.geometry.attributes.aL;
+      for (let k = 0; k < L.count; k++) { L.array[k * 4] = light >> 8; L.array[k * 4 + 1] = light & 255; }
+      L.needsUpdate = true;
+      e.meshes.push(mesh);
+      return g;
+    };
+    const fid = I[e.glow ? 'glow_item_frame' : 'item_frame'];
+    if (fid !== undefined) put(fid, -0.5 + 0.5 / 16, 12 / 14, 0);
+    if (e.item) {
+      const g = D._base(e.item.id);
+      if (g) put(e.item.id, g.flat ? -0.5 + 1.5 / 16 : -0.5 + 1 / 16 + 0.125, g.flat ? 0.5 : 0.25, e.rot);
+    }
+  }
+  _lightPacked(e) {
+    const w = this.world;
+    let sky = 15;
+    for (let y = e.y + 1; y < e.y + 64 && sky > 0; y++) { const b = w.get(e.x, y, e.z); if (b) sky -= OPACITY[b]; }
+    return (Math.max(0, sky) * 17 << 8);
   }
   _showText(e) {
     const font = this.gui && this.gui.font;
@@ -428,6 +517,7 @@ export class Details {
     const out = [];
     for (const e of this.map.values()) {
       if (e.k === 'sign') out.push({ k: 's', p: [e.x, e.y, e.z], f: e.front, b: e.back, w: e.waxed ? 1 : 0 });
+      else if (e.k === 'frame') out.push({ k: 'f', p: [e.x, e.y, e.z], i: e.item ? stackToJSON(e.item) : null, r: e.rot });
       else if (e.items.some(Boolean)) out.push({ k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? [s.id, s.count] : null)), t: e.t, n: e.total });
     }
     return out;
@@ -442,6 +532,9 @@ export class Details {
         const e = this.entry(x, y, z, 'sign');
         const side = v => ({ lines: (v && Array.isArray(v.lines) ? v.lines : []).concat(['', '', '', '']).slice(0, 4).map(String), colour: (v && v.colour) || 'black', glow: !!(v && v.glow) });
         e.front = side(o.f); e.back = side(o.b); e.waxed = !!o.w;
+      } else if (o.k === 'f') {
+        const e = this.entry(x, y, z, 'frame');
+        e.item = o.i ? stackFromJSON(o.i) : null; e.rot = (o.r | 0) & 7;
       } else if (o.k === 'c') {
         const e = this.entry(x, y, z, 'campfire');
         e.items = (o.i || []).concat([null, null, null, null]).slice(0, 4).map(a => (a && ITEMS[a[0]] !== undefined || (a && BLOCKS[a[0]]) ? { id: a[0], count: a[1] || 1 } : null));

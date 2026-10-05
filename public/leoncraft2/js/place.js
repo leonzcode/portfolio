@@ -27,7 +27,7 @@ function wallVariant(name) {
   return undefined;
 }
 const SUPPORTED = new Set(['cross', 'torch', 'rail', 'wire', 'crop', 'plate', 'thin', 'candle', 'snow', 'layer', 'button', 'pot', 'sign', 'head', 'lantern']);
-const ON_WALL = new Set(['wall_torch', 'ladder', 'button', 'wall_sign', 'head']);
+const ON_WALL = new Set(['wall_torch', 'ladder', 'button', 'wall_sign', 'head', 'frame']);
 
 /* Work out what to place for a click. Returns a list of [x, y, z, id, meta]
    to set (empty when it cannot go there), given the world, the pick result,

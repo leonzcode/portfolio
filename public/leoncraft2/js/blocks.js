@@ -164,6 +164,10 @@ for (const e of DATA) {
 }
 // the Nether's and the End's own blocks and items (portals, frames, flint and steel, eyes of ender)
 dimBlocks(def, B, BLOCKS);
+// item frames: in the game an entity on a block's face; here a block of their own that draws nothing itself
+// (details.js draws the frame and what it holds), so they are picked, broken and saved like the rest
+for (const [n, display] of [['lc2_item_frame', 'Item Frame'], ['lc2_glow_item_frame', 'Glow Item Frame']])
+  def(n, { display, shape: 'frame', pass: 'cutout', solid: false, opacity: 0, item: false, tab: null, hardness: 0, tex: 'birch_planks', frame: true, glow: /glow/.test(n) });
 for (const d of BLOCKS) {
   if (!d) continue;
   if (d.display === undefined) d.display = d.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
