@@ -25,10 +25,10 @@
      hand.useOn(hit)         right click on a block (chests, tables); true if it did something
      hand.useItem(hit)       right click with the item (eat, armour, buckets); true if it did
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=13';
-import { selectionBoxes } from './models.js?v=13';
-import { placement, use, breakAt } from './place.js?v=13';
-import { breakTime, dropOf } from './survival.js?v=13';
+import { B, BLOCKS, FLUID } from './blocks.js?v=14';
+import { selectionBoxes } from './models.js?v=14';
+import { placement, use, breakAt } from './place.js?v=14';
+import { breakTime, dropOf } from './survival.js?v=14';
 
 export class Interactor {
   constructor(o) {
@@ -113,6 +113,10 @@ export class Interactor {
     if (m.t >= m.total - 1e-9) { this.breakTarget(); this.mining = null; this.breakDelay = 5; }
   }
   breakTarget() {
+    this.world.urgent = true;
+    try { return this._breakTarget(); } finally { this.world.urgent = false; }
+  }
+  _breakTarget() {
     const h = this.target;
     if (!h) return;
     const w = this.world;
@@ -143,6 +147,10 @@ export class Interactor {
     this.target = null;
   }
   useOnce() {
+    this.world.urgent = true;
+    try { return this._useOnce(); } finally { this.world.urgent = false; }
+  }
+  _useOnce() {
     if (this.useWith()) return;
     // the main hand had nothing to do: the off hand has its turn (a torch beside the pickaxe, food), as in the game
     if (this.hand.withOffhand) this.hand.withOffhand(() => this.useWith());
