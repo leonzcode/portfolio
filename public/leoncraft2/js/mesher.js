@@ -484,7 +484,8 @@ export function meshColumn(job) {
           const buf = d.pass === 'opaque' || fastLeaf ? out.opaque : d.pass === 'translucent' ? out.translucent : out.cutout;
           const tint = tintFor(d, k2);
           const tinted = d.tint ? 64 : 0;
-          const box = d.shape === 'snow' ? { h: d.height } : d.shape === 'cactus' ? { in: 1 / 16 } : null;
+          // snow comes in eight layers (meta 0-7), two pixels each
+          const box = d.shape === 'snow' ? { h: ((rm[i] & 7) + 1) / 8 } : d.shape === 'cactus' ? { in: 1 / 16 } : null;
           const snowy = d.snowy && (rb[i + A] === B.snow || rb[i + A] === B.snow_block || rb[i + A] === B.powder_snow);
           for (let f = 0; f < 6; f++) {
             const nb = rb[i + NSTEP[f]];

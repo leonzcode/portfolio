@@ -70,6 +70,22 @@ export function installFarming(sim) {
   });
 
   /* ---- where seeds and plants may go ---- */
+  // what each kind of ground plant may stand on (Minecraft Wiki; the game's mayPlaceOn): null when it is not one of them
+  const nm = b => (b ? BLOCKS[b].name : '');
+  const SANDY = b => /^(sand|red_sand|suspicious_sand|suspicious_gravel)$|terracotta$/.test(nm(b));
+  const dirtOrFarm = b => isDirt(b) || b === B.farmland;
+  const NETHER_SOIL = b => /^(crimson_nylium|warped_nylium|soul_soil|mycelium)$/.test(nm(b)) || dirtOrFarm(b);
+  const skyAbove = (x, y, z) => { for (let k = 1; k < 64; k++) { const c = sim.get(x, y + k, z); if (c && BLOCKS[c].opacity >= 15) return false; } return true; };
+  const FLOWERS = /^(short_grass|fern|tall_grass|large_fern|dandelion|golden_dandelion|torchflower|poppy|blue_orchid|allium|azure_bluet|red_tulip|orange_tulip|white_tulip|pink_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony|pitcher_plant|pink_petals|wildflowers|bush|firefly_bush|open_eyeblossom|closed_eyeblossom|cactus_flower|red_shrub)$/;
+  const SOIL = n => {
+    if (FLOWERS.test(n)) return n === 'cactus_flower' ? (b => b === B.cactus || dirtOrFarm(b)) : dirtOrFarm;
+    if (n === 'wither_rose') return b => dirtOrFarm(b) || /^(netherrack|soul_sand|soul_soil)$/.test(nm(b));
+    if (n === 'dead_bush' || n === 'short_dry_grass' || n === 'tall_dry_grass') return b => SANDY(b) || dirtOrFarm(b);
+    // mushrooms: mycelium, podzol and nylium at any light; otherwise a full block out of the daylight
+    if (n === 'brown_mushroom' || n === 'red_mushroom') return (b, x, y, z) => /^(mycelium|podzol|crimson_nylium|warped_nylium)$/.test(nm(b)) || (b && BLOCKS[b].shape === 'cube' && BLOCKS[b].opacity >= 15 && !skyAbove(x, y, z));
+    if (/^(crimson|warped)_(fungus|roots)$|^nether_sprouts$/.test(n)) return NETHER_SOIL;
+    return null;
+  };
   const FARMLAND_ONLY = new Set(['wheat', 'carrots', 'potatoes', 'beetroots', 'melon_stem', 'pumpkin_stem', 'torchflower_crop', 'pitcher_crop']);
   const SAPLINGS = /_sapling$|^mangrove_propagule$|^azalea$|^flowering_azalea$|^sweet_berry_bush$|^bamboo$/;
   (sim.placers = sim.placers || []).push((list) => {
@@ -81,6 +97,9 @@ export function installFarming(sim) {
       if (d.name === 'nether_wart' && below !== B.soul_sand) return [];
       if (SAPLINGS.test(d.name) && !(isDirt(below) || below === B.farmland || (d.name === 'bamboo' && (below === B.bamboo || below === B.sand || below === B.gravel || below === B.red_sand)))) return [];
       if (d.name === 'cactus' && !(below === B.sand || below === B.red_sand || below === B.cactus)) return [];
+      // flowers, grass and the rest of the ground plants want soil under them, as the game's mayPlaceOn says
+      const soil = SOIL(d.name);
+      if (soil && !list.some(e => e[0] === x && e[1] === y - 1 && e[2] === z) && !soil(below, x, y, z)) return [];
       if (d.name === 'sugar_cane') {
         if (below !== B.sugar_cane) {
           if (!below || !/^(grass_block|dirt|coarse_dirt|podzol|mycelium|rooted_dirt|moss_block|mud|sand|red_sand|suspicious_sand|pale_moss_block)$/.test(BLOCKS[below].name)) return [];

@@ -43,14 +43,17 @@ export function placement(world, hit, id, player) {
   if (hit.b === id) {
     if (d.shape === 'slab' && ((hm === 0 && n[1] === 1) || (hm === 1 && n[1] === -1))) return [[hit.x, hit.y, hit.z, id, 2]];
     if (d.shape === 'candle' && (hm & 3) < 3) return [[hit.x, hit.y, hit.z, id, hm + 1]];
-    if (d.shape === 'layer' && (hm & 7) < 7) return [[hit.x, hit.y, hit.z, id, hm + 1]];
+    if ((d.shape === 'layer' || d.shape === 'snow') && (hm & 7) < 7) return [[hit.x, hit.y, hit.z, id, hm + 1]];
   }
   let x = hit.x, y = hit.y, z = hit.z;
   // clicking on grass or snow replaces it, as in the game
-  if (!hd.replaceable) { x += n[0]; y += n[1]; z += n[2]; }
+  // (only a single layer of snow gives way: two or more is built on)
+  const gives = (bd, bm) => bd.replaceable && !(bd.shape === 'snow' && (bm & 7) > 0);
+  if (!gives(hd, hm)) { x += n[0]; y += n[1]; z += n[2]; }
   const cur = world.get(x, y, z), cm = world.meta(x, y, z);
   if (cur && cur === id && d.shape === 'slab' && cm !== 2) return [[x, y, z, id, 2]];
-  if (cur && !BLOCKS[cur].replaceable) return out;
+  if (cur && cur === id && d.shape === 'snow' && (cm & 7) < 7) return [[x, y, z, id, cm + 1]];
+  if (cur && !gives(BLOCKS[cur], cm)) return out;
   const fy = hit.hit ? hit.hit[1] - Math.floor(hit.hit[1] - (n[1] === 1 ? 1e-6 : 0)) : 0.5;   // how high up the clicked face
   const upperHalf = n[1] === -1 || (n[1] === 0 && fy > 0.5);
   const look = lookFacing(player.yaw);
@@ -89,6 +92,8 @@ export function placement(world, hit, id, player) {
         return [[x, y, z, wv, support]];
       }
       if (!solidBelow && !(d.shape === 'sign' && d.hanging)) return out;
+      // a hanging sign needs something above to hang from
+      if (d.shape === 'sign' && d.hanging) { const ab = world.get(x, y + 1, z); if (!ab || !BLOCKS[ab].solid) return out; }
       m = d.shape === 'torch' ? 0 : (look + 2) & 3;
       break;
     }

@@ -193,6 +193,10 @@ if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], 
   shapeOf('bell', 'bell', d => addTex(d, { post: 'stone', bar: 'dark_oak_planks' }));
   shapeOf('enchanting_table', 'table');
   shapeOf('brewing_stand', 'brewing');
+  // hanging signs hang from iron chains; on a wall, from a bar of their wood's stripped log
+  for (const d of BLOCKS) if (d && d.hanging && d.tex) d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), { chain: 'iron_chain', bar: typeof d.tex === 'string' ? d.tex : d.tex.all || d.tex.side });
+  // a candle cake's candle can be lit: its candle's lit texture
+  for (const d of BLOCKS) if (d && /candle_cake$/.test(d.name) && typeof d.candle === 'string') d.tex = Object.assign({}, d.tex, { candleLit: d.candle + '_lit' });
 }
 
 export const COUNT = LIST.length + 1;

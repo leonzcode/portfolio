@@ -256,11 +256,12 @@ export const SHAPES = {
     return hang(b, FACING_FACE[((f & 3) + 2) & 3]);
   },
   candle(d, m) {
-    const n = (m & 3) + 1, L = d.faces[0];
+    // bits 0-1 how many less one, bit 2 lit (the lit texture's wick glows)
+    const n = (m & 3) + 1, L = m & 4 && d.L && d.L.lit !== undefined ? d.L.lit : d.faces[0];
     const at = [[[8, 8]], [[6, 8], [10, 8]], [[6, 7], [10, 7], [8, 10]], [[6, 6], [10, 6], [6, 10], [10, 10]]][n - 1];
     const r = [];
     for (const [cx, cz] of at) {
-      r.push(box(cx - 1, 0, cz - 1, cx + 1, 6, cz + 1, { uv: [[0, 8, 2, 14], [0, 8, 2, 14], [0, 6, 2, 8], [0, 6, 2, 8], [0, 8, 2, 14], [0, 8, 2, 14]] }));
+      r.push(box(cx - 1, 0, cz - 1, cx + 1, 6, cz + 1, { faces: [L, L, L, L, L, L], uv: [[0, 8, 2, 14], [0, 8, 2, 14], [0, 6, 2, 8], [0, 6, 2, 8], [0, 8, 2, 14], [0, 8, 2, 14]] }));
       r.push({ q: [[cx - 0.5, 6, cz], [cx + 0.5, 6, cz], [cx + 0.5, 7, cz], [cx - 0.5, 7, cz]], uv: [0, 5, 1, 6], layer: L });
     }
     return r;
@@ -274,7 +275,14 @@ export const SHAPES = {
     }
     return r;
   },
-  cake(d) { return [box(1, 0, 1, 15, 8, 15)]; },
+  cake(d, m) {
+    // bits 0-2 the slices eaten (the cut side shows the inside); a candle cake has its candle on top (bit 2 lit)
+    const L = d.L || {};
+    if (L.candle === undefined) return [box(1 + 2 * Math.min(6, m & 7), 0, 1, 15, 8, 15)];
+    const c = m & 4 && L.candleLit !== undefined ? L.candleLit : L.candle;
+    return [box(1, 0, 1, 15, 8, 15), box(7, 8, 7, 9, 14, 9, { faces: [c, c, c, c, c, c], uv: [[0, 8, 2, 14], [0, 8, 2, 14], [0, 6, 2, 8], [0, 6, 2, 8], [0, 8, 2, 14], [0, 8, 2, 14]] }),
+      { q: [[7.5, 14, 8], [8.5, 14, 8], [8.5, 15, 8], [7.5, 15, 8]], uv: [0, 5, 1, 6], layer: c }];
+  },
   chest(d, m) {
     const fc = d.faces.slice();
     if (d.front !== undefined) fc[5] = d.front;
@@ -307,8 +315,8 @@ export const SHAPES = {
   layer(d, m) { return [box(0, 0, 0, 16, 2 * ((m & 7) + 1), 16)]; },
   crop(d) { return hash([4, 12], d.faces[2], 0, 16, -1, 15); },
   sign(d, m) {
-    // hanging signs hang under a block; banners are a flag on a pole
-    if (d.hanging) return turn([box(1, 0, 7, 15, 10, 9)], m & 3);
+    // hanging signs hang under a block on two chains; banners are a flag on a pole
+    if (d.hanging) return turn([box(1, 0, 7, 15, 10, 9), ...signChains(d, [3, 13], 'x')], m & 3);
     if (d.banner) return turn([box(7.5, 0, 7.5, 8.5, 16, 8.5), box(2, 1, 7, 14, 16, 7.75)], m & 3);
     // the game's sign: a board 16 by 8 and 4/3 thick standing on a post, its top a little over the block
     const bd = [0, 0, 16, 8], ps = [7, 8, 9, 16];
@@ -317,7 +325,11 @@ export const SHAPES = {
   },
   wall_sign(d, m) {
     if (d.banner) return turn([box(2, 0, 0, 14, 15, 1)], sideFacing(m & 7) || 0);
-    if (d.hanging) return turn([box(1, 0, 7, 15, 10, 9), box(0, 14, 0, 16, 16, 16)], sideFacing(m & 7) || 0);
+    // a hanging sign on a wall sticks out from it, under a bar that runs out from the wall
+    if (d.hanging) {
+      const L = d.L && d.L.chain !== undefined ? d.L.chain : d.faces[0], bar = d.L && d.L.bar !== undefined ? d.L.bar : d.faces[0];
+      return turn([box(7, 0, 1, 9, 10, 15), box(6, 14, 0, 10, 16, 16, { faces: [bar, bar, bar, bar, bar, bar] }), ...signChains(d, [3, 13], 'z', 14)], sideFacing(m & 7) || 0);
+    }
     return turn([box(0, 4.5, 0, 16, 12.5, 1.5)], sideFacing(m & 7) || 0);
   },
   hanging_sign(d) { return [box(1, 0, 7, 15, 10, 9)]; },
@@ -333,6 +345,17 @@ export const SHAPES = {
     return turn(q, F);
   },
 };
+
+// the chains a hanging sign hangs from: a pair of crossed strips at each of two spots along the board
+function signChains(d, at, along, top = 16) {
+  const L = d.L && d.L.chain !== undefined ? d.L.chain : d.faces[0], r = [];
+  for (const c of at) {
+    const [x, z] = along === 'x' ? [c, 8] : [8, c];
+    r.push({ q: [[x - 1.5, 10, z], [x + 1.5, 10, z], [x + 1.5, top, z], [x - 1.5, top, z]], uv: [0, 0, 3, top - 10], layer: L },
+      { q: [[x, 10, z - 1.5], [x, 10, z + 1.5], [x, top, z + 1.5], [x, top, z - 1.5]], uv: [3, 0, 6, top - 10], layer: L });
+  }
+  return r;
+}
 
 /* ---- shapes worked out from the neighbours, drawn flat on the ground ---- */
 const FLAT_UV = [0, 0, 16, 16];
@@ -529,7 +552,7 @@ export function selectionBoxes(d, m, nb) {
   if (s === 'cube' || s === 'fluid') return FULL;
   if (s === 'cross' || s === 'pad') return d.shape === 'pad' ? [[1 / 16, 0, 1 / 16, 15 / 16, 1.5 / 16, 15 / 16]] : [[2 / 16, 0, 2 / 16, 14 / 16, 13 / 16, 14 / 16]];
   if (s === 'torch') return [[6 / 16, 0, 6 / 16, 10 / 16, 10 / 16, 10 / 16]];
-  if (s === 'snow') return [[0, 0, 0, 1, (d.height || 0.125), 1]];
+  if (s === 'snow') return [[0, 0, 0, 1, ((m & 7) + 1) / 8, 1]];
   if (s === 'rail' || s === 'wire') return [[0, 0, 0, 1, 2 / 16, 1]];
   if (s === 'crop') return [[0, 0, 0, 1, 0.5, 1]];
   if (!SHAPES[s]) return FULL;
