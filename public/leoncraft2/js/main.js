@@ -549,6 +549,8 @@ async function boot() {
     gui.panorama = false; gui.inGame = true;
     gui.closeAll();
     startedAt = performance.now();
+    // every shader built now, in the background, not the first time its water, glass or mob comes into view
+    renderer.warmUp([game.entities && game.entities.meshes && game.entities.meshes.mat]);
     // only now does the loop play it: until every part (items lying about, mobs, the
     // simulation, the dimensions) is in place, a frame would trip over the missing ones
     game.ready = true;
