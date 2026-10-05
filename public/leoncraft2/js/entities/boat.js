@@ -515,20 +515,22 @@ export class Boat extends Entity {
     return true;
   }
   openInventory() { return this.openChest(); }
-  /* Getting out: beside it the way the rider looks (out to the edge of a
-     square round it), onto the ground there or a block lower, if that is
-     not over water and there is room to stand (or crouch); else on top.
+  /* Getting out (the player, or a mob put out when it breaks or sinks):
+     beside it the way the rider looks (out to the edge of a square round
+     it), onto the ground there or a block lower, if that is not over water
+     and there is room to stand (the player: or crouch); else on top.
      Returns [x, y, z, crouching] or null for on top. */
   dismountSpot(P) {
-    const T = this.m.t, d = (this.w * Math.SQRT2 + 0.6 + 1e-5) / 2;
+    const T = this.m.t, isP = P === this.m.P || !!P.isPlayer, pw = isP ? 0.6 : P.w, d = (this.w * Math.SQRT2 + pw + 1e-5) / 2, r = pw / 2;
     const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), m = Math.max(Math.abs(fx), Math.abs(fz));
     const x = this.pos.x + fx * d / m, z = this.pos.z + fz * d / m;
     const by = Math.floor(this.pos.y + this.h), bx = Math.floor(x), bz = Math.floor(z);
     if (this.waterIn(bx, by - 1, bz)) return null;
+    const heights = isP ? [1.8, 1.5] : [P.h];
     for (const y of [by, by - 1]) {
       const fl = this.floorAt(bx, y, bz);
       if (fl === null) continue;
-      for (const h of [1.8, 1.5]) if (!T.boxHits(x - 0.3, y + fl, z - 0.3, x + 0.3, y + fl + h, z + 0.3)) return [x, y + fl, z, h < 1.8];
+      for (const h of heights) if (!T.boxHits(x - r, y + fl, z - r, x + r, y + fl + h, z + r)) return [x, y + fl, z, h < heights[0]];
     }
     return null;
   }
