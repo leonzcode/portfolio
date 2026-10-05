@@ -380,7 +380,13 @@ export class Entities {
     if (v.onMounted) v.onMounted(this.player);
     return true;
   }
-  unseat(e) { const v = e.vehicle; if (!v) return; v.passengers.splice(v.passengers.indexOf(e), 1); e.vehicle = null; e.setPos(v.pos.x, v.pos.y + v.h + 0.1, v.pos.z); }
+  // a mob put out of its seat: where its vehicle says (a boat: beside it the way the mob looks, or on top), else on top
+  unseat(e) {
+    const v = e.vehicle; if (!v) return;
+    v.passengers.splice(v.passengers.indexOf(e), 1); e.vehicle = null;
+    const s = v.dismountSpot ? v.dismountSpot(e) : null;
+    if (s) e.setPos(s[0], s[1], s[2]); else e.setPos(v.pos.x, v.pos.y + v.h + (v.dismountSpot ? 0 : 0.1), v.pos.z);
+  }
   dismount() {
     const v = this.riding;
     if (!v) return;
@@ -426,6 +432,8 @@ export class Entities {
     // sitting up: never in a swimming or crouching pose, no fall counted
     P.swimming = false; P.pose = 'stand'; P.h = 1.8; P.fallDistance = 0; P.landed = null;
     P.prevEyeH = P.eyeH; P.eyeH += (1.62 - P.eyeH) * 0.5;
+    // no sprint now, so the view narrows back to the FOV setting (as it does on foot)
+    if (P.baseFov) P.fov += (P.baseFov - P.fov) * 0.35;
     // the rest of last tick's turn, before this tick's
     P.yaw += this.turnDue - this.turnDone; this.turnDue = this.turnDone = 0;
     // the eyes: under water only if the boat went under
@@ -739,6 +747,17 @@ export class Entities {
     a.shoot(dir.x, dir.y, dir.z, power * 3, 1);
     a.vel.x += P.vel.x; a.vel.z += P.vel.z; if (!P.onGround) a.vel.y += P.vel.y;
     return a;
+  }
+  /* A container that is an entity, in the block at (x, y, z), for hoppers
+     and droppers (containers.js): a chest boat whose box is in that block
+     (one of them at random, as the game picks). */
+  containerAt(x, y, z) {
+    let found = null, n = 0;
+    this.forNear(x + 0.5, z + 0.5, 2, e => {
+      if (!e.slots || !e.chest || e.removed || e.pos.x + e.hw <= x || e.pos.x - e.hw >= x + 1 || e.pos.z + e.hw <= z || e.pos.z - e.hw >= z + 1 || e.pos.y + e.h <= y || e.pos.y >= y + 1) return;
+      if (Math.random() * ++n < 1) found = e;
+    });
+    return found;
   }
   // a boat from a dispenser (dispense.js): where it says, facing its way
   placeBoatAt(name, x, y, z, yaw) { return placeBoat(this, name, x, y, z, yaw); }

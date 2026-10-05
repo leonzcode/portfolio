@@ -521,6 +521,8 @@ async function boot() {
       g.partsDim = d;
       Object.assign(hands, { world: w, drops, containers, fluids: fl });
       containers.drops = drops;
+      // hoppers and droppers fill and empty chest boats (js/entities)
+      containers.entityAt = (x, y, z) => entities.containerAt(x, y, z);
       inter.entities = entities; entities.inter = inter; inter.sim = sim;
       if (renderer.particles) renderer.particles.setWorld(w);
     };
