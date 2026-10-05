@@ -308,9 +308,11 @@ export function drawOutline(g, kind, x, y) {
 // an item and its count, the count in the slot's bottom-right corner, and the wear bar, as in the game
 export function drawStack(g, icons, st, x, y, countText, countColour) {
   if (!st) return;
-  // a compass or a clock shows where it points now (js/dials.js); a potion its colour, dyed leather its dye
+  // a compass or a clock shows where it points now (js/dials.js); trimmed armour its trim (js/trims.js),
+  // a potion its colour, dyed leather its dye
   const dial = ITEMS[st.id] && dialPicture(ITEMS[st.id].name);
   if (dial && icons.drawLayer && icons.drawLayer(g, dial, x, y)) { /* drawn */ }
+  else if (st.trim && icons.drawTrimmed) icons.drawTrimmed(g, st, x, y);
   else if ((st.potion || st.color !== undefined) && icons.drawTinted) icons.drawTinted(g, st, x, y);
   else icons.draw(g, st.id, x, y);
   if (st.dmg > 0) {

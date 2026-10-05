@@ -922,7 +922,7 @@ const CREDITS = [
   ['Block textures, GUI art and the font:'],
   ['Pixel Perfection by XSSheep, in its Community Edition,'], ['by XSSheep and contributors.'],
   ['github.com/Athemis/PixelPerfectionCE', 0, 'https://github.com/Athemis/PixelPerfectionCE'],
-  ['Newer blocks: Pixel Perfection Legacy, by Nova_Wostra.'],
+  ['Newer blocks, many items, the leggings and the trim colours:'], ['Pixel Perfection Legacy, by Nova_Wostra.'],
   ['modrinth.com/resourcepack/pixel-perfection-legacy', 0, 'https://modrinth.com/resourcepack/pixel-perfection-legacy'],
   ['Items, armour and many blocks: REFI Textures, by MysticTempest,'], ['and Bauniclonia, by Mirtilo.'],
   ['github.com/MysticTempest/REFI_Textures', 0, 'https://github.com/MysticTempest/REFI_Textures'],
