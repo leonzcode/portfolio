@@ -3,7 +3,8 @@
 
    A fluid cell is a source (level 0) or flowing (levels 1-7, how far from
    its source), or falling (a column pouring down). Every 5 ticks for water
-   and 30 for lava, cells that might change are looked at:
+   and 30 for lava (10 in the Nether, where lava also runs as far as water),
+   cells that might change are looked at:
 
      - a flowing cell takes its level from its highest neighbour (one more
        than it; two more for lava), turns to a source if two sources flank it
@@ -40,7 +41,7 @@ export class Fluids {
   around(x, y, z) {
     for (const [dx, dy, dz] of [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
       const b = this.w.get(x + dx, y + dy, z + dz);
-      if (FLUID[b]) this.schedule(x + dx, y + dy, z + dz, FLUID[b] === 2 ? 30 : 5);
+      if (FLUID[b]) this.schedule(x + dx, y + dy, z + dz, FLUID[b] === 2 ? (this.w.dim === 'the_nether' ? 10 : 30) : 5);
     }
   }
   kindAt(x, y, z) { return FLUID[this.w.get(x, y, z)]; }
@@ -93,7 +94,9 @@ export class Fluids {
   update(x, y, z) {
     const kind = this.kindAt(x, y, z);
     if (!kind) return;
-    const drop = kind === 1 ? 1 : 2, reach = kind === 1 ? 4 : 2, max = kind === 1 ? 7 : 6;
+    // Nether lava drops a level a block and looks four blocks for a slope, as water does
+    const far = kind === 1 || this.w.dim === 'the_nether';
+    const drop = far ? 1 : 2, reach = far ? 4 : 2, max = far ? 7 : 6;
     let meta = this.w.meta(x, y, z);
     const source = (meta & (LEVEL | FALLING)) === 0;
     // lava meeting water at its side or top

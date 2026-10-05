@@ -106,6 +106,7 @@ export class Details {
     if (d.name === 'composter') return this.composter(h, hit, s, n);
     if (d.shape === 'campfire') return this.campfire(h, hit, d, s, n);
     if (d.shape === 'cake') return this.cake(h, hit, d, s, n);
+    if (d.shape === 'pot') return this.pot(h, hit, d, s, n);
     if (d.shape === 'candle') return this.candle(h, hit, d, s, n);
     if (isSign(d)) return this.sign(h, hit, d, s, n);
     return false;
@@ -139,6 +140,23 @@ export class Details {
     if (!(this.creative && this.creative()) && this.drops) this.drops.spawn(x + 0.5, y + 0.4, z + 0.5, e.item);
     e.item = null; e.rot = 0;
     this.changed(e);
+    return true;
+  }
+  /* A flower pot: a plant that has a potted kind goes into an empty one; any other click on a full one takes
+     the plant back out into your hands (the game's FlowerPotBlock). */
+  pot(h, hit, d, s, n) {
+    const w = this.world, { x, y, z } = hit;
+    const potted = s ? (B['potted_' + n] !== undefined ? B['potted_' + n] : B['potted_' + n + '_bush']) : undefined;
+    if (potted !== undefined) {
+      if (d.name === 'flower_pot') { w.set(x, y, z, potted, 0); if (!h.creative) h.inv.takeSelected(1); }
+      return true;
+    }
+    if (d.name === 'flower_pot' || !/^potted_/.test(d.name)) return true;
+    let plant = d.name.slice(7);
+    if (I[plant] === undefined && B[plant] === undefined) plant = plant.replace(/_bush$/, '');
+    const id = I[plant] !== undefined ? I[plant] : B[plant];
+    if (id !== undefined) h.inv.add(id, 1);
+    w.set(x, y, z, B.flower_pot, 0);
     return true;
   }
   // flint and steel wears, a fire charge is used up
