@@ -16,8 +16,8 @@
    the portal room: 12 end portal frames, each with a 1 in 10 chance of an
    eye already in it, the lava pool, and the silverfish spawner on the steps.
 --------------------------------------------------------------------------- */
-import { Box, Piece, Pieces, NORTH, EAST, SOUTH, WEST, HORIZONTAL } from './piece.js?v=13';
-import { largeFeature, JRand } from './rand.js?v=13';
+import { Box, Piece, Pieces, NORTH, EAST, SOUTH, WEST, HORIZONTAL } from './piece.js?v=14';
+import { largeFeature, JRand } from './rand.js?v=14';
 
 const OPENING = 0, WOOD_DOOR = 1, GRATES = 2, IRON_DOOR = 3;
 export const DOOR_NAMES = ['OPENING', 'WOOD_DOOR', 'GRATES', 'IRON_DOOR'];

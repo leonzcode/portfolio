@@ -1,11 +1,11 @@
 /* Leoncraft 2 - a worker: makes chunks and meshes them, off the main thread. */
-import { Gen } from './worldgen.js?v=13';
-import { VanillaGen } from './gen/vanillagen.js?v=13';
-import { meshColumn, setColours } from './mesher.js?v=13';
-import { resolveTextures } from './blocks.js?v=13';
-import { NetherGen } from './gen/nether.js?v=13';
-import { EndGen } from './gen/end.js?v=13';
-import { worldStructures, structureMessage } from './struct/hook.js?v=13';
+import { Gen } from './worldgen.js?v=14';
+import { VanillaGen } from './gen/vanillagen.js?v=14';
+import { meshColumn, setColours } from './mesher.js?v=14';
+import { resolveTextures } from './blocks.js?v=14';
+import { NetherGen } from './gen/nether.js?v=14';
+import { EndGen } from './gen/end.js?v=14';
+import { worldStructures, structureMessage } from './struct/hook.js?v=14';
 
 let gen = null, structs = null;
 
@@ -41,7 +41,7 @@ self.onmessage = e => {
       transfer.push(g.index.buffer);
     }
     if (out.light) transfer.push(out.light.buffer);
-    self.postMessage({ type: 'mesh', id: m.id, cx: m.cx, cz: m.cz, version: m.version, mesh: out }, transfer);
+    self.postMessage({ type: 'mesh', id: m.id, cx: m.cx, cz: m.cz, version: m.version, mesh: out, urgent: m.urgent }, transfer);
     return;
   }
   if (m.type === 'structures') {

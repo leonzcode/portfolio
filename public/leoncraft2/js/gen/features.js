@@ -20,12 +20,12 @@
    checked against chunks the real server made. Feature kinds are
    registered in FEATURES; ones not written yet place nothing.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=13';
-import { BIO, BIOMES } from '../biomes.js?v=13';
-import { Xoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=13';
-import { Simplex } from './noise.js?v=13';
-import { msin, mcos } from './carvers.js?v=13';
-import { stateOf } from './states.js?v=13';
+import { B, BLOCKS } from '../blocks.js?v=14';
+import { BIO, BIOMES } from '../biomes.js?v=14';
+import { Xoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=14';
+import { Simplex } from './noise.js?v=14';
+import { msin, mcos } from './carvers.js?v=14';
+import { stateOf } from './states.js?v=14';
 
 const MIN_Y = -64, MAX_Y = 319, SEA_LEVEL = 63;
 export const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
@@ -212,7 +212,38 @@ export function stateFrom(j) {
   if (j.Name !== undefined) return stateOf(j);
   return null;
 }
+/* The game names some of its block lists (worldgen/block_state_provider):
+   "minecraft:flower_plain", "minecraft:soil_beneath_tree"... They are not
+   blocks, and read as one they came out as stone, the fallback for a name
+   it does not know, so stray stone stood on the surface wherever flowers
+   should have been. These are the lists, and anything else unknown places
+   nothing rather than stone. */
+const pickOf = names => {
+  const ss = names.filter(n => B[n] !== undefined).map(n => stateOf('minecraft:' + n));
+  return ss.length ? (r => ss[ss.length > 1 ? r.nextInt(ss.length) : 0]) : (() => stateOf('minecraft:air'));
+};
+const NAMED = {
+  flower_default: pickOf(['dandelion', 'dandelion', 'poppy']),
+  flower_plain: pickOf(['dandelion', 'dandelion', 'poppy']),
+  flower_plains: pickOf(['dandelion', 'dandelion', 'poppy']),
+  flower_swamp: pickOf(['blue_orchid']),
+  flower_meadow: pickOf(['cornflower', 'allium', 'azure_bluet', 'oxeye_daisy', 'dandelion', 'poppy']),
+  flower_cherry: pickOf(['pink_petals']),
+  flower_flower_forest: pickOf(['dandelion', 'poppy', 'allium', 'azure_bluet', 'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower', 'lily_of_the_valley']),
+  flower_warm: pickOf(['dandelion', 'poppy']),
+  soil_beneath_tree: pickOf(['dirt']),
+  cave_vines_body: pickOf(['cave_vines_plant']),
+  cave_vines_head: pickOf(['cave_vines']),
+};
+function named(name) {
+  if (NAMED[name]) return NAMED[name];
+  if (/flower/.test(name)) return NAMED.flower_default;
+  if (/soil|dirt/.test(name)) return NAMED.soil_beneath_tree;
+  return () => stateOf('minecraft:air');
+}
 export function provider(p) {
+  // a name that is not a block is one of the game's named lists
+  if (typeof p === 'string' && B[strip(p.replace(/\[.*$/, ''))] === undefined) return named(strip(p.replace(/\[.*$/, '')));
   if (p._prov) return p._prov;
   let f;
   const direct = stateFrom(p);

@@ -7,8 +7,8 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=13';
-import { BLOCKS, FLUID } from './blocks.js?v=13';
+import { CH, H, idx } from './world-const.js?v=14';
+import { BLOCKS, FLUID } from './blocks.js?v=14';
 
 export class World {
   constructor(opts) {
@@ -25,12 +25,16 @@ export class World {
     this.edits = opts.edits || new Map();       // "cx,cz" -> Map(cell index -> block * 256 + meta)
     this.save = opts.save || null;
     const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+    /* One more worker than that, kept for what you change yourself: a block
+       you break or place is meshed again at once, never behind terrain being
+       made (the generator can take a good fraction of a second a chunk). */
+    this.genN = n; this.editW = n;
     this.workers = [];
     this.busy = [];
     this.nextId = 1;
     this.waiting = new Map();          // job id -> resolver
-    this.ready = Promise.all(Array.from({ length: n }, (_, i) => new Promise(res => {
-      const w = new Worker(new URL('./worker.js?v=13', import.meta.url), { type: 'module' });
+    this.ready = Promise.all(Array.from({ length: n + 1 }, (_, i) => new Promise(res => {
+      const w = new Worker(new URL('./worker.js?v=14', import.meta.url), { type: 'module' });
       w.onmessage = e => this.onMessage(i, e.data, res);
       w.onerror = e => console.error('worker', e.message || e);
       w.postMessage({ type: 'init', seed: this.seed, generator: this.generator, dim: this.dim, manifest: opts.manifest, colours: opts.colours });
@@ -67,11 +71,16 @@ export class World {
       this.inFlight.delete('m' + k);
       const c = this.chunks.get(k);
       if (!c) return;
-      if ((this.meshVersion.get(k) || 0) !== m.version) return;     // something changed since: a newer one is coming
+      /* Any mesh newer than the one on screen is shown. (Waiting for the very
+         last one sent made a block you broke wait behind the slower remeshes
+         that terrain still loading round it keeps asking for.) */
+      const shown = this.shownVersion || (this.shownVersion = new Map());
+      if (m.version <= (shown.get(k) || 0)) return;
+      shown.set(k, m.version);
       c.meshed = true;
       if (m.mesh.light) { c.light = m.mesh.light; c.lightH = m.mesh.lightH; }    // for mobs (js/entities)
       this.stats.mesh++;
-      this.onMesh(m.cx, m.cz, m.mesh);
+      this.onMesh(m.cx, m.cz, m.mesh, m.urgent);
       return;
     }
     const r = this.waiting.get(m.id);
@@ -86,7 +95,7 @@ export class World {
       this.workers[i].postMessage(Object.assign({ id }, msg));
     });
   }
-  idlest() { let b = 0; for (let i = 1; i < this.busy.length; i++) if (this.busy[i] < this.busy[b]) b = i; return b; }
+  idlest() { let b = 0; for (let i = 1; i < this.genN; i++) if (this.busy[i] < this.busy[b]) b = i; return b; }
 
   wanted(cx, cz) {
     const dx = cx - this.pcx, dz = cz - this.pcz;
@@ -141,7 +150,7 @@ export class World {
     }
   }
   inFlightCount() { return this.inFlight.size; }
-  sendMesh(cx, cz) {
+  sendMesh(cx, cz, urgent) {
     const k = this.key(cx, cz);
     const chunks = [], tops = [], transfer = [];
     let top = 0;
@@ -173,8 +182,9 @@ export class World {
     const v = (this.meshVersion.get(k) || 0) + 1;
     this.meshVersion.set(k, v);
     this.inFlight.add('m' + k);
-    const i = this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky }, transfer);
+    // your own edits to the worker kept for them, everything else to the least busy
+    const i = urgent ? this.editW : this.idlest(); this.busy[i]++;
+    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky, urgent: !!urgent }, transfer);
   }
 
   /* ---- blocks ---- */
@@ -231,13 +241,23 @@ export class World {
     const cx = Math.floor(x / CH), cz = Math.floor(z / CH);
     const lx = x - cx * CH, lz = z - cz * CH;
     this.dirty = this.dirty || new Set();
-    this.dirty.add(this.key(cx, cz));
-    if (lx === 0) this.dirty.add(this.key(cx - 1, cz));
-    if (lx === 15) this.dirty.add(this.key(cx + 1, cz));
-    if (lz === 0) this.dirty.add(this.key(cx, cz - 1));
-    if (lz === 15) this.dirty.add(this.key(cx, cz + 1));
+    // your own edits (interact.js sets world.urgent while it works) go to the edit worker
+    const D = this.urgent ? (this.urgentDirty || (this.urgentDirty = new Set())) : this.dirty;
+    D.add(this.key(cx, cz));
+    if (lx === 0) D.add(this.key(cx - 1, cz));
+    if (lx === 15) D.add(this.key(cx + 1, cz));
+    if (lz === 0) D.add(this.key(cx, cz - 1));
+    if (lz === 15) D.add(this.key(cx, cz + 1));
   }
   flush() {
+    if (this.urgentDirty && this.urgentDirty.size) {
+      for (const k of this.urgentDirty) {
+        const [x, z] = k.split(',').map(Number);
+        if (this.dirty) this.dirty.delete(k);
+        if (this.chunks.has(k)) this.sendMeshSoon(x, z, true);
+      }
+      this.urgentDirty.clear();
+    }
     if (!this.dirty || !this.dirty.size) return;
     for (const k of this.dirty) {
       const [x, z] = k.split(',').map(Number);
@@ -247,10 +267,10 @@ export class World {
     }
     this.dirty.clear();
   }
-  sendMeshSoon(cx, cz) {
+  sendMeshSoon(cx, cz, urgent) {
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!this.chunks.has(this.key(cx + dx, cz + dz))) return;
     this.inFlight.delete('m' + this.key(cx, cz));
-    this.sendMesh(cx, cz);
+    this.sendMesh(cx, cz, urgent);
   }
   biomeAt(x, z) {
     const c = this.chunkAt(x, z);
