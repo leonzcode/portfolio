@@ -41,6 +41,29 @@ const JIGSAW = {
   bastion_remnant: 10, trail_ruins: 4, trial_chambers: 0, ancient_city: 0,
 };
 const ROT = [[1, 1], [-1, 1], [-1, -1], [1, -1]];      // where a turned template's far corner lands
+/* The start pools of the jigsaw structures that stand on the surface: each
+   start template's weight and its size across (x, z), as 26.3 has them. The
+   start's middle (where its biome is read and its height taken) is the
+   middle of the template picked, turned, so it is where the game puts it. */
+const STARTS = {
+  village_plains: [[50, 9, 9], [50, 10, 10], [50, 8, 15], [50, 11, 11], [1, 9, 9], [1, 10, 10], [1, 8, 15], [1, 11, 11]],
+  village_desert: [[98, 17, 9], [98, 12, 12], [49, 15, 15], [2, 17, 9], [2, 12, 12], [1, 15, 15]],
+  village_savanna: [[100, 14, 12], [50, 11, 11], [150, 9, 11], [150, 9, 9], [2, 14, 12], [1, 11, 11], [3, 9, 11], [3, 9, 9]],
+  village_snowy: [[100, 12, 8], [50, 11, 9], [150, 7, 7], [2, 12, 8], [1, 11, 9], [3, 7, 7]],
+  village_taiga: [[49, 22, 18], [49, 9, 9], [1, 22, 18], [1, 9, 9]],
+  trail_ruins: [[1, 5, 5], [1, 5, 5], [1, 7, 7], [1, 7, 7], [1, 7, 7]],
+  pillager_outpost: [[1, 16, 16]],
+};
+// the middle of a template's box once turned about the chunk corner (Java's
+// integer halving, which rounds towards zero)
+function startMiddle(x0, z0, sx, sz, rot) {
+  let x1, x2, z1, z2;
+  if (rot === 0) { x1 = x0; x2 = x0 + sx - 1; z1 = z0; z2 = z0 + sz - 1; }
+  else if (rot === 1) { x1 = x0 - (sz - 1); x2 = x0; z1 = z0; z2 = z0 + sx - 1; }
+  else if (rot === 2) { x1 = x0 - (sx - 1); x2 = x0; z1 = z0 - (sz - 1); z2 = z0; }
+  else { x1 = x0; x2 = x0 + sz - 1; z1 = z0 - (sx - 1); z2 = z0; }
+  return [Math.trunc((x1 + x2) / 2), Math.trunc((z1 + z2) / 2)];
+}
 
 /* =================================================== the biome source == */
 /* Make the source structures read the land from, out of a world generator:
@@ -111,14 +134,22 @@ export class Structures {
       if (this.lowest(x0, z0, w, d) < SEA_LEVEL) return null;
       p = { x: xm, y: this.occupied(xm, zm), z: zm };
     } else if (JIGSAW[type] !== undefined || type.startsWith('abandoned_camp')) {
-      // the start piece's height, its template and turn come first from the random
+      // the start piece's height, then its turn, then its template come first from the random
       let y = 0;
       if (type === 'trial_chambers') y = r.between(-40, -20);
       else if (type === 'ancient_city') y = -27;
       else if (type === 'bastion_remnant') y = 33;
-      r.next(31);
+      const T = STARTS[type];
+      let k = 0;
       const rot = r.nextInt(4), hw = JIGSAW[type] !== undefined ? JIGSAW[type] : 3;
-      const x = x0 + ROT[rot][0] * hw, z = z0 + ROT[rot][1] * hw;
+      if (T) {
+        let n = 0;
+        for (const t of T) n += t[0];
+        n = r.nextInt(n);
+        while ((n -= T[k][0]) >= 0) k++;
+      } else r.next(31);
+      let x = x0 + ROT[rot][0] * hw, z = z0 + ROT[rot][1] * hw;
+      if (T) [x, z] = startMiddle(x0, z0, T[k][1], T[k][2], rot);
       if (type.startsWith('village') || type === 'pillager_outpost' || type.startsWith('abandoned_camp')) y = this.occupied(x, z) + 1;
       else if (type === 'trail_ruins') y = this.occupied(x, z) + 1 - 15;
       p = { x, y, z, rot };
