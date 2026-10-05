@@ -12,7 +12,9 @@
      - it pours down if it can; if it cannot, it spreads sideways, towards the
        nearest place within reach it could fall (as the game looks for a
        slope), or every way when there is none;
-     - lava and water meeting make obsidian, cobblestone or stone.
+     - lava and water meeting make obsidian, cobblestone or stone;
+     - flowing into a torch, redstone dust or a plant that does not stand in
+       water washes it away: water drops it as an item, lava just burns it.
 
    Generated water sits still until something next to it changes, as in the
    game. Cells are looked at only when a neighbour changes, so a still sea
@@ -20,6 +22,16 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID, SOLID } from './blocks.js?v=14';
 import { LEVEL, FALLING } from './world-const.js?v=14';
+import { blockDrops } from './loot.js?v=14';
+import { dropStack } from './drops.js?v=14';
+
+// what a flow washes away (the game's: no collision, not a door, sign, ladder, sugar cane or a block that holds water)
+const WASH = new Uint8Array(4096);
+for (const d of BLOCKS) {
+  if (!d || d.solid || d.fluid || d.waterlogged) continue;
+  if (/coral|dripstone|amethyst|sea_pickle|kelp|seagrass|sugar_cane|bamboo|cobweb|cocoa|vines|roots|dripleaf|spore_blossom|hanging_moss|_portal$|^fire$|^soul_fire$/.test(d.name)) continue;
+  if (d.shape === 'torch' || d.shape === 'wall_torch' || d.shape === 'wire' || d.shape === 'crop' || d.shape === 'cross') WASH[d.id] = 1;
+}
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
@@ -57,7 +69,7 @@ export class Fluids {
     const b = this.w.get(x, y, z);
     if (!b) return true;
     const d = BLOCKS[b];
-    return !d.solid && !d.fluid && d.replaceable;
+    return !d.solid && !d.fluid && (d.replaceable || WASH[b] === 1);
   }
   place(x, y, z, kind, level, falling) {
     const b = kind === 1 ? B.water : B.lava;
@@ -71,6 +83,13 @@ export class Fluids {
       return;
     }
     const m = (falling ? FALLING : 0) | (level & LEVEL);
+    // a torch or a flower in the way: water drops it as an item (and the top of a tall plant with it)
+    if (cur && WASH[cur] && kind === 1) {
+      const out = blockDrops(this.w, x, y, z, cur, this.w.meta(x, y, z), { popped: true });
+      for (const s of out.items || []) dropStack(x + 0.5, y + 0.25, z + 0.5, s);
+      const up = this.w.get(x, y + 1, z), ud = BLOCKS[up];
+      if (up && ud && (ud.lower && B[ud.lower] === cur || (BLOCKS[cur].tall && up === cur))) this.w.set(x, y + 1, z, 0, 0);
+    }
     if (this.w.set(x, y, z, b, m)) {
       this.onChange(x, y, z, kind);
       this.around(x, y, z);
