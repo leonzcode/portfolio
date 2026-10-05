@@ -358,4 +358,118 @@ export class CurableZombieVillager extends ZombieVillager {
   fromJSON(o) { super.fromJSON(o); if (o.vd) this.villager = o.vd; this.cureT = o.cure | 0; }
 }
 register('zombie_villager', CurableZombieVillager);
+
+/* ---------------------------------------------------------------------------
+   The wandering trader (the wiki's Wandering Trader, Java Edition)
+
+   Nine trades (two it buys, two special and five ordinary things it sells),
+   no levels, no demand, no reputation in its prices. It keeps within 16
+   blocks of where it came to, drinks a potion of Invisibility at nightfall
+   and milk by day while still invisible, runs from zombies and illagers,
+   and leaves after 48000 ticks (not counted while someone trades with it).
+   Killed by a zombie it stays dead.
+
+   Its coming: a counter starts at 24000 and falls by 1200 a minute; at 0 it
+   starts again and, with a chance of 25% (then 50%, then 75% until one
+   comes), one may come: a 10% chance, at the surface somewhere within 48
+   blocks of you.
+--------------------------------------------------------------------------- */
+const VillagerDie = Object.getPrototypeOf(Villager.prototype).die;
+export class WanderingTrader extends Villager {
+  static TEX = 'wandering_trader';
+  constructor(m, type) {
+    super(m, type);
+    this.offers = []; this.customer = null; this.isTrader = true;
+    this.despawnT = 0; this.home = null; this.drinkT = 0; this.drinking = null;
+  }
+  registerGoals() {
+    super.registerGoals();
+    this.goals.add(1, new TradeGoal(this));
+    this.goals.add(4, new HomeGoal(this));
+  }
+  spawnData(o) {
+    if (o.json) return;
+    if (!this.offers.length) this.offers = T.wanderingOffers();
+    if (o.natural !== false && o.wandering) { this.despawnT = 48000; this.home = [this.pos.x, this.pos.y, this.pos.z]; }
+  }
+  get trades() { return this.offers.map(o => ({ give: [o.a].concat(o.b ? [o.b] : []), get: o.out, maxUses: o.maxUses, uses: o.uses })); }
+  get canTrade() { return this.offers.length > 0; }
+  get profession() { return 'wandering_trader'; }
+  get vlevel() { return 0; }
+  rep() { return 0; }
+  interact(held) {
+    if (held === 'name_tag' || this.dead || this.customer) return false;
+    if (!this.canTrade) { this.shakeT = 40; return 'shake'; }
+    return 'trade';
+  }
+  startTrading(player) { this.customer = player; this.stopMoving(); }
+  stopTrading() { this.customer = null; }
+  traded(o) {
+    o.uses++;
+    const h = this.m.hooks;
+    if (h && h.giveXp) h.giveXp(3 + RI(4), this.pos.x, this.pos.y + 0.5, this.pos.z);
+  }
+  aiStep() {
+    super.aiStep();
+    if (this.dead) return;
+    // its time here runs out (not while trading)
+    if (this.despawnT > 0 && !this.customer && --this.despawnT === 0) { this.remove(); return; }
+    // invisible by night, seen by day
+    const inv = !!(this.effects && this.effects.invisibility), day = this.m.isDay();
+    if (this.drinkT > 0) {
+      this.stopMoving();
+      if (--this.drinkT === 0) {
+        if (this.drinking === 'potion') this.addEffect('invisibility', 1, 3600);
+        else if (this.clearEffects) this.clearEffects();
+        this.drinking = null;
+      }
+    } else if (!this.customer && ((!day && !inv) || (day && inv)) && RI(20) === 0) { this.drinkT = 32; this.drinking = day ? 'milk' : 'potion'; }
+  }
+  anim(A, a) { super.anim(A, a); A.drinking = this.drinkT > 0; }
+  die(source) { VillagerDie.call(this, source); }
+  toJSON() {
+    const o = super.toJSON();
+    o.wt = { of: T.offersToJSON(this.offers), d: this.despawnT, h: this.home };
+    return o;
+  }
+  fromJSON(o) {
+    super.fromJSON(o);
+    if (o.wt) { this.offers = T.offersFromJSON(o.wt.of); this.despawnT = o.wt.d | 0; this.home = o.wt.h || null; }
+  }
+}
+register('wandering_trader', WanderingTrader);
+// back to within 16 blocks of where it came
+class HomeGoal extends Goal {
+  constructor(mob) { super(mob, MOVE); }
+  canUse() {
+    const v = this.mob, h = v.home;
+    if (!h || v.customer || RI(40)) return false;
+    return (v.pos.x - h[0]) ** 2 + (v.pos.z - h[2]) ** 2 > 256;
+  }
+  start() { const h = this.mob.home; this.mob.nav.moveTo(h[0], h[1], h[2], 0.35, 4); }
+  canContinue() { return !this.mob.nav.isDone() && !this.mob.customer; }
+  stop() { this.mob.nav.stop(); }
+}
+// the counter that brings one now and then
+export function wandererTick(m) {
+  if (m.age % 1200 !== 0 || m.dim !== 'overworld' || m.gone) return;
+  const s = m.wt || (m.wt = { delay: 24000, chance: 25 });
+  s.delay -= 1200;
+  if (s.delay > 0) return;
+  s.delay = 24000;
+  const c = s.chance;
+  s.chance = Math.max(25, Math.min(75, s.chance + 25));
+  if (RI(100) > c || RI(10) !== 0) return;
+  const P = m.P;
+  for (let k = 0; k < 10; k++) {
+    const x = Math.floor(P.pos.x) + RI(96) - 48, z = Math.floor(P.pos.z) + RI(96) - 48;
+    if (!m.t.loaded(x, z)) continue;
+    const y = m.t.motionTop(x, z);
+    if (!m.t.solid(x, y - 1, z) || m.t.solid(x, y, z) || m.t.solid(x, y + 1, z)) continue;
+    if (m.list.some(e => e.type === 'wandering_trader' && !e.dead)) return;
+    const t = m.spawn('wandering_trader', x + 0.5, y, z + 0.5, { natural: true, wandering: true });
+    if (t) { t.persistent = true; s.chance = 25; }
+    return;
+  }
+}
 export { villagerLayers, TYPES };

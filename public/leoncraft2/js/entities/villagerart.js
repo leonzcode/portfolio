@@ -176,5 +176,26 @@ BADGES.forEach(([c, edge, w, h], i) => addArt('villager_level_' + (i + 1), [64, 
   p.fill(bx, by, w, h, c, 0.02);
   p.fill(bx, by + h - 1, w, 1, edge); if (w > 2) p.fill(bx + w - 1, by, 1, h, edge);
 }));
+/* ---- the wandering trader: a whole skin of its own (the villager's shape) ---- */
+addArt('wandering_trader', [64, 64], p => {
+  const skin = 0xbd8b72, dark = 0x9c6e58, blue = 0x2b4a8c, blueD = 0x1e3564, trim = 0xd9c48c, cloth = 0xddd4ae;
+  cover(p, HEAD, skin, 0.05);
+  const [fx, fy] = HEAD.front;
+  p.fill(fx, fy + 3, 8, 1, 0x4a3426);                                  // the brow
+  p.px(fx + 1, fy + 4, 0xffffff); p.px(fx + 2, fy + 4, 0x2e6a2a); p.px(fx + 5, fy + 4, 0x2e6a2a); p.px(fx + 6, fy + 4, 0xffffff);
+  p.fill(fx + 2, fy + 8, 4, 1, dark);
+  p.box(24, 0, 2, 4, 2, 0xae7c64, 0.05);                                // nose
+  // the cloth over its head and down the back of the neck
+  p.fill(HAT.top[0], HAT.top[1], 8, 8, cloth, 0.06); band(p, HAT, 0, 3, cloth, 0.06);
+  for (const s of ['right', 'left', 'back']) { const [x, y, w] = HAT[s]; p.fill(x, y + 3, w, 7, cloth, 0.06); }
+  band(p, HAT, 3, 1, 0xb8a878);
+  // the blue robe with its gold edging, a brown belt
+  cover(p, BODY, blue); cover(p, ROBE, blue); cover(p, ARM, blue); cover(p, MID, blue);
+  p.speckle(0, 44, 28, 18, blueD, 0.15);
+  band(p, ROBE, 17, 1, trim); band(p, ROBE, 9, 2, 0x5a3a20);
+  const [rx, ry] = ROBE.front; p.fill(rx + 3, ry, 2, 9, trim);
+  p.fill(ARM.front[0], ARM.front[1] + 5, 4, 3, skin);
+  cover(p, LEG, blueD, 0.06); band(p, LEG, 10, 2, 0x3a2a1c, 0.05);
+});
 for (const t in TYPE_ART) addArt('villager_type_' + t, [64, 64], TYPE_ART[t]);
 for (const n in PROF_ART) addArt('villager_prof_' + n, [64, 64], PROF_ART[n]);
