@@ -76,7 +76,7 @@ export class Entity {
     const ey = p.y + this.eyeH;
     const eb = T.get(Math.floor(p.x), Math.floor(ey), Math.floor(p.z));
     this.eyeInWater = (FLUID[eb] === 1 && ey < Math.floor(ey) + T.fluidHeight(Math.floor(p.x), Math.floor(ey), Math.floor(p.z))) || !!(BLOCKS[eb] && BLOCKS[eb].waterlogged);
-    if (this.inWater && !wasIn && this.vel.y < -0.2 && this.m.onSplash) this.m.onSplash(p.x, p.z, Math.min(1.4, -this.vel.y * 3));
+    if (this.inWater && !wasIn && this.vel.y < -0.2 && this.m.hooks.onSplash) this.m.hooks.onSplash(p.x, p.z, Math.min(1.4, -this.vel.y * 3));
     if (this.inWater) { this.fallDist = 0; if (this.fire > 0) this.fire = 0; }
     if (this.inLava) { this.fallDist *= 0.5; this.lavaHurt(); }
     if (this.fire > 0) this.burnTick();

@@ -128,6 +128,7 @@ export class Containers {
     this.hoppers = new Set();
     this.looted = new Set();         // structure chests whose loot has been rolled (or that never had any)
     this.drops = null;               // (drops.js) so hoppers can take items lying on them, and what spills
+    this.entityAt = null;            // (x, y, z) -> a container that is an entity in that block (a chest boat: js/entities), or null
     this.dirty = false;
     this.ticks = 0;
     this.onLit = null;               // (c, lit) a furnace lit up or went out
@@ -328,7 +329,11 @@ export class Containers {
   // the slots of the container at a position as [record, slot] pairs (a large chest is one), or null
   slotRefs(x, y, z) {
     const c = this.at(x, y, z);
-    if (!c) return null;
+    if (!c) {
+      // no block that holds things: a chest boat in that block, as the game's hoppers and droppers find one
+      const e = this.entityAt ? this.entityAt(x, y, z) : null;
+      return e ? { kind: 'chest_boat', c: e, refs: e.slots.map((_, i) => [e, i]) } : null;
+    }
     if (isChestKind(c.kind)) {
       const two = this.large(x, y, z);
       if (two) return { kind: c.kind, c, refs: two[0].slots.map((_, i) => [two[0], i]).concat(two[1].slots.map((_, i) => [two[1], i])) };
