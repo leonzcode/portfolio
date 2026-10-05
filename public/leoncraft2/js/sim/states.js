@@ -85,6 +85,8 @@ for (const n of ['redstone_wire', 'melon_stem', 'pumpkin_stem']) if (has(n)) STA
 
 for (const n of ['redstone_lamp', 'redstone_torch', 'redstone_wall_torch', 'respawn_anchor', 'redstone_ore', 'deepslate_redstone_ore']) if (has(n)) SLIGHT[B[n]] = 1;
 for (const d of BLOCKS) if (d && /copper_bulb$/.test(d.name)) SLIGHT[d.id] = 1;
+// campfires give no light once put out; candles and candle cakes only while lit (3 a candle)
+for (const d of BLOCKS) if (d && (d.shape === 'campfire' || d.shape === 'candle' || /candle_cake$/.test(d.name))) SLIGHT[d.id] = 1;
 
 // blocks dust joins up with (the game's "signal sources")
 const SOURCES = ['redstone_torch', 'redstone_wall_torch', 'lever', 'redstone_block', 'repeater', 'comparator', 'observer',
@@ -104,6 +106,9 @@ export function lightOf(b, m) {
     case 'respawn_anchor': return [0, 3, 7, 11, 15][Math.min(4, m & 7)];
     case 'redstone_ore': case 'deepslate_redstone_ore': return m & 1 ? 9 : 0;
   }
+  if (d.shape === 'campfire') return m & 4 ? 0 : d.light || 0;
+  if (d.shape === 'candle') return m & 4 ? 3 * ((m & 3) + 1) : 0;
+  if (/candle_cake$/.test(d.name)) return m & 4 ? 3 : 0;
   // copper bulbs, lit: 15, 12, 8 or 4 as the copper ages
   if (/copper_bulb$/.test(d.name)) return m & 1 ? (/oxidized/.test(d.name) ? 4 : /weathered/.test(d.name) ? 8 : /exposed/.test(d.name) ? 12 : 15) : 0;
   return d.light || 0;

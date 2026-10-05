@@ -4,7 +4,7 @@
    The sign is drawn large in the middle of the screen with its four lines;
    typing goes into the line with the caret, Enter or the down arrow moves to
    the next line and the up arrow back, and a line takes only as much as fits
-   on the board (90 of the font's pixels). Done (or Escape) keeps the text.
+   on the board (90 of the font's pixels, 60 on a hanging sign). Done (or Escape) keeps the text.
 --------------------------------------------------------------------------- */
 import { Screen, Button, TextField, WHITE } from './gui.js?v=14';
 
@@ -55,7 +55,7 @@ export class SignEditScreen extends Screen {
     const font = () => this.gui.font;
     this.fields = this.lines.map((v, i) => this.add(new SignLine(cx - 50, top + 26 + i * 10, 100, {
       value: v, colour: this.o.colour || 0,
-      filter: s => font().width(s) <= MAX_W,
+      filter: s => font().width(s) <= (this.o.hanging ? 60 : MAX_W),
       onChange: s => { this.lines[i] = s; },
       onEnter: () => this.focus(Math.min(3, i + 1)),
     })));

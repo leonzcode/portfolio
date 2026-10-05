@@ -62,7 +62,8 @@ export function signBoard(d, m, x, y, z) {
   let F, out, cy, w = 1, h = 0.5;
   if (d.shape === 'wall_sign') {
     const wall = SIDE_FACING[m & 7] || 0;
-    F = (wall + 2) & 3;
+    // a wall sign looks out from its wall; a hanging one on a wall sticks out from it, so it looks along the wall
+    F = d.hanging ? (wall + 1) & 3 : (wall + 2) & 3;
     if (d.hanging) { out = 1 / 16; cy = 5 / 16; w = 14 / 16; h = 10 / 16; } else { out = 0.5 - 1.5 / 16; cy = 8.5 / 16; }
   } else {
     // a standing sign built facing north: its front looks north, turned with it
@@ -97,8 +98,46 @@ export class Details {
     if (d.shape === 'cauldron') return this.cauldron(h, hit, d, s, n);
     if (d.name === 'composter') return this.composter(h, hit, s, n);
     if (d.shape === 'campfire') return this.campfire(h, hit, d, s, n);
+    if (d.shape === 'cake') return this.cake(h, hit, d, s, n);
+    if (d.shape === 'candle') return this.candle(h, hit, d, s, n);
     if (isSign(d)) return this.sign(h, hit, d, s, n);
     return false;
+  }
+  // flint and steel wears, a fire charge is used up
+  lighter(h, n) { if (h.creative) return; if (n === 'flint_and_steel') h.inv.damageSelected(1); else h.inv.takeSelected(1); }
+  candle(h, hit, d, s, n) {
+    const w = this.world, { x, y, z } = hit, m = w.meta(x, y, z), b = w.get(x, y, z);
+    if (!(m & 4) && (n === 'flint_and_steel' || n === 'fire_charge')) { w.set(x, y, z, b, m | 4); this.lighter(h, n); return true; }
+    // an empty hand blows them out
+    if ((m & 4) && !s) { w.set(x, y, z, b, m & ~4); return true; }
+    return false;
+  }
+  /* A cake: a slice for 2 hunger and 0.4 saturation each click (seven slices), when you can eat (always in
+     creative); a candle goes on an uncut one. A candle cake lights like a candle, an empty hand blows it out,
+     and eating from it drops the candle and leaves a cake with a slice gone. */
+  cake(h, hit, d, s, n) {
+    const w = this.world, { x, y, z } = hit, m = w.meta(x, y, z), b = w.get(x, y, z);
+    const candleCake = /candle_cake$/.test(d.name);
+    if (candleCake) {
+      if (!(m & 4) && (n === 'flint_and_steel' || n === 'fire_charge')) { w.set(x, y, z, b, m | 4); this.lighter(h, n); return true; }
+      if ((m & 4) && !s) { w.set(x, y, z, b, m & ~4); return true; }
+    } else if (s && /candle$/.test(n) && (m & 7) === 0 && B[n + '_cake'] !== undefined) {
+      w.set(x, y, z, B[n + '_cake'], 0);
+      if (!h.creative) h.inv.takeSelected(1);
+      return true;
+    }
+    const sv = h.survival;
+    if (!h.creative && sv && !sv.wantsFood(false)) return false;
+    if (sv && !h.creative) sv.eat(2, 0.4);
+    if (candleCake) {
+      w.set(x, y, z, B.cake, 1);
+      const c = I[d.candle] !== undefined ? I[d.candle] : B[d.candle];
+      if (c !== undefined && this.drops) this.drops.popFrom(x, y, z, { id: c, count: 1 });
+      return true;
+    }
+    const bites = (m & 7) + 1;
+    if (bites > 6) w.set(x, y, z, 0, 0); else w.set(x, y, z, b, bites);
+    return true;
   }
   // the held stack becomes `to` (one of them), the rest stays; creative keeps what it held
   swap(h, to) {
