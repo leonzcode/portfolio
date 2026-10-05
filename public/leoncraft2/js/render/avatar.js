@@ -51,7 +51,7 @@ import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=14';
 import { H, idx } from '../world-const.js?v=14';
 import { armorSheet, avatarArmorGeometry, pieceLook, GLINT, SHEET_W, SHEET_H } from './armor.js?v=14';
 import { blockGeometry, isFlatItem } from './blockmesh.js?v=14';
-import { heldKind, placeInHand, placeOnHead, setLight } from './held.js?v=14';
+import { heldKind, heldGeometry, placeInHand, placeOnHead, setLight } from './held.js?v=14';
 import { setGlint } from './glint.js?v=14';
 const THREE = window.THREE;
 
@@ -508,7 +508,7 @@ export class Avatar {
     const R = this.R, old = this.held[side];
     if (old) { R.scene.remove(old.mesh); old.mesh.geometry.dispose(); this.held[side] = null; }
     if (!d || !d.faces) return;
-    const { geometry: g, cutout } = blockGeometry(d, d.iconMeta || 0);
+    const { geometry: g, cutout } = heldGeometry(d);
     const m = new THREE.Mesh(g, cutout ? R.mats.cutout : R.mats.opaque);
     m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false;
     this.held[side] = { mesh: m, kind: heldKind(d), light: -1 };
@@ -676,7 +676,7 @@ export class Avatar {
     for (let side = 0; side < 2; side++) {
       const h = this.held[side];
       if (!h) continue;
-      this.placeHeld(side, h.kind, this.parts, h.mesh.matrix);
+      this.placeHeld(side, this.heldKindNow(side), this.parts, h.mesh.matrix);
       h.mesh.matrixWorldNeedsUpdate = true;
     }
     if (this.headItem) { this.placeHead(this.headItem.skull, this.parts, this.headItem.mesh.matrix); this.headItem.mesh.matrixWorldNeedsUpdate = true; }
@@ -792,6 +792,11 @@ export class Avatar {
      placing (at the hand, turned down the arm, then the item model's own
      third-person turn: 75 and 45 degrees and 0.375 of a block for a block, a
      tool leaning forward, a flat item upright), from the parts' matrices into m */
+  // a shield up to block has a place of its own
+  heldKindNow(side) {
+    const h = this.held[side], u = this.useNow;
+    return h.kind === 'shield' && u && u.kind === 'block' && (u.side | 0) === side ? 'shieldBlock' : h.kind;
+  }
   placeHeld(side, kind, parts, m) {
     // a slim arm's hand is half a pixel further in, as the game holds it
     return placeInHand(m, parts[2 + side], side, kind, this.slim ? 0.5 : 0, this.t, this.e);

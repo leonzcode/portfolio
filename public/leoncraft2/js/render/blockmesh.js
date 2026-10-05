@@ -28,6 +28,62 @@ export function setLayerPixels(px) { PIX = px; }
 
 export function isFlatItem(d) { return !!d && (FLAT.has(d.shape) || (d.iconLayer !== undefined && d.shape !== 'cube' && d.shape !== 'slab' && d.shape !== 'stairs')); }
 
+/* The shield in a hand, as the game's shield model: a board 12 x 22 x 1
+   pixels with a handle 2 x 6 x 6 behind it (its boxes, turned over as the
+   game turns the model into the item's space). Our own look, from block
+   textures: upright boards in an iron rim, a darker wooden handle.
+   layers: { wood, rim, handle }. It sits half a block higher than a block
+   would, so every corner stays in the unsigned vertex range; the shield's
+   DISPLAY entries in held.js take that back off. */
+export function shieldGeometry(layers) {
+  const verts = [], A = [], L = [], C = [], idx = [];
+  // a box from the game's model numbers (pixels, y down, -z the front), with a layer, a tint and a turn of its texture
+  const box = (x, y, z, w, h, d, layer, tint, rot) => {
+    const f = [x, 8 - (y + h), -(z + d)], t = [x + w, 8 - y, -z];
+    const size = [w, h, d];
+    for (let fi = 0; fi < 6; fi++) {
+      const F = FACES[fi];
+      let kt = 0, kb = 0;
+      for (let k = 0; k < 3; k++) { if (F.t[k]) kt = k; if (F.b[k]) kb = k; }
+      // the face's texture: as many pixels as it is wide and tall (turned or not), no more than one tile
+      const uw = Math.min(16, size[kt]), vh = Math.min(16, size[kb]);
+      const v0 = verts.length / 4;
+      for (let c = 0; c < 4; c++) {
+        const [u, v] = CORNERS[c], P = [0, 0, 0];
+        for (let k = 0; k < 3; k++) {
+          if (F.n[k]) P[k] = F.n[k] > 0 ? t[k] : f[k];
+          else if (k === kt) P[k] = (F.t[k] > 0) === (u === 1) ? t[k] : f[k];
+          else P[k] = (F.b[k] > 0) === (v === 1) ? t[k] : f[k];
+        }
+        verts.push(Math.round((P[0] / 16 + 7.5) * 32), Math.round((P[1] / 16 + 0.5) * 32), Math.round((P[2] / 16 + 7.5) * 32), layer);
+        A.push(u ? uw : 0, v ? vh : 0, fi, 3 | (rot ? 4 : 0) | (tint !== 0xffffff ? 64 : 0));
+        L.push(255, 0, 0, 0);
+        C.push(tint >> 16, (tint >> 8) & 255, tint & 255, 255);
+      }
+      idx.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);
+    }
+  };
+  const W = 0xffffff, IRON = 0xb4b4bc;
+  // the boards, upright, in two parts so the texture is never stretched
+  box(-5, -10, -2, 10, 16, 1, layers.wood, W, 1);
+  box(-5, 6, -2, 10, 4, 1, layers.wood, W, 1);
+  // the rim: down both sides, across the top and the bottom
+  box(-6, -11, -2, 1, 22, 1, layers.rim, IRON, 0);
+  box(5, -11, -2, 1, 22, 1, layers.rim, IRON, 0);
+  box(-5, -11, -2, 10, 1, 1, layers.rim, IRON, 0);
+  box(-5, 10, -2, 10, 1, 1, layers.rim, IRON, 0);
+  // the handle behind
+  box(-1, -3, -1, 2, 6, 6, layers.handle, W, 0);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('aPos', new THREE.BufferAttribute(new Uint16Array(verts), 4));
+  g.setAttribute('aA', new THREE.BufferAttribute(new Uint8Array(A), 4));
+  g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(L), 4));
+  g.setAttribute('aC', new THREE.BufferAttribute(new Uint8Array(C), 4));
+  g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
+  return { geometry: g, flat: false, cutout: false };
+}
+
 export function blockGeometry(d, meta) {
   const verts = [], A = [], L = [], C = [], idx = [];
   const tint = TINTS[d.tint] || 0xffffff, tinted = d.tint ? 64 : 0;
