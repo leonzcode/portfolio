@@ -165,7 +165,7 @@ export class MerchantScreen extends ContainerScreen {
     const L = this.left, T0 = this.top;
     g.blit(SHEET, 0, 0, 276, 166, L, T0);
     // the titles
-    const title = (T.TITLES[v.profession] || 'Villager') + (v.vlevel >= 1 && v.vlevel <= 5 ? ' - ' + T.LEVEL_NAMES[v.vlevel - 1] : '');
+    const title = v.isTrader ? 'Wandering Trader' : (T.TITLES[v.profession] || 'Villager') + (v.vlevel >= 1 && v.vlevel <= 5 ? ' - ' + T.LEVEL_NAMES[v.vlevel - 1] : '');
     g.text(title, L + 187 - Math.floor(g.textWidth(title) / 2), T0 + 6, LABEL_GREY, false);
     g.text('Trades', L + 53 - Math.floor(g.textWidth('Trades') / 2), T0 + 6, LABEL_GREY, false);
     g.text('Inventory', L + 107, T0 + 72, LABEL_GREY, false);
@@ -206,7 +206,7 @@ export class MerchantScreen extends ContainerScreen {
   // the villager's experience: what it has towards the next level, and what the chosen trade adds
   drawXp(g) {
     const v = this.v, lv = v.vlevel;
-    if (lv >= 5) return;
+    if (v.isTrader || lv >= 5) return;
     const L = this.left, T0 = this.top;
     g.blit(SHEET, 280, 40, 102, 5, L + 136, T0 + 16);
     const lo = T.LEVEL_XP[lv - 1], hi = T.LEVEL_XP[lv];

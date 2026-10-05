@@ -29,7 +29,7 @@ import { placeBoat } from './boat.js?v=14';
 import './mobs2.js?v=14';
 import './mobs3.js?v=14';
 import './mobs4.js?v=14';
-import './merchant.js?v=14';
+import { wandererTick } from './merchant.js?v=14';
 import { explode } from './explosion.js?v=14';
 import { splitXp } from './xporb.js?v=14';
 import { placeMinecart, isRail } from './minecart.js?v=14';
@@ -250,6 +250,7 @@ export class Entities {
     this.effectsTick();
     if (this.difficulty === 'peaceful') this.peaceful();
     this.spawner.tick();
+    wandererTick(this);
     if (this.fallChecks.length) this.fallTick();
     const n = this.list.length;
     for (let i = 0; i < n; i++) {
@@ -747,7 +748,8 @@ export class Entities {
       // the light, eased so it never pops
       e.lS += (e.lightS / 15 - e.lS) * k; e.lB += (e.lightB / 15 - e.lB) * k;
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
-      const seen = this.frustum.intersectsSphere(this.sphere);
+      // under Invisibility a mob is not drawn, nor its shadow
+      const seen = this.frustum.intersectsSphere(this.sphere) && !(e.effects && e.effects.invisibility);
       if (c.BLOCK) { e.draw(this.group, this.R, alpha); continue; }
       if (seen) { if (c.PARTICLE) e.particle(this.meshes, alpha, x, y, z); else this.drawOne(e, alpha, x, y, z); }
       // a boat keeps the water out of its inside
@@ -857,13 +859,14 @@ export class Entities {
     for (const e of this.list) if (!e.removed && !e.dead && e.toJSON && !(e.constructor.HOSTILE && !e.persistent && e.constructor.NO_SAVE)) list.push(e.toJSON());
     const stored = {};
     for (const [k, a] of this.stored) stored[k] = a;
-    return { v: 1, list, stored, pop: [...this.populated] };
+    return { v: 1, list, stored, pop: [...this.populated], wt: this.wt || null };
   }
   fromJSON(o) {
     if (!o) return;
     for (const e of o.list || []) if (TYPES[e.t]) this.spawn(e.t, e.p[0], e.p[1], e.p[2], { json: e, natural: false });
     for (const k in o.stored || {}) this.stored.set(k, o.stored[k]);
     for (const k of o.pop || []) this.populated.add(k);
+    if (o.wt) this.wt = o.wt;
   }
   // leaving the world: drop everything
   dispose() {
