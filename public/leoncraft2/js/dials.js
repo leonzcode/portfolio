@@ -22,6 +22,9 @@
                          (yaw as player.js has it: facing -sin, -cos);
                          true when a shown frame changed (redraw the hotbar)
      dialPicture(name)   the frame to show for that item now, or null
+     dialInHotbar(inv, nameOf)
+                         true when the hotbar or the off hand holds one, so
+                         a turning player with none redraws nothing for them
 --------------------------------------------------------------------------- */
 const TURN = Math.PI * 2;
 const wrap = a => a - Math.floor(a);
@@ -71,4 +74,11 @@ export function tickDials(s) {
 export function dialPicture(name) {
   const d = DIALS[name];
   return d ? 'frame_' + name + '_' + String(d.frame).padStart(2, '0') : null;
+}
+
+export function dialInHotbar(inv, nameOf) {
+  const is = st => st && DIALS[nameOf(st.id)] !== undefined;
+  if (is(inv.offhand)) return true;
+  for (let i = 0; i < 9; i++) if (is(inv.slots[i])) return true;
+  return false;
 }

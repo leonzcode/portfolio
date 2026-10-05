@@ -53,7 +53,7 @@ import { EntityStore } from './entities/store.js?v=14';
 import { Sim } from './sim/sim.js?v=14';
 import { DIMS } from './dims.js?v=14';
 import { Realms } from './dim/realms.js?v=14';
-import { tickDials } from './dials.js?v=14';
+import { tickDials, dialInHotbar } from './dials.js?v=14';
 import { addDimArt, endSkyTexture } from './dim/art.js?v=14';
 import { structuresApi } from './struct/spawners.js?v=14';
 const THREE = window.THREE;
@@ -955,9 +955,10 @@ async function boot() {
         }
       }
       g.drops.tick(player, g.collector);
-      // a compass needle or a clock face that moved is drawn again (js/dials.js)
+      // a compass needle or a clock face that moved is drawn again (js/dials.js), where one shows
       if (tickDials({ yaw: player.yaw, x: player.pos.x, z: player.pos.z, spawn: g.spawn, time: g.time, dim: g.dim, dead: survival.dead })) {
-        hud.markDirty(); if (gui.isOpen()) gui.markDirty();
+        if (gui.isOpen()) gui.markDirty();
+        if (dialInHotbar(g.inv, itemName)) hud.markDirty();
       }
       if (timeRuns) g.time += 1;
       for (const s of player.splashes.splice(0)) renderer.inter.splash(s[0], s[1], s[2], s[3]);
