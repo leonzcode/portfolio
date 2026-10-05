@@ -25,6 +25,22 @@
      dialInHotbar(inv, nameOf)
                          true when the hotbar or the off hand holds one, so
                          a turning player with none redraws nothing for them
+
+   A bow being drawn and a crossbow being loaded change picture too, and a
+   loaded crossbow shows what it holds (frame_bow_pulling_N and so on):
+
+     bow       bow_pulling_0, _1 from 0.65 of a full draw (20 ticks), _2
+               from 0.9
+     crossbow  crossbow_pulling_0, _1 from 0.58 of its load time, _2 once
+               loaded; loaded, crossbow_arrow, or crossbow_firework with a
+               rocket in it
+
+     setUse(use, stack, loadTicks)
+                         once a tick, with combat's use ({ kind, t } or
+                         null) and the stack in use; true when its picture
+                         changed (redraw the hotbar)
+     usePicture(stack, name)
+                         the frame to show for that stack now, or null
 --------------------------------------------------------------------------- */
 const TURN = Math.PI * 2;
 const wrap = a => a - Math.floor(a);
@@ -74,6 +90,30 @@ export function tickDials(s) {
 export function dialPicture(name) {
   const d = DIALS[name];
   return d ? 'frame_' + name + '_' + String(d.frame).padStart(2, '0') : null;
+}
+
+let useStack = null, useFrame = null;
+
+export function setUse(use, stack, loadTicks) {
+  let f = null;
+  if (use && stack && use.kind === 'bow') {
+    const p = use.t / 20;
+    f = 'frame_bow_pulling_' + (p >= 0.9 ? 2 : p >= 0.65 ? 1 : 0);
+  } else if (use && stack && use.kind === 'crossbow' && !(stack.charged && stack.charged.length)) {
+    const p = loadTicks > 0 ? use.t / loadTicks : 1;
+    f = 'frame_crossbow_pulling_' + (p >= 1 ? 2 : p >= 0.58 ? 1 : 0);
+  }
+  const changed = f !== useFrame || (f && stack !== useStack);
+  useStack = f ? stack : null; useFrame = f;
+  return changed;
+}
+
+export function usePicture(st, name) {
+  if (useFrame && st === useStack) return useFrame;
+  if (name === 'crossbow' && st.charged && st.charged.length) {
+    return st.charged.some(c => c && c[0] === 'firework_rocket') ? 'frame_crossbow_firework' : 'frame_crossbow_arrow';
+  }
+  return null;
 }
 
 export function dialInHotbar(inv, nameOf) {

@@ -110,8 +110,9 @@ Item pictures (items.png)
 items.png holds one 16x16 picture for every item that is not a block (in the
 order of ITEM_TEX in js/itemdata.js), the eleven sizes of the experience orb,
 the separate layers of the pictures the game colours per item (a potion's
-liquid, a tipped arrow's head, dyed leather and wolf armour), and the frames
-of the compass, the recovery compass and the clock. Made by
+liquid, a tipped arrow's head, dyed leather and wolf armour), the frames of
+the compass, the recovery compass and the clock, and the bow's and the
+crossbow's pictures while drawn, loading and loaded. Made by
 tools/leoncraft2/build_items.py from six resource packs:
 
 - "REFI Textures", by MysticTempest (drawn from scratch for Luanti games,
@@ -146,7 +147,9 @@ colour statistics only, no pixels), fully or partly; many pictures are moved
 by up to two pixels, and some mirrored, so they sit in the slot where the
 game's picture does (the outlines compared; nothing is redrawn); the
 compass, the recovery compass and the clock keep every frame (the game turns
-them to where they point), other animated pictures their first frame; wider
+them to where they point), and the bow and crossbow their drawn and loaded
+pictures (Bauniclonia's numbered bow frames, Pixel Perfection CE's
+crossbow), other animated pictures their first frame; wider
 pictures are scaled down to 16x16;
 leather horse armour, potions, tipped arrows, firework stars and filled maps
 are their grey base tinted the default colour with their overlay on top (as
