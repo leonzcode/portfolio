@@ -11,7 +11,8 @@
                      direction, from where the player stands
      ambient         8 x 1, every frame: what the rest of the shaders light
                      with - the sky's light from above, from the side and
-                     from the ground, and the colour of the sun (or moon)
+                     from the ground, and the colour of the sun (or moon) -
+                     and how open the eye should be for that light
 
    The sun reddens at sunset because there is more air to get through, the
    sky goes deep blue overhead and pale at the horizon, and the world takes
@@ -22,6 +23,18 @@ const THREE = window.THREE;
 
 export const SUN_I = 14.0;      // the sun's strength in the scene's units
 export const MOON_I = 0.045;    // and the moon's: dim, but enough to walk by
+/* Detailed's light look: a lighter sky than the atmosphere gives (so the
+   day reads bright and clear, and the fog and the water's sheen with it),
+   the sky's light into the shade brighter still (so a shadow is soft and
+   readable, never black), and sunlight a little warmer. The exposure is
+   then worked out from that light (texel 6), so the picture stays the same
+   brightness from noon to dusk. */
+const LOOK = /* glsl */`
+const float SKY_GAIN = 1.5;
+const float AMB_BOOST = 1.7;
+const vec3 WARM = vec3(1.06, 1.0, 0.88);
+const float KEY = 0.85;
+`;
 
 export class FullScreen {
   constructor(material) {
@@ -118,7 +131,7 @@ void main() {
   o = vec4(L2 / (1.0 - F), 1.0);
 }`;
 
-const FS_VIEW = COMMON + ATMOS + /* glsl */`
+const FS_VIEW = COMMON + ATMOS + LOOK + /* glsl */`
 uniform sampler2D uTrans, uMS;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uCamH, uSunI, uMoonI;
@@ -155,11 +168,12 @@ void main() {
     L += T * (sunL * uSunI + moonL * uMoonI) * integ;
     T *= stp;
   }
-  o = vec4(L, 1.0);
+  o = vec4(L * SKY_GAIN, 1.0);
 }`;
 
-// what the scene is lit by: sky light from above, from the side, from below, then the sun or moon
-const FS_AMB = COMMON + ATMOS + /* glsl */`
+// what the scene is lit by: sky light from above, from the side, from below, then the sun or moon,
+// then the exposure for that light
+const FS_AMB = COMMON + ATMOS + LOOK + /* glsl */`
 uniform sampler2D uView, uTrans;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uCamH, uSunI, uMoonI;
@@ -190,16 +204,23 @@ void main() {
   vec3 sunT = texture(uTrans, transUV(uCamH, uSunDir.y)).rgb;
   vec3 moonT = texture(uTrans, transUV(uCamH, uMoonDir.y)).rgb;
   vec3 c = vec3(0.0);
-  if (i == 0) c = irr(vec3(0.0, 1.0, 0.0));
-  else if (i == 1) c = (irr(vec3(1.0, 0.0, 0.0)) + irr(vec3(-1.0, 0.0, 0.0)) + irr(vec3(0.0, 0.0, 1.0)) + irr(vec3(0.0, 0.0, -1.0))) * 0.25;
+  vec3 light = uSunDir.y > -0.02 ? sunT * uSunI * smoothstep(-0.02, 0.03, uSunDir.y) : moonT * uMoonI * smoothstep(-0.02, 0.06, uMoonDir.y);
+  if (i == 0) c = irr(vec3(0.0, 1.0, 0.0)) * AMB_BOOST;
+  else if (i == 1) c = (irr(vec3(1.0, 0.0, 0.0)) + irr(vec3(-1.0, 0.0, 0.0)) + irr(vec3(0.0, 0.0, 1.0)) + irr(vec3(0.0, 0.0, -1.0))) * 0.25 * AMB_BOOST;
   else if (i == 2) {
     // what bounces off the ground: sky and sun on grass-ish ground
     vec3 Eg = irr(vec3(0.0, 1.0, 0.0)) + sunT * uSunI * sat(uSunDir.y) + moonT * uMoonI * sat(uMoonDir.y);
-    c = Eg * 0.18;
+    c = Eg * 0.18 * AMB_BOOST;
   }
-  else if (i == 3) c = uSunDir.y > -0.02 ? sunT * uSunI * smoothstep(-0.02, 0.03, uSunDir.y) : moonT * uMoonI * smoothstep(-0.02, 0.06, uMoonDir.y);
+  else if (i == 3) c = light * WARM;
   else if (i == 4) c = sunT * uSunI;
   else if (i == 5) c = moonT * uMoonI;
+  else if (i == 6) {
+    // how much light falls on an everyday scene (a third of the sun, all of the sky), and the exposure that keeps it
+    // mid-bright; at night it opens no further than the moon allows, so night stays night
+    float E = lum(light) * 0.35 + lum(irr(vec3(0.0, 1.0, 0.0))) * AMB_BOOST;
+    c = vec3(clamp(KEY / max(E, 1e-4), 0.05, 4.5));
+  }
   o = vec4(c, 1.0);
 }`;
 

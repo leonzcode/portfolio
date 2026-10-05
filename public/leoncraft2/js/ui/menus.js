@@ -642,8 +642,8 @@ export class OptionsScreen extends Screen {
 const QUALITY = ['detailed', 'fast'];
 const QUALITY_NAMES = { detailed: 'Detailed', fast: 'Fast' };
 const QUALITY_TIPS = {
-  detailed: 'Sun rays, soft shadows, clouds and water reflections.',
-  fast: 'One pass, no shadows, a short view and fast leaves. For old Chromebooks.',
+  detailed: 'Light shaders: soft sun shadows, warm sunlight, a real sky and the sky in the water. Nearly as smooth as Fast.',
+  fast: 'No shaders at all, as the game draws itself: no shadows. The quickest there is.',
 };
 const QUALITY_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
 

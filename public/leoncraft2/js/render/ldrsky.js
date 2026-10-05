@@ -1,22 +1,26 @@
 /* ---------------------------------------------------------------------------
-   Leoncraft 2 - the sky for the single-pass (low and potato) tiers.
+   Leoncraft 2 - the sky for Detailed graphics.
 
-   One full-screen pass, drawn first, straight to the screen: the same
-   atmosphere as the full tiers (one look-up in the sky table), the sun's disc,
-   the moon in its phase, stars, and a flat layer of clouds (two noise taps,
-   lit from the sun's side) instead of the marched volumetric ones. Exposure
-   and tone mapping happen here too, so nothing runs after it.
+   One full-screen pass, drawn first, straight to the screen: the atmosphere
+   (one look-up in the sky table), the sun's disc, the moon in its phase and
+   the stars. The clouds are the game's own blocks of cloud, drawn after the
+   world (render/clouds.js). In the Nether the sky is its fog colour, in the
+   End a dark speckled box. Exposure and tone mapping happen here too, so
+   nothing runs after it.
 --------------------------------------------------------------------------- */
-import { COMMON, TONEMAP } from './glsl.js?v=14';
+import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=14';
 import { rawMat } from './sky.js?v=14';
 const THREE = window.THREE;
 
 const FS = COMMON + TONEMAP + /* glsl */`
-uniform sampler2D uView, uAmbient, uNoise, uMoon;
+uniform sampler2D uView, uAmbient, uMoon, uEndSky;
 uniform mat4 uInvViewProj;
-uniform vec3 uCamPos, uSunDir, uMoonDir, uLightDir;
-uniform float uTime, uMoonPhase, uExposure, uCover, uEyeInWater;
+uniform vec3 uCamPos, uSunDir, uMoonDir;
+uniform float uTime, uMoonPhase, uExposure, uEyeInWater;
 uniform vec3 uWaterTint;
+uniform float uDim;
+uniform vec3 uDimFog;
+` + EXPOSURE + /* glsl */`
 in vec2 vUv; out vec4 o;
 vec3 skyRadiance(vec3 d) {
   float elev = asin(clamp(d.y, -1.0, 1.0));
@@ -36,7 +40,14 @@ void main() {
   vec4 p = uInvViewProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
   vec3 rd = normalize(p.xyz / p.w - uCamPos);
   vec3 col;
-  if (uEyeInWater > 0.5) {
+  if (uDim > 0.5) {
+    // no atmosphere: the Nether's sky is its fog, the End's a dark speckled box (js/dim/look.js sets the colour)
+    if (uDim > 1.5) {
+      vec3 a = abs(rd);
+      vec2 q = a.x > a.y && a.x > a.z ? rd.zy / a.x : a.y > a.z ? rd.xz / a.y : rd.xy / a.z;
+      col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16);
+    } else col = uDimFog;
+  } else if (uEyeInWater > 0.5) {
     vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
     col = amb * uWaterTint * 0.6;
   } else {
@@ -51,25 +62,13 @@ void main() {
     vec2 mp = vec2(dot(rd, mu), dot(rd, mv)) / radians(1.6);
     if (dot(rd, md) > 0.0 && abs(mp.x) < 1.0 && abs(mp.y) < 1.0) {
       vec2 cell = vec2(mod(uMoonPhase, 4.0), floor(uMoonPhase / 4.0));
-      vec4 m = texture(uMoon, vec2(((cell + (mp * 0.5 + 0.5)) / vec2(4.0, 2.0)).x, 1.0 - ((cell + (mp * 0.5 + 0.5)) / vec2(4.0, 2.0)).y));
+      vec2 muv = (cell + (mp * 0.5 + 0.5)) / vec2(4.0, 2.0);
+      vec4 m = texture(uMoon, vec2(muv.x, 1.0 - muv.y));
       col += toLinear(m.rgb) * m.a * 2.2 * smoothstep(-0.05, 0.08, md.y);
     }
     col += stars(rd) * (1.0 - smoothstep(-0.12, 0.02, uSunDir.y)) * sat(rd.y * 4.0);
-    // a flat layer of clouds at the height of the full tiers' ones
-    if (rd.y > 0.01) {
-      float t = (250.0 - uCamPos.y) / rd.y;
-      if (t > 0.0) {
-        // the same coverage as the full tiers' clouds, and as the shadows they cast (glsl.js cloudShade)
-        vec2 xz = uCamPos.xz + rd.xz * t, wind = vec2(uTime * 2.2, uTime * 0.9);
-        float c = texture(uNoise, (xz + wind) * 0.00018).a * 0.65 + texture(uNoise, (xz + wind * 1.3) * 0.0007).r * 0.35;
-        c = sat((c - (1.0 - uCover)) * 2.6);
-        vec3 lightC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, ambC = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
-        vec3 cloud = lightC * (0.04 + 0.06 * pow(sat(dot(rd, uLightDir)), 4.0)) + ambC * 0.9;
-        col = mix(col, cloud, c * exp(-t * 0.00022) * 0.92);
-      }
-    }
   }
-  o = vec4(toSRGB(agx(col * uExposure)), 1.0);
+  o = vec4(toSRGB(agx(col * exposureNow())), 1.0);
 }`;
 
 export function makeLdrSky(U) {

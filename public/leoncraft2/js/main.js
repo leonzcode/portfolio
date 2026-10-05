@@ -66,14 +66,17 @@ const MENU_SEED = 20261002;
 // a dimension's mobs are kept under the world's id, with the dimension added for the Nether and the End
 const entityKey = (entry, dim) => entry.id + (!dim || dim === 'overworld' ? '' : '~' + dim);
 const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) : entry.seed | 0);
-/* Graphics, as in the game's Video Settings: Detailed (the full look: sun
-   rays, soft shadows, clouds, reflections) or Fast (the game with no shaders
-   at all, as Minecraft itself draws it: render/vanilla.js). Both draw at the
-   screen's full resolution. A change takes effect when you leave Video
-   Settings, and only if it really changed. */
+/* Graphics, as in the game's Video Settings: Detailed (light shaders: soft
+   sun shadows, warm sunlight and a real sky, water with the sky in it,
+   plants in the wind) or Fast (the game with no shaders at all, as Minecraft
+   itself draws it: render/vanilla.js). Both draw in one pass straight to the
+   screen at its full resolution, so Detailed runs nearly as smoothly as
+   Fast: no light shafts, marched clouds, reflections, bloom or eye
+   adjustment (the clouds are the game's blocks of cloud in both). A change
+   takes effect when you leave Video Settings, and only if it really changed. */
 const PRESETS = {
   fast: { rd: 8, scale: 1, ldr: true, vanilla: true, shadows: 0, normals: false, spec: false, fastLeaves: false, interSize: 32, uploadMs: 3, plantDist: 136, leafInDist: 64, plantShadows: false },
-  detailed: { rd: 8, shadowRes: 2048, shadowDist: 96, shadows: 2, scale: 1, fxaa: false, vlSteps: 10, cloudSteps: 14, ssrSteps: 18, plantDist: 80, leafInDist: 40, leafInShadows: false },
+  detailed: { rd: 8, scale: 1, ldr: true, shadowRes: 1024, shadowDist: 64, shadows: 2, normals: false, cloudShadow: 0, sky: 4, interSize: 128, uploadMs: 3, plantDist: 96, leafInDist: 48, plantShadows: false, leafInShadows: false },
 };
 // what the older settings become
 const GRAPHICS_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
