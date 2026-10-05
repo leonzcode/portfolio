@@ -498,6 +498,8 @@ export class Boat extends Entity {
     return wood + (this.raft ? ' Raft' : ' Boat') + (this.chest ? ' with Chest' : '');
   }
   itemName() { return this.raft ? (this.chest ? 'bamboo_chest_raft' : 'bamboo_raft') : this.wood + (this.chest ? '_chest_boat' : '_boat'); }
+  // middle click (pick block) on it: its item
+  pickItem() { return this.itemName(); }
   /* Right click: get in (not sneaking, not while it is sunk). A chest
      boat opens instead when sneaking, or when there is no room for you. */
   interact(held, player) {
@@ -552,6 +554,8 @@ export class Boat extends Entity {
     return h > -Infinity && h < 1 ? h : null;
   }
   /* ---- drawing ---- */
+  // the water is kept out of a boat's inside, not a raft's (it has none), nor once the boat has gone under
+  noMask() { return this.raft || this.status === UNDER_WATER || this.status === UNDER_FLOWING; }
   tint() { return WOODS[this.raft ? 'bamboo' : this.wood] || WOODS.oak; }
   anim(A, a) {
     A.paddleL = this.rowing[0] ? this.paddle[0] - PI / 8 * (1 - a) : 0;

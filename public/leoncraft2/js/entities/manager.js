@@ -823,7 +823,7 @@ export class Entities {
       if (c.BLOCK) { e.draw(this.group, this.R, alpha); continue; }
       if (seen) { if (c.PARTICLE) e.particle(this.meshes, alpha, x, y, z); else this.drawOne(e, alpha, x, y, z); }
       // a boat keeps the water out of its inside
-      if (seen && c.WATER_MASK) this.meshes.maskAt(x, y + c.WATER_MASK, z, e.prevYaw + wrap(e.yaw - e.prevYaw) * alpha, c.MASK_HX || 0.55, c.MASK_HZ || 0.74);
+      if (seen && c.WATER_MASK && !(e.noMask && e.noMask())) this.meshes.maskAt(x, y + c.WATER_MASK, z, e.prevYaw + wrap(e.yaw - e.prevYaw) * alpha, c.MASK_HX || 0.55, c.MASK_HZ || 0.74);
       // its round shadow on the ground
       if (seen && c.SHADOW && !e.vehicle) this.shadowOf(e, x, y, z, c.SHADOW * (e.baby || e.ageT < 0 ? 0.5 : 1) * (c.SCALE || 1));
     }

@@ -751,7 +751,8 @@ async function boot() {
       cheats: !!(window.__lc2.cheats || (g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
       say: (t, c) => chat.add(t, c),
       setMode,
-      teleport: (x, y, z) => { const p = g.player; p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; },
+      // (a teleport takes you off what you ride, as in the game)
+      teleport: (x, y, z) => { const p = g.player; if (g.entities && g.entities.riding) g.entities.dismount(); p.pos.set(x, y, z); p.prev.copy(p.pos); p.vel.set(0, 0, 0); p.fallDistance = 0; },
       give: (name, count) => {
         // any item or block by its name (items.js knows both)
         const id = itemId(name) || (B[name] !== undefined && BLOCKS[B[name]] && BLOCKS[B[name]].item !== false ? B[name] : 0);
@@ -859,7 +860,9 @@ async function boot() {
     const g = game;
     if (e.button === 1) {
       e.preventDefault();
-      const hit = g.inter.target;
+      const hit = g.inter.target, ent = g.inter.entityTarget;
+      // an entity that has an item of its own (a boat: js/entities) gives that
+      if (ent && ent.pickItem) { const id = itemId(ent.pickItem()); if (id) g.inv.pickBlock(id); return; }
       if (hit) { const d = BLOCKS[hit.b]; g.inv.pickBlock(d.lower ? B[d.lower] : hit.b); }
       return;
     }
