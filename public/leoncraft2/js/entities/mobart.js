@@ -387,6 +387,8 @@ const EXTRA = [];
 export function addArt(name, size, fn) { SIZES[name] = size; ART[name] = fn; EXTRA.push(name); }
 
 export function buildAtlas() {
+  // every atlas (one per dimension visited) is packed from its first slot, or later ones run off the edge
+  nextSlot = 0;
   const c = document.createElement('canvas');
   c.width = c.height = ATLAS;
   const g = c.getContext('2d');

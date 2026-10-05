@@ -540,6 +540,8 @@ async function boot() {
     hud = new Hud(inv, icons);
     gui.hud = hud;
     inv.on('held', id => renderer.setHeld(id, DRAW));
+    // the off hand and the armour are read from here; the hand dips with the attack cooldown
+    renderer.wearer = { inv, cooldown: () => (game && game.entities ? game.entities.combat.cooldown() : 1) };
     held();
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     loading = null;
