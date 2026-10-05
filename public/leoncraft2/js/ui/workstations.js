@@ -15,13 +15,15 @@
      smithing table    template, base, addition: netherite gear and trims
      stonecutter       one block in, pick what to cut it into
 
-   Sheets and layouts are the game's (176 wide); the art is Pixel Perfection
-   CE's. The smithing table's template slot is drawn over the older sheet.
+   Layouts are the game's (176 wide, the smithing table's since 1.20); the
+   sheets are our own (tools/leoncraft2/build_stations.py).
 --------------------------------------------------------------------------- */
 import { ContainerScreen, SearchField, slot, range, TO_PLAYER, TO_PLAYER_REVERSED, stackTooltip } from './inventory.js?v=14';
 import { I, ITEMS, withCount, displayName } from '../items.js?v=14';
-import { tableOffers3, anvilResult, grindResult, enchName, enchantability } from '../enchanting.js?v=14';
+import { tableOffers3, anvilResult, grindResult, grindable, enchName, enchantability } from '../enchanting.js?v=14';
+import { isPotion, potionName } from '../brewing.js?v=14';
 import { stonecutterRecipes } from '../crafting.js?v=14';
+import { LegacyRandom } from '../gen/random.js?v=14';
 
 const LABEL_GREY = 0x404040;
 const MAIN = range(9, 36), HOT = range(0, 9);
@@ -30,12 +32,6 @@ function playerSlots(L, T, y) {
   for (let j = 9; j < 36; j++) out.push(slot(L + 8 + (j % 9) * 18, T + y + Math.floor((j - 9) / 9) * 18, 'inv', j));
   for (let i = 0; i < 9; i++) out.push(slot(L + 8 + i * 18, T + y + 58, 'inv', i));
   return out;
-}
-// a slot frame drawn by hand: dark above and left, light below and right
-function slotFrame(g, x, y) {
-  g.fill(x - 1, y - 1, x + 17, y + 17, 0xFF8B8B8B);
-  g.fill(x - 1, y - 1, x + 17, y, 0xFF373737); g.fill(x - 1, y - 1, x, y + 17, 0xFF373737);
-  g.fill(x - 1, y + 16, x + 17, y + 17, 0xFFFFFFFF); g.fill(x + 16, y - 1, x + 17, y + 17, 0xFFFFFFFF);
 }
 
 /* Shared: inputs in this.grid, a result by station rules; shift-click from the
@@ -68,7 +64,9 @@ class StationScreen extends ContainerScreen {
 
 /* ------------------------------ enchanting table ------------------------------ */
 
-const GLYPHS = 'the elder scrolls klaatu berata niktu xyzzy squeamish ossifrage free cthulhu ftaghn fhtagn baguette ruby qwerty grumble bunny';
+// the words the table's runes spell (our own list): three or four of them a slot, cut to fit
+const GLYPHS = 'the elder scrolls klaatu berata niktu xyzzy squeamish ossifrage free cthulhu ftaghn fhtagn baguette ruby qwerty grumble bunny ' +
+  'ember quill lantern brook vellum moss thistle harrow gleam tallow wisp cinder loam marrow rune sigil';
 export class EnchantScreen extends StationScreen {
   /* hooks: { level(), spend(levels), seed(), reseed(), shelves } */
   constructor(inv, icons, hooks) {
@@ -96,11 +94,13 @@ export class EnchantScreen extends StationScreen {
     if (key === this.key) return;
     this.key = key;
     this.offers = it && !(it.ench && Object.keys(it.ench).length) ? tableOffers3(it.id, this.st.shelves || 0, this.st.seed ? this.st.seed() : 1) : [null, null, null];
-    this.words = this.offers.map((o, i) => o ? gibberish((this.st.seed ? this.st.seed() : 1) + i * 31) : '');
+    // one random seeded with the enchantment seed spells the slots in turn, as in the game
+    const r = new LegacyRandom((this.st.seed ? this.st.seed() : 1) | 0);
+    this.words = this.offers.map(o => o ? gibberish(r) : '');
   }
   canTake(i) {
     const o = this.offers[i];
-    if (!o) return false;
+    if (!o || !o.ench.length) return false;
     if (this.isCreative) return true;
     const lapis = this.grid[1] ? this.grid[1].count : 0;
     return this.level >= o.level && this.level >= i + 1 && lapis >= i + 1;
@@ -142,11 +142,11 @@ export class EnchantScreen extends StationScreen {
       g.blit('container/enchanting_table', 16 * i, ok ? 223 : 239, 16, 16, x + 1, y + 1);
       const lv = String(o.level), lw = g.textWidth(lv);
       const room = 86 - lw;
-      g.text(g.font.trim(this.words[i], room), x + 20, y + 2, ok ? (hover === i ? 0xFFFF80 : 0x685E4A) : 0x342F25, false);
+      runes(g, this.words[i], x + 20, y + 2, room, ok ? (hover === i ? 0xFFFF80 : 0x685E4A) : 0x342F25);
       g.text(lv, x + 20 + 86 - lw, y + 9, ok ? 0x80FF20 : 0x407F10, true);
     }
     const prev = this.drawSlots(g, mx, my);
-    if (hover >= 0 && this.offers[hover] && !this.inv.carried) {
+    if (hover >= 0 && this.offers[hover] && this.offers[hover].hint && !this.inv.carried) {
       const o = this.offers[hover], lines = ['§f' + enchName(o.hint[0], o.hint[1]) + ' . . . ?'];
       if (!this.isCreative) {
         const lapis = this.grid[1] ? this.grid[1].count : 0;
@@ -161,11 +161,43 @@ export class EnchantScreen extends StationScreen {
     this.drawCarried(g, mx, my, prev);
   }
 }
-function gibberish(seed) {
-  const w = GLYPHS.split(' ');
-  let s = seed >>> 0, out = [];
-  for (let i = 0; i < 3 + (s % 3); i++) { s = (s * 1103515245 + 12345) >>> 0; out.push(w[(s >>> 8) % w.length]); }
+// the name an item shows now: its own, a potion's, or the item's
+function shownName(st) { return st.name || (isPotion(st) ? potionName(st) : displayName(st.id)); }
+function gibberish(r) {
+  const w = GLYPHS.split(' '), out = [];
+  for (let i = 0, n = r.nextInt(2) + 3; i < n; i++) out.push(w[r.nextInt(w.length)]);
   return out.join(' ');
+}
+/* The runes the table writes in: a galactic alphabet drawn here, a few pixels a
+   letter (our own shapes, one row string a pixel row, top down). */
+const RUNES = {
+  a: ['#....', '#....', '#####', '....#', '....#'], b: ['####', '...#', '...#', '..##', '..#.'], c: ['.###', '#...', '#.#.', '.###'],
+  d: ['####', '#...', '#.#.', '#..#', '#...'], e: ['#####', '#.#.#', '#.#.#'], f: ['#####', '.....', '#.#.#'], g: ['....#', '....#', '#####', '....#', '....#'],
+  h: ['#####', '.....', '#####', '..#..', '..#..'], i: ['#', '#', '.', '#', '#'], j: ['#', '.', '#', '.', '#'], k: ['#..#', '#.#.', '##..', '#.#.', '#..#'],
+  l: ['#...', '#...', '#...', '####'], m: ['#.#.#', '#.#.#', '#.#.#', '#####'], n: ['#..#', '#..#', '...#', '..#.', '.#..'], o: ['####', '...#', '.###', '...#', '####'],
+  p: ['#.#', '#.#', '#..', '..#', '#.#'], q: ['####', '#..#', '#..#'], r: ['#.#', '...', '#.#'], s: ['#.#.#', '#...#', '#####'], t: ['####', '...#', '...#', '...#', '.#..'],
+  u: ['#####', '.....', '##.##'], v: ['..#..', '..#..', '#####', '.....', '#####'], w: ['..#..', '.....', '#...#'], x: ['...#', '..#.', '.#..', '#...'],
+  y: ['#.#', '#.#', '#.#', '#.#'], z: ['#####', '#...#', '#...#', '#...#'],
+};
+const runeW = ch => (ch === ' ' ? 4 : RUNES[ch] ? RUNES[ch][0].length + 1 : 0);
+function runes(g, str, x, y, room, rgb) {
+  const col = 0xFF000000 | rgb;
+  let w = 0;
+  for (const ch of str) {
+    const a = runeW(ch);
+    if (w + a - 1 > room) break;
+    const rows = RUNES[ch];
+    if (rows) for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      for (let c = 0; c < row.length; c++) {
+        if (row[c] !== '#') continue;
+        let e = c; while (e < row.length && row[e] === '#') e++;
+        g.fill(x + w + c, y + 1 + r, x + w + e, y + 2 + r, col);
+        c = e;
+      }
+    }
+    w += a;
+  }
 }
 
 /* ------------------------------ anvil ------------------------------ */
@@ -192,14 +224,12 @@ export class AnvilScreen extends StationScreen {
     if (left && this.lastLeft !== left) {
       // a new item: its name goes in the box
       this.lastLeft = left;
-      this.nameField.setValue(left.name || displayName(left.id));
+      this.nameField.setValue(shownName(left));
     } else if (!left) { this.lastLeft = null; if (this.nameField.value) this.nameField.setValue(''); }
-    const nm = this.nameField.value.trim();
-    const want = left && nm !== (left.name || displayName(left.id)) ? nm : '';
-    this.calc = left ? anvilResult(left, this.grid[1], want, this.isCreative) : null;
-    this.result = this.calc && !(this.calc.tooExpensive) ? { stack: this.calc.result } : null;
+    this.calc = left ? anvilResult(left, this.grid[1], this.nameField.value, this.isCreative, shownName(left)) : null;
+    this.result = this.calc && this.calc.result ? { stack: this.calc.result } : null;
   }
-  affordable() { return this.calc && (this.isCreative || (this.level >= this.calc.cost && this.calc.cost > 0)); }
+  affordable() { return !!(this.result && (this.isCreative || (this.level >= this.calc.cost && this.calc.cost > 0))); }
   craftOnce() {
     if (!this.result || !this.affordable()) return null;
     const c = this.calc, out = withCount(c.result, c.result.count);
@@ -224,11 +254,12 @@ export class AnvilScreen extends StationScreen {
     g.blit('container/anvil', 0, 0, 176, 166, L, T);
     g.blit('container/anvil', 0, this.grid[0] ? 166 : 182, 110, 16, L + 59, T + 20);
     this.nameField.draw(g);
-    if (this.grid[0] && this.grid[1] && !this.result) g.blit('container/anvil', 176, 0, 28, 21, L + 99, T + 45);
+    // the red cross over the arrow: something in, nothing to take
+    if ((this.grid[0] || this.grid[1]) && !this.result) g.blit('container/anvil', 176, 0, 28, 21, L + 99, T + 45);
     g.text(this.title, L + 60, T + 6, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
     const c = this.calc;
-    if (c && c.cost > 0) {
+    if (c && c.cost > 0 && (c.tooExpensive || this.result)) {
       const tooMuch = c.tooExpensive;
       const text = tooMuch ? 'Too Expensive!' : 'Enchantment Cost: ' + c.cost;
       const colour = tooMuch || !this.affordable() ? 0xFF6060 : 0x80FF20;
@@ -251,7 +282,7 @@ export class GrindstoneScreen extends StationScreen {
     return [slot(L + 49, T + 19, 'craft', 0), slot(L + 49, T + 40, 'craft', 1), slot(L + 129, T + 34, 'result')].concat(playerSlots(L, T, 84));
   }
   mayPlace(s, st) {
-    if (s.kind === 'craft' && st) { const it = ITEMS[st.id]; return !!it && (!!it.dur || it.name === 'enchanted_book'); }
+    if (s.kind === 'craft' && st) return grindable(st);
     return super.mayPlace(s, st);
   }
   updateResult() {
@@ -286,7 +317,7 @@ export class SmithingScreen extends StationScreen {
   constructor(inv, icons) { super(inv, icons, 176, 166, 3); this.title = 'Upgrade Gear'; }
   makeSlots() {
     const L = this.left, T = this.top;
-    return [slot(L + 8, T + 48, 'craft', 0), slot(L + 27, T + 48, 'craft', 1), slot(L + 76, T + 48, 'craft', 2), slot(L + 134, T + 48, 'result')].concat(playerSlots(L, T, 84));
+    return [slot(L + 8, T + 48, 'craft', 0), slot(L + 26, T + 48, 'craft', 1), slot(L + 44, T + 48, 'craft', 2), slot(L + 98, T + 48, 'result')].concat(playerSlots(L, T, 84));
   }
   updateResult() {
     const [t, b, a] = this.grid;
@@ -313,8 +344,8 @@ export class SmithingScreen extends StationScreen {
     this.drawBackdrop(g);
     const L = this.left, T = this.top;
     g.blit('container/smithing', 0, 0, 176, 166, L, T);
-    // the template slot (newer than the sheet)
-    slotFrame(g, L + 8, T + 48);
+    // the red cross: all three in, and nothing they make
+    if (this.grid[0] && this.grid[1] && this.grid[2] && !this.result) g.blit('container/smithing', 176, 0, 28, 21, L + 65, T + 46);
     g.text(this.title, L + 44, T + 15, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
     const prev = this.drawSlots(g, mx, my);
@@ -324,6 +355,9 @@ export class SmithingScreen extends StationScreen {
 
 /* ------------------------------ stonecutter ------------------------------ */
 
+// the game lists the cuts by their results' translation keys: blocks (block.minecraft.*) before items, then by name
+const transKey = id => (ITEMS[id] && ITEMS[id].block ? 'block.' : 'item.') + (ITEMS[id] ? ITEMS[id].name : '');
+const byTranslationKey = list => list.slice().sort((a, b) => (transKey(a.id) < transKey(b.id) ? -1 : transKey(a.id) > transKey(b.id) ? 1 : 0));
 export class StonecutterScreen extends StationScreen {
   constructor(inv, icons) { super(inv, icons, 176, 166, 1); this.title = 'Stonecutter'; this.recipes = []; this.sel = -1; this.scroll = 0; this.lastIn = 0; }
   makeSlots() {
@@ -333,7 +367,7 @@ export class StonecutterScreen extends StationScreen {
   updateResult() {
     const inp = this.grid[0];
     const id = inp ? inp.id : 0;
-    if (id !== this.lastIn) { this.lastIn = id; this.recipes = id ? stonecutterRecipes(id) : []; this.sel = -1; this.scroll = 0; }
+    if (id !== this.lastIn) { this.lastIn = id; this.recipes = id ? byTranslationKey(stonecutterRecipes(id)) : []; this.sel = -1; this.scroll = 0; }
     const r = this.sel >= 0 && inp ? this.recipes[this.sel] : null;
     this.result = r ? { stack: { id: r.id, count: r.count } } : null;
   }
