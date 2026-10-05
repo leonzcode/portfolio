@@ -89,7 +89,7 @@ export function canApply(name, id) {
   return categories(id).indexOf(e.category) >= 0;
 }
 // the order the game keeps the table's enchantments in: its weighted draws walk them in it
-const ORDER = ['protection', 'fire_protection', 'feather_falling', 'blast_protection', 'projectile_protection', 'respiration', 'aqua_affinity', 'thorns',
+export const ORDER = ['protection', 'fire_protection', 'feather_falling', 'blast_protection', 'projectile_protection', 'respiration', 'aqua_affinity', 'thorns',
   'depth_strider', 'sharpness', 'smite', 'bane_of_arthropods', 'knockback', 'fire_aspect', 'looting', 'sweeping_edge', 'efficiency', 'silk_touch', 'unbreaking',
   'fortune', 'power', 'punch', 'flame', 'infinity', 'luck_of_the_sea', 'lure', 'loyalty', 'impaling', 'riptide', 'channeling', 'multishot', 'quick_charge',
   'piercing', 'density', 'breach', 'lunge'];
@@ -126,16 +126,19 @@ export function countShelves(world, x, y, z, isShelf) {
 }
 /* The three offers for an item: [{ level (the level asked), ench: [[name, lvl]...], hint: [name, lvl] }]
    (null where the slot is empty). seed: the player's enchantment seed (an int). */
+// the levels the three slots draw (before a slot below its number is emptied)
+export function slotLevels(shelves, seed) {
+  const r = new LegacyRandom(seed | 0);
+  const b = Math.min(15, Math.max(0, shelves | 0));
+  return [0, 1, 2].map(slot => {
+    const base = r.nextInt(8) + 1 + (b >> 1) + r.nextInt(b + 1);
+    return slot === 0 ? Math.max(Math.floor(base / 3), 1) : slot === 1 ? Math.floor(base * 2 / 3) + 1 : Math.max(base, b * 2);
+  });
+}
 export function tableOffers3(id, shelves, seed) {
   const e = enchantability(id);
   if (!e) return [null, null, null];
-  const r = new LegacyRandom(seed | 0);
-  const b = Math.min(15, Math.max(0, shelves | 0));
-  const levels = [0, 1, 2].map(slot => {
-    const base = r.nextInt(8) + 1 + (b >> 1) + r.nextInt(b + 1);
-    const lv = slot === 0 ? Math.max(Math.floor(base / 3), 1) : slot === 1 ? Math.floor(base * 2 / 3) + 1 : Math.max(base, b * 2);
-    return lv < slot + 1 ? 0 : lv;
-  });
+  const levels = slotLevels(shelves, seed).map((lv, slot) => (lv < slot + 1 ? 0 : lv));
   return levels.map((lv, slot) => {
     if (!lv) return null;
     const lr = new LegacyRandom((seed + slot) | 0);
@@ -318,7 +321,11 @@ export function enchantDebug(game) {
   const stackOf = o => o ? { id: I[o.item], count: o.count || 1, dmg: o.damage || 0, rep: o.work ? (1 << o.work) - 1 : 0, ench: o.enchants ? Object.assign({}, o.enchants) : undefined } : null;
   return {
     // the three offers for an item (an iron sword) with this many shelves and this seed
-    offers: (shelves, seed, item = 'iron_sword') => tableOffers3(I[item], shelves, seed).map(o => o ? { level: o.level, ench: o.ench, hint: o.hint } : null),
+    // (level is what the slot drew; an empty slot, one whose level is below its number, says so)
+    offers: (shelves, seed, item = 'iron_sword') => {
+      const drawn = slotLevels(shelves, seed);
+      return tableOffers3(I[item], shelves, seed).map((o, i) => o ? { level: o.level, ench: o.ench, hint: o.hint } : { level: drawn[i], empty: true });
+    },
     // take slot n (1-3) for the held item (an iron sword if the hand holds nothing to enchant), as the screen does
     apply(slot, shelves) {
       const held = inv.slots[inv.selected];
