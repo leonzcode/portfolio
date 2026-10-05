@@ -6,19 +6,20 @@
    the mob's own bones (manager.js drawOne): a model made once per mob model
    and piece, with the mob's parts and only the armour boxes, on the parts
    named as a humanoid's are (render/armor.js), and the armour pictures in
-   the mob atlas, a 64 x 64 slot per material (layer 1 over layer 2), copied
-   from the armour sheet when it changes. Leather keeps its dye, enchanted
+   the mob atlas, a 64 x 64 slot per material (layer 1 over layer 2) and one
+   for leather's undyed overlay, copied from the armour sheet when it changes. Leather keeps its dye, enchanted
    pieces shimmer, and armour does not flash red when the mob is hurt, as in
    the game.
 --------------------------------------------------------------------------- */
 import { MODELS } from './mobmodels.js?v=14';
 import { addArt, SLOTS } from './mobart.js?v=14';
-import { ARMOR_MATS, PIECE_BOXES, armorSheet, pieceLook } from '../render/armor.js?v=14';
+import { ARMOR_MATS, PIECE_BOXES, OVERLAY_ROW, armorSheet, pieceLook } from '../render/armor.js?v=14';
 import { itemId } from '../items.js?v=14';
 
 const SLOT_NAMES = ['head', 'chest', 'legs', 'feet'];
-// a slot in the atlas for each material, left empty here and filled from the sheet
+// a slot in the atlas for each material (and leather's undyed overlay), left empty here and filled from the sheet
 for (const m of ARMOR_MATS) addArt('armor_' + m, [64, 64], () => {});
+addArt('armor_overlay', [64, 64], () => {});
 
 /* the armour model for one piece on one mob model: the mob's parts (so the
    mob's bones move it), with only the armour boxes, every box tinted so
@@ -54,11 +55,11 @@ function patchAtlas(mgr) {
   if (mgr.armorV === sh.version || !mgr.atlas || !mgr.meshes) return;
   mgr.armorV = sh.version;
   const g = mgr.atlas.getContext('2d');
-  ARMOR_MATS.forEach((m, i) => {
+  ARMOR_MATS.concat(['overlay']).forEach((m, i) => {
     const s = SLOTS['armor_' + m];
     if (!s) return;
     g.clearRect(s[0], s[1], 64, 64);
-    g.drawImage(sh.canvas, 0, i * 64, 64, 64, s[0], s[1], 64, 64);
+    g.drawImage(sh.canvas, 0, (m === 'overlay' ? OVERLAY_ROW : i) * 64, 64, 64, s[0], s[1], 64, 64);
   });
   mgr.meshes.atlas.needsUpdate = true;
 }
@@ -77,6 +78,9 @@ export function armorLayers(mgr, e, name, out) {
     const look = lookOf(it);
     if (!look) continue;
     const m = armorModel(name, i);
-    if (m) out.push([m.name, 'armor_' + look.material, look.tint, look.glint, true]);
+    if (!m) continue;
+    out.push([m.name, 'armor_' + look.material, look.tint, look.glint, true]);
+    // leather's undyed parts, over the dyed piece as they are
+    if (look.overlay >= 0) out.push([m.name, 'armor_overlay', 0xffffff, false, true]);
   }
 }

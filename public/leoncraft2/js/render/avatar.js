@@ -161,6 +161,15 @@ function buildGeometry(slim, onlyParts) {
 }
 
 /* ---- the shaders ---- */
+/* armour's colour: the piece in its dye, and where it has an undyed overlay
+   (leather's), the overlay on top as it is */
+const ARMOR_OVERLAY = /* glsl */`
+vec4 armorColour(vec4 t) {
+  vec4 c = vec4(t.rgb * vTint, t.a);
+  if (vUv2.x >= 0.0) { vec4 o = texture(uSkin, vUv2); if (o.a >= 0.1) c = vec4(o.rgb, 1.0); }
+  return c;
+}`;
+export { ARMOR_OVERLAY };
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow;\n`;
 const VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
@@ -169,11 +178,11 @@ uniform int uShow;
 in vec3 position; in vec3 normal; in vec2 uv; in vec2 aPart;
 out vec3 vWorld; out vec3 vN; out vec2 vUv; flat out int vLayer;
 #ifdef ARMOR
-// per piece (helmet, chestplate, leggings, boots): its row's first pixel in the sheet, worn, glint; and its colour
+// per piece (helmet, chestplate, leggings, boots): its row's first pixel in the sheet, worn, glint, its overlay's row (or -1); and its colour
 uniform vec4 uPiece[4];
 uniform vec3 uTint[4];
 uniform vec2 uSheet;
-out vec3 vTint; out vec3 vG;
+out vec3 vTint; out vec3 vG; out vec2 vUv2;
 #endif
 void main() {
   int layer = int(aPart.y + 0.5);
@@ -181,6 +190,7 @@ void main() {
   vec4 pc = uPiece[layer];
   vLayer = 1; vUv = (uv + vec2(0.0, pc.x)) / uSheet;
   vTint = uTint[layer]; vG = vec3(uv, pc.z);
+  vUv2 = pc.w < 0.0 ? vec2(-1.0) : (uv + vec2(0.0, pc.w)) / uSheet;
   // a piece not worn goes behind the far plane
   if (pc.y < 0.5) { vWorld = vec3(0.0); vN = vec3(0.0, 1.0, 0.0); gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
 #else
@@ -210,9 +220,10 @@ uniform float uEyeInWater;
 ` + LIGHTS + `
 in vec3 vWorld; in vec3 vN; in vec2 vUv; flat in int vLayer;
 #ifdef ARMOR
-in vec3 vTint; in vec3 vG;
+in vec3 vTint; in vec3 vG; in vec2 vUv2;
 uniform float uClock;
 ` + GLINT + `
+` + ARMOR_OVERLAY + `
 #endif
 layout(location = 0) out vec4 outColor;
 vec3 ambientAt(vec3 n) {
@@ -225,8 +236,9 @@ void main() {
   vec4 t = texture(uSkin, vUv);
 #ifdef ARMOR
   // armour is cut out and seen from both sides (the inside of a helmet from below); leather takes its dye; it never flashes red
-  if (t.a < 0.1) discard;
-  vec3 albedo = toLinear(t.rgb * vTint);
+  vec4 dyed = armorColour(t);
+  if (dyed.a < 0.1) discard;
+  vec3 albedo = toLinear(dyed.rgb);
 #else
   // the base layer is solid and one-sided (a camera pushed into the head sees out); the outer layers are cut out
   if (vLayer == 0 ? !gl_FrontFacing : t.a < 0.5) discard;
@@ -284,15 +296,15 @@ uniform sampler2D uSkin, uNoise;
 uniform vec3 cameraPosition;
 uniform vec2 uLightLv;
 uniform float uClock;
-in vec3 vWorld; in vec3 vN; in vec2 vUv; flat in int vLayer; in vec3 vTint; in vec3 vG;
+in vec3 vWorld; in vec3 vN; in vec2 vUv; flat in int vLayer; in vec3 vTint; in vec3 vG; in vec2 vUv2;
 layout(location = 0) out vec4 outColor;
-` + GLINT + `
+` + GLINT + ARMOR_OVERLAY + `
 void main() {
-  vec4 t = texture(uSkin, vUv);
+  vec4 t = armorColour(texture(uSkin, vUv));
   if (t.a < 0.1) discard;
   vec3 N = normalize(vN);
   if (!gl_FrontFacing) N = -N;
-  vec3 c = t.rgb * vTint * entityShade(N) * lightmapAt(uLightLv.x, uLightLv.y);
+  vec3 c = t.rgb * entityShade(N) * lightmapAt(uLightLv.x, uLightLv.y);
   if (vG.z > 0.5) c += glintAt(vG.xy, uClock);
   outColor = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;
@@ -519,7 +531,7 @@ export class Avatar {
       const look = pieceLook(stacks && stacks[i]), p = this.uPiece.value[i];
       if (!look) { p.set(0, 0, 0, 0); continue; }
       any = true;
-      p.set(look.row * 64, 1, look.glint ? 1 : 0, 0);
+      p.set(look.row * 64, 1, look.glint ? 1 : 0, look.overlay >= 0 ? look.overlay * 64 : -1);
       const c = look.tint;
       this.uTint.value[i].set(((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255);
     }
