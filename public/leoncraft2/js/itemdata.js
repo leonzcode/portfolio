@@ -4,7 +4,7 @@
    size, durability, enchantment categories, repair material, creative tab;
    food values; the tool each block wants; the crafting recipes. The
    pictures of the items that are not blocks are textures/items.png, in the
-   order of ITEM_TEX (Pixel Perfection CE and Legacy, CC BY-SA 4.0). */
+   order of ITEM_TEX (open resource packs, CC BY-SA 4.0: textures/LICENSE.txt). */
 export const ITEM_LIST = [
 {"d":"Stone","n":"stone","s":64},
 {"d":"Granite","n":"granite","s":64},
