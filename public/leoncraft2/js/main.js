@@ -890,7 +890,8 @@ async function boot() {
     // chat: T, or / with the slash already typed
     if ((a === 'chat' || (!a && e.code === 'KeyT')) && !e.repeat) { e.preventDefault(); openChat(''); return; }
     if ((a === 'command' || e.key === '/') && !e.repeat) { e.preventDefault(); openChat('/'); return; }
-    if (a && a.startsWith('hotbar')) { game.inv.select(+a.slice(6) - 1); return; }
+    // (with Ctrl held to sprint, Ctrl+1 to 9 would otherwise change the browser's tab)
+    if (a && a.startsWith('hotbar')) { game.inv.select(+a.slice(6) - 1); e.preventDefault(); return; }
     // Q throws one of the selected stack (Ctrl+Q all of it), F swaps it with the off hand
     if (a === 'drop') { game.hands.dropSelected(e.ctrlKey || e.metaKey); e.preventDefault(); return; }
     if (a === 'swapOffhand') { const inv = game.inv, t = inv.slots[inv.selected]; inv.slots[inv.selected] = inv.offhand; inv.offhand = t; inv.changed(); e.preventDefault(); return; }
@@ -977,14 +978,13 @@ async function boot() {
     // the next frame is asked for first, so one that goes wrong never stops the game
     requestAnimationFrame(loop);
     try {
-      const draw = !cardBusy(performance.now());
       drawDt += dt;
-      if (game && game.ready && !travelling) playFrame(now, dt, draw);
+      if (game && game.ready && !travelling) playFrame(now, dt);
       else {
         drawDt = 0;
         // the title world turns slowly: half the frames are plenty, and the menus stay quick
         menuAcc += dt;
-        if (menu && menuAcc >= 1 / 31 && draw) { menuFrame(menuAcc); menuAcc = 0; drawn(); }
+        if (menu && menuAcc >= 1 / 31 && !cardBusy(performance.now())) { menuFrame(menuAcc); menuAcc = 0; drawn(); }
       }
     } catch (e) {
       if (!loop.warned) { loop.warned = true; console.error(e); }
@@ -1008,7 +1008,7 @@ async function boot() {
       biome: BIOMES[w.biomeAt(Math.floor(eyeV.x), Math.floor(eyeV.z))], dim: DIMS[w.dim || 'overworld'],
     }, dt);
   }
-  function playFrame(now, dt, draw) {
+  function playFrame(now, dt) {
     const g = game, { world, player, fluids, inter, survival } = g;
     acc += dt;
     while (acc >= 0.05) {
@@ -1060,8 +1060,9 @@ async function boot() {
     const boss = g.realms.boss;
     if ((boss ? boss.progress : -1) !== (hud.boss ? hud.boss.progress : -1)) { hud.boss = boss ? Object.assign({}, boss) : null; hud.markDirty(); }
     zoomF = zoomHeld ? 0.25 : 1;
-    // the card still busy with the frames before: this one is not drawn (see cardBusy)
-    if (draw) {
+    /* the card still busy with the frames before: this one is not drawn (see cardBusy). Asked
+       here, after the ticks, rather than as the frame starts: the card has had that much longer */
+    if (!cardBusy(performance.now())) {
       const eyeBlock = world.get(Math.floor(v.eye.x), Math.floor(v.eye.y), Math.floor(v.eye.z));
       const onGrass = player.onGround && !player.flying;
       renderer.render({
