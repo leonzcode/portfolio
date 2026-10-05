@@ -373,6 +373,8 @@ export class Living extends Entity {
     if (this.maxHealth !== (this.constructor.HEALTH || 20)) o.mh = this.maxHealth;
     if (this.customName) o.cn = this.customName;
     if (this.equip && Object.keys(this.equip).length) o.eq = this.equip;
+    // the armour points what it wears gives it (a zombie in a helmet, a piglin in gold)
+    if (this.armor) o.ar = this.armor; if (this.toughness) o.at = this.toughness;
     return o;
   }
   fromJSON(o) {
@@ -380,6 +382,7 @@ export class Living extends Entity {
     this.bodyYaw = this.prevBodyYaw = this.headYaw = this.prevHeadYaw = this.yaw; this.persistent = !!o.pp;
     if (o.cn) this.customName = o.cn;
     if (o.eq && this.equip) Object.assign(this.equip, o.eq);
+    if (o.ar !== undefined) this.armor = o.ar; if (o.at) this.toughness = o.at;
   }
 }
 

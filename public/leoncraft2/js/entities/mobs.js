@@ -11,6 +11,7 @@ import { Mob, Living, DEG, wrap, yawTo, rotTowards } from './entity.js?v=14';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal, EatGrassGoal,
   MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=14';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=14';
+import { itemId, armorOf } from '../items.js?v=14';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);
@@ -19,6 +20,45 @@ const between = (a, b) => a + RI(b - a + 1);
 export const TYPES = {};
 export function register(name, cls) { cls.TYPE = name; TYPES[name] = cls; return cls; }
 
+/* ---- regional difficulty, the game's way (Minecraft Wiki): 0.75, plus the
+   world's age (nothing for the first 3 days, up to 0.25 at 63), plus the
+   moon (a quarter of its brightness, no more than the age part), times 1, 2
+   or 3 for Easy, Normal and Hard; clamped is 0 below 2, 1 above 4, between
+   in a straight line. The time spent in the chunk is not kept here, so that
+   part is left out. ---- */
+const MOON_BRIGHT = [1, 0.75, 0.5, 0.25, 0, 0.25, 0.5, 0.75];
+export function clampedDifficulty(m) {
+  const d = m.difficulty;
+  if (d === 'peaceful') return 0;
+  const t = m.time || 0;
+  const age = t > 63 * 24000 ? 0.25 : t < 72000 ? 0 : (t - 72000) / 5760000;
+  let chunk = Math.min(MOON_BRIGHT[Math.floor(t / 24000) % 8] * 0.25, age);
+  if (d === 'easy') chunk *= 0.5;
+  const r = (0.75 + age + chunk) * (d === 'hard' ? 3 : d === 'easy' ? 1 : 2);
+  return r < 2 ? 0 : r > 4 ? 1 : (r - 2) / 2;
+}
+/* What a zombie or a skeleton is wearing when it appears (Minecraft Wiki):
+   armour 15% x the clamped regional difficulty of the time; leather 23.60%,
+   copper 32.23%, gold 33.29%, chainmail 9.73%, iron 1.10%, diamond 0.04%; a
+   helmet always, then the chestplate, the leggings and the boots, each with a
+   75% chance to go on (90% on Hard). The pieces add their armour points. */
+const SPAWN_ARMOR = [['leather', 0.2360], ['copper', 0.3223], ['golden', 0.3329], ['chainmail', 0.0973], ['iron', 0.0110], ['diamond', 0.0004]];
+const PIECES = [['head', 'helmet'], ['chest', 'chestplate'], ['legs', 'leggings'], ['feet', 'boots']];
+export function spawnArmor(mob) {
+  const m = mob.m;
+  if (R() >= 0.15 * clampedDifficulty(m)) return;
+  let r = R(), mat = 'leather';
+  for (const [n, p] of SPAWN_ARMOR) { if (r < p) { mat = n; break; } r -= p; }
+  const keep = m.difficulty === 'hard' ? 0.9 : 0.75;
+  for (let i = 0; i < 4; i++) {
+    if (i > 0 && R() >= keep) break;
+    const [slot, piece] = PIECES[i], name = mat + '_' + piece, a = armorOf(itemId(name));
+    if (mob.equip[slot] || !a) continue;
+    mob.equip[slot] = name;
+    mob.armor += a.points; mob.toughness = (mob.toughness || 0) + a.toughness;
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Monsters: they burn in daylight (the undead), prefer the dark when they
    wander, and go away when you are far off.
@@ -26,9 +66,9 @@ export function register(name, cls) { cls.TYPE = name; TYPES[name] = cls; return
 export class Monster extends Mob {
   static HOSTILE = true; static CATEGORY = 'monster'; static XP = 5;
   walkValue(x, y, z) { return 0.5 - this.m.brightness(x, y, z); }
-  // the undead catch fire in the sun: by day, in full light, under open sky, not wet, no helmet
+  // the undead catch fire in the sun: by day, in full light, under open sky, not wet, nothing on the head
   sunBurn() {
-    if (!this.constructor.UNDEAD || this.fire > 0 || this.inWater || this.helmet) return;
+    if (!this.constructor.UNDEAD || this.fire > 0 || this.inWater || this.helmet || (this.equip && this.equip.head)) return;
     if (!this.m.isDay()) return;
     const x = Math.floor(this.pos.x), y = Math.floor(this.pos.y + this.eyeH), z = Math.floor(this.pos.z);
     const br = this.m.brightness(x, y, z);
@@ -40,7 +80,7 @@ export class Monster extends Mob {
 /* ---- Zombie: 20 health, speed 0.23, 3 damage, follow 35 ---- */
 export class Zombie extends Monster {
   static W = 0.6; static H = 1.95; static HEALTH = 20; static SPEED = 0.23; static ATTACK = 3; static FOLLOW = 35; static ARMOR = 2;
-  static UNDEAD = true; static MODEL = 'zombie'; static TEX = 'zombie'; static SHADOW = 0.5;
+  static UNDEAD = true; static MODEL = 'zombie'; static TEX = 'zombie'; static SHADOW = 0.5; static SPAWN_ARMOR = true;
   constructor(m, type) {
     super(m, type);
     this.armor = 2;
@@ -68,6 +108,7 @@ export class Zombie extends Monster {
   finalizeSpawn() {
     // 5% are babies (and some of those ride chickens, not here)
     if (R() < 0.05) this.setBaby(true);
+    if (this.constructor.SPAWN_ARMOR) spawnArmor(this);
     // can break doors on Hard (a 10% chance per zombie, scaled by regional difficulty: about 10%)
     this.breaksDoors = this.m.difficulty === 'hard' && R() < 0.1;
   }
@@ -139,7 +180,7 @@ export class Husk extends Zombie {
 register('husk', Husk);
 // a drowned: lives in water, swims after you
 export class Drowned extends Zombie {
-  static TEX = 'drowned'; static WATER_BREATHER = true; static CONVERTS_TO = null;
+  static TEX = 'drowned'; static WATER_BREATHER = true; static CONVERTS_TO = null; static SPAWN_ARMOR = false;
   constructor(m, type) { super(m, type); this.waterCost = 0; }
   registerGoals() {
     this.goals.add(2, new MeleeAttackGoal(this, 1, false));
@@ -170,7 +211,8 @@ register('zombie_villager', ZombieVillager);
 /* ---- Skeleton: 20 health, speed 0.25, a bow ---- */
 export class Skeleton extends Monster {
   static W = 0.6; static H = 1.99; static HEALTH = 20; static SPEED = 0.25; static ATTACK = 2; static FOLLOW = 16;
-  static UNDEAD = true; static MODEL = 'skeleton'; static TEX = 'skeleton'; static SHADOW = 0.5;
+  static UNDEAD = true; static MODEL = 'skeleton'; static TEX = 'skeleton'; static SHADOW = 0.5; static SPAWN_ARMOR = true;
+  finalizeSpawn() { if (this.constructor.SPAWN_ARMOR) spawnArmor(this); }
   constructor(m, type) { super(m, type); this.equip.mainhand = 'bow'; this.snowT = 0; this.convertT = -1; }
   registerGoals() {
     this.goals.add(3, new AvoidGoal(this, e => e.type === 'wolf' && !e.dead, 6, 1, 1.2));

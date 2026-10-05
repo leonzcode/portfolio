@@ -24,6 +24,7 @@ import { makeLdrSky } from './ldrsky.js?v=14';
 import { FullScreen } from './sky.js?v=14';
 import { Avatar } from './avatar.js?v=14';
 import { Held } from './held.js?v=14';
+import { Figure } from './figure.js?v=14';
 import { glints } from './armor.js?v=14';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=14';
 import { dimLook } from '../dim/look.js?v=14';
@@ -99,6 +100,8 @@ export class Renderer {
     this.avatar = new Avatar(this);
     // what is in your hands in first person (held.js); main.js sets this.wearer = { inv, cooldown }
     this.held = new Held(this);
+    // you in the inventory screen (figure.js): main.js gives it to the inventory as drawPlayer
+    this.figure = new Figure(this);
     this.wearer = null;
     this.columns = new Map();
     this.frame = 0;
@@ -478,6 +481,7 @@ export class Renderer {
     // the player's model posed for this frame (and, in third person, the camera pulled back), in what it wears and holds
     if (state.player) this.checkWorn();
     this.avatar.update(state, dt, cam);
+    if (state.player) this.figure.frame(state);
     // hurt: the view tilts away from the hit (combat/combat.js)
     if (state.tilt) cam.quaternion.multiply(state.tilt);
     // the held block takes the light where you stand, as the model does
