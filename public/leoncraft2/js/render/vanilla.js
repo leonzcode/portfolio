@@ -27,6 +27,7 @@
 --------------------------------------------------------------------------- */
 import { COMMON } from './glsl.js?v=12';
 import { FullScreen, VS_FULL } from './sky.js?v=12';
+import { BlockClouds } from './clouds.js?v=12';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k
@@ -362,18 +363,9 @@ export class Vanilla {
     this.skyC = new THREE.Vector3(0.47, 0.65, 1); this.fogBase = new THREE.Vector3(0.75, 0.85, 1);
     this.tmp = new THREE.Vector3(); this.tmp2 = new THREE.Vector3();
     this.waterFog = new THREE.Vector3(); this.waterFogTarget = new THREE.Vector3(); this.waterFogSet = false;
-    // clouds
-    this.cloudCells = makeCloudPattern();
-    this.cloudKey = '';
-    this.cloudGeo = new THREE.BufferGeometry();
+    // clouds (render/clouds.js): white with the face shades, fogged like the blocks
     const cu = { uCloudColor: U.uCloudColor, uFogColor: U.uFogColor, uCloudFog: U.uCloudFog };
-    const cm = (extra) => new THREE.RawShaderMaterial(Object.assign({ glslVersion: THREE.GLSL3, vertexShader: 'precision highp float;\n' + CLOUD_VS, fragmentShader: 'precision highp float;\n' + CLOUD_FS, uniforms: cu, side: THREE.DoubleSide }, extra));
-    // drawn twice: depth first, then colour where it is the nearest cloud, so they never show through each other
-    this.cloudDepth = new THREE.Mesh(this.cloudGeo, cm({ colorWrite: false }));
-    this.cloudColour = new THREE.Mesh(this.cloudGeo, cm({ transparent: true, depthWrite: false, depthFunc: THREE.LessEqualDepth }));
-    this.cloudScene = new THREE.Scene();
-    for (const m of [this.cloudDepth, this.cloudColour]) { m.frustumCulled = false; m.matrixAutoUpdate = false; this.cloudScene.add(m); }
-    this.cloudColour.renderOrder = 1;
+    this.cloudMesh = new BlockClouds(extra => new THREE.RawShaderMaterial(Object.assign({ glslVersion: THREE.GLSL3, vertexShader: 'precision highp float;\n' + CLOUD_VS, fragmentShader: 'precision highp float;\n' + CLOUD_FS, uniforms: cu, side: THREE.DoubleSide }, extra)));
   }
 
   /* ---- once a frame: the clock, the colours, the lightmap and the fog ---- */
@@ -501,60 +493,10 @@ export class Vanilla {
 
   drawSky(r) { this.skyFS.render(r, null); }
 
-  /* ---- clouds: rebuilt when you cross into another cloud cell ---- */
+  /* ---- clouds: rebuilt when you cross into another cloud cell (render/clouds.js) ---- */
   drawClouds(r, cam, time) {
     if (this.clouds === 'off') return;
-    const H = 192, S = 12;
-    const scroll = time * 20 * 0.03;
-    const fx = (cam.position.x + scroll) / S, fz = cam.position.z / S;
-    const cx = Math.floor(fx), cz = Math.floor(fz);
-    const flat = this.clouds === 'fast';
-    const R = Math.max(16, Math.ceil(this.R.U.uCloudFog.value.y / S) + 1) + 8;
-    const B = this.cloudAt;
-    if (!B || B.flat !== flat || B.R !== R || Math.abs(cx - B.cx) > 8 || Math.abs(cz - B.cz) > 8) {
-      this.cloudAt = { cx, cz, flat, R };
-      this.buildClouds(cx, cz, R, flat);
-    }
-    // the mesh is laid out in cloud cells round where it was built; slide it with the wind
-    const at = this.cloudAt;
-    for (const m of [this.cloudDepth, this.cloudColour]) {
-      m.position.set(at.cx * S - scroll, H, at.cz * S);
-      m.updateMatrix(); m.matrixWorld.copy(m.matrix);
-    }
-    r.render(this.cloudScene, cam);
-  }
-  buildClouds(cx, cz, R, flat) {
-    const cells = this.cloudCells, S = 12, T = flat ? 0 : 4;
-    const on = (x, z) => cells[(((cz + z) & 255) << 8) | ((cx + x) & 255)];
-    // counted first, then written straight into typed arrays
-    let quads = 0;
-    for (let z = -R; z <= R; z++) for (let x = -R; x <= R; x++) {
-      if (!on(x, z)) continue;
-      quads += flat ? 1 : 2 + !on(x - 1, z) + !on(x + 1, z) + !on(x, z - 1) + !on(x, z + 1);
-    }
-    const pos = new Float32Array(quads * 18), sh = new Float32Array(quads * 6);
-    let n = 0, m = 0;
-    const v = (x, y, z) => { pos[n++] = x; pos[n++] = y; pos[n++] = z; };
-    const quad = (ax, ay, az, bx, by, bz, cx2, cy, cz2, dx, dy, dz, s) => {
-      v(ax, ay, az); v(bx, by, bz); v(cx2, cy, cz2); v(ax, ay, az); v(cx2, cy, cz2); v(dx, dy, dz);
-      for (let i = 0; i < 6; i++) sh[m++] = s;
-    };
-    for (let z = -R; z <= R; z++) for (let x = -R; x <= R; x++) {
-      if (!on(x, z)) continue;
-      const x0 = x * S, x1 = x0 + S, z0 = z * S, z1 = z0 + S;
-      quad(x0, T, z0, x0, T, z1, x1, T, z1, x1, T, z0, 1.0);
-      if (flat) continue;
-      quad(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1, 0.7);
-      if (!on(x - 1, z)) quad(x0, 0, z0, x0, 0, z1, x0, T, z1, x0, T, z0, 0.9);
-      if (!on(x + 1, z)) quad(x1, 0, z1, x1, 0, z0, x1, T, z0, x1, T, z1, 0.9);
-      if (!on(x, z - 1)) quad(x1, 0, z0, x0, 0, z0, x0, T, z0, x1, T, z0, 0.8);
-      if (!on(x, z + 1)) quad(x0, 0, z1, x1, 0, z1, x1, T, z1, x0, T, z1, 0.8);
-    }
-    const g = this.cloudGeo;
-    g.dispose();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('shade', new THREE.BufferAttribute(sh, 1));
-    g.setDrawRange(0, quads * 6);
+    this.cloudMesh.draw(r, cam, time, this.clouds, this.R.U.uCloudFog.value.y);
   }
 }
 
@@ -567,26 +509,6 @@ function sunriseColour(tod) {
   let f4 = 1 - (1 - Math.sin(f3 * Math.PI)) * 0.99;
   f4 *= f4;
   return [f3 * 0.3 + 0.7, f3 * f3 * 0.7 + 0.2, 0.2, f4];
-}
-
-/* Our own cloud pattern, 256 x 256 cells that wrap round: soft noise cut at
-   a level, so it comes out as the same kind of big blocky drifts with sky
-   between them. */
-function makeCloudPattern() {
-  const N = 256, out = new Uint8Array(N * N);
-  const rnd = (x, y, s) => { let h = (x * 374761393 + y * 668265263 + s * 2246822519) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-  const noise = (x, y, p, s) => {
-    const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
-    const a = rnd(((xi % p) + p) % p, ((yi % p) + p) % p, s), b = rnd((((xi + 1) % p) + p) % p, ((yi % p) + p) % p, s);
-    const c = rnd(((xi % p) + p) % p, (((yi + 1) % p) + p) % p, s), d = rnd((((xi + 1) % p) + p) % p, (((yi + 1) % p) + p) % p, s);
-    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
-    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-  };
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const n = noise(x / 16, y / 16, 16, 1) * 0.55 + noise(x / 6, y / 6, 256 / 6 | 0, 2) * 0.3 + noise(x / 2.5, y / 2.5, 256 / 2.5 | 0, 3) * 0.15;
-    out[y * N + x] = n > 0.56 ? 1 : 0;
-  }
-  return out;
 }
 
 /* ---- the materials ---- */
