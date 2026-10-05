@@ -304,11 +304,60 @@ export function drawOutline(g, kind, x, y) {
 
 /* ------------------------------ drawing a stack ------------------------------ */
 
+/* The enchantment glint: what is enchanted (and a few things that always
+   shine: an enchanted golden apple, a bottle o' enchanting, a nether star...)
+   gets two bands of violet light sliding across it, added over its picture.
+   Drawn here, not the game's texture. GLINT.seen says one was drawn, so the
+   HUD and the screens keep redrawing while it moves. */
+const ALWAYS_GLINT = new Set(['enchanted_golden_apple', 'experience_bottle', 'nether_star', 'enchanted_book', 'end_crystal', 'debug_stick', 'written_book']);
+export const GLINT = { seen: false };
+export function hasGlint(st) {
+  if (!st) return false;
+  if (st.ench && Object.keys(st.ench).length) return true;
+  const it = ITEMS[st.id];
+  return !!it && ALWAYS_GLINT.has(it.name);
+}
+let glintC = null, glintTimer = 0;
+// the screen drawn again in 50 ms (twenty times a second is enough for the bands to slide smoothly)
+function glintAgain(g) { if (!glintTimer) glintTimer = setTimeout(() => { glintTimer = 0; g.markDirty(); }, 50); }
+function drawGlint(g, icons, st, x, y) {
+  const e = icons.get ? icons.get(st.id) : null;
+  if (!e || !e.c) return;
+  const w = e.w;
+  if (!glintC) glintC = document.createElement('canvas');
+  if (glintC.width !== w) { glintC.width = glintC.height = w; }
+  const c = glintC.getContext('2d');
+  c.globalCompositeOperation = 'copy';
+  c.drawImage(e.c, e.x, e.y, w, w, 0, 0, w, w);
+  c.globalCompositeOperation = 'source-in';
+  // two bands, one sliding each way, slowly (a band crosses in about three seconds)
+  const t = performance.now() / 1000;
+  // a violet sheen all over, and the bands brighter on it
+  c.fillStyle = 'rgb(34,12,66)';
+  c.fillRect(0, 0, w, w);
+  c.globalCompositeOperation = 'lighter';
+  for (const [speed, slope, rgb] of [[0.33, 0.6, '128,64,204'], [-0.21, -1.4, '96,48,170']]) {
+    const off = ((t * speed) % 1 + 1) % 1 * 3 * w - w * 1.5;
+    const gr = c.createLinearGradient(off, 0, off + w * 1.2, w * 1.2 * slope);
+    gr.addColorStop(0, 'rgba(' + rgb + ',0)'); gr.addColorStop(0.5, 'rgba(' + rgb + ',0.55)'); gr.addColorStop(1, 'rgba(' + rgb + ',0)');
+    c.fillStyle = gr;
+    c.fillRect(0, 0, w, w);
+  }
+  c.globalCompositeOperation = 'destination-in';
+  c.drawImage(e.c, e.x, e.y, w, w, 0, 0, w, w);
+  const ctx = g.ctx, op = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.drawImage(glintC, 0, 0, w, w, x, y, 16, 16);
+  ctx.globalCompositeOperation = op;
+  GLINT.seen = true;
+}
+
 // an item and its count, the count in the slot's bottom-right corner, and the wear bar, as in the game
 export function drawStack(g, icons, st, x, y, countText, countColour) {
   if (!st) return;
   if (st.potion && icons.drawTinted) icons.drawTinted(g, st, x, y);
   else icons.draw(g, st.id, x, y);
+  if (hasGlint(st)) drawGlint(g, icons, st, x, y);
   if (st.dmg > 0) {
     const max = maxDamage(st.id);
     if (max) {
@@ -800,6 +849,8 @@ export class ContainerScreen extends Screen {
       const st = this.slotStack(this.hover);
       if (st) g.setTooltip(this.tooltipFor(st, this.hover));
     }
+    // something shining in the screen: keep drawing it while it moves
+    if (GLINT.seen) { GLINT.seen = false; glintAgain(g); }
     return prev;
   }
   slotStack(s) { return this.getStack(s); }
@@ -811,6 +862,7 @@ export class ContainerScreen extends Screen {
     if (!c || mx < 0) return;
     if (prev) drawStack(g, this.icons, c, mx - 8, my - 8, prev.left === 0 ? '§e0' : prev.left > 1 ? String(prev.left) : '');
     else drawStack(g, this.icons, c, mx - 8, my - 8);
+    if (GLINT.seen) { GLINT.seen = false; glintAgain(g); }
   }
 }
 
