@@ -26,6 +26,9 @@ import { dimLook } from '../dim/look.js?v=19';
 import { blockGeometry, intAttribute } from './blockmesh.js?v=19';
 import { applyLook, looked } from './looks.js?v=19';
 const THREE = window.THREE;
+// a column's distance from (ex, ez), squared, in whole blocks; and nearest first
+const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
+const byDist = (a, b) => a.dist - b.dist;
 // one black pixel, for a texture that is made later
 function blankTexture() {
   const t = new THREE.DataTexture(new Uint8Array(4), 1, 1);
@@ -117,6 +120,7 @@ export class Renderer {
     // the view out of a carved pumpkin worn on the head (pumpkin.js)
     this.pumpkin = new PumpkinView(this.r.domElement);
     this.columns = new Map();
+    this.order = [];          // the same, nearest the camera first (inView)
     this.frame = 0;
     this.resize(canvas.clientWidth || 1280, canvas.clientHeight || 720);
   }
@@ -172,11 +176,12 @@ export class Renderer {
   pumpUploads(budgetMs) {
     if (!this.uploads || !this.uploads.size) return;
     const t0 = performance.now();
-    // nearest first
-    const list = [...this.uploads.values()].sort((a, b) => ((a[0] - this.ccx) ** 2 + (a[1] - this.ccz) ** 2) - ((b[0] - this.ccx) ** 2 + (b[1] - this.ccz) ** 2));
-    for (const [cx, cz, mesh] of list) {
-      this.uploads.delete(cx + ',' + cz);
-      this.addColumn(cx, cz, mesh);
+    // nearest first: picked one at a time (a few a frame), not the whole line copied and sorted each frame
+    while (this.uploads.size) {
+      let best = null, bd = Infinity;
+      for (const e of this.uploads.values()) { const d = (e[0] - this.ccx) * (e[0] - this.ccx) + (e[1] - this.ccz) * (e[1] - this.ccz); if (d < bd) { bd = d; best = e; } }
+      this.uploads.delete(best[0] + ',' + best[1]);
+      this.addColumn(best[0], best[1], best[2]);
       if (performance.now() - t0 > budgetMs) break;
     }
     // buffers and vertex arrays were bound behind three.js's back
@@ -300,10 +305,19 @@ export class Renderer {
     this.frustum.setFromProjectionMatrix(this.fm);
     const ex = cam.position.x, ez = cam.position.z, b = this.box, F = this.frustum;
     const cut = !this.noSectionCull;
-    for (const col of this.columns.values()) {
+    /* The view's own camera goes through every column in the order kept for
+       it (nearest first, put right here each frame: from one frame to the next
+       it hardly changes, so that is a pass or two over the list, where sorting
+       afresh made a few thousand comparisons and as much garbage), and decides
+       on the way whether its grass and canopy insides are near enough to draw.
+       Any other camera (the sun's, for its map) sorts what it sees. */
+    const main = cam === this.camera, order = main ? this.sortOrder(ex, ez) : this.order;
+    for (let i = 0; i < order.length; i++) {
+      const col = order[i];
+      if (col.dead) continue;
       b.min.set(col.cx * 16, col.y0, col.cz * 16); b.max.set(col.cx * 16 + 16, col.y1, col.cz * 16 + 16);
       if (!F.intersectsBox(b)) continue;
-      col.dist = (col.cx * 16 + 8 - ex) ** 2 + (col.cz * 16 + 8 - ez) ** 2;
+      if (!main) col.dist = distTo(col, ex, ez);
       list.push(col);
       /* and only the run of its sections the camera can see: a column near you is
          mostly above or below the view (the ground under your feet, the caves
@@ -317,8 +331,31 @@ export class Renderer {
       }
       col.viewCam = cam; col.view0 = s0; col.view1 = s1;
     }
-    list.sort((a, b) => a.dist - b.dist);
+    if (!main) list.sort(byDist);
     return list;
+  }
+  /* The columns nearest first from (ex, ez), every one's distance (squared,
+     in whole blocks) worked out, the dropped ones taken out; and whether its
+     plants and the inside of its canopies are drawn: grass and flowers stop
+     where you could not make them out anyway, a canopy's inside further in. */
+  sortOrder(ex, ez) {
+    const o = this.order, pd = this.opts.plantDist || 96, ld = this.opts.leafInDist || 64, pd2 = pd * pd, ld2 = ld * ld;
+    let j = 0;
+    for (let i = 0; i < o.length; i++) {
+      const col = o[i];
+      if (col.dead) continue;
+      const d = distTo(col, ex, ez);
+      col.dist = d;
+      if (col.plants) col.plants.hidden = d >= pd2;
+      if (col.leafIn) col.leafIn.hidden = d >= ld2;
+      // straight into its place among those before it (almost always where it already is)
+      let k = j;
+      while (k > 0 && o[k - 1].dist > d) { o[k] = o[k - 1]; k--; }
+      o[k] = col;
+      j++;
+    }
+    o.length = j;
+    return o;
   }
   addColumn(cx, cz, mesh) {
     this.shadows.changed(cx, cz);
@@ -374,6 +411,10 @@ export class Renderer {
     col.leafIn = col.byKind.leafIn || null;
     if (col.y0 > col.y1) { col.y0 = 0; col.y1 = 1; }
     this.columns.set(cx + ',' + cz, col);
+    // in the near-first order where the column it replaces was (a new one goes in from the end)
+    const at = was ? this.order.indexOf(was) : -1;
+    if (at >= 0) { col.dist = was.dist; this.order[at] = col; }
+    else this.order.push(col);
     this.glDirty = true;
   }
   dropColumn(cx, cz) {
@@ -639,15 +680,7 @@ export class Renderer {
     const vk = Math.floor(cam.position.x / 16) + ',' + Math.max(0, Math.min(23, Math.floor(cam.position.y / 16))) + ',' + Math.floor(cam.position.z / 16);
     const now = performance.now();
     if (vk !== this.visKey || (this.visDirty && now - (this.visAt || 0) > 1000)) { this.updateVisibility(cam.position); this.visAt = now; }
-    // grass and flowers stop where you could not make them out anyway
-    const pd = (this.opts.plantDist || 96) / 16;
-    // and the inside of a tree's canopy only near enough to see into
-    const ld = (this.opts.leafInDist || 64) / 16;
-    for (const col of this.columns.values()) {
-      const d = Math.hypot(col.cx + 0.5 - cam.position.x / 16, col.cz + 0.5 - cam.position.z / 16);
-      if (col.plants) col.plants.hidden = d >= pd;
-      if (col.leafIn) col.leafIn.hidden = d >= ld;
-    }
+    // (how far grass, flowers and the inside of canopies are drawn: inView, as it puts the columns in order)
 
     // the sky table: every frame on the full tiers; on the light ones every few frames (it changes
     // slowly), a third of it a frame, and all at once when the sun has jumped (/time set, a night's sleep)

@@ -271,8 +271,7 @@ export class World {
       this.genList = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
         if (dx * dx + dz * dz > R * R) continue;
-        const k = this.key(pcx + dx, pcz + dz);
-        if (!this.chunks.has(k)) this.genList.push([dx * dx + dz * dz, pcx + dx, pcz + dz]);
+        if (!this.chunkXZ(pcx + dx, pcz + dz)) this.genList.push([dx * dx + dz * dz, pcx + dx, pcz + dz]);
       }
       this.genList.sort((a, b) => a[0] - b[0]);
       this.lookup();
@@ -363,12 +362,17 @@ export class World {
     this.sched = false;
     const list = this.genList;
     if (!list) return;
+    /* (this runs whenever a worker answers, over every chunk still to make: no
+       string is made for one until a job could go out for it, which with every
+       worker busy is never) */
     let j = 0;
     for (let n = 0; n < list.length; n++) {
-      const e = list[n], x = e[1], z = e[2], k = this.key(x, z);
-      if (this.chunks.has(k)) continue;
+      const e = list[n], x = e[1], z = e[2];
+      if (this.chunkXZ(x, z)) continue;
       list[j++] = e;                       // still to be made: stays in the list
-      if (this.inFlightCount() >= cap || this.inFlight.has('g' + k) || this.lookingUp.has(k)) continue;
+      if (this.inFlightCount() >= cap) continue;
+      const k = this.key(x, z);
+      if (this.inFlight.has('g' + k) || this.lookingUp.has(k)) continue;
       // while a loading screen waits for the chunks round you (focus), nothing further away takes a worker
       if (this.focus >= 0 && Math.max(Math.abs(x - this.pcx), Math.abs(z - this.pcz)) > this.focus) continue;
       if (this.canGen(x, z)) { this.sendGen(x, z); continue; }
@@ -395,8 +399,14 @@ export class World {
     const i = this.idlest(); this.busy[i]++;
     this.workers[i].postMessage({ type: 'terrain', cx: x, cz: z });
   }
-  // a chunk's terrain as a worker takes it: copied, for the original stays here for the other jobs that need it
-  protoCopy(p) { return { cx: p.cx, cz: p.cz, blocks: p.blocks.slice(), meta: p.meta.slice(), grid: p.grid }; }
+  /* a chunk's terrain as a worker takes it: copied, for the original stays here for the other jobs that
+     need it; into buffers the worker hands back when the job is done (see pool). Fresh ones each time, nine
+     to a decoration, were three megabytes a job for the collector while a world loads. */
+  protoCopy(p) {
+    const blocks = new Uint16Array(this.takeBuf('b')), meta = new Uint8Array(this.takeBuf('m'));
+    blocks.set(p.blocks); meta.set(p.meta);
+    return { cx: p.cx, cz: p.cz, blocks, meta, grid: p.grid };
+  }
   sendDecorate(x, z) {
     const f = numKey(x, z), protos = [], transfer = [];
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
