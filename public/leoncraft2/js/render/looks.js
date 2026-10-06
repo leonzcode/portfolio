@@ -31,7 +31,7 @@ import { Sky, FullScreen } from './sky.js?v=17';
 import { Post } from './post.js?v=17';
 import { makeMaterials } from './materials.js?v=17';
 import { makeWaterMaterial } from './water.js?v=17';
-import { makeNoise3DAsync } from './noisetex.js?v=17';
+import { makeNoise3DAsync, makeNoise3DGPU } from './noisetex.js?v=17';
 import { makeLdrSky } from './ldrsky.js?v=17';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=17';
 import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=17';
@@ -136,7 +136,9 @@ export function lookOf(s, on) {
     water: s.water === 'vanilla' ? 0 : 1, waves: s.waves === 'off' ? false : s.waves === 'low' ? 'low' : true,
     ssrSteps: s.water === 'reflections' ? (s.reflections === 'high' ? 28 : 12) : 0,
     bloom: s.bloom !== 'off', bloomMix: s.bloom === 'high' ? 0.08 : 0.045,
+    // (High: finer, and the beams stronger, so the level shows)
     vlSteps: s.lightShafts === 'off' ? 0 : s.lightShafts === 'high' ? 20 : 10,
+    vlStrength: s.lightShafts === 'high' ? 1.5 : 1,
     volumetric: s.clouds === 'volumetric', shaderClouds: s.clouds,
     fxaa: s.antialiasing === 'fxaa',
     ao: s.ao, fog: s.fog, exposure: s.exposure, contrast: s.contrast, saturation: s.saturation, tone: s.tone || 'agx',
@@ -169,7 +171,7 @@ function codeKey(o) {
    constructor) builds everything at once. Later ones that only change
    numbers (exposure, fog, how far the shadows reach...) take effect at once.
    One that needs new shader code builds it off to the side and has the
-   graphics card compile it in the background (three.js compileAsync) while
+   graphics card compile it in the background (KHR_parallel_shader_compile) while
    the old look goes on being drawn; when it is ready the materials take it,
    the programs come out of three.js's cache already built, and the new look
    is there from one frame to the next with no stall. */
@@ -185,6 +187,8 @@ export function applyLook(R, look, first) {
   // already being built for: it takes these numbers when it is ready
   if (R.lookPending && R.lookPending.key === key) { Object.assign(R.lookPending.look, look); return true; }
   const token = R.lookToken = (R.lookToken || 0) + 1;
+  // (main.js's render scale leaves alone the frames from here until a few seconds after the look lands)
+  R.lookAt = performance.now();
   const prep = prepare(R, o);
   const pending = R.lookPending = { key, look: Object.assign({}, look), prep };
   let ran = false;
@@ -199,19 +203,35 @@ export function applyLook(R, look, first) {
      a program together (its source, then the calls that start it compiling)
      takes a few milliseconds in this thread, and the full chain's forty in one
      go cost the frame the setting was changed in a tenth of a second or more. */
+  /* Each frame after that, the programs handed over are asked whether they
+     are built yet, oldest first, stopping at the first that is not: every
+     such question waits for the graphics process to catch up, so they are
+     kept to a few a frame (three.js's own compileAsync asked all of them every
+     ten milliseconds). One that is built is asked for its uniforms and
+     attributes there and then, questions three.js would otherwise ask at its
+     first draw, all of them in the frame the new look first shows. */
   const compiled = new Promise(res => {
-    const list = prep.compile, waits = [];
+    const list = prep.compile, building = [];
     let i = 0;
     const step = () => {
       if (R.lookToken !== token) return res();
       const t0 = performance.now();
       while (i < list.length && performance.now() - t0 < 5) {
-        const scene = new THREE.Scene();
-        for (const m of list.slice(i, i + 3)) scene.add(new THREE.Mesh(R.standGeo, m));
+        const scene = new THREE.Scene(), batch = list.slice(i, i + 3);
+        for (const m of batch) scene.add(new THREE.Mesh(R.standGeo, m));
         i += 3;
-        try { waits.push(R.r.compileAsync(scene, R.camera)); } catch (e) { /* built when first drawn */ }
+        try {
+          R.r.compile(scene, R.camera);
+          for (const m of batch) { const p = R.r.properties.get(m).currentProgram; if (p && !building.includes(p)) building.push(p); }
+        } catch (e) { /* built when first drawn */ }
       }
-      if (i < list.length) requestAnimationFrame(step); else Promise.all(waits).then(res, res);
+      while (building.length && performance.now() - t0 < 8) {
+        const p = building[0];
+        if (!p.isReady()) break;
+        try { p.getUniforms(); p.getAttributes(); } catch (e) { /* (three.js reports a shader that failed) */ }
+        building.shift();
+      }
+      if (i < list.length || building.length) requestAnimationFrame(step); else res();
     };
     step();
   });
@@ -251,9 +271,14 @@ function firstVertexFlat(r) {
   const pv = r.getContext().getExtension('WEBGL_provoking_vertex');
   if (pv) pv.provokingVertexWEBGL(pv.FIRST_VERTEX_CONVENTION_WEBGL);
 }
-// the full chain's 3D noise (volumetric clouds and light shafts): made in a worker, once, and filled in when ready
+// the full chain's 3D noise (volumetric clouds and light shafts): drawn by the graphics card, once, and filled in when ready
 function noise3D(R) {
-  if (!R.noise3) R.noise3 = makeNoise3DAsync().then(t => { R.U.uNoise3.value = t; });
+  if (!R.noise3) {
+    let made;
+    try { made = makeNoise3DGPU(R.r); } catch (e) { console.warn('noise on the graphics card', e); made = makeNoise3DAsync(); }
+    const put = t => { R.U.uNoise3.value = t; };
+    R.noise3 = made.then(put, e => { console.warn('noise on the graphics card', e); return makeNoise3DAsync().then(put); });
+  }
   return R.noise3;
 }
 
@@ -273,15 +298,18 @@ function prepare(R, o) {
     compile.push(R.skyFS.mesh.material, R.blockClouds.depth.material, R.blockClouds.colour.material);
   }
   let noise = null;
+  const variants = [];
   if (!o.ldr) {
     if (!U.uNoise3.value) noise = noise3D(R);
     if (!R._post) R._post = new Post(r, U, o);
     if (!R.blockCloudsHDR) R.blockCloudsHDR = new BlockClouds(detailedCloudMaterial(U, true));
     const P = R._post;
     compile.push(P.mCopy, P.mLin, P.mVL, P.mClouds, P.mComp, P.mDown, P.mUp, P.mLum, P.mExpo, P.mFinal, P.mFxaa, R.blockCloudsHDR.depth.material, R.blockCloudsHDR.colour.material);
+    // (and any pass whose shader the new look changes, in its new form)
+    for (const m of P.variants(o)) { variants.push(m); compile.push(m); }
   }
   const next = o.vanilla ? makeVanillaMaterials(U, o) : Object.assign(makeMaterials(U, o), { fluid: makeWaterMaterial(U, o) });
-  const temps = [], pairs = [];
+  const temps = variants.slice(), pairs = [];
   for (const k in next) if (next[k]) { temps.push(next[k]); compile.push(next[k]); }
   if (R.lookList) R.lookList = R.lookList.filter(e => {
     const m = e.ref.deref();
@@ -328,9 +356,11 @@ function finishLook(R, look, first, prep) {
     S.uniforms.uExpBias.value = Math.pow(2, o.exposure || 0);
     // all of the table again next frame, so the new colours show at once
     if (R.skySun) R.skySun.set(0, -2, 0);
-    // the tone curve, with the contrast and saturation in it (no cost a pixel)
+    /* the tone curve, with the contrast and saturation in it (no cost a pixel), refilled in
+       place; only the light pipeline reads it (the full chain works the same out per pixel),
+       so in the full chain it waits until the light one is back */
     const tk = (o.contrast || 1) + ',' + (o.saturation === undefined ? 1 : o.saturation) + ',' + (o.tone || 'agx');
-    if (R.toneKey !== tk) { if (U.uToneLut.value) U.uToneLut.value.dispose(); U.uToneLut.value = makeToneLut(o.contrast || 1, o.saturation === undefined ? 1 : o.saturation, o.tone); R.toneKey = tk; }
+    if (o.ldr && R.toneKey !== tk) { U.uToneLut.value = makeToneLut(o.contrast || 1, o.saturation === undefined ? 1 : o.saturation, o.tone, U.uToneLut.value); R.toneKey = tk; }
     if (!o.ldr && !U.uNoise3.value) noise3D(R);
   }
   U.uWave.value.set(o.wave ? o.wave[0] : 0, o.wave ? o.wave[1] : 0);
@@ -473,7 +503,10 @@ function r_upload(r, t, pieces, layers, skip) {
 export function setFiltering(R, mipLevels, aniso) {
   const r = R.r, gl = r.getContext();
   const ext = r.extensions.get('EXT_texture_filter_anisotropic');
-  const maxA = ext ? gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT) : 1;
+  /* (three.js asks the graphics card once and keeps the answer: asking it
+     again waits for everything the card has still to do, which while a new
+     look's shaders are being built was a sixth of a second) */
+  const maxA = ext ? r.capabilities.getMaxAnisotropy() : 1;
   for (const t of [R.U.uAlbedo.value, R.U.uNormalMap.value, R.U.uSpecMap.value]) {
     if (!t || !t.image || !(t.image.depth > 1)) continue;
     const p = r.properties.get(t);
