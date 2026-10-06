@@ -323,9 +323,7 @@ export class Player {
   tick() {
     this.prev.copy(this.pos);
     this.prevWalk = this.walkDist;
-    // the view bob follows the speed across the ground, up to 0.1, 0.4 of the way a tick (none in the air or swimming)
     this.oBob = this.bob;
-    this.bob += ((this.onGround && !this.flying && !this.swimming ? Math.min(0.1, Math.hypot(this.vel.x, this.vel.z)) : 0) - this.bob) * 0.4;
     this.prevEyeH = this.eyeH;
     // the keys as this tick sees them: held now, or pressed since the last tick (a tap shorter than a tick)
     const k0 = this.keys, k = this.tickKeys || (this.tickKeys = {});
@@ -501,6 +499,10 @@ export class Player {
       const sf = isWater(here) ? 1 : SPEED.get(here) || SPEED.get(this.w.get(px, Math.floor(this.pos.y - 0.500001), pz)) || 1;
       if (sf !== 1) { this.vel.x *= sf; this.vel.z *= sf; }
     }
+    /* the view bob follows the speed across the ground, up to 0.1, 0.4 of the way a tick (none in the
+       air or swimming): the speed this tick's move left, as the game takes it, so the bob eases off on
+       the very tick you stop pushing */
+    this.bob += ((this.onGround && !this.flying && !this.swimming ? Math.min(0.1, Math.hypot(this.vel.x, this.vel.z)) : 0) - this.bob) * 0.4;
     // the game drops speeds too small to see
     if (Math.abs(this.vel.x) < 0.003) this.vel.x = 0;
     if (Math.abs(this.vel.y) < 0.003) this.vel.y = 0;
@@ -536,7 +538,9 @@ export class Player {
   /* ---- where the camera is, between ticks ---- */
   view(alpha) {
     const p = this.prev.clone().lerp(this.pos, alpha);
-    const walk = this.prevWalk + (this.walkDist - this.prevWalk) * alpha;
+    // (the step's phase runs on from the newest tick rather than between the last two, as the game's does,
+    // so the bob stops with the tick you stop on rather than one after)
+    const walk = this.walkDist + (this.walkDist - this.prevWalk) * alpha;
     const eye = p.clone();
     eye.y += this.prevEyeH + (this.eyeH - this.prevEyeH) * alpha;
     /* The game's view bob: with each step the world and your hands swing
