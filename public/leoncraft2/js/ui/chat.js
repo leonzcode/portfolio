@@ -119,6 +119,7 @@ export class ChatScreen extends Screen {
     if (chat.sent[chat.sent.length - 1] !== v) chat.sent.push(v);
     const ctx = this.ctxOf();
     if (v.startsWith('/')) execute(v, ctx);
+    else if (ctx.sendChat) ctx.sendChat(v);
     else chat.add(`<${ctx.playerName}> ${v}`);
   }
   onClose() { this.chat.open = false; this.chat.dirty = true; this.gui._blurText && this.gui._blurText(); }

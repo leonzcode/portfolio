@@ -397,8 +397,12 @@ function loadImage(src) {
 const REST = [[0, 0, 0], [0, 0, 0], [-5, 2, 0], [5, 2, 0], [-1.9, 12, 0.1], [1.9, 12, 0.1]];
 
 export class Avatar {
-  constructor(renderer) {
-    current = this;
+  /* remote: another player on a server (net/players.js), drawn the same way but
+     never the one the skin settings belong to, with no first-person arm and no
+     body shadow (the small body map is only round you) */
+  constructor(renderer, remote) {
+    if (!remote) current = this;
+    this.remote = !!remote;
     this.R = renderer;
     const U = renderer.U, opts = renderer.opts;
     this.view = 0;                  // 0 first person, 1 behind, 2 in front
@@ -412,7 +416,7 @@ export class Avatar {
     tex.generateMipmaps = false; tex.flipY = false;
     this.parts = Array.from({ length: 6 }, () => new THREE.Matrix4());
     this.armParts = Array.from({ length: 6 }, () => new THREE.Matrix4());
-    this.uShow = { value: settings.show | 1 };
+    this.uShow = { value: remote ? 0x7f : settings.show | 1 };
     this.uLight = { value: new THREE.Vector2(1, 0) };
     this.uHurt = { value: 0 };
     const uni = Object.assign({}, U, { uSkin: { value: tex }, uParts: { value: this.parts }, uShow: this.uShow, uLightLv: this.uLight, uHurt: this.uHurt });
@@ -454,9 +458,8 @@ export class Avatar {
     for (const m of [this.mesh, this.shadowMesh, this.arm, this.armor, this.armorShadow]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
     renderer.scene.add(this.mesh);
     renderer.scene.add(this.armor);
-    // (only drawn while there are shadows: render/shadows.js)
-    renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow);
-    renderer.handScene.add(this.arm);
+    // (only drawn while there are shadows: render/shadows.js; another player's model has no first-person arm)
+    if (!remote) { renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow); renderer.handScene.add(this.arm); }
     // what is in each hand (0 main, 1 off), in the model's hand in third person
     this.held = [null, null];
     this.heldGlint = [false, false];
@@ -476,7 +479,8 @@ export class Avatar {
     // scratch
     this.m = new THREE.Matrix4(); this.t = new THREE.Matrix4(); this.root = new THREE.Matrix4();
     this.e = new THREE.Euler(); this.handPos = new THREE.Vector3(); this.vs = new THREE.Vector3(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
-    this.setSkin(settings.skin || defaultSkin, settings.slim === null ? undefined : settings.slim).catch(() => this.setSkin(defaultSkin, false));
+    if (remote) this.setSkin(defaultSkin, false).catch(() => {});
+    else this.setSkin(settings.skin || defaultSkin, settings.slim === null ? undefined : settings.slim).catch(() => this.setSkin(defaultSkin, false));
   }
 
   /* ---- skins ----
@@ -495,6 +499,7 @@ export class Avatar {
     }
     this.tex.needsUpdate = true;
     this.ready = true;
+    if (this.remote) return;
     // keep it for next time: the default by name, anything else as a picture
     settings.slim = s;
     settings.skin = urlOrImage === DEFAULT_SKIN || urlOrImage === defaultSkin ? null : (() => { try { return this.canvas.toDataURL('image/png'); } catch (e) { return null; } })();

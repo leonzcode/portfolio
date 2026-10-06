@@ -305,7 +305,8 @@ export class Sim {
     for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
       if (dx * dx + dz * dz > R * R) continue;
       const c = this.w.chunkXZ(pcx + dx, pcz + dz);
-      if (!c) continue;
+      // (on a server, a chunk another player is nearer to is theirs to tick: net/net.js)
+      if (!c || (this.skip && this.skip(c))) continue;
       if (!c.rtc) { if (fresh++ > 6) continue; this.sectionCounts(c); }
       const rtc = c.rtc, bl = c.blocks, ox = c.cx * CH, oz = c.cz * CH;
       for (let s = 0; s < rtc.length; s++) {

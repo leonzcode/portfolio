@@ -107,7 +107,7 @@ export class Weather {
     for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
       if (dx * dx + dz * dz > R * R) continue;
       const c = w.chunkXZ(pcx + dx, pcz + dz);
-      if (!c) continue;
+      if (!c || (sim.skip && sim.skip(c))) continue;
       if (storm && Math.floor(r() * 100000) === 0) this.strikeIn(c);
       if (Math.floor(r() * 16) !== 0) continue;
       const x = c.cx * CH + Math.floor(r() * 16), z = c.cz * CH + Math.floor(r() * 16);

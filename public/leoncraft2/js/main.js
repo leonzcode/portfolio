@@ -62,6 +62,7 @@ import { structuresApi } from './struct/spawners.js?v=16';
 import { Details, isSign } from './details.js?v=16';
 import { SignEditScreen } from './ui/sign.js?v=16';
 import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=16';
+import { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=16';
 import { VideoSettings } from './settings.js?v=16';
 const THREE = window.THREE;
 
@@ -260,8 +261,8 @@ async function boot() {
   let loading = null;               // { text, progress, chunks } while a world loads
   /* After a graphics or resource pack change the page loads again straight
      back into the world you were in: no title world is made for it. */
-  let resumeTo = null;
-  try { const id = sessionStorage.getItem('lc2_resume'); sessionStorage.removeItem('lc2_resume'); if (id) resumeTo = Worlds.get(id); } catch (e) {}
+  let resumeTo = null, resumeMp = null;
+  try { const id = sessionStorage.getItem('lc2_resume'); sessionStorage.removeItem('lc2_resume'); if (id) { resumeTo = Worlds.get(id); if (!resumeTo && id.startsWith('mp-')) resumeMp = id.slice(3); } } catch (e) {}
   let rendererUp = false;           // the title's world is started before the renderer exists (makeMenu)
   const early = new Map();          // "cx,cz" -> [cx, cz, mesh] made before the renderer was
   status('Loading textures…', 0.05);
@@ -366,6 +367,9 @@ async function boot() {
     // (Video Settings and Shader Packs take effect as they change: settings.js)
     applyGraphics: () => {},
     shadersOn: () => video.shadersOn(),
+    // the server list (ui/multiplayer.js), and whether the world being played is on a server (the game menu's Disconnect)
+    multiplayer: () => gui.open(new MultiplayerScreen()),
+    online: () => !!(game && game.net),
     // the last screen closed in the game: take the mouse back
     closed: () => { if (game && !game.survival.dead) lock(); },
   };
@@ -477,11 +481,15 @@ async function boot() {
     gui.setRoot(new LoadingScreen());
     // the mobs' pictures painted while the workers make the ground, not after (entities/mobart.js)
     setTimeout(primeAtlas, 100);
-    const save = new Save(entry.id);
+    // on a server its changes come from the server, and only your own record stays in this browser (net/net.js)
+    const mkSave = id => (entry.mp ? entry.mp.save(id) : new Save(id));
+    const save = mkSave(entry.id);
+    await save.init();
     const st = isNew ? null : save.readState();
     // the dimension you were in, and a save of its own for each (js/dims.js)
     const dim = st && st.dimension && DIMS[st.dimension] ? st.dimension : 'overworld';
-    const saves = { overworld: save, the_nether: new Save(entry.id + DIMS.the_nether.suffix), the_end: new Save(entry.id + DIMS.the_end.suffix) };
+    const saves = { overworld: save, the_nether: mkSave(entry.id + DIMS.the_nether.suffix), the_end: mkSave(entry.id + DIMS.the_end.suffix) };
+    await saves.the_nether.init(); await saves.the_end.init();
     let world;
     const generator = entry.generator === 'vanilla' ? 'vanilla' : 'classic';
     const seed = worldSeed(entry);
@@ -668,6 +676,12 @@ async function boot() {
     // only now does the loop play it: until every part (items lying about, mobs, the
     // simulation, the dimensions) is in place, a frame would trip over the missing ones
     game.ready = true;
+    // on a server: the other players, and everything that changes, from now on (net/net.js)
+    if (entry.mp) {
+      game.net = entry.mp;
+      entry.mp.attach(game, { renderer, gui, chat, rule: r => gameRule(game, r),
+        disconnected: reason => quitToTitle().then(() => gui.open(new DisconnectedScreen('Connection Lost', reason))) });
+    }
     lock();
     // no mouse yet (the click that started this is long gone): the game menu, as when the window loses focus
     setTimeout(() => { if (game && !locked() && !gui.isOpen()) gui.open(new PauseScreen()); }, 600);
@@ -809,6 +823,7 @@ async function boot() {
     if (!game) return;
     const g = game;
     await saveGame();
+    if (g.net) { g.net.close(); g.net = null; }
     g.drops.dispose();
     if (g.details) g.details.dispose();
     scope(false);
@@ -935,7 +950,9 @@ async function boot() {
   const chatCtx = () => {
     const g = game;
     return {
-      game: g, playerName: 'Player',
+      game: g, playerName: g.net ? g.net.name : 'Player',
+      // on a server what you say goes to everyone (net/net.js)
+      sendChat: g.net ? t => g.net.chat(t) : null,
       // Allow Commands: as set when the world was made (creative worlds have it on unless turned off)
       cheats: !!(window.__lc2.cheats || (g.lan ? g.lan.cheats : g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
       say: (t, c) => chat.add(t, c),
@@ -961,7 +978,7 @@ async function boot() {
       kill: () => { if (g.mode === 'survival' || g.mode === 'adventure') g.survival.hurt(3.4e38, 'generic_kill'); else respawn(); },
       seed: () => g.entry.seed,
       blockChanged: () => {},
-      setWeather: (w, ticks) => { g.weather = { kind: w, ticks: ticks === null ? 6000 + Math.floor(Math.random() * 12000) : ticks }; },
+      setWeather: (w, ticks) => { const W = g.sim && g.sim.weather; if (W) W.set(w, ticks || 0); g.weather = { kind: w, ticks: ticks === null ? 6000 + Math.floor(Math.random() * 12000) : ticks }; },
       setDifficulty: d => { g.entry.difficulty = d; Worlds.update(g.entry.id, { difficulty: d }); options.set('difficulty', d); },
       dimension: () => g.dimension || 'overworld',
       xp: null,
@@ -1227,6 +1244,8 @@ async function boot() {
       if (timeRuns) g.time += 1;
       for (const s of player.splashes.splice(0)) renderer.inter.splash(s[0], s[1], s[2], s[3]);
       structures.spawners.tick(world, player);
+      // on a server: where you are, and what came in from the others (net/net.js)
+      if (g.net) g.net.tick(now - acc * 1000);
       // every ten seconds, what changed goes into the browser's storage
       if (++g.saveT >= 200) { g.saveT = 0; saveGame(); }
     }
@@ -1240,6 +1259,7 @@ async function boot() {
     if (g.details) g.details.update();
     if (g.entities) g.entities.render(alpha);
     g.eye = v.eye;
+    if (g.net) g.net.frame(now, dt, v.eye);
     // the other dimensions have no sun: Detailed's sky tables are left at midnight there
     const D = DIMS[g.dim];
     sunAt(D.fixedTime !== null ? 18000 : g.time);
@@ -1381,6 +1401,8 @@ async function boot() {
   };
   // after a quality change, straight back into the world you were in
   if (resumeTo) startGame(resumeTo, false);
+  // (a server's world comes back by joining it again: ui/multiplayer.js)
+  else if (resumeMp) rejoin(gui, resumeMp);
 }
 
 boot().catch(e => { console.error(e); status('Something went wrong: ' + (e && e.message)); });
