@@ -29,6 +29,7 @@ import { addArt } from './mobart.js?v=17';
 import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=17';
 import { use as useBlock } from '../place.js?v=17';
 import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf } from '../items.js?v=17';
+import { MountScreen } from '../ui/containers.js?v=17';
 
 // the stack in the player's hand (a mob's interact is told only the item's name), and a stack dropped where a mob is
 const heldStack = m => (m.inv && m.inv.slots[m.inv.selected]) || null;
@@ -1014,16 +1015,47 @@ export class AbstractHorse extends Animal {
   canSaddle() { return this.tamed && this.ageT >= 0 && !this.saddled; }
   // horse armour: on a tamed adult horse or zombie horse only (not donkeys, mules or skeleton horses)
   canWearArmor() { return this.tamed && this.ageT >= 0 && (this.type === 'horse' || this.type === 'zombie_horse'); }
+  // a donkey's or mule's chest, hung on its sides
+  chestLayer(out) { if (this.chest && (this.type === 'donkey' || this.type === 'mule')) out.push(['donkey_chest', 'donkey_chest', null]); }
   setBody(st) {
     this.body = st;
     const a = st && HORSE_ARMOR[itemNameOf(st.id).replace(/_horse_armor$/, '')];
     this.armor = a ? a[0] : 0; this.toughness = a ? a[1] : 0;
   }
+  // a donkey, mule or llama carries a chest (15 slots; a llama 3 a point of strength)
+  canCarryChest() { return /^(donkey|mule|llama|trader_llama)$/.test(this.type); }
+  chestSize() { return this.type === 'llama' || this.type === 'trader_llama' ? 3 * (this.strength || 3) : 15; }
+  setChest(on) { this.chest = on; this.chestSlots = on ? (this.chestSlots && this.chestSlots.length === this.chestSize() ? this.chestSlots : new Array(this.chestSize()).fill(null)) : null; }
+  // its screen's parts (ui/containers.js MountScreen): saddle, armour (or carpet), the chest's slots
+  mountSlots() {
+    const kinds = [], box = [];
+    if (this.type !== 'llama' && this.type !== 'trader_llama') { kinds.push('saddle'); box.push(this.saddled ? { id: itemIdOf('saddle'), count: 1 } : null); }
+    if (this.canWearArmor()) { kinds.push('armor'); box.push(this.body || null); }
+    if (this.type === 'llama' || this.type === 'trader_llama') { kinds.push('carpet'); box.push(this.decor && this.decor !== 'trader' ? { id: itemIdOf(this.decor + '_carpet'), count: 1 } : null); }
+    if (this.chest && this.chestSlots) for (const s of this.chestSlots) { kinds.push('chest'); box.push(s); }
+    return { kinds, box, cols: this.chest && this.chestSlots ? this.chestSlots.length / 3 : 0 };
+  }
+  mountChanged(i, st) {
+    const k = this.mountSlots().kinds[i];
+    if (k === 'saddle') this.saddled = !!st;
+    else if (k === 'armor') this.setBody(st || null);
+    else if (k === 'carpet') this.decor = st ? itemNameOf(st.id).replace(/_carpet$/, '') : null;
+    else if (k === 'chest') this.chestSlots[i - this.mountSlots().kinds.indexOf('chest')] = st || null;
+  }
+  openInventory() {
+    const H = this.m.hooks && this.m.hooks.hands;
+    if (!this.tamed || !H || !H.open) return false;
+    H.open(new MountScreen(H.inv, H.icons, this));
+    return true;
+  }
   interact(held, player) {
+    // sneaking: a tamed one's screen
+    if (this.tamed && player && player.sneaking && player.sneaking() && this.openInventory()) return 'swing';
     if (this.passengers.length) return false;
     const f = HORSE_FOOD[held];
     if (f) return this.eatFood(f) ? 'consume' : 'swing';
     if (this.ageT < 0) return false;
+    if (held === 'chest' && this.tamed && this.canCarryChest() && !this.chest) { this.setChest(true); return 'consume'; }
     if (!this.tamed) {
       if (held) { this.rear(); return 'swing'; }      // anything in hand but food: it rears
       this.m.mount(this);
@@ -1099,16 +1131,22 @@ export class AbstractHorse extends Animal {
     A.swish = this.tailT > 0;
   }
   layers(out) {
+    this.chestLayer(out);
     if (this.body) { const mat = itemNameOf(this.body.id).replace(/_horse_armor$/, ''); out.push(['horse_armor', 'horse_armor_' + mat, mat === 'leather' ? (this.body.color !== undefined ? this.body.color : 0xA06540) : null, !!this.body.ench]); }
     if (this.saddled) out.push([this.passengers.length ? 'horse_saddle_reins' : 'horse_saddle', 'horse_saddle', null]);
   }
-  loot(drop) { drop('leather', RI(3)); if (this.saddled) drop('saddle', 1); if (this.body) { dropStack(this, this.body); this.body = null; } }
+  loot(drop) {
+    drop('leather', RI(3)); if (this.saddled) drop('saddle', 1); if (this.body) { dropStack(this, this.body); this.body = null; }
+    if (this.chest && this.type !== 'llama' && this.type !== 'trader_llama') drop('chest', 1);
+    if (this.chestSlots) { for (const s of this.chestSlots) if (s) dropStack(this, s); this.chestSlots = null; }
+  }
   get xp() { return this.ageT < 0 ? 0 : 1 + RI(3); }
   toJSON() {
     const o = super.toJSON();
     o.st = [r4(this.maxHealth), r4(this.speed), r4(this.jumpStrength)];
     if (this.tamed) o.tm = 1; if (this.temper) o.tp = this.temper; if (this.saddled) o.sad = 1;
     if (this.body) o.body = stackToJSON(this.body);
+    if (this.chest) { o.chest = 1; if (this.chestSlots) o.cs = this.chestSlots.map(s => (s ? stackToJSON(s) : null)); }
     return o;
   }
   fromJSON(o) {
@@ -1116,6 +1154,7 @@ export class AbstractHorse extends Animal {
     super.fromJSON(o);
     this.tamed = !!o.tm; this.temper = o.tp || 0; this.saddled = !!o.sad;
     if (o.body) this.setBody(stackFromJSON(o.body));
+    if (o.chest || o.ch) { this.setChest(true); if (Array.isArray(o.cs)) o.cs.forEach((a, i) => { if (i < this.chestSlots.length) this.chestSlots[i] = a ? stackFromJSON(a) : null; }); }
   }
 }
 const r4 = v => Math.round(v * 10000) / 10000;
@@ -1208,6 +1247,14 @@ model('horse', horseParts('horse'), horseAnim);
 model('donkey', horseParts('donkey'), horseAnim);
 model('horse_saddle', horseParts('saddle'), horseAnim);
 model('horse_saddle_reins', horseParts('reins'), horseAnim);
+// a donkey's or mule's chest: one on each side of the body, 8 long, 8 high, 3 thick (the game's)
+model('donkey_chest', horseParts('donkey').map(p => Object.assign({}, p, { boxes: p.name === 'body' ? [[5, -8, -6, 3, 8, 8, 0, 0], [-8, -8, -6, 3, 8, 8, 0, 0, 0, true]] : [] })), horseAnim);
+addArt('donkey_chest', [64, 64], p => {
+  p.clear(0, 0, 64, 64);
+  p.box(0, 0, 3, 8, 8, { all: 0x9a6a2c, top: 0xa8763a }, 0.08);
+  p.fill(0, 8 + 3, 22, 1, 0x4a3214);
+  p.fill(8 + 3 - 1, 8 + 3, 2, 2, 0xc8c8c8, 0.03);
+});
 // horse armour: the horse's shape a tenth of a pixel out, without the tail or the mane
 model('horse_armor', horseParts('horse').map(p => Object.assign({}, p, { boxes: p.name === 'tail' ? [] : p.boxes.filter(b => !(p.name === 'neck' && b[4] === 16)).map(b => { const c = b.slice(); while (c.length < 11) c.push(0); c[8] = (c[8] || 0) + 0.1; c[9] = !!c[9]; c[10] = 1; return c; }) })), horseAnim);
 
