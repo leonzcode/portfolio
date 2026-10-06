@@ -122,7 +122,7 @@ function makeStack(r, e) {
         case 'potion': st.potion = v; break;
         case 'stew': {
           const pick = v[v.length > 1 ? r.nextInt(v.length) : 0];
-          st.stew = { effect: pick[0], seconds: Math.round(floatBetween(r, pick[1], pick[2]) * 10) / 10 };
+          st.stew = [pick[0], Math.round(floatBetween(r, pick[1], pick[2]) * 20)];
           break;
         }
         case 'amp': st.amp = r.between(v[0], v[1]); break;

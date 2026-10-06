@@ -29,7 +29,7 @@
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=17';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON } from './items.js?v=17';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown } from './items.js?v=17';
 import { breakTicks, wearFor } from './mining.js?v=17';
 import { blockDrops } from './loot.js?v=17';
 import { containerKind, spill } from './containers.js?v=17';
@@ -309,6 +309,8 @@ export class Hands {
     const cb = this.inter && this.inter.entities && this.inter.entities.combat;
     if (cb && !this.using && cb.useItem(s)) return true;
     const food = foodOf(s.id);
+    // an item still cooling down (chorus fruit, a goat horn) does nothing, and the other hand may have its go
+    if (onCooldown(it.name)) return false;
     if (food && !this.using) {
       // food that is also a block (a carrot, sweet berries) is planted when clicked on a block it can go on
       if (it.block && hit && hit.face && this.canPlant(it, hit)) return false;
@@ -319,6 +321,16 @@ export class Hands {
       return true;
     }
     if (this.using) return true;
+    /* a goat horn: blown for its seven seconds, the arm up to the mouth and the step slowed as with
+       anything used, and seven seconds from the first note before it sounds again (the game's
+       instruments all last 7 seconds; this game has no sounds yet, onHorn is where one would go) */
+    if (it.name === 'goat_horn') {
+      this.using = { slot: this.inv.selected, id: s.id, t: 0, total: 140, off: !!this.offTurn, horn: true };
+      this.player.usingItem = true;
+      addCooldown('goat_horn', 140);
+      if (this.onHorn) this.onHorn(s);
+      return true;
+    }
     // armour (not the wearable blocks, which are placed): straight on, swapping what was worn
     const ar = armorOf(s.id);
     if (ar && !it.block) {
@@ -433,6 +445,7 @@ export class Hands {
     // let go, switched slot (for the main hand) or item: stop
     if (!this.inter.useHeld || (!u.off && this.inv.selected !== u.slot) || !s || s.id !== u.id) { this.stopUsing(); return; }
     u.t++;
+    if (u.horn) { if (u.t >= u.total) this.stopUsing(); return; }
     if (u.t > 7 && (u.total - u.t) % 4 === 0) {
       this.crumbs(u.id);
       if (this.onEat) this.onEat(u.id);
@@ -445,13 +458,16 @@ export class Hands {
     const s = this.usedStack(u);
     this.stopUsing();
     if (food.hunger || food.saturation) sv.eat(food.hunger, food.saturation);
-    if (food.effects) for (const [name, level, secs, chance] of food.effects) if (Math.random() < chance) sv.addEffect(name, level, secs * 20);
+    // (an ominous bottle's Bad Omen is as strong as the bottle says)
+    const amp = it.name === 'ominous_bottle' && s ? (s.amp | 0) : 0;
+    if (food.effects) for (const [name, level, secs, chance] of food.effects) if (Math.random() < chance) sv.addEffect(name, level + amp, secs * 20);
     if (it.name === 'milk_bucket') sv.clearEffects();
     if (it.name === 'honey_bottle') delete sv.effects.poison;
-    if (it.name === 'chorus_fruit') this.chorusTeleport();
+    if (it.name === 'chorus_fruit') { this.chorusTeleport(); addCooldown('chorus_fruit', 20); }
     if (isPotion(s)) drinkPotion(s, sv);
     // a suspicious stew's effect (a farmer's, or one from flowers)
-    if (s && s.stew) sv.addEffect(s.stew[0], 1, s.stew[1]);
+    const stew = stewEffect(s);
+    if (stew) sv.addEffect(stew[0], 1, stew[1]);
     if (!this.creative && s) {
       s.count--;
       const left = food.leaves ? I[food.leaves] : 0;
@@ -489,13 +505,25 @@ export class Hands {
     out.use = null;
     if (u) {
       const food = ITEMS[u.id] && ITEMS[u.id].food;
-      U.kind = food && food.drink ? 'drink' : 'eat'; U.side = u.off ? 1 : 0; U.t = u.t + a; U.total = u.total;
+      U.kind = u.horn ? 'horn' : food && food.drink ? 'drink' : 'eat'; U.side = u.off ? 1 : 0; U.t = u.t + a; U.total = u.total;
       out.use = U;
     } else {
       const cb = this.inter && this.inter.entities && this.inter.entities.combat;
       if (cb && cb.useState) out.use = cb.useState(a);
+      // a spyglass up to the eye (main.js draws the glass in first person; this is the arm, for third person)
+      if (!out.use && this.inter && this.inter.useHeld) {
+        const side = this.spyglassSide();
+        if (side >= 0) { U.kind = 'spyglass'; U.side = side; U.t = 0; U.total = 0; out.use = U; }
+      }
     }
     return out;
+  }
+
+  // the hand a spyglass is held up with: the main hand, or the off hand while the main hand is empty (-1: none)
+  spyglassSide() {
+    const m = this.inv.slots[this.inv.selected], o = this.inv.offhand;
+    if (m) return ITEMS[m.id] && ITEMS[m.id].name === 'spyglass' ? 0 : -1;
+    return o && ITEMS[o.id] && ITEMS[o.id].name === 'spyglass' ? 1 : -1;
   }
 
   /* ---- wear from use away from blocks ---- */

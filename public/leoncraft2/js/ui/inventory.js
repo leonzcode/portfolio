@@ -36,10 +36,10 @@
 --------------------------------------------------------------------------- */
 import { BLOCKS, B } from '../blocks.js?v=17';
 import { Screen, TextField, WHITE } from './gui.js?v=17';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf } from '../items.js?v=17';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS } from '../items.js?v=17';
 import { matchGrid, consumeGrid } from '../crafting.js?v=17';
-import { enchName } from '../enchanting.js?v=17';
-import { isPotion, isTipped, potionName, potionLines } from '../brewing.js?v=17';
+import { enchName, ENCH } from '../enchanting.js?v=17';
+import { isPotion, isTipped, potionName, potionLines, POTIONS } from '../brewing.js?v=17';
 import { patternLines, drawBannerIcon } from '../banners.js?v=17';
 import { mapLines } from '../maps.js?v=17';
 import { dialPicture, usePicture } from '../dials.js?v=17';
@@ -272,10 +272,71 @@ export function creativeItems() {
   }
   // the items that are not blocks, in the game's list order
   for (const k of ITEM_TABS) out[k] = [];
-  for (let id = ITEM_BASE; id < ITEMS.length; id++) { const it = ITEMS[id]; if (it && out[it.tab] && it.texIndex >= 0) out[it.tab].push(id); }
-  for (const k of BLOCK_TABS.concat(ITEM_TABS)) for (const id of out[k]) { out.all.push(id); out.tabOf.set(id, k); }
+  for (let id = ITEM_BASE; id < ITEMS.length; id++) { const it = ITEMS[id], tab = it && (TAB_OF[it.name] || it.tab); if (it && out[tab] && it.texIndex >= 0) out[tab].push(id); }
+  // an item the game lists once for each of its kinds: those kinds in its place (the search tab gets every book level)
+  const search = new Map();
+  for (const k of BLOCK_TABS.concat(ITEM_TABS)) {
+    const list = [];
+    for (const id of out[k]) {
+      const kinds = VARIANTS[ITEMS[id] ? ITEMS[id].name : ''];
+      if (!kinds) { list.push(id); continue; }
+      const v = kinds(id);
+      for (const st of v.tab) list.push(st);
+      if (v.search) search.set(id, v.search);
+    }
+    // the rockets are in Combat too, after the arrows
+    if (k === 'combat' && I.firework_rocket !== undefined && !list.some(e => entryId(e) === I.firework_rocket)) list.push(...VARIANTS.firework_rocket(I.firework_rocket).tab);
+    out[k] = list;
+  }
+  for (const k of BLOCK_TABS.concat(ITEM_TABS)) for (const e of out[k]) {
+    const id = entryId(e), first = !out.tabOf.has(id);
+    if (search.has(id)) { if (first) out.all.push(...search.get(id)); }
+    else if (first || typeof e === 'object' && k === out.tabOf.get(id)) out.all.push(e);
+    if (first) out.tabOf.set(id, k);
+  }
   itemsCache = out; itemsFor = BLOCKS.length;
   return out;
+}
+// items the generated list files under the wrong tab: the game keeps these with the functional blocks
+const TAB_OF = { item_frame: 'functional', glow_item_frame: 'functional', painting: 'functional', armor_stand: 'functional', end_crystal: 'functional' };
+/* The kinds the game lists an item under, each a stack to copy: every
+   potion as a drink, a splash and a lingering potion and an arrow (the
+   game's order of potions); an enchanted book of each enchantment at its top
+   level (and at every level in the search tab); the goat horns' eight
+   instruments; rockets of each flight; ominous bottles of each level;
+   suspicious stews of each flower's effect (one each); every painting. */
+const POTION_ORDER = ['water', 'mundane', 'thick', 'awkward', 'night_vision', 'long_night_vision', 'invisibility', 'long_invisibility',
+  'leaping', 'long_leaping', 'strong_leaping', 'fire_resistance', 'long_fire_resistance', 'swiftness', 'long_swiftness', 'strong_swiftness',
+  'slowness', 'long_slowness', 'strong_slowness', 'turtle_master', 'long_turtle_master', 'strong_turtle_master', 'water_breathing',
+  'long_water_breathing', 'healing', 'strong_healing', 'harming', 'strong_harming', 'poison', 'long_poison', 'strong_poison', 'regeneration',
+  'long_regeneration', 'strong_regeneration', 'strength', 'long_strength', 'strong_strength', 'weakness', 'long_weakness', 'luck',
+  'slow_falling', 'long_slow_falling', 'wind_charged', 'weaving', 'oozing', 'infested'];
+export const INSTRUMENTS = ['ponder', 'sing', 'seek', 'feel', 'admire', 'call', 'yearn', 'dream'];
+const potions = id => ({ tab: POTION_ORDER.filter(p => POTIONS[p]).map(potion => ({ id, potion })) });
+const VARIANTS = {
+  potion: potions, splash_potion: potions, lingering_potion: potions, tipped_arrow: potions,
+  enchanted_book: id => {
+    const names = Object.keys(ENCH).sort(), all = [];
+    for (const n of names) for (let l = 1; l <= ENCH[n].maxLevel; l++) all.push({ id, ench: { [n]: l } });
+    return { tab: names.map(n => ({ id, ench: { [n]: ENCH[n].maxLevel } })), search: all };
+  },
+  goat_horn: id => ({ tab: INSTRUMENTS.map(n => ({ id, instrument: n + '_goat_horn' })) }),
+  firework_rocket: id => ({ tab: [1, 2, 3].map(flight => ({ id, flight })) }),
+  ominous_bottle: id => ({ tab: [0, 1, 2, 3, 4].map(amp => ({ id, amp })) }),
+  suspicious_stew: id => {
+    const seen = new Set(), tab = [];
+    for (const k in STEW_EFFECTS) { const e = STEW_EFFECTS[k], key = e.join(); if (!seen.has(key)) { seen.add(key); tab.push({ id, stew: e.slice() }); } }
+    return { tab };
+  },
+  painting: id => ({ tab: [id].concat(PAINTING_VARIANTS.map(([variant]) => ({ id, variant }))) }),
+};
+// a creative list's entry: an id, or a stack to copy (a potion, a book...)
+export const entryId = e => (typeof e === 'number' ? e : e ? e.id : 0);
+export const entryStack = (e, count) => (typeof e === 'number' ? { id: e, count } : Object.assign(JSON.parse(JSON.stringify(e)), { count }));
+// what the search box matches an entry by: its name as its tooltip shows it
+function entryName(e) {
+  if (typeof e === 'number') return displayName(e);
+  return stackTooltip(entryStack(e, 1)).slice(0, 2).join(' ').replace(/\u00a7./g, '');
 }
 const tabIconId = t => { for (const n of t.icon) if (I[n] !== undefined) return I[n]; return B.stone || 1; };
 
@@ -380,7 +441,12 @@ export function drawStack(g, icons, st, x, y, countText, countColour) {
   }
   const text = countText !== undefined ? countText : st.count > 1 ? String(st.count) : '';
   if (text) g.text(text, x + 19 - 2 - g.textWidth(text), y + 6 + 3, countColour || WHITE, true);
+  // an item cooling down (a pearl just thrown, a horn just blown): a half-white veil over what is left of it, from the bottom
+  const cd = cooldownLeft(st.id);
+  if (cd > 0) { const top = y + Math.floor(16 * (1 - cd)); g.fill(x, top, x + 16, top + Math.ceil(16 * cd), 0x7FFFFFFF); COOLING.seen = true; }
 }
+// set when a slot was drawn under a cooldown, so the HUD draws again soon (ui/hud.js)
+export const COOLING = { seen: false };
 function hsv(h, s, v) {
   const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
   const [r, g, b] = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i % 6];
@@ -407,6 +473,13 @@ export function stackTooltip(st, advanced) {
   if (st.patterns) lines.push(...patternLines(st));
   if (st.color !== undefined) lines.push('§o§7Dyed');
   if (st.flight) lines.push('§7Flight Duration: ' + st.flight);
+  if (st.instrument) lines.push('§7' + title(st.instrument.replace(/_goat_horn$/, '')));
+  if (it && it.name === 'ominous_bottle') lines.push('§9Bad Omen' + ((st.amp | 0) > 0 ? ' ' + ['II', 'III', 'IV', 'V'][(st.amp | 0) - 1] : '') + ' (01:40:00)');
+  if (it && it.name === 'painting') {
+    const v = st.variant && PAINTING_VARIANTS.find(p => p[0] === st.variant);
+    if (v) lines.push('§e' + title(v[0]), '§f' + v[1] + 'x' + v[2]);
+    else lines.push('§7Random variant');
+  }
   const fwLines = fw => {
     const out = ['§7  ' + title(fw.shape === 'small_ball' ? 'small_ball' : fw.shape)];
     if (fw.colors && fw.colors.length) out.push('§7  ' + fw.colors.map(title).join(', '));
@@ -993,9 +1066,9 @@ export class CreativeInventoryScreen extends ContainerScreen {
     const t = this.T;
     if (t.search) {
       const q = this.search.value.trim().toLowerCase();
-      this.items = q ? all.all.filter(id => {
-        const n = ITEMS[id] ? ITEMS[id].name : BLOCKS[id].name;
-        return displayName(id).toLowerCase().indexOf(q) >= 0 || n.replace(/_/g, ' ').indexOf(q) >= 0 || n.indexOf(q) >= 0;
+      this.items = q ? all.all.filter(e => {
+        const id = entryId(e), n = ITEMS[id] ? ITEMS[id].name : BLOCKS[id].name;
+        return entryName(e).toLowerCase().indexOf(q) >= 0 || n.replace(/_/g, ' ').indexOf(q) >= 0 || n.indexOf(q) >= 0;
       }) : all.all;
     } else if (t.inventory) this.items = [];
     else this.items = all[t.key] || [];
@@ -1007,7 +1080,7 @@ export class CreativeInventoryScreen extends ContainerScreen {
   rowOffset() { const extra = this.rows - 5; return extra > 0 ? Math.max(0, Math.floor(this.scroll * extra + 0.5)) : 0; }
   gridItem(i) { const k = this.rowOffset() * 9 + i; return k < this.items.length ? this.items[k] : 0; }
   slotStack(s) {
-    if (s.kind === 'grid') { const id = this.gridItem(s.i); return id ? { id, count: 1 } : null; }
+    if (s.kind === 'grid') { const e = this.gridItem(s.i); return e ? entryStack(e, 1) : null; }
     return this.getStack(s);
   }
   getStack(s) { return s.kind === 'grid' ? this.slotStack(s) : super.getStack(s); }
@@ -1059,10 +1132,10 @@ export class CreativeInventoryScreen extends ContainerScreen {
   // on the search tab the box keeps the focus, whatever is clicked, as in the game
   keepFocus() { return this.T.search ? this.search : true; }
   gridClick(s, button, shift) {
-    const id = this.gridItem(s.i), c = this.inv.carried;
+    const e = this.gridItem(s.i), id = entryId(e), c = this.inv.carried;
     const max = id ? maxStack(id) : 64;
-    if (button === 1) { if (!c && id) this.setCarried({ id, count: max }); return; }
-    if (c && id && c.id === id && !c.dmg && !c.ench) {
+    if (button === 1) { if (!c && id) this.setCarried(entryStack(e, max)); return; }
+    if (c && id && sameItem(c, entryStack(e, 1))) {
       if (button === 0) { if (shift) c.count = max; else if (c.count < max) c.count++; }
       else { c.count--; if (!c.count) this.setCarried(null); }
     } else if (id && !c) {
@@ -1070,11 +1143,11 @@ export class CreativeInventoryScreen extends ContainerScreen {
         // a full stack straight into the hotbar: onto the same item, else the first empty slot
         const hot = this.inv.slots;
         let at = -1;
-        for (let i = 0; i < 9 && at < 0; i++) if (hot[i] && hot[i].id === id) at = i;
+        for (let i = 0; i < 9 && at < 0; i++) if (hot[i] && sameItem(hot[i], entryStack(e, 1))) at = i;
         for (let i = 0; i < 9 && at < 0; i++) if (!hot[i]) at = i;
-        if (at >= 0) hot[at] = { id, count: max };
-        else this.setCarried({ id, count: max });
-      } else this.setCarried({ id, count: 1 });
+        if (at >= 0) hot[at] = entryStack(e, max);
+        else this.setCarried(entryStack(e, max));
+      } else this.setCarried(entryStack(e, 1));
     } else if (button === 0) this.setCarried(null);        // clicking the grid with something else throws it away
     else if (c) { c.count--; if (!c.count) this.setCarried(null); }
   }
@@ -1088,7 +1161,7 @@ export class CreativeInventoryScreen extends ContainerScreen {
     this.setCarried(null);
   }
   numberKey(s, n) {
-    if (s.kind === 'grid') { const id = this.gridItem(s.i); if (id) this.inv.slots[n] = { id, count: maxStack(id) }; return; }
+    if (s.kind === 'grid') { const e = this.gridItem(s.i); if (e) this.inv.slots[n] = entryStack(e, maxStack(entryId(e))); return; }
     super.numberKey(s, n);
   }
   mouseDragged(mx, my, button) {

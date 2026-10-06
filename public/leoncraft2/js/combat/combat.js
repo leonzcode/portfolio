@@ -32,7 +32,7 @@
      water or rain, Channeling calls lightning in a storm); the shield is up
      5 ticks after the button goes down, slowing you to a fifth from the start.
 --------------------------------------------------------------------------- */
-import { ITEMS, I, itemName } from '../items.js?v=17';
+import { ITEMS, I, itemName, addCooldown } from '../items.js?v=17';
 import { wear } from '../ui/inventory.js?v=17';
 import { Living } from '../entities/entity.js?v=17';
 import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=17';
@@ -338,7 +338,7 @@ export class Combat {
     }
     m.lastBlocked = { amount, src: src.type };
   }
-  disableShield() { this.shieldCool = 100; this.shieldT = 0; this.shieldUp = false; if (this.P && this.P.usingItem === 'shield') this.P.usingItem = false; }
+  disableShield() { addCooldown('shield', 100); this.shieldCool = 100; this.shieldT = 0; this.shieldUp = false; if (this.P && this.P.usingItem === 'shield') this.P.usingItem = false; }
 
   /* ---- bows, crossbows, tridents: the use button ---- */
   // right click with stack in the main hand; true if it started (or is) drawing

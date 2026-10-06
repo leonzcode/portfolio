@@ -19,7 +19,7 @@
      hud.setDebug(leftLines, rightLines); // or hud.setDebug(null) to hide F3
      hud.crosshair = false;               // third person
 --------------------------------------------------------------------------- */
-import { displayName, drawStack, GLINT } from './inventory.js?v=17';
+import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=17';
 import { drawBossBar } from '../dim/bossbar.js?v=17';
 
 const TICK = 50;
@@ -108,13 +108,15 @@ export class Hud {
       if (!leftHanded) g.blit('widgets', 24, 22, 22, 24, cx - 91 - 29, H - 23);
       else g.blit('widgets', 60, 22, 22, 24, cx + 91 + 7, H - 23);
     }
-    GLINT.seen = false;
+    GLINT.seen = false; COOLING.seen = false;
     for (let i = 0; i < 9; i++) drawStack(g, this.icons, inv.slots[i], cx - 90 + i * 20 + 2, H - 16 - 3);
     if (off) drawStack(g, this.icons, off, leftHanded ? cx + 91 + 10 : cx - 91 - 26, H - 16 - 3);
     // Attack Indicator: Hotbar (Video Settings): a sword beside the hotbar on the main hand's side, filling as the hit charges
     if (this.attackMode === 'hotbar' && this.attack !== null && this.attack !== undefined && this.attack < 1) this._hotbarAttack(g, leftHanded ? cx - 91 - 22 : cx + 91 + 6, H - 20, this.attack);
     // an enchanted item in the hotbar shines: redrawn twenty times a second while it is there
     if (GLINT.seen) { GLINT.seen = false; this._wakeAt(now + 50); }
+    // an item cooling down: its veil shrinks a step a tick
+    if (COOLING.seen) { COOLING.seen = false; this._wakeAt(now + 50); }
 
     if (survival && this.stats) this._bars(g, cx, H, now);
 

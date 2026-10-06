@@ -26,7 +26,8 @@
      consumeGrid(grid, giveBack, m)  // after the result is taken
 --------------------------------------------------------------------------- */
 import { SETS, CRAFTING, TRANSMUTE, SPECIAL, COOKING, CUTTING } from './recipedata.js?v=17';
-import { I, ITEMS, maxDamage, withCount } from './items.js?v=17';
+import { I, ITEMS, maxDamage, withCount, STEW_EFFECTS } from './items.js?v=17';
+import { BLOCKS } from './blocks.js?v=17';
 import { RECIPES, ING } from './itemdata.js?v=17';
 
 // ingredient sets as sets of item ids (an item this game does not have is left out)
@@ -96,12 +97,19 @@ export function matchGrid(grid, w) {
     if (R.n !== n) continue;
     if (R.w) {
       if (R.w !== bw || R.h !== bh) continue;
-      if (shapedAt(R, grid, w, x0, y0, false) || shapedAt(R, grid, w, x0, y0, true)) return { result: { id: R.id, count: R.count }, recipe: R };
-    } else if (shapeless(R, grid)) return { result: { id: R.id, count: R.count }, recipe: R };
+      if (shapedAt(R, grid, w, x0, y0, false) || shapedAt(R, grid, w, x0, y0, true)) return { result: withStew({ id: R.id, count: R.count }, grid), recipe: R };
+    } else if (shapeless(R, grid)) return { result: withStew({ id: R.id, count: R.count }, grid), recipe: R };
   }
   const items = [];
   for (const s of grid) if (s) items.push(s);
   return transmute(items) || special(items, grid, w);
+}
+
+// a suspicious stew takes its effect from the flower that went in
+function withStew(out, grid) {
+  if (out.id !== I.suspicious_stew) return out;
+  for (const s of grid) { const e = s && STEW_EFFECTS[ITEMS[s.id] ? ITEMS[s.id].name : BLOCKS[s.id] && BLOCKS[s.id].name]; if (e) { out.stew = e.slice(); break; } }
+  return out;
 }
 
 function shapedAt(R, grid, w, x0, y0, mirror) {
