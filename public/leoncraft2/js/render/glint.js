@@ -55,18 +55,18 @@ void main() {
 export function glintMaterial(R, gui) {
   const mats = R.glintMats || (R.glintMats = []), k = gui ? 1 : 0;
   if (mats[k]) return mats[k];
-  // gui: for the figure in the inventory, which is never exposed
-  const hdr = !gui && !R.opts.vanilla && !R.opts.ldr;
+  // gui: for the figure in the inventory, which is never exposed; made again for each look (render/looks.js)
   const uExpo = { value: null };
-  const m = new THREE.RawShaderMaterial({
+  const make = o => new THREE.RawShaderMaterial({
     glslVersion: THREE.GLSL3, vertexShader: HEAD + VS, fragmentShader: HEAD + FS,
-    uniforms: { uAlbedo: R.U.uAlbedo, uNoise: R.U.uNoise, uClock: R.U.uClock, uExpo },
-    defines: hdr ? { HDR: 1 } : {},
+    uniforms: { uAlbedo: R.U.uAlbedo, uNoise: R.U.uNoise, uClock: R.U.uClock, uGlint: R.U.uGlint, uExpo },
+    defines: !gui && !o.vanilla && !o.ldr ? { HDR: 1 } : {},
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthFunc: THREE.LessEqualDepth,
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, side: THREE.DoubleSide,
   });
-  // Detailed: the exposure the last frame was shown at
-  if (hdr) m.userData.expo = uExpo;
+  const m = R.looked ? R.looked(make) : make(R.opts);
+  // the full chain: the exposure the last frame was shown at
+  if (!gui) m.userData.expo = uExpo;
   mats[k] = m;
   return m;
 }
@@ -79,8 +79,8 @@ export function setGlint(mesh, on, R, gui) {
     g = new THREE.Mesh(mesh.geometry, glintMaterial(R, gui));
     g.frustumCulled = false; g.matrixAutoUpdate = false;
     // Detailed: the exposure texture changes hands every frame
-    const u = g.material.userData.expo, post = R.post;
-    if (u && post) g.onBeforeRender = () => { u.value = post.expo[post.expoI].texture; };
+    const u = g.material.userData.expo;
+    if (u) g.onBeforeRender = () => { const post = R.post; if (post && post.expo) u.value = post.expo[post.expoI].texture; };
     mesh.add(g);
     mesh.userData.glint = g;
   }

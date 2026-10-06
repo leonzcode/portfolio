@@ -60,6 +60,7 @@ import { structuresApi } from './struct/spawners.js?v=16';
 import { Details, isSign } from './details.js?v=16';
 import { SignEditScreen } from './ui/sign.js?v=16';
 import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=16';
+import { VideoSettings } from './settings.js?v=16';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -71,21 +72,11 @@ const MENU_SEED = 20261002;
 // a dimension's mobs are kept under the world's id, with the dimension added for the Nether and the End
 const entityKey = (entry, dim) => entry.id + (!dim || dim === 'overworld' ? '' : '~' + dim);
 const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) : entry.seed | 0);
-/* Graphics, as in the game's Video Settings: Detailed (light shaders: soft
-   sun shadows, warm sunlight and a real sky, water with the sky in it,
-   plants in the wind) or Fast (the game with no shaders at all, as Minecraft
-   itself draws it: render/vanilla.js). Both draw in one pass straight to the
-   screen at its full resolution, so Detailed runs nearly as smoothly as
-   Fast: no light shafts, marched clouds, reflections, bloom or eye
-   adjustment (the clouds are the game's blocks of cloud in both). A change
-   takes effect when you leave Video Settings, and only if it really changed. */
-const PRESETS = {
-  fast: { rd: 8, scale: 1, ldr: true, vanilla: true, shadows: 0, normals: false, spec: false, fastLeaves: false, interSize: 32, uploadMs: 3, plantDist: 136, leafInDist: 64, plantShadows: false },
-  detailed: { rd: 8, scale: 1, ldr: true, shadowRes: 1024, shadowDist: 64, shadows: 2, normals: false, cloudShadow: 0, sky: 16, interSize: 128, uploadMs: 3, plantDist: 96, leafInDist: 48, plantShadows: false, leafInShadows: false },
-};
-// what the older settings become
-const GRAPHICS_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
-// software rendering (no graphics chip at all) starts on Fast; everything else on Detailed
+/* How the game looks is in Options: Video Settings (the game's own) and Shader
+   Packs (Shaders ON, with the Shader Options, or OFF: the game as Minecraft
+   itself draws it, render/vanilla.js). settings.js puts every change into
+   effect at once, while you play; nothing is loaded again. */
+// software rendering (no graphics chip at all) starts with no shaders; everything else with them
 function guessGraphics() {
   try {
     const gl = document.createElement('canvas').getContext('webgl2');
@@ -98,11 +89,14 @@ function guessGraphics() {
 const options = new Options();
 // Q throws and F5 turns the view, as in the game (older settings had the view on Q)
 { const k = options.get('keys'); if (k && k.perspective === 'KeyQ' && !k.drop) { options.setKey('drop', 'KeyQ'); options.setKey('perspective', 'F5'); } }
-const chosen = GRAPHICS_OF[options.get('quality')] && options.get('quality') !== 'auto' ? GRAPHICS_OF[options.get('quality')] : null;
-let QNAME = GRAPHICS_OF[params.get('q')] || chosen || guessGraphics();
-const chosenByUser = !!(params.get('q') || chosen);
-const QP = PRESETS[QNAME];
-const RD = +(params.get('rd') || options.get('renderDistance') || QP.rd);
+// ?q=fast or ?q=detailed: Shaders OFF or ON for this visit (tests), whatever was chosen
+const qParam = params.get('q');
+if (qParam) options.data.shaders = !(qParam === 'fast' || qParam === 'potato');
+const chosenByUser = !!qParam || (options.get('shaders') !== null && options.get('shaders') !== undefined);
+const video = new VideoSettings(options, guessGraphics() !== 'fast');
+const LOOK = video.look();
+const QNAME = () => video.shadersOn() ? 'shaders' : 'no shaders';
+const RD = +(params.get('rd') || options.get('renderDistance') || 8);
 
 function loadImg(src) {
   return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
@@ -261,9 +255,10 @@ async function boot() {
   const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
   let [alb, grass, foliage, moon, sunImg] = await Promise.all(
     ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png', 'environment_sun.png'].map(f => loadImg(base + f + TEX_V)));
-  // the potato tier draws no normal maps: it skips that file altogether (a third of the download)
-  const withNormals = QP.normals !== false;
-  const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, QP.spec !== false ? 'terrain_spec.png' : null]
+  // normal maps only for a look that starts with them (a third of the download; render/looks.js fetches them later
+  // if they are turned on); the material map always, so the shaders can be turned on at any time
+  const withNormals = !!LOOK.normals;
+  const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, 'terrain_spec.png']
     .map(f => f ? strip(base + f + TEX_V, manifest.layers) : null));
   // our own art for the Nether and the End (the portal swirl, the frame's eye, item icons) on extra layers
   const dimArt = addDimArt(manifest);
@@ -300,7 +295,7 @@ async function boot() {
   status('Starting the renderer…', 0.5);
   const canvas = $('#c');
   const rs = options.get('renderScale');
-  const renderer = new Renderer(canvas, textures, Object.assign({}, QP, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : QP.scale)),
+  const renderer = new Renderer(canvas, textures, Object.assign({}, LOOK, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : 1)),
     brightness: options.get('brightness'), clouds: options.get('clouds') }));
   for (const t of [textures.albedo, textures.normal, textures.spec]) if (t.pieces) uploadArray(renderer.r, t);
   dimArt.upload(renderer.r, textures);
@@ -329,12 +324,9 @@ async function boot() {
     reloadResources: () => {
       saveGame().then(() => { try { sessionStorage.setItem('lc2_resume', game ? game.entry.id : ''); } catch (e) {} location.reload(); });
     },
-    // leaving Video Settings: Detailed or Fast takes effect now, if it really changed
-    applyGraphics: () => {
-      const want = GRAPHICS_OF[options.get('quality')] || 'detailed';
-      if (want === QNAME) return;
-      saveGame().then(() => { try { sessionStorage.setItem('lc2_resume', game ? game.entry.id : ''); } catch (e) {} location.reload(); });
-    },
+    // (Video Settings and Shader Packs take effect as they change: settings.js)
+    applyGraphics: () => {},
+    shadersOn: () => video.shadersOn(),
     // the last screen closed in the game: take the mouse back
     closed: () => { if (game && !game.survival.dead) lock(); },
   };
@@ -350,7 +342,9 @@ async function boot() {
       if (sk) useDefaultSkin(sk);
     } catch (e) { console.warn('resource pack GUI', e); }
   }
-  gui.lowEnd = QNAME === 'fast';
+  // Video Settings and Shader Packs, from now on put into effect as they change (settings.js)
+  video.attach({ renderer, gui, normalsUrl: base + 'terrain_normal.png' + TEX_V, blockLayers: manifest.layers, packed: !!(packTex && packTex.size) });
+  video.worldsFn = () => [game && game.world, menu && menu.world];
   window.addEventListener('resize', fit);
   fit();
 
@@ -369,7 +363,7 @@ async function boot() {
   /* ---- the world behind the title screen ---- */
   async function startMenu(seed) {
     const world = new World({
-      seed, renderDist: Math.min(RD, 6), manifest, colours, fastLeaves: !!QP.fastLeaves,
+      seed, renderDist: Math.min(RD, 6), manifest, colours, ...video.worldOpts(),
       onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
       onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
     });
@@ -422,7 +416,7 @@ async function boot() {
     } else {
       if (menu) dropWorld(menu.world);
       world = new World({
-        seed, generator, dim, renderDist: RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save: saves[dim],
+        seed, generator, dim, renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits, save: saves[dim],
         onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
         onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
       });
@@ -667,7 +661,7 @@ async function boot() {
         const edits = await save.loadEdits();
         world = new World({
           seed: worldSeed(g.entry), generator: g.entry.generator === 'vanilla' ? 'vanilla' : 'classic', dim,
-          renderDist: renderer.opts.renderDist || RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save,
+          renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits, save,
           onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
           onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
         });
@@ -1027,22 +1021,26 @@ async function boot() {
      picture right behind your hands. ?frames=N tries another depth. */
   const gl = renderer.r.getContext();
   const fences = [];               // [fence, when it was set]
-  const inFlight = Math.max(1, +params.get('frames') || 2);
+  // (VSync in Video Settings: two, or one; ?frames=N for a test)
+  const inFlightOf = () => Math.max(1, +params.get('frames') || video.inFlight());
   let drawDt = 0;
   function cardBusy(now) {
     while (fences.length && gl.getSyncParameter(fences[0][0], gl.SYNC_STATUS) === gl.SIGNALED) gl.deleteSync(fences.shift()[0]);
     // a fence that never comes back (the context lost, a driver hiccup) must not stop the drawing
     if (fences.length && (now - fences[0][1] > 250 || gl.isContextLost())) { for (const f of fences) gl.deleteSync(f[0]); fences.length = 0; }
-    return fences.length >= inFlight;
+    return fences.length >= inFlightOf();
   }
   function drawn() { const s = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); if (s) fences.push([s, performance.now()]); }
   function loop(now) {
+    // Max Framerate and Reduce FPS when (Video Settings): not this frame, the next (settings.js)
+    if (video.hold(now)) { requestAnimationFrame(loop); gui.frame(now); return; }
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     // the next frame is asked for first, so one that goes wrong never stops the game
     requestAnimationFrame(loop);
     try {
       drawDt += dt;
+      video.frame(game && game.ready ? game : null, dt);
       if (game && game.ready && !travelling) playFrame(now, dt);
       else {
         drawDt = 0;
@@ -1146,11 +1144,11 @@ async function boot() {
         moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud && !scoped, bob: g.hands.handBob(v.handBob),
         waterTint: tintAt(world, v.eye), player, alpha,
         // hurt: the camera tilts and the model flashes red (combat/combat.js)
-        tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
+        tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha, video.tilt()) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
         biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
         dim: D, bossFog: g.realms.bossFog,
         // the screen tips when hurt and rolls a little in death (survival.js)
-        ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha)) : NO_TILT),
+        ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha, video.tilt())) : NO_TILT),
       }, Math.min(0.25, drawDt));
       drawDt = 0; drawn(); frames++;
     }
@@ -1159,7 +1157,10 @@ async function boot() {
     const cross = renderer.avatar.view === 0 && !gui.hideHud;
     if (hud.crosshair !== cross) { hud.crosshair = cross; hud.markDirty(); }
     // the attack indicator under it (js/entities)
-    if (g.entities) { const at = g.entities.combat.indicator(); if (Math.floor(at * 17) !== Math.floor((hud.attack === null || hud.attack === undefined ? 1 : hud.attack) * 17)) { hud.attack = at; hud.markDirty(); } }
+    // (Attack Indicator in Video Settings: under the crosshair, beside the hotbar, or not at all)
+    const am = video.attackMode();
+    if (hud.attackMode !== am) { hud.attackMode = am; hud.attack = null; hud.markDirty(); }
+    if (g.entities && am !== 'off') { const at = g.entities.combat.indicator(); if (Math.floor(at * 17) !== Math.floor((hud.attack === null || hud.attack === undefined ? 1 : hud.attack) * 17)) { hud.attack = at; hud.markDirty(); } }
     fpsT += dt;
     if (fpsT > 0.5) {
       fps = Math.round(frames / fpsT); frames = 0; fpsT = 0;
@@ -1169,16 +1170,14 @@ async function boot() {
         // never so low it blurs: three quarters of the screen, or half of a very sharp one
         const floor = (renderer.dpr || 1) > 1.4 ? 0.5 : 0.75;
         if (fps < 42 && s > floor) { renderer.opts.scale = Math.max(floor, +(s - 0.1).toFixed(2)); fit(); }
-        else if (fps > 58 && s < QP.scale) { renderer.opts.scale = Math.min(QP.scale, +(s + 0.05).toFixed(2)); fit(); }
+        else if (fps > 58 && s < 1) { renderer.opts.scale = Math.min(1, +(s + 0.05).toFixed(2)); fit(); }
       }
       // the first half minute, on a guessed tier: still struggling at the lowest scale means one tier down, once
       slowFor = fps < 28 ? slowFor + 0.5 : 0;
-      if (!chosenByUser && !steppedDown && now - startedAt < 25000 && slowFor >= 4 && renderer.opts.scale <= 0.55 && QNAME !== 'fast') {
-        // a machine that cannot keep up even at the lowest scale goes to Fast, once
+      if (!chosenByUser && !steppedDown && now - startedAt < 25000 && slowFor >= 4 && renderer.opts.scale <= 0.55 && video.shadersOn()) {
+        // a machine that cannot keep up even at the lowest scale turns the shaders off, once (at once, no reload)
         steppedDown = true;
-        options.set('quality', 'fast');
-        try { sessionStorage.setItem('lc2_resume', g.entry.id); } catch (e) {}
-        saveGame().then(() => location.reload());
+        options.set('shaders', false);
       }
     }
     if (showDebug) {
@@ -1187,7 +1186,7 @@ async function boot() {
       const bn = BIOMES[world.biomeAt(Math.floor(p.x), Math.floor(p.z))];
       const t = inter.target;
       hud.setDebug([
-        'Leoncraft 2 (' + QNAME + ')',
+        'Leoncraft 2 (' + QNAME() + ')',
         fps + ' fps',
         '',
         'XYZ: ' + p.x.toFixed(3) + ' / ' + (p.y + Y0).toFixed(5) + ' / ' + p.z.toFixed(3),
@@ -1199,7 +1198,7 @@ async function boot() {
         g.mode !== 'creative' ? 'Food ' + survival.food + ', saturation ' + survival.saturation.toFixed(1) + ', exhaustion ' + survival.exhaustion.toFixed(3) : '',
       ], [
         'Render ' + renderer.rw + 'x' + renderer.rh + ' (F7 scale)',
-        'Distance ' + world.renderDist + ', graphics ' + QNAME,
+        'Distance ' + world.renderDist + ', ' + QNAME() + (video.shadersOn() ? ' (' + options.get('shaderPreset') + ')' : ''),
         'Seed ' + worldSeed(g.entry) + (g.world.generator === 'vanilla' ? '' : ' (classic)'),
         'Fluids pending ' + fluids.pending.size,
         '',
@@ -1245,7 +1244,7 @@ async function boot() {
   requestAnimationFrame(loop);
   window.__lc2 = {
     structures,
-    renderer, gui, options, B, BLOCKS,
+    renderer, gui, options, B, BLOCKS, video,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
     command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=16').then(m => m.execute(line, ctx)); },

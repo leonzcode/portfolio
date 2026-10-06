@@ -46,7 +46,11 @@ void main() {
   vFlow = aF.xy / 127.0;
   // the surface rises and falls a little with the swell, and with the ripples
   if ((flags & 4) != 0 && (flags & 2) == 0) {
+#ifdef NO_WAVES
+    float sw = 0.0;
+#else
     float sw = sin(world.x * 0.35 + uTime * 1.4) * cos(world.z * 0.31 - uTime * 1.1) * 0.025;
+#endif
     vec2 iuv = (world.xz - uInteractRect.xy) / uInteractRect.zw;
     float rip = (iuv.x > 0.0 && iuv.y > 0.0 && iuv.x < 1.0 && iuv.y < 1.0) ? textureLod(uInteract, iuv, 0.0).r : 0.0;
     world.y += (sw * (0.3 + 0.7 * sky) + rip * 0.12) - 0.035;
@@ -91,6 +95,41 @@ vec3 viewPos(vec2 uv, float d) {
 }
 vec2 project(vec3 vp) { vec4 c = projectionMatrix * vec4(vp, 1.0); return c.xy / c.w * 0.5 + 0.5; }
 
+#ifdef WATER_TEX
+/* Shader Options, Water: Vanilla. The water's own texture, sampled as the
+   game samples it (render/vanilla.js FLUID_FS): still on top, the flowing
+   one turned downhill on running water and down the sides. */
+uniform sampler2D uLayerInfo;
+uniform vec2 uFlowLayers;
+float frameOfW(float layer) {
+  vec4 info = texelFetch(uLayerInfo, ivec2(int(layer + 0.5), 0), 0);
+  if (info.x < 1.5) return layer;
+  return layer + mod(floor(uTime * 20.0 / max(1.0, info.y)), info.x);
+}
+vec4 waterTexture(bool top) {
+  vec2 p, dpx, dpy;
+  float layer;
+  if (top) {
+    p = vWorld.xz; dpx = dFdx(p); dpy = dFdy(p);
+    vec2 cell = fract(p);
+    float fl = length(vFlow);
+    if (fl > 0.05 && vNormal == 2) {
+      vec2 d = vFlow / fl, q = cell - 0.5;
+      q = vec2(q.x * d.y - q.y * d.x, q.x * d.x + q.y * d.y);
+      p = 0.5 + q * 0.5; dpx *= 0.5; dpy *= 0.5;
+      layer = frameOfW(uFlowLayers.x);
+    } else { p = cell; layer = frameOfW(vLayer); }
+  } else {
+    float along = (vNormal == 0 || vNormal == 1) ? vWorld.z : vWorld.x;
+    vec2 w = vec2(along, -vWorld.y);
+    dpx = dFdx(w) * 0.5; dpy = dFdy(w) * 0.5;
+    p = fract(w) * 0.5;
+    layer = frameOfW(uFlowLayers.x);
+  }
+  return textureGrad(uAlbedo, vec3(p, layer), dpx, dpy);
+}
+#endif
+#if SSR_STEPS > 0
 // screen-space reflection: march, then home in
 vec4 ssr(vec3 vp, vec3 vn, float jitter) {
   vec3 rd = normalize(reflect(normalize(vp), vn));
@@ -123,6 +162,7 @@ vec4 ssr(vec3 vp, vec3 vn, float jitter) {
   }
   return vec4(0.0);
 }
+#endif
 
 void main() {
   bool lava = (vFlags & 2) != 0;
@@ -152,6 +192,30 @@ void main() {
 
   // ---- water ----
   vec3 tint = toLinear(vCol.rgb);
+#ifdef WATER_TEX
+  {
+    // the texture's grain in the biome's water colour, lit by the sun (through its shadow), the sky and the torches
+    vec4 t = waterTexture(top);
+    vec3 alb = toLinear(vec3(dot(t.rgb, vec3(0.299, 0.587, 0.114)) * 1.9) * vCol.rgb);
+    vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, ambUp = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
+    float gate = smoothstep(0.03, 0.2, sky);
+#if SHADOWS > 0
+    float shadow = shadowHard(shadowCoord(vWorld, Ng, 1.0, dist)) * gate;
+#else
+    float shadow = smoothstep(0.8, 0.95, sky) * gate;
+#endif
+    float block = max(vLight.y, heldLight(vWorld, Ng));
+    vec3 light = (sunC * shadow * sat(abs(dot(Ng, uLightDir))) + ambUp * sky * sky) / PI
+               + (block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) / PI : vec3(0.0));
+    vec3 col = alb * light;
+#ifdef LDR
+    outColor = vec4(toneLDR(col * vKeep + vAdd), t.a);
+#else
+    outColor = vec4(mix(texture(uSceneColor, gl_FragCoord.xy / uRes).rgb, col, t.a), 1.0);
+#endif
+    return;
+  }
+#endif
   vec3 absorb = -0.15 * log(max(tint, vec3(0.02))) + 0.03;
   vec3 N = Ng;
   if (top || abs(Ng.y) < 0.5) {
@@ -160,7 +224,9 @@ void main() {
     vec2 wp = top ? vWorld.xz : vec2(dot(vWorld, vec3(Ng.z, 0.0, -Ng.x)), vWorld.y * 0.6);
     if (!top) flow = vec2(0.0, -1.0);            // a waterfall's face streams downward
     float t = uTime * (falling || !top ? 1.8 : 1.0);
-#ifdef LDR
+#ifdef NO_WAVES
+    vec3 wn = vec3(0.0, 1.0, 0.0);
+#elif defined(LDR)
     vec3 wn = waveNormalD(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5), dist < 32.0 ? 5 : 3);
 #else
     vec3 wn = waveNormal(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5));
@@ -267,8 +333,12 @@ void main() {
   // a pouring column is churned up: hardly a mirror, and full of air
   bool pour = !top || falling;
   if (pour) F *= 0.35;
-  // the reflection: what is on screen, else the sky, darkened under cover
+  // the reflection: what is on screen (Water: Reflections), else the sky, darkened under cover
+#if SSR_STEPS > 0
   vec4 r = ssr(vp, vn, ign(gl_FragCoord.xy, uFrame));
+#else
+  vec4 r = vec4(0.0);
+#endif
   vec3 R = reflect(-V, N);
   vec3 skyR = skyRadiance(R) * pow(sat(sky * 1.15), 6.0);
   vec3 refl = mix(skyR, r.rgb, r.a);
@@ -304,7 +374,9 @@ export function makeWaterMaterial(shared, opts) {
     fragmentShader: HEAD + COMMON + SHADOW + WIND + WAVES + TONEMAP + FS.replace('void main() {', (opts && opts.ldr ? LDR : '') + LIGHTS + '\nvoid main() {'),
     uniforms: Object.assign({ uMeshTime: { value: 0 } }, shared),
     side: THREE.DoubleSide,
-    defines: Object.assign({ SSR_STEPS: (opts && opts.ssrSteps) || 28, SHADOWS: opts && opts.shadows !== undefined ? opts.shadows : 2 }, lightDefines(opts), opts && opts.ldr ? { LDR: 1, TONE_LUT: 1 } : {}),
+    defines: Object.assign({ SSR_STEPS: opts && opts.ssrSteps !== undefined ? opts.ssrSteps : 28, SHADOWS: opts && opts.shadows !== undefined ? opts.shadows : 2 }, lightDefines(opts), opts && opts.ldr ? { LDR: 1, TONE_LUT: 1 } : {},
+      // Shader Options: Water (Vanilla: its texture) and Waves
+      opts && opts.water === 0 ? { WATER_TEX: 1 } : {}, opts && opts.waves === false ? { NO_WAVES: 1 } : {}),
     transparent: !!(opts && opts.ldr), depthWrite: true,
   });
 }

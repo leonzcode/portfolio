@@ -14,24 +14,17 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Sky, SUN_I, FullScreen } from './sky.js?v=16';
-import { Post } from './post.js?v=16';
 import { Interaction } from './interaction.js?v=16';
-import { makeMaterials, makeLayerInfo, bakeLayerMaterials } from './materials.js?v=16';
-import { makeWaterMaterial } from './water.js?v=16';
-import { makeNoise2D, makeNoise3D } from './noisetex.js?v=16';
-import { makeLdrSky } from './ldrsky.js?v=16';
+import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=16';
+import { makeNoise2D } from './noisetex.js?v=16';
 import { Avatar } from './avatar.js?v=16';
 import { Held } from './held.js?v=16';
 import { Figure } from './figure.js?v=16';
 import { PumpkinView } from './pumpkin.js?v=16';
 import { glints, pieceLook } from './armor.js?v=16';
-import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=16';
 import { dimLook } from '../dim/look.js?v=16';
 import { blockGeometry } from './blockmesh.js?v=16';
-import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=16';
-import { ShadowMaps } from './shadows.js?v=16';
-import { makeToneLut } from './glsl.js?v=16';
+import { applyLook, looked } from './looks.js?v=16';
 const THREE = window.THREE;
 // one black pixel, for a texture that is made later
 function blankTexture() {
@@ -56,22 +49,21 @@ export class Renderer {
     this.shadowScene = new THREE.Scene();    // what moves: your own body (render/avatar.js)
     this.shadowTerrain = new THREE.Scene();  // the world's blocks, drawn into their own map and kept
     this.shadowCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 400);
-    // Fast graphics is the game with no shaders (vanilla.js): no atmosphere tables at all
-    this.sky = this.opts.vanilla ? null : new Sky(r);
-    this.inter = new Interaction(r, this.opts.interSize || 256);
-    // the sun's shadow maps (render/shadows.js); with no shadows at all, token ones
-    const sr = this.opts.shadows ? this.opts.shadowRes : 4;
-    this.shadows = new ShadowMaps(this, sr);
+    this.textures = textures;
+    // the atmosphere tables, the shadow maps and the rest are made by the look (render/looks.js)
+    this.sky = null; this.shadows = null;
+    this.inter = new Interaction(r, this.opts.interSize || 128);
+    const sr = 4;
     // the textures
     this.U = {
       uTime: { value: 0 }, uFrame: { value: 0 },
       uAlbedo: { value: textures.albedo }, uNormalMap: { value: textures.normal }, uSpecMap: { value: textures.spec },
       uLayerInfo: { value: makeLayerInfo(textures.manifest) }, uLayerMat: { value: blankTexture() },
       uAmbient: { value: this.sky ? this.sky.amb.texture : null }, uView: { value: this.sky ? this.sky.view.texture : null }, uTrans: { value: this.sky ? this.sky.trans.texture : null },
-      uNoise: { value: makeNoise2D() }, uNoise3: { value: ldr ? null : makeNoise3D() },
-      uShadow: { value: this.shadows.texture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowRes: { value: sr },
+      uNoise: { value: makeNoise2D() }, uNoise3: { value: null },
+      uShadow: { value: null }, uShadowMat: { value: new THREE.Matrix4() }, uShadowRes: { value: sr },
       // your own body's small shadow map, and how to find it from the blocks' one (render/shadows.js)
-      uBodyShadow: { value: this.shadows.body.depthTexture }, uBodyMat: { value: new THREE.Matrix4() }, uBody: { value: new THREE.Vector4() },
+      uBodyShadow: { value: null }, uBodyMat: { value: new THREE.Matrix4() }, uBody: { value: new THREE.Vector4() },
       uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
       uInteract: { value: this.inter.texture }, uInteractRect: { value: this.inter.rect }, uPlayer: { value: new THREE.Vector3() },
       uWet: { value: 0 }, uSceneColor: { value: null }, uSceneDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
@@ -89,30 +81,27 @@ export class Renderer {
       // Detailed's per-vertex light, from the light table each frame (sky.js setUniforms), and the fog's colours
       uAmbUp: { value: new THREE.Vector3() }, uAmbSide: { value: new THREE.Vector3() }, uAmbDown: { value: new THREE.Vector3() },
       uSunC: { value: new THREE.Vector3() }, uDayK: { value: 0 }, uExpo: { value: 1 }, uFogK: { value: 0.0019 },
-      uFogTab: { value: this.sky ? this.sky.fog.texture : null }, uShadowInv: { value: new THREE.Matrix4() },
+      uFogTab: { value: null }, uShadowInv: { value: new THREE.Matrix4() },
       // Detailed's tone curve as a table (glsl.js TONE_LUT)
-      uToneLut: { value: this.opts.vanilla ? null : makeToneLut() },
+      uToneLut: { value: null },
+      // the Shader Options that are only numbers (render/looks.js): the shadows' softness, how much
+      // plants and leaves wave, the corners' shade, the fog's thickness; a chunk fading in (Chunk Fade);
+      // where the clouds melt into the sky (Cloud Distance)
+      uShadowSoft: { value: 1.6 }, uWave: { value: new THREE.Vector2(1, 1) }, uAO: { value: 1 }, uFogMul: { value: 1 },
+      uChunkFade: { value: 1 }, uCloudFade: { value: new THREE.Vector2(256, 512) },
+      // the enchantment glint's speed and strength (Accessibility Settings; render/armor.js GLINT)
+      uGlint: { value: new THREE.Vector2(0.5, 0.75) },
+      // Brightness (Video Settings) less its default, for the shader look (glsl.js lightFloor)
+      uBrightD: { value: (this.opts.brightness === undefined ? 0.5 : this.opts.brightness) - 0.5 },
+      // the still and flowing water textures (the Shader Options' vanilla water, and Shaders OFF)
+      uFlowLayers: { value: new THREE.Vector2(textures.manifest.textures.water_flow ? textures.manifest.textures.water_flow.layer : 0, textures.manifest.textures.lava_flow ? textures.manifest.textures.lava_flow.layer : 0) },
     };
-    if (this.opts.vanilla) {
-      this.vanilla = new Vanilla(this, textures);
-      this.mats = makeVanillaMaterials(this.U);
-    } else {
-      this.mats = makeMaterials(this.U, this.opts);
-      this.mats.fluid = makeWaterMaterial(this.U, this.opts);
-    }
     this.gl = r.getContext();
-    this.makeStandIns();
-    // the full tiers run the whole chain after the world; the low ones draw straight to the screen
-    this.post = ldr ? null : new Post(r, this.U, this.opts);
-    // Detailed: the sky in one pass first, and the game's own blocks of cloud after the world
-    if (ldr && !this.vanilla) {
-      this.skyFS = new FullScreen(makeLdrSky(this.U));
-      // drawn after every solid thing and before anything blended (rain, glass, beams), only where
-      // nothing covers it (ldrsky.js), so most of the screen never runs the sky's shader
-      this.skyFS.mesh.renderOrder = 1e6;
-      this.scene.add(this.skyFS.mesh);
-      this.blockClouds = new BlockClouds(detailedCloudMaterial(this.U));
-    }
+    /* Everything that depends on the look: Shaders OFF (the game's own, vanilla.js), or
+       the shader's light pipeline (the sky in one pass first, as the scene's last solid
+       thing, so most of the screen never runs it; the game's blocks of cloud after the
+       world) or its full chain after the world (post.js). render/looks.js. */
+    applyLook(this, this.opts, true);
     // the block in your hand: drawn in the world just in front of the eye
     this.handScene = new THREE.Scene();
     this.hand = new THREE.Group();
@@ -146,6 +135,9 @@ export class Renderer {
     if (this.ldr) {
       // drawn at the render scale and stretched by the browser: the cheapest upscale there is
       this.r.setSize(rw, rh, false);
+      // (the full chain's pictures let go, if a look before this one had them)
+      if (this.main) { this.main.depthTexture.dispose(); this.main.dispose(); this.main = null; }
+      if (this._post) this._post.release();
       return;
     }
     this.r.setSize(Math.round(w * dpr), Math.round(h * dpr), false);
@@ -200,18 +192,24 @@ export class Renderer {
      almost nothing. Opaque chunks go nearest first, so hidden pixels are
      never shaded; water and glass furthest first, so they blend right. */
   makeStandIns() {
-    const g = new THREE.BufferGeometry();
-    for (const nm of ['aPos', 'aA', 'aL', 'aF', 'aC']) g.setAttribute(nm, new THREE.BufferAttribute(nm === 'aPos' ? new Uint16Array(12) : nm === 'aF' ? new Int8Array(12) : new Uint8Array(12), 4));
-    g.setIndex([0, 1, 2]);
-    this.standGeo = g;
+    let g = this.standGeo;
+    if (!g) {
+      g = new THREE.BufferGeometry();
+      for (const nm of ['aPos', 'aA', 'aL', 'aF', 'aC']) g.setAttribute(nm, new THREE.BufferAttribute(nm === 'aPos' ? new Uint16Array(12) : nm === 'aF' ? new Int8Array(12) : new Uint8Array(12), 4));
+      g.setIndex([0, 1, 2]);
+      this.standGeo = g;
+    }
     this.locs = new Map();
     this.frustum = new THREE.Frustum(); this.fm = new THREE.Matrix4(); this.box = new THREE.Box3();
+    // (made again by a new look: render/looks.js)
+    this.stands = this.stands || [];
     const stand = (scene, material, kinds, order, shadow) => {
       if (!material) return;
       const m = new THREE.Mesh(g, material);
       m.frustumCulled = false; m.renderOrder = order; m.matrixAutoUpdate = false;
       m.onAfterRender = (r, sc, cam) => this.drawParts(material, kinds, cam, shadow);
       scene.add(m);
+      this.stands.push(m);
     };
     stand(this.scene, this.mats.opaque, ['opaque'], -10, false);
     stand(this.scene, this.mats.cutout, ['cutout', 'plants', 'leafIn'], -9, false);
@@ -228,8 +226,11 @@ export class Renderer {
     if (!prog) return;
     const P = prog.program;
     let L = this.locs.get(P);
-    if (!L) { L = { chunk: gl.getUniformLocation(P, 'uChunk'), meshTime: gl.getUniformLocation(P, 'uMeshTime') }; this.locs.set(P, L); }
+    if (!L) { L = { chunk: gl.getUniformLocation(P, 'uChunk'), meshTime: gl.getUniformLocation(P, 'uMeshTime'), fade: gl.getUniformLocation(P, 'uChunkFade') }; this.locs.set(P, L); }
     if (!L.chunk) return;
+    // Chunk Fade (Video Settings): a column fades in over its first moments on screen
+    const fadeFor = shadow || !L.fade || !(this.opts.chunkFade > 0) ? 0 : this.opts.chunkFade * 1000, now = this.fadeNow;
+    let faded = false;
     // the shadow map is drawn a share of its columns at a time (render/shadows.js)
     const slice = shadow ? this.shadowSlice : null;
     const list = slice ? slice.list : this.inView(cam);
@@ -239,6 +240,10 @@ export class Renderer {
       const col = list[back ? n - 1 - j : j];
       if (col.dead) continue;
       gl.uniform3f(L.chunk, col.cx * 16, 0, col.cz * 16);
+      if (fadeFor) {
+        const f = Math.min(1, (now - col.born) / fadeFor);
+        if (f < 1 || faded) { gl.uniform1f(L.fade, f); faded = f < 1; }
+      }
       for (let k = 0; k < kinds.length; k++) {
         const p = col.byKind[kinds[k]];
         if (!p) continue;
@@ -253,6 +258,7 @@ export class Renderer {
     }
     // back as three.js left it
     gl.uniform3f(L.chunk, 0, 0, 0);
+    if (faded) gl.uniform1f(L.fade, 1);
     if (L.meshTime && material.uniforms.uMeshTime) gl.uniform1f(L.meshTime, material.uniforms.uMeshTime.value);
     gl.bindVertexArray(prevVao);
   }
@@ -279,9 +285,11 @@ export class Renderer {
   }
   addColumn(cx, cz, mesh) {
     this.shadows.changed(cx, cz);
+    // when it first came into the world (a new mesh of the same column keeps it): Chunk Fade
+    const was = this.columns.get(cx + ',' + cz);
     this.dropColumn(cx, cz);
     const gl = this.gl;
-    const col = { cx, cz, vis: mesh.vis, skyLow: mesh.skyLow, parts: [], byKind: {}, y0: 1e9, y1: -1e9, dist: 0 };
+    const col = { cx, cz, vis: mesh.vis, skyLow: mesh.skyLow, parts: [], byKind: {}, y0: 1e9, y1: -1e9, dist: 0, born: was ? was.born : (this.fadeNow || 0) };
     const add = (data, kind) => {
       if (!data || !data.index.length) return;
       // how tall the mesh is, for culling: from the first section with anything in it to the last
@@ -485,20 +493,38 @@ export class Renderer {
      the world is loaded, in the background where the browser can, before it
      is ever looked at. */
   warmUp(extra) {
+    // (kept, for when a new look needs them all built again: render/looks.js)
+    if (extra) this.warmExtra = extra;
     const r = this.r, cam = this.camera, more = new THREE.Scene();
     const mats = [this.mats.handOpaque, this.mats.handCutout].concat(extra || []);
     for (const m of mats) if (m) more.add(new THREE.Mesh(this.standGeo, m));
     const scenes = [this.scene, this.trans, this.handScene, this.shadowTerrain, this.shadowScene, more,
-      this.blockClouds && this.blockClouds.scene, this.overlay && this.overlay.scene].filter(Boolean);
+      this.vanilla ? null : this.ldr ? this.blockClouds && this.blockClouds.scene : this.blockCloudsHDR && this.blockCloudsHDR.scene,
+      this.overlay && this.overlay.scene].filter(Boolean);
     if (this.vanilla) for (const o of [this.vanilla.skyFS, this.vanilla.cloudMesh]) if (o && o.scene) scenes.push(o.scene);
     for (const s of scenes) { try { r.compileAsync(s, cam).catch(() => {}); } catch (e) { /* drawn as before, built when first seen */ } }
   }
+
+  // the rain and snow, on their own (Improved Transparency: before the water as well as after it)
+  drawFx(cam) {
+    if (!this.fxMeshes) return;
+    for (const m of this.fxMeshes) if (m.visible && m.parent && (!m.geometry.drawRange || m.geometry.drawRange.count > 0)) this.r.render(m, cam);
+  }
+
+  /* ---- the look: Shaders ON or OFF and the shader's settings (render/looks.js) ---- */
+  setLook(look) { return applyLook(this, look, false); }
+  // a material that is made again for each look: make(opts) -> material
+  looked(make) { return looked(this, make); }
+  // fn(opts, rebuilt) after every change of look
+  onLook(fn) { (this.lookFns || (this.lookFns = [])).push(fn); }
+  // a material's own uniforms, with any of the shared ones a later look added (the Fast look's lightmap and fog)
+  withU(uniforms) { for (const k in this.U) if (!(k in uniforms)) uniforms[k] = this.U[k]; return uniforms; }
 
   /* ---- the light in your hand, and torch flicker ---- */
   updateLights(state, dt) {
     const U = this.U, t = U.uClock.value;
     // the held light fades in and out rather than snapping
-    const want = this.heldLight || 0;
+    const want = this.opts.heldLight === false ? 0 : this.heldLight || 0;
     this.heldNow = (this.heldNow || 0) + (want - (this.heldNow || 0)) * (1 - Math.exp(-dt * 7));
     if (this.heldNow < 0.05 && want === 0) this.heldNow = 0;
     U.uHeldLight.value = this.heldNow * (1 + 0.025 * Math.sin(t * 6.1) + 0.015 * Math.sin(t * 13.7 + 2.0));
@@ -518,6 +544,7 @@ export class Renderer {
     // Detailed: what each texture is made of, once the textures are on the graphics card (materials.js)
     if (this.ldr && !this.vanilla && !this.layerMatDone) { this.layerMatDone = true; U.uLayerMat.value = bakeLayerMaterials(r, U.uSpecMap.value, U.uLayerInfo.value); }
     this.frame++;
+    this.fadeNow = performance.now();
     U.uFrame.value = this.frame;
     U.uTime.value = state.time;
     U.uClock.value = performance.now() / 1000;
@@ -545,8 +572,10 @@ export class Renderer {
     // the held block takes the light where you stand, as the model does
     if (this.uHandLight && this.avatar.uLight) this.uHandLight.value.copy(this.avatar.uLight.value);
     cam.fov = state.fov;
-    // far enough for the clouds, which reach twice the render distance out at height 192
-    cam.far = this.opts.renderDist * 32 + 128;
+    // far enough for the clouds, which reach as far as Cloud Distance says at height 192
+    const cloudReach = (this.opts.cloudDist || this.opts.renderDist * 2) * 16;
+    U.uCloudFade.value.set(Math.min(cloudReach * 0.5, U.uRender.value), cloudReach);
+    cam.far = Math.max(this.opts.renderDist * 32 + 128, Math.hypot(cloudReach, 192 - state.eye.y) + 64);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     U.uNear.value = cam.near; U.uFar.value = cam.far;
@@ -573,7 +602,7 @@ export class Renderer {
     // the sky table: every frame on the full tiers; on the light ones every few frames (it changes
     // slowly), a third of it a frame, and all at once when the sun has jumped (/time set, a night's sleep)
     // (nothing in the Nether or the End, which have no sky)
-    if (this.sky && (this.frame < 3 || !(state.dim && state.dim.sky !== 'normal'))) {
+    if (!this.vanilla && this.sky && (this.frame < 3 || !(state.dim && state.dim.sky !== 'normal'))) {
       const n = this.opts.sky || 1, at = this.skySun || (this.skySun = new THREE.Vector3(0, -2, 0));
       if (n < 3 || this.frame < 3 || at.dot(sun) < 0.9997) { this.sky.update(sun, moon, state.eye.y); at.copy(sun); }
       else if (this.frame % n < 3) { this.sky.part(this.frame % n, sun, moon, state.eye.y); if (this.frame % n === 0) at.copy(sun); }
@@ -599,8 +628,11 @@ export class Renderer {
       this.vanilla.drawSky(r);
       r.render(this.scene, cam);
       if (this.overlay) this.overlay.render(r, cam);
+      // Improved Transparency: the clouds and the rain go in before water and glass, so they show through them
+      const it = !!this.opts.improvedTransparency;
+      if (it) { this.vanilla.drawClouds(r, cam, state.time); this.drawFx(cam); }
       r.render(this.trans, cam);
-      this.vanilla.drawClouds(r, cam, state.time);
+      if (!it) this.vanilla.drawClouds(r, cam, state.time);
       this.drawHand(state, cam, dt);
       return;
     }
@@ -611,18 +643,23 @@ export class Renderer {
       const cave = !sunless && state.skyAtEye < 1 ? 1 : 0;
       this.caveNow = this.caveNow === undefined ? cave : this.caveNow + (cave - this.caveNow) * Math.min(1, dt * 1.5);
       U.uCave.value = this.caveNow < 0.002 ? 0 : this.caveNow;
-      U.uExposure.value = sunless ? (state.dim.id === 'the_end' ? 2.0 : 4.2) : 2.4;
+      U.uExposure.value = (sunless ? (state.dim.id === 'the_end' ? 2.0 : 4.2) : 2.4) * Math.pow(2, this.opts.exposure || 0);
       this.sky.setUniforms(U, cam.position.y);
+      U.uFogK.value *= this.opts.fog === undefined ? 1 : this.opts.fog;
       r.setRenderTarget(null);
       r.setClearColor(0x000000, 1);
       r.clear(true, true, false);
-      // the sky is the scene's last solid thing (see the constructor)
+      // the sky is the scene's last solid thing (render/looks.js)
       r.render(this.scene, cam);
       if (this.overlay) this.overlay.render(r, cam);
+      // the clouds, as Fast draws them (none where the dimension has none, or with Clouds off), before
+      // water and glass with Improved Transparency (and the rain too), after them without
+      const clouds = state.dim && !state.dim.clouds ? 'off' : this.opts.shaderClouds === 'off' ? 'off' : this.opts.clouds || 'fancy';
+      const drawClouds = this.blockClouds && clouds !== 'off' && !state.eyeInWater;
+      const it = !!this.opts.improvedTransparency;
+      if (it) { if (drawClouds) this.blockClouds.draw(r, cam, state.time, clouds, cloudReach); this.drawFx(cam); }
       r.render(this.trans, cam);
-      // the clouds, as Fast draws them (none where the dimension has none, or with Clouds off)
-      const clouds = state.dim && !state.dim.clouds ? 'off' : this.opts.clouds || 'fancy';
-      if (this.blockClouds && clouds !== 'off' && !state.eyeInWater) this.blockClouds.draw(r, cam, state.time, clouds, U.uRender.value * 2);
+      if (drawClouds && !it) this.blockClouds.draw(r, cam, state.time, clouds, cloudReach);
       this.drawHand(state, cam, dt);
       return;
     }
@@ -633,6 +670,15 @@ export class Renderer {
     r.clear(true, true, false);
     r.render(this.scene, cam);
     if (this.overlay) this.overlay.render(r, cam);
+    // block clouds (Shader Options), lit as the rest of the full chain and marked so the
+    // edge of the world does not melt them (post.js); the marched ones are the post chain's
+    const clouds = state.dim && !state.dim.clouds ? 'off' : this.opts.clouds || 'fancy';
+    this.post.cloudsOn = this.opts.volumetric && clouds !== 'off';
+    if (this.opts.shaderClouds === 'blocks' && clouds !== 'off' && !state.eyeInWater && this.blockCloudsHDR) {
+      r.setRenderTarget(this.main);
+      this.blockCloudsHDR.draw(r, cam, state.time, clouds, cloudReach);
+    }
+    if (this.opts.improvedTransparency) this.drawFx(cam);
     this.post.copies(this.main);
     r.setRenderTarget(this.main);
     r.render(this.trans, cam);

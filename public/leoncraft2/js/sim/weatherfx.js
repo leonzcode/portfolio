@@ -67,7 +67,8 @@ export class WeatherFX {
   constructor(sim, weather) {
     this.sim = sim; this.weather = weather;
     const r = sim.renderer;
-    this.R = r.vanilla ? 5 : 10;
+    // room for the widest Weather Effect Radius (Video Settings: 3 to 10 blocks); frame() reads the setting
+    this.R = 10;
     const max = (this.R * 2 + 1) ** 2;
     this.max = max;
     this.layers = {};
@@ -86,6 +87,8 @@ export class WeatherFX {
       mesh.frustumCulled = false;
       mesh.renderOrder = 10;
       (r.trans || r.scene).add(mesh);
+      // drawn before water and glass as well, with Improved Transparency (renderer.js drawFx)
+      r.fxMeshes = (r.fxMeshes || []).filter(x => x.parent).concat([mesh]);
       this.layers[kind] = { g, m, mesh };
     }
     this.boltGroup = new THREE.Group();
@@ -112,7 +115,8 @@ export class WeatherFX {
     this.bolts = this.bolts.filter(b => { if (b.life <= 0) { this.boltGroup.remove(b.obj); b.obj.geometry.dispose(); return false; } return true; });
     if (rain <= 0 || sim.dimension() !== 'overworld') { for (const k in this.layers) this.layers[k].g.setDrawRange(0, 0); return; }
     const cam = r.camera.position;
-    const cx = Math.floor(cam.x), cy = cam.y, cz = Math.floor(cam.z), R = this.R;
+    const cx = Math.floor(cam.x), cy = cam.y, cz = Math.floor(cam.z);
+    const R = Math.max(1, Math.min(this.R, Math.round(r.opts.weatherRadius || (r.vanilla ? 5 : 10))));
     const ticks = sim.n + Math.min(1, (performance.now() - (sim.bodies.lastTick || 0)) / 50);
     const fill = { rain: 0, snow: 0 };
     const tops = this.tops || (this.tops = new Map());

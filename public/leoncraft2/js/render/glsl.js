@@ -44,6 +44,29 @@ vec3 faceB(int i) {
   if (i == 2) return vec3(0, 0, 1); if (i == 3) return vec3(0, 0, -1);
   return vec3(0, -1, 0);
 }
+// Brightness (Video Settings) less its default, 0.5: the least light anything gets, lowered towards
+// none (Moody) or raised so the darkest caves can be made out (Bright), as the game's own setting does
+uniform float uBrightD;
+vec3 lightFloor() { return vec3(0.0035, 0.004, 0.006) * (1.0 + 2.0 * min(uBrightD, 0.0)) + vec3(0.03, 0.032, 0.036) * 2.0 * max(uBrightD, 0.0); }
+`;
+
+/* ---- Texture Filtering (Video Settings) ----------------------------------
+   RGSS: four samples on a rotated grid across the part of the texture the
+   pixel covers, each at the level of detail of a quarter of it, averaged.
+   Without RGSS defined it is the one ordinary sample. */
+export const FILTER = /* glsl */`
+uniform float uChunkFade;      // a column fading in: 0 just arrived, 1 there (Chunk Fade)
+vec4 texFiltered(sampler2DArray s, vec3 p) {
+#ifdef RGSS
+  vec2 dx = dFdx(p.xy), dy = dFdy(p.xy), hx = dx * 0.5, hy = dy * 0.5;
+  return (textureGrad(s, vec3(p.xy + dx * 0.125 + dy * 0.375, p.z), hx, hy)
+        + textureGrad(s, vec3(p.xy + dx * 0.375 - dy * 0.125, p.z), hx, hy)
+        + textureGrad(s, vec3(p.xy - dx * 0.125 - dy * 0.375, p.z), hx, hy)
+        + textureGrad(s, vec3(p.xy - dx * 0.375 + dy * 0.125, p.z), hx, hy)) * 0.25;
+#else
+  return texture(s, p);
+#endif
+}
 `;
 
 /* ---- the sun's shadow map ------------------------------------------------ */
@@ -51,6 +74,7 @@ export const SHADOW = /* glsl */`
 uniform sampler2DShadow uShadow;
 uniform mat4 uShadowMat;      // world -> shadow clip (orthographic, centred on the player)
 uniform float uShadowRes;
+uniform float uShadowSoft;    // how far apart the soft shadow's taps are, in texels (Shader Options: Shadow Softness)
 const float SHADOW_B = 0.85;  // how hard the map is squeezed towards the player
 vec2 distort(vec2 p) { float f = length(p) * SHADOW_B + (1.0 - SHADOW_B); return p / f; }
 float distortFactor(vec2 p) { return length(p) * SHADOW_B + (1.0 - SHADOW_B); }
@@ -116,13 +140,19 @@ uniform float uTime;
 uniform sampler2D uInteract;   // r: water height, g: previous, b: trampled grass
 uniform vec4 uInteractRect;    // world xz of the map's corner, and its size
 uniform vec3 uPlayer;          // the player's feet
+uniform vec2 uWave;            // how far plants (x) and leaves (y) move (Shader Options: Waving Plants, Waving Leaves)
 float trampleAt(vec2 xz) {
   vec2 uv = (xz - uInteractRect.xy) / uInteractRect.zw;
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
   return textureLod(uInteract, uv, 0.0).b;
 }
 vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
+#ifdef NO_WIND
+  return vec3(0.0);
+#else
   if (wave == 0) return vec3(0.0);
+  float amp = wave == 2 ? uWave.y : uWave.x;
+  if (amp <= 0.0) return vec3(0.0);
   float w;
   if (wave == 1 || wave == 4) w = 1.0 - v;
   else if (wave == 6) w = (1.0 - v) * 0.45;
@@ -161,7 +191,8 @@ vec3 windOffset(vec3 p, int wave, float v, float sky, float rnd) {
     float d = length(tp.xz);
     if (d < 1.0 && tp.y > -0.5 && tp.y < 2.0) off.xz += normalize(tp.xz + 1e-4) * (1.0 - d) * 0.5 * w;
   }
-  return off;
+  return off * amp;
+#endif
 }
 `;
 
@@ -334,7 +365,7 @@ vec3 toneLDR(vec3 c) { return toSRGB(agx(c)); }
    punch, the way out) and the sRGB step, 32 to a side, filtered. Indexed by
    the log of the colour, as AgX itself works, so the dark end gets as many
    entries as the bright. */
-export function makeToneLut() {
+export function makeToneLut(contrastK = 1, saturation = 1) {
   const THREE = window.THREE, N = 32;
   const outM = [1.19687900512017, -0.0528968517574562, -0.0529716355144438, -0.0980208811401368, 1.15190312990417, -0.0980434501171241, -0.0990297440797205, -0.0989611768448433, 1.15107367264116];
   const contrast = x => { const x2 = x * x, x4 = x2 * x2; return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232; };
@@ -347,7 +378,12 @@ export function makeToneLut() {
     // outM * c, the matrix by columns as GLSL has it
     const o = [0, 1, 2].map(k => outM[k] * c[0] + outM[3 + k] * c[1] + outM[6 + k] * c[2]);
     const i = ((b * N + g) * N + r) * 4;
-    for (let k = 0; k < 3; k++) data[i + k] = Math.round(Math.min(1, Math.max(0, srgb(Math.pow(Math.max(o[k], 0), 2.2)))) * 255);
+    // the Shader Options' saturation (round the colour's own brightness) and contrast (round the middle of the screen's range)
+    const lin = o.map(v => Math.pow(Math.max(v, 0), 2.2)), ll = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+    for (let k = 0; k < 3; k++) {
+      const c = srgb(Math.max(0, ll + (lin[k] - ll) * saturation));
+      data[i + k] = Math.round(Math.min(1, Math.max(0, (c - 0.5) * contrastK + 0.5)) * 255);
+    }
     data[i + 3] = 255;
   }
   const t = new THREE.Data3DTexture(data, N, N, N);
@@ -380,6 +416,7 @@ float exposureNow() {
    (and HAS_DIM defined if it declares uDim itself) */
 export const LDR = /* glsl */`
 uniform float uExposure, uRender, uSkyAtEye;
+uniform float uFogMul;          // the fog's thickness (Shader Options: Fog)
 uniform vec3 uWaterTint;
 #ifndef HAS_DIM
 uniform float uDim;
@@ -406,7 +443,7 @@ vec3 finishLDR(vec3 col, vec3 world) {
     col = col * Tr + amb * uWaterTint * 0.6 * uSkyAtEye * (1.0 - Tr);
   } else {
     float h0 = cameraPosition.y - 63.0, k = 1.0 / 60.0, dy = rd.y * dist;
-    float od = 0.0019 * exp(-h0 * k) * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
+    float od = 0.0019 * uFogMul * exp(-h0 * k) * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
     vec3 fogC = skyDir(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)));
     float T = exp(-od);
     col = col * T + fogC * (1.0 - T) * uSkyAtEye;

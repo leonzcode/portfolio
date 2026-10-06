@@ -71,8 +71,37 @@ export const DEFAULT_OPTIONS = {
   invertY: false,
   rawInput: true,          // the mouse's own movement while it is held, no pointer acceleration (the game's Raw Input)
   autoJump: false,
-  renderDistance: null,    // chunks, null = the quality tier's own
-  quality: 'auto',         // auto potato low medium high ultra
+  // Video Settings, as the game's own (ui/video.js). The Preset sets the Quality & Performance ones.
+  graphicsPreset: 'fancy', // fast fancy fabulous custom
+  renderDistance: 16,      // chunks, 2-32
+  simulationDistance: 12,  // chunks, 5-32
+  chunkBuilder: 'semi',    // threaded semi full
+  smoothLighting: true,
+  biomeBlend: 2,           // 0 (OFF) to 7 (15 x 15)
+  particles: 'all',        // all decreased minimal
+  mipmapLevels: 4,         // 0-4
+  entityShadows: true,
+  entityDistance: 1,       // 0.5-5
+  cloudDistance: 64,       // chunks, 2-128
+  cutoutLeaves: true,      // See-Through Leaves
+  improvedTransparency: false,
+  textureFiltering: 'rgss', // none rgss anisotropic
+  maxAnisotropy: 2,        // 2 4 8
+  weatherRadius: 10,       // blocks, 3-10
+  vsync: true,
+  inactivityFpsLimit: 'afk', // afk minimized
+  autosaveIndicator: true,
+  vignette: true,
+  attackIndicator: 'crosshair', // off crosshair hotbar
+  chunkFade: 0.75,         // seconds, 0-1
+  glintSpeed: 0.5,         // 0-1
+  glintStrength: 0.75,     // 0-1
+  damageTilt: 1,           // 0-1
+  // Shader Packs (ui/video.js, render/looks.js): on or off, and the shader's own settings
+  shaders: null,           // true, false, or null: the game picks (main.js: off only with no graphics chip)
+  shaderPreset: 'medium',  // low medium high ultra custom
+  shader: {},              // what differs from the preset (render/looks.js SHADER_DEFAULTS)
+  quality: 'auto',         // the old Graphics setting (Detailed / Fast): read once, to carry it over
   renderScale: 'auto',     // 'auto' or 0.4-1
   guiScale: 0,             // 0 = auto
   brightness: 0.5,         // 0 moody - 1 bright
@@ -80,7 +109,7 @@ export const DEFAULT_OPTIONS = {
   clouds: 'fancy',         // fancy fast off
   menuBlur: 5,             // 0-10
   fovEffects: 1,           // 0-1
-  maxFps: 0,               // 0 = unlimited
+  maxFps: 120,             // 0 = unlimited
   difficulty: 'normal',
   textBgOpacity: 0.5,
   hideSplash: false,
@@ -110,8 +139,30 @@ export class Options {
           if (k === 'keys' || k === 'skinParts') Object.assign(this.data[k], saved[k]);
           else this.data[k] = saved[k];
         }
+        if (!('graphicsPreset' in saved)) this.carryOver(saved);
       }
     } catch (e) { /* private window or bad JSON: defaults */ }
+  }
+  /* Settings saved before Video Settings became the game's own: as the game
+     does for players who update, the Preset is Custom so nothing they chose
+     changes (the render distance and clouds they had stay, the rest is what
+     they saw before), and the old Graphics choice becomes Shaders ON (Detailed)
+     or OFF (Fast). */
+  carryOver(saved) {
+    const d = this.data;
+    d.graphicsPreset = 'custom';
+    d.renderDistance = saved.renderDistance || 8;
+    d.maxFps = saved.maxFps || 0;
+    d.simulationDistance = 8;
+    d.cutoutLeaves = true; d.smoothLighting = true; d.biomeBlend = 2;
+    d.entityDistance = 2.5; d.cloudDistance = Math.max(2, d.renderDistance * 2);
+    d.chunkBuilder = 'semi'; d.textureFiltering = 'anisotropic'; d.maxAnisotropy = 8; d.mipmapLevels = 4;
+    const q = saved.quality;
+    if (q === 'fast' || q === 'potato') d.shaders = false;
+    else if (q && q !== 'auto') d.shaders = true;
+    else d.shaders = null;       // the game picks, as it did (main.js)
+    d.weatherRadius = d.shaders === false ? 5 : 10;
+    this.save();
   }
   get(k) { return this.data[k]; }
   set(k, v) {
@@ -399,6 +450,8 @@ export class Gui {
       const [mx, my] = this._pos(e);
       // one notch is one step, whatever the browser's pixel delta
       const steps = e.deltaMode === 0 ? e.deltaY / 100 : e.deltaY / 3;
+      // (Control held: Video Settings changes the GUI Scale with the wheel, as the game does)
+      this.wheelCtrl = e.ctrlKey || e.metaKey;
       s.mouseScrolled(mx, my, -Math.max(-3, Math.min(3, steps)));
       this.dirty = true;
     }, { passive: false });

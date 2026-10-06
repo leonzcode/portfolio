@@ -26,6 +26,7 @@ uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
 uniform sampler2D uView, uAmbient;
 uniform vec3 cameraPosition, uLightDir;
 uniform float uExposure, uRender, uDim;
+uniform vec2 uCloudFade;     // where they start to melt into the sky, and where they are gone (Cloud Distance)
 ` + EXPOSURE + /* glsl */`
 in vec3 position; in float shade;
 out vec4 vCol;
@@ -41,20 +42,29 @@ void main() {
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
   vec3 c = 0.85 * (sunC * (0.2 + 0.45 * sat(uLightDir.y)) + amb * (1.3 / PI)) * shade;
   vec3 rel = w.xyz - cameraPosition;
-  float f = smoothstep(uRender, uRender * 2.0, length(rel.xz));
+  float f = smoothstep(uCloudFade.x, uCloudFade.y, length(rel.xz));
   vec3 rd = normalize(rel);
   c = mix(c, skyDir(vec3(rd.x, max(rd.y, 0.0), rd.z)), f);
-  vCol = vec4(toneLDR(c * exposureNow()), 0.8 * (1.0 - f * f));
+  float a = 0.8 * (1.0 - f * f);
+#ifdef HDR
+  // the full chain: light as it is, weighed by how much cloud there is, and what shows through it in
+  // the alpha, for the composite to put the sky behind (post.js)
+  vCol = vec4(c * a, 1.0 - a);
+#else
+  vCol = vec4(toneLDR(c * exposureNow()), a);
+#endif
 }`;
 const DETAILED_FS = /* glsl */`
 in vec4 vCol;
 out vec4 o;
 void main() { o = vCol; }`;
-export function detailedCloudMaterial(U) {
+export function detailedCloudMaterial(U, hdr) {
+  // (the full chain's are written straight over what is there, colour and alpha: see DETAILED_VS)
+  const over = hdr ? { blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.ZeroFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor } : {};
   return extra => new THREE.RawShaderMaterial(Object.assign({
     glslVersion: THREE.GLSL3, vertexShader: 'precision highp float; precision highp int;\n' + DETAILED_VS, fragmentShader: 'precision highp float;\n' + DETAILED_FS,
-    uniforms: U, side: THREE.DoubleSide,
-  }, extra));
+    uniforms: U, side: THREE.DoubleSide, defines: hdr ? { HDR: 1 } : {},
+  }, extra, extra && extra.transparent ? over : {}));
 }
 
 export class BlockClouds {
@@ -94,9 +104,11 @@ export class BlockClouds {
     const on = (x, z) => cells[(((cz + z) & 255) << 8) | ((cx + x) & 255)];
     // counted first, then written straight into typed arrays
     let quads = 0;
+    // past NEAR cells only their tops: smaller than a pixel's worth of side by then, and a long Cloud Distance stays cheap
+    const NEAR = 48 * 48;
     for (let z = -R; z <= R; z++) for (let x = -R; x <= R; x++) {
       if (!on(x, z)) continue;
-      quads += flat ? 1 : 2 + !on(x - 1, z) + !on(x + 1, z) + !on(x, z - 1) + !on(x, z + 1);
+      quads += flat || x * x + z * z > NEAR ? 1 : 2 + !on(x - 1, z) + !on(x + 1, z) + !on(x, z - 1) + !on(x, z + 1);
     }
     const pos = new Float32Array(quads * 18), sh = new Float32Array(quads * 6);
     let n = 0, m = 0;
@@ -109,7 +121,7 @@ export class BlockClouds {
       if (!on(x, z)) continue;
       const x0 = x * S, x1 = x0 + S, z0 = z * S, z1 = z0 + S;
       quad(x0, T, z0, x0, T, z1, x1, T, z1, x1, T, z0, 1.0);
-      if (flat) continue;
+      if (flat || x * x + z * z > NEAR) continue;
       quad(x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1, 0.7);
       if (!on(x - 1, z)) quad(x0, 0, z0, x0, 0, z1, x0, T, z1, x0, T, z0, 0.9);
       if (!on(x + 1, z)) quad(x1, 0, z1, x1, 0, z0, x1, T, z0, x1, T, z1, 0.9);

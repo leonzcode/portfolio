@@ -278,11 +278,12 @@ function build(job, ny, c0, c1, base) {
   for (let i = ya * A, e1 = yb * A; i < e1; i++) { const b = rb[i]; if (!b) continue; const e = SLIGHT[b] ? lightOf(b, rm[i]) : EMIT[b]; if (e) { blk[i] = e; Q[qt++ & QM] = i; } }
   spread(blk);
 
-  /* ---- biome colours, blended over 5 x 5 columns like Minecraft ---- */
+  /* ---- biome colours, blended over 5 x 5 columns like Minecraft (Biome Blend: 1 x 1 to 15 x 15) ---- */
   const tintG = new Uint32Array(256), tintL = new Uint32Array(256), tintW = new Uint32Array(256);
+  const BR = job.blend === undefined ? 2 : Math.max(0, Math.min(7, job.blend | 0));
   for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
     let gr = 0, gg = 0, gb = 0, lr = 0, lg = 0, lb = 0, wr = 0, wg = 0, wb = 0, n = 0;
-    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+    for (let dz = -BR; dz <= BR; dz++) for (let dx = -BR; dx <= BR; dx++) {
       const b = bio[(16 + z + dz) * W + 16 + x + dx];
       const g = colours.grass[b], l = colours.leaf[b], w = colours.water[b];
       gr += g >> 16; gg += (g >> 8) & 255; gb += g & 255;
@@ -336,6 +337,8 @@ function build(job, ny, c0, c1, base) {
     }
   };
 
+  // Smooth Lighting off: each face has the light of the block it looks into, the same at every corner, and no corner shade
+  const flatLight = !!job.flat;
   /* ---- one cube face ---- */
   const AO4 = [0, 0, 0, 0], LS4 = [0, 0, 0, 0], LB4 = [0, 0, 0, 0];
   function face(buf, f, x, y, z, i, layer, flags, tint, wave, rnd, box) {
@@ -350,6 +353,7 @@ function build(job, ny, c0, c1, base) {
       const o1 = OPAQUE[rb[s1]] || 0, o2 = OPAQUE[rb[s2]] || 0, oc = OPAQUE[rb[cc]] || 0;
       ao[c] = o1 && o2 ? 0 : 3 - (o1 + o2 + oc);
       let sl = sky[fi], bl = blk[fi], n = 1;
+      if (flatLight) { ao[c] = 3; ls[c] = sl; lb[c] = bl; continue; }
       if (!o1) { sl += sky[s1]; bl += blk[s1]; n++; }
       if (!o2) { sl += sky[s2]; bl += blk[s2]; n++; }
       if (!oc && !(o1 && o2)) { sl += sky[cc]; bl += blk[cc]; n++; }
@@ -410,6 +414,7 @@ function build(job, ny, c0, c1, base) {
       const o1 = OPAQUE[rb[s1]] || 0, o2 = OPAQUE[rb[s2]] || 0, oc = OPAQUE[rb[cc]] || 0;
       BAO[c] = o1 && o2 ? 0 : 3 - (o1 + o2 + oc);
       let sl = sky[fi], bl = blk[fi], n = 1;
+      if (flatLight) { BAO[c] = 3; BLS[c] = sl; BLB[c] = bl; continue; }
       if (!o1) { sl += sky[s1]; bl += blk[s1]; n++; }
       if (!o2) { sl += sky[s2]; bl += blk[s2]; n++; }
       if (!oc && !(o1 && o2)) { sl += sky[cc]; bl += blk[cc]; n++; }

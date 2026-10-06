@@ -20,6 +20,11 @@ export class World {
     this.chunks = new Map();          // "cx,cz" -> chunk
     this.onMesh = opts.onMesh;
     this.fastLeaves = !!opts.fastLeaves;
+    // Video Settings the meshes are made with: Biome Blend (0 off to 7, 15 x 15) and Smooth Lighting
+    this.blend = opts.blend === undefined ? 2 : opts.blend;
+    this.flatLight = !!opts.flatLight;
+    // Chunk Builder: 'threaded' (your own changes wait their turn), 'semi' (they are made at once), 'full' (so is every change next to you)
+    this.builder = opts.builder || 'semi';
     this.onDrop = opts.onDrop;
     // what changed from the generated terrain, kept so a saved world comes back (see save.js)
     this.edits = opts.edits || new Map();       // "cx,cz" -> Map(cell index -> block * 256 + meta)
@@ -225,6 +230,7 @@ export class World {
        always warm (cold, it took several times as long over your blocks). */
     const i = urgent || (base && !this.busy[this.editW]) ? this.editW : this.idlest(); this.busy[i]++;
     this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky, urgent: !!urgent,
+      blend: this.blend, flat: this.flatLight,
       keep: this.near(cx, cz), base, rows: base ? rows : null }, transfer);
   }
 
@@ -248,7 +254,7 @@ export class World {
       const y = Math.max(0, ny - 24 - n * 16);
       this.busy[this.editW]++;
       this.workers[this.editW].postMessage({ type: 'mesh', warm: true, cx, cz, chunks, tops, version: 0, seed: this.seed, prev: new Int32Array(0),
-        fast: !!this.fastLeaves, noSky: this.noSky, keep: true, base: kept.mesh, rows: [y, y] });
+        fast: !!this.fastLeaves, noSky: this.noSky, keep: true, base: kept.mesh, rows: [y, y], blend: this.blend, flat: this.flatLight });
     }
   }
 
@@ -307,7 +313,8 @@ export class World {
     const lx = x - cx * CH, lz = z - cz * CH;
     this.dirty = this.dirty || new Set();
     // your own edits (interact.js sets world.urgent while it works) go to the edit worker, with the rows they changed
-    const urgent = this.urgent;
+    // (Chunk Builder: Threaded leaves them in turn; Fully Blocking makes anything next to you at once)
+    const urgent = this.builder === 'threaded' ? false : this.urgent || (this.builder === 'full' && this.near(cx, cz));
     const D = urgent ? (this.urgentDirty || (this.urgentDirty = new Set())) : this.dirty;
     const lo = y === undefined ? 0 : y, hi = y === undefined ? H - 1 : y;
     const add = k => {
@@ -351,6 +358,19 @@ export class World {
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!this.chunks.has(this.key(cx + dx, cz + dz))) return;
     this.inFlight.delete('m' + this.key(cx, cz));
     this.sendMesh(cx, cz, urgent, edit);
+  }
+  /* The meshes made again with new Video Settings (See-Through Leaves, Smooth
+     Lighting, Biome Blend): every column already made goes back in the line,
+     nearest first, the old mesh staying on screen until its new one is in. */
+  setMeshing(o) {
+    let changed = false;
+    if (o.fastLeaves !== undefined && !!o.fastLeaves !== this.fastLeaves) { this.fastLeaves = !!o.fastLeaves; changed = true; }
+    if (o.blend !== undefined && o.blend !== this.blend) { this.blend = o.blend; changed = true; }
+    if (o.flatLight !== undefined && !!o.flatLight !== this.flatLight) { this.flatLight = !!o.flatLight; changed = true; }
+    if (!changed) return false;
+    this.meshCache.clear();
+    for (const c of this.chunks.values()) if (c.meshed) this.queueMesh(c.cx, c.cz);
+    return true;
   }
   biomeAt(x, z) {
     const c = this.chunkAt(x, z);
