@@ -33,7 +33,13 @@
    from the top; breaking the jukebox drops it. The block's meta is 1 while
    it holds a disc (a comparator reads the song's number then, sim/rsparts.js).
 
-   What it remembers (sign text, food on campfires, framed items, discs) is kept per dimension
+   Vaults (trial chambers): a trial key used on one (an ominous trial key on
+   an ominous one, meta bit 8) is taken and the vault rolls its reward
+   table (chests/trial_chambers/reward, or reward_ominous), then throws the
+   stacks up out of its top one at a time, a second apart, after a moment
+   unlocking. Each vault rewards you once; after that it takes no key.
+
+   What it remembers (sign text, food on campfires, framed items, discs, vaults) is kept per dimension
    (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, OPACITY } from './blocks.js?v=17';
@@ -117,7 +123,23 @@ export class Details {
     if (d.shape === 'candle') return this.candle(h, hit, d, s, n);
     if (isSign(d)) return this.sign(h, hit, d, s, n);
     if (d.name === 'jukebox') return this.jukebox(h, hit, s, n);
+    if (d.name === 'vault') return this.vault(h, hit, s, n);
     return false;
+  }
+  vault(h, hit, s, n) {
+    const w = this.world, x = hit.x, y = hit.y, z = hit.z, ominous = (w.meta(x, y, z) & 8) !== 0;
+    if (n !== (ominous ? 'ominous_trial_key' : 'trial_key')) return false;
+    const e = this.entry(x, y, z, 'vault');
+    if (e.rewarded || e.queue.length) return false;
+    e.rewarded = true; e.at = this.ticks + 14;
+    if (!h.creative) h.inv.takeSelected(1);
+    import('./struct/loot.js?v=17').then(L => import('./containers.js?v=17').then(C => {
+      const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
+      for (const r of L.rollLoot(table, (Math.random() * 2147483647) | 0, { size: 27 })) { const st = C.lootStack(r); if (st) e.queue.push(st); }
+      this.dirty = true;
+    }));
+    this.dirty = true;
+    return true;
   }
   jukebox(h, hit, s, n) {
     const w = this.world, x = hit.x, y = hit.y, z = hit.z, e = this.map.get(key(x, y, z));
@@ -377,6 +399,7 @@ export class Details {
       e = k === 'sign' ? { k, x, y, z, front: { lines: ['', '', '', ''], colour: 'black', glow: false }, back: { lines: ['', '', '', ''], colour: 'black', glow: false }, waxed: false }
         : k === 'frame' ? { k, x, y, z, item: null, rot: 0 }
         : k === 'jukebox' ? { k, x, y, z, disc: null, t: 0 }
+        : k === 'vault' ? { k, x, y, z, rewarded: false, queue: [], at: 0 }
         : { k, x, y, z, items: [null, null, null, null], t: [0, 0, 0, 0], total: [600, 600, 600, 600] };
       this.map.set(id, e);
     }
@@ -417,9 +440,21 @@ export class Details {
       // now and then: a block that has gone (an explosion, a piston, its support) lets go of what it held
       if ((this.ticks + e.x + e.z) % 20 === 0) {
         const d = BLOCKS[w.get(e.x, e.y, e.z)];
-        if (!d || (e.k === 'sign' ? !isSign(d) : e.k === 'frame' ? !d.frame : e.k === 'jukebox' ? d.name !== 'jukebox' : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
+        if (!d || (e.k === 'sign' ? !isSign(d) : e.k === 'frame' ? !d.frame : e.k === 'jukebox' ? d.name !== 'jukebox' : e.k === 'vault' ? d.name !== 'vault' : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
         // loaded from the save before its chunk was there: drawn now
-        if (!e.meshes && e.k !== 'jukebox') this._show(e);
+        if (!e.meshes && e.k !== 'jukebox' && e.k !== 'vault') this._show(e);
+      }
+      if (e.k === 'vault') {
+        // unlocking, then a stack thrown up out of the top each second
+        if (e.queue.length && this.ticks >= e.at) {
+          const st = e.queue.shift();
+          if (this.drops) this.drops.spawn(e.x + 0.5, e.y + 1.2, e.z + 0.5, st, { vel: [(Math.random() - 0.5) * 0.1, 0.25, (Math.random() - 0.5) * 0.1] });
+          const P = this.R && this.R.particles;
+          if (P && P.spawn) for (let i = 0; i < 6; i++) P.spawn(e.x + 0.5 + (Math.random() - 0.5) * 0.6, e.y + 1.1, e.z + 0.5 + (Math.random() - 0.5) * 0.6, 0, 0.04, 0, { colour: 0xffd070, size: 0.1, life: 10, gravity: 0, physics: false });
+          e.at = this.ticks + 20;
+          this.dirty = true;
+        }
+        continue;
       }
       if (e.k === 'jukebox') {
         // playing: a note rises from the top each second, until the song is over (the disc stays in)
@@ -488,7 +523,7 @@ export class Details {
     e.meshes = [];
     if (e.k === 'campfire') this._showFood(e);
     else if (e.k === 'frame') this._showFrame(e);
-    else if (e.k === 'jukebox') return;
+    else if (e.k === 'jukebox' || e.k === 'vault') return;
     else this._showText(e);
   }
   // the food lies flat on the logs, one item to each side, as the game's campfire renderer lays it
@@ -606,6 +641,7 @@ export class Details {
       if (e.k === 'sign') out.push({ k: 's', p: [e.x, e.y, e.z], f: e.front, b: e.back, w: e.waxed ? 1 : 0 });
       else if (e.k === 'frame') out.push({ k: 'f', p: [e.x, e.y, e.z], i: e.item ? stackToJSON(e.item) : null, r: e.rot });
       else if (e.k === 'jukebox') { if (e.disc) out.push({ k: 'j', p: [e.x, e.y, e.z], i: stackToJSON(e.disc), t: e.t }); }
+      else if (e.k === 'vault') out.push({ k: 'v', p: [e.x, e.y, e.z], r: e.rewarded ? 1 : 0, q: e.queue.map(stackToJSON) });
       else if (e.items.some(Boolean)) out.push({ k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total });
     }
     return out;
@@ -623,6 +659,9 @@ export class Details {
       } else if (o.k === 'f') {
         const e = this.entry(x, y, z, 'frame');
         e.item = o.i ? stackFromJSON(o.i) : null; e.rot = (o.r | 0) & 7;
+      } else if (o.k === 'v') {
+        const e = this.entry(x, y, z, 'vault');
+        e.rewarded = !!o.r; e.queue = (o.q || []).map(stackFromJSON).filter(Boolean);
       } else if (o.k === 'j') {
         const e = this.entry(x, y, z, 'jukebox');
         e.disc = o.i ? stackFromJSON(o.i) : null; e.t = o.t | 0;
