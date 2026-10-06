@@ -324,6 +324,8 @@ async function boot() {
     // whether Esc in the game menu can take the mouse back (see keyMayLock)
     keyResumes: () => keyMayLock(),
     respawn: () => respawn(),
+    // a hardcore death: back, as a spectator for good
+    spectate: () => { if (!game) return; game.entry.mode = 'spectator'; Worlds.update(game.entry.id, { mode: 'spectator' }); respawn().then(() => setMode('spectator')); },
     // Open to LAN (ui/lan.js): the world's mode and commands, and starting it
     lan: () => game ? { mode: game.entry.mode || 'survival', cheats: chatCtx().cheats, open: !!game.lan } : null,
     startLan: (mode, cheats, port) => {
