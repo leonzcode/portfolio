@@ -333,10 +333,11 @@ export class Player {
     else if (this.swimming) this.swimming = this.sprinting && this.inWater;
     else this.swimming = this.sprinting && this.eyeInWater && isWater(this.w.get(ex, Math.floor(this.pos.y), ez));
     this.insideBlocks();
-    if (this.climbing || this.stuck) this.fallDistance = 0;
+    if (this.climbing || this.stuck || this.flying) this.fallDistance = 0;
 
     let accel;
-    if (this.flying) accel = this.sprinting ? 0.1 : 0.05;
+    // (flySpeed: 0.05, which a spectator's mouse wheel changes)
+    if (this.flying) accel = (this.flySpeed ?? 0.05) * (this.sprinting ? 2 : 1);
     else if (this.inWater || this.inLava) accel = 0.02;
     else if (this.onGround) {
       const under = this.under();
@@ -361,8 +362,9 @@ export class Player {
     // Space and Shift
     const fluidDepth = this.inWater ? this.waterDepth : this.lavaDepth;
     if (this.flying) {
-      if (k[' ']) this.vel.y += 0.15 * 0.25 * 3;
-      if (k.shift) this.vel.y -= 0.15 * 0.25 * 3;
+      const up = 0.15 * 0.25 * 3 * (this.flySpeed ?? 0.05) / 0.05;
+      if (k[' ']) this.vel.y += up;
+      if (k.shift) this.vel.y -= up;
     } else if (k[' '] && (this.inWater || this.inLava) && (!this.onGround || fluidDepth > 0.4)) {
       this.vel.y += 0.04;                       // swimming up
     } else if (k[' '] && this.onGround) {
@@ -456,8 +458,7 @@ export class Player {
     if (this.onGround) this.walkDist += moved * 0.6;
     // wading and swimming push ripples out across the water
     if (this.inWater && moved > 0.02 && Math.random() < 0.6) this.splashes.push([this.pos.x, this.pos.z, 0.25 + moved * 1.2, 1.2]);
-    // creative: falling out of the world brings you back down from the sky (survival hurts instead)
-    if (this.canFly && this.pos.y < -80) { this.pos.y = 200; this.vel.set(0, 0, 0); }
+    // (the void kills in creative too, as in the game: survival.js creativeTick; a spectator flies on down as far as it likes)
     if (!this.canFly) this.flying = false;
     /* The view widens with your speed, as the game works it out: half way
        between walking speed and how fast you could go (sprinting 30% faster
