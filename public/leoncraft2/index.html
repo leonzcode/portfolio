@@ -15,6 +15,13 @@
 <link rel="preload" href="textures/colormap_grass.png?v=21" as="fetch" crossorigin>
 <link rel="preload" href="textures/colormap_foliage.png?v=21" as="fetch" crossorigin>
 <script>
+  // the workers that make the world, started at once so their code loads beside the page's (world.js startWorkers takes them)
+  try {
+    const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1)) + 1;
+    window.__lc2Workers = Array.from({ length: n }, () => new Worker('js/worker.js?v=21', { type: 'module' }));
+  } catch (e) { /* world.js starts them */ }
+</script>
+<script>
   // Detailed graphics also reads the material map: asked for now too, unless Fast is chosen
   try {
     const o = JSON.parse(localStorage.getItem('lc2_options') || 'null') || {}, q = new URLSearchParams(location.search).get('q') || o.quality;

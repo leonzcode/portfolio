@@ -386,26 +386,33 @@ const EXTRA = [];
 // more textures (entities/mobart2.js and later files) register here before the atlas is drawn
 export function addArt(name, size, fn) { SIZES[name] = size; ART[name] = fn; EXTRA.push(name); }
 
-/* Painting every mob takes a fifth of a second, and it comes out the same
-   each time: so it is painted once a visit (paintAtlas, called while a
-   loading screen waits) and each atlas after (one per world and dimension,
-   drawn on by armour layers) is a copy of those pixels. */
+/* Painting every mob takes a fifth of a second or more, and it comes out
+   the same each time: so it is painted once a visit, a few textures at a
+   time while the menus are open (paintSome, so no frame of the title or of
+   a loading screen waits on it), and each atlas after (one per world and
+   dimension, drawn on by armour layers) is a copy of those pixels. */
 let painted = null;                // { n: how many textures, img }
-function paintAtlas() {
-  // every atlas is packed from its first slot, or later ones run off the edge
-  nextSlot = 0;
+let painting = null;               // the one under way: { n, names, i, img, seed }
+function paintAtlas(ms) {
   const n = Object.keys(SIZES).length;
-  const img = new ImageData(ATLAS, ATLAS);
-  let seed = 1;
-  for (const name in SIZES) {
+  // every atlas is packed from its first slot, or later ones run off the edge
+  if (!painting || painting.n !== n) { nextSlot = 0; painting = { n, names: Object.keys(SIZES), i: 0, img: new ImageData(ATLAS, ATLAS), seed: 1 }; }
+  const p = painting, t0 = performance.now();
+  while (p.i < p.names.length) {
+    const name = p.names[p.i++];
     const [w, h] = SIZES[name];
     const [x, y] = slot(name, w, h);
-    try { ART[name](new Painter(img, x, y, 0x9e3779b1 ^ (seed++ * 2654435761))); } catch (e) { console.error('mob art', name, e); }
+    try { ART[name](new Painter(p.img, x, y, 0x9e3779b1 ^ (p.seed++ * 2654435761))); } catch (e) { console.error('mob art', name, e); }
+    if (ms !== undefined && p.i < p.names.length && performance.now() - t0 > ms) return null;
   }
-  painted = { n, img };
+  painting = null;
+  painted = { n, img: p.img };
   return painted;
 }
-export function primeAtlas() { if (!painted || painted.n !== Object.keys(SIZES).length) paintAtlas(); }
+const allPainted = () => painted && painted.n === Object.keys(SIZES).length;
+export function primeAtlas() { if (!allPainted()) paintAtlas(); }
+// some more of it, for up to ms milliseconds: true once it is all painted
+export function paintSome(ms) { return !!(allPainted() || paintAtlas(ms)); }
 export function buildAtlas() {
   primeAtlas();
   const c = document.createElement('canvas');

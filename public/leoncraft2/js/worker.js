@@ -20,7 +20,7 @@ import { Gen } from './worldgen.js?v=21';
 import { meshColumn, setColours } from './mesher.js?v=21';
 import { resolveTextures } from './blocks.js?v=21';
 import { worldStructures, structureMessage } from './struct/hook.js?v=21';
-import { keepChunk, readChunks, sweepChunks } from './chunkcache.js?v=21';
+import { keepChunk, readChunks, sweepChunks, keptCount } from './chunkcache.js?v=21';
 
 let G = null;                 // { VanillaGen, NetherGen, EndGen } once loaded
 let loadingG = null;
@@ -32,8 +32,18 @@ const needsG = m => m.dim === 'the_nether' || m.dim === 'the_end' || m.generator
 let gen = null, structs = null;
 let cacheKey = null;          // where this world's chunks are kept between visits (chunkcache.js), or null
 let tag = 0;                  // the World this worker serves (world.js), sent back with chunks read back later
-// a generator made ahead, while the player was in the menus, for the world most likely to be opened next
-let spare = null;
+/* Generators made ahead, while the player was in the menus, for the worlds
+   most likely to be opened next (the last one played, and the one a blank
+   Create New World makes): the two practised last, by name. */
+const spares = new Map();
+function spareFor(m) {
+  const k = nameOf(m);
+  let s = spares.get(k);
+  if (s) spares.delete(k); else s = make(m);
+  spares.set(k, s);
+  if (spares.size > 2) spares.delete(spares.keys().next().value);
+  return s;
+}
 let resolved = null;
 const nameOf = m => m.dim + '|' + m.generator + '|' + m.seed;
 function make(m) {
@@ -70,9 +80,9 @@ function handle(m) {
   }
   if (m.type === 'init') {
     prepare(m);
-    if (spare && spare.name === nameOf(m)) { gen = spare.gen; structs = spare.structs; }
-    else { const s = make(m); gen = s.gen; structs = s.structs; }
-    spare = null;
+    const s = spares.get(nameOf(m)) || make(m);
+    gen = s.gen; structs = s.structs;
+    spares.clear();
     cacheKey = m.cache || null; tag = m.tag || 0;
     self.postMessage({ type: 'ready', staged: staged(gen), features: staged(gen) && !!gen.decorator.features });
     return;
@@ -83,41 +93,62 @@ function handle(m) {
     return;
   }
   if (m.type === 'lookup') {
-    // the chunks of the list kept from before, sent as if just made; then the ones still to make
+    // the chunks of the list kept from before, sent as if just made, nearest first; the ones still to make as soon as
+    // the store has answered (any kept but unreadable later, as a background answer: cached, so it frees no worker)
     const t = tag;
     readChunks(cacheKey, m.list, (cx, cz, c, s) => {
       self.postMessage({ type: 'gen', cached: true, tag: t, cx, cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: s }, [c.blocks.buffer, c.meta.buffer, c.biome.buffer]);
-    }).then(missing => self.postMessage({ type: 'looked', tag: t, missing }));
+    }, missing => self.postMessage({ type: 'looked', tag: t, missing }))
+      .then(failed => { if (failed.length) self.postMessage({ type: 'looked', tag: t, missing: failed, cached: true }); });
     return;
   }
   if (m.type === 'sweep') { sweepChunks(m.prefix, m.limit); return; }
   if (m.type === 'practice') {
     /* Practice, in the menus: the generator for the world most likely to be
-       opened next is made now, and its first chunks' terrain and features
-       done once, so its code is compiled and fast by the time that world (or
-       any other) is opened. It comes a few chunks at a time (world.js), so a
-       world opened meanwhile never waits long behind it. What it made is
-       handed back to be kept; the terrain stays here too, for the features. */
+       opened next is made now, and one piece of it at a time (world.js
+       practise): a column for the search for where a new world starts you, a chunk's terrain, a chunk's
+       features (from the nine terrains handed in), or the mesher run once on
+       that ground. So its code is compiled and fast, and the ground round you
+       made, by the time that world is opened; one piece at a time, so a world
+       opened meanwhile never waits long behind it. What it made is handed
+       back to be kept, with the piece it was (did), answered even if it
+       failed, so nothing waits on it for ever. */
     prepare(m);
-    if (!spare || spare.name !== nameOf(m)) spare = make(m);
-    const g = spare.gen, out = [];
-    if (staged(g)) {
-      for (const [x, z] of m.terrain || []) {
-        const k = ck(x, z);
-        const p = g.protoCache.get(k) || g.terrain(x, z);
-        g.protoCache.set(k, p);
-        out.push(['t', x, z, p.blocks.slice(), p.meta.slice(), p.grid]);
-      }
-      if (m.decorate) {
-        const [x, z] = m.decorate;
-        out.push(['d', x, z, writesOf(g, x, z)]);
-      }
-      // the last part: the mesher on this ground, then the terrain let go
-      if (m.mesh) { meshPractice(g, m.mesh[0], m.mesh[1]); g.protoCache.clear(); g.writeCache.clear(); }
-    } else if (m.terrain && m.terrain.length) g.generate(m.terrain[0][0], m.terrain[0][1]);
+    // whether a world played before has its chunks round you kept (world.js asks before making them)
+    if (m.probe) keptCount(m.cache, m.probe).then(kept => self.postMessage({ type: 'practised', name: nameOf(m), out: [], kept, did: null }));
+    const spare = spareFor(m);
+    if (m.probe) return;
+    const g = spare.gen, name = spare.name, out = [];
+    const did = m.terrain ? ['t', m.terrain[0], m.terrain[1]] : m.decorate ? ['d', m.decorate[0], m.decorate[1]] : null;
+    if (m.surface) {
+      // a column for the spawn search (world.js practise, spawn.js), as a 'surface' job answers it
+      const [x, z, wb] = m.surface;
+      self.postMessage({ type: 'practised', name, out, id: m.id, surface: { y: g.surfaceAt(x, z), biome: wb ? g.climate(x, z) : null }, did: null });
+      return;
+    }
+    try {
+      if (staged(g)) {
+        if (m.terrain) {
+          const p = g.terrain(m.terrain[0], m.terrain[1]);
+          out.push(['t', m.terrain[0], m.terrain[1], p.blocks, p.meta, p.grid]);
+        }
+        if (m.decorate) {
+          for (const p of m.protos) g.protoCache.set(ck(p.cx, p.cz), p);
+          out.push(['d', m.decorate[0], m.decorate[1], writesOf(g, m.decorate[0], m.decorate[1])]);
+        }
+        if (m.mesh) {
+          for (const p of m.protos) g.protoCache.set(ck(p.cx, p.cz), p);
+          meshPractice(g, m.mesh[0], m.mesh[1]);
+        }
+        g.protoCache.clear(); g.writeCache.clear();
+      } else if (m.terrain) g.generate(m.terrain[0], m.terrain[1]);
+    } catch (e) { console.error('practice', e); out.length = 0; }
     const transfer = [];
-    for (const t of out) if (t[0] === 't') transfer.push(t[3].buffer, t[4].buffer);
-    self.postMessage({ type: 'practised', name: spare.name, out }, transfer);
+    for (const t of out) {
+      if (t[0] === 't') transfer.push(t[3].buffer, t[4].buffer);
+      else for (const e of t[3]) transfer.push(e[1].buffer);
+    }
+    self.postMessage({ type: 'practised', name, out, staged: staged(g), did }, transfer);
     return;
   }
   if (m.type === 'terrain') {
