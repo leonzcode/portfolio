@@ -1067,12 +1067,16 @@ function runOut(R) {
   const budget = { n: 20000 };
   const still = (x, y, z) => { const b = R.get(x, y, z); return (b === B.water || b === B.lava) && R.meta(x, y, z) === 0 ? b : 0; };
   const open = (x, y, z) => OPEN_SIDES.some(([dx, dy, dz]) => isAirId(R.get(x + dx, y + dy, z + dz)));
-  const c = R.chunks[4], x0 = R.x0 + 16, z0 = R.z0 + 16;
+  const c = R.chunks[4], x0 = R.x0 + 16, z0 = R.z0 + 16, W = B.water, L = B.lava;
+  const shut = id => id !== 0 && !isAirId(id);
   for (let i = 256; i < VOLI && budget.n > 0; i++) {
-    const b = c.blocks[i];
-    if ((b !== B.water && b !== B.lava) || c.meta[i] !== 0) continue;
-    const x = x0 + (i & 15), z = z0 + ((i >> 4) & 15), y = (i >> 8) + MIN_Y;
-    if (open(x, y, z)) flowOut(R, x, y, z, b === B.water ? 1 : 2, budget);
+    const bl = c.blocks, b = bl[i];
+    if ((b !== W && b !== L) || c.meta[i] !== 0) continue;
+    const lx = i & 15, lz = (i >> 4) & 15;
+    // (inside the chunk the neighbours are read straight from it: a sea is a lot of water)
+    if (lx > 0 && lx < 15 && lz > 0 && lz < 15 && shut(bl[i - 256]) && shut(bl[i + 1]) && shut(bl[i - 1]) && shut(bl[i + 16]) && shut(bl[i - 16])) continue;
+    const x = x0 + lx, z = z0 + lz, y = (i >> 8) + MIN_Y;
+    if (open(x, y, z)) flowOut(R, x, y, z, b === W ? 1 : 2, budget);
   }
   // the air this chunk's features made, wherever it is, and the fluid around it
   for (let k = 0; k < 9 && budget.n > 0; k++) {
