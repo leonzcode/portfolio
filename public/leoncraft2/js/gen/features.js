@@ -1334,10 +1334,12 @@ export class Decorator {
        order as the lakes, the trees of the four chunks before this one are
        worked out first (see treePlan) and stand in the region while this
        chunk is decorated, without being this chunk's to place. */
+    const before = [];
     for (const [dx, dz] of [[-1, -1], [0, -1], [1, -1], [-1, 0]]) {
-      const plan = this.treePlan(cx, cz, cx + dx, cz + dz);
-      for (let k = 0; k < plan.length; k += 4) R.preset(plan[k], plan[k + 1], plan[k + 2], plan[k + 3] >> 8, plan[k + 3] & 255);
+      const plan = this.treePlan(cx, cz, cx + dx, cz + dz, before);
+      for (let k = 0; k < plan.length; k++) before.push(plan[k]);
     }
+    for (let k = 0; k < before.length; k += 4) R.preset(before[k], before[k + 1], before[k + 2], before[k + 3] >> 8, before[k + 3] & 255);
     this.run(D, cx, cz, this.steps.length);
     runOut(R);
     return R;
@@ -1346,10 +1348,12 @@ export class Decorator {
      would grow, as [x, y, z, block * 256 + meta, ...], worked out in the
      region round the chunk being decorated (cx, cz): only the part near that
      chunk matters, and the region holds it, so no other terrain is needed.
-     The neighbour's own neighbours' trees are not looked at (one step
-     back, as with the lakes). */
-  treePlan(cx, cz, nx, nz) {
+     Each neighbour's trees are worked out with those of the neighbours
+     before it in the same order already standing (the ones of the four
+     that come before it); further back is not looked at. */
+  treePlan(cx, cz, nx, nz, before) {
     const R = new Region(this.gen, cx, cz);
+    for (let k = 0; k < before.length; k += 4) R.preset(before[k], before[k + 1], before[k + 2], before[k + 3] >> 8, before[k + 3] & 255);
     this.run(this.context(R, this.dryR), nx, nz, this.steps.length, VEGETAL, name => this.growsCanopy(name));
     const out = [];
     for (let k = 0; k < 9; k++) {
