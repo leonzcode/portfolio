@@ -59,6 +59,8 @@ export class VideoSettings {
     this.normalsUrl = normalsUrl; this.blockLayers = blockLayers; this.packed = packed;
     this.filtering();
     this.normals();
+    // (and whenever a look lands, in case one wanting them came some other way)
+    renderer.onLook(o => { if (o.normals) this.normals(o); });
     this.R.U.uGlint.value.set(this.o.get('glintSpeed'), this.o.get('glintStrength'));
     // no blur behind the menus only with no graphics chip at all (Menu Background Blur works with or without shaders)
     gui.lowEnd = !this.guessed;
@@ -74,14 +76,19 @@ export class VideoSettings {
     const o = this.o;
     setFiltering(this.R, o.get('mipmapLevels'), o.get('textureFiltering') === 'anisotropic' ? o.get('maxAnisotropy') : 1);
   }
-  // normal maps: fetched the first time a look wants them (and never with a resource pack's textures in)
-  normals() {
-    if (!this.R.opts.normals || this.R.normalsLoaded || !this.normalsUrl || this.packed) return;
-    loadNormalMaps(this.R, this.normalsUrl, this.blockLayers);
+  /* normal maps: fetched the first time a look wants them (and never with a
+     resource pack's textures in). Asked for with the look itself, so they come
+     down while its shaders are being built; R.opts still holds the old look
+     then, which is why the new one is passed in. */
+  normals(look) {
+    if (!(look || this.R.opts).normals || this.R.normalsLoaded || this.R.normalsLoading || !this.normalsUrl || this.packed) return;
+    // (with Mipmap Levels and Anisotropic Filtering put on them like the rest of the textures)
+    loadNormalMaps(this.R, this.normalsUrl, this.blockLayers).then(() => { if (this.R.normalsLoaded) this.filtering(); });
   }
   relook() {
-    this.R.setLook(this.look());
-    this.normals();
+    const look = this.look();
+    this.R.setLook(look);
+    this.normals(look);
   }
 
   /* ---- an option changed ---- */
