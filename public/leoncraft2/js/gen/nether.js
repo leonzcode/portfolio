@@ -2,14 +2,16 @@
    Leoncraft 2 - the Nether's generator (the same interface as worldgen.js's
    Gen: generate(cx, cz), surfaceAt(x, z), climate(x, z)).
 
-   Shaped after the game's own settings for the Nether, as the Minecraft
-   Wiki describes them (the noise is ours, so seeds do not match the game):
+   Shaped after the game's own settings for the Nether. The land and the
+   biomes are the game's own from the seed; the surfaces and the features
+   are ours (made after what the Minecraft Wiki describes):
 
-     terrain   blended 3D noise (xz scale 0.25, y scale 0.375, factors 80
-               and 60) worked out every 4 blocks across and 8 up and
-               blended between; the top 24 blocks slide to solid (the
-               ceiling) and the bottom 32 too (the floor); 0.64 times, then
-               squeezed; solid where above zero. Height 0..127.
+     terrain   the game's old blended noise (xz scale 0.25, y scale 0.375,
+               factors 80 and 60, smear 8, java.util.Random from the seed)
+               worked out every 4 blocks across and 8 up and blended
+               between; the top 24 blocks slide to solid (the ceiling) and
+               the bottom 32 too (the floor); 0.64 times; solid where above
+               zero. Height 0..127.
      sea       lava up to y 31
      bedrock   y 0 always, thinning out to y 4; the roof at y 127, thinning
                down to y 123; netherrack just under the roof
@@ -37,9 +39,10 @@ import { B } from '../blocks.js?v=17';
 import { CH, H, Y0, VOL, idx } from '../world-const.js?v=17';
 import { BIO } from '../biomes.js?v=17';
 import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=17';
-import { BlendedNoise, yGradient, squeeze } from './blended.js?v=17';
-import { Perlin } from './noise.js?v=17';
+import { yGradient } from './blended.js?v=17';
+import { Perlin, Blended } from './noise.js?v=17';
 import { LegacyRandom, seedLong } from './random.js?v=17';
+import { NetherCarvers } from './carvers.js?v=17';
 
 const I = y => y - Y0;                 // world y -> index
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -81,8 +84,10 @@ export class NetherGen {
   constructor(seed) {
     this.seed = seed | 0;
     const S = this.seed;
-    this.base = new BlendedNoise(S, 'nether/base_3d_noise', 0.25, 0.375, 80, 60);
     const s64 = seedLong(seed);
+    // the land's noise, the game's own: its old blended noise on java.util.Random from the seed
+    this.base = new Blended(new LegacyRandom(s64), 0.25, 0.375, 80, 60, 8);
+    this.carvers = new NetherCarvers(s64, { bedrock: B.bedrock, lava: B.lava });
     this.nTemp = legacyNetherNoise(s64);
     this.nHum = legacyNetherNoise(BigInt.asIntN(64, s64 + 1n));
     this.nState = new NormalNoise(S, 'nether_state_selector', -4, [1]);
@@ -120,16 +125,17 @@ export class NetherGen {
     return best;
   }
 
-  /* ---- the density, before blending ---- */
+  /* ---- the density, before blending (and before the squeeze, which keeps
+     the sign: solid is where the blend of these comes out above zero) ---- */
   density(x, y, z) {
     let d = this.base.sample(x, y, z);
     d = 0.9375 + yGradient(y, 104, 128, 1, 0) * (d - 0.9375);     // the ceiling
     d = 2.5 + yGradient(y, -8, 24, 0, 1) * (d - 2.5);             // the floor
-    return squeeze(0.64 * d);
+    return 0.64 * d;
   }
   // a column's lattice values every 8 blocks from y 0 to 128
   column(x, z) {
-    const out = new Float32Array(17);
+    const out = new Float64Array(17);
     for (let k = 0; k <= 16; k++) out[k] = this.density(x, k * 8, z);
     return out;
   }
@@ -178,6 +184,8 @@ export class NetherGen {
       }
     }
     this.surface(blocks, meta, biome, x0, z0);
+    // the game's caves, cut after the surfaces as the game cuts them
+    this.carvers.carve(blocks, meta, cx, cz);
     const r = rng(mix32(S ^ Math.imul(cx, 341873128) ^ Math.imul(cz, 132897987)));
     this.ores(blocks, r);
     this.decorate(blocks, meta, biome, r, x0, z0);
