@@ -44,6 +44,10 @@ vec3 faceB(int i) {
   if (i == 2) return vec3(0, 0, 1); if (i == 3) return vec3(0, 0, -1);
   return vec3(0, -1, 0);
 }
+// Brightness (Video Settings) less its default, 0.5: the least light anything gets, lowered towards
+// none (Moody) or raised so the darkest caves can be made out (Bright), as the game's own setting does
+uniform float uBrightD;
+vec3 lightFloor() { return vec3(0.0035, 0.004, 0.006) * (1.0 + 2.0 * min(uBrightD, 0.0)) + vec3(0.03, 0.032, 0.036) * 2.0 * max(uBrightD, 0.0); }
 `;
 
 /* ---- Texture Filtering (Video Settings) ----------------------------------

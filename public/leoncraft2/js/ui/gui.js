@@ -450,6 +450,8 @@ export class Gui {
       const [mx, my] = this._pos(e);
       // one notch is one step, whatever the browser's pixel delta
       const steps = e.deltaMode === 0 ? e.deltaY / 100 : e.deltaY / 3;
+      // (Control held: Video Settings changes the GUI Scale with the wheel, as the game does)
+      this.wheelCtrl = e.ctrlKey || e.metaKey;
       s.mouseScrolled(mx, my, -Math.max(-3, Math.min(3, steps)));
       this.dirty = true;
     }, { passive: false });

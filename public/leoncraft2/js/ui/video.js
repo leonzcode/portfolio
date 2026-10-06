@@ -131,6 +131,16 @@ export class VideoSettingsScreen extends OptionsListScreen {
   }
   // the whole list again (a preset changes most of what it shows), keeping where it was scrolled to
   refresh() { this.gui._initScreen(this); this.gui.markDirty(); }
+  // Control and the wheel: the GUI Scale, a step at a time, as in the game
+  mouseScrolled(mx, my, d) {
+    if (!this.gui.wheelCtrl) return super.mouseScrolled(mx, my, d);
+    const o = this.options, max = this.gui.maxScale;
+    let v = (o.get('guiScale') | 0) || this.gui.scale;
+    v = Math.max(0, Math.min(max, v + (d > 0 ? 1 : -1)));
+    // (the GUI lays itself out again for the new scale: gui.js)
+    o.set('guiScale', v);
+    return true;
+  }
   rows(list) {
     const o = this.options, g = this.gui;
     const set = (k, v) => { o.set(k, v); this.touched(); };

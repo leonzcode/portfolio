@@ -121,7 +121,7 @@ void main() {
   amb *= sky * sky * 0.8;
   block = max(block, heldLight(vWorld, N));
   vec3 blockL = block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) : vec3(0.0);
-  vec3 light = (diffuse * PI + amb + blockL + vec3(0.0035, 0.004, 0.006)) / PI;
+  vec3 light = (diffuse * PI + amb + blockL + lightFloor()) / PI;
   vec3 col = albedo * light;
   // enchanted armour: the glint, by the light it is in (as on the player, render/avatar.js)
   if (vG.z > 0.5) col += glintAt(vG.xy, uClock) * (light + 0.02) * 1.5;
