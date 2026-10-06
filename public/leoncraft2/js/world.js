@@ -18,6 +18,7 @@ export class World {
     this.noSky = this.dim === 'the_nether';     // no sky light at all there
     this.renderDist = opts.renderDist;
     this.chunks = new Map();          // "cx,cz" -> chunk
+    this.byNum = new Map();           // the same by a number (chunkXZ), for lookups made thousands of times a tick
     this.onMesh = opts.onMesh;
     this.fastLeaves = !!opts.fastLeaves;
     this.onDrop = opts.onDrop;
@@ -70,6 +71,14 @@ export class World {
     }
   }
   key(cx, cz) { return cx + ',' + cz; }
+  /* The chunk at chunk coordinates, found without making a string: the
+     simulation and the mobs look chunks up thousands of times a tick, and each
+     "cx,cz" made was garbage. The number keeps 15 bits of each coordinate, so
+     the chunk found is checked to be the one asked for. */
+  chunkXZ(cx, cz) {
+    const c = this.byNum.get(((cx & 0x7fff) << 15) | (cz & 0x7fff));
+    return c !== undefined && c.cx === cx && c.cz === cz ? c : undefined;
+  }
   // the column you are in and the eight round it: the ones you can reach to build in
   near(cx, cz) { return Math.abs(cx - this.pcx) <= 1 && Math.abs(cz - this.pcz) <= 1; }
 
@@ -85,7 +94,7 @@ export class World {
       // put back whatever was changed here before
       const ed = this.edits.get(k);
       if (ed) for (const [cell, v] of ed) { c.blocks[cell] = v >> 8; c.meta[cell] = v & 255; if (v >> 8 && (cell >> 8) > c.top) c.top = cell >> 8; }
-      this.chunks.set(k, c); this.cgen = (this.cgen || 0) + 1;
+      this.chunks.set(k, c); this.byNum.set(((m.cx & 0x7fff) << 15) | (m.cz & 0x7fff), c); this.cgen = (this.cgen || 0) + 1;
       this.stats.gen++;
       // this chunk, and every neighbour it completes, can now be meshed
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) this.queueMesh(m.cx + dx, m.cz + dz);
@@ -149,7 +158,7 @@ export class World {
     const R = this.renderDist + 1;
     if (moved) {
       // forget what is too far, and line up what is missing, nearest first
-      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.meshCache.delete(k); this.rowLog.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
+      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.byNum.delete(((c.cx & 0x7fff) << 15) | (c.cz & 0x7fff)); this.meshCache.delete(k); this.rowLog.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
       this.genList = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
         if (dx * dx + dz * dz > R * R) continue;
@@ -277,7 +286,7 @@ export class World {
     const cx = Math.floor(x / CH), cz = Math.floor(z / CH);
     if (cx === this._cx && cz === this._cz && this._cg === this.cgen) return this._c;
     this._cx = cx; this._cz = cz; this._cg = this.cgen;
-    return (this._c = this.chunks.get(cx + ',' + cz));
+    return (this._c = this.chunkXZ(cx, cz));
   }
   get(x, y, z) {
     if (y < 0 || y >= H) return 0;
@@ -388,7 +397,7 @@ export class World {
   destroy() {
     for (const w of this.workers) w.terminate();
     this.workers = []; this.busy = [];
-    this.chunks.clear(); this.cgen = (this.cgen || 0) + 1; this.meshQueue.clear(); this.inFlight.clear();
+    this.chunks.clear(); this.byNum.clear(); this.cgen = (this.cgen || 0) + 1; this.meshQueue.clear(); this.inFlight.clear();
     this.meshCache.clear();
     this.genList = [];
     this.pool = { b: [], m: [] };
