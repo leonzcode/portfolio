@@ -70,7 +70,8 @@ export function detailedCloudMaterial(U, hdr) {
 export class BlockClouds {
   // material(extra): a material for this geometry, with extra settings merged in
   constructor(material) {
-    this.cells = makeCloudPattern();
+    // (only read, so one for every set of clouds: the full chain's no longer works it out again in the frame it is turned on)
+    this.cells = cloudPattern || (cloudPattern = makeCloudPattern());
     this.geo = new THREE.BufferGeometry();
     this.depth = new THREE.Mesh(this.geo, material({ colorWrite: false }));
     this.colour = new THREE.Mesh(this.geo, material({ transparent: true, depthWrite: false, depthFunc: THREE.LessEqualDepth }));
@@ -139,6 +140,7 @@ export class BlockClouds {
 /* Our own cloud pattern, 256 x 256 cells that wrap round: soft noise cut at
    a level, so it comes out as the same kind of big blocky drifts with sky
    between them. */
+let cloudPattern = null;
 function makeCloudPattern() {
   const N = 256, out = new Uint8Array(N * N);
   const rnd = (x, y, s) => { let h = (x * 374761393 + y * 668265263 + s * 2246822519) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
