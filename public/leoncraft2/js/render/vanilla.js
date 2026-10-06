@@ -121,6 +121,10 @@ void main() {
 #ifdef CUTOUT
   if (alb.a < (plant ? 0.1 : 0.5)) discard;
 #endif
+#ifdef DEPTH_ONLY
+  outColor = vec4(0.0);
+  return;
+#endif
   vec3 c = alb.rgb;
   if (overlay) {
     vec4 ov = texture(uAlbedo, vec3(uv, vLayer + 1.0));
@@ -532,6 +536,9 @@ export function makeVanillaMaterials(U) {
     opaque: mk({}), cutout: mk({ CUTOUT: 1 }), translucent: mk({ TRANSLUCENT: 1 }, true),
     handOpaque: mk({ HAND: 1 }, false, { depthFunc: THREE.AlwaysDepth }), handCutout: mk({ HAND: 1, CUTOUT: 1 }, false, { depthFunc: THREE.AlwaysDepth }),
     shadowOpaque: null, shadowCutout: null, fluid,
+    // leaves and plants near you: their depth first, then lit only where in front (as Detailed's: materials.js cutoutDepthPass)
+    cutoutDepth: mk({ CUTOUT: 1, DEPTH_ONLY: 1 }, false, { colorWrite: false, polygonOffset: true, polygonOffsetFactor: 0.5, polygonOffsetUnits: 2 }),
+    cutoutNear: mk({ CUTOUT: 1 }, false, { depthWrite: false }),
   };
 }
 
