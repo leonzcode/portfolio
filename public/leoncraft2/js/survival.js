@@ -302,7 +302,8 @@ export class Survival {
   }
 
   /* ---- hunger ---- */
-  exhaust(n) { if (n > 0) this.exhaustion = Math.min(40, this.exhaustion + n); }
+  // (a creative or spectating player never tires, as in the game)
+  exhaust(n) { if (n > 0 && !this.creative) this.exhaustion = Math.min(40, this.exhaustion + n); }
   canSprint() { return this.food > 6 && !this.effects.blindness || this.creative; }
   // a food eaten: hunger and saturation (saturation never above the food level), then its effects
   eat(hunger, saturation) {
@@ -448,6 +449,8 @@ export class Survival {
     if (P.pos.y < (P.voidY ?? -64)) this.hurt(4, 'out_of_world');
     // the head in a solid block
     if (!P.noclip && w && this.inWall(P)) this.hurt(1, 'in_wall');
+    // gliding into a wall (player.js)
+    if (P.wallHit) { this.hurt(P.wallHit, 'fly_into_wall'); P.wallHit = 0; }
     this.breathe(P);
     if (this.dead) return;
     this.tickEffects();
@@ -464,6 +467,21 @@ export class Survival {
     this.tickFood();
     // old fights are forgotten
     if (this.fights.length && this.age - this.fights[0].age > 300) this.fights.shift();
+  }
+  /* Once a tick in creative: effects still run their course (Night Vision
+     wears off, Regeneration heals), and the void still kills, the one
+     damage creative is not safe from; nothing else here can hurt. */
+  creativeTick(P) {
+    if (this.dead) { this.deathTime++; return; }
+    this.age++;
+    this.lastHealth = this.health;
+    if (this.hurtTime > 0) this.hurtTime--;
+    if (this.invul > 0) this.invul--;
+    if (this.totemT > 0) this.totemT--;
+    if (this.fire > 0) this.fire--;
+    if (this.air < 300) this.air = Math.min(300, this.air + 4);
+    if (P.pos.y < (P.voidY ?? -64)) this.hurt(4, 'out_of_world');
+    if (!this.dead) this.tickEffects();
   }
   // the eye inside a suffocating block (a box 0.48 across at the eye, as the game checks)
   inWall(P) {

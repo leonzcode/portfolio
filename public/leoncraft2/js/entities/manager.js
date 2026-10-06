@@ -45,9 +45,15 @@ import { dropOf } from '../survival.js?v=16';
 import { itemName, ITEMS, I } from '../items.js?v=16';
 import { Combat } from '../combat/combat.js?v=16';
 import './nether.js?v=16';
+// the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
+import './mobs5.js?v=16';
+import './mobs6.js?v=16';
+import './mobs7.js?v=16';
 import { DIMS } from '../dims.js?v=16';
 import { armorLayers } from './armorlayer.js?v=16';
 import { MobHeld } from '../render/mobheld.js?v=16';
+import { setSpawnerMob } from '../struct/spawners.js?v=16';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=16';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -64,6 +70,7 @@ export class Entities {
     this.t = new Terrain(this.world);
     this.paths = new PathFinder(this.t);
     this.list = [];
+    this.displays = [];             // mobs shown inside spawners (makeDisplay)
     this.grid = new Map();
     this.particlesP = new Particles();
     this.age = 0;
@@ -118,6 +125,8 @@ export class Entities {
     };
     // a boat's turn reaches the camera a frame at a time, not in a jump each tick
     this.turnDue = 0; this.turnDone = 0;
+    // a named mob's name over it while you look at it
+    nameplates(this);
   }
   get difficulty() { return (this.options && this.options.get('difficulty')) || 'normal'; }
   get time() { return this.hooks.time ? this.hooks.time() : 6000; }
@@ -250,6 +259,24 @@ export class Entities {
     return e;
   }
   get count() { return this.list.length; }
+  /* A mob to show inside a spawner: made like any other but kept out of the
+     list (nothing ticks it, hits it or saves it), small enough to fit the
+     cage (the game's 0.53125, less for anything bigger than a block), tipped
+     back 30 degrees. */
+  makeDisplay(type, x, y, z) {
+    const C = TYPES[type];
+    if (!C || !C.MODEL) return null;
+    const e = new C(this, type);
+    e.setPos(x, y, z);
+    e.bodyYaw = e.prevBodyYaw = e.headYaw = e.prevHeadYaw = e.yaw = e.prevYaw = 0;
+    const big = Math.max(e.w, e.h);
+    e.drawScale = 0.53125 / (big > 1 ? big : 1) / (C.SCALE || 1);
+    e.rootPose = (root, t) => { root.multiply(t.makeTranslation(0, -0.2, 0)); root.multiply(t.makeRotationX(-Math.PI / 6)); };
+    this.sampleLight(e, true);
+    this.displays.push(e);
+    return e;
+  }
+  dropDisplay(e) { const i = this.displays.indexOf(e); if (i >= 0) this.displays.splice(i, 1); }
 
   /* ---- 20 a second ---- */
   tick() {
@@ -278,6 +305,7 @@ export class Entities {
       if (e.vehicle && !e.vehicle.removed && e.vehicle.passengers.indexOf(e) >= 0) continue;
       if (e.vehicle) { this.ridingTick(e); continue; }
       e.tick();
+      if (e.leash) leashTick(this, e);
       if (e.passengers.length) this.tickRiders(e);
       if (!e.removed && (this.age + e.id) % 4 === 0) this.sampleLight(e);
       // flames off anything burning
@@ -554,6 +582,8 @@ export class Entities {
   interact(e) {
     if (!e || e.removed || e.dead) return false;
     const held = this.heldName();
+    // leads on and off, a name tag's name (entities/items2.js)
+    if (leashInteract(this, e, held)) return true;
     // a fish, an axolotl or a tadpole scooped up in a water bucket (the bucket becomes a bucket of it)
     if (held === 'water_bucket' && /^(cod|salmon|tropical_fish|pufferfish|axolotl|tadpole)$/.test(e.type) && this.inv) {
       const id = I[e.type + '_bucket'], inv = this.inv;
@@ -729,22 +759,29 @@ export class Entities {
      the block looked at), a spawn egg, an egg or snowball to throw. True if
      it was used. */
   useHeld(target) {
+    // a fence: the mobs you lead are tied to it, whatever is in your hand (entities/items2.js)
+    if (target && target.face && tieToFence(this, target)) return true;
     const name = this.heldName();
     if (!name || !this.lookEye) return false;
     const P = this.P, eye = this.lookEye, dir = this.lookDir;
     const take = () => { if (this.mode !== 'creative' && this.inv) this.inv.takeSelected(1); };
+    // adventure puts nothing into the world with an item (a boat is the exception, as in the game)
+    const build = this.mode !== 'adventure' && this.mode !== 'spectator';
     if (/_boat$|_raft$/.test(name)) {
       if (!this.placeBoatLooking(name, this.mode === 'creative' ? 5 : 4.5)) return false;
       take();
       return true;
     }
     if (name === 'minecart' && target && isRail(target.b)) {
+      if (!build) return false;
       if (placeMinecart(this, target.x, target.y, target.z)) take();
       return true;
     }
     if (/_spawn_egg$/.test(name)) {
       const type = name.slice(0, -10);
-      if (!TYPES[type] || !target) return false;
+      // on a spawner: the spawner takes the egg's mob (struct/spawners.js)
+      if (target && build && target.face && setSpawnerMob(this.world, target.x, target.y, target.z, type)) { take(); return true; }
+      if (!TYPES[type] || !target || !build) return false;
       const f = target.face || [0, 1, 0];
       // (a mob from an egg is not kept for good: like any other it goes when you are far off, unless named)
       this.spawn(type, target.x + 0.5 + f[0] * 0.5, target.y + (f[1] > 0 ? 1 : f[1] < 0 ? -TYPES[type].H || -1 : 0), target.z + 0.5 + f[2] * 0.5, { natural: true, egg: true });
@@ -768,7 +805,8 @@ export class Entities {
       take();
       return true;
     }
-    return false;
+    // pearls, bottles o' enchanting, wind charges, fireworks, armor stands, paintings, the fishing rod (entities/items2.js)
+    return useExtra(this, name, target, take, build);
   }
   /* The player's bow, for the items module: drawn for so many ticks, an
      arrow at 3 x power (power = (f^2 + 2f) / 3 of f = ticks / 20, at most 1),
@@ -876,6 +914,8 @@ export class Entities {
       // its round shadow on the ground
       if (seen && blobs && c.SHADOW && !e.vehicle) this.shadowOf(e, x, y, z, c.SHADOW * (e.baby || e.ageT < 0 ? 0.5 : 1) * (c.SCALE || 1));
     }
+    // the mobs turning inside spawners (struct/spawners.js): drawn, never ticked or hit
+    for (const e of this.displays) this.drawOne(e, alpha, e.pos.x, e.pos.y, e.pos.z);
     this.particlesP.draw(M, alpha);
     M.end();
     held.end();
@@ -932,7 +972,7 @@ export class Entities {
       if (f > 1) f = 1;
       root.multiply(t.makeRotationZ(f * Math.PI / 2 * (c.FLIP || 1)));
     }
-    let s = (c.SCALE || 1) / 16;
+    let s = (c.SCALE || 1) / 16 * (e.drawScale || 1);
     if (e.baby || (e.ageT !== undefined && e.ageT < 0)) s *= 0.5;
     if (A.swell > 0) {
       // a creeper swelling before it goes

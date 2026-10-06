@@ -43,6 +43,8 @@ export class Interactor {
   constructor(o) {
     Object.assign(this, o);       // world, player, fluids, renderer, overlay, hand, onSplash
     this.creative = true;
+    this.adventure = false;       // adventure (and spectator): nothing broken or placed (modes.js)
+    this.spectator = false;       // spectator: nothing done at all
     this.attack = false; this.useHeld = false;
     this.mining = null;           // { x, y, z, b, t, total }
     this.breakDelay = 0; this.useDelay = 0;
@@ -68,10 +70,13 @@ export class Interactor {
     const mm = this.mining;
     // the cracks: none until some of the block is worn away, then a stage for each tenth
     if (mm && mm.x === hit.x && mm.y === hit.y && mm.z === hit.z && mm.total > 0 && mm.t > 0) stage = Math.min(9, Math.floor(mm.t / mm.total * 10));
-    if (this.overlay) this.overlay.set(hit.x, hit.y, hit.z, selectionBoxes(d, w.meta(hit.x, hit.y, hit.z), nb), stage);
+    // (adventure and spectator show no outline: there is nothing they could do to the block)
+    if (this.overlay) { if (this.adventure) this.overlay.set(0, 0, 0, null, -1); else this.overlay.set(hit.x, hit.y, hit.z, selectionBoxes(d, w.meta(hit.x, hit.y, hit.z), nb), stage); }
     return hit;
   }
   down(button) {
+    // a spectator only watches
+    if (this.spectator) return;
     const R = this.renderer, at = performance.now();
     this._down(button);
     // a swing the click started goes from the moment of the click (render/avatar.js startSwing)
@@ -95,6 +100,8 @@ export class Interactor {
       this.attack = true;
       this.swing();
       this.sinceSwing = -1;         // (the next tick is the click's own)
+      // adventure: the arm swings, and that is all
+      if (this.adventure) { this.attack = false; return; }
       // the game's five ticks of delay, and one more for the click's own tick
       if (this.creative) { if (this.target) { this.breakTarget(); this.breakDelay = 6; } }
       else {
@@ -172,6 +179,8 @@ export class Interactor {
     if (!h) return;
     // a hit on an item frame knocks out what it holds before the frame itself (details.js)
     if (this.onPunch && this.onPunch(h)) { this.target = null; return; }
+    // a sword, trident, mace or debug stick breaks nothing in creative (modes.js)
+    if (this.creative && this.hand.mayBreak && !this.hand.mayBreak()) return;
     const w = this.world;
     const cells = breakAt(w, h.x, h.y, h.z);
     // a block broken starts the attack cooldown again
@@ -211,7 +220,8 @@ export class Interactor {
   // one right click with what is in the hand (hands.js swaps the off hand in for its turn); true when it did something
   useWith() {
     // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities); on a block, only once the block has had its say
-    const makes = () => !!(this.entities && !this.entityTarget && this.entities.useHeld(this.target));
+    // (looking at a mob that did nothing with the click, the item is still used, as in the game: a pearl is thrown)
+    const makes = () => !!(this.entities && this.entities.useHeld(this.target));
     const h = this.target;
     // at nothing: an item that is thrown (an eye of ender), or one that works by itself (eating, armour, a bucket)
     if (!h || !h.face) {
@@ -236,6 +246,8 @@ export class Interactor {
     // (so a chest opens rather than taking a boat on its lid, as in the game)
     if (makes()) { this.hand.swing(); return true; }
     if (this.hand.useItem && this.hand.useItem(h)) return true;
+    // adventure places nothing
+    if (this.adventure) return false;
     const id = this.hand.id();
     if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return false;
     let list = placement(this.world, h, id, this.player);
