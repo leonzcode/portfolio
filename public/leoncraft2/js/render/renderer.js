@@ -481,7 +481,8 @@ export class Renderer {
     try {
       r.setRenderTarget(this.vanilla || this.ldr ? null : this.main);
       for (const s of [this.scene, this.trans, this.handScene, extra]) r.compile(s, cam);
-      if (this.opts.shadows) { r.setRenderTarget(this.shadowRT); r.compile(this.shadowScene, this.shadowCam); }
+      // (your body's shadow, into its own map as render/shadows.js draws it)
+      if (this.opts.shadows && this.shadows) { r.setRenderTarget(this.shadows.body); r.compile(this.shadowScene, this.shadowCam); }
     } catch (e) { console.warn('precompile', e); }
     r.setRenderTarget(null);
   }

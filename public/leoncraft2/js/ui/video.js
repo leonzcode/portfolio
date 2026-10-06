@@ -155,8 +155,8 @@ export class VideoSettingsScreen extends OptionsListScreen {
       label: v => 'Max Framerate: ' + (v >= 260 ? 'Unlimited' : v + ' fps'),
       onChange: v => o.set('maxFps', v >= 260 ? 0 : v),
     });
-    const vsync = toggle('VSync', o.get('vsync') !== false, v => o.set('vsync', v),
-      'The browser shows whole frames only, in step with the screen. OFF keeps one frame fewer waiting for the graphics card, so the game answers your hand a little sooner.');
+    // (no tooltip, as in the game: ON shows whole frames in step with the screen, OFF keeps one frame fewer waiting for the graphics card)
+    const vsync = toggle('VSync', o.get('vsync') !== false, v => o.set('vsync', v));
     const afk = cycle('Reduce FPS when', ['afk', 'minimized'], o.get('inactivityFpsLimit') || 'afk', v => AFK[v], v => o.set('inactivityFpsLimit', v), v => AFK_TIPS[v]);
     const gs = slider({
       min: 0, max: g.maxScale, step: 1, value: Math.min(o.get('guiScale') | 0, g.maxScale),
@@ -164,8 +164,8 @@ export class VideoSettingsScreen extends OptionsListScreen {
       // applied when the handle is let go, so the screen does not jump under the pointer
       onRelease: v => o.set('guiScale', v),
     });
-    const full = toggle('Fullscreen', !!document.fullscreenElement, v => setFullscreen(v),
-      'In fullscreen Esc goes to the game menu and back at once. Hold Esc to leave fullscreen.');
+    // (no tooltip, as in the game; the browser says itself to hold Esc to leave fullscreen)
+    const full = toggle('Fullscreen', !!document.fullscreenElement, v => setFullscreen(v));
     const excl = off(toggle('Exclusive Fullscreen', false, null), 'A web page can only use the screen as the browser gives it.');
     const br = slider({
       min: 0, max: 1, step: 0.01, value: o.get('brightness'),
