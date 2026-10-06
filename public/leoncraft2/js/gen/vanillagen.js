@@ -538,9 +538,32 @@ export class VanillaGen {
         p.structs = this.structureHook(p.blocks, p.meta, cx, cz, mask);
         p.smask = mask;
         p.heights = null;
+        if (p.structs) this.regrass(p, cx, cz, mask);
       }
     }
     return p;
+  }
+  /* Where a structure cleared the ground (a village levelling a slope, a
+     ruin dug in) the dirt it uncovered gets the top the surface rules give
+     it, as the game shapes its terrain around a structure before laying the
+     surface, so no bare dirt is left open to the sky. */
+  regrass(p, cx, cz, mask) {
+    const blocks = p.blocks, meta = p.meta, grid = p.grid, M = this.mctx;
+    // the material rules' view of this chunk: its biomes, and its column heights (for "steep")
+    const present = this.present || (this.present = new Uint8Array(256));
+    present.fill(0);
+    for (let i = 0; i < grid.g.length; i++) present[grid.g[i]] = 1;
+    M.present = present;
+    const surfH = new Int16Array(256);
+    for (let col = 0; col < 256; col++) surfH[col] = this.colHeight(blocks, col & 15, col >> 4);
+    M.surfH = surfH;
+    // terrain dirt with air the structure made right on top of it (under an overhang too)
+    for (let i = 256; i < VOL; i++) {
+      if (!mask[i] || blocks[i] !== 0 || blocks[i - 256] !== B.dirt || mask[i - 256]) continue;
+      const lx = i & 15, lz = (i >> 4) & 15;
+      const st = this.topMaterial(cx * 16 + lx, (i >> 8) + MIN_Y - 1, cz * 16 + lz, lx, lz, false, grid);
+      if (st) { blocks[i - 256] = st.id; meta[i - 256] = st.meta; }
+    }
   }
   // the same, perhaps before its structures are in (only its fluid map is read so)
   rawProto(cx, cz) {
