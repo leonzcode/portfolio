@@ -24,7 +24,7 @@ import { Avatar } from '../render/avatar.js?v=19';
 import { pieceLook, armorSheet } from '../render/armor.js?v=19';
 import { setLight as setLightOf } from '../render/held.js?v=19';
 import { DRAW, I, stackFromJSON } from '../items.js?v=19';
-import { B } from '../blocks.js?v=19';
+import { B, BLOCKS } from '../blocks.js?v=19';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -35,11 +35,13 @@ const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 
 // the flags each position carries (net/net.js sends them)
-export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512 };
+export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024 };
 // what the use button can be doing with a hand (render/avatar.js useNow kinds), by number in a position
 export const USE_KINDS = ['eat', 'drink', 'horn', 'bow', 'aim', 'crossbow', 'block', 'trident', 'spear', 'spyglass'];
 // sitting on something: the legs sit (the mount itself is on its rider's machine only, for now)
 const SEAT = { yaw: 0 };
+// a bed's facing bits (sim/beds.js): north, east, south, west, the way from its foot to its head
+const BED_DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 export class RemotePlayers {
   constructor(renderer, font) {
@@ -123,7 +125,18 @@ export class RemotePlayers {
     if (r.av) return r.av;
     const av = r.av = new Avatar(this.R, true);
     av.started = false;
-    r.P = { pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, sneaking: false, flying: false, gliding: false, pose: 'stand', riding: null, w: null };
+    r.P = { pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, sneaking: false, flying: false, gliding: false, pose: 'stand', riding: null, w: null, bed: null };
+    /* Asleep, they lie in the bed as the game draws a sleeper: on their back,
+       the head straight on the pillow, the feet in the foot of the bed, a
+       pixel or two over the mattress (the game's 0.6875 against the bed's 0.5625). */
+    const lay = av.layDown;
+    av.layDown = function (root, P, a, pitch) {
+      const f = P.bed;
+      if (!f) return lay.call(this, root, P, a, pitch);
+      const fx = f[0], fz = f[1], o = P.pos;
+      root.set(-fz, fx, 0, o.x - fx * 1.52, 0, 0, 1, o.y + 0.125, fx, fz, 0, o.z - fz * 1.52, 0, 0, 0, 1);
+      this.pose[0].rx = this.pose[0].ry = 0;
+    };
     this.skinOf(r);
     this.equip(r);
     return av;
@@ -196,6 +209,11 @@ export class RemotePlayers {
       P.w = world;
       P.sneaking = !!(p.f & F.SNEAK); P.flying = !!(p.f & F.FLY); P.gliding = !!(p.f & F.GLIDE);
       P.riding = p.f & F.RIDE ? SEAT : null;
+      P.bed = null;
+      if (p.f & F.SLEEP) {
+        const bx = Math.floor(p.x), by = Math.floor(p.y), bz = Math.floor(p.z), b = world && world.get(bx, by, bz);
+        if (b && BLOCKS[b] && BLOCKS[b].shape === 'bed') P.bed = BED_DIRS[world.meta(bx, by, bz) & 3];
+      }
       P.pose = p.f & F.SWIM ? 'swim' : 'stand';
       P.pitch = p.pitch;
       // a bow drawn, food eaten, a shield up: the pose for it, as for you
@@ -223,7 +241,7 @@ export class RemotePlayers {
       /* the name, its top half a block over the head (lower when they sneak),
          within 64 blocks; a player sneaking shows only the faint layer, and
          not through walls */
-      const tag = this.tagOf(r), top = (P.sneaking ? 1.5 : P.pose === 'swim' ? 0.6 : 1.8) + 0.5 + 0.025 - tag.h * 0.0125;
+      const tag = this.tagOf(r), top = (P.bed ? 0.2 : P.sneaking ? 1.5 : P.pose === 'swim' ? 0.6 : 1.8) + 0.5 + 0.025 - tag.h * 0.0125;
       tag.far.position.set(p.x, p.y + top, p.z); tag.near.position.copy(tag.far.position);
       const close = d2 < 64 * 64;
       tag.far.visible = close;
