@@ -180,9 +180,11 @@ export class CreateServerScreen extends Screen {
   }
   init() {
     const W = this.width, H = this.height, g = this.gui, x = Math.floor(W / 2 - 100);
-    let y = Math.max(30, Math.floor(H / 4) - 36);
+    // a quarter of the way down where there is room, never so low the buttons run into the fields
+    const contentH = 32 * (this.editing ? 3 : 4) + 24 * 2;
+    let y = Math.max(28, Math.min(Math.floor(H / 4) - 36, H - 28 - 22 - contentH));
     this.labels = [];
-    const field = (label, f) => { this.labels.push([label, x, y]); f.x = x; f.y = y + 11; this.add(f); y += 36; };
+    const field = (label, f) => { this.labels.push([label, x, y]); f.x = x; f.y = y + 10; this.add(f); y += 32; };
     field('Server Name', this.nameField);
     field('Message of the Day', this.motdField);
     this.add(new CycleButton(x, y, 98, 20, '', { values: ['public', 'private'], value: this.kind, format: v => (v === 'public' ? 'Public' : 'Private'),
@@ -191,13 +193,14 @@ export class CreateServerScreen extends Screen {
     y += 24;
     this.add(new CycleButton(x, y, 200, 20, 'Allow Commands', { values: [false, true], value: this.cheats, format: onOff, onChange: v => { this.cheats = v; },
       tooltip: () => 'Whether everyone on the server can use commands like /gamemode and /time' }));
-    y += 26;
+    y += 24;
     field('Password', this.pwField);
     this.pwField.active = this.kind === 'private';
     if (!this.editing) field('Seed for the World Generator', this.seedField);
-    this.add(new Button(W / 2 - 100, Math.min(H - 52, y + 4), 98, 20, this.editing ? 'Done' : 'Create', () => this.done()));
-    this.add(new Button(W / 2 + 2, Math.min(H - 52, y + 4), 98, 20, 'Cancel', () => g.back()));
-    this.errY = Math.min(H - 52, y + 4) + 26;
+    const by = Math.min(H - 28, y + 20);
+    this.add(new Button(W / 2 - 100, by, 98, 20, this.editing ? 'Done' : 'Create', () => this.done()));
+    this.add(new Button(W / 2 + 2, by, 98, 20, 'Cancel', () => g.back()));
+    this.errY = by - 12;
   }
   async done() {
     if (this.busy) return;
