@@ -68,7 +68,7 @@ export function seedFrom(text) {
 const fmtDate = ms => {
   try { return new Date(ms).toLocaleString('en-US', { year: '2-digit', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
 };
-const MODES = { survival: 'Survival', creative: 'Creative' };
+const MODES = { survival: 'Survival', hardcore: 'Hardcore', creative: 'Creative', adventure: 'Adventure', spectator: 'Spectator' };
 
 /* ------------------------------ the wordmark ------------------------------ */
 
@@ -301,7 +301,9 @@ class WorldEntry {
     const w = this.world;
     g.text(w.name || 'World', left + 35, top + 1, WHITE, false);
     g.text(g.font.trim((w.folder || w.name) + ' (' + fmtDate(w.lastPlayed || w.created) + ')', width - 40), left + 35, top + 12, 0x808080, false);
-    g.text(g.font.trim((MODES[w.mode] || 'Survival') + ' Mode' + (w.seed !== undefined ? ', Seed: ' + w.seed : ''), width - 40), left + 35, top + 21, 0x808080, false);
+    // (a hardcore world says so in red, as in the game)
+    const modeText = w.hardcore ? '§cHardcore Mode§7' : (MODES[w.mode] || 'Survival') + ' Mode';
+    g.text(g.font.trim(modeText + (w.seed !== undefined ? ', Seed: ' + w.seed : ''), width - 40), left + 35, top + 21, 0x808080, false);
     // the world's picture if the game saved one, otherwise a dirt tile
     if (w.icon) {
       if (!this.icon) { this.icon = new Image(); this.icon.onload = () => g.markDirty(); this.icon.src = w.icon; }
@@ -404,13 +406,14 @@ const DIFF_NAMES = { peaceful: 'Peaceful', easy: 'Easy', normal: 'Normal', hard:
 const MODE_INFO = {
   survival: 'Gather what you need, craft, and look after your health and hunger',
   creative: 'Every block at hand, free flight, and blocks that break at once',
+  hardcore: 'Survival at the hardest difficulty, and only one life',
 };
 
 export class CreateWorldScreen extends Screen {
   constructor(opts = {}) {
     super('Create New World');
     const from = opts.from || null;
-    this.mode = from ? from.mode || 'survival' : 'survival';
+    this.mode = from ? (from.hardcore ? 'hardcore' : from.mode || 'survival') : 'survival';
     this.difficulty = from ? from.difficulty || 'normal' : 'normal';
     this.cheats = from && from.cheats !== undefined ? !!from.cheats : this.mode === 'creative';
     this.tab = 0;
@@ -432,17 +435,21 @@ export class CreateWorldScreen extends Screen {
       this.add(this.nameField);
       y += 35 + 8;
       this.add(new CycleButton(x, y, 210, 20, 'Game Mode', {
-        values: ['survival', 'creative'], value: this.mode, format: v => MODES[v],
+        values: ['survival', 'hardcore', 'creative'], value: this.mode, format: v => MODES[v],
         tooltip: v => MODE_INFO[v], onChange: v => { this.mode = v; this.cheats = v === 'creative'; g._initScreen(this); },
       }));
       y += 28;
-      this.add(new CycleButton(x, y, 210, 20, 'Difficulty', {
-        values: DIFFS, value: this.difficulty, format: v => DIFF_NAMES[v], onChange: v => { this.difficulty = v; },
+      // hardcore: the hardest difficulty, and no commands, both fixed (as in the game)
+      const hard = this.mode === 'hardcore';
+      const diff = this.add(new CycleButton(x, y, 210, 20, 'Difficulty', {
+        values: DIFFS, value: hard ? 'hard' : this.difficulty, format: v => DIFF_NAMES[v], onChange: v => { this.difficulty = v; },
         tooltip: () => 'How hard the world is. Only Peaceful and Normal play differently for now.',
       }));
+      if (hard) diff.active = false;
       y += 28;
-      const cmd = this.add(new CycleButton(x, y, 210, 20, 'Allow Commands', { values: [false, true], value: this.cheats, format: onOff, onChange: v => { this.cheats = v; } }));
+      const cmd = this.add(new CycleButton(x, y, 210, 20, 'Allow Commands', { values: [false, true], value: hard ? false : this.cheats, format: onOff, onChange: v => { this.cheats = v; } }));
       cmd.tooltip = 'Whether to allow commands like /gamemode, /experience';
+      if (hard) cmd.active = false;
     } else if (this.tab === 1) {
       const x = Math.floor(W / 2 - 154);
       let y = place(20 + 8 + 13 + 20 + 8 + 20 + 8 + 20);
@@ -488,8 +495,10 @@ export class CreateWorldScreen extends Screen {
       name, folder: Worlds.folderName(name),
       seed: this.worldType === 'classic' ? seedFrom(this.seedField.value) : parseSeed(this.seedField.value),
       generator: this.worldType === 'classic' ? 'classic' : 'vanilla',
-      mode: this.mode, difficulty: this.difficulty, cheats: this.cheats, created: now, lastPlayed: now,
+      mode: this.mode === 'hardcore' ? 'survival' : this.mode, difficulty: this.mode === 'hardcore' ? 'hard' : this.difficulty,
+      cheats: this.mode === 'hardcore' ? false : this.cheats, created: now, lastPlayed: now,
     };
+    if (this.mode === 'hardcore') world.hardcore = true;
     Worlds.add(world);
     if (this.hooks.play) this.hooks.play(world, { isNew: true });
   }
@@ -1201,8 +1210,11 @@ export class DeathScreen extends Screen {
   }
   init() {
     const W = this.width, H = this.height, g = this.gui;
+    const hc = this.title === 'Game Over!';
     this.buttons = [
-      this.add(new Button(W / 2 - 100, Math.floor(H / 4) + 72, 200, 20, 'Respawn', () => { g.closeAll(); if (this.hooks.respawn) this.hooks.respawn(); })),
+      // (in hardcore there is no coming back: only watching)
+      hc ? this.add(new Button(W / 2 - 100, Math.floor(H / 4) + 72, 200, 20, 'Spectate World', () => { g.closeAll(); if (this.hooks.spectate) this.hooks.spectate(); }))
+        : this.add(new Button(W / 2 - 100, Math.floor(H / 4) + 72, 200, 20, 'Respawn', () => { g.closeAll(); if (this.hooks.respawn) this.hooks.respawn(); })),
       this.add(new Button(W / 2 - 100, Math.floor(H / 4) + 96, 200, 20, 'Title Screen', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); })),
     ];
     for (const b of this.buttons) b.active = this.t0 >= 0 && this.gui.now - this.t0 >= 1000;

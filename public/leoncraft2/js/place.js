@@ -139,7 +139,8 @@ export function placement(world, hit, id, player) {
     case 'chain': m = n[0] ? 1 : n[2] ? 2 : 0; break;
     case 'cross': case 'crop': case 'rail': case 'wire': case 'plate': case 'pot': case 'candle': case 'cake':
       if (!solidBelow) return out;
-      if (d.tall) {
+      // (a tall crop, the pitcher pod's, starts a single block: its top half grows later)
+      if (d.tall && d.shape !== 'crop') {
         const ab = world.get(x, y + 1, z);
         if (ab && !BLOCKS[ab].replaceable) return out;
         return [[x, y, z, id, 0], [x, y + 1, z, id, 8]];
