@@ -60,7 +60,7 @@ import { structuresApi } from './struct/spawners.js?v=16';
 import { Details, isSign } from './details.js?v=16';
 import { SignEditScreen } from './ui/sign.js?v=16';
 import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=16';
-import { MultiplayerScreen, DisconnectedScreen } from './ui/multiplayer.js?v=16';
+import { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=16';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -1284,7 +1284,8 @@ async function boot() {
   // after a quality change, straight back into the world you were in
   let resume = null;
   try { resume = sessionStorage.getItem('lc2_resume'); sessionStorage.removeItem('lc2_resume'); } catch (e) {}
-  if (resume) { const w = Worlds.get(resume); if (w) startGame(w, false); }
+  // (a server's world comes back by joining it again: ui/multiplayer.js)
+  if (resume) { const w = Worlds.get(resume); if (w) startGame(w, false); else if (resume.startsWith('mp-')) rejoin(gui, resume.slice(3)); }
 }
 
 boot().catch(e => { console.error(e); status('Something went wrong: ' + (e && e.message)); });

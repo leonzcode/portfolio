@@ -261,6 +261,15 @@ export class PasswordScreen extends Screen {
   }
 }
 
+/* Back onto a server after the page loaded again (a change of graphics or
+   resource packs reloads it): the list, then straight into that server, with
+   its password if one is kept. */
+export function rejoin(gui, id) {
+  const list = new MultiplayerScreen();
+  gui.open(list);
+  list.join({ id, name: 'the server', kind: 'public' }, savedPassword(id));
+}
+
 /* ---- your name on servers ---- */
 export class NameScreen extends Screen {
   constructor() {
