@@ -280,6 +280,8 @@ class CastleSmallCorridorCrossing extends simple('nescsc', -1, 0, 0, 5, 7, 5) {
     this.legs(w, cb, 0, 0, 4, 4);
   }
 }
+// (the chest's spot is in one chunk only, so it is put there whenever that chunk is made: the game's
+// "placed it already" flag would leave it out of a chunk made a second time)
 const needChest = (p, r) => { p.needChest = r.nextInt(3) === 0; };
 class CastleSmallCorridorRightTurn extends simple('nescrt', -1, 0, 0, 5, 7, 5, needChest) {
   addChildren(start, acc, r) { this.right(start, acc, r, 0, 1, true); }
@@ -289,7 +291,7 @@ class CastleSmallCorridorRightTurn extends simple('nescrt', -1, 0, 0, 5, 7, 5, n
     this.box1(w, cb, 0, 3, 1, 0, 4, 1, FENCE); this.box1(w, cb, 0, 3, 3, 0, 4, 3, FENCE);
     this.box1(w, cb, 1, 3, 4, 1, 4, 4, FENCE); this.box1(w, cb, 3, 3, 4, 3, 4, 4, FENCE);
     this.box1(w, cb, 4, 2, 0, 4, 5, 0, NB);
-    if (this.needChest && this.chest(w, cb, r, 1, 2, 3, 'nether_bridge')) this.needChest = false;
+    if (this.needChest) this.chest(w, cb, r, 1, 2, 3, 'nether_bridge');
     this.legs(w, cb, 0, 0, 4, 4);
   }
 }
@@ -301,7 +303,7 @@ class CastleSmallCorridorLeftTurn extends simple('nesclt', -1, 0, 0, 5, 7, 5, ne
     this.box1(w, cb, 4, 3, 1, 4, 4, 1, FENCE); this.box1(w, cb, 4, 3, 3, 4, 4, 3, FENCE);
     this.box1(w, cb, 1, 3, 4, 1, 4, 4, FENCE); this.box1(w, cb, 3, 3, 4, 3, 4, 4, FENCE);
     this.box1(w, cb, 0, 2, 0, 0, 5, 0, NB);
-    if (this.needChest && this.chest(w, cb, r, 3, 2, 3, 'nether_bridge')) this.needChest = false;
+    if (this.needChest) this.chest(w, cb, r, 3, 2, 3, 'nether_bridge');
     this.legs(w, cb, 0, 0, 4, 4);
   }
 }

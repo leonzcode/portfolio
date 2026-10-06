@@ -724,10 +724,11 @@ FEATURES.speleothem = (D, c, r, ox, oy, oz) => {
    dripstone cave. Not the game's own code (we do not have it): our own
    design after what the wiki describes and what the real caves look like,
    made from the same settings (radius, height, density, wetness, layer
-   thickness, column radius, bluntness). A cluster coats the floor and the
-   ceiling over an oval with dripstone and hangs pointed dripstone from it,
-   tallest in the middle; a large dripstone is a pair of cones, one down from
-   the ceiling and one up from the floor. */
+   thickness, column radius, bluntness), and tuned against the real game's
+   caves. A cluster coats the floor and the ceiling over its patch with
+   dripstone (thinning out towards the patch's edge) and grows pointed
+   dripstone from the coat, tallest in the middle; a large dripstone is a
+   pair of cones, one down from the ceiling and one up from the floor. */
 // (the block keeps only which way it points, as growPointed sets it)
 const dripState = dir => ({ id: B.pointed_dripstone, meta: dir < 0 ? 5 : 4 });
 // a pointed column of n blocks from (x, y, z) towards dir
@@ -763,25 +764,23 @@ FEATURES.speleothem_cluster = (D, c, r, ox, oy, oz) => {
   const centreReach = c.max_distance_from_center_affecting_height_bias ?? 8;
   const dev = c.height_deviation ?? 3;
   let any = false;
+  const coat = (x, y, z, dir, n) => { for (let i = 0; i < n; i++) { const b = R.get(x, y + dir * i, z); if (rep[b]) R.set(x, y + dir * i, z, baseSt.id, baseSt.meta); else break; } };
   for (let dx = -rx; dx <= rx; dx++) for (let dz = -rz; dz <= rz; dz++) {
-    const e = (dx * dx) / (rx * rx + 0.01) + (dz * dz) / (rz * rz + 0.01);
-    if (e > 1) continue;
     const x = ox + dx, z = oz + dz;
-    // fewer and shorter spikes towards the edge of the oval
+    // over the whole patch, thinning out towards its edge: one column in ten at the very edge, every one a few blocks in
     const toEdge = Math.min(rx - Math.abs(dx), rz - Math.abs(dz));
-    const chance = toEdge >= edgeReach ? density : edgeChance + (density - edgeChance) * (toEdge / edgeReach);
+    const chance = toEdge >= edgeReach ? 1 : edgeChance + (1 - edgeChance) * (toEdge / edgeReach);
     const top = caveEdge(R, x, oy, z, 1, range), bottom = caveEdge(R, x, oy, z, -1, range);
     if (top === null && bottom === null) continue;
-    const layer = sampleInt(c.speleothem_block_layer_thickness ?? 2, r);
-    // coat the rock the spikes hang from (only rock the feature may replace: a coat another cluster
-    // already laid stops it, so two caves either side of a thin floor do not make it dripstone right through)
-    if (top !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, top + i, z); if (rep[b]) R.set(x, top + i, z, baseSt.id, baseSt.meta); else break; }
-    if (bottom !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, bottom - i, z); if (rep[b]) R.set(x, bottom - i, z, baseSt.id, baseSt.meta); else break; }
     any = true;
-    if (r.nextFloat() >= chance) continue;
+    // the ceiling and the floor each coated (only rock the feature may replace: a coat another cluster
+    // already laid stops it), and a spike grown from the coat as often as the cave's density says,
+    // tallest in the middle of the patch
     const bias = Math.max(0, 1 - Math.sqrt(dx * dx + dz * dz) / centreReach);
-    let up = Math.max(0, Math.round(height * bias + (r.nextFloat() * 2 - 1) * dev * 0.5));
-    let down = Math.max(0, Math.round(height * bias + (r.nextFloat() * 2 - 1) * dev * 0.5));
+    const spike = () => (r.nextFloat() < density ? Math.max(0, Math.round(height * bias * 0.5 + (r.nextFloat() * 2 - 1) * dev * 0.5)) : 0);
+    let down = 0, up = 0;
+    if (top !== null && r.nextFloat() < chance) { coat(x, top, z, 1, sampleInt(c.speleothem_block_layer_thickness ?? 2, r)); down = spike(); }
+    if (bottom !== null && r.nextFloat() < chance) { coat(x, bottom, z, -1, sampleInt(c.speleothem_block_layer_thickness ?? 2, r)); up = spike(); }
     // a puddle on the floor now and then, where the cave is wet
     // (only where rock or water holds it on every side and underneath, as the game asks, so no puddle hangs over a cave)
     if (bottom !== null && r.nextFloat() < wetness && R.get(x, bottom, z) === baseSt.id) {
@@ -818,7 +817,6 @@ FEATURES.large_dripstone = (D, c, r, ox, oy, oz) => {
   const R = D.region;
   const o = R.get(ox, oy, oz);
   if (!isAir(o) && o !== B.water) return false;
-  const rep = set(c.replaceable_blocks || '#minecraft:dripstone_replaceable_blocks');
   const top = caveEdge(R, ox, oy, oz, 1, 30), bottom = caveEdge(R, ox, oy, oz, -1, 30);
   if (top === null || bottom === null) return false;
   const caveH = top - bottom - 1;
@@ -830,19 +828,42 @@ FEATURES.large_dripstone = (D, c, r, ox, oy, oz) => {
   const bluntDown = sampleFloat(c.stalactite_bluntness, r), bluntUp = sampleFloat(c.stalagmite_bluntness, r);
   const wind = sampleFloat(c.wind_speed ?? 0, r), windDir = r.nextFloat() * Math.PI * 2;
   const windy = rad >= (c.min_radius_for_wind ?? 4) && Math.min(bluntDown, bluntUp) >= F(c.min_bluntness_for_wind ?? 0.6);
-  // each cone: its height from the radius and the scale, sharper when less blunt
+  // whether the rock holds a circle of radius q at height y all round (no air, water or lava in it)
+  const holds = (q, y) => {
+    const qi = Math.ceil(q);
+    for (let dx = -qi; dx <= qi; dx++) for (let dz = -qi; dz <= qi; dz++) {
+      if (dx * dx + dz * dz > q * q) continue;
+      const b = R.get(ox + dx, y, oz + dz);
+      if (isAir(b) || b === B.water || b === B.lava) return false;
+    }
+    return true;
+  };
+  /* Each cone grows from a foot set back into the rock (up to 10 blocks) until
+     the rock holds it all round; where the rock is too broken for that its
+     width is halved and it tries again, and one that cannot keep 2 is not
+     grown. Its height comes from its width and the scale, more where it is
+     less blunt; most of its width is a flared foot gone within a few blocks,
+     round a core that narrows to the tip, and it only fills the open cave.
+     (Measured against the real game's dripstone caves: blocks, columns 5
+     and 10 tall, and blocks with open cave beside them all come within a
+     tenth or so.) */
   const cone = (from, dir, blunt) => {
-    const h = Math.min(Math.round(rad * scale * 2 / Math.max(0.3, blunt)), caveH);
+    let w = rad, at = null;
+    while (w >= 2 && at === null) {
+      for (let k = 0; k < 10; k++) { const y = from - dir - dir * k; if (holds(w, y)) { at = y; break; } }
+      if (at === null) w = Math.floor(w / 2);
+    }
+    if (at === null) return;
+    const h = Math.min(Math.round(w * scale * 2 / Math.max(0.3, blunt)), caveH + Math.abs(at - from));
     for (let i = 0; i < h; i++) {
-      const t = i / h;
-      const rr = rad * Math.pow(1 - t, 0.5 + blunt);
+      const rr = w * (0.6 * Math.exp(-i / 1.5) + 0.4 * Math.pow(1 - i / h, blunt));
       if (rr < 0.5) break;
       const sx = windy ? Math.round(Math.cos(windDir) * wind * i) : 0, sz = windy ? Math.round(Math.sin(windDir) * wind * i) : 0;
-      const y = from + dir * i, ri = Math.ceil(rr);
+      const y = at + dir * i, ri = Math.ceil(rr);
       for (let dx = -ri; dx <= ri; dx++) for (let dz = -ri; dz <= ri; dz++) {
         if (dx * dx + dz * dz > rr * rr) continue;
         const x = ox + dx + sx, z = oz + dz + sz, b = R.get(x, y, z);
-        if (isAir(b) || b === B.water || rep[b]) R.set(x, y, z, B.dripstone_block, 0);
+        if (isAir(b) || b === B.water) R.set(x, y, z, B.dripstone_block, 0);
       }
     }
   };

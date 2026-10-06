@@ -267,6 +267,14 @@ export function featureSeed(r, decoSeed, index, step) {
   r.setSeed(BigInt.asIntN(64, decoSeed + BigInt(index) + BigInt(10000 * step)));
 }
 
+/* A world's seed as the 64-bit number the game keeps, from what a generator
+   is handed (a vanilla world's seed comes as decimal text, the first
+   generator's as a 32-bit number). */
+export function seedLong(seed) {
+  const t = String(seed).trim();
+  return /^[-+]?\d+$/.test(t) ? BigInt.asIntN(64, BigInt(t)) : BigInt(seed | 0);
+}
+
 /* Seeds as Minecraft reads them: a number that fits a long is that long,
    anything else is the text's String.hashCode, and nothing at all is a
    random 64-bit seed. Returned as a decimal string. */
