@@ -174,7 +174,7 @@ function codeKey(o) {
    the programs come out of three.js's cache already built, and the new look
    is there from one frame to the next with no stall. */
 export function applyLook(R, look, first) {
-  if (first) safeCompileAsync(R.r);
+  if (first) { safeCompileAsync(R.r); firstVertexFlat(R.r); }
   const o = Object.assign({}, R.opts || {}, look);
   const key = codeKey(o);
   if (first || key === R.lookKey) {
@@ -224,6 +224,16 @@ function safeCompileAsync(r) {
       if (parallel) check(); else setTimeout(check, 10);
     });
   };
+}
+/* A flat varying (the texture layer, the face's flags: the same at every
+   corner of a face) takes the last corner's value in OpenGL and the first's
+   in Direct3D, so ANGLE on Direct3D 11 put a geometry shader in front of
+   every shader that has one, built at its first draw and run on every
+   triangle after. Asking for the first corner's value lets the graphics
+   card do it its own way. */
+function firstVertexFlat(r) {
+  const pv = r.getContext().getExtension('WEBGL_provoking_vertex');
+  if (pv) pv.provokingVertexWEBGL(pv.FIRST_VERTEX_CONVENTION_WEBGL);
 }
 // the full chain's 3D noise (volumetric clouds and light shafts): made in a worker, once, and filled in when ready
 function noise3D(R) {
