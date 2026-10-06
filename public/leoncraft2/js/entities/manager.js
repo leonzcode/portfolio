@@ -733,18 +733,21 @@ export class Entities {
     if (!name || !this.lookEye) return false;
     const P = this.P, eye = this.lookEye, dir = this.lookDir;
     const take = () => { if (this.mode !== 'creative' && this.inv) this.inv.takeSelected(1); };
+    // adventure puts nothing into the world with an item (a boat is the exception, as in the game)
+    const build = this.mode !== 'adventure' && this.mode !== 'spectator';
     if (/_boat$|_raft$/.test(name)) {
       if (!this.placeBoatLooking(name, this.mode === 'creative' ? 5 : 4.5)) return false;
       take();
       return true;
     }
     if (name === 'minecart' && target && isRail(target.b)) {
+      if (!build) return false;
       if (placeMinecart(this, target.x, target.y, target.z)) take();
       return true;
     }
     if (/_spawn_egg$/.test(name)) {
       const type = name.slice(0, -10);
-      if (!TYPES[type] || !target) return false;
+      if (!TYPES[type] || !target || !build) return false;
       const f = target.face || [0, 1, 0];
       // (a mob from an egg is not kept for good: like any other it goes when you are far off, unless named)
       this.spawn(type, target.x + 0.5 + f[0] * 0.5, target.y + (f[1] > 0 ? 1 : f[1] < 0 ? -TYPES[type].H || -1 : 0), target.z + 0.5 + f[2] * 0.5, { natural: true, egg: true });

@@ -129,6 +129,7 @@ export class Sim {
   get time() { return this.game ? this.game.time : 0; }
   set time(t) { if (this.game) this.game.time = t; }
   get creative() { return this.game && this.game.mode === 'creative'; }
+  get mayBuild() { const m = this.game && this.game.mode; return m !== 'adventure' && m !== 'spectator'; }
 
   /* ---- scheduled ticks ---- */
   schedule(x, y, z, delay, priority) {
@@ -391,7 +392,8 @@ export class Sim {
     const heldId = this.inv ? this.inv.heldId() : blockId;
     const held = heldId ? itemNameOf(heldId) : '';
     // what is in the hand first (bone meal, a hoe, flint and steel...), then the block itself
-    if (this.useItem && this.useItem(held, hit, heldId, sneaking)) return true;
+    // (not in adventure: there only the block itself answers, a lever or a door, as in the game)
+    if (this.useItem && this.mayBuild && this.useItem(held, hit, heldId, sneaking)) return true;
     if (sneaking && heldId) return false;
     const b = this.w.get(hit.x, hit.y, hit.z), h = this.beh[b];
     if (h && h.use) return !!h.use(this, hit.x, hit.y, hit.z, this.w.meta(hit.x, hit.y, hit.z), held, hit);

@@ -34,6 +34,8 @@ export class Interactor {
   constructor(o) {
     Object.assign(this, o);       // world, player, fluids, renderer, overlay, hand, onSplash
     this.creative = true;
+    this.adventure = false;       // adventure (and spectator): nothing broken or placed (modes.js)
+    this.spectator = false;       // spectator: nothing done at all
     this.attack = false; this.useHeld = false;
     this.mining = null;           // { x, y, z, b, t, total }
     this.breakDelay = 0; this.useDelay = 0;
@@ -53,10 +55,13 @@ export class Interactor {
     const mm = this.mining;
     // the cracks: none until some of the block is worn away, then a stage for each tenth
     if (mm && mm.x === hit.x && mm.y === hit.y && mm.z === hit.z && mm.total > 0 && mm.t > 0) stage = Math.min(9, Math.floor(mm.t / mm.total * 10));
-    if (this.overlay) this.overlay.set(hit.x, hit.y, hit.z, selectionBoxes(d, w.meta(hit.x, hit.y, hit.z), nb), stage);
+    // (adventure and spectator show no outline: there is nothing they could do to the block)
+    if (this.overlay) { if (this.adventure) this.overlay.set(0, 0, 0, null, -1); else this.overlay.set(hit.x, hit.y, hit.z, selectionBoxes(d, w.meta(hit.x, hit.y, hit.z), nb), stage); }
     return hit;
   }
   down(button) {
+    // a spectator only watches
+    if (this.spectator) return;
     // while something is in use (eating, a drawn bow, a raised shield) the attack button does nothing, as in the game
     if (button === 0 && this.player.usingItem) return;
     // an entity under the crosshair: hit it, or use it (js/entities)
@@ -71,6 +76,8 @@ export class Interactor {
       if (this.onAttack && this.onAttack(this.target)) { this.hand.swing(); return; }
       this.attack = true;
       this.hand.swing();
+      // adventure: the arm swings, and that is all
+      if (this.adventure) { this.attack = false; return; }
       if (this.creative) { this.breakTarget(); this.breakDelay = 5; }
       else this.startMining();
     } else if (button === 2) {
@@ -121,6 +128,8 @@ export class Interactor {
     if (!h) return;
     // a hit on an item frame knocks out what it holds before the frame itself (details.js)
     if (this.onPunch && this.onPunch(h)) { this.target = null; return; }
+    // a sword, trident, mace or debug stick breaks nothing in creative (modes.js)
+    if (this.creative && this.hand.mayBreak && !this.hand.mayBreak()) return;
     const w = this.world;
     const cells = breakAt(w, h.x, h.y, h.z);
     // a block broken starts the attack cooldown again
@@ -185,6 +194,8 @@ export class Interactor {
     // (so a chest opens rather than taking a boat on its lid, as in the game)
     if (makes()) { this.hand.swing(); return true; }
     if (this.hand.useItem && this.hand.useItem(h)) return true;
+    // adventure places nothing
+    if (this.adventure) return false;
     const id = this.hand.id();
     if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return false;
     let list = placement(this.world, h, id, this.player);

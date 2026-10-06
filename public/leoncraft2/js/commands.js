@@ -113,6 +113,8 @@ register('gamemode', {
     const m = MODE_SHORT[args[0]] || args[0];
     if (!MODE_NAMES[m]) fail(`Unknown game mode '${args[0] || ''}'`);
     self(args[1], ctx);
+    // already in it: nothing changes and nothing is said, as in the game
+    if (ctx.game.mode === m) return;
     ctx.setMode(m);
     ctx.say(`Set own game mode to ${MODE_NAMES[m]}`);
   },
