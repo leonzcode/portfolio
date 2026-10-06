@@ -221,7 +221,41 @@ export class LegacyRandom {
   }
 }
 
-/* WorldgenRandom over Xoroshiro: the decoration and feature seeds. */
+/* WorldgenRandom over Xoroshiro, which is what decorates a chunk. The game
+   wraps the Xoroshiro in a class that keeps java.util.Random's methods and
+   only takes its bits from the Xoroshiro (the top bits of each long), so
+   nextInt(n), nextLong, nextDouble and nextBoolean draw differently from a
+   bare Xoroshiro: nextLong takes two longs, nextDouble two, nextInt(n) is
+   java.util.Random's rejection loop over the top 31 bits. Every feature
+   (and the decoration seed itself) draws this way. */
+export class WorldgenXoroshiro extends Xoroshiro {
+  constructor() { super(0, 0, 0, 0); this.gHave = false; this.gNext = 0; }
+  bits(n) { this.next(); return n === 32 ? this.rH | 0 : this.rH >>> (32 - n); }
+  nextInt(bound) {
+    if (bound === undefined) return this.bits(32);
+    if ((bound & -bound) === bound) return Math.floor(bound * this.bits(31) / 2147483648);
+    let b, v;
+    do { b = this.bits(31); v = b % bound; } while (((b - v + (bound - 1)) | 0) < 0);
+    return v;
+  }
+  nextLong() { const h = this.bits(32), l = this.bits(32); return BigInt.asIntN(64, (BigInt(h) << 32n) + BigInt(l)); }
+  nextBoolean() { return this.bits(1) !== 0; }
+  nextFloat() { return this.bits(24) / 16777216; }
+  nextDouble() { const a = this.bits(26), b = this.bits(27); return (a * 134217728 + b) * 1.1102230246251565e-16; }
+  // java.util.Random's polar method, keeping the second value for the next call
+  nextGaussian() {
+    if (this.gHave) { this.gHave = false; return this.gNext; }
+    let d, e, f;
+    do { d = 2 * this.nextDouble() - 1; e = 2 * this.nextDouble() - 1; f = d * d + e * e; } while (f >= 1 || f === 0);
+    const g = Math.sqrt(-2 * Math.log(f) / f);
+    this.gNext = e * g; this.gHave = true;
+    return d * g;
+  }
+  consume(n) { for (let i = 0; i < n; i++) this.next(); }
+}
+
+/* The decoration and feature seeds (WorldgenRandom.setDecorationSeed and
+   setFeatureSeed); r is a WorldgenXoroshiro. */
 export function decorationSeed(r, worldSeed, x, z) {
   r.setSeed(worldSeed);
   const a = r.nextLong() | 1n, b = r.nextLong() | 1n;
