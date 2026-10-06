@@ -610,46 +610,50 @@ FEATURES.root_system = (D, c, r, ox, oy, oz) => {
 };
 
 /* ============================================================ dripstone == */
-function dripBase(b, rep) { return b === B.dripstone_block || rep[b] === 1; }
-function placeDripBlock(R, x, y, z, rep) {
-  if (rep[R.get(x, y, z)]) { R.set(x, y, z, B.dripstone_block, 0); return true; }
+/* (the same feature makes the sulfur caves' spikes: its base_block and
+   pointed_block say which; pointed dripstone keeps which way it points) */
+function dripBase(b, rep, base) { return b === base.id || rep[b] === 1; }
+function placeDripBlock(R, x, y, z, rep, base) {
+  if (rep[R.get(x, y, z)]) { R.set(x, y, z, base.id, base.meta); return true; }
   return false;
 }
-function growPointed(R, x, y, z, dir, height, rep) {
+function growPointed(R, x, y, z, dir, height, rep, base, tip) {
   // dir: -1 down (a stalactite), 1 up (a stalagmite)
   const back = R.get(x, y - dir, z);
-  if (!(dripBase(back, rep) || back === B.lava)) return;
-  for (let i = 0; i < height; i++) R.set(x, y + dir * i, z, B.pointed_dripstone, dir < 0 ? 5 : 4);
+  if (!(dripBase(back, rep, base) || back === B.lava)) return;
+  const m = tip.id === B.pointed_dripstone ? (dir < 0 ? 5 : 4) : tip.meta;
+  for (let i = 0; i < height; i++) R.set(x, y + dir * i, z, tip.id, m);
 }
 FEATURES.speleothem = (D, c, r, ox, oy, oz) => {
   const R = D.region;
   const rep = set(c.replaceable_blocks || '#minecraft:dripstone_replaceable_blocks');
-  const up = dripBase(R.get(ox, oy + 1, oz), rep), dn = dripBase(R.get(ox, oy - 1, oz), rep);
+  const base = stateFrom(c.base_block || 'minecraft:dripstone_block'), tip = stateFrom(c.pointed_block || 'minecraft:pointed_dripstone');
+  const up = dripBase(R.get(ox, oy + 1, oz), rep, base), dn = dripBase(R.get(ox, oy - 1, oz), rep, base);
   let dir;
   if (up && dn) dir = r.nextBoolean() ? -1 : 1;
   else if (up) dir = -1;
   else if (dn) dir = 1;
   else return false;
   const bx = ox, by = oy - dir, bz = oz;
-  placeDripBlock(R, bx, by, bz, rep);
+  placeDripBlock(R, bx, by, bz, rep, base);
   const spread = F(c.chance_of_directional_spread ?? 0.7), r2 = F(c.chance_of_spread_radius2 ?? 0.5), r3 = F(c.chance_of_spread_radius3 ?? 0.5);
   for (const hi of HORIZ) {
     if (r.nextFloat() > spread) continue;
     const [dx, , dz] = DIRS[hi];
     let x = bx + dx, y = by, z = bz + dz;
-    placeDripBlock(R, x, y, z, rep);
+    placeDripBlock(R, x, y, z, rep, base);
     if (r.nextFloat() > r2) continue;
     let d = DIRS[r.nextInt(6)];
     x += d[0]; y += d[1]; z += d[2];
-    placeDripBlock(R, x, y, z, rep);
+    placeDripBlock(R, x, y, z, rep, base);
     if (r.nextFloat() > r3) continue;
     d = DIRS[r.nextInt(6)];
     x += d[0]; y += d[1]; z += d[2];
-    placeDripBlock(R, x, y, z, rep);
+    placeDripBlock(R, x, y, z, rep, base);
   }
   const tipFree = (() => { const b = R.get(ox, oy + dir, oz); return isAir(b) || b === B.water; })();
   const h = r.nextFloat() < F(c.chance_of_taller_dripstone ?? 0.2) && tipFree ? 2 : 1;
-  growPointed(R, ox, oy, oz, dir, h, rep);
+  growPointed(R, ox, oy, oz, dir, h, rep, base, tip);
   return true;
 };
 
