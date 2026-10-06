@@ -45,7 +45,7 @@ export class Terrain {
     const cx = Math.floor(x / 16), cz = Math.floor(z / 16);
     if (cx === this.lcx && cz === this.lcz) return this.lc;
     this.lcx = cx; this.lcz = cz;
-    this.lc = this.w.chunks.get(cx + ',' + cz) || null;
+    this.lc = (this.w.chunkXZ ? this.w.chunkXZ(cx, cz) : this.w.chunks.get(cx + ',' + cz)) || null;
     return this.lc;
   }
   loaded(x, z) { return !!this.chunk(x, z); }

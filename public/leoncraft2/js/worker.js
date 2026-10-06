@@ -152,9 +152,12 @@ function handle(m) {
   }
   if (m.type === 'mesh') {
     const out = meshColumn(m);
+    // the chunks' buffers go back with the answer, to be used for the next job (world.js pool)
+    const back = [];
+    for (const ch of m.chunks) if (ch) back.push(ch.blocks.buffer, ch.meta.buffer);
     // practice only (world.js warmEditWorker): nothing to send back
-    if (m.warm) { self.postMessage({ type: 'warmed' }); return; }
-    const transfer = [];
+    if (m.warm) { self.postMessage({ type: 'warmed', back }, back); return; }
+    const transfer = back.slice();
     for (const k of ['opaque', 'cutout', 'translucent', 'fluid', 'plants', 'leafIn']) {
       const g = out[k];
       if (!g) continue;
@@ -163,7 +166,7 @@ function handle(m) {
     }
     if (out.light) transfer.push(out.light.buffer);
     if (out.region) transfer.push(out.region.buffer);
-    self.postMessage({ type: 'mesh', id: m.id, cx: m.cx, cz: m.cz, version: m.version, mesh: out, urgent: m.urgent }, transfer);
+    self.postMessage({ type: 'mesh', id: m.id, cx: m.cx, cz: m.cz, version: m.version, mesh: out, urgent: m.urgent, back }, transfer);
     return;
   }
   if (m.type === 'structures') {
