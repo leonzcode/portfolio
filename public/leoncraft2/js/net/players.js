@@ -273,3 +273,32 @@ export class RemotePlayers {
     if (hi) { hi.mesh.visible = on; if (lv !== hi.light) { hi.light = lv; setLightOf(hi.mesh.geometry, lv); } }
   }
 }
+/* ---- Tab: who is on the server ----
+   The game's player list: a box across the top, a row for each player (a
+   column for every 20), their face from their skin, their name, and the
+   signal bars for how long the server takes to hear from them. */
+const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 : ms < 1000 ? 3 : 4);
+export class PlayerList {
+  constructor(net) { this.net = net; this.shown = false; this.animates = false; }
+  draw(g) {
+    if (!this.shown) return;
+    const net = this.net, lat = net.lat || {};
+    const rows = [{ name: net.name, ping: Math.round(net.rtt), face: net.ctx ? net.ctx.renderer.avatar.canvas : null }];
+    if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : null });
+    rows.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
+    const n = rows.length, cols = Math.ceil(n / 20), per = Math.ceil(n / cols);
+    let nw = 0;
+    for (const r of rows) nw = Math.max(nw, g.textWidth(r.name));
+    const sw = Math.min(nw + 9 + 13 + 4, Math.floor((g.width - 50) / cols));
+    const total = sw * cols + (cols - 1) * 5;
+    const left = Math.floor(g.width / 2 - total / 2), top = 10;
+    g.fill(left - 1, top - 1, left + total + 1, top + per * 9, 0x80000000);
+    for (let i = 0; i < n; i++) {
+      const r = rows[i], x = left + Math.floor(i / per) * (sw + 5), y = top + (i % per) * 9;
+      g.fill(x, y, x + sw, y + 8, 0x20FFFFFF);
+      if (r.face) { g.blit(r.face, 8, 8, 8, 8, x, y, 8, 8); g.blit(r.face, 40, 8, 8, 8, x, y, 8, 8); }
+      g.text(g.font.trim(r.name, sw - 9 - 13), x + 9, y, 0xFFFFFF);
+      g.blit('icons', 0, 176 + pingBars(r.ping) * 8, 10, 8, x + sw - 11, y);
+    }
+  }
+}

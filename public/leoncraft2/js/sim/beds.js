@@ -134,7 +134,8 @@ export function installBeds(sim) {
     for (const k in p.keys || {}) p.keys[k] = false;
     z.t++;
     sim.msg.dark = Math.min(1, z.t / 100) * 0.7;
-    if (z.t >= 100) {
+    // (on a server, only once everyone in the Overworld is asleep: net/net.js)
+    if (z.t >= 100 && !(sim.othersAwake && sim.othersAwake(z.t))) {
       // the night passes: the next morning, and the rain stops
       const t = sim.time + 24000;
       sim.time = t - (t % 24000);

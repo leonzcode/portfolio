@@ -46,7 +46,7 @@ import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=16';
 import { glints } from '../render/armor.js?v=16';
 import { containerKind } from '../containers.js?v=16';
 import { getSkinSettings } from '../render/avatar.js?v=16';
-import { RemotePlayers, F } from './players.js?v=16';
+import { RemotePlayers, PlayerList, F } from './players.js?v=16';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
@@ -222,6 +222,17 @@ export class Net {
     const av = ctx.renderer.avatar, swing = av.startSwing.bind(av);
     av.startSwing = () => { swing(); if (this.game) this.send({ t: 'sw', h: 0 }); };
     this.unswing = () => { av.startSwing = swing; };
+    // Tab held: who is on (players.js PlayerList)
+    this.list = new PlayerList(this);
+    ctx.gui.overlays.push(this.list);
+    this.onKey = e => {
+      if (e.code !== 'Tab') return;
+      const down = e.type === 'keydown' && !ctx.gui.isOpen();
+      if (down !== this.list.shown) { this.list.shown = down; ctx.gui.markDirty(); }
+      if (e.type === 'keydown' && !ctx.gui.isOpen()) e.preventDefault();
+    };
+    document.addEventListener('keydown', this.onKey);
+    document.addEventListener('keyup', this.onKey);
     this.sendSkin();
     // the world's spawn, found by the first player to arrive
     if (!this.spawn && game.spawn) this.send({ t: 'spawn', x: game.spawn.x, z: game.spawn.z });
@@ -245,6 +256,8 @@ export class Net {
   }
   detach() {
     if (this.players) { this.players.dispose(); this.players = null; }
+    if (this.list) { const o = this.ctx.gui.overlays, i = o.indexOf(this.list); if (i >= 0) o.splice(i, 1); this.list = null; }
+    if (this.onKey) { document.removeEventListener('keydown', this.onKey); document.removeEventListener('keyup', this.onKey); this.onKey = null; }
     if (this.unswing) { this.unswing(); this.unswing = null; }
     this.game = null;
   }
@@ -269,7 +282,7 @@ export class Net {
       case 'eq': if (this.players) this.players.setEquip(m.id, m.eq); else this.early(m); return;
       case 'sw': if (this.players) this.players.swing(m.id, m.h); return;
       case 'hurt': if (this.players) this.players.hurt(m.id); return;
-      case 'lat': this.lat = m.l; return;
+      case 'lat': this.lat = m.l; if (this.list && this.list.shown) this.ctx.gui.markDirty(); return;
       case 'pong': {
         const rtt = performance.now() - m.c;
         this.pings.push(rtt); if (this.pings.length > 5) this.pings.shift();
@@ -297,8 +310,9 @@ export class Net {
     this.hook();
     // the clock: a time set here (a command, a bed, the [ and ] keys) is asked of the server
     if (this.timeExpect !== null && Math.abs(g.time - this.timeExpect) > 2) {
-      this.send({ t: 'time', time: g.time, sleep: !!(g.sim && g.sim.sleeping) });
+      this.send({ t: 'time', time: g.time, sleep: !!(this.slept || (g.sim && g.sim.sleeping)) });
     }
+    this.slept = false;
     for (let n = 0; this.inbox.length && n < 2000; n++) this.handle(this.inbox.shift());
     this.timeExpect = g.time + 1;
     this.sendState(stamp);
@@ -350,6 +364,13 @@ export class Net {
       D.changed = function (e) { changed.call(this, e); if (!net.applying && e) net.queueT(e.x, e.y, e.z, e); };
       D.broken = function (x, y, z) { const had = this.map.has(key3(x, y, z)); broken.call(this, x, y, z); if (!net.applying && had) net.queueT(x, y, z, null); };
     }
+    const E = g.entities;
+    if (E && E !== this.he) {
+      this.he = E;
+      // the crosshair finds the other players too, in front of any mob or block (for hitting them)
+      const pickFor = E.pickFor;
+      E.pickFor = function (eye, blockT) { return net.pickPlayer(this, eye, blockT, pickFor.call(this, eye, blockT)); };
+    }
     const S = g.sim;
     if (S && S !== this.hs) {
       this.hs = S;
@@ -363,6 +384,17 @@ export class Net {
         W.set = (kind, ticks) => this.send({ t: 'wx', kind, ticks: ticks || 0 });
         W.clearBySleep = () => {};
       }
+      // a bed: the night passes only once everyone in the Overworld is asleep (sim/beds.js)
+      S.othersAwake = t => {
+        if (!this.players) return false;
+        let n = 1, asleep = 1;
+        for (const r of this.players.list.values()) { const s = r.st; if (!s || s.d !== 0 || (s.f & F.DEAD)) continue; n++; if (s.f & F.SLEEP) asleep++; }
+        if (asleep >= n) return false;
+        if (t % 20 === 0 && S.msg) S.msg.show(asleep + '/' + n + ' players sleeping', 30);
+        return true;
+      };
+      const wake = S.wake;
+      if (wake) S.wake = skipped => { if (skipped) this.slept = true; return wake(skipped); };
     }
   }
   applyWeather() {
@@ -384,6 +416,57 @@ export class Net {
       if ((d2 < mine || (d2 === mine && r.id < this.id)) && d2 < 128 * 128) return false;
     }
     return true;
+  }
+
+  /* ---- hitting another player ----
+     The crosshair's ray against each player's box (0.6 wide, 1.8 tall, 1.5
+     sneaking) within reach and short of whatever else it found. What comes
+     back stands in for them in the combat code (combat/combat.js attack): its
+     hurt() is the hit, worked out here as the game does (the charge, a
+     critical when falling, a sprint's extra knockback) and sent to the
+     server, which checks the reach and passes it on; their own game takes
+     the damage, with their armour, and knocks them back. */
+  pickPlayer(E, eye, blockT, found) {
+    if (!this.players || !this.server.pvp || this.closed) return found;
+    const g = this.game, P = g.player, D = dimCode(g.dim);
+    const dx = -Math.sin(P.yaw) * Math.cos(P.pitch), dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * Math.cos(P.pitch);
+    let lim = Math.min(E.combat.reach(), blockT === undefined ? Infinity : blockT);
+    if (found) { const h = E.raycast(eye, { x: dx, y: dy, z: dz }, lim); if (h) lim = h.t; }
+    let best = null;
+    for (const r of this.players.list.values()) {
+      const s = r.st, f = r.feet;
+      if (!s || !f || s.d !== D || (s.f & F.DEAD) || !r.av || !r.av.mesh.visible) continue;
+      const h = s.f & F.SNEAK ? 1.5 : s.f & F.SWIM ? 0.6 : 1.8;
+      const t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - 0.3, f.y, f.z - 0.3, f.x + 0.3, f.y + h, f.z + 0.3);
+      if (t < lim) { lim = t; best = r; }
+    }
+    if (!best) return found;
+    const r = best;
+    if (!r.proxy) r.proxy = { remotePlayer: true, id: r.id, get pos() { return r.feet; }, hw: 0.3, w: 0.6, h: 1.8, removed: false, dead: false, customName: r.name, hurt: amount => this.hitPlayer(r, amount) };
+    r.proxy.customName = r.name;
+    return r.proxy;
+  }
+  hitPlayer(r, amount) {
+    const g = this.game, P = g.player, E = g.entities;
+    if (!(amount > 0)) return false;
+    const inv = g.inv, st = inv.slots[inv.selected], ench = (st && st.ench) || {};
+    const c = E ? E.combat.cooldown() : 1, strong = c > 0.9;
+    const sprint = P.sprinting && strong;
+    const crit = strong && P.fallDistance > 0 && !P.onGround && !P.climbing && !P.inWater && !P.flying && !sprint;
+    if (crit) amount *= 1.5;
+    const kb = (ench.knockback | 0) + (sprint ? 1 : 0);
+    if (kb > 0) { P.vel.x *= 0.6; P.vel.z *= 0.6; P.sprinting = false; }
+    this.send({ t: 'hit', id: r.id, dmg: Math.round(amount * 100) / 100, kb, crit, fire: (ench.fire_aspect | 0) * 4 });
+    if (crit && E && E.particles) E.particles('crit', r.feet.x, r.feet.y + 0.9, r.feet.z, 12, 0.3);
+    return true;
+  }
+  // a hit from another player: taken here as the game takes one, armour and all, knocked back away from them
+  struck(m) {
+    const g = this.game, E = g.entities;
+    if (!E || !E.combat) return;
+    const r = this.players && this.players.list.get(m.from), s = r && r.st, P = g.player;
+    E.combat.hurtPlayer(m.dmg, { type: 'player', attacker: { customName: m.name, pos: r && r.feet }, x: s ? s.x : P.pos.x, z: s ? s.z : P.pos.z, knock: m.kb, yaw: s ? s.yaw : 0 });
+    if (m.fire && E.setPlayerFire) E.setPlayerFire(m.fire);
   }
 
   /* ---- your changes, sent at the end of the frame ---- */
@@ -487,7 +570,7 @@ export class Net {
       }
       case 'wx': this.wx = { r: !!m.r, th: !!m.th }; this.applyWeather(); return;
       case 'spawn': this.spawn = m.spawn; if (m.spawn) g.spawn = { x: m.spawn.x, z: m.spawn.z }; return;
-      case 'hit': this.ctx.hit(m); return;
+      case 'hit': this.struck(m); return;
     }
   }
   // put a block in without it counting as yours, and without the simulation reacting to it
@@ -581,6 +664,18 @@ export class Net {
       D._show(e);
     } finally { this.applying = false; }
   }
+}
+// where a ray first enters a box, or Infinity
+function rayBox(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
+  let t0 = 0, t1 = Infinity;
+  for (const [o, d, a, b] of [[ox, dx, x0, x1], [oy, dy, y0, y1], [oz, dz, z0, z1]]) {
+    if (Math.abs(d) < 1e-9) { if (o < a || o > b) return Infinity; continue; }
+    let ta = (a - o) / d, tb = (b - o) / d;
+    if (ta > tb) { const t = ta; ta = tb; tb = t; }
+    if (ta > t0) t0 = ta; if (tb < t1) t1 = tb;
+    if (t0 > t1) return Infinity;
+  }
+  return t0;
 }
 // a container gone with its block on someone else's machine: forgotten here, nothing spilled
 function dropContainer(C, x, y, z) {
