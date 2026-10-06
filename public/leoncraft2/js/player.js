@@ -85,6 +85,8 @@ export class Player {
   }
   setKey(k, on) {
     if (k === ' ' && on && !this.keys[' ']) {
+      // a press in the air with an elytra on starts a glide (tick())
+      if (!this.onGround && !this.flying) this.wantGlide = true;
       const now = performance.now();
       if (now - this.lastSpace < 300 && this.canFly) this.flying = !this.flying, this.vel.y = 0;
       this.lastSpace = now;
@@ -299,6 +301,25 @@ export class Player {
     this.climbing = CLIMB.has(this.w.get(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)));
   }
 
+  /* Gliding on an elytra, the game's own flight (its fall-flying travel):
+     looking down trades height for speed, looking up spends speed on height,
+     a tenth of the way each tick towards going where you look, then 0.99 of
+     the speed kept across and 0.98 up and down. Returns the speed across
+     before the move (for flying into a wall). */
+  glide() {
+    const v = this.vel, f = -this.pitch;          // (the game's pitch: down is positive)
+    const lx = -Math.sin(this.yaw) * Math.cos(f), lz = -Math.cos(this.yaw) * Math.cos(f);
+    const d = Math.hypot(lx, lz), e = Math.hypot(v.x, v.z);
+    const g = this.effects && this.effects.slow_falling && v.y <= 0 ? 0.01 : 0.08;
+    const h = Math.cos(f) * Math.cos(f);
+    v.y += g * (-1 + h * 0.75);
+    if (v.y < 0 && d > 0) { const i = v.y * -0.1 * h; v.x += lx * i / d; v.y += i; v.z += lz * i / d; }
+    if (f < 0 && d > 0) { const i = e * -Math.sin(f) * 0.04; v.x += -lx * i / d; v.y += i * 3.2; v.z += -lz * i / d; }
+    if (d > 0) { v.x += (lx / d * e - v.x) * 0.1; v.z += (lz / d * e - v.z) * 0.1; }
+    v.x *= 0.99; v.y *= 0.98; v.z *= 0.99;
+    return Math.hypot(v.x, v.z);
+  }
+
   /* ---- one tick ---- */
   tick() {
     this.prev.copy(this.pos);
@@ -350,8 +371,12 @@ export class Player {
     if (slowPose) { fwd *= 0.3; str *= 0.3; }
     // eating or drawing a bow: a fifth of the speed
     if (this.usingItem) { fwd *= 0.2; str *= 0.2; }
+    // an elytra: a press of Space in the air opens it; the ground, water, flying or a worn-out elytra close it
+    if (this.wantGlide) { this.wantGlide = false; if (!this.onGround && !this.flying && !this.inWater && !this.inLava && !this.climbing && !this.riding && !(this.effects && this.effects.levitation) && this.hasElytra && this.hasElytra()) this.gliding = true; }
+    if (this.gliding && (this.onGround || this.flying || this.inWater || this.inLava || this.riding || !(this.hasElytra && this.hasElytra()))) this.gliding = false;
+    const glideSpeed = this.gliding ? this.glide() : 0;
     // move relative to where you are looking (only round, not up)
-    let len = Math.hypot(fwd, str);
+    let len = this.gliding ? 0 : Math.hypot(fwd, str);
     if (len > 0.0001) {
       if (len < 1) len = 1;
       const f = fwd / len * accel, s = str / len * accel;
@@ -410,7 +435,13 @@ export class Player {
     // climbing: pushing into the ladder, or Space, goes up
     if (this.climbing && !this.flying && (this.hCollide || k[' '])) this.vel.y = 0.2;
     // drag and gravity
-    if (this.flying) {
+    if (this.gliding) {
+      // into a wall at speed: the speed lost, times 10, less 3 (survival.js takes it as flying into a wall)
+      if (this.hCollide) { const lost = (glideSpeed - Math.hypot(this.vel.x, this.vel.z)) * 10 - 3; if (lost > 0) this.wallHit = (this.wallHit || 0) + lost; }
+      // a glide that is not falling fast counts as a fall of 1 (the game's)
+      if (this.vel.y > -0.5) this.fallDistance = 1;
+      if (this.onGround) this.gliding = false;
+    } else if (this.flying) {
       this.vel.x *= 0.91 * 0.6 / 0.546 * 0.91; this.vel.z *= 0.91 * 0.6 / 0.546 * 0.91; this.vel.y *= 0.6;
       if (this.onGround) this.flying = false;
     } else if (this.inWater) {
@@ -450,7 +481,7 @@ export class Player {
     if (Math.abs(this.vel.y) < 0.003) this.vel.y = 0;
     if (Math.abs(this.vel.z) < 0.003) this.vel.z = 0;
     // the pose for next tick: swimming lies down, sneaking crouches, and a low gap keeps you crawling
-    let pose = this.swimming ? 'swim' : this.sneaking ? 'crouch' : 'stand';
+    let pose = this.swimming || this.gliding ? 'swim' : this.sneaking ? 'crouch' : 'stand';
     // (a spectator passes through blocks standing up: nothing makes it crouch or crawl)
     if (this.noclip) pose = 'stand';
     else if (!this.fits(pose)) pose = this.fits('crouch') ? 'crouch' : 'swim';
