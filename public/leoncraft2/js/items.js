@@ -258,6 +258,39 @@ export const SONGS = {
   music_disc_lava_chicken: ['Hyper Potions - Lava Chicken', 135, 9],
 };
 
+/* Bundles (any colour): what is inside is items, the newest first. A bundle
+   holds 64 sixty-fourths: each item takes 64 / its stack size of them (a
+   sword a whole bundle, an ender pearl four), a bundle inside one 4 and what
+   it holds, a hive with bees in it the lot. Shulker boxes never go in. */
+export const isBundle = st => !!st && /^(\w+_)?bundle$/.test(itemName(st.id));
+function weightOf(s) {
+  const n = itemName(s.id);
+  if (/^(\w+_)?bundle$/.test(n)) return 4 + bundleWeight(s);
+  if ((n === 'beehive' || n === 'bee_nest') && s.bees && s.bees.length) return 64;
+  return 64 / maxStack(s.id);
+}
+export function bundleWeight(b) { let w = 0; if (b && Array.isArray(b.items)) for (const s of b.items) if (s) w += s.count * weightOf(s); return w; }
+// as many of a stack as fit go in (onto a like stack inside, else as the newest); how many went
+export function bundleInsert(b, st) {
+  if (!st || !st.count || /shulker_box$/.test(itemName(st.id)) || st === b) return 0;
+  const each = weightOf(st), room = 64 - bundleWeight(b), n = Math.min(st.count, Math.floor(room / each));
+  if (n <= 0) return 0;
+  if (!Array.isArray(b.items)) b.items = [];
+  const like = b.items.find(s => s && sameItem(s, st));
+  if (like) like.count += n;
+  else b.items.unshift(withCount(st, n));
+  return n;
+}
+// the newest stack out, or null
+export function bundleTake(b) {
+  if (!b || !Array.isArray(b.items)) return null;
+  const i = b.items.findIndex(Boolean);
+  if (i < 0) return null;
+  const s = b.items.splice(i, 1)[0];
+  if (!b.items.some(Boolean)) delete b.items;
+  return s;
+}
+
 /* Item cooldowns, the game's: an ender pearl's second, chorus fruit's, a
    wind charge's half second, a goat horn's seven, a shield an axe knocked
    down. By item name, the tick each began and ends, on the game's ticks

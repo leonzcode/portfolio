@@ -30,7 +30,7 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=17';
 import { setLodestoneCheck } from './dials.js?v=17';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown } from './items.js?v=17';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=17';
 import { breakTicks, wearFor } from './mining.js?v=17';
 import { blockDrops } from './loot.js?v=17';
 import { containerKind, spill } from './containers.js?v=17';
@@ -377,6 +377,13 @@ export class Hands {
     /* a goat horn: blown for its seven seconds, the arm up to the mouth and the step slowed as with
        anything used, and seven seconds from the first note before it sounds again (the game's
        instruments all last 7 seconds; this game has no sounds yet, onHorn is where one would go) */
+    if (isBundle(s)) {
+      if (!s.items || !s.items.some(Boolean)) return false;
+      this.using = { slot: this.inv.selected, id: s.id, t: 0, total: 200, off: !!this.offTurn, bundle: true };
+      this.player.usingItem = true;
+      this.dropFromBundle();
+      return true;
+    }
     if (it.name === 'goat_horn') {
       this.using = { slot: this.inv.selected, id: s.id, t: 0, total: 140, off: !!this.offTurn, horn: true };
       this.player.usingItem = true;
@@ -499,6 +506,7 @@ export class Hands {
     if (!this.inter.useHeld || (!u.off && this.inv.selected !== u.slot) || !s || s.id !== u.id) { this.stopUsing(); return; }
     u.t++;
     if (u.horn) { if (u.t >= u.total) this.stopUsing(); return; }
+    if (u.bundle) { if (u.t > 10 && u.t % 2 === 0 && !this.dropFromBundle()) this.stopUsing(); else if (u.t >= u.total) this.stopUsing(); return; }
     if (u.t > 7 && (u.total - u.t) % 4 === 0) {
       this.crumbs(u.id);
       if (this.onEat) this.onEat(u.id);
@@ -572,6 +580,15 @@ export class Hands {
     return out;
   }
 
+  // the newest stack in the bundle in use thrown out ahead, as a dropped item is; false once it is empty
+  dropFromBundle() {
+    const s = this.usedStack(this.using);
+    const out = s && bundleTake(s);
+    if (!out) return false;
+    this.throwStack(out);
+    this.inv.changed();
+    return true;
+  }
   // the hand a spyglass is held up with: the main hand, or the off hand while the main hand is empty (-1: none)
   spyglassSide() {
     const m = this.inv.slots[this.inv.selected], o = this.inv.offhand;

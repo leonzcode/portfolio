@@ -36,7 +36,7 @@
 --------------------------------------------------------------------------- */
 import { BLOCKS, B } from '../blocks.js?v=17';
 import { Screen, TextField, WHITE } from './gui.js?v=17';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS } from '../items.js?v=17';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=17';
 import { matchGrid, consumeGrid } from '../crafting.js?v=17';
 import { enchName, ENCH } from '../enchanting.js?v=17';
 import { isPotion, isTipped, potionName, potionLines, POTIONS } from '../brewing.js?v=17';
@@ -430,6 +430,11 @@ export function drawStack(g, icons, st, x, y, countText, countColour) {
   else if (st.patterns && st.patterns.length) drawBannerIcon(g, st, x, y);
   else icons.draw(g, st.id, x, y);
   if (hasGlint(st)) drawGlint(g, icons, st, x, y);
+  // a bundle with something in it: how full, in blue (red once full)
+  if (st.items && isBundle(st)) {
+    const w = bundleWeight(st);
+    if (w > 0) { g.fill(x + 2, y + 13, x + 15, y + 15, 0xFF000000); g.fill(x + 2, y + 13, x + 2 + Math.min(1 + Math.floor(w / 64 * 12), 13), y + 14, w >= 64 ? 0xFFFF5555 : 0xFF7087FF); }
+  }
   if (st.dmg > 0) {
     const max = maxDamage(st.id);
     if (max) {
@@ -648,6 +653,7 @@ export class ContainerScreen extends Screen {
   click(s, button) {
     if (s.kind === 'result') { this.clickResult(button); return; }
     const st = this.getStack(s), c = this.inv.carried;
+    if (!s.output && this.bundleClick(s, button, st, c)) return;
     if (s.output) {
       // an output slot (a furnace's) only gives
       if (!st) return;
@@ -685,6 +691,32 @@ export class ContainerScreen extends Screen {
         this.setStack(s, c); this.setCarried(st);
       }
     }
+  }
+  /* A bundle, the game's way (1.21.2 on): carried and left-clicked on a
+     stack, it takes in what fits; right-clicked on an empty slot, its newest
+     stack comes out there. Lying in a slot, a stack left-clicked onto it
+     goes in, and a right click with nothing carried takes its newest out. */
+  bundleClick(s, button, st, c) {
+    if (c && isBundle(c) && st && button === 0) {
+      if (!this.mayTake || this.mayTake(s)) { const n = bundleInsert(c, st); if (n) { st.count -= n; this.setStack(s, st.count ? st : null); } }
+      return true;
+    }
+    if (c && isBundle(c) && !st && button === 2) {
+      const out = bundleTake(c);
+      if (out) { if (this.mayPlace(s, out)) this.setStack(s, out); else bundleInsert(c, out); }
+      return true;
+    }
+    if (st && isBundle(st) && c && button === 0 && !isBundle(c)) {
+      const n = bundleInsert(st, c);
+      if (n) { c.count -= n; if (c.count <= 0) this.setCarried(null); this.setStack(s, st); }
+      return true;
+    }
+    if (st && isBundle(st) && !c && button === 2) {
+      const out = bundleTake(st);
+      if (out) { this.setCarried(out); this.setStack(s, st); }
+      return true;
+    }
+    return false;
   }
   tookOutput() {}                       // a hook: items taken from an output slot (furnace experience)
   // merge a stack into inventory slots (indices, in order), matching stacks first, then empty ones
