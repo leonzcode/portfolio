@@ -647,6 +647,24 @@ const QUALITY_TIPS = {
 };
 const QUALITY_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
 
+/* Fullscreen, as the game's own button. In a window the browser keeps Esc
+   for itself: it lets go of the mouse, and will not give it back for a
+   second and a quarter, nor at all for a key (Esc to leave the game menu)
+   rather than a click. In fullscreen the page may keep Esc (the keyboard
+   lock), so Esc opens and closes the game menu with the mouse taken back at
+   once, as in the game; holding Esc leaves fullscreen. */
+function setFullscreen(on) {
+  const d = document;
+  if (on && !d.fullscreenElement && d.documentElement.requestFullscreen) {
+    d.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+      // Esc, and the keys played with Ctrl held to sprint (Ctrl+W would close the tab, Ctrl+1 change it)
+      const keys = ['Escape', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'];
+      for (let n = 1; n <= 9; n++) keys.push('Digit' + n);
+      if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(keys).catch(() => {});
+    }, () => {});
+  } else if (!on && d.fullscreenElement) d.exitFullscreen().catch(() => {});
+}
+
 export class VideoSettingsScreen extends OptionsListScreen {
   constructor() { super('Video Settings'); }
   // the graphics setting is put into effect on the way out, and only if it changed
@@ -690,12 +708,15 @@ export class VideoSettingsScreen extends OptionsListScreen {
     const fe = optSlider(o, 'fovEffects', 0, 1, 0.01, v => 'FOV Effects: ' + (v <= 0 ? 'OFF' : pct(v)));
     fe.tooltip = 'How much the view widens when you sprint or fly.';
     const blur = optSlider(o, 'menuBlur', 0, 10, 1, v => 'Menu Background Blurriness: ' + (v ? v : 'OFF'));
+    const full = new CycleButton(0, 0, 150, 20, 'Fullscreen', { values: [false, true], value: !!document.fullscreenElement, format: onOff, onChange: v => setFullscreen(v) });
+    full.tooltip = 'In fullscreen Esc goes to the game menu and back at once. Hold Esc to leave fullscreen.';
     list.entries = [
       new WidgetRow(graphics, rd),
       new WidgetRow(rs, fps),
       new WidgetRow(optToggle(o, 'bobbing', 'View Bobbing'), gs),
       new WidgetRow(br, clouds),
-      new WidgetRow(fe, blur),
+      new WidgetRow(full, fe),
+      new WidgetRow(blur),
     ];
   }
 }
@@ -718,7 +739,7 @@ export class MouseSettingsScreen extends OptionsListScreen {
   rows(list) {
     const o = this.options;
     const sens = optSlider(o, 'sensitivity', 0, 1, 0.005, v => 'Sensitivity: ' + (v <= 0 ? '*yawn*' : v >= 1 ? 'HYPERSPEED!!!' : Math.round(v * 200) + '%'));
-    list.entries = [new WidgetRow(sens, optToggle(o, 'invertY', 'Invert Mouse'))];
+    list.entries = [new WidgetRow(sens, optToggle(o, 'invertY', 'Invert Mouse')), new WidgetRow(optToggle(o, 'rawInput', 'Raw Input'))];
   }
 }
 
@@ -1110,7 +1131,8 @@ export class PauseScreen extends Screen {
   }
   resume() { this.gui.closeAll(); if (this.hooks.resume) this.hooks.resume(); }
   // the Esc that let the mouse go (and so opened this menu) must not close it again at once
-  onEscape() { if (performance.now() - this.openedAt > 400) this.resume(); }
+  // (and Esc stays in the menu when the browser would not give the mouse back for a key: main.js keyMayLock)
+  onEscape() { if (performance.now() - this.openedAt > 400 && (!this.hooks.keyResumes || this.hooks.keyResumes())) this.resume(); }
   render(g, mx, my, dt) {
     g.centered(this.title, this.width / 2, 40, WHITE);
     super.render(g, mx, my, dt);

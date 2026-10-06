@@ -46,6 +46,7 @@ class Buf {
     this.arrs = kinds.map(k => new k.T(n * 4));
     this.idx = new Uint32Array(n * 1.5 | 0); this.ni = 0;
     this.marks = new Int32Array(25);   // where each 16-block section's indices start
+    this.vmarks = new Int32Array(25);  // and its vertices (so a run of sections can be swapped for new ones)
   }
   grow() {
     this.cap *= 2;
@@ -60,9 +61,79 @@ class Buf {
   }
   out() {
     if (!this.n) return null;
-    return { count: this.n, attrs: this.arrs.map(a => a.slice(0, this.n * 4)), index: this.idx.slice(0, this.ni), marks: this.marks };
+    return { count: this.n, attrs: this.arrs.map(a => a.slice(0, this.n * 4)), index: this.idx.slice(0, this.ni), marks: this.marks, vmarks: this.vmarks };
   }
 }
+const KINDS = ['opaque', 'cutout', 'translucent', 'fluid', 'plants', 'leafIn'];
+const NO_MARKS = new Int32Array(25);
+// the light's work queue, kept from column to column (4 MB is not worth making again each time)
+const Q = new Int32Array(1 << 20), QM = Q.length - 1;
+/* The region's working arrays (blocks, states, sky and block light, which
+   leaves are on the outside), kept from column to column too and cleared
+   for each one: made afresh, several megabytes a column kept the collector
+   busy, and a block you broke waited behind it. */
+let SCRATCH = null;
+function scratch(N) {
+  if (!SCRATCH || SCRATCH.n < N) SCRATCH = { n: N, rb: new Uint16Array(N), rm: new Uint8Array(N), sky: new Uint8Array(N), blk: new Uint8Array(N), outer: new Int8Array(N) };
+  const S = SCRATCH, take = a => { const v = a.subarray(0, N); v.fill(0); return v; };
+  return { rb: take(S.rb), rm: take(S.rm), sky: take(S.sky), blk: take(S.blk), outer: take(S.outer) };
+}
+
+/* A run of sections (c0 to c1) put in place of the same ones in a column's
+   last mesh: the vertices and indices before and after are kept, the indices
+   after moved along by however many vertices the run gained or lost. */
+function spliceBuf(b, p, c0, c1) {
+  const bm = b ? b.marks : NO_MARKS, bv = b ? b.vmarks : NO_MARKS, pm = p ? p.marks : NO_MARKS, pv = p ? p.vmarks : NO_MARKS;
+  const v0 = bv[c0], v1 = bv[c1 + 1], i0 = bm[c0], i1 = bm[c1 + 1];
+  const bn = b ? b.count : 0, bi = b ? b.index.length : 0, pn = p ? p.count : 0, pi = p ? p.index.length : 0;
+  const n = v0 + pn + (bn - v1), ni = i0 + pi + (bi - i1);
+  if (!n || !ni) return null;
+  const dv = pn - (v1 - v0), di = pi - (i1 - i0);
+  const attrs = (b || p).attrs.map((a, k) => {
+    const o = new a.constructor(n * 4);
+    if (b) { o.set(b.attrs[k].subarray(0, v0 * 4), 0); o.set(b.attrs[k].subarray(v1 * 4, bn * 4), (v0 + pn) * 4); }
+    if (p) o.set(p.attrs[k].subarray(0, pn * 4), v0 * 4);
+    return o;
+  });
+  const index = new Uint32Array(ni);
+  if (b) index.set(b.index.subarray(0, i0), 0);
+  if (p) { const P = p.index; for (let j = 0; j < pi; j++) index[i0 + j] = P[j] + v0; }
+  if (b) { const I = b.index; for (let j = i1, o = i0 + pi; j < bi; j++, o++) index[o] = I[j] + dv; }
+  const marks = new Int32Array(25), vmarks = new Int32Array(25);
+  for (let s = 0; s <= 24; s++) {
+    if (s <= c0) { marks[s] = bm[s]; vmarks[s] = bv[s]; }
+    else if (s <= c1 + 1) { marks[s] = i0 + pm[s]; vmarks[s] = v0 + pv[s]; }
+    else { marks[s] = bm[s] + di; vmarks[s] = bv[s] + dv; }
+  }
+  return { count: n, attrs, index, marks, vmarks };
+}
+function splice(base, r, c0, c1, ny, noSky) {
+  const out = { vis: base.vis.slice(), skyLow: Math.min(base.skyLow, r.skyLow), lightH: ny, regionH: ny };
+  for (const k of KINDS) out[k] = spliceBuf(base[k], r.parts[k], c0, c1);
+  /* The water kept from the last mesh has not moved since: no glide (the
+     renderer starts every fluid mesh's glide again as it arrives, and the
+     kept vertices would replay theirs). The whole column made again gives
+     the same. */
+  const fo = out.fluid;
+  if (fo && base.fluid) {
+    const v0 = base.fluid.vmarks[c0], v1 = v0 + (r.parts.fluid ? r.parts.fluid.count : 0), F = fo.attrs[2];
+    for (let j = 0; j < v0; j++) F[j * 4 + 2] = 0;
+    for (let j = v1; j < fo.count; j++) F[j * 4 + 2] = 0;
+  }
+  out.vis.set(r.vis.subarray(c0 * 6, (c1 + 1) * 6), c0 * 6);
+  // the light, of the middle chunk and of the whole region: the old rows, then the new ones for the sections made
+  const rows = (old, oldH, per, now) => {
+    const a = new Uint8Array(per * ny);
+    a.set(old.subarray(0, per * Math.min(ny, oldH)));
+    if (oldH < ny && !noSky) a.fill(15 << 4, per * oldH);
+    a.set(now, per * r.ly0);
+    return a;
+  };
+  out.light = rows(base.light, base.lightH, 256, r.light);
+  out.region = rows(base.region, base.regionH, A, r.region);
+  return out;
+}
+const hasMarks = m => m && m.vis && m.light && m.region && KINDS.every(k => !m[k] || m[k].vmarks);
 const TERRAIN = [{ T: Uint16Array }, { T: Uint8Array }, { T: Uint8Array }, { T: Uint8Array }];
 const FLUIDF = [{ T: Uint16Array }, { T: Uint8Array }, { T: Int8Array }, { T: Uint8Array }];
 
@@ -106,71 +177,105 @@ function tables() {
 }
 
 /* ======================================================================== */
+/* A whole column; or, for a block you broke or placed (job.base: the
+   column's last mesh, job.rows: the rows the change was in), only the
+   sections round it, made again and put in place of the same sections in
+   the last mesh. A section or two instead of the whole column is what puts
+   the change on screen at once. Where the light changed past the sections
+   made (a shaft covered over, a torch near a section's edge) the run of
+   sections grows until it no longer does, so the result is exactly what
+   meshing the whole column would give. */
 export function meshColumn(job) {
-  const { chunks, tops } = job;
   // the highest anything reaches, so nothing above it is walked
   let top = 0;
-  for (const t of tops) top = Math.max(top, t);
+  for (const t of job.tops) top = Math.max(top, t);
   const ny = Math.min(H, top + 2);
+  const base = job.base && job.rows && hasMarks(job.base) ? job.base : null;
+  if (!base) return build(job, ny, 0, 23, null);
+  const last = Math.max(0, (ny - 2) >> 4);         // the highest section with anything in it
+  // what a block looks like can hang on blocks two away (a leaf face on whether the next leaf is on the outside)
+  let c0 = Math.min(last, Math.max(0, (job.rows[0] - 2) >> 4)), c1 = Math.min(last, Math.max(c0, (job.rows[1] + 2) >> 4));
+  for (;;) {
+    const r = build(job, ny, c0, c1, base);
+    const n = c1 - c0 + 1;
+    let again = false;
+    if (r.spillDown && c0 > 0) { c0 = Math.max(0, c0 - n); again = true; }
+    if (r.spillUp && c1 < last) { c1 = Math.min(last, c1 + n); again = true; }
+    if (!again) return splice(base, r, c0, c1, ny, job.noSky);
+  }
+}
+
+function build(job, ny, c0, c1, base) {
+  const { chunks, tops } = job;
+  const part = !!base;
+  // the rows worked on: every one, or the sections being made and a section either side (light goes 15 blocks at most)
+  const ya = part ? Math.max(0, c0 * 16 - 16) : 0, yb = part ? Math.min(ny, (c1 + 1) * 16 + 16) : ny;
   const N = A * ny;
-  const rb = new Uint16Array(N), rm = new Uint8Array(N);
+  const { rb, rm, sky, blk, outer } = scratch(N);
   const bio = new Uint8Array(W * W);
   for (let c = 0; c < 9; c++) {
     const ch = chunks[c];
     const ox = (c % 3) * 16, oz = ((c / 3) | 0) * 16;
     if (!ch) continue;
-    for (let y = 0; y < ny; y++) {
+    // above a chunk's highest block is only air, which the arrays already hold
+    const cb = ch.blocks, cm = ch.meta, y1 = Math.min(yb, tops[c] + 1);
+    for (let y = ya; y < y1; y++) {
       for (let z = 0; z < 16; z++) {
-        const src = (y << 8) | (z << 4), dst = y * A + (oz + z) * W + ox;
-        rb.set(ch.blocks.subarray(src, src + 16), dst);
-        rm.set(ch.meta.subarray(src, src + 16), dst);
+        let src = (y << 8) | (z << 4), dst = y * A + (oz + z) * W + ox;
+        for (let x = 0; x < 16; x++, src++, dst++) { rb[dst] = cb[src]; rm[dst] = cm[src]; }
       }
     }
     for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) bio[(oz + z) * W + ox + x] = ch.biome[(z << 4) | x];
   }
 
   /* ---- light ---- */
-  const sky = new Uint8Array(N), blk = new Uint8Array(N);
-  const Q = new Int32Array(1 << 20); const QM = Q.length - 1;
   let qh = 0, qt = 0;
   const skyTop = job.noSky ? 0 : 15;      // the Nether: no sky light anywhere
-  for (let z = 0; z < W; z++) for (let x = 0; x < W; x++) {
-    let v = skyTop;
-    for (let y = ny - 1; y >= 0; y--) {
-      const i = y * A + z * W + x;
-      const op = OPACITY[rb[i]];
-      if (op >= 15) v = 0; else if (op > 0) v = v > op ? v - op : 0;
-      sky[i] = v;
+  // straight down from the sky, a row at a time; above the rows worked on, read from the chunks themselves
+  const run = new Uint8Array(A).fill(skyTop);
+  const dim = (j, op) => { const v = run[j]; run[j] = op >= 15 ? 0 : v > op ? v - op : 0; };
+  if (skyTop && yb < ny) {
+    for (let c = 0; c < 9; c++) {
+      const ch = chunks[c];
+      if (!ch) continue;
+      const ox = (c % 3) * 16, oz = ((c / 3) | 0) * 16, cb = ch.blocks;
+      for (let y = Math.min(ny - 1, tops[c]); y >= yb; y--) {
+        for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) { const op = OPACITY[cb[(y << 8) | (z << 4) | x]]; if (op) dim((oz + z) * W + ox + x, op); }
+      }
     }
   }
+  for (let y = yb - 1; y >= ya; y--) {
+    const o = y * A;
+    for (let j = 0; j < A; j++) { const op = OPACITY[rb[o + j]]; if (op) dim(j, op); sky[o + j] = run[j]; }
+  }
   // seed the spread from every lit cell next to a darker one it could light
-  for (let y = 0; y < ny; y++) for (let z = 1; z < W - 1; z++) for (let x = 1; x < W - 1; x++) {
+  for (let y = ya; y < yb; y++) for (let z = 1; z < W - 1; z++) for (let x = 1; x < W - 1; x++) {
     const i = y * A + z * W + x, l = sky[i];
     if (l < 2) continue;
-    if (sky[i + 1] < l - 1 || sky[i - 1] < l - 1 || sky[i + W] < l - 1 || sky[i - W] < l - 1 || (y > 0 && sky[i - A] < l - 1)) {
+    if (sky[i + 1] < l - 1 || sky[i - 1] < l - 1 || sky[i + W] < l - 1 || sky[i - W] < l - 1 || (y > ya && sky[i - A] < l - 1)) {
       Q[qt++ & QM] = i;
     }
   }
+  const go = (L, n, l) => {
+    const op = OPACITY[rb[n]];
+    if (op >= 15) return;
+    const nl = l - (op > 1 ? op : 1);
+    if (L[n] < nl) { L[n] = nl; Q[qt++ & QM] = n; }
+  };
   const spread = (L) => {
     while (qh !== qt) {
       const i = Q[qh++ & QM];
       const l = L[i];
       if (l < 2) continue;
       const y = (i / A) | 0, r = i - y * A, z = (r / W) | 0, x = r - z * W;
-      const go = n => {
-        const op = OPACITY[rb[n]];
-        if (op >= 15) return;
-        const nl = l - (op > 1 ? op : 1);
-        if (L[n] < nl) { L[n] = nl; Q[qt++ & QM] = n; }
-      };
-      if (x > 0) go(i - 1); if (x < W - 1) go(i + 1);
-      if (z > 0) go(i - W); if (z < W - 1) go(i + W);
-      if (y > 0) go(i - A); if (y < ny - 1) go(i + A);
+      if (x > 0) go(L, i - 1, l); if (x < W - 1) go(L, i + 1, l);
+      if (z > 0) go(L, i - W, l); if (z < W - 1) go(L, i + W, l);
+      if (y > ya) go(L, i - A, l); if (y < yb - 1) go(L, i + A, l);
     }
   };
   spread(sky);
   qh = qt = 0;
-  for (let i = 0; i < N; i++) { const e = SLIGHT[rb[i]] ? lightOf(rb[i], rm[i]) : EMIT[rb[i]]; if (e) { blk[i] = e; Q[qt++ & QM] = i; } }
+  for (let i = ya * A, e1 = yb * A; i < e1; i++) { const b = rb[i]; if (!b) continue; const e = SLIGHT[b] ? lightOf(b, rm[i]) : EMIT[b]; if (e) { blk[i] = e; Q[qt++ & QM] = i; } }
   spread(blk);
 
   /* ---- biome colours, blended over 5 x 5 columns like Minecraft ---- */
@@ -201,7 +306,6 @@ export function meshColumn(job) {
      them is on the outside of the canopy. You cannot see the faces deep
      inside a tree anyway, and in a jungle they are most of the triangles. */
   const { LEAF, MODEL, SMALL, ORIENT, WL } = tables();
-  const outer = new Int8Array(N);
   const onSurface = j => {
     let v = outer[j];
     if (v) return v > 0;
@@ -213,7 +317,7 @@ export function meshColumn(job) {
   const seed = job.seed | 0;
   const wx0 = job.cx * 16, wz0 = job.cz * 16;
 
-  const isWaterish = b => FLUID[b] === 1 || (BLOCKS[b] && BLOCKS[b].waterlogged);
+  const isWaterish = b => FLUID[b] === 1 || WL[b] === 1;
   // how deep under water a cell is (0 = not under water), for caustics and absorption
   const waterDepth = (i, y) => {
     if (!isWaterish(rb[i])) return 0;
@@ -252,20 +356,23 @@ export function meshColumn(job) {
       ls[c] = sl / n; lb[c] = bl / n;
     }
     const flip = ao[0] + ao[2] < ao[1] + ao[3];
-    const v0 = buf.n;
+    // the four vertices first (the buffers may grow), then their values
+    const v0 = buf.vert(); buf.vert(); buf.vert(); buf.vert();
+    const ar = buf.arrs, P = ar[0], Aa = ar[1], L = ar[2], C = ar[3];
+    const Fn = F.n, Ft = F.t, Fb = F.b;
     for (let c = 0; c < 4; c++) {
-      const [u, v] = CORNERS[c];
-      let px = x + 0.5 + F.n[0] * 0.5 + F.t[0] * (u - 0.5) + F.b[0] * (v - 0.5);
-      let py = y + 0.5 + F.n[1] * 0.5 + F.t[1] * (u - 0.5) + F.b[1] * (v - 0.5);
-      let pz = z + 0.5 + F.n[2] * 0.5 + F.t[2] * (u - 0.5) + F.b[2] * (v - 0.5);
+      const cr = CORNERS[c], u = cr[0], v = cr[1];
+      let px = x + 0.5 + Fn[0] * 0.5 + Ft[0] * (u - 0.5) + Fb[0] * (v - 0.5);
+      let py = y + 0.5 + Fn[1] * 0.5 + Ft[1] * (u - 0.5) + Fb[1] * (v - 0.5);
+      let pz = z + 0.5 + Fn[2] * 0.5 + Ft[2] * (u - 0.5) + Fb[2] * (v - 0.5);
       let tu = u * 16, tv = v * 16;
       if (box) {
         // a shorter or inset box: snow layers, cactus sides
         if (box.h !== undefined && py > y + box.h) { py = y + box.h; }
-        if (box.h !== undefined && F.n[1] === 0) tv = v ? 16 : 16 - box.h * 16;
-        if (box.in && F.n[1] === 0) { px -= F.n[0] * box.in; pz -= F.n[2] * box.in; }
+        if (box.h !== undefined && Fn[1] === 0) tv = v ? 16 : 16 - box.h * 16;
+        if (box.in && Fn[1] === 0) { px -= Fn[0] * box.in; pz -= Fn[2] * box.in; }
       }
-      const k = buf.vert(), [P, Aa, L, C] = buf.arrs;
+      const k = v0 + c;
       P[k * 4] = Math.round((px + 8) * 32); P[k * 4 + 1] = Math.round(py * 32); P[k * 4 + 2] = Math.round((pz + 8) * 32); P[k * 4 + 3] = layer;
       Aa[k * 4] = tu; Aa[k * 4 + 1] = tv; Aa[k * 4 + 2] = f + wave * 8; Aa[k * 4 + 3] = ao[c] | flags;
       L[k * 4] = Math.round(ls[c] * 17); L[k * 4 + 1] = Math.round(lb[c] * 17); L[k * 4 + 2] = wd * 17; L[k * 4 + 3] = rnd;
@@ -278,7 +385,7 @@ export function meshColumn(job) {
   function quad(buf, pts, uvs, layer, nIdx, flags, tint, wave, rnd, sl, bl, wd) {
     const v0 = buf.n;
     for (let c = 0; c < 4; c++) {
-      const k = buf.vert(), [P, Aa, L, C] = buf.arrs;
+      const k = buf.vert(), ar = buf.arrs, P = ar[0], Aa = ar[1], L = ar[2], C = ar[3];
       P[k * 4] = Math.round((pts[c][0] + 8) * 32); P[k * 4 + 1] = Math.round(pts[c][1] * 32); P[k * 4 + 2] = Math.round((pts[c][2] + 8) * 32); P[k * 4 + 3] = layer;
       Aa[k * 4] = uvs[c][0]; Aa[k * 4 + 1] = uvs[c][1]; Aa[k * 4 + 2] = nIdx + wave * 8; Aa[k * 4 + 3] = 3 | flags;
       L[k * 4] = sl * 17; L[k * 4 + 1] = bl * 17; L[k * 4 + 2] = wd * 17; L[k * 4 + 3] = rnd;
@@ -332,7 +439,7 @@ export function meshColumn(job) {
       const lb = BLB[3] * w00 + BLB[2] * w10 + BLB[0] * w01 + BLB[1] * w11;
       const aq = Math.round(ao);
       if (c === 0) a0 = aq; else if (c === 1) a1 = aq; else if (c === 2) a2 = aq; else a3 = aq;
-      const k = buf.vert(), [P, Aa, L, C] = buf.arrs;
+      const k = buf.vert(), ar = buf.arrs, P = ar[0], Aa = ar[1], L = ar[2], C = ar[3];
       P[k * 4] = Math.round((x + PB[0] / 16 + 8) * 32); P[k * 4 + 1] = Math.round((y + PB[1] / 16) * 32); P[k * 4 + 2] = Math.round((z + PB[2] / 16 + 8) * 32); P[k * 4 + 3] = layer;
       Aa[k * 4] = tu; Aa[k * 4 + 1] = tv; Aa[k * 4 + 2] = f; Aa[k * 4 + 3] = aq | flags;
       L[k * 4] = Math.round(ls * 17); L[k * 4 + 1] = Math.round(lb * 17); L[k * 4 + 2] = wd * 17; L[k * 4 + 3] = rnd;
@@ -418,7 +525,7 @@ export function meshColumn(job) {
     const sl = Math.max(sky[i], i + A < N ? sky[i + A] : 15), bl = Math.max(blk[i], i + A < N ? blk[i + A] : 0);
     const flags = (falling ? 1 : 0) | (kind === 2 ? 2 : 0);
     const put = (px, py, pz, nIdx, top, cn) => {
-      const k = buf.vert(), [P, Aa, F, C] = buf.arrs;
+      const k = buf.vert(), ar = buf.arrs, P = ar[0], Aa = ar[1], F = ar[2], C = ar[3];
       if (cn !== undefined) fluidVerts.push(k, i, cn, kind);
       P[k * 4] = Math.round((px + 8) * 32); P[k * 4 + 1] = Math.round(py * 32); P[k * 4 + 2] = Math.round((pz + 8) * 32); P[k * 4 + 3] = layer;
       Aa[k * 4] = nIdx; Aa[k * 4 + 1] = flags | (top ? 4 : 0); Aa[k * 4 + 2] = sl * 17; Aa[k * 4 + 3] = bl * 17;
@@ -461,8 +568,9 @@ export function meshColumn(job) {
   /* ---- walk the middle chunk ---- */
   const bufs = [out.opaque, out.cutout, out.translucent, out.fluid, out.plants, out.leafIn];
   const fast = !!job.fast;              // Minecraft's "fast" leaves: solid, with no faces between them
-  for (let y = 0; y < ny - 1; y++) {
-    if ((y & 15) === 0) for (const bb of bufs) bb.marks[y >> 4] = bb.ni;
+  const wy0 = part ? c0 * 16 : 0, wy1 = part ? Math.min(ny - 1, (c1 + 1) * 16) : ny - 1;
+  for (let y = wy0; y < wy1; y++) {
+    if ((y & 15) === 0) for (const bb of bufs) { bb.marks[y >> 4] = bb.ni; bb.vmarks[y >> 4] = bb.n; }
     for (let z = 0; z < 16; z++) {
       for (let x = 0; x < 16; x++) {
         const i = y * A + (16 + z) * W + 16 + x;
@@ -497,7 +605,7 @@ export function meshColumn(job) {
             }
             let layer = d.faces[f], flags = 0, fTint = tint, ftinted = tinted;
             // a few blocks come in variants, chosen and turned by position
-            const h = hash3(seed ^ 0x51ed, wx, y, wz);
+            const h = d.topVariantLayers || d.variantLayers ? hash3(seed ^ 0x51ed, wx, y, wz) : 0;
             if (f === 2 && d.topVariantLayers) { layer = d.topVariantLayers[(h * d.topVariantLayers.length) | 0]; flags |= ((h * 997) & 3) << 2; }
             else if (d.variantLayers) { layer = d.variantLayers[(h * d.variantLayers.length) | 0]; if (f === 2 || f === 3) flags |= ((h * 997) & 3) << 2; }
             const or = ORIENT[b];
@@ -566,8 +674,9 @@ export function meshColumn(job) {
       }
     }
   }
-  for (let s = ((ny - 1) >> 4) + 1; s <= 24; s++) for (const bb of bufs) bb.marks[s] = bb.ni;
-  for (const bb of bufs) for (let s = 1; s <= 24; s++) if (bb.marks[s] < bb.marks[s - 1]) bb.marks[s] = bb.marks[s - 1];
+  // every section after the last one walked ends where the buffers do
+  for (let s = ((wy1 - 1) >> 4) + 1; s <= 24; s++) for (const bb of bufs) { bb.marks[s] = bb.ni; bb.vmarks[s] = bb.n; }
+  for (const bb of bufs) for (let s = 1; s <= 24; s++) { if (bb.marks[s] < bb.marks[s - 1]) bb.marks[s] = bb.marks[s - 1]; if (bb.vmarks[s] < bb.vmarks[s - 1]) bb.vmarks[s] = bb.vmarks[s - 1]; }
 
   /* ---- which faces of each 16-block section can see each other ----
      Sodium's cave culling: flood the open cells of a section; every region
@@ -577,8 +686,16 @@ export function meshColumn(job) {
      leave by, having come in through entry. */
   const vis = new Uint8Array(24 * 6);
   const seen = new Uint8Array(4096), stack = new Int32Array(4096);
-  for (let s = 0; s < 24; s++) {
-    const y0 = s * 16;
+  let sp = 0, vy0 = 0;
+  // a neighbour in the section: seen now, and flooded on from if it is open
+  const visit = n => {
+    if (seen[n]) return;
+    seen[n] = 1;
+    const yy = vy0 + (n >> 8);
+    if (yy >= ny || !OPAQUE[rb[yy * A + (16 + ((n >> 4) & 15)) * W + 16 + (n & 15)]]) stack[sp++] = n;
+  };
+  for (let s = part ? c0 : 0, s1 = part ? c1 : 23; s <= s1; s++) {
+    const y0 = vy0 = s * 16;
     if (y0 >= ny - 1) { vis.fill(63, s * 6, s * 6 + 6); continue; }
     seen.fill(0);
     for (let c = 0; c < 4096; c++) {
@@ -586,7 +703,8 @@ export function meshColumn(job) {
       const cy = c >> 8, cz = (c >> 4) & 15, cx = c & 15;
       const ri = (y0 + cy) * A + (16 + cz) * W + 16 + cx;
       if (y0 + cy >= ny || OPAQUE[rb[ri]]) { seen[c] = 1; continue; }
-      let sp = 0, faces = 0;
+      let faces = 0;
+      sp = 0;
       stack[sp++] = c; seen[c] = 1;
       while (sp) {
         const q = stack[--sp];
@@ -594,21 +712,18 @@ export function meshColumn(job) {
         if (qx === 0) faces |= 2; if (qx === 15) faces |= 1;
         if (qy === 0) faces |= 8; if (qy === 15) faces |= 4;
         if (qz === 0) faces |= 32; if (qz === 15) faces |= 16;
-        const nbs = [qx > 0 ? q - 1 : -1, qx < 15 ? q + 1 : -1, qz > 0 ? q - 16 : -1, qz < 15 ? q + 16 : -1, qy > 0 ? q - 256 : -1, qy < 15 ? q + 256 : -1];
-        for (const n of nbs) {
-          if (n < 0 || seen[n]) continue;
-          const ny2 = n >> 8, nz = (n >> 4) & 15, nx = n & 15;
-          const nri = (y0 + ny2) * A + (16 + nz) * W + 16 + nx;
-          seen[n] = 1;
-          if (y0 + ny2 >= ny || !OPAQUE[rb[nri]]) stack[sp++] = n;
-        }
+        if (qx > 0) visit(q - 1); if (qx < 15) visit(q + 1);
+        if (qz > 0) visit(q - 16); if (qz < 15) visit(q + 16);
+        if (qy > 0) visit(q - 256); if (qy < 15) visit(q + 256);
       }
       for (let f = 0; f < 6; f++) if (faces & (1 << f)) vis[s * 6 + f] |= faces;
     }
   }
+  // the rows whose light is kept: all of them, or the sections made
+  const ly0 = wy0, ly1 = part ? Math.min(ny, (c1 + 1) * 16) : ny;
   // the lowest cell the sky reaches: nothing under it can shade anything the sun lights
   let skyLow = ny;
-  for (let y = 0; y < ny && skyLow === ny; y++) for (let z = 16; z < 32 && skyLow === ny; z++) for (let x = 16; x < 32; x++) if (sky[y * A + z * W + x] > 0 && !OPAQUE[rb[y * A + z * W + x]]) { skyLow = y; break; }
+  for (let y = ly0; y < ly1 && skyLow === ny; y++) for (let z = 16; z < 32 && skyLow === ny; z++) for (let x = 16; x < 32; x++) if (sky[y * A + z * W + x] > 0 && !OPAQUE[rb[y * A + z * W + x]]) { skyLow = y; break; }
 
   /* ---- where the fluid surface was a moment ago ----
      The cells the flow has changed since the last mesh come with what they
@@ -639,10 +754,37 @@ export function meshColumn(job) {
   }
   /* ---- the middle chunk's light, kept by the main thread for mobs ----
      sky * 16 + block, in the chunk's own cell order (js/entities reads it). */
-  const light = new Uint8Array(256 * ny);
-  for (let y = 0; y < ny; y++) for (let z = 0; z < 16; z++) {
-    const r = y * A + (16 + z) * W + 16, o = (y << 8) | (z << 4);
-    for (let x = 0; x < 16; x++) light[o + x] = (sky[r + x] << 4) | blk[r + x];
+  const lightAt = (y, z, x) => { const r = y * A + (16 + z) * W + 16 + x; return (sky[r] << 4) | blk[r]; };
+  const light = new Uint8Array(256 * (ly1 - ly0));
+  for (let y = ly0; y < ly1; y++) for (let z = 0; z < 16; z++) {
+    const o = ((y - ly0) << 8) | (z << 4);
+    for (let x = 0; x < 16; x++) light[o + x] = lightAt(y, z, x);
   }
-  return { opaque: out.opaque.out(), cutout: out.cutout.out(), translucent: out.translucent.out(), fluid: out.fluid.out(), plants: out.plants.out(), leafIn: out.leafIn.out(), vis, skyLow, light, lightH: ny };
+  const parts = {};
+  for (const k of KINDS) parts[k] = out[k].out();
+  /* The light of the whole region, kept with the meshes of the columns
+     round the player (job.keep): what an edit there is compared against. */
+  let region = null;
+  if (job.keep || part) {
+    region = new Uint8Array(A * (ly1 - ly0));
+    for (let i = ly0 * A, o = 0, e1 = ly1 * A; i < e1; i++, o++) region[o] = (sky[i] << 4) | blk[i];
+  }
+  if (!part) return Object.assign(parts, { vis, skyLow, light, lightH: ny }, region ? { region, regionH: ny } : null);
+  /* Did the light change at the edge of the sections made, or just outside
+     them, anywhere in the region (it can go round through the next chunk
+     and come back in)? The faces next to the edge take their light from
+     both rows. Then more of the column has to be made (meshColumn). Light
+     travels 15 blocks at most, so with a section's margin these rows are
+     exact, and if they are as they were, nothing further out has changed. */
+  const changed = y => {
+    if (y >= base.regionH) { for (let j = 0, o = y * A; j < A; j++) if (((sky[o + j] << 4) | blk[o + j]) !== skyTop << 4) return true; return false; }
+    for (let j = 0, o = y * A; j < A; j++) if (((sky[o + j] << 4) | blk[o + j]) !== base.region[o + j]) return true;
+    return false;
+  };
+  // water (or lava) just outside: its surface, and how deep the water over the blocks below it is, may have changed
+  const wet = y => { for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) { const b = rb[y * A + (16 + z) * W + 16 + x]; if (FLUID[b] || WL[b]) return true; } return false; };
+  const lo = c0 * 16, hi = (c1 + 1) * 16;
+  return { parts, vis, skyLow, light, region, ly0,
+    spillDown: c0 > 0 && (wet(lo - 1) || changed(lo - 1) || changed(lo)),
+    spillUp: hi < ny && (wet(hi) || changed(hi) || changed(hi - 1)) };
 }
