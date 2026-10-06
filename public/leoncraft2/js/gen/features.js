@@ -447,9 +447,17 @@ export function predicate(p) {
     }
     case 'matching_block_tag': { const s = tag(p.tag); f = (R, x, y, z) => s[R.get(x + ox, y + oy, z + oz)] === 1; break; }
     case 'matching_fluids': {
-      const fl0 = Array.isArray(p.fluids) ? p.fluids : [p.fluids];
-      const wantW = fl0.some(n => strip(n).includes('water')), wantL = fl0.some(n => strip(n).includes('lava'));
-      f = (R, x, y, z) => { const fl = fluidOf(R.get(x + ox, y + oy, z + oz)); return (fl === 1 && wantW) || (fl === 2 && wantL); };
+      // "empty" is no fluid at all (the melon patches ask for it); "water" and "lava" are still, "flowing_..." running
+      const names = (Array.isArray(p.fluids) ? p.fluids : [p.fluids]).map(strip);
+      const want = { empty: names.includes('empty'), water: names.includes('water'), flowing_water: names.includes('flowing_water'),
+        lava: names.includes('lava'), flowing_lava: names.includes('flowing_lava') };
+      f = (R, x, y, z) => {
+        const b = R.get(x + ox, y + oy, z + oz), fl = fluidOf(b);
+        if (!fl) return want.empty;
+        // (a plant standing in water holds still water)
+        const running = (b === B.water || b === B.lava) && (R.meta(x + ox, y + oy, z + oz) & 15) !== 0;
+        return fl === 1 ? (running ? want.flowing_water : want.water) : (running ? want.flowing_lava : want.lava);
+      };
       break;
     }
     case 'all_of': { const ps = p.predicates.map(predicate); f = (R, x, y, z) => { for (const q of ps) if (!q(R, x, y, z)) return false; return true; }; break; }

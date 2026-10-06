@@ -81,7 +81,8 @@ export function worldStructures(seed, gen, dim) {
    that could not grow there goes; then whatever stood on it or hung from it
    is checked in turn. */
 const KIND = new Uint8Array(4096);        // 1 stands on soil, 2 on nylium or soil, 3 on sand or soil, 4 on any whole block,
-                                          // 5 the top half of a tall plant, 6 hangs, 7 climbs, 8 chorus, 9 grows in water
+                                          // 5 the top half of a tall plant, 6 hangs, 7 climbs, 8 chorus, 9 grows in water,
+                                          // 10 the stem of a huge fungus
 const SOIL = new Uint8Array(4096), NYLIUM = new Uint8Array(4096), SANDY = new Uint8Array(4096);
 {
   const mark = (arr, names, v = 1) => { for (const n of names) if (B[n] !== undefined) arr[B[n]] = v; };
@@ -102,6 +103,13 @@ const SOIL = new Uint8Array(4096), NYLIUM = new Uint8Array(4096), SANDY = new Ui
   mark(KIND, ['twisting_vines', 'twisting_vines_plant'], 7);
   mark(KIND, ['chorus_plant', 'chorus_flower'], 8);
   mark(KIND, ['seagrass', 'kelp', 'kelp_plant'], 9);
+  mark(KIND, ['crimson_stem', 'warped_stem'], 10);
+}
+// what a huge fungus is made of, and a chorus plant
+const FUNGUS = new Uint8Array(4096), CHORUS = new Uint8Array(4096);
+{
+  for (const n of ['crimson_stem', 'warped_stem', 'nether_wart_block', 'warped_wart_block', 'shroomlight', 'weeping_vines', 'weeping_vines_plant']) if (B[n] !== undefined) FUNGUS[B[n]] = 1;
+  for (const n of ['chorus_plant', 'chorus_flower']) if (B[n] !== undefined) CHORUS[B[n]] = 1;
 }
 const whole = b => b !== 0 && BLOCKS[b] && BLOCKS[b].shape === 'cube' && BLOCKS[b].solid !== false && !BLOCKS[b].leaves;
 function holds(blocks, i, b) {
@@ -121,23 +129,27 @@ function holds(blocks, i, b) {
   }
   return true;
 }
-// the chorus plant a block belongs to, gone if nothing of it still stands on end stone
-function settleChorus(blocks, meta, start, done) {
+/* A whole plant (a chorus plant, a huge fungus) a block belongs to, gone if
+   no part of it still stands on what it grew from: end stone for a chorus
+   plant, anything but air under a fungus's stem. */
+function settleBody(blocks, meta, start, done, part, rooted) {
   const list = [start], seen = new Set([start]);
-  let rooted = false;
+  let held = false;
   for (let k = 0; k < list.length && list.length < 4096; k++) {
     const i = list[k];
-    if (i >= 256 && blocks[i - 256] === B.end_stone) rooted = true;
+    if (rooted(blocks, i)) held = true;
     const x = i & 15, z = (i >> 4) & 15;
     for (const [j, ok] of [[i + 256, i + 256 < VOL], [i - 256, i >= 256], [i + 1, x < 15], [i - 1, x > 0], [i + 16, z < 15], [i - 16, z > 0]]) {
-      if (!ok || seen.has(j) || KIND[blocks[j]] !== 8) continue;
+      if (!ok || seen.has(j) || !part[blocks[j]]) continue;
       seen.add(j); list.push(j);
     }
     // a plant reaching out of the chunk is judged whole by its other part
-    if (x === 0 || x === 15 || z === 0 || z === 15) rooted = true;
+    if (x === 0 || x === 15 || z === 0 || z === 15) held = true;
   }
-  for (const i of list) { done.add(i); if (!rooted) { blocks[i] = 0; meta[i] = 0; } }
+  for (const i of list) { done.add(i); if (!held) { blocks[i] = 0; meta[i] = 0; } }
 }
+const onEndStone = (blocks, i) => i >= 256 && blocks[i - 256] === B.end_stone;
+const stemStands = (blocks, i) => (blocks[i] === B.crimson_stem || blocks[i] === B.warped_stem) && i >= 256 && blocks[i - 256] !== 0 && !FUNGUS[blocks[i - 256]];
 function settlePlants(blocks, meta, mask) {
   const queue = [], done = new Set();
   for (let i = 0; i < VOL; i++) if (mask[i]) {
@@ -147,7 +159,8 @@ function settlePlants(blocks, meta, mask) {
   for (let k = 0; k < queue.length; k++) {
     const i = queue[k], b = blocks[i];
     if (!KIND[b] || mask[i]) continue;
-    if (KIND[b] === 8) { if (!done.has(i)) settleChorus(blocks, meta, i, done); continue; }
+    if (KIND[b] === 8) { if (!done.has(i)) settleBody(blocks, meta, i, done, CHORUS, onEndStone); continue; }
+    if (KIND[b] === 10) { if (!done.has(i) && i >= 256 && blocks[i - 256] === 0) settleBody(blocks, meta, i, done, FUNGUS, stemStands); continue; }
     if (holds(blocks, i, b)) continue;
     blocks[i] = KIND[b] === 9 ? B.water : 0; meta[i] = 0;
     if (i + 256 < VOL && KIND[blocks[i + 256]]) queue.push(i + 256);

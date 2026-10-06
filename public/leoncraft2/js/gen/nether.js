@@ -392,5 +392,12 @@ export class NetherGen {
         }
       }
     }
+    // a shroomlight inside the hat that touches nothing (not the stem, the hat or another light) is not left hanging in the air
+    for (let yy = hatBottom; yy < y + h; yy++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (get(x + dx, yy, z + dz) !== B.shroomlight) continue;
+      let held = false;
+      for (const [ax, ay, az] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) if (get(x + dx + ax, yy + ay, z + dz + az) > 0) held = true;
+      if (!held) set(x + dx, yy, z + dz, 0);
+    }
   }
 }
