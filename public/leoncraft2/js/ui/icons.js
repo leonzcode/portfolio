@@ -487,7 +487,7 @@ function sampleMap(img) {
   try {
     const c = document.createElement('canvas');
     c.width = c.height = 1;
-    const g = c.getContext('2d');
+    const g = c.getContext('2d', { willReadFrequently: true });
     const x = Math.floor(0.5 * (img.width - 1)), y = Math.floor(0.5 * (img.height - 1));
     g.drawImage(img, x, y, 1, 1, 0, 0, 1, 1);
     const p = g.getImageData(0, 0, 1, 1).data;

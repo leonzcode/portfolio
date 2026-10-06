@@ -253,6 +253,7 @@ export class World {
         if (c && c.meshed && !this.meshCache.has(k) && !this.inFlight.has('m' + k)) this.queueMesh(pcx + dx, pcz + dz);
       }
     }
+    this.lookupStuck();
     const cap = this.workers.length * 2;
     // meshes first (they are what you see), nearest first; a few a frame, so packing them never stalls one
     let sends = 0;
@@ -307,6 +308,16 @@ export class World {
     const n = list.length > 16 ? this.genN : 1, parts = Array.from({ length: n }, () => []);
     list.forEach((e, j) => parts[j % n].push(e));
     for (const part of parts) { const i = this.idlest(); this.busy[i]++; this.workers[i].postMessage({ type: 'lookup', list: part }); }
+    this.lookedAt = performance.now();
+  }
+  /* A read that never comes back (storage stuck or gone) must not hold the
+     world up: after a few seconds whatever is still being read is made. */
+  lookupStuck() {
+    if (!this.lookingUp.size || performance.now() - this.lookedAt < 4000) return;
+    console.warn('kept chunks not read back in time; making', this.lookingUp.size);
+    for (const k of this.lookingUp) this.missing.set(k, k.split(',').map(Number));
+    this.lookingUp.clear();
+    this.sched = true;
   }
   inFlightCount() { return this.inFlight.size + this.stageIn.size; }
 
