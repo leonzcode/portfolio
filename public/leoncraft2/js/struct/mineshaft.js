@@ -102,7 +102,15 @@ class Corridor extends MS {
     this.hasRails = r.nextInt(3) === 0;
     this.spiderCorridor = !this.hasRails && r.nextInt(23) === 0;
     this.sections = dir === NORTH || dir === SOUTH ? (box.zs / 5) | 0 : (box.xs / 5) | 0;
-    this.spiderSeed = 0;
+    /* Where a spider corridor's spawner stands. The game puts it in the first
+       section of the first chunk it builds the corridor into, which hangs on
+       the order chunks happen to be made in; here it is fixed by the corridor
+       itself (a section and a step along it from its box), so it comes out
+       the same however the chunks round it are made, or made again. */
+    if (this.spiderCorridor) {
+      const h = Math.imul(box.x0 * 73856093 ^ box.y0 * 19349663 ^ box.z0 * 83492791, 0x9e3779b1) >>> 0;
+      this.spiderAt = 2 + (h % this.sections) * 5 - 1 + ((h >>> 16) % 3);
+    }
   }
   static find(acc, r, x, y, z, dir) {
     for (let i = r.nextInt(3) + 2; i > 0; i--) {
@@ -179,10 +187,7 @@ class Corridor extends MS {
         if (this.get(w, x, 2, z, cb) === 0 && r.nextFloat() < p) this.put(w, 'cobweb', x, 2, z, cb);
       if (r.nextInt(100) === 0) this.minecart(w, cb, r, 2, 0, o - 1);
       if (r.nextInt(100) === 0) this.minecart(w, cb, r, 0, 0, o + 1);
-      if (this.spiderCorridor && !this.placedSpider) {
-        const z = o - 1 + r.nextInt(3);
-        if (this.spawner(w, cb, 1, 0, z, 'cave_spider')) this.placedSpider = true;
-      }
+      if (this.spiderCorridor && this.spiderAt >= o - 1 && this.spiderAt <= o + 1) this.spawner(w, cb, 1, 0, this.spiderAt, 'cave_spider');
     }
     // a floor of planks where the corridor crosses a gap
     for (let x = 0; x <= 2; x++) for (let z = 0; z <= m; z++) {
