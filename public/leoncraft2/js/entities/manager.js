@@ -42,7 +42,7 @@ import { EntityMeshes } from '../render/entitymesh.js?v=17';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=17';
 import { breakAt } from '../place.js?v=17';
 import { dropOf } from '../survival.js?v=17';
-import { itemName, ITEMS, I } from '../items.js?v=17';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=17';
 import { Combat } from '../combat/combat.js?v=17';
 import './nether.js?v=17';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
@@ -281,6 +281,7 @@ export class Entities {
   /* ---- 20 a second ---- */
   tick() {
     this.age++;
+    cooldownTick();
     this.t.reset();
     this.budget = 6;
     const P = this.P;

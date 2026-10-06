@@ -791,6 +791,12 @@ export class Avatar {
         main.rx = main.rx * 0.5 - 0.94; main.ry = -PI / 6 * s;
       } else if (use.kind === 'trident') {
         main.rx = main.rx * 0.5 - PI; main.ry = 0;
+      } else if (use.kind === 'horn') {
+        // a goat horn to the mouth: the head's pitch (kept within 1.2) less 85 degrees, turned 30 in
+        main.rx = Math.max(-1.2, Math.min(1.2, head.rx)) - 1.4835298; main.ry = head.ry - PI / 6 * s;
+      } else if (use.kind === 'spyglass') {
+        // a spyglass to the eye: the head's pitch less 110 degrees (15 more crouching), turned 15 in
+        main.rx = Math.max(-2.4, Math.min(3.3, head.rx - 1.9198622 - (P.sneaking && !P.flying ? 0.2617994 : 0))); main.ry = head.ry - 0.2617994 * s;
       }
     }
     // the swing: the body twists and the right arm comes over and down
