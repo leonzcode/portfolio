@@ -104,7 +104,8 @@ export function makeNoise3D() { return noise3DTexture(noise3DData()); }
    half a second or more of work. (Made in a worker before: starting a worker
    held this thread up for a third of a second to a second, on the very
    frame Shader Options changed.) Its small shader is built in the background
-   first; the promise gives the texture once it is drawn. */
+   first, then eight layers are drawn a frame; the promise gives the texture
+   once they all are. */
 const NOISE_VS = `in vec3 position;
 void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 const NOISE_FS = `precision highp float;
@@ -166,21 +167,26 @@ export function makeNoise3DGPU(r) {
   mesh.frustumCulled = false;
   const scene = new THREE.Scene(), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   scene.add(mesh);
-  const draw = () => {
-    const prev = r.getRenderTarget(), clear = r.autoClear;
-    r.autoClear = false;
-    for (let z = 0; z < S; z++) {
-      mat.uniforms.uZ.value = z;
-      r.setRenderTarget(rt, z);
-      r.render(scene, cam);
-    }
-    r.setRenderTarget(prev);
-    r.autoClear = clear;
-    mat.dispose(); geo.dispose();
-    for (const p of pts) p.dispose();
-    return t;
-  };
-  return (r.compileAsync ? r.compileAsync(scene, cam) : Promise.resolve()).then(draw, draw);
+  // eight layers a frame, so no one frame pays for all sixty-four draws
+  return new Promise(resolve => {
+    let z = 0;
+    const layers = () => {
+      const prev = r.getRenderTarget(), clear = r.autoClear;
+      r.autoClear = false;
+      for (const end = Math.min(S, z + 8); z < end; z++) {
+        mat.uniforms.uZ.value = z;
+        r.setRenderTarget(rt, z);
+        r.render(scene, cam);
+      }
+      r.setRenderTarget(prev);
+      r.autoClear = clear;
+      if (z < S) { requestAnimationFrame(layers); return; }
+      mat.dispose(); geo.dispose();
+      for (const p of pts) p.dispose();
+      resolve(t);
+    };
+    (r.compileAsync ? r.compileAsync(scene, cam) : Promise.resolve()).then(layers, layers);
+  });
 }
 /* The same, made in a worker so turning on the full chain (Shader Options)
    never stops the game for it; at once in this thread if there are no
