@@ -620,8 +620,12 @@ export class Avatar {
     this.uHurt.value = state.hurt ? 1 : 0;
     // what the use button is doing with your hands, for the poses (hands.js handBob)
     this.useNow = state.bob && state.bob.use || null;
-    this.alpha = state.alpha || 0;
-    if (R.swing >= 1) { this.startSwing(R.swingAt !== undefined ? (performance.now() - R.swingAt) / 50 : undefined); R.swingAt = undefined; R.swing = 0.999; }
+    // a swing from a click is set going after this frame's ticks, below; any other one now, so a tick takes it up
+    let ago;
+    if (R.swing >= 1) {
+      if (R.swingAt !== undefined) ago = (performance.now() - R.swingAt) / 50; else this.startSwing();
+      R.swingAt = undefined; R.swing = 0.999;
+    }
     if (!P) {
       this.mesh.visible = this.shadowMesh.visible = this.armor.visible = this.armorShadow.visible = false;
       for (const h of this.held) if (h) h.mesh.visible = false;
@@ -642,6 +646,7 @@ export class Avatar {
     }
     this.lastAlpha = a;
     const al = a === undefined ? this.acc / 0.05 : a;
+    if (ago !== undefined) { this.alpha = al; this.startSwing(ago); }
     const feet = state.feet || P.pos;
     // the light around you, a few times a second, eased so it never pops
     this.lightT -= dt;
