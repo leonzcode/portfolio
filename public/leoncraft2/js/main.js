@@ -263,6 +263,10 @@ async function boot() {
   let menu = null;                  // the world turning behind the title screen
   let menuStart = null;             // that world being started (makeMenu)
   let loading = null;               // { text, progress, chunks } while a world loads
+  /* After a graphics or resource pack change the page loads again straight
+     back into the world you were in: no title world is made for it. */
+  let resumeTo = null;
+  try { const id = sessionStorage.getItem('lc2_resume'); sessionStorage.removeItem('lc2_resume'); if (id) resumeTo = Worlds.get(id); } catch (e) {}
   let rendererUp = false;           // the title's world is started before the renderer exists (makeMenu)
   const early = new Map();          // "cx,cz" -> [cx, cz, mesh] made before the renderer was
   status('Loading textures…', 0.05);
@@ -292,7 +296,7 @@ async function boot() {
   let [grass, foliage] = await mapsP;
   const packs = await packsP;
   let colours = null;
-  if (!packs.length) { colours = biomeColours(pixels(grass), pixels(foliage)); menuStart = makeMenu(MENU_SEED); }
+  if (!packs.length) { colours = biomeColours(pixels(grass), pixels(foliage)); if (!resumeTo) menuStart = makeMenu(MENU_SEED); }
   const [albP, nrmP, spcP] = await stripsP;
   const itemStrip = await itemStripP;
   const LAYERS = manifest.layers + await addItemPieces(itemStrip, manifest.layers, albP, nrmP, spcP);
@@ -450,15 +454,17 @@ async function boot() {
     } catch (e) { /* the world list unreadable: practise on a new world */ }
     practise(Object.assign(spec, { manifest, colours }), menu && menu.world);
   }
-  status('Building the world…', 0.7);
-  await startMenu(MENU_SEED);
-  // and the shaders done, so the title does not freeze on its first frame (never more than a few seconds)
-  await Promise.race([shadersBuilt, new Promise(r => setTimeout(r, 4000))]);
-  status('Building the world…', 1);
+  if (!resumeTo) {
+    status('Building the world…', 0.7);
+    await startMenu(MENU_SEED);
+    // and the shaders done, so the title does not freeze on its first frame (never more than a few seconds)
+    await Promise.race([shadersBuilt, new Promise(r => setTimeout(r, 4000))]);
+    status('Building the world…', 1);
+  }
   $('#loading').hidden = true;
-  gui.panorama = true;
-  gui.setRoot(new TitleScreen());
-  practiseNext();
+  gui.panorama = !resumeTo;
+  // straight back into a world (below): its loading screen, with no title world or practice in the way
+  if (!resumeTo) { gui.setRoot(new TitleScreen()); practiseNext(); }
 
   /* ---- playing a world ---- */
   async function startGame(entry, isNew) {
@@ -1333,9 +1339,7 @@ async function boot() {
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
   };
   // after a quality change, straight back into the world you were in
-  let resume = null;
-  try { resume = sessionStorage.getItem('lc2_resume'); sessionStorage.removeItem('lc2_resume'); } catch (e) {}
-  if (resume) { const w = Worlds.get(resume); if (w) startGame(w, false); }
+  if (resumeTo) startGame(resumeTo, false);
 }
 
 boot().catch(e => { console.error(e); status('Something went wrong: ' + (e && e.message)); });
