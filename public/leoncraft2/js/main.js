@@ -324,6 +324,14 @@ async function boot() {
     // whether Esc in the game menu can take the mouse back (see keyMayLock)
     keyResumes: () => keyMayLock(),
     respawn: () => respawn(),
+    // Open to LAN (ui/lan.js): the world's mode and commands, and starting it
+    lan: () => game ? { mode: game.entry.mode || 'survival', cheats: chatCtx().cheats, open: !!game.lan } : null,
+    startLan: (mode, cheats, port) => {
+      gui.closeAll(); lock();
+      game.lan = { cheats };
+      if (mode !== game.mode) setMode(mode);
+      chat.add('Local game hosted on port ' + port);
+    },
     loadingProgress: () => loading || { text: 'Loading terrain...', progress: 0 },
     quit: () => { location.href = '/'; },
     // Done on the resource pack screen after a change: load everything again, back into the same world
@@ -534,7 +542,9 @@ async function boot() {
           // what is in the hands, and its wear from hits, blocking and shearing (hands.js)
           itemName: id => itemName(id), damageHeld: (n, kind) => hands.wearHeld(n, kind), fillBucket: name => hands.fillHeld(name), trade: v => hands.trade(v),
           // screens and spilled stacks (a chest boat's chest)
-          hands } });
+          hands,
+          // the dragon from a spawn egg flies with the End's own (dim/realms.js)
+          realms: () => game && game.realms } });
       entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));
       renderer.scene.add(entities.group);
       const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
@@ -856,7 +866,7 @@ async function boot() {
     return {
       game: g, playerName: 'Player',
       // Allow Commands: as set when the world was made (creative worlds have it on unless turned off)
-      cheats: !!(window.__lc2.cheats || (g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
+      cheats: !!(window.__lc2.cheats || (g.lan ? g.lan.cheats : g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
       say: (t, c) => chat.add(t, c),
       setMode,
       // (a teleport takes you off what you ride, as in the game)
@@ -1159,7 +1169,8 @@ async function boot() {
     const D = DIMS[g.dim];
     sunAt(D.fixedTime !== null ? 18000 : g.time);
     g.realms.frame(alpha, dt);
-    const boss = g.realms.boss;
+    // the dragon's bar (dim/realms.js), or a wither's (entities/mobs7.js)
+    const boss = g.realms.boss || (g.entities && g.entities.boss) || null;
     if ((boss ? boss.progress : -1) !== (hud.boss ? hud.boss.progress : -1)) { hud.boss = boss ? Object.assign({}, boss) : null; hud.markDirty(); }
     scope(spyglassUp());
     zoomF = scoped ? 0.1 : zoomHeld ? 0.25 : 1;

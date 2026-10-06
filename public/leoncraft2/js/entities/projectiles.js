@@ -134,12 +134,13 @@ export class Arrow extends Projectile {
         const l = Math.hypot(this.vel.x, this.vel.z) || 1, k = this.knock * 0.6 * Math.max(0, 1 - (e.kbResist || 0));
         if (e.isPlayer) e.push(this.vel.x / l * k, 0.1, this.vel.z / l * k); else { e.vel.x += this.vel.x / l * k; e.vel.y += 0.1; e.vel.z += this.vel.z / l * k; }
       }
-      if (this.effect && e.isPlayer) this.m.effectPlayer(this.effect, 600);
+      // (a stray's slowness lasts 30 seconds, a bogged's poison 4: effectT)
+      if (this.effect && e.isPlayer) this.m.effectPlayer(this.effect, this.effectT || 600);
       if (e.isPlayer && this.item === 'spectral_arrow') this.m.effectPlayer('glowing', 200);
       if (e.isPlayer && this.potion) tippedOnPlayer(this.m.survival, this.potion);
       // on a mob: an eighth of each effect's time (at least a tick), instant ones in full
       else if (this.potion && !e.isPlayer) applyPotion(this.m, e, this.potion, 0.125, 1, this.owner, 0);
-      if (this.effect && !e.isPlayer && e.addEffect) e.addEffect(this.effect, 1, 600, this.owner);
+      if (this.effect && !e.isPlayer && e.addEffect) e.addEffect(this.effect, 1, this.effectT || 600, this.owner);
       if (!e.isPlayer && this.item === 'spectral_arrow' && e.addEffect) e.addEffect('glowing', 1, 200, this.owner);
       if (!(this.pierce > 0)) this.remove();
       return true;

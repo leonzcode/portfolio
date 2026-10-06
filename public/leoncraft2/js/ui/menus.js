@@ -28,6 +28,7 @@ import {
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
 } from './gui.js?v=16';
 import { Packs } from './pack.js?v=16';
+import { LanScreen } from './lan.js?v=16';
 import { parseSeed } from '../gen/random.js?v=16';
 
 const PI = Math.PI;
@@ -1132,7 +1133,10 @@ export class PauseScreen extends Screen {
     };
     row(top + 74, ['Advancements', null], ['Statistics', null]);
     row(top + 98, ['Send Feedback', null], ['Report Bugs', null]);
-    row(top + 122, ['Options...', () => g.open(new OptionsScreen())], ['Open to LAN', null]);
+    // Open to LAN (ui/lan.js): greyed out once the world is open
+    const lan = this.hooks.lan && this.hooks.lan();
+    row(top + 122, ['Options...', () => g.open(new OptionsScreen())], ['Open to LAN', lan && !lan.open ? () => g.open(new LanScreen()) : null]);
+    if (lan && lan.open) this.widgets[this.widgets.length - 1].tooltip = '';
     this.add(new Button(xl, top + 146, 204, 20, 'Save and Quit to Title', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); }));
   }
   resume() { this.gui.closeAll(); if (this.hooks.resume) this.hooks.resume(); }
