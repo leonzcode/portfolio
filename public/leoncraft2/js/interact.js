@@ -119,6 +119,8 @@ export class Interactor {
   _breakTarget() {
     const h = this.target;
     if (!h) return;
+    // a hit on an item frame knocks out what it holds before the frame itself (details.js)
+    if (this.onPunch && this.onPunch(h)) { this.target = null; return; }
     const w = this.world;
     const cells = breakAt(w, h.x, h.y, h.z);
     // a block broken starts the attack cooldown again

@@ -3,7 +3,8 @@
 
    A fluid cell is a source (level 0) or flowing (levels 1-7, how far from
    its source), or falling (a column pouring down). Every 5 ticks for water
-   and 30 for lava, cells that might change are looked at:
+   and 30 for lava (10 in the Nether, where lava also runs as far as water),
+   cells that might change are looked at:
 
      - a flowing cell takes its level from its highest neighbour (one more
        than it; two more for lava), turns to a source if two sources flank it
@@ -11,7 +12,9 @@
      - it pours down if it can; if it cannot, it spreads sideways, towards the
        nearest place within reach it could fall (as the game looks for a
        slope), or every way when there is none;
-     - lava and water meeting make obsidian, cobblestone or stone.
+     - lava and water meeting make obsidian, cobblestone or stone;
+     - flowing into a torch, redstone dust or a plant that does not stand in
+       water washes it away: water drops it as an item, lava just burns it.
 
    Generated water sits still until something next to it changes, as in the
    game. Cells are looked at only when a neighbour changes, so a still sea
@@ -19,6 +22,16 @@
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID, SOLID } from './blocks.js?v=16';
 import { LEVEL, FALLING } from './world-const.js?v=16';
+import { blockDrops } from './loot.js?v=16';
+import { dropStack } from './drops.js?v=16';
+
+// what a flow washes away (the game's: no collision, not a door, sign, ladder, sugar cane or a block that holds water)
+const WASH = new Uint8Array(4096);
+for (const d of BLOCKS) {
+  if (!d || d.solid || d.fluid || d.waterlogged) continue;
+  if (/coral|dripstone|amethyst|sea_pickle|kelp|seagrass|sugar_cane|bamboo|cobweb|cocoa|vines|roots|dripleaf|spore_blossom|hanging_moss|_portal$|^fire$|^soul_fire$/.test(d.name)) continue;
+  if (d.shape === 'torch' || d.shape === 'wall_torch' || d.shape === 'wire' || d.shape === 'crop' || d.shape === 'cross') WASH[d.id] = 1;
+}
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
@@ -40,7 +53,7 @@ export class Fluids {
   around(x, y, z) {
     for (const [dx, dy, dz] of [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
       const b = this.w.get(x + dx, y + dy, z + dz);
-      if (FLUID[b]) this.schedule(x + dx, y + dy, z + dz, FLUID[b] === 2 ? 30 : 5);
+      if (FLUID[b]) this.schedule(x + dx, y + dy, z + dz, FLUID[b] === 2 ? (this.w.dim === 'the_nether' ? 10 : 30) : 5);
     }
   }
   kindAt(x, y, z) { return FLUID[this.w.get(x, y, z)]; }
@@ -56,7 +69,7 @@ export class Fluids {
     const b = this.w.get(x, y, z);
     if (!b) return true;
     const d = BLOCKS[b];
-    return !d.solid && !d.fluid && d.replaceable;
+    return !d.solid && !d.fluid && (d.replaceable || WASH[b] === 1);
   }
   place(x, y, z, kind, level, falling) {
     const b = kind === 1 ? B.water : B.lava;
@@ -70,6 +83,13 @@ export class Fluids {
       return;
     }
     const m = (falling ? FALLING : 0) | (level & LEVEL);
+    // a torch or a flower in the way: water drops it as an item (and the top of a tall plant with it)
+    if (cur && WASH[cur] && kind === 1) {
+      const out = blockDrops(this.w, x, y, z, cur, this.w.meta(x, y, z), { popped: true });
+      for (const s of out.items || []) dropStack(x + 0.5, y + 0.25, z + 0.5, s);
+      const up = this.w.get(x, y + 1, z), ud = BLOCKS[up];
+      if (up && ud && (ud.lower && B[ud.lower] === cur || (BLOCKS[cur].tall && up === cur))) this.w.set(x, y + 1, z, 0, 0);
+    }
     if (this.w.set(x, y, z, b, m)) {
       this.onChange(x, y, z, kind);
       this.around(x, y, z);
@@ -93,7 +113,9 @@ export class Fluids {
   update(x, y, z) {
     const kind = this.kindAt(x, y, z);
     if (!kind) return;
-    const drop = kind === 1 ? 1 : 2, reach = kind === 1 ? 4 : 2, max = kind === 1 ? 7 : 6;
+    // Nether lava drops a level a block and looks four blocks for a slope, as water does
+    const far = kind === 1 || this.w.dim === 'the_nether';
+    const drop = far ? 1 : 2, reach = far ? 4 : 2, max = far ? 7 : 6;
     let meta = this.w.meta(x, y, z);
     const source = (meta & (LEVEL | FALLING)) === 0;
     // lava meeting water at its side or top

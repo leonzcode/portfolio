@@ -164,6 +164,10 @@ for (const e of DATA) {
 }
 // the Nether's and the End's own blocks and items (portals, frames, flint and steel, eyes of ender)
 dimBlocks(def, B, BLOCKS);
+// item frames: in the game an entity on a block's face; here a block of their own that draws nothing itself
+// (details.js draws the frame and what it holds), so they are picked, broken and saved like the rest
+for (const [n, display] of [['lc2_item_frame', 'Item Frame'], ['lc2_glow_item_frame', 'Glow Item Frame']])
+  def(n, { display, shape: 'frame', pass: 'cutout', solid: false, opacity: 0, item: false, tab: null, hardness: 0, tex: 'birch_planks', frame: true, glow: /glow/.test(n) });
 for (const d of BLOCKS) {
   if (!d) continue;
   if (d.display === undefined) d.display = d.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -180,6 +184,28 @@ if (B.crafter !== undefined && !BLOCKS[B.crafter].orient) BLOCKS[B.crafter].orie
 
 // the end portal frame is not a full block, and shows its eye (see models.js portal_frame)
 if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], { shape: 'portal_frame', opacity: 0, content: 'dark_prismarine' });
+
+// the hollow and village blocks get the game's models (models.js) rather than a cube or a borrowed shape
+{
+  const shapeOf = (n, shape, more) => { if (B[n] === undefined) return; const d = BLOCKS[B[n]]; d.shape = shape; d.opacity = 0; if (more) more(d); };
+  const addTex = (d, extra) => { d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), extra); };
+  for (const n of ['cauldron', 'water_cauldron', 'lava_cauldron', 'powder_snow_cauldron']) shapeOf(n, 'cauldron');
+  shapeOf('composter', 'composter', d => addTex(d, { compost: 'coarse_dirt', ready: 'podzol_top' }));
+  shapeOf('hopper', 'hopper', d => { delete d.orient; });
+  shapeOf('campfire', 'campfire', d => { delete d.orient; });
+  shapeOf('soul_campfire', 'campfire', d => { delete d.orient; });
+  shapeOf('bell', 'bell', d => addTex(d, { post: 'stone', bar: 'dark_oak_planks' }));
+  shapeOf('enchanting_table', 'table');
+  shapeOf('lectern', 'lectern', d => { delete d.orient; });
+  shapeOf('grindstone', 'grindstone', d => { delete d.orient; addTex(d, { leg: 'dark_oak_log' }); });
+  shapeOf('brewing_stand', 'brewing');
+  // hanging signs hang from iron chains; on a wall, from a bar of their wood's stripped log
+  for (const d of BLOCKS) if (d && d.hanging && d.tex) d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), { chain: 'iron_chain', bar: typeof d.tex === 'string' ? d.tex : d.tex.all || d.tex.side });
+  // a banner's pole and crossbar are wood
+  for (const d of BLOCKS) if (d && d.banner && d.tex) d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), { pole: 'dark_oak_planks' });
+  // a candle cake's candle can be lit: its candle's lit texture
+  for (const d of BLOCKS) if (d && /candle_cake$/.test(d.name) && typeof d.candle === 'string') d.tex = Object.assign({}, d.tex, { candleLit: d.candle + '_lit' });
+}
 
 export const COUNT = LIST.length + 1;
 

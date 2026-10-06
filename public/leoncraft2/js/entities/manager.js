@@ -549,6 +549,15 @@ export class Entities {
   interact(e) {
     if (!e || e.removed || e.dead) return false;
     const held = this.heldName();
+    // a fish, an axolotl or a tadpole scooped up in a water bucket (the bucket becomes a bucket of it)
+    if (held === 'water_bucket' && /^(cod|salmon|tropical_fish|pufferfish|axolotl|tadpole)$/.test(e.type) && this.inv) {
+      const id = I[e.type + '_bucket'], inv = this.inv;
+      if (id === undefined) return false;
+      if (this.mode === 'creative') { if (!inv.count(id)) inv.add(id, 1); }
+      else { inv.slots[inv.selected] = { id, count: 1 }; inv.changed(); }
+      e.remove();
+      return true;
+    }
     const r = e.interact ? e.interact(held, this.player) : false;
     if (!r) return false;
     if (r === 'consume' && this.mode !== 'creative' && this.inv) this.inv.takeSelected(1);

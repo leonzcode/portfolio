@@ -38,6 +38,7 @@ import { isPotion, drinkPotion } from './brewing.js?v=16';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=16';
 import { countShelves } from './enchanting.js?v=16';
 import { wear } from './ui/inventory.js?v=16';
+import { BookScreen } from './ui/book.js?v=16';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // two slot arrays seen as one (a large chest): reads and writes go straight to the halves
@@ -121,6 +122,8 @@ export class Hands {
   placed(list) {
     // the first cell is the block from the hand (a shulker box brings its contents); the rest are its other parts
     if (list) list.forEach(([x, y, z], i) => this.containers.placed(x, y, z, i === 0 ? this.held || {} : null));
+    // a sign opens its editing screen
+    if (list && list.length && this.details) this.details.placed(list[0][0], list[0][1], list[0][2]);
     if (this.creative) return;
     const s = this.held;
     if (!s) return;
@@ -176,6 +179,8 @@ export class Hands {
     }
     // a container's contents spill (in creative too, as in the game), thrown out in parts of 10-30
     for (const [x, y, z] of cells) spill(this.drops, x, y, z, this.containers.remove(x, y, z));
+    // the food on a campfire spills too; a sign's words go with it
+    if (this.details) for (const [x, y, z] of cells) this.details.broken(x, y, z);
     return replace;
   }
 
@@ -185,6 +190,8 @@ export class Hands {
     if (!d || w.get(hit.x, hit.y, hit.z) !== b) return false;
     const holding = !!this.held || !!this.inv.offhand;
     if (this.player.sneaking && holding) return false;
+    // cauldrons, composters, campfires and signs (details.js)
+    if (this.details && this.details.use(this, hit)) return true;
     if (d.name === 'crafting_table') { this.open(new CraftingScreen(this.inv, this.icons)); return true; }
     if (this.openStation(d, hit)) return true;
     if (d.name === 'ender_chest') {
@@ -304,7 +311,20 @@ export class Hands {
     }
     if (it.name === 'bucket') return this.fillBucket();
     if (it.name === 'glass_bottle') return this.fillBucket(true);
+    if (it.name === 'writable_book' || it.name === 'written_book') return this.openBook(s, it.name === 'written_book');
     return false;
+  }
+  /* A book and quill opens to write in (what is written stays in it; signing makes it a written book by
+     its author); a written book opens to read. The stack is the one in the hand when it opened. */
+  openBook(s, written) {
+    const inv = this.inv, slot = inv.selected, off = !!this.offTurn;
+    const put = st => { if (off) inv.offhand = st; else if (inv.slots[slot] === s) inv.slots[slot] = st; inv.changed(); };
+    this.open(new BookScreen({
+      pages: s.pages || [], written, player: 'Player',
+      done: pages => { const st = withCount(s, s.count); st.pages = pages; if (!pages.some(Boolean)) delete st.pages; put(st); },
+      sign: (title, pages) => { if (I.written_book === undefined) return; put({ id: I.written_book, count: 1, pages, title, author: 'Player' }); },
+    }));
+    return true;
   }
   // seeds and berries go in the ground when the block clicked takes them
   canPlant(it, hit) {

@@ -53,9 +53,11 @@ import { EntityStore } from './entities/store.js?v=16';
 import { Sim } from './sim/sim.js?v=16';
 import { DIMS } from './dims.js?v=16';
 import { Realms } from './dim/realms.js?v=16';
-import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=16';
 import { addDimArt, endSkyTexture } from './dim/art.js?v=16';
 import { structuresApi } from './struct/spawners.js?v=16';
+import { Details, isSign } from './details.js?v=16';
+import { SignEditScreen } from './ui/sign.js?v=16';
+import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=16';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -504,6 +506,7 @@ async function boot() {
         g.dimKeep = g.dimKeep || {};
         g.dimKeep[g.partsDim] = { drops: g.drops.toJSON(), sim: g.sim ? g.sim.toJSON() : null };
         if (g.containers.dirty) { g.containers.dirty = false; await g.saves[g.partsDim].writeExtra('containers', g.containers.toJSON()); }
+        if (g.details) { if (g.details.dirty) { g.details.dirty = false; await g.saves[g.partsDim].writeExtra('details', g.details.toJSON()); } g.details.dispose(); }
         EntityStore.save(entityKey(g.entry, g.partsDim), g.entities.toJSON());
         g.drops.dispose(); if (g.drops.group.parent) g.drops.group.parent.remove(g.drops.group);
         g.entities.dispose();
@@ -527,7 +530,17 @@ async function boot() {
       renderer.scene.add(entities.group);
       const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
       if (keep.sim) sim.fromJSON(keep.sim);
-      Object.assign(g, { drops, containers, entities, sim });
+      // sign text and the food on campfires (details.js)
+      const details = new Details({ world: w, drops, renderer, gui });
+      if (!isNew || g.partsDim) { try { const dd = await g.saves[d].readExtra('details'); if (dd) details.fromJSON(dd); } catch (e) {} }
+      details.showAll();
+      details.onEdit = (x, y, z, front) => editSign(x, y, z, front);
+      details.creative = () => !!(game && game.mode === 'creative');
+      details.entities = () => game && game.entities;
+      inter.onPunch = hit => !!(game && game.details && game.details.punch(hit.x, hit.y, hit.z));
+      details.daylight = () => { const t = (((game ? game.time : 6000) % 24000) + 24000) % 24000; return Math.min(1, Math.max(0.2, 0.5 + 2 * Math.cos(2 * Math.PI * (t / 24000 - 0.25)))); };
+      Object.assign(g, { drops, containers, entities, sim, details });
+      hands.details = details;
       g.partsDim = d;
       Object.assign(hands, { world: w, drops, containers, fluids: fl });
       containers.drops = drops;
@@ -577,6 +590,16 @@ async function boot() {
   }
   function held() { if (game) renderer.setHeld(game.inv.heldId(), DRAW); }
   // a screen opened from the world (a chest, a crafting table): the mouse is let go without the game menu
+  // writing on a sign: the screen with the side's words, then back into the sign (details.js)
+  function editSign(x, y, z, front) {
+    const g = game;
+    if (!g || !g.details) return;
+    const b = g.world.get(x, y, z), d = BLOCKS[b];
+    if (!isSign(d)) return;
+    const side = g.details.textOf(x, y, z, front) || { lines: ['', '', '', ''], colour: 'black' };
+    openScreen(new SignEditScreen({ lines: side.lines, layer: d.faces[0], wall: d.shape === 'wall_sign' && !d.hanging, hanging: !!d.hanging,
+      colour: 0, done: lines => { if (game === g) g.details.setText(x, y, z, front, lines); } }));
+  }
   function openScreen(screen) {
     if (!game) return;
     wantInv = true;
@@ -685,6 +708,7 @@ async function boot() {
     if (!game) return;
     game.save.writeState(stateOf());
     if (game.containers.dirty) { game.containers.dirty = false; game.saves[game.dim].writeExtra('containers', game.containers.toJSON()); }
+    if (game.details && game.details.dirty) { game.details.dirty = false; game.saves[game.dim].writeExtra('details', game.details.toJSON()); }
     if (game.entities) EntityStore.save(entityKey(game.entry, game.dim), game.entities.toJSON());
     // the world's changes go to its own dimension's save
     await game.saves[game.dim].flush(game.world.edits);
@@ -694,6 +718,8 @@ async function boot() {
     const g = game;
     await saveGame();
     g.drops.dispose();
+    if (g.details) g.details.dispose();
+    scope(false);
     game = null;
     if (g.entities) g.entities.dispose();
     if (g.sim) g.sim.dispose();
@@ -779,6 +805,25 @@ async function boot() {
   /* zoom (C held): the view narrows to a quarter and the mouse turns slower to match, at once,
      the way OptiFine's zoom key does (eased, it took a fifth of a second to get there) */
   let zoomHeld = false, zoomF = 1;
+  /* The spyglass, held to the eye with the use button: a tenth of the view and the mouse slowed with it, the
+     world seen through a round glass (everything outside it black), the hand put away. */
+  let scopeEl = null, scoped = false;
+  function spyglassUp() {
+    const g = game;
+    if (!g || gui.isOpen() || !g.inter.useHeld) return false;
+    return itemName(g.inv.heldId()) === 'spyglass' || (!g.inv.heldId() && g.inv.offhand && itemName(g.inv.offhand.id) === 'spyglass');
+  }
+  function scope(on) {
+    if (on === scoped) return;
+    scoped = on;
+    if (!scopeEl) {
+      scopeEl = document.createElement('div');
+      scopeEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;display:none;' +
+        'background:radial-gradient(circle at center, transparent 0, transparent calc(min(50vw, 50vh) - 3px), rgba(0,0,0,0.75) calc(min(50vw, 50vh) - 2px), #000 min(50vw, 50vh))';
+      canvas.parentNode.insertBefore(scopeEl, canvas.nextSibling);
+    }
+    scopeEl.style.display = on ? 'block' : 'none';
+  }
   /* ---- chat and commands ---- */
   function setMode(m) {
     const g = game;
@@ -1034,6 +1079,7 @@ async function boot() {
       if (renderer.particles) renderer.particles.tick();
       g.hands.tick();
       g.containers.tick();
+      if (g.details) g.details.tick();
       if (g.entities) g.entities.tick();
       g.realms.tick();
       if (g.mode === 'survival' || g.mode === 'adventure') {
@@ -1072,6 +1118,7 @@ async function boot() {
     inter.look(v.eye);
     g.hands.alpha = alpha;
     g.drops.update(dt, alpha, player, renderer.camera);
+    if (g.details) g.details.update();
     if (g.entities) g.entities.render(alpha);
     g.eye = v.eye;
     // the other dimensions have no sun: Detailed's sky tables are left at midnight there
@@ -1080,7 +1127,8 @@ async function boot() {
     g.realms.frame(alpha, dt);
     const boss = g.realms.boss;
     if ((boss ? boss.progress : -1) !== (hud.boss ? hud.boss.progress : -1)) { hud.boss = boss ? Object.assign({}, boss) : null; hud.markDirty(); }
-    zoomF = zoomHeld ? 0.25 : 1;
+    scope(spyglassUp());
+    zoomF = scoped ? 0.1 : zoomHeld ? 0.25 : 1;
     /* the card still busy with the frames before: this one is not drawn (see cardBusy). Asked
        here, after the ticks, rather than as the frame starts: the card has had that much longer */
     if (!cardBusy(performance.now())) {
@@ -1089,7 +1137,7 @@ async function boot() {
       renderer.render({
         time: (g.time + alpha) / 20, sunDir, moonDir, feet: v.feet, eye: v.eye, yaw: player.yaw, pitch: player.pitch,
         fov: v.fov * (g.entities ? g.entities.combat.fovScale(alpha) : 1) * zoomF, eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
-        moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud, bob: g.hands.handBob(v.handBob),
+        moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud && !scoped, bob: g.hands.handBob(v.handBob),
         waterTint: tintAt(world, v.eye), player, alpha,
         // hurt: the camera tilts and the model flashes red (combat/combat.js)
         tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),

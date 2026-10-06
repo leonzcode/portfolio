@@ -430,7 +430,8 @@ function build(job, ny, c0, c1, base) {
       // where on the full face this corner is (0..16), which is also its texture spot
       const fu = F.t[kt] > 0 ? PB[kt] : 16 - PB[kt], fv = F.b[kb] > 0 ? PB[kb] : 16 - PB[kb];
       let tu = fu, tv = fv;
-      if (uvr) { tu = u ? uvr[2] : uvr[0]; tv = v ? uvr[3] : uvr[1]; }
+      // (a fifth entry turns the texture a quarter: a log lying the other way)
+      if (uvr) { if (uvr[4]) { tu = v ? uvr[2] : uvr[0]; tv = u ? uvr[3] : uvr[1]; } else { tu = u ? uvr[2] : uvr[0]; tv = v ? uvr[3] : uvr[1]; } }
       // corners are (0,1) (1,1) (1,0) (0,0): blend them for this spot
       const s = Math.min(1, Math.max(0, fu / 16)), t = Math.min(1, Math.max(0, fv / 16));
       const w00 = (1 - s) * (1 - t), w10 = s * (1 - t), w01 = (1 - s) * t, w11 = s * t;
@@ -461,13 +462,14 @@ function build(job, ny, c0, c1, base) {
     const buf = d.pass === 'translucent' ? out.translucent : d.pass === 'opaque' ? out.opaque : out.cutout;
     const small = SMALL[d.id];
     for (const bx of list) {
+      if (bx.hide) continue;            // there to be picked, drawn elsewhere (item frames)
       if (bx.q) {
         // a free quad: crossed planes and things lying flat
         for (let c = 0; c < 4; c++) { QP[c][0] = x + bx.q[c][0] / 16; QP[c][1] = y + bx.q[c][1] / 16; QP[c][2] = z + bx.q[c][2] / 16; }
         const uv = bx.uv;
         QUV[0][0] = uv[0]; QUV[0][1] = uv[3]; QUV[1][0] = uv[2]; QUV[1][1] = uv[3];
         QUV[2][0] = uv[2]; QUV[2][1] = uv[1]; QUV[3][0] = uv[0]; QUV[3][1] = uv[1];
-        quad(small ? out.plants : out.cutout, QP, QUV, bx.layer, 2, (bx.up ? 0 : 32) | tinted, tint, d.wave || 0, rnd, sky[i], blk[i], waterDepth(i, y));
+        quad(small ? out.plants : out.cutout, QP, QUV, bx.layer, 2, (bx.up ? 0 : 32) | (bx.plain ? 0 : tinted), tint, d.wave || 0, rnd, sky[i], blk[i], waterDepth(i, y));
         continue;
       }
       const faces = bx.faces || d.faces;
@@ -478,7 +480,8 @@ function build(job, ny, c0, c1, base) {
         const edge = F.n[ax] > 0 ? bx.t[ax] >= 16 : bx.f[ax] <= 0;
         // on the block's edge against a full cube: never seen
         if (edge && OPAQUE[rb[i + NSTEP[f]]]) continue;
-        boxFace(small ? out.plants : buf, f, x, y, z, i, bx, faces[f], bx.uv ? bx.uv[f] : null, tinted, tint, rnd, edge);
+        // (a box marked plain keeps its own colour in a tinted block: the cauldron round its water)
+        boxFace(small ? out.plants : buf, f, x, y, z, i, bx, faces[f], bx.uv ? bx.uv[f] : null, bx.plain ? 0 : tinted, tint, rnd, edge);
       }
     }
   }
@@ -590,7 +593,8 @@ function build(job, ny, c0, c1, base) {
           const buf = d.pass === 'opaque' || fastLeaf ? out.opaque : d.pass === 'translucent' ? out.translucent : out.cutout;
           const tint = tintFor(d, k2);
           const tinted = d.tint ? 64 : 0;
-          const box = d.shape === 'snow' ? { h: d.height } : d.shape === 'cactus' ? { in: 1 / 16 } : null;
+          // snow comes in eight layers (meta 0-7), two pixels each
+          const box = d.shape === 'snow' ? { h: ((rm[i] & 7) + 1) / 8 } : d.shape === 'cactus' ? { in: 1 / 16 } : null;
           const snowy = d.snowy && (rb[i + A] === B.snow || rb[i + A] === B.snow_block || rb[i + A] === B.powder_snow);
           for (let f = 0; f < 6; f++) {
             const nb = rb[i + NSTEP[f]];
