@@ -327,6 +327,9 @@ export class Held {
       dx = -0.32 * b; dy = 0.2 * b; dz = 0.08 * b; ry = 75 * b;
     } else if (use.kind === 'aim') {
       dx = -0.26; dy = 0.26; ry = 45; rx = 22;
+    } else if (use.kind === 'spear') {
+      // a spear charged: brought in under the view and pointed ahead
+      dx = -0.22 * k; dy = 0.08 * k; dz = -0.18 * k; ry = 20 * k; rx = -35 * k;
     } else return false;
     U.makeTranslation(c.x + f * dx, c.y + dy, c.z + dz);
     if (ry) U.multiply(T.makeRotationY(f * ry * DEG));

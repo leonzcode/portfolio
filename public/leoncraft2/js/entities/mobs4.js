@@ -28,6 +28,17 @@ import { model } from './mobs2.js?v=17';
 import { addArt } from './mobart.js?v=17';
 import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=17';
 import { use as useBlock } from '../place.js?v=17';
+import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf } from '../items.js?v=17';
+import { MountScreen } from '../ui/containers.js?v=17';
+
+// the stack in the player's hand (a mob's interact is told only the item's name), and a stack dropped where a mob is
+const heldStack = m => (m.inv && m.inv.slots[m.inv.selected]) || null;
+function dropStack(e, st) {
+  if (!st) return;
+  const H = e.m.hooks && e.m.hooks.hands, D = H && H.drops;
+  if (D && D.spawn) D.spawn(e.pos.x, e.pos.y + 0.5, e.pos.z, withCountOf(st, st.count || 1));
+  else e.m.dropItemAt(e.pos.x, e.pos.y + 0.5, e.pos.z, itemNameOf(st.id), st.count || 1);
+}
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -364,6 +375,12 @@ export class Wolf extends Tamable {
   wantsToAttack(t) { return super.wantsToAttack(t) && !(t.type === 'wolf' && t.tamed); }
   interact(held, player) {
     const food = WOLF_FOOD[held];
+    // wolf armour (the owner's: here every tamed wolf is yours): on a tamed adult, off with shears, mended with a scute
+    if (this.tamed && this.ageT >= 0) {
+      if (held === 'wolf_armor' && !this.body) { this.body = withCountOf(heldStack(this.m), 1); return 'consume'; }
+      if (held === 'shears' && this.body) { dropStack(this, this.body); this.body = null; return 'damage'; }
+      if (held === 'armadillo_scute' && this.body && (this.body.dmg | 0) > 0) { this.body.dmg = Math.max(0, (this.body.dmg | 0) - 8); return 'consume'; }
+    }
     if (this.tamed) {
       if (food !== undefined && this.health < this.maxHealth) {
         this.heal(food * 2);
@@ -418,12 +435,37 @@ export class Wolf extends Tamable {
   layers(out) {
     if (this.tamed) { out.push(['wolf_collar', 'wolf_collar', DYE_RGB[this.collar] || DYE_RGB.red]); out.push(['wolf_eyes', 'wolf_eyes_tame', null]); }
     else if (this.angry) out.push(['wolf_eyes', 'wolf_eyes_angry', null]);
+    if (this.body) {
+      const b = this.body, left = 1 - (b.dmg | 0) / 64;
+      out.push(['wolf_armor', 'wolf_armor', null, !!b.ench, true]);
+      if (b.color !== undefined) out.push(['wolf_armor', 'wolf_armor_overlay', b.color, false, true]);
+      // cracks as it wears: under 95%, 69% and 32% left (the game's thresholds)
+      if (left <= 0.95) out.push(['wolf_armor', left <= 0.32 ? 'wolf_armor_crack_high' : left <= 0.69 ? 'wolf_armor_crack_medium' : 'wolf_armor_crack_low', null, false, true]);
+    }
+  }
+  /* Wolf armour takes the hit instead of the wolf (all but drowning,
+     freezing, suffocating, magic, thorns, wither, the void and crowding),
+     worn a point for each point of damage; the wolf only flashes and is
+     pushed. At 64 it breaks. */
+  hurt(amount, source) {
+    const b = this.body;
+    if (!b || this.dead || this.removed || amount <= 0 || /^(drown|freeze|suffocat\w*|in_wall|magic|thorns|wither|void|cramming|kill)$/.test(source.type || '')) return super.hurt(amount, source);
+    if (this.invul > 10) { if (amount <= this.lastHurt) return false; } else { this.invul = 20; this.hurtTime = 10; }
+    this.lastHurt = amount;
+    b.dmg = (b.dmg | 0) + Math.ceil(amount);
+    if (b.dmg >= 64) { this.body = null; this.m.particles('poof', this.pos.x, this.pos.y + this.h * 0.6, this.pos.z, 8, 0.4); }
+    if (!source.noKnock && source.x !== undefined) this.knockback(0.4, source.x - this.pos.x, source.z - this.pos.z);
+    if (source.attacker) { this.lastHurtBy = source.attacker; this.lastHurtByTime = 100; }
+    this.onHurt(0, source);
+    return true;
   }
   get xp() { return this.ageT < 0 ? 0 : 1 + RI(3); }
-  toJSON() { const o = super.toJSON(); o.var = this.variant; if (this.collar !== 'red') o.col = this.collar; return o; }
+  loot(drop) { if (this.body) { dropStack(this, this.body); this.body = null; } }
+  toJSON() { const o = super.toJSON(); o.var = this.variant; if (this.collar !== 'red') o.col = this.collar; if (this.body) o.body = stackToJSON(this.body); return o; }
   fromJSON(o) {
     super.fromJSON(o);
     this.variant = o.var || 'pale'; this.collar = o.col || 'red';
+    if (o.body) this.body = stackFromJSON(o.body);
     if (this.tamed) { this.maxHealth = 40; if (o.h !== undefined) this.health = o.h; }
   }
 }
@@ -465,6 +507,8 @@ function wolfAnim(m, P, A) {
 model('wolf', wolfParts(null), wolfAnim);
 model('wolf_collar', wolfParts('collar'), wolfAnim);
 model('wolf_eyes', wolfParts('eyes'), wolfAnim);
+// wolf armour: over the body and the mane, a fifth of a pixel out
+model('wolf_armor', wolfParts(null).map(p => Object.assign({}, p, { boxes: p.name === 'body' || p.name === 'mane' ? p.boxes.map(b => { const c = b.slice(); while (c.length < 11) c.push(0); c[8] = 0.2; c[9] = !!c[9]; c[10] = 1; return c; }) : [] })), wolfAnim);
 
 /* ---- wolf coats ----
    Each variant: base fur, a darker back, a lighter belly and muzzle, and
@@ -532,6 +576,26 @@ addArt('wolf_collar', [64, 32], p => {
   p.clear(0, 0, 64, 32);
   p.fill(21, 7, 30, 2, 0xf0f0f0, 0.04);
   p.fill(28 + 3, 8, 2, 1, 0xd8d8d8);
+});
+/* wolf armour, our own: rows of scute plates over the back and shoulders;
+   a pale overlay for the dye; dark cracks in three steps as it wears */
+addArt('wolf_armor', [64, 32], p => {
+  p.clear(0, 0, 64, 32);
+  const scute = (x, y, w, h) => { p.fill(x, y, w, h, 0x9a6e62, 0.06); for (let j = 1; j < h; j += 3) p.fill(x, y + j, w, 1, 0x6e4a42, 0.04); for (let i = 0; i < w; i += 4) p.px(x + i, y, 0xc49a8a); };
+  p.box(18, 14, 6, 9, 6, { all: scute });
+  p.box(21, 0, 8, 6, 7, { all: scute });
+});
+addArt('wolf_armor_overlay', [64, 32], p => {
+  p.clear(0, 0, 64, 32);
+  for (let y = 21; y < 29; y += 3) p.fill(18, y, 30, 1, 0xf0f0f0, 0.03);
+  for (let y = 8; y < 13; y += 3) p.fill(21, y, 30, 1, 0xf0f0f0, 0.03);
+});
+for (const [k, n] of [['low', 6], ['medium', 14], ['high', 26]]) addArt('wolf_armor_crack_' + k, [64, 32], p => {
+  p.clear(0, 0, 64, 32);
+  for (let i = 0; i < n; i++) {
+    let x = 18 + Math.floor(p.r() * 30), y = (p.r() < 0.5 ? 1 : 15) + Math.floor(p.r() * 12);
+    for (let s = 0; s < 3; s++) { p.px(x, y, 0x2a1e1a); x += p.r() < 0.5 ? 1 : 0; y += 1; }
+  }
 });
 // eyes over the face: tamed (soft, a lighter brow) and angry (red, the brow down)
 addArt('wolf_eyes_tame', [64, 32], p => {
@@ -949,17 +1013,61 @@ export class AbstractHorse extends Animal {
     return ate;
   }
   canSaddle() { return this.tamed && this.ageT >= 0 && !this.saddled; }
+  // horse armour: on a tamed adult horse or zombie horse only (not donkeys, mules or skeleton horses)
+  canWearArmor() { return this.tamed && this.ageT >= 0 && (this.type === 'horse' || this.type === 'zombie_horse'); }
+  // a donkey's or mule's chest, hung on its sides
+  chestLayer(out) { if (this.chest && (this.type === 'donkey' || this.type === 'mule')) out.push(['donkey_chest', 'donkey_chest', null]); }
+  setBody(st) {
+    this.body = st;
+    const a = st && HORSE_ARMOR[itemNameOf(st.id).replace(/_horse_armor$/, '')];
+    this.armor = a ? a[0] : 0; this.toughness = a ? a[1] : 0;
+  }
+  // a donkey, mule or llama carries a chest (15 slots; a llama 3 a point of strength)
+  canCarryChest() { return /^(donkey|mule|llama|trader_llama)$/.test(this.type); }
+  chestSize() { return this.type === 'llama' || this.type === 'trader_llama' ? 3 * (this.strength || 3) : 15; }
+  setChest(on) { this.chest = on; this.chestSlots = on ? (this.chestSlots && this.chestSlots.length === this.chestSize() ? this.chestSlots : new Array(this.chestSize()).fill(null)) : null; }
+  // its screen's parts (ui/containers.js MountScreen): saddle, armour (or carpet), the chest's slots
+  mountSlots() {
+    const kinds = [], box = [];
+    if (this.type !== 'llama' && this.type !== 'trader_llama') { kinds.push('saddle'); box.push(this.saddled ? { id: itemIdOf('saddle'), count: 1 } : null); }
+    if (this.canWearArmor()) { kinds.push('armor'); box.push(this.body || null); }
+    if (this.type === 'llama' || this.type === 'trader_llama') { kinds.push('carpet'); box.push(this.decor && this.decor !== 'trader' ? { id: itemIdOf(this.decor + '_carpet'), count: 1 } : null); }
+    if (this.chest && this.chestSlots) for (const s of this.chestSlots) { kinds.push('chest'); box.push(s); }
+    return { kinds, box, cols: this.chest && this.chestSlots ? this.chestSlots.length / 3 : 0 };
+  }
+  mountChanged(i, st) {
+    const k = this.mountSlots().kinds[i];
+    if (k === 'saddle') this.saddled = !!st;
+    else if (k === 'armor') this.setBody(st || null);
+    else if (k === 'carpet') this.decor = st ? itemNameOf(st.id).replace(/_carpet$/, '') : null;
+    else if (k === 'chest') this.chestSlots[i - this.mountSlots().kinds.indexOf('chest')] = st || null;
+  }
+  openInventory() {
+    const H = this.m.hooks && this.m.hooks.hands;
+    if (!this.tamed || !H || !H.open) return false;
+    H.open(new MountScreen(H.inv, H.icons, this));
+    return true;
+  }
   interact(held, player) {
+    // sneaking: a tamed one's screen
+    if (this.tamed && player && player.sneaking && player.sneaking() && this.openInventory()) return 'swing';
     if (this.passengers.length) return false;
     const f = HORSE_FOOD[held];
     if (f) return this.eatFood(f) ? 'consume' : 'swing';
     if (this.ageT < 0) return false;
+    if (held === 'chest' && this.tamed && this.canCarryChest() && !this.chest) { this.setChest(true); return 'consume'; }
     if (!this.tamed) {
       if (held) { this.rear(); return 'swing'; }      // anything in hand but food: it rears
       this.m.mount(this);
       return 'swing';
     }
     if (held === 'saddle' && this.canSaddle()) { this.saddled = true; return 'consume'; }
+    if (/_horse_armor$/.test(held || '') && this.canWearArmor() && !this.body) { this.setBody(withCountOf(heldStack(this.m), 1)); return 'consume'; }
+    // shears take off the armour, then the saddle (1.21.5 on)
+    if (held === 'shears' && (this.body || this.saddled)) {
+      if (this.body) { dropStack(this, this.body); this.setBody(null); } else { this.saddled = false; dropStack(this, { id: itemIdOf('saddle'), count: 1 }); }
+      return 'damage';
+    }
     this.m.mount(this);
     return 'swing';
   }
@@ -1022,19 +1130,31 @@ export class AbstractHorse extends Animal {
     A.eat = this.oEat + (this.eat - this.oEat) * a;
     A.swish = this.tailT > 0;
   }
-  layers(out) { if (this.saddled) out.push([this.passengers.length ? 'horse_saddle_reins' : 'horse_saddle', 'horse_saddle', null]); }
-  loot(drop) { drop('leather', RI(3)); if (this.saddled) drop('saddle', 1); }
+  layers(out) {
+    this.chestLayer(out);
+    if (this.body) { const mat = itemNameOf(this.body.id).replace(/_horse_armor$/, ''); out.push(['horse_armor', 'horse_armor_' + mat, mat === 'leather' ? (this.body.color !== undefined ? this.body.color : 0xA06540) : null, !!this.body.ench]); }
+    if (this.saddled) out.push([this.passengers.length ? 'horse_saddle_reins' : 'horse_saddle', 'horse_saddle', null]);
+  }
+  loot(drop) {
+    drop('leather', RI(3)); if (this.saddled) drop('saddle', 1); if (this.body) { dropStack(this, this.body); this.body = null; }
+    if (this.chest && this.type !== 'llama' && this.type !== 'trader_llama') drop('chest', 1);
+    if (this.chestSlots) { for (const s of this.chestSlots) if (s) dropStack(this, s); this.chestSlots = null; }
+  }
   get xp() { return this.ageT < 0 ? 0 : 1 + RI(3); }
   toJSON() {
     const o = super.toJSON();
     o.st = [r4(this.maxHealth), r4(this.speed), r4(this.jumpStrength)];
     if (this.tamed) o.tm = 1; if (this.temper) o.tp = this.temper; if (this.saddled) o.sad = 1;
+    if (this.body) o.body = stackToJSON(this.body);
+    if (this.chest) { o.chest = 1; if (this.chestSlots) o.cs = this.chestSlots.map(s => (s ? stackToJSON(s) : null)); }
     return o;
   }
   fromJSON(o) {
     if (o.st) { this.maxHealth = o.st[0]; this.speed = o.st[1]; this.jumpStrength = o.st[2]; }
     super.fromJSON(o);
     this.tamed = !!o.tm; this.temper = o.tp || 0; this.saddled = !!o.sad;
+    if (o.body) this.setBody(stackFromJSON(o.body));
+    if (o.chest || o.ch) { this.setChest(true); if (Array.isArray(o.cs)) o.cs.forEach((a, i) => { if (i < this.chestSlots.length) this.chestSlots[i] = a ? stackFromJSON(a) : null; }); }
   }
 }
 const r4 = v => Math.round(v * 10000) / 10000;
@@ -1127,6 +1247,16 @@ model('horse', horseParts('horse'), horseAnim);
 model('donkey', horseParts('donkey'), horseAnim);
 model('horse_saddle', horseParts('saddle'), horseAnim);
 model('horse_saddle_reins', horseParts('reins'), horseAnim);
+// a donkey's or mule's chest: one on each side of the body, 8 long, 8 high, 3 thick (the game's)
+model('donkey_chest', horseParts('donkey').map(p => Object.assign({}, p, { boxes: p.name === 'body' ? [[5, -8, -6, 3, 8, 8, 0, 0], [-8, -8, -6, 3, 8, 8, 0, 0, 0, true]] : [] })), horseAnim);
+addArt('donkey_chest', [64, 64], p => {
+  p.clear(0, 0, 64, 64);
+  p.box(0, 0, 3, 8, 8, { all: 0x9a6a2c, top: 0xa8763a }, 0.08);
+  p.fill(0, 8 + 3, 22, 1, 0x4a3214);
+  p.fill(8 + 3 - 1, 8 + 3, 2, 2, 0xc8c8c8, 0.03);
+});
+// horse armour: the horse's shape a tenth of a pixel out, without the tail or the mane
+model('horse_armor', horseParts('horse').map(p => Object.assign({}, p, { boxes: p.name === 'tail' ? [] : p.boxes.filter(b => !(p.name === 'neck' && b[4] === 16)).map(b => { const c = b.slice(); while (c.length < 11) c.push(0); c[8] = (c[8] || 0) + 0.1; c[9] = !!c[9]; c[10] = 1; return c; }) })), horseAnim);
 
 /* ---- horse coats: the base colour dappled, a darker (or paler) mane and tail ---- */
 const COATS = {
@@ -1197,6 +1327,23 @@ function paintMarks(p, kind) {
   }
 }
 for (const k of HORSE_MARKS) if (k !== 'none') addArt('horse_mark_' + k, [64, 64], p => paintMarks(p, k));
+/* horse armour, our own pictures on the horse's shape: plates over the
+   body, neck, head and the tops of the legs, the eyes and hooves left bare
+   (leather is drawn pale and takes its dye as a tint) */
+const HORSE_ARMOR = { leather: [3, 0], copper: [4, 0], iron: [5, 0], golden: [7, 0], diamond: [11, 2], netherite: [19, 3] };
+const ARMOR_RGB = { leather: 0xe8e4dc, copper: 0xc4744e, iron: 0xd0d0d0, golden: 0xf2d34a, diamond: 0x62dccc, netherite: 0x4c4648 };
+for (const mat in HORSE_ARMOR) addArt('horse_armor_' + mat, [64, 64], p => {
+  const c = ARMOR_RGB[mat], line = p.shade(c, 0.72), lit = p.shade(c, 1.12);
+  const plate = (x, y, w, h) => { p.fill(x, y, w, h, c, 0.05); for (let j = 3; j < h; j += 5) p.fill(x, y + j, w, 1, line, 0.03); p.fill(x, y, w, 1, lit, 0.03); };
+  p.clear(0, 0, 64, 64);
+  p.box(0, 32, 10, 10, 22, { all: plate });                     // the body
+  p.box(0, 35, 4, 12, 7, { all: plate });                       // the neck
+  p.box(0, 13, 6, 5, 7, { all: plate });                        // the head
+  p.box(0, 25, 4, 5, 5, { all: plate });                        // the muzzle
+  for (const [ex, ey] of [[5, 21], [14, 21]]) { p.clear(ex - 1, ey - 1, 3, 2); }
+  p.fill(48, 25, 16, 5, c, 0.05); p.fill(48, 25, 16, 1, lit, 0.03);   // the tops of the legs
+  if (mat === 'diamond' || mat === 'golden' || mat === 'copper') for (const [x, y] of [[4, 44], [26, 44], [12, 58], [40, 58], [8, 16], [2, 40]]) p.px(x, y, lit);
+});
 // the saddle and bridle: dark leather, a lighter seat, iron rings and stirrups
 addArt('horse_saddle', [64, 64], p => {
   p.clear(0, 0, 64, 64);

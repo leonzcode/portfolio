@@ -33,7 +33,8 @@ import { wandererTick } from './merchant.js?v=17';
 import { tableBooks } from './tablebook.js?v=17';
 import { explode } from './explosion.js?v=17';
 import { splitXp } from './xporb.js?v=17';
-import { placeMinecart, isRail } from './minecart.js?v=17';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=17';
+import { CART_ITEMS } from './carts.js?v=17';
 import { FALLS, free } from './fallingblock.js?v=17';
 import { Spawner, DESPAWN } from './spawner.js?v=17';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=17';
@@ -42,7 +43,7 @@ import { EntityMeshes } from '../render/entitymesh.js?v=17';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=17';
 import { breakAt } from '../place.js?v=17';
 import { dropOf } from '../survival.js?v=17';
-import { itemName, ITEMS, I } from '../items.js?v=17';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=17';
 import { Combat } from '../combat/combat.js?v=17';
 import './nether.js?v=17';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
@@ -281,6 +282,7 @@ export class Entities {
   /* ---- 20 a second ---- */
   tick() {
     this.age++;
+    cooldownTick();
     this.t.reset();
     this.budget = 6;
     const P = this.P;
@@ -593,6 +595,14 @@ export class Entities {
       e.remove();
       return true;
     }
+    // its own kind's spawn egg: a baby of it where it stands, if it has babies (the game's offspring from an egg)
+    if (held === e.type + '_spawn_egg' && this.mode !== 'adventure' && this.mode !== 'spectator' && (e.setBaby || e.ageT !== undefined)) {
+      const n = this.spawn(e.type, e.pos.x, e.pos.y, e.pos.z, { natural: false, yaw: 0 });
+      if (!n) return false;
+      if (n.setBaby) n.setBaby(true); else n.ageT = -24000;
+      if (this.mode !== 'creative' && this.inv) this.inv.takeSelected(1);
+      return true;
+    }
     const r = e.interact ? e.interact(held, this.player) : false;
     if (!r) return false;
     if (r === 'consume' && this.mode !== 'creative' && this.inv) this.inv.takeSelected(1);
@@ -772,19 +782,21 @@ export class Entities {
       take();
       return true;
     }
-    if (name === 'minecart' && target && isRail(target.b)) {
+    if (CART_ITEMS[name] && target && isRail(target.b)) {
       if (!build) return false;
-      if (placeMinecart(this, target.x, target.y, target.z)) take();
+      if (placeMinecart(this, target.x, target.y, target.z, CART_ITEMS[name])) take();
       return true;
     }
     if (/_spawn_egg$/.test(name)) {
       const type = name.slice(0, -10);
       // on a spawner: the spawner takes the egg's mob (struct/spawners.js)
       if (target && build && target.face && setSpawnerMob(this.world, target.x, target.y, target.z, type)) { take(); return true; }
-      if (!TYPES[type] || !target || !build) return false;
-      const f = target.face || [0, 1, 0];
+      if (!TYPES[type] || !build) return false;
+      // on a block, where the game puts it; at nothing, into the water or lava looked at
+      const at = target && target.face ? this.eggSpot(target) : !target ? this.eggFluidSpot() : null;
+      if (!at) return false;
       // (a mob from an egg is not kept for good: like any other it goes when you are far off, unless named)
-      this.spawn(type, target.x + 0.5 + f[0] * 0.5, target.y + (f[1] > 0 ? 1 : f[1] < 0 ? -TYPES[type].H || -1 : 0), target.z + 0.5 + f[2] * 0.5, { natural: true, egg: true });
+      this.spawn(type, at[0], at[1], at[2], { natural: true, egg: true });
       take();
       return true;
     }
@@ -837,6 +849,8 @@ export class Entities {
     });
     return found;
   }
+  // a cart of any kind from a dispenser (dispense.js), on the rail at (x, y, z)
+  placeCartAt(name, x, y, z) { return placeMinecart(this, x, y, z, CART_ITEMS[name] || 'minecart'); }
   // a boat from a dispenser (dispense.js): where it says, facing its way
   placeBoatAt(name, x, y, z, yaw) { return placeBoat(this, name, x, y, z, yaw); }
   /* A boat from its item, the game's way: where the look first meets a block
@@ -844,12 +858,37 @@ export class Entities {
      if it would be inside a block, a boat, a mob or you (so not on the side
      of a block), nor while your eyes are inside a mob. Returns the boat or
      null. */
+  /* Where a spawn egg used on a block puts its mob, as the game does: in
+     the block clicked if nothing there stops you (grass, a flower, snow),
+     else in the one beside the face; then, from a block above that, let down
+     onto whatever stops it there (two blocks down when it was a top face that
+     was clicked, so it stands on a slab or a fence, one otherwise). */
+  eggSpot(target) {
+    const T = this.t, f = target.face, d = BLOCKS[target.b];
+    const empty = !d || !d.solid;
+    const x = empty ? target.x : target.x + f[0], y = empty ? target.y : target.y + f[1], z = empty ? target.z : target.z + f[2];
+    const more = !empty && f[1] > 0, down = more ? 2 : 1;
+    const y0 = y + 1;
+    T.gather(x, y0 - down, z, x + 1, y0 + 1, z + 1);
+    const dy = T.clip(1, -down, x + 0.001, y0, z + 0.001, x + 0.999, y0 + 1, z + 0.999);
+    return [x + 0.5, y0 + dy, z + 0.5];
+  }
+  // at nothing in reach: the source block of water or lava along the look, the mob put in it
+  eggFluidSpot() {
+    const eye = this.lookEye, dir = this.lookDir, T = this.t;
+    if (!eye || !dir) return null;
+    const reach = this.mode === 'creative' ? 5 : 4.5;
+    if (T.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, reach, true) >= reach) return null;
+    const x = T.rayX, y = T.rayY, z = T.rayZ;
+    if (!FLUID[T.get(x, y, z)] || (T.meta(x, y, z) & 15)) return null;
+    return [x + 0.5, y, z + 0.5];
+  }
   placeBoatLooking(name, reach) {
     const P = this.P, eye = this.lookEye, dir = this.lookDir, T = this.t;
     if (!eye || !dir) return null;
     let inside = false;
     this.forNear(eye.x, eye.z, 4, e => {
-      if (!inside && !e.removed && (e instanceof Living || e.constructor.SOLID || e.type === 'minecart') && e !== this.riding
+      if (!inside && !e.removed && (e instanceof Living || e.constructor.SOLID || e instanceof Minecart) && e !== this.riding
         && Math.abs(eye.x - e.pos.x) < e.hw && Math.abs(eye.z - e.pos.z) < e.hw && eye.y > e.pos.y && eye.y < e.pos.y + e.h) inside = true;
     });
     if (inside) return null;
@@ -869,7 +908,7 @@ export class Entities {
     let blocked = false;
     this.forNear(x, z, 3, e => {
       if (blocked || e.removed || e.dead || e.vehicle) return;
-      if (!(e instanceof Living && !e.constructor.NO_PUSH) && !e.constructor.SOLID && e.type !== 'minecart') return;
+      if (!(e instanceof Living && !e.constructor.NO_PUSH) && !e.constructor.SOLID && !(e instanceof Minecart)) return;
       if (e.pos.x + e.hw > x - hw + E && e.pos.x - e.hw < x + hw - E && e.pos.z + e.hw > z - hw + E && e.pos.z - e.hw < z + hw - E && e.pos.y + e.h > y + E && e.pos.y < y + 0.5625 - E) blocked = true;
     });
     if (blocked) return null;

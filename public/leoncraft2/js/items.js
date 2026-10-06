@@ -213,8 +213,112 @@ export function fuelTicks(id) { const it = ITEMS[id]; return it && it.fuel ? it.
    firework, a firework star; sherds, a decorated pot's four sides; pages, title
    and author, a book and quill's or a written book's words; stew, a suspicious
    stew's [effect, ticks]; patterns, a banner's (or shield's) [[pattern, colour]...];
-   map, a filled map's number (js/maps.js) */
-const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map'];
+   map, a filled map's number (js/maps.js); amp, an ominous bottle's Bad Omen
+   level (0 for I); instrument, a goat horn's ('ponder_goat_horn'...);
+   variant, a painting's (PAINTING_VARIANTS); lodestone, where a compass
+   was linked ({ x, y, z, dim }) */
+const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map', 'amp', 'instrument', 'variant', 'lodestone'];
+/* What a suspicious stew made with each flower does: [effect, ticks] (the
+   wiki's Suspicious Stew table, Java Edition). The tulips all give weakness. */
+export const STEW_EFFECTS = {
+  dandelion: ['saturation', 7], golden_dandelion: ['saturation', 7], poppy: ['night_vision', 100], blue_orchid: ['saturation', 7],
+  allium: ['fire_resistance', 60], azure_bluet: ['blindness', 220], red_tulip: ['weakness', 140], orange_tulip: ['weakness', 140],
+  white_tulip: ['weakness', 140], pink_tulip: ['weakness', 140], oxeye_daisy: ['regeneration', 140], cornflower: ['jump_boost', 100],
+  lily_of_the_valley: ['poison', 220], wither_rose: ['wither', 140], torchflower: ['night_vision', 100],
+  open_eyeblossom: ['blindness', 220], closed_eyeblossom: ['nausea', 140],
+};
+/* The paintings, by name, width and height in blocks (the game's placeable
+   ones; each picture is our own, entities/items2.js). A painting item may
+   carry one (variant), placed only where it fits, else a random one of the
+   largest that fit. */
+export const PAINTING_VARIANTS = [
+  ['kebab', 1, 1], ['aztec', 1, 1], ['alban', 1, 1], ['aztec2', 1, 1], ['bomb', 1, 1], ['plant', 1, 1], ['wasteland', 1, 1], ['meditative', 1, 1],
+  ['pool', 2, 1], ['courbet', 2, 1], ['sea', 2, 1], ['sunset', 2, 1], ['creebet', 2, 1],
+  ['wanderer', 1, 2], ['graham', 1, 2], ['prairie_ride', 1, 2],
+  ['match', 2, 2], ['bust', 2, 2], ['stage', 2, 2], ['void', 2, 2], ['skull_and_roses', 2, 2], ['wither', 2, 2], ['baroque', 2, 2], ['humble', 2, 2],
+  ['bouquet', 3, 3], ['cavebird', 3, 3], ['cotan', 3, 3], ['endboss', 3, 3], ['fern', 3, 3], ['owlemons', 3, 3], ['sunflowers', 3, 3], ['tides', 3, 3], ['dennis', 3, 3],
+  ['backyard', 3, 4], ['pond', 3, 4],
+  ['fighters', 4, 2], ['changing', 4, 2], ['finding', 4, 2], ['lowmist', 4, 2], ['passage', 4, 2],
+  ['skeleton', 4, 3], ['donkey_kong', 4, 3],
+  ['pointer', 4, 4], ['pigscene', 4, 4], ['burning_skull', 4, 4], ['orb', 4, 4], ['unpacked', 4, 4],
+];
+
+/* The music discs' songs, as the jukebox shows them ("Now Playing") and the
+   disc's tooltip: [credit, seconds long, what a comparator reads from the
+   jukebox]. This game plays no sound yet; the jukebox keeps the time. */
+export const SONGS = {
+  music_disc_13: ['C418 - 13', 178, 1], music_disc_cat: ['C418 - cat', 185, 2], music_disc_blocks: ['C418 - blocks', 345, 3],
+  music_disc_chirp: ['C418 - chirp', 185, 4], music_disc_far: ['C418 - far', 174, 5], music_disc_mall: ['C418 - mall', 197, 6],
+  music_disc_mellohi: ['C418 - mellohi', 96, 7], music_disc_stal: ['C418 - stal', 150, 8], music_disc_strad: ['C418 - strad', 188, 9],
+  music_disc_ward: ['C418 - ward', 251, 10], music_disc_11: ['C418 - 11', 71, 11], music_disc_wait: ['C418 - wait', 238, 12],
+  music_disc_pigstep: ['Lena Raine - Pigstep', 149, 13], music_disc_otherside: ['Lena Raine - otherside', 195, 14],
+  music_disc_5: ['Samuel Åberg - 5', 178, 15], music_disc_relic: ['Aaron Cherof - Relic', 218, 14],
+  music_disc_precipice: ['Aaron Cherof - Precipice', 299, 13], music_disc_creator: ['Lena Raine - Creator', 176, 12],
+  music_disc_creator_music_box: ['Lena Raine - Creator (Music Box)', 73, 11], music_disc_tears: ['Amos Roddy - Tears', 175, 10],
+  music_disc_lava_chicken: ['Hyper Potions - Lava Chicken', 135, 9],
+};
+
+/* Bundles (any colour): what is inside is items, the newest first. A bundle
+   holds 64 sixty-fourths: each item takes 64 / its stack size of them (a
+   sword a whole bundle, an ender pearl four), a bundle inside one 4 and what
+   it holds, a hive with bees in it the lot. Shulker boxes never go in. */
+export const isBundle = st => !!st && /^(\w+_)?bundle$/.test(itemName(st.id));
+function weightOf(s) {
+  const n = itemName(s.id);
+  if (/^(\w+_)?bundle$/.test(n)) return 4 + bundleWeight(s);
+  if ((n === 'beehive' || n === 'bee_nest') && s.bees && s.bees.length) return 64;
+  return 64 / maxStack(s.id);
+}
+export function bundleWeight(b) { let w = 0; if (b && Array.isArray(b.items)) for (const s of b.items) if (s) w += s.count * weightOf(s); return w; }
+// as many of a stack as fit go in (onto a like stack inside, else as the newest); how many went
+export function bundleInsert(b, st) {
+  if (!st || !st.count || /shulker_box$/.test(itemName(st.id)) || st === b) return 0;
+  const each = weightOf(st), room = 64 - bundleWeight(b), n = Math.min(st.count, Math.floor(room / each));
+  if (n <= 0) return 0;
+  if (!Array.isArray(b.items)) b.items = [];
+  const like = b.items.find(s => s && sameItem(s, st));
+  if (like) like.count += n;
+  else b.items.unshift(withCount(st, n));
+  return n;
+}
+// the newest stack out, or null
+export function bundleTake(b) {
+  if (!b || !Array.isArray(b.items)) return null;
+  const i = b.items.findIndex(Boolean);
+  if (i < 0) return null;
+  const s = b.items.splice(i, 1)[0];
+  if (!b.items.some(Boolean)) delete b.items;
+  return s;
+}
+
+/* Item cooldowns, the game's: an ender pearl's second, chorus fruit's, a
+   wind charge's half second, a goat horn's seven, a shield an axe knocked
+   down. By item name, the tick each began and ends, on the game's ticks
+   (the entity manager calls cooldownTick). While one runs the item does
+   nothing, and its slots are veiled from the bottom by what is left. */
+export const COOLDOWNS = { now: 0, map: new Map() };
+export function addCooldown(name, ticks) { COOLDOWNS.map.set(name, [COOLDOWNS.now, COOLDOWNS.now + ticks]); }
+export function onCooldown(name) { const c = COOLDOWNS.map.get(name); return !!c && c[1] > COOLDOWNS.now; }
+// what is left of an item's cooldown, 1 down to 0 (partial: how far into the next tick)
+export function cooldownLeft(id, partial = 0) {
+  if (!COOLDOWNS.map.size) return 0;
+  const c = COOLDOWNS.map.get(itemName(id));
+  if (!c) return 0;
+  const f = (c[1] - (COOLDOWNS.now + partial)) / (c[1] - c[0]);
+  return f > 0 ? Math.min(1, f) : 0;
+}
+export function cooldownTick() {
+  COOLDOWNS.now++;
+  for (const [k, c] of COOLDOWNS.map) if (c[1] <= COOLDOWNS.now) COOLDOWNS.map.delete(k);
+}
+
+// a stew's [effect, ticks], whichever way it was written down (loot tables once kept { effect, seconds })
+export function stewEffect(s) {
+  const v = s && s.stew;
+  if (!v) return null;
+  if (Array.isArray(v)) return v;
+  return v.effect ? [v.effect, Math.round((v.seconds || 0) * 20)] : null;
+}
 const hasExtra = s => { for (const k of EXTRA) if (s[k] !== undefined) return true; return false; };
 // two stacks that can go on one another (same item, same wear, enchantments, name, contents)
 export function sameItem(a, b) {

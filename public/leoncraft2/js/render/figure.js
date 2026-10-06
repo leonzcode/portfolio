@@ -185,11 +185,14 @@ export class Figure {
     A.poseFor(P, a, i * 20 * DEG, -h * 20 * DEG);
     const sneak = A.cur.sneak, px = W.size * W.s;
     const root = this.root;
-    // the feet below the middle of the box by half the height and a sixteenth, leaning about the feet, turned to the mouse
-    root.makeTranslation(0, -((sneak ? 1.5 : 1.8) / 2 + 1 / 16) * px, 0);
+    // the feet below the middle of the box by half the height (of the pose's box: 0.6 swimming, crawling or
+    // gliding) and a sixteenth, leaning about the feet, turned to the mouse
+    root.makeTranslation(0, -((P.pose === 'swim' ? 0.6 : sneak ? 1.5 : 1.8) / 2 + 1 / 16) * px, 0);
     root.multiply(t.makeRotationX(-i * 20 * DEG));
     root.multiply(t.makeRotationY(-h * 20 * DEG));
     root.multiply(t.makeScale(px, px, px));
+    // swimming, crawling or gliding: laid down as you are, along the mouse's look (not standing with the swimmer's arms up)
+    A.layDown(root, P, a, i * 20 * DEG);
     if (sneak) root.multiply(t.makeTranslation(0, -0.125, 0));
     root.multiply(t.makeScale(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE));
     A.matrices(root, this.parts);
