@@ -80,6 +80,9 @@ export function makeSource(gen, BIOMES, pickBiome, Y0, dim) {
   };
   let biome;
   if (typeof gen.noiseBiome === 'function') biome = (x, y, z) => name(gen.noiseBiome(x >> 2, y >> 2, z >> 2));
+  // the Nether's and the End's own generators know their biomes by column (so an end city
+  // never stands on the main island, nor a bastion in the basalt deltas)
+  else if (dim !== 'overworld' && typeof gen.biomeAt === 'function') biome = (x, y, z) => name(gen.biomeAt(x, z));
   else if (pickBiome && typeof gen.climate === 'function') biome = (x, y, z) => name(pickBiome(gen.climate(x & ~3, z & ~3)));
   else biome = () => undefined;
   const src = { vanilla: typeof gen.noiseBiome === 'function', biome, ground };

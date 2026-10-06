@@ -448,7 +448,7 @@ export class VanillaGen {
         for (let k = 0; k < mine.length; k += 2) {
           const i = mine[k], v = mine[k + 1], id = v >> 8;
           if (!owner[i]) { owner[i] = 1; touched.push(i); }
-          else if (writeRank(id) < writeRank(blocks[i])) continue;
+          else if (writeRank(id, v & 255) < writeRank(blocks[i], meta[i])) continue;
           blocks[i] = id; meta[i] = v & 255;
         }
       }
@@ -494,27 +494,27 @@ export class VanillaGen {
     }
     return false;
   }
-  /* Every plant a feature put down (or that stands on a block a feature
-     changed) that has lost what it needs, taken away: back to air, or to
-     water for the ones that grow in it. Bottom up, so a tall plant's top
-     goes with its bottom. */
+  /* Every plant a feature put down (or that stands on, or hangs from, a
+     block a feature changed) that has lost what it needs, taken away: back
+     to air, or to water for the ones that grow in it. Whatever stood on it
+     or hung from it is looked at again, so a tall plant's top goes with its
+     bottom and a vine with the root it hung from. */
   settle(view, touched) {
     const blocks = view.blocks, meta = view.m;
-    const look = this._look || (this._look = new Uint8Array(VOL));
-    let lo = VOL, hi = -1;
+    const q = [];
     for (const i of touched) {
-      look[i] = 1; if (i < lo) lo = i; if (i > hi) hi = i;
-      if (i + 256 < VOL) { look[i + 256] = 1; if (i + 256 > hi) hi = i + 256; }
+      q.push(i);
+      if (i + 256 < VOL) q.push(i + 256);
+      if (i >= 256) q.push(i - 256);
     }
-    for (let i = lo; i <= hi; i++) {
-      if (!look[i]) continue;
-      look[i] = 0;
-      const b = blocks[i], kind = isGroundPlant(b);
+    for (let k = 0; k < q.length; k++) {
+      const i = q[k], b = blocks[i], kind = isGroundPlant(b);
       if (!kind) continue;
       const x = view.x0 + (i & 15), z = view.z0 + ((i >> 4) & 15), y = (i >> 8) + MIN_Y;
       if (plantHolds(view, b, meta[i], x, y, z)) continue;
       blocks[i] = kind === 2 ? B.water : 0; meta[i] = 0;
-      if (i + 256 < VOL) { look[i + 256] = 1; if (i + 256 > hi) hi = i + 256; }
+      if (i + 256 < VOL) q.push(i + 256);
+      if (i >= 256) q.push(i - 256);
     }
   }
   // a chunk's feature writes, by the chunk they land in (0..8 around it)
