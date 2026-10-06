@@ -133,7 +133,10 @@ function handle(m) {
     for (const p of m.protos) gen.protoCache.set(ck(p.cx, p.cz), p);
     const w = writesOf(gen, m.cx, m.cz);
     gen.protoCache.clear(); gen.writeCache.clear();
-    self.postMessage({ type: 'decorate', cx: m.cx, cz: m.cz, writes: w }, w.map(e => e[1].buffer));
+    // the terrains' buffers go back with the answer, to be used for the next job (world.js pool)
+    const back = [];
+    for (const p of m.protos) back.push(p.blocks.buffer, p.meta.buffer);
+    self.postMessage({ type: 'decorate', cx: m.cx, cz: m.cz, writes: w, back }, w.map(e => e[1].buffer).concat(back));
     return;
   }
   if (m.type === 'gen') {
@@ -146,8 +149,10 @@ function handle(m) {
     if (m.proto) { gen.protoCache.clear(); gen.writeCache.clear(); }
     const extra = structs ? structs.build(c, m.cx, m.cz) : null;      // the structures reaching into this chunk
     if (cacheKey) keepChunk(cacheKey, m.cx, m.cz, c, extra);
-    self.postMessage({ type: 'gen', id: m.id, cx: m.cx, cz: m.cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: extra },
-      [c.blocks.buffer, c.meta.buffer, c.biome.buffer]);
+    // (the terrain it was made from goes back to be used again, as a decoration's do; the chunk is a copy of it)
+    const back = m.proto && m.proto.blocks.buffer !== c.blocks.buffer && m.proto.meta.buffer !== c.meta.buffer ? [m.proto.blocks.buffer, m.proto.meta.buffer] : [];
+    self.postMessage({ type: 'gen', id: m.id, cx: m.cx, cz: m.cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: extra, back },
+      [c.blocks.buffer, c.meta.buffer, c.biome.buffer].concat(back));
     return;
   }
   if (m.type === 'mesh') {
