@@ -197,7 +197,7 @@ export class VideoSettingsScreen extends OptionsListScreen {
       label: v => 'Simulation Distance: ' + v + ' Chunks', onChange: v => set('simulationDistance', v),
     });
     const smooth = toggle('Smooth Lighting', o.get('smoothLighting'), v => set('smoothLighting', v));
-    const clouds = cycle('Clouds', ['fancy', 'fast', 'off'], o.get('clouds'), v => CLOUDS[v], v => set('clouds', v));
+    const clouds = cycle('Clouds', ['off', 'fast', 'fancy'], o.get('clouds'), v => CLOUDS[v], v => set('clouds', v));
     const parts = cycle('Particles', ['all', 'decreased', 'minimal'], o.get('particles'), v => PARTICLES[v], v => set('particles', v));
     const mip = slider({ min: 0, max: 4, step: 1, value: o.get('mipmapLevels'), label: v => 'Mipmap Levels: ' + (v ? v : 'OFF'), onChange: v => set('mipmapLevels', v) });
     const shadows = toggle('Entity Shadows', o.get('entityShadows'), v => set('entityShadows', v));
