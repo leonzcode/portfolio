@@ -161,6 +161,8 @@ export class MountScreen extends ContainerScreen {
     if (this.kinds.indexOf('saddle') < 0) g.fill(L + 7, T + 17, L + 25, T + 35, 0xFFC6C6C6);
     if (this.kinds.indexOf('armor') < 0 && this.kinds.indexOf('carpet') < 0) g.fill(L + 7, T + 35, L + 25, T + 53, 0xFFC6C6C6);
     for (let c = 0; c < this.cols; c++) for (let r = 0; r < 3; r++) g.blit('container/horse', 0, 166, 18, 18, L + 79 + c * 18, T + 17 + r * 18);
+    // the animal in the black box, turned to the mouse (render/mobfigure.js): 17 pixels a block, a quarter block low
+    if (this.inv.drawMob) this.inv.drawMob(g, L + 26, T + 18, 52, 52, mx, my, this.mob, 17, 0.25);
     g.text(this.title, L + 8, T + 6, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
     const prev = this.drawSlots(g, mx, my);

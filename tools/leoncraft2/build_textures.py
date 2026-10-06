@@ -51,7 +51,7 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from labcolour import correct
+from labcolour import correct, lab_to_srgb
 SRC = sys.argv[1] if len(sys.argv) > 1 else 'PixelPerfectionCE-master'
 PPL = sys.argv[2] if len(sys.argv) > 2 else 'PixelPerfectionLegacy'
 REFI = sys.argv[3] if len(sys.argv) > 3 else 'REFI_Textures'
@@ -758,9 +758,21 @@ REPLACE = {
     'chiseled_bookshelf_empty': lambda: (block_tex('chiseled_bookshelf_side')[0], None),
     'tnt_bottom': lambda: (block_tex('tnt_top')[0], None),
 }
+def glazed_like(c, design):
+    """A glazed terracotta drawn in another one's pattern: only the pattern's lightness, laid on a ramp round the
+    game's mean colour for it and pulled to the game's spread (colour statistics, no pixels). The concrete's ramp
+    it used before is nearly one colour, so these seven came out flat."""
+    a = block_tex(design + '_glazed_terracotta')[0][0]
+    t = STATS[c + '_glazed_terracotta']
+    lo = lab_to_srgb(np.array([t[0] - 1.6 * t[3], t[1], t[2]])) * 255
+    hi = lab_to_srgb(np.array([t[0] + 1.6 * t[3], t[1], t[2]])) * 255
+    out = palette_map(a, lo, hi, contrast=1.25)
+    out[..., 3] = a[..., 3]
+    return correct([out], t)
+
+
 for c, design in GLAZED.items():
-    REPLACE[c + '_glazed_terracotta'] = (lambda c=c, design=design:
-        (recoloured(design + '_glazed_terracotta', ramp=c + '_concrete', contrast=1.25), None))
+    REPLACE[c + '_glazed_terracotta'] = (lambda c=c, design=design: (glazed_like(c, design), None))
 for n in ('jigsaw_top', 'jigsaw_side', 'jigsaw_bottom', 'jigsaw_lock', 'structure_block', 'structure_block_load',
           'structure_block_save', 'structure_block_corner', 'structure_block_data'):
     REPLACE[n] = lambda: (art('tech_block.png'), None)

@@ -34,10 +34,13 @@ export const SPAWNABLE = ['zombie', 'skeleton', 'spider', 'cave_spider', 'blaze'
   'piglin', 'piglin_brute', 'strider', 'zoglin', 'zombified_piglin', 'enderman', 'shulker', 'wither', 'ender_dragon'];
 export const spawnerMob = meta => (meta > 0 && meta <= SPAWNABLE.length ? SPAWNABLE[meta - 1] : null);
 // a spawn egg used on a spawner: true when it took the egg's mob
+// (bumped when an egg gives a spawner its mob, so the list below is read again at once: the cell was already an edit)
+let EGGED = 0;
 export function setSpawnerMob(world, x, y, z, type) {
   const i = SPAWNABLE.indexOf(type), b = world.get(x, y, z);
   if (i < 0 || (b !== B.spawner && b !== B.trial_spawner)) return false;
   world.set(x, y, z, b, i + 1);
+  EGGED++;
   return true;
 }
 
@@ -63,8 +66,8 @@ export class Spawners {
       const ed = world.edits && world.edits.get(key);
       if (!ed) continue;
       let list = this.edited.get(key);
-      if (!list || list.size !== ed.size || rescan) {
-        list = { size: ed.size, cells: [] };
+      if (!list || list.size !== ed.size || list.egged !== EGGED || rescan) {
+        list = { size: ed.size, egged: EGGED, cells: [] };
         for (const [cell, v] of ed) if ((v >> 8) === B.spawner && (v & 255)) list.cells.push(cell);
         this.edited.set(key, list);
       }
