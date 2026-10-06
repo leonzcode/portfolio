@@ -115,6 +115,12 @@ export function survives(R, st, x, y, z) {
       return dirt[below] === 1 || below === B.farmland || (n === 'leaf_litter' && fullTop(below));
     case 'pumpkin': case 'melon': return true;
     case 'pale_moss_carpet': case 'moss_carpet': return !isAirId(below);
+    // a spore blossom hangs from the whole face of the block over it
+    case 'spore_blossom': return fullTop(R.get(x, y + 1, z));
+    // a small dripleaf on clay or moss, or on soil where it stands in still water (its top half is held by its bottom)
+    case 'small_dripleaf':
+      if (st.meta & 8) return true;
+      return tag('supports_small_dripleaf')[below] === 1 || (R.get(x, y, z) === B.water && R.meta(x, y, z) === 0 && tag('supports_big_dripleaf')[below] === 1);
     case 'pale_hanging_moss': return R.get(x, y + 1, z) !== 0;
   }
   const d = BLOCKS[st.id];
