@@ -83,6 +83,8 @@ export function makeSource(gen, BIOMES, pickBiome, Y0, dim) {
   else if (pickBiome && typeof gen.climate === 'function') biome = (x, y, z) => name(pickBiome(gen.climate(x & ~3, z & ~3)));
   else biome = () => undefined;
   const src = { vanilla: typeof gen.noiseBiome === 'function', biome, ground };
+  // whether any water or lava of a chunk's bare terrain touches a box there (the vanilla generator knows)
+  if (typeof gen.fluidNear === 'function') src.fluidNear = (box, cx, cz) => gen.fluidNear(box.x0, box.y0, box.z0, box.x1, box.y1, box.z1, cx, cz);
   if (dim === 'nether') { src.netherBiome = biome; src.biome = () => undefined; }
   if (dim === 'end') { src.endBiome = (x, z) => biome(x, 64, z); src.endGround = ground; src.biome = () => undefined; }
   return src;
@@ -392,14 +394,19 @@ export class Structures {
      order (underground ones first, then the surface ones), and return what
      the game needs to know: chests (with their loot table), spawners and
      entities to make. */
-  apply(blocks, meta, cx, cz, dim) {
+  apply(blocks, meta, cx, cz, dim, mask) {
     const list = this.piecesFor(cx, cz, dim);
     if (!list.length) return null;
     const w = new ChunkWriter(blocks, meta, cx, cz);
+    w.mask = mask || null;
     const order = t => (t.startsWith('mineshaft') || t === 'buried_treasure' || t === 'trail_ruins' || t === 'trial_chambers' ? 0
       : t === 'fortress' || t === 'ancient_city' ? 2 : 1);
     list.sort((a, b) => order(a[0].type) - order(b[0].type));
     for (const [s, p] of list) {
+      // A mineshaft piece that water or lava would touch in this chunk is not built here (the game
+      // checks each chunk's part of a piece the same way, so its mineshafts stop short of the sea
+      // and of aquifers, the corridor cut off), and no sea hangs over a corridor.
+      if (s.type.startsWith('mineshaft') && this.src.fluidNear && this.src.fluidNear(p.box, cx, cz)) continue;
       const r = new JRand(BigInt(((p.box.x0 * 73856093) ^ (p.box.y0 * 19349663) ^ (p.box.z0 * 83492791) ^ (cx * 2654435761) ^ (cz * 40503)) | 0) ^ this.seed);
       try { p.place(w, w.box, r); } catch (e) { console.error('structure piece', s.type, p.type, e); }
     }
