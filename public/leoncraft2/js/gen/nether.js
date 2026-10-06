@@ -13,9 +13,11 @@
      sea       lava up to y 31
      bedrock   y 0 always, thinning out to y 4; the roof at y 127, thinning
                down to y 123; netherrack just under the roof
-     biomes    temperature and vegetation noise, the nearest of the five
-               points (wastes 0,0; soul sand valley 0,-0.5; crimson forest
-               0.4,0; warped forest 0,0.5 + 0.375; basalt deltas -0.5,0 + 0.175)
+     biomes    the game's own from the seed (its old-random temperature and
+               vegetation noises, see legacyNetherNoise), the nearest of the
+               five points (wastes 0,0; soul sand valley 0,-0.5; crimson
+               forest 0.4,0; warped forest 0,0.5 + 0.375; basalt deltas
+               -0.5,0 + 0.175)
      surfaces  nylium (and wart patches) on forest floors above the lava,
                soul sand and soul soil in the valleys, basalt, blackstone and
                gravel in the deltas, soul sand and gravel bands round the
@@ -36,25 +38,55 @@ import { CH, H, Y0, VOL, idx } from '../world-const.js?v=17';
 import { BIO } from '../biomes.js?v=17';
 import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=17';
 import { BlendedNoise, yGradient, squeeze } from './blended.js?v=17';
+import { Perlin } from './noise.js?v=17';
+import { LegacyRandom } from './random.js?v=17';
 
 const I = y => y - Y0;                 // world y -> index
 const lerp = (a, b, t) => a + (b - a) * t;
 const LAVA_TOP = 31, ROOF = 127;
 
-// the five biomes' points: [temperature, humidity, offset]
+// the five biomes' points: [temperature, humidity, offset], as the game keeps them (times 10000, whole)
 const POINTS = [
-  ['nether_wastes', 0, 0, 0], ['soul_sand_valley', 0, -0.5, 0], ['crimson_forest', 0.4, 0, 0],
-  ['warped_forest', 0, 0.5, 0.375], ['basalt_deltas', -0.5, 0, 0.175],
+  ['nether_wastes', 0, 0, 0], ['soul_sand_valley', 0, -5000, 0], ['crimson_forest', 4000, 0, 0],
+  ['warped_forest', 0, 5000, 3750], ['basalt_deltas', -5000, 0, 1750],
 ];
+
+/* The biomes are the game's own, from the seed. The Nether is one of the
+   worlds that keep the old random: its temperature and vegetation are each
+   an old-style noise of two octaves (-7 and -6, both at strength 1) seeded
+   with java.util.Random from the world seed (temperature) and the seed plus
+   one (vegetation), read at a quarter of the block position, with no offset
+   noise, every 4 blocks. Each value is kept to 1/10000 as a float, and the
+   nearest point wins. */
+const INPUT = 1.0181268882175227, VALUE = 0.16666666666666666 / 0.15;
+function legacyOctaves(r) {
+  // the old PerlinNoise constructor for octaves -7..-6: a noise for octave 0
+  // made and never used, five octaves skipped (262 draws each), then -6, then -7
+  new Perlin(r);
+  r.consume(262 * 5);
+  const o6 = new Perlin(r), o7 = new Perlin(r);
+  return (x, z) => o7.sample(x / 128, 0, z / 128) * (2 / 3) + o6.sample(x / 64, 0, z / 64) * (1 / 3);
+}
+function legacyNetherNoise(seed) {
+  const r = new LegacyRandom(seed);
+  const a = legacyOctaves(r), b = legacyOctaves(r);
+  return (x, z) => (a(x, z) + b(x * INPUT, z * INPUT)) * VALUE;
+}
+// a world's seed as the 64-bit number the game keeps (a vanilla world's seed comes as decimal text)
+function seed64(seed) {
+  const t = String(seed).trim();
+  return /^[-+]?\d+$/.test(t) ? BigInt.asIntN(64, BigInt(t)) : BigInt(seed | 0);
+}
+const quantize = v => Math.trunc(Math.fround(Math.fround(v) * 10000));
 
 export class NetherGen {
   constructor(seed) {
     this.seed = seed | 0;
     const S = this.seed;
     this.base = new BlendedNoise(S, 'nether/base_3d_noise', 0.25, 0.375, 80, 60);
-    this.nTemp = new NormalNoise(S, 'temperature', -10, [1.5, 0, 1, 0, 0, 0]);
-    this.nHum = new NormalNoise(S, 'vegetation', -8, [1, 1, 0, 0, 0, 0]);
-    this.nShift = new NormalNoise(S, 'offset', -3, [1, 1, 1, 0]);
+    const s64 = seed64(seed);
+    this.nTemp = legacyNetherNoise(s64);
+    this.nHum = legacyNetherNoise(BigInt.asIntN(64, s64 + 1n));
     this.nState = new NormalNoise(S, 'nether_state_selector', -4, [1]);
     this.nSoul = new NormalNoise(S, 'soul_sand_layer', -8, [1, 1, 1, 1, 0, 0, 0, 0, 0.013]);
     this.nGravel = new NormalNoise(S, 'gravel_layer', -8, [1, 1, 1, 1, 0, 0, 0, 0, 0.013]);
@@ -65,16 +97,15 @@ export class NetherGen {
 
   /* ---- climate and biomes ---- */
   climate(x, z) {
-    const sx = x * 0.25 + this.nShift.sample(x * 0.25, 0, z * 0.25) * 4;
-    const sz = z * 0.25 + this.nShift.sample(z * 0.25, x * 0.25, 0) * 4;
-    return { T: this.nTemp.sample(sx, 0, sz), Hu: this.nHum.sample(sx, 0, sz) };
+    return { T: this.nTemp(x * 0.25, z * 0.25), Hu: this.nHum(x * 0.25, z * 0.25) };
   }
+  // the biome of the 4 x 4 cell a column is in (read at the cell's corner, as the game reads it)
   biomeAt(x, z) {
-    const c = this.climate(x, z);
-    let best = 0, bd = 1e9;
+    const c = this.climate(x & ~3, z & ~3), t = quantize(c.T), h = quantize(c.Hu);
+    let best = 0, bd = Infinity;
     for (let i = 0; i < POINTS.length; i++) {
       const p = POINTS[i];
-      const d = (c.T - p[1]) ** 2 + (c.Hu - p[2]) ** 2 + p[3] * p[3];
+      const d = (t - p[1]) ** 2 + (h - p[2]) ** 2 + p[3] * p[3];
       if (d < bd) { bd = d; best = i; }
     }
     return this.biomeIds[best];
