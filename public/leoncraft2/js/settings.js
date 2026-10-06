@@ -97,9 +97,9 @@ export class VideoSettings {
         if (v === 'fast' || v === 'potato') this.o.set('shaders', false); else if (v && v !== 'auto') this.o.set('shaders', true);
         break;
       case 'mipmapLevels': case 'maxAnisotropy': this.filtering(); break;
-      case 'cloudDistance': R.opts.cloudDist = v; break;
-      case 'weatherRadius': R.opts.weatherRadius = v; break;
-      case 'chunkFade': R.opts.chunkFade = v; break;
+      case 'cloudDistance': this.setR('cloudDist', v); break;
+      case 'weatherRadius': this.setR('weatherRadius', v); break;
+      case 'chunkFade': this.setR('chunkFade', v); break;
       case 'brightness': R.U.uBrightD.value = v - 0.5; break;
       case 'particles': particleSetting.level = v; break;
       case 'glintSpeed': case 'glintStrength': R.U.uGlint.value.set(this.o.get('glintSpeed'), this.o.get('glintStrength')); break;
@@ -112,6 +112,8 @@ export class VideoSettings {
     }
     if (g && g.hud && k === 'attackIndicator') g.hud.markDirty && g.hud.markDirty();
   }
+  // a number the renderer reads each frame, and the look still being built (render/looks.js) told too
+  setR(k, v) { this.R.opts[k] = v; if (this.R.lookPending) this.R.lookPending.look[k] = v; }
   // the worlds there are: the one played, and the title screen's
   worlds() { return (this.worldsFn ? this.worldsFn() : []).filter(Boolean); }
 
