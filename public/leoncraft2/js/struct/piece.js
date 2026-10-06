@@ -283,6 +283,7 @@ export class ChunkWriter {
     this.chests = []; this.spawners = []; this.entities = [];
     this.keep = null;            // cells a structure has claimed (spawners, chests, frames are never overwritten)
     this._surf = null;
+    this.mask = null;            // when given, every block a structure writes is marked here (the generator's features keep off them)
   }
   get(x, y, z) {
     const lx = x - this.x0, lz = z - this.z0, ly = y - Y0;
@@ -299,6 +300,7 @@ export class ChunkWriter {
     if (lx < 0 || lx > 15 || lz < 0 || lz > 15 || ly < 0 || ly >= H) return;
     const i = idx(lx, ly, lz);
     this.blocks[i] = b; this.meta[i] = m || 0;
+    if (this.mask) this.mask[i] = 1;
     if (b === SPAWNER || b === CHEST || b === FRAME || b === BEDROCK) (this.keep || (this.keep = new Set())).add(i);
     this._surf = null;
   }
