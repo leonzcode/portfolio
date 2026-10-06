@@ -27,7 +27,7 @@ function wallVariant(name) {
   return undefined;
 }
 const SUPPORTED = new Set(['cross', 'torch', 'rail', 'wire', 'crop', 'plate', 'thin', 'candle', 'snow', 'layer', 'button', 'pot', 'sign', 'head', 'lantern']);
-const ON_WALL = new Set(['wall_torch', 'ladder', 'button', 'wall_sign', 'head']);
+const ON_WALL = new Set(['wall_torch', 'ladder', 'button', 'wall_sign', 'head', 'frame']);
 
 /* Work out what to place for a click. Returns a list of [x, y, z, id, meta]
    to set (empty when it cannot go there), given the world, the pick result,
@@ -43,14 +43,30 @@ export function placement(world, hit, id, player) {
   if (hit.b === id) {
     if (d.shape === 'slab' && ((hm === 0 && n[1] === 1) || (hm === 1 && n[1] === -1))) return [[hit.x, hit.y, hit.z, id, 2]];
     if (d.shape === 'candle' && (hm & 3) < 3) return [[hit.x, hit.y, hit.z, id, hm + 1]];
-    if (d.shape === 'layer' && (hm & 7) < 7) return [[hit.x, hit.y, hit.z, id, hm + 1]];
+    if ((d.shape === 'layer' || d.shape === 'snow') && (hm & 7) < 7) return [[hit.x, hit.y, hit.z, id, hm + 1]];
+  }
+  // scaffolding on scaffolding (not sneaking): up the column, or along the way you face when you click its top,
+  // to the first free cell within 7 (the game's ScaffoldingBlockItem)
+  if (hit.b === id && d.name === 'scaffolding' && !player.sneaking) {
+    const dir = n[1] === 1 ? DIRS[lookFacing(player.yaw)] : [0, 1, 0];
+    for (let k = 1; k <= 7; k++) {
+      const cx = hit.x + dir[0] * k, cy = hit.y + dir[1] * k, cz = hit.z + dir[2] * k, c = world.get(cx, cy, cz);
+      if (c === id) continue;
+      if (c && !BLOCKS[c].replaceable) return out;
+      if (player.occupies(cx, cy, cz, [[0, 0, 0, 1, 1, 1]])) return out;
+      return [[cx, cy, cz, id, 0]];
+    }
+    return out;
   }
   let x = hit.x, y = hit.y, z = hit.z;
   // clicking on grass or snow replaces it, as in the game
-  if (!hd.replaceable) { x += n[0]; y += n[1]; z += n[2]; }
+  // (only a single layer of snow gives way: two or more is built on)
+  const gives = (bd, bm) => bd.replaceable && !(bd.shape === 'snow' && (bm & 7) > 0);
+  if (!gives(hd, hm)) { x += n[0]; y += n[1]; z += n[2]; }
   const cur = world.get(x, y, z), cm = world.meta(x, y, z);
   if (cur && cur === id && d.shape === 'slab' && cm !== 2) return [[x, y, z, id, 2]];
-  if (cur && !BLOCKS[cur].replaceable) return out;
+  if (cur && cur === id && d.shape === 'snow' && (cm & 7) < 7) return [[x, y, z, id, cm + 1]];
+  if (cur && !gives(BLOCKS[cur], cm)) return out;
   const fy = hit.hit ? hit.hit[1] - Math.floor(hit.hit[1] - (n[1] === 1 ? 1e-6 : 0)) : 0.5;   // how high up the clicked face
   const upperHalf = n[1] === -1 || (n[1] === 0 && fy > 0.5);
   const look = lookFacing(player.yaw);
@@ -70,9 +86,17 @@ export function placement(world, hit, id, player) {
       break;
     case 'door': {
       if (!solidBelow || world.get(x, y + 1, z) && !BLOCKS[world.get(x, y + 1, z)].replaceable) return out;
-      // the hinge goes on the side of the click, the way the game breaks a tie
-      const r = DIRS[(look + 1) & 3], hx = hit.hit ? hit.hit[0] - x - 0.5 : 0, hz = hit.hit ? hit.hit[2] - z - 0.5 : 0;
-      const right = hx * r[0] + hz * r[2] > 0 ? 16 : 0;
+      // the hinge (the game's getHinge): beside a door of the same kind it pairs up into a double door; else
+      // towards the side with fewer full blocks beside it (below and above); a tie goes by the side clicked
+      const r = DIRS[(look + 1) & 3], l = DIRS[(look + 3) & 3], hx = hit.hit ? hit.hit[0] - x - 0.5 : 0, hz = hit.hit ? hit.hit[2] - z - 0.5 : 0;
+      const fullAt = (xx, yy, zz) => { const b = world.get(xx, yy, zz); return !!b && BLOCKS[b].solid && BLOCKS[b].shape === 'cube'; };
+      const lowerDoor = (xx, zz) => world.get(xx, y, zz) === id && !(world.meta(xx, y, zz) & 8);
+      const lean = -fullAt(x + l[0], y, z + l[2]) - fullAt(x + l[0], y + 1, z + l[2]) + fullAt(x + r[0], y, z + r[2]) + fullAt(x + r[0], y + 1, z + r[2]);
+      const leftDoor = lowerDoor(x + l[0], z + l[2]), rightDoor = lowerDoor(x + r[0], z + r[2]);
+      let right;
+      if ((leftDoor && !rightDoor) || lean > 0) right = 16;
+      else if ((rightDoor && !leftDoor) || lean < 0) right = 0;
+      else right = hx * r[0] + hz * r[2] > 0 ? 16 : 0;
       return [[x, y, z, id, look | right], [x, y + 1, z, id, look | 8 | right]];
     }
     case 'bed': {
@@ -89,6 +113,8 @@ export function placement(world, hit, id, player) {
         return [[x, y, z, wv, support]];
       }
       if (!solidBelow && !(d.shape === 'sign' && d.hanging)) return out;
+      // a hanging sign needs something above to hang from
+      if (d.shape === 'sign' && d.hanging) { const ab = world.get(x, y + 1, z); if (!ab || !BLOCKS[ab].solid) return out; }
       m = d.shape === 'torch' ? 0 : (look + 2) & 3;
       break;
     }
@@ -97,6 +123,18 @@ export function placement(world, hit, id, player) {
       m = support; break;
     case 'button': m = support; break;
     case 'lantern': m = n[1] === -1 ? 1 : 0; break;
+    // a hopper points into what you clicked, or down when you click a top or a bottom
+    case 'hopper': m = n[1] !== 0 ? 4 : horizOf([-n[0], 0, -n[2]]); break;
+    case 'campfire': m = look; break;
+    case 'lectern': case 'grindstone': m = (look + 2) & 3; break;
+    // a bell stands on the floor across your view, hangs from a ceiling, or from one wall (or two)
+    case 'bell': {
+      if (n[1] === 1) { m = look << 1; break; }
+      if (n[1] === -1) { m = 1; break; }
+      const F = { 5: 0, 0: 1, 4: 2, 1: 3 }[support], far = world.get(x + n[0], y, z + n[2]);
+      m = (F << 1) | (far && BLOCKS[far].solid && BLOCKS[far].shape === 'cube' ? 32 : 8);
+      break;
+    }
     case 'rod': m = n[1] === 1 ? 4 : n[1] === -1 ? 5 : horizOf(n); break;
     case 'chain': m = n[0] ? 1 : n[2] ? 2 : 0; break;
     case 'cross': case 'crop': case 'rail': case 'wire': case 'plate': case 'pot': case 'candle': case 'cake':

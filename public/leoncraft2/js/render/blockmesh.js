@@ -172,7 +172,7 @@ export function blockGeometry(d, meta) {
           }
           let tu = F.t[kt] > 0 ? P[kt] : 16 - P[kt], tv = F.b[kb] > 0 ? P[kb] : 16 - P[kb];
           const r = bx.uv && bx.uv[f];
-          if (r) { tu = u ? r[2] : r[0]; tv = v ? r[3] : r[1]; }
+          if (r) { if (r[4]) { tu = v ? r[2] : r[0]; tv = u ? r[3] : r[1]; } else { tu = u ? r[2] : r[0]; tv = v ? r[3] : r[1]; } }
           put(P[0] / 16 - 0.5, P[1] / 16 - 0.5, P[2] / 16 - 0.5, layer, tu, tv, f, flags);
         }
         idx.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);

@@ -42,6 +42,7 @@ const EPS = 1e-7;
 // the body's poses: height and eye height
 const POSE = { stand: [1.8, 1.62], crouch: [1.5, 1.27], swim: [0.6, 0.4] };
 const ids = list => new Set(list.map(n => B[n]).filter(v => v !== undefined));
+const SCAFFOLD = B.scaffolding;
 const CLIMB = ids(['ladder', 'vine', 'scaffolding', 'weeping_vines', 'weeping_vines_plant', 'twisting_vines', 'twisting_vines_plant', 'cave_vines', 'cave_vines_plant']);
 const byName = list => new Map(list.filter(e => B[e[0]] !== undefined).map(e => [B[e[0]], e[1]]));
 // standing on these: how much of your speed (and jump) is left
@@ -110,6 +111,8 @@ export class Player {
           const b = w.get(x, y, z);
           if (!b || !SOLID[b]) continue;
           const d = BLOCKS[b];
+          // scaffolding holds you up only from above, and not while you sneak down through it (the game's STABLE shape)
+          if (b === SCAFFOLD) { if (this.pos.y >= y + 1 - 1e-5 && !this.sneaking) out.push(x, y + 14 / 16, z, x + 1, y + 1, z + 1); continue; }
           if (d.shape === 'cube') { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }
           const boxes = collisionBoxes(d, w.meta(x, y, z), nbAt(x, y, z));
           if (boxes) for (const c of boxes) out.push(x + c[0], y + c[1], z + c[2], x + c[3], y + c[4], z + c[5]);
@@ -382,7 +385,8 @@ export class Player {
       this.vel.x = Math.max(-0.15, Math.min(0.15, this.vel.x));
       this.vel.z = Math.max(-0.15, Math.min(0.15, this.vel.z));
       this.vel.y = Math.max(-0.15, this.vel.y);
-      if (this.vel.y < 0 && this.sneaking) this.vel.y = 0;
+      // (but sneaking in scaffolding is how you go down it)
+      if (this.vel.y < 0 && this.sneaking && this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y), Math.floor(this.pos.z)) !== SCAFFOLD) this.vel.y = 0;
     }
     if (this.inWater && !this.flying) this.pushByWater();
     const was = this.pos.clone(), startY = this.pos.y;
