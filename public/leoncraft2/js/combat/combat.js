@@ -415,7 +415,10 @@ export class Combat {
     const stage = e < C[1] ? 0 : e < C[1] + C[2] ? 1 : 2;
     const cp = Math.cos(P.pitch), lx = -Math.sin(P.yaw) * cp, ly = Math.sin(P.pitch), lz = -Math.cos(P.yaw) * cp;
     const ex = P.pos.x, ey = P.pos.y + (P.eyeH || 1.62), ez = P.pos.z, g = 0.125;
-    const v = (m.riding || P).vel;
+    // how you are really moving: the step the last tick took (the velocity left after it is
+    // what friction leaves, about half a sprint's), the mount's when riding
+    const mount = m.riding, mv = P.moved || [0, 0, 0];
+    const v = mount ? { x: mount.pos.x - mount.prev.x, y: mount.pos.y - mount.prev.y, z: mount.pos.z - mount.prev.z } : { x: mv[0], y: mv[1], z: mv[2] };
     m.forNear(ex, ez, 8, t => {
       if (!(t instanceof Living) || t.dead || t.removed || t === m.riding || t.vehicle === m.riding && m.riding) return;
       const d = rayBox(ex, ey, ez, lx, ly, lz, t.pos.x - t.hw - g, t.pos.y - g, t.pos.z - t.hw - g, t.pos.x + t.hw + g, t.pos.y + t.h + g, t.pos.z + t.hw + g);

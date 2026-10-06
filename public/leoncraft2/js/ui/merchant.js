@@ -189,7 +189,7 @@ export class MerchantScreen extends ContainerScreen {
     }
     this.drawScroller(g);
     const prev = this.drawSlots(g, mx, my);
-    if (tip) g.setTooltip(stackTooltip(tip, this.advancedTips));
+    if (tip) g.setTooltip(stackTooltip(tip, this.advancedTips, this.inv && this.inv.mode === 'creative'));
     else if (sel && T.outOfStock(sel) && mx >= L + 186 && mx < L + 208 && my >= T0 + 35 && my < T0 + 56) g.setTooltip(['Villagers restock up to two times per day.']);
     this.drawCarried(g, mx, my, prev);
   }
