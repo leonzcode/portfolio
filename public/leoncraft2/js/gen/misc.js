@@ -100,6 +100,10 @@ FEATURES.lake = (D, c, r, ox, oy, oz) => {
     if (t >= 4 && fluidOf(b)) return false;
     if (t < 4 && !isSolid(b) && b !== fluid.id) return false;
   }
+  // working out where lakes would go (Decorator.lakePlan), or giving way to a lake of a chunk decorated first
+  const box = [ox, oy, oz, ox + 15, oy + 7, oz + 15];
+  if (R.dry) { R.dry.push(box); return true; }
+  if (D.lakeClash && D.lakeClash(box)) return false;
   const canFluid = predicate(c.can_replace_with_air_or_fluid || { type: 'true' });
   for (let j = 0; j < 16; j++) for (let s = 0; s < 16; s++) for (let t = 0; t < 8; t++) {
     if (!at(j, s, t)) continue;
@@ -711,9 +715,11 @@ FEATURES.speleothem_cluster = (D, c, r, ox, oy, oz) => {
     let up = Math.max(0, Math.round(height * bias + (r.nextFloat() * 2 - 1) * dev * 0.5));
     let down = Math.max(0, Math.round(height * bias + (r.nextFloat() * 2 - 1) * dev * 0.5));
     // a puddle on the floor now and then, where the cave is wet
+    // (only where rock or water holds it on every side and underneath, as the game asks, so no puddle hangs over a cave)
     if (bottom !== null && r.nextFloat() < wetness && R.get(x, bottom, z) === baseSt.id) {
-      let walled = true;
-      for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const b = R.get(x + ax, bottom, z + az); if (isAir(b)) { walled = false; break; } }
+      const holds = b => b === B.water || sturdy(b);
+      let walled = holds(R.get(x, bottom - 1, z));
+      for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { if (!walled) break; if (!holds(R.get(x + ax, bottom, z + az))) walled = false; }
       if (walled) { R.set(x, bottom, z, B.water, 0); up = 0; }
     }
     if (pointedName !== 'pointed_dripstone') {

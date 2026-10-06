@@ -536,9 +536,9 @@ export class VanillaGen {
       if (this.structureHook) {
         const mask = new Uint8Array(VOL);
         p.structs = this.structureHook(p.blocks, p.meta, cx, cz, mask);
-        p.smask = mask;
         p.heights = null;
-        if (p.structs) this.regrass(p, cx, cz, mask);
+        // kept only where something was built (it is what the first features keep off)
+        if (p.structs) { p.smask = mask; this.regrass(p, cx, cz, mask); }
       }
     }
     return p;
