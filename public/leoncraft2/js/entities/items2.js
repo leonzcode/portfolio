@@ -33,7 +33,7 @@ import { register, TYPES } from './mobs.js?v=17';
 import { model } from './mobs2.js?v=17';
 import { addArt } from './mobart.js?v=17';
 import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=17';
-import { ITEMS, I, armorOf } from '../items.js?v=17';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS } from '../items.js?v=17';
 import { fireworkColour } from '../crafting.js?v=17';
 import { rayBox } from './terrain.js?v=17';
 const THREE = window.THREE;
@@ -209,17 +209,7 @@ addArt('armor_stand', [64, 64], p => {
 });
 
 /* ---- paintings ---- */
-const PAINTINGS = [
-  ['kebab', 1, 1], ['aztec', 1, 1], ['alban', 1, 1], ['aztec2', 1, 1], ['bomb', 1, 1], ['plant', 1, 1], ['wasteland', 1, 1], ['meditative', 1, 1],
-  ['pool', 2, 1], ['courbet', 2, 1], ['sea', 2, 1], ['sunset', 2, 1], ['creebet', 2, 1],
-  ['wanderer', 1, 2], ['graham', 1, 2], ['prairie_ride', 1, 2],
-  ['match', 2, 2], ['bust', 2, 2], ['stage', 2, 2], ['void', 2, 2], ['skull_and_roses', 2, 2], ['wither', 2, 2], ['baroque', 2, 2], ['humble', 2, 2],
-  ['bouquet', 3, 3], ['cavebird', 3, 3], ['cotan', 3, 3], ['endboss', 3, 3], ['fern', 3, 3], ['owlemons', 3, 3], ['sunflowers', 3, 3], ['tides', 3, 3], ['dennis', 3, 3],
-  ['backyard', 3, 4], ['pond', 3, 4],
-  ['fighters', 4, 2], ['changing', 4, 2], ['finding', 4, 2], ['lowmist', 4, 2], ['passage', 4, 2],
-  ['skeleton', 4, 3], ['donkey_kong', 4, 3],
-  ['pointer', 4, 4], ['pigscene', 4, 4], ['burning_skull', 4, 4], ['orb', 4, 4], ['unpacked', 4, 4],
-];
+const PAINTINGS = PAINTING_VARIANTS;
 /* Each picture our own, from the name's seed: one of four scenes (rolling
    hills by day, a sea at sunset, a night with a moon and stars, a few bold
    shapes), in flat bands of colour with a pixel of grain, a sun or moon,
@@ -437,14 +427,14 @@ export function useExtra(m, name, target, take, build) {
     return e;
   };
   if (name === 'ender_pearl') {
-    if ((m.pearlCool || 0) > m.age) return true;
-    if (throwIt('ender_pearl', 1.5, 0)) { take(); m.pearlCool = m.age + 20; }
+    if (onCooldown(name)) return true;
+    if (throwIt('ender_pearl', 1.5, 0)) { take(); addCooldown(name, 20); }
     return true;
   }
   if (name === 'experience_bottle') { if (throwIt('experience_bottle', 0.7, 20)) take(); return true; }
   if (name === 'wind_charge') {
-    if ((m.windCool || 0) > m.age) return true;
-    if (throwIt('wind_charge', 1.5, 0)) { take(); m.windCool = m.age + 10; }
+    if (onCooldown(name)) return true;
+    if (throwIt('wind_charge', 1.5, 0)) { take(); addCooldown(name, 10); }
     return true;
   }
   if (name === 'blue_egg' || name === 'brown_egg') { if (throwIt('egg', 1.5, 0)) take(); return true; }
@@ -477,7 +467,15 @@ export function useExtra(m, name, target, take, build) {
   }
   if (name === 'painting') {
     if (!target || !target.face || !build || target.face[1] !== 0) return false;
-    const f = target.face;
+    const f = target.face, st = m.inv && m.inv.slots[m.inv.selected];
+    // one picture of its own (from the creative tabs): there, if it fits
+    const own = st && st.variant && PAINTINGS.find(v => v[0] === st.variant);
+    if (own) {
+      if (!paintingFits(m, target.x, target.y, target.z, f, own[1], own[2])) return false;
+      const e = m.spawn('painting', target.x, target.y, target.z, { natural: false });
+      if (e) { e.setOn(target.x, target.y, target.z, f, own[0]); e.persistent = true; take(); }
+      return true;
+    }
     // the largest pictures that fit, one of them at random
     let best = 0, fits = [];
     for (const v of PAINTINGS) {

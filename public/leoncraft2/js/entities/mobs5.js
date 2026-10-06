@@ -336,7 +336,8 @@ export class Llama extends AbstractHorse {
   inherit(a, b) { this.rollStats(); this.health = this.maxHealth; this.coat = R() < 0.5 ? a.coat : b.coat; }
   texName() { return 'llama_' + this.coat; }
   eatFood(f) { return f; }
-  interact(held) {
+  interact(held, player) {
+    if (this.tamed && player && player.sneaking && player.sneaking() && this.openInventory()) return 'swing';
     if (this.passengers.length) return false;
     if (held === 'wheat' || held === 'hay_block') {
       let ate = false;
@@ -348,7 +349,7 @@ export class Llama extends AbstractHorse {
     }
     if (this.ageT < 0) return false;
     if (held && held.endsWith('_carpet') && this.tamed) { this.decor = held.slice(0, -7); return 'consume'; }
-    if (held === 'chest' && this.tamed && !this.chest) { this.chest = true; return 'consume'; }
+    if (held === 'chest' && this.tamed && !this.chest) { this.setChest(true); return 'consume'; }
     if (!this.tamed && held) { this.rear(); return 'swing'; }
     this.m.mount(this);
     return 'swing';
@@ -360,10 +361,10 @@ export class Llama extends AbstractHorse {
     if (this.decor) out.push(['llama_decor', this.decor === 'trader' ? 'llama_decor_trader' : 'llama_decor', this.decor === 'trader' ? null : CARPET_RGB[this.decor]]);
     if (this.chest) out.push(['llama_chest', this.texName(), null]);
   }
-  loot(drop) { drop('leather', RI(3)); if (this.chest) drop('chest', 1); if (this.decor) drop(this.decor + '_carpet', 1); }
+  loot(drop) { super.loot(drop); if (this.chest) drop('chest', 1); if (this.decor) drop(this.decor + '_carpet', 1); }
   anim(A, a) { super.anim(A, a); A.eat = 0; }
   toJSON() { const o = super.toJSON(); o.coat = this.coat; o.str = this.strength; if (this.decor) o.dec = this.decor; if (this.chest) o.ch = 1; return o; }
-  fromJSON(o) { super.fromJSON(o); this.coat = o.coat || 'creamy'; this.strength = o.str || 3; this.decor = o.dec || null; this.chest = !!o.ch; }
+  fromJSON(o) { this.strength = o.str || 3; super.fromJSON(o); this.coat = o.coat || 'creamy'; this.decor = o.dec || null; if (o.ch && !this.chest) this.setChest(true); }
 }
 register('llama', Llama);
 export class TraderLlama extends Llama {

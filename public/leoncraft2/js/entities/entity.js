@@ -411,6 +411,8 @@ export class Mob extends Living {
     this.registerGoals();
   }
   registerGoals() {}
+  // how much it likes to wander to a spot (the game's walk target value): no preference unless a kind says so
+  walkValue() { return 0; }
   holding(name) { return this.equip.mainhand === name || this.equip.offhand === name; }
   equipXp() { let n = 0; for (const k in this.equip) if (this.equip[k]) n += 1 + Math.floor(Math.random() * 3); return n; }
   dropEquipment(drop, byPlayer) {

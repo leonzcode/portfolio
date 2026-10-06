@@ -29,7 +29,8 @@
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=17';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON } from './items.js?v=17';
+import { setLodestoneCheck } from './dials.js?v=17';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=17';
 import { breakTicks, wearFor } from './mining.js?v=17';
 import { blockDrops } from './loot.js?v=17';
 import { containerKind, spill } from './containers.js?v=17';
@@ -62,6 +63,18 @@ function joinSlots(a, b) {
     has(t, k) { if (typeof k === 'string' && /^\d+$/.test(k)) return +k < n; return k in t; },
   });
 }
+/* Copper's ages: each copper block's name one age younger (an axe scrapes it
+   back), and every copper block that ages (honeycomb waxes those). */
+const COPPER_AGES = ['exposed_', 'weathered_', 'oxidized_'], COPPER_AGE = new Set(), COPPER_BACK = {};
+for (const d of BLOCKS) {
+  if (!d || !/copper|lightning_rod/.test(d.name) || /^waxed_|ore$|^raw_|_ingot$|_nugget$/.test(d.name)) continue;
+  if (B['waxed_' + d.name] !== undefined) COPPER_AGE.add(d.name);
+  const i = COPPER_AGES.findIndex(a => d.name.startsWith(a));
+  if (i < 0) continue;
+  const fam = d.name.slice(COPPER_AGES[i].length);
+  const back = i > 0 ? COPPER_AGES[i - 1] + fam : fam === 'copper' ? 'copper_block' : fam;
+  if (B[back] !== undefined) COPPER_BACK[d.name] = back;
+}
 const STRIP = {};
 for (const w of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'cherry', 'pale_oak', 'poplar']) { STRIP[w + '_log'] = 'stripped_' + w + '_log'; STRIP[w + '_wood'] = 'stripped_' + w + '_wood'; }
 for (const w of ['crimson', 'warped']) { STRIP[w + '_stem'] = 'stripped_' + w + '_stem'; STRIP[w + '_hyphae'] = 'stripped_' + w + '_hyphae'; }
@@ -81,6 +94,12 @@ export class Hands {
     this.onToolBreak = null;         // (stack) the breaking sound
     // a tool or a piece of armour that wears out breaks into pieces
     if (this.inv && this.inv.on) this.inv.on('broke', s => this.toolBroke(s));
+    // a lodestone compass's needle spins once its lodestone is known to be gone (js/dials.js)
+    setLodestoneCheck((x, y, z, dim) => {
+      const w = this.world;
+      if (!w || (w.dim || 'overworld') !== dim || (w.chunkAt && !w.chunkAt(x, z))) return null;
+      return w.get(x, y, z) === B.lodestone;
+    });
     // an elytra worn and not worn out (one point of it left is not enough to fly), for the player's glide
     if (this.player) this.player.hasElytra = () => { const c = this.inv.armor[1], it = c && ITEMS[c.id]; return !!(it && it.name === 'elytra' && (c.dmg | 0) < (it.dur || 432) - 1); };
     this.glideT = 0;
@@ -201,7 +220,8 @@ export class Hands {
     const w = this.world, b = hit.b, d = BLOCKS[b];
     if (!d || w.get(hit.x, hit.y, hit.z) !== b) return false;
     const holding = !!this.held || !!this.inv.offhand;
-    if (this.player.sneaking && holding) return false;
+    // sneaking with something in hand skips the block's own use, not what the item does to it
+    if (this.player.sneaking && holding) return this.itemOnBlock(hit, d);
     // cauldrons, composters, campfires and signs (details.js)
     if (this.details && this.details.use(this, hit)) return true;
     if (d.name === 'crafting_table') { this.open(new CraftingScreen(this.inv, this.icons)); return true; }
@@ -241,21 +261,54 @@ export class Hands {
       this.open(kind === 'shulker_box' ? new ShulkerScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)) : new ChestScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)));
       return true;
     }
-    // tools on the ground and on logs
-    const it = this.held ? ITEMS[this.held.id] : null, tool = it && it.tool;
-    if (tool && !this.player.sneaking && this.mayBuild) {
-      const above = w.get(hit.x, hit.y + 1, hit.z);
-      let to = null;
-      if (tool.kind === 'axe' && STRIP[d.name]) to = STRIP[d.name];
-      else if (tool.kind === 'hoe' && TILL[d.name] && !above && hit.face && hit.face[1] !== -1) to = TILL[d.name];
-      else if (tool.kind === 'shovel' && FLATTEN[d.name] && !above && hit.face && hit.face[1] !== -1) to = FLATTEN[d.name];
-      if (to && B[to] !== undefined) {
-        w.set(hit.x, hit.y, hit.z, B[to], tool.kind === 'axe' ? w.meta(hit.x, hit.y, hit.z) : 0);
-        if (!this.creative) this.inv.damageSelected(1);
-        return true;
+    return this.itemOnBlock(hit, d);
+  }
+  /* What the held item does to a block, sneaking or not: tools till, flatten
+     and strip, an axe scrapes copper back an age or takes its wax off (not
+     with a shield up in the other hand, unless sneaking), honeycomb waxes
+     copper so it never ages. A door changes both its halves. */
+  itemOnBlock(hit, d) {
+    const w = this.world, it = this.held ? ITEMS[this.held.id] : null, tool = it && it.tool;
+    if (!it || !this.mayBuild) return false;
+    // a door or trapdoor opens instead, unless you sneak (interact.js)
+    if (!this.player.sneaking && (d.shape === 'door' || d.shape === 'trapdoor')) return false;
+    const set = to => {
+      const m = w.meta(hit.x, hit.y, hit.z);
+      w.set(hit.x, hit.y, hit.z, B[to], m);
+      if (d.shape === 'door') { const oy = m & 8 ? -1 : 1; if (w.get(hit.x, hit.y + oy, hit.z) === d.id) w.set(hit.x, hit.y + oy, hit.z, B[to], w.meta(hit.x, hit.y + oy, hit.z)); }
+    };
+    /* a compass on a lodestone points at it from now on: the compass itself if it is alone
+       (in survival), else a new one, the old stack one fewer */
+    if (it.name === 'compass' && d.name === 'lodestone') {
+      const link = { x: hit.x, y: hit.y, z: hit.z, dim: w.dim || 'overworld' }, s = this.held;
+      if (!this.creative && s.count === 1) { s.lodestone = link; this.inv.changed(); }
+      else {
+        if (!this.creative) this.inv.takeSelected(1);
+        this.inv.placeBack({ id: s.id, count: 1, lodestone: link });
+        this.inv.changed();
       }
+      return true;
     }
-    return false;
+    if (it.name === 'honeycomb' && !/^waxed_/.test(d.name) && COPPER_AGE.has(d.name) && B['waxed_' + d.name] !== undefined) {
+      set('waxed_' + d.name);
+      if (!this.creative) this.inv.takeSelected(1);
+      return true;
+    }
+    if (!tool) return false;
+    const above = w.get(hit.x, hit.y + 1, hit.z);
+    let to = null;
+    if (tool.kind === 'axe') {
+      const off = this.inv.offhand, shield = off && ITEMS[off.id] && ITEMS[off.id].name === 'shield';
+      if (shield && !this.player.sneaking) return false;
+      if (STRIP[d.name]) to = STRIP[d.name];
+      else if (/^waxed_/.test(d.name)) to = d.name.slice(6);
+      else to = COPPER_BACK[d.name] || null;
+    } else if (tool.kind === 'hoe' && TILL[d.name] && !above && hit.face && hit.face[1] !== -1) to = TILL[d.name];
+    else if (tool.kind === 'shovel' && FLATTEN[d.name] && !above && hit.face && hit.face[1] !== -1) to = FLATTEN[d.name];
+    if (!to || B[to] === undefined) return false;
+    if (tool.kind === 'axe') set(to); else w.set(hit.x, hit.y, hit.z, B[to], 0);
+    if (!this.creative) this.inv.damageSelected(1);
+    return true;
   }
 
   // the work blocks: enchanting table, anvils, grindstone, smithing table, stonecutter
@@ -303,12 +356,17 @@ export class Hands {
   useItem(hit) {
     const s = this.held;
     if (!s) return false;
+    // a lily pad or frogspawn goes on the water looked at, never on a block (the game's place-on-water items)
+    const pad = BLOCKS[blockOf(s.id)];
+    if (pad && pad.shape === 'pad') return this.placeOnWater(s, blockOf(s.id));
     const it = ITEMS[s.id];
     if (!it) return false;
     // bows, crossbows and tridents draw while the button is held (combat/combat.js)
     const cb = this.inter && this.inter.entities && this.inter.entities.combat;
     if (cb && !this.using && cb.useItem(s)) return true;
     const food = foodOf(s.id);
+    // an item still cooling down (chorus fruit, a goat horn) does nothing, and the other hand may have its go
+    if (onCooldown(it.name)) return false;
     if (food && !this.using) {
       // food that is also a block (a carrot, sweet berries) is planted when clicked on a block it can go on
       if (it.block && hit && hit.face && this.canPlant(it, hit)) return false;
@@ -319,6 +377,23 @@ export class Hands {
       return true;
     }
     if (this.using) return true;
+    /* a goat horn: blown for its seven seconds, the arm up to the mouth and the step slowed as with
+       anything used, and seven seconds from the first note before it sounds again (the game's
+       instruments all last 7 seconds; this game has no sounds yet, onHorn is where one would go) */
+    if (isBundle(s)) {
+      if (!s.items || !s.items.some(Boolean)) return false;
+      this.using = { slot: this.inv.selected, id: s.id, t: 0, total: 200, off: !!this.offTurn, bundle: true };
+      this.player.usingItem = true;
+      this.dropFromBundle();
+      return true;
+    }
+    if (it.name === 'goat_horn') {
+      this.using = { slot: this.inv.selected, id: s.id, t: 0, total: 140, off: !!this.offTurn, horn: true };
+      this.player.usingItem = true;
+      addCooldown('goat_horn', 140);
+      if (this.onHorn) this.onHorn(s);
+      return true;
+    }
     // armour (not the wearable blocks, which are placed): straight on, swapping what was worn
     const ar = armorOf(s.id);
     if (ar && !it.block) {
@@ -433,6 +508,8 @@ export class Hands {
     // let go, switched slot (for the main hand) or item: stop
     if (!this.inter.useHeld || (!u.off && this.inv.selected !== u.slot) || !s || s.id !== u.id) { this.stopUsing(); return; }
     u.t++;
+    if (u.horn) { if (u.t >= u.total) this.stopUsing(); return; }
+    if (u.bundle) { if (u.t > 10 && u.t % 2 === 0 && !this.dropFromBundle()) this.stopUsing(); else if (u.t >= u.total) this.stopUsing(); return; }
     if (u.t > 7 && (u.total - u.t) % 4 === 0) {
       this.crumbs(u.id);
       if (this.onEat) this.onEat(u.id);
@@ -445,13 +522,16 @@ export class Hands {
     const s = this.usedStack(u);
     this.stopUsing();
     if (food.hunger || food.saturation) sv.eat(food.hunger, food.saturation);
-    if (food.effects) for (const [name, level, secs, chance] of food.effects) if (Math.random() < chance) sv.addEffect(name, level, secs * 20);
+    // (an ominous bottle's Bad Omen is as strong as the bottle says)
+    const amp = it.name === 'ominous_bottle' && s ? (s.amp | 0) : 0;
+    if (food.effects) for (const [name, level, secs, chance] of food.effects) if (Math.random() < chance) sv.addEffect(name, level + amp, secs * 20);
     if (it.name === 'milk_bucket') sv.clearEffects();
     if (it.name === 'honey_bottle') delete sv.effects.poison;
-    if (it.name === 'chorus_fruit') this.chorusTeleport();
+    if (it.name === 'chorus_fruit') { this.chorusTeleport(); addCooldown('chorus_fruit', 20); }
     if (isPotion(s)) drinkPotion(s, sv);
     // a suspicious stew's effect (a farmer's, or one from flowers)
-    if (s && s.stew) sv.addEffect(s.stew[0], 1, s.stew[1]);
+    const stew = stewEffect(s);
+    if (stew) sv.addEffect(stew[0], 1, stew[1]);
     if (!this.creative && s) {
       s.count--;
       const left = food.leaves ? I[food.leaves] : 0;
@@ -489,13 +569,58 @@ export class Hands {
     out.use = null;
     if (u) {
       const food = ITEMS[u.id] && ITEMS[u.id].food;
-      U.kind = food && food.drink ? 'drink' : 'eat'; U.side = u.off ? 1 : 0; U.t = u.t + a; U.total = u.total;
+      U.kind = u.horn ? 'horn' : food && food.drink ? 'drink' : 'eat'; U.side = u.off ? 1 : 0; U.t = u.t + a; U.total = u.total;
       out.use = U;
     } else {
       const cb = this.inter && this.inter.entities && this.inter.entities.combat;
       if (cb && cb.useState) out.use = cb.useState(a);
+      // a spyglass up to the eye (main.js draws the glass in first person; this is the arm, for third person)
+      if (!out.use && this.inter && this.inter.useHeld) {
+        const side = this.spyglassSide();
+        if (side >= 0) { U.kind = 'spyglass'; U.side = side; U.t = 0; U.total = 0; out.use = U; }
+      }
     }
     return out;
+  }
+
+  /* On the first still water along the look within reach (flowing water is
+     looked through, anything solid stops it): the block put on top of it,
+     if that cell is free. */
+  placeOnWater(s, block) {
+    if (!this.mayBuild) return false;
+    const p = this.player, w = this.world, eye = p.view(1).eye;
+    const dx = -Math.sin(p.yaw) * Math.cos(p.pitch), dy = Math.sin(p.pitch), dz = -Math.cos(p.yaw) * Math.cos(p.pitch);
+    const reach = this.creative ? 5 : 4.5;
+    for (let t = 0; t <= reach; t += 0.05) {
+      const x = Math.floor(eye.x + dx * t), y = Math.floor(eye.y + dy * t), z = Math.floor(eye.z + dz * t), b = w.get(x, y, z);
+      if (!b) continue;
+      if (FLUID[b] === 1) {
+        if (w.meta(x, y, z) & 15) continue;
+        const up = w.get(x, y + 1, z);
+        if (up && !(BLOCKS[up] && BLOCKS[up].replaceable && !FLUID[up])) return false;
+        w.set(x, y + 1, z, block || s.id, 0);
+        if (!this.creative) this.inv.takeSelected(1);
+        if (this.renderer) this.renderer.swing = 1;
+        return true;
+      }
+      if (BLOCKS[b].solid) return false;
+    }
+    return false;
+  }
+  // the newest stack in the bundle in use thrown out ahead, as a dropped item is; false once it is empty
+  dropFromBundle() {
+    const s = this.usedStack(this.using);
+    const out = s && bundleTake(s);
+    if (!out) return false;
+    this.throwStack(out);
+    this.inv.changed();
+    return true;
+  }
+  // the hand a spyglass is held up with: the main hand, or the off hand while the main hand is empty (-1: none)
+  spyglassSide() {
+    const m = this.inv.slots[this.inv.selected], o = this.inv.offhand;
+    if (m) return ITEMS[m.id] && ITEMS[m.id].name === 'spyglass' ? 0 : -1;
+    return o && ITEMS[o.id] && ITEMS[o.id].name === 'spyglass' ? 1 : -1;
   }
 
   /* ---- wear from use away from blocks ---- */

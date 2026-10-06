@@ -325,7 +325,8 @@ export function installParts(sim) {
     if (n === 'end_portal_frame') return m & 4 ? 15 : 0;
     if (n === 'respawn_anchor') return Math.floor(15 * Math.min(4, m & 7) / 4);
     if (/copper_bulb$/.test(n)) return m & 1 ? 15 : 0;
-    if (n === 'jukebox' || n === 'beehive' || n === 'bee_nest' || n === 'chiseled_bookshelf' || n === 'lectern' || n === 'decorated_pot' || n === 'crafter') return 0;
+    if (n === 'jukebox') { const D = S.game && S.game.details; return D && D.jukeboxSignal ? D.jukeboxSignal(x, y, z) : 0; }
+    if (n === 'beehive' || n === 'bee_nest' || n === 'chiseled_bookshelf' || n === 'lectern' || n === 'decorated_pot' || n === 'crafter') return 0;
     if (n === 'detector_rail') return 0;
     return -1;
   };
@@ -797,7 +798,7 @@ export function installParts(sim) {
     if (E && E.list) for (const e of E.list) {
       if (e.removed || (e.dead && e.deathTime > 0)) continue;
       const hw = e.hw !== undefined ? e.hw : (e.w || 0.6) / 2, h = e.h || 1;
-      const k = e.type === 'minecart' ? 'cart' : /arrow|trident/.test(e.type) ? 'arrow' : e instanceof Living ? 'mob' : 'other';
+      const k = /minecart$/.test(e.type) ? 'cart' : /arrow|trident/.test(e.type) ? 'arrow' : e instanceof Living ? 'mob' : 'other';
       boxes.push({ k, living: e instanceof Living, sneak: false, b: [e.pos.x - hw, e.pos.y, e.pos.z - hw, e.pos.x + hw, e.pos.y + h, e.pos.z + hw], e });
     }
     const D = g && g.drops;

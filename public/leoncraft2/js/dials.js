@@ -55,6 +55,21 @@ const DIALS = {
   recovery_compass: { at: 0, to: 0, frames: 32, base: 16, frame: 16 },
   clock: { at: 0, to: 0, frames: 64, base: 0, frame: 0 },
 };
+/* A lodestone compass ({ lodestone: { x, y, z, dim } } on its stack) has a
+   needle of its own: towards its lodestone in that dimension, spinning
+   elsewhere or once the lodestone is gone (lodestoneCheck, set by hands.js:
+   false when the block there is known not to be one). A needle nothing has
+   shown for 10 seconds is let go. */
+const LODE = new Map();
+let lodestoneCheck = null;
+export function setLodestoneCheck(fn) { lodestoneCheck = fn; }
+function lodeDial(t) {
+  const k = t.x + ',' + t.y + ',' + t.z + ',' + (t.dim || 'overworld');
+  let d = LODE.get(k);
+  if (!d) { d = { at: 0, to: 0, frames: 32, base: 16, frame: 16, t, idle: 0, fresh: true }; LODE.set(k, d); }
+  d.idle = 0;
+  return d;
+}
 let death = null;           // { dim, x, z }: where you last died
 let wasDead = false;
 let started = false;
@@ -78,6 +93,16 @@ export function tickDials(s) {
   if (home) K.to = wrap(s.time / 24000 - 0.25);
   else if (Math.random() < 0.1) K.to = Math.random();
   let changed = false;
+  for (const [k, d] of LODE) {
+    if (++d.idle > 200) { LODE.delete(k); continue; }
+    const t = d.t, there = (t.dim || 'overworld') === (s.dim || 'overworld') && !(lodestoneCheck && lodestoneCheck(t.x, t.y, t.z, t.dim || 'overworld') === false);
+    if (there) d.to = angleTo(s, t.x + 0.5, t.z + 0.5);
+    else if (Math.random() < 0.1) d.to = Math.random();
+    d.at = d.fresh ? d.to : wrap(d.at + towards(d.at, d.to) / 3);
+    d.fresh = false;
+    const f = (d.base + Math.round(d.at * d.frames)) % d.frames;
+    if (f !== d.frame) { d.frame = f; changed = true; }
+  }
   for (const name in DIALS) {
     const d = DIALS[name];
     // the first tick puts every dial where it belongs; after that they ease a third of the way each tick
@@ -97,8 +122,8 @@ export function setDeathPoint(d) {
   wasDead = false; started = false;
 }
 
-export function dialPicture(name) {
-  const d = DIALS[name];
+export function dialPicture(name, st) {
+  const d = name === 'compass' && st && st.lodestone ? lodeDial(st.lodestone) : DIALS[name];
   return d ? 'frame_' + name + '_' + String(d.frame).padStart(2, '0') : null;
 }
 

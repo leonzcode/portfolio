@@ -55,9 +55,16 @@ function particleV(e, kind, x, y, z, vx, vy, vz, col, light) {
 // the player's eye height (sneaking lowers it)
 const eyeOf = P => P.pos.y + (P.sneaking ? 1.27 : 1.62);
 // is it raining on this spot? (the weather is someone else's; this reads it if it is there)
+/* rain falling on a block, as the game asks it: raining, open to the sky, and
+   a biome where it rains rather than snows (or neither). The manager's
+   raining is a method: read as a value it was always true, so endermen under
+   an open sky were hurt and teleported off every tick, rain or not. */
 function rainOn(m, x, y, z) {
-  const r = typeof m.isRaining === 'function' ? m.isRaining() : m.raining;
-  return !!r && m.seesSky(Math.floor(x), Math.floor(y), Math.floor(z));
+  const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
+  const w = m.sim && m.sim.weather;
+  if (w && w.rainingAt) return m.dim === 'overworld' && w.rainingAt(bx, by, bz);
+  const r = typeof m.isRaining === 'function' ? m.isRaining() : typeof m.raining === 'function' ? m.raining() : m.raining;
+  return !!r && m.seesSky(bx, by, bz);
 }
 const ids = names => { const a = new Uint8Array(4096); for (const n of names) if (B[n] !== undefined) a[B[n]] = 1; return a; };
 let TABLES = null;

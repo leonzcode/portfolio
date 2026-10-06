@@ -175,6 +175,14 @@ function dispense(sim, C, c, i, st, x, y, z, f, fx, fy, fz) {
     sound(sim, 'click', x, y, z);
     return one();
   }
+  // a minecart of any kind: onto a rail in front (or one a block down there), else thrown out
+  if (E && E.placeCartAt && /^(\w+_)?minecart$/.test(n)) {
+    const rail = id => !!id && !!BLOCKS[id] && BLOCKS[id].shape === 'rail';
+    const at = rail(front) ? fy : rail(w.get(fx, fy - 1, fz)) ? fy - 1 : null;
+    if (at === null || !E.placeCartAt(n, fx, at, fz)) return throwOne();
+    sound(sim, 'click', x, y, z);
+    return one();
+  }
   // mobs from spawn eggs
   if (E && /_spawn_egg$/.test(n)) {
     const e = E.spawn(n.slice(0, -10), fx + 0.5, fy, fz + 0.5, { natural: true });
