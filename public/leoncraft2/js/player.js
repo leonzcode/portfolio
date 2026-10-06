@@ -6,14 +6,21 @@
 
      on the ground   acceleration 0.1 (x1.3 sprinting, x0.3 sneaking), then
                      friction 0.546 a tick; jump 0.42 up (sprint-jumping
-                     adds 0.2 forward)
+                     adds 0.2 forward), and held, the next jump 10 ticks
+                     after the last
      in the air      acceleration 0.02, gravity 0.08, drag 0.98 up and down,
                      0.91 across
+                     (the ground as a tick starts picks the friction, so the
+                     tick of a jump still has the ground's and the tick of a
+                     landing the air's, which is what makes a sprint-jump
+                     7.1 m/s)
      in water        acceleration 0.02, drag 0.8 (0.9 sprint-swimming),
                      sinking 0.005, Space swims up 0.04, Shift down 0.04;
                      swimming into a wall with clear air 0.6 above lifts
                      you 0.3, which is how you climb out onto the bank
-     flying          double-tap Space; Space and Shift for up and down
+     flying          double-tap Space (within 7 ticks); acceleration 0.05
+                     (0.1 sprinting), drag 0.91; Space and Shift add 0.15
+                     up or down, drag 0.6, so 7.5 m/s
 
    The keys give 0.98 of a step each way (the game's own factor, which is
    what makes walking 4.317 m/s and sprinting 5.612). Water depth is read
@@ -80,22 +87,27 @@ export class Player {
     this.fovMod = 1; this.prevFovMod = 1;   // how much wider than the FOV option the view is, this tick and the last
     this.canFly = true;           // creative mode
     this.stepped = 0;
-    this.lastSpace = 0;
     this.splashes = [];
+    this.age = 0;                 // ticks lived, for the presses below
+    this.taps = {};               // presses since the last tick: { age, n } a key
+    this.noJumpDelay = 0;         // holding Space jumps again only 10 ticks after the last jump
+    this.jumpTrigger = 0;         // the game's double-tap windows: 7 ticks after a press of Space (flying)
+    this.sprintTrigger = 0;       // and of forward (sprinting)
   }
+  /* A key going down or up, the moment it happens. The tick reads what is
+     held then, as the game does, and also every press since the tick
+     before, so a tap shorter than a tick is never lost. Double taps (Space
+     to fly, forward to sprint) are counted in ticks, as the game counts
+     them. */
   setKey(k, on) {
-    if (k === ' ' && on && !this.keys[' ']) {
-      const now = performance.now();
-      if (now - this.lastSpace < 300 && this.canFly) this.flying = !this.flying, this.vel.y = 0;
-      this.lastSpace = now;
-    }
-    if ((k === 'w') && on && !this.keys.w) {
-      const now = performance.now();
-      if (now - (this.lastW || 0) < 280 && this.canSprint !== false) this.sprinting = true;
-      this.lastW = now;
+    if (on && !this.keys[k]) {
+      const t = this.taps[k];
+      this.taps[k] = t && t.age === this.age ? { age: this.age, n: t.n + 1 } : { age: this.age, n: 1 };
     }
     this.keys[k] = on;
   }
+  // how many times a key went down since the last tick
+  presses(k) { const t = this.taps[k]; return t && t.age === this.age ? t.n : 0; }
 
   /* ---- collision ---- */
   // every solid box overlapping a region, as flat [x0, y0, z0, x1, y1, z1] runs in this.bx
@@ -153,13 +165,14 @@ export class Player {
     // spectators pass through everything
     if (this.noclip) { p.x += dx; p.y += dy; p.z += dz; this.onGround = false; this.hCollide = false; this.moved[0] = dx; this.moved[1] = dy; this.moved[2] = dz; return; }
     // sneaking keeps you on the edge of a block: no step that would leave nothing under you
-    if (this.sneaking && this.onGround && !this.flying) {
+    // (in 0.05 steps, and the last step of 0.05 or less stops it, as the game does; never on the way up)
+    if (this.sneaking && this.onGround && !this.flying && dy <= 0) {
       const drop = (nx, nz) => !this.boxHits(nx - W, p.y - STEP, nz - W, nx + W, p.y, nz + W);
-      while (dx !== 0 && drop(p.x + dx, p.z)) dx = Math.abs(dx) < 0.05 ? 0 : dx - Math.sign(dx) * 0.05;
-      while (dz !== 0 && drop(p.x, p.z + dz)) dz = Math.abs(dz) < 0.05 ? 0 : dz - Math.sign(dz) * 0.05;
+      while (dx !== 0 && drop(p.x + dx, p.z)) dx = Math.abs(dx) <= 0.05 ? 0 : dx - Math.sign(dx) * 0.05;
+      while (dz !== 0 && drop(p.x, p.z + dz)) dz = Math.abs(dz) <= 0.05 ? 0 : dz - Math.sign(dz) * 0.05;
       while (dx !== 0 && dz !== 0 && drop(p.x + dx, p.z + dz)) {
-        dx = Math.abs(dx) < 0.05 ? 0 : dx - Math.sign(dx) * 0.05;
-        dz = Math.abs(dz) < 0.05 ? 0 : dz - Math.sign(dz) * 0.05;
+        dx = Math.abs(dx) <= 0.05 ? 0 : dx - Math.sign(dx) * 0.05;
+        dz = Math.abs(dz) <= 0.05 ? 0 : dz - Math.sign(dz) * 0.05;
       }
     }
     const reach = Math.max(Math.abs(dx), Math.abs(dz)) + STEP + 1;
@@ -199,6 +212,13 @@ export class Player {
   }
   // the block you are standing on (just under the feet, as the game looks for it)
   under() { return this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y - 0.2), Math.floor(this.pos.z)); }
+  /* how slippery the ground you move on is: the block half a block under the
+     feet, as the game looks for it (so a slab or a carpet laid on ice is as
+     slippery as the ice) */
+  slip() {
+    const b = this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y - 0.500001), Math.floor(this.pos.z));
+    return (BLOCKS[b] && BLOCKS[b].slippery) || 0.6;
+  }
 
   /* ---- fluids ---- */
   /* Where a fluid's surface is in a block (-1e9: no fluid of that kind). A
@@ -307,10 +327,23 @@ export class Player {
     this.oBob = this.bob;
     this.bob += ((this.onGround && !this.flying && !this.swimming ? Math.min(0.1, Math.hypot(this.vel.x, this.vel.z)) : 0) - this.bob) * 0.4;
     this.prevEyeH = this.eyeH;
-    const k = this.keys;
+    // the keys as this tick sees them: held now, or pressed since the last tick (a tap shorter than a tick)
+    const k0 = this.keys, k = this.tickKeys || (this.tickKeys = {});
+    for (const n of ['w', 'a', 's', 'd', ' ', 'shift', 'control']) k[n] = !!k0[n] || this.presses(n) > 0;
+    const jumpPresses = this.presses(' '), fwdPresses = this.presses('w');
     // the keys: 0.98 of a step each way, as the game reads them
     let fwd = ((k.w ? 1 : 0) - (k.s ? 1 : 0)) * 0.98, str = ((k.d ? 1 : 0) - (k.a ? 1 : 0)) * 0.98;
     this.sneaking = !!k.shift && !this.flying;
+    /* Space twice within 7 ticks starts or stops flying (creative), as the
+       game counts it: the first press opens the window, the second, on any
+       of the six ticks after, flies. Not while swimming. */
+    if (this.canFly) for (let i = 0; i < jumpPresses; i++) {
+      if (this.jumpTrigger === 0) this.jumpTrigger = 7;
+      else if (!this.swimming) { this.flying = !this.flying; this.jumpTrigger = 0; }
+    }
+    if (this.jumpTrigger > 0) this.jumpTrigger--;
+    if (this.sprintTrigger > 0) this.sprintTrigger--;
+    if (this.noJumpDelay > 0) this.noJumpDelay--;
     // water and lava, measured from their surfaces
     const wasIn = this.inWater;
     this.waterDepth = this.fluidDepth(1); this.lavaDepth = this.fluidDepth(2);
@@ -319,15 +352,31 @@ export class Player {
     this.eyeInWater = this.fluidTop(ex, Math.floor(ey), ez, 1) > ey;
     if (this.inWater) this.fallDistance = 0;
     if (this.inWater && !wasIn && this.vel.y < -0.15) this.splashes.push([this.pos.x, this.pos.z, Math.min(1.6, -this.vel.y * 3), 2.6]);
-    // sprinting stops when you let go of forward, sneak, run straight into a wall, or wade (not swim)
-    const slowPose = this.pose === 'crouch' || (this.pose === 'swim' && !this.inWater);
-    // survival sets canSprint (hunger above 6) and usingItem (eating: no sprinting)
-    const mayRun = !this.noSprint && this.canSprint !== false && !this.usingItem;
-    if (fwd <= 0 || this.sneaking || !mayRun) this.sprinting = false;
+    /* Crouching slows you on the very tick Shift goes down (and stops on the
+       tick it comes up), as in the game: it is worked out here from the key,
+       not from last tick's pose. A gap too low to stand in keeps you
+       crouched; one too low to crouch in, crawling. */
+    const crouching = !this.flying && !this.swimming && this.fits('crouch') && (k.shift || !this.fits('stand'));
+    const slowPose = crouching || (this.pose === 'swim' && !this.inWater);
+    /* Sprinting stops when you let go of forward, get too hungry, run
+       straight into a wall, or wade (not swim). Sneaking, eating or drawing
+       a bow slow you but do not stop it (the game went back to that in
+       1.21.5); they only keep it from starting, which takes a full step
+       forward. survival sets canSprint (hunger above 6) and usingItem. */
+    const mayRun = !this.noSprint && this.canSprint !== false;
+    const mayStart = mayRun && !this.usingItem && (!slowPose || this.eyeInWater);
+    if (fwd <= 0 || !mayRun) this.sprinting = false;
     if (this.hCollide && !this.minorCollide) this.sprinting = false;
     if (this.swimming) { if (!this.inWater) this.sprinting = false; }
     else if (this.inWater && !this.eyeInWater && !this.flying) this.sprinting = false;
-    if (k.control && fwd > 0 && mayRun && (!slowPose || this.eyeInWater) && (!this.inWater || this.eyeInWater || this.flying)) this.sprinting = true;
+    if (k.control && fwd > 0 && mayStart && (!this.inWater || this.eyeInWater || this.flying)) this.sprinting = true;
+    // forward twice within 7 ticks, on the ground or under water (the game's double tap)
+    if (this.usingItem) this.sprintTrigger = 0;
+    for (let i = 0; i < fwdPresses; i++) {
+      if (this.sprinting || fwd <= 0 || !mayStart || !(this.onGround || this.eyeInWater)) break;
+      if (this.sprintTrigger > 0) this.sprinting = true;
+      else this.sprintTrigger = 7;
+    }
     // swimming: sprinting under water, and it lasts while you sprint in water
     if (this.flying) this.swimming = false;
     else if (this.swimming) this.swimming = this.sprinting && this.inWater;
@@ -335,12 +384,16 @@ export class Player {
     this.insideBlocks();
     if (this.climbing || this.stuck) this.fallDistance = 0;
 
+    /* The ground as the tick starts decides both the push and the friction
+       after the move, as in the game: the tick of a jump still slides like
+       the ground (0.546), and the tick you land still glides like the air
+       (0.91). */
+    const ground0 = this.onGround, slip0 = ground0 ? this.slip() : 1;
     let accel;
     if (this.flying) accel = this.sprinting ? 0.1 : 0.05;
     else if (this.inWater || this.inLava) accel = 0.02;
-    else if (this.onGround) {
-      const under = this.under();
-      const slip = (BLOCKS[under] && BLOCKS[under].slippery) || 0.6;
+    else if (ground0) {
+      const slip = slip0;
       accel = (this.sprinting ? 0.13 : 0.1) * (0.216 / (slip * slip * slip));
       // Speed and Slowness (survival.js effects): +20% and -15% a level
       const fx = this.effects;
@@ -360,20 +413,23 @@ export class Player {
     }
     // Space and Shift
     const fluidDepth = this.inWater ? this.waterDepth : this.lavaDepth;
+    // flying: three times the flying speed (0.05) a tick up or down, so 7.5 blocks a second at full speed
     if (this.flying) {
-      if (k[' ']) this.vel.y += 0.15 * 0.25 * 3;
-      if (k.shift) this.vel.y -= 0.15 * 0.25 * 3;
+      if (k[' ']) this.vel.y += 0.05 * 3;
+      if (k.shift) this.vel.y -= 0.05 * 3;
     } else if (k[' '] && (this.inWater || this.inLava) && (!this.onGround || fluidDepth > 0.4)) {
       this.vel.y += 0.04;                       // swimming up
-    } else if (k[' '] && this.onGround) {
-      // a jump, from the ground or from water too shallow to swim in
+    } else if (k[' '] && this.onGround && this.noJumpDelay === 0) {
+      // a jump, from the ground or from water too shallow to swim in (held, the next one waits 10 ticks)
       const px = Math.floor(this.pos.x), pz = Math.floor(this.pos.z);
       const j = JUMP.get(this.w.get(px, Math.floor(this.pos.y), pz)) || JUMP.get(this.w.get(px, Math.floor(this.pos.y - 0.5), pz)) || 1;
-      this.vel.y = 0.42 * j + (this.effects && this.effects.jump_boost ? 0.1 * this.effects.jump_boost.level : 0);
+      this.vel.y = Math.max(0.42 * j + (this.effects && this.effects.jump_boost ? 0.1 * this.effects.jump_boost.level : 0), this.vel.y);
       this.jumped = true;           // survival.js takes a jump's exhaustion
+      this.noJumpDelay = 10;
       if (this.sprinting) { this.vel.x += -Math.sin(this.yaw) * 0.2; this.vel.z += -Math.cos(this.yaw) * 0.2; }
       this.onGround = false;
     }
+    if (!k[' ']) this.noJumpDelay = 0;
     if (this.inWater && k.shift && !this.flying) this.vel.y -= 0.04;
     // swimming follows where you look, up and down
     if (this.swimming) {
@@ -389,7 +445,7 @@ export class Player {
       if (this.vel.y < 0 && this.sneaking && this.w.get(Math.floor(this.pos.x), Math.floor(this.pos.y), Math.floor(this.pos.z)) !== SCAFFOLD) this.vel.y = 0;
     }
     if (this.inWater && !this.flying) this.pushByWater();
-    const was = this.pos.clone(), startY = this.pos.y;
+    const was = this.pos.clone(), startY = this.pos.y, vy0 = this.vel.y;
     // inside a cobweb or a bush: only part of the move happens, and the speed is lost
     if (this.stuck && !this.flying) {
       const st = this.stuck;
@@ -409,7 +465,8 @@ export class Player {
     if (this.climbing && !this.flying && (this.hCollide || k[' '])) this.vel.y = 0.2;
     // drag and gravity
     if (this.flying) {
-      this.vel.x *= 0.91 * 0.6 / 0.546 * 0.91; this.vel.z *= 0.91 * 0.6 / 0.546 * 0.91; this.vel.y *= 0.6;
+      // flying: the air's 0.91 across, and 0.6 of the climb or dive asked for (a ceiling does not take it away)
+      this.vel.x *= slip0 * 0.91; this.vel.z *= slip0 * 0.91; this.vel.y = vy0 * 0.6;
       if (this.onGround) this.flying = false;
     } else if (this.inWater) {
       // Dolphin's Grace: hardly any drag across the water
@@ -425,7 +482,7 @@ export class Player {
       if (this.hCollide && this.freeAt(this.vel.x, this.vel.y + 0.6 - this.pos.y + startY, this.vel.z)) this.vel.y = 0.3;
     } else {
       const under = this.under();
-      const slip = this.onGround ? ((BLOCKS[under] && BLOCKS[under].slippery) || 0.6) : 1.0;
+      const slip = slip0;            // (the ground as the tick started: see above)
       // Levitation: drawn up towards 0.05 a tick a level; Slow Falling: a tenth of the gravity on the way down
       const lev = this.effects && this.effects.levitation;
       if (lev) this.vel.y = (this.vel.y + (0.05 * lev.level - this.vel.y) * 0.2) * 0.98;
@@ -472,6 +529,7 @@ export class Player {
     this.prevFovMod = this.fovMod;
     this.fovMod = Math.max(0.1, Math.min(1.5, this.fovMod + (1 + (fm - 1) * this.fovEffects - this.fovMod) * 0.5));
     this.fov = this.baseFov * this.fovMod;
+    this.age++;                   // (presses before now are spent)
   }
 
   /* ---- where the camera is, between ticks ---- */
