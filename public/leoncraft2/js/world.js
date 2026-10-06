@@ -56,7 +56,7 @@ export function practise(spec, world) {
   ws.forEach((w, i) => {
     const [ox, oz] = centres[i % centres.length], x = cx + ox, z = cz + oz, terrain = [];
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) terrain.push([x + dx, z + dz]);
-    const parts = [terrain.slice(0, 3), terrain.slice(3, 6), terrain.slice(6)].map((t, n) => Object.assign({}, base, { terrain: t, decorate: n === 2 ? [x, z] : null }));
+    const parts = [terrain.slice(0, 3), terrain.slice(3, 6), terrain.slice(6), []].map((t, n) => Object.assign({}, base, { terrain: t, decorate: n === 2 ? [x, z] : null, mesh: n === 3 ? [x, z] : null }));
     if (!world || world.dead) w.onmessage = e => keepAhead(e.data, w);
     ahead.drills.set(w, parts);
     w.postMessage(parts.shift());
