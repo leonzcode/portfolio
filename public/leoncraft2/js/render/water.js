@@ -25,7 +25,11 @@ const HEAD = `precision highp float; precision highp int; precision highp sample
 const VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
 uniform float uMeshTime, uClock;
-layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aF; layout(location = 3) in vec4 aC;
+layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 2) in ivec4 aF; layout(location = 3) in uvec4 aC;
+#define aPos vec4(aPos)
+#define aA vec4(aA)
+#define aF vec4(aF)
+#define aC vec4(aC)
 uniform vec3 uChunk;
 out vec3 vWorld; out vec4 vLight; out vec2 vFlow; out vec4 vCol; out float vFoam;
 flat out int vNormal; flat out int vFlags; flat out float vLayer;
