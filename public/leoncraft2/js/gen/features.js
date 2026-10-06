@@ -151,8 +151,12 @@ for (const d of BLOCKS) {
   else if (!d.solid || d.replaceable || d.shape !== 'cube') RANK[d.id] = 1;
   else RANK[d.id] = 4;
 }
-// which of two neighbours' writes to one block stays (the later one on a tie)
-export const writeRank = id => RANK[id];
+/* which of two neighbours' writes to one block stays (the later one on a tie).
+   Water or lava that has run out of a source (any level, or falling) is what
+   the game's fluid ticks would make after every feature is in, and those
+   never wash a tree away: it gives way to leaves and anything sturdier, and
+   only takes a plant's place. */
+export const writeRank = (id, m) => ((m & 15) !== 0 && (id === B.water || id === B.lava) ? 1.5 : RANK[id]);
 
 // the plants that stand on the block under them, and those that stand in water (taken back to water)
 const GROUND = new Uint8Array(4096);
@@ -170,11 +174,26 @@ const GROUND = new Uint8Array(4096);
     if (up && B[up] !== undefined) GROUND[B[up]] = 1;
   }
   for (const n of ['seagrass', 'tall_seagrass', 'tall_seagrass_top_block', 'kelp', 'kelp_plant']) if (B[n] !== undefined) GROUND[B[n]] = 2;
+  // and what hangs from a ceiling or points from rock (a neighbour's lake or pool can dig either away)
+  for (const n of ['pointed_dripstone', 'sulfur_spike', 'cave_vines', 'cave_vines_plant', 'hanging_roots', 'spore_blossom', 'pale_hanging_moss']) if (B[n] !== undefined) GROUND[B[n]] = 1;
 }
 export const isGroundPlant = id => GROUND[id];
+// a block a pointed or hanging block can hold on to (its face towards it whole)
+const holdsOn = b => b !== 0 && !!BLOCKS[b] && BLOCKS[b].shape === 'cube' && BLOCKS[b].solid !== false;
 // can this plant stay where it is, with what is around it now
 export function plantHolds(R, id, m, x, y, z) {
   const d = BLOCKS[id];
+  if (id === B.pointed_dripstone || id === B.sulfur_spike) {
+    // pointed dripstone keeps which way it points (4 up, 5 down); a sulfur spike only needs one end held
+    const a = R.get(x, y + 1, z), b = R.get(x, y - 1, z);
+    const top = a === id || holdsOn(a), bottom = b === id || holdsOn(b) || b === B.lava;
+    if (id === B.pointed_dripstone && (m & 7) === 5) return top;
+    if (id === B.pointed_dripstone && (m & 7) === 4) return bottom;
+    return top || bottom;
+  }
+  if (id === B.cave_vines || id === B.cave_vines_plant) { const a = R.get(x, y + 1, z); return a === B.cave_vines_plant || a === B.cave_vines || holdsOn(a); }
+  if (id === B.pale_hanging_moss) { const a = R.get(x, y + 1, z); return a === id || holdsOn(a) || !!(BLOCKS[a] && BLOCKS[a].leaves); }
+  if (id === B.hanging_roots || id === B.spore_blossom) return holdsOn(R.get(x, y + 1, z));
   if (d.lower) return R.get(x, y - 1, z) === B[d.lower];                    // the top half of a tall plant needs its bottom half
   if (d.upper && B[d.upper] !== undefined && R.get(x, y + 1, z) !== B[d.upper]) return false;   // and the bottom half its top
   if (id === B.kelp || id === B.kelp_plant) {
