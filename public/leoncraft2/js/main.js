@@ -53,7 +53,7 @@ import { EntityStore } from './entities/store.js?v=14';
 import { Sim } from './sim/sim.js?v=14';
 import { DIMS } from './dims.js?v=14';
 import { Realms } from './dim/realms.js?v=14';
-import { tickDials, dialInHotbar, setUse } from './dials.js?v=14';
+import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=14';
 import { addDimArt, endSkyTexture } from './dim/art.js?v=14';
 import { structuresApi } from './struct/spawners.js?v=14';
 const THREE = window.THREE;
@@ -422,6 +422,8 @@ async function boot() {
     menu = null;
     world.renderDist = RD;
     const spawn = st && st.spawn ? st.spawn : (entry.spawn || (dim === 'overworld' ? await findSpawn(world) : { x: 0, z: 0 }));
+    // where you last died in this world, for the recovery compass (js/dials.js)
+    setDeathPoint(st && st.lastDeath);
     const at = st && st.player ? st.player : null;
     const cx = at ? at.x : spawn.x, cz = at ? at.z : spawn.z;
     // wait for the ground round where you will stand
@@ -657,7 +659,8 @@ async function boot() {
     const g = game, p = g.player;
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
       inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
-      drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null, dimension: g.dim, realms: g.realms ? g.realms.toJSON() : null };
+      drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null, dimension: g.dim, realms: g.realms ? g.realms.toJSON() : null,
+      lastDeath: deathPoint() };
   }
   async function saveGame() {
     if (!game) return;
