@@ -26,10 +26,10 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=19';
-import { Packs } from './pack.js?v=19';
-import { LanScreen } from './lan.js?v=19';
-import { parseSeed } from '../gen/random.js?v=19';
+} from './gui.js?v=20';
+import { Packs } from './pack.js?v=20';
+import { LanScreen } from './lan.js?v=20';
+import { parseSeed } from '../gen/random.js?v=20';
 
 const PI = Math.PI;
 
@@ -650,8 +650,8 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own), Shader Packs and Shader Options live in ui/video.js
-export { VideoSettingsScreen, ShaderPacksScreen, ShaderOptionsScreen } from './video.js?v=19';
-import { VideoSettingsScreen } from './video.js?v=19';
+export { VideoSettingsScreen, ShaderPacksScreen, ShaderOptionsScreen } from './video.js?v=20';
+import { VideoSettingsScreen } from './video.js?v=20';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }

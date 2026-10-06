@@ -8,7 +8,7 @@
    or a door: the albedo from the strip, a flat normal map and a plain
    material map. The terrain files themselves are never changed.
 
-     const items = await loadItemStrip(base, '?v=19');
+     const items = await loadItemStrip(base, '?v=20');
      addItemPieces(items, manifest.layers, albPieces, nrmPieces, spcPieces);
      setItemLayers(manifest.layers);        // js/items.js
 
@@ -19,7 +19,7 @@
    dimensions' art and every frame together would pass that, leaving the
    whole array unmade and the world black.
 --------------------------------------------------------------------------- */
-import { ITEM_TEX } from './itemdata.js?v=19';
+import { ITEM_TEX } from './itemdata.js?v=20';
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
 const PIECE = 128;
 // how many pictures of the strip go into the texture array: everything before the first frame
