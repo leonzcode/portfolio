@@ -35,7 +35,7 @@ import { B, BLOCKS, SOLID, FLUID, OPACITY } from './blocks.js?v=17';
 import { collisionBoxes } from './models.js?v=17';
 import { LEVEL, FALLING } from './world-const.js?v=17';
 import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=17';
-import { blockGeometry } from './render/blockmesh.js?v=17';
+import { blockGeometry, intAttribute } from './render/blockmesh.js?v=17';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height
@@ -92,10 +92,10 @@ function copiesOf(src, n, flat, id, sc) {
     for (let j = 0; j < I.length; j++) idx.push(I[j] + k * nv);
   }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('aPos', new THREE.BufferAttribute(pos, 4));
-  g.setAttribute('aA', new THREE.BufferAttribute(aa, 4));
-  g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(nv * n * 4), 4));
-  g.setAttribute('aC', new THREE.BufferAttribute(cc, 4));
+  g.setAttribute('aPos', intAttribute(pos));
+  g.setAttribute('aA', intAttribute(aa));
+  g.setAttribute('aL', intAttribute(new Uint8Array(nv * n * 4)));
+  g.setAttribute('aC', intAttribute(cc));
   g.setIndex(idx);
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
   return g;
@@ -443,7 +443,7 @@ export class Drops {
     const R = this.R, g = new THREE.BufferGeometry();
     for (const n of ['aPos', 'aA', 'aC']) g.setAttribute(n, src.attributes[n]);
     g.setIndex(src.index);
-    g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(src.attributes.aL.count * 4), 4));
+    g.setAttribute('aL', intAttribute(new Uint8Array(src.attributes.aL.count * 4)));
     g.boundingSphere = src.boundingSphere;
     const m = new THREE.Mesh(g, cutout ? R.mats.cutout : R.mats.opaque);
     m.matrixAutoUpdate = false; m.frustumCulled = false;
@@ -459,10 +459,10 @@ export class Drops {
     const put = (x, y, u, v) => { verts.push(Math.round((x + 8) * 32), Math.round((y + 1) * 32), Math.round(8 * 32), layer); A.push(u, v, 4, 3 | 64 | 32); L.push(0, 255, 0, 0); C.push(255, 255, 255, 255); };
     put(-0.5, -0.5, 0, 16); put(0.5, -0.5, 16, 16); put(0.5, 0.5, 16, 0); put(-0.5, 0.5, 0, 0);
     const g = new THREE.BufferGeometry();
-    g.setAttribute('aPos', new THREE.BufferAttribute(new Uint16Array(verts), 4));
-    g.setAttribute('aA', new THREE.BufferAttribute(new Uint8Array(A), 4));
-    g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(L), 4));
-    g.setAttribute('aC', new THREE.BufferAttribute(new Uint8Array(C), 4));
+    g.setAttribute('aPos', intAttribute(new Uint16Array(verts)));
+    g.setAttribute('aA', intAttribute(new Uint8Array(A)));
+    g.setAttribute('aL', intAttribute(new Uint8Array(L)));
+    g.setAttribute('aC', intAttribute(new Uint8Array(C)));
     g.setIndex([0, 1, 2, 0, 2, 3]);
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 2);
     return g;

@@ -71,7 +71,10 @@ void main() {
 const ITEM_HEAD = `precision highp float; precision highp int; precision highp sampler2DArray;\n`;
 const ITEM_VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
-layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 3) in vec4 aC;
+layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 3) in uvec4 aC;
+#define aPos vec4(aPos)
+#define aA vec4(aA)
+#define aC vec4(aC)
 out vec2 vUv; out float vShade; out vec3 vTint; flat out float vLayer; flat out int vFlags;
 ` + LIGHTS + `
 const vec3 FN[6] = vec3[6](vec3(1, 0, 0), vec3(-1, 0, 0), vec3(0, 1, 0), vec3(0, -1, 0), vec3(0, 0, 1), vec3(0, 0, -1));

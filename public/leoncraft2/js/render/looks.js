@@ -31,7 +31,7 @@ import { Sky, FullScreen } from './sky.js?v=17';
 import { Post } from './post.js?v=17';
 import { makeMaterials } from './materials.js?v=17';
 import { makeWaterMaterial } from './water.js?v=17';
-import { makeNoise3D } from './noisetex.js?v=17';
+import { makeNoise3DAsync } from './noisetex.js?v=17';
 import { makeLdrSky } from './ldrsky.js?v=17';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=17';
 import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=17';
@@ -168,6 +168,7 @@ function codeKey(o) {
    the programs come out of three.js's cache already built, and the new look
    is there from one frame to the next with no stall. */
 export function applyLook(R, look, first) {
+  if (first) safeCompileAsync(R.r);
   const o = Object.assign({}, R.opts || {}, look);
   const key = codeKey(o);
   if (first || key === R.lookKey) {
@@ -190,10 +191,38 @@ export function applyLook(R, look, first) {
     R.lookPending = null;
     finishLook(R, pending.look, false, prep);
   };
-  try { R.r.compileAsync(scene, R.camera).then(done, done); } catch (e) { done(); }
-  // a browser that cannot say when they are ready: after a few seconds all the same
-  setTimeout(done, 4000);
+  let compiled;
+  try { compiled = R.r.compileAsync(scene, R.camera); } catch (e) { compiled = null; }
+  // (and the full chain's cloud noise, made in a worker the first time)
+  Promise.all([compiled, prep.noise]).then(done, done);
+  // a browser that cannot say when they are ready: after a while all the same
+  setTimeout(done, 10000);
   return true;
+}
+
+/* three.js's compileAsync asks each material for its program until all are
+   built; a material that took another look's shader meanwhile (morph, which
+   lets its program go) has none to ask, and the question threw. These are
+   simply not waited for. */
+function safeCompileAsync(r) {
+  if (r.compileAsyncSafe) return;
+  r.compileAsyncSafe = true;
+  r.compileAsync = function (scene, camera, target = null) {
+    const mats = r.compile(scene, camera, target);
+    const parallel = r.extensions.get('KHR_parallel_shader_compile') !== null;
+    return new Promise(resolve => {
+      const check = () => {
+        for (const m of mats) { const p = r.properties.get(m).currentProgram; if (!p || p.isReady()) mats.delete(m); }
+        if (mats.size === 0) resolve(scene); else setTimeout(check, 10);
+      };
+      if (parallel) check(); else setTimeout(check, 10);
+    });
+  };
+}
+// the full chain's 3D noise (volumetric clouds and light shafts): made in a worker, once, and filled in when ready
+function noise3D(R) {
+  if (!R.noise3) R.noise3 = makeNoise3DAsync().then(t => { R.U.uNoise3.value = t; });
+  return R.noise3;
 }
 
 /* What a new look needs that can be made before it takes over: the parts
@@ -211,8 +240,9 @@ function prepare(R, o) {
     if (!R.blockClouds) R.blockClouds = new BlockClouds(detailedCloudMaterial(U));
     compile.push(R.skyFS.mesh.material, R.blockClouds.depth.material, R.blockClouds.colour.material);
   }
+  let noise = null;
   if (!o.ldr) {
-    if (!U.uNoise3.value) U.uNoise3.value = makeNoise3D();
+    if (!U.uNoise3.value) noise = noise3D(R);
     if (!R._post) R._post = new Post(r, U, o);
     if (!R.blockCloudsHDR) R.blockCloudsHDR = new BlockClouds(detailedCloudMaterial(U, true));
     const P = R._post;
@@ -228,7 +258,7 @@ function prepare(R, o) {
     pairs.push([m, n]); temps.push(n); compile.push(n);
     return true;
   });
-  return { next, pairs, temps, compile };
+  return { next, pairs, temps, compile, noise };
 }
 
 /* The look takes over. prep: what prepare() made (a new shader), false (only
@@ -238,6 +268,7 @@ function finishLook(R, look, first, prep) {
   const o = R.opts = Object.assign(R.opts || {}, look);
   const rebuild = first || !!prep;
   R.lookKey = codeKey(o);
+  const wasLdr = R.ldr;
   R.ldr = !!o.ldr;
 
   // the sun's shadow maps: a new pair when the size changes (token ones with no shadows)
@@ -268,7 +299,7 @@ function finishLook(R, look, first, prep) {
     // the tone curve, with the contrast and saturation in it (no cost a pixel)
     const tk = (o.contrast || 1) + ',' + (o.saturation === undefined ? 1 : o.saturation);
     if (R.toneKey !== tk) { if (U.uToneLut.value) U.uToneLut.value.dispose(); U.uToneLut.value = makeToneLut(o.contrast || 1, o.saturation === undefined ? 1 : o.saturation); R.toneKey = tk; }
-    if (!o.ldr && !U.uNoise3.value) U.uNoise3.value = makeNoise3D();
+    if (!o.ldr && !U.uNoise3.value) noise3D(R);
   }
   U.uWave.value.set(o.wave ? o.wave[0] : 0, o.wave ? o.wave[1] : 0);
   U.uAO.value = o.ao === undefined ? 1 : o.ao;
@@ -327,7 +358,10 @@ function finishLook(R, look, first, prep) {
 
   if (!first && rebuild) {
     R.locs = new Map();
-    R.resize(R.cw, R.ch);
+    /* The canvas and the full chain's pictures only when the pipeline itself
+       changed: giving a canvas a size, even the one it has, throws its picture
+       away and costs the graphics card a frame. */
+    if (R.ldr !== wasLdr || (!R.ldr && !R.main)) R.resize(R.cw, R.ch);
     if (R.shadows) R.shadows.S.dirty = true;
   }
   if (R.lookFns) for (const fn of R.lookFns) { try { fn(o, rebuild); } catch (e) { console.error(e); } }

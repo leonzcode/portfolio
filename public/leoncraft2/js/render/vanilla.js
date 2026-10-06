@@ -66,7 +66,11 @@ const TERRAIN_VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
 uniform vec3 cameraPosition;
 uniform vec2 uLightLv;
-layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL; layout(location = 3) in vec4 aC;
+layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 2) in uvec4 aL; layout(location = 3) in uvec4 aC;
+#define aPos vec4(aPos)
+#define aA vec4(aA)
+#define aL vec4(aL)
+#define aC vec4(aC)
 uniform vec3 uChunk;
 out vec2 vUv; out vec3 vShade; out float vFogD; out vec3 vTint;
 flat out float vLayer; flat out int vFlags;
@@ -147,7 +151,11 @@ const FLUID_VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
 uniform vec3 cameraPosition;
 uniform float uMeshTime, uClock;
-layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aF; layout(location = 3) in vec4 aC;
+layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 2) in ivec4 aF; layout(location = 3) in uvec4 aC;
+#define aPos vec4(aPos)
+#define aA vec4(aA)
+#define aF vec4(aF)
+#define aC vec4(aC)
 uniform vec3 uChunk;
 out vec3 vWorld; out vec3 vLight; out float vFogD; out vec3 vCol; out vec2 vFlow;
 flat out int vNormal; flat out int vFlags; flat out float vLayer;
