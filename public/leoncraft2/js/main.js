@@ -53,6 +53,7 @@ import { EntityStore } from './entities/store.js?v=16';
 import { Sim } from './sim/sim.js?v=16';
 import { DIMS } from './dims.js?v=16';
 import { Realms } from './dim/realms.js?v=16';
+import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=16';
 import { addDimArt, endSkyTexture } from './dim/art.js?v=16';
 import { structuresApi } from './struct/spawners.js?v=16';
 const THREE = window.THREE;
@@ -426,6 +427,8 @@ async function boot() {
     menu = null;
     world.renderDist = RD;
     const spawn = st && st.spawn ? st.spawn : (entry.spawn || (dim === 'overworld' ? await findSpawn(world) : { x: 0, z: 0 }));
+    // where you last died in this world, for the recovery compass (js/dials.js)
+    setDeathPoint(st && st.lastDeath);
     const at = st && st.player ? st.player : null;
     const cx = at ? at.x : spawn.x, cz = at ? at.z : spawn.z;
     // wait for the ground round where you will stand
@@ -675,7 +678,8 @@ async function boot() {
     const g = game, p = g.player;
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
       inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
-      drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null, dimension: g.dim, realms: g.realms ? g.realms.toJSON() : null };
+      drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null, dimension: g.dim, realms: g.realms ? g.realms.toJSON() : null,
+      lastDeath: deathPoint() };
   }
   async function saveGame() {
     if (!game) return;
@@ -1047,6 +1051,14 @@ async function boot() {
         }
       }
       g.drops.tick(player, g.collector);
+      // a compass needle or a clock face that moved is drawn again (js/dials.js), where one shows
+      if (tickDials({ yaw: player.yaw, x: player.pos.x, z: player.pos.z, spawn: g.spawn, time: g.time, dim: g.dim, dead: survival.dead })) {
+        if (gui.isOpen()) gui.markDirty();
+        if (dialInHotbar(g.inv, itemName)) hud.markDirty();
+      }
+      // so is a bow being drawn or a crossbow being loaded
+      const cu = g.entities ? g.entities.combat.use : null, cs = cu ? g.inv.slots[cu.slot] : null;
+      if (setUse(cu, cs, cs && cu.kind === 'crossbow' ? g.entities.combat.crossbowTicks(cs) : 0)) { hud.markDirty(); if (gui.isOpen()) gui.markDirty(); }
       if (timeRuns) g.time += 1;
       for (const s of player.splashes.splice(0)) renderer.inter.splash(s[0], s[1], s[2], s[3]);
       structures.spawners.tick(world, player);

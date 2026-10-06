@@ -28,11 +28,20 @@
 --------------------------------------------------------------------------- */
 import { DRAW, textureLayer } from '../items.js?v=16';
 import { potionColour } from '../brewing.js?v=16';
+import { trimPiece, applyTrim } from '../trims.js?v=16';
 
-// pictures coloured per stack: the tinted layer under the plain one (a potion's liquid under its bottle)
+/* pictures coloured per stack: [the layer under, the layer over, which of the two takes the colour (0 the one
+   under, 1 the one over)]. A potion's liquid goes under its bottle; dyed leather is its grey picture times the dye
+   with the undyed parts over it; the wolf armour keeps its own picture with the dyed part over it, as in the game. */
 const TINTED_PARTS = {
-  potion: ['layer_potion_overlay', 'layer_potion'], splash_potion: ['layer_potion_overlay', 'layer_splash_potion'],
-  lingering_potion: ['layer_potion_overlay', 'layer_lingering_potion'], tipped_arrow: ['layer_tipped_arrow_head', 'layer_tipped_arrow_base'],
+  potion: ['layer_potion_overlay', 'layer_potion', 0], splash_potion: ['layer_potion_overlay', 'layer_splash_potion', 0],
+  lingering_potion: ['layer_potion_overlay', 'layer_lingering_potion', 0], tipped_arrow: ['layer_tipped_arrow_head', 'layer_tipped_arrow_base', 0],
+  leather_helmet: ['layer_leather_helmet', 'layer_leather_helmet_overlay', 0],
+  leather_chestplate: ['layer_leather_chestplate', 'layer_leather_chestplate_overlay', 0],
+  leather_leggings: ['layer_leather_leggings', 'layer_leather_leggings_overlay', 0],
+  leather_boots: ['layer_leather_boots', 'layer_leather_boots_overlay', 0],
+  leather_horse_armor: ['layer_leather_horse_armor', 'layer_leather_horse_armor_overlay', 0],
+  wolf_armor: ['wolf_armor', 'layer_wolf_armor_overlay', 1],
 };
 import { boxesOf } from '../models.js?v=16';
 
@@ -246,18 +255,67 @@ export class ItemIcons {
     return true;
   }
 
-  /* A stack whose picture is coloured by what it holds (potions, tipped
-     arrows): made once per colour, kept with the flat icons. */
+  /* A stack whose picture is coloured by what it holds or how it was dyed
+     (potions, tipped arrows, dyed leather and wolf armour): made once per
+     colour, kept with the flat icons. Undyed, it is the plain picture. */
   drawTinted(g, st, x, y) {
     const d = DRAW[st.id], parts = d && TINTED_PARTS[d.name];
     if (!parts) return this.draw(g, st.id, x, y);
-    const col = potionColour(st), key = 't:' + d.name + ':' + col;
+    const col = st.potion ? potionColour(st) : st.color;
+    if (typeof col !== 'number') return this.draw(g, st.id, x, y);
+    const key = 't:' + d.name + ':' + col;
     let e = this.map.get(key);
     if (!e) {
       const under = textureLayer(parts[0]), over = textureLayer(parts[1]);
       if (under < 0 || over < 0) return this.draw(g, st.id, x, y);
       e = this.flat.alloc();
-      this._fill(under, col, 1, over, -1);
+      this._fill(under, parts[2] ? -1 : col, 1, over, parts[2] ? col : -1);
+      e.c.getContext('2d').putImageData(this.fimg, e.x, e.y);
+      this.map.set(key, e);
+    }
+    g.ctx.drawImage(e.c, e.x, e.y, e.w, e.w, x, y, 16, 16);
+    return true;
+  }
+
+  /* A trimmed armour piece (js/trims.js): its picture (dyed, for leather)
+     with the trim over it in the trim material's colours, made once per
+     piece, trim and dye, kept with the flat icons. */
+  drawTrimmed(g, st, x, y) {
+    const d = DRAW[st.id];
+    if (!d || !st.trim || !trimPiece(d.name)) return this.draw(g, st.id, x, y);
+    const parts = TINTED_PARTS[d.name], col = typeof st.color === 'number' ? st.color : -1;
+    const key = 'r:' + d.name + ':' + st.trim.join(':') + ':' + col;
+    let e = this.map.get(key);
+    if (!e) {
+      if (parts && col >= 0) {
+        const under = textureLayer(parts[0]), over = textureLayer(parts[1]);
+        if (under < 0 || over < 0) return this.draw(g, st.id, x, y);
+        this._fill(under, parts[2] ? -1 : col, 1, over, parts[2] ? col : -1);
+      } else {
+        const layer = textureLayer(d.name);
+        if (layer < 0) return this.draw(g, st.id, x, y);
+        this._fill(layer, -1, 1, -1, -1);
+      }
+      applyTrim(this.fimg.data, d.name, st.trim);
+      e = this.flat.alloc();
+      e.c.getContext('2d').putImageData(this.fimg, e.x, e.y);
+      this.map.set(key, e);
+    }
+    g.ctx.drawImage(e.c, e.x, e.y, e.w, e.w, x, y, 16, 16);
+    return true;
+  }
+
+  /* One named picture of the item strip (a frame of a compass or a clock,
+     js/dials.js), made once and kept with the flat icons. False when the
+     strip has no such picture. */
+  drawLayer(g, name, x, y) {
+    const key = 'l:' + name;
+    let e = this.map.get(key);
+    if (!e) {
+      const layer = textureLayer(name);
+      if (layer < 0) return false;
+      e = this.flat.alloc();
+      this._fill(layer, -1, 1, -1, -1);
       e.c.getContext('2d').putImageData(this.fimg, e.x, e.y);
       this.map.set(key, e);
     }

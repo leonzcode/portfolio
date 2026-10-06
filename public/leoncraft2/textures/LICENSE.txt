@@ -2,7 +2,11 @@ Leoncraft 2 - block textures
 
 The block textures in this folder (terrain_albedo.png, terrain_normal.png,
 terrain_spec.png, manifest.json, the colour maps, the sun and the moon) are
-made from two resource packs:
+made from four resource packs: the two below, and REFI Textures and
+Bauniclonia (credited under "Item pictures"), which give the terrain, wood,
+ore, glass and farm blocks listed in tools/leoncraft2/data/open_pack_map.json.
+Each texture's colours are then moved towards the game's own average and
+spread (six numbers per texture, colour statistics only, no pixels).
 
 - "Pixel Perfection Community Edition", by XSSheep and its contributors
   (block, item and entity textures for blocks up to Minecraft 1.16):
@@ -105,29 +109,127 @@ Item pictures (items.png)
 
 items.png holds one 16x16 picture for every item that is not a block (in the
 order of ITEM_TEX in js/itemdata.js), the eleven sizes of the experience orb,
-and the separate layers of the potion and tipped arrow pictures. Made by
-tools/leoncraft2/build_items.py from:
+the separate layers of the pictures the game colours per item (a potion's
+liquid, a tipped arrow's head, dyed leather and wolf armour), the frames of
+the compass, the recovery compass and the clock, and the bow's and the
+crossbow's pictures while drawn, loading and loaded. Made by
+tools/leoncraft2/build_items.py from six resource packs:
 
-- Pixel Perfection Community Edition (items up to 1.16, and the experience
-  orb from its entity textures), and
-- Pixel Perfection Legacy (items added since 1.17: copper, amethyst, spawn
-  eggs, smithing templates, pottery sherds, spears, harnesses and the rest),
+- "REFI Textures", by MysticTempest (drawn from scratch for Luanti games,
+  Mineclonia among them): dyes, coal, raw ores, food, the compass, the mace,
+  the trident and others:
+  https://content.luanti.org/packages/MysticTempest/refi_textures/
+  https://github.com/MysticTempest/REFI_Textures
+- "Refined Textures", by awuuwa (a fork of REFI Textures): bread, cooked
+  chicken and the glistering melon slice:
+  https://content.luanti.org/packages/awuuwa/refined_textures/
+- "Bauniclonia", by Mirtilo (the Baunilha pack made for Mineclonia): every
+  tool, the helmets, chestplates and boots, the ingots, gems, meat, buckets
+  and others:
+  https://content.luanti.org/packages/Mirtilo/bauniclonia/
+  https://codeberg.org/mirtilo/Bauniclonia
+- "Pixel ImPerfection", by bramaudi (Pixel Perfection reworked for
+  Mineclonia): the blaze rod, the totem of undying, the heart of the sea and
+  magma cream:
+  https://content.luanti.org/packages/bramaudi/pixel_imperfection/
+  https://codeberg.org/mineclonia/pixel_imperfection
+- Pixel Perfection Community Edition (the experience orb, from its entity
+  textures; the shield, drawn from its shield texture; the leather, chainmail,
+  iron and diamond leggings; and items up to 1.16), and
+- Pixel Perfection Legacy (the copper, golden and netherite leggings, spawn
+  eggs, boats, harnesses, bundles, books,
+  music discs, smithing templates, pottery sherds, spears and the rest),
 
-both CC BY-SA 4.0 (links above). Changes: animated pictures keep their first
-frame; leather armour, potions, tipped arrows, firework stars and filled maps
+all six CC BY-SA 4.0 (links above). tools/leoncraft2/data/item_sources.json
+names the pack and file of every picture. Changes: each picture's colours are
+moved towards the game's own average and spread (six numbers per picture,
+colour statistics only, no pixels), fully or partly; many pictures are moved
+by up to two pixels, and some mirrored, so they sit in the slot where the
+game's picture does (the outlines compared; nothing is redrawn); the
+compass, the recovery compass and the clock keep every frame (the game turns
+them to where they point), and the bow and crossbow their drawn and loaded
+pictures (Bauniclonia's numbered bow frames, Pixel Perfection CE's
+crossbow), other animated pictures their first frame; wider
+pictures are scaled down to 16x16;
+leather horse armour, potions, tipped arrows, firework stars and filled maps
 are their grey base tinted the default colour with their overlay on top (as
-the game draws them).
+the game draws them), and dyed leather is the grey leather (Bauniclonia's,
+or Pixel Perfection CE's for the leggings) times the dye; the shield is
+Pixel Perfection CE's shield texture drawn as the game draws the shield in
+the inventory (its model, turned and scaled the same way); the turtle helmet
+is Bauniclonia's leather cap recoloured; the enchanted golden apple and the
+debug stick use the golden apple and the stick.
 
-Checked against the game's own files. A pixel comparison of both packs' item
-folders with Minecraft's item textures (every version from 1.16.5 to 26.3,
-October 2026) found these to be Mojang's pixels, copied or traced, so they are
-not used: from Pixel Perfection CE, dried kelp, leather horse armour, the
-turtle scute and the pufferfish (Pixel Perfection Legacy's are used instead),
-and the compass from both packs. The compass, the shield and the mace (which
-neither pack has as an item picture) are our own drawings
-(tools/leoncraft2/build_items.py).
+Armour trims on the item pictures (js/trims.js) are coloured with Pixel
+Perfection Legacy's trim material palettes (eight colours a material, from
+its trims/color_palettes, CC BY-SA 4.0); where the trim sits on each piece is
+drawn for these pictures, not taken from a pack (Legacy's own boots trim
+picture is the game's, and its helmet trim shares a third of the game's
+pixels, so neither is used).
+
+Checked against the game's own files. Every chosen picture was compared with
+Minecraft's own item texture (26.1.2, October 2026): no more than 15% of its
+pixels may equal the game's at any shift of up to two pixels or mirrored, and
+its fine detail may not follow the game's (a correlation of 0.75 as drawn, or
+0.9 at any shift), where the pack drew it and where it is placed; traces keep
+the detail even when recoloured. These were found to be Mojang's pixels,
+copied or traced, and are not used: from Pixel Perfection CE, dried kelp,
+leather horse armour, the turtle scute, the pufferfish and the trident, and
+the compass (from both packs). Nothing turtle is taken from Pixel Perfection
+CE (its turtle armour texture is the game's own), and the FamiliarCraft pack
+was not used at all (its tools are the game's, recoloured). Pixel
+ImPerfection's book follows the game's detail, so no book is taken from that
+pack. Where a full colour pull would raise a drawing's detail past the limit
+(the tipped arrow, among others), it is pulled partly or not at all;
+item_sources.json gives the strength of every picture.
+
+A wider check (October 2026) compared every picture with every item picture
+of every game version from 1.8.9 to 26.1.2, whatever its name: identical
+pixels, and the inside detail wherever the outline is all but the same. It
+found more pack files that are the game's pictures, and none of them is
+used: Pixel Perfection CE's phantom membrane and nautilus shell (the 1.13
+pictures, recoloured) and the "Miner 16px" pack's ingots (the 1.8 ingot; its
+apple has the 1.8 outline too), so nothing at all is taken from Miner 16px.
+A further check (October 2026) turned every picture all eight ways (a
+quarter turn at a time, and mirrored) as well as moving it, and compared each
+pack's leggings, helmets, boots, chestplates, sticks, pickaxes and swords with
+the game's the same way. Bauniclonia's leggings were the only leggings of
+more than forty drawings to share the game's leggings outline exactly, with
+their inside detail following it too (0.83 to 0.88, the same signature as the
+traced ingots), so the leggings now come from Pixel Perfection CE and Legacy
+instead. The stick is the plain corner-to-corner stick of the older game; the
+tools that remain flagged line up with the game's along their handle only,
+after being placed in the slot (each pack drawing on its own scores 0.6 to
+0.65, like the other packs' tools). Like any texture pack, many pictures still
+follow the layout of the object they show (a sword is a diagonal blade over a
+guard and grip).
 
 These pictures, including the changes above, are shared under the same
+licence, CC BY-SA 4.0.
+
+
+Armour textures (armor/)
+
+armor/<material>_layer_1.png (helmet, chestplate and boots) and
+_layer_2.png (leggings), 64x32 in the game's layout, for leather, chainmail,
+iron, gold, diamond, netherite and copper, and turtle_layer_1.png (the turtle
+shell), are made by tools/leoncraft2/build_items.py from Bauniclonia's armour
+textures (by Mirtilo, CC BY-SA 4.0, link above). Changes: each piece's own
+64x32 sheet is laid onto one sheet per layer, the helmet moved from the hat
+box to the head box; the colours are moved towards the game's own average and
+spread (colour statistics only); leather_layer_N.png is Bauniclonia's grey
+leather, to be multiplied by the dye colour (or by undyed leather's brown),
+and leather_layer_2_overlay.png the leggings' waist band in Bauniclonia's
+undyed leather (not recoloured), drawn over the dyed leggings untinted; the
+turtle shell is the leather cap recoloured green. A pixel comparison with the
+game's own armour textures found none of these to be copies, also patch by
+patch (every 8x8 patch turned all eight ways against every patch of every
+version's armour). Pixel Perfection CE's turtle
+texture is identical to the game's, and Pixel Perfection Legacy's turtle and
+REFI Textures' iron, gold and diamond armour follow the game's too closely, so
+none of those are used.
+
+These textures, including the changes above, are shared under the same
 licence, CC BY-SA 4.0.
 
 
