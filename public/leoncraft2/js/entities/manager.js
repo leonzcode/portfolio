@@ -851,6 +851,9 @@ export class Entities {
     this.pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.pm);
     const P = this.P, far = (this.world.renderDist || 8) * 16 + 16, far2 = far * far;
+    // Entity Distance (Video Settings): the game draws a mob out to 64 blocks for each block of its
+    // average side, times the setting; Entity Shadows: the round shadows under them, or none
+    const ed = 64 * (this.entityDistance === undefined ? 2.5 : this.entityDistance), blobs = this.entityShadows !== false;
     const k = 0.15;
     for (const e of this.list) {
       if (e.removed) continue;
@@ -859,6 +862,8 @@ export class Entities {
       const x = e.prev.x + (e.pos.x - e.prev.x) * alpha, y = e.prev.y + (e.pos.y - e.prev.y) * alpha, z = e.prev.z + (e.pos.z - e.prev.z) * alpha;
       const dx = x - P.pos.x, dz = z - P.pos.z;
       if (dx * dx + dz * dz > far2) continue;
+      const reach = ed * ((e.w || 0.6) * 2 + (e.h || 0.6)) / 3, dy = y - P.pos.y;
+      if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
       // the light, eased so it never pops
       e.lS += (e.lightS / 15 - e.lS) * k; e.lB += (e.lightB / 15 - e.lB) * k;
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
@@ -869,7 +874,7 @@ export class Entities {
       // a boat keeps the water out of its inside
       if (seen && c.WATER_MASK && !(e.noMask && e.noMask())) this.meshes.maskAt(x, y + c.WATER_MASK, z, e.prevYaw + wrap(e.yaw - e.prevYaw) * alpha, c.MASK_HX || 0.55, c.MASK_HZ || 0.74);
       // its round shadow on the ground
-      if (seen && c.SHADOW && !e.vehicle) this.shadowOf(e, x, y, z, c.SHADOW * (e.baby || e.ageT < 0 ? 0.5 : 1) * (c.SCALE || 1));
+      if (seen && blobs && c.SHADOW && !e.vehicle) this.shadowOf(e, x, y, z, c.SHADOW * (e.baby || e.ageT < 0 ? 0.5 : 1) * (c.SCALE || 1));
     }
     this.particlesP.draw(M, alpha);
     M.end();

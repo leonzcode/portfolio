@@ -32,8 +32,11 @@ export const MOON_I = 0.045;    // and the moon's: dim, but enough to walk by
 const LOOK = /* glsl */`
 const float SKY_GAIN = 1.5;
 const float AMB_BOOST = 1.7;
-const vec3 WARM = vec3(1.06, 1.0, 0.88);
 const float KEY = 0.85;
+// the Shader Options (render/looks.js): the sun's colour and strength (1.06, 1.0, 0.88 as it was),
+// the sky's light in the shade, the sky's colour, and the exposure in stops as a factor
+uniform vec3 uWarm;
+uniform float uSkyK, uSkySat, uExpBias;
 `;
 
 export class FullScreen {
@@ -168,7 +171,10 @@ void main() {
     L += T * (sunL * uSunI + moonL * uMoonI) * integ;
     T *= stp;
   }
-  o = vec4(L * SKY_GAIN, 1.0);
+  // Shader Options, Sky Colour: towards grey, or deeper
+  L *= SKY_GAIN;
+  float g = dot(L, vec3(0.2126, 0.7152, 0.0722));
+  o = vec4(max(vec3(0.0), g + (L - g) * uSkySat), 1.0);
 }`;
 
 // what the scene is lit by: sky light from above, from the side, from below, then the sun or moon,
@@ -205,21 +211,21 @@ void main() {
   vec3 moonT = texture(uTrans, transUV(uCamH, uMoonDir.y)).rgb;
   vec3 c = vec3(0.0);
   vec3 light = uSunDir.y > -0.02 ? sunT * uSunI * smoothstep(-0.02, 0.03, uSunDir.y) : moonT * uMoonI * smoothstep(-0.02, 0.06, uMoonDir.y);
-  if (i == 0) c = irr(vec3(0.0, 1.0, 0.0)) * AMB_BOOST;
-  else if (i == 1) c = (irr(vec3(1.0, 0.0, 0.0)) + irr(vec3(-1.0, 0.0, 0.0)) + irr(vec3(0.0, 0.0, 1.0)) + irr(vec3(0.0, 0.0, -1.0))) * 0.25 * AMB_BOOST;
+  if (i == 0) c = irr(vec3(0.0, 1.0, 0.0)) * AMB_BOOST * uSkyK;
+  else if (i == 1) c = (irr(vec3(1.0, 0.0, 0.0)) + irr(vec3(-1.0, 0.0, 0.0)) + irr(vec3(0.0, 0.0, 1.0)) + irr(vec3(0.0, 0.0, -1.0))) * 0.25 * AMB_BOOST * uSkyK;
   else if (i == 2) {
     // what bounces off the ground: sky and sun on grass-ish ground
     vec3 Eg = irr(vec3(0.0, 1.0, 0.0)) + sunT * uSunI * sat(uSunDir.y) + moonT * uMoonI * sat(uMoonDir.y);
-    c = Eg * 0.18 * AMB_BOOST;
+    c = Eg * 0.18 * AMB_BOOST * uSkyK;
   }
-  else if (i == 3) c = light * WARM;
+  else if (i == 3) c = light * uWarm;
   else if (i == 4) c = sunT * uSunI;
   else if (i == 5) c = moonT * uMoonI;
   else if (i == 6) {
     // how much light falls on an everyday scene (a third of the sun, all of the sky), and the exposure that keeps it
     // mid-bright; at night it opens no further than the moon allows, so night stays night
     float E = lum(light) * 0.35 + lum(irr(vec3(0.0, 1.0, 0.0))) * AMB_BOOST;
-    c = vec3(clamp(KEY / max(E, 1e-4), 0.05, 4.5));
+    c = vec3(clamp(KEY / max(E, 1e-4), 0.05, 4.5) * uExpBias);
   }
   o = vec4(c, 1.0);
 }`;
@@ -255,6 +261,7 @@ export class Sky {
       uTrans: { value: this.trans.texture }, uMS: { value: this.ms.texture }, uView: { value: this.view.texture },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
       uCamH: { value: 0.2 }, uSunI: { value: SUN_I }, uMoonI: { value: MOON_I },
+      uWarm: { value: new THREE.Vector3(1.06, 1.0, 0.88) }, uSkyK: { value: 1 }, uSkySat: { value: 1 }, uExpBias: { value: 1 },
     };
     this.mTrans = rawMat(FS_TRANS, {});
     this.mMS = rawMat(FS_MS, this.uniforms);

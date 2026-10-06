@@ -264,7 +264,7 @@ void main() {
   if (gate > 0.0 && NoL > 0.0) {
     vec3 sc = shadowCoord(vWorld, N, NoL, length(cameraPosition - vWorld));
 #if SHADOWS > 1
-    shadow = shadowSoft(sc, ign(gl_FragCoord.xy, uFrame), 1.6);
+    shadow = shadowSoft(sc, ign(gl_FragCoord.xy, uFrame), uShadowSoft);
 #else
     shadow = shadowHard(sc);
 #endif
@@ -416,14 +416,13 @@ export class Avatar {
     this.uLight = { value: new THREE.Vector2(1, 0) };
     this.uHurt = { value: 0 };
     const uni = Object.assign({}, U, { uSkin: { value: tex }, uParts: { value: this.parts }, uShow: this.uShow, uLightLv: this.uLight, uHurt: this.uHurt });
-    const defines = { SHADOWS: opts.shadows === undefined ? 2 : opts.shadows };
-    if (opts.ldr) defines.LDR = 1;
-    Object.assign(defines, lightDefines(opts));
-    const mk = (vs, fs, uniforms, extra, fsVanilla, defs) => new THREE.RawShaderMaterial(Object.assign({
+    // made again for each look, Shaders ON or OFF (render/looks.js)
+    const definesFor = (o, armor) => Object.assign({ SHADOWS: o.shadows === undefined ? 2 : o.shadows }, o.ldr ? { LDR: 1 } : {}, lightDefines(o), armor ? { ARMOR: 1 } : {});
+    const mk = (vs, fs, uniforms, extra, fsVanilla, armor) => renderer.looked(o => new THREE.RawShaderMaterial(Object.assign({
       glslVersion: THREE.GLSL3, vertexShader: HEAD + COMMON + vs,
-      fragmentShader: opts.vanilla ? HEAD + VANILLA + (fsVanilla || AVATAR_FS) : HEAD + COMMON + SHADOW + TONEMAP + fs,
-      uniforms, defines: defs || defines, side: THREE.DoubleSide,
-    }, extra || {}));
+      fragmentShader: o.vanilla ? HEAD + VANILLA + (fsVanilla || AVATAR_FS) : HEAD + COMMON + SHADOW + TONEMAP + fs,
+      uniforms: renderer.withU(uniforms), defines: definesFor(o, armor), side: THREE.DoubleSide,
+    }, extra || {})));
     this.mat = mk(VS, FS, uni);
     // the first-person arm: drawn by the hand's own camera, in front of the world (render/held.js)
     this.armMat = mk(VS, FS, Object.assign({}, uni, { uParts: { value: this.armParts }, uHurt: { value: 0 } }), { side: THREE.FrontSide });
@@ -444,8 +443,7 @@ export class Avatar {
     this.uTint = { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector3(1, 1, 1)) };
     this.uTrim = { value: [0, 1, 2, 3, 4].map(() => new THREE.Vector4(-1, 1, 1, 1)) };
     const auni = Object.assign({}, uni, { uSkin: { value: atex }, uPiece: this.uPiece, uTint: this.uTint, uTrim: this.uTrim, uSheet: { value: new THREE.Vector2(SHEET_W, SHEET_H) } });
-    const adefs = Object.assign({}, defines, { ARMOR: 1 });
-    this.armorMat = mk(VS, FS, auni, null, ARMOR_FS_VANILLA, adefs);
+    this.armorMat = mk(VS, FS, auni, null, ARMOR_FS_VANILLA, true);
     this.armorShadowMat = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: HEAD + SHADOW_VS, fragmentShader: HEAD + SHADOW_FS, uniforms: auni, defines: { ARMOR: 1 }, side: THREE.DoubleSide,
     });
@@ -456,7 +454,8 @@ export class Avatar {
     for (const m of [this.mesh, this.shadowMesh, this.arm, this.armor, this.armorShadow]) { m.frustumCulled = false; m.matrixAutoUpdate = false; m.visible = false; }
     renderer.scene.add(this.mesh);
     renderer.scene.add(this.armor);
-    if (opts.shadows) { renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow); }
+    // (only drawn while there are shadows: render/shadows.js)
+    renderer.shadowScene.add(this.shadowMesh); renderer.shadowScene.add(this.armorShadow);
     renderer.handScene.add(this.arm);
     // what is in each hand (0 main, 1 off), in the model's hand in third person
     this.held = [null, null];

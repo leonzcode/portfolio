@@ -105,6 +105,8 @@ export class Hud {
     GLINT.seen = false;
     for (let i = 0; i < 9; i++) drawStack(g, this.icons, inv.slots[i], cx - 90 + i * 20 + 2, H - 16 - 3);
     if (off) drawStack(g, this.icons, off, leftHanded ? cx + 91 + 10 : cx - 91 - 26, H - 16 - 3);
+    // Attack Indicator: Hotbar (Video Settings): a sword beside the hotbar on the main hand's side, filling as the hit charges
+    if (this.attackMode === 'hotbar' && this.attack !== null && this.attack !== undefined && this.attack < 1) this._hotbarAttack(g, leftHanded ? cx - 91 - 22 : cx + 91 + 6, H - 20, this.attack);
     // an enchanted item in the hotbar shines: redrawn twenty times a second while it is there
     if (GLINT.seen) { GLINT.seen = false; this._wakeAt(now + 50); }
 
@@ -299,8 +301,15 @@ export class Hud {
      full charge with a mob in reach, a small sword there instead.
      hud.attack is the charge (0..1), 2 for the sword, or null for none
      (combat/combat.js indicator()). */
+  // our own sword, 16 x 16: grey, and white up to the charge
+  _hotbarAttack(g, x, y, a) {
+    const fill = Math.round(Math.max(0, Math.min(1, a)) * 16);
+    const px = (u, v) => g.fill(x + u, y + v, x + u + 1, y + v + 1, 16 - v <= fill ? 0xFFFFFFFF : 0xFF5A5A5A);
+    for (let i = 0; i < 9; i++) { px(5 + i, 10 - i); px(6 + i, 10 - i); }
+    for (const [u, v] of [[3, 9], [4, 10], [5, 11], [6, 12], [4, 12], [3, 13], [2, 14], [1, 15]]) px(u, v);
+  }
   _syncAttack(g, x, y) {
-    const a = this.attack;
+    const a = this.attackMode && this.attackMode !== 'crosshair' ? null : this.attack;
     if (a === null || a === undefined || (a >= 1 && a !== 2)) { if (this._atk) this._atk.style.display = 'none'; return; }
     if (!this._atk) {
       const c = this._atk = document.createElement('canvas');

@@ -202,6 +202,7 @@ uniform float uDim;
 uniform vec3 uDimFog;
 uniform vec2 uDimFogRange;
 uniform sampler2D uEndSky;
+uniform float uFogMul;          // the fog's thickness (Shader Options: Fog)
 in vec2 vUv; out vec4 o;
 vec3 stars(vec3 d) {
   vec3 p = d * 220.0;
@@ -236,7 +237,10 @@ void main() {
   vec3 sunC = texelFetch(uAmbient, ivec2(4, 0), 0).rgb;
   vec3 moonC = texelFetch(uAmbient, ivec2(5, 0), 0).rgb;
   bool water = uEyeInWater > 0.5;
-  if (d >= 1.0) {
+  // block clouds (renderer.js): their colour already weighed by how much of them there is, and what
+  // shows through them in the alpha; the sky is put behind them here, and they melt by themselves
+  bool cloud = base.a < 0.999 && d < 1.0;
+  if (d >= 1.0 || cloud) {
     // below the horizon there is only what has not loaded yet: the haze at the horizon
     col = skyRadiance(vec3(rd.x, max(rd.y, 0.0), rd.z));
     // the sun's disc, darker at its edge
@@ -256,6 +260,7 @@ void main() {
     }
     float night = 1.0 - smoothstep(-0.12, 0.02, uSunDir.y);
     col += stars(rd) * night * sat(rd.y * 4.0);
+    if (cloud) col = col * base.a + base.rgb;
   }
   // clouds, in front of the sky and anything beyond them
   vec4 cl = texture(uClouds, vUv);
@@ -267,12 +272,12 @@ void main() {
     vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
     vec3 sc = (amb * 0.6 + texelFetch(uAmbient, ivec2(3, 0), 0).rgb * 0.25 / PI) * uWaterTint * uSkyAtEye * 0.9;
     col = col * Tr + sc * (1.0 - Tr);
-  } else if (d < 1.0) {
+  } else if (d < 1.0 && !cloud) {
     // height fog, in the colour of the sky behind it
     float h0 = uCamPos.y - 63.0;
     float k = 1.0 / 60.0;
     float dy = rd.y * dist;
-    float od = 0.0019 * exp(-h0 * k) * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
+    float od = 0.0019 * uFogMul * exp(-h0 * k) * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
     vec3 fogC = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)));
     float T = exp(-od);
     col = col * T + fogC * (1.0 - T) * uSkyAtEye;
@@ -339,12 +344,12 @@ void main() {
   o = vec4(l / 16.0 * w, w, 0.0, 1.0);
 }`;
 const FS_EXPO = /* glsl */`
-uniform sampler2D uLum, uPrev; uniform float uDt, uBias;
+uniform sampler2D uLum, uPrev; uniform float uDt, uBias, uEV;
 in vec2 vUv; out vec4 o;
 void main() {
   vec4 s = textureLod(uLum, vec2(0.5), 10.0);
   float avg = exp2(s.x / max(s.y, 1e-4));
-  float target = clamp(0.115 / max(avg, 1e-5), 0.025, 5.5) * uBias;
+  float target = clamp(0.115 / max(avg, 1e-5), 0.025, 5.5) * uBias * uEV;
   float prev = texture(uPrev, vec2(0.5)).r;
   if (prev <= 0.0) prev = target;
   // brighter quickly, darker slowly, the way eyes go
@@ -357,6 +362,7 @@ void main() {
 const FS_FINAL = COMMON + TONEMAP + /* glsl */`
 uniform sampler2D uColor, uBloom, uExpo;
 uniform float uEyeInWater, uTime, uBloomMix;
+uniform float uSat, uContrast;  // Shader Options: Saturation and Contrast
 in vec2 vUv; out vec4 o;
 void main() {
   vec2 uv = vUv;
@@ -370,7 +376,10 @@ void main() {
   vec2 q = uv - 0.5;
   c *= 1.0 - dot(q, q) * 0.38 * (1.0 - sat(lum(c)));
   c = agx(c);
+  float l = lum(c);
+  c = max(vec3(0.0), l + (c - l) * uSat);
   c = toSRGB(c);
+  c = clamp((c - 0.5) * uContrast + 0.5, 0.0, 1.0);
   o = vec4(c, lum(c));
 }`;
 const FS_FXAA = /* glsl */`
@@ -432,6 +441,8 @@ export class Post {
       uExpo: { value: null }, uLum: { value: null }, uPrev: { value: null }, uHistory: { value: null },
       uInvViewProj: { value: new THREE.Matrix4() }, uPrevViewProj: { value: new THREE.Matrix4() },
       uDt: { value: 0.016 }, uBias: { value: 1 }, uBloomMix: { value: 0.045 },
+      // the Shader Options' exposure (in stops, as a factor), saturation and contrast
+      uEV: { value: 1 }, uSat: { value: 1 }, uContrast: { value: 1 },
     };
     const U = Object.assign({}, shared, this.u);
     // the same objects, so a value set here is seen by every pass
@@ -457,9 +468,37 @@ export class Post {
     this.lum = floatTarget(64, 64, { minFilter: THREE.LinearMipmapLinearFilter, generateMipmaps: true });
     this.lum.texture.generateMipmaps = true;
     this.cloudHist = 0;
+    this.cloudsOn = true; this.vlOn = true; this.bloomMix = 0.045;
+    this.configure(opts);
   }
+  /* The Shader Options this chain has (render/looks.js): bloom and how strong,
+     light shafts and how many steps, edge smoothing, exposure, saturation,
+     contrast. A pass that is off is not run at all; its picture is cleared
+     once so the composite reads nothing from it. */
+  configure(o) {
+    this.bloom = o.bloom !== false;
+    this.bloomMix = o.bloomMix || 0.045;
+    this.fxaa = !!o.fxaa;
+    const vl = o.vlSteps === undefined ? 14 : o.vlSteps;
+    this.vlOn = vl > 0;
+    if (vl > 0 && this.mVL.defines.VL_STEPS !== vl) { this.mVL.defines.VL_STEPS = vl; this.mVL.needsUpdate = true; }
+    this.u.uEV.value = Math.pow(2, o.exposure || 0);
+    this.u.uSat.value = o.saturation === undefined ? 1 : o.saturation;
+    this.u.uContrast.value = o.contrast || 1;
+    this.cleared = false;
+  }
+  // the pictures given back while another look is in use (made again by the next resize)
+  release() {
+    if (!this.w) return;
+    [this.copyColor, this.linDepth, this.vl, this.comp, this.ldr, ...(this.clouds || []), ...(this.down || []), ...(this.up || [])].forEach(t => t && t.dispose());
+    this.copyColor = this.linDepth = this.vl = this.comp = this.ldr = null;
+    this.clouds = this.down = this.up = null;
+    this.w = this.h = 0;
+  }
+  clearTo(t, a) { const r = this.r; r.setRenderTarget(t); r.setClearColor(0x000000, a); r.clear(true, false, false); }
   resize(w, h) {
     this.w = w; this.h = h;
+    this.cleared = false;
     const dispose = t => t && t.dispose();
     [this.copyColor, this.linDepth, this.vl, this.comp, this.ldr, ...(this.clouds || []), ...(this.down || []), ...(this.up || [])].forEach(dispose);
     this.copyColor = floatTarget(w, h);
@@ -491,11 +530,16 @@ export class Post {
     u.uDt.value = this.expoDt;
     // light shafts
     const other = this.shared.uDim && this.shared.uDim.value > 0;    // the Nether and the End: no shafts, no clouds
-    if (!other && (!this.halfClouds || ((this.cloudTick || 0) & 1))) this.run(this.mVL, this.vl);   // light rays: on the faster setting, the frames the clouds skip
+    // a pass switched off: its picture cleared once (nothing to add, nothing in front of the sky)
+    if (!this.cleared) { this.cleared = true; this.clearTo(this.vl, 1); for (const t of this.clouds) this.clearTo(t, 1); this.r.setClearColor(0x000000, 1); }
+    if (!this.vlOn || other) { if (this.vlWas !== false) { this.clearTo(this.vl, 1); this.vlWas = false; } }
+    else { this.vlWas = true; if (!this.halfClouds || ((this.cloudTick || 0) & 1)) this.run(this.mVL, this.vl); }   // light rays: on the faster setting, the frames the clouds skip
     // clouds, over the last frame's
     // they blend into the last frame's anyway: on the faster setting they are worked out every other frame
     this.cloudTick = (this.cloudTick || 0) + 1;
-    if (!other && (!this.halfClouds || (this.cloudTick & 1))) {
+    if (!this.cloudsOn || other) { if (this.cloudsWas !== false) { for (const t of this.clouds) this.clearTo(t, 1); this.cloudsWas = false; } }
+    else if (!this.halfClouds || (this.cloudTick & 1)) {
+      this.cloudsWas = true;
       const ci = this.cloudHist;
       u.uHistory.value = this.clouds[ci].texture;
       this.run(this.mClouds, this.clouds[1 - ci]);
@@ -508,7 +552,7 @@ export class Post {
     // bloom: down, then back up
     let src = this.comp.texture, sw = this.w, sh = this.h;
     let upSrc = this.comp.texture;
-    u.uBloomMix.value = this.bloom ? 0.045 : 0;
+    u.uBloomMix.value = this.bloom ? this.bloomMix : 0;
     if (this.bloom) {
     for (let i = 0; i < this.down.length; i++) {
       u.uSrc.value = src; u.uTexel.value.set(1 / sw, 1 / sh); u.uFirst.value = i === 0 ? 1 : 0;

@@ -74,6 +74,14 @@ void main() {
   o = vec4(toneLDR(albedo * vLight * vKeep + vAdd), 1.0);
 }`;
 
+/* Particles (Video Settings): All shows every one; Decreased leaves out one
+   in three; Minimal shows only one in ten. */
+export const particleSetting = { level: 'all' };
+export function keepParticle() {
+  const l = particleSetting.level;
+  return l === 'all' ? true : l === 'decreased' ? Math.random() >= 1 / 3 : Math.random() < 0.1;
+}
+
 export class Particles {
   constructor(renderer, world) {
     this.R = renderer; this.world = world;
@@ -89,10 +97,11 @@ export class Particles {
     g.setDrawRange(0, 0);
     const U = renderer.U;
     const uni = Object.assign({}, U, { uLightLv: renderer.avatar.uLight });
-    this.mesh = new THREE.Mesh(g, new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: HEAD + (renderer.vanilla ? VS.replace('LIGHTS_HERE', '') : COMMON + TONEMAP + 'uniform float uTime;\n' + VS.replace('LIGHTS_HERE', LDR + LIGHTS)), fragmentShader: HEAD + (renderer.vanilla ? FS_VANILLA : FS_DETAILED),
-      uniforms: uni, side: THREE.DoubleSide, defines: renderer.ldr && !renderer.vanilla ? { LDR: 1 } : {},
-    }));
+    // made again for each look, Shaders ON or OFF (render/looks.js)
+    this.mesh = new THREE.Mesh(g, renderer.looked(o => new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + (o.vanilla ? VS.replace('LIGHTS_HERE', '') : COMMON + TONEMAP + 'uniform float uTime;\n' + VS.replace('LIGHTS_HERE', LDR + LIGHTS)), fragmentShader: HEAD + (o.vanilla ? FS_VANILLA : FS_DETAILED),
+      uniforms: renderer.withU(uni), side: THREE.DoubleSide, defines: o.ldr && !o.vanilla ? { LDR: 1 } : {},
+    })));
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 5;
     renderer.scene.add(this.mesh);
@@ -123,11 +132,14 @@ export class Particles {
   }
   // the game's particle: a random push, normalised to a random speed, plus 0.1 up
   make(x, y, z, xa, ya, za) {
+    const keep = keepParticle();
     let xd = xa + (Math.random() * 2 - 1) * 0.4, yd = ya + (Math.random() * 2 - 1) * 0.4, zd = za + (Math.random() * 2 - 1) * 0.4;
     const s = (Math.random() + Math.random() + 1) * 0.15, l = Math.hypot(xd, yd, zd) || 1;
     xd = xd / l * s * 0.4; yd = yd / l * s * 0.4 + 0.1; zd = zd / l * s * 0.4;
     const p = { x, y, z, ox: x, oy: y, oz: z, xd, yd, zd, age: 0, life: Math.floor(4 / (Math.random() * 0.9 + 0.1)), size: 0.1 * (Math.random() * 0.5 + 0.5) * 2,
       gravity: 1, friction: 0.98, layer: -1, uo: 0, vo: 0, r: 1, g: 1, b: 1, ground: false, physics: true };
+    // (one the Particles setting leaves out is made all the same, for whoever asked for it, but never shown)
+    if (!keep) return p;
     if (this.list.length >= MAX) this.list.shift();
     this.list.push(p);
     return p;

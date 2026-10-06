@@ -315,16 +315,16 @@ export class EntityMeshes {
     this.bones = new Float32Array(BONE_W * 4 * this.boneRows * 4);
     this.boneTex = this.makeBoneTex();
     this.nBones = 0;
-    const defines = { SHADOWS: opts.shadows === undefined ? 2 : opts.shadows };
-    if (opts.ldr) defines.LDR = 1;
-    if (opts.ldr && !opts.vanilla) { defines.FOG_V = 1; defines.TONE_LUT = 1; }
-    Object.assign(defines, lightDefines(opts));
     this.uBones = { value: this.boneTex };
     const uni = Object.assign({}, U, { uAtlas: { value: tex }, uBones: this.uBones });
-    this.mat = new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: HEAD + COMMON + (opts.ldr && !opts.vanilla ? TONEMAP + VS.replace('LDR_HERE', LDR) : VS.replace('LDR_HERE', '')),
-      fragmentShader: opts.vanilla ? HEAD + FS_VANILLA : HEAD + COMMON + SHADOW + TONEMAP + FS,
-      uniforms: uni, defines, side: THREE.DoubleSide,
+    // made again for each look, Shaders ON or OFF (render/looks.js)
+    this.mat = R.looked(o => {
+      const defines = Object.assign({ SHADOWS: o.shadows === undefined ? 2 : o.shadows }, o.ldr ? { LDR: 1 } : {}, o.ldr && !o.vanilla ? { FOG_V: 1, TONE_LUT: 1 } : {}, lightDefines(o));
+      return new THREE.RawShaderMaterial({
+        glslVersion: THREE.GLSL3, vertexShader: HEAD + COMMON + (o.ldr && !o.vanilla ? TONEMAP + VS.replace('LDR_HERE', LDR) : VS.replace('LDR_HERE', '')),
+        fragmentShader: o.vanilla ? HEAD + FS_VANILLA : HEAD + COMMON + SHADOW + TONEMAP + FS,
+        uniforms: R.withU(uni), defines, side: THREE.DoubleSide,
+      });
     });
     this.models = new Map();        // name -> { mesh, geo, inst arrays, n, cap }
     // round shadows
@@ -346,13 +346,12 @@ export class EntityMeshes {
     pg.setIndex([0, 1, 2, 0, 2, 3]);
     this.partGeo = pg; this.partCap = 0; this.partN = 0;
     this.growParts(256);
-    const pdef = {};
-    if (opts.ldr) pdef.LDR = 1;
-    this.parts = new THREE.Mesh(pg, new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: HEAD + PART_VS, fragmentShader: HEAD + (opts.vanilla ? PART_FS_VANILLA : PART_FS), defines: pdef,
-      uniforms: { uSheet: { value: sheet }, uAmbient: U.uAmbient, uLightmap: U.uLightmap || { value: null }, uFogColor: U.uFogColor || { value: null }, uFog: U.uFog || { value: null } },
+    const uSheet = { value: sheet };
+    this.parts = new THREE.Mesh(pg, R.looked(o => new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + PART_VS, fragmentShader: HEAD + (o.vanilla ? PART_FS_VANILLA : PART_FS), defines: o.ldr ? { LDR: 1 } : {},
+      uniforms: { uSheet, uAmbient: U.uAmbient, uLightmap: U.uLightmap || { value: null }, uFogColor: U.uFogColor || { value: null }, uFog: U.uFog || { value: null } },
       transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    }));
+    })));
     this.parts.frustumCulled = false; this.parts.renderOrder = 6;
     this.group.add(this.parts);
     // boats' water patches: after everything opaque, depth only

@@ -353,11 +353,13 @@ export function avatarArmorGeometry() {
    noise reads as long soft streaks; two layers cross at different angles
    and drift different ways. */
 export const GLINT = /* glsl */`
+uniform vec2 uGlint;    // Glint Speed and Glint Strength (Accessibility Settings): 0.5 and 0.75 are as it always was
 vec3 glintAt(vec2 p, float t) {
+  t *= uGlint.x * 2.0;
   vec2 a = vec2(p.x * 0.985 + p.y * 0.174, -p.x * 0.174 + p.y * 0.985);
   vec2 b = vec2(p.x * 0.643 - p.y * 0.766, p.x * 0.766 + p.y * 0.643);
   float s = texture(uNoise, vec2(a.x * 0.004 + 0.13, a.y * 0.022 - t * 0.05)).r;
   float u = texture(uNoise, vec2(b.x * 0.004 + 0.61, b.y * 0.018 + t * 0.037)).a;
   float g = smoothstep(0.5, 0.95, s) * 0.9 + smoothstep(0.55, 0.95, u) * 0.7;
-  return vec3(0.5, 0.25, 0.95) * g;
+  return vec3(0.5, 0.25, 0.95) * g * (uGlint.y / 0.75);
 }`;
