@@ -451,7 +451,9 @@ export class Player {
     if (Math.abs(this.vel.z) < 0.003) this.vel.z = 0;
     // the pose for next tick: swimming lies down, sneaking crouches, and a low gap keeps you crawling
     let pose = this.swimming ? 'swim' : this.sneaking ? 'crouch' : 'stand';
-    if (!this.fits(pose)) pose = this.fits('crouch') ? 'crouch' : 'swim';
+    // (a spectator passes through blocks standing up: nothing makes it crouch or crawl)
+    if (this.noclip) pose = 'stand';
+    else if (!this.fits(pose)) pose = this.fits('crouch') ? 'crouch' : 'swim';
     this.pose = pose; this.h = POSE[pose][0];
     this.eyeH += (POSE[pose][1] - this.eyeH) * 0.5;
     const moved = Math.hypot(this.pos.x - was.x, this.pos.z - was.z);

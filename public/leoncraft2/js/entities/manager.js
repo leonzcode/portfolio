@@ -45,6 +45,10 @@ import { dropOf } from '../survival.js?v=16';
 import { itemName, ITEMS, I } from '../items.js?v=16';
 import { Combat } from '../combat/combat.js?v=16';
 import './nether.js?v=16';
+// the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
+import './mobs5.js?v=16';
+import './mobs6.js?v=16';
+import './mobs7.js?v=16';
 import { DIMS } from '../dims.js?v=16';
 import { armorLayers } from './armorlayer.js?v=16';
 import { MobHeld } from '../render/mobheld.js?v=16';
