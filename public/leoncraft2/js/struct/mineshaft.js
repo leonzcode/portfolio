@@ -304,5 +304,8 @@ export function mineshaftPieces(seed, cx, cz, kind, groundAt) {
     dy = k - my;
     acc.shift(dy);
   } else dy = acc.moveBelowSeaLevel(63, -64, r, 10);
+  // the room's doorways move with it (the game's room moves its entrance boxes too); left behind they
+  // cut a hole of air into the ground or the sea floor sixty blocks above every mineshaft
+  for (const e of room.entrances) e.move(0, dy, 0);
   return { pieces: acc.list, dy };
 }

@@ -30,20 +30,29 @@ export function worldStructures(seed, gen, dim) {
   dim = dim === 'the_nether' ? 'nether' : dim === 'the_end' ? 'end' : dim || 'overworld';
   let S;
   try { S = new Structures(seed, makeSource(gen, BIOMES, dim === 'overworld' ? pickBiome : null, Y0, dim)); } catch (e) { console.error('structures', e); return null; }
+  // the structures and dungeons of one chunk, drawn into its blocks
+  const draw = (blocks, meta, cx, cz, mask) => {
+    let out = null;
+    try {
+      out = S.apply(blocks, meta, cx, cz, dim, mask);
+      if (dim === 'overworld') {
+        const d = dungeons(S.seed, blocks, meta, cx, cz);
+        if (d) {
+          out = out || { chests: [], spawners: [], entities: [], structures: [] };
+          out.chests.push(...d.chests); out.spawners.push(...d.spawners);
+        }
+      }
+    } catch (e) { console.error('structures in chunk', cx, cz, e); }
+    return out;
+  };
+  // A generator that decorates (the vanilla one) builds them into its terrain before the trees and
+  // plants, as the game does, so nothing grows through a house or stands on a path; c.structs is
+  // then what they left. Otherwise they are drawn over the finished chunk here.
+  if (typeof gen.useStructures === 'function') gen.useStructures(draw);
   return {
     S,
     build(c, cx, cz) {
-      let out = null;
-      try {
-        out = S.apply(c.blocks, c.meta, cx, cz, dim);
-        if (dim === 'overworld') {
-          const d = dungeons(S.seed, c.blocks, c.meta, cx, cz);
-          if (d) {
-            out = out || { chests: [], spawners: [], entities: [], structures: [] };
-            out.chests.push(...d.chests); out.spawners.push(...d.spawners);
-          }
-        }
-      } catch (e) { console.error('structures in chunk', cx, cz, e); }
+      let out = c.structs !== undefined ? c.structs : draw(c.blocks, c.meta, cx, cz);
       if (out) {
         for (let i = VOL - 1; i >= 0; i--) if (c.blocks[i]) { c.top = Math.max(c.top, i >> 8); break; }
         if (!out.chests.length && !out.spawners.length && !out.entities.length && !out.structures.length) out = null;

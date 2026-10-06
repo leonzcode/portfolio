@@ -72,6 +72,8 @@ export const FeatureData = { tags: {}, placed: {}, configured: {}, biome: {} };
    blocks features place ---- */
 // 26.3 says which blocks hold plants up with tags (supports_vegetation and friends)
 const DIRTLIKE = () => tag('supports_vegetation');
+// a full block nothing can be seen through (the game's "solid render")
+const solidRender = id => id !== 0 && BLOCKS[id].shape === 'cube' && BLOCKS[id].solid && !BLOCKS[id].leaves && (BLOCKS[id].pass || 'opaque') === 'opaque';
 export function survives(R, st, x, y, z) {
   const n = BLOCKS[st.id].name;
   const below = R.get(x, y - 1, z), bn = BLOCKS[below] ? BLOCKS[below].name : 'air';
@@ -97,9 +99,11 @@ export function survives(R, st, x, y, z) {
     case 'cactus_flower': return below === B.cactus || fullTop(below);
     case 'dead_bush': case 'short_dry_grass': case 'tall_dry_grass':
       return tag('supports_dry_vegetation')[below] === 1;
-    case 'lily_pad': return (below === B.water && R.meta(x, y - 1, z) === 0) || tag('supports_lily_pad')[below] === 1;
+    // still water, or a plant standing in it (seagrass holds water too)
+    case 'lily_pad': return (below === B.water && R.meta(x, y - 1, z) === 0) || (fluidOf(below) === 1 && below !== B.water) || tag('supports_lily_pad')[below] === 1;
+    // a mushroom needs a whole block under it that light cannot pass (never leaves or glass); mycelium, podzol and nylium hold it in any light
     case 'brown_mushroom': case 'red_mushroom':
-      return tag('mushroom_grow_block')[below] === 1 || fullTop(below);
+      return tag('overrides_mushroom_light_requirement')[below] === 1 || solidRender(below);
     case 'seagrass': case 'kelp': case 'kelp_plant': case 'tall_seagrass':
       return fullTop(below) && below !== B.magma_block;
     case 'snow': {
@@ -110,7 +114,7 @@ export function survives(R, st, x, y, z) {
     case 'sweet_berry_bush': case 'firefly_bush': case 'bush': case 'leaf_litter': case 'wildflowers': case 'pink_petals':
       return dirt[below] === 1 || below === B.farmland || (n === 'leaf_litter' && fullTop(below));
     case 'pumpkin': case 'melon': return true;
-    case 'pale_moss_carpet': case 'moss_carpet': return below !== 0;
+    case 'pale_moss_carpet': case 'moss_carpet': return !isAirId(below);
     case 'pale_hanging_moss': return R.get(x, y + 1, z) !== 0;
   }
   const d = BLOCKS[st.id];
@@ -123,6 +127,61 @@ export function survives(R, st, x, y, z) {
     return dirt[below] === 1 || below === B.farmland;
   }
   return true;
+}
+
+/* ---- a chunk put together from nine chunks' features ----
+   Each chunk is decorated on its own, against the bare terrain of the chunks
+   around it, and a chunk is then laid together from its own writes and its
+   neighbours'. So two neighbours may write the same block, or one may take
+   away what a plant of the other stands on (a clay pool or a sand disk under
+   its grass, a fern over the bottom half of its tall grass). The game
+   decorates chunks one after another, each feature seeing what came before,
+   so neither can happen there. Here, when two chunks write the same block the
+   sturdier one stays: a trunk over leaves, leaves over a flower (a tree
+   grown later would have pushed the flower aside; a flower placed later would
+   have found no room). Then every plant left without what it needs is taken
+   away, as the game would never have put it there. */
+const RANK = new Uint8Array(4096);
+for (const d of BLOCKS) {
+  if (!d) continue;
+  const n = d.name;
+  if (isAirId(d.id) || /(_log|_wood|_stem|_hyphae|mushroom_block)$/.test(n)) RANK[d.id] = 5;   // air a feature dug (a geode, a lake) or a trunk
+  else if (FLUIDISH[d.id] && d.shape === 'fluid') RANK[d.id] = 3;
+  else if (d.leaves) RANK[d.id] = 2;
+  else if (!d.solid || d.replaceable || d.shape !== 'cube') RANK[d.id] = 1;
+  else RANK[d.id] = 4;
+}
+// which of two neighbours' writes to one block stays (the later one on a tie)
+export const writeRank = id => RANK[id];
+
+// the plants that stand on the block under them, and those that stand in water (taken back to water)
+const GROUND = new Uint8Array(4096);
+{
+  const names = ['short_grass', 'fern', 'tall_grass', 'large_fern', 'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet', 'red_tulip',
+    'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'torchflower', 'sunflower', 'lilac', 'rose_bush',
+    'peony', 'open_eyeblossom', 'closed_eyeblossom', 'sweet_berry_bush', 'firefly_bush', 'bush', 'pink_petals', 'wildflowers', 'leaf_litter',
+    'dead_bush', 'short_dry_grass', 'tall_dry_grass', 'brown_mushroom', 'red_mushroom', 'cactus', 'cactus_flower', 'sugar_cane', 'lily_pad',
+    'snow', 'moss_carpet', 'pale_moss_carpet', 'azalea', 'flowering_azalea', 'bamboo', 'bamboo_sapling', 'oak_sapling', 'spruce_sapling',
+    'birch_sapling', 'jungle_sapling', 'acacia_sapling', 'dark_oak_sapling', 'cherry_sapling', 'pale_oak_sapling'];
+  for (const n of names) {
+    if (B[n] === undefined) continue;
+    GROUND[B[n]] = 1;
+    const up = BLOCKS[B[n]].upper;
+    if (up && B[up] !== undefined) GROUND[B[up]] = 1;
+  }
+  for (const n of ['seagrass', 'tall_seagrass', 'tall_seagrass_top_block', 'kelp', 'kelp_plant']) if (B[n] !== undefined) GROUND[B[n]] = 2;
+}
+export const isGroundPlant = id => GROUND[id];
+// can this plant stay where it is, with what is around it now
+export function plantHolds(R, id, m, x, y, z) {
+  const d = BLOCKS[id];
+  if (d.lower) return R.get(x, y - 1, z) === B[d.lower];                    // the top half of a tall plant needs its bottom half
+  if (d.upper && B[d.upper] !== undefined && R.get(x, y + 1, z) !== B[d.upper]) return false;   // and the bottom half its top
+  if (id === B.kelp || id === B.kelp_plant) {
+    const b = R.get(x, y - 1, z);
+    return b === B.kelp_plant || (b !== 0 && BLOCKS[b].shape === 'cube' && BLOCKS[b].solid && b !== B.magma_block);
+  }
+  return survives(R, { id, meta: m }, x, y, z);
 }
 
 /* ============================================================ providers == */
@@ -454,7 +513,7 @@ export class Region {
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const p = gen.proto(cx + dx, cz + dz);
       this.protos.push(p);
-      this.chunks.push({ blocks: p.blocks, meta: p.meta, own: false, writes: null });
+      this.chunks.push({ blocks: p.blocks, meta: p.meta, own: false, writes: null, smask: p.smask || null });
     }
     // heightmaps over the 48 x 48 columns: first free y (world y), from each
     // chunk's own (worked out once per chunk)
@@ -484,8 +543,10 @@ export class Region {
     const lx = x - this.x0, lz = z - this.z0;
     if (lx < 0 || lx >= 48 || lz < 0 || lz >= 48 || y < MIN_Y || y > MAX_Y) return false;
     const c = this.chunks[(lz >> 4) * 3 + (lx >> 4)];
-    if (!c.own) { c.blocks = c.blocks.slice(); c.meta = c.meta.slice(); c.own = true; c.writes = new Map(); }
     const i = ((y - MIN_Y) << 8) | ((lz & 15) << 4) | (lx & 15);
+    // the features the game places before its structures leave a structure's blocks as they are
+    if (this.early && c.smask && c.smask[i]) return false;
+    if (!c.own) { c.blocks = c.blocks.slice(); c.meta = c.meta.slice(); c.own = true; c.writes = new Map(); }
     c.blocks[i] = id; c.meta[i] = meta;
     c.writes.set(i, id * 256 + meta);
     // the heightmaps that change as features place blocks
@@ -962,8 +1023,10 @@ FEATURES.spring_feature = (D, c, r, x, y, z) => {
     if (n.startsWith('#')) { const s = tag(n.slice(1)); for (let i = 0; i < 4096; i++) if (s[i]) valid[i] = 1; }
     else if (B[n] !== undefined) valid[B[n]] = 1;
   }
+  // the game's defaults when the data leaves them out: a block below, four rock sides and one way out
+  const needBelow = c.requires_block_below ?? true, rocks = c.rock_count ?? 4, holes = c.hole_count ?? 1;
   if (!valid[R.get(x, y + 1, z)]) return false;
-  if (c.requires_block_below && !valid[R.get(x, y - 1, z)]) return false;
+  if (needBelow && !valid[R.get(x, y - 1, z)]) return false;
   const here = R.get(x, y, z);
   if (!isAirId(here) && !valid[here]) return false;
   let rock = 0, hole = 0;
@@ -972,13 +1035,171 @@ FEATURES.spring_feature = (D, c, r, x, y, z) => {
     if (valid[b]) rock++;
     if (isAirId(b)) hole++;
   }
-  if (rock === c.rock_count && hole === c.hole_count) {
+  if (rock === rocks && hole === holes) {
     const fl = strip((c.state && (c.state.Name || c.state.id)) || 'water');
-    R.set(x, y, z, fl.includes('lava') ? B.lava : B.water, 0);
+    const kind = fl.includes('lava') ? 2 : 1;
+    R.set(x, y, z, kind === 2 ? B.lava : B.water, 0);
+    // the game ticks a new spring at once, so it has run out over the rock by the time anyone sees it
+    flowOut(R, x, y, z, kind);
     return true;
   }
   return false;
 };
+
+/* A fluid running out of a new source until it settles, by the rules the
+   game's own water and lava follow (fluids.js): pour down where it can,
+   else spread sideways towards the nearest way down within reach (4 blocks
+   for water, 2 for lava), one level less each block (two for lava, which
+   stops after three). What it settles to is what fluids.js would make, so
+   it stays as it is until something next to it changes. It never leaves the
+   region the chunk can write to. */
+const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const F_LEVEL = 7, F_FALLING = 8;
+/* The game ticks the water and lava its aquifers leave against a cave (and
+   every new spring) once a chunk is made, so by the time anyone sees them
+   they have run out over the rock: a cave lake with a cave beside it spills
+   in, rather than standing as a wall of water. The same here, for this
+   chunk's own still water and lava with open air under or beside it, and
+   for any still water or lava (in this chunk or a neighbour) that one of
+   this chunk's features opened up, say a geode dug under the sea floor. */
+const OPEN_SIDES = [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+function runOut(R) {
+  const budget = { n: 20000 };
+  const still = (x, y, z) => { const b = R.get(x, y, z); return (b === B.water || b === B.lava) && R.meta(x, y, z) === 0 ? b : 0; };
+  const open = (x, y, z) => OPEN_SIDES.some(([dx, dy, dz]) => isAirId(R.get(x + dx, y + dy, z + dz)));
+  const c = R.chunks[4], x0 = R.x0 + 16, z0 = R.z0 + 16, W = B.water, L = B.lava;
+  const shut = id => id !== 0 && !isAirId(id);
+  for (let i = 256; i < VOLI && budget.n > 0; i++) {
+    const bl = c.blocks, b = bl[i];
+    if ((b !== W && b !== L) || c.meta[i] !== 0) continue;
+    const lx = i & 15, lz = (i >> 4) & 15;
+    // (inside the chunk the neighbours are read straight from it: a sea is a lot of water)
+    if (lx > 0 && lx < 15 && lz > 0 && lz < 15 && shut(bl[i - 256]) && shut(bl[i + 1]) && shut(bl[i - 1]) && shut(bl[i + 16]) && shut(bl[i - 16])) continue;
+    const x = x0 + lx, z = z0 + lz, y = (i >> 8) + MIN_Y;
+    if (open(x, y, z)) flowOut(R, x, y, z, b === W ? 1 : 2, budget);
+  }
+  // the air this chunk's features made, wherever it is, and the fluid around it
+  for (let k = 0; k < 9 && budget.n > 0; k++) {
+    const ch = R.chunks[k];
+    if (!ch.writes) continue;
+    const cx0 = R.x0 + (k % 3) * 16, cz0 = R.z0 + Math.floor(k / 3) * 16;
+    for (const [i, v] of ch.writes) {
+      if (!isAirId(v >> 8) || budget.n <= 0) continue;
+      const x = cx0 + (i & 15), z = cz0 + ((i >> 4) & 15), y = (i >> 8) + MIN_Y;
+      for (const [dx, dy, dz] of [[0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]) {
+        const b = still(x + dx, y + dy, z + dz);
+        if (b) flowOut(R, x + dx, y + dy, z + dz, b === B.water ? 1 : 2, budget);
+      }
+    }
+  }
+}
+function flowOut(R, sx, sy, sz, kind, budget) {
+  const FB = kind === 1 ? B.water : B.lava;
+  const drop = kind === 1 ? 1 : 2, reach = kind === 1 ? 4 : 2, max = kind === 1 ? 7 : 6;
+  const inside = (x, y, z) => R.inside(x, z) && y > MIN_Y && y <= MAX_Y;
+  const kindAt = (x, y, z) => fluidOf(R.get(x, y, z)) === 1 && R.get(x, y, z) !== B.water ? 0 : fluidOf(R.get(x, y, z));
+  const open = (x, y, z) => {
+    if (!inside(x, y, z)) return false;
+    const b = R.get(x, y, z);
+    if (isAirId(b)) return true;
+    const d = BLOCKS[b];
+    return !d.solid && !d.fluid && !fluidOf(b) && (d.replaceable || d.shape === 'cross');
+  };
+  const isSource = (x, y, z) => kindAt(x, y, z) === kind && (R.meta(x, y, z) & (F_LEVEL | F_FALLING)) === 0;
+  const levelOf = (x, y, z) => {
+    if (kindAt(x, y, z) !== kind) return 99;
+    const m = R.meta(x, y, z);
+    return m & F_FALLING ? 0 : m & F_LEVEL;
+  };
+  const queue = [], queued = new Set();
+  const key = (x, y, z) => (x - R.x0) + ',' + y + ',' + (z - R.z0);
+  const wake = (x, y, z) => {
+    for (const [dx, dy, dz] of [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+      const k = key(x + dx, y + dy, z + dz);
+      if (kindAt(x + dx, y + dy, z + dz) && !queued.has(k)) { queued.add(k); queue.push(x + dx, y + dy, z + dz); }
+    }
+  };
+  const place = (x, y, z, level, falling) => {
+    const other = kindAt(x, y, z);
+    if (other && other !== kind) {
+      R.set(x, y, z, R.meta(x, y, z) === 0 ? (other === 2 ? B.obsidian : B.stone) : B.cobblestone, 0);
+      return;
+    }
+    const b = R.get(x, y, z), d = BLOCKS[b];
+    // a tall plant in the way goes whole
+    if (b && d.upper && R.get(x, y + 1, z) === B[d.upper]) R.set(x, y + 1, z, 0, 0);
+    if (R.set(x, y, z, FB, (falling ? F_FALLING : 0) | (level & F_LEVEL))) wake(x, y, z);
+  };
+  const distToDrop = (x, y, z, fx, fz) => {
+    if (open(x, y - 1, z) || kindAt(x, y - 1, z)) return 0;
+    let frontier = [[x, z]];
+    const seen = new Set([x + ',' + z]);
+    for (let d = 1; d <= reach; d++) {
+      const nxt = [];
+      for (const [cx, cz] of frontier) for (const [dx, dz] of SIDES) {
+        const nx = cx + dx, nz = cz + dz, k = nx + ',' + nz;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        if (!open(nx, y, nz) && !kindAt(nx, y, nz)) continue;
+        if (open(nx, y - 1, nz) || (kindAt(nx, y - 1, nz) && !isSource(nx, y - 1, nz))) return d;
+        nxt.push([nx, nz]);
+      }
+      frontier = nxt;
+    }
+    return 99;
+  };
+  wake(sx, sy, sz);
+  const most = budget ? budget.n : 4000;
+  let n = 0;
+  for (let q = 0; q < queue.length && n < most; n++, q += 3) {
+    const x = queue[q], y = queue[q + 1], z = queue[q + 2];
+    queued.delete(key(x, y, z));
+    if (kindAt(x, y, z) !== kind) continue;
+    let meta = R.meta(x, y, z);
+    const source = (meta & (F_LEVEL | F_FALLING)) === 0;
+    // lava with water at its side or on top hardens
+    if (kind === 2 && [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([dx, dy, dz]) => kindAt(x + dx, y + dy, z + dz) === 1)) {
+      R.set(x, y, z, source ? B.obsidian : B.cobblestone, 0);
+      continue;
+    }
+    if (!source) {
+      let want;
+      if (kindAt(x, y + 1, z) === kind) want = F_FALLING;
+      else {
+        let best = 99, sources = 0;
+        for (const [dx, dz] of SIDES) {
+          const l = levelOf(x + dx, y, z + dz);
+          if (l < best) best = l;
+          if (isSource(x + dx, y, z + dz)) sources++;
+        }
+        const below = R.get(x, y - 1, z);
+        if (kind === 1 && sources >= 2 && ((below && BLOCKS[below].solid) || isSource(x, y - 1, z))) want = 0;
+        else want = best + drop <= max ? best + drop : -1;
+      }
+      if (want === -1) { R.set(x, y, z, 0, 0); wake(x, y, z); continue; }
+      if (want !== meta) { R.set(x, y, z, FB, want); meta = want; wake(x, y, z); }
+    }
+    const level = meta & F_FALLING ? 0 : meta & F_LEVEL;
+    const under = kindAt(x, y - 1, z);
+    if (open(x, y - 1, z) || (under && under !== kind)) {
+      place(x, y - 1, z, 0, true);
+      if (!source) continue;
+    } else if (under === kind && !source) continue;          // pouring into more of itself (a falling column too: it never spreads over its own pool)
+    const next = level + drop;
+    if (next > max) continue;
+    const ways = [];
+    let bestD = 99;
+    for (const [dx, dz] of SIDES) {
+      const nx = x + dx, nz = z + dz;
+      if (!open(nx, y, nz) && !(kindAt(nx, y, nz) === kind && levelOf(nx, y, nz) > next)) continue;
+      const d = distToDrop(nx, y, nz, -dx, -dz);
+      if (d < bestD) { bestD = d; ways.length = 0; }
+      if (d === bestD) ways.push(nx, nz);
+    }
+    for (let k = 0; k < ways.length; k += 2) place(ways[k], y, ways[k + 1], next, false);
+  }
+  if (budget) budget.n -= n;
+}
 
 /* ---- snow and ice on the top layer ---- */
 FEATURES.freeze_top_layer = (D, c, r, ox, oy, oz) => {
@@ -1020,6 +1241,8 @@ export class Decorator {
     this.biomeSets = new Map();
     this.unknown = new Set();
     this.r = new WorldgenXoroshiro();
+    this.dryR = new WorldgenXoroshiro();       // for lakePlan, which runs in the middle of a decoration
+    this.plans = new Map();
   }
   biomeHas(bid, name) {
     let s = this.biomeSets.get(bid);
@@ -1035,19 +1258,37 @@ export class Decorator {
   /* Decorate one chunk against its neighbours' terrain; returns the region
      (whose chunks carry the writes). */
   decorateSource(cx, cz) {
-    const g = this.gen;
-    const R = new Region(g, cx, cz);
-    const D = { region: R, gen: g, biomeHas: (b, n) => this.biomeHas(b, n), unknownModifier: t => this.unknownModifier(t), r: this.r };
+    const R = new Region(this.gen, cx, cz);
+    const D = this.context(R, this.r);
+    // a lake that would run into a lake of a chunk decorated before this one is not dug (see lakePlan)
+    D.lakeClash = box => {
+      for (const [dx, dz] of [[-1, -1], [0, -1], [1, -1], [-1, 0]]) {
+        for (const b of this.lakePlan(cx + dx, cz + dz)) {
+          if (b[0] <= box[3] && b[3] >= box[0] && b[1] <= box[4] && b[4] >= box[1] && b[2] <= box[5] && b[5] >= box[2]) return true;
+        }
+      }
+      return false;
+    };
+    this.run(D, cx, cz, this.steps.length);
+    runOut(R);
+    return R;
+  }
+  context(R, r) {
+    return { region: R, gen: this.gen, biomeHas: (b, n) => this.biomeHas(b, n), unknownModifier: t => this.unknownModifier(t), r };
+  }
+  // every feature of the first n steps for a chunk, in the game's order, each with its own random
+  run(D, cx, cz, n) {
+    const g = this.gen, R = D.region, r = D.r;
     // the biomes stored in this chunk and the eight around it
     const present = new Set();
     for (const p of R.protos) {
       const gg = p.grid.g;
       for (let j = 1; j <= 4; j++) for (let i = 1; i <= 4; i++) for (let k = 1; k <= 96; k++) present.add(gg[(j * 6 + i) * 98 + k]);
     }
-    const r = this.r;
     const deco = decorationSeed(r, g.seed, cx * 16, cz * 16);
-    for (let step = 0; step < this.steps.length; step++) {
+    for (let step = 0; step < n; step++) {
       const list = this.steps[step];
+      R.early = step < 3;          // raw generation, lakes, local modifications: before the structures
       const idx = new Set();
       for (const bid of present) {
         const b = FeatureData.biome[BIOMES[bid].name];
@@ -1057,6 +1298,8 @@ export class Decorator {
       const order = [...idx].filter(v => v !== undefined).sort((a, b) => a - b);
       for (const p of order) {
         const name = list.features[p];
+        // snow and ice go on once the chunk is put together with its neighbours' features (VanillaGen.generate)
+        if (name === 'freeze_top_layer') continue;
         featureSeed(r, deco, p, step);
         try {
           placePlaced(D, name, r, cx * 16, MIN_Y, cz * 16, name);
@@ -1065,7 +1308,24 @@ export class Decorator {
         }
       }
     }
-    return R;
+  }
+  /* The lakes a chunk would dig (their boxes), worked out without digging
+     them. The game decorates chunks one after another, so a lake meeting
+     another chunk's lake finds it there and gives up; decorated on their
+     own, both would be dug and leave one's water standing against the
+     other's open air. So chunks take a fixed order (row by row, west to
+     east), and a lake gives way to any lake of a chunk before it. */
+  lakePlan(cx, cz) {
+    const key = cx + ',' + cz;
+    let plan = this.plans.get(key);
+    if (plan) return plan;
+    plan = [];
+    const R = new Region(this.gen, cx, cz);
+    R.dry = plan;
+    this.run(this.context(R, this.dryR), cx, cz, 2);       // raw generation and lakes
+    this.plans.set(key, plan);
+    if (this.plans.size > 400) this.plans.delete(this.plans.keys().next().value);
+    return plan;
   }
   warmEnoughToMelt(biome, x, y, z) {
     return temperatureAt(BIOMES[biome].name, x, y, z) > F(0.1);

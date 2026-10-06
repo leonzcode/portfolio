@@ -162,8 +162,8 @@ export class Fluids {
     if (y > 0 && (this.open(x, y - 1, z) || (this.kindAt(x, y - 1, z) && this.kindAt(x, y - 1, z) !== kind))) {
       this.place(x, y - 1, z, kind, 0, true);
       if (!source) return;
-    } else if (y > 0 && this.kindAt(x, y - 1, z) === kind && !(meta & FALLING) && !source) {
-      return;                                // already pouring into more of itself
+    } else if (y > 0 && this.kindAt(x, y - 1, z) === kind && !source) {
+      return;                                // already pouring into more of itself (a falling column never spreads over its own pool)
     }
     // otherwise across, towards the nearest way down
     const next = level + drop;
