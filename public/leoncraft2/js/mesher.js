@@ -110,6 +110,16 @@ function spliceBuf(b, p, c0, c1) {
 function splice(base, r, c0, c1, ny, noSky) {
   const out = { vis: base.vis.slice(), skyLow: Math.min(base.skyLow, r.skyLow), lightH: ny, regionH: ny };
   for (const k of KINDS) out[k] = spliceBuf(base[k], r.parts[k], c0, c1);
+  /* The water kept from the last mesh has not moved since: no glide (the
+     renderer starts every fluid mesh's glide again as it arrives, and the
+     kept vertices would replay theirs). The whole column made again gives
+     the same. */
+  const fo = out.fluid;
+  if (fo && base.fluid) {
+    const v0 = base.fluid.vmarks[c0], v1 = v0 + (r.parts.fluid ? r.parts.fluid.count : 0), F = fo.attrs[2];
+    for (let j = 0; j < v0; j++) F[j * 4 + 2] = 0;
+    for (let j = v1; j < fo.count; j++) F[j * 4 + 2] = 0;
+  }
   out.vis.set(r.vis.subarray(c0 * 6, (c1 + 1) * 6), c0 * 6);
   // the light, of the middle chunk and of the whole region: the old rows, then the new ones for the sections made
   const rows = (old, oldH, per, now) => {
