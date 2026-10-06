@@ -321,6 +321,10 @@ void main() {
     float a = mod(floor(f), frames);
     vLayers = vec3(aPos.w + a, aPos.w + mod(a + 1.0, frames), fract(f));
   }
+#ifdef DEPTH_ONLY
+  // the cut-out blocks' depth pass (cutoutDepthPass below): where the face is and its texture, nothing else
+  return;
+#endif
 
   bool plant = (flags & 32) != 0;
   vec3 Ng = plant ? vec3(0.0, 1.0, 0.0) : uFaceRot * faceN(nw & 7);
@@ -419,6 +423,10 @@ void main() {
   // keep thin leaves and grass blades from vanishing in the distance
   float a = (alb.a - 0.5) / max(fwidth(alb.a), 1e-4) + 0.5;
   if (a < 0.5) discard;
+#endif
+#ifdef DEPTH_ONLY
+  outColor = vec4(0.0);
+  return;
 #endif
   vec3 albedo = alb.rgb;
   if (overlay) {
@@ -606,5 +614,21 @@ export function makeMaterials(shared, q) {
     // the held block: drawn over whatever it is pushed into, keeping its own depth
     handOpaque: mk({}, false, { depthFunc: THREE.AlwaysDepth }), handCutout: mk({ CUTOUT: 1 }, false, { depthFunc: THREE.AlwaysDepth }),
     shadowOpaque: sh({}), shadowCutout: sh({ CUTOUT: 1 }),
+    // Detailed: cut-out blocks near you, their depth drawn first and then lit where in front (see cutoutDepthPass)
+    cutoutDepth: q.ldr ? cutoutDepthPass(mk) : null,
+    cutoutNear: q.ldr ? mk({ CUTOUT: 1 }, false, { depthWrite: false }) : null,
   };
+}
+
+/* Leaves, grass and the like are cut out of their textures (a pixel is kept or
+   thrown away), and a shader that can throw a pixel away stops the graphics
+   card skipping pixels hidden behind ones already drawn: every layer of a
+   canopy was lit in full, shadows and all, and then mostly covered (in a
+   forest that was two thirds of the frame). So they are drawn twice: first
+   only their depth, with a shader that does nothing but the cut, then with the
+   full shader against that depth, testing it but not writing it, so only the
+   face in front at each pixel is lit. The first pass sits a hair further back
+   (polygon offset), so the second always finds its own face there. */
+function cutoutDepthPass(mk) {
+  return mk({ CUTOUT: 1, DEPTH_ONLY: 1 }, false, { colorWrite: false, polygonOffset: true, polygonOffsetFactor: 0.5, polygonOffsetUnits: 2 });
 }

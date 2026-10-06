@@ -203,16 +203,27 @@ export class Renderer {
     this.frustum = new THREE.Frustum(); this.fm = new THREE.Matrix4(); this.box = new THREE.Box3();
     // (made again by a new look: render/looks.js)
     this.stands = this.stands || [];
-    const stand = (scene, material, kinds, order, shadow) => {
+    const stand = (scene, material, kinds, order, shadow, band) => {
       if (!material) return;
       const m = new THREE.Mesh(g, material);
       m.frustumCulled = false; m.renderOrder = order; m.matrixAutoUpdate = false;
-      m.onAfterRender = (r, sc, cam) => this.drawParts(material, kinds, cam, shadow);
+      m.onAfterRender = (r, sc, cam) => this.drawParts(material, kinds, cam, shadow, band || 0);
       scene.add(m);
       this.stands.push(m);
+      return m;
     };
     stand(this.scene, this.mats.opaque, ['opaque'], -10, false);
-    stand(this.scene, this.mats.cutout, ['cutout', 'plants', 'leafIn'], -9, false);
+    /* Cut-out blocks near you: their depth first, then lit only where they are in
+       front (materials.js cutoutDepthPass). Further out a tree is small on the
+       screen, so its hidden layers cost less than drawing it twice: there they
+       are drawn once, as before. */
+    const cut = ['cutout', 'plants', 'leafIn'];
+    this.cutoutNearDist = this.opts.cutoutNear === undefined ? 40 : this.opts.cutoutNear;
+    if (this.mats.cutoutDepth && this.mats.cutoutNear) {
+      this.cutoutDepthMesh = stand(this.scene, this.mats.cutoutDepth, cut, -9.6, false, 1);
+      this.cutoutNearMesh = stand(this.scene, this.mats.cutoutNear, cut, -9.5, false, 1);
+      stand(this.scene, this.mats.cutout, cut, -9, false, 2);
+    } else stand(this.scene, this.mats.cutout, cut, -9, false);
     stand(this.trans, this.mats.fluid, ['fluid'], -10, false);
     stand(this.trans, this.mats.translucent, ['translucent'], -9, false);
     if (this.opts.shadows) {
@@ -220,7 +231,8 @@ export class Renderer {
       stand(this.shadowTerrain, this.mats.shadowCutout, ['cutout'].concat(this.opts.plantShadows === false ? [] : ['plants']).concat(this.opts.leafInShadows === false ? [] : ['leafIn']), -9, true);
     }
   }
-  drawParts(material, kinds, cam, shadow) {
+  // band: 0 every column, 1 only those within cutoutNearDist of the camera, 2 only those beyond
+  drawParts(material, kinds, cam, shadow, band) {
     const gl = this.gl;
     const prog = this.r.properties.get(material).currentProgram;
     if (!prog) return;
@@ -236,21 +248,32 @@ export class Renderer {
     const list = slice ? slice.list : this.inView(cam);
     const back = !!material.transparent, n = slice ? slice.to : list.length;
     const prevVao = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
+    const nd = this.cutoutNearDist * this.cutoutNearDist;
     for (let j = slice ? slice.from : 0; j < n; j++) {
       const col = list[back ? n - 1 - j : j];
       if (col.dead) continue;
-      gl.uniform3f(L.chunk, col.cx * 16, 0, col.cz * 16);
+      if (band && ((col.viewCam === cam && col.dist <= nd) !== (band === 1))) continue;
       if (fadeFor) {
         const f = Math.min(1, (now - col.born) / fadeFor);
         if (f < 1 || faded) { gl.uniform1f(L.fade, f); faded = f < 1; }
       }
+      // the sections this camera can see (inView), if it was the last to look at this column
+      const v0 = !shadow && col.viewCam === cam ? col.view0 : 0, v1 = !shadow && col.viewCam === cam ? col.view1 + 1 : 24;
+      let set = false;
       for (let k = 0; k < kinds.length; k++) {
         const p = col.byKind[kinds[k]];
         if (!p) continue;
         let from, to;
         if (shadow) { from = p.shadowFrom; to = p.count; }
-        else { if (!p.visible || p.hidden) continue; from = p.from; to = p.to; }
+        else {
+          if (!p.visible || p.hidden) continue;
+          from = p.from; to = p.to;
+          const a = p.marks[v0], z = p.marks[v1];
+          if (a > from) from = a;
+          if (z < to) to = z;
+        }
         if (to <= from) continue;
+        if (!set) { gl.uniform3f(L.chunk, col.cx * 16, 0, col.cz * 16); set = true; }
         if (L.meshTime && p.t0 !== undefined) gl.uniform1f(L.meshTime, p.t0);
         gl.bindVertexArray(p.vao);
         gl.drawElements(gl.TRIANGLES, to - from, p.type, from * p.bytes);
@@ -273,12 +296,24 @@ export class Renderer {
     list.length = 0;
     this.fm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.fm);
-    const ex = cam.position.x, ez = cam.position.z, b = this.box;
+    const ex = cam.position.x, ez = cam.position.z, b = this.box, F = this.frustum;
+    const cut = !this.noSectionCull;
     for (const col of this.columns.values()) {
       b.min.set(col.cx * 16, col.y0, col.cz * 16); b.max.set(col.cx * 16 + 16, col.y1, col.cz * 16 + 16);
-      if (!this.frustum.intersectsBox(b)) continue;
+      if (!F.intersectsBox(b)) continue;
       col.dist = (col.cx * 16 + 8 - ex) ** 2 + (col.cz * 16 + 8 - ez) ** 2;
       list.push(col);
+      /* and only the run of its sections the camera can see: a column near you is
+         mostly above or below the view (the ground under your feet, the caves
+         beneath, the sky over a tree), and every vertex there would be worked out
+         and then thrown away. A section's box is a block bigger each way, for what
+         pokes out of it (plants in the wind). drawParts reads these for this camera. */
+      let s0 = col.y0 >> 4, s1 = Math.min(23, (col.y1 - 1) >> 4);
+      if (cut) {
+        while (s0 < s1) { b.min.y = s0 * 16 - 1; b.max.y = s0 * 16 + 17; if (F.intersectsBox(b)) break; s0++; }
+        while (s1 > s0) { b.min.y = s1 * 16 - 1; b.max.y = s1 * 16 + 17; if (F.intersectsBox(b)) break; s1--; }
+      }
+      col.viewCam = cam; col.view0 = s0; col.view1 = s1;
     }
     list.sort((a, b) => a.dist - b.dist);
     return list;
@@ -375,31 +410,40 @@ export class Renderer {
       const ix = col.cx - csx + R, iz = col.cz - csz + R;
       if (ix >= 0 && iz >= 0 && ix < span && iz < span) cols[ix * span + iz] = col;
     }
-    const OPP = [1, 0, 3, 2, 5, 4], DX = [1, -1, 0, 0, 0, 0], DY = [0, 0, 1, -1, 0, 0], DZ = [0, 0, 0, 0, 1, -1];
     let head = 0, tail = 0;
-    const start = ((R * span) + R) * 24 + csy;
+    const start = ((R * span) + R) * 24 + csy, sx = span * 24, last = span - 1;
     q[tail++] = start; done[start] = 63;
+    /* The six ways out written out one by one (faces 0 to 5: +x, -x, +y, -y, +z,
+       -z; a cell entered by face f is marked with the opposite one's bit): this
+       runs on every section you cross, over every section in range, and the
+       loop over a table of directions took most of a millisecond. */
     while (head < tail) {
       const cell = q[head++], entries = done[cell];
-      const y = cell % 24, ci = (cell - y) / 24, ix = (ci / span) | 0, iz = ci - ix * span;
+      const ci = (cell / 24) | 0, y = cell - ci * 24, ix = (ci / span) | 0, iz = ci - ix * span;
       if (y < lo[ci]) lo[ci] = y;
       if (y > hi[ci]) hi[ci] = y;
       const col = cols[ci];
       // which faces can be left by, from the faces it was entered by
-      let exits = 0;
-      if (!col || !col.vis || cell === start) exits = 63;
-      else { const vis = col.vis, o = y * 6; for (let f = 0; f < 6; f++) if (entries & (1 << f)) exits |= vis[o + f]; }
-      for (let f = 0; f < 6; f++) {
-        if (!(exits & (1 << f))) continue;
-        const dx = DX[f], dy = DY[f], dz = DZ[f];
-        // never back towards the camera
-        if ((dx > 0 && ix < R) || (dx < 0 && ix > R) || (dy > 0 && y < csy) || (dy < 0 && y > csy) || (dz > 0 && iz < R) || (dz < 0 && iz > R)) continue;
-        const nx = ix + dx, ny = y + dy, nz = iz + dz;
-        if (ny < 0 || ny > 23 || nx < 0 || nz < 0 || nx >= span || nz >= span) continue;
-        const kk = (nx * span + nz) * 24 + ny, ent = 1 << OPP[f];
-        if (!done[kk]) q[tail++] = kk;
-        done[kk] |= ent;
+      let exits;
+      if (col === null || !col.vis || cell === start) exits = 63;
+      else {
+        const vis = col.vis, o = y * 6;
+        exits = 0;
+        if (entries & 1) exits |= vis[o];
+        if (entries & 2) exits |= vis[o + 1];
+        if (entries & 4) exits |= vis[o + 2];
+        if (entries & 8) exits |= vis[o + 3];
+        if (entries & 16) exits |= vis[o + 4];
+        if (entries & 32) exits |= vis[o + 5];
       }
+      // never back towards the camera, never out of range
+      let k;
+      if ((exits & 1) && ix >= R && ix < last) { k = cell + sx; if (!done[k]) q[tail++] = k; done[k] |= 2; }
+      if ((exits & 2) && ix <= R && ix > 0) { k = cell - sx; if (!done[k]) q[tail++] = k; done[k] |= 1; }
+      if ((exits & 4) && y >= csy && y < 23) { k = cell + 1; if (!done[k]) q[tail++] = k; done[k] |= 8; }
+      if ((exits & 8) && y <= csy && y > 0) { k = cell - 1; if (!done[k]) q[tail++] = k; done[k] |= 4; }
+      if ((exits & 16) && iz >= R && iz < last) { k = cell + 24; if (!done[k]) q[tail++] = k; done[k] |= 32; }
+      if ((exits & 32) && iz <= R && iz > 0) { k = cell - 24; if (!done[k]) q[tail++] = k; done[k] |= 16; }
     }
     for (const col of this.columns.values()) {
       const ix = col.cx - csx + R, iz = col.cz - csz + R;

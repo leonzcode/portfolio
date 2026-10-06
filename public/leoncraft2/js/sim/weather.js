@@ -106,7 +106,7 @@ export class Weather {
     const storm = this.raining && this.thundering;
     for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
       if (dx * dx + dz * dz > R * R) continue;
-      const c = w.chunks.get((pcx + dx) + ',' + (pcz + dz));
+      const c = w.chunkXZ(pcx + dx, pcz + dz);
       if (!c) continue;
       if (storm && Math.floor(r() * 100000) === 0) this.strikeIn(c);
       if (Math.floor(r() * 16) !== 0) continue;

@@ -291,8 +291,9 @@ export class Sim {
   /* ---- random ticks ---- */
   sectionCounts(c) {
     if (c.rtc) return c.rtc;
+    // nothing above the chunk's highest block but air, so the count stops there (a third of the chunk, often)
     const rtc = new Int32Array(H >> 4), bl = c.blocks, RT = this.RT;
-    for (let i = 0, n = bl.length; i < n; i++) if (RT[bl[i]]) rtc[i >> 12]++;
+    for (let i = 0, n = Math.min(bl.length, ((c.top | 0) + 1) << 8); i < n; i++) if (RT[bl[i]]) rtc[i >> 12]++;
     return (c.rtc = rtc);
   }
   randomTicks() {
@@ -302,7 +303,7 @@ export class Sim {
     let fresh = 0;
     for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
       if (dx * dx + dz * dz > R * R) continue;
-      const c = this.w.chunks.get((pcx + dx) + ',' + (pcz + dz));
+      const c = this.w.chunkXZ(pcx + dx, pcz + dz);
       if (!c) continue;
       if (!c.rtc) { if (fresh++ > 6) continue; this.sectionCounts(c); }
       const rtc = c.rtc, bl = c.blocks, ox = c.cx * CH, oz = c.cz * CH;
@@ -352,7 +353,9 @@ export class Sim {
   }
   // the top block a column's rain or snow lands on (the game's motion-blocking height map)
   topAt(x, z) {
-    for (let y = H - 1; y > 0; y--) {
+    // from the chunk's highest block down (above it is only air)
+    const c = this.w.chunkAt(x, z);
+    for (let y = c ? Math.min(H - 1, c.top | 0) : H - 1; y > 0; y--) {
       const b = this.w.get(x, y, z);
       if (!b) continue;
       const d = BLOCKS[b];

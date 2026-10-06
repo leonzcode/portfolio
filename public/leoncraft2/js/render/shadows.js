@@ -17,9 +17,22 @@
 --------------------------------------------------------------------------- */
 const THREE = window.THREE;
 
-const SLICES = 4;          // frames a new map is spread over
+const SLICES = 6;          // frames a new map is spread over
 const BODY_RES = 256;      // the body's map: texels a side
 const BODY_R = 1.6;        // and how far it reaches round your chest, in blocks
+
+// what a column draws into the map (the shadow pass starts each kind where the sky stops reaching), kept on it
+function shadowCount(col, o) {
+  if (col.shadowN === undefined) {
+    let n = 0;
+    for (const p of col.parts) {
+      if (p.kind === 'fluid' || p.kind === 'translucent' || (p.kind === 'plants' && o.plantShadows === false) || (p.kind === 'leafIn' && o.leafInShadows === false)) continue;
+      n += p.count - p.shadowFrom;
+    }
+    col.shadowN = n;
+  }
+  return col.shadowN;
+}
 
 function depthTarget(n) {
   const t = new THREE.WebGLRenderTarget(n, n, { depthBuffer: true, type: THREE.UnsignedByteType });
@@ -95,7 +108,12 @@ export class ShadowMaps {
       this.mats[back].multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
       // every column in the new map's view, fixed for the whole build
       const list = R.inView(cam).slice();
-      this.build = { at: back, list, i: 0, step: Math.max(1, Math.ceil(list.length / SLICES)) };
+      /* the shares are even in what is drawn, not in columns: a column of forest
+         is many times one of plains or sea, and a share that happened to take the
+         woods cost a frame several milliseconds on the graphics card */
+      let total = 0;
+      for (const col of list) total += shadowCount(col, R.opts);
+      this.build = { at: back, list, i: 0, per: Math.max(1, total / SLICES) };
       this.lightUp[back] = light.y > 0.0;
       r.setRenderTarget(this.maps[back]);
       r.setClearColor(0xffffff, 1);
@@ -103,8 +121,9 @@ export class ShadowMaps {
     }
     const B = this.build;
     if (B) {
-      // this frame's share of the columns, into the map being built
-      const to = Math.min(B.list.length, B.i + B.step);
+      // this frame's share of the columns, into the map being built (about a sixth of what it all draws)
+      let to = B.i, n = 0;
+      while (to < B.list.length && (n === 0 || n + shadowCount(B.list[to], R.opts) <= B.per * 1.25)) n += shadowCount(B.list[to++], R.opts);
       if (this.lightUp[B.at] && to > B.i) {
         R.shadowSlice = { list: B.list, from: B.i, to };
         r.setRenderTarget(this.maps[B.at]);
