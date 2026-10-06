@@ -502,7 +502,8 @@ export class Renderer {
       this.vanilla ? null : this.ldr ? this.blockClouds && this.blockClouds.scene : this.blockCloudsHDR && this.blockCloudsHDR.scene,
       this.overlay && this.overlay.scene].filter(Boolean);
     if (this.vanilla) for (const o of [this.vanilla.skyFS, this.vanilla.cloudMesh]) if (o && o.scene) scenes.push(o.scene);
-    for (const s of scenes) { try { r.compileAsync(s, cam).catch(() => {}); } catch (e) { /* drawn as before, built when first seen */ } }
+    // resolves once they are all built (or could not be), for whoever wants to wait for that
+    return Promise.all(scenes.map(s => { try { return r.compileAsync(s, cam).catch(() => {}); } catch (e) { return null; /* drawn as before, built when first seen */ } }));
   }
 
   // the rain and snow, on their own (Improved Transparency: before the water as well as after it)
