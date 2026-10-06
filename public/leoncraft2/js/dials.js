@@ -41,6 +41,8 @@
                          changed (redraw the hotbar)
      usePicture(stack, name)
                          the frame to show for that stack now, or null
+     deathPoint(), setDeathPoint(d)
+                         where you last died, saved with the world
 --------------------------------------------------------------------------- */
 const TURN = Math.PI * 2;
 const wrap = a => a - Math.floor(a);
@@ -85,6 +87,14 @@ export function tickDials(s) {
   }
   started = true;
   return changed;
+}
+
+// where you last died ({ dim, x, z } or null), kept with the world's save so the recovery compass still knows
+// after a reload; a world that starts sets it (and the dials snap to where they point, without easing)
+export function deathPoint() { return death; }
+export function setDeathPoint(d) {
+  death = d && typeof d.x === 'number' && typeof d.z === 'number' ? { dim: d.dim || 'overworld', x: d.x, z: d.z } : null;
+  wasDead = false; started = false;
 }
 
 export function dialPicture(name) {
