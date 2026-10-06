@@ -285,20 +285,26 @@ export class World {
     this.lookupStuck();
     const cap = this.workers.length * 2;
     // meshes first (they are what you see), nearest first; a few a frame, so packing them never stalls one
+    /* (the nearest picked out of the line each time, rather than the whole line
+       split into numbers and sorted every frame: with every worker busy that was
+       all garbage, and nothing went out) */
     let sends = 0;
-    if (this.meshQueue.size) {
-      const list = [...this.meshQueue].map(k => { const [x, z] = k.split(',').map(Number); return [(x - pcx) ** 2 + (z - pcz) ** 2, x, z, k]; })
-        .sort((a, b) => a[0] - b[0]);
-      for (const [d, x, z, k] of list) {
-        if (this.inFlightCount() >= cap || sends >= 2) break;
+    while (this.meshQueue.size && sends < 2 && this.inFlightCount() < cap) {
+      let best = null, bd = Infinity, bx = 0, bz = 0;
+      for (const k of this.meshQueue) {
         if (this.inFlight.has('m' + k)) continue;
-        sends++;
-        if (d > this.renderDist * this.renderDist) { this.meshQueue.delete(k); continue; }
-        this.meshQueue.delete(k);
-        // a neighbour gone since it was queued: it is queued again when that one is back
-        if (!this.around(x, z)) continue;
-        this.sendMesh(x, z);
+        const c = this.chunks.get(k);
+        if (!c) { this.meshQueue.delete(k); continue; }
+        const d = (c.cx - pcx) * (c.cx - pcx) + (c.cz - pcz) * (c.cz - pcz);
+        if (d < bd) { bd = d; best = k; bx = c.cx; bz = c.cz; }
       }
+      if (best === null) break;
+      sends++;
+      this.meshQueue.delete(best);
+      if (bd > this.renderDist * this.renderDist) continue;
+      // a neighbour gone since it was queued: it is queued again when that one is back
+      if (!this.around(bx, bz)) continue;
+      this.sendMesh(bx, bz);
     }
     if (this.staged) {
       if (moved || this.sched) this.schedule(cap);
