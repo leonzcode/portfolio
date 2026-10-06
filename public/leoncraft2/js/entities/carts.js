@@ -21,14 +21,14 @@
                it (containers.js finds it as it finds a chest boat)
      command   the block only (the game's command block is for operators)
 --------------------------------------------------------------------------- */
-import { Minecart } from './minecart.js?v=17';
-import { register } from './mobs.js?v=17';
-import { MODELS } from './mobmodels.js?v=17';
-import { addArt } from './mobart.js?v=17';
-import { B } from '../blocks.js?v=17';
-import { stackToJSON, stackFromJSON } from '../items.js?v=17';
-import { spill, lootStack } from '../containers.js?v=17';
-import { ChestScreen, HopperScreen } from '../ui/containers.js?v=17';
+import { Minecart } from './minecart.js?v=18';
+import { register } from './mobs.js?v=18';
+import { MODELS } from './mobmodels.js?v=18';
+import { addArt } from './mobart.js?v=18';
+import { B } from '../blocks.js?v=18';
+import { stackToJSON, stackFromJSON } from '../items.js?v=18';
+import { spill, lootStack } from '../containers.js?v=18';
+import { ChestScreen, HopperScreen } from '../ui/containers.js?v=18';
 
 const R = () => Math.random(), RI = n => Math.floor(Math.random() * n);
 
@@ -128,7 +128,7 @@ class ChestCart extends BlockCart {
     const L = this.loot;
     if (!L) return Promise.resolve();
     this.loot = null;
-    return import('../struct/loot.js?v=17').then(mod => {
+    return import('../struct/loot.js?v=18').then(mod => {
       for (const e of mod.rollLoot(L.table, L.seed, { size: this.slots.length })) {
         const st = lootStack(e);
         if (st && e.slot >= 0 && e.slot < this.slots.length && !this.slots[e.slot]) this.slots[e.slot] = st;

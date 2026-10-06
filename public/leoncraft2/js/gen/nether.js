@@ -31,11 +31,11 @@
    Features are kept inside their own chunk (fungi and blobs start far
    enough from its edge), so a chunk never needs its neighbours.
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=17';
-import { CH, H, Y0, VOL, idx } from '../world-const.js?v=17';
-import { BIO } from '../biomes.js?v=17';
-import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=17';
-import { BlendedNoise, yGradient, squeeze } from './blended.js?v=17';
+import { B } from '../blocks.js?v=18';
+import { CH, H, Y0, VOL, idx } from '../world-const.js?v=18';
+import { BIO } from '../biomes.js?v=18';
+import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=18';
+import { BlendedNoise, yGradient, squeeze } from './blended.js?v=18';
 
 const I = y => y - Y0;                 // world y -> index
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -391,6 +391,13 @@ export class NetherGen {
           }
         }
       }
+    }
+    // a shroomlight inside the hat that touches nothing (not the stem, the hat or another light) is not left hanging in the air
+    for (let yy = hatBottom; yy < y + h; yy++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (get(x + dx, yy, z + dz) !== B.shroomlight) continue;
+      let held = false;
+      for (const [ax, ay, az] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) if (get(x + dx + ax, yy + ay, z + dz + az) > 0) held = true;
+      if (!held) set(x + dx, yy, z + dz, 0);
     }
   }
 }

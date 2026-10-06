@@ -30,10 +30,10 @@
       badlands terracotta, snow on peaks, podzol, mycelium, gravel...), then
       deepslate, bedrock, stone blobs and ores, then trees and plants.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from './blocks.js?v=17';
-import { BIO, BIOMES } from './biomes.js?v=17';
-import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=17';
-import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=17';
+import { B, BLOCKS } from './blocks.js?v=18';
+import { BIO, BIOMES } from './biomes.js?v=18';
+import { NormalNoise, Improved, rng, mix32, hash3, spline, evalSpline } from './noise.js?v=18';
+import { CH, H, Y0, SEA, idx, VOL } from './world-const.js?v=18';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -805,6 +805,10 @@ export class Gen {
       const cur = blocks[i];
       if (onlyAir && cur !== 0 && !BLOCKS[cur].replaceable) return;
       if (BLOCKS[cur] && BLOCKS[cur].log && BLOCKS[b].leaves) return;
+      // a tall plant a neighbour's tree grows into goes whole, so no half of it is left on the leaves
+      const d = BLOCKS[cur];
+      if (d && cur !== b && d.upper && y + 1 < H && blocks[i + 256] === B[d.upper]) blocks[i + 256] = 0;
+      if (d && cur !== b && d.lower && y > 0 && blocks[i - 256] === B[d.lower]) blocks[i - 256] = 0;
       blocks[i] = b;
       if (b === B.water) meta[i] = 0;
     };
@@ -871,6 +875,8 @@ export class Gen {
       if (y < 0) return;
       const g = get(x, y, z);
       if (g !== B.grass_block && (onlyGrass || (g !== B.dirt && g !== B.podzol && g !== B.coarse_dirt && g !== B.sand && g !== B.red_sand && g !== B.moss_block))) return;
+      // ferns need soil (sand is for the dead bushes)
+      if ((g === B.sand || g === B.red_sand) && (block === B.fern || block === B.large_fern)) return;
       if (get(x, y + 1, z) !== 0) return;
       const d = BLOCKS[block];
       if (d.upper) { if (get(x, y + 2, z) !== 0) return; set(x, y + 1, z, block); set(x, y + 2, z, B[d.upper]); }
@@ -920,8 +926,10 @@ export class Gen {
       for (let i = 1; i <= h; i++) if (get(x, y + i, z) === 0) set(x, y + i, z, B.sugar_cane);
     }
     // under the water: seagrass and kelp on the floor, lily pads on the top
+    // (the seagrass and kelp already down are looked through, so nothing grows on top of them)
+    const wet = b => b === B.water || b === B.seagrass || b === B.tall_seagrass || b === B.tall_seagrass_top_block || b === B.kelp || b === B.kelp_plant;
     const floorAt = (x, z) => {
-      for (let y = SEA; y > 1; y--) { const b = get(x, y, z); if (b !== B.water) return b && b !== B.lava ? y : -1; }
+      for (let y = SEA; y > 1; y--) { const b = get(x, y, z); if (!wet(b)) return b > 0 && b !== B.lava && BLOCKS[b].solid && BLOCKS[b].shape === 'cube' ? y : -1; }
       return -1;
     };
     for (let k = 0; k < (F.seagrass || 0); k++) {
@@ -934,6 +942,7 @@ export class Gen {
       const [x, z] = rnd(); const y = floorAt(x, z);
       if (y < 0) continue;
       const h = 1 + r.int(Math.max(1, SEA - y - 2));
+      if (get(x, y + 1, z) !== B.water) continue;
       let i = 1;
       for (; i < h && get(x, y + i + 1, z) === B.water; i++) set(x, y + i, z, B.kelp_plant);
       if (get(x, y + i, z) === B.water) set(x, y + i, z, B.kelp);

@@ -13,11 +13,11 @@
    light like they do. Books are found by looking over the area round you
    one layer a tick, and are not saved: they come back with their tables.
 --------------------------------------------------------------------------- */
-import { Entity } from './entity.js?v=17';
-import { register } from './mobs.js?v=17';
-import { model } from './mobs2.js?v=17';
-import { addArt } from './mobart.js?v=17';
-import { B, BLOCKS } from '../blocks.js?v=17';
+import { Entity } from './entity.js?v=18';
+import { register } from './mobs.js?v=18';
+import { model } from './mobs2.js?v=18';
+import { addArt } from './mobart.js?v=18';
+import { B, BLOCKS } from '../blocks.js?v=18';
 
 const R = () => Math.random();
 const PI = Math.PI;

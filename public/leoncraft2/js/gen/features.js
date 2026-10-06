@@ -20,12 +20,12 @@
    checked against chunks the real server made. Feature kinds are
    registered in FEATURES; ones not written yet place nothing.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=17';
-import { BIO, BIOMES } from '../biomes.js?v=17';
-import { Xoroshiro, WorldgenXoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=17';
-import { Simplex, normalNoise } from './noise.js?v=17';
-import { msin, mcos } from './carvers.js?v=17';
-import { stateOf } from './states.js?v=17';
+import { B, BLOCKS } from '../blocks.js?v=18';
+import { BIO, BIOMES } from '../biomes.js?v=18';
+import { Xoroshiro, WorldgenXoroshiro, LegacyRandom, decorationSeed, featureSeed } from './random.js?v=18';
+import { Simplex, normalNoise } from './noise.js?v=18';
+import { msin, mcos } from './carvers.js?v=18';
+import { stateOf } from './states.js?v=18';
 
 const MIN_Y = -64, MAX_Y = 319, SEA_LEVEL = 63;
 export const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
@@ -115,6 +115,12 @@ export function survives(R, st, x, y, z) {
       return dirt[below] === 1 || below === B.farmland || (n === 'leaf_litter' && fullTop(below));
     case 'pumpkin': case 'melon': return true;
     case 'pale_moss_carpet': case 'moss_carpet': return !isAirId(below);
+    // a spore blossom hangs from the whole face of the block over it
+    case 'spore_blossom': return fullTop(R.get(x, y + 1, z));
+    // a small dripleaf on clay or moss, or on soil where it stands in still water (its top half is held by its bottom)
+    case 'small_dripleaf':
+      if (st.meta & 8) return true;
+      return tag('supports_small_dripleaf')[below] === 1 || (R.get(x, y, z) === B.water && R.meta(x, y, z) === 0 && tag('supports_big_dripleaf')[below] === 1);
     case 'pale_hanging_moss': return R.get(x, y + 1, z) !== 0;
   }
   const d = BLOCKS[st.id];
@@ -151,8 +157,12 @@ for (const d of BLOCKS) {
   else if (!d.solid || d.replaceable || d.shape !== 'cube') RANK[d.id] = 1;
   else RANK[d.id] = 4;
 }
-// which of two neighbours' writes to one block stays (the later one on a tie)
-export const writeRank = id => RANK[id];
+/* which of two neighbours' writes to one block stays (the later one on a tie).
+   Water or lava that has run out of a source (any level, or falling) is what
+   the game's fluid ticks would make after every feature is in, and those
+   never wash a tree away: it gives way to leaves and anything sturdier, and
+   only takes a plant's place. */
+export const writeRank = (id, m) => ((m & 15) !== 0 && (id === B.water || id === B.lava) ? 1.5 : RANK[id]);
 
 // the plants that stand on the block under them, and those that stand in water (taken back to water)
 const GROUND = new Uint8Array(4096);
@@ -170,11 +180,26 @@ const GROUND = new Uint8Array(4096);
     if (up && B[up] !== undefined) GROUND[B[up]] = 1;
   }
   for (const n of ['seagrass', 'tall_seagrass', 'tall_seagrass_top_block', 'kelp', 'kelp_plant']) if (B[n] !== undefined) GROUND[B[n]] = 2;
+  // and what hangs from a ceiling or points from rock (a neighbour's lake or pool can dig either away)
+  for (const n of ['pointed_dripstone', 'sulfur_spike', 'cave_vines', 'cave_vines_plant', 'hanging_roots', 'spore_blossom', 'pale_hanging_moss']) if (B[n] !== undefined) GROUND[B[n]] = 1;
 }
 export const isGroundPlant = id => GROUND[id];
+// a block a pointed or hanging block can hold on to (its face towards it whole)
+const holdsOn = b => b !== 0 && !!BLOCKS[b] && BLOCKS[b].shape === 'cube' && BLOCKS[b].solid !== false;
 // can this plant stay where it is, with what is around it now
 export function plantHolds(R, id, m, x, y, z) {
   const d = BLOCKS[id];
+  if (id === B.pointed_dripstone || id === B.sulfur_spike) {
+    // pointed dripstone keeps which way it points (4 up, 5 down); a sulfur spike only needs one end held
+    const a = R.get(x, y + 1, z), b = R.get(x, y - 1, z);
+    const top = a === id || holdsOn(a), bottom = b === id || holdsOn(b) || b === B.lava;
+    if (id === B.pointed_dripstone && (m & 7) === 5) return top;
+    if (id === B.pointed_dripstone && (m & 7) === 4) return bottom;
+    return top || bottom;
+  }
+  if (id === B.cave_vines || id === B.cave_vines_plant) { const a = R.get(x, y + 1, z); return a === B.cave_vines_plant || a === B.cave_vines || holdsOn(a); }
+  if (id === B.pale_hanging_moss) { const a = R.get(x, y + 1, z); return a === id || holdsOn(a) || !!(BLOCKS[a] && BLOCKS[a].leaves); }
+  if (id === B.hanging_roots || id === B.spore_blossom) return holdsOn(R.get(x, y + 1, z));
   if (d.lower) return R.get(x, y - 1, z) === B[d.lower];                    // the top half of a tall plant needs its bottom half
   if (d.upper && B[d.upper] !== undefined && R.get(x, y + 1, z) !== B[d.upper]) return false;   // and the bottom half its top
   if (id === B.kelp || id === B.kelp_plant) {
@@ -428,9 +453,17 @@ export function predicate(p) {
     }
     case 'matching_block_tag': { const s = tag(p.tag); f = (R, x, y, z) => s[R.get(x + ox, y + oy, z + oz)] === 1; break; }
     case 'matching_fluids': {
-      const fl0 = Array.isArray(p.fluids) ? p.fluids : [p.fluids];
-      const wantW = fl0.some(n => strip(n).includes('water')), wantL = fl0.some(n => strip(n).includes('lava'));
-      f = (R, x, y, z) => { const fl = fluidOf(R.get(x + ox, y + oy, z + oz)); return (fl === 1 && wantW) || (fl === 2 && wantL); };
+      // "empty" is no fluid at all (the melon patches ask for it); "water" and "lava" are still, "flowing_..." running
+      const names = (Array.isArray(p.fluids) ? p.fluids : [p.fluids]).map(strip);
+      const want = { empty: names.includes('empty'), water: names.includes('water'), flowing_water: names.includes('flowing_water'),
+        lava: names.includes('lava'), flowing_lava: names.includes('flowing_lava') };
+      f = (R, x, y, z) => {
+        const b = R.get(x + ox, y + oy, z + oz), fl = fluidOf(b);
+        if (!fl) return want.empty;
+        // (a plant standing in water holds still water)
+        const running = (b === B.water || b === B.lava) && (R.meta(x + ox, y + oy, z + oz) & 15) !== 0;
+        return fl === 1 ? (running ? want.flowing_water : want.water) : (running ? want.flowing_lava : want.lava);
+      };
       break;
     }
     case 'all_of': { const ps = p.predicates.map(predicate); f = (R, x, y, z) => { for (const q of ps) if (!q(R, x, y, z)) return false; return true; }; break; }
@@ -810,7 +843,9 @@ FEATURES.simple_block = (D, c, r, x, y, z) => {
   if (!survives(R, st, x, y, z)) return false;
   const d = BLOCKS[st.id];
   if (d.upper || isDoubleData(d)) {
-    if (!isAirId(R.get(x, y + 1, z))) return false;
+    // (a tall plant that grows under water, tall seagrass, has water over it, not air)
+    const above = R.get(x, y + 1, z);
+    if (!isAirId(above) && !(d.waterlogged && above === B.water)) return false;
     placeDouble(R, st, x, y, z);
   } else R.set(x, y, z, st.id, st.meta);
   return true;
@@ -841,12 +876,18 @@ FEATURES.weighted_random_selector = (D, c, r, x, y, z) => {
   for (const e of list) { k -= e.weight; if (k < 0) return placePlaced(D, e.data ?? e.feature, r, x, y, z); }
   return false;
 };
+/* A sequence goes on only while each step places something (the deep
+   dark's catalyst sits only in a sculk patch that was made, the sulfur
+   pool's last block only beside its pool); an overlay places every part. */
 FEATURES.sequence = (D, c, r, x, y, z) => {
+  for (const f of c.features) if (!placePlaced(D, f, r, x, y, z)) return false;
+  return true;
+};
+FEATURES.overlay = (D, c, r, x, y, z) => {
   let any = false;
   for (const f of c.features) if (placePlaced(D, f, r, x, y, z)) any = true;
   return any;
 };
-FEATURES.overlay = FEATURES.sequence;
 
 // a column of blocks in layers (cactus, sugar cane, kelp, dripleaf...)
 FEATURES.block_column = (D, c, r, x, y, z) => {

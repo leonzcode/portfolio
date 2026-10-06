@@ -13,15 +13,20 @@
    The rules are the game's (MonsterRoomFeature); the tries come from our
    own random, so dungeons are not where the real game would put them. Each
    room is kept inside its chunk, which the game does not need to do.
+
+   Rooms are made with the structures, before any feature, so every block
+   of one is marked in `mask` when it is given: the game places its lakes
+   before its dungeons, so a lake never opens a room's floor there, and the
+   few features made before the structures here keep off it the same way.
 --------------------------------------------------------------------------- */
-import { JRand, hash32 } from './rand.js?v=17';
-import { B, BLOCKS } from '../blocks.js?v=17';
-import { Y0, H, idx } from '../world-const.js?v=17';
+import { JRand, hash32 } from './rand.js?v=18';
+import { B, BLOCKS } from '../blocks.js?v=18';
+import { Y0, H, idx } from '../world-const.js?v=18';
 
 const MOBS = ['skeleton', 'zombie', 'zombie', 'spider'];
 const DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0];
 
-export function dungeons(seed, blocks, meta, cx, cz) {
+export function dungeons(seed, blocks, meta, cx, cz, mask) {
   const r = new JRand(BigInt(hash32(cx, cz, 0x6d6f6e)) ^ seed);
   const solid = (x, y, z) => { if (y < 0 || y >= H) return false; const b = blocks[idx(x, y, z)]; return b !== 0 && BLOCKS[b].solid && !BLOCKS[b].fluid; };
   const empty = (x, y, z) => y >= 0 && y < H && blocks[idx(x, y, z)] === 0;
@@ -46,13 +51,15 @@ export function dungeons(seed, blocks, meta, cx, cz) {
     for (let x = k; x <= l; x++) for (let y = 3; y >= -1; y--) for (let z = p; z <= q; z++) {
       const X = ox + x, Y = oy + y, Z = oz + z, i = idx(X, Y, Z);
       if (x === k || y === -1 || z === p || x === l || y === 4 || z === q) {
-        if (Y > 0 && !solid(X, Y - 1, Z)) { blocks[i] = 0; meta[i] = 0; continue; }
+        if (Y > 0 && !solid(X, Y - 1, Z)) { blocks[i] = 0; meta[i] = 0; if (mask) mask[i] = 1; continue; }
         if (!solid(X, Y, Z) || blocks[i] === B.chest) continue;
         blocks[i] = y === -1 && r.nextInt(4) !== 0 ? B.mossy_cobblestone : B.cobblestone; meta[i] = 0;
+        if (mask) mask[i] = 1;
         continue;
       }
       if (blocks[i] === B.chest || blocks[i] === B.spawner) continue;
       blocks[i] = 0; meta[i] = 0;
+      if (mask) mask[i] = 1;
     }
     for (let s = 0; s < 2; s++) for (let t = 0; t < 3; t++) {
       const u = ox + r.nextInt(j * 2 + 1) - j, w = oz + r.nextInt(o * 2 + 1) - o;
@@ -62,11 +69,13 @@ export function dungeons(seed, blocks, meta, cx, cz) {
       if (walls !== 1) continue;
       const i = idx(u, oy, w);
       blocks[i] = B.chest; meta[i] = face;
+      if (mask) mask[i] = 1;
       out.chests.push({ x: cx * 16 + u, y: oy + Y0, z: cz * 16 + w, table: 'simple_dungeon', seed: r.nextInt() });
       break;
     }
     const si = idx(ox, oy, oz);
     blocks[si] = B.spawner; meta[si] = 0;
+    if (mask) mask[si] = 1;
     out.spawners.push({ x: cx * 16 + ox, y: oy + Y0, z: cz * 16 + oz, mob: MOBS[r.nextInt(4)] });
   }
   return out.spawners.length ? out : null;
