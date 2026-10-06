@@ -868,12 +868,18 @@ FEATURES.weighted_random_selector = (D, c, r, x, y, z) => {
   for (const e of list) { k -= e.weight; if (k < 0) return placePlaced(D, e.data ?? e.feature, r, x, y, z); }
   return false;
 };
+/* A sequence goes on only while each step places something (the deep
+   dark's catalyst sits only in a sculk patch that was made, the sulfur
+   pool's last block only beside its pool); an overlay places every part. */
 FEATURES.sequence = (D, c, r, x, y, z) => {
+  for (const f of c.features) if (!placePlaced(D, f, r, x, y, z)) return false;
+  return true;
+};
+FEATURES.overlay = (D, c, r, x, y, z) => {
   let any = false;
   for (const f of c.features) if (placePlaced(D, f, r, x, y, z)) any = true;
   return any;
 };
-FEATURES.overlay = FEATURES.sequence;
 
 // a column of blocks in layers (cactus, sugar cane, kelp, dripleaf...)
 FEATURES.block_column = (D, c, r, x, y, z) => {

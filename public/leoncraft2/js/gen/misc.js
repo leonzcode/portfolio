@@ -609,6 +609,69 @@ FEATURES.root_system = (D, c, r, ox, oy, oz) => {
   return true;
 };
 
+/* ========================================================= sculk patch == */
+/* The deep dark's sculk. Not the game's own code: our own design after what
+   the wiki describes, made from the same settings (charge_count,
+   amount_per_charge, spread_attempts, spread_rounds, growth_rounds). A
+   patch starts only from air or water beside a whole block. Each charge
+   sets out from there with amount_per_charge to spend and wanders over the
+   cave's surface (blocks that can take sculk, open to the cave), turning
+   each one it reaches into sculk for one of its charge; going over sculk
+   already laid costs nothing. Veins grow out over the rock round the edge,
+   and where a charge gives out on sculk open above it now and then leaves a
+   sensor, more rarely a shrieker. */
+FEATURES.sculk_patch = (D, c, r, ox, oy, oz) => {
+  const R = D.region;
+  const o = R.get(ox, oy, oz);
+  if (!isAir(o) && o !== B.water) return false;
+  let touches = false;
+  for (const [dx, dy, dz] of DIRS) if (sturdy(R.get(ox + dx, oy + dy, oz + dz))) { touches = true; break; }
+  if (!touches) return false;
+  const rep = set('#minecraft:sculk_replaceable_world_gen');
+  const open = b => isAir(b) || b === B.water;
+  const surface = (x, y, z) => {
+    const b = R.get(x, y, z);
+    if (!(rep[b] || b === B.sculk) || !R.inside(x, z)) return false;
+    for (const [dx, dy, dz] of DIRS) if (open(R.get(x + dx, y + dy, z + dz))) return true;
+    return false;
+  };
+  const charges = c.charge_count ?? 10, amount = c.amount_per_charge ?? 32;
+  const steps = (c.spread_attempts ?? 64) * Math.max(1, c.spread_rounds ?? 1);
+  const laid = [];
+  const cand = [];
+  for (let k = 0; k < charges; k++) {
+    let x = ox, y = oy, z = oz, left = amount;
+    for (let s = 0; s < steps && left > 0; s++) {
+      cand.length = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        if ((dx || dy || dz) && surface(x + dx, y + dy, z + dz)) cand.push(x + dx, y + dy, z + dz);
+      }
+      if (!cand.length) break;
+      const j = r.nextInt(cand.length / 3) * 3;
+      x = cand[j]; y = cand[j + 1]; z = cand[j + 2];
+      if (R.get(x, y, z) !== B.sculk) { R.set(x, y, z, B.sculk, 0); laid.push(x, y, z); left--; }
+    }
+    // a growth where the charge gave out, on sculk with room above it
+    if (R.get(x, y, z) === B.sculk && isAir(R.get(x, y + 1, z))) {
+      const g = r.nextFloat();
+      if (g < 0.05) R.set(x, y + 1, z, B.sculk_shrieker, 0);
+      else if (g < 0.33) R.set(x, y + 1, z, B.sculk_sensor, 0);
+    }
+  }
+  // veins over the rock round the edge of what was laid
+  for (let i = 0; i < laid.length; i += 3) {
+    const x = laid[i], y = laid[i + 1], z = laid[i + 2];
+    for (const [dx, dy, dz] of DIRS) {
+      const nx = x + dx, ny = y + dy, nz = z + dz;
+      if (!isAir(R.get(nx, ny, nz)) || !R.inside(nx, nz)) continue;
+      let rock = false;
+      for (const [ex, ey, ez] of DIRS) { const m = R.get(nx + ex, ny + ey, nz + ez); if (rep[m] && m !== B.sculk && sturdy(m)) { rock = true; break; } }
+      if (rock && r.nextFloat() < 0.65) R.set(nx, ny, nz, B.sculk_vein, 0);
+    }
+  }
+  return laid.length > 0;
+};
+
 /* ============================================================ dripstone == */
 /* (the same feature makes the sulfur caves' spikes: its base_block and
    pointed_block say which; pointed dripstone keeps which way it points) */
