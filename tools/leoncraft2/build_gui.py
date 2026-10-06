@@ -15,7 +15,7 @@ and textures/gui/accessibility.png (20 x 40, a figure on a button), then the
 work blocks' screens (build_stations.py).
 
 It also draws the container screens (inventory, crafting table, furnaces,
-chests, dispenser, hopper, shulker box, crafter) in the classic light grey: a panel
+chests, dispenser, hopper, shulker box, crafter, a mount's) in the classic light grey: a panel
 of 198 grey with a black rounded outline, a two-pixel white bevel along the
 top and left and a dark one along the bottom and right, and sunken slots.
 Only the slot positions follow the game's screens (they are where its
@@ -228,8 +228,25 @@ def containers():
         print('wrote', path)
 
 
+def horse():
+    """The screen of a horse, donkey, mule, llama or camel: the saddle and armour slots, the black box the
+    animal stands in, the player's rows, and one slot below the panel (0, 166) that the screen draws for
+    each of a chest's slots (a llama's chest has as many columns as its strength)."""
+    path = os.path.join(OUT, 'container', 'horse.png')
+    img = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+    panel(img, 176, 166)
+    for (x0, y, n) in [(8, 18, 1), (8, 36, 1)] + ROWS_INV:
+        for k in range(n):
+            sunken(img, x0 + 18 * k - 1, y - 1, 18, 18, SLOT)
+    sunken(img, 25, 17, 54, 54, LINE)
+    sunken(img, 0, 166, 18, 18, SLOT)
+    img.save(path, optimize=True)
+    print('wrote', path)
+
+
 def main():
     containers()
+    horse()
     path = os.path.join(OUT, 'widgets.png')
     img = Image.open(path).convert('RGBA')
     # clear what we redraw, then draw it

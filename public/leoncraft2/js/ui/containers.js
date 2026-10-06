@@ -107,6 +107,67 @@ export class ChestScreen extends ContainerScreen {
   }
 }
 
+/* ------------------------------ a mount's own screen ------------------------------ */
+
+/* A horse's, donkey's, mule's, llama's or camel's screen (sneak and use a
+   tamed one, or the inventory key while riding it): its saddle (not a
+   llama's), its armour (a horse's or zombie horse's horse armour, a llama's
+   carpet), and a donkey's, mule's or llama's chest once it carries one (5
+   columns of 3, a llama as many columns as its strength). The mob (js/
+   entities/mobs4.js mountSlots) hands over its parts as an array and is told
+   when one changes. */
+export class MountScreen extends ContainerScreen {
+  constructor(inv, icons, mob) {
+    super(inv, icons, 176, 166);
+    this.mob = mob;
+    const k = mob.mountSlots();
+    this.box = k.box; this.kinds = k.kinds; this.cols = k.cols;
+    this.title = mob.displayName ? mob.displayName() : mob.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+  boxChanged(i) { this.mob.mountChanged(i, this.box[i]); }
+  makeSlots() {
+    const L = this.left, T = this.top, out = [];
+    this.kinds.forEach((k, i) => {
+      if (k === 'saddle') out.push(slot(L + 8, T + 18, 'box', i));
+      else if (k === 'armor' || k === 'carpet') out.push(slot(L + 8, T + 36, 'box', i));
+      else { const j = i - this.kinds.indexOf('chest'); out.push(slot(L + 80 + Math.floor(j / 3) * 18, T + 18 + (j % 3) * 18, 'box', i)); }
+    });
+    return out.concat(playerSlots(L, T, 84));
+  }
+  mayPlace(s, st) {
+    if (s.kind !== 'box' || !st) return super.mayPlace(s, st);
+    const n = ITEMS[st.id] ? ITEMS[st.id].name : '', k = this.kinds[s.i];
+    if (k === 'saddle') return n === 'saddle';
+    if (k === 'armor') return /_horse_armor$/.test(n);
+    if (k === 'carpet') return /_carpet$/.test(n);
+    return true;
+  }
+  limit(s, id) { return s.kind === 'box' && this.kinds[s.i] !== 'chest' ? 1 : super.limit(s, id); }
+  quickMove(s) {
+    const st = this.getStack(s);
+    if (!st) return;
+    if (s.kind === 'box') { this.moveInto(st, TO_PLAYER_REVERSED); this.setStack(s, st.count ? st : null); return; }
+    // saddle and armour to their own slots first, then the chest
+    const k = this.kinds.findIndex((kk, i) => kk !== 'chest' && !this.box[i] && this.mayPlace({ kind: 'box', i }, st));
+    if (k >= 0) { this.box[k] = Object.assign({}, st, { count: 1 }); st.count--; this.boxChanged(k); }
+    else { const chest = []; this.kinds.forEach((kk, i) => { if (kk === 'chest') chest.push(i); }); if (chest.length) this.moveIntoBox(st, chest); }
+    if (!st.count) this.setStack(s, null);
+  }
+  render(g, mx, my) {
+    this.drawBackdrop(g);
+    const L = this.left, T = this.top;
+    g.blit('container/horse', 0, 0, 176, 166, L, T);
+    // the slots that are there for this animal (the sheet has the saddle's and the armour's; a chest's are drawn here)
+    if (this.kinds.indexOf('saddle') < 0) g.fill(L + 7, T + 17, L + 25, T + 35, 0xFFC6C6C6);
+    if (this.kinds.indexOf('armor') < 0 && this.kinds.indexOf('carpet') < 0) g.fill(L + 7, T + 35, L + 25, T + 53, 0xFFC6C6C6);
+    for (let c = 0; c < this.cols; c++) for (let r = 0; r < 3; r++) g.blit('container/horse', 0, 166, 18, 18, L + 79 + c * 18, T + 17 + r * 18);
+    g.text(this.title, L + 8, T + 6, LABEL_GREY, false);
+    g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
+    const prev = this.drawSlots(g, mx, my);
+    this.drawCarried(g, mx, my, prev);
+  }
+}
+
 /* ------------------------------ shulker boxes ------------------------------ */
 
 // a chest's screen on the shulker box sheet; no shulker box goes inside another
