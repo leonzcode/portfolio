@@ -649,5 +649,133 @@ FEATURES.speleothem = (D, c, r, ox, oy, oz) => {
   return true;
 };
 
+/* Dripstone clusters and large dripstone, the two features that fill a
+   dripstone cave. Not the game's own code (we do not have it): our own
+   design after what the wiki describes and what the real caves look like,
+   made from the same settings (radius, height, density, wetness, layer
+   thickness, column radius, bluntness). A cluster coats the floor and the
+   ceiling over an oval with dripstone and hangs pointed dripstone from it,
+   tallest in the middle; a large dripstone is a pair of cones, one down from
+   the ceiling and one up from the floor. */
+// (the block keeps only which way it points, as growPointed sets it)
+const dripState = dir => ({ id: B.pointed_dripstone, meta: dir < 0 ? 5 : 4 });
+// a pointed column of n blocks from (x, y, z) towards dir
+function pointedColumn(R, x, y, z, dir, n) {
+  for (let i = 0; i < n; i++) {
+    const yy = y + dir * i, b = R.get(x, yy, z);
+    if (!isAir(b) && b !== B.water) return;
+    const st = dripState(dir);
+    R.set(x, yy, z, st.id, st.meta);
+  }
+}
+// the first block that is not air (or water) from y going dir, within n steps: its y, or null
+function caveEdge(R, x, y, z, dir, n) {
+  for (let i = 0; i <= n; i++) {
+    const b = R.get(x, y + dir * i, z);
+    if (!isAir(b) && b !== B.water) return y + dir * i;
+  }
+  return null;
+}
+FEATURES.speleothem_cluster = (D, c, r, ox, oy, oz) => {
+  const R = D.region;
+  const o = R.get(ox, oy, oz);
+  if (!isAir(o) && o !== B.water) return false;
+  const rep = set(c.replaceable_blocks || '#minecraft:dripstone_replaceable_blocks');
+  const baseSt = stateFrom(c.base_block || 'minecraft:dripstone_block');
+  const pointedName = strip(c.pointed_block || 'minecraft:pointed_dripstone');
+  const range = c.floor_to_ceiling_search_range ?? 12;
+  const rx = sampleInt(c.radius, r), rz = sampleInt(c.radius, r);
+  const height = sampleInt(c.height, r);
+  const density = sampleFloat(c.density, r), wetness = sampleFloat(c.wetness ?? 0, r);
+  const edgeReach = c.max_distance_from_edge_affecting_chance_of_speleothem ?? 3;
+  const edgeChance = F(c.chance_of_speleothem_at_max_distance_from_center ?? 0.1);
+  const centreReach = c.max_distance_from_center_affecting_height_bias ?? 8;
+  const dev = c.height_deviation ?? 3;
+  let any = false;
+  for (let dx = -rx; dx <= rx; dx++) for (let dz = -rz; dz <= rz; dz++) {
+    const e = (dx * dx) / (rx * rx + 0.01) + (dz * dz) / (rz * rz + 0.01);
+    if (e > 1) continue;
+    const x = ox + dx, z = oz + dz;
+    // fewer and shorter spikes towards the edge of the oval
+    const toEdge = Math.min(rx - Math.abs(dx), rz - Math.abs(dz));
+    const chance = toEdge >= edgeReach ? density : edgeChance + (density - edgeChance) * (toEdge / edgeReach);
+    const top = caveEdge(R, x, oy, z, 1, range), bottom = caveEdge(R, x, oy, z, -1, range);
+    if (top === null && bottom === null) continue;
+    const layer = sampleInt(c.speleothem_block_layer_thickness ?? 2, r);
+    // coat the rock the spikes hang from
+    if (top !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, top + i, z); if (rep[b] || b === baseSt.id) R.set(x, top + i, z, baseSt.id, baseSt.meta); else break; }
+    if (bottom !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, bottom - i, z); if (rep[b] || b === baseSt.id) R.set(x, bottom - i, z, baseSt.id, baseSt.meta); else break; }
+    any = true;
+    if (r.nextFloat() >= chance) continue;
+    const bias = Math.max(0, 1 - Math.sqrt(dx * dx + dz * dz) / centreReach);
+    let up = Math.max(0, Math.round(height * bias + (r.nextFloat() * 2 - 1) * dev * 0.5));
+    let down = Math.max(0, Math.round(height * bias + (r.nextFloat() * 2 - 1) * dev * 0.5));
+    // a puddle on the floor now and then, where the cave is wet
+    if (bottom !== null && r.nextFloat() < wetness && R.get(x, bottom, z) === baseSt.id) {
+      let walled = true;
+      for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const b = R.get(x + ax, bottom, z + az); if (isAir(b)) { walled = false; break; } }
+      if (walled) { R.set(x, bottom, z, B.water, 0); up = 0; }
+    }
+    if (pointedName !== 'pointed_dripstone') {
+      // other spikes (sulfur) have no thickness stages: a column of the block
+      const ps = stateFrom(c.pointed_block);
+      if (top !== null) for (let i = 1; i <= down && isAir(R.get(x, top - i, z)); i++) R.set(x, top - i, z, ps.id, ps.meta);
+      if (bottom !== null && R.get(x, bottom, z) !== B.water) for (let i = 1; i <= up && isAir(R.get(x, bottom + i, z)); i++) R.set(x, bottom + i, z, ps.id, ps.meta);
+      continue;
+    }
+    if (top !== null && bottom !== null) {
+      const gap = top - bottom - 1;
+      if (up + down > gap) {
+        // they meet: share the gap, tips touching
+        down = Math.min(down, gap); up = Math.min(up, gap - down);
+        if (up + down >= gap && up > 0 && down > 0) {
+          pointedColumn(R, x, top - 1, z, -1, down);
+          pointedColumn(R, x, bottom + 1, z, 1, gap - down);
+          continue;
+        }
+      }
+    }
+    if (top !== null && down > 0) pointedColumn(R, x, top - 1, z, -1, down);
+    if (bottom !== null && up > 0 && R.get(x, bottom, z) !== B.water) pointedColumn(R, x, bottom + 1, z, 1, up);
+  }
+  return any;
+};
+FEATURES.large_dripstone = (D, c, r, ox, oy, oz) => {
+  const R = D.region;
+  const o = R.get(ox, oy, oz);
+  if (!isAir(o) && o !== B.water) return false;
+  const rep = set(c.replaceable_blocks || '#minecraft:dripstone_replaceable_blocks');
+  const top = caveEdge(R, ox, oy, oz, 1, 30), bottom = caveEdge(R, ox, oy, oz, -1, 30);
+  if (top === null || bottom === null) return false;
+  const caveH = top - bottom - 1;
+  if (caveH < 4) return false;
+  let rad = sampleInt(c.column_radius, r);
+  rad = Math.max(1, Math.min(rad, Math.floor(caveH * F(c.max_column_radius_to_cave_height_ratio ?? 0.33))));
+  if (rad < 2) return false;
+  const scale = sampleFloat(c.height_scale, r);
+  const bluntDown = sampleFloat(c.stalactite_bluntness, r), bluntUp = sampleFloat(c.stalagmite_bluntness, r);
+  const wind = sampleFloat(c.wind_speed ?? 0, r), windDir = r.nextFloat() * Math.PI * 2;
+  const windy = rad >= (c.min_radius_for_wind ?? 4) && Math.min(bluntDown, bluntUp) >= F(c.min_bluntness_for_wind ?? 0.6);
+  // each cone: its height from the radius and the scale, sharper when less blunt
+  const cone = (from, dir, blunt) => {
+    const h = Math.min(Math.round(rad * scale * 2 / Math.max(0.3, blunt)), caveH);
+    for (let i = 0; i < h; i++) {
+      const t = i / h;
+      const rr = rad * Math.pow(1 - t, 0.5 + blunt);
+      if (rr < 0.5) break;
+      const sx = windy ? Math.round(Math.cos(windDir) * wind * i) : 0, sz = windy ? Math.round(Math.sin(windDir) * wind * i) : 0;
+      const y = from + dir * i, ri = Math.ceil(rr);
+      for (let dx = -ri; dx <= ri; dx++) for (let dz = -ri; dz <= ri; dz++) {
+        if (dx * dx + dz * dz > rr * rr) continue;
+        const x = ox + dx + sx, z = oz + dz + sz, b = R.get(x, y, z);
+        if (isAir(b) || b === B.water || rep[b]) R.set(x, y, z, B.dripstone_block, 0);
+      }
+    }
+  };
+  cone(top - 1, -1, bluntDown);
+  cone(bottom + 1, 1, bluntUp);
+  return true;
+};
+
 /* ======================================================== small helpers == */
 void survives; void sampleFloat; void msin;
