@@ -2,11 +2,20 @@
    Leoncraft 2 - mining and building, tick by tick.
 
    As in the game: in creative a click breaks the block at once, and holding
-   the button breaks another every five ticks; in survival holding it wears
-   the block down over its break time, the cracks growing through ten
-   stages, and looking away starts again. Holding the use button places (or
-   opens a door) again every four ticks. The block you look at gets the thin
-   black outline.
+   the button breaks another every six ticks (the game's five ticks of
+   delay, then the break); in survival holding it wears the block down over
+   its break time, the cracks growing through ten stages, looking away
+   starts again, and after a block breaks five ticks pass before the next
+   one starts. Holding the use button places (or opens a door) again every
+   four ticks. The block you look at gets the thin black outline.
+
+   A click acts the moment it happens, not at the next tick: the block
+   breaks or goes down, and the arm swings, in the very next frame. The
+   repeats then keep the game's own count, from the tick the game would
+   have seen the click on (the next one), so the click's own tick counts
+   as the first tick of the delay, as it does in the game. While the
+   button is held the arm keeps swinging (every four ticks) and the block
+   gives off bits, delay or not, as in the game.
 
    The hand is an adapter the game passes in:
      hand.id()        the block in the selected slot (0 for none)
@@ -37,10 +46,16 @@ export class Interactor {
     this.attack = false; this.useHeld = false;
     this.mining = null;           // { x, y, z, b, t, total }
     this.breakDelay = 0; this.useDelay = 0;
+    this.sinceSwing = 0;          // ticks since the arm last started a swing (it starts again after four)
     this.target = null;
   }
+  // the arm swings, as a click does
+  swing() { this.hand.swing(); this.sinceSwing = 0; }
+  // held on a block: the arm swings on again once the last swing is four ticks old
+  heldSwing() { if (++this.sinceSwing >= 4) this.swing(); }
   // what the crosshair is on, from the eye this frame
   look(eye) {
+    this.lastEye = eye;
     let hit = this.player.pick(eye, this.creative ? 5 : 4.5);
     // a mob or a boat in front of the block is what you are looking at (js/entities)
     this.entityTarget = this.entities ? this.entities.pickFor(eye, hit ? hit.t : undefined) : null;
@@ -57,26 +72,42 @@ export class Interactor {
     return hit;
   }
   down(button) {
+    const R = this.renderer, at = performance.now();
+    this._down(button);
+    // a swing the click started goes from the moment of the click (render/avatar.js startSwing)
+    if (R && R.swing >= 1) R.swingAt = at;
+  }
+  _down(button) {
     // while something is in use (eating, a drawn bow, a raised shield) the attack button does nothing, as in the game
     if (button === 0 && this.player.usingItem) return;
+    // what the crosshair is on now: the view may have turned since the frame was drawn
+    if (this.lastEye) this.look(this.lastEye);
     // an entity under the crosshair: hit it, or use it (js/entities)
     const e = this.entityTarget;
     if (e && this.entities) {
       if (button === 0) { this.attack = true; this.hand.swing(); this.entities.attack(e); return; }
-      if (button === 2 && this.entities.interact(e)) { this.useHeld = true; this.useDelay = 4; this.hand.swing(); return; }
+      if (button === 2 && this.entities.interact(e)) { this.useHeld = true; this.useDelay = 5; this.hand.swing(); return; }
     }
     if (button === 0 && !this.target && this.entities) this.entities.swung();
     if (button === 0) {
       // the dragon or a crystal nearer than the block (js/dim/realms.js)
       if (this.onAttack && this.onAttack(this.target)) { this.hand.swing(); return; }
       this.attack = true;
-      this.hand.swing();
-      if (this.creative) { this.breakTarget(); this.breakDelay = 5; }
-      else this.startMining();
+      this.swing();
+      this.sinceSwing = -1;         // (the next tick is the click's own)
+      // the game's five ticks of delay, and one more for the click's own tick
+      if (this.creative) { if (this.target) { this.breakTarget(); this.breakDelay = 6; } }
+      else {
+        this.startMining();
+        // the first bits fly off the block with the click (the wear itself counts from the next tick, as in the game)
+        const h = this.target;
+        if (this.mining && h && this.onHit) this.onHit(h.x, h.y, h.z, h.face, h.b, h.box);
+      }
     } else if (button === 2) {
       this.useHeld = true;
       this.useOnce();
-      this.useDelay = 4;
+      // again four ticks after the tick the game would have seen the click on
+      this.useDelay = 5;
     }
   }
   up(button) {
@@ -86,7 +117,7 @@ export class Interactor {
   // once a tick
   tick() {
     if (this.attack) {
-      if (this.creative) { if (--this.breakDelay <= 0) { this.hand.swing(); this.breakTarget(); this.breakDelay = 5; } }
+      if (this.creative) this.creativeTick();
       else this.mineTick();
     }
     if (this.useHeld && --this.useDelay <= 0) { this.useOnce(); this.useDelay = 4; }
@@ -100,15 +131,35 @@ export class Interactor {
     // a block that goes at once leaves no delay, so holding the button mows grass or insta-mines stone a block a tick
     if (this.hand.progress ? this.hand.progress(h) >= 1 : total === 0) { this.breakTarget(); this.mining = null; }
   }
+  // creative, held: five ticks of delay (counted only while on a block, as in the game), then the next block goes
+  creativeTick() {
+    const h = this.target;
+    if (!h) return;
+    if (this.breakDelay > 0) {
+      this.breakDelay--;
+      this.heldSwing();
+      if (this.onHit) this.onHit(h.x, h.y, h.z, h.face, h.b, h.box);
+      return;
+    }
+    this.swing();
+    this.breakTarget();
+    this.breakDelay = 5;
+  }
   mineTick() {
-    // after a block that took time breaks, five ticks before the next one starts (as the game does)
-    if (this.breakDelay > 0) { this.breakDelay--; return; }
     const h = this.target, m = this.mining;
     if (!h) { this.mining = null; return; }
+    // after a block that took time breaks, five ticks before the next one starts (as the game does)
+    if (this.breakDelay > 0) {
+      this.breakDelay--;
+      this.heldSwing();
+      if (this.onHit) this.onHit(h.x, h.y, h.z, h.face, h.b, h.box);
+      return;
+    }
     // another block, or another item in the hand: start again from nothing
     if (!m || m.x !== h.x || m.y !== h.y || m.z !== h.z || m.b !== h.b || (this.hand.key && m.key !== this.hand.key())) { this.startMining(); return; }
     m.t += this.hand.progress ? this.hand.progress(h) : 0.05;
-    if (++m.ticks % 4 === 0) this.hand.swing();
+    m.ticks++;
+    this.heldSwing();
     if (this.onHit) this.onHit(h.x, h.y, h.z, h.face, h.b, h.box);
     if (m.t >= m.total - 1e-9) { this.breakTarget(); this.mining = null; this.breakDelay = 5; }
   }
