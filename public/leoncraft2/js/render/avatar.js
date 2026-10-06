@@ -791,6 +791,9 @@ export class Avatar {
         main.rx = main.rx * 0.5 - 0.94; main.ry = -PI / 6 * s;
       } else if (use.kind === 'trident') {
         main.rx = main.rx * 0.5 - PI; main.ry = 0;
+      } else if (use.kind === 'spear') {
+        // a spear charged: the arm out along the look, the spear level under it
+        main.rx = head.rx - PI / 2 + 0.2; main.ry = head.ry - 0.1 * s;
       } else if (use.kind === 'horn') {
         // a goat horn to the mouth: the head's pitch (kept within 1.2) less 85 degrees, turned 30 in
         main.rx = Math.max(-1.2, Math.min(1.2, head.rx)) - 1.4835298; main.ry = head.ry - PI / 6 * s;

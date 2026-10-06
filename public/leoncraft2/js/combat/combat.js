@@ -37,6 +37,21 @@ import { wear } from '../ui/inventory.js?v=17';
 import { Living } from '../entities/entity.js?v=17';
 import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=17';
 import './trident.js?v=17';
+import { rayBox } from '../entities/terrain.js?v=17';
+
+/* The spear's charge (the use button held), as the Spear page gives it, by
+   material: [ticks before it works, then engaged, tired and disengaged
+   ticks, the damage multiplier, the speed (blocks a second) a hit must come
+   at to throw a rider off]. Every tick of it, whatever living thing the look
+   meets within 4.5 blocks (a margin of 0.125 round it), not hit by it in the
+   last half second, is hit if you close on it at 4.6 blocks a second or more
+   along the look: floor(that speed x the multiplier) and the fist's 1,
+   knocked back at 5.1 or more while engaged or tired, thrown off its mount
+   while engaged. It runs out at the end; you keep your stride meanwhile. */
+const CHARGE = {
+  wooden: [15, 100, 100, 100, 0.7, 14], golden: [14, 70, 100, 105, 0.7, 13], stone: [14, 90, 90, 95, 0.82, 13], copper: [13, 80, 85, 85, 0.82, 12],
+  iron: [12, 50, 85, 90, 0.95, 11], diamond: [10, 60, 70, 70, 1.075, 10], netherite: [8, 50, 60, 65, 1.2, 9],
+};
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -358,6 +373,13 @@ export class Combat {
       this.begin('crossbow', stack);
       return true;
     }
+    if (weaponOf(stack.id).kind === 'spear') {
+      if (it.dur && (stack.dmg | 0) >= it.dur - 1) return false;
+      this.begin('spear', stack);
+      this.use.hits = new Map();
+      this.P.usingItem = false;          // (a spear is charged at full stride)
+      return true;
+    }
     if (it.name === 'trident') {
       // one durability left: it will not go
       if (it.dur && (stack.dmg | 0) >= it.dur - 1) return false;
@@ -382,6 +404,35 @@ export class Combat {
     if (inv.selected !== u.slot || !s || s.id !== u.id || (this.sv && this.sv.dead)) { this.stopUse(); return; }
     if (!(this.m.inter && this.m.inter.useHeld)) { this.release(s); return; }
     u.t++;
+    if (u.kind === 'spear') this.chargeTick(s, u);
+  }
+  // one tick of a spear's charge (CHARGE above)
+  chargeTick(s, u) {
+    const it = ITEMS[s.id], C = CHARGE[it.tool && it.tool.material] || CHARGE.wooden, m = this.m, P = this.P;
+    const e = u.t - C[0];
+    if (e < 0) return;
+    if (e >= C[1] + C[2] + C[3]) { this.stopUse(); return; }
+    const stage = e < C[1] ? 0 : e < C[1] + C[2] ? 1 : 2;
+    const cp = Math.cos(P.pitch), lx = -Math.sin(P.yaw) * cp, ly = Math.sin(P.pitch), lz = -Math.cos(P.yaw) * cp;
+    const ex = P.pos.x, ey = P.pos.y + (P.eyeH || 1.62), ez = P.pos.z, g = 0.125;
+    const v = (m.riding || P).vel;
+    m.forNear(ex, ez, 8, t => {
+      if (!(t instanceof Living) || t.dead || t.removed || t === m.riding || t.vehicle === m.riding && m.riding) return;
+      const d = rayBox(ex, ey, ez, lx, ly, lz, t.pos.x - t.hw - g, t.pos.y - g, t.pos.z - t.hw - g, t.pos.x + t.hw + g, t.pos.y + t.h + g, t.pos.z + t.hw + g);
+      if (!(d <= 4.5)) return;
+      const last = u.hits.get(t);
+      if (last !== undefined && u.t - last < 10) return;
+      const tv = t.vel || { x: 0, y: 0, z: 0 };
+      const rel = ((v.x - tv.x) * lx + (v.y - tv.y) * ly + (v.z - tv.z) * lz) * 20;
+      if (rel < 4.6) return;
+      u.hits.set(t, u.t);
+      const dmg = Math.floor(rel * C[4]) + 1 + enchantBonus(s, t);
+      if (!t.hurt(dmg, { type: 'player', attacker: m.player, player: true, x: P.pos.x, z: P.pos.z, noKnock: true })) return;
+      t.lastHurtByPlayer = m.age;
+      if (stage <= 1 && rel >= 5.1) t.knockback(0.5, -lx, -lz);
+      if (stage === 0 && rel >= C[5] && t.vehicle && m.unseat) m.unseat(t);
+      if (!this.creative) this.wearHeld(1);
+    });
   }
   release(s) {
     const u = this.use;
@@ -623,7 +674,7 @@ export class Combat {
     const u = this.use, o = this._use || (this._use = {});
     if (u) {
       o.kind = u.kind; o.side = 0; o.t = u.t + alpha;
-      o.total = u.kind === 'bow' ? 20 : u.kind === 'trident' ? 10 : Math.max(1, this.crossbowTicks(this.held()));
+      o.total = u.kind === 'bow' ? 20 : u.kind === 'trident' ? 10 : u.kind === 'spear' ? 1 : Math.max(1, this.crossbowTicks(this.held()));
       return o;
     }
     if (this.shieldT > 0) {
