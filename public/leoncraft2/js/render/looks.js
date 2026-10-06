@@ -195,7 +195,7 @@ export function applyLook(R, look, first) {
   const done = () => {
     if (ran) return;
     ran = true;
-    if (R.lookToken !== token) { for (const m of prep.temps) m.dispose(); return; }
+    if (R.lookToken !== token) { letGoBuilt(R, prep.temps); return; }
     R.lookPending = null;
     finishLook(R, pending.look, false, prep);
   };
@@ -220,15 +220,15 @@ export function applyLook(R, look, first) {
         const scene = new THREE.Scene(), batch = list.slice(i, i + 3);
         for (const m of batch) scene.add(new THREE.Mesh(R.standGeo, m));
         i += 3;
-        try {
-          R.r.compile(scene, R.camera);
-          for (const m of batch) { const p = R.r.properties.get(m).currentProgram; if (p && !building.includes(p)) building.push(p); }
-        } catch (e) { /* built when first drawn */ }
+        try { R.r.compile(scene, R.camera); for (const m of batch) building.push(m); } catch (e) { /* built when first drawn */ }
       }
       while (building.length && performance.now() - t0 < 8) {
-        const p = building[0];
-        if (!p.isReady()) break;
-        try { p.getUniforms(); p.getAttributes(); } catch (e) { /* (three.js reports a shader that failed) */ }
+        // (a material's program as it is now: one let go meanwhile is not asked about)
+        const p = R.r.properties.get(building[0]).currentProgram;
+        if (p && p.program) {
+          if (!p.isReady()) break;
+          try { p.getUniforms(); p.getAttributes(); } catch (e) { /* (three.js reports a shader that failed) */ }
+        }
         building.shift();
       }
       if (i < list.length || building.length) requestAnimationFrame(step); else res();
@@ -240,6 +240,21 @@ export function applyLook(R, look, first) {
   // a browser that cannot say when they are ready: after a while all the same
   setTimeout(done, 10000);
   return true;
+}
+
+/* A look given up while it was still being built (another chosen before it
+   was ready): its materials are let go once the graphics process has finished
+   building their programs. Let go while it was still at it, Chrome went on
+   asking after programs that were no longer there, a console warning each
+   time. (Checked four times a second, half a minute at most.) */
+function letGoBuilt(R, mats) {
+  let tries = 0;
+  const check = () => {
+    const building = mats.some(m => { const p = R.r.properties.get(m).currentProgram; return p && p.program && !p.isReady(); });
+    if (building && ++tries < 120) setTimeout(check, 250);
+    else for (const m of mats) m.dispose();
+  };
+  check();
 }
 
 /* three.js's compileAsync asks each material for its program until all are
