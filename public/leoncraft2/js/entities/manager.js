@@ -52,6 +52,7 @@ import './mobs7.js?v=16';
 import { DIMS } from '../dims.js?v=16';
 import { armorLayers } from './armorlayer.js?v=16';
 import { MobHeld } from '../render/mobheld.js?v=16';
+import { setSpawnerMob } from '../struct/spawners.js?v=16';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -68,6 +69,7 @@ export class Entities {
     this.t = new Terrain(this.world);
     this.paths = new PathFinder(this.t);
     this.list = [];
+    this.displays = [];             // mobs shown inside spawners (makeDisplay)
     this.grid = new Map();
     this.particlesP = new Particles();
     this.age = 0;
@@ -254,6 +256,24 @@ export class Entities {
     return e;
   }
   get count() { return this.list.length; }
+  /* A mob to show inside a spawner: made like any other but kept out of the
+     list (nothing ticks it, hits it or saves it), small enough to fit the
+     cage (the game's 0.53125, less for anything bigger than a block), tipped
+     back 30 degrees. */
+  makeDisplay(type, x, y, z) {
+    const C = TYPES[type];
+    if (!C || !C.MODEL) return null;
+    const e = new C(this, type);
+    e.setPos(x, y, z);
+    e.bodyYaw = e.prevBodyYaw = e.headYaw = e.prevHeadYaw = e.yaw = e.prevYaw = 0;
+    const big = Math.max(e.w, e.h);
+    e.drawScale = 0.53125 / (big > 1 ? big : 1) / (C.SCALE || 1);
+    e.rootPose = (root, t) => { root.multiply(t.makeTranslation(0, -0.2, 0)); root.multiply(t.makeRotationX(-Math.PI / 6)); };
+    this.sampleLight(e, true);
+    this.displays.push(e);
+    return e;
+  }
+  dropDisplay(e) { const i = this.displays.indexOf(e); if (i >= 0) this.displays.splice(i, 1); }
 
   /* ---- 20 a second ---- */
   tick() {
@@ -751,6 +771,8 @@ export class Entities {
     }
     if (/_spawn_egg$/.test(name)) {
       const type = name.slice(0, -10);
+      // on a spawner: the spawner takes the egg's mob (struct/spawners.js)
+      if (target && build && target.face && setSpawnerMob(this.world, target.x, target.y, target.z, type)) { take(); return true; }
       if (!TYPES[type] || !target || !build) return false;
       const f = target.face || [0, 1, 0];
       // (a mob from an egg is not kept for good: like any other it goes when you are far off, unless named)
@@ -878,6 +900,8 @@ export class Entities {
       // its round shadow on the ground
       if (seen && c.SHADOW && !e.vehicle) this.shadowOf(e, x, y, z, c.SHADOW * (e.baby || e.ageT < 0 ? 0.5 : 1) * (c.SCALE || 1));
     }
+    // the mobs turning inside spawners (struct/spawners.js): drawn, never ticked or hit
+    for (const e of this.displays) this.drawOne(e, alpha, e.pos.x, e.pos.y, e.pos.z);
     this.particlesP.draw(M, alpha);
     M.end();
     held.end();
@@ -934,7 +958,7 @@ export class Entities {
       if (f > 1) f = 1;
       root.multiply(t.makeRotationZ(f * Math.PI / 2 * (c.FLIP || 1)));
     }
-    let s = (c.SCALE || 1) / 16;
+    let s = (c.SCALE || 1) / 16 * (e.drawScale || 1);
     if (e.baby || (e.ageT !== undefined && e.ageT < 0)) s *= 0.5;
     if (A.swell > 0) {
       // a creeper swelling before it goes
