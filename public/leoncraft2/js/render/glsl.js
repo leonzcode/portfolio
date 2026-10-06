@@ -365,21 +365,32 @@ vec3 toneLDR(vec3 c) { return toSRGB(agx(c)); }
    punch, the way out) and the sRGB step, 32 to a side, filtered. Indexed by
    the log of the colour, as AgX itself works, so the dark end gets as many
    entries as the bright. */
-export function makeToneLut(contrastK = 1, saturation = 1) {
+export function makeToneLut(contrastK = 1, saturation = 1, curve = 'agx') {
   const THREE = window.THREE, N = 32;
+  // the other curves (Shader Options: Tone Mapping) take the colour back out of AgX's log and its inset first
+  const minEv = -12.47393, span = 4.026069 + 12.47393;
   const outM = [1.19687900512017, -0.0528968517574562, -0.0529716355144438, -0.0980208811401368, 1.15190312990417, -0.0980434501171241, -0.0990297440797205, -0.0989611768448433, 1.15107367264116];
   const contrast = x => { const x2 = x * x, x4 = x2 * x2; return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232; };
   const srgb = c => { c = Math.max(c, 0); return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
   const data = new Uint8Array(N * N * N * 4);
   for (let b = 0; b < N; b++) for (let g = 0; g < N; g++) for (let r = 0; r < N; r++) {
-    let c = [contrast(r / (N - 1)), contrast(g / (N - 1)), contrast(b / (N - 1))];
-    const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-    c = c.map(v => Math.pow(Math.max(l + 1.12 * (v - l), 0), 1.06));
-    // outM * c, the matrix by columns as GLSL has it
-    const o = [0, 1, 2].map(k => outM[k] * c[0] + outM[3 + k] * c[1] + outM[6 + k] * c[2]);
     const i = ((b * N + g) * N + r) * 4;
+    let lin;
+    if (curve === 'agx') {
+      let c = [contrast(r / (N - 1)), contrast(g / (N - 1)), contrast(b / (N - 1))];
+      const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      c = c.map(v => Math.pow(Math.max(l + 1.12 * (v - l), 0), 1.06));
+      // outM * c, the matrix by columns as GLSL has it
+      const o = [0, 1, 2].map(k => outM[k] * c[0] + outM[3 + k] * c[1] + outM[6 + k] * c[2]);
+      lin = o.map(v => Math.pow(Math.max(v, 0), 2.2));
+    } else {
+      // the scene's own colour: out of the log, then the inset undone
+      const v = [r, g, b].map(n => Math.pow(2, n / (N - 1) * span + minEv));
+      // (AgX's way out, outM, is exactly the inverse of its way in)
+      lin = [0, 1, 2].map(k => toneCurve(curve, Math.max(0, outM[k] * v[0] + outM[3 + k] * v[1] + outM[6 + k] * v[2])));
+    }
     // the Shader Options' saturation (round the colour's own brightness) and contrast (round the middle of the screen's range)
-    const lin = o.map(v => Math.pow(Math.max(v, 0), 2.2)), ll = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+    const ll = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
     for (let k = 0; k < 3; k++) {
       const c = srgb(Math.max(0, ll + (lin[k] - ll) * saturation));
       data[i + k] = Math.round(Math.min(1, Math.max(0, (c - 0.5) * contrastK + 0.5)) * 255);
@@ -394,6 +405,18 @@ export function makeToneLut(contrastK = 1, saturation = 1) {
   t.needsUpdate = true;
   return t;
 }
+
+/* The other tone curves, one colour channel at a time, each scaled so a mid
+   grey comes out as bright as AgX's (the same exposure suits all three):
+   ACES (Narkowicz's fit of the film curve: deeper shadows, richer colour)
+   and Reinhard (extended, white at 8: soft, flat and pale in bright light).
+   The full chain has the same in GLSL (post.js). */
+function toneCurve(curve, x) {
+  if (curve === 'aces') { x *= 0.78; return Math.min(1, Math.max(0, (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14))); }
+  x *= 1.35;
+  return Math.min(1, x * (1 + x / 64) / (1 + x));
+}
+export const TONE_CURVES = { agx: 0, aces: 1, reinhard: 2 };
 
 /* ---- Detailed's exposure ----
    In the Overworld the sky table works out how much light there is and so
