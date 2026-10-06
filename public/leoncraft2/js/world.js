@@ -53,6 +53,21 @@ export class World {
        it, even while other remeshes of the column are on their way. */
     this.rowLog = new Map();
     this.stats = { gen: 0, mesh: 0 };
+    /* The blocks a mesh job takes along are copied into buffers the workers hand
+       back with the mesh, and used again: a fresh one for each of the nine chunks
+       of every job (a megabyte a column) cost the main thread most of a
+       millisecond in making and clearing new memory, two jobs a frame while the
+       world loads. */
+    this.pool = { b: [], m: [] };
+  }
+  // a buffer for a chunk's blocks (b) or states (m), whole-chunk sized, from those handed back if any
+  takeBuf(k) { return this.pool[k].pop() || new ArrayBuffer(k === 'b' ? CH * CH * H * 2 : CH * CH * H); }
+  giveBack(list) {
+    if (!list) return;
+    for (const buf of list) {
+      const k = buf.byteLength === CH * CH * H * 2 ? 'b' : buf.byteLength === CH * CH * H ? 'm' : null;
+      if (k && this.pool[k].length < 96) this.pool[k].push(buf);
+    }
   }
   key(cx, cz) { return cx + ',' + cz; }
   // the column you are in and the eight round it: the ones you can reach to build in
@@ -61,6 +76,7 @@ export class World {
   onMessage(i, m, initRes) {
     if (m.type === 'ready') { initRes(); return; }
     this.busy[i]--;
+    if (m.back) this.giveBack(m.back);
     if (m.type === 'gen') {
       const k = this.key(m.cx, m.cz);
       this.inFlight.delete('g' + k);
@@ -195,8 +211,9 @@ export class World {
     const ny = Math.min(H, top + 2);
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const c = this.chunks.get(this.key(cx + dx, cz + dz));
-      // only the part with anything in it, copied
-      const blocks = c.blocks.slice(0, ny * 256), meta = c.meta.slice(0, ny * 256);
+      // only the part with anything in it, copied into buffers kept for it (see pool)
+      const blocks = new Uint16Array(this.takeBuf('b'), 0, ny * 256), meta = new Uint8Array(this.takeBuf('m'), 0, ny * 256);
+      blocks.set(c.blocks.subarray(0, ny * 256)); meta.set(c.meta.subarray(0, ny * 256));
       chunks.push({ blocks, meta, biome: c.biome });
       transfer.push(blocks.buffer, meta.buffer);      // handed over, not copied a second time
       tops.push(c.top);
@@ -374,6 +391,7 @@ export class World {
     this.chunks.clear(); this.cgen = (this.cgen || 0) + 1; this.meshQueue.clear(); this.inFlight.clear();
     this.meshCache.clear();
     this.genList = [];
+    this.pool = { b: [], m: [] };
     this.dead = true;
   }
 }
