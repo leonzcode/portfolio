@@ -32,7 +32,6 @@ export class VideoSettings {
     // with no choice made, the shaders are on unless there is no graphics chip at all
     this.guessed = guessShaders;
     this.lastInput = performance.now();
-    this.shown = 0;
     this.vig = 0;
     this.saveFlash = -1e9;
     this.playTicks = 0;
@@ -128,9 +127,12 @@ export class VideoSettings {
       if (idle > 600000) fps = fps ? Math.min(fps, 10) : 10;
       else if (idle > 60000) fps = fps ? Math.min(fps, 30) : 30;
     }
-    if (!fps || fps >= 260) { this.shown = now; return false; }
-    if (now - this.shown < 1000 / fps - 2) return true;
-    this.shown = now;
+    if (!fps || fps >= 260) { this.due = now; return false; }
+    // drawn on a steady beat (each frame due one interval after the last was due), so the screen's
+    // own uneven rhythm never costs a whole extra frame of waiting; half a screen frame early is on time
+    const step = 1000 / fps;
+    if (now < (this.due || 0) - 8) return true;
+    this.due = Math.max((this.due || 0) + step, now - step);
     return false;
   }
   // VSync: frames left with the graphics card at once (two keeps it busy and smooth; one answers your hand a frame sooner)

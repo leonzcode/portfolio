@@ -1244,7 +1244,7 @@ async function boot() {
   requestAnimationFrame(loop);
   window.__lc2 = {
     structures,
-    renderer, gui, options, B, BLOCKS,
+    renderer, gui, options, B, BLOCKS, video,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
     command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=16').then(m => m.execute(line, ctx)); },
