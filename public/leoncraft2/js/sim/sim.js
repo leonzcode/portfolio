@@ -291,8 +291,9 @@ export class Sim {
   /* ---- random ticks ---- */
   sectionCounts(c) {
     if (c.rtc) return c.rtc;
+    // nothing above the chunk's highest block but air, so the count stops there (a third of the chunk, often)
     const rtc = new Int32Array(H >> 4), bl = c.blocks, RT = this.RT;
-    for (let i = 0, n = bl.length; i < n; i++) if (RT[bl[i]]) rtc[i >> 12]++;
+    for (let i = 0, n = Math.min(bl.length, ((c.top | 0) + 1) << 8); i < n; i++) if (RT[bl[i]]) rtc[i >> 12]++;
     return (c.rtc = rtc);
   }
   randomTicks() {
