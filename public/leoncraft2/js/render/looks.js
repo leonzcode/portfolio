@@ -358,6 +358,8 @@ function finishLook(R, look, first, prep) {
 
   if (!first && rebuild) {
     R.locs = new Map();
+    // (main.js's render scale leaves the next few seconds alone)
+    R.lookAt = performance.now();
     /* The canvas and the full chain's pictures only when the pipeline itself
        changed: giving a canvas a size, even the one it has, throws its picture
        away and costs the graphics card a frame. */
