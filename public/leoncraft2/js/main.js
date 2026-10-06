@@ -246,6 +246,32 @@ async function findSpawn(world) {
   }
   return { x: 0, z: 0 };
 }
+/* Where you stand at the world's spawn, as the game finds it (its
+   getOverworldRespawnPos and fudgeSpawnLocation): down a column from its
+   top to the first block with a full top (a tree's leaves or log count: you
+   may be put on a tree, never inside one), no spot over a fluid, with two
+   blocks free to stand in; the nearest such column out to 10 blocks from
+   the spawn. Was the ground under the trees, which put you inside a trunk
+   in a forest, crawling. */
+function standY(world, x, z) {
+  for (let y = 383; y > 0; y--) {
+    const b = world.get(x, y, z);
+    if (!b) continue;
+    const d = BLOCKS[b];
+    if (d.fluid) return -1;
+    if (d.solid && d.shape === 'cube') return y + 1;
+  }
+  return -1;
+}
+function spawnSpot(world, x, z) {
+  const free = (xx, yy, zz) => { const b = world.get(xx, yy, zz); return !b || !BLOCKS[b].solid; };
+  for (let r = 0; r <= 10; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+    const y = standY(world, x + dx, z + dz);
+    if (y > 0 && free(x + dx, y, z + dz) && free(x + dx, y + 1, z + dz)) return { x: x + dx, y, z: z + dz };
+  }
+  return null;
+}
 // the ground itself at a column, not the top of a tree
 function groundY(world, x, z) {
   for (let y = 383; y > 0; y--) { const b = world.get(x, y, z); if (b && BLOCKS[b].solid && !BLOCKS[b].leaves && !BLOCKS[b].log) return y + 1; }
@@ -521,8 +547,8 @@ async function boot() {
     if (at) {
       player.pos.set(at.x, at.y, at.z); player.yaw = at.yaw || 0; player.pitch = at.pitch || 0; player.flying = !!at.flying;
     } else {
-      const gy = groundY(world, spawn.x, spawn.z);
-      player.pos.set(spawn.x + 0.5, gy > 0 ? gy : 120, spawn.z + 0.5);
+      const s = spawnSpot(world, spawn.x, spawn.z), gy = groundY(world, spawn.x, spawn.z);
+      if (s) player.pos.set(s.x + 0.5, s.y, s.z + 0.5); else player.pos.set(spawn.x + 0.5, gy > 0 ? gy : 120, spawn.z + 0.5);
       player.yaw = Math.PI * 0.75;
     }
     player.prev.copy(player.pos);
@@ -740,8 +766,8 @@ async function boot() {
   }
   // where the world spawn puts you, on the ground
   function spawnPoint(world) {
-    const g = game, gy = groundY(world, g.spawn.x, g.spawn.z);
-    return { x: g.spawn.x + 0.5, y: gy > 0 ? gy : 120, z: g.spawn.z + 0.5 };
+    const g = game, s = spawnSpot(world, g.spawn.x, g.spawn.z), gy = groundY(world, g.spawn.x, g.spawn.z);
+    return s ? { x: s.x + 0.5, y: s.y, z: s.z + 0.5 } : { x: g.spawn.x + 0.5, y: gy > 0 ? gy : 120, z: g.spawn.z + 0.5 };
   }
   /* Going to another dimension (or far within one): the loading screen, what
      changed saved, the old world's meshes and workers let go, the new one's
