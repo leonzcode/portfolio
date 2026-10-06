@@ -36,7 +36,7 @@
 --------------------------------------------------------------------------- */
 import { BLOCKS, B } from '../blocks.js?v=17';
 import { Screen, TextField, WHITE } from './gui.js?v=17';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS } from '../items.js?v=17';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS } from '../items.js?v=17';
 import { matchGrid, consumeGrid } from '../crafting.js?v=17';
 import { enchName, ENCH } from '../enchanting.js?v=17';
 import { isPotion, isTipped, potionName, potionLines, POTIONS } from '../brewing.js?v=17';
@@ -378,6 +378,7 @@ export const GLINT = { seen: false };
 export function hasGlint(st) {
   if (!st) return false;
   if (st.ench && Object.keys(st.ench).length) return true;
+  if (st.lodestone) return true;
   const it = ITEMS[st.id];
   return !!it && ALWAYS_GLINT.has(it.name);
 }
@@ -422,7 +423,7 @@ export function drawStack(g, icons, st, x, y, countText, countColour) {
   // a compass or a clock shows where it points now, a bow or a crossbow how far it is drawn or what it holds
   // (js/dials.js); trimmed armour its trim (js/trims.js), a potion its colour, dyed leather its dye
   const nm = ITEMS[st.id] && ITEMS[st.id].name;
-  const dial = nm && (dialPicture(nm) || usePicture(st, nm));
+  const dial = nm && (dialPicture(nm, st) || usePicture(st, nm));
   if (dial && icons.drawLayer && icons.drawLayer(g, dial, x, y)) { /* drawn */ }
   else if (st.trim && icons.drawTrimmed) icons.drawTrimmed(g, st, x, y);
   else if ((st.potion || st.color !== undefined) && icons.drawTinted) icons.drawTinted(g, st, x, y);
@@ -457,7 +458,7 @@ function hsv(h, s, v) {
 // tooltips on (F3 + H) the durability and the item's id as well, as in the game
 export function stackTooltip(st, advanced) {
   const it = ITEMS[st.id];
-  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : displayName(st.id))];
+  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : st.lodestone ? 'Lodestone Compass' : displayName(st.id))];
   if (isPotion(st) || (st.potion && isTipped(st))) lines.push(...potionLines(st));
   const title = n => n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   if (st.trim) lines.push('§7Upgrade:', '§9 ' + title(st.trim[0]) + ' Armor Trim', '§9 ' + title(st.trim[1]) + ' Material');
@@ -474,6 +475,7 @@ export function stackTooltip(st, advanced) {
   if (st.color !== undefined) lines.push('§o§7Dyed');
   if (st.flight) lines.push('§7Flight Duration: ' + st.flight);
   if (st.instrument) lines.push('§7' + title(st.instrument.replace(/_goat_horn$/, '')));
+  if (it && SONGS[it.name]) lines.push('§7' + SONGS[it.name][0]);
   if (it && it.name === 'ominous_bottle') lines.push('§9Bad Omen' + ((st.amp | 0) > 0 ? ' ' + ['II', 'III', 'IV', 'V'][(st.amp | 0) - 1] : '') + ' (01:40:00)');
   if (it && it.name === 'painting') {
     const v = st.variant && PAINTING_VARIANTS.find(p => p[0] === st.variant);

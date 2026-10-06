@@ -325,7 +325,8 @@ export function installParts(sim) {
     if (n === 'end_portal_frame') return m & 4 ? 15 : 0;
     if (n === 'respawn_anchor') return Math.floor(15 * Math.min(4, m & 7) / 4);
     if (/copper_bulb$/.test(n)) return m & 1 ? 15 : 0;
-    if (n === 'jukebox' || n === 'beehive' || n === 'bee_nest' || n === 'chiseled_bookshelf' || n === 'lectern' || n === 'decorated_pot' || n === 'crafter') return 0;
+    if (n === 'jukebox') { const D = S.game && S.game.details; return D && D.jukeboxSignal ? D.jukeboxSignal(x, y, z) : 0; }
+    if (n === 'beehive' || n === 'bee_nest' || n === 'chiseled_bookshelf' || n === 'lectern' || n === 'decorated_pot' || n === 'crafter') return 0;
     if (n === 'detector_rail') return 0;
     return -1;
   };

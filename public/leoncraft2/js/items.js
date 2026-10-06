@@ -215,8 +215,9 @@ export function fuelTicks(id) { const it = ITEMS[id]; return it && it.fuel ? it.
    stew's [effect, ticks]; patterns, a banner's (or shield's) [[pattern, colour]...];
    map, a filled map's number (js/maps.js); amp, an ominous bottle's Bad Omen
    level (0 for I); instrument, a goat horn's ('ponder_goat_horn'...);
-   variant, a painting's (PAINTING_VARIANTS) */
-const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map', 'amp', 'instrument', 'variant'];
+   variant, a painting's (PAINTING_VARIANTS); lodestone, where a compass
+   was linked ({ x, y, z, dim }) */
+const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map', 'amp', 'instrument', 'variant', 'lodestone'];
 /* What a suspicious stew made with each flower does: [effect, ticks] (the
    wiki's Suspicious Stew table, Java Edition). The tulips all give weakness. */
 export const STEW_EFFECTS = {
@@ -241,6 +242,21 @@ export const PAINTING_VARIANTS = [
   ['skeleton', 4, 3], ['donkey_kong', 4, 3],
   ['pointer', 4, 4], ['pigscene', 4, 4], ['burning_skull', 4, 4], ['orb', 4, 4], ['unpacked', 4, 4],
 ];
+
+/* The music discs' songs, as the jukebox shows them ("Now Playing") and the
+   disc's tooltip: [credit, seconds long, what a comparator reads from the
+   jukebox]. This game plays no sound yet; the jukebox keeps the time. */
+export const SONGS = {
+  music_disc_13: ['C418 - 13', 178, 1], music_disc_cat: ['C418 - cat', 185, 2], music_disc_blocks: ['C418 - blocks', 345, 3],
+  music_disc_chirp: ['C418 - chirp', 185, 4], music_disc_far: ['C418 - far', 174, 5], music_disc_mall: ['C418 - mall', 197, 6],
+  music_disc_mellohi: ['C418 - mellohi', 96, 7], music_disc_stal: ['C418 - stal', 150, 8], music_disc_strad: ['C418 - strad', 188, 9],
+  music_disc_ward: ['C418 - ward', 251, 10], music_disc_11: ['C418 - 11', 71, 11], music_disc_wait: ['C418 - wait', 238, 12],
+  music_disc_pigstep: ['Lena Raine - Pigstep', 149, 13], music_disc_otherside: ['Lena Raine - otherside', 195, 14],
+  music_disc_5: ['Samuel Åberg - 5', 178, 15], music_disc_relic: ['Aaron Cherof - Relic', 218, 14],
+  music_disc_precipice: ['Aaron Cherof - Precipice', 299, 13], music_disc_creator: ['Lena Raine - Creator', 176, 12],
+  music_disc_creator_music_box: ['Lena Raine - Creator (Music Box)', 73, 11], music_disc_tears: ['Amos Roddy - Tears', 175, 10],
+  music_disc_lava_chicken: ['Hyper Potions - Lava Chicken', 135, 9],
+};
 
 /* Item cooldowns, the game's: an ender pearl's second, chorus fruit's, a
    wind charge's half second, a goat horn's seven, a shield an axe knocked
