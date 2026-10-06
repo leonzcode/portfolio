@@ -25,7 +25,7 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON } from './glsl.js?v=16';
+import { COMMON, FILTER } from './glsl.js?v=16';
 import { FullScreen, VS_FULL } from './sky.js?v=16';
 import { BlockClouds } from './clouds.js?v=16';
 const THREE = window.THREE;
@@ -116,8 +116,8 @@ void main() {
   else if (rot == 2) uv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
   else if (rot == 3) uv = vec2(vUv.y, 1.0 - vUv.x);
   float layer = frameOf(vLayer);
-  // grass and flowers use the full-size texture at any distance (the game's cutout layer has no mipmaps)
-  vec4 alb = plant ? textureLod(uAlbedo, vec3(uv, layer), 0.0) : texture(uAlbedo, vec3(uv, layer));
+  // every block is mipmapped now, plants too (Mipmap Levels), and filtered as Texture Filtering says
+  vec4 alb = texFiltered(uAlbedo, vec3(uv, layer));
 #ifdef CUTOUT
   if (alb.a < (plant ? 0.1 : 0.5)) discard;
 #endif
@@ -130,6 +130,8 @@ void main() {
   if ((vFlags & 128) != 0 && alb.a < 0.5) c = vTint * 0.42;
   c *= vShade;
   c = linearFog(c, vFogD);
+  // Chunk Fade: a column just come into the world fades in from the fog
+  c = mix(uFogColor, c, uChunkFade);
 #ifdef TRANSLUCENT
   outColor = vec4(c, alb.a);
 #else
@@ -461,7 +463,9 @@ export class Vanilla {
     // clouds: white by day, grey at night
     U.uCloudColor.value.set(daylight * 0.9 + 0.1, daylight * 0.9 + 0.1, daylight * 0.85 + 0.15);
     greyTowards(U.uCloudColor.value, rain * 0.95, 0.6); greyTowards(U.uCloudColor.value, thunder * 0.95, 0.2);
-    U.uCloudFog.value.set(R * 1.0, R * 2.0);
+    // and gone at Cloud Distance (Video Settings)
+    const reach = (opts.cloudDist || rdc * 2) * 16;
+    U.uCloudFog.value.set(Math.min(R, reach * 0.5), reach);
     this.clouds = D && !D.clouds ? 'off' : opts.clouds || 'fancy';
   }
   makeLightmap(skyDarken, gamma, ambient, endBright) {
@@ -512,12 +516,13 @@ function sunriseColour(tod) {
 }
 
 /* ---- the materials ---- */
-export function makeVanillaMaterials(U) {
+export function makeVanillaMaterials(U, o) {
+  const base = o && o.rgss ? { RGSS: 1 } : {};
   const mk = (defines, transparent, extra) => new THREE.RawShaderMaterial(Object.assign({
     glslVersion: THREE.GLSL3,
     vertexShader: HEAD + VANILLA + TERRAIN_VS,
-    fragmentShader: HEAD + VANILLA + TERRAIN_FS,
-    uniforms: U, defines: Object.assign({}, defines),
+    fragmentShader: HEAD + VANILLA + FILTER + TERRAIN_FS,
+    uniforms: U, defines: Object.assign({}, base, defines),
     side: defines.CUTOUT || defines.TRANSLUCENT ? THREE.DoubleSide : THREE.FrontSide,
     transparent: !!transparent, depthWrite: !transparent,
   }, extra || {}));

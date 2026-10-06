@@ -6,6 +6,7 @@
    20 times a second with its own gravity and drag, ages through its frames,
    and is drawn between ticks as a camera-facing square (render/entitymesh.js).
 --------------------------------------------------------------------------- */
+import { keepParticle } from '../render/particles.js?v=16';
 const N = 4096;
 const R = () => Math.random();
 
@@ -43,6 +44,8 @@ export class Particles {
     const s = spread === undefined ? K.spread : spread;
     for (let k = 0; k < count; k++) {
       if (this.n >= N) return;
+      // the Particles setting (Video Settings) leaves some out
+      if (!keepParticle()) continue;
       const i = this.n++;
       const o = i * 3;
       const px = x + (count > 1 ? (R() - 0.5) * s * 2 : 0), py = y + (count > 1 ? (R() - 0.5) * s * 2 : 0), pz = z + (count > 1 ? (R() - 0.5) * s * 2 : 0);

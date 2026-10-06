@@ -16,7 +16,7 @@
    Detailed draws the terrain with lighter shaders that light per vertex
    (LEAN_VS / LEAN_FS below); the rest is the full chain's.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS } from './glsl.js?v=16';
+import { COMMON, SHADOW, WIND, TONEMAP, LDR, LIGHTS, FILTER } from './glsl.js?v=16';
 const THREE = window.THREE;
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray; precision highp sampler2DShadow;\n`;
@@ -59,6 +59,7 @@ uniform sampler2D uLayerInfo, uAmbient, uNoise;
 uniform vec3 cameraPosition;
 uniform vec3 uLightDir;
 uniform float uFrame, uWet;
+uniform float uAO;              // the corners' shade (Shader Options: Ambient Occlusion)
 uniform mat3 uFaceRot;
 uniform float uDim;             // 0 the Overworld, 1 the Nether, 2 the End (js/dims.js)
 #define HAS_DIM
@@ -152,7 +153,7 @@ void main() {
     N = normalize(vec3(nxy.x * 0.3, 1.0, nxy.y * 0.3));
   } else if (!gl_FrontFacing) { N = -N; Ng = -Ng; }
 
-  float sky = vLight.x, block = vLight.y, ao = 0.35 + 0.65 * vLight.z;
+  float sky = vLight.x, block = vLight.y, ao = mix(1.0, 0.35 + 0.65 * vLight.z, uAO);
   float wd = vLight.w;
   float dist = length(cameraPosition - vWorld);
   vec3 L = uLightDir;
@@ -166,7 +167,7 @@ void main() {
   if (gate > 0.0 && (NoLg > 0.0 || plant || sp.b > 0.3)) {
     vec3 sc = shadowCoord(vWorld, Ng, plant ? 1.0 : NoLg, dist);
 #if SHADOWS > 1
-    shadow = shadowSoft(sc, ign(gl_FragCoord.xy, uFrame), 1.6);
+    shadow = shadowSoft(sc, ign(gl_FragCoord.xy, uFrame), uShadowSoft);
 #else
     shadow = shadowHard(sc);
 #endif
@@ -279,6 +280,8 @@ uniform float uEyeInWater;
 // and how much daylight washes out torch light
 uniform vec3 uAmbUp, uAmbSide, uAmbDown, uSunC;
 uniform float uDayK;
+uniform float uAO;          // the corners' shade (Shader Options: Ambient Occlusion)
+uniform float uChunkFade;   // a column fading in (Chunk Fade)
 layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL; layout(location = 3) in vec4 aC;
 uniform vec3 uChunk;
 ` + LDR + LIGHTS + /* glsl */`
@@ -319,7 +322,7 @@ void main() {
 
   bool plant = (flags & 32) != 0;
   vec3 Ng = plant ? vec3(0.0, 1.0, 0.0) : uFaceRot * faceN(nw & 7);
-  float sky = L.x, block = L.y, ao = 0.35 + 0.65 * float(flags & 3) / 3.0, wd = L.z * 15.0;
+  float sky = L.x, block = L.y, ao = mix(1.0, 0.35 + 0.65 * float(flags & 3) / 3.0, uAO), wd = L.z * 15.0;
   vec3 toEye = cameraPosition - world.xyz;
   float dist = length(toEye);
   vec3 V = toEye / max(dist, 1e-4);
@@ -347,6 +350,8 @@ void main() {
   vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : skyAmt * uDayK) * ao : vec3(0.0);
   vec3 keep, add;
   fogTerms(world.xyz, keep, add);
+  // Chunk Fade: a column just come into the world fades in from the fog's colour
+  if (uChunkFade < 1.0) { keep *= uChunkFade; add = mix(fogColour(normalize(world.xyz - cameraPosition)) * uExpo, add, uChunkFade); }
   vAmb = (amb + blockL + vec3(0.0035, 0.004, 0.006) * ao) / PI * keep;
   vFog = vec4(add, mat.g > 0.0 ? 6.0 * dot(keep, vec3(1.0 / 3.0)) : 0.0);
   // how much of the sun the face takes: its angle to the light (a plant's from straight up, softened,
@@ -406,8 +411,8 @@ void main() {
   if (rot == 1) uv = vec2(1.0 - vUv.y, vUv.x);
   else if (rot == 2) uv = vec2(1.0 - vUv.x, 1.0 - vUv.y);
   else if (rot == 3) uv = vec2(vUv.y, 1.0 - vUv.x);
-  vec4 alb = texture(uAlbedo, vec3(uv, vLayers.x));
-  if (vLayers.z > 0.0) alb = mix(alb, texture(uAlbedo, vec3(uv, vLayers.y)), vLayers.z);
+  vec4 alb = texFiltered(uAlbedo, vec3(uv, vLayers.x));
+  if (vLayers.z > 0.0) alb = mix(alb, texFiltered(uAlbedo, vec3(uv, vLayers.y)), vLayers.z);
 #ifdef CUTOUT
   // keep thin leaves and grass blades from vanishing in the distance
   float a = (alb.a - 0.5) / max(fwidth(alb.a), 1e-4) + 0.5;
@@ -445,7 +450,7 @@ void main() {
 #if SHADOWS > 1
     // four taps within 16 blocks of you, where a shadow's edge is big enough to see how soft it is;
     // one further out, where the squeezed map's texels are several times larger and one is as soft
-    float shadow = dot(raw.xy, raw.xy) < 0.0625 ? shadowSoft(sc, 0.0, 1.6) : shadowHard(sc);
+    float shadow = dot(raw.xy, raw.xy) < 0.0625 ? shadowSoft(sc, 0.0, uShadowSoft) : shadowHard(sc);
 #elif SHADOWS > 0
     float shadow = shadowHard(sc);
 #else
@@ -572,11 +577,14 @@ export function makeMaterials(shared, q) {
   q = q || {};
   const base = { SHADOWS: q.shadows === undefined ? 2 : q.shadows };
   if (q.normals !== false) base.NORMALMAP = 1;
+  // no plants or leaves moving: the wind is left out of the shaders altogether; Texture Filtering: RGSS
+  if (q.wind === false) base.NO_WIND = 1;
+  if (q.rgss) base.RGSS = 1;
   if (q.ldr) { base.LDR = 1; base.TONE_LUT = 1; }
   Object.assign(base, lightDefines(q));
   // Detailed (one pass to the screen) lights per vertex; the full chain per pixel
   const vs = q.ldr ? HEAD + COMMON + WIND + TONEMAP + LEAN_VS : HEAD + COMMON + WIND + TERRAIN_VS;
-  const fs = q.ldr ? HEAD + COMMON + SHADOW + TONEMAP + LEAN_FS : HEAD + COMMON + SHADOW + WIND + TONEMAP + TERRAIN_FS.replace('void main() {', LDR_FN + LIGHTS + '\nvoid main() {');
+  const fs = q.ldr ? HEAD + COMMON + SHADOW + TONEMAP + FILTER + LEAN_FS : HEAD + COMMON + SHADOW + WIND + TONEMAP + TERRAIN_FS.replace('void main() {', LDR_FN + LIGHTS + '\nvoid main() {');
   const mk = (defines, transparent, extra) => new THREE.RawShaderMaterial(Object.assign({
     glslVersion: THREE.GLSL3,
     vertexShader: vs,

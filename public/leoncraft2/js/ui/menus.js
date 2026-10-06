@@ -639,87 +639,9 @@ export class OptionsScreen extends Screen {
   }
 }
 
-const QUALITY = ['detailed', 'fast'];
-const QUALITY_NAMES = { detailed: 'Detailed', fast: 'Fast' };
-const QUALITY_TIPS = {
-  detailed: 'Light shaders: soft sun shadows, warm sunlight, a real sky and the sky in the water. Nearly as smooth as Fast.',
-  fast: 'No shaders at all, as the game draws itself: no shadows. The quickest there is.',
-};
-const QUALITY_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
-
-/* Fullscreen, as the game's own button. In a window the browser keeps Esc
-   for itself: it lets go of the mouse, and will not give it back for a
-   second and a quarter, nor at all for a key (Esc to leave the game menu)
-   rather than a click. In fullscreen the page may keep Esc (the keyboard
-   lock), so Esc opens and closes the game menu with the mouse taken back at
-   once, as in the game; holding Esc leaves fullscreen. */
-function setFullscreen(on) {
-  const d = document;
-  if (on && !d.fullscreenElement && d.documentElement.requestFullscreen) {
-    d.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => {
-      // Esc, and the keys played with Ctrl held to sprint (Ctrl+W would close the tab, Ctrl+1 change it)
-      const keys = ['Escape', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'];
-      for (let n = 1; n <= 9; n++) keys.push('Digit' + n);
-      if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(keys).catch(() => {});
-    }, () => {});
-  } else if (!on && d.fullscreenElement) d.exitFullscreen().catch(() => {});
-}
-
-export class VideoSettingsScreen extends OptionsListScreen {
-  constructor() { super('Video Settings'); }
-  // the graphics setting is put into effect on the way out, and only if it changed
-  onClose() { super.onClose && super.onClose(); if (this.hooks.applyGraphics) this.hooks.applyGraphics(); }
-  rows(list) {
-    const o = this.options, g = this.gui;
-    const rdMax = (g.limits && g.limits.renderDistanceMax) || 32;
-    const graphics = new CycleButton(0, 0, 150, 20, 'Graphics', {
-      values: QUALITY, value: QUALITY_OF[o.get('quality')] || 'detailed', format: v => QUALITY_NAMES[v], tooltip: v => QUALITY_TIPS[v],
-      onChange: v => o.set('quality', v),
-    });
-    const rd = new Slider(0, 0, 150, 20, {
-      min: 1, max: rdMax, step: 1, value: o.get('renderDistance') || 1,
-      label: v => v <= 1 ? 'Render Distance: Auto' : 'Render Distance: ' + v + ' chunks',
-      onChange: v => o.set('renderDistance', v <= 1 ? null : v),
-    });
-    const rs0 = o.get('renderScale');
-    const rs = new Slider(0, 0, 150, 20, {
-      min: 35, max: 100, step: 5, value: rs0 === 'auto' ? 35 : Math.round(rs0 * 100),
-      label: v => v <= 35 ? 'Render Scale: Auto' : 'Render Scale: ' + v + '%',
-      onChange: v => o.set('renderScale', v <= 35 ? 'auto' : v / 100),
-    });
-    rs.tooltip = 'How many pixels the 3D view draws. Lower is faster and blurrier. Auto follows the frame rate.';
-    const fps0 = o.get('maxFps');
-    const fps = new Slider(0, 0, 150, 20, {
-      min: 10, max: 260, step: 10, value: fps0 ? fps0 : 260,
-      label: v => v >= 260 ? 'Max Framerate: Unlimited' : 'Max Framerate: ' + v + ' fps',
-      onChange: v => o.set('maxFps', v >= 260 ? 0 : v),
-    });
-    const gs = new Slider(0, 0, 150, 20, {
-      min: 0, max: g.maxScale, step: 1, value: Math.min(o.get('guiScale') | 0, g.maxScale),
-      label: v => 'GUI Scale: ' + (v ? v : 'Auto'),
-      // applied when the handle is let go, so the screen does not jump under the pointer
-      onRelease: v => o.set('guiScale', v),
-    });
-    const br = optSlider(o, 'brightness', 0, 1, 0.01, v => 'Brightness: ' + (v <= 0 ? 'Moody' : v >= 1 ? 'Bright' : pct(v)));
-    const clouds = new CycleButton(0, 0, 150, 20, 'Clouds', {
-      values: ['fancy', 'fast', 'off'], value: o.get('clouds'), format: v => ({ fancy: 'Fancy', fast: 'Fast', off: 'OFF' })[v],
-      onChange: v => o.set('clouds', v),
-    });
-    const fe = optSlider(o, 'fovEffects', 0, 1, 0.01, v => 'FOV Effects: ' + (v <= 0 ? 'OFF' : pct(v)));
-    fe.tooltip = 'How much the view widens when you sprint or fly.';
-    const blur = optSlider(o, 'menuBlur', 0, 10, 1, v => 'Menu Background Blurriness: ' + (v ? v : 'OFF'));
-    const full = new CycleButton(0, 0, 150, 20, 'Fullscreen', { values: [false, true], value: !!document.fullscreenElement, format: onOff, onChange: v => setFullscreen(v) });
-    full.tooltip = 'In fullscreen Esc goes to the game menu and back at once. Hold Esc to leave fullscreen.';
-    list.entries = [
-      new WidgetRow(graphics, rd),
-      new WidgetRow(rs, fps),
-      new WidgetRow(optToggle(o, 'bobbing', 'View Bobbing'), gs),
-      new WidgetRow(br, clouds),
-      new WidgetRow(full, fe),
-      new WidgetRow(blur),
-    ];
-  }
-}
+// Video Settings (the game's own), Shader Packs and Shader Options live in ui/video.js
+export { VideoSettingsScreen, ShaderPacksScreen, ShaderOptionsScreen } from './video.js?v=16';
+import { VideoSettingsScreen } from './video.js?v=16';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -889,16 +811,25 @@ export class AccessibilitySettingsScreen extends OptionsListScreen {
     const na = 'Not in Leoncraft 2 yet';
     const text = optSlider(o, 'textBgOpacity', 0, 1, 0.01, v => 'Text Background Opacity: ' + pct(v));
     const fe = optSlider(o, 'fovEffects', 0, 1, 0.01, v => 'FOV Effects: ' + (v <= 0 ? 'OFF' : pct(v)));
-    const blur = optSlider(o, 'menuBlur', 0, 10, 1, v => 'Menu Background Blurriness: ' + (v ? v : 'OFF'));
+    const blur = optSlider(o, 'menuBlur', 0, 10, 1, v => 'Menu Background Blur: ' + (v ? v : 'OFF'));
+    blur.tooltip = 'Changes the blurriness of menu backgrounds.';
+    fe.tooltip = 'Controls how much the field of view can change with gameplay effects.';
+    // moved here from Video Settings, as in the game
+    const gsp = optSlider(o, 'glintSpeed', 0, 1, 0.01, v => 'Glint Speed: ' + (v <= 0 ? 'OFF' : pct(v)));
+    gsp.tooltip = 'Controls how fast the visual glint shimmers across enchanted items.';
+    const gst = optSlider(o, 'glintStrength', 0, 1, 0.01, v => 'Glint Strength: ' + (v <= 0 ? 'OFF' : pct(v)));
+    gst.tooltip = 'Controls how transparent the visual glint is on enchanted items.';
+    const tilt = optSlider(o, 'damageTilt', 0, 1, 0.01, v => 'Damage Tilt: ' + (v <= 0 ? 'OFF' : pct(v)));
+    tilt.tooltip = 'The amount of camera shake caused by being hurt.';
     list.entries = [
       new WidgetRow(off(new CycleButton(0, 0, 150, 20, 'Narrator', { values: [false], value: false, format: onOff }), na),
         off(new CycleButton(0, 0, 150, 20, 'Show Subtitles', { values: [false], value: false, format: onOff }), na)),
       new WidgetRow(text, off(new CycleButton(0, 0, 150, 20, 'High Contrast', { values: [false], value: false, format: onOff }), na)),
       new WidgetRow(optToggle(o, 'autoJump', 'Auto-Jump'), optToggle(o, 'bobbing', 'View Bobbing')),
-      new WidgetRow(fe, optToggle(o, 'hideSplash', 'Hide Splash Texts', 'Hides the yellow line on the title screen.')),
-      new WidgetRow(blur),
+      new WidgetRow(fe, tilt),
+      new WidgetRow(gsp, gst),
+      new WidgetRow(optToggle(o, 'hideSplash', 'Hide Splash Texts', 'Hides the yellow line on the title screen.'), blur),
     ];
-    list.entries[4].children[0].wide = false;
   }
   footer() {
     const W = this.width, H = this.height;
