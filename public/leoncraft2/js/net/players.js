@@ -193,7 +193,8 @@ export class RemotePlayers {
       while (r.acc >= 0.05 && n++ < 5) {
         r.acc -= 0.05;
         P.prev.copy(P.pos);
-        const q = this.at(r, r.rt - r.acc * 1000);
+        // (into a record of its own: p is this frame's position and must not move)
+        const q = this.at(r, r.rt - r.acc * 1000, r.tmpT || (r.tmpT = {}));
         if (q) { P.pos.set(q.x, q.y, q.z); P.yaw = q.yaw; }
         av.tick(P);
       }
@@ -223,9 +224,15 @@ export class RemotePlayers {
   sample(r, now, dt) {
     if (r.est === null) return null;
     // the estimate moves gently, so a quick message leaving the window never jerks them back
-    r.estS += (r.est - r.estS) * Math.min(1, dt * 2);
+    // (a big change, a tab that slept or a clock that jumped, is taken at once: they would crawl for seconds)
+    if (Math.abs(r.est - r.estS) > 250) r.estS = r.est;
+    else r.estS += Math.max(-dt * 50, Math.min(dt * 50, (r.est - r.estS) * Math.min(1, dt * 2)));
+    /* So does the delay. The picture's clock may run at most a tenth fast or
+       slow while either changes: a late message makes them drift back a
+       little, never stop and start. */
     const want = Math.max(DELAY, Math.min(MAX_DELAY, Math.max(r.late, r.lateMax) + 20));
-    r.delay += (want - r.delay) * Math.min(1, dt * (want > r.delay ? 4 : 0.5));
+    const step = (want - r.delay) * Math.min(1, dt * (want > r.delay ? 4 : 0.5)), most = dt * 100;
+    r.delay += Math.max(-most, Math.min(most, step));
     r.rt = now - r.estS - r.delay;
     // forget what is long past
     const b = r.buf;
@@ -234,7 +241,7 @@ export class RemotePlayers {
     if (k) b.splice(0, k);
     return this.at(r, r.rt);
   }
-  at(r, t) {
+  at(r, t, out) {
     const b = r.buf;
     if (!b.length) return null;
     if (t <= b[0].ts) return b[0];
@@ -242,7 +249,7 @@ export class RemotePlayers {
       const a = b[i - 1], c = b[i];
       if (t >= a.ts) {
         if (t >= c.ts) return c;
-        const k = (t - a.ts) / (c.ts - a.ts), o = r.tmp || (r.tmp = {});
+        const k = (t - a.ts) / (c.ts - a.ts), o = out || r.tmp || (r.tmp = {});
         o.x = a.x + (c.x - a.x) * k; o.y = a.y + (c.y - a.y) * k; o.z = a.z + (c.z - a.z) * k;
         o.yaw = a.yaw + wrap(c.yaw - a.yaw) * k; o.pitch = a.pitch + (c.pitch - a.pitch) * k;
         o.f = k < 0.5 ? a.f : c.f;
