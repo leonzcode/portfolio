@@ -84,6 +84,9 @@ export function installParts(sim) {
       { colour, size: 0.08, life: 8 + Math.floor(Math.random() * 8), gravity: 0, physics: false });
   };
   const dustBits = (x, y, z) => particles(x + 0.5, y + 0.6, z + 0.5, 0xff1a1a, 2, 0.6);
+  // a vault gone (broken, blown up, set over by a command) forgets whom it rewarded at once, so one put back
+  // in its place is a new vault (details.js would only notice within the second)
+  if (B.vault !== undefined) sim.on('vault', { removed: (s, x, y, z) => { const D = s.game && s.game.details; if (D) D.broken(x, y, z); } });
 
   /* ------------------------------------------------ block of redstone */
   if (has('redstone_block')) { WEAK[B.redstone_block] = () => 15; SOURCE[B.redstone_block] = 1; }

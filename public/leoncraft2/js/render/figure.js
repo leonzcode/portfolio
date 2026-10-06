@@ -31,6 +31,7 @@
 import { AVATAR_HEAD, AVATAR_VS, ARMOR_OVERLAY } from './avatar.js?v=18';
 import { GLINT, SHEET_W, SHEET_H } from './armor.js?v=18';
 import { setGlint } from './glint.js?v=18';
+import { MobFigure } from './mobfigure.js?v=18';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const MODEL_SCALE = 0.9375 / 16;
@@ -135,6 +136,8 @@ export class Figure {
       uniforms: { uAlbedo: R.U.uAlbedo }, side: THREE.DoubleSide,
     });
     this.items = [null, null]; this.headMesh = null;
+    // a mount's screen draws the animal here instead (mobfigure.js)
+    this.mobFig = new MobFigure(this.scene);
     for (const m of [this.body, this.armor]) { m.frustumCulled = false; m.matrixAutoUpdate = false; this.scene.add(m); }
     // the picture, and reading it back
     this.rt = null; this.w = 0; this.h = 0;
@@ -147,10 +150,10 @@ export class Figure {
 
   /* From the GUI (inventory.drawPlayer): the box, in GUI pixels, and the mouse.
      Draws the last picture there, and asks for a new one. */
-  draw(g, x, y, w, h, mx, my) {
+  draw(g, x, y, w, h, mx, my, mob, size, drop) {
     this.gui = g;
     const s = g.scale || 1, W = Math.round(w * s), H = Math.round(h * s);
-    this.want = { w, h, W, H, mx: mx - (x + w / 2), my: my - (y + h / 2), size: h > 50 ? 30 : 20, s, t: performance.now() };
+    this.want = { w, h, W, H, mx: mx - (x + w / 2), my: my - (y + h / 2), size: size || (h > 50 ? 30 : 20), s, t: performance.now(), mob: mob || null, drop: drop || 0 };
     if (this.shown && this.shown[0] === W && this.shown[1] === H) g.ctx.drawImage(this.canvas, 0, 0, W, H, x, y, w, h);
   }
 
@@ -171,10 +174,14 @@ export class Figure {
     const W = this.want, now = performance.now();
     // nothing on screen asks for it (the screen is closed): nothing to draw
     if (!W || now - W.t > 400 || !state.player || !this.A.ready) return;
-    const mouse = W.mx + ',' + W.my + ',' + W.W + ',' + W.H;
+    const mouse = W.mx + ',' + W.my + ',' + W.W + ',' + W.H + ',' + (W.mob ? W.mob.id : '');
     if (mouse === this.lastMouse && now - this.last < 50) return;
     this.lastMouse = mouse; this.last = now;
-    this.pose(state, W);
+    // a mount's screen: the animal alone
+    const mob = W.mob && !W.mob.removed ? W.mob : null;
+    for (const m of [this.body, this.armor, this.items[0], this.items[1], this.headMesh]) if (m) m.visible = !mob;
+    if (mob) { if (!this.mobFig.posed(mob, state.alpha === undefined ? 0 : state.alpha, W)) return; }
+    else { this.mobFig.hide(); this.pose(state, W); }
     this.render(W.W, W.H);
   }
 

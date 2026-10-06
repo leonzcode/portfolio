@@ -139,15 +139,21 @@ export function potionLines(st) {
   if (!p || !p.effects.length) return ['§7No Effects'];
   const n = ITEMS[st.id].name;
   // a lingering potion's cloud gives a quarter of the time, a tipped arrow an eighth
-  const scale = n === 'lingering_potion' ? 0.25 : n === 'tipped_arrow' ? 0.125 : 1;
+  return effectLines(p.effects, n === 'lingering_potion' ? 0.25 : n === 'tipped_arrow' ? 0.125 : 1);
+}
+/* [effect, level, ticks]... as the game lists them under a potion's name (and a suspicious stew's, in
+   creative): each with its time as 03:00 (01:40:00 past the hour), then what it changes */
+export function effectLines(effects, scale = 1) {
+  const pad = v => String(v).padStart(2, '0');
   const out = [], applied = [];
-  for (const [e, lv, t] of p.effects) {
-    const def = EFFECTS[e], col = def && def.kind === 'good' ? '§9' : '§c';
+  for (const [e, lv, t] of effects) {
+    // blue for the good and the neutral, red for the harmful; no time for one over within a second
+    const def = EFFECTS[e], col = def && def.kind === 'bad' ? '§c' : '§9';
     const nm = effectName(e, lv);
-    if (def && def.instant) out.push(col + nm);
+    if ((def && def.instant) || t <= 20) out.push(col + nm);
     else {
-      const s = Math.floor(Math.max(1, Math.floor(t * scale)) / 20);
-      out.push(col + nm + ' (' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ')');
+      const s = Math.floor(Math.max(1, Math.floor(t * scale)) / 20), m = Math.floor(s / 60);
+      out.push(col + nm + ' (' + (m >= 60 ? pad(Math.floor(m / 60)) + ':' : '') + pad(m % 60) + ':' + pad(s % 60) + ')');
     }
     const a = APPLIED[e];
     if (a) {

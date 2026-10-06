@@ -36,10 +36,10 @@
 --------------------------------------------------------------------------- */
 import { BLOCKS, B } from '../blocks.js?v=18';
 import { Screen, TextField, WHITE } from './gui.js?v=18';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=18';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=18';
 import { matchGrid, consumeGrid } from '../crafting.js?v=18';
 import { enchName, ENCH } from '../enchanting.js?v=18';
-import { isPotion, isTipped, potionName, potionLines, POTIONS } from '../brewing.js?v=18';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=18';
 import { patternLines, drawBannerIcon } from '../banners.js?v=18';
 import { mapLines } from '../maps.js?v=18';
 import { dialPicture, usePicture } from '../dials.js?v=18';
@@ -460,11 +460,13 @@ function hsv(h, s, v) {
 }
 
 // the lines of a stack's tooltip: name, enchantments, what it does in the hand; with advanced
-// tooltips on (F3 + H) the durability and the item's id as well, as in the game
-export function stackTooltip(st, advanced) {
+// tooltips on (F3 + H) the durability and the item's id as well, as in the game; in creative a suspicious
+// stew's effect (only there: in survival you cannot tell what flower went in)
+export function stackTooltip(st, advanced, creative) {
   const it = ITEMS[st.id];
   const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : st.lodestone ? 'Lodestone Compass' : displayName(st.id))];
   if (isPotion(st) || (st.potion && isTipped(st))) lines.push(...potionLines(st));
+  if (creative && st.stew) { const sw = stewEffect(st); if (sw) lines.push(...effectLines([[sw[0], 1, sw[1]]])); }
   const title = n => n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   if (st.trim) lines.push('§7Upgrade:', '§9 ' + title(st.trim[0]) + ' Armor Trim', '§9 ' + title(st.trim[1]) + ' Material');
   // what a shulker box holds: the first five stacks, then how many more
@@ -975,7 +977,7 @@ export class ContainerScreen extends Screen {
     return prev;
   }
   slotStack(s) { return this.getStack(s); }
-  tooltipFor(st) { return stackTooltip(st, this.advancedTips); }
+  tooltipFor(st) { return stackTooltip(st, this.advancedTips, this.inv.mode === 'creative'); }
   get advancedTips() { return !!(this.gui && this.gui.options && this.gui.options.get('advancedTooltips')); }
   // the stack on the mouse, over everything
   drawCarried(g, mx, my, prev) {
@@ -1221,7 +1223,7 @@ export class CreativeInventoryScreen extends ContainerScreen {
     return super.keyPressed(e);
   }
   tooltipFor(st, s) {
-    const lines = stackTooltip(st, this.advancedTips);
+    const lines = stackTooltip(st, this.advancedTips, true);
     if (s && s.kind === 'grid' && this.T.search) {
       const k = creativeItems().tabOf.get(st.id);
       const t = TABS.find(x => x.key === k);

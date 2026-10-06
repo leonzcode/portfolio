@@ -689,6 +689,8 @@ async function boot() {
     renderer.wearer = { inv, cooldown: () => (game && game.entities ? game.entities.combat.cooldown() : 1) };
     // you in the inventory's black box, looking at the mouse (render/figure.js)
     inv.drawPlayer = (g, x, y, w, h, mx, my) => renderer.figure.draw(g, x, y, w, h, mx, my);
+    // and a mount in its own screen (render/mobfigure.js)
+    inv.drawMob = (g, x, y, w, h, mx, my, mob, size, drop) => renderer.figure.draw(g, x, y, w, h, mx, my, mob, size, drop);
     held();
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     loading = null;
@@ -1293,7 +1295,8 @@ async function boot() {
     // the dragon's bar (dim/realms.js), or a wither's (entities/mobs7.js)
     const boss = g.realms.boss || (g.entities && g.entities.boss) || null;
     if ((boss ? boss.progress : -1) !== (hud.boss ? hud.boss.progress : -1)) { hud.boss = boss ? Object.assign({}, boss) : null; hud.markDirty(); }
-    scope(spyglassUp());
+    // (in third person the arm goes up, but the view is not narrowed and there is no glass, as in the game)
+    scope(spyglassUp() && renderer.avatar.view === 0);
     zoomF = scoped ? 0.1 : zoomHeld ? 0.25 : 1;
     /* the card still busy with the frames before: this one is not drawn (see cardBusy). Asked
        here, after the ticks, rather than as the frame starts: the card has had that much longer */
