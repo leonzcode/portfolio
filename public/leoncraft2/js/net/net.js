@@ -46,7 +46,7 @@ import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=19';
 import { glints } from '../render/armor.js?v=19';
 import { containerKind } from '../containers.js?v=19';
 import { getSkinSettings } from '../render/avatar.js?v=19';
-import { RemotePlayers, PlayerList, F } from './players.js?v=19';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=19';
 import { register } from '../commands.js?v=19';
 
 /* ---- who you are, and where the server is ---- */
@@ -131,11 +131,14 @@ function packContainer(c) {
   if (c.kind === 'hopper') o.cd = c.cool;
   return o;
 }
-/* and a sign, frame or campfire's, as details.js saves one */
+/* and a sign, frame, jukebox or campfire's, as details.js saves one (a
+   vault's reward is each player's own, as in the game: not shared) */
 function packDetail(e) {
   if (e.k === 'sign') return { k: 's', p: [e.x, e.y, e.z], f: e.front, b: e.back, w: e.waxed ? 1 : 0 };
   if (e.k === 'frame') return { k: 'f', p: [e.x, e.y, e.z], i: e.item ? stackToJSON(e.item) : null, r: e.rot, gl: e.glow ? 1 : 0 };
-  return { k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total };
+  if (e.k === 'jukebox') return { k: 'j', p: [e.x, e.y, e.z], i: e.disc ? stackToJSON(e.disc) : null, t: e.t | 0 };
+  if (e.k === 'campfire') return { k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total };
+  return undefined;
 }
 
 export class Net {
@@ -173,6 +176,7 @@ export class Net {
     this.outB = [[], [], []];        // blocks to send, per dimension
     this.outC = new Map();           // "d:x,y,z" -> [d, container or null]
     this.outT = new Map();           // "d:x,y,z" -> [d, detail entry or null]
+    this.outFx = [];                 // blocks you broke by hand, for their pieces on the others' screens
     this.applying = false;           // putting in someone else's change: not to be sent back
     this.rtt = 0; this.pings = [];
     this.game = null;
@@ -303,6 +307,7 @@ export class Net {
         return;
       }
       case 'kicked': this.kickReason = m.reason; return;
+      case 'fx': if (this.game && this.game.ready) this.effects(m); return;
       // blocks, chests and signs go in the moment they arrive, not at the next tick: they show a frame sooner
       case 'b': case 'ct': case 'dt': if (this.game && this.game.ready && !this.inbox.length) { this.handle(m); return; } this.inbox.push(m); return;
       default: this.inbox.push(m);
@@ -375,6 +380,45 @@ export class Net {
       const changed = D.changed, broken = D.broken;
       D.changed = function (e) { changed.call(this, e); if (!net.applying && e) net.queueT(e.x, e.y, e.z, e); };
       D.broken = function (x, y, z) { const had = this.map.has(key3(x, y, z)); broken.call(this, x, y, z); if (!net.applying && had) net.queueT(x, y, z, null); };
+      // a disc put in or taken out, food put on a campfire (details.js marks these dirty without changed())
+      const after = (fn, at) => function (...a) {
+        const r = fn.apply(this, a), p = at(a);
+        if (!net.applying && p) { const e = this.map.get(key3(p.x, p.y, p.z)); net.queueT(p.x, p.y, p.z, e && (e.k === 'jukebox' || e.k === 'campfire') ? e : null); }
+        return r;
+      };
+      D.jukebox = after(D.jukebox, a => a[1]);
+      D.campfire = after(D.campfire, a => a[1]);
+      D.ejectDisc = after(D.ejectDisc, a => a[0]);
+      /* A campfire's food is cooked on the machine of the player nearest to
+         it only, who sends what came of it: cooked twice, it would be two
+         pieces of food for one. */
+      const tick = D.tick;
+      D.tick = function () {
+        const away = [], mine = [];
+        for (const e of this.map.values()) {
+          if (e.k !== 'campfire') continue;
+          if (net.ownsAt(e.x, e.z)) mine.push([e, e.items.map(v => (v ? v.id : 0)).join()]);
+          else { away.push([e, e.items, e.t]); e.items = [null, null, null, null]; e.t = e.t.slice(); }
+        }
+        try { tick.call(this); }
+        finally {
+          for (const [e, items, t] of away) { e.items = items; e.t = t; }
+          for (const [e, sig] of mine) if (this.map.get(key3(e.x, e.y, e.z)) === e && e.items.map(v => (v ? v.id : 0)).join() !== sig) net.queueT(e.x, e.y, e.z, e);
+        }
+      };
+    }
+    // a block you break by hand: its pieces fly on the others' screens too, as the game shows them
+    const I = g.inter;
+    if (I && I !== this.hi) {
+      this.hi = I;
+      const onBreak = I.onBreak;
+      I.onBreak = function (x, y, z, b, boxes) {
+        if (onBreak) onBreak.call(this, x, y, z, b, boxes);
+        if (net.closed || !BLOCKS[b] || net.outFx.length >= 64) return;
+        const o = { p: [x, y, z], b: BLOCKS[b].name };
+        if (boxes && boxes.length && boxes.length <= 8) o.x = [].concat(...boxes.map(v => v.slice(0, 6).map(n => Math.round(n * 1000) / 1000)));
+        net.outFx.push(o);
+      };
     }
     const E = g.entities;
     if (E && E !== this.he) {
@@ -415,6 +459,7 @@ export class Net {
     W.rainingFlag = !!this.wx.r; W.thunderingFlag = !!this.wx.th;
     W.clearTime = 0; W.rainTime = 1; W.thunderTime = 1;
   }
+  ownsAt(x, z) { return this.owns({ cx: Math.floor(x / 16), cz: Math.floor(z / 16) }); }
   // whether no other player in this dimension is nearer to a chunk (the lower number wins a tie)
   owns(c) {
     const g = this.game;
@@ -454,8 +499,9 @@ export class Net {
     }
     if (!best) return found;
     const r = best;
-    if (!r.proxy) r.proxy = { remotePlayer: true, id: r.id, get pos() { return r.feet; }, hw: 0.3, w: 0.6, h: 1.8, removed: false, dead: false, customName: r.name, hurt: amount => this.hitPlayer(r, amount) };
-    r.proxy.customName = r.name;
+    // (no customName: their name is drawn over them already, players.js, not a second time as a named mob's)
+    if (!r.proxy) r.proxy = { remotePlayer: true, id: r.id, get pos() { return r.feet; }, hw: 0.3, w: 0.6, h: 1.8, removed: false, dead: false, hurt: amount => this.hitPlayer(r, amount) };
+    r.proxy.name = r.name;
     return r.proxy;
   }
   hitPlayer(r, amount) {
@@ -500,6 +546,7 @@ export class Net {
     this.pending.set('t' + k, { s: this.seq + 1 });
   }
   flush() {
+    if (this.outFx.length) { this.send({ t: 'fx', d: dimCode(this.game.dim), k: 'break', e: this.outFx }); this.outFx = []; }
     if (!this.outC.size && !this.outT.size && !this.outB[0].length && !this.outB[1].length && !this.outB[2].length) return;
     const s = ++this.seq, msgs = [];
     for (let d = 0; d < 3; d++) {
@@ -518,6 +565,7 @@ export class Net {
     this.outC.clear();
     for (const [, [d, x, y, z, e]] of this.outT) {
       const o = e ? packDetail(e) : null, k = key3(x, y, z);
+      if (o === undefined) continue;
       if (o) this.dt[d].set(k, o); else this.dt[d].delete(k);
       msgs.push({ t: 'dt', d, p: [x, y, z], o });
     }
@@ -532,14 +580,19 @@ export class Net {
     const g = this.game, P = g.player, S = this.sent;
     const sv = g.survival, dead = !!(sv && sv.dead);
     const f = (P.sneaking ? F.SNEAK : 0) | (P.sprinting ? F.SPRINT : 0) | (P.flying ? F.FLY : 0) | (P.pose === 'swim' ? F.SWIM : 0) |
-      (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP : 0) | (dead ? F.DEAD : 0);
+      (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP : 0) | (dead ? F.DEAD : 0) | (P.gliding ? F.GLIDE : 0) | (P.riding ? F.RIDE : 0);
     const d = dimCode(g.dim);
     const r4 = v => Math.round(v * 10000) / 10000;
     const x = r4(P.pos.x), y = r4(P.pos.y), z = r4(P.pos.z), yaw = r4(P.yaw), pitch = r4(P.pitch);
-    if (x === S.x && y === S.y && z === S.z && yaw === S.yaw && pitch === S.pitch && f === S.f && d === S.d && stamp - S.at < 1000) return;
-    Object.assign(S, { at: stamp, x, y, z, yaw, pitch, f, d });
+    // what the use button is doing with your hands (render/avatar.js useNow): a bow drawn, food, a shield up
+    const U = this.ctx.renderer.avatar.useNow, k = U ? USE_KINDS.indexOf(U.kind) : -1;
+    const u = k >= 0 ? (k + 1) | ((U.side | 0) ? 16 : 0) : 0, ut = u ? Math.round((U.t || 0) * 10) / 10 : 0, uT = u ? U.total | 0 : 0;
+    if (x === S.x && y === S.y && z === S.z && yaw === S.yaw && pitch === S.pitch && f === S.f && d === S.d && u === S.u && ut === S.ut && stamp - S.at < 1000) return;
+    Object.assign(S, { at: stamp, x, y, z, yaw, pitch, f, d, u, ut });
     this.stats.sentP++;
-    this.send({ t: 'p', ts: Math.round(stamp * 10) / 10, x, y, z, yaw, pitch, f, d });
+    const m = { t: 'p', ts: Math.round(stamp * 10) / 10, x, y, z, yaw, pitch, f, d };
+    if (u) { m.u = u; m.ut = ut; m.uT = uT; }
+    this.send(m);
   }
   sendEquip() {
     const inv = this.game.inv, h = inv.slots[inv.selected], o = inv.offhand;
@@ -583,6 +636,17 @@ export class Net {
       case 'wx': this.wx = { r: !!m.r, th: !!m.th }; this.applyWeather(); return;
       case 'spawn': this.spawn = m.spawn; if (m.spawn) g.spawn = { x: m.spawn.x, z: m.spawn.z }; return;
       case 'hit': this.struck(m); return;
+    }
+  }
+  // another player broke blocks by hand: the pieces, where they are within sight (64 blocks, as the game sends them)
+  effects(m) {
+    const g = this.game, Pa = this.ctx.renderer.particles, P = g.player;
+    if (!Pa || dimCode(g.dim) !== m.d || !Array.isArray(m.e)) return;
+    for (const o of m.e) {
+      const b = o && B[o.b], p = o && o.p;
+      if (b === undefined || !Array.isArray(p) || (p[0] + 0.5 - P.pos.x) ** 2 + (p[1] + 0.5 - P.pos.y) ** 2 + (p[2] + 0.5 - P.pos.z) ** 2 > 64 * 64) continue;
+      const boxes = Array.isArray(o.x) && o.x.length ? Array.from({ length: o.x.length / 6 }, (_, i) => o.x.slice(i * 6, i * 6 + 6)) : null;
+      Pa.blockBreak(p[0], p[1], p[2], b, boxes);
     }
   }
   // put a block in without it counting as yours, and without the simulation reacting to it
@@ -662,9 +726,13 @@ export class Net {
     try {
       const old = D.map.get(k);
       if (!o) { if (old) { D.map.delete(k); D._unshow(old); } return; }
-      const kind = o.k === 's' ? 'sign' : o.k === 'f' ? 'frame' : 'campfire';
+      if (o.k !== 's' && o.k !== 'f' && o.k !== 'j' && o.k !== 'c') return;
+      const kind = o.k === 's' ? 'sign' : o.k === 'f' ? 'frame' : o.k === 'j' ? 'jukebox' : 'campfire';
       const e = D.entry(x, y, z, kind);
-      if (o.k === 's') {
+      if (o.k === 'j') {
+        if (!o.i) { D.map.delete(k); D._unshow(e); return; }
+        e.disc = stackFromJSON(o.i); e.t = o.t | 0;
+      } else if (o.k === 's') {
         const side = v => ({ lines: (v && Array.isArray(v.lines) ? v.lines : []).concat(['', '', '', '']).slice(0, 4).map(String), colour: (v && v.colour) || 'black', glow: !!(v && v.glow) });
         e.front = side(o.f); e.back = side(o.b); e.waxed = !!o.w;
       } else if (o.k === 'f') {
