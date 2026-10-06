@@ -449,6 +449,8 @@ export class Survival {
     if (P.pos.y < (P.voidY ?? -64)) this.hurt(4, 'out_of_world');
     // the head in a solid block
     if (!P.noclip && w && this.inWall(P)) this.hurt(1, 'in_wall');
+    // gliding into a wall (player.js)
+    if (P.wallHit) { this.hurt(P.wallHit, 'fly_into_wall'); P.wallHit = 0; }
     this.breathe(P);
     if (this.dead) return;
     this.tickEffects();

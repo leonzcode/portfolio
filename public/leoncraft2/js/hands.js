@@ -81,6 +81,9 @@ export class Hands {
     this.onToolBreak = null;         // (stack) the breaking sound
     // a tool or a piece of armour that wears out breaks into pieces
     if (this.inv && this.inv.on) this.inv.on('broke', s => this.toolBroke(s));
+    // an elytra worn and not worn out (one point of it left is not enough to fly), for the player's glide
+    if (this.player) this.player.hasElytra = () => { const c = this.inv.armor[1], it = c && ITEMS[c.id]; return !!(it && it.name === 'elytra' && (c.dmg | 0) < (it.dur || 432) - 1); };
+    this.glideT = 0;
     // the screens' sheets, fetched now so a chest never opens on an empty frame
     if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter', 'villager', 'loom', 'cartography_table'])
       this.gui.loadSheet('container/' + n).catch(() => {});
@@ -420,6 +423,10 @@ export class Hands {
   setUsedStack(u, st) { if (u && u.off) this.inv.offhand = st; else this.inv.slots[this.inv.selected] = st; }
   tick() {
     this.mapsTick();
+    // gliding wears the elytra a point a second (never past its last point)
+    if (this.player && this.player.gliding && !this.creative) {
+      if (++this.glideT % 20 === 0) { const c = this.inv.armor[1]; if (c) { c.dmg = Math.min((ITEMS[c.id].dur || 432) - 1, (c.dmg | 0) + 1); this.inv.changed(); } }
+    } else this.glideT = 0;
     const u = this.using;
     if (!u) return;
     const s = this.usedStack(u);
