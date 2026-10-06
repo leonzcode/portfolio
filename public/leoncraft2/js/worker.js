@@ -111,8 +111,9 @@ function handle(m) {
       if (m.decorate) {
         const [x, z] = m.decorate;
         out.push(['d', x, z, writesOf(g, x, z)]);
-        g.protoCache.clear(); g.writeCache.clear();
       }
+      // the last part: the mesher on this ground, then the terrain let go
+      if (m.mesh) { meshPractice(g, m.mesh[0], m.mesh[1]); g.protoCache.clear(); g.writeCache.clear(); }
     } else if (m.terrain && m.terrain.length) g.generate(m.terrain[0][0], m.terrain[0][1]);
     const transfer = [];
     for (const t of out) if (t[0] === 't') transfer.push(t[3].buffer, t[4].buffer);
@@ -173,6 +174,22 @@ function handle(m) {
     // the ground height at a column, for finding somewhere to stand
     self.postMessage({ type: 'surface', id: m.id, y: gen.surfaceAt(m.x, m.z), biome: m.withBiome ? gen.climate(m.x, m.z) : null });
   }
+}
+/* The mesher practised on this kind of ground too (its stone, deepslate,
+   ores and water take paths the title's world never does, and a cold first
+   column took several times as long): the bare terrain round (x, z),
+   meshed once and thrown away. */
+function meshPractice(g, x, z) {
+  const chunks = [], tops = [];
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    const p = g.protoCache.get(ck(x + dx, z + dz));
+    if (!p) return;
+    let top = p.blocks.length / 256 - 1;
+    while (top > 0 && !p.blocks.subarray(top * 256, top * 256 + 256).some(b => b)) top--;
+    chunks.push({ blocks: p.blocks.slice(0, (top + 2) * 256), meta: p.meta.slice(0, (top + 2) * 256), biome: new Uint8Array(256) });
+    tops.push(top);
+  }
+  try { meshColumn({ type: 'mesh', cx: x, cz: z, chunks, tops, version: 0, seed: 0, prev: new Int32Array(0), fast: false, noSky: false, keep: true }); } catch (e) { /* practice only */ }
 }
 // one chunk's feature writes, as [chunk 0..8 round it, Int32Array of cell, value pairs], taken out of the cache
 function writesOf(g, x, z) {

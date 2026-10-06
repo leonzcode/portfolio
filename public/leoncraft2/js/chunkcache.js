@@ -43,13 +43,24 @@ export function keepChunk(world, cx, cz, c, structs) {
   raw.set(c.biome, n * 3);
   write(world + '|' + cx + ',' + cz, raw, n, c.top, structs);
 }
+/* Written a batch at a time, a few times a second: a write holds the store,
+   and a world opening reads from it, so fewer and bigger writes keep those
+   reads from waiting behind a queue of small ones. */
+let batch = [], flushing = null;
 async function write(key, raw, n, top, structs) {
-  const d = await db();
-  if (!d) return;
   try {
     const z = await squeeze(raw, new CompressionStream('deflate'));
-    const tx = d.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put({ z, n, top, s: structs || null }, key);
+    batch.push([key, { z, n, top, s: structs || null }]);
+    if (!flushing) flushing = setTimeout(flush, 400);
+  } catch (e) { /* not kept: made again next time */ }
+}
+async function flush() {
+  const d = await db(), list = batch;
+  batch = []; flushing = null;
+  if (!d || !list.length) return;
+  try {
+    const st = d.transaction(STORE, 'readwrite').objectStore(STORE);
+    for (const [key, rec] of list) st.put(rec, key);
   } catch (e) { /* not kept: made again next time */ }
 }
 // the chunks of a list that are kept, each handed to found(cx, cz, chunk, structs) as it is read; resolves with the ones that are not
