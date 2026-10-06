@@ -502,11 +502,17 @@ export class Net {
         W.clearBySleep = () => {};
       }
       // a bed: the night passes only once everyone in the Overworld is asleep (sim/beds.js)
+      // (as the game counts it: everyone asleep, and each of them for 100 ticks or more, before the night passes)
       S.othersAwake = t => {
         if (!this.players) return false;
-        let n = 1, asleep = 1;
-        for (const r of this.players.list.values()) { const s = r.st; if (!s || s.d !== 0 || (s.f & F.DEAD)) continue; n++; if (s.f & F.SLEEP) asleep++; }
-        if (asleep >= n) return false;
+        let n = 1, asleep = 1, long = true;
+        for (const r of this.players.list.values()) {
+          const s = r.st;
+          if (!s || s.d !== 0 || (s.f & F.DEAD)) continue;
+          n++;
+          if (s.f & F.SLEEP) { asleep++; if (!(s.f & F.SLEPT)) long = false; }
+        }
+        if (asleep >= n && long) return false;
         if (t % 20 === 0 && S.msg) S.msg.show(asleep + '/' + n + ' players sleeping', 30);
         return true;
       };
@@ -642,7 +648,7 @@ export class Net {
     const g = this.game, P = g.player, S = this.sent;
     const sv = g.survival, dead = !!(sv && sv.dead);
     const f = (P.sneaking ? F.SNEAK : 0) | (P.sprinting ? F.SPRINT : 0) | (P.flying ? F.FLY : 0) | (P.pose === 'swim' ? F.SWIM : 0) |
-      (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP : 0) | (dead ? F.DEAD : 0) | (P.gliding ? F.GLIDE : 0) | (P.riding ? F.RIDE : 0);
+      (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP | (g.sim.sleeping.t >= 100 ? F.SLEPT : 0) : 0) | (dead ? F.DEAD : 0) | (P.gliding ? F.GLIDE : 0) | (P.riding ? F.RIDE : 0);
     const d = dimCode(g.dim);
     const r4 = v => Math.round(v * 10000) / 10000;
     const x = r4(P.pos.x), y = r4(P.pos.y), z = r4(P.pos.z), yaw = r4(P.yaw), pitch = r4(P.pitch);
@@ -693,6 +699,8 @@ export class Net {
         const t = m.time + Math.round(this.rtt / 100);
         this.time = t; this.timeAt = performance.now();
         if (Math.abs(g.time - t) > 1) g.time = t;
+        // the night slept through (by whoever's machine got there first): everyone in a bed gets up, as the game wakes them all
+        if (m.wake && g.sim && g.sim.sleeping && g.sim.wake) g.sim.wake(true);
         return;
       }
       case 'wx': this.wx = { r: !!m.r, th: !!m.th }; this.applyWeather(); return;
