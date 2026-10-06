@@ -91,6 +91,8 @@ export class Renderer {
       uChunkFade: { value: 1 }, uCloudFade: { value: new THREE.Vector2(256, 512) },
       // the enchantment glint's speed and strength (Accessibility Settings; render/armor.js GLINT)
       uGlint: { value: new THREE.Vector2(0.5, 0.75) },
+      // Brightness (Video Settings) less its default, for the shader look (glsl.js lightFloor)
+      uBrightD: { value: (this.opts.brightness === undefined ? 0.5 : this.opts.brightness) - 0.5 },
       // the still and flowing water textures (the Shader Options' vanilla water, and Shaders OFF)
       uFlowLayers: { value: new THREE.Vector2(textures.manifest.textures.water_flow ? textures.manifest.textures.water_flow.layer : 0, textures.manifest.textures.lava_flow ? textures.manifest.textures.lava_flow.layer : 0) },
     };

@@ -60,6 +60,7 @@ uniform vec3 cameraPosition;
 uniform vec3 uLightDir;
 uniform float uFrame, uWet;
 uniform float uAO;              // the corners' shade (Shader Options: Ambient Occlusion)
+uniform float uChunkFade;       // a column fading in (Chunk Fade): here a few more of its pixels each frame, the sky behind the rest
 uniform mat3 uFaceRot;
 uniform float uDim;             // 0 the Overworld, 1 the Nether, 2 the End (js/dims.js)
 #define HAS_DIM
@@ -103,6 +104,7 @@ float caustics(vec3 p) {
 }
 
 void main() {
+  if (uChunkFade < 1.0 && ign(gl_FragCoord.xy, uFrame) > uChunkFade) discard;
 #ifdef NORMALMAP
   // which way the block light grows across the screen, taken while every pixel still runs together
   vec2 dBlock = vec2(dFdx(vLight.y), dFdy(vLight.y));
@@ -229,7 +231,7 @@ void main() {
     amb = uDimAmb * ao * (uDim < 1.5 ? 1.0 : 0.3 + 0.7 * skyAmt);
   }
   vec3 blockL = block > 0.0 ? blockLight(block, uDim > 0.5 ? 0.0 : skyAmt * sat(lum(sunC) * 0.3)) * ao : vec3(0.0);
-  vec3 minimum = vec3(0.0035, 0.004, 0.006) * ao;
+  vec3 minimum = lightFloor() * ao;
   vec3 col = albedo / PI * (diffuse * PI * (metal ? 0.25 : 1.0) + amb + blockL + minimum);
 
   // specular from the sun
@@ -352,7 +354,7 @@ void main() {
   fogTerms(world.xyz, keep, add);
   // Chunk Fade: a column just come into the world fades in from the fog's colour
   if (uChunkFade < 1.0) { keep *= uChunkFade; add = mix(fogColour(normalize(world.xyz - cameraPosition)) * uExpo, add, uChunkFade); }
-  vAmb = (amb + blockL + vec3(0.0035, 0.004, 0.006) * ao) / PI * keep;
+  vAmb = (amb + blockL + lightFloor() * ao) / PI * keep;
   vFog = vec4(add, mat.g > 0.0 ? 6.0 * dot(keep, vec3(1.0 / 3.0)) : 0.0);
   // how much of the sun the face takes: its angle to the light (a plant's from straight up, softened,
   // the same from either side) and the glow. A face is flat, so this is the same all over it

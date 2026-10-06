@@ -60,7 +60,8 @@ export class VideoSettings {
     this.filtering();
     this.normals();
     this.R.U.uGlint.value.set(this.o.get('glintSpeed'), this.o.get('glintStrength'));
-    gui.lowEnd = !this.shadersOn();
+    // no blur behind the menus only with no graphics chip at all (Menu Background Blur works with or without shaders)
+    gui.lowEnd = !this.guessed;
     // "Saving world", bottom right, as the game shows it when it saves by itself
     gui.overlays.push(this.saveOverlay = {
       video: this,
@@ -80,7 +81,6 @@ export class VideoSettings {
   }
   relook() {
     this.R.setLook(this.look());
-    this.gui.lowEnd = !this.shadersOn();
     this.normals();
   }
 
@@ -100,6 +100,7 @@ export class VideoSettings {
       case 'cloudDistance': R.opts.cloudDist = v; break;
       case 'weatherRadius': R.opts.weatherRadius = v; break;
       case 'chunkFade': R.opts.chunkFade = v; break;
+      case 'brightness': R.U.uBrightD.value = v - 0.5; break;
       case 'particles': particleSetting.level = v; break;
       case 'glintSpeed': case 'glintStrength': R.U.uGlint.value.set(this.o.get('glintSpeed'), this.o.get('glintStrength')); break;
       case 'cutoutLeaves': case 'smoothLighting': case 'biomeBlend': case 'chunkBuilder':
