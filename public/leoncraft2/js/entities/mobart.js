@@ -386,20 +386,31 @@ const EXTRA = [];
 // more textures (entities/mobart2.js and later files) register here before the atlas is drawn
 export function addArt(name, size, fn) { SIZES[name] = size; ART[name] = fn; EXTRA.push(name); }
 
-export function buildAtlas() {
-  // every atlas (one per dimension visited) is packed from its first slot, or later ones run off the edge
+/* Painting every mob takes a fifth of a second, and it comes out the same
+   each time: so it is painted once a visit (paintAtlas, called while a
+   loading screen waits) and each atlas after (one per world and dimension,
+   drawn on by armour layers) is a copy of those pixels. */
+let painted = null;                // { n: how many textures, img }
+function paintAtlas() {
+  // every atlas is packed from its first slot, or later ones run off the edge
   nextSlot = 0;
-  const c = document.createElement('canvas');
-  c.width = c.height = ATLAS;
-  const g = c.getContext('2d');
-  const img = g.createImageData(ATLAS, ATLAS);
+  const n = Object.keys(SIZES).length;
+  const img = new ImageData(ATLAS, ATLAS);
   let seed = 1;
   for (const name in SIZES) {
     const [w, h] = SIZES[name];
     const [x, y] = slot(name, w, h);
     try { ART[name](new Painter(img, x, y, 0x9e3779b1 ^ (seed++ * 2654435761))); } catch (e) { console.error('mob art', name, e); }
   }
-  g.putImageData(img, 0, 0);
+  painted = { n, img };
+  return painted;
+}
+export function primeAtlas() { if (!painted || painted.n !== Object.keys(SIZES).length) paintAtlas(); }
+export function buildAtlas() {
+  primeAtlas();
+  const c = document.createElement('canvas');
+  c.width = c.height = ATLAS;
+  c.getContext('2d').putImageData(painted.img, 0, 0);
   return c;
 }
 
