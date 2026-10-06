@@ -578,13 +578,11 @@ async function boot() {
         g.sim.dispose();
       }
       const keep = (g.dimKeep && g.dimKeep[d]) || first || {};
-      performance.mark('lc2-a-drops'); // TMPMARK
       const drops = new Drops(w, renderer);
       renderer.scene.add(drops.group);
       if (keep.drops) drops.fromJSON(keep.drops);
       const containers = new Containers(w);
       if (!isNew || g.partsDim) { try { const c = await g.saves[d].readExtra('containers'); if (c) containers.fromJSON(c); } catch (e) {} }
-      performance.mark('lc2-a-ents0'); // TMPMARK
       const entities = new Entities({ world: w, player, inv, survival, renderer, options, mode: g.mode, fluids: fl,
         hooks: { time: () => game ? game.time : 6000, onSplash: (x, z, s) => renderer.inter.splash(x, z, s, 2.0), spawnPoint: () => game && game.spawn,
           // what mobs drop goes through the items (drops.js): things on the ground, orbs of experience
@@ -594,15 +592,12 @@ async function boot() {
           // screens and spilled stacks (a chest boat's chest)
           hands } });
       entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));
-      performance.mark('lc2-a-ents'); // TMPMARK
       renderer.scene.add(entities.group);
-      performance.mark('lc2-a-sim0'); // TMPMARK
       const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
       if (keep.sim) sim.fromJSON(keep.sim);
       // sign text and the food on campfires (details.js)
       const details = new Details({ world: w, drops, renderer, gui });
       if (!isNew || g.partsDim) { try { const dd = await g.saves[d].readExtra('details'); if (dd) details.fromJSON(dd); } catch (e) {} }
-      performance.mark('lc2-a-details'); // TMPMARK
       details.showAll();
       details.onEdit = (x, y, z, front) => editSign(x, y, z, front);
       details.creative = () => !!(game && game.mode === 'creative');
