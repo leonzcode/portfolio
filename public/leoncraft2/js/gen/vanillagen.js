@@ -23,10 +23,10 @@ import { VDATA } from './vdata.js?v=16';
 import { DensityState, Compiler, tri, children } from './density.js?v=16';
 import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=16';
 import { Xoroshiro } from './random.js?v=16';
-import { B } from '../blocks.js?v=16';
+import { B, BLOCKS } from '../blocks.js?v=16';
 import { BIO, BIOMES } from '../biomes.js?v=16';
 import { H, Y0, VOL } from '../world-const.js?v=16';
-import { Decorator } from './features.js?v=16';
+import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf } from './features.js?v=16';
 import { Carvers } from './carvers.js?v=16';
 import { stateOf } from './states.js?v=16';
 import './trees.js?v=16';
@@ -216,6 +216,46 @@ function makeBands(r) {
   return bands;
 }
 
+/* ======================================================== a chunk view ==
+   One finished chunk seen as the features see their region (get, meta,
+   set, height, biome), for what is done once a chunk is put together: the
+   plants' check and the snow. Blocks beyond the chunk are read from the
+   neighbours' terrain (water beside sugar cane, a block beside a cactus). */
+class ChunkView {
+  constructor(gen, blocks, meta, cx, cz, grid) {
+    this.gen = gen; this.blocks = blocks; this.m = meta; this.cx = cx; this.cz = cz; this.grid = grid;
+    this.x0 = cx * 16; this.z0 = cz * 16;
+  }
+  index(x, y, z) { return ((y - MIN_Y) << 8) | ((z - this.z0) << 4) | (x - this.x0); }
+  mine(x, z) { return x >= this.x0 && x < this.x0 + 16 && z >= this.z0 && z < this.z0 + 16; }
+  get(x, y, z) {
+    if (y < MIN_Y || y >= MIN_Y + H) return 0;
+    if (this.mine(x, z)) return this.blocks[this.index(x, y, z)];
+    return this.gen.proto(Math.floor(x / 16), Math.floor(z / 16)).blocks[((y - MIN_Y) << 8) | ((z & 15) << 4) | (x & 15)];
+  }
+  meta(x, y, z) {
+    if (y < MIN_Y || y >= MIN_Y + H) return 0;
+    if (this.mine(x, z)) return this.m[this.index(x, y, z)];
+    return this.gen.proto(Math.floor(x / 16), Math.floor(z / 16)).meta[((y - MIN_Y) << 8) | ((z & 15) << 4) | (x & 15)];
+  }
+  set(x, y, z, id, meta = 0) {
+    if (y < MIN_Y || y >= MIN_Y + H || !this.mine(x, z)) return false;
+    const i = this.index(x, y, z);
+    this.blocks[i] = id; this.m[i] = meta;
+    return true;
+  }
+  // only MOTION_BLOCKING is asked for (by the snow): the first free y above anything solid or wet
+  height(type, x, z) {
+    const col = ((z - this.z0) << 4) | (x - this.x0);
+    for (let iy = H - 1; iy >= 0; iy--) {
+      const b = this.blocks[(iy << 8) | col];
+      if (b && ((BLOCKS[b].solid && b !== B.cobweb) || fluidOf(b))) return iy + MIN_Y + 1;
+    }
+    return MIN_Y;
+  }
+  biome(x, y, z) { return this.gen.gridBiome(this.grid, x, y, z); }
+}
+
 /* ===================================================== the generator == */
 export class VanillaGen {
   constructor(seed) {
@@ -389,15 +429,28 @@ export class VanillaGen {
   generate(cx, cz) {
     const p = this.proto(cx, cz);
     const blocks = p.blocks.slice(), meta = p.meta.slice();
+    const x0 = cx * 16, z0 = cz * 16, grid = p.grid;
     if (this.decorator.features) {
+      // the nine chunks' writes; where two write one block the sturdier stays (see writeRank)
+      const owner = this._owner || (this._owner = new Uint8Array(VOL));
+      owner.fill(0);
+      const touched = [];
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
         const w = this.writes(cx + dx, cz + dz);
         const mine = w.get((cz - (cz + dz) + 1) * 3 + (cx - (cx + dx) + 1));
         if (!mine) continue;
-        for (let k = 0; k < mine.length; k += 2) { const i = mine[k], v = mine[k + 1]; blocks[i] = v >> 8; meta[i] = v & 255; }
+        for (let k = 0; k < mine.length; k += 2) {
+          const i = mine[k], v = mine[k + 1], id = v >> 8;
+          if (!owner[i]) { owner[i] = 1; touched.push(i); }
+          else if (writeRank(id) < writeRank(blocks[i])) continue;
+          blocks[i] = id; meta[i] = v & 255;
+        }
       }
+      const view = new ChunkView(this, blocks, meta, cx, cz, grid);
+      this.settle(view, touched);
+      // snow and ice last, over whatever every chunk's features left on top
+      FEATURES.freeze_top_layer({ region: view }, null, null, x0, MIN_Y, z0);
     }
-    const x0 = cx * 16, z0 = cz * 16, grid = p.grid;
     // each column's biome, where it shows: at its top block
     const biome = new Uint8Array(256);
     for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
@@ -408,6 +461,29 @@ export class VanillaGen {
     let top = 0;
     for (let i = VOL - 1; i >= 0; i--) if (blocks[i]) { top = i >> 8; break; }
     return { blocks, meta, biome, top };
+  }
+  /* Every plant a feature put down (or that stands on a block a feature
+     changed) that has lost what it needs, taken away: back to air, or to
+     water for the ones that grow in it. Bottom up, so a tall plant's top
+     goes with its bottom. */
+  settle(view, touched) {
+    const blocks = view.blocks, meta = view.m;
+    const look = this._look || (this._look = new Uint8Array(VOL));
+    let lo = VOL, hi = -1;
+    for (const i of touched) {
+      look[i] = 1; if (i < lo) lo = i; if (i > hi) hi = i;
+      if (i + 256 < VOL) { look[i + 256] = 1; if (i + 256 > hi) hi = i + 256; }
+    }
+    for (let i = lo; i <= hi; i++) {
+      if (!look[i]) continue;
+      look[i] = 0;
+      const b = blocks[i], kind = isGroundPlant(b);
+      if (!kind) continue;
+      const x = view.x0 + (i & 15), z = view.z0 + ((i >> 4) & 15), y = (i >> 8) + MIN_Y;
+      if (plantHolds(view, b, meta[i], x, y, z)) continue;
+      blocks[i] = kind === 2 ? B.water : 0; meta[i] = 0;
+      if (i + 256 < VOL) { look[i + 256] = 1; if (i + 256 > hi) hi = i + 256; }
+    }
   }
   // a chunk's feature writes, by the chunk they land in (0..8 around it)
   writes(cx, cz) {
