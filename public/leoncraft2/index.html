@@ -5,6 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Leoncraft 2</title>
+<!-- asked for at once rather than one after another: the game's code beside three.js, and the
+     textures while the code loads (main.js asks for the same addresses, stamps and all) -->
+<link rel="modulepreload" href="../legacy/vendor/three-0.163.0.module.js">
+<link rel="modulepreload" href="js/main.js?v=16">
+<link rel="preload" href="textures/manifest.json?v=16" as="fetch" crossorigin>
+<link rel="preload" href="textures/terrain_albedo.png?v=16" as="fetch" crossorigin>
+<link rel="preload" href="textures/items.png?v=16" as="fetch" crossorigin>
+<link rel="preload" href="textures/colormap_grass.png?v=16" as="image">
+<link rel="preload" href="textures/colormap_foliage.png?v=16" as="image">
+<script>
+  // Detailed graphics also reads the material map: asked for now too, unless Fast is chosen
+  try {
+    const o = JSON.parse(localStorage.getItem('lc2_options') || 'null') || {}, q = new URLSearchParams(location.search).get('q') || o.quality;
+    if (q !== 'fast' && q !== 'potato') {
+      const l = document.createElement('link');
+      l.rel = 'preload'; l.as = 'fetch'; l.crossOrigin = 'anonymous'; l.href = 'textures/terrain_spec.png?v=16';
+      document.head.appendChild(l);
+    }
+  } catch (e) { /* main.js asks for it in any case */ }
+</script>
 <style>
   [hidden] { display: none !important; }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }

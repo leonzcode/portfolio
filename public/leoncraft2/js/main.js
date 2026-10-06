@@ -52,6 +52,7 @@ import { Hands } from './hands.js?v=16';
 import { setLayerPixels } from './render/blockmesh.js?v=16';
 import { Entities } from './entities/manager.js?v=16';
 import { EntityStore } from './entities/store.js?v=16';
+import { primeAtlas } from './entities/mobart.js?v=16';
 import { Sim } from './sim/sim.js?v=16';
 import { DIMS } from './dims.js?v=16';
 import { Realms } from './dim/realms.js?v=16';
@@ -396,6 +397,7 @@ async function boot() {
       onMesh: (cx, cz, mesh, urgent) => { if (rendererUp) renderer.setColumn(cx, cz, mesh, urgent); else early.set(cx + ',' + cz, [cx, cz, mesh]); },
       onDrop: (cx, cz) => { if (rendererUp) renderer.dropColumn(cx, cz); else early.delete(cx + ',' + cz); },
     });
+    world.allHands = true;            // nothing is ever edited in it: every worker makes it
     await world.ready;
     // the title's world stands in the same place every visit: found once, then remembered
     const K = 'lc2_menu_at', V = TEX_V + '|' + seed;
@@ -456,30 +458,31 @@ async function boot() {
   async function startGame(entry, isNew) {
     loading = { text: 'Loading terrain...', progress: 0, chunks: [] };
     gui.setRoot(new LoadingScreen());
+    // the mobs' pictures painted while the workers make the ground, not after (entities/mobart.js)
+    setTimeout(primeAtlas, 100);
     const save = new Save(entry.id);
-    await save.init();
     const st = isNew ? null : save.readState();
     // the dimension you were in, and a save of its own for each (js/dims.js)
     const dim = st && st.dimension && DIMS[st.dimension] ? st.dimension : 'overworld';
     const saves = { overworld: save, the_nether: new Save(entry.id + DIMS.the_nether.suffix), the_end: new Save(entry.id + DIMS.the_end.suffix) };
-    await saves.the_nether.init(); await saves.the_end.init();
-    const edits = isNew ? new Map() : await saves[dim].loadEdits();
     let world;
     const generator = entry.generator === 'vanilla' ? 'vanilla' : 'classic';
     const seed = worldSeed(entry);
-    if (menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim) {
-      // the title screen's world is this one: keep what is already made
-      world = menu.world;
-      world.adoptEdits(edits, saves[dim]);
-    } else {
+    // the title screen's world is this one: keep what is already made
+    const reuse = menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim;
+    if (!reuse) {
+      // made at once, so the workers set up its generator while what changed in it is read
       if (menu) dropWorld(menu.world);
       world = new World({
-        seed, generator, dim, renderDist: RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save: saves[dim],
+        seed, generator, dim, renderDist: RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits: new Map(), save: saves[dim],
         onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
         onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
       });
-      await world.ready;
     }
+    await Promise.all([save.init(), saves.the_nether.init(), saves.the_end.init()]);
+    const edits = isNew ? new Map() : await saves[dim].loadEdits();
+    if (reuse) { world = menu.world; world.adoptEdits(edits, saves[dim]); }
+    else { world.edits = edits; await world.ready; }
     menu = null;
     world.renderDist = RD;
     const spawn = st && st.spawn ? st.spawn : (entry.spawn || (dim === 'overworld' ? await findSpawn(world) : { x: 0, z: 0 }));
@@ -666,28 +669,33 @@ async function boot() {
     gui.open(screen);
   }
   /* Wait for the ground round (cx, cz) to be made and drawn, showing it on
-     the loading screen. As in the game, only a small area: the chunk you
-     stand in and the eight round it (everything you could reach or fall
-     into in the first moments); the rest comes in, nearest first, while you
-     play. Checked every frame, so you are in the moment it is there. */
-  function waitGround(world, cx, cz) {
+     the loading screen. As in the game, which lets you in once the section
+     you stand in is built: the chunk you stand in drawn, the eight round it
+     made (so there is ground to stand and walk on); the rest comes in,
+     nearest first, while you play. Checked every frame, so you are in the
+     moment it is there. wide: the eight round it drawn too, so everything
+     within two chunks is made (looking for somewhere to put a portal). */
+  function waitGround(world, cx, cz, wide) {
+    // nothing can be edited yet: the worker kept for edits helps make the ground, and only it is made
+    world.allHands = true;
+    world.focus = wide ? 2 : 1; world.sched = true;
     return new Promise(res => {
       const t0 = performance.now();
       const wait = () => {
         world.update(cx, cz);
         world.flush();
         renderer.pumpUploads(8);
-        let meshed = 0, need = 0;
         const pcx = Math.floor(cx / 16), pcz = Math.floor(cz / 16), ch = [];
-        for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) ch.push([dx, dz, world.stateAt(pcx + dx, pcz + dz)]);
+        let drawn = true;
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+          if (!wide && (dx || dz)) continue;
           const c = world.chunks.get((pcx + dx) + ',' + (pcz + dz));
-          const mine = Math.abs(dx) <= 1 && Math.abs(dz) <= 1;
-          if (mine) { need++; if (c && c.meshed) meshed++; }
-          ch.push([dx, dz, c ? (c.meshed ? 7 : 4) : world.inFlight.has('g' + (pcx + dx) + ',' + (pcz + dz)) ? 1 : 0]);
+          if (!c || !c.meshed) drawn = false;
         }
-        if (loading) { loading.progress = meshed / need; loading.chunks = ch; }
+        if (loading) { loading.progress = drawn ? 1 : world.readiness(pcx, pcz); loading.chunks = ch; }
         gui.markDirty();
-        if (meshed >= need || performance.now() - t0 > 60000) res(); else setTimeout(wait, 16);
+        if (drawn || performance.now() - t0 > 60000) { world.allHands = false; world.focus = -1; world.sched = true; res(); } else setTimeout(wait, 16);
       };
       wait();
     });
@@ -717,13 +725,14 @@ async function boot() {
       if (dim !== g.dim) {
         dropWorld(g.world);
         const save = g.saves[dim];
-        const edits = await save.loadEdits();
+        // made first, so the workers set up its generator while what changed there is read
         world = new World({
           seed: worldSeed(g.entry), generator: g.entry.generator === 'vanilla' ? 'vanilla' : 'classic', dim,
-          renderDist: renderer.opts.renderDist || RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits, save,
+          renderDist: renderer.opts.renderDist || RD, manifest, colours, fastLeaves: !!QP.fastLeaves, edits: new Map(), save,
           onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
           onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
         });
+        world.edits = await save.loadEdits();
         await world.ready;
         g.world = world; g.dim = dim;
         g.player.w = world; g.inter.world = world;
@@ -734,7 +743,7 @@ async function boot() {
         await g.attach(world, g.fluids, dim);
         g.realms.entered();
       }
-      await waitGround(world, near.x, near.z);
+      await waitGround(world, near.x, near.z, true);
       const pos = await resolve(world);
       if (pos) {
         if (Math.hypot(pos.x - near.x, pos.z - near.z) > 24) await waitGround(world, pos.x, pos.z);

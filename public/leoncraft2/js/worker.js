@@ -31,6 +31,7 @@ const needsG = m => m.dim === 'the_nether' || m.dim === 'the_end' || m.generator
 
 let gen = null, structs = null;
 let cacheKey = null;          // where this world's chunks are kept between visits (chunkcache.js), or null
+let tag = 0;                  // the World this worker serves (world.js), sent back with chunks read back later
 // a generator made ahead, while the player was in the menus, for the world most likely to be opened next
 let spare = null;
 let resolved = null;
@@ -72,20 +73,21 @@ function handle(m) {
     if (spare && spare.name === nameOf(m)) { gen = spare.gen; structs = spare.structs; }
     else { const s = make(m); gen = s.gen; structs = s.structs; }
     spare = null;
-    cacheKey = m.cache || null;
+    cacheKey = m.cache || null; tag = m.tag || 0;
     self.postMessage({ type: 'ready', staged: staged(gen), features: staged(gen) && !!gen.decorator.features });
     return;
   }
   if (m.type === 'idle') {
     // back in the pool: let the last world's generator and everything it kept go
-    gen = null; structs = null; cacheKey = null;
+    gen = null; structs = null; cacheKey = null; tag = 0;
     return;
   }
   if (m.type === 'lookup') {
     // the chunks of the list kept from before, sent as if just made; then the ones still to make
+    const t = tag;
     readChunks(cacheKey, m.list, (cx, cz, c, s) => {
-      self.postMessage({ type: 'gen', cached: true, cx, cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: s }, [c.blocks.buffer, c.meta.buffer, c.biome.buffer]);
-    }).then(missing => self.postMessage({ type: 'looked', missing, asked: m.list.length }));
+      self.postMessage({ type: 'gen', cached: true, tag: t, cx, cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: s }, [c.blocks.buffer, c.meta.buffer, c.biome.buffer]);
+    }).then(missing => self.postMessage({ type: 'looked', tag: t, missing }));
     return;
   }
   if (m.type === 'sweep') { sweepChunks(m.prefix, m.limit); return; }
@@ -93,18 +95,20 @@ function handle(m) {
     /* Practice, in the menus: the generator for the world most likely to be
        opened next is made now, and its first chunks' terrain and features
        done once, so its code is compiled and fast by the time that world (or
-       any other) is opened. What it made is handed back to be kept. */
+       any other) is opened. It comes a few chunks at a time (world.js), so a
+       world opened meanwhile never waits long behind it. What it made is
+       handed back to be kept; the terrain stays here too, for the features. */
     prepare(m);
     if (!spare || spare.name !== nameOf(m)) spare = make(m);
     const g = spare.gen, out = [];
     if (staged(g)) {
       for (const [x, z] of m.terrain || []) {
-        const p = g.terrain(x, z);
-        out.push(['t', x, z, p.blocks, p.meta, p.grid]);
+        const k = ck(x, z);
+        const p = g.protoCache.get(k) || g.terrain(x, z);
+        g.protoCache.set(k, p);
+        out.push(['t', x, z, p.blocks.slice(), p.meta.slice(), p.grid]);
       }
       if (m.decorate) {
-        // its own terrain round the chunk to decorate, kept only for this
-        for (const t of out) g.protoCache.set(ck(t[1], t[2]), { blocks: t[3], meta: t[4], grid: t[5], cx: t[1], cz: t[2] });
         const [x, z] = m.decorate;
         out.push(['d', x, z, writesOf(g, x, z)]);
         g.protoCache.clear(); g.writeCache.clear();
