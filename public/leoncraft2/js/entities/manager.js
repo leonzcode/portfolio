@@ -36,7 +36,9 @@ import { FALLS, free } from './fallingblock.js?v=16';
 import { Spawner, DESPAWN } from './spawner.js?v=16';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=16';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=16';
+import { armorLayers } from './armorlayer.js?v=16';
 import { EntityMeshes } from '../render/entitymesh.js?v=16';
+import { MobHeld } from '../render/mobheld.js?v=16';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=16';
 import { breakAt } from '../place.js?v=16';
 import { dropOf } from '../survival.js?v=16';
@@ -818,6 +820,9 @@ export class Entities {
     if (this.riding) this.rideFrame(alpha);
     const M = this.meshes;
     M.begin();
+    // what mobs hold (render/mobheld.js): one set for the renderer, whichever world is drawn
+    const held = this.R.mobHeld || (this.R.mobHeld = new MobHeld(this.R));
+    held.begin();
     const cam = this.R.camera;
     this.pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.pm);
@@ -843,6 +848,7 @@ export class Entities {
     }
     this.particlesP.draw(M, alpha);
     M.end();
+    held.end();
   }
   shadowOf(e, x, y, z, r) {
     const T = this.t;
@@ -919,20 +925,23 @@ export class Entities {
       else { m.setPosition(P[o], 24 - P[o + 1], -P[o + 2]); m.premultiply(root); }
       M.setBone(bone + i, m);
     }
+    // what it holds, in its hands
+    if (e.equip && (e.equip.mainhand || e.equip.offhand || e.equip.head)) this.R.mobHeld.hold(e, mdl, mats, e.lS, e.lB);
     const slot = SLOTS[e.texName ? e.texName() : c.TEX] || [0, 0];
     const white = A.swell > 0 ? (Math.floor(A.swell * 10) % 2 ? Math.max(0.5, Math.min(1, A.swell)) * 0.7 : 0) : 0;
     const hurt = e.hurtTime > 0 || (living && e.dead) ? 1 : 0;
     const tint = e.tint ? e.tint() : 0xffffff;
     M.add(M.model(name, mdl), bone, slot[0], slot[1], e.lS, e.lB, hurt, white, ((tint >> 16) & 255) / 255, ((tint >> 8) & 255) / 255, (tint & 255) / 255);
-    // layers on the same bones: wool, saddles, armour
+    // layers on the same bones: wool, saddles, armour ([model, texture, colour, glint, no hurt flash])
     const L = this.layerList; L.length = 0;
     if (e.layers) e.layers(L);
-    for (const [ln, lt, col] of L) {
+    if (e.equip) armorLayers(this, e, name, L);
+    for (const [ln, lt, col, glint, steady] of L) {
       const lm = MODELS[ln];
       if (!lm) continue;
       const ls = SLOTS[lt] || slot;
       const cc = col === null || col === undefined ? 0xffffff : col;
-      M.add(M.model(ln, lm), bone, ls[0], ls[1], e.lS, e.lB, hurt, white, ((cc >> 16) & 255) / 255, ((cc >> 8) & 255) / 255, (cc & 255) / 255);
+      M.add(M.model(ln, lm), bone, ls[0], ls[1], e.lS, e.lB, steady ? 0 : hurt, white, ((cc >> 16) & 255) / 255, ((cc >> 8) & 255) / 255, (cc & 255) / 255, glint ? 1 : 0);
     }
   }
   v3(s) { return (this._v3 || (this._v3 = new THREE.Vector3())).set(s, s, s); }

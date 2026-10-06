@@ -970,7 +970,7 @@ register('strider', Strider);
 =========================================================================== */
 export class WitherSkeleton extends Skeleton {
   static W = 0.7; static H = 2.4; static HEALTH = 20; static SPEED = 0.25; static ATTACK = 4; static FIRE_IMMUNE = true;
-  static TEX = 'wither_skeleton'; static SCALE = 1.2; static SHADOW = 0.6;
+  static TEX = 'wither_skeleton'; static SCALE = 1.2; static SHADOW = 0.6; static SPAWN_ARMOR = false;
   constructor(m, type) { super(m, type); this.equip.mainhand = 'stone_sword'; this.attackDamage = 8; }
   get eyeH() { return 2.1; }
   registerGoals() {

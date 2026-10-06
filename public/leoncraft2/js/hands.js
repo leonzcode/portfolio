@@ -409,14 +409,23 @@ export class Hands {
     const dx = -Math.sin(p.yaw), dz = -Math.cos(p.yaw);
     if (this.drops.crumbs) this.drops.crumbs(p.pos.x + dx * 0.35, p.pos.y + 1.45, p.pos.z + dz * 0.35, id, 5, dx, dz);
   }
-  // the held item moves to the mouth and bobs while eating (an offset for the hand's sway)
+  /* The walking bob for the hands, with what the use button is doing with
+     them (render/held.js moves the hand for it): eating or drinking here, a
+     bow, crossbow, trident or shield in combat/combat.js. use: { kind, side
+     (0 main hand, 1 off), t (ticks so far), total }, or null. */
   handBob(bob) {
-    const u = this.using;
-    if (!u || u.off) { const cb = this.inter && this.inter.entities && this.inter.entities.combat; return cb ? cb.handPose(bob, this.alpha || 0) : bob; }
-    const t = u.t + (this.alpha || 0), k = Math.min(1, t / 6);
-    const out = this._bob || (this._bob = { x: 0, y: 0 });
-    out.x = (bob ? bob.x : 0) - 0.42 * k;
-    out.y = (bob ? bob.y : 0) + 0.2 * k + (t > 6 ? Math.abs(Math.cos(t / 4 * Math.PI)) * 0.06 : 0);
+    const u = this.using, a = this.alpha || 0;
+    const out = this._bob || (this._bob = { x: 0, y: 0, rz: 0, rx: 0, use: null }), U = this._use || (this._use = {});
+    out.x = bob ? bob.x : 0; out.y = bob ? bob.y : 0; out.rz = bob && bob.rz || 0; out.rx = bob && bob.rx || 0;
+    out.use = null;
+    if (u) {
+      const food = ITEMS[u.id] && ITEMS[u.id].food;
+      U.kind = food && food.drink ? 'drink' : 'eat'; U.side = u.off ? 1 : 0; U.t = u.t + a; U.total = u.total;
+      out.use = U;
+    } else {
+      const cb = this.inter && this.inter.entities && this.inter.entities.combat;
+      if (cb && cb.useState) out.use = cb.useState(a);
+    }
     return out;
   }
 

@@ -551,6 +551,10 @@ async function boot() {
     hud = new Hud(inv, icons);
     gui.hud = hud;
     inv.on('held', id => renderer.setHeld(id, DRAW));
+    // the off hand and the armour are read from here; the hand dips with the attack cooldown
+    renderer.wearer = { inv, cooldown: () => (game && game.entities ? game.entities.combat.cooldown() : 1) };
+    // you in the inventory's black box, looking at the mouse (render/figure.js)
+    inv.drawPlayer = (g, x, y, w, h, mx, my) => renderer.figure.draw(g, x, y, w, h, mx, my);
     held();
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     loading = null;

@@ -21,12 +21,16 @@ import { makeMaterials, makeLayerInfo, bakeLayerMaterials } from './materials.js
 import { makeWaterMaterial } from './water.js?v=16';
 import { makeNoise2D, makeNoise3D } from './noisetex.js?v=16';
 import { makeLdrSky } from './ldrsky.js?v=16';
-import { blockGeometry } from './blockmesh.js?v=16';
 import { Avatar } from './avatar.js?v=16';
+import { Held } from './held.js?v=16';
+import { Figure } from './figure.js?v=16';
+import { PumpkinView } from './pumpkin.js?v=16';
+import { glints, pieceLook } from './armor.js?v=16';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=16';
+import { dimLook } from '../dim/look.js?v=16';
+import { blockGeometry } from './blockmesh.js?v=16';
 import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=16';
 import { ShadowMaps } from './shadows.js?v=16';
-import { dimLook } from '../dim/look.js?v=16';
 import { makeToneLut } from './glsl.js?v=16';
 const THREE = window.THREE;
 // one black pixel, for a texture that is made later
@@ -114,8 +118,15 @@ export class Renderer {
     this.hand = new THREE.Group();
     this.handScene.add(this.hand);
     this.swing = 0;
-    // the player's own model: third person, its shadow, and the bare arm in first person
+    // the player's own model: third person, its shadow, its armour, and the arms in first person
     this.avatar = new Avatar(this);
+    // what is in your hands in first person (held.js); main.js sets this.wearer = { inv, cooldown }
+    this.held = new Held(this);
+    // you in the inventory screen (figure.js): main.js gives it to the inventory as drawPlayer
+    this.figure = new Figure(this);
+    this.wearer = null;
+    // the view out of a carved pumpkin worn on the head (pumpkin.js)
+    this.pumpkin = new PumpkinView(this.r.domElement);
     this.columns = new Map();
     this.frame = 0;
     this.resize(canvas.clientWidth || 1280, canvas.clientHeight || 720);
@@ -397,10 +408,11 @@ export class Renderer {
     this.visDirty = false;
   }
 
-  /* ---- the held block ----
-     The block's own shape (or the flat item picture for plants, doors,
-     torches) in the terrain's own vertex format, so it takes the same light,
-     shadow and fog. See blockmesh.js. */
+  /* ---- what is in your hands ----
+     The block's own shape (or the flat item picture for tools, plants,
+     doors, torches) in the terrain's own vertex format, so it takes the same
+     light, shadow and fog; held by your arm in first person (held.js) and by
+     the model's hand in third person (avatar.js). */
   /* Every shader the world, the hand and the player's model are drawn with,
      compiled now (behind the loading screen) rather than in the frame that
      first needs one: three.js builds a program the first time a material is
@@ -417,48 +429,51 @@ export class Renderer {
     } catch (e) { console.warn('precompile', e); }
     r.setRenderTarget(null);
   }
-  setHeld(id, BLOCKS) {
-    this.hand.clear();
-    const d = BLOCKS[id];
+  setHeld(id, DRAW) {
+    const d = DRAW[id];
     // a torch, lantern or glowstone in your hand lights the world around you (faded in render())
     this.heldLight = d && d.light ? d.light : 0;
-    if (!d || !d.faces) { this.handMesh = null; this.avatar.setHeld(null); return; }
-    // the same boxes as the world draws (a held stair is a stair), or the item's flat picture
-    const { geometry: g, flat, cutout } = blockGeometry(d, d.iconMeta || 0);
-    const m = new THREE.Mesh(g, cutout ? this.mats.handCutout : this.mats.handOpaque);
-    m.frustumCulled = false;
-    // the shader's face frames turn with the hand
-    const rot = new THREE.Matrix3();
-    m.onBeforeRender = () => { rot.setFromMatrix4(m.matrixWorld); rot.multiplyScalar(1 / m.matrixWorld.getMaxScaleOnAxis()); this.U.uFaceRot.value.copy(rot); m.material.uniformsNeedUpdate = true; };
-    m.onAfterRender = () => { this.U.uFaceRot.value.identity(); m.material.uniformsNeedUpdate = true; };
-    this.handMesh = m;
-    this.hand.add(m);
-    this.heldFlat = flat;
-    this.avatar.setHeld(m, flat);
-    // glass and leaves keep their holes in the model's hand too
-    if (cutout && this.avatar.held) this.avatar.held.material = this.mats.cutout;
+    this.held.set(0, id, DRAW);
+    this.avatar.setHeld(0, d);
+    this.drawTable = DRAW;
   }
-  placeHand(state, cam) {
-    if (!this.handMesh) return;
-    // where it sits: low and to the right, turned the way the game holds a block
-    const s = this.swing;
-    const sw = Math.sin(Math.min(1, s) * Math.PI);
-    const bob = state.bob || { x: 0, y: 0 };
-    this.hand.position.copy(cam.position);
-    this.hand.quaternion.copy(cam.quaternion);
-    const m = this.handMesh;
-    m.position.set(0.56 + bob.x - sw * 0.18, -0.52 + bob.y - sw * 0.2 + Math.sin(Math.sqrt(Math.min(1, s)) * Math.PI * 2) * 0.05, -0.85 - sw * 0.25);
-    m.rotation.set(this.heldFlat ? sw * -0.6 : 0.42 - sw * 0.6, this.heldFlat ? -0.5 : 0.785 + sw * 0.4, 0, 'YXZ');
-    m.scale.setScalar(this.heldFlat ? 0.55 : 0.4);
-    this.hand.updateMatrixWorld(true);
+  /* the off hand and the armour, read from the inventory main.js gave us
+     (this.wearer): cheap enough to look at every frame, and nothing is
+     missed whatever changed them */
+  checkWorn() {
+    const inv = this.wearer && this.wearer.inv, DRAW = this.drawTable;
+    if (!inv || !DRAW) return;
+    const off = inv.offhand ? inv.offhand.id : 0;
+    if (off !== this.offId) { this.offId = off; this.held.set(1, off, DRAW); this.avatar.setHeld(1, DRAW[off]); }
+    // enchanted things shimmer, in either hand
+    const gm = glints(inv.slots[inv.selected]), go = glints(inv.offhand);
+    this.held.glint(0, gm); this.held.glint(1, go); this.avatar.glintHeld(0, gm); this.avatar.glintHeld(1, go);
+    // a loaded crossbow shows what it is loaded with
+    const load = s => s && s.charged && s.charged.length ? (s.charged[0][0] === 'firework_rocket' ? 'rocket' : 'arrow') : null;
+    this.held.loaded(0, load(inv.slots[inv.selected])); this.held.loaded(1, load(inv.offhand));
+    // per piece: the stack, its id, enchanted or not, its dye
+    const W = this.worn || (this.worn = [null, null, null, null, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]);
+    let changed = false;
+    for (let i = 0; i < 4; i++) {
+      const s = inv.armor[i], id = s ? s.id : 0, en = (s && s.ench ? 1 : 0) | (s && s.trim ? 2 : 0), col = s && typeof s.color === 'number' ? s.color : -1;
+      if (W[i] !== s || W[i + 4] !== id || W[i + 8] !== en || W[i + 12] !== col) { W[i] = s; W[i + 4] = id; W[i + 8] = en; W[i + 12] = col; changed = true; }
+    }
+    if (changed) this.avatar.setArmor(inv.armor);
+    // a block worn on the head that is not armour (a carved pumpkin, a mob head): the block itself
+    const hid = W[4];
+    if (hid !== this.headId) {
+      this.headId = hid;
+      const d = hid && !pieceLook(inv.armor[0]) ? DRAW[hid] : null;
+      this.avatar.setHeadItem(d);
+      this.headPumpkin = !!d && d.name === 'carved_pumpkin';
+    }
   }
-  // first person only: the held block, or the bare arm when the hand is empty
+  // first person only: your arm, and whatever it holds (held.js)
   drawHand(state, cam, dt) {
     this.swing = Math.max(0, this.swing - dt * 3.2);
+    this.pumpkin.show(this.headPumpkin && state.showHand !== false && !this.avatar.view);
     if (state.showHand === false || this.avatar.view) return;
-    if (this.handMesh) this.placeHand(state, cam);
-    this.avatar.placeArm(state, cam, !this.handMesh);
-    this.r.render(this.handScene, cam);
+    this.held.draw(state, cam, dt);
   }
 
   /* ---- shaders built before they are needed ----
@@ -521,8 +536,10 @@ export class Renderer {
     cam.position.copy(state.eye);
     // roll and tiltPitch: the tip of the view when hurt (survival.js viewTilt)
     cam.rotation.set(state.pitch + (state.tiltPitch || 0), state.yaw, state.roll || 0, 'YXZ');
-    // the player's model posed for this frame (and, in third person, the camera pulled back)
+    // the player's model posed for this frame (and, in third person, the camera pulled back), in what it wears and holds
+    if (state.player) this.checkWorn();
     this.avatar.update(state, dt, cam);
+    if (state.player) this.figure.frame(state);
     // hurt: the view tilts away from the hit (combat/combat.js)
     if (state.tilt) cam.quaternion.multiply(state.tilt);
     // the held block takes the light where you stand, as the model does

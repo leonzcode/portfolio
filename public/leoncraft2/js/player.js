@@ -72,7 +72,7 @@ export class Player {
     this.noSprint = false;        // set while too hungry to sprint
     this.keys = {};
     this.walkDist = 0; this.prevWalk = 0;
-    this.bob = 0;
+    this.bob = 0; this.oBob = 0;   // how much the view bobs (the game's: speed over the ground, up to 0.1)
     this.fov = 70;
     this.baseFov = 70;            // the FOV option; sprinting widens it by fovEffects
     this.fovEffects = 1;
@@ -300,6 +300,9 @@ export class Player {
   tick() {
     this.prev.copy(this.pos);
     this.prevWalk = this.walkDist;
+    // the view bob follows the speed across the ground, up to 0.1, 0.4 of the way a tick (none in the air or swimming)
+    this.oBob = this.bob;
+    this.bob += ((this.onGround && !this.flying && !this.swimming ? Math.min(0.1, Math.hypot(this.vel.x, this.vel.z)) : 0) - this.bob) * 0.4;
     this.prevEyeH = this.eyeH;
     const k = this.keys;
     // the keys: 0.98 of a step each way, as the game reads them
@@ -473,17 +476,19 @@ export class Player {
     const walk = this.prevWalk + (this.walkDist - this.prevWalk) * alpha;
     const eye = p.clone();
     eye.y += this.prevEyeH + (this.eyeH - this.prevEyeH) * alpha;
-    // the game's head bob: a figure of eight as you walk
-    const speed = Math.min(1, Math.hypot(this.vel.x, this.vel.z) * 4);
-    const bobAmt = this.onGround && !this.flying && this.bobbing !== false ? speed : 0;
-    this.bob += (bobAmt - this.bob) * 0.1;
-    const bx = Math.sin(walk * Math.PI) * 0.05 * this.bob, by = -Math.abs(Math.cos(walk * Math.PI)) * 0.08 * this.bob;
-    eye.x += Math.cos(this.yaw) * bx; eye.z += -Math.sin(this.yaw) * bx;
-    eye.y += by;
-    // the held block sways a little against the step
-    const handBob = { x: Math.sin(walk * Math.PI) * 0.025 * this.bob, y: -Math.abs(Math.cos(walk * Math.PI)) * 0.03 * this.bob };
+    /* The game's view bob: with each step the world and your hands swing
+       across by half the bob and down by all of it (so the eye goes the
+       other way, along the view's own right and up), and the hands turn a
+       little too: 3 degrees on z and 5 on x at full bob. */
+    const h = this.bobbing !== false ? this.oBob + (this.bob - this.oBob) * alpha : 0;
+    const s = Math.sin(walk * Math.PI), c = Math.cos(walk * Math.PI);
+    const bx = s * h * 0.5, by = Math.abs(c) * h, sp = Math.sin(this.pitch);
+    eye.x += Math.cos(this.yaw) * bx + Math.sin(this.yaw) * sp * by;
+    eye.y += Math.cos(this.pitch) * by;
+    eye.z += -Math.sin(this.yaw) * bx + Math.cos(this.yaw) * sp * by;
+    const handBob = { x: -bx, y: -by, rz: -s * h * 3 * Math.PI / 180, rx: Math.abs(Math.cos(walk * Math.PI + 0.2)) * h * 5 * Math.PI / 180 };
     const fov = this.baseFov * (this.prevFovMod + (this.fovMod - this.prevFovMod) * alpha);
-    return { feet: p, eye, roll: Math.sin(walk * Math.PI) * 0.006 * this.bob, handBob, fov };
+    return { feet: p, eye, roll: 0, handBob, fov };
   }
 
   /* ---- what the crosshair is on: a voxel walk along the view ray ---- */
