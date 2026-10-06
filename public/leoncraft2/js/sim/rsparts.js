@@ -840,7 +840,7 @@ export function installParts(sim) {
     const pcx = Math.floor(p.x / 16), pcz = Math.floor(p.z / 16);
     let budget = 3;
     for (let dz = -R; dz <= R && budget > 0; dz++) for (let dx = -R; dx <= R && budget > 0; dx++) {
-      const c = w.chunks.get((pcx + dx) + ',' + (pcz + dz));
+      const c = w.chunkXZ(pcx + dx, pcz + dz);
       if (!c || c.rsScanned) continue;
       c.rsScanned = true; budget--;
       // only up to its highest block: above that is air
