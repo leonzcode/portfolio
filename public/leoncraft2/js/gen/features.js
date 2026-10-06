@@ -1326,6 +1326,10 @@ export class Decorator {
       const gg = p.grid.g;
       for (let j = 1; j <= 4; j++) for (let i = 1; i <= 4; i++) for (let k = 1; k <= 96; k++) present.add(gg[(j * 6 + i) * 98 + k]);
     }
+    // the game decorates each chunk with a random of its own, so no Gaussian left over from the chunk
+    // before carries into this one (within the chunk one does carry from feature to feature, as reseeding
+    // for each feature leaves it be)
+    r.gHave = false;
     const deco = decorationSeed(r, g.seed, cx * 16, cz * 16);
     for (let step = 0; step < n; step++) {
       const list = this.steps[step];
