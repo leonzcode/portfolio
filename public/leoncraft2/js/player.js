@@ -336,8 +336,9 @@ export class Player {
     this.sneaking = !!k.shift && !this.flying;
     /* Space twice within 7 ticks starts or stops flying (creative), as the
        game counts it: the first press opens the window, the second, on any
-       of the six ticks after, flies. Not while swimming. */
-    if (this.canFly) for (let i = 0; i < jumpPresses; i++) {
+       of the six ticks after, flies. Not while swimming, and a spectator
+       is always flying. */
+    if (this.canFly && !this.noclip) for (let i = 0; i < jumpPresses; i++) {
       if (this.jumpTrigger === 0) this.jumpTrigger = 7;
       else if (!this.swimming) { this.flying = !this.flying; this.jumpTrigger = 0; }
     }

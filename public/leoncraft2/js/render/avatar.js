@@ -571,9 +571,15 @@ export class Avatar {
   // where the head item goes, from the parts' matrices into m (held.js placeOnHead)
   placeHead(skull, parts, m) { return placeOnHead(m, parts[0], skull, this.t); }
 
-  startSwing() {
+  startSwing(ago) {
     // as the game: a click in the second half of a swing starts it again
-    if (!this.swinging || this.swingT >= 3 || this.swingT < 0) { this.swingT = -1; this.swinging = true; }
+    if (!this.swinging || this.swingT >= 3 || this.swingT < 0) {
+      this.swingT = -1; this.swinging = true;
+      /* a click (interact.js) swings from the moment it happened, `ago` ticks before this frame, so
+         the arm is already moving in the first frame after it: the swing's clock is set back by that
+         much, as if it had begun then (the game shows a click's swing only from the tick after next) */
+      if (ago !== undefined) { const s = this.alpha - Math.max(0, Math.min(1, ago)); this.oAttack = -s / 6; this.swingT = 1 - s; this.attack = this.swingT / 6; }
+    }
   }
 
   /* ---- one game tick ---- */
@@ -614,7 +620,8 @@ export class Avatar {
     this.uHurt.value = state.hurt ? 1 : 0;
     // what the use button is doing with your hands, for the poses (hands.js handBob)
     this.useNow = state.bob && state.bob.use || null;
-    if (R.swing >= 1) { this.startSwing(); R.swing = 0.999; }
+    this.alpha = state.alpha || 0;
+    if (R.swing >= 1) { this.startSwing(R.swingAt !== undefined ? (performance.now() - R.swingAt) / 50 : undefined); R.swingAt = undefined; R.swing = 0.999; }
     if (!P) {
       this.mesh.visible = this.shadowMesh.visible = this.armor.visible = this.armorShadow.visible = false;
       for (const h of this.held) if (h) h.mesh.visible = false;

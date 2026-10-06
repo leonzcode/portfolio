@@ -72,6 +72,12 @@ export class Interactor {
     return hit;
   }
   down(button) {
+    const R = this.renderer, at = performance.now();
+    this._down(button);
+    // a swing the click started goes from the moment of the click (render/avatar.js startSwing)
+    if (R && R.swing >= 1) R.swingAt = at;
+  }
+  _down(button) {
     // while something is in use (eating, a drawn bow, a raised shield) the attack button does nothing, as in the game
     if (button === 0 && this.player.usingItem) return;
     // what the crosshair is on now: the view may have turned since the frame was drawn
@@ -91,7 +97,12 @@ export class Interactor {
       this.sinceSwing = -1;         // (the next tick is the click's own)
       // the game's five ticks of delay, and one more for the click's own tick
       if (this.creative) { if (this.target) { this.breakTarget(); this.breakDelay = 6; } }
-      else this.startMining();
+      else {
+        this.startMining();
+        // the first bits fly off the block with the click (the wear itself counts from the next tick, as in the game)
+        const h = this.target;
+        if (this.mining && h && this.onHit) this.onHit(h.x, h.y, h.z, h.face, h.b, h.box);
+      }
     } else if (button === 2) {
       this.useHeld = true;
       this.useOnce();
