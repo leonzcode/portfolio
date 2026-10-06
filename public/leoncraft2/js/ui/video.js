@@ -372,7 +372,7 @@ export class ShaderOptionsScreen extends OptionsListScreen {
     const cl = lv('Clouds', 'clouds', ['blocks', 'volumetric', 'off'], CLOUD_STYLE,
       v => v === 'blocks' ? 'The game\'s blocks of cloud, lit by the shader (Clouds in Video Settings says Fancy or Fast).' : v === 'volumetric' ? 'Soft, deep clouds, marched through.' + FULL : 'No clouds.', true);
     const fog = sl('fog', 0, 2, 0.05, v => 'Fog: ' + (v <= 0 ? 'OFF' : pct(v)), 'How thick the haze over the distance is. The edge of the world always melts into the sky.');
-    const ls = lv('Light Shafts', 'lightShafts', ['off', 'low', 'high'], LEVELS, 'Sunbeams through the leaves and the air.' + FULL, true);
+    const ls = lv('Light Shafts', 'lightShafts', ['off', 'low', 'high'], LEVELS, 'Sunbeams through the leaves and the air. High: stronger beams, more finely drawn.' + FULL, true);
     const bl = lv('Bloom', 'bloom', ['off', 'low', 'high'], LEVELS, 'A soft glow round bright things.' + FULL, true);
 
     const tm = lv('Tone Mapping', 'tone', ['agx', 'aces', 'reinhard'], TONE, v => TONE_TIPS[v] + ' Costs nothing either way.');

@@ -97,6 +97,91 @@ function noise3DTexture(data) {
   return t;
 }
 export function makeNoise3D() { return noise3DTexture(noise3DData()); }
+
+/* The same noise drawn by the graphics card, a layer at a time into a 64^3
+   target: the random points are the same ones (made here, a few thousand),
+   so it is the same picture, made in well under a millisecond instead of
+   half a second or more of work. (Made in a worker before: starting a worker
+   held this thread up for a third of a second to a second, on the very
+   frame Shader Options changed.) Its small shader is built in the background
+   first; the promise gives the texture once it is drawn. */
+const NOISE_VS = `in vec3 position;
+void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const NOISE_FS = `precision highp float;
+precision highp int;
+precision highp sampler2D;
+uniform sampler2D uPts[3];
+uniform float uZ;
+out vec4 fragColor;
+// distance to the nearest point of a wrapping grid of cells (one random point each)
+float worley(sampler2D pts, int cells, vec3 v) {
+  vec3 p = v / 64.0 * float(cells);
+  ivec3 c = ivec3(floor(p));
+  float best = 9.0;
+  for (int dz = -1; dz <= 1; dz++) for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+    ivec3 n = c + ivec3(dx, dy, dz);
+    ivec3 w = (n + cells) % cells;
+    vec3 q = vec3(n) + texelFetch(pts, ivec2(w.x, w.y + w.z * cells), 0).xyz - p;
+    best = min(best, dot(q, q));
+  }
+  return sqrt(best);
+}
+void main() {
+  vec3 v = vec3(floor(gl_FragCoord.xy), uZ);
+  // inverted, so the cells are puffs; several sizes, the bigger counting more
+  float a = 1.0 - min(1.0, worley(uPts[0], 4, v) * 1.2);
+  float b = 1.0 - min(1.0, worley(uPts[1], 8, v) * 1.2);
+  float c = 1.0 - min(1.0, worley(uPts[2], 16, v) * 1.2);
+  fragColor = vec4(1.0 - (a * 0.625 + b * 0.25 + c * 0.125), 1.0 - b, 1.0 - c, 1.0);
+}`;
+export function makeNoise3DGPU(r) {
+  const S = 64;
+  // the points noise3DData uses: the same generator and seeds, one texel each (x, y + z * cells)
+  const points = (cells, seed) => {
+    const d = new Float32Array(cells * cells * cells * 4);
+    let s = seed >>> 0;
+    const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    for (let i = 0; i < cells * cells * cells; i++) { d[i * 4] = rnd(); d[i * 4 + 1] = rnd(); d[i * 4 + 2] = rnd(); }
+    const t = new THREE.DataTexture(d, cells, cells * cells, THREE.RGBAFormat, THREE.FloatType);
+    t.magFilter = t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false;
+    t.needsUpdate = true;
+    return t;
+  };
+  const pts = [points(4, 17), points(8, 29), points(16, 43)];
+  const mat = new THREE.RawShaderMaterial({
+    vertexShader: NOISE_VS, fragmentShader: NOISE_FS,
+    uniforms: { uPts: { value: pts }, uZ: { value: 0 } }, glslVersion: THREE.GLSL3,
+    depthTest: false, depthWrite: false,
+  });
+  const rt = new THREE.WebGL3DRenderTarget(S, S, S, { depthBuffer: false });
+  const t = rt.texture;
+  t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
+  t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping;
+  t.magFilter = t.minFilter = THREE.LinearFilter;
+  t.generateMipmaps = false;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  const scene = new THREE.Scene(), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  scene.add(mesh);
+  const draw = () => {
+    const prev = r.getRenderTarget(), clear = r.autoClear;
+    r.autoClear = false;
+    for (let z = 0; z < S; z++) {
+      mat.uniforms.uZ.value = z;
+      r.setRenderTarget(rt, z);
+      r.render(scene, cam);
+    }
+    r.setRenderTarget(prev);
+    r.autoClear = clear;
+    mat.dispose(); geo.dispose();
+    for (const p of pts) p.dispose();
+    return t;
+  };
+  return (r.compileAsync ? r.compileAsync(scene, cam) : Promise.resolve()).then(draw, draw);
+}
 /* The same, made in a worker so turning on the full chain (Shader Options)
    never stops the game for it; at once in this thread if there are no
    workers to be had. */
