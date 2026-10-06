@@ -364,39 +364,71 @@ vec3 toneLDR(vec3 c) { return toSRGB(agx(c)); }
 /* The table for TONE_LUT: AgX from its log step on (the contrast curve, the
    punch, the way out) and the sRGB step, 32 to a side, filtered. Indexed by
    the log of the colour, as AgX itself works, so the dark end gets as many
-   entries as the bright. */
-export function makeToneLut(contrastK = 1, saturation = 1, curve = 'agx') {
-  const THREE = window.THREE, N = 32;
+   entries as the bright.
+   The curve's own output is worked out once per curve and kept: Contrast and
+   Saturation (dragged a step at a time in Shader Options) only redo the last
+   step, into the same texture when one is given (a few milliseconds, where
+   the whole table each step was forty). */
+const TONE_N = 32, toneLinear = {};
+// the sRGB step as a table, read between its entries (never as much as a two-hundredth of a step of 255 out)
+const SRGB_STEPS = 8192;
+let srgbT = null;
+function srgbTable() {
+  if (srgbT) return srgbT;
+  srgbT = new Float32Array(SRGB_STEPS + 2);
+  for (let n = 0; n <= SRGB_STEPS + 1; n++) { const c = Math.min(1, n / SRGB_STEPS); srgbT[n] = c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; }
+  return srgbT;
+}
+function toneCurveTable(curve) {
+  const N = TONE_N, out = new Float32Array(N * N * N * 3);
   // the other curves (Shader Options: Tone Mapping) take the colour back out of AgX's log and its inset first
   const minEv = -12.47393, span = 4.026069 + 12.47393;
-  const outM = [1.19687900512017, -0.0528968517574562, -0.0529716355144438, -0.0980208811401368, 1.15190312990417, -0.0980434501171241, -0.0990297440797205, -0.0989611768448433, 1.15107367264116];
+  const M = [1.19687900512017, -0.0528968517574562, -0.0529716355144438, -0.0980208811401368, 1.15190312990417, -0.0980434501171241, -0.0990297440797205, -0.0989611768448433, 1.15107367264116];
   const contrast = x => { const x2 = x * x, x4 = x2 * x2; return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232; };
-  const srgb = c => { c = Math.max(c, 0); return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
-  const data = new Uint8Array(N * N * N * 4);
-  for (let b = 0; b < N; b++) for (let g = 0; g < N; g++) for (let r = 0; r < N; r++) {
-    const i = ((b * N + g) * N + r) * 4;
-    let lin;
+  const step = new Float32Array(N), ev = new Float32Array(N);
+  for (let n = 0; n < N; n++) { step[n] = contrast(n / (N - 1)); ev[n] = Math.pow(2, n / (N - 1) * span + minEv); }
+  let j = 0;
+  for (let b = 0; b < N; b++) for (let g = 0; g < N; g++) for (let r = 0; r < N; r++, j += 3) {
+    let x, y, z;
     if (curve === 'agx') {
-      let c = [contrast(r / (N - 1)), contrast(g / (N - 1)), contrast(b / (N - 1))];
-      const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-      c = c.map(v => Math.pow(Math.max(l + 1.12 * (v - l), 0), 1.06));
+      const c0 = step[r], c1 = step[g], c2 = step[b];
+      const l = 0.2126 * c0 + 0.7152 * c1 + 0.0722 * c2;
+      const p0 = Math.pow(Math.max(l + 1.12 * (c0 - l), 0), 1.06), p1 = Math.pow(Math.max(l + 1.12 * (c1 - l), 0), 1.06), p2 = Math.pow(Math.max(l + 1.12 * (c2 - l), 0), 1.06);
       // outM * c, the matrix by columns as GLSL has it
-      const o = [0, 1, 2].map(k => outM[k] * c[0] + outM[3 + k] * c[1] + outM[6 + k] * c[2]);
-      lin = o.map(v => Math.pow(Math.max(v, 0), 2.2));
+      x = Math.pow(Math.max(M[0] * p0 + M[3] * p1 + M[6] * p2, 0), 2.2);
+      y = Math.pow(Math.max(M[1] * p0 + M[4] * p1 + M[7] * p2, 0), 2.2);
+      z = Math.pow(Math.max(M[2] * p0 + M[5] * p1 + M[8] * p2, 0), 2.2);
     } else {
-      // the scene's own colour: out of the log, then the inset undone
-      const v = [r, g, b].map(n => Math.pow(2, n / (N - 1) * span + minEv));
-      // (AgX's way out, outM, is exactly the inverse of its way in)
-      lin = [0, 1, 2].map(k => toneCurve(curve, Math.max(0, outM[k] * v[0] + outM[3 + k] * v[1] + outM[6 + k] * v[2])));
+      // the scene's own colour: out of the log, then the inset undone (AgX's way out, outM, is exactly the inverse of its way in)
+      const v0 = ev[r], v1 = ev[g], v2 = ev[b];
+      x = toneCurve(curve, Math.max(0, M[0] * v0 + M[3] * v1 + M[6] * v2));
+      y = toneCurve(curve, Math.max(0, M[1] * v0 + M[4] * v1 + M[7] * v2));
+      z = toneCurve(curve, Math.max(0, M[2] * v0 + M[5] * v1 + M[8] * v2));
     }
-    // the Shader Options' saturation (round the colour's own brightness) and contrast (round the middle of the screen's range)
-    const ll = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
-    for (let k = 0; k < 3; k++) {
-      const c = srgb(Math.max(0, ll + (lin[k] - ll) * saturation));
-      data[i + k] = Math.round(Math.min(1, Math.max(0, (c - 0.5) * contrastK + 0.5)) * 255);
-    }
+    out[j] = x; out[j + 1] = y; out[j + 2] = z;
+  }
+  return out;
+}
+export function makeToneLut(contrastK = 1, saturation = 1, curve = 'agx', into = null) {
+  const THREE = window.THREE, N = TONE_N;
+  const lin = toneLinear[curve] || (toneLinear[curve] = toneCurveTable(curve));
+  const data = into ? into.image.data : new Uint8Array(N * N * N * 4);
+  // the Shader Options' saturation (round the colour's own brightness) and contrast (round the middle of the screen's range)
+  const S = srgbTable(), K = SRGB_STEPS;
+  const put = c => {
+    if (c <= 0) c = 0;
+    else if (c >= 1) c = 1.055 * Math.pow(c, 1 / 2.4) - 0.055;     // (brighter than white still counts with Contrast under 1)
+    else { const f = c * K, n = f | 0; c = S[n] + (S[n + 1] - S[n]) * (f - n); }
+    return Math.round(Math.min(1, Math.max(0, (c - 0.5) * contrastK + 0.5)) * 255);
+  };
+  for (let j = 0, i = 0; j < lin.length; j += 3, i += 4) {
+    const r = lin[j], g = lin[j + 1], b = lin[j + 2], ll = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    data[i] = put(ll + (r - ll) * saturation);
+    data[i + 1] = put(ll + (g - ll) * saturation);
+    data[i + 2] = put(ll + (b - ll) * saturation);
     data[i + 3] = 255;
   }
+  if (into) { into.needsUpdate = true; return into; }
   const t = new THREE.Data3DTexture(data, N, N, N);
   t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
   t.minFilter = t.magFilter = THREE.LinearFilter;

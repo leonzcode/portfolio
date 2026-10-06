@@ -155,8 +155,8 @@ export class VideoSettingsScreen extends OptionsListScreen {
       label: v => 'Max Framerate: ' + (v >= 260 ? 'Unlimited' : v + ' fps'),
       onChange: v => o.set('maxFps', v >= 260 ? 0 : v),
     });
-    const vsync = toggle('VSync', o.get('vsync') !== false, v => o.set('vsync', v),
-      'The browser shows whole frames only, in step with the screen. OFF keeps one frame fewer waiting for the graphics card, so the game answers your hand a little sooner.');
+    // (no tooltip, as in the game: ON shows whole frames in step with the screen, OFF keeps one frame fewer waiting for the graphics card)
+    const vsync = toggle('VSync', o.get('vsync') !== false, v => o.set('vsync', v));
     const afk = cycle('Reduce FPS when', ['afk', 'minimized'], o.get('inactivityFpsLimit') || 'afk', v => AFK[v], v => o.set('inactivityFpsLimit', v), v => AFK_TIPS[v]);
     const gs = slider({
       min: 0, max: g.maxScale, step: 1, value: Math.min(o.get('guiScale') | 0, g.maxScale),
@@ -164,8 +164,8 @@ export class VideoSettingsScreen extends OptionsListScreen {
       // applied when the handle is let go, so the screen does not jump under the pointer
       onRelease: v => o.set('guiScale', v),
     });
-    const full = toggle('Fullscreen', !!document.fullscreenElement, v => setFullscreen(v),
-      'In fullscreen Esc goes to the game menu and back at once. Hold Esc to leave fullscreen.');
+    // (no tooltip, as in the game; the browser says itself to hold Esc to leave fullscreen)
+    const full = toggle('Fullscreen', !!document.fullscreenElement, v => setFullscreen(v));
     const excl = off(toggle('Exclusive Fullscreen', false, null), 'A web page can only use the screen as the browser gives it.');
     const br = slider({
       min: 0, max: 1, step: 0.01, value: o.get('brightness'),
@@ -372,7 +372,7 @@ export class ShaderOptionsScreen extends OptionsListScreen {
     const cl = lv('Clouds', 'clouds', ['blocks', 'volumetric', 'off'], CLOUD_STYLE,
       v => v === 'blocks' ? 'The game\'s blocks of cloud, lit by the shader (Clouds in Video Settings says Fancy or Fast).' : v === 'volumetric' ? 'Soft, deep clouds, marched through.' + FULL : 'No clouds.', true);
     const fog = sl('fog', 0, 2, 0.05, v => 'Fog: ' + (v <= 0 ? 'OFF' : pct(v)), 'How thick the haze over the distance is. The edge of the world always melts into the sky.');
-    const ls = lv('Light Shafts', 'lightShafts', ['off', 'low', 'high'], LEVELS, 'Sunbeams through the leaves and the air.' + FULL, true);
+    const ls = lv('Light Shafts', 'lightShafts', ['off', 'low', 'high'], LEVELS, 'Sunbeams through the leaves and the air. High: stronger beams, more finely drawn.' + FULL, true);
     const bl = lv('Bloom', 'bloom', ['off', 'low', 'high'], LEVELS, 'A soft glow round bright things.' + FULL, true);
 
     const tm = lv('Tone Mapping', 'tone', ['agx', 'aces', 'reinhard'], TONE, v => TONE_TIPS[v] + ' Costs nothing either way.');
