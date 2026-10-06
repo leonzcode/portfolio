@@ -16,7 +16,7 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS } from './glsl.js?v=17';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS, TONE_CURVES } from './glsl.js?v=17';
 import { FullScreen, rawMat, floatTarget } from './sky.js?v=17';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
@@ -363,6 +363,7 @@ const FS_FINAL = COMMON + TONEMAP + /* glsl */`
 uniform sampler2D uColor, uBloom, uExpo;
 uniform float uEyeInWater, uTime, uBloomMix;
 uniform float uSat, uContrast;  // Shader Options: Saturation and Contrast
+uniform float uCurve;           // and Tone Mapping: 0 AgX, 1 ACES, 2 Reinhard (glsl.js toneCurve)
 in vec2 vUv; out vec4 o;
 void main() {
   vec2 uv = vUv;
@@ -375,7 +376,9 @@ void main() {
   // a soft vignette, kinder to bright pixels
   vec2 q = uv - 0.5;
   c *= 1.0 - dot(q, q) * 0.38 * (1.0 - sat(lum(c)));
-  c = agx(c);
+  if (uCurve < 0.5) c = agx(c);
+  else if (uCurve < 1.5) { c *= 0.78; c = clamp((c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0); }
+  else { c *= 1.35; c = min(vec3(1.0), c * (1.0 + c / 64.0) / (1.0 + c)); }
   float l = lum(c);
   c = max(vec3(0.0), l + (c - l) * uSat);
   c = toSRGB(c);
@@ -442,7 +445,7 @@ export class Post {
       uInvViewProj: { value: new THREE.Matrix4() }, uPrevViewProj: { value: new THREE.Matrix4() },
       uDt: { value: 0.016 }, uBias: { value: 1 }, uBloomMix: { value: 0.045 },
       // the Shader Options' exposure (in stops, as a factor), saturation and contrast
-      uEV: { value: 1 }, uSat: { value: 1 }, uContrast: { value: 1 },
+      uEV: { value: 1 }, uSat: { value: 1 }, uContrast: { value: 1 }, uCurve: { value: 0 },
     };
     const U = Object.assign({}, shared, this.u);
     // the same objects, so a value set here is seen by every pass
@@ -469,8 +472,14 @@ export class Post {
     this.lum.texture.generateMipmaps = true;
     this.cloudHist = 0;
     this.cloudsOn = true; this.vlOn = true; this.bloomMix = 0.045;
+    this.snap = 4;
     this.configure(opts);
   }
+  /* The eye set straight to the picture, not eased over from where it was
+     (the last time this chain was in use, or nothing at all): for the first
+     few measurements after the chain is turned on, or the first frames had
+     the screen flash white or black for a second while it caught up. */
+  resetExposure() { this.snap = 4; }
   /* The Shader Options this chain has (render/looks.js): bloom and how strong,
      light shafts and how many steps, edge smoothing, exposure, saturation,
      contrast. A pass that is off is not run at all; its picture is cleared
@@ -485,6 +494,7 @@ export class Post {
     this.u.uEV.value = Math.pow(2, o.exposure || 0);
     this.u.uSat.value = o.saturation === undefined ? 1 : o.saturation;
     this.u.uContrast.value = o.contrast || 1;
+    this.u.uCurve.value = TONE_CURVES[o.tone] || 0;
     this.cleared = false;
   }
   // the pictures given back while another look is in use (made again by the next resize)
@@ -571,6 +581,8 @@ export class Post {
     this.expoTick = (this.expoTick || 0) + 1;
     if (!this.halfClouds || (this.expoTick & 1)) {
       u.uSrc.value = this.comp.texture; this.run(this.mLum, this.lum);
+      // (nothing to ease from: the exposure jumps to what this frame wants)
+      if (this.snap > 0) { this.snap--; this.clearTo(this.expo[this.expoI], 0); this.r.setClearColor(0x000000, 1); }
       u.uLum.value = this.lum.texture; u.uPrev.value = this.expo[this.expoI].texture;
       this.run(this.mExpo, this.expo[1 - this.expoI]);
       this.expoI = 1 - this.expoI;

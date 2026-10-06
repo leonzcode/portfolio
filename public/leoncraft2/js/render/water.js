@@ -53,7 +53,7 @@ void main() {
 #ifdef NO_WAVES
     float sw = 0.0;
 #else
-    float sw = sin(world.x * 0.35 + uTime * 1.4) * cos(world.z * 0.31 - uTime * 1.1) * 0.025;
+    float sw = sin(world.x * 0.35 + uTime * 1.4) * cos(world.z * 0.31 - uTime * 1.1) * 0.025 * WAVE_K;
 #endif
     vec2 iuv = (world.xz - uInteractRect.xy) / uInteractRect.zw;
     float rip = (iuv.x > 0.0 && iuv.y > 0.0 && iuv.x < 1.0 && iuv.y < 1.0) ? textureLod(uInteract, iuv, 0.0).r : 0.0;
@@ -231,9 +231,9 @@ void main() {
 #ifdef NO_WAVES
     vec3 wn = vec3(0.0, 1.0, 0.0);
 #elif defined(LDR)
-    vec3 wn = waveNormalD(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5), dist < 32.0 ? 5 : 3);
+    vec3 wn = waveNormalD(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * WAVE_K * (top ? 1.0 : 2.5), dist < 32.0 && WAVE_K > 0.75 ? 5 : 3);
 #else
-    vec3 wn = waveNormal(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * (top ? 1.0 : 2.5));
+    vec3 wn = waveNormal(wp * (dot(flow, flow) > 0.01 ? 1.4 : 1.0), t, flow * (top ? 1.0 : 3.0), strength * WAVE_K * (top ? 1.0 : 2.5));
 #endif
     // ripples from the interaction map (in Detailed only near you, where they are big enough to see)
     vec2 iuv = (vWorld.xz - uInteractRect.xy) / uInteractRect.zw;
@@ -380,7 +380,8 @@ export function makeWaterMaterial(shared, opts) {
     side: THREE.DoubleSide,
     defines: Object.assign({ SSR_STEPS: opts && opts.ssrSteps !== undefined ? opts.ssrSteps : 28, SHADOWS: opts && opts.shadows !== undefined ? opts.shadows : 2 }, lightDefines(opts), opts && opts.ldr ? { LDR: 1, TONE_LUT: 1 } : {},
       // Shader Options: Water (Vanilla: its texture) and Waves
-      opts && opts.water === 0 ? { WATER_TEX: 1 } : {}, opts && opts.waves === false ? { NO_WAVES: 1 } : {}),
+      // (Waves Low: half as high and three waves summed near you, not five)
+      opts && opts.water === 0 ? { WATER_TEX: 1 } : {}, opts && opts.waves === false ? { NO_WAVES: 1 } : { WAVE_K: opts && opts.waves === 'low' ? '0.5' : '1.0' }),
     transparent: !!(opts && opts.ldr), depthWrite: true,
   });
 }

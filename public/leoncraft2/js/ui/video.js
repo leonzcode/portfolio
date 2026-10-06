@@ -311,6 +311,12 @@ const SUN = { warm: 'Warm', natural: 'Natural', cool: 'Cool' };
 const WATER = { vanilla: 'Vanilla', sheen: 'Sheen', reflections: 'Reflections' };
 const CLOUD_STYLE = { blocks: 'Blocks', volumetric: 'Volumetric', off: 'OFF' };
 const AA = { off: 'OFF', fxaa: 'FXAA' };
+const TONE = { agx: 'AgX', aces: 'ACES', reinhard: 'Reinhard' };
+const TONE_TIPS = {
+  agx: 'Keeps the colour of bright light, and fades the brightest to white gently. The default.',
+  aces: 'The film curve: deeper shadows and richer colour, with more punch.',
+  reinhard: 'Soft and even: lighter shadows, paler bright light.',
+};
 
 export class ShaderOptionsScreen extends OptionsListScreen {
   constructor() { super('Shader Options'); }
@@ -357,7 +363,8 @@ export class ShaderOptionsScreen extends OptionsListScreen {
       v => v === 'vanilla' ? 'The water\'s own texture, as the game draws it, lit by the shader.' : v === 'sheen' ? 'Clear water with the sky in it and the sun\'s glint on the waves.' : 'The world on the shore reflected in the water as well as the sky.' + FULL, true);
     const rf = lv('Reflections', 'reflections', ['low', 'high'], { low: 'Low', high: 'High' }, 'How far into the picture a reflection looks for what to show.');
     if (s.water !== 'reflections') off(rf, 'Only with Water: Reflections.');
-    const wv = tg('Waves', 'waves', 'Waves running over water, and the surface rising and falling with them.');
+    const wv = lv('Waves', 'waves', ['off', 'low', 'high'], LEVELS,
+      v => v === 'off' ? 'Still water: no waves, the cheapest.' : v === 'low' ? 'Gentle waves, half as high, and a little cheaper.' : 'Waves running over the water, and the surface rising and falling with them.');
 
     const wp = lv('Waving Plants', 'wavingPlants', ['off', 'low', 'high'], LEVELS, 'Grass, flowers, crops and kelp moving in the wind and out of your way.');
     const wl = lv('Waving Leaves', 'wavingLeaves', ['off', 'low', 'high'], LEVELS, 'Leaves moving in the wind.');
@@ -368,8 +375,9 @@ export class ShaderOptionsScreen extends OptionsListScreen {
     const ls = lv('Light Shafts', 'lightShafts', ['off', 'low', 'high'], LEVELS, 'Sunbeams through the leaves and the air.' + FULL, true);
     const bl = lv('Bloom', 'bloom', ['off', 'low', 'high'], LEVELS, 'A soft glow round bright things.' + FULL, true);
 
+    const tm = lv('Tone Mapping', 'tone', ['agx', 'aces', 'reinhard'], TONE, v => TONE_TIPS[v] + ' Costs nothing either way.');
     const ex = sl('exposure', -2, 2, 0.1, v => 'Exposure: ' + (v > 0 ? '+' : '') + v.toFixed(1), 'Brighter or darker, in stops.');
-    const ct = sl('contrast', 0.5, 1.5, 0.05, v => 'Contrast: ' + pct(v));
+    const ct = sl('contrast', 0.5, 1.5, 0.05, v => 'Contrast: ' + pct(v), 'How far apart the darks and the brights are.');
     const sat = sl('saturation', 0, 2, 0.05, v => 'Saturation: ' + pct(v), 'How strong the colours are.');
     const aa = lv('Anti-aliasing', 'antialiasing', ['off', 'fxaa'], AA, 'Smooths jagged edges (the full pipeline only), a little blurrier.');
     if (!needsFullChain(s)) off(aa, 'Only in the full pipeline (bloom, light shafts, volumetric clouds, reflections or normal maps).');
@@ -395,7 +403,7 @@ export class ShaderOptionsScreen extends OptionsListScreen {
       new Header('Sky and Atmosphere'),
       new WidgetRow(cl, fog), new WidgetRow(ls, bl),
       new Header('Camera'),
-      new WidgetRow(ex, ct), new WidgetRow(sat, aa),
+      new WidgetRow(tm, ex), new WidgetRow(ct, sat), new WidgetRow(aa),
       new Header('Performance'),
       new WidgetRow(rs),
     ];
