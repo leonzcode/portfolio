@@ -32,11 +32,11 @@
      water or rain, Channeling calls lightning in a storm); the shield is up
      5 ticks after the button goes down, slowing you to a fifth from the start.
 --------------------------------------------------------------------------- */
-import { ITEMS, I, itemName } from '../items.js?v=15';
-import { wear } from '../ui/inventory.js?v=15';
-import { Living } from '../entities/entity.js?v=15';
-import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=15';
-import './trident.js?v=15';
+import { ITEMS, I, itemName } from '../items.js?v=16';
+import { wear } from '../ui/inventory.js?v=16';
+import { Living } from '../entities/entity.js?v=16';
+import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=16';
+import './trident.js?v=16';
 const THREE = window.THREE;
 
 const R = () => Math.random();

@@ -14,19 +14,27 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Sky, SUN_I } from './sky.js?v=15';
-import { Post } from './post.js?v=15';
-import { Interaction } from './interaction.js?v=15';
-import { makeMaterials, makeLayerInfo } from './materials.js?v=15';
-import { makeWaterMaterial } from './water.js?v=15';
-import { makeNoise2D, makeNoise3D } from './noisetex.js?v=15';
-import { makeLdrSky } from './ldrsky.js?v=15';
-import { FullScreen } from './sky.js?v=15';
-import { blockGeometry } from './blockmesh.js?v=15';
-import { Avatar } from './avatar.js?v=15';
-import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=15';
-import { dimLook } from '../dim/look.js?v=15';
+import { Sky, SUN_I, FullScreen } from './sky.js?v=16';
+import { Post } from './post.js?v=16';
+import { Interaction } from './interaction.js?v=16';
+import { makeMaterials, makeLayerInfo, bakeLayerMaterials } from './materials.js?v=16';
+import { makeWaterMaterial } from './water.js?v=16';
+import { makeNoise2D, makeNoise3D } from './noisetex.js?v=16';
+import { makeLdrSky } from './ldrsky.js?v=16';
+import { blockGeometry } from './blockmesh.js?v=16';
+import { Avatar } from './avatar.js?v=16';
+import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=16';
+import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=16';
+import { ShadowMaps } from './shadows.js?v=16';
+import { dimLook } from '../dim/look.js?v=16';
+import { makeToneLut } from './glsl.js?v=16';
 const THREE = window.THREE;
+// one black pixel, for a texture that is made later
+function blankTexture() {
+  const t = new THREE.DataTexture(new Uint8Array(4), 1, 1);
+  t.needsUpdate = true;
+  return t;
+}
 
 export class Renderer {
   constructor(canvas, textures, opts) {
@@ -41,34 +49,32 @@ export class Renderer {
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.05, 1000);
     this.scene = new THREE.Scene();          // opaque and cutout
     this.trans = new THREE.Scene();          // fluids and translucent
-    this.shadowScene = new THREE.Scene();
+    this.shadowScene = new THREE.Scene();    // what moves: your own body (render/avatar.js)
+    this.shadowTerrain = new THREE.Scene();  // the world's blocks, drawn into their own map and kept
     this.shadowCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 400);
     // Fast graphics is the game with no shaders (vanilla.js): no atmosphere tables at all
     this.sky = this.opts.vanilla ? null : new Sky(r);
     this.inter = new Interaction(r, this.opts.interSize || 256);
-    // shadow map
-    const sr = this.opts.shadows ? this.opts.shadowRes : 4;   // no shadow map at all: a token one
-    this.shadowRT = new THREE.WebGLRenderTarget(sr, sr, { depthBuffer: true, type: THREE.UnsignedByteType });
-    this.shadowRT.depthTexture = new THREE.DepthTexture(sr, sr, THREE.FloatType);
-    this.shadowRT.depthTexture.compareFunction = THREE.LessEqualCompare;
-    this.shadowRT.depthTexture.minFilter = this.shadowRT.depthTexture.magFilter = THREE.LinearFilter;
-    // made now, cleared to "nothing in the way", so the shaders never sample a map that is not there yet
-    r.setRenderTarget(this.shadowRT); r.setClearColor(0xffffff, 1); r.clear(true, true, false); r.setRenderTarget(null);
+    // the sun's shadow maps (render/shadows.js); with no shadows at all, token ones
+    const sr = this.opts.shadows ? this.opts.shadowRes : 4;
+    this.shadows = new ShadowMaps(this, sr);
     // the textures
     this.U = {
       uTime: { value: 0 }, uFrame: { value: 0 },
       uAlbedo: { value: textures.albedo }, uNormalMap: { value: textures.normal }, uSpecMap: { value: textures.spec },
-      uLayerInfo: { value: makeLayerInfo(textures.manifest) },
+      uLayerInfo: { value: makeLayerInfo(textures.manifest) }, uLayerMat: { value: blankTexture() },
       uAmbient: { value: this.sky ? this.sky.amb.texture : null }, uView: { value: this.sky ? this.sky.view.texture : null }, uTrans: { value: this.sky ? this.sky.trans.texture : null },
       uNoise: { value: makeNoise2D() }, uNoise3: { value: ldr ? null : makeNoise3D() },
-      uShadow: { value: this.shadowRT.depthTexture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowRes: { value: sr },
+      uShadow: { value: this.shadows.texture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowRes: { value: sr },
+      // your own body's small shadow map, and how to find it from the blocks' one (render/shadows.js)
+      uBodyShadow: { value: this.shadows.body.depthTexture }, uBodyMat: { value: new THREE.Matrix4() }, uBody: { value: new THREE.Vector4() },
       uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
       uInteract: { value: this.inter.texture }, uInteractRect: { value: this.inter.rect }, uPlayer: { value: new THREE.Vector3() },
       uWet: { value: 0 }, uSceneColor: { value: null }, uSceneDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
       uEyeInWater: { value: 0 }, uNear: { value: 0.05 }, uFar: { value: 1000 }, uProjInv: { value: new THREE.Matrix4() },
       uRender: { value: 160 }, uMoon: { value: textures.moon }, uMoonPhase: { value: 0 }, uSkyAtEye: { value: 1 },
       uWaterTint: { value: new THREE.Vector3(0.05, 0.18, 0.78) }, uCover: { value: 0.42 }, uCamPos: { value: new THREE.Vector3() },
-      uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uInvViewProj: { value: new THREE.Matrix4() },
+      uClock: { value: 0 }, uFaceRot: { value: new THREE.Matrix3() }, uExposure: { value: 1 }, uCave: { value: 0 }, uInvViewProj: { value: new THREE.Matrix4() },
       // the light in your hand (level, faded in and out) and where it is; torches' flicker; how dark cloud shadows are
       uHeldLight: { value: 0 }, uHeldPos: { value: new THREE.Vector3() }, uFlicker: { value: 1 }, uCloudShadow: { value: this.opts.cloudShadow > 0 ? 0.8 : 0 },
       // where a chunk mesh sits (set per draw by drawParts; 0 for everything three.js draws itself)
@@ -76,6 +82,12 @@ export class Renderer {
       // the dimension being drawn (js/dims.js; js/dim/look.js sets these each frame)
       uDim: { value: 0 }, uDimAmb: { value: new THREE.Vector3() }, uDimFog: { value: new THREE.Vector3() }, uDimFogRange: { value: new THREE.Vector2(0, 1) },
       uEndSky: { value: textures.endSky || null },
+      // Detailed's per-vertex light, from the light table each frame (sky.js setUniforms), and the fog's colours
+      uAmbUp: { value: new THREE.Vector3() }, uAmbSide: { value: new THREE.Vector3() }, uAmbDown: { value: new THREE.Vector3() },
+      uSunC: { value: new THREE.Vector3() }, uDayK: { value: 0 }, uExpo: { value: 1 }, uFogK: { value: 0.0019 },
+      uFogTab: { value: this.sky ? this.sky.fog.texture : null }, uShadowInv: { value: new THREE.Matrix4() },
+      // Detailed's tone curve as a table (glsl.js TONE_LUT)
+      uToneLut: { value: this.opts.vanilla ? null : makeToneLut() },
     };
     if (this.opts.vanilla) {
       this.vanilla = new Vanilla(this, textures);
@@ -88,7 +100,15 @@ export class Renderer {
     this.makeStandIns();
     // the full tiers run the whole chain after the world; the low ones draw straight to the screen
     this.post = ldr ? null : new Post(r, this.U, this.opts);
-    if (ldr && !this.vanilla) { this.skyFS = new FullScreen(makeLdrSky(this.U)); }
+    // Detailed: the sky in one pass first, and the game's own blocks of cloud after the world
+    if (ldr && !this.vanilla) {
+      this.skyFS = new FullScreen(makeLdrSky(this.U));
+      // drawn after every solid thing and before anything blended (rain, glass, beams), only where
+      // nothing covers it (ldrsky.js), so most of the screen never runs the sky's shader
+      this.skyFS.mesh.renderOrder = 1e6;
+      this.scene.add(this.skyFS.mesh);
+      this.blockClouds = new BlockClouds(detailedCloudMaterial(this.U));
+    }
     // the block in your hand: drawn in the world just in front of the eye
     this.handScene = new THREE.Scene();
     this.hand = new THREE.Group();
@@ -158,25 +178,6 @@ export class Renderer {
     this.r.resetState();
     this.visDirty = true;
   }
-  /* The shadow map is kept from frame to frame and only drawn again when it
-     would look different: the sun has moved a quarter of a degree, you have
-     moved a few blocks from where it was centred, the world's meshes changed,
-     or your own body is moving (so its shadow keeps up). Standing still, it
-     costs nothing at all; it is most of what the full tiers spend a frame on. */
-  shadowNeeded(state, light) {
-    const S = this.shadowState || (this.shadowState = { x: 0, y: 0, z: 0, cx: 1e9, cy: 1e9, cz: 1e9, at: -1e9, dirty: true });
-    const grid = Math.max(2, this.opts.shadowDist / 24), f = state.feet;
-    const cx = Math.floor(f.x / grid), cy = Math.floor(f.y / grid), cz = Math.floor(f.z / grid);
-    const turned = light.x * S.x + light.y * S.y + light.z * S.z < 0.99999;
-    const P = state.player;
-    // your own shadow keeps up with you
-    const body = this.avatar && this.avatar.ready && P && (Math.abs(P.vel.x) + Math.abs(P.vel.z) > 0.005 || Math.abs(P.vel.y) > 0.01 || this.swing > 0 || P.sneaking !== S.sneak);
-    const need = S.dirty || turned || cx !== S.cx || cy !== S.cy || cz !== S.cz || this.frame - S.at > 60 || body;
-    if (!need) return false;
-    S.x = light.x; S.y = light.y; S.z = light.z; S.cx = cx; S.cy = cy; S.cz = cz; S.at = this.frame; S.dirty = false;
-    S.sneak = P ? P.sneaking : false;
-    return true;
-  }
   /* ---- chunk meshes, drawn in one loop ----
      A column's meshes are plain vertex arrays on the graphics card, each in
      its own vertex array object. Every kind (opaque, cut-out, plants, the
@@ -206,8 +207,8 @@ export class Renderer {
     stand(this.trans, this.mats.fluid, ['fluid'], -10, false);
     stand(this.trans, this.mats.translucent, ['translucent'], -9, false);
     if (this.opts.shadows) {
-      stand(this.shadowScene, this.mats.shadowOpaque, ['opaque'], -10, true);
-      stand(this.shadowScene, this.mats.shadowCutout, ['cutout'].concat(this.opts.plantShadows === false ? [] : ['plants']).concat(this.opts.leafInShadows === false ? [] : ['leafIn']), -9, true);
+      stand(this.shadowTerrain, this.mats.shadowOpaque, ['opaque'], -10, true);
+      stand(this.shadowTerrain, this.mats.shadowCutout, ['cutout'].concat(this.opts.plantShadows === false ? [] : ['plants']).concat(this.opts.leafInShadows === false ? [] : ['leafIn']), -9, true);
     }
   }
   drawParts(material, kinds, cam, shadow) {
@@ -218,11 +219,14 @@ export class Renderer {
     let L = this.locs.get(P);
     if (!L) { L = { chunk: gl.getUniformLocation(P, 'uChunk'), meshTime: gl.getUniformLocation(P, 'uMeshTime') }; this.locs.set(P, L); }
     if (!L.chunk) return;
-    const list = this.inView(cam);
-    const back = !!material.transparent, n = list.length;
+    // the shadow map is drawn a share of its columns at a time (render/shadows.js)
+    const slice = shadow ? this.shadowSlice : null;
+    const list = slice ? slice.list : this.inView(cam);
+    const back = !!material.transparent, n = slice ? slice.to : list.length;
     const prevVao = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
-    for (let j = 0; j < n; j++) {
+    for (let j = slice ? slice.from : 0; j < n; j++) {
       const col = list[back ? n - 1 - j : j];
+      if (col.dead) continue;
       gl.uniform3f(L.chunk, col.cx * 16, 0, col.cz * 16);
       for (let k = 0; k < kinds.length; k++) {
         const p = col.byKind[kinds[k]];
@@ -263,7 +267,7 @@ export class Renderer {
     return list;
   }
   addColumn(cx, cz, mesh) {
-    if (this.shadowState) this.shadowState.dirty = true;
+    this.shadows.changed(cx, cz);
     this.dropColumn(cx, cz);
     const gl = this.gl;
     const col = { cx, cz, vis: mesh.vis, skyLow: mesh.skyLow, parts: [], byKind: {}, y0: 1e9, y1: -1e9, dist: 0 };
@@ -315,12 +319,14 @@ export class Renderer {
     this.glDirty = true;
   }
   dropColumn(cx, cz) {
-    if (this.shadowState) this.shadowState.dirty = true;
     const k = cx + ',' + cz;
     if (this.uploads) this.uploads.delete(k);
     const col = this.columns.get(k);
     if (!col) return;
+    this.shadows.changed(cx, cz);
     const gl = this.gl;
+    // a shadow map being built may still hold it in its list
+    col.dead = true;
     for (const p of col.parts) { gl.deleteVertexArray(p.vao); for (const b of p.bufs) gl.deleteBuffer(b); }
     this.columns.delete(k);
     this.visDirty = true;
@@ -439,6 +445,24 @@ export class Renderer {
     this.r.render(this.handScene, cam);
   }
 
+  /* ---- shaders built before they are needed ----
+     A shader is put together the first time something drawn with it comes
+     into view: the water's when you first turn to the sea, glass, a mob's,
+     the clouds'. Building one stops that frame for a tenth of a second or
+     more (Detailed's are the bigger ones), which is felt as a hitch. So every
+     material the world has (and any handed in, like the mobs') is built once
+     the world is loaded, in the background where the browser can, before it
+     is ever looked at. */
+  warmUp(extra) {
+    const r = this.r, cam = this.camera, more = new THREE.Scene();
+    const mats = [this.mats.handOpaque, this.mats.handCutout].concat(extra || []);
+    for (const m of mats) if (m) more.add(new THREE.Mesh(this.standGeo, m));
+    const scenes = [this.scene, this.trans, this.handScene, this.shadowTerrain, this.shadowScene, more,
+      this.blockClouds && this.blockClouds.scene, this.overlay && this.overlay.scene].filter(Boolean);
+    if (this.vanilla) for (const o of [this.vanilla.skyFS, this.vanilla.cloudMesh]) if (o && o.scene) scenes.push(o.scene);
+    for (const s of scenes) { try { r.compileAsync(s, cam).catch(() => {}); } catch (e) { /* drawn as before, built when first seen */ } }
+  }
+
   /* ---- the light in your hand, and torch flicker ---- */
   updateLights(state, dt) {
     const U = this.U, t = U.uClock.value;
@@ -460,6 +484,8 @@ export class Renderer {
   /* ---- a frame ---- */
   render(state, dt) {
     const U = this.U, r = this.r;
+    // Detailed: what each texture is made of, once the textures are on the graphics card (materials.js)
+    if (this.ldr && !this.vanilla && !this.layerMatDone) { this.layerMatDone = true; U.uLayerMat.value = bakeLayerMaterials(r, U.uSpecMap.value, U.uLayerInfo.value); }
     this.frame++;
     U.uFrame.value = this.frame;
     U.uTime.value = state.time;
@@ -486,7 +512,8 @@ export class Renderer {
     // the held block takes the light where you stand, as the model does
     if (this.uHandLight && this.avatar.uLight) this.uHandLight.value.copy(this.avatar.uLight.value);
     cam.fov = state.fov;
-    cam.far = this.opts.renderDist * 16 + 96;
+    // far enough for the clouds, which reach twice the render distance out at height 192
+    cam.far = this.opts.renderDist * 32 + 128;
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     U.uNear.value = cam.near; U.uFar.value = cam.far;
@@ -510,8 +537,14 @@ export class Renderer {
       if (col.leafIn) col.leafIn.hidden = d >= ld;
     }
 
-    // the sky table: every frame on the full tiers, every few on the low ones (it changes slowly)
-    if (this.sky && (this.frame % (this.opts.sky || 1) === 0 || this.frame < 3)) this.sky.update(sun, moon, state.eye.y);
+    // the sky table: every frame on the full tiers; on the light ones every few frames (it changes
+    // slowly), a third of it a frame, and all at once when the sun has jumped (/time set, a night's sleep)
+    // (nothing in the Nether or the End, which have no sky)
+    if (this.sky && (this.frame < 3 || !(state.dim && state.dim.sky !== 'normal'))) {
+      const n = this.opts.sky || 1, at = this.skySun || (this.skySun = new THREE.Vector3(0, -2, 0));
+      if (n < 3 || this.frame < 3 || at.dot(sun) < 0.9997) { this.sky.update(sun, moon, state.eye.y); at.copy(sun); }
+      else if (this.frame % n < 3) { this.sky.part(this.frame % n, sun, moon, state.eye.y); if (this.frame % n === 0) at.copy(sun); }
+    }
     if (!this.vanilla) {
       this.inter.update(dt, state.feet, state.trample);
       U.uInteract.value = this.inter.texture;
@@ -520,30 +553,9 @@ export class Renderer {
     // the shadow map, from whichever light is up (some tiers redraw it every other frame)
     if (!this.vanilla) dimLook(this, state, dt);
     const sunless = !!(state.dim && state.dim.sky !== 'normal');
-    const doShadow = this.opts.shadows > 0 && !sunless && (this.frame % (this.opts.shadowEvery || 1) === 0) && this.shadowNeeded(state, light);
-    if (doShadow) {
-    const D = this.opts.shadowDist;
-    const sc = this.shadowCam;
-    sc.left = -D; sc.right = D; sc.top = D; sc.bottom = -D; sc.near = -320; sc.far = 320;
-    sc.updateProjectionMatrix();
-    const T = this.tmp || (this.tmp = { up: new THREE.Vector3(), o: new THREE.Vector3(), n: new THREE.Vector3(), look: new THREE.Matrix4(), inv: new THREE.Matrix4(), c: new THREE.Vector3() });
-    const up = Math.abs(light.y) > 0.99 ? T.up.set(0, 0, 1) : T.up.set(0, 1, 0);
-    const look = T.look.lookAt(T.o.set(0, 0, 0), T.n.copy(light).negate(), up);
-    // snap the centre to whole texels in the light's own frame
-    const inv = T.inv.copy(look).invert();
-    const centre = T.c.copy(state.feet).applyMatrix4(inv);
-    const texel = 2 * D / this.opts.shadowRes * 0.25;
-    centre.x = Math.round(centre.x / texel) * texel; centre.y = Math.round(centre.y / texel) * texel;
-    centre.applyMatrix4(look);
-    sc.position.copy(centre);
-    sc.quaternion.setFromRotationMatrix(look);
-    sc.updateMatrixWorld();
-    U.uShadowMat.value.multiplyMatrices(sc.projectionMatrix, sc.matrixWorldInverse);
-    r.setRenderTarget(this.shadowRT);
-    r.setClearColor(0xffffff, 1);
-    r.clear(true, true, false);
-    if (light.y > 0.0) r.render(this.shadowScene, sc);
-    }
+    // the sun's shadow maps: kept, and built a share at a time when they must change (render/shadows.js)
+    if (this.opts.shadows > 0 && !sunless) this.shadows.update(state, light, this.frame);
+    else U.uBody.value.w = 0;
     U.uInvViewProj.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
     if (this.vanilla) {
       // the game with no shaders: sky, blocks, water, clouds, hand, straight to the screen
@@ -560,20 +572,24 @@ export class Renderer {
       return;
     }
     if (this.ldr) {
-      // exposure worked out here: by day the sky, by night the moon, deeper in a cave
-      const day = Math.min(1, Math.max(0, (sun.y + 0.12) / 0.42));
-      let e = Math.exp(Math.log(4.2) + (Math.log(0.11) - Math.log(4.2)) * Math.sqrt(day));
-      if (state.skyAtEye < 1) e *= 2.2;
-      const ex = this.ldrExpo === undefined ? e : this.ldrExpo + (e - this.ldrExpo) * Math.min(1, dt * 1.5);
-      this.ldrExpo = ex;
-      U.uExposure.value = ex;
+      // the exposure: under the sky the sky table works it out from the light there is (glsl.js EXPOSURE);
+      // in a cave or under a roof the eye eases over to one level, whatever the time of day;
+      // the Nether and the End have no sky and keep one level each (about where the eye used to settle there)
+      const cave = !sunless && state.skyAtEye < 1 ? 1 : 0;
+      this.caveNow = this.caveNow === undefined ? cave : this.caveNow + (cave - this.caveNow) * Math.min(1, dt * 1.5);
+      U.uCave.value = this.caveNow < 0.002 ? 0 : this.caveNow;
+      U.uExposure.value = sunless ? (state.dim.id === 'the_end' ? 2.0 : 4.2) : 2.4;
+      this.sky.setUniforms(U, cam.position.y);
       r.setRenderTarget(null);
       r.setClearColor(0x000000, 1);
       r.clear(true, true, false);
-      this.skyFS.render(r, null);
+      // the sky is the scene's last solid thing (see the constructor)
       r.render(this.scene, cam);
       if (this.overlay) this.overlay.render(r, cam);
       r.render(this.trans, cam);
+      // the clouds, as Fast draws them (none where the dimension has none, or with Clouds off)
+      const clouds = state.dim && !state.dim.clouds ? 'off' : this.opts.clouds || 'fancy';
+      if (this.blockClouds && clouds !== 'off' && !state.eyeInWater) this.blockClouds.draw(r, cam, state.time, clouds, U.uRender.value * 2);
       this.drawHand(state, cam, dt);
       return;
     }

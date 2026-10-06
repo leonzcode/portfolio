@@ -119,7 +119,7 @@ export class WeatherFX {
     if ((this.topsAt || 0) !== sim.n) { tops.clear(); this.topsAt = sim.n; }
     // how bright: the time of day, the rain itself and the sky light at the eye
     const day = Math.max(0.2, 1 - sim.skyDarken() / 15);
-    for (const k in this.layers) this.layers[k].m.uniforms.uBright.value = (r.vanilla ? 1 : 1.6) * day;
+    for (const k in this.layers) this.layers[k].m.uniforms.uBright.value = (r.post ? 1.6 : 1) * day;
     for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
       const d2 = dx * dx + dz * dz;
       if (d2 > R * R) continue;

@@ -11,17 +11,30 @@
                      direction, from where the player stands
      ambient         8 x 1, every frame: what the rest of the shaders light
                      with - the sky's light from above, from the side and
-                     from the ground, and the colour of the sun (or moon)
+                     from the ground, and the colour of the sun (or moon) -
+                     and how open the eye should be for that light
 
    The sun reddens at sunset because there is more air to get through, the
    sky goes deep blue overhead and pale at the horizon, and the world takes
    its colour from the same sky it is under.
 --------------------------------------------------------------------------- */
-import { COMMON, ATMOS } from './glsl.js?v=15';
+import { COMMON, ATMOS } from './glsl.js?v=16';
 const THREE = window.THREE;
 
 export const SUN_I = 14.0;      // the sun's strength in the scene's units
 export const MOON_I = 0.045;    // and the moon's: dim, but enough to walk by
+/* Detailed's light look: a lighter sky than the atmosphere gives (so the
+   day reads bright and clear, and the fog and the water's sheen with it),
+   the sky's light into the shade brighter still (so a shadow is soft and
+   readable, never black), and sunlight a little warmer. The exposure is
+   then worked out from that light (texel 6), so the picture stays the same
+   brightness from noon to dusk. */
+const LOOK = /* glsl */`
+const float SKY_GAIN = 1.5;
+const float AMB_BOOST = 1.7;
+const vec3 WARM = vec3(1.06, 1.0, 0.88);
+const float KEY = 0.85;
+`;
 
 export class FullScreen {
   constructor(material) {
@@ -118,7 +131,7 @@ void main() {
   o = vec4(L2 / (1.0 - F), 1.0);
 }`;
 
-const FS_VIEW = COMMON + ATMOS + /* glsl */`
+const FS_VIEW = COMMON + ATMOS + LOOK + /* glsl */`
 uniform sampler2D uTrans, uMS;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uCamH, uSunI, uMoonI;
@@ -155,11 +168,12 @@ void main() {
     L += T * (sunL * uSunI + moonL * uMoonI) * integ;
     T *= stp;
   }
-  o = vec4(L, 1.0);
+  o = vec4(L * SKY_GAIN, 1.0);
 }`;
 
-// what the scene is lit by: sky light from above, from the side, from below, then the sun or moon
-const FS_AMB = COMMON + ATMOS + /* glsl */`
+// what the scene is lit by: sky light from above, from the side, from below, then the sun or moon,
+// then the exposure for that light
+const FS_AMB = COMMON + ATMOS + LOOK + /* glsl */`
 uniform sampler2D uView, uTrans;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uCamH, uSunI, uMoonI;
@@ -190,17 +204,42 @@ void main() {
   vec3 sunT = texture(uTrans, transUV(uCamH, uSunDir.y)).rgb;
   vec3 moonT = texture(uTrans, transUV(uCamH, uMoonDir.y)).rgb;
   vec3 c = vec3(0.0);
-  if (i == 0) c = irr(vec3(0.0, 1.0, 0.0));
-  else if (i == 1) c = (irr(vec3(1.0, 0.0, 0.0)) + irr(vec3(-1.0, 0.0, 0.0)) + irr(vec3(0.0, 0.0, 1.0)) + irr(vec3(0.0, 0.0, -1.0))) * 0.25;
+  vec3 light = uSunDir.y > -0.02 ? sunT * uSunI * smoothstep(-0.02, 0.03, uSunDir.y) : moonT * uMoonI * smoothstep(-0.02, 0.06, uMoonDir.y);
+  if (i == 0) c = irr(vec3(0.0, 1.0, 0.0)) * AMB_BOOST;
+  else if (i == 1) c = (irr(vec3(1.0, 0.0, 0.0)) + irr(vec3(-1.0, 0.0, 0.0)) + irr(vec3(0.0, 0.0, 1.0)) + irr(vec3(0.0, 0.0, -1.0))) * 0.25 * AMB_BOOST;
   else if (i == 2) {
     // what bounces off the ground: sky and sun on grass-ish ground
     vec3 Eg = irr(vec3(0.0, 1.0, 0.0)) + sunT * uSunI * sat(uSunDir.y) + moonT * uMoonI * sat(uMoonDir.y);
-    c = Eg * 0.18;
+    c = Eg * 0.18 * AMB_BOOST;
   }
-  else if (i == 3) c = uSunDir.y > -0.02 ? sunT * uSunI * smoothstep(-0.02, 0.03, uSunDir.y) : moonT * uMoonI * smoothstep(-0.02, 0.06, uMoonDir.y);
+  else if (i == 3) c = light * WARM;
   else if (i == 4) c = sunT * uSunI;
   else if (i == 5) c = moonT * uMoonI;
+  else if (i == 6) {
+    // how much light falls on an everyday scene (a third of the sun, all of the sky), and the exposure that keeps it
+    // mid-bright; at night it opens no further than the moon allows, so night stays night
+    float E = lum(light) * 0.35 + lum(irr(vec3(0.0, 1.0, 0.0))) * AMB_BOOST;
+    c = vec3(clamp(KEY / max(E, 1e-4), 0.05, 4.5));
+  }
   o = vec4(c, 1.0);
+}`;
+
+/* The fog's colour in every direction above the horizon, for the shaders
+   that fog per vertex: the sky table again, laid out so a direction finds
+   its place without any angles (a hemi-octahedron: x + z and x - z over the
+   sum of the three, the horizon round the edge). */
+const FS_FOGTAB = COMMON + /* glsl */`
+uniform sampler2D uView;
+in vec2 vUv; out vec4 o;
+void main() {
+  vec2 p = vUv * 2.0 - 1.0;
+  vec2 xz = vec2(p.x + p.y, p.x - p.y) * 0.5;
+  vec3 d = normalize(vec3(xz.x, max(1.0 - abs(xz.x) - abs(xz.y), 0.0), xz.y));
+  d = normalize(vec3(d.x, max(d.y, 0.02), d.z));
+  float elev = asin(clamp(d.y, -1.0, 1.0));
+  float v = 0.5 + 0.5 * sign(elev) * sqrt(abs(elev) / (PI * 0.5));
+  float az = atan(d.z, d.x); if (az < 0.0) az += TAU;
+  o = vec4(texture(uView, vec2(az / TAU, v)).rgb, 1.0);
 }`;
 
 export class Sky {
@@ -211,6 +250,7 @@ export class Sky {
     this.ms = floatTarget(32, 32);
     this.view = floatTarget(192, 108, { wrapS: THREE.RepeatWrapping });
     this.amb = floatTarget(8, 1, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    this.fog = floatTarget(64, 64);
     this.uniforms = {
       uTrans: { value: this.trans.texture }, uMS: { value: this.ms.texture }, uView: { value: this.view.texture },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
@@ -220,14 +260,87 @@ export class Sky {
     this.mMS = rawMat(FS_MS, this.uniforms);
     this.mView = rawMat(FS_VIEW, this.uniforms);
     this.mAmb = rawMat(FS_AMB, this.uniforms);
+    this.mFog = rawMat(FS_FOGTAB, this.uniforms);
     this.fs.material = this.mTrans; this.fs.render(renderer, this.trans);
     this.fs.material = this.mMS; this.fs.render(renderer, this.ms);
+    // the light table, as numbers the CPU can hand to the shaders (see readLight)
+    this.light = new Float32Array(32);
+    this.lightRead = false;
   }
   update(sunDir, moonDir, eyeY) {
-    this.uniforms.uSunDir.value.copy(sunDir);
-    this.uniforms.uMoonDir.value.copy(moonDir);
-    this.uniforms.uCamH.value = Math.max(0.01, 0.2 + (eyeY - 63) / 1000);
-    this.fs.material = this.mView; this.fs.render(this.renderer, this.view);
-    this.fs.material = this.mAmb; this.fs.render(this.renderer, this.amb);
+    for (let k = 0; k < 3; k++) this.part(k, sunDir, moonDir, eyeY);
+  }
+  /* The same, a third at a time (renderer.js spreads it over three frames, so
+     no one frame pays for the whole table): 0 the sky in every direction,
+     1 the fog's table from it, 2 the light it gives and its read-back. */
+  part(k, sunDir, moonDir, eyeY) {
+    if (k === 0) {
+      this.uniforms.uSunDir.value.copy(sunDir);
+      this.uniforms.uMoonDir.value.copy(moonDir);
+      this.uniforms.uCamH.value = Math.max(0.01, 0.2 + (eyeY - 63) / 1000);
+      this.fs.material = this.mView; this.fs.render(this.renderer, this.view);
+    } else if (k === 1) { this.fs.material = this.mFog; this.fs.render(this.renderer, this.fog); }
+    else { this.fs.material = this.mAmb; this.fs.render(this.renderer, this.amb); this.askLight(); }
+  }
+  /* The eight numbers of the light table (sky light from above, the side
+     and below, the sun or moon, the exposure...) read back to the CPU, so
+     the shaders that light per vertex take them as plain values instead of
+     reading the table at every vertex. The read is started after the table
+     is drawn and picked up a frame or two later, when the graphics card has
+     done it (a fence), so it never makes the CPU wait; the very first one is
+     read at once. The sky changes slowly, so a frame or two late is never
+     seen. */
+  askLight() {
+    const r = this.renderer, gl = r.getContext();
+    if (this.fence) return;
+    r.setRenderTarget(this.amb);
+    if (!this.lightRead) {
+      gl.readPixels(0, 0, 8, 1, gl.RGBA, gl.FLOAT, this.light);
+      this.lightRead = true;
+      return;
+    }
+    if (!this.pbo) {
+      this.pbo = gl.createBuffer();
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, this.light.byteLength, gl.STREAM_READ);
+    } else gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
+    gl.readPixels(0, 0, 8, 1, gl.RGBA, gl.FLOAT, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this.fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+  }
+  /* Once a frame, for Detailed: the table's values as the per-vertex shaders
+     take them (materials.js LEAN_VS, glsl.js fogTerms). The sky's light from
+     above, the side and below is greyed a little and has the sun's bounce off
+     the ground added, as the blocks' shader always did; the exposure is the
+     table's, eased over to the renderer's own in a cave, and the renderer's
+     alone in the Nether and the End (glsl.js EXPOSURE); the fog thickens
+     below the eye's height (uFogK). */
+  setUniforms(U, camY) {
+    this.readLight();
+    const a = this.light;
+    const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const sr = a[12], sg = a[13], sb = a[14];
+    const put = (v, i) => {
+      const r = a[i], g = a[i + 1], b = a[i + 2], m = lum(r, g, b);
+      v.set(r + (m - r) * 0.22 + sr * 0.03, g + (m - g) * 0.22 + sg * 0.03, b + (m - b) * 0.22 + sb * 0.03);
+    };
+    put(U.uAmbUp.value, 0); put(U.uAmbSide.value, 4); put(U.uAmbDown.value, 8);
+    U.uSunC.value.set(sr, sg, sb);
+    U.uDayK.value = Math.min(1, Math.max(0, lum(sr, sg, sb) * 0.3));
+    const e = Math.max(1e-4, a[24]), cave = U.uCave.value, ex = U.uExposure.value;
+    U.uExpo.value = U.uDim.value > 0.5 ? ex : cave > 0 ? Math.exp(Math.log(e) + (Math.log(ex) - Math.log(e)) * cave) : e;
+    U.uFogK.value = 0.0019 * Math.exp(-(camY - 63) / 60);
+  }
+  // once a frame: has the last read arrived?
+  readLight() {
+    if (!this.fence) return;
+    const gl = this.renderer.getContext();
+    if (gl.clientWaitSync(this.fence, 0, 0) === gl.TIMEOUT_EXPIRED) return;
+    gl.deleteSync(this.fence);
+    this.fence = null;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this.light);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   }
 }

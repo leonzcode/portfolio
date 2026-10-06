@@ -20,7 +20,7 @@
    Yaw here is the player's: 0 faces -z, and the way ahead is
    (-sin yaw, -cos yaw).
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, B } from '../blocks.js?v=15';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=16';
 const THREE = window.THREE;
 
 export const DEG = Math.PI / 180;

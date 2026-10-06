@@ -47,8 +47,8 @@
    the biome the chest stands in (a few entries only exist in, or everywhere
    but, one biome; with no biome given the ones that need a biome are left out).
 --------------------------------------------------------------------------- */
-import { JRand, toLong } from './rand.js?v=15';
-import { LOOT } from './lootdata.js?v=15';
+import { JRand, toLong } from './rand.js?v=16';
+import { LOOT } from './lootdata.js?v=16';
 
 const CHEST_SLOTS = 27;
 const DISPENSER_SLOTS = 9;

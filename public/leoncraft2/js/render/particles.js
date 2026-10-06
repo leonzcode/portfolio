@@ -17,9 +17,9 @@
    each frame from the live ones (at most MAX), lit by the light where the
    player stands.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B, SOLID } from '../blocks.js?v=15';
-import { VANILLA } from './vanilla.js?v=15';
-import { COMMON, LIGHTS } from './glsl.js?v=15';
+import { BLOCKS, B, SOLID } from '../blocks.js?v=16';
+import { VANILLA } from './vanilla.js?v=16';
+import { COMMON, LIGHTS, LDR, TONEMAP } from './glsl.js?v=16';
 const THREE = window.THREE;
 
 const MAX = 1500;
@@ -29,9 +29,24 @@ const VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
 in vec3 position; in vec3 aUv; in vec3 aCol;
 out vec3 vUv; out vec3 vCol; out vec3 vWorld;
+#ifdef LDR
+// Detailed: the light where you stand and the fog, per corner (a piece is a few pixels across)
+uniform sampler2D uAmbient, uNoise, uView;
+uniform vec3 cameraPosition;
+uniform vec2 uLightLv;
+uniform float uEyeInWater;
+out vec3 vLight; out vec3 vKeep; out vec3 vAdd;
+#endif
+LIGHTS_HERE
 void main() {
   vUv = aUv; vCol = aCol; vWorld = position;
   gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+#ifdef LDR
+  float sky = uLightLv.x, block = uLightLv.y;
+  vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
+  vLight = sunC * smoothstep(0.8, 0.95, sky) * 0.5 + amb * sky * sky * 0.8 / PI + (block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) / PI : vec3(0.0)) + vec3(0.002);
+  fogTerms(position, vKeep, vAdd);
+#endif
 }`;
 // Fast graphics: the lightmap and the fog, as the blocks
 const FS_VANILLA = VANILLA + /* glsl */`
@@ -46,24 +61,17 @@ void main() {
   vec3 c = t.rgb * vCol * lightmapAt(uLightLv.x, uLightLv.y);
   o = vec4(linearFog(c, fogDistance(vWorld - cameraPosition)), 1.0);
 }`;
-// Detailed graphics: lit like the player model (sky, sun, block light), in linear light for the post chain
-const FS_DETAILED = COMMON + /* glsl */`
+// Detailed graphics: lit like the player model (sky, sun, block light), then fogged and tone mapped like the blocks
+const FS_DETAILED = COMMON + TONEMAP + /* glsl */`
 uniform sampler2DArray uAlbedo;
-uniform sampler2D uAmbient, uNoise;
-uniform vec3 cameraPosition, uLightDir;
-uniform vec2 uLightLv;
-uniform float uTime, uFrame;
-` + LIGHTS + /* glsl */`
 in vec3 vUv; in vec3 vCol; in vec3 vWorld;
+in vec3 vLight; in vec3 vKeep; in vec3 vAdd;
 out vec4 o;
 void main() {
   vec4 t = vUv.z >= 0.0 ? textureLod(uAlbedo, vUv, 0.0) : vec4(1.0);
   if (t.a < 0.1) discard;
   vec3 albedo = toLinear(t.rgb * vCol);
-  float sky = uLightLv.x, block = uLightLv.y;
-  vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
-  vec3 light = sunC * smoothstep(0.8, 0.95, sky) * 0.5 + amb * sky * sky * 0.8 / PI + (block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) / PI : vec3(0.0)) + vec3(0.002);
-  o = vec4(albedo * light, 1.0);
+  o = vec4(toneLDR(albedo * vLight * vKeep + vAdd), 1.0);
 }`;
 
 export class Particles {
@@ -82,8 +90,8 @@ export class Particles {
     const U = renderer.U;
     const uni = Object.assign({}, U, { uLightLv: renderer.avatar.uLight });
     this.mesh = new THREE.Mesh(g, new THREE.RawShaderMaterial({
-      glslVersion: THREE.GLSL3, vertexShader: HEAD + VS, fragmentShader: HEAD + (renderer.vanilla ? FS_VANILLA : FS_DETAILED),
-      uniforms: uni, side: THREE.DoubleSide,
+      glslVersion: THREE.GLSL3, vertexShader: HEAD + (renderer.vanilla ? VS.replace('LIGHTS_HERE', '') : COMMON + TONEMAP + 'uniform float uTime;\n' + VS.replace('LIGHTS_HERE', LDR + LIGHTS)), fragmentShader: HEAD + (renderer.vanilla ? FS_VANILLA : FS_DETAILED),
+      uniforms: uni, side: THREE.DoubleSide, defines: renderer.ldr && !renderer.vanilla ? { LDR: 1 } : {},
     }));
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 5;

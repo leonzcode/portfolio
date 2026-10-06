@@ -62,19 +62,18 @@ vec3 shadowCoord(vec3 world, vec3 n, float NoL, float dist) {
   c.z *= 0.2;
   return c.xyz * 0.5 + 0.5;
 }
-// soft shadows: a rotated Vogel disc of hardware-filtered taps
+// soft shadows, kept cheap: four hardware-filtered taps in a fixed square
+// (each tap already blends four texels), so the edge is soft and never
+// shimmers from frame to frame. The noise argument is no longer used.
 float shadowSoft(vec3 sc, float noise, float radius) {
   if (sc.x <= 0.0 || sc.x >= 1.0 || sc.y <= 0.0 || sc.y >= 1.0 || sc.z >= 1.0) return 1.0;
-  float s = 0.0;
-  float a0 = noise * TAU;
-  float bias = 0.00004;
-  for (int i = 0; i < 8; i++) {
-    float r = sqrt((float(i) + 0.5) / 8.0) * radius;
-    float a = float(i) * 2.39996 + a0;
-    vec2 o = vec2(cos(a), sin(a)) * r / uShadowRes;
-    s += textureLod(uShadow, vec3(sc.xy + o, sc.z - bias), 0.0);
-  }
-  return s / 8.0;
+  float bias = 0.00004, z = sc.z - bias;
+  vec2 o = vec2(0.5 * radius / uShadowRes);
+  float s = textureLod(uShadow, vec3(sc.xy + vec2(-o.x, -o.y), z), 0.0)
+          + textureLod(uShadow, vec3(sc.xy + vec2(o.x, -o.y), z), 0.0)
+          + textureLod(uShadow, vec3(sc.xy + vec2(-o.x, o.y), z), 0.0)
+          + textureLod(uShadow, vec3(sc.xy + vec2(o.x, o.y), z), 0.0);
+  return s * 0.25;
 }
 float shadowHard(vec3 sc) {
   if (sc.x <= 0.0 || sc.x >= 1.0 || sc.y <= 0.0 || sc.y >= 1.0 || sc.z >= 1.0) return 1.0;
@@ -192,6 +191,41 @@ vec3 waveNormal(vec2 p, float t, vec2 flow, float strength) {
   float hx = waveH(p + vec2(e, 0.0), t, flow), hz = waveH(p + vec2(0.0, e), t, flow);
   return normalize(vec3(-(hx - h0) / e * strength, 1.0, -(hz - h0) / e * strength));
 }
+// value noise and its slope
+vec3 vnoiseD(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f), du = 6.0 * f * (1.0 - f);
+  float a = hash12(i), b = hash12(i + vec2(1, 0)), c = hash12(i + vec2(0, 1)), d = hash12(i + vec2(1, 1));
+  float k = a - b - c + d;
+  return vec3(a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y, du * vec2((b - a) + k * u.y, (c - a) + k * u.x));
+}
+/* The same waves as waveNormal, their slope worked out with them rather than
+   by sampling the sum three times: one pass of five waves instead of
+   fifteen. The noise that bends the crests is taken into the slope too.
+   Far off only the first few (n): the finest are smaller than a pixel there. */
+vec3 waveNormalD(vec2 p, float t, vec2 flow, float strength, int n) {
+  float amp = 1.0, wl = 7.0;
+  float a = 0.52;
+  vec3 wn = vnoiseD(p * 0.18 + t * 0.05);
+  float warp = wn.x * 2.0;
+  vec2 dwarp = wn.yz * 0.36;
+  bool flowing = dot(flow, flow) > 0.01;
+  vec2 g = vec2(0.0);
+  for (int i = 0; i < 5; i++) {
+    if (i >= n) break;
+    vec2 dir = flowing ? normalize(flow) : vec2(cos(a), sin(a));
+    float k = TAU / wl;
+    float w = sqrt(9.8 * k) * (flowing ? 0.7 : 1.0);
+    float x = w * t - k * (dot(dir, p) + warp);
+    float s = sin(x);
+    // the slope of amp * sqr(sin(x) * 0.5 + 0.5)
+    g += amp * (s * 0.5 + 0.5) * cos(x) * -k * (dir + dwarp);
+    amp *= 0.55; wl *= 0.62; a += 2.39996;
+  }
+  // over all five waves' heights (1 + 0.55 + 0.55^2 + ...), however many were summed
+  g /= 2.1109;
+  return normalize(vec3(-g.x * strength, 1.0, -g.y * strength));
+}
 `;
 
 /* ---- block light, the light in your hand, and the clouds' shadows ---------
@@ -279,13 +313,80 @@ vec3 toSRGB(vec3 c) {
   c = max(c, 0.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
+// Detailed's whole tone curve, exposure already applied: linear light in, the screen's colour out.
+// With TONE_LUT, everything after AgX's log step comes from a small table (makeToneLut below):
+// one look-up instead of a dozen powers a pixel, never more than two steps of 255 from the curve itself
+#ifdef TONE_LUT
+uniform highp sampler3D uToneLut;
+vec3 toneLDR(vec3 c) {
+  const mat3 inM = mat3(0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+                        0.0784335999999992, 0.878468636469772, 0.0784336,
+                        0.0792237451477643, 0.0791661274605434, 0.879142973793104);
+  vec3 x = (clamp(log2(max(inM * c, 1e-10)), -12.47393, 4.026069) + 12.47393) / 16.499999;
+  return textureLod(uToneLut, x * (31.0 / 32.0) + 0.5 / 32.0, 0.0).rgb;
+}
+#else
+vec3 toneLDR(vec3 c) { return toSRGB(agx(c)); }
+#endif
 `;
 
-/* ---- the single-pass finish, for the low tiers: fog, exposure, tone map ----
-   needs uView, uAmbient, uEyeInWater and cameraPosition declared by the host */
+/* The table for TONE_LUT: AgX from its log step on (the contrast curve, the
+   punch, the way out) and the sRGB step, 32 to a side, filtered. Indexed by
+   the log of the colour, as AgX itself works, so the dark end gets as many
+   entries as the bright. */
+export function makeToneLut() {
+  const THREE = window.THREE, N = 32;
+  const outM = [1.19687900512017, -0.0528968517574562, -0.0529716355144438, -0.0980208811401368, 1.15190312990417, -0.0980434501171241, -0.0990297440797205, -0.0989611768448433, 1.15107367264116];
+  const contrast = x => { const x2 = x * x, x4 = x2 * x2; return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232; };
+  const srgb = c => { c = Math.max(c, 0); return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
+  const data = new Uint8Array(N * N * N * 4);
+  for (let b = 0; b < N; b++) for (let g = 0; g < N; g++) for (let r = 0; r < N; r++) {
+    let c = [contrast(r / (N - 1)), contrast(g / (N - 1)), contrast(b / (N - 1))];
+    const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    c = c.map(v => Math.pow(Math.max(l + 1.12 * (v - l), 0), 1.06));
+    // outM * c, the matrix by columns as GLSL has it
+    const o = [0, 1, 2].map(k => outM[k] * c[0] + outM[3 + k] * c[1] + outM[6 + k] * c[2]);
+    const i = ((b * N + g) * N + r) * 4;
+    for (let k = 0; k < 3; k++) data[i + k] = Math.round(Math.min(1, Math.max(0, srgb(Math.pow(Math.max(o[k], 0), 2.2)))) * 255);
+    data[i + 3] = 255;
+  }
+  const t = new THREE.Data3DTexture(data, N, N, N);
+  t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
+  t.minFilter = t.magFilter = THREE.LinearFilter;
+  t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping;
+  t.generateMipmaps = false; t.unpackAlignment = 1;
+  t.needsUpdate = true;
+  return t;
+}
+
+/* ---- Detailed's exposure ----
+   In the Overworld the sky table works out how much light there is and so
+   how open the eye should be (render/sky.js, its seventh texel); in a cave
+   or under a roof the eye eases over (uCave, 0 to 1) to the renderer's
+   uExposure, the same at any time of day. The Nether and the End have no
+   sky, and uExposure is their whole exposure. Needs uDim, uExposure and
+   uAmbient declared by the host. */
+export const EXPOSURE = /* glsl */`
+uniform float uCave;
+float exposureNow() {
+  if (uDim > 0.5) return uExposure;
+  float e = texelFetch(uAmbient, ivec2(6, 0), 0).r;
+  return uCave > 0.0 ? exp(mix(log(e), log(uExposure), uCave)) : e;
+}
+`;
+
+/* ---- the single-pass finish, for Detailed: fog, exposure, tone map ----
+   needs uView, uAmbient, uEyeInWater and cameraPosition declared by the host
+   (and HAS_DIM defined if it declares uDim itself) */
 export const LDR = /* glsl */`
 uniform float uExposure, uRender, uSkyAtEye;
 uniform vec3 uWaterTint;
+#ifndef HAS_DIM
+uniform float uDim;
+#endif
+uniform vec3 uDimFog;           // the Nether's and the End's fog colour and range (js/dim/look.js)
+uniform vec2 uDimFogRange;
+` + EXPOSURE + /* glsl */`
 vec3 skyDir(vec3 d) {
   float elev = asin(clamp(d.y, -1.0, 1.0));
   float v = 0.5 + 0.5 * sign(elev) * sqrt(abs(elev) / (PI * 0.5));
@@ -295,7 +396,10 @@ vec3 skyDir(vec3 d) {
 vec3 finishLDR(vec3 col, vec3 world) {
   vec3 rd = world - cameraPosition;
   float dist = length(rd); rd /= max(dist, 1e-4);
-  if (uEyeInWater > 0.5) {
+  if (uDim > 0.5) {
+    // no sky to fog towards: the fog closes in on its own colour
+    col = mix(col, uDimFog, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
+  } else if (uEyeInWater > 0.5) {
     vec3 absorb = -0.15 * log(max(uWaterTint, vec3(0.02))) + 0.03;
     vec3 Tr = exp(-(absorb + 0.025) * min(dist, 96.0));
     vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
@@ -309,6 +413,41 @@ vec3 finishLDR(vec3 col, vec3 world) {
     float hd = length((world - cameraPosition).xz);
     col = mix(col, skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), smoothstep(uRender * 0.72, uRender, hd));
   }
-  return toSRGB(agx(col * uExposure));
+  return toSRGB(agx(col * exposureNow()));
+}
+/* The same fog worked out once per vertex (as the game does its fog), for
+   the shaders that light per vertex: what is left of the surface (keep, a
+   colour, since water takes red first) and the light the fog adds in front
+   of it. finishLDR(col) is then toneLDR(col * keep + add), with the exposure
+   already in both. The renderer hands in what is the same for the whole
+   frame: the exposure (uExpo) and the fog's thickness at the eye's height
+   (uFogK); the fog's colour comes from a small table (sky.js FS_FOGTAB). */
+uniform float uExpo, uFogK;
+uniform sampler2D uFogTab;
+vec3 fogColour(vec3 rd) {
+  vec3 d = vec3(rd.x, max(rd.y, 0.02), rd.z);
+  vec2 uv = vec2(d.x + d.z, d.x - d.z) / (abs(d.x) + d.y + abs(d.z));
+  return textureLod(uFogTab, uv * 0.5 + 0.5, 0.0).rgb;
+}
+void fogTerms(vec3 world, out vec3 keep, out vec3 add) {
+  vec3 rd = world - cameraPosition;
+  float dist = length(rd); rd /= max(dist, 1e-4);
+  float E = uExpo;
+  if (uDim > 0.5) {
+    float f = sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x));
+    keep = vec3((1.0 - f) * E); add = uDimFog * f * E;
+  } else if (uEyeInWater > 0.5) {
+    vec3 absorb = -0.15 * log(max(uWaterTint, vec3(0.02))) + 0.03;
+    vec3 Tr = exp(-(absorb + 0.025) * min(dist, 96.0));
+    vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb / PI;
+    keep = Tr * E; add = amb * uWaterTint * 0.6 * uSkyAtEye * (1.0 - Tr) * E;
+  } else {
+    float k = 1.0 / 60.0, dy = rd.y * dist;
+    float od = uFogK * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
+    float T = exp(-od);
+    float fade = smoothstep(uRender * 0.72, uRender, length(rd.xz) * dist);
+    keep = vec3(T * (1.0 - fade) * E);
+    add = fogColour(rd) * ((1.0 - T) * uSkyAtEye * (1.0 - fade) + fade) * E;
+  }
 }
 `;
