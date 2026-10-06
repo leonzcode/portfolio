@@ -23,7 +23,7 @@ import { lightDefines } from './materials.js?v=16';
 import { GLINT } from './armor.js?v=16';
 const THREE = window.THREE;
 
-export const ATLAS = 1024;           // the mob texture atlas, in pixels a side
+export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)
 const BONE_W = 256;                  // matrices per row of the bone texture
 
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow;\n`;

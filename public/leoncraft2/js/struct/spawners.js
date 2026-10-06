@@ -12,24 +12,90 @@
 
    Chests in structures hold their loot as data (a loot table and a seed)
    until something opens them: lootAt(x, y, z) rolls it (struct/loot.js).
+
+   A spawn egg used on a spawner sets its mob (setSpawnerMob): kept in the
+   spawner block's meta, an index into SPAWNABLE, so it is saved with the
+   world's edits like any block. Those spawners are found among the edits of
+   the chunks round the player, and work the same way. An empty spawner
+   (placed, never given an egg) spawns nothing, as in the game. The mob of
+   each spawner near the player turns slowly inside its cage, small (drawn
+   by the mobs' renderer from its displays list, never ticked or hit).
 --------------------------------------------------------------------------- */
 import { B } from '../blocks.js?v=16';
-import { Y0 } from '../world-const.js?v=16';
+import { Y0, CH } from '../world-const.js?v=16';
+
+// what a spawner can hold, by its meta (1 up): append only, saves keep the numbers
+export const SPAWNABLE = ['zombie', 'skeleton', 'spider', 'cave_spider', 'blaze', 'creeper', 'husk', 'stray', 'drowned', 'magma_cube', 'silverfish', 'endermite',
+  'witch', 'slime', 'pig', 'cow', 'sheep', 'chicken', 'rabbit', 'wolf', 'fox', 'cat', 'ocelot', 'horse', 'donkey', 'mule', 'llama', 'trader_llama', 'camel',
+  'parrot', 'bat', 'bee', 'goat', 'panda', 'polar_bear', 'armadillo', 'axolotl', 'cod', 'salmon', 'tropical_fish', 'pufferfish', 'squid', 'glow_squid',
+  'dolphin', 'turtle', 'frog', 'tadpole', 'allay', 'mooshroom', 'sniffer', 'iron_golem', 'snow_golem', 'copper_golem', 'villager', 'wandering_trader',
+  'zombie_villager', 'skeleton_horse', 'zombie_horse', 'camel_husk', 'bogged', 'parched', 'wither_skeleton', 'zombie_nautilus', 'nautilus', 'breeze',
+  'creaking', 'elder_guardian', 'guardian', 'phantom', 'warden', 'evoker', 'pillager', 'ravager', 'vindicator', 'vex', 'ghast', 'happy_ghast', 'hoglin',
+  'piglin', 'piglin_brute', 'strider', 'zoglin', 'zombified_piglin', 'enderman', 'shulker', 'wither', 'ender_dragon'];
+export const spawnerMob = meta => (meta > 0 && meta <= SPAWNABLE.length ? SPAWNABLE[meta - 1] : null);
+// a spawn egg used on a spawner: true when it took the egg's mob
+export function setSpawnerMob(world, x, y, z, type) {
+  const i = SPAWNABLE.indexOf(type), b = world.get(x, y, z);
+  if (i < 0 || (b !== B.spawner && b !== B.trial_spawner)) return false;
+  world.set(x, y, z, b, i + 1);
+  return true;
+}
 
 const RANGE = 16, SPAWN_RANGE = 4, COUNT = 4, MAX_NEAR = 6, MIN_DELAY = 200, MAX_DELAY = 800;
 
 export class Spawners {
-  constructor() { this.state = new Map(); }     // "x,y,z" -> ticks left
+  constructor() { this.state = new Map(); this.edited = new Map(); this.shown = new Map(); this.n = 0; }     // state: "x,y,z" -> ticks left
   tick(world, player) {
     if (!world || !player) return;
     const px = player.pos.x, py = player.pos.y + Y0, pz = player.pos.z;
     const ccx = Math.floor(px / 16), ccz = Math.floor(pz / 16);
+    const seen = new Set(), rescan = ++this.n % 100 === 0;
     for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
-      const c = world.chunks.get((ccx + dx) + ',' + (ccz + dz));
-      if (!c || !c.structs || !c.structs.spawners) continue;
-      for (const s of c.structs.spawners) this.one(world, s, px, py, pz);
+      const key = (ccx + dx) + ',' + (ccz + dz);
+      const c = world.chunks.get(key);
+      if (!c) continue;
+      // a structure's spawner keeps its own mob unless an egg changed it (then it is one of the edited ones below)
+      if (c.structs && c.structs.spawners) for (const s of c.structs.spawners) {
+        if (world.get(s.x, s.y - Y0, s.z) === B.spawner && world.meta(s.x, s.y - Y0, s.z)) continue;
+        this.one(world, s, px, py, pz); this.show(world, s, px, py, pz, seen);
+      }
+      // the spawners among this chunk's edits that have a mob
+      const ed = world.edits && world.edits.get(key);
+      if (!ed) continue;
+      let list = this.edited.get(key);
+      if (!list || list.size !== ed.size || rescan) {
+        list = { size: ed.size, cells: [] };
+        for (const [cell, v] of ed) if ((v >> 8) === B.spawner && (v & 255)) list.cells.push(cell);
+        this.edited.set(key, list);
+      }
+      for (const cell of list.cells) {
+        const x = (ccx + dx) * CH + (cell & 15), z = (ccz + dz) * CH + ((cell >> 4) & 15), y = cell >> 8;
+        const mob = world.get(x, y, z) === B.spawner ? spawnerMob(world.meta(x, y, z)) : null;
+        if (!mob) continue;
+        const s = { x, y: y + Y0, z, mob };
+        this.one(world, s, px, py, pz); this.show(world, s, px, py, pz, seen);
+      }
     }
+    // the ones out of sight or gone lose their turning mob
+    for (const [k, e] of this.shown) if (!seen.has(k)) this.unshow(k, e);
   }
+  // the spawner's mob, small and turning inside it (faster while the player is close enough to wake it)
+  show(world, s, px, py, pz, seen) {
+    const E = typeof window !== 'undefined' && window.__lc2 && window.__lc2.entities;
+    if (!E || !E.makeDisplay) return;
+    const k = s.x + ',' + s.y + ',' + s.z;
+    if (world.get(s.x, s.y - Y0, s.z) !== B.spawner) return;
+    const ddx = s.x + 0.5 - px, ddy = s.y + 0.5 - py, ddz = s.z + 0.5 - pz, d2 = ddx * ddx + ddy * ddy + ddz * ddz;
+    if (d2 > 48 * 48) return;
+    seen.add(k);
+    let e = this.shown.get(k);
+    if (e && (e.type !== s.mob || e.m !== E)) { this.unshow(k, e); e = null; }
+    if (!e) { e = E.makeDisplay(s.mob, s.x + 0.5, s.y - Y0 + 0.4, s.z + 0.5); if (!e) return; this.shown.set(k, e); }
+    e.prevBodyYaw = e.bodyYaw; e.prevHeadYaw = e.headYaw;
+    const spin = d2 < 16 * 16 ? 0.1 : 0.02;
+    e.bodyYaw += spin; e.headYaw = e.bodyYaw; e.age++;
+  }
+  unshow(k, e) { this.shown.delete(k); if (e && e.m && e.m.dropDisplay) e.m.dropDisplay(e); }
   one(world, s, px, py, pz) {
     const k = s.x + ',' + s.y + ',' + s.z;
     if (world.get(s.x, s.y - Y0, s.z) !== B.spawner) { this.state.delete(k); return; }    // broken

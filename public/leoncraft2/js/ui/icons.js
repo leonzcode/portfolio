@@ -66,6 +66,10 @@ const D_BLOCK = { ry: 225, s: 0.625, tx: 0, ty: 0 };
 const D_135 = { ry: 135, s: 0.625, tx: 0, ty: 0 };
 const D_BED = { ry: 160, s: 0.5325, tx: 0, ty: 1 };
 const D_HEAD = { ry: 45, s: 1, tx: 0, ty: 3 };
+// a candle: the game draws its picture full size; the little candle, drawn twice as big and lifted to the middle, comes close
+const D_CANDLE = { ry: 225, s: 1.25, tx: 0, ty: 6 };
+// rods (end rods, lightning rods) stand upright in the slot and in the hand, as the game's models have them
+for (const d of DRAW) if (d && d.shape === 'rod' && d.iconMeta === undefined) d.iconMeta = 4;
 
 // shapes shown as their flat sprite
 const FLAT = new Set(['cross', 'torch', 'wall_torch', 'fluid', 'none', 'pad', 'vine', 'rail', 'wire', 'crop', 'pane', 'ladder', 'chain']);
@@ -124,6 +128,7 @@ function modelFor(d) {
     }
     default: {
       try { boxes = boxesOf(d, d.iconMeta || 0, () => null); } catch (e) { boxes = null; }
+      if (s === 'candle') disp = D_CANDLE;
     }
   }
   if (boxes) boxes = boxes.filter(b => !b.q);

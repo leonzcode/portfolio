@@ -43,6 +43,7 @@ import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=16';
 import { countShelves } from './enchanting.js?v=16';
 import { wear } from './ui/inventory.js?v=16';
 import { BookScreen } from './ui/book.js?v=16';
+import { breaksInCreative } from './modes.js?v=16';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // two slot arrays seen as one (a large chest): reads and writes go straight to the halves
@@ -80,11 +81,16 @@ export class Hands {
     this.onToolBreak = null;         // (stack) the breaking sound
     // a tool or a piece of armour that wears out breaks into pieces
     if (this.inv && this.inv.on) this.inv.on('broke', s => this.toolBroke(s));
+    // an elytra worn and not worn out (one point of it left is not enough to fly), for the player's glide
+    if (this.player) this.player.hasElytra = () => { const c = this.inv.armor[1], it = c && ITEMS[c.id]; return !!(it && it.name === 'elytra' && (c.dmg | 0) < (it.dur || 432) - 1); };
+    this.glideT = 0;
     // the screens' sheets, fetched now so a chest never opens on an empty frame
     if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter', 'villager', 'loom', 'cartography_table'])
       this.gui.loadSheet('container/' + n).catch(() => {});
   }
   get creative() { return this.mode === 'creative'; }
+  // adventure and spectator change nothing in the world with an item (modes.js)
+  get mayBuild() { return this.mode !== 'adventure' && this.mode !== 'spectator'; }
   get held() { return this.inv.slots[this.inv.selected]; }
 
   /* ---- the Interactor's hand ---- */
@@ -103,6 +109,8 @@ export class Hands {
       key: () => { const s = self.held; return s ? s.id + '/' + (s.dmg | 0) + '/' + (s.ench ? JSON.stringify(s.ench) : '') + '/' + (s.name || '') : ''; },
       withOffhand: fn => self.withOffhand(fn),
       wear: n => self.wearHeld(n),
+      // creative: a sword, trident, mace or debug stick in the hand breaks nothing
+      mayBreak: () => !self.creative || breaksInCreative(self.held ? self.held.id : 0),
     };
   }
   /* The off hand's turn at a right click, when the main hand did nothing (a
@@ -235,7 +243,7 @@ export class Hands {
     }
     // tools on the ground and on logs
     const it = this.held ? ITEMS[this.held.id] : null, tool = it && it.tool;
-    if (tool && !this.player.sneaking) {
+    if (tool && !this.player.sneaking && this.mayBuild) {
       const above = w.get(hit.x, hit.y + 1, hit.z);
       let to = null;
       if (tool.kind === 'axe' && STRIP[d.name]) to = STRIP[d.name];
@@ -350,6 +358,8 @@ export class Hands {
   }
   // the bucket ray: the first source of water or lava along the view, within reach
   fillBucket(bottle) {
+    // (an empty bucket takes nothing up in adventure; a bottle still fills)
+    if (!bottle && !this.mayBuild) return false;
     const p = this.player, eye = { x: p.pos.x, y: p.pos.y + (p.sneaking ? 1.27 : 1.62), z: p.pos.z };
     const dx = -Math.sin(p.yaw) * Math.cos(p.pitch), dy = Math.sin(p.pitch), dz = -Math.cos(p.yaw) * Math.cos(p.pitch);
     const reach = this.creative ? 5 : 4.5;
@@ -413,6 +423,10 @@ export class Hands {
   setUsedStack(u, st) { if (u && u.off) this.inv.offhand = st; else this.inv.slots[this.inv.selected] = st; }
   tick() {
     this.mapsTick();
+    // gliding wears the elytra a point a second (never past its last point)
+    if (this.player && this.player.gliding && !this.creative) {
+      if (++this.glideT % 20 === 0) { const c = this.inv.armor[1]; if (c) { c.dmg = Math.min((ITEMS[c.id].dur || 432) - 1, (c.dmg | 0) + 1); this.inv.changed(); } }
+    } else this.glideT = 0;
     const u = this.using;
     if (!u) return;
     const s = this.usedStack(u);

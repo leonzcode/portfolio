@@ -42,7 +42,8 @@ import { Survival } from './survival.js?v=16';
 import { survivalHooks, respawnPlayer } from './life.js?v=16';
 import { Save } from './save.js?v=16';
 import { Chat, ChatScreen } from './ui/chat.js?v=16';
-import { displayName, setItemNames, register, gameRule } from './commands.js?v=16';
+import { displayName, setItemNames, register, gameRule, execute } from './commands.js?v=16';
+import { applyModeRules, ModeKeys } from './modes.js?v=16';
 import { Particles } from './render/particles.js?v=16';
 import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=16';
 import { loadItemStrip, addItemPieces } from './itemtex.js?v=16';
@@ -346,6 +347,16 @@ async function boot() {
     // whether Esc in the game menu can take the mouse back (see keyMayLock)
     keyResumes: () => keyMayLock(),
     respawn: () => respawn(),
+    // a hardcore death: back, as a spectator for good
+    spectate: () => { if (!game) return; game.entry.mode = 'spectator'; Worlds.update(game.entry.id, { mode: 'spectator' }); respawn().then(() => setMode('spectator')); },
+    // Open to LAN (ui/lan.js): the world's mode and commands, and starting it
+    lan: () => game ? { mode: game.entry.mode || 'survival', cheats: chatCtx().cheats, open: !!game.lan } : null,
+    startLan: (mode, cheats, port) => {
+      gui.closeAll(); lock();
+      game.lan = { cheats };
+      if (mode !== game.mode) setMode(mode);
+      chat.add('Local game hosted on port ' + port);
+    },
     loadingProgress: () => loading || { text: 'Loading terrain...', progress: 0 },
     quit: () => { location.href = '/'; },
     // Done on the resource pack screen after a change: load everything again, back into the same world
@@ -541,6 +552,9 @@ async function boot() {
     });
     inter.creative = mode === 'creative';
     inter.adventure = mode === 'adventure' || mode === 'spectator';
+    inter.spectator = mode === 'spectator';
+    // (a saved inventory carries the mode it was saved in: the world's mode is the one that counts)
+    inv.mode = mode === 'creative' ? 'creative' : 'survival';
     // block pieces when something breaks, and chips while mining
     if (!renderer.particles) renderer.particles = new Particles(renderer, world);
     else renderer.particles.setWorld(world);
@@ -550,7 +564,8 @@ async function boot() {
     inv.on('drop', s => hands.throwStack(s));
     // picking things up: into the inventory, experience into the bar (Mending repairs first)
     const collector = {
-      inv, get alive() { return !survival.dead; },
+      // (a spectator picks nothing up)
+      inv, get alive() { return !survival.dead && !(game && game.mode === 'spectator'); },
       addXp: n => survival.addXp(n),
       mendingRepair: n => hands.mend(n),
     };
@@ -590,7 +605,9 @@ async function boot() {
           // what is in the hands, and its wear from hits, blocking and shearing (hands.js)
           itemName: id => itemName(id), damageHeld: (n, kind) => hands.wearHeld(n, kind), fillBucket: name => hands.fillHeld(name), trade: v => hands.trade(v),
           // screens and spilled stacks (a chest boat's chest)
-          hands } });
+          hands,
+          // the dragon from a spawn egg flies with the End's own (dim/realms.js)
+          realms: () => game && game.realms } });
       entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));
       renderer.scene.add(entities.group);
       const sim = new Sim({ world: w, fluids: fl, player, inv, renderer, gui, game: g });
@@ -631,6 +648,7 @@ async function boot() {
     inter.onBroken = (x, y, z, b) => game.realms.broken(x, y, z, b);
     hud = new Hud(inv, icons);
     gui.hud = hud;
+    applyModeRules(game, mode, hud);
     // a map in the hand is drawn by the HUD, held up (js/maps.js): the arm shows bare
     inv.on('held', id => renderer.setHeld(isFilledMap(inv.slots[inv.selected]) ? 0 : id, DRAW));
     // the off hand and the armour are read from here; the hand dips with the attack cooldown
@@ -909,8 +927,8 @@ async function boot() {
     if (m === 'spectator') p.flying = true; else if (!p.canFly) p.flying = false;
     g.inv.setMode(m === 'creative' ? 'creative' : 'survival');
     if (g.entities) g.entities.mode = m;           // mobs leave a creative or spectating player alone
-    g.inter.creative = m === 'creative';
-    g.inter.adventure = m === 'adventure' || m === 'spectator';
+    // the hands too: placing uses up the stack, breaking drops, tools wear (hands.js), and what each mode may do (modes.js)
+    applyModeRules(g, m, hud);
     if (m === 'survival' || m === 'adventure') hud.setStats(g.survival.stats()); else hud.setStats(null);
     hud.markDirty();
   }
@@ -919,7 +937,7 @@ async function boot() {
     return {
       game: g, playerName: 'Player',
       // Allow Commands: as set when the world was made (creative worlds have it on unless turned off)
-      cheats: !!(window.__lc2.cheats || (g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
+      cheats: !!(window.__lc2.cheats || (g.lan ? g.lan.cheats : g.entry.cheats !== undefined ? g.entry.cheats : g.entry.mode === 'creative')),
       say: (t, c) => chat.add(t, c),
       setMode,
       // (a teleport takes you off what you ride, as in the game)
@@ -979,6 +997,7 @@ async function boot() {
   // the player's own key names, from the bindings in Options
   const MOVE = { forward: 'w', left: 'a', back: 's', right: 'd', jump: ' ', sneak: 'shift', sprint: 'control' };
   const bindingOf = code => options.actionFor(code);
+  const modeKeys = new ModeKeys({ gui, hud: () => hud, chat, icons, game: () => game, cheats: () => !!(game && chatCtx().cheats), run: line => execute(line, chatCtx()) });
   let showDebug = false, f3Held = false, f3Combo = false, timeRuns = true, autoScale = options.get('renderScale') === 'auto' && !params.get('scale');
   document.addEventListener('keydown', e => {
     if (!game || gui.isOpen()) return;
@@ -992,11 +1011,19 @@ async function boot() {
       chat.add('§e§l[Debug]:§r Advanced tooltips: ' + (v ? 'shown' : 'hidden'));
       e.preventDefault(); return;
     }
+    // F3 + N: spectator and back; F3 + F4: the game mode switcher (modes.js)
+    if (f3Held && (e.code === 'KeyN' || e.code === 'F4')) {
+      f3Combo = true;
+      if (!e.repeat) { if (e.code === 'KeyN') modeKeys.toggleSpectator(); else modeKeys.switcher(); }
+      e.preventDefault(); return;
+    }
     if (a === 'hideGui' || e.code === 'F1') { gui.hideHud = !gui.hideHud; gui.markDirty(); e.preventDefault(); return; }
     if (e.code === 'F7') { autoScale = false; renderer.opts.scale = renderer.opts.scale >= 1 ? 0.75 : renderer.opts.scale >= 0.75 ? 0.5 : 1; fit(); e.preventDefault(); return; }
     if (a === 'perspective' || e.code === 'F5') { if (!e.repeat) renderer.avatar.cycleView(); e.preventDefault(); return; }
     if (a === 'inventory') {
       e.preventDefault();
+      // (a spectator has no inventory to open)
+      if (game.mode === 'spectator') return;
       // riding a chest boat: its chest (js/entities)
       if (game.entities && game.entities.rideInventory()) return;
       wantInv = true;
@@ -1024,8 +1051,9 @@ async function boot() {
     if ((a === 'chat' || (!a && e.code === 'KeyT')) && !e.repeat) { e.preventDefault(); openChat(''); return; }
     if ((a === 'command' || e.key === '/') && !e.repeat) { e.preventDefault(); openChat('/'); return; }
     // (with Ctrl held to sprint, Ctrl+1 to 9 would otherwise change the browser's tab)
-    if (a && a.startsWith('hotbar')) { game.inv.select(+a.slice(6) - 1); e.preventDefault(); return; }
+    if (a && a.startsWith('hotbar')) { if (game.mode !== 'spectator') game.inv.select(+a.slice(6) - 1); e.preventDefault(); return; }
     // Q throws one of the selected stack (Ctrl+Q all of it), F swaps it with the off hand
+    if ((a === 'drop' || a === 'swapOffhand') && game.mode === 'spectator') { e.preventDefault(); return; }
     if (a === 'drop') { game.hands.dropSelected(e.ctrlKey || e.metaKey); e.preventDefault(); return; }
     if (a === 'swapOffhand') { const inv = game.inv, t = inv.slots[inv.selected]; inv.slots[inv.selected] = inv.offhand; inv.offhand = t; inv.changed(); e.preventDefault(); return; }
     if (e.code === 'BracketLeft') game.time -= 1000;
@@ -1037,16 +1065,22 @@ async function boot() {
     if (e.code === 'KeyC') { zoomHeld = false; zoomF = 1; }
     if (!game) return;
     const a = bindingOf(e.code) || (e.code === 'KeyR' ? 'sprint' : null);
-    if (a === 'debug' || e.code === 'F3') { if (f3Held && !f3Combo && !gui.isOpen()) { showDebug = !showDebug; if (!showDebug && hud) hud.setDebug(null); } f3Held = false; return; }
+    if (a === 'debug' || e.code === 'F3') { if (f3Held && !f3Combo && !gui.isOpen()) { showDebug = !showDebug; if (!showDebug && hud) hud.setDebug(null); } f3Held = false; modeKeys.release(); return; }
     if (a && MOVE[a]) game.player.setKey(MOVE[a], false);
   });
-  canvas.addEventListener('wheel', e => { if (game && locked()) game.inv.scroll(e.deltaY); }, { passive: true });
+  canvas.addEventListener('wheel', e => {
+    if (!game || !locked()) return;
+    // a spectator's wheel is the flying speed (0 to 0.2, a 200th a notch, as in the game)
+    if (game.mode === 'spectator') { const p = game.player; p.flySpeed = Math.max(0, Math.min(0.2, (p.flySpeed ?? 0.05) - Math.sign(e.deltaY) * 0.005)); return; }
+    game.inv.scroll(e.deltaY);
+  }, { passive: true });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('mousedown', e => {
     if (!game || !locked()) return;
     const g = game;
     if (e.button === 1) {
       e.preventDefault();
+      if (g.mode === 'spectator') return;
       const hit = g.inter.target, ent = g.inter.entityTarget;
       // an entity that has an item of its own (a boat: js/entities) gives that
       if (ent && ent.pickItem) { const id = itemId(ent.pickItem()); if (id) g.inv.pickBlock(id); return; }
@@ -1165,6 +1199,12 @@ async function boot() {
         player.canSprint = survival.canSprint();
         player.effects = survival.effects;
         survival.tick(player);
+      } else if (g.mode === 'creative') {
+        // effects, and the void (survival.js)
+        player.effects = survival.effects;
+        survival.creativeTick(player);
+      }
+      if (g.mode !== 'spectator') {
         // a death: everything spills (not with keepInventory), then the death screen (or straight back, doImmediateRespawn)
         if (survival.dead && !g.spilled) { g.spilled = true; if (!gameRule(g, 'keepInventory')) g.hands.spillAll(); }
         if (survival.dead && !gui.isOpen() && !g.respawning) {
@@ -1204,7 +1244,8 @@ async function boot() {
     const D = DIMS[g.dim];
     sunAt(D.fixedTime !== null ? 18000 : g.time);
     g.realms.frame(alpha, dt);
-    const boss = g.realms.boss;
+    // the dragon's bar (dim/realms.js), or a wither's (entities/mobs7.js)
+    const boss = g.realms.boss || (g.entities && g.entities.boss) || null;
     if ((boss ? boss.progress : -1) !== (hud.boss ? hud.boss.progress : -1)) { hud.boss = boss ? Object.assign({}, boss) : null; hud.markDirty(); }
     scope(spyglassUp());
     zoomF = scoped ? 0.1 : zoomHeld ? 0.25 : 1;
@@ -1216,7 +1257,7 @@ async function boot() {
       renderer.render({
         time: (g.time + alpha) / 20, sunDir, moonDir, feet: v.feet, eye: v.eye, yaw: player.yaw, pitch: player.pitch,
         fov: v.fov * (g.entities ? g.entities.combat.fovScale(alpha) : 1) * zoomF, eyeInWater: FLUID[eyeBlock] === 1 || player.eyeInWater, skyAtEye: skyAt(world, v.eye),
-        moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud && !scoped, bob: g.hands.handBob(v.handBob),
+        moonPhase: Math.floor(g.time / 24000) % 8, trample: onGrass ? 1 : 0, showHand: !gui.hideHud && !scoped && g.mode !== 'spectator', bob: g.hands.handBob(v.handBob),
         waterTint: tintAt(world, v.eye), player, alpha,
         // hurt: the camera tilts and the model flashes red (combat/combat.js)
         tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha, video.tilt()) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
@@ -1229,7 +1270,8 @@ async function boot() {
     }
     if (g.mode === 'survival' || g.mode === 'adventure') hud.setStats(survival.stats());
     // no crosshair in third person, or with the HUD hidden
-    const cross = renderer.avatar.view === 0 && !gui.hideHud;
+    // (a spectator has one only over a mob)
+    const cross = renderer.avatar.view === 0 && !gui.hideHud && (g.mode !== 'spectator' || !!inter.entityTarget);
     if (hud.crosshair !== cross) { hud.crosshair = cross; hud.markDirty(); }
     // the attack indicator under it (js/entities)
     // (Attack Indicator in Video Settings: under the crosshair, beside the hotbar, or not at all)

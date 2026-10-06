@@ -94,6 +94,12 @@ export class Hud {
 
     // what is held up under the HUD (a map in the hand: js/maps.js), and when to draw again
     if (this.under) { const w = this.under(g, now); if (w) this._wakeAt(w); }
+    // a spectator has no hotbar (modes.js): only the debug text and a boss's bar
+    if (this.spectator) {
+      if (this.debug) this._debugText(g, W);
+      if (this.boss) drawBossBar(g, this.boss, cx);
+      return;
+    }
     // the hotbar, the selected slot's frame and the off hand
     g.blit('widgets', 0, 0, 182, 22, cx - 91, H - 22);
     g.blit('widgets', 0, 22, 24, 23, cx - 91 - 1 + inv.selected * 20, H - 23);
