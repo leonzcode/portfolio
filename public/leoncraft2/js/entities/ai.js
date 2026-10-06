@@ -43,7 +43,8 @@ export function randomLandPos(mob, h, v, avoidWater = true, towards) {
     if (FLUID[below] === 2 || FLUID[T.get(x, y, z)] === 2) continue;
     const wet = FLUID[T.get(x, y, z)] === 1 || FLUID[below] === 1;
     if (wet && avoidWater && R() < 0.999) continue;
-    const val = mob.walkValue(x, y, z);
+    // a mob with no liking of its own takes any spot alike (the game's PathfinderMob gives 0)
+    const val = mob.walkValue ? mob.walkValue(x, y, z) : 0;
     if (val > bestV) { bestV = val; best = [x + 0.5, y, z + 0.5]; }
   }
   return best;
