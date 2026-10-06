@@ -25,9 +25,9 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON, FILTER } from './glsl.js?v=20';
-import { FullScreen, VS_FULL } from './sky.js?v=20';
-import { BlockClouds } from './clouds.js?v=20';
+import { COMMON, FILTER } from './glsl.js?v=21';
+import { FullScreen, VS_FULL } from './sky.js?v=21';
+import { BlockClouds } from './clouds.js?v=21';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k

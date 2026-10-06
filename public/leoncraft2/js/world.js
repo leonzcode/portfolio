@@ -7,8 +7,8 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=20';
-import { BLOCKS, FLUID } from './blocks.js?v=20';
+import { CH, H, idx } from './world-const.js?v=21';
+import { BLOCKS, FLUID } from './blocks.js?v=21';
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -19,7 +19,7 @@ import { BLOCKS, FLUID } from './blocks.js?v=20';
 const GEN_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 const POOL = [];
 function newWorker() {
-  const w = new Worker(new URL('./worker.js?v=20', import.meta.url), { type: 'module' });
+  const w = new Worker(new URL('./worker.js?v=21', import.meta.url), { type: 'module' });
   w.onerror = e => console.error('worker', e.message || e);
   return w;
 }
@@ -271,8 +271,7 @@ export class World {
       this.genList = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
         if (dx * dx + dz * dz > R * R) continue;
-        const k = this.key(pcx + dx, pcz + dz);
-        if (!this.chunks.has(k)) this.genList.push([dx * dx + dz * dz, pcx + dx, pcz + dz]);
+        if (!this.chunkXZ(pcx + dx, pcz + dz)) this.genList.push([dx * dx + dz * dz, pcx + dx, pcz + dz]);
       }
       this.genList.sort((a, b) => a[0] - b[0]);
       this.lookup();
@@ -286,20 +285,26 @@ export class World {
     this.lookupStuck();
     const cap = this.workers.length * 2;
     // meshes first (they are what you see), nearest first; a few a frame, so packing them never stalls one
+    /* (the nearest picked out of the line each time, rather than the whole line
+       split into numbers and sorted every frame: with every worker busy that was
+       all garbage, and nothing went out) */
     let sends = 0;
-    if (this.meshQueue.size) {
-      const list = [...this.meshQueue].map(k => { const [x, z] = k.split(',').map(Number); return [(x - pcx) ** 2 + (z - pcz) ** 2, x, z, k]; })
-        .sort((a, b) => a[0] - b[0]);
-      for (const [d, x, z, k] of list) {
-        if (this.inFlightCount() >= cap || sends >= 2) break;
+    while (this.meshQueue.size && sends < 2 && this.inFlightCount() < cap) {
+      let best = null, bd = Infinity, bx = 0, bz = 0;
+      for (const k of this.meshQueue) {
         if (this.inFlight.has('m' + k)) continue;
-        sends++;
-        if (d > this.renderDist * this.renderDist) { this.meshQueue.delete(k); continue; }
-        this.meshQueue.delete(k);
-        // a neighbour gone since it was queued: it is queued again when that one is back
-        if (!this.around(x, z)) continue;
-        this.sendMesh(x, z);
+        const c = this.chunks.get(k);
+        if (!c) { this.meshQueue.delete(k); continue; }
+        const d = (c.cx - pcx) * (c.cx - pcx) + (c.cz - pcz) * (c.cz - pcz);
+        if (d < bd) { bd = d; best = k; bx = c.cx; bz = c.cz; }
       }
+      if (best === null) break;
+      sends++;
+      this.meshQueue.delete(best);
+      if (bd > this.renderDist * this.renderDist) continue;
+      // a neighbour gone since it was queued: it is queued again when that one is back
+      if (!this.around(bx, bz)) continue;
+      this.sendMesh(bx, bz);
     }
     if (this.staged) {
       if (moved || this.sched) this.schedule(cap);
@@ -363,12 +368,17 @@ export class World {
     this.sched = false;
     const list = this.genList;
     if (!list) return;
+    /* (this runs whenever a worker answers, over every chunk still to make: no
+       string is made for one until a job could go out for it, which with every
+       worker busy is never) */
     let j = 0;
     for (let n = 0; n < list.length; n++) {
-      const e = list[n], x = e[1], z = e[2], k = this.key(x, z);
-      if (this.chunks.has(k)) continue;
+      const e = list[n], x = e[1], z = e[2];
+      if (this.chunkXZ(x, z)) continue;
       list[j++] = e;                       // still to be made: stays in the list
-      if (this.inFlightCount() >= cap || this.inFlight.has('g' + k) || this.lookingUp.has(k)) continue;
+      if (this.inFlightCount() >= cap) continue;
+      const k = this.key(x, z);
+      if (this.inFlight.has('g' + k) || this.lookingUp.has(k)) continue;
       // while a loading screen waits for the chunks round you (focus), nothing further away takes a worker
       if (this.focus >= 0 && Math.max(Math.abs(x - this.pcx), Math.abs(z - this.pcz)) > this.focus) continue;
       if (this.canGen(x, z)) { this.sendGen(x, z); continue; }
@@ -395,17 +405,32 @@ export class World {
     const i = this.idlest(); this.busy[i]++;
     this.workers[i].postMessage({ type: 'terrain', cx: x, cz: z });
   }
-  // a chunk's terrain as a worker takes it: copied, for the original stays here for the other jobs that need it
-  protoCopy(p) { return { cx: p.cx, cz: p.cz, blocks: p.blocks.slice(), meta: p.meta.slice(), grid: p.grid }; }
+  /* a chunk's terrain as a worker takes it: copied, for the original stays here for the other jobs that
+     need it; into buffers the worker hands back when the job is done (see pool). Fresh ones each time, nine
+     to a decoration, were three megabytes a job for the collector while a world loads. */
+  protoCopy(p) {
+    const blocks = new Uint16Array(this.takeBuf('b')), meta = new Uint8Array(this.takeBuf('m'));
+    blocks.set(p.blocks); meta.set(p.meta);
+    return { cx: p.cx, cz: p.cz, blocks, meta, grid: p.grid };
+  }
   sendDecorate(x, z) {
     const f = numKey(x, z), protos = [], transfer = [];
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const p = this.protoCopy(this.protos.get(numKey(x + dx, z + dz)));
       protos.push(p); transfer.push(p.blocks.buffer, p.meta.buffer);
     }
+    /* and the biomes of the terrains just beyond them that are here already: a
+       lake there gives way to a lake of the chunks next to this one, and working
+       out where those go wants the biomes round them (gen/features.js LazyRegion) */
+    const grids = [];
+    for (let dz = -2; dz <= 1; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (dx >= -1 && dx <= 1 && dz >= -1) continue;
+      const p = this.protos.get(numKey(x + dx, z + dz));
+      if (p && p.grid) grids.push([x + dx, z + dz, p.grid]);
+    }
     this.stageIn.add(f * 4 + 2);
     const i = this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'decorate', cx: x, cz: z, protos }, transfer);
+    this.workers[i].postMessage({ type: 'decorate', cx: x, cz: z, protos, grids }, transfer);
   }
   sendGen(x, z) {
     const k = this.key(x, z);
@@ -461,7 +486,7 @@ export class World {
      behind you. What sits at the edge of what is loaded is kept, for when
      you walk on. */
   prune() {
-    const R = this.renderDist + 4, made = (x, z) => this.chunks.has(this.key(x, z));
+    const R = this.renderDist + 4, made = (x, z) => this.chunkXZ(x, z) !== undefined;
     const far = p => (p.cx - this.pcx) ** 2 + (p.cz - this.pcz) ** 2 > R * R;
     for (const [f, p] of this.protos) {
       let all = true;

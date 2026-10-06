@@ -7,11 +7,11 @@
    range, size, loot, experience, and the goals each one runs, in the
    game's priority order.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards } from './entity.js?v=20';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards } from './entity.js?v=21';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal, EatGrassGoal,
-  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=20';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=20';
-import { itemId, armorOf } from '../items.js?v=20';
+  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=21';
+import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=21';
+import { itemId, armorOf } from '../items.js?v=21';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);
