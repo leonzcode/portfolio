@@ -106,7 +106,7 @@ function buildLogo(terrain, font) {
   let stone = null;
   if (terrain) {
     const c = document.createElement('canvas'); c.width = 16; c.height = 16;
-    const g = c.getContext('2d'); g.drawImage(terrain, 0, 0, 16, 16, 0, 0, 16, 16);
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(terrain, 0, 0, 16, 16, 0, 0, 16, 16);
     try { stone = g.getImageData(0, 0, 16, 16).data; } catch (e) { stone = null; }
   }
   // the stone toned down to a calm grey, so the letters read before the texture does
@@ -174,7 +174,7 @@ function buildLogo(terrain, font) {
   // BROWSER EDITION: the GUI font in bold, light grey with a dark outline and a darker lower lip
   const EW = 128, EH = 14;
   const tmp = document.createElement('canvas'); tmp.width = EW; tmp.height = EH;
-  const tg = tmp.getContext('2d');
+  const tg = tmp.getContext('2d', { willReadFrequently: true });
   const label = '§lBROWSER EDITION';
   font.draw(tg, label, Math.floor((EW - font.width(label)) / 2), 3, 0xFFFFFF, false);
   const mask = tg.getImageData(0, 0, EW, EH).data;

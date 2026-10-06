@@ -190,7 +190,8 @@ export function addDimArt(manifest) {
     extendStrip(alb) {
       const c = document.createElement('canvas');
       c.width = 16; c.height = next * 16;
-      const g = c.getContext('2d');
+      // kept on the CPU: the item icons read it straight back
+      const g = c.getContext('2d', { willReadFrequently: true });
       g.drawImage(alb, 0, 0);
       for (const [layer, rgba] of layers) g.putImageData(new ImageData(new Uint8ClampedArray(rgba), 16, 16), 0, layer * 16);
       return c;

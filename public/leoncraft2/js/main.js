@@ -116,7 +116,7 @@ function loadImg(src) {
    the normal and material maps keep data in every channel. */
 const PIECE = 128;
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
-async function strip(url, layers) {
+async function strip(url, layers, keep) {
   const blob = await (await fetch(url)).blob();
   const full = await createImageBitmap(blob, RAW);
   const parts = [];
@@ -124,7 +124,8 @@ async function strip(url, layers) {
     const n = Math.min(PIECE, layers - z);
     parts.push([z, n, await createImageBitmap(full, 0, z * 16, 16, n * 16, RAW)]);
   }
-  full.close && full.close();
+  // keep: the whole strip is wanted too (the albedo, for the item icons), so it is decoded only once
+  if (keep) parts.full = full; else if (full.close) full.close();
   return parts;
 }
 function arrayTex(parts, layers, filter) {
@@ -219,7 +220,8 @@ function flatNormals() {
 }
 function pixels(img) {
   const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
-  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  // read back on the CPU: a canvas the graphics card holds can stall a second while the card starts up
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
   return g.getImageData(0, 0, img.width, img.height).data;
 }
 
@@ -272,15 +274,16 @@ async function boot() {
      as those are in (makeMenu), while the big textures, the renderer and the
      menus load. */
   const manifestP = fetch(base + 'manifest.json' + TEX_V).then(r => r.json());
-  const mapsP = Promise.all(['colormap_grass.png', 'colormap_foliage.png'].map(f => loadImg(base + f + TEX_V)));
-  const imgsP = Promise.all(['terrain_albedo.png', 'environment_moon_phases.png', 'environment_sun.png'].map(f => loadImg(base + f + TEX_V)));
+  // decoded off the main thread (an Image drawn to a canvas is decoded on it, and that can wait a second behind the big textures)
+  const mapsP = Promise.all(['colormap_grass.png', 'colormap_foliage.png'].map(f => fetch(base + f + TEX_V).then(r => r.blob()).then(b => createImageBitmap(b))));
+  const imgsP = Promise.all(['environment_moon_phases.png', 'environment_sun.png'].map(f => loadImg(base + f + TEX_V)));
   // resource packs the player opened from their own computer (ui/pack.js): theirs first, ours underneath
   const packsP = Packs.active().catch(e => { console.warn('resource packs', e); return []; });
   const manifest = await manifestP;
   // the potato tier draws no normal maps: it skips that file altogether (a third of the download)
   const withNormals = QP.normals !== false;
   const stripsP = Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, QP.spec !== false ? 'terrain_spec.png' : null]
-    .map(f => f ? strip(base + f + TEX_V, manifest.layers) : null));
+    .map((f, i) => f ? strip(base + f + TEX_V, manifest.layers, i === 0) : null));
   // the pictures of the items that are not blocks, after the last block layer (itemtex.js)
   const itemStripP = loadItemStrip(base, TEX_V);
   // our own art for the Nether and the End (the portal swirl, the frame's eye, item icons) on extra layers
@@ -306,7 +309,8 @@ async function boot() {
     }
   } catch (e) { console.warn('resource packs', e); find = null; packTex = null; }
   if (!colours) colours = biomeColours(pixels(grass), pixels(foliage));
-  let [alb, moon, sunImg] = await imgsP;
+  const [moon, sunImg] = await imgsP;
+  let alb = albP.full;
   const moonTex = new THREE.Texture(moon);
   moonTex.magFilter = THREE.NearestFilter; moonTex.minFilter = THREE.NearestFilter; moonTex.needsUpdate = true;
   const sunTex = new THREE.Texture(sunImg);
@@ -331,7 +335,7 @@ async function boot() {
   const overlay = new Overlay(renderer.U, manifest);
   renderer.overlay = overlay;
   // every shader set compiling now, in the background, so the title's first frame does not stop to build them
-  renderer.warmUp();
+  const shadersBuilt = renderer.warmUp();
   const fit = () => { renderer.resize(window.innerWidth, window.innerHeight); gui.resize(); };
 
   /* ---- the menus, and everything they ask of the game ---- */
@@ -448,6 +452,8 @@ async function boot() {
   }
   status('Building the world…', 0.7);
   await startMenu(MENU_SEED);
+  // and the shaders done, so the title does not freeze on its first frame (never more than a few seconds)
+  await Promise.race([shadersBuilt, new Promise(r => setTimeout(r, 4000))]);
   status('Building the world…', 1);
   $('#loading').hidden = true;
   gui.panorama = true;
