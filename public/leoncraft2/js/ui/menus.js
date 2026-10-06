@@ -232,7 +232,7 @@ export class TitleScreen extends Screen {
     this.add(new Button(W / 2 - 100, l, 200, 20, 'Singleplayer', () => {
       g.open(Worlds.list().length ? new SelectWorldScreen() : new CreateWorldScreen());
     }));
-    this.add(new Button(W / 2 - 100, l + 24, 200, 20, 'Multiplayer', () => g.open(new NoticeScreen('Multiplayer', 'Multiplayer is not available in Leoncraft 2 yet.'))));
+    this.add(new Button(W / 2 - 100, l + 24, 200, 20, 'Multiplayer', () => (this.hooks.multiplayer ? this.hooks.multiplayer() : g.open(new NoticeScreen('Multiplayer', 'Multiplayer is not available in Leoncraft 2 yet.')))));
     const realms = this.add(new Button(W / 2 - 100, l + 48, 200, 20, 'Leoncraft Realms', null, 'Not available in Leoncraft'));
     realms.active = false;
     this.add(new IconButton(W / 2 - 124, l + 84, 'language', () => g.open(new LanguageScreen()), 'Language'));
@@ -1133,7 +1133,9 @@ export class PauseScreen extends Screen {
     row(top + 74, ['Advancements', null], ['Statistics', null]);
     row(top + 98, ['Send Feedback', null], ['Report Bugs', null]);
     row(top + 122, ['Options...', () => g.open(new OptionsScreen())], ['Open to LAN', null]);
-    this.add(new Button(xl, top + 146, 204, 20, 'Save and Quit to Title', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); }));
+    // on a server it is Disconnect, as in the game
+    const online = !!(this.hooks.online && this.hooks.online());
+    this.add(new Button(xl, top + 146, 204, 20, online ? 'Disconnect' : 'Save and Quit to Title', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); }));
   }
   resume() { this.gui.closeAll(); if (this.hooks.resume) this.hooks.resume(); }
   // the Esc that let the mouse go (and so opened this menu) must not close it again at once
