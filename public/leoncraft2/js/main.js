@@ -22,7 +22,7 @@ import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=16';
 import { BIOMES, biomeColours } from './biomes.js?v=16';
 import { pickBiome } from './worldgen.js?v=16';
 import { parseSeed } from './gen/random.js?v=16';
-import { World } from './world.js?v=16';
+import { World, startWorkers, practise } from './world.js?v=16';
 import { Fluids } from './fluids.js?v=16';
 import { Player } from './player.js?v=16';
 import { Renderer } from './render/renderer.js?v=16';
@@ -52,6 +52,7 @@ import { Hands } from './hands.js?v=16';
 import { setLayerPixels } from './render/blockmesh.js?v=16';
 import { Entities } from './entities/manager.js?v=16';
 import { EntityStore } from './entities/store.js?v=16';
+import { primeAtlas } from './entities/mobart.js?v=16';
 import { Sim } from './sim/sim.js?v=16';
 import { DIMS } from './dims.js?v=16';
 import { Realms } from './dim/realms.js?v=16';
@@ -109,7 +110,7 @@ function loadImg(src) {
    the normal and material maps keep data in every channel. */
 const PIECE = 128;
 const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
-async function strip(url, layers) {
+async function strip(url, layers, keep) {
   const blob = await (await fetch(url)).blob();
   const full = await createImageBitmap(blob, RAW);
   const parts = [];
@@ -117,7 +118,8 @@ async function strip(url, layers) {
     const n = Math.min(PIECE, layers - z);
     parts.push([z, n, await createImageBitmap(full, 0, z * 16, 16, n * 16, RAW)]);
   }
-  full.close && full.close();
+  // keep: the whole strip is wanted too (the albedo, for the item icons), so it is decoded only once
+  if (keep) parts.full = full; else if (full.close) full.close();
   return parts;
 }
 function arrayTex(parts, layers, filter) {
@@ -212,7 +214,8 @@ function flatNormals() {
 }
 function pixels(img) {
   const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
-  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  // read back on the CPU: a canvas the graphics card holds can stall a second while the card starts up
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
   return g.getImageData(0, 0, img.width, img.height).data;
 }
 
@@ -248,29 +251,53 @@ function groundY(world, x, z) {
 }
 
 async function boot() {
+  // the workers' code loads and compiles while the textures do (world.js)
+  startWorkers();
+  let game = null;                  // the world being played
+  let menu = null;                  // the world turning behind the title screen
+  let menuStart = null;             // that world being started (makeMenu)
+  let loading = null;               // { text, progress, chunks } while a world loads
+  /* After a graphics or resource pack change the page loads again straight
+     back into the world you were in: no title world is made for it. */
+  let resumeTo = null;
+  try { const id = sessionStorage.getItem('lc2_resume'); sessionStorage.removeItem('lc2_resume'); if (id) resumeTo = Worlds.get(id); } catch (e) {}
+  let rendererUp = false;           // the title's world is started before the renderer exists (makeMenu)
+  const early = new Map();          // "cx,cz" -> [cx, cz, mesh] made before the renderer was
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
   const TEX_V = '?v=16';
-  const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
-  let [alb, grass, foliage, moon, sunImg] = await Promise.all(
-    ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png', 'environment_sun.png'].map(f => loadImg(base + f + TEX_V)));
+  /* Everything is asked for at once. The title's world needs only the
+     texture list and the two colour maps, so it starts being made as soon
+     as those are in (makeMenu), while the big textures, the renderer and the
+     menus load. */
+  const manifestP = fetch(base + 'manifest.json' + TEX_V).then(r => r.json());
+  // decoded off the main thread (an Image drawn to a canvas is decoded on it, and that can wait a second behind the big textures)
+  const mapsP = Promise.all(['colormap_grass.png', 'colormap_foliage.png'].map(f => fetch(base + f + TEX_V).then(r => r.blob()).then(b => createImageBitmap(b))));
+  const imgsP = Promise.all(['environment_moon_phases.png', 'environment_sun.png'].map(f => loadImg(base + f + TEX_V)));
+  // resource packs the player opened from their own computer (ui/pack.js): theirs first, ours underneath
+  const packsP = Packs.active().catch(e => { console.warn('resource packs', e); return []; });
+  const manifest = await manifestP;
   // normal maps only for a look that starts with them (a third of the download; render/looks.js fetches them later
   // if they are turned on); the material map always, so the shaders can be turned on at any time
   const withNormals = !!LOOK.normals;
-  const [albP, nrmP, spcP] = await Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, 'terrain_spec.png']
-    .map(f => f ? strip(base + f + TEX_V, manifest.layers) : null));
+  const stripsP = Promise.all(['terrain_albedo.png', withNormals ? 'terrain_normal.png' : null, 'terrain_spec.png']
+    .map((f, i) => f ? strip(base + f + TEX_V, manifest.layers, i === 0) : null));
+  // the pictures of the items that are not blocks, after the last block layer (itemtex.js)
+  const itemStripP = loadItemStrip(base, TEX_V);
   // our own art for the Nether and the End (the portal swirl, the frame's eye, item icons) on extra layers
   const dimArt = addDimArt(manifest);
   resolveTextures(manifest);
-  // the pictures of the items that are not blocks, after the last block layer (itemtex.js)
-  const itemStrip = await loadItemStrip(base, TEX_V);
+  let [grass, foliage] = await mapsP;
+  const packs = await packsP;
+  let colours = null;
+  if (!packs.length) { colours = biomeColours(pixels(grass), pixels(foliage)); if (!resumeTo) menuStart = makeMenu(MENU_SEED); }
+  const [albP, nrmP, spcP] = await stripsP;
+  const itemStrip = await itemStripP;
   const LAYERS = manifest.layers + await addItemPieces(itemStrip, manifest.layers, albP, nrmP, spcP);
   setItemLayers(manifest.layers);
-  // resource packs the player opened from their own computer (ui/pack.js): theirs first, ours underneath
   let find = null, packTex = null;
   try {
-    const packs = await Packs.active();
     if (packs.length) {
       status('Loading resource packs…', 0.3);
       find = resolver(packs);
@@ -280,7 +307,9 @@ async function boot() {
       packTex = await blockTextures(find, manifest);
     }
   } catch (e) { console.warn('resource packs', e); find = null; packTex = null; }
-  const colours = biomeColours(pixels(grass), pixels(foliage));
+  if (!colours) colours = biomeColours(pixels(grass), pixels(foliage));
+  const [moon, sunImg] = await imgsP;
+  let alb = albP.full;
   const moonTex = new THREE.Texture(moon);
   moonTex.magFilter = THREE.NearestFilter; moonTex.minFilter = THREE.NearestFilter; moonTex.needsUpdate = true;
   const sunTex = new THREE.Texture(sunImg);
@@ -304,12 +333,11 @@ async function boot() {
   alb = dimArt.extendStrip(alb);
   const overlay = new Overlay(renderer.U, manifest);
   renderer.overlay = overlay;
+  // every shader set compiling now, in the background, so the title's first frame does not stop to build them
+  const shadersBuilt = renderer.warmUp();
   const fit = () => { renderer.resize(window.innerWidth, window.innerHeight); gui.resize(); };
 
   /* ---- the menus, and everything they ask of the game ---- */
-  let game = null;                  // the world being played
-  let menu = null;                  // the world turning behind the title screen
-  let loading = null;               // { text, progress, chunks } while a world loads
   const hooks = {
     play: (entry, o) => startGame(entry, o && o.isNew),
     deleteWorld: w => { EntityStore.remove(w.id); return Save.remove(w.id); },
@@ -360,16 +388,35 @@ async function boot() {
 
   let hud = null;                   // the hotbar, hearts and F3, made per world (js/ui/hud.js)
 
-  /* ---- the world behind the title screen ---- */
-  async function startMenu(seed) {
+  /* ---- the world behind the title screen ----
+     Started (makeMenu) the moment the colours are known, while the big
+     textures, the renderer and the menus are still loading: its chunks are
+     read back or made meanwhile, and its meshes wait here until the
+     renderer is up. Then startMenu waits for the ground round it. */
+  async function makeMenu(seed) {
     const world = new World({
       seed, renderDist: Math.min(RD, 6), manifest, colours, ...video.worldOpts(),
-      onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
-      onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
+      onMesh: (cx, cz, mesh, urgent) => { if (rendererUp) renderer.setColumn(cx, cz, mesh, urgent); else early.set(cx + ',' + cz, [cx, cz, mesh]); },
+      onDrop: (cx, cz) => { if (rendererUp) renderer.dropColumn(cx, cz); else early.delete(cx + ',' + cz); },
     });
+    world.allHands = true;            // nothing is ever edited in it: every worker makes it
     await world.ready;
-    const spawn = await findSpawn(world);
+    // the title's world stands in the same place every visit: found once, then remembered
+    const K = 'lc2_menu_at', V = TEX_V + '|' + seed;
+    let spawn = null;
+    try { const c = JSON.parse(localStorage.getItem(K) || 'null'); if (c && c.v === V && !params.get('at')) spawn = c; } catch (e) {}
+    if (!spawn) { spawn = await findSpawn(world); try { localStorage.setItem(K, JSON.stringify({ v: V, x: spawn.x, z: spawn.z })); } catch (e) {} }
     menu = { world, x: spawn.x + 0.5, z: spawn.z + 0.5, y: null, yaw: Math.PI * 0.75, seed, generator: 'classic' };
+    // kept going until startMenu takes over
+    const pump = () => { if (rendererUp || !menu || menu.world !== world) return; world.update(menu.x, menu.z); setTimeout(pump, 16); };
+    pump();
+  }
+  async function startMenu(seed) {
+    await (menuStart || (menuStart = makeMenu(seed)));
+    const world = menu.world;
+    rendererUp = true;
+    for (const [cx, cz, mesh] of early.values()) renderer.setColumn(cx, cz, mesh);
+    early.clear();
     // the ground round it first, so the title never opens on an empty sky
     await new Promise(res => {
       const t0 = performance.now();
@@ -382,46 +429,66 @@ async function boot() {
           need++; const c = world.chunks.get((pcx + dx) + ',' + (pcz + dz)); if (c && c.meshed) meshed++;
         }
         status('Building the world…', 0.7 + 0.3 * meshed / need);
-        if (meshed >= need || performance.now() - t0 > 30000) res(); else setTimeout(wait, 60);
+        if (meshed >= need || performance.now() - t0 > 30000) res(); else setTimeout(wait, 16);
       };
       wait();
     });
   }
-  status('Building the world…', 0.7);
-  await startMenu(MENU_SEED);
-  status('Building the world…', 1);
+  /* While you are in the menus, the workers practise on the world you are
+     most likely to open next: the last one played, where you left it, or a
+     new one when there is none. Its code is compiled and fast, and the
+     ground under you partly made, before you press Singleplayer (world.js). */
+  function practiseNext() {
+    let spec = { seed: parseSeed(''), generator: 'vanilla', dim: 'overworld', at: { x: 0, z: 0 } };
+    try {
+      const last = Worlds.list().sort((a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0))[0];
+      const st = last ? new Save(last.id).readState() : null;
+      const at = st && st.player ? st.player : last && last.spawn;
+      if (at) spec = { seed: worldSeed(last), generator: last.generator === 'vanilla' ? 'vanilla' : 'classic', dim: st && DIMS[st.dimension] ? st.dimension : 'overworld', at };
+    } catch (e) { /* the world list unreadable: practise on a new world */ }
+    practise(Object.assign(spec, { manifest, colours }), menu && menu.world);
+  }
+  if (!resumeTo) {
+    status('Building the world…', 0.7);
+    await startMenu(MENU_SEED);
+    // and the shaders done, so the title does not freeze on its first frame (never more than a few seconds)
+    await Promise.race([shadersBuilt, new Promise(r => setTimeout(r, 4000))]);
+    status('Building the world…', 1);
+  }
   $('#loading').hidden = true;
-  gui.panorama = true;
-  gui.setRoot(new TitleScreen());
+  gui.panorama = !resumeTo;
+  // straight back into a world (below): its loading screen, with no title world or practice in the way
+  if (!resumeTo) { gui.setRoot(new TitleScreen()); practiseNext(); }
 
   /* ---- playing a world ---- */
   async function startGame(entry, isNew) {
     loading = { text: 'Loading terrain...', progress: 0, chunks: [] };
     gui.setRoot(new LoadingScreen());
+    // the mobs' pictures painted while the workers make the ground, not after (entities/mobart.js)
+    setTimeout(primeAtlas, 100);
     const save = new Save(entry.id);
-    await save.init();
     const st = isNew ? null : save.readState();
     // the dimension you were in, and a save of its own for each (js/dims.js)
     const dim = st && st.dimension && DIMS[st.dimension] ? st.dimension : 'overworld';
     const saves = { overworld: save, the_nether: new Save(entry.id + DIMS.the_nether.suffix), the_end: new Save(entry.id + DIMS.the_end.suffix) };
-    await saves.the_nether.init(); await saves.the_end.init();
-    const edits = isNew ? new Map() : await saves[dim].loadEdits();
     let world;
     const generator = entry.generator === 'vanilla' ? 'vanilla' : 'classic';
     const seed = worldSeed(entry);
-    if (menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim) {
-      // the title screen's world is this one: keep what is already made
-      world = menu.world;
-      world.adoptEdits(edits, saves[dim]);
-    } else {
+    // the title screen's world is this one: keep what is already made
+    const reuse = menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim;
+    if (!reuse) {
+      // made at once, so the workers set up its generator while what changed in it is read
       if (menu) dropWorld(menu.world);
       world = new World({
-        seed, generator, dim, renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits, save: saves[dim],
+        seed, generator, dim, renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits: new Map(), save: saves[dim],
         onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
         onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
       });
-      await world.ready;
     }
+    await Promise.all([save.init(), saves.the_nether.init(), saves.the_end.init()]);
+    const edits = isNew ? new Map() : await saves[dim].loadEdits();
+    if (reuse) { world = menu.world; world.adoptEdits(edits, saves[dim]); }
+    else { world.edits = edits; await world.ready; }
     menu = null;
     world.renderDist = RD;
     const spawn = st && st.spawn ? st.spawn : (entry.spawn || (dim === 'overworld' ? await findSpawn(world) : { x: 0, z: 0 }));
@@ -607,28 +674,34 @@ async function boot() {
     letGo();
     gui.open(screen);
   }
-  // wait for the ground round (cx, cz) to be made and drawn, showing it on the loading screen
-  function waitGround(world, cx, cz) {
+  /* Wait for the ground round (cx, cz) to be made and drawn, showing it on
+     the loading screen. As in the game, which lets you in once the section
+     you stand in is built: the chunk you stand in drawn, the eight round it
+     made (so there is ground to stand and walk on); the rest comes in,
+     nearest first, while you play. Checked every frame, so you are in the
+     moment it is there. wide: the eight round it drawn too, so everything
+     within two chunks is made (looking for somewhere to put a portal). */
+  function waitGround(world, cx, cz, wide) {
+    // nothing can be edited yet: the worker kept for edits helps make the ground, and only it is made
+    world.allHands = true;
+    world.focus = wide ? 2 : 1; world.sched = true;
     return new Promise(res => {
       const t0 = performance.now();
       const wait = () => {
         world.update(cx, cz);
         world.flush();
         renderer.pumpUploads(8);
-        let meshed = 0, need = 0;
         const pcx = Math.floor(cx / 16), pcz = Math.floor(cz / 16), ch = [];
-        // only chunks inside the render distance are ever meshed: wait for those near you
-        const R = Math.min(3, world.renderDist - 1);
-        for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
-          if (dx * dx + dz * dz > R * R) { ch.push([dx, dz, 0]); continue; }
-          need++;
+        for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) ch.push([dx, dz, world.stateAt(pcx + dx, pcz + dz)]);
+        let drawn = true;
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+          if (!wide && (dx || dz)) continue;
           const c = world.chunks.get((pcx + dx) + ',' + (pcz + dz));
-          if (c && c.meshed) meshed++;
-          ch.push([dx, dz, c ? (c.meshed ? 7 : 4) : world.inFlight.has('g' + (pcx + dx) + ',' + (pcz + dz)) ? 1 : 0]);
+          if (!c || !c.meshed) drawn = false;
         }
-        if (loading) { loading.progress = meshed / need; loading.chunks = ch; }
+        if (loading) { loading.progress = drawn ? 1 : world.readiness(pcx, pcz); loading.chunks = ch; }
         gui.markDirty();
-        if (meshed >= need || performance.now() - t0 > 60000) res(); else setTimeout(wait, 50);
+        if (drawn || performance.now() - t0 > 60000) { world.allHands = false; world.focus = -1; world.sched = true; res(); } else setTimeout(wait, 16);
       };
       wait();
     });
@@ -658,13 +731,14 @@ async function boot() {
       if (dim !== g.dim) {
         dropWorld(g.world);
         const save = g.saves[dim];
-        const edits = await save.loadEdits();
+        // made first, so the workers set up its generator while what changed there is read
         world = new World({
           seed: worldSeed(g.entry), generator: g.entry.generator === 'vanilla' ? 'vanilla' : 'classic', dim,
-          renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits, save,
+          renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits: new Map(), save,
           onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
           onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
         });
+        world.edits = await save.loadEdits();
         await world.ready;
         g.world = world; g.dim = dim;
         g.player.w = world; g.inter.world = world;
@@ -675,7 +749,7 @@ async function boot() {
         await g.attach(world, g.fluids, dim);
         g.realms.entered();
       }
-      await waitGround(world, near.x, near.z);
+      await waitGround(world, near.x, near.z, true);
       const pos = await resolve(world);
       if (pos) {
         if (Math.hypot(pos.x - near.x, pos.z - near.z) > 24) await waitGround(world, pos.x, pos.z);
@@ -734,6 +808,7 @@ async function boot() {
     if (renderer.particles) renderer.particles.list.length = 0;
     gui.inGame = false; gui.panorama = true;
     gui.setRoot(new TitleScreen());
+    practiseNext();
   }
   async function respawn() {
     if (!game || game.respawning) return;
@@ -1263,9 +1338,7 @@ async function boot() {
     isLeaf: b => !BLOCKS[b] || BLOCKS[b].leaves || BLOCKS[b].log || !BLOCKS[b].solid,
   };
   // after a quality change, straight back into the world you were in
-  let resume = null;
-  try { resume = sessionStorage.getItem('lc2_resume'); sessionStorage.removeItem('lc2_resume'); } catch (e) {}
-  if (resume) { const w = Worlds.get(resume); if (w) startGame(w, false); }
+  if (resumeTo) startGame(resumeTo, false);
 }
 
 boot().catch(e => { console.error(e); status('Something went wrong: ' + (e && e.message)); });

@@ -42,7 +42,7 @@ export class Font {
     this.adv = new Uint8Array(256);
     const c = document.createElement('canvas');
     c.width = img.width; c.height = img.height;
-    const g = c.getContext('2d');
+    const g = c.getContext('2d', { willReadFrequently: true });
     g.drawImage(img, 0, 0);
     const px = g.getImageData(0, 0, img.width, img.height).data;
     const n = this.cell;
