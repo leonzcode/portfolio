@@ -773,9 +773,10 @@ FEATURES.speleothem_cluster = (D, c, r, ox, oy, oz) => {
     const top = caveEdge(R, x, oy, z, 1, range), bottom = caveEdge(R, x, oy, z, -1, range);
     if (top === null && bottom === null) continue;
     const layer = sampleInt(c.speleothem_block_layer_thickness ?? 2, r);
-    // coat the rock the spikes hang from
-    if (top !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, top + i, z); if (rep[b] || b === baseSt.id) R.set(x, top + i, z, baseSt.id, baseSt.meta); else break; }
-    if (bottom !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, bottom - i, z); if (rep[b] || b === baseSt.id) R.set(x, bottom - i, z, baseSt.id, baseSt.meta); else break; }
+    // coat the rock the spikes hang from (only rock the feature may replace: a coat another cluster
+    // already laid stops it, so two caves either side of a thin floor do not make it dripstone right through)
+    if (top !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, top + i, z); if (rep[b]) R.set(x, top + i, z, baseSt.id, baseSt.meta); else break; }
+    if (bottom !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, bottom - i, z); if (rep[b]) R.set(x, bottom - i, z, baseSt.id, baseSt.meta); else break; }
     any = true;
     if (r.nextFloat() >= chance) continue;
     const bias = Math.max(0, 1 - Math.sqrt(dx * dx + dz * dz) / centreReach);
