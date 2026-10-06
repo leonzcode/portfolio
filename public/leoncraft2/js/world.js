@@ -9,6 +9,7 @@
 --------------------------------------------------------------------------- */
 import { CH, H, idx } from './world-const.js?v=21';
 import { BLOCKS, FLUID } from './blocks.js?v=21';
+import { searchSpawn } from './spawn.js?v=21';
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -24,53 +25,185 @@ function newWorker() {
   return w;
 }
 let started = 0;
-export function startWorkers() { while (started < GEN_N + 1) { POOL.push(newWorker()); started++; } }
+export function startWorkers() {
+  // the page starts them itself (index.html), so their code loads beside its own
+  const early = self.__lc2Workers;
+  if (early) { self.__lc2Workers = null; for (const w of early) if (started < GEN_N + 1) { w.onerror = e => console.error('worker', e.message || e); POOL.push(w); started++; } else w.terminate(); }
+  while (started < GEN_N + 1) { POOL.push(newWorker()); started++; }
+}
 /* What the workers made ahead in the menus (practise) for the world most
-   likely to be opened next: its terrain and features round where the player
-   will stand, taken by that World when it is made. */
+   likely to be opened next: where a new one starts you, the terrain and
+   features round where you will stand, taken by that World when it is made. */
 let ahead = null;
 /* Chunks are kept between visits (chunkcache.js) under the code's version
    stamp and the size of the block table: a new version never reads what an
    older one made. Tidied once a visit. */
 const CACHE = 'c' + (new URL(import.meta.url).searchParams.get('v') || '0') + '.' + BLOCKS.length;
 let swept = false;
+/* Which worlds have chunks kept (their cache keys), remembered beside them:
+   a world with none (the title's on a first visit, a world just made, a
+   dimension never visited) does not wait on a read that can only come back
+   empty (on a first visit that read alone took most of a second). */
+const KEPT = 'lc2_kept';
+function keptKeys() { try { const k = JSON.parse(localStorage.getItem(KEPT) || 'null'); return k && k.v === CACHE ? k.keys : []; } catch (e) { return []; } }
+function noteKept(key) {
+  try { const keys = keptKeys().filter(k => k !== key); keys.push(key); localStorage.setItem(KEPT, JSON.stringify({ v: CACHE, keys: keys.slice(-200) })); } catch (e) { /* read every time instead */ }
+}
 let worlds = 0;                    // each World's number, on everything read back for it (see lookup)
 const numKey = (cx, cz) => cx * 4194304 + cz;       // a chunk as one number (|cz| < 2 million)
-/* Practice in the menus: every worker that has nothing to do makes the
-   generator of the world likely to be opened next (spec: seed, generator,
-   dim, manifest, colours, at: { x, z }) and the terrain and features round
-   where the player will stand, so its code is compiled and fast, and that
-   much of the world is already made, before Singleplayer is ever pressed. */
-export function practise(spec, world) {
+/* Practice in the menus: every worker the title's world has makes the world
+   likely to be opened next (spec: seed, generator, dim, manifest, colours,
+   and at: { x, z } where you will stand, or null for a new world). For a new
+   one, where it starts you is looked for first (spawn.js, the search
+   startGame would make, its columns shared out among the workers). Then the pieces the chunk you will stand in needs, nearest first: the
+   terrain of the 49 chunks round it and the features of the 25 nearest, one
+   piece a job, each worker handed its next as it gives one back, and last
+   the mesher practised on that ground once by each. So the generator's code
+   is compiled and fast, and the ground under you all but made, before
+   Create New World or the world is ever pressed; the title's world waits
+   meanwhile (practising). Typing a seed starts it again for that seed.
+   then: a second world to practise once this one is done (the next new
+   world, after the last one played); what the first made is kept too. */
+const AHEAD_R = 3;                 // terrain within 3 chunks, features within 2: what your own chunk is put together from
+let behind = null;                 // a world practised before the one under way, all done: kept for it all the same
+export function practise(spec, world, then) {
   const name = spec.dim + '|' + spec.generator + '|' + spec.seed;
   // nothing to do when it is already made, or is the very world behind the title (it is kept for you)
-  if ((ahead && ahead.name === name) || (world && !world.dead && world.dim + '|' + world.generator + '|' + world.seed === name)) return;
-  ahead = { name, protos: new Map(), writes: new Map(), drills: new Map() };
-  const cx = Math.floor(spec.at.x / CH), cz = Math.floor(spec.at.z / CH);
-  // the workers of the world on screen (the title's), between its own jobs, or else those waiting in the pool
-  const ws = world && !world.dead ? world.workers.slice(0, world.genN) : POOL.slice(0, GEN_N);
-  // each worker a different chunk's features (the one you stand in first) and the nine terrains it needs,
-  // three at a time: the next part goes only when the last is back (keepAhead), and stops once a world is opened
-  const centres = [[0, 0], [1, 0], [0, 1], [1, 1]];
-  const base = { type: 'practice', seed: spec.seed, generator: spec.generator, dim: spec.dim, manifest: spec.manifest, colours: spec.colours };
-  ws.forEach((w, i) => {
-    const [ox, oz] = centres[i % centres.length], x = cx + ox, z = cz + oz, terrain = [];
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) terrain.push([x + dx, z + dz]);
-    const parts = [terrain.slice(0, 3), terrain.slice(3, 6), terrain.slice(6), []].map((t, n) => Object.assign({}, base, { terrain: t, decorate: n === 2 ? [x, z] : null, mesh: n === 3 ? [x, z] : null }));
-    if (!world || world.dead) w.onmessage = e => keepAhead(e.data, w);
-    ahead.drills.set(w, parts);
-    w.postMessage(parts.shift());
-  });
-}
-// what practice made, kept for its world; and that worker's next part of it
-function keepAhead(m, w) {
-  if (m.type !== 'practised' || !ahead || ahead.name !== m.name) return;
-  for (const t of m.out) {
-    if (t[0] === 't') ahead.protos.set(numKey(t[1], t[2]), { cx: t[1], cz: t[2], blocks: t[3], meta: t[4], grid: t[5] });
-    else ahead.writes.set(numKey(t[1], t[2]), { cx: t[1], cz: t[2], w: t[3] });
+  if ((ahead && ahead.name === name) || (behind && behind.name === name) || (world && !world.dead && world.dim + '|' + world.generator + '|' + world.seed === name)) {
+    // (the world after it, once it is done, or at once when this one is already there)
+    if (then && ahead && ahead.name === name) { ahead.then = then; if (done(ahead)) { ahead.then = null; practise(then, ahead.world); } }
+    else if (then) practise(then, world);
+    return;
   }
-  const parts = w && ahead.drills.get(w);
-  if (parts && parts.length) w.postMessage(parts.shift());
+  // the workers of the world on screen (the title's, which waits meanwhile), or else those waiting in the pool
+  const ws = world && !world.dead ? world.workers.slice() : POOL.slice(0, GEN_N + 1);
+  if (world && !world.dead) world.yields = true;
+  // the one under way, if it is all done, is kept beside the new one
+  if (ahead && done(ahead)) behind = ahead;
+  const a = ahead = { name, protos: new Map(), writes: new Map(), spawn: null, centre: null, staged: true, then: then || null, world,
+    base: { type: 'practice', seed: spec.seed, generator: spec.generator, dim: spec.dim },
+    asked: new Set(),               // pieces being made (chunk number * 4 + 1 terrain, + 2 features)
+    failed: new Set(),              // pieces that came back with nothing (not asked for again)
+    idle: new Set(), meshed: new Set(), ws, plan: null,
+    searching: !spec.at, asks: new Map(), nextAsk: 1 };
+  /* A world played before: its chunks round you are most likely kept
+     (chunkcache.js) and read back in a moment when it opens, so the first
+     worker asks first, and the ground is made ahead only if they are not. */
+  const nineAt = c => { const l = []; for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) l.push([c[0] + dx, c[1] + dz]); return l; };
+  if (spec.at) { a.centre = [Math.floor(spec.at.x / CH), Math.floor(spec.at.z / CH)]; a.probing = true; }
+  ws.forEach((w, i) => {
+    if (!world || world.dead) w.onmessage = e => keepAhead(e.data, w);
+    // a worker may still be on a piece of the world practised before: this goes after it. Each makes the
+    // generator (the textures and colours come once, with this); the first asks whether a world played before is kept
+    w.postMessage(Object.assign({ manifest: spec.manifest, colours: spec.colours }, a.base, i || !a.centre ? {} : { probe: nineAt(a.centre), cache: CACHE + '|' + name }));
+  });
+  if (a.searching) {
+    searchSpawn(q => new Promise(res => {
+      const id = a.nextAsk++;
+      a.asks.set(id, res);
+      ws[id % ws.length].postMessage(Object.assign({ surface: [q.x, q.z, q.withBiome ? 1 : 0], id }, a.base));
+    })).then(spawn => {
+      // where the new world starts you: from here on, the ground round it
+      a.searching = false; a.spawn = spawn; a.centre = [Math.floor(spawn.x / CH), Math.floor(spawn.z / CH)];
+      for (const x of [...a.idle]) feed(a, x);
+    }, e => { console.warn('spawn search', e); a.searching = false; });
+  }
+}
+// whether practice still has work on the workers (the title's world waits meanwhile: World.yields)
+const done = a => !a.searching && a.idle.size >= a.ws.length;
+export function practising() { return !!ahead && !done(ahead); }
+// the pieces round the centre, nearest first: [distance, x, z, stage (1 terrain, 2 features)]
+function planOf(a) {
+  const [cx, cz] = a.centre, plan = [];
+  for (let dz = -AHEAD_R; dz <= AHEAD_R; dz++) for (let dx = -AHEAD_R; dx <= AHEAD_R; dx++) {
+    const d = dx * dx + dz * dz, x = cx + dx, z = cz + dz;
+    plan.push([d, x, z, 1]);
+    if (Math.max(Math.abs(dx), Math.abs(dz)) < AHEAD_R) plan.push([d, x, z, 2]);
+  }
+  return plan.sort((p, q) => p[0] - q[0] || q[3] - p[3]);
+}
+// a worker's next piece of practice, or nothing left for it (it waits)
+function feed(a, w) {
+  if (a !== ahead) return;
+  let msg = null;
+  // (still looking for the spawn or asking what is kept)
+  if (!a.centre || a.probing) { a.idle.add(w); return; }
+  if (a.kept) { /* all of it kept: nothing to make */ }
+  else if (a.staged) {
+    const plan = a.plan || (a.plan = planOf(a));
+    // the nearest features whose nine terrains are here, else the nearest terrain not asked for
+    for (const [, x, z, st] of plan) {
+      const f = numKey(x, z);
+      if (st !== 2 || a.writes.has(f) || a.asked.has(f * 4 + 2) || a.failed.has(f * 4 + 2)) continue;
+      let all = true;
+      for (let tz = -1; tz <= 1 && all; tz++) for (let tx = -1; tx <= 1; tx++) if (!a.protos.has(numKey(x + tx, z + tz))) { all = false; break; }
+      if (!all) continue;
+      a.asked.add(f * 4 + 2);
+      msg = { decorate: [x, z], protos: nine(a.protos, x, z) };
+      break;
+    }
+    if (!msg) for (const [, x, z, st] of plan) {
+      const f = numKey(x, z);
+      if (st !== 1 || a.protos.has(f) || a.asked.has(f * 4 + 1) || a.failed.has(f * 4 + 1)) continue;
+      a.asked.add(f * 4 + 1);
+      msg = { terrain: [x, z] };
+      break;
+    }
+    // everything round you made: the mesher practised on this ground, once by each worker
+    if (!msg && !a.asked.size && !a.meshed.has(w) && a.writes.size) {
+      a.meshed.add(w);
+      msg = { mesh: a.centre, protos: nine(a.protos, a.centre[0], a.centre[1]) };
+    }
+  } else if (!a.meshed.has(w)) {
+    // a generator not made in stages (the first one, the Nether's, the End's): a chunk made once, for the practice
+    a.meshed.add(w);
+    msg = { terrain: a.centre };
+  }
+  if (!msg) {
+    a.idle.add(w);
+    // all of it done: on to the world to practise next, if any
+    if (done(a) && a.then) { const t = a.then; a.then = null; practise(t, a.world); }
+    return;
+  }
+  a.idle.delete(w);
+  const transfer = [];
+  if (msg.protos) for (const p of msg.protos) transfer.push(p.blocks.buffer, p.meta.buffer);
+  w.postMessage(Object.assign({}, a.base, msg), transfer);
+}
+// copies of the nine terrains round (x, z), for a job (the originals stay here for the next)
+function nine(protos, x, z) {
+  const out = [];
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    const p = protos.get(numKey(x + dx, z + dz));
+    if (p) out.push({ cx: p.cx, cz: p.cz, blocks: p.blocks.slice(), meta: p.meta.slice(), grid: p.grid });
+  }
+  return out;
+}
+// what practice made, kept for its world; and that worker's next piece of it
+function keepAhead(m, w) {
+  const a = ahead;
+  if (m.type !== 'practised' || !a || a.name !== m.name) return;
+  // a column asked for by the spawn search
+  if (m.surface) { const r = a.asks.get(m.id); a.asks.delete(m.id); if (r) r(m.surface); return; }
+  takeOut(a.protos, a.writes, m, a.asked);
+  if (m.did && !m.out.length) a.failed.add(numKey(m.did[1], m.did[2]) * 4 + (m.did[0] === 't' ? 1 : 2));
+  if (m.staged === false) a.staged = false;
+  if (m.kept !== undefined && a.probing) {
+    // the chunk you stand in and the eight round it all kept: nothing to make; else the ground round you
+    a.probing = false; a.kept = m.kept >= 9;
+  }
+  if (w) feed(a, w);
+  // what came back may be what the workers waiting were waiting for (the spawn, the nine terrains a chunk's features need)
+  for (const x of [...a.idle]) if (x !== w) feed(a, x);
+}
+// practice's pieces into a world's (or ahead's) maps, and the piece asked for no longer being made (even if it failed)
+function takeOut(protos, writes, m, asked) {
+  for (const t of m.out) {
+    const f = numKey(t[1], t[2]);
+    if (t[0] === 't') protos.set(f, { cx: t[1], cz: t[2], blocks: t[3], meta: t[4], grid: t[5] });
+    else writes.set(f, { cx: t[1], cz: t[2], w: t[3] });
+  }
+  if (m.did) asked.delete(numKey(m.did[1], m.did[2]) * 4 + (m.did[0] === 't' ? 1 : 2));
 }
 
 export class World {
@@ -110,22 +243,41 @@ export class World {
     const name = this.dim + '|' + this.generator + '|' + this.seed;
     // where this world's chunks are kept (opts.cache false: never)
     this.cacheKey = opts.cache === false ? null : CACHE + '|' + name;
+    /* A world just created (opts.fresh), or one with nothing kept, has nothing
+       to read back, so it does not wait on a read until it has let a chunk of
+       its own go. */
+    this.fresh = !!opts.fresh || (!!this.cacheKey && !keptKeys().includes(this.cacheKey));
+    this.noted = false;
     this.tag = ++worlds;
     this.lookingUp = new Set();       // "cx,cz" being read back from the kept chunks
     this.missing = new Map();         // "cx,cz" -> [cx, cz]: not kept, to be made
-    if (ahead && ahead.name === name) { this.protos = ahead.protos; this.writesOf = ahead.writes; }
-    ahead = null;
+    /* What practice made for this very world is taken (and where it starts
+       you, for a new one); pieces still being made for it are not asked for
+       again, they come in as practice (takePractice). */
+    this.spawnAhead = null;
+    const pre = ahead && ahead.name === name ? ahead : behind && behind.name === name ? behind : null;
+    if (pre) {
+      this.protos = pre.protos; this.writesOf = pre.writes; this.spawnAhead = pre.spawn;
+      for (const p of pre.asked) this.stageIn.add(p);
+    }
+    ahead = null; behind = null;
     startWorkers();
-    this.ready = Promise.all(Array.from({ length: n + 1 }, (_, i) => new Promise(res => {
+    /* Ready once the first of the workers making chunks is: the others join in
+       as each finishes what it was doing (a piece of practice, say), and no
+       job goes to one before it has (idlest). */
+    let first;
+    this.ready = new Promise(res => { first = res; });
+    for (let i = 0; i <= n; i++) {
       const w = POOL.shift() || newWorker();
       this.live.push(false);
-      w.onmessage = e => this.onMessage(i, e.data, res);
+      w.onmessage = e => this.onMessage(i, e.data, () => { if (i < n) first(); });
       w.postMessage({ type: 'init', seed: this.seed, generator: this.generator, dim: this.dim, manifest: opts.manifest, colours: opts.colours, cache: this.cacheKey, tag: this.tag });
       // once a visit, the edit worker tidies the kept chunks (old versions out)
-      if (i === n && !swept) { swept = true; w.postMessage({ type: 'sweep', prefix: CACHE + '|', limit: 40000 }); }
+      // (a while after the page opens: it holds the store, and the first worlds' reads would wait behind it)
+      if (i === n && !swept) { swept = true; setTimeout(() => w.postMessage({ type: 'sweep', prefix: CACHE + '|', limit: 40000 }), 15000); }
       this.workers.push(w);
       this.busy.push(0);
-    })));
+    }
     this.genQueue = new Set();
     this.meshQueue = new Set();
     this.inFlight = new Set();
@@ -168,7 +320,7 @@ export class World {
 
   onMessage(i, m, initRes) {
     // practice finishing for this very world (it was opened while the workers were still at it)
-    if (m.type === 'practised') { if (m.name === this.dim + '|' + this.generator + '|' + this.seed) this.takePractice(m.out); else keepAhead(m, this.dead ? null : this.workers[i]); return; }
+    if (m.type === 'practised') { if (m.name === this.dim + '|' + this.generator + '|' + this.seed) this.takePractice(m); else keepAhead(m, this.dead ? null : this.workers[i]); return; }
     // anything else from before the init (a job of the world this worker served last) is not ours
     if (!this.live[i]) {
       if (m.type === 'ready') { this.live[i] = true; if (i < this.genN && m.staged) { this.staged = true; this.features = !!m.features; } initRes(); }
@@ -190,6 +342,8 @@ export class World {
       this.inFlight.delete('g' + k);
       this.lookingUp.delete(k);
       if (!m.cached) this.missing.delete(k);
+      // its chunks are being kept from now on: the next visit reads them back
+      if (!m.cached && this.cacheKey && !this.noted) { this.noted = true; noteKept(this.cacheKey); }
       if (!this.wanted(m.cx, m.cz)) return;
       const c = { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, biome: m.biome, top: m.top, meshed: false, structs: m.structs || null };
       // put back whatever was changed here before
@@ -238,9 +392,14 @@ export class World {
       this.workers[i].postMessage(Object.assign({ id }, msg));
     });
   }
-  /* The least busy worker. The one kept for your edits joins in while
-     nothing can be edited (allHands: a loading screen, the title's world). */
-  idlest() { const n = this.genN + (this.allHands ? 1 : 0); let b = 0; for (let i = 1; i < n; i++) if (this.busy[i] < this.busy[b]) b = i; return b; }
+  /* The least busy worker of those ready. The one kept for your edits joins
+     in while nothing can be edited (allHands: a loading screen, the title's world). */
+  idlest() {
+    const n = this.genN + (this.allHands ? 1 : 0);
+    let b = -1;
+    for (let i = 0; i < n; i++) if (this.live[i] && (b < 0 || this.busy[i] < this.busy[b])) b = i;
+    return b < 0 ? 0 : b;
+  }
 
   wanted(cx, cz) {
     const dx = cx - this.pcx, dz = cz - this.pcz;
@@ -267,7 +426,7 @@ export class World {
     const R = this.renderDist + 1;
     if (moved) {
       // forget what is too far, and line up what is missing, nearest first
-      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.chunks.delete(k); this.byNum.delete(((c.cx & 0x7fff) << 15) | (c.cz & 0x7fff)); this.meshCache.delete(k); this.rowLog.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
+      for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.fresh = false; this.chunks.delete(k); this.byNum.delete(((c.cx & 0x7fff) << 15) | (c.cz & 0x7fff)); this.meshCache.delete(k); this.rowLog.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
       this.genList = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
         if (dx * dx + dz * dz > R * R) continue;
@@ -306,21 +465,26 @@ export class World {
       if (!this.around(bx, bz)) continue;
       this.sendMesh(bx, bz);
     }
+    // the title's world makes one thing at a time while the workers practise on the world you are about to open (practise)
+    const held = !!this.yields && practising();
+    if (this.yielding && !held) this.sched = true;   // practice done: back to its own pace
+    this.yielding = held;
+    const gcap = held ? 1 : cap;
     if (this.staged) {
-      if (moved || this.sched) this.schedule(cap);
+      if (moved || this.sched) this.schedule(gcap);
       // what is no longer needed goes when you cross into another chunk, and once all round you is made
       if (moved) this.prunedAll = false;
       if (moved || (!this.prunedAll && this.genList.length === 0 && !this.stageIn.size)) { this.prune(); this.prunedAll = this.genList.length === 0; }
       return;
     }
     const L = this.genList;
-    if (!L || !L.length || this.inFlightCount() >= cap) return;
+    if (!L || !L.length || this.inFlightCount() >= gcap) return;
     let j = 0;
     for (let n = 0; n < L.length; n++) {
       const e = L[n], x = e[1], z = e[2], k = this.key(x, z);
       if (this.chunks.has(k) || this.inFlight.has('g' + k)) continue;
-      // still being read back from the kept chunks, or no worker free: later
-      if (this.lookingUp.has(k) || this.inFlightCount() >= cap) { L[j++] = e; continue; }
+      // still being read back from the kept chunks, no worker free, or a loading screen waiting on nearer ones (focus): later
+      if (this.lookingUp.has(k) || this.inFlightCount() >= gcap || (this.focus >= 0 && Math.max(Math.abs(x - this.pcx), Math.abs(z - this.pcz)) > this.focus)) { L[j++] = e; continue; }
       this.inFlight.add('g' + k);
       const i = this.idlest(); this.busy[i]++;
       this.workers[i].postMessage({ type: 'gen', cx: x, cz: z });
@@ -331,7 +495,7 @@ export class World {
      all of them, by whichever worker is free); what is not kept is made. */
   lookup() {
     for (const [k, [x, z]] of this.missing) if (!this.wanted(x, z)) this.missing.delete(k);
-    if (!this.cacheKey) return;
+    if (!this.cacheKey || this.fresh) return;
     const list = [];
     for (const e of this.genList) {
       const k = this.key(e[1], e[2]);
@@ -448,11 +612,8 @@ export class World {
     if (m.type === 'terrain') this.protos.set(f, { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, grid: m.grid });
     else this.writesOf.set(f, { cx: m.cx, cz: m.cz, w: m.writes });
   }
-  takePractice(out) {
-    for (const t of out) {
-      if (t[0] === 't') this.protos.set(numKey(t[1], t[2]), { cx: t[1], cz: t[2], blocks: t[3], meta: t[4], grid: t[5] });
-      else this.writesOf.set(numKey(t[1], t[2]), { cx: t[1], cz: t[2], w: t[3] });
-    }
+  takePractice(m) {
+    takeOut(this.protos, this.writesOf, m, this.stageIn);
     this.sched = true;
   }
   /* How far along a chunk is, as the loading screen's squares show it (the
@@ -702,6 +863,8 @@ export class World {
   // take on a saved world's changes while its chunks are already loaded (the title screen's world, reused)
   adoptEdits(edits, save) {
     this.edits = edits; this.save = save;
+    // the title's world played: it no longer waits for practice
+    this.yields = false;
     for (const [k, ed] of edits) {
       const c = this.chunks.get(k);
       if (!c) continue;

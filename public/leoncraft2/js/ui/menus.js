@@ -485,16 +485,34 @@ export class CreateWorldScreen extends Screen {
     const b = this.add(new CycleButton(x + 308 - 44, y, 44, 20, label, { values: [false, true], value, format: onOff, valueOnly: true }));
     b.active = false; b.tooltip = tip;
   }
+  /* The world this screen would make: Minecraft's seeds (a number that fits
+     a long is that long, other text its hash), and for a blank seed the
+     random one drawn ahead (main.js nextSeed), so the world being made in
+     the background while you choose is the one you get. */
+  chosen() {
+    const generator = this.worldType === 'classic' ? 'classic' : 'vanilla', text = this.seedField.value.trim();
+    const seed = text ? (generator === 'classic' ? seedFrom(text) : parseSeed(text))
+      : this.hooks.nextSeed ? this.hooks.nextSeed(generator) : generator === 'classic' ? seedFrom('') : parseSeed('');
+    return { seed, generator };
+  }
+  // started ahead (main.js prepare) once the seed and type have stayed the same a moment
+  prepareAhead() {
+    const key = this.worldType + '|' + this.seedField.value.trim();
+    if (key === this.preparedKey || !this.hooks.prepare) return;
+    this.preparedKey = key;
+    clearTimeout(this.prepareT);
+    this.prepareT = setTimeout(() => { if (this.gui && this.gui.screen === this) this.hooks.prepare(this.chosen()); }, this.prepareT === undefined ? 0 : 400);
+  }
   create() {
+    clearTimeout(this.prepareT);
     const name = this.nameField.value.trim() || 'New World';
     const now = Date.now();
+    const { seed, generator } = this.chosen();
     const world = {
       id: 'w' + now.toString(36) + (Math.random() * 1e6 | 0).toString(36),
-      // Minecraft's seeds: a number that fits a long is that long, other text its hash,
-      // blank a random 64-bit seed; made by the vanilla generator from now on
+      // made by the vanilla generator from now on, unless Classic is chosen
       name, folder: Worlds.folderName(name),
-      seed: this.worldType === 'classic' ? seedFrom(this.seedField.value) : parseSeed(this.seedField.value),
-      generator: this.worldType === 'classic' ? 'classic' : 'vanilla',
+      seed, generator,
       mode: this.mode === 'hardcore' ? 'survival' : this.mode, difficulty: this.mode === 'hardcore' ? 'hard' : this.difficulty,
       cheats: this.mode === 'hardcore' ? false : this.cheats, created: now, lastPlayed: now,
     };
@@ -504,6 +522,7 @@ export class CreateWorldScreen extends Screen {
   }
   render(g, mx, my, dt) {
     const W = this.width, H = this.height;
+    this.prepareAhead();
     g.headerSeparator(0, W, 22);
     g.footerSeparator(0, W, H - 35);
     for (const [t, x, y, c] of this.labels) g.text(t, x, y, c || WHITE);

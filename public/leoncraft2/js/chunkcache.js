@@ -63,35 +63,64 @@ async function flush() {
     for (const [key, rec] of list) st.put(rec, key);
   } catch (e) { /* not kept: made again next time */ }
 }
-// the chunks of a list that are kept, each handed to found(cx, cz, chunk, structs) as it is read; resolves with the ones that are not
-export async function readChunks(world, list, found) {
-  const d = await db();
-  if (!d) return list;
-  const recs = await new Promise(res => {
+/* The chunks of a list that are kept, each handed to found(cx, cz, chunk,
+   structs) as it is unsqueezed, the list's own order (nearest first) a few
+   at a time; absent(list) is told the ones not kept as soon as the store has
+   answered, before any is unsqueezed, so they can be made meanwhile.
+   Resolves with any that were kept but could not be read. */
+export function readChunks(world, list, found, absent) {
+  return db().then(d => new Promise(done => {
+    if (!d) { absent(list); done([]); return; }
+    const missing = [], failed = [], queue = [];
+    let left = list.length, running = 0, read = false;
+    const finish = () => { if (read && !running && !queue.length) done(failed); };
+    const next = () => {
+      while (running < 4 && queue.length) {
+        const [x, z, r] = queue.shift();
+        running++;
+        squeeze(r.z, new DecompressionStream('deflate')).then(buf => {
+          try {
+            const raw = new Uint8Array(buf), n = r.n;
+            const blocks = new Uint16Array(n), meta = new Uint8Array(n);
+            new Uint8Array(blocks.buffer).set(raw.subarray(0, n * 2));
+            meta.set(raw.subarray(n * 2, n * 3));
+            found(x, z, { blocks, meta, biome: raw.slice(n * 3), top: r.top }, r.s);
+          } catch (e) { failed.push([x, z]); }
+        }, () => failed.push([x, z])).then(() => { running--; next(); finish(); });
+      }
+    };
+    const got = (x, z, r) => {
+      if (read) return;              // (the store failed part way through: every one of them is made instead)
+      if (r) { queue.push([x, z, r]); next(); } else missing.push([x, z]);
+      if (--left === 0) { read = true; absent(missing); finish(); }
+    };
     try {
-      const st = d.transaction(STORE, 'readonly').objectStore(STORE), out = new Array(list.length);
-      let left = list.length;
-      if (!left) { res(out); return; }
-      list.forEach(([x, z], i) => {
-        const r = st.get(world + '|' + x + ',' + z);
-        r.onsuccess = () => { out[i] = r.result || null; if (--left === 0) res(out); };
-        r.onerror = () => { out[i] = null; if (--left === 0) res(out); };
-      });
-    } catch (e) { res(new Array(list.length).fill(null)); }
-  });
-  const missing = [];
-  await Promise.all(list.map(async ([x, z], i) => {
-    const r = recs[i];
-    if (!r) { missing.push([x, z]); return; }
-    try {
-      const raw = new Uint8Array(await squeeze(r.z, new DecompressionStream('deflate'))), n = r.n;
-      const blocks = new Uint16Array(n), meta = new Uint8Array(n);
-      new Uint8Array(blocks.buffer).set(raw.subarray(0, n * 2));
-      meta.set(raw.subarray(n * 2, n * 3));
-      found(x, z, { blocks, meta, biome: raw.slice(n * 3), top: r.top }, r.s);
-    } catch (e) { missing.push([x, z]); }
+      if (!left) { read = true; absent(missing); finish(); return; }
+      const st = d.transaction(STORE, 'readonly').objectStore(STORE);
+      for (const [x, z] of list) {
+        const q = st.get(world + '|' + x + ',' + z);
+        q.onsuccess = () => got(x, z, q.result || null);
+        q.onerror = () => got(x, z, null);
+      }
+    } catch (e) { if (!read) { read = true; queue.length = 0; absent(list); } finish(); }
   }));
-  return missing;
+}
+// how many chunks of a list are kept (practice in the menus asks, before making what would only be read back)
+export async function keptCount(world, list) {
+  const d = await db();
+  if (!d) return 0;
+  return new Promise(res => {
+    try {
+      const st = d.transaction(STORE, 'readonly').objectStore(STORE);
+      let left = list.length, n = 0;
+      if (!left) { res(0); return; }
+      for (const [x, z] of list) {
+        const r = st.count(world + '|' + x + ',' + z);
+        r.onsuccess = () => { if (r.result) n++; if (--left === 0) res(n); };
+        r.onerror = () => { if (--left === 0) res(n); };
+      }
+    } catch (e) { res(0); }
+  });
 }
 /* Once a visit: chunks of other versions of the game go, and if the store
    has grown past a limit it starts again (about 25 KB a chunk). */
