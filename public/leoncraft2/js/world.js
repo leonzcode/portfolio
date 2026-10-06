@@ -413,9 +413,18 @@ export class World {
       const p = this.protoCopy(this.protos.get(numKey(x + dx, z + dz)));
       protos.push(p); transfer.push(p.blocks.buffer, p.meta.buffer);
     }
+    /* and the biomes of the terrains just beyond them that are here already: a
+       lake there gives way to a lake of the chunks next to this one, and working
+       out where those go wants the biomes round them (gen/features.js LazyRegion) */
+    const grids = [];
+    for (let dz = -2; dz <= 1; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (dx >= -1 && dx <= 1 && dz >= -1) continue;
+      const p = this.protos.get(numKey(x + dx, z + dz));
+      if (p && p.grid) grids.push([x + dx, z + dz, p.grid]);
+    }
     this.stageIn.add(f * 4 + 2);
     const i = this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'decorate', cx: x, cz: z, protos }, transfer);
+    this.workers[i].postMessage({ type: 'decorate', cx: x, cz: z, protos, grids }, transfer);
   }
   sendGen(x, z) {
     const k = this.key(x, z);
@@ -471,7 +480,7 @@ export class World {
      behind you. What sits at the edge of what is loaded is kept, for when
      you walk on. */
   prune() {
-    const R = this.renderDist + 4, made = (x, z) => this.chunks.has(this.key(x, z));
+    const R = this.renderDist + 4, made = (x, z) => this.chunkXZ(x, z) !== undefined;
     const far = p => (p.cx - this.pcx) ** 2 + (p.cz - this.pcz) ** 2 > R * R;
     for (const [f, p] of this.protos) {
       let all = true;

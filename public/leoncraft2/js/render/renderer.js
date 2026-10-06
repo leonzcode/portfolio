@@ -29,6 +29,18 @@ const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
 const byDist = (a, b) => a.dist - b.dist;
+// what a column's mesh puts on the graphics card, in bytes
+const MESH_KINDS = ['opaque', 'cutout', 'plants', 'leafIn', 'fluid', 'translucent'];
+function meshBytes(mesh) {
+  let n = 0;
+  for (let k = 0; k < MESH_KINDS.length; k++) {
+    const d = mesh[MESH_KINDS[k]];
+    if (!d) continue;
+    for (let i = 0; i < d.attrs.length; i++) n += d.attrs[i].byteLength;
+    n += d.index.byteLength;
+  }
+  return n;
+}
 // one black pixel, for a texture that is made later
 function blankTexture() {
   const t = new THREE.DataTexture(new Uint8Array(4), 1, 1);
@@ -176,10 +188,18 @@ export class Renderer {
   pumpUploads(budgetMs) {
     if (!this.uploads || !this.uploads.size) return;
     const t0 = performance.now();
-    // nearest first: picked one at a time (a few a frame), not the whole line copied and sorted each frame
+    /* Nearest first: picked one at a time (a few a frame), not the whole line
+       copied and sorted each frame. And no more than about three megabytes a
+       frame: handing the data over is quick here, but the graphics process
+       copies it after, and a burst of columns arriving together cost the next
+       frame there instead. */
+    let bytes = 0;
     while (this.uploads.size) {
       let best = null, bd = Infinity;
       for (const e of this.uploads.values()) { const d = (e[0] - this.ccx) * (e[0] - this.ccx) + (e[1] - this.ccz) * (e[1] - this.ccz); if (d < bd) { bd = d; best = e; } }
+      const size = meshBytes(best[2]);
+      if (bytes > 0 && bytes + size > (this.opts.uploadBytes || 3e6)) break;
+      bytes += size;
       this.uploads.delete(best[0] + ',' + best[1]);
       this.addColumn(best[0], best[1], best[2]);
       if (performance.now() - t0 > budgetMs) break;

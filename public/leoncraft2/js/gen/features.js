@@ -1409,13 +1409,13 @@ export class Decorator {
   }
   // a chunk's biome grid alone, kept for the lake plans of the chunks round it (a few kilobytes each)
   gridOf(x, z) {
-    const key = x + ',' + z;
-    let g = this.grids.get(key);
-    if (!g) {
-      g = this.gen.biomeGrid(x, z);
-      this.grids.set(key, g);
-      if (this.grids.size > 512) this.grids.delete(this.grids.keys().next().value);
-    }
+    const g = this.grids.get(x + ',' + z);
+    return g || this.keepGrid(x, z, this.gen.biomeGrid(x, z));
+  }
+  // (and one handed in with a decoration, from a terrain made elsewhere: js/worker.js)
+  keepGrid(x, z, g) {
+    this.grids.set(x + ',' + z, g);
+    if (this.grids.size > 512) this.grids.delete(this.grids.keys().next().value);
     return g;
   }
   warmEnoughToMelt(biome, x, y, z) {
