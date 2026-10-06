@@ -206,15 +206,26 @@ export class Renderer {
     this.standGeo = g;
     this.locs = new Map();
     this.frustum = new THREE.Frustum(); this.fm = new THREE.Matrix4(); this.box = new THREE.Box3();
-    const stand = (scene, material, kinds, order, shadow) => {
+    const stand = (scene, material, kinds, order, shadow, band) => {
       if (!material) return;
       const m = new THREE.Mesh(g, material);
       m.frustumCulled = false; m.renderOrder = order; m.matrixAutoUpdate = false;
-      m.onAfterRender = (r, sc, cam) => this.drawParts(material, kinds, cam, shadow);
+      m.onAfterRender = (r, sc, cam) => this.drawParts(material, kinds, cam, shadow, band || 0);
       scene.add(m);
+      return m;
     };
     stand(this.scene, this.mats.opaque, ['opaque'], -10, false);
-    stand(this.scene, this.mats.cutout, ['cutout', 'plants', 'leafIn'], -9, false);
+    /* Cut-out blocks near you: their depth first, then lit only where they are in
+       front (materials.js cutoutDepthPass). Further out a tree is small on the
+       screen, so its hidden layers cost less than drawing it twice: there they
+       are drawn once, as before. */
+    const cut = ['cutout', 'plants', 'leafIn'];
+    this.cutoutNearDist = this.opts.cutoutNear === undefined ? 40 : this.opts.cutoutNear;
+    if (this.mats.cutoutDepth && this.mats.cutoutNear) {
+      this.cutoutDepthMesh = stand(this.scene, this.mats.cutoutDepth, cut, -9.6, false, 1);
+      this.cutoutNearMesh = stand(this.scene, this.mats.cutoutNear, cut, -9.5, false, 1);
+      stand(this.scene, this.mats.cutout, cut, -9, false, 2);
+    } else stand(this.scene, this.mats.cutout, cut, -9, false);
     stand(this.trans, this.mats.fluid, ['fluid'], -10, false);
     stand(this.trans, this.mats.translucent, ['translucent'], -9, false);
     if (this.opts.shadows) {
@@ -222,7 +233,8 @@ export class Renderer {
       stand(this.shadowTerrain, this.mats.shadowCutout, ['cutout'].concat(this.opts.plantShadows === false ? [] : ['plants']).concat(this.opts.leafInShadows === false ? [] : ['leafIn']), -9, true);
     }
   }
-  drawParts(material, kinds, cam, shadow) {
+  // band: 0 every column, 1 only those within cutoutNearDist of the camera, 2 only those beyond
+  drawParts(material, kinds, cam, shadow, band) {
     const gl = this.gl;
     const prog = this.r.properties.get(material).currentProgram;
     if (!prog) return;
@@ -235,9 +247,11 @@ export class Renderer {
     const list = slice ? slice.list : this.inView(cam);
     const back = !!material.transparent, n = slice ? slice.to : list.length;
     const prevVao = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
+    const nd = this.cutoutNearDist * this.cutoutNearDist;
     for (let j = slice ? slice.from : 0; j < n; j++) {
       const col = list[back ? n - 1 - j : j];
       if (col.dead) continue;
+      if (band && ((col.viewCam === cam && col.dist <= nd) !== (band === 1))) continue;
       // the sections this camera can see (inView), if it was the last to look at this column
       const v0 = !shadow && col.viewCam === cam ? col.view0 : 0, v1 = !shadow && col.viewCam === cam ? col.view1 + 1 : 24;
       let set = false;
