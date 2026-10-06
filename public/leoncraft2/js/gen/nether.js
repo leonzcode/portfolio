@@ -39,7 +39,7 @@ import { BIO } from '../biomes.js?v=17';
 import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=17';
 import { BlendedNoise, yGradient, squeeze } from './blended.js?v=17';
 import { Perlin } from './noise.js?v=17';
-import { LegacyRandom } from './random.js?v=17';
+import { LegacyRandom, seedLong } from './random.js?v=17';
 
 const I = y => y - Y0;                 // world y -> index
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -73,11 +73,6 @@ function legacyNetherNoise(seed) {
   const a = legacyOctaves(r), b = legacyOctaves(r);
   return (x, z) => (a(x, z) + b(x * INPUT, z * INPUT)) * VALUE;
 }
-// a world's seed as the 64-bit number the game keeps (a vanilla world's seed comes as decimal text)
-function seed64(seed) {
-  const t = String(seed).trim();
-  return /^[-+]?\d+$/.test(t) ? BigInt.asIntN(64, BigInt(t)) : BigInt(seed | 0);
-}
 const quantize = v => Math.trunc(Math.fround(Math.fround(v) * 10000));
 // the order the game's search meets the points in (by the sum of their sizes): wastes, crimson, soul sand, deltas, warped
 const ORDER = [0, 2, 1, 4, 3];
@@ -87,7 +82,7 @@ export class NetherGen {
     this.seed = seed | 0;
     const S = this.seed;
     this.base = new BlendedNoise(S, 'nether/base_3d_noise', 0.25, 0.375, 80, 60);
-    const s64 = seed64(seed);
+    const s64 = seedLong(seed);
     this.nTemp = legacyNetherNoise(s64);
     this.nHum = legacyNetherNoise(BigInt.asIntN(64, s64 + 1n));
     this.nState = new NormalNoise(S, 'nether_state_selector', -4, [1]);
