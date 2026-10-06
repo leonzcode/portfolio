@@ -20,11 +20,11 @@
    sneak. Nothing is drawn of a player in another dimension or out of sight
    range.
 --------------------------------------------------------------------------- */
-import { Avatar } from '../render/avatar.js?v=16';
-import { pieceLook, armorSheet } from '../render/armor.js?v=16';
-import { setLight as setLightOf } from '../render/held.js?v=16';
-import { DRAW, I, stackFromJSON } from '../items.js?v=16';
-import { B } from '../blocks.js?v=16';
+import { Avatar } from '../render/avatar.js?v=17';
+import { pieceLook, armorSheet } from '../render/armor.js?v=17';
+import { setLight as setLightOf } from '../render/held.js?v=17';
+import { DRAW, I, stackFromJSON } from '../items.js?v=17';
+import { B } from '../blocks.js?v=17';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -120,7 +120,7 @@ export class RemotePlayers {
   }
   skinOf(r) {
     const av = r.av;
-    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=16', import.meta.url).href;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=17', import.meta.url).href;
     av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
   }
   equip(r) {

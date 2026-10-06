@@ -30,9 +30,9 @@
    What it remembers (sign text, food on campfires, framed items) is kept per dimension
    (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPACITY } from './blocks.js?v=16';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON } from './items.js?v=16';
-import { cookingRecipe } from './crafting.js?v=16';
+import { B, BLOCKS, OPACITY } from './blocks.js?v=17';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON } from './items.js?v=17';
+import { cookingRecipe } from './crafting.js?v=17';
 const THREE = window.THREE;
 
 /* ---- the composter's chances, by item (Minecraft Wiki, Composter) ---- */

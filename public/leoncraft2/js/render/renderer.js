@@ -14,17 +14,17 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Interaction } from './interaction.js?v=16';
-import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=16';
-import { makeNoise2D } from './noisetex.js?v=16';
-import { Avatar } from './avatar.js?v=16';
-import { Held } from './held.js?v=16';
-import { Figure } from './figure.js?v=16';
-import { PumpkinView } from './pumpkin.js?v=16';
-import { glints, pieceLook } from './armor.js?v=16';
-import { dimLook } from '../dim/look.js?v=16';
-import { blockGeometry } from './blockmesh.js?v=16';
-import { applyLook, looked } from './looks.js?v=16';
+import { Interaction } from './interaction.js?v=17';
+import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=17';
+import { makeNoise2D } from './noisetex.js?v=17';
+import { Avatar } from './avatar.js?v=17';
+import { Held } from './held.js?v=17';
+import { Figure } from './figure.js?v=17';
+import { PumpkinView } from './pumpkin.js?v=17';
+import { glints, pieceLook } from './armor.js?v=17';
+import { dimLook } from '../dim/look.js?v=17';
+import { blockGeometry } from './blockmesh.js?v=17';
+import { applyLook, looked } from './looks.js?v=17';
 const THREE = window.THREE;
 // one black pixel, for a texture that is made later
 function blankTexture() {
