@@ -1,35 +1,49 @@
 /* ---------------------------------------------------------------------------
    Leoncraft 2 - the End's generator (the same interface as worldgen.js's Gen).
 
-   Shaped after the game's End settings as the Minecraft Wiki describes them
-   (the noise and the island hash are ours, so seeds do not match the game):
+   The land is the game's own from the seed: 26.3's end/islands and
+   end/base_3d_noise, made with the old random as the game's End makes them
+   (the outer islands as deepslate and cubiomes have them, both MIT:
+   https://github.com/misode/deepslate, Copyright (c) 2021 Misode;
+   https://github.com/Cubitect/cubiomes, Copyright (c) 2020 Cubitect):
 
-     islands   a height field in steps of 8 blocks: the main island falls
-               off from 100 at the centre by 8 a step (gone at about 100
-               blocks out), and past 1024 blocks a sparse grid of outer
-               islands, each falling off at its own rate of 9 to 21 a step;
-               the highest wins, clamped to -100..80, then (v - 8) / 128
-     terrain   that plus blended 3D noise (xz and y scale 0.25, factors 80
-               and 160), worked out every 8 blocks across and 4 up; slid
-               away above y 56 (to -23.4375 by y 312) and below y 32 (to
-               -0.234375 at y 4); 0.64 times, squeezed, solid above zero;
-               all of it end stone
+     islands   the main island: 100 less the distance from 0, 0, clamped to
+               -100..80; past 1024 blocks a grid of outer islands, one cell
+               every 16 blocks where a simplex noise (java.util.Random from
+               the seed, 17292 draws skipped) is under -0.9, each falling off
+               at its own rate of 9 to 21 a step of 8 blocks; the higher
+               wins, then (v - 8) / 128
+     terrain   that plus the old blended noise (xz and y scale 0.25, factors
+               80 and 160, smear 4, java.util.Random from the seed); slid away
+               above y 56 (to -23.4375 by y 312) and below y 32 (to -0.234375
+               at y 4); 0.64 times; worked out every 8 blocks across and 4 up
+               and blended between (up, then across, then along); solid above
+               zero; all of it end stone
+     biomes    one a chunk, from the islands at its middle: the End within 64
+               chunks of the centre, else highlands over 0.25, midlands from
+               -0.0625, small islands under -0.21875, barrens between
      spikes    ten obsidian pillars in a ring 42 blocks out, 76 to 103 tall
                and 2 to 5 wide (shuffled by the seed), bedrock on top, the
                two smallest-but-one caged in iron bars
      podium    the exit portal's bedrock bowl and pillar at 0, 0, unlit
-     outer     chorus plants on the highlands; small floating islands
+     outer     chorus plants on the highlands
    The obsidian platform, the gateways, the crystals and the dragon belong to
    the fight (js/dim/endfight.js), not to the terrain.
 --------------------------------------------------------------------------- */
 import { B } from '../blocks.js?v=19';
 import { CH, H, Y0, VOL, idx } from '../world-const.js?v=19';
 import { BIO } from '../biomes.js?v=19';
-import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=19';
+import { rng, mix32, NormalNoise, hash3 } from '../noise.js?v=19';
+import { Simplex, Blended } from './noise.js?v=19';
+import { LegacyRandom, seedLong } from './random.js?v=19';
 import { BlendedNoise, yGradient, squeeze } from './blended.js?v=19';
 
 const I = y => y - Y0;
 const lerp = (a, b, t) => a + (b - a) * t;
+const F = Math.fround;
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+// the slides at a height: the land's value v there becomes this
+const slid = (y, v) => 0.64 * (-0.234375 + clamp((y - 4) / 28, 0, 1) * (-23.4375 + clamp(1 - (y - 56) / 256, 0, 1) * (v + 23.4375) + 0.234375));
 
 /* The ten pillars for a seed: the game's ring of 42 blocks, heights 76 + 3i
    and radii 2 + i/3 handed out in a seeded shuffle; i = 1 and 2 are caged. */
@@ -74,69 +88,92 @@ export function podiumBlocks(y, active, egg) {
 export class EndGen {
   constructor(seed) {
     this.seed = seed | 0;
-    const S = this.seed;
-    this.base = new BlendedNoise(S, 'end/base_3d_noise', 0.25, 0.25, 80, 160);
-    this.nIsl = new NormalNoise(S, 'end_islands', -1, [1]);
+    const S = this.seed, L = seedLong(seed);
+    const r = new LegacyRandom(L);
+    r.consume(17292);
+    this.simplex = new Simplex(r);
+    this.base = new Blended(new LegacyRandom(L), 0.25, 0.25, 80, 160, 4);
+    this.cols = new Map();
+    this.cells = new Map();
     this.spikes = endSpikes(S);
     this.podiumY = null;
   }
-  // the island height field at block (x, z): steps of 8 blocks
+  // the islands at block (x, z): the main island, or an outer one where it stands higher
   islands(x, z) {
-    const u = x / 8, v = z / 8;
-    let best = Math.max(-100, Math.min(80, 100 - Math.sqrt(u * u + v * v) * 8));
-    if (x * x + z * z < 800 * 800) return (best - 8) / 128;   // no outer island reaches this far in
-    const ci = Math.floor(u / 2), cj = Math.floor(v / 2);
-    for (let j = -12; j <= 12; j++) for (let i = -12; i <= 12; i++) {
-      const a = ci + i, b = cj + j;
-      if (a * a + b * b <= 4096) continue;                     // inside 1024 blocks: only the main island
-      if (this.cellIsland(a, b) === 0) continue;
-      const k = this.cellIsland(a, b);
-      const du = u - (a * 2 + 1), dv = v - (b * 2 + 1);
-      const h = 100 - Math.sqrt(du * du + dv * dv) * k;
-      if (h > best) best = Math.min(80, h);
+    const main = (clamp(100 - Math.sqrt(x * x + z * z), -100, 80) - 8) * 0.0078125;
+    const cx = Math.trunc(x / 8), cz = Math.trunc(z / 8), i = Math.trunc(cx / 2), j = Math.trunc(cz / 2);
+    // (no outer island's cell is near enough to matter here)
+    if ((Math.abs(i) + 12) ** 2 + (Math.abs(j) + 12) ** 2 <= 4096) return main;
+    const k = cx % 2, l = cz % 2;
+    let f = -100;
+    for (let m = -12; m <= 12; m++) for (let n = -12; n <= 12; n++) {
+      const o = i + m, p = j + n;
+      if (o * o + p * p <= 4096) continue;
+      const g = this.cell(o, p);
+      if (g === 0) continue;
+      const h = F(k - m * 2), q = F(l - n * 2);
+      const v = clamp(F(100 - F(F(Math.sqrt(F(F(h * h) + F(q * q)))) * g)), -100, 80);
+      if (v > f) f = v;
     }
-    return (best - 8) / 128;
+    return Math.max(main, (f - 8) / 128);
   }
-  // an outer island's fall-off rate for a grid cell, or 0 for none
-  cellIsland(a, b) {
-    const n = this.nIsl.sample(a * 0.5, 0, b * 0.5);
-    if (n > -0.52) return 0;
-    return 9 + Math.floor(hash3(this.seed ^ 0x1515, a, 0, b) * 13);
+  // an outer island's fall-off rate at a cell of the grid (16 blocks a cell), or 0 for none
+  cell(o, p) {
+    const key = o * 1048576 + p;
+    let g = this.cells.get(key);
+    if (g === undefined) {
+      g = this.simplex.sample2(o, p) < F(-0.9) ? F(F(F(F(Math.abs(o)) * 3439) + F(F(Math.abs(p)) * 147)) % 13 + 9) : 0;
+      if (this.cells.size > 200000) this.cells.clear();
+      this.cells.set(key, g);
+    }
+    return g;
   }
-  density(x, y, z, isl) {
-    let d = isl + this.base.sample(x, y, z) * 0.6;
-    d = -23.4375 + yGradient(y, 56, 312, 1, 0) * (d + 23.4375);
-    d = -0.234375 + yGradient(y, 4, 32, 0, 1) * (d + 0.234375);
-    return squeeze(0.64 * d);
-  }
+  /* The land's value at the corners of a column of cells (every 4 blocks up,
+     x and z on the 8-block grid), before the squeeze, which keeps the sign:
+     solid is where these, blended, come out above zero. At y 4 and below the
+     floor's slide is all there is; from y 80 up nothing the noise can give
+     (it never reaches 1.1 either way) lifts the land, nor the corners round
+     it, over zero, so those are not worked out. */
   column(x, z) {
+    const key = (x / 8) * 8388608 + z / 8;
+    let out = this.cols.get(key);
+    if (out) return out;
+    out = new Float64Array(33);
     const isl = this.islands(x, z);
-    const out = new Float32Array(33);
-    if (isl < -0.5) return out.fill(-0.3);                      // the void: nothing to work out
-    for (let k = 0; k <= 32; k++) out[k] = this.density(x, k * 4, z, isl);
+    for (let k = 0; k <= 32; k++) {
+      const y = k * 4;
+      out[k] = k <= 1 ? 0.64 * -0.234375 : k >= 20 ? -1 : slid(y, isl + this.base.sample(x, y, z));
+    }
+    if (this.cols.size > 4096) this.cols.clear();
+    this.cols.set(key, out);
     return out;
   }
+  // a block's value from the four columns round it, blended as the game blends: up, then across, then along
+  static blend(a, b, c, d, y, fx, fz) {
+    const k = y >> 2, fy = (y & 3) / 4;
+    const a0 = a[k] + fy * (a[k + 1] - a[k]), b0 = b[k] + fy * (b[k + 1] - b[k]);
+    const c0 = c[k] + fy * (c[k + 1] - c[k]), d0 = d[k] + fy * (d[k + 1] - d[k]);
+    const e = a0 + fx * (b0 - a0), f = c0 + fx * (d0 - c0);
+    return e + fz * (f - e);
+  }
   climate(x, z) { return { T: 0, Hu: 0 }; }
+  // one biome a chunk, read from the islands at the chunk's middle
   biomeAt(x, z) {
-    if (x * x + z * z <= 1024 * 1024) return BIO.the_end;
-    const e = this.islands(x, z);
+    const cx = x >> 4, cz = z >> 4;
+    if (cx * cx + cz * cz <= 4096) return BIO.the_end;
+    const e = this.islands(cx * 16 + 8, cz * 16 + 8);
     return e > 0.25 ? BIO.end_highlands : e >= -0.0625 ? BIO.end_midlands : e < -0.21875 ? BIO.small_end_islands : BIO.end_barrens;
   }
+  // the top block of the bare land at a column (index y), or -1 over the void
   surfaceAt(x, z) {
-    const c = this.column(Math.floor(x / 8) * 8, Math.floor(z / 8) * 8);
-    for (let y = 127; y > 0; y--) { const v = lerp(c[y >> 2], c[Math.min(32, (y >> 2) + 1)], (y & 3) / 4); if (v > 0) return I(y); }
-    return -1;
+    const y = this.topAt(x, z);
+    return y < 0 ? -1 : I(y);
   }
-  // the exact top block at a column, by the same blending as a chunk
+  // the same as a world y
   topAt(x, z) {
     const x0 = Math.floor(x / 8) * 8, z0 = Math.floor(z / 8) * 8, fx = (x - x0) / 8, fz = (z - z0) / 8;
     const a = this.column(x0, z0), b = this.column(x0 + 8, z0), c = this.column(x0, z0 + 8), d = this.column(x0 + 8, z0 + 8);
-    for (let y = 127; y > 0; y--) {
-      const k = y >> 2, fy = (y & 3) / 4;
-      const v0 = lerp(lerp(a[k], b[k], fx), lerp(c[k], d[k], fx), fz);
-      const v1 = lerp(lerp(a[k + 1], b[k + 1], fx), lerp(c[k + 1], d[k + 1], fx), fz);
-      if (lerp(v0, v1, fy) > 0) return y;
-    }
+    for (let y = 79; y > 0; y--) if (EndGen.blend(a, b, c, d, y, fx, fz) > 0) return y;
     return -1;
   }
 
@@ -149,12 +186,7 @@ export class EndGen {
     for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
       const i = x >> 3, j = z >> 3, fx = (x & 7) / 8, fz = (z & 7) / 8;
       const a = lat[j * 3 + i], b = lat[j * 3 + i + 1], c = lat[(j + 1) * 3 + i], d = lat[(j + 1) * 3 + i + 1];
-      for (let y = 0; y < 128; y++) {
-        const k = y >> 2, fy = (y & 3) / 4;
-        const v0 = lerp(lerp(a[k], b[k], fx), lerp(c[k], d[k], fx), fz);
-        const v1 = lerp(lerp(a[k + 1], b[k + 1], fx), lerp(c[k + 1], d[k + 1], fx), fz);
-        if (lerp(v0, v1, fy) > 0) blocks[idx(x, I(y), z)] = B.end_stone;
-      }
+      for (let y = 1; y < 80; y++) if (EndGen.blend(a, b, c, d, y, fx, fz) > 0) blocks[idx(x, I(y), z)] = B.end_stone;
     }
     const put = (wx, y, wz, b, m) => {
       const x = wx - x0, z = wz - z0;

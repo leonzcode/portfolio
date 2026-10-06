@@ -592,6 +592,22 @@ export class Region {
     this.hmUpdate(5, col, x, y, z, (solid || fl) && !(id && d.leaves));
     return true;
   }
+  // a block another chunk's features put there (a neighbour's tree, see Decorator.treePlan): in the
+  // region for this chunk's features to find, but not one of this chunk's writes
+  preset(x, y, z, id, meta) {
+    const lx = x - this.x0, lz = z - this.z0;
+    if (lx < 0 || lx >= 48 || lz < 0 || lz >= 48 || y < MIN_Y || y > MAX_Y) return;
+    const c = this.chunks[(lz >> 4) * 3 + (lx >> 4)];
+    if (!c.own) { c.blocks = c.blocks.slice(); c.meta = c.meta.slice(); c.own = true; c.writes = new Map(); }
+    const i = ((y - MIN_Y) << 8) | ((lz & 15) << 4) | (lx & 15);
+    c.blocks[i] = id; c.meta[i] = meta;
+    const col = lz * 48 + lx, d = BLOCKS[id];
+    const solid = id !== 0 && d.solid && id !== B.cobweb, fl = fluidOf(id) !== 0;
+    this.hmUpdate(2, col, x, y, z, id !== 0);
+    this.hmUpdate(3, col, x, y, z, solid);
+    this.hmUpdate(4, col, x, y, z, solid || fl);
+    this.hmUpdate(5, col, x, y, z, (solid || fl) && !(id && d.leaves));
+  }
   hmUpdate(k, col, x, y, z, opaque) {
     const h = this.hm[k], i = h[col];
     if (y <= i - 2) return;
@@ -1284,6 +1300,7 @@ export class Decorator {
     this.r = new WorldgenXoroshiro();
     this.dryR = new WorldgenXoroshiro();       // for lakePlan, which runs in the middle of a decoration
     this.plans = new Map();
+    this.canopy = new Map();
   }
   biomeHas(bid, name) {
     let s = this.biomeSets.get(bid);
@@ -1310,15 +1327,65 @@ export class Decorator {
       }
       return false;
     };
+    /* The game decorates chunks one after another, so a chunk's trees find
+       the trees of the chunks decorated before it already standing (and do
+       not grow into their crowns); decorated on its own, a dense forest
+       would get a third more trees than the game's. So, in the same fixed
+       order as the lakes, the trees of the four chunks before this one are
+       worked out first (see treePlan) and stand in the region while this
+       chunk is decorated, without being this chunk's to place. */
+    const before = [];
+    for (const [dx, dz] of [[-1, -1], [0, -1], [1, -1], [-1, 0]]) {
+      const plan = this.treePlan(cx, cz, cx + dx, cz + dz, before);
+      for (let k = 0; k < plan.length; k++) before.push(plan[k]);
+    }
+    for (let k = 0; k < before.length; k += 4) R.preset(before[k], before[k + 1], before[k + 2], before[k + 3] >> 8, before[k + 3] & 255);
     this.run(D, cx, cz, this.steps.length);
     runOut(R);
     return R;
+  }
+  /* The trees (and huge mushrooms and fallen logs) a neighbour (nx, nz)
+     would grow, as [x, y, z, block * 256 + meta, ...], worked out in the
+     region round the chunk being decorated (cx, cz): only the part near that
+     chunk matters, and the region holds it, so no other terrain is needed.
+     Each neighbour's trees are worked out with those of the neighbours
+     before it in the same order already standing (the ones of the four
+     that come before it); further back is not looked at. */
+  treePlan(cx, cz, nx, nz, before) {
+    const R = new Region(this.gen, cx, cz);
+    for (let k = 0; k < before.length; k += 4) R.preset(before[k], before[k + 1], before[k + 2], before[k + 3] >> 8, before[k + 3] & 255);
+    this.run(this.context(R, this.dryR), nx, nz, this.steps.length, VEGETAL, name => this.growsCanopy(name));
+    const out = [];
+    for (let k = 0; k < 9; k++) {
+      const c = R.chunks[k];
+      if (!c.writes) continue;
+      const ox = R.x0 + (k % 3) * 16, oz = R.z0 + Math.floor(k / 3) * 16;
+      for (const [i, v] of c.writes) out.push(ox + (i & 15), (i >> 8) + MIN_Y, oz + ((i >> 4) & 15), v);
+    }
+    return out;
+  }
+  // whether a placed feature grows a tree, a huge mushroom or a fallen log (through any selector)
+  growsCanopy(ref, depth = 0) {
+    const key = typeof ref === 'string' ? ref : null;
+    if (key !== null && this.canopy.has(key)) return this.canopy.get(key);
+    let yes = false;
+    const pf = placedOf(ref), cfg = configuredOf(pf.feature);
+    if (cfg && depth < 8) {
+      const t = strip(cfg.type);
+      if (t === 'tree' || t === 'fallen_tree' || t === 'huge_brown_mushroom' || t === 'huge_red_mushroom') yes = true;
+      else if (t === 'random_selector') yes = cfg.features.some(e => this.growsCanopy(e.feature, depth + 1)) || this.growsCanopy(cfg.default, depth + 1);
+      else if (t === 'simple_random_selector') yes = cfg.features.some(f => this.growsCanopy(f, depth + 1));
+      else if (t === 'random_boolean_selector') yes = this.growsCanopy(cfg.feature_true, depth + 1) || this.growsCanopy(cfg.feature_false, depth + 1);
+      else if (t === 'weighted_random_selector') yes = (cfg.features || cfg.entries).some(e => this.growsCanopy(e.data ?? e.feature, depth + 1));
+    }
+    if (key !== null) this.canopy.set(key, yes);
+    return yes;
   }
   context(R, r) {
     return { region: R, gen: this.gen, biomeHas: (b, n) => this.biomeHas(b, n), unknownModifier: t => this.unknownModifier(t), r };
   }
   // every feature of the first n steps for a chunk, in the game's order, each with its own random
-  run(D, cx, cz, n) {
+  run(D, cx, cz, n, first = 0, only = null) {
     const g = this.gen, R = D.region, r = D.r;
     // the biomes stored in this chunk and the eight around it
     const present = new Set();
@@ -1326,8 +1393,12 @@ export class Decorator {
       const gg = p.grid.g;
       for (let j = 1; j <= 4; j++) for (let i = 1; i <= 4; i++) for (let k = 1; k <= 96; k++) present.add(gg[(j * 6 + i) * 98 + k]);
     }
+    // the game decorates each chunk with a random of its own, so no Gaussian left over from the chunk
+    // before carries into this one (within the chunk one does carry from feature to feature, as reseeding
+    // for each feature leaves it be)
+    r.gHave = false;
     const deco = decorationSeed(r, g.seed, cx * 16, cz * 16);
-    for (let step = 0; step < n; step++) {
+    for (let step = first; step < n; step++) {
       const list = this.steps[step];
       R.early = step < 3;          // raw generation, lakes, local modifications: before the structures
       const idx = new Set();
@@ -1341,6 +1412,7 @@ export class Decorator {
         const name = list.features[p];
         // snow and ice go on once the chunk is put together with its neighbours' features (VanillaGen.generate)
         if (name === 'freeze_top_layer') continue;
+        if (only && !only(name)) continue;
         featureSeed(r, deco, p, step);
         try {
           placePlaced(D, name, r, cx * 16, MIN_Y, cz * 16, name);
@@ -1377,6 +1449,8 @@ export class Decorator {
 /* FeatureSorter: every biome's per-step feature lists merged into one order
    per step (a depth-first topological sort, as the game does), so a
    feature's index - and with it its random seed - is the same everywhere. */
+// the decoration step trees grow in (vegetal decoration, the tenth of the game's eleven)
+const VEGETAL = 9;
 export function sortFeatures(D) {
   const bp = D.biome_params;
   const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
