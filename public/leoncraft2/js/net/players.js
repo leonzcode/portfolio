@@ -43,6 +43,13 @@ export class RemotePlayers {
     this.list = new Map();          // id -> remote player
     this.group = new THREE.Group(); this.group.name = 'players';
     renderer.scene.add(this.group);
+    // the name tags' shader built now, in the background, not in the frame the first player comes into view
+    try {
+      const sc = new THREE.Scene(), c = document.createElement('canvas');
+      c.width = c.height = 1;
+      sc.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, depthWrite: false, fog: false, toneMapped: false })));
+      renderer.r.compileAsync(sc, renderer.camera).catch(() => {});
+    } catch (e) { /* built when first drawn instead */ }
   }
   dispose() {
     for (const r of this.list.values()) this.drop(r);
