@@ -2,29 +2,46 @@
    Leoncraft 2 - enchanting, the anvil and the grindstone: the numbers.
 
    Enchanting table (Minecraft Wiki, Enchanting mechanics, Java Edition):
-     base = 1 + rand(0..7) + floor(min(15, shelves) / 2) + rand(0..min(15, shelves))
+     each slot draws its own base:
+       base = 1 + rand(0..7) + floor(min(15, shelves) / 2) + rand(0..min(15, shelves))
      slots: max(1, floor(base / 3)), floor(2 base / 3) + 1, max(base, 2 shelves)
+            (a slot whose level is below its number is empty)
      cost  = round((slot + 1 + rand(0..e/4) + rand(0..e/4)) x (1 + 0.15 (rand + rand - 1)))
              (e: the item's enchantability)
      the first enchantment by weight among those that fit the item and have
      a level whose range holds the cost (the highest such level); then, while
-     a chance of (cost + 1) / 50 holds, another (never one that clashes with
-     those chosen), the cost halved each time. A book drops one of several.
-   Costs per level of each enchantment are the game's (min base + per level,
-   max base + per level), from the wiki's tables.
+     rand(0..49) <= cost, another (never one that clashes with those chosen),
+     the cost halved each time. A book drops one of several. The hint is one
+     of the list at random.
+   The draws are java.util.Random's, seeded as the game seeds them (the
+   player's enchantment seed for the levels, the seed plus the slot for each
+   list), walking the enchantments in the game's order, so a seed gives the
+   offers it gives in the game. Costs per level of each enchantment are the
+   game's (min base + per level, max base + per level), from the wiki's
+   tables. Some go only on some of the items that can carry them at the
+   table: Sharpness, Smite, Bane of Arthropods and Fire Aspect on swords
+   and spears (not axes or the mace), Thorns on chestplates.
 
    Anvil (Anvil mechanics): prior work 2^n - 1 for each item; combining two
-   of a kind adds their durability plus 12%; each enchantment brought over
-   costs its level times its multiplier (common 1, uncommon 2, rare 4, very
-   rare 8; half that from a book), one that clashes costs 1; a material
-   repairs a quarter of the durability a unit for a level each; naming costs
-   1. 40 levels or more is Too Expensive. The anvil wears with chance 12%.
+   of a kind (anything with durability) adds their durability plus 12%;
+   each enchantment brought over costs its level times its multiplier
+   (common 1, uncommon 2, rare 4, very rare 8; half that, at least 1, from
+   a book), each enchantment already on it that one clashes with costs 1,
+   and if nothing could go on, nothing is made; a material repairs a
+   quarter of the durability a unit for a level each; naming (or clearing
+   a name) costs 1. 40 levels or more is Too Expensive, except a name
+   alone, which is held at 39; a name alone does not add to the prior
+   work. The anvil wears with chance 12%.
 
    Grindstone: takes off every enchantment but curses, joins two worn items
-   of a kind (plus 5%), and pays back experience for what it took off.
+   of a kind (plus 5%), and pays back experience for what it took off: half
+   the total of each enchantment's lowest cost (rounded up), plus up to as
+   much again less one. What comes out keeps a prior work of 2^curses - 1.
 --------------------------------------------------------------------------- */
 import { ENCHANTS } from './itemdata.js?v=16';
-import { ITEMS, I, maxDamage } from './items.js?v=16';
+import { ITEMS, I, maxDamage, withCount } from './items.js?v=16';
+import { LegacyRandom } from './gen/random.js?v=16';
+import { BLOCKS } from './blocks.js?v=16';
 
 /* min and max cost: [base, per level above the first] for each */
 const COST = {
@@ -71,14 +88,22 @@ export function canApply(name, id) {
   if (it.name === 'book' || it.name === 'enchanted_book') return true;
   return categories(id).indexOf(e.category) >= 0;
 }
-// offered by the table: the item's primary enchantments (axes get no sword enchantments there)
+// the order the game keeps the table's enchantments in: its weighted draws walk them in it
+export const ORDER = ['protection', 'fire_protection', 'feather_falling', 'blast_protection', 'projectile_protection', 'respiration', 'aqua_affinity', 'thorns',
+  'depth_strider', 'sharpness', 'smite', 'bane_of_arthropods', 'knockback', 'fire_aspect', 'looting', 'sweeping_edge', 'efficiency', 'silk_touch', 'unbreaking',
+  'fortune', 'power', 'punch', 'flame', 'infinity', 'luck_of_the_sea', 'lure', 'loyalty', 'impaling', 'riptide', 'channeling', 'multishot', 'quick_charge',
+  'piercing', 'density', 'breach', 'lunge'];
+// the items an enchantment is offered on at the table, where that is fewer than it can go on
+const SWORDS_AND_SPEARS = id => { const n = ITEMS[id].name; return /_(sword|spear)$/.test(n); };
+const PRIMARY = { sharpness: SWORDS_AND_SPEARS, smite: SWORDS_AND_SPEARS, bane_of_arthropods: SWORDS_AND_SPEARS, fire_aspect: SWORDS_AND_SPEARS,
+  thorns: id => !!(ITEMS[id].armor && ITEMS[id].armor.slot === 1) };
+// offered by the table: the item's primary enchantments
 function tableOffers(name, id) {
   const e = ENCH[name], it = ITEMS[id];
   if (!e || e.treasure || !e.discoverable) return false;
   if (it.name === 'book') return true;
   if (!canApply(name, id)) return false;
-  if (it.tool && it.tool.kind === 'axe' && /weapon|fire_aspect|sweeping/.test(e.category)) return false;
-  return true;
+  return !PRIMARY[name] || PRIMARY[name](id);
 }
 export function compatible(a, b) {
   if (a === b) return false;
@@ -87,165 +112,253 @@ export function compatible(a, b) {
 }
 
 /* ---- the table ---- */
-// a small seeded random (the player's enchantment seed keeps the offers until one is taken)
-function rng(seed) {
-  let s = seed >>> 0 || 1;
-  const next = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
-  return { f: next, i: n => Math.floor(next() * n) };
-}
-// the shelves round a table: two blocks out, on its level or one up, with air between
+// the shelves round a table: two blocks out, on its level or one up, with the block half way
+// letting the power through (air, or anything that is replaced by placing a block: grass, snow...)
 export function countShelves(world, x, y, z, isShelf) {
   let n = 0;
   for (let oy = 0; oy <= 1; oy++) for (let oz = -2; oz <= 2; oz++) for (let ox = -2; ox <= 2; ox++) {
     if (Math.abs(ox) !== 2 && Math.abs(oz) !== 2) continue;
-    // the block half way must let the power through (air)
-    if (world.get(x + Math.trunc(ox / 2), y + oy, z + Math.trunc(oz / 2))) continue;
+    const mid = BLOCKS[world.get(x + Math.trunc(ox / 2), y + oy, z + Math.trunc(oz / 2))];
+    if (mid && !mid.replaceable && !mid.fluid) continue;
     if (isShelf(world.get(x + ox, y + oy, z + oz))) n++;
   }
   return n;
 }
 /* The three offers for an item: [{ level (the level asked), ench: [[name, lvl]...], hint: [name, lvl] }]
-   (null where there is nothing). */
+   (null where the slot is empty). seed: the player's enchantment seed (an int). */
+// the levels the three slots draw (before a slot below its number is emptied)
+export function slotLevels(shelves, seed) {
+  const r = new LegacyRandom(seed | 0);
+  const b = Math.min(15, Math.max(0, shelves | 0));
+  return [0, 1, 2].map(slot => {
+    const base = r.nextInt(8) + 1 + (b >> 1) + r.nextInt(b + 1);
+    return slot === 0 ? Math.max(Math.floor(base / 3), 1) : slot === 1 ? Math.floor(base * 2 / 3) + 1 : Math.max(base, b * 2);
+  });
+}
 export function tableOffers3(id, shelves, seed) {
   const e = enchantability(id);
   if (!e) return [null, null, null];
-  const r = rng(seed);
-  const b = Math.min(15, shelves);
-  const base = 1 + r.i(8) + Math.floor(b / 2) + r.i(b + 1);
-  const levels = [Math.max(1, Math.floor(base / 3)), Math.floor(base * 2 / 3) + 1, Math.max(base, b * 2)];
+  const levels = slotLevels(shelves, seed).map((lv, slot) => (lv < slot + 1 ? 0 : lv));
   return levels.map((lv, slot) => {
-    if (lv < slot + 1) return null;
-    const list = selectEnchants(id, lv, rng(seed + slot * 7919 + 1));
-    return list.length ? { level: lv, ench: list, hint: list[Math.floor(rng(seed + slot).f() * list.length)] } : null;
+    if (!lv) return null;
+    const lr = new LegacyRandom((seed + slot) | 0);
+    const list = selectEnchants(id, lv, lr);
+    if (ITEMS[id].name === 'book' && list.length > 1) list.splice(lr.nextInt(list.length), 1);
+    return { level: lv, ench: list, hint: list.length ? list[lr.nextInt(list.length)] : null };
   });
 }
-function selectEnchants(id, level, r) {
+// the enchantments for an item at a level (r: a java.util.Random); also what traded gear and loot are enchanted with
+export function selectEnchants(id, level, r, allow = tableOffers) {
   const e = enchantability(id);
-  let cost = level + 1 + r.i(Math.floor(e / 4) + 1) + r.i(Math.floor(e / 4) + 1);
-  cost = Math.max(1, Math.round(cost * (1 + (r.f() + r.f() - 1) * 0.15)));
-  const avail = c => {
-    const out = [];
-    for (const name in ENCH) {
-      if (!tableOffers(name, id)) continue;
-      const en = ENCH[name];
-      for (let l = en.maxLevel; l >= 1; l--) if (c >= en.min(l) && c <= en.max(l)) { out.push([name, l]); break; }
-    }
-    return out;
-  };
-  const pick = list => {
+  if (!e) return [];
+  const f = Math.fround;
+  level += 1 + r.nextInt((e >> 2) + 1) + r.nextInt((e >> 2) + 1);
+  const k = f(f(f(r.nextFloat() + r.nextFloat()) - 1) * f(0.15));
+  let cost = Math.max(1, Math.floor(f(f(level + f(level * k)) + 0.5)));
+  let list = [];
+  for (const name of ORDER) {
+    const en = ENCH[name];
+    if (!en || !allow(name, id)) continue;
+    for (let l = en.maxLevel; l >= 1; l--) if (cost >= en.min(l) && cost <= en.max(l)) { list.push([name, l]); break; }
+  }
+  const pick = () => {
     let total = 0;
     for (const [n] of list) total += ENCH[n].weight;
-    let k = r.f() * total;
-    for (const x of list) { k -= ENCH[x[0]].weight; if (k < 0) return x; }
+    let j = r.nextInt(total);
+    for (const x of list) { j -= ENCH[x[0]].weight; if (j < 0) return x; }
     return list[list.length - 1];
   };
-  let list = avail(cost);
   const out = [];
   if (!list.length) return out;
-  out.push(pick(list));
-  while (r.f() * 50 < cost + 1) {
-    list = list.filter(([n]) => out.every(([m]) => compatible(n, m)));
+  out.push(pick());
+  while (r.nextInt(50) <= cost) {
+    const last = out[out.length - 1][0];
+    list = list.filter(([n]) => compatible(n, last));
     if (!list.length) break;
-    out.push(pick(list));
+    out.push(pick());
     cost = Math.floor(cost / 2);
   }
-  if (ITEMS[id].name === 'book' && out.length > 1) out.splice(Math.floor(r.f() * out.length), 1);
   return out;
+}
+// enchanting with levels (a villager's gear, loot): the enchantments as a stack carries them
+export function enchantWithLevels(id, level, r) {
+  const o = {};
+  for (const [n, l] of selectEnchants(id, level, r)) o[n] = l;
+  return o;
 }
 
 /* ---- the anvil ---- */
 const mult = (name, fromBook) => { const w = ENCH[name] ? ENCH[name].weight : 10; const m = w >= 10 ? 1 : w >= 5 ? 2 : w >= 2 ? 4 : 8; return fromBook ? Math.max(1, m / 2) : m; };
-/* left, right: stacks (right may be null); name: the text in the box ('' = leave it).
-   Returns { result, cost, used (how many of the right stack go), tooExpensive } or null. */
-export function anvilResult(left, right, name, creative) {
+/* left, right: stacks (right may be null); name: the text in the box (null or undefined: the
+   name is not touched; blank: a name given before is taken off); hover: the name the left
+   item shows now (its own name, or the item's). Returns { result (null when nothing can be
+   made), cost (what the screen shows), used (how many of the right stack go), tooExpensive,
+   onlyName } or null when there is no cost at all. */
+export function anvilResult(left, right, name, creative, hover) {
   if (!left) return null;
   const L = ITEMS[left.id];
-  const out = { id: left.id, count: left.count };
-  if (left.dmg) out.dmg = left.dmg;
+  if (!L) return null;
+  const out = withCount(left, left.count);
   const ench = Object.assign({}, left.ench || {});
-  let cost = 0, used = 0, work = (left.rep | 0) + (right ? right.rep | 0 : 0);
+  let cost = 0, used = 0, nameCost = 0;
+  const work = (left.rep | 0) + (right ? right.rep | 0 : 0);
   if (right) {
     const R = ITEMS[right.id];
+    if (!R) return null;
     const max = maxDamage(left.id);
-    const isBook = R.name === 'enchanted_book';
-    // repair with its material: a quarter a unit
-    if (max && left.dmg > 0 && L.repair && L.repair.indexOf(R.name) >= 0 && !(right.ench && Object.keys(right.ench).length)) {
-      let dmg = left.dmg, n = 0;
-      while (dmg > 0 && n < right.count) { dmg = Math.max(0, dmg - Math.floor(max / 4)); n++; cost++; }
-      out.dmg = dmg; if (!dmg) delete out.dmg;
+    const isBook = R.name === 'enchanted_book' && !!right.ench && Object.keys(right.ench).length > 0;
+    if (max && L.repair && L.repair.indexOf(R.name) >= 0) {
+      // repair with its material: a quarter of the durability a unit, a level each (nothing to mend: nothing made)
+      let step = Math.min(left.dmg | 0, Math.floor(max / 4));
+      if (step <= 0) return null;
+      let dmg = left.dmg | 0, n = 0;
+      while (step > 0 && n < right.count) { dmg -= step; cost++; n++; step = Math.min(dmg, Math.floor(max / 4)); }
+      if (dmg) out.dmg = dmg; else delete out.dmg;
       used = n;
     } else {
-      if (!isBook && right.id !== left.id) return null;
-      // two of a kind: their durability together, plus 12%
-      if (!isBook && max) {
+      // two of a kind, if it wears; anything with an enchanted book
+      if (!isBook && (right.id !== left.id || !max)) return null;
+      if (max && !isBook) {
+        // their durability together, plus 12%
         const keep = (max - (left.dmg | 0)) + (max - (right.dmg | 0)) + Math.floor(max * 12 / 100);
         const dmg = Math.max(0, max - keep);
-        if (dmg < (left.dmg | 0)) cost += 2;
-        if (dmg) out.dmg = dmg; else delete out.dmg;
+        if (dmg < (left.dmg | 0)) { cost += 2; if (dmg) out.dmg = dmg; else delete out.dmg; }
       }
       let any = false, clash = false;
       for (const k in right.ench || {}) {
         const lv = right.ench[k], en = ENCH[k];
         if (!en) continue;
-        const fits = creative || canApply(k, left.id) || L.name === 'enchanted_book';
-        const ok = fits && Object.keys(ench).every(m => m === k || compatible(k, m));
-        if (!ok) { clash = true; cost += 1; continue; }
-        any = true;
         const have = ench[k] | 0;
-        const now = have === lv ? Math.min(en.maxLevel, lv + 1) : Math.max(have, lv);
+        let now = have === lv ? lv + 1 : Math.max(lv, have);
+        let ok = creative || canApply(k, left.id) || L.name === 'enchanted_book';
+        // each enchantment already there that this one clashes with costs a level
+        for (const m in ench) if (m !== k && !compatible(k, m)) { ok = false; cost++; }
+        if (!ok) { clash = true; continue; }
+        any = true;
+        now = Math.min(now, en.maxLevel);
         ench[k] = now;
         cost += now * mult(k, isBook);
+        if (left.count > 1) cost = 40;
       }
-      if (!any && clash && !(max && out.dmg !== left.dmg)) return null;
-      used = 1;
+      if (clash && !any) return null;
+      used = right.count;
     }
   }
-  let renamed = false;
-  if (name && name !== (left.name || '')) { out.name = name; cost += 1; renamed = true; }
-  else if (left.name) out.name = left.name;
-  if (Object.keys(ench).length) out.ench = ench;
-  if (!right && !renamed) return null;
-  let total = cost + work;
-  if (renamed && cost === 1 && total >= 40) total = 39;      // a new name alone is never too expensive
-  out.rep = Math.max(left.rep | 0, right ? right.rep | 0 : 0) * 2 + 1;
-  return { result: out, cost: total, used, tooExpensive: total >= 40 && !creative };
+  if (name !== null && name !== undefined) {
+    if (name.trim() !== '') {
+      if (name !== (hover === undefined ? left.name || '' : hover)) { nameCost = 1; cost += 1; out.name = name; }
+    } else if (left.name) { nameCost = 1; cost += 1; delete out.name; }
+  }
+  if (Object.keys(ench).length) out.ench = ench; else delete out.ench;
+  let total = work + cost;
+  const onlyName = nameCost > 0 && cost === nameCost;
+  if (onlyName && total >= 40) total = 39;                  // a new name alone is never too expensive
+  // the prior work goes up, unless only the name changed
+  let rep = Math.max(left.rep | 0, right ? right.rep | 0 : 0);
+  if (!onlyName) rep = rep * 2 + 1;
+  if (rep) out.rep = rep; else delete out.rep;
+  if (!total && !cost) return null;
+  const tooExpensive = total >= 40 && !creative;
+  return { result: cost > 0 && !tooExpensive ? out : null, cost: total, used, tooExpensive, onlyName };
 }
 
 /* ---- the grindstone ---- */
-// one or two items in: the result, and the experience it gives back
+// what goes in: anything that wears, and anything enchanted (an enchanted book)
+export function grindable(st) { return !!st && !!ITEMS[st.id] && (!!maxDamage(st.id) || hasEnchants(st)); }
+// one or two items in (one of each at most): the result, and the experience it gives back
 export function grindResult(a, b) {
   if (!a && !b) return null;
-  if (a && b && a.id !== b.id) return null;
-  const one = a || b, it = ITEMS[one.id];
-  const max = maxDamage(one.id);
-  if (a && b && (!max || a.count > 1 || b.count > 1)) return null;
-  const out = { id: one.id, count: one.count };
-  if (it.name === 'enchanted_book' && !hasCurse(a) && !hasCurse(b)) { out.id = I.book; }
+  if ((a && a.count > 1) || (b && b.count > 1)) return null;
+  const one = a || b;
+  let out;
   if (a && b) {
+    // two of a kind that wear: their durability together, plus 5%; the curses of both
+    const max = maxDamage(a.id);
+    if (a.id !== b.id || !max) return null;
+    out = withCount(a, 1);
     const keep = (max - (a.dmg | 0)) + (max - (b.dmg | 0)) + Math.floor(max * 5 / 100);
     const dmg = Math.max(0, max - keep);
-    if (dmg) out.dmg = dmg;
-  } else if (one.dmg) out.dmg = one.dmg;
-  let xpPoints = 0;
+    if (dmg) out.dmg = dmg; else delete out.dmg;
+    out.ench = Object.assign({}, b.ench || {}, a.ench || {});
+  } else {
+    if (!hasEnchants(one)) return null;
+    out = withCount(one, 1);
+  }
   const curses = {};
+  for (const k in out.ench || {}) if (ENCH[k] && ENCH[k].curse) curses[k] = out.ench[k];
+  const n = Object.keys(curses).length;
+  if (n) out.ench = curses; else delete out.ench;
+  if (ITEMS[out.id].name === 'enchanted_book' && !n) out.id = I.book;
+  // a prior work of 2^curses - 1
+  let rep = 0;
+  for (let i = 0; i < n; i++) rep = rep * 2 + 1;
+  if (rep) out.rep = rep; else delete out.rep;
+  return { result: out, xp: grindXp(a, b) };
+}
+// the experience: half the total of each enchantment's lowest cost, rounded up, plus 0 to one less than that
+function grindXp(a, b) {
+  let points = 0;
   for (const s of [a, b]) {
     if (!s || !s.ench) continue;
-    for (const k in s.ench) {
-      if (ENCH[k] && ENCH[k].curse) { curses[k] = s.ench[k]; continue; }
-      if (ENCH[k]) xpPoints += ENCH[k].min(s.ench[k]);
-    }
+    for (const k in s.ench) if (ENCH[k] && !ENCH[k].curse) points += ENCH[k].min(s.ench[k]);
   }
-  if (Object.keys(curses).length) out.ench = curses;
-  if (one.name) out.name = one.name;
-  if (!(a && b) && !(one.ench && Object.keys(one.ench).some(k => ENCH[k] && !ENCH[k].curse))) return null;
-  const half = Math.ceil(xpPoints / 2);
-  return { result: out, xp: half + Math.floor(Math.random() * (half + 1)) };
+  if (points <= 0) return 0;
+  const half = Math.ceil(points / 2);
+  return half + Math.floor(Math.random() * half);
 }
-function hasCurse(s) { return !!(s && s.ench && Object.keys(s.ench).some(k => ENCH[k] && ENCH[k].curse)); }
+function hasEnchants(s) { return !!(s && s.ench && Object.keys(s.ench).length); }
 
 export function enchName(k, lv) {
   const R = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
   const e = ENCH[k];
   const n = e ? e.display : k;
   return e && e.maxLevel === 1 ? n : n + ' ' + (R[lv] || lv);
+}
+
+/* ---- for tests (window.__lc2.enchanting): the table, the anvil and the levels, by name ---- */
+export function enchantDebug(game) {
+  const sv = game.survival, inv = game.inv;
+  const stackOf = o => o ? { id: I[o.item], count: o.count || 1, dmg: o.damage || 0, rep: o.work ? (1 << o.work) - 1 : 0, ench: o.enchants ? Object.assign({}, o.enchants) : undefined } : null;
+  return {
+    // the three offers for an item (an iron sword) with this many shelves and this seed
+    // (level is what the slot drew; an empty slot, one whose level is below its number, says so)
+    offers: (shelves, seed, item = 'iron_sword') => {
+      const drawn = slotLevels(shelves, seed);
+      return tableOffers3(I[item], shelves, seed).map((o, i) => o ? { level: o.level, ench: o.ench, hint: o.hint } : { level: drawn[i], empty: true });
+    },
+    // take slot n (1-3) for the held item (an iron sword if the hand holds nothing to enchant), as the screen does
+    apply(slot, shelves) {
+      const held = inv.slots[inv.selected];
+      const item = held && enchantability(held.id) && !held.ench ? held : { id: I.iron_sword, count: 1 };
+      const o = tableOffers3(item.id, shelves, sv.enchantSeed)[slot - 1];
+      let lapis = 0;
+      for (const s of inv.slots) if (s && s.id === I.lapis_lazuli) lapis += s.count;
+      if (!o || !o.ench.length || lapis < slot || (sv.level < o.level && inv.mode !== 'creative')) return false;
+      let left = slot;
+      for (let i = 0; i < inv.slots.length && left; i++) {
+        const s = inv.slots[i];
+        if (!s || s.id !== I.lapis_lazuli) continue;
+        const n = Math.min(left, s.count); s.count -= n; left -= n;
+        if (!s.count) inv.slots[i] = null;
+      }
+      sv.addLevels(-slot);
+      sv.enchantSeed = (Math.random() * 2147483647) | 0;
+      item.ench = {};
+      for (const [k, lv] of o.ench) item.ench[k] = lv;
+      inv.changed();
+      return item.ench;
+    },
+    anvil: {
+      // left, right: { item, count, damage, work (anvil uses so far), enchants }; rename: a new name
+      cost(left, right, rename) {
+        const L = stackOf(left), Rt = stackOf(right);
+        const c = anvilResult(L, Rt, rename === undefined ? null : rename, false);
+        if (!c) return null;
+        const work = (L.rep | 0) + (Rt ? Rt.rep | 0 : 0);
+        return { cost: c.cost, base: c.cost - work, penalty: work, allowed: !!c.result, result: c.result };
+      },
+    },
+    maxLevels: name => (ENCH[name] ? ENCH[name].maxLevel : 0),
+    grind: (a, b) => grindResult(stackOf(a), stackOf(b)),
+  };
 }

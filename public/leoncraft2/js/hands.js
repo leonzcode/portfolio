@@ -36,6 +36,10 @@ import { containerKind, spill } from './containers.js?v=16';
 import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=16';
 import { isPotion, drinkPotion } from './brewing.js?v=16';
 import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=16';
+import { MerchantScreen } from './ui/merchant.js?v=16';
+import { LoomScreen } from './ui/loom.js?v=16';
+import { CartographyScreen } from './ui/cartography.js?v=16';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=16';
 import { countShelves } from './enchanting.js?v=16';
 import { wear } from './ui/inventory.js?v=16';
 import { BookScreen } from './ui/book.js?v=16';
@@ -77,7 +81,7 @@ export class Hands {
     // a tool or a piece of armour that wears out breaks into pieces
     if (this.inv && this.inv.on) this.inv.on('broke', s => this.toolBroke(s));
     // the screens' sheets, fetched now so a chest never opens on an empty frame
-    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter'])
+    if (this.gui && this.gui.loadSheet) for (const n of ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker', 'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter', 'villager', 'loom', 'cartography_table'])
       this.gui.loadSheet('container/' + n).catch(() => {});
   }
   get creative() { return this.mode === 'creative'; }
@@ -276,7 +280,15 @@ export class Hands {
     }
     if (n === 'smithing_table') { this.open(new SmithingScreen(this.inv, this.icons)); return true; }
     if (n === 'stonecutter') { this.open(new StonecutterScreen(this.inv, this.icons)); return true; }
+    if (n === 'loom') { this.open(new LoomScreen(this.inv, this.icons)); return true; }
+    if (n === 'cartography_table') { this.open(new CartographyScreen(this.inv, this.icons)); return true; }
     return false;
+  }
+
+  // a villager's trades (entities/merchant.js): Hero of the Village takes its price off
+  trade(v) {
+    const fx = this.survival.effects && this.survival.effects.hero_of_the_village;
+    this.open(new MerchantScreen(this.inv, this.icons, v, { player: this.player, hero: () => (fx && fx.ticks !== 0 ? fx.level : 0) }));
   }
 
   /* ---- right click with the item itself ---- */
@@ -310,6 +322,7 @@ export class Hands {
       return true;
     }
     if (it.name === 'bucket') return this.fillBucket();
+    if (it.name === 'map') return this.newMap();
     if (it.name === 'glass_bottle') return this.fillBucket(true);
     if (it.name === 'writable_book' || it.name === 'written_book') return this.openBook(s, it.name === 'written_book');
     return false;
@@ -375,11 +388,31 @@ export class Hands {
     return false;
   }
 
+  /* ---- maps (js/maps.js) ---- */
+  // an empty map used: a map of the square you stand in, in its place
+  newMap() {
+    const p = this.player, m = MAPS.create(Math.floor(p.pos.x), Math.floor(p.pos.z), 0, this.world.dim || 'overworld');
+    const st = { id: I.filled_map, count: 1, map: m.id };
+    if (this.creative) this.inv.placeBack(st);
+    else { const s = this.held; if (s.count <= 1) this.inv.slots[this.inv.selected] = st; else { s.count--; this.inv.placeBack(st); } }
+    this.inv.changed();
+    if (this.renderer) this.renderer.swing = 1;
+    MAPS.update(m.id, this.world, p);
+    return true;
+  }
+  // maps held in either hand fill in as you go, and the HUD shows them held up
+  mapsTick() {
+    for (const st of [this.held, this.inv.offhand]) if (isFilledMap(st)) MAPS.update(st.map, this.world, this.player);
+    const hud = this.gui && this.gui.hud;
+    if (hud && hud.under !== this.underHud) { hud.under = this.underHud || (this.underHud = (g, now) => drawHeldMaps(g, now, this.inv, this.player, this.world)); hud.markDirty(); }
+  }
+
   /* ---- once a tick ---- */
   // the stack being eaten or drunk: the selected one, or the off hand's
   usedStack(u) { return u && u.off ? this.inv.offhand : this.held; }
   setUsedStack(u, st) { if (u && u.off) this.inv.offhand = st; else this.inv.slots[this.inv.selected] = st; }
   tick() {
+    this.mapsTick();
     const u = this.using;
     if (!u) return;
     const s = this.usedStack(u);
@@ -403,6 +436,8 @@ export class Hands {
     if (it.name === 'honey_bottle') delete sv.effects.poison;
     if (it.name === 'chorus_fruit') this.chorusTeleport();
     if (isPotion(s)) drinkPotion(s, sv);
+    // a suspicious stew's effect (a farmer's, or one from flowers)
+    if (s && s.stew) sv.addEffect(s.stew[0], 1, s.stew[1]);
     if (!this.creative && s) {
       s.count--;
       const left = food.leaves ? I[food.leaves] : 0;

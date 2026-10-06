@@ -130,6 +130,8 @@ const isStairs = n => n && n.d.shape === 'stairs';
 /* ---- the families: each takes the block's def, its meta and a neighbour lookup ---- */
 export const SHAPES = {
   slab(d, m) {
+    // the enchanting table is a slab of twelve sixteenths (its sides' lower twelve rows)
+    if (d.name === 'enchanting_table') return [box(0, 0, 0, 16, 12, 16)];
     const t = m & 3;
     if (t === 2) return [box(0, 0, 0, 16, 16, 16)];
     return t === 1 ? [box(0, 8, 0, 16, 16, 16)] : [box(0, 0, 0, 16, 8, 16)];

@@ -36,6 +36,8 @@ import { ItemIcons } from './ui/icons.js?v=16';
 import { Inventory, inventoryScreen } from './ui/inventory.js?v=16';
 import { Hud } from './ui/hud.js?v=16';
 import { Interactor } from './interact.js?v=16';
+import { enchantDebug } from './enchanting.js?v=16';
+import { MAPS, isFilledMap } from './maps.js?v=16';
 import { Survival } from './survival.js?v=16';
 import { survivalHooks, respawnPlayer } from './life.js?v=16';
 import { Save } from './save.js?v=16';
@@ -494,6 +496,8 @@ async function boot() {
     game = { entry, world, player, fluids, inv, survival, inter, save, saves, dim, mode, spawn, time: st && st.time !== undefined ? st.time : 1500, saveT: 0, hands, collector };
     // FOV, FOV Effects and View Bobbing as set in Options, from the first frame
     applyOptions();
+    // the world's maps (js/maps.js), kept with the Overworld's save
+    MAPS.open(saves.overworld, isNew);
     /* The things that live in one world, one dimension: items lying about and
        experience orbs (drops.js), chests and furnaces (containers.js), mobs,
        boats and arrows (js/entities), the world simulating itself (sim/sim.js).
@@ -523,7 +527,7 @@ async function boot() {
           // what mobs drop goes through the items (drops.js): things on the ground, orbs of experience
           dropItem: (ww, x, y, z, name, n) => dropItem(ww, x, y, z, name, n), giveXp: (n, x, y, z) => giveXp(x, y, z, n),
           // what is in the hands, and its wear from hits, blocking and shearing (hands.js)
-          itemName: id => itemName(id), damageHeld: (n, kind) => hands.wearHeld(n, kind), fillBucket: name => hands.fillHeld(name),
+          itemName: id => itemName(id), damageHeld: (n, kind) => hands.wearHeld(n, kind), fillBucket: name => hands.fillHeld(name), trade: v => hands.trade(v),
           // screens and spilled stacks (a chest boat's chest)
           hands } });
       entities.fromJSON(isNew && !g.partsDim ? null : await EntityStore.load(entityKey(g.entry, d)));
@@ -566,7 +570,8 @@ async function boot() {
     inter.onBroken = (x, y, z, b) => game.realms.broken(x, y, z, b);
     hud = new Hud(inv, icons);
     gui.hud = hud;
-    inv.on('held', id => renderer.setHeld(id, DRAW));
+    // a map in the hand is drawn by the HUD, held up (js/maps.js): the arm shows bare
+    inv.on('held', id => renderer.setHeld(isFilledMap(inv.slots[inv.selected]) ? 0 : id, DRAW));
     // the off hand and the armour are read from here; the hand dips with the attack cooldown
     renderer.wearer = { inv, cooldown: () => (game && game.entities ? game.entities.combat.cooldown() : 1) };
     // you in the inventory's black box, looking at the mouse (render/figure.js)
@@ -588,7 +593,7 @@ async function boot() {
     // no mouse yet (the click that started this is long gone): the game menu, as when the window loses focus
     setTimeout(() => { if (game && !locked() && !gui.isOpen()) gui.open(new PauseScreen()); }, 600);
   }
-  function held() { if (game) renderer.setHeld(game.inv.heldId(), DRAW); }
+  function held() { if (game) renderer.setHeld(isFilledMap(game.inv.slots[game.inv.selected]) ? 0 : game.inv.heldId(), DRAW); }
   // a screen opened from the world (a chest, a crafting table): the mouse is let go without the game menu
   // writing on a sign: the screen with the side's words, then back into the sign (details.js)
   function editSign(x, y, z, front) {
@@ -707,6 +712,7 @@ async function boot() {
   async function saveGame() {
     if (!game) return;
     game.save.writeState(stateOf());
+    MAPS.save();
     if (game.containers.dirty) { game.containers.dirty = false; game.saves[game.dim].writeExtra('containers', game.containers.toJSON()); }
     if (game.details && game.details.dirty) { game.details.dirty = false; game.saves[game.dim].writeExtra('details', game.details.toJSON()); }
     if (game.entities) EntityStore.save(entityKey(game.entry, game.dim), game.entities.toJSON());
@@ -1245,6 +1251,7 @@ async function boot() {
     command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=16').then(m => m.execute(line, ctx)); },
     get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
     get survival() { return game && game.survival; },
+    get enchanting() { return game && enchantDebug(game); },
     get entities() { return game && game.entities; },
     get sim() { return game && game.sim; },
     get time() { return game ? game.time : menuTime; }, set time(t) { if (game) game.time = t; else menuTime = t; },

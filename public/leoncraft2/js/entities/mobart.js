@@ -406,7 +406,8 @@ export function buildAtlas() {
 /* ---- the particle sheet: 8 x 8 frames of 16 x 16 ----
    0-7 the smoke puff, big to small; 8 crit; 9 magic crit; 10 heart;
    11 angry cloud; 12 flame; 13 bubble; 14 splash drop; 15 the explosion
-   puff; 16-19 the explosion frames; 20 note; 21 sparkle; 22 dust. */
+   puff; 16-19 the explosion frames; 20 note; 21 sparkle; 22 dust;
+   24-25 runes (an enchanting table's). */
 export function buildSheet() {
   const S = 16, c = document.createElement('canvas');
   c.width = c.height = S * 8;
@@ -467,6 +468,9 @@ export function buildSheet() {
     const l = Math.hypot(x - 7.5, y - 7.5);
     if (l <= 4.6) put(23, x, y, l > 3.4 ? [70, 90, 20] : l < 1.6 ? [255, 255, 255] : [230, 255, 140]);
   }
+  // runes: two little marks of our own galactic alphabet
+  const runes = [['.##....##.', '..#....#..', '..######..', '..#....#..', '.##....##.'], ['####..', '...#..', '..###.', '...#..', '####..']];
+  runes.forEach((rows, k) => rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === '#') { put(24 + k, x + 3, y * 2 + 3, [255, 255, 255]); put(24 + k, x + 3, y * 2 + 4, [255, 255, 255]); } })));
   g.putImageData(img, 0, 0);
   return c;
 }
