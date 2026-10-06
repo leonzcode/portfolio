@@ -469,7 +469,7 @@ export class Avatar {
     this.speed = 0; this.oSpeed = 0; this.limb = 0;
     this.body = 0; this.oBody = 0;
     this.swinging = false; this.swingT = 0; this.attack = 0; this.oAttack = 0;
-    this.swim = 0; this.oSwim = 0;
+    this.swim = 0; this.oSwim = 0; this.glide = 0;
     this.age = 0; this.acc = 0;
     this.pose = REST.map(() => ({ x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }));
     this.cur = { attack: 0 };
@@ -611,10 +611,11 @@ export class Avatar {
     this.oAttack = this.attack;
     if (this.swinging) { if (++this.swingT >= 6) { this.swingT = 0; this.swinging = false; } } else this.swingT = 0;
     this.attack = this.swingT / 6;
-    // swimming: sprinting in water lays the body down
+    // swimming (and crawling) lays the body down; gliding on an elytra is a pose of its own, counted in ticks
     this.oSwim = this.swim;
-    const sw = P.pose === 'swim' && !P.flying ? 1 : 0;
+    const sw = P.pose === 'swim' && !P.flying && !P.gliding ? 1 : 0;
     this.swim = sw > this.swim ? Math.min(1, this.swim + 0.09) : Math.max(0, this.swim - 0.09);
+    this.glide = P.gliding ? this.glide + 1 : 0;
     this.age++;
   }
 
@@ -690,13 +691,17 @@ export class Avatar {
   posed(P, a, feet) {
     const bodyYaw = this.oBody + wrap(this.body - this.oBody) * a;
     this.poseFor(P, a, P.pitch, wrap(P.yaw - bodyYaw));
-    const root = this.root, t = this.t, swim = this.cur.swim;
+    const root = this.root, t = this.t;
     root.makeRotationY(bodyYaw + PI);
     root.setPosition(feet.x, feet.y - (this.cur.sneak ? 0.125 : 0), feet.z);
-    if (swim > 0) {
-      root.multiply(t.makeTranslation(0, 0.9, 0));
-      root.multiply(t.makeRotationX(swim * (PI / 2 - P.pitch)));
-      root.multiply(t.makeTranslation(0, -0.9, 0));
+    this.layDown(root, P, a, P.pitch);
+    if (this.glide > 0) {
+      // and rolled into a turn, by the angle between where you look and where you fly
+      const v = P.vel, lx = -Math.sin(P.yaw), lz = -Math.cos(P.yaw), d0 = v.x * v.x + v.z * v.z;
+      if (d0 > 1e-8) {
+        const c = (v.x * lx + v.z * lz) / Math.sqrt(d0), s = v.x * lz - v.z * lx;
+        root.multiply(t.makeRotationY(Math.sign(s) * Math.acos(Math.max(-1, Math.min(1, c)))));
+      }
     }
     root.scale(this.vs);
     this.matrices(root, this.parts);
@@ -707,6 +712,20 @@ export class Avatar {
       h.mesh.matrixWorldNeedsUpdate = true;
     }
     if (this.headItem) { this.placeHead(this.headItem.skull, this.parts, this.headItem.mesh.matrix); this.headItem.mesh.matrixWorldNeedsUpdate = true; }
+  }
+
+  /* Swimming, crawling and gliding lay the model down about its feet, as the
+     game's renderer does: swimming along the look (pitch, up positive),
+     crawling flat, then moved back a block and up 0.3 so it lies along its
+     0.6 high box; gliding tips over along the look over its first ten ticks.
+     Used by the figure in the inventory too, with the mouse's look. */
+  layDown(root, P, a, pitch) {
+    const t = this.t, swim = this.cur.swim;
+    if (this.glide > 0) root.multiply(t.makeRotationX(Math.min(1, (this.glide + a) ** 2 / 100) * (PI / 2 - pitch)));
+    else if (swim > 0) {
+      root.multiply(t.makeRotationX(swim * (P.inWater ? PI / 2 - pitch : PI / 2)));
+      if (P.pose === 'swim') root.multiply(t.makeTranslation(0, -1, -0.3));
+    }
   }
 
   /* The parts' turns and places, in the game's model space (y down, -z
@@ -729,12 +748,16 @@ export class Avatar {
     const swim = this.cur.swim = this.oSwim + (this.swim - this.oSwim) * a;
     const sneak = this.cur.sneak = P.sneaking && !P.flying && swim === 0;
 
-    head.rx = -pitch;
+    // gliding: the head looks ahead along the body once it has tipped over, and the faster you fly
+    // the stiller the limbs hang (the game divides their swing by (speed squared / 0.2) cubed, at least 1)
+    let stiff = 1;
+    if (this.glide > 0) { const v = P.vel, f = (v.x * v.x + v.y * v.y + v.z * v.z) / 0.2; stiff = Math.max(1, f * f * f); }
+    head.rx = this.glide > 4 ? -PI / 4 : -pitch;
     head.ry = -headYaw;
     // walking: opposite arm and leg together
     const c = Math.cos(ls * 0.6662);
-    armR.rx = -c * amt; armL.rx = c * amt;
-    legR.rx = c * 1.4 * amt; legL.rx = -c * 1.4 * amt;
+    armR.rx = -c * amt / stiff; armL.rx = c * amt / stiff;
+    legR.rx = c * 1.4 * amt / stiff; legL.rx = -c * 1.4 * amt / stiff;
     // riding (a boat, a horse: js/entities): sitting, legs forward and a little apart, arms forward a little
     if (P.riding) {
       armR.rx -= PI / 5; armL.rx -= PI / 5;
