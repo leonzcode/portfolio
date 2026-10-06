@@ -541,7 +541,7 @@ export class Containers {
 }
 
 // a structure loot entry as a stack: its count, wear, potion
-function lootStack(e) {
+export function lootStack(e) {
   const id = I[e.item];
   if (id === undefined || !(e.count > 0)) return null;
   const st = { id, count: Math.min(e.count, maxStack(id)) };

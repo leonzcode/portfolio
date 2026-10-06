@@ -798,7 +798,7 @@ export function installParts(sim) {
     if (E && E.list) for (const e of E.list) {
       if (e.removed || (e.dead && e.deathTime > 0)) continue;
       const hw = e.hw !== undefined ? e.hw : (e.w || 0.6) / 2, h = e.h || 1;
-      const k = e.type === 'minecart' ? 'cart' : /arrow|trident/.test(e.type) ? 'arrow' : e instanceof Living ? 'mob' : 'other';
+      const k = /minecart$/.test(e.type) ? 'cart' : /arrow|trident/.test(e.type) ? 'arrow' : e instanceof Living ? 'mob' : 'other';
       boxes.push({ k, living: e instanceof Living, sneak: false, b: [e.pos.x - hw, e.pos.y, e.pos.z - hw, e.pos.x + hw, e.pos.y + h, e.pos.z + hw], e });
     }
     const D = g && g.drops;

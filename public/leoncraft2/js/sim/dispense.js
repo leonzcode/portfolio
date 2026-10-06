@@ -142,8 +142,8 @@ export function installDispensers(sim) {
       e.persistent = true;
       return 'used';
     }
-    if (n === 'minecart' && E) {
-      if (fd && fd.shape === 'rail') { placeMinecart(E, fx, fy, fz); return 'used'; }
+    if (/^(\w+_)?minecart$/.test(n) && E) {
+      if (fd && fd.shape === 'rail') { placeMinecart(E, fx, fy, fz, n); return 'used'; }
       return 'drop';
     }
     const ar = armorOf(st.id);
