@@ -1237,6 +1237,8 @@ export class Decorator {
     this.biomeSets = new Map();
     this.unknown = new Set();
     this.r = new WorldgenXoroshiro();
+    this.dryR = new WorldgenXoroshiro();       // for lakePlan, which runs in the middle of a decoration
+    this.plans = new Map();
   }
   biomeHas(bid, name) {
     let s = this.biomeSets.get(bid);
@@ -1252,18 +1254,35 @@ export class Decorator {
   /* Decorate one chunk against its neighbours' terrain; returns the region
      (whose chunks carry the writes). */
   decorateSource(cx, cz) {
-    const g = this.gen;
-    const R = new Region(g, cx, cz);
-    const D = { region: R, gen: g, biomeHas: (b, n) => this.biomeHas(b, n), unknownModifier: t => this.unknownModifier(t), r: this.r };
+    const R = new Region(this.gen, cx, cz);
+    const D = this.context(R, this.r);
+    // a lake that would run into a lake of a chunk decorated before this one is not dug (see lakePlan)
+    D.lakeClash = box => {
+      for (const [dx, dz] of [[-1, -1], [0, -1], [1, -1], [-1, 0]]) {
+        for (const b of this.lakePlan(cx + dx, cz + dz)) {
+          if (b[0] <= box[3] && b[3] >= box[0] && b[1] <= box[4] && b[4] >= box[1] && b[2] <= box[5] && b[5] >= box[2]) return true;
+        }
+      }
+      return false;
+    };
+    this.run(D, cx, cz, this.steps.length);
+    runOut(R);
+    return R;
+  }
+  context(R, r) {
+    return { region: R, gen: this.gen, biomeHas: (b, n) => this.biomeHas(b, n), unknownModifier: t => this.unknownModifier(t), r };
+  }
+  // every feature of the first n steps for a chunk, in the game's order, each with its own random
+  run(D, cx, cz, n) {
+    const g = this.gen, R = D.region, r = D.r;
     // the biomes stored in this chunk and the eight around it
     const present = new Set();
     for (const p of R.protos) {
       const gg = p.grid.g;
       for (let j = 1; j <= 4; j++) for (let i = 1; i <= 4; i++) for (let k = 1; k <= 96; k++) present.add(gg[(j * 6 + i) * 98 + k]);
     }
-    const r = this.r;
     const deco = decorationSeed(r, g.seed, cx * 16, cz * 16);
-    for (let step = 0; step < this.steps.length; step++) {
+    for (let step = 0; step < n; step++) {
       const list = this.steps[step];
       R.early = step < 3;          // raw generation, lakes, local modifications: before the structures
       const idx = new Set();
@@ -1285,8 +1304,24 @@ export class Decorator {
         }
       }
     }
-    runOut(R);
-    return R;
+  }
+  /* The lakes a chunk would dig (their boxes), worked out without digging
+     them. The game decorates chunks one after another, so a lake meeting
+     another chunk's lake finds it there and gives up; decorated on their
+     own, both would be dug and leave one's water standing against the
+     other's open air. So chunks take a fixed order (row by row, west to
+     east), and a lake gives way to any lake of a chunk before it. */
+  lakePlan(cx, cz) {
+    const key = cx + ',' + cz;
+    let plan = this.plans.get(key);
+    if (plan) return plan;
+    plan = [];
+    const R = new Region(this.gen, cx, cz);
+    R.dry = plan;
+    this.run(this.context(R, this.dryR), cx, cz, 2);       // raw generation and lakes
+    this.plans.set(key, plan);
+    if (this.plans.size > 400) this.plans.delete(this.plans.keys().next().value);
+    return plan;
   }
   warmEnoughToMelt(biome, x, y, z) {
     return temperatureAt(BIOMES[biome].name, x, y, z) > F(0.1);
