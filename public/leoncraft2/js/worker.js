@@ -131,6 +131,8 @@ function handle(m) {
   if (m.type === 'decorate') {
     // the features of one chunk (stage two), placed against the terrain of the nine round it
     for (const p of m.protos) gen.protoCache.set(ck(p.cx, p.cz), p);
+    // the biomes of the terrains round those, for the lake plans of the chunks next to this one
+    if (m.grids && gen.decorator.keepGrid) for (const [x, z, g] of m.grids) gen.decorator.keepGrid(x, z, g);
     const w = writesOf(gen, m.cx, m.cz);
     gen.protoCache.clear(); gen.writeCache.clear();
     // the terrains' buffers go back with the answer, to be used for the next job (world.js pool)
