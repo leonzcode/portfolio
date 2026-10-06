@@ -57,7 +57,8 @@ const POINTS = [
    with java.util.Random from the world seed (temperature) and the seed plus
    one (vegetation), read at a quarter of the block position, with no offset
    noise, every 4 blocks. Each value is kept to 1/10000 as a float, and the
-   nearest point wins. */
+   nearest point wins. (The same build as cubiomes' setNetherSeed, MIT,
+   Copyright (c) 2020 Cubitect, https://github.com/Cubitect/cubiomes.) */
 const INPUT = 1.0181268882175227, VALUE = 0.16666666666666666 / 0.15;
 function legacyOctaves(r) {
   // the old PerlinNoise constructor for octaves -7..-6: a noise for octave 0
@@ -78,6 +79,8 @@ function seed64(seed) {
   return /^[-+]?\d+$/.test(t) ? BigInt.asIntN(64, BigInt(t)) : BigInt(seed | 0);
 }
 const quantize = v => Math.trunc(Math.fround(Math.fround(v) * 10000));
+// the order the game's search meets the points in (by the sum of their sizes): wastes, crimson, soul sand, deltas, warped
+const ORDER = [0, 2, 1, 4, 3];
 
 export class NetherGen {
   constructor(seed) {
@@ -101,14 +104,25 @@ export class NetherGen {
   }
   // the biome of the 4 x 4 cell a column is in (read at the cell's corner, as the game reads it)
   biomeAt(x, z) {
-    const c = this.climate(x & ~3, z & ~3), t = quantize(c.T), h = quantize(c.Hu);
-    let best = 0, bd = Infinity;
-    for (let i = 0; i < POINTS.length; i++) {
+    return this.biomeIds[this.nearest(x & ~3, z & ~3, true)];
+  }
+  // which of the five points is nearest a cell's climate. Two at the same distance (now and then, on a
+  // line half way between two) keep the one the cell before it got, as the game's search keeps the last
+  // answer it gave, and the cell before is the one north of it (a chunk's cells are filled z fastest, then
+  // up, then x), else the same column's last; failing that, the first in the game's order
+  nearest(X, Z, ties) {
+    const c = this.climate(X, Z), t = quantize(c.T), h = quantize(c.Hu);
+    let best = -1, bd = Infinity, tied = 0;
+    for (const i of ORDER) {
       const p = POINTS[i];
       const d = (t - p[1]) ** 2 + (h - p[2]) ** 2 + p[3] * p[3];
-      if (d < bd) { bd = d; best = i; }
+      if (d < bd) { bd = d; best = i; tied = 1 << i; } else if (d === bd) tied |= 1 << i;
     }
-    return this.biomeIds[best];
+    if (ties && tied !== 1 << best) {
+      const prev = this.nearest(X, (Z >> 2) & 3 ? Z - 4 : Z + 12, false);
+      if (tied & (1 << prev)) return prev;
+    }
+    return best;
   }
 
   /* ---- the density, before blending ---- */
