@@ -187,8 +187,6 @@ export function applyLook(R, look, first) {
   const token = R.lookToken = (R.lookToken || 0) + 1;
   const prep = prepare(R, o);
   const pending = R.lookPending = { key, look: Object.assign({}, look), prep };
-  const scene = new THREE.Scene();
-  for (const m of prep.compile) scene.add(new THREE.Mesh(R.standGeo, m));
   let ran = false;
   const done = () => {
     if (ran) return;
@@ -197,8 +195,26 @@ export function applyLook(R, look, first) {
     R.lookPending = null;
     finishLook(R, pending.look, false, prep);
   };
-  let compiled;
-  try { compiled = R.r.compileAsync(scene, R.camera); } catch (e) { compiled = null; }
+  /* Handed to the graphics card a few at a time, a frame's share each: putting
+     a program together (its source, then the calls that start it compiling)
+     takes a few milliseconds in this thread, and the full chain's forty in one
+     go cost the frame the setting was changed in a tenth of a second or more. */
+  const compiled = new Promise(res => {
+    const list = prep.compile, waits = [];
+    let i = 0;
+    const step = () => {
+      if (R.lookToken !== token) return res();
+      const t0 = performance.now();
+      while (i < list.length && performance.now() - t0 < 5) {
+        const scene = new THREE.Scene();
+        for (const m of list.slice(i, i + 3)) scene.add(new THREE.Mesh(R.standGeo, m));
+        i += 3;
+        try { waits.push(R.r.compileAsync(scene, R.camera)); } catch (e) { /* built when first drawn */ }
+      }
+      if (i < list.length) requestAnimationFrame(step); else Promise.all(waits).then(res, res);
+    };
+    step();
+  });
   // (and the full chain's cloud noise, made in a worker the first time)
   Promise.all([compiled, prep.noise]).then(done, done);
   // a browser that cannot say when they are ready: after a while all the same
