@@ -238,14 +238,23 @@ export class Renderer {
     for (let j = slice ? slice.from : 0; j < n; j++) {
       const col = list[back ? n - 1 - j : j];
       if (col.dead) continue;
-      gl.uniform3f(L.chunk, col.cx * 16, 0, col.cz * 16);
+      // the sections this camera can see (inView), if it was the last to look at this column
+      const v0 = !shadow && col.viewCam === cam ? col.view0 : 0, v1 = !shadow && col.viewCam === cam ? col.view1 + 1 : 24;
+      let set = false;
       for (let k = 0; k < kinds.length; k++) {
         const p = col.byKind[kinds[k]];
         if (!p) continue;
         let from, to;
         if (shadow) { from = p.shadowFrom; to = p.count; }
-        else { if (!p.visible || p.hidden) continue; from = p.from; to = p.to; }
+        else {
+          if (!p.visible || p.hidden) continue;
+          from = p.from; to = p.to;
+          const a = p.marks[v0], z = p.marks[v1];
+          if (a > from) from = a;
+          if (z < to) to = z;
+        }
         if (to <= from) continue;
+        if (!set) { gl.uniform3f(L.chunk, col.cx * 16, 0, col.cz * 16); set = true; }
         if (L.meshTime && p.t0 !== undefined) gl.uniform1f(L.meshTime, p.t0);
         gl.bindVertexArray(p.vao);
         gl.drawElements(gl.TRIANGLES, to - from, p.type, from * p.bytes);
@@ -267,12 +276,24 @@ export class Renderer {
     list.length = 0;
     this.fm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.fm);
-    const ex = cam.position.x, ez = cam.position.z, b = this.box;
+    const ex = cam.position.x, ez = cam.position.z, b = this.box, F = this.frustum;
+    const cut = !this.noSectionCull;
     for (const col of this.columns.values()) {
       b.min.set(col.cx * 16, col.y0, col.cz * 16); b.max.set(col.cx * 16 + 16, col.y1, col.cz * 16 + 16);
-      if (!this.frustum.intersectsBox(b)) continue;
+      if (!F.intersectsBox(b)) continue;
       col.dist = (col.cx * 16 + 8 - ex) ** 2 + (col.cz * 16 + 8 - ez) ** 2;
       list.push(col);
+      /* and only the run of its sections the camera can see: a column near you is
+         mostly above or below the view (the ground under your feet, the caves
+         beneath, the sky over a tree), and every vertex there would be worked out
+         and then thrown away. A section's box is a block bigger each way, for what
+         pokes out of it (plants in the wind). drawParts reads these for this camera. */
+      let s0 = col.y0 >> 4, s1 = Math.min(23, (col.y1 - 1) >> 4);
+      if (cut) {
+        while (s0 < s1) { b.min.y = s0 * 16 - 1; b.max.y = s0 * 16 + 17; if (F.intersectsBox(b)) break; s0++; }
+        while (s1 > s0) { b.min.y = s1 * 16 - 1; b.max.y = s1 * 16 + 17; if (F.intersectsBox(b)) break; s1--; }
+      }
+      col.viewCam = cam; col.view0 = s0; col.view1 = s1;
     }
     list.sort((a, b) => a.dist - b.dist);
     return list;
