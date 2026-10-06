@@ -1059,17 +1059,34 @@ const F_LEVEL = 7, F_FALLING = 8;
    every new spring) once a chunk is made, so by the time anyone sees them
    they have run out over the rock: a cave lake with a cave beside it spills
    in, rather than standing as a wall of water. The same here, for this
-   chunk's own still water and lava with open air under or beside it. */
+   chunk's own still water and lava with open air under or beside it, and
+   for any still water or lava (in this chunk or a neighbour) that one of
+   this chunk's features opened up, say a geode dug under the sea floor. */
+const OPEN_SIDES = [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
 function runOut(R) {
-  const c = R.chunks[4], x0 = R.x0 + 16, z0 = R.z0 + 16;
   const budget = { n: 20000 };
+  const still = (x, y, z) => { const b = R.get(x, y, z); return (b === B.water || b === B.lava) && R.meta(x, y, z) === 0 ? b : 0; };
+  const open = (x, y, z) => OPEN_SIDES.some(([dx, dy, dz]) => isAirId(R.get(x + dx, y + dy, z + dz)));
+  const c = R.chunks[4], x0 = R.x0 + 16, z0 = R.z0 + 16;
   for (let i = 256; i < VOLI && budget.n > 0; i++) {
     const b = c.blocks[i];
     if ((b !== B.water && b !== B.lava) || c.meta[i] !== 0) continue;
     const x = x0 + (i & 15), z = z0 + ((i >> 4) & 15), y = (i >> 8) + MIN_Y;
-    if (!isAirId(R.get(x, y - 1, z)) && !isAirId(R.get(x + 1, y, z)) && !isAirId(R.get(x - 1, y, z))
-      && !isAirId(R.get(x, y, z + 1)) && !isAirId(R.get(x, y, z - 1))) continue;
-    flowOut(R, x, y, z, b === B.water ? 1 : 2, budget);
+    if (open(x, y, z)) flowOut(R, x, y, z, b === B.water ? 1 : 2, budget);
+  }
+  // the air this chunk's features made, wherever it is, and the fluid around it
+  for (let k = 0; k < 9 && budget.n > 0; k++) {
+    const ch = R.chunks[k];
+    if (!ch.writes) continue;
+    const cx0 = R.x0 + (k % 3) * 16, cz0 = R.z0 + Math.floor(k / 3) * 16;
+    for (const [i, v] of ch.writes) {
+      if (!isAirId(v >> 8) || budget.n <= 0) continue;
+      const x = cx0 + (i & 15), z = cz0 + ((i >> 4) & 15), y = (i >> 8) + MIN_Y;
+      for (const [dx, dy, dz] of [[0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]) {
+        const b = still(x + dx, y + dy, z + dz);
+        if (b) flowOut(R, x + dx, y + dy, z + dz, b === B.water ? 1 : 2, budget);
+      }
+    }
   }
 }
 function flowOut(R, sx, sy, sz, kind, budget) {
