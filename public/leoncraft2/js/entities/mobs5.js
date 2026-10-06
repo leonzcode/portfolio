@@ -156,6 +156,8 @@ export class Camel extends AbstractHorse {
     return false;
   }
   interact(held, player) {
+    // sneaking: its screen (a grown one; a camel needs no taming)
+    if (player && player.sneaking && player.sneaking() && this.ageT >= 0 && this.openInventory()) return 'swing';
     if (this.passengers.length && held !== 'saddle') { this.m.mount(this); return 'swing'; }
     if (this.constructor.FOOD.indexOf(held) >= 0) return this.eatFood() ? 'consume' : 'swing';
     if (this.ageT < 0) return false;
@@ -373,15 +375,16 @@ export class TraderLlama extends Llama {
   layers(out) { out.push(['llama_decor', 'llama_decor_trader', null]); if (this.chest) out.push(['llama_chest', this.texName(), null]); }
 }
 register('trader_llama', TraderLlama);
+// (the decor's boxes take the carpet's colour: the last true in each)
 const llamaParts = (part) => [
-  { name: 'head', pivot: [0, 7, -6], boxes: part ? (part === 'decor' ? [[-4, -16, -6, 8, 18, 6, 0, 14, 0.5]] : []) : [[-2, -14, -10, 4, 4, 9, 0, 0], [-4, -16, -6, 8, 18, 6, 0, 14], [-4, -19, -4, 3, 3, 2, 17, 0], [1, -19, -4, 3, 3, 2, 17, 0]] },
-  { name: 'body', pivot: [0, 5, 2], rot: [PI / 2, 0, 0], boxes: part === 'chest' ? [] : part === 'decor' ? [[-6, -10, -7, 12, 18, 10, 29, 0, 0.5]] : [[-6, -10, -7, 12, 18, 10, 29, 0]] },
+  { name: 'head', pivot: [0, 7, -6], boxes: part ? (part === 'decor' ? [[-4, -16, -6, 8, 18, 6, 0, 14, 0.5, false, true]] : []) : [[-2, -14, -10, 4, 4, 9, 0, 0], [-4, -16, -6, 8, 18, 6, 0, 14], [-4, -19, -4, 3, 3, 2, 17, 0], [1, -19, -4, 3, 3, 2, 17, 0]] },
+  { name: 'body', pivot: [0, 5, 2], rot: [PI / 2, 0, 0], boxes: part === 'chest' ? [] : part === 'decor' ? [[-6, -10, -7, 12, 18, 10, 29, 0, 0.5, false, true]] : [[-6, -10, -7, 12, 18, 10, 29, 0]] },
   { name: 'rightChest', pivot: [-8.5, 3, 3], rot: [0, PI / 2, 0], boxes: part === 'chest' ? [[-3, 0, 0, 8, 8, 3, 45, 28]] : [] },
   { name: 'leftChest', pivot: [5.5, 3, 3], rot: [0, PI / 2, 0], boxes: part === 'chest' ? [[-3, 0, 0, 8, 8, 3, 45, 41]] : [] },
-  { name: 'rightHind', pivot: [-3.5, 10, 6], boxes: part ? (part === 'decor' ? [[-2, 0, -2, 4, 14, 4, 29, 29, 0.5]] : []) : [[-2, 0, -2, 4, 14, 4, 29, 29]] },
-  { name: 'leftHind', pivot: [3.5, 10, 6], boxes: part ? (part === 'decor' ? [[-2, 0, -2, 4, 14, 4, 29, 29, 0.5]] : []) : [[-2, 0, -2, 4, 14, 4, 29, 29]] },
-  { name: 'rightFront', pivot: [-3.5, 10, -5], boxes: part ? (part === 'decor' ? [[-2, 0, -2, 4, 14, 4, 29, 29, 0.5]] : []) : [[-2, 0, -2, 4, 14, 4, 29, 29]] },
-  { name: 'leftFront', pivot: [3.5, 10, -5], boxes: part ? (part === 'decor' ? [[-2, 0, -2, 4, 14, 4, 29, 29, 0.5]] : []) : [[-2, 0, -2, 4, 14, 4, 29, 29]] },
+  { name: 'rightHind', pivot: [-3.5, 10, 6], boxes: part ? (part === 'decor' ? [[-2, 0, -2, 4, 14, 4, 29, 29, 0.5, false, true]] : []) : [[-2, 0, -2, 4, 14, 4, 29, 29]] },
+  { name: 'leftHind', pivot: [3.5, 10, 6], boxes: part ? (part === 'decor' ? [[-2, 0, -2, 4, 14, 4, 29, 29, 0.5, false, true]] : []) : [[-2, 0, -2, 4, 14, 4, 29, 29]] },
+  { name: 'rightFront', pivot: [-3.5, 10, -5], boxes: part ? (part === 'decor' ? [[-2, 0, -2, 4, 14, 4, 29, 29, 0.5, false, true]] : []) : [[-2, 0, -2, 4, 14, 4, 29, 29]] },
+  { name: 'leftFront', pivot: [3.5, 10, -5], boxes: part ? (part === 'decor' ? [[-2, 0, -2, 4, 14, 4, 29, 29, 0.5, false, true]] : []) : [[-2, 0, -2, 4, 14, 4, 29, 29]] },
 ];
 function llamaAnim(m, P, A) {
   const I = m.index;

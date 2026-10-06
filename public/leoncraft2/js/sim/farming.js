@@ -92,6 +92,8 @@ export function installFarming(sim) {
     for (const [x, y, z, id] of list) {
       const d = BLOCKS[id];
       if (!d) continue;
+      // the top half of a two-block plant stands on its own bottom half, which is what is judged
+      if (list.some(e => e[0] === x && e[1] === y - 1 && e[2] === z)) continue;
       const below = sim.get(x, y - 1, z);
       if (FARMLAND_ONLY.has(d.name) && below !== B.farmland) return [];
       if (d.name === 'nether_wart' && below !== B.soul_sand) return [];
