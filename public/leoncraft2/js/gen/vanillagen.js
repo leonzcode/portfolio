@@ -19,18 +19,18 @@
    extensions, carvers, features) is written from the game's observable
    behaviour and checked against chunks the real 26.3 server made.
 --------------------------------------------------------------------------- */
-import { VDATA } from './vdata.js?v=16';
-import { DensityState, Compiler, tri, children } from './density.js?v=16';
-import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=16';
-import { Xoroshiro } from './random.js?v=16';
-import { B, BLOCKS } from '../blocks.js?v=16';
-import { BIO, BIOMES } from '../biomes.js?v=16';
-import { H, Y0, VOL } from '../world-const.js?v=16';
-import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf } from './features.js?v=16';
-import { Carvers } from './carvers.js?v=16';
-import { stateOf } from './states.js?v=16';
-import './trees.js?v=16';
-import './misc.js?v=16';
+import { VDATA } from './vdata.js?v=17';
+import { DensityState, Compiler, tri, children } from './density.js?v=17';
+import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=17';
+import { Xoroshiro } from './random.js?v=17';
+import { B, BLOCKS } from '../blocks.js?v=17';
+import { BIO, BIOMES } from '../biomes.js?v=17';
+import { H, Y0, VOL } from '../world-const.js?v=17';
+import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf } from './features.js?v=17';
+import { Carvers } from './carvers.js?v=17';
+import { stateOf } from './states.js?v=17';
+import './trees.js?v=17';
+import './misc.js?v=17';
 
 const MIN_Y = -64, SEA_LEVEL = 63;
 const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
@@ -257,6 +257,12 @@ class ChunkView {
 }
 
 /* ===================================================== the generator == */
+// where a chunk's water and lava are, one bit a block
+function fluidBits(blocks) {
+  const fluid = new Uint8Array(VOL >> 3), WATER = B.water, LAVA = B.lava;
+  for (let i = 0; i < VOL; i++) { const b = blocks[i]; if (b === WATER || b === LAVA) fluid[i >> 3] |= 1 << (i & 7); }
+  return fluid;
+}
 export class VanillaGen {
   constructor(seed) {
     this.seedStr = String(seed);
@@ -479,7 +485,9 @@ export class VanillaGen {
     y0 = Math.max(MIN_Y, y0 - 1); y1 = Math.min(MIN_Y + H - 1, y1 + 1);
     const ax = Math.max(x0 - 1, cx * 16), bx = Math.min(x1 + 1, cx * 16 + 15), az = Math.max(z0 - 1, cz * 16), bz = Math.min(z1 + 1, cz * 16 + 15);
     if (ax > bx || az > bz) return false;
-    const f = this.rawProto(cx, cz).fluid;
+    /* (a chunk's terrain handed over from another worker, js/world.js stages,
+       comes without its fluid map: worked out here from its bare blocks) */
+    const p = this.rawProto(cx, cz), f = p.fluid || (p.fluid = fluidBits(p.blocks));
     for (let y = y0; y <= y1; y++) for (let z = az; z <= bz; z++) for (let x = ax; x <= bx; x++) {
       const i = ((y - MIN_Y) << 8) | ((z & 15) << 4) | (x & 15);
       if (f[i >> 3] & (1 << (i & 7))) return true;
@@ -615,9 +623,7 @@ export class VanillaGen {
     // carvers
     if (this.decorator.carve) this.carvers.carve(blocks, meta, cx, cz, aq, grid);
     // where the water and lava are, one bit a block, before anything is built
-    const fluid = new Uint8Array(VOL >> 3);
-    for (let i = 0; i < VOL; i++) { const b = blocks[i]; if (b === WATER || b === LAVA) fluid[i >> 3] |= 1 << (i & 7); }
-    return { blocks, meta, grid, cx, cz, fluid, built: false };
+    return { blocks, meta, grid, cx, cz, fluid: fluidBits(blocks), built: false };
   }
 
   /* ---- the material rules ---- */

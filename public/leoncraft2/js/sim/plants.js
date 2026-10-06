@@ -31,10 +31,10 @@
                     copper that is younger)
    mushrooms        1 in 25, spread if fewer than five round them, in the dark
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=16';
-import { Gen } from '../worldgen.js?v=16';
-import { rng } from '../noise.js?v=16';
-import { LEVEL, FALLING } from '../world-const.js?v=16';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=17';
+import { Gen } from '../worldgen.js?v=17';
+import { rng } from '../noise.js?v=17';
+import { LEVEL, FALLING } from '../world-const.js?v=17';
 
 const HORIZ = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const R = sim => sim.rng();
