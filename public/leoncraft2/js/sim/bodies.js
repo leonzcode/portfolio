@@ -17,8 +17,8 @@
    Drawn with the block's own model and the held-block material, so they take
    the same light and fog as the world.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=18';
-import { blockGeometry } from '../render/blockmesh.js?v=18';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=19';
+import { blockGeometry } from '../render/blockmesh.js?v=19';
 const THREE = window.THREE;
 
 const W = 0.98, HT = 0.98;
