@@ -72,6 +72,8 @@ export const FeatureData = { tags: {}, placed: {}, configured: {}, biome: {} };
    blocks features place ---- */
 // 26.3 says which blocks hold plants up with tags (supports_vegetation and friends)
 const DIRTLIKE = () => tag('supports_vegetation');
+// a full block nothing can be seen through (the game's "solid render")
+const solidRender = id => id !== 0 && BLOCKS[id].shape === 'cube' && BLOCKS[id].solid && !BLOCKS[id].leaves && (BLOCKS[id].pass || 'opaque') === 'opaque';
 export function survives(R, st, x, y, z) {
   const n = BLOCKS[st.id].name;
   const below = R.get(x, y - 1, z), bn = BLOCKS[below] ? BLOCKS[below].name : 'air';
@@ -97,9 +99,11 @@ export function survives(R, st, x, y, z) {
     case 'cactus_flower': return below === B.cactus || fullTop(below);
     case 'dead_bush': case 'short_dry_grass': case 'tall_dry_grass':
       return tag('supports_dry_vegetation')[below] === 1;
-    case 'lily_pad': return (below === B.water && R.meta(x, y - 1, z) === 0) || tag('supports_lily_pad')[below] === 1;
+    // still water, or a plant standing in it (seagrass holds water too)
+    case 'lily_pad': return (below === B.water && R.meta(x, y - 1, z) === 0) || (fluidOf(below) === 1 && below !== B.water) || tag('supports_lily_pad')[below] === 1;
+    // a mushroom needs a whole block under it that light cannot pass (never leaves or glass); mycelium, podzol and nylium hold it in any light
     case 'brown_mushroom': case 'red_mushroom':
-      return tag('mushroom_grow_block')[below] === 1 || fullTop(below);
+      return tag('overrides_mushroom_light_requirement')[below] === 1 || solidRender(below);
     case 'seagrass': case 'kelp': case 'kelp_plant': case 'tall_seagrass':
       return fullTop(below) && below !== B.magma_block;
     case 'snow': {
@@ -110,7 +114,7 @@ export function survives(R, st, x, y, z) {
     case 'sweet_berry_bush': case 'firefly_bush': case 'bush': case 'leaf_litter': case 'wildflowers': case 'pink_petals':
       return dirt[below] === 1 || below === B.farmland || (n === 'leaf_litter' && fullTop(below));
     case 'pumpkin': case 'melon': return true;
-    case 'pale_moss_carpet': case 'moss_carpet': return below !== 0;
+    case 'pale_moss_carpet': case 'moss_carpet': return !isAirId(below);
     case 'pale_hanging_moss': return R.get(x, y + 1, z) !== 0;
   }
   const d = BLOCKS[st.id];
@@ -123,6 +127,61 @@ export function survives(R, st, x, y, z) {
     return dirt[below] === 1 || below === B.farmland;
   }
   return true;
+}
+
+/* ---- a chunk put together from nine chunks' features ----
+   Each chunk is decorated on its own, against the bare terrain of the chunks
+   around it, and a chunk is then laid together from its own writes and its
+   neighbours'. So two neighbours may write the same block, or one may take
+   away what a plant of the other stands on (a clay pool or a sand disk under
+   its grass, a fern over the bottom half of its tall grass). The game
+   decorates chunks one after another, each feature seeing what came before,
+   so neither can happen there. Here, when two chunks write the same block the
+   sturdier one stays: a trunk over leaves, leaves over a flower (a tree
+   grown later would have pushed the flower aside; a flower placed later would
+   have found no room). Then every plant left without what it needs is taken
+   away, as the game would never have put it there. */
+const RANK = new Uint8Array(4096);
+for (const d of BLOCKS) {
+  if (!d) continue;
+  const n = d.name;
+  if (isAirId(d.id) || /(_log|_wood|_stem|_hyphae|mushroom_block)$/.test(n)) RANK[d.id] = 5;   // air a feature dug (a geode, a lake) or a trunk
+  else if (FLUIDISH[d.id] && d.shape === 'fluid') RANK[d.id] = 3;
+  else if (d.leaves) RANK[d.id] = 2;
+  else if (!d.solid || d.replaceable || d.shape !== 'cube') RANK[d.id] = 1;
+  else RANK[d.id] = 4;
+}
+// which of two neighbours' writes to one block stays (the later one on a tie)
+export const writeRank = id => RANK[id];
+
+// the plants that stand on the block under them, and those that stand in water (taken back to water)
+const GROUND = new Uint8Array(4096);
+{
+  const names = ['short_grass', 'fern', 'tall_grass', 'large_fern', 'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet', 'red_tulip',
+    'orange_tulip', 'white_tulip', 'pink_tulip', 'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'torchflower', 'sunflower', 'lilac', 'rose_bush',
+    'peony', 'open_eyeblossom', 'closed_eyeblossom', 'sweet_berry_bush', 'firefly_bush', 'bush', 'pink_petals', 'wildflowers', 'leaf_litter',
+    'dead_bush', 'short_dry_grass', 'tall_dry_grass', 'brown_mushroom', 'red_mushroom', 'cactus', 'cactus_flower', 'sugar_cane', 'lily_pad',
+    'snow', 'moss_carpet', 'pale_moss_carpet', 'azalea', 'flowering_azalea', 'bamboo', 'bamboo_sapling', 'oak_sapling', 'spruce_sapling',
+    'birch_sapling', 'jungle_sapling', 'acacia_sapling', 'dark_oak_sapling', 'cherry_sapling', 'pale_oak_sapling'];
+  for (const n of names) {
+    if (B[n] === undefined) continue;
+    GROUND[B[n]] = 1;
+    const up = BLOCKS[B[n]].upper;
+    if (up && B[up] !== undefined) GROUND[B[up]] = 1;
+  }
+  for (const n of ['seagrass', 'tall_seagrass', 'tall_seagrass_top_block', 'kelp', 'kelp_plant']) if (B[n] !== undefined) GROUND[B[n]] = 2;
+}
+export const isGroundPlant = id => GROUND[id];
+// can this plant stay where it is, with what is around it now
+export function plantHolds(R, id, m, x, y, z) {
+  const d = BLOCKS[id];
+  if (d.lower) return R.get(x, y - 1, z) === B[d.lower];                    // the top half of a tall plant needs its bottom half
+  if (d.upper && B[d.upper] !== undefined && R.get(x, y + 1, z) !== B[d.upper]) return false;   // and the bottom half its top
+  if (id === B.kelp || id === B.kelp_plant) {
+    const b = R.get(x, y - 1, z);
+    return b === B.kelp_plant || (b !== 0 && BLOCKS[b].shape === 'cube' && BLOCKS[b].solid && b !== B.magma_block);
+  }
+  return survives(R, { id, meta: m }, x, y, z);
 }
 
 /* ============================================================ providers == */
@@ -1057,6 +1116,8 @@ export class Decorator {
       const order = [...idx].filter(v => v !== undefined).sort((a, b) => a - b);
       for (const p of order) {
         const name = list.features[p];
+        // snow and ice go on once the chunk is put together with its neighbours' features (VanillaGen.generate)
+        if (name === 'freeze_top_layer') continue;
         featureSeed(r, deco, p, step);
         try {
           placePlaced(D, name, r, cx * 16, MIN_Y, cz * 16, name);
