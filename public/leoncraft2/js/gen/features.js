@@ -537,28 +537,32 @@ function protoHeights(p) {
 }
 const VOLI = 16 * 16 * 384;
 export class Region {
-  constructor(gen, cx, cz) {
+  constructor(gen, cx, cz, lazy) {
     this.gen = gen;
     this.cx = cx; this.cz = cz;
     this.x0 = (cx - 1) * 16; this.z0 = (cz - 1) * 16;
     this.chunks = [];
     this.protos = [];
+    // heightmaps over the 48 x 48 columns: first free y (world y), from each
+    // chunk's own (worked out once per chunk)
+    this.hm = [];
+    for (let k = 0; k < 6; k++) this.hm.push(new Int16Array(48 * 48));
+    // (a LazyRegion fills its chunks in as they are first read)
+    if (lazy) return;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const p = gen.proto(cx + dx, cz + dz);
       this.protos.push(p);
       this.chunks.push({ blocks: p.blocks, meta: p.meta, own: false, writes: null, smask: p.smask || null });
     }
-    // heightmaps over the 48 x 48 columns: first free y (world y), from each
-    // chunk's own (worked out once per chunk)
-    this.hm = [];
-    for (let k = 0; k < 6; k++) this.hm.push(new Int16Array(48 * 48));
-    for (let c = 0; c < 9; c++) {
-      const h = protoHeights(this.protos[c]);
-      const ox = (c % 3) * 16, oz = Math.floor(c / 3) * 16;
-      for (let k = 0; k < 6; k++) {
-        const src = h[k], dst = this.hm[k];
-        for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) dst[(oz + z) * 48 + ox + x] = src[(z << 4) | x];
-      }
+    for (let c = 0; c < 9; c++) this.heightsOf(c);
+  }
+  // chunk c's heightmaps into the region's
+  heightsOf(c) {
+    const h = protoHeights(this.protos[c]);
+    const ox = (c % 3) * 16, oz = Math.floor(c / 3) * 16;
+    for (let k = 0; k < 6; k++) {
+      const src = h[k], dst = this.hm[k];
+      for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) dst[(oz + z) * 48 + ox + x] = src[(z << 4) | x];
     }
   }
   inside(x, z) { return x >= this.x0 && x < this.x0 + 48 && z >= this.z0 && z < this.z0 + 48; }
@@ -618,6 +622,40 @@ export class Region {
     return this.gen.gridBiome(c.grid, x, y, z);
   }
   canWrite(x, y, z) { return this.inside(x, z) && y >= MIN_Y && y <= MAX_Y; }
+}
+
+/* The region a lake plan is worked out in (Decorator.lakePlan): the same,
+   but a chunk's terrain is made only when something there is first read.
+   Most plans read no block at all (a lake is rare), and most of the terrain
+   round a neighbour is not among the nine a worker is handed: made in full
+   up front, it was most of the time a decoration took. Their biomes are
+   wanted from the start (they say which features run); a biome grid is a
+   small part of a terrain. grids(x, z) gives one. */
+class LazyRegion extends Region {
+  constructor(gen, cx, cz, grids) {
+    super(gen, cx, cz, true);
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const x = cx + dx, z = cz + dz, p = gen.protoCache.get(x + ',' + z);
+      this.protos.push({ grid: p ? p.grid : grids(x, z), lazy: true });
+      this.chunks.push(null);
+    }
+  }
+  load(c) {
+    const p = this.gen.proto(this.cx + (c % 3) - 1, this.cz + Math.floor(c / 3) - 1);
+    this.protos[c] = p;
+    this.heightsOf(c);
+    return (this.chunks[c] = { blocks: p.blocks, meta: p.meta, own: false, writes: null, smask: p.smask || null });
+  }
+  at(x, z) {
+    const lx = x - this.x0, lz = z - this.z0;
+    if (lx < 0 || lx >= 48 || lz < 0 || lz >= 48) return;
+    const c = (lz >> 4) * 3 + (lx >> 4);
+    if (!this.chunks[c]) this.load(c);
+  }
+  get(x, y, z) { this.at(x, z); return super.get(x, y, z); }
+  meta(x, y, z) { this.at(x, z); return super.meta(x, y, z); }
+  set(x, y, z, id, meta = 0) { this.at(x, z); return super.set(x, y, z, id, meta); }
+  height(type, x, z) { this.at(x, z); return super.height(type, x, z); }
 }
 
 /* ===================================================== feature registry == */
@@ -1284,6 +1322,7 @@ export class Decorator {
     this.r = new WorldgenXoroshiro();
     this.dryR = new WorldgenXoroshiro();       // for lakePlan, which runs in the middle of a decoration
     this.plans = new Map();
+    this.grids = new Map();
   }
   biomeHas(bid, name) {
     let s = this.biomeSets.get(bid);
@@ -1361,12 +1400,23 @@ export class Decorator {
     let plan = this.plans.get(key);
     if (plan) return plan;
     plan = [];
-    const R = new Region(this.gen, cx, cz);
+    const R = new LazyRegion(this.gen, cx, cz, (x, z) => this.gridOf(x, z));
     R.dry = plan;
     this.run(this.context(R, this.dryR), cx, cz, 2);       // raw generation and lakes
     this.plans.set(key, plan);
     if (this.plans.size > 400) this.plans.delete(this.plans.keys().next().value);
     return plan;
+  }
+  // a chunk's biome grid alone, kept for the lake plans of the chunks round it (a few kilobytes each)
+  gridOf(x, z) {
+    const key = x + ',' + z;
+    let g = this.grids.get(key);
+    if (!g) {
+      g = this.gen.biomeGrid(x, z);
+      this.grids.set(key, g);
+      if (this.grids.size > 512) this.grids.delete(this.grids.keys().next().value);
+    }
+    return g;
   }
   warmEnoughToMelt(biome, x, y, z) {
     return temperatureAt(BIOMES[biome].name, x, y, z) > F(0.1);
