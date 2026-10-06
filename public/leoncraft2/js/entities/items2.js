@@ -1,0 +1,509 @@
+/* ---------------------------------------------------------------------------
+   Leoncraft 2 - what the hand throws or puts out that did nothing before:
+
+     ender pearl          thrown (1.5 a tick); where it lands you go, for 5
+                          damage, and one time in twenty an endermite comes
+                          out; a second's wait between throws
+     bottle o' enchanting thrown up a little (0.7); 3 to 11 experience where
+                          it breaks
+     wind charge          thrown (1.5), a burst where it hits (mobs7.js); half
+                          a second between throws
+     blue and brown eggs  thrown like an egg (a chick one time in eight)
+     firework rocket      on a block: up it goes and bursts in its stars'
+                          colours (5 damage, 2 more a star, to what is close);
+                          gliding with an elytra, a boost along the look
+     armor stand          stood on the block clicked, facing you; armour on it
+                          and off it with a right click; two quick hits (one in
+                          creative) knock it down
+     painting             on the side of a block: the biggest that fits there,
+                          one of the sizes the game has (our own pictures);
+                          comes off when hit or when its wall goes
+     fishing rod          cast and reeled in; in water a fish bites after 5 to
+                          30 seconds (less with Lure), the bobber dips, and a
+                          reel then lands a fish, junk or treasure, and 1 to 6
+                          experience
+     ominous bottle       drunk: Bad Omen for 100 minutes
+
+   useExtra(manager, itemName, target, take, build) is the manager's last
+   try at a right click (entities/manager.js useHeld).
+--------------------------------------------------------------------------- */
+import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=16';
+import { Projectile } from './projectiles.js?v=16';
+import { register, TYPES } from './mobs.js?v=16';
+import { model } from './mobs2.js?v=16';
+import { addArt } from './mobart.js?v=16';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=16';
+import { ITEMS, I, armorOf } from '../items.js?v=16';
+import { fireworkColour } from '../crafting.js?v=16';
+import { rayBox } from './terrain.js?v=16';
+const THREE = window.THREE;
+
+const PI = Math.PI;
+const R = () => Math.random();
+const RI = n => Math.floor(Math.random() * n);
+const POSE = 7, RX = 3, RY = 4, RZ = 5, SC = 6;
+const set = (P, i, k, v) => { if (i !== undefined) P[i * POSE + k] = v; };
+
+// the ominous bottle is drunk like a potion: Bad Omen (its level from the bottle) for 100 minutes
+if (I.ominous_bottle !== undefined && ITEMS[I.ominous_bottle]) ITEMS[I.ominous_bottle].food = { hunger: 0, saturation: 0, ticks: 32, always: true, drink: true, effects: [['bad_omen', 1, 6000, 1]], leaves: null };
+
+/* ---- thrown ---- */
+export class EnderPearl extends Projectile {
+  static MODEL = 'ball'; static TEX = 'ender_pearl';
+  hitEntity(e) {
+    const src = { type: 'thrown', attacker: this.owner, direct: this, x: this.pos.x - this.vel.x, z: this.pos.z - this.vel.z };
+    if (e.isPlayer) this.m.hurtPlayer(0.0001, src); else if (e.hurt) e.hurt(0.0001, src);
+    this.land(); return true;
+  }
+  hitBlock() { this.land(); }
+  land() {
+    if (this.removed) return;
+    const p = this.pos, m = this.m;
+    m.particles('magic', p.x, p.y, p.z, 32, 0.5, [0.55, 0.2, 0.75]);
+    if (this.owner === m.player && m.player.alive()) {
+      if (m.riding) m.dismount();
+      const P = m.P;
+      P.pos.set(p.x, p.y, p.z); P.prev.copy(P.pos); P.vel.set(0, 0, 0); P.fallDistance = 0;
+      m.hurtPlayer(5, { type: 'ender_pearl', noKnock: true });
+      if (R() < 0.05) m.spawn('endermite', p.x, p.y, p.z, { natural: false });
+    }
+    this.remove();
+  }
+}
+register('ender_pearl', EnderPearl);
+addArt('ender_pearl', [64, 32], p => { p.box(0, 0, 4, 4, 4, 0x1e5a52, 0.12); p.speckle(0, 0, 16, 8, 0x3a8a7a, 0.3); });
+export class ExpBottle extends Projectile {
+  static MODEL = 'ball'; static TEX = 'experience_bottle';
+  constructor(m, type) { super(m, type); this.gravity = 0.07; }
+  hitEntity() { this.smash(); return true; }
+  hitBlock() { this.smash(); }
+  smash() {
+    if (this.removed) return;
+    const p = this.pos;
+    this.m.particles('magic', p.x, p.y, p.z, 20, 0.4, [0.4, 0.6, 1]);
+    this.m.xpAt(p.x, p.y, p.z, 3 + RI(5) + RI(5));
+    this.remove();
+  }
+}
+register('experience_bottle', ExpBottle);
+addArt('experience_bottle', [64, 32], p => { p.box(0, 0, 4, 4, 4, 0x7ad87a, 0.1); p.speckle(0, 0, 16, 8, 0xd8f8a8, 0.2); });
+
+/* ---- fireworks ---- */
+export class FireworkRocket extends Entity {
+  static W = 0.25; static H = 0.25; static MODEL = 'firework_rocket'; static TEX = 'firework_rocket'; static BRIGHT = true;
+  constructor(m, type) { super(m, type); this.gravity = 0; this.life = 0; this.stack = null; this.boosting = null; }
+  init(stack) {
+    this.stack = stack;
+    const flight = (stack && stack.flight) || 1;
+    this.life = 10 * (1 + flight) + RI(6) + RI(7);
+    this.vel.set((R() - R()) * 0.0023, 0.05, (R() - R()) * 0.0023);
+  }
+  tick() {
+    this.prev.copy(this.pos); this.prevYaw = this.yaw; this.age++;
+    if (this.boosting) {
+      // carrying a gliding player along their look
+      const P = this.m.P, b = this.boosting;
+      if (!P.gliding) { this.burst(); return; }
+      const lx = -Math.sin(P.yaw) * Math.cos(P.pitch), ly = Math.sin(P.pitch), lz = -Math.cos(P.yaw) * Math.cos(P.pitch);
+      P.vel.x += lx * 0.1 + (lx * 1.5 - P.vel.x) * 0.5; P.vel.y += ly * 0.1 + (ly * 1.5 - P.vel.y) * 0.5; P.vel.z += lz * 0.1 + (lz * 1.5 - P.vel.z) * 0.5;
+      this.pos.set(P.pos.x, P.pos.y + 0.5, P.pos.z);
+      void b;
+    } else {
+      this.vel.x *= 1.15; this.vel.z *= 1.15; this.vel.y += 0.04;
+      this.move(this.vel.x, this.vel.y, this.vel.z);
+      if (this.hCollide || this.vCollide) { this.burst(); return; }
+    }
+    if (this.age % 2 === 0) this.m.particles('sparkle', this.pos.x, this.pos.y - 0.2, this.pos.z, 1, 0.05);
+    if (this.age > this.life) this.burst();
+  }
+  burst() {
+    if (this.removed) return;
+    const ex = (this.stack && this.stack.explosions) || [], p = this.pos;
+    for (const f of ex) {
+      const cols = (f.colors || ['white']).map(c => { const v = fireworkColour(c) || 0xffffff; return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]; });
+      const n = f.shape === 'large_ball' ? 60 : f.shape === 'small_ball' ? 30 : 40, spread = f.shape === 'large_ball' ? 3 : 1.6;
+      for (let i = 0; i < n; i += 4) this.m.particles('sparkle', p.x, p.y, p.z, 4, spread, cols[RI(cols.length)]);
+    }
+    if (!ex.length) this.m.particles('poof', p.x, p.y, p.z, 3, 0.2);
+    // stars hurt what is close: 5, and 2 more for each further star (within 5 blocks, seen)
+    if (ex.length) {
+      const dmg = 5 + ex.length * 2;
+      this.m.forNear(p.x, p.z, 5, e => { if (e !== this && e.hurt && !e.dead && e.dist2(p.x, p.y, p.z) <= 25) e.hurt(dmg * Math.sqrt((5 - Math.sqrt(e.dist2(p.x, p.y, p.z))) / 5), { type: 'fireworks', noKnock: true }); });
+      const P = this.m.player, d2 = P.dist2(p.x, p.y, p.z);
+      if (P.alive() && d2 <= 25) this.m.hurtPlayer(dmg * Math.sqrt((5 - Math.sqrt(d2)) / 5), { type: 'fireworks', noKnock: true });
+    }
+    this.remove();
+  }
+  toJSON() { const o = super.toJSON(); o.lf = this.life; if (this.stack) o.st = { flight: this.stack.flight, explosions: this.stack.explosions }; return o; }
+  fromJSON(o) { super.fromJSON(o); this.life = o.lf || 30; this.stack = o.st || null; }
+}
+register('firework_rocket', FireworkRocket);
+model('firework_rocket', [{ name: 'rocket', pivot: [0, 24, 0], boxes: [[-1, -8, -1, 2, 5, 2, 0, 0], [-0.5, -3, -0.5, 1, 5, 1, 8, 0], [-1.5, -10, -1.5, 3, 2, 3, 0, 8]] }]);
+addArt('firework_rocket', [64, 32], p => { p.box(0, 0, 2, 5, 2, 0xc83030, 0.06); p.fill(0, 4, 8, 1, 0xf0f0f0); p.box(8, 0, 1, 5, 1, 0x8a6a40, 0.06); p.box(0, 8, 3, 2, 3, 0xd8d8d8, 0.06); });
+
+/* ---- armor stand ---- */
+export class ArmorStand extends Living {
+  static W = 0.5; static H = 1.975; static HEALTH = 20; static MODEL = 'armor_stand'; static TEX = 'armor_stand'; static SHADOW = 0.5;
+  static NO_PUSH = true; static NO_FALL = true; static CATEGORY = 'misc';
+  constructor(m, type) { super(m, type); this.equip = {}; this.lastHit = -100; this.wobble = 0; }
+  tick() {
+    this.prev.copy(this.pos); this.prevBodyYaw = this.bodyYaw; this.prevHeadYaw = this.headYaw; this.prevYaw = this.yaw;
+    this.age++;
+    if (this.wobble > 0) this.wobble--;
+    // it falls, and stands where it lands
+    this.vel.y -= 0.08; this.vel.x = 0; this.vel.z = 0;
+    this.move(0, this.vel.y, 0);
+    if (this.onGround) this.vel.y = 0;
+    this.headYaw = this.bodyYaw = this.yaw;
+  }
+  hurt(amount, source) {
+    if (this.removed) return false;
+    if (source && (source.type === 'explosion' || source.type === 'fire' || source.type === 'lava')) { this.breakDown(true); return true; }
+    const byPlayer = source && (source.player || (source.attacker && source.attacker.isPlayer));
+    if (!byPlayer) return false;
+    // in creative one hit takes it away, nothing dropped; otherwise two within a quarter second
+    if (this.m.mode === 'creative') { this.remove(); this.m.particles('poof', this.pos.x, this.pos.y + 1, this.pos.z, 8, 0.3, [0.6, 0.45, 0.3]); return true; }
+    if (this.age - this.lastHit < 5) { this.breakDown(true); return true; }
+    this.lastHit = this.age; this.wobble = 10;
+    return true;
+  }
+  breakDown(drop) {
+    if (drop) { this.m.dropAt(this, 'armor_stand', 1); for (const k in this.equip) if (this.equip[k]) this.m.dropAt(this, this.equip[k], 1); }
+    this.m.particles('poof', this.pos.x, this.pos.y + 1, this.pos.z, 12, 0.3, [0.6, 0.45, 0.3]);
+    this.remove();
+  }
+  // armour on: into its slot (swapping); empty-handed: off again, the piece by where you clicked
+  interact(held, player) {
+    const a = held ? armorOf(I[held]) : null;
+    const slots = ['head', 'chest', 'legs', 'feet'];
+    if (a) {
+      const k = slots[a.slot], old = this.equip[k];
+      this.equip[k] = held;
+      if (old) this.m.dropItemAt(this.m.P.pos.x, this.m.P.pos.y + 1, this.m.P.pos.z, old, 1, false, true);
+      return 'consume';
+    }
+    if (held) { if (!this.equip.mainhand) { this.equip.mainhand = held; return 'consume'; } return false; }
+    const P = this.m.P, eyeY = P.pos.y + 1.62, dy = eyeY - this.pos.y;
+    const k = dy > 1.6 ? 'head' : dy > 0.9 ? 'chest' : dy > 0.4 ? 'legs' : 'feet';
+    const order = [k, 'head', 'chest', 'legs', 'feet', 'mainhand'];
+    for (const s of order) if (this.equip[s]) { const it = this.equip[s]; this.equip[s] = null; this.m.dropItemAt(P.pos.x, P.pos.y + 1, P.pos.z, it, 1, false, true); return 'swing'; }
+    return false;
+  }
+  anim(A) { A.wobble = this.wobble; }
+}
+register('armor_stand', ArmorStand);
+model('armor_stand', [
+  { name: 'head', pivot: [0, 1, 0], boxes: [[-1, -7, -1, 2, 7, 2, 0, 0]] },
+  { name: 'body', pivot: [0, 0, 0], boxes: [[-6, 0, -1.5, 12, 3, 3, 0, 26], [-3, 3, -1, 2, 7, 2, 16, 0], [1, 3, -1, 2, 7, 2, 48, 16], [-4, 10, -1, 8, 2, 2, 0, 48]] },
+  { name: 'rightArm', pivot: [-5, 2, 0], boxes: [] },
+  { name: 'leftArm', pivot: [5, 2, 0], boxes: [] },
+  { name: 'rightLeg', pivot: [-1.9, 12, 0], boxes: [[-1, 0, -1, 2, 11, 2, 8, 0]] },
+  { name: 'leftLeg', pivot: [1.9, 12, 0], boxes: [[-1, 0, -1, 2, 11, 2, 40, 16, 0, true]] },
+  { name: 'base', pivot: [0, 12, 0], boxes: [[-6, 11, -6, 12, 1, 12, 0, 32]] },
+], (m, P, A) => { if (A.wobble > 0) set(P, m.index.body, RY, Math.sin(A.wobble * 1.3) * 0.15); });
+addArt('armor_stand', [64, 64], p => {
+  const wood = 0xa8824e, dark = 0x7a5a32, stone = 0x9a9a9a;
+  p.clear(0, 0, 64, 64);
+  for (const [u, v, w, h, d] of [[0, 0, 2, 7, 2], [16, 0, 2, 7, 2], [48, 16, 2, 7, 2], [8, 0, 2, 11, 2], [40, 16, 2, 11, 2], [0, 26, 12, 3, 3], [0, 48, 8, 2, 2]]) { p.box(u, v, w, h, d, wood, 0.08); p.speckle(u, v, 2 * (w + d), h + d, dark, 0.15); }
+  p.box(0, 32, 12, 1, 12, stone, 0.06); p.speckle(0, 32, 48, 13, 0x7a7a7a, 0.2);
+});
+
+/* ---- paintings ---- */
+const PAINTINGS = [
+  ['kebab', 1, 1], ['aztec', 1, 1], ['alban', 1, 1], ['aztec2', 1, 1], ['bomb', 1, 1], ['plant', 1, 1], ['wasteland', 1, 1], ['meditative', 1, 1],
+  ['pool', 2, 1], ['courbet', 2, 1], ['sea', 2, 1], ['sunset', 2, 1], ['creebet', 2, 1],
+  ['wanderer', 1, 2], ['graham', 1, 2], ['prairie_ride', 1, 2],
+  ['match', 2, 2], ['bust', 2, 2], ['stage', 2, 2], ['void', 2, 2], ['skull_and_roses', 2, 2], ['wither', 2, 2], ['baroque', 2, 2], ['humble', 2, 2],
+  ['bouquet', 3, 3], ['cavebird', 3, 3], ['cotan', 3, 3], ['endboss', 3, 3], ['fern', 3, 3], ['owlemons', 3, 3], ['sunflowers', 3, 3], ['tides', 3, 3], ['dennis', 3, 3],
+  ['backyard', 3, 4], ['pond', 3, 4],
+  ['fighters', 4, 2], ['changing', 4, 2], ['finding', 4, 2], ['lowmist', 4, 2], ['passage', 4, 2],
+  ['skeleton', 4, 3], ['donkey_kong', 4, 3],
+  ['pointer', 4, 4], ['pigscene', 4, 4], ['burning_skull', 4, 4], ['orb', 4, 4], ['unpacked', 4, 4],
+];
+/* Each picture our own, from the name's seed: one of four scenes (rolling
+   hills by day, a sea at sunset, a night with a moon and stars, a few bold
+   shapes), in flat bands of colour with a pixel of grain, a sun or moon,
+   trees or figures, and a dark frame. */
+const SCENES = [
+  { sky: [0x7ab0e0, 0xb8d8f0], far: 0x6a9a5a, near: 0x4a7a3a, ground: 0x8a6a40, sun: 0xf8e8a0 },
+  { sky: [0xd8784a, 0xf0c070], far: 0x3a5a8a, near: 0x2a4a7a, ground: 0x1a3a6a, sun: 0xf8d060 },
+  { sky: [0x1a1a3a, 0x3a3a6a], far: 0x2a3a4a, near: 0x1e2a36, ground: 0x141c24, sun: 0xe8e8f0 },
+  { sky: [0xe8dcc0, 0xd8c8a0], far: 0xa84a3a, near: 0x3a5a8a, ground: 0x2a2a2a, sun: 0xf0b030 },
+];
+function paintPicture(p, name, w, h) {
+  const W = w * 16, H = h * 16;
+  let seed = 7; for (const c of name) seed = (seed * 31 + c.charCodeAt(0)) >>> 0;
+  const rnd = () => { seed ^= seed << 13; seed >>>= 0; seed ^= seed >>> 17; seed ^= seed << 5; seed >>>= 0; return seed / 4294967296; };
+  const k0 = rnd(), kind = k0 < 0.4 ? 0 : k0 < 0.65 ? 1 : k0 < 0.85 ? 2 : 3, S = SCENES[kind];
+  const grain = (c, x, y) => p.shade(c, ((x * 7 + y * 13 + seed) % 5) === 0 ? 0.94 : 1);
+  const mix = (a, b, t) => { const A = [(a >> 16) & 255, (a >> 8) & 255, a & 255], Bc = [(b >> 16) & 255, (b >> 8) & 255, b & 255]; return A.map((v, i) => Math.round(v + (Bc[i] - v) * t)); };
+  // the sky, in four bands from top to bottom
+  for (let y = 0; y < H; y++) { const c = mix(S.sky[0], S.sky[1], Math.floor(y / H * 4) / 3); for (let x = 0; x < W; x++) p.px(x, y, c); }
+  const ph1 = rnd() * 6, ph2 = rnd() * 6, f1 = 1 + Math.floor(rnd() * 2), f2 = 2 + Math.floor(rnd() * 2);
+  if (kind === 3) {
+    // bold shapes: a big disc, a slab, a bar
+    const r = Math.floor(Math.min(W, H) * 0.28), cx = Math.floor(W * (0.3 + rnd() * 0.4)), cy = Math.floor(H * 0.4);
+    for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r) p.px(cx + x, cy + y, S.far);
+    p.fill(Math.floor(W * 0.1), Math.floor(H * 0.62), Math.floor(W * 0.8), Math.max(2, Math.floor(H * 0.12)), S.near);
+    p.fill(Math.floor(W * (0.15 + rnd() * 0.5)), Math.floor(H * 0.2), Math.max(2, Math.floor(W * 0.08)), Math.floor(H * 0.65), S.ground);
+  } else {
+    // the sun (or moon), then far and near hills (a flat sea for the sunset) and the ground
+    const r = Math.max(2, Math.floor(Math.min(W, H) / 7)), sx = Math.floor(W * (0.2 + rnd() * 0.6)), sy = Math.floor(H * (0.15 + rnd() * 0.15));
+    for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r) p.px(sx + x, sy + y, S.sun);
+    if (kind === 2) for (let k = 0; k < w * h * 3; k++) p.px(Math.floor(rnd() * W), Math.floor(rnd() * H * 0.5), 0xf0f0f8);
+    for (let x = 0; x < W; x++) {
+      const t = x / W;
+      const far = kind === 1 ? Math.floor(H * 0.55) : Math.floor(H * (0.5 + 0.08 * Math.sin(t * PI * f1 + ph1)));
+      const near = Math.floor(H * (0.66 + 0.07 * Math.sin(t * PI * f2 + ph2)));
+      for (let y = far; y < H; y++) p.px(x, y, grain(y >= near ? (y >= H - Math.max(2, Math.floor(H / 8)) ? S.ground : S.near) : S.far, x, y));
+      if (kind === 1 && x % 4 === Math.floor(ph1) % 4) p.px(x, far + 2 + (x % 3), 0x8ab0d8);
+    }
+    // trees on the hills (day and night), each a trunk and a round top
+    if (kind !== 1) for (let k = 0; k < w * h; k++) {
+      const tx = 2 + Math.floor(rnd() * (W - 5)), base = Math.floor(H * (0.66 + 0.07 * Math.sin(tx / W * PI * f2 + ph2)));
+      p.fill(tx + 1, base - 4, 1, 4, 0x4a3420);
+      p.fill(tx, base - 7, 3, 3, kind === 2 ? 0x1a2a1a : 0x2a5a2a);
+    }
+  }
+  // the frame round the edge
+  for (let x = 0; x < W; x++) { p.px(x, 0, 0x5a3a20); p.px(x, H - 1, 0x4a2e18); }
+  for (let y = 0; y < H; y++) { p.px(0, y, 0x5a3a20); p.px(W - 1, y, 0x4a2e18); }
+}
+const sizes = new Set(PAINTINGS.map(([, w, h]) => w + 'x' + h));
+for (const s of sizes) {
+  const [w, h] = s.split('x').map(Number), W = w * 16, H = h * 16;
+  // the back: a wooden board a pixel thick; the picture: a plane on its front
+  model('painting_' + s, [{ name: 'board', pivot: [0, 24, 0], boxes: [[-W / 2, -H, 0, W, H, 1, 0, 0]] }]);
+  model('painting_' + s + '_face', [{ name: 'board', pivot: [0, 24, 0], boxes: [[-W / 2, -H, -0.01, W, H, 0, 0, 0]] }]);
+}
+addArt('painting_back', [64, 64], p => { p.fill(0, 0, 64, 64, 0x8a6a40, 0.1); for (let y = 0; y < 64; y += 4) p.fill(0, y, 64, 1, 0x6a4e2e); });
+for (const [n, w, h] of PAINTINGS) addArt('painting_' + n, [Math.max(64, w * 32), Math.max(64, h * 16)], p => { p.clear(0, 0, w * 32, h * 16); paintPicture(p, n, w, h); });
+export class Painting extends Entity {
+  static W = 1; static H = 1; static TEX = 'painting_back'; static NO_PUSH = true; static SHADOW = 0;
+  constructor(m, type) { super(m, type); this.variant = 'kebab'; this.face = [0, 0, -1]; this.block = null; this.gravity = 0; this.checkT = 0; }
+  get size() { const v = PAINTINGS.find(e => e[0] === this.variant) || PAINTINGS[0]; return v[1] + 'x' + v[2]; }
+  modelName() { return 'painting_' + this.size; }
+  // hung: its box is a thin slab against the wall (w x h, 1/16 deep)
+  setOn(bx, by, bz, face, variant) {
+    this.variant = variant; this.face = face; this.block = [bx, by, bz];
+    const v = PAINTINGS.find(e => e[0] === variant), w = v[1], h = v[2];
+    // facing out of the wall (a mob's yaw: its front is (-sin, -cos))
+    this.yaw = this.prevYaw = Math.atan2(-face[0], -face[2]);
+    // the middle of the wall the picture covers, off its face by half a pixel
+    const ox = (w % 2 === 0 ? 0.5 : 0), oy = (h % 2 === 0 ? 0.5 : 0);
+    const rx = -face[2], rz = face[0];          // the wall's "right" as you face it
+    const cx = bx + 0.5 + face[0] * 0.5625 + rx * ox, cz = bz + 0.5 + face[2] * 0.5625 + rz * ox;
+    this.setPos(cx, by + 0.5 - h / 2 + oy, cz);
+    const thin = 1 / 16;
+    this.w = Math.abs(face[0]) ? thin : w; this.hw = Math.max(this.w, Math.abs(face[0]) ? w : thin) / 2; this.h = h;
+    return this;
+  }
+  tick() {
+    this.prev.copy(this.pos); this.age++;
+    // the wall behind gone: it drops
+    if (++this.checkT >= 20 && this.block) {
+      this.checkT = 0;
+      const [x, y, z] = this.block;
+      if (!SOLID[this.m.t.get(x, y, z)]) { this.m.dropAt(this, 'painting', 1); this.remove(); }
+    }
+  }
+  hurt(amount, source) {
+    if (this.removed) return false;
+    if (this.m.mode !== 'creative' || !(source && source.player)) this.m.dropAt(this, 'painting', 1);
+    this.remove();
+    return true;
+  }
+  layers(out) { out.push(['painting_' + this.size + '_face', 'painting_' + this.variant, null, false, true]); }
+  toJSON() { const o = super.toJSON(); o.vr = this.variant; o.fc = this.face; o.bl = this.block; return o; }
+  fromJSON(o) { super.fromJSON(o); if (o.vr && o.fc && o.bl) this.setOn(o.bl[0], o.bl[1], o.bl[2], o.fc, o.vr); }
+}
+Painting.MODEL = 'painting_1x1';
+register('painting', Painting);
+// the biggest pictures that fit on the wall at (x, y, z) facing out of face: a solid wall behind, nothing in front
+function paintingFits(m, x, y, z, face, w, h) {
+  const T = m.t, rx = -face[2], rz = face[0];
+  const x0 = -Math.floor((w - 1) / 2), y0 = -Math.floor((h - 1) / 2);
+  for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) {
+    const ax = x + rx * (x0 + i), ay = y + y0 + j, az = z + rz * (x0 + i);
+    if (!SOLID[T.get(ax, ay, az)]) return false;
+    const b = T.get(ax + face[0], ay, az + face[2]);
+    if (b && (SOLID[b] || FLUID[b])) return false;
+  }
+  // no other painting there already
+  let clash = false;
+  m.forNear(x + 0.5, z + 0.5, 4, e => { if (e.type === 'painting' && !e.removed && e.face && e.face[0] === face[0] && e.face[2] === face[2] && Math.abs(e.pos.y - (y + 0.5)) < (h + e.h) / 2 && Math.hypot(e.pos.x - (x + 0.5 + face[0] * 0.53), e.pos.z - (z + 0.5 + face[2] * 0.53)) < (w + 1) / 2) clash = true; });
+  return !clash;
+}
+
+/* ---- the fishing rod ---- */
+const FISH = [['cod', 60], ['salmon', 25], ['tropical_fish', 2], ['pufferfish', 13]];
+const JUNK = [['lily_pad', 17], ['leather_boots', 10], ['leather', 10], ['bone', 10], ['potion', 10], ['string', 5], ['fishing_rod', 2], ['bowl', 10], ['stick', 5], ['ink_sac', 1], ['tripwire_hook', 10], ['rotten_flesh', 10], ['bamboo', 10]];
+const TREASURE = [['name_tag', 1], ['saddle', 1], ['bow', 1], ['fishing_rod', 1], ['enchanted_book', 1], ['nautilus_shell', 1]];
+const pickW = list => { let t = 0; for (const [, w] of list) t += w; let r = R() * t; for (const [n, w] of list) { if (r < w) return n; r -= w; } return list[0][0]; };
+export class FishingBobber extends Projectile {
+  static W = 0.25; static H = 0.25; static MODEL = 'bobber'; static TEX = 'bobber';
+  constructor(m, type) {
+    super(m, type); this.gravity = 0.03; this.drag = 0.92; this.wait = 0; this.bite = 0; this.hooked = null; this.inWaterT = 0; this.lure = 0; this.luck = 0; this.stuckBlock = false;
+    this.line = null;
+  }
+  tick() {
+    const T = this.m.t, p = this.pos;
+    const water = FLUID[T.get(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z))] === 1;
+    if (this.hooked) {
+      const h = this.hooked;
+      if (h.removed || h.dead) this.hooked = null;
+      else { this.prev.copy(p); p.set(h.pos.x, h.pos.y + h.h * 0.8, h.pos.z); this.age++; this.lineTick(); return; }
+    }
+    if (water) {
+      // floating at the surface, bobbing; the wait for a bite, then a dip
+      this.prev.copy(p); this.age++;
+      const top = Math.floor(p.y) + 0.9;
+      this.vel.x *= 0.9; this.vel.z *= 0.9;
+      this.vel.y += (top - p.y) * 0.1 - this.vel.y * 0.3;
+      if (this.bite > 0) { this.vel.y -= 0.1; this.bite--; if (this.bite === 0) this.wait = this.newWait(); }
+      p.add(this.vel);
+      if (this.wait <= 0) this.wait = this.newWait();
+      else if (--this.wait === 0) { this.bite = 20 + RI(21); this.m.particles('splash', p.x, p.y, p.z, 6, 0.2); }
+      else if (this.wait < 40 && this.age % 3 === 0) this.m.particles('bubble', p.x + (R() - 0.5) * 1.5, p.y, p.z + (R() - 0.5) * 1.5, 1, 0.1);
+      this.lineTick();
+      return;
+    }
+    if (this.stuckBlock) { this.prev.copy(p); this.lineTick(); return; }
+    super.tick();
+    this.lineTick();
+    if (this.age > 1200) this.gone();
+  }
+  newWait() { return Math.max(20, (100 + RI(500)) - this.lure * 100); }
+  hitEntity(e) { if (e.isPlayer) return false; this.hooked = e; this.vel.set(0, 0, 0); return true; }
+  hitBlock() { this.stuckBlock = true; this.vel.set(0, 0, 0); }
+  // reeling in: a fish if one is biting, the hooked mob pulled, else nothing; the rod's wear
+  reel() {
+    const m = this.m, P = m.P, p = this.pos;
+    let wear = 0;
+    if (this.hooked) {
+      const h = this.hooked, dx = P.pos.x - h.pos.x, dy = P.pos.y - h.pos.y, dz = P.pos.z - h.pos.z;
+      if (h.vel) { h.vel.x += dx * 0.1; h.vel.y += dy * 0.1 + Math.sqrt(Math.hypot(dx, dy, dz)) * 0.08; h.vel.z += dz * 0.1; }
+      wear = 5;
+    } else if (this.bite > 0) {
+      const r = R(), luck = this.luck;
+      const name = r < 0.05 + luck * 0.021 ? pickW(TREASURE) : r < 0.15 + luck * 0.021 - luck * 0.019 ? pickW(JUNK) : pickW(FISH);
+      // what was caught comes out of the water at the bobber
+      m.dropItemAt(p.x, p.y + 0.5, p.z, name, 1, false, true);
+      m.xpAt(P.pos.x, P.pos.y + 0.5, P.pos.z + 0.5, 1 + RI(6));
+      wear = 1;
+    } else if (this.stuckBlock) wear = 2;
+    this.gone();
+    return wear;
+  }
+  gone() { this.remove(); if (this.line) { if (this.line.parent) this.line.parent.remove(this.line); this.line.geometry.dispose(); this.line = null; } if (this.m.bobber === this) this.m.bobber = null; }
+  // the line: from the rod's tip (in front of the player's right hand) to the bobber
+  lineTick() {
+    const m = this.m, P = m.P;
+    if (!this.line) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(3 * 9), 3));
+      this.line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x1a1a1a }));
+      this.line.frustumCulled = false;
+      if (m.group) m.group.add(this.line);
+    }
+    // too far, or the rod put away: in it comes
+    if (P && (this.dist2(P.pos.x, P.pos.y, P.pos.z) > 32 * 32 || m.heldName() !== 'fishing_rod')) { this.gone(); return; }
+    const a = this.line.geometry.attributes.position.array, s = Math.sin(P.yaw), c = Math.cos(P.yaw);
+    const hx = P.pos.x - c * 0.35 - s * 0.8, hy = P.pos.y + 1.62 + 0.25, hz = P.pos.z + s * 0.35 - c * 0.8;
+    for (let i = 0; i < 9; i++) {
+      const t = i / 8, sag = Math.sin(t * PI) * 0.3;
+      a[i * 3] = hx + (this.pos.x - hx) * t; a[i * 3 + 1] = hy + (this.pos.y + 0.1 - hy) * t - sag; a[i * 3 + 2] = hz + (this.pos.z - hz) * t;
+    }
+    this.line.geometry.attributes.position.needsUpdate = true;
+  }
+  remove() { super.remove(); if (this.line && this.line.parent) { this.line.parent.remove(this.line); this.line.geometry.dispose(); this.line = null; } }
+}
+register('fishing_bobber', FishingBobber);
+model('bobber', [{ name: 'b', pivot: [0, 24, 0], boxes: [[-1.5, -3, -1.5, 3, 3, 3, 0, 0], [-0.5, -5, -0.5, 1, 2, 1, 12, 0]] }]);
+addArt('bobber', [64, 32], p => { p.box(0, 0, 3, 3, 3, { all: 0xd83030, bottom: 0xf0f0f0 }, 0.05); p.fill(0, 4, 12, 2, 0xf0f0f0); p.box(12, 0, 1, 2, 1, 0x3a3a3a, 0.05); });
+
+/* ---- the right click ---- */
+const enchOf = (st, k) => (st && st.ench && st.ench[k]) || 0;
+export function useExtra(m, name, target, take, build) {
+  const P = m.P, eye = m.lookEye, dir = m.lookDir;
+  if (!eye || !dir) return false;
+  const throwIt = (type, speed, up) => {
+    const e = m.spawn(type, eye.x, eye.y - 0.1, eye.z, { natural: false });
+    if (!e) return null;
+    e.owner = m.player;
+    if (up) { const yaw = P.yaw, c = Math.cos(P.pitch); e.shoot(-Math.sin(yaw) * c, Math.sin(P.pitch + up * DEG), -Math.cos(yaw) * c, speed, 1); }
+    else e.shoot(dir.x, dir.y, dir.z, speed, 1);
+    e.vel.x += P.vel.x; e.vel.z += P.vel.z; if (!P.onGround) e.vel.y += P.vel.y;
+    return e;
+  };
+  if (name === 'ender_pearl') {
+    if ((m.pearlCool || 0) > m.age) return true;
+    if (throwIt('ender_pearl', 1.5, 0)) { take(); m.pearlCool = m.age + 20; }
+    return true;
+  }
+  if (name === 'experience_bottle') { if (throwIt('experience_bottle', 0.7, 20)) take(); return true; }
+  if (name === 'wind_charge') {
+    if ((m.windCool || 0) > m.age) return true;
+    if (throwIt('wind_charge', 1.5, 0)) { take(); m.windCool = m.age + 10; }
+    return true;
+  }
+  if (name === 'blue_egg' || name === 'brown_egg') { if (throwIt('egg', 1.5, 0)) take(); return true; }
+  if (name === 'firework_rocket') {
+    const st = m.inv && m.inv.slots[m.inv.selected];
+    if (P.gliding) {
+      const e = m.spawn('firework_rocket', P.pos.x, P.pos.y + 0.5, P.pos.z, { natural: false });
+      if (e) { e.init(st); e.boosting = true; take(); }
+      return true;
+    }
+    if (!target || !target.face || !build) return false;
+    const f = target.face, x = target.hit ? target.hit[0] : target.x + 0.5 + f[0] * 0.5, y = target.hit ? target.hit[1] : target.y + 0.5 + f[1] * 0.5, z = target.hit ? target.hit[2] : target.z + 0.5 + f[2] * 0.5;
+    const e = m.spawn('firework_rocket', x + f[0] * 0.15, y + f[1] * 0.15, z + f[2] * 0.15, { natural: false });
+    if (e) { e.init(st); take(); }
+    return true;
+  }
+  if (name === 'armor_stand') {
+    if (!target || !target.face || !build) return false;
+    const f = target.face, x = target.x + f[0], y = target.y + f[1], z = target.z + f[2], T = m.t;
+    if (T.solid(x, y, z) || T.solid(x, y + 1, z)) return false;
+    const e = m.spawn('armor_stand', x + 0.5, y, z + 0.5, { natural: false });
+    if (e) {
+      // facing you, to the nearest eighth of a turn
+      const yaw = Math.round((P.yaw + PI) / (PI / 4)) * (PI / 4);
+      e.yaw = e.prevYaw = e.bodyYaw = e.prevBodyYaw = e.headYaw = e.prevHeadYaw = yaw;
+      e.persistent = true;
+      take();
+    }
+    return true;
+  }
+  if (name === 'painting') {
+    if (!target || !target.face || !build || target.face[1] !== 0) return false;
+    const f = target.face;
+    // the largest pictures that fit, one of them at random
+    let best = 0, fits = [];
+    for (const v of PAINTINGS) {
+      const area = v[1] * v[2];
+      if (area < best) continue;
+      if (!paintingFits(m, target.x, target.y, target.z, f, v[1], v[2])) continue;
+      if (area > best) { best = area; fits = []; }
+      fits.push(v);
+    }
+    if (!fits.length) return false;
+    const v = fits[RI(fits.length)];
+    const e = m.spawn('painting', target.x, target.y, target.z, { natural: false });
+    if (e) { e.setOn(target.x, target.y, target.z, f, v[0]); e.persistent = true; take(); }
+    return true;
+  }
+  if (name === 'fishing_rod') {
+    const st = m.inv && m.inv.slots[m.inv.selected];
+    if (m.bobber && !m.bobber.removed) {
+      const wear = m.bobber.reel();
+      if (wear && m.mode !== 'creative') m.damageHeld(wear);
+      m.bobber = null;
+      return true;
+    }
+    const b = throwIt('fishing_bobber', 0.6 + R() * 0.2, 0);
+    if (b) { b.lure = enchOf(st, 'lure'); b.luck = enchOf(st, 'luck_of_the_sea'); m.bobber = b; }
+    return true;
+  }
+  return false;
+}

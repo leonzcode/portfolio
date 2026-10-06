@@ -169,7 +169,8 @@ export class Interactor {
   // one right click with what is in the hand (hands.js swaps the off hand in for its turn); true when it did something
   useWith() {
     // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities); on a block, only once the block has had its say
-    const makes = () => !!(this.entities && !this.entityTarget && this.entities.useHeld(this.target));
+    // (looking at a mob that did nothing with the click, the item is still used, as in the game: a pearl is thrown)
+    const makes = () => !!(this.entities && this.entities.useHeld(this.target));
     const h = this.target;
     // at nothing: an item that is thrown (an eye of ender), or one that works by itself (eating, armour, a bucket)
     if (!h || !h.face) {

@@ -53,6 +53,7 @@ import { DIMS } from '../dims.js?v=16';
 import { armorLayers } from './armorlayer.js?v=16';
 import { MobHeld } from '../render/mobheld.js?v=16';
 import { setSpawnerMob } from '../struct/spawners.js?v=16';
+import { useExtra } from './items2.js?v=16';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -797,7 +798,8 @@ export class Entities {
       take();
       return true;
     }
-    return false;
+    // pearls, bottles o' enchanting, wind charges, fireworks, armor stands, paintings, the fishing rod (entities/items2.js)
+    return useExtra(this, name, target, take, build);
   }
   /* The player's bow, for the items module: drawn for so many ticks, an
      arrow at 3 x power (power = (f^2 + 2f) / 3 of f = ticks / 20, at most 1),
