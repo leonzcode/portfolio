@@ -18,6 +18,7 @@ export function lookFacing(yaw) {
   return Math.abs(fx) > Math.abs(fz) ? (fx > 0 ? 1 : 3) : (fz > 0 ? 2 : 0);
 }
 const faceOf = n => (n[0] === 1 ? 0 : n[0] === -1 ? 1 : n[1] === 1 ? 2 : n[1] === -1 ? 3 : n[2] === 1 ? 4 : 5);
+const HANGS = /^(weeping_vines|spore_blossom|hanging_roots|pale_hanging_moss|cave_vines)$/;
 const horizOf = n => (n[2] === -1 ? 0 : n[0] === 1 ? 1 : n[2] === 1 ? 2 : 3);
 // the wall-hung version of a block (torch -> wall_torch, oak_sign -> oak_wall_sign...)
 function wallVariant(name) {
@@ -74,6 +75,11 @@ export function placement(world, hit, id, player) {
   const solidBelow = below && BLOCKS[below].solid;
   const support = faceOf([-n[0], -n[1], -n[2]]);       // the face of the new cell that touches what was clicked
   let m = 0;
+  // cocoa: on the side of a jungle log only, facing it (as the trees grow it, gen/trees.js)
+  if (d.name === 'cocoa') {
+    if (n[1] !== 0 || !/^(stripped_)?jungle_(log|wood)$/.test(hd.name)) return out;
+    return [[x, y, z, id, horizOf([-n[0], 0, -n[2]])]];
+  }
   switch (d.shape) {
     case 'slab': m = upperHalf && !/campfire$/.test(d.name) ? 1 : 0; break;
     case 'stairs': m = look | (upperHalf ? 4 : 0); break;
@@ -138,6 +144,8 @@ export function placement(world, hit, id, player) {
     case 'rod': m = n[1] === 1 ? 4 : n[1] === -1 ? 5 : horizOf(n); break;
     case 'chain': m = n[0] ? 1 : n[2] ? 2 : 0; break;
     case 'cross': case 'crop': case 'rail': case 'wire': case 'plate': case 'pot': case 'candle': case 'cake':
+      // (what hangs, from a block above: sim/farming.js says what may hold it)
+      if (HANGS.test(d.name)) { if (n[1] === 1) return out; break; }
       if (!solidBelow) return out;
       // (a tall crop, the pitcher pod's, starts a single block: its top half grows later)
       if (d.tall && d.shape !== 'crop') {

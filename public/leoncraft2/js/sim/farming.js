@@ -97,6 +97,23 @@ export function installFarming(sim) {
       if (d.name === 'nether_wart' && below !== B.soul_sand) return [];
       if (SAPLINGS.test(d.name) && !(isDirt(below) || below === B.farmland || (d.name === 'bamboo' && (below === B.bamboo || below === B.sand || below === B.gravel || below === B.red_sand)))) return [];
       if (d.name === 'cactus' && !(below === B.sand || below === B.red_sand || below === B.cactus)) return [];
+      // (the game's canSurvive) what hangs needs something above it: weeping vines, spore blossoms, hanging roots,
+      // pale hanging moss (also under leaves); twisting vines something below; sea grass and kelp water to stand in;
+      // big dripleaf its ground, small dripleaf clay or moss (or, under water, dirt); chorus end stone or chorus
+      const above = sim.get(x, y + 1, z), here = sim.get(x, y, z);
+      const sturdy = b => !!b && !!BLOCKS[b] && !!BLOCKS[b].solid && BLOCKS[b].shape === 'cube';
+      const n = d.name;
+      if (/^(weeping_vines|spore_blossom|hanging_roots|pale_hanging_moss)$/.test(n) && !(sturdy(above) || above === id || nm(above) === n + '_plant'
+        || (n === 'pale_hanging_moss' && /_leaves$/.test(nm(above))))) return [];
+      if (n === 'twisting_vines' && !(sturdy(below) || below === id || nm(below) === 'twisting_vines_plant')) return [];
+      if (/^(seagrass|tall_seagrass|kelp)$/.test(n) && !(FLUID[here] === 1 && (sturdy(below) || below === id || nm(below) === 'kelp_plant'))) return [];
+      if (n === 'big_dripleaf' && !(/^(clay|dirt|coarse_dirt|grass_block|farmland|moss_block|pale_moss_block|mud|muddy_mangrove_roots|mycelium|podzol|rooted_dirt)$/.test(nm(below)) || /^big_dripleaf/.test(nm(below)))) return [];
+      if (n === 'small_dripleaf' && !(/^(clay|moss_block)$/.test(nm(below)) || (FLUID[here] === 1 && (isDirt(below) || below === B.farmland)))) return [];
+      if ((n === 'chorus_plant' || n === 'chorus_flower') && !(below === B.end_stone || below === B.chorus_plant)) return [];
+      // a vine holds on to a full block beside it or above it; cocoa grows only on the side of a jungle log
+      const sides = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, c]) => sim.get(x + a, y, z + c));
+      if (n === 'vine' && !(sides.some(sturdy) || sturdy(above))) return [];
+      if (n === 'cocoa' && !sides.some(b => /^(stripped_)?jungle_(log|wood)$/.test(nm(b)))) return [];
       // flowers, grass and the rest of the ground plants want soil under them, as the game's mayPlaceOn says
       const soil = SOIL(d.name);
       if (soil && !list.some(e => e[0] === x && e[1] === y - 1 && e[2] === z) && !soil(below, x, y, z)) return [];

@@ -356,6 +356,9 @@ export class Hands {
   useItem(hit) {
     const s = this.held;
     if (!s) return false;
+    // a lily pad or frogspawn goes on the water looked at, never on a block (the game's place-on-water items)
+    const pad = BLOCKS[blockOf(s.id)];
+    if (pad && pad.shape === 'pad') return this.placeOnWater(s, blockOf(s.id));
     const it = ITEMS[s.id];
     if (!it) return false;
     // bows, crossbows and tridents draw while the button is held (combat/combat.js)
@@ -580,6 +583,30 @@ export class Hands {
     return out;
   }
 
+  /* On the first still water along the look within reach (flowing water is
+     looked through, anything solid stops it): the block put on top of it,
+     if that cell is free. */
+  placeOnWater(s, block) {
+    if (!this.mayBuild) return false;
+    const p = this.player, w = this.world, eye = p.view(1).eye;
+    const dx = -Math.sin(p.yaw) * Math.cos(p.pitch), dy = Math.sin(p.pitch), dz = -Math.cos(p.yaw) * Math.cos(p.pitch);
+    const reach = this.creative ? 5 : 4.5;
+    for (let t = 0; t <= reach; t += 0.05) {
+      const x = Math.floor(eye.x + dx * t), y = Math.floor(eye.y + dy * t), z = Math.floor(eye.z + dz * t), b = w.get(x, y, z);
+      if (!b) continue;
+      if (FLUID[b] === 1) {
+        if (w.meta(x, y, z) & 15) continue;
+        const up = w.get(x, y + 1, z);
+        if (up && !(BLOCKS[up] && BLOCKS[up].replaceable && !FLUID[up])) return false;
+        w.set(x, y + 1, z, block || s.id, 0);
+        if (!this.creative) this.inv.takeSelected(1);
+        if (this.renderer) this.renderer.swing = 1;
+        return true;
+      }
+      if (BLOCKS[b].solid) return false;
+    }
+    return false;
+  }
   // the newest stack in the bundle in use thrown out ahead, as a dropped item is; false once it is empty
   dropFromBundle() {
     const s = this.usedStack(this.using);
