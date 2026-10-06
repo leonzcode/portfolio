@@ -460,7 +460,32 @@ export class VanillaGen {
     }
     let top = 0;
     for (let i = VOL - 1; i >= 0; i--) if (blocks[i]) { top = i >> 8; break; }
-    return { blocks, meta, biome, top };
+    // what the structures built into this chunk left for the game (chests, spawners...), when they are built here
+    return { blocks, meta, biome, top, structs: this.structureHook ? p.structs : undefined };
+  }
+  /* Structures are built into the terrain before any feature, as the game
+     builds them before its ores, trees and plants (struct/hook.js hands the
+     drawing over): a feature of any chunk around then finds the house, the
+     path or the corridor already there. The few features the game places
+     before its structures (lakes, geodes, icebergs: the first three steps)
+     leave the blocks a structure wrote alone, as the structure would have
+     built over them. */
+  useStructures(draw) {
+    this.structureHook = draw;
+    this.protoCache.clear(); this.writeCache.clear();
+  }
+  // whether any water or lava of the bare terrain (before structures) lies in or right beside a box
+  fluidNear(x0, y0, z0, x1, y1, z1) {
+    y0 = Math.max(MIN_Y, y0 - 1); y1 = Math.min(MIN_Y + H - 1, y1 + 1);
+    for (let cz = Math.floor((z0 - 1) / 16); cz <= Math.floor((z1 + 1) / 16); cz++) for (let cx = Math.floor((x0 - 1) / 16); cx <= Math.floor((x1 + 1) / 16); cx++) {
+      const f = this.rawProto(cx, cz).fluid;
+      const ax = Math.max(x0 - 1, cx * 16), bx = Math.min(x1 + 1, cx * 16 + 15), az = Math.max(z0 - 1, cz * 16), bz = Math.min(z1 + 1, cz * 16 + 15);
+      for (let y = y0; y <= y1; y++) for (let z = az; z <= bz; z++) for (let x = ax; x <= bx; x++) {
+        const i = ((y - MIN_Y) << 8) | ((z & 15) << 4) | (x & 15);
+        if (f[i >> 3] & (1 << (i & 7))) return true;
+      }
+    }
+    return false;
   }
   /* Every plant a feature put down (or that stands on a block a feature
      changed) that has lost what it needs, taken away: back to air, or to
@@ -503,7 +528,22 @@ export class VanillaGen {
     if (this.writeCache.size > this.writeMax) this.writeCache.delete(this.writeCache.keys().next().value);
     return w;
   }
+  // a chunk's terrain and carvers, with its structures built in (what the features see)
   proto(cx, cz) {
+    const p = this.rawProto(cx, cz);
+    if (!p.built) {
+      p.built = true;
+      if (this.structureHook) {
+        const mask = new Uint8Array(VOL);
+        p.structs = this.structureHook(p.blocks, p.meta, cx, cz, mask);
+        p.smask = mask;
+        p.heights = null;
+      }
+    }
+    return p;
+  }
+  // the same, perhaps before its structures are in (only its fluid map is read so)
+  rawProto(cx, cz) {
     const key = cx + ',' + cz;
     let p = this.protoCache.get(key);
     if (p) { this.protoCache.delete(key); this.protoCache.set(key, p); return p; }
@@ -552,7 +592,10 @@ export class VanillaGen {
     this.materials(blocks, meta, x0, z0, surfH, grid);
     // carvers
     if (this.decorator.carve) this.carvers.carve(blocks, meta, cx, cz, aq, grid);
-    return { blocks, meta, grid, cx, cz };
+    // where the water and lava are, one bit a block, before anything is built
+    const fluid = new Uint8Array(VOL >> 3);
+    for (let i = 0; i < VOL; i++) { const b = blocks[i]; if (b === WATER || b === LAVA) fluid[i >> 3] |= 1 << (i & 7); }
+    return { blocks, meta, grid, cx, cz, fluid, built: false };
   }
 
   /* ---- the material rules ---- */

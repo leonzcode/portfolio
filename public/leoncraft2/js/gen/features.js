@@ -513,7 +513,7 @@ export class Region {
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const p = gen.proto(cx + dx, cz + dz);
       this.protos.push(p);
-      this.chunks.push({ blocks: p.blocks, meta: p.meta, own: false, writes: null });
+      this.chunks.push({ blocks: p.blocks, meta: p.meta, own: false, writes: null, smask: p.smask || null });
     }
     // heightmaps over the 48 x 48 columns: first free y (world y), from each
     // chunk's own (worked out once per chunk)
@@ -543,8 +543,10 @@ export class Region {
     const lx = x - this.x0, lz = z - this.z0;
     if (lx < 0 || lx >= 48 || lz < 0 || lz >= 48 || y < MIN_Y || y > MAX_Y) return false;
     const c = this.chunks[(lz >> 4) * 3 + (lx >> 4)];
-    if (!c.own) { c.blocks = c.blocks.slice(); c.meta = c.meta.slice(); c.own = true; c.writes = new Map(); }
     const i = ((y - MIN_Y) << 8) | ((lz & 15) << 4) | (lx & 15);
+    // the features the game places before its structures leave a structure's blocks as they are
+    if (this.early && c.smask && c.smask[i]) return false;
+    if (!c.own) { c.blocks = c.blocks.slice(); c.meta = c.meta.slice(); c.own = true; c.writes = new Map(); }
     c.blocks[i] = id; c.meta[i] = meta;
     c.writes.set(i, id * 256 + meta);
     // the heightmaps that change as features place blocks
@@ -1021,8 +1023,10 @@ FEATURES.spring_feature = (D, c, r, x, y, z) => {
     if (n.startsWith('#')) { const s = tag(n.slice(1)); for (let i = 0; i < 4096; i++) if (s[i]) valid[i] = 1; }
     else if (B[n] !== undefined) valid[B[n]] = 1;
   }
+  // the game's defaults when the data leaves them out: a block below, four rock sides and one way out
+  const needBelow = c.requires_block_below ?? true, rocks = c.rock_count ?? 4, holes = c.hole_count ?? 1;
   if (!valid[R.get(x, y + 1, z)]) return false;
-  if (c.requires_block_below && !valid[R.get(x, y - 1, z)]) return false;
+  if (needBelow && !valid[R.get(x, y - 1, z)]) return false;
   const here = R.get(x, y, z);
   if (!isAirId(here) && !valid[here]) return false;
   let rock = 0, hole = 0;
@@ -1031,13 +1035,150 @@ FEATURES.spring_feature = (D, c, r, x, y, z) => {
     if (valid[b]) rock++;
     if (isAirId(b)) hole++;
   }
-  if (rock === c.rock_count && hole === c.hole_count) {
+  if (rock === rocks && hole === holes) {
     const fl = strip((c.state && (c.state.Name || c.state.id)) || 'water');
-    R.set(x, y, z, fl.includes('lava') ? B.lava : B.water, 0);
+    const kind = fl.includes('lava') ? 2 : 1;
+    R.set(x, y, z, kind === 2 ? B.lava : B.water, 0);
+    // the game ticks a new spring at once, so it has run out over the rock by the time anyone sees it
+    flowOut(R, x, y, z, kind);
     return true;
   }
   return false;
 };
+
+/* A fluid running out of a new source until it settles, by the rules the
+   game's own water and lava follow (fluids.js): pour down where it can,
+   else spread sideways towards the nearest way down within reach (4 blocks
+   for water, 2 for lava), one level less each block (two for lava, which
+   stops after three). What it settles to is what fluids.js would make, so
+   it stays as it is until something next to it changes. It never leaves the
+   region the chunk can write to. */
+const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const F_LEVEL = 7, F_FALLING = 8;
+/* The game ticks the water and lava its aquifers leave against a cave (and
+   every new spring) once a chunk is made, so by the time anyone sees them
+   they have run out over the rock: a cave lake with a cave beside it spills
+   in, rather than standing as a wall of water. The same here, for this
+   chunk's own still water and lava with open air under or beside it. */
+function runOut(R) {
+  const c = R.chunks[4], x0 = R.x0 + 16, z0 = R.z0 + 16;
+  const budget = { n: 20000 };
+  for (let i = 256; i < VOLI && budget.n > 0; i++) {
+    const b = c.blocks[i];
+    if ((b !== B.water && b !== B.lava) || c.meta[i] !== 0) continue;
+    const x = x0 + (i & 15), z = z0 + ((i >> 4) & 15), y = (i >> 8) + MIN_Y;
+    if (!isAirId(R.get(x, y - 1, z)) && !isAirId(R.get(x + 1, y, z)) && !isAirId(R.get(x - 1, y, z))
+      && !isAirId(R.get(x, y, z + 1)) && !isAirId(R.get(x, y, z - 1))) continue;
+    flowOut(R, x, y, z, b === B.water ? 1 : 2, budget);
+  }
+}
+function flowOut(R, sx, sy, sz, kind, budget) {
+  const FB = kind === 1 ? B.water : B.lava;
+  const drop = kind === 1 ? 1 : 2, reach = kind === 1 ? 4 : 2, max = kind === 1 ? 7 : 6;
+  const inside = (x, y, z) => R.inside(x, z) && y > MIN_Y && y <= MAX_Y;
+  const kindAt = (x, y, z) => fluidOf(R.get(x, y, z)) === 1 && R.get(x, y, z) !== B.water ? 0 : fluidOf(R.get(x, y, z));
+  const open = (x, y, z) => {
+    if (!inside(x, y, z)) return false;
+    const b = R.get(x, y, z);
+    if (isAirId(b)) return true;
+    const d = BLOCKS[b];
+    return !d.solid && !d.fluid && !fluidOf(b) && (d.replaceable || d.shape === 'cross');
+  };
+  const isSource = (x, y, z) => kindAt(x, y, z) === kind && (R.meta(x, y, z) & (F_LEVEL | F_FALLING)) === 0;
+  const levelOf = (x, y, z) => {
+    if (kindAt(x, y, z) !== kind) return 99;
+    const m = R.meta(x, y, z);
+    return m & F_FALLING ? 0 : m & F_LEVEL;
+  };
+  const queue = [], queued = new Set();
+  const key = (x, y, z) => (x - R.x0) + ',' + y + ',' + (z - R.z0);
+  const wake = (x, y, z) => {
+    for (const [dx, dy, dz] of [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+      const k = key(x + dx, y + dy, z + dz);
+      if (kindAt(x + dx, y + dy, z + dz) && !queued.has(k)) { queued.add(k); queue.push(x + dx, y + dy, z + dz); }
+    }
+  };
+  const place = (x, y, z, level, falling) => {
+    const other = kindAt(x, y, z);
+    if (other && other !== kind) {
+      R.set(x, y, z, R.meta(x, y, z) === 0 ? (other === 2 ? B.obsidian : B.stone) : B.cobblestone, 0);
+      return;
+    }
+    const b = R.get(x, y, z), d = BLOCKS[b];
+    // a tall plant in the way goes whole
+    if (b && d.upper && R.get(x, y + 1, z) === B[d.upper]) R.set(x, y + 1, z, 0, 0);
+    if (R.set(x, y, z, FB, (falling ? F_FALLING : 0) | (level & F_LEVEL))) wake(x, y, z);
+  };
+  const distToDrop = (x, y, z, fx, fz) => {
+    if (open(x, y - 1, z) || kindAt(x, y - 1, z)) return 0;
+    let frontier = [[x, z]];
+    const seen = new Set([x + ',' + z]);
+    for (let d = 1; d <= reach; d++) {
+      const nxt = [];
+      for (const [cx, cz] of frontier) for (const [dx, dz] of SIDES) {
+        const nx = cx + dx, nz = cz + dz, k = nx + ',' + nz;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        if (!open(nx, y, nz) && !kindAt(nx, y, nz)) continue;
+        if (open(nx, y - 1, nz) || (kindAt(nx, y - 1, nz) && !isSource(nx, y - 1, nz))) return d;
+        nxt.push([nx, nz]);
+      }
+      frontier = nxt;
+    }
+    return 99;
+  };
+  wake(sx, sy, sz);
+  const most = budget ? budget.n : 4000;
+  let n = 0;
+  for (let q = 0; q < queue.length && n < most; n++, q += 3) {
+    const x = queue[q], y = queue[q + 1], z = queue[q + 2];
+    queued.delete(key(x, y, z));
+    if (kindAt(x, y, z) !== kind) continue;
+    let meta = R.meta(x, y, z);
+    const source = (meta & (F_LEVEL | F_FALLING)) === 0;
+    // lava with water at its side or on top hardens
+    if (kind === 2 && [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([dx, dy, dz]) => kindAt(x + dx, y + dy, z + dz) === 1)) {
+      R.set(x, y, z, source ? B.obsidian : B.cobblestone, 0);
+      continue;
+    }
+    if (!source) {
+      let want;
+      if (kindAt(x, y + 1, z) === kind) want = F_FALLING;
+      else {
+        let best = 99, sources = 0;
+        for (const [dx, dz] of SIDES) {
+          const l = levelOf(x + dx, y, z + dz);
+          if (l < best) best = l;
+          if (isSource(x + dx, y, z + dz)) sources++;
+        }
+        const below = R.get(x, y - 1, z);
+        if (kind === 1 && sources >= 2 && ((below && BLOCKS[below].solid) || isSource(x, y - 1, z))) want = 0;
+        else want = best + drop <= max ? best + drop : -1;
+      }
+      if (want === -1) { R.set(x, y, z, 0, 0); wake(x, y, z); continue; }
+      if (want !== meta) { R.set(x, y, z, FB, want); meta = want; wake(x, y, z); }
+    }
+    const level = meta & F_FALLING ? 0 : meta & F_LEVEL;
+    const under = kindAt(x, y - 1, z);
+    if (open(x, y - 1, z) || (under && under !== kind)) {
+      place(x, y - 1, z, 0, true);
+      if (!source) continue;
+    } else if (under === kind && !source) continue;          // pouring into more of itself (a falling column too: it never spreads over its own pool)
+    const next = level + drop;
+    if (next > max) continue;
+    const ways = [];
+    let bestD = 99;
+    for (const [dx, dz] of SIDES) {
+      const nx = x + dx, nz = z + dz;
+      if (!open(nx, y, nz) && !(kindAt(nx, y, nz) === kind && levelOf(nx, y, nz) > next)) continue;
+      const d = distToDrop(nx, y, nz, -dx, -dz);
+      if (d < bestD) { bestD = d; ways.length = 0; }
+      if (d === bestD) ways.push(nx, nz);
+    }
+    for (let k = 0; k < ways.length; k += 2) place(ways[k], y, ways[k + 1], next, false);
+  }
+  if (budget) budget.n -= n;
+}
 
 /* ---- snow and ice on the top layer ---- */
 FEATURES.freeze_top_layer = (D, c, r, ox, oy, oz) => {
@@ -1107,6 +1248,7 @@ export class Decorator {
     const deco = decorationSeed(r, g.seed, cx * 16, cz * 16);
     for (let step = 0; step < this.steps.length; step++) {
       const list = this.steps[step];
+      R.early = step < 3;          // raw generation, lakes, local modifications: before the structures
       const idx = new Set();
       for (const bid of present) {
         const b = FeatureData.biome[BIOMES[bid].name];
@@ -1126,6 +1268,7 @@ export class Decorator {
         }
       }
     }
+    runOut(R);
     return R;
   }
   warmEnoughToMelt(biome, x, y, z) {
