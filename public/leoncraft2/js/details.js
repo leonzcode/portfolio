@@ -42,9 +42,9 @@
    What it remembers (sign text, food on campfires, framed items, discs, vaults) is kept per dimension
    (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPACITY } from './blocks.js?v=20';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS } from './items.js?v=20';
-import { cookingRecipe } from './crafting.js?v=20';
+import { B, BLOCKS, OPACITY } from './blocks.js?v=21';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS } from './items.js?v=21';
+import { cookingRecipe } from './crafting.js?v=21';
 const THREE = window.THREE;
 
 /* ---- the composter's chances, by item (Minecraft Wiki, Composter) ---- */
@@ -133,7 +133,7 @@ export class Details {
     if (e.rewarded || e.queue.length) return false;
     e.rewarded = true; e.at = this.ticks + 14;
     if (!h.creative) h.inv.takeSelected(1);
-    import('./struct/loot.js?v=20').then(L => import('./containers.js?v=20').then(C => {
+    import('./struct/loot.js?v=21').then(L => import('./containers.js?v=21').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
       for (const r of L.rollLoot(table, (Math.random() * 2147483647) | 0, { size: 27 })) { const st = C.lootStack(r); if (st) e.queue.push(st); }
       this.dirty = true;

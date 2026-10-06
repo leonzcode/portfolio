@@ -10,7 +10,7 @@
    no longer be changed. The page itself is drawn here (a cream sheet with a
    darker edge), not taken from the game's art.
 --------------------------------------------------------------------------- */
-import { Screen, Button, TextField, Widget, WHITE } from './gui.js?v=20';
+import { Screen, Button, TextField, Widget, WHITE } from './gui.js?v=21';
 
 const PAGE_W = 114, LINES = 14, MAX_PAGES = 100, MAX_CHARS = 1024;
 const BLACK = 0x000000;

@@ -24,14 +24,14 @@
    after travelling, kept topped up while you stand in a portal; end portals
    and gateways at once.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=20';
-import { Y0 } from '../world-const.js?v=20';
-import { DIMS } from '../dims.js?v=20';
-import { explode } from '../explosion.js?v=20';
-import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=20';
-import { EndFight, gatewayBlocks } from './endfight.js?v=20';
-import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=20';
-import { mix32, rng } from '../noise.js?v=20';
+import { B, BLOCKS } from '../blocks.js?v=21';
+import { Y0 } from '../world-const.js?v=21';
+import { DIMS } from '../dims.js?v=21';
+import { explode } from '../explosion.js?v=21';
+import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=21';
+import { EndFight, gatewayBlocks } from './endfight.js?v=21';
+import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=21';
+import { mix32, rng } from '../noise.js?v=21';
 const THREE = window.THREE;
 
 const E = y => y - Y0;                     // world y -> engine y

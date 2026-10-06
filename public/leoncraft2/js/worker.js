@@ -16,15 +16,15 @@
    more than half of a worker's code, so they are loaded only when a world
    first needs them: the title screen's world (the first generator) starts
    without waiting for them. */
-import { Gen } from './worldgen.js?v=20';
-import { meshColumn, setColours } from './mesher.js?v=20';
-import { resolveTextures } from './blocks.js?v=20';
-import { worldStructures, structureMessage } from './struct/hook.js?v=20';
-import { keepChunk, readChunks, sweepChunks } from './chunkcache.js?v=20';
+import { Gen } from './worldgen.js?v=21';
+import { meshColumn, setColours } from './mesher.js?v=21';
+import { resolveTextures } from './blocks.js?v=21';
+import { worldStructures, structureMessage } from './struct/hook.js?v=21';
+import { keepChunk, readChunks, sweepChunks } from './chunkcache.js?v=21';
 
 let G = null;                 // { VanillaGen, NetherGen, EndGen } once loaded
 let loadingG = null;
-const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=20'), import('./gen/nether.js?v=20'), import('./gen/end.js?v=20')])
+const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=21'), import('./gen/nether.js?v=21'), import('./gen/end.js?v=21')])
   .then(([v, n, e]) => { G = { VanillaGen: v.VanillaGen, NetherGen: n.NetherGen, EndGen: e.EndGen }; }));
 // whether a world (init or practice) needs one of Minecraft's generators
 const needsG = m => m.dim === 'the_nether' || m.dim === 'the_end' || m.generator === 'vanilla';
@@ -131,9 +131,14 @@ function handle(m) {
   if (m.type === 'decorate') {
     // the features of one chunk (stage two), placed against the terrain of the nine round it
     for (const p of m.protos) gen.protoCache.set(ck(p.cx, p.cz), p);
+    // the biomes of the terrains round those, for the lake plans of the chunks next to this one
+    if (m.grids && gen.decorator.keepGrid) for (const [x, z, g] of m.grids) gen.decorator.keepGrid(x, z, g);
     const w = writesOf(gen, m.cx, m.cz);
     gen.protoCache.clear(); gen.writeCache.clear();
-    self.postMessage({ type: 'decorate', cx: m.cx, cz: m.cz, writes: w }, w.map(e => e[1].buffer));
+    // the terrains' buffers go back with the answer, to be used for the next job (world.js pool)
+    const back = [];
+    for (const p of m.protos) back.push(p.blocks.buffer, p.meta.buffer);
+    self.postMessage({ type: 'decorate', cx: m.cx, cz: m.cz, writes: w, back }, w.map(e => e[1].buffer).concat(back));
     return;
   }
   if (m.type === 'gen') {
@@ -146,8 +151,10 @@ function handle(m) {
     if (m.proto) { gen.protoCache.clear(); gen.writeCache.clear(); }
     const extra = structs ? structs.build(c, m.cx, m.cz) : null;      // the structures reaching into this chunk
     if (cacheKey) keepChunk(cacheKey, m.cx, m.cz, c, extra);
-    self.postMessage({ type: 'gen', id: m.id, cx: m.cx, cz: m.cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: extra },
-      [c.blocks.buffer, c.meta.buffer, c.biome.buffer]);
+    // (the terrain it was made from goes back to be used again, as a decoration's do; the chunk is a copy of it)
+    const back = m.proto && m.proto.blocks.buffer !== c.blocks.buffer && m.proto.meta.buffer !== c.meta.buffer ? [m.proto.blocks.buffer, m.proto.meta.buffer] : [];
+    self.postMessage({ type: 'gen', id: m.id, cx: m.cx, cz: m.cz, blocks: c.blocks, meta: c.meta, biome: c.biome, top: c.top, structs: extra, back },
+      [c.blocks.buffer, c.meta.buffer, c.biome.buffer].concat(back));
     return;
   }
   if (m.type === 'mesh') {
@@ -161,8 +168,8 @@ function handle(m) {
     for (const k of ['opaque', 'cutout', 'translucent', 'fluid', 'plants', 'leafIn']) {
       const g = out[k];
       if (!g) continue;
+      // (no indices: every mesh is drawn with the same ones, render/renderer.js quadIndex)
       for (const a of g.attrs) transfer.push(a.buffer);
-      transfer.push(g.index.buffer);
     }
     if (out.light) transfer.push(out.light.buffer);
     if (out.region) transfer.push(out.region.buffer);
