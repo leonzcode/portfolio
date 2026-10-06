@@ -47,6 +47,7 @@ import { glints } from '../render/armor.js?v=16';
 import { containerKind } from '../containers.js?v=16';
 import { getSkinSettings } from '../render/avatar.js?v=16';
 import { RemotePlayers, PlayerList, F } from './players.js?v=16';
+import { register } from '../commands.js?v=16';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
@@ -109,6 +110,17 @@ class MpSave {
   readState() { return this.local.readState(); }
   writeState(s) { this.local.writeState(s); }
 }
+
+// /list: who is on, as the game answers it (no commands needed)
+register('list', {
+  usage: '',
+  always: true,
+  run(args, ctx) {
+    const net = ctx.game && ctx.game.net;
+    const names = net ? [net.name].concat(net.players ? [...net.players.list.values()].map(r => r.name) : []) : [ctx.playerName || 'Player'];
+    ctx.say(`There are ${names.length} of a max of ${net ? 20 : 1} players online: ${names.join(', ')}`);
+  },
+});
 
 /* a container's record, as containers.js saves one */
 function packContainer(c) {
