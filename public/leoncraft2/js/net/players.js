@@ -1,0 +1,311 @@
+/* ---------------------------------------------------------------------------
+   Leoncraft 2 - the other players on a server, as you see them.
+
+   Each one sends where it is on every game tick that something changed,
+   stamped with its own clock (net/net.js). Those stamps are what the
+   picture runs on: the positions are spaced exactly as they were made,
+   whatever the network did to them on the way. Each player is drawn a
+   tenth of a second behind the newest one that could have arrived (the
+   quickest any message from them has taken, plus the delay), straight
+   between the two ticks either side, so they glide as smoothly as you see
+   yourself. A connection that keeps arriving late pushes that delay up
+   (to a quarter of a second at most) rather than letting them stutter.
+
+   They are drawn with the same model as you in third person
+   (render/avatar.js): their own skin, what they hold and wear, the arm
+   swing, sneaking, swimming and the red flash when hurt, the limbs worked
+   out at 20 ticks a second from how far they moved. Above each one its
+   name, as the game draws it: white on a faint dark band, seen through
+   walls a little, and only up close (dimmer, not through walls) while they
+   sneak. Nothing is drawn of a player in another dimension or out of sight
+   range.
+--------------------------------------------------------------------------- */
+import { Avatar } from '../render/avatar.js?v=16';
+import { pieceLook, armorSheet } from '../render/armor.js?v=16';
+import { setLight as setLightOf } from '../render/held.js?v=16';
+import { DRAW, I, stackFromJSON } from '../items.js?v=16';
+import { B } from '../blocks.js?v=16';
+const THREE = window.THREE;
+
+const DELAY = 100;          // ms behind the newest position, at the least
+const MAX_DELAY = 250;
+const KEEP = 1500;          // ms of positions kept
+const PI = Math.PI;
+const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
+const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
+
+// the flags each position carries (net/net.js sends them)
+export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256 };
+
+export class RemotePlayers {
+  constructor(renderer, font) {
+    this.R = renderer; this.font = font;
+    this.list = new Map();          // id -> remote player
+    this.group = new THREE.Group(); this.group.name = 'players';
+    renderer.scene.add(this.group);
+    // the name tags' shader built now, in the background, not in the frame the first player comes into view
+    try {
+      const sc = new THREE.Scene(), c = document.createElement('canvas');
+      c.width = c.height = 1;
+      sc.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, depthWrite: false, fog: false, toneMapped: false })));
+      renderer.r.compileAsync(sc, renderer.camera).catch(() => {});
+    } catch (e) { /* built when first drawn instead */ }
+  }
+  dispose() {
+    for (const r of this.list.values()) this.drop(r);
+    this.list.clear();
+    if (this.group.parent) this.group.parent.remove(this.group);
+  }
+
+  /* ---- what the server says ---- */
+  add(p) {
+    if (this.list.has(p.id)) this.remove(p.id);
+    const r = { id: p.id, name: p.name, buf: [], est: null, estS: null, win: Infinity, winPrev: Infinity, winAt: 0, late: 0, lateMax: 0, delay: DELAY,
+      av: null, P: null, acc: 0, eq: null, tag: null, hurtUntil: 0, st: null, lat: p.lat | 0 };
+    this.list.set(p.id, r);
+    if (p.st) this.state(p.id, p.st, null);
+    r.skinUrl = p.skin || ''; r.slim = !!p.slim;
+    if (p.eq) r.eq = p.eq;
+    return r;
+  }
+  remove(id) { const r = this.list.get(id); if (r) { this.drop(r); this.list.delete(id); } }
+  drop(r) {
+    if (r.av) {
+      const av = r.av, R = this.R;
+      for (const m of [av.mesh, av.armor]) { R.scene.remove(m); }
+      av.mesh.geometry.dispose(); av.arm.geometry.dispose();
+      for (let s = 0; s < 2; s++) av.setHeld(s, null);
+      av.setHeadItem(null);
+      av.tex.dispose(); av.armorTex.dispose();
+      for (const m of [av.mat, av.armMat, av.shadowMat, av.armorMat, av.armorShadowMat]) m.dispose();
+      r.av = null;
+    }
+    if (r.tag) { this.group.remove(r.tag.far, r.tag.near); r.tag.tex.dispose(); r.tag.far.material.dispose(); r.tag.near.material.dispose(); r.tag = null; }
+  }
+  // a position, with the sender's clock (ts) and when it got here (at, this page's clock)
+  state(id, s, at) {
+    const r = this.list.get(id);
+    if (!r) return;
+    r.st = s;
+    const b = r.buf, now = at === null ? performance.now() : at;
+    if (b.length && s.ts <= b[b.length - 1].ts) { if (s.ts < b[b.length - 1].ts - 5000) b.length = 0; else return; }
+    // nothing is sent while nothing changes: the last position held until a tick before this one
+    if (b.length && s.ts - b[b.length - 1].ts > 75) { const h = Object.assign({}, b[b.length - 1]); h.ts = s.ts - 50; b.push(h); }
+    b.push(s);
+    // the quickest any message has taken (with the two clocks' difference in it): the lowest of the last two to four seconds
+    const off = now - s.ts;
+    if (now - r.winAt > 2000) { r.winPrev = r.win; r.win = Infinity; r.winAt = now; r.lateMax = r.late; r.late = 0; }
+    if (off < r.win) r.win = off;
+    r.est = Math.min(r.win, r.winPrev);
+    if (r.estS === null) r.estS = r.est;
+    // how late this one was against the quickest: a jittery connection gets a longer delay
+    const late = off - r.est;
+    if (late > r.late) r.late = late;
+  }
+  setSkin(id, skin, slim) { const r = this.list.get(id); if (!r) return; r.skinUrl = skin || ''; r.slim = !!slim; if (r.av) this.skinOf(r); }
+  setEquip(id, eq) { const r = this.list.get(id); if (!r) return; r.eq = eq; if (r.av) this.equip(r); }
+  swing(id, hand) { const r = this.list.get(id); if (r && r.av && !hand) r.av.startSwing(); }
+  hurt(id) { const r = this.list.get(id); if (r) r.hurtUntil = performance.now() + 500; }
+  rename(id, name) { const r = this.list.get(id); if (r && r.name !== name) { r.name = name; if (r.tag) { this.group.remove(r.tag.far, r.tag.near); r.tag = null; } } }
+
+  /* ---- the model ---- */
+  avatarOf(r) {
+    if (r.av) return r.av;
+    const av = r.av = new Avatar(this.R, true);
+    av.started = false;
+    r.P = { pos: new THREE.Vector3(), prev: new THREE.Vector3(), yaw: 0, pitch: 0, sneaking: false, flying: false, pose: 'stand', riding: null, w: null };
+    this.skinOf(r);
+    this.equip(r);
+    return av;
+  }
+  skinOf(r) {
+    const av = r.av;
+    const url = r.skinUrl || new URL('../../textures/skin/default.png?v=16', import.meta.url).href;
+    av.setSkin(url, r.skinUrl ? r.slim : false).catch(() => {});
+  }
+  equip(r) {
+    const av = r.av, eq = r.eq || {}, R = this.R;
+    const h = idOf(eq.h), o = idOf(eq.o);
+    if (r.heldId !== h) { r.heldId = h; av.setHeld(0, DRAW[h] || null); }
+    if (r.offId !== o) { r.offId = o; av.setHeld(1, DRAW[o] || null); }
+    av.glintHeld(0, !!eq.hg); av.glintHeld(1, !!eq.og);
+    const armor = [0, 1, 2, 3].map(i => (eq.a && eq.a[i] ? stackFromJSON(eq.a[i]) : null));
+    av.setArmor(armor);
+    // a block on the head that is not armour (a carved pumpkin, a mob head): the block itself
+    const head = armor[0] && !pieceLook(armor[0]) ? DRAW[armor[0].id] : null;
+    av.setHeadItem(head || null);
+    void R;
+  }
+
+  /* ---- the name over their head ---- */
+  tagOf(r) {
+    if (r.tag) return r.tag;
+    const f = this.font, name = r.name || '';
+    const w = (f ? f.width(name) : name.length * 6) + 2, h = 10, k = 4;
+    const c = document.createElement('canvas');
+    c.width = w * k; c.height = h * k;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    // the band: black at a quarter, a pixel round the text
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 0, c.width, c.height);
+    if (f) {
+      const t = document.createElement('canvas'); t.width = w; t.height = h;
+      const tg = t.getContext('2d');
+      f.draw(tg, name, 1, 1, 0xFFFFFF, false);
+      g.drawImage(t, 0, 0, w, h, 0, 0, c.width, c.height);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mk = (depth, opacity) => {
+      const m = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: depth, depthWrite: false, opacity, fog: false, toneMapped: false });
+      const s = new THREE.Sprite(m);
+      s.scale.set(w * 0.025, h * 0.025, 1);
+      s.renderOrder = depth ? 10 : 9;
+      s.frustumCulled = false;
+      return s;
+    };
+    // through walls (faint), and the real one in front of them
+    const far = mk(false, 0.35), near = mk(true, 1);
+    this.group.add(far, near);
+    return (r.tag = { far, near, tex, w, h });
+  }
+
+  /* ---- every frame: where each one is now, posed and named ---- */
+  frame(now, dt, world, dimCode, eye, maxDist) {
+    for (const r of this.list.values()) {
+      const s = r.st;
+      const show = !!s && s.d === dimCode && !(s.f & F.DEAD) && r.buf.length > 0;
+      if (!show) { if (r.av) this.hide(r); continue; }
+      const p = this.sample(r, now, dt);
+      if (!p) { if (r.av) this.hide(r); continue; }
+      const dx = p.x - eye.x, dy = p.y - eye.y, dz = p.z - eye.z, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > maxDist * maxDist) { if (r.av) this.hide(r); continue; }
+      const av = this.avatarOf(r), P = r.P;
+      P.w = world;
+      P.sneaking = !!(p.f & F.SNEAK); P.flying = !!(p.f & F.FLY);
+      P.pose = p.f & F.SWIM ? 'swim' : 'stand';
+      P.pitch = p.pitch;
+      // the limbs: a game tick of movement at a time, as for you
+      if (!av.started) { av.started = true; P.pos.set(p.x, p.y, p.z); P.prev.copy(P.pos); P.yaw = p.yaw; av.body = av.oBody = p.yaw; r.acc = 0; }
+      r.acc += dt;
+      let n = 0;
+      while (r.acc >= 0.05 && n++ < 5) {
+        r.acc -= 0.05;
+        P.prev.copy(P.pos);
+        const q = this.at(r, r.rt - r.acc * 1000);
+        if (q) { P.pos.set(q.x, q.y, q.z); P.yaw = q.yaw; }
+        av.tick(P);
+      }
+      if (r.acc > 0.05) r.acc = 0;
+      P.yaw = p.yaw;
+      const feet = r.feet || (r.feet = new THREE.Vector3());
+      feet.set(p.x, p.y, p.z);
+      this.draw(r, av, P, feet, Math.min(1, r.acc / 0.05), dt, now);
+      // the name, half a block over the head (lower when they sneak)
+      const tag = this.tagOf(r), top = (P.sneaking ? 1.5 : P.pose === 'swim' ? 0.6 : 1.8) + 0.5 + tag.h * 0.0125;
+      tag.far.position.set(p.x, p.y + top, p.z); tag.near.position.copy(tag.far.position);
+      const close = d2 < 64 * 64;
+      tag.far.visible = close && !P.sneaking;
+      tag.near.visible = close;
+      tag.near.material.opacity = P.sneaking ? 0.35 : 1;
+    }
+  }
+  hide(r) {
+    const av = r.av;
+    av.mesh.visible = av.armor.visible = false;
+    for (const h of av.held) if (h) h.mesh.visible = false;
+    if (av.headItem) av.headItem.mesh.visible = false;
+    if (r.tag) r.tag.far.visible = r.tag.near.visible = false;
+    av.started = false;
+  }
+  // the position to draw now: a tenth of a second (or more) behind the newest
+  sample(r, now, dt) {
+    if (r.est === null) return null;
+    // the estimate moves gently, so a quick message leaving the window never jerks them back
+    r.estS += (r.est - r.estS) * Math.min(1, dt * 2);
+    const want = Math.max(DELAY, Math.min(MAX_DELAY, Math.max(r.late, r.lateMax) + 20));
+    r.delay += (want - r.delay) * Math.min(1, dt * (want > r.delay ? 4 : 0.5));
+    r.rt = now - r.estS - r.delay;
+    // forget what is long past
+    const b = r.buf;
+    let k = 0;
+    while (k < b.length - 2 && b[k + 1].ts < r.rt - KEEP) k++;
+    if (k) b.splice(0, k);
+    return this.at(r, r.rt);
+  }
+  at(r, t) {
+    const b = r.buf;
+    if (!b.length) return null;
+    if (t <= b[0].ts) return b[0];
+    for (let i = b.length - 1; i > 0; i--) {
+      const a = b[i - 1], c = b[i];
+      if (t >= a.ts) {
+        if (t >= c.ts) return c;
+        const k = (t - a.ts) / (c.ts - a.ts), o = r.tmp || (r.tmp = {});
+        o.x = a.x + (c.x - a.x) * k; o.y = a.y + (c.y - a.y) * k; o.z = a.z + (c.z - a.z) * k;
+        o.yaw = a.yaw + wrap(c.yaw - a.yaw) * k; o.pitch = a.pitch + (c.pitch - a.pitch) * k;
+        o.f = k < 0.5 ? a.f : c.f;
+        // a jump of more than 8 blocks in a tick is a teleport: no gliding across the world
+        if (Math.abs(c.x - a.x) + Math.abs(c.y - a.y) + Math.abs(c.z - a.z) > 8) return k < 0.5 ? a : c;
+        return o;
+      }
+    }
+    return b[b.length - 1];
+  }
+  // the model for this frame: its light, its pose, what it holds and wears (render/avatar.js update, for someone else)
+  draw(r, av, P, feet, a, dt, now) {
+    av.world = P.w;
+    av.uHurt.value = now < r.hurtUntil ? 1 : 0;
+    av.useNow = null;
+    av.lightT -= dt;
+    if (av.lightT <= 0) { av.lightT = 0.25 + Math.random() * 0.05; av.refreshCache(feet.x, feet.z); av.sampleLight(feet); }
+    const k = Math.min(1, dt * 6);
+    av.sky += (av.skyLv / 15 - av.sky) * k; av.block += (av.blockLv / 15 - av.block) * k;
+    av.uLight.value.set(av.sky, av.block);
+    av.posed(P, a, feet);
+    const on = av.ready;
+    av.mesh.visible = on;
+    av.armor.visible = on && av.wearing;
+    // the armour's pictures taken up again whenever another file has landed in the sheet
+    if (av.wearing) { const sh = armorSheet(); if (sh.version !== av.armorV) { av.armorV = sh.version; av.armorTex.needsUpdate = true; } }
+    av.uPiece.value[0].y = av.headWorn ? 1 : 0;
+    const lv = (Math.round(av.sky * 255) << 8) | Math.round(av.block * 255);
+    for (const h of av.held) {
+      if (!h) continue;
+      h.mesh.visible = on;
+      if (lv !== h.light) { h.light = lv; setLightOf(h.mesh.geometry, lv); }
+    }
+    const hi = av.headItem;
+    if (hi) { hi.mesh.visible = on; if (lv !== hi.light) { hi.light = lv; setLightOf(hi.mesh.geometry, lv); } }
+  }
+}
+/* ---- Tab: who is on the server ----
+   The game's player list: a box across the top, a row for each player (a
+   column for every 20), their face from their skin, their name, and the
+   signal bars for how long the server takes to hear from them. */
+const pingBars = ms => (ms < 0 ? 5 : ms < 150 ? 0 : ms < 300 ? 1 : ms < 600 ? 2 : ms < 1000 ? 3 : 4);
+export class PlayerList {
+  constructor(net) { this.net = net; this.shown = false; this.animates = false; }
+  draw(g) {
+    if (!this.shown) return;
+    const net = this.net, lat = net.lat || {};
+    const rows = [{ name: net.name, ping: Math.round(net.rtt), face: net.ctx ? net.ctx.renderer.avatar.canvas : null }];
+    if (net.players) for (const r of net.players.list.values()) rows.push({ name: r.name, ping: lat[r.id] !== undefined ? lat[r.id] : -1, face: r.av && r.av.ready ? r.av.canvas : null });
+    rows.sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1));
+    const n = rows.length, cols = Math.ceil(n / 20), per = Math.ceil(n / cols);
+    let nw = 0;
+    for (const r of rows) nw = Math.max(nw, g.textWidth(r.name));
+    const sw = Math.min(nw + 9 + 13 + 4, Math.floor((g.width - 50) / cols));
+    const total = sw * cols + (cols - 1) * 5;
+    const left = Math.floor(g.width / 2 - total / 2), top = 10;
+    g.fill(left - 1, top - 1, left + total + 1, top + per * 9, 0x80000000);
+    for (let i = 0; i < n; i++) {
+      const r = rows[i], x = left + Math.floor(i / per) * (sw + 5), y = top + (i % per) * 9;
+      g.fill(x, y, x + sw, y + 8, 0x20FFFFFF);
+      if (r.face) { g.blit(r.face, 8, 8, 8, 8, x, y, 8, 8); g.blit(r.face, 40, 8, 8, 8, x, y, 8, 8); }
+      g.text(g.font.trim(r.name, sw - 9 - 13), x + 9, y, 0xFFFFFF);
+      g.blit('icons', 0, 176 + pingBars(r.ping) * 8, 10, 8, x + sw - 11, y);
+    }
+  }
+}
