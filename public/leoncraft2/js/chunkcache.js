@@ -100,14 +100,10 @@ export async function sweepChunks(prefix, limit) {
   if (!d) return;
   try {
     const st = d.transaction(STORE, 'readwrite').objectStore(STORE);
-    const count = await new Promise(res => { const r = st.count(); r.onsuccess = () => res(r.result); r.onerror = () => res(0); });
-    if (count > limit) { st.clear(); return; }
-    const r = st.openKeyCursor();
-    r.onsuccess = () => {
-      const c = r.result;
-      if (!c) return;
-      if (!String(c.key).startsWith(prefix)) st.delete(c.key);
-      c.continue();
-    };
+    // every key not under this version's prefix sorts before it or after all of its keys: two ranges, gone in two requests
+    st.delete(IDBKeyRange.upperBound(prefix, true));
+    st.delete(IDBKeyRange.lowerBound(prefix + '￿'));
+    const r = st.count();
+    r.onsuccess = () => { if (r.result > limit) st.clear(); };
   } catch (e) { /* tidied another time */ }
 }
