@@ -62,6 +62,7 @@ uniform vec3 uLightDir;
 uniform float uFrame, uEyeInWater, uTime, uSkyAtEye;
 uniform vec3 uWaterTint;
 uniform float uDim;
+uniform float uVLK;     // Light Shafts: how strong in the air (Low 1, High more)
 in vec2 vUv; out vec4 o;
 float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
 float caustic(vec3 p) {
@@ -105,7 +106,7 @@ void main() {
       vis *= caustic(p);
     } else {
       float h = max(p.y - 63.0, -8.0);
-      float dens = 0.0045 * exp(-h / 45.0) + 0.0007;
+      float dens = (0.0045 * exp(-h / 45.0) + 0.0007) * uVLK;
       sigS = vec3(dens); sigT = vec3(dens * 1.05);
     }
     vec3 stepT = exp(-sigT * dt);
@@ -446,6 +447,8 @@ export class Post {
       uDt: { value: 0.016 }, uBias: { value: 1 }, uBloomMix: { value: 0.045 },
       // the Shader Options' exposure (in stops, as a factor), saturation and contrast
       uEV: { value: 1 }, uSat: { value: 1 }, uContrast: { value: 1 }, uCurve: { value: 0 },
+      // Light Shafts: Low or High (render/looks.js)
+      uVLK: { value: 1 },
     };
     const U = Object.assign({}, shared, this.u);
     // the same objects, so a value set here is seen by every pass
@@ -491,11 +494,21 @@ export class Post {
     const vl = o.vlSteps === undefined ? 14 : o.vlSteps;
     this.vlOn = vl > 0;
     if (vl > 0 && this.mVL.defines.VL_STEPS !== vl) { this.mVL.defines.VL_STEPS = vl; this.mVL.needsUpdate = true; }
+    this.u.uVLK.value = o.vlStrength || 1;
     this.u.uEV.value = Math.pow(2, o.exposure || 0);
     this.u.uSat.value = o.saturation === undefined ? 1 : o.saturation;
     this.u.uContrast.value = o.contrast || 1;
     this.u.uCurve.value = TONE_CURVES[o.tone] || 0;
     this.cleared = false;
+  }
+  /* What a new look will draw this chain with that it has not got yet, for
+     render/looks.js to have built in the background: the light shafts' pass
+     with its new number of steps (configure() changes it only when the look
+     lands, and three.js would otherwise build it at its first draw). */
+  variants(o) {
+    const vl = o.vlSteps === undefined ? 14 : o.vlSteps;
+    if (!(vl > 0) || this.mVL.defines.VL_STEPS === vl) return [];
+    return [mat(FS_VL, this.U, { defines: Object.assign({}, this.mVL.defines, { VL_STEPS: vl }) })];
   }
   // the pictures given back while another look is in use (made again by the next resize)
   release() {

@@ -1331,8 +1331,8 @@ async function boot() {
     if (fpsT > 0.5) {
       fps = Math.round(frames / fpsT); frames = 0; fpsT = 0;
       // keep it smooth: give up resolution before frame rate, and take it back when there is room
-      // (not over the frames a change of look costs: one slow frame then is no reason to blur the picture)
-      if (autoScale && now - startedAt > 6000 && now - (renderer.lookAt || 0) > 3000 && ++scaleTick % 4 === 0) {
+      // (not over the frames a change of look costs, from the moment it is asked for: one slow frame then is no reason to blur the picture)
+      if (autoScale && now - startedAt > 6000 && !renderer.lookPending && now - (renderer.lookAt || 0) > 3000 && ++scaleTick % 4 === 0) {
         const s = renderer.opts.scale;
         // never so low it blurs: three quarters of the screen, or half of a very sharp one
         const floor = (renderer.dpr || 1) > 1.4 ? 0.5 : 0.75;
