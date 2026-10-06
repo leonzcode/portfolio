@@ -18,43 +18,43 @@
    middle click pick block, F1 hide the HUD, F3 details, [ and ] the clock,
    F7 render scale, F8 quality.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=15';
-import { BIOMES, biomeColours } from './biomes.js?v=15';
-import { pickBiome } from './worldgen.js?v=15';
-import { parseSeed } from './gen/random.js?v=15';
-import { World } from './world.js?v=15';
-import { Fluids } from './fluids.js?v=15';
-import { Player } from './player.js?v=15';
-import { Renderer } from './render/renderer.js?v=15';
-import { Overlay } from './render/overlay.js?v=15';
-import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=15';
-import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=15';
-import { SEA, Y0 } from './world-const.js?v=15';
-import { Gui, Options } from './ui/gui.js?v=15';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=15';
-import { ItemIcons } from './ui/icons.js?v=15';
-import { Inventory, inventoryScreen } from './ui/inventory.js?v=15';
-import { Hud } from './ui/hud.js?v=15';
-import { Interactor } from './interact.js?v=15';
-import { Survival } from './survival.js?v=15';
-import { survivalHooks, respawnPlayer } from './life.js?v=15';
-import { Save } from './save.js?v=15';
-import { Chat, ChatScreen } from './ui/chat.js?v=15';
-import { displayName, setItemNames, register, gameRule } from './commands.js?v=15';
-import { Particles } from './render/particles.js?v=15';
-import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=15';
-import { loadItemStrip, addItemPieces } from './itemtex.js?v=15';
-import { Drops, dropItem, giveXp } from './drops.js?v=15';
-import { Containers } from './containers.js?v=15';
-import { Hands } from './hands.js?v=15';
-import { setLayerPixels } from './render/blockmesh.js?v=15';
-import { Entities } from './entities/manager.js?v=15';
-import { EntityStore } from './entities/store.js?v=15';
-import { Sim } from './sim/sim.js?v=15';
-import { DIMS } from './dims.js?v=15';
-import { Realms } from './dim/realms.js?v=15';
-import { addDimArt, endSkyTexture } from './dim/art.js?v=15';
-import { structuresApi } from './struct/spawners.js?v=15';
+import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=16';
+import { BIOMES, biomeColours } from './biomes.js?v=16';
+import { pickBiome } from './worldgen.js?v=16';
+import { parseSeed } from './gen/random.js?v=16';
+import { World } from './world.js?v=16';
+import { Fluids } from './fluids.js?v=16';
+import { Player } from './player.js?v=16';
+import { Renderer } from './render/renderer.js?v=16';
+import { Overlay } from './render/overlay.js?v=16';
+import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=16';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=16';
+import { SEA, Y0 } from './world-const.js?v=16';
+import { Gui, Options } from './ui/gui.js?v=16';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt } from './ui/menus.js?v=16';
+import { ItemIcons } from './ui/icons.js?v=16';
+import { Inventory, inventoryScreen } from './ui/inventory.js?v=16';
+import { Hud } from './ui/hud.js?v=16';
+import { Interactor } from './interact.js?v=16';
+import { Survival } from './survival.js?v=16';
+import { survivalHooks, respawnPlayer } from './life.js?v=16';
+import { Save } from './save.js?v=16';
+import { Chat, ChatScreen } from './ui/chat.js?v=16';
+import { displayName, setItemNames, register, gameRule } from './commands.js?v=16';
+import { Particles } from './render/particles.js?v=16';
+import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=16';
+import { loadItemStrip, addItemPieces } from './itemtex.js?v=16';
+import { Drops, dropItem, giveXp } from './drops.js?v=16';
+import { Containers } from './containers.js?v=16';
+import { Hands } from './hands.js?v=16';
+import { setLayerPixels } from './render/blockmesh.js?v=16';
+import { Entities } from './entities/manager.js?v=16';
+import { EntityStore } from './entities/store.js?v=16';
+import { Sim } from './sim/sim.js?v=16';
+import { DIMS } from './dims.js?v=16';
+import { Realms } from './dim/realms.js?v=16';
+import { addDimArt, endSkyTexture } from './dim/art.js?v=16';
+import { structuresApi } from './struct/spawners.js?v=16';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -66,14 +66,17 @@ const MENU_SEED = 20261002;
 // a dimension's mobs are kept under the world's id, with the dimension added for the Nether and the End
 const entityKey = (entry, dim) => entry.id + (!dim || dim === 'overworld' ? '' : '~' + dim);
 const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) : entry.seed | 0);
-/* Graphics, as in the game's Video Settings: Detailed (the full look: sun
-   rays, soft shadows, clouds, reflections) or Fast (the game with no shaders
-   at all, as Minecraft itself draws it: render/vanilla.js). Both draw at the
-   screen's full resolution. A change takes effect when you leave Video
-   Settings, and only if it really changed. */
+/* Graphics, as in the game's Video Settings: Detailed (light shaders: soft
+   sun shadows, warm sunlight and a real sky, water with the sky in it,
+   plants in the wind) or Fast (the game with no shaders at all, as Minecraft
+   itself draws it: render/vanilla.js). Both draw in one pass straight to the
+   screen at its full resolution, so Detailed runs nearly as smoothly as
+   Fast: no light shafts, marched clouds, reflections, bloom or eye
+   adjustment (the clouds are the game's blocks of cloud in both). A change
+   takes effect when you leave Video Settings, and only if it really changed. */
 const PRESETS = {
   fast: { rd: 8, scale: 1, ldr: true, vanilla: true, shadows: 0, normals: false, spec: false, fastLeaves: false, interSize: 32, uploadMs: 3, plantDist: 136, leafInDist: 64, plantShadows: false },
-  detailed: { rd: 8, shadowRes: 2048, shadowDist: 96, shadows: 2, scale: 1, fxaa: false, vlSteps: 10, cloudSteps: 14, ssrSteps: 18, plantDist: 80, leafInDist: 40, leafInShadows: false },
+  detailed: { rd: 8, scale: 1, ldr: true, shadowRes: 1024, shadowDist: 64, shadows: 2, normals: false, cloudShadow: 0, sky: 16, interSize: 128, uploadMs: 3, plantDist: 96, leafInDist: 48, plantShadows: false, leafInShadows: false },
 };
 // what the older settings become
 const GRAPHICS_OF = { auto: 'detailed', potato: 'fast', low: 'detailed', medium: 'detailed', high: 'detailed', ultra: 'detailed', fast: 'fast', detailed: 'detailed' };
@@ -249,7 +252,7 @@ async function boot() {
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
-  const TEX_V = '?v=15';
+  const TEX_V = '?v=16';
   const manifest = await (await fetch(base + 'manifest.json' + TEX_V)).json();
   let [alb, grass, foliage, moon, sunImg] = await Promise.all(
     ['terrain_albedo.png', 'colormap_grass.png', 'colormap_foliage.png', 'environment_moon_phases.png', 'environment_sun.png'].map(f => loadImg(base + f + TEX_V)));
@@ -550,6 +553,8 @@ async function boot() {
     gui.panorama = false; gui.inGame = true;
     gui.closeAll();
     startedAt = performance.now();
+    // every shader built now, in the background, not the first time its water, glass or mob comes into view
+    renderer.warmUp([game.entities && game.entities.meshes && game.entities.meshes.mat]);
     // only now does the loop play it: until every part (items lying about, mobs, the
     // simulation, the dimensions) is in place, a frame would trip over the missing ones
     game.ready = true;
@@ -882,7 +887,7 @@ async function boot() {
     if (k === 'difficulty' && game && v && game.entry.difficulty !== v) { game.entry.difficulty = v; Worlds.update(game.entry.id, { difficulty: v }); }
     if (k === 'clouds') renderer.opts.clouds = v;
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
-    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=15', import.meta.url).href : v);
+    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=16', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
   });
 
@@ -1091,7 +1096,7 @@ async function boot() {
     renderer, gui, options, B, BLOCKS,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
-    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=15').then(m => m.execute(line, ctx)); },
+    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=16').then(m => m.execute(line, ctx)); },
     get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
     get survival() { return game && game.survival; },
     get entities() { return game && game.entities; },

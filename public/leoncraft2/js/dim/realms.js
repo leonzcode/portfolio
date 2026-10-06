@@ -24,14 +24,14 @@
    after travelling, kept topped up while you stand in a portal; end portals
    and gateways at once.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=15';
-import { Y0 } from '../world-const.js?v=15';
-import { DIMS } from '../dims.js?v=15';
-import { explode } from '../explosion.js?v=15';
-import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=15';
-import { EndFight, gatewayBlocks } from './endfight.js?v=15';
-import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=15';
-import { mix32, rng } from '../noise.js?v=15';
+import { B, BLOCKS } from '../blocks.js?v=16';
+import { Y0 } from '../world-const.js?v=16';
+import { DIMS } from '../dims.js?v=16';
+import { explode } from '../explosion.js?v=16';
+import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPortal, tryEndPortal } from './portal.js?v=16';
+import { EndFight, gatewayBlocks } from './endfight.js?v=16';
+import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=16';
+import { mix32, rng } from '../noise.js?v=16';
 const THREE = window.THREE;
 
 const E = y => y - Y0;                     // world y -> engine y
@@ -59,7 +59,8 @@ export class Realms {
   constructor(o) {
     this.o = o;                             // { game(), renderer, travel(dim, resolve, near), give(id, n), survival() }
     this.R = o.renderer;
-    this.linear = !this.R.vanilla;
+    // plain colours go through the post chain's exposure only when there is one; otherwise they are drawn as they are
+    this.linear = !!this.R.post;
     this.entities = [];
     this.portalTime = 0; this.cooldown = 0; this.busy = false;
     this.poi = { overworld: [], the_nether: [], the_end: [] };

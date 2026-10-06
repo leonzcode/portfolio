@@ -34,12 +34,12 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=15';
-import { Screen, TextField, WHITE } from './gui.js?v=15';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf } from '../items.js?v=15';
-import { matchGrid, consumeGrid } from '../crafting.js?v=15';
-import { enchName } from '../enchanting.js?v=15';
-import { isPotion, potionName, potionLines } from '../brewing.js?v=15';
+import { BLOCKS, B } from '../blocks.js?v=16';
+import { Screen, TextField, WHITE } from './gui.js?v=16';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf } from '../items.js?v=16';
+import { matchGrid, consumeGrid } from '../crafting.js?v=16';
+import { enchName } from '../enchanting.js?v=16';
+import { isPotion, potionName, potionLines } from '../brewing.js?v=16';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles

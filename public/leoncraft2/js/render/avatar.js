@@ -36,11 +36,11 @@
      notice shall be included in all copies or substantial portions of the
      Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 --------------------------------------------------------------------------- */
-import { VANILLA, AVATAR_FS } from './vanilla.js?v=15';
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=15';
-import { lightDefines } from './materials.js?v=15';
-import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=15';
-import { H, idx } from '../world-const.js?v=15';
+import { VANILLA, AVATAR_FS } from './vanilla.js?v=16';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=16';
+import { lightDefines } from './materials.js?v=16';
+import { SOLID, OPAQUE, OPACITY, EMIT, FLUID } from '../blocks.js?v=16';
+import { H, idx } from '../world-const.js?v=16';
 const THREE = window.THREE;
 
 const PI = Math.PI, DEG = PI / 180;
@@ -51,7 +51,7 @@ const mix = (x, y, t) => x + (y - x) * t;
 /* the outer layers, as bits of the show mask (bit 0 is the base layer, always on) */
 export const SKIN_PARTS = ['hat', 'jacket', 'leftSleeve', 'rightSleeve', 'leftPants', 'rightPants'];
 const BIT = { hat: 1, jacket: 2, leftSleeve: 3, rightSleeve: 4, leftPants: 5, rightPants: 6 };
-const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=15', import.meta.url).href;
+const DEFAULT_SKIN = new URL('../../textures/skin/default.png?v=16', import.meta.url).href;
 // the default skin: ours, or the one a resource pack the player opened brings (see ui/pack.js)
 let defaultSkin = DEFAULT_SKIN;
 
@@ -235,19 +235,18 @@ void main() {
 #endif
   outColor = vec4(col, 1.0);
 }`;
+// into the body's own small shadow map (render/shadows.js): the blocks' view, a small window, no squeeze
 const SHADOW_VS = /* glsl */`
-uniform mat4 uShadowMat;
+uniform mat4 uBodyMat;
 uniform mat4 uParts[6];
 uniform int uShow;
 in vec3 position; in vec2 uv; in vec2 aPart;
 out vec2 vUv; flat out int vLayer;
-const float SHADOW_B = 0.85;
 void main() {
   int layer = int(aPart.y + 0.5);
   vLayer = layer; vUv = uv;
   if (((uShow >> layer) & 1) == 0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
-  vec4 c = uShadowMat * (uParts[int(aPart.x + 0.5)] * vec4(position, 1.0));
-  c.xy /= length(c.xy) * SHADOW_B + (1.0 - SHADOW_B);
+  vec4 c = uBodyMat * (uParts[int(aPart.x + 0.5)] * vec4(position, 1.0));
   c.z *= 0.2;
   gl_Position = c;
 }`;

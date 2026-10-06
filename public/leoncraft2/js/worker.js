@@ -1,11 +1,11 @@
 /* Leoncraft 2 - a worker: makes chunks and meshes them, off the main thread. */
-import { Gen } from './worldgen.js?v=15';
-import { VanillaGen } from './gen/vanillagen.js?v=15';
-import { meshColumn, setColours } from './mesher.js?v=15';
-import { resolveTextures } from './blocks.js?v=15';
-import { NetherGen } from './gen/nether.js?v=15';
-import { EndGen } from './gen/end.js?v=15';
-import { worldStructures, structureMessage } from './struct/hook.js?v=15';
+import { Gen } from './worldgen.js?v=16';
+import { VanillaGen } from './gen/vanillagen.js?v=16';
+import { meshColumn, setColours } from './mesher.js?v=16';
+import { resolveTextures } from './blocks.js?v=16';
+import { NetherGen } from './gen/nether.js?v=16';
+import { EndGen } from './gen/end.js?v=16';
+import { worldStructures, structureMessage } from './struct/hook.js?v=16';
 
 let gen = null, structs = null;
 
