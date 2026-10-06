@@ -93,6 +93,7 @@ const ALWAYS_GLINT = new Set(['enchanted_golden_apple', 'experience_bottle', 'ne
 export function glints(stack) {
   if (!stack) return false;
   if (stack.ench) for (const k in stack.ench) return true;
+  if (stack.lodestone) return true;
   const it = ITEMS[stack.id];
   return !!(it && ALWAYS_GLINT.has(it.name));
 }

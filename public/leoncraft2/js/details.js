@@ -27,11 +27,17 @@
    a hit knocks the item out, the next hit takes the frame down. A glow
    frame and what it holds are drawn at full light.
 
-   What it remembers (sign text, food on campfires, framed items) is kept per dimension
+   Jukeboxes: a music disc goes in (one of it) and plays for its song's
+   length, "Now Playing" over the hotbar and a note rising from the top
+   every second while it does; a click takes the disc back out, thrown up
+   from the top; breaking the jukebox drops it. The block's meta is 1 while
+   it holds a disc (a comparator reads the song's number then, sim/rsparts.js).
+
+   What it remembers (sign text, food on campfires, framed items, discs) is kept per dimension
    (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, OPACITY } from './blocks.js?v=17';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON } from './items.js?v=17';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS } from './items.js?v=17';
 import { cookingRecipe } from './crafting.js?v=17';
 const THREE = window.THREE;
 
@@ -110,7 +116,38 @@ export class Details {
     if (d.shape === 'pot') return this.pot(h, hit, d, s, n);
     if (d.shape === 'candle') return this.candle(h, hit, d, s, n);
     if (isSign(d)) return this.sign(h, hit, d, s, n);
+    if (d.name === 'jukebox') return this.jukebox(h, hit, s, n);
     return false;
+  }
+  jukebox(h, hit, s, n) {
+    const w = this.world, x = hit.x, y = hit.y, z = hit.z, e = this.map.get(key(x, y, z));
+    if (e && e.k === 'jukebox' && e.disc) {
+      this.ejectDisc(e);
+      return true;
+    }
+    if (!SONGS[n]) return false;
+    const j = this.entry(x, y, z, 'jukebox');
+    j.disc = withCount(s, 1); j.t = 0;
+    w.set(x, y, z, B.jukebox, 1);
+    if (!h.creative) h.inv.takeSelected(1);
+    const msg = h.inter && h.inter.sim && h.inter.sim.msg;
+    if (msg) msg.show('Now Playing: ' + SONGS[n][0], 60);
+    this.dirty = true;
+    return true;
+  }
+  // the disc thrown up out of the top, as the game pops it
+  ejectDisc(e) {
+    const w = this.world;
+    if (e.disc && this.drops) this.drops.spawn(e.x + 0.5 + (Math.random() - 0.5) * 0.7, e.y + 1.01, e.z + 0.5 + (Math.random() - 0.5) * 0.7, e.disc, { vel: [0, 0.1, 0] });
+    e.disc = null; e.t = 0;
+    if (w.get(e.x, e.y, e.z) === B.jukebox) w.set(e.x, e.y, e.z, B.jukebox, 0);
+    this.map.delete(key(e.x, e.y, e.z));
+    this.dirty = true;
+  }
+  // what a comparator reads from a jukebox: its song's number while it holds a disc
+  jukeboxSignal(x, y, z) {
+    const e = this.map.get(key(x, y, z)), song = e && e.k === 'jukebox' && e.disc ? SONGS[itemName(e.disc.id)] : null;
+    return song ? song[2] : 0;
   }
   // an item frame on the face clicked: the face of its own cell that touches the block (models.js 'on a face')
   hangFrame(h, hit, n) {
@@ -339,6 +376,7 @@ export class Details {
       if (e) this._unshow(e);
       e = k === 'sign' ? { k, x, y, z, front: { lines: ['', '', '', ''], colour: 'black', glow: false }, back: { lines: ['', '', '', ''], colour: 'black', glow: false }, waxed: false }
         : k === 'frame' ? { k, x, y, z, item: null, rot: 0 }
+        : k === 'jukebox' ? { k, x, y, z, disc: null, t: 0 }
         : { k, x, y, z, items: [null, null, null, null], t: [0, 0, 0, 0], total: [600, 600, 600, 600] };
       this.map.set(id, e);
     }
@@ -354,6 +392,7 @@ export class Details {
     this._unshow(e);
     this.dirty = true;
     if (e.k === 'campfire' && this.drops) for (const s of e.items) if (s) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, s);
+    if (e.k === 'jukebox' && e.disc && this.drops) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, e.disc);
     // a frame comes down as its item, with what it held (nothing in creative)
     if (e.k === 'frame' && this.drops && !(this.creative && this.creative())) {
       if (e.item) this.drops.spawn(x + 0.5, y + 0.4, z + 0.5, e.item);
@@ -378,9 +417,20 @@ export class Details {
       // now and then: a block that has gone (an explosion, a piston, its support) lets go of what it held
       if ((this.ticks + e.x + e.z) % 20 === 0) {
         const d = BLOCKS[w.get(e.x, e.y, e.z)];
-        if (!d || (e.k === 'sign' ? !isSign(d) : e.k === 'frame' ? !d.frame : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
+        if (!d || (e.k === 'sign' ? !isSign(d) : e.k === 'frame' ? !d.frame : e.k === 'jukebox' ? d.name !== 'jukebox' : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
         // loaded from the save before its chunk was there: drawn now
-        if (!e.meshes) this._show(e);
+        if (!e.meshes && e.k !== 'jukebox') this._show(e);
+      }
+      if (e.k === 'jukebox') {
+        // playing: a note rises from the top each second, until the song is over (the disc stays in)
+        const song = e.disc && SONGS[itemName(e.disc.id)];
+        if (!song || e.t >= song[1] * 20) continue;
+        if (++e.t % 20 === 0) {
+          const P = this.R && this.R.particles, f = Math.random();
+          const c = v => Math.max(0, Math.min(255, Math.round((Math.max(0, Math.sin((f + v) * Math.PI * 2) * 0.65 + 0.35)) * 255)));
+          if (P && P.spawn) P.spawn(e.x + 0.5, e.y + 1.2, e.z + 0.5, 0, 0.06, 0, { colour: (c(0) << 16) | (c(1 / 3) << 8) | c(2 / 3), size: 0.18, life: 6, gravity: 0, physics: false });
+        }
+        continue;
       }
       if (e.k !== 'campfire') continue;
       const lit = !(w.meta(e.x, e.y, e.z) & 4);
@@ -438,6 +488,7 @@ export class Details {
     e.meshes = [];
     if (e.k === 'campfire') this._showFood(e);
     else if (e.k === 'frame') this._showFrame(e);
+    else if (e.k === 'jukebox') return;
     else this._showText(e);
   }
   // the food lies flat on the logs, one item to each side, as the game's campfire renderer lays it
@@ -554,6 +605,7 @@ export class Details {
     for (const e of this.map.values()) {
       if (e.k === 'sign') out.push({ k: 's', p: [e.x, e.y, e.z], f: e.front, b: e.back, w: e.waxed ? 1 : 0 });
       else if (e.k === 'frame') out.push({ k: 'f', p: [e.x, e.y, e.z], i: e.item ? stackToJSON(e.item) : null, r: e.rot });
+      else if (e.k === 'jukebox') { if (e.disc) out.push({ k: 'j', p: [e.x, e.y, e.z], i: stackToJSON(e.disc), t: e.t }); }
       else if (e.items.some(Boolean)) out.push({ k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total });
     }
     return out;
@@ -571,6 +623,9 @@ export class Details {
       } else if (o.k === 'f') {
         const e = this.entry(x, y, z, 'frame');
         e.item = o.i ? stackFromJSON(o.i) : null; e.rot = (o.r | 0) & 7;
+      } else if (o.k === 'j') {
+        const e = this.entry(x, y, z, 'jukebox');
+        e.disc = o.i ? stackFromJSON(o.i) : null; e.t = o.t | 0;
       } else if (o.k === 'c') {
         const e = this.entry(x, y, z, 'campfire');
         e.items = (o.i || []).concat([null, null, null, null]).slice(0, 4).map(a => (a ? stackFromJSON(a) : null));

@@ -29,6 +29,7 @@
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=17';
+import { setLodestoneCheck } from './dials.js?v=17';
 import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown } from './items.js?v=17';
 import { breakTicks, wearFor } from './mining.js?v=17';
 import { blockDrops } from './loot.js?v=17';
@@ -62,6 +63,18 @@ function joinSlots(a, b) {
     has(t, k) { if (typeof k === 'string' && /^\d+$/.test(k)) return +k < n; return k in t; },
   });
 }
+/* Copper's ages: each copper block's name one age younger (an axe scrapes it
+   back), and every copper block that ages (honeycomb waxes those). */
+const COPPER_AGES = ['exposed_', 'weathered_', 'oxidized_'], COPPER_AGE = new Set(), COPPER_BACK = {};
+for (const d of BLOCKS) {
+  if (!d || !/copper|lightning_rod/.test(d.name) || /^waxed_|ore$|^raw_|_ingot$|_nugget$/.test(d.name)) continue;
+  if (B['waxed_' + d.name] !== undefined) COPPER_AGE.add(d.name);
+  const i = COPPER_AGES.findIndex(a => d.name.startsWith(a));
+  if (i < 0) continue;
+  const fam = d.name.slice(COPPER_AGES[i].length);
+  const back = i > 0 ? COPPER_AGES[i - 1] + fam : fam === 'copper' ? 'copper_block' : fam;
+  if (B[back] !== undefined) COPPER_BACK[d.name] = back;
+}
 const STRIP = {};
 for (const w of ['oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'cherry', 'pale_oak', 'poplar']) { STRIP[w + '_log'] = 'stripped_' + w + '_log'; STRIP[w + '_wood'] = 'stripped_' + w + '_wood'; }
 for (const w of ['crimson', 'warped']) { STRIP[w + '_stem'] = 'stripped_' + w + '_stem'; STRIP[w + '_hyphae'] = 'stripped_' + w + '_hyphae'; }
@@ -81,6 +94,12 @@ export class Hands {
     this.onToolBreak = null;         // (stack) the breaking sound
     // a tool or a piece of armour that wears out breaks into pieces
     if (this.inv && this.inv.on) this.inv.on('broke', s => this.toolBroke(s));
+    // a lodestone compass's needle spins once its lodestone is known to be gone (js/dials.js)
+    setLodestoneCheck((x, y, z, dim) => {
+      const w = this.world;
+      if (!w || (w.dim || 'overworld') !== dim || (w.chunkAt && !w.chunkAt(x, z))) return null;
+      return w.get(x, y, z) === B.lodestone;
+    });
     // an elytra worn and not worn out (one point of it left is not enough to fly), for the player's glide
     if (this.player) this.player.hasElytra = () => { const c = this.inv.armor[1], it = c && ITEMS[c.id]; return !!(it && it.name === 'elytra' && (c.dmg | 0) < (it.dur || 432) - 1); };
     this.glideT = 0;
@@ -201,7 +220,8 @@ export class Hands {
     const w = this.world, b = hit.b, d = BLOCKS[b];
     if (!d || w.get(hit.x, hit.y, hit.z) !== b) return false;
     const holding = !!this.held || !!this.inv.offhand;
-    if (this.player.sneaking && holding) return false;
+    // sneaking with something in hand skips the block's own use, not what the item does to it
+    if (this.player.sneaking && holding) return this.itemOnBlock(hit, d);
     // cauldrons, composters, campfires and signs (details.js)
     if (this.details && this.details.use(this, hit)) return true;
     if (d.name === 'crafting_table') { this.open(new CraftingScreen(this.inv, this.icons)); return true; }
@@ -241,21 +261,54 @@ export class Hands {
       this.open(kind === 'shulker_box' ? new ShulkerScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)) : new ChestScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)));
       return true;
     }
-    // tools on the ground and on logs
-    const it = this.held ? ITEMS[this.held.id] : null, tool = it && it.tool;
-    if (tool && !this.player.sneaking && this.mayBuild) {
-      const above = w.get(hit.x, hit.y + 1, hit.z);
-      let to = null;
-      if (tool.kind === 'axe' && STRIP[d.name]) to = STRIP[d.name];
-      else if (tool.kind === 'hoe' && TILL[d.name] && !above && hit.face && hit.face[1] !== -1) to = TILL[d.name];
-      else if (tool.kind === 'shovel' && FLATTEN[d.name] && !above && hit.face && hit.face[1] !== -1) to = FLATTEN[d.name];
-      if (to && B[to] !== undefined) {
-        w.set(hit.x, hit.y, hit.z, B[to], tool.kind === 'axe' ? w.meta(hit.x, hit.y, hit.z) : 0);
-        if (!this.creative) this.inv.damageSelected(1);
-        return true;
+    return this.itemOnBlock(hit, d);
+  }
+  /* What the held item does to a block, sneaking or not: tools till, flatten
+     and strip, an axe scrapes copper back an age or takes its wax off (not
+     with a shield up in the other hand, unless sneaking), honeycomb waxes
+     copper so it never ages. A door changes both its halves. */
+  itemOnBlock(hit, d) {
+    const w = this.world, it = this.held ? ITEMS[this.held.id] : null, tool = it && it.tool;
+    if (!it || !this.mayBuild) return false;
+    // a door or trapdoor opens instead, unless you sneak (interact.js)
+    if (!this.player.sneaking && (d.shape === 'door' || d.shape === 'trapdoor')) return false;
+    const set = to => {
+      const m = w.meta(hit.x, hit.y, hit.z);
+      w.set(hit.x, hit.y, hit.z, B[to], m);
+      if (d.shape === 'door') { const oy = m & 8 ? -1 : 1; if (w.get(hit.x, hit.y + oy, hit.z) === d.id) w.set(hit.x, hit.y + oy, hit.z, B[to], w.meta(hit.x, hit.y + oy, hit.z)); }
+    };
+    /* a compass on a lodestone points at it from now on: the compass itself if it is alone
+       (in survival), else a new one, the old stack one fewer */
+    if (it.name === 'compass' && d.name === 'lodestone') {
+      const link = { x: hit.x, y: hit.y, z: hit.z, dim: w.dim || 'overworld' }, s = this.held;
+      if (!this.creative && s.count === 1) { s.lodestone = link; this.inv.changed(); }
+      else {
+        if (!this.creative) this.inv.takeSelected(1);
+        this.inv.placeBack({ id: s.id, count: 1, lodestone: link });
+        this.inv.changed();
       }
+      return true;
     }
-    return false;
+    if (it.name === 'honeycomb' && !/^waxed_/.test(d.name) && COPPER_AGE.has(d.name) && B['waxed_' + d.name] !== undefined) {
+      set('waxed_' + d.name);
+      if (!this.creative) this.inv.takeSelected(1);
+      return true;
+    }
+    if (!tool) return false;
+    const above = w.get(hit.x, hit.y + 1, hit.z);
+    let to = null;
+    if (tool.kind === 'axe') {
+      const off = this.inv.offhand, shield = off && ITEMS[off.id] && ITEMS[off.id].name === 'shield';
+      if (shield && !this.player.sneaking) return false;
+      if (STRIP[d.name]) to = STRIP[d.name];
+      else if (/^waxed_/.test(d.name)) to = d.name.slice(6);
+      else to = COPPER_BACK[d.name] || null;
+    } else if (tool.kind === 'hoe' && TILL[d.name] && !above && hit.face && hit.face[1] !== -1) to = TILL[d.name];
+    else if (tool.kind === 'shovel' && FLATTEN[d.name] && !above && hit.face && hit.face[1] !== -1) to = FLATTEN[d.name];
+    if (!to || B[to] === undefined) return false;
+    if (tool.kind === 'axe') set(to); else w.set(hit.x, hit.y, hit.z, B[to], 0);
+    if (!this.creative) this.inv.damageSelected(1);
+    return true;
   }
 
   // the work blocks: enchanting table, anvils, grindstone, smithing table, stonecutter
