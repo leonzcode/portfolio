@@ -28,6 +28,77 @@ export function setLayerPixels(px) { PIX = px; }
 
 export function isFlatItem(d) { return !!d && (FLAT.has(d.shape) || (d.iconLayer !== undefined && d.shape !== 'cube' && d.shape !== 'slab' && d.shape !== 'stairs')); }
 
+/* A thing held as one of the game's entity models (the shield, the
+   trident): its boxes turned over as the game turns the model into the
+   item's space, lifted by lift pixels so every corner stays in the unsigned
+   vertex range (the DISPLAY entries in held.js take the lift back off).
+   Each box: the game's model numbers (pixels, y down, -z the front), a
+   texture layer, a tint and whether its texture is turned. */
+function modelGeometry(boxes, lift) {
+  const verts = [], A = [], L = [], C = [], idx = [];
+  const box = (x, y, z, w, h, d, layer, tint, rot) => {
+    const f = [x, lift - (y + h), -(z + d)], t = [x + w, lift - y, -z];
+    const size = [w, h, d];
+    for (let fi = 0; fi < 6; fi++) {
+      const F = FACES[fi];
+      let kt = 0, kb = 0;
+      for (let k = 0; k < 3; k++) { if (F.t[k]) kt = k; if (F.b[k]) kb = k; }
+      // the face's texture: as many pixels as it is wide and tall (turned or not), no more than one tile
+      const uw = Math.min(16, size[kt]), vh = Math.min(16, size[kb]);
+      const v0 = verts.length / 4;
+      for (let c = 0; c < 4; c++) {
+        const [u, v] = CORNERS[c], P = [0, 0, 0];
+        for (let k = 0; k < 3; k++) {
+          if (F.n[k]) P[k] = F.n[k] > 0 ? t[k] : f[k];
+          else if (k === kt) P[k] = (F.t[k] > 0) === (u === 1) ? t[k] : f[k];
+          else P[k] = (F.b[k] > 0) === (v === 1) ? t[k] : f[k];
+        }
+        verts.push(Math.round((P[0] / 16 + 7.5) * 32), Math.round((P[1] / 16 + 0.5) * 32), Math.round((P[2] / 16 + 7.5) * 32), layer);
+        A.push(u ? uw : 0, v ? vh : 0, fi, 3 | (rot ? 4 : 0) | (tint !== 0xffffff ? 64 : 0));
+        L.push(255, 0, 0, 0);
+        C.push(tint >> 16, (tint >> 8) & 255, tint & 255, 255);
+      }
+      idx.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);
+    }
+  };
+  for (const b of boxes) box(...b);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('aPos', new THREE.BufferAttribute(new Uint16Array(verts), 4));
+  g.setAttribute('aA', new THREE.BufferAttribute(new Uint8Array(A), 4));
+  g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(L), 4));
+  g.setAttribute('aC', new THREE.BufferAttribute(new Uint8Array(C), 4));
+  g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
+  return { geometry: g, flat: false, cutout: false };
+}
+/* The shield: a board 12 x 22 x 1 pixels with a handle 2 x 6 x 6 behind it
+   (the game's shield model), lifted 8 pixels. Our own look, from block
+   textures: upright boards in an iron rim, a darker wooden handle.
+   layers: { wood, rim, handle }. */
+export function shieldGeometry(layers) {
+  const W = 0xffffff, IRON = 0xb4b4bc;
+  return modelGeometry([
+    // the boards, upright, in two parts so the texture is never stretched
+    [-5, -10, -2, 10, 16, 1, layers.wood, W, 1], [-5, 6, -2, 10, 4, 1, layers.wood, W, 1],
+    // the rim: down both sides, across the top and the bottom
+    [-6, -11, -2, 1, 22, 1, layers.rim, IRON, 0], [5, -11, -2, 1, 22, 1, layers.rim, IRON, 0],
+    [-5, -11, -2, 10, 1, 1, layers.rim, IRON, 0], [-5, 10, -2, 10, 1, 1, layers.rim, IRON, 0],
+    // the handle behind
+    [-1, -3, -1, 2, 6, 6, layers.handle, W, 0],
+  ], 8);
+}
+/* The trident: a pole 25 pixels long, a crosspiece and three prongs (the
+   game's trident model), lifted 24 pixels. Our own look, from block
+   textures: a dark prismarine pole under a paler head. layers: { pole, head }. */
+export function tridentGeometry(layers) {
+  const W = 0xffffff;
+  return modelGeometry([
+    [-0.5, 2, -0.5, 1, 25, 1, layers.pole, W, 0],
+    [-1.5, 0, -0.5, 3, 2, 1, layers.head, W, 0],
+    [-2.5, -3, -0.5, 1, 4, 1, layers.head, W, 0], [-0.5, -4, -0.5, 1, 4, 1, layers.head, W, 0], [1.5, -3, -0.5, 1, 4, 1, layers.head, W, 0],
+  ], 24);
+}
+
 export function blockGeometry(d, meta) {
   const verts = [], A = [], L = [], C = [], idx = [];
   const tint = TINTS[d.tint] || 0xffffff, tinted = d.tint ? 64 : 0;
