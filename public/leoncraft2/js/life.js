@@ -16,12 +16,12 @@
    Commands: /effect give|clear, /xp (add, set, query), /spawnpoint (the
    player's own respawn point, as the game's is).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=17';
-import { gameRule, register } from './commands.js?v=17';
-import { DIMS } from './dims.js?v=17';
-import { Y0 } from './world-const.js?v=17';
-import { EFFECTS, effectId, effectName } from './effects.js?v=17';
-import { xpForLevel } from './survival.js?v=17';
+import { B, BLOCKS, FLUID } from './blocks.js?v=18';
+import { gameRule, register } from './commands.js?v=18';
+import { DIMS } from './dims.js?v=18';
+import { Y0 } from './world-const.js?v=18';
+import { EFFECTS, effectId, effectName } from './effects.js?v=18';
+import { xpForLevel } from './survival.js?v=18';
 
 /* ---- what survival.js asks ---- */
 export function survivalHooks(getGame, deps) {

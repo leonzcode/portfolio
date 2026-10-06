@@ -19,18 +19,18 @@
    extensions, carvers, features) is written from the game's observable
    behaviour and checked against chunks the real 26.3 server made.
 --------------------------------------------------------------------------- */
-import { VDATA } from './vdata.js?v=17';
-import { DensityState, Compiler, tri, children } from './density.js?v=17';
-import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=17';
-import { Xoroshiro } from './random.js?v=17';
-import { B, BLOCKS } from '../blocks.js?v=17';
-import { BIO, BIOMES } from '../biomes.js?v=17';
-import { H, Y0, VOL } from '../world-const.js?v=17';
-import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf } from './features.js?v=17';
-import { Carvers } from './carvers.js?v=17';
-import { stateOf } from './states.js?v=17';
-import './trees.js?v=17';
-import './misc.js?v=17';
+import { VDATA } from './vdata.js?v=18';
+import { DensityState, Compiler, tri, children } from './density.js?v=18';
+import { BiomeTable, Zoom, quantize } from './biomesrc.js?v=18';
+import { Xoroshiro } from './random.js?v=18';
+import { B, BLOCKS } from '../blocks.js?v=18';
+import { BIO, BIOMES } from '../biomes.js?v=18';
+import { H, Y0, VOL } from '../world-const.js?v=18';
+import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf } from './features.js?v=18';
+import { Carvers } from './carvers.js?v=18';
+import { stateOf } from './states.js?v=18';
+import './trees.js?v=18';
+import './misc.js?v=18';
 
 const MIN_Y = -64, SEA_LEVEL = 63;
 const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
@@ -448,7 +448,7 @@ export class VanillaGen {
         for (let k = 0; k < mine.length; k += 2) {
           const i = mine[k], v = mine[k + 1], id = v >> 8;
           if (!owner[i]) { owner[i] = 1; touched.push(i); }
-          else if (writeRank(id) < writeRank(blocks[i])) continue;
+          else if (writeRank(id, v & 255) < writeRank(blocks[i], meta[i])) continue;
           blocks[i] = id; meta[i] = v & 255;
         }
       }
@@ -494,27 +494,27 @@ export class VanillaGen {
     }
     return false;
   }
-  /* Every plant a feature put down (or that stands on a block a feature
-     changed) that has lost what it needs, taken away: back to air, or to
-     water for the ones that grow in it. Bottom up, so a tall plant's top
-     goes with its bottom. */
+  /* Every plant a feature put down (or that stands on, or hangs from, a
+     block a feature changed) that has lost what it needs, taken away: back
+     to air, or to water for the ones that grow in it. Whatever stood on it
+     or hung from it is looked at again, so a tall plant's top goes with its
+     bottom and a vine with the root it hung from. */
   settle(view, touched) {
     const blocks = view.blocks, meta = view.m;
-    const look = this._look || (this._look = new Uint8Array(VOL));
-    let lo = VOL, hi = -1;
+    const q = [];
     for (const i of touched) {
-      look[i] = 1; if (i < lo) lo = i; if (i > hi) hi = i;
-      if (i + 256 < VOL) { look[i + 256] = 1; if (i + 256 > hi) hi = i + 256; }
+      q.push(i);
+      if (i + 256 < VOL) q.push(i + 256);
+      if (i >= 256) q.push(i - 256);
     }
-    for (let i = lo; i <= hi; i++) {
-      if (!look[i]) continue;
-      look[i] = 0;
-      const b = blocks[i], kind = isGroundPlant(b);
+    for (let k = 0; k < q.length; k++) {
+      const i = q[k], b = blocks[i], kind = isGroundPlant(b);
       if (!kind) continue;
       const x = view.x0 + (i & 15), z = view.z0 + ((i >> 4) & 15), y = (i >> 8) + MIN_Y;
       if (plantHolds(view, b, meta[i], x, y, z)) continue;
       blocks[i] = kind === 2 ? B.water : 0; meta[i] = 0;
-      if (i + 256 < VOL) { look[i + 256] = 1; if (i + 256 > hi) hi = i + 256; }
+      if (i + 256 < VOL) q.push(i + 256);
+      if (i >= 256) q.push(i - 256);
     }
   }
   // a chunk's feature writes, by the chunk they land in (0..8 around it)

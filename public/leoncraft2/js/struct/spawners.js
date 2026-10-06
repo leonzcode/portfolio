@@ -21,8 +21,8 @@
    each spawner near the player turns slowly inside its cage, small (drawn
    by the mobs' renderer from its displays list, never ticked or hit).
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=17';
-import { Y0, CH } from '../world-const.js?v=17';
+import { B } from '../blocks.js?v=18';
+import { Y0, CH } from '../world-const.js?v=18';
 
 // what a spawner can hold, by its meta (1 up): append only, saves keep the numbers
 export const SPAWNABLE = ['zombie', 'skeleton', 'spider', 'cave_spider', 'blaze', 'creeper', 'husk', 'stray', 'drowned', 'magma_cube', 'silverfish', 'endermite',
@@ -138,7 +138,7 @@ function nearby(E, s) {
 
 /* window.__lc2.structures: ask the workers (they hold the generator). */
 let roll = null;
-const loadLoot = () => roll || (roll = import('./loot.js?v=17').then(m => m.rollLoot).catch(() => null));
+const loadLoot = () => roll || (roll = import('./loot.js?v=18').then(m => m.rollLoot).catch(() => null));
 export function structuresApi(getWorld, getPlayer) {
   const ask = (msg) => {
     const w = getWorld();

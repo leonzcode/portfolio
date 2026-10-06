@@ -51,7 +51,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=17';
+import { Font, cssRGB } from './font.js?v=18';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -230,7 +230,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=17';
+    this.version = version || '?v=18';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();

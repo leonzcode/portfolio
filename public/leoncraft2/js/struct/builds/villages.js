@@ -25,8 +25,8 @@
    Villagers (one per bed), an iron golem by the well and a cat are left as
    entities.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=17';
-import { footprint, overlaps, door, bed, torch, gableZ, gableX, DX, DZ, rng } from './util.js?v=17';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=18';
+import { footprint, overlaps, door, bed, torch, gableZ, gableX, DX, DZ, rng } from './util.js?v=18';
 
 export const PLANS = {};
 
@@ -527,7 +527,8 @@ function drawFarm(g, o) {
     const half = x < 6 ? 0 : 1;
     g.set(x, 1, z, o.crop[half], { m: o.age[half] });
   }
-  if (S.roof === 'flat') g.set(0, 1, 0, 'dead_bush');
+  // (a dead bush cannot grow on the cut sandstone of the frame: it stands in a pot there)
+  if (S.roof === 'flat') g.set(0, 1, 0, 'potted_dead_bush');
 }
 function drawPen(g, o) {
   const S = o.S, W = g.w, D = g.d;

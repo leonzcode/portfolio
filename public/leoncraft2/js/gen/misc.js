@@ -11,12 +11,12 @@
    Written from the game's behaviour and its 26.3 worldgen data, and checked
    against chunks the real server made. Registered into FEATURES.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=17';
+import { B, BLOCKS } from '../blocks.js?v=18';
 import {
   FEATURES, strip, tag, provider, predicate, sampleInt, sampleFloat, stateFrom, placePlaced, survives, fluidOf, msin,
-} from './features.js?v=17';
-import { LegacyRandom } from './random.js?v=17';
-import { Perlin } from './noise.js?v=17';
+} from './features.js?v=18';
+import { LegacyRandom } from './random.js?v=18';
+import { Perlin } from './noise.js?v=18';
 
 const MIN_Y = -64, MAX_Y = 319, SEA_LEVEL = 63;
 const F = Math.fround;
@@ -609,47 +609,114 @@ FEATURES.root_system = (D, c, r, ox, oy, oz) => {
   return true;
 };
 
+/* ========================================================= sculk patch == */
+/* The deep dark's sculk. Not the game's own code: our own design after what
+   the wiki describes, made from the same settings (charge_count,
+   amount_per_charge, spread_attempts, spread_rounds, growth_rounds). A
+   patch starts only from air or water beside a whole block. Each charge
+   sets out from there with amount_per_charge to spend and wanders over the
+   cave's surface (blocks that can take sculk, open to the cave), turning
+   each one it reaches into sculk for one of its charge; going over sculk
+   already laid costs nothing. Veins grow out over the rock round the edge,
+   and where a charge gives out on sculk open above it now and then leaves a
+   sensor, more rarely a shrieker. */
+FEATURES.sculk_patch = (D, c, r, ox, oy, oz) => {
+  const R = D.region;
+  const o = R.get(ox, oy, oz);
+  if (!isAir(o) && o !== B.water) return false;
+  let touches = false;
+  for (const [dx, dy, dz] of DIRS) if (sturdy(R.get(ox + dx, oy + dy, oz + dz))) { touches = true; break; }
+  if (!touches) return false;
+  const rep = set('#minecraft:sculk_replaceable_world_gen');
+  const open = b => isAir(b) || b === B.water;
+  const surface = (x, y, z) => {
+    const b = R.get(x, y, z);
+    if (!(rep[b] || b === B.sculk) || !R.inside(x, z)) return false;
+    for (const [dx, dy, dz] of DIRS) if (open(R.get(x + dx, y + dy, z + dz))) return true;
+    return false;
+  };
+  const charges = c.charge_count ?? 10, amount = c.amount_per_charge ?? 32;
+  const steps = (c.spread_attempts ?? 64) * Math.max(1, c.spread_rounds ?? 1);
+  const laid = [];
+  const cand = [];
+  for (let k = 0; k < charges; k++) {
+    let x = ox, y = oy, z = oz, left = amount;
+    for (let s = 0; s < steps && left > 0; s++) {
+      cand.length = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        if ((dx || dy || dz) && surface(x + dx, y + dy, z + dz)) cand.push(x + dx, y + dy, z + dz);
+      }
+      if (!cand.length) break;
+      const j = r.nextInt(cand.length / 3) * 3;
+      x = cand[j]; y = cand[j + 1]; z = cand[j + 2];
+      if (R.get(x, y, z) !== B.sculk) { R.set(x, y, z, B.sculk, 0); laid.push(x, y, z); left--; }
+    }
+    // a growth where the charge gave out, on sculk with room above it
+    if (R.get(x, y, z) === B.sculk && isAir(R.get(x, y + 1, z))) {
+      const g = r.nextFloat();
+      if (g < 0.05) R.set(x, y + 1, z, B.sculk_shrieker, 0);
+      else if (g < 0.33) R.set(x, y + 1, z, B.sculk_sensor, 0);
+    }
+  }
+  // veins over the rock round the edge of what was laid
+  for (let i = 0; i < laid.length; i += 3) {
+    const x = laid[i], y = laid[i + 1], z = laid[i + 2];
+    for (const [dx, dy, dz] of DIRS) {
+      const nx = x + dx, ny = y + dy, nz = z + dz;
+      if (!isAir(R.get(nx, ny, nz)) || !R.inside(nx, nz)) continue;
+      let rock = false;
+      for (const [ex, ey, ez] of DIRS) { const m = R.get(nx + ex, ny + ey, nz + ez); if (rep[m] && m !== B.sculk && sturdy(m)) { rock = true; break; } }
+      if (rock && r.nextFloat() < 0.65) R.set(nx, ny, nz, B.sculk_vein, 0);
+    }
+  }
+  return laid.length > 0;
+};
+
 /* ============================================================ dripstone == */
-function dripBase(b, rep) { return b === B.dripstone_block || rep[b] === 1; }
-function placeDripBlock(R, x, y, z, rep) {
-  if (rep[R.get(x, y, z)]) { R.set(x, y, z, B.dripstone_block, 0); return true; }
+/* (the same feature makes the sulfur caves' spikes: its base_block and
+   pointed_block say which; pointed dripstone keeps which way it points) */
+function dripBase(b, rep, base) { return b === base.id || rep[b] === 1; }
+function placeDripBlock(R, x, y, z, rep, base) {
+  if (rep[R.get(x, y, z)]) { R.set(x, y, z, base.id, base.meta); return true; }
   return false;
 }
-function growPointed(R, x, y, z, dir, height, rep) {
+function growPointed(R, x, y, z, dir, height, rep, base, tip) {
   // dir: -1 down (a stalactite), 1 up (a stalagmite)
   const back = R.get(x, y - dir, z);
-  if (!(dripBase(back, rep) || back === B.lava)) return;
-  for (let i = 0; i < height; i++) R.set(x, y + dir * i, z, B.pointed_dripstone, dir < 0 ? 5 : 4);
+  if (!(dripBase(back, rep, base) || back === B.lava)) return;
+  const m = tip.id === B.pointed_dripstone ? (dir < 0 ? 5 : 4) : tip.meta;
+  for (let i = 0; i < height; i++) R.set(x, y + dir * i, z, tip.id, m);
 }
 FEATURES.speleothem = (D, c, r, ox, oy, oz) => {
   const R = D.region;
   const rep = set(c.replaceable_blocks || '#minecraft:dripstone_replaceable_blocks');
-  const up = dripBase(R.get(ox, oy + 1, oz), rep), dn = dripBase(R.get(ox, oy - 1, oz), rep);
+  const base = stateFrom(c.base_block || 'minecraft:dripstone_block'), tip = stateFrom(c.pointed_block || 'minecraft:pointed_dripstone');
+  const up = dripBase(R.get(ox, oy + 1, oz), rep, base), dn = dripBase(R.get(ox, oy - 1, oz), rep, base);
   let dir;
   if (up && dn) dir = r.nextBoolean() ? -1 : 1;
   else if (up) dir = -1;
   else if (dn) dir = 1;
   else return false;
   const bx = ox, by = oy - dir, bz = oz;
-  placeDripBlock(R, bx, by, bz, rep);
+  placeDripBlock(R, bx, by, bz, rep, base);
   const spread = F(c.chance_of_directional_spread ?? 0.7), r2 = F(c.chance_of_spread_radius2 ?? 0.5), r3 = F(c.chance_of_spread_radius3 ?? 0.5);
   for (const hi of HORIZ) {
     if (r.nextFloat() > spread) continue;
     const [dx, , dz] = DIRS[hi];
     let x = bx + dx, y = by, z = bz + dz;
-    placeDripBlock(R, x, y, z, rep);
+    placeDripBlock(R, x, y, z, rep, base);
     if (r.nextFloat() > r2) continue;
     let d = DIRS[r.nextInt(6)];
     x += d[0]; y += d[1]; z += d[2];
-    placeDripBlock(R, x, y, z, rep);
+    placeDripBlock(R, x, y, z, rep, base);
     if (r.nextFloat() > r3) continue;
     d = DIRS[r.nextInt(6)];
     x += d[0]; y += d[1]; z += d[2];
-    placeDripBlock(R, x, y, z, rep);
+    placeDripBlock(R, x, y, z, rep, base);
   }
   const tipFree = (() => { const b = R.get(ox, oy + dir, oz); return isAir(b) || b === B.water; })();
   const h = r.nextFloat() < F(c.chance_of_taller_dripstone ?? 0.2) && tipFree ? 2 : 1;
-  growPointed(R, ox, oy, oz, dir, h, rep);
+  growPointed(R, ox, oy, oz, dir, h, rep, base, tip);
   return true;
 };
 
@@ -706,9 +773,10 @@ FEATURES.speleothem_cluster = (D, c, r, ox, oy, oz) => {
     const top = caveEdge(R, x, oy, z, 1, range), bottom = caveEdge(R, x, oy, z, -1, range);
     if (top === null && bottom === null) continue;
     const layer = sampleInt(c.speleothem_block_layer_thickness ?? 2, r);
-    // coat the rock the spikes hang from
-    if (top !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, top + i, z); if (rep[b] || b === baseSt.id) R.set(x, top + i, z, baseSt.id, baseSt.meta); else break; }
-    if (bottom !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, bottom - i, z); if (rep[b] || b === baseSt.id) R.set(x, bottom - i, z, baseSt.id, baseSt.meta); else break; }
+    // coat the rock the spikes hang from (only rock the feature may replace: a coat another cluster
+    // already laid stops it, so two caves either side of a thin floor do not make it dripstone right through)
+    if (top !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, top + i, z); if (rep[b]) R.set(x, top + i, z, baseSt.id, baseSt.meta); else break; }
+    if (bottom !== null) for (let i = 0; i < layer; i++) { const b = R.get(x, bottom - i, z); if (rep[b]) R.set(x, bottom - i, z, baseSt.id, baseSt.meta); else break; }
     any = true;
     if (r.nextFloat() >= chance) continue;
     const bias = Math.max(0, 1 - Math.sqrt(dx * dx + dz * dz) / centreReach);
