@@ -15,16 +15,16 @@
    (render/avatar.js): their own skin, what they hold and wear, the arm
    swing, sneaking, swimming and the red flash when hurt, the limbs worked
    out at 20 ticks a second from how far they moved. Above each one its
-   name, as the game draws it: white on a faint dark band, seen through
-   walls a little, and only up close (dimmer, not through walls) while they
-   sneak. Nothing is drawn of a player in another dimension or out of sight
-   range.
+   name, as the game draws it: white on a faint dark band, the band and a
+   faint copy of the name seen through walls, only the faint one (and not
+   through walls) while they sneak, none past 64 blocks. Nothing is drawn of
+   a player in another dimension or out of sight range.
 --------------------------------------------------------------------------- */
 import { Avatar } from '../render/avatar.js?v=21';
 import { pieceLook, armorSheet } from '../render/armor.js?v=21';
 import { setLight as setLightOf } from '../render/held.js?v=21';
 import { DRAW, I, stackFromJSON } from '../items.js?v=21';
-import { B } from '../blocks.js?v=21';
+import { B, BLOCKS } from '../blocks.js?v=21';
 const THREE = window.THREE;
 
 const DELAY = 100;          // ms behind the newest position, at the least
@@ -35,7 +35,13 @@ const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 
 // the flags each position carries (net/net.js sends them)
-export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256 };
+export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024 };
+// what the use button can be doing with a hand (render/avatar.js useNow kinds), by number in a position
+export const USE_KINDS = ['eat', 'drink', 'horn', 'bow', 'aim', 'crossbow', 'block', 'trident', 'spear', 'spyglass'];
+// sitting on something: the legs sit (the mount itself is on its rider's machine only, for now)
+const SEAT = { yaw: 0 };
+// a bed's facing bits (sim/beds.js): north, east, south, west, the way from its foot to its head
+const BED_DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 export class RemotePlayers {
   constructor(renderer, font) {
@@ -80,7 +86,13 @@ export class RemotePlayers {
       for (const m of [av.mat, av.armMat, av.shadowMat, av.armorMat, av.armorShadowMat]) m.dispose();
       r.av = null;
     }
-    if (r.tag) { this.group.remove(r.tag.far, r.tag.near); r.tag.tex.dispose(); r.tag.far.material.dispose(); r.tag.near.material.dispose(); r.tag = null; }
+    if (r.tag) this.dropTag(r);
+  }
+  dropTag(r) {
+    const t = r.tag;
+    this.group.remove(t.far, t.near);
+    for (const s of [t.far, t.near]) { s.material.map.dispose(); s.material.dispose(); }
+    r.tag = null;
   }
   // a position, with the sender's clock (ts) and when it got here (at, this page's clock)
   state(id, s, at) {
@@ -106,14 +118,25 @@ export class RemotePlayers {
   setEquip(id, eq) { const r = this.list.get(id); if (!r) return; r.eq = eq; if (r.av) this.equip(r); }
   swing(id, hand) { const r = this.list.get(id); if (r && r.av && !hand) r.av.startSwing(); }
   hurt(id) { const r = this.list.get(id); if (r) r.hurtUntil = performance.now() + 500; }
-  rename(id, name) { const r = this.list.get(id); if (r && r.name !== name) { r.name = name; if (r.tag) { this.group.remove(r.tag.far, r.tag.near); r.tag = null; } } }
+  rename(id, name) { const r = this.list.get(id); if (r && r.name !== name) { r.name = name; if (r.tag) this.dropTag(r); } }
 
   /* ---- the model ---- */
   avatarOf(r) {
     if (r.av) return r.av;
     const av = r.av = new Avatar(this.R, true);
     av.started = false;
-    r.P = { pos: new THREE.Vector3(), prev: new THREE.Vector3(), yaw: 0, pitch: 0, sneaking: false, flying: false, pose: 'stand', riding: null, w: null };
+    r.P = { pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, sneaking: false, flying: false, gliding: false, pose: 'stand', riding: null, w: null, bed: null };
+    /* Asleep, they lie in the bed as the game draws a sleeper: on their back,
+       the head straight on the pillow, the feet in the foot of the bed, a
+       pixel or two over the mattress (the game's 0.6875 against the bed's 0.5625). */
+    const lay = av.layDown;
+    av.layDown = function (root, P, a, pitch) {
+      const f = P.bed;
+      if (!f) return lay.call(this, root, P, a, pitch);
+      const fx = f[0], fz = f[1], o = P.pos;
+      root.set(-fz, fx, 0, o.x - fx * 1.52, 0, 0, 1, o.y + 0.125, fx, fz, 0, o.z - fz * 1.52, 0, 0, 0, 1);
+      this.pose[0].rx = this.pose[0].ry = 0;
+    };
     this.skinOf(r);
     this.equip(r);
     return av;
@@ -142,33 +165,34 @@ export class RemotePlayers {
     if (r.tag) return r.tag;
     const f = this.font, name = r.name || '';
     const w = (f ? f.width(name) : name.length * 6) + 2, h = 10, k = 4;
-    const c = document.createElement('canvas');
-    c.width = w * k; c.height = h * k;
-    const g = c.getContext('2d');
-    g.imageSmoothingEnabled = false;
-    // the band: black at a quarter, a pixel round the text
-    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 0, c.width, c.height);
-    if (f) {
-      const t = document.createElement('canvas'); t.width = w; t.height = h;
-      const tg = t.getContext('2d');
-      f.draw(tg, name, 1, 1, 0xFFFFFF, false);
+    const t = document.createElement('canvas'); t.width = w; t.height = h;
+    if (f) f.draw(t.getContext('2d'), name, 1, 1, 0xFFFFFF, false);
+    /* Two layers, as the game draws a name: the band (black at a quarter, a
+       pixel round the text) with the words faint on it (an eighth), seen
+       through walls; and the words in white, only where nothing is in front. */
+    const layer = band => {
+      const c = document.createElement('canvas');
+      c.width = w * k; c.height = h * k;
+      const g = c.getContext('2d');
+      g.imageSmoothingEnabled = false;
+      if (band) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 0, c.width, c.height); g.globalAlpha = 32 / 255; }
       g.drawImage(t, 0, 0, w, h, 0, 0, c.width, c.height);
-    }
-    const tex = new THREE.CanvasTexture(c);
-    tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const mk = (depth, opacity) => {
-      const m = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: depth, depthWrite: false, opacity, fog: false, toneMapped: false });
+      const tex = new THREE.CanvasTexture(c);
+      tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    };
+    const mk = (tex, depth) => {
+      const m = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: depth, depthWrite: false, fog: false, toneMapped: false });
       const s = new THREE.Sprite(m);
       s.scale.set(w * 0.025, h * 0.025, 1);
       s.renderOrder = depth ? 10 : 9;
       s.frustumCulled = false;
       return s;
     };
-    // through walls (faint), and the real one in front of them
-    const far = mk(false, 0.35), near = mk(true, 1);
+    const far = mk(layer(true), false), near = mk(layer(false), true);
     this.group.add(far, near);
-    return (r.tag = { far, near, tex, w, h });
+    return (r.tag = { far, near, w, h });
   }
 
   /* ---- every frame: where each one is now, posed and named ---- */
@@ -183,9 +207,19 @@ export class RemotePlayers {
       if (d2 > maxDist * maxDist) { if (r.av) this.hide(r); continue; }
       const av = this.avatarOf(r), P = r.P;
       P.w = world;
-      P.sneaking = !!(p.f & F.SNEAK); P.flying = !!(p.f & F.FLY);
+      P.sneaking = !!(p.f & F.SNEAK); P.flying = !!(p.f & F.FLY); P.gliding = !!(p.f & F.GLIDE);
+      P.riding = p.f & F.RIDE ? SEAT : null;
+      P.bed = null;
+      if (p.f & F.SLEEP) {
+        const bx = Math.floor(p.x), by = Math.floor(p.y), bz = Math.floor(p.z), b = world && world.get(bx, by, bz);
+        if (b && BLOCKS[b] && BLOCKS[b].shape === 'bed') P.bed = BED_DIRS[world.meta(bx, by, bz) & 3];
+      }
       P.pose = p.f & F.SWIM ? 'swim' : 'stand';
       P.pitch = p.pitch;
+      // a bow drawn, food eaten, a shield up: the pose for it, as for you
+      const U = p.u ? (r.use || (r.use = {})) : null;
+      if (U) { U.kind = USE_KINDS[(p.u & 15) - 1] || 'eat'; U.side = p.u & 16 ? 1 : 0; U.t = p.ut || 0; U.total = p.uT || 0; }
+      r.useNow = U;
       // the limbs: a game tick of movement at a time, as for you
       if (!av.started) { av.started = true; P.pos.set(p.x, p.y, p.z); P.prev.copy(P.pos); P.yaw = p.yaw; av.body = av.oBody = p.yaw; r.acc = 0; }
       r.acc += dt;
@@ -193,8 +227,10 @@ export class RemotePlayers {
       while (r.acc >= 0.05 && n++ < 5) {
         r.acc -= 0.05;
         P.prev.copy(P.pos);
-        const q = this.at(r, r.rt - r.acc * 1000);
+        // (into a record of its own: p is this frame's position and must not move)
+        const q = this.at(r, r.rt - r.acc * 1000, r.tmpT || (r.tmpT = {}));
         if (q) { P.pos.set(q.x, q.y, q.z); P.yaw = q.yaw; }
+        P.vel.subVectors(P.pos, P.prev);
         av.tick(P);
       }
       if (r.acc > 0.05) r.acc = 0;
@@ -202,13 +238,15 @@ export class RemotePlayers {
       const feet = r.feet || (r.feet = new THREE.Vector3());
       feet.set(p.x, p.y, p.z);
       this.draw(r, av, P, feet, Math.min(1, r.acc / 0.05), dt, now);
-      // the name, half a block over the head (lower when they sneak)
-      const tag = this.tagOf(r), top = (P.sneaking ? 1.5 : P.pose === 'swim' ? 0.6 : 1.8) + 0.5 + tag.h * 0.0125;
+      /* the name, its top half a block over the head (lower when they sneak),
+         within 64 blocks; a player sneaking shows only the faint layer, and
+         not through walls */
+      const tag = this.tagOf(r), top = (P.bed ? 0.2 : P.sneaking ? 1.5 : P.pose === 'swim' ? 0.6 : 1.8) + 0.5 + 0.025 - tag.h * 0.0125;
       tag.far.position.set(p.x, p.y + top, p.z); tag.near.position.copy(tag.far.position);
       const close = d2 < 64 * 64;
-      tag.far.visible = close && !P.sneaking;
-      tag.near.visible = close;
-      tag.near.material.opacity = P.sneaking ? 0.35 : 1;
+      tag.far.visible = close;
+      tag.near.visible = close && !P.sneaking;
+      if (tag.far.material.depthTest !== P.sneaking) tag.far.material.depthTest = P.sneaking;
     }
   }
   hide(r) {
@@ -223,9 +261,15 @@ export class RemotePlayers {
   sample(r, now, dt) {
     if (r.est === null) return null;
     // the estimate moves gently, so a quick message leaving the window never jerks them back
-    r.estS += (r.est - r.estS) * Math.min(1, dt * 2);
+    // (a big change, a tab that slept or a clock that jumped, is taken at once: they would crawl for seconds)
+    if (Math.abs(r.est - r.estS) > 250) r.estS = r.est;
+    else r.estS += Math.max(-dt * 50, Math.min(dt * 50, (r.est - r.estS) * Math.min(1, dt * 2)));
+    /* So does the delay. The picture's clock may run at most a tenth fast or
+       slow while either changes: a late message makes them drift back a
+       little, never stop and start. */
     const want = Math.max(DELAY, Math.min(MAX_DELAY, Math.max(r.late, r.lateMax) + 20));
-    r.delay += (want - r.delay) * Math.min(1, dt * (want > r.delay ? 4 : 0.5));
+    const step = (want - r.delay) * Math.min(1, dt * (want > r.delay ? 4 : 0.5)), most = dt * 100;
+    r.delay += Math.max(-most, Math.min(most, step));
     r.rt = now - r.estS - r.delay;
     // forget what is long past
     const b = r.buf;
@@ -234,7 +278,7 @@ export class RemotePlayers {
     if (k) b.splice(0, k);
     return this.at(r, r.rt);
   }
-  at(r, t) {
+  at(r, t, out) {
     const b = r.buf;
     if (!b.length) return null;
     if (t <= b[0].ts) return b[0];
@@ -242,10 +286,11 @@ export class RemotePlayers {
       const a = b[i - 1], c = b[i];
       if (t >= a.ts) {
         if (t >= c.ts) return c;
-        const k = (t - a.ts) / (c.ts - a.ts), o = r.tmp || (r.tmp = {});
+        const k = (t - a.ts) / (c.ts - a.ts), o = out || r.tmp || (r.tmp = {});
         o.x = a.x + (c.x - a.x) * k; o.y = a.y + (c.y - a.y) * k; o.z = a.z + (c.z - a.z) * k;
         o.yaw = a.yaw + wrap(c.yaw - a.yaw) * k; o.pitch = a.pitch + (c.pitch - a.pitch) * k;
         o.f = k < 0.5 ? a.f : c.f;
+        o.u = k < 0.5 ? a.u : c.u; o.uT = c.uT; o.ut = a.u === c.u ? (a.ut || 0) + ((c.ut || 0) - (a.ut || 0)) * k : c.ut;
         // a jump of more than 8 blocks in a tick is a teleport: no gliding across the world
         if (Math.abs(c.x - a.x) + Math.abs(c.y - a.y) + Math.abs(c.z - a.z) > 8) return k < 0.5 ? a : c;
         return o;
@@ -257,7 +302,7 @@ export class RemotePlayers {
   draw(r, av, P, feet, a, dt, now) {
     av.world = P.w;
     av.uHurt.value = now < r.hurtUntil ? 1 : 0;
-    av.useNow = null;
+    av.useNow = r.useNow || null;
     av.lightT -= dt;
     if (av.lightT <= 0) { av.lightT = 0.25 + Math.random() * 0.05; av.refreshCache(feet.x, feet.z); av.sampleLight(feet); }
     const k = Math.min(1, dt * 6);

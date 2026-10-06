@@ -16,6 +16,8 @@ import { Y0 } from './world-const.js?v=21';
 const REG = new Map();
 export function register(name, def) { REG.set(name, def); for (const a of def.aliases || []) REG.set(a, def); }
 export function commandNames() { return [...new Set([...REG.keys()])].sort(); }
+// a command as registered (net/net.js builds the server's versions of a few on them)
+export const commandDef = name => REG.get(name);
 
 const RED = 0xFF5555, GREY = 0xAAAAAA;
 class CommandError extends Error {}

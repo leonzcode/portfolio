@@ -1073,12 +1073,12 @@ export class PauseScreen extends Screen {
     };
     row(top + 74, ['Advancements', null], ['Statistics', null]);
     row(top + 98, ['Send Feedback', null], ['Report Bugs', null]);
-    // Open to LAN (ui/lan.js): greyed out once the world is open
+    // Open to LAN (ui/lan.js): greyed out once the world is open; on a server the game has Player Reporting there
     const lan = this.hooks.lan && this.hooks.lan();
-    row(top + 122, ['Options...', () => g.open(new OptionsScreen())], ['Open to LAN', lan && !lan.open ? () => g.open(new LanScreen()) : null]);
-    if (lan && lan.open) this.widgets[this.widgets.length - 1].tooltip = '';
-    // on a server it is Disconnect, as in the game
     const online = !!(this.hooks.online && this.hooks.online());
+    row(top + 122, ['Options...', () => g.open(new OptionsScreen())], online ? ['Player Reporting', null] : ['Open to LAN', lan && !lan.open ? () => g.open(new LanScreen()) : null]);
+    if (lan && lan.open && !online) this.widgets[this.widgets.length - 1].tooltip = '';
+    // on a server it is Disconnect, as in the game
     this.add(new Button(xl, top + 146, 204, 20, online ? 'Disconnect' : 'Save and Quit to Title', () => { if (this.hooks.quitToTitle) this.hooks.quitToTitle(); }));
   }
   resume() { this.gui.closeAll(); if (this.hooks.resume) this.hooks.resume(); }
