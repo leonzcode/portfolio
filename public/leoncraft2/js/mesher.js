@@ -39,12 +39,19 @@ const W = 48, A = W * W;          // the region: three chunks a side
 let colours = null;               // biome colours, set once at start
 export function setColours(c) { colours = c; }
 
-/* --- a growable vertex/index store -------------------------------------- */
+/* --- a growable vertex store -------------------------------------------- */
+/* Every face is a quad of four vertices, drawn as the triangles (0 1 2) and
+   (0 2 3). A face whose corner shade wants the other diagonal has its four
+   vertices turned one place round (1 2 3 0) instead of other indices, so the
+   indices are the same for every mesh: the renderer keeps one list of them
+   for all, and a mesh carries none (they were nearly a quarter of what went
+   to the graphics card). The triangles come out just as they were, in the
+   same winding, with the same first and last corners. */
 class Buf {
   constructor(n, kinds) {
     this.cap = n; this.n = 0; this.kinds = kinds;
     this.arrs = kinds.map(k => new k.T(n * 4));
-    this.idx = new Uint32Array(n * 1.5 | 0); this.ni = 0;
+    this.ni = 0;                       // indices drawn: six a quad
     this.marks = new Int32Array(25);   // where each 16-block section's indices start
     this.vmarks = new Int32Array(25);  // and its vertices (so a run of sections can be swapped for new ones)
   }
@@ -54,14 +61,17 @@ class Buf {
   }
   vert() { if (this.n >= this.cap) this.grow(); return this.n++; }
   quad(v0, flip) {
-    if (this.ni + 6 > this.idx.length) { const b = new Uint32Array(this.idx.length * 2); b.set(this.idx); this.idx = b; }
-    const I = this.idx;
-    if (flip) { I[this.ni++] = v0 + 1; I[this.ni++] = v0 + 2; I[this.ni++] = v0 + 3; I[this.ni++] = v0 + 1; I[this.ni++] = v0 + 3; I[this.ni++] = v0; }
-    else { I[this.ni++] = v0; I[this.ni++] = v0 + 1; I[this.ni++] = v0 + 2; I[this.ni++] = v0; I[this.ni++] = v0 + 2; I[this.ni++] = v0 + 3; }
+    if (flip) {
+      const o = v0 * 4;
+      for (const a of this.arrs) {
+        for (let c = 0; c < 4; c++) { const t = a[o + c]; a[o + c] = a[o + 4 + c]; a[o + 4 + c] = a[o + 8 + c]; a[o + 8 + c] = a[o + 12 + c]; a[o + 12 + c] = t; }
+      }
+    }
+    this.ni += 6;
   }
   out() {
     if (!this.n) return null;
-    return { count: this.n, attrs: this.arrs.map(a => a.slice(0, this.n * 4)), index: this.idx.slice(0, this.ni), marks: this.marks, vmarks: this.vmarks };
+    return { count: this.n, attrs: this.arrs.map(a => a.slice(0, this.n * 4)), marks: this.marks, vmarks: this.vmarks };
   }
 }
 const KINDS = ['opaque', 'cutout', 'translucent', 'fluid', 'plants', 'leafIn'];
@@ -80,32 +90,29 @@ function scratch(N) {
 }
 
 /* A run of sections (c0 to c1) put in place of the same ones in a column's
-   last mesh: the vertices and indices before and after are kept, the indices
-   after moved along by however many vertices the run gained or lost. */
+   last mesh: the vertices before and after are kept, the sections after
+   moved along by however many vertices the run gained or lost (the indices
+   are the same list for every mesh: see Buf). */
 function spliceBuf(b, p, c0, c1) {
   const bm = b ? b.marks : NO_MARKS, bv = b ? b.vmarks : NO_MARKS, pm = p ? p.marks : NO_MARKS, pv = p ? p.vmarks : NO_MARKS;
-  const v0 = bv[c0], v1 = bv[c1 + 1], i0 = bm[c0], i1 = bm[c1 + 1];
-  const bn = b ? b.count : 0, bi = b ? b.index.length : 0, pn = p ? p.count : 0, pi = p ? p.index.length : 0;
-  const n = v0 + pn + (bn - v1), ni = i0 + pi + (bi - i1);
-  if (!n || !ni) return null;
-  const dv = pn - (v1 - v0), di = pi - (i1 - i0);
+  const v0 = bv[c0], v1 = bv[c1 + 1], i0 = bm[c0];
+  const bn = b ? b.count : 0, pn = p ? p.count : 0;
+  const n = v0 + pn + (bn - v1);
+  if (!n) return null;
+  const dv = pn - (v1 - v0), di = dv * 1.5;
   const attrs = (b || p).attrs.map((a, k) => {
     const o = new a.constructor(n * 4);
     if (b) { o.set(b.attrs[k].subarray(0, v0 * 4), 0); o.set(b.attrs[k].subarray(v1 * 4, bn * 4), (v0 + pn) * 4); }
     if (p) o.set(p.attrs[k].subarray(0, pn * 4), v0 * 4);
     return o;
   });
-  const index = new Uint32Array(ni);
-  if (b) index.set(b.index.subarray(0, i0), 0);
-  if (p) { const P = p.index; for (let j = 0; j < pi; j++) index[i0 + j] = P[j] + v0; }
-  if (b) { const I = b.index; for (let j = i1, o = i0 + pi; j < bi; j++, o++) index[o] = I[j] + dv; }
   const marks = new Int32Array(25), vmarks = new Int32Array(25);
   for (let s = 0; s <= 24; s++) {
     if (s <= c0) { marks[s] = bm[s]; vmarks[s] = bv[s]; }
     else if (s <= c1 + 1) { marks[s] = i0 + pm[s]; vmarks[s] = v0 + pv[s]; }
     else { marks[s] = bm[s] + di; vmarks[s] = bv[s] + dv; }
   }
-  return { count: n, attrs, index, marks, vmarks };
+  return { count: n, attrs, marks, vmarks };
 }
 function splice(base, r, c0, c1, ny, noSky) {
   const out = { vis: base.vis.slice(), skyLow: Math.min(base.skyLow, r.skyLow), lightH: ny, regionH: ny };

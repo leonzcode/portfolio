@@ -37,7 +37,6 @@ function meshBytes(mesh) {
     const d = mesh[MESH_KINDS[k]];
     if (!d) continue;
     for (let i = 0; i < d.attrs.length; i++) n += d.attrs[i].byteLength;
-    n += d.index.byteLength;
   }
   return n;
 }
@@ -385,10 +384,11 @@ export class Renderer {
     const gl = this.gl;
     const col = { cx, cz, vis: mesh.vis, skyLow: mesh.skyLow, parts: [], byKind: {}, y0: 1e9, y1: -1e9, dist: 0, born: was ? was.born : (this.fadeNow || 0) };
     const add = (data, kind) => {
-      if (!data || !data.index.length) return;
+      if (!data || !data.count) return;
       // how tall the mesh is, for culling: from the first section with anything in it to the last
       const mk = data.marks;
       for (let sct = 0; sct < 24; sct++) if (mk[sct + 1] > mk[sct]) { col.y0 = Math.min(col.y0, sct * 16); col.y1 = Math.max(col.y1, sct * 16 + 17); }
+      const qi = this.quadIndex(data.count);
       const vao = gl.createVertexArray();
       gl.bindVertexArray(vao);
       const bufs = [];
@@ -402,16 +402,13 @@ export class Renderer {
         gl.vertexAttribIPointer(i, 4, a instanceof Uint16Array ? gl.UNSIGNED_SHORT : a instanceof Int8Array ? gl.BYTE : gl.UNSIGNED_BYTE, 0, 0);
         bufs.push(buf);
       }
-      const ib = gl.createBuffer();
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
-      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data.index, gl.STATIC_DRAW);
-      bufs.push(ib);
+      // the indices every mesh shares (quadIndex), never let go with the column
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, qi.buf);
       gl.bindVertexArray(null);
-      const wide = data.index instanceof Uint32Array;
-      const count = data.index.length;
+      const count = data.count * 1.5;
       const p = {
         kind, vao, bufs, count, marks: data.marks, from: 0, to: count, visible: true, hidden: false,
-        type: wide ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, bytes: wide ? 4 : 2,
+        type: qi.type, bytes: qi.bytes,
         // the shadow pass needs nothing below where the sky reaches
         shadowFrom: data.marks[Math.max(0, Math.min(24, (mesh.skyLow >> 4) - 1))],
       };
@@ -436,6 +433,26 @@ export class Renderer {
     if (at >= 0) { col.dist = was.dist; this.order[at] = col; }
     else this.order.push(col);
     this.glDirty = true;
+  }
+  /* The one list of indices every chunk mesh is drawn with (mesher.js Buf:
+     each face four vertices, its triangles 0 1 2 and 0 2 3), long enough for
+     a mesh of this many vertices: 16-bit while that will do (most of them),
+     32-bit past it, made longer when a bigger mesh comes (the meshes made
+     before keep the shorter one, which is long enough for them). */
+  quadIndex(verts) {
+    const gl = this.gl, wide = verts > 65536, Q = this.quads || (this.quads = {});
+    let e = wide ? Q.wide : Q.narrow;
+    if (e && e.verts >= verts) return e;
+    const n = wide ? Math.max(verts, e ? e.verts * 2 : 1 << 18) : 65536, quads = n >> 2;
+    const a = wide ? new Uint32Array(quads * 6) : new Uint16Array(quads * 6);
+    for (let q = 0, i = 0; q < quads; q++) { const v = q * 4; a[i++] = v; a[i++] = v + 1; a[i++] = v + 2; a[i++] = v; a[i++] = v + 2; a[i++] = v + 3; }
+    gl.bindVertexArray(null);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, a, gl.STATIC_DRAW);
+    e = { buf, verts: n, type: wide ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, bytes: wide ? 4 : 2 };
+    if (wide) Q.wide = e; else Q.narrow = e;
+    return e;
   }
   dropColumn(cx, cz) {
     const k = cx + ',' + cz;

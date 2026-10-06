@@ -168,8 +168,8 @@ function handle(m) {
     for (const k of ['opaque', 'cutout', 'translucent', 'fluid', 'plants', 'leafIn']) {
       const g = out[k];
       if (!g) continue;
+      // (no indices: every mesh is drawn with the same ones, render/renderer.js quadIndex)
       for (const a of g.attrs) transfer.push(a.buffer);
-      transfer.push(g.index.buffer);
     }
     if (out.light) transfer.push(out.light.buffer);
     if (out.region) transfer.push(out.region.buffer);
