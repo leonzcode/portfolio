@@ -211,11 +211,14 @@ export class Realms {
     const axis = this.world.meta(at[0], at[1], at[2]) === 2 ? 'z' : 'x';
     const D = DIMS[to], yLo = E(D.minY) + 1, yHi = E(D.minY + D.logical) - 1;
     const ty = Math.max(yLo, Math.min(yHi - 4, Math.floor(p.y)));
+    // a portal known there already (the one you came through, most often): the ground is made round it,
+    // not round the point the coordinates give, which can be a hundred blocks from it
+    const known = this.findPortal(null, to, tx, ty, tz);
     this.go(to, world => {
       const s = this.findPortal(world, to, tx, ty, tz) || this.makePortal(world, to, tx, ty, tz, axis, yLo, yHi);
       const along = s.w / 2;
       return { x: s.x + (s.axis === 'x' ? along : 0.5), y: s.y, z: s.z + (s.axis === 'z' ? along : 0.5) };
-    }, { x: tx, z: tz });
+    }, known ? { x: known.x, z: known.z } : { x: tx, z: tz });
   }
   // the nearest known portal within 128 blocks (16 in the Nether), by straight-line distance to its nearest block
   findPortal(world, dim, tx, ty, tz) {
@@ -228,8 +231,8 @@ export class Realms {
         if (d < bd) { bd = d; best = s; }
       }
     }
-    // gone since (broken while you were away)? forget it and look again
-    if (best && world.loaded(best.x, best.z) && world.get(best.x, best.y, best.z) !== B.nether_portal) {
+    // gone since (broken while you were away)? forget it and look again (world: null, before it is loaded)
+    if (best && world && world.loaded(best.x, best.z) && world.get(best.x, best.y, best.z) !== B.nether_portal) {
       this.poi[dim] = this.poi[dim].filter(s => s !== best);
       return this.findPortal(world, dim, tx, ty, tz);
     }
