@@ -474,16 +474,15 @@ export class VanillaGen {
     this.structureHook = draw;
     this.protoCache.clear(); this.writeCache.clear();
   }
-  // whether any water or lava of the bare terrain (before structures) lies in or right beside a box
-  fluidNear(x0, y0, z0, x1, y1, z1) {
+  // whether any water or lava of a chunk's bare terrain (before structures) lies in or right beside a box, in that chunk
+  fluidNear(x0, y0, z0, x1, y1, z1, cx, cz) {
     y0 = Math.max(MIN_Y, y0 - 1); y1 = Math.min(MIN_Y + H - 1, y1 + 1);
-    for (let cz = Math.floor((z0 - 1) / 16); cz <= Math.floor((z1 + 1) / 16); cz++) for (let cx = Math.floor((x0 - 1) / 16); cx <= Math.floor((x1 + 1) / 16); cx++) {
-      const f = this.rawProto(cx, cz).fluid;
-      const ax = Math.max(x0 - 1, cx * 16), bx = Math.min(x1 + 1, cx * 16 + 15), az = Math.max(z0 - 1, cz * 16), bz = Math.min(z1 + 1, cz * 16 + 15);
-      for (let y = y0; y <= y1; y++) for (let z = az; z <= bz; z++) for (let x = ax; x <= bx; x++) {
-        const i = ((y - MIN_Y) << 8) | ((z & 15) << 4) | (x & 15);
-        if (f[i >> 3] & (1 << (i & 7))) return true;
-      }
+    const ax = Math.max(x0 - 1, cx * 16), bx = Math.min(x1 + 1, cx * 16 + 15), az = Math.max(z0 - 1, cz * 16), bz = Math.min(z1 + 1, cz * 16 + 15);
+    if (ax > bx || az > bz) return false;
+    const f = this.rawProto(cx, cz).fluid;
+    for (let y = y0; y <= y1; y++) for (let z = az; z <= bz; z++) for (let x = ax; x <= bx; x++) {
+      const i = ((y - MIN_Y) << 8) | ((z & 15) << 4) | (x & 15);
+      if (f[i >> 3] & (1 << (i & 7))) return true;
     }
     return false;
   }
