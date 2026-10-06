@@ -402,31 +402,40 @@ export class Renderer {
       const ix = col.cx - csx + R, iz = col.cz - csz + R;
       if (ix >= 0 && iz >= 0 && ix < span && iz < span) cols[ix * span + iz] = col;
     }
-    const OPP = [1, 0, 3, 2, 5, 4], DX = [1, -1, 0, 0, 0, 0], DY = [0, 0, 1, -1, 0, 0], DZ = [0, 0, 0, 0, 1, -1];
     let head = 0, tail = 0;
-    const start = ((R * span) + R) * 24 + csy;
+    const start = ((R * span) + R) * 24 + csy, sx = span * 24, last = span - 1;
     q[tail++] = start; done[start] = 63;
+    /* The six ways out written out one by one (faces 0 to 5: +x, -x, +y, -y, +z,
+       -z; a cell entered by face f is marked with the opposite one's bit): this
+       runs on every section you cross, over every section in range, and the
+       loop over a table of directions took most of a millisecond. */
     while (head < tail) {
       const cell = q[head++], entries = done[cell];
-      const y = cell % 24, ci = (cell - y) / 24, ix = (ci / span) | 0, iz = ci - ix * span;
+      const ci = (cell / 24) | 0, y = cell - ci * 24, ix = (ci / span) | 0, iz = ci - ix * span;
       if (y < lo[ci]) lo[ci] = y;
       if (y > hi[ci]) hi[ci] = y;
       const col = cols[ci];
       // which faces can be left by, from the faces it was entered by
-      let exits = 0;
-      if (!col || !col.vis || cell === start) exits = 63;
-      else { const vis = col.vis, o = y * 6; for (let f = 0; f < 6; f++) if (entries & (1 << f)) exits |= vis[o + f]; }
-      for (let f = 0; f < 6; f++) {
-        if (!(exits & (1 << f))) continue;
-        const dx = DX[f], dy = DY[f], dz = DZ[f];
-        // never back towards the camera
-        if ((dx > 0 && ix < R) || (dx < 0 && ix > R) || (dy > 0 && y < csy) || (dy < 0 && y > csy) || (dz > 0 && iz < R) || (dz < 0 && iz > R)) continue;
-        const nx = ix + dx, ny = y + dy, nz = iz + dz;
-        if (ny < 0 || ny > 23 || nx < 0 || nz < 0 || nx >= span || nz >= span) continue;
-        const kk = (nx * span + nz) * 24 + ny, ent = 1 << OPP[f];
-        if (!done[kk]) q[tail++] = kk;
-        done[kk] |= ent;
+      let exits;
+      if (col === null || !col.vis || cell === start) exits = 63;
+      else {
+        const vis = col.vis, o = y * 6;
+        exits = 0;
+        if (entries & 1) exits |= vis[o];
+        if (entries & 2) exits |= vis[o + 1];
+        if (entries & 4) exits |= vis[o + 2];
+        if (entries & 8) exits |= vis[o + 3];
+        if (entries & 16) exits |= vis[o + 4];
+        if (entries & 32) exits |= vis[o + 5];
       }
+      // never back towards the camera, never out of range
+      let k;
+      if ((exits & 1) && ix >= R && ix < last) { k = cell + sx; if (!done[k]) q[tail++] = k; done[k] |= 2; }
+      if ((exits & 2) && ix <= R && ix > 0) { k = cell - sx; if (!done[k]) q[tail++] = k; done[k] |= 1; }
+      if ((exits & 4) && y >= csy && y < 23) { k = cell + 1; if (!done[k]) q[tail++] = k; done[k] |= 8; }
+      if ((exits & 8) && y <= csy && y > 0) { k = cell - 1; if (!done[k]) q[tail++] = k; done[k] |= 4; }
+      if ((exits & 16) && iz >= R && iz < last) { k = cell + 24; if (!done[k]) q[tail++] = k; done[k] |= 32; }
+      if ((exits & 32) && iz <= R && iz > 0) { k = cell - 24; if (!done[k]) q[tail++] = k; done[k] |= 16; }
     }
     for (const col of this.columns.values()) {
       const ix = col.cx - csx + R, iz = col.cz - csz + R;
