@@ -125,6 +125,8 @@ export class Containers {
     this.world = world;
     this.map = new Map();            // "x,y,z" -> { kind, slots, ...furnace }
     this.lit = new Set();            // furnaces and brewing stands that are doing something
+    // a stack dropped beside a block (what a brewing stand's dragon's breath leaves)
+    this.dropAt = (x, y, z, st) => { if (this.drops) this.drops.spawn(x, y, z, st); };
     this.hoppers = new Set();
     this.looted = new Set();         // structure chests whose loot has been rolled (or that never had any)
     this.drops = null;               // (drops.js) so hoppers can take items lying on them, and what spills
@@ -310,7 +312,7 @@ export class Containers {
     if (this.lit.size) this.dirty = true;          // their progress is saved too
     for (const c of this.lit) {
       if (this.map.get(this.key(c.x, c.y, c.z)) !== c) { this.lit.delete(c); continue; }
-      if (!(c.kind === 'brewing_stand' ? brewingTick(c) : this.furnaceTick(c))) this.lit.delete(c);
+      if (!(c.kind === 'brewing_stand' ? brewingTick(c, this.dropAt) : this.furnaceTick(c))) this.lit.delete(c);
     }
     for (const h of this.hoppers) {
       if (containerKind(this.world.get(h.x, h.y, h.z)) !== 'hopper' || this.map.get(this.key(h.x, h.y, h.z)) !== h) { this.hoppers.delete(h); continue; }

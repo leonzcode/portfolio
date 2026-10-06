@@ -19,8 +19,7 @@
      hud.setDebug(leftLines, rightLines); // or hud.setDebug(null) to hide F3
      hud.crosshair = false;               // third person
 --------------------------------------------------------------------------- */
-import { displayName } from './inventory.js?v=16';
-import { drawStack } from './inventory.js?v=16';
+import { displayName, drawStack, GLINT } from './inventory.js?v=16';
 import { drawBossBar } from '../dim/bossbar.js?v=16';
 
 const TICK = 50;
@@ -93,6 +92,8 @@ export class Hud {
     // the axes in place of the crosshair while F3 is up and the camera is known
     if (this.debug && this.camera) this._axes(g, cx, Math.floor(H / 2));
 
+    // what is held up under the HUD (a map in the hand: js/maps.js), and when to draw again
+    if (this.under) { const w = this.under(g, now); if (w) this._wakeAt(w); }
     // the hotbar, the selected slot's frame and the off hand
     g.blit('widgets', 0, 0, 182, 22, cx - 91, H - 22);
     g.blit('widgets', 0, 22, 24, 23, cx - 91 - 1 + inv.selected * 20, H - 23);
@@ -101,8 +102,11 @@ export class Hud {
       if (!leftHanded) g.blit('widgets', 24, 22, 22, 24, cx - 91 - 29, H - 23);
       else g.blit('widgets', 60, 22, 22, 24, cx + 91 + 7, H - 23);
     }
+    GLINT.seen = false;
     for (let i = 0; i < 9; i++) drawStack(g, this.icons, inv.slots[i], cx - 90 + i * 20 + 2, H - 16 - 3);
     if (off) drawStack(g, this.icons, off, leftHanded ? cx + 91 + 10 : cx - 91 - 26, H - 16 - 3);
+    // an enchanted item in the hotbar shines: redrawn twenty times a second while it is there
+    if (GLINT.seen) { GLINT.seen = false; this._wakeAt(now + 50); }
 
     if (survival && this.stats) this._bars(g, cx, H, now);
 

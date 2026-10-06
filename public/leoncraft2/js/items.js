@@ -211,8 +211,10 @@ export function fuelTicks(id) { const it = ITEMS[id]; return it && it.fuel ? it.
    and what a few items carry (EXTRA): items, a shulker box's 27 slots (or a
    bundle's); color, dyed leather; flight and explosions, a firework rocket;
    firework, a firework star; sherds, a decorated pot's four sides; pages, title
-   and author, a book and quill's or a written book's words */
-const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author'];
+   and author, a book and quill's or a written book's words; stew, a suspicious
+   stew's [effect, ticks]; patterns, a banner's (or shield's) [[pattern, colour]...];
+   map, a filled map's number (js/maps.js) */
+const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map'];
 const hasExtra = s => { for (const k of EXTRA) if (s[k] !== undefined) return true; return false; };
 // two stacks that can go on one another (same item, same wear, enchantments, name, contents)
 export function sameItem(a, b) {

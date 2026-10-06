@@ -29,6 +29,8 @@ import { placeBoat } from './boat.js?v=16';
 import './mobs2.js?v=16';
 import './mobs3.js?v=16';
 import './mobs4.js?v=16';
+import { wandererTick } from './merchant.js?v=16';
+import { tableBooks } from './tablebook.js?v=16';
 import { explode } from './explosion.js?v=16';
 import { splitXp } from './xporb.js?v=16';
 import { placeMinecart, isRail } from './minecart.js?v=16';
@@ -36,9 +38,7 @@ import { FALLS, free } from './fallingblock.js?v=16';
 import { Spawner, DESPAWN } from './spawner.js?v=16';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=16';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=16';
-import { armorLayers } from './armorlayer.js?v=16';
 import { EntityMeshes } from '../render/entitymesh.js?v=16';
-import { MobHeld } from '../render/mobheld.js?v=16';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=16';
 import { breakAt } from '../place.js?v=16';
 import { dropOf } from '../survival.js?v=16';
@@ -46,6 +46,8 @@ import { itemName, ITEMS, I } from '../items.js?v=16';
 import { Combat } from '../combat/combat.js?v=16';
 import './nether.js?v=16';
 import { DIMS } from '../dims.js?v=16';
+import { armorLayers } from './armorlayer.js?v=16';
+import { MobHeld } from '../render/mobheld.js?v=16';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -240,6 +242,7 @@ export class Entities {
     if (e instanceof Mob) e.nav = new Navigation(e);
     if (o.natural !== false && e.finalizeSpawn && !o.json) e.finalizeSpawn(o);
     if (o.json) e.fromJSON(o.json);
+    if (e.spawnData) e.spawnData(o);
     if (o.persistent) e.persistent = true;
     e.lightS = 15; e.lightB = 0; e.lS = 1; e.lB = 0;
     this.sampleLight(e, true);
@@ -264,6 +267,8 @@ export class Entities {
     this.effectsTick();
     if (this.difficulty === 'peaceful') this.peaceful();
     this.spawner.tick();
+    wandererTick(this);
+    tableBooks(this);
     if (this.fallChecks.length) this.fallTick();
     const n = this.list.length;
     for (let i = 0; i < n; i++) {
@@ -563,6 +568,8 @@ export class Entities {
     if (r === 'consume' && this.mode !== 'creative' && this.inv) this.inv.takeSelected(1);
     if (r === 'milk') this.fillHeld('milk_bucket');
     if (r === 'damage') this.damageHeld(1);
+    // a villager's trades (hands.js opens the screen)
+    if (r === 'trade' && this.hooks.trade) this.hooks.trade(e);
     return true;
   }
 
@@ -744,11 +751,19 @@ export class Entities {
       take();
       return true;
     }
-    if (name === 'egg' || name === 'snowball' || name === 'splash_potion') {
-      const e = this.spawn(name === 'splash_potion' ? 'potion' : name, eye.x, eye.y - 0.1, eye.z, { natural: false });
+    if (name === 'egg' || name === 'snowball' || name === 'splash_potion' || name === 'lingering_potion') {
+      const thrown = name === 'splash_potion' || name === 'lingering_potion';
+      const e = this.spawn(thrown ? 'potion' : name, eye.x, eye.y - 0.1, eye.z, { natural: false });
       if (!e) return false;
       e.owner = this.player;
-      e.shoot(dir.x, dir.y, dir.z, name === 'splash_potion' ? 0.5 : 1.5, 1);
+      if (thrown) {
+        // the potion it carries; thrown at 0.5, aimed 20 degrees above the look (the game's)
+        const st = this.inv && this.inv.slots[this.inv.selected];
+        e.potion = (st && st.potion) || 'water'; e.lingering = name === 'lingering_potion';
+        // (the game lifts only the upward part: across it keeps the look's own pitch)
+        const yaw = P.yaw, c = Math.cos(P.pitch);
+        e.shoot(-Math.sin(yaw) * c, Math.sin(P.pitch + 20 * DEG), -Math.cos(yaw) * c, 0.5, 1);
+      } else e.shoot(dir.x, dir.y, dir.z, 1.5, 1);
       e.vel.x += P.vel.x; e.vel.z += P.vel.z; if (!P.onGround) e.vel.y += P.vel.y;
       take();
       return true;
@@ -847,7 +862,8 @@ export class Entities {
       // the light, eased so it never pops
       e.lS += (e.lightS / 15 - e.lS) * k; e.lB += (e.lightB / 15 - e.lB) * k;
       this.sphere.center.set(x, y + e.h / 2, z); this.sphere.radius = Math.max(e.w, e.h) + 1.5;
-      const seen = this.frustum.intersectsSphere(this.sphere);
+      // under Invisibility a mob is not drawn, nor its shadow
+      const seen = this.frustum.intersectsSphere(this.sphere) && !(e.effects && e.effects.invisibility);
       if (c.BLOCK) { e.draw(this.group, this.R, alpha); continue; }
       if (seen) { if (c.PARTICLE) e.particle(this.meshes, alpha, x, y, z); else this.drawOne(e, alpha, x, y, z); }
       // a boat keeps the water out of its inside
@@ -961,7 +977,7 @@ export class Entities {
     for (const e of this.list) if (!e.removed && !e.dead && e.toJSON && !(e.constructor.HOSTILE && !e.persistent && e.constructor.NO_SAVE) && !(e.vehicle && e.vehicle.constructor.KEEPS_RIDERS)) list.push(e.toJSON());
     const stored = {};
     for (const [k, a] of this.stored) stored[k] = a;
-    return { v: 1, list, stored, pop: [...this.populated] };
+    return { v: 1, list, stored, pop: [...this.populated], wt: this.wt || null };
   }
   fromJSON(o) {
     if (!o) return;
@@ -971,6 +987,7 @@ export class Entities {
     this.remount = null;
     for (const k in o.stored || {}) this.stored.set(k, o.stored[k]);
     for (const k of o.pop || []) this.populated.add(k);
+    if (o.wt) this.wt = o.wt;
   }
   // leaving the world: drop everything
   dispose() {

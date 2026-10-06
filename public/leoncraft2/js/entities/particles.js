@@ -26,6 +26,8 @@ const KINDS = {
   sparkle: { f0: 21, f1: 21, size: 0.1, life: [10, 20], g: -0.005, drag: 0.9, col: [0.5, 1, 0.5], spread: 0.05, glow: true },
   portal: { f0: 22, f1: 22, size: 0.08, life: [20, 40], g: 0, drag: 0.94, col: [0.6, 0.2, 0.9], spread: 0.3, glow: true },
   dust: { f0: 22, f1: 22, size: 0.08, life: [10, 20], g: 0.002, drag: 0.9, col: [0.5, 0.5, 0.5], spread: 0.05 },
+  // the runes that drift from bookshelves into an enchanting table (their path is set where they are made)
+  enchant: { f0: 24, f1: 25, size: 0.09, life: [30, 40], g: 0.0015, drag: 1, col: [0.86, 0.86, 1], spread: 0, glow: true },
   note: { f0: 20, f1: 20, size: 0.2, life: [10, 14], g: -0.02, drag: 0.8, col: [0.3, 1, 0.3], spread: 0, glow: true },
 };
 

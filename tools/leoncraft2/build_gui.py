@@ -11,7 +11,8 @@ GUI code cuts them the same way:
   buttons     0, 46 disabled / 66 normal / 86 hover, 200 x 20
   language    0, 106 normal / 126 hover, 20 x 20 (a globe on a button)
 
-and textures/gui/accessibility.png (20 x 40, a figure on a button).
+and textures/gui/accessibility.png (20 x 40, a figure on a button), then the
+work blocks' screens (build_stations.py).
 
 It also draws the container screens (inventory, crafting table, furnaces,
 chests, dispenser, hopper, shulker box, crafter) in the classic light grey: a panel
@@ -249,6 +250,9 @@ def main():
         figure(acc, 0, s * 20, s == 1)
     acc.save(os.path.join(OUT, 'accessibility.png'), optimize=True)
     print('wrote', path)
+    # the work blocks' screens (enchanting table, anvil, villager...)
+    from build_stations import stations
+    stations()
 
 
 if __name__ == '__main__':

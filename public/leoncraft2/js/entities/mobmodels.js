@@ -120,6 +120,8 @@ function villagerParts(zombie) {
   return [
     { name: 'head', pivot: [0, 0, 0], boxes: [[-4, -10, -4, 8, 10, 8, 0, 0], [-4, -10, -4, 8, 10, 8, 32, 0, 0.51]] },
     { name: 'nose', parent: 'head', pivot: [0, -2, 0], boxes: [[-1, -1, -6, 2, 4, 2, 24, 0]] },
+    // a hat's brim (a farmer's, a fisherman's...): flat round the head; bare where the texture is clear
+    { name: 'hatRim', parent: 'head', pivot: [0, 0, 0], rot: [-PI / 2, 0, 0], boxes: [[-8, -8, -6, 16, 16, 1, 30, 47]] },
     { name: 'body', pivot: [0, 0, 0], boxes: [[-4, 0, -3, 8, 12, 6, 16, 20], [-4, 0, -3, 8, 18, 6, 0, 38, 0.5]] },
     zombie ? { name: 'rightArm', pivot: [-5, 2, 0], boxes: [[-3, -2, -2, 4, 12, 4, 44, 22]] }
       : { name: 'arms', pivot: [0, 3, -1], rot: [-0.75, 0, 0], boxes: [[-4, 2, -2, 8, 4, 4, 40, 38], [-8, -2, -2, 4, 8, 4, 44, 22], [4, -2, -2, 4, 8, 4, 44, 22, 0, true]] },
