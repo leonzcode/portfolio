@@ -837,7 +837,9 @@ FEATURES.simple_block = (D, c, r, x, y, z) => {
   if (!survives(R, st, x, y, z)) return false;
   const d = BLOCKS[st.id];
   if (d.upper || isDoubleData(d)) {
-    if (!isAirId(R.get(x, y + 1, z))) return false;
+    // (a tall plant that grows under water, tall seagrass, has water over it, not air)
+    const above = R.get(x, y + 1, z);
+    if (!isAirId(above) && !(d.waterlogged && above === B.water)) return false;
     placeDouble(R, st, x, y, z);
   } else R.set(x, y, z, st.id, st.meta);
   return true;
