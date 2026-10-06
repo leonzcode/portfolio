@@ -530,7 +530,19 @@ export class Gui {
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
     ctx.imageSmoothingEnabled = false;
     if (!this.font) return;
-    if (this.hud && this.inGame && !this.hideHud) this.hud.draw(this);
+    if (this.hud && this.inGame && !this.hideHud) {
+      this.hud.draw(this);
+      // under a menu the game blurs the HUD along with the world (Menu Background Blur)
+      const hb = s && this.backgroundKind(s.background) === 'world' ? this._blurPx() : 0;
+      if (hb) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.filter = 'blur(' + (hb * 1.2 * (this.dpr || 1)).toFixed(1) + 'px)';
+        ctx.globalCompositeOperation = 'copy';
+        ctx.drawImage(this.canvas, 0, 0);
+        ctx.restore();
+      }
+    }
     if (s) {
       this._background(s.background);
       this._tooltip = null;

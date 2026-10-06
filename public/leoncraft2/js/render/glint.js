@@ -20,7 +20,9 @@ const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DArray;\n`;
 const VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
-layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA;
+layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA;
+#define aPos vec4(aPos)
+#define aA vec4(aA)
 out vec2 vUv; flat out float vLayer; flat out int vFlags;
 void main() {
   vUv = aA.xy / 16.0;

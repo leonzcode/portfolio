@@ -23,7 +23,7 @@ import { Figure } from './figure.js?v=17';
 import { PumpkinView } from './pumpkin.js?v=17';
 import { glints, pieceLook } from './armor.js?v=17';
 import { dimLook } from '../dim/look.js?v=17';
-import { blockGeometry } from './blockmesh.js?v=17';
+import { blockGeometry, intAttribute } from './blockmesh.js?v=17';
 import { applyLook, looked } from './looks.js?v=17';
 const THREE = window.THREE;
 // one black pixel, for a texture that is made later
@@ -132,15 +132,17 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
     this.U.uRes.value.set(rw, rh);
     this.rw = rw; this.rh = rh;
+    // the canvas only given a size that is new: any size given to it, even its own, throws its picture away (a frame's stall)
+    const size = (cw, ch) => { const c = this.r.domElement; if (c.width !== cw || c.height !== ch) this.r.setSize(cw, ch, false); };
     if (this.ldr) {
       // drawn at the render scale and stretched by the browser: the cheapest upscale there is
-      this.r.setSize(rw, rh, false);
+      size(rw, rh);
       // (the full chain's pictures let go, if a look before this one had them)
       if (this.main) { this.main.depthTexture.dispose(); this.main.dispose(); this.main = null; }
       if (this._post) this._post.release();
       return;
     }
-    this.r.setSize(Math.round(w * dpr), Math.round(h * dpr), false);
+    size(Math.round(w * dpr), Math.round(h * dpr));
     if (this.main) this.main.dispose();
     this.main = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType, depthBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     this.main.depthTexture = new THREE.DepthTexture(rw, rh, THREE.FloatType);
@@ -195,7 +197,7 @@ export class Renderer {
     let g = this.standGeo;
     if (!g) {
       g = new THREE.BufferGeometry();
-      for (const nm of ['aPos', 'aA', 'aL', 'aF', 'aC']) g.setAttribute(nm, new THREE.BufferAttribute(nm === 'aPos' ? new Uint16Array(12) : nm === 'aF' ? new Int8Array(12) : new Uint8Array(12), 4));
+      for (const nm of ['aPos', 'aA', 'aL', 'aF', 'aC']) g.setAttribute(nm, intAttribute(nm === 'aPos' ? new Uint16Array(12) : nm === 'aF' ? new Int8Array(12) : new Uint8Array(12)));
       g.setIndex([0, 1, 2]);
       this.standGeo = g;
     }
@@ -338,7 +340,9 @@ export class Renderer {
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
         gl.bufferData(gl.ARRAY_BUFFER, a, gl.STATIC_DRAW);
         gl.enableVertexAttribArray(i);
-        gl.vertexAttribPointer(i, 4, a instanceof Uint16Array ? gl.UNSIGNED_SHORT : a instanceof Int8Array ? gl.BYTE : gl.UNSIGNED_BYTE, false, 0, 0);
+        // read as integers (uvec4 / ivec4 in the shaders): fed to a float input, ANGLE on Direct3D 11 would build every
+        // shader a second time at its first draw (a third of a second or more each, the hang after a change of look)
+        gl.vertexAttribIPointer(i, 4, a instanceof Uint16Array ? gl.UNSIGNED_SHORT : a instanceof Int8Array ? gl.BYTE : gl.UNSIGNED_BYTE, 0, 0);
         bufs.push(buf);
       }
       const ib = gl.createBuffer();

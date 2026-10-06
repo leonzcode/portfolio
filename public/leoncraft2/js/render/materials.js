@@ -23,7 +23,11 @@ const HEAD = `precision highp float; precision highp int; precision highp sample
 
 const TERRAIN_VS = /* glsl */`
 uniform mat4 modelMatrix, viewMatrix, projectionMatrix;
-layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL; layout(location = 3) in vec4 aC;
+layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 2) in uvec4 aL; layout(location = 3) in uvec4 aC;
+#define aPos vec4(aPos)
+#define aA vec4(aA)
+#define aL vec4(aL)
+#define aC vec4(aC)
 uniform vec3 uChunk;
 out vec3 vWorld; out vec2 vUv; out vec4 vLight; out vec3 vTint; out float vRnd;
 flat out float vLayer; flat out int vNormal; flat out int vFlags;
@@ -284,7 +288,11 @@ uniform vec3 uAmbUp, uAmbSide, uAmbDown, uSunC;
 uniform float uDayK;
 uniform float uAO;          // the corners' shade (Shader Options: Ambient Occlusion)
 uniform float uChunkFade;   // a column fading in (Chunk Fade)
-layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL; layout(location = 3) in vec4 aC;
+layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 2) in uvec4 aL; layout(location = 3) in uvec4 aC;
+#define aPos vec4(aPos)
+#define aA vec4(aA)
+#define aL vec4(aL)
+#define aC vec4(aC)
 uniform vec3 uChunk;
 ` + LDR + LIGHTS + /* glsl */`
 out vec2 vUv; out vec3 vTint;
@@ -536,7 +544,10 @@ export function bakeLayerMaterials(r, specTex, layerInfo) {
 
 const SHADOW_VS = /* glsl */`
 uniform mat4 modelMatrix, uShadowMat;
-layout(location = 0) in vec4 aPos; layout(location = 1) in vec4 aA; layout(location = 2) in vec4 aL;
+layout(location = 0) in uvec4 aPos; layout(location = 1) in uvec4 aA; layout(location = 2) in uvec4 aL;
+#define aPos vec4(aPos)
+#define aA vec4(aA)
+#define aL vec4(aL)
 uniform vec3 uChunk;
 out vec2 vUv; flat out float vLayer;
 const float SHADOW_B = 0.85;

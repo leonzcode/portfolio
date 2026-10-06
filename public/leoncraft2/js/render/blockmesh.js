@@ -10,6 +10,15 @@
 import { boxesOf } from '../models.js?v=17';
 const THREE = window.THREE;
 
+/* The vertex format's attributes (mesher.js) are small whole numbers, and the
+   shaders take them as such (uvec4 / ivec4): three.js has to hand them over
+   with vertexAttribIPointer, which it does for an attribute marked IntType. */
+export function intAttribute(array, size = 4) {
+  const a = new THREE.BufferAttribute(array, size);
+  a.gpuType = THREE.IntType;
+  return a;
+}
+
 const FACES = [
   { n: [1, 0, 0], t: [0, 0, -1], b: [0, -1, 0] }, { n: [-1, 0, 0], t: [0, 0, 1], b: [0, -1, 0] },
   { n: [0, 1, 0], t: [1, 0, 0], b: [0, 0, 1] }, { n: [0, -1, 0], t: [1, 0, 0], b: [0, 0, -1] },
@@ -63,10 +72,10 @@ function modelGeometry(boxes, lift) {
   };
   for (const b of boxes) box(...b);
   const g = new THREE.BufferGeometry();
-  g.setAttribute('aPos', new THREE.BufferAttribute(new Uint16Array(verts), 4));
-  g.setAttribute('aA', new THREE.BufferAttribute(new Uint8Array(A), 4));
-  g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(L), 4));
-  g.setAttribute('aC', new THREE.BufferAttribute(new Uint8Array(C), 4));
+  g.setAttribute('aPos', intAttribute(new Uint16Array(verts)));
+  g.setAttribute('aA', intAttribute(new Uint8Array(A)));
+  g.setAttribute('aL', intAttribute(new Uint8Array(L)));
+  g.setAttribute('aC', intAttribute(new Uint8Array(C)));
   g.setIndex(idx);
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
   return { geometry: g, flat: false, cutout: false };
@@ -180,10 +189,10 @@ export function blockGeometry(d, meta) {
     }
   }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('aPos', new THREE.BufferAttribute(new Uint16Array(verts), 4));
-  g.setAttribute('aA', new THREE.BufferAttribute(new Uint8Array(A), 4));
-  g.setAttribute('aL', new THREE.BufferAttribute(new Uint8Array(L), 4));
-  g.setAttribute('aC', new THREE.BufferAttribute(new Uint8Array(C), 4));
+  g.setAttribute('aPos', intAttribute(new Uint16Array(verts)));
+  g.setAttribute('aA', intAttribute(new Uint8Array(A)));
+  g.setAttribute('aL', intAttribute(new Uint8Array(L)));
+  g.setAttribute('aC', intAttribute(new Uint8Array(C)));
   g.setIndex(idx);
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 2);
   return { geometry: g, flat, cutout: flat || d.pass !== 'opaque' };
