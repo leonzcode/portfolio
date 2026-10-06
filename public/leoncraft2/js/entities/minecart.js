@@ -99,14 +99,16 @@ export class Minecart extends Entity {
     if (RAIL[T.get(bx, by - 1, bz)]) by--;
     const r = this.rail(bx, by, bz);
     const inWater = T.fluid(bx, Math.floor(p.y + 0.2), bz) === 1;
-    const max = inWater ? 0.2 : 0.4;
+    // (a furnace cart goes at half: entities/carts.js)
+    const max = (inWater ? 0.2 : 0.4) * (this.speedScale || 1);
+    this.hitEnd = false;
     if (!r) {
       // off the rails: fall, slow on the ground
       this.onRail = false;
       v.y -= inWater ? 0.005 : 0.04;
       v.x = Math.max(-max, Math.min(max, v.x)); v.z = Math.max(-max, Math.min(max, v.z));
       if (this.onGround) { v.x *= 0.5; v.z *= 0.5; }
-      this.m.t.move(this, v.x, v.y, v.z);
+      this.move(v.x, v.y, v.z);
       if (!this.onGround) { v.x *= 0.95; v.y *= 0.95; v.z *= 0.95; }
       this.pitch *= 0.8;
       this.pickUp();
@@ -141,7 +143,8 @@ export class Minecart extends Entity {
         }
       } else if (Math.abs(s) < 0.03) s = 0; else s *= 0.5;
     }
-    // friction, and the speed limit
+    // a furnace cart's push (entities/carts.js); friction, and the speed limit
+    if (this.drive) s = this.drive(s, hx, hz);
     s *= rider ? 0.997 : 0.96;
     if (inWater) s *= 0.95;
     s = Math.max(-max, Math.min(max, s));
@@ -157,6 +160,7 @@ export class Minecart extends Entity {
       const nbx = bx + ex[0], nbz = bz + ex[1];
       if (!RAIL[T.get(nbx, ey, nbz)] && !RAIL[T.get(nbx, ey - 1, nbz)] && T.solid(nbx, ey, nbz)) {
         const lim = tt > 1 ? 1 : 0;
+        this.hitEnd = true;
         nx = x0 + hx * lim * len * 0.999 + hx * (lim ? -0.01 : 0.01); nz = z0 + hz * lim * len * 0.999 + hz * (lim ? -0.01 : 0.01);
         s = 0;
       }
@@ -176,7 +180,7 @@ export class Minecart extends Entity {
   }
   // a mob bumped by a moving, empty cart gets in
   pickUp() {
-    if (this.passengers.length || this.vel.x * this.vel.x + this.vel.z * this.vel.z < 0.01) return;
+    if (this.constructor.NO_RIDE || this.passengers.length || this.vel.x * this.vel.x + this.vel.z * this.vel.z < 0.01) return;
     this.m.forNear(this.pos.x, this.pos.z, 2, e => {
       if (this.passengers.length || e === this || e.removed || e.dead || !(e instanceof Living) || e.vehicle || e.type === 'iron_golem' || e.w > 1) return;
       if (Math.abs(e.pos.x - this.pos.x) < this.hw + e.hw && Math.abs(e.pos.z - this.pos.z) < this.hw + e.hw && Math.abs(e.pos.y - this.pos.y) < 1) {
@@ -190,7 +194,9 @@ export class Minecart extends Entity {
     this.damage += amount * 10;
     const creative = src && src.player && this.m.mode === 'creative';
     if (creative || this.damage > 40) {
-      if (!creative) this.m.dropItemAt(this.pos.x, this.pos.y + 0.3, this.pos.z, 'minecart', 1);
+      // its own item (a cart with a block drops as one since 1.19), and what a chest or hopper cart held
+      if (!creative) this.m.dropItemAt(this.pos.x, this.pos.y + 0.3, this.pos.z, this.constructor.ITEM || 'minecart', 1);
+      if (this.broken) this.broken(creative);
       for (const p of this.passengers.slice()) { if (p.isPlayer) this.m.dismount(); else p.vehicle = null; }
       this.passengers.length = 0;
       this.remove();
@@ -211,11 +217,11 @@ export class Minecart extends Entity {
 }
 register('minecart', Minecart);
 
-/* Putting a cart on a rail (the minecart item) */
-export function placeMinecart(m, x, y, z) {
+/* Putting a cart on a rail (the minecart item, or one with a block: type) */
+export function placeMinecart(m, x, y, z, type = 'minecart') {
   const T = m.t;
   if (!RAIL[T.get(x, y, z)]) return null;
-  const c = m.spawn('minecart', x + 0.5, y + 0.0625, z + 0.5, { natural: false });
+  const c = m.spawn(type, x + 0.5, y + 0.0625, z + 0.5, { natural: false });
   if (c) { const r = c.rail(x, y, z); if (r) c.yaw = c.prevYaw = Math.atan2(-(r[1][0] - r[0][0]), -(r[1][1] - r[0][1])); }
   return c;
 }

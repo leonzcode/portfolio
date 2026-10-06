@@ -33,7 +33,8 @@ import { wandererTick } from './merchant.js?v=17';
 import { tableBooks } from './tablebook.js?v=17';
 import { explode } from './explosion.js?v=17';
 import { splitXp } from './xporb.js?v=17';
-import { placeMinecart, isRail } from './minecart.js?v=17';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=17';
+import { CART_ITEMS } from './carts.js?v=17';
 import { FALLS, free } from './fallingblock.js?v=17';
 import { Spawner, DESPAWN } from './spawner.js?v=17';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=17';
@@ -781,9 +782,9 @@ export class Entities {
       take();
       return true;
     }
-    if (name === 'minecart' && target && isRail(target.b)) {
+    if (CART_ITEMS[name] && target && isRail(target.b)) {
       if (!build) return false;
-      if (placeMinecart(this, target.x, target.y, target.z)) take();
+      if (placeMinecart(this, target.x, target.y, target.z, CART_ITEMS[name])) take();
       return true;
     }
     if (/_spawn_egg$/.test(name)) {
@@ -848,6 +849,8 @@ export class Entities {
     });
     return found;
   }
+  // a cart of any kind from a dispenser (dispense.js), on the rail at (x, y, z)
+  placeCartAt(name, x, y, z) { return placeMinecart(this, x, y, z, CART_ITEMS[name] || 'minecart'); }
   // a boat from a dispenser (dispense.js): where it says, facing its way
   placeBoatAt(name, x, y, z, yaw) { return placeBoat(this, name, x, y, z, yaw); }
   /* A boat from its item, the game's way: where the look first meets a block
@@ -885,7 +888,7 @@ export class Entities {
     if (!eye || !dir) return null;
     let inside = false;
     this.forNear(eye.x, eye.z, 4, e => {
-      if (!inside && !e.removed && (e instanceof Living || e.constructor.SOLID || e.type === 'minecart') && e !== this.riding
+      if (!inside && !e.removed && (e instanceof Living || e.constructor.SOLID || e instanceof Minecart) && e !== this.riding
         && Math.abs(eye.x - e.pos.x) < e.hw && Math.abs(eye.z - e.pos.z) < e.hw && eye.y > e.pos.y && eye.y < e.pos.y + e.h) inside = true;
     });
     if (inside) return null;
@@ -905,7 +908,7 @@ export class Entities {
     let blocked = false;
     this.forNear(x, z, 3, e => {
       if (blocked || e.removed || e.dead || e.vehicle) return;
-      if (!(e instanceof Living && !e.constructor.NO_PUSH) && !e.constructor.SOLID && e.type !== 'minecart') return;
+      if (!(e instanceof Living && !e.constructor.NO_PUSH) && !e.constructor.SOLID && !(e instanceof Minecart)) return;
       if (e.pos.x + e.hw > x - hw + E && e.pos.x - e.hw < x + hw - E && e.pos.z + e.hw > z - hw + E && e.pos.z - e.hw < z + hw - E && e.pos.y + e.h > y + E && e.pos.y < y + 0.5625 - E) blocked = true;
     });
     if (blocked) return null;
