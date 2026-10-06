@@ -53,7 +53,7 @@ import { DIMS } from '../dims.js?v=16';
 import { armorLayers } from './armorlayer.js?v=16';
 import { MobHeld } from '../render/mobheld.js?v=16';
 import { setSpawnerMob } from '../struct/spawners.js?v=16';
-import { useExtra } from './items2.js?v=16';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=16';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -125,6 +125,8 @@ export class Entities {
     };
     // a boat's turn reaches the camera a frame at a time, not in a jump each tick
     this.turnDue = 0; this.turnDone = 0;
+    // a named mob's name over it while you look at it
+    nameplates(this);
   }
   get difficulty() { return (this.options && this.options.get('difficulty')) || 'normal'; }
   get time() { return this.hooks.time ? this.hooks.time() : 6000; }
@@ -303,6 +305,7 @@ export class Entities {
       if (e.vehicle && !e.vehicle.removed && e.vehicle.passengers.indexOf(e) >= 0) continue;
       if (e.vehicle) { this.ridingTick(e); continue; }
       e.tick();
+      if (e.leash) leashTick(this, e);
       if (e.passengers.length) this.tickRiders(e);
       if (!e.removed && (this.age + e.id) % 4 === 0) this.sampleLight(e);
       // flames off anything burning
@@ -579,6 +582,8 @@ export class Entities {
   interact(e) {
     if (!e || e.removed || e.dead) return false;
     const held = this.heldName();
+    // leads on and off, a name tag's name (entities/items2.js)
+    if (leashInteract(this, e, held)) return true;
     // a fish, an axolotl or a tadpole scooped up in a water bucket (the bucket becomes a bucket of it)
     if (held === 'water_bucket' && /^(cod|salmon|tropical_fish|pufferfish|axolotl|tadpole)$/.test(e.type) && this.inv) {
       const id = I[e.type + '_bucket'], inv = this.inv;
@@ -754,6 +759,8 @@ export class Entities {
      the block looked at), a spawn egg, an egg or snowball to throw. True if
      it was used. */
   useHeld(target) {
+    // a fence: the mobs you lead are tied to it, whatever is in your hand (entities/items2.js)
+    if (target && target.face && tieToFence(this, target)) return true;
     const name = this.heldName();
     if (!name || !this.lookEye) return false;
     const P = this.P, eye = this.lookEye, dir = this.lookDir;

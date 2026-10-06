@@ -505,5 +505,173 @@ export function useExtra(m, name, target, take, build) {
     if (b) { b.lure = enchOf(st, 'lure'); b.luck = enchOf(st, 'luck_of_the_sea'); m.bobber = b; }
     return true;
   }
+  if (name === 'brush') return brushAt(m, target);
+  // a knowledge book teaches its recipes (every recipe is known here already) and is used up
+  if (name === 'knowledge_book') { take(); return true; }
   return false;
+}
+
+/* ---- the brush: held on suspicious sand or gravel, a stroke every half
+   second; ten strokes and what was buried comes out, the block is plain
+   sand or gravel, and the brush takes a point of wear. (What it finds is
+   drawn from the desert's and the trail ruins' lists together: the block
+   does not keep which ruin it was part of.) ---- */
+const SAND_FINDS = ['archer_pottery_sherd', 'miner_pottery_sherd', 'prize_pottery_sherd', 'skull_pottery_sherd', 'diamond', 'tnt', 'gunpowder', 'emerald', 'emerald'];
+const GRAVEL_FINDS = ['arms_up_pottery_sherd', 'brewer_pottery_sherd', 'burn_pottery_sherd', 'danger_pottery_sherd', 'friend_pottery_sherd', 'heart_pottery_sherd',
+  'howl_pottery_sherd', 'sheaf_pottery_sherd', 'coal', 'emerald', 'wheat', 'wooden_hoe', 'gold_nugget', 'iron_axe'];
+function brushAt(m, t) {
+  if (!t || !t.face) return false;
+  const b = m.t.get(t.x, t.y, t.z), n = BLOCKS[b] && BLOCKS[b].name;
+  if (n !== 'suspicious_sand' && n !== 'suspicious_gravel') return false;
+  const k = t.x + ',' + t.y + ',' + t.z, br = m.brushing;
+  if (!br || br.k !== k || m.age - br.last > 20) m.brushing = { k, n: 0, last: m.age };
+  const s = m.brushing;
+  if (m.age - s.last >= 10 || s.n === 0) {
+    s.last = m.age; s.n++;
+    const sand = n === 'suspicious_sand';
+    m.particles('poof', t.x + 0.5 + t.face[0] * 0.55, t.y + 0.5 + t.face[1] * 0.55, t.z + 0.5 + t.face[2] * 0.55, 4, 0.2, sand ? [0.86, 0.8, 0.6] : [0.55, 0.52, 0.5]);
+    if (s.n >= 10) {
+      const finds = sand ? SAND_FINDS : GRAVEL_FINDS;
+      m.dropItemAt(t.x + 0.5 + t.face[0] * 0.7, t.y + 0.5 + t.face[1] * 0.7, t.z + 0.5 + t.face[2] * 0.7, finds[RI(finds.length)], 1, true, true);
+      m.world.set(t.x, t.y, t.z, sand ? B.sand : B.gravel, 0);
+      if (m.mode !== 'creative') m.damageHeld(1);
+      m.brushing = null;
+    }
+  }
+  return true;
+}
+
+/* ---- leads: a mob on one follows you (pulled along past 6 blocks, the lead
+   snapping past 10); right click a fence and the mobs you lead are tied to
+   a knot on it; right click a led mob to let it go. Kept with the mob when
+   the world is saved. ---- */
+const FENCE = b => !!(BLOCKS[b] && BLOCKS[b].shape === 'fence');
+const NOT_LEASHED = /^(villager|wandering_trader|bat|cod|salmon|tropical_fish|pufferfish|tadpole|wither|ender_dragon|armor_stand|evoker_fangs|painting|leash_knot|shulker|warden|creaking|elder_guardian|guardian|ghast|vex|phantom|breeze)$/;
+const leashable = e => e instanceof Living && !e.constructor.HOSTILE && !NOT_LEASHED.test(e.type) && !e.dead;
+// what the lead pulls towards: the player, or the knot on a fence
+function holderPos(m, e) {
+  const L = e.leash;
+  if (L.knot) return { x: L.knot[0] + 0.5, y: L.knot[1] + 0.6, z: L.knot[2] + 0.5 };
+  const P = m.P;
+  return { x: P.pos.x, y: P.pos.y + 1.0, z: P.pos.z };
+}
+function unleash(m, e, drop) {
+  if (!e.leash) return;
+  const knot = e.leash.knot;
+  e.leash = null;
+  if (drop) m.dropAt(e, 'lead', 1);
+  dropLine(e);
+  if (knot) cleanKnots(m);
+}
+function dropLine(e) { if (e.leashLine) { if (e.leashLine.parent) e.leashLine.parent.remove(e.leashLine); e.leashLine.geometry.dispose(); e.leashLine = null; } }
+// the knots: one entity on each fence something is tied to, gone when nothing is
+function cleanKnots(m) {
+  for (const k of m.list) if (k.type === 'leash_knot' && !k.removed && !m.list.some(e => e.leash && e.leash.knot && e.leash.knot.join(',') === k.at)) k.remove();
+}
+function ensureKnot(m, at) {
+  const key = at.join(',');
+  if (m.list.some(k => k.type === 'leash_knot' && !k.removed && k.at === key)) return;
+  const k = m.spawn('leash_knot', at[0] + 0.5, at[1] + 0.375, at[2] + 0.5, { natural: false });
+  if (k) k.at = key;
+}
+// a right click on a mob: a lead put on or taken off, a name tag's name given (true when it took the click)
+export function leashInteract(m, e, held) {
+  if (e.leash) { unleash(m, e, m.mode !== 'creative'); return true; }
+  if (held === 'lead' && leashable(e)) {
+    e.leash = { player: true }; e.persistent = true;
+    if (m.mode !== 'creative' && m.inv) m.inv.takeSelected(1);
+    return true;
+  }
+  if (held === 'name_tag') {
+    const st = m.inv && m.inv.slots[m.inv.selected];
+    // only a tag renamed on an anvil names anything
+    if (!st || !st.name || !(e instanceof Living) || e.isPlayer) return false;
+    e.customName = st.name; e.persistent = true;
+    if (m.mode !== 'creative') m.inv.takeSelected(1);
+    return true;
+  }
+  return false;
+}
+// a right click on a fence: what you lead is tied there (true when anything was)
+export function tieToFence(m, t) {
+  if (!t || !FENCE(t.b)) return false;
+  let any = false;
+  for (const e of m.list) if (e.leash && e.leash.player && !e.removed) { e.leash = { knot: [t.x, t.y, t.z] }; any = true; }
+  if (any) ensureKnot(m, [t.x, t.y, t.z]);
+  return any;
+}
+// each tick, for a led mob
+export function leashTick(m, e) {
+  const L = e.leash;
+  if (e.dead || e.removed) { unleash(m, e, !e.removed || e.dead); return; }
+  if (L.knot && !FENCE(m.t.get(L.knot[0], L.knot[1], L.knot[2]))) { unleash(m, e, true); return; }
+  if (L.player && !m.player.alive()) { unleash(m, e, true); return; }
+  if (L.knot) ensureKnot(m, L.knot);
+  const h = holderPos(m, e), dx = h.x - e.pos.x, dy = h.y - (e.pos.y + e.h * 0.6), dz = h.z - e.pos.z, d = Math.hypot(dx, dy, dz);
+  if (d > 10) { unleash(m, e, true); return; }
+  if (d > 6) {
+    const k = Math.min(0.4, (d - 6) * 0.1);
+    e.vel.x += dx / d * k; e.vel.z += dz / d * k; if (dy > 0) e.vel.y += dy / d * k * 0.5;
+  }
+  if (d > 4 && e.nav && (e.nav.isDone() || m.age % 10 === 0)) e.nav.moveTo(h.x, h.y - 1, h.z, 1, 2);
+  // the line, from the mob's neck to the hand or the knot
+  if (!e.leashLine) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(3 * 12), 3));
+    e.leashLine = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x6a4a2a }));
+    e.leashLine.frustumCulled = false;
+    if (m.group) m.group.add(e.leashLine);
+  }
+  const a = e.leashLine.geometry.attributes.position.array, sx = e.pos.x, sy = e.pos.y + e.h * 0.8, sz = e.pos.z;
+  let hx = h.x, hy = h.y, hz = h.z;
+  if (L.player) { const P = m.P, s = Math.sin(P.yaw), c = Math.cos(P.yaw); hx = P.pos.x - c * 0.35 - s * 0.5; hy = P.pos.y + 1.1; hz = P.pos.z + s * 0.35 - c * 0.5; }
+  for (let i = 0; i < 12; i++) {
+    const t = i / 11, sag = Math.sin(t * PI) * Math.max(0, 0.6 - d * 0.05);
+    a[i * 3] = sx + (hx - sx) * t; a[i * 3 + 1] = sy + (hy - sy) * t - sag; a[i * 3 + 2] = sz + (hz - sz) * t;
+  }
+  e.leashLine.geometry.attributes.position.needsUpdate = true;
+}
+// the knot on a fence post
+export class LeashKnot extends Entity {
+  static W = 0.375; static H = 0.5; static MODEL = 'leash_knot'; static TEX = 'leash_knot'; static NO_PUSH = true; static SHADOW = 0;
+  constructor(m, type) { super(m, type); this.gravity = 0; this.at = ''; }
+  tick() { this.prev.copy(this.pos); this.age++; if (this.age % 40 === 0) cleanKnots(this.m); }
+  // hit: everything tied here is let go
+  hurt() { for (const e of this.m.list) if (e.leash && e.leash.knot && e.leash.knot.join(',') === this.at) unleash(this.m, e, this.m.mode !== 'creative'); this.remove(); return true; }
+  toJSON() { const o = super.toJSON(); o.at = this.at; return o; }
+  fromJSON(o) { super.fromJSON(o); this.at = o.at || ''; }
+}
+register('leash_knot', LeashKnot);
+model('leash_knot', [{ name: 'knot', pivot: [0, 24, 0], boxes: [[-3, -8, -3, 6, 8, 6, 0, 0]] }]);
+addArt('leash_knot', [64, 32], p => { p.box(0, 0, 6, 8, 6, 0x8a6a40, 0.12); p.speckle(0, 0, 24, 14, 0x5a4428, 0.25); });
+// a lead kept with the mob in the save: Living's own toJSON and fromJSON, wrapped
+{
+  const tj = Living.prototype.toJSON, fj = Living.prototype.fromJSON;
+  Living.prototype.toJSON = function () { const o = tj.call(this); if (this.leash) o.lsh = this.leash.knot ? this.leash.knot : 1; return o; };
+  Living.prototype.fromJSON = function (o) { fj.call(this, o); if (o.lsh) this.leash = Array.isArray(o.lsh) ? { knot: o.lsh } : { player: true }; };
+}
+
+/* ---- a named mob's name, over its head while you look at it (the game's
+   nameplate: white on a dark band), drawn on the GUI ---- */
+const projV = new THREE.Vector3();
+export function nameplates(mgr) {
+  const H = mgr.hooks.hands, gui = H && H.gui;
+  if (!gui) return;
+  // one overlay on the GUI, pointed at the mobs of the dimension being played
+  if (gui.nameplates) { gui.nameplates.m = mgr; return; }
+  const ov = gui.nameplates = {
+    m: mgr,
+    get animates() { const m = this.m, e = m.inter && m.inter.entityTarget; return !!(e && e.customName); },
+    draw(g) {
+      const m = this.m, e = m.inter && m.inter.entityTarget, cam = m.R && m.R.camera;
+      if (!e || !e.customName || !cam || g.screen || m.gone) return;
+      projV.set(e.pos.x, e.pos.y + e.h + 0.5, e.pos.z).project(cam);
+      if (projV.z > 1) return;
+      const x = Math.round((projV.x + 1) / 2 * g.width), y = Math.round((1 - projV.y) / 2 * g.height);
+      const t = e.customName, w = g.textWidth(t);
+      g.fill(x - Math.ceil(w / 2) - 1, y - 1, x + Math.ceil(w / 2) + 1, y + 8, 0x40000000);
+      g.text(t, x - Math.floor(w / 2), y, 0xFFFFFF, false);
+    },
+  };
+  gui.overlays.push(ov);
 }
