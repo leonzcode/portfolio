@@ -53,7 +53,14 @@ const STARTS = {
   village_taiga: [[49, 22, 18], [49, 9, 9], [1, 22, 18], [1, 9, 9]],
   trail_ruins: [[1, 5, 5], [1, 5, 5], [1, 7, 7], [1, 7, 7], [1, 7, 7]],
   pillager_outpost: [[1, 16, 16]],
+  bastion_remnant: [[1, 46, 46], [1, 30, 48], [1, 38, 38], [1, 16, 32]],
+  trial_chambers: [[1, 19, 19], [1, 19, 19]],
+  ancient_city: [[1, 18, 41], [1, 18, 41], [1, 18, 41]],
 };
+/* A start placed by a named jigsaw (the ancient city's city_anchor) is moved
+   so that jigsaw sits on the chunk corner: where it is in the template (x, z),
+   the same in each of the city's centres. */
+const ANCHOR = { ancient_city: [13, 20] };
 // the middle of a template's box once turned about the chunk corner (Java's
 // integer halving, which rounds towards zero)
 function startMiddle(x0, z0, sx, sz, rot) {
@@ -154,7 +161,11 @@ export class Structures {
         while ((n -= T[k][0]) >= 0) k++;
       } else r.next(31);
       let x = x0 + ROT[rot][0] * hw, z = z0 + ROT[rot][1] * hw;
-      if (T) [x, z] = startMiddle(x0, z0, T[k][1], T[k][2], rot);
+      if (T) {
+        // the anchor turned with the template (no turn, a quarter, a half, three quarters clockwise)
+        const A = ANCHOR[type] || [0, 0], ax = [A[0], -A[1], -A[0], A[1]][rot], az = [A[1], A[0], -A[1], -A[0]][rot];
+        [x, z] = startMiddle(x0 - ax, z0 - az, T[k][1], T[k][2], rot);
+      }
       if (type.startsWith('village') || type === 'pillager_outpost' || type.startsWith('abandoned_camp')) y = this.occupied(x, z) + 1;
       else if (type === 'trail_ruins') y = this.occupied(x, z) + 1 - 15;
       p = { x, y, z, rot };
