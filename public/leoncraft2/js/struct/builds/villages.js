@@ -527,7 +527,8 @@ function drawFarm(g, o) {
     const half = x < 6 ? 0 : 1;
     g.set(x, 1, z, o.crop[half], { m: o.age[half] });
   }
-  if (S.roof === 'flat') g.set(0, 1, 0, 'dead_bush');
+  // (a dead bush cannot grow on the cut sandstone of the frame: it stands in a pot there)
+  if (S.roof === 'flat') g.set(0, 1, 0, 'potted_dead_bush');
 }
 function drawPen(g, o) {
   const S = o.S, W = g.w, D = g.d;
