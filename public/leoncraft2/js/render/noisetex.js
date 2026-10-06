@@ -48,7 +48,9 @@ export function makeNoise2D() {
   return t;
 }
 
-export function makeNoise3D() {
+/* The volumetric clouds' 3D noise (64 x 64 x 64, half a second of work), as
+   bytes. Self-contained, so it can also run in a worker (makeNoise3DAsync). */
+function noise3DData() {
   const S = 64;
   const data = new Uint8Array(S * S * S * 4);
   // Worley: distance to the nearest of a wrapping grid of random points
@@ -83,10 +85,31 @@ export function makeNoise3D() {
     data[i * 4 + 2] = (1 - c) * 255;
     data[i * 4 + 3] = 255;
   }
+  return data;
+}
+function noise3DTexture(data) {
+  const S = 64;
   const t = new THREE.Data3DTexture(data, S, S, S);
   t.format = THREE.RGBAFormat;
   t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping;
   t.magFilter = t.minFilter = THREE.LinearFilter;
   t.needsUpdate = true;
   return t;
+}
+export function makeNoise3D() { return noise3DTexture(noise3DData()); }
+/* The same, made in a worker so turning on the full chain (Shader Options)
+   never stops the game for it; at once in this thread if there are no
+   workers to be had. */
+export function makeNoise3DAsync() {
+  return new Promise(resolve => {
+    let w;
+    try {
+      const src = 'const f = ' + noise3DData.toString() + ';\nconst d = f(); postMessage(d, [d.buffer]);';
+      const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      w = new Worker(url);
+      URL.revokeObjectURL(url);
+    } catch (e) { resolve(makeNoise3D()); return; }
+    w.onmessage = e => { w.terminate(); resolve(noise3DTexture(e.data)); };
+    w.onerror = () => { w.terminate(); resolve(makeNoise3D()); };
+  });
 }

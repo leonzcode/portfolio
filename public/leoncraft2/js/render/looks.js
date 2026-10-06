@@ -31,7 +31,7 @@ import { Sky, FullScreen } from './sky.js?v=17';
 import { Post } from './post.js?v=17';
 import { makeMaterials } from './materials.js?v=17';
 import { makeWaterMaterial } from './water.js?v=17';
-import { makeNoise3D } from './noisetex.js?v=17';
+import { makeNoise3DAsync } from './noisetex.js?v=17';
 import { makeLdrSky } from './ldrsky.js?v=17';
 import { Vanilla, makeVanillaMaterials } from './vanilla.js?v=17';
 import { BlockClouds, detailedCloudMaterial } from './clouds.js?v=17';
@@ -52,7 +52,7 @@ export const SHADER_DEFAULTS = {
   skyColour: 1,              // how deep the sky's blue is, 0 grey - 1.5
   water: 'sheen',            // vanilla (its texture), sheen (the sky in it), reflections (the world in it too)
   reflections: 'low',        // low high: how far the reflections look
-  waves: true,
+  waves: 'high',             // off low high: how high the waves run (Low: half as high, and cheaper)
   wavingPlants: 'high',      // off low high: grass, flowers, crops, kelp
   wavingLeaves: 'high',      // off low high
   bloom: 'off',              // off low high
@@ -67,9 +67,10 @@ export const SHADER_DEFAULTS = {
   normalMaps: false,
   heldLight: true,           // a torch in your hand lights what is round you
   antialiasing: 'off',       // off fxaa (the full chain only)
+  tone: 'agx',               // agx aces reinhard: the tone curve from the scene's light to the screen
 };
 export const SHADER_PRESETS = {
-  low: { shadows: 'off', wavingPlants: 'low', wavingLeaves: 'off', waves: false },
+  low: { shadows: 'off', wavingPlants: 'low', wavingLeaves: 'off', waves: 'off' },
   medium: {},
   high: { shadows: 'high', shadowDistance: 96, shadowSoftness: 0.6 },
   ultra: { shadows: 'high', shadowDistance: 128, shadowSoftness: 0.6, bloom: 'low', lightShafts: 'low', clouds: 'volumetric', cloudShadows: true,
@@ -79,7 +80,12 @@ export const SHADER_PRESET_NAMES = ['low', 'medium', 'high', 'ultra'];
 
 // the settings in effect: a preset's, or the player's own (Custom)
 export function shaderSettings(preset, own) {
-  if (preset === 'custom') return Object.assign({}, SHADER_DEFAULTS, own || {});
+  if (preset === 'custom') {
+    const s = Object.assign({}, SHADER_DEFAULTS, own || {});
+    // (Waves was ON or OFF before it had levels)
+    if (s.waves === true) s.waves = 'high'; else if (s.waves === false) s.waves = 'off';
+    return s;
+  }
   return Object.assign({}, SHADER_DEFAULTS, SHADER_PRESETS[preset] || {});
 }
 // which preset these settings are (or 'custom')
@@ -102,7 +108,7 @@ const VANILLA_LOOK = {
   vanilla: true, ldr: true, shadows: 0, normals: false, cloudShadow: 0, sky: 16,
   uploadMs: 3, plantDist: 136, leafInDist: 64, plantShadows: false, wind: false, wave: [0, 0], water: 1, waves: false, ssrSteps: 0,
   bloom: false, vlSteps: 0, volumetric: false, shaderClouds: 'blocks', fxaa: false, heldLight: false,
-  ao: 1, fog: 1, exposure: 0, contrast: 1, saturation: 1, sunTint: SUN_TINT.natural, skyLight: 1, skySat: 1,
+  ao: 1, fog: 1, exposure: 0, contrast: 1, saturation: 1, tone: 'agx', sunTint: SUN_TINT.natural, skyLight: 1, skySat: 1,
 };
 
 // does this need the full chain?
@@ -127,13 +133,13 @@ export function lookOf(s, on) {
     sky: full ? 1 : 16,
     uploadMs: 3, plantDist: 96, leafInDist: 48, plantShadows: false, leafInShadows: false,
     wind: plants + leaves > 0, wave: [plants, leaves],
-    water: s.water === 'vanilla' ? 0 : 1, waves: !!s.waves,
+    water: s.water === 'vanilla' ? 0 : 1, waves: s.waves === 'off' ? false : s.waves === 'low' ? 'low' : true,
     ssrSteps: s.water === 'reflections' ? (s.reflections === 'high' ? 28 : 12) : 0,
     bloom: s.bloom !== 'off', bloomMix: s.bloom === 'high' ? 0.08 : 0.045,
     vlSteps: s.lightShafts === 'off' ? 0 : s.lightShafts === 'high' ? 20 : 10,
     volumetric: s.clouds === 'volumetric', shaderClouds: s.clouds,
     fxaa: s.antialiasing === 'fxaa',
-    ao: s.ao, fog: s.fog, exposure: s.exposure, contrast: s.contrast, saturation: s.saturation,
+    ao: s.ao, fog: s.fog, exposure: s.exposure, contrast: s.contrast, saturation: s.saturation, tone: s.tone || 'agx',
     sunTint: tint.map(v => v * s.sunBrightness), skyLight: s.skyLight, skySat: s.skyColour, heldLight: !!s.heldLight,
   };
 }
@@ -168,6 +174,7 @@ function codeKey(o) {
    the programs come out of three.js's cache already built, and the new look
    is there from one frame to the next with no stall. */
 export function applyLook(R, look, first) {
+  if (first) { safeCompileAsync(R.r); firstVertexFlat(R.r); }
   const o = Object.assign({}, R.opts || {}, look);
   const key = codeKey(o);
   if (first || key === R.lookKey) {
@@ -180,8 +187,6 @@ export function applyLook(R, look, first) {
   const token = R.lookToken = (R.lookToken || 0) + 1;
   const prep = prepare(R, o);
   const pending = R.lookPending = { key, look: Object.assign({}, look), prep };
-  const scene = new THREE.Scene();
-  for (const m of prep.compile) scene.add(new THREE.Mesh(R.standGeo, m));
   let ran = false;
   const done = () => {
     if (ran) return;
@@ -190,10 +195,66 @@ export function applyLook(R, look, first) {
     R.lookPending = null;
     finishLook(R, pending.look, false, prep);
   };
-  try { R.r.compileAsync(scene, R.camera).then(done, done); } catch (e) { done(); }
-  // a browser that cannot say when they are ready: after a few seconds all the same
-  setTimeout(done, 4000);
+  /* Handed to the graphics card a few at a time, a frame's share each: putting
+     a program together (its source, then the calls that start it compiling)
+     takes a few milliseconds in this thread, and the full chain's forty in one
+     go cost the frame the setting was changed in a tenth of a second or more. */
+  const compiled = new Promise(res => {
+    const list = prep.compile, waits = [];
+    let i = 0;
+    const step = () => {
+      if (R.lookToken !== token) return res();
+      const t0 = performance.now();
+      while (i < list.length && performance.now() - t0 < 5) {
+        const scene = new THREE.Scene();
+        for (const m of list.slice(i, i + 3)) scene.add(new THREE.Mesh(R.standGeo, m));
+        i += 3;
+        try { waits.push(R.r.compileAsync(scene, R.camera)); } catch (e) { /* built when first drawn */ }
+      }
+      if (i < list.length) requestAnimationFrame(step); else Promise.all(waits).then(res, res);
+    };
+    step();
+  });
+  // (and the full chain's cloud noise, made in a worker the first time)
+  Promise.all([compiled, prep.noise]).then(done, done);
+  // a browser that cannot say when they are ready: after a while all the same
+  setTimeout(done, 10000);
   return true;
+}
+
+/* three.js's compileAsync asks each material for its program until all are
+   built; a material that took another look's shader meanwhile (morph, which
+   lets its program go) has none to ask, and the question threw. These are
+   simply not waited for. */
+function safeCompileAsync(r) {
+  if (r.compileAsyncSafe) return;
+  r.compileAsyncSafe = true;
+  r.compileAsync = function (scene, camera, target = null) {
+    const mats = r.compile(scene, camera, target);
+    const parallel = r.extensions.get('KHR_parallel_shader_compile') !== null;
+    return new Promise(resolve => {
+      const check = () => {
+        for (const m of mats) { const p = r.properties.get(m).currentProgram; if (!p || p.isReady()) mats.delete(m); }
+        if (mats.size === 0) resolve(scene); else setTimeout(check, 10);
+      };
+      if (parallel) check(); else setTimeout(check, 10);
+    });
+  };
+}
+/* A flat varying (the texture layer, the face's flags: the same at every
+   corner of a face) takes the last corner's value in OpenGL and the first's
+   in Direct3D, so ANGLE on Direct3D 11 put a geometry shader in front of
+   every shader that has one, built at its first draw and run on every
+   triangle after. Asking for the first corner's value lets the graphics
+   card do it its own way. */
+function firstVertexFlat(r) {
+  const pv = r.getContext().getExtension('WEBGL_provoking_vertex');
+  if (pv) pv.provokingVertexWEBGL(pv.FIRST_VERTEX_CONVENTION_WEBGL);
+}
+// the full chain's 3D noise (volumetric clouds and light shafts): made in a worker, once, and filled in when ready
+function noise3D(R) {
+  if (!R.noise3) R.noise3 = makeNoise3DAsync().then(t => { R.U.uNoise3.value = t; });
+  return R.noise3;
 }
 
 /* What a new look needs that can be made before it takes over: the parts
@@ -205,14 +266,15 @@ function prepare(R, o) {
   if (o.vanilla && !R._vanilla) R._vanilla = new Vanilla(R, R.textures);
   if (o.vanilla) for (const fs of [R._vanilla.skyFS]) compile.push(fs.mesh.material);
   if (o.vanilla) compile.push(R._vanilla.cloudMesh.depth.material, R._vanilla.cloudMesh.colour.material);
-  if (!o.vanilla && !U.uToneLut.value) U.uToneLut.value = makeToneLut(o.contrast || 1, o.saturation === undefined ? 1 : o.saturation);
+  if (!o.vanilla && !U.uToneLut.value) U.uToneLut.value = makeToneLut(o.contrast || 1, o.saturation === undefined ? 1 : o.saturation, o.tone);
   if (!o.vanilla && o.ldr) {
     if (!R.skyFS) { R.skyFS = new FullScreen(makeLdrSky(U)); R.skyFS.mesh.renderOrder = 1e6; }
     if (!R.blockClouds) R.blockClouds = new BlockClouds(detailedCloudMaterial(U));
     compile.push(R.skyFS.mesh.material, R.blockClouds.depth.material, R.blockClouds.colour.material);
   }
+  let noise = null;
   if (!o.ldr) {
-    if (!U.uNoise3.value) U.uNoise3.value = makeNoise3D();
+    if (!U.uNoise3.value) noise = noise3D(R);
     if (!R._post) R._post = new Post(r, U, o);
     if (!R.blockCloudsHDR) R.blockCloudsHDR = new BlockClouds(detailedCloudMaterial(U, true));
     const P = R._post;
@@ -228,7 +290,7 @@ function prepare(R, o) {
     pairs.push([m, n]); temps.push(n); compile.push(n);
     return true;
   });
-  return { next, pairs, temps, compile };
+  return { next, pairs, temps, compile, noise };
 }
 
 /* The look takes over. prep: what prepare() made (a new shader), false (only
@@ -238,6 +300,7 @@ function finishLook(R, look, first, prep) {
   const o = R.opts = Object.assign(R.opts || {}, look);
   const rebuild = first || !!prep;
   R.lookKey = codeKey(o);
+  const wasLdr = R.ldr;
   R.ldr = !!o.ldr;
 
   // the sun's shadow maps: a new pair when the size changes (token ones with no shadows)
@@ -266,9 +329,9 @@ function finishLook(R, look, first, prep) {
     // all of the table again next frame, so the new colours show at once
     if (R.skySun) R.skySun.set(0, -2, 0);
     // the tone curve, with the contrast and saturation in it (no cost a pixel)
-    const tk = (o.contrast || 1) + ',' + (o.saturation === undefined ? 1 : o.saturation);
-    if (R.toneKey !== tk) { if (U.uToneLut.value) U.uToneLut.value.dispose(); U.uToneLut.value = makeToneLut(o.contrast || 1, o.saturation === undefined ? 1 : o.saturation); R.toneKey = tk; }
-    if (!o.ldr && !U.uNoise3.value) U.uNoise3.value = makeNoise3D();
+    const tk = (o.contrast || 1) + ',' + (o.saturation === undefined ? 1 : o.saturation) + ',' + (o.tone || 'agx');
+    if (R.toneKey !== tk) { if (U.uToneLut.value) U.uToneLut.value.dispose(); U.uToneLut.value = makeToneLut(o.contrast || 1, o.saturation === undefined ? 1 : o.saturation, o.tone); R.toneKey = tk; }
+    if (!o.ldr && !U.uNoise3.value) noise3D(R);
   }
   U.uWave.value.set(o.wave ? o.wave[0] : 0, o.wave ? o.wave[1] : 0);
   U.uAO.value = o.ao === undefined ? 1 : o.ao;
@@ -321,13 +384,20 @@ function finishLook(R, look, first, prep) {
   // the full chain
   if (!o.ldr) {
     if (!R._post) R._post = new Post(r, U, o);
+    // coming into the full chain from another look: its eye starts from this picture
+    else if (wasLdr) R._post.resetExposure();
     R.post = R._post;
     R.post.configure(o);
   } else R.post = null;
 
   if (!first && rebuild) {
     R.locs = new Map();
-    R.resize(R.cw, R.ch);
+    // (main.js's render scale leaves the next few seconds alone)
+    R.lookAt = performance.now();
+    /* The canvas and the full chain's pictures only when the pipeline itself
+       changed: giving a canvas a size, even the one it has, throws its picture
+       away and costs the graphics card a frame. */
+    if (R.ldr !== wasLdr || (!R.ldr && !R.main)) R.resize(R.cw, R.ch);
     if (R.shadows) R.shadows.S.dirty = true;
   }
   if (R.lookFns) for (const fn of R.lookFns) { try { fn(o, rebuild); } catch (e) { console.error(e); } }
@@ -351,21 +421,32 @@ export async function loadNormalMaps(R, url, layersOfBlocks) {
     const blob = await (await fetch(url)).blob();
     const RAW = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
     const full = await createImageBitmap(blob, RAW);
-    const layers = R.U.uAlbedo.value.image.depth;
+    const layers = R.U.uAlbedo.value.image.depth, blockLayers = Math.min(layersOfBlocks, full.height / 16);
+    /* Cut into pieces of 128 layers (no one upload over 2048 pixels tall) as
+       bitmaps, decoded with nothing premultiplied, and handed to the graphics
+       card as they are. (They went through a 2D canvas before, which keeps
+       colour premultiplied by alpha: the height kept in alpha wiped out the
+       normal of every low pixel, which then faced away from all light, black
+       specks over stone and sand.) */
+    const pieces = [];
+    for (let z = 0; z < blockLayers; z += 128) {
+      const n = Math.min(128, blockLayers - z);
+      pieces.push([z, n, await createImageBitmap(full, 0, z * 16, 16, n * 16, RAW)]);
+    }
+    full.close && full.close();
     const t = new THREE.DataArrayTexture(null, 16, 16, layers);
     t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
     t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
     t.generateMipmaps = true; t.anisotropy = 8;
     t.source.dataReady = false;
     t.needsUpdate = true;
-    r_upload(R.r, t, full, layers, Math.min(layersOfBlocks, full.height / 16), R.skipNormalLayers);
-    full.close && full.close();
+    r_upload(R.r, t, pieces, layers, R.skipNormalLayers);
     R.U.uNormalMap.value = t;
     R.normalsLoaded = true;
   })().catch(e => { console.warn('normal maps', e); R.normalsLoading = null; });
   return R.normalsLoading;
 }
-function r_upload(r, t, bmp, layers, blockLayers, skip) {
+function r_upload(r, t, pieces, layers, skip) {
   r.initTexture(t);
   const gl = r.getContext(), glTex = r.properties.get(t).__webglTexture;
   gl.bindTexture(gl.TEXTURE_2D_ARRAY, glTex);
@@ -375,18 +456,11 @@ function r_upload(r, t, bmp, layers, blockLayers, skip) {
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
   const N = 128, flat = new Uint8Array(16 * 16 * N * 4);
   for (let i = 0; i < flat.length; i += 4) { flat[i] = 128; flat[i + 1] = 128; flat[i + 2] = 255; flat[i + 3] = 255; }
+  // every layer flat first (items, the other dimensions' art), then the blocks' own maps
   for (let z = 0; z < layers; z += N) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, z, 16, 16, Math.min(N, layers - z), gl.RGBA, gl.UNSIGNED_BYTE, flat);
-  // the blocks' own maps, a piece at a time (no one upload over 2048 pixels tall), leaving out layers a resource pack replaced
-  const cv = document.createElement('canvas'); cv.width = 16; cv.height = 16 * N;
-  const cg = cv.getContext('2d', { willReadFrequently: true });
-  for (let z = 0; z < blockLayers; z += N) {
-    const n = Math.min(N, blockLayers - z);
-    cg.clearRect(0, 0, 16, 16 * N);
-    cg.drawImage(bmp, 0, z * 16, 16, n * 16, 0, 0, 16, n * 16);
-    const px = cg.getImageData(0, 0, 16, n * 16).data;
-    if (skip) for (const l of skip) if (l >= z && l < z + n) px.set(flat.subarray(0, 1024), (l - z) * 1024);
-    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, z, 16, 16, n, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  }
+  for (const [z, n, bmp] of pieces) { gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, z, 16, 16, n, gl.RGBA, gl.UNSIGNED_BYTE, bmp); bmp.close && bmp.close(); }
+  // and flat again where a resource pack replaced the block's picture (its bumps were made for ours)
+  if (skip) for (const l of skip) if (l < layers) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, l, 16, 16, 1, gl.RGBA, gl.UNSIGNED_BYTE, flat, 0);
   gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
   gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
   r.resetState();

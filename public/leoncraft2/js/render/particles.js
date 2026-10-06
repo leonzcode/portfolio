@@ -29,8 +29,8 @@ const VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
 in vec3 position; in vec3 aUv; in vec3 aCol;
 out vec3 vUv; out vec3 vCol; out vec3 vWorld;
-#ifdef LDR
-// Detailed: the light where you stand and the fog, per corner (a piece is a few pixels across)
+#ifdef LIT
+// Shaders ON: the light where you stand and (one pass) the fog, per corner (a piece is a few pixels across)
 uniform sampler2D uAmbient, uNoise, uView;
 uniform vec3 cameraPosition;
 uniform vec2 uLightLv;
@@ -41,11 +41,16 @@ LIGHTS_HERE
 void main() {
   vUv = aUv; vCol = aCol; vWorld = position;
   gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
-#ifdef LDR
+#ifdef LIT
   float sky = uLightLv.x, block = uLightLv.y;
   vec3 sunC = texelFetch(uAmbient, ivec2(3, 0), 0).rgb, amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb;
   vLight = sunC * smoothstep(0.8, 0.95, sky) * 0.5 + amb * sky * sky * 0.8 / PI + (block > 0.0 ? blockLight(block, sky * sky * sat(lum(sunC) * 0.3)) / PI : vec3(0.0)) + vec3(0.002);
+#ifdef LDR
   fogTerms(position, vKeep, vAdd);
+#else
+  // the full chain fogs and tone-maps the whole picture afterwards (render/post.js)
+  vKeep = vec3(1.0); vAdd = vec3(0.0);
+#endif
 #endif
 }`;
 // Fast graphics: the lightmap and the fog, as the blocks
@@ -71,7 +76,11 @@ void main() {
   vec4 t = vUv.z >= 0.0 ? textureLod(uAlbedo, vUv, 0.0) : vec4(1.0);
   if (t.a < 0.1) discard;
   vec3 albedo = toLinear(t.rgb * vCol);
+#ifdef LDR
   o = vec4(toneLDR(albedo * vLight * vKeep + vAdd), 1.0);
+#else
+  o = vec4(albedo * vLight, 1.0);
+#endif
 }`;
 
 /* Particles (Video Settings): All shows every one; Decreased leaves out one
@@ -100,7 +109,7 @@ export class Particles {
     // made again for each look, Shaders ON or OFF (render/looks.js)
     this.mesh = new THREE.Mesh(g, renderer.looked(o => new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: HEAD + (o.vanilla ? VS.replace('LIGHTS_HERE', '') : COMMON + TONEMAP + 'uniform float uTime;\n' + VS.replace('LIGHTS_HERE', LDR + LIGHTS)), fragmentShader: HEAD + (o.vanilla ? FS_VANILLA : FS_DETAILED),
-      uniforms: renderer.withU(uni), side: THREE.DoubleSide, defines: o.ldr && !o.vanilla ? { LDR: 1 } : {},
+      uniforms: renderer.withU(uni), side: THREE.DoubleSide, defines: o.vanilla ? {} : o.ldr ? { LIT: 1, LDR: 1, TONE_LUT: 1 } : { LIT: 1 },
     })));
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 5;
