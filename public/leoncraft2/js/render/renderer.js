@@ -132,15 +132,17 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
     this.U.uRes.value.set(rw, rh);
     this.rw = rw; this.rh = rh;
+    // the canvas only given a size that is new: any size given to it, even its own, throws its picture away (a frame's stall)
+    const size = (cw, ch) => { const c = this.r.domElement; if (c.width !== cw || c.height !== ch) this.r.setSize(cw, ch, false); };
     if (this.ldr) {
       // drawn at the render scale and stretched by the browser: the cheapest upscale there is
-      this.r.setSize(rw, rh, false);
+      size(rw, rh);
       // (the full chain's pictures let go, if a look before this one had them)
       if (this.main) { this.main.depthTexture.dispose(); this.main.dispose(); this.main = null; }
       if (this._post) this._post.release();
       return;
     }
-    this.r.setSize(Math.round(w * dpr), Math.round(h * dpr), false);
+    size(Math.round(w * dpr), Math.round(h * dpr));
     if (this.main) this.main.dispose();
     this.main = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType, depthBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     this.main.depthTexture = new THREE.DepthTexture(rw, rh, THREE.FloatType);
