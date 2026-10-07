@@ -28,6 +28,7 @@ import {
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
 } from './gui.js?v=22';
 import { Packs } from './pack.js?v=22';
+import { packArtSummary } from '../entities/packart.js?v=22';
 import { LanScreen } from './lan.js?v=22';
 import { parseSeed } from '../gen/random.js?v=22';
 
@@ -928,6 +929,25 @@ const CREDITS = [
   ['Not approved by or associated with Mojang or Microsoft.', 0xA0A0A0],
 ];
 
+/* Which mobs wear the skins of the packs in use, and which keep Leoncraft's own: a model of ours built differently
+   from the game's keeps its picture rather than wear one cut for another shape (entities/packart.js). */
+export class MobSkinsScreen extends OptionsListScreen {
+  constructor() { super('Mob Skins'); this.itemHeight = 12; this.rowWidth = 300; }
+  rows(list) {
+    list.entries = [];
+    const g = this.gui, s = packArtSummary(), W = Math.min(300, this.width - 20);
+    const say = (t, c) => { for (const line of g.font.wrap(t, W)) list.entries.push(new TextRow(line, c || WHITE, null)); };
+    const names = a => a.map(n => n.replace(/_/g, ' ')).join(', ');
+    if (!s) { say('No resource pack is in use: every mob wears Leoncraft\'s own skin.', 0xA0A0A0); return; }
+    say('From your packs (' + s.took.length + ')', 0xFFFF55);
+    say(s.took.length ? names(s.took) : 'none');
+    say('');
+    say('Kept as Leoncraft draws them (' + s.kept.length + ')', 0xFFFF55);
+    say('These are shaped differently here than in the game, or the packs have no picture for them, so they keep their own skin.', 0xA0A0A0);
+    say(s.kept.length ? names(s.kept) : 'none');
+  }
+}
+
 export class CreditsScreen extends OptionsListScreen {
   constructor() { super('Credits & Attribution'); this.itemHeight = 12; this.rowWidth = 300; }
   rows(list) {
@@ -998,8 +1018,9 @@ export class ResourcePacksScreen extends Screen {
     const W = this.width, H = this.height, g = this.gui;
     this.left = this.add(new ScrollList(W / 2 - 204, 48, 200, H - 48 - 82, 36, { rowWidth: 200 - 22 }));
     this.right = this.add(new ScrollList(W / 2 + 4, 48, 200, H - 48 - 82, 36, { rowWidth: 200 - 22 }));
-    // the game's own look, from the player's own copy of it (see useGameFiles)
-    this.add(new Button(W / 2 - 154, H - 72, 308, 20, 'Use My Minecraft Files...', () => this.useGameFiles()));
+    // the game's own look, from the player's own copy of it (see useGameFiles), and which mobs took it
+    this.add(new Button(W / 2 - 154, H - 72, 202, 20, 'Use My Minecraft Files...', () => this.useGameFiles()));
+    this.add(new Button(W / 2 + 52, H - 72, 102, 20, 'Mob Skins...', () => g.open(new MobSkinsScreen())));
     this.add(new Button(W / 2 - 154, H - 48, 150, 20, 'Open Pack Folder', () => this.pick()));
     this.add(new Button(W / 2 + 4, H - 48, 150, 20, 'Done', () => this.done()));
     this.refresh();
