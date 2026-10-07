@@ -407,6 +407,7 @@ export class Net {
     this.shots = [];                 // what you shot or threw this tick, for the others to see fly
     this.pvpHit = null;              // the last hit another player gave you: { name, k, item, age }
     this.veh = new Vehicles(this);   // the boats and minecarts everyone shares (vehicles.js)
+    this.qsT = 0; this.wasDead = false; this.invSig = '';
   }
   // whether you may use the commands that change the world (an operator, or Allow Commands)
   canCheat() { return this.op >= 2; }
@@ -605,6 +606,7 @@ export class Net {
     this.shareShots();
     this.sendState(stamp);
     if (++this.eqTick % 5 === 0 || this.eqTick === 1 || g.inv.heldId() !== this.lastHeld) this.sendEquip();
+    this.quickSave();
     if (g.survival.hurtTime === 10 && !this.hurtSent) { this.hurtSent = true; this.send({ t: 'hurt' }); }
     if (g.survival.hurtTime !== 10) this.hurtSent = false;
     this.flush();
@@ -1102,6 +1104,20 @@ export class Net {
     if (sig === this.eqSig) return;
     this.eqSig = sig;
     this.send(Object.assign({ t: 'eq' }, eq));
+  }
+  /* Between those saves: as you die (what you had is on the ground now), and
+     within two seconds of your inventory changing (something thrown, picked
+     up, put in a chest), so a page that closes without a word cannot leave
+     the server holding things that are also lying on the ground. */
+  quickSave() {
+    const g = this.game, sv = g.survival, dead = !!(sv && sv.dead);
+    const due = dead !== this.wasDead || (++this.qsT % 40 === 0 && g.inv.toJSON && JSON.stringify(g.inv.toJSON()) !== this.invSig);
+    this.wasDead = dead;
+    if (!due || !this.pdata || !g.inv.toJSON) return;
+    const P = g.player, inventory = g.inv.toJSON();
+    this.invSig = JSON.stringify(inventory);
+    this.savePlayer(Object.assign({}, this.pdata, { inventory, survival: sv.toJSON(), mode: g.mode, dimension: g.dim, hands: g.hands ? g.hands.toJSON() : this.pdata.hands,
+      player: { x: P.pos.x, y: P.pos.y, z: P.pos.z, yaw: P.yaw, pitch: P.pitch, flying: P.flying } }));
   }
   // your own record to the server (main.js saves every ten seconds, as you leave, and when the page is hidden): only when it changed
   savePlayer(s) {
