@@ -135,7 +135,8 @@ export class Details {
     if (!h.creative) h.inv.takeSelected(1);
     import('./struct/loot.js?v=22').then(L => import('./containers.js?v=22').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
-      for (const r of L.rollLoot(table, (Math.random() * 2147483647) | 0, { size: 27 })) { const st = C.lootStack(r); if (st) e.queue.push(st); }
+      // (the game's getRandomItems: the stacks as drawn, one thrown out at a time, never shuffled or split as a chest's are)
+      for (const r of L.rollItems(table, (Math.random() * 2147483647) | 0)) { const st = C.lootStack(r); if (st) e.queue.push(st); }
       this.dirty = true;
     }));
     this.dirty = true;

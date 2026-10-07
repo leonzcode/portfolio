@@ -159,27 +159,38 @@ export class Containers {
   }
   // a structure's chest holds a loot table until it is first opened (struct/loot.js): rolled once, then never again
   // (asStacks: hand back the stacks instead of filling the container, for a chest broken unopened)
+  // (filled at once when the loot code is in, so a chest never opens empty; otherwise as soon as it is, and the
+  // screen showing it is drawn again: onLoot)
   rollLoot(c, asStacks) {
     const k = this.key(c.x, c.y, c.z);
     if (this.looted.has(k)) return null;
-    this.looted.add(k); this.dirty = true;
     const L = typeof window !== 'undefined' ? window.__lc2 : null, S = L && L.structures;
+    // (no structures to ask yet: asked again the next time, not marked as rolled)
     if (!S || typeof S.lootAt !== 'function') return null;
-    let p;
-    try { p = S.lootAt(c.x, c.y, c.z); } catch (e) { return null; }
-    if (!p || !p.then) return null;
-    return p.then(list => {
-      if (!list || !list.length) return [];
+    this.looted.add(k); this.dirty = true;
+    const fill = list => {
       const out = [];
+      if (!list || !list.length) return out;
       for (const e of list) {
         const st = lootStack(e);
         if (!st) continue;
         if (asStacks) out.push(st);
         else if (e.slot >= 0 && e.slot < c.slots.length && !c.slots[e.slot]) c.slots[e.slot] = st;
       }
-      if (!asStacks) { this.changed(c); if (this.onLoot) this.onLoot(c); }
+      if (!asStacks) {
+        this.changed(c);
+        // a screen already showing it (the loot came late) is drawn again
+        if (this.onLoot) this.onLoot(c); else if (L.gui && L.gui.markDirty) L.gui.markDirty();
+      }
       return out;
-    }, () => []);
+    };
+    let now;
+    try { now = S.lootNow ? S.lootNow(c.x, c.y, c.z, c.slots.length) : undefined; } catch (e) { now = null; }
+    if (now !== undefined) { const out = fill(now); return asStacks ? Promise.resolve(out) : null; }
+    let p;
+    try { p = S.lootAt(c.x, c.y, c.z, c.slots.length); } catch (e) { return null; }
+    if (!p || !p.then) return null;
+    return p.then(fill, () => []);
   }
   // a block was placed: the contents a shulker box item carried go in; hoppers start working
   placed(x, y, z, stack) {
@@ -295,7 +306,8 @@ export class Containers {
   // a structure's chest broken before it was ever opened: its loot is rolled and spills
   unopened(x, y, z) {
     if (this.looted.has(this.key(x, y, z))) return;
-    const r = this.rollLoot(this.fresh('chest', x, y, z), true);
+    const kind = containerKind(this.world.get(x, y, z)) || 'chest';
+    const r = this.rollLoot({ kind, slots: new Array(SIZES[kind] || 27).fill(null), x, y, z }, true);
     if (r) r.then(st => spill(this.drops, x, y, z, st || []));
   }
   // what a shulker box block holds, as the item's own list of 27 (null when empty), taking it out of here
@@ -548,7 +560,10 @@ export function lootStack(e) {
   const it = ITEMS[id];
   if (e.damage !== undefined && it && it.dur) { const d = Math.round((1 - e.damage) * it.dur); if (d > 0) st.dmg = Math.min(it.dur - 1, d); }
   if (e.potion) st.potion = String(e.potion).replace(/^minecraft:/, '');
-  if (e.ench && e.ench.set) st.ench = Object.assign({}, e.ench.set);
+  if (e.ench && Object.keys(e.ench).length) st.ench = Object.assign({}, e.ench.set || e.ench);
+  if (e.stew) st.stew = e.stew.slice();
+  if (e.amp !== undefined) st.amp = e.amp;
+  if (e.instrument) st.instrument = e.instrument;
   return st;
 }
 

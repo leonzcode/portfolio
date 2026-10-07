@@ -36,6 +36,7 @@
 --------------------------------------------------------------------------- */
 import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=22';
 import { footprint, surfacePrint, door, bed, torch, make, rng, weather, DX, DZ } from './util.js?v=22';
+import { blockPosLong } from '../rand.js?v=22';
 
 export const PLANS = {};
 
@@ -45,6 +46,14 @@ function container(g, x, y, z, block, state, table) {
   if (!g.inside(x, y, z)) return;
   const [X, Y, Z] = g.world(x, y, z);
   g.wr.chest(X, Y, Z, table, (X * 3129871) ^ (Z * 116129781) ^ Y);
+}
+// a suspicious block and the archaeology table it holds; its loot seed is its place as a long, as the game gives a
+// desert pyramid's (BlockPos.asLong)
+function find(g, x, y, z, block, table) {
+  g.set(x, y, z, block);
+  if (!g.inside(x, y, z)) return;
+  const [X, Y, Z] = g.world(x, y, z);
+  g.wr.chest(X, Y, Z, table, blockPosLong(X, Y, Z));
 }
 // the corner and turn for a w x d design at the start chunk's corner, turned at random
 function atCorner(ctx, w, d) {
@@ -128,7 +137,7 @@ function drawPyramid(g, o) {
   for (const [ax, az] of [[10, 8], [10, 12], [8, 10], [12, 10]]) g.air(ax, b - 13, az, ax, b - 12, az);
   g.fill(9, b - 15, 9, 11, b - 15, 11, 'tnt');
   g.set(10, b - 13, 10, 'stone_pressure_plate');
-  for (const [cx, cz] of [[9, 9], [11, 9], [9, 11], [11, 11]]) g.set(cx, b - 14, cz, 'suspicious_sand');
+  for (const [cx, cz] of [[9, 9], [11, 9], [9, 11], [11, 11]]) find(g, cx, b - 14, cz, 'suspicious_sand', 'archaeology/desert_pyramid');
   g.set(10, b - 11, 8, 'chiseled_sandstone'); g.set(10, b - 11, 12, 'chiseled_sandstone');
   g.set(8, b - 11, 10, 'chiseled_sandstone'); g.set(12, b - 11, 10, 'chiseled_sandstone');
   g.chest(10, b - 13, 8, 'desert_pyramid', SOUTH);
