@@ -340,8 +340,8 @@ def main():
         lines.append('%s:%s' % (js(name), js(tables[name])))
     head = (
         '/* GENERATED from the game\'s loot table data by tools/leoncraft2/build_loot.py - do not edit by hand.\n'
-        '   %d chest, dispenser and archaeology tables of Minecraft 26.3: pools, rolls, weighted entries,\n'
-        '   count ranges and the flags that change a stack. See the header of\n'
+        '   %d chest, dispenser and archaeology tables of Minecraft 26.3 (the archaeology ones from 26.1.2):\n'
+        '   pools, rolls, weighted entries, count ranges and the flags that change a stack. See the header of\n'
         '   tools/leoncraft2/build_loot.py for the shape of every field. */\n'
     ) % len(tables)
     body = 'export const LOOT = {\n' + ',\n'.join(lines) + '\n};\n'
