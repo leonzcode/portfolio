@@ -19,7 +19,7 @@
    change into effect at once, while you play.
 --------------------------------------------------------------------------- */
 import { Button, Slider, CycleButton, WidgetRow, OptionsListScreen, onOff, WHITE } from './gui.js?v=22';
-import { SHADER_LEVELS, SHADER_DEFAULTS, SHADER_PRESET_NAMES, shaderSettings, presetOf, needsFullChain } from '../render/looks.js?v=22';
+import { SHADER_LEVELS } from '../render/looks.js?v=22';
 
 /* ------------------------------ helpers ------------------------------ */
 
