@@ -11,6 +11,12 @@
      flowing water     1 in 64   block.water.ambient     0.75-1, 0.5-1.5
      nether portal     1 in 100  block.portal.ambient    0.5, 0.8-1.2
      campfire          1 in 10   block.campfire.crackle  0.5-1.5, 0.6-1.3
+     charged respawn   1 in 100  block.respawn_anchor.ambient  1, 1
+       anchor
+     a stalactite of   1 in 50   block.pointed_dripstone.drip_water (or
+       pointed dripstone          _lava), 0.3-1, where its drop lands (2 and
+       under water or             0.9-1 into a cauldron); the game's drop
+       lava                       takes a moment to fall, this one lands at once
    and a lit furnace, smoker or blast furnace crackles one tick in ten.
 
    Rain: up to 100 x rain^2 columns within 10 of the camera; every few
@@ -46,7 +52,7 @@ const ri = n => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; re
    times the chance, sounds the same (every block is heard as often on
    average) and costs a quarter. */
 const SAMPLES = 167, K = 4;
-// what each block does: 1 fire, 2 lava, 3 water, 4 nether portal, 5 campfire
+// what each block does: 1 fire, 2 lava, 3 water, 4 nether portal, 5 campfire, 6 respawn anchor, 7 pointed dripstone
 const AMB = new Uint8Array(4096);
 for (const d of BLOCKS) {
   if (!d) continue;
@@ -55,6 +61,8 @@ for (const d of BLOCKS) {
   else if (FLUID[d.id] === 1) AMB[d.id] = 3;
   else if (d.name === 'nether_portal') AMB[d.id] = 4;
   else if (d.name === 'campfire' || d.name === 'soul_campfire') AMB[d.id] = 5;
+  else if (d.name === 'respawn_anchor') AMB[d.id] = 6;
+  else if (d.name === 'pointed_dripstone') AMB[d.id] = 7;
 }
 const COOKS = { furnace: 'block.furnace.fire_crackle', smoker: 'block.smoker.smoke', blast_furnace: 'block.blastfurnace.fire_crackle' };
 const NETHER_AMB = { nether_wastes: 1, crimson_forest: 1, warped_forest: 1, soul_sand_valley: 1, basalt_deltas: 1 };
@@ -116,7 +124,25 @@ export class Ambience {
       return;
     }
     if (k === 4) { if (ri(100) < K) Sound.play('block.portal.ambient', x + 0.5, y + 0.5, z + 0.5, 0.5, R() * 0.4 + 0.8, 'block'); return; }
-    if (k === 5 && ri(10) < K) Sound.play('block.campfire.crackle', x + 0.5, y + 0.5, z + 0.5, 0.5 + R(), R() * 0.7 + 0.6, 'block');
+    if (k === 5) { if (ri(10) < K) Sound.play('block.campfire.crackle', x + 0.5, y + 0.5, z + 0.5, 0.5 + R(), R() * 0.7 + 0.6, 'block'); return; }
+    if (k === 6) { if ((w.meta(x, y, z) & 7) > 0 && ri(100) < K) Sound.play('block.respawn_anchor.ambient', x + 0.5, y + 0.5, z + 0.5, 1, 1, 'block'); return; }
+    if (k === 7 && ri(50) < K) this.drip(w, x, y, z);
+  }
+  // a hanging tip of pointed dripstone with water or lava over the block it hangs from: a drop lands below it
+  drip(w, x, y, z) {
+    if ((w.meta(x, y, z) & 7) !== 5 || w.get(x, y - 1, z) !== 0) return;
+    let top = y + 1;
+    while (top < y + 12 && w.get(x, top, z) === B.pointed_dripstone) top++;
+    if (w.get(x, top, z) !== B.dripstone_block) return;
+    const f = FLUID[w.get(x, top + 1, z)];
+    if (!f) return;
+    let floor = y - 1;
+    while (floor > y - 12 && w.get(x, floor, z) === 0) floor--;
+    const hit = w.get(x, floor, z);
+    if (!hit) return;
+    const cauldron = BLOCKS[hit] && BLOCKS[hit].name === 'cauldron';
+    const ev = 'block.pointed_dripstone.drip_' + (f === 2 ? 'lava' : 'water') + (cauldron ? '_into_cauldron' : '');
+    Sound.play(ev, x + 0.5, floor + 1, z + 0.5, cauldron ? 2 : 0.3 + R() * 0.7, cauldron ? 0.9 + R() * 0.1 : 1, 'block');
   }
   cookers(g, eye) {
     for (const c of g.containers.lit) {
