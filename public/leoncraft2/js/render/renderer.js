@@ -14,17 +14,17 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Interaction } from './interaction.js?v=25';
-import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=25';
-import { makeNoise2D } from './noisetex.js?v=25';
-import { Avatar } from './avatar.js?v=25';
-import { Held } from './held.js?v=25';
-import { Figure } from './figure.js?v=25';
-import { PumpkinView } from './pumpkin.js?v=25';
-import { glints, pieceLook } from './armor.js?v=25';
-import { dimLook } from '../dim/look.js?v=25';
-import { blockGeometry, intAttribute } from './blockmesh.js?v=25';
-import { applyLook, looked } from './looks.js?v=25';
+import { Interaction } from './interaction.js?v=26';
+import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=26';
+import { makeNoise2D } from './noisetex.js?v=26';
+import { Avatar } from './avatar.js?v=26';
+import { Held } from './held.js?v=26';
+import { Figure } from './figure.js?v=26';
+import { PumpkinView } from './pumpkin.js?v=26';
+import { glints, pieceLook } from './armor.js?v=26';
+import { dimLook } from '../dim/look.js?v=26';
+import { blockGeometry, intAttribute } from './blockmesh.js?v=26';
+import { applyLook, looked } from './looks.js?v=26';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
@@ -708,8 +708,9 @@ export class Renderer {
        stays as it is */
     // (the game's factor is on the colour as shown, (y over the floor / 32) squared; here the light is
     // before the tone curve, where it takes about its cube to look as dark)
-    const vd = state.dim, vf = (state.eye.y - 64 - (vd ? vd.minY : -64)) / 32;
-    U.uVoid.value.set(vd && vd.sky !== 'normal' ? 0 : Math.max(0, Math.min(1, 127 - state.eye.y)),
+    // (a Superflat world, its horizon at the floor, darkens only in its last block: the game's clear colour scale is 1 there)
+    const vd = state.dim, vf = (state.eye.y - 64 - (vd ? vd.minY : -64)) / (state.horizon === 0 ? 1 : 32);
+    U.uVoid.value.set(vd && vd.sky !== 'normal' ? 0 : Math.max(0, Math.min(1, (state.horizon !== undefined ? state.horizon : 127) - state.eye.y)),
       vd && vd.sky === 'end' ? 0 : 1 - (Math.max(0, Math.min(1, vf)) ** 2) ** 3, Math.max(32, this.opts.renderDist * 16));
     U.uMoonPhase.value = state.moonPhase;
     U.uRender.value = this.opts.renderDist * 16;

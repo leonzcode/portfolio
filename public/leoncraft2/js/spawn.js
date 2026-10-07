@@ -11,9 +11,9 @@
    does: the ground's height at the column and, when asked, its biome (the
    vanilla generator's biome number, or the first generator's climate).
 --------------------------------------------------------------------------- */
-import { SEA } from './world-const.js?v=25';
-import { BIOMES } from './biomes.js?v=25';
-import { pickBiome } from './worldgen.js?v=25';
+import { SEA } from './world-const.js?v=26';
+import { BIOMES } from './biomes.js?v=26';
+import { pickBiome } from './worldgen.js?v=26';
 
 const GOOD = ['plains', 'forest', 'birch_forest', 'flower_forest', 'meadow', 'cherry_grove', 'sunflower_plains', 'taiga', 'dark_forest', 'old_growth_birch_forest', 'savanna', 'jungle', 'sparse_jungle'];
 export async function searchSpawn(ask) {
@@ -26,6 +26,7 @@ export async function searchSpawn(ask) {
     const res = await Promise.all(tries.map(([x, z]) => ask({ type: 'surface', x, z, withBiome: true })));
     for (let i = 0; i < tries.length; i++) {
       const r = res[i];
+      if (r.spawn) return r.spawn;
       if (r.y < SEA + 1 || r.y > SEA + 30) continue;
       // the vanilla generator answers with the biome itself, the first one with its climate
       const bid = typeof r.biome === 'number' ? r.biome : pickBiome(r.biome);

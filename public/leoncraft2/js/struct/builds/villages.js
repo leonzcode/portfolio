@@ -25,8 +25,8 @@
    Villagers (one per bed), an iron golem by the well and a cat are left as
    entities.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=25';
-import { footprint, overlaps, door, bed, torch, gableZ, gableX, DX, DZ, rng } from './util.js?v=25';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=26';
+import { footprint, overlaps, door, bed, torch, gableZ, gableX, DX, DZ, rng } from './util.js?v=26';
 
 export const PLANS = {};
 
@@ -104,6 +104,8 @@ const KINDS = [
 for (const style of Object.keys(STYLES)) PLANS['village_' + style] = ctx => village(ctx, style);
 
 function village(ctx, style) {
+  // the top of the sea (a Superflat world's is far lower: struct/starts.js ctx.sea)
+  const SEA1 = (ctx.sea !== undefined ? ctx.sea : 63) - 1;
   const S = STYLES[style];
   const r = ctx.r;
   const type = ctx.type;
@@ -124,7 +126,7 @@ function village(ctx, style) {
   roads.push(plaza);
   paths.push(plaza);
   const gy = ctx.ground(cx, cz);
-  const wellY = Math.max(gy, 62);
+  const wellY = Math.max(gy, SEA1);
   builds.push(new Build(type, cx - 2, wellY - 3, cz - 2, 5, 9, 5, 0, drawWell, { S, base: 3 }));
 
   /* streets out from the middle of each side of the square */
@@ -181,7 +183,7 @@ function village(ctx, style) {
       if (!free(q)) continue;
       taken.push(q);
       const y = ctx.ground(lx, lz);
-      if (y < 62) continue;
+      if (y < SEA1) continue;
       lamps.push(new Build(type, lx - 1, y, lz - 1, 3, 6, 3, 0, drawLamp, { S }));
     }
   }
@@ -210,7 +212,7 @@ function village(ctx, style) {
     while (s.len > 0) {
       s.rect = rectOf(s);
       const ex = s.x + DX[s.d] * (s.len - 1), ez = s.z + DZ[s.d] * (s.len - 1);
-      if (within(s.rect) && ctx.ground(ex, ez) >= 61) break;
+      if (within(s.rect) && ctx.ground(ex, ez) >= SEA1 - 1) break;
       s.len--;
     }
     s.rect = rectOf(s);
@@ -232,7 +234,7 @@ function village(ctx, style) {
     // the building may only touch its own street at the front, never block it
     const fp = footprint(ctx, q[0], q[1], W, D, 2);
     const steep = kind.startsWith('farm') || kind === 'pen' ? 3 : 4;
-    if (fp.min < 62 || fp.max - fp.min > steep) return false;
+    if (fp.min < SEA1 || fp.max - fp.min > steep) return false;
     const y = fp.med;
     taken.push(q);
     const o = { S, kind, job: null, bedsAt: [], seed: (q[0] * 341873128 + q[1] * 132897987 + t) | 0 };
@@ -285,21 +287,22 @@ function pathPiece(ctx, type, S, q, ents) {
   const hs = new Array(w * d);
   let lo = 999;
   for (let x = 0; x < w; x++) for (let z = 0; z < d; z++) { const h = ctx.ground(q[0] + x, q[1] + z); hs[x * d + z] = h; if (h < lo) lo = h; }
-  lo = Math.min(lo, 62);
+  const sea1 = (ctx.sea !== undefined ? ctx.sea : 63) - 1;
+  lo = Math.min(lo, sea1);
   const e = ents ? ents.map(a => ({ type: a.type, x: a.x - q[0], z: a.z - q[1] })) : null;
-  return new Build(type, q[0], lo, q[1], w, 8, d, 0, drawPath, { hs, y0: lo, bridge: S.style === 'desert' ? 'smooth_sandstone' : S.planks, ents: e });
+  return new Build(type, q[0], lo, q[1], w, 8, d, 0, drawPath, { hs, y0: lo, sea1, bridge: S.style === 'desert' ? 'smooth_sandstone' : S.planks, ents: e });
 }
 function drawPath(g, o) {
   for (let x = 0; x < g.w; x++) for (let z = 0; z < g.d; z++) {
     const h = o.hs[x * g.d + z];
-    if (h < 62) { g.set(x, 62 - o.y0, z, o.bridge); g.air(x, 63 - o.y0, z, x, 64 - o.y0, z); continue; }
+    if (h < o.sea1) { g.set(x, o.sea1 - o.y0, z, o.bridge); g.air(x, o.sea1 + 1 - o.y0, z, x, o.sea1 + 2 - o.y0, z); continue; }
     const y = h - o.y0;
     g.set(x, y, z, 'dirt_path');
     g.air(x, y + 1, z, x, y + 3, z);
   }
   if (o.ents) for (const e of o.ents) {
     const h = o.hs[e.x * g.d + e.z];
-    g.entity(e.type, e.x, Math.max(h, 62) + 1 - o.y0, e.z);
+    g.entity(e.type, e.x, Math.max(h, o.sea1) + 1 - o.y0, e.z);
   }
 }
 

@@ -42,11 +42,11 @@
    A trade gives the player 3 to 6 experience (5 more when the villager
    levels up) and the villager the trade's experience.
 --------------------------------------------------------------------------- */
-import { I, maxStack, withCount, stackToJSON, stackFromJSON } from './items.js?v=25';
-import { B } from './blocks.js?v=25';
-import { ENCH, ORDER, selectEnchants } from './enchanting.js?v=25';
-import { BREWABLE } from './brewing.js?v=25';
-import { dyeColour, mixColours } from './crafting.js?v=25';
+import { I, maxStack, withCount, stackToJSON, stackFromJSON } from './items.js?v=26';
+import { B } from './blocks.js?v=26';
+import { ENCH, ORDER, selectEnchants } from './enchanting.js?v=26';
+import { BREWABLE } from './brewing.js?v=26';
+import { dyeColour, mixColours } from './crafting.js?v=26';
 
 export const LEVEL_XP = [0, 10, 70, 150, 250];
 export const LEVEL_NAMES = ['Novice', 'Apprentice', 'Journeyman', 'Expert', 'Master'];
@@ -238,7 +238,7 @@ const RNG = { nextInt: rand, nextFloat: () => Math.random() };
    nowhere to show, a trade for other biomes). */
 export function makeOffer(t, type) {
   if (t.types && t.types.indexOf(type) < 0) return null;
-  if (t.kind === 'map') return null;                         // no explorer maps yet
+  if (t.kind === 'map') return mapOffer(t);
   const st = ([n, c]) => { const id = idOf(n); return id === undefined ? null : { id, count: c }; };
   let a = st(t.want[0]), b = t.want[1] ? st(t.want[1]) : null, out = st(t.give);
   if (!a || (t.want[1] && !b) || !out) return null;
@@ -270,6 +270,31 @@ export function makeOffer(t, type) {
     case 'potion': if (t.want[0][0] === 'potion') a.potion = t.arg; else out.potion = t.arg; break;
   }
   return { a, b, out, uses: 0, maxUses: t.uses, xp: t.xp, mult: t.mult, demand: 0, special: 0 };
+}
+/* A cartographer's explorer map: the offer is made at once, its map once the nearest of its place is
+   found from where you are (the workers search, as /locate does), with the place marked and the land and
+   water drawn in; where there is none in reach the offer is left used up, as the game would not offer it. */
+const MAP_TARGET = { monument: ['monument', 'monument'], mansion: ['mansion', 'mansion'], trial_chambers: ['trial_chambers', 'trial_chambers'],
+  jungle_temple: ['jungle_pyramid', 'jungle_temple'], swamp_hut: ['swamp_hut', 'swamp_hut'], plains: ['village_plains', 'village_plains'],
+  savanna: ['village_savanna', 'village_savanna'], taiga: ['village_taiga', 'village_taiga'], desert: ['village_desert', 'village_desert'], snowy: ['village_snowy', 'village_snowy'] };
+function mapOffer(t) {
+  const target = MAP_TARGET[t.arg], a = idOf(t.want[0][0]), b = t.want[1] ? idOf(t.want[1][0]) : undefined, out = idOf('filled_map');
+  if (!target || a === undefined || out === undefined || (t.want[1] && b === undefined)) return null;
+  const o = { a: { id: a, count: t.want[0][1] }, b: t.want[1] ? { id: b, count: t.want[1][1] } : null, out: { id: out, count: 1 },
+    uses: 0, maxUses: t.uses, xp: t.xp, mult: t.mult, demand: 0, special: 0 };
+  Promise.all([import('./containers.js?v=26'), import('./maps.js?v=26')]).then(([C, M]) => {
+    const L = typeof window !== 'undefined' ? window.__lc2 : null, S = L && L.structures;
+    o.out.title = C.MAP_TITLE[target[0]] || 'Explorer Map';
+    if (!S || !S.locate) { o.uses = o.maxUses; return; }
+    return S.locate(target[0]).then(f => {
+      if (!f || f.x === undefined) { o.uses = o.maxUses; return; }
+      const m = M.MAPS.create(f.x, f.z, 2, (L.world && L.world.dim) || 'overworld');
+      m.marks = [{ x: f.x, z: f.z, type: target[1] }];
+      o.out.map = m.id;
+      M.fillPreview(m, L.world);
+    }, () => { o.uses = o.maxUses; });
+  }).catch(() => { o.uses = o.maxUses; });
+  return o;
 }
 // up to n offers drawn from a pool without putting back (the ones that cannot be made are passed over)
 function draw(list, n, type) {
