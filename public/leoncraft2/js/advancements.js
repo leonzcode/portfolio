@@ -298,6 +298,7 @@ export class Progress {
     if (E) E.forNear(P.pos.x, P.pos.z, 16, e => {
       if (e.tamed && !seen.has(e)) { seen.add(e); if (t.tamedReady) this.event('tame_animal', { entity: e.type }); }
       if (e.type === 'wither' && !wither.has(e)) { wither.add(e); if (t.tamedReady) this.event('summoned_entity', { entity: 'wither' }); }
+      if (e.type === 'iron_golem' && e.playerMade && !wither.has(e)) { wither.add(e); this.event('summoned_entity', { entity: 'iron_golem' }); }
     });
     t.tamedReady = true;
   }
