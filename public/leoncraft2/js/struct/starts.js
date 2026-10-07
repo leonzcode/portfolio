@@ -424,7 +424,8 @@ export class Structures {
       const r = new JRand(BigInt(((p.box.x0 * 73856093) ^ (p.box.y0 * 19349663) ^ (p.box.z0 * 83492791) ^ (cx * 2654435761) ^ (cz * 40503)) | 0) ^ this.seed);
       try { p.place(w, w.box, r); } catch (e) { console.error('structure piece', s.type, p.type, e); }
     }
-    return { chests: w.chests, spawners: w.spawners, entities: w.entities, structures: [...new Set(list.map(e => e[0]))].map(s => ({ type: s.type, cx: s.cx, cz: s.cz })) };
+    // (each structure with the boxes of its pieces that reach this chunk: whether the player stands inside one, for the advancements)
+    return { chests: w.chests, spawners: w.spawners, entities: w.entities, structures: [...new Set(list.map(e => e[0]))].map(s => ({ type: s.type, cx: s.cx, cz: s.cz, boxes: list.filter(e => e[0] === s).map(e => e[1].box.toArray()) })) };
   }
 }
 

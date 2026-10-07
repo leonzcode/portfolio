@@ -19,8 +19,9 @@ export class Chat {
     this.open = false;
     this.dirty = true;
   }
-  add(text, colour = 0xFFFFFF) {
-    for (const part of String(text).split('\n')) this.lines.push({ text: part, colour, at: performance.now() });
+  // extra.hover: { text, lines } a part of the line with a tooltip under the mouse while chat is open (an advancement's name)
+  add(text, colour = 0xFFFFFF, extra) {
+    for (const part of String(text).split('\n')) this.lines.push({ text: part, colour, at: performance.now(), hover: extra && extra.hover || null });
     if (this.lines.length > KEEP) this.lines.splice(0, this.lines.length - KEEP);
     this.dirty = true;
   }
@@ -32,8 +33,28 @@ export class Chat {
     if (this.dirty) { this.dirty = false; return true; }
     return false;
   }
+  // with chat open: the tooltip of the part of a line under the mouse, if it has one
+  hoverAt(g, mx, my) {
+    const f = g.font;
+    let y = g.height - 16, n = 0;
+    for (let i = this.lines.length - 1; i >= 0 && n < 20; i--) {
+      const l = this.lines[i], parts = f.wrap(l.text, WIDTH);
+      for (let k = parts.length - 1; k >= 0 && n < 20; k--, n++, y -= LINE) {
+        if (!l.hover || my < y - LINE || my >= y) continue;
+        const at = parts[k].indexOf(l.hover.text);
+        if (at < 0) continue;
+        const x0 = 2 + f.width(parts[k].slice(0, at)), x1 = x0 + f.width(l.hover.text);
+        // (wrapped as the game wraps hover text: half the screen, or 200 at least; each line keeps its colour)
+        if (mx >= x0 && mx < x1) return l.hover.lines.flatMap(s => { const c = /^§./.test(s) ? s.slice(0, 2) : ''; return f.wrap(s, Math.max(g.width / 2, 200)).map((p, j) => (j && c && !p.startsWith('§') ? c + p : p)); });
+      }
+    }
+    return null;
+  }
   draw(g) {
     if (!this.lines.length || (g.hideHud && !this.open)) return;
+    // under a menu that darkens and blurs the world (the game menu, the advancements) the chat is part of what it hides
+    const s = g.screen;
+    if (s && !this.open && g.inGame && g.backgroundKind && g.backgroundKind(s.background) === 'world') return;
     const f = g.font, now = performance.now();
     const bottom = g.height - (this.open ? 16 : 40);
     const max = this.open ? 20 : 10;
@@ -126,6 +147,8 @@ export class ChatScreen extends Screen {
   render(g, mx, my, dt) {
     const W = this.width, H = this.height, f = g.font;
     g.fill(2, H - 14, W - 2, H - 2, 0x80000000);
+    const tip = this.chat.hoverAt && this.chat.hoverAt(g, mx, my);
+    if (tip) g.setTooltip(tip);
     const shown = f.trim(this.value, W - 12, true);
     const x = g.text(shown, 4, H - 12, 0xFFFFFF);
     if ((((g.now - this.field.focusTime) / 300) | 0) % 2 === 0) g.text('_', x, H - 12, 0xFFFFFF);

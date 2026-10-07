@@ -142,7 +142,7 @@ const flat = a => a.slice();
    PLAYER_KEYS), kept by the server under your name as the game's servers keep
    playerdata, so it is there from any browser. The rest (maps, what the
    simulation was in the middle of) is kept in this browser. */
-const PLAYER_KEYS = ['player', 'inventory', 'survival', 'mode', 'hands', 'dimension', 'lastDeath'];
+const PLAYER_KEYS = ['player', 'inventory', 'survival', 'mode', 'hands', 'dimension', 'lastDeath', 'advancements'];
 class MpSave {
   constructor(net, d, id) { this.net = net; this.d = d; this.dirty = new Set(); this.local = new Save(id); }
   async init() { await this.local.init(); }
