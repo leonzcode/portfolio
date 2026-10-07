@@ -60,7 +60,10 @@ export function advInit(deps) {
   if (chat && chat.add && !chat.__adv) {
     chat.__adv = true;
     const add = chat.add.bind(chat);
-    chat.add = (text, colour, extra) => add(text, colour, extra || hoverLine(text));
+    chat.add = (text, colour, extra) => {
+      const h = extra ? null : hoverLine(text);
+      return add(h ? h.text : text, colour, extra || (h ? { hover: h.hover } : undefined));
+    };
   }
   // for tests and the curious: the record, the list, a trigger by hand, one tick's checks (for timing)
   window.__lc2adv = { get progress() { return P; }, ADV, TABS, fire, env: () => makeEnv(), toast: AdvToast, open: () => openAdvancements(), tick: () => G && advTick(G) };
@@ -136,11 +139,19 @@ function made(a, how) {
 export function hoverOf(a) { return { text: '[' + a.title + ']', lines: [(CODE[a.frame] || '§a') + a.title, ...a.desc.split('\n').map(l => '§f' + l)], colour: TYPE_COLOUR[a.frame] }; }
 const LINE = /^\S+ (has made the advancement|has reached the goal|has completed the challenge) §[a5]\[(.+)\]$/;
 const FRAME_OF = { 'has made the advancement': 'task', 'has reached the goal': 'goal', 'has completed the challenge': 'challenge' };
+/* (a server's word filter can star out part of a name: Sky's the Limit comes back as S**** the Limit;
+   the name is put back when it is one of the game's own, letter for letter apart from the stars, and
+   only the name: whoever made it is left as the server sent it) */
 function hoverLine(text) {
   if (typeof text !== 'string' || text.indexOf(' has ') < 0) return undefined;
   const m = LINE.exec(text);
   if (!m) return undefined;
-  for (const a of ADV.values()) if (a.title === m[2] && a.frame === FRAME_OF[m[1]]) return { hover: hoverOf(a) };
+  const frame = FRAME_OF[m[1]], title = m[2];
+  const starred = title.indexOf('*') >= 0 ? new RegExp('^' + title.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.') + '$') : null;
+  for (const a of ADV.values()) {
+    if (a.frame !== frame || !(a.title === title || (starred && starred.test(a.title)))) continue;
+    return { text: starred ? text.slice(0, text.length - title.length - 1) + a.title + ']' : text, hover: hoverOf(a) };
+  }
   return undefined;
 }
 
