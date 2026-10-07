@@ -57,6 +57,7 @@ export const EFFECTS = {
   weaving: E(0x78695A, 'bad', 'Weaving'),
   oozing: E(0x99FFA3, 'bad', 'Oozing'),
   infested: E(0x8C9B8C, 'bad', 'Infested'),
+  breath_of_the_nautilus: E(0x00FFFF, 'good', 'Breath of the Nautilus'),
 };
 // the old names commands and items still use
 const ALIAS = { jump: 'jump_boost', instant_heal: 'instant_health', harm: 'instant_damage', heal: 'instant_health', confusion: 'nausea', bad_luck: 'unluck' };

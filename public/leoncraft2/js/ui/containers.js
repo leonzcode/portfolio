@@ -138,7 +138,7 @@ export class MountScreen extends ContainerScreen {
     if (s.kind !== 'box' || !st) return super.mayPlace(s, st);
     const n = ITEMS[st.id] ? ITEMS[st.id].name : '', k = this.kinds[s.i];
     if (k === 'saddle') return n === 'saddle';
-    if (k === 'armor') return /_horse_armor$/.test(n);
+    if (k === 'armor') return (this.mob.armorKind || /_horse_armor$/).test(n);
     if (k === 'carpet') return /_carpet$/.test(n);
     return true;
   }
