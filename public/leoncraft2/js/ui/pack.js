@@ -119,7 +119,8 @@ export const Packs = {
       if (!p.enabled) continue;
       try {
         const blob = await idb('readonly', st => st.get(p.id));
-        if (blob) out.push(Object.assign({ zip: await openZip(blob) }, p));
+        // read into memory once: thousands of small reads from the stored file each wait on the disk (seconds for a game .jar)
+        if (blob) out.push(Object.assign({ zip: await openZip(blob.size < 256e6 ? new Blob([await blob.arrayBuffer()]) : blob) }, p));
       } catch (e) { console.warn('pack', p.name, e); }
     }
     return out;
@@ -209,20 +210,25 @@ export function packFiles(packs, dir) {
    (js/itemtex.js), cell for cell by name. Returns a new strip, or null when the pack has none. ---- */
 export async function itemStripFrom(find, strip, names) {
   if (!strip || !strip.bmp) return null;
-  const [c, g] = canvas(16, strip.bmp.height);
-  g.drawImage(strip.bmp, 0, 0);
-  let n = 0;
-  await Promise.all(names.map(async (name, i) => {
-    if (!name || name.startsWith('frame_')) return;
+  // (an animated picture is a column of frames: its first, already 16 x 16 as it is decoded)
+  const pics = await Promise.all(names.map(async name => {
+    if (!name || name.startsWith('frame_')) return null;
     const b = await find('assets/minecraft/textures/item/' + name + '.png');
-    const bmp = b ? await bitmap(b) : null;
-    if (!bmp) return;
-    // (an animated picture is a column of frames: the first)
-    g.clearRect(0, i * 16, 16, 16);
-    g.drawImage(bmp, 0, 0, bmp.width, bmp.width, 0, i * 16, 16, 16);
-    n++;
+    if (!b) return null;
+    try {
+      const full = await createImageBitmap(b, RAW);
+      return await createImageBitmap(full, 0, 0, full.width, full.width, Object.assign({ resizeWidth: 16, resizeHeight: 16, resizeQuality: 'pixelated' }, RAW));
+    } catch (e) { return null; }
   }));
-  return n ? createImageBitmap(c, RAW) : null;
+  if (!pics.some(Boolean)) return null;
+  // drawn in one go on a canvas kept in memory (thousands of little draws on a drawing surface on the graphics card are slow)
+  const c = document.createElement('canvas');
+  c.width = 16; c.height = strip.bmp.height;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingEnabled = false;
+  g.drawImage(strip.bmp, 0, 0);
+  pics.forEach((p, i) => { if (p) { g.clearRect(0, i * 16, 16, 16); g.drawImage(p, 0, i * 16); } });
+  return createImageBitmap(c, RAW);
 }
 
 /* ---- the GUI: the sheets the game draws from, made from either layout ---- */
