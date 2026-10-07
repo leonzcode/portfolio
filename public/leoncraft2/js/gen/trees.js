@@ -839,7 +839,8 @@ const DECORATORS = {
     if (r.nextFloat() >= F(d.probability)) return;
     const list = shuffle(logs.slice(), r);
     const spot = list.find(([x, y, z]) => ALL6.every(([a, b, c]) => isLog(t.R, x + a, y + b, z + c)));
-    if (spot) setDeco(t, spot[0], spot[1], spot[2], { id: B.creaking_heart, meta: 0 });
+    // (meta 3: upright and natural, so it gives experience when broken: entities/hearts.js)
+    if (spot) setDeco(t, spot[0], spot[1], spot[2], { id: B.creaking_heart, meta: 3 });
   },
   shelf_mushroom() { /* 26.x: not written yet */ },
 };
