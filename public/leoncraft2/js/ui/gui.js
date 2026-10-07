@@ -35,7 +35,8 @@
    view behind the title screen; false falls back to the tiled background),
    gui.lowEnd (no CSS blur), gui.hideHud (F1), gui.hud = { draw(g),
    animates?, isDirty?() } drawn under any screen while in game, and
-   gui.overlays = [{ draw(g), animates? }] drawn over everything.
+   gui.overlays = [{ draw(g), animates? }] drawn over everything (or,
+   with under: true, with the HUD, under any screen).
 
    Drawing helpers (g is the Gui itself, in GUI pixels):
      g.blit(sheet, sx, sy, sw, sh, dx, dy, dw?, dh?)   sheet = name or image
@@ -560,8 +561,11 @@ export class Gui {
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
     ctx.imageSmoothingEnabled = false;
     if (!this.font) return;
-    if (this.hud && this.inGame && !this.hideHud) {
-      this.hud.draw(this);
+    const hudOn = this.hud && this.inGame && !this.hideHud;
+    if (hudOn) this.hud.draw(this);
+    // what the game draws as part of its HUD, under any screen (the chat: an inventory covers it)
+    for (let i = 0; i < this.overlays.length; i++) if (this.overlays[i].under) this.overlays[i].draw(this);
+    if (hudOn || (s && this.inGame)) {
       // under a menu the game blurs the HUD along with the world (Menu Background Blur)
       const hb = s && this.backgroundKind(s.background) === 'world' ? this._blurPx() : 0;
       if (hb) {
@@ -583,7 +587,7 @@ export class Gui {
       ctx.globalAlpha = 1;
       if (this._tooltip) this.tooltip(this._tooltip, mx, my);
     } else this._setBlur('');
-    for (let i = 0; i < this.overlays.length; i++) this.overlays[i].draw(this);
+    for (let i = 0; i < this.overlays.length; i++) if (!this.overlays[i].under) this.overlays[i].draw(this);
   }
 
   _blurPx() {
