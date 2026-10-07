@@ -16,7 +16,7 @@
    more than half of a worker's code, so they are loaded only when a world
    first needs them: the title screen's world (the first generator) starts
    without waiting for them. */
-import { Gen } from './worldgen.js?v=24';
+import { Gen, pickBiome } from './worldgen.js?v=24';
 import { FlatGen } from './gen/flat.js?v=24';
 import { meshColumn, setColours } from './mesher.js?v=24';
 import { resolveTextures } from './blocks.js?v=24';
@@ -226,6 +226,16 @@ function work(m) {
   }
   if (m.type === 'structures') {
     self.postMessage(Object.assign({ type: 'structures', id: m.id }, structureMessage(structs, m)));
+    return;
+  }
+  if (m.type === 'biomes') {
+    // a grid of biome ids, n x n columns step apart from (x0, z0) at sea level (an explorer map's first look: maps.js previewBiomes)
+    const n = m.n | 0, out = new Uint8Array(n * n);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const x = m.x0 + i * m.step, z = m.z0 + j * m.step;
+      out[j * n + i] = typeof gen.noiseBiome === 'function' ? gen.noiseBiome(x >> 2, 16, z >> 2) : pickBiome(gen.climate(x, z));
+    }
+    self.postMessage({ type: 'biomes', id: m.id, ids: out }, [out.buffer]);
     return;
   }
   if (m.type === 'surface') {

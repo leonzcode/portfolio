@@ -32,6 +32,7 @@
 import { BLOCKS, B, FLUID } from './blocks.js?v=24';
 import { H } from './world-const.js?v=24';
 import { ITEMS } from './items.js?v=24';
+import { BIOMES } from './biomes.js?v=24';
 
 // the base colours, by id
 const BASE = [null, [127, 178, 56], [247, 233, 163], [199, 199, 199], [255, 0, 0], [160, 160, 255], [167, 167, 167], [0, 124, 0], [255, 255, 255], [164, 168, 184],
@@ -121,6 +122,36 @@ for (const k in BLOCKS) {
 }
 COLOUR[0] = 0;
 export const mapColourOf = b => COLOUR[b] || 0;
+
+/* An explorer map's first look (the game's biome preview, filled in when the
+   map is made): the water of its area (oceans, rivers and swamps, the game's
+   water_on_map_outlines) in orange stripes, the coast outlined in brown, the
+   land left blank paper. Held, it then fills in as any map does over this.
+   ids: a biome id per pixel, row by row (from the workers: fillPreview). */
+const WET = /ocean|river|swamp/;
+export function previewBiomes(m, ids) {
+  const wet = new Uint8Array(16384);
+  for (let i = 0; i < 16384; i++) { const b = BIOMES[ids[i]]; wet[i] = b && WET.test(b.name) ? 1 : 0; }
+  for (let v = 0; v < 128; v++) for (let u = 0; u < 128; u++) {
+    const i = v * 128 + u;
+    if (m.colors[i]) continue;                  // what has been seen already stays
+    if (wet[i]) { m.colors[i] = 15 * 4 + (((u + v) >> 1) & 1); continue; }
+    const coast = (u > 0 && wet[i - 1]) || (u < 127 && wet[i + 1]) || (v > 0 && wet[i - 128]) || (v < 127 && wet[i + 128]);
+    if (coast) m.colors[i] = 26 * 4 + 1;
+  }
+  m.changed = true;
+}
+// ask the world's workers for the biomes under a map and lay its preview (a promise)
+export function fillPreview(m, world) {
+  if (!world || !world.ask) return Promise.resolve(false);
+  const s = 1 << m.scale;
+  return world.ask({ type: 'biomes', x0: m.cx - 64 * s + (s >> 1), z0: m.cz - 64 * s + (s >> 1), step: s, n: 128 }).then(r => {
+    if (!r || !r.ids) return false;
+    previewBiomes(m, r.ids);
+    MAPS.dirty = true;
+    return true;
+  }, () => false);
+}
 
 /* ---- one map ---- */
 export class MapData {
@@ -328,7 +359,8 @@ export function drawMap(ctx, m, x, y, size, player) {
 /* The places marked on a map (our own drawings): a red X for buried treasure,
    a small coloured diamond outlined in black for any other structure. */
 const MARK_COLOUR = { monument: '#3aa5a5', mansion: '#6b4a2a', ancient_city: '#2b3a4a', trial_chambers: '#c46b2a', mineshaft: '#7a6a5a',
-  desert_pyramid: '#d8c27a', jungle_temple: '#4f7a3a', ocean_ruin_warm: '#d8c9a0', ocean_ruin_cold: '#7a8a8a', swamp_hut: '#4a5a3a', abandoned_camp: '#a84a3a' };
+  desert_pyramid: '#d8c27a', jungle_temple: '#4f7a3a', ocean_ruin_warm: '#d8c9a0', ocean_ruin_cold: '#7a8a8a', swamp_hut: '#4a5a3a', abandoned_camp: '#a84a3a',
+  village_plains: '#c89a5a', village_savanna: '#c8783a', village_taiga: '#7a5a3a', village_desert: '#e0c890', village_snowy: '#e8f0f8' };
 function drawMarks(ctx, m, x, y, size) {
   const s = 1 << m.scale, k = size / 128;
   for (const mk of m.marks) {

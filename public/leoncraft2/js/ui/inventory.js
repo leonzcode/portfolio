@@ -464,7 +464,7 @@ function hsv(h, s, v) {
 // stew's effect (only there: in survival you cannot tell what flower went in)
 export function stackTooltip(st, advanced, creative) {
   const it = ITEMS[st.id];
-  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : st.lodestone ? 'Lodestone Compass' : displayName(st.id))];
+  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : st.lodestone ? 'Lodestone Compass' : st.title && st.map !== undefined ? st.title : displayName(st.id))];
   if (isPotion(st) || (st.potion && isTipped(st))) lines.push(...potionLines(st));
   if (creative && st.stew) { const sw = stewEffect(st); if (sw) lines.push(...effectLines([[sw[0], 1, sw[1]]])); }
   const title = n => n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
