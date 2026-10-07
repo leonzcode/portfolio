@@ -1,11 +1,11 @@
 /* ---------------------------------------------------------------------------
-   Leoncraft 2 - Video Settings and Shader Packs, put into effect while you
+   Leoncraft 2 - Video Settings, Shaders included, put into effect while you
    play.
 
    The screens (ui/video.js) only change Options; this hears every change and
    does what it means, at once and without loading anything again:
 
-     the look              Shaders ON or OFF and the Shader Options (render/looks.js)
+     the look              Shaders: Off, Low, Medium, High or RIP Computer (render/looks.js)
      the meshes            See-Through Leaves, Smooth Lighting, Biome Blend: every
                            column made again in the workers, the old one shown
                            until its new one is in (world.js setMeshing)
@@ -23,13 +23,13 @@
    asks it before every frame whether to draw one (hold) and calls frame()
    once a frame with the game.
 --------------------------------------------------------------------------- */
-import { shaderSettings, lookOf, setFiltering, loadNormalMaps } from './render/looks.js?v=22';
+import { shaderSettings, lookOf, setFiltering, loadNormalMaps, SHADER_LEVELS } from './render/looks.js?v=22';
 import { particleSetting } from './render/particles.js?v=22';
 
 export class VideoSettings {
   constructor(options, guessShaders) {
     this.o = options;
-    // with no choice made, the shaders are on unless there is no graphics chip at all
+    // whether there is a graphics chip at all (no blur behind the menus without one)
     this.guessed = guessShaders;
     this.lastInput = performance.now();
     this.vig = 0;
@@ -38,8 +38,10 @@ export class VideoSettings {
     for (const ev of ['keydown', 'mousedown', 'mousemove', 'wheel', 'touchstart']) window.addEventListener(ev, () => { this.lastInput = performance.now(); }, { passive: true, capture: true });
     particleSetting.level = options.get('particles') || 'all';
   }
-  shadersOn() { const v = this.o.get('shaders'); return v === null || v === undefined ? this.guessed : !!v; }
-  shader() { return shaderSettings(this.o.get('shaderPreset') || 'medium', this.o.get('shader')); }
+  // the Shaders level (Off by default)
+  level() { const v = this.o.get('shaderLevel'); return SHADER_LEVELS.includes(v) ? v : 'off'; }
+  shadersOn() { return this.level() !== 'off'; }
+  shader() { return shaderSettings(this.level()); }
   // everything the renderer is told about the look: the shader's (or the game's own) and the Video Settings that reach it
   look() {
     const o = this.o;
@@ -95,13 +97,13 @@ export class VideoSettings {
   changed(k, v) {
     const R = this.R, g = this.game;
     switch (k) {
-      case 'shaders': case 'shaderPreset': case 'shader': case 'improvedTransparency': case 'textureFiltering':
+      case 'shaderLevel': case 'improvedTransparency': case 'textureFiltering':
         this.relook();
         if (k === 'textureFiltering') this.filtering();
         break;
       case 'quality':
-        // the old Graphics setting, for anything that still sets it: Fast is Shaders OFF, anything else ON
-        if (v === 'fast' || v === 'potato') this.o.set('shaders', false); else if (v && v !== 'auto') this.o.set('shaders', true);
+        // the old Graphics setting, for anything that still sets it: Fast is Shaders Off, anything else Medium
+        if (v === 'fast' || v === 'potato') this.o.set('shaderLevel', 'off'); else if (v && v !== 'auto') this.o.set('shaderLevel', 'medium');
         break;
       case 'mipmapLevels': case 'maxAnisotropy': this.filtering(); break;
       case 'cloudDistance': this.setR('cloudDist', v); break;

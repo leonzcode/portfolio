@@ -249,7 +249,11 @@ void main() {
 }`;
 
 export class Sky {
-  constructor(renderer) {
+  /* later: its shaders made but not yet drawn with, so they can be built in the
+     background first (render/looks.js), and the tables drawn by init() once they
+     are; the first time the shaders are turned on while playing, building them
+     where they were first drawn held the game up for a second and more */
+  constructor(renderer, later) {
     this.renderer = renderer;
     this.fs = new FullScreen(null);
     this.trans = floatTarget(256, 64);
@@ -268,11 +272,20 @@ export class Sky {
     this.mView = rawMat(FS_VIEW, this.uniforms);
     this.mAmb = rawMat(FS_AMB, this.uniforms);
     this.mFog = rawMat(FS_FOGTAB, this.uniforms);
-    this.fs.material = this.mTrans; this.fs.render(renderer, this.trans);
-    this.fs.material = this.mMS; this.fs.render(renderer, this.ms);
     // the light table, as numbers the CPU can hand to the shaders (see readLight)
     this.light = new Float32Array(32);
     this.lightRead = false;
+    this.ready = false;
+    if (!later) this.init();
+  }
+  // every shader the tables are drawn with, for building ahead
+  get materials() { return [this.mTrans, this.mMS, this.mView, this.mAmb, this.mFog]; }
+  // the two tables that never change (the air's transmittance and its multiple scattering)
+  init() {
+    if (this.ready) return;
+    this.ready = true;
+    this.fs.material = this.mTrans; this.fs.render(this.renderer, this.trans);
+    this.fs.material = this.mMS; this.fs.render(this.renderer, this.ms);
   }
   update(sunDir, moonDir, eyeY) {
     for (let k = 0; k < 3; k++) this.part(k, sunDir, moonDir, eyeY);
@@ -280,14 +293,14 @@ export class Sky {
   /* The same, a third at a time (renderer.js spreads it over three frames, so
      no one frame pays for the whole table): 0 the sky in every direction,
      1 the fog's table from it, 2 the light it gives and its read-back. */
-  part(k, sunDir, moonDir, eyeY) {
+  part(k, sunDir, moonDir, eyeY, later) {
     if (k === 0) {
       this.uniforms.uSunDir.value.copy(sunDir);
       this.uniforms.uMoonDir.value.copy(moonDir);
       this.uniforms.uCamH.value = Math.max(0.01, 0.2 + (eyeY - 63) / 1000);
       this.fs.material = this.mView; this.fs.render(this.renderer, this.view);
     } else if (k === 1) { this.fs.material = this.mFog; this.fs.render(this.renderer, this.fog); }
-    else { this.fs.material = this.mAmb; this.fs.render(this.renderer, this.amb); this.askLight(); }
+    else { this.fs.material = this.mAmb; this.fs.render(this.renderer, this.amb); this.askLight(later); }
   }
   /* The eight numbers of the light table (sky light from above, the side
      and below, the sun or moon, the exposure...) read back to the CPU, so
@@ -295,13 +308,13 @@ export class Sky {
      reading the table at every vertex. The read is started after the table
      is drawn and picked up a frame or two later, when the graphics card has
      done it (a fence), so it never makes the CPU wait; the very first one is
-     read at once. The sky changes slowly, so a frame or two late is never
-     seen. */
-  askLight() {
+     read at once, unless later (render/looks.js waits for it). The sky
+     changes slowly, so a frame or two late is never seen. */
+  askLight(later) {
     const r = this.renderer, gl = r.getContext();
     if (this.fence) return;
     r.setRenderTarget(this.amb);
-    if (!this.lightRead) {
+    if (!this.lightRead && !later) {
       gl.readPixels(0, 0, 8, 1, gl.RGBA, gl.FLOAT, this.light);
       this.lightRead = true;
       return;
@@ -349,5 +362,6 @@ export class Sky {
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
     gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this.light);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this.lightRead = true;
   }
 }

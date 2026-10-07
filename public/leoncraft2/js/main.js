@@ -94,13 +94,12 @@ function guessGraphics() {
 const options = new Options();
 // Q throws and F5 turns the view, as in the game (older settings had the view on Q)
 { const k = options.get('keys'); if (k && k.perspective === 'KeyQ' && !k.drop) { options.setKey('drop', 'KeyQ'); options.setKey('perspective', 'F5'); } }
-// ?q=fast or ?q=detailed: Shaders OFF or ON for this visit (tests), whatever was chosen
+// ?q=: a Shaders level for this visit (tests), whatever was chosen: off low medium high rip, or fast (Off) and detailed (Medium)
 const qParam = params.get('q');
-if (qParam) options.data.shaders = !(qParam === 'fast' || qParam === 'potato');
-const chosenByUser = !!qParam || (options.get('shaders') !== null && options.get('shaders') !== undefined);
+if (qParam) options.data.shaderLevel = { fast: 'off', potato: 'off', detailed: 'medium', ultra: 'high' }[qParam] || qParam;
 const video = new VideoSettings(options, guessGraphics() !== 'fast');
 const LOOK = video.look();
-const QNAME = () => video.shadersOn() ? 'shaders' : 'no shaders';
+const QNAME = () => video.shadersOn() ? 'shaders ' + video.level() : 'no shaders';
 const RD = +(params.get('rd') || options.get('renderDistance') || 8);
 
 function loadImg(src) {
@@ -1196,7 +1195,7 @@ async function boot() {
   });
 
   /* ---- the loop ---- */
-  let acc = 0, last = performance.now(), fps = 0, fpsT = 0, frames = 0, scaleTick = 0, slowFor = 0, steppedDown = false;
+  let acc = 0, last = performance.now(), fps = 0, fpsT = 0, frames = 0, scaleTick = 0;
   const TILT = { roll: 0, tiltPitch: 0 }, NO_TILT = { roll: 0, tiltPitch: 0 };
   let startedAt = performance.now();
   const sunDir = new THREE.Vector3(), moonDir = new THREE.Vector3(), eyeV = new THREE.Vector3();
@@ -1382,13 +1381,6 @@ async function boot() {
         if (fps < 42 && s > floor) { renderer.opts.scale = Math.max(floor, +(s - 0.1).toFixed(2)); fit(); }
         else if (fps > 58 && s < 1) { renderer.opts.scale = Math.min(1, +(s + 0.05).toFixed(2)); fit(); }
       }
-      // the first half minute, on a guessed tier: still struggling at the lowest scale means one tier down, once
-      slowFor = fps < 28 ? slowFor + 0.5 : 0;
-      if (!chosenByUser && !steppedDown && now - startedAt < 25000 && slowFor >= 4 && renderer.opts.scale <= 0.55 && video.shadersOn()) {
-        // a machine that cannot keep up even at the lowest scale turns the shaders off, once (at once, no reload)
-        steppedDown = true;
-        options.set('shaders', false);
-      }
     }
     if (showDebug) {
       hud.camera = { yaw: player.yaw, pitch: player.pitch };
@@ -1408,7 +1400,7 @@ async function boot() {
         g.mode !== 'creative' ? 'Food ' + survival.food + ', saturation ' + survival.saturation.toFixed(1) + ', exhaustion ' + survival.exhaustion.toFixed(3) : '',
       ], [
         'Render ' + renderer.rw + 'x' + renderer.rh + ' (F7 scale)',
-        'Distance ' + world.renderDist + ', ' + QNAME() + (video.shadersOn() ? ' (' + options.get('shaderPreset') + ')' : ''),
+        'Distance ' + world.renderDist + ', ' + QNAME(),
         'Seed ' + worldSeed(g.entry) + (g.world.generator === 'vanilla' ? '' : ' (classic)'),
         'Fluids pending ' + fluids.pending.size,
         '',
