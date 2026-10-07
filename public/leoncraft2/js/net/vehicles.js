@@ -282,7 +282,8 @@ export class Vehicles {
         const rec = this.recs.get(m.id);
         if (!rec || !Array.isArray(m.s)) return;
         rec.s = m.s;
-        if (rec.e && rec.e.ghost) rec.q.push(m.s);
+        // (a page not ticking, hidden, keeps only the newest few)
+        if (rec.e && rec.e.ghost) { rec.q.push(m.s); if (rec.q.length > 8) rec.q.shift(); }
         return;
       }
       case 'vc': {
