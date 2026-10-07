@@ -351,7 +351,7 @@ export class Net {
        30 seconds      Timed out, as the game says it */
   static connect(server, password, name) {
     return new Promise((resolve, reject) => {
-      const url = wsBase() + '?mode=lc2&pv=2&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
+      const url = wsBase() + '?mode=lc2&pv=3&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
         '&name=' + encodeURIComponent(name) + '&device=' + encodeURIComponent(deviceId());
       let ws;
       try { ws = new WebSocket(url); } catch (e) { reject({ reason: FAIL_TEXT.down[1], kind: SERVER_DOWN }); return; }
@@ -394,7 +394,8 @@ export class Net {
     this.rtt = 0; this.pings = []; this.itemTick = 0;
     this.game = null;
     this.dead = false;
-    this.sent = { at: -1e9, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, f: -1, d: -1 };
+    this.sent = { at: -1e9, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, f: -1, d: -1, n: -1 };
+    this.bases = new Map();          // each other player's position as last sent, in millimetres (what the changes go on top of)
     this.eqSig = ''; this.eqTick = 0;
     this.timeExpect = null;
     this.stats = { sentB: 0, gotB: 0, sentP: 0, gotP: 0 };
@@ -528,10 +529,19 @@ export class Net {
 
   /* ---- what arrives ---- */
   receive(m) {
-    // a position, as a short array: [0, id, ts, x, y, z, yaw, pitch, flags, dim, use, useT, useTotal]
+    /* a position, as a short array: [0, id, ts, x, y, z, yaw, pitch, flags, dim, use, useT, useTotal],
+       or what changed since the last: [1, id, dts, dx, dy, dz, dyaw, dpitch, flags, dim, use...] in
+       ms, millimetres and thousandths of a radian, a number left off the end unchanged (lc2.js moveFor) */
     if (Array.isArray(m)) {
-      if (m[0] !== 0) return;
-      const s = { t: 'p', id: m[1], ts: m[2], x: m[3], y: m[4], z: m[5], yaw: m[6], pitch: m[7], f: m[8], d: m[9] };
+      let b = this.bases.get(m[1]);
+      if (m[0] === 0) {
+        b = { ts: m[2], X: Math.round(m[3] * 1000), Y: Math.round(m[4] * 1000), Z: Math.round(m[5] * 1000), YAW: Math.round(m[6] * 1000), PITCH: Math.round(m[7] * 1000), f: m[8] | 0, d: m[9] | 0 };
+        this.bases.set(m[1], b);
+      } else if (m[0] === 1 && b) {
+        b.ts += m[2] | 0; b.X += m[3] | 0; b.Y += m[4] | 0; b.Z += m[5] | 0; b.YAW += m[6] | 0; b.PITCH += m[7] | 0;
+        if (m[8] !== undefined) { b.f = m[8] | 0; b.d = m[9] | 0; }
+      } else return;
+      const s = { t: 'p', id: m[1], ts: b.ts, x: b.X / 1000, y: b.Y / 1000, z: b.Z / 1000, yaw: b.YAW / 1000, pitch: b.PITCH / 1000, f: b.f, d: b.d };
       if (m[10]) { s.u = m[10]; s.ut = m[11]; s.uT = m[12]; }
       m = s;
     }
@@ -542,7 +552,7 @@ export class Net {
       case 'prot': this.prot = m.r | 0; return;
       case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1]); return;
       case 'join': if (this.players) { this.players.add(m.p); } else this.initPlayers.push(m.p); return;
-      case 'leave': if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
+      case 'leave': this.bases.delete(m.id); if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
       case 'skin': if (this.players) this.players.setSkin(m.id, m.skin, m.slim); else this.early(m); return;
       case 'eq': if (this.players) this.players.setEquip(m.id, m.eq); else this.early(m); return;
       case 'sw': if (this.players) this.players.swing(m.id, m.h); return;
@@ -1050,11 +1060,24 @@ export class Net {
     const U = this.ctx.renderer.avatar.useNow, k = U ? USE_KINDS.indexOf(U.kind) : -1;
     const u = k >= 0 ? (k + 1) | ((U.side | 0) ? 16 : 0) : 0, ut = u ? Math.round((U.t || 0) * 10) / 10 : 0, uT = u ? U.total | 0 : 0;
     if (x === S.x && y === S.y && z === S.z && yaw === S.yaw && pitch === S.pitch && f === S.f && d === S.d && u === S.u && ut === S.ut && stamp - S.at < 1000) return;
-    Object.assign(S, { at: stamp, x, y, z, yaw, pitch, f, d, u, ut });
+    const ts = Math.round(stamp), q = [ts, Math.round(x * 1000), Math.round(y * 1000), Math.round(z * 1000), Math.round(yaw * 1000), Math.round(pitch * 1000)];
+    let m;
+    /* [0, ts, x, y, z, yaw, pitch, flags, dim, use, useT, useTotal] (lc2.js position()) the first
+       time and every fortieth (two seconds), and between, to a server that reads them, what changed
+       ([1, dts, dx, dy, dz, dyaw, dpitch, flags, dim, use...]: lc2.js position()) */
+    if (!(this.server.pv >= 3) || ++S.n % 40 === 0 || !S.q) {
+      m = [0, ts, x, y, z, yaw, pitch, f, d];
+      if (u) m.push(u, ut, uT);
+      S.n = 0;
+    } else {
+      m = [1];
+      for (let i = 0; i < 6; i++) m.push(q[i] - S.q[i]);
+      const tail = f !== S.f || d !== S.d || u;
+      if (!tail) while (m.length > 2 && m[m.length - 1] === 0) m.pop();
+      else { m.push(f, d); if (u) m.push(u, ut, uT); }
+    }
+    Object.assign(S, { at: stamp, x, y, z, yaw, pitch, f, d, u, ut, q });
     this.stats.sentP++;
-    // [0, ts, x, y, z, yaw, pitch, flags, dim, use, useT, useTotal]: lc2.js position()
-    const m = [0, Math.round(stamp), x, y, z, yaw, pitch, f, d];
-    if (u) m.push(u, ut, uT);
     this.send(m);
   }
   sendEquip() {
