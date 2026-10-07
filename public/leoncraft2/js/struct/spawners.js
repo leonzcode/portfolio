@@ -24,6 +24,7 @@
 import { B } from '../blocks.js?v=24';
 import { BIOMES } from '../biomes.js?v=24';
 import { Y0, CH } from '../world-const.js?v=24';
+import { trialSpawners } from './trials.js?v=24';
 
 // what a spawner can hold, by its meta (1 up): append only, saves keep the numbers
 export const SPAWNABLE = ['zombie', 'skeleton', 'spider', 'cave_spider', 'blaze', 'creeper', 'husk', 'stray', 'drowned', 'magma_cube', 'silverfish', 'endermite',
@@ -48,7 +49,7 @@ export function setSpawnerMob(world, x, y, z, type) {
 const RANGE = 16, SPAWN_RANGE = 4, COUNT = 4, MAX_NEAR = 6, MIN_DELAY = 200, MAX_DELAY = 800;
 
 export class Spawners {
-  constructor() { this.state = new Map(); this.edited = new Map(); this.shown = new Map(); this.n = 0; }     // state: "x,y,z" -> ticks left
+  constructor() { this.state = new Map(); this.edited = new Map(); this.shown = new Map(); this.n = 0; this.trials = trialSpawners(spawnerMob); }     // state: "x,y,z" -> ticks left
   tick(world, player) {
     if (!world || !player) return;
     const px = player.pos.x, py = player.pos.y + Y0, pz = player.pos.z;
@@ -80,6 +81,8 @@ export class Spawners {
         this.one(world, s, px, py, pz); this.show(world, s, px, py, pz, seen);
       }
     }
+    // trial spawners (struct/trials.js), their mobs turning inside them too
+    this.trials.tick(world, player, s => this.show(world, s, px, py, pz, seen));
     // the ones out of sight or gone lose their turning mob
     for (const [k, e] of this.shown) if (!seen.has(k)) this.unshow(k, e);
   }
@@ -88,7 +91,8 @@ export class Spawners {
     const E = typeof window !== 'undefined' && window.__lc2 && window.__lc2.entities;
     if (!E || !E.makeDisplay) return;
     const k = s.x + ',' + s.y + ',' + s.z;
-    if (world.get(s.x, s.y - Y0, s.z) !== B.spawner) return;
+    const here = world.get(s.x, s.y - Y0, s.z);
+    if (here !== B.spawner && here !== B.trial_spawner) return;
     const ddx = s.x + 0.5 - px, ddy = s.y + 0.5 - py, ddz = s.z + 0.5 - pz, d2 = ddx * ddx + ddy * ddy + ddz * ddz;
     if (d2 > 48 * 48) return;
     seen.add(k);
