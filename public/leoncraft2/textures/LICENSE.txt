@@ -111,6 +111,11 @@ In widgets.png the hotbar, the hotbar selector, the buttons and the language
 button, and all of accessibility.png, are our own grey drawings
 (tools/leoncraft2/build_gui.py), not the pack's gold ones.
 
+In icons.png the crosshair, the hearts (empty, flashing, red, poisoned,
+withered and gold), the air bubbles, the hunger shanks and the experience bar
+are our own drawings (tools/leoncraft2/build_hud.py) over the pack's; the rest
+of that sheet (armour, the signal bars and the other rows) is the pack's.
+
 The LEONCRAFT title and its BROWSER EDITION plate are drawn by the game at load
 (js/ui/menus.js) from our own letter shapes, the stone texture above and the
 font sheet above, so they are adapted material under CC BY-SA 4.0 as well.
