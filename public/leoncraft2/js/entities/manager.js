@@ -61,6 +61,8 @@ const THREE = window.THREE;
 const R = () => Math.random();
 const CELL = 8;
 const DIFF = { peaceful: 0, easy: 1, normal: 2, hard: 3 };
+// a stick for steering: the mob it works on and how much one burst wears it
+const STICKS = { carrot_on_a_stick: ['pig', 7], warped_fungus_on_a_stick: ['strider', 1] };
 
 export class Entities {
   constructor(o) {
@@ -758,6 +760,17 @@ export class Entities {
     if (target && target.face && tieToFence(this, target)) return true;
     const name = this.heldName();
     if (!name || !this.lookEye) return false;
+    /* On the pig or strider you ride, its stick gives it a burst of speed (none while one is on), worn
+       7 (a carrot) or 1 (warped fungus); worn out it is a plain fishing rod again (the game's FoodOnAStick) */
+    const stick = STICKS[name], r = this.riding;
+    if (stick && r && r.type === stick[0] && r.boost) {
+      if (!r.boost()) return false;
+      if (this.mode !== 'creative' && this.inv) {
+        this.damageHeld(stick[1], name);
+        if (!this.inv.slots[this.inv.selected]) { this.inv.slots[this.inv.selected] = { id: I.fishing_rod, count: 1 }; this.inv.changed(); }
+      }
+      return true;
+    }
     const P = this.P, eye = this.lookEye, dir = this.lookDir;
     const take = () => { if (this.mode !== 'creative' && this.inv) this.inv.takeSelected(1); };
     // adventure puts nothing into the world with an item (a boat is the exception, as in the game)
