@@ -31,12 +31,12 @@
      dropItem(world, x, y, z, 'diamond', 2)     from anywhere (mob loot...)
      giveXp(x, y, z, 7)
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, SOLID, FLUID, OPACITY } from './blocks.js?v=28';
-import { collisionBoxes } from './models.js?v=28';
-import { LEVEL, FALLING } from './world-const.js?v=28';
-import { DIMS } from './dims.js?v=28';
-import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=28';
-import { blockGeometry, intAttribute } from './render/blockmesh.js?v=28';
+import { B, BLOCKS, SOLID, FLUID, OPACITY } from './blocks.js?v=29';
+import { collisionBoxes } from './models.js?v=29';
+import { LEVEL, FALLING } from './world-const.js?v=29';
+import { DIMS } from './dims.js?v=29';
+import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=29';
+import { blockGeometry, intAttribute } from './render/blockmesh.js?v=29';
 const THREE = window.THREE;
 
 const ITEM_W = 0.125, ITEM_H = 0.25;           // half width, height
@@ -163,9 +163,12 @@ export class Drops {
     const dx = -Math.sin(yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = -Math.cos(yaw) * Math.cos(pitch);
     const a = Math.random() * Math.PI * 2, r = 0.02 * Math.random();
     const y = player.pos.y + (player.sneaking ? 1.27 : 1.62) - 0.3;
-    return this.spawn(player.pos.x, y, player.pos.z, stack, {
+    const e = this.spawn(player.pos.x, y, player.pos.z, stack, {
       delay: 40, vel: [dx * 0.3 + Math.cos(a) * r, dy * 0.3 + 0.1 + (Math.random() - Math.random()) * 0.1, dz * 0.3 + Math.sin(a) * r],
     });
+    // (thrown by you: a mob that picks it up is "given" it, as the game's advancements count)
+    if (e) e.thrown = true;
+    return e;
   }
   xp(x, y, z, amount) {
     amount = Math.floor(amount);
@@ -201,7 +204,8 @@ export class Drops {
           const b = w.get(x, y, z);
           if (!b || !SOLID[b]) continue;
           const d = BLOCKS[b];
-          if (d.shape === 'cube') { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }
+          // (a honey block's box is a sixteenth in and 15/16 tall: models.js collisionBoxes)
+          if (d.shape === 'cube' && b !== B.honey_block) { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }
           const boxes = collisionBoxes(d, w.meta(x, y, z), (dx, dy, dz) => { const n = w.get(x + dx, y + dy, z + dz); return n ? { d: BLOCKS[n], m: w.meta(x + dx, y + dy, z + dz) } : null; });
           if (boxes) for (const c of boxes) out.push(x + c[0], y + c[1], z + c[2], x + c[3], y + c[4], z + c[5]);
         }

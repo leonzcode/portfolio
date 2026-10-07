@@ -20,10 +20,10 @@
    The frames, tabs and window are drawn here (pixels of our own), not
    taken from the game.
 --------------------------------------------------------------------------- */
-import { Screen } from '../ui/gui.js?v=28';
-import { drawStack } from '../ui/inventory.js?v=28';
-import { ADV } from './tracker.js?v=28';
-import { iconStack } from './toast.js?v=28';
+import { Screen } from '../ui/gui.js?v=29';
+import { drawStack } from '../ui/inventory.js?v=29';
+import { ADV } from './tracker.js?v=29';
+import { iconStack } from './toast.js?v=29';
 
 const WW = 252, WH = 140, IX = 9, IY = 18, IW = 234, IH = 113;
 const BG = { stone: 'stone', nether: 'netherrack', end: 'end_stone', adventure: 'sandstone_top', husbandry: 'farmland' };
@@ -54,8 +54,8 @@ function depthOf(inside, n) {
   return dep;
 }
 const SHAPES = {
-  // a square with its corner pixels cut
-  task: (x, y) => x >= 1 && x <= 24 && y >= 1 && y <= 24 && !((x === 1 || x === 24) && (y === 1 || y === 24)),
+  // a square with its corners cut in two steps
+  task: (x, y) => { const ax = Math.abs(x - 12.5), ay = Math.abs(y - 12.5); return ax <= 11.5 && ay <= 11.5 && ax + ay <= 21.5; },
   // a rounded square, its sides bowed (a squircle)
   goal: (x, y) => { const dx = (x - 12.5) / 12.6, dy = (y - 12.5) / 12.6; return dx ** 4 + dy ** 4 <= 1; },
   // a square with a point at each corner and a notch in each side
@@ -66,52 +66,68 @@ const SHAPES = {
     return body || spike;
   },
 };
+/* Shaded as the game shades its frames: a black edge, a one pixel bevel inside it (light along the
+   top and left, dark along the bottom and right, a middle shade where the two meet on the other
+   diagonal) and a flat face; gold once made, grey before */
 const PALETTE = {
-  made: { edge: 0x3B2A05, light: 0xFFE27F, dark: 0x9B6E14, inner: 0xD9A833, rim: 0x7A560E },
-  open: { edge: 0x262626, light: 0xF4F4F4, dark: 0x7A7A7A, inner: 0xBDBDBD, rim: 0x5E5E5E },
+  made: { edge: 0x000000, light: 0xDBA213, dark: 0x493606, mid: 0xB98F2C, inner: 0xAA7E0F },
+  open: { edge: 0x000000, light: 0xFFFFFF, dark: 0x555555, mid: 0xC6C6C6, inner: 0xC6C6C6 },
 };
 const FRAMES = {};
 function frame(kind, made) {
   const k = kind + (made ? 1 : 0);
   if (FRAMES[k]) return FRAMES[k];
   const shape = SHAPES[kind] || SHAPES.task, P = made ? PALETTE.made : PALETTE.open;
-  const dep = depthOf(shape, 26);
+  const dep = depthOf(shape, 26), at = (x, y) => (x < 0 || y < 0 || x > 25 || y > 25 ? -1 : dep[y * 26 + x]);
   FRAMES[k] = pic(26, 26, (d, w) => {
     for (let y = 0; y < 26; y++) for (let x = 0; x < 26; x++) {
       const v = dep[y * 26 + x];
       if (v < 0) continue;
-      let c;
+      let c = P.inner;
       if (v === 0) c = P.edge;
-      else if (v <= 2) c = x + y < 25 ? P.light : P.dark;
-      else if (v === 3) c = P.rim;
-      else c = P.inner;
+      else if (v === 1) {
+        const lit = at(x, y - 1) === 0 || at(x - 1, y) === 0, shade = at(x, y + 1) === 0 || at(x + 1, y) === 0;
+        c = lit && !shade ? P.light : shade && !lit ? P.dark : x + y < 25 ? P.light : x + y > 25 ? P.dark : P.mid;
+      }
       put(d, w, x, y, c);
     }
   });
   return FRAMES[k];
 }
-// a tab above the window: 28 wide, 28 tall (32 when chosen, reaching over the window's edge)
+/* The classic grey panel's edge, as the game cuts it: two steps off the top left and bottom right
+   corners, three off the other two; a black line, then two pixels of light (top, left) and of shade
+   (bottom, right), a pixel of each tucked into its inner corner, and plain grey where they meet. */
+function panelPixel(x, y, w, h, face) {
+  const tl = x + y, tr = (w - 1 - x) + y, bl = x + (h - 1 - y), br = (w - 1 - x) + (h - 1 - y);
+  if (tl < 2 || tr < 3 || bl < 3 || br < 2) return -1;
+  if (tl === 2 || tr === 3 || bl === 3 || br === 2 || x === 0 || y === 0 || x === w - 1 || y === h - 1) return 0x000000;
+  const light = x <= 2 || y <= 2 || (x === 3 && y === 3), dark = x >= w - 3 || y >= h - 3 || (x === w - 4 && y === h - 4);
+  return light && dark ? face : light ? 0xFFFFFF : dark ? 0x555555 : face;
+}
+/* A tab above the window, 28 x 32 drawn 28 over its top: a closed one shows 25 of that, darker,
+   standing on the window's edge; the open one is 4 taller and runs into the window */
 const TABS = {};
 function tabPic(selected) {
   const k = selected ? 1 : 0;
   if (TABS[k]) return TABS[k];
-  const h = selected ? 32 : 28;
-  TABS[k] = pic(28, h, (d, w) => {
-    for (let y = 0; y < h; y++) for (let x = 0; x < 28; x++) {
-      const corner = y < 2 && (x < 2 - y || x > 25 + y);
-      if (corner) continue;
+  TABS[k] = pic(28, 32, (d, w) => {
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 28; x++) {
       let c;
-      if (y === 0 || x === 0 || x === 27) c = 0x000000;
-      else if (y === 1 || x === 1) c = selected ? 0xFFFFFF : 0xDBDBDB;
-      else if (x === 26 && y > 1) c = selected ? 0x555555 : 0x5A5A5A;
-      else c = selected ? 0xC6C6C6 : 0x9E9E9E;
-      if (!selected && y === h - 1) c = 0x000000;
-      put(d, w, x, y, c);
+      if (selected) {
+        // (its last rows join the window: its light runs into the window's, its shade turns the corner)
+        if (y <= 28) c = panelPixel(x, y, 28, 64, 0xC6C6C6);
+        else if (y === 31) c = 0xC6C6C6;
+        else c = x <= 2 || x >= (y === 29 ? 27 : 26) ? 0xFFFFFF : x >= 25 ? 0x555555 : 0xC6C6C6;
+      } else {
+        if (y < 4 || y > 28) continue;
+        c = y === 28 ? 0x000000 : panelPixel(x, y - 4, 28, 64, 0x8B8B8B);
+      }
+      if (c >= 0) put(d, w, x, y, c);
     }
   });
   return TABS[k];
 }
-// the window: the classic grey panel with its edge, and a sunken edge round the inside
+// the window: the classic grey panel, and a sunken edge round the inside (dark above and left, pale below and right)
 let WINDOW = null;
 function windowPic() {
   if (WINDOW) return WINDOW;
@@ -119,17 +135,13 @@ function windowPic() {
     for (let y = 0; y < WH; y++) for (let x = 0; x < WW; x++) {
       const inner = x >= IX && x < IX + IW && y >= IY && y < IY + IH;
       if (inner) continue;
-      const cut = (x < 2 && y < 2 && x + y < 2) || (x > WW - 3 && y < 2 && (WW - 1 - x) + y < 2) || (x < 2 && y > WH - 3 && x + (WH - 1 - y) < 2) || (x > WW - 3 && y > WH - 3 && (WW - 1 - x) + (WH - 1 - y) < 2);
-      if (cut) continue;
-      let c = 0xC6C6C6;
-      if (x === 0 || y === 0 || x === WW - 1 || y === WH - 1 || (x === 1 && y === 1) || (x === WW - 2 && y === 1) || (x === 1 && y === WH - 2) || (x === WW - 2 && y === WH - 2)) c = 0x000000;
-      else if (x <= 2 || y <= 2) c = 0xFFFFFF;
-      else if (x >= WW - 3 || y >= WH - 3) c = 0x555555;
-      // the inside's sunken edge
-      if (x === IX - 1 && y >= IY - 1 && y <= IY + IH) c = 0x373737;
-      if (y === IY - 1 && x >= IX - 1 && x <= IX + IW) c = 0x373737;
-      if (x === IX + IW && y >= IY - 1 && y <= IY + IH) c = 0xFFFFFF;
-      if (y === IY + IH && x >= IX && x <= IX + IW) c = 0xFFFFFF;
+      let c = panelPixel(x, y, WW, WH, 0xC6C6C6);
+      if (c < 0) continue;
+      const top = y === IY - 1 && x >= IX - 1 && x <= IX + IW, left = x === IX - 1 && y >= IY - 1 && y <= IY + IH;
+      const bottom = y === IY + IH && x >= IX - 1 && x <= IX + IW, right = x === IX + IW && y >= IY - 1 && y <= IY + IH;
+      if ((top && right) || (left && bottom)) c = 0x575757;
+      else if (top || left) c = 0x202020;
+      else if (bottom || right) c = 0x939393;
       put(d, w, x, y, c);
     }
   });
@@ -141,7 +153,7 @@ let tileLoad = null;
 function loadTiles(gui) {
   if (tileLoad) return tileLoad;
   const base = new URL('../../textures/', import.meta.url).href;
-  tileLoad = Promise.all([fetch(base + 'manifest.json?v=28').then(r => r.json()), new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = base + 'terrain_albedo.png?v=28'; })])
+  tileLoad = Promise.all([fetch(base + 'manifest.json?v=29').then(r => r.json()), new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = base + 'terrain_albedo.png?v=29'; })])
     .then(([m, img]) => {
       for (const k in BG) {
         const t = m.textures[BG[k]];
@@ -155,19 +167,25 @@ function loadTiles(gui) {
   return tileLoad;
 }
 
-/* the description over lines of about the bar's width (a few widths are tried, the fewest lines
-   and the most even win) */
+/* the description over lines about as wide as the bar, as the game picks them: wrapped at the
+   bar's width, then 10 and 25 narrower and wider, the first whose widest line is within 10 of the
+   bar's width, or else the nearest */
 function linesOf(font, text, want) {
-  let best = null;
+  let best = null, bd = Infinity;
   for (const off of [0, 10, -10, 25, -25]) {
-    const w = Math.max(40, want + off);
-    const lines = text.split('\n').flatMap(p => font.wrap(p, w));
-    const widths = lines.map(l => font.width(l));
-    const spread = Math.max(...widths) - Math.min(...widths);
-    const score = lines.length * 1000 + spread;
-    if (!best || score < best.score) best = { lines, score };
+    const lines = text.split('\n').flatMap(p => font.wrap(p, Math.max(1, want - off)));
+    const d = Math.abs(Math.max(0, ...lines.map(l => font.width(l))) - want);
+    if (d <= 10) return lines;
+    if (d < bd) { bd = d; best = lines; }
   }
-  return best.lines;
+  return best;
+}
+// the name as the game shows it in the box: cut to 163 wide
+function titleOf(font, t) {
+  if (font.width(t) <= 163) return t;
+  let s = t;
+  while (s.length && font.width(s) > 163) s = s.slice(0, -1);
+  return s;
 }
 
 export class AdvancementsScreen extends Screen {
@@ -216,8 +234,9 @@ export class AdvancementsScreen extends Screen {
     const tabs = this.p.tabs();
     if (tabs.length < 2) return null;
     for (let i = 0; i < tabs.length; i++) {
+      // (the whole 28 x 32 of its picture, as the game takes it, the 4 over the window's edge too)
       const x = this.left + 32 * i, y = this.top - 28;
-      if (mx >= x && mx < x + 28 && my >= y && my < y + 28) return tabs[i];
+      if (mx >= x && mx < x + 28 && my >= y && my < y + 32) return tabs[i];
     }
     return null;
   }
@@ -323,52 +342,58 @@ export class AdvancementsScreen extends Screen {
     if (hover) this.drawHover(g, hover, list, s, ix, iy);
   }
 
-  /* The box over an advancement: a bar with its icon, name and progress, and a dark box with what it
-     asks, under the bar (over it when there is no room below), reaching right (or left near the edge). */
+  /* The box over an advancement, as the game lays it out: a bar with its icon, name and progress, and a
+     dark box with what it asks, under the bar (over it when there is no room below in the window),
+     reaching right (or left when it would run off the screen); it may go past the window's edge. */
   drawHover(g, a, list, s, ix, iy) {
     const f = g.font, made = this.p.isMade(a.id), prog = this.p.progressText(a.id), pct = made ? 1 : this.p.percent(a.id);
-    const tw = f.width(a.title), pw = prog ? f.width(prog) : 0;
-    let want = 29 + tw + pw;
+    const title = titleOf(f, a.title), pw = prog ? f.width(prog) : 0;
+    // (room kept for the progress at its widest: two spaces, the count's digits twice and the slash)
+    const n = a.req.length, room = n > 1 ? f.width('  ') + f.width('0') * String(n).length * 2 + f.width('/') : 0;
+    let want = 29 + f.width(title) + room;
     const lines = a.desc ? linesOf(f, a.desc, want) : [];
     for (const l of lines) want = Math.max(want, f.width(l));
     const width = want + 3 + 5;
     const x = ix + Math.floor(s.sx) + Math.floor(a.x * 28), y = iy + Math.floor(s.sy) + Math.floor(a.y * 27);
-    const left = x + width > ix + IW && x + 26 - width >= 4 ? x + 26 - width : x;
-    const descH = lines.length ? 32 + lines.length * 9 : 0;
-    const up = lines.length && y + descH > iy + IH && y + 26 - descH >= 0;
+    const flip = x + width + 26 >= g.width;
+    const left = flip ? x - width + 32 : x;
+    const descH = 32 + lines.length * 9;
+    const up = y + descH >= iy + IH;
     // the dark box for the description
     if (lines.length) {
       const by = up ? y + 26 - descH : y;
-      panel(g, left, by, width, descH, 0xFF555555, 0xFF212121);
+      box(g, left, by, width, descH, 0xFF000000, 0xFF555555, 0xFF555555, 0xFF212121);
       const colour = DESC_COLOUR[a.frame] || 0x55FF55;
-      let ty = up ? by + 7 : y + 26 + 5;
-      for (const l of lines) { g.text(l, left + 5, ty, colour); ty += 9; }
+      let ty = up ? by + 7 : y + 26;
+      for (const l of lines) { g.text(l, left + 5, ty, colour, false); ty += 9; }
     }
     // the bar: gold as far as the progress, blue for the rest
-    const split = Math.floor(width * pct);
-    const gold = [0xFF5E4410, 0xFFB98C2B], blue = [0xFF01384F, 0xFF0A6F99];
-    if (split >= width - 1) panel(g, left, y, width, 26, gold[0], gold[1]);
-    else if (split < 2) panel(g, left, y, width, 26, blue[0], blue[1]);
+    // (all gold when done or nearly, all blue under two pixels' worth, otherwise split there)
+    const split = Math.floor(pct * width), gold = pct >= 1 || split > width - 2 ? 2 : split < 2 ? 0 : 1;
+    const GOLD = [0xFF000000, 0xFFDBA213, 0xFF493606, 0xFFB98F2C], BLUE = [0xFF000000, 0xFF0489C1, 0xFF012E40, 0xFF036A96];
+    if (gold !== 1) box(g, left, y, width, 26, ...(gold ? GOLD : BLUE));
     else {
-      g.scissor(left, y, left + split, y + 26); panel(g, left, y, width, 26, gold[0], gold[1]); g.endScissor();
-      g.scissor(left + split, y, left + width, y + 26); panel(g, left, y, width, 26, blue[0], blue[1]); g.endScissor();
+      g.scissor(left, y, left + split, y + 26); box(g, left, y, width, 26, ...GOLD); g.endScissor();
+      g.scissor(left + split, y, left + width, y + 26); box(g, left, y, width, 26, ...BLUE); g.endScissor();
     }
-    g.ctx.drawImage(frame(a.frame, made), x + 3, y);
+    g.ctx.drawImage(frame(a.frame, pct >= 1), x + 3, y);
     const st = iconStack(a);
     if (st) drawStack(g, this.icons, st, x + 8, y + 5);
-    if (left === x) {
-      g.text(a.title, x + 32, y + 9, 0xFFFFFF);
-      if (prog) g.text(prog, left + width - pw - 5, y + 9, 0xFFFFFF);
+    if (!flip) {
+      g.text(title, x + 32, y + 9, 0xFFFFFF);
+      if (prog) g.text(prog, x + width - pw - 5, y + 9, 0xFFFFFF);
     } else {
-      g.text(a.title, left + 5, y + 9, 0xFFFFFF);
-      if (prog) g.text(prog, x - pw - 2, y + 9, 0xFFFFFF);
+      g.text(title, left + 5, y + 9, 0xFFFFFF);
+      if (prog) g.text(prog, x - pw, y + 9, 0xFFFFFF);
     }
   }
 }
-// a box with a black edge (corners cut), a border and an inside
-function panel(g, x, y, w, h, border, fill) {
-  g.fill(x + 1, y, x + w - 1, y + h, 0xFF000000);
-  g.fill(x, y + 1, x + w, y + h - 1, 0xFF000000);
-  g.fill(x + 1, y + 1, x + w - 1, y + h - 1, border);
-  g.fill(x + 2, y + 2, x + w - 2, y + h - 2, fill);
+/* The game's bar and box: 3 clear rows above and below, then a black edge with its corners cut,
+   a one pixel bevel (light along the top and left, dark along the bottom and right) and the face */
+function box(g, x, y, w, h, edge, light, dark, face) {
+  const t = y + 3, b = y + h - 3;
+  g.fill(x + 2, t, x + w - 2, b, edge); g.fill(x + 1, t + 1, x + w - 1, b - 1, edge); g.fill(x, t + 2, x + w, b - 2, edge);
+  g.fill(x + 2, t + 1, x + w - 2, t + 2, light); g.fill(x + 1, t + 2, x + 2, b - 2, light);
+  g.fill(x + 2, b - 2, x + w - 2, b - 1, dark); g.fill(x + w - 2, t + 2, x + w - 1, b - 2, dark);
+  g.fill(x + 2, t + 2, x + w - 2, b - 2, face);
 }

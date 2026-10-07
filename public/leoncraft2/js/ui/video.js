@@ -18,8 +18,8 @@
    Nothing here does anything but change Options; settings.js puts each
    change into effect at once, while you play.
 --------------------------------------------------------------------------- */
-import { Button, Slider, CycleButton, WidgetRow, OptionsListScreen, onOff, WHITE } from './gui.js?v=28';
-import { SHADER_LEVELS } from '../render/looks.js?v=28';
+import { Button, Slider, CycleButton, WidgetRow, OptionsListScreen, onOff, WHITE } from './gui.js?v=29';
+import { SHADER_LEVELS } from '../render/looks.js?v=29';
 
 /* ------------------------------ helpers ------------------------------ */
 

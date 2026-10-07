@@ -18,10 +18,10 @@
    made here with Web Audio (a soft swish in and out, a short rising
    fanfare), since Leoncraft's own sound banks have none.
 --------------------------------------------------------------------------- */
-import { Sound } from '../sound/sound.js?v=28';
-import { itemId } from '../items.js?v=28';
-import { B, BLOCKS } from '../blocks.js?v=28';
-import { drawStack } from '../ui/inventory.js?v=28';
+import { Sound } from '../sound/sound.js?v=29';
+import { itemId } from '../items.js?v=29';
+import { B, BLOCKS } from '../blocks.js?v=29';
+import { drawStack } from '../ui/inventory.js?v=29';
 
 const W = 160, H = 32, SLIDE = 600, SHOW = 5000, SLOTS = 5;
 const HEAD = { task: 'Advancement Made!', goal: 'Goal Reached!', challenge: 'Challenge Complete!' };
@@ -120,24 +120,27 @@ export const AdvToast = {
     if (!this.shown.length || !g.font) return;
     const now = performance.now();
     for (const s of this.shown) {
-      let v = Math.min(1, (now - s.t0) / SLIDE);
-      if (s.out) v = 1 - Math.min(1, (now - s.out) / SLIDE);
-      v *= v;
+      // (in and out alike: the share of the slide's time gone, squared, as the game eases it)
+      const k = Math.min(1, (now - (s.out || s.t0)) / SLIDE), v = s.out ? 1 - k * k : k * k;
       const x = Math.round(g.width - W * v), y = s.slot * H;
       if (s.a.recipe) drawRecipeToast(g, icons, s.a, x, y, now - s.t0);
-      else drawToast(g, icons, s.a, x, y, now - s.t0);
+      // (the toast's own clock starts once it is in)
+      else drawToast(g, icons, s.a, x, y, Math.max(0, now - s.t0 - SLIDE));
     }
   },
 };
 
-function box(g, x, y, border = 0xFF555555, inside = 0xFF212121) {
-  // black edge with cut corners, a 2 px grey border, the dark inside
-  g.fill(x + 2, y, x + W - 2, y + 1, 0xFF000000); g.fill(x + 2, y + H - 1, x + W - 2, y + H, 0xFF000000);
-  g.fill(x, y + 2, x + 1, y + H - 2, 0xFF000000); g.fill(x + W - 1, y + 2, x + W, y + H - 2, 0xFF000000);
-  g.fill(x + 1, y + 1, x + 2, y + 2, 0xFF000000); g.fill(x + W - 2, y + 1, x + W - 1, y + 2, 0xFF000000);
-  g.fill(x + 1, y + H - 2, x + 2, y + H - 1, 0xFF000000); g.fill(x + W - 2, y + H - 2, x + W - 1, y + H - 1, 0xFF000000);
-  g.fill(x + 2, y + 1, x + W - 2, y + H - 1, border); g.fill(x + 1, y + 2, x + W - 1, y + H - 2, border);
-  g.fill(x + 4, y + 3, x + W - 4, y + H - 3, inside); g.fill(x + 3, y + 4, x + W - 3, y + H - 4, inside);
+/* black edge, a 2 px border and the inside (grey and dark; a recipe's light); the corners are cut in
+   steps, two at the top left and bottom right and three at the other two, as the game's toast is */
+function box(g, x, y, E = 0xFF555555, F = 0xFF212121) {
+  const K = 0xFF000000;
+  g.fill(x + 2, y, x + W - 3, y + 1, K); g.fill(x + 3, y + H - 1, x + W - 2, y + H, K);
+  g.fill(x, y + 2, x + 1, y + H - 3, K); g.fill(x + W - 1, y + 3, x + W, y + H - 2, K);
+  g.fill(x + 1, y + 1, x + 2, y + 2, K); g.fill(x + W - 3, y + 1, x + W - 2, y + 2, K); g.fill(x + W - 2, y + 2, x + W - 1, y + 3, K);
+  g.fill(x + 1, y + H - 3, x + 2, y + H - 2, K); g.fill(x + 2, y + H - 2, x + 3, y + H - 1, K); g.fill(x + W - 2, y + H - 2, x + W - 1, y + H - 1, K);
+  g.fill(x + 2, y + 1, x + W - 3, y + 2, E); g.fill(x + 1, y + 2, x + W - 2, y + 3, E); g.fill(x + 1, y + 3, x + W - 1, y + H - 3, E);
+  g.fill(x + 2, y + H - 3, x + W - 1, y + H - 2, E); g.fill(x + 3, y + H - 2, x + W - 2, y + H - 1, E);
+  g.fill(x + 4, y + 3, x + W - 4, y + H - 3, F); g.fill(x + 3, y + 4, x + W - 3, y + H - 4, F);
 }
 // New Recipes Unlocked!: the light box, the results one after another (all of them within the 5 seconds)
 function drawRecipeToast(g, icons, r, x, y, age) {

@@ -18,28 +18,29 @@
    (where you are, every second; what you carry, when it changes) is looked
    at here in advTick.
 --------------------------------------------------------------------------- */
-import { Progress, ADV, TABS } from './tracker.js?v=28';
-import { AdvToast } from './toast.js?v=28';
-import { AdvancementsScreen } from './screen.js?v=28';
-import { B, BLOCKS, FLUID } from '../blocks.js?v=28';
-import { itemName, itemId, armorOf } from '../items.js?v=28';
-import { BIOMES } from '../biomes.js?v=28';
-import { Y0 } from '../world-const.js?v=28';
-import { register, gameRule } from '../commands.js?v=28';
-import { Living } from '../entities/entity.js?v=28';
-import { TYPES } from '../entities/mobs.js?v=28';
-import { AbstractHorse } from '../entities/mobs4.js?v=28';
-import { Allay } from '../entities/mobs6.js?v=28';
-import { WindCharge } from '../entities/mobs7.js?v=28';
-import { summonAt } from '../entities/summon.js?v=28';
-import { hives } from '../entities/hives.js?v=28';
-import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=28';
-import { FishingBobber } from '../entities/items2.js?v=28';
-import { EnderDragon } from '../dim/dragon.js?v=28';
-import { EndFight } from '../dim/endfight.js?v=28';
-import { ContainerScreen } from '../ui/inventory.js?v=28';
-import { BrewingScreen } from '../ui/containers.js?v=28';
-import { EnchantScreen, SmithingScreen } from '../ui/workstations.js?v=28';
+import { Progress, ADV, TABS } from './tracker.js?v=29';
+import { AdvToast } from './toast.js?v=29';
+import { AdvancementsScreen } from './screen.js?v=29';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=29';
+import { itemName, itemId, armorOf } from '../items.js?v=29';
+import { BIOMES } from '../biomes.js?v=29';
+import { Y0 } from '../world-const.js?v=29';
+import { register, gameRule } from '../commands.js?v=29';
+import { Living } from '../entities/entity.js?v=29';
+import { TYPES } from '../entities/mobs.js?v=29';
+import { AbstractHorse } from '../entities/mobs4.js?v=29';
+import { Allay } from '../entities/mobs6.js?v=29';
+import { Piglin } from '../entities/nether.js?v=29';
+import { WindCharge } from '../entities/mobs7.js?v=29';
+import { summonAt } from '../entities/summon.js?v=29';
+import { hives } from '../entities/hives.js?v=29';
+import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=29';
+import { FishingBobber } from '../entities/items2.js?v=29';
+import { EnderDragon } from '../dim/dragon.js?v=29';
+import { EndFight } from '../dim/endfight.js?v=29';
+import { ContainerScreen } from '../ui/inventory.js?v=29';
+import { BrewingScreen } from '../ui/containers.js?v=29';
+import { EnchantScreen, SmithingScreen } from '../ui/workstations.js?v=29';
 
 let G = null;          // the game being played
 let P = null;          // its player's advancements
@@ -54,6 +55,16 @@ const CODE = { task: '§a', goal: '§a', challenge: '§5' };
 export function advInit(deps) {
   D = deps;
   if (deps.gui) deps.gui.overlays.push(AdvToast.overlay(deps.gui, deps.icons));
+  // a line about someone's advancement (yours or another player's, from the server) carries the name's hover
+  const chat = deps.chat;
+  if (chat && chat.add && !chat.__adv) {
+    chat.__adv = true;
+    const add = chat.add.bind(chat);
+    chat.add = (text, colour, extra) => {
+      const h = extra ? null : hoverLine(text);
+      return add(h ? h.text : text, colour, extra || (h ? { hover: h.hover } : undefined));
+    };
+  }
   // for tests and the curious: the record, the list, a trigger by hand, one tick's checks (for timing)
   window.__lc2adv = { get progress() { return P; }, ADV, TABS, fire, env: () => makeEnv(), toast: AdvToast, open: () => openAdvancements(), tick: () => G && advTick(G) };
 }
@@ -114,15 +125,35 @@ function made(a, how) {
   if (!G) return;
   if (!a.noToast) AdvToast.add(a);
   if (!a.noChat && gameRule(G, 'announceAdvancements') !== false && D && D.chat) {
-    const who = D.name ? D.name() : 'Player';
-    D.chat.add(`${who} ${MADE_TEXT[a.frame] || MADE_TEXT.task} ${CODE[a.frame] || '§a'}[${a.title}]`, 0xFFFFFF, { hover: hoverOf(a) });
-    if (G.net && G.net.advancementMade) G.net.advancementMade(a, who);
+    const who = D.name ? D.name() : 'Player', line = `${who} ${MADE_TEXT[a.frame] || MADE_TEXT.task} ${CODE[a.frame] || '§a'}[${a.title}]`;
+    /* on a server everyone reads it, as the game's server tells them all: it goes out by the server's
+       line for news about one player (the one death messages take, which reaches everyone, you too, and
+       must start with your name), and comes back into your chat with the others' */
+    if (G.net && G.net.send && G.net.ws && G.net.ws.readyState === 1) G.net.send({ t: 'death', text: line });
+    else D.chat.add(line, 0xFFFFFF, { hover: hoverOf(a) });
   }
   if (a.xp && G.survival) G.survival.addXp(a.xp);
   void how;
 }
 // the chat line's hover: the name in its colour, then what it asks
 export function hoverOf(a) { return { text: '[' + a.title + ']', lines: [(CODE[a.frame] || '§a') + a.title, ...a.desc.split('\n').map(l => '§f' + l)], colour: TYPE_COLOUR[a.frame] }; }
+const LINE = /^\S+ (has made the advancement|has reached the goal|has completed the challenge) §[a5]\[(.+)\]$/;
+const FRAME_OF = { 'has made the advancement': 'task', 'has reached the goal': 'goal', 'has completed the challenge': 'challenge' };
+/* (a server's word filter can star out part of a name: Sky's the Limit comes back as S**** the Limit;
+   the name is put back when it is one of the game's own, letter for letter apart from the stars, and
+   only the name: whoever made it is left as the server sent it) */
+function hoverLine(text) {
+  if (typeof text !== 'string' || text.indexOf(' has ') < 0) return undefined;
+  const m = LINE.exec(text);
+  if (!m) return undefined;
+  const frame = FRAME_OF[m[1]], title = m[2];
+  const starred = title.indexOf('*') >= 0 ? new RegExp('^' + title.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.') + '$') : null;
+  for (const a of ADV.values()) {
+    if (a.frame !== frame || !(a.title === title || (starred && starred.test(a.title)))) continue;
+    return { text: starred ? text.slice(0, text.length - title.length - 1) + a.title + ']' : text, hover: hoverOf(a) };
+  }
+  return undefined;
+}
 
 /* ======================================================= events ===== */
 // something happened: the criteria of that trigger are tried (nothing is built while none is wanted)
@@ -185,7 +216,9 @@ function playerView(depth = 0) {
 export function entityView(e, depth = 0) {
   if (!e) return null;
   if (e.isPlayer) return G ? playerView(depth) : null;
-  const v = { type: e.type, x: e.pos.x, y: e.pos.y + Y0, z: e.pos.z, dim: G ? G.dim : 'overworld',
+  // (a boat is one kind here; the game names it by its wood, and a raft and a chest boat their own)
+  const type = e.type === 'boat' ? (e.raft ? (e.chest ? 'bamboo_chest_raft' : 'bamboo_raft') : (e.wood || 'oak') + (e.chest ? '_chest_boat' : '_boat')) : e.type;
+  const v = { type, x: e.pos.x, y: e.pos.y + Y0, z: e.pos.z, dim: G ? G.dim : 'overworld',
     baby: !!(e.baby || e.isBaby || (e.ageT !== undefined && e.ageT < 0)), onFire: e.fire > 0, sneaking: !!e.sneaking };
   const eq = {};
   const st = s => (s && typeof s === 'object' ? stackView(s) : typeof s === 'string' ? { name: s, count: 1 } : null);
@@ -220,13 +253,15 @@ function heartState(x, y, z, m) {
   const t = (((G.time | 0) % 24000) + 24000) % 24000;
   return t >= 13000 && t < 23000 ? 'awake' : 'dormant';
 }
-// smoke under a hive: a lit campfire within five blocks below
+/* smoke under a hive, as the game looks for it: down five blocks, a lit campfire (bit 4 is a campfire
+   put out); the first block in the way ends the search, and counts only with a lit campfire under it */
 function smokey(at) {
   const w = G.world, x = Math.floor(at.x), y = Math.floor(at.y) - Y0, z = Math.floor(at.z);
+  const lit = yy => { const d = BLOCKS[w.get(x, yy, z)]; return !!(d && /campfire$/.test(d.name) && !(w.meta(x, yy, z) & 4)); };
   for (let k = 1; k <= 5; k++) {
+    if (lit(y - k)) return true;
     const d = BLOCKS[w.get(x, y - k, z)];
-    if (d && /campfire$/.test(d.name)) return !(w.meta(x, y - k, z) & 8);
-    if (d && d.solid && !/campfire$/.test(d.name) && d.name !== 'hay_block') return false;
+    if (d && d.solid) return lit(y - k - 1);
   }
   return false;
 }
@@ -304,16 +339,13 @@ function wrapGame(g) {
   }
   // the player's death by a mob (entity_killed_player) and the totem (used_totem)
   if (sv && sv.hooks && !sv.hooks.__adv) {
-    const h = sv.hooks, oDeath = h.onDeath, oTotem = h.onTotem;
+    const h = sv.hooks;
     h.__adv = true;
-    h.onDeath = (m, src) => {
-      try {
-        const k = sv.attacker && sv.age - sv.attackerAge <= 100 ? sv.attacker : null;
-        if (k && !k.isPlayer) fire('entity_killed_player', () => ({ entity: entityView(k), killingBlow: damageOf(src) }));
-      } catch (e) { console.warn(e); }
-      if (oDeath) return oDeath(m, src);
-    };
-    h.onTotem = () => { fire('used_totem', { item: { name: 'totem_of_undying', count: 1 } }); if (oTotem) return oTotem(); };
+    hookBefore(h, 'onDeath', (m, src) => {
+      const k = sv.attacker && sv.age - sv.attackerAge <= 100 ? sv.attacker : null;
+      if (k && !k.isPlayer) fire('entity_killed_player', () => ({ entity: entityView(k), killingBlow: damageOf(src) }));
+    });
+    hookBefore(h, 'onTotem', () => fire('used_totem', { item: { name: 'totem_of_undying', count: 1 } }));
   }
   // a right click on a block with something in the hand: item_used_on_block (both before and after, as the game
   // checks some uses before the block changes and some after); placing a block is not a use
@@ -352,6 +384,13 @@ function wrapGame(g) {
       return r;
     };
   }
+}
+/* Our look first, then whatever hook is set there, now or later: a server sets its own death hook
+   once you join (net/net.js), which would otherwise take the place of this one. */
+function hookBefore(obj, name, before) {
+  let inner = obj[name];
+  const outer = function (...a) { try { before(...a); } catch (e) { console.warn(e); } return inner ? inner.apply(this, a) : undefined; };
+  Object.defineProperty(obj, name, { configurable: true, enumerable: true, get: () => outer, set: v => { if (v !== outer) inner = v; } });
 }
 const SWINGS = /(_door|_trapdoor|_fence_gate|^lever|_button|_pressure_plate|^note_block|^repeater|^comparator|^daylight_detector)$/;
 function useSig(g, H, h) {
@@ -524,10 +563,10 @@ function killed(e, src) {
     for (let dy = -8; dy <= 8 && !found; dy++) for (let dz = -8; dz <= 8 && !found; dz++) for (let dx = -8; dx <= 8; dx++) if (w.get(x + dx, y + dy, z + dz) === B.sculk_catalyst) { found = true; break; }
     if (found) fire('kill_mob_near_sculk_catalyst', { entity: entityView(e) });
   }
-  // an axolotl fighting it: Regeneration for you, and Mining Fatigue gone (the game's supporting effects)
-  const E = G.entities;
+  // an axolotl fighting it, with you within 20 blocks of it: Regeneration for you, and Mining Fatigue gone (the game's supporting effects)
+  const E = G.entities, pp = G.player.pos;
   if (E && E.list) {
-    const ax = E.list.find(o => o.type === 'axolotl' && !o.dead && o.target === e);
+    const ax = E.list.find(o => o.type === 'axolotl' && !o.dead && o.target === e && Math.abs(o.pos.x - pp.x) <= 20.3 && Math.abs(o.pos.y - pp.y) <= 21 && Math.abs(o.pos.z - pp.z) <= 20.3);
     if (ax && G.survival) {
       const sv = G.survival, cur = sv.effects.regeneration;
       if (!cur || (cur.ticks >= 0 && cur.ticks <= 2399)) sv.addEffect('regeneration', 1, Math.min(2400, 100 + (cur && cur.ticks > 0 ? cur.ticks : 0)));
@@ -585,14 +624,23 @@ wrapProto(WindCharge, 'burst', function (orig, a) {
   if (P && G && G.player === P && (P.vel.x !== v0[0] || P.vel.y !== v0[1] || P.vel.z !== v0[2])) launched(type);
   return r;
 });
-// an allay bringing what it collected to your feet: thrown_item_picked_up_by_player
+/* an allay bringing what it collected to your feet (thrown_item_picked_up_by_player), or leaving it on
+   the note block it likes (allay_drop_item_on_block, for you, who gave it the item) */
 wrapProto(Allay, 'aiStep', function (orig, a) {
   const n = this.carry | 0, item = this.equip && this.equip.mainhand;
   const r = orig.apply(this, a);
   if (n > 0 && !(this.carry | 0) && G) {
-    const v = this;
-    fire('thrown_item_picked_up_by_player', () => ({ entity: entityView(v), item: { name: typeof item === 'string' ? item : itemName(item && item.id), count: n } }));
+    const v = this, st = { name: typeof item === 'string' ? item : itemName(item && item.id), count: n }, at = this.gaveAt;
+    if (at) fire('allay_drop_item_on_block', { x: at[0], y: at[1] + Y0, z: at[2], tool: st });
+    else fire('thrown_item_picked_up_by_player', () => ({ entity: entityView(v), item: st }));
   }
+  return r;
+});
+// a piglin picking up gold you threw (thrown_item_picked_up_by_entity: Oh Shiny)
+wrapProto(Piglin, 'pickUp', function (orig, a) {
+  const e = a[0], st = e && e.stack ? Object.assign(stackView(e.stack), { count: 1 }) : null, mine = !!(e && e.thrown);
+  const r = orig.apply(this, a);
+  if (r && mine && st && G) { const v = this; fire('thrown_item_picked_up_by_entity', () => ({ entity: entityView(v), item: st })); }
   return r;
 });
 // a horse, donkey, mule or llama giving in to its rider: tame_animal
@@ -637,10 +685,11 @@ wrapProto(EnderDragon, 'setPhase', function (orig, a) {
   }
   return r;
 });
-wrapProto(EndFight, 'spawnDragon', function (orig, a) {
-  const again = !!this.s.respawn;
+// the dragon brought back by four crystals (summoned_entity): the respawn's last tick clears the respawn and
+// then spawns it, so it is seen after that tick (a respawn cut short is cleared elsewhere, never in it)
+wrapProto(EndFight, 'respawnTick', function (orig, a) {
   const r = orig.apply(this, a);
-  if (again) fire('summoned_entity', { entity: { type: 'ender_dragon', equipment: {} } });
+  if (!this.s.respawn && this.dragon) fire('summoned_entity', { entity: { type: 'ender_dragon', equipment: {} } });
   return r;
 });
 // a trident's channeling: what its bolt strikes (channeled_lightning)
@@ -765,8 +814,10 @@ function effectsTick(g) {
     fire('levitation', { start: S.lev, end: { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z }, duration: S.t - S.lev.t });
   } else S.lev = null;
 }
-/* Falls: from where you began to fall to where it ended, if you live (fall_from_height); a wind
-   charge's launch measured while you fly (fall_after_explosion) */
+/* Falls: from where you began to fall to where it ended, if you live (fall_from_height). A wind
+   charge's launch counts as the game counts it (fall_after_explosion): once, the moment you start
+   to fall after it, from where it hit you to where the fall begins, and only when that is no lower
+   than where it hit you (a charge that knocks you off a ledge is not a launch) */
 function fallTick(g, p) {
   const sv = g.survival;
   // a teleport (a command, a portal, an ender pearl's long throw) starts every fall afresh
@@ -774,30 +825,38 @@ function fallTick(g, p) {
   if (lp && Math.abs(p.pos.x - lp[0]) + Math.abs(p.pos.y - lp[1]) + Math.abs(p.pos.z - lp[2]) > 12) S.fall = S.launch = null;
   S.lastPos = [p.pos.x, p.pos.y, p.pos.z];
   const settled = p.onGround || p.inWater || p.climbing || p.flying || (g.entities && g.entities.riding);
+  const L = S.launch;
   if (!settled) {
-    if (!S.fall && p.vel.y < 0) S.fall = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
+    if (!S.fall && p.vel.y < 0) {
+      S.fall = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
+      if (L && L.start.y <= S.fall.y) fire('fall_after_explosion', { start: L.start, end: S.fall, cause: L.cause });
+    }
   } else if (S.fall) {
     if (!(sv && sv.dead)) fire('fall_from_height', { start: S.fall, end: { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z } });
     S.fall = null;
   }
-  const L = S.launch;
-  if (L) {
-    const at = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
-    if (!settled || S.t - L.t < 3) fire('fall_after_explosion', { start: L.start, end: at, cause: L.cause });
-    if (settled && S.t - L.t >= 3) S.launch = null;
-  }
+  // (the launch is forgotten once you are down again, after the few ticks the push takes to lift you)
+  if (L && settled && S.t - L.t >= 3) S.launch = null;
 }
-// a wind charge's burst that moves you: remembered until you land
+// a wind charge's burst that moves you: where it hit you, until you land (a fall under way starts again from the top)
 export function launched(cause) {
   if (!S || !G) return;
   const p = G.player;
   S.launch = { start: { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z }, cause: { type: cause, equipment: {} }, t: S.t };
+  S.fall = null;
 }
-// riding: started_riding, a strider in the Overworld's lava (ride_entity_in_lava), the fungus on a stick (item_durability_changed)
+/* riding: started_riding as you get on, and as anything else gets on what you ride (a goat into
+   your boat); a strider in the Overworld's lava (ride_entity_in_lava); the fungus on a stick
+   (item_durability_changed) */
 function rideTick(g, p) {
   const E = g.entities, r = E && E.riding;
+  const crew = r && r.passengers ? r.passengers.length : 0;
   if (r !== S.riding) { S.riding = r; S.lava = null; if (r) fire('started_riding', {}); }
-  if (r && r.type === 'strider' && r.inLava) {
+  else if (r && crew > S.crew) fire('started_riding', {});
+  S.crew = crew;
+  // (a strider walking on the lava's top half counts as in it, as the game's box in the lava does;
+  // entities/nether.js keeps its inLava off there so it does not swim)
+  if (r && r.type === 'strider' && (r.inLava || r.onLava)) {
     if (!S.lava) S.lava = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
     fire('ride_entity_in_lava', { start: S.lava, end: { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z } });
   } else S.lava = null;
@@ -935,17 +994,8 @@ function blockTick(g, p) {
     if (inGate && !S.gate) fire('enter_block', { block: { name: 'end_gateway', meta: 0 } });
     S.gate = inGate;
   }
-  // sliding: falling faster than 0.08 a tick, off the ground, beside a honey block's side and not above its top
-  if (B.honey_block !== undefined && !p.onGround && p.vel.y < -0.08 && P.wants('slide_down_block')) {
-    const hw = 0.3, y = Math.floor(p.pos.y + 0.5);
-    for (let bx = Math.floor(p.pos.x - hw - 0.05); bx <= Math.floor(p.pos.x + hw + 0.05); bx++)
-      for (let bz = Math.floor(p.pos.z - hw - 0.05); bz <= Math.floor(p.pos.z + hw + 0.05); bz++) {
-        if (w.get(bx, y, bz) !== B.honey_block) continue;
-        if (p.pos.y > y + 0.9375) continue;
-        const ox = Math.abs(bx + 0.5 - p.pos.x), oz = Math.abs(bz + 0.5 - p.pos.z), r = 0.4375 + hw;
-        if (ox + 1e-7 > r || oz + 1e-7 > r) { fire('slide_down_block', { block: { name: 'honey_block', meta: 0 } }); return; }
-      }
-  }
+  // sliding down a honey block's side (player.js honeySlide, the game's rule)
+  if (p.slidingOn) fire('slide_down_block', { block: { name: 'honey_block', meta: 0 } });
 }
 /* Sneaking where a sculk sensor (8 blocks; a calibrated one 16) or a warden (16) would have heard
    your steps: avoid_vibration, once a step's worth of creeping */

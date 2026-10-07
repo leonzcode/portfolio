@@ -39,9 +39,9 @@
    at the first one in the way. Walking into something up to 0.6 high steps
    up onto it, which is how stairs and slabs are climbed.
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=28';
-import { collisionBoxes, selectionBoxes } from './models.js?v=28';
-import { LEVEL, FALLING } from './world-const.js?v=28';
+import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=29';
+import { collisionBoxes, selectionBoxes } from './models.js?v=29';
+import { LEVEL, FALLING } from './world-const.js?v=29';
 const THREE = window.THREE;
 
 const W = 0.3, HT = 1.8, STEP = 0.6;
@@ -50,6 +50,7 @@ const EPS = 1e-7;
 const POSE = { stand: [1.8, 1.62], crouch: [1.5, 1.27], swim: [0.6, 0.4] };
 const ids = list => new Set(list.map(n => B[n]).filter(v => v !== undefined));
 const SCAFFOLD = B.scaffolding;
+const HONEY = B.honey_block;
 const CLIMB = ids(['ladder', 'vine', 'scaffolding', 'weeping_vines', 'weeping_vines_plant', 'twisting_vines', 'twisting_vines_plant', 'cave_vines', 'cave_vines_plant']);
 const byName = list => new Map(list.filter(e => B[e[0]] !== undefined).map(e => [B[e[0]], e[1]]));
 // standing on these: how much of your speed (and jump) is left
@@ -127,6 +128,8 @@ export class Player {
           const d = BLOCKS[b];
           // scaffolding holds you up only from above, and not while you sneak down through it (the game's STABLE shape)
           if (b === SCAFFOLD) { if (this.pos.y >= y + 1 - 1e-5 && !this.sneaking) out.push(x, y + 14 / 16, z, x + 1, y + 1, z + 1); continue; }
+          // a honey block is a sixteenth in from each side and 15/16 tall (you lean into it to slide)
+          if (b === HONEY) { out.push(x + 1 / 16, y, z + 1 / 16, x + 15 / 16, y + 15 / 16, z + 15 / 16); continue; }
           if (d.shape === 'cube') { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }
           const boxes = collisionBoxes(d, w.meta(x, y, z), nbAt(x, y, z));
           if (boxes) for (const c of boxes) out.push(x + c[0], y + c[1], z + c[2], x + c[3], y + c[4], z + c[5]);
@@ -307,6 +310,24 @@ export class Player {
   fits(pose) {
     const p = this.pos, h = POSE[pose][0];
     return !this.boxHits(p.x - W + 1e-4, p.y + 1e-4, p.z - W + 1e-4, p.x + W - 1e-4, p.y + h - 1e-4, p.z + W - 1e-4);
+  }
+  /* The game's honey slide: in a honey block's cell (its box is a sixteenth in from each side, so you
+     can lean into it), off the ground, falling faster than 0.08, no higher than 15/16 of it, and not
+     over its top: the fall turns into a slide at 0.05 (what you had across slowed in step) and the
+     fall so far is forgotten. The block slid on, or null. */
+  honeySlide() {
+    const p = this.pos, v = this.vel, r = 0.4375 + W;
+    for (let y = Math.floor(p.y + 1e-7); y <= Math.floor(p.y + this.h - 1e-7); y++)
+      for (let z = Math.floor(p.z - W + 1e-7); z <= Math.floor(p.z + W - 1e-7); z++)
+        for (let x = Math.floor(p.x - W + 1e-7); x <= Math.floor(p.x + W - 1e-7); x++) {
+          if (this.w.get(x, y, z) !== HONEY || p.y > y + 0.9375 - 1e-7) continue;
+          if (!(Math.abs(x + 0.5 - p.x) + 1e-7 > r || Math.abs(z + 0.5 - p.z) + 1e-7 > r)) continue;
+          if (v.y < -0.13) { const d = -0.05 / v.y; v.x *= d; v.z *= d; }
+          v.y = -0.05;
+          this.fallDistance = 0;
+          return [x, y, z];
+        }
+    return null;
   }
   // the blocks the body is inside: cobwebs and the like, and ladders
   insideBlocks() {
@@ -490,6 +511,8 @@ export class Player {
     }
     // climbing: pushing into the ladder, or Space, goes up
     if (this.climbing && !this.flying && (this.hCollide || k[' '])) this.vel.y = 0.2;
+    // pressed into a honey block's side on the way down: a slow, safe slide
+    this.slidingOn = !this.flying && !this.onGround && this.vel.y < -0.08 ? this.honeySlide() : null;
     // drag and gravity
     if (this.gliding) {
       // into a wall at speed: the speed lost, times 10, less 3 (survival.js takes it as flying into a wall)

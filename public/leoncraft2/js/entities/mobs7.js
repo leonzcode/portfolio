@@ -9,18 +9,18 @@
    manager scales a hit on the player for Easy and Hard). Shapes are boxes
    in the game's model units; every texture is painted here.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=28';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=29';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, BowAttackGoal, AvoidGoal,
-  HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, LeapGoal, randomLandPos } from './ai.js?v=28';
-import { Monster, Skeleton, register, TYPES, spawnArmor } from './mobs.js?v=28';
-import { model } from './mobs2.js?v=28';
-import { addArt } from './mobart.js?v=28';
-import { MODELS } from './mobmodels.js?v=28';
-import { Projectile } from './projectiles.js?v=28';
-import { exposure } from './explosion.js?v=28';
-import { Entity } from './entity.js?v=28';
-import { EnderDragon } from '../dim/dragon.js?v=28';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=28';
+  HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, LeapGoal, randomLandPos } from './ai.js?v=29';
+import { Monster, Skeleton, register, TYPES, spawnArmor } from './mobs.js?v=29';
+import { model } from './mobs2.js?v=29';
+import { addArt } from './mobart.js?v=29';
+import { MODELS } from './mobmodels.js?v=29';
+import { Projectile } from './projectiles.js?v=29';
+import { exposure } from './explosion.js?v=29';
+import { Entity } from './entity.js?v=29';
+import { EnderDragon } from '../dim/dragon.js?v=29';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=29';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -582,6 +582,14 @@ export class WindCharge extends Projectile {
   static MODEL = 'wind_charge'; static TEX = 'wind_charge'; static W = 0.3125; static H = 0.3125; static BRIGHT = true;
   constructor(m, type) { super(m, type); this.gravity = 0; this.drag = 1; this.power = 1.22; this.radius = 1.2; this.dmg = 1; }
   tick() { super.tick(); if (this.age > 100 && !this.removed) this.burst(); }
+  // hit by a player: it flies off the way they look at a block a tick, theirs now (the game's aim deflection)
+  hurt(n, src) {
+    const P = this.m.P;
+    if (!src || !src.player || !P || this.removed) return false;
+    this.vel.set(-Math.sin(P.yaw) * Math.cos(P.pitch), Math.sin(P.pitch), -Math.cos(P.yaw) * Math.cos(P.pitch));
+    this.owner = this.m.player; this.age = 0;
+    return true;
+  }
   hitEntity(e) {
     if (e === this.owner && this.age < 5) return false;
     const src = { type: 'wind_charge', attacker: this.owner, direct: this, x: this.pos.x - this.vel.x, z: this.pos.z - this.vel.z };
@@ -661,8 +669,9 @@ export class Breeze extends Monster {
     this.targets.add(2, new NearestPlayerTargetGoal(this, true));
     this.targets.add(3, new NearestMobTargetGoal(this, e => e.type === 'iron_golem', true));
   }
-  // its wind turns what is shot at it aside (a wind charge goes through)
+  // its wind turns what is shot at it aside (a wind charge goes through); nothing a breeze does hurts a breeze
   hurt(amount, source) {
+    if (source && source.attacker instanceof Breeze) return false;
     const d = source && source.direct;
     if (d && d instanceof Projectile && !(d instanceof WindCharge) && d.type !== 'trident') { d.vel.multiplyScalar(-0.6); d.vel.y += 0.2; d.owner = this; return false; }
     return super.hurt(amount, source);
