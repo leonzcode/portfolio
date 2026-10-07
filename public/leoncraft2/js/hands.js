@@ -51,6 +51,8 @@ const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 const FILLED = { water_bucket: 'water', lava_bucket: 'lava', powder_snow_bucket: 'powder_snow', cod_bucket: 'water', salmon_bucket: 'water',
   pufferfish_bucket: 'water', tropical_fish_bucket: 'water', axolotl_bucket: 'water', tadpole_bucket: 'water' };
 const MOB_BUCKET = /^(cod|salmon|pufferfish|tropical_fish|axolotl|tadpole)_bucket$/;
+// what poured water or lava breaks out of its way (the game's non-solid blocks that cannot hold water)
+const WASHED = new Set(['torch', 'wall_torch', 'wire', 'cross', 'crop']);
 // two slot arrays seen as one (a large chest): reads and writes go straight to the halves
 function joinSlots(a, b) {
   const n = a.length + b.length;
@@ -451,7 +453,8 @@ export class Hands {
     let x = hit.x + f[0], y = hit.y + f[1], z = hit.z + f[2];
     if (fill === 'powder_snow' && BLOCKS[hit.b] && BLOCKS[hit.b].replaceable && !FLUID[hit.b]) { x = hit.x; y = hit.y; z = hit.z; }
     const cur = w.get(x, y, z), d = BLOCKS[cur];
-    if (cur && !FLUID[cur] && !(d && d.replaceable)) return false;
+    // (a fluid washes away what it can: grass, flowers, crops, torches, redstone dust; never into a block that holds water itself)
+    if (cur && !FLUID[cur] && !(d && (d.replaceable || (fill !== 'powder_snow' && !d.solid && !d.waterlogged && WASHED.has(d.shape))))) return false;
     if (B[fill] === undefined) return false;
     const sim = this.inter && this.inter.sim;
     if (fill === 'water' && w.dim === 'the_nether') {
