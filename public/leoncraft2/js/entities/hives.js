@@ -201,8 +201,8 @@ export class Hives {
    no nearer (behind leaves, under an overhang): a best-first search over the
    cells a bee fits in, six ways, within 24 blocks of the hive and at most
    2000 cells looked at (leaning hard toward the hive, so a way round is
-   found quickly rather than the shortest); the cells to fly through, the last within two
-   blocks of the hive's middle, or null. */
+   found quickly rather than the shortest); the cells to fly through, the
+   last within two blocks of the hive's middle, or null. */
 function airPath(T, e, h) {
   const open = (x, y, z) => { const b = T.get(x, y, z); return !SOLID[b] && !FLUID[b]; };
   const sx = Math.floor(e.pos.x), sy = Math.floor(e.pos.y + 0.3), sz = Math.floor(e.pos.z), hx = h[0], hy = h[1] + 0.3, hz = h[2];
