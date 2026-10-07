@@ -12,6 +12,11 @@
    two loose pages and the spine; our own art), so it takes the world's
    light like they do. Books are found by looking over the area round you
    one layer a tick, and are not saved: they come back with their tables.
+
+   A lectern holding a book (meta bit 2, details.js) shows the same book
+   lying open on its slope, its spine across the lectern and the pages
+   towards whoever reads it, as the game draws it; put on, it shows at once
+   (wantBook), and it goes when the book is taken or the lectern broken.
 --------------------------------------------------------------------------- */
 import { Entity } from './entity.js?v=24';
 import { register } from './mobs.js?v=24';
@@ -19,6 +24,7 @@ import { model } from './mobs2.js?v=24';
 import { addArt } from './mobart.js?v=24';
 import { B, BLOCKS } from '../blocks.js?v=24';
 
+const THREE = window.THREE;
 const R = () => Math.random();
 const PI = Math.PI;
 
@@ -101,27 +107,62 @@ export class TableBook extends Entity {
 TableBook.prototype.toJSON = undefined;
 register('table_book', TableBook);
 
+/* ---- the book on a lectern: open and still on the slope, its spine running up the slope and the pages either
+   side of it, facing whoever reads it (the lectern's front, which is the low edge) ---- */
+const LECTERN_YAW = [PI, PI / 2, 0, -PI / 2], FRONT = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+const SLOPE = new THREE.Matrix4().makeRotationX(-22.5 * PI / 180);
+// the model's page side (its x) up, its spine (y) along the lectern, its width (z) across it
+const LIE = new THREE.Matrix4().set(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1);
+export class LecternBook extends TableBook {
+  tick() {
+    this.prev.copy(this.pos); this.prevYaw = this.yaw; this.age++;
+    const [x, y, z] = this.table, f = this.m.t.meta(x, y, z) & 3, [fx, fz] = FRONT[f];
+    this.open = this.prevOpen = 1.2; this.flip = this.prevFlip = 0.1;
+    this.yaw = this.prevYaw = LECTERN_YAW[f];
+    // on the middle of the slope, half a pixel off it
+    this.pos.set(x + 0.5 + fx * 0.15, y + 1.02, z + 0.5 + fz * 0.15);
+    if (this.age === 1) this.prev.copy(this.pos);
+  }
+  // (the two loose pages each lifted a little off their side)
+  anim(A) { A.open = 1.2; A.flip1 = 0.1; A.flip2 = 0.9; }
+  rootPose(root) { root.multiply(SLOPE); root.multiply(LIE); }
+}
+LecternBook.prototype.toJSON = undefined;
+register('lectern_book', LecternBook);
+// a book was just put on a lectern: shown at the next tick rather than when the search comes by
+const WANT = [];
+export function wantBook(x, y, z) { WANT.push([x, y, z]); }
+
 /* ---- finding the tables, and the runes ---- */
 const OFFSETS = [];
 for (let oy = 0; oy <= 1; oy++) for (let oz = -2; oz <= 2; oz++) for (let ox = -2; ox <= 2; ox++) if (Math.abs(ox) === 2 || Math.abs(oz) === 2) OFFSETS.push([ox, oy, oz]);
 const passes = b => { const d = BLOCKS[b]; return !d || d.replaceable || d.fluid; };
+const LECTERN = B.lectern;
+const lecternWithBook = (T, x, y, z) => T.get(x, y, z) === LECTERN && (T.meta(x, y, z) & 4) !== 0;
 export function tableBooks(m) {
   if (B.enchanting_table === undefined) return;
   const books = m.books || (m.books = new Map());
   const T = m.t, P = m.P, px = Math.floor(P.pos.x), py = Math.floor(P.pos.y), pz = Math.floor(P.pos.z);
+  const add = (kind, x, y, z) => {
+    const k = x + ',' + y + ',' + z;
+    if (books.has(k)) return;
+    const e = m.spawn(kind, x + 0.5, y + (kind === 'table_book' ? 0.85 : 1), z + 0.5, { natural: false });
+    if (e) { e.table = [x, y, z]; books.set(k, e); }
+  };
+  while (WANT.length) { const [x, y, z] = WANT.pop(); if (lecternWithBook(T, x, y, z)) add('lectern_book', x, y, z); }
   // one layer of the 33 x 17 x 33 blocks round you a tick
   const ly = py - 8 + (m.age % 17);
   for (let z = pz - 16; z <= pz + 16; z++) for (let x = px - 16; x <= px + 16; x++) {
-    if (T.get(x, ly, z) !== B.enchanting_table) continue;
-    const k = x + ',' + ly + ',' + z;
-    if (books.has(k)) continue;
-    const e = m.spawn('table_book', x + 0.5, ly + 0.85, z + 0.5, { natural: false });
-    if (e) { e.table = [x, ly, z]; books.set(k, e); }
+    const b = T.get(x, ly, z);
+    if (b === B.enchanting_table) add('table_book', x, ly, z);
+    else if (b === LECTERN && LECTERN !== undefined && (T.meta(x, ly, z) & 4)) add('lectern_book', x, ly, z);
   }
   for (const [k, e] of books) {
     const [x, y, z] = e.table;
     if (e.removed) { books.delete(k); continue; }
-    if (T.get(x, y, z) !== B.enchanting_table || (x - P.pos.x) ** 2 + (z - P.pos.z) ** 2 > 48 * 48) { e.remove(); continue; }
+    const there = e instanceof LecternBook ? lecternWithBook(T, x, y, z) : T.get(x, y, z) === B.enchanting_table;
+    if (!there || (x - P.pos.x) ** 2 + (z - P.pos.z) ** 2 > 48 * 48) { e.remove(); continue; }
+    if (e instanceof LecternBook) continue;
     // now and then (as often as the game shows its tables), runes from the shelves that power it
     if (R() < 0.021 && (x - P.pos.x) ** 2 + (z - P.pos.z) ** 2 < 256) {
       for (const [ox, oy, oz] of OFFSETS) {

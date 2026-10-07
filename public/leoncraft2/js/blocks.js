@@ -168,6 +168,9 @@ dimBlocks(def, B, BLOCKS);
 // (details.js draws the frame and what it holds), so they are picked, broken and saved like the rest
 for (const [n, display] of [['lc2_item_frame', 'Item Frame'], ['lc2_glow_item_frame', 'Glow Item Frame']])
   def(n, { display, shape: 'frame', pass: 'cutout', solid: false, opacity: 0, item: false, tab: null, hardness: 0, tex: 'birch_planks', frame: true, glow: /glow/.test(n) });
+// a conduit put into water stays in the water (the game's waterlogged state): a block of its own, drawn with the water
+// round it, that is the conduit to everything else and leaves the water when it is broken
+def('lc2_wet_conduit', { display: 'Conduit', shape: 'head', pass: 'cutout', tex: 'conduit', light: 15, opacity: 1, hardness: 3.0, item: false, tab: null, itemOf: 'conduit', waterlogged: true });
 for (const d of BLOCKS) {
   if (!d) continue;
   if (d.display === undefined) d.display = d.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -205,8 +208,17 @@ if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], 
   shapeOf('beacon', 'beacon');
   for (const d of BLOCKS) if (d && /_shelf$/.test(d.name) && d.shape === 'cube') shapeOf(d.name, 'shelf', s => { delete s.orient; });
   shapeOf('conduit', 'conduit');
+  shapeOf('lc2_wet_conduit', 'conduit');
+  // turtle eggs, the sniffer egg and the dried ghast have models of their own (models.js)
+  shapeOf('turtle_egg', 'eggs');
+  // the shrieker's top is a ring: you see its soul through the middle (the game draws it cut out)
+  if (B.sculk_shrieker !== undefined) BLOCKS[B.sculk_shrieker].pass = 'cutout';
+  shapeOf('sniffer_egg', 'sniffer_egg', d => { delete d.orient; });
+  shapeOf('dried_ghast', 'dried_ghast', d => { delete d.orient; });
+  if (B.potted_cactus !== undefined) addTex(BLOCKS[B.potted_cactus], { cactusTop: 'cactus_top' });
+  for (const [n, k] of [['potted_azalea_bush', 'azalea'], ['potted_flowering_azalea_bush', 'flowering_azalea']])
+    if (B[n] !== undefined) addTex(BLOCKS[B[n]], { bushTop: k + '_top', bushSide: k + '_side' });
   shapeOf('decorated_pot', 'vase', d => { delete d.orient; addTex(d, { base: 'decorated_pot_base' }); });
-  for (const n of ['sculk_sensor', 'calibrated_sculk_sensor']) if (B[n] !== undefined) addTex(BLOCKS[B[n]], { tendril: 'sculk_sensor_tendril_inactive' });
   // the faces a few blocks show in some states: a dispenser's or dropper's front facing up or down, an open barrel, a cake's cut side
   for (const n of ['dispenser', 'dropper']) if (B[n] !== undefined) addTex(BLOCKS[B[n]], { fv: n + '_front_vertical' });
   if (B.barrel !== undefined) addTex(BLOCKS[B.barrel], { topOpen: 'barrel_top_open' });

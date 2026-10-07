@@ -9,6 +9,11 @@
    letters) and turns the book into a written book "by" its author, which can
    no longer be changed. The page itself is drawn here (a cream sheet with a
    darker edge), not taken from the game's art.
+
+   A book on a lectern opens the same way to read (the game's LecternScreen):
+   it opens at the page the lectern is on, every page turned tells the
+   lectern (its redstone pulse, what a comparator reads), and Take Book
+   beside Done takes it off.
 --------------------------------------------------------------------------- */
 import { Screen, Button, TextField, Widget, WHITE } from './gui.js?v=24';
 
@@ -93,14 +98,15 @@ class PageField extends TextField {
 
 export class BookScreen extends Screen {
   /* opts: { pages: [..], title, author, written (read only), done(pages) for a book being written,
-     sign(title, pages) to sign it, player (the author's name) } */
+     sign(title, pages) to sign it, player (the author's name); on a lectern also page (where it opens),
+     onPage(page) as it turns and take() for the Take Book button } */
   constructor(opts) {
     super('');
     this.o = opts;
     this.background = 'world';
     this.animates = !opts.written;
     this.pages = (opts.pages && opts.pages.length ? opts.pages : ['']).slice(0, MAX_PAGES).map(String);
-    this.page = 0;
+    this.page = Math.max(0, Math.min(this.pages.length - 1, opts.page | 0));
     this.signing = false;
     this.titleText = '';
     this.saved = false;
@@ -119,7 +125,10 @@ export class BookScreen extends Screen {
       this.gui.focusText(this.titleField);
       return;
     }
-    if (this.o.written) this.add(new Button(cx - 100, 196, 200, 20, 'Done', () => this.gui.back()));
+    if (this.o.take) {
+      this.add(new Button(cx - 100, 196, 98, 20, 'Done', () => this.gui.back()));
+      this.add(new Button(cx + 2, 196, 98, 20, 'Take Book', () => { this.gui.back(); this.o.take(); }));
+    } else if (this.o.written) this.add(new Button(cx - 100, 196, 200, 20, 'Done', () => this.gui.back()));
     else {
       this.add(new Button(cx - 100, 196, 98, 20, 'Sign', () => { this.signing = true; this.init(); }));
       this.add(new Button(cx + 2, 196, 98, 20, 'Done', () => this.gui.back()));
@@ -148,6 +157,7 @@ export class BookScreen extends Screen {
       this.pages.push('');
     }
     this.page = p;
+    if (this.o.onPage) this.o.onPage(p);
     this.showPage();
   }
   keyPressed(e) {

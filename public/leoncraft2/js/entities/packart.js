@@ -13,9 +13,14 @@
      - its paintings (textures/painting/<name>.png) and their back
      - the skins of the mobs and things, where the picture lays out over the
        same parts as our model of that mob uses: at least nine in ten of our
-       pixels covered, and little of it outside them. A model of ours that is
+       pixels covered and little of it outside them, or six in ten covered
+       with nearly none outside (a layer the game leaves clear). A model of ours that is
        built differently keeps its own picture rather than wearing one cut for
-       another shape.
+       another shape (packArtSummary says which, for the Resource Packs
+       screen's Mob Skins list).
+     - a villager's clothes with its skin: the biome's, the profession's and
+       the level's badge, all from the pack once its villager skin fits, so
+       a villager never wears our clothes over the game's skin.
 --------------------------------------------------------------------------- */
 import { setArtImage, artSize, artMask, artNames } from './mobart.js?v=24';
 import { PAINTING_VARIANTS } from '../items.js?v=24';
@@ -33,7 +38,13 @@ function pixels(src, sx, sy, sw, sh, w, h, tile) {
 }
 const decode = async blob => { try { return await createImageBitmap(blob, RAW); } catch (e) { return null; } };
 
+// what the packs gave: the skins taken from them and the ones that kept our own look (null with no pack)
+let SUMMARY = null;
+export const packArtSummary = () => SUMMARY;
+const LEVELS = ['stone', 'iron', 'gold', 'emerald', 'diamond'];
+
 export async function loadEntityArt(base, ver, packs) {
+  SUMMARY = null;
   // our paintings
   try {
     const [where, sheet] = await Promise.all([
@@ -58,21 +69,40 @@ export async function loadEntityArt(base, ver, packs) {
     if (!byName.has(n)) byName.set(n, path);
   }
   let took = 0;
+  const taken = [], kept = [], why = {};
+  const layer = n => /^villager_(type|prof|level)_/.test(n);
   for (const name of artNames()) {
-    if (name.startsWith('painting_')) continue;
+    if (name.startsWith('painting_') || layer(name)) continue;
     const path = byName.get(name) || byName.get(name + '_temperate');
-    if (!path) continue;
+    if (!path) { kept.push(name); why[name] = 'no picture'; continue; }
     const [w, h] = artSize(name);
     const blob = await find(path), bmp = blob && await decode(blob);
-    if (!bmp || bmp.width * h !== bmp.height * w) continue;
+    if (!bmp || bmp.width * h !== bmp.height * w) { kept.push(name); why[name] = 'size ' + (bmp ? bmp.width + 'x' + bmp.height : '?'); continue; }
     const img = pixels(bmp, 0, 0, bmp.width, bmp.height, w, h), mask = artMask(name);
-    if (!mask) continue;
+    if (!mask) { kept.push(name); continue; }
     let ours = 0, both = 0, theirs = 0;
     for (let i = 0; i < w * h; i++) {
       const t = img.data[i * 4 + 3] > 0;
       if (mask[i]) { ours++; if (t) both++; } else if (t) theirs++;
     }
-    if (ours && both / ours >= 0.9 && theirs <= 0.2 * (both + theirs)) { setArtImage(name, img); took++; }
+    // (nine in ten of ours covered; or six in ten, when all but a few of theirs fall on our model: the game leaves
+    // a layer clear that we paint, a zombie's hat, and the picture still fits)
+    if (ours && ((both / ours >= 0.9 && theirs <= 0.2 * (both + theirs)) || (both / ours >= 0.6 && theirs <= 0.05 * (both + theirs)))) { setArtImage(name, img); took++; taken.push(name); }
+    else { kept.push(name); why[name] = [ours, both, theirs]; }
   }
+  // the villager's clothes go with its skin: the pack's biome, profession and badge pictures (the game's own layout,
+  // which our villager shares), so the game's skin never wears our clothes
+  if (taken.includes('villager')) {
+    await Promise.all(artNames().filter(layer).map(async name => {
+      const [, kind, v] = /^villager_(type|prof|level)_(.+)$/.exec(name);
+      const file = kind === 'type' ? 'type/' + v : kind === 'prof' ? 'profession/' + v : 'profession_level/' + LEVELS[(+v || 1) - 1];
+      const blob = await find('assets/minecraft/textures/entity/villager/' + file + '.png'), bmp = blob && await decode(blob);
+      if (!bmp) return;
+      const [w, h] = artSize(name);
+      // (an animated picture, a farmer's hat: its first frame)
+      setArtImage(name, pixels(bmp, 0, 0, bmp.width, Math.min(bmp.height, bmp.width * h / w), w, h));
+    }));
+  }
+  SUMMARY = { took: taken.sort(), kept: kept.sort(), why };
   if (took) console.info('resource packs: ' + took + ' mob skins');
 }

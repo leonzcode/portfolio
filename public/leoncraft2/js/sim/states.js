@@ -19,7 +19,8 @@
      redstone torch                bit 3 unlit (wall torch: bits 0-2 its wall)
      repeater                      bits 0-1 the way it outputs, bits 2-3 delay - 1, bit 4 powered, bit 5 locked
      comparator                    bits 0-1 output, bit 2 subtract, bit 3 powered
-     lever, buttons                bits 0-2 the face it is on, bit 3 powered
+     lever, buttons                bits 0-2 the face it is on, bit 3 powered; on a floor or a ceiling
+                                   bits 4-5 the way it faces
      pressure plates               bit 0 pressed; weighted ones bits 0-3 power
      redstone_lamp                 bit 0 lit
      piston, sticky piston         bits 0-2 facing, bit 3 extended;  piston_head bits 0-2 facing, bit 3 sticky
@@ -37,10 +38,17 @@
      lightning rod                 bits 0-2 facing, bit 3 powered
      redstone ore                  bit 0 lit;  copper bulb bit 0 lit, bit 1 powered
      bell                          bit 0 hanging, bit 4 powered
+     sculk sensors                 bits 0-1 phase (0 waiting, 1 active, 2 cooling down), bits 2-3 facing
+                                   (calibrated), bits 4-7 the power it gives while active
+     sculk shrieker                bit 0 shrieking, bit 1 can summon a warden
+     chiseled bookshelf            bits 0-1 facing, bits 2-7 which of its six slots hold a book
+     lectern                       bits 0-1 facing, bit 2 holds a book, bit 3 powered
+     vault                         bits 0-1 facing, bit 3 ominous, bits 4-5 waiting, active (someone near
+                                   it may unlock it), unlocking, throwing out its reward (details.js)
      comparator output             kept in the simulation's state, not the meta
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, MAX_ID } from '../blocks.js?v=24';
-import { SHAPES, MODEL_SHAPES, turn, rotate, faceUV } from '../models.js?v=24';
+import { SHAPES, MODEL_SHAPES, turn, rotate, faceUV, sheet, buttonModel, element } from '../models.js?v=24';
 
 export const STATEFUL = new Uint8Array(MAX_ID);    // its look depends on its meta
 export const SLIGHT = new Uint8Array(MAX_ID);      // so does its light
@@ -80,6 +88,13 @@ addTex('daylight_detector', { inv: 'daylight_detector_inverted_top' });
 addTex('powered_rail', { on: 'powered_rail_on' });
 addTex('detector_rail', { on: 'detector_rail_on' });
 addTex('activator_rail', { on: 'activator_rail_on' });
+addTex('tripwire_hook', { wood: 'oak_planks' });
+addTex('vault', { frontOn: 'vault_front_on', sideOn: 'vault_side_on', frontEject: 'vault_front_ejecting', topEject: 'vault_top_ejecting' });
+addTex('chiseled_bookshelf', { occupied: 'chiseled_bookshelf_occupied' });
+addTex('sculk_sensor', { tendril: 'sculk_sensor_tendril_inactive', tendrilOn: 'sculk_sensor_tendril_active' });
+addTex('calibrated_sculk_sensor', { tendril: 'sculk_sensor_tendril_inactive', tendrilOn: 'sculk_sensor_tendril_active',
+  input: 'calibrated_sculk_sensor_input_side', amethyst: 'calibrated_sculk_sensor_amethyst' });
+addTex('sculk_shrieker', { inner: 'sculk_shrieker_inner_top', innerOn: 'sculk_shrieker_can_summon_inner_top' });
 addTex('respawn_anchor', { lit: 'respawn_anchor_top', c1: 'respawn_anchor_side1', c2: 'respawn_anchor_side2', c3: 'respawn_anchor_side3', c4: 'respawn_anchor_side4' });
 for (const n of ['redstone_wire', 'melon_stem', 'pumpkin_stem']) if (has(n)) STATEFUL[B[n]] = 1;
 
@@ -163,6 +178,15 @@ function make(d, m) {
     case 'redstone_wire': return variant(d, { rgb: DUST[m & 15] });
     case 'melon_stem': case 'pumpkin_stem': return variant(d, { rgb: STEM[m & 7] });
     case 'piston': case 'sticky_piston': return m & 8 ? variant(d, { shape: 'pistonbase', asModel: true }) : null;
+    // a vault lit up while someone near it may unlock it, its front open while it gives out its reward
+    case 'vault': {
+      const st = (m >> 4) & 3;
+      if (!st || !ok(d, 'frontOn')) return null;
+      const side = L.sideOn, front = st === 1 ? L.frontOn : L.frontEject;
+      return variant(d, { front, faces: [side, side, d.faces[2], d.faces[3], side, side], L: Object.assign({}, L, st === 3 && ok(d, 'topEject') ? { top: L.topEject } : {}) });
+    }
+    // a chiseled bookshelf is a full block to everything else, drawn as its model (models.js chiseled)
+    case 'chiseled_bookshelf': return variant(d, { shape: 'chiseled', asModel: true });
   }
   return null;
 }
@@ -242,32 +266,49 @@ MODEL_SHAPES.add('pistonbase');
 
 const buttonBase = SHAPES.button;
 SHAPES.button = function (d, m, nb) {
-  const f = m & 7, on = !!(m & 8);
-  if (d.name === 'lever') return leverModel(d, f, on);
-  if (!on || d.name === 'tripwire_hook') return buttonBase(d, m, nb);
+  const on = !!(m & 8);
+  if (d.name === 'lever') return leverModel(d, m, on);
+  if (d.name === 'tripwire_hook') return hookModel(d, m, on);
+  if (!on) return buttonBase(d, m, nb);
   // pressed: half as deep
-  if (f === 3) return [box(5, 0, 6, 11, 1, 10)];
-  if (f === 2) return [box(5, 15, 6, 11, 16, 10)];
-  return turn([box(5, 6, 0, 11, 10, 1)], { 5: 0, 0: 1, 4: 2, 1: 3 }[f] || 0);
+  return buttonModel(m, true);
 };
-function leverModel(d, f, on) {
-  const L = d.L || {}, lever = L.lever !== undefined ? L.lever : d.faces[2];
-  // built on the floor: the cobblestone base and the handle leaning one way or the other
-  const base = box(5, 0, 4, 11, 3, 12);
-  const tilt = on ? 1 : -1, s = Math.sin(Math.PI / 4) * 8, c = Math.cos(Math.PI / 4) * 8;
-  const B0 = [8, 2, 8], T = [8, 2 + c, 8 + tilt * s];
-  const h = 1;
-  const handle = [
-    { q: [[B0[0] - h, B0[1], B0[2]], [B0[0] + h, B0[1], B0[2]], [T[0] + h, T[1], T[2]], [T[0] - h, T[1], T[2]]], uv: [7, 6, 9, 16], layer: lever },
-    { q: [[B0[0], B0[1], B0[2] - h], [B0[0], B0[1], B0[2] + h], [T[0], T[1], T[2] + h], [T[0], T[1], T[2] - h]], uv: [7, 6, 9, 16], layer: lever },
+/* The game's lever: a cobblestone base six by eight and three high, and the handle, a stick two pixels square
+   and ten long, leaning 45 degrees from its foot: towards the way the lever faces when it is on, away when off.
+   Built on the floor facing north, then turned as the game's block states turn it (floor, ceiling or wall,
+   and which way: on a floor or ceiling the meta's bits 4-5, on a wall away from the wall). */
+/* A tripwire hook (the game's tripwire_hook models, built on the south wall): the plank it is nailed to, the stick
+   out from it and the ring, hanging down at rest and drawn level when it is tripped (bit 3). */
+function hookModel(d, m, on) {
+  const L = d.L || {}, H = d.faces[0], W = L.wood !== undefined ? L.wood : H, rx = (o, a) => ({ axis: 'x', angle: a, origin: o });
+  const dy = on ? 0.4 : 0, dz = on ? -1.2 : 0, ring = on ? null : rx([8, 6, 5.2], -45);
+  const list = [
+    ...element([6.2, 3.8 + dy, 7.9 + dz], [9.8, 4.6 + dy, 11.5 + dz], { down: [[5, 3, 11, 9], H], up: [[5, 3, 11, 9], H], north: [[5, 3, 11, 4], H],
+      south: [[5, 8, 11, 9], H], west: [[5, 8, 11, 9], H], east: [[5, 3, 11, 4], H] }, ring),
+    ...element([7.4, 3.8 + dy, 10.3 + dz], [8.6, 4.6 + dy, 10.3 + dz], { north: [[7, 8, 9, 9], H] }, ring),
+    ...element([7.4, 3.8 + dy, 9.1 + dz], [8.6, 4.6 + dy, 9.1 + dz], { south: [[7, 3, 9, 4], H] }, ring),
+    ...element([7.4, 3.8 + dy, 9.1 + dz], [7.4, 4.6 + dy, 10.3 + dz], { east: [[7, 8, 9, 9], H] }, ring),
+    ...element([8.6, 3.8 + dy, 9.1 + dz], [8.6, 4.6 + dy, 10.3 + dz], { west: [[7, 3, 9, 4], H] }, ring),
+    ...element([7.4, 5.2, 10], [8.8, 6.8, 14], { down: [[7, 9, 9, 14], W], up: [[7, 2, 9, 7], W], north: [[7, 9, 9, 11], W], south: [[7, 9, 9, 11], W],
+      west: [[2, 9, 7, 11], W], east: [[9, 9, 14, 11], W] }, rx([8, 6, 14], on ? -22.5 : 45)),
+    ...element([6, 1, 14], [10, 9, 16], { down: [[6, 14, 10, 16], W], up: [[6, 0, 10, 2], W], north: [[6, 7, 10, 15], W], south: [[6, 7, 10, 15], W],
+      west: [[0, 7, 2, 15], W], east: [[14, 7, 16, 15], W] }),
   ];
+  return rotate(list, 0, ({ 5: 0, 0: 1, 4: 2, 1: 3 }[m & 7] + 2) & 3);
+}
+const LEVER_TILT = Math.PI / 4;
+function leverModel(d, m, on) {
+  const L = d.L || {}, lever = L.lever !== undefined ? L.lever : d.faces[2], f = m & 7;
+  const base = box(5, 0, 4, 11, 3, 12, { uv: [[4, 0, 12, 3], [4, 0, 12, 3], [5, 4, 11, 12], [5, 4, 11, 12], [5, 0, 11, 3], [5, 0, 11, 3]] });
+  // the handle's faces as sheets, tipped about the line through (8, 1, 8) along x
+  const a = on ? -LEVER_TILT : LEVER_TILT, c = Math.cos(a), s = Math.sin(a);
+  const tip = ([x, y, z]) => [x, 1 + (y - 1) * c - (z - 8) * s, 8 + (y - 1) * s + (z - 8) * c];
+  const side = [7, 6, 9, 16], hf = [7, 1, 7], ht = [9, 11, 9];
+  const handle = [0, 1, 2, 4, 5].map(k => sheet(hf, ht, k, k === 2 ? [7, 6, 9, 8] : side, lever)).map(q => Object.assign(q, { q: q.q.map(tip) }));
   const list = [base, ...handle];
-  if (f === 3) return list;
-  if (f === 2) return list.map(b => b.q ? Object.assign({}, b, { q: b.q.map(([x, y, z]) => [x, 16 - y, z]) }) : box(b.f[0], 16 - b.t[1], b.f[2], b.t[0], 16 - b.f[1], b.t[2]));
-  // on a wall: the floor model stood against the wall (y -> z), then turned to it
-  const up = list.map(b => b.q ? Object.assign({}, b, { q: b.q.map(([x, y, z]) => [x, 16 - z, y]) })
-    : box(b.f[0], 16 - b.t[2], b.f[1], b.t[0], 16 - b.f[2], b.t[1]));
-  return turn(up, { 5: 0, 0: 1, 4: 2, 1: 3 }[f] || 0);
+  if (f === 3) return rotate(list, 0, (m >> 4) & 3);
+  if (f === 2) return rotate(list, 2, (((m >> 4) & 3) + 2) & 3);
+  return rotate(list, 1, ({ 5: 0, 0: 1, 4: 2, 1: 3 }[f] + 2) & 3);
 }
 
 const plateBase = SHAPES.plate;

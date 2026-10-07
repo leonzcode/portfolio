@@ -36,7 +36,7 @@ export const REACT = new Uint8Array(4096);
 const IMMOVABLE = new Set(['obsidian', 'crying_obsidian', 'respawn_anchor', 'reinforced_deepslate', 'barrier', 'beacon', 'bedrock', 'command_block',
   'chain_command_block', 'repeating_command_block', 'creaking_heart', 'enchanting_table', 'end_gateway', 'end_portal', 'end_portal_frame', 'ender_chest',
   'grindstone', 'jigsaw', 'jukebox', 'light', 'lodestone', 'spawner', 'moving_piston', 'nether_portal', 'piston_head', 'structure_block',
-  'sculk_sensor', 'calibrated_sculk_sensor', 'sculk_catalyst', 'sculk_shrieker', 'trial_spawner', 'vault', 'conduit', 'lectern', 'daylight_detector',
+  'sculk_sensor', 'calibrated_sculk_sensor', 'sculk_catalyst', 'sculk_shrieker', 'trial_spawner', 'vault', 'conduit', 'lc2_wet_conduit', 'lectern', 'daylight_detector',
   'chiseled_bookshelf', 'crafter', 'beehive', 'bee_nest', 'brewing_stand', 'potent_sulfur']);
 const BREAKS = new Set(['pumpkin', 'carved_pumpkin', 'jack_o_lantern', 'melon', 'cobweb', 'fire', 'soul_fire', 'dragon_egg', 'bell', 'scaffolding',
   'turtle_egg', 'sniffer_egg', 'frogspawn', 'sea_pickle', 'cocoa', 'chorus_plant', 'chorus_flower', 'pointed_dripstone', 'small_amethyst_bud',

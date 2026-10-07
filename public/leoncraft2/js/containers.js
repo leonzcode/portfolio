@@ -288,7 +288,7 @@ export class Containers {
       const f = w.meta(x, y, z) & 7, o = DIRS[f] || DIRS[4];
       const b = w.get(x + o[0], y + o[1], z + o[2]);
       if (!b || !BLOCKS[b].solid) return false;
-      const d = BLOCKS[b], m = w.meta(x + o[0], y + o[1], z + o[2]);
+      const d = BLOCKS[b], m = /_slab$/.test(BLOCKS[b].name) ? w.meta(x + o[0], y + o[1], z + o[2]) : 0;
       if (d.shape === 'slab' && m !== 2) return f === 4 ? m === 0 : f === 5 ? m === 1 : true;
       return true;
     }
@@ -298,6 +298,14 @@ export class Containers {
   changed(c) {
     this.dirty = true;
     if (c && (COOKER[c.kind] || c.kind === 'brewing_stand')) this.lit.add(c);
+    if (c && c.kind === 'brewing_stand') this.bottles(c);
+  }
+  // a brewing stand shows a bottle on each arm whose slot holds one (meta bits 0-2, the game's has_bottle_0-2)
+  bottles(c) {
+    const w = this.world, b = w.get(c.x, c.y, c.z);
+    if (containerKind(b) !== 'brewing_stand') return;
+    const m = w.meta(c.x, c.y, c.z), want = (c.slots[0] ? 1 : 0) | (c.slots[1] ? 2 : 0) | (c.slots[2] ? 4 : 0);
+    if ((m & 7) !== want) w.set(c.x, c.y, c.z, b, (m & ~7) | want);
   }
   // the block is gone: what it held, to be dropped (a furnace's stored experience goes with xpOf before this)
   remove(x, y, z) {

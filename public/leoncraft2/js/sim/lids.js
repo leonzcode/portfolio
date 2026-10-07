@@ -42,8 +42,16 @@ export function boxOpened(x, y, z, screen, partner) {
   const prev = screen.onClosed;
   screen.onClosed = () => { if (prev) prev(); for (const [a, b, c] of spots) L.close(a, b, c); };
 }
-// a bell rang, struck from the side whose face (0-5, as models.js numbers them) was hit
-export function bellRang(x, y, z, face) { if (ACTIVE) ACTIVE.ring(x, y, z, face); }
+// a bell rang, struck by the player from the side whose face (0-5, as models.js numbers them) was hit; the
+// simulation hears it as it hears a powered one (sim.onBell: its sound), then it swings
+export function bellRang(x, y, z, face) {
+  const L = ACTIVE;
+  if (!L) return;
+  const s = L.sim;
+  if (s.onBell) s.onBell(x, y, z);
+  s.lastBell = { x, y, z, at: s.n };
+  L.ring(x, y, z, face);
+}
 // something went into a decorated pot (ok), or it would not take it
 export function potWobbled(x, y, z, ok) { if (ACTIVE) ACTIVE.wobble(x, y, z, ok); }
 
@@ -109,9 +117,8 @@ export class Lids {
     this.m4 = new THREE.Matrix4(); this.t4 = new THREE.Matrix4();
     ACTIVE = this;
     (sim.tickers || (sim.tickers = [])).push(() => this.tick());
-    // powered, a bell rings the way it faces (sim/rsparts.js)
-    const was = sim.onBell;
-    sim.onBell = (x, y, z) => { if (was) was(x, y, z); this.ring(x, y, z, [5, 0, 4, 1][(this.w.meta(x, y, z) >> 1) & 3]); };
+    // (a powered bell is rung by sim/rsparts.js, straight through sim.lids, so whatever else listens on
+    // sim.onBell, the sound, can take that hook over)
     const frame = () => {
       if (this.dead) return;
       if (this.list.size) this.frame(Math.min(1, (performance.now() - this.lastTick) / 50));
@@ -146,6 +153,8 @@ export class Lids {
     const e = this.entry(x, y, z);
     if (!e) return;
     e.viewers++;
+    // (heard by sculk sensors, as the game's container_open)
+    if (this.sim.sculk) this.sim.sculk.vibrate(x + 0.5, y + 0.5, z + 0.5, 15, true);
     // a barrel: its open top is a state of the block
     if (e.kind === 'barrel') { const m = this.w.meta(x, y, z); if (!(m & 8)) this.w.set(x, y, z, e.b, m | 8); return; }
     this.show(e);
@@ -154,6 +163,7 @@ export class Lids {
     const e = this.list.get(key(x, y, z));
     if (!e) return;
     e.viewers = Math.max(0, e.viewers - 1);
+    if (this.sim.sculk) this.sim.sculk.vibrate(x + 0.5, y + 0.5, z + 0.5, 14, true);
     if (e.kind === 'barrel' && !e.viewers) {
       const m = this.w.meta(x, y, z);
       if (this.w.get(x, y, z) === e.b && (m & 8)) this.w.set(x, y, z, e.b, m & ~8);
