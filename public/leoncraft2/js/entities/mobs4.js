@@ -657,6 +657,12 @@ export class Villager extends Mob {
     this.goals.add(7, new LookAroundGoal(this));
   }
   walkValue(x, y, z) { return this.m.t.get(x, y - 1, z) === B.grass_block ? 2 : 0; }
+  // a villager struck by lightning (manager.js lightning) is a witch where it stood, not on Peaceful (a wandering trader is only hurt)
+  thunderHit(m) {
+    if (this.type !== 'villager' || m.difficulty === 'peaceful') return undefined;
+    const n = m.convertMob(this, 'witch', w => { w.persistent = true; });
+    return n ? false : undefined;
+  }
   aiStep() {
     super.aiStep();
     if (this.ageT < 0 && ++this.ageT === 0) this.setBaby(false);

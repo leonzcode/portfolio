@@ -329,6 +329,8 @@ export class Creeper extends Monster {
   static W = 0.6; static H = 1.7; static HEALTH = 20; static SPEED = 0.25; static FOLLOW = 16;
   static MODEL = 'creeper'; static TEX = 'creeper'; static SHADOW = 0.5;
   constructor(m, type) { super(m, type); this.swell = 0; this.oSwell = 0; this.swellDir = -1; this.fuse = 30; this.power = 3; this.charged = false; }
+  // struck by lightning (manager.js lightning): charged, and hurt and set alight as anything is
+  thunderHit() { this.charged = true; }
   registerGoals() {
     this.goals.add(1, new FloatGoal(this));
     this.goals.add(2, new SwellGoal(this));
@@ -462,6 +464,12 @@ export class Pig extends Animal {
   static FOOD = ['carrot', 'potato', 'beetroot', 'carrot_on_a_stick'];
   constructor(m, type) { super(m, type); this.saddled = false; this.boostT = 0; this.boostLen = 0; }
   aiStep() { super.aiStep(); if (this.boostT > 0) this.boostT--; }
+  // struck by lightning: a zombified piglin with a golden sword where it stood (not on Peaceful, where it is only hurt)
+  thunderHit(m) {
+    if (m.difficulty === 'peaceful') return undefined;
+    const n = m.convertMob(this, 'zombified_piglin', z => { if (z.equip) z.equip.mainhand = 'golden_sword'; z.attackDamage = 8; z.persistent = true; });
+    return n ? false : undefined;
+  }
   // a burst from the carrot on a stick: 140 to 980 ticks, the speed rising and falling up to 2.15 times (as the strider's)
   boost() { if (this.boostT > 0) return false; this.boostLen = this.boostT = 140 + RI(841); return true; }
   boostFactor() { return this.boostT > 0 ? 1 + 1.15 * Math.sin((1 - this.boostT / this.boostLen) * Math.PI) : 1; }

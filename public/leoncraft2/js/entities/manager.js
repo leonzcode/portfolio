@@ -710,9 +710,9 @@ export class Entities {
   explode(x, y, z, power, src, o) { return explode(this, x, y, z, power, src, o); }
   /* Lightning (sim/weather.js calls this; the player's share it does
      itself): everything within 3 blocks takes 5 and burns for 8 seconds,
-     and some change: a creeper is charged, a pig becomes a zombified
-     piglin and a villager a witch (not on Peaceful), a mooshroom turns
-     brown or red. */
+     and some change (their thunderHit): a creeper is charged, a pig becomes
+     a zombified piglin and a villager a witch (not on Peaceful). Not yet: a
+     mooshroom turning brown (there is no brown one). */
   lightning(x, y, z) {
     for (const e of this.near(x, y, z, 8)) {
       if (e.removed || e.dead || Math.abs(e.pos.x - x) > 3 + e.hw || Math.abs(e.pos.z - z) > 3 + e.hw || e.pos.y > y + 9 || e.pos.y + e.h < y - 3) continue;
