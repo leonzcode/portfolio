@@ -522,6 +522,10 @@ export class Survival {
      you land sneaking, a stalagmite doubles it with 2.5 more; Jump Boost
      takes a block a level; Slow Falling never hurts. */
   landing(P) {
+    // thrown up by your own wind charge (entities/mobs7.js): only what you fall below where it threw you from counts,
+    // the game's impulse rule; spent on the first landing, in water or flying
+    let from;
+    if (P.impulseY !== undefined && (P.landed || P.inWater || P.flying || P.climbing)) { from = P.impulseY; P.impulseY = undefined; }
     if (this.effects.slow_falling) { P.fallDistance = 0; P.landed = null; return; }
     const l = P.landed;
     if (!l) return;
@@ -530,6 +534,7 @@ export class Survival {
     const name = nameOf(l.block);
     const feet = P.w ? nameOf(P.w.get(Math.floor(P.pos.x), Math.floor(P.pos.y), Math.floor(P.pos.z))) : '';
     let dist = l.dist, k = 1, type = 'fall';
+    if (from !== undefined) { if (from <= P.pos.y) return; dist = Math.min(dist, from - P.pos.y); }
     if (feet === 'pointed_dripstone') { dist += 2.5; k = 2; type = 'stalagmite'; }
     else if (name === 'slime_block') k = P.sneaking ? 1 : 0;
     else if (name === 'hay_block' || name === 'honey_block') k = 0.2;

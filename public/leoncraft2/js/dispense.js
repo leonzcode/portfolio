@@ -213,11 +213,12 @@ function craft(sim, C, c, x, y, z, f, fx, fy, fz) {
     if (to) while (st.count > 0 && C.insertOne(to, st, sideFrom(f))) st.count--;
     if (st.count > 0) eject(C.drops, x, y, z, f, st);
   }
-  sound(sim, 'craft', x, y, z);
+  sound(sim, 'craft', x, y, z, m.result);
   return true;
 }
 
-function sound(sim, kind, x, y, z) {
+// (what a crafter made goes with its sound: the advancements want to know, adv/game.js)
+function sound(sim, kind, x, y, z, made) {
   const L = typeof window !== 'undefined' ? window.__lc2 : null;
-  if (L && L.onBlockSound) try { L.onBlockSound(kind, x, y, z); } catch (e) {}
+  if (L && L.onBlockSound) try { L.onBlockSound(kind, x, y, z, made); } catch (e) {}
 }
