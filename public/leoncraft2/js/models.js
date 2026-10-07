@@ -1204,6 +1204,8 @@ const toBlocks = list => list.filter(b => !b.q && b.f[1] !== b.t[1]).map(b => [b
 export function collisionBoxes(d, m, nb) {
   if (!d.solid) return null;
   const s = d.shape;
+  // a honey block is as narrow as a cactus, and as short
+  if (d.name === 'honey_block') return CACTUS;
   if (s === 'cube') return FULL;
   // a cactus is a sixteenth narrower each side and 15/16 tall, so whatever leans on it is in its block (and hurt)
   if (s === 'cactus') return CACTUS;
