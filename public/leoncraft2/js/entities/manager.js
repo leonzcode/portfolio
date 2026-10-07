@@ -299,7 +299,7 @@ export class Entities {
     wandererTick(this);
     tableBooks(this);
     if (this.fallChecks.length) this.fallTick();
-    const n = this.list.length;
+    const n = this.list.length, voidY = this.D.minY;
     for (let i = 0; i < n; i++) {
       const e = this.list[i];
       if (e.removed) continue;
@@ -307,6 +307,8 @@ export class Entities {
       if (e.vehicle && !e.vehicle.removed && e.vehicle.passengers.indexOf(e) >= 0) continue;
       if (e.vehicle) { this.ridingTick(e); continue; }
       e.tick();
+      // fallen out of the world (64 below its floor; heights here are y + 64): a mob takes the void's damage, anything else is gone
+      if (!e.removed && e.pos.y < voidY) e.belowWorld();
       if (e.leash) leashTick(this, e);
       if (e.passengers.length) this.tickRiders(e);
       if (!e.removed && (this.age + e.id) % 4 === 0) this.sampleLight(e);

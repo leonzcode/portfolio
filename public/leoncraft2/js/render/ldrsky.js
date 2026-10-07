@@ -67,6 +67,7 @@ void main() {
       col += toLinear(m.rgb) * m.a * 2.2 * smoothstep(-0.05, 0.08, md.y);
     }
     col += stars(rd) * (1.0 - smoothstep(-0.12, 0.02, uSunDir.y)) * sat(rd.y * 4.0);
+    col = voidSky(col, rd);
   }
   o = vec4(toneLDR(col * exposureNow()), 1.0);
 }`;

@@ -457,7 +457,15 @@ export const TONE_CURVES = { agx: 0, aces: 1, reinhard: 2 };
    uExposure, the same at any time of day. The Nether and the End have no
    sky, and uExposure is their whole exposure. Needs uDim, uExposure and
    uAmbient declared by the host. */
-export const EXPOSURE = /* glsl */`
+/* The void (renderer.js sets uVoid each frame; both 0 leave everything as it
+   was, so a shader without it is unchanged): x, the eye below sea level, the
+   sky under the horizon going dark; y, the eye near or below the bottom of
+   the world, the sky and the fog going to black. */
+export const VOID = /* glsl */`
+uniform vec2 uVoid;
+vec3 voidSky(vec3 col, vec3 rd) { return col * (1.0 - uVoid.x * smoothstep(-0.02, -0.2, rd.y)) * (1.0 - uVoid.y); }
+`;
+export const EXPOSURE = VOID + /* glsl */`
 uniform float uCave;
 float exposureNow() {
   if (uDim > 0.5) return uExposure;
@@ -499,11 +507,11 @@ vec3 finishLDR(vec3 col, vec3 world) {
   } else {
     float h0 = cameraPosition.y - 63.0, k = 1.0 / 60.0, dy = rd.y * dist;
     float od = 0.0019 * uFogMul * exp(-h0 * k) * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
-    vec3 fogC = skyDir(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)));
+    vec3 fogC = skyDir(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z))) * (1.0 - uVoid.y);
     float T = exp(-od);
     col = col * T + fogC * (1.0 - T) * uSkyAtEye;
     float hd = length((world - cameraPosition).xz);
-    col = mix(col, skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), smoothstep(uRender * 0.72, uRender, hd));
+    col = mix(col, voidSky(skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), rd), smoothstep(uRender * 0.72, uRender, hd));
   }
   return toSRGB(agx(col * exposureNow()));
 }
@@ -539,7 +547,7 @@ void fogTerms(vec3 world, out vec3 keep, out vec3 add) {
     float T = exp(-od);
     float fade = smoothstep(uRender * 0.72, uRender, length(rd.xz) * dist);
     keep = vec3(T * (1.0 - fade) * E);
-    add = fogColour(rd) * ((1.0 - T) * uSkyAtEye * (1.0 - fade) + fade) * E;
+    add = fogColour(rd) * ((1.0 - T) * uSkyAtEye * (1.0 - fade) + fade) * (1.0 - uVoid.y) * E;
   }
 }
 `;

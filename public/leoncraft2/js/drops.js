@@ -34,6 +34,7 @@
 import { B, BLOCKS, SOLID, FLUID, OPACITY } from './blocks.js?v=21';
 import { collisionBoxes } from './models.js?v=21';
 import { LEVEL, FALLING } from './world-const.js?v=21';
+import { DIMS } from './dims.js?v=21';
 import { DRAW, I, ITEMS, maxStack, sameItem, withCount, stackToJSON, stackFromJSON, textureLayer } from './items.js?v=21';
 import { blockGeometry, intAttribute } from './render/blockmesh.js?v=21';
 const THREE = window.THREE;
@@ -286,6 +287,8 @@ export class Drops {
     this.ticks++;
     if (this.takeXpDelay > 0) this.takeXpDelay--;
     const P = player ? player.pos : null;
+    // 64 below the dimension's floor is the void: anything falling there is gone (heights here are y + 64)
+    const voidY = (DIMS[this.world && this.world.dim] || DIMS.overworld).minY;
     for (let i = this.items.length - 1; i >= 0; i--) {
       const e = this.items[i];
       e.prev.copy(e.pos);
@@ -311,7 +314,7 @@ export class Drops {
         if (e.onGround && e.vel.y < 0) e.vel.y *= -0.5;
         if (e.hitY && !e.onGround) e.vel.y = 0;
       }
-      if (e.pos.y < -130) { this._remove(e, i); continue; }
+      if (e.pos.y < voidY) { this._remove(e, i); continue; }
       // join a stack of the same item close by: every 2 ticks of its age when it crossed into another block, else every 40
       const f = Math.floor;
       const crossed = f(e.pos.x) !== f(e.prev.x) || f(e.pos.y) !== f(e.prev.y) || f(e.pos.z) !== f(e.prev.z);
@@ -365,7 +368,7 @@ export class Drops {
       const f = o.onGround ? this._slip(o) * 0.98 : 0.98;
       o.vel.x *= f; o.vel.y *= 0.98; o.vel.z *= f;
       if (o.onGround && o.vel.y < 0) o.vel.y *= -0.9;
-      if (o.pos.y < -130) { this._removeOrb(o, i); continue; }
+      if (o.pos.y < voidY) { this._removeOrb(o, i); continue; }
       // within the player's reach for things on the ground (a block out to the sides, half a block up and down): one orb every two ticks
       if (P && collector && collector.alive && this.takeXpDelay === 0) {
         if (Math.abs(o.pos.x - P.x) < 0.3 + 1 + ORB_W / 2 && Math.abs(o.pos.z - P.z) < 0.3 + 1 + ORB_W / 2 && o.pos.y + ORB_H > P.y - 0.5 && o.pos.y < P.y + 1.8 + 0.5) {
