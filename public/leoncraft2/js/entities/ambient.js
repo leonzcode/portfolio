@@ -23,8 +23,9 @@
    leaves         (26.x) now and then a leaf falling from under one, tinted
                   as the leaves are, gone when it reaches the ground
 
-   And while it rains, the splashes where it lands (rainSplashes); and the
-   pieces of ground your feet kick up sprinting or landing hard (feet).
+   And while it rains, the splashes where it lands (rainSplashes); the
+   pieces of ground your feet kick up sprinting or landing hard (feet); and
+   getting into water, the game's splash (splashIn)."
 
    Particles go through entities/particles.js like the rest, so Video
    Settings' Particles leaves some out the same way. Cheap: 1334 block reads
@@ -136,6 +137,10 @@ export class Ambient {
      breaks (render/particles.js). */
   feet() {
     const m = this.m, P = m.P, RP = m.R && m.R.particles, T = m.t;
+    // into the water: the splash (only on the way in, as the game's "was touching water")
+    const wet = !!P.inWater;
+    if (wet && this.wet === false && m.mode !== 'spectator') this.splashIn(P);
+    this.wet = wet;
     if (!RP || m.mode === 'spectator') return;
     const L = P.landed;
     if (L !== this.landed) {
@@ -155,6 +160,18 @@ export class Ambient {
         RP.terrain(x, P.pos.y + 0.1, z, -P.vel.x * 4, 1.5, -P.vel.z * 4, look);
       }
     }
+  }
+  /* The game's splash as something gets into water: 1 + its width x 20
+     bubbles (13 for you), each somewhere over your width either way at the top
+     of the block your feet are in, pushed on with a fifth of your motion and
+     down a little; and as many drops, hopping up off the surface. */
+  splashIn(P) {
+    const Q = this.m.particlesP, w = 0.6, n = 1 + w * 20, y = Math.floor(P.pos.y) + 1, v = P.vel;
+    for (let i = 0; i < n; i++) {
+      const x = P.pos.x + (R() * 2 - 1) * w, z = P.pos.z + (R() * 2 - 1) * w;
+      this.puff('bubble', x, y, z, v.x * 0.2 + (R() * 2 - 1) * 0.02, (v.y - R() * 0.2) * 0.2 + (R() * 2 - 1) * 0.02, v.z * 0.2 + (R() * 2 - 1) * 0.02, undefined, OUTDOORS);
+    }
+    for (let i = 0; i < n; i++) Q.add('splash', P.pos.x + (R() * 2 - 1) * w, y, P.pos.z + (R() * 2 - 1) * w, 1, 0, undefined, OUTDOORS);
   }
   block(k, b, x, y, z) {
     const T = this.m.t;

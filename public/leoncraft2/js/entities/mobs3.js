@@ -627,7 +627,7 @@ export class Slime extends Monster {
       const n = this.size * 8;
       for (let j = 0; j < n; j++) {
         const a = R() * PI * 2, f = R() * 0.5 + 0.5;
-        puff(this, 'splash', this.pos.x + Math.sin(a) * this.size * 0.5 * f, this.pos.y + 0.05, this.pos.z + Math.cos(a) * this.size * 0.5 * f, 1, 0, [0.45, 0.78, 0.35]);
+        puff(this, 'slime', this.pos.x + Math.sin(a) * this.size * 0.5 * f, this.pos.y + 0.05, this.pos.z + Math.cos(a) * this.size * 0.5 * f, 1, 0, [0.45, 0.78, 0.35]);
       }
       this.targetSquish = -0.5;
     } else if (!this.onGround && this.wasOnGround) this.targetSquish = 1;

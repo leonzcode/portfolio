@@ -154,8 +154,9 @@ export class Combat {
     if (enchOf(st, 'bane_of_arthropods') && ARTHROPOD.has(e.type) && e.slow !== undefined) e.slow = Math.max(e.slow, 20 + Math.floor(R() * 10 * enchOf(st, 'bane_of_arthropods')));
     if (smash) this.smashed(e, st);
     // sparks: the critical's stars, the enchantments' blue ones, and dark hearts for a big hit
-    if (crit) m.particles('crit', e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, 12, e.w * 0.5);
-    if (bonus > 0) m.particles('magic', e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, 12, e.w * 0.5, [0.45, 0.75, 1]);
+    // the game's crit emitters: 3 ticks of sparks round the middle of what was hit (entities/particles.js emit)
+    if (crit) m.particlesP.emit('crit', e);
+    if (bonus > 0) m.particlesP.emit('magic', e, [0.3, 0.8, 1]);
     const lost = hp0 - Math.max(0, e.health);
     if (lost > 2) m.particles('heart', e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, Math.floor(lost * 0.5), e.w * 0.5, [0.45, 0.05, 0.05]);
     // the weapon wears, and a hit is tiring
