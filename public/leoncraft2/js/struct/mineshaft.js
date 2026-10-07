@@ -200,11 +200,13 @@ class Corridor extends MS {
     }
   }
   // a chest minecart on a rail: the cart is an entity (left for the entities to make), its loot is kept here
+  // (the game draws the rail's way, north-south or east-west, and then the cart's loot seed, a long kept as text)
   minecart(w, cb, r, x, y, z) {
     const X = this.wx(x, z), Y = this.wy(y), Z = this.wz(x, z);
     if (!cb.inside(X, Y, Z) || w.get(X, Y, Z) !== 0 || !w.get(X, Y - 1, Z)) return;
+    r.nextBoolean();
     this.put(w, 'rail', x, y, z, cb);
-    w.entity('chest_minecart', X + 0.5, Y, Z + 0.5, { loot: 'abandoned_mineshaft', seed: r.nextInt() });
+    w.entity('chest_minecart', X + 0.5, Y, Z + 0.5, { loot: 'abandoned_mineshaft', seed: String(r.nextLong()) });
   }
 }
 

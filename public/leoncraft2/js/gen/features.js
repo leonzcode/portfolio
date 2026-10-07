@@ -162,6 +162,13 @@ for (const d of BLOCKS) {
    the game's fluid ticks would make after every feature is in, and those
    never wash a tree away: it gives way to leaves and anything sturdier, and
    only takes a plant's place. */
+/* A feature's note on a block it placed (Region.note): code 1 + i is a
+   container with loot table NOTE_TABLES[i], its seed the long (a << 32 | b);
+   code NOTE_SPAWNER is a spawner holding NOTE_MOBS[a]. */
+export const NOTE_TABLES = ['simple_dungeon', 'archaeology/desert_well'];
+export const NOTE_MOBS = ['skeleton', 'zombie', 'spider'];
+export const NOTE_SPAWNER = 100;
+export const longHalves = s => [Number(BigInt.asIntN(32, s >> 32n)), Number(BigInt.asIntN(32, s))];
 export const writeRank = (id, m) => ((m & 15) !== 0 && (id === B.water || id === B.lava) ? 1.5 : RANK[id]);
 
 // the plants that stand on the block under them, and those that stand in water (taken back to water)
@@ -595,6 +602,17 @@ export class Region {
     this.hmUpdate(4, col, x, y, z, solid || fl);
     this.hmUpdate(5, col, x, y, z, (solid || fl) && !(id && d.leaves));
     return true;
+  }
+  /* What a block a feature placed holds beyond its state, as the game keeps
+     it in the block's entity: a chest's loot table and seed, a spawner's mob
+     (see NOTE_TABLES and NOTE_MOBS). Kept with the writes of the chunk the
+     block is in, as two pairs after them (vanillagen.js writes and generate):
+     [-1 - cell, code] and [a, b]. */
+  note(x, y, z, code, a = 0, b = 0) {
+    const lx = x - this.x0, lz = z - this.z0;
+    if (lx < 0 || lx >= 48 || lz < 0 || lz >= 48 || y < MIN_Y || y > MAX_Y) return;
+    const c = this.chunks[(lz >> 4) * 3 + (lx >> 4)];
+    (c.notes || (c.notes = [])).push(-1 - (((y - MIN_Y) << 8) | ((lz & 15) << 4) | (lx & 15)), code, a, b);
   }
   // a block another chunk's features put there (a neighbour's tree, see Decorator.treePlan): in the
   // region for this chunk's features to find, but not one of this chunk's writes

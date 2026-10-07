@@ -26,7 +26,7 @@ import { Xoroshiro } from './random.js?v=24';
 import { B, BLOCKS } from '../blocks.js?v=24';
 import { BIO, BIOMES } from '../biomes.js?v=24';
 import { H, Y0, VOL } from '../world-const.js?v=24';
-import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf } from './features.js?v=24';
+import { Decorator, FEATURES, writeRank, isGroundPlant, plantHolds, fluidOf, NOTE_TABLES, NOTE_MOBS, NOTE_SPAWNER } from './features.js?v=24';
 import { Carvers } from './carvers.js?v=24';
 import { stateOf } from './states.js?v=24';
 import './trees.js?v=24';
@@ -263,6 +263,29 @@ function fluidBits(blocks) {
   for (let i = 0; i < VOL; i++) { const b = blocks[i]; if (b === WATER || b === LAVA) fluid[i >> 3] |= 1 << (i & 7); }
   return fluid;
 }
+/* The notes the features left on blocks of a chunk (Region.note) as the
+   game's world keeps them: a chest with its loot table and seed, a spawner
+   with its mob, added to what the structures left (structs, never changed:
+   it is kept with the chunk's terrain). Only the ones whose block is still
+   there count (another chunk's feature may have written over it). */
+function featureNotes(notes, blocks, x0, z0, structs) {
+  const out = { chests: [], spawners: [], entities: [], structures: [] };
+  if (structs) for (const k in out) if (structs[k]) out[k] = structs[k].slice();
+  for (let n = 0; n < notes.length; n += 4) {
+    const i = notes[n], code = notes[n + 1], a = notes[n + 2], b = notes[n + 3];
+    const x = x0 + (i & 15), y = (i >> 8) + MIN_Y, z = z0 + ((i >> 4) & 15);
+    if (code === NOTE_SPAWNER) {
+      if (blocks[i] === B.spawner && NOTE_MOBS[a]) out.spawners.push({ x, y, z, mob: NOTE_MOBS[a] });
+      continue;
+    }
+    const table = NOTE_TABLES[code - 1];
+    const held = blocks[i];
+    if (!table || !(held === B.chest || held === B.barrel || held === B.suspicious_sand || held === B.suspicious_gravel)) continue;
+    const seed = String(BigInt.asIntN(64, (BigInt(a) << 32n) | BigInt(b >>> 0)));
+    out.chests.push({ x, y, z, table, seed });
+  }
+  return out;
+}
 export class VanillaGen {
   constructor(seed) {
     this.seedStr = String(seed);
@@ -436,6 +459,7 @@ export class VanillaGen {
     const p = this.proto(cx, cz);
     const blocks = p.blocks.slice(), meta = p.meta.slice();
     const x0 = cx * 16, z0 = cz * 16, grid = p.grid;
+    let notes = null;
     if (this.decorator.features) {
       // the nine chunks' writes; where two write one block the sturdier stays (see writeRank)
       const owner = this._owner || (this._owner = new Uint8Array(VOL));
@@ -447,6 +471,8 @@ export class VanillaGen {
         if (!mine) continue;
         for (let k = 0; k < mine.length; k += 2) {
           const i = mine[k], v = mine[k + 1], id = v >> 8;
+          // a note on what a placed block holds (Region.note): two pairs
+          if (i < 0) { (notes || (notes = [])).push(-1 - i, v, mine[k + 2], mine[k + 3]); k += 2; continue; }
           if (!owner[i]) { owner[i] = 1; touched.push(i); }
           else if (writeRank(id, v & 255) < writeRank(blocks[i], meta[i])) continue;
           blocks[i] = id; meta[i] = v & 255;
@@ -466,8 +492,11 @@ export class VanillaGen {
     }
     let top = 0;
     for (let i = VOL - 1; i >= 0; i--) if (blocks[i]) { top = i >> 8; break; }
-    // what the structures built into this chunk left for the game (chests, spawners...), when they are built here
-    return { blocks, meta, biome, top, structs: this.structureHook ? p.structs : undefined };
+    // what the structures built into this chunk left for the game (chests, spawners...), when they are built here,
+    // and the same for the blocks its features placed (a dungeon's chests and spawner)
+    let structs = this.structureHook ? p.structs : undefined;
+    if (notes && this.structureHook) structs = featureNotes(notes, blocks, x0, z0, structs);
+    return { blocks, meta, biome, top, structs };
   }
   /* Structures are built into the terrain before any feature, as the game
      builds them before its ores, trees and plants (struct/hook.js hands the
@@ -526,9 +555,12 @@ export class VanillaGen {
     w = new Map();
     R.chunks.forEach((c, k) => {
       if (!c.writes) return;
-      const a = new Int32Array(c.writes.size * 2);
+      // (the notes on what a block holds, a chest's loot or a spawner's mob, go after the writes: see Region.note)
+      const notes = c.notes || [];
+      const a = new Int32Array(c.writes.size * 2 + notes.length);
       let o = 0;
       for (const [i, v] of c.writes) { a[o++] = i; a[o++] = v; }
+      for (let j = 0; j < notes.length; j++) a[o++] = notes[j];
       w.set(k, a);
     });
     this.writeCache.set(key, w);

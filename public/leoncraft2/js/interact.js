@@ -127,6 +127,10 @@ export class Interactor {
   }
   // once a tick
   tick() {
+    // with a button held, what the crosshair is on is looked at again first, as the game picks again each tick: a block
+    // just broken (or placed) is not left as the target until the next frame, which in a slow frame comes after a tick or
+    // two, and those ticks would not count towards the delay
+    if ((this.attack || this.useHeld) && this.lastEye) this.look(this.lastEye);
     if (this.attack) {
       if (this.creative) this.creativeTick();
       else this.mineTick();
