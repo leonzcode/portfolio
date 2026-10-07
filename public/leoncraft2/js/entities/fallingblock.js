@@ -11,10 +11,10 @@
    Drawn with the world's own block shader and textures (render/blockmesh.js),
    lit by the light where it is.
 --------------------------------------------------------------------------- */
-import { Entity } from './entity.js?v=23';
-import { register } from './mobs.js?v=23';
-import { BLOCKS, FLUID, B } from '../blocks.js?v=23';
-import { blockGeometry } from '../render/blockmesh.js?v=23';
+import { Entity } from './entity.js?v=24';
+import { register } from './mobs.js?v=24';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=24';
+import { blockGeometry } from '../render/blockmesh.js?v=24';
 const THREE = window.THREE;
 
 export const FALLS = new Uint8Array(4096);

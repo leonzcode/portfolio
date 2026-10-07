@@ -11,11 +11,17 @@
 
    Packs stack like the game's Resource Packs screen: the one at the top wins,
    anything no pack has falls through to Leoncraft's own art. A pack can give
-     - block and item textures (assets/minecraft/textures/block, item)
+     - block and item textures (assets/minecraft/textures/block, item), the
+       pictures of every item in the inventory as well (itemStripFrom)
+     - chests, beds, shulker boxes and mob heads, cut from its entity
+       pictures the way our own are cut (composedTextures)
+     - paintings, and the skins of mobs whose boxes take the picture the way
+       ours do (entities/packart.js)
      - the grass and foliage colour maps
      - the GUI: the old combined sheets (widgets.png, icons.png...) or the
        1.20.2+ sprites (sprites/widget/button.png, sprites/hud/hotbar.png...),
-       turned into the sheets the GUI here draws from
+       turned into the sheets the GUI here draws from, the container screens
+       among them
      - the font (font/ascii.png), the title logo and edition plate
      - the default player skin (entity/player/wide/steve.png or entity/steve.png)
    A change takes effect on the next load, as the game reloads its resources.
@@ -113,7 +119,8 @@ export const Packs = {
       if (!p.enabled) continue;
       try {
         const blob = await idb('readonly', st => st.get(p.id));
-        if (blob) out.push(Object.assign({ zip: await openZip(blob) }, p));
+        // read into memory once: thousands of small reads from the stored file each wait on the disk (seconds for a game .jar)
+        if (blob) out.push(Object.assign({ zip: await openZip(blob.size < 256e6 ? new Blob([await blob.arrayBuffer()]) : blob) }, p));
       } catch (e) { console.warn('pack', p.name, e); }
     }
     return out;
@@ -164,7 +171,102 @@ export async function blockTextures(find, manifest) {
   return out;
 }
 
+/* ---- chests, beds, shulker boxes and mob heads: drawn by the game from entity pictures, which our texture
+   build cuts into layers of their own (bed_red_head_top, chest_front...). textures/composed.json says how each
+   layer was cut; a pack's own entity pictures are cut the same way here. Returns Map(name -> [frame]). ---- */
+export async function composedTextures(find) {
+  const out = new Map();
+  let spec;
+  try { spec = await (await fetch(new URL('../../textures/composed.json?v=24', import.meta.url))).json(); } catch (e) { return out; }
+  const pics = new Map();
+  for (const [name, [file, cuts, size]] of Object.entries(spec)) {
+    if (!pics.has(file)) { const b = await find('assets/minecraft/textures/entity/' + file); pics.set(file, b ? await bitmap(b) : null); }
+    const bmp = pics.get(file);
+    if (!bmp) continue;
+    const k = bmp.width / (size || 64);          // (a pack drawn at more pixels: cut to the same sixteenths)
+    const [c, g] = canvas(16, 16);
+    for (const [sx, sy, w, h, dx, dy, flip] of cuts) {
+      g.save();
+      if (flip) { g.translate(0, 2 * dy + h); g.scale(1, -1); }
+      g.drawImage(bmp, sx * k, sy * k, w * k, h * k, dx, dy, w, h);
+      g.restore();
+    }
+    out.set(name, [await createImageBitmap(c, RAW)]);
+  }
+  return out;
+}
+
+/* ---- the files a pack has under a folder of assets/minecraft/textures/ (the top pack's first) ---- */
+export function packFiles(packs, dir) {
+  const out = new Map(), root = 'assets/minecraft/textures/' + dir;
+  for (const p of packs) for (const n of p.zip.files.keys()) {
+    const path = n.slice(p.zip.prefix.length);
+    if (path.startsWith(root) && path.endsWith('.png') && !out.has(path)) out.set(path, p);
+  }
+  return [...out.keys()];
+}
+
+/* ---- item pictures: the pack's (textures/item/<name>.png) in place of ours in the strip of item pictures
+   (js/itemtex.js), cell for cell by name. Returns a new strip, or null when the pack has none. ---- */
+export async function itemStripFrom(find, strip, names) {
+  if (!strip || !strip.bmp) return null;
+  // (an animated picture is a column of frames: its first, already 16 x 16 as it is decoded)
+  const pics = await Promise.all(names.map(async name => {
+    if (!name || name.startsWith('frame_')) return null;
+    const b = await find('assets/minecraft/textures/item/' + name + '.png');
+    if (!b) return null;
+    try {
+      const full = await createImageBitmap(b, RAW);
+      return await createImageBitmap(full, 0, 0, full.width, full.width, Object.assign({ resizeWidth: 16, resizeHeight: 16, resizeQuality: 'pixelated' }, RAW));
+    } catch (e) { return null; }
+  }));
+  if (!pics.some(Boolean)) return null;
+  // drawn in one go on a canvas kept in memory (thousands of little draws on a drawing surface on the graphics card are slow)
+  const c = document.createElement('canvas');
+  c.width = 16; c.height = strip.bmp.height;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingEnabled = false;
+  g.drawImage(strip.bmp, 0, 0);
+  pics.forEach((p, i) => { if (p) { g.clearRect(0, i * 16, 16, 16); g.drawImage(p, 0, i * 16); } });
+  return createImageBitmap(c, RAW);
+}
+
 /* ---- the GUI: the sheets the game draws from, made from either layout ---- */
+/* The container screens: since 1.20.2 the game's container pictures hold only the background, and the bits
+   that move (a furnace's flame and arrow, the brewing bubbles...) are sprites of their own. Each sheet here is
+   ours with the pack's background drawn over it (its clear parts leave ours showing), and the pack's sprites
+   put where the classic sheet keeps them, which is where the screens here draw them from. */
+const CONTAINERS = ['crafting_table', 'generic_54', 'shulker_box', 'dispenser', 'crafter', 'hopper', 'brewing_stand', 'furnace', 'smoker',
+  'blast_furnace', 'enchanting_table', 'anvil', 'grindstone', 'smithing', 'stonecutter', 'loom', 'cartography_table', 'villager', 'horse'];
+const SPRITES = {
+  furnace: [['lit_progress', 176, 0], ['burn_progress', 176, 14]],
+  smoker: [['lit_progress', 176, 0], ['burn_progress', 176, 14]],
+  blast_furnace: [['lit_progress', 176, 0], ['burn_progress', 176, 14]],
+  brewing_stand: [['brew_progress', 176, 0], ['bubbles', 185, 0], ['fuel_length', 176, 29]],
+  anvil: [['error', 176, 0], ['text_field', 0, 166], ['text_field_disabled', 0, 182]],
+  grindstone: [['error', 176, 0]], smithing: [['error', 176, 0]],
+  stonecutter: [['scroller', 176, 0], ['scroller_disabled', 188, 0], ['recipe', 0, 166], ['recipe_selected', 0, 184], ['recipe_highlighted', 0, 202]],
+  enchanting_table: [['enchantment_slot', 0, 166], ['enchantment_slot_disabled', 0, 185], ['enchantment_slot_highlighted', 0, 204],
+    ['level_1', 0, 223], ['level_2', 16, 223], ['level_3', 32, 223], ['level_1_disabled', 0, 239], ['level_2_disabled', 16, 239], ['level_3_disabled', 32, 239]],
+};
+async function containerSheets(find, load, img, sheets) {
+  for (const name of CONTAINERS) {
+    const key = 'container/' + name;
+    if (sheets[key]) continue;
+    const bg = await img('gui/' + key + '.png');
+    const sp = SPRITES[name] || [];
+    const parts = await Promise.all(sp.map(([s]) => img('gui/sprites/' + key + '/' + s + '.png')));
+    if (!bg && !parts.some(Boolean)) continue;
+    let ours = null;
+    try { ours = load ? await load(key) : null; } catch (e) {}
+    const k = bg ? bg.width / 256 : 1;
+    const [c, g] = canvas(256, 256);
+    if (ours) g.drawImage(ours, 0, 0, 256, 256);
+    if (bg) g.drawImage(bg, 0, 0, bg.width, bg.height, 0, 0, bg.width / k, bg.height / k);
+    sp.forEach(([, x, y], i) => { const p = parts[i]; if (p) { g.clearRect(x, y, p.width / k, p.height / k); g.drawImage(p, 0, 0, p.width, p.height, x, y, p.width / k, p.height / k); } });
+    sheets[key] = c;
+  }
+}
 const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; return [c, g]; };
 export async function guiSheets(find, base) {
   const T = 'assets/minecraft/textures/';
@@ -252,6 +354,8 @@ export async function guiSheets(find, base) {
     if (scd) { g.clearRect(244, 0, 12, 15); g.drawImage(scd, 244, 0); }
     sheets['container/creative_inventory/tabs'] = c;
   }
+  // every other container screen: the pack's background over ours, and its sprites
+  await containerSheets(find, base.load, img, sheets);
   // the recipe book button moved out of inventory.png into sprites
   const rb = await img(S + 'recipe_book/button.png');
   if (sheets['container/inventory'] && rb) {

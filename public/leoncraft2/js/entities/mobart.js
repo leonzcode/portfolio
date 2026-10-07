@@ -13,7 +13,7 @@
 
    Also here: the particle sheet (smoke puffs, crits, hearts, flames...).
 --------------------------------------------------------------------------- */
-import { ATLAS } from '../render/entitymesh.js?v=23';
+import { ATLAS } from '../render/entitymesh.js?v=24';
 
 /* ---- a little painting kit ---- */
 function rng(seed) {
@@ -403,6 +403,7 @@ function paintAtlas(ms) {
     const [w, h] = SIZES[name];
     const [x, y] = slot(name, w, h);
     try { ART[name](new Painter(p.img, x, y, 0x9e3779b1 ^ (p.seed++ * 2654435761))); } catch (e) { console.error('mob art', name, e); }
+    if (IMAGES.has(name)) blitImage(p.img, name, IMAGES.get(name));
     if (ms !== undefined && p.i < p.names.length && performance.now() - t0 > ms) return null;
   }
   painting = null;
@@ -411,6 +412,38 @@ function paintAtlas(ms) {
 }
 const allPainted = () => painted && painted.n === Object.keys(SIZES).length;
 export function primeAtlas() { if (!allPainted()) paintAtlas(); }
+
+/* ---- pictures from files over the painted ones ----
+   Our paintings (Pixel Perfection CE's, entities/packart.js) and what a
+   player's own copy of the game gives (its paintings, and the skins of the
+   mobs whose boxes take a picture the way ours do): an ImageData the size
+   of the texture, drawn over its slot whenever the atlas is painted. */
+const IMAGES = new Map();
+function blitImage(img, name, src) {
+  const at = SLOTS[name];
+  if (!at) return;
+  const [w, h] = SIZES[name], d = img.data, s = src.data, sw = src.width;
+  for (let y = 0; y < Math.min(h, src.height); y++) for (let x = 0; x < Math.min(w, sw); x++) {
+    const o = ((at[1] + y) * ATLAS + at[0] + x) * 4, i = (y * sw + x) * 4;
+    d[o] = s[i]; d[o + 1] = s[i + 1]; d[o + 2] = s[i + 2]; d[o + 3] = s[i + 3];
+  }
+}
+export function setArtImage(name, src) {
+  if (!SIZES[name]) return false;
+  IMAGES.set(name, src);
+  if (painted && SLOTS[name]) blitImage(painted.img, name, src);
+  return true;
+}
+export const artSize = name => SIZES[name] || null;
+// where our own picture of a texture has pixels (1) and where it is clear (0): the parts its boxes use
+export function artMask(name) {
+  if (!SIZES[name]) return null;
+  primeAtlas();
+  const at = SLOTS[name], [w, h] = SIZES[name], d = painted.img.data, out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) out[y * w + x] = d[((at[1] + y) * ATLAS + at[0] + x) * 4 + 3] > 0 ? 1 : 0;
+  return out;
+}
+export const artNames = () => Object.keys(SIZES);
 // some more of it, for up to ms milliseconds: true once it is all painted
 export function paintSome(ms) { return !!(allPainted() || paintAtlas(ms)); }
 export function buildAtlas() {

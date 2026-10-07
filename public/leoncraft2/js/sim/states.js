@@ -39,8 +39,8 @@
      bell                          bit 0 hanging, bit 4 powered
      comparator output             kept in the simulation's state, not the meta
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from '../blocks.js?v=23';
-import { SHAPES, MODEL_SHAPES, turn } from '../models.js?v=23';
+import { B, BLOCKS, MAX_ID } from '../blocks.js?v=24';
+import { SHAPES, MODEL_SHAPES, turn, rotate, faceUV } from '../models.js?v=24';
 
 export const STATEFUL = new Uint8Array(MAX_ID);    // its look depends on its meta
 export const SLIGHT = new Uint8Array(MAX_ID);      // so does its light
@@ -170,16 +170,6 @@ function make(d, m) {
 /* ------------------------------------------------------------- models */
 const box = (x0, y0, z0, x1, y1, z1, extra) => Object.assign({ f: [x0, y0, z0], t: [x1, y1, z1] }, extra || {});
 const DIRS = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];
-const FACE_OF_FACING = [5, 0, 4, 1, 2, 3];          // facing (n e s w up down) -> the face it points out of
-// a sprite standing up: two crossed planes centred at (cx, cz), y0 to y1, w wide
-function sprite(cx, cz, y0, y1, w, layer, uv) {
-  const h = w / 2;
-  uv = uv || [0, 0, 16, 16];
-  return [
-    { q: [[cx - h, y0, cz - h], [cx + h, y0, cz + h], [cx + h, y1, cz + h], [cx - h, y1, cz - h]], uv, layer },
-    { q: [[cx - h, y0, cz + h], [cx + h, y0, cz - h], [cx + h, y1, cz - h], [cx - h, y1, cz + h]], uv, layer },
-  ];
-}
 // a picture lying flat at height y, turned a quarter at a time (rot 0: the top of the picture to the north)
 function flatQuad(layer, y, rot) {
   const c = [[0, y, 0], [16, y, 0], [16, y, 16], [0, y, 16]];
@@ -195,58 +185,58 @@ SHAPES.thin = function (d, m, nb) {
   return thinBase(d, m, nb);
 };
 function torchLayer(d, lit) { const L = d.L || {}; return lit ? (L.torch || d.faces[2]) : (L.torchOff || L.torch || d.faces[2]); }
+// a redstone torch on a repeater or comparator, as the game draws it: a little box two pixels square, h tall
+function diodeTorch(x, z, h, layer) {
+  const s = [7, 6, 9, 6 + h];
+  return box(x - 1, 2, z - 1, x + 1, 2 + h, z + 1, { faces: all6(layer), skip: 1 << 3, uv: [s, s, [7, 6, 9, 8], [7, 6, 9, 8], s, s] });
+}
+// the slab under a repeater or comparator: its sides the bottom band of the smooth stone, its top the diode's picture
+function diodeBase(d, top) {
+  const bottom = d.faces[3], side = bottom, s = [0, 14, 16, 16];
+  return [box(0, 0, 0, 16, 2, 16, { faces: [side, side, side, bottom, side, side], skip: 1 << 2, uv: [s, s, [0, 0, 16, 16], [0, 0, 16, 16], s, s] }), flatQuad(top, 2, 0)];
+}
 function repeaterModel(d, m) {
   const out = m & 3, delay = (m >> 2) & 3, on = !!(m & 16), locked = !!(m & 32);
   const L = d.L || {}, top = on && L.on ? L.on : d.faces[2];
-  const side = d.faces[0], bottom = d.faces[3];
-  const list = [box(0, 0, 0, 16, 2, 16, { faces: [side, side, side, bottom, side, side], skip: 1 << 2 }), flatQuad(top, 2, 0)];
+  const list = diodeBase(d, top);
   const tl = torchLayer(d, on);
-  list.push(...sprite(8, 3, 1, 9, 5, tl));                            // the torch by the output
-  if (locked) list.push(box(2, 2, 6 + delay * 2, 14, 4, 8 + delay * 2, { faces: all6(d.faces[3]) }));   // the bar that locks it
-  else list.push(...sprite(8, 7 + delay * 2, 1, 9, 5, tl));          // the one that moves with the delay
+  list.push(diodeTorch(8, 3, 5, tl));                                  // the torch by the output
+  if (locked) {
+    // the bar that locks it (the game draws it in bedrock's picture: here the bottom of the slab)
+    const b = d.faces[3];
+    list.push(box(2, 2, 6 + delay * 2, 14, 4, 8 + delay * 2, { faces: all6(b), skip: 1 << 3, uv: [[6, 7, 8, 9], [6, 7, 8, 9], [2, 7, 14, 9], [2, 7, 14, 9], [2, 7, 14, 9], [2, 7, 14, 9]] }));
+  } else list.push(diodeTorch(8, 7 + delay * 2, 5, tl));             // the one that moves with the delay
   return turn(list, out);
 }
 function comparatorModel(d, m) {
   const out = m & 3, sub = !!(m & 4), on = !!(m & 8);
   const L = d.L || {}, top = on && L.on ? L.on : d.faces[2];
-  const side = d.faces[0], bottom = d.faces[3];
-  const list = [box(0, 0, 0, 16, 2, 16, { faces: [side, side, side, bottom, side, side], skip: 1 << 2 }), flatQuad(top, 2, 0)];
-  list.push(...sprite(8, 3, 1, sub ? 9 : 7, 5, torchLayer(d, sub)));
-  list.push(...sprite(4, 12, 1, 9, 5, torchLayer(d, on)), ...sprite(12, 12, 1, 9, 5, torchLayer(d, on)));
+  const list = diodeBase(d, top);
+  // the front torch is lit in subtract mode (and stands two pixels taller, as the game's does)
+  list.push(diodeTorch(8, 3, sub ? 5 : 3, torchLayer(d, sub)));
+  list.push(diodeTorch(5, 12, 5, torchLayer(d, on)), diodeTorch(11, 12, 5, torchLayer(d, on)));
   return turn(list, out);
 }
-// the piston head: the plate at the front and the arm back into the base
+// the game's turns that point a model built facing north the way a piston faces (north, east, south, west, up, down)
+const POINT = [[0, 0], [0, 1], [0, 2], [0, 3], [3, 0], [1, 0]];
+/* The piston head (the game's model, built pointing north): the plate, its face the platform (sticky or not),
+   the back of it the plain platform, the sides the edge of the piston's side picture; and the arm, which runs
+   on four pixels into the base's open front. */
 function pistonHead(d, m) {
-  const f = Math.min(5, m & 7), F = FACE_OF_FACING[f];
-  const L = d.L || {};
-  const front = m & 8 && L.sticky ? L.sticky : d.faces[2], side = L.pside !== undefined ? L.pside : d.faces[0];
-  const plate = slab(F, 0, 4), arm = rodTo(F, 4, 16);
-  const pf = all6(side); pf[F] = front; pf[F ^ 1] = d.faces[2];
-  return [Object.assign(plate, { faces: pf }), Object.assign(arm, { faces: all6(side) })];
+  const f = Math.min(5, m & 7), L = d.L || {}, g = faceUV;
+  const front = m & 8 && L.sticky ? L.sticky : d.faces[2], back = d.faces[2], side = L.pside !== undefined ? L.pside : d.faces[0];
+  const plate = box(0, 0, 0, 16, 16, 4, { faces: [side, side, side, side, back, front],
+    uv: [g([0, 0, 16, 4], 90), g([0, 0, 16, 4], 270), [0, 0, 16, 4], g([0, 0, 16, 4], 180), [0, 0, 16, 16], [0, 0, 16, 16]] });
+  const arm = box(6, 6, 4, 10, 10, 20, { faces: all6(side), skip: 48, uv: [[0, 0, 16, 4], [16, 4, 0, 0], g([0, 0, 16, 4], 270), g([0, 0, 16, 4], 90), [0, 0, 0, 0], [0, 0, 0, 0]] });
+  return rotate([plate, arm], POINT[f][0], POINT[f][1]);
 }
-// the box from depth a to depth b in from face F
-function slab(F, a, b) {
-  switch (F) {
-    case 0: return box(16 - b, 0, 0, 16 - a, 16, 16);
-    case 1: return box(a, 0, 0, b, 16, 16);
-    case 2: return box(0, 16 - b, 0, 16, 16 - a, 16);
-    case 3: return box(0, a, 0, 16, b, 16);
-    case 4: return box(0, 0, 16 - b, 16, 16, 16 - a);
-    default: return box(0, 0, a, 16, 16, b);
-  }
-}
-function rodTo(F, a, b) {
-  const s = slab(F, a, b), ax = F >> 1;
-  for (let k = 0; k < 3; k++) if (k !== ax) { s.f[k] = 6; s.t[k] = 10; }
-  return s;
-}
-// an extended piston's base: twelve pixels, the inside showing where the head came out
+// an extended piston's base: twelve pixels, the inside showing where the head came out (the game's model)
 SHAPES.pistonbase = function (d, m) {
-  const f = Math.min(5, m & 7), F = FACE_OF_FACING[f], L = d.L || {};
-  const fc = all6(d.faces[0]);
-  fc[F] = L.inner !== undefined ? L.inner : d.faces[0];
-  fc[F ^ 1] = d.back !== undefined ? d.back : d.faces[0];
-  return [Object.assign(slab(F, 4, 16), { faces: fc })];
+  const f = Math.min(5, m & 7), L = d.L || {}, g = faceUV, S = d.faces[0];
+  const inner = L.inner !== undefined ? L.inner : S, back = d.back !== undefined ? d.back : S;
+  const b = box(0, 0, 4, 16, 16, 16, { faces: [S, S, S, S, back, inner],
+    uv: [g([0, 4, 16, 16], 90), g([0, 4, 16, 16], 270), [0, 4, 16, 16], g([0, 4, 16, 16], 180), [0, 0, 16, 16], [0, 0, 16, 16]] });
+  return rotate([b], POINT[f][0], POINT[f][1]);
 };
 MODEL_SHAPES.add('pistonbase');
 

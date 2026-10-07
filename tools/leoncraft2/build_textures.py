@@ -72,7 +72,7 @@ COLOURS = ['white', 'light_gray', 'gray', 'black', 'brown', 'red', 'orange', 'ye
 RENAME = {'short_grass': 'grass', 'iron_chain': 'chain', 'dirt_path_side': 'grass_path_side',
           'dirt_path_top': 'grass_path_top'}
 # textures neither pack has: the nearest thing that does exist (logged)
-FALLBACK = {'decorated_pot_side': 'terracotta', 'vault_top': 'vault_top_off', 'bamboo_fence': 'bamboo_fence_side',
+FALLBACK = {'decorated_pot_side': 'terracotta', 'decorated_pot_base': 'terracotta','vault_top': 'vault_top_off', 'bamboo_fence': 'bamboo_fence_side',
             'pitcher_crop_top_stage_3': 'pitcher_crop_head_stage_3', 'pitcher_crop_top_stage_4': 'pitcher_crop_head_stage_4',
             'sulfur_spike_up_tip': 'sulfur_spike'}
 # Pixel Perfection Legacy draws a few blocks as one small atlas: the 16x16 piece each face uses
@@ -288,57 +288,56 @@ def paste(dst, img, x, y):
 # Minecraft's box UV layout: a box w x h x d at (u, v) has its two big faces at
 # (u+d, v) and (u+d+w, v), and its four sides along v+d. For chests the y axis
 # points up, so the side strips are upside down in the file.
-def chest_faces(file):
-    im = ent('chest/' + file)
-    flip = lambda c: c.transpose(Image.FLIP_TOP_BOTTOM)
-    out = {}
-    lid_top = im.crop((28, 0, 42, 14))
-    base_bot = im.crop((14, 19, 28, 33))
-    top = blank(); paste(top, lid_top, 1, 1); out['top'] = top
-    bot = blank(); paste(bot, base_bot, 1, 1); out['bottom'] = bot
-    # the box is x 1..15, y 0..14: rows 2..16 of the layer; the lid (y 9..14) over the base (y 0..9)
-    for face, (lu, bu) in {'front': (42, 42), 'side': (0, 0)}.items():
-        t = blank()
-        paste(t, flip(im.crop((bu, 33, bu + 14, 43))).crop((0, 1, 14, 10)), 1, 7)
-        paste(t, flip(im.crop((lu, 14, lu + 14, 19))), 1, 2)
-        if face == 'front':   # the latch, y 7..11 at x 7..9
-            paste(t, flip(im.crop((1, 1, 3, 5))), 7, 5)
-        out[face] = t
-    return out
+#
+# Each composed layer is a list of cuts from one 64 x 64 entity picture: (sx, sy,
+# w, h, dx, dy, flip), the piece at (sx, sy) pasted at (dx, dy) over what is
+# there (where it is not clear), flip 1 turning it top to bottom first. The same
+# lists go out as textures/composed.json, so a player's own copy of the game
+# (ui/pack.js) is cut up the same way and its chests, beds and shulker boxes
+# look like the game's.
+CUTS = {}           # layer name -> [entity picture (under textures/entity/), [cuts]]
 
 
-def bed_faces(colour):
-    """Head and foot of a bed: top (row 0 = the head end), side (x 0 = the head end), end."""
-    im = ent('bed/' + colour + '.png')
-    leg = im.crop((53, 3, 56, 6))
-    out = {}
-    for part, v in (('head', 0), ('foot', 22)):
-        top = im.crop((6, v + 6, 22, v + 22))
-        out[part + '_top'] = to_f(top)
-        # the 6-deep side strip runs along the bed: turn it so the mattress top is up
-        side = im.crop((0, v + 6, 6, v + 22)).transpose(Image.ROTATE_90)   # 16 wide, 6 tall
-        s = blank()
-        paste(s, side, 0, 7)                     # y 3..9
-        legx = 0 if part == 'head' else 13       # legs stand at the outer end of each half
-        paste(s, leg, legx, 13)
-        out[part + '_side'] = s
-        if part == 'head':
-            end = im.crop((6, 0, 22, 6)).transpose(Image.FLIP_TOP_BOTTOM)
-        else:
-            end = im.crop((22, 22, 38, 28)).transpose(Image.FLIP_TOP_BOTTOM)
-        e = blank()
-        paste(e, end, 0, 7)
-        paste(e, leg, 0, 13); paste(e, leg, 13, 13)
-        out[part + '_end'] = e
-    return out
+def cut(img, pieces):
+    t = blank()
+    for sx, sy, w, h, dx, dy, fl in pieces:
+        c = img.crop((sx, sy, sx + w, sy + h))
+        if fl:
+            c = c.transpose(Image.FLIP_TOP_BOTTOM)
+        paste(t, c, dx, dy)
+    return t
 
 
-def shulker_faces(file):
-    im = ent('shulker/' + file)
-    side = blank()
-    paste(side, im.crop((16, 44 + 4, 32, 52)), 0, 12)   # the base below the lid
-    paste(side, im.crop((16, 16, 32, 28)), 0, 0)        # the lid, 12 tall
-    return {'top': to_f(im.crop((16, 0, 32, 16))), 'bottom': to_f(im.crop((32, 28, 48, 44))), 'side': side}
+def chest_cuts(file):
+    # the box is x 1..15, y 0..14: rows 2..16 of the layer; the lid (y 9..14) over the base (y 0..9); the front
+    # carries the latch's picture where the latch sits (y 7..11, x 7..9)
+    side = lambda u: [(u, 33, 14, 9, 1, 7, 1), (u, 14, 14, 5, 1, 2, 1)]
+    return {'top': ['chest/' + file, [(28, 0, 14, 14, 1, 1, 0)]],
+            'bottom': ['chest/' + file, [(14, 19, 14, 14, 1, 1, 0)]],
+            'front': ['chest/' + file, side(42) + [(1, 1, 2, 4, 7, 5, 1)]],
+            'side': ['chest/' + file, side(0)]}
+
+
+def bed_cuts(colour):
+    """The pieces of a bed (models.js bed lays them on with these positions):
+       head_top, foot_top   each half's top as it is, the pillow at row 0 of the head's
+       head_side, foot_side the half's west side (x 0-5) and east side (x 6-11), as they are in the picture
+       head_end             the head's end (rows 0-5), the foot's end (rows 6-11), a leg's four sides
+                            (x 0-11, rows 12-14) and its foot (x 12-14)
+       foot_end             the underside"""
+    f = 'bed/' + colour + '.png'
+    return {'head_top': [f, [(6, 6, 16, 16, 0, 0, 0)]], 'foot_top': [f, [(6, 28, 16, 16, 0, 0, 0)]],
+            'head_side': [f, [(0, 6, 6, 16, 0, 0, 0), (22, 6, 6, 16, 6, 0, 0)]],
+            'foot_side': [f, [(0, 28, 6, 16, 0, 0, 0), (22, 28, 6, 16, 6, 0, 0)]],
+            'head_end': [f, [(6, 0, 16, 6, 0, 0, 0), (22, 22, 16, 6, 0, 6, 0), (50, 3, 12, 3, 0, 12, 0), (56, 0, 3, 3, 12, 12, 0)]],
+            'foot_end': [f, [(28, 6, 16, 16, 0, 0, 0)]]}
+
+
+def shulker_cuts(file):
+    f = 'shulker/' + file
+    # the side: the lid, 12 tall, over the base's eight rows (the game's lid has a notch the base shows through)
+    return {'top': [f, [(16, 0, 16, 16, 0, 0, 0)]], 'bottom': [f, [(32, 28, 16, 16, 0, 0, 0)]],
+            'side': [f, [(16, 44, 16, 8, 0, 8, 0), (16, 16, 16, 12, 0, 0, 0)]]}
 
 
 def sign_faces(img):
@@ -367,26 +366,37 @@ def head_faces(img, kind):
 COMPOSED = {}
 
 
+def compose_cuts(name, spec):
+    CUTS[name] = spec
+    COMPOSED[name] = cut(ent(spec[0]), spec[1])
+
+
 def compose_all():
     chests = {'chest': 'normal.png', 'trapped_chest': 'trapped.png', 'ender_chest': 'ender.png'}
     for k, f in chests.items():
-        for face, a in chest_faces(f).items():
-            COMPOSED[k + '_' + face] = a
-    # copper chests: the wooden chest recoloured to each copper stage
-    for age in ('', 'exposed_', 'weathered_', 'oxidized_'):
+        for face, spec in chest_cuts(f).items():
+            compose_cuts(k + '_' + face, spec)
+    # copper chests: the wooden chest recoloured to each copper stage (the game's own copper chests, when a player
+    # opens their copy of the game, are cut from its pictures: the entries in composed.json)
+    for age, file in (('', 'copper.png'), ('exposed_', 'copper_exposed.png'), ('weathered_', 'copper_weathered.png'), ('oxidized_', 'copper_oxidized.png')):
         base = block_tex(age + 'copper' if age else 'copper_block')[0][0]
         dark, light = ramp_of(base)
-        for face in ('top', 'bottom', 'side', 'front'):
+        for face, spec in chest_cuts(file).items():
             a = palette_map(COMPOSED['chest_' + face], dark, light, 1.2)
             a[..., 3] = COMPOSED['chest_' + face][..., 3]
             COMPOSED[age + 'copper_chest_' + face] = a
+            CUTS[age + 'copper_chest_' + face] = spec
     for c in COLOURS:
-        for k, a in bed_faces(c).items():
-            COMPOSED['bed_%s_%s' % (c, k)] = a
-        for k, a in shulker_faces('shulker_%s.png' % c).items():
-            COMPOSED['shulker_box_%s_%s' % (c, k)] = a
-    for k, a in shulker_faces('shulker.png').items():
-        COMPOSED['shulker_box_' + k] = a
+        for k, spec in bed_cuts(c).items():
+            compose_cuts('bed_%s_%s' % (c, k), spec)
+        for k, spec in shulker_cuts('shulker_%s.png' % c).items():
+            compose_cuts('shulker_box_%s_%s' % (c, k), spec)
+    for k, spec in shulker_cuts('shulker.png').items():
+        compose_cuts('shulker_box_' + k, spec)
+    # pictures Pixel Perfection CE does not have (the decorated pot's): ours fall back to terracotta, and a player's
+    # own copy of the game is cut like this (the third number is the size the picture is drawn at)
+    CUTS['decorated_pot_side'] = ['decorated_pot/decorated_pot_side.png', [(0, 0, 16, 16, 0, 0, 0)], 16]
+    CUTS['decorated_pot_base'] = ['decorated_pot/decorated_pot_base.png', [(0, 13, 14, 14, 1, 1, 0)], 32]
     # signs: the eight woods Pixel Perfection CE has; the newer woods are the oak sign recoloured to their planks
     oak = ent('signs/oak.png')
     for w in ('oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'crimson', 'warped', 'mangrove', 'cherry',
@@ -409,6 +419,10 @@ def compose_all():
     for k, f in heads.items():
         for face, a in head_faces(ent(f), k).items():
             COMPOSED['head_%s_%s' % (k, face)] = a
+        r = {'top': (9, 0), 'front': (9, 8), 'side': (0, 8), 'back': (27, 8)} if k == 'piglin' else \
+            {'top': (8, 0), 'front': (8, 8), 'side': (0, 8), 'back': (24, 8)}
+        for face, (sx, sy) in r.items():
+            CUTS['head_%s_%s' % (k, face)] = [f, [(sx, sy, 8, 8, 4, 4 if face == 'top' else 8, 0)]]
     # the player head is the game's own default skin (original art), not the pack's
     skin = Image.open(os.path.join(GAME, 'textures', 'skin', 'default.png')).convert('RGBA')
     for face, a in head_faces(skin, 'player').items():
@@ -862,6 +876,41 @@ Image.open(os.path.join(ART, 'colormap_grass.png')).convert('RGBA').save(os.path
 
 with open(os.path.join(OUT, 'manifest.json'), 'w', encoding='utf-8') as fh:
     json.dump(dict(size=16, layers=N, textures=manifest), fh, separators=(',', ':'))
+
+# how each composed layer is cut from an entity picture, for ui/pack.js (only the layers that are in the strip)
+with open(os.path.join(OUT, 'composed.json'), 'w', encoding='utf-8') as fh:
+    json.dump({k: v for k, v in sorted(CUTS.items()) if k in manifest}, fh, separators=(',', ':'))
+
+# ---------------------------------------------------------------- paintings
+# Pixel Perfection CE's own paintings, under the game's names and at its sizes (16 pixels a block). They are the
+# pack's own pictures: a pixel audit against the game's paintings (2026-10-07) found no pixel in common and no
+# likeness in their layout. (Pixel Perfection Legacy's paintings are the game's own, so none of those is used.)
+# Packed into one picture for entities/items2.js; the paintings the pack does not have are drawn by the game.
+PAINT_DIR = os.path.join(TEX, 'painting')
+if os.path.isdir(PAINT_DIR):
+    pics = []
+    for f in sorted(os.listdir(PAINT_DIR)):
+        if f.endswith('.png') and not f.startswith('paintings_'):
+            pics.append((f[:-4], Image.open(os.path.join(PAINT_DIR, f)).convert('RGBA')))
+    pics.sort(key=lambda p: (-p[1].size[1], p[0]))
+    W, x, y, row, where = 256, 0, 0, 0, {}
+    for n, im in pics:
+        w, h = im.size
+        if x + w > W:
+            x, y, row = 0, y + row, 0
+        where[n] = [x, y, w, h]
+        x += w
+        row = max(row, h)
+    sheet = Image.new('RGBA', (W, y + row), (0, 0, 0, 0))
+    for n, im in pics:
+        sheet.paste(im, tuple(where[n][:2]))
+    sheet.save(os.path.join(OUT, 'paintings.png'), optimize=True)
+    with open(os.path.join(OUT, 'paintings.json'), 'w', encoding='utf-8') as fh:
+        json.dump(where, fh, separators=(',', ':'))
+    print('paintings:', len(where))
+# the beacon's beam (Pixel Perfection CE's; checked against the game's: no pixel in common), for js/sim/beams.js
+if os.path.exists(os.path.join(ENTITY, 'beacon_beam.png')):
+    Image.open(os.path.join(ENTITY, 'beacon_beam.png')).convert('RGBA').save(os.path.join(OUT, 'beacon_beam.png'), optimize=True)
 
 print('textures:', len(manifest), 'layers:', N, '(the game checks MAX_ARRAY_TEXTURE_LAYERS)')
 print('from Pixel Perfection Legacy:', len(set(log_ppl)))
