@@ -58,15 +58,18 @@ export const EFFECTS = {
   oozing: E(0x99FFA3, 'bad', 'Oozing'),
   infested: E(0x8C9B8C, 'bad', 'Infested'),
 };
-// where each effect's picture is in the classic sheet (container/inventory, 18 x 18 from 0, 198, eight to a row)
-export const EFFECT_ICON = {
-  speed: 0, slowness: 1, haste: 2, mining_fatigue: 3, strength: 4, weakness: 5, poison: 6, regeneration: 7,
-  invisibility: 8, hunger: 9, jump_boost: 10, nausea: 11, night_vision: 12, blindness: 13, resistance: 14, fire_resistance: 15,
-  water_breathing: 16, wither: 17, absorption: 18, levitation: 19, glowing: 20, luck: 21, unluck: 22, health_boost: 23,
-  // the effects that came later, with the nearest of those
-  slow_falling: 19, conduit_power: 16, dolphins_grace: 0, bad_omen: 22, raid_omen: 22, trial_omen: 22, hero_of_the_village: 21,
-  darkness: 13, wind_charged: 10, weaving: 1, oozing: 6, infested: 9,
-};
+/* each effect's picture: the gui sheet mob_effect.png (tools/leoncraft2/build_effects.py), 18 x 18,
+   eight to a row in this order (the same list as the tool's) */
+export const EFFECT_SHEET = 'mob_effect';
+const SHEET_ORDER = [
+  'speed', 'slowness', 'haste', 'mining_fatigue', 'strength', 'instant_health', 'instant_damage', 'jump_boost',
+  'nausea', 'regeneration', 'resistance', 'fire_resistance', 'water_breathing', 'invisibility', 'blindness', 'night_vision',
+  'hunger', 'weakness', 'poison', 'wither', 'health_boost', 'absorption', 'saturation', 'glowing',
+  'levitation', 'luck', 'unluck', 'slow_falling', 'conduit_power', 'dolphins_grace', 'bad_omen', 'hero_of_the_village',
+  'darkness', 'trial_omen', 'raid_omen', 'wind_charged', 'weaving', 'oozing', 'infested', 'breath_of_the_nautilus',
+];
+export const EFFECT_ICON = {};
+SHEET_ORDER.forEach((n, i) => { EFFECT_ICON[n] = i; });
 // the old names commands and items still use
 const ALIAS = { jump: 'jump_boost', instant_heal: 'instant_health', harm: 'instant_damage', heal: 'instant_health', confusion: 'nausea', bad_luck: 'unluck' };
 export function effectId(name) {

@@ -22,7 +22,7 @@
 import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=25';
 import { drawBossBar } from '../dim/bossbar.js?v=25';
 import { BLOCKS, B } from '../blocks.js?v=25';
-import { EFFECTS, EFFECT_ICON } from '../effects.js?v=25';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=25';
 
 const TICK = 50;
 
@@ -111,8 +111,8 @@ export class Hud {
 
     // what is held up under the HUD (a map in the hand: js/maps.js), and when to draw again
     if (this.under) { const w = this.under(g, now); if (w) this._wakeAt(w); }
-    // the effects on you, top right
-    if (this.effects) this._effects(g, W, now);
+    // the effects on you, top right (unless the open inventory lists them)
+    if (this.effects && !(g.screen && g.screen.listsEffects && g.screen.listsEffects())) this._effects(g, W, now);
     // a spectator has no hotbar (modes.js): only the debug text and a boss's bar
     if (this.spectator) {
       if (this.debug) this._debugText(g, W);
@@ -256,15 +256,15 @@ export class Hud {
      longest lasting furthest right (ambient ones, from a beacon or a
      conduit, first, in the box with the light rim), the picture 3 in, and in
      the last ten seconds the picture fading and flickering by the game's
-     sum. The boxes and pictures are Pixel Perfection's (container/inventory,
-     where the classic game kept them); effects newer than that sheet borrow
-     the nearest picture. */
+     sum. The boxes are Pixel Perfection's (container/inventory), the
+     pictures the newer kind (gui/mob_effect.png). Not drawn while the
+     inventory lists them down its side (the game leaves them off then). */
   _effects(g, W, now) {
     const e = this.effects, list = [];
     for (const n in e) { const d = EFFECTS[n]; if (d && !d.instant && !e[n].hidden) list.push(n); }
     if (!list.length) return;
-    const img = g.sheet('container/inventory');
-    if (!img) { this._wakeAt(now + 100); return; }
+    const img = g.sheet('container/inventory'), pics = g.sheet(EFFECT_SHEET);
+    if (!img || !pics) { this._wakeAt(now + 100); return; }
     const key = n => { const x = e[n]; return [x.ambient ? 1 : 0, x.ticks < 0 ? 1 : 0, x.ticks < 0 ? 0 : x.ticks, EFFECTS[n].colour]; };
     list.sort((a, b) => { const p = key(a), q = key(b); for (let i = 0; i < 4; i++) if (p[i] !== q[i]) return q[i] - p[i]; return 0; });
     let good = 0, rest = 0;
@@ -283,7 +283,7 @@ export class Hud {
       const ic = EFFECT_ICON[n];
       if (ic === undefined) continue;
       ctx.globalAlpha = a;
-      g.blit(img, (ic % 8) * 18, 198 + Math.floor(ic / 8) * 18, 18, 18, px + 3, py + 3);
+      g.blit(pics, (ic % 8) * 18, Math.floor(ic / 8) * 18, 18, 18, px + 3, py + 3);
       ctx.globalAlpha = 1;
     }
   }

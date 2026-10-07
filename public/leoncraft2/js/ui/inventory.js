@@ -42,7 +42,7 @@ import { enchName, ENCH } from '../enchanting.js?v=25';
 import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=25';
 import { patternLines, drawBannerIcon } from '../banners.js?v=25';
 import { mapLines } from '../maps.js?v=25';
-import { EFFECTS, EFFECT_ICON, effectName, effectTime } from '../effects.js?v=25';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=25';
 import { dialPicture, usePicture } from '../dials.js?v=25';
 export { displayName, maxStack };
 
@@ -1023,6 +1023,13 @@ export class InventoryScreen extends ContainerScreen {
      120 across with the name and time left when there is room, else 32 with
      just the picture and the name in a tooltip. Redrawn while any are on, for
      their clocks. (The HUD's own list: gui.hud.effects.) */
+  // whether the effects are listed down the side now (the HUD leaves its own off then, as the game does)
+  listsEffects() {
+    const e = this.gui && this.gui.hud && this.gui.hud.effects;
+    if (!e || this.width - (this.left + 176 + 2) < 32) return false;
+    for (const n in e) { const d = EFFECTS[n]; if (d && !d.instant && !e[n].hidden) return true; }
+    return false;
+  }
   drawEffects(g, mx, my) {
     const e = g.hud && g.hud.effects, list = [];
     if (e) for (const n in e) { const d = EFFECTS[n]; if (d && !d.instant && !e[n].hidden) list.push(n); }
@@ -1033,7 +1040,7 @@ export class InventoryScreen extends ContainerScreen {
     const wide = room >= 120, step = list.length > 5 ? Math.floor(132 / (list.length - 1)) : 33;
     const key = n => { const v = e[n]; return [v.ambient ? 1 : 0, v.ticks < 0 ? 1 : 0, v.ticks < 0 ? 0 : v.ticks, EFFECTS[n].colour]; };
     list.sort((a, b) => { const p = key(a), q = key(b); for (let i = 0; i < 4; i++) if (p[i] !== q[i]) return p[i] - q[i]; return 0; });
-    const img = g.sheet('container/inventory');
+    const img = g.sheet(EFFECT_SHEET);
     let y = this.top;
     for (const n of list) {
       const v = e[n], w = wide ? 120 : 32;
@@ -1043,7 +1050,7 @@ export class InventoryScreen extends ContainerScreen {
       g.fill(x + 1, y + 1, x + w - 1, y + 31, band);
       g.fill(x + 3, y + 3, x + w - 3, y + 29, 0xFF212121);
       const ic = EFFECT_ICON[n];
-      if (img && ic !== undefined) g.blit(img, (ic % 8) * 18, 198 + Math.floor(ic / 8) * 18, 18, 18, x + (wide ? 6 : 7), y + 7);
+      if (img && ic !== undefined) g.blit(img, (ic % 8) * 18, Math.floor(ic / 8) * 18, 18, 18, x + (wide ? 6 : 7), y + 7);
       if (wide) {
         g.text(effectName(n, v.level), x + 28, y + 6, 0xFFFFFF);
         g.text(effectTime(v.ticks), x + 28, y + 16, 0x7F7F7F);
