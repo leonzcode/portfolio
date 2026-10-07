@@ -53,7 +53,9 @@ import { glints } from '../render/armor.js?v=21';
 import { containerKind } from '../containers.js?v=21';
 import { getSkinSettings } from '../render/avatar.js?v=21';
 import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=21';
-import { register, commandDef } from '../commands.js?v=21';
+import { register, commandDef, execute, gameRule } from '../commands.js?v=21';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=21';
+import { Projectile } from '../entities/projectiles.js?v=21';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
@@ -80,16 +82,38 @@ export function wsBase() {
   return 'ws://' + h + ':8600/mc/ws';
 }
 export const httpBase = () => wsBase().replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/ws$/, '');
-async function post(path, body) {
-  const r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ device: deviceId() }, body)) });
-  return r.json();
+/* Why the server could not be reached, in words for the player:
+     down  nothing answers (the server stopped, restarting after an update, or
+           no network): the page asked and heard nothing, or the proxy in
+           front of it said the server behind it is not there (502, 503, 504)
+     old   the server answers, but as the mc server did before it had
+           Leoncraft 2 on it (plain text where the list should be, or another
+           game's welcome on the socket): it has not been updated yet */
+export const SERVER_DOWN = 'down', SERVER_OLD = 'old';
+export const FAIL_TEXT = {
+  down: ["Can't connect to server", 'The multiplayer server is not answering. It may be restarting, so try again in a minute.'],
+  old: ['Outdated server!', 'The multiplayer server has not been updated for Leoncraft 2 yet.'],
+};
+async function answer(r) {
+  if (!r.ok) throw { kind: SERVER_DOWN, status: r.status };
+  const text = await r.text();
+  try { return JSON.parse(text); } catch (e) { throw { kind: SERVER_OLD }; }
 }
-// the server list, and how long the server took to answer it (the ping shown beside each)
+async function post(path, body) {
+  let r;
+  try { r = await fetch(httpBase() + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ device: deviceId() }, body)) }); }
+  catch (e) { return { error: FAIL_TEXT.down[1] }; }
+  try { return await answer(r); } catch (e) { return { error: FAIL_TEXT[e.kind || SERVER_DOWN][1] }; }
+}
+// the server list, and how long the server took to answer it (the ping shown beside each); throws { kind } when it cannot be had
 export async function listServers() {
   const t0 = performance.now();
-  const r = await fetch(httpBase() + '/lc2/servers?device=' + encodeURIComponent(deviceId()), { cache: 'no-store' });
-  const j = await r.json();
-  return { servers: j.servers || [], ping: Math.round(performance.now() - t0) };
+  let r;
+  try { r = await fetch(httpBase() + '/lc2/servers?device=' + encodeURIComponent(deviceId()), { cache: 'no-store' }); }
+  catch (e) { throw { kind: SERVER_DOWN }; }
+  const j = await answer(r);
+  if (!j || !Array.isArray(j.servers)) throw { kind: SERVER_OLD };
+  return { servers: j.servers, ping: Math.round(performance.now() - t0) };
 }
 export const createServer = o => post('/lc2/create', o);
 export const editServer = o => post('/lc2/edit', o);
@@ -117,16 +141,80 @@ class MpSave {
   writeState(s) { this.local.writeState(s); }
 }
 
-// /list: who is on, as the game answers it (no commands needed)
+// /list: who is on, as the game answers it (no commands needed; on a server, the server's own count)
 register('list', {
   usage: '',
   always: true,
   run(args, ctx) {
     const net = ctx.game && ctx.game.net;
-    const names = net ? [net.name].concat(net.players ? [...net.players.list.values()].map(r => r.name) : []) : [ctx.playerName || 'Player'];
-    ctx.say(`There are ${names.length} of a max of ${net ? 20 : 1} players online: ${names.join(', ')}`);
+    if (net) { net.send({ t: 'cmd', line: 'list' }); return; }
+    ctx.say(`There are 1 of a max of 1 players online: ${ctx.playerName || 'Player'}`);
   },
 });
+/* The commands only a server has (its operators': the one who made it and
+   whoever they /op), answered by the server in the game's words. Not on a
+   server: unknown, as in singleplayer. */
+const SERVER_ONLY = {
+  op: '<targets>', deop: '<targets>', kick: '<targets> [reason]', ban: '<targets> [reason]', 'ban-ip': '<target> [reason]',
+  pardon: '<targets>', 'pardon-ip': '<target>', banlist: '', whitelist: '<on|off|add|remove|list|reload>', 'save-all': '',
+};
+for (const name in SERVER_ONLY) {
+  register(name, {
+    usage: SERVER_ONLY[name], always: true,
+    suggest: (i, w) => {
+      if (name === 'whitelist') return i === 0 ? ['on', 'off', 'add', 'remove', 'list', 'reload'] : i === 1 ? onlineNames() : [];
+      return i === 0 && SERVER_ONLY[name] ? onlineNames() : [];
+    },
+    run(args, ctx) {
+      const net = ctx.game && ctx.game.net;
+      if (!net) { ctx.say('Unknown or incomplete command, see below for error', 0xFF5555); ctx.say('/' + [name].concat(args).join(' ') + '<--[HERE]', 0xFF5555); return; }
+      net.send({ t: 'cmd', line: [name].concat(args).join(' ') });
+    },
+  });
+}
+// the names Tab offers for a player (everyone on the server you are on)
+let activeNet = null;
+function onlineNames() { const n = activeNet; return n ? [n.name].concat(n.players ? [...n.players.list.values()].map(r => r.name) : []) : []; }
+
+/* ---- commands aimed at other players ----
+   /gamemode creative Bob, /give Bob diamond, /kill Bob, /tp Bob Cara... As
+   the game does it, the command reaches Bob: here, the server passes it to
+   Bob's game, which runs it on Bob as if Bob had typed it and sends back
+   what it said (net.ranAs). Selectors: @s (you), @p (the nearest player,
+   you), @a (everyone), @r (one at random), or a name. Only with the right to
+   use commands, which the server checks again. */
+const TARGET_ARG = { gamemode: 1, give: 0, clear: 0, kill: 0, xp: 1, experience: 1, effect: 1, enchant: 0, spawnpoint: 0 };
+function targetsOf(net, ctx, s) {
+  const me = ctx.playerName, others = net.players ? [...net.players.list.values()] : [];
+  if (s === undefined || s === '@s' || s === '@p' || s.toLowerCase() === me.toLowerCase()) return null;
+  if (s === '@a' || s === '@e') return [me].concat(others.map(r => r.name));
+  if (s === '@r') { const all = [me].concat(others.map(r => r.name)); return [all[Math.floor(Math.random() * all.length)]]; }
+  if (s.startsWith('@')) return null;
+  const r = others.find(q => q.name.toLowerCase() === s.toLowerCase());
+  return r ? [r.name] : [];
+}
+for (const name in TARGET_ARG) {
+  const def = commandDef(name);
+  if (!def) continue;
+  const at = TARGET_ARG[name];
+  register(name, Object.assign({}, def, {
+    suggest: (i, w) => (i === at ? ['@s', '@a', '@p', '@r'].concat(onlineNames()) : def.suggest ? def.suggest(i, w) : []),
+    run(args, ctx) {
+      const net = ctx.game && ctx.game.net;
+      const sub = name === 'effect' ? args[0] : null;
+      // (/effect give <target> ..., /effect clear [target]: the target is the second word)
+      const i = name === 'effect' && sub !== 'give' && sub !== 'clear' ? -1 : at;
+      const list = net && i >= 0 ? targetsOf(net, ctx, args[i]) : null;
+      if (!list) return def.run(args, ctx);
+      if (!list.length) { ctx.say('No player was found', 0xFF5555); return; }
+      const mine = list.some(n => n.toLowerCase() === ctx.playerName.toLowerCase());
+      const rest = list.filter(n => n.toLowerCase() !== ctx.playerName.toLowerCase());
+      const a = args.slice(); a[i] = '@s';
+      if (mine) def.run(a.slice(), ctx);
+      if (rest.length) net.send({ t: 'as', to: rest, line: name + ' ' + a.join(' ') });
+    },
+  }));
+}
 
 /* ---- the commands a server adds to, as the game has them ---- */
 // /msg, /tell, /w: a whisper to one player (no commands needed)
@@ -163,8 +251,18 @@ if (tpDef) {
       const net = ctx.game && ctx.game.net;
       const isName = a => a && !/^[~^@0-9.+-]/.test(a);
       const last = args[args.length - 1];
+      // someone else moved (/tp Bob Cara, /tp Bob 0 64 0, /tp @a ~ ~ ~): their own game moves them
+      if (net && (args.length === 2 || args.length === 4) && args[0] !== '@s' && args[0].toLowerCase() !== ctx.playerName.toLowerCase()) {
+        const list = targetsOf(net, ctx, args[0]);
+        if (list && !list.length) { ctx.say('No player was found', 0xFF5555); return; }
+        if (list) {
+          const rest = list.filter(n => n.toLowerCase() !== ctx.playerName.toLowerCase());
+          if (rest.length) net.send({ t: 'as', to: rest, line: 'tp @s ' + args.slice(1).join(' ') });
+          if (rest.length === list.length) return;
+          args = ['@s'].concat(args.slice(1));
+        }
+      }
       if (net && (args.length === 1 || args.length === 2) && isName(last) && last.toLowerCase() !== ctx.playerName.toLowerCase()) {
-        if (args.length === 2 && !(args[0] === '@s' || args[0].toLowerCase() === ctx.playerName.toLowerCase())) { ctx.say('Only you can be moved here', 0xFF5555); return; }
         const r = net.players && [...net.players.list.values()].find(q => q.name.toLowerCase() === last.toLowerCase());
         const s = r && r.st;
         if (!s) { ctx.say('No player was found', 0xFF5555); return; }
@@ -175,6 +273,29 @@ if (tpDef) {
         return;
       }
       return tpDef.run(args, ctx);
+    },
+  }));
+}
+
+/* /difficulty, /gamerule and /defaultgamemode on a server are the server's,
+   for everyone: asked of it, and what it says goes to everyone (a rule's
+   value is asked here, from the rules the server sent; pvp is one of them) */
+for (const name of ['difficulty', 'gamerule', 'defaultgamemode']) {
+  const def = commandDef(name);
+  if (!def) continue;
+  register(name, Object.assign({}, def, {
+    suggest: (i, w) => (name === 'gamerule' && i === 0 ? (def.suggest ? def.suggest(i, w) : []).concat(['pvp']) : def.suggest ? def.suggest(i, w) : []),
+    run(args, ctx) {
+      const net = ctx.game && ctx.game.net;
+      if (!net) return def.run(args, ctx);
+      if (name === 'gamerule' && args[0] && args[1] === undefined) {
+        const v = args[0] === 'pvp' ? net.server.pvp !== false : gameRule(ctx.game, args[0]);
+        if (v === undefined) { ctx.say('Incorrect argument for command', 0xFF5555); return; }
+        ctx.say(`Gamerule ${args[0]} is currently set to: ${v}`);
+        return;
+      }
+      if (name === 'gamerule' && args[0] !== 'pvp' && gameRule(ctx.game, args[0]) === undefined) { ctx.say('Incorrect argument for command', 0xFF5555); return; }
+      net.send({ t: 'cmd', line: [name].concat(args).join(' ') });
     },
   }));
 }
@@ -201,26 +322,39 @@ function packDetail(e) {
 export class Net {
   /* Connect, and wait for the world: resolves with the Net once the server
      has sent it, or rejects with { reason, password } (a wrong password asks again). */
+  /* What a failed join says (the Failed to connect to the server screen):
+       turned away     the server's own reason (wrong password, full, banned)
+       no answer       the socket never opened: the server is down (FAIL_TEXT.down)
+       another game    it opened, but the mc server answered as it did before it
+                       had Leoncraft 2 (FAIL_TEXT.old)
+       closed early    it opened and shut without a word: refused
+       30 seconds      Timed out, as the game says it */
   static connect(server, password, name) {
     return new Promise((resolve, reject) => {
-      const url = wsBase() + '?mode=lc2&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
+      const url = wsBase() + '?mode=lc2&pv=2&server=' + encodeURIComponent(server) + '&pw=' + encodeURIComponent(password || '') +
         '&name=' + encodeURIComponent(name) + '&device=' + encodeURIComponent(deviceId());
       let ws;
-      try { ws = new WebSocket(url); } catch (e) { reject({ reason: 'Could not reach the server.' }); return; }
+      try { ws = new WebSocket(url); } catch (e) { reject({ reason: FAIL_TEXT.down[1], kind: SERVER_DOWN }); return; }
       const net = new Net(ws);
-      let done = false;
+      let done = false, opened = false;
       const end = (ok, v) => { if (done) return; done = true; clearTimeout(timer); ok ? resolve(v) : reject(v); };
-      const timer = setTimeout(() => { try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 20000);
+      const timer = setTimeout(() => { try { ws.close(); } catch (e) {} end(false, { reason: 'Timed out' }); }, 30000);
+      ws.onopen = () => { opened = true; };
       ws.onmessage = ev => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (!done) {
           if (m.t === 'init') { net.onInit(m); end(true, net); }
           else if (m.t === 'refused') end(false, { reason: m.reason, password: !!m.password });
+          // another game's welcome ({ type: ... }): the server has not been updated for this one
+          else if (m.type && !m.t) { end(false, { reason: FAIL_TEXT.old[0] + ' ' + FAIL_TEXT.old[1], kind: SERVER_OLD }); try { ws.close(); } catch (e) {} }
           return;
         }
         net.receive(m);
       };
-      ws.onclose = () => { if (!done) end(false, { reason: 'Connection refused' }); else net.lost(net.kickReason || 'Connection lost'); };
+      ws.onclose = () => {
+        if (!done) end(false, opened ? { reason: 'Connection refused' } : { reason: FAIL_TEXT.down[0] + '. ' + FAIL_TEXT.down[1], kind: SERVER_DOWN });
+        else net.lost(net.kickReason || 'Connection lost');
+      };
       ws.onerror = () => {};
     });
   }
@@ -244,11 +378,20 @@ export class Net {
     this.eqSig = ''; this.eqTick = 0;
     this.timeExpect = null;
     this.stats = { sentB: 0, gotB: 0, sentP: 0, gotP: 0 };
+    this.op = 0;                     // what you may do here: 4 an operator, 2 commands allowed, 0 neither
+    this.shots = [];                 // what you shot or threw this tick, for the others to see fly
+    this.pvpHit = null;              // the last hit another player gave you: { name, k, item, age }
   }
+  // whether you may use the commands that change the world (an operator, or Allow Commands)
+  canCheat() { return this.op >= 2; }
 
   /* ---- the world the server sent ---- */
   onInit(m) {
     this.id = m.id; this.name = m.name; this.server = m.server;
+    // (an older server sends no level: its Allow Commands is all there is)
+    this.op = m.op !== undefined ? m.op | 0 : m.server && m.server.cheats ? 2 : 0;
+    this.rules = m.rules || null;
+    if (this.rules && this.rules.pvp !== undefined) this.server.pvp = !!this.rules.pvp;
     this.time = m.time; this.timeAt = performance.now(); this.wx = m.wx || { r: false, th: false }; this.spawn = m.spawn || null;
     // the world's block names to this version's numbers (a name this version does not know is left as generated)
     const ids = (m.palette || []).map(n => (B[n] !== undefined ? B[n] : -1));
@@ -272,9 +415,10 @@ export class Net {
   }
   // the world as the game's list of worlds holds one (main.js startGame)
   entry() {
-    const s = this.server;
+    const s = this.server, net = this;
+    // (cheats is asked each time a command is typed: an /op or /deop counts at once)
     return { id: 'mp-' + s.id, name: s.name, seed: s.seed, generator: s.generator || 'vanilla', mode: s.mode, difficulty: s.difficulty,
-      cheats: !!s.cheats, spawn: this.spawn || undefined, mp: this, created: 0, lastPlayed: Date.now() };
+      get cheats() { return net.canCheat(); }, set cheats(v) {}, spawn: this.spawn || undefined, mp: this, created: 0, lastPlayed: Date.now() };
   }
   // save.js's stand-in for each dimension (main.js asks by the save's id)
   save(id) {
@@ -285,14 +429,24 @@ export class Net {
   /* ---- the game has started (main.js), with what this needs of it ---- */
   attach(game, ctx) {
     this.game = game; this.ctx = ctx;
+    activeNet = this;
     this.players = new RemotePlayers(ctx.renderer, ctx.gui.font);
+    // the puff of smoke a player leaves when they die
+    this.players.onPoof = (x, y, z) => { const E = this.game && this.game.entities; if (E && E.particles) E.particles('poof', x, y + 0.9, z, 20, 0.4); };
     for (const p of this.initPlayers) this.players.add(p);
     this.initPlayers = null;
+    // the server's game rules and difficulty, for everyone
+    if (this.rules) this.applyRules(this.rules);
     // you: your name in death messages, which go to everyone
     const hooks = game.survival.hooks;
     if (hooks) {
       hooks.name = () => this.name;
-      hooks.onDeath = message => { if (this.ctx.rule('showDeathMessages')) this.send({ t: 'death', text: message }); };
+      // (said by the server to everyone, you too: not put in your chat here as well)
+      hooks.onDeath = (message, src) => {
+        message = this.deathText(message, src);
+        if (game.survival) game.survival.deathMessage = message;
+        if (this.ctx.rule('showDeathMessages')) this.send({ t: 'death', text: message });
+      };
     }
     // your arm swinging, for everyone else's picture of you
     const av = ctx.renderer.avatar, swing = av.startSwing.bind(av);
@@ -331,6 +485,7 @@ export class Net {
     this.detach();
   }
   detach() {
+    if (activeNet === this) activeNet = null;
     if (this.players) { this.players.dispose(); this.players = null; }
     if (this.list) { const o = this.ctx.gui.overlays, i = o.indexOf(this.list); if (i >= 0) o.splice(i, 1); this.list = null; }
     if (this.onKey) { document.removeEventListener('keydown', this.onKey); document.removeEventListener('keyup', this.onKey); this.onKey = null; }
@@ -349,9 +504,18 @@ export class Net {
 
   /* ---- what arrives ---- */
   receive(m) {
+    // a position, as a short array: [0, id, ts, x, y, z, yaw, pitch, flags, dim, use, useT, useTotal]
+    if (Array.isArray(m)) {
+      if (m[0] !== 0) return;
+      const s = { t: 'p', id: m[1], ts: m[2], x: m[3], y: m[4], z: m[5], yaw: m[6], pitch: m[7], f: m[8], d: m[9] };
+      if (m[10]) { s.u = m[10]; s.ut = m[11]; s.uT = m[12]; }
+      m = s;
+    }
     switch (m.t) {
       // the other players: straight away, with when each position got here
       case 'p': this.stats.gotP++; if (this.players) this.players.state(m.id, m, performance.now()); else this.early(m); return;
+      case 'op': this.op = m.level | 0; return;
+      case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1]); return;
       case 'join': if (this.players) { this.players.add(m.p); } else this.initPlayers.push(m.p); return;
       case 'leave': if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
       case 'skin': if (this.players) this.players.setSkin(m.id, m.skin, m.slim); else this.early(m); return;
@@ -392,6 +556,8 @@ export class Net {
     this.slept = false;
     for (let n = 0; this.inbox.length && n < 2000; n++) this.handle(this.inbox.shift());
     this.timeExpect = g.time + 1;
+    this.pushTick();
+    this.shareShots();
     this.sendState(stamp);
     if (++this.eqTick % 5 === 0 || this.eqTick === 1 || g.inv.heldId() !== this.lastHeld) this.sendEquip();
     if (g.survival.hurtTime === 10 && !this.hurtSent) { this.hurtSent = true; this.send({ t: 'hurt' }); }
@@ -405,7 +571,7 @@ export class Net {
     this.flush();
     if (this.players) {
       const R = this.ctx.renderer;
-      this.players.frame(now, dt, g.world, dimCode(g.dim), eye, Math.max(48, (R.opts.renderDist || 8) * 16));
+      this.players.frame(now, dt, g.world, dimCode(g.dim), eye, Math.max(48, (R.opts.renderDist || 8) * 16), g.mode === 'spectator');
     }
     // a new skin chosen while playing goes to everyone
     if ((this.skinCheck = (this.skinCheck || 0) + dt) > 2) { this.skinCheck = 0; this.sendSkin(); }
@@ -487,6 +653,13 @@ export class Net {
       // the crosshair finds the other players too, in front of any mob or block (for hitting them)
       const pickFor = E.pickFor;
       E.pickFor = function (eye, blockT) { return net.pickPlayer(this, eye, blockT, pickFor.call(this, eye, blockT)); };
+      // what you shoot or throw, for the others to see fly (shareShots, at the end of the tick, once its owner is set)
+      const spawn = E.spawn;
+      E.spawn = function (type, x, y, z, o) {
+        const e = spawn.call(this, type, x, y, z, o);
+        if (e && !net.applying && !(o && o.json) && e instanceof Projectile && net.shots.length < 32) net.shots.push(e);
+        return e;
+      };
     }
     const S = g.sim;
     if (S && S !== this.hs) {
@@ -551,47 +724,234 @@ export class Net {
      server, which checks the reach and passes it on; their own game takes
      the damage, with their armour, and knocks them back. */
   pickPlayer(E, eye, blockT, found) {
-    if (!this.players || !this.server.pvp || this.closed) return found;
+    if (!this.players || !this.server.pvp || this.closed || this.game.mode === 'spectator') return found;
     const g = this.game, P = g.player, D = dimCode(g.dim);
     const dx = -Math.sin(P.yaw) * Math.cos(P.pitch), dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * Math.cos(P.pitch);
     let lim = Math.min(E.combat.reach(), blockT === undefined ? Infinity : blockT);
     if (found) { const h = E.raycast(eye, { x: dx, y: dy, z: dz }, lim); if (h) lim = h.t; }
     let best = null;
     for (const r of this.players.list.values()) {
-      const s = r.st, f = r.feet;
-      if (!s || !f || s.d !== D || (s.f & F.DEAD) || !r.av || !r.av.mesh.visible) continue;
-      const h = s.f & F.SNEAK ? 1.5 : s.f & F.SWIM ? 0.6 : 1.8;
+      if (!this.hittable(r, D)) continue;
+      const f = r.feet, h = heightOf(r.st);
       const t = rayBox(eye.x, eye.y, eye.z, dx, dy, dz, f.x - 0.3, f.y, f.z - 0.3, f.x + 0.3, f.y + h, f.z + 0.3);
       if (t < lim) { lim = t; best = r; }
     }
-    if (!best) return found;
-    const r = best;
-    // (no customName: their name is drawn over them already, players.js, not a second time as a named mob's)
-    if (!r.proxy) r.proxy = { remotePlayer: true, id: r.id, get pos() { return r.feet; }, hw: 0.3, w: 0.6, h: 1.8, removed: false, dead: false, hurt: amount => this.hitPlayer(r, amount) };
-    r.proxy.name = r.name;
+    return best ? this.proxyOf(best) : found;
+  }
+  // a player who can be hit here: in this dimension, drawn, alive, not a spectator
+  hittable(r, D) {
+    const s = r.st;
+    return !!(s && r.feet && s.d === D && !(s.f & (F.DEAD | F.SPEC)) && r.av && r.av.started);
+  }
+  /* What stands in for another player in the combat code and for what you
+     shoot (combat/combat.js attack, entities/projectiles.js): its box, and its
+     hurt(), which works out the hit as the game does and sends it. (No
+     customName: their name is drawn over them already, players.js.) */
+  proxyOf(r) {
+    if (r.proxy) { r.proxy.name = r.name; r.proxy.h = heightOf(r.st); return r.proxy; }
+    const net = this;
+    r.proxy = {
+      remotePlayer: true, type: 'player', id: 'p' + r.id, name: r.name, get pos() { return r.feet; }, hw: 0.3, w: 0.6, h: heightOf(r.st),
+      removed: false, dead: false, vel: { x: 0, y: 0, z: 0 }, fire: 0, kbResist: 0,
+      dist2(x, y, z) { const f = r.feet; return (f.x - x) ** 2 + (f.y - y) ** 2 + (f.z - z) ** 2; },
+      hurt(amount, src, info) { return src && (src.type === 'arrow' || src.type === 'trident' || src.type === 'thrown') ? net.shotPlayer(r, amount, src) : net.hitPlayer(r, amount, info); },
+      // a flaming arrow's fire, said with the hit that follows it
+      setFire(s) { this.fire = Math.max(this.fire, s | 0); },
+      // a tipped or spectral arrow's effects, after its hit
+      addEffect(n, lv, t, by, inst) { net.send({ t: 'hit', id: r.id, k: 'arrow', dmg: 0, ef: [[n, lv | 0, t | 0, inst === undefined ? 1 : +inst]] }); return true; },
+      knockback() {},
+    };
     return r.proxy;
   }
-  hitPlayer(r, amount) {
-    const g = this.game, P = g.player, E = g.entities;
-    if (!(amount > 0)) return false;
-    const inv = g.inv, st = inv.slots[inv.selected], ench = (st && st.ench) || {};
-    const c = E ? E.combat.cooldown() : 1, strong = c > 0.9;
+  /* Your hit on another player, as the game's Player.attack works it out:
+     the cooldown's share (combat.js passes base, bonus and charge), a
+     critical (falling, not sprinting) x1.5 on the base, a sprint's extra
+     knock, a mace's smash, a sword's sweep (everyone within a block of them
+     takes 1 and Sweeping Edge's share), Fire Aspect. The weapon wears and the
+     hit is tiring. Their game takes it with their armour and shield. */
+  hitPlayer(r, amount, info) {
+    const g = this.game, P = g.player, E = g.entities, C = E && E.combat;
+    if (!C || g.mode === 'spectator' || !this.server.pvp) return false;
+    const inv = g.inv, st = inv.slots[inv.selected], id = st ? st.id : 0, w = weaponOf(id), fx = (g.survival && g.survival.effects) || {};
+    const c = info ? info.c : 1, strong = c > 0.9, spin = !!(info && info.spin);
+    let base = info ? info.base : amount;
+    const bonus = info ? info.bonus : 0;
+    if (!(base > 0 || bonus > 0)) return false;
     const sprint = P.sprinting && strong;
-    const crit = strong && P.fallDistance > 0 && !P.onGround && !P.climbing && !P.inWater && !P.flying && !sprint;
-    if (crit) amount *= 1.5;
-    const kb = (ench.knockback | 0) + (sprint ? 1 : 0);
+    let smash = false;
+    if (w.kind === 'mace' && !spin && P.fallDistance > 1.5 && !P.flying && !P.gliding) { base += smashBonus(P.fallDistance, enchOf(st, 'density')); smash = true; }
+    const crit = strong && P.fallDistance > 0 && !P.onGround && !P.climbing && !P.inWater && !(E.riding) && !P.flying && !P.sprinting && !fx.blindness && !fx.slow_falling && w.kind !== 'spear';
+    if (crit) base *= 1.5;
+    const mx = P.pos.x - P.prev.x, mz = P.pos.z - P.prev.z, slow = 0.1 * (1 + 0.2 * (fx.speed ? fx.speed.level || 1 : 0)) * 2.5;
+    const sweep = strong && !crit && !sprint && P.onGround && mx * mx + mz * mz < slow * slow && w.kind === 'sword' && !spin;
+    const kb = enchOf(st, 'knockback') + (sprint ? 1 : 0);
     if (kb > 0) { P.vel.x *= 0.6; P.vel.z *= 0.6; P.sprinting = false; }
-    this.send({ t: 'hit', id: r.id, dmg: Math.round(amount * 100) / 100, kb, crit, fire: (ench.fire_aspect | 0) * 4 });
-    if (crit && E && E.particles) E.particles('crit', r.feet.x, r.feet.y + 0.9, r.feet.z, 12, 0.3);
+    const item = st && st.name ? String(st.name).slice(0, 50) : undefined;
+    this.send({ t: 'hit', id: r.id, k: smash ? 'smash' : spin ? 'spin' : 'melee', dmg: Math.round((base + bonus) * 1000) / 1000, kb, crit, fire: enchOf(st, 'fire_aspect') * 4, axe: w.kind === 'axe' ? 1 : 0, item });
+    const pr = this.proxyOf(r), sn = Math.sin(P.yaw), cs = Math.cos(P.yaw);
+    if (sweep) {
+      // the others beside them, and the mobs (combat.js sweep)
+      const ratio = enchOf(st, 'sweeping_edge') / (enchOf(st, 'sweeping_edge') + 1), f = r.feet, D = dimCode(g.dim);
+      for (const q of this.players.list.values()) {
+        if (q === r || !this.hittable(q, D)) continue;
+        const o = q.feet;
+        if (Math.abs(o.x - f.x) > 1.6 || Math.abs(o.z - f.z) > 1.6 || o.y + heightOf(q.st) < f.y - 0.25 || o.y > f.y + pr.h + 0.25) continue;
+        if ((o.x - P.pos.x) ** 2 + (o.y - P.pos.y) ** 2 + (o.z - P.pos.z) ** 2 >= 9) continue;
+        this.send({ t: 'hit', id: q.id, k: 'sweep', dmg: Math.round((1 + ratio * info.base + enchantBonus(st, null)) * c * 1000) / 1000, kb: 0.8, item });
+      }
+      C.sweep(pr, st, info.base, c, sn, cs);
+    }
+    if (smash) C.smashed(pr, st);
+    if (crit && E.particles) E.particles('crit', r.feet.x, r.feet.y + 0.9, r.feet.z, 12, 0.3);
+    if (bonus > 0 && E.particles) E.particles('magic', r.feet.x, r.feet.y + 0.9, r.feet.z, 12, 0.3, [0.45, 0.75, 1]);
+    if (g.mode !== 'creative') { const wr = spin ? 0 : wearPerHit(id); if (wr) C.wearHeld(wr); if (g.survival) g.survival.exhaust(0.1); }
+    this.lastPvp = { to: r.name, k: smash ? 'smash' : 'melee', dmg: base + bonus, crit, sweep, kb, c, fall: Math.round(P.fallDistance * 100) / 100, ground: !!P.onGround, at: Math.round(performance.now()) };
     return true;
   }
-  // a hit from another player: taken here as the game takes one, armour and all, knocked back away from them
+  // your arrow, trident or snowball reached another player (on your screen): the hit goes to them
+  shotPlayer(r, amount, src) {
+    const d = src.direct, g = this.game, inv = g.inv, st = inv.slots[inv.selected];
+    if (!this.server.pvp || !d) return false;
+    const k = src.type, pr = this.proxyOf(r), r3 = v => Math.round(v * 1000) / 1000;
+    this.send({ t: 'hit', id: r.id, k, dmg: amount < 0.01 ? amount : Math.round(amount * 1000) / 1000, dir: [r3(d.vel.x), r3(d.vel.y), r3(d.vel.z)], at: [r3(d.pos.x), r3(d.pos.y), r3(d.pos.z)],
+      punch: d.knock || 0, fire: pr.fire || 0, pierce: d.pierce > 0 ? 1 : 0, crit: !!d.crit, item: st && st.name ? String(st.name).slice(0, 50) : undefined });
+    pr.fire = 0;
+    this.lastPvp = { to: r.name, k, dmg: amount };
+    return true;
+  }
+  /* A hit from another player, taken here as the game takes one: their
+     damage, through your shield (an axe puts it down for 5 seconds), armour
+     and protection, the half second a hit protects for; knocked 0.4 away from
+     them and their weapon's extra along their look, or along an arrow's
+     flight (and Punch); set alight; a tipped arrow's effects. They are named
+     in your death message if you die of it, or of anything in the next 5
+     seconds (a fall, the fire). */
   struck(m) {
-    const g = this.game, E = g.entities;
-    if (!E || !E.combat) return;
+    const g = this.game, E = g.entities, sv = g.survival;
+    if (!E || !E.combat || !sv || sv.dead) return;
     const r = this.players && this.players.list.get(m.from), s = r && r.st, P = g.player;
-    E.combat.hurtPlayer(m.dmg, { type: 'player', attacker: { customName: m.name, pos: r && r.feet }, x: s ? s.x : P.pos.x, z: s ? s.z : P.pos.z, knock: m.kb, yaw: s ? s.yaw : 0 });
+    const from = r && r.feet ? r.feet : s ? { x: s.x, y: s.y, z: s.z } : P.pos;
+    const attacker = { customName: m.name, pos: from, remotePlayer: true };
+    // a tipped arrow's potion (after its hit)
+    for (const e of Array.isArray(m.ef) ? m.ef : []) {
+      const [n, lv, t, inst] = e, k = Math.max(0, Math.min(1, +inst || 1));
+      if (g.mode === 'creative' || g.mode === 'spectator') break;
+      if (n === 'instant_health') sv.heal(Math.floor(k * (4 << (lv - 1)) + 0.5));
+      else if (n === 'instant_damage') sv.hurtEffect(Math.floor(k * (6 << (lv - 1)) + 0.5), 'magic');
+      else if (E.effectPlayer) E.effectPlayer(n, t, lv);
+    }
+    if (!(m.dmg > 0)) return;
+    const proj = m.k === 'arrow' || m.k === 'trident' || m.k === 'thrown';
+    const src = { type: proj ? m.k : m.k === 'smash' ? 'mace_smash' : 'player', attacker, x: from.x, z: from.z, knock: proj ? 0 : m.kb, yaw: s ? s.yaw : 0, axe: !!m.axe };
+    if (proj && Array.isArray(m.dir)) src.direct = { vel: { x: m.dir[0], y: m.dir[1], z: m.dir[2] }, pos: Array.isArray(m.at) ? { x: m.at[0], y: m.at[1], z: m.at[2] } : from, pierce: m.pierce ? 1 : 0 };
+    // named in a death in the next 5 seconds (survival.js dying)
+    sv.attacker = attacker; sv.attackerAge = sv.age;
+    this.striking = m;
+    let ok;
+    try { ok = E.combat.hurtPlayer(m.dmg, src); } finally { this.striking = null; }
+    if (!ok) return;
+    this.pvpHit = { name: m.name, k: m.k, item: m.item, age: sv.age };
+    // Punch: a push along the flight, 0.6 a level (less by knockback resistance), and 0.1 up
+    if (m.punch > 0 && src.direct) {
+      const v = src.direct.vel, l = Math.hypot(v.x, v.z) || 1, k = m.punch * 0.6 * (1 - E.combat.knockbackResistance());
+      P.vel.x += v.x / l * k; P.vel.y += 0.1; P.vel.z += v.z / l * k;
+    }
     if (m.fire && E.setPlayerFire) E.setPlayerFire(m.fire);
+  }
+  // your death message, as the game words it when another player did it ("X was slain by Y using [Z]")
+  deathText(message) {
+    const m = this.striking;
+    if (!m) return message;
+    const w = { arrow: ['was shot by', 'using'], trident: ['was impaled by', 'with'], thrown: ['was pummeled by', 'using'], smash: ['was smashed by', 'with'] }[m.k] || ['was slain by', 'using'];
+    return `${this.name} ${w[0]} ${m.name}` + (m.item ? ` ${w[1]} [${m.item}]` : '');
+  }
+
+  /* ---- what you shoot and throw, seen by everyone ----
+     Each machine flies its own: yours is sent as it leaves your hand (where
+     it is and how fast), and the others fly a copy of it that touches
+     nothing (it vanishes on whatever it meets, and an arrow or trident sticks
+     where it lands). Whether it hit someone is your machine's to say. */
+  shareShots() {
+    if (!this.shots.length) return;
+    const g = this.game, P = g.entities && g.entities.player, r3 = v => Math.round(v * 1000) / 1000, out = [];
+    for (const e of this.shots) {
+      if (!P || e.owner !== P || e.ghost || out.length >= 16) continue;
+      const o = { ty: e.type, p: [r3(e.pos.x), r3(e.pos.y), r3(e.pos.z)], v: [r3(e.vel.x), r3(e.vel.y), r3(e.vel.z)] };
+      if (e.item) o.it = e.item;
+      if (e.crit) o.c = 1;
+      out.push(o);
+    }
+    this.shots.length = 0;
+    if (out.length) this.send({ t: 'fx', d: dimCode(g.dim), k: 'shot', e: out });
+  }
+  ghostShots(m) {
+    const g = this.game, E = g.entities, P = g.player;
+    if (!E || dimCode(g.dim) !== m.d) return;
+    for (const o of m.e) {
+      if (!o || !Array.isArray(o.p) || !Array.isArray(o.v) || (o.p[0] - P.pos.x) ** 2 + (o.p[2] - P.pos.z) ** 2 > 128 * 128) continue;
+      let e;
+      this.applying = true;
+      try { e = E.spawn(o.ty, o.p[0], o.p[1], o.p[2], { natural: false }); } catch (err) { e = null; } finally { this.applying = false; }
+      if (!e || !(e instanceof Projectile)) { if (e) e.remove(); continue; }
+      e.ghost = true; e.owner = null; e.pickup = 0;
+      this.stats.ghosts = (this.stats.ghosts || 0) + 1;
+      if (o.it) e.item = o.it;
+      if (o.c) e.crit = true;
+      e.vel.set(o.v[0], o.v[1], o.v[2]);
+      e.yaw = e.prevYaw = Math.atan2(-o.v[0], -o.v[2]); e.pitch = e.prevPitch = Math.atan2(o.v[1], Math.hypot(o.v[0], o.v[2]));
+      // it touches nothing: gone on whatever it meets; an arrow or trident stays stuck where it lands a while
+      const sticks = e.type === 'arrow' || e.type === 'trident';
+      e.hitEntity = function () { this.remove(); return true; };
+      e.hitBlock = function (x, y, z) {
+        if (!sticks) { if (this.m.particles) this.m.particles('poof', this.pos.x, this.pos.y, this.pos.z, 8, 0.1, [1, 1, 1]); this.remove(); return; }
+        this.stuck = true; this.life = 0; this.vel.set(0, 0, 0); this.stuckAt = [x, y, z]; this.shake = 7;
+      };
+      e.stuckTick = function () { if (this.shake > 0) this.shake--; if (++this.life > (this.type === 'trident' ? 200 : 1200)) this.remove(); };
+    }
+  }
+  // each tick: you are pushed off the other players you stand in, as the game pushes two entities apart
+  pushTick() {
+    const g = this.game, P = g.player, E = g.entities;
+    if (!this.players || P.flying || g.mode === 'spectator' || (g.survival && g.survival.dead) || P.riding || (E && E.riding) || (g.sim && g.sim.sleeping)) return;
+    const D = dimCode(g.dim), myH = P.sneaking ? 1.5 : P.pose === 'swim' ? 0.6 : 1.8;
+    for (const r of this.players.list.values()) {
+      const s = r.st, f = r.feet;
+      if (!s || !f || s.d !== D || (s.f & (F.DEAD | F.SPEC | F.SLEEP | F.RIDE))) continue;
+      if (Math.abs(f.x - P.pos.x) >= 0.6 || Math.abs(f.z - P.pos.z) >= 0.6 || f.y >= P.pos.y + myH || f.y + heightOf(s) <= P.pos.y) continue;
+      // (the game's Entity.push: along the larger of the two gaps, 0.05 a tick, harder the closer)
+      let dx = f.x - P.pos.x, dz = f.z - P.pos.z, d = Math.max(Math.abs(dx), Math.abs(dz));
+      if (d < 0.01) continue;
+      d = Math.sqrt(d); dx /= d; dz /= d;
+      const k = Math.min(1, 1 / d) * 0.05;
+      P.vel.x -= dx * k; P.vel.z -= dz * k;
+    }
+  }
+  /* ---- the server's rules and difficulty, and commands run for someone else ---- */
+  applyRules(rules) {
+    this.rules = rules;
+    if (rules.pvp !== undefined && this.server) this.server.pvp = !!rules.pvp;
+    const g = this.game;
+    if (g) g.rules = Object.assign(g.rules || {}, rules);
+  }
+  /* An operator's command aimed at you (/gamemode creative You, /give You
+     ...): run here as if you had typed it, and what it said sent back to
+     them; a change of game mode is told to you as the game tells it. Only
+     the commands that act on a player, whatever the server passes on. */
+  ranAs(m) {
+    const g = this.game, ctx = this.ctx;
+    if (!g || !ctx.commandCtx || typeof m.line !== 'string') return;
+    const word = (m.line.trim().split(/\s+/)[0] || '').replace(/^\//, '').toLowerCase();
+    if (!AS_OK.has(word)) return;
+    const out = [];
+    const c = Object.assign(ctx.commandCtx(), { cheats: true, say: (t, col) => out.push([String(t), col === undefined ? 0xFFFFFF : col]) });
+    execute(m.line, c);
+    const back = [];
+    for (const [t, col] of out) {
+      const gm = /^Set own game mode to (.*)$/.exec(t);
+      if (gm) { ctx.chat.add(`Your game mode has been updated to ${gm[1]}`); back.push([`Set ${this.name}'s game mode to ${gm[1]}`, col]); }
+      else back.push([t, col]);
+    }
+    this.send({ t: 'asr', to: m.fid, lines: back });
   }
 
   /* ---- your changes, sent at the end of the frame ---- */
@@ -647,19 +1007,23 @@ export class Net {
   sendState(stamp) {
     const g = this.game, P = g.player, S = this.sent;
     const sv = g.survival, dead = !!(sv && sv.dead);
+    const fx = sv && sv.effects;
     const f = (P.sneaking ? F.SNEAK : 0) | (P.sprinting ? F.SPRINT : 0) | (P.flying ? F.FLY : 0) | (P.pose === 'swim' ? F.SWIM : 0) |
-      (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP | (g.sim.sleeping.t >= 100 ? F.SLEPT : 0) : 0) | (dead ? F.DEAD : 0) | (P.gliding ? F.GLIDE : 0) | (P.riding ? F.RIDE : 0);
+      (P.onGround ? F.GROUND : 0) | (g.sim && g.sim.sleeping ? F.SLEEP | (g.sim.sleeping.t >= 100 ? F.SLEPT : 0) : 0) | (dead ? F.DEAD : 0) | (P.gliding ? F.GLIDE : 0) | (P.riding ? F.RIDE : 0) |
+      (g.mode === 'spectator' ? F.SPEC : 0) | (fx && fx.invisibility ? F.INVIS : 0);
     const d = dimCode(g.dim);
-    const r4 = v => Math.round(v * 10000) / 10000;
-    const x = r4(P.pos.x), y = r4(P.pos.y), z = r4(P.pos.z), yaw = r4(P.yaw), pitch = r4(P.pitch);
+    // (a millimetre and a twentieth of a degree: finer than any screen shows, in fewer characters)
+    const r3 = v => Math.round(v * 1000) / 1000;
+    const x = r3(P.pos.x), y = r3(P.pos.y), z = r3(P.pos.z), yaw = r3(P.yaw), pitch = r3(P.pitch);
     // what the use button is doing with your hands (render/avatar.js useNow): a bow drawn, food, a shield up
     const U = this.ctx.renderer.avatar.useNow, k = U ? USE_KINDS.indexOf(U.kind) : -1;
     const u = k >= 0 ? (k + 1) | ((U.side | 0) ? 16 : 0) : 0, ut = u ? Math.round((U.t || 0) * 10) / 10 : 0, uT = u ? U.total | 0 : 0;
     if (x === S.x && y === S.y && z === S.z && yaw === S.yaw && pitch === S.pitch && f === S.f && d === S.d && u === S.u && ut === S.ut && stamp - S.at < 1000) return;
     Object.assign(S, { at: stamp, x, y, z, yaw, pitch, f, d, u, ut });
     this.stats.sentP++;
-    const m = { t: 'p', ts: Math.round(stamp * 10) / 10, x, y, z, yaw, pitch, f, d };
-    if (u) { m.u = u; m.ut = ut; m.uT = uT; }
+    // [0, ts, x, y, z, yaw, pitch, flags, dim, use, useT, useTotal]: lc2.js position()
+    const m = [0, Math.round(stamp), x, y, z, yaw, pitch, f, d];
+    if (u) m.push(u, ut, uT);
     this.send(m);
   }
   sendEquip() {
@@ -706,6 +1070,9 @@ export class Net {
       case 'wx': this.wx = { r: !!m.r, th: !!m.th }; this.applyWeather(); return;
       case 'spawn': this.spawn = m.spawn; if (m.spawn) g.spawn = { x: m.spawn.x, z: m.spawn.z }; return;
       case 'hit': this.struck(m); return;
+      case 'rules': this.applyRules(m.rules || {}); return;
+      case 'diff': this.server.difficulty = m.d; if (this.ctx.setDifficulty) this.ctx.setDifficulty(m.d); return;
+      case 'as': this.ranAs(m); return;
       case 'it+': for (const o of m.e || []) { const rec = this.keepItem(o); if (rec && rec.d === dimCode(g.dim)) this.showItem(rec); } return;
       case 'it=': this.numbered(m.e || []); return;
       case 'it-': case 'itno': this.itemGone(m.id); return;
@@ -858,6 +1225,7 @@ export class Net {
   // another player broke blocks by hand: the pieces, where they are within sight (64 blocks, as the game sends them)
   effects(m) {
     const g = this.game, Pa = this.ctx.renderer.particles, P = g.player;
+    if (m.k === 'shot' && Array.isArray(m.e)) { this.ghostShots(m); return; }
     if (!Pa || dimCode(g.dim) !== m.d || !Array.isArray(m.e)) return;
     for (const o of m.e) {
       const b = o && B[o.b], p = o && o.p;
@@ -962,6 +1330,10 @@ export class Net {
     } finally { this.applying = false; }
   }
 }
+// a player's height by their pose: 1.8, 1.5 sneaking, 0.6 swimming or crawling
+const heightOf = s => (s && s.f & F.SNEAK ? 1.5 : s && s.f & F.SWIM ? 0.6 : 1.8);
+// the commands an operator's /command <you> runs on your machine (ranAs)
+const AS_OK = new Set(['gamemode', 'give', 'clear', 'kill', 'xp', 'experience', 'effect', 'enchant', 'spawnpoint', 'tp', 'teleport']);
 // where a ray first enters a box, or Infinity
 function rayBox(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
   let t0 = 0, t1 = Infinity;
@@ -974,6 +1346,26 @@ function rayBox(ox, oy, oz, dx, dy, dz, x0, y0, z0, x1, y1, z1) {
   }
   return t0;
 }
+/* What you shoot or throw meets the other players too: while one of your own
+   projectiles moves, the entity manager's forNear also visits the other
+   players (as their stand-ins, Net.proxyOf). A copy of someone else's
+   (Net.ghostShots) changes nothing in the world where it lands. */
+const projTick = Projectile.prototype.tick;
+Projectile.prototype.tick = function () {
+  const net = activeNet, m = this.m;
+  if (this.ghost) {
+    const opb = m.onProjectileBlock;
+    m.onProjectileBlock = null;
+    try { return projTick.call(this); } finally { m.onProjectileBlock = opb; }
+  }
+  if (!net || !net.players || this.stuck || this.owner !== m.player || !net.server.pvp || !net.game) return projTick.call(this);
+  const own = Object.prototype.hasOwnProperty.call(m, 'forNear'), fn = m.forNear, D = dimCode(net.game.dim);
+  m.forNear = function (x, z, r, cb) {
+    fn.call(this, x, z, r, cb);
+    for (const q of net.players.list.values()) if (net.hittable(q, D) && Math.abs(q.feet.x - x) <= r + 1 && Math.abs(q.feet.z - z) <= r + 1) cb(net.proxyOf(q));
+  };
+  try { return projTick.call(this); } finally { if (own) m.forNear = fn; else delete m.forNear; }
+};
 // a container gone with its block on someone else's machine: forgotten here, nothing spilled
 function dropContainer(C, x, y, z) {
   const k = key3(x, y, z), c = C.map.get(k);
