@@ -312,11 +312,17 @@ function wrapGame(g) {
       // or what the block keeps changed (a disc, a sign's glow), or the stack in the hand or the inventory did (used up, filled, linked)
       const after = blockView(h.x, h.y + Y0, h.z);
       const moved = after.name !== before.name || (after.meta !== before.meta && !SWINGS.test(after.name)) || useSig(g, H, h) !== sig;
-      if (r === true && !S.placedNow && tool && moved) {
+      /* The game looks at the block as it was when the item turns it into another (honeycomb waxing, an
+         axe scraping: it asks before the change) and as it is after anything else (glowstone charging an
+         anchor); a block the click destroyed (an anchor going off) was not used with the item at all. */
+      const gone = !BLOCKS[G.world.get(h.x, h.y, h.z)] || after.name === 'air' || /fire$/.test(after.name) || FLUID[G.world.get(h.x, h.y, h.z)];
+      if (r === true && !S.placedNow && tool && moved && !gone) {
         const ev = { x: h.x, y: h.y + Y0, z: h.z, tool };
         const env = makeEnv();
-        const live = env.block;
-        P.trigger('item_used_on_block', ev, Object.assign({}, env, { block: (x, y, z) => (x === h.x && y === h.y + Y0 && z === h.z ? before : live(x, y, z)) }));
+        if (after.name !== before.name) {
+          const live = env.block;
+          env.block = (x, y, z) => (x === h.x && y === h.y + Y0 && z === h.z ? before : live(x, y, z));
+        }
         P.trigger('item_used_on_block', ev, env);
       }
       S.wet = null;
@@ -391,17 +397,6 @@ export function advParts(g) {
           fire('player_interacted_with_entity', () => ({ entity: entityView(e), item: held }));
         } catch (err) { console.warn(err); }
       }
-      return r;
-    };
-    // two animals bred: bred_animals (the child, or for the kinds that lay eggs, one like them)
-    const breed = E.breed.bind(E);
-    E.breed = (a, b) => {
-      let baby = null;
-      const spawn = E.spawn;
-      E.spawn = function (...args) { const n = spawn.apply(this, args); if (!baby) baby = n; return n; };
-      let r;
-      try { r = breed(a, b); } finally { E.spawn = spawn; }
-      if (baby) fire('bred_animals', () => ({ child: entityView(baby), parent: entityView(a), partner: entityView(b) }));
       return r;
     };
     wrapCombat(g, E);
@@ -529,7 +524,8 @@ function lightning(strike, x, y, z) {
   const views = hit.map(e => entityView(e)), spared = near.map(e => entityView(e));
   let fires = 0;
   const lf = sim && sim.lightFire;
-  if (lf) sim.lightFire = (...a) => { fires++; return lf.apply(sim, a); };
+  // (a fire counts once it is really there: none takes on top of a lightning rod)
+  if (lf) sim.lightFire = (...a) => { const before = sim.get(a[0], a[1], a[2]); const r = lf.apply(sim, a); const now = sim.get(a[0], a[1], a[2]); if (now !== before && BLOCKS[now] && /fire$/.test(BLOCKS[now].name)) fires++; return r; };
   let r;
   try { r = strike(x, y, z); } finally { if (lf) sim.lightFire = lf; }
   if (channelling) fire('channeled_lightning', { victims: views });
@@ -697,6 +693,7 @@ export function advTick(g) {
   fallTick(g, p);
   rideTick(g, p);
   if (t % 5 === 0) tameTick(g);
+  breedTick(g);
   if (t % 20 === 10) beaconTick(g, p);
   spyglassTick(g, p);
   blockTick(g, p);
@@ -721,13 +718,13 @@ function stacksOf(inv) {
 function askBiome(g) {
   const w = g.world, p = g.player;
   if (S.asking || !w || !w.ask || g.dim !== 'overworld' || w.generator !== 'vanilla') { S.biome = null; return; }
-  const at = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
-  S.asking = true;
+  const at = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z }, st = S;
+  st.asking = true;
   w.ask({ type: 'structures', op: 'biome', x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) }).then(m => {
-    S.asking = false;
-    if (!G || G.world !== w) return;
-    if (m && m.biome) { S.biome = m.biome; S.biomeAt = at; if (P.wants('location')) fire('location', {}); }
-  }, () => { S.asking = false; });
+    st.asking = false;
+    if (!G || G.world !== w || S !== st) return;
+    if (m && m.biome) { st.biome = m.biome; st.biomeAt = at; if (P.wants('location')) fire('location', {}); }
+  }, () => { st.asking = false; });
 }
 // effects: effects_changed when the set changes; levitation, measured from where it began
 function effectsTick(g) {
@@ -799,6 +796,34 @@ function tameTick(g) {
     if (was === undefined) { S.tamed.set(e, !!e.tamed); continue; }
     if (!was && e.tamed) tamed(e);
     else if (was && !e.tamed) S.tamed.set(e, false);
+  }
+}
+/* Two animals bred: bred_animals. Every way the mobs breed (a baby of their own kind, a mule, a
+   frog's tadpoles, a turtle's or a sniffer's eggs) ends the pair's love and starts their 5 minute
+   wait (ageT 6000) in the same tick: a pair seen doing that is a breeding, and the child is the
+   baby just born beside them, or for those that lay eggs or spawn, one of their own kind (as the
+   game counts a frog or a turtle for Two by Two). */
+function breedTick(g) {
+  const E = g.entities;
+  if (!E || !E.list) return;
+  const was = S.loving || new Set(), now = new Set(), bred = [];
+  for (const e of E.list) {
+    if (e.inLove > 0 && !e.dead) now.add(e);
+    else if (was.has(e) && !e.dead && e.ageT >= 5990) bred.push(e);
+  }
+  S.loving = now;
+  if (!bred.length || !P.wants('bred_animals')) return;
+  const used = new Set();
+  for (const a of bred) {
+    if (used.has(a)) continue;
+    let b = null, bd = 64;
+    for (const o of bred) { if (o === a || used.has(o)) continue; const d = (o.pos.x - a.pos.x) ** 2 + (o.pos.z - a.pos.z) ** 2; if (d < bd) { bd = d; b = o; } }
+    if (!b) continue;
+    used.add(a); used.add(b);
+    let baby = null;
+    for (const o of E.list) if (!o.dead && o.ageT !== undefined && o.ageT <= -23990 && (o.pos.x - a.pos.x) ** 2 + (o.pos.z - a.pos.z) ** 2 < 25) { baby = o; break; }
+    const child = baby && baby.type !== 'tadpole' ? entityView(baby) : Object.assign(entityView(a), { baby: true });
+    fire('bred_animals', { child, parent: entityView(a), partner: entityView(b) });
   }
 }
 /* Beacons: one that comes alive (a pyramid under it and the sky over it) counts for everyone within
