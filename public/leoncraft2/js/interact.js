@@ -92,7 +92,10 @@ export class Interactor {
     const e = this.entityTarget;
     if (e && this.entities) {
       if (button === 0) { this.attack = true; this.hand.swing(); this.entities.attack(e); return; }
-      if (button === 2 && this.entities.interact(e)) { this.useHeld = true; this.useDelay = 5; this.hand.swing(); return; }
+      // (the main hand first, then the off hand: wheat in the off hand feeds a cow, as in the game)
+      if (button === 2 && (this.entities.interact(e) || (this.hand.withOffhand && this.hand.withOffhand(() => this.entities.interact(e))))) {
+        this.useHeld = true; this.useDelay = 5; this.hand.swing(); return;
+      }
     }
     if (button === 0 && !this.target && this.entities) this.entities.swung();
     if (button === 0) {
