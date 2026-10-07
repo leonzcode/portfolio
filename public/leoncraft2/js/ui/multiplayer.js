@@ -20,7 +20,7 @@
 --------------------------------------------------------------------------- */
 import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=22';
 import { ConfirmScreen } from './menus.js?v=22';
-import { Net, listServers, createServer, editServer, deleteServer, playerName, setPlayerName, cleanName } from '../net/net.js?v=22';
+import { Net, listServers, createServer, editServer, deleteServer, playerName, setPlayerName, cleanName, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=22';
 import { parseSeed } from '../gen/random.js?v=22';
 
 const PW_KEY = 'lc2_pw_';
@@ -108,10 +108,15 @@ export class MultiplayerScreen extends Screen {
   async refresh() {
     this.status = 'Pinging...'; this.ping = -1;
     if (this.gui) this.gui.markDirty();
+    this.status2 = '';
     try {
       const r = await listServers();
       this.servers = r.servers; this.ping = r.ping; this.status = '';
-    } catch (e) { this.servers = []; this.status = "Can't connect to the server list"; }
+    } catch (e) {
+      // nothing answering, or an mc server without Leoncraft 2 on it yet: said plainly (net.js FAIL_TEXT)
+      const t = FAIL_TEXT[(e && e.kind) || SERVER_DOWN] || FAIL_TEXT.down;
+      this.servers = []; this.status = t[0]; this.status2 = t[1];
+    }
     this.fill();
   }
   remove() {
@@ -145,7 +150,12 @@ export class MultiplayerScreen extends Screen {
   render(g, mx, my, dt) {
     super.render(g, mx, my, dt);
     g.centered(this.title, this.width / 2, 20, WHITE);
-    if (this.status) g.centered(this.status, this.width / 2, 32 + Math.floor((this.height - 96) / 2) - 4, GREY);
+    if (this.status) {
+      const y = 32 + Math.floor((this.height - 96) / 2) - 4;
+      // (a server that cannot be reached is said in the game's dark red, with why under it)
+      g.centered(this.status, this.width / 2, y - (this.status2 ? 5 : 0), this.status2 ? 0xAA0000 : GREY);
+      if (this.status2) for (const [i, l] of g.font.wrap(this.status2, this.width - 50).entries()) g.centered(l, this.width / 2, y + 6 + i * 10, GREY);
+    }
     if (this.message) g.centered(this.message, this.width / 2, this.height - 64 - 4 - 9, 0xFF5555);
   }
   keyPressed(e) {
@@ -172,6 +182,8 @@ export class CreateServerScreen extends Screen {
     this.kind = e ? e.kind : 'public';
     this.mode = e ? e.mode : 'survival';
     this.cheats = e ? !!e.cheats : false;
+    // spawn protection, as server.properties has it: 16 blocks round the world spawn that only operators can change (0 for none)
+    this.prot = e && e.spawnProt !== undefined ? (e.spawnProt | 0 ? 16 : 0) : 16;
     this.nameField = new TextField(0, 0, 200, 20, { value: e ? e.name : 'Leoncraft Server', maxLength: 32, onEnter: () => this.done() });
     this.motdField = new TextField(0, 0, 200, 20, { value: e ? e.motd || '' : '', maxLength: 60, hint: 'A line under the name' });
     this.pwField = new TextField(0, 0, 200, 20, { value: '', maxLength: 32, hint: e ? 'Leave blank to keep it' : 'Needed to join', onEnter: () => this.done() });
@@ -181,7 +193,7 @@ export class CreateServerScreen extends Screen {
   init() {
     const W = this.width, H = this.height, g = this.gui, x = Math.floor(W / 2 - 100);
     // a quarter of the way down where there is room, never so low the buttons run into the fields
-    const contentH = 32 * (this.editing ? 3 : 4) + 24 * 2;
+    const contentH = 32 * (this.editing ? 3 : 4) + 24 * (this.editing ? 3 : 2);
     let y = Math.max(28, Math.min(Math.floor(H / 4) - 36, H - 28 - 22 - contentH));
     this.labels = [];
     const field = (label, f) => { this.labels.push([label, x, y]); f.x = x; f.y = y + 10; this.add(f); y += 32; };
@@ -194,6 +206,12 @@ export class CreateServerScreen extends Screen {
     this.add(new CycleButton(x, y, 200, 20, 'Allow Commands', { values: [false, true], value: this.cheats, format: onOff, onChange: v => { this.cheats = v; },
       tooltip: () => 'Whether everyone on the server can use commands like /gamemode and /time' }));
     y += 24;
+    // (on Edit, where the seed's row would be: a new server starts with the game's 16)
+    if (this.editing) {
+      this.add(new CycleButton(x, y, 200, 20, 'Spawn Protection', { values: [16, 0], value: this.prot, format: v => (v ? v + ' blocks' : 'OFF'), onChange: v => { this.prot = v; },
+        tooltip: () => 'Only operators can break, place or use blocks this close to the world spawn' }));
+      y += 24;
+    }
     field('Password', this.pwField);
     this.pwField.active = this.kind === 'private';
     if (!this.editing) field('Seed for the World Generator', this.seedField);
@@ -211,7 +229,7 @@ export class CreateServerScreen extends Screen {
     this.busy = true; this.error = this.editing ? 'Saving...' : 'Creating...'; this.gui.markDirty();
     let r;
     try {
-      const o = { name, motd: this.motdField.value.trim(), kind: this.kind, mode: this.mode, cheats: this.cheats };
+      const o = { name, motd: this.motdField.value.trim(), kind: this.kind, mode: this.mode, cheats: this.cheats, spawnProt: this.prot };
       if (pw) o.password = pw;
       if (this.editing) { o.id = this.editing.id; r = await editServer(o); }
       else { o.seed = parseSeed(this.seedField.value); r = await createServer(o); }

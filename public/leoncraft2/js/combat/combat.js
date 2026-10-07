@@ -118,8 +118,8 @@ export class Combat {
     bonus *= c;
     m.ticksSinceSwing = 0;
     const src = { type: 'player', attacker: m.player, player: true, x: P.pos.x, z: P.pos.z };
-    // not alive (a boat, a minecart): it just takes the hit
-    if (!(e instanceof Living)) return e.hurt ? e.hurt(base + bonus, src) : false;
+    // not alive (a boat, a minecart): it just takes the hit (another player on a server works it out from the parts and the charge, net/net.js)
+    if (!(e instanceof Living)) return e.hurt ? e.hurt(base + bonus, src, { base, bonus, c, spin: !!spin }) : false;
     if (e.dead || (base <= 0 && bonus <= 0)) return false;
     const strong = c > 0.9;
     const sprintHit = P.sprinting && strong;
