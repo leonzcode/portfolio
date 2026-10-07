@@ -70,7 +70,7 @@ export function dungeons(seed, blocks, meta, cx, cz, mask) {
       const i = idx(u, oy, w);
       blocks[i] = B.chest; meta[i] = face;
       if (mask) mask[i] = 1;
-      out.chests.push({ x: cx * 16 + u, y: oy + Y0, z: cz * 16 + w, table: 'simple_dungeon', seed: r.nextInt() });
+      out.chests.push({ x: cx * 16 + u, y: oy + Y0, z: cz * 16 + w, table: 'simple_dungeon', seed: String(r.nextLong()) });
       break;
     }
     const si = idx(ox, oy, oz);

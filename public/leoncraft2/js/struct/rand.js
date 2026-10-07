@@ -91,3 +91,16 @@ export function hash32(...v) {
   }
   return h >>> 0;
 }
+
+/* Loot seeds the game gives blocks by where they stand: blockPosLong is
+   BlockPos.asLong as text (a desert pyramid's suspicious sand takes it as its
+   seed); mthSeed is Mth.getSeed, the seed of the random a template's rule
+   processor draws a block's loot seed from (ocean and trail ruins). */
+export function blockPosLong(x, y, z) {
+  return String(BigInt.asIntN(64, (BigInt(x & 0x3FFFFFF) << 38n) | (BigInt(z & 0x3FFFFFF) << 12n) | BigInt(y & 0xFFF)));
+}
+export function mthSeed(x, y, z) {
+  let l = BigInt.asIntN(64, BigInt(Math.imul(x, 3129871)) ^ (BigInt(z) * 116129781n) ^ BigInt(y));
+  l = BigInt.asIntN(64, l * l * 42317861n + l * 11n);
+  return l >> 16n;
+}

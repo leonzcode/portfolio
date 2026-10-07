@@ -389,9 +389,19 @@ export class Combat {
     }
     return false;
   }
+  // (off: drawn in the off hand, its turn at the click: hands.js withOffhand stands it in the selected slot meanwhile)
   begin(kind, stack) {
-    this.use = { kind, t: 0, slot: this.inv.selected, id: stack.id, loaded: false };
+    const H = this.m.hooks && this.m.hooks.hands;
+    this.use = { kind, t: 0, slot: this.inv.selected, id: stack.id, loaded: false, off: !!(H && H.offTurn) };
     this.P.usingItem = kind;
+  }
+  // the stack being drawn: the selected one, or the off hand's
+  useStack(u) { const inv = this.inv; return !u || !inv ? null : u.off ? inv.offhand : inv.slots[inv.selected]; }
+  // fn run with the hand in use standing as the held one (the off hand's bow wears, and is let go, as the main hand's)
+  inUseHand(u, fn) {
+    const H = this.m.hooks && this.m.hooks.hands;
+    if (u && u.off && H && H.withOffhand && !H.offTurn) return H.withOffhand(fn);
+    return fn();
   }
   stopUse() { this.use = null; if (this.P && (this.P.usingItem === 'bow' || this.P.usingItem === 'crossbow' || this.P.usingItem === 'trident')) this.P.usingItem = false; }
   // ticks a crossbow takes to load: 25, 5 fewer a level of Quick Charge
@@ -399,12 +409,12 @@ export class Combat {
   useTick() {
     const u = this.use, inv = this.inv;
     if (!u) return;
-    const s = this.held();
+    const s = this.useStack(u);
     // a different slot or item: put away without letting go
-    if (inv.selected !== u.slot || !s || s.id !== u.id || (this.sv && this.sv.dead)) { this.stopUse(); return; }
-    if (!(this.m.inter && this.m.inter.useHeld)) { this.release(s); return; }
+    if ((!u.off && inv.selected !== u.slot) || !s || s.id !== u.id || (this.sv && this.sv.dead)) { this.stopUse(); return; }
+    if (!(this.m.inter && this.m.inter.useHeld)) { this.inUseHand(u, () => this.release(this.held())); return; }
     u.t++;
-    if (u.kind === 'spear') this.chargeTick(s, u);
+    if (u.kind === 'spear') this.inUseHand(u, () => this.chargeTick(this.held(), u));
   }
   // one tick of a spear's charge (CHARGE above)
   chargeTick(s, u) {
@@ -676,8 +686,8 @@ export class Combat {
   useState(alpha) {
     const u = this.use, o = this._use || (this._use = {});
     if (u) {
-      o.kind = u.kind; o.side = 0; o.t = u.t + alpha;
-      o.total = u.kind === 'bow' ? 20 : u.kind === 'trident' ? 10 : u.kind === 'spear' ? 1 : Math.max(1, this.crossbowTicks(this.held()));
+      o.kind = u.kind; o.side = u.off ? 1 : 0; o.t = u.t + alpha;
+      o.total = u.kind === 'bow' ? 20 : u.kind === 'trident' ? 10 : u.kind === 'spear' ? 1 : Math.max(1, this.crossbowTicks(this.useStack(u)));
       return o;
     }
     if (this.shieldT > 0) {

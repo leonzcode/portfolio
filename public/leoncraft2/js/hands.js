@@ -48,6 +48,12 @@ import { breaksInCreative } from './modes.js?v=24';
 import { boxOpened, bellRang } from './sim/lids.js?v=24';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
+// what a full bucket pours out (the fish buckets are water with a fish in it)
+const FILLED = { water_bucket: 'water', lava_bucket: 'lava', powder_snow_bucket: 'powder_snow', cod_bucket: 'water', salmon_bucket: 'water',
+  pufferfish_bucket: 'water', tropical_fish_bucket: 'water', axolotl_bucket: 'water', tadpole_bucket: 'water' };
+const MOB_BUCKET = /^(cod|salmon|pufferfish|tropical_fish|axolotl|tadpole)_bucket$/;
+// what poured water or lava breaks out of its way (the game's non-solid blocks that cannot hold water)
+const WASHED = new Set(['torch', 'wall_torch', 'wire', 'cross', 'crop']);
 // two slot arrays seen as one (a large chest): reads and writes go straight to the halves
 function joinSlots(a, b) {
   const n = a.length + b.length;
@@ -419,6 +425,9 @@ export class Hands {
       this.inv.changed();
       return true;
     }
+    // a shield goes up (combat.js raises it while the button is held): the use ends here, the other hand waits
+    if (it.name === 'shield') return true;
+    if (FILLED[it.name]) return this.emptyBucket(hit, it.name);
     if (it.name === 'bucket') return this.fillBucket();
     if (it.name === 'map') return this.newMap();
     if (it.name === 'glass_bottle') return this.fillBucket(true);
@@ -445,6 +454,43 @@ export class Hands {
     if (!crop) return false;
     if (crop.name === 'sweet_berry_bush') return /^(grass_block|dirt|podzol|coarse_dirt|farmland|moss_block|mud|rooted_dirt)$/.test(d.name);
     return d.name === 'farmland';
+  }
+  /* A full bucket emptied (the game's BucketItem): into the cell in front of
+     the face looked at, where that is air, a fluid, or something a fluid
+     washes away (it drops what it would); water boils away in the Nether, a
+     fish bucket lets its fish go, and powder snow goes down as a block does
+     (into a block it can replace, else in front of it). Nothing there to
+     take it: the other hand may have its go. Survival is left holding the
+     empty bucket, creative keeps the full one. */
+  emptyBucket(hit, name) {
+    if (!hit || !hit.face || !this.mayBuild) return false;
+    const w = this.world, f = hit.face, fill = FILLED[name];
+    let x = hit.x + f[0], y = hit.y + f[1], z = hit.z + f[2];
+    if (fill === 'powder_snow' && BLOCKS[hit.b] && BLOCKS[hit.b].replaceable && !FLUID[hit.b]) { x = hit.x; y = hit.y; z = hit.z; }
+    const cur = w.get(x, y, z), d = BLOCKS[cur];
+    // (a fluid washes away what it can: grass, flowers, crops, torches, redstone dust; never into a block that holds water itself)
+    if (cur && !FLUID[cur] && !(d && (d.replaceable || (fill !== 'powder_snow' && !d.solid && !d.waterlogged && WASHED.has(d.shape))))) return false;
+    if (B[fill] === undefined) return false;
+    const sim = this.inter && this.inter.sim;
+    if (fill === 'water' && w.dim === 'the_nether') {
+      // it boils away in a puff of smoke
+      const P = this.renderer && this.renderer.particles;
+      if (P && P.spawn) for (let i = 0; i < 8; i++) P.spawn(x + Math.random(), y + Math.random(), z + Math.random(), 0, 0.02, 0, { colour: 0x707070, size: 0.18, life: 20, gravity: -0.01, physics: false });
+    } else {
+      // a plant or the like in the way is washed out (what it drops comes out)
+      if (cur && !FLUID[cur]) { if (sim) sim.destroy(x, y, z); else w.set(x, y, z, 0, 0); }
+      if (w.get(x, y, z) !== B[fill]) w.set(x, y, z, B[fill], 0);
+      if (this.fluids && fill !== 'powder_snow') this.fluids.around(x, y, z);
+      // the fish, axolotl or tadpole it held swims out (kept: it came from a bucket)
+      const mob = name.replace(/_bucket$/, '');
+      if (MOB_BUCKET.test(name)) {
+        const E = this.inter && this.inter.entities, e = E && E.spawn ? E.spawn(mob, x + 0.5, y, z + 0.5, { natural: false }) : null;
+        if (e) e.persistent = true;
+      }
+    }
+    if (this.renderer) this.renderer.swing = 1;
+    if (!this.creative) { this.inv.slots[this.inv.selected] = { id: I.bucket, count: 1 }; this.inv.changed(); }
+    return true;
   }
   // the bucket ray: the first source of water or lava along the view, within reach
   fillBucket(bottle) {

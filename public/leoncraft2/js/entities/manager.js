@@ -35,7 +35,7 @@ import { explode } from './explosion.js?v=24';
 import { splitXp } from './xporb.js?v=24';
 import { placeMinecart, isRail, Minecart } from './minecart.js?v=24';
 import { CART_ITEMS } from './carts.js?v=24';
-import { FALLS, free } from './fallingblock.js?v=24';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=24';
 import { Spawner, DESPAWN } from './spawner.js?v=24';
 import { MODELS, POSE, restPose } from './mobmodels.js?v=24';
 import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=24';
@@ -84,9 +84,6 @@ export class Entities {
     this.effects = {};               // the player's effects: name -> ticks left
     this.budget = 0;
     this.spawner = new Spawner(this);
-    // blocks that fall, checked two ticks after something changes next to them
-    this.fallChecks = [];
-    this.world.onSetE = (x, y, z, b) => { if (FALLS[b] || FALLS[this.t.get(x, y + 1, z)]) this.fallChecks.push(x, y, z, this.age + 2); };
     // drawing
     this.atlas = buildAtlas();
     this.meshes = new EntityMeshes(this.R, this.atlas, buildSheet());
@@ -298,7 +295,6 @@ export class Entities {
     this.spawner.tick();
     wandererTick(this);
     tableBooks(this);
-    if (this.fallChecks.length) this.fallTick();
     const n = this.list.length, voidY = this.D.minY;
     for (let i = 0; i < n; i++) {
       const e = this.list[i];
@@ -330,23 +326,8 @@ export class Entities {
     for (const p of e.passengers) { if (p !== this.player) p.vehicle = null; }
     if (this.riding === e) this.dismount();
   }
-  // sand over a gap becomes a falling block (and whatever was resting on it after)
-  fallTick() {
-    const q = this.fallChecks, keep = [];
-    for (let i = 0; i < q.length; i += 4) {
-      if (q[i + 3] > this.age) { keep.push(q[i], q[i + 1], q[i + 2], q[i + 3]); continue; }
-      for (const y of [q[i + 1], q[i + 1] + 1]) {
-        const x = q[i], z = q[i + 2], b = this.t.get(x, y, z);
-        if (!FALLS[b] || !free(this.t.get(x, y - 1, z)) || y <= 0) continue;
-        const meta = this.t.meta(x, y, z);
-        this.world.set(x, y, z, 0, 0);
-        if (this.fluids) this.fluids.around(x, y, z);
-        const e = this.spawn('falling_block', x + 0.5, y, z + 0.5, { natural: false });
-        if (e) { e.block = b; e.meta = meta; }
-      }
-    }
-    this.fallChecks = keep;
-  }
+  // a block starting to fall (sim/bodies.js says when, on the game's scheduled ticks): the entity, the cell left empty
+  fallBlock(x, y, z, b, meta) { return fallFrom(this, x, y, z, b, meta); }
   // the light where a mob's eyes are, eased when drawn
   sampleLight(e, now) {
     const x = Math.floor(e.pos.x), y = Math.floor(e.pos.y + Math.min(e.h, 1.6) * 0.85), z = Math.floor(e.pos.z);

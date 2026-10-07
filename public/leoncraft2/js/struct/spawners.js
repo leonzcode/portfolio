@@ -22,6 +22,7 @@
    by the mobs' renderer from its displays list, never ticked or hit).
 --------------------------------------------------------------------------- */
 import { B } from '../blocks.js?v=24';
+import { BIOMES } from '../biomes.js?v=24';
 import { Y0, CH } from '../world-const.js?v=24';
 
 // what a spawner can hold, by its meta (1 up): append only, saves keep the numbers
@@ -140,15 +141,23 @@ function nearby(E, s) {
 }
 
 /* window.__lc2.structures: ask the workers (they hold the generator). */
-let roll = null;
-const loadLoot = () => roll || (roll = import('./loot.js?v=24').then(m => m.rollLoot).catch(() => null));
+let roll = null, LOOT = null;
+// the loot rolling (struct/loot.js), fetched once; after that a chest is filled the moment it opens
+const loadLoot = () => roll || (roll = import('./loot.js?v=24').then(m => { LOOT = m; return m.rollLoot; }).catch(() => { roll = null; return null; }));
 export function structuresApi(getWorld, getPlayer) {
+  // fetched while the game starts, so the first chest opened is not left empty for a moment
+  setTimeout(loadLoot, 4000);
   const ask = (msg) => {
     const w = getWorld();
     if (!w || !w.ask) return Promise.resolve({ error: 'no world' });
     return w.ask(Object.assign({ type: 'structures' }, msg));
   };
   const here = () => { const p = getPlayer(); return p ? { x: Math.floor(p.pos.x), z: Math.floor(p.pos.z) } : { x: 0, z: 0 }; };
+  // the biome the container stands in (a few entries only exist in, or everywhere but, one biome) and its slots
+  const lootOpts = (x, z, size) => {
+    const w = getWorld(), b = w && w.biomeAt ? BIOMES[w.biomeAt(x, z)] : null;
+    return { size, biome: b ? b.name : '' };
+  };
   const api = {
     // the nearest structure of a kind ('village', 'stronghold', 'monument', 'mansion', 'fortress', ... or any structure id)
     locate(kind, x, z, dim) { const h = here(); return ask({ op: 'locate', kind, x: x === undefined ? h.x : x, z: z === undefined ? h.z : z, dim }).then(m => m.error ? Promise.reject(new Error(m.error)) : m.found); },
@@ -161,11 +170,25 @@ export function structuresApi(getWorld, getPlayer) {
       const c = api.inChunk(Math.floor(x / 16), Math.floor(z / 16));
       return c && c.chests ? c.chests.find(e => e.x === x && e.y === y + Y0 && e.z === z) || null : null;
     },
-    // the contents of a structure chest (y in the game's index terms), rolled from its table (a promise)
-    lootAt(x, y, z) {
+    // the contents of a structure chest (y in the game's index terms), rolled from its table (a promise;
+    // size: the container's slots)
+    lootAt(x, y, z, size) {
       const e = api.chestAt(x, y, z);
-      return e ? loadLoot().then(f => (f ? f(e.table, e.seed) : null)) : Promise.resolve(null);
+      return e ? loadLoot().then(f => (f ? f(e.table, e.seed, lootOpts(x, z, size)) : null)) : Promise.resolve(null);
     },
+    // the same at once: undefined while the loot code is still on its way, null for a chest no structure filled
+    lootNow(x, y, z, size) {
+      if (!LOOT) { loadLoot(); return undefined; }
+      const e = api.chestAt(x, y, z);
+      return e ? LOOT.rollLoot(e.table, e.seed, lootOpts(x, z, size)) : null;
+    },
+    // what a suspicious block a structure laid holds (one stack or null), as the game's brush finds it; a promise
+    findAt(x, y, z) {
+      const e = api.chestAt(x, y, z);
+      if (!e || !/^archaeology\//.test(e.table)) return Promise.resolve(null);
+      return loadLoot().then(() => (LOOT ? LOOT.rollItems(e.table, e.seed, lootOpts(x, z))[0] || null : null));
+    },
+    loadLoot,
     spawners: new Spawners(),
   };
   return api;

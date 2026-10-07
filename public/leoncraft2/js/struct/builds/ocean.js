@@ -34,6 +34,7 @@
 import { NORTH, EAST, SOUTH, WEST } from '../build.js?v=24';
 import { make, footprint, turned, rect, overlaps, rng } from './util.js?v=24';
 import { BLOCKS } from '../../blocks.js?v=24';
+import { JRand, mthSeed } from '../rand.js?v=24';
 
 export const PLANS = {};
 
@@ -104,7 +105,16 @@ function drawModel(g, model, y0, silt) {
       const wy = y0 + y;
       if (wy <= silt && solidAt(g, x, y, z)) continue;
       g.set(x, y, z, wy <= SEA ? 'water' : 'air');
-    } else g.set(x, y, z, name, state);
+    } else {
+      g.set(x, y, z, name, state);
+      // a suspicious block on a ruin's floor holds the ruin's archaeology table (gravel the cold ruins', sand the warm
+      // ones'); its loot seed drawn as the game's rule processor draws it, from a random of its place
+      if ((name === 'suspicious_gravel' || name === 'suspicious_sand') && g.inside(x, y, z)) {
+        const [X, Y, Z] = g.world(x, y, z), r = new JRand(mthSeed(X, Y, Z));
+        r.nextFloat();
+        g.wr.chest(X, Y, Z, name === 'suspicious_sand' ? 'archaeology/ocean_ruin_warm' : 'archaeology/ocean_ruin_cold', String(r.nextLong()));
+      }
+    }
   }
   if (model.feet) for (const [x, z, name] of model.feet) g.down(x, -1, z, name);
   for (const [x, y, z, table, f] of model.chests) g.chest(x, y, z, table, f);

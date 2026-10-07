@@ -92,7 +92,10 @@ export class Interactor {
     const e = this.entityTarget;
     if (e && this.entities) {
       if (button === 0) { this.attack = true; this.hand.swing(); this.entities.attack(e); return; }
-      if (button === 2 && this.entities.interact(e)) { this.useHeld = true; this.useDelay = 5; this.hand.swing(); return; }
+      // (the main hand first, then the off hand: wheat in the off hand feeds a cow, as in the game)
+      if (button === 2 && (this.entities.interact(e) || (this.hand.withOffhand && this.hand.withOffhand(() => this.entities.interact(e))))) {
+        this.useHeld = true; this.useDelay = 5; this.hand.swing(); return;
+      }
     }
     if (button === 0 && !this.target && this.entities) this.entities.swung();
     if (button === 0) {
@@ -133,6 +136,8 @@ export class Interactor {
   startMining() {
     const h = this.target;
     if (!h || (this.locked && this.locked(h.x, h.y, h.z))) { this.mining = null; return; }
+    // a block that answers a punch (the dragon egg teleports away: sim/bodies.js)
+    if (this.sim && this.sim.attacked && this.sim.attacked(h)) { this.mining = null; this.target = null; return; }
     // with the hand's rules, t runs from 0 to 1 by the tool's progress a tick; without, seconds by hand
     const total = this.hand.progress ? 1 : breakTime(BLOCKS[h.b]);
     this.mining = { x: h.x, y: h.y, z: h.z, b: h.b, t: 0, total, ticks: 0, key: this.hand.key ? this.hand.key() : '' };
@@ -219,7 +224,8 @@ export class Interactor {
     // the main hand had nothing to do: the off hand has its turn (a torch beside the pickaxe, food), as in the game
     if (this.hand.withOffhand) this.hand.withOffhand(() => this.useWith());
   }
-  // one right click with what is in the hand (hands.js swaps the off hand in for its turn); true when it did something
+  // one right click with what is in the hand (hands.js swaps the off hand in for its turn); true when it did something,
+  // 'fail' when a block could not be placed (which ends the click too)
   useWith() {
     // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities); on a block, only once the block has had its say
     // (looking at a mob that did nothing with the click, the item is still used, as in the game: a pearl is thrown)
@@ -255,7 +261,8 @@ export class Interactor {
     if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return false;
     let list = placement(this.world, h, id, this.player);
     if (list.length && this.sim) list = this.sim.placed(list, h, id);
-    if (!list.length) return false;
+    // a block that cannot go there fails the click outright: the other hand does not get its turn (the game's FAIL)
+    if (!list.length) return 'fail';
     for (const [x, y, z, b, m] of list) {
       const cur = this.world.get(x, y, z);
       this.world.set(x, y, z, b, m);

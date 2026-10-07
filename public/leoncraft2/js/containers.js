@@ -43,6 +43,7 @@ import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackF
 import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=24';
 import { cookingRecipe, remainderOf } from './crafting.js?v=24';
 import { fire } from './dispense.js?v=24';
+import { MAPS } from './maps.js?v=24';
 
 export const SIZES = { chest: 27, trapped_chest: 27, copper_chest: 27, barrel: 27, shulker_box: 27, furnace: 3, smoker: 3, blast_furnace: 3,
   dispenser: 9, dropper: 9, crafter: 9, hopper: 5, brewing_stand: 5 };
@@ -159,27 +160,47 @@ export class Containers {
   }
   // a structure's chest holds a loot table until it is first opened (struct/loot.js): rolled once, then never again
   // (asStacks: hand back the stacks instead of filling the container, for a chest broken unopened)
+  // (filled at once when the loot code is in, so a chest never opens empty; otherwise as soon as it is, and the
+  // screen showing it is drawn again: onLoot)
   rollLoot(c, asStacks) {
     const k = this.key(c.x, c.y, c.z);
     if (this.looted.has(k)) return null;
-    this.looted.add(k); this.dirty = true;
     const L = typeof window !== 'undefined' ? window.__lc2 : null, S = L && L.structures;
+    // (no structures to ask yet: asked again the next time, not marked as rolled)
     if (!S || typeof S.lootAt !== 'function') return null;
-    let p;
-    try { p = S.lootAt(c.x, c.y, c.z); } catch (e) { return null; }
-    if (!p || !p.then) return null;
-    return p.then(list => {
-      if (!list || !list.length) return [];
+    this.looted.add(k); this.dirty = true;
+    const fill = list => {
       const out = [];
+      if (!list || !list.length) return out;
       for (const e of list) {
+        // an explorer map: made once the structure it leads to is found (the ask goes to the generator)
+        if (e.map) {
+          explorerMap(e, c.x, c.z).then(st => {
+            if (!st) return;
+            if (asStacks) spill(this.drops, c.x, c.y, c.z, [st]);
+            else if (e.slot >= 0 && e.slot < c.slots.length && !c.slots[e.slot]) { c.slots[e.slot] = st; this.changed(c); if (L.gui && L.gui.markDirty) L.gui.markDirty(); }
+          });
+          continue;
+        }
         const st = lootStack(e);
         if (!st) continue;
         if (asStacks) out.push(st);
         else if (e.slot >= 0 && e.slot < c.slots.length && !c.slots[e.slot]) c.slots[e.slot] = st;
       }
-      if (!asStacks) { this.changed(c); if (this.onLoot) this.onLoot(c); }
+      if (!asStacks) {
+        this.changed(c);
+        // a screen already showing it (the loot came late) is drawn again
+        if (this.onLoot) this.onLoot(c); else if (L.gui && L.gui.markDirty) L.gui.markDirty();
+      }
       return out;
-    }, () => []);
+    };
+    let now;
+    try { now = S.lootNow ? S.lootNow(c.x, c.y, c.z, c.slots.length) : undefined; } catch (e) { now = null; }
+    if (now !== undefined) { const out = fill(now); return asStacks ? Promise.resolve(out) : null; }
+    let p;
+    try { p = S.lootAt(c.x, c.y, c.z, c.slots.length); } catch (e) { return null; }
+    if (!p || !p.then) return null;
+    return p.then(fill, () => []);
   }
   // a block was placed: the contents a shulker box item carried go in; hoppers start working
   placed(x, y, z, stack) {
@@ -293,9 +314,11 @@ export class Containers {
     return c.slots.filter(Boolean);
   }
   // a structure's chest broken before it was ever opened: its loot is rolled and spills
-  unopened(x, y, z) {
+  // (kind: what it was, when the block is already gone)
+  unopened(x, y, z, kind) {
     if (this.looted.has(this.key(x, y, z))) return;
-    const r = this.rollLoot(this.fresh('chest', x, y, z), true);
+    kind = kind || containerKind(this.world.get(x, y, z)) || 'chest';
+    const r = this.rollLoot({ kind, slots: new Array(SIZES[kind] || 27).fill(null), x, y, z }, true);
     if (r) r.then(st => spill(this.drops, x, y, z, st || []));
   }
   // what a shulker box block holds, as the item's own list of 27 (null when empty), taking it out of here
@@ -541,6 +564,27 @@ export class Containers {
 }
 
 // a structure loot entry as a stack: its count, wear, potion
+/* An exploration map from a loot table (the game's exploration_map): a filled
+   map at the table's zoom (2 unless it says), centred on the nearest
+   structure of its kind from the chest, that place marked. When none is
+   found the map is thrown away, as the game's tables say (resolves null). */
+const MAP_KIND = {
+  on_treasure_maps: 'buried_treasure', on_ocean_explorer_maps: 'monument', on_woodland_explorer_maps: 'mansion', on_woodland_mansion_maps: 'mansion',
+  on_ancient_city_maps: 'ancient_city', on_trial_chambers_maps: 'trial_chambers', on_buried_trial_chambers_maps: 'trial_chambers', on_mineshaft_maps: 'mineshaft',
+  on_desert_pyramid_maps: 'desert_pyramid', on_jungle_pyramid_maps: 'jungle_pyramid', on_jungle_explorer_maps: 'jungle_pyramid', on_swamp_explorer_maps: 'swamp_hut',
+  on_ocean_ruin_warm_maps: 'ocean_ruin_warm', on_ocean_ruin_cold_maps: 'ocean_ruin_cold',
+};
+export function explorerMap(e, x, z) {
+  const L = typeof window !== 'undefined' ? window.__lc2 : null, S = L && L.structures;
+  const kind = MAP_KIND[e.map] || (/^on_abandoned_camp_/.test(e.map) ? e.map.replace(/^on_/, '') : null);
+  if (!S || !S.locate || !kind || I.filled_map === undefined) return Promise.resolve(null);
+  return S.locate(kind, x, z).then(f => {
+    if (!f || f.x === undefined) return null;
+    const w = L.world, m = MAPS.create(f.x, f.z, e.zoom !== undefined ? e.zoom : 2, (w && w.dim) || 'overworld');
+    m.marks = [{ x: f.x, z: f.z, type: e.deco || 'red_x' }];
+    return { id: I.filled_map, count: 1, map: m.id };
+  }, () => null);
+}
 export function lootStack(e) {
   const id = I[e.item];
   if (id === undefined || !(e.count > 0)) return null;
@@ -548,7 +592,10 @@ export function lootStack(e) {
   const it = ITEMS[id];
   if (e.damage !== undefined && it && it.dur) { const d = Math.round((1 - e.damage) * it.dur); if (d > 0) st.dmg = Math.min(it.dur - 1, d); }
   if (e.potion) st.potion = String(e.potion).replace(/^minecraft:/, '');
-  if (e.ench && e.ench.set) st.ench = Object.assign({}, e.ench.set);
+  if (e.ench && Object.keys(e.ench).length) st.ench = Object.assign({}, e.ench.set || e.ench);
+  if (e.stew) st.stew = e.stew.slice();
+  if (e.amp !== undefined) st.amp = e.amp;
+  if (e.instrument) st.instrument = e.instrument;
   return st;
 }
 
@@ -604,7 +651,7 @@ export function installContainers(sim) {
         const cs = C();
         if (!cs || containerKind(nb)) return;
         const c = cs.peek(x, y, z);
-        if (!c) { cs.unopened(x, y, z); return; }
+        if (!c) { cs.unopened(x, y, z, kind); return; }
         const D = cs.drops;
         if (kind === 'shulker_box') {
           // a shulker box always drops itself, its contents inside
