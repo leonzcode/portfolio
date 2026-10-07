@@ -131,32 +131,23 @@ export class Ambience {
     const W = g.sim && g.sim.weather;
     const lvl = W ? W.rain : 0;
     if (!(lvl > 0) || !W.rainingAt) return;
-    const w = g.world, ex = Math.floor(eye.x), ey = Math.floor(eye.y), ez = Math.floor(eye.z);
+    const sim = g.sim, ex = Math.floor(eye.x), ey = Math.floor(eye.y), ez = Math.floor(eye.z);
+    if (!sim.topAt || sim.dimension() !== 'overworld') return;
     // (the game looks at up to 100 x rain^2 columns and keeps the last it rains on: one found is as good, so a few are tried)
     const n = Math.min(6, Math.floor(100 * lvl * lvl));
     let hit = null;
     for (let j = 0; j < n && !hit; j++) {
       const x = ex + ri(21) - 10, z = ez + ri(21) - 10;
-      const top = this.topAt(w, x, z, ey);
-      if (top === null || top > ey + 10 || top < ey - 10) continue;
-      if (!W.rainingAt(x, top, z)) continue;
+      // the highest block that stops rain (the game's MOTION_BLOCKING heightmap), and the rain on it
+      const top = sim.topAt(x, z) + 1;
+      if (top <= 0 || top > ey + 10 || top < ey - 10) continue;
+      if (W.precipAt ? W.precipAt(x, top, z) !== 'rain' : !W.rainingAt(x, top, z)) continue;
       hit = [x, top - 1, z];
     }
     if (!hit || !(ri(3) < this.rainT++)) return;
     this.rainT = 0;
-    const roof = this.topAt(w, ex, ez, ey);
-    if (hit[1] > ey + 1 && roof !== null && roof > ey) Sound.play('weather.rain.above', hit[0] + 0.5, hit[1] + 0.5, hit[2] + 0.5, 0.1, 0.5, 'weather');
+    if (hit[1] > ey + 1 && sim.topAt(ex, ez) + 1 > ey) Sound.play('weather.rain.above', hit[0] + 0.5, hit[1] + 0.5, hit[2] + 0.5, 0.1, 0.5, 'weather');
     else Sound.play('weather.rain', hit[0] + 0.5, hit[1] + 0.5, hit[2] + 0.5, 0.2, 1, 'weather');
-  }
-  // the first space above the highest block that stops rain in a column (the game's MOTION_BLOCKING heightmap), looked for near y
-  topAt(w, x, z, y) {
-    const c = w.chunkAt(x, z);
-    if (!c) return null;
-    for (let yy = Math.min(c.top, 383); yy >= y - 12 && yy > 0; yy--) {
-      const b = w.get(x, yy, z);
-      if (b && (BLOCKS[b].solid || FLUID[b] || BLOCKS[b].leaves)) return yy + 1;
-    }
-    return null;
   }
   underwater(P, dead) {
     const under = !!P.eyeInWater && !dead;

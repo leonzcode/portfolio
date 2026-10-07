@@ -115,6 +115,7 @@ function pick(event, depth = 0) {
 
 /* ---- the listener: the camera ---- */
 function setListener(x, y, z, fx, fy, fz, ux, uy, uz) {
+  if (!Number.isFinite(x + y + z + fx + fy + fz + ux + uy + uz)) return;
   listenerPos.x = x; listenerPos.y = y; listenerPos.z = z;
   fwd.x = fx; fwd.y = fy; fwd.z = fz; upv.x = ux; upv.y = uy; upv.z = uz;
   if (!ctx) return;
@@ -274,6 +275,8 @@ export const Sound = {
   /* A sound in the world, at (x, y, z). */
   play(event, x, y, z, volume = 1, pitch = 1, cat = 'block') {
     if (!ctx || ctx.state !== 'running') return null;
+    // (a position that is not a number would throw in the panner)
+    if (!Number.isFinite(x + y + z) || !Number.isFinite(volume * pitch)) return null;
     const r = pick(event);
     if (!r) return null;
     const v = start(r, [x, y, z], volume, pitch, cat);
