@@ -507,10 +507,11 @@ export class World {
     this.lookupStuck();
     const now = performance.now();
     if (moved || now - (this.auditAt || 0) > 1000) this.audit(now);
-    /* (deeper while a loading screen or the title waits (focus), so a worker stays
-       busy while the page is: six chunks of a world made whole, three pieces of
-       one made in stages, each of those several times as long) */
-    const deep = this.focus >= 0 ? (this.staged ? 3 : 6) : 2, cap = this.workers.length * deep;
+    /* (six deep while a loading screen or the title waits (focus) on a world made
+       a chunk at a time, so a worker stays busy while the page is; a world made in
+       stages stays at two, as its pieces wait on each other: deeper, the ones the
+       chunk you stand in needs waited behind others in the workers' lines) */
+    const deep = this.focus >= 0 && !this.staged ? 6 : 2, cap = this.workers.length * deep;
     // meshes first (they are what you see), nearest first; a few a frame, so packing them never stalls one
     /* (the nearest picked out of the line each time, rather than the whole line
        split into numbers and sorted every frame: with every worker busy that was

@@ -732,6 +732,8 @@ async function boot() {
     // portals, the End and its dragon (js/dim/realms.js)
     const realms = new Realms({
       game: () => game, renderer, travel, spawnPoint: w => spawnPoint(w),
+      // standing in a portal: the workers start on the other side (its generator, the ground where you come out: world.js practise)
+      ahead: (dim, near) => { if (game && !game.net) practise({ seed: worldSeed(game.entry), generator: genOf(game.entry), dim, at: near, manifest, colours }, game.world); },
       give: (id, n) => inv.add(id, n),
       // the player's hit on the dragon or a crystal, by the combat rules (combat/combat.js)
       attackDamage: () => (game && game.entities ? game.entities.combat.strikeDamage() : 1),

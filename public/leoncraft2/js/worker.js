@@ -312,9 +312,12 @@ function work(m) {
     const meshesOk = ahead ? preCheck(ahead) : false;
     // (a warm visit's meshes still being read back, or the check's own list not in yet, are given when they come: lateMeshes)
     if (ahead && !meshesOk && (ahead.reading || !ahead.look)) ahead.late = true;
-    const s = spares.get(nameOf(m)) || make(m);
+    // (the world being left is kept as the one spare: coming back from the Nether, its generator need not be made again)
+    const prev = gen && serving ? { gen, structs, name: serving } : null;
+    const s = spares.get(nameOf(m)) || (prev && prev.name === nameOf(m) ? prev : null) || make(m);
     gen = s.gen; structs = s.structs;
     spares.clear();
+    if (prev && prev.name !== nameOf(m)) spares.set(prev.name, prev);
     cacheKey = m.cache || null; tag = m.tag || 0; serving = nameOf(m);
     // the chunks made ahead for this very world, named in the answer so they are asked of this worker
     preMade = ahead && ahead.made.size ? ahead.made : null;
