@@ -32,6 +32,7 @@ import { AbstractHorse } from '../entities/mobs4.js?v=25';
 import { Allay } from '../entities/mobs6.js?v=25';
 import { WindCharge } from '../entities/mobs7.js?v=25';
 import { summonAt } from '../entities/summon.js?v=25';
+import { hives } from '../entities/hives.js?v=25';
 import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=25';
 import { FishingBobber } from '../entities/items2.js?v=25';
 import { EnderDragon } from '../dim/dragon.js?v=25';
@@ -261,6 +262,19 @@ function wrapGame(g) {
   // eating and drinking: consume_item
   if (H && !H.__adv) {
     H.__adv = true;
+    // a bee nest or beehive broken: bee_nest_destroyed, with how many bees were in it (entities/hives.js)
+    const broke = H.broke.bind(H);
+    H.broke = (hit, cells) => {
+      let ev = null;
+      const w = G && G.world, b = w ? w.get(hit.x, hit.y, hit.z) : 0;
+      if (b && (b === B.bee_nest || b === B.beehive) && !H.creative) {
+        const m = w.meta(hit.x, hit.y, hit.z), list = hives().inside.get(hit.x + ',' + hit.y + ',' + hit.z);
+        ev = { block: blockView(hit.x, hit.y + Y0, hit.z), item: H.held ? stackView(H.held) : null, num_bees_inside: (list ? list.length : 0) + ((m >> 5) & 3) };
+      }
+      const r = broke(hit, cells);
+      if (ev) fire('bee_nest_destroyed', ev);
+      return r;
+    };
     const finish = H.finish.bind(H);
     H.finish = id => {
       const s = H.usedStack ? H.usedStack(H.using) : null, view = s ? stackView(s) : { name: itemName(id), count: 1 };
