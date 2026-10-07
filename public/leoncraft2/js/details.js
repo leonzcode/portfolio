@@ -67,6 +67,11 @@ import { potWobbled } from './sim/lids.js?v=24';
 import { BookScreen } from './ui/book.js?v=24';
 import { wantBook } from './entities/tablebook.js?v=24';
 import { cookingRecipe } from './crafting.js?v=24';
+
+/* Other modules keep state of their own with a dimension's block entities (struct/trials.js: a trial
+   spawner's cooldown): registerExtra(k, { save(details) -> entries with that k, load(details, entry), reset(details) }). */
+const EXTRA = new Map();
+export function registerExtra(k, x) { EXTRA.set(k, x); }
 const THREE = window.THREE;
 
 /* ---- the composter's chances, by item (Minecraft Wiki, Composter) ---- */
@@ -785,11 +790,13 @@ export class Details {
       else if (e.k === 'lectern') { if (e.book) out.push({ k: 'le', p: [e.x, e.y, e.z], i: stackToJSON(e.book), g: e.page }); }
       else if (e.items.some(Boolean)) out.push({ k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total });
     }
+    for (const x of EXTRA.values()) for (const o of x.save(this) || []) out.push(o);
     return out;
   }
   fromJSON(list) {
     for (const e of this.map.values()) this._unshow(e);
     this.map.clear();
+    for (const x of EXTRA.values()) if (x.reset) x.reset(this);
     if (!Array.isArray(list)) return;
     for (const o of list) {
       const [x, y, z] = o.p || [0, 0, 0];
@@ -815,6 +822,8 @@ export class Details {
       } else if (o.k === 'j') {
         const e = this.entry(x, y, z, 'jukebox');
         e.disc = o.i ? stackFromJSON(o.i) : null; e.t = o.t | 0;
+      } else if (EXTRA.has(o.k)) {
+        EXTRA.get(o.k).load(this, o);
       } else if (o.k === 'c') {
         const e = this.entry(x, y, z, 'campfire');
         e.items = (o.i || []).concat([null, null, null, null]).slice(0, 4).map(a => (a ? stackFromJSON(a) : null));

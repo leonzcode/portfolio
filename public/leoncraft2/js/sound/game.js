@@ -245,6 +245,8 @@ export function soundParts(g) {
     // a note: 2^((note - 12) / 12), loud (3: heard 48 blocks away), on the Jukebox/Note Blocks slider
     sim.onNote = (x, y, z, inst, note) => Sound.play('block.note_block.' + inst, x + 0.5, y + 0.5, z + 0.5, 3, Math.pow(2, (note - 12) / 12), 'record');
     sim.onBell = (x, y, z) => Sound.play('block.bell.use', x + 0.5, y + 0.5, z + 0.5, 2, 1, 'block');
+    // any other block's sound by its event (conduits, sculk sensors and shriekers...)
+    sim.onSound = (e, x, y, z, v = 1, p = 1) => Sound.play(e, x + 0.5, y + 0.5, z + 0.5, v, p, 'block');
     sim.onDispense = (x, y, z, ok) => Sound.play(ok ? 'block.dispenser.dispense' : 'block.dispenser.fail', x + 0.5, y + 0.5, z + 0.5, 1, ok ? 1 : 1.2, 'block');
     sim.onBurnout = (x, y, z) => Sound.play('block.redstone_torch.burnout', x + 0.5, y + 0.5, z + 0.5, 0.5, 2.6 + spread() * 0.8, 'block');
     // lightning: the thunder heard everywhere (volume 10000), the strike near it
