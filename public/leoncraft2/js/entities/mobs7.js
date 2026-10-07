@@ -1044,6 +1044,17 @@ export class Wither extends Monster {
   }
   serverAi() {
     this.noActionTime++;
+    if (this.summonT > 0) {
+      // built from blocks (sim/golems.js): still while its health fills, then it bursts out
+      this.vel.set(0, 0, 0);
+      this.health = Math.min(this.maxHealth, this.health + this.maxHealth * (2 / 3) / 220);
+      if (this.summonT % 4 === 0) this.m.particles('magic', this.pos.x, this.pos.y + 2, this.pos.z, 3, 1.2, [0.4, 0.5, 0.9]);
+      if (--this.summonT === 0) {
+        this.health = this.maxHealth;
+        this.m.explode(this.pos.x, this.pos.y + 1.75, this.pos.z, 7, { type: 'explosion', attacker: this, mob: true }, { breakBlocks: this.m.mobGriefing !== false });
+      }
+      return;
+    }
     this.targets.tick();
     const t = this.target, v = this.vel, p = this.pos;
     if (t && t.alive()) {
@@ -1071,6 +1082,8 @@ export class Wither extends Monster {
   }
   travel() { const v = this.vel; this.move(v.x, v.y, v.z); v.x *= 0.91; v.z *= 0.91; }
   hurt(amount, source) {
+    // nothing hurts it while it charges, newly built
+    if (this.summonT > 0 && source.type !== 'void') return false;
     // below half health its armour turns arrows
     if (this.health <= this.maxHealth / 2 && source.direct && source.type === 'arrow') return false;
     const ok = super.hurt(amount, source);
