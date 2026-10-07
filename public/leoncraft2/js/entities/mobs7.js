@@ -607,7 +607,7 @@ export class WindCharge extends Projectile {
       const hw = e.hw !== undefined ? e.hw : 0.3, h = e.h || 1.8;
       const ex = exposure(T, e.pos.x - hw, e.pos.y, e.pos.z - hw, e.pos.x + hw, e.pos.y + h, e.pos.z + hw, cx, cy, cz);
       const k = (1 - d / (r * 2)) * ex * this.power * (1 - (e.kbResist || 0));
-      if (isP) { this.m.player.push(dx * k, dy * k, dz * k); if (this.owner === this.m.player && this.m.P) this.m.P.fallDistance = 0; }
+      if (isP) { this.m.player.push(dx * k, dy * k, dz * k); if (this.owner === this.m.player && this.m.P) { this.m.P.fallDistance = 0; this.m.P.impulseY = this.m.P.pos.y; } }
       else if (e.vel) { e.vel.x += dx * k; e.vel.y += dy * k; e.vel.z += dz * k; }
     };
     const P = this.m.player;
