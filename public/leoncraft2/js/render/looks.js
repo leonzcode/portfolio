@@ -98,6 +98,8 @@ const SHADOW_RES = { low: 1024, medium: 2048, high: 3072, ultra: 4096 };
 const SHADOW_SLICES = { low: 8, medium: 6, high: 3, ultra: 1 };
 const SHADOW_TAPS = { low: 4, medium: 4, high: 8, ultra: 16 };
 const WAVE = { off: 0, low: 0.5, high: 1 };
+// how many new shader programs are built at once while a look is coming (applyLook)
+const COMPILE_AT_ONCE = (navigator.hardwareConcurrency || 4) >= 12 ? 2 : 1;
 const SUN_TINT = { warm: [1.12, 0.97, 0.78], natural: [1.06, 1.0, 0.88], cool: [0.98, 1.0, 1.04] };
 
 // Shaders OFF: the game's own look
@@ -198,37 +200,47 @@ export function applyLook(R, look, first) {
     R.lookPending = null;
     finishLook(R, pending.look, false, prep);
   };
-  /* Handed to the graphics card a few at a time, a frame's share each: putting
-     a program together (its source, then the calls that start it compiling)
-     takes a few milliseconds in this thread, and the full chain's forty in one
-     go cost the frame the setting was changed in a tenth of a second or more. */
-  /* Each frame after that, the programs handed over are asked whether they
-     are built yet, oldest first, stopping at the first that is not: every
-     such question waits for the graphics process to catch up, so they are
-     kept to a few a frame (three.js's own compileAsync asked all of them every
-     ten milliseconds). One that is built is asked for its uniforms and
-     attributes there and then, questions three.js would otherwise ask at its
-     first draw, all of them in the frame the new look first shows. */
+  /* Handed to the graphics card one at a time (two on a machine with a dozen
+     cores or more), the next only when one of those is built. The browser
+     compiles each new program on a core of its own, and the first time a
+     look is chosen on a machine none of them are in its cache yet: the
+     forty-odd of a look handed over at once (three a frame) took every core
+     for half a second and more, the browser's own drawing starved with
+     them, and the game stopped for that long, from a third of a second to
+     two and a half with the machine busy. One at a time the new look takes
+     a little longer to come (the old one is drawn meanwhile) and the frames
+     keep coming. A program that is in the cache already (an earlier look's,
+     or the browser's own copy from another day) is ready at once and holds
+     no place in the line. */
+  /* Each frame, the programs being built are asked whether they are done:
+     every such question waits for the graphics process to catch up, which is
+     why there are only ever one or two to ask (three.js's own compileAsync
+     asked all of them every ten milliseconds). One that is done is asked for
+     its uniforms and attributes there and then, questions three.js would
+     otherwise ask at its first draw, all of them in the frame the new look
+     first shows. */
   const compiled = new Promise(res => {
-    const list = prep.compile, building = [];
+    const list = prep.compile, building = [], most = R.compileAtOnce || COMPILE_AT_ONCE, programs = R.r.info.programs;
     let i = 0;
     const step = () => {
       if (R.lookToken !== token) return res();
       const t0 = performance.now();
-      while (i < list.length && performance.now() - t0 < 5) {
-        const scene = new THREE.Scene(), batch = list.slice(i, i + 3);
-        for (const m of batch) scene.add(new THREE.Mesh(R.standGeo, m));
-        i += 3;
-        try { R.r.compile(scene, R.camera); for (const m of batch) building.push(m); } catch (e) { /* built when first drawn */ }
-      }
-      while (building.length && performance.now() - t0 < 8) {
-        // (a material's program as it is now: one let go meanwhile is not asked about)
-        const p = R.r.properties.get(building[0]).currentProgram;
-        if (p && p.program) {
-          if (!p.isReady()) break;
+      for (let j = 0; j < building.length;) {
+        // (one let go meanwhile, its look given up, is not asked about)
+        const [p, at] = building[j];
+        if (p.program && !p.isReady()) { j++; continue; }
+        if (p.program) {
           try { p.getUniforms(); p.getAttributes(); } catch (e) { /* (three.js reports a shader that failed) */ }
+          if (R.lookStats) R.lookStats.push([p, performance.now() - at]);
         }
-        building.shift();
+        building.splice(j, 1);
+      }
+      while (i < list.length && building.length < most && performance.now() - t0 < 5) {
+        const scene = new THREE.Scene(), had = programs ? programs.length : 0;
+        scene.add(new THREE.Mesh(R.standGeo, list[i++]));
+        try { R.r.compile(scene, R.camera); } catch (e) { /* built when first drawn */ }
+        // (the programs this one made: none when it shares one already built)
+        if (programs) for (let k = had; k < programs.length; k++) building.push([programs[k], performance.now()]);
       }
       if (i < list.length || building.length) requestAnimationFrame(step); else res();
     };
@@ -328,6 +340,8 @@ function prepare(R, o) {
   // (the atmosphere's tables drawn only once their shaders are built: finishLook)
   if (!o.vanilla && !R.sky) R.sky = new Sky(r, true);
   if (!o.vanilla && !R.sky.ready) compile.push(...R.sky.materials);
+  // (the ripples and trampled grass, stepped every frame with shaders on: built in its first frame, a tenth of a second)
+  if (!o.vanilla && R.inter && R.inter.m) compile.push(R.inter.m);
   // (and the light pipeline's table of what each texture is made of, worked out at its first frame: renderer.js)
   if (!o.vanilla && o.ldr && !R.layerMatDone && !R.layerMatMat) { R.layerMatMat = layerMatMaterial(U.uSpecMap.value, U.uLayerInfo.value); compile.push(R.layerMatMat); }
   if (o.vanilla && !R._vanilla) R._vanilla = new Vanilla(R, R.textures);
@@ -510,33 +524,85 @@ export async function loadNormalMaps(R, url, layersOfBlocks) {
     const t = new THREE.DataArrayTexture(null, 16, 16, layers);
     t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
     t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
-    t.generateMipmaps = true; t.anisotropy = 8;
+    /* Room for all five mip levels, but none made by three.js: it made them
+       as soon as the texture was there, from layers nothing had been put in
+       yet, and the graphics process first cleared every level of every layer
+       for that, a sixth of a second in the frame the maps came (r_upload
+       makes them once the layers are in). */
+    t.generateMipmaps = false; t.mipmaps = [{}, {}, {}, {}, {}]; t.anisotropy = 8;
     t.source.dataReady = false;
     t.needsUpdate = true;
-    r_upload(R.r, t, pieces, layers, R.skipNormalLayers);
+    await r_upload(R.r, t, pieces, layers, blockLayers, R.skipNormalLayers);
     R.U.uNormalMap.value = t;
     R.normalsLoaded = true;
   })().catch(e => { console.warn('normal maps', e); R.normalsLoading = null; });
   return R.normalsLoading;
 }
-function r_upload(r, t, pieces, layers, skip) {
+/* Handed to the graphics card a share a frame: every layer flat (items and
+   the other dimensions' art keep that), a size a frame; then a piece of the
+   blocks' maps a frame; then the blocks' smaller sizes, each made from the
+   size above it a few hundred layers a frame (a blit to half the size, four
+   texels averaged into one, as generateMipmap does). All in one go
+   (generateMipmap over all nineteen hundred layers at the end) it was a
+   tenth of a second of the graphics process's time in the frame the maps
+   came, the first time High or RIP Computer was chosen. */
+async function r_upload(r, t, pieces, layers, blockLayers, skip) {
+  const gl = r.getContext(), frame = () => new Promise(res => requestAnimationFrame(res));
   r.initTexture(t);
-  const gl = r.getContext(), glTex = r.properties.get(t).__webglTexture;
-  gl.bindTexture(gl.TEXTURE_2D_ARRAY, glTex);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
-  const N = 128, flat = new Uint8Array(16 * 16 * N * 4);
+  const glTex = r.properties.get(t).__webglTexture;
+  const begin = () => {
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, glTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  };
+  const end = () => { gl.bindTexture(gl.TEXTURE_2D_ARRAY, null); r.resetState(); };
+  /* Every size of every layer flat first, each size in one go: the first
+     time a size is written only in part, the graphics process clears the
+     whole of it (all the layers) before it writes, a fiftieth of a second
+     each time. */
+  const flat = new Uint8Array(16 * 16 * layers * 4);
   for (let i = 0; i < flat.length; i += 4) { flat[i] = 128; flat[i + 1] = 128; flat[i + 2] = 255; flat[i + 3] = 255; }
-  // every layer flat first (items, the other dimensions' art), then the blocks' own maps
-  for (let z = 0; z < layers; z += N) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, z, 16, 16, Math.min(N, layers - z), gl.RGBA, gl.UNSIGNED_BYTE, flat);
-  for (const [z, n, bmp] of pieces) { gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, z, 16, 16, n, gl.RGBA, gl.UNSIGNED_BYTE, bmp); bmp.close && bmp.close(); }
-  // and flat again where a resource pack replaced the block's picture (its bumps were made for ours)
-  if (skip) for (const l of skip) if (l < layers) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, l, 16, 16, 1, gl.RGBA, gl.UNSIGNED_BYTE, flat, 0);
-  gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
-  gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
-  r.resetState();
+  for (let lv = 0, s = 16; lv < 5; lv++, s >>= 1) {
+    await frame();
+    begin();
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, lv, 0, 0, 0, s, s, layers, gl.RGBA, gl.UNSIGNED_BYTE, flat);
+    end();
+  }
+  // then the blocks' own maps, a piece a frame
+  for (const [z, n, bmp] of pieces) {
+    await frame();
+    begin();
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, z, 16, 16, n, gl.RGBA, gl.UNSIGNED_BYTE, bmp);
+    bmp.close && bmp.close();
+    end();
+  }
+  // flat again where a resource pack replaced the block's picture (its bumps were made for ours)
+  if (skip) {
+    begin();
+    for (const l of skip) if (l < blockLayers) gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, l, 16, 16, 1, gl.RGBA, gl.UNSIGNED_BYTE, flat, 0);
+    end();
+  }
+  const from = gl.createFramebuffer(), to = gl.createFramebuffer(), PER = 256;
+  for (let lv = 1, s = 8; lv < 5; lv++, s >>= 1) {
+    for (let z0 = 0; z0 < blockLayers; z0 += PER) {
+      await frame();
+      // (a blit is cut to the scissor box, which the frame may have left on)
+      gl.disable(gl.SCISSOR_TEST);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, from);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, to);
+      for (let z = z0, z1 = Math.min(blockLayers, z0 + PER); z < z1; z++) {
+        gl.framebufferTextureLayer(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, glTex, lv - 1, z);
+        gl.framebufferTextureLayer(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, glTex, lv, z);
+        gl.blitFramebuffer(0, 0, s * 2, s * 2, 0, 0, s, s, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+      }
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+      r.resetState();
+    }
+  }
+  gl.deleteFramebuffer(from); gl.deleteFramebuffer(to);
 }
 
 /* ---- texture filtering and mipmaps (Video Settings) ----
