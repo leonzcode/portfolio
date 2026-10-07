@@ -668,8 +668,8 @@ export class OptionsScreen extends Screen {
   }
 }
 
-// Video Settings (the game's own), Shader Packs and Shader Options live in ui/video.js
-export { VideoSettingsScreen, ShaderPacksScreen, ShaderOptionsScreen } from './video.js?v=21';
+// Video Settings (the game's own, with the one Shaders button) live in ui/video.js
+export { VideoSettingsScreen } from './video.js?v=21';
 import { VideoSettingsScreen } from './video.js?v=21';
 
 export class ControlsScreen extends OptionsListScreen {

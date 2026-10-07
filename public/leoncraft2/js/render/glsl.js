@@ -72,32 +72,52 @@ vec4 texFiltered(sampler2DArray s, vec3 p) {
 /* ---- the sun's shadow map ------------------------------------------------ */
 export const SHADOW = /* glsl */`
 uniform sampler2DShadow uShadow;
-uniform mat4 uShadowMat;      // world -> shadow clip (orthographic, centred on the player)
+uniform mat4 uShadowMat;      // world -> shadow clip (orthographic, an even grid pinned to the world: render/shadows.js)
 uniform float uShadowRes;
-uniform float uShadowSoft;    // how far apart the soft shadow's taps are, in texels (Shader Options: Shadow Softness)
-const float SHADOW_B = 0.85;  // how hard the map is squeezed towards the player
-vec2 distort(vec2 p) { float f = length(p) * SHADOW_B + (1.0 - SHADOW_B); return p / f; }
-float distortFactor(vec2 p) { return length(p) * SHADOW_B + (1.0 - SHADOW_B); }
+uniform float uShadowSoft;    // how far apart the soft shadow's taps are, in texels
+// where you stand in the map (xy, its clip space), the map's reach over the shadow distance (z)
+// and a texel's size in blocks (w)
+uniform vec4 uShadowEye;
+// how far a texel of the map is nudged off its own surface: a texel or two, more the more
+// the face turns from the light (the map's texels are the same size everywhere)
+vec3 shadowNudge(vec3 n, float NoL) { return n * uShadowEye.w * (0.6 + 1.4 * (1.0 - sat(NoL))); }
 // where a world point lands in the shadow map, nudged off its own surface
 vec3 shadowCoord(vec3 world, vec3 n, float NoL, float dist) {
-  world += n * 0.25 * clamp(0.12 + 0.01 * dist, 0.0, 1.0) * (2.0 - sat(NoL));
+  world += shadowNudge(n, NoL);
   vec4 c = uShadowMat * vec4(world, 1.0);
-  c.xy = distort(c.xy);
   c.z *= 0.2;
   return c.xyz * 0.5 + 0.5;
 }
-// soft shadows, kept cheap: four hardware-filtered taps in a fixed square
-// (each tap already blends four texels), so the edge is soft and never
-// shimmers from frame to frame. The noise argument is no longer used.
+// how far a point is from you in the map, in shadow distances (1 is as far as the shadows reach)
+float shadowReach(vec2 clipXY) { return length(clipXY - uShadowEye.xy) * uShadowEye.z; }
+// past the shadow distance, the light level's guess takes over: by distance from you, so the
+// fade moves with you and never jumps when the map moves on
+float shadowFade(vec3 sc) { return linstep(0.82, 1.0, shadowReach(sc.xy * 2.0 - 1.0)); }
+// soft shadows from hardware-filtered taps (each blends four texels) in a fixed pattern, so the
+// edge is soft and never shimmers from frame to frame: four in a square, or (SHADOW_TAPS 8 or
+// 16, the full looks) a Vogel disc. The noise argument is no longer used.
+#ifndef SHADOW_TAPS
+#define SHADOW_TAPS 4
+#endif
 float shadowSoft(vec3 sc, float noise, float radius) {
   if (sc.x <= 0.0 || sc.x >= 1.0 || sc.y <= 0.0 || sc.y >= 1.0 || sc.z >= 1.0) return 1.0;
   float bias = 0.00004, z = sc.z - bias;
+#if SHADOW_TAPS > 4
+  float s = 0.0;
+  for (int i = 0; i < SHADOW_TAPS; i++) {
+    float r = sqrt((float(i) + 0.5) / float(SHADOW_TAPS)) * radius * 0.9;
+    float a = float(i) * 2.39996;
+    s += textureLod(uShadow, vec3(sc.xy + vec2(cos(a), sin(a)) * r / uShadowRes, z), 0.0);
+  }
+  return s / float(SHADOW_TAPS);
+#else
   vec2 o = vec2(0.5 * radius / uShadowRes);
   float s = textureLod(uShadow, vec3(sc.xy + vec2(-o.x, -o.y), z), 0.0)
           + textureLod(uShadow, vec3(sc.xy + vec2(o.x, -o.y), z), 0.0)
           + textureLod(uShadow, vec3(sc.xy + vec2(-o.x, o.y), z), 0.0)
           + textureLod(uShadow, vec3(sc.xy + vec2(o.x, o.y), z), 0.0);
   return s * 0.25;
+#endif
 }
 float shadowHard(vec3 sc) {
   if (sc.x <= 0.0 || sc.x >= 1.0 || sc.y <= 0.0 || sc.y >= 1.0 || sc.z >= 1.0) return 1.0;
@@ -339,6 +359,30 @@ vec3 agx(vec3 c) {
   c = pow(max(c, 0.0), vec3(1.06));
   c = outM * c;
   return pow(max(c, 0.0), vec3(2.2));   // back to linear for the sRGB step after
+}
+/* AgX worked backwards: the light agx() turns into this (linear) colour, for
+   what must come out of the tone curve as a set colour (lava: water.js). The
+   contrast curve rises all the way from 0 to 1, so Newton's method undoes it;
+   a colour AgX cannot reach (lava's deepest orange) comes out as near as it gets. */
+vec3 agxInverse(vec3 y) {
+  const mat3 inM = mat3(0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+                        0.0784335999999992, 0.878468636469772, 0.0784336,
+                        0.0792237451477643, 0.0791661274605434, 0.879142973793104);
+  const mat3 outM = mat3(1.19687900512017, -0.0528968517574562, -0.0529716355144438,
+                         -0.0980208811401368, 1.15190312990417, -0.0980434501171241,
+                         -0.0990297440797205, -0.0989611768448433, 1.15107367264116);
+  const float minEv = -12.47393, maxEv = 4.026069;
+  vec3 c = inverse(outM) * pow(max(y, 0.0), vec3(1.0 / 2.2));
+  c = pow(max(c, 0.0), vec3(1.0 / 1.06));
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c = l + (c - l) / 1.12;
+  vec3 x = vec3(0.6);
+  for (int i = 0; i < 8; i++) {
+    vec3 x2 = x * x, x4 = x2 * x2;
+    vec3 d = 93.0 * x4 * x - 200.7 * x4 + 127.84 * x2 * x - 20.604 * x2 + 0.8596 * x + 0.1191;
+    x = clamp(x - (agxContrast(x) - c) / d, 0.0, 1.0);
+  }
+  return max(inverse(inM) * exp2(x * (maxEv - minEv) + minEv), 0.0);
 }
 vec3 toSRGB(vec3 c) {
   c = max(c, 0.0);

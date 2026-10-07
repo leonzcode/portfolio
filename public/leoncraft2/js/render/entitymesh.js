@@ -105,8 +105,7 @@ void main() {
   if (gate > 0.0 && NoL > 0.0) {
     vec3 sc = shadowCoord(vWorld, N, NoL, length(cameraPosition - vWorld));
     shadow = shadowHard(sc);
-    float edge = max(abs(sc.x - 0.5), abs(sc.y - 0.5)) * 2.0;
-    shadow = mix(shadow, smoothstep(0.85, 0.95, sky), linstep(0.85, 1.0, edge));
+    shadow = mix(shadow, smoothstep(0.85, 0.95, sky), shadowFade(sc));
   }
 #else
   shadow = smoothstep(0.8, 0.95, sky) * step(0.0, NoL);

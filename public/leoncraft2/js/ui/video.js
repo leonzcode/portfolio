@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Leoncraft 2 - Video Settings, Shader Packs and Shader Options.
+   Leoncraft 2 - Video Settings.
 
    Video Settings is the game's own screen as it is now (Java Edition 26):
    three sections, Display, Quality & Performance and Preferences, with the
@@ -10,15 +10,16 @@
    (View Bobbing, FOV Effects and the glint's speed and strength live in
    Accessibility Settings now, as they do in the game.)
 
-   Shader Packs is where a shader mod would put it: Shaders ON or OFF, and
-   Shader Options for ours, part by part, with Profiles (Low, Medium, High,
-   Ultra) as shader packs have them.
+   The one button the game does not have sits beside Done, where a shader mod
+   puts its own: Shaders, cycled like the game's buttons through Off, Low,
+   Medium, High and RIP Computer (render/looks.js says what each one is).
+   Off, the default, is the game as it draws itself.
 
    Nothing here does anything but change Options; settings.js puts each
    change into effect at once, while you play.
 --------------------------------------------------------------------------- */
 import { Button, Slider, CycleButton, WidgetRow, OptionsListScreen, onOff, WHITE } from './gui.js?v=21';
-import { SHADER_DEFAULTS, SHADER_PRESET_NAMES, shaderSettings, presetOf, needsFullChain } from '../render/looks.js?v=21';
+import { SHADER_LEVELS } from '../render/looks.js?v=21';
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -257,156 +258,23 @@ export class VideoSettingsScreen extends OptionsListScreen {
     list.entries[16].children[0].wide = false;
   }
   footer() {
-    const W = this.width, H = this.height;
-    this.add(new Button(W / 2 - 155, H - 27, 150, 20, 'Shader Packs...', () => this.gui.open(new ShaderPacksScreen())));
+    const W = this.width, H = this.height, o = this.options;
+    const now = SHADER_LEVELS.includes(o.get('shaderLevel')) ? o.get('shaderLevel') : 'off';
+    this.add(new CycleButton(W / 2 - 155, H - 27, 150, 20, 'Shaders', {
+      values: SHADER_LEVELS, value: now, format: v => SHADER_NAMES[v], tooltip: v => SHADER_TIPS[v],
+      onChange: v => o.set('shaderLevel', v),
+    }));
     this.add(new Button(W / 2 + 5, H - 27, 150, 20, 'Done', () => this.gui.back()));
   }
 }
 
-/* ------------------------------ Shader Packs ------------------------------ */
+/* ------------------------------ Shaders ------------------------------ */
 
-// our one pack, as a shader mod's list shows a pack: its name and what it does
-class PackRow {
-  constructor(on) { this.on = on; }
-  render(g, list, i, top, left, width) {
-    const x0 = Math.floor(list.x + (list.w - list.rowWidth) / 2), x1 = Math.floor(list.x + (list.w + list.rowWidth) / 2);
-    g.fill(x0, top - 2, x1, top + 34, this.on() ? 0xFFFFFFFF : 0xFF808080);
-    g.fill(x0 + 1, top - 1, x1 - 1, top + 33, 0xFF000000);
-    g.text('Leoncraft Shaders', left + 4, top + 2, this.on() ? 0xFFFFFF : 0xA0A0A0);
-    g.text('Sun shadows, a real sky, water that shines,', left + 4, top + 13, 0x808080);
-    g.text('plants in the wind, bloom and light shafts', left + 4, top + 23, 0x808080);
-  }
-}
-export class ShaderPacksScreen extends OptionsListScreen {
-  constructor() { super('Shader Packs'); this.itemHeight = 25; }
-  refresh() { this.gui._initScreen(this); this.gui.markDirty(); }
-  rows(list) {
-    const o = this.options;
-    const on = () => o.get('shaders') === null || o.get('shaders') === undefined ? !!(this.gui.hooks.shadersOn && this.gui.hooks.shadersOn()) : !!o.get('shaders');
-    const sw = new CycleButton(0, 0, 310, 20, 'Shaders', {
-      values: [false, true], value: on(), format: onOff, onChange: v => { o.set('shaders', v); this.refresh(); },
-      tooltip: v => v ? 'Our shader: shadows from the sun and moon, a real sky, water with the sky in it, plants and leaves in the wind, and more in Shader Options.'
-        : 'No shaders: the game as it draws itself.',
-    });
-    const optsB = new Button(0, 0, 310, 20, 'Shader Options...', () => this.gui.open(new ShaderOptionsScreen()));
-    if (!on()) off(optsB, 'Turn Shaders ON to change them.');
-    const pack = new PackRow(on);
-    list.entries = [new WidgetRow(sw), pack, { render() {} }, new WidgetRow(optsB)];
-  }
-}
-
-/* ------------------------------ Shader Options ------------------------------ */
-
-const LEVELS = { off: 'OFF', low: 'Low', medium: 'Medium', high: 'High' };
-const PROFILE_NAMES = { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra', custom: 'Custom' };
-const PROFILE_TIPS = {
-  low: 'No shadows, gentle grass, still leaves and still water: the quickest shader look.',
-  medium: 'Soft sun shadows near you, plants and leaves in the wind, the sky in the water. Nearly as smooth as no shaders.',
-  high: 'Sharper shadows reaching further.',
-  ultra: 'Everything: light worked out per pixel with normal maps, bloom, light shafts, volumetric clouds and their shadows, and reflections of the world in the water. Needs a strong graphics card.',
-  custom: 'Your own choice of each part.',
+const SHADER_NAMES = { off: 'Off', low: 'Low', medium: 'Medium', high: 'High', rip: 'RIP Computer' };
+const SHADER_TIPS = {
+  off: 'No shaders: the game as it draws itself. The fastest.',
+  low: 'Light shaders: hard shadows from the sun and moon, a real sky, the sky in the water and grass in the wind. Nearly as fast as no shaders.',
+  medium: 'Soft shadows from the sun and moon, waves on the water, and plants and leaves in the wind. Runs well on most computers.',
+  high: 'The full shader look: bloom, light shafts through the leaves, deep clouds and their shadows, the world reflected in the water, bumpy block surfaces and soft shadows far out. Needs a strong graphics card.',
+  rip: 'Everything at its most: the sharpest shadows reaching furthest, the finest light shafts, clouds and reflections, and stronger bloom. Only for the most powerful graphics cards.',
 };
-const FULL = ' Needs the full shader pipeline, which costs more.';
-const SUN = { warm: 'Warm', natural: 'Natural', cool: 'Cool' };
-const WATER = { vanilla: 'Vanilla', sheen: 'Sheen', reflections: 'Reflections' };
-const CLOUD_STYLE = { blocks: 'Blocks', volumetric: 'Volumetric', off: 'OFF' };
-const AA = { off: 'OFF', fxaa: 'FXAA' };
-const TONE = { agx: 'AgX', aces: 'ACES', reinhard: 'Reinhard' };
-const TONE_TIPS = {
-  agx: 'Keeps the colour of bright light, and fades the brightest to white gently. The default.',
-  aces: 'The film curve: deeper shadows and richer colour, with more punch.',
-  reinhard: 'Soft and even: lighter shadows, paler bright light.',
-};
-
-export class ShaderOptionsScreen extends OptionsListScreen {
-  constructor() { super('Shader Options'); }
-  refresh() { this.gui._initScreen(this); this.gui.markDirty(); }
-  rows(list) {
-    const o = this.options;
-    const s = shaderSettings(o.get('shaderPreset') || 'medium', o.get('shader'));
-    // one part changed: the settings become the player's own, unless they match a profile again
-    const set = (k, v, redo) => {
-      const next = Object.assign({}, s, { [k]: v });
-      s[k] = v;
-      const p = presetOf(next);
-      if (p === 'custom') { const own = {}; for (const key in SHADER_DEFAULTS) own[key] = next[key]; o.set('shader', own); }
-      o.set('shaderPreset', p);
-      if (this.profileW) { this.profileW.value = p; this.profileW._msg(); }
-      if (redo) this.refresh(); else this.gui.markDirty();
-    };
-    const lv = (label, k, values, names, tips, redo) => cycle(label, values, s[k], v => names[v], v => set(k, v, redo), tips ? (typeof tips === 'function' ? tips : () => tips) : null);
-    const sl = (k, min, max, step, label, tip) => { const w = slider({ min, max, step, value: s[k], label: v => label(v), onChange: v => set(k, v) }); if (tip) w.tooltip = tip; return w; };
-    const tg = (label, k, tip, redo) => toggle(label, s[k], v => set(k, v, redo), tip);
-
-    const prof = this.profileW = cycle('Profile', SHADER_PRESET_NAMES, o.get('shaderPreset') === 'custom' ? 'custom' : o.get('shaderPreset') || 'medium', v => PROFILE_NAMES[v],
-      v => { o.set('shaderPreset', v); o.set('shader', {}); this.refresh(); }, v => PROFILE_TIPS[v] + (v === 'custom' ? '' : '\n\nThe pipeline: ' + (needsFullChain(shaderSettings(v)) ? 'full (post-processing)' : 'light (one pass)') + '.'));
-    // Custom is shown, never picked from the button
-    if (o.get('shaderPreset') === 'custom') { prof.value = 'custom'; prof._msg(); }
-
-    const shadowsOn = s.shadows !== 'off';
-    const sh = lv('Shadows', 'shadows', ['off', 'low', 'medium', 'high'], LEVELS,
-      v => v === 'off' ? 'No shadow map: places under a roof are shaded by their light level alone.' : 'Shadows from the sun and moon, from a ' + { low: 512, medium: 1024, high: 2048 }[v] + ' pixel map: sharper the higher it goes.', true);
-    const shd = sl('shadowDistance', 32, 160, 16, v => 'Shadow Distance: ' + v + ' Blocks', 'How far from you the shadows reach. Further makes them less sharp.');
-    const shs = sl('shadowSoftness', 0, 1, 0.05, v => 'Shadow Softness: ' + (v <= 0 ? 'Hard' : pct(v)), 'How soft the edges of shadows are.');
-    if (!shadowsOn) { shd.active = false; shs.active = false; }
-    const cls = tg('Cloud Shadows', 'cloudShadows', 'Shadows of the clouds drifting over the ground.');
-
-    const ao = sl('ao', 0, 1, 0.05, v => 'Ambient Occlusion: ' + (v <= 0 ? 'OFF' : pct(v)), 'How dark the corners and the ground beside blocks are.');
-    const hl = tg('Hand Light', 'heldLight', 'A torch, lantern or glowstone in your hand lights what is round you.');
-    const sunc = lv('Sun Colour', 'sunColour', ['warm', 'natural', 'cool'], SUN, 'The colour of sunlight: a golden afternoon, the default, or a cooler white.');
-    const sunb = sl('sunBrightness', 0.5, 1.5, 0.05, v => 'Sun Brightness: ' + pct(v), 'How strong the sun and moon light is.');
-    const skyl = sl('skyLight', 0.5, 1.5, 0.05, v => 'Sky Light: ' + pct(v), 'How much light the sky gives in the shade.');
-    const skyc = sl('skyColour', 0, 1.5, 0.05, v => 'Sky Colour: ' + (v <= 0 ? 'Grey' : pct(v)), 'How deep the blue of the sky, and of the fog and water that take its colour, is.');
-    const nm = tg('Normal Maps', 'normalMaps', 'Bumps on every block\'s surface, lit per pixel.' + FULL, true);
-
-    const wt = lv('Water', 'water', ['vanilla', 'sheen', 'reflections'], WATER,
-      v => v === 'vanilla' ? 'The water\'s own texture, as the game draws it, lit by the shader.' : v === 'sheen' ? 'Clear water with the sky in it and the sun\'s glint on the waves.' : 'The world on the shore reflected in the water as well as the sky.' + FULL, true);
-    const rf = lv('Reflections', 'reflections', ['low', 'high'], { low: 'Low', high: 'High' }, 'How far into the picture a reflection looks for what to show.');
-    if (s.water !== 'reflections') off(rf, 'Only with Water: Reflections.');
-    const wv = lv('Waves', 'waves', ['off', 'low', 'high'], LEVELS,
-      v => v === 'off' ? 'Still water: no waves, the cheapest.' : v === 'low' ? 'Gentle waves, half as high, and a little cheaper.' : 'Waves running over the water, and the surface rising and falling with them.');
-
-    const wp = lv('Waving Plants', 'wavingPlants', ['off', 'low', 'high'], LEVELS, 'Grass, flowers, crops and kelp moving in the wind and out of your way.');
-    const wl = lv('Waving Leaves', 'wavingLeaves', ['off', 'low', 'high'], LEVELS, 'Leaves moving in the wind.');
-
-    const cl = lv('Clouds', 'clouds', ['blocks', 'volumetric', 'off'], CLOUD_STYLE,
-      v => v === 'blocks' ? 'The game\'s blocks of cloud, lit by the shader (Clouds in Video Settings says Fancy or Fast).' : v === 'volumetric' ? 'Soft, deep clouds, marched through.' + FULL : 'No clouds.', true);
-    const fog = sl('fog', 0, 2, 0.05, v => 'Fog: ' + (v <= 0 ? 'OFF' : pct(v)), 'How thick the haze over the distance is. The edge of the world always melts into the sky.');
-    const ls = lv('Light Shafts', 'lightShafts', ['off', 'low', 'high'], LEVELS, 'Sunbeams through the leaves and the air. High: stronger beams, more finely drawn.' + FULL, true);
-    const bl = lv('Bloom', 'bloom', ['off', 'low', 'high'], LEVELS, 'A soft glow round bright things.' + FULL, true);
-
-    const tm = lv('Tone Mapping', 'tone', ['agx', 'aces', 'reinhard'], TONE, v => TONE_TIPS[v] + ' Costs nothing either way.');
-    const ex = sl('exposure', -2, 2, 0.1, v => 'Exposure: ' + (v > 0 ? '+' : '') + v.toFixed(1), 'Brighter or darker, in stops.');
-    const ct = sl('contrast', 0.5, 1.5, 0.05, v => 'Contrast: ' + pct(v), 'How far apart the darks and the brights are.');
-    const sat = sl('saturation', 0, 2, 0.05, v => 'Saturation: ' + pct(v), 'How strong the colours are.');
-    const aa = lv('Anti-aliasing', 'antialiasing', ['off', 'fxaa'], AA, 'Smooths jagged edges (the full pipeline only), a little blurrier.');
-    if (!needsFullChain(s)) off(aa, 'Only in the full pipeline (bloom, light shafts, volumetric clouds, reflections or normal maps).');
-
-    const rs0 = o.get('renderScale');
-    const rs = slider({
-      min: 35, max: 100, step: 5, value: rs0 === 'auto' ? 35 : Math.round(rs0 * 100),
-      label: v => v <= 35 ? 'Render Resolution: Auto' : 'Render Resolution: ' + v + '%',
-      onChange: v => o.set('renderScale', v <= 35 ? 'auto' : v / 100),
-    });
-    rs.tooltip = 'How many pixels the 3D view draws. Lower is faster and blurrier. Auto follows the frame rate.';
-
-    list.entries = [
-      wide(prof),
-      new Header('Shadows'),
-      new WidgetRow(sh, shd), new WidgetRow(shs, cls),
-      new Header('Lighting'),
-      new WidgetRow(ao, hl), new WidgetRow(sunc, sunb), new WidgetRow(skyl, skyc), new WidgetRow(nm),
-      new Header('Water'),
-      new WidgetRow(wt, rf), new WidgetRow(wv),
-      new Header('Wind'),
-      new WidgetRow(wp, wl),
-      new Header('Sky and Atmosphere'),
-      new WidgetRow(cl, fog), new WidgetRow(ls, bl),
-      new Header('Camera'),
-      new WidgetRow(tm, ex), new WidgetRow(ct, sat), new WidgetRow(aa),
-      new Header('Performance'),
-      new WidgetRow(rs),
-    ];
-    for (const e of list.entries) if (e.children && e.children.length === 1 && e !== list.entries[0]) e.children[0].wide = false;
-  }
-}
