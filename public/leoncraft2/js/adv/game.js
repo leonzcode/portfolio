@@ -31,6 +31,7 @@ import { TYPES } from '../entities/mobs.js?v=24';
 import { AbstractHorse } from '../entities/mobs4.js?v=24';
 import { Allay } from '../entities/mobs6.js?v=24';
 import { WindCharge } from '../entities/mobs7.js?v=24';
+import { summonAt } from '../entities/summon.js?v=24';
 import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=24';
 import { FishingBobber } from '../entities/items2.js?v=24';
 import { EnderDragon } from '../dim/dragon.js?v=24';
@@ -350,6 +351,9 @@ function placedBlock(list, tool) {
   fire('placed_block', { x, y: y + Y0, z, tool }, {
     block: (bx, by, bz) => { const v = blockView(bx, by, bz); if (bx === x && by === y + Y0 && bz === z) v.waterlogged = !!wet; return v; },
   });
+  // the last block of a golem or the wither: it comes to life (entities/summon.js), and you saw it made (summoned_entity)
+  const mob = summonAt(G, x, y, z);
+  if (mob) fire('summoned_entity', { entity: entityView(mob) });
 }
 // a damage source as the conditions see it: its tags and who did it
 const PROJECTILE = new Set(['arrow', 'trident', 'fireball', 'small_fireball', 'wind_charge', 'breeze_wind_charge', 'thrown', 'snowball', 'egg', 'wither_skull', 'shulker_bullet', 'llama_spit', 'projectile']);
