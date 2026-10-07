@@ -8,7 +8,8 @@
    glowing orange, brighter and dimmer over 40 ticks (the game fades two
    frames into each other every 10 ticks; we step it in four). Each picture
    is the unlit front with only its dark mouth pixels replaced, so it follows
-   whatever our front looks like. The fire pixels glow with the shaders on.
+   whatever our front looks like. The fire has no glow of its own: the light
+   13 the block gives lights its face, shaders on or off.
 
      const lit = litFronts(add);     // dim/art.js addDimArt: the layers, empty
      lit.fill(albedoStrip);          // once the strip is loaded: the pixels
@@ -28,8 +29,9 @@ function h2(x, y, s) {
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
-// fire, by how hot (0 the dark red at the top of the flames .. 1 the white-yellow at their root)
-const FIRE = [[96, 22, 6], [176, 52, 8], [228, 110, 18], [246, 170, 40], [255, 222, 110], [255, 246, 196]];
+// fire, by how hot (0 the dark red at the top of the flames .. 1 the pale yellow at their root), as
+// saturated as the game's own (its middle is a full yellow-orange, white only at the very root)
+const FIRE = [[110, 28, 6], [190, 70, 10], [232, 120, 12], [250, 170, 10], [255, 214, 30], [255, 242, 150]];
 function fire(t) {
   t = Math.max(0, Math.min(1, t)) * (FIRE.length - 1);
   const i = Math.min(FIRE.length - 2, Math.floor(t)), f = t - i, a = FIRE[i], b = FIRE[i + 1];
@@ -64,8 +66,9 @@ function light(src, spec, kind, k) {
         c = t < 0.05 ? [src[o] + 26, src[o + 1] + 8, src[o + 2]] : fire(t);
       }
       out[o] = c[0]; out[o + 1] = c[1]; out[o + 2] = c[2]; out[o + 3] = 255;
-      // glowing with the shaders on, the brighter the hotter
-      em[o + 3] = Math.round(Math.min(1, (c[0] + c[1]) / 420) * 200);
+      // no glow of its own with the shaders on (as in the game, where the front is only lit by the
+      // block's own light 13): the face already gets that light, and any emission on top took the
+      // fire past orange to white through the shader's tone curve
     }
   };
   paint(F.box, false);
