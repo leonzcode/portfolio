@@ -333,7 +333,13 @@ export const SHAPES = {
     // the enchanting table is a slab of twelve sixteenths (its sides' lower twelve rows); a daylight detector six,
     // sculk sensors and shriekers eight: their meta is their power or state, never which half they are in
     const low = LOW_SLABS[d.name];
-    if (low) return [box(0, 0, 0, 16, low, 16)];
+    if (low) {
+      const r = [box(0, 0, 0, 16, low, 16)];
+      // a sculk sensor's four tendrils, standing at its corners turned 45 degrees (the game's model)
+      const T = d.L && d.L.tendril;
+      if (T !== undefined) for (const [x, z, dir] of [[3, 3, 1], [13, 3, -1], [13, 13, 1], [3, 13, -1]]) r.push(diagonal(x, z, 4, 8, 16, [4, 8, 12, 16], T, dir));
+      return r;
+    }
     const t = m & 3;
     if (t === 2) return [box(0, 0, 0, 16, 16, 16)];
     return t === 1 ? [box(0, 8, 0, 16, 16, 16)] : [box(0, 0, 0, 16, 8, 16)];
@@ -837,6 +843,24 @@ SHAPES.stonecutter = function (d, m) {
 };
 // an enchanting table is twelve pixels tall
 SHAPES.table = function (d) { return [box(0, 0, 0, 16, d.h || 12, 16)]; };
+// a beacon: the glass case, the obsidian it stands on and the beacon inside (the game's model)
+SHAPES.beacon = function (d) {
+  const L = d.L || {}, G = d.faces[0], O = L.bottom !== undefined ? L.bottom : d.faces[3], C = L.top !== undefined ? L.top : d.faces[2];
+  const f = [0, 0, 16, 16], o = [2, 13, 14, 16], c = [3, 2, 13, 13];
+  return [box(0, 0, 0, 16, 16, 16, { faces: [G, G, G, G, G, G], uv: [f, f, f, f, f, f] }),
+    box(2, 0.1, 2, 14, 3, 14, { faces: [O, O, O, O, O, O], uv: [o, o, [2, 2, 14, 14], [2, 2, 14, 14], o, o] }),
+    box(3, 3, 3, 13, 14, 13, { faces: [C, C, C, C, C, C], uv: [c, c, [3, 3, 13, 13], [3, 3, 13, 13], c, c] })];
+};
+// a conduit not at work: its shell, six pixels square, floating in the middle of the block
+SHAPES.conduit = function (d) { const s = [5, 5, 11, 11]; return [box(5, 5, 5, 11, 11, 11, { uv: [s, s, s, s, s, s] })]; };
+/* A decorated pot (the game's pot): the body fourteen pixels square and a block tall, each side the middle of
+   its picture, then a narrow collar and the wider lip on top. */
+SHAPES.vase = function (d) {
+  const S = d.faces[0], T = d.L && d.L.base !== undefined ? d.L.base : S, s = [1, 0, 15, 16], t = [1, 1, 15, 15];
+  return [box(1, 0, 1, 15, 16, 15, { faces: [S, S, T, T, S, S], uv: [s, s, t, t, s, s] }),
+    box(5, 16, 5, 11, 17, 11, { faces: [S, S, S, S, S, S], skip: 12, uv: [[5, 0, 11, 1], [5, 0, 11, 1], null, null, [5, 0, 11, 1], [5, 0, 11, 1]] }),
+    box(4, 17, 4, 12, 20, 12, { faces: [S, S, T, S, S, S], uv: [[4, 0, 12, 3], [4, 0, 12, 3], [4, 4, 12, 12], [4, 4, 12, 12], [4, 0, 12, 3], [4, 0, 12, 3]] })];
+};
 // a brewing stand: the rod, three stone feet, and the arms and bottles as crossed sprites
 SHAPES.brewing = function (d) {
   const L = d.L || {}, S = d.faces[0], base = L.base !== undefined ? L.base : S;
