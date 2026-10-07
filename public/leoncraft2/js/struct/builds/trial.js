@@ -253,9 +253,10 @@ function drawSupply(g, o) {
   }
   g.set(m, 0, m, 'waxed_copper_grate');
   for (const [x, z] of [[2, 2], [w - 3, d - 3]]) if (!barrels.some(b => b[0] === x && b[1] === z)) g.set(x, 1, z, 'decorated_pot');
+  // every barrel on the floor holds something (the others the corridor table, as the game's decor barrels do);
+  // the ones stacked on them are empty, as the barrels of the game's disposal corners are
   barrels.forEach(([x, z], i) => {
-    if (h01(o.s, x, z, 4) < 0.5) g.barrel(x, 1, z, 'trial_chambers/intersection_barrel');
-    else g.set(x, 1, z, 'barrel');
+    g.barrel(x, 1, z, h01(o.s, x, z, 4) < 0.5 ? 'trial_chambers/intersection_barrel' : 'trial_chambers/corridor');
     if (i % 2 === 0) g.set(x, 2, z, 'barrel');
   });
   for (const [x, z, f] of chests) g.chest(x, 1, z, 'trial_chambers/supply', f);
