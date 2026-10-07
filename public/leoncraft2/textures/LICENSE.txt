@@ -33,6 +33,12 @@ Changes made for Leoncraft 2:
   and composed into 16x16 layers (chest, trapped chest, ender chest, the 16
   beds and shulker boxes, eight sign woods, five mob heads); the player head
   is taken from the game's own original skin (below);
+- paintings.png holds Pixel Perfection CE's own paintings (the 26 older
+  ones, under the game's names and at its sizes) packed into one picture;
+  checked pixel by pixel against the game's paintings (October 2026), they
+  share none of its pixels. (Pixel Perfection Legacy's paintings are copies
+  of the game's, so none of those is used.) The newer paintings are drawn by
+  Leoncraft's own code;
 - copper chests are the wooden chest recoloured to each copper stage; signs
   for mangrove, cherry, pale oak, poplar and bamboo are the oak sign
   recoloured to their planks; pointed dripstone is Legacy's sulfur spike

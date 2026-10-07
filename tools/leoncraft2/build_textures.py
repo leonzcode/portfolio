@@ -335,9 +335,9 @@ def bed_cuts(colour):
 
 def shulker_cuts(file):
     f = 'shulker/' + file
-    # the side: the lid, 12 tall, over the base's lower four rows
+    # the side: the lid, 12 tall, over the base's eight rows (the game's lid has a notch the base shows through)
     return {'top': [f, [(16, 0, 16, 16, 0, 0, 0)]], 'bottom': [f, [(32, 28, 16, 16, 0, 0, 0)]],
-            'side': [f, [(16, 48, 16, 4, 0, 12, 0), (16, 16, 16, 12, 0, 0, 0)]]}
+            'side': [f, [(16, 44, 16, 8, 0, 8, 0), (16, 16, 16, 12, 0, 0, 0)]]}
 
 
 def sign_faces(img):

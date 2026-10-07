@@ -28,7 +28,9 @@ import { Player } from './player.js?v=22';
 import { Renderer } from './render/renderer.js?v=22';
 import { Overlay } from './render/overlay.js?v=22';
 import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=22';
-import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=22';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps, composedTextures, itemStripFrom } from './ui/pack.js?v=22';
+import { loadEntityArt } from './entities/packart.js?v=22';
+import { ITEM_TEX } from './itemdata.js?v=22';
 import { SEA, Y0 } from './world-const.js?v=22';
 import { Gui, Options } from './ui/gui.js?v=22';
 import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt, seedFrom } from './ui/menus.js?v=22';
@@ -304,12 +306,16 @@ async function boot() {
   let [grass, foliage] = await mapsP;
   MK('maps');
   const packs = await packsP;
+  // the paintings (ours, and a pack's) and a pack's mob skins, into the mobs' atlas (entities/packart.js)
+  const entityArtP = loadEntityArt(base, TEX_V, packs).catch(e => console.warn('entity art', e));
   let colours = null;
   if (!packs.length) { colours = biomeColours(pixels(grass), pixels(foliage)); if (!resumeTo) menuStart = makeMenu(MENU_SEED); }
   const [albP, nrmP, spcP] = await stripsP;
   MK('strips');
   const itemStrip = await itemStripP;
   MK('itemStrip');
+  // a pack's item pictures over ours, before they go to the graphics card and the inventory
+  if (packs.length) { try { const s = await itemStripFrom(resolver(packs), itemStrip, ITEM_TEX); if (s) itemStrip.bmp = s; } catch (e) { console.warn('resource pack items', e); } }
   const LAYERS = manifest.layers + await addItemPieces(itemStrip, manifest.layers, albP, nrmP, spcP);
   setItemLayers(manifest.layers);
   let find = null, packTex = null;
@@ -321,8 +327,11 @@ async function boot() {
       if (cm.grass) grass = cm.grass;
       if (cm.foliage) foliage = cm.foliage;
       packTex = await blockTextures(find, manifest);
+      // chests, beds, shulker boxes and heads, cut from the pack's entity pictures
+      for (const [k, v] of await composedTextures(find)) packTex.set(k, v);
     }
   } catch (e) { console.warn('resource packs', e); find = null; packTex = null; }
+  await entityArtP;
   if (!colours) colours = biomeColours(pixels(grass), pixels(foliage));
   const [moon, sunImg] = await imgsP;
   let alb = albP.full;
@@ -398,7 +407,7 @@ async function boot() {
   if (find) {
     try {
       await gui.loadSheet('container/creative_inventory/tabs').catch(() => null);
-      const sheets = await guiSheets(find, { widgets: gui.sheets.get('widgets'), icons: gui.sheets.get('icons'), tabs: gui.sheets.get('container/creative_inventory/tabs') });
+      const sheets = await guiSheets(find, { widgets: gui.sheets.get('widgets'), icons: gui.sheets.get('icons'), tabs: gui.sheets.get('container/creative_inventory/tabs'), load: n => gui.loadSheet(n) });
       for (const k in sheets) gui.setSheet(k, sheets[k]);
       setLogoArt(await logoArt(find));
       const sk = await skinUrl(find);
