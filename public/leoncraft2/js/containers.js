@@ -314,9 +314,10 @@ export class Containers {
     return c.slots.filter(Boolean);
   }
   // a structure's chest broken before it was ever opened: its loot is rolled and spills
-  unopened(x, y, z) {
+  // (kind: what it was, when the block is already gone)
+  unopened(x, y, z, kind) {
     if (this.looted.has(this.key(x, y, z))) return;
-    const kind = containerKind(this.world.get(x, y, z)) || 'chest';
+    kind = kind || containerKind(this.world.get(x, y, z)) || 'chest';
     const r = this.rollLoot({ kind, slots: new Array(SIZES[kind] || 27).fill(null), x, y, z }, true);
     if (r) r.then(st => spill(this.drops, x, y, z, st || []));
   }
@@ -650,7 +651,7 @@ export function installContainers(sim) {
         const cs = C();
         if (!cs || containerKind(nb)) return;
         const c = cs.peek(x, y, z);
-        if (!c) { cs.unopened(x, y, z); return; }
+        if (!c) { cs.unopened(x, y, z, kind); return; }
         const D = cs.drops;
         if (kind === 'shulker_box') {
           // a shulker box always drops itself, its contents inside
