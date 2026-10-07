@@ -703,7 +703,7 @@ const BINDS = [
   ['Movement', [['jump', 'Jump'], ['sneak', 'Sneak'], ['sprint', 'Sprint'], ['left', 'Strafe Left'], ['right', 'Strafe Right'], ['back', 'Walk Backwards'], ['forward', 'Walk Forwards']]],
   ['Gameplay', [['attack', 'Attack/Destroy'], ['pickBlock', 'Pick Block'], ['use', 'Use Item/Place Block']]],
   ['Inventory', [['drop', 'Drop Selected Item'], ['swapOffhand', 'Swap Item With Offhand']].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ['hotbar' + n, 'Hotbar Slot ' + n]), [['inventory', 'Open/Close Inventory']])],
-  ['Miscellaneous', [['debug', 'Debug Screen'], ['hideGui', 'Hide GUI'], ['perspective', 'Toggle Perspective']]],
+  ['Miscellaneous', [['advancements', 'Advancements'], ['debug', 'Debug Screen'], ['hideGui', 'Hide GUI'], ['perspective', 'Toggle Perspective']]],
 ];
 
 class CategoryRow {
@@ -1185,7 +1185,7 @@ export class PauseScreen extends Screen {
         if (!fn) off(btn, 'Not in Leoncraft 2 yet');
       }
     };
-    row(top + 74, ['Advancements', null], ['Statistics', null]);
+    row(top + 74, ['Advancements', this.hooks.advancements ? () => this.hooks.advancements() : null], ['Statistics', null]);
     row(top + 98, ['Send Feedback', null], ['Report Bugs', null]);
     // Open to LAN (ui/lan.js): greyed out once the world is open; on a server the game has Player Reporting there
     const lan = this.hooks.lan && this.hooks.lan();

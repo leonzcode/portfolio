@@ -66,6 +66,7 @@ import { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.
 import { VideoSettings } from './settings.js?v=24';
 import { pickBiome } from './worldgen.js?v=24';
 import { initSound, soundWorld, soundParts, soundTick, soundFrame, soundLeave } from './sound/game.js?v=24';
+import { advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements } from './adv/game.js?v=24';
 import { loadEntityArt } from './entities/packart.js?v=24';
 import { ITEM_TEX } from './itemdata.js?v=24';
 const THREE = window.THREE;
@@ -401,6 +402,8 @@ async function boot() {
     online: () => !!(game && game.net),
     // the last screen closed in the game: take the mouse back
     closed: () => { if (game && !game.survival.dead) lock(); },
+    // the game menu's Advancements button (js/adv)
+    advancements: () => openAdvancements(),
   };
   const gui = new Gui($('#gui'), { base: base + 'gui/', options, hooks, version: TEX_V });
   await gui.load();
@@ -432,6 +435,8 @@ async function boot() {
   /* ---- item icons for the inventory and the hotbar (made a few at a time) ---- */
   const icons = new ItemIcons(alb, { grassMap: grass, foliageMap: foliage, extra: itemStrip.bmp });
   setLayerPixels(icons.px);          // flat items in the hand and on the ground get their thickness from these
+  // advancements: the toast, the screen, /advancement (js/adv)
+  advInit({ gui, chat, icons, options, name: () => (game && game.net ? game.net.name : 'Player') });
 
   let hud = null;                   // the hotbar, hearts and F3, made per world (js/ui/hud.js)
 
@@ -712,6 +717,7 @@ async function boot() {
       inter.entities = entities; entities.inter = inter; inter.sim = sim;
       if (renderer.particles) renderer.particles.setWorld(w);
       soundParts(g);
+      advParts(g);
     };
     MK('sgPreAttach');
     await game.attach(world, fluids, dim, { drops: st && st.drops, sim: st && st.sim });
@@ -730,6 +736,7 @@ async function boot() {
     inter.onAttack = target => game.realms.attack(game.eye || player.view(0).eye, target);
     inter.onBroken = (x, y, z, b) => game.realms.broken(x, y, z, b);
     soundWorld(game); soundParts(game);
+    advWorld(game, st && st.advancements);
     hud = new Hud(inv, icons);
     gui.hud = hud;
     applyModeRules(game, mode, hud);
@@ -889,7 +896,7 @@ async function boot() {
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
       inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
       drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null, dimension: g.dim, realms: g.realms ? g.realms.toJSON() : null,
-      lastDeath: deathPoint() };
+      lastDeath: deathPoint(), advancements: advState() };
   }
   async function saveGame() {
     if (!game) return;
@@ -914,6 +921,7 @@ async function boot() {
     scope(false);
     game = null;
     soundLeave();
+    advLeave();
     if (g.entities) g.entities.dispose();
     if (g.sim) g.sim.dispose();
     if (g.realms) g.realms.dispose();
@@ -1123,6 +1131,16 @@ async function boot() {
     if (a === 'hideGui' || e.code === 'F1') { gui.hideHud = !gui.hideHud; gui.markDirty(); e.preventDefault(); return; }
     if (e.code === 'F7') { autoScale = false; renderer.opts.scale = renderer.opts.scale >= 1 ? 0.75 : renderer.opts.scale >= 0.75 ? 0.5 : 1; fit(); e.preventDefault(); return; }
     if (a === 'perspective' || e.code === 'F5') { if (!e.repeat) renderer.avatar.cycleView(); e.preventDefault(); return; }
+    // L: the advancements (js/adv)
+    if (a === 'advancements') {
+      e.preventDefault();
+      if (e.repeat) return;
+      wantInv = true;
+      for (const k in game.player.keys) game.player.keys[k] = false;
+      letGo();
+      if (!openAdvancements()) lock();
+      return;
+    }
     if (a === 'inventory') {
       e.preventDefault();
       // (a spectator has no inventory to open)
@@ -1334,6 +1352,7 @@ async function boot() {
       for (const s of player.splashes.splice(0)) renderer.inter.splash(s[0], s[1], s[2], s[3]);
       structures.spawners.tick(world, player);
       soundTick(g);
+      advTick(g);
       // on a server: where you are, and what came in from the others (net/net.js)
       if (g.net) g.net.tick(now - acc * 1000);
       // every ten seconds, what changed goes into the browser's storage
