@@ -79,6 +79,8 @@ export class Chat {
       y -= LINE;
     }
     ctx.globalAlpha = 1;
+    // the hover of the part under the mouse, over the lines (ChatScreen finds it)
+    if (this.open && this.tip) g.tooltip(this.tip.lines, this.tip.x, this.tip.y);
   }
 }
 
@@ -143,12 +145,12 @@ export class ChatScreen extends Screen {
     else if (ctx.sendChat) ctx.sendChat(v);
     else chat.add(`<${ctx.playerName}> ${v}`);
   }
-  onClose() { this.chat.open = false; this.chat.dirty = true; this.gui._blurText && this.gui._blurText(); }
+  onClose() { this.chat.open = false; this.chat.tip = null; this.chat.dirty = true; this.gui._blurText && this.gui._blurText(); }
   render(g, mx, my, dt) {
     const W = this.width, H = this.height, f = g.font;
     g.fill(2, H - 14, W - 2, H - 2, 0x80000000);
     const tip = this.chat.hoverAt && this.chat.hoverAt(g, mx, my);
-    if (tip) g.setTooltip(tip);
+    this.chat.tip = tip ? { lines: tip, x: mx, y: my } : null;
     const shown = f.trim(this.value, W - 12, true);
     const x = g.text(shown, 4, H - 12, 0xFFFFFF);
     if ((((g.now - this.field.focusTime) / 300) | 0) % 2 === 0) g.text('_', x, H - 12, 0xFFFFFF);
