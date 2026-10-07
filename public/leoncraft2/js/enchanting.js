@@ -97,13 +97,17 @@ export const ORDER = ['protection', 'fire_protection', 'feather_falling', 'blast
 const SWORDS_AND_SPEARS = id => { const n = ITEMS[id].name; return /_(sword|spear)$/.test(n); };
 const PRIMARY = { sharpness: SWORDS_AND_SPEARS, smite: SWORDS_AND_SPEARS, bane_of_arthropods: SWORDS_AND_SPEARS, fire_aspect: SWORDS_AND_SPEARS,
   thorns: id => !!(ITEMS[id].armor && ITEMS[id].armor.slot === 1) };
+// one of the item's primary enchantments (what the table and loot enchanted "with levels" choose from)
+export function isPrimary(name, id) {
+  if (!canApply(name, id)) return false;
+  return !PRIMARY[name] || PRIMARY[name](id);
+}
 // offered by the table: the item's primary enchantments
 function tableOffers(name, id) {
   const e = ENCH[name], it = ITEMS[id];
   if (!e || e.treasure || !e.discoverable) return false;
   if (it.name === 'book') return true;
-  if (!canApply(name, id)) return false;
-  return !PRIMARY[name] || PRIMARY[name](id);
+  return isPrimary(name, id);
 }
 export function compatible(a, b) {
   if (a === b) return false;
@@ -148,7 +152,8 @@ export function tableOffers3(id, shelves, seed) {
   });
 }
 // the enchantments for an item at a level (r: a java.util.Random); also what traded gear and loot are enchanted with
-export function selectEnchants(id, level, r, allow = tableOffers) {
+// (order: the list the game walks, the table's own unless a loot table names another)
+export function selectEnchants(id, level, r, allow = tableOffers, order = ORDER) {
   const e = enchantability(id);
   if (!e) return [];
   const f = Math.fround;
@@ -156,7 +161,7 @@ export function selectEnchants(id, level, r, allow = tableOffers) {
   const k = f(f(f(r.nextFloat() + r.nextFloat()) - 1) * f(0.15));
   let cost = Math.max(1, Math.floor(f(f(level + f(level * k)) + 0.5)));
   let list = [];
-  for (const name of ORDER) {
+  for (const name of order) {
     const en = ENCH[name];
     if (!en || !allow(name, id)) continue;
     for (let l = en.maxLevel; l >= 1; l--) if (cost >= en.min(l) && cost <= en.max(l)) { list.push([name, l]); break; }
