@@ -19,10 +19,10 @@
      hud.setDebug(leftLines, rightLines); // or hud.setDebug(null) to hide F3
      hud.crosshair = false;               // third person
 --------------------------------------------------------------------------- */
-import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=27';
-import { drawBossBar } from '../dim/bossbar.js?v=27';
-import { BLOCKS, B } from '../blocks.js?v=27';
-import { EFFECTS, EFFECT_ICON } from '../effects.js?v=27';
+import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=28';
+import { drawBossBar } from '../dim/bossbar.js?v=28';
+import { BLOCKS, B } from '../blocks.js?v=28';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET } from '../effects.js?v=28';
 
 const TICK = 50;
 
@@ -58,7 +58,7 @@ export class Hud {
     const o = this.stats;
     if (s && o && s.health === o.health && s.food === o.food && s.air === o.air && s.xp === o.xp && s.level === o.level && s.armor === o.armor && s.absorption === o.absorption
       && s.poison === o.poison && s.wither === o.wither && s.hungerEffect === o.hungerEffect && s.regen === o.regen && (s.saturation > 0) === (o.saturation > 0)
-      && s.fire === o.fire) return;
+      && s.fire === o.fire && s.frozen === o.frozen && s.freeze === o.freeze && s.hardcore === o.hardcore) return;
     if (s && this._lastHealth >= 0 && s.health < this._lastHealth) {
       // hurt: the hearts blink for a second, the lost ones shown white
       this._blinkUntil = performance.now() + 1000;
@@ -103,14 +103,16 @@ export class Hud {
 
     // burning, in first person: the game's flames up the lower part of the view, under the HUD
     if (this.stats && this.stats.fire && this.crosshair) this._fire(g, now);
+    // freezing in powder snow: frost creeps in from the edges of the screen
+    if (this.stats && this.stats.freeze > 0) this._frost(g, this.stats.freeze);
 
     // the axes in place of the crosshair while F3 is up and the camera is known
     if (this.debug && this.camera) this._axes(g, cx, Math.floor(H / 2));
 
     // what is held up under the HUD (a map in the hand: js/maps.js), and when to draw again
     if (this.under) { const w = this.under(g, now); if (w) this._wakeAt(w); }
-    // the effects on you, top right
-    if (this.effects) this._effects(g, W, now);
+    // the effects on you, top right (unless the open inventory lists them)
+    if (this.effects && !(g.screen && g.screen.listsEffects && g.screen.listsEffects())) this._effects(g, W, now);
     // a spectator has no hotbar (modes.js): only the debug text and a boss's bar
     if (this.spectator) {
       if (this.debug) this._debugText(g, W);
@@ -187,8 +189,10 @@ export class Hud {
     const lowHealth = health + absorb <= 4;
     if (lowHealth) this._wakeAt((tick + 1) * TICK);
     const hearts = Math.ceil(maxHealth / 2), total = hearts + Math.ceil(absorb / 2);
-    // poisoned hearts are green, withered ones black; with regeneration a wave runs along them
-    const hx = s.poison ? 36 : s.wither ? 72 : 0;
+    // poisoned hearts are green, withered ones black, frozen solid ones ice; with regeneration a wave runs along them
+    const hx = s.poison ? 36 : s.wither ? 72 : s.frozen ? 126 : 0, flashX = hx > 72 ? 0 : hx;
+    // a hardcore world's hearts are the row below (their own look)
+    const hv = s.hardcore ? 45 : 0;
     const wave = s.regen ? tick % Math.ceil(maxHealth + 5) : -1;
     if (s.regen) this._wakeAt((tick + 1) * TICK);
     for (let i = total - 1; i >= 0; i--) {
@@ -197,16 +201,16 @@ export class Hud {
       let y = top - row * rowH;
       if (lowHealth) y += hash(tick * 31 + i) & 1;
       if (i === wave) y -= 2;
-      g.blit('icons', 16 + (blink ? 9 : 0), 0, 9, 9, x, y);
+      g.blit('icons', 16 + (blink ? 9 : 0), hv, 9, 9, x, y);
       if (i >= hearts) {
-        // absorption hearts, gold
+        // absorption hearts, gold (black while withered)
         const a = absorb - (i - hearts) * 2;
-        g.blit('icons', a >= 2 ? 160 : 169, 0, 9, 9, x, y);
+        g.blit('icons', s.wither ? (a >= 2 ? 124 : 133) : a >= 2 ? 160 : 169, hv, 9, 9, x, y);
         continue;
       }
-      if (blink && i * 2 < lost) g.blit('icons', (i * 2 + 1 < lost ? 70 : 79) + hx, 0, 9, 9, x, y);
-      if (i * 2 + 1 < health) g.blit('icons', 52 + hx, 0, 9, 9, x, y);
-      else if (i * 2 + 1 === health) g.blit('icons', 61 + hx, 0, 9, 9, x, y);
+      if (blink && i * 2 < lost) g.blit('icons', (i * 2 + 1 < lost ? 70 : 79) + flashX, hv, 9, 9, x, y);
+      if (i * 2 + 1 < health) g.blit('icons', 52 + hx, hv, 9, 9, x, y);
+      else if (i * 2 + 1 === health) g.blit('icons', 61 + hx, hv, 9, 9, x, y);
     }
 
     // armour, above the hearts
@@ -252,15 +256,15 @@ export class Hud {
      longest lasting furthest right (ambient ones, from a beacon or a
      conduit, first, in the box with the light rim), the picture 3 in, and in
      the last ten seconds the picture fading and flickering by the game's
-     sum. The boxes and pictures are Pixel Perfection's (container/inventory,
-     where the classic game kept them); effects newer than that sheet borrow
-     the nearest picture. */
+     sum. The boxes are Pixel Perfection's (container/inventory), the
+     pictures the newer kind (gui/mob_effect.png). Not drawn while the
+     inventory lists them down its side (the game leaves them off then). */
   _effects(g, W, now) {
     const e = this.effects, list = [];
     for (const n in e) { const d = EFFECTS[n]; if (d && !d.instant && !e[n].hidden) list.push(n); }
     if (!list.length) return;
-    const img = g.sheet('container/inventory');
-    if (!img) { this._wakeAt(now + 100); return; }
+    const img = g.sheet('container/inventory'), pics = g.sheet(EFFECT_SHEET);
+    if (!img || !pics) { this._wakeAt(now + 100); return; }
     const key = n => { const x = e[n]; return [x.ambient ? 1 : 0, x.ticks < 0 ? 1 : 0, x.ticks < 0 ? 0 : x.ticks, EFFECTS[n].colour]; };
     list.sort((a, b) => { const p = key(a), q = key(b); for (let i = 0; i < 4; i++) if (p[i] !== q[i]) return q[i] - p[i]; return 0; });
     let good = 0, rest = 0;
@@ -279,7 +283,7 @@ export class Hud {
       const ic = EFFECT_ICON[n];
       if (ic === undefined) continue;
       ctx.globalAlpha = a;
-      g.blit(img, (ic % 8) * 18, 198 + Math.floor(ic / 8) * 18, 18, 18, px + 3, py + 3);
+      g.blit(pics, (ic % 8) * 18, Math.floor(ic / 8) * 18, 18, 18, px + 3, py + 3);
       ctx.globalAlpha = 1;
     }
   }
@@ -329,6 +333,23 @@ export class Hud {
         ctx.drawImage(c, 15 - u, 0, 1, 16, L, top[1], R - L, bot[1] - top[1]);
       }
     }
+    ctx.restore();
+  }
+
+  /* ---- frozen ----
+     The game lays its powder snow picture over the whole screen at the
+     share of the way to frozen solid (ticks in the snow / 140). Ours is a
+     frost of our own (frostPicture): a ring of feathery ice crystals round
+     a round clear middle, heaviest in the corners, 256 pixels across
+     stretched to the screen as the game stretches its own. */
+  _frost(g, k) {
+    const pic = this._frostPic || (this._frostPic = frostPicture());
+    const ctx = g.ctx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = Math.max(0, Math.min(1, k));
+    ctx.drawImage(pic, 0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.restore();
   }
 
@@ -467,6 +488,71 @@ function same(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+/* The frost picture (ours): a ring of ice round a round clear middle, as
+   the game's frame looks, heaviest in the corners. Feathery crystals grow
+   in from outside the ring towards the middle (a stem with barbs either
+   side, shorter towards the tip), over a thin pale wash; a few sparkles and
+   specks sit just inside where the ice stops. N x N pixels, RGBA. */
+function frostPicture() {
+  const N = 256, c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d'), img = g.createImageData(N, N);
+  paintFrost(img.data, N);
+  g.putImageData(img, 0, 0);
+  return c;
+}
+function paintFrost(d, N) {
+  let s = 0x2f6a91;
+  const R = () => { s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const H = N / 2;
+  const DEEP = [72, 178, 216], MID = [122, 218, 240], LIGHT = [184, 240, 252], WHITE = [236, 251, 255];
+  const put = (x, y, c, a) => {
+    x = Math.round(x); y = Math.round(y);
+    if (x < 0 || y < 0 || x >= N || y >= N) return;
+    const o = (y * N + x) * 4;
+    if (d[o + 3] > a) return;
+    d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = a;
+  };
+  // where the ice stops, by angle: about the half width from the middle, wavering
+  const p1 = R() * 6.28, p2 = R() * 6.28;
+  const edge = th => 0.97 + 0.04 * Math.sin(3 * th + p1) + 0.025 * Math.sin(8 * th + p2);
+  // the pale wash under the crystals, a little way past where the ice stops
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = (x + 0.5 - H) / H, dy = (y + 0.5 - H) / H, r = Math.hypot(dx, dy), th = Math.atan2(dy, dx);
+    if (r > edge(th) + 0.16 + R() * 0.06 && R() < 0.7) put(x, y, DEEP, 112);
+  }
+  // the crystals: more of them towards the corners
+  const fronds = [];
+  for (let n = 0; n < 4000 && fronds.length < 210; n++) {
+    const th = R() * Math.PI * 2, corner = Math.abs(Math.sin(2 * th));
+    if (R() > 0.35 + corner * 0.65) continue;
+    fronds.push(th);
+  }
+  for (const th of fronds) {
+    const e = edge(th), start = e + 0.22 + R() * 0.3, tip = e - 0.03 + R() * 0.09;
+    const x0 = H + Math.cos(th) * start * H, y0 = H + Math.sin(th) * start * H;
+    const a = th + Math.PI + (R() - 0.5) * 0.7, len = (start - tip) * H;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    for (let t = 0; t <= len; t += 0.5) put(x0 + ca * t, y0 + sa * t, t > len - 3 ? WHITE : t > len * 0.6 ? LIGHT : MID, 255);
+    // barbs every three or four pixels, both sides, leaning towards the tip
+    for (let t = 2 + R() * 2; t < len - 1; t += 3 + Math.round(R())) {
+      const bl = (len - t) * (0.3 + R() * 0.15), sx = x0 + ca * t, sy = y0 + sa * t;
+      for (const side of [-1, 1]) {
+        const b = a + side * (0.75 + R() * 0.25), cb = Math.cos(b), sb = Math.sin(b);
+        for (let u = 1; u <= bl; u += 0.6) put(sx + cb * u, sy + sb * u, u > bl - 1.2 ? LIGHT : t > len * 0.5 ? MID : DEEP, 255);
+      }
+    }
+  }
+  // sparkles and specks just inside where the ice stops
+  for (let n = 0; n < 70; n++) {
+    const th = R() * Math.PI * 2, r = edge(th) - 0.02 - R() * 0.16;
+    const x = H + Math.cos(th) * r * H, y = H + Math.sin(th) * r * H;
+    if (n % 3) { put(x, y, LIGHT, 220); continue; }
+    put(x, y, WHITE, 255);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) put(x + dx, y + dy, LIGHT, 230);
+    if (n % 2) for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) put(x + dx, y + dy, MID, 200);
+  }
 }
 // a small stable random number per tick and heart, for the low-health shake
 function hash(n) { n = (n ^ 61) ^ (n >>> 16); n = (n + (n << 3)) | 0; n ^= n >>> 4; n = Math.imul(n, 0x27d4eb2d); return (n ^ (n >>> 15)) >>> 0; }

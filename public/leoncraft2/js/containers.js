@@ -38,12 +38,12 @@
    pair seen from behind it (its partner is clockwise of its facing), 2 the
    right (partner anticlockwise; this one holds the top rows), 3 single.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPAQUE } from './blocks.js?v=27';
-import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=27';
-import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=27';
-import { cookingRecipe, remainderOf } from './crafting.js?v=27';
-import { fire } from './dispense.js?v=27';
-import { MAPS, fillPreview } from './maps.js?v=27';
+import { B, BLOCKS, OPAQUE } from './blocks.js?v=28';
+import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackFromJSON } from './items.js?v=28';
+import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=28';
+import { cookingRecipe, remainderOf } from './crafting.js?v=28';
+import { fire } from './dispense.js?v=28';
+import { MAPS, fillPreview } from './maps.js?v=28';
 
 export const SIZES = { chest: 27, trapped_chest: 27, copper_chest: 27, barrel: 27, shulker_box: 27, furnace: 3, smoker: 3, blast_furnace: 3,
   dispenser: 9, dropper: 9, crafter: 9, hopper: 5, brewing_stand: 5 };
@@ -509,8 +509,24 @@ export class Containers {
         }
       } else c.cook = 0;
     } else if (c.cook > 0) c.cook = Math.max(0, c.cook - 2);
-    if (wasLit !== c.burn > 0 && this.onLit) this.onLit(c, c.burn > 0);
+    // the block follows (also the first tick after loading: a save from before the lit bit, or one
+    // whose chunk was not in yet, is put right then)
+    const lit = c.burn > 0;
+    if (c.shown !== lit) c.shown = this.showLit(c, lit) ? lit : undefined;
+    if (wasLit !== lit && this.onLit) this.onLit(c, lit);
     return c.burn > 0 || c.cook > 0 || (canCook && !!s[1] && fuelTicks(s[1].id) > 0);
+  }
+  /* the block shows it too, as the game's lit state: meta bit 2 of a furnace,
+     smoker or blast furnace (its front drawn with the fire going and light 13:
+     sim/states.js) */
+  showLit(c, lit) {
+    const w = this.world;
+    if (!w || !w.get) return false;
+    const b = w.get(c.x, c.y, c.z), d = BLOCKS[b];
+    if (!d || d.name !== c.kind) return false;
+    const m = w.meta(c.x, c.y, c.z), n = lit ? m | 4 : m & ~4;
+    if (n !== m) w.set(c.x, c.y, c.z, b, n);
+    return true;
   }
   // the experience a furnace holds: each recipe's xp times how many were made, the whole points and the rest by chance
   xpOf(c, take = true) {

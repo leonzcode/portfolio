@@ -26,14 +26,14 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=27';
-import { Packs } from './pack.js?v=27';
-import { packArtSummary } from '../entities/packart.js?v=27';
-import { LanScreen } from './lan.js?v=27';
-import { parseSeed } from '../gen/random.js?v=27';
-import { SOUND_CREDITS } from '../sound/credits.js?v=27';
-import { FlatCustomizeScreen } from './flat.js?v=27';
-import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=27';
+} from './gui.js?v=28';
+import { Packs } from './pack.js?v=28';
+import { packArtSummary } from '../entities/packart.js?v=28';
+import { LanScreen } from './lan.js?v=28';
+import { parseSeed } from '../gen/random.js?v=28';
+import { SOUND_CREDITS } from '../sound/credits.js?v=28';
+import { FlatCustomizeScreen } from './flat.js?v=28';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=28';
 
 const PI = Math.PI;
 
@@ -688,8 +688,8 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=27';
-import { VideoSettingsScreen } from './video.js?v=27';
+export { VideoSettingsScreen } from './video.js?v=28';
+import { VideoSettingsScreen } from './video.js?v=28';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -981,7 +981,7 @@ const CREDITS = [
   ['github.com/bs-community/skinview3d', 0, 'https://github.com/bs-community/skinview3d'],
   ['Block list and hardness: minecraft-data, MIT License'],
   ['github.com/PrismarineJS/minecraft-data', 0, 'https://github.com/PrismarineJS/minecraft-data'],
-  ['The player skin, the grey buttons and a few textures are original drawings.'],
+  ['The player skin, the grey buttons, the effect pictures, the frost'], ['and a few textures are original drawings.'],
   ['Everything else: written for Leoncraft by Leon Zhao.'], [''],
   ['Not an official Minecraft product.', 0xA0A0A0],
   ['Not approved by or associated with Mojang or Microsoft.', 0xA0A0A0],

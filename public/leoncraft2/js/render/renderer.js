@@ -14,17 +14,18 @@
 
    Chunk meshes come in from the workers as plain arrays and are wrapped here.
 --------------------------------------------------------------------------- */
-import { Interaction } from './interaction.js?v=27';
-import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=27';
-import { makeNoise2D } from './noisetex.js?v=27';
-import { Avatar } from './avatar.js?v=27';
-import { Held } from './held.js?v=27';
-import { Figure } from './figure.js?v=27';
-import { PumpkinView } from './pumpkin.js?v=27';
-import { glints, pieceLook } from './armor.js?v=27';
-import { dimLook } from '../dim/look.js?v=27';
-import { blockGeometry, intAttribute } from './blockmesh.js?v=27';
-import { applyLook, looked } from './looks.js?v=27';
+import { Interaction } from './interaction.js?v=28';
+import { makeLayerInfo, bakeLayerMaterials } from './materials.js?v=28';
+import { makeNoise2D } from './noisetex.js?v=28';
+import { Avatar } from './avatar.js?v=28';
+import { Held } from './held.js?v=28';
+import { Figure } from './figure.js?v=28';
+import { PumpkinView } from './pumpkin.js?v=28';
+import { glints, pieceLook } from './armor.js?v=28';
+import { dimLook } from '../dim/look.js?v=28';
+import { blockGeometry, intAttribute } from './blockmesh.js?v=28';
+import { applyLook, looked } from './looks.js?v=28';
+import { screenFx } from './screenfx.js?v=28';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
@@ -733,6 +734,8 @@ export class Renderer {
     U.uCloudFade.value.set(Math.min(cloudReach * 0.5, U.uRender.value), cloudReach);
     cam.far = Math.max(this.opts.renderDist * 32 + 128, Math.hypot(cloudReach, 192 - state.eye.y) + 64);
     cam.updateProjectionMatrix();
+    // the portal's and Nausea's wobble, and the water over your eyes (render/screenfx.js)
+    screenFx(this, cam, state);
     cam.updateMatrixWorld();
     U.uNear.value = cam.near; U.uFar.value = cam.far;
     // block pieces and the like, placed for this frame (render/particles.js)

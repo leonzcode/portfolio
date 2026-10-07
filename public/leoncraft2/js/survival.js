@@ -67,11 +67,11 @@
    Experience: a level takes 2L + 7 points up to 15, 5L - 38 up to 30, and
    9L - 158 after that.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=27';
-import { I, ITEMS, armorOf } from './items.js?v=27';
-import { wear } from './ui/inventory.js?v=27';
-import { sourceOf, deathMessage } from './damage.js?v=27';
-import { effectId, EFFECTS } from './effects.js?v=27';
+import { B, BLOCKS, FLUID } from './blocks.js?v=28';
+import { I, ITEMS, armorOf } from './items.js?v=28';
+import { wear } from './ui/inventory.js?v=28';
+import { sourceOf, deathMessage } from './damage.js?v=28';
+import { effectId, EFFECTS } from './effects.js?v=28';
 
 const BYPASS_ARMOR = new Set(['fall', 'drown', 'starve', 'void', 'magic', 'poison', 'wither', 'suffocation', 'generic', 'freeze', 'kill']);
 const FIRE = new Set(['lava', 'fire', 'on_fire', 'hot_floor']);
@@ -82,7 +82,8 @@ const has = n => B[n] !== undefined;
 const id = n => (has(n) ? B[n] : -1);
 const nameOf = b => (BLOCKS[b] ? BLOCKS[b].name : '');
 // the head inside one of these hurts (whole, solid, opaque cubes: not glass, leaves or ice)
-const suffocates = b => { const d = BLOCKS[b]; return !!d && d.solid && d.shape === 'cube' && (d.pass || 'opaque') === 'opaque' && !FLUID[b]; };
+// (powder snow is a full opaque cube to us but never suffocates in the game: it only freezes)
+const suffocates = b => { const d = BLOCKS[b]; return !!d && d.solid && d.shape === 'cube' && (d.pass || 'opaque') === 'opaque' && !FLUID[b] && b !== B.powder_snow; };
 const CLIMB_NAMES = new Set(['ladder', 'vine', 'weeping_vines', 'weeping_vines_plant', 'twisting_vines', 'twisting_vines_plant', 'scaffolding', 'cave_vines', 'cave_vines_plant']);
 const FIRE_TICKS_IMMUNE = 20;          // a player's fire goes to -20 when it is out: the second it takes to catch again
 

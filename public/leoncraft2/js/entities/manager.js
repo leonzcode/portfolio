@@ -19,43 +19,43 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=27';
-import { PathFinder, Navigation } from './path.js?v=27';
-import { Particles } from './particles.js?v=27';
-import { Ambient } from './ambient.js?v=27';
-import { Living, Mob, wrap, DEG } from './entity.js?v=27';
-import { TYPES } from './mobs.js?v=27';
-import './projectiles.js?v=27';
-import { placeBoat } from './boat.js?v=27';
-import './mobs2.js?v=27';
-import './mobs3.js?v=27';
-import './mobs4.js?v=27';
-import { wandererTick } from './merchant.js?v=27';
-import { tableBooks } from './tablebook.js?v=27';
-import { explode } from './explosion.js?v=27';
-import { splitXp } from './xporb.js?v=27';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=27';
-import { CART_ITEMS } from './carts.js?v=27';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=27';
-import { Spawner, DESPAWN } from './spawner.js?v=27';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=27';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=27';
-import { EntityMeshes } from '../render/entitymesh.js?v=27';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=27';
-import { breakAt } from '../place.js?v=27';
-import { dropOf } from '../survival.js?v=27';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=27';
-import { Combat } from '../combat/combat.js?v=27';
-import './nether.js?v=27';
+import { Terrain } from './terrain.js?v=28';
+import { PathFinder, Navigation } from './path.js?v=28';
+import { Particles } from './particles.js?v=28';
+import { Ambient } from './ambient.js?v=28';
+import { Living, Mob, wrap, DEG } from './entity.js?v=28';
+import { TYPES } from './mobs.js?v=28';
+import './projectiles.js?v=28';
+import { placeBoat } from './boat.js?v=28';
+import './mobs2.js?v=28';
+import './mobs3.js?v=28';
+import './mobs4.js?v=28';
+import { wandererTick } from './merchant.js?v=28';
+import { tableBooks } from './tablebook.js?v=28';
+import { explode } from './explosion.js?v=28';
+import { splitXp } from './xporb.js?v=28';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=28';
+import { CART_ITEMS } from './carts.js?v=28';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=28';
+import { Spawner, DESPAWN } from './spawner.js?v=28';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=28';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=28';
+import { EntityMeshes } from '../render/entitymesh.js?v=28';
+import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=28';
+import { breakAt } from '../place.js?v=28';
+import { dropOf } from '../survival.js?v=28';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=28';
+import { Combat } from '../combat/combat.js?v=28';
+import './nether.js?v=28';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=27';
-import './mobs6.js?v=27';
-import './mobs7.js?v=27';
-import { DIMS } from '../dims.js?v=27';
-import { armorLayers } from './armorlayer.js?v=27';
-import { MobHeld } from '../render/mobheld.js?v=27';
-import { setSpawnerMob } from '../struct/spawners.js?v=27';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=27';
+import './mobs5.js?v=28';
+import './mobs6.js?v=28';
+import './mobs7.js?v=28';
+import { DIMS } from '../dims.js?v=28';
+import { armorLayers } from './armorlayer.js?v=28';
+import { MobHeld } from '../render/mobheld.js?v=28';
+import { setSpawnerMob } from '../struct/spawners.js?v=28';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=28';
 const THREE = window.THREE;
 
 const R = () => Math.random();
@@ -75,6 +75,7 @@ export class Entities {
     this.displays = [];             // mobs shown inside spawners (makeDisplay)
     this.grid = new Map();
     this.particlesP = new Particles();
+    this.particlesP.t = this.t;       // (water drops land, bubbles burst out of water)
     this.ambient = new Ambient(this);      // torches smoking, campfires, lava sparks (ambient.js)
     this.age = 0;
     this.stored = new Map();        // "cx,cz" -> saved entities of chunks not loaded
@@ -1075,4 +1076,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=27';
+import { rayBox } from './terrain.js?v=28';
