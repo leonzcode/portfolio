@@ -44,6 +44,7 @@ export class Interactor {
     Object.assign(this, o);       // world, player, fluids, renderer, overlay, hand, onSplash
     this.creative = true;
     this.adventure = false;       // adventure (and spectator): nothing broken or placed (modes.js)
+    this.locked = null;           // (x, y, z) -> true where nothing may be broken, placed or used: a server's spawn protection (net/net.js)
     this.spectator = false;       // spectator: nothing done at all
     this.attack = false; this.useHeld = false;
     this.mining = null;           // { x, y, z, b, t, total }
@@ -131,7 +132,7 @@ export class Interactor {
   }
   startMining() {
     const h = this.target;
-    if (!h) { this.mining = null; return; }
+    if (!h || (this.locked && this.locked(h.x, h.y, h.z))) { this.mining = null; return; }
     // with the hand's rules, t runs from 0 to 1 by the tool's progress a tick; without, seconds by hand
     const total = this.hand.progress ? 1 : breakTime(BLOCKS[h.b]);
     this.mining = { x: h.x, y: h.y, z: h.z, b: h.b, t: 0, total, ticks: 0, key: this.hand.key ? this.hand.key() : '' };
@@ -181,6 +182,7 @@ export class Interactor {
     if (this.onPunch && this.onPunch(h)) { this.target = null; return; }
     // a sword, trident, mace or debug stick breaks nothing in creative (modes.js)
     if (this.creative && this.hand.mayBreak && !this.hand.mayBreak()) return;
+    if (this.locked && this.locked(h.x, h.y, h.z)) return;
     const w = this.world;
     const cells = breakAt(w, h.x, h.y, h.z);
     // a block broken starts the attack cooldown again
@@ -222,7 +224,8 @@ export class Interactor {
     // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities); on a block, only once the block has had its say
     // (looking at a mob that did nothing with the click, the item is still used, as in the game: a pearl is thrown)
     const makes = () => !!(this.entities && this.entities.useHeld(this.target));
-    const h = this.target;
+    // (a block you may not touch is as good as none: what is in your hand is still used, food eaten, a pearl thrown)
+    const h = this.target && this.locked && this.locked(this.target.x, this.target.y, this.target.z) ? null : this.target;
     // at nothing: an item that is thrown (an eye of ender), or one that works by itself (eating, armour, a bucket)
     if (!h || !h.face) {
       if (makes()) { this.hand.swing(); return true; }

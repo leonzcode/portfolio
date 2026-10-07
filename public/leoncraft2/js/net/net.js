@@ -411,6 +411,8 @@ export class Net {
     // (an older server sends no level: its Allow Commands is all there is)
     this.op = m.op !== undefined ? m.op | 0 : m.server && m.server.cheats ? 2 : 0;
     this.rules = m.rules || null;
+    // spawn protection: how far round the world spawn you may not change anything (0: none for you, or none here)
+    this.prot = m.prot | 0;
     if (this.rules && this.rules.pvp !== undefined) this.server.pvp = !!this.rules.pvp;
     this.time = m.time; this.timeAt = performance.now(); this.wx = m.wx || { r: false, th: false }; this.spawn = m.spawn || null;
     // the world's block names to this version's numbers (a name this version does not know is left as generated)
@@ -537,6 +539,7 @@ export class Net {
       // the other players: straight away, with when each position got here
       case 'p': this.stats.gotP++; if (this.players) this.players.state(m.id, m, performance.now()); else this.early(m); return;
       case 'op': this.op = m.level | 0; return;
+      case 'prot': this.prot = m.r | 0; return;
       case 'out': if (this.ctx) for (const l of m.lines || []) if (Array.isArray(l)) this.ctx.chat.add(String(l[0]), l[1] === undefined ? 0xFFFFFF : l[1]); return;
       case 'join': if (this.players) { this.players.add(m.p); } else this.initPlayers.push(m.p); return;
       case 'leave': if (this.players) this.players.remove(m.id); else this.initPlayers = this.initPlayers.filter(p => p.id !== m.id); return;
@@ -659,6 +662,7 @@ export class Net {
     const I = g.inter;
     if (I && I !== this.hi) {
       this.hi = I;
+      I.locked = (x, y, z) => this.protectedAt(x, z);
       const onBreak = I.onBreak;
       I.onBreak = function (x, y, z, b, boxes) {
         if (onBreak) onBreak.call(this, x, y, z, b, boxes);
@@ -722,6 +726,11 @@ export class Net {
     W.clearTime = 0; W.rainTime = 1; W.thunderTime = 1;
   }
   ownsAt(x, z) { return this.owns({ cx: Math.floor(x / 16), cz: Math.floor(z / 16) }); }
+  // within the server's spawn protection (the Overworld only, as the game has it)
+  protectedAt(x, z) {
+    const s = this.spawn;
+    return this.prot > 0 && !!s && !!this.game && this.game.dim === 'overworld' && Math.max(Math.abs(x - s.x), Math.abs(z - s.z)) <= this.prot;
+  }
   // whether no other player in this dimension is nearer to a chunk (the lower number wins a tie)
   owns(c) {
     const g = this.game;

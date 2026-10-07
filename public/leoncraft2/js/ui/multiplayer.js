@@ -182,6 +182,8 @@ export class CreateServerScreen extends Screen {
     this.kind = e ? e.kind : 'public';
     this.mode = e ? e.mode : 'survival';
     this.cheats = e ? !!e.cheats : false;
+    // spawn protection, as server.properties has it: 16 blocks round the world spawn that only operators can change (0 for none)
+    this.prot = e && e.spawnProt !== undefined ? (e.spawnProt | 0 ? 16 : 0) : 16;
     this.nameField = new TextField(0, 0, 200, 20, { value: e ? e.name : 'Leoncraft Server', maxLength: 32, onEnter: () => this.done() });
     this.motdField = new TextField(0, 0, 200, 20, { value: e ? e.motd || '' : '', maxLength: 60, hint: 'A line under the name' });
     this.pwField = new TextField(0, 0, 200, 20, { value: '', maxLength: 32, hint: e ? 'Leave blank to keep it' : 'Needed to join', onEnter: () => this.done() });
@@ -191,7 +193,7 @@ export class CreateServerScreen extends Screen {
   init() {
     const W = this.width, H = this.height, g = this.gui, x = Math.floor(W / 2 - 100);
     // a quarter of the way down where there is room, never so low the buttons run into the fields
-    const contentH = 32 * (this.editing ? 3 : 4) + 24 * 2;
+    const contentH = 32 * (this.editing ? 3 : 4) + 24 * 3;
     let y = Math.max(28, Math.min(Math.floor(H / 4) - 36, H - 28 - 22 - contentH));
     this.labels = [];
     const field = (label, f) => { this.labels.push([label, x, y]); f.x = x; f.y = y + 10; this.add(f); y += 32; };
@@ -203,6 +205,9 @@ export class CreateServerScreen extends Screen {
     y += 24;
     this.add(new CycleButton(x, y, 200, 20, 'Allow Commands', { values: [false, true], value: this.cheats, format: onOff, onChange: v => { this.cheats = v; },
       tooltip: () => 'Whether everyone on the server can use commands like /gamemode and /time' }));
+    y += 24;
+    this.add(new CycleButton(x, y, 200, 20, 'Spawn Protection', { values: [16, 0], value: this.prot, format: v => (v ? v + ' blocks' : 'OFF'), onChange: v => { this.prot = v; },
+      tooltip: () => 'Only operators can break, place or use blocks this close to the world spawn' }));
     y += 24;
     field('Password', this.pwField);
     this.pwField.active = this.kind === 'private';
@@ -221,7 +226,7 @@ export class CreateServerScreen extends Screen {
     this.busy = true; this.error = this.editing ? 'Saving...' : 'Creating...'; this.gui.markDirty();
     let r;
     try {
-      const o = { name, motd: this.motdField.value.trim(), kind: this.kind, mode: this.mode, cheats: this.cheats };
+      const o = { name, motd: this.motdField.value.trim(), kind: this.kind, mode: this.mode, cheats: this.cheats, spawnProt: this.prot };
       if (pw) o.password = pw;
       if (this.editing) { o.id = this.editing.id; r = await editServer(o); }
       else { o.seed = parseSeed(this.seedField.value); r = await createServer(o); }
