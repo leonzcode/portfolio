@@ -54,6 +54,22 @@ const ANGRY = { wolf: 'growl', enderman: 'scream', piglin: 'angry', piglin_brute
 
 const part = (v, i) => typeof v === 'number' ? v : v ? v[i] : 1;
 
+/* What a mob's kind sounds like, worked out once a mob (its type does not
+   change): its event names, volume, pitch, slider and how far it is heard
+   (16 blocks, further for a sound over volume 1). */
+function kindOf(e) {
+  const type = e.type, slime = type === 'slime' || type === 'magma_cube';
+  const v = slime ? 0.4 * Math.max(0, (e.size | 0) - 1) : VOL[type];
+  const reach = 16 * Math.max(1, typeof v === 'number' ? v : v ? Math.max(v[0], v[1], v[2]) : 1, STEP[type] || 0);
+  const sr = 16 * Math.max(1, STEP[type] || 0);
+  return {
+    type, slime, v, reach2: reach * reach, name: 'entity.' + (NAME[type] || type) + '.', pitch: PITCH[type],
+    cat: HOSTILE.has(type) || e.constructor.HOSTILE ? 'hostile' : 'neutral',
+    step: 'entity.' + (STEP_OF[type] || NAME[type] || type) + '.step', stepR2: sr * sr,
+    trades: e.vxp !== undefined || e.shakeT !== undefined,
+  };
+}
+
 /* What a mob says when it speaks of its own accord (null: nothing), by the
    game's rules for the few that have more than one thing to say. */
 function ambientOf(e, type) {
@@ -89,7 +105,7 @@ function hurtOf(e, type, kind) {
 const BEE_LOOPS = 4, BEE_NEAR = 8;
 
 export class MobSounds {
-  constructor() { this.n = 0; this.bees = new Map(); }
+  constructor() { this.n = 0; this.bees = new Map(); this.warmed = new Set(); }
   reset() { for (const h of this.bees.values()) h.stop(); this.bees.clear(); }
   // at: the listener's position (sound.js), so far-off mobs cost nothing
   tick(E, at) {
@@ -99,61 +115,67 @@ export class MobSounds {
     for (const e of E.list) {
       if (e.removed) continue;
       let s = e._snd;
-      if (!s) s = e._snd = { amb: -80 + ((R() * 80) | 0), hurt: e.hurtTime | 0, dead: !!e.dead, md: 0, next: 1, stuck: !!e.stuck, new: true, ground: !!e.onGround, vxp: e.vxp | 0, shake: e.shakeT | 0 };
+      if (!s) s = e._snd = { amb: -80 + ((R() * 80) | 0), hurt: e.hurtTime | 0, dead: !!e.dead, md: 0, next: 1, stuck: !!e.stuck, new: true, ground: !!e.onGround, vxp: e.vxp | 0, shake: e.shakeT | 0, k: null };
       const dx = e.pos.x - at.x, dy = e.pos.y - at.y, dz = e.pos.z - at.z, d2 = dx * dx + dy * dy + dz * dz;
       if (e.type === 'arrow' || e.type === 'spectral_arrow') { this.arrow(e, s); continue; }
       if (e.type === 'trident') { this.trident(e, s); continue; }
       if (e.paddle && e.rowing) { if (d2 < 16 * 16) this.paddles(e); continue; }
       if (typeof e.health !== 'number' || !e.maxHealth) { s.new = false; continue; }
-      const type = e.type, name = 'entity.' + (NAME[type] || type) + '.';
-      const cat = HOSTILE.has(type) || e.constructor.HOSTILE ? 'hostile' : 'neutral';
-      const slime = type === 'slime' || type === 'magma_cube';
-      const v = slime ? 0.4 * Math.max(0, (e.size | 0) - 1) : VOL[type];
-      // in earshot of the loudest thing it says (a sound is heard 16 blocks away, further for one over volume 1)
-      const reach = 16 * Math.max(1, typeof v === 'number' ? v : v ? Math.max(v[0], v[1], v[2]) : 1, STEP[type] || 0);
-      const near = d2 < reach * reach;
-      const baby = !!(e.isBaby || e.baby);
-      const P = PITCH[type];
-      // hurt or killed
+      // what its kind sounds like, worked out once
+      const k = s.k || (s.k = kindOf(e));
+      const type = k.type, name = k.name;
+      // its kind's voices fetched as the first of them comes within 48 blocks (a bank of them, ready before it is heard)
+      if (d2 < 2304 && !this.warmed.has(type)) { this.warmed.add(type); Sound.prefetch(name + 'hurt'); }
       const h = e.hurtTime | 0;
+      // out of earshot: only what it was doing is kept, so nothing old is heard when it comes near
+      if (d2 >= k.reach2) {
+        if (h <= s.hurt || e.dead) s.hurt = h; else { s.hurt = h; s.amb = -80; }
+        if (e.dead) s.dead = true;
+        if (s.leash || e.leash) s.leash = e.leash ? (e.leash.knot ? 'k' : 'p') : '';
+        s.vxp = e.vxp | 0; s.shake = e.shakeT | 0; s.ground = !!e.onGround;
+        if (type === 'bee' && this.bees.has(e)) this.bee(e, d2);
+        continue;
+      }
+      const v = k.v, P = k.pitch, cat = k.cat, slime = k.slime, baby = !!(e.isBaby || e.baby);
+      // hurt or killed
       if (e.dead && !s.dead) {
         s.dead = true;
-        if (near) Sound.play(name + hurtOf(e, type, 'death'), e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, part(v, 2), voice(baby) * part(P, 2) * (slime ? 0.8 : 1), cat);
+        Sound.play(name + hurtOf(e, type, 'death'), e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, part(v, 2), voice(baby) * part(P, 2) * (slime ? 0.8 : 1), cat);
       } else if (h > s.hurt && !e.dead) {
-        if (near) Sound.play(name + hurtOf(e, type, 'hurt'), e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, part(v, 1), voice(baby) * part(P, 1) * (slime ? 0.8 : 1), cat);
+        Sound.play(name + hurtOf(e, type, 'hurt'), e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, part(v, 1), voice(baby) * part(P, 1) * (slime ? 0.8 : 1), cat);
         s.amb = -80;
       }
       s.hurt = h;
-      if (e.leash !== undefined || s.leash) this.lead(E, e, s);
+      if (e.leash || s.leash) this.lead(E, e, s);
       if (e.dead) continue;
       // speaking
       if (((R() * 1000) | 0) < s.amb++) {
         s.amb = -80;
-        const a = near && ambientOf(e, type);
+        const a = ambientOf(e, type);
         if (a) Sound.play(name + a, e.pos.x, e.pos.y + e.h * 0.85, e.pos.z, part(v, 0), voice(baby) * part(P, 0), cat);
       }
       // a villager or a wandering trader: yes to a trade made, no to one it cannot make
-      if (e.vxp !== undefined || e.shakeT !== undefined) {
-        if ((e.vxp | 0) > s.vxp && near) Sound.play(name + 'yes', e.pos.x, e.pos.y + e.h * 0.85, e.pos.z, 1, voice(baby), cat);
-        if ((e.shakeT | 0) > s.shake && near) Sound.play(name + 'no', e.pos.x, e.pos.y + e.h * 0.85, e.pos.z, 1, voice(baby), cat);
+      if (k.trades) {
+        if ((e.vxp | 0) > s.vxp) Sound.play(name + 'yes', e.pos.x, e.pos.y + e.h * 0.85, e.pos.z, 1, voice(baby), cat);
+        if ((e.shakeT | 0) > s.shake) Sound.play(name + 'no', e.pos.x, e.pos.y + e.h * 0.85, e.pos.z, 1, voice(baby), cat);
         s.vxp = e.vxp | 0; s.shake = e.shakeT | 0;
       }
       // a slime or magma cube: a squish as it lands, a smaller one for a small one (1 to 1.5 high)
       if (slime) {
-        if (e.onGround && !s.ground && near && v > 0) Sound.play(name + ((e.size | 0) <= 1 ? 'squish_small' : 'squish'), e.pos.x, e.pos.y, e.pos.z, v, (spread() * 0.2 + 1) / 0.8, cat);
-        if (!e.onGround && s.ground && e.vel && e.vel.y > 0.1 && near && v > 0) Sound.play(name + ((e.size | 0) <= 1 ? 'jump_small' : 'jump'), e.pos.x, e.pos.y, e.pos.z, v, (spread() * 0.2 + 1) * ((e.size | 0) <= 1 ? 1.4 : 0.8), cat);
+        const small = (e.size | 0) <= 1;
+        if (e.onGround && !s.ground && v > 0) Sound.play(name + (small ? 'squish_small' : 'squish'), e.pos.x, e.pos.y, e.pos.z, v, (spread() * 0.2 + 1) / 0.8, cat);
+        if (!e.onGround && s.ground && e.vel && e.vel.y > 0.1 && v > 0) Sound.play(name + (small ? 'jump_small' : 'jump'), e.pos.x, e.pos.y, e.pos.z, v, (spread() * 0.2 + 1) * (small ? 1.4 : 0.8), cat);
         s.ground = !!e.onGround;
         continue;
       }
       if (type === 'bee') this.bee(e, d2);
       // footsteps
-      if (!near || !e.onGround) continue;
+      if (!e.onGround) continue;
       const mx = e.pos.x - e.prev.x, mz = e.pos.z - e.prev.z;
       s.md += Math.sqrt(mx * mx + mz * mz) * 0.6;
       if (s.md > s.next) {
         s.next = Math.floor(s.md) + 1;
-        const own = 'entity.' + (STEP_OF[type] || NAME[type] || type) + '.step', sr = 16 * Math.max(1, STEP[type] || 0);
-        if (d2 < sr * sr && Sound.has(own)) Sound.play(own, e.pos.x, e.pos.y, e.pos.z, STEP[type] || 0.15, 1, cat);
+        if (d2 < k.stepR2 && Sound.has(k.step)) Sound.play(k.step, e.pos.x, e.pos.y, e.pos.z, STEP[type] || 0.15, 1, cat);
         else if (d2 < 256) {
           const w = E.world || (E.t && E.t.w);
           const b = w ? w.get(Math.floor(e.pos.x), Math.floor(e.pos.y - 0.2), Math.floor(e.pos.z)) : 0;

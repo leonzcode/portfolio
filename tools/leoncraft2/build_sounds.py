@@ -39,7 +39,7 @@ import argparse, fnmatch, json, os, sys, urllib.parse, urllib.request, zipfile
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from soundlib import SR, decode, features, distance, fades, resample, lp, hp, eq_to, segments, write_ogg, active
+from soundlib import SR, decode, features, distance, fades, resample, lp, hp, eq_to, segments, write_ogg, active, envelope
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
@@ -119,7 +119,63 @@ SOURCES = {
     'm_darkintro': (OGA + 'Dark%20Intro_0.ogg', 'file', 'Dark Intro', 'Nikke', CC0, OGAP + 'dark-intro'),
     'm_underwater': (OGA + 'underwater_theme_ii.zip', 'zip', 'Underwater Theme II', 'Cleyton Kauffman', CC0, OGAP + 'underwater-theme-ii'),
     'm_pad': (OGA + 'Underwater-Ambient-Pad-isaiah658_0.ogg', 'file', 'Underwater Ambient Pad', 'isaiah658', CC0, OGAP + 'underwater-ambient-pad'),
+    # animals (OpenGameArt)
+    'catk1': (OGA + 'cat_mewfood.wav', 'file', 'Cat Purr & Meow', 'Kerzoven', CC0, OGAP + 'cat-purr-meow'),
+    'catk2': (OGA + 'cat_mewpurr.wav', 'file', 'Cat Purr & Meow', 'Kerzoven', CC0, OGAP + 'cat-purr-meow'),
+    'catk3': (OGA + 'cat_mewpurr2.wav', 'file', 'Cat Purr & Meow', 'Kerzoven', CC0, OGAP + 'cat-purr-meow'),
+    'catk4': (OGA + 'cat_softmew.wav', 'file', 'Cat Purr & Meow', 'Kerzoven', CC0, OGAP + 'cat-purr-meow'),
+    'catk5': (OGA + 'cat_purractive_loop.wav', 'file', 'Cat Purr & Meow', 'Kerzoven', CC0, OGAP + 'cat-purr-meow'),
+    'kitten': (OGA + 'kitten_mew-1_0.ogg', 'file', 'Kitten Mew', 'AntumDeluge', CC0, OGAP + 'kitten-mew'),
+    'dogs': (OGA + 'dog.7z', '7z', 'Dog Sounds', 'pauliuw', CC0, OGAP + 'dog-sounds'),
+    'doggrowl': (OGA + 'dog-growl.ogg', 'file', 'Dog Growl', 'bonebrah', CC0, OGAP + 'dog-growl'),
+    'dogsnarl': (OGA + 'dog_0.7z', '7z', 'Dog snarl, grunt, grumble', 'qubodup', CC0, OGAP + 'dog-snarl-grunt-grumble'),
+    'doggrunt': (OGA + 'dog-frieda-grunt-96khz-01.flac', 'file', 'Dog Grunt', 'qubodup', CC0, OGAP + 'dog-grunt'),
+    'donkeyoga': (OGA + 'donkey_bray_-_starninjas_0.ogg', 'file', 'Donkey Bray', 'StarNinjas', CC0, OGAP + 'donkey-bray'),
+    'bats': (OGA + 'bat.zip', 'zip', 'Bat Screeches', 'AntumDeluge', CC0, OGAP + 'bat-screeches'),
+    'croak1': (OGA + 'croak_01_0.mp3', 'file', 'Frog Croaks', 'EZduzziteh', CC0, OGAP + 'frog-croaks'),
+    'croak2': (OGA + 'croak_02.mp3', 'file', 'Frog Croaks', 'EZduzziteh', CC0, OGAP + 'frog-croaks'),
+    'croak3': (OGA + 'croak_03.mp3', 'file', 'Frog Croaks', 'EZduzziteh', CC0, OGAP + 'frog-croaks'),
+    'croak4': (OGA + 'croak_04.mp3', 'file', 'Frog Croaks', 'EZduzziteh', CC0, OGAP + 'frog-croaks'),
+    'ribbit1': (OGA + 'ribbit_01.mp3', 'file', 'Ribbit Frog Sounds', 'EZduzziteh', CC0, OGAP + 'ribbit-frog-sounds'),
+    'ribbit2': (OGA + 'ribbit_02.mp3', 'file', 'Ribbit Frog Sounds', 'EZduzziteh', CC0, OGAP + 'ribbit-frog-sounds'),
+    'ribbit3': (OGA + 'ribbit_03.mp3', 'file', 'Ribbit Frog Sounds', 'EZduzziteh', CC0, OGAP + 'ribbit-frog-sounds'),
+    'animalnoise': (OGA + 'some%20animal%20noise.wav', 'file', 'Some animal noise', 'mikeask', CC0, OGAP + 'some-animal-noise'),
+    # the music discs' songs, one each
+    'd_13': (OGA + '012_Sirens_in_Darkness_0.mp3', 'file', 'Sirens in Darkness', 'cynicmusic (The Cynic Project)', CC0, OGAP + 'sirens-in-darkness'),
+    'd_11': (OGA + 'The%209th%20Circle%20V2.mp3', 'file', 'The 9th Circle', 'Joth', CC0, OGAP + 'the-9th-circle'),
+    'd_5': (OGA + 'The%20Beach%20Where%20Dreams%20Die.wav', 'file', 'The Beach Where Dreams Die', 'Chloe Wolfe', CC0, OGAP + 'ambient-the-beach-where-dreams-die'),
+    'd_cat': (OGA + 'Christmas%20synths.ogg', 'file', 'Happy synths loop with slight Christmas feeling', '3xBlast', CC0, OGAP + 'happy-synths-loop-with-slight-christmas-feeling'),
+    'd_blocks': (OGA + 'Of%20Far%20Different%20Nature%20-%20Funky%20House%20%28CC0%29_0.mp3', 'file', 'Funky House', 'Of Far Different Nature', CC0, OGAP + 'funky-house'),
+    'd_chirp': (OGA + 'TalkingCuteChiptune_0.mp3', 'file', 'Talking Cute Chiptune', 'Pro Sensory', CC0, OGAP + 'talking-cute-chiptune'),
+    'd_far': (OGA + 'Mirror%20Lake.mp3', 'file', 'Mirror Lake', 'Joth', CC0, OGAP + 'mirror-lake'),
+    'd_mall': (OGA + '8bit%20Bossa.mp3', 'file', 'Bossa Nova', 'Joth', CC0, OGAP + 'bossa-nova'),
+    'd_mellohi': (OGA + 'Piano%20Loop.wav', 'file', 'Emotional Piano Loop', 'extenz', CC0, OGAP + 'emotional-piano-loop'),
+    'd_stal': (OGA + 'blues_0.mp3', 'file', 'Jazzy Blues', 'LushoGames', CC0, OGAP + 'jazzy-blues'),
+    'd_strad': (OGA + 'raspberry_jam.ogg', 'file', 'Raspberry Jam', 'congusbongus', CC0, OGAP + 'raspberry-jam'),
+    'd_ward': (OGA + 'which_brand_of_mustard_shall_i_buy.ogg', 'file', 'Which brand of mustard shall I buy?', 'congusbongus', CC0, OGAP + 'which-brand-of-mustard-shall-i-buy'),
+    'd_wait': (OGA + 'rhythm_garden_0.ogg', 'file', 'Rhythm Garden', 'congusbongus', CC0, OGAP + 'rhythm-garden'),
+    'd_pigstep': (OGA + 'CVP701Jam_0.ogg', 'file', 'Funky Hip-Hop Lofi Jam', 'omfgdude', CC0, OGAP + 'funky-hip-hop-lofi-jam'),
+    'd_otherside': (OGA + 'S31-Night%20Prowler.ogg', 'file', 'Night Prowler', 'section31', CC0, OGAP + 'night-prowler'),
+    'd_relic': (OGA + 'Lament_for_a_Warriors_Soul_REUPLOAD.mp3', 'file', "Lament for a Warrior's Soul", 'RandomMind', CC0, OGAP + 'fantasy-lament-for-a-warriors-soul'),
+    'd_creator': (OGA + 'magic%20space.mp3', 'file', 'Magic Space', 'CodeManu', CC0, OGAP + 'magic-space'),
+    'd_music_box': (OGA + '4_music_box_tracks_ogg.zip', 'zip', '4 Music Box Tracks', 'Aureolus_Omicron', CC0, OGAP + '4-music-box-tracks'),
+    'd_precipice': (OGA + 'mythica.mp3', 'file', 'Mythica', 'congusbongus', CC0, OGAP + 'mythica'),
+    'd_tears': (OGA + 'Cyberpunk%20Moonlight%20Sonata%20v2.mp3', 'file', 'Cyberpunk Moonlight Sonata', 'Joth', CC0, OGAP + 'cyberpunk-moonlight-sonata'),
+    'd_lava_chicken': (OGA + 'happy_adveture.mp3', 'file', 'Happy Adventure (loop)', 'TinyWorlds', CC0, OGAP + 'happy-adventure-loop'),
 }
+
+# more CC0 recordings from Freesound, each checked on its own page (tools/leoncraft2/sound_sources.json:
+# pool -> [{sid, url, title, author, licence, page, file}]); their high quality previews are used
+FS = {}
+try:
+    for _pool, _rows in json.load(open(os.path.join(HERE, 'sound_sources.json'), encoding='utf-8')).items():
+        for _r in _rows:
+            if _r.get('licence') != CC0:
+                continue
+            SOURCES[_r['sid']] = (_r['url'], 'file', _r['title'], _r['author'], CC0, _r['page'])
+            FS.setdefault(_pool, []).append(_r['sid'])
+except FileNotFoundError:
+    pass
 
 SRC = None
 USED = set()
@@ -135,9 +191,17 @@ def fetch():
         p = os.path.join(d, name)
         if not os.path.exists(p):
             print('fetch', sid, url)
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=300) as r, open(p, 'wb') as f:
-                f.write(r.read())
+            try:
+                import requests
+                r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=300)
+                r.raise_for_status()
+                data = r.content
+            except ImportError:
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=300) as r:
+                    data = r.read()
+            with open(p, 'wb') as f:
+                f.write(data)
         x = os.path.join(d, 'x')
         if kind == 'zip' and not os.path.isdir(x):
             zipfile.ZipFile(p).extractall(x)
@@ -358,6 +422,33 @@ def synth_levelup():
     return out
 
 
+def synth_levelup_bright(octave=2.0):
+    """the same three bell notes an octave up, with a glassy overtone and a breath of shimmer over them"""
+    out = np.zeros(int(1.3 * SR), np.float32)
+    for i, f in enumerate((1046.5 * octave / 2, 1318.5 * octave / 2, 1568.0 * octave / 2)):
+        n = tone([(f, 1, 3), (f * 2, 0.45, 5), (f * 2.76, 0.25, 7), (f * 4, 0.12, 9)], 1.1, 2.6)
+        a = int(i * 0.06 * SR)
+        out[a:a + len(n)] += n[:len(out) - a]
+    t = t_(1.3)
+    out += (0.04 * hp(noise(1.3), 5000) * np.exp(-t * 3)).astype(np.float32)
+    return out
+
+
+def synth_crackle(dur=1.8, rate=40, bed=0.08):
+    """fire as it sounds close up: sharp little cracks at random, on a soft hiss"""
+    n = int(dur * SR)
+    out = (bed * hp(noise(dur), 3000)).astype(np.float32)
+    k = rng.poisson(rate * dur)
+    for _ in range(k):
+        L = int(rng.uniform(0.002, 0.012) * SR)
+        a = int(rng.uniform(0, n - L - 1))
+        burst = rng.uniform(-1, 1, L) * np.exp(-np.arange(L) / (L / 4)) * rng.uniform(0.2, 1.0)
+        out[a:a + L] += hp(burst.astype(np.float32), rng.uniform(1500, 5000))
+    t = t_(dur)
+    env = np.minimum(1, t / 0.1) * np.minimum(1, (dur - t) / 0.3)
+    return fades((out * env).astype(np.float32), 0.01, 0.1)
+
+
 def synth_hiss(dur=1.2):
     t = t_(dur)
     return fades((hp(noise(dur), 2500) * np.minimum(1, t / 0.05) * np.exp(-t * 2.2)).astype(np.float32), 0.005, 0.2)
@@ -371,23 +462,170 @@ def synth_portal(dur, rise=False, cutoff=900):
     return fades((n * (0.4 + 0.6 * wob) * env).astype(np.float32), 0.2, 0.4)
 
 
+def glide(contour, dur):
+    """a pitch contour: (time share, Hz) points joined smoothly"""
+    t = np.linspace(0, 1, int(dur * SR))
+    ts, fs = zip(*contour)
+    return np.interp(t, ts, fs)
+
+
+def brass(freq, harm=14, tilt=1.15):
+    """a reedy, horn-like tone following freq (Hz per sample)"""
+    ph = 2 * np.pi * np.cumsum(freq) / SR
+    y = np.zeros_like(ph)
+    for k in range(1, harm + 1):
+        y += np.sin(k * ph) / k ** tilt
+    return y.astype(np.float32)
+
+
+# the goat horn's eight calls, each its own shape (our own playing, nothing like a recording of the game's)
+HORN_CONTOURS = [
+    [(0, 196), (0.25, 220), (0.7, 220), (1, 185)],                    # ponder: a slow rise and a sinking end
+    [(0, 247), (0.3, 247), (0.35, 330), (0.8, 330), (1, 311)],        # sing: two notes, up a fourth
+    [(0, 165), (0.8, 262), (1, 262)],                                 # seek: a long rising glide
+    [(0, 294), (0.2, 294), (1, 196)],                                 # feel: falling away
+    [(0, 220), (0.2, 220), (0.25, 277), (0.45, 277), (0.5, 220), (0.7, 220), (0.75, 277), (1, 262)],   # admire: back and forth
+    [(0, 208), (0.1, 233), (1, 233)],                                 # call: one long steady note
+    [(0, 233), (0.3, 262), (0.55, 220), (0.8, 247), (1, 208)],        # yearn: rising and falling
+    [(0, 147), (0.4, 165), (1, 156)],                                 # dream: low and soft
+]
+
+
+def synth_horn(i, dur=4.5):
+    f = glide(HORN_CONTOURS[i % 8], dur)
+    t = t_(dur)
+    f = f * (1 + 0.006 * np.sin(2 * np.pi * 5.2 * t) * np.minimum(1, t / 0.8))   # a little vibrato once it is going
+    y = brass(f)
+    y = hp(lp(y, 2400), 160) * 1.0 + 0.5 * lp(hp(y, 600), 1600)                 # a horn's two broad resonances
+    y = y + 0.03 * lp(hp(noise(dur), 900), 3000)                                 # breath
+    env = np.minimum(1, t / 0.18) * np.minimum(1, (dur - t) / 0.9) * (0.85 + 0.15 * np.sin(np.pi * t / dur))
+    return fades((y * env).astype(np.float32), 0.01, 0.2)
+
+
+def synth_chord(freqs, dur, rise=None, shimmer=0.0, beat=0.0, decay=0.0):
+    """sustained sines (a hum), gliding by rise (a share of the pitch over the whole sound), beating slowly"""
+    t = t_(dur)
+    y = np.zeros_like(t)
+    for k, f in enumerate(freqs):
+        fr = f * (1 + (rise or 0) * t / dur)
+        ph = 2 * np.pi * np.cumsum(fr) / SR
+        y += np.sin(ph) / (1 + k * 0.6)
+        if beat:
+            y += 0.5 * np.sin(ph * (1 + beat / f)) / (1 + k * 0.6)
+    if shimmer:
+        y += shimmer * hp(noise(dur), 4000) * (0.5 + 0.5 * np.sin(2 * np.pi * 7 * t))
+    env = np.minimum(1, t / 0.15) * np.minimum(1, (dur - t) / 0.4) * np.exp(-t * decay)
+    return fades((y * env).astype(np.float32), 0.01, 0.1)
+
+
+def synth_pulse(dur=0.5, f=55):
+    """a deep soft thump, like a heartbeat under water"""
+    t = t_(dur)
+    fr = f * (1 + 0.6 * np.exp(-t * 25))
+    y = np.sin(2 * np.pi * np.cumsum(fr) / SR) * np.exp(-t * 9) + 0.15 * lp(noise(dur), 400) * np.exp(-t * 14)
+    return fades(y.astype(np.float32), 0.002, 0.05)
+
+
+def synth_zap(dur=0.6):
+    t = t_(dur)
+    fr = 1800 * np.exp(-t * 6) + 200
+    y = 0.6 * np.sin(2 * np.pi * np.cumsum(fr) / SR) * np.exp(-t * 6) + 0.4 * hp(noise(dur), 2500) * np.exp(-t * 12)
+    return fades(y.astype(np.float32), 0.001, 0.05)
+
+
+def synth_la(f0=880, dur=0.6, up=True):
+    """a small sung 'la': a vowel on a gliding note, with a chime on top (the allay's kind of voice)"""
+    t = t_(dur)
+    f = f0 * (1 + (0.12 if up else -0.1) * np.sin(np.pi * t / dur)) * (1 + 0.01 * np.sin(2 * np.pi * 6 * t))
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    y = np.sin(ph) + 0.35 * np.sin(2 * ph) + 0.15 * np.sin(3 * ph)
+    y += 0.25 * np.sin(2 * np.pi * f0 * 2.76 * t) * np.exp(-t * 6)
+    env = np.minimum(1, t / 0.04) * np.minimum(1, (dur - t) / 0.2)
+    return fades((y * env).astype(np.float32), 0.003, 0.05)
+
+
+def synth_whistle(dur=0.6, f0=3000, f1=6000, clicks=0):
+    """a dolphin's kind of call: a quick whistle sweeping between two notes, with a few clicks before it"""
+    t = t_(dur)
+    f = f0 + (f1 - f0) * (0.5 - 0.5 * np.cos(np.pi * t / dur * 1.5))
+    y = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.minimum(1, t / 0.03) * np.minimum(1, (dur - t) / 0.08)
+    out = np.zeros(int((dur + 0.02 * clicks) * SR), np.float32)
+    for k in range(clicks):
+        a = int(k * 0.02 * SR)
+        L = int(0.002 * SR)
+        out[a:a + L] += (hp(noise(0.002), 3000) * 0.8)[:L]
+    out[int(0.02 * clicks * SR):int(0.02 * clicks * SR) + len(y)] += 0.6 * y.astype(np.float32)
+    return fades(out, 0.002, 0.05)
+
+
+def synth_wind(dur=6.0, centre=500, gust=0.25):
+    """wind rushing past: noise in a band that wanders, swelling and easing"""
+    t = t_(dur)
+    n = noise(dur)
+    a = lp(hp(n, centre * 0.5), centre * 2)
+    b = lp(hp(n, centre * 1.5), centre * 5)
+    sw = 0.6 + gust * np.sin(2 * np.pi * 0.23 * t) + 0.15 * np.sin(2 * np.pi * 0.61 * t + 1)
+    return fades(((a + 0.4 * b) * sw).astype(np.float32), 0.3, 0.5)
+
+
 # ------------------------------------------------------------------ choosing and shaping
 TARGETS = None
 TEXT = {}
 
 
+def sustain(y, want):
+    """a long sound (thunder, an explosion) whose tail dies away sooner than the game's: the quieter
+    part after its peak brought up, gently and no more than 24 dB, until it lasts about as long"""
+    if features(y)['dur'] >= want * 0.9:
+        return y
+    n = int(0.01 * SR)
+    env = envelope(y)
+    env = np.convolve(env, np.ones(9) / 9, mode='same')
+    pk = int(np.argmax(env))
+    best = y
+    for k in (0.12, 0.22, 0.32, 0.42, 0.52, 0.62):
+        g = np.ones_like(env)
+        g[pk:] = np.clip((env[pk:] / (env[pk] + 1e-9)) ** (-k), 1, 10 ** (24 / 20))
+        gs = np.repeat(g, n)[:len(y)]
+        gs = np.pad(gs, (0, len(y) - len(gs)), mode='edge')
+        z = (y * gs).astype(np.float32)
+        best = z
+        if features(z)['dur'] >= want * 0.9:
+            break
+    return best
+
+
 def shape(x, T, r, i=0, eq=True, cut=True):
     y = onset_trim(x)
     y = resample(y, r)
+    durs = T.get('durs') or [T['dur']]
+    want = durs[i % len(durs)] if i is not None else T['dur']
     if cut:
-        durs = T.get('durs') or [T['dur']]
-        want = durs[i % len(durs)] if i is not None else T['dur']
-        n = int((want * 1.08 + 0.03) * SR)
-        if len(y) > n:
-            y = fades(y[:n], 0.001, min(0.25, want * 0.35))
+        # cut so the part that sounds lasts as long as the game's: the fade at the end eats into it, so the
+        # cut is moved until the sounding part comes out right (or the recording runs out)
+        L = want * 1.1 + 0.03
+        z = y
+        for _ in range(4):
+            n = int(L * SR)
+            if len(y) <= n:
+                z = y
+                break
+            z = fades(y[:n], 0.001, min(0.12, want * 0.2))
+            d = features(z)['dur']
+            if abs(d - want) <= 0.08 * want + 0.01:
+                break
+            L = max(0.03, L * (want + 0.02) / (d + 0.02))
+        y = z
+    elif want > 0.5:
+        y = sustain(y, want)
     y = fades(y, 0.001, 0.008)
     if eq:
-        y = eq_to(y, features(y)['bands'], T['bands'], 10.0)
+        # towards the game's spectrum in up to three passes of at most 8 dB each, stopping once close
+        for _ in range(3):
+            b = features(y)['bands']
+            if float(np.mean(np.abs(np.array(b) - np.array(T['bands'])))) < 1.5:
+                break
+            y = eq_to(y, b, T['bands'], 8.0)
     f = features(y)
     if f['rms'] > 0:
         y = y * (T['rms'] / f['rms'])
@@ -557,7 +795,7 @@ def pools():
     P['eat'] = lambda: pieces('crunch', '*', 0.06, 0.6, -30, 0.05) + pieces('applebite', '*', 0.06, 0.6, -30, 0.05) + files('rdcreature', 'eat_*')
     P['drink'] = lambda: files('rdwater', 'bubble_*') + files('rdwater', 'slime_*', lambda x: lp(x, 3000)) + pieces('peludo3', '*', 0.2, 2.0) + windows('rdwater', 'loop_bubbles*', 1.2, 4)
     P['burp'] = lambda: files('rdcreature', 'burp_*') + files('rdcreature', 'burble_*')
-    P['levelup'] = lambda: [('synth:levelup', 'synth', synth_levelup())] + files('jingles', '*steel*') + files('jingles', '*pizzi*') + files('jingles', '*hit*') + KU('confirmation_*') + KU('maximize_*')
+    P['levelup'] = lambda: [('synth:levelup', 'synth', synth_levelup()), ('synth:levelup2', 'synth', synth_levelup_bright()), ('synth:levelup3', 'synth', synth_levelup_bright(2.5))] + files('jingles', '*steel*') + files('jingles', '*pizzi*') + files('jingles', '*hit*') + KU('confirmation_*') + KU('maximize_*')
     P['orb'] = lambda: KU('glass_*') + KU('bong_*') + [('synth:ding%d' % f, 'synth', synth_ding(f)) for f in (1400, 1700, 2100, 2600, 3100)]
     P['pop'] = lambda: files('rd100', 'plop_*') + KU('drop_*') + KU('pluck_*') + [('synth:pop', 'synth', synth_pop())]
     P['itembreak'] = lambda: K('impactWood_light_*') + K('impactPlate_light_*') + files('rd100', 'hit_*') + K('impactGlass_light_*') + files('rd100', 'tools_*')
@@ -577,7 +815,7 @@ def pools():
     P['piston'] = lambda: files('rd100', 'machine_*') + files('rd100', 'slam_*') + [('mix:piston%d' % i, 'impact', mixdown((S('impact', 'impactPlank_medium_00%d.ogg' % i), 0, 1.0), (S('impact', 'impactMetal_light_00%d.ogg' % i), 0.02, 0.5))) for i in range(5)] + files('rd100b', '*misc_*')
     P['explode'] = lambda: files('synthboom') + files('rd100', 'explosion*') + files('muffled') + files('rdbang', 'bang_*') + files('rdbang', 'cannon_*')
     P['fuse'] = lambda: files('fuse') + [('synth:fuse%d' % i, 'synth', synth_fuse(2.6)) for i in range(3)]
-    P['fire'] = lambda: windows('fire', '*', 1.8, 10) + windows('fire', '*', 2.8, 6) + windows('fire', '*', 2.2, 6)
+    P['fire'] = lambda: windows('fire', '*', 1.8, 10) + windows('fire', '*', 2.8, 6) + windows('fire', '*', 2.2, 6) + [('synth:crackle%d' % i, 'synth', synth_crackle(1.8 + 0.4 * i, 25 + 12 * i, 0.05 + 0.02 * i)) for i in range(5)]
     P['fizz'] = lambda: [('synth:fizz%d' % i, 'synth', synth_fizz(0.3 + 0.15 * i)) for i in range(5)] + files('rd100b', '*air_*') + files('rdloops', 'noise_*', lambda x: x[:int(0.8 * SR)])
     P['ignite'] = lambda: [('mix:flint%d' % i, 'rpg', mixdown((S('rpg', 'metalClick.ogg'), 0, 1.0), (synth_fizz(0.35), 0.03, 0.4))) for i in range(3)] + KR('metalClick*') + files('rd100', 'key_open*') + KR('drawKnife*')
     P['lava_pop'] = lambda: files('rdwater', 'bubble_*', lambda x: lp(x, 3000)) + files('rd100', 'plop_*', lambda x: lp(x, 2500)) + files('rdwater', 'slime_*', lambda x: lp(x, 2000))
@@ -628,6 +866,73 @@ def pools():
     P['chicken'] = lambda: pieces('chicken', '*.ogg', 0.05, 1.5, -30, 0.06) + pieces('chicken', '*.mp3', 0.05, 1.5, -30, 0.06)
     P['generic_hurt'] = lambda: pieces('grunts', '*', 0.06, 0.8, -35, 0.15) + K('impactPunch_medium_*') + K('impactSoft_medium_*')
     P['slime'] = lambda: files('rdwater', 'slime_*')
+    # more mobs: Freesound's CC0 recordings (FS), OpenGameArt's, and our own synthesis where nothing came close
+    F = lambda pool, fn=None: [c for sid in FS.get(pool, []) for c in files(sid, '*', fn)]
+    FP = lambda pool, lo=0.08, hi=2.5, fn=None: [c for sid in FS.get(pool, []) for c in pieces(sid, '*', lo, hi, -32, 0.08, fn)]
+    P['villager'] = lambda: FP('villager', 0.15, 1.6) + F('villager')
+    P['witch'] = lambda: FP('witch', 0.2, 2.5) + F('witch')
+    P['illager'] = lambda: FP('illager', 0.15, 1.6) + F('illager') + FP('villager', 0.15, 1.6)
+    P['horse'] = lambda: FP('horse', 0.2, 3.5) + F('horse')
+    P['donkey'] = lambda: files('donkeyoga') + FP('donkey', 0.3, 4.5) + F('donkey')
+    P['camel'] = lambda: FP('camel', 0.2, 3.5) + F('camel') + files('yak') + [('yak:r', 'yak', resample(S('yak'), 0.8))]
+    P['cat'] = lambda: files('catk1') + files('catk2') + files('catk3') + files('catk4') + files('kitten') + FP('cat', 0.15, 1.8)
+    P['cat_hiss'] = lambda: [c for sid in FS.get('cat', []) if 'hiss' in SOURCES[sid][2].lower() for c in files(sid)] + [('synth:hiss', 'synth', synth_hiss(0.9))]
+    P['cat_purr'] = lambda: windows('catk5', '*', 1.6, 4) + [c for sid in FS.get('cat', []) if 'purr' in SOURCES[sid][2].lower() for c in windows(sid, '*', 1.6, 2)]
+    P['dog_bark'] = lambda: files('dogs', 'dog bark*') + files('dogs', 'dog*.wav') + FP('dog', 0.08, 1.0)
+    P['dog_pant'] = lambda: [c for sid in FS.get('dog', []) if 'pant' in SOURCES[sid][2].lower() for c in windows(sid, '*', 1.4, 2)] + files('dogsnarl', 'dog-grumble*')
+    P['dog_whine'] = lambda: files('dogs', 'sad dog*') + [c for sid in FS.get('dog', []) if 'whin' in SOURCES[sid][2].lower() for c in pieces(sid, '*', 0.2, 2.0)]
+    P['dog_growl'] = lambda: files('doggrowl') + files('dogsnarl') + [c for sid in FS.get('dog', []) if 'growl' in SOURCES[sid][2].lower() for c in files(sid)]
+    P['dog_hurt'] = lambda: [c for sid in FS.get('dog', []) if 'yelp' in SOURCES[sid][2].lower() for c in pieces(sid, '*', 0.08, 1.0)] + files('doggrunt') + files('dogs', 'sad dog*')
+    P['fox'] = lambda: FP('fox', 0.1, 1.5) + F('fox')
+    P['rabbit'] = lambda: FP('rabbit', 0.05, 0.8) + FP('squeak', 0.05, 0.8)
+    P['bat'] = lambda: files('bats', '*.ogg') + pieces('bats', '*.ogg', 0.05, 0.8) + FP('bat', 0.05, 0.8)
+    P['parrot'] = lambda: FP('parrot', 0.1, 1.5) + F('parrot')
+    P['bee'] = lambda: [c for sid in FS.get('bee', []) for c in windows(sid, '*', 0.5, 3)]
+    P['bee_loop'] = lambda: [c for sid in FS.get('bee', []) for c in windows(sid, '*', 2.5, 2)]
+    P['frog'] = lambda: files('croak1') + files('croak2') + files('croak3') + files('croak4') + files('ribbit1') + files('ribbit2') + files('ribbit3') + FP('frog', 0.1, 1.5)
+    P['dolphin'] = lambda: FP('dolphin', 0.1, 2.0) + F('dolphin') + files('animalnoise') + [('synth:dolphin%d' % i, 'synth', synth_whistle(0.4 + 0.15 * i, f0, f1, c)) for i, (f0, f1, c) in enumerate(((2500, 6000, 0), (5000, 2200, 6), (3000, 7000, 3), (4000, 3000, 10), (2000, 5000, 0)))]
+    P['fish_flop'] = lambda: FP('fishflop', 0.05, 0.6) + files('rdwater', 'splash_*', lambda x: hp(x, 400))
+    P['squid'] = lambda: FP('squid', 0.08, 1.2) + files('rdwater', 'slime_*')
+    P['bear'] = lambda: FP('bear', 0.2, 3.0) + F('bear') + files('rdcreature', 'grunt_*') + files('rdcreature', 'roar_*')
+    P['snort'] = lambda: FP('snort', 0.1, 2.0) + F('snort') + files('rdcreature', 'nose*')
+    P['squeak'] = lambda: FP('squeak', 0.05, 1.0) + FP('rabbit', 0.05, 1.0) + files('rdcreature', 'cute_*')
+    P['boar'] = lambda: FP('boar', 0.1, 2.0) + F('boar') + P['pig']() + [('pig:low%d' % i, 'pig1', resample(S('pig%d' % (i + 1)), 0.75)) for i in range(4)]
+    P['wail'] = lambda: FP('wail', 0.3, 3.5) + F('wail') + files('rdcreature', 'scream_*')
+    P['breath'] = lambda: FP('breath', 0.2, 3.0) + F('breath') + files('rdcreature', 'breath*') + files('rdcreature', 'snore*')
+    P['screech'] = lambda: FP('screech', 0.15, 2.5) + F('screech') + files('rdcreature', 'scream_*')
+    P['shriek'] = lambda: FP('shriek', 0.1, 2.0) + F('shriek') + files('rdcreature', 'cute_*', lambda x: resample(x, 1.3))
+    P['roar'] = lambda: FP('roar', 0.3, 4.0) + F('roar') + files('rdcreature', 'roar_*') + files('rdcreature', 'monster_*') + files('rdcreature', 'troll_*')
+    P['insect'] = lambda: FP('insect', 0.05, 1.5) + files('rdcreature', 'bug_*')
+    P['chirp'] = lambda: FP('chirp', 0.05, 1.5) + files('rdcreature', 'cute_*') + files('rdcreature', 'alien_*')
+    P['guardian'] = lambda: files('rdcreature', 'alien_*') + FP('chirp', 0.1, 1.5) + files('rdcreature', 'weird_*')
+    P['trill'] = lambda: FP('trill', 0.1, 2.5) + F('trill') + files('rdcreature', 'burble_*')
+    P['llama'] = lambda: FP('llama', 0.2, 2.5) + F('llama') + P['sheep']()
+    P['goat'] = lambda: FP('goat', 0.2, 2.5) + F('goat') + P['sheep']()
+    P['creak'] = lambda: KR('creak*') + KR('doorOpen*')
+    P['metal_hurt'] = lambda: K('impactMetal_heavy_*') + K('impactPlate_heavy_*') + K('impactBell_heavy_*')
+    P['metal_step'] = lambda: K('impactMetal_heavy_*', ) + K('impactPlate_heavy_*') + K('impactMetal_medium_*')
+    P['allay'] = lambda: [('synth:la%d' % i, 'synth', synth_la(f, d, i % 2 == 0)) for i, (f, d) in enumerate(((880, 0.5), (988, 0.6), (784, 0.7), (1047, 0.45), (932, 0.55)))]
+    P['ender'] = lambda: [('mix:ender%d' % i, 'grunts', mixdown(*[(resample(c[2][::-1].copy(), r), 0, 0.5) for r in (0.55, 0.6, 0.66)])) for i, c in enumerate(pieces('grunts', '*', 0.2, 0.8, -35, 0.15)[:6])]
+    P['teleport'] = lambda: [('synth:tp%d' % i, 'synth', synth_portal(0.9 + 0.3 * i, i % 2 == 0, 900 + 300 * i)) for i in range(3)] + files('rd100b', '*air_*')
+    P['bubbles'] = lambda: FP('bubbles', 0.2, 3.0) + files('rdwater', 'bubble_*') + windows('rdwater', 'loop_bubbles*', 1.5, 3)
+    P['drip'] = lambda: FP('drip', 0.03, 0.6) + pieces('basement', '*', 0.03, 0.6, -30, 0.05) + files('rdwater', 'bubble_*', lambda x: x[:int(0.25 * SR)])
+    P['wind_loop'] = lambda: [c for sid in FS.get('wind', []) for c in windows(sid, '*', 6.0, 1)] + [('synth:wind', 'synth', synth_wind(6.0))]
+    P['wind'] = lambda: FP('wind', 0.3, 3.0) + [c for sid in FS.get('wind', []) for c in windows(sid, '*', 1.5, 2)] + [('synth:gust%d' % i, 'synth', synth_wind(1.2 + 0.4 * i, 700 + 200 * i, 0.4)) for i in range(3)]
+    P['brush'] = lambda: FP('brush', 0.1, 1.5) + [c for sid in FS.get('brush', []) for c in windows(sid, '*', 0.6, 3)] + K('footstep_snow_*')
+    P['rope'] = lambda: FP('rope', 0.05, 1.0) + KR('cloth*') + KR('beltHandle*')
+    P['slide'] = lambda: FP('slide', 0.05, 1.2) + KR('metalLatch*') + KR('drawKnife*') + KU('scratch_*')
+    P['pouch'] = lambda: FP('pouch', 0.05, 1.0) + KR('cloth*') + KR('dropLeather*') + KR('handleSmallLeather*')
+    P['crank'] = lambda: FP('crank', 0.05, 1.5) + KR('creak*') + KR('drawKnife*') + KR('metalClick*')
+    P['sponge'] = lambda: FP('sponge', 0.1, 1.5) + P['drink']()
+    P['beacon_on'] = lambda: [('synth:beacon_on%d' % i, 'synth', synth_chord((220 * k, 330 * k, 440 * k), 2.6, 0.25, 0.05)) for i, k in enumerate((1, 1.12, 0.9))]
+    P['beacon_off'] = lambda: [('synth:beacon_off%d' % i, 'synth', synth_chord((440 * k, 330 * k, 220 * k), 2.2, -0.3, 0.03, decay=0.8)) for i, k in enumerate((1, 1.12, 0.9))]
+    P['beacon_hum'] = lambda: [('synth:beacon_hum%d' % i, 'synth', synth_chord((110 * k, 220 * k, 330 * k), 4.0, 0, 0.02, beat=1.5)) for i, k in enumerate((1, 1.06, 0.94))]
+    P['conduit_on'] = lambda: [('synth:conduit_on%d' % i, 'synth', mixdown((synth_portal(3.0, True, 600 + 200 * i), 0, 0.8), (synth_chord((165, 247, 330), 3.0, 0.2, 0.08), 0.2, 0.5))) for i in range(3)]
+    P['conduit_off'] = lambda: [('synth:conduit_off%d' % i, 'synth', mixdown((synth_portal(2.5, False, 500 + 200 * i), 0, 0.8), (synth_chord((330, 247, 165), 2.5, -0.3, 0.04, decay=1), 0, 0.5))) for i in range(3)]
+    P['conduit_pulse'] = lambda: [('synth:pulse%d' % i, 'synth', synth_pulse(0.5 + 0.1 * i, 50 + 8 * i)) for i in range(4)] + [('synth:pulses%d' % i, 'synth', mixdown((synth_pulse(0.5, 55), 0, 1), (synth_pulse(0.5, 52), 0.42 + 0.05 * i, 0.8))) for i in range(3)]
+    P['zap'] = lambda: [('synth:zap%d' % i, 'synth', synth_zap(0.4 + 0.15 * i)) for i in range(4)]
+    P['riptide'] = lambda: [('mix:riptide%d' % i, 'rdwater', mixdown((c[2], 0, 1.0), (synth_wind(1.4, 900, 0.5), 0.05, 0.6))) for i, c in enumerate(files('rdwater', 'splash_*')[:5])]
+    P['horn'] = lambda: F('horn')
     return P
 
 
@@ -669,9 +974,9 @@ def alias_blocks():
 # the mobs Leoncraft has recordings for, and the ones that borrow them (name, pitch)
 MOB_ALIASES = {
     'husk': ('zombie', 0.85), 'drowned': ('zombie', 0.95), 'zombie_villager': ('zombie', 1.1), 'zombified_piglin': ('zombie', 0.8),
-    'zoglin': ('zombie', 0.7), 'giant': ('zombie', 0.6),
+    'giant': ('zombie', 0.6), 'parched': ('skeleton', 1.05),
     'stray': ('skeleton', 0.9), 'wither_skeleton': ('skeleton', 0.8), 'bogged': ('skeleton', 1.05), 'skeleton_horse': ('skeleton', 1.2),
-    'cave_spider': ('spider', 1.2), 'mooshroom': ('cow', 1.0), 'goat': ('sheep', 0.9), 'llama': ('sheep', 0.8),
+    'cave_spider': ('spider', 1.2), 'mooshroom': ('cow', 1.0),
 }
 MOB_KINDS = ('ambient', 'hurt', 'death', 'step')
 
@@ -690,6 +995,18 @@ def alias_mobs():
             ref(ev, 'entity.generic.hurt', 1.0)
         elif p[2] == 'death' and 'entity.generic.hurt' in EVENTS:
             ref(ev, 'entity.generic.hurt', 0.85)
+
+
+# the banks the rest of the mobs' voices go in, by where they are met (sound.js fetches one as its first mob comes near)
+MOB_BANKS = {
+    'village': ('villager', 'wandering_trader', 'witch', 'pillager', 'vindicator', 'evoker', 'illusioner', 'iron_golem', 'cat', 'ocelot', 'copper_golem', 'snow_golem', 'allay'),
+    'animals': ('horse', 'zombie_horse', 'donkey', 'mule', 'camel', 'camel_husk', 'wolf', 'fox', 'rabbit', 'parrot', 'bee', 'frog', 'tadpole', 'polar_bear',
+                'panda', 'sniffer', 'armadillo', 'llama', 'goat', 'turtle'),
+    'water': ('dolphin', 'cod', 'salmon', 'tropical_fish', 'puffer_fish', 'squid', 'glow_squid', 'guardian', 'elder_guardian', 'axolotl', 'nautilus', 'zombie_nautilus'),
+    'cave': ('bat', 'silverfish', 'endermite', 'enderman', 'creaking', 'warden'),
+    'nether': ('ghast', 'happy_ghast', 'blaze', 'hoglin', 'zoglin', 'piglin', 'piglin_brute', 'strider', 'wither'),
+    'end': ('shulker', 'phantom', 'vex', 'ravager', 'ender_dragon', 'breeze'),
+}
 
 
 # ------------------------------------------------------------------ the music
@@ -747,6 +1064,49 @@ def build_music(q):
     return out
 
 
+# the music discs: each its own song (disc, source, file), none of them the game's background music
+DISCS = [('13', 'd_13', '*'), ('11', 'd_11', '*'), ('5', 'd_5', '*'), ('cat', 'd_cat', '*'), ('blocks', 'd_blocks', '*'),
+         ('chirp', 'd_chirp', '*'), ('far', 'd_far', '*'), ('mall', 'd_mall', '*'), ('mellohi', 'd_mellohi', '*'), ('stal', 'd_stal', '*'),
+         ('strad', 'd_strad', '*'), ('ward', 'd_ward', '*'), ('wait', 'd_wait', '*'), ('pigstep', 'd_pigstep', '*'),
+         ('otherside', 'd_otherside', '*'), ('relic', 'd_relic', '*'), ('creator', 'd_creator', '*'),
+         ('creator_music_box', 'd_music_box', 'musicbox2*'), ('precipice', 'd_precipice', '*'), ('tears', 'd_tears', '*'),
+         ('lava_chicken', 'd_lava_chicken', '*')]
+
+
+def build_discs(q):
+    """One mono file a disc (a jukebox is one point in the world, as the game's records are): a short loop
+    played round until it lasts a minute and a half, anything longer than two and a half minutes faded out
+    there, at the game's music loudness."""
+    sr = 32000
+    os.makedirs(os.path.join(OUT, 'discs'), exist_ok=True)
+    out = {}
+    for disc, sid, pat in DISCS:
+        fs = [n for n in sorted(listing(sid)) if fnmatch.fnmatch(n.lower(), pat.lower())]
+        if not fs:
+            print('  (no file for disc %s)' % disc)
+            continue
+        x = decode(listing(sid)[fs[0]], sr)
+        a, b = active(x)
+        x = x[a:]
+        if len(x) < 90 * sr:
+            x = np.tile(x, int(np.ceil(90 * sr / len(x))))[:max(len(x), 90 * sr)]
+        x = x[:150 * sr]
+        x = x * min(4.0, MUSIC_RMS / (float(np.sqrt(np.mean(x ** 2))) + 1e-9))
+        n = len(x)
+        fade = np.ones(n, np.float32)
+        k = min(n // 4, 4 * sr)
+        fade[n - k:] = np.linspace(1, 0, k)
+        fade[:int(0.03 * sr)] = np.linspace(0, 1, int(0.03 * sr))
+        x = np.clip(x * fade, -0.98, 0.98).astype(np.float32)
+        dst = os.path.join(OUT, 'discs', disc + '.ogg')
+        write_ogg(x, dst, q, sr=sr)
+        USED.add(sid)
+        _, _, title, author, lic, page = SOURCES[sid][:6]
+        out['discs/' + disc] = {'file': 'discs/' + disc + '.ogg', 'title': title, 'by': author, 'licence': lic, 'where': ['disc'], 'seconds': round(n / sr, 1)}
+        print('disc  %-20s %6.1f s %7.1f KB' % (disc, n / sr, os.path.getsize(dst) / 1024))
+    return out
+
+
 def music_events(music):
     """music.menu, music.game... as the game names them, each a list of our tracks"""
     by = {}
@@ -766,10 +1126,11 @@ def music_events(music):
     for ev in TARGETS['music']:
         if ev.startswith('music.overworld.'):
             EVENTS[ev] = {'sounds': [{'name': 'music.game', 'type': 'event'}]}
-    # music discs play our tracks (one each, the same every time)
-    names = sorted(music)
+    # music discs: each its own song (build_discs), or, for one without, one of the tracks
+    names = sorted(n for n in music if not n.startswith('discs/'))
     for i, ev in enumerate(sorted(e for e in TARGETS['music'] if e.startswith('music_disc.'))):
-        EVENTS[ev] = {'sounds': st([names[i % len(names)]]), 'subtitle': 'subtitles.jukebox_song'}
+        d = 'discs/' + ev.split('.', 1)[1]
+        EVENTS[ev] = {'sounds': st([d if d in music else names[i % len(names)]]), 'subtitle': 'subtitles.jukebox_song'}
 
 
 # ------------------------------------------------------------------ credits
@@ -808,6 +1169,7 @@ def main():
     ap.add_argument('--report', action='store_true')
     ap.add_argument('--q', default='3')
     ap.add_argument('--music-q', default='2')
+    ap.add_argument('--disc-q', default='0')
     ap.add_argument('--no-music', action='store_true')
     a = ap.parse_args()
     SRC = os.path.abspath(a.src)
@@ -818,7 +1180,9 @@ def main():
     TARGETS['subs'] = raw.get('subtitles', {})
     TARGETS['music'] = raw.get('music_events', [])
     MUSIC_RMS = raw.get('music_rms', 0.06)
-    for name, load in (('ui', 'now'), ('blocks', 'now'), ('player', 'world'), ('world', 'world'), ('ambient', 'world'), ('mobs', 'world'), ('notes', 'world')):
+    # (the mobs past the first few come in banks by where they live, each fetched when one of them first comes near: 'lazy')
+    for name, load in (('ui', 'now'), ('blocks', 'now'), ('player', 'world'), ('world', 'world'), ('ambient', 'world'), ('mobs', 'world'), ('notes', 'world'),
+                       ('items', 'world'), ('m_village', 'lazy'), ('m_animals', 'lazy'), ('m_water', 'lazy'), ('m_cave', 'lazy'), ('m_nether', 'lazy'), ('m_end', 'lazy')):
         BANKS[name] = Bank(name, load)
     P = pools()
     rep = a.report
@@ -1009,6 +1373,125 @@ def main():
     B('mobs', 'entity.slime.jump', 'slime')
     B('mobs', 'entity.slime.hurt', 'slime')
     B('mobs', 'entity.slime.death', 'slime')
+    # the rest of the mobs: each its own voice where the game gives it one
+    def mob(m, pools, maxn=3):
+        bank = 'm_' + next((f for f, ms in MOB_BANKS.items() if m in ms), 'animals')
+        for kind, pool in pools.items():
+            ev = 'entity.%s.%s' % (m, kind)
+            if ev in EVENTS or ev not in TARGETS:
+                continue
+            if isinstance(pool, tuple):            # ('like', other event): another's, pitched and levelled to this one
+                like(ev, pool[1])
+            else:
+                B(bank, ev, pool, maxn=maxn)
+    voice3 = lambda amb, hurt=None, death=None: {'ambient': amb, 'hurt': hurt or amb, 'death': death or hurt or amb}
+    mob('villager', dict(voice3('villager'), trade='villager', yes='villager', no='villager'))
+    mob('wandering_trader', {k: ('like', 'entity.villager.' + k) for k in ('ambient', 'hurt', 'death', 'trade', 'yes', 'no')})
+    mob('witch', voice3('witch'))
+    for m in ('pillager', 'vindicator', 'evoker', 'illusioner'):
+        mob(m, voice3('illager'))
+    mob('horse', dict(voice3('horse'), angry='horse', breathe='snort'))
+    mob('zombie_horse', {k: ('like', 'entity.horse.' + k) for k in ('ambient', 'hurt', 'death', 'angry')})
+    mob('donkey', dict(voice3('donkey'), angry='donkey'))
+    mob('mule', {k: ('like', 'entity.donkey.' + k) for k in ('ambient', 'hurt', 'death', 'angry')})
+    mob('camel', voice3('camel'))
+    mob('camel_husk', {k: ('like', 'entity.camel.' + k) for k in ('ambient', 'hurt', 'death')})
+    mob('cat', dict(voice3('cat'), stray_ambient='cat', purreow='cat', hiss='cat_hiss', purr='cat_purr', beg_for_food='cat', eat='eat'))
+    mob('ocelot', {k: ('like', 'entity.cat.' + k) for k in ('ambient', 'hurt', 'death')})
+    mob('wolf', {'ambient': 'dog_bark', 'pant': 'dog_pant', 'whine': 'dog_whine', 'growl': 'dog_growl', 'hurt': 'dog_hurt', 'death': 'dog_whine'})
+    mob('fox', dict(voice3('fox'), sleep='breath', screech='fox', aggro='fox'))
+    mob('rabbit', voice3('rabbit'))
+    mob('bat', voice3('bat'))
+    mob('parrot', voice3('parrot'))
+    mob('bee', {'hurt': 'bee', 'death': 'bee'})
+    mob('frog', voice3('frog'))
+    mob('tadpole', {'hurt': 'fish_flop', 'death': 'fish_flop', 'flop': 'fish_flop'})
+    mob('dolphin', dict(voice3('dolphin'), ambient_water='dolphin'))
+    for m in ('cod', 'salmon', 'tropical_fish', 'puffer_fish'):
+        mob(m, {'ambient': 'squid', 'flop': 'fish_flop', 'hurt': 'fish_flop', 'death': 'fish_flop'})
+    mob('squid', voice3('squid'))
+    mob('glow_squid', voice3('squid'))
+    mob('polar_bear', dict(voice3('bear'), ambient_baby='bear', warning='bear'))
+    mob('panda', dict(voice3('snort', 'bear'), worried_ambient='snort', aggressive_ambient='bear'))
+    mob('sniffer', {'idle': 'snort', 'hurt': 'snort', 'death': 'bear'})
+    mob('armadillo', voice3('squeak'))
+    mob('hoglin', dict(voice3('boar'), angry='boar'))
+    mob('zoglin', {k: ('like', 'entity.hoglin.' + k) for k in ('ambient', 'hurt', 'death', 'angry')})
+    mob('piglin', dict(voice3('boar'), angry='boar', admiring_item='boar', jealous='boar', celebrate='boar', retreat='boar'))
+    mob('piglin_brute', {k: ('like', 'entity.piglin.' + k) for k in ('ambient', 'hurt', 'death', 'angry')})
+    mob('ghast', dict(voice3('wail'), scream='wail', warn='wail'))
+    mob('happy_ghast', {k: ('like', 'entity.ghast.' + k) for k in ('ambient', 'hurt', 'death')})
+    mob('blaze', voice3('breath'))
+    mob('shulker', dict(voice3('creak', 'squeak'), hurt_closed='metal_hurt'))
+    mob('phantom', voice3('screech'))
+    mob('vex', voice3('shriek'))
+    mob('ravager', voice3('roar'))
+    mob('warden', dict(voice3('roar'), angry='roar'))
+    mob('wither', voice3('roar'))
+    mob('ender_dragon', dict(voice3('roar'), growl='roar'))
+    mob('silverfish', voice3('insect'))
+    mob('endermite', voice3('insect'))
+    mob('guardian', dict(voice3('guardian'), ambient_land='guardian', hurt_land='guardian', death_land='guardian'))
+    mob('elder_guardian', {k: ('like', 'entity.guardian.' + k) for k in ('ambient', 'ambient_land', 'hurt', 'hurt_land', 'death', 'death_land')})
+    mob('turtle', {'ambient_land': 'chirp', 'hurt': 'chirp', 'death': 'chirp', 'hurt_baby': 'chirp', 'death_baby': 'chirp'})
+    mob('axolotl', {'idle_air': 'chirp', 'idle_water': 'chirp', 'hurt': 'chirp', 'death': 'chirp'})
+    mob('strider', voice3('trill'))
+    mob('breeze', {'idle_ground': 'wind', 'idle_air': 'wind', 'hurt': 'wind', 'death': 'wind'})
+    mob('creaking', {'ambient': 'creak', 'death': 'creak'})
+    mob('iron_golem', {'hurt': 'metal_hurt', 'death': 'metal_hurt', 'step': 'metal_step'})
+    mob('copper_golem', {'hurt': 'metal_hurt', 'death': 'metal_hurt', 'step': 'metal_step'})
+    mob('snow_golem', {'ambient': 'snow_dig', 'hurt': 'snow_dig', 'death': 'snow_dig'})
+    mob('allay', {'ambient_with_item': 'allay', 'ambient_without_item': 'allay', 'hurt': 'allay', 'death': 'allay'})
+    mob('nautilus', voice3('bubbles'))
+    mob('zombie_nautilus', {k: ('like', 'entity.nautilus.' + k) for k in ('ambient', 'hurt', 'death')})
+    mob('enderman', dict(voice3('ender'), scream='ender', stare='ender', teleport='teleport'))
+    mob('llama', voice3('llama'))
+    mob('goat', voice3('goat'))
+    for e, to in (('entity.mooshroom.shear', 'entity.sheep.shear'), ('entity.snow_golem.shear', 'entity.sheep.shear'), ('entity.bogged.shear', 'entity.sheep.shear'),
+                  ('entity.goat.milk', 'entity.cow.milk'), ('entity.mooshroom.milk', 'entity.cow.milk'), ('entity.shulker.teleport', 'entity.enderman.teleport'),
+                  ('entity.endermite.step', 'entity.spider.step'), ('entity.silverfish.step', 'entity.spider.step')):
+        if to in EVENTS and e not in EVENTS:
+            like(e, to)
+    # bees: the buzz, held while one flies near (a loop)
+    if 'entity.bee.loop' in TARGETS and FS.get('bee'):
+        c = P['bee_loop']()[0][2]
+        put('m_animals', 'entity.bee.loop', [loop_join(c * (TARGETS['entity.bee.loop']['rms'] / max(1e-6, float(np.sqrt(np.mean(c ** 2))))))])
+        ref('entity.bee.loop_aggressive', 'entity.bee.loop', 1.15, 1.2)
+    # items and blocks the game plays and nothing above gave a sound
+    for k in range(8):
+        ev = 'item.goat_horn.sound.%d' % k
+        if ev in TARGETS:
+            put('items', ev, choose(ev, [('synth:horn%d' % k, 'synth', synth_horn(k, max(2.5, TARGETS[ev]['dur'])))], n=1, cut=False))
+    for ev, pool in (('item.spyglass.use', 'slide'), ('item.spyglass.stop_using', 'slide'),
+                     ('item.crossbow.loading_start', 'crank'), ('item.crossbow.loading_middle', 'crank'), ('item.crossbow.quick_charge_1', 'crank'),
+                     ('item.crossbow.quick_charge_2', 'crank'), ('item.crossbow.quick_charge_3', 'crank'), ('item.crossbow.hit', 'arrow_hit'),
+                     ('item.trident.riptide_1', 'riptide'), ('item.trident.riptide_2', 'riptide'), ('item.trident.riptide_3', 'riptide'),
+                     ('item.trident.return', 'teleport'), ('item.trident.hit', 'arrow_hit'), ('item.trident.hit_ground', 'arrow_hit'),
+                     ('item.brush.brushing.sand', 'brush'), ('item.brush.brushing.gravel', 'brush'), ('item.brush.brushing.generic', 'brush'),
+                     ('item.brush.brushing.sand.complete', 'sand_dig'), ('item.brush.brushing.gravel.complete', 'gravel_dig'),
+                     ('item.lead.tied', 'rope'), ('item.lead.untied', 'rope'), ('item.lead.break', 'rope'),
+                     ('item.bundle.insert', 'pouch'), ('item.bundle.remove_one', 'pouch'), ('item.bundle.drop_contents', 'pouch'), ('item.bundle.insert_fail', 'pouch'),
+                     ('item.dye.use', 'squid'), ('item.ink_sac.use', 'squid'), ('item.glow_ink_sac.use', 'squid'),
+                     ('ui.hud.bubble_pop', 'pop'), ('ui.loom.select_pattern', 'click'), ('ui.stonecutter.select_recipe', 'click'),
+                     ('block.composter.empty', 'gravel_dig'), ('block.composter.ready', 'plant'), ('block.cake.add_candle', 'plant'),
+                     ('block.candle.ambient', 'fire'), ('block.candle.extinguish', 'fizz'), ('block.pumpkin.carve', 'strip'),
+                     ('block.sponge.absorb', 'sponge'), ('block.wet_sponge.dries', 'fizz'), ('block.end_gateway.spawn', 'explode'),
+                     ('block.respawn_anchor.ambient', 'portal'), ('block.respawn_anchor.set_spawn', 'portal_trigger'), ('block.respawn_anchor.deplete', 'portal_trigger'),
+                     ('block.bubble_column.upwards_ambient', 'bubbles'), ('block.bubble_column.whirlpool_ambient', 'bubbles'),
+                     ('block.bubble_column.upwards_inside', 'bubbles'), ('block.bubble_column.whirlpool_inside', 'bubbles'), ('block.bubble_column.bubble_pop', 'pop'),
+                     ('block.pointed_dripstone.drip_water', 'drip'), ('block.pointed_dripstone.drip_lava', 'drip'),
+                     ('block.pointed_dripstone.drip_water_into_cauldron', 'drip'), ('block.pointed_dripstone.drip_lava_into_cauldron', 'drip'),
+                     ('block.beacon.activate', 'beacon_on'), ('block.beacon.deactivate', 'beacon_off'), ('block.beacon.ambient', 'beacon_hum'), ('block.beacon.power_select', 'levelup'),
+                     ('block.conduit.activate', 'conduit_on'), ('block.conduit.deactivate', 'conduit_off'), ('block.conduit.ambient', 'conduit_pulse'),
+                     ('block.conduit.ambient.short', 'conduit_pulse'), ('block.conduit.attack.target', 'zap')):
+        if ev not in EVENTS:
+            B('items' if not ev.startswith('ui.') else 'ui', ev, pool, maxn=2, cut=pool not in ('beacon_on', 'beacon_off', 'beacon_hum', 'conduit_on', 'conduit_off'))
+    if 'item.trident.thunder' not in EVENTS and 'entity.lightning_bolt.thunder' in EVENTS:
+        like('item.trident.thunder', 'entity.lightning_bolt.thunder')
+    # gliding: the wind as it rushes past, a held loop (game.js sets how loud by speed)
+    if 'item.elytra.flying' in TARGETS:
+        c = P['wind_loop']()[0][2]
+        put('items', 'item.elytra.flying', [loop_join(c * (TARGETS['item.elytra.flying']['rms'] / max(1e-6, float(np.sqrt(np.mean(c ** 2))))))])
     # the note block's sixteen instruments (our own synthesis), each played 0.5-2x from F#4
     for inst in ('harp', 'bass', 'basedrum', 'snare', 'hat', 'bell', 'flute', 'chime', 'guitar', 'xylophone', 'iron_xylophone', 'cow_bell', 'didgeridoo', 'bit', 'banjo', 'pling'):
         ev = 'block.note_block.' + inst
@@ -1062,6 +1545,7 @@ def main():
             music = {}
     else:
         music = build_music(a.music_q)
+        music.update(build_discs(a.disc_q))
     if music:
         music_events(music)
     index = {'v': 1, 'banks': {}, 'music': music, 'events': EVENTS}
