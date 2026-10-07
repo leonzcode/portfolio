@@ -477,6 +477,9 @@ export function stackTooltip(st, advanced, creative) {
     for (const s of inside.slice(0, 5)) lines.push('§f' + (s.name || displayName(s.id)) + ' x' + s.count);
     if (inside.length > 5) lines.push('§o§7and ' + (inside.length - 5) + ' more...');
   }
+  // a nest or hive moved with Silk Touch: its bees and honey
+  if (Array.isArray(st.bees) && st.bees.length) lines.push('§7Bees: ' + st.bees.length + ' / 3');
+  if (st.honey !== undefined) lines.push('§7Honey: ' + st.honey + ' / 5');
   // a filled map: locked, and with advanced tooltips its number and zoom
   if (st.map !== undefined) lines.push(...mapLines(st, advanced));
   // a banner's layers, the first six
