@@ -70,6 +70,7 @@ import { advInit, advWorld, advParts, advTick, advState, advLeave, openAdvanceme
 import { loadEntityArt } from './entities/packart.js?v=25';
 import { ITEM_TEX } from './itemdata.js?v=25';
 import { debugLines, F3_HELP } from './ui/debug.js?v=25';
+import { Spin } from './render/screenfx.js?v=25';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -1327,6 +1328,8 @@ async function boot() {
       if (g.details) g.details.tick();
       if (g.entities) g.entities.tick();
       g.realms.tick();
+      // the portal's and Nausea's wobble of the view (render/screenfx.js)
+      (g.spin || (g.spin = new Spin())).tick(g.realms.portalTime, survival.effects.nausea ? survival.effects.nausea.ticks : null);
       if (g.mode === 'survival' || g.mode === 'adventure') {
         player.canSprint = survival.canSprint();
         player.effects = survival.effects;
@@ -1401,7 +1404,7 @@ async function boot() {
         // hurt: the camera tilts and the model flashes red (combat/combat.js)
         tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha, video.tilt()) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
         biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
-        dim: D, bossFog: g.realms.bossFog,
+        dim: D, bossFog: g.realms.bossFog, spin: g.spin ? g.spin.at(alpha) : null,
         // the screen tips when hurt and rolls a little in death (survival.js)
         ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha, video.tilt())) : NO_TILT),
       }, Math.min(0.25, drawDt));

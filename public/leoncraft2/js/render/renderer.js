@@ -25,6 +25,7 @@ import { glints, pieceLook } from './armor.js?v=25';
 import { dimLook } from '../dim/look.js?v=25';
 import { blockGeometry, intAttribute } from './blockmesh.js?v=25';
 import { applyLook, looked } from './looks.js?v=25';
+import { screenFx } from './screenfx.js?v=25';
 const THREE = window.THREE;
 // a column's distance from (ex, ez), squared, in whole blocks; and nearest first
 const distTo = (col, ex, ez) => { const dx = col.cx * 16 + 8 - ex, dz = col.cz * 16 + 8 - ez; return (dx * dx + dz * dz) | 0; };
@@ -732,6 +733,8 @@ export class Renderer {
     U.uCloudFade.value.set(Math.min(cloudReach * 0.5, U.uRender.value), cloudReach);
     cam.far = Math.max(this.opts.renderDist * 32 + 128, Math.hypot(cloudReach, 192 - state.eye.y) + 64);
     cam.updateProjectionMatrix();
+    // the portal's and Nausea's wobble, and the water over your eyes (render/screenfx.js)
+    screenFx(this, cam, state);
     cam.updateMatrixWorld();
     U.uNear.value = cam.near; U.uFar.value = cam.far;
     // block pieces and the like, placed for this frame (render/particles.js)
