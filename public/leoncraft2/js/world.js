@@ -242,6 +242,7 @@ export class World {
     this.protos = new Map();           // chunk number -> its terrain { cx, cz, blocks, meta, grid }
     this.writesOf = new Map();         // chunk number -> its features' writes { cx, cz, w: [[0..8, Int32Array], ...] }
     this.stageIn = new Set();          // chunk numbers * 4 + stage (1 terrain, 2 features) asked of a worker
+    this.thrown = new Map();           // the same, -> times a piece came in too far away to keep since you last crossed a chunk (onStage)
     const name = this.dim + '|' + this.generator + '|' + this.seed;
     // where this world's chunks are kept (opts.cache false: never)
     this.cacheKey = opts.cache === false ? null : CACHE + '|' + name;
@@ -426,10 +427,23 @@ export class World {
   /* The chunks to make, (dx, dz) from yours: every one next to a column within
      render distance, as a column is meshed only once all eight round it are
      here. (A circle one chunk wider missed sixteen of them, so twelve columns
-     at the very edge, the one straight ahead among them, were never drawn.) */
-  inReach(dx, dz) {
-    const a = Math.max(Math.abs(dx) - 1, 0), b = Math.max(Math.abs(dz) - 1, 0), rd = this.renderDist;
+     at the very edge, the one straight ahead among them, were never drawn.)
+     With k = 2 it is every chunk whose features one of those needs, and with
+     k = 3 every chunk whose terrain they need (a chunk's features are placed
+     on the terrain of the nine round it). */
+  inReach(dx, dz, k = 1) {
+    const a = Math.max(Math.abs(dx) - k, 0), b = Math.max(Math.abs(dz) - k, 0), rd = this.renderDist;
     return a * a + b * b <= rd * rd;
+  }
+  /* A piece (terrain or features) too far from you to keep: past the circle
+     kept for when you walk on, and not needed by any chunk still to make.
+     (The circle alone, render distance + 4, left out the terrain the corner
+     chunks need at 3, 5, 8, 9, 10 and most distances past 12: it came in, was
+     thrown away and was asked for again, for ever, with every worker busy and
+     the columns there never drawn.) */
+  farPiece(cx, cz, terrain) {
+    const dx = cx - this.pcx, dz = cz - this.pcz, R = this.renderDist + 4;
+    return dx * dx + dz * dz > R * R && !this.inReach(dx, dz, terrain ? 3 : 2);
   }
   wanted(cx, cz) {
     const dx = cx - this.pcx, dz = cz - this.pcz;
@@ -460,6 +474,7 @@ export class World {
     this.pcx = pcx; this.pcz = pcz;
     const R = this.renderDist + 1;
     if (moved) {
+      this.thrown.clear();
       // forget what is too far, and line up what is missing, nearest first
       for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.fresh = false; this.chunks.delete(k); this.byNum.delete(((c.cx & 0x7fff) << 15) | (c.cz & 0x7fff)); this.meshCache.delete(k); this.rowLog.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
       this.genList = [];
@@ -740,9 +755,19 @@ export class World {
     this.job(this.idlest(), 'g' + k, { type: 'gen', cx: x, cz: z, proto, writes }, [proto.blocks.buffer, proto.meta.buffer]);
   }
   onStage(m) {
-    const f = numKey(m.cx, m.cz), dx = m.cx - this.pcx, dz = m.cz - this.pcz, R = this.renderDist + 4;
-    this.stageIn.delete(f * 4 + (m.type === 'terrain' ? 1 : 2));
-    if (dx * dx + dz * dz > R * R) return;          // you have gone on: not worth keeping
+    const f = numKey(m.cx, m.cz);
+    const st = f * 4 + (m.type === 'terrain' ? 1 : 2);
+    this.stageIn.delete(st);
+    if (this.farPiece(m.cx, m.cz, m.type === 'terrain')) {
+      /* you have gone on: not worth keeping. But a piece thrown away twice
+         without you crossing into another chunk is one something here still
+         asks for, so the third time it is kept (else it is made again and
+         again for ever, the workers never idle and a column never drawn). */
+      const n = (this.thrown.get(st) || 0) + 1;
+      this.thrown.set(st, n);
+      if (n < 3) return;
+      if (n === 3) console.warn('a piece thrown away and asked for again; kept', m.type, m.cx - this.pcx, m.cz - this.pcz);
+    }
     if (m.type === 'terrain') this.protos.set(f, { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, grid: m.grid });
     else this.writesOf.set(f, { cx: m.cx, cz: m.cz, w: m.writes });
   }
@@ -782,17 +807,16 @@ export class World {
      behind you. What sits at the edge of what is loaded is kept, for when
      you walk on. */
   prune() {
-    const R = this.renderDist + 4, made = (x, z) => this.chunkXZ(x, z) !== undefined;
-    const far = p => (p.cx - this.pcx) ** 2 + (p.cz - this.pcz) ** 2 > R * R;
+    const made = (x, z) => this.chunkXZ(x, z) !== undefined;
     for (const [f, p] of this.protos) {
       let all = true;
       for (let dz = -2; dz <= 2 && all; dz++) for (let dx = -2; dx <= 2; dx++) if (!made(p.cx + dx, p.cz + dz)) { all = false; break; }
-      if (all || far(p)) this.protos.delete(f);
+      if (all || this.farPiece(p.cx, p.cz, true)) this.protos.delete(f);
     }
     for (const [f, p] of this.writesOf) {
       let all = true;
       for (let dz = -1; dz <= 1 && all; dz++) for (let dx = -1; dx <= 1; dx++) if (!made(p.cx + dx, p.cz + dz)) { all = false; break; }
-      if (all || far(p)) this.writesOf.delete(f);
+      if (all || this.farPiece(p.cx, p.cz, false)) this.writesOf.delete(f);
     }
   }
   sendMesh(cx, cz, urgent, edit) {
