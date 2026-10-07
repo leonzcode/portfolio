@@ -199,7 +199,8 @@ export class MinecraftPack {
   // the game's English names (subtitles, music) from the version that uses this index: its .jar
   async readLang(top, index) {
     const versions = await top.dir('versions');
-    const list = (await versions.list()).filter(e => e.dir).map(e => e.name);
+    // the newest first (26.1.2 before 1.21), so the one that uses this index is found after a few reads
+    const list = (await versions.list()).filter(e => e.dir).map(e => e.name).sort((a, b) => b.localeCompare(a, undefined, { numeric: true })).slice(0, 60);
     let best = null;
     for (const v of list) {
       try {

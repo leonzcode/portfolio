@@ -18,13 +18,14 @@
    notes at each, from the Minecraft Wiki and the game's sounds.json).
 --------------------------------------------------------------------------- */
 import { Sound } from './sound.js?v=22';
-import { SoundPacks } from './packs.js?v=22';
+import { SoundPacks, MinecraftPack } from './packs.js?v=22';
 import { blockSound, doorSound, voice, spread } from './sfx.js?v=22';
 import { COVERS, INSIDE } from './blocksounds.js?v=22';
 import { Music, situation } from './music.js?v=22';
 import { Ambience } from './ambient.js?v=22';
 import { MobSounds } from './mobsounds.js?v=22';
 import { Captions } from './captions.js?v=22';
+import { MusicToast } from './toast.js?v=22';
 import { B, BLOCKS, FLUID } from '../blocks.js?v=22';
 import { ITEMS } from '../items.js?v=22';
 import { BIOMES } from '../biomes.js?v=22';
@@ -43,11 +44,11 @@ export function initSound(opts, gui) {
   SoundPacks.init(new URL('../../sounds/', import.meta.url).href);
   Music.init(opts);
   Captions.init(opts);
-  if (gui) { gui.overlays.push(Captions.overlay()); gui.soundPacks = SoundPacks; }
+  if (gui) { gui.overlays.push(Captions.overlay()); gui.soundPacks = SoundPacks; MusicToast.init(opts, gui); }
   // every button, as the game's widgets do: ui.button.click, volume 0.25 on the UI slider
   setUiSound(() => Sound.near('ui.button.click', 0.25, 1, 'ui'));
   // for tests and the curious
-  window.__lc2sound = { Sound, SoundPacks, Music, Captions, ambience: amb, mobs };
+  window.__lc2sound = { Sound, SoundPacks, Music, Captions, ambience: amb, mobs, MinecraftPack };
 }
 
 /* ---- once a frame: the listener, and the title screen's music ---- */
@@ -393,6 +394,7 @@ export function soundTick(g) {
     st.dim = g.dim;
     amb.reset();
   }
+  if (g.details) jukeboxes(g.details);
   const eye = Sound.listener;
   amb.tick(g, eye);
   if (g.entities) mobs.tick(g.entities, eye);
@@ -446,8 +448,31 @@ function playerSteps(g, st, P, w) {
   }
 }
 
+/* Jukeboxes: a disc going in plays its song from the jukebox (volume 4, so
+   heard 64 blocks away, on the Jukebox/Note Blocks slider); taking it out,
+   or breaking the jukebox, stops it. (details.js keeps the discs.) */
+const records = new Map();     // "x,y,z" -> { voice, disc }
+function jukeboxes(D) {
+  const seen = new Set();
+  for (const e of D.map.values()) {
+    if (e.k !== 'jukebox') continue;
+    const k = e.x + ',' + e.y + ',' + e.z;
+    const id = e.disc ? e.disc.id : 0, r = records.get(k);
+    if (r && r.disc !== id) { Sound.stop(r.voice); records.delete(k); }
+    if (id && !records.has(k) && (e.t | 0) <= 2) {
+      const it = ITEMS[id], ev = it ? it.name.replace(/^music_disc_/, 'music_disc.') : '';
+      const voice = ev && Sound.stream(ev, 'record', { at: [e.x + 0.5, e.y + 0.5, e.z + 0.5], volume: 4 });
+      if (voice) records.set(k, { voice, disc: id });
+    }
+    if (records.has(k)) seen.add(k);
+  }
+  for (const [k, r] of records) if (!seen.has(k)) { Sound.stop(r.voice); records.delete(k); }
+}
+
 /* ---- leaving a world ---- */
 export function soundLeave() {
+  for (const r of records.values()) Sound.stop(r.voice);
+  records.clear();
   amb.reset();
   Sound.stopAll();
   Music.reset();
