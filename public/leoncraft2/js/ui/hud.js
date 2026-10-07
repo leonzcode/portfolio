@@ -58,7 +58,7 @@ export class Hud {
     const o = this.stats;
     if (s && o && s.health === o.health && s.food === o.food && s.air === o.air && s.xp === o.xp && s.level === o.level && s.armor === o.armor && s.absorption === o.absorption
       && s.poison === o.poison && s.wither === o.wither && s.hungerEffect === o.hungerEffect && s.regen === o.regen && (s.saturation > 0) === (o.saturation > 0)
-      && s.fire === o.fire) return;
+      && s.fire === o.fire && s.frozen === o.frozen && s.freeze === o.freeze && s.hardcore === o.hardcore) return;
     if (s && this._lastHealth >= 0 && s.health < this._lastHealth) {
       // hurt: the hearts blink for a second, the lost ones shown white
       this._blinkUntil = performance.now() + 1000;
@@ -103,6 +103,8 @@ export class Hud {
 
     // burning, in first person: the game's flames up the lower part of the view, under the HUD
     if (this.stats && this.stats.fire && this.crosshair) this._fire(g, now);
+    // freezing in powder snow: frost creeps in from the edges of the screen
+    if (this.stats && this.stats.freeze > 0) this._frost(g, this.stats.freeze);
 
     // the axes in place of the crosshair while F3 is up and the camera is known
     if (this.debug && this.camera) this._axes(g, cx, Math.floor(H / 2));
@@ -187,8 +189,10 @@ export class Hud {
     const lowHealth = health + absorb <= 4;
     if (lowHealth) this._wakeAt((tick + 1) * TICK);
     const hearts = Math.ceil(maxHealth / 2), total = hearts + Math.ceil(absorb / 2);
-    // poisoned hearts are green, withered ones black; with regeneration a wave runs along them
-    const hx = s.poison ? 36 : s.wither ? 72 : 0;
+    // poisoned hearts are green, withered ones black, frozen solid ones ice; with regeneration a wave runs along them
+    const hx = s.poison ? 36 : s.wither ? 72 : s.frozen ? 126 : 0, flashX = hx > 72 ? 0 : hx;
+    // a hardcore world's hearts are the row below (their own look)
+    const hv = s.hardcore ? 45 : 0;
     const wave = s.regen ? tick % Math.ceil(maxHealth + 5) : -1;
     if (s.regen) this._wakeAt((tick + 1) * TICK);
     for (let i = total - 1; i >= 0; i--) {
@@ -197,16 +201,16 @@ export class Hud {
       let y = top - row * rowH;
       if (lowHealth) y += hash(tick * 31 + i) & 1;
       if (i === wave) y -= 2;
-      g.blit('icons', 16 + (blink ? 9 : 0), 0, 9, 9, x, y);
+      g.blit('icons', 16 + (blink ? 9 : 0), hv, 9, 9, x, y);
       if (i >= hearts) {
-        // absorption hearts, gold
+        // absorption hearts, gold (black while withered)
         const a = absorb - (i - hearts) * 2;
-        g.blit('icons', a >= 2 ? 160 : 169, 0, 9, 9, x, y);
+        g.blit('icons', s.wither ? (a >= 2 ? 124 : 133) : a >= 2 ? 160 : 169, hv, 9, 9, x, y);
         continue;
       }
-      if (blink && i * 2 < lost) g.blit('icons', (i * 2 + 1 < lost ? 70 : 79) + hx, 0, 9, 9, x, y);
-      if (i * 2 + 1 < health) g.blit('icons', 52 + hx, 0, 9, 9, x, y);
-      else if (i * 2 + 1 === health) g.blit('icons', 61 + hx, 0, 9, 9, x, y);
+      if (blink && i * 2 < lost) g.blit('icons', (i * 2 + 1 < lost ? 70 : 79) + flashX, hv, 9, 9, x, y);
+      if (i * 2 + 1 < health) g.blit('icons', 52 + hx, hv, 9, 9, x, y);
+      else if (i * 2 + 1 === health) g.blit('icons', 61 + hx, hv, 9, 9, x, y);
     }
 
     // armour, above the hearts
@@ -329,6 +333,23 @@ export class Hud {
         ctx.drawImage(c, 15 - u, 0, 1, 16, L, top[1], R - L, bot[1] - top[1]);
       }
     }
+    ctx.restore();
+  }
+
+  /* ---- frozen ----
+     The game lays its powder snow picture over the whole screen at the
+     share of the way to frozen solid (ticks in the snow / 140). Ours is a
+     frost of our own: pale ice crystals growing in from every edge, thicker
+     at the edge and ragged where it stops, 256 pixels across stretched to
+     the screen as the game stretches its own. */
+  _frost(g, k) {
+    const pic = this._frostPic || (this._frostPic = frostPicture());
+    const ctx = g.ctx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = Math.max(0, Math.min(1, k));
+    ctx.drawImage(pic, 0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.restore();
   }
 
@@ -467,6 +488,34 @@ function same(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+/* The frost picture (ours): a value noise at two sizes decides how far in
+   from the nearest edge the ice reaches at each pixel, most of it within a
+   sixteenth of the way to the middle and a few spikes to a third; the ice is
+   the game's pale cyan, whiter towards its tips. */
+function frostPicture() {
+  const N = 256, c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d'), img = g.createImageData(N, N), d = img.data;
+  const rnd = (x, y, s) => (hash(Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ s) & 0xffff) / 0xffff;
+  const smooth = (x, y, cell, s) => {
+    const fx = x / cell, fy = y / cell, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const a = rnd(x0, y0, s), b = rnd(x0 + 1, y0, s), e = rnd(x0, y0 + 1, s), f = rnd(x0 + 1, y0 + 1, s);
+    return (a + (b - a) * sx) + ((e + (f - e) * sx) - (a + (b - a) * sx)) * sy;
+  };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const e = Math.min(x, N - 1 - x, y, N - 1 - y) / (N / 2);
+    if (e > 0.34) continue;
+    const v = smooth(x, y, 7, 11) * 0.7 + smooth(x, y, 2.5, 29) * 0.3;
+    const reach = 0.3 * Math.pow(v, 2.2);
+    if (e >= reach) continue;
+    const tip = e / reach, o = (y * N + x) * 4, w = tip * 0.6 + rnd(x, y, 5) * 0.25;
+    d[o] = 112 + (232 - 112) * w; d[o + 1] = 212 + (246 - 212) * w; d[o + 2] = 234 + (252 - 234) * w;
+    d[o + 3] = 236 - tip * 60;
+  }
+  g.putImageData(img, 0, 0);
+  return c;
 }
 // a small stable random number per tick and heart, for the low-health shake
 function hash(n) { n = (n ^ 61) ^ (n >>> 16); n = (n + (n << 3)) | 0; n ^= n >>> 4; n = Math.imul(n, 0x27d4eb2d); return (n ^ (n >>> 15)) >>> 0; }
