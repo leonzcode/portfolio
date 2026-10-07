@@ -270,6 +270,9 @@ export class Realms {
   // an end gateway: out to the islands 1024 blocks on (a return gateway built there), or back again
   async gatewayTravel(at) {
     if (this.dim !== 'the_end' || !this.fight) return;
+    // (its purple flash, sim/beams.js)
+    const sim = this.game && this.game.sim;
+    if (sim && sim.beams && sim.beams.gatewayUsed) sim.beams.gatewayUsed(at[0], at[1], at[2]);
     const f = this.fight.s, key = at[0] + ',' + at[2];
     let exit = f.links[key];
     this.busy = true;

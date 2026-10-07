@@ -37,17 +37,35 @@
    an ominous one, meta bit 8) is taken and the vault rolls its reward
    table (chests/trial_chambers/reward, or reward_ominous), then throws the
    stacks up out of its top one at a time, a second apart, after a moment
-   unlocking. Each vault rewards you once; after that it takes no key.
+   unlocking. Each vault rewards you once; after that it takes no key. It
+   lights up while you are within 4 blocks of one that has not rewarded you,
+   and opens its front while it unlocks and gives (meta bits 4-5).
 
    Decorated pots hold one stack of one kind of thing: a click with an item
    puts one in, and breaking the pot spills it (sim/lids.js wobbles the pot).
 
-   What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots hold) is kept per dimension
-   (main.js saves it beside the chests, as 'details').
+   Chiseled bookshelves hold six books (a book, a book and quill, a written
+   or enchanted book, a knowledge book), one to a slot: a click on the front
+   with one puts it in the slot under the crosshair, a click on a slot that
+   holds one takes it out (whatever is in your hand). Which slots are full is
+   the block's state (meta bits 2-7, models.js draws them); a comparator
+   reads the last slot used, 1 to 6; breaking it spills the books.
+
+   Lecterns take a book and quill or a written book (bit 2 of the meta: the
+   book drawn open on its top, entities/tablebook.js). With a book on it a
+   click opens the book where it was left; each page turned sends a redstone
+   pulse two ticks long (sim/rsparts.js) and a comparator reads how far
+   through the book it is; Take Book takes it back, and breaking the lectern
+   drops it.
+
+   What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots, shelves and lecterns
+   hold) is kept per dimension (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, OPACITY } from './blocks.js?v=24';
 import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=24';
 import { potWobbled } from './sim/lids.js?v=24';
+import { BookScreen } from './ui/book.js?v=24';
+import { wantBook } from './entities/tablebook.js?v=24';
 import { cookingRecipe } from './crafting.js?v=24';
 const THREE = window.THREE;
 
@@ -73,9 +91,15 @@ const DYE_TEXT = { white: 0xFFFFFF, orange: 0xFF681F, magenta: 0xFF00FF, light_b
 const dark = c => (Math.round(((c >> 16) & 255) * 0.4) << 16) | (Math.round(((c >> 8) & 255) * 0.4) << 8) | Math.round((c & 255) * 0.4);
 
 const DIRS = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];
+// what a chiseled bookshelf takes (the game's bookshelf_books tag)
+const SHELF_BOOKS = /^(book|writable_book|written_book|enchanted_book|knowledge_book)$/;
+// the simulation's sound hook (sound/game.js sets sim.onSound), for the block sounds made here
+const sound = (h, e, x, y, z) => { const s = h && h.inter && h.inter.sim; if (s && s.onSound) s.onSound(e, x, y, z); };
 const SIDE_FACING = { 5: 0, 0: 1, 4: 2, 1: 3 };
 export const isSign = d => !!d && (d.shape === 'sign' || d.shape === 'wall_sign') && !d.banner;
 const key = (x, y, z) => x + ',' + y + ',' + z;
+// the kinds drawn by the block itself (or by sim/lids.js, entities/tablebook.js), not here
+const NOT_DRAWN = new Set(['jukebox', 'vault', 'decorated_pot', 'shelf', 'lectern']);
 
 /* Where a sign's board is: its middle, the way its front looks (a unit
    vector), and the board's size in blocks, from the sign's model (models.js). */
@@ -129,7 +153,74 @@ export class Details {
     if (d.name === 'jukebox') return this.jukebox(h, hit, s, n);
     if (d.name === 'vault') return this.vault(h, hit, s, n);
     if (d.name === 'decorated_pot') return this.decoratedPot(h, hit, s);
+    if (d.name === 'chiseled_bookshelf') return this.shelf(h, hit, s, n);
+    if (d.name === 'lectern') return this.lectern(h, hit, s, n);
     return false;
+  }
+  /* A chiseled bookshelf: the slot under the crosshair on its front (two rows of three, six, five and five
+     pixels wide from the left as you face it). */
+  shelf(h, hit, s, n) {
+    const w = this.world, { x, y, z } = hit, b = w.get(x, y, z), m = w.meta(x, y, z), F = DIRS[m & 3], f = hit.face;
+    if (!f || f[0] !== F[0] || f[1] !== 0 || f[2] !== F[2]) return false;
+    const p = hit.hit || [x + 0.5, y + 0.5, z + 0.5], fx = p[0] - x, fz = p[2] - z;
+    const u = [1 - fx, 1 - fz, fx, fz][m & 3];
+    const slot = (p[1] - y >= 0.5 ? 0 : 3) + (u < 6 / 16 ? 0 : u < 11 / 16 ? 1 : 2), bit = 4 << slot;
+    const e = this.entry(x, y, z, 'shelf');
+    if (m & bit) {
+      // taken out, into the inventory (or dropped when there is no room)
+      const st = e.items[slot] || (I.book !== undefined ? { id: I.book, count: 1 } : null);
+      e.items[slot] = null; e.last = slot;
+      if (st) h.inv.placeBack(st);
+      w.set(x, y, z, b, m & ~bit);
+      sound(h, st && st.enchants ? 'block.chiseled_bookshelf.pickup.enchanted' : 'block.chiseled_bookshelf.pickup', x, y, z);
+      this.dirty = true;
+      return true;
+    }
+    if (!s || !SHELF_BOOKS.test(n)) return false;
+    e.items[slot] = withCount(s, 1); e.last = slot;
+    if (!h.creative) h.inv.takeSelected(1);
+    w.set(x, y, z, b, m | bit);
+    sound(h, n === 'enchanted_book' ? 'block.chiseled_bookshelf.insert.enchanted' : 'block.chiseled_bookshelf.insert', x, y, z);
+    this.dirty = true;
+    return true;
+  }
+  // what a comparator reads from a chiseled bookshelf: the last slot used, 1 to 6 (0 before any)
+  shelfSignal(x, y, z) { const e = this.map.get(key(x, y, z)); return e && e.k === 'shelf' && e.last >= 0 ? e.last + 1 : 0; }
+  /* A lectern: a book goes on it, or the one on it opens to read (and to take back). */
+  lectern(h, hit, s, n) {
+    const w = this.world, { x, y, z } = hit, b = w.get(x, y, z), m = w.meta(x, y, z);
+    if (!(m & 4)) {
+      if (n !== 'writable_book' && n !== 'written_book') return false;
+      const e = this.entry(x, y, z, 'lectern');
+      e.book = withCount(s, 1); e.page = 0;
+      if (!h.creative) h.inv.takeSelected(1);
+      w.set(x, y, z, b, m | 4);
+      wantBook(x, y, z);
+      sound(h, 'item.book.put', x, y, z);
+      this.dirty = true;
+      return true;
+    }
+    const e = this.entry(x, y, z, 'lectern'), bk = e.book || {}, sim = h.inter && h.inter.sim;
+    const here = () => w.get(x, y, z) === b && (w.meta(x, y, z) & 4) && this.map.get(key(x, y, z)) === e;
+    h.open(new BookScreen({
+      pages: bk.pages || [], title: bk.title, author: bk.author, written: true, page: e.page,
+      onPage: p => { if (!here()) return; e.page = p; this.dirty = true; if (sim && sim.lecternPulse) sim.lecternPulse(x, y, z); sound(h, 'item.book.page_turn', x, y, z); },
+      take: () => {
+        if (!here()) return;
+        if (e.book) h.inv.placeBack(e.book);
+        e.book = null; e.page = 0;
+        w.set(x, y, z, b, w.meta(x, y, z) & ~4);
+        this.dirty = true;
+      },
+    }));
+    return true;
+  }
+  // what a comparator reads from a lectern with a book: how far through it the open page is, 1 to 15
+  lecternSignal(x, y, z) {
+    const e = this.map.get(key(x, y, z));
+    if (!e || e.k !== 'lectern' || !e.book) return 0;
+    const pages = Math.max(1, (e.book.pages || []).length);
+    return pages > 1 ? Math.floor(1 + 14 * e.page / (pages - 1)) : 15;
   }
   /* A decorated pot holds one stack of one kind of thing: a click with an item puts one in and the pot wobbles;
      when it cannot take it (another kind, or full) it shakes instead. Breaking it spills what it held (the
@@ -151,7 +242,7 @@ export class Details {
     if (n !== (ominous ? 'ominous_trial_key' : 'trial_key')) return false;
     const e = this.entry(x, y, z, 'vault');
     if (e.rewarded || e.queue.length) return false;
-    e.rewarded = true; e.at = this.ticks + 14;
+    e.rewarded = true; e.at = this.ticks + 14; e.unlockUntil = e.at;
     if (!h.creative) h.inv.takeSelected(1);
     import('./struct/loot.js?v=24').then(L => import('./containers.js?v=24').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
@@ -422,6 +513,8 @@ export class Details {
         : k === 'jukebox' ? { k, x, y, z, disc: null, t: 0 }
         : k === 'vault' ? { k, x, y, z, rewarded: false, queue: [], at: 0 }
         : k === 'decorated_pot' ? { k, x, y, z, item: null }
+        : k === 'shelf' ? { k, x, y, z, items: [null, null, null, null, null, null], last: -1 }
+        : k === 'lectern' ? { k, x, y, z, book: null, page: 0 }
         : { k, x, y, z, items: [null, null, null, null], t: [0, 0, 0, 0], total: [600, 600, 600, 600] };
       this.map.set(id, e);
     }
@@ -439,6 +532,8 @@ export class Details {
     if (e.k === 'campfire' && this.drops) for (const s of e.items) if (s) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, s);
     if (e.k === 'jukebox' && e.disc && this.drops) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, e.disc);
     if (e.k === 'decorated_pot' && e.item && this.drops) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, e.item);
+    if (e.k === 'shelf' && this.drops) for (const s of e.items) if (s) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, s);
+    if (e.k === 'lectern' && e.book && this.drops) this.drops.spawn(x + 0.5, y + 1, z + 0.5, e.book);
     // a frame comes down as its item, with what it held (nothing in creative)
     if (e.k === 'frame' && this.drops && !(this.creative && this.creative())) {
       if (e.item) this.drops.spawn(x + 0.5, y + 0.4, z + 0.5, e.item);
@@ -447,10 +542,27 @@ export class Details {
     }
   }
 
+  /* The look of the vaults near the player (every half second): lit up while one that has not rewarded you is
+     within 4 blocks, unlocking for the moment after a key goes in, then throwing out the reward. */
+  vaultLooks() {
+    const w = this.world, E = this.entities && this.entities(), P = E && E.player;
+    if (!P || B.vault === undefined) return;
+    const px = Math.floor(P.pos.x), py = Math.floor(P.pos.y), pz = Math.floor(P.pos.z), ey = P.pos.y + 1.62;
+    for (let y = py - 4; y <= py + 6; y++) for (let z = pz - 5; z <= pz + 5; z++) for (let x = px - 5; x <= px + 5; x++) {
+      if (w.get(x, y, z) !== B.vault) continue;
+      const e = this.map.get(key(x, y, z)), m = w.meta(x, y, z);
+      const near = (P.pos.x - x - 0.5) ** 2 + (ey - y - 0.5) ** 2 + (P.pos.z - z - 0.5) ** 2 <= 16;
+      const unlocking = e && e.k === 'vault' && this.ticks < (e.unlockUntil || 0), giving = e && e.k === 'vault' && e.queue.length > 0;
+      const st = unlocking ? 2 : giving ? 3 : near && !(e && e.k === 'vault' && e.rewarded) ? 1 : 0;
+      if (((m >> 4) & 3) !== st) w.set(x, y, z, B.vault, (m & ~48) | (st << 4));
+    }
+  }
+
   /* ---- 20 times a second ---- */
   tick() {
     this.ticks++;
     const w = this.world;
+    if (this.ticks % 10 === 0) this.vaultLooks();
     // composters at 7 turn ready after a second
     if (this.ripen.length) {
       this.ripen = this.ripen.filter(r => {
@@ -464,10 +576,12 @@ export class Details {
       if ((this.ticks + e.x + e.z) % 20 === 0) {
         const d = BLOCKS[w.get(e.x, e.y, e.z)];
         if (!d || (e.k === 'sign' ? !isSign(d) : e.k === 'frame' ? !d.frame : e.k === 'jukebox' ? d.name !== 'jukebox' : e.k === 'vault' ? d.name !== 'vault'
-          : e.k === 'decorated_pot' ? d.name !== 'decorated_pot' : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
+          : e.k === 'decorated_pot' ? d.name !== 'decorated_pot' : e.k === 'shelf' ? d.name !== 'chiseled_bookshelf'
+            : e.k === 'lectern' ? d.name !== 'lectern' : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
         // loaded from the save before its chunk was there: drawn now
-        if (!e.meshes && e.k !== 'jukebox' && e.k !== 'vault' && e.k !== 'decorated_pot') this._show(e);
+        if (!e.meshes && !NOT_DRAWN.has(e.k)) this._show(e);
       }
+      if (e.k === 'shelf' || e.k === 'lectern' || e.k === 'decorated_pot') continue;
       if (e.k === 'vault') {
         // unlocking, then a stack thrown up out of the top each second
         if (e.queue.length && this.ticks >= e.at) {
@@ -547,7 +661,7 @@ export class Details {
     e.meshes = [];
     if (e.k === 'campfire') this._showFood(e);
     else if (e.k === 'frame') this._showFrame(e);
-    else if (e.k === 'jukebox' || e.k === 'vault' || e.k === 'decorated_pot') return;
+    else if (NOT_DRAWN.has(e.k)) return;
     else this._showText(e);
   }
   // the food lies flat on the logs, one item to each side, as the game's campfire renderer lays it
@@ -667,6 +781,8 @@ export class Details {
       else if (e.k === 'jukebox') { if (e.disc) out.push({ k: 'j', p: [e.x, e.y, e.z], i: stackToJSON(e.disc), t: e.t }); }
       else if (e.k === 'vault') out.push({ k: 'v', p: [e.x, e.y, e.z], r: e.rewarded ? 1 : 0, q: e.queue.map(stackToJSON) });
       else if (e.k === 'decorated_pot') { if (e.item) out.push({ k: 'p', p: [e.x, e.y, e.z], i: stackToJSON(e.item) }); }
+      else if (e.k === 'shelf') out.push({ k: 'cb', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), l: e.last });
+      else if (e.k === 'lectern') { if (e.book) out.push({ k: 'le', p: [e.x, e.y, e.z], i: stackToJSON(e.book), g: e.page }); }
       else if (e.items.some(Boolean)) out.push({ k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total });
     }
     return out;
@@ -687,6 +803,12 @@ export class Details {
       } else if (o.k === 'v') {
         const e = this.entry(x, y, z, 'vault');
         e.rewarded = !!o.r; e.queue = (o.q || []).map(stackFromJSON).filter(Boolean);
+      } else if (o.k === 'cb') {
+        const e = this.entry(x, y, z, 'shelf');
+        e.items = [0, 1, 2, 3, 4, 5].map(i => (o.i && o.i[i] ? stackFromJSON(o.i[i]) : null)); e.last = o.l === undefined ? -1 : o.l | 0;
+      } else if (o.k === 'le') {
+        const e = this.entry(x, y, z, 'lectern');
+        e.book = o.i ? stackFromJSON(o.i) : null; e.page = o.g | 0;
       } else if (o.k === 'p') {
         const e = this.entry(x, y, z, 'decorated_pot');
         e.item = o.i ? stackFromJSON(o.i) : null;
