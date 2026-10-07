@@ -4,12 +4,13 @@ Leoncraft 2 - measure the game's own sounds, as numbers only.
 Reads the vanilla sounds from your own Minecraft installation (the hashed
 files under .minecraft/assets/objects, found through the newest asset index)
 and writes, for every sound event that plays short recordings, what those
-recordings are like: how long they sound, how fast they rise and fall, how
+recordings are like as it plays them (at each one's own pitch): how long they sound, how fast they rise and fall, how
 loud they are, where their energy sits in pitch and the shape of their
 spectrum (soundlib.features), averaged over the event's recordings with the
 volume sounds.json plays each at. Also each event's attenuation distance,
 where sounds.json sets one, and a short signature of its recordings' names
-so events that play the same ones can share them.
+so events that play the same ones can share them, and the key of the
+caption each event shows (not its words).
 
 Nothing of Mojang's is copied: the output (tools/leoncraft2/sound_targets.json)
 is a table of measurements that build_sounds.py uses to choose openly licensed
@@ -22,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from soundlib import decode, features
+from soundlib import decode, features, resample
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'sound_targets.json')
@@ -61,11 +62,17 @@ def main():
             plan[ev] = out
     print('index', index, ':', len(plan), 'events,', len(files), 'recordings')
 
+    # each recording as sounds.json plays it: at its own pitch (a file can be listed at several)
+    pitches = {}
+    for entries in plan.values():
+        for s in entries:
+            pitches.setdefault(s['name'], set()).add(round(float(s.get('pitch', 1.0)), 3))
     feats = {}
 
     def one(n):
         try:
-            return n, features(decode(files[n]))
+            x = decode(files[n])
+            return n, {p: features(resample(x, p) if abs(p - 1) > 1e-3 else x) for p in pitches[n]}
         except Exception as ex:
             return n, None
 
@@ -77,7 +84,7 @@ def main():
 
     out = {'index': index, 'events': {}}
     for ev, entries in plan.items():
-        fs = [(feats[s['name']], s) for s in entries if feats.get(s['name'])]
+        fs = [(feats[s['name']][round(float(s.get('pitch', 1.0)), 3)], s) for s in entries if feats.get(s['name'])]
         if not fs:
             continue
         med = lambda k: float(np.median([f[k] for f, s in fs]))
@@ -95,25 +102,12 @@ def main():
         if att:
             row['range'] = att[0]
         out['events'][ev] = row
-    # the subtitle each event shows, and its English words (from the version's own en_us.json)
-    lang = {}
-    vdir = os.path.join(a.mc, 'versions')
-    for v in sorted(os.listdir(vdir)):
-        try:
-            j = json.load(open(os.path.join(vdir, v, v + '.json')))
-            if str(j.get('assetIndex', {}).get('id')) == str(index) and not j.get('inheritsFrom'):
-                import zipfile
-                lang = json.loads(zipfile.ZipFile(os.path.join(vdir, v, v + '.jar')).read('assets/minecraft/lang/en_us.json').decode('utf-8'))
-                out['version'] = v
-                break
-        except Exception:
-            continue
+    # the subtitle key each event shows (the words themselves are not taken: js/sound/subtitles.js has our own)
     out['subtitles'] = {}
     for ev, e in sj.items():
         k = e.get('subtitle')
         if k:
             out['subtitles'][ev] = k
-    out['text'] = {k: lang[k] for k in sorted(set(out['subtitles'].values())) if k in lang}
     # the music events by name, and how loud the game's music is (a few tracks of music.game)
     out['music_events'] = sorted(e for e in sj if e.startswith('music'))
     tracks = [s if isinstance(s, dict) else {'name': s} for s in sj.get('music.game', {}).get('sounds', [])]

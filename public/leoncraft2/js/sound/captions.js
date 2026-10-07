@@ -11,10 +11,10 @@
    gets an arrow on the side it is on.
 
    The words come from the pack in use: the player's own Minecraft's
-   en_us.json, or Leoncraft's copy of the lines it plays (subtitles.js).
+   en_us.json, or else Leoncraft's own words for it (subtitles.js).
 --------------------------------------------------------------------------- */
 import { Sound } from './sound.js?v=24';
-import { SUBTITLES } from './subtitles.js?v=24';
+import { caption } from './subtitles.js?v=24';
 import { SoundPacks } from './packs.js?v=24';
 
 const LIFE = 3000;
@@ -30,7 +30,7 @@ export const Captions = {
   },
   text(key) {
     const mc = SoundPacks.mc;
-    return (mc && mc.lang && mc.lang[key]) || SUBTITLES[key] || null;
+    return (mc && mc.lang && mc.lang[key]) || caption(key);
   },
   add(key, x, y, z, rel) {
     if (!this.on) return;
