@@ -275,6 +275,8 @@ export class World {
        features): one never answered is asked again (audit). */
     this.sentAt = new Map();
     this.fails = new Map();            // a job that went wrong in a worker: how many times, and when
+    // the pieces practice is still making for this world, by no worker of ours (-1): given up on in time like the rest
+    for (const p of this.stageIn) { const st = ((p % 4) + 4) % 4; this.sentAt.set((st === 1 ? 't' : 'd') + (p - st) / 4, [performance.now(), -1]); }
     for (let i = 0; i <= n; i++) {
       const w = POOL.shift() || newWorker();
       this.live.push(false);
@@ -610,8 +612,12 @@ export class World {
       }
     }
     // a job not answered in half a minute is lost: its worker is started afresh and all it had is asked again
+    // (a piece practice was making is simply asked again)
     let stuck = -1;
-    for (const [, [t, i]] of this.sentAt) if (now - t > 30000) { stuck = i; break; }
+    for (const [key, [t, i]] of this.sentAt) {
+      if (now - t <= 30000) continue;
+      if (i < 0) { this.sentAt.delete(key); this.forget(key); this.sched = true; } else if (stuck < 0) stuck = i;
+    }
     if (stuck >= 0) this.replaceWorker(stuck);
   }
   replaceWorker(i) {
@@ -742,6 +748,7 @@ export class World {
   }
   takePractice(m) {
     takeOut(this.protos, this.writesOf, m, this.stageIn);
+    if (m.did) this.sentAt.delete((m.did[0] === 't' ? 't' : 'd') + numKey(m.did[1], m.did[2]));
     this.sched = true;
   }
   /* How far along a chunk is, as the loading screen's squares show it (the
