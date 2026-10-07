@@ -480,7 +480,8 @@ export class CreateWorldScreen extends Screen {
       y += 13 + 20 + 8;
       this.switchRow(x, y, 'Generate Structures', true, 'Villages, ruins and other buildings: not in Leoncraft 2 yet');
       y += 28;
-      this.switchRow(x, y, 'Bonus Chest', false, 'Not in Leoncraft 2 yet');
+      const bonus = this.switchRow(x, y, 'Bonus Chest', !!this.bonusChest, 'A chest of things to start with near where you begin');
+      bonus.active = true; bonus.o.onChange = v => { this.bonusChest = v; };
     } else {
       const x = Math.floor(W / 2 - 105);
       let y = place(20 * 3 + 8 * 2);
@@ -498,6 +499,7 @@ export class CreateWorldScreen extends Screen {
     this.labels.push([label, x + 1, y + 6, GREY]);
     const b = this.add(new CycleButton(x + 308 - 44, y, 44, 20, label, { values: [false, true], value, format: onOff, valueOnly: true }));
     b.active = false; b.tooltip = tip;
+    return b;
   }
   /* The world this screen would make: Minecraft's seeds (a number that fits
      a long is that long, other text its hash), and for a blank seed the
@@ -532,6 +534,7 @@ export class CreateWorldScreen extends Screen {
       mode: this.mode === 'hardcore' ? 'survival' : this.mode, difficulty: this.mode === 'hardcore' ? 'hard' : this.difficulty,
       cheats: this.mode === 'hardcore' ? false : this.cheats, created: now, lastPlayed: now,
     };
+    if (this.bonusChest) world.bonusChest = true;
     if (this.mode === 'hardcore') world.hardcore = true;
     Worlds.add(world);
     if (this.hooks.play) this.hooks.play(world, { isNew: true });

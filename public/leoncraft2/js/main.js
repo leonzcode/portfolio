@@ -744,6 +744,8 @@ async function boot() {
     // and a mount in its own screen (render/mobfigure.js)
     inv.drawMob = (g, x, y, w, h, mx, my, mob, size, drop) => renderer.figure.draw(g, x, y, w, h, mx, my, mob, size, drop);
     held();
+    // a new world made with Bonus Chest on (bonus.js)
+    if (isNew && entry.bonusChest && dim === 'overworld') import('./bonus.js?v=24').then(m => m.bonusChest(game, Math.floor(spawn.x), Math.floor(spawn.z))).catch(e => console.warn('bonus chest', e));
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     loading = null;
     gui.panorama = false; gui.inGame = true;
