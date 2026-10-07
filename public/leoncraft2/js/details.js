@@ -39,12 +39,16 @@
    stacks up out of its top one at a time, a second apart, after a moment
    unlocking. Each vault rewards you once; after that it takes no key.
 
-   What it remembers (sign text, food on campfires, framed items, discs, vaults) is kept per dimension
+   Decorated pots hold one stack of one kind of thing: a click with an item
+   puts one in, and breaking the pot spills it (sim/lids.js wobbles the pot).
+
+   What it remembers (sign text, food on campfires, framed items, discs, vaults, what pots hold) is kept per dimension
    (main.js saves it beside the chests, as 'details').
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, OPACITY } from './blocks.js?v=23';
-import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS } from './items.js?v=23';
-import { cookingRecipe } from './crafting.js?v=23';
+import { B, BLOCKS, OPACITY } from './blocks.js?v=24';
+import { I, ITEMS, itemName, withCount, stackToJSON, stackFromJSON, SONGS, sameItem, maxStack } from './items.js?v=24';
+import { potWobbled } from './sim/lids.js?v=24';
+import { cookingRecipe } from './crafting.js?v=24';
 const THREE = window.THREE;
 
 /* ---- the composter's chances, by item (Minecraft Wiki, Composter) ---- */
@@ -124,7 +128,23 @@ export class Details {
     if (isSign(d)) return this.sign(h, hit, d, s, n);
     if (d.name === 'jukebox') return this.jukebox(h, hit, s, n);
     if (d.name === 'vault') return this.vault(h, hit, s, n);
+    if (d.name === 'decorated_pot') return this.decoratedPot(h, hit, s);
     return false;
+  }
+  /* A decorated pot holds one stack of one kind of thing: a click with an item puts one in and the pot wobbles;
+     when it cannot take it (another kind, or full) it shakes instead. Breaking it spills what it held (the
+     game's DecoratedPotBlock; the wobble is drawn by sim/lids.js). */
+  decoratedPot(h, hit, s) {
+    if (!s) return false;
+    const { x, y, z } = hit, e = this.entry(x, y, z, 'decorated_pot');
+    const ok = !e.item || (sameItem(e.item, s) && e.item.count < maxStack(s.id));
+    if (ok) {
+      if (e.item) e.item.count++; else e.item = withCount(s, 1);
+      if (!h.creative) h.inv.takeSelected(1);
+      this.dirty = true;
+    }
+    potWobbled(x, y, z, ok);
+    return true;
   }
   vault(h, hit, s, n) {
     const w = this.world, x = hit.x, y = hit.y, z = hit.z, ominous = (w.meta(x, y, z) & 8) !== 0;
@@ -133,7 +153,7 @@ export class Details {
     if (e.rewarded || e.queue.length) return false;
     e.rewarded = true; e.at = this.ticks + 14;
     if (!h.creative) h.inv.takeSelected(1);
-    import('./struct/loot.js?v=23').then(L => import('./containers.js?v=23').then(C => {
+    import('./struct/loot.js?v=24').then(L => import('./containers.js?v=24').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
       for (const r of L.rollLoot(table, (Math.random() * 2147483647) | 0, { size: 27 })) { const st = C.lootStack(r); if (st) e.queue.push(st); }
       this.dirty = true;
@@ -400,6 +420,7 @@ export class Details {
         : k === 'frame' ? { k, x, y, z, item: null, rot: 0 }
         : k === 'jukebox' ? { k, x, y, z, disc: null, t: 0 }
         : k === 'vault' ? { k, x, y, z, rewarded: false, queue: [], at: 0 }
+        : k === 'decorated_pot' ? { k, x, y, z, item: null }
         : { k, x, y, z, items: [null, null, null, null], t: [0, 0, 0, 0], total: [600, 600, 600, 600] };
       this.map.set(id, e);
     }
@@ -416,6 +437,7 @@ export class Details {
     this.dirty = true;
     if (e.k === 'campfire' && this.drops) for (const s of e.items) if (s) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, s);
     if (e.k === 'jukebox' && e.disc && this.drops) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, e.disc);
+    if (e.k === 'decorated_pot' && e.item && this.drops) this.drops.spawn(x + 0.5, y + 0.5, z + 0.5, e.item);
     // a frame comes down as its item, with what it held (nothing in creative)
     if (e.k === 'frame' && this.drops && !(this.creative && this.creative())) {
       if (e.item) this.drops.spawn(x + 0.5, y + 0.4, z + 0.5, e.item);
@@ -440,9 +462,10 @@ export class Details {
       // now and then: a block that has gone (an explosion, a piston, its support) lets go of what it held
       if ((this.ticks + e.x + e.z) % 20 === 0) {
         const d = BLOCKS[w.get(e.x, e.y, e.z)];
-        if (!d || (e.k === 'sign' ? !isSign(d) : e.k === 'frame' ? !d.frame : e.k === 'jukebox' ? d.name !== 'jukebox' : e.k === 'vault' ? d.name !== 'vault' : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
+        if (!d || (e.k === 'sign' ? !isSign(d) : e.k === 'frame' ? !d.frame : e.k === 'jukebox' ? d.name !== 'jukebox' : e.k === 'vault' ? d.name !== 'vault'
+          : e.k === 'decorated_pot' ? d.name !== 'decorated_pot' : d.shape !== 'campfire')) { if (w.loaded(e.x, e.z)) this.broken(e.x, e.y, e.z); continue; }
         // loaded from the save before its chunk was there: drawn now
-        if (!e.meshes && e.k !== 'jukebox' && e.k !== 'vault') this._show(e);
+        if (!e.meshes && e.k !== 'jukebox' && e.k !== 'vault' && e.k !== 'decorated_pot') this._show(e);
       }
       if (e.k === 'vault') {
         // unlocking, then a stack thrown up out of the top each second
@@ -523,7 +546,7 @@ export class Details {
     e.meshes = [];
     if (e.k === 'campfire') this._showFood(e);
     else if (e.k === 'frame') this._showFrame(e);
-    else if (e.k === 'jukebox' || e.k === 'vault') return;
+    else if (e.k === 'jukebox' || e.k === 'vault' || e.k === 'decorated_pot') return;
     else this._showText(e);
   }
   // the food lies flat on the logs, one item to each side, as the game's campfire renderer lays it
@@ -642,6 +665,7 @@ export class Details {
       else if (e.k === 'frame') out.push({ k: 'f', p: [e.x, e.y, e.z], i: e.item ? stackToJSON(e.item) : null, r: e.rot });
       else if (e.k === 'jukebox') { if (e.disc) out.push({ k: 'j', p: [e.x, e.y, e.z], i: stackToJSON(e.disc), t: e.t }); }
       else if (e.k === 'vault') out.push({ k: 'v', p: [e.x, e.y, e.z], r: e.rewarded ? 1 : 0, q: e.queue.map(stackToJSON) });
+      else if (e.k === 'decorated_pot') { if (e.item) out.push({ k: 'p', p: [e.x, e.y, e.z], i: stackToJSON(e.item) }); }
       else if (e.items.some(Boolean)) out.push({ k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total });
     }
     return out;
@@ -662,6 +686,9 @@ export class Details {
       } else if (o.k === 'v') {
         const e = this.entry(x, y, z, 'vault');
         e.rewarded = !!o.r; e.queue = (o.q || []).map(stackFromJSON).filter(Boolean);
+      } else if (o.k === 'p') {
+        const e = this.entry(x, y, z, 'decorated_pot');
+        e.item = o.i ? stackFromJSON(o.i) : null;
       } else if (o.k === 'j') {
         const e = this.entry(x, y, z, 'jukebox');
         e.disc = o.i ? stackFromJSON(o.i) : null; e.t = o.t | 0;

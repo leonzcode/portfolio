@@ -17,8 +17,8 @@
    Tool, armour, food and fuel numbers are the Minecraft Wiki's (Java Edition,
    October 2026); the list itself is minecraft-data's (js/itemdata.js).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from './blocks.js?v=23';
-import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=23';
+import { B, BLOCKS, MAX_ID } from './blocks.js?v=24';
+import { ITEM_LIST, ITEM_TEX, FOODS } from './itemdata.js?v=24';
 
 export const ITEM_BASE = MAX_ID;          // 4096: the first id that is not a block
 export const ITEMS = [];
@@ -228,7 +228,8 @@ export const STEW_EFFECTS = {
   open_eyeblossom: ['blindness', 220], closed_eyeblossom: ['nausea', 140],
 };
 /* The paintings, by name, width and height in blocks (the game's placeable
-   ones; each picture is our own, entities/items2.js). A painting item may
+   ones; each picture is Pixel Perfection CE's or our own, entities/packart.js
+   and items2.js, or the game's from a player's own copy). A painting item may
    carry one (variant), placed only where it fits, else a random one of the
    largest that fit. */
 export const PAINTING_VARIANTS = [

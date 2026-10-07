@@ -4,4 +4,6 @@
  "cocoa_stage0", "cocoa_stage1", "sweet_berry_bush_stage1", "sweet_berry_bush_stage2", "farmland_moist",
  "redstone_lamp_on", "redstone_torch_off", "repeater_on", "comparator_on", "observer_back_on", "piston_inner",
  "daylight_detector_inverted_top", "powered_rail_on", "detector_rail_on", "activator_rail_on",
- "respawn_anchor_top", "respawn_anchor_side1", "respawn_anchor_side2", "respawn_anchor_side3", "respawn_anchor_side4"]
+ "respawn_anchor_top", "respawn_anchor_side1", "respawn_anchor_side2", "respawn_anchor_side3", "respawn_anchor_side4",
+ "dispenser_front_vertical", "dropper_front_vertical", "barrel_top_open", "cake_inner", "stonecutter_saw",
+ "lectern_base", "composter_compost", "composter_ready", "sculk_sensor_tendril_inactive", "decorated_pot_base"]

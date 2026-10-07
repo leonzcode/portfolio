@@ -28,23 +28,24 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=23';
-import { setLodestoneCheck } from './dials.js?v=23';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=23';
-import { breakTicks, wearFor } from './mining.js?v=23';
-import { blockDrops } from './loot.js?v=23';
-import { containerKind, spill } from './containers.js?v=23';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=23';
-import { isPotion, drinkPotion } from './brewing.js?v=23';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=23';
-import { MerchantScreen } from './ui/merchant.js?v=23';
-import { LoomScreen } from './ui/loom.js?v=23';
-import { CartographyScreen } from './ui/cartography.js?v=23';
-import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=23';
-import { countShelves } from './enchanting.js?v=23';
-import { wear } from './ui/inventory.js?v=23';
-import { BookScreen } from './ui/book.js?v=23';
-import { breaksInCreative } from './modes.js?v=23';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=24';
+import { setLodestoneCheck } from './dials.js?v=24';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=24';
+import { breakTicks, wearFor } from './mining.js?v=24';
+import { blockDrops } from './loot.js?v=24';
+import { containerKind, spill } from './containers.js?v=24';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=24';
+import { isPotion, drinkPotion } from './brewing.js?v=24';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=24';
+import { MerchantScreen } from './ui/merchant.js?v=24';
+import { LoomScreen } from './ui/loom.js?v=24';
+import { CartographyScreen } from './ui/cartography.js?v=24';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=24';
+import { countShelves } from './enchanting.js?v=24';
+import { wear } from './ui/inventory.js?v=24';
+import { BookScreen } from './ui/book.js?v=24';
+import { breaksInCreative } from './modes.js?v=24';
+import { boxOpened, bellRang } from './sim/lids.js?v=24';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // two slot arrays seen as one (a large chest): reads and writes go straight to the halves
@@ -228,7 +229,15 @@ export class Hands {
     if (this.openStation(d, hit)) return true;
     if (d.name === 'ender_chest') {
       if (OPAQUE[w.get(hit.x, hit.y + 1, hit.z)]) return true;
-      this.open(new ChestScreen(this.inv, this.icons, this.ender, 'Ender Chest'));
+      const s = new ChestScreen(this.inv, this.icons, this.ender, 'Ender Chest');
+      this.open(s);
+      boxOpened(hit.x, hit.y, hit.z, s);
+      return true;
+    }
+    // a bell rings, swinging away from the side you struck (sim/lids.js)
+    if (d.shape === 'bell') {
+      const n = hit.face || [0, 0, -1];
+      bellRang(hit.x, hit.y, hit.z, n[0] > 0 ? 0 : n[0] < 0 ? 1 : n[1] > 0 ? 2 : n[1] < 0 ? 3 : n[2] > 0 ? 4 : 5);
       return true;
     }
     const kind = containerKind(b);
@@ -250,7 +259,10 @@ export class Hands {
       if (two) {
         // a large chest: the half on your left as you face it holds the top three rows; one live view of both
         const box = joinSlots(two[0].slots, two[1].slots);
-        this.open(new ChestScreen(this.inv, this.icons, box, 'Large Chest', i => C.changed(i < 27 ? two[0] : two[1])));
+        const s = new ChestScreen(this.inv, this.icons, box, 'Large Chest', i => C.changed(i < 27 ? two[0] : two[1]));
+        this.open(s);
+        // both halves' lids open (sim/lids.js)
+        boxOpened(x, y, z, s, C.partner(x, y, z));
         return true;
       }
       if (kind === 'hopper') { this.open(new HopperScreen(this.inv, this.icons, c.slots, () => C.changed(c))); return true; }
@@ -258,7 +270,10 @@ export class Hands {
       if (kind === 'dispenser' || kind === 'dropper') { this.open(new DispenserScreen(this.inv, this.icons, c.slots, kind === 'dropper' ? 'Dropper' : 'Dispenser', () => C.changed(c))); return true; }
       if (kind === 'crafter') { this.open(new CrafterScreen(this.inv, this.icons, c, { changed: () => C.changed(c), powered: () => !!(w.meta(x, y, z) & 8) })); return true; }
       const title = kind === 'barrel' ? 'Barrel' : kind === 'shulker_box' ? 'Shulker Box' : 'Chest';
-      this.open(kind === 'shulker_box' ? new ShulkerScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)) : new ChestScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)));
+      const s = kind === 'shulker_box' ? new ShulkerScreen(this.inv, this.icons, c.slots, title, () => C.changed(c)) : new ChestScreen(this.inv, this.icons, c.slots, title, () => C.changed(c));
+      this.open(s);
+      // the lid opens, or the barrel shows open, until the screen closes (sim/lids.js)
+      boxOpened(x, y, z, s);
       return true;
     }
     return this.itemOnBlock(hit, d);
