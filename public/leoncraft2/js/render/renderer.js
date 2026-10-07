@@ -92,6 +92,8 @@ export class Renderer {
       // the dimension being drawn (js/dims.js; js/dim/look.js sets these each frame)
       uDim: { value: 0 }, uDimAmb: { value: new THREE.Vector3() }, uDimFog: { value: new THREE.Vector3() }, uDimFogRange: { value: new THREE.Vector2(0, 1) },
       uEndSky: { value: textures.endSky || null },
+      // the void's dark (glsl.js VOID): under the horizon below sea level, and all of it near the world's floor
+      uVoid: { value: new THREE.Vector2() },
       // Detailed's per-vertex light, from the light table each frame (sky.js setUniforms), and the fog's colours
       uAmbUp: { value: new THREE.Vector3() }, uAmbSide: { value: new THREE.Vector3() }, uAmbDown: { value: new THREE.Vector3() },
       uSunC: { value: new THREE.Vector3() }, uDayK: { value: 0 }, uExpo: { value: 1 }, uFogK: { value: 0.0019 },
@@ -495,6 +497,11 @@ export class Renderer {
     let head = 0, tail = 0;
     const start = ((R * span) + R) * 24 + csy, sx = span * 24, last = span - 1;
     q[tail++] = start; done[start] = 63;
+    /* Under the world (falling into the void) the camera is in no section: the
+       walk starts from the bottom of every column at once, as if come in from
+       below, so the underside of the world is drawn (from the bottom section
+       under you alone, only it and its four neighbours were). */
+    if (eye.y < 0) for (let ci = 0; ci < span * span; ci++) { const c = ci * 24; if (c !== start) { q[tail++] = c; done[c] = 8; } }
     /* The six ways out written out one by one (faces 0 to 5: +x, -x, +y, -y, +z,
        -z; a cell entered by face f is marked with the opposite one's bit): this
        runs on every section you cross, over every section in range, and the
@@ -538,7 +545,7 @@ export class Renderer {
         p.visible = true; p.from = from; p.to = to;
       }
     }
-    this.visKey = csx + ',' + csy + ',' + csz;
+    this.visKey = csx + ',' + (eye.y < 0 ? -1 : csy) + ',' + csz;
     this.visDirty = false;
   }
 
@@ -684,6 +691,13 @@ export class Renderer {
     U.uPlayer.value.copy(state.feet);
     U.uEyeInWater.value = state.eyeInWater ? 1 : 0;
     U.uSkyAtEye.value = state.skyAtEye;
+    /* the void (glsl.js VOID): the sky under the horizon darkens once the eye is
+       below sea level (y 63, 127 here), easing in over a block; the sky and fog
+       go to black over the last 32 blocks above the dimension's floor, as the
+       game's fog does (not in the End, whose sky stays as it is) */
+    const vd = state.dim, vf = (state.eye.y - 64 - (vd ? vd.minY : -64)) / 32;
+    U.uVoid.value.set(vd && vd.sky !== 'normal' ? 0 : Math.max(0, Math.min(1, 127 - state.eye.y)),
+      vd && vd.sky === 'end' ? 0 : 1 - Math.max(0, Math.min(1, vf)) ** 2);
     U.uMoonPhase.value = state.moonPhase;
     U.uRender.value = this.opts.renderDist * 16;
     if (state.waterTint) U.uWaterTint.value.copy(state.waterTint);
@@ -714,7 +728,8 @@ export class Renderer {
     this.updateLights(state, dt);
     this.ccx = Math.floor(cam.position.x / 16); this.ccz = Math.floor(cam.position.z / 16);
     this.pumpUploads(this.opts.uploadMs || 4);
-    const vk = Math.floor(cam.position.x / 16) + ',' + Math.max(0, Math.min(23, Math.floor(cam.position.y / 16))) + ',' + Math.floor(cam.position.z / 16);
+    // (under the world is a place of its own, -1: the walk starts differently there)
+    const vk = Math.floor(cam.position.x / 16) + ',' + Math.max(-1, Math.min(23, Math.floor(cam.position.y / 16))) + ',' + Math.floor(cam.position.z / 16);
     const now = performance.now();
     if (vk !== this.visKey || (this.visDirty && now - (this.visAt || 0) > 1000)) { this.updateVisibility(cam.position); this.visAt = now; }
     // (how far grass, flowers and the inside of canopies are drawn: inView, as it puts the columns in order)
