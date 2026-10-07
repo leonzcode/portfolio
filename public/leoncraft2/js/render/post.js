@@ -286,7 +286,7 @@ void main() {
     // the edge of the loaded world melts into the horizon
     float hd = length((wp - uCamPos).xz);
     float edge = smoothstep(uRender * 0.72, uRender, hd);
-    col = mix(col, voidSky(skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), rd), edge);
+    col = mix(col, skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))) * (1.0 - uVoid.y), edge);
   }
   col += texture(uVL, vUv).rgb;
   o = vec4(col, 1.0);

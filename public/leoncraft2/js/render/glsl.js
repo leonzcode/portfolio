@@ -511,7 +511,7 @@ vec3 finishLDR(vec3 col, vec3 world) {
     float T = exp(-od);
     col = col * T + fogC * (1.0 - T) * uSkyAtEye;
     float hd = length((world - cameraPosition).xz);
-    col = mix(col, voidSky(skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), rd), smoothstep(uRender * 0.72, uRender, hd));
+    col = mix(col, skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))) * (1.0 - uVoid.y), smoothstep(uRender * 0.72, uRender, hd));
   }
   return toSRGB(agx(col * exposureNow()));
 }
