@@ -339,9 +339,9 @@ export class Hud {
   /* ---- frozen ----
      The game lays its powder snow picture over the whole screen at the
      share of the way to frozen solid (ticks in the snow / 140). Ours is a
-     frost of our own: pale ice crystals growing in from every edge, thicker
-     at the edge and ragged where it stops, 256 pixels across stretched to
-     the screen as the game stretches its own. */
+     frost of our own (frostPicture): a ring of feathery ice crystals round
+     a round clear middle, heaviest in the corners, 256 pixels across
+     stretched to the screen as the game stretches its own. */
   _frost(g, k) {
     const pic = this._frostPic || (this._frostPic = frostPicture());
     const ctx = g.ctx;
@@ -489,33 +489,70 @@ function same(a, b) {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
 }
-/* The frost picture (ours): a value noise at two sizes decides how far in
-   from the nearest edge the ice reaches at each pixel, most of it within a
-   sixteenth of the way to the middle and a few spikes to a third; the ice is
-   the game's pale cyan, whiter towards its tips. */
+/* The frost picture (ours): a ring of ice round a round clear middle, as
+   the game's frame looks, heaviest in the corners. Feathery crystals grow
+   in from outside the ring towards the middle (a stem with barbs either
+   side, shorter towards the tip), over a thin pale wash; a few sparkles and
+   specks sit just inside where the ice stops. N x N pixels, RGBA. */
 function frostPicture() {
   const N = 256, c = document.createElement('canvas');
   c.width = c.height = N;
-  const g = c.getContext('2d'), img = g.createImageData(N, N), d = img.data;
-  const rnd = (x, y, s) => (hash(Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ s) & 0xffff) / 0xffff;
-  const smooth = (x, y, cell, s) => {
-    const fx = x / cell, fy = y / cell, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
-    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
-    const a = rnd(x0, y0, s), b = rnd(x0 + 1, y0, s), e = rnd(x0, y0 + 1, s), f = rnd(x0 + 1, y0 + 1, s);
-    return (a + (b - a) * sx) + ((e + (f - e) * sx) - (a + (b - a) * sx)) * sy;
-  };
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const e = Math.min(x, N - 1 - x, y, N - 1 - y) / (N / 2);
-    if (e > 0.34) continue;
-    const v = smooth(x, y, 7, 11) * 0.7 + smooth(x, y, 2.5, 29) * 0.3;
-    const reach = 0.3 * Math.pow(v, 2.2);
-    if (e >= reach) continue;
-    const tip = e / reach, o = (y * N + x) * 4, w = tip * 0.6 + rnd(x, y, 5) * 0.25;
-    d[o] = 112 + (232 - 112) * w; d[o + 1] = 212 + (246 - 212) * w; d[o + 2] = 234 + (252 - 234) * w;
-    d[o + 3] = 236 - tip * 60;
-  }
+  const g = c.getContext('2d'), img = g.createImageData(N, N);
+  paintFrost(img.data, N);
   g.putImageData(img, 0, 0);
   return c;
+}
+function paintFrost(d, N) {
+  let s = 0x2f6a91;
+  const R = () => { s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const H = N / 2;
+  const DEEP = [72, 178, 216], MID = [122, 218, 240], LIGHT = [184, 240, 252], WHITE = [236, 251, 255];
+  const put = (x, y, c, a) => {
+    x = Math.round(x); y = Math.round(y);
+    if (x < 0 || y < 0 || x >= N || y >= N) return;
+    const o = (y * N + x) * 4;
+    if (d[o + 3] > a) return;
+    d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = a;
+  };
+  // where the ice stops, by angle: about the half width from the middle, wavering
+  const p1 = R() * 6.28, p2 = R() * 6.28;
+  const edge = th => 0.97 + 0.04 * Math.sin(3 * th + p1) + 0.025 * Math.sin(8 * th + p2);
+  // the pale wash under the crystals, a little way past where the ice stops
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = (x + 0.5 - H) / H, dy = (y + 0.5 - H) / H, r = Math.hypot(dx, dy), th = Math.atan2(dy, dx);
+    if (r > edge(th) + 0.16 + R() * 0.06 && R() < 0.7) put(x, y, DEEP, 112);
+  }
+  // the crystals: more of them towards the corners
+  const fronds = [];
+  for (let n = 0; n < 4000 && fronds.length < 210; n++) {
+    const th = R() * Math.PI * 2, corner = Math.abs(Math.sin(2 * th));
+    if (R() > 0.35 + corner * 0.65) continue;
+    fronds.push(th);
+  }
+  for (const th of fronds) {
+    const e = edge(th), start = e + 0.22 + R() * 0.3, tip = e - 0.03 + R() * 0.09;
+    const x0 = H + Math.cos(th) * start * H, y0 = H + Math.sin(th) * start * H;
+    const a = th + Math.PI + (R() - 0.5) * 0.7, len = (start - tip) * H;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    for (let t = 0; t <= len; t += 0.5) put(x0 + ca * t, y0 + sa * t, t > len - 3 ? WHITE : t > len * 0.6 ? LIGHT : MID, 255);
+    // barbs every three or four pixels, both sides, leaning towards the tip
+    for (let t = 2 + R() * 2; t < len - 1; t += 3 + Math.round(R())) {
+      const bl = (len - t) * (0.3 + R() * 0.15), sx = x0 + ca * t, sy = y0 + sa * t;
+      for (const side of [-1, 1]) {
+        const b = a + side * (0.75 + R() * 0.25), cb = Math.cos(b), sb = Math.sin(b);
+        for (let u = 1; u <= bl; u += 0.6) put(sx + cb * u, sy + sb * u, u > bl - 1.2 ? LIGHT : t > len * 0.5 ? MID : DEEP, 255);
+      }
+    }
+  }
+  // sparkles and specks just inside where the ice stops
+  for (let n = 0; n < 70; n++) {
+    const th = R() * Math.PI * 2, r = edge(th) - 0.02 - R() * 0.16;
+    const x = H + Math.cos(th) * r * H, y = H + Math.sin(th) * r * H;
+    if (n % 3) { put(x, y, LIGHT, 220); continue; }
+    put(x, y, WHITE, 255);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) put(x + dx, y + dy, LIGHT, 230);
+    if (n % 2) for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) put(x + dx, y + dy, MID, 200);
+  }
 }
 // a small stable random number per tick and heart, for the low-health shake
 function hash(n) { n = (n ^ 61) ^ (n >>> 16); n = (n + (n << 3)) | 0; n ^= n >>> 4; n = Math.imul(n, 0x27d4eb2d); return (n ^ (n >>> 15)) >>> 0; }

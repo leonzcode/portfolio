@@ -531,10 +531,12 @@ export function buildSheet() {
   // runes: two little marks of our own galactic alphabet
   const runes = [['.##....##.', '..#....#..', '..######..', '..#....#..', '.##....##.'], ['####..', '...#..', '..###.', '...#..', '####..']];
   runes.forEach((rows, k) => rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === '#') { put(24 + k, x + 3, y * 2 + 3, [255, 255, 255]); put(24 + k, x + 3, y * 2 + 4, [255, 255, 255]); } })));
-  /* 28-31 water drops (rain landing, a splash): two or three fat pixels of
-     deep blue low in the frame, as small as the game's drops look */
-  const drops = [[[2, 6, 0], [4, 6, 1], [3, 7, 2]], [[3, 6, 0], [5, 7, 1]], [[2, 7, 1], [4, 6, 2]], [[3, 6, 2], [4, 7, 0], [2, 7, 1]]];
-  const blue = [[74, 110, 208], [28, 78, 204], [8, 58, 196]];
+  /* 28-31 water drops (rain landing, a splash), our own: one little drop a
+     frame, two or three fat pixels just right of the middle (a pale
+     highlight on top, the plain water blue 3f76e4 under it, a darker side),
+     tipped a different way in each frame. As small as the game's drops look. */
+  const drops = [[[5, 4, 0], [5, 5, 1], [6, 5, 2]], [[5, 5, 0], [5, 6, 1]], [[6, 4, 0], [6, 5, 1], [5, 5, 2]], [[5, 5, 1], [6, 5, 2]]];
+  const blue = [[156, 192, 244], [63, 118, 228], [36, 80, 176]];
   drops.forEach((list, k) => list.forEach(([x, y, c]) => { for (let q = 0; q < 4; q++) put(28 + k, x * 2 + (q & 1), y * 2 + (q >> 1), blue[c]); }));
   g.putImageData(img, 0, 0);
   return c;
