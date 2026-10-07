@@ -82,7 +82,8 @@ const has = n => B[n] !== undefined;
 const id = n => (has(n) ? B[n] : -1);
 const nameOf = b => (BLOCKS[b] ? BLOCKS[b].name : '');
 // the head inside one of these hurts (whole, solid, opaque cubes: not glass, leaves or ice)
-const suffocates = b => { const d = BLOCKS[b]; return !!d && d.solid && d.shape === 'cube' && (d.pass || 'opaque') === 'opaque' && !FLUID[b]; };
+// (powder snow is a full opaque cube to us but never suffocates in the game: it only freezes)
+const suffocates = b => { const d = BLOCKS[b]; return !!d && d.solid && d.shape === 'cube' && (d.pass || 'opaque') === 'opaque' && !FLUID[b] && b !== B.powder_snow; };
 const CLIMB_NAMES = new Set(['ladder', 'vine', 'weeping_vines', 'weeping_vines_plant', 'twisting_vines', 'twisting_vines_plant', 'scaffolding', 'cave_vines', 'cave_vines_plant']);
 const FIRE_TICKS_IMMUNE = 20;          // a player's fire goes to -20 when it is out: the second it takes to catch again
 

@@ -509,7 +509,11 @@ export class Containers {
         }
       } else c.cook = 0;
     } else if (c.cook > 0) c.cook = Math.max(0, c.cook - 2);
-    if (wasLit !== c.burn > 0) { this.showLit(c, c.burn > 0); if (this.onLit) this.onLit(c, c.burn > 0); }
+    // the block follows (also the first tick after loading: a save from before the lit bit, or one
+    // whose chunk was not in yet, is put right then)
+    const lit = c.burn > 0;
+    if (c.shown !== lit) c.shown = this.showLit(c, lit) ? lit : undefined;
+    if (wasLit !== lit && this.onLit) this.onLit(c, lit);
     return c.burn > 0 || c.cook > 0 || (canCook && !!s[1] && fuelTicks(s[1].id) > 0);
   }
   /* the block shows it too, as the game's lit state: meta bit 2 of a furnace,
@@ -517,11 +521,12 @@ export class Containers {
      sim/states.js) */
   showLit(c, lit) {
     const w = this.world;
-    if (!w || !w.get) return;
+    if (!w || !w.get) return false;
     const b = w.get(c.x, c.y, c.z), d = BLOCKS[b];
-    if (!d || d.name !== c.kind) return;
+    if (!d || d.name !== c.kind) return false;
     const m = w.meta(c.x, c.y, c.z), n = lit ? m | 4 : m & ~4;
     if (n !== m) w.set(c.x, c.y, c.z, b, n);
+    return true;
   }
   // the experience a furnace holds: each recipe's xp times how many were made, the whole points and the rest by chance
   xpOf(c, take = true) {
