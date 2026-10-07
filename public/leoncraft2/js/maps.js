@@ -20,6 +20,9 @@
                      dot on the rim (until you are too far)
      copies          share their picture (they are one map); a locked map
                      no longer changes; zooming out starts a new, empty map
+     explorer maps   from a chest (containers.js): centred on the structure
+                     it leads to, its place marked (a red X for buried
+                     treasure, our own little markers for the rest)
 
    The colours are the game's 62 base colours, each in four shades (180,
    220, 255 and 135 of 255), and which blocks show which is the wiki's
@@ -124,6 +127,7 @@ export class MapData {
   constructor(id, scale, cx, cz, dim) {
     this.id = id; this.scale = scale; this.cx = cx; this.cz = cz; this.dim = dim || 'overworld';
     this.locked = false;
+    this.marks = null;              // [{ x, z, type }]: places marked on it (an explorer map's target)
     this.colors = new Uint8Array(128 * 128);
     this.step = 0; this.canvas = null; this.changed = true;
   }
@@ -146,11 +150,14 @@ export class MapData {
   toJSON() {
     let s = '';
     for (let i = 0; i < this.colors.length; i += 8192) s += String.fromCharCode.apply(null, this.colors.subarray(i, i + 8192));
-    return { s: this.scale, x: this.cx, z: this.cz, d: this.dim, l: this.locked ? 1 : 0, c: btoa(s) };
+    const o = { s: this.scale, x: this.cx, z: this.cz, d: this.dim, l: this.locked ? 1 : 0, c: btoa(s) };
+    if (this.marks && this.marks.length) o.k = this.marks.map(k => [k.x, k.z, k.type]);
+    return o;
   }
   static fromJSON(id, o) {
     const m = new MapData(id, o.s | 0, o.x | 0, o.z | 0, o.d);
     m.locked = !!o.l;
+    if (Array.isArray(o.k)) m.marks = o.k.map(k => ({ x: k[0] | 0, z: k[1] | 0, type: String(k[2] || 'red_x') }));
     try { const s = atob(o.c || ''); for (let i = 0; i < s.length && i < 16384; i++) m.colors[i] = s.charCodeAt(i); } catch (e) { /* an empty map */ }
     return m;
   }
@@ -193,6 +200,7 @@ class Maps {
     if (!o) return null;
     const m = new MapData(this.next++, o.scale, o.cx, o.cz, o.dim);
     m.colors.set(o.colors); m.locked = true;
+    if (o.marks) m.marks = o.marks.map(k => Object.assign({}, k));
     this.list.set(m.id, m);
     this.dirty = true;
     return m;
@@ -294,6 +302,7 @@ export const MAPS = new Maps();
 export function drawMap(ctx, m, x, y, size, player) {
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(m.image(), 0, 0, 128, 128, x, y, size, size);
+  if (m.marks) drawMarks(ctx, m, x, y, size);
   if (!player || m.dim !== player.dim) return;
   const s = 1 << m.scale, k = size / 128;
   let mx = (player.pos.x - m.cx) / s + 64, mz = (player.pos.z - m.cz) / s + 64;
@@ -315,6 +324,31 @@ export function drawMap(ctx, m, x, y, size, player) {
   ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(3, 3.5); ctx.lineTo(0, 1.5); ctx.lineTo(-3, 3.5); ctx.closePath();
   ctx.fill(); ctx.stroke();
   ctx.restore();
+}
+/* The places marked on a map (our own drawings): a red X for buried treasure,
+   a small coloured diamond outlined in black for any other structure. */
+const MARK_COLOUR = { monument: '#3aa5a5', mansion: '#6b4a2a', ancient_city: '#2b3a4a', trial_chambers: '#c46b2a', mineshaft: '#7a6a5a',
+  desert_pyramid: '#d8c27a', jungle_temple: '#4f7a3a', ocean_ruin_warm: '#d8c9a0', ocean_ruin_cold: '#7a8a8a', swamp_hut: '#4a5a3a', abandoned_camp: '#a84a3a' };
+function drawMarks(ctx, m, x, y, size) {
+  const s = 1 << m.scale, k = size / 128;
+  for (const mk of m.marks) {
+    const u = (mk.x - m.cx) / s + 64, v = (mk.z - m.cz) / s + 64;
+    if (u < 0 || v < 0 || u >= 128 || v >= 128) continue;
+    const px = x + u * k, py = y + v * k, r = 3 * k;
+    ctx.save();
+    ctx.lineCap = 'square';
+    if (mk.type === 'red_x') {
+      for (const [w, c] of [[2.4 * k, '#000000'], [1.2 * k, '#c81e1e']]) {
+        ctx.strokeStyle = c; ctx.lineWidth = w;
+        ctx.beginPath(); ctx.moveTo(px - r, py - r); ctx.lineTo(px + r, py + r); ctx.moveTo(px + r, py - r); ctx.lineTo(px - r, py + r); ctx.stroke();
+      }
+    } else {
+      ctx.fillStyle = MARK_COLOUR[mk.type] || '#ffffff'; ctx.strokeStyle = '#000000'; ctx.lineWidth = 0.8 * k;
+      ctx.beginPath(); ctx.moveTo(px, py - r); ctx.lineTo(px + r, py); ctx.lineTo(px, py + r); ctx.lineTo(px - r, py); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 // the paper a held map is drawn on (our own colours)
 export function drawPaper(ctx, x, y, size) {

@@ -51,7 +51,7 @@
 --------------------------------------------------------------------------- */
 import { JRand, toLong } from './rand.js?v=22';
 import { LOOT } from './lootdata.js?v=22';
-import { I } from '../items.js?v=22';
+import { I, maxStack } from '../items.js?v=22';
 import { ENCH, ORDER, canApply, isPrimary, selectEnchants } from '../enchanting.js?v=22';
 
 /* The game's enchantment tags (data/minecraft/tags/enchantment), in their own
@@ -258,7 +258,18 @@ export function rollItems(table, seed, opts) {
   const r = new JRand(toLong(seed));
   const out = [];
   rollTable(r, name, { biome: String(o.biome || '').replace(/^minecraft:/, '') }, out, 0);
-  return out.filter(s => s.count > 0);
+  return bySize(out);
+}
+// the game's stack splitter: a stack of more than the item stacks to (four stews) goes in as several
+function bySize(list) {
+  const out = [];
+  for (const s of list) {
+    if (!(s.count > 0)) continue;
+    const id = I[s.item], max = id === undefined ? 64 : maxStack(id);
+    if (s.count <= max) { out.push(s); continue; }
+    for (let n = s.count; n > 0; n -= max) out.push(Object.assign({}, s, { count: Math.min(max, n) }));
+  }
+  return out;
 }
 
 // the contents of one container, as an array of stacks sorted by slot
@@ -271,8 +282,9 @@ export function rollLoot(table, seed, opts) {
   const r = new JRand(toLong(seed));
   const ctx = { biome: String(o.biome || '').replace(/^minecraft:/, '') };
 
-  const rolled = [];
+  let rolled = [];
   rollTable(r, name, ctx, rolled, 0);
+  rolled = bySize(rolled);
 
   const slots = [];
   for (let i = 0; i < size; i++) slots.push(i);
