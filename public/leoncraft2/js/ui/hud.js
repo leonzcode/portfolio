@@ -22,18 +22,9 @@
 import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=24';
 import { drawBossBar } from '../dim/bossbar.js?v=24';
 import { BLOCKS, B } from '../blocks.js?v=24';
-import { EFFECTS } from '../effects.js?v=24';
+import { EFFECTS, EFFECT_ICON } from '../effects.js?v=24';
 
 const TICK = 50;
-// where each effect's picture is in the classic sheet (container/inventory, 18 x 18 from 0, 198, eight to a row)
-const EFFECT_ICON = {
-  speed: 0, slowness: 1, haste: 2, mining_fatigue: 3, strength: 4, weakness: 5, poison: 6, regeneration: 7,
-  invisibility: 8, hunger: 9, jump_boost: 10, nausea: 11, night_vision: 12, blindness: 13, resistance: 14, fire_resistance: 15,
-  water_breathing: 16, wither: 17, absorption: 18, levitation: 19, glowing: 20, luck: 21, unluck: 22, health_boost: 23,
-  // the effects that came later, with the nearest of those
-  slow_falling: 19, conduit_power: 16, dolphins_grace: 0, bad_omen: 22, raid_omen: 22, trial_omen: 22, hero_of_the_village: 21,
-  darkness: 13, wind_charged: 10, weaving: 1, oozing: 6, infested: 9,
-};
 
 export class Hud {
   constructor(inventory, icons) {

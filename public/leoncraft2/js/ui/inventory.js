@@ -42,6 +42,7 @@ import { enchName, ENCH } from '../enchanting.js?v=24';
 import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=24';
 import { patternLines, drawBannerIcon } from '../banners.js?v=24';
 import { mapLines } from '../maps.js?v=24';
+import { EFFECTS, EFFECT_ICON, effectName, effectTime } from '../effects.js?v=24';
 import { dialPicture, usePicture } from '../dials.js?v=24';
 export { displayName, maxStack };
 
@@ -1013,8 +1014,42 @@ export class InventoryScreen extends ContainerScreen {
     g.blit('container/inventory', 178, overBook ? 19 : 0, 20, 18, bx, by);
     if (this.inv.drawPlayer) this.inv.drawPlayer(g, L + 26, T + 8, 49, 70, mx, my);
     g.text(this.title, L + 97, T + 8, LABEL_GREY, false);
+    this.drawEffects(g, mx, my);
     const prev = this.drawSlots(g, mx, my);
     this.drawCarried(g, mx, my, prev);
+  }
+  /* The effects on you, down the right of the panel as the game lists them:
+     shortest first, a dark box each 33 apart (closer with more than five),
+     120 across with the name and time left when there is room, else 32 with
+     just the picture and the name in a tooltip. Redrawn while any are on, for
+     their clocks. (The HUD's own list: gui.hud.effects.) */
+  drawEffects(g, mx, my) {
+    const e = g.hud && g.hud.effects, list = [];
+    if (e) for (const n in e) { const d = EFFECTS[n]; if (d && !d.instant && !e[n].hidden) list.push(n); }
+    const x = this.left + 176 + 2, room = this.width - x;
+    if (!list.length || room < 32) return;
+    // the clocks count down: drawn again four times a second while the list shows
+    if (!this._fxT) this._fxT = setTimeout(() => { this._fxT = 0; g.markDirty(); }, 250);
+    const wide = room >= 120, step = list.length > 5 ? Math.floor(132 / (list.length - 1)) : 33;
+    const key = n => { const v = e[n]; return [v.ambient ? 1 : 0, v.ticks < 0 ? 1 : 0, v.ticks < 0 ? 0 : v.ticks, EFFECTS[n].colour]; };
+    list.sort((a, b) => { const p = key(a), q = key(b); for (let i = 0; i < 4; i++) if (p[i] !== q[i]) return p[i] - q[i]; return 0; });
+    const img = g.sheet('container/inventory');
+    let y = this.top;
+    for (const n of list) {
+      const v = e[n], w = wide ? 120 : 32;
+      // the box: a black rim with round corners, a grey (or, from a beacon, teal) band, dark inside
+      const [rim, band] = v.ambient ? [0xFF005454, 0xFF00A8A8] : [0xFF000000, 0xFF555555];
+      g.fill(x + 1, y, x + w - 1, y + 32, rim); g.fill(x, y + 1, x + w, y + 31, rim);
+      g.fill(x + 1, y + 1, x + w - 1, y + 31, band);
+      g.fill(x + 3, y + 3, x + w - 3, y + 29, 0xFF212121);
+      const ic = EFFECT_ICON[n];
+      if (img && ic !== undefined) g.blit(img, (ic % 8) * 18, 198 + Math.floor(ic / 8) * 18, 18, 18, x + (wide ? 6 : 7), y + 7);
+      if (wide) {
+        g.text(effectName(n, v.level), x + 28, y + 6, 0xFFFFFF);
+        g.text(effectTime(v.ticks), x + 28, y + 16, 0x7F7F7F);
+      } else if (mx >= x && mx < x + w && my >= y && my < y + step) g.setTooltip([effectName(n, v.level), effectTime(v.ticks)]);
+      y += step;
+    }
   }
 }
 
