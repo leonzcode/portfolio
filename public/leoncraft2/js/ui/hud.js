@@ -22,8 +22,18 @@
 import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=24';
 import { drawBossBar } from '../dim/bossbar.js?v=24';
 import { BLOCKS, B } from '../blocks.js?v=24';
+import { EFFECTS } from '../effects.js?v=24';
 
 const TICK = 50;
+// where each effect's picture is in the classic sheet (container/inventory, 18 x 18 from 0, 198, eight to a row)
+const EFFECT_ICON = {
+  speed: 0, slowness: 1, haste: 2, mining_fatigue: 3, strength: 4, weakness: 5, poison: 6, regeneration: 7,
+  invisibility: 8, hunger: 9, jump_boost: 10, nausea: 11, night_vision: 12, blindness: 13, resistance: 14, fire_resistance: 15,
+  water_breathing: 16, wither: 17, absorption: 18, levitation: 19, glowing: 20, luck: 21, unluck: 22, health_boost: 23,
+  // the effects that came later, with the nearest of those
+  slow_falling: 19, conduit_power: 16, dolphins_grace: 0, bad_omen: 22, raid_omen: 22, trial_omen: 22, hero_of_the_village: 21,
+  darkness: 13, wind_charged: 10, weaving: 1, oozing: 6, infested: 9,
+};
 
 export class Hud {
   constructor(inventory, icons) {
@@ -67,6 +77,15 @@ export class Hud {
     this.stats = s ? Object.assign({}, s) : null;
     this._dirty = true;
   }
+  /* the effects on you (survival.js effects: name -> { level, ticks, ambient }),
+     each frame; the HUD is drawn again when one comes or goes, and each tick
+     while one is in its last ten seconds (its icon flickers) */
+  setEffects(e) {
+    let k = '';
+    if (e) for (const n in e) { const x = e[n]; k += n + (x.ambient ? '*' : '') + (x.ticks >= 0 && x.ticks <= 200 ? ':' + x.ticks : '') + ','; }
+    if (k === this._fxKey) return;
+    this._fxKey = k; this.effects = k ? e : null; this._dirty = true;
+  }
   setDebug(left, right) {
     if (!left && !right) { if (this.debug) { this.debug = null; this._dirty = true; } return; }
     const d = this.debug, L = left || [], R = right || [];
@@ -99,6 +118,8 @@ export class Hud {
 
     // what is held up under the HUD (a map in the hand: js/maps.js), and when to draw again
     if (this.under) { const w = this.under(g, now); if (w) this._wakeAt(w); }
+    // the effects on you, top right
+    if (this.effects) this._effects(g, W, now);
     // a spectator has no hotbar (modes.js): only the debug text and a boss's bar
     if (this.spectator) {
       if (this.debug) this._debugText(g, W);
@@ -231,6 +252,44 @@ export class Hud {
     if (air < maxAir) {
       const full = Math.ceil((air - 2) * 10 / maxAir), popping = Math.ceil(air * 10 / maxAir) - full;
       for (let k = 0; k < full + popping; k++) g.blit('icons', k < full ? 16 : 25, 18, 9, 9, right - k * 8 - 9, top - 10);
+    }
+  }
+
+  /* ---- effects ----
+     As the game lays them out: a 24 pixel box each from the top right, the
+     beneficial ones in the top row and the rest in a second row 26 below,
+     longest lasting furthest right (ambient ones, from a beacon or a
+     conduit, first, in the box with the light rim), the picture 3 in, and in
+     the last ten seconds the picture fading and flickering by the game's
+     sum. The boxes and pictures are Pixel Perfection's (container/inventory,
+     where the classic game kept them); effects newer than that sheet borrow
+     the nearest picture. */
+  _effects(g, W, now) {
+    const e = this.effects, list = [];
+    for (const n in e) { const d = EFFECTS[n]; if (d && !d.instant && !e[n].hidden) list.push(n); }
+    if (!list.length) return;
+    const img = g.sheet('container/inventory');
+    if (!img) { this._wakeAt(now + 100); return; }
+    const key = n => { const x = e[n]; return [x.ambient ? 1 : 0, x.ticks < 0 ? 1 : 0, x.ticks < 0 ? 0 : x.ticks, EFFECTS[n].colour]; };
+    list.sort((a, b) => { const p = key(a), q = key(b); for (let i = 0; i < 4; i++) if (p[i] !== q[i]) return q[i] - p[i]; return 0; });
+    let good = 0, rest = 0;
+    const ctx = g.ctx, clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    for (const n of list) {
+      const x = e[n], d = EFFECTS[n];
+      let px = W, py = 1;
+      if (d.kind === 'good') px -= 25 * ++good;
+      else { px -= 25 * ++rest; py += 26; }
+      g.blit(img, x.ambient ? 165 : 141, 166, 24, 24, px, py);
+      let a = 1;
+      if (!x.ambient && x.ticks >= 0 && x.ticks <= 200) {
+        const k = x.ticks, l = 10 - k / 20;
+        a = clamp(clamp(k / 10 / 5 * 0.5, 0, 0.5) + Math.cos(k * Math.PI / 5) * clamp(l / 10 * 0.25, 0, 0.25), 0, 1);
+      }
+      const ic = EFFECT_ICON[n];
+      if (ic === undefined) continue;
+      ctx.globalAlpha = a;
+      g.blit(img, (ic % 8) * 18, 198 + Math.floor(ic / 8) * 18, 18, 18, px + 3, py + 3);
+      ctx.globalAlpha = 1;
     }
   }
 
