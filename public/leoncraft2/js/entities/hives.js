@@ -43,8 +43,8 @@ export class Hives {
     const ed = world.edits && world.edits.get(key), size = ed ? ed.size : 0;
     let f = this.found.get(c);
     if (f && f.ed === size) return f.list;
-    const list = [], bl = c.blocks, top = Math.min(bl.length, ((c.top || 383) + 1) << 8);
-    for (let i = 0; i < top; i++) if (isHive(bl[i])) list.push([c.cx * CH + (i & 15), i >> 8, c.cz * CH + ((i >> 4) & 15)]);
+    const list = [], bl = c.blocks;
+    for (const T of [B.beehive, B.bee_nest]) for (let i = bl.indexOf(T); i >= 0; i = bl.indexOf(T, i + 1)) list.push([c.cx * CH + (i & 15), i >> 8, c.cz * CH + ((i >> 4) & 15)]);
     this.found.set(c, { list, ed: size });
     return list;
   }

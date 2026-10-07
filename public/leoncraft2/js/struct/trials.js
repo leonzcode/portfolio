@@ -174,8 +174,8 @@ export class TrialSpawners {
       const made = [];
       const st = c.structs && c.structs.structures;
       if (st && st.some(s => s.type === 'trial_chambers') && B.trial_spawner !== undefined) {
-        const bl = c.blocks, T = B.trial_spawner, top = Math.min(bl.length, ((c.top || 383) + 1) << 8);
-        for (let i = 0; i < top; i++) if (bl[i] === T) made.push([c.cx * CH + (i & 15), i >> 8, c.cz * CH + ((i >> 4) & 15), true]);
+        const bl = c.blocks, T = B.trial_spawner;
+        for (let i = bl.indexOf(T); i >= 0; i = bl.indexOf(T, i + 1)) made.push([c.cx * CH + (i & 15), i >> 8, c.cz * CH + ((i >> 4) & 15), true]);
       }
       f = { made };
     }

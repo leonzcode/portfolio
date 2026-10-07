@@ -37,8 +37,8 @@ export class Hearts {
     if (f && f.ed === size) return f.list;
     const list = [];
     if (B.creaking_heart !== undefined && (c.biome && c.biome.indexOf(BIO.pale_garden) >= 0 || size)) {
-      const bl = c.blocks, T = B.creaking_heart, top = Math.min(bl.length, ((c.top || 383) + 1) << 8);
-      for (let i = 0; i < top; i++) if (bl[i] === T) list.push([c.cx * CH + (i & 15), i >> 8, c.cz * CH + ((i >> 4) & 15)]);
+      const bl = c.blocks, T = B.creaking_heart;
+      for (let i = bl.indexOf(T); i >= 0; i = bl.indexOf(T, i + 1)) list.push([c.cx * CH + (i & 15), i >> 8, c.cz * CH + ((i >> 4) & 15)]);
     }
     this.found.set(c, { list, ed: size });
     return list;
