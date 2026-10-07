@@ -249,11 +249,12 @@ void main() {
     o = vec4(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0), 1.0);
     return;
   }
-  // the sky plane 16 blocks up, fogged at its corners (the game fogs it per corner of a 512 block fan)
+  // the sky plane 16 blocks up, fogged at its corners (the game fogs it per corner of a 512 block fan,
+  // in a straight line from none at the eye to all of it at the render distance, its fog.glsl)
   if (rd.y > 0.0313) {
     float r = 16.0 / max(rd.y, 1e-4) * length(rd.xz);
     float d = 16.0 + min(r, 512.0) * (496.0 / 512.0);
-    col = mix(uSkyColor, uFogColor, smoothstep(0.0, uSky.x, d));
+    col = mix(uSkyColor, uFogColor, sat(d / uSky.x));
   }
   // the sunrise fan, low on the horizon on the sun's side
   if (uSunrise.a > 0.0) {
@@ -302,7 +303,7 @@ void main() {
      line of fog colour with the dark below it, as in a ravine or the void. */
   if (uVoidDisc > 0.5 && rd.y < 0.0) {
     float r = 4.0 / max(-rd.y, 1e-4) * length(rd.xz);
-    if (r < 512.0) col = mix(vec3(0.0), uFogColor, smoothstep(0.0, uSky.x, 4.0 + r * (508.0 / 512.0)));
+    if (r < 512.0) col = mix(vec3(0.0), uFogColor, sat((4.0 + r * (508.0 / 512.0)) / uSky.x));
   }
   o = vec4(col, 1.0);
 }`;
