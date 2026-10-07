@@ -5,7 +5,7 @@
    the music that belongs to it, with the game's delays (in ticks) before a
    track and whether it may cut the one playing short:
 
-     title screen          music.menu         20 - 600     (1 - 30 seconds)
+     title screen          music.menu         20 - 600     (1 - 30 seconds), replacing
      credits               music.credits      0, at once, replacing
      the End, dragon alive music.dragon       0, at once, replacing
      the End               music.end          6000 - 24000
@@ -15,11 +15,13 @@
      anywhere else         music.overworld.<biome> or music.game  12000 - 24000
      a pale garden         no music: what plays fades out
 
-   The first track in a world waits 100 ticks; after a track, the delay
-   starts again (Music Frequency: Default 10 - 20 minutes, Frequent half
-   that, Constant 5 seconds). Changing situation (the title to a world, the
-   Overworld to the Nether) stops what plays and the next track of the new
-   kind comes within half its shortest delay. Music at 0% plays nothing.
+   Entering or leaving a world stops the music, and the first track waits
+   100 ticks; after a track, the delay starts again (Music Frequency:
+   Default 10 - 20 minutes, Frequent half that, Constant 5 seconds). Music
+   that replaces stops another kind playing and comes within half its
+   shortest delay; otherwise a track plays on to its end (a walk from a
+   forest into a desert lets the forest's track finish). Music at 0% plays
+   nothing.
 --------------------------------------------------------------------------- */
 import { Sound } from './sound.js?v=22';
 
@@ -53,8 +55,8 @@ export const Music = {
     });
   },
   delayFor(kind) {
-    const [lo, hi, replace] = KINDS[kind] || KINDS.game;
-    if (replace) return 0;
+    const [lo, hi] = KINDS[kind] || KINDS.game;
+    if (hi === 0) return 0;
     const f = this.options ? this.options.get('musicFrequency') : 'default';
     if (f === 'constant') return 100;
     if (f === 'frequent') return between(lo >> 1, hi >> 1);
@@ -77,11 +79,12 @@ export const Music = {
     if (this.current && this.current.kind !== s.kind && replace) { this.stop(); this.nextDelay = between(0, lo >> 1); }
     // (a walk into another biome lets the track playing finish, as in the game)
     if (!this.current) {
-      this.nextDelay = Math.min(this.nextDelay, replace ? 0 : this.scaled(hi));
+      // (the dragon's and the credits' music wait 0 ticks; the menu's no more than 600)
+      this.nextDelay = Math.min(this.nextDelay, this.scaled(hi));
       if (this.nextDelay-- <= 0) this.start(s);
     }
   },
-  scaled(hi) { const f = this.options ? this.options.get('musicFrequency') : 'default'; return f === 'constant' ? 100 : f === 'frequent' ? hi >> 1 : hi; },
+  scaled(hi) { const f = this.options ? this.options.get('musicFrequency') : 'default'; return hi === 0 ? 0 : f === 'constant' ? 100 : f === 'frequent' ? hi >> 1 : hi; },
   // a world was entered or left: what played stops (the loading screen stops the game's music), the next comes after 5 seconds
   reset() { this.stop(); this.nextDelay = 100; },
   start(s) {

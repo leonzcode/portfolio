@@ -216,7 +216,8 @@ export function soundParts(g) {
     D.onXp = () => atP('entity.experience_orb.pickup', 0.1, spread() * 0.35 + 0.9);
   }
   // blocks breaking (the game's level event 2001: the pieces and the sound, for every cause)
-  const parts = g.renderer && g.renderer.particles;
+  const R3 = g.renderer || (g.inter && g.inter.renderer) || (g.hands && g.hands.renderer);
+  const parts = R3 && R3.particles;
   if (parts && !parts.__snd) {
     parts.__snd = true;
     const bb = parts.blockBreak.bind(parts);
