@@ -39,10 +39,19 @@
                   server numbers each one, every machine lets it fall and
                   float as the game does, and a pick-up is asked of the
                   server, so only the first to reach it gets it
+     fighting     your hit on another player is worked out here as the game
+                  works it out (Net.hitPlayer, shotPlayer) and taken by their
+                  game with their armour and shield (Net.struck); what you
+                  shoot or throw flies on everyone's screen (shareShots) but
+                  only yours can hit anyone. A death names who did it.
+     commands     the server's own (/list, /op, /kick, /ban, /whitelist,
+                  /difficulty, /gamerule) are answered by it; one aimed at
+                  another player is run by their game (ranAs)
 
-   Not shared yet: the mobs and the orbs of experience. Each player has their
-   own, and what a mob does to the world (a creeper's hole, a farmer's crops,
-   what it drops) is shared like anything else.
+   Not shared yet: the mobs, the orbs of experience and what you ride (a
+   boat, a minecart: each player sees their own; others see you sitting).
+   What a mob does to the world (a creeper's hole, a farmer's crops, what it
+   drops) is shared like anything else.
 --------------------------------------------------------------------------- */
 import { B, BLOCKS } from '../blocks.js?v=21';
 import { idx, H } from '../world-const.js?v=21';
