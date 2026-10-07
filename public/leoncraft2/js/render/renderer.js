@@ -708,7 +708,8 @@ export class Renderer {
        stays as it is */
     // (the game's factor is on the colour as shown, (y over the floor / 32) squared; here the light is
     // before the tone curve, where it takes about its cube to look as dark)
-    const vd = state.dim, vf = (state.eye.y - 64 - (vd ? vd.minY : -64)) / 32;
+    // (a Superflat world, its horizon at the floor, darkens only in its last block: the game's clear colour scale is 1 there)
+    const vd = state.dim, vf = (state.eye.y - 64 - (vd ? vd.minY : -64)) / (state.horizon === 0 ? 1 : 32);
     U.uVoid.value.set(vd && vd.sky !== 'normal' ? 0 : Math.max(0, Math.min(1, (state.horizon !== undefined ? state.horizon : 127) - state.eye.y)),
       vd && vd.sky === 'end' ? 0 : 1 - (Math.max(0, Math.min(1, vf)) ** 2) ** 3, Math.max(32, this.opts.renderDist * 16));
     U.uMoonPhase.value = state.moonPhase;
