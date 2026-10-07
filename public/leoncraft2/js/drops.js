@@ -204,7 +204,8 @@ export class Drops {
           const b = w.get(x, y, z);
           if (!b || !SOLID[b]) continue;
           const d = BLOCKS[b];
-          if (d.shape === 'cube') { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }
+          // (a honey block's box is a sixteenth in and 15/16 tall: models.js collisionBoxes)
+          if (d.shape === 'cube' && b !== B.honey_block) { out.push(x, y, z, x + 1, y + 1, z + 1); continue; }
           const boxes = collisionBoxes(d, w.meta(x, y, z), (dx, dy, dz) => { const n = w.get(x + dx, y + dy, z + dz); return n ? { d: BLOCKS[n], m: w.meta(x + dx, y + dy, z + dz) } : null; });
           if (boxes) for (const c of boxes) out.push(x + c[0], y + c[1], z + c[2], x + c[3], y + c[4], z + c[5]);
         }

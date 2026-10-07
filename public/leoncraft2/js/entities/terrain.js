@@ -22,7 +22,9 @@ import { H } from '../world-const.js?v=27';
 const EPS = 1e-7;
 // full solid cubes, which a box can rest on without looking at shapes
 const FULL = new Uint8Array(4096);
-for (const d of BLOCKS) if (d && d.solid && d.shape === 'cube') FULL[d.id] = 1;
+for (const d of BLOCKS) if (d && d.solid && d.shape === 'cube' && d.name !== 'honey_block') FULL[d.id] = 1;
+// a honey block is a sixteenth in from each side and 15/16 tall for mobs too (models.js collisionBoxes)
+const HONEY = B.honey_block;
 
 export class Terrain {
   constructor(world) {
@@ -129,7 +131,7 @@ export class Terrain {
         const b = c.blocks[(y << 8) | (lz << 4) | lx];
         if (!b || !SOLID[b]) continue;
         const d = BLOCKS[b];
-        if (d.shape === 'cube') { push(x, y, z, x + 1, y + 1, z + 1); continue; }
+        if (d.shape === 'cube' && b !== HONEY) { push(x, y, z, x + 1, y + 1, z + 1); continue; }
         this.nbx = x; this.nby = y; this.nbz = z;
         const boxes = collisionBoxes(d, c.meta[(y << 8) | (lz << 4) | lx], this.nbFn);
         if (boxes) for (const q of boxes) push(x + q[0], y + q[1], z + q[2], x + q[3], y + q[4], z + q[5]);
