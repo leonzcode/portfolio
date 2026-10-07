@@ -32,6 +32,7 @@ import { portalShape, shapeCells, tryLight, checkPortal, findBuildSpot, buildPor
 import { EndFight, gatewayBlocks } from './endfight.js?v=24';
 import { EndCrystal, EyeOfEnder, Burst, boxesTouch } from './entities.js?v=24';
 import { mix32, rng } from '../noise.js?v=24';
+import { portalSwirl } from './art.js?v=24';
 const THREE = window.THREE;
 
 const E = y => y - Y0;                     // world y -> engine y
@@ -69,8 +70,12 @@ export class Realms {
     this.spawnDim = 'overworld'; this.anchor = null;
     this.bossFog = false; this.boss = null;
     this.hurtCool = 0;
-    this.overlay = document.createElement('div');
-    this.overlay.style.cssText = 'position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center, rgba(150,60,230,0.55), rgba(70,10,140,0.9));mix-blend-mode:screen;';
+    /* standing in a portal: the portal's own swirl over the whole screen, as the game draws it (one
+       16 pixel picture stretched across, turning as the block does), clearer the longer you stand */
+    this.overlay = document.createElement('canvas');
+    this.overlay.width = this.overlay.height = 16;
+    this.overlay.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:0;image-rendering:pixelated;';
+    this.swirlAt = -1;
     const c = document.getElementById('c');
     if (c && c.parentNode) c.parentNode.insertBefore(this.overlay, c.nextSibling);
   }
@@ -190,8 +195,14 @@ export class Realms {
   /* ---- each frame ---- */
   frame(alpha) {
     for (const e of this.entities) e.render(alpha);
-    const a = Math.min(1, this.portalTime / 80);
-    this.overlay.style.opacity = a > 0 ? (a * a * 0.85).toFixed(3) : '0';
+    // the game's sum: a fifth at once, then the fourth power of the time stood there (80 ticks) up to all of it
+    let a = Math.min(1, this.portalTime / 80);
+    if (a > 0 && a < 1) a = a * a * a * a * 0.8 + 0.2;
+    this.overlay.style.opacity = a > 0 ? a.toFixed(3) : '0';
+    if (a > 0) {
+      const frames = portalSwirl(), f = Math.floor(performance.now() / 100) % frames.length;
+      if (f !== this.swirlAt) { this.swirlAt = f; this.overlay.getContext('2d').putImageData(new ImageData(frames[f], 16, 16), 0, 0); }
+    }
   }
 
   /* ---- travelling ---- */
