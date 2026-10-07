@@ -35,6 +35,7 @@ const KINDS = {
   soul_flame: { f0: 26, f1: 26, size: 0.12, life: [8, 20], g: -0.002, drag: 0.96, col: [1, 1, 1], spread: 0.01, glow: true },
   large_smoke: { f0: 7, f1: 0, size: 0.3, life: [16, 40], g: -0.003, drag: 0.96, col: [0.3, 0.3, 0.3], spread: 0 },
   lava: { f0: 22, f1: 22, size: 0.12, life: [16, 40], g: 0.03, drag: 0.999, col: [1, 0.55, 0.15], spread: 0, glow: true },
+  rain: { f0: 22, f1: 22, size: 0.2, life: [8, 40], g: 0.06, drag: 0.98, col: [0.7, 0.8, 1], spread: 0 },
   campfire: { f0: 2, f1: 2, size: 0.5, life: [280, 330], g: -0.000003, drag: 1, col: [0.85, 0.85, 0.85], spread: 0 },
   campfire_signal: { f0: 1, f1: 1, size: 0.5, life: [400, 460], g: -0.000003, drag: 1, col: [0.85, 0.85, 0.85], spread: 0 },
 };

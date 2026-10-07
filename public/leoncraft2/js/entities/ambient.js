@@ -15,11 +15,14 @@
                     rising 0.07 a tick for 280 to 330 ticks (a signal fire,
                     over a hay bale, higher), and now and then a spark
 
+   And while it rains, the splashes where it lands (rainSplashes).
+
    Particles go through entities/particles.js like the rest, so Video
    Settings' Particles leaves some out the same way. Cheap: 1334 block reads
    a tick, nothing kept but the campfires near you.
 --------------------------------------------------------------------------- */
 import { BLOCKS, B } from '../blocks.js?v=24';
+import { BIOMES } from '../biomes.js?v=24';
 
 const R = Math.random;
 const KIND = new Uint8Array(BLOCKS.length + 1);
@@ -47,9 +50,10 @@ export class Ambient {
     this.fires = new Map();      // campfires seen near you: "x,y,z" -> [x, y, z]
   }
   // one particle where asked, still (the game's torch smoke and flames start at rest), or with a push
-  puff(kind, x, y, z, vx = 0, vy = 0, vz = 0, col) {
+  // (light: 1 draws it at full brightness; below that it takes the lightmap, so it darkens at night)
+  puff(kind, x, y, z, vx = 0, vy = 0, vz = 0, col, light) {
     const P = this.m.particlesP, i = P.n;
-    P.add(kind, x, y, z, 1, 0, col);
+    P.add(kind, x, y, z, 1, 0, col, light);
     if (P.n > i) { const o = i * 3; P.vel[o] = vx; P.vel[o + 1] = vy; P.vel[o + 2] = vz; }
   }
   tick() {
@@ -63,6 +67,7 @@ export class Ambient {
         if (k) this.block(k, b, x, y, z);
       }
     }
+    this.rainSplashes(px, py, pz);
     // the campfires: every tick, as their block entities do in the game
     for (const [key, f] of this.fires) {
       const [x, y, z] = f;
@@ -70,8 +75,30 @@ export class Ambient {
       if (KIND[b] !== CAMPFIRE || (T.meta(x, y, z) & 4) || Math.abs(x - px) > 64 || Math.abs(z - pz) > 64) { this.fires.delete(key); continue; }
       if (R() < 0.11) {
         const n = 2 + ((R() * 2) | 0), kind = T.get(x, y - 1, z) === B.hay_block ? 'campfire_signal' : 'campfire';
-        for (let k = 0; k < n; k++) this.puff(kind, x + 0.5 + R() / 3 * (R() < 0.5 ? 1 : -1), y + R() + R(), z + 0.5 + R() / 3 * (R() < 0.5 ? 1 : -1), 0, 0.07, 0);
+        for (let k = 0; k < n; k++) this.puff(kind, x + 0.5 + R() / 3 * (R() < 0.5 ? 1 : -1), y + R() + R(), z + 0.5 + R() / 3 * (R() < 0.5 ? 1 : -1), 0, 0.07, 0, undefined, OUTDOORS);
       }
+    }
+  }
+  /* Rain hitting the ground, as the game's weather does each tick: 100 x
+     rain level squared tries at columns within 10 blocks, each where the rain
+     lands (the top block that stops it) if that is within 10 of you and it
+     rains there rather than snows: a little splash that hops and falls, or a
+     wisp of smoke off lava, magma or a lit campfire. */
+  rainSplashes(px, py, pz) {
+    const m = this.m, ws = m.R && m.R.weatherState, rain = ws ? ws.rain || 0 : 0;
+    if (rain <= 0 || m.dim !== 'overworld') return;
+    const T = m.t, W = m.world, n = Math.floor(100 * rain * rain);
+    for (let i = 0; i < n; i++) {
+      const x = px + ((R() * 21) | 0) - 10, z = pz + ((R() * 21) | 0) - 10;
+      const top = T.motionTop(x, z);
+      if (top <= 0 || top > py + 10 || top < py - 10) continue;
+      const bi = BIOMES[W.biomeAt(x, z)];
+      if (!bi || bi.snowy || !bi.rain) continue;
+      const b = T.get(x, top - 1, z), d = BLOCKS[b];
+      const hot = d && (d.name === 'lava' || d.name === 'magma_block' || (KIND[b] === CAMPFIRE && !(T.meta(x, top - 1, z) & 4)));
+      const sx = x + R(), sz = z + R(), sy = top - (d && d.name === 'water' ? 1 / 9 : 0);
+      if (hot) this.puff('smoke', sx, sy, sz);
+      else this.puff('rain', sx, sy, sz, (R() - 0.5) * 0.04, 0.1 + R() * 0.2, (R() - 0.5) * 0.04, undefined, OUTDOORS);
     }
   }
   block(k, b, x, y, z) {
@@ -121,3 +148,5 @@ export class Ambient {
   }
 }
 const RED = [1.0, 0.15, 0.1];
+// in the open sky's light (the lightmap darkens it at night), not glowing
+const OUTDOORS = 0.98;
