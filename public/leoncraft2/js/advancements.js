@@ -27,6 +27,15 @@
    new one shows a toast (Advancement Made!, Goal Reached!, Challenge
    Complete!) and a line in chat (with announceAdvancements on).
 
+   Recipes for the recipe book (ui/recipebook.js) are unlocked here too, as
+   the game's recipe advancements do it (js/recipeunlocks.js, built from its
+   data by tools/leoncraft2/build_recipe_unlocks.py): carrying an item for
+   the first time unlocks the recipes it is named for (planks the sticks and
+   signs, a stone pickaxe the torch...), standing in water the boats, and the
+   crafting table is known from the start; a recipe the table does not name
+   is unlocked by any of its ingredients. Each new batch shows a New Recipes
+   Unlocked! toast; /recipe gives and takes them.
+
    Statistics (the game's General and Mobs pages, and the Items page's mined,
    picked up and used): time played, distances by way of moving, jumps,
    deaths, kills, damage taken, animals bred, times slept, blocks mined...
@@ -36,6 +45,9 @@ import { BLOCKS } from './blocks.js?v=24';
 import { BIOMES } from './biomes.js?v=24';
 import { ITEMS, I } from './items.js?v=24';
 import { CH } from './world-const.js?v=24';
+import { allRecipes } from './crafting.js?v=24';
+import { register } from './commands.js?v=24';
+import { UNLOCKS, START } from './recipeunlocks.js?v=24';
 
 export const TABS = [
   { id: 'story', title: 'Minecraft', icon: 'grass_block', bg: 0xFF3A3A3A },
@@ -68,12 +80,57 @@ export class Progress {
       this.done = (st && st.done) || {};
       this.crit = (st && st.crit) || {};
       this.stats = (st && st.stats) || {};
+      // the recipe book: items ever carried (by name) and the recipes unlocked (by recipeKey)
+      this.seen = new Set((st && st.seen) || []);
+      this.rkeys = new Set((st && st.recipes) || []);
+      this.unlocked = null;
+      if (!st || !st.recipes) this.unlock(allRecipes().filter(r => START.includes(nameOf(r.id))), true);
       this.dim = null; this.track = {};
     }
     this.hook(g);
     if (!this.overlaid) { const L = lc2(); if (L && L.gui) { L.gui.overlays.push(toastOverlay(this)); this.overlaid = true; } }
   }
-  save() { try { localStorage.setItem(KEY(this.id), JSON.stringify({ done: this.done, crit: this.crit, stats: this.stats })); } catch (e) { /* storage full */ } this.dirty = false; }
+  save() {
+    const o = { done: this.done, crit: this.crit, stats: this.stats, seen: [...(this.seen || [])], recipes: [...(this.rkeys || [])] };
+    try { localStorage.setItem(KEY(this.id), JSON.stringify(o)); } catch (e) { /* storage full */ }
+    this.dirty = false;
+  }
+
+  /* ---- the recipe book's recipes ---- */
+  // every recipe unlocked in this world (a Set of crafting.js recipes), or null before a world
+  unlockedRecipes() {
+    if (!this.rkeys) return null;
+    if (!this.unlocked) { const K = recipeKeys(); this.unlocked = new Set([...this.rkeys].map(k => K.byKey.get(k)).filter(Boolean)); }
+    return this.unlocked;
+  }
+  recipeCount() { const u = this.unlockedRecipes(); return u ? u.size : 0; }
+  // recipes unlocked (a toast for those that are new); returns how many were
+  unlock(list, quiet) {
+    const u = this.unlockedRecipes(), K = recipeKeys(), fresh = [];
+    for (const r of list) if (!u.has(r)) { u.add(r); this.rkeys.add(K.keyOf.get(r)); fresh.push(r.id); }
+    if (fresh.length) { this.dirty = true; if (!quiet) this.recipeToast(fresh); }
+    return fresh.length;
+  }
+  lock(list) {
+    const u = this.unlockedRecipes(), K = recipeKeys();
+    let n = 0;
+    for (const r of list) if (u.delete(r)) { this.rkeys.delete(K.keyOf.get(r)); n++; }
+    if (n) this.dirty = true;
+    return n;
+  }
+  // an item carried for the first time (or '@water', first in water): the recipes it unlocks
+  see(name) {
+    this.seen.add(name);
+    this.dirty = true;
+    this.unlock(recipesWith(name));
+  }
+  recipeToast(ids) {
+    const last = this.toasts[this.toasts.length - 1];
+    if (last && last.recipe && (!last.t0 || performance.now() - last.t0 < SHOW)) { for (const id of ids) if (last.ids.length < 64) last.ids.push(id); return; }
+    this.toasts.push({ recipe: true, ids: ids.slice(0, 64), t0: 0 });
+    const S = typeof window !== 'undefined' && window.__lc2sound && window.__lc2sound.Sound;
+    if (S) try { S.near('ui.toast.in', 1, 1, 'ui'); } catch (e) { /* no sound */ }
+  }
   stat(k, n = 1) { this.stats[k] = (this.stats[k] || 0) + n; this.dirty = true; }
   statOf(kind, name, n = 1) { const t = this.stats[kind] || (this.stats[kind] = {}); t[name] = (t[name] || 0) + n; this.dirty = true; }
 
@@ -250,6 +307,10 @@ export class Progress {
     // what you carry and wear
     const have = new Set(), stacks = [];
     if (inv) for (const st of [...inv.slots, ...inv.armor, inv.offhand]) if (st) { have.add(nameOf(st.id)); stacks.push(st); }
+    if (this.seen) {
+      if (P.inWater) have.add('@water');
+      for (const n of have) if (n && !this.seen.has(n)) this.see(n);
+    }
     for (const a of ADVANCEMENTS) {
       if (this.done[a.id] || UNFOLLOWED.has(a.id)) continue;
       for (const k in a.crit) {
@@ -353,11 +414,23 @@ function toastOverlay(p) {
         const age = now - t.t0;
         const slide = age < SLIDE ? age / SLIDE : age > SHOW + SLIDE ? Math.max(0, 1 - (age - SHOW - SLIDE) / SLIDE) : 1;
         const w = 160, h = 32, x = Math.round(g.width - w * slide), y = i * h;
+        const L = lc2(), icons = L && L.hands && L.hands.icons;
+        if (t.recipe) {
+          // New Recipes Unlocked!, the new ones' results in turn
+          g.fill(x, y, x + w, y + h, 0xFF555555);
+          g.fill(x + 1, y + 1, x + w - 1, y + h - 1, 0xFFE0E0E0);
+          g.fill(x + 2, y + 2, x + w - 2, y + h - 2, 0xFFC6C6C6);
+          const id = t.ids[Math.floor(age / 1000) % t.ids.length];
+          if (icons && id) icons.draw(g, id, x + 8, y + 8);
+          g.text('New Recipes Unlocked!', x + 30, y + 7, 0x500050, false);
+          g.text('Check your recipe book', x + 30, y + 18, 0x000000, false);
+          return;
+        }
         const a = t.a, challenge = a.frame === 'challenge';
         g.fill(x, y, x + w, y + h, 0xFF202020);
         g.fill(x + 1, y + 1, x + w - 1, y + h - 1, 0xFF3C3C3C);
         g.fill(x + 2, y + 2, x + w - 2, y + h - 2, 0xFF202020);
-        const L = lc2(), icons = L && L.hands && L.hands.icons, id = itemIdOf(a.icon);
+        const id = itemIdOf(a.icon);
         if (icons && id) icons.draw(g, id, x + 8, y + 8);
         g.text(challenge ? 'Challenge Complete!' : a.frame === 'goal' ? 'Goal Reached!' : 'Advancement Made!', x + 30, y + 7, challenge ? 0xFF88FF : 0xFFFF00, false);
         g.text(g.font && g.font.trim ? g.font.trim(a.title, w - 36) : a.title, x + 30, y + 18, 0xFFFFFF, false);
@@ -370,3 +443,56 @@ export const itemIdOf = name => (I[name] !== undefined ? I[name] : 0);
 
 let ONE = null;
 export function progress() { return ONE || (ONE = new Progress()); }
+
+/* A recipe's key, kept in the save: what it makes, and which of the recipes making that it is
+   (the order they are in the game's data), so a key still means the same recipe after a rebuild. */
+let KEYS = null;
+function recipeKeys() {
+  if (!KEYS) {
+    KEYS = { byKey: new Map(), keyOf: new Map() };
+    const n = new Map();
+    for (const r of allRecipes()) {
+      const base = nameOf(r.id) + (r.kind === 'transmute' ? '~' : ''), k = (n.get(base) || 0);
+      n.set(base, k + 1);
+      const key = base + (k ? '#' + k : '');
+      KEYS.byKey.set(key, r); KEYS.keyOf.set(r, key);
+    }
+  }
+  return KEYS;
+}
+// the recipes each item (by name) unlocks: the game's list for what the recipe makes, else its ingredients
+let BY_ITEM = null;
+function recipesWith(name) {
+  if (!BY_ITEM) {
+    BY_ITEM = new Map();
+    const add = (n, r) => { let a = BY_ITEM.get(n); if (!a) BY_ITEM.set(n, a = []); if (a[a.length - 1] !== r) a.push(r); };
+    for (const r of allRecipes()) {
+      const list = UNLOCKS[nameOf(r.id)];
+      if (list) for (const n of list) add(n, r);
+      else for (const c of r.cells) if (c) for (const i of c) add(nameOf(i), r);
+    }
+  }
+  return BY_ITEM.get(name) || [];
+}
+
+/* /recipe (give|take) <targets> (*|<recipe>), the game's replies; a recipe is named by what it makes */
+register('recipe', {
+  usage: '(give|take) <targets> (*|<recipe>)',
+  suggest: i => (i === 0 ? ['give', 'take'] : i === 1 ? ['@s'] : i === 2 ? ['*'] : []),
+  run(args, ctx) {
+    const op = args[0], P = progress(), who = ctx.playerName || 'Player';
+    if ((op !== 'give' && op !== 'take') || args[2] === undefined) { ctx.say('Incomplete command', 0xFF5555); return; }
+    if (!/^(@s|@p|@a)$/.test(args[1]) && args[1] !== who) { ctx.say('No player was found', 0xFF5555); return; }
+    if (!P.rkeys) { ctx.say('No player was found', 0xFF5555); return; }
+    let list = allRecipes();
+    if (args[2] !== '*') {
+      const n = args[2].replace(/^minecraft:/, '');
+      list = list.filter(r => nameOf(r.id) === n);
+      if (!list.length) { ctx.say('Unknown recipe: ' + args[2], 0xFF5555); return; }
+    }
+    const k = op === 'give' ? P.unlock(list) : P.lock(list);
+    P.save();
+    if (!k) ctx.say(op === 'give' ? 'No recipes could be learned' : 'No recipes could be forgotten', 0xFF5555);
+    else ctx.say(op === 'give' ? `Unlocked ${k} recipes for ${who}` : `Took ${k} recipes from ${who}`);
+  },
+});
