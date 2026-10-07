@@ -421,6 +421,14 @@ export class World {
     return b < 0 ? 0 : b;
   }
 
+  /* The chunks to make, (dx, dz) from yours: every one next to a column within
+     render distance, as a column is meshed only once all eight round it are
+     here. (A circle one chunk wider missed sixteen of them, so twelve columns
+     at the very edge, the one straight ahead among them, were never drawn.) */
+  inReach(dx, dz) {
+    const a = Math.max(Math.abs(dx) - 1, 0), b = Math.max(Math.abs(dz) - 1, 0), rd = this.renderDist;
+    return a * a + b * b <= rd * rd;
+  }
   wanted(cx, cz) {
     const dx = cx - this.pcx, dz = cz - this.pcz;
     return dx * dx + dz * dz <= (this.renderDist + 2) * (this.renderDist + 2);
@@ -454,7 +462,7 @@ export class World {
       for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.fresh = false; this.chunks.delete(k); this.byNum.delete(((c.cx & 0x7fff) << 15) | (c.cz & 0x7fff)); this.meshCache.delete(k); this.rowLog.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
       this.genList = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
-        if (dx * dx + dz * dz > R * R) continue;
+        if (!this.inReach(dx, dz)) continue;
         if (!this.chunkXZ(pcx + dx, pcz + dz)) this.genList.push([dx * dx + dz * dz, pcx + dx, pcz + dz]);
       }
       this.genList.sort((a, b) => a[0] - b[0]);
@@ -588,7 +596,7 @@ export class World {
       const R = rd + 1;
       let lost = null;
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
-        if (dx * dx + dz * dz > R * R) continue;
+        if (!this.inReach(dx, dz)) continue;
         const x = this.pcx + dx, z = this.pcz + dz;
         if (this.chunkXZ(x, z)) continue;
         const k = this.key(x, z);
