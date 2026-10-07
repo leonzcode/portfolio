@@ -53,7 +53,8 @@ const CODE = { task: '§a', goal: '§a', challenge: '§5' };
 export function advInit(deps) {
   D = deps;
   if (deps.gui) deps.gui.overlays.push(AdvToast.overlay(deps.gui, deps.icons));
-  window.__lc2adv = { get progress() { return P; }, ADV, TABS, fire, env: () => makeEnv(), toast: AdvToast, open: () => openAdvancements() };
+  // for tests and the curious: the record, the list, a trigger by hand, one tick's checks (for timing)
+  window.__lc2adv = { get progress() { return P; }, ADV, TABS, fire, env: () => makeEnv(), toast: AdvToast, open: () => openAdvancements(), tick: () => G && advTick(G) };
 }
 export function openAdvancements() {
   if (!G || !P || !D || !D.gui) return false;
@@ -669,7 +670,8 @@ for (const name of ['click', 'quickMove']) wrapProto(BrewingScreen, name, functi
 export function advTick(g) {
   if (!P || !S || g !== G || !g.player) return;
   const p = g.player, t = ++S.t;
-  if (g.mode === 'spectator') return;
+  // (a spectator, or a player lying dead, counts for nothing)
+  if (g.mode === 'spectator' || (g.survival && g.survival.dead)) { S.fall = S.launch = S.lev = S.lava = null; return; }
   // what you carry: inventory_changed whenever it changes
   if (P.wants('inventory_changed')) {
     const sig = invSig(g.inv);
@@ -746,6 +748,10 @@ function effectsTick(g) {
    charge's launch measured while you fly (fall_after_explosion) */
 function fallTick(g, p) {
   const sv = g.survival;
+  // a teleport (a command, a portal, an ender pearl's long throw) starts every fall afresh
+  const lp = S.lastPos;
+  if (lp && Math.abs(p.pos.x - lp[0]) + Math.abs(p.pos.y - lp[1]) + Math.abs(p.pos.z - lp[2]) > 12) S.fall = S.launch = null;
+  S.lastPos = [p.pos.x, p.pos.y, p.pos.z];
   const settled = p.onGround || p.inWater || p.climbing || p.flying || (g.entities && g.entities.riding);
   if (!settled) {
     if (!S.fall && p.vel.y < 0) S.fall = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
