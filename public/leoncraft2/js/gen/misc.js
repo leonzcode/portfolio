@@ -14,6 +14,7 @@
 import { B, BLOCKS } from '../blocks.js?v=22';
 import {
   FEATURES, strip, tag, provider, predicate, sampleInt, sampleFloat, stateFrom, placePlaced, survives, fluidOf, msin,
+  NOTE_TABLES, NOTE_MOBS, NOTE_SPAWNER, longHalves,
 } from './features.js?v=22';
 import { LegacyRandom } from './random.js?v=22';
 import { Perlin } from './noise.js?v=22';
@@ -261,23 +262,28 @@ FEATURES.monster_room = (D, c, r, ox, oy, oz) => {
     if (b === B.chest || b === B.spawner) continue;
     safeSet(R, x, y, z, CAVE_AIR, 0, cant);
   }
-  // up to two chests against a wall
+  // up to two chests against a wall, facing away from it
   for (let s = 0; s < 2; s++) {
     for (let t = 0; t < 3; t++) {
       const x = ox + r.nextInt(j * 2 + 1) - j, y = oy, z = oz + r.nextInt(o * 2 + 1) - o;
       if (!isAir(R.get(x, y, z))) continue;
-      let walls = 0;
-      for (const hi of HORIZ) { const [dx, , dz] = DIRS[hi]; if (isSolid(R.get(x + dx, y, z + dz))) walls++; }
+      let walls = 0, face = 0;
+      for (let h = 0; h < 4; h++) { const [dx, , dz] = DIRS[HORIZ[h]]; if (isSolid(R.get(x + dx, y, z + dz))) { walls++; face = (h + 2) & 3; } }
       if (walls !== 1) continue;
-      safeSet(R, x, y, z, B.chest, 0, cant);
-      r.nextLong();          // the chest's loot table seed
+      safeSet(R, x, y, z, B.chest, face, cant);
+      // the chest's loot: the dungeon's table and a seed drawn now, as the game's setBlockEntityLootTable does
+      // (only when the chest went in), kept as a note the chunk turns into a structure chest (vanillagen.js featureNotes)
+      if (R.get(x, y, z) === B.chest) { const [hi, lo] = longHalves(r.nextLong()); R.note(x, y, z, 1 + NOTE_TABLES.indexOf('simple_dungeon'), hi, lo); }
       break;
     }
   }
   safeSet(R, ox, oy, oz, B.spawner, 0, cant);
-  r.nextInt(4);              // which mob the spawner holds
+  // which mob the spawner holds (skeleton, zombie, zombie or spider)
+  const mob = DUNGEON_MOBS[r.nextInt(4)];
+  if (R.get(ox, oy, oz) === B.spawner) R.note(ox, oy, oz, NOTE_SPAWNER, NOTE_MOBS.indexOf(mob));
   return true;
 };
+const DUNGEON_MOBS = ['skeleton', 'zombie', 'zombie', 'spider'];
 
 /* ====================================================== magma under sea == */
 FEATURES.underwater_magma = (D, c, r, ox, oy, oz) => {
