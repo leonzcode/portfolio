@@ -866,7 +866,9 @@ SHAPES.shelf = function (d, m) {
 SHAPES.conduit = function (d) { const s = [5, 5, 11, 11]; return [box(5, 5, 5, 11, 11, 11, { uv: [s, s, s, s, s, s] })]; };
 /* A decorated pot (the game's pot): the body fourteen pixels square and a block tall, each side the middle of
    its picture, then a narrow collar and the wider lip on top. */
-SHAPES.vase = function (d) {
+SHAPES.vase = function (d, m) {
+  // (while it wobbles the whole pot moves, drawn by sim/lids.js)
+  if (m & 256) return [];
   const S = d.faces[0], T = d.L && d.L.base !== undefined ? d.L.base : S, s = [1, 0, 15, 16], t = [1, 1, 15, 15];
   return [box(1, 0, 1, 15, 16, 15, { faces: [S, S, T, T, S, S], uv: [s, s, t, t, s, s] }),
     box(5, 16, 5, 11, 17, 11, { faces: [S, S, S, S, S, S], skip: 12, uv: [[5, 0, 11, 1], [5, 0, 11, 1], null, null, [5, 0, 11, 1], [5, 0, 11, 1]] }),
@@ -1002,7 +1004,7 @@ const MOVING_DEF = new Map();
 export function movingDef(d) {
   if (MOVING_DEF.has(d.id)) return MOVING_DEF.get(d.id);
   let v = null;
-  if (d.shape === 'chest' || d.shape === 'bell') v = d;
+  if (d.shape === 'chest' || d.shape === 'bell' || d.shape === 'vase') v = d;
   else if (/shulker_box$/.test(d.name)) v = Object.assign(Object.create(d), { shape: 'shulker' });
   MOVING_DEF.set(d.id, v);
   return v;

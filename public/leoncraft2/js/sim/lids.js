@@ -13,6 +13,8 @@
                      a state of the block, as in the game)
      bells           swing for 50 ticks when they ring, sin(t / pi) / (4 + t / 3)
                      radians, away from the side they were struck on
+     decorated pots  wobble when something goes in (a twist, 7 ticks) or will
+                     not go in (a rock from side to side, 10 ticks)
 
    While a part moves, the block's own mesh is made without it
    (world.setMoving: the mesher draws those cells from models.js movingDef)
@@ -42,6 +44,8 @@ export function boxOpened(x, y, z, screen, partner) {
 }
 // a bell rang, struck from the side whose face (0-5, as models.js numbers them) was hit
 export function bellRang(x, y, z, face) { if (ACTIVE) ACTIVE.ring(x, y, z, face); }
+// something went into a decorated pot (ok), or it would not take it
+export function potWobbled(x, y, z, ok) { if (ACTIVE) ACTIVE.wobble(x, y, z, ok); }
 
 const FACES_N = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 const FACE_TB = [[[2, -1], [1, -1]], [[2, 1], [1, -1]], [[0, 1], [2, 1]], [[0, 1], [2, -1]], [[0, 1], [1, -1]], [[0, -1], [1, -1]]];
@@ -131,7 +135,8 @@ export class Lids {
     const b = this.w.get(x, y, z);
     if (!b) return null;
     const d = BLOCKS[b], m = this.w.meta(x, y, z);
-    const kind = d.shape === 'chest' ? 'chest' : /shulker_box$/.test(d.name) ? 'shulker' : d.name === 'barrel' ? 'barrel' : d.shape === 'bell' ? 'bell' : null;
+    const kind = d.shape === 'chest' ? 'chest' : /shulker_box$/.test(d.name) ? 'shulker' : d.name === 'barrel' ? 'barrel' : d.shape === 'bell' ? 'bell'
+      : d.shape === 'vase' ? 'pot' : null;
     if (!kind) return null;
     e = { k, x, y, z, b, d, m, kind, viewers: 0, open: 0, prev: 0, ticks: 0, face: 0, mesh: null, keep: 0, shown: false };
     this.list.set(k, e);
@@ -161,6 +166,13 @@ export class Lids {
     e.ticks = 0; e.ringing = true; e.face = face;
     this.show(e);
   }
+  // a decorated pot: a twist when something goes in, a shake of the head when it will not take it
+  wobble(x, y, z, ok) {
+    const e = this.entry(x, y, z);
+    if (!e || e.kind !== 'pot') return;
+    e.ticks = 0; e.ringing = true; e.ok = ok;
+    this.show(e);
+  }
   // the moving part's own mesh, and the block meshed without it
   show(e) {
     if (e.mesh) { e.keep = 0; if (!e.shown) { e.shown = true; this.w.setMoving(e.x, e.y, e.z, true); } return; }
@@ -170,6 +182,7 @@ export class Lids {
     let list;
     if (e.kind === 'chest') list = turn(chestParts(d, m | 512).map(fixUV), m & 3);
     else if (e.kind === 'shulker') { const [rx, ry] = ENDS[Math.min(5, m & 7)]; list = rotate(SHAPES.shulker(Object.assign(Object.create(d), { shape: 'shulker' }), m | 512), rx, ry); }
+    else if (e.kind === 'pot') list = SHAPES.vase(d, m | 512);
     else list = SHAPES.bell(d, m | 512);
     const cut = d.pass !== 'opaque';
     e.mesh = new THREE.Mesh(partGeometry(list, d), cut ? r.mats.cutout : r.mats.opaque);
@@ -208,11 +221,11 @@ export class Lids {
       if (this.w.get(e.x, e.y, e.z) !== e.b) { this.drop(e, true); this.list.delete(e.k); continue; }
       if (e.kind === 'barrel') continue;
       e.prev = e.open;
-      if (e.kind === 'bell') {
-        if (e.ringing && ++e.ticks >= 50) { e.ringing = false; e.ticks = 0; }
+      if (e.kind === 'bell' || e.kind === 'pot') {
+        if (e.ringing && ++e.ticks >= (e.kind === 'bell' ? 50 : e.ok ? 7 : 10)) { e.ringing = false; e.ticks = 0; }
       } else e.open = Math.max(0, Math.min(1, e.open + (e.viewers > 0 ? 0.1 : -0.1)));
       if (e.mesh) this.light(e);
-      const still = e.kind === 'bell' ? !e.ringing : e.viewers === 0 && e.open === 0 && e.prev === 0;
+      const still = e.kind === 'bell' || e.kind === 'pot' ? !e.ringing : e.viewers === 0 && e.open === 0 && e.prev === 0;
       if (still) {
         // shut: the block takes its part back; the moving one stays a few ticks while the block's mesh is made
         if (e.shown) this.drop(e, false);
@@ -247,6 +260,11 @@ export class Lids {
       // struck on a side with normal n: it swings about the level line across n, its foot first away from the blow
       const axis = [-n[2], 0, n[0]];
       if (axis[0] || axis[2]) pivot([8, 12, 8], axis, -j);
+    } else if (e.kind === 'pot' && e.ringing) {
+      // on its foot: a quick twist about its middle that dies away, or a rock from side to side
+      const s = (e.ticks + a) / (e.ok ? 7 : 10);
+      if (e.ok) pivot([8, 0, 8], [0, 1, 0], Math.sin(-s * PI * 3) * 0.125 * (1 - s));
+      else { pivot([8, 0, 8], [1, 0, 0], Math.sin(s * PI * 2) * 0.06 * (1 - s)); pivot([8, 0, 8], [0, 0, 1], Math.sin(s * PI * 4) * 0.04 * (1 - s)); }
     }
     e.mesh.matrix.copy(M);
     e.mesh.matrixWorldNeedsUpdate = true;
