@@ -17,10 +17,10 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=27';
-import { VANILLA } from './vanilla.js?v=27';
-import { lightDefines } from './materials.js?v=27';
-import { GLINT } from './armor.js?v=27';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=28';
+import { VANILLA } from './vanilla.js?v=28';
+import { lightDefines } from './materials.js?v=28';
+import { GLINT } from './armor.js?v=28';
 const THREE = window.THREE;
 
 export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)
@@ -155,12 +155,12 @@ void main() {
 }`;
 const PART_FS_VANILLA = VANILLA + /* glsl */`
 uniform sampler2D uSheet;
-in vec2 vUv; in vec4 vC; in float vLight;
+in vec2 vUv; in vec4 vC; in float vLight; in float vBlock;
 layout(location = 0) out vec4 outColor;
 void main() {
   vec4 t = texture(uSheet, vUv);
   if (t.a * vC.a < 0.1) discard;
-  vec3 c = t.rgb * vC.rgb * (vLight > 0.99 ? vec3(1.0) : lightmapAt(vLight, 0.0));
+  vec3 c = t.rgb * vC.rgb * (vLight > 0.99 ? vec3(1.0) : lightmapAt(vLight, vBlock));
   outColor = vec4(c, t.a * vC.a);
 }`;
 
@@ -208,8 +208,8 @@ const PART_VS = /* glsl */`
 uniform mat4 viewMatrix, projectionMatrix;
 in vec3 position; in vec4 aP;   // x, y, z, size
 in vec4 aC;                     // colour rgb, alpha
-in vec4 aT;                     // frame, light (0..1), spin, (unused)
-out vec2 vUv; out vec4 vC; out float vLight;
+in vec4 aT;                     // frame, sky light (0..1; 1 glows), spin, block light (0..1)
+out vec2 vUv; out vec4 vC; out float vLight; out float vBlock;
 void main() {
   vec4 v = viewMatrix * vec4(aP.xyz, 1.0);
   float c = cos(aT.z), s = sin(aT.z);
@@ -217,21 +217,22 @@ void main() {
   v.xy += q * aP.w;
   float f = aT.x;
   vUv = (vec2(mod(f, 8.0), floor(f / 8.0)) + (position.xy * vec2(1.0, -1.0) + 0.5)) / 8.0;
-  vC = aC; vLight = aT.y;
+  vC = aC; vLight = aT.y; vBlock = aT.w;
   gl_Position = projectionMatrix * v;
 }`;
 const PART_FS = /* glsl */`
 uniform sampler2D uSheet, uAmbient;
-in vec2 vUv; in vec4 vC; in float vLight;
+in vec2 vUv; in vec4 vC; in float vLight; in float vBlock;
 layout(location = 0) out vec4 outColor;
 void main() {
   vec4 t = texture(uSheet, vUv);
   if (t.a * vC.a < 0.1) discard;
   vec3 c = pow(t.rgb * vC.rgb, vec3(2.2));
-  // lit by the sky's light where it is (glowing ones carry a light of 1)
+  // lit by the sky's light where it is (glowing ones carry a light of 1), and the warm light of torches and fires there
   vec3 amb = texelFetch(uAmbient, ivec2(0, 0), 0).rgb + texelFetch(uAmbient, ivec2(3, 0), 0).rgb * 0.6;
   vec3 lit = mix(amb / 3.14159 * 1.4, vec3(1.0), vLight > 0.99 ? 1.0 : 0.0);
-  c *= max(lit * max(vLight, 0.06), vec3(0.004));
+  vec3 warm = vLight > 0.99 ? vec3(0.0) : vec3(1.0, 0.8, 0.58) * pow(vBlock, 2.4) * 1.1;
+  c *= max(lit * max(vLight, 0.06) + warm, vec3(0.004));
 #ifdef LDR
   c = pow(c, vec3(1.0 / 2.2));
 #endif
@@ -477,7 +478,7 @@ export class EntityMeshes {
     S[this.maskN * 2] = hx; S[this.maskN * 2 + 1] = hz;
     this.maskN++;
   }
-  particle(x, y, z, size, r, g, b, a, frame, light, spin) {
+  particle(x, y, z, size, r, g, b, a, frame, light, spin, block) {
     if (this.partN >= this.partCap) {
       const op = this.pP.array, oc = this.pC.array, ot = this.pT.array;
       this.growParts(this.partCap * 2);
@@ -486,7 +487,7 @@ export class EntityMeshes {
     const o = this.partN * 4, P = this.pP.array, C = this.pC.array, T = this.pT.array;
     P[o] = x; P[o + 1] = y; P[o + 2] = z; P[o + 3] = size;
     C[o] = r; C[o + 1] = g; C[o + 2] = b; C[o + 3] = a;
-    T[o] = frame; T[o + 1] = light; T[o + 2] = spin || 0; T[o + 3] = 0;
+    T[o] = frame; T[o + 1] = light; T[o + 2] = spin || 0; T[o + 3] = block || 0;
     this.partN++;
   }
   end() {

@@ -1,12 +1,12 @@
 /* ---------------------------------------------------------------------------
    Leoncraft 2 - what is in your hands, in first person.
 
-     arm        your arm is always there. Empty, it is the game's bare arm;
-                holding something, the same arm holds it, with the item in
-                the fist turned the way the game turns that kind of item in
-                first person (a block 45 degrees round, a tool or a sword
-                leaning out, anything flat at the game's slant). What is in
-                the off hand the left arm holds the same way.
+     arm        with the main hand empty, the game's bare right arm; holding
+                something, the game draws only the thing, no arm under it,
+                where that kind of item's own first person numbers put it (a
+                block 45 degrees round, low and to the right, a tool or a
+                sword leaning out, anything flat at the game's slant). The
+                off hand shows only what it holds, never an arm.
      items      a block is its own small shape, anything flat is its picture
                 given a pixel of thickness (render/blockmesh.js).
      motion     it swings with the arm (the game's 6 tick swing) and bobs as
@@ -23,9 +23,9 @@
    The item model numbers (where and how far round each kind sits) are the
    game's display settings for its block, flat, handheld and rod items.
 --------------------------------------------------------------------------- */
-import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=27';
-import { setGlint } from './glint.js?v=27';
-import { textureLayer, DRAW, itemId } from '../items.js?v=27';
+import { blockGeometry, isFlatItem, shieldGeometry, tridentGeometry } from './blockmesh.js?v=28';
+import { setGlint } from './glint.js?v=28';
+import { textureLayer, DRAW, itemId } from '../items.js?v=28';
 const THREE = window.THREE;
 const PI = Math.PI, DEG = PI / 180;
 const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
@@ -179,28 +179,15 @@ export function heldGeometry(d) {
   return blockGeometry(d, d.iconMeta || 0);
 }
 
-/* Where the fist closes on each base kind, in the item's own space (a block
+/* Where a hand would hold each base kind, in the item's own space (a block
    centred on the origin, a picture in the x-y plane): under a block, at a
    tool's handle (bottom left of its picture), at the foot of anything else.
-   Every kind closes on its base kind's grip in its own place, so its turn and
-   size are the game's (a furnace has its front towards you) and the hand
-   holds it wherever that puts it (a carpet lies on the fist). */
+   Only the trident uses it now (it turns about its grip while raised to
+   throw); the game draws held things without the arm. */
 const GRIP = {
   block: [0, -0.85, 0], flat: [0, -0.42, 0], handheld: [-0.3, -0.3, 0], rod: [-0.3, -0.3, 0], mace: [-0.3, -0.3, 0],
   bow: [-0.05, -0.05, 0], crossbow: [-0.15, -0.15, 0], shield: [-0.5, 0, -0.625], trident: [-0.5, -0.125, -0.5],
 };
-/* and a nudge from the grip, in the camera's space (blocks) */
-const NUDGE = {
-  block: [-0.07, 0.02, -0.08], flat: [-0.02, 0, 0], handheld: [0, 0, 0], rod: [0, 0, 0], mace: [0, 0, 0], bow: [0, 0, 0], crossbow: [0, 0, 0], shield: [0, 0, 0], trident: [0, 0, 0],
-};
-/* Holding something, the arm sits a little lower than the bare arm (so the
-   item is about where the game shows it, and still in a hand you can see),
-   in blocks; and a block leans its top towards you a little, so you see it
-   from above as the game's lower held block is seen. */
-const DROP = { block: 0.14, flat: 0.07, handheld: 0.1, rod: 0.08, mace: 0.1, bow: 0.07, crossbow: 0.08, shield: 0, trident: 0 };
-const TILT = { block: 22, flat: 0, handheld: 0, rod: 0, mace: 0, bow: 0, crossbow: 0, shield: 0, trident: 0 };
-// the fist: the middle of the bottom of the arm (the skin's arm, model pixels, y up)
-const FIST_Y = -10;
 
 export class Held {
   constructor(R) {
@@ -353,42 +340,31 @@ export class Held {
   }
 
   /* The item at rest, in the camera's space, worked out once per kind and
-     side: the game's first person place and turn for that kind, moved so
-     its grip sits in the bare arm's fist. With it, the point the game turns
-     the item about as it swings (moved the same way), and the fist. */
+     side: the game's first person place for a held thing (0.56 to the side,
+     0.52 down, 0.72 ahead) and that kind's own place and turn in it. With
+     it, the point the game turns the item about as it swings, and where a
+     hand would hold it (the grip). */
   rest(kind, side) {
-    const A = this.R.avatar, key = kind + side + (A.slim ? 's' : 'w');
+    const key = kind + side;
     let C = this.rests.get(key);
     if (C) return C;
     const t = this.t, f = side ? -1 : 1, base = DISPLAY[kind].base;
-    const arm = A.armMatrix(new THREE.Matrix4(), null, side, 0, 0, 0, 0);
-    // where the grip is in the game's first person place for this kind, and the shift that puts it in the fist
-    const J = this.place(kind, base, side), g = GRIP[base], n = NUDGE[base];
-    /* the shield and the trident stay where the game puts them, the arm
-       brought to the handle (a model is the same either hand: its grip is
-       not mirrored) */
+    const J = this.place(kind, side), g = GRIP[base];
+    // (the shield and the trident are models, the same either hand: their grip is not mirrored)
     const own = base === 'shield' || base === 'trident';
-    const grip = new THREE.Vector3(own ? g[0] : f * g[0], g[1], g[2]).applyMatrix4(J);
-    const nudge = new THREE.Vector3(f * n[0], n[1], n[2]);
-    const fist = own ? grip.clone() : this.fistOf(arm, side, new THREE.Vector3()).add(nudge);
-    const shift = fist.clone().sub(grip);
-    // moved so the grip is in the fist (the geometry's block is centred one block up)
-    const K = new THREE.Matrix4().makeTranslation(shift.x, shift.y, shift.z).multiply(J).multiply(t.makeTranslation(0, -1, 0));
-    C = { K, fist, nudge, pivot: new THREE.Vector3(f * 0.56, -0.52, -0.72).add(shift) };
+    const fist = new THREE.Vector3(own ? g[0] : f * g[0], g[1], g[2]).applyMatrix4(J);
+    // (the geometry's block is centred one block up)
+    const K = new THREE.Matrix4().copy(J).multiply(t.makeTranslation(0, -1, 0));
+    C = { K, fist, pivot: new THREE.Vector3(f * 0.56, -0.52, -0.72) };
     this.rests.set(key, C);
     return C;
   }
-  // the game's first person place for a kind, at rest (with its base kind's lean)
-  place(kind, base, side) {
-    const t = this.t, f = side ? -1 : 1;
+  // the game's first person place for a kind, at rest
+  place(kind, side) {
+    const f = side ? -1 : 1;
     const J = new THREE.Matrix4().makeTranslation(f * 0.56, -0.52, -0.72);
-    if (TILT[base]) J.multiply(t.makeRotationX(TILT[base] * DEG));
-    applyDisplay(J, DISPLAY[kind][side ? 'fpL' : 'fp'], t, this.e);
+    applyDisplay(J, DISPLAY[kind][side ? 'fpL' : 'fp'], this.t, this.e);
     return J;
-  }
-  // the middle of the bottom of an arm, from its matrix
-  fistOf(arm, side, out) {
-    return out.set(-(this.R.avatar.slim ? 0.5 : 1) * (side ? -1 : 1), FIST_Y, 0).applyMatrix4(arm);
   }
   /* The game's swing of a held item (f 1 the right hand, -1 the left; sp
      0..1): it turns towards the middle, tips forward and down, and comes back. */
@@ -438,8 +414,8 @@ export class Held {
     for (const H of this.hands) {
       const side = H.side, f = side ? -1 : 1;
       let m = H.show;
-      // how far down the arm is: the drop of what it holds, and the dip while it changes (0.6 a block for all the way)
-      const eq = (m ? DROP[DISPLAY[m.userData.kind].base] / 0.6 : 0) + 1 - H.h;
+      // how far down the hand is while what it holds changes (0.6 a block for all the way)
+      const eq = 1 - H.h;
       // only the main hand swings
       const sp = side === 0 ? A.cur.attack : 0, sq = Math.sqrt(sp);
       const arm = A.armMatrix(this.arms[side], null, side, sp, 0, 0, eq);
@@ -460,17 +436,14 @@ export class Held {
       const pl = this.pictureFor(H, use);
       if (pl >= 0) { m.visible = false; m = this.variant(H, pl); }
       if (H.variants) for (const v of H.variants.values()) if (v !== m) v.visible = false;
-      // the arm goes with it, its fist kept on the item's grip
-      const grip = this.v.copy(C.fist).applyMatrix4(M), fist = this.fistOf(arm, side, this.w).add(C.nudge);
-      arm.premultiply(t.makeTranslation(grip.x - fist.x, grip.y - fist.y, grip.z - fist.z)).premultiply(B);
       M.multiply(C.K).premultiply(B);
       m.matrix.multiplyMatrices(cam.matrixWorld, M);
       m.visible = true;
       m.matrixWorldNeedsUpdate = true;
       if (m.userData.light !== lv) { m.userData.light = lv; setLight(m.geometry, lv); }
     }
-    // the right arm is always there; the left only to hold something
-    A.setArms(cam.matrixWorld, this.arms[0], this.arms[1], true, !!this.hands[1].show);
+    // the bare right arm only while the main hand holds nothing (the game never draws an arm under a held thing)
+    A.setArms(cam.matrixWorld, this.arms[0], this.arms[1], !this.hands[0].show, false);
     R.r.render(R.handScene, hc);
   }
 }

@@ -16,10 +16,10 @@
    did it. A comparator reads the honey level. The bees inside are kept with
    the dimension's block entities (details.js registerExtra).
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=27';
-import { CH } from '../world-const.js?v=27';
-import { I } from '../items.js?v=27';
-import { registerExtra } from '../details.js?v=27';
+import { B } from '../blocks.js?v=28';
+import { CH } from '../world-const.js?v=28';
+import { I } from '../items.js?v=28';
+import { registerExtra } from '../details.js?v=28';
 
 const R = Math.random, RI = n => Math.floor(Math.random() * n);
 const FRONT = [[0, -1], [1, 0], [0, 1], [-1, 0]];        // facing north, east, south, west

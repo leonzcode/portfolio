@@ -11,16 +11,16 @@
    The models follow the game's proportions; every texture is painted here,
    pixel by pixel, in our own colours.
 --------------------------------------------------------------------------- */
-import { Mob, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=27';
-import { FloatGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, NearestPlayerTargetGoal, HurtByTargetGoal, SwimGoal } from './ai.js?v=27';
-import { register, Monster, DYE_RGB } from './mobs.js?v=27';
-import { model } from './mobs2.js?v=27';
-import { POSE } from './mobmodels.js?v=27';
-import { addArt, SLOTS } from './mobart.js?v=27';
-import { B, BLOCKS, FLUID, SOLID, OPAQUE } from '../blocks.js?v=27';
-import { Y0 } from '../world-const.js?v=27';
-import { breakAt } from '../place.js?v=27';
-import { dropOf } from '../survival.js?v=27';
+import { Mob, Goal, DEG, wrap, yawTo, rotTowards, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=28';
+import { FloatGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, NearestPlayerTargetGoal, HurtByTargetGoal, SwimGoal } from './ai.js?v=28';
+import { register, Monster, DYE_RGB } from './mobs.js?v=28';
+import { model } from './mobs2.js?v=28';
+import { POSE } from './mobmodels.js?v=28';
+import { addArt, SLOTS } from './mobart.js?v=28';
+import { B, BLOCKS, FLUID, SOLID, OPAQUE } from '../blocks.js?v=28';
+import { Y0 } from '../world-const.js?v=28';
+import { breakAt } from '../place.js?v=28';
+import { dropOf } from '../survival.js?v=28';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -627,7 +627,7 @@ export class Slime extends Monster {
       const n = this.size * 8;
       for (let j = 0; j < n; j++) {
         const a = R() * PI * 2, f = R() * 0.5 + 0.5;
-        puff(this, 'splash', this.pos.x + Math.sin(a) * this.size * 0.5 * f, this.pos.y + 0.05, this.pos.z + Math.cos(a) * this.size * 0.5 * f, 1, 0, [0.45, 0.78, 0.35]);
+        puff(this, 'slime', this.pos.x + Math.sin(a) * this.size * 0.5 * f, this.pos.y + 0.05, this.pos.z + Math.cos(a) * this.size * 0.5 * f, 1, 0, [0.45, 0.78, 0.35]);
       }
       this.targetSquish = -0.5;
     } else if (!this.onGround && this.wasOnGround) this.targetSquish = 1;
