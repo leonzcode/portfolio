@@ -193,7 +193,7 @@ export class CreateServerScreen extends Screen {
   init() {
     const W = this.width, H = this.height, g = this.gui, x = Math.floor(W / 2 - 100);
     // a quarter of the way down where there is room, never so low the buttons run into the fields
-    const contentH = 32 * (this.editing ? 3 : 4) + 24 * 3;
+    const contentH = 32 * (this.editing ? 3 : 4) + 24 * (this.editing ? 3 : 2);
     let y = Math.max(28, Math.min(Math.floor(H / 4) - 36, H - 28 - 22 - contentH));
     this.labels = [];
     const field = (label, f) => { this.labels.push([label, x, y]); f.x = x; f.y = y + 10; this.add(f); y += 32; };
@@ -206,9 +206,12 @@ export class CreateServerScreen extends Screen {
     this.add(new CycleButton(x, y, 200, 20, 'Allow Commands', { values: [false, true], value: this.cheats, format: onOff, onChange: v => { this.cheats = v; },
       tooltip: () => 'Whether everyone on the server can use commands like /gamemode and /time' }));
     y += 24;
-    this.add(new CycleButton(x, y, 200, 20, 'Spawn Protection', { values: [16, 0], value: this.prot, format: v => (v ? v + ' blocks' : 'OFF'), onChange: v => { this.prot = v; },
-      tooltip: () => 'Only operators can break, place or use blocks this close to the world spawn' }));
-    y += 24;
+    // (on Edit, where the seed's row would be: a new server starts with the game's 16)
+    if (this.editing) {
+      this.add(new CycleButton(x, y, 200, 20, 'Spawn Protection', { values: [16, 0], value: this.prot, format: v => (v ? v + ' blocks' : 'OFF'), onChange: v => { this.prot = v; },
+        tooltip: () => 'Only operators can break, place or use blocks this close to the world spawn' }));
+      y += 24;
+    }
     field('Password', this.pwField);
     this.pwField.active = this.kind === 'private';
     if (!this.editing) field('Seed for the World Generator', this.seedField);
