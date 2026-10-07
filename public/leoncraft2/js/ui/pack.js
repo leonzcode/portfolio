@@ -178,11 +178,11 @@ export async function composedTextures(find) {
   let spec;
   try { spec = await (await fetch(new URL('../../textures/composed.json?v=22', import.meta.url))).json(); } catch (e) { return out; }
   const pics = new Map();
-  for (const [name, [file, cuts]] of Object.entries(spec)) {
+  for (const [name, [file, cuts, size]] of Object.entries(spec)) {
     if (!pics.has(file)) { const b = await find('assets/minecraft/textures/entity/' + file); pics.set(file, b ? await bitmap(b) : null); }
     const bmp = pics.get(file);
     if (!bmp) continue;
-    const k = bmp.width / 64;          // (a pack drawn at more pixels: cut to the same sixteenths)
+    const k = bmp.width / (size || 64);          // (a pack drawn at more pixels: cut to the same sixteenths)
     const [c, g] = canvas(16, 16);
     for (const [sx, sy, w, h, dx, dy, flip] of cuts) {
       g.save();

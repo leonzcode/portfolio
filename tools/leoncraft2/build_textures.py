@@ -72,7 +72,7 @@ COLOURS = ['white', 'light_gray', 'gray', 'black', 'brown', 'red', 'orange', 'ye
 RENAME = {'short_grass': 'grass', 'iron_chain': 'chain', 'dirt_path_side': 'grass_path_side',
           'dirt_path_top': 'grass_path_top'}
 # textures neither pack has: the nearest thing that does exist (logged)
-FALLBACK = {'decorated_pot_side': 'terracotta', 'vault_top': 'vault_top_off', 'bamboo_fence': 'bamboo_fence_side',
+FALLBACK = {'decorated_pot_side': 'terracotta', 'decorated_pot_base': 'terracotta','vault_top': 'vault_top_off', 'bamboo_fence': 'bamboo_fence_side',
             'pitcher_crop_top_stage_3': 'pitcher_crop_head_stage_3', 'pitcher_crop_top_stage_4': 'pitcher_crop_head_stage_4',
             'sulfur_spike_up_tip': 'sulfur_spike'}
 # Pixel Perfection Legacy draws a few blocks as one small atlas: the 16x16 piece each face uses
@@ -393,6 +393,10 @@ def compose_all():
             compose_cuts('shulker_box_%s_%s' % (c, k), spec)
     for k, spec in shulker_cuts('shulker.png').items():
         compose_cuts('shulker_box_' + k, spec)
+    # pictures Pixel Perfection CE does not have (the decorated pot's): ours fall back to terracotta, and a player's
+    # own copy of the game is cut like this (the third number is the size the picture is drawn at)
+    CUTS['decorated_pot_side'] = ['decorated_pot/decorated_pot_side.png', [(0, 0, 16, 16, 0, 0, 0)], 16]
+    CUTS['decorated_pot_base'] = ['decorated_pot/decorated_pot_base.png', [(0, 13, 14, 14, 1, 1, 0)], 32]
     # signs: the eight woods Pixel Perfection CE has; the newer woods are the oak sign recoloured to their planks
     oak = ent('signs/oak.png')
     for w in ('oak', 'spruce', 'birch', 'jungle', 'acacia', 'dark_oak', 'crimson', 'warped', 'mangrove', 'cherry',
@@ -904,6 +908,9 @@ if os.path.isdir(PAINT_DIR):
     with open(os.path.join(OUT, 'paintings.json'), 'w', encoding='utf-8') as fh:
         json.dump(where, fh, separators=(',', ':'))
     print('paintings:', len(where))
+# the beacon's beam (Pixel Perfection CE's; checked against the game's: no pixel in common), for js/sim/beams.js
+if os.path.exists(os.path.join(ENTITY, 'beacon_beam.png')):
+    Image.open(os.path.join(ENTITY, 'beacon_beam.png')).convert('RGBA').save(os.path.join(OUT, 'beacon_beam.png'), optimize=True)
 
 print('textures:', len(manifest), 'layers:', N, '(the game checks MAX_ARRAY_TEXTURE_LAYERS)')
 print('from Pixel Perfection Legacy:', len(set(log_ppl)))

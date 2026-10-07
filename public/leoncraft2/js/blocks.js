@@ -202,6 +202,10 @@ if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], 
   shapeOf('grindstone', 'grindstone', d => { delete d.orient; addTex(d, { leg: 'dark_oak_log' }); });
   shapeOf('brewing_stand', 'brewing');
   shapeOf('stonecutter', 'stonecutter', d => { delete d.orient; addTex(d, { saw: 'stonecutter_saw' }); });
+  shapeOf('beacon', 'beacon');
+  shapeOf('conduit', 'conduit');
+  shapeOf('decorated_pot', 'vase', d => { delete d.orient; addTex(d, { base: 'decorated_pot_base' }); });
+  for (const n of ['sculk_sensor', 'calibrated_sculk_sensor']) if (B[n] !== undefined) addTex(BLOCKS[B[n]], { tendril: 'sculk_sensor_tendril_inactive' });
   // the faces a few blocks show in some states: a dispenser's or dropper's front facing up or down, an open barrel, a cake's cut side
   for (const n of ['dispenser', 'dropper']) if (B[n] !== undefined) addTex(BLOCKS[B[n]], { fv: n + '_front_vertical' });
   if (B.barrel !== undefined) addTex(BLOCKS[B.barrel], { topOpen: 'barrel_top_open' });
