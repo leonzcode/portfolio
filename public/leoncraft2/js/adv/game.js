@@ -674,10 +674,11 @@ wrapProto(EnderDragon, 'setPhase', function (orig, a) {
   }
   return r;
 });
-wrapProto(EndFight, 'spawnDragon', function (orig, a) {
-  const again = !!this.s.respawn;
+// the dragon brought back by four crystals (summoned_entity): the respawn's last tick clears the respawn and
+// then spawns it, so it is seen after that tick (a respawn cut short is cleared elsewhere, never in it)
+wrapProto(EndFight, 'respawnTick', function (orig, a) {
   const r = orig.apply(this, a);
-  if (again) fire('summoned_entity', { entity: { type: 'ender_dragon', equipment: {} } });
+  if (!this.s.respawn && this.dragon) fire('summoned_entity', { entity: { type: 'ender_dragon', equipment: {} } });
   return r;
 });
 // a trident's channeling: what its bolt strikes (channeled_lightning)
