@@ -41,6 +41,9 @@
      detector rail    15 while a minecart is on it, looked at every 20 ticks
      hopper           stops moving items while powered
      bell             rings when power comes on
+     lectern          a page turned: 15 for 2 ticks, strongly into the block
+                      under it; a comparator reads how far through the book
+     chiseled bookshelf  a comparator reads the last slot used, 1 to 6
 
    Meta layouts are listed in sim/states.js.
 --------------------------------------------------------------------------- */
@@ -153,6 +156,25 @@ export function installParts(sim) {
       },
       removed(s, x, y, z, om) { if (om & 8) { const [ax, ay, az] = at(x, y, z, om & 7); rs.around(ax, ay, az); } },
       neighbor(s, x, y, z, m) { hangCheck(s, x, y, z, m); },
+    });
+  }
+  /* ------------------------------------------------ lectern: a page turned (details.js) is a pulse of 2 ticks, bit 3 */
+  if (has('lectern')) {
+    const id = B.lectern;
+    WEAK[id] = (r, x, y, z, m) => (m & 8 ? 15 : 0);
+    STRONG[id] = (r, x, y, z, m, f) => (m & 8 && f === 3 ? 15 : 0);
+    SOURCE[id] = 1;
+    const out = (x, y, z) => { const [ax, ay, az] = at(x, y, z, 3); rs.around(x, y, z); rs.around(ax, ay, az); rs.go(); };
+    sim.lecternPulse = (x, y, z) => {
+      const m = S.meta(x, y, z);
+      if (S.get(x, y, z) !== id) return;
+      if (!(m & 8)) { S.set(x, y, z, id, m | 8); out(x, y, z); }
+      // (a page turned while it is still on starts the 2 ticks again)
+      S.unschedule(x, y, z); S.schedule(x, y, z, 2);
+    };
+    sim.on(id, {
+      tick(s, x, y, z, m) { if (m & 8) { s.set(x, y, z, id, m & ~8); out(x, y, z); } },
+      removed(s, x, y, z, om) { if (om & 8) { const [ax, ay, az] = at(x, y, z, 3); rs.around(ax, ay, az); } },
     });
   }
   // how long a button stays pressed: 20 ticks for stone ones, 30 for wood (which arrows press too)
@@ -329,7 +351,11 @@ export function installParts(sim) {
     if (n === 'respawn_anchor') return Math.floor(15 * Math.min(4, m & 7) / 4);
     if (/copper_bulb$/.test(n)) return m & 1 ? 15 : 0;
     if (n === 'jukebox') { const D = S.game && S.game.details; return D && D.jukeboxSignal ? D.jukeboxSignal(x, y, z) : 0; }
-    if (n === 'beehive' || n === 'bee_nest' || n === 'chiseled_bookshelf' || n === 'lectern' || n === 'decorated_pot' || n === 'crafter') return 0;
+    if (n === 'chiseled_bookshelf' || n === 'lectern') {
+      const D = S.game && S.game.details;
+      return D ? (n === 'lectern' ? D.lecternSignal(x, y, z) : D.shelfSignal(x, y, z)) : 0;
+    }
+    if (n === 'beehive' || n === 'bee_nest' || n === 'decorated_pot' || n === 'crafter') return 0;
     if (n === 'detector_rail') return 0;
     return -1;
   };
