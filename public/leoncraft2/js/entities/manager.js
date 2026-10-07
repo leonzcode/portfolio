@@ -308,8 +308,6 @@ export class Entities {
       if (e.leash) leashTick(this, e);
       if (e.passengers.length) this.tickRiders(e);
       if (!e.removed && (this.age + e.id) % 4 === 0) this.sampleLight(e);
-      // flames off anything burning
-      if (e.fire > 0 && !e.removed && (this.age + e.id) % 2 === 0) this.particlesP.add('flame', e.pos.x + (R() - 0.5) * e.w, e.pos.y + R() * e.h, e.pos.z + (R() - 0.5) * e.w, 1, 0);
     }
     if (this.riding && this.riding.removed) this.dismount();
     // the dead go
@@ -604,7 +602,8 @@ export class Entities {
   setPlayerFire(seconds) {
     const S = this.survival;
     if (!S || this.mode === 'creative') return;
-    if (typeof S.setFire === 'function') { S.setFire(seconds); return; }
+    // the player's own fire (survival.js ignite, in ticks), so it burns, shows and goes out as any other
+    if (typeof S.ignite === 'function') { S.ignite(seconds * 20); return; }
     this.pFire = Math.max(this.pFire || 0, seconds * 20);
   }
   playerFireTick() {
@@ -931,10 +930,17 @@ export class Entities {
       const seen = this.frustum.intersectsSphere(this.sphere) && !(e.effects && e.effects.invisibility);
       if (c.BLOCK) { e.draw(this.group, this.R, alpha); continue; }
       if (seen) { if (c.PARTICLE) e.particle(this.meshes, alpha, x, y, z); else this.drawOne(e, alpha, x, y, z); }
+      // the game's flames round anything burning (render/particles.js burn)
+      if (seen && e.fire > 0 && !c.PARTICLE && this.R.particles) this.R.particles.burn(x, y, z, e.w || 0.6, e.h || 1.8);
       // a boat keeps the water out of its inside
       if (seen && c.WATER_MASK && !(e.noMask && e.noMask())) this.meshes.maskAt(x, y + c.WATER_MASK, z, e.prevYaw + wrap(e.yaw - e.prevYaw) * alpha, c.MASK_HX || 0.55, c.MASK_HZ || 0.74);
       // its round shadow on the ground
       if (seen && blobs && c.SHADOW && !e.vehicle) this.shadowOf(e, x, y, z, c.SHADOW * (e.baby || e.ageT < 0 ? 0.5 : 1) * (c.SCALE || 1));
+    }
+    // you, burning, seen from behind or in front (F5)
+    if (this.survival && this.survival.onFire && this.R.avatar && this.R.avatar.view && this.R.particles && this.mode !== 'spectator') {
+      const pp = P.prev || P.pos;
+      this.R.particles.burn(pp.x + (P.pos.x - pp.x) * alpha, pp.y + (P.pos.y - pp.y) * alpha, pp.z + (P.pos.z - pp.z) * alpha, 0.6, P.h || 1.8);
     }
     // the mobs turning inside spawners (struct/spawners.js): drawn, never ticked or hit
     for (const e of this.displays) this.drawOne(e, alpha, e.pos.x, e.pos.y, e.pos.z);
