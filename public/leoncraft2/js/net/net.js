@@ -56,19 +56,19 @@
    the world (a creeper's hole, a farmer's crops, what it drops) is shared
    like anything else.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=26';
-import { idx, H } from '../world-const.js?v=26';
-import { DIMS, DIM_IDS } from '../dims.js?v=26';
-import { Save } from '../save.js?v=26';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=26';
-import { glints } from '../render/armor.js?v=26';
-import { containerKind } from '../containers.js?v=26';
-import { getSkinSettings } from '../render/avatar.js?v=26';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=26';
-import { register, commandDef, execute, gameRule } from '../commands.js?v=26';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=26';
-import { Projectile } from '../entities/projectiles.js?v=26';
-import { Vehicles } from './vehicles.js?v=26';
+import { B, BLOCKS } from '../blocks.js?v=27';
+import { idx, H } from '../world-const.js?v=27';
+import { DIMS, DIM_IDS } from '../dims.js?v=27';
+import { Save } from '../save.js?v=27';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=27';
+import { glints } from '../render/armor.js?v=27';
+import { containerKind } from '../containers.js?v=27';
+import { getSkinSettings } from '../render/avatar.js?v=27';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=27';
+import { register, commandDef, execute, gameRule } from '../commands.js?v=27';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=27';
+import { Projectile } from '../entities/projectiles.js?v=27';
+import { Vehicles } from './vehicles.js?v=27';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
