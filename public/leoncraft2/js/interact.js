@@ -224,7 +224,8 @@ export class Interactor {
     // the main hand had nothing to do: the off hand has its turn (a torch beside the pickaxe, food), as in the game
     if (this.hand.withOffhand) this.hand.withOffhand(() => this.useWith());
   }
-  // one right click with what is in the hand (hands.js swaps the off hand in for its turn); true when it did something
+  // one right click with what is in the hand (hands.js swaps the off hand in for its turn); true when it did something,
+  // 'fail' when a block could not be placed (which ends the click too)
   useWith() {
     // things that make an entity: boats, spawn eggs, thrown eggs and snowballs (js/entities); on a block, only once the block has had its say
     // (looking at a mob that did nothing with the click, the item is still used, as in the game: a pearl is thrown)
@@ -260,7 +261,8 @@ export class Interactor {
     if (!id || !BLOCKS[id] || BLOCKS[id].place === false) return false;
     let list = placement(this.world, h, id, this.player);
     if (list.length && this.sim) list = this.sim.placed(list, h, id);
-    if (!list.length) return false;
+    // a block that cannot go there fails the click outright: the other hand does not get its turn (the game's FAIL)
+    if (!list.length) return 'fail';
     for (const [x, y, z, b, m] of list) {
       const cur = this.world.get(x, y, z);
       this.world.set(x, y, z, b, m);
