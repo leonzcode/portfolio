@@ -842,7 +842,9 @@ function rideTick(g, p) {
   if (r !== S.riding) { S.riding = r; S.lava = null; if (r) fire('started_riding', {}); }
   else if (r && crew > S.crew) fire('started_riding', {});
   S.crew = crew;
-  if (r && r.type === 'strider' && r.inLava) {
+  // (a strider walking on the lava's top half counts as in it, as the game's box in the lava does;
+  // entities/nether.js keeps its inLava off there so it does not swim)
+  if (r && r.type === 'strider' && (r.inLava || r.onLava)) {
     if (!S.lava) S.lava = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
     fire('ride_entity_in_lava', { start: S.lava, end: { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z } });
   } else S.lava = null;
