@@ -470,7 +470,7 @@ export const VOID = /* glsl */`
 uniform vec3 uVoid;
 float voidFog(vec3 rd, float h) {
   float r = h / max(abs(rd.y), 1e-4) * length(rd.xz);
-  return smoothstep(0.0, uVoid.z, h + min(r, 512.0) * (1.0 - h / 512.0));
+  return clamp((h + min(r, 512.0) * (1.0 - h / 512.0)) / uVoid.z, 0.0, 1.0);    // (in a straight line, as the game's fog.glsl)
 }
 vec3 voidSky(vec3 col, vec3 rd) {
   float disc = rd.y < 0.0 && 4.0 / max(-rd.y, 1e-4) * length(rd.xz) < 512.0 ? 1.0 - voidFog(rd, 4.0) : 0.0;
