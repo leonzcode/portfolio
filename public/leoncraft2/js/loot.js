@@ -199,8 +199,9 @@ function crop(out, meta, ripe, item, seeds, fortune) {
 }
 // how many items a block is: a double slab is two, three candles three
 function slabCount(d, meta) {
-  if (d.shape === 'slab') return (meta & 3) === 2 ? 2 : 1;
+  // (the low blocks drawn as slabs, sculk sensors and daylight detectors, keep other things in their meta)
+  if (d.shape === 'slab') return /_slab$/.test(d.name) && (meta & 3) === 2 ? 2 : 1;
   if (d.shape === 'candle' || /sea_pickle|^.*_candle$|^candle$/.test(d.name)) return (meta & 7) + 1;
-  if (d.name === 'pink_petals' || d.name === 'wildflowers' || d.name === 'leaf_litter') return (meta & 3) + 1;
+  if (d.name === 'pink_petals' || d.name === 'wildflowers' || d.name === 'leaf_litter' || d.name === 'turtle_egg') return (meta & 3) + 1;
   return 1;
 }

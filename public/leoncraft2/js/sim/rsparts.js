@@ -656,6 +656,8 @@ export function installParts(sim) {
         const p = rs.powered(x, y, z);
         if (p === !!(m & 16)) return;
         if (p && s.onBell) s.onBell(x, y, z);
+        // (it swings away from the way it faces: sim/lids.js)
+        if (p && s.lids) s.lids.ring(x, y, z, [5, 0, 4, 1][(m >> 1) & 3]);
         if (p) s.lastBell = { x, y, z, at: s.n };
         s.set(x, y, z, B.bell, (m & ~16) | (p ? 16 : 0));
       },

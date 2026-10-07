@@ -74,6 +74,49 @@ function projected(b, f) {
   const c0 = sb > 0 ? b.f[kb] : 16 - b.t[kb], c1 = sb > 0 ? b.t[kb] : 16 - b.f[kb];
   return [a0, c0, a1, c1];
 }
+/* A sheet with no thickness, written as the game writes one face of it: the box from f to t (flat across the
+   face's own axis), which face (0-5), its uv rectangle and its texture layer. It is a free quad, seen from both
+   sides, and each side shows the picture as that face lays it (the game's two faces of such an element do). */
+export function sheet(f, t, face, uv, layer) {
+  const [[kt, st], [kb, sb]] = FACE_TB[face], k = NORMAL[face].findIndex(v => v !== 0);
+  const pt = (a, c) => {
+    const p = [0, 0, 0];
+    p[k] = NORMAL[face][k] > 0 ? t[k] : f[k];
+    p[kt] = (st > 0) === (a === 1) ? t[kt] : f[kt];
+    p[kb] = (sb > 0) === (c === 1) ? t[kb] : f[kb];
+    return p;
+  };
+  // the free quad's corners run left bottom, right bottom, right top, left top
+  return { q: [pt(0, 1), pt(1, 1), pt(1, 0), pt(0, 0)], uv, layer };
+}
+/* One element of a game block model as it is written: from, to, its faces by name ({ north: [uv, layer, turn],
+   ... }, those left out not drawn) and, for a tilted one, its rotation { axis: 'x' | 'y' | 'z', angle (degrees),
+   origin }. A level one is a box; a tilted one is its faces as sheets tipped about the origin. */
+const FACE_NAMES = ['east', 'west', 'up', 'down', 'south', 'north'];
+export function element(from, to, faces, rot) {
+  const uv = [], layers = [];
+  let skip = 0;
+  FACE_NAMES.forEach((n, f) => {
+    const fc = faces[n];
+    if (!fc) { skip |= 1 << f; uv[f] = null; layers[f] = 0; return; }
+    uv[f] = fc[2] ? faceUV(fc[0], fc[2]) : fc[0]; layers[f] = fc[1];
+  });
+  if (!rot || !rot.angle) return [box(from[0], from[1], from[2], to[0], to[1], to[2], { faces: layers, uv, skip })];
+  const a = rot.angle * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), [ox, oy, oz] = rot.origin;
+  const tip = rot.axis === 'x' ? ([x, y, z]) => [x, oy + (y - oy) * c - (z - oz) * s, oz + (y - oy) * s + (z - oz) * c]
+    : rot.axis === 'y' ? ([x, y, z]) => [ox + (x - ox) * c + (z - oz) * s, y, oz - (x - ox) * s + (z - oz) * c]
+      : ([x, y, z]) => [ox + (x - ox) * c - (y - oy) * s, oy + (x - ox) * s + (y - oy) * c, z];
+  const out = [];
+  FACE_NAMES.forEach((n, f) => {
+    if (skip & (1 << f)) return;
+    const fc = faces[n], q = sheet(from, to, f, fc[0], fc[1]), r = (((fc[2] || 0) / 90) | 0) & 3;
+    // (a picture turned clockwise on its face: the sheet's corners hand it on a quarter at a time)
+    if (r) q.q = q.q.map((p, i) => q.q[(i + 4 - r) & 3]);
+    q.q = q.q.map(tip);
+    out.push(q);
+  });
+  return out;
+}
 // a box with every face's rectangle written out, so it keeps its pictures however it is turned
 export function fixUV(b) {
   if (b.q) return b;
@@ -180,6 +223,18 @@ export function rotate(list, x, y) {
   });
 }
 
+/* A button (the game's button model: six by four, two pixels deep, one when pressed). Its meta: bits 0-2 the face
+   of the cell it is on, bit 3 pressed, and on a floor or a ceiling bits 4-5 the way it faces (the way you looked
+   when you put it there), which turns it and its picture with it; on a wall the picture stays put. */
+export function buttonModel(m, pressed) {
+  const f = m & 7, h = pressed ? 1 : 2;
+  if (f === 3 || f === 2) {
+    const F = (m >> 4) & 3, e = [6, 14, 10, 14 + h], n = [5, 14, 11, 14 + h], t = [5, 6, 11, 10];
+    const b = [box(5, 0, 6, 11, h, 10, { uv: [e, e, t, t, n, n] })];
+    return f === 3 ? rotate(b, 0, F) : rotate(b, 2, (F + 2) & 3);
+  }
+  return turn([box(5, 6, 0, 11, 10, h)], sideFacing(f) || 0);
+}
 // stand a model built on the floor (support below) against another face of its cell
 function hang(list, face) {
   if (face === 3) return list;
@@ -202,12 +257,13 @@ function crossed(x0, y0, z0, x1, y1, z1, layer, uv) {
   ];
 }
 function hash(planes, layer, x0, x1, y0, y1) {
-  // four planes in a # (crops)
-  const uv = [0, 0, 16, 16], r = [];
-  for (const p of planes) {
-    r.push({ q: [[p, y0, x0], [p, y0, x1], [p, y1, x1], [p, y1, x0]], uv, layer });
-    r.push({ q: [[x0, y0, p], [x1, y0, p], [x1, y1, p], [x0, y1, p]], uv, layer });
-  }
+  // four planes in a # (crops); as the game's crop model lays them, the picture runs one way on the west and
+  // south planes and the other way on the east and north ones, so the four read as one ring seen from outside
+  const fw = [0, 0, 16, 16], bk = [16, 0, 0, 16], r = [];
+  planes.forEach((p, k) => {
+    r.push({ q: [[p, y0, x0], [p, y0, x1], [p, y1, x1], [p, y1, x0]], uv: k ? bk : fw, layer });
+    r.push({ q: [[x0, y0, p], [x1, y0, p], [x1, y1, p], [x0, y1, p]], uv: k ? fw : bk, layer });
+  });
   return r;
 }
 
@@ -277,6 +333,46 @@ function BAMBOO_GATE_OPEN() {
   ]);
 }
 
+/* A sculk shrieker (the game's model): the slab its soul sits in, the upper ring a pixel in from the edges with its
+   inner walls, and the soul's picture on the slab inside (the brighter, faster one when it can summon a warden,
+   meta bit 1; bit 0 is shrieking). */
+function shrieker(d, m) {
+  const L = d.L || {}, S = d.faces[0], T = d.faces[2], Bt = d.faces[3];
+  const inner = m & 2 && L.innerOn !== undefined ? L.innerOn : L.inner !== undefined ? L.inner : T;
+  const s8 = [0, 8, 16, 16], r1 = [1, 1, 15, 8], t = [1, 1, 15, 15];
+  return [box(0, 0, 0, 16, 8, 16, { faces: [S, S, inner, Bt, S, S], uv: [s8, s8, [0, 0, 16, 16], [0, 0, 16, 16], s8, s8] }),
+    box(1, 8, 1, 15, 15, 15, { faces: [S, S, T, S, S, S], skip: 1 << 3, uv: [r1, r1, t, null, r1, r1] }),
+    // (the ring's inside, and its top seen from below)
+    sheet([1, 14.98, 1], [15, 14.98, 15], 3, t, T), sheet([1, 8, 14.98], [15, 15, 14.98], 5, r1, S), sheet([1, 8, 1.02], [15, 15, 1.02], 4, r1, S),
+    sheet([14.98, 8, 1], [14.98, 15, 15], 1, r1, S), sheet([1.02, 8, 1], [1.02, 15, 15], 0, r1, S)];
+}
+
+/* ---- iron and copper bars: since 26.1 the game draws them as sheets down the middle of the block (its bars
+   models), not as thin boxes like a pane: a cross of two narrow sheets on their own, a sheet out to each side
+   they join, its end against the neighbour and its top and bottom edges, and a short cap closing the far side
+   when they join on one side only ---- */
+function bars(d, n) {
+  const L = d.faces[0], none = 63, only = f => none & ~(1 << f);
+  const end = y => sheet([7, y, 7], [9, y, 9], 2, [7, 7, 9, 9], L);
+  const r = [end(0.001), end(15.999)];
+  const side = () => [sheet([8, 0, 0], [8, 16, 8], 1, [16, 0, 8, 16], L),
+    box(7, 0, 0, 9, 16, 0, { skip: only(5), uv: [null, null, null, null, null, [7, 0, 9, 16]] }),
+    sheet([7, 0.001, 0], [9, 0.001, 7], 2, [7, 0, 9, 7], L), sheet([7, 15.999, 0], [9, 15.999, 7], 2, [7, 0, 9, 7], L)];
+  const sideAlt = () => [sheet([8, 0, 8], [8, 16, 16], 1, [8, 0, 0, 16], L),
+    box(7, 0, 9, 9, 16, 16, { skip: 3 | 32, uv: [null, null, [7, 9, 9, 16], [9, 9, 7, 16], [7, 0, 9, 16], null] }),
+    sheet([7, 0.001, 9], [9, 0.001, 16], 2, [7, 9, 9, 16], L), sheet([7, 15.999, 9], [9, 15.999, 16], 2, [7, 9, 9, 16], L)];
+  const cap = () => [sheet([8, 0, 8], [8, 16, 9], 1, [8, 0, 7, 16], L), sheet([7, 0, 9], [9, 16, 9], 5, [9, 0, 7, 16], L)];
+  const capAlt = () => [sheet([8, 0, 7], [8, 16, 8], 1, [8, 0, 9, 16], L), sheet([7, 0, 7], [9, 16, 7], 5, [7, 0, 9, 16], L)];
+  const count = n.filter(Boolean).length;
+  if (!count) r.push(sheet([8, 0, 7], [8, 16, 9], 1, [7, 0, 9, 16], L), sheet([7, 0, 8], [9, 16, 8], 5, [7, 0, 9, 16], L));
+  if (count === 1) r.push(...(n[0] ? cap() : n[1] ? rotate(cap(), 0, 1) : n[2] ? capAlt() : rotate(capAlt(), 0, 1)));
+  if (n[0]) r.push(...side());
+  if (n[1]) r.push(...rotate(side(), 0, 1));
+  if (n[2]) r.push(...sideAlt());
+  if (n[3]) r.push(...rotate(sideAlt(), 0, 1));
+  return r;
+}
+
 /* ---- doors: the four boards of the game's door models (shut or open, hinge left or right), as drawn facing
    east: the east, west, south and north faces, and the bottom (lower half) or the top (upper half) ---- */
 const DOOR_FACES = [
@@ -334,11 +430,18 @@ export const SHAPES = {
     // sculk sensors and shriekers eight: their meta is their power or state, never which half they are in
     const low = LOW_SLABS[d.name];
     if (low) {
-      const r = [box(0, 0, 0, 16, low, 16)];
-      // a sculk sensor's four tendrils, standing at its corners turned 45 degrees (the game's model)
-      const T = d.L && d.L.tendril;
+      if (d.name === 'sculk_shrieker') return shrieker(d, m);
+      const L = d.L || {}, cal = d.name === 'calibrated_sculk_sensor', s8 = [0, 8, 16, 16], t = [0, 0, 16, 16];
+      const r = [d.L && d.L.tendril !== undefined ? box(0, 0, 0, 16, low, 16, { uv: [s8, s8, t, t, s8, s8] }) : box(0, 0, 0, 16, low, 16)];
+      // a calibrated sensor's input side is its back (it faces the way you looked: meta bits 2-3)
+      if (cal && L.input !== undefined) r[0].faces = [d.faces[0], d.faces[1], d.faces[2], d.faces[3], L.input, d.faces[5]];
+      // a sculk sensor's four tendrils, standing at its corners turned 45 degrees (the game's model); while it is
+      // active or cooling down (meta bits 0-1) they are the active ones
+      const T = (m & 3) && L.tendrilOn !== undefined ? L.tendrilOn : L.tendril;
       if (T !== undefined) for (const [x, z, dir] of [[3, 3, 1], [13, 3, -1], [13, 13, 1], [3, 13, -1]]) r.push(diagonal(x, z, 4, 8, 16, [4, 8, 12, 16], T, dir));
-      return r;
+      // and the calibrated one's amethyst, two crossed sheets standing out of its top
+      if (cal && L.amethyst !== undefined) r.push(...crossed(0, 8, 0, 16, 20, 16, L.amethyst, [0, 4, 16, 16]));
+      return cal ? turn(r, (m >> 2) & 3) : r;
     }
     const t = m & 3;
     if (t === 2) return [box(0, 0, 0, 16, 16, 16)];
@@ -393,10 +496,12 @@ export const SHAPES = {
   },
   pane(d, m, nb) {
     const n = DIRS.map(v => joins(d, nb(v[0], 0, v[2]), 'pane'));
+    if (/_bars$/.test(d.name)) return bars(d, n);
     // the glass on the broad sides; the thin edges, top and ends show the edge texture, as in the game; joined to
     // nothing, a pane is the post alone (the game's Java look), its sides a sliver of the glass
-    const g = d.faces[0], e = d.L && d.L.top !== undefined ? d.L.top : g, s = [9, 0, 7, 16];
-    const b = [box(7, 0, 7, 9, 16, 9, { faces: [g, g, e, e, g, g], uv: [s, s, null, null, s, s] })];
+    const g = d.faces[0], e = d.L && d.L.top !== undefined ? d.L.top : g, s = [9, 0, 7, 16], t = [7, 0, 9, 16];
+    // (the game's "noside" pieces: the north and west slivers one way, the east and south the other)
+    const b = [box(7, 0, 7, 9, 16, 9, { faces: [g, g, e, e, g, g], uv: [t, s, null, null, t, s] })];
     for (let k = 0; k < 4; k++) if (n[k]) b.push(...turn([box(7, 0, 0, 9, 16, 7, { faces: [g, g, e, e, e, e] })], k));
     return b;
   },
@@ -451,12 +556,7 @@ export const SHAPES = {
     return out;
   },
   plate(d) { return [box(1, 0, 1, 15, 1, 15)]; },
-  button(d, m) {
-    const f = m & 7;
-    if (f === 3) return [box(5, 0, 6, 11, 2, 10)];
-    if (f === 2) return [box(5, 14, 6, 11, 16, 10)];
-    return turn([box(5, 6, 0, 11, 10, 2)], sideFacing(f) || 0);
-  },
+  button(d, m) { return buttonModel(m, false); },
   // the game's ladder is a single sheet 0.8 of a pixel off the wall, the same picture from both sides
   ladder(d, m) { return turn([box(0, 0, 0.8, 16, 16, 0.8, { skip: 47, uv: [null, null, null, null, [0, 0, 16, 16], null] })], sideFacing(m & 7) || 0); },
   lantern(d, m) {
@@ -516,11 +616,21 @@ export const SHAPES = {
       box(6, 0, 10, 10, 6, 11, { faces: S, skip: 3, uv: [null, null, [6, 10, 10, 11], [6, 5, 10, 6], [6, 10, 10, 16], [6, 10, 10, 16]] }),
       box(6, 0, 6, 10, 4, 10, { faces: [P, P, dirt, P, P, P], skip: 51, uv: [null, null, [6, 6, 10, 10], [6, 12, 10, 16], null, null] }),
     ];
-    // the plant growing in it
-    if (d.L && d.L.plant !== undefined) {
-      if (d.plantShape === 'cube') r.push(box(6, 6, 6, 10, 16, 10, { faces: [d.L.plant, d.L.plant, d.L.plant, d.L.plant, d.L.plant, d.L.plant] }));
-      else r.push(...crossed(4.4, 4, 4.4, 11.6, 16, 11.6, d.L.plant));
-    }
+    // the plant growing in it (the game's potted cactus, bamboo and azalea have models of their own)
+    const L = d.L || {}, p = L.plant;
+    if (p === undefined) return r;
+    if (d.name === 'potted_cactus') {
+      const s = [6, 0, 10, 11], T = L.cactusTop !== undefined ? L.cactusTop : p;
+      r.push(box(6, 5, 6, 10, 16, 10, { faces: [p, p, T, p, p, p], skip: 1 << 3, uv: [s, s, [6, 6, 10, 10], null, s, s] }));
+    } else if (d.name === 'potted_bamboo') {
+      const s = [6, 0, 8, 16];
+      r.push(box(7, 0, 7, 9, 16, 9, { faces: [p, p, p, p, p, p], skip: 1 << 3, uv: [s, s, [13, 0, 15, 2], null, s, s] }));
+    } else if (L.bushTop !== undefined) {
+      // an azalea: the bush, a box of sheets eight pixels across on its stem
+      const T = L.bushTop, S = L.bushSide, a = [4, 5, 12, 13], b = [12, 5, 4, 13];
+      r.push(sheet([4, 16, 4], [12, 16, 12], 2, [4, 4, 12, 12], T), sheet([4, 8, 4], [12, 16, 4], 5, a, S), sheet([4, 8, 12], [12, 16, 12], 4, a, S),
+        sheet([4, 8, 4], [4, 16, 12], 1, a, S), sheet([12, 8, 4], [12, 16, 12], 0, a, S), ...crossed(2.6, 4, 2.6, 13.4, 16, 13.4, p, [0, 4, 16, 16]));
+    } else r.push(...crossed(4.4, 4, 4.4, 11.6, 16, 11.6, p));
     return r;
   },
   cake(d, m) {
@@ -578,6 +688,26 @@ export const SHAPES = {
     ].map(fixUV), [2, 3, 0, 1][(m + 1) & 3]);
   },
   cactus() { return [box(1, 0, 1, 15, 16, 15)]; },
+  /* Turtle eggs (the game's one to four egg models): each egg a small box with its own part of the picture;
+     meta bits 0-1 how many, less one. */
+  eggs(d, m) {
+    const egg = (x0, y1, z0, w, top, side) => box(x0, 0, z0, x0 + w, y1, z0 + w, { uv: [side, side, top, top, side, side] });
+    return [egg(5, 7, 4, 4, [0, 0, 4, 4], [1, 4, 5, 11]), egg(1, 5, 7, 4, [6, 7, 10, 11], [10, 10, 14, 15]),
+      egg(11, 4, 7, 3, [5, 0, 8, 3], [8, 3, 11, 7]), egg(6, 4, 9, 4, [0, 11, 4, 15], [4, 11, 8, 15])].slice(0, (m & 3) + 1);
+  },
+  // a sniffer egg: fourteen by twelve and a block tall, each face its own picture (no facing in the game)
+  sniffer_egg(d) {
+    return [box(1, 0, 2, 15, 16, 14, { faces: [d.faces[0], d.faces[1], d.faces[2], d.faces[3], d.back !== undefined ? d.back : d.faces[4], d.front !== undefined ? d.front : d.faces[5]],
+      uv: [[0, 0, 12, 16], [0, 0, 12, 16], [0, 0, 14, 12], [0, 0, 14, 12], [0, 0, 14, 16], [0, 0, 14, 16]] })];
+  },
+  /* A dried ghast (the game's model, built facing north): its body ten pixels square, and the tentacles, little
+     boxes on three sides of it, turned to face you. */
+  dried_ghast(d, m) {
+    const S = d.faces[0], f = [0, 0, 10, 10], t = [S, S, S, S, S, S];
+    const tent = (x0, z0, x1, z1) => box(x0, 0, z0, x1, 1, z1, { faces: t });
+    return turn([box(3, 0, 3, 13, 10, 13, { faces: [d.faces[0], d.faces[1], d.faces[2], d.faces[3], d.back !== undefined ? d.back : S, d.front !== undefined ? d.front : S],
+      uv: [f, f, faceUV(f, 180), [10, 0, 0, 10], f, f] }), tent(0, 5, 3, 7), tent(0, 9, 3, 11), tent(13, 5, 16, 7), tent(13, 9, 16, 11), tent(9, 13, 11, 16), tent(5, 13, 7, 16)], m & 3);
+  },
   layer(d, m) { return [box(0, 0, 0, 16, 2 * ((m & 7) + 1), 16)]; },
   crop(d) { return hash([4, 12], d.faces[2], 0, 16, -1, 15); },
   sign(d, m) {
@@ -766,11 +896,13 @@ SHAPES.campfire = function (d, m) {
   const L = d.L || {}, lit = !(m & 4);
   // the game's campfire model (built facing south): the glowing faces are the lit log texture while it burns
   const log = L.side !== undefined ? L.side : d.faces[0], lt = lit && L.top !== undefined ? L.top : log, g = faceUV, n = [0, 0, 0, 0];
+  // (put out, the crossing logs' undersides are the plain log's end of the picture)
+  const under = lit ? [0, 4, 16, 8] : [0, 0, 16, 4];
   const r = [
     box(1, 0, 0, 5, 4, 16, { faces: [lt, log, log, log, log, log], uv: [[0, 1, 16, 5], [16, 0, 0, 4], g([0, 0, 16, 4], 90), g([0, 0, 16, 4], 90), [0, 4, 4, 8], [0, 4, 4, 8]] }),
-    box(0, 3, 11, 16, 7, 15, { faces: [log, log, log, lt, lt, lt], uv: [[0, 4, 4, 8], [0, 4, 4, 8], g([0, 0, 16, 4], 180), [0, 4, 16, 8], [0, 0, 16, 4], [16, 0, 0, 4]] }),
+    box(0, 3, 11, 16, 7, 15, { faces: [log, log, log, lt, lt, lt], uv: [[0, 4, 4, 8], [0, 4, 4, 8], g([0, 0, 16, 4], 180), under, [0, 0, 16, 4], [16, 0, 0, 4]] }),
     box(11, 0, 0, 15, 4, 16, { faces: [log, lt, log, log, log, log], uv: [[0, 0, 16, 4], [16, 1, 0, 5], g([0, 0, 16, 4], 90), g([0, 0, 16, 4], 90), [0, 4, 4, 8], [0, 4, 4, 8]] }),
-    box(0, 3, 1, 16, 7, 5, { faces: [log, log, log, lt, lt, lt], uv: [[0, 4, 4, 8], [0, 4, 4, 8], g([0, 0, 16, 4], 180), [0, 4, 16, 8], [16, 0, 0, 4], [0, 0, 16, 4]] }),
+    box(0, 3, 1, 16, 7, 5, { faces: [log, log, log, lt, lt, lt], uv: [[0, 4, 4, 8], [0, 4, 4, 8], g([0, 0, 16, 4], 180), under, [16, 0, 0, 4], [0, 0, 16, 4]] }),
     box(5, 0, 0, 11, 1, 16, { faces: [log, log, lt, log, log, log], skip: 3, uv: [n, n, g([0, 8, 16, 14], 90), g([0, 8, 16, 14], 90), [10, 15, 16, 16], [0, 15, 6, 16]] }),
   ];
   if (lit && L.fire !== undefined) r.push(...crossed(0.8, 1, 0.8, 15.2, 17, 15.2, L.fire));
@@ -790,12 +922,18 @@ SHAPES.bell = function (d, m) {
   // (512: the bell alone, which swings when it rings, sim/lids.js; 256: everything but it)
   if (m & 512) return body;
   const r = m & 256 ? [] : body;
-  const F = (m >> 1) & 3;
+  // what holds it, as the game's bell_floor, bell_ceiling, bell_wall and bell_between_walls models lay their pictures,
+  // turned the way it faces (the wall ones are built against the east wall)
+  const F = (m >> 1) & 3, barUV = [null, null, [2, 3, 14, 5], [2, 3, 14, 5], [2, 3, 14, 5], [2, 2, 14, 4]];
   let hold;
-  if (m & 1) hold = [box(7, 13, 7, 9, 16, 9, { faces: R })];
-  else if (m & 32) hold = turn([box(7, 13, 0, 9, 15, 16, { faces: R })], F);
-  else if (m & 8) hold = turn([box(7, 13, 0, 9, 15, 9, { faces: R }), box(6, 12, 0, 10, 16, 1, { faces: R })], F);
-  else hold = turn([box(2, 13, 7, 14, 15, 9, { faces: R }), box(0, 0, 6, 2, 16, 10, { faces: P }), box(14, 0, 6, 16, 16, 10, { faces: P })], F);
+  if (m & 1) hold = rotate([box(7, 13, 7, 9, 16, 9, { faces: R, skip: 1 << 3, uv: [[1, 2, 3, 5], [4, 2, 6, 5], [1, 3, 3, 5], null, [6, 2, 8, 5], [7, 2, 9, 5]] })], 0, F);
+  else if (m & 40) {
+    const end = [5, 4, 7, 6], u = barUV.slice(); u[0] = u[1] = end;
+    hold = rotate([box(m & 32 ? 0 : 3, 13, 7, 16, 15, 9, { faces: R, uv: u })], 0, (F + 3) & 3);
+  } else {
+    const ps = [0, 1, 2, 16], pe = [0, 1, 4, 16], pt = [0, 0, 2, 4], post = x => box(x, 0, 6, x + 2, 16, 10, { faces: P, uv: [pe, pe, pt, pt, ps, ps] });
+    hold = rotate([box(2, 13, 7, 14, 15, 9, { faces: R, skip: 3, uv: barUV }), post(0), post(14)], 0, F);
+  }
   return r.concat(hold);
 };
 // an item frame: twelve pixels square and one thick against the face it hangs on (bits 0-2), drawn by details.js
@@ -839,7 +977,8 @@ SHAPES.grindstone = function (d, m) {
 // the game's stonecutter: a block nine pixels tall with its saw blade standing across the middle, turned to face you
 SHAPES.stonecutter = function (d, m) {
   const L = d.L || {}, saw = L.saw !== undefined ? L.saw : d.faces[0], s = [0, 7, 16, 16], f = [0, 0, 16, 16];
-  return turn([box(0, 0, 0, 16, 9, 16, { uv: [s, s, f, f, s, s] }), { q: [[1, 9, 8], [15, 9, 8], [15, 16, 8], [1, 16, 8]], uv: [1, 9, 15, 16], layer: saw }], m & 3);
+  // (the blade reads the same from both sides, its picture running from east to west)
+  return turn([box(0, 0, 0, 16, 9, 16, { uv: [s, s, f, f, s, s] }), { q: [[1, 9, 8], [15, 9, 8], [15, 16, 8], [1, 16, 8]], uv: [15, 9, 1, 16], layer: saw }], m & 3);
 };
 // an enchanting table is twelve pixels tall
 SHAPES.table = function (d) { return [box(0, 0, 0, 16, d.h || 12, 16)]; };
@@ -862,6 +1001,19 @@ SHAPES.shelf = function (d, m) {
     box(0, 4, 13, 16, 12, 13, { skip: 31, uv: [n, n, n, n, n, [0, 2, 8, 6]] }),
   ], m & 3);
 };
+/* A chiseled bookshelf (the game's model, built facing north): the body with the shelf's sides and top, and its
+   front in six slots, two rows of three, each its part of the picture with a book in it or empty (meta bits 2-7,
+   slot 0 the top left as you face it; bits 0-1 the way it faces). */
+const CHISEL_SLOTS = [[10, 16, 8, 16, 0], [5, 10, 8, 16, 6], [0, 5, 8, 16, 11], [10, 16, 0, 8, 0], [5, 10, 0, 8, 6], [0, 5, 0, 8, 11]];
+SHAPES.chiseled = function (d, m) {
+  const L = d.L || {}, full = L.occupied !== undefined ? L.occupied : d.front, empty = d.front !== undefined ? d.front : d.faces[0];
+  const r = [box(0, 0, 0, 16, 16, 16, { skip: 1 << 5 })];
+  CHISEL_SLOTS.forEach(([x0, x1, y0, y1, u], k) => {
+    const v = 16 - y1, layer = m & (4 << k) ? full : empty, F = [0, 0, 0, 0, 0, layer];
+    r.push(box(x0, y0, 0, x1, y1, 0, { faces: F, skip: 63 & ~(1 << 5), uv: [null, null, null, null, null, [u, v, u + (x1 - x0), v + (y1 - y0)]] }));
+  });
+  return turn(r, m & 3);
+};
 // a conduit not at work: its shell, six pixels square, floating in the middle of the block
 SHAPES.conduit = function (d) { const s = [5, 5, 11, 11]; return [box(5, 5, 5, 11, 11, 11, { uv: [s, s, s, s, s, s] })]; };
 /* A decorated pot (the game's pot): the body fourteen pixels square and a block tall, each side the middle of
@@ -874,12 +1026,24 @@ SHAPES.vase = function (d, m) {
     box(5, 16, 5, 11, 17, 11, { faces: [S, S, S, S, S, S], skip: 12, uv: [[5, 0, 11, 1], [5, 0, 11, 1], null, null, [5, 0, 11, 1], [5, 0, 11, 1]] }),
     box(4, 17, 4, 12, 20, 12, { faces: [S, S, T, S, S, S], uv: [[4, 0, 12, 3], [4, 0, 12, 3], [4, 4, 12, 12], [4, 4, 12, 12], [4, 0, 12, 3], [4, 0, 12, 3]] })];
 };
-// a brewing stand: the rod, three stone feet, and the arms and bottles as crossed sprites
-SHAPES.brewing = function (d) {
+/* A brewing stand (the game's model): the rod, three stone feet, and three arms, sheets out from the rod to the
+   east, the north-west and the south-west, each the bottle half of the picture while that slot holds a bottle
+   (meta bits 0-2, kept by containers.js) and the empty arm half while it does not. */
+SHAPES.brewing = function (d, m) {
   const L = d.L || {}, S = d.faces[0], base = L.base !== undefined ? L.base : S;
-  const Bs = [base, base, base, base, base, base];
-  return [box(9, 0, 5, 15, 2, 11, { faces: Bs }), box(2, 0, 1, 8, 2, 7, { faces: Bs }), box(2, 0, 9, 8, 2, 15, { faces: Bs }),
-    ...crossed(1.5, 0, 1.5, 14.5, 16, 14.5, S)];
+  const Bs = [base, base, base, base, base, base], rs = [7, 2, 9, 16], rt = [7, 7, 9, 9];
+  const r = [box(7, 0, 7, 9, 14, 9, { faces: [S, S, S, S, S, S], uv: [rs, rs, rt, rt, rs, rs] }),
+    box(9, 0, 5, 15, 2, 11, { faces: Bs, uv: [[5, 14, 11, 16], [5, 14, 11, 16], [9, 5, 15, 11], [9, 5, 15, 11], [9, 14, 15, 16], [9, 14, 15, 16]] }),
+    box(1, 0, 1, 7, 2, 7, { faces: Bs, uv: [[1, 14, 7, 16], [1, 14, 7, 16], [1, 1, 7, 7], [1, 1, 7, 7], [1, 14, 7, 16], [1, 14, 7, 16]] }),
+    box(1, 0, 9, 7, 2, 15, { faces: Bs, uv: [[9, 14, 15, 16], [9, 14, 15, 16], [1, 9, 7, 15], [1, 9, 7, 15], [1, 14, 7, 16], [1, 14, 7, 16]] })];
+  r.push(sheet([8, 0, 8], [16, 16, 8], 5, m & 1 ? [0, 0, 8, 16] : [16, 0, 8, 16], S));
+  // the other two arms point west and are turned 45 degrees either way about the rod
+  for (const [bit, ang] of [[2, -Math.PI / 4], [4, Math.PI / 4]]) {
+    const q = sheet([-0.41, 0, 8], [7.59, 16, 8], 5, m & bit ? [8, 0, 0, 16] : [8, 0, 16, 16], S), c = Math.cos(ang), sn = Math.sin(ang);
+    q.q = q.q.map(([x, y, z]) => [8 + (x - 8) * c + (z - 8) * sn, y, 8 - (x - 8) * sn + (z - 8) * c]);
+    r.push(q);
+  }
+  return r;
 };
 
 export const MODEL_SHAPES = new Set(Object.keys(SHAPES));
