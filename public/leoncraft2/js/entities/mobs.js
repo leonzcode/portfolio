@@ -415,7 +415,11 @@ export class Animal extends Mob {
 export class Pig extends Animal {
   static W = 0.9; static H = 0.9; static HEALTH = 10; static SPEED = 0.25; static MODEL = 'pig'; static TEX = 'pig'; static SHADOW = 0.7;
   static FOOD = ['carrot', 'potato', 'beetroot', 'carrot_on_a_stick'];
-  constructor(m, type) { super(m, type); this.saddled = false; }
+  constructor(m, type) { super(m, type); this.saddled = false; this.boostT = 0; this.boostLen = 0; }
+  aiStep() { super.aiStep(); if (this.boostT > 0) this.boostT--; }
+  // a burst from the carrot on a stick: 140 to 980 ticks, the speed rising and falling up to 2.15 times (as the strider's)
+  boost() { if (this.boostT > 0) return false; this.boostLen = this.boostT = 140 + RI(841); return true; }
+  boostFactor() { return this.boostT > 0 ? 1 + 1.15 * Math.sin((1 - this.boostT / this.boostLen) * Math.PI) : 1; }
   loot(drop) { drop(this.fire > 0 ? 'cooked_porkchop' : 'porkchop', between(1, 3)); if (this.saddled) drop('saddle', 1); }
   interact(held) {
     if (held === 'saddle' && !this.saddled && this.ageT >= 0) { this.saddled = true; return 'consume'; }
@@ -427,7 +431,7 @@ export class Pig extends Animal {
     if (this.m.heldName() !== 'carrot_on_a_stick') return false;
     this.yaw = rotTowards(this.yaw, rider.yaw, 10 * DEG);
     this.bodyYaw = this.yaw; this.headYaw = this.yaw;
-    this.moveSpeedNow = this.speed * 0.225 / 0.25 * 1.0;
+    this.moveSpeedNow = this.speed * 0.225 / 0.25 * this.boostFactor();
     this.zza = this.moveSpeedNow;
     return true;
   }
