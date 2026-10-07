@@ -20,7 +20,7 @@
 --------------------------------------------------------------------------- */
 import { Screen, Button, TextField, CycleButton, ScrollList, WHITE, GREY, onOff } from './gui.js?v=21';
 import { ConfirmScreen } from './menus.js?v=21';
-import { Net, listServers, createServer, editServer, deleteServer, playerName, setPlayerName, cleanName } from '../net/net.js?v=21';
+import { Net, listServers, createServer, editServer, deleteServer, playerName, setPlayerName, cleanName, FAIL_TEXT, SERVER_DOWN } from '../net/net.js?v=21';
 import { parseSeed } from '../gen/random.js?v=21';
 
 const PW_KEY = 'lc2_pw_';
@@ -108,10 +108,15 @@ export class MultiplayerScreen extends Screen {
   async refresh() {
     this.status = 'Pinging...'; this.ping = -1;
     if (this.gui) this.gui.markDirty();
+    this.status2 = '';
     try {
       const r = await listServers();
       this.servers = r.servers; this.ping = r.ping; this.status = '';
-    } catch (e) { this.servers = []; this.status = "Can't connect to the server list"; }
+    } catch (e) {
+      // nothing answering, or an mc server without Leoncraft 2 on it yet: said plainly (net.js FAIL_TEXT)
+      const t = FAIL_TEXT[(e && e.kind) || SERVER_DOWN] || FAIL_TEXT.down;
+      this.servers = []; this.status = t[0]; this.status2 = t[1];
+    }
     this.fill();
   }
   remove() {
@@ -145,7 +150,12 @@ export class MultiplayerScreen extends Screen {
   render(g, mx, my, dt) {
     super.render(g, mx, my, dt);
     g.centered(this.title, this.width / 2, 20, WHITE);
-    if (this.status) g.centered(this.status, this.width / 2, 32 + Math.floor((this.height - 96) / 2) - 4, GREY);
+    if (this.status) {
+      const y = 32 + Math.floor((this.height - 96) / 2) - 4;
+      // (a server that cannot be reached is said in the game's dark red, with why under it)
+      g.centered(this.status, this.width / 2, y - (this.status2 ? 5 : 0), this.status2 ? 0xAA0000 : GREY);
+      if (this.status2) for (const [i, l] of g.font.wrap(this.status2, this.width - 50).entries()) g.centered(l, this.width / 2, y + 6 + i * 10, GREY);
+    }
     if (this.message) g.centered(this.message, this.width / 2, this.height - 64 - 4 - 9, 0xFF5555);
   }
   keyPressed(e) {

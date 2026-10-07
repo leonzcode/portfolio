@@ -35,7 +35,7 @@ const wrap = a => a - 2 * PI * Math.round(a / (2 * PI));
 const idOf = name => !name ? 0 : (I[name] !== undefined ? I[name] : B[name] !== undefined ? B[name] : 0);
 
 // the flags each position carries (net/net.js sends them)
-export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024 };
+export const F = { SNEAK: 1, SPRINT: 2, FLY: 4, SWIM: 8, GROUND: 32, SLEEP: 64, DEAD: 128, GLIDE: 256, RIDE: 512, SLEPT: 1024, SPEC: 2048, INVIS: 4096 };
 // what the use button can be doing with a hand (render/avatar.js useNow kinds), by number in a position
 export const USE_KINDS = ['eat', 'drink', 'horn', 'bow', 'aim', 'crossbow', 'block', 'trident', 'spear', 'spyglass'];
 // sitting on something: the legs sit (the mount itself is on its rider's machine only, for now)
@@ -70,6 +70,8 @@ export class RemotePlayers {
       av: null, P: null, acc: 0, eq: null, tag: null, hurtUntil: 0, st: null, lat: p.lat | 0 };
     this.list.set(p.id, r);
     if (p.st) this.state(p.id, p.st, null);
+    // (dead already when you came: no dying to watch)
+    if (p.st && (p.st.f & F.DEAD)) r.deadAt = -1e9;
     r.skinUrl = p.skin || ''; r.slim = !!p.slim;
     if (p.eq) r.eq = p.eq;
     return r;
@@ -132,6 +134,8 @@ export class RemotePlayers {
     const lay = av.layDown;
     av.layDown = function (root, P, a, pitch) {
       const f = P.bed;
+      // dying: tipped onto its side about the feet, as the game's renderer does
+      if (P.dying > 0) root.multiply(this.t.makeRotationZ(P.dying * PI / 2));
       if (!f) return lay.call(this, root, P, a, pitch);
       const fx = f[0], fz = f[1], o = P.pos;
       root.set(-fz, fx, 0, o.x - fx * 1.52, 0, 0, 1, o.y + 0.125, fx, fz, 0, o.z - fz * 1.52, 0, 0, 0, 1);
@@ -196,17 +200,32 @@ export class RemotePlayers {
   }
 
   /* ---- every frame: where each one is now, posed and named ---- */
-  frame(now, dt, world, dimCode, eye, maxDist) {
+  frame(now, dt, world, dimCode, eye, maxDist, spectator) {
     for (const r of this.list.values()) {
       const s = r.st;
-      const show = !!s && s.d === dimCode && !(s.f & F.DEAD) && r.buf.length > 0;
+      // (a spectator is seen only by other spectators, as in the game)
+      const show = !!s && s.d === dimCode && r.buf.length > 0 && (!(s.f & F.SPEC) || spectator);
       if (!show) { if (r.av) this.hide(r); continue; }
       const p = this.sample(r, now, dt);
       if (!p) { if (r.av) this.hide(r); continue; }
+      /* Dying, as the game shows it: tipped over onto its side over the first
+         two thirds of a second, red, and gone in a puff at one second (20 ticks). */
+      if (p.f & F.DEAD) {
+        if (!r.deadAt) r.deadAt = now;
+        const ticks = (now - r.deadAt) / 50;
+        if (ticks >= 20) {
+          if (!r.poofed && r.av && r.av.mesh.visible && this.onPoof) { r.poofed = true; this.onPoof(p.x, p.y, p.z); }
+          if (r.av) this.hide(r);
+          continue;
+        }
+        r.dying = Math.min(1, Math.sqrt(Math.max(0, ticks / 20 * 1.6)));
+      } else { r.deadAt = 0; r.dying = 0; r.poofed = false; }
       const dx = p.x - eye.x, dy = p.y - eye.y, dz = p.z - eye.z, d2 = dx * dx + dy * dy + dz * dz;
       if (d2 > maxDist * maxDist) { if (r.av) this.hide(r); continue; }
       const av = this.avatarOf(r), P = r.P;
       P.w = world;
+      P.dying = r.dying || 0;
+      r.invis = !!(p.f & F.INVIS);
       P.sneaking = !!(p.f & F.SNEAK); P.flying = !!(p.f & F.FLY); P.gliding = !!(p.f & F.GLIDE);
       P.riding = p.f & F.RIDE ? SEAT : null;
       P.bed = null;
@@ -243,7 +262,8 @@ export class RemotePlayers {
          not through walls */
       const tag = this.tagOf(r), top = (P.bed ? 0.2 : P.sneaking ? 1.5 : P.pose === 'swim' ? 0.6 : 1.8) + 0.5 + 0.025 - tag.h * 0.0125;
       tag.far.position.set(p.x, p.y + top, p.z); tag.near.position.copy(tag.far.position);
-      const close = d2 < 64 * 64;
+      // (nor over someone invisible, or dying)
+      const close = d2 < 64 * 64 && !r.invis && !(p.f & F.DEAD);
       tag.far.visible = close;
       tag.near.visible = close && !P.sneaking;
       if (tag.far.material.depthTest !== P.sneaking) tag.far.material.depthTest = P.sneaking;
@@ -301,7 +321,7 @@ export class RemotePlayers {
   // the model for this frame: its light, its pose, what it holds and wears (render/avatar.js update, for someone else)
   draw(r, av, P, feet, a, dt, now) {
     av.world = P.w;
-    av.uHurt.value = now < r.hurtUntil ? 1 : 0;
+    av.uHurt.value = now < r.hurtUntil || P.dying > 0 ? 1 : 0;
     av.useNow = r.useNow || null;
     av.lightT -= dt;
     if (av.lightT <= 0) { av.lightT = 0.25 + Math.random() * 0.05; av.refreshCache(feet.x, feet.z); av.sampleLight(feet); }
@@ -310,7 +330,8 @@ export class RemotePlayers {
     av.uLight.value.set(av.sky, av.block);
     av.posed(P, a, feet);
     const on = av.ready;
-    av.mesh.visible = on;
+    // invisible: only what they wear and hold shows, as in the game
+    av.mesh.visible = on && !r.invis;
     av.armor.visible = on && av.wearing;
     // the armour's pictures taken up again whenever another file has landed in the sheet
     if (av.wearing) { const sh = armorSheet(); if (sh.version !== av.armorV) { av.armorV = sh.version; av.armorTex.needsUpdate = true; } }

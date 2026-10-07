@@ -746,7 +746,8 @@ async function boot() {
     // on a server: the other players, and everything that changes, from now on (net/net.js)
     if (entry.mp) {
       game.net = entry.mp;
-      entry.mp.attach(game, { renderer, gui, chat, rule: r => gameRule(game, r),
+      entry.mp.attach(game, { renderer, gui, chat, rule: r => gameRule(game, r), commandCtx: chatCtx,
+        setDifficulty: d => { if (game) game.entry.difficulty = d; options.set('difficulty', d); },
         disconnected: reason => quitToTitle().then(() => gui.open(new DisconnectedScreen('Connection Lost', reason))) });
     }
     lock();
