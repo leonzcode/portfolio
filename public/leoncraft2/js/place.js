@@ -134,7 +134,7 @@ export function placement(world, hit, id, player) {
     // a hopper points into what you clicked, or down when you click a top or a bottom
     case 'hopper': m = n[1] !== 0 ? 4 : horizOf([-n[0], 0, -n[2]]); break;
     case 'campfire': m = look; break;
-    case 'lectern': case 'grindstone': case 'stonecutter': m = (look + 2) & 3; break;
+    case 'lectern': case 'grindstone': case 'stonecutter': case 'shelf': m = (look + 2) & 3; break;
     // a bell stands on the floor across your view, hangs from a ceiling, or from one wall (or two)
     case 'bell': {
       if (n[1] === 1) { m = look << 1; break; }
