@@ -356,7 +356,7 @@ async function boot() {
   const renderer = new Renderer(canvas, textures, Object.assign({}, LOOK, { renderDist: RD, scale: +(params.get('scale') || (rs !== 'auto' ? rs : 1)),
     brightness: options.get('brightness'), clouds: options.get('clouds') }));
   for (const t of [textures.albedo, textures.normal, textures.spec]) if (t.pieces) uploadArray(renderer.r, t);
-  dimArt.upload(renderer.r, textures);
+  dimArt.upload(renderer.r, textures, alb);
   if (packTex && packTex.size) alb = applyPackTextures(renderer.r, textures, manifest, packTex, alb);
   renderer.colours = colours;
   alb = dimArt.extendStrip(alb);

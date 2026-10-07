@@ -9,6 +9,7 @@
    pixels go in once the arrays are on the GPU (upload), and the icon strip
    gets the same layers (extendStrip).
 --------------------------------------------------------------------------- */
+import { litFronts } from '../render/litfront.js?v=25';
 const THREE = window.THREE;
 
 // a small seeded hash for the art (the same picture every time)
@@ -153,7 +154,8 @@ export function addDimArt(manifest) {
   const add = (name, frames, frametime, emissive) => {
     T[name] = { layer: next };
     if (frames.length > 1) { T[name].frames = frames.length; T[name].frametime = frametime; }
-    for (const f of frames) layers.push([next++, f, emissive]);
+    // emissive: true (the whole picture glows), or one material picture per frame
+    frames.forEach((f, i) => layers.push([next++, f, Array.isArray(emissive) ? emissive[i] : emissive]));
   };
   add('nether_portal', portalFrames(), 2, true);
   add('end_portal_frame_eye', [frameEye()], 1, false);
@@ -161,11 +163,15 @@ export function addDimArt(manifest) {
   add('lc2_fire_charge', [fireCharge()], 1, false);
   add('lc2_ender_eye', [enderEye()], 1, false);
   add('lc2_end_crystal', [endCrystal()], 1, false);
+  // lit furnaces, smokers and blast furnaces (render/litfront.js), filled from the strip in upload
+  const lit = litFronts(add);
   manifest.layers = next;
   return {
     layers,
     // the pixels into the arrays (albedo, and a flat normal and a plain or glowing material where those arrays exist)
-    upload(r, textures) {
+    // (strip: the albedo strip as loaded, for the pictures made from our own: the lit fronts)
+    upload(r, textures, strip) {
+      lit.fill(strip, T);
       const gl = r.getContext();
       const flat = new Uint8Array(16 * 16 * 4), spec = new Uint8Array(16 * 16 * 4), glow = new Uint8Array(16 * 16 * 4);
       for (let i = 0; i < 256; i++) { flat.set([128, 128, 255, 255], i * 4); spec.set([40, 10, 0, 0], i * 4); glow.set([40, 10, 0, 140], i * 4); }
@@ -180,7 +186,7 @@ export function addDimArt(manifest) {
       for (const [layer, rgba, em] of layers) {
         put(textures.albedo, layer, new Uint8Array(rgba.buffer));
         put(textures.normal, layer, flat);
-        put(textures.spec, layer, em ? glow : spec);
+        put(textures.spec, layer, em && em.length ? em : em ? glow : spec);
       }
       for (const t of [textures.albedo, textures.normal, textures.spec]) {
         if (!t || !t.image || t.image.depth <= 1) continue;

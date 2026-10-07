@@ -23,6 +23,7 @@
                                    bits 4-5 the way it faces
      pressure plates               bit 0 pressed; weighted ones bits 0-3 power
      redstone_lamp                 bit 0 lit
+     furnace, smoker, blast furnace bits 0-1 facing, bit 2 lit (burning: containers.js showLit)
      piston, sticky piston         bits 0-2 facing, bit 3 extended;  piston_head bits 0-2 facing, bit 3 sticky
      observer                      bits 0-2 facing (where it looks), bit 3 powered
      dispenser, dropper            bits 0-2 facing, bit 3 triggered
@@ -76,6 +77,8 @@ addTex('cocoa', stages('cocoa_stage', 3));
 addTex('sweet_berry_bush', stages('sweet_berry_bush_stage', 4));
 addTex('farmland', { moist: 'farmland_moist' });
 addTex('redstone_lamp', { on: 'redstone_lamp_on' });
+// (the lit fronts are our own, drawn from the unlit ones: render/litfront.js)
+for (const n of ['furnace', 'smoker', 'blast_furnace']) addTex(n, { frontOn: n + '_front_on' });
 addTex('redstone_torch', { off: 'redstone_torch_off' });
 addTex('redstone_wall_torch', { off: 'redstone_torch_off' });
 addTex('repeater', { on: 'repeater_on', torch: 'redstone_torch', torchOff: 'redstone_torch_off' });
@@ -98,7 +101,7 @@ addTex('sculk_shrieker', { inner: 'sculk_shrieker_inner_top', innerOn: 'sculk_sh
 addTex('respawn_anchor', { lit: 'respawn_anchor_top', c1: 'respawn_anchor_side1', c2: 'respawn_anchor_side2', c3: 'respawn_anchor_side3', c4: 'respawn_anchor_side4' });
 for (const n of ['redstone_wire', 'melon_stem', 'pumpkin_stem']) if (has(n)) STATEFUL[B[n]] = 1;
 
-for (const n of ['redstone_lamp', 'redstone_torch', 'redstone_wall_torch', 'respawn_anchor', 'redstone_ore', 'deepslate_redstone_ore']) if (has(n)) SLIGHT[B[n]] = 1;
+for (const n of ['redstone_lamp', 'redstone_torch', 'redstone_wall_torch', 'respawn_anchor', 'redstone_ore', 'deepslate_redstone_ore', 'furnace', 'smoker', 'blast_furnace']) if (has(n)) SLIGHT[B[n]] = 1;
 for (const d of BLOCKS) if (d && /copper_bulb$/.test(d.name)) SLIGHT[d.id] = 1;
 // campfires give no light once put out; candles and candle cakes only while lit (3 a candle)
 for (const d of BLOCKS) if (d && (d.shape === 'campfire' || d.shape === 'candle' || /candle_cake$/.test(d.name))) SLIGHT[d.id] = 1;
@@ -120,6 +123,8 @@ export function lightOf(b, m) {
     case 'redstone_torch': case 'redstone_wall_torch': return m & 8 ? 0 : 7;
     case 'respawn_anchor': return [0, 3, 7, 11, 15][Math.min(4, m & 7)];
     case 'redstone_ore': case 'deepslate_redstone_ore': return m & 1 ? 9 : 0;
+    // burning, 13
+    case 'furnace': case 'smoker': case 'blast_furnace': return m & 4 ? 13 : 0;
   }
   if (d.shape === 'campfire') return m & 4 ? 0 : d.light || 0;
   if (d.shape === 'candle') return m & 4 ? 3 * ((m & 3) + 1) : 0;
@@ -165,6 +170,7 @@ function make(d, m) {
     case 'cocoa': { const s = 's' + Math.min(2, (m >> 3) & 3); return ok(d, s) ? variant(d, { faces: all6(L[s]) }) : null; }
     case 'farmland': return (m & 7) === 7 && ok(d, 'moist') ? variant(d, { faces: [d.faces[0], d.faces[1], L.moist, d.faces[3], d.faces[4], d.faces[5]] }) : null;
     case 'redstone_lamp': return m & 1 && ok(d, 'on') ? variant(d, { faces: all6(L.on) }) : null;
+    case 'furnace': case 'smoker': case 'blast_furnace': return m & 4 && ok(d, 'frontOn') ? variant(d, { front: L.frontOn }) : null;
     case 'redstone_torch': case 'redstone_wall_torch': return m & 8 && ok(d, 'off') ? variant(d, { faces: all6(L.off) }) : null;
     case 'observer': return m & 8 && ok(d, 'backOn') ? variant(d, { back: L.backOn }) : null;
     case 'daylight_detector': return m & 16 && ok(d, 'inv') ? variant(d, { faces: [d.faces[0], d.faces[1], L.inv, d.faces[3], d.faces[4], d.faces[5]] }) : null;

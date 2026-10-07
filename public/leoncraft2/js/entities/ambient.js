@@ -17,6 +17,9 @@
                     rising 0.07 a tick for 280 to 330 ticks (a signal fire,
                     over a hay bale, higher), and now and then a spark
 
+     furnaces       lit (burning): smoke and a flame at the front's mouth,
+                    a blast furnace smoke there, a smoker smoke over its top
+
    leaves         (26.x) now and then a leaf falling from under one, tinted
                   as the leaves are, gone when it reaches the ground
 
@@ -42,6 +45,10 @@ set('fire', FIRE); set('soul_fire', FIRE); set('lava', LAVA); set('nether_portal
 const WATER = 12;
 set('water', WATER);
 for (const d of BLOCKS) if (d && d.shape === 'campfire') KIND[d.id] = CAMPFIRE;
+const FURNACE = 13, BLAST = 14, SMOKER = 15;
+set('furnace', FURNACE); set('blast_furnace', BLAST); set('smoker', SMOKER);
+// a horizontal facing (meta bits 0-1: north, east, south, west) as a step out of the front
+const OUT = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 /* leaves (26.x): each time one is picked, a chance it lets a leaf fall if nothing solid is under it,
    one in a hundred (cherry one in ten, its pink petals falling faster; pale oak one in fifty) */
 const LEAVES = 11, LEAF = [];
@@ -212,6 +219,17 @@ export class Ambient {
         const m = T.meta(x, y, z);
         if ((m & LEVEL) && !(m & FALLING)) break;
         this.puff('underwater', x + R(), y + R(), z + R(), 0, 0, 0, undefined, OUTDOORS);
+        break;
+      }
+      case FURNACE: case BLAST: case SMOKER: {
+        // lit (sim/states.js bit 2): the game's spots, half a block out from the front, a random way along it
+        const m = T.meta(x, y, z);
+        if (!(m & 4)) break;
+        if (k === SMOKER) { this.puff('smoke', x + 0.5, y + 1.1, z + 0.5); break; }
+        const [sx, sz] = OUT[m & 3], h = R() * 0.6 - 0.3;
+        const px = x + 0.5 + (sx ? sx * 0.52 : h), pz = z + 0.5 + (sz ? sz * 0.52 : h), py = y + R() * (k === BLAST ? 9 : 6) / 16;
+        this.puff('smoke', px, py, pz);
+        if (k === FURNACE) this.puff('flame', px, py, pz);
         break;
       }
       case CAMPFIRE: {
