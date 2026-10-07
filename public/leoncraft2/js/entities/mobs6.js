@@ -317,16 +317,24 @@ addArt('bee_angry_nectar', [64, 64], p => paintBee(p, true, true));
 /* ---- Allay: 20 health, 0.35 x 0.6, flies; give it an item and it fetches
    that item: anything matching lying within 32 blocks it picks up and
    brings back to whoever gave it, and drops at their feet. Right click
-   with an empty hand to take the item back. Blue and glowing. ---- */
+   with an empty hand to take the item back. Blue and glowing. A note
+   block played within 16 blocks of it is liked for 30 seconds: it stays
+   by it and leaves what it fetches on top of it instead. ---- */
 export class Allay extends Flyer {
   static W = 0.35; static H = 0.6; static HEALTH = 20; static SPEED = 0.1; static FLY_SPEED = 0.25; static SHADOW = 0.2;
   static MODEL = 'allay'; static TEX = 'allay'; static CATEGORY = 'creature'; static NO_DESPAWN = true; static GLOW = true;
-  constructor(m, type) { super(m, type); this.carry = 0; this.want = null; this.dropCool = 0; }
+  constructor(m, type) { super(m, type); this.carry = 0; this.want = null; this.dropCool = 0; this.note = null; this.noteT = 0; this.heard = null; this.gaveAt = null; }
   get eyeH() { return 0.36; }
   registerGoals() {
-    this.goals.add(2, new FlyFollowGoal(this, m => (m.equip.mainhand ? m.m.player : null), 1.2, 6, 2));
+    this.goals.add(2, new FlyFollowGoal(this, m => (m.equip.mainhand ? m.deposit() : null), 1.2, 6, 2));
     this.goals.add(4, new FlyWanderGoal(this, 0.8, 40, 5));
     this.goals.add(5, new LookAtPlayerGoal(this, 6));
+  }
+  // where what it fetches goes: the note block it likes while it is still one (the spot over it), else the player
+  deposit() {
+    const n = this.noteT > 0 ? this.note : null, d = n && BLOCKS[this.m.t.get(n[0], n[1], n[2])];
+    if (d && d.name === 'note_block') return this.noteSpot;
+    return this.m.player;
   }
   interact(held) {
     if (!held && this.equip.mainhand) { this.m.dropAt(this, this.equip.mainhand, 1); if (this.carry) this.m.dropAt(this, this.equip.mainhand, this.carry); this.equip.mainhand = null; this.carry = 0; return 'swing'; }
@@ -335,11 +343,24 @@ export class Allay extends Flyer {
   }
   aiStep() {
     super.aiStep();
-    if (this.dead || !this.equip.mainhand) return;
+    this.gaveAt = null;
+    if (this.dead) return;
+    // a note block played within 16 blocks (the simulation keeps the last one played)
+    const ln = this.m.sim && this.m.sim.lastNote;
+    if (ln && ln !== this.heard) {
+      this.heard = ln;
+      if (this.dist2(ln.x + 0.5, ln.y + 0.5, ln.z + 0.5) <= 256) { this.note = [ln.x, ln.y, ln.z]; this.noteT = 600; this.noteSpot = { pos: { x: ln.x + 0.5, y: ln.y + 1, z: ln.z + 0.5 }, eyeH: 0.5, h: 1 }; }
+    }
+    if (this.noteT > 0) this.noteT--;
+    if (!this.equip.mainhand) return;
     if (this.dropCool > 0) this.dropCool--;
-    const D = activeDrops(), want = I[this.equip.mainhand], P = this.m.player;
-    // carrying some: home to the player, and drop them at their feet
-    if (this.carry > 0 && P && P.alive() && this.dist2(P.pos.x, P.pos.y, P.pos.z) < 6 && this.dropCool <= 0) {
+    const D = activeDrops(), want = I[this.equip.mainhand], P = this.m.player, to = this.deposit();
+    // carrying some: to the note block it likes, and left on top of it, or home to the player and at their feet
+    if (this.carry > 0 && to && to !== P && this.dropCool <= 0 && this.dist2(to.pos.x, to.pos.y + 0.5, to.pos.z) < 9) {
+      this.m.dropItemAt(to.pos.x, to.pos.y + 0.1, to.pos.z, this.equip.mainhand, this.carry); this.carry = 0; this.dropCool = 60; this.gaveAt = this.note.slice();
+      return;
+    }
+    if (this.carry > 0 && to === P && P && P.alive() && this.dist2(P.pos.x, P.pos.y, P.pos.z) < 6 && this.dropCool <= 0) {
       this.m.dropItemAt(P.pos.x, P.pos.y + 1, P.pos.z, this.equip.mainhand, this.carry); this.carry = 0; this.dropCool = 60;
       return;
     }
@@ -823,8 +844,8 @@ export class Axolotl extends Animal {
     if (held === 'tropical_fish_bucket') {
       const r = this.feed();
       // the fish is eaten; the bucket goes back with water in it
-      if (r && this.m.inv) { this.m.fillHeld ? null : null; }
-      return r ? 'consume' : false;
+      if (r && this.m.mode !== 'creative') this.m.fillHeld('water_bucket');
+      return r ? 'swing' : false;
     }
     return false;
   }
@@ -877,20 +898,44 @@ for (const k of AXOLOTL_KINDS) addArt('axolotl_' + k, [64, 64], p => {
 /* ---- Nautilus (and the zombie nautilus, its undead kind): a shelled
    swimmer that can be ridden under water; put a saddle on it and it goes
    the way you look, Space for a dash. Slow and floundering on land.
+   Tamed with pufferfish (or a bucket of one), one time in three; a tame
+   one at full health fed any fish (or a bucket of fish) falls in love and
+   breeds; a baby grows up in 20 minutes, each fish a tenth sooner. Only a
+   tame one takes a saddle. Fish tempt it from 10 blocks.
    (Numbers are our guess where the wiki had none to give.) ---- */
+const NAUTILUS_FOOD = ['cod', 'salmon', 'pufferfish', 'tropical_fish', 'cod_bucket', 'salmon_bucket', 'pufferfish_bucket', 'tropical_fish_bucket'];
 export class Nautilus extends Swimmer {
   static W = 0.95; static H = 0.95; static HEALTH = 15; static SPEED = 0.3; static SWIM = 0.8; static SHADOW = 0.5;
   static MODEL = 'nautilus'; static TEX = 'nautilus'; static WATER_BREATHER = 'only'; static CATEGORY = 'water_creature'; static NO_DESPAWN = true;
-  constructor(m, type) { super(m, type); this.saddled = false; this.dashCool = 0; }
+  constructor(m, type) { super(m, type); this.saddled = false; this.dashCool = 0; this.tamed = false; this.ageT = 0; this.inLove = 0; }
   registerGoals() {
     this.goals.add(0, new PanicGoal(this, 1.3));
-    this.goals.add(3, new TemptGoal(this, 1.1, ['pufferfish', 'cod', 'salmon']));
+    this.goals.add(1, new BreedGoal(this, 1));
+    this.goals.add(3, new TemptGoal(this, 1.1, NAUTILUS_FOOD));
     this.goals.add(4, new SwimGoal(this, 1, 30));
     this.goals.add(5, new LookAtPlayerGoal(this, 6));
   }
+  get isBaby() { return this.ageT < 0; }
+  aiStep() {
+    super.aiStep();
+    if (this.ageT < 0) this.ageT++;
+    else if (this.ageT > 0) this.ageT--;
+    if (this.inLove > 0) { this.inLove--; if (this.age % 10 === 0) this.m.particles('heart', this.pos.x, this.pos.y + this.h + 0.3, this.pos.z, 1, 0.4); }
+  }
   interact(held) {
-    if (held === 'saddle' && !this.saddled) { this.saddled = true; return 'consume'; }
-    if (this.saddled) { this.m.mount(this); return 'swing'; }
+    const fish = NAUTILUS_FOOD.indexOf(held) >= 0, bucket = fish && /_bucket$/.test(held);
+    // (a bucket of fish is eaten out of: the bucket goes back with its water)
+    const eaten = () => { if (bucket) { if (this.m.mode !== 'creative') this.m.fillHeld('water_bucket'); return 'swing'; } return 'consume'; };
+    if (fish && !this.tamed && this.ageT >= 0) {
+      if (held !== 'pufferfish' && held !== 'pufferfish_bucket') return false;
+      if (RI(3) === 0) { this.tamed = true; this.persistent = true; this.m.particles('heart', this.pos.x, this.pos.y + this.h, this.pos.z, 7, 0.6); }
+      else this.m.particles('smoke', this.pos.x, this.pos.y + this.h, this.pos.z, 7, 0.6);
+      return eaten();
+    }
+    if (fish && this.ageT < 0) { this.ageT = Math.min(0, this.ageT + Math.floor(-this.ageT * 0.1)); this.m.particles('sparkle', this.pos.x, this.pos.y + this.h, this.pos.z, 4, 0.5); return eaten(); }
+    if (fish && this.tamed && this.ageT === 0 && !this.inLove && this.health >= this.maxHealth) { this.inLove = 600; return eaten(); }
+    if (held === 'saddle' && this.tamed && !this.saddled && this.ageT >= 0) { this.saddled = true; return 'consume'; }
+    if (this.saddled && !fish) { this.m.mount(this); return 'swing'; }
     return false;
   }
   ridingOffset() { return 0.75; }
@@ -909,12 +954,18 @@ export class Nautilus extends Swimmer {
   get xp() { return 1 + RI(3); }
   layers(out) { if (this.saddled) out.push(['nautilus', 'nautilus_saddle', null]); }
   rootPose(root, t, a, A) { if (!this.inWater) root.multiply(t.makeRotationZ(0.3 * Math.sin(A.age * 0.5))); }
-  toJSON() { const o = super.toJSON(); if (this.saddled) o.sad = 1; return o; }
-  fromJSON(o) { super.fromJSON(o); this.saddled = !!o.sad; }
+  toJSON() { const o = super.toJSON(); if (this.saddled) o.sad = 1; if (this.tamed) o.tm = 1; if (this.ageT) o.age = this.ageT; return o; }
+  fromJSON(o) { super.fromJSON(o); this.saddled = !!o.sad; this.tamed = !!o.tm; this.ageT = o.age || 0; }
 }
 register('nautilus', Nautilus);
 export class ZombieNautilus extends Nautilus {
   static TEX = 'zombie_nautilus'; static UNDEAD = true; static HEALTH = 15;
+  // undead: fish neither tame nor breed it (a saddle still goes on, as before)
+  interact(held) {
+    if (held === 'saddle' && !this.saddled) { this.saddled = true; return 'consume'; }
+    if (this.saddled) { this.m.mount(this); return 'swing'; }
+    return false;
+  }
   loot(drop) { drop('rotten_flesh', RI(3)); if (this.saddled) drop('saddle', 1); }
 }
 register('zombie_nautilus', ZombieNautilus);

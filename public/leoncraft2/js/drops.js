@@ -163,9 +163,12 @@ export class Drops {
     const dx = -Math.sin(yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = -Math.cos(yaw) * Math.cos(pitch);
     const a = Math.random() * Math.PI * 2, r = 0.02 * Math.random();
     const y = player.pos.y + (player.sneaking ? 1.27 : 1.62) - 0.3;
-    return this.spawn(player.pos.x, y, player.pos.z, stack, {
+    const e = this.spawn(player.pos.x, y, player.pos.z, stack, {
       delay: 40, vel: [dx * 0.3 + Math.cos(a) * r, dy * 0.3 + 0.1 + (Math.random() - Math.random()) * 0.1, dz * 0.3 + Math.sin(a) * r],
     });
+    // (thrown by you: a mob that picks it up is "given" it, as the game's advancements count)
+    if (e) e.thrown = true;
+    return e;
   }
   xp(x, y, z, amount) {
     amount = Math.floor(amount);

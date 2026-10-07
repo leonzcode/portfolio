@@ -454,6 +454,11 @@ class CrossbowGoal extends Goal {
     else if (this.state === 2) { if (--this.t <= 0 && sees) { m.shootCrossbow(t); this.state = 0; m.aiming = false; } }
   }
 }
+// what a piglin loves and picks up to admire (the game's piglin_loved), and the golden armour it will wear
+const LOVED = new Set(['gold_ore', 'nether_gold_ore', 'deepslate_gold_ore', 'gold_block', 'gilded_blackstone', 'light_weighted_pressure_plate', 'gold_ingot', 'bell', 'clock',
+  'golden_carrot', 'glistering_melon_slice', 'golden_apple', 'enchanted_golden_apple', 'golden_helmet', 'golden_chestplate', 'golden_leggings', 'golden_boots', 'golden_horse_armor',
+  'golden_nautilus_armor', 'golden_sword', 'golden_spear', 'golden_pickaxe', 'golden_shovel', 'golden_axe', 'golden_hoe', 'raw_gold', 'raw_gold_block', 'golden_dandelion']);
+const GOLD_ARMOUR = { golden_helmet: ['head', 2], golden_chestplate: ['chest', 5], golden_leggings: ['legs', 3], golden_boots: ['feet', 1] };
 // running from what a piglin fears: zombified piglins and zoglins close by
 export class Piglin extends Monster {
   static W = 0.6; static H = 1.95; static HEALTH = 16; static SPEED = 0.35; static ATTACK = 5; static FOLLOW = 16;
@@ -489,27 +494,59 @@ export class Piglin extends Monster {
   }
   onHurt(amount, source) {
     super.onHurt(amount, source);
-    // hurt while admiring: the gold is gone (and no barter)
-    if (this.admireT > 0) { this.admireT = 0; this.gold = 0; }
+    // hurt while admiring: the gold is gone (and no barter); and for 20 seconds no gold distracts it
+    if (this.admireT > 0) { this.admireT = 0; this.gold = 0; this.admiring = null; }
+    this.noAdmireT = 400;
     const a = source.attacker;
     if (a && a !== this && (a.isPlayer || a instanceof Living)) angerAt(this, a, true);
   }
-  /* A gold ingot given by hand: it takes it and looks at it for 6 seconds,
-     then barters (a baby keeps it). Not while it is already admiring. */
+  /* A gold ingot given by hand: a grown one takes it and looks at it for 6
+     seconds, then barters. Not while it is already admiring. */
   interact(held) {
-    if (held !== 'gold_ingot' || this.admireT > 0) return false;
-    this.admireT = 120; this.gold = 1;
+    if (held !== 'gold_ingot' || this.admireT > 0 || this.baby) return false;
+    this.admireT = 120; this.gold = 1; this.admiring = held;
     if (this.target && this.target.isPlayer && wearsGold(this.m)) this.target = null;
     this.nav.stop();
     return 'consume';
   }
+  /* Gold lying about (what it loves, the game's piglin_loved): one not busy admiring or fighting goes
+     to the nearest within 9 blocks and picks one up, then admires it as if given. */
+  seekGold() {
+    const D = activeDrops();
+    if (!D) return;
+    let best = null, bd = 81;
+    for (const e of D.items) {
+      if (e.gone || !e.stack || e.delay > 0 || !LOVED.has(ITEMS[e.stack.id] && ITEMS[e.stack.id].name)) continue;
+      const d = this.dist2(e.pos.x, e.pos.y, e.pos.z);
+      if (d < bd) { bd = d; best = e; }
+    }
+    if (!best) return;
+    if (Math.abs(best.pos.x - this.pos.x) < this.hw + 1.2 && Math.abs(best.pos.z - this.pos.z) < this.hw + 1.2 && best.pos.y > this.pos.y - 0.6 && best.pos.y < this.pos.y + this.h + 0.5) this.pickUp(best);
+    else if (this.age % 10 === 0 || this.nav.isDone()) this.nav.moveTo(best.pos.x, best.pos.y, best.pos.z, 1, 0);
+  }
+  // one taken off the stack in reach; true when it took it
+  pickUp(e) {
+    const D = activeDrops(), name = ITEMS[e.stack.id] && ITEMS[e.stack.id].name;
+    if (!D || !name || this.admireT > 0) return false;
+    if (e.stack.count > 1) e.stack.count--; else D._remove(e, -1);
+    this.admireT = 120; this.gold = name === 'gold_ingot' ? 1 : 0; this.admiring = name;
+    this.nav.stop();
+    return true;
+  }
   aiStep() {
     super.aiStep();
     if (this.dead || this.removed) return;
-    if (this.admireT > 0 && --this.admireT === 0 && this.gold) {
-      this.gold = 0;
-      if (!this.baby) { const [item, n] = barter(); throwStack(this, barterStack(item, n)); this.bartered = (this.bartered || 0) + 1; this.lastBarter = [item, n]; }
-    }
+    if (this.admireT > 0 && --this.admireT === 0) {
+      // a grown one barters for an ingot; anything else it keeps (golden armour it wears, if that slot is free)
+      if (this.gold && !this.baby) { const [item, n] = barter(); throwStack(this, barterStack(item, n)); this.bartered = (this.bartered || 0) + 1; this.lastBarter = [item, n]; }
+      else if (this.admiring) {
+        const slot = GOLD_ARMOUR[this.admiring];
+        if (slot && !this.equip[slot[0]]) { this.equip[slot[0]] = this.admiring; this.armor += slot[1]; }
+        else (this.kept || (this.kept = [])).push(this.admiring);
+      }
+      this.gold = 0; this.admiring = null;
+    } else if (this.noAdmireT > 0) this.noAdmireT--;
+    else if (!this.admireT && this.age % 4 === 0) this.seekGold();
     // out of the Nether: 15 seconds of shaking and it is a zombified piglin
     if (!inNether(this.m) && !this.immune) {
       if (++this.zombifyT >= 300) this.m.convertMob(this, 'zombified_piglin', n => { n.equip = Object.assign({}, this.equip); n.attackDamage = n.holding('golden_sword') ? 8 : 5; });
@@ -536,8 +573,10 @@ export class Piglin extends Monster {
   }
   rootPose(root, t, a) { if (this.zombifyT > 0) root.multiply(t.makeRotationY(Math.cos((this.age + a) * 3.25) * PI * 0.01)); }
   static checkSpawn(S, x, y, z) { return below(S, x, y, z) !== 'nether_wart_block' && S.onGround(this, x, y, z) && S.walkOk(x, y, z); }
-  toJSON() { const o = super.toJSON(); if (this.baby) o.baby = 1; if (this.immune) o.imm = 1; return o; }
-  fromJSON(o) { super.fromJSON(o); if (o.baby) this.setBaby(true); this.immune = !!o.imm; this.attackDamage = this.holding('golden_sword') ? 8 : 5; }
+  // the gold it kept goes when it dies
+  loot(drop) { if (this.kept) for (const n of this.kept) drop(n, 1); }
+  toJSON() { const o = super.toJSON(); if (this.baby) o.baby = 1; if (this.immune) o.imm = 1; if (this.kept && this.kept.length) o.kept = this.kept.slice(0, 8); return o; }
+  fromJSON(o) { super.fromJSON(o); if (o.baby) this.setBaby(true); this.immune = !!o.imm; this.attackDamage = this.holding('golden_sword') ? 8 : 5; if (Array.isArray(o.kept)) this.kept = o.kept.filter(n => typeof n === 'string'); }
 }
 // melee for one holding a sword (or nothing)
 class PiglinMelee extends MeleeAttackGoal {

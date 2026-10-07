@@ -30,6 +30,7 @@ import { Living } from '../entities/entity.js?v=25';
 import { TYPES } from '../entities/mobs.js?v=25';
 import { AbstractHorse } from '../entities/mobs4.js?v=25';
 import { Allay } from '../entities/mobs6.js?v=25';
+import { Piglin } from '../entities/nether.js?v=25';
 import { WindCharge } from '../entities/mobs7.js?v=25';
 import { summonAt } from '../entities/summon.js?v=25';
 import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=25';
@@ -182,12 +183,13 @@ function equipOf(inv) {
   out.offhand = stackView(inv.offhand);
   return out;
 }
-function playerView() {
+// (depth: how far into a vehicle and its riders the view has gone, so you in the boat you ride stops there)
+function playerView(depth = 0) {
   const g = G, p = g.player, E = g.entities;
   const v = { type: 'player', isPlayer: true, x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z, dim: g.dim, sneaking: !!p.sneaking, sprinting: !!p.sprinting,
     swimming: !!p.swimming, flying: !!p.flying, onFire: !!(g.survival && g.survival.fire > 0), equipment: equipOf(g.inv) };
   const r = E && E.riding;
-  if (r) v.vehicle = entityView(r, 1);
+  if (r && depth < 2) v.vehicle = entityView(r, depth + 1);
   // the block under the feet (stepping_on)
   const fx = Math.floor(p.pos.x), fy = Math.floor(p.pos.y - 0.2), fz = Math.floor(p.pos.z);
   v.stepping = { x: fx + 0.5, y: fy + Y0, z: fz + 0.5 };
@@ -195,8 +197,10 @@ function playerView() {
 }
 export function entityView(e, depth = 0) {
   if (!e) return null;
-  if (e.isPlayer) return G ? playerView() : null;
-  const v = { type: e.type, x: e.pos.x, y: e.pos.y + Y0, z: e.pos.z, dim: G ? G.dim : 'overworld',
+  if (e.isPlayer) return G ? playerView(depth) : null;
+  // (a boat is one kind here; the game names it by its wood, and a raft and a chest boat their own)
+  const type = e.type === 'boat' ? (e.raft ? (e.chest ? 'bamboo_chest_raft' : 'bamboo_raft') : (e.wood || 'oak') + (e.chest ? '_chest_boat' : '_boat')) : e.type;
+  const v = { type, x: e.pos.x, y: e.pos.y + Y0, z: e.pos.z, dim: G ? G.dim : 'overworld',
     baby: !!(e.baby || e.isBaby || (e.ageT !== undefined && e.ageT < 0)), onFire: e.fire > 0, sneaking: !!e.sneaking };
   const eq = {};
   const st = s => (s && typeof s === 'object' ? stackView(s) : typeof s === 'string' ? { name: s, count: 1 } : null);
@@ -587,14 +591,23 @@ wrapProto(WindCharge, 'burst', function (orig, a) {
   if (P && G && G.player === P && (P.vel.x !== v0[0] || P.vel.y !== v0[1] || P.vel.z !== v0[2])) launched(type);
   return r;
 });
-// an allay bringing what it collected to your feet: thrown_item_picked_up_by_player
+/* an allay bringing what it collected to your feet (thrown_item_picked_up_by_player), or leaving it on
+   the note block it likes (allay_drop_item_on_block, for you, who gave it the item) */
 wrapProto(Allay, 'aiStep', function (orig, a) {
   const n = this.carry | 0, item = this.equip && this.equip.mainhand;
   const r = orig.apply(this, a);
   if (n > 0 && !(this.carry | 0) && G) {
-    const v = this;
-    fire('thrown_item_picked_up_by_player', () => ({ entity: entityView(v), item: { name: typeof item === 'string' ? item : itemName(item && item.id), count: n } }));
+    const v = this, st = { name: typeof item === 'string' ? item : itemName(item && item.id), count: n }, at = this.gaveAt;
+    if (at) fire('allay_drop_item_on_block', { x: at[0], y: at[1] + Y0, z: at[2], tool: st });
+    else fire('thrown_item_picked_up_by_player', () => ({ entity: entityView(v), item: st }));
   }
+  return r;
+});
+// a piglin picking up gold you threw (thrown_item_picked_up_by_entity: Oh Shiny)
+wrapProto(Piglin, 'pickUp', function (orig, a) {
+  const e = a[0], st = e && e.stack ? Object.assign(stackView(e.stack), { count: 1 }) : null, mine = !!(e && e.thrown);
+  const r = orig.apply(this, a);
+  if (r && mine && st && G) { const v = this; fire('thrown_item_picked_up_by_entity', () => ({ entity: entityView(v), item: st })); }
   return r;
 });
 // a horse, donkey, mule or llama giving in to its rider: tame_animal
