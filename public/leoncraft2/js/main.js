@@ -29,8 +29,6 @@ import { Renderer } from './render/renderer.js?v=24';
 import { Overlay } from './render/overlay.js?v=24';
 import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=24';
 import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps, composedTextures, itemStripFrom } from './ui/pack.js?v=24';
-import { loadEntityArt } from './entities/packart.js?v=24';
-import { ITEM_TEX } from './itemdata.js?v=24';
 import { SEA, Y0 } from './world-const.js?v=24';
 import { Gui, Options } from './ui/gui.js?v=24';
 import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt, seedFrom } from './ui/menus.js?v=24';
@@ -67,6 +65,9 @@ import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './di
 import { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=24';
 import { VideoSettings } from './settings.js?v=24';
 import { pickBiome } from './worldgen.js?v=24';
+import { initSound, soundWorld, soundParts, soundTick, soundFrame, soundLeave } from './sound/game.js?v=24';
+import { loadEntityArt } from './entities/packart.js?v=24';
+import { ITEM_TEX } from './itemdata.js?v=24';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -404,6 +405,8 @@ async function boot() {
   const gui = new Gui($('#gui'), { base: base + 'gui/', options, hooks, version: TEX_V });
   await gui.load();
   MK('gui');
+  // music and sound (js/sound)
+  initSound(options, gui);
   if (find) {
     try {
       await gui.loadSheet('container/creative_inventory/tabs').catch(() => null);
@@ -708,6 +711,7 @@ async function boot() {
       containers.entityAt = (x, y, z) => entities.containerAt(x, y, z);
       inter.entities = entities; entities.inter = inter; inter.sim = sim;
       if (renderer.particles) renderer.particles.setWorld(w);
+      soundParts(g);
     };
     MK('sgPreAttach');
     await game.attach(world, fluids, dim, { drops: st && st.drops, sim: st && st.sim });
@@ -725,6 +729,7 @@ async function boot() {
     inter.onUseAir = id => game.realms.useAir(id);
     inter.onAttack = target => game.realms.attack(game.eye || player.view(0).eye, target);
     inter.onBroken = (x, y, z, b) => game.realms.broken(x, y, z, b);
+    soundWorld(game); soundParts(game);
     hud = new Hud(inv, icons);
     gui.hud = hud;
     applyModeRules(game, mode, hud);
@@ -905,6 +910,7 @@ async function boot() {
     if (g.details) g.details.dispose();
     scope(false);
     game = null;
+    soundLeave();
     if (g.entities) g.entities.dispose();
     if (g.sim) g.sim.dispose();
     if (g.realms) g.realms.dispose();
@@ -1253,6 +1259,7 @@ async function boot() {
         menuAcc += dt;
         if (menu && menuAcc >= 1 / 31 && !cardBusy(performance.now())) { menuFrame(menuAcc); menuAcc = 0; drawn(); }
       }
+      soundFrame(game, renderer.camera, now);
     } catch (e) {
       if (!loop.warned) { loop.warned = true; console.error(e); }
     }
@@ -1323,6 +1330,7 @@ async function boot() {
       if (timeRuns) g.time += 1;
       for (const s of player.splashes.splice(0)) renderer.inter.splash(s[0], s[1], s[2], s[3]);
       structures.spawners.tick(world, player);
+      soundTick(g);
       // on a server: where you are, and what came in from the others (net/net.js)
       if (g.net) g.net.tick(now - acc * 1000);
       // every ten seconds, what changed goes into the browser's storage
