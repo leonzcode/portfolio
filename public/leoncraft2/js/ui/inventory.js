@@ -43,6 +43,7 @@ import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } fro
 import { patternLines, drawBannerIcon } from '../banners.js?v=24';
 import { mapLines } from '../maps.js?v=24';
 import { dialPicture, usePicture } from '../dials.js?v=24';
+import { RecipeBook } from './recipebook.js?v=24';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -993,6 +994,16 @@ export class ContainerScreen extends Screen {
 
 export class InventoryScreen extends ContainerScreen {
   constructor(inv, icons) { super(inv, icons, 176, 166); this.title = 'Crafting'; this.grid = inv.craft; this.gridW = 2; }
+  // the recipe book (ui/recipebook.js); its button sits at the game's place
+  init() {
+    super.init();
+    if (!this.book) this.book = new RecipeBook(this, SearchField, (L, T, H) => [L + 104, Math.floor(H / 2) - 22]);
+    this.book.layout();
+  }
+  extraClick(mx, my, button) { return this.book ? this.book.mouse(mx, my, button, press.shift) : false; }
+  slotShown() { return !(this.book && this.book.covers()); }
+  keyPressed(e) { const k = this.book ? this.book.key(e) : null; return k === null ? super.keyPressed(e) : k; }
+  onClose() { if (this.book) this.book.close(); super.onClose(); }
   makeSlots() {
     const L = this.left, T = this.top, out = [];
     out.push(slot(L + 154, T + 28, 'result'));
@@ -1006,14 +1017,16 @@ export class InventoryScreen extends ContainerScreen {
   render(g, mx, my) {
     this.drawBackdrop(g);
     const L = this.left, T = this.top;
+    const book = this.book;
+    // a screen too narrow for both: the book alone
+    if (book.covers()) { book.render(g, mx, my); book.drawButton(g, mx, my); this.drawCarried(g, mx, my, null); return; }
+    book.render(g, mx, my);
     g.blit('container/inventory', 0, 0, 176, 166, L, T);
-    // the recipe book button (the book itself is not in this preview)
-    const bx = L + 104, by = Math.floor(this.height / 2) - 22;
-    const overBook = mx >= bx && my >= by && mx < bx + 20 && my < by + 18;
-    g.blit('container/inventory', 178, overBook ? 19 : 0, 20, 18, bx, by);
+    book.drawButton(g, mx, my);
     if (this.inv.drawPlayer) this.inv.drawPlayer(g, L + 26, T + 8, 49, 70, mx, my);
     g.text(this.title, L + 97, T + 8, LABEL_GREY, false);
     const prev = this.drawSlots(g, mx, my);
+    book.drawGhost(g);
     this.drawCarried(g, mx, my, prev);
   }
 }
@@ -1021,6 +1034,7 @@ export class InventoryScreen extends ContainerScreen {
 /* ------------------------------ creative inventory ------------------------------ */
 
 // the creative search box: no frame of its own (the sheet has one), white text
+export { press };
 export class SearchField extends TextField {
   draw(g) {
     const { x, y, w } = this;
