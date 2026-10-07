@@ -93,7 +93,7 @@ export class Renderer {
       uDim: { value: 0 }, uDimAmb: { value: new THREE.Vector3() }, uDimFog: { value: new THREE.Vector3() }, uDimFogRange: { value: new THREE.Vector2(0, 1) },
       uEndSky: { value: textures.endSky || null },
       // the void's dark (glsl.js VOID): under the horizon below sea level, and all of it near the world's floor
-      uVoid: { value: new THREE.Vector2() },
+      uVoid: { value: new THREE.Vector3(0, 0, 160) },
       // Detailed's per-vertex light, from the light table each frame (sky.js setUniforms), and the fog's colours
       uAmbUp: { value: new THREE.Vector3() }, uAmbSide: { value: new THREE.Vector3() }, uAmbDown: { value: new THREE.Vector3() },
       uSunC: { value: new THREE.Vector3() }, uDayK: { value: 0 }, uExpo: { value: 1 }, uFogK: { value: 0.0019 },
@@ -692,14 +692,16 @@ export class Renderer {
     U.uEyeInWater.value = state.eyeInWater ? 1 : 0;
     U.uSkyAtEye.value = state.skyAtEye;
     /* the void (glsl.js VOID): the sky under the horizon darkens once the eye is
-       below sea level (y 63, 127 here), easing in over a block; the sky and fog
-       go to black over the last 32 blocks above the dimension's floor, as the
-       game's fog does (not in the End, whose sky stays as it is) */
+       below sea level (y 63, 127 here), easing in over a block; the fog goes
+       to black over the last 32 blocks above the dimension's floor, as the
+       game's does, and the sky with it as far as the fog reaches into the sky
+       (the render distance: overhead it stays blue); not in the End, whose sky
+       stays as it is */
     // (the game's factor is on the colour as shown, (y over the floor / 32) squared; here the light is
     // before the tone curve, where it takes about its cube to look as dark)
     const vd = state.dim, vf = (state.eye.y - 64 - (vd ? vd.minY : -64)) / 32;
     U.uVoid.value.set(vd && vd.sky !== 'normal' ? 0 : Math.max(0, Math.min(1, 127 - state.eye.y)),
-      vd && vd.sky === 'end' ? 0 : 1 - (Math.max(0, Math.min(1, vf)) ** 2) ** 3);
+      vd && vd.sky === 'end' ? 0 : 1 - (Math.max(0, Math.min(1, vf)) ** 2) ** 3, Math.max(32, this.opts.renderDist * 16));
     U.uMoonPhase.value = state.moonPhase;
     U.uRender.value = this.opts.renderDist * 16;
     if (state.waterTint) U.uWaterTint.value.copy(state.waterTint);
