@@ -32,6 +32,8 @@ import { packArtSummary } from '../entities/packart.js?v=24';
 import { LanScreen } from './lan.js?v=24';
 import { parseSeed } from '../gen/random.js?v=24';
 import { SOUND_CREDITS } from '../sound/credits.js?v=24';
+import { FlatCustomizeScreen } from './flat.js?v=24';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=24';
 
 const PI = Math.PI;
 
@@ -418,6 +420,12 @@ export class CreateWorldScreen extends Screen {
     this.mode = from ? (from.hardcore ? 'hardcore' : from.mode || 'survival') : 'survival';
     this.difficulty = from ? from.difficulty || 'normal' : 'normal';
     this.cheats = from && from.cheats !== undefined ? !!from.cheats : this.mode === 'creative';
+    // a world made again keeps its type (and a Superflat world its layers)
+    if (from && from.generator) {
+      const fl = /^flat:([^|]*)\|?(.*)$/.exec(from.generator);
+      this.worldType = fl ? 'flat' : from.generator === 'classic' ? 'classic' : 'vanilla';
+      if (fl) this.flat = { code: fl[1], structures: fl[2] ? fl[2].split(',') : [] };
+    }
     this.tab = 0;
     this.nameField = new TextField(0, 0, 208, 20, { value: from ? from.name : 'New World', maxLength: 32, onEnter: () => this.create() });
     this.seedField = new TextField(0, 0, 308, 20, { value: from ? String(from.seed) : '', maxLength: 32, hint: 'Leave blank for a random seed', onEnter: () => this.create() });
@@ -455,12 +463,16 @@ export class CreateWorldScreen extends Screen {
     } else if (this.tab === 1) {
       const x = Math.floor(W / 2 - 154);
       let y = place(20 + 8 + 13 + 20 + 8 + 20 + 8 + 20);
-      // Default: Minecraft's own worlds from a real seed (js/gen); Classic: the first generator
-      const type = this.add(new CycleButton(x, y, 150, 20, 'World Type', { values: ['vanilla', 'classic'], value: this.worldType || 'vanilla',
-        format: v => v === 'classic' ? 'Classic' : 'Default', onChange: v => { this.worldType = v; } }));
-      type.tooltip = 'Default builds the same world as Minecraft from the seed; Classic is the first Leoncraft generator';
-      const cust = this.add(new Button(x + 158, y, 150, 20, 'Customize', null));
-      cust.active = false;
+      // Default: Minecraft's own worlds from a real seed (js/gen); Superflat: layers and one biome (gen/flat.js, its
+      // presets and layers under Customize, ui/flat.js); Classic: the first generator
+      const type = this.add(new CycleButton(x, y, 150, 20, 'World Type', { values: ['vanilla', 'flat', 'classic'], value: this.worldType || 'vanilla',
+        format: v => v === 'classic' ? 'Classic' : v === 'flat' ? 'Superflat' : 'Default', onChange: v => { this.worldType = v; g._initScreen(this); } }));
+      type.tooltip = 'Default builds the same world as Minecraft from the seed; Superflat is flat layers of blocks; Classic is the first Leoncraft generator';
+      const cust = this.add(new Button(x + 158, y, 150, 20, 'Customize', () => {
+        const f = this.flat || { code: DEFAULT_FLAT.code, structures: DEFAULT_FLAT.structures };
+        g.open(new FlatCustomizeScreen(f.code, f.structures, (code, structures) => { this.flat = { code, structures }; }));
+      }));
+      cust.active = this.worldType === 'flat';
       y += 28;
       this.labels.push(['Seed for the World Generator', x + 1, y, GREY]);
       this.seedField.x = x + 1; this.seedField.y = y + 13; this.seedField.w = 306;
@@ -492,14 +504,16 @@ export class CreateWorldScreen extends Screen {
      random one drawn ahead (main.js nextSeed), so the world being made in
      the background while you choose is the one you get. */
   chosen() {
-    const generator = this.worldType === 'classic' ? 'classic' : 'vanilla', text = this.seedField.value.trim();
+    // (a Superflat world takes its seed as the first generator does: its structures are placed by it)
+    const generator = this.worldType === 'classic' || this.worldType === 'flat' ? 'classic' : 'vanilla', text = this.seedField.value.trim();
     const seed = text ? (generator === 'classic' ? seedFrom(text) : parseSeed(text))
       : this.hooks.nextSeed ? this.hooks.nextSeed(generator) : generator === 'classic' ? seedFrom('') : parseSeed('');
+    if (this.worldType === 'flat') { const f = this.flat || DEFAULT_FLAT; return { seed, generator: flatGenerator(f.code, f.structures) }; }
     return { seed, generator };
   }
   // started ahead (main.js prepare) once the seed and type have stayed the same a moment
   prepareAhead() {
-    const key = this.worldType + '|' + this.seedField.value.trim();
+    const key = this.worldType + '|' + this.seedField.value.trim() + (this.worldType === 'flat' && this.flat ? '|' + this.flat.code : '');
     if (key === this.preparedKey || !this.hooks.prepare) return;
     this.preparedKey = key;
     clearTimeout(this.prepareT);

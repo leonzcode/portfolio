@@ -93,6 +93,9 @@ export function makeSource(gen, BIOMES, pickBiome, Y0, dim) {
   else if (pickBiome && typeof gen.climate === 'function') biome = (x, y, z) => name(pickBiome(gen.climate(x & ~3, z & ~3)));
   else biome = () => undefined;
   const src = { vanilla: typeof gen.noiseBiome === 'function', biome, ground };
+  // a Superflat world (gen/flat.js): the game's sea level for it, and only the structures its preset has
+  if (gen.seaLevel !== undefined) src.seaLevel = gen.seaLevel;
+  if (gen.allowStructures) src.allow = gen.allowStructures;
   // whether any water or lava of a chunk's bare terrain touches a box there (the vanilla generator knows)
   if (typeof gen.fluidNear === 'function') src.fluidNear = (box, cx, cz) => gen.fluidNear(box.x0, box.y0, box.z0, box.x1, box.y1, box.z1, cx, cz);
   if (dim === 'nether') { src.netherBiome = biome; src.biome = () => undefined; }
@@ -105,6 +108,7 @@ export class Structures {
   constructor(seed, src) {
     this.seed = toLong(seed);
     this.src = src || { biome: () => undefined, ground: () => 64 };
+    this.sea = this.src.seaLevel !== undefined ? this.src.seaLevel : SEA_LEVEL;
     this.starts = new Map();          // "set:cx,cz" -> start or null
     this.groundCache = new Map();
     this.ring = null;                 // stronghold ring tries (cheap), and their final chunks once worked out
@@ -119,7 +123,7 @@ export class Structures {
     }
     return v;
   }
-  occupied(x, z) { return Math.max(this.ground(x, z), SEA_LEVEL - 1); }       // WORLD_SURFACE_WG: water counts
+  occupied(x, z) { return Math.max(this.ground(x, z), this.sea - 1); }       // WORLD_SURFACE_WG: water counts
   biomeOK(type, x, y, z, dim) {
     const src = this.src;
     let b;
@@ -135,6 +139,7 @@ export class Structures {
   /* Where the structure would stand if built in chunk (cx, cz), checked as
      the game checks it (Structure.findValidGenerationPoint), or null. */
   point(type, cx, cz, dim) {
+    if (this.src.allow && !this.src.allow.has(type)) return null;
     // the chunk's middle (ChunkPos.getMiddleBlockX, block 8), where most
     // structures stand and are biome-checked; mansions and end cities measure
     // from block 7 instead
@@ -143,7 +148,7 @@ export class Structures {
     let p = null;
     if (SINGLE[type]) {
       const [w, d] = SINGLE[type];
-      if (this.lowest(x0, z0, w, d) < SEA_LEVEL) return null;
+      if (this.lowest(x0, z0, w, d) < this.sea) return null;
       p = { x: xm, y: this.occupied(xm, zm), z: zm };
     } else if (JIGSAW[type] !== undefined || type.startsWith('abandoned_camp')) {
       // the start piece's height, then its turn, then its template come first from the random
@@ -367,7 +372,7 @@ export class Structures {
             const r = largeFeature(new JRand(0), this.seed, s.cx, s.cz);
             list = plan({
               type: s.type, seed: this.seed, cx: s.cx, cz: s.cz, x0: s.cx * 16, z0: s.cz * 16, point: s, rot: s.rot || 0, r,
-              ground: (x, z) => this.ground(x, z), surface: (x, z) => this.occupied(x, z), biome: (x, y, z) => this.src.biome(x, y, z),
+              ground: (x, z) => this.ground(x, z), surface: (x, z) => this.occupied(x, z), biome: (x, y, z) => this.src.biome(x, y, z), sea: this.sea,
             }) || [];
           }
         }

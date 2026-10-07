@@ -17,6 +17,7 @@
    first needs them: the title screen's world (the first generator) starts
    without waiting for them. */
 import { Gen } from './worldgen.js?v=24';
+import { FlatGen } from './gen/flat.js?v=24';
 import { meshColumn, setColours } from './mesher.js?v=24';
 import { resolveTextures } from './blocks.js?v=24';
 import { worldStructures, structureMessage } from './struct/hook.js?v=24';
@@ -50,7 +51,7 @@ function make(m) {
   // each dimension has its own generator (js/dims.js); the Overworld is Minecraft's own for worlds
   // made as Vanilla Seed, the first generator for the rest
   const g = m.dim === 'the_nether' ? new G.NetherGen(m.seed) : m.dim === 'the_end' ? new G.EndGen(m.seed)
-    : m.generator === 'vanilla' ? new G.VanillaGen(String(m.seed)) : new Gen(m.seed | 0);
+    : m.generator === 'vanilla' ? new G.VanillaGen(String(m.seed)) : /^flat:/.test(m.generator || '') ? new FlatGen(m.seed, m.generator.slice(5)) : new Gen(m.seed | 0);
   // structures read their biomes and heights from whichever generator this is (fortresses and
   // bastions in the Nether, end cities in the End)
   const s = worldStructures(m.generator === 'vanilla' ? String(m.seed) : m.seed | 0, g, m.dim || 'overworld');
@@ -229,7 +230,7 @@ function work(m) {
   }
   if (m.type === 'surface') {
     // the ground height at a column, for finding somewhere to stand
-    self.postMessage({ type: 'surface', id: m.id, y: gen.surfaceAt(m.x, m.z), biome: m.withBiome ? gen.climate(m.x, m.z) : null });
+    self.postMessage({ type: 'surface', id: m.id, y: gen.surfaceAt(m.x, m.z), biome: m.withBiome ? gen.climate(m.x, m.z) : null, spawn: gen.spawnAt || null });
   }
 }
 /* The mesher practised on this kind of ground too (its stone, deepslate,

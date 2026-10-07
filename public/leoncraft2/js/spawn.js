@@ -26,6 +26,7 @@ export async function searchSpawn(ask) {
     const res = await Promise.all(tries.map(([x, z]) => ask({ type: 'surface', x, z, withBiome: true })));
     for (let i = 0; i < tries.length; i++) {
       const r = res[i];
+      if (r.spawn) return r.spawn;
       if (r.y < SEA + 1 || r.y > SEA + 30) continue;
       // the vanilla generator answers with the biome itself, the first one with its climate
       const bid = typeof r.biome === 'number' ? r.biome : pickBiome(r.biome);
