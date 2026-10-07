@@ -39,9 +39,9 @@
    at the first one in the way. Walking into something up to 0.6 high steps
    up onto it, which is how stairs and slabs are climbed.
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=25';
-import { collisionBoxes, selectionBoxes } from './models.js?v=25';
-import { LEVEL, FALLING } from './world-const.js?v=25';
+import { BLOCKS, FLUID, SOLID, B } from './blocks.js?v=26';
+import { collisionBoxes, selectionBoxes } from './models.js?v=26';
+import { LEVEL, FALLING } from './world-const.js?v=26';
 const THREE = window.THREE;
 
 const W = 0.3, HT = 1.8, STEP = 0.6;

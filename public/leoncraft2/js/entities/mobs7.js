@@ -9,18 +9,18 @@
    manager scales a hit on the player for Easy and Hard). Shapes are boxes
    in the game's model units; every texture is painted here.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=25';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=26';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, MeleeAttackGoal, BowAttackGoal, AvoidGoal,
-  HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, LeapGoal, randomLandPos } from './ai.js?v=25';
-import { Monster, Skeleton, register, TYPES, spawnArmor } from './mobs.js?v=25';
-import { model } from './mobs2.js?v=25';
-import { addArt } from './mobart.js?v=25';
-import { MODELS } from './mobmodels.js?v=25';
-import { Projectile } from './projectiles.js?v=25';
-import { exposure } from './explosion.js?v=25';
-import { Entity } from './entity.js?v=25';
-import { EnderDragon } from '../dim/dragon.js?v=25';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=25';
+  HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, LeapGoal, randomLandPos } from './ai.js?v=26';
+import { Monster, Skeleton, register, TYPES, spawnArmor } from './mobs.js?v=26';
+import { model } from './mobs2.js?v=26';
+import { addArt } from './mobart.js?v=26';
+import { MODELS } from './mobmodels.js?v=26';
+import { Projectile } from './projectiles.js?v=26';
+import { exposure } from './explosion.js?v=26';
+import { Entity } from './entity.js?v=26';
+import { EnderDragon } from '../dim/dragon.js?v=26';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=26';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -742,6 +742,8 @@ export class Creaking extends Monster {
     super.serverAi();
   }
   doHurtTarget(t) { return this.frozen ? false : super.doHurtTarget(t); }
+  // bound to a creaking heart (entities/hearts.js): nothing hurts it while the heart stands
+  hurt(amount, source) { if (this.heartGuard && this.heartGuard(amount, source)) return false; return super.hurt(amount, source); }
   loot() {}
   anim(A) { A.frozen = this.frozen; }
   layers(out) { if (!this.frozen) out.push(['creaking', 'creaking_eyes', null, false, true]); }
@@ -926,6 +928,7 @@ export class Warden extends Monster {
     this.targets.add(2, new WardenSenseGoal(this));
   }
   onHurt(amount, source) { super.onHurt(amount, source); this.anger = 600; this.idleT = 0; }
+  hurt(amount, source) { return this.emergeT > 0 ? false : super.hurt(amount, source); }
   sonicBoom(t) {
     const ex = this.pos.x, ey = this.pos.y + 1.6, ez = this.pos.z, dx = t.pos.x - ex, dy = t.pos.y + 1 - ey, dz = t.pos.z - ez, l = Math.hypot(dx, dy, dz) || 1;
     for (let i = 1; i < l; i += 0.8) this.m.particles('magic', ex + dx * i / l, ey + dy * i / l, ez + dz * i / l, 1, 0.05, [0.2, 0.7, 0.8]);
@@ -934,6 +937,12 @@ export class Warden extends Monster {
     else if (t.hurt) { t.hurt(10, src); if (t.vel) { t.vel.x += dx / l * 2.5; t.vel.y += 0.5; t.vel.z += dz / l * 2.5; } }
   }
   aiStep() {
+    if (this.emergeT > 0) {
+      // coming up out of the ground (a shrieker's summons): still, and nothing hurts it
+      this.stopMoving();
+      if (--this.emergeT % 4 === 0) this.m.particles('poof', this.pos.x, this.pos.y + 0.2, this.pos.z, 4, 0.6, [0.1, 0.25, 0.3]);
+      return;
+    }
     if (this.boomCool > 0) this.boomCool--;
     if (this.anger > 0) this.anger--;
     if (this.digT >= 0) {
@@ -952,7 +961,7 @@ export class Warden extends Monster {
     super.aiStep();
   }
   loot(drop) { drop('sculk_catalyst', 1); }
-  anim(A) { A.boom = this.boomT > 0 ? 1 - this.boomT / 34 : 0; A.dig = this.digT >= 0 ? this.digT / 100 : 0; A.heart = this.heart; }
+  anim(A) { A.boom = this.boomT > 0 ? 1 - this.boomT / 34 : 0; A.dig = this.digT >= 0 ? this.digT / 100 : this.emergeT > 0 ? this.emergeT / 134 : 0; A.heart = this.heart; }
   rootPose(root, t, a, A) { if (A.dig) root.multiply(t.makeTranslation(0, -A.dig * 3, 0)); }
   layers(out) { out.push(['warden', 'warden_glow', null, false, true]); }
 }
@@ -1051,6 +1060,17 @@ export class Wither extends Monster {
   }
   serverAi() {
     this.noActionTime++;
+    if (this.summonT > 0) {
+      // built from blocks (entities/summon.js): still while its health fills, then it bursts out
+      this.vel.set(0, 0, 0);
+      this.health = Math.min(this.maxHealth, this.health + this.maxHealth * (2 / 3) / 220);
+      if (this.summonT % 4 === 0) this.m.particles('magic', this.pos.x, this.pos.y + 2, this.pos.z, 3, 1.2, [0.4, 0.5, 0.9]);
+      if (--this.summonT === 0) {
+        this.health = this.maxHealth;
+        this.m.explode(this.pos.x, this.pos.y + 1.75, this.pos.z, 7, { type: 'explosion', attacker: this, mob: true }, { breakBlocks: this.m.mobGriefing !== false });
+      }
+      return;
+    }
     this.targets.tick();
     const t = this.target, v = this.vel, p = this.pos;
     if (t && t.alive()) {
@@ -1078,6 +1098,8 @@ export class Wither extends Monster {
   }
   travel() { const v = this.vel; this.move(v.x, v.y, v.z); v.x *= 0.91; v.z *= 0.91; }
   hurt(amount, source) {
+    // nothing hurts it while it charges, newly built
+    if (this.summonT > 0 && source.type !== 'void') return false;
     // below half health its armour turns arrows
     if (this.health <= this.maxHealth / 2 && source.direct && source.type === 'arrow') return false;
     const ok = super.hurt(amount, source);

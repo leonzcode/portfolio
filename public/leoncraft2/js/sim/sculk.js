@@ -21,14 +21,16 @@
    a sensor within 8 blocks of it hears a player: rings rise from it one
    after another. One that can summon a warden (meta bit 1, the ones the
    game puts in its ancient cities) also brings Darkness for 12 seconds on
-   the players near it in survival, at most once in 10 seconds. (There are
-   no wardens yet.)
+   the players near it in survival, at most once in 10 seconds, and counts a
+   warning against them: the fourth (with no warden within 48 blocks) brings
+   a warden up out of the ground within 5 blocks of the shrieker; a warning
+   wears off every 10 minutes.
 
    Meta layouts are in sim/states.js. Sensors and shriekers near the player
    are found by looking over the area round them a layer a tick.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from '../blocks.js?v=25';
-import { WEAK, STRONG, SOURCE } from './redstone.js?v=25';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=26';
+import { WEAK, STRONG, SOURCE } from './redstone.js?v=26';
 const THREE = window.THREE;
 
 const SENSOR = B.sculk_sensor, CAL = B.calibrated_sculk_sensor, SHRIEKER = B.sculk_shrieker;
@@ -169,6 +171,31 @@ export class Sculk {
     if ((m & 2) && g && g.mode === 'survival' && P && this.sim.n - this.warned >= 200 && Math.hypot(P.pos.x - x, P.pos.z - z) <= 40) {
       this.warned = this.sim.n;
       if (g.survival && g.survival.addEffect) g.survival.addEffect('darkness', 1, 260);
+      const E = g.entities;
+      const near = E && E.list.some(e => e.type === 'warden' && !e.dead && !e.removed && Math.hypot(e.pos.x - x, e.pos.y - y, e.pos.z - z) < 48);
+      if (!near) {
+        this.warning = (this.warning || 0) + 1; this.warnAt = this.sim.n;
+        if (this.warning >= 4) { this.warning = 0; this.summonWarden(x, y, z); }
+      }
+    }
+  }
+  // a warden up out of the ground: a spot within 5 blocks across and 6 up or down, solid under it and three free above
+  summonWarden(x, y, z) {
+    const g = this.sim.game, E = g && g.entities, w = this.w;
+    if (!E) return;
+    for (let i = 0; i < 30; i++) {
+      const sx = x + Math.floor(R() * 11) - 5, sz = z + Math.floor(R() * 11) - 5;
+      for (let sy = y + 6; sy >= y - 6; sy--) {
+        const below = w.get(sx, sy - 1, sz);
+        if (!below || !BLOCKS[below].solid || FLUID[below]) continue;
+        let free = true;
+        for (let k = 0; k < 3; k++) { const b = w.get(sx, sy + k, sz); if (b && (BLOCKS[b].solid || FLUID[b])) free = false; }
+        if (!free) continue;
+        const e = E.spawn('warden', sx + 0.5, sy, sz + 0.5, { natural: false });
+        if (e) { e.emergeT = 134; e.persistent = false; }
+        if (this.sim.onSound) this.sim.onSound('entity.warden.emerge', sx, sy, sz);
+        return;
+      }
     }
   }
 
@@ -178,6 +205,8 @@ export class Sculk {
     this.lastTick = performance.now();
     if (!P) return;
     this.scan(P);
+    // a warning wears off every 10 minutes
+    if (this.warning > 0 && sim.n - this.warnAt > 12000) { this.warning--; this.warnAt = sim.n; }
     // vibrations arriving
     for (const [k, v] of this.flying) {
       if (v.at > sim.n) continue;

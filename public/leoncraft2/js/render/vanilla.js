@@ -25,9 +25,9 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON, FILTER } from './glsl.js?v=25';
-import { FullScreen, VS_FULL } from './sky.js?v=25';
-import { BlockClouds } from './clouds.js?v=25';
+import { COMMON, FILTER } from './glsl.js?v=26';
+import { FullScreen, VS_FULL } from './sky.js?v=26';
+import { BlockClouds } from './clouds.js?v=26';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k
@@ -523,11 +523,13 @@ export class Vanilla {
     /* Near the bottom of the world the fog fades to black: over the last 32
        blocks above the dimension's floor, squared, and black below it (the
        Overworld from y -32 to -64; heights here are y + 64). Not in the End,
-       whose dark sky goes on below its islands as it is. */
-    const above = (state.eye.y - 64 - (D ? D.minY : -64)) / 32;
+       whose dark sky goes on below its islands as it is. A Superflat world
+       (its horizon at the floor) darkens only in its last block, as the game's
+       does (its clear colour scale is 1 there, 1/32 elsewhere). */
+    const above = (state.eye.y - 64 - (D ? D.minY : -64)) / (state.horizon === 0 ? 1 : 32);
     if (above < 1 && !(D && D.sky === 'end')) fog.multiplyScalar(Math.max(0, above) * Math.max(0, above));
     // the eye below sea level (y 63): the dark disc under the horizon (SKY_FS)
-    U.uVoidDisc.value = U.uSkyMode.value === 0 && state.eye.y < 127 ? 1 : 0;
+    U.uVoidDisc.value = U.uSkyMode.value === 0 && state.eye.y < (state.horizon !== undefined ? state.horizon : 127) ? 1 : 0;
     // clouds: white by day, grey at night
     U.uCloudColor.value.set(daylight * 0.9 + 0.1, daylight * 0.9 + 0.1, daylight * 0.85 + 0.15);
     greyTowards(U.uCloudColor.value, rain * 0.95, 0.6); greyTowards(U.uCloudColor.value, thunder * 0.95, 0.2);

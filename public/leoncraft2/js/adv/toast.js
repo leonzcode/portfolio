@@ -9,7 +9,8 @@
    shadow. A name too long for one line shows the heading for a second and a
    half, then the name over two lines instead. The box comes in with the
    toast's in sound and leaves with its out sound; a challenge plays the
-   challenge fanfare as it arrives.
+   challenge fanfare as it arrives. The recipe book's New Recipes Unlocked!
+   (js/recipes.js) takes its turn in the same column, in a light box.
 
    The box is drawn here in flat colours (black edge with cut corners, a
    grey border, a near-black inside). The three sounds are the player's own
@@ -17,10 +18,10 @@
    made here with Web Audio (a soft swish in and out, a short rising
    fanfare), since Leoncraft's own sound banks have none.
 --------------------------------------------------------------------------- */
-import { Sound } from '../sound/sound.js?v=25';
-import { itemId } from '../items.js?v=25';
-import { B, BLOCKS } from '../blocks.js?v=25';
-import { drawStack } from '../ui/inventory.js?v=25';
+import { Sound } from '../sound/sound.js?v=26';
+import { itemId } from '../items.js?v=26';
+import { B, BLOCKS } from '../blocks.js?v=26';
+import { drawStack } from '../ui/inventory.js?v=26';
 
 const W = 160, H = 32, SLIDE = 600, SHOW = 5000, SLOTS = 5;
 const HEAD = { task: 'Advancement Made!', goal: 'Goal Reached!', challenge: 'Challenge Complete!' };
@@ -85,12 +86,19 @@ export const AdvToast = {
   queue: [],        // waiting
   shown: [],        // { a, slot, t0, out (the time it started leaving), sounded }
   add(a) { this.queue.push(a); },
+  /* New Recipes Unlocked! (js/recipes.js): recipes that come while one is up or waiting join it, and it
+     stays 5 seconds from the last of them, showing each result in turn, as the game's does */
+  addRecipes(ids) {
+    const open = this.shown.find(s => s.a.recipe && !s.out), r = open ? open.a : this.queue.find(a => a.recipe);
+    if (r) { for (const id of ids) if (r.ids.length < 64 && !r.ids.includes(id)) r.ids.push(id); if (open) open.changed = performance.now(); return; }
+    this.queue.push({ recipe: true, ids: ids.slice(0, 64) });
+  },
   clear() { this.queue.length = 0; this.shown.length = 0; },
   get busy() { return this.queue.length > 0 || this.shown.length > 0; },
   update(now) {
     // the finished ones go; waiting ones take free slots from the top
     this.shown = this.shown.filter(s => !(s.out && now - s.out >= SLIDE));
-    for (const s of this.shown) if (!s.out && now - s.t0 >= SLIDE + SHOW) { s.out = now; ui('ui.toast.out'); }
+    for (const s of this.shown) if (!s.out && now - Math.max(s.t0, s.changed || 0) >= SLIDE + SHOW) { s.out = now; ui('ui.toast.out'); }
     while (this.queue.length && this.shown.length < SLOTS) {
       const used = new Set(this.shown.map(s => s.slot));
       let slot = 0;
@@ -115,16 +123,17 @@ export const AdvToast = {
       // (in and out alike: the share of the slide's time gone, squared, as the game eases it)
       const k = Math.min(1, (now - (s.out || s.t0)) / SLIDE), v = s.out ? 1 - k * k : k * k;
       const x = Math.round(g.width - W * v), y = s.slot * H;
-      // the toast's own clock starts once it is in
-      drawToast(g, icons, s.a, x, y, Math.max(0, now - s.t0 - SLIDE));
+      if (s.a.recipe) drawRecipeToast(g, icons, s.a, x, y, now - s.t0);
+      // (the toast's own clock starts once it is in)
+      else drawToast(g, icons, s.a, x, y, Math.max(0, now - s.t0 - SLIDE));
     }
   },
 };
 
-/* black edge, a 2 px grey border and the dark inside; the corners are cut in steps, two at the top
-   left and bottom right and three at the other two, as the game's toast is */
-function box(g, x, y) {
-  const K = 0xFF000000, E = 0xFF555555, F = 0xFF212121;
+/* black edge, a 2 px border and the inside (grey and dark; a recipe's light); the corners are cut in
+   steps, two at the top left and bottom right and three at the other two, as the game's toast is */
+function box(g, x, y, E = 0xFF555555, F = 0xFF212121) {
+  const K = 0xFF000000;
   g.fill(x + 2, y, x + W - 3, y + 1, K); g.fill(x + 3, y + H - 1, x + W - 2, y + H, K);
   g.fill(x, y + 2, x + 1, y + H - 3, K); g.fill(x + W - 1, y + 3, x + W, y + H - 2, K);
   g.fill(x + 1, y + 1, x + 2, y + 2, K); g.fill(x + W - 3, y + 1, x + W - 2, y + 2, K); g.fill(x + W - 2, y + 2, x + W - 1, y + 3, K);
@@ -132,6 +141,14 @@ function box(g, x, y) {
   g.fill(x + 2, y + 1, x + W - 3, y + 2, E); g.fill(x + 1, y + 2, x + W - 2, y + 3, E); g.fill(x + 1, y + 3, x + W - 1, y + H - 3, E);
   g.fill(x + 2, y + H - 3, x + W - 1, y + H - 2, E); g.fill(x + 3, y + H - 2, x + W - 2, y + H - 1, E);
   g.fill(x + 4, y + 3, x + W - 4, y + H - 3, F); g.fill(x + 3, y + 4, x + W - 3, y + H - 4, F);
+}
+// New Recipes Unlocked!: the light box, the results one after another (all of them within the 5 seconds)
+function drawRecipeToast(g, icons, r, x, y, age) {
+  box(g, x, y, 0xFFA0A0A0, 0xFFE8E8E8);
+  g.text('New Recipes Unlocked!', x + 30, y + 7, 0x500050, false);
+  g.text('Check your recipe book', x + 30, y + 18, 0x000000, false);
+  const id = r.ids.length ? r.ids[Math.floor(age / Math.max(1, SHOW / r.ids.length)) % r.ids.length] : 0;
+  if (id && icons) drawStack(g, icons, { id, count: 1 }, x + 8, y + 8);
 }
 function drawToast(g, icons, a, x, y, age) {
   box(g, x, y);

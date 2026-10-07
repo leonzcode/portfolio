@@ -18,28 +18,29 @@
    (where you are, every second; what you carry, when it changes) is looked
    at here in advTick.
 --------------------------------------------------------------------------- */
-import { Progress, ADV, TABS } from './tracker.js?v=25';
-import { AdvToast } from './toast.js?v=25';
-import { AdvancementsScreen } from './screen.js?v=25';
-import { B, BLOCKS, FLUID } from '../blocks.js?v=25';
-import { itemName, itemId, armorOf } from '../items.js?v=25';
-import { BIOMES } from '../biomes.js?v=25';
-import { Y0 } from '../world-const.js?v=25';
-import { register, gameRule } from '../commands.js?v=25';
-import { Living } from '../entities/entity.js?v=25';
-import { TYPES } from '../entities/mobs.js?v=25';
-import { AbstractHorse } from '../entities/mobs4.js?v=25';
-import { Allay } from '../entities/mobs6.js?v=25';
-import { Piglin } from '../entities/nether.js?v=25';
-import { WindCharge } from '../entities/mobs7.js?v=25';
-import { summonAt } from '../entities/summon.js?v=25';
-import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=25';
-import { FishingBobber } from '../entities/items2.js?v=25';
-import { EnderDragon } from '../dim/dragon.js?v=25';
-import { EndFight } from '../dim/endfight.js?v=25';
-import { ContainerScreen } from '../ui/inventory.js?v=25';
-import { BrewingScreen } from '../ui/containers.js?v=25';
-import { EnchantScreen, SmithingScreen } from '../ui/workstations.js?v=25';
+import { Progress, ADV, TABS } from './tracker.js?v=26';
+import { AdvToast } from './toast.js?v=26';
+import { AdvancementsScreen } from './screen.js?v=26';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=26';
+import { itemName, itemId, armorOf } from '../items.js?v=26';
+import { BIOMES } from '../biomes.js?v=26';
+import { Y0 } from '../world-const.js?v=26';
+import { register, gameRule } from '../commands.js?v=26';
+import { Living } from '../entities/entity.js?v=26';
+import { TYPES } from '../entities/mobs.js?v=26';
+import { AbstractHorse } from '../entities/mobs4.js?v=26';
+import { Allay } from '../entities/mobs6.js?v=26';
+import { Piglin } from '../entities/nether.js?v=26';
+import { WindCharge } from '../entities/mobs7.js?v=26';
+import { summonAt } from '../entities/summon.js?v=26';
+import { hives } from '../entities/hives.js?v=26';
+import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=26';
+import { FishingBobber } from '../entities/items2.js?v=26';
+import { EnderDragon } from '../dim/dragon.js?v=26';
+import { EndFight } from '../dim/endfight.js?v=26';
+import { ContainerScreen } from '../ui/inventory.js?v=26';
+import { BrewingScreen } from '../ui/containers.js?v=26';
+import { EnchantScreen, SmithingScreen } from '../ui/workstations.js?v=26';
 
 let G = null;          // the game being played
 let P = null;          // its player's advancements
@@ -96,6 +97,12 @@ function wrapWorldwide() {
       if (e && e.table) fire('player_generates_container_loot', { table: e.table });
       return findAt(x, y, z);
     };
+  }
+  // a raid beaten by those who fought in it: hero_of_the_village (entities/raids.js)
+  const R = St && St.spawners && St.spawners.raids;
+  if (R && R.victory) {
+    const victory = R.victory.bind(R);
+    R.victory = (...a) => { const heroes = !!(R.raid && R.raid.heroes); const r = victory(...a); if (heroes) fire('hero_of_the_village', {}); return r; };
   }
   // a crafter's craft is heard by everyone within 17 blocks (Crafters Crafting Crafters)
   const obs = L.onBlockSound;
@@ -183,12 +190,12 @@ function equipOf(inv) {
   out.offhand = stackView(inv.offhand);
   return out;
 }
-// (depth: how far into a vehicle and its riders the view has gone, so you in the boat you ride stops there)
 function playerView(depth = 0) {
   const g = G, p = g.player, E = g.entities;
   const v = { type: 'player', isPlayer: true, x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z, dim: g.dim, sneaking: !!p.sneaking, sprinting: !!p.sprinting,
     swimming: !!p.swimming, flying: !!p.flying, onFire: !!(g.survival && g.survival.fire > 0), equipment: equipOf(g.inv) };
   const r = E && E.riding;
+  // (seen from what you ride, you are among its passengers: the depth keeps the two from asking each other forever)
   if (r && depth < 2) v.vehicle = entityView(r, depth + 1);
   // the block under the feet (stepping_on)
   const fx = Math.floor(p.pos.x), fy = Math.floor(p.pos.y - 0.2), fz = Math.floor(p.pos.z);
@@ -277,6 +284,19 @@ function wrapGame(g) {
   // eating and drinking: consume_item
   if (H && !H.__adv) {
     H.__adv = true;
+    // a bee nest or beehive broken: bee_nest_destroyed, with how many bees were in it (entities/hives.js)
+    const broke = H.broke.bind(H);
+    H.broke = (hit, cells) => {
+      let ev = null;
+      const w = G && G.world, b = w ? w.get(hit.x, hit.y, hit.z) : 0;
+      if (b && (b === B.bee_nest || b === B.beehive) && !H.creative) {
+        const m = w.meta(hit.x, hit.y, hit.z), list = hives().inside.get(hit.x + ',' + hit.y + ',' + hit.z);
+        ev = { block: blockView(hit.x, hit.y + Y0, hit.z), item: H.held ? stackView(H.held) : null, num_bees_inside: (list ? list.length : 0) + ((m >> 5) & 3) };
+      }
+      const r = broke(hit, cells);
+      if (ev) fire('bee_nest_destroyed', ev);
+      return r;
+    };
     const finish = H.finish.bind(H);
     H.finish = id => {
       const s = H.usedStack ? H.usedStack(H.using) : null, view = s ? stackView(s) : { name: itemName(id), count: 1 };
