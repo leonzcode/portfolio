@@ -88,15 +88,15 @@ export function soundWorld(g) {
   const H = g.hands;
   if (H && !H.__snd) {
     H.__snd = true;
-    H.onEat = id => {
+    hook(H, 'onEat', id => {
       const it = ITEMS[id], food = it && it.food;
       const ev = food && food.drink ? (it.name === 'honey_bottle' ? 'item.honey_bottle.drink' : 'entity.generic.drink') : 'entity.generic.eat';
       // the game's: 0.5 or 1 loud, pitch 1 +- 0.2
       atP(ev, 0.5 + 0.5 * ((R() * 2) | 0), spread() * 0.2 + 1);
-    };
-    H.onBurp = id => { const it = ITEMS[id]; if (it && it.food && !it.food.drink) atP('entity.player.burp', 0.5, R() * 0.1 + 0.9); };
-    H.onToolBreak = s => { const it = ITEMS[s.id]; atP(it && it.name === 'shield' ? 'item.shield.break' : 'entity.item.break', 0.8, 0.8 + R() * 0.4); };
-    H.onHorn = s => atP('item.goat_horn.sound.' + ((s && s.instrument | 0) || 0), 16, 1, 'record');
+    });
+    hook(H, 'onBurp', id => { const it = ITEMS[id]; if (it && it.food && !it.food.drink) atP('entity.player.burp', 0.5, R() * 0.1 + 0.9); });
+    hook(H, 'onToolBreak', s => { const it = ITEMS[s.id]; atP(it && it.name === 'shield' ? 'item.shield.break' : 'entity.item.break', 0.8, 0.8 + R() * 0.4); });
+    hook(H, 'onHorn', s => atP('item.goat_horn.sound.' + ((s && s.instrument | 0) || 0), 16, 1, 'record'));
     wrapHands(g, H, atP);
   }
 }
@@ -212,8 +212,8 @@ export function soundParts(g) {
   const atP = (e, v = 1, p = 1, cat = 'player') => Sound.play(e, P.pos.x, P.pos.y, P.pos.z, v, p, cat);
   // picking things up (drops.js): an item's pop, an orb's ding
   if (D) {
-    D.onPickup = () => atP('entity.item.pickup', 0.2, Math.min(2, spread() * 1.4 + 2));
-    D.onXp = () => atP('entity.experience_orb.pickup', 0.1, spread() * 0.35 + 0.9);
+    hook(D, 'onPickup', () => atP('entity.item.pickup', 0.2, Math.min(2, spread() * 1.4 + 2)));
+    hook(D, 'onXp', () => atP('entity.experience_orb.pickup', 0.1, spread() * 0.35 + 0.9));
   }
   // blocks breaking (the game's level event 2001: the pieces and the sound, for every cause)
   const R3 = g.renderer || (g.inter && g.inter.renderer) || (g.hands && g.hands.renderer);
@@ -236,22 +236,22 @@ export function soundParts(g) {
   }
   if (sim) {
     // levers, buttons and pressure plates (sim/rsparts.js)
-    sim.onClick = (x, y, z, kind, on) => {
+    hook(sim, 'onClick', (x, y, z, kind, on) => {
       const n = BLOCKS[w.get(x, y, z)] ? BLOCKS[w.get(x, y, z)].name : '';
       if (kind === 'lever') Sound.play('block.lever.click', x + 0.5, y + 0.5, z + 0.5, 0.3, on ? 0.6 : 0.5, 'block');
       else Sound.play(clickEvent(n, kind, on), x + 0.5, y + 0.5, z + 0.5, 1, 1, 'block');
-    };
-    sim.onPiston = (x, y, z, out) => Sound.play(out ? 'block.piston.extend' : 'block.piston.contract', x + 0.5, y + 0.5, z + 0.5, 0.5, R() * (out ? 0.25 : 0.15) + 0.6, 'block');
+    });
+    hook(sim, 'onPiston', (x, y, z, out) => Sound.play(out ? 'block.piston.extend' : 'block.piston.contract', x + 0.5, y + 0.5, z + 0.5, 0.5, R() * (out ? 0.25 : 0.15) + 0.6, 'block'));
     // a note: 2^((note - 12) / 12), loud (3: heard 48 blocks away), on the Jukebox/Note Blocks slider
-    sim.onNote = (x, y, z, inst, note) => Sound.play('block.note_block.' + inst, x + 0.5, y + 0.5, z + 0.5, 3, Math.pow(2, (note - 12) / 12), 'record');
-    sim.onBell = (x, y, z) => Sound.play('block.bell.use', x + 0.5, y + 0.5, z + 0.5, 2, 1, 'block');
-    sim.onDispense = (x, y, z, ok) => Sound.play(ok ? 'block.dispenser.dispense' : 'block.dispenser.fail', x + 0.5, y + 0.5, z + 0.5, 1, ok ? 1 : 1.2, 'block');
-    sim.onBurnout = (x, y, z) => Sound.play('block.redstone_torch.burnout', x + 0.5, y + 0.5, z + 0.5, 0.5, 2.6 + spread() * 0.8, 'block');
+    hook(sim, 'onNote', (x, y, z, inst, note) => Sound.play('block.note_block.' + inst, x + 0.5, y + 0.5, z + 0.5, 3, Math.pow(2, (note - 12) / 12), 'record'));
+    hook(sim, 'onBell', (x, y, z) => Sound.play('block.bell.use', x + 0.5, y + 0.5, z + 0.5, 2, 1, 'block'));
+    hook(sim, 'onDispense', (x, y, z, ok) => Sound.play(ok ? 'block.dispenser.dispense' : 'block.dispenser.fail', x + 0.5, y + 0.5, z + 0.5, 1, ok ? 1 : 1.2, 'block'));
+    hook(sim, 'onBurnout', (x, y, z) => Sound.play('block.redstone_torch.burnout', x + 0.5, y + 0.5, z + 0.5, 0.5, 2.6 + spread() * 0.8, 'block'));
     // lightning: the thunder heard everywhere (volume 10000), the strike near it
-    sim.onLightning = (x, y, z) => {
+    hook(sim, 'onLightning', (x, y, z) => {
       Sound.play('entity.lightning_bolt.thunder', x + 0.5, y, z + 0.5, 10000, 0.8 + R() * 0.2, 'weather');
       Sound.play('entity.lightning_bolt.impact', x + 0.5, y, z + 0.5, 2, 0.5 + R() * 0.2, 'weather');
-    };
+    });
     if (sim.primeTnt && !sim.primeTnt.__snd) {
       const pt = sim.primeTnt;
       sim.primeTnt = (x, y, z, by, fuse) => { Sound.play('entity.tnt.primed', x + 0.5, y, z + 0.5, 1, 1, 'block'); return pt(x, y, z, by, fuse); };
@@ -290,9 +290,8 @@ export function soundParts(g) {
   if (E && !E.__snd) {
     E.__snd = true;
     // creepers: the hiss as they swell
-    E.fuseSound = e => Sound.play('entity.creeper.primed', e.pos.x, e.pos.y + 1, e.pos.z, 1, 0.5, 'hostile');
-    const oe = E.onExplode;
-    E.onExplode = (x, y, z, power) => { explodeSound(x, y, z); if (oe) oe(x, y, z, power); };
+    hook(E, 'fuseSound', e => Sound.play('entity.creeper.primed', e.pos.x, e.pos.y + 1, e.pos.z, 1, 0.5, 'hostile'));
+    hook(E, 'onExplode', (x, y, z) => explodeSound(x, y, z));
     wrapCombat(g, E, atP);
   }
   const RL = g.realms;
@@ -310,6 +309,21 @@ export function soundParts(g) {
   }
   // the world's loops belong to the dimension they were in
   amb.stopLoops();
+}
+/* Adds fn to one of the hooks the game offers (drops.onPickup, sim.onClick...),
+   keeping whatever another part of the game set there: both run, the game's
+   own first, and the sound's failure never stops it. Once per object and hook,
+   however often the parts are joined up again. */
+function hook(o, k, fn) {
+  const done = o.__sndHooks || (o.__sndHooks = {});
+  if (done[k]) return;
+  done[k] = true;
+  const prev = o[k];
+  o[k] = function (...a) {
+    const r = prev ? prev.apply(this, a) : undefined;
+    try { fn.apply(this, a); } catch (e) { console.warn(e); }
+    return r;
+  };
 }
 // redstone doors/trapdoors/gates (1: a door, whose upper half is left out)
 const SWING = new Uint8Array(4096);
