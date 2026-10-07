@@ -204,6 +204,9 @@ export class Renderer {
     while (this.uploads.size) {
       let best = null, bd = Infinity;
       for (const e of this.uploads.values()) { const d = (e[0] - this.ccx) * (e[0] - this.ccx) + (e[1] - this.ccz) * (e[1] - this.ccz); if (d < bd) { bd = d; best = e; } }
+      // (before the first frame the camera's chunk is not known, as when a world is loaded straight after the page,
+      // with no title screen drawn first: then any order will do; it had stopped the loading for good)
+      if (!best) best = this.uploads.values().next().value;
       const size = meshBytes(best[2]);
       if (bytes > 0 && bytes + size > (this.opts.uploadBytes || 3e6)) break;
       bytes += size;

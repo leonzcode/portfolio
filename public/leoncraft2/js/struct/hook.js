@@ -31,12 +31,17 @@ export function worldStructures(seed, gen, dim) {
   dim = dim === 'the_nether' ? 'nether' : dim === 'the_end' ? 'end' : dim || 'overworld';
   let S;
   try { S = new Structures(seed, makeSource(gen, BIOMES, dim === 'overworld' ? pickBiome : null, Y0, dim)); } catch (e) { console.error('structures', e); return null; }
+  /* (the game's own world places its dungeons as the game does, among its
+     features: gen/misc.js monster_room, whose chests and spawners come back
+     with the chunk. Ours, from dungeon.js, are for the first generator only;
+     both at once was twice the game's dungeons.) */
+  const ownRooms = typeof gen.useStructures !== 'function';
   // the structures and dungeons of one chunk, drawn into its blocks
   const draw = (blocks, meta, cx, cz, mask) => {
     let out = null;
     try {
       out = S.apply(blocks, meta, cx, cz, dim, mask);
-      if (dim === 'overworld') {
+      if (dim === 'overworld' && ownRooms) {
         const d = dungeons(S.seed, blocks, meta, cx, cz, mask);
         if (d) {
           out = out || { chests: [], spawners: [], entities: [], structures: [] };
