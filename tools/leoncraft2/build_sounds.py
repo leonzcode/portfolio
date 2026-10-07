@@ -1332,6 +1332,11 @@ def main():
     B('world', 'ui.stonecutter.take_result', 'strip')
     like('ui.loom.take_result', 'block.wool.break')
     like('ui.cartography_table.take_result', 'block.wool.break')
+    # the events of the trial spawners, raids, advancement toasts and riding in a minecart: the nearest recordings
+    # the pack has, pitched and levelled by ear (js/struct/trials.js, js/entities/raids.js, js/advancements.js)
+    for ev, to, pt, vol in [('block.trial_spawner.detect_player', 'block.iron_trapdoor.open', 0.8, 0.8), ('block.trial_spawner.spawn_mob', 'block.fire.extinguish', 1.2, 0.6), ('block.trial_spawner.eject_item', 'block.dispenser.dispense', 0.9, 1.0), ('block.trial_spawner.open_shutter', 'block.iron_door.open', 0.9, 0.8), ('block.trial_spawner.close_shutter', 'block.iron_door.close', 0.9, 0.8), ('block.trial_spawner.ominous_activate', 'block.portal.trigger', 1.6, 0.5), ('block.trial_spawner.become_ominous', 'block.conduit.activate', 0.8, 0.8), ('block.trial_spawner.about_to_spawn_item', 'block.respawn_anchor.charge', 1.4, 0.6), ('block.trial_spawner.spawn_item', 'block.dispenser.dispense', 1.2, 0.8), ('event.raid.horn', 'item.goat_horn.sound.0', 0.8, 1.0), ('ui.toast.in', 'ui.button.click', 0.6, 0.4), ('ui.toast.challenge_complete', 'entity.player.levelup', 1.0, 0.7), ('entity.minecart.inside', 'entity.minecart.riding', 0.85, 1.0)]:
+        if to in EVENTS:
+            ref(ev, to, pt, vol)
     B('world', 'entity.item_frame.add_item', 'equip')
     B('world', 'entity.item_frame.remove_item', 'equip')
     B('world', 'entity.boat.paddle_water', 'swim', maxn=2)
