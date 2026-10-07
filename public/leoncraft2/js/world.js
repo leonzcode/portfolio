@@ -7,9 +7,9 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=25';
-import { BLOCKS, FLUID } from './blocks.js?v=25';
-import { searchSpawn } from './spawn.js?v=25';
+import { CH, H, idx } from './world-const.js?v=26';
+import { BLOCKS, FLUID } from './blocks.js?v=26';
+import { searchSpawn } from './spawn.js?v=26';
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -20,7 +20,7 @@ import { searchSpawn } from './spawn.js?v=25';
 const GEN_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 const POOL = [];
 function newWorker() {
-  const w = new Worker(new URL('./worker.js?v=25', import.meta.url), { type: 'module' });
+  const w = new Worker(new URL('./worker.js?v=26', import.meta.url), { type: 'module' });
   w.onerror = e => console.error('worker', e.message || e);
   return w;
 }

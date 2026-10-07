@@ -26,12 +26,14 @@
 import {
   Screen, Button, IconButton, Slider, CycleButton, TextField, Checkbox, TextLink, ScrollList,
   WidgetRow, Tabs, OptionsListScreen, DEFAULT_KEYS, keyLabel, onOff, WHITE, GREY,
-} from './gui.js?v=25';
-import { Packs } from './pack.js?v=25';
-import { packArtSummary } from '../entities/packart.js?v=25';
-import { LanScreen } from './lan.js?v=25';
-import { parseSeed } from '../gen/random.js?v=25';
-import { SOUND_CREDITS } from '../sound/credits.js?v=25';
+} from './gui.js?v=26';
+import { Packs } from './pack.js?v=26';
+import { packArtSummary } from '../entities/packart.js?v=26';
+import { LanScreen } from './lan.js?v=26';
+import { parseSeed } from '../gen/random.js?v=26';
+import { SOUND_CREDITS } from '../sound/credits.js?v=26';
+import { FlatCustomizeScreen } from './flat.js?v=26';
+import { DEFAULT_FLAT, flatGenerator } from '../gen/flat.js?v=26';
 
 const PI = Math.PI;
 
@@ -418,6 +420,12 @@ export class CreateWorldScreen extends Screen {
     this.mode = from ? (from.hardcore ? 'hardcore' : from.mode || 'survival') : 'survival';
     this.difficulty = from ? from.difficulty || 'normal' : 'normal';
     this.cheats = from && from.cheats !== undefined ? !!from.cheats : this.mode === 'creative';
+    // a world made again keeps its type (and a Superflat world its layers)
+    if (from && from.generator) {
+      const fl = /^flat:([^|]*)\|?(.*)$/.exec(from.generator);
+      this.worldType = fl ? 'flat' : from.generator === 'classic' ? 'classic' : 'vanilla';
+      if (fl) this.flat = { code: fl[1], structures: fl[2] ? fl[2].split(',') : [] };
+    }
     this.tab = 0;
     this.nameField = new TextField(0, 0, 208, 20, { value: from ? from.name : 'New World', maxLength: 32, onEnter: () => this.create() });
     this.seedField = new TextField(0, 0, 308, 20, { value: from ? String(from.seed) : '', maxLength: 32, hint: 'Leave blank for a random seed', onEnter: () => this.create() });
@@ -455,12 +463,16 @@ export class CreateWorldScreen extends Screen {
     } else if (this.tab === 1) {
       const x = Math.floor(W / 2 - 154);
       let y = place(20 + 8 + 13 + 20 + 8 + 20 + 8 + 20);
-      // Default: Minecraft's own worlds from a real seed (js/gen); Classic: the first generator
-      const type = this.add(new CycleButton(x, y, 150, 20, 'World Type', { values: ['vanilla', 'classic'], value: this.worldType || 'vanilla',
-        format: v => v === 'classic' ? 'Classic' : 'Default', onChange: v => { this.worldType = v; } }));
-      type.tooltip = 'Default builds the same world as Minecraft from the seed; Classic is the first Leoncraft generator';
-      const cust = this.add(new Button(x + 158, y, 150, 20, 'Customize', null));
-      cust.active = false;
+      // Default: Minecraft's own worlds from a real seed (js/gen); Superflat: layers and one biome (gen/flat.js, its
+      // presets and layers under Customize, ui/flat.js); Classic: the first generator
+      const type = this.add(new CycleButton(x, y, 150, 20, 'World Type', { values: ['vanilla', 'flat', 'classic'], value: this.worldType || 'vanilla',
+        format: v => v === 'classic' ? 'Classic' : v === 'flat' ? 'Superflat' : 'Default', onChange: v => { this.worldType = v; g._initScreen(this); } }));
+      type.tooltip = 'Default builds the same world as Minecraft from the seed; Superflat is flat layers of blocks; Classic is the first Leoncraft generator';
+      const cust = this.add(new Button(x + 158, y, 150, 20, 'Customize', () => {
+        const f = this.flat || { code: DEFAULT_FLAT.code, structures: DEFAULT_FLAT.structures };
+        g.open(new FlatCustomizeScreen(f.code, f.structures, (code, structures) => { this.flat = { code, structures }; }));
+      }));
+      cust.active = this.worldType === 'flat';
       y += 28;
       this.labels.push(['Seed for the World Generator', x + 1, y, GREY]);
       this.seedField.x = x + 1; this.seedField.y = y + 13; this.seedField.w = 306;
@@ -468,7 +480,8 @@ export class CreateWorldScreen extends Screen {
       y += 13 + 20 + 8;
       this.switchRow(x, y, 'Generate Structures', true, 'Villages, ruins and other buildings: not in Leoncraft 2 yet');
       y += 28;
-      this.switchRow(x, y, 'Bonus Chest', false, 'Not in Leoncraft 2 yet');
+      const bonus = this.switchRow(x, y, 'Bonus Chest', !!this.bonusChest, 'A chest of things to start with near where you begin');
+      bonus.active = true; bonus.o.onChange = v => { this.bonusChest = v; };
     } else {
       const x = Math.floor(W / 2 - 105);
       let y = place(20 * 3 + 8 * 2);
@@ -486,20 +499,23 @@ export class CreateWorldScreen extends Screen {
     this.labels.push([label, x + 1, y + 6, GREY]);
     const b = this.add(new CycleButton(x + 308 - 44, y, 44, 20, label, { values: [false, true], value, format: onOff, valueOnly: true }));
     b.active = false; b.tooltip = tip;
+    return b;
   }
   /* The world this screen would make: Minecraft's seeds (a number that fits
      a long is that long, other text its hash), and for a blank seed the
      random one drawn ahead (main.js nextSeed), so the world being made in
      the background while you choose is the one you get. */
   chosen() {
-    const generator = this.worldType === 'classic' ? 'classic' : 'vanilla', text = this.seedField.value.trim();
+    // (a Superflat world takes its seed as the first generator does: its structures are placed by it)
+    const generator = this.worldType === 'classic' || this.worldType === 'flat' ? 'classic' : 'vanilla', text = this.seedField.value.trim();
     const seed = text ? (generator === 'classic' ? seedFrom(text) : parseSeed(text))
       : this.hooks.nextSeed ? this.hooks.nextSeed(generator) : generator === 'classic' ? seedFrom('') : parseSeed('');
+    if (this.worldType === 'flat') { const f = this.flat || DEFAULT_FLAT; return { seed, generator: flatGenerator(f.code, f.structures) }; }
     return { seed, generator };
   }
   // started ahead (main.js prepare) once the seed and type have stayed the same a moment
   prepareAhead() {
-    const key = this.worldType + '|' + this.seedField.value.trim();
+    const key = this.worldType + '|' + this.seedField.value.trim() + (this.worldType === 'flat' && this.flat ? '|' + this.flat.code : '');
     if (key === this.preparedKey || !this.hooks.prepare) return;
     this.preparedKey = key;
     clearTimeout(this.prepareT);
@@ -518,6 +534,7 @@ export class CreateWorldScreen extends Screen {
       mode: this.mode === 'hardcore' ? 'survival' : this.mode, difficulty: this.mode === 'hardcore' ? 'hard' : this.difficulty,
       cheats: this.mode === 'hardcore' ? false : this.cheats, created: now, lastPlayed: now,
     };
+    if (this.bonusChest) world.bonusChest = true;
     if (this.mode === 'hardcore') world.hardcore = true;
     Worlds.add(world);
     if (this.hooks.play) this.hooks.play(world, { isNew: true });
@@ -671,8 +688,8 @@ export class OptionsScreen extends Screen {
 }
 
 // Video Settings (the game's own, with the one Shaders button) live in ui/video.js
-export { VideoSettingsScreen } from './video.js?v=25';
-import { VideoSettingsScreen } from './video.js?v=25';
+export { VideoSettingsScreen } from './video.js?v=26';
+import { VideoSettingsScreen } from './video.js?v=26';
 
 export class ControlsScreen extends OptionsListScreen {
   constructor() { super('Controls'); }
@@ -1185,7 +1202,7 @@ export class PauseScreen extends Screen {
         if (!fn) off(btn, 'Not in Leoncraft 2 yet');
       }
     };
-    row(top + 74, ['Advancements', this.hooks.advancements ? () => this.hooks.advancements() : null], ['Statistics', null]);
+    row(top + 74, ['Advancements', this.hooks.advancements ? () => this.hooks.advancements() : null], ['Statistics', this.hooks.statistics ? () => this.hooks.statistics() : null]);
     row(top + 98, ['Send Feedback', null], ['Report Bugs', null]);
     // Open to LAN (ui/lan.js): greyed out once the world is open; on a server the game has Player Reporting there
     const lan = this.hooks.lan && this.hooks.lan();

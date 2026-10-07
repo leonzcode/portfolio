@@ -10,9 +10,9 @@
    browser for Java, the page's memory for the JVM's, the graphics card's name
    as the browser gives it). Everything is worked out only while F3 is up.
 --------------------------------------------------------------------------- */
-import { BIOMES } from '../biomes.js?v=25';
-import { BLOCKS } from '../blocks.js?v=25';
-import { presetNow } from './video.js?v=25';
+import { BIOMES } from '../biomes.js?v=26';
+import { BLOCKS } from '../blocks.js?v=26';
+import { presetNow } from './video.js?v=26';
 
 const FACING = [
   ['north', 'Towards negative Z'], ['west', 'Towards negative X'],

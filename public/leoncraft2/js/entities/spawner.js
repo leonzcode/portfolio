@@ -37,11 +37,11 @@
    animals in it. A structure's own mobs (villagers, shulkers, guardians...)
    come with it too, once, the first time its chunk is seen.
 --------------------------------------------------------------------------- */
-import { TYPES } from './mobs.js?v=25';
-import { BIOMES } from '../biomes.js?v=25';
-import { B, BLOCKS, SOLID, FLUID, OPAQUE } from '../blocks.js?v=25';
-import { SEA, Y0 } from '../world-const.js?v=25';
-import { DIMS } from '../dims.js?v=25';
+import { TYPES } from './mobs.js?v=26';
+import { BIOMES } from '../biomes.js?v=26';
+import { B, BLOCKS, SOLID, FLUID, OPAQUE } from '../blocks.js?v=26';
+import { SEA, Y0 } from '../world-const.js?v=26';
+import { DIMS } from '../dims.js?v=26';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);
@@ -91,11 +91,15 @@ function creaturesOf(b) {
     default: return /ocean|river|beach|shore|peaks|badlands/.test(b) ? [] : FARM;
   }
 }
-function waterOf(b) {
-  if (/river/.test(b)) return [['squid', 2, 1, 4]];
-  if (/ocean/.test(b)) return [['squid', /deep/.test(b) ? 1 : 10, 1, 4]].concat(/warm|lukewarm/.test(b) ? [['dolphin', 2, 1, 2]] : []);
-  return [];
-}
+const WATER_CREATURES = {
+  river: [['squid', 2, 1, 4]], frozen_river: [['squid', 2, 1, 4]],
+  ocean: [['squid', 1, 1, 4], ['dolphin', 1, 1, 2], ['nautilus', 5, 1, 1]], deep_ocean: [['squid', 1, 1, 4], ['dolphin', 1, 1, 2], ['nautilus', 5, 1, 1]],
+  warm_ocean: [['nautilus', 5, 1, 1], ['squid', 10, 4, 4], ['dolphin', 2, 1, 2]],
+  lukewarm_ocean: [['squid', 10, 1, 2], ['dolphin', 2, 1, 2], ['nautilus', 5, 1, 1]], deep_lukewarm_ocean: [['squid', 8, 1, 4], ['dolphin', 2, 1, 2], ['nautilus', 5, 1, 1]],
+  cold_ocean: [['squid', 3, 1, 4], ['nautilus', 2, 1, 1]], deep_cold_ocean: [['squid', 3, 1, 4], ['nautilus', 2, 1, 1]],
+  frozen_ocean: [['squid', 1, 1, 4], ['nautilus', 2, 1, 1]], deep_frozen_ocean: [['squid', 1, 1, 4], ['nautilus', 2, 1, 1]],
+};
+function waterOf(b) { return WATER_CREATURES[b] || []; }
 function fishOf(b) {
   if (/river/.test(b)) return [['salmon', 5, 1, 5]];
   if (/warm_ocean|lukewarm/.test(b)) return [['tropical_fish', 25, 8, 8], ['pufferfish', 15, 1, 3], ['cod', /lukewarm/.test(b) ? 15 : 0, 3, 6]];
@@ -310,6 +314,7 @@ export class Spawner {
     }
     if (dim === 'the_nether') { const n = NETHER[b] || NETHER.nether_wastes; return n[cat] || []; }
     if (dim === 'the_end') return cat === 'monster' ? END : [];
+    if (b === 'the_void') return [];
     if (cat === 'monster') return monstersOf(b);
     if (cat === 'creature') return creaturesOf(b);
     if (cat === 'ambient') return [['bat', 10, 8, 8]];
@@ -370,6 +375,7 @@ export class Spawner {
     const m = this.m, T = m.t;
     if (this.dim !== 'overworld') return;
     const b0 = this.biome(cx * 16 + 8, cz * 16 + 8);
+    if (b0 === 'the_void') return;
     const p = SNOWY.has(b0) || b0 === 'ice_spikes' ? 0.07 : 0.1;
     let tries = 0;
     while (R() < p && tries++ < 4) {
