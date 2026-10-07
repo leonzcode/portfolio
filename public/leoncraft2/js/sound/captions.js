@@ -14,7 +14,7 @@
    en_us.json, or else Leoncraft's own words for it (subtitles.js).
 --------------------------------------------------------------------------- */
 import { Sound } from './sound.js?v=24';
-import { caption, SUBTITLES } from './subtitles.js?v=24';
+import { caption } from './subtitles.js?v=24';
 import { SoundPacks } from './packs.js?v=24';
 
 const LIFE = 3000;
