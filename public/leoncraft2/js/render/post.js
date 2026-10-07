@@ -97,7 +97,7 @@ void main() {
     float dt = t - prevT; prevT = t;
     vec3 p = ro + rd * t;
     vec4 sc = uShadowMat * vec4(p, 1.0);
-    sc.xy = distort(sc.xy); sc.z *= 0.2;
+    sc.z *= 0.2;
     vec3 s = sc.xyz * 0.5 + 0.5;
     float vis = shadowHard(s);
     vec3 sigS, sigT;
@@ -232,7 +232,7 @@ void main() {
         col = toLinear(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * 0.16);
       } else col = uDimFog;
     } else col = mix(col, uDimFog, sat((dist - uDimFogRange.x) / max(1.0, uDimFogRange.y - uDimFogRange.x)));
-    o = vec4(col, 1.0);
+    o = vec4(col, base.a > 1.5 ? 0.0 : 1.0);
     return;
   }
   vec3 sunC = texelFetch(uAmbient, ivec2(4, 0), 0).rgb;
@@ -289,7 +289,8 @@ void main() {
     col = mix(col, skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))) * (1.0 - uVoid.y), edge);
   }
   col += texture(uVL, vUv).rgb;
-  o = vec4(col, 1.0);
+  // (lava, marked 2 by water.js, marked 0 here: the eye does not adapt to it)
+  o = vec4(col, base.a > 1.5 ? 0.0 : 1.0);
 }`;
 
 /* ---- bloom ---- */
@@ -336,14 +337,16 @@ void main() {
 const FS_LUM = /* glsl */`
 uniform sampler2D uSrc; in vec2 vUv; out vec4 o;
 void main() {
-  float l = 0.0;
+  float l = 0.0, n = 0.0;
   for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) {
-    vec3 c = texture(uSrc, vUv + (vec2(i, j) - 1.5) / vec2(256.0, 144.0)).rgb;
-    l += log2(max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-5));
+    vec4 c = texture(uSrc, vUv + (vec2(i, j) - 1.5) / vec2(256.0, 144.0));
+    // (lava is left out: it is drawn as its own colour whatever the eye does: water.js)
+    float k = step(0.5, c.a);
+    l += log2(max(dot(c.rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-5)) * k; n += k;
   }
   // the middle of the screen counts for more
   float w = 1.0 - 0.6 * length(vUv - 0.5);
-  o = vec4(l / 16.0 * w, w, 0.0, 1.0);
+  o = vec4(l / 16.0 * w, n / 16.0 * w, 0.0, 1.0);
 }`;
 const FS_EXPO = /* glsl */`
 uniform sampler2D uLum, uPrev; uniform float uDt, uBias, uEV;
@@ -461,8 +464,9 @@ export class Post {
     this.bloom = opts.bloom !== false;
     this.fxaa = opts.fxaa !== false;
     this.halfClouds = !!opts.halfClouds;      // edge smoothing as the last pass, or the tone-mapped picture straight to the screen    // the soft glow round bright things: eleven passes, left out where speed matters more
-    this.mVL = mat(FS_VL, U, { defines: Q });
-    this.mClouds = mat(FS_CLOUDS, U, { defines: Q });
+    // (each its own copy of the steps: one changing must not change the other's behind three.js's back)
+    this.mVL = mat(FS_VL, U, { defines: Object.assign({}, Q) });
+    this.mClouds = mat(FS_CLOUDS, U, { defines: Object.assign({}, Q) });
     this.mComp = mat(FS_COMP, U);
     this.mDown = mat(FS_DOWN, U);
     this.mUp = mat(FS_UP, U);
@@ -495,6 +499,8 @@ export class Post {
     const vl = o.vlSteps === undefined ? 14 : o.vlSteps;
     this.vlOn = vl > 0;
     if (vl > 0 && this.mVL.defines.VL_STEPS !== vl) { this.mVL.defines.VL_STEPS = vl; this.mVL.needsUpdate = true; }
+    const cs = o.cloudSteps || 20;
+    if (this.mClouds.defines.CLOUD_STEPS !== cs) { this.mClouds.defines.CLOUD_STEPS = cs; this.mClouds.needsUpdate = true; }
     this.u.uVLK.value = o.vlStrength || 1;
     this.u.uEV.value = Math.pow(2, o.exposure || 0);
     this.u.uSat.value = o.saturation === undefined ? 1 : o.saturation;
@@ -503,13 +509,17 @@ export class Post {
     this.cleared = false;
   }
   /* What a new look will draw this chain with that it has not got yet, for
-     render/looks.js to have built in the background: the light shafts' pass
-     with its new number of steps (configure() changes it only when the look
-     lands, and three.js would otherwise build it at its first draw). */
+     render/looks.js to have built in the background: the light shafts' and
+     the clouds' passes with their new numbers of steps (configure() changes
+     them only when the look lands, and three.js would otherwise build them at
+     their first draw). */
   variants(o) {
+    const out = [];
     const vl = o.vlSteps === undefined ? 14 : o.vlSteps;
-    if (!(vl > 0) || this.mVL.defines.VL_STEPS === vl) return [];
-    return [mat(FS_VL, this.U, { defines: Object.assign({}, this.mVL.defines, { VL_STEPS: vl }) })];
+    if (vl > 0 && this.mVL.defines.VL_STEPS !== vl) out.push(mat(FS_VL, this.U, { defines: Object.assign({}, this.mVL.defines, { VL_STEPS: vl }) }));
+    const cs = o.cloudSteps || 20;
+    if (this.mClouds.defines.CLOUD_STEPS !== cs) out.push(mat(FS_CLOUDS, this.U, { defines: Object.assign({}, this.mClouds.defines, { CLOUD_STEPS: cs }) }));
+    return out;
   }
   // the pictures given back while another look is in use (made again by the next resize)
   release() {
@@ -604,6 +614,8 @@ export class Post {
     }
     // tone map, then smooth the edges onto the screen
     u.uColor.value = this.comp.texture; u.uBloom.value = upSrc; u.uExpo.value = this.expo[this.expoI].texture;
+    // (and for the next frame's lava: water.js)
+    if (this.shared.uExpoTex) this.shared.uExpoTex.value = this.expo[this.expoI].texture;
     this.run(this.mFinal, this.fxaa ? this.ldr : null);
     if (!this.fxaa) return;
     u.uSrc.value = this.ldr.texture; u.uTexel.value.set(1 / this.w, 1 / this.h);

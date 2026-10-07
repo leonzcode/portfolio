@@ -97,10 +97,12 @@ export const DEFAULT_OPTIONS = {
   glintSpeed: 0.5,         // 0-1
   glintStrength: 0.75,     // 0-1
   damageTilt: 1,           // 0-1
-  // Shader Packs (ui/video.js, render/looks.js): on or off, and the shader's own settings
-  shaders: null,           // true, false, or null: the game picks (main.js: off only with no graphics chip)
+  // Shaders, the one extra button in Video Settings (ui/video.js, render/looks.js): off low medium high rip
+  shaderLevel: 'off',
+  // the shader settings from before that button, read once to carry a choice made then over (carryShaders)
+  shaders: null,           // true, false, or null (never chosen: on, the old default)
   shaderPreset: 'medium',  // low medium high ultra custom
-  shader: {},              // what differs from the preset (render/looks.js SHADER_DEFAULTS)
+  shader: {},              // what differed from the preset
   quality: 'auto',         // the old Graphics setting (Detailed / Fast): read once, to carry it over
   renderScale: 'auto',     // 'auto' or 0.4-1
   guiScale: 0,             // 0 = auto
@@ -140,6 +142,7 @@ export class Options {
           else this.data[k] = saved[k];
         }
         if (!('graphicsPreset' in saved)) this.carryOver(saved);
+        if (!('shaderLevel' in saved)) this.carryShaders();
       }
     } catch (e) { /* private window or bad JSON: defaults */ }
   }
@@ -162,6 +165,26 @@ export class Options {
     else if (q && q !== 'auto') d.shaders = true;
     else d.shaders = null;       // the game picks, as it did (main.js)
     d.weatherRadius = d.shaders === false ? 5 : 10;
+    this.save();
+  }
+  /* Settings saved before the one Shaders button. Shaders are Off by default
+     now: settings that only had the old default (on, never chosen) start Off,
+     and a choice the player made themselves (Shaders ON in Shader Packs, or
+     Detailed in the older Graphics button) carries over to the nearest level:
+     the full shader chain (Ultra, or parts of it chosen by hand) is High, the
+     rest Medium, Low stays Low. The render resolution went with the old
+     Shader Options screen, so it goes back to following the frame rate. */
+  carryShaders() {
+    const d = this.data;
+    let level = 'off';
+    if (d.shaders === true) {
+      const p = d.shaderPreset, own = d.shader || {};
+      const full = p === 'ultra' || (p === 'custom' && (own.bloom && own.bloom !== 'off' || own.lightShafts && own.lightShafts !== 'off' ||
+        own.clouds === 'volumetric' || own.water === 'reflections' || !!own.normalMaps));
+      level = full ? 'high' : p === 'low' ? 'low' : 'medium';
+    }
+    d.shaderLevel = level;
+    d.renderScale = 'auto';
     this.save();
   }
   get(k) { return this.data[k]; }

@@ -104,6 +104,12 @@ export class Renderer {
       // plants and leaves wave, the corners' shade, the fog's thickness; a chunk fading in (Chunk Fade);
       // where the clouds melt into the sky (Cloud Distance)
       uShadowSoft: { value: 1.6 }, uWave: { value: new THREE.Vector2(1, 1) }, uAO: { value: 1 }, uFogMul: { value: 1 },
+      // where you stand in the shadow map, its reach and its texel's size (render/shadows.js tellEye)
+      uShadowEye: { value: new THREE.Vector4(0, 0, 1, 0.07) },
+      // the view a shadow map is being drawn from (render/shadows.js: the shaders read the last one's until it is done)
+      uShadowDraw: { value: new THREE.Matrix4() },
+      // the full chain's eye, a 1 x 1 picture (render/post.js; lava in water.js reads it)
+      uExpoTex: { value: null },
       uChunkFade: { value: 1 }, uCloudFade: { value: new THREE.Vector2(256, 512) },
       // the enchantment glint's speed and strength (Accessibility Settings; render/armor.js GLINT)
       uGlint: { value: new THREE.Vector2(0.5, 0.75) },
@@ -677,7 +683,7 @@ export class Renderer {
   render(state, dt) {
     const U = this.U, r = this.r;
     // Detailed: what each texture is made of, once the textures are on the graphics card (materials.js)
-    if (this.ldr && !this.vanilla && !this.layerMatDone) { this.layerMatDone = true; U.uLayerMat.value = bakeLayerMaterials(r, U.uSpecMap.value, U.uLayerInfo.value); }
+    if (this.ldr && !this.vanilla && !this.layerMatDone) { this.layerMatDone = true; U.uLayerMat.value = bakeLayerMaterials(r, U.uSpecMap.value, U.uLayerInfo.value, this.layerMatMat); this.layerMatMat = null; }
     this.frame++;
     this.fadeNow = performance.now();
     U.uFrame.value = this.frame;

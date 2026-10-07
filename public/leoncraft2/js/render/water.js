@@ -15,7 +15,10 @@
    From below: Snell's window - the sky through a circle overhead, the
    underside of the surface mirroring the water around it.
 
-   Lava: its own animated texture streaming along the flow, glowing.
+   Lava: as the game draws it, whatever the shaders: its own texture (the
+   still one on top, the flowing one turned downhill on running lava and
+   down the sides, each running through its own frames) at full light, the
+   same colour by day and night and wherever the eye has adapted to.
 --------------------------------------------------------------------------- */
 import { COMMON, SHADOW, WIND, WAVES, TONEMAP, LDR, LIGHTS } from './glsl.js?v=22';
 import { lightDefines } from './materials.js?v=22';
@@ -99,18 +102,19 @@ vec3 viewPos(vec2 uv, float d) {
 }
 vec2 project(vec3 vp) { vec4 c = projectionMatrix * vec4(vp, 1.0); return c.xy / c.w * 0.5 + 0.5; }
 
-#ifdef WATER_TEX
-/* Shader Options, Water: Vanilla. The water's own texture, sampled as the
-   game samples it (render/vanilla.js FLUID_FS): still on top, the flowing
-   one turned downhill on running water and down the sides. */
+/* A fluid's own texture, sampled as the game samples it (render/vanilla.js
+   FLUID_FS): the still one on top, the flowing one (flowLayer) turned downhill
+   on running water or lava and down the sides, at half size; each running
+   through its own frames at its own pace (the layer table). Water with
+   Water: Vanilla, and lava always. */
 uniform sampler2D uLayerInfo;
-uniform vec2 uFlowLayers;
+uniform vec2 uFlowLayers;       // water_flow, lava_flow
 float frameOfW(float layer) {
   vec4 info = texelFetch(uLayerInfo, ivec2(int(layer + 0.5), 0), 0);
   if (info.x < 1.5) return layer;
   return layer + mod(floor(uTime * 20.0 / max(1.0, info.y)), info.x);
 }
-vec4 waterTexture(bool top) {
+vec4 fluidTexture(bool top, float flowLayer) {
   vec2 p, dpx, dpy;
   float layer;
   if (top) {
@@ -121,17 +125,22 @@ vec4 waterTexture(bool top) {
       vec2 d = vFlow / fl, q = cell - 0.5;
       q = vec2(q.x * d.y - q.y * d.x, q.x * d.x + q.y * d.y);
       p = 0.5 + q * 0.5; dpx *= 0.5; dpy *= 0.5;
-      layer = frameOfW(uFlowLayers.x);
+      layer = frameOfW(flowLayer);
     } else { p = cell; layer = frameOfW(vLayer); }
   } else {
     float along = (vNormal == 0 || vNormal == 1) ? vWorld.z : vWorld.x;
     vec2 w = vec2(along, -vWorld.y);
     dpx = dFdx(w) * 0.5; dpy = dFdy(w) * 0.5;
     p = fract(w) * 0.5;
-    layer = frameOfW(uFlowLayers.x);
+    layer = frameOfW(flowLayer);
   }
   return textureGrad(uAlbedo, vec3(p, layer), dpx, dpy);
 }
+vec4 waterTexture(bool top) { return fluidTexture(top, uFlowLayers.x); }
+#ifndef LDR
+// the full chain's eye (render/post.js), for lava to come out of it as its own colour; and the dimension
+uniform sampler2D uExpoTex;
+uniform float uDim;
 #endif
 #if SSR_STEPS > 0
 // screen-space reflection: march, then home in
@@ -178,18 +187,21 @@ void main() {
   float sky = vLight.x;
 
   if (lava) {
-    // lava: its own texture, streaming along the flow, and bright
-    vec2 uv = top ? vWorld.xz : (abs(Ng.x) > 0.5 ? vec2(vWorld.z, -vWorld.y) : vec2(vWorld.x, -vWorld.y));
-    uv = uv / 1.0 - vFlow * uTime * 0.18 + (top ? vec2(0.0) : vec2(0.0, uTime * 0.25));
-    float f = uTime * 20.0 / 3.0;
-    float fa = mod(floor(f), 20.0), fb = mod(fa + 1.0, 20.0);
-    vec3 l = mix(texture(uAlbedo, vec3(fract(uv), vLayer + fa)).rgb, texture(uAlbedo, vec3(fract(uv), vLayer + fb)).rgb, fract(f));
-    l = toLinear(l);
-    float glow = 1.0 + 0.4 * sin(uTime * 1.3 + vWorld.x * 0.7 + vWorld.z * 0.5);
+    // lava as the game draws it (see the top): its texture at full light, which is its own colour on the screen
+    vec3 l = fluidTexture(vNormal == 2 || vNormal == 3, uFlowLayers.y).rgb;
+    // and the game's shade by side (render/vanilla.js faceShade; the Nether's top and bottom both 0.9)
+    float ca = abs(uDim - 1.0) < 0.5 ? 1.0 : 0.0;
+    l *= vNormal == 2 ? mix(1.0, 0.9, ca) : vNormal == 3 ? mix(0.5, 0.9, ca) : vNormal >= 4 ? 0.8 : 0.6;
 #ifdef LDR
-    outColor = vec4(toneLDR(l * (5.0 + 3.0 * lum(l)) * glow * vKeep + vAdd), 1.0);
+    // straight to the screen in its own colours, the fog laid over it in the screen's colours too
+    float keep = sat(dot(vKeep, vec3(1.0 / 3.0)) / max(uExpo, 1e-4));
+    outColor = vec4(keep > 0.999 ? l : mix(toneLDR(vAdd / max(1.0 - keep, 1e-3)), l, keep), 1.0);
 #else
-    outColor = vec4(l * (5.0 + 3.0 * lum(l)) * glow, 1.0);
+    // the full chain exposes and tone-maps everything after this: the light that comes out of both as
+    // this colour (glsl.js agxInverse), marked (alpha 2) so the eye does not adapt to it (post.js)
+    vec3 lin = mix(l / 12.92, pow((l + 0.055) / 1.055, vec3(2.4)), step(0.04045, l));
+    float e = texture(uExpoTex, vec2(0.5)).r;
+    outColor = vec4(agxInverse(lin) / (e > 1e-3 ? e : 1.0), 2.0);
 #endif
     return;
   }
