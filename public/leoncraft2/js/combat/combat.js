@@ -32,12 +32,12 @@
      water or rain, Channeling calls lightning in a storm); the shield is up
      5 ticks after the button goes down, slowing you to a fifth from the start.
 --------------------------------------------------------------------------- */
-import { ITEMS, I, itemName, addCooldown } from '../items.js?v=28';
-import { wear } from '../ui/inventory.js?v=28';
-import { Living } from '../entities/entity.js?v=28';
-import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=28';
-import './trident.js?v=28';
-import { rayBox } from '../entities/terrain.js?v=28';
+import { ITEMS, I, itemName, addCooldown } from '../items.js?v=29';
+import { wear } from '../ui/inventory.js?v=29';
+import { Living } from '../entities/entity.js?v=29';
+import { weaponOf, enchOf, enchantBonus, chargeTicks, wearPerHit, smashBonus, ARTHROPOD } from './weapons.js?v=29';
+import './trident.js?v=29';
+import { rayBox } from '../entities/terrain.js?v=29';
 
 /* The spear's charge (the use button held), as the Spear page gives it, by
    material: [ticks before it works, then engaged, tired and disengaged
@@ -237,7 +237,8 @@ export class Combat {
     const fresh = !(sv.invul > 10);
     if (!fresh && amount <= sv.lastHurt) return false;
     const before = sv.health;
-    sv.hurt(amount, SURVIVAL_KIND[src.type] || src.type || 'generic');
+    // (with who did it: the death message names them, difficulty scales a mob's hit, and the advancements know the killer)
+    sv.hurt(amount, Object.assign({}, src, { type: SURVIVAL_KIND[src.type] || src.type || 'generic' }));
     if (fresh) {
       const P = this.P;
       // where it came from: an arrow's flight, or the attacker

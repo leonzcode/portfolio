@@ -7,11 +7,11 @@
    range, size, loot, experience, and the goals each one runs, in the
    game's priority order.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK } from './entity.js?v=28';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK } from './entity.js?v=29';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal, EatGrassGoal,
-  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=28';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=28';
-import { itemId, armorOf } from '../items.js?v=28';
+  MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=29';
+import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=29';
+import { itemId, armorOf } from '../items.js?v=29';
 
 const R = () => Math.random();
 const RI = n => Math.floor(Math.random() * n);
@@ -258,7 +258,7 @@ export class Drowned extends Zombie {
 }
 register('drowned', Drowned);
 const BIOME_NAMES = [];
-import('../biomes.js?v=28').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
+import('../biomes.js?v=29').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 
 /* ---- Zombie villager: a zombie with a villager's face ---- */
 export class ZombieVillager extends Zombie {
@@ -329,6 +329,8 @@ export class Creeper extends Monster {
   static W = 0.6; static H = 1.7; static HEALTH = 20; static SPEED = 0.25; static FOLLOW = 16;
   static MODEL = 'creeper'; static TEX = 'creeper'; static SHADOW = 0.5;
   constructor(m, type) { super(m, type); this.swell = 0; this.oSwell = 0; this.swellDir = -1; this.fuse = 30; this.power = 3; this.charged = false; }
+  // struck by lightning (manager.js lightning): charged, and hurt and set alight as anything is
+  thunderHit() { this.charged = true; }
   registerGoals() {
     this.goals.add(1, new FloatGoal(this));
     this.goals.add(2, new SwellGoal(this));
@@ -460,7 +462,17 @@ export class Animal extends Mob {
 export class Pig extends Animal {
   static W = 0.9; static H = 0.9; static HEALTH = 10; static SPEED = 0.25; static MODEL = 'pig'; static TEX = 'pig'; static SHADOW = 0.7;
   static FOOD = ['carrot', 'potato', 'beetroot', 'carrot_on_a_stick'];
-  constructor(m, type) { super(m, type); this.saddled = false; }
+  constructor(m, type) { super(m, type); this.saddled = false; this.boostT = 0; this.boostLen = 0; }
+  aiStep() { super.aiStep(); if (this.boostT > 0) this.boostT--; }
+  // struck by lightning: a zombified piglin with a golden sword where it stood (not on Peaceful, where it is only hurt)
+  thunderHit(m) {
+    if (m.difficulty === 'peaceful') return undefined;
+    const n = m.convertMob(this, 'zombified_piglin', z => { if (z.equip) z.equip.mainhand = 'golden_sword'; z.attackDamage = 8; z.persistent = true; });
+    return n ? false : undefined;
+  }
+  // a burst from the carrot on a stick: 140 to 980 ticks, the speed rising and falling up to 2.15 times (as the strider's)
+  boost() { if (this.boostT > 0) return false; this.boostLen = this.boostT = 140 + RI(841); return true; }
+  boostFactor() { return this.boostT > 0 ? 1 + 1.15 * Math.sin((1 - this.boostT / this.boostLen) * Math.PI) : 1; }
   loot(drop) { drop(this.fire > 0 ? 'cooked_porkchop' : 'porkchop', between(1, 3)); if (this.saddled) drop('saddle', 1); }
   interact(held) {
     if (held === 'saddle' && !this.saddled && this.ageT >= 0) { this.saddled = true; return 'consume'; }
@@ -472,7 +484,7 @@ export class Pig extends Animal {
     if (this.m.heldName() !== 'carrot_on_a_stick') return false;
     this.yaw = rotTowards(this.yaw, rider.yaw, 10 * DEG);
     this.bodyYaw = this.yaw; this.headYaw = this.yaw;
-    this.moveSpeedNow = this.speed * 0.225 / 0.25 * 1.0;
+    this.moveSpeedNow = this.speed * 0.225 / 0.25 * this.boostFactor();
     this.zza = this.moveSpeedNow;
     return true;
   }

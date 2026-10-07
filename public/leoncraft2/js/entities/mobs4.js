@@ -20,16 +20,16 @@
 
    The player is the only owner there can be, so "tamed" means "yours".
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=28';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=29';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=28';
-import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=28';
-import { model } from './mobs2.js?v=28';
-import { addArt } from './mobart.js?v=28';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=28';
-import { use as useBlock } from '../place.js?v=28';
-import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf } from '../items.js?v=28';
-import { MountScreen } from '../ui/containers.js?v=28';
+  MeleeAttackGoal, LeapGoal, AvoidGoal, HurtByTargetGoal, randomLandPos, posAway } from './ai.js?v=29';
+import { Animal, Cow, register, TYPES, DYES, DYE_RGB } from './mobs.js?v=29';
+import { model } from './mobs2.js?v=29';
+import { addArt } from './mobart.js?v=29';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=29';
+import { use as useBlock } from '../place.js?v=29';
+import { stackToJSON, stackFromJSON, withCount as withCountOf, itemName as itemNameOf, itemId as itemIdOf } from '../items.js?v=29';
+import { MountScreen } from '../ui/containers.js?v=29';
 
 // the stack in the player's hand (a mob's interact is told only the item's name), and a stack dropped where a mob is
 const heldStack = m => (m.inv && m.inv.slots[m.inv.selected]) || null;
@@ -657,6 +657,12 @@ export class Villager extends Mob {
     this.goals.add(7, new LookAroundGoal(this));
   }
   walkValue(x, y, z) { return this.m.t.get(x, y - 1, z) === B.grass_block ? 2 : 0; }
+  // a villager struck by lightning (manager.js lightning) is a witch where it stood, not on Peaceful (a wandering trader is only hurt)
+  thunderHit(m) {
+    if (this.type !== 'villager' || m.difficulty === 'peaceful') return undefined;
+    const n = m.convertMob(this, 'witch', w => { w.persistent = true; });
+    return n ? false : undefined;
+  }
   aiStep() {
     super.aiStep();
     if (this.ageT < 0 && ++this.ageT === 0) this.setBaby(false);

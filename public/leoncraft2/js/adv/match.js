@@ -67,7 +67,8 @@ export function blockState(b, key) {
   const n = b.name, m = b.meta | 0;
   switch (key) {
     case 'charges': return n === 'respawn_anchor' ? String(m & 7) : undefined;
-    case 'lit': return /copper_bulb$|redstone_lamp|redstone_ore|furnace|smoker|campfire/.test(n) ? String(!!(m & 1)) : undefined;
+    // (bit 0 lit for bulbs, lamps and ore; a campfire's bit 4 is put out)
+    case 'lit': return /campfire$/.test(n) ? String(!(m & 4)) : /copper_bulb$|redstone_lamp|redstone_ore/.test(n) ? String(!!(m & 1)) : undefined;
     case 'ominous': return n === 'vault' || n === 'trial_spawner' ? String(!!(m & 8)) : undefined;
     // logs: the face they were put against (0 up and down, 1 east-west, 2 north-south); a heart is a log too
     case 'axis': return ['y', 'x', 'z'][m % 3];

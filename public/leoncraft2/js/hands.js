@@ -28,24 +28,25 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=28';
-import { setLodestoneCheck } from './dials.js?v=28';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=28';
-import { breakTicks, wearFor } from './mining.js?v=28';
-import { blockDrops } from './loot.js?v=28';
-import { containerKind, spill } from './containers.js?v=28';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=28';
-import { isPotion, drinkPotion } from './brewing.js?v=28';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=28';
-import { MerchantScreen } from './ui/merchant.js?v=28';
-import { LoomScreen } from './ui/loom.js?v=28';
-import { CartographyScreen } from './ui/cartography.js?v=28';
-import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=28';
-import { countShelves } from './enchanting.js?v=28';
-import { wear } from './ui/inventory.js?v=28';
-import { BookScreen } from './ui/book.js?v=28';
-import { breaksInCreative } from './modes.js?v=28';
-import { boxOpened, bellRang } from './sim/lids.js?v=28';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=29';
+import { setLodestoneCheck } from './dials.js?v=29';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=29';
+import { breakTicks, wearFor } from './mining.js?v=29';
+import { blockDrops } from './loot.js?v=29';
+import { containerKind, spill } from './containers.js?v=29';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=29';
+import { isPotion, drinkPotion } from './brewing.js?v=29';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=29';
+import { MerchantScreen } from './ui/merchant.js?v=29';
+import { hives } from './entities/hives.js?v=29';
+import { LoomScreen } from './ui/loom.js?v=29';
+import { CartographyScreen } from './ui/cartography.js?v=29';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=29';
+import { countShelves } from './enchanting.js?v=29';
+import { wear } from './ui/inventory.js?v=29';
+import { BookScreen } from './ui/book.js?v=29';
+import { breaksInCreative } from './modes.js?v=29';
+import { boxOpened, bellRang } from './sim/lids.js?v=29';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // what a full bucket pours out (the fish buckets are water with a fish in it)
@@ -160,6 +161,8 @@ export class Hands {
   placed(list) {
     // the first cell is the block from the hand (a shulker box brings its contents); the rest are its other parts
     if (list) list.forEach(([x, y, z], i) => this.containers.placed(x, y, z, i === 0 ? this.held || {} : null));
+    // a nest or hive that was moved with Silk Touch brings its bees and honey back
+    if (list && list.length && this.held && (this.held.bees || this.held.honey)) hives().placed(this.world, list[0][0], list[0][1], list[0][2], this.held);
     // a sign opens its editing screen
     if (list && list.length && this.details) this.details.placed(list[0][0], list[0][1], list[0][2]);
     if (this.creative) return;
@@ -193,8 +196,11 @@ export class Hands {
     if (!this.creative) {
       const held = this.held;
       const out = blockDrops(w, hit.x, hit.y, hit.z, b, m, { stack: held });
+      // a bee nest or beehive mined with Silk Touch keeps its bees and its honey level (entities/hives.js)
+      const hive = (d.name === 'bee_nest' || d.name === 'beehive') && held && held.ench && held.ench.silk_touch ? hives().take(w, hit.x, hit.y, hit.z) : null;
       for (const s of out.items) {
         if (inBox && s.id === b && !s.items) s.items = inBox;
+        if (hive && s.id === b) { if (hive.length) s.bees = hive; s.honey = (m >> 2) & 7; }
         this.drops.popFrom(hit.x, hit.y, hit.z, s);
       }
       if (out.xp) this.drops.xp(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5, out.xp);

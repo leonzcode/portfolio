@@ -56,19 +56,19 @@
    the world (a creeper's hole, a farmer's crops, what it drops) is shared
    like anything else.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=28';
-import { idx, H } from '../world-const.js?v=28';
-import { DIMS, DIM_IDS } from '../dims.js?v=28';
-import { Save } from '../save.js?v=28';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=28';
-import { glints } from '../render/armor.js?v=28';
-import { containerKind } from '../containers.js?v=28';
-import { getSkinSettings } from '../render/avatar.js?v=28';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=28';
-import { register, commandDef, execute, gameRule } from '../commands.js?v=28';
-import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=28';
-import { Projectile } from '../entities/projectiles.js?v=28';
-import { Vehicles } from './vehicles.js?v=28';
+import { B, BLOCKS } from '../blocks.js?v=29';
+import { idx, H } from '../world-const.js?v=29';
+import { DIMS, DIM_IDS } from '../dims.js?v=29';
+import { Save } from '../save.js?v=29';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=29';
+import { glints } from '../render/armor.js?v=29';
+import { containerKind } from '../containers.js?v=29';
+import { getSkinSettings } from '../render/avatar.js?v=29';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=29';
+import { register, commandDef, execute, gameRule } from '../commands.js?v=29';
+import { weaponOf, enchOf, enchantBonus, wearPerHit, smashBonus } from '../combat/weapons.js?v=29';
+import { Projectile } from '../entities/projectiles.js?v=29';
+import { Vehicles } from './vehicles.js?v=29';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {
@@ -139,10 +139,11 @@ const flat = a => a.slice();
 /* What a world keeps in place of save.js, per dimension: the edits and the
    chests and signs come from the server (and stay up to date with it), and
    so does your own record (where you are, your inventory, health, game mode:
-   PLAYER_KEYS), kept by the server under your name as the game's servers keep
-   playerdata, so it is there from any browser. The rest (maps, what the
-   simulation was in the middle of) is kept in this browser. */
-const PLAYER_KEYS = ['player', 'inventory', 'survival', 'mode', 'hands', 'dimension', 'lastDeath', 'advancements'];
+   PLAYER_KEYS; and your advancements, statistics and recipes, as the game
+   keeps them per player), kept by the server under your name as the game's
+   servers keep playerdata, so it is there from any browser. The rest (maps,
+   what the simulation was in the middle of) is kept in this browser. */
+const PLAYER_KEYS = ['player', 'inventory', 'survival', 'mode', 'hands', 'dimension', 'lastDeath', 'advancements', 'stats', 'recipes'];
 class MpSave {
   constructor(net, d, id) { this.net = net; this.d = d; this.dirty = new Set(); this.local = new Save(id); }
   async init() { await this.local.init(); }

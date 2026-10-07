@@ -34,17 +34,17 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=28';
-import { Screen, TextField, WHITE } from './gui.js?v=28';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=28';
-import { matchGrid, consumeGrid } from '../crafting.js?v=28';
-import { enchName, ENCH } from '../enchanting.js?v=28';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=28';
-import { patternLines, drawBannerIcon } from '../banners.js?v=28';
-import { mapLines } from '../maps.js?v=28';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=28';
-import { dialPicture, usePicture } from '../dials.js?v=28';
-import { RecipeBook } from './recipebook.js?v=28';
+import { BLOCKS, B } from '../blocks.js?v=29';
+import { Screen, TextField, WHITE } from './gui.js?v=29';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=29';
+import { matchGrid, consumeGrid } from '../crafting.js?v=29';
+import { enchName, ENCH } from '../enchanting.js?v=29';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=29';
+import { patternLines, drawBannerIcon } from '../banners.js?v=29';
+import { mapLines } from '../maps.js?v=29';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=29';
+import { dialPicture, usePicture } from '../dials.js?v=29';
+import { RecipeBook } from './recipebook.js?v=29';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -477,6 +477,9 @@ export function stackTooltip(st, advanced, creative) {
     for (const s of inside.slice(0, 5)) lines.push('§f' + (s.name || displayName(s.id)) + ' x' + s.count);
     if (inside.length > 5) lines.push('§o§7and ' + (inside.length - 5) + ' more...');
   }
+  // a nest or hive moved with Silk Touch: its bees and honey
+  if (Array.isArray(st.bees) && st.bees.length) lines.push('§7Bees: ' + st.bees.length + ' / 3');
+  if (st.honey !== undefined) lines.push('§7Honey: ' + st.honey + ' / 5');
   // a filled map: locked, and with advanced tooltips its number and zoom
   if (st.map !== undefined) lines.push(...mapLines(st, advanced));
   // a banner's layers, the first six

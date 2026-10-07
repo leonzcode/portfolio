@@ -19,48 +19,50 @@
    Without them, drops of things that are blocks go straight into the
    inventory and the rest are left out.
 --------------------------------------------------------------------------- */
-import { Terrain } from './terrain.js?v=28';
-import { PathFinder, Navigation } from './path.js?v=28';
-import { Particles } from './particles.js?v=28';
-import { Ambient } from './ambient.js?v=28';
-import { Living, Mob, wrap, DEG } from './entity.js?v=28';
-import { TYPES } from './mobs.js?v=28';
-import './projectiles.js?v=28';
-import { placeBoat } from './boat.js?v=28';
-import './mobs2.js?v=28';
-import './mobs3.js?v=28';
-import './mobs4.js?v=28';
-import { wandererTick } from './merchant.js?v=28';
-import { tableBooks } from './tablebook.js?v=28';
-import { explode } from './explosion.js?v=28';
-import { splitXp } from './xporb.js?v=28';
-import { placeMinecart, isRail, Minecart } from './minecart.js?v=28';
-import { CART_ITEMS } from './carts.js?v=28';
-import { fallFrom, FALLS, free } from './fallingblock.js?v=28';
-import { Spawner, DESPAWN } from './spawner.js?v=28';
-import { MODELS, POSE, restPose } from './mobmodels.js?v=28';
-import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=28';
-import { EntityMeshes } from '../render/entitymesh.js?v=28';
-import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=28';
-import { breakAt } from '../place.js?v=28';
-import { dropOf } from '../survival.js?v=28';
-import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=28';
-import { Combat } from '../combat/combat.js?v=28';
-import './nether.js?v=28';
+import { Terrain } from './terrain.js?v=29';
+import { PathFinder, Navigation } from './path.js?v=29';
+import { Particles } from './particles.js?v=29';
+import { Ambient } from './ambient.js?v=29';
+import { Living, Mob, wrap, DEG } from './entity.js?v=29';
+import { TYPES } from './mobs.js?v=29';
+import './projectiles.js?v=29';
+import { placeBoat } from './boat.js?v=29';
+import './mobs2.js?v=29';
+import './mobs3.js?v=29';
+import './mobs4.js?v=29';
+import { wandererTick } from './merchant.js?v=29';
+import { tableBooks } from './tablebook.js?v=29';
+import { explode } from './explosion.js?v=29';
+import { splitXp } from './xporb.js?v=29';
+import { placeMinecart, isRail, Minecart } from './minecart.js?v=29';
+import { CART_ITEMS } from './carts.js?v=29';
+import { fallFrom, FALLS, free } from './fallingblock.js?v=29';
+import { Spawner, DESPAWN } from './spawner.js?v=29';
+import { MODELS, POSE, restPose } from './mobmodels.js?v=29';
+import { buildAtlas, buildSheet, SLOTS } from './mobart.js?v=29';
+import { EntityMeshes } from '../render/entitymesh.js?v=29';
+import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=29';
+import { breakAt } from '../place.js?v=29';
+import { dropOf } from '../survival.js?v=29';
+import { itemName, ITEMS, I, cooldownTick } from '../items.js?v=29';
+import { Combat } from '../combat/combat.js?v=29';
+import './nether.js?v=29';
 // the mobs whose spawn eggs had nothing to make: land animals, flyers and swimmers, monsters
-import './mobs5.js?v=28';
-import './mobs6.js?v=28';
-import './mobs7.js?v=28';
-import { DIMS } from '../dims.js?v=28';
-import { armorLayers } from './armorlayer.js?v=28';
-import { MobHeld } from '../render/mobheld.js?v=28';
-import { setSpawnerMob } from '../struct/spawners.js?v=28';
-import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=28';
+import './mobs5.js?v=29';
+import './mobs6.js?v=29';
+import './mobs7.js?v=29';
+import { DIMS } from '../dims.js?v=29';
+import { armorLayers } from './armorlayer.js?v=29';
+import { MobHeld } from '../render/mobheld.js?v=29';
+import { setSpawnerMob } from '../struct/spawners.js?v=29';
+import { useExtra, leashInteract, leashTick, tieToFence, nameplates } from './items2.js?v=29';
 const THREE = window.THREE;
 
 const R = () => Math.random();
 const CELL = 8;
 const DIFF = { peaceful: 0, easy: 1, normal: 2, hard: 3 };
+// a stick for steering: the mob it works on and how much one burst wears it
+const STICKS = { carrot_on_a_stick: ['pig', 7], warped_fungus_on_a_stick: ['strider', 1] };
 
 export class Entities {
   constructor(o) {
@@ -551,6 +553,21 @@ export class Entities {
     else { inv.takeSelected(1); if (inv.add(id, 1) > 0) this.dropItemAt(this.P.pos.x, this.P.pos.y + 1, this.P.pos.z, name, 1); }
     return true;
   }
+  /* One of the held stack given for another, whatever it was (a bucket of
+     fish fed to an axolotl or a nautilus leaves a bucket of water). Not a
+     bucket filled, so it goes straight to the inventory and is not counted
+     as one. In creative the held item stays, and the other is added if
+     there is none, as the game's filled result does. */
+  turnHeld(name) {
+    const inv = this.inv, id = I[name];
+    if (!inv || id === undefined) return false;
+    if (this.mode === 'creative') { if (!inv.count(id)) inv.add(id, 1); return true; }
+    const s = inv.slots[inv.selected];
+    if (!s) return false;
+    if (s.count <= 1) { inv.slots[inv.selected] = { id, count: 1 }; inv.changed(); }
+    else { inv.takeSelected(1); if (inv.add(id, 1) > 0) this.dropItemAt(this.P.pos.x, this.P.pos.y + 1, this.P.pos.z, name, 1); }
+    return true;
+  }
   // how charged the next hit is (0..1): ticks since the last swing over 20 / attack speed
   cooldown() { return this.combat.cooldown(); }
   // a click in the air (or a block broken) starts the cooldown again, as the game does
@@ -694,9 +711,9 @@ export class Entities {
   explode(x, y, z, power, src, o) { return explode(this, x, y, z, power, src, o); }
   /* Lightning (sim/weather.js calls this; the player's share it does
      itself): everything within 3 blocks takes 5 and burns for 8 seconds,
-     and some change: a creeper is charged, a pig becomes a zombified
-     piglin and a villager a witch (not on Peaceful), a mooshroom turns
-     brown or red. */
+     and some change (their thunderHit): a creeper is charged, a pig becomes
+     a zombified piglin and a villager a witch (not on Peaceful). Not yet: a
+     mooshroom turning brown (there is no brown one). */
   lightning(x, y, z) {
     for (const e of this.near(x, y, z, 8)) {
       if (e.removed || e.dead || Math.abs(e.pos.x - x) > 3 + e.hw || Math.abs(e.pos.z - z) > 3 + e.hw || e.pos.y > y + 9 || e.pos.y + e.h < y - 3) continue;
@@ -759,6 +776,17 @@ export class Entities {
     if (target && target.face && tieToFence(this, target)) return true;
     const name = this.heldName();
     if (!name || !this.lookEye) return false;
+    /* On the pig or strider you ride, its stick gives it a burst of speed (none while one is on), worn
+       7 (a carrot) or 1 (warped fungus); worn out it is a plain fishing rod again (the game's FoodOnAStick) */
+    const stick = STICKS[name], r = this.riding;
+    if (stick && r && r.type === stick[0] && r.boost) {
+      if (!r.boost()) return false;
+      if (this.mode !== 'creative' && this.inv) {
+        this.damageHeld(stick[1], name);
+        if (!this.inv.slots[this.inv.selected]) { this.inv.slots[this.inv.selected] = { id: I.fishing_rod, count: 1 }; this.inv.changed(); }
+      }
+      return true;
+    }
     const P = this.P, eye = this.lookEye, dir = this.lookDir;
     const take = () => { if (this.mode !== 'creative' && this.inv) this.inv.takeSelected(1); };
     // adventure puts nothing into the world with an item (a boat is the exception, as in the game)
@@ -1076,4 +1104,4 @@ export class Entities {
     if (this.group.parent) this.group.parent.remove(this.group);
   }
 }
-import { rayBox } from './terrain.js?v=28';
+import { rayBox } from './terrain.js?v=29';

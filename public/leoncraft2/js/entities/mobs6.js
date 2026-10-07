@@ -11,16 +11,16 @@
    the fish's way (mobs3.js). Numbers from the Minecraft Wiki (Java Edition);
    the shapes are boxes in the game's units, the textures our own.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=28';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=29';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=28';
-import { Animal, Monster, register, TYPES } from './mobs.js?v=28';
-import { model } from './mobs2.js?v=28';
-import { addArt } from './mobart.js?v=28';
-import { MODELS } from './mobmodels.js?v=28';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=28';
-import { activeDrops } from '../drops.js?v=28';
-import { ITEMS, I } from '../items.js?v=28';
+  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=29';
+import { Animal, Monster, register, TYPES } from './mobs.js?v=29';
+import { model } from './mobs2.js?v=29';
+import { addArt } from './mobart.js?v=29';
+import { MODELS } from './mobmodels.js?v=29';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=29';
+import { activeDrops } from '../drops.js?v=29';
+import { ITEMS, I } from '../items.js?v=29';
 
 const PI = Math.PI;
 const R = () => Math.random();
@@ -317,16 +317,24 @@ addArt('bee_angry_nectar', [64, 64], p => paintBee(p, true, true));
 /* ---- Allay: 20 health, 0.35 x 0.6, flies; give it an item and it fetches
    that item: anything matching lying within 32 blocks it picks up and
    brings back to whoever gave it, and drops at their feet. Right click
-   with an empty hand to take the item back. Blue and glowing. ---- */
+   with an empty hand to take the item back. Blue and glowing. A note
+   block played within 16 blocks of it is liked for 30 seconds: it stays
+   by it and leaves what it fetches on top of it instead. ---- */
 export class Allay extends Flyer {
   static W = 0.35; static H = 0.6; static HEALTH = 20; static SPEED = 0.1; static FLY_SPEED = 0.25; static SHADOW = 0.2;
   static MODEL = 'allay'; static TEX = 'allay'; static CATEGORY = 'creature'; static NO_DESPAWN = true; static GLOW = true;
-  constructor(m, type) { super(m, type); this.carry = 0; this.want = null; this.dropCool = 0; }
+  constructor(m, type) { super(m, type); this.carry = 0; this.want = null; this.dropCool = 0; this.note = null; this.noteT = 0; this.heard = null; this.gaveAt = null; }
   get eyeH() { return 0.36; }
   registerGoals() {
-    this.goals.add(2, new FlyFollowGoal(this, m => (m.equip.mainhand ? m.m.player : null), 1.2, 6, 2));
+    this.goals.add(2, new FlyFollowGoal(this, m => (m.equip.mainhand ? m.deposit() : null), 1.2, 6, 2));
     this.goals.add(4, new FlyWanderGoal(this, 0.8, 40, 5));
     this.goals.add(5, new LookAtPlayerGoal(this, 6));
+  }
+  // where what it fetches goes: the note block it likes while it is still one (the spot over it), else the player
+  deposit() {
+    const n = this.noteT > 0 ? this.note : null, d = n && BLOCKS[this.m.t.get(n[0], n[1], n[2])];
+    if (d && d.name === 'note_block') return this.noteSpot;
+    return this.m.player;
   }
   interact(held) {
     if (!held && this.equip.mainhand) { this.m.dropAt(this, this.equip.mainhand, 1); if (this.carry) this.m.dropAt(this, this.equip.mainhand, this.carry); this.equip.mainhand = null; this.carry = 0; return 'swing'; }
@@ -335,11 +343,24 @@ export class Allay extends Flyer {
   }
   aiStep() {
     super.aiStep();
-    if (this.dead || !this.equip.mainhand) return;
+    this.gaveAt = null;
+    if (this.dead) return;
+    // a note block played within 16 blocks (the simulation keeps the last one played)
+    const ln = this.m.sim && this.m.sim.lastNote;
+    if (ln && ln !== this.heard) {
+      this.heard = ln;
+      if (this.dist2(ln.x + 0.5, ln.y + 0.5, ln.z + 0.5) <= 256) { this.note = [ln.x, ln.y, ln.z]; this.noteT = 600; this.noteSpot = { pos: { x: ln.x + 0.5, y: ln.y + 1, z: ln.z + 0.5 }, eyeH: 0.5, h: 1 }; }
+    }
+    if (this.noteT > 0) this.noteT--;
+    if (!this.equip.mainhand) return;
     if (this.dropCool > 0) this.dropCool--;
-    const D = activeDrops(), want = I[this.equip.mainhand], P = this.m.player;
-    // carrying some: home to the player, and drop them at their feet
-    if (this.carry > 0 && P && P.alive() && this.dist2(P.pos.x, P.pos.y, P.pos.z) < 6 && this.dropCool <= 0) {
+    const D = activeDrops(), want = I[this.equip.mainhand], P = this.m.player, to = this.deposit();
+    // carrying some: to the note block it likes, and left on top of it, or home to the player and at their feet
+    if (this.carry > 0 && to && to !== P && this.dropCool <= 0 && this.dist2(to.pos.x, to.pos.y + 0.5, to.pos.z) < 9) {
+      this.m.dropItemAt(to.pos.x, to.pos.y + 0.1, to.pos.z, this.equip.mainhand, this.carry); this.carry = 0; this.dropCool = 60; this.gaveAt = this.note.slice();
+      return;
+    }
+    if (this.carry > 0 && to === P && P && P.alive() && this.dist2(P.pos.x, P.pos.y, P.pos.z) < 6 && this.dropCool <= 0) {
       this.m.dropItemAt(P.pos.x, P.pos.y + 1, P.pos.z, this.equip.mainhand, this.carry); this.carry = 0; this.dropCool = 60;
       return;
     }
@@ -823,8 +844,8 @@ export class Axolotl extends Animal {
     if (held === 'tropical_fish_bucket') {
       const r = this.feed();
       // the fish is eaten; the bucket goes back with water in it
-      if (r && this.m.inv) { this.m.fillHeld ? null : null; }
-      return r ? 'consume' : false;
+      if (r) this.m.turnHeld('water_bucket');
+      return r ? 'swing' : false;
     }
     return false;
   }
@@ -886,7 +907,9 @@ for (const k of AXOLOTL_KINDS) addArt('axolotl_' + k, [64, 64], p => {
    every 2 seconds), and its rider has Breath of the Nautilus, which keeps
    the air bar where it is. The zombie nautilus is the same but undead: it
    burns in daylight, never suffocates out of water, is a tenth faster and
-   dashes a little further. ---- */
+   dashes a little further. A tamed one at full health fed a fish falls in
+   love and breeds (a baby grows up in 20 minutes, each fish a tenth
+   sooner); the undead kind never breeds. ---- */
 const FISH_HEAL = { pufferfish: 2, pufferfish_bucket: 2, cod: 4, salmon: 4, cod_bucket: 4, salmon_bucket: 4, tropical_fish: 4, tropical_fish_bucket: 4, cooked_cod: 10, cooked_salmon: 12 };
 const NAUTILUS_ARMOR = { copper: [4, 0], iron: [5, 0], golden: [7, 0], diamond: [11, 2], netherite: [19, 3] };
 const itemNm = id => (ITEMS[id] ? ITEMS[id].name : '');
@@ -901,9 +924,10 @@ export class Nautilus extends Swimmer {
   static W = 0.875; static H = 0.95; static HEALTH = 15; static SPEED = 0.3; static SWIM = 0.8; static SHADOW = 0.5; static ATTACK = 3;
   static MODEL = 'nautilus'; static TEX = 'nautilus'; static WATER_BREATHER = 'only'; static CATEGORY = 'water_creature'; static NO_DESPAWN = true;
   static RIDE_WATER = 0.325; static RIDE_LAND = 0.044; static DASH = 1.2;
-  constructor(m, type) { super(m, type); this.saddled = false; this.tamed = false; this.body = null; this.dashCool = 0; this.charge = 0; }
+  constructor(m, type) { super(m, type); this.saddled = false; this.tamed = false; this.body = null; this.dashCool = 0; this.charge = 0; this.ageT = 0; this.inLove = 0; }
   registerGoals() {
     this.goals.add(1, new MeleeAttackGoal(this, 1.2, true));
+    this.goals.add(2, new BreedGoal(this, 1));
     this.goals.add(3, new TemptGoal(this, 1.1, Object.keys(FISH_HEAL)));
     this.goals.add(4, new SwimGoal(this, 1, 30));
     this.goals.add(5, new LookAtPlayerGoal(this, 6));
@@ -911,6 +935,13 @@ export class Nautilus extends Swimmer {
     this.targets.add(1, new HurtByTargetGoal(this));
   }
   get armorKind() { return /_nautilus_armor$/; }
+  get isBaby() { return this.ageT < 0; }
+  aiStep() {
+    super.aiStep();
+    if (this.ageT < 0) this.ageT++;
+    else if (this.ageT > 0) this.ageT--;
+    if (this.inLove > 0) { this.inLove--; if (this.age % 10 === 0) this.m.particles('heart', this.pos.x, this.pos.y + this.h + 0.3, this.pos.z, 1, 0.4); }
+  }
   setBody(st) {
     this.body = st || null;
     const a = st && NAUTILUS_ARMOR[itemNm(st.id).replace(/_nautilus_armor$/, '')];
@@ -936,10 +967,12 @@ export class Nautilus extends Swimmer {
       const bucket = /_bucket$/.test(held);
       if (!this.tamed && /^pufferfish/.test(held)) {
         if (RI(3) === 0) this.tame(); else this.m.particles('smoke', this.pos.x, this.pos.y + this.h * 0.8, this.pos.z, 7, this.w * 0.5);
-      } else if (this.tamed && this.health < this.maxHealth) this.heal(heal);
+      } else if (this.ageT < 0) { this.ageT = Math.min(0, this.ageT + Math.floor(-this.ageT * 0.1)); this.m.particles('sparkle', this.pos.x, this.pos.y + this.h, this.pos.z, 4, 0.5); }
+      else if (this.tamed && this.health < this.maxHealth) this.heal(heal);
+      else if (this.tamed && !this.constructor.UNDEAD && this.ageT === 0 && !this.inLove) this.inLove = 600;
       else return false;
       // a bucket of fish leaves the bucket of water
-      if (bucket) { this.m.fillHeld('water_bucket'); return 'swing'; }
+      if (bucket) { this.m.turnHeld('water_bucket'); return 'swing'; }
       return 'consume';
     }
     if (!this.tamed) return false;
@@ -1001,12 +1034,12 @@ export class Nautilus extends Swimmer {
   rootPose(root, t, a, A) { if (!this.inWater) root.multiply(t.makeRotationZ(0.3 * Math.sin(A.age * 0.5))); }
   toJSON() {
     const o = super.toJSON();
-    if (this.saddled) o.sad = 1; if (this.tamed) o.tm = 1;
+    if (this.saddled) o.sad = 1; if (this.tamed) o.tm = 1; if (this.ageT) o.age = this.ageT;
     if (this.body) o.body = itemNm(this.body.id);
     return o;
   }
   fromJSON(o) {
-    super.fromJSON(o); this.saddled = !!o.sad; this.tamed = !!o.tm;
+    super.fromJSON(o); this.saddled = !!o.sad; this.tamed = !!o.tm; this.ageT = o.age || 0;
     if (typeof o.body === 'string' && I[o.body] !== undefined) this.setBody({ id: I[o.body], count: 1 });
   }
 }
@@ -1029,7 +1062,7 @@ export class ZombieNautilus extends Nautilus {
 register('zombie_nautilus', ZombieNautilus);
 // the mount screen, fetched once (ui/containers.js leads back to the entities, so not imported at the top)
 let MountScreenRef = null;
-import('../ui/containers.js?v=28').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
+import('../ui/containers.js?v=29').then(m => { MountScreenRef = m.MountScreen; }).catch(() => {});
 // nautilus armour: bands of the metal round the shell and a plate over its back
 const NAUT_ARMOR_ART = { copper: [0xc8764a, 0x8a4a2a], iron: [0xd8d8d8, 0x9a9a9a], golden: [0xf8d84a, 0xc89a20], diamond: [0x5ae8e0, 0x2aa8a0], netherite: [0x4a4248, 0x2a2428] };
 for (const k in NAUT_ARMOR_ART) addArt('nautilus_armor_' + k, [64, 64], p => {

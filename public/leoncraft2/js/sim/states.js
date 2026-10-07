@@ -48,8 +48,8 @@
                                    it may unlock it), unlocking, throwing out its reward (details.js)
      comparator output             kept in the simulation's state, not the meta
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, MAX_ID } from '../blocks.js?v=28';
-import { SHAPES, MODEL_SHAPES, turn, rotate, faceUV, sheet, buttonModel, element } from '../models.js?v=28';
+import { B, BLOCKS, MAX_ID } from '../blocks.js?v=29';
+import { SHAPES, MODEL_SHAPES, turn, rotate, faceUV, sheet, buttonModel, element } from '../models.js?v=29';
 
 export const STATEFUL = new Uint8Array(MAX_ID);    // its look depends on its meta
 export const SLIGHT = new Uint8Array(MAX_ID);      // so does its light
