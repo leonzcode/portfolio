@@ -16,7 +16,7 @@
    did it. A comparator reads the honey level. The bees inside are kept with
    the dimension's block entities (details.js registerExtra).
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=27';
+import { B, SOLID, FLUID } from '../blocks.js?v=27';
 import { CH } from '../world-const.js?v=27';
 import { I } from '../items.js?v=27';
 import { registerExtra } from '../details.js?v=27';
@@ -28,7 +28,7 @@ const isHive = b => b === B.beehive || b === B.bee_nest;
 export const honeyOf = m => (m >> 2) & 7;
 
 export class Hives {
-  constructor() { this.found = new WeakMap(); this.inside = new Map(); this.n = 0; this.det = null; }
+  constructor() { this.found = new WeakMap(); this.inside = new Map(); this.n = 0; this.det = null; this.homing = new Set(); this.night = false; this.rain = false; }
   save(det) {
     if (det !== this.det) return [];
     const out = [];
@@ -57,9 +57,11 @@ export class Hives {
     this.n++;
     // the bees inside count down
     for (const list of this.inside.values()) for (const e of list) if (e.left > 0) e.left--;
+    // bees finding their way home round leaves or an overhang go a cell at a time
+    if (this.homing.size) this.follow();
     if (this.n % 20) return;
-    const night = (((g.time % 24000) + 24000) % 24000) >= 12542 && (((g.time % 24000) + 24000) % 24000) < 23460;
-    const rain = !!(g.sim && g.sim.weather && g.sim.weather.raining);
+    const night = this.night = (((g.time % 24000) + 24000) % 24000) >= 12542 && (((g.time % 24000) + 24000) % 24000) < 23460;
+    const rain = this.rain = !!(g.sim && g.sim.weather && g.sim.weather.raining);
     const ccx = Math.floor(player.pos.x / CH), ccz = Math.floor(player.pos.z / CH), hives = [];
     for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
       const key = (ccx + dx) + ',' + (ccz + dz), c = world.chunks.get(key);
@@ -106,7 +108,7 @@ export class Hives {
     // bees going home
     for (const e of E.list) {
       if (e.type !== 'bee' || e.dead || e.removed || e.angerT > 0) continue;
-      if (!(e.nectar || night || rain)) continue;
+      if (!(e.nectar || night || rain)) { e.homeD = undefined; continue; }
       let h = e.hive && isHive(world.get(e.hive[0], e.hive[1], e.hive[2])) ? e.hive : null;
       if (!h) {
         let bd = 22 * 22;
@@ -118,15 +120,42 @@ export class Hives {
         e.hive = h;
       }
       const f = FRONT[world.meta(h[0], h[1], h[2]) & 3], fx = h[0] + 0.5 + f[0] * 0.8, fz = h[2] + 0.5 + f[1] * 0.8;
-      const d2 = (fx - e.pos.x) ** 2 + (h[1] + 0.3 - e.pos.y) ** 2 + (fz - e.pos.z) ** 2;
-      if (d2 < 1.6 * 1.6) {
+      // within two blocks of it, it goes in (as near as a bee has to be in the game)
+      const d2 = (h[0] + 0.5 - e.pos.x) ** 2 + (h[1] + 0.5 - e.pos.y) ** 2 + (h[2] + 0.5 - e.pos.z) ** 2;
+      if (d2 < 4) {
         const k = h.join(','), list = this.inside.get(k) || [];
         if (list.length >= 3) continue;
         list.push({ json: e.toJSON ? e.toJSON() : null, left: e.nectar ? 2400 : 600, nectar: !!e.nectar });
         this.inside.set(k, list);
         e.remove();
+        this.homing.delete(e);
         this.dirty(g);
-      } else if (e.flyTo && !e.target) e.flyTo(fx, h[1] + 0.3, fz, 1);
+      } else if (e.flyTo && !e.target) {
+        // straight for its front; one that got no nearer in the last second (or no further along its way
+        // round) looks for a way through the air, and one with none tries again ten seconds later
+        const stuck = e.homePath ? e.homeI === e.homeLast : e.homeD !== undefined && d2 > (Math.sqrt(e.homeD) - 0.5) ** 2;
+        e.homeD = d2; e.homeLast = e.homeI;
+        if (stuck && !(e.homeWait > 0 && e.homeWait--)) {
+          const path = airPath(E.t, e, h);
+          e.homePath = path; e.homeI = e.homeLast = 0; e.dest = null; e.homeWait = path ? 0 : 10;
+          if (path) this.homing.add(e); else this.homing.delete(e);
+        }
+        if (!e.homePath) e.flyTo(fx, h[1] + 0.3, fz, 1);
+      }
+    }
+  }
+  // the bees on their way round: the next cell when they reach the last (none once it is day again, or they are cross)
+  follow() {
+    for (const e of this.homing) {
+      const p = e.homePath;
+      if (!p || e.removed || e.dead || e.angerT > 0 || e.target || !(e.nectar || this.night || this.rain) || e.homeI >= p.length) {
+        if (p && !e.dead && !e.removed && e.homeI >= p.length) e.homeD = undefined;
+        e.homePath = null; this.homing.delete(e);
+        continue;
+      }
+      if (e.dest) continue;
+      const c = p[e.homeI++];
+      e.flyTo(c[0] + 0.5, c[1] + 0.2, c[2] + 0.5, 1);
     }
   }
   release(world, E, x, y, z, m, json) {
@@ -144,7 +173,70 @@ export class Hives {
     if (list) { for (const b of list.splice(0)) { this.release(world, E, x, y, z, world.meta(x, y, z), b.json); } }
     E.forNear(x + 0.5, z + 0.5, 3, e => { if (e.type === 'bee' && !e.dead && !e.stung) { e.angerT = 400 + RI(400); e.target = P; } });
   }
+  /* A nest or hive mined with Silk Touch (hands.js broke): the bees in it go
+     with the block that drops, a grown nest's waiting ones too, each with
+     the time it had left, and none of them comes out or gets angry. */
+  take(world, x, y, z) {
+    const k = x + ',' + y + ',' + z, list = this.inside.get(k) || [], waiting = (world.meta(x, y, z) >> 5) & 3;
+    const out = list.map(e => ({ j: e.json, t: e.left, n: e.nectar ? 1 : 0 }));
+    for (let i = 0; i < waiting && out.length < 3; i++) out.push({ j: null, t: 1 + RI(600), n: 0 });
+    if (this.inside.delete(k)) { const L = lc2(); this.dirty(L && L.game); }
+    return out;
+  }
+  // that block put down again (hands.js placed): its honey level back, its bees inside
+  placed(world, x, y, z, st) {
+    if (st.honey) world.set(x, y, z, world.get(x, y, z), (world.meta(x, y, z) & ~28) | ((st.honey & 7) << 2));
+    if (!Array.isArray(st.bees) || !st.bees.length) return;
+    this.inside.set(x + ',' + y + ',' + z, st.bees.slice(0, 3).map(e => ({ json: e.j || null, left: e.t | 0, nectar: !!e.n })));
+    const L = lc2();
+    this.dirty(L && L.game);
+  }
   dirty(g) { if (g && g.details) g.details.dirty = true; }
+}
+
+/* A way through the air to a hive, for a bee that flying straight at it got
+   no nearer (behind leaves, under an overhang): a best-first search over the
+   cells a bee fits in, six ways, within 24 blocks of the hive and at most
+   2000 cells looked at (leaning hard toward the hive, so a way round is
+   found quickly rather than the shortest); the cells to fly through, the last within two
+   blocks of the hive's middle, or null. */
+function airPath(T, e, h) {
+  const open = (x, y, z) => { const b = T.get(x, y, z); return !SOLID[b] && !FLUID[b]; };
+  const sx = Math.floor(e.pos.x), sy = Math.floor(e.pos.y + 0.3), sz = Math.floor(e.pos.z), hx = h[0], hy = h[1] + 0.3, hz = h[2];
+  const far = (x, y, z) => Math.abs(x - h[0]) > 24 || Math.abs(y - h[1]) > 24 || Math.abs(z - h[2]) > 24;
+  if (far(sx, sy, sz) || !open(sx, sy, sz)) return null;
+  const key = (x, y, z) => ((x - h[0] + 25) * 51 + (y - h[1] + 25)) * 51 + (z - h[2] + 25);
+  const est = (x, y, z) => 2 * (Math.abs(x - hx) + Math.abs(y - hy) + Math.abs(z - hz));
+  const cells = [[sx, sy, sz]], from = [-1], g = [0], f = [est(sx, sy, sz)], seen = new Uint8Array(51 * 51 * 51), heap = [0];
+  seen[key(sx, sy, sz)] = 1;
+  const push = i => { let k = heap.length; heap.push(i); while (k > 0) { const q = (k - 1) >> 1; if (f[heap[q]] <= f[i]) break; heap[k] = heap[q]; k = q; } heap[k] = i; };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      let k = 0;
+      for (;;) { let c = 2 * k + 1; if (c >= heap.length) break; if (c + 1 < heap.length && f[heap[c + 1]] < f[heap[c]]) c++; if (f[heap[c]] >= f[last]) break; heap[k] = heap[c]; k = c; }
+      heap[k] = last;
+    }
+    return top;
+  };
+  const STEP = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+  for (let n = 0; heap.length && n < 2000; n++) {
+    const i = pop(), [x, y, z] = cells[i];
+    if ((x - hx) ** 2 + (y - hy) ** 2 + (z - hz) ** 2 < 3.6) {
+      const path = [];
+      for (let k = i; k > 0; k = from[k]) path.push(cells[k]);
+      return path.reverse();
+    }
+    for (const [dx, dy, dz] of STEP) {
+      const nx = x + dx, ny = y + dy, nz = z + dz, k = key(nx, ny, nz);
+      if (far(nx, ny, nz) || seen[k]) continue;
+      seen[k] = 1;
+      if (!open(nx, ny, nz)) continue;
+      cells.push([nx, ny, nz]); from.push(i); g.push(g[i] + 1); f.push(g[i] + 1 + est(nx, ny, nz));
+      push(cells.length - 1);
+    }
+  }
+  return null;
 }
 
 let ONE = null;

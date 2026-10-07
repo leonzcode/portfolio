@@ -225,8 +225,9 @@ export function fuelTicks(id) { const it = ITEMS[id]; return it && it.fuel ? it.
    map, a filled map's number (js/maps.js); amp, an ominous bottle's Bad Omen
    level (0 for I); instrument, a goat horn's ('ponder_goat_horn'...);
    variant, a painting's (PAINTING_VARIANTS); lodestone, where a compass
-   was linked ({ x, y, z, dim }) */
-const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map', 'amp', 'instrument', 'variant', 'lodestone'];
+   was linked ({ x, y, z, dim }); bees and honey, a nest or hive moved with
+   Silk Touch (the bees in it, [{ j, t, n }], and its honey level) */
+const EXTRA = ['items', 'color', 'flight', 'explosions', 'firework', 'sherds', 'charged', 'pages', 'title', 'author', 'stew', 'patterns', 'map', 'amp', 'instrument', 'variant', 'lodestone', 'bees', 'honey'];
 /* What a suspicious stew made with each flower does: [effect, ticks] (the
    wiki's Suspicious Stew table, Java Edition). The tulips all give weakness. */
 export const STEW_EFFECTS = {
