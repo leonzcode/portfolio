@@ -28,9 +28,9 @@
    the frame position and a salt from the plan, so every chunk a box
    crosses draws the same thing, and nothing takes from g.r except chests.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=24';
-import { id } from '../piece.js?v=24';
-import { hash32 } from '../rand.js?v=24';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=25';
+import { id } from '../piece.js?v=25';
+import { hash32 } from '../rand.js?v=25';
 
 export const PLANS = {};
 

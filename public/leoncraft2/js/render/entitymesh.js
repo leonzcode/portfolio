@@ -17,10 +17,10 @@
    and the particles (smoke puffs, crits, hearts, flames, explosions), each
    one instanced draw.
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=24';
-import { VANILLA } from './vanilla.js?v=24';
-import { lightDefines } from './materials.js?v=24';
-import { GLINT } from './armor.js?v=24';
+import { COMMON, SHADOW, TONEMAP, LDR, LIGHTS } from './glsl.js?v=25';
+import { VANILLA } from './vanilla.js?v=25';
+import { lightDefines } from './materials.js?v=25';
+import { GLINT } from './armor.js?v=25';
 const THREE = window.THREE;
 
 export const ATLAS = 2048;           // the mob texture atlas, in pixels a side (2048: room for every mob of the game)
@@ -253,6 +253,13 @@ function faceList(u, v, w, h, d) {
     [[0, -1, 0], [[-1, -1, 1], [1, -1, 1], [1, -1, -1], [-1, -1, -1]], [u + d + w, v, u + d + 2 * w, v + d]],              // bottom
   ];
 }
+/* three.js works out once, the first time an instanced geometry is drawn,
+   how many instances its attributes can hold, and never draws more than that:
+   after the attributes are replaced with bigger ones it has to be told to
+   look again, or everything past the first size goes undrawn (the particles
+   of a rain shower, the twentieth sheep). */
+function uncap(geo) { delete geo._maxInstanceCount; }
+
 export function modelGeometry(model) {
   const P = [], N = [], T = [], A = [], I = [];
   model.parts.forEach((part, pi) => {
@@ -395,6 +402,7 @@ export class EntityMeshes {
       m[k] = attr;
       m.geo.setAttribute(k, attr);
     }
+    uncap(m.geo);
   }
   growBlobs(cap) {
     this.blobCap = cap;
@@ -402,6 +410,7 @@ export class EntityMeshes {
     this.blobA = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage);
     this.blobGeo.setAttribute('aB', this.blobB);
     this.blobGeo.setAttribute('aA', this.blobA);
+    uncap(this.blobGeo);
   }
   growParts(cap) {
     this.partCap = cap;
@@ -411,6 +420,7 @@ export class EntityMeshes {
     this.partGeo.setAttribute('aP', this.pP);
     this.partGeo.setAttribute('aC', this.pC);
     this.partGeo.setAttribute('aT', this.pT);
+    uncap(this.partGeo);
   }
 
   begin() {

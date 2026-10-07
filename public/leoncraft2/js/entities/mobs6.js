@@ -11,16 +11,16 @@
    the fish's way (mobs3.js). Numbers from the Minecraft Wiki (Java Edition);
    the shapes are boxes in the game's units, the textures our own.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=24';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK, JUMP, TARGET } from './entity.js?v=25';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal,
-  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=24';
-import { Animal, Monster, register, TYPES } from './mobs.js?v=24';
-import { model } from './mobs2.js?v=24';
-import { addArt } from './mobart.js?v=24';
-import { MODELS } from './mobmodels.js?v=24';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=24';
-import { activeDrops } from '../drops.js?v=24';
-import { ITEMS, I } from '../items.js?v=24';
+  MeleeAttackGoal, AvoidGoal, HurtByTargetGoal, NearestPlayerTargetGoal, NearestMobTargetGoal, SwimGoal, randomLandPos } from './ai.js?v=25';
+import { Animal, Monster, register, TYPES } from './mobs.js?v=25';
+import { model } from './mobs2.js?v=25';
+import { addArt } from './mobart.js?v=25';
+import { MODELS } from './mobmodels.js?v=25';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=25';
+import { activeDrops } from '../drops.js?v=25';
+import { ITEMS, I } from '../items.js?v=25';
 
 const PI = Math.PI;
 const R = () => Math.random();

@@ -35,7 +35,8 @@
    view behind the title screen; false falls back to the tiled background),
    gui.lowEnd (no CSS blur), gui.hideHud (F1), gui.hud = { draw(g),
    animates?, isDirty?() } drawn under any screen while in game, and
-   gui.overlays = [{ draw(g), animates? }] drawn over everything.
+   gui.overlays = [{ draw(g), animates? }] drawn over everything (or,
+   with under: true, with the HUD, under any screen).
 
    Drawing helpers (g is the Gui itself, in GUI pixels):
      g.blit(sheet, sx, sy, sw, sh, dx, dy, dw?, dh?)   sheet = name or image
@@ -51,7 +52,7 @@
    textures/gui/. The pack leaves button interiors see-through, so a
    translucent fill goes under them for legible text over the world.
 --------------------------------------------------------------------------- */
-import { Font, cssRGB } from './font.js?v=24';
+import { Font, cssRGB } from './font.js?v=25';
 
 /* ------------------------------ options ------------------------------ */
 
@@ -260,7 +261,7 @@ export class Gui {
     this.ctx = canvas.getContext('2d');
     this.base = base || new URL('../../textures/gui/', import.meta.url).href;
     if (!this.base.endsWith('/')) this.base += '/';
-    this.version = version || '?v=24';
+    this.version = version || '?v=25';
     this.options = options || new Options();
     this.hooks = hooks || {};
     this.sheets = new Map();
@@ -560,8 +561,11 @@ export class Gui {
     ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
     ctx.imageSmoothingEnabled = false;
     if (!this.font) return;
-    if (this.hud && this.inGame && !this.hideHud) {
-      this.hud.draw(this);
+    const hudOn = this.hud && this.inGame && !this.hideHud;
+    if (hudOn) this.hud.draw(this);
+    // what the game draws as part of its HUD, under any screen (the chat: an inventory covers it)
+    for (let i = 0; i < this.overlays.length; i++) if (this.overlays[i].under) this.overlays[i].draw(this);
+    if (hudOn || (s && this.inGame)) {
       // under a menu the game blurs the HUD along with the world (Menu Background Blur)
       const hb = s && this.backgroundKind(s.background) === 'world' ? this._blurPx() : 0;
       if (hb) {
@@ -583,7 +587,7 @@ export class Gui {
       ctx.globalAlpha = 1;
       if (this._tooltip) this.tooltip(this._tooltip, mx, my);
     } else this._setBlur('');
-    for (let i = 0; i < this.overlays.length; i++) this.overlays[i].draw(this);
+    for (let i = 0; i < this.overlays.length; i++) if (!this.overlays[i].under) this.overlays[i].draw(this);
   }
 
   _blurPx() {
@@ -612,8 +616,9 @@ export class Gui {
     const blur = this._blurPx();
     if (k === 'world') {
       this._setBlur(blur ? 'blur(' + (blur * 1.2).toFixed(1) + 'px)' : '');
-      // the in-game darkening; lighter when the blur already hides the detail
-      if (blur) this.gradient(0, 0, W, H, 0x70101010, 0x80101010);
+      /* the in-game darkening: over the blur, the game's in-world menu
+         background, black at a quarter (it was half, which hid the world) */
+      if (blur) this.fill(0, 0, W, H, 0x40000000);
       else this.gradient(0, 0, W, H, 0xC0101010, 0xD0101010);
     } else if (k === 'blurred') {
       this._setBlur(blur ? 'blur(' + (blur * 1.2).toFixed(1) + 'px)' : '');

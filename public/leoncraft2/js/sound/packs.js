@@ -24,10 +24,10 @@
      first click, unless they told it to always allow). Browsers without
      folder handles (Firefox, Safari) can pick the folder each visit instead.
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=24';
-import { openZip } from '../ui/pack.js?v=24';
+import { Sound } from './sound.js?v=25';
+import { openZip } from '../ui/pack.js?v=25';
 
-const V = '?v=24';
+const V = '?v=25';
 
 /* ---- how an entry in sounds.json is read: "name" or { name, volume, pitch, weight, stream, attenuation_distance, type } ---- */
 function normalise(json) {

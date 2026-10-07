@@ -97,6 +97,9 @@ def figure(img, ox, oy, light):
 
 
 def hotbar(img):
+    """nine slots in a black outline, each a two-pixel grey frame (lit along
+    the top) round a 16 x 16 well that is mostly dark, letting a little of the
+    world through, as the classic hotbar does"""
     px = img.load()
     for y in range(22):
         for x in range(182):
@@ -104,15 +107,26 @@ def hotbar(img):
     for y in range(22):
         for x in range(182):
             if x == 0 or y == 0 or x == 181 or y == 21:
-                px[x, y] = (0, 0, 0, 200)
+                px[x, y] = (0, 0, 0, 255)
                 continue
             i = (x - 1) // 20
             sx, sy = (x - 1) - i * 20, y - 1
-            if sx in (0, 19) or sy in (0, 19):
-                light = sx == 0 or sy == 0
-                px[x, y] = (150, 150, 150, 220) if light else (52, 52, 52, 220)
+            n = int((noise(x, y, 9) - 0.5) * 8)
+            if sy == 0: v = 144                      # the lit top
+            elif sy == 1: v = 98
+            elif sy == 18: v = 122
+            elif sy == 19: v = 92
+            elif sx == 0: v = 134 if i == 0 else 122
+            elif sx == 1: v = 96
+            elif sx == 18: v = 124
+            elif sx == 19: v = 94
             else:
-                px[x, y] = (24, 24, 24, 120)
+                v = None
+            if v is not None:
+                px[x, y] = (v + n, v + n, v + n, 255)
+            else:
+                d = 6 + int(noise(x, y, 4) * 6)
+                px[x, y] = (d, d, d, 182)
 
 
 def selector(img):
