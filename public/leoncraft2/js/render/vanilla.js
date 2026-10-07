@@ -355,7 +355,20 @@ function celestial() {
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
     return t;
   };
+  /* round both, a faint glow fading out to the picture's edge, as the game's
+     pictures have: about an eighth of full brightness next to the disc, half
+     that 3 pixels out, nothing at the edge; warm round the sun, cool round
+     the moon (our own curve) */
+  const glow = (data, w, ox, oy, rgb) => {
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+      if (x >= 12 && x < 20 && y >= 12 && y < 20) continue;
+      const r = Math.hypot(x - 15.5, y - 15.5), g = 44 * Math.pow(Math.max(0, 1 - (r - 4) / 11.5), 1.35);
+      const i = ((oy + y) * w + ox + x) * 4;
+      data[i] = Math.round(rgb[0] * g); data[i + 1] = Math.round(rgb[1] * g); data[i + 2] = Math.round(rgb[2] * g); data[i + 3] = 255;
+    }
+  };
   const sun = new Uint8Array(32 * 32 * 4);
+  glow(sun, 32, 0, 0, [1, 1, 0.37]);
   const SUN = [[250, 212, 88], [255, 236, 148], [255, 249, 204], [255, 255, 236]];
   for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
     const ring = Math.min(x, y, 7 - x, 7 - y), c = SUN[ring], i = ((12 + y) * 32 + 12 + x) * 4;
@@ -368,6 +381,7 @@ function celestial() {
   const LIT = [[0, 8], [0, 6], [0, 4], [0, 2], [0, 0], [6, 8], [4, 8], [2, 8]];
   const moon = new Uint8Array(128 * 64 * 4);
   for (let p = 0; p < 8; p++) {
+    glow(moon, 128, (p % 4) * 32, Math.floor(p / 4) * 32, [0.37, 0.55, 1]);
     const ox = (p % 4) * 32 + 12, oy = Math.floor(p / 4) * 32 + 12, [a, b] = LIT[p];
     for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
       const i = ((oy + y) * 128 + ox + x) * 4;
