@@ -157,6 +157,8 @@ export function stateDef(d, m) {
   cache.set(key, v);
   return v;
 }
+// the states kept above let go, for when the blocks' textures are worked out again (worker.js prepare)
+export function forgetStates() { cache.clear(); }
 function variant(d, o) { return Object.assign(Object.create(d), o); }
 function make(d, m) {
   const L = d.L || {};

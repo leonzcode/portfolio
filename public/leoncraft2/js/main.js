@@ -466,7 +466,8 @@ async function boot() {
     const K = 'lc2_menu_at', V = TEX_V + '|' + seed;
     let spawn = null;
     try { const c = JSON.parse(localStorage.getItem(K) || 'null'); if (c && c.v === V && !params.get('at')) spawn = c; } catch (e) {}
-    // (where findSpawn puts the usual title world, worked out once: a first visit need not search 1807 columns for it)
+    // (where findSpawn puts the usual title world, worked out once: a first visit need not search 1807 columns for it;
+    // index.html starts the workers on the chunks round it, so a change to MENU_SEED or this spot goes there too)
     if (!spawn && seed === MENU_SEED && !params.get('at')) spawn = { x: 1101, z: 771 };
     if (!spawn) { spawn = await findSpawn(world); try { localStorage.setItem(K, JSON.stringify({ v: V, x: spawn.x, z: spawn.z })); } catch (e) {} }
     MK('menuSpawn');
