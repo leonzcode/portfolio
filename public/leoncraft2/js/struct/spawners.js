@@ -29,6 +29,7 @@ import { Hearts } from '../entities/hearts.js?v=24';
 import { Raids } from '../entities/raids.js?v=24';
 import { progress } from '../advancements.js?v=24';
 import { hives } from '../entities/hives.js?v=24';
+import { Catalysts } from '../entities/catalyst.js?v=24';
 
 // what a spawner can hold, by its meta (1 up): append only, saves keep the numbers
 export const SPAWNABLE = ['zombie', 'skeleton', 'spider', 'cave_spider', 'blaze', 'creeper', 'husk', 'stray', 'drowned', 'magma_cube', 'silverfish', 'endermite',
@@ -95,6 +96,8 @@ export class Spawners {
     progress().tick();
     // bees going home to their hives, honey (entities/hives.js)
     hives().tick(world, player);
+    // sculk catalysts blooming on the deaths round them (entities/catalyst.js)
+    (this.catalysts || (this.catalysts = new Catalysts())).tick(world, player);
     // the ones out of sight or gone lose their turning mob
     for (const [k, e] of this.shown) if (!seen.has(k)) this.unshow(k, e);
   }
