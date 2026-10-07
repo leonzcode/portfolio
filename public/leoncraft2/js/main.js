@@ -69,7 +69,7 @@ import { initSound, soundWorld, soundParts, soundTick, soundFrame, soundLeave } 
 import { advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements } from './adv/game.js?v=25';
 import { loadEntityArt } from './entities/packart.js?v=25';
 import { ITEM_TEX } from './itemdata.js?v=25';
-import { debugLines } from './ui/debug.js?v=25';
+import { debugLines, F3_HELP } from './ui/debug.js?v=25';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -1126,7 +1126,7 @@ async function boot() {
     // F3 + Q: the list of F3 keys, in the chat as the game prints it
     if (f3Held && e.code === 'KeyQ') {
       f3Combo = true;
-      if (!e.repeat) for (const l of ['§e§l[Debug]:§r Key bindings:', 'F3 + H = Advanced tooltips', 'F3 + N = Cycle previous gamemode <-> spectator', 'F3 + F4 = Open game mode switcher', 'F3 + Q = Show this list']) chat.add(l);
+      if (!e.repeat) for (const l of F3_HELP) chat.add(l);
       e.preventDefault(); return;
     }
     // F3 + N: spectator and back; F3 + F4: the game mode switcher (modes.js)
@@ -1315,6 +1315,7 @@ async function boot() {
     acc += dt;
     while (acc >= 0.05) {
       acc -= 0.05;
+      const tick0 = performance.now();      // (F3's server line: how long a tick takes, on average)
       // riding: the keys go to the vehicle instead (js/entities)
       if (!(g.entities && g.entities.rideTick())) player.tick();
       fluids.step();
@@ -1364,6 +1365,7 @@ async function boot() {
       if (g.net) g.net.tick(now - acc * 1000);
       // every ten seconds, what changed goes into the browser's storage
       if (++g.saveT >= 200) { g.saveT = 0; saveGame(); }
+      g.tickMs = (g.tickMs || 0) * 0.95 + (performance.now() - tick0) * 0.05;
     }
     const alpha = acc / 0.05;
     world.update(player.pos.x, player.pos.z);
