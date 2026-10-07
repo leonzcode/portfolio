@@ -457,13 +457,26 @@ export const TONE_CURVES = { agx: 0, aces: 1, reinhard: 2 };
    uExposure, the same at any time of day. The Nether and the End have no
    sky, and uExposure is their whole exposure. Needs uDim, uExposure and
    uAmbient declared by the host. */
-/* The void (renderer.js sets uVoid each frame; both 0 leave everything as it
-   was, so a shader without it is unchanged): x, the eye below sea level, the
-   sky under the horizon going dark; y, the eye near or below the bottom of
-   the world, the sky and the fog going to black. */
+/* The void (renderer.js sets uVoid each frame; x and y both 0 leave
+   everything as it was, so a shader without it is unchanged): x, the eye
+   below sea level, the game's dark disc under the horizon; y, the eye near or
+   below the bottom of the world, the fog going to black. The game's sky is a
+   plane 16 blocks up and the disc one 4 blocks down, both 512 across, and
+   both are fogged out to the render distance (z, in blocks): so overhead the
+   sky stays blue to the very bottom of the void, and only towards the
+   horizon does it go to the fog's black, and the disc is black straight down
+   and the fog's colour at its rim, a line at the horizon. */
 export const VOID = /* glsl */`
-uniform vec2 uVoid;
-vec3 voidSky(vec3 col, vec3 rd) { return col * (1.0 - uVoid.x * smoothstep(-0.02, -0.2, rd.y)) * (1.0 - uVoid.y); }
+uniform vec3 uVoid;
+float voidFog(vec3 rd, float h) {
+  float r = h / max(abs(rd.y), 1e-4) * length(rd.xz);
+  return smoothstep(0.0, uVoid.z, h + min(r, 512.0) * (1.0 - h / 512.0));
+}
+vec3 voidSky(vec3 col, vec3 rd) {
+  float disc = rd.y < 0.0 && 4.0 / max(-rd.y, 1e-4) * length(rd.xz) < 512.0 ? 1.0 - voidFog(rd, 4.0) : 0.0;
+  float fog = rd.y > 0.0313 ? voidFog(rd, 16.0) : 1.0;
+  return col * (1.0 - uVoid.x * disc) * (1.0 - uVoid.y * fog);
+}
 `;
 export const EXPOSURE = VOID + /* glsl */`
 uniform float uCave;
