@@ -258,7 +258,8 @@ export class Piece {
       if (f < 0) f = SOUTH;
     }
     w.set(X, Y, Z, id('chest'), f);
-    w.chest(X, Y, Z, table, rand.nextInt());
+    // the loot seed, as the game's createChest draws it (a long, kept as text)
+    w.chest(X, Y, Z, table, String(rand.nextLong()));
     return true;
   }
   spawner(w, cb, x, y, z, mob) {

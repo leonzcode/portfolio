@@ -13,6 +13,14 @@ unpack it from a server jar yourself, or let this script read the jar:
 
   python tools/leoncraft2/build_loot.py <folder holding chests/ and dispensers/>
   python tools/leoncraft2/build_loot.py --jar <server.jar>
+  python tools/leoncraft2/build_loot.py --jar <client or server jar> --only archaeology
+
+--only <folder,...> keeps every table already in lootdata.js and takes from
+the source only the tables under those folders (the archaeology tables, what
+suspicious sand and gravel hold, were added this way from 26.1.2, the newest
+jar to hand; their names keep the folder: "archaeology/desert_pyramid").
+Older jars write a table's functions as "functions" with a "function" key;
+both spellings are read.
 
 --jar understands the bundler jar (the real jar sits inside at
 META-INF/versions/<v>/server-<v>.jar). Nothing is copied into the repo, only
@@ -118,7 +126,7 @@ def apply_modifiers(mods, flags, label):
     if isinstance(mods, dict):
         mods = [mods]
     for m in mods:
-        t = ns(m['type'])
+        t = ns(m.get('type') or m['function'])
         if t == 'set_count':
             if m.get('add'):
                 raise SystemExit('%s: set_count with add is not handled' % label)
@@ -204,7 +212,7 @@ def build_entry(e, pool_mods, label):
         flags['table'] = re.sub(r'^chests/', '', ns(v))
     else:
         raise SystemExit('%s: unsupported entry type %r' % (label, e['type']))
-    c1 = apply_modifiers(e.get('modifier'), flags, label)
+    c1 = apply_modifiers(e.get('modifier', e.get('functions')), flags, label)
     c2 = apply_modifiers(pool_mods, flags, label)
     count = c2 or c1
     mn = mx = 1
@@ -229,7 +237,7 @@ def build_table(doc, name):
     for i, p in enumerate(doc['pools']):
         label = '%s pool %d' % (name, i)
         for k in p:
-            if k not in ('rolls', 'entries', 'condition', 'modifier', 'bonus_rolls'):
+            if k not in ('rolls', 'entries', 'condition', 'modifier', 'functions', 'bonus_rolls'):
                 raise SystemExit('%s: pool key %r not handled' % (label, k))
         if 'bonus_rolls' in p and p['bonus_rolls'] not in (0, 0.0):
             raise SystemExit('%s: bonus_rolls are not handled' % label)
@@ -245,7 +253,7 @@ def build_table(doc, name):
             if list(f) != ['chance']:
                 raise SystemExit('%s: pool condition %r not handled' % (label, p['condition']))
             out['chance'] = f['chance']
-        out['entries'] = [build_entry(e, p.get('modifier'), '%s entry %d' % (label, j))
+        out['entries'] = [build_entry(e, p.get('modifier', p.get('functions')), '%s entry %d' % (label, j))
                           for j, e in enumerate(p['entries'])]
         pools.append(out)
     return pools
@@ -253,7 +261,7 @@ def build_table(doc, name):
 
 def read_dir(root):
     docs = {}
-    for sub in ('chests', 'dispensers'):
+    for sub in ('chests', 'dispensers', 'archaeology'):
         base = os.path.join(root, sub)
         if not os.path.isdir(base):
             continue
@@ -273,14 +281,31 @@ def read_jar(path):
         z = zipfile.ZipFile(io.BytesIO(z.read(inner[0])))
     docs = {}
     for nm in z.namelist():
-        m = re.match(r'data/minecraft/loot_table/((?:chests|dispensers)/.+)\.json$', nm)
+        m = re.match(r'data/minecraft/loot_table/((?:chests|dispensers|archaeology)/.+)\.json$', nm)
         if m:
             docs[m.group(1)] = json.loads(z.read(nm).decode('utf-8'))
     return docs
 
 
+def kept_tables():
+    """The tables lootdata.js holds now (one per line), as their JSON."""
+    out = {}
+    if not os.path.exists(OUT):
+        return out
+    for line in open(OUT, encoding='utf-8'):
+        m = re.match(r'^("(?:[^"\\]|\\.)*"):(\[.*\]),?$', line.rstrip('\n'))
+        if m:
+            out[json.loads(m.group(1))] = json.loads(m.group(2))
+    return out
+
+
 def main():
     args = sys.argv[1:]
+    only = None
+    if '--only' in args:
+        i = args.index('--only')
+        only = args[i + 1].split(',')
+        del args[i:i + 2]
     if len(args) == 2 and args[0] == '--jar':
         docs = read_jar(args[1])
     elif len(args) == 1:
@@ -291,6 +316,11 @@ def main():
         raise SystemExit('no loot tables found')
 
     tables = {}
+    if only:
+        tables = kept_tables()
+        docs = {k: v for k, v in docs.items() if k.split('/')[0] in only}
+        if not docs:
+            raise SystemExit('no tables under %s' % ', '.join(only))
     for rel in sorted(docs):
         name = re.sub(r'^chests/', '', rel)
         tables[name] = build_table(docs[rel], name)
@@ -310,7 +340,7 @@ def main():
         lines.append('%s:%s' % (js(name), js(tables[name])))
     head = (
         '/* GENERATED from the game\'s loot table data by tools/leoncraft2/build_loot.py - do not edit by hand.\n'
-        '   %d chest and dispenser tables of Minecraft 26.3: pools, rolls, weighted entries,\n'
+        '   %d chest, dispenser and archaeology tables of Minecraft 26.3: pools, rolls, weighted entries,\n'
         '   count ranges and the flags that change a stack. See the header of\n'
         '   tools/leoncraft2/build_loot.py for the shape of every field. */\n'
     ) % len(tables)

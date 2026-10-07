@@ -74,12 +74,15 @@ class Pen {
   is(x, y, z, name) { return this.get(x, y, z) === id(name); }
   inside(x, y, z) { return this.cb.inside(this.p.wx(x, z), this.p.wy(y), this.p.wz(x, z)); }
   down(x, y, z, name) { this.p.column(this.wr, name, x, y, z, this.cb); }
-  chest(x, y, z, table, f) { return this.p.chest(this.wr, this.cb, this.r, x, y, z, table, f); }
+  // each chest draws its loot seed from a random of its own place, so two chests of one design never hold the same
+  // (the pen's random starts again in every chunk the box crosses)
+  chest(x, y, z, table, f) { return this.p.chest(this.wr, this.cb, this.own(x, y, z), x, y, z, table, f); }
+  own(x, y, z) { return new JRand(BigInt(hash32(this.p.seed, this.p.wx(x, z), this.p.wy(y), this.p.wz(x, z)))); }
   barrel(x, y, z, table) {
     const X = this.p.wx(x, z), Y = this.p.wy(y), Z = this.p.wz(x, z);
     if (!this.cb.inside(X, Y, Z)) return false;
     this.wr.set(X, Y, Z, id('barrel'), 4);
-    this.wr.chest(X, Y, Z, table, this.r.nextInt());
+    this.wr.chest(X, Y, Z, table, String(this.own(x, y, z).nextLong()));
     return true;
   }
   spawner(x, y, z, mob) { return this.p.spawner(this.wr, this.cb, x, y, z, mob); }

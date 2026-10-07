@@ -36,6 +36,7 @@ import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=24';
 import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS } from '../items.js?v=24';
 import { fireworkColour } from '../crafting.js?v=24';
 import { rayBox } from './terrain.js?v=24';
+import { lootStack } from '../containers.js?v=24';
 const THREE = window.THREE;
 
 const PI = Math.PI;
@@ -688,27 +689,31 @@ export function useExtra(m, name, target, take, build) {
 }
 
 /* ---- the brush: held on suspicious sand or gravel, a stroke every half
-   second; ten strokes and what was buried comes out, the block is plain
-   sand or gravel, and the brush takes a point of wear. (What it finds is
-   drawn from the desert's and the trail ruins' lists together: the block
-   does not keep which ruin it was part of.) ---- */
-const SAND_FINDS = ['archer_pottery_sherd', 'miner_pottery_sherd', 'prize_pottery_sherd', 'skull_pottery_sherd', 'diamond', 'tnt', 'gunpowder', 'emerald', 'emerald'];
-const GRAVEL_FINDS = ['arms_up_pottery_sherd', 'brewer_pottery_sherd', 'burn_pottery_sherd', 'danger_pottery_sherd', 'friend_pottery_sherd', 'heart_pottery_sherd',
-  'howl_pottery_sherd', 'sheaf_pottery_sherd', 'coal', 'emerald', 'wheat', 'wooden_hoe', 'gold_nugget', 'iron_axe'];
+   second; ten strokes and what was buried comes out of the face brushed,
+   the block is plain sand or gravel, and the brush takes a point of wear.
+   Left alone for two seconds the strokes start again. What it finds is the
+   block's own archaeology table, rolled from its loot seed (the structure
+   that laid it says which: struct/spawners.js findAt); one with no table
+   (placed from the creative inventory) holds nothing, as in the game. ---- */
 function brushAt(m, t) {
   if (!t || !t.face) return false;
   const b = m.t.get(t.x, t.y, t.z), n = BLOCKS[b] && BLOCKS[b].name;
   if (n !== 'suspicious_sand' && n !== 'suspicious_gravel') return false;
   const k = t.x + ',' + t.y + ',' + t.z, br = m.brushing;
-  if (!br || br.k !== k || m.age - br.last > 20) m.brushing = { k, n: 0, last: m.age };
+  if (!br || br.k !== k || m.age - br.last > 40) m.brushing = { k, n: 0, last: m.age };
   const s = m.brushing;
   if (m.age - s.last >= 10 || s.n === 0) {
     s.last = m.age; s.n++;
     const sand = n === 'suspicious_sand';
     m.particles('poof', t.x + 0.5 + t.face[0] * 0.55, t.y + 0.5 + t.face[1] * 0.55, t.z + 0.5 + t.face[2] * 0.55, 4, 0.2, sand ? [0.86, 0.8, 0.6] : [0.55, 0.52, 0.5]);
     if (s.n >= 10) {
-      const finds = sand ? SAND_FINDS : GRAVEL_FINDS;
-      m.dropItemAt(t.x + 0.5 + t.face[0] * 0.7, t.y + 0.5 + t.face[1] * 0.7, t.z + 0.5 + t.face[2] * 0.7, finds[RI(finds.length)], 1, true, true);
+      // the find, in the block next to the face brushed, lying still
+      const S = typeof window !== 'undefined' && window.__lc2 && window.__lc2.structures, H = m.hooks.hands;
+      const fx = t.x + t.face[0] + 0.5, fy = t.y + t.face[1] + 0.625, fz = t.z + t.face[2] + 0.5;
+      if (S && S.findAt) S.findAt(t.x, t.y, t.z).then(e => {
+        const st = e && lootStack(e);
+        if (st && H && H.drops) H.drops.spawn(fx, fy, fz, st, { vel: [0, 0, 0] });
+      }, () => {});
       m.world.set(t.x, t.y, t.z, sand ? B.sand : B.gravel, 0);
       if (m.mode !== 'creative') m.damageHeld(1);
       m.brushing = null;

@@ -17,38 +17,77 @@
         shuffleAndSplitItems), the lot is shuffled, and each stack goes into the
         next free slot.
 
-   The random source is the same java.util.Random as the structure placement,
-   so a loot seed taken from a piece's random (its nextLong) draws what the game
-   would draw, apart from the enchantments: which enchantment a book or a tool
-   gets needs the whole enchantment list, which this game does not have, so an
-   enchanted stack only says how it should be enchanted and nothing is drawn
-   for it. A book that is enchanted comes out as an enchanted_book.
+   The random source is the game's own (LootTable.fill makes a java.util.Random
+   from the container's loot seed), and every draw is made in the game's
+   order, the enchantments too: enchant_randomly picks one from its list
+   (#on_random_loot when the table names none) and a level, enchant_with_levels
+   runs the enchanting table's selection (enchanting.js) over the list's
+   primary enchantments, so a seed gives the game's chest. A book that is
+   enchanted comes out as an enchanted_book.
 
    Each stack is { slot, item, count } plus, when they apply:
-     ench        { random: true }                  one random enchantment
-                 { from: [ids] }                   one, from this list
-                 { levels: n, from?: '#tag' }      as at an enchanting table of this level
-                 { set: { id: level } }            exactly these
+     ench        { id: level, ... }                its enchantments
      damage      durability left, 0 to 1 (1 is undamaged)
      potion      the potion id (potion, tipped arrow, splash and lingering)
      map         where the map leads, as the game's destination tag
                  (on_treasure_maps...), with deco (the marker), name (the title's
                  translation key) and zoom. A map whose destination is not found
                  is thrown away by the game; the caller does the same.
-     stew        { effect, seconds }               a suspicious stew's effect
+     stew        [effect, ticks]                   a suspicious stew's effect
      amp         an ominous bottle's amplifier
      instrument  a goat horn's instrument
 
    Table names may carry "minecraft:" and "chests/". Dispenser tables are named
    dispensers/trial_chambers/chamber and so on, and "jungle_temple_dispenser" is
-   one too: those default to nine slots, every other table to 27.
+   one too: those default to nine slots, every other table to 27. The
+   archaeology tables (archaeology/desert_pyramid...) are what suspicious sand
+   and gravel hold.
 
    rollLoot(table, seed, { size, biome }): size is the number of slots and biome
    the biome the chest stands in (a few entries only exist in, or everywhere
    but, one biome; with no biome given the ones that need a biome are left out).
+   rollItems(table, seed, { biome }): the stacks alone, in the order drawn, as
+   the game's getRandomItems gives them (a vault's reward, a brushed block's find).
 --------------------------------------------------------------------------- */
 import { JRand, toLong } from './rand.js?v=24';
 import { LOOT } from './lootdata.js?v=24';
+import { I, maxStack } from '../items.js?v=24';
+import { ENCH, ORDER, canApply, isPrimary, selectEnchants } from '../enchanting.js?v=24';
+
+/* The game's enchantment tags (data/minecraft/tags/enchantment), in their own
+   order: a draw walks them in it. A name that is no tag is one enchantment. */
+const TAGS = {
+  non_treasure: ORDER,
+  in_enchanting_table: ORDER,
+  on_random_loot: ORDER.concat(['binding_curse', 'vanishing_curse', 'frost_walker', 'mending']),
+  tradeable: ORDER.concat(['binding_curse', 'vanishing_curse', 'frost_walker', 'mending']),
+  treasure: ['binding_curse', 'vanishing_curse', 'swift_sneak', 'soul_speed', 'frost_walker', 'mending', 'wind_burst'],
+  curse: ['binding_curse', 'vanishing_curse'],
+};
+function enchantList(from) {
+  if (Array.isArray(from)) return from.filter(n => ENCH[n]);
+  const n = String(from || 'on_random_loot').replace(/^#/, '');
+  return TAGS[n] || (ENCH[n] ? [n] : TAGS.on_random_loot);
+}
+// enchant_randomly: one enchantment from the list (only ones that fit the item, a book takes any), at a level from 1 to its most
+function enchantRandomly(r, item, from) {
+  const id = I[item], book = item === 'book';
+  const list = enchantList(from).filter(n => book || (id !== undefined && canApply(n, id)));
+  if (!list.length) return null;
+  const n = list[r.nextInt(list.length)];
+  return { [n]: r.between(1, ENCH[n].maxLevel) };
+}
+// enchant_with_levels: the enchanting table's choice at that level, from the list's enchantments primary for the item
+function enchantWithLevels(r, item, level, from) {
+  const id = I[item];
+  if (id === undefined) return null;
+  const order = enchantList(from), set = new Set(order), book = item === 'book';
+  const out = {};
+  for (const [n, l] of selectEnchants(id, level, r, (name, it) => set.has(name) && (book || isPrimary(name, it)), order)) out[n] = l;
+  return out;
+}
+// the effects that act at once: a stew's duration for them is in ticks already
+const INSTANT = new Set(['saturation', 'instant_health', 'instant_damage']);
 
 const CHEST_SLOTS = 27;
 const DISPENSER_SLOTS = 9;
@@ -103,15 +142,19 @@ function makeStack(r, e) {
     for (const k in f) {
       const v = f[k];
       switch (k) {
-        case 'ench':
-          if (v === true) st.ench = { random: true };
-          else if (v.levels) {
-            st.ench = { levels: r.between(v.levels[0], v.levels[1]) };
-            if (v.from) st.ench.from = v.from;
-          } else if (v.set) st.ench = { set: Object.assign({}, v.set) };
-          else st.ench = { from: v.from.slice() };
-          if (st.item === 'book') st.item = 'enchanted_book';
+        case 'ench': {
+          let e;
+          if (v === true) e = enchantRandomly(r, st.item, null);
+          else if (v.levels) e = enchantWithLevels(r, st.item, r.between(v.levels[0], v.levels[1]), v.from);
+          else if (v.set) e = Object.assign({}, v.set);
+          else e = enchantRandomly(r, st.item, v.from);
+          // (a book that found no enchantment at random stays a book; one enchanted with levels never does)
+          if (e && (Object.keys(e).length || v.levels)) {
+            if (Object.keys(e).length) st.ench = Object.assign(st.ench || {}, e);
+            if (st.item === 'book') st.item = 'enchanted_book';
+          }
           break;
+        }
         case 'damage':
           st.damage = Math.round(floatBetween(r, v[0], v[1]) * 1000) / 1000;
           break;
@@ -121,8 +164,9 @@ function makeStack(r, e) {
         case 'zoom': st.zoom = v; break;
         case 'potion': st.potion = v; break;
         case 'stew': {
-          const pick = v[v.length > 1 ? r.nextInt(v.length) : 0];
-          st.stew = [pick[0], Math.round(floatBetween(r, pick[1], pick[2]) * 20)];
+          // (Util.getRandom draws even from a list of one; the duration is a whole number of seconds)
+          const pick = v[r.nextInt(v.length)], s = r.between(pick[1], pick[2]);
+          st.stew = [pick[0], INSTANT.has(pick[0]) ? s : s * 20];
           break;
         }
         case 'amp': st.amp = r.between(v[0], v[1]); break;
@@ -206,6 +250,28 @@ function splitAndShuffle(stacks, free, r) {
   return keep;
 }
 
+// the stacks a table gives, in the order drawn (no container: a vault's reward, a brushed block's find)
+export function rollItems(table, seed, opts) {
+  const name = resolve(table);
+  if (name === null) return [];
+  const o = opts || {};
+  const r = new JRand(toLong(seed));
+  const out = [];
+  rollTable(r, name, { biome: String(o.biome || '').replace(/^minecraft:/, '') }, out, 0);
+  return bySize(out);
+}
+// the game's stack splitter: a stack of more than the item stacks to (four stews) goes in as several
+function bySize(list) {
+  const out = [];
+  for (const s of list) {
+    if (!(s.count > 0)) continue;
+    const id = I[s.item], max = id === undefined ? 64 : maxStack(id);
+    if (s.count <= max) { out.push(s); continue; }
+    for (let n = s.count; n > 0; n -= max) out.push(Object.assign({}, s, { count: Math.min(max, n) }));
+  }
+  return out;
+}
+
 // the contents of one container, as an array of stacks sorted by slot
 export function rollLoot(table, seed, opts) {
   const name = resolve(table);
@@ -216,8 +282,9 @@ export function rollLoot(table, seed, opts) {
   const r = new JRand(toLong(seed));
   const ctx = { biome: String(o.biome || '').replace(/^minecraft:/, '') };
 
-  const rolled = [];
+  let rolled = [];
   rollTable(r, name, ctx, rolled, 0);
+  rolled = bySize(rolled);
 
   const slots = [];
   for (let i = 0; i < size; i++) slots.push(i);
