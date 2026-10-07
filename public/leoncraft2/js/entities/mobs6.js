@@ -1013,7 +1013,12 @@ export class Nautilus extends Swimmer {
 register('nautilus', Nautilus);
 export class ZombieNautilus extends Nautilus {
   static TEX = 'zombie_nautilus'; static UNDEAD = true; static HEALTH = 15; static WATER_BREATHER = true;
-  static RIDE_WATER = 0.3575; static RIDE_LAND = 0.0485; static DASH = 1.3;
+  static RIDE_WATER = 0.3575; static RIDE_LAND = 0.0485; static DASH = 1.3; static FOLLOW = 24;
+  registerGoals() {
+    super.registerGoals();
+    // a drowned riding it (a jockey) takes it after the player
+    this.targets.add(2, new NearestPlayerTargetGoal(this, true, () => !this.tamed && this.passengers.some(p => p.type === 'drowned')));
+  }
   aiStep() {
     // undead: it burns in daylight out of the water
     if (this.age % 20 === 0 && !this.inWater && this.m.isDay() && this.m.seesSky(Math.floor(this.pos.x), Math.floor(this.pos.y + this.h), Math.floor(this.pos.z))) this.fire = Math.max(this.fire || 0, 160);
