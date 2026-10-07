@@ -15,9 +15,9 @@
      light   block light it gives off (0-15)
      opacity how much sky light it takes away (15 = all, leaves and water 1)
 --------------------------------------------------------------------------- */
-import { DATA } from './blockdata.js?v=26';
-import { MODEL_SHAPES } from './models.js?v=26';
-import { dimBlocks } from './dim/blocks.js?v=26';
+import { DATA } from './blockdata.js?v=27';
+import { MODEL_SHAPES } from './models.js?v=27';
+import { dimBlocks } from './dim/blocks.js?v=27';
 
 export const AIR = 0;
 export const MAX_ID = 4096;   // block ids are 16-bit in the world; this many fit the lookup tables

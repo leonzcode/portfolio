@@ -18,11 +18,11 @@
                   (and its top blown clear), the dragon comes back and the
                   four crystals explode; about 30 seconds in all
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=26';
-import { endSpikes, podiumBlocks } from '../gen/end.js?v=26';
-import { rng, mix32 } from '../noise.js?v=26';
-import { EndCrystal, XpOrb, splitXp } from './entities.js?v=26';
-import { EnderDragon } from './dragon.js?v=26';
+import { B, BLOCKS } from '../blocks.js?v=27';
+import { endSpikes, podiumBlocks } from '../gen/end.js?v=27';
+import { rng, mix32 } from '../noise.js?v=27';
+import { EndCrystal, XpOrb, splitXp } from './entities.js?v=27';
+import { EnderDragon } from './dragon.js?v=27';
 
 const E = y => y + 64;                 // world y -> the engine's index
 
