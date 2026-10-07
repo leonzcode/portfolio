@@ -912,6 +912,7 @@ export class Warden extends Monster {
     this.targets.add(2, new WardenSenseGoal(this));
   }
   onHurt(amount, source) { super.onHurt(amount, source); this.anger = 600; this.idleT = 0; }
+  hurt(amount, source) { return this.emergeT > 0 ? false : super.hurt(amount, source); }
   sonicBoom(t) {
     const ex = this.pos.x, ey = this.pos.y + 1.6, ez = this.pos.z, dx = t.pos.x - ex, dy = t.pos.y + 1 - ey, dz = t.pos.z - ez, l = Math.hypot(dx, dy, dz) || 1;
     for (let i = 1; i < l; i += 0.8) this.m.particles('magic', ex + dx * i / l, ey + dy * i / l, ez + dz * i / l, 1, 0.05, [0.2, 0.7, 0.8]);
@@ -920,6 +921,12 @@ export class Warden extends Monster {
     else if (t.hurt) { t.hurt(10, src); if (t.vel) { t.vel.x += dx / l * 2.5; t.vel.y += 0.5; t.vel.z += dz / l * 2.5; } }
   }
   aiStep() {
+    if (this.emergeT > 0) {
+      // coming up out of the ground (a shrieker's summons): still, and nothing hurts it
+      this.stopMoving();
+      if (--this.emergeT % 4 === 0) this.m.particles('poof', this.pos.x, this.pos.y + 0.2, this.pos.z, 4, 0.6, [0.1, 0.25, 0.3]);
+      return;
+    }
     if (this.boomCool > 0) this.boomCool--;
     if (this.anger > 0) this.anger--;
     if (this.digT >= 0) {
@@ -938,7 +945,7 @@ export class Warden extends Monster {
     super.aiStep();
   }
   loot(drop) { drop('sculk_catalyst', 1); }
-  anim(A) { A.boom = this.boomT > 0 ? 1 - this.boomT / 34 : 0; A.dig = this.digT >= 0 ? this.digT / 100 : 0; A.heart = this.heart; }
+  anim(A) { A.boom = this.boomT > 0 ? 1 - this.boomT / 34 : 0; A.dig = this.digT >= 0 ? this.digT / 100 : this.emergeT > 0 ? this.emergeT / 134 : 0; A.heart = this.heart; }
   rootPose(root, t, a, A) { if (A.dig) root.multiply(t.makeTranslation(0, -A.dig * 3, 0)); }
   layers(out) { out.push(['warden', 'warden_glow', null, false, true]); }
 }
