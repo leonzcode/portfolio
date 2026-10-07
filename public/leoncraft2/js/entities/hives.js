@@ -13,8 +13,11 @@
    At honey level 5, shears take three honeycombs and a glass bottle takes a
    bottle of honey, and the level goes back to 0; unless a campfire is
    burning within 5 blocks under the hive, the bees about turn on whoever
-   did it. A comparator reads the honey level. The bees inside are kept with
-   the dimension's block entities (details.js registerExtra).
+   did it. A comparator reads the honey level. Mined with Silk Touch, a nest
+   or hive keeps its bees and honey level in the item, and put down again
+   they are inside it (hands.js); mined any other way, out they come angry.
+   The bees inside are kept with the dimension's block entities (details.js
+   registerExtra).
 --------------------------------------------------------------------------- */
 import { B, SOLID, FLUID } from '../blocks.js?v=27';
 import { CH } from '../world-const.js?v=27';
