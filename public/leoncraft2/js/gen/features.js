@@ -40,6 +40,8 @@ export const isWater = id => id === B.water;
 const FLUIDISH = new Uint8Array(4096);
 FLUIDISH[B.water] = 1; FLUIDISH[B.lava] = 2;
 for (const n of ['seagrass', 'tall_seagrass', 'tall_seagrass_top_block', 'kelp', 'kelp_plant', 'bubble_column']) if (B[n] !== undefined) FLUIDISH[B[n]] = 1;
+// (and every other block that stands in water: the wet corals and sea pickles, the wet conduit)
+for (const d of BLOCKS) if (d && d.waterlogged) FLUIDISH[d.id] = 1;
 // the fluid in a block: 1 water (including waterlogged plants), 2 lava
 export const fluidOf = id => FLUIDISH[id];
 
@@ -66,6 +68,15 @@ export function tag(name) {
   TAGS.set(name, s);
   return s;
 }
+// the block names in a tag, in its own order (nested tags opened where they stand)
+export function tagList(name, depth = 0) {
+  const out = [];
+  for (const e of FeatureData.tags[strip(name).replace(/^#/, '')] || []) {
+    const n = strip(typeof e === 'string' ? e : e.id);
+    if (n.startsWith('#')) { if (depth < 8) out.push(...tagList(n.slice(1), depth + 1)); } else out.push(n);
+  }
+  return out;
+}
 export const FeatureData = { tags: {}, placed: {}, configured: {}, biome: {} };
 
 /* ---- what a block needs under it to stay (Block.canSurvive), for the
@@ -79,6 +90,9 @@ export function survives(R, st, x, y, z) {
   const below = R.get(x, y - 1, z), bn = BLOCKS[below] ? BLOCKS[below].name : 'air';
   const dirt = DIRTLIKE();
   const fullTop = id => id !== 0 && BLOCKS[id].shape === 'cube' && BLOCKS[id].solid;
+  // corals and sea pickles stand on a whole face; a wall fan hangs on the block behind it (its facing points away)
+  if (/coral(_fan)?$|^sea_pickle$/.test(n.replace(/^lc2_wet_/, ''))) return fullTop(below);
+  if (/coral_wall_fan$/.test(n)) { const f = st.meta & 3; return fullTop(R.get(x + [0, -1, 0, 1][f], y, z + [1, 0, -1, 0][f])); }
   switch (n) {
     case 'sugar_cane': {
       if (below === B.sugar_cane) return true;
@@ -383,6 +397,24 @@ export function provider(p) {
       break;
     }
     case 'rotated_block_provider': { const s = stateFrom(p.state); f = r => { const a = r.nextInt(3); return stateOf({ Name: s.name, Properties: { axis: 'xyz'[a] } }); }; break; }
+    // one block of a list or a tag, any of them as likely
+    case 'random_block': {
+      const names = [];
+      for (const b of (Array.isArray(p.blocks) ? p.blocks : [p.blocks])) {
+        const n = strip(b);
+        if (!n.startsWith('#')) { if (B[n] !== undefined) names.push(n); continue; }
+        for (const e of tagList(n.slice(1))) if (B[e] !== undefined) names.push(e);
+      }
+      const list = names.map(n => stateOf(n));
+      f = r => list[r.nextInt(list.length)];
+      break;
+    }
+    // another provider's block turned to face one way (a wall coral on the side of its block)
+    case 'rotated': {
+      const src = provider(p.state), dir = p.direction;
+      f = (r, x, y, z, R) => { const s = src(r, x, y, z, R); return s ? stateOf({ Name: s.name, Properties: Object.assign({}, s.props || {}, { facing: dir }) }) : s; };
+      break;
+    }
     case 'randomized_int_state_provider': case 'randomized_int': {
       const src = provider(p.source);
       f = (r, x, y, z) => {
@@ -482,6 +514,16 @@ export function predicate(p) {
     case 'has_sturdy_face': f = (R, x, y, z) => { const b = R.get(x + ox, y + oy, z + oz); return b !== 0 && BLOCKS[b].shape === 'cube' && BLOCKS[b].solid; }; break;
     case 'inside_world_bounds': f = (R, x, y, z) => y + oy >= MIN_Y && y + oy <= MAX_Y; break;
     case 'unobstructed': f = () => true; break;
+    // every block of a box round the spot passes (the desert well wants ground under all of its 5 x 5)
+    case 'volume_match': {
+      const q = predicate(p.match), lo = p.min || [0, 0, 0], hi = p.max || [0, 0, 0];
+      f = (R, x, y, z) => {
+        for (let dy = lo[1]; dy <= hi[1]; dy++) for (let dz = lo[2]; dz <= hi[2]; dz++) for (let dx = lo[0]; dx <= hi[0]; dx++)
+          if (!q(R, x + ox + dx, y + oy + dy, z + oz + dz)) return false;
+        return true;
+      };
+      break;
+    }
     default: console.warn('block predicate not handled:', t); f = () => false;
   }
   p._pred = f;
@@ -813,7 +855,24 @@ export function applyModifier(D, m, r, x, y, z, top, next) {
       return;
     }
     case 'fixed_placement': for (const p of m.positions) next(p[0], p[1], p[2]); return;
-    case 'cuboid': case 'randomly_selected': case 'carving_mask':
+    // one of several placements, picked at random
+    case 'randomly_selected': {
+      const list = m.placements || [];
+      if (list.length) applyModifier(D, list[r.nextInt(list.length)], r, x, y, z, top, next);
+      return;
+    }
+    /* Every cell of a box from here (x and z across xz_size + 1, y up y_size + 1): the cells of its
+       faces always, its edges and its inside when asked for. With neither it is a hollow box with its
+       edges left open, the shape of the warm ocean's coral mushrooms. */
+    case 'cuboid': {
+      const sx = sampleInt(m.xz_size, r), sy = sampleInt(m.y_size, r), sz = sx;
+      for (let i = 0; i <= sx; i++) for (let j = 0; j <= sy; j++) for (let k = 0; k <= sz; k++) {
+        const on = (i === 0 || i === sx) + (j === 0 || j === sy) + (k === 0 || k === sz);
+        if (on === 1 || (on >= 2 && m.include_edges) || (on === 0 && m.include_interior)) next(x + i, y + j, z + k);
+      }
+      return;
+    }
+    case 'carving_mask':
       D.unknownModifier(strip(m.type));
       return;
   }
@@ -919,7 +978,11 @@ FEATURES.simple_block = (D, c, r, x, y, z) => {
     const above = R.get(x, y + 1, z);
     if (!isAirId(above) && !(d.waterlogged && above === B.water)) return false;
     placeDouble(R, st, x, y, z);
-  } else R.set(x, y, z, st.id, st.meta);
+  } else {
+    // a coral or a sea pickle put into water stays in it (the game's waterlogged state: a wet block of its own here)
+    const wet = R.get(x, y, z) === B.water ? B['lc2_wet_' + d.name] : undefined;
+    R.set(x, y, z, wet !== undefined ? wet : st.id, st.meta);
+  }
   return true;
 };
 const isDoubleData = d => d.shape === 'tall' || d.tall === true;

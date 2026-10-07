@@ -66,6 +66,17 @@ const ON_WALL = new Set(['wall_torch', 'ladder', 'button', 'wall_sign', 'head', 
    to set (empty when it cannot go there), given the world, the pick result,
    the block in hand and the player. */
 export function placement(world, hit, id, player) {
+  // a pickle clicked onto a wet pickle stacks as onto a dry one
+  const d0 = BLOCKS[id], wetId = d0 ? B['lc2_wet_' + d0.name] : undefined;
+  const out = placeDry(world, wetId !== undefined && hit && hit.b === wetId ? Object.assign({}, hit, { b: id }) : hit, id, player);
+  // corals, coral fans and sea pickles put into still water stay in it: their wet copies (blocks.js)
+  for (const e of out) {
+    const wet = B['lc2_wet_' + BLOCKS[e[3]].name], here = world.get(e[0], e[1], e[2]);
+    if (wet !== undefined && ((FLUID[here] === 1 && !(world.meta(e[0], e[1], e[2]) & 15)) || here === wet)) e[3] = wet;
+  }
+  return out;
+}
+function placeDry(world, hit, id, player) {
   const out = [];
   if (!hit || !hit.face) return out;
   const n = hit.face;

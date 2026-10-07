@@ -31,6 +31,7 @@ import { Carvers } from './carvers.js?v=24';
 import { stateOf } from './states.js?v=24';
 import './trees.js?v=24';
 import './misc.js?v=24';
+import './shapes.js?v=24';
 
 const MIN_Y = -64, SEA_LEVEL = 63;
 const strip = s => (typeof s === 'string' && s.startsWith('minecraft:') ? s.slice(10) : s);
