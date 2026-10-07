@@ -51,7 +51,7 @@ let packs = [];                   // the packs, the first that has an event wins
 const listenerPos = { x: 0, y: 0, z: 0 };
 const fwd = { x: 0, y: 0, z: -1 }, upv = { x: 0, y: 1, z: 0 };
 const unlockers = [];
-let subtitleSink = null;          // (key, x, y, z, relative) for the subtitles (subtitles.js)
+let subtitleSink = null;          // (key, x, y, z, relative) for the subtitles (captions.js)
 let onLoad = [];
 
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;

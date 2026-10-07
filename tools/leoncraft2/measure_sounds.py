@@ -9,7 +9,8 @@ loud they are, where their energy sits in pitch and the shape of their
 spectrum (soundlib.features), averaged over the event's recordings with the
 volume sounds.json plays each at. Also each event's attenuation distance,
 where sounds.json sets one, and a short signature of its recordings' names
-so events that play the same ones can share them.
+so events that play the same ones can share them, and the key of the
+caption each event shows (not its words).
 
 Nothing of Mojang's is copied: the output (tools/leoncraft2/sound_targets.json)
 is a table of measurements that build_sounds.py uses to choose openly licensed
@@ -95,25 +96,12 @@ def main():
         if att:
             row['range'] = att[0]
         out['events'][ev] = row
-    # the subtitle each event shows, and its English words (from the version's own en_us.json)
-    lang = {}
-    vdir = os.path.join(a.mc, 'versions')
-    for v in sorted(os.listdir(vdir)):
-        try:
-            j = json.load(open(os.path.join(vdir, v, v + '.json')))
-            if str(j.get('assetIndex', {}).get('id')) == str(index) and not j.get('inheritsFrom'):
-                import zipfile
-                lang = json.loads(zipfile.ZipFile(os.path.join(vdir, v, v + '.jar')).read('assets/minecraft/lang/en_us.json').decode('utf-8'))
-                out['version'] = v
-                break
-        except Exception:
-            continue
+    # the subtitle key each event shows (the words themselves are not taken: js/sound/subtitles.js has our own)
     out['subtitles'] = {}
     for ev, e in sj.items():
         k = e.get('subtitle')
         if k:
             out['subtitles'][ev] = k
-    out['text'] = {k: lang[k] for k in sorted(set(out['subtitles'].values())) if k in lang}
     # the music events by name, and how loud the game's music is (a few tracks of music.game)
     out['music_events'] = sorted(e for e in sj if e.startswith('music'))
     tracks = [s if isinstance(s, dict) else {'name': s} for s in sj.get('music.game', {}).get('sounds', [])]

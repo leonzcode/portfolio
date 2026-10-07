@@ -11,49 +11,108 @@
                only its extra damage, and no sound); a hit that kills plays
                the death sound instead
      step      every 1/0.6 blocks walked on the ground: the mob's own step
-               sound (volume 0.15) or the block's
-     voice     pitch 1 +- 0.2 (1.5 for a baby), the mob's volume (1; a ghast
-               5, a slime 0.4 a size), hostile ones on Hostile Mobs, the
-               rest on Friendly Mobs
-   Sounds are named by the mob's id: entity.<id>.ambient and so on. With the
-   player's own Minecraft sounds every mob has its own; Leoncraft's sounds
-   give the common ones theirs, and the rest a hurt and a death.
+               sound or the block's
+     voice     pitch 1 +- 0.2 (1.5 for a baby), at the mob's own volume (the
+               Minecraft Wiki's sound tables: a cow 0.4, a bat 0.1, a ghast
+               5...), hostile ones on Hostile Mobs, the rest on Friendly Mobs
+   Sounds are named as the game names them: entity.<name>.ambient and so on,
+   where a few mobs borrow another's (a cave spider is a spider to the ear, a
+   mooshroom a cow) and some speak differently by what they are doing (a cat
+   that is not tamed, an axolotl out of water, a villager trading).
 
    Arrows: a mob's arrow leaving its bow plays the mob's shoot sound, and
    any arrow sticking in a block plays entity.arrow.hit.
 --------------------------------------------------------------------------- */
 import { Sound } from './sound.js?v=22';
-import { blockSound, voice } from './sfx.js?v=22';
+import { blockSound, voice, spread } from './sfx.js?v=22';
 
 const R = Math.random;
-const ANGRY = { wolf: 'growl', enderman: 'scream', piglin: 'angry', zombified_piglin: 'angry', polar_bear: 'warning', bee: null };
-const QUIET = { creeper: 1, slime: 1, magma_cube: 1, iron_golem: 1, xp_orb: 1, bat: 0 };
+// the mobs that sound as another does (the game's own sounds.json has no events of their own)
+const NAME = { cave_spider: 'spider', mooshroom: 'cow', trader_llama: 'llama', pufferfish: 'puffer_fish' };
+// the game's volume for each mob's voice where it is not 1: one number, or [ambient, hurt, death]
+const VOL = {
+  bat: 0.1, bee: 0.4, cow: 0.4, mooshroom: 0.4, squid: 0.4, ghast: 5, ender_dragon: 5, warden: 4, drowned: 0.9,
+  horse: 0.8, donkey: 0.8, mule: 0.8, skeleton_horse: 0.8, zombie_horse: 0.8, camel: 0.8,
+  hoglin: [0.9, 0.8, 0.9], zoglin: [0.9, 0.9, 0.93], piglin_brute: [0.9, 0.64, 0.8], rabbit: [0.25, 0.5, 0.5],
+  cat: [0.6, 0.65, 0.75], ocelot: [0.6, 0.45, 0.45], fox: [0.8, 0.75, 0.9], goat: [1, 0.65, 0.65], panda: [1, 0.82, 0.82],
+  phantom: [0.8, 0.75, 1], turtle: [0.8, 1, 1], allay: [0.1, 0.32, 0.24], parrot: [0.7, 1, 1], guardian: [0.1, 1, 1],
+};
+// pitch multipliers, as the game's: [ambient, hurt, death]
+const PITCH = { bat: [0.95, 0.95, 0.95], allay: [1, 1.5, 1], cat: [1, 1, 0.9], salmon: [1, 0.8, 0.8], tropical_fish: [1, 1, 0.8] };
+// their own footsteps, and how loud (the rest step with the block's sound, or none)
+const STEP = { iron_golem: 1, warden: 3, camel: 0.5, camel_husk: 0.5, strider: 0.25, piglin_brute: 0.1125 };
+const STEP_OF = { zombified_piglin: 'zombie' };
+// heard on the Hostile Mobs slider (the game's sound source), the rest on Friendly Mobs
+const HOSTILE = new Set(('blaze bogged breeze cave_spider creaking creeper drowned elder_guardian ender_dragon enderman endermite evoker ghast guardian '
+  + 'hoglin husk magma_cube parched phantom piglin piglin_brute pillager ravager shulker silverfish skeleton slime spider stray vex vindicator '
+  + 'warden witch wither wither_skeleton zoglin zombie zombie_villager zombified_piglin').split(' '));
+// what an angry one says instead of its usual
+const ANGRY = { wolf: 'growl', enderman: 'scream', piglin: 'angry', piglin_brute: 'angry', zombified_piglin: 'angry', hoglin: 'angry', zoglin: 'angry', warden: 'angry' };
+
+const part = (v, i) => typeof v === 'number' ? v : v ? v[i] : 1;
+
+/* What a mob says when it speaks of its own accord (null: nothing), by the
+   game's rules for the few that have more than one thing to say. */
+function ambientOf(e, type) {
+  switch (type) {
+    case 'cat': return e.tamed ? (R() < 0.25 ? 'purreow' : 'ambient') : 'stray_ambient';
+    case 'wolf': if (e.target) return 'growl'; return R() < 1 / 3 ? (e.tamed && e.health < e.maxHealth / 2 ? 'whine' : 'pant') : 'ambient';
+    case 'allay': return e.equip && e.equip.mainhand ? 'ambient_with_item' : 'ambient_without_item';
+    case 'axolotl': return e.inWater ? 'idle_water' : 'idle_air';
+    case 'breeze': return e.onGround ? 'idle_ground' : 'idle_air';
+    case 'dolphin': return e.inWater ? 'ambient_water' : 'ambient';
+    case 'drowned': return e.inWater ? 'ambient_water' : 'ambient';
+    case 'skeleton_horse': return e.inWater ? 'ambient_water' : 'ambient';
+    case 'guardian': case 'elder_guardian': return e.inWater ? 'ambient' : 'ambient_land';
+    case 'turtle': return e.inWater ? null : 'ambient_land';
+    case 'polar_bear': return e.baby ? 'ambient_baby' : 'ambient';
+    case 'sniffer': return 'idle';
+    case 'fox': return e.sleeping ? 'sleep' : 'ambient';
+    case 'villager': case 'wandering_trader': return e.sleeping ? null : e.customer ? 'trade' : 'ambient';
+    // these say nothing unprompted
+    case 'creeper': case 'slime': case 'magma_cube': case 'iron_golem': case 'copper_golem': case 'bee': case 'tadpole': case 'pufferfish': return null;
+  }
+  return e.target && ANGRY[type] ? ANGRY[type] : 'ambient';
+}
+// the hurt or death event, where being out of water or small changes it
+function hurtOf(e, type, kind) {
+  if (type === 'guardian' || type === 'elder_guardian') return e.inWater ? kind : kind + '_land';
+  if (type === 'drowned') return e.inWater ? kind + '_water' : kind;
+  if (type === 'turtle' && e.baby) return kind + '_baby';
+  if ((type === 'slime' || type === 'magma_cube') && (e.size | 0) <= 1) return kind + '_small';
+  return kind;
+}
 
 export class MobSounds {
   constructor() { this.n = 0; }
-  // the listener's position (sound.js), so far-off mobs cost nothing
+  // at: the listener's position (sound.js), so far-off mobs cost nothing
   tick(E, at) {
     if (!E || !E.list) return;
     this.n++;
     for (const e of E.list) {
       if (e.removed) continue;
       let s = e._snd;
-      if (!s) s = e._snd = { amb: -80 + ((R() * 80) | 0), hurt: e.hurtTime | 0, dead: !!e.dead, md: 0, next: 1, stuck: !!e.stuck, new: true };
+      if (!s) s = e._snd = { amb: -80 + ((R() * 80) | 0), hurt: e.hurtTime | 0, dead: !!e.dead, md: 0, next: 1, stuck: !!e.stuck, new: true, ground: !!e.onGround, vxp: e.vxp | 0, shake: e.shakeT | 0 };
       const dx = e.pos.x - at.x, dy = e.pos.y - at.y, dz = e.pos.z - at.z, d2 = dx * dx + dy * dy + dz * dz;
       if (e.type === 'arrow' || e.type === 'spectral_arrow') { this.arrow(e, s); continue; }
-      if (e.paddle && e.rowing) { if (d2 < 40 * 40) this.paddles(e); continue; }
+      if (e.paddle && e.rowing) { if (d2 < 16 * 16) this.paddles(e); continue; }
       if (typeof e.health !== 'number' || !e.maxHealth) { s.new = false; continue; }
-      const type = e.type, C = e.constructor, cat = C.HOSTILE ? 'hostile' : 'neutral';
-      const vol = type === 'ghast' ? 5 : (type === 'slime' || type === 'magma_cube') ? 0.4 * (e.size || 1) : 1;
-      const near = d2 < (16 * Math.max(1, vol) + 4) ** 2;
+      const type = e.type, name = 'entity.' + (NAME[type] || type) + '.';
+      const cat = HOSTILE.has(type) || e.constructor.HOSTILE ? 'hostile' : 'neutral';
+      const slime = type === 'slime' || type === 'magma_cube';
+      const v = slime ? 0.4 * Math.max(0, (e.size | 0) - 1) : VOL[type];
+      // in earshot of the loudest thing it says (a sound is heard 16 blocks away, further for one over volume 1)
+      const reach = 16 * Math.max(1, typeof v === 'number' ? v : v ? Math.max(v[0], v[1], v[2]) : 1, STEP[type] || 0);
+      const near = d2 < reach * reach;
       const baby = !!(e.isBaby || e.baby);
+      const P = PITCH[type];
       // hurt or killed
       const h = e.hurtTime | 0;
       if (e.dead && !s.dead) {
         s.dead = true;
-        if (near) Sound.play('entity.' + type + '.death', e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, vol, voice(baby), cat);
+        if (near) Sound.play(name + hurtOf(e, type, 'death'), e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, part(v, 2), voice(baby) * part(P, 2) * (slime ? 0.8 : 1), cat);
       } else if (h > s.hurt && !e.dead) {
-        if (near) Sound.play('entity.' + type + '.hurt', e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, vol, voice(baby), cat);
+        if (near) Sound.play(name + hurtOf(e, type, 'hurt'), e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, part(v, 1), voice(baby) * part(P, 1) * (slime ? 0.8 : 1), cat);
         s.amb = -80;
       }
       s.hurt = h;
@@ -61,20 +120,31 @@ export class MobSounds {
       // speaking
       if (((R() * 1000) | 0) < s.amb++) {
         s.amb = -80;
-        if (near && !QUIET[type]) {
-          const a = e.target && ANGRY[type] ? ANGRY[type] : 'ambient';
-          Sound.play('entity.' + type + '.' + a, e.pos.x, e.pos.y + e.h * 0.85, e.pos.z, vol, voice(baby), cat);
-        }
+        const a = near && ambientOf(e, type);
+        if (a) Sound.play(name + a, e.pos.x, e.pos.y + e.h * 0.85, e.pos.z, part(v, 0), voice(baby) * part(P, 0), cat);
+      }
+      // a villager or a wandering trader: yes to a trade made, no to one it cannot make
+      if (e.vxp !== undefined || e.shakeT !== undefined) {
+        if ((e.vxp | 0) > s.vxp && near) Sound.play(name + 'yes', e.pos.x, e.pos.y + e.h * 0.85, e.pos.z, 1, voice(baby), cat);
+        if ((e.shakeT | 0) > s.shake && near) Sound.play(name + 'no', e.pos.x, e.pos.y + e.h * 0.85, e.pos.z, 1, voice(baby), cat);
+        s.vxp = e.vxp | 0; s.shake = e.shakeT | 0;
+      }
+      // a slime or magma cube: a squish as it lands, a smaller one for a small one (1 to 1.5 high)
+      if (slime) {
+        if (e.onGround && !s.ground && near && v > 0) Sound.play(name + ((e.size | 0) <= 1 ? 'squish_small' : 'squish'), e.pos.x, e.pos.y, e.pos.z, v, (spread() * 0.2 + 1) / 0.8, cat);
+        if (!e.onGround && s.ground && e.vel && e.vel.y > 0.1 && near && v > 0) Sound.play(name + ((e.size | 0) <= 1 ? 'jump_small' : 'jump'), e.pos.x, e.pos.y, e.pos.z, v, (spread() * 0.2 + 1) * ((e.size | 0) <= 1 ? 1.4 : 0.8), cat);
+        s.ground = !!e.onGround;
+        continue;
       }
       // footsteps
-      if (!near || !e.onGround) { s.md += 0; continue; }
+      if (!near || !e.onGround) continue;
       const mx = e.pos.x - e.prev.x, mz = e.pos.z - e.prev.z;
       s.md += Math.sqrt(mx * mx + mz * mz) * 0.6;
       if (s.md > s.next) {
         s.next = Math.floor(s.md) + 1;
-        const own = 'entity.' + type + '.step';
-        if (Sound.has(own)) Sound.play(own, e.pos.x, e.pos.y, e.pos.z, 0.15, 1, cat);
-        else {
+        const own = 'entity.' + (STEP_OF[type] || NAME[type] || type) + '.step', sr = 16 * Math.max(1, STEP[type] || 0);
+        if (d2 < sr * sr && Sound.has(own)) Sound.play(own, e.pos.x, e.pos.y, e.pos.z, STEP[type] || 0.15, 1, cat);
+        else if (d2 < 256) {
           const w = E.world || (E.t && E.t.w);
           const b = w ? w.get(Math.floor(e.pos.x), Math.floor(e.pos.y - 0.2), Math.floor(e.pos.z)) : 0;
           if (b) blockSound('step', b, e.pos.x, e.pos.y, e.pos.z);
@@ -104,7 +174,7 @@ export class MobSounds {
       s.new = false;
       const o = e.owner;
       // (the player's own bow plays its sound where the bow is drawn: game.js)
-      if (o && !o.isPlayer && o.type && e.age < 3) Sound.play('entity.' + o.type + '.shoot', o.pos.x, o.pos.y + 1.5, o.pos.z, 1, 1 / (R() * 0.4 + 0.8), o.constructor.HOSTILE ? 'hostile' : 'neutral');
+      if (o && !o.isPlayer && o.type && e.age < 3) Sound.play('entity.' + (NAME[o.type] || o.type) + '.shoot', o.pos.x, o.pos.y + 1.5, o.pos.z, 1, 1 / (R() * 0.4 + 0.8), HOSTILE.has(o.type) ? 'hostile' : 'neutral');
     }
     if (e.stuck && !s.stuck) Sound.play('entity.arrow.hit', e.pos.x, e.pos.y, e.pos.z, 1, 1.2 / (R() * 0.2 + 0.9), 'neutral');
     s.stuck = !!e.stuck;
