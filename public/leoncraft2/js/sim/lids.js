@@ -153,6 +153,8 @@ export class Lids {
     const e = this.entry(x, y, z);
     if (!e) return;
     e.viewers++;
+    // (heard by sculk sensors, as the game's container_open)
+    if (this.sim.sculk) this.sim.sculk.vibrate(x + 0.5, y + 0.5, z + 0.5, 15, true);
     // a barrel: its open top is a state of the block
     if (e.kind === 'barrel') { const m = this.w.meta(x, y, z); if (!(m & 8)) this.w.set(x, y, z, e.b, m | 8); return; }
     this.show(e);
@@ -161,6 +163,7 @@ export class Lids {
     const e = this.list.get(key(x, y, z));
     if (!e) return;
     e.viewers = Math.max(0, e.viewers - 1);
+    if (this.sim.sculk) this.sim.sculk.vibrate(x + 0.5, y + 0.5, z + 0.5, 14, true);
     if (e.kind === 'barrel' && !e.viewers) {
       const m = this.w.meta(x, y, z);
       if (this.w.get(x, y, z) === e.b && (m & 8)) this.w.set(x, y, z, e.b, m & ~8);

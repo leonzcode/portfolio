@@ -35,6 +35,7 @@ import { installFire } from './fire.js?v=22';
 import { Bodies } from './bodies.js?v=22';
 import { Lids } from './lids.js?v=22';
 import { Beams } from './beams.js?v=22';
+import { Sculk } from './sculk.js?v=22';
 import { installBeds } from './beds.js?v=22';
 import { Weather } from './weather.js?v=22';
 import { installRedstone } from './redstone.js?v=22';
@@ -86,6 +87,8 @@ export class Sim {
     // chest and shulker box lids, open barrels, ringing bells (sim/lids.js); beacon beams (sim/beams.js)
     this.lids = new Lids(this);
     this.beams = new Beams(this);
+    // sculk sensors hearing vibrations, shriekers shrieking (sim/sculk.js)
+    this.sculk = new Sculk(this);
     // (sim/dispense.js has dispensers too; containers.js's run them, so they are not installed twice)
     this.w.onSet = (x, y, z, ob, om, nb, nm) => this.onSet(x, y, z, ob, om, nb, nm);
   }
@@ -95,6 +98,7 @@ export class Sim {
     this.bodies.dispose();
     this.lids.dispose();
     this.beams.dispose();
+    this.sculk.dispose();
     this.weather.dispose();
     this.msg.dispose();
   }
@@ -197,6 +201,7 @@ export class Sim {
     const c = this.w.chunkAt(x, z);
     if (c && c.rtc) { const s = y >> 4; if (this.RT[ob]) c.rtc[s]--; if (this.RT[nb]) c.rtc[s]++; }
     if (this.silent) return;
+    if (this.sculk) this.sculk.changed(x, y, z, ob, om, nb, nm);
     const kind = this.quiet ? 2 : 0;
     if (ob !== nb && !this.quiet) {
       const h = this.beh[ob]; if (h && h.removed) h.removed(this, x, y, z, om, nb);

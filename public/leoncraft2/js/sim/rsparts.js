@@ -351,6 +351,7 @@ export function installParts(sim) {
     if (n === 'respawn_anchor') return Math.floor(15 * Math.min(4, m & 7) / 4);
     if (/copper_bulb$/.test(n)) return m & 1 ? 15 : 0;
     if (n === 'jukebox') { const D = S.game && S.game.details; return D && D.jukeboxSignal ? D.jukeboxSignal(x, y, z) : 0; }
+    if (n === 'sculk_sensor' || n === 'calibrated_sculk_sensor') return S.sculk ? S.sculk.frequency(x, y, z) : 0;
     if (n === 'chiseled_bookshelf' || n === 'lectern') {
       const D = S.game && S.game.details;
       return D ? (n === 'lectern' ? D.lecternSignal(x, y, z) : D.shelfSignal(x, y, z)) : 0;
