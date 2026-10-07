@@ -213,7 +213,9 @@ const PAINTINGS = PAINTING_VARIANTS;
 /* Each picture our own, from the name's seed: one of four scenes (rolling
    hills by day, a sea at sunset, a night with a moon and stars, a few bold
    shapes), in flat bands of colour with a pixel of grain, a sun or moon,
-   trees or figures, and a dark frame. */
+   trees or figures, and a dark frame. Where Pixel Perfection CE has a
+   painting of the same name (or a player opened their own copy of the game)
+   that picture is drawn over this one (entities/packart.js). */
 const SCENES = [
   { sky: [0x7ab0e0, 0xb8d8f0], far: 0x6a9a5a, near: 0x4a7a3a, ground: 0x8a6a40, sun: 0xf8e8a0 },
   { sky: [0xd8784a, 0xf0c070], far: 0x3a5a8a, near: 0x2a4a7a, ground: 0x1a3a6a, sun: 0xf8d060 },

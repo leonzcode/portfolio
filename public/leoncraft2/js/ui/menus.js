@@ -900,7 +900,7 @@ export class LanguageScreen extends OptionsListScreen {
 const CREDITS = [
   ['Leoncraft 2', 0xFFFF55], ['Made by Leon Zhao.'], [''],
   ['Textures', 0xFFFF55],
-  ['Block textures, GUI art and the font:'],
+  ['Block textures, GUI art, the font and the older paintings:'],
   ['Pixel Perfection by XSSheep, in its Community Edition,'], ['by XSSheep and contributors.'],
   ['github.com/Athemis/PixelPerfectionCE', 0, 'https://github.com/Athemis/PixelPerfectionCE'],
   ['Newer blocks, many items, the leggings and the trim colours:'], ['Pixel Perfection Legacy, by Nova_Wostra.'],
@@ -996,8 +996,10 @@ export class ResourcePacksScreen extends Screen {
   get selected() { return this.packs.filter(p => p.enabled); }
   init() {
     const W = this.width, H = this.height, g = this.gui;
-    this.left = this.add(new ScrollList(W / 2 - 204, 48, 200, H - 48 - 58, 36, { rowWidth: 200 - 22 }));
-    this.right = this.add(new ScrollList(W / 2 + 4, 48, 200, H - 48 - 58, 36, { rowWidth: 200 - 22 }));
+    this.left = this.add(new ScrollList(W / 2 - 204, 48, 200, H - 48 - 82, 36, { rowWidth: 200 - 22 }));
+    this.right = this.add(new ScrollList(W / 2 + 4, 48, 200, H - 48 - 82, 36, { rowWidth: 200 - 22 }));
+    // the game's own look, from the player's own copy of it (see useGameFiles)
+    this.add(new Button(W / 2 - 154, H - 72, 308, 20, 'Use My Minecraft Files...', () => this.useGameFiles()));
     this.add(new Button(W / 2 - 154, H - 48, 150, 20, 'Open Pack Folder', () => this.pick()));
     this.add(new Button(W / 2 + 4, H - 48, 150, 20, 'Done', () => this.done()));
     this.refresh();
@@ -1040,11 +1042,27 @@ export class ResourcePacksScreen extends Screen {
       this.gui.back();
     }));
   }
-  pick() {
+  pick(accept) {
     const inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = '.zip,.jar'; inp.multiple = true;
+    inp.type = 'file'; inp.accept = accept || '.zip,.jar'; inp.multiple = !accept;
     inp.onchange = () => this.addFiles([...inp.files]);
     inp.click();
+  }
+  /* Leoncraft ships only openly licensed art; the game's own textures, paintings, mobs and screens can only
+     come from the player's own copy of the game. Its client .jar is read like any pack (pack.js) and goes to
+     the top of the Selected list. */
+  useGameFiles() {
+    this.gui.open(new ConfirmScreen('Use My Minecraft Files',
+      'Leoncraft comes with openly licensed art of its own. To see the game\'s original look (its blocks, items, ' +
+      'paintings, mobs, chests, beds and screens), choose the game file from your own copy of Minecraft: Java Edition.\n\n' +
+      'It is in your .minecraft folder, under versions, for example versions/26.1.2/26.1.2.jar ' +
+      '(on Windows, %APPDATA%\\.minecraft\\versions).\n\n' +
+      'The file is read here and kept in this browser on this computer. It is never uploaded, and you can remove it on this screen at any time.',
+      'Choose .jar File...', 'Cancel', yes => {
+        // (the file dialog has to open from the click itself)
+        if (yes) this.pick('.jar');
+        this.gui.back();
+      }));
   }
   async addFiles(files) {
     for (const f of files) {
@@ -1069,7 +1087,7 @@ export class ResourcePacksScreen extends Screen {
     g.centered(this.message || 'Drag and drop files into this window to add packs', W / 2, 20, 0xA0A0A0);
     g.centered('§l§nAvailable', W / 2 - 104, 38, WHITE);
     g.centered('§l§nSelected', W / 2 + 104, 38, WHITE);
-    g.centered('Packs stay on this computer and are never uploaded. A .jar from your own copy of the game gives its original look.', W / 2, this.height - 20, 0x808080);
+    g.centered('Packs stay on this computer and are never uploaded.', W / 2, this.height - 20, 0x808080);
   }
 }
 

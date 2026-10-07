@@ -228,7 +228,8 @@ export const STEW_EFFECTS = {
   open_eyeblossom: ['blindness', 220], closed_eyeblossom: ['nausea', 140],
 };
 /* The paintings, by name, width and height in blocks (the game's placeable
-   ones; each picture is our own, entities/items2.js). A painting item may
+   ones; each picture is Pixel Perfection CE's or our own, entities/packart.js
+   and items2.js, or the game's from a player's own copy). A painting item may
    carry one (variant), placed only where it fits, else a random one of the
    largest that fit. */
 export const PAINTING_VARIANTS = [
