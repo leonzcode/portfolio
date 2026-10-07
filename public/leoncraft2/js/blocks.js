@@ -203,6 +203,7 @@ if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], 
   shapeOf('brewing_stand', 'brewing');
   shapeOf('stonecutter', 'stonecutter', d => { delete d.orient; addTex(d, { saw: 'stonecutter_saw' }); });
   shapeOf('beacon', 'beacon');
+  for (const d of BLOCKS) if (d && /_shelf$/.test(d.name) && d.shape === 'cube') shapeOf(d.name, 'shelf', s => { delete s.orient; });
   shapeOf('conduit', 'conduit');
   shapeOf('decorated_pot', 'vase', d => { delete d.orient; addTex(d, { base: 'decorated_pot_base' }); });
   for (const n of ['sculk_sensor', 'calibrated_sculk_sensor']) if (B[n] !== undefined) addTex(BLOCKS[B[n]], { tendril: 'sculk_sensor_tendril_inactive' });

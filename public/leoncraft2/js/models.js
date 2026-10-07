@@ -393,11 +393,11 @@ export const SHAPES = {
   },
   pane(d, m, nb) {
     const n = DIRS.map(v => joins(d, nb(v[0], 0, v[2]), 'pane'));
-    const any = n.some(Boolean);
-    // the glass on the broad sides; the thin edges, top and ends show the edge texture, as in the game
-    const g = d.faces[0], e = d.L && d.L.top !== undefined ? d.L.top : g;
-    const b = [box(7, 0, 7, 9, 16, 9, { faces: [g, g, e, e, g, g] })];
-    for (let k = 0; k < 4; k++) if (n[k] || !any) b.push(...turn([box(7, 0, 0, 9, 16, 7, { faces: [g, g, e, e, e, e] })], k));
+    // the glass on the broad sides; the thin edges, top and ends show the edge texture, as in the game; joined to
+    // nothing, a pane is the post alone (the game's Java look), its sides a sliver of the glass
+    const g = d.faces[0], e = d.L && d.L.top !== undefined ? d.L.top : g, s = [9, 0, 7, 16];
+    const b = [box(7, 0, 7, 9, 16, 9, { faces: [g, g, e, e, g, g], uv: [s, s, null, null, s, s] })];
+    for (let k = 0; k < 4; k++) if (n[k]) b.push(...turn([box(7, 0, 0, 9, 16, 7, { faces: [g, g, e, e, e, e] })], k));
     return b;
   },
   gate(d, m) {
@@ -850,6 +850,17 @@ SHAPES.beacon = function (d) {
   return [box(0, 0, 0, 16, 16, 16, { faces: [G, G, G, G, G, G], uv: [f, f, f, f, f, f] }),
     box(2, 0.1, 2, 14, 3, 14, { faces: [O, O, O, O, O, O], uv: [o, o, [2, 2, 14, 14], [2, 2, 14, 14], o, o] }),
     box(3, 3, 3, 13, 14, 13, { faces: [C, C, C, C, C, C], uv: [c, c, [3, 3, 13, 13], [3, 3, 13, 13], c, c] })];
+};
+/* A shelf (the game's model, built facing north): a board three pixels thick against the wall behind, a ledge
+   along its foot and one along its top, and the back between them. Its picture holds those parts side by side. */
+SHAPES.shelf = function (d, m) {
+  const n = [0, 0, 0, 0];
+  return turn([
+    box(0, 0, 13, 16, 16, 16, { skip: 32, uv: [[8, 0, 9.5, 8], [14.5, 0, 16, 8], [16, 5, 8, 3.5], [16, 6, 8, 4.5], [8, 0, 16, 8], n] }),
+    box(0, 0, 11, 16, 4, 13, { skip: 16, uv: [[1.5, 6, 2.5, 8], [5.5, 6, 6.5, 8], [8, 3.5, 16, 4.5], [16, 4.5, 8, 3.5], n, [0, 6, 8, 8]] }),
+    box(0, 12, 11, 16, 16, 13, { skip: 16, uv: [[1.5, 0, 2.5, 2], [5.5, 0, 6.5, 2], [16, 6, 8, 5], [8, 5, 16, 6], n, [0, 0, 8, 2]] }),
+    box(0, 4, 13, 16, 12, 13, { skip: 31, uv: [n, n, n, n, n, [0, 2, 8, 6]] }),
+  ], m & 3);
 };
 // a conduit not at work: its shell, six pixels square, floating in the middle of the block
 SHAPES.conduit = function (d) { const s = [5, 5, 11, 11]; return [box(5, 5, 5, 11, 11, 11, { uv: [s, s, s, s, s, s] })]; };
