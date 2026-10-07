@@ -1403,7 +1403,7 @@ async function boot() {
         waterTint: tintAt(world, v.eye), player, alpha,
         // hurt: the camera tilts and the model flashes red (combat/combat.js)
         tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha, video.tilt()) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
-        biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
+        biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2, eyeInSnow: eyeBlock === B.powder_snow,
         dim: D, bossFog: g.realms.bossFog, spin: g.spin ? g.spin.at(alpha) : null,
         // the screen tips when hurt and rolls a little in death (survival.js)
         ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha, video.tilt())) : NO_TILT),

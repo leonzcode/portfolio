@@ -511,6 +511,10 @@ export class Vanilla {
     if (state.eyeInLava) {
       fog.set(0.6, 0.1, 0); U.uFog.value.set(0.25, 1, 0); U.uSky.value.z = 1;
       this.waterTime = 0;
+    } else if (state.eyeInSnow) {
+      // your eyes in powder snow: the game's pale blue, closing in from nothing to 2 blocks
+      fog.set(0.623, 0.734, 0.785); U.uFog.value.set(0, 2, 0); U.uSky.value.z = 1;
+      this.waterTime = 0; this.waterFogSet = false;
     } else if (state.eyeInWater) {
       // under water: the biome's water fog colour, brightening and clearing over the first 30 seconds
       this.waterTime += dt * 20;
@@ -548,7 +552,8 @@ export class Vanilla {
     // and gone at Cloud Distance (Video Settings)
     const reach = (opts.cloudDist || rdc * 2) * 16;
     U.uCloudFog.value.set(Math.min(R, reach * 0.5), reach);
-    this.clouds = D && !D.clouds ? 'off' : opts.clouds || 'fancy';
+    // (in lava or powder snow the fog closes in within a block or two: no clouds through it)
+    this.clouds = (D && !D.clouds) || state.eyeInLava || state.eyeInSnow ? 'off' : opts.clouds || 'fancy';
   }
   makeLightmap(skyDarken, gamma, ambient, endBright) {
     const d = this.lmData;
