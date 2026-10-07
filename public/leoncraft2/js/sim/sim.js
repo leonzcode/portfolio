@@ -41,6 +41,7 @@ import { installBeds } from './beds.js?v=25';
 import { Weather } from './weather.js?v=25';
 import { installRedstone } from './redstone.js?v=25';
 import { installParts } from './rsparts.js?v=25';
+import { installTripwire } from './tripwire.js?v=25';
 import { installPistons } from './pistons.js?v=25';
 import { installDispensers } from './dispense.js?v=25';
 import { explode } from '../explosion.js?v=25';
@@ -84,6 +85,7 @@ export class Sim {
     installRedstone(this);
     installContainers(this);         // chests joining, spilling, droppers and dispensers firing (containers.js)
     installParts(this);
+    installTripwire(this);           // tripwire hooks and their strings (sim/tripwire.js)
     installPistons(this);
     // chest and shulker box lids, open barrels, ringing bells (sim/lids.js); beacon beams (sim/beams.js)
     this.lids = new Lids(this);

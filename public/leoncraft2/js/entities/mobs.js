@@ -7,7 +7,7 @@
    range, size, loot, experience, and the goals each one runs, in the
    game's priority order.
 --------------------------------------------------------------------------- */
-import { Mob, Living, DEG, wrap, yawTo, rotTowards } from './entity.js?v=25';
+import { Mob, Living, DEG, wrap, yawTo, rotTowards, Goal, MOVE, LOOK } from './entity.js?v=25';
 import { FloatGoal, PanicGoal, StrollGoal, LookAtPlayerGoal, LookAroundGoal, TemptGoal, BreedGoal, FollowParentGoal, EatGrassGoal,
   MeleeAttackGoal, BowAttackGoal, SwellGoal, LeapGoal, AvoidGoal, NearestPlayerTargetGoal, HurtByTargetGoal, NearestMobTargetGoal } from './ai.js?v=25';
 import { B, BLOCKS, FLUID, OPACITY } from '../blocks.js?v=25';
@@ -191,11 +191,54 @@ export class Husk extends Zombie {
   doHurtTarget(t) { const ok = super.doHurtTarget(t); if (ok && t.isPlayer) this.m.effectPlayer('hunger', 140 * 2); return ok; }
 }
 register('husk', Husk);
+/* A drowned with a trident throws it (the game's ranged attack: every 40 ticks at a target it can see within
+   10 blocks); the trident it throws is gone, the one it holds may drop. */
+class DrownedTridentGoal extends Goal {
+  constructor(mob) { super(mob, MOVE | LOOK); this.t = 0; }
+  canUse() { const m = this.mob, t = m.target; return m.equip.mainhand === 'trident' && !!t && t.alive() && m.dist2(t.pos.x, t.pos.y, t.pos.z) < 100 && m.canSee(t); }
+  start() { this.t = 20; this.mob.aiming = true; }
+  stop() { this.mob.aiming = false; }
+  tick() {
+    const m = this.mob, t = m.target;
+    if (!t) return;
+    m.lookAtEntity(t, 30, 30);
+    if (m.nav) m.nav.stop();
+    if (--this.t > 0) return;
+    this.t = 40;
+    const ey = m.pos.y + m.eyeH - 0.1, dx = t.pos.x - m.pos.x, dz = t.pos.z - m.pos.z, dy = t.pos.y + (t.h || 1.8) / 3 - ey, hd = Math.hypot(dx, dz);
+    const tr = m.m.spawn('trident', m.pos.x, ey, m.pos.z, { natural: false });
+    if (!tr) return;
+    tr.owner = m; tr.pickup = 0; tr.stack = null;
+    const diff = { peaceful: 0, easy: 1, normal: 2, hard: 3 }[m.m.difficulty] || 2;
+    tr.shoot(dx, dy + hd * 0.2, dz, 1.6, 14 - diff * 4);
+    m.swing();
+  }
+}
 // a drowned: lives in water, swims after you
 export class Drowned extends Zombie {
   static TEX = 'drowned'; static WATER_BREATHER = true; static CONVERTS_TO = null; static SPAWN_ARMOR = false;
   constructor(m, type) { super(m, type); this.waterCost = 0; }
+  /* What it holds, as the game's natural ones (Minecraft Wiki): a trident 6.25% of the time, else a fishing
+     rod 3.75%; a nautilus shell in its other hand 3%. Half of those with a trident, outside rivers, come
+     riding a zombie nautilus. */
+  finalizeSpawn(o) {
+    super.finalizeSpawn(o);
+    if (o && (o.spawner || o.trial || o.converted)) return;
+    const r = R();
+    if (r < 0.0625) this.equip.mainhand = 'trident';
+    else if (r < 0.1) this.equip.mainhand = 'fishing_rod';
+    if (R() < 0.03) this.equip.offhand = 'nautilus_shell';
+    if (this.equip.mainhand === 'trident' && !this.baby && R() < 0.5 && o && o.natural !== false) {
+      const W = this.m.world, b = W && W.biomeAt ? W.biomeAt(Math.floor(this.pos.x), Math.floor(this.pos.z)) : -1;
+      const name = b >= 0 && BIOME_NAMES[b] ? BIOME_NAMES[b] : '';
+      if (!/river/.test(name)) {
+        const n = this.m.spawn('zombie_nautilus', this.pos.x, this.pos.y, this.pos.z, { natural: false });
+        if (n) { this.vehicle = n; n.passengers.push(this); }
+      }
+    }
+  }
   registerGoals() {
+    this.goals.add(1, new DrownedTridentGoal(this));
     this.goals.add(2, new MeleeAttackGoal(this, 1, false));
     this.goals.add(7, new StrollGoal(this, 1, 120, false));
     this.goals.add(8, new LookAroundGoal(this));
@@ -214,6 +257,8 @@ export class Drowned extends Zombie {
   loot(drop, byPlayer) { drop('rotten_flesh', RI(3)); if (byPlayer && R() < 0.11) drop('copper_ingot', 1); }
 }
 register('drowned', Drowned);
+const BIOME_NAMES = [];
+import('../biomes.js?v=25').then(m => { for (const b of m.BIOMES) BIOME_NAMES[b.id] = b.name; }).catch(() => {});
 
 /* ---- Zombie villager: a zombie with a villager's face ---- */
 export class ZombieVillager extends Zombie {

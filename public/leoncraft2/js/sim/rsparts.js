@@ -356,7 +356,8 @@ export function installParts(sim) {
       const D = S.game && S.game.details;
       return D ? (n === 'lectern' ? D.lecternSignal(x, y, z) : D.shelfSignal(x, y, z)) : 0;
     }
-    if (n === 'beehive' || n === 'bee_nest' || n === 'decorated_pot' || n === 'crafter') return 0;
+    if (n === 'beehive' || n === 'bee_nest') return (S.meta(x, y, z) >> 2) & 7;
+    if (n === 'decorated_pot' || n === 'crafter') return 0;
     if (n === 'detector_rail') return 0;
     return -1;
   };

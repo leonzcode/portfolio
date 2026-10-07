@@ -495,6 +495,8 @@ export class Survival {
   breathe(P) {
     const eyeIn = P.eyeInWater && !(P.w && nameOf(P.w.get(Math.floor(P.pos.x), Math.floor(P.pos.y + (P.eyeH || 1.62)), Math.floor(P.pos.z))) === 'bubble_column');
     if (eyeIn) {
+      // (riding a nautilus, Breath of the Nautilus holds the air where it is)
+      if (this.effects.breath_of_the_nautilus) return;
       if (!this.effects.water_breathing && !this.effects.conduit_power) {
         const resp = this.helmetEnchant('respiration');
         if (!(resp > 0 && Math.random() >= 1 / (resp + 1))) this.air--;

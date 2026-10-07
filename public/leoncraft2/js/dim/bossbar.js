@@ -3,7 +3,7 @@
    top, a bar 182 x 5 GUI pixels under it (12 from the top), its colour's
    dark track with the light fill over it (our own colours, no texture).
 --------------------------------------------------------------------------- */
-const COLOURS = { pink: [0xFF5A1E4E, 0xFFEC00B8, 0xFFFF7FE3], purple: [0xFF33134F, 0xFF8B2BE0, 0xFFC27DFF] };
+const COLOURS = { pink: [0xFF5A1E4E, 0xFFEC00B8, 0xFFFF7FE3], purple: [0xFF33134F, 0xFF8B2BE0, 0xFFC27DFF], red: [0xFF4E1414, 0xFFE02A2A, 0xFFFF8080] };
 
 export function drawBossBar(g, boss, cx) {
   const [track, fill, shine] = COLOURS[boss.colour] || COLOURS.pink;

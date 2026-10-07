@@ -67,6 +67,8 @@ import { VideoSettings } from './settings.js?v=25';
 import { pickBiome } from './worldgen.js?v=25';
 import { initSound, soundWorld, soundParts, soundTick, soundFrame, soundLeave } from './sound/game.js?v=25';
 import { advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements } from './adv/game.js?v=25';
+import { statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics } from './stats.js?v=25';
+import { recipesWorld, recipesTick, recipesState, recipesLeave } from './recipes.js?v=25';
 import { loadEntityArt } from './entities/packart.js?v=25';
 import { ITEM_TEX } from './itemdata.js?v=25';
 import { debugLines } from './ui/debug.js?v=25';
@@ -82,6 +84,8 @@ const MENU_SEED = 20261002;
 // a dimension's mobs are kept under the world's id, with the dimension added for the Nether and the End
 const entityKey = (entry, dim) => entry.id + (!dim || dim === 'overworld' ? '' : '~' + dim);
 const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) : entry.seed | 0);
+// the generator a world is made by: 'vanilla', a Superflat world's own 'flat:...' (gen/flat.js), else the first one
+const genOf = entry => (entry.generator === 'vanilla' || /^flat:/.test(entry.generator || '') ? entry.generator : 'classic');
 /* How the game looks is in Options: Video Settings (the game's own) and Shader
    Packs (Shaders ON, with the Shader Options, or OFF: the game as Minecraft
    itself draws it, render/vanilla.js). settings.js puts every change into
@@ -403,8 +407,9 @@ async function boot() {
     online: () => !!(game && game.net),
     // the last screen closed in the game: take the mouse back
     closed: () => { if (game && !game.survival.dead) lock(); },
-    // the game menu's Advancements button (js/adv)
+    // the game menu's Advancements button (js/adv) and Statistics (js/stats.js)
     advancements: () => openAdvancements(),
+    statistics: () => openStatistics(gui, icons),
   };
   const gui = new Gui($('#gui'), { base: base + 'gui/', options, hooks, version: TEX_V });
   await gui.load();
@@ -514,7 +519,7 @@ async function boot() {
       const last = Worlds.list().sort((a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0))[0];
       const st = last ? new Save(last.id).readState() : null;
       const at = st && st.player ? st.player : last && last.spawn;
-      if (at) spec = { seed: worldSeed(last), generator: last.generator === 'vanilla' ? 'vanilla' : 'classic', dim: st && DIMS[st.dimension] ? st.dimension : 'overworld', at, manifest, colours };
+      if (at) spec = { seed: worldSeed(last), generator: genOf(last), dim: st && DIMS[st.dimension] ? st.dimension : 'overworld', at, manifest, colours };
     } catch (e) { /* the world list unreadable: practise on a new world */ }
     practise(spec, menu && menu.world, spec === fresh ? null : fresh);
   }
@@ -563,7 +568,7 @@ async function boot() {
     const saves = { overworld: save, the_nether: mkSave(entry.id + DIMS.the_nether.suffix), the_end: mkSave(entry.id + DIMS.the_end.suffix) };
     await saves.the_nether.init(); await saves.the_end.init();
     let world;
-    const generator = entry.generator === 'vanilla' ? 'vanilla' : 'classic';
+    const generator = genOf(entry);
     const seed = worldSeed(entry);
     // the title screen's world is this one: keep what is already made
     const reuse = menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim;
@@ -738,6 +743,7 @@ async function boot() {
     inter.onBroken = (x, y, z, b) => game.realms.broken(x, y, z, b);
     soundWorld(game); soundParts(game);
     advWorld(game, st && st.advancements);
+    statsWorld(game, st && st.stats); recipesWorld(game, st && st.recipes);
     hud = new Hud(inv, icons);
     gui.hud = hud;
     applyModeRules(game, mode, hud);
@@ -750,6 +756,8 @@ async function boot() {
     // and a mount in its own screen (render/mobfigure.js)
     inv.drawMob = (g, x, y, w, h, mx, my, mob, size, drop) => renderer.figure.draw(g, x, y, w, h, mx, my, mob, size, drop);
     held();
+    // a new world made with Bonus Chest on (bonus.js)
+    if (isNew && entry.bonusChest && dim === 'overworld') import('./bonus.js?v=25').then(m => m.bonusChest(game, Math.floor(spawn.x), Math.floor(spawn.z))).catch(e => console.warn('bonus chest', e));
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     loading = null;
     gui.panorama = false; gui.inGame = true;
@@ -855,7 +863,7 @@ async function boot() {
         const save = g.saves[dim];
         // made first, so the workers set up its generator while what changed there is read
         world = new World({
-          seed: worldSeed(g.entry), generator: g.entry.generator === 'vanilla' ? 'vanilla' : 'classic', dim,
+          seed: worldSeed(g.entry), generator: genOf(g.entry), dim,
           renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits: new Map(), save,
           onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
           onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
@@ -897,7 +905,7 @@ async function boot() {
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
       inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
       drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null, dimension: g.dim, realms: g.realms ? g.realms.toJSON() : null,
-      lastDeath: deathPoint(), advancements: advState() };
+      lastDeath: deathPoint(), advancements: advState(), stats: statsState(), recipes: recipesState() };
   }
   async function saveGame() {
     if (!game) return;
@@ -915,6 +923,7 @@ async function boot() {
   async function quitToTitle() {
     if (!game) return;
     const g = game;
+    statsQuit();
     await saveGame();
     if (g.net) { g.net.close(); g.net = null; }
     g.drops.dispose();
@@ -922,7 +931,7 @@ async function boot() {
     scope(false);
     game = null;
     soundLeave();
-    advLeave();
+    advLeave(); statsLeave(); recipesLeave();
     if (g.entities) g.entities.dispose();
     if (g.sim) g.sim.dispose();
     if (g.realms) g.realms.dispose();
@@ -1360,6 +1369,7 @@ async function boot() {
       structures.spawners.tick(world, player);
       soundTick(g);
       advTick(g);
+      statsTick(g); recipesTick(g);
       // on a server: where you are, and what came in from the others (net/net.js)
       if (g.net) g.net.tick(now - acc * 1000);
       // every ten seconds, what changed goes into the browser's storage
@@ -1399,7 +1409,7 @@ async function boot() {
         // hurt: the camera tilts and the model flashes red (combat/combat.js)
         tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha, video.tilt()) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
         biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
-        dim: D, bossFog: g.realms.bossFog,
+        dim: D, bossFog: g.realms.bossFog, horizon: /^flat:/.test(world.generator || '') ? 0 : 127,
         // the screen tips when hurt and rolls a little in death (survival.js)
         ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha, video.tilt())) : NO_TILT),
       }, Math.min(0.25, drawDt));

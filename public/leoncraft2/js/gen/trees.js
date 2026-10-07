@@ -737,10 +737,10 @@ const DECORATORS = {
     shuffle(list, r);
     const spot = list.find(([x, y, z]) => ctxAir(t, x, y, z) && ctxAir(t, x, y, z + 1));
     if (!spot) return;
-    setDeco(t, spot[0], spot[1], spot[2], { id: B.bee_nest, meta: 2 });
-    // the bees the nest gets (only their random draws matter here)
+    // the bees the nest gets (their random draws; how many waits in meta bits 5-6, entities/hives.js lets them out)
     const n = 2 + r.nextInt(2);
     for (let k = 0; k < n; k++) r.nextInt(599);
+    setDeco(t, spot[0], spot[1], spot[2], { id: B.bee_nest, meta: 2 | (n << 5) });
   },
   alter_ground(t, d, ctx) {
     const P = prov(d.provider);
@@ -839,9 +839,24 @@ const DECORATORS = {
     if (r.nextFloat() >= F(d.probability)) return;
     const list = shuffle(logs.slice(), r);
     const spot = list.find(([x, y, z]) => ALL6.every(([a, b, c]) => isLog(t.R, x + a, y + b, z + c)));
-    if (spot) setDeco(t, spot[0], spot[1], spot[2], { id: B.creaking_heart, meta: 0 });
+    // (meta 3: upright and natural, so it gives experience when broken: entities/hearts.js)
+    if (spot) setDeco(t, spot[0], spot[1], spot[2], { id: B.creaking_heart, meta: 3 });
   },
-  shelf_mushroom() { /* 26.x: not written yet */ },
+  /* 26.x shelf mushrooms on a fallen log's sides (our own: the game's decorator was not to hand): with the
+     decorator's probability, one to three of them on open sides of the log, each hanging on the log (meta: the
+     face of the block it hangs on, as a button's) */
+  shelf_mushroom(t, d, ctx) {
+    const r = t.r, logs = ctx.logs;
+    if (!logs.length || B.shelf_mushroom === undefined || r.nextFloat() >= F(d.probability)) return;
+    const sides = [[1, 0, 1], [-1, 0, 0], [0, 1, 5], [0, -1, 4]];
+    let n = 1 + r.nextInt(3);
+    for (let k = 0; k < 8 && n > 0; k++) {
+      const [x, y, z] = logs[r.nextInt(logs.length)], [dx, dz, face] = sides[r.nextInt(4)];
+      if (!ctxAir(t, x + dx, y, z + dz)) continue;
+      setDeco(t, x + dx, y, z + dz, { id: B.shelf_mushroom, meta: face });
+      n--;
+    }
+  },
 };
 
 /* ---- TreeFeature ---- */
