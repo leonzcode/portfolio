@@ -572,13 +572,15 @@ addArt('piglin_brute', [64, 64], p => {
    shoots wind charges: 1 damage and a burst that throws things back. Its
    wind turns arrows and other things shot at it aside.
    Wind charge (the player's too, from the item): flies straight at 1.5 a
-   tick (the breeze's at 0.7), and bursts on what it hits: everything within
-   about 2.5 blocks is pushed out from the burst, the thrower's own fall
-   counted from there.
+   tick (the breeze's at 0.7), and bursts on what it hits: an explosion of
+   radius 1.2 (the breeze's 3) that breaks nothing, so everything within
+   2.4 blocks (6) is pushed out from the burst, the player's 1.22 times as
+   hard as an explosion would; the thrower's own fall counted from there.
+   One at your feet throws you about 8 blocks up.
 =========================================================================== */
 export class WindCharge extends Projectile {
   static MODEL = 'wind_charge'; static TEX = 'wind_charge'; static W = 0.3125; static H = 0.3125; static BRIGHT = true;
-  constructor(m, type) { super(m, type); this.gravity = 0; this.drag = 1; this.power = 1.22; this.radius = 2.4; this.dmg = 1; }
+  constructor(m, type) { super(m, type); this.gravity = 0; this.drag = 1; this.power = 1.22; this.radius = 1.2; this.dmg = 1; }
   tick() { super.tick(); if (this.age > 100 && !this.removed) this.burst(); }
   hitEntity(e) {
     if (e === this.owner && this.age < 5) return false;
@@ -590,17 +592,22 @@ export class WindCharge extends Projectile {
   hitBlock() { this.burst(); }
   burst() {
     if (this.removed) return;
-    const cx = this.pos.x, cy = this.pos.y + 0.15, cz = this.pos.z, r = this.radius, T = this.m.t;
+    // (the burst is where the charge is, at the foot of its box, as the game's explosion is)
+    const cx = this.pos.x, cy = this.pos.y, cz = this.pos.z, r = this.radius, T = this.m.t;
+    /* the game's explosion push: how far from the burst its feet are, out of twice the radius, sets
+       how hard; the push is away from the burst towards its eyes */
     const push = (e, isP) => {
-      const ey = e.pos.y + (e.eyeH !== undefined ? e.eyeH : 1.62) * 0.5;
+      const ey = e.pos.y + (e.eyeH !== undefined ? e.eyeH : 1.62);
+      const d = Math.hypot(e.pos.x - cx, e.pos.y - cy, e.pos.z - cz);
+      if (d > r * 2) return;
       let dx = e.pos.x - cx, dy = ey - cy, dz = e.pos.z - cz;
-      const d = Math.hypot(dx, dy, dz);
-      if (d > r * 2 || d < 1e-6) return;
-      dx /= d; dy /= d; dz /= d;
+      const l = Math.hypot(dx, dy, dz);
+      if (l < 1e-6) return;
+      dx /= l; dy /= l; dz /= l;
       const hw = e.hw !== undefined ? e.hw : 0.3, h = e.h || 1.8;
       const ex = exposure(T, e.pos.x - hw, e.pos.y, e.pos.z - hw, e.pos.x + hw, e.pos.y + h, e.pos.z + hw, cx, cy, cz);
       const k = (1 - d / (r * 2)) * ex * this.power * (1 - (e.kbResist || 0));
-      if (isP) { this.m.player.push(dx * k, dy * k + 0.1 * k, dz * k); if (this.owner === this.m.player && this.m.P) this.m.P.fallDistance = 0; }
+      if (isP) { this.m.player.push(dx * k, dy * k, dz * k); if (this.owner === this.m.player && this.m.P) this.m.P.fallDistance = 0; }
       else if (e.vel) { e.vel.x += dx * k; e.vel.y += dy * k; e.vel.z += dz * k; }
     };
     const P = this.m.player;
