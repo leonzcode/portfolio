@@ -133,8 +133,12 @@ const key3 = (x, y, z) => x + ',' + y + ',' + z;
 const flat = a => a.slice();
 
 /* What a world keeps in place of save.js, per dimension: the edits and the
-   chests and signs come from the server (and stay up to date with it), the
-   rest (where you were, your inventory, maps) is kept in this browser. */
+   chests and signs come from the server (and stay up to date with it), and
+   so does your own record (where you are, your inventory, health, game mode:
+   PLAYER_KEYS), kept by the server under your name as the game's servers keep
+   playerdata, so it is there from any browser. The rest (maps, what the
+   simulation was in the middle of) is kept in this browser. */
+const PLAYER_KEYS = ['player', 'inventory', 'survival', 'mode', 'hands', 'dimension', 'lastDeath'];
 class MpSave {
   constructor(net, d, id) { this.net = net; this.d = d; this.dirty = new Set(); this.local = new Save(id); }
   async init() { await this.local.init(); }
@@ -146,8 +150,15 @@ class MpSave {
     return this.local.readExtra(name);
   }
   async writeExtra(name, v) { if (name !== 'containers' && name !== 'details') return this.local.writeExtra(name, v); }
-  readState() { return this.local.readState(); }
-  writeState(s) { this.local.writeState(s); }
+  readState() {
+    const net = this.net, local = this.local.readState();
+    // (a server without records has none to give: what this browser kept is all there is; one that has none for you yet takes this browser's, once)
+    const st = net.pdata ? Object.assign({}, local || {}, net.pdata) : local;
+    // the world spawn is the server's
+    if (st && net.spawn) st.spawn = { x: net.spawn.x, z: net.spawn.z };
+    return st;
+  }
+  writeState(s) { this.local.writeState(s); if (s) this.net.savePlayer(s); }
 }
 
 // /list: who is on, as the game answers it (no commands needed; on a server, the server's own count)
@@ -417,6 +428,8 @@ export class Net {
       this.edits.push(edits); this.ct.push(ct); this.dt.push(dt);
     }
     this.initPlayers = m.players || [];
+    // your own record on this server (MpSave.readState), or null the first time you come
+    this.pdata = m.pdata && typeof m.pdata === 'object' ? m.pdata : null;
     for (const o of m.items || []) this.keepItem(o);
     this.serverNow = m.now;
     this.ping();
@@ -1044,6 +1057,16 @@ export class Net {
     if (sig === this.eqSig) return;
     this.eqSig = sig;
     this.send(Object.assign({ t: 'eq' }, eq));
+  }
+  // your own record to the server (main.js saves every ten seconds, as you leave, and when the page is hidden): only when it changed
+  savePlayer(s) {
+    const o = {};
+    for (const k of PLAYER_KEYS) if (s[k] !== undefined) o[k] = s[k];
+    const str = JSON.stringify(o);
+    if (str === this.pdSent || str.length > 250000) return;
+    this.pdSent = str;
+    this.pdata = o;
+    if (this.ws.readyState === 1) { try { this.ws.send('{"t":"pd","s":' + str + '}'); } catch (e) {} }
   }
   sendSkin() {
     const s = getSkinSettings();
