@@ -40,9 +40,11 @@ export function placement(world, hit, id, player) {
   let d = BLOCKS[id];
   const hd = BLOCKS[hit.b];
   const hm = world.meta(hit.x, hit.y, hit.z);
+  // (the low blocks drawn as slabs, a daylight detector or a sculk sensor, are never put in the top half or doubled)
+  const halves = d.shape === 'slab' && /_slab$/.test(d.name);
   // stacking onto the same block: a slab into a double, one more candle, another layer of snow
   if (hit.b === id) {
-    if (d.shape === 'slab' && ((hm === 0 && n[1] === 1) || (hm === 1 && n[1] === -1))) return [[hit.x, hit.y, hit.z, id, 2]];
+    if (halves && ((hm === 0 && n[1] === 1) || (hm === 1 && n[1] === -1))) return [[hit.x, hit.y, hit.z, id, 2]];
     if (d.shape === 'candle' && (hm & 3) < 3) return [[hit.x, hit.y, hit.z, id, hm + 1]];
     if ((d.shape === 'layer' || d.shape === 'snow') && (hm & 7) < 7) return [[hit.x, hit.y, hit.z, id, hm + 1]];
   }
@@ -65,7 +67,7 @@ export function placement(world, hit, id, player) {
   const gives = (bd, bm) => bd.replaceable && !(bd.shape === 'snow' && (bm & 7) > 0);
   if (!gives(hd, hm)) { x += n[0]; y += n[1]; z += n[2]; }
   const cur = world.get(x, y, z), cm = world.meta(x, y, z);
-  if (cur && cur === id && d.shape === 'slab' && cm !== 2) return [[x, y, z, id, 2]];
+  if (cur && cur === id && halves && cm !== 2) return [[x, y, z, id, 2]];
   if (cur && cur === id && d.shape === 'snow' && (cm & 7) < 7) return [[x, y, z, id, cm + 1]];
   if (cur && !gives(BLOCKS[cur], cm)) return out;
   const fy = hit.hit ? hit.hit[1] - Math.floor(hit.hit[1] - (n[1] === 1 ? 1e-6 : 0)) : 0.5;   // how high up the clicked face
@@ -81,7 +83,7 @@ export function placement(world, hit, id, player) {
     return [[x, y, z, id, horizOf([-n[0], 0, -n[2]])]];
   }
   switch (d.shape) {
-    case 'slab': m = upperHalf && !/campfire$/.test(d.name) ? 1 : 0; break;
+    case 'slab': m = upperHalf && halves ? 1 : 0; break;
     case 'stairs': m = look | (upperHalf ? 4 : 0); break;
     case 'gate': m = look; break;
     case 'anvil': m = look; break;
@@ -132,7 +134,7 @@ export function placement(world, hit, id, player) {
     // a hopper points into what you clicked, or down when you click a top or a bottom
     case 'hopper': m = n[1] !== 0 ? 4 : horizOf([-n[0], 0, -n[2]]); break;
     case 'campfire': m = look; break;
-    case 'lectern': case 'grindstone': m = (look + 2) & 3; break;
+    case 'lectern': case 'grindstone': case 'stonecutter': m = (look + 2) & 3; break;
     // a bell stands on the floor across your view, hangs from a ceiling, or from one wall (or two)
     case 'bell': {
       if (n[1] === 1) { m = look << 1; break; }

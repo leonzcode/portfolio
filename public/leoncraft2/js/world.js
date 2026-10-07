@@ -228,6 +228,8 @@ export class World {
     // what changed from the generated terrain, kept so a saved world comes back (see save.js)
     this.edits = opts.edits || new Map();       // "cx,cz" -> Map(cell index -> block * 256 + meta)
     this.save = opts.save || null;
+    // blocks with a part being drawn moving instead (a chest's lid, a ringing bell: sim/lids.js), meshed without it
+    this.moving = new Set();          // "x,y,z"
     const n = GEN_N;
     /* One more worker than that, kept for what you change yourself: a block
        you break or place is meshed again at once, never behind terrain being
@@ -871,8 +873,14 @@ export class World {
        goes to the edit worker too when it has nothing to do, so its code is
        always warm (cold, it took several times as long over your blocks). */
     const i = urgent || (base && !this.busy[this.editW]) ? this.editW : this.idlest();
+    // the cells of this column whose moving part is drawn elsewhere (sim/lids.js), in the region's own numbering
+    const moving = [];
+    for (const key of this.moving) {
+      const [x, y, z] = key.split(',').map(Number), lx = x - cx * CH, lz = z - cz * CH;
+      if (lx >= 0 && lx < CH && lz >= 0 && lz < CH) moving.push(y * 2304 + (16 + lz) * 48 + 16 + lx);
+    }
     this.job(i, 'm' + k + '#' + v, { type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky, urgent: !!urgent,
-      blend: this.blend, flat: this.flatLight,
+      blend: this.blend, flat: this.flatLight, moving,
       keep: this.near(cx, cz), base, rows: base ? rows : null }, transfer);
   }
 
@@ -948,6 +956,13 @@ export class World {
     if (this.onSet) this.onSet(x, y, z, was, wasM, b, m || 0);
     if (this.onSetE) this.onSetE(x, y, z, b);
     return true;
+  }
+  // a block's moving part is drawn elsewhere from now on (on), or back in the block's own mesh (off)
+  setMoving(x, y, z, on) {
+    const k = x + ',' + y + ',' + z;
+    if (on === this.moving.has(k)) return;
+    if (on) this.moving.add(k); else this.moving.delete(k);
+    this.touch(x, z, y);
   }
   // remesh the column a block is in, and any neighbour whose edge it sits on
   touch(x, z, y) {
