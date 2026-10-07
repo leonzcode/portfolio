@@ -169,12 +169,13 @@ function equipOf(inv) {
   out.offhand = stackView(inv.offhand);
   return out;
 }
-function playerView() {
+function playerView(depth = 0) {
   const g = G, p = g.player, E = g.entities;
   const v = { type: 'player', isPlayer: true, x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z, dim: g.dim, sneaking: !!p.sneaking, sprinting: !!p.sprinting,
     swimming: !!p.swimming, flying: !!p.flying, onFire: !!(g.survival && g.survival.fire > 0), equipment: equipOf(g.inv) };
   const r = E && E.riding;
-  if (r) v.vehicle = entityView(r, 1);
+  // (seen from what you ride, you are among its passengers: the depth keeps the two from asking each other forever)
+  if (r && depth < 2) v.vehicle = entityView(r, depth + 1);
   // the block under the feet (stepping_on)
   const fx = Math.floor(p.pos.x), fy = Math.floor(p.pos.y - 0.2), fz = Math.floor(p.pos.z);
   v.stepping = { x: fx + 0.5, y: fy + Y0, z: fz + 0.5 };
@@ -182,7 +183,7 @@ function playerView() {
 }
 export function entityView(e, depth = 0) {
   if (!e) return null;
-  if (e.isPlayer) return G ? playerView() : null;
+  if (e.isPlayer) return G ? playerView(depth) : null;
   const v = { type: e.type, x: e.pos.x, y: e.pos.y + Y0, z: e.pos.z, dim: G ? G.dim : 'overworld',
     baby: !!(e.baby || e.isBaby || (e.ageT !== undefined && e.ageT < 0)), onFire: e.fire > 0, sneaking: !!e.sneaking };
   const eq = {};
