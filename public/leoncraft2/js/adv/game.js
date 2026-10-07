@@ -958,17 +958,8 @@ function blockTick(g, p) {
     if (inGate && !S.gate) fire('enter_block', { block: { name: 'end_gateway', meta: 0 } });
     S.gate = inGate;
   }
-  // sliding: falling faster than 0.08 a tick, off the ground, beside a honey block's side and not above its top
-  if (B.honey_block !== undefined && !p.onGround && p.vel.y < -0.08 && P.wants('slide_down_block')) {
-    const hw = 0.3, y = Math.floor(p.pos.y + 0.5);
-    for (let bx = Math.floor(p.pos.x - hw - 0.05); bx <= Math.floor(p.pos.x + hw + 0.05); bx++)
-      for (let bz = Math.floor(p.pos.z - hw - 0.05); bz <= Math.floor(p.pos.z + hw + 0.05); bz++) {
-        if (w.get(bx, y, bz) !== B.honey_block) continue;
-        if (p.pos.y > y + 0.9375) continue;
-        const ox = Math.abs(bx + 0.5 - p.pos.x), oz = Math.abs(bz + 0.5 - p.pos.z), r = 0.4375 + hw;
-        if (ox + 1e-7 > r || oz + 1e-7 > r) { fire('slide_down_block', { block: { name: 'honey_block', meta: 0 } }); return; }
-      }
-  }
+  // sliding down a honey block's side (player.js honeySlide, the game's rule)
+  if (p.slidingOn) fire('slide_down_block', { block: { name: 'honey_block', meta: 0 } });
 }
 /* Sneaking where a sculk sensor (8 blocks; a calibrated one 16) or a warden (16) would have heard
    your steps: avoid_vibration, once a step's worth of creeping */
