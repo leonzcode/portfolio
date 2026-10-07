@@ -310,6 +310,7 @@ export class Spawner {
     }
     if (dim === 'the_nether') { const n = NETHER[b] || NETHER.nether_wastes; return n[cat] || []; }
     if (dim === 'the_end') return cat === 'monster' ? END : [];
+    if (b === 'the_void') return [];
     if (cat === 'monster') return monstersOf(b);
     if (cat === 'creature') return creaturesOf(b);
     if (cat === 'ambient') return [['bat', 10, 8, 8]];
@@ -370,6 +371,7 @@ export class Spawner {
     const m = this.m, T = m.t;
     if (this.dim !== 'overworld') return;
     const b0 = this.biome(cx * 16 + 8, cz * 16 + 8);
+    if (b0 === 'the_void') return;
     const p = SNOWY.has(b0) || b0 === 'ice_spikes' ? 0.07 : 0.1;
     let tries = 0;
     while (R() < p && tries++ < 4) {

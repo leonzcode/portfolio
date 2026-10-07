@@ -80,6 +80,8 @@ const MENU_SEED = 20261002;
 // a dimension's mobs are kept under the world's id, with the dimension added for the Nether and the End
 const entityKey = (entry, dim) => entry.id + (!dim || dim === 'overworld' ? '' : '~' + dim);
 const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) : entry.seed | 0);
+// the generator a world is made by: 'vanilla', a Superflat world's own 'flat:...' (gen/flat.js), else the first one
+const genOf = entry => (entry.generator === 'vanilla' || /^flat:/.test(entry.generator || '') ? entry.generator : 'classic');
 /* How the game looks is in Options: Video Settings (the game's own) and Shader
    Packs (Shaders ON, with the Shader Options, or OFF: the game as Minecraft
    itself draws it, render/vanilla.js). settings.js puts every change into
@@ -508,7 +510,7 @@ async function boot() {
       const last = Worlds.list().sort((a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0))[0];
       const st = last ? new Save(last.id).readState() : null;
       const at = st && st.player ? st.player : last && last.spawn;
-      if (at) spec = { seed: worldSeed(last), generator: last.generator === 'vanilla' ? 'vanilla' : 'classic', dim: st && DIMS[st.dimension] ? st.dimension : 'overworld', at, manifest, colours };
+      if (at) spec = { seed: worldSeed(last), generator: genOf(last), dim: st && DIMS[st.dimension] ? st.dimension : 'overworld', at, manifest, colours };
     } catch (e) { /* the world list unreadable: practise on a new world */ }
     practise(spec, menu && menu.world, spec === fresh ? null : fresh);
   }
@@ -557,7 +559,7 @@ async function boot() {
     const saves = { overworld: save, the_nether: mkSave(entry.id + DIMS.the_nether.suffix), the_end: mkSave(entry.id + DIMS.the_end.suffix) };
     await saves.the_nether.init(); await saves.the_end.init();
     let world;
-    const generator = entry.generator === 'vanilla' ? 'vanilla' : 'classic';
+    const generator = genOf(entry);
     const seed = worldSeed(entry);
     // the title screen's world is this one: keep what is already made
     const reuse = menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim;
@@ -847,7 +849,7 @@ async function boot() {
         const save = g.saves[dim];
         // made first, so the workers set up its generator while what changed there is read
         world = new World({
-          seed: worldSeed(g.entry), generator: g.entry.generator === 'vanilla' ? 'vanilla' : 'classic', dim,
+          seed: worldSeed(g.entry), generator: genOf(g.entry), dim,
           renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits: new Map(), save,
           onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
           onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
@@ -1373,7 +1375,7 @@ async function boot() {
         // hurt: the camera tilts and the model flashes red (combat/combat.js)
         tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha, video.tilt()) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
         biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2,
-        dim: D, bossFog: g.realms.bossFog,
+        dim: D, bossFog: g.realms.bossFog, horizon: /^flat:/.test(world.generator || '') ? 0 : 127,
         // the screen tips when hurt and rolls a little in death (survival.js)
         ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha, video.tilt())) : NO_TILT),
       }, Math.min(0.25, drawDt));

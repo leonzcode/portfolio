@@ -485,7 +485,7 @@ export class Vanilla {
     const above = (state.eye.y - 64 - (D ? D.minY : -64)) / 32;
     if (above < 1 && !(D && D.sky === 'end')) fog.multiplyScalar(Math.max(0, above) * Math.max(0, above));
     // the eye below sea level (y 63): the dark disc under the horizon (SKY_FS)
-    U.uVoidDisc.value = U.uSkyMode.value === 0 && state.eye.y < 127 ? 1 : 0;
+    U.uVoidDisc.value = U.uSkyMode.value === 0 && state.eye.y < (state.horizon !== undefined ? state.horizon : 127) ? 1 : 0;
     // clouds: white by day, grey at night
     U.uCloudColor.value.set(daylight * 0.9 + 0.1, daylight * 0.9 + 0.1, daylight * 0.85 + 0.15);
     greyTowards(U.uCloudColor.value, rain * 0.95, 0.6); greyTowards(U.uCloudColor.value, thunder * 0.95, 0.2);
