@@ -51,6 +51,8 @@ function noteKept(key) {
 }
 let worlds = 0;                    // each World's number, on everything read back for it (see lookup)
 const numKey = (cx, cz) => cx * 4194304 + cz;       // a chunk as one number (|cz| < 2 million)
+// the eight chunks round one by lightEdges' bits: west, east, north, south, then the corners
+const EDGE_DX = [-1, 1, 0, 0, -1, 1, -1, 1], EDGE_DZ = [0, 0, -1, 1, -1, -1, 1, 1];
 /* Practice in the menus: every worker the title's world has makes the world
    likely to be opened next (spec: seed, generator, dim, manifest, colours,
    and at: { x, z } where you will stand, or null for a new world). For a new
@@ -381,7 +383,11 @@ export class World {
       if (m.version <= (shown.get(k) || 0)) return;
       shown.set(k, m.version);
       c.meshed = true;
-      if (m.mesh.light) { c.light = m.mesh.light; c.lightH = m.mesh.lightH; }    // for mobs (js/entities)
+      if (m.mesh.light) {
+        // light that changed along the column's edges: the columns beside it were drawn with the old (lightEdges)
+        if (c.light) this.lightEdges(m.cx, m.cz, c.light, c.lightH, m.mesh.light, m.mesh.lightH);
+        c.light = m.mesh.light; c.lightH = m.mesh.lightH;    // (also for mobs: js/entities)
+      }
       this.stats.mesh++;
       this.onMesh(m.cx, m.cz, m.mesh, m.urgent);
       // the columns round you keep their mesh (with the region's light), so an edit there remakes only its sections
@@ -914,21 +920,59 @@ export class World {
     const urgent = this.builder === 'threaded' ? false : this.urgent || (this.builder === 'full' && this.near(cx, cz));
     const D = urgent ? (this.urgentDirty || (this.urgentDirty = new Set())) : this.dirty;
     const lo = y === undefined ? 0 : y, hi = y === undefined ? H - 1 : y;
-    const add = k => {
-      D.add(k);
-      // the rows changed, against the newest mesh sent (see rowLog)
-      const v = this.meshVersion.get(k) || 0;
-      let log = this.rowLog.get(k);
-      if (!log) this.rowLog.set(k, log = []);
-      const e = log.length ? log[log.length - 1] : null;
-      if (e && e[0] === v) { if (lo < e[1]) e[1] = lo; if (hi > e[2]) e[2] = hi; }
-      else log.push([v, lo, hi]);
-    };
+    const add = k => this.markRows(D, k, lo, hi);
     add(this.key(cx, cz));
     if (lx === 0) add(this.key(cx - 1, cz));
     if (lx === 15) add(this.key(cx + 1, cz));
     if (lz === 0) add(this.key(cx, cz - 1));
     if (lz === 15) add(this.key(cx, cz + 1));
+  }
+  // a column to mesh again (in the line D), with the rows changed, against the newest mesh sent (see rowLog)
+  markRows(D, k, lo, hi) {
+    D.add(k);
+    const v = this.meshVersion.get(k) || 0;
+    let log = this.rowLog.get(k);
+    if (!log) this.rowLog.set(k, log = []);
+    const e = log.length ? log[log.length - 1] : null;
+    if (e && e[0] === v) { if (lo < e[1]) e[1] = lo; if (hi > e[2]) e[2] = hi; }
+    else log.push([v, lo, hi]);
+  }
+  /* A torch near a chunk's edge lights the chunk beside it too, and that one
+     was drawn with the light as it was (it was meshed again only when a block
+     on the edge itself changed): a sharp dark line along the border, or a glow
+     left behind when the torch was taken away. So when a column's new mesh has
+     different light in a cell along its edge, the column on that side (and
+     the one across a corner, whose corner faces take light from it) is made
+     again, in turn, over the rows that changed. Its new light is looked at the
+     same way, so a change goes on as far as it reaches and no further; the
+     column that set it off is not made again for its own change (lightCause). */
+  lightEdges(cx, cz, ol, oh, nl, nh) {
+    const top = Math.max(oh || 0, nh), air = this.noSky ? 0 : 0xf0;
+    let mask = 0, lo = H, hi = -1;
+    for (let y = 0; y < top; y++) {
+      const o = y < oh ? y << 8 : -1, n = y < nh ? y << 8 : -1;
+      let row = 0;
+      for (let t = 0; t < 16; t++) {
+        // west (x 0), east (x 15), north (z 0), south (z 15); a corner cell also the chunk across that corner
+        const w = t << 4, e = w | 15, nn = t, so = 240 | t;
+        if ((o < 0 ? air : ol[o + w]) !== (n < 0 ? air : nl[n + w])) row |= 1 | (t === 0 ? 16 : t === 15 ? 64 : 0);
+        if ((o < 0 ? air : ol[o + e]) !== (n < 0 ? air : nl[n + e])) row |= 2 | (t === 0 ? 32 : t === 15 ? 128 : 0);
+        if ((o < 0 ? air : ol[o + nn]) !== (n < 0 ? air : nl[n + nn])) row |= 4;
+        if ((o < 0 ? air : ol[o + so]) !== (n < 0 ? air : nl[n + so])) row |= 8;
+      }
+      if (row) { mask |= row; if (y < lo) lo = y; hi = y; }
+    }
+    if (!mask) return;
+    const k = this.key(cx, cz), cause = this.lightCause && this.lightCause.get(k);
+    if (cause) this.lightCause.delete(k);
+    const D = this.dirty || (this.dirty = new Set()), C = this.lightCause || (this.lightCause = new Map());
+    for (let b = 0; b < 8; b++) {
+      if (!(mask & (1 << b))) continue;
+      const dx = EDGE_DX[b], dz = EDGE_DZ[b], nk = this.key(cx + dx, cz + dz), c = this.chunks.get(nk);
+      if (!c || !c.meshed || nk === cause) continue;
+      C.set(nk, k);
+      this.markRows(D, nk, Math.max(0, lo - 1), Math.min(H - 1, hi + 1));
+    }
   }
   // your own edits go out the moment they are made (interact.js), not at the next frame
   flushUrgent() {
