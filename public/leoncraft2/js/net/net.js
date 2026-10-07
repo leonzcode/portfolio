@@ -139,10 +139,11 @@ const flat = a => a.slice();
 /* What a world keeps in place of save.js, per dimension: the edits and the
    chests and signs come from the server (and stay up to date with it), and
    so does your own record (where you are, your inventory, health, game mode:
-   PLAYER_KEYS), kept by the server under your name as the game's servers keep
-   playerdata, so it is there from any browser. The rest (maps, what the
-   simulation was in the middle of) is kept in this browser. */
-const PLAYER_KEYS = ['player', 'inventory', 'survival', 'mode', 'hands', 'dimension', 'lastDeath', 'advancements'];
+   PLAYER_KEYS; and your advancements, statistics and recipes, as the game
+   keeps them per player), kept by the server under your name as the game's
+   servers keep playerdata, so it is there from any browser. The rest (maps,
+   what the simulation was in the middle of) is kept in this browser. */
+const PLAYER_KEYS = ['player', 'inventory', 'survival', 'mode', 'hands', 'dimension', 'lastDeath', 'advancements', 'stats', 'recipes'];
 class MpSave {
   constructor(net, d, id) { this.net = net; this.d = d; this.dirty = new Set(); this.local = new Save(id); }
   async init() { await this.local.init(); }
