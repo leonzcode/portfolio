@@ -32,7 +32,7 @@ import { BLOCKS, B, OPAQUE, OPACITY, EMIT, FLUID, MAX_ID } from './blocks.js?v=2
 import { CH, H, LEVEL, FALLING } from './world-const.js?v=22';
 import { BIOMES, SPRUCE_LEAF, BIRCH_LEAF } from './biomes.js?v=22';
 import { hash3 } from './noise.js?v=22';
-import { boxesOf, MODEL_SHAPES } from './models.js?v=22';
+import { boxesOf, MODEL_SHAPES, cubeLook, hasCubeLook, movingDef } from './models.js?v=22';
 import { STATEFUL, SLIGHT, stateDef, lightOf } from './sim/states.js?v=22';
 
 const W = 48, A = W * W;          // the region: three chunks a side
@@ -172,6 +172,8 @@ function tables() {
   const LEAF = new Uint8Array(MAX_ID), WL = new Uint8Array(MAX_ID);
   // blocks drawn from boxes (stairs, fences, doors...), and the small ones that can drop out at a distance
   const MODEL = new Uint8Array(MAX_ID), SMALL = new Uint8Array(MAX_ID), ORIENT = new Uint8Array(MAX_ID);
+  // full blocks that turn with the game's own rules for each face's picture (models.js cubeLook)
+  const LOOK = new Uint8Array(MAX_ID);
   for (const d of BLOCKS) {
     if (!d) continue;
     if (d.leaves) LEAF[d.id] = 1;
@@ -179,8 +181,9 @@ function tables() {
     if (MODEL_SHAPES.has(d.shape) && d.shape !== 'cactus') MODEL[d.id] = 1;
     if (/^(button|rail|wire|candle|wall_torch|crop|vine|plate|pot|lantern|chain|rod)$/.test(d.shape)) SMALL[d.id] = 1;
     ORIENT[d.id] = d.orient === 'axis' ? 1 : d.orient === 'horizontal' ? 2 : d.orient === 'facing' ? 3 : 0;
+    if (hasCubeLook(d)) LOOK[d.id] = 1;
   }
-  return (TABLES = { LEAF, MODEL, SMALL, ORIENT, WL });
+  return (TABLES = { LEAF, MODEL, SMALL, ORIENT, WL, LOOK });
 }
 
 /* ======================================================================== */
@@ -313,7 +316,7 @@ function build(job, ny, c0, c1, base) {
   /* Smart leaves: a face between two leaf blocks is kept only when one of
      them is on the outside of the canopy. You cannot see the faces deep
      inside a tree anyway, and in a jungle they are most of the triangles. */
-  const { LEAF, MODEL, SMALL, ORIENT, WL } = tables();
+  const { LEAF, MODEL, SMALL, ORIENT, WL, LOOK } = tables();
   const onSurface = j => {
     let v = outer[j];
     if (v) return v > 0;
@@ -323,6 +326,8 @@ function build(job, ny, c0, c1, base) {
     return v > 0;
   };
   const seed = job.seed | 0;
+  // blocks whose moving part (a chest's lid, a ringing bell) is drawn elsewhere just now (sim/lids.js): drawn without it
+  const MOVING = job.moving && job.moving.length ? new Set(job.moving) : null;
   const wx0 = job.cx * 16, wz0 = job.cz * 16;
 
   const isWaterish = b => FLUID[b] === 1 || WL[b] === 1;
@@ -348,7 +353,7 @@ function build(job, ny, c0, c1, base) {
   const flatLight = !!job.flat;
   /* ---- one cube face ---- */
   const AO4 = [0, 0, 0, 0], LS4 = [0, 0, 0, 0], LB4 = [0, 0, 0, 0];
-  function face(buf, f, x, y, z, i, layer, flags, tint, wave, rnd, box) {
+  function face(buf, f, x, y, z, i, layer, flags, tint, wave, rnd, box, mir) {
     const F = FACES[f];
     const fi = i + NSTEP[f];                      // the cell the face looks into
     const wd = waterDepth(fi, y + F.n[1]);
@@ -376,7 +381,7 @@ function build(job, ny, c0, c1, base) {
       let px = x + 0.5 + Fn[0] * 0.5 + Ft[0] * (u - 0.5) + Fb[0] * (v - 0.5);
       let py = y + 0.5 + Fn[1] * 0.5 + Ft[1] * (u - 0.5) + Fb[1] * (v - 0.5);
       let pz = z + 0.5 + Fn[2] * 0.5 + Ft[2] * (u - 0.5) + Fb[2] * (v - 0.5);
-      let tu = u * 16, tv = v * 16;
+      let tu = (mir ? 1 - u : u) * 16, tv = v * 16;
       if (box) {
         // a shorter or inset box: snow layers, cactus sides
         if (box.h !== undefined && py > y + box.h) { py = y + box.h; }
@@ -461,14 +466,14 @@ function build(job, ny, c0, c1, base) {
     buf.quad(v0, a0 + a2 < a1 + a3);
   }
   const QP = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], QUV = [[0, 0], [0, 0], [0, 0], [0, 0]];
-  function drawModel(x, y, z, i, d, k2, rnd) {
+  function drawModel(x, y, z, i, d, k2, rnd, mark) {
     const nb = (dx, dy, dz) => {
       const yy = y + dy;
       if (yy < 0 || yy >= ny) return null;
       const j = i + dx + dz * W + dy * A, b2 = rb[j];
       return b2 ? { d: BLOCKS[b2], m: rm[j] } : null;
     };
-    const list = boxesOf(d, rm[i], nb);
+    const list = boxesOf(d, rm[i] | (mark || 0), nb);
     if (!list) return;
     const tint = tintFor(d, k2), tinted = d.tint ? 64 : 0;
     const buf = d.pass === 'translucent' ? out.translucent : d.pass === 'opaque' ? out.opaque : out.cutout;
@@ -597,6 +602,7 @@ function build(job, ny, c0, c1, base) {
         const rnd = (hash3(seed, wx, y, wz) * 255) | 0;
         // a block drawn by its state (a crop's stage, a lit lamp, an extended piston: sim/states.js)
         if (STATEFUL[b]) { d = stateDef(d, rm[i]); if (d.asModel) { drawModel(x, y, z, i, d, k2, rnd); continue; } }
+        if (MOVING && MOVING.has(i)) { const md = movingDef(d); if (md) { drawModel(x, y, z, i, md, k2, rnd, 256); continue; } }
         if (d.shape === 'fluid') { fluidCell(x, y, z, i, FLUID[b]); continue; }
         if (d.waterlogged) fluidCell(x, y, z, i, 1);     // the water around a sea plant
         if (MODEL[b]) { drawModel(x, y, z, i, d, k2, rnd); continue; }
@@ -608,6 +614,8 @@ function build(job, ny, c0, c1, base) {
           // snow comes in eight layers (meta 0-7), two pixels each
           const box = d.shape === 'snow' ? { h: ((rm[i] & 7) + 1) / 8 } : d.shape === 'cactus' ? { in: 1 / 16 } : null;
           const snowy = d.snowy && (rb[i + A] === B.snow || rb[i + A] === B.snow_block || rb[i + A] === B.powder_snow);
+          // a block that turns: each face's picture and how it lies, worked out once per state
+          const look = LOOK[b] ? cubeLook(d, rm[i]) : null;
           for (let f = 0; f < 6; f++) {
             const nb = rb[i + NSTEP[f]];
             if (box && box.h !== undefined) { if (f === 3 && OPAQUE[nb]) continue; if (f !== 2 && f !== 3 && OPAQUE[nb]) continue; }
@@ -619,13 +627,14 @@ function build(job, ny, c0, c1, base) {
               if (nb === b && d.pass === 'cutout' && !d.leaves) continue;
               if (d.shape === 'cactus' && (f === 2 || f === 3) && nb === b) continue;
             }
-            let layer = d.faces[f], flags = 0, fTint = tint, ftinted = tinted;
+            let layer = d.faces[f], flags = 0, fTint = tint, ftinted = tinted, mir = 0;
             // a few blocks come in variants, chosen and turned by position
             const h = d.topVariantLayers || d.variantLayers ? hash3(seed ^ 0x51ed, wx, y, wz) : 0;
             if (f === 2 && d.topVariantLayers) { layer = d.topVariantLayers[(h * d.topVariantLayers.length) | 0]; flags |= ((h * 997) & 3) << 2; }
             else if (d.variantLayers) { layer = d.variantLayers[(h * d.variantLayers.length) | 0]; if (f === 2 || f === 3) flags |= ((h * 997) & 3) << 2; }
             const or = ORIENT[b];
-            if (or) {
+            if (look) { layer = look[f * 2]; const c = look[f * 2 + 1]; flags |= (c & 3) << 2; mir = c & 4; }
+            else if (or) {
               const m = rm[i];
               if (or === 1 && m) {
                 // a log on its side: the rings on the ends, the bark turned to run along it
@@ -647,7 +656,7 @@ function build(job, ny, c0, c1, base) {
             } else if (d.overlay !== undefined && f === 3) { ftinted = 0; fTint = 0xffffff; }
             // a face between two leaf blocks goes where it can be left out at a distance
             const fb = d.leaves && !fastLeaf && LEAF[rb[i + NSTEP[f]]] ? out.leafIn : buf;
-            face(fb, f, x, y, z, i, layer, flags | ftinted | (fastLeaf ? 128 : 0), fTint, fastLeaf ? 0 : (d.wave || 0), rnd, box);
+            face(fb, f, x, y, z, i, layer, flags | ftinted | (fastLeaf ? 128 : 0), fTint, fastLeaf ? 0 : (d.wave || 0), rnd, box, mir);
           }
           continue;
         }

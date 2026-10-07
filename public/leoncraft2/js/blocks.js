@@ -190,15 +190,22 @@ if (B.end_portal_frame !== undefined) Object.assign(BLOCKS[B.end_portal_frame], 
   const shapeOf = (n, shape, more) => { if (B[n] === undefined) return; const d = BLOCKS[B[n]]; d.shape = shape; d.opacity = 0; if (more) more(d); };
   const addTex = (d, extra) => { d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), extra); };
   for (const n of ['cauldron', 'water_cauldron', 'lava_cauldron', 'powder_snow_cauldron']) shapeOf(n, 'cauldron');
-  shapeOf('composter', 'composter', d => addTex(d, { compost: 'coarse_dirt', ready: 'podzol_top' }));
+  shapeOf('composter', 'composter', d => addTex(d, { compost: 'composter_compost', ready: 'composter_ready' }));
   shapeOf('hopper', 'hopper', d => { delete d.orient; });
   shapeOf('campfire', 'campfire', d => { delete d.orient; });
   shapeOf('soul_campfire', 'campfire', d => { delete d.orient; });
   shapeOf('bell', 'bell', d => addTex(d, { post: 'stone', bar: 'dark_oak_planks' }));
   shapeOf('enchanting_table', 'table');
-  shapeOf('lectern', 'lectern', d => { delete d.orient; });
+  shapeOf('lectern', 'lectern', d => { delete d.orient; addTex(d, { base: 'lectern_base' }); });
+  // the dirt a flower pot holds
+  for (const d of BLOCKS) if (d && d.shape === 'pot') addTex(d, { inside: 'dirt' });
   shapeOf('grindstone', 'grindstone', d => { delete d.orient; addTex(d, { leg: 'dark_oak_log' }); });
   shapeOf('brewing_stand', 'brewing');
+  shapeOf('stonecutter', 'stonecutter', d => { delete d.orient; addTex(d, { saw: 'stonecutter_saw' }); });
+  // the faces a few blocks show in some states: a dispenser's or dropper's front facing up or down, an open barrel, a cake's cut side
+  for (const n of ['dispenser', 'dropper']) if (B[n] !== undefined) addTex(BLOCKS[B[n]], { fv: n + '_front_vertical' });
+  if (B.barrel !== undefined) addTex(BLOCKS[B.barrel], { topOpen: 'barrel_top_open' });
+  if (B.cake !== undefined) addTex(BLOCKS[B.cake], { inside: 'cake_inner' });
   // hanging signs hang from iron chains; on a wall, from a bar of their wood's stripped log
   for (const d of BLOCKS) if (d && d.hanging && d.tex) d.tex = Object.assign(typeof d.tex === 'string' ? { all: d.tex } : Object.assign({}, d.tex), { chain: 'iron_chain', bar: typeof d.tex === 'string' ? d.tex : d.tex.all || d.tex.side });
   // a banner's pole and crossbar are wood
