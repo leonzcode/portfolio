@@ -110,7 +110,8 @@ class ChestCart extends BlockCart {
   static ITEM = 'chest_minecart'; static LAYER = 'cart_chest'; static LAYER_TEX = 'cart_chest';
   constructor(m, type) { super(m, type); this.slots = new Array(27).fill(null); this.chest = true; this.loot = null; }
   // from a structure (a mineshaft): its loot table and seed, rolled when first opened
-  spawnData(o) { if (o && o.loot) this.loot = { table: o.loot, seed: o.seed | 0 }; }
+  // (the seed a long, kept as text; carts saved before kept a number, which rolls the same way)
+  spawnData(o) { if (o && o.loot) this.loot = { table: o.loot, seed: o.seed === undefined ? 0 : o.seed }; }
   title() { return 'Minecart with Chest'; }
   interact(held, player) {
     if (!player || !player.isPlayer) return false;
