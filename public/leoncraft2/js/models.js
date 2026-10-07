@@ -670,6 +670,8 @@ export const SHAPES = {
   },
   head(d, m) {
     const L = d.L || {};
+    // the heavy core: half a block, its picture holding the sides below the top and the bottom (the game's model)
+    if (d.name === 'heavy_core') { const s = [0, 8, 8, 16]; return [box(4, 0, 4, 12, 8, 12, { uv: [s, s, [0, 0, 8, 8], [8, 0, 16, 8], s, s] })]; }
     const fr = L.front !== undefined ? L.front : d.faces[0], bk = L.back !== undefined ? L.back : d.faces[0];
     // on a wall: the back against it, looking out
     if (d.wall || (m & 8)) return turn([box(4, 4, 0, 12, 12, 8, { faces: [d.faces[0], d.faces[1], d.faces[2], d.faces[3], fr, bk] })], sideFacing(m & 7) || 0);
