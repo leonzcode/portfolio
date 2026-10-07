@@ -36,6 +36,7 @@ import { Bodies } from './bodies.js?v=22';
 import { Lids } from './lids.js?v=22';
 import { Beams } from './beams.js?v=22';
 import { Sculk } from './sculk.js?v=22';
+import { Conduits } from './conduit.js?v=22';
 import { installBeds } from './beds.js?v=22';
 import { Weather } from './weather.js?v=22';
 import { installRedstone } from './redstone.js?v=22';
@@ -89,6 +90,8 @@ export class Sim {
     this.beams = new Beams(this);
     // sculk sensors hearing vibrations, shriekers shrieking (sim/sculk.js)
     this.sculk = new Sculk(this);
+    // conduits waking in their frames (sim/conduit.js)
+    this.conduits = new Conduits(this);
     // (sim/dispense.js has dispensers too; containers.js's run them, so they are not installed twice)
     this.w.onSet = (x, y, z, ob, om, nb, nm) => this.onSet(x, y, z, ob, om, nb, nm);
   }
@@ -99,6 +102,7 @@ export class Sim {
     this.lids.dispose();
     this.beams.dispose();
     this.sculk.dispose();
+    this.conduits.dispose();
     this.weather.dispose();
     this.msg.dispose();
   }

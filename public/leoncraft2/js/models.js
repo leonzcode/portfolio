@@ -1014,8 +1014,9 @@ SHAPES.chiseled = function (d, m) {
   });
   return turn(r, m & 3);
 };
-// a conduit not at work: its shell, six pixels square, floating in the middle of the block
-SHAPES.conduit = function (d) { const s = [5, 5, 11, 11]; return [box(5, 5, 5, 11, 11, 11, { uv: [s, s, s, s, s, s] })]; };
+// a conduit not at work: its shell, six pixels square, floating in the middle of the block (an active one opens:
+// sim/conduit.js draws it then, and the block leaves the shell out, meta + 256)
+SHAPES.conduit = function (d, m) { const s = [5, 5, 11, 11]; return m & 256 ? [] : [box(5, 5, 5, 11, 11, 11, { uv: [s, s, s, s, s, s] })]; };
 /* A decorated pot (the game's pot): the body fourteen pixels square and a block tall, each side the middle of
    its picture, then a narrow collar and the wider lip on top. */
 SHAPES.vase = function (d, m) {
@@ -1168,7 +1169,7 @@ const MOVING_DEF = new Map();
 export function movingDef(d) {
   if (MOVING_DEF.has(d.id)) return MOVING_DEF.get(d.id);
   let v = null;
-  if (d.shape === 'chest' || d.shape === 'bell' || d.shape === 'vase') v = d;
+  if (d.shape === 'chest' || d.shape === 'bell' || d.shape === 'vase' || d.shape === 'conduit') v = d;
   else if (/shulker_box$/.test(d.name)) v = Object.assign(Object.create(d), { shape: 'shulker' });
   MOVING_DEF.set(d.id, v);
   return v;

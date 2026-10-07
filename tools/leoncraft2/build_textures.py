@@ -936,6 +936,16 @@ if os.path.isdir(PAINT_DIR):
 # the beacon's beam (Pixel Perfection CE's; checked against the game's: no pixel in common), for js/sim/beams.js
 if os.path.exists(os.path.join(ENTITY, 'beacon_beam.png')):
     Image.open(os.path.join(ENTITY, 'beacon_beam.png')).convert('RGBA').save(os.path.join(OUT, 'beacon_beam.png'), optimize=True)
+# the end gateway's beam, the same way (Pixel Perfection CE's; no pixel in common with the game's either)
+if os.path.exists(os.path.join(ENTITY, 'end_gateway_beam.png')):
+    Image.open(os.path.join(ENTITY, 'end_gateway_beam.png')).convert('RGBA').save(os.path.join(OUT, 'end_gateway_beam.png'), optimize=True)
+# an active conduit's cage, shell and eyes, for js/sim/conduit.js: Pixel Perfection Legacy's own (its spirals and a
+# heart for the eye; checked against the game's: no pixel in common). Pixel Perfection CE's are the game's own: not used.
+PPL_CONDUIT = os.path.join(PPL, 'assets', 'minecraft', 'textures', 'entity', 'conduit')
+if os.path.isdir(PPL_CONDUIT):
+    os.makedirs(os.path.join(OUT, 'conduit'), exist_ok=True)
+    for f in ('base', 'cage', 'open_eye', 'closed_eye'):
+        Image.open(os.path.join(PPL_CONDUIT, f + '.png')).convert('RGBA').save(os.path.join(OUT, 'conduit', f + '.png'), optimize=True)
 
 print('textures:', len(manifest), 'layers:', N, '(the game checks MAX_ARRAY_TEXTURE_LAYERS)')
 print('from Pixel Perfection Legacy:', len(set(log_ppl)))

@@ -71,6 +71,8 @@ export function placement(world, hit, id, player) {
   if (cur && cur === id && halves && cm !== 2) return [[x, y, z, id, 2]];
   if (cur && cur === id && d.shape === 'snow' && (cm & 7) < 7) return [[x, y, z, id, cm + 1]];
   if (cur && !gives(BLOCKS[cur], cm)) return out;
+  // a conduit put into still water keeps it (sim/conduit.js)
+  if (d.name === 'conduit' && FLUID[cur] === 1 && !(cm & 15) && B.lc2_wet_conduit !== undefined) return [[x, y, z, B.lc2_wet_conduit, 0]];
   const fy = hit.hit ? hit.hit[1] - Math.floor(hit.hit[1] - (n[1] === 1 ? 1e-6 : 0)) : 0.5;   // how high up the clicked face
   const upperHalf = n[1] === -1 || (n[1] === 0 && fy > 0.5);
   const look = lookFacing(player.yaw);
