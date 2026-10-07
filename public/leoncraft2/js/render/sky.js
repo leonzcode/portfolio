@@ -188,7 +188,7 @@ vec3 skyL(vec3 d) {
   float elev = asin(clamp(d.y, -1.0, 1.0));
   float v = 0.5 + 0.5 * sign(elev) * sqrt(abs(elev) / (PI * 0.5));
   float az = atan(d.z, d.x); if (az < 0.0) az += TAU;
-  return texture(uView, vec2(az / TAU, v)).rgb;
+  return textureLod(uView, vec2(az / TAU, v), 0.0).rgb;
 }
 vec3 irr(vec3 n) {
   vec3 E = vec3(0.0);
@@ -211,11 +211,22 @@ void main() {
   vec3 moonT = texture(uTrans, transUV(uCamH, uMoonDir.y)).rgb;
   vec3 c = vec3(0.0);
   vec3 light = uSunDir.y > -0.02 ? sunT * uSunI * smoothstep(-0.02, 0.03, uSunDir.y) : moonT * uMoonI * smoothstep(-0.02, 0.06, uMoonDir.y);
-  if (i == 0) c = irr(vec3(0.0, 1.0, 0.0)) * AMB_BOOST * uSkyK;
-  else if (i == 1) c = (irr(vec3(1.0, 0.0, 0.0)) + irr(vec3(-1.0, 0.0, 0.0)) + irr(vec3(0.0, 0.0, 1.0)) + irr(vec3(0.0, 0.0, -1.0))) * 0.25 * AMB_BOOST * uSkyK;
+  /* The sky's light on the faces this texel wants: the four sides averaged
+     for 1, straight up for 0, 2 and 6. Gathered in one loop whose length the
+     shader compiler cannot know, so irr() is in the program once: called
+     seven times over, each copy unrolled, it took the compiler two thirds
+     of a second the first time a shader look was chosen. (The same sums in
+     the same order as before; the sky table is read with textureLod, as a
+     loop of unknown length allows, the same texel it read before.) */
+  int faces = i == 1 ? 4 : i == 0 || i == 2 || i == 6 ? 1 : 0;
+  vec3 Ei = vec3(0.0);
+  for (int k = 0; k < faces; k++)
+    Ei += irr(i != 1 ? vec3(0.0, 1.0, 0.0) : k == 0 ? vec3(1.0, 0.0, 0.0) : k == 1 ? vec3(-1.0, 0.0, 0.0) : k == 2 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 0.0, -1.0));
+  if (i == 0) c = Ei * AMB_BOOST * uSkyK;
+  else if (i == 1) c = Ei * 0.25 * AMB_BOOST * uSkyK;
   else if (i == 2) {
     // what bounces off the ground: sky and sun on grass-ish ground
-    vec3 Eg = irr(vec3(0.0, 1.0, 0.0)) + sunT * uSunI * sat(uSunDir.y) + moonT * uMoonI * sat(uMoonDir.y);
+    vec3 Eg = Ei + sunT * uSunI * sat(uSunDir.y) + moonT * uMoonI * sat(uMoonDir.y);
     c = Eg * 0.18 * AMB_BOOST * uSkyK;
   }
   else if (i == 3) c = light * uWarm;
@@ -224,7 +235,7 @@ void main() {
   else if (i == 6) {
     // how much light falls on an everyday scene (a third of the sun, all of the sky), and the exposure that keeps it
     // mid-bright; at night it opens no further than the moon allows, so night stays night
-    float E = lum(light) * 0.35 + lum(irr(vec3(0.0, 1.0, 0.0))) * AMB_BOOST;
+    float E = lum(light) * 0.35 + lum(Ei) * AMB_BOOST;
     c = vec3(clamp(KEY / max(E, 1e-4), 0.05, 4.5) * uExpBias);
   }
   o = vec4(c, 1.0);
