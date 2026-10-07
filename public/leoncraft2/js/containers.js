@@ -509,8 +509,19 @@ export class Containers {
         }
       } else c.cook = 0;
     } else if (c.cook > 0) c.cook = Math.max(0, c.cook - 2);
-    if (wasLit !== c.burn > 0 && this.onLit) this.onLit(c, c.burn > 0);
+    if (wasLit !== c.burn > 0) { this.showLit(c, c.burn > 0); if (this.onLit) this.onLit(c, c.burn > 0); }
     return c.burn > 0 || c.cook > 0 || (canCook && !!s[1] && fuelTicks(s[1].id) > 0);
+  }
+  /* the block shows it too, as the game's lit state: meta bit 2 of a furnace,
+     smoker or blast furnace (its front drawn with the fire going and light 13:
+     sim/states.js) */
+  showLit(c, lit) {
+    const w = this.world;
+    if (!w || !w.get) return;
+    const b = w.get(c.x, c.y, c.z), d = BLOCKS[b];
+    if (!d || d.name !== c.kind) return;
+    const m = w.meta(c.x, c.y, c.z), n = lit ? m | 4 : m & ~4;
+    if (n !== m) w.set(c.x, c.y, c.z, b, n);
   }
   // the experience a furnace holds: each recipe's xp times how many were made, the whole points and the rest by chance
   xpOf(c, take = true) {
