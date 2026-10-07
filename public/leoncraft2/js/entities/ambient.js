@@ -15,7 +15,8 @@
                     rising 0.07 a tick for 280 to 330 ticks (a signal fire,
                     over a hay bale, higher), and now and then a spark
 
-   And while it rains, the splashes where it lands (rainSplashes).
+   And while it rains, the splashes where it lands (rainSplashes); and the
+   pieces of ground your feet kick up sprinting or landing hard (feet).
 
    Particles go through entities/particles.js like the rest, so Video
    Settings' Particles leaves some out the same way. Cheap: 1334 block reads
@@ -48,6 +49,7 @@ export class Ambient {
   constructor(m) {
     this.m = m;
     this.fires = new Map();      // campfires seen near you: "x,y,z" -> [x, y, z]
+    this.landed = undefined;     // the player's last landing seen (player.js landed)
   }
   // one particle where asked, still (the game's torch smoke and flames start at rest), or with a push
   // (light: 1 draws it at full brightness; below that it takes the lightmap, so it darkens at night)
@@ -68,6 +70,7 @@ export class Ambient {
       }
     }
     this.rainSplashes(px, py, pz);
+    this.feet();
     // the campfires: every tick, as their block entities do in the game
     for (const [key, f] of this.fires) {
       const [x, y, z] = f;
@@ -99,6 +102,34 @@ export class Ambient {
       const sx = x + R(), sz = z + R(), sy = top - (d && d.name === 'water' ? 1 / 9 : 0);
       if (hot) this.puff('smoke', sx, sy, sz);
       else this.puff('rain', sx, sy, sz, (R() - 0.5) * 0.04, 0.1 + R() * 0.2, (R() - 0.5) * 0.04, undefined, OUTDOORS);
+    }
+  }
+  /* What your feet kick up, as the game's do: sprinting on the ground (not in
+     water or lava, not sneaking), a piece of the block under you each tick,
+     thrown back against your motion and up; landing after a fall of more
+     than 3 blocks, a burst of 150 x (0.2 + the blocks past 3 / 15) pieces
+     (at most 2.5 times that) from your feet. Pieces of the block, as when it
+     breaks (render/particles.js). */
+  feet() {
+    const m = this.m, P = m.P, RP = m.R && m.R.particles, T = m.t;
+    if (!RP || m.mode === 'spectator') return;
+    const L = P.landed;
+    if (L !== this.landed) {
+      if (this.landed !== undefined && L && L.dist > 3 && L.block && !P.inWater) {
+        const look = RP.look(L.block, Math.floor(P.pos.x), Math.floor(P.pos.z));
+        const n = Math.floor(150 * Math.min(0.2 + Math.ceil(L.dist - 3) / 15, 2.5));
+        if (look) for (let i = 0; i < n; i++) RP.terrain(P.pos.x, P.pos.y, P.pos.z, gauss() * 0.15, gauss() * 0.15, gauss() * 0.15, look);
+      }
+      this.landed = L;
+    }
+    if (P.sprinting && P.onGround && !P.inWater && !P.inLava && !P.sneaking && !P.flying) {
+      const bx = Math.floor(P.pos.x), by = Math.floor(P.pos.y - 0.2), bz = Math.floor(P.pos.z);
+      const b = T.get(bx, by, bz), look = b ? RP.look(b, bx, bz) : null;
+      if (look) {
+        let x = P.pos.x + (R() - 0.5) * 0.6, z = P.pos.z + (R() - 0.5) * 0.6;
+        x = Math.max(bx, Math.min(bx + 1, x)); z = Math.max(bz, Math.min(bz + 1, z));
+        RP.terrain(x, P.pos.y + 0.1, z, -P.vel.x * 4, 1.5, -P.vel.z * 4, look);
+      }
     }
   }
   block(k, b, x, y, z) {
@@ -150,3 +181,5 @@ export class Ambient {
 const RED = [1.0, 0.15, 0.1];
 // in the open sky's light (the lightmap darkens it at night), not glowing
 const OUTDOORS = 0.98;
+// a normal random number (mean 0, spread 1), as the game's nextGaussian
+function gauss() { let u = 0; while (!u) u = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * R()); }
