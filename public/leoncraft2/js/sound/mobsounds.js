@@ -21,7 +21,10 @@
    that is not tamed, an axolotl out of water, a villager trading).
 
    Arrows: a mob's arrow leaving its bow plays the mob's shoot sound, and
-   any arrow sticking in a block plays entity.arrow.hit.
+   any arrow sticking in a block plays entity.arrow.hit. A thrown trident
+   hits a mob or the ground with its own sounds, and calls out as it starts
+   back to a Loyalty thrower. A lead put on, tied to a fence, let go or
+   snapping (past 10 blocks) is heard; bees buzz while they fly near.
 --------------------------------------------------------------------------- */
 import { Sound } from './sound.js?v=22';
 import { blockSound, voice, spread } from './sfx.js?v=22';
@@ -83,18 +86,23 @@ function hurtOf(e, type, kind) {
   return kind;
 }
 
+const BEE_LOOPS = 4, BEE_NEAR = 8;
+
 export class MobSounds {
-  constructor() { this.n = 0; }
+  constructor() { this.n = 0; this.bees = new Map(); }
+  reset() { for (const h of this.bees.values()) h.stop(); this.bees.clear(); }
   // at: the listener's position (sound.js), so far-off mobs cost nothing
   tick(E, at) {
     if (!E || !E.list) return;
     this.n++;
+    if (this.bees.size) this.sweep();
     for (const e of E.list) {
       if (e.removed) continue;
       let s = e._snd;
       if (!s) s = e._snd = { amb: -80 + ((R() * 80) | 0), hurt: e.hurtTime | 0, dead: !!e.dead, md: 0, next: 1, stuck: !!e.stuck, new: true, ground: !!e.onGround, vxp: e.vxp | 0, shake: e.shakeT | 0 };
       const dx = e.pos.x - at.x, dy = e.pos.y - at.y, dz = e.pos.z - at.z, d2 = dx * dx + dy * dy + dz * dz;
       if (e.type === 'arrow' || e.type === 'spectral_arrow') { this.arrow(e, s); continue; }
+      if (e.type === 'trident') { this.trident(e, s); continue; }
       if (e.paddle && e.rowing) { if (d2 < 16 * 16) this.paddles(e); continue; }
       if (typeof e.health !== 'number' || !e.maxHealth) { s.new = false; continue; }
       const type = e.type, name = 'entity.' + (NAME[type] || type) + '.';
@@ -116,6 +124,7 @@ export class MobSounds {
         s.amb = -80;
       }
       s.hurt = h;
+      if (e.leash !== undefined || s.leash) this.lead(E, e, s);
       if (e.dead) continue;
       // speaking
       if (((R() * 1000) | 0) < s.amb++) {
@@ -136,6 +145,7 @@ export class MobSounds {
         s.ground = !!e.onGround;
         continue;
       }
+      if (type === 'bee') this.bee(e, d2);
       // footsteps
       if (!near || !e.onGround) continue;
       const mx = e.pos.x - e.prev.x, mz = e.pos.z - e.prev.z;
@@ -151,6 +161,47 @@ export class MobSounds {
         }
       }
     }
+  }
+  /* Bees buzz while they fly: a held loop on each of the nearest few (an
+     angry one's harder), following it, gone when it lands, dies or is out
+     of earshot. */
+  bee(e, d2) {
+    let h = this.bees.get(e);
+    const want = !e.dead && !e.removed && !e.onGround && d2 < BEE_NEAR * BEE_NEAR;
+    if (!want) { if (h) { h.stop(); this.bees.delete(e); } return; }
+    if (!h && this.bees.size < BEE_LOOPS) {
+      h = Sound.loop(e.target ? 'entity.bee.loop_aggressive' : 'entity.bee.loop', 'neutral', { at: [e.pos.x, e.pos.y + 0.3, e.pos.z], volume: 0.7, pitch: e.baby ? 1.5 : 1 });
+      if (h) this.bees.set(e, h);
+    }
+    if (h) h.pos(e.pos.x, e.pos.y + 0.3, e.pos.z);
+  }
+  // the bees' loops whose bee is gone from the world
+  sweep() {
+    for (const [e, h] of this.bees) if (e.removed || e.dead || h.stopped) { h.stop(); this.bees.delete(e); }
+  }
+  /* A lead: put on a mob, moved to a fence, let go, or snapping. */
+  lead(E, e, s) {
+    const L = e.leash, now = L ? (L.knot ? 'k' : 'p') : '';
+    const was = s.leash || '';
+    if (now !== was) {
+      if (now === 'p' && !was) Sound.play('item.lead.tied', e.pos.x, e.pos.y + e.h * 0.6, e.pos.z, 1, 1, 'neutral');
+      else if (now === 'k') Sound.play('item.lead.tied', L.knot[0] + 0.5, L.knot[1] + 0.5, L.knot[2] + 0.5, 1, 1, 'neutral');
+      else if (!now) Sound.play((s.leashD || 0) > 9.5 ? 'item.lead.break' : 'item.lead.untied', e.pos.x, e.pos.y + e.h * 0.6, e.pos.z, 1, 1, 'neutral');
+    }
+    s.leash = now;
+    if (L) {
+      const P = E.P || (E.player && E.player.pos ? E.player : null);
+      const hx = L.knot ? L.knot[0] + 0.5 : P ? P.pos.x : e.pos.x, hy = L.knot ? L.knot[1] + 0.6 : P ? P.pos.y + 1 : e.pos.y, hz = L.knot ? L.knot[2] + 0.5 : P ? P.pos.z : e.pos.z;
+      s.leashD = Math.hypot(hx - e.pos.x, hy - (e.pos.y + e.h * 0.6), hz - e.pos.z);
+    }
+  }
+  /* A thrown trident: into a mob, into the ground, and back to its thrower. */
+  trident(e, s) {
+    const cat = e.owner && e.owner.isPlayer ? 'player' : 'hostile';
+    if (e.dealt && !s.dealt) Sound.play('item.trident.hit', e.pos.x, e.pos.y, e.pos.z, 1, 1, cat);
+    else if (e.stuck && !s.stuck && !e.dealt) Sound.play('item.trident.hit_ground', e.pos.x, e.pos.y, e.pos.z, 1, 1.2 / (R() * 0.2 + 0.9), cat);
+    if (e.returning && !s.returning) Sound.play('item.trident.return', e.pos.x, e.pos.y, e.pos.z, 10, 1, cat);
+    s.dealt = !!e.dealt; s.stuck = !!e.stuck; s.returning = !!e.returning;
   }
   /* A boat's paddles: each dips with a splash (or a scrape on land) as it
      comes round past an eighth of a turn, on the side it is on, as the game
