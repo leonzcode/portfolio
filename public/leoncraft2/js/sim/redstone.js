@@ -108,7 +108,8 @@ export class Redstone {
     if (!d.solid && d.name !== 'hopper') return false;
     if (d.shape === 'cube' || d.shape === 'cactus') return d.name !== 'hopper' || f === 2;
     const m = this.w.meta(x, y, z);
-    if (d.shape === 'slab') { const t = m & 3; return t === 2 || (t === 1 ? f === 2 : f === 3); }
+    // (a sculk sensor or a daylight detector is a low slab whatever its meta holds: only its foot is full)
+    if (d.shape === 'slab') { const t = /_slab$/.test(d.name) ? m & 3 : 0; return t === 2 || (t === 1 ? f === 2 : f === 3); }
     if (d.shape === 'stairs') return f === (m & 4 ? 2 : 3);
     return false;
   }

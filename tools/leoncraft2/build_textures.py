@@ -91,7 +91,10 @@ CROPS = {'sniffer_egg_not_cracked_top': ('sniffer_egg_not_cracked', (0, 0, 16, 1
 # kept animated (all frames); everything else uses its first frame
 ANIMATED = {'water_still', 'water_flow', 'lava_still', 'lava_flow', 'sea_lantern', 'magma', 'prismarine', 'fire_0',
             'soul_fire_0', 'nether_portal', 'seagrass', 'kelp', 'kelp_plant', 'tall_seagrass_bottom',
-            'tall_seagrass_top', 'sculk', 'sculk_vein', 'sculk_catalyst_top', 'sculk_catalyst_side'}
+            'tall_seagrass_top', 'sculk', 'sculk_vein', 'sculk_catalyst_top', 'sculk_catalyst_side',
+            'sculk_sensor_tendril_inactive', 'sculk_sensor_tendril_active', 'sculk_shrieker_inner_top',
+            'sculk_shrieker_can_summon_inner_top'}
+HALF_FRAMES = {'sculk_shrieker_inner_top', 'sculk_shrieker_can_summon_inner_top'}
 # extra random-looking copies of a texture (the world picks one per block)
 VARIANTS = {'stone': ['stone1', 'stone2', 'stone3'], 'granite': ['granite1'], 'diorite': ['diorite1'],
             'andesite': ['andesite1'], 'dirt': ['dirt1', 'dirt2'], 'grass_block_top': ['grass_block_top1', 'grass_block_top2'],
@@ -238,6 +241,9 @@ def block_tex(name, raw=False):
         log_ppl.append(name)
     SRC_OF[name] = src
     frames, anim = frames_of(p, name in ANIMATED)
+    # (a slow animation keeps every other frame, held twice as long: the texture array has room for 2048 layers)
+    if name in HALF_FRAMES and anim and len(frames) > 2:
+        frames, anim = frames[::2], dict(anim, frametime=anim['frametime'] * 2)
     return (frames if raw else finish(name, frames)), anim
 
 
@@ -769,9 +775,28 @@ REPLACE = {
     'bell_bottom': lambda: (block_tex('gold_block')[0], None),
     'smithing_table_front': lambda: (recoloured('dark_oak_planks', dark=(30, 30, 36), light=(110, 96, 90)), None),
     'smithing_table_side': lambda: (recoloured('dark_oak_planks', dark=(34, 32, 36), light=(116, 100, 92)), None),
-    'chiseled_bookshelf_empty': lambda: (block_tex('chiseled_bookshelf_side')[0], None),
+    'chiseled_bookshelf_empty': lambda: (chiseled_front(False), None),
+    'chiseled_bookshelf_occupied': lambda: (chiseled_front(True), None),
     'tnt_bottom': lambda: (block_tex('tnt_top')[0], None),
 }
+# The chiseled bookshelf's front (the packs' own one follows the game's too closely): Pixel Perfection Legacy's
+# chiseled bookshelf side, whose panels sit where the game's six slots are, with each panel opened up, dark and
+# empty, or holding the books of Pixel Perfection CE's bookshelf from the same spot of its picture.
+CHISEL_PANELS = [(x0, x1, y0, y1) for (y0, y1) in ((1, 7), (9, 15)) for (x0, x1) in ((2, 5), (6, 10), (11, 14))]
+def chiseled_front(books):
+    out = block_tex('chiseled_bookshelf_side')[0][0].copy()
+    shelf = block_tex('bookshelf')[0][0]
+    for x0, x1, y0, y1 in CHISEL_PANELS:
+        if books:
+            out[y0:y1, x0:x1] = shelf[y0:y1, x0:x1]
+        else:
+            # the hollow: dark, darker under the shelf above
+            for y in range(y0, y1):
+                k = 0.07 if y == y0 else 0.11 if y < y1 - 1 else 0.15
+                out[y, x0:x1, :3] = np.array([0.55, 0.42, 0.30]) * k / 0.15 * 0.35
+    return [out]
+
+
 def glazed_like(c, design):
     """A glazed terracotta drawn in another one's pattern: only the pattern's lightness, laid on a ramp round the
     game's mean colour for it and pulled to the game's spread (colour statistics, no pixels). The concrete's ramp

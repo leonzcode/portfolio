@@ -46,6 +46,7 @@ export function placement(world, hit, id, player) {
   if (hit.b === id) {
     if (halves && ((hm === 0 && n[1] === 1) || (hm === 1 && n[1] === -1))) return [[hit.x, hit.y, hit.z, id, 2]];
     if (d.shape === 'candle' && (hm & 3) < 3) return [[hit.x, hit.y, hit.z, id, hm + 1]];
+    if (d.shape === 'eggs' && (hm & 3) < 3) return [[hit.x, hit.y, hit.z, id, hm + 1]];
     if ((d.shape === 'layer' || d.shape === 'snow') && (hm & 7) < 7) return [[hit.x, hit.y, hit.z, id, hm + 1]];
   }
   // scaffolding on scaffolding (not sneaking): up the column, or along the way you face when you click its top,
@@ -83,7 +84,8 @@ export function placement(world, hit, id, player) {
     return [[x, y, z, id, horizOf([-n[0], 0, -n[2]])]];
   }
   switch (d.shape) {
-    case 'slab': m = upperHalf && halves ? 1 : 0; break;
+    // (a calibrated sculk sensor faces the way you look, its input side towards you: bits 2-3)
+    case 'slab': m = d.name === 'calibrated_sculk_sensor' ? look << 2 : upperHalf && halves ? 1 : 0; break;
     case 'stairs': m = look | (upperHalf ? 4 : 0); break;
     case 'gate': m = look; break;
     case 'anvil': m = look; break;
@@ -129,16 +131,19 @@ export function placement(world, hit, id, player) {
     case 'wall_torch': case 'wall_sign': case 'ladder':
       if (n[1] !== 0) return out;
       m = support; break;
-    case 'button': m = support; break;
+    // (on a floor or a ceiling it faces the way you look, bits 4-5)
+    case 'button': m = support === 2 || support === 3 ? support | (look << 4) : support; break;
     case 'lantern': m = n[1] === -1 ? 1 : 0; break;
     // a hopper points into what you clicked, or down when you click a top or a bottom
     case 'hopper': m = n[1] !== 0 ? 4 : horizOf([-n[0], 0, -n[2]]); break;
     case 'campfire': m = look; break;
+    // a dried ghast faces you
+    case 'dried_ghast': m = (look + 2) & 3; break;
     case 'lectern': case 'grindstone': case 'stonecutter': case 'shelf': m = (look + 2) & 3; break;
     // a bell stands on the floor across your view, hangs from a ceiling, or from one wall (or two)
     case 'bell': {
       if (n[1] === 1) { m = look << 1; break; }
-      if (n[1] === -1) { m = 1; break; }
+      if (n[1] === -1) { m = 1 | (look << 1); break; }
       const F = { 5: 0, 0: 1, 4: 2, 1: 3 }[support], far = world.get(x + n[0], y, z + n[2]);
       m = (F << 1) | (far && BLOCKS[far].solid && BLOCKS[far].shape === 'cube' ? 32 : 8);
       break;

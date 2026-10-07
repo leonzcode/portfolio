@@ -39,6 +39,9 @@ Changes made for Leoncraft 2:
   share none of its pixels. (Pixel Perfection Legacy's paintings are copies
   of the game's, so none of those is used.) The newer paintings are drawn by
   Leoncraft's own code;
+- beacon_beam.png, the beacon's beam, is Pixel Perfection CE's own
+  (textures/entity/beacon_beam.png in that pack); checked pixel by pixel
+  against the game's beam (October 2026), it shares none of its pixels;
 - copper chests are the wooden chest recoloured to each copper stage; signs
   for mangrove, cherry, pale oak, poplar and bamboo are the oak sign
   recoloured to their planks; pointed dripstone is Legacy's sulfur spike
