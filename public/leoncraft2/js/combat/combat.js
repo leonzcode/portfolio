@@ -236,7 +236,8 @@ export class Combat {
     const fresh = !(sv.invul > 10);
     if (!fresh && amount <= sv.lastHurt) return false;
     const before = sv.health;
-    sv.hurt(amount, SURVIVAL_KIND[src.type] || src.type || 'generic');
+    // (with who did it: the death message names them, difficulty scales a mob's hit, and the advancements know the killer)
+    sv.hurt(amount, Object.assign({}, src, { type: SURVIVAL_KIND[src.type] || src.type || 'generic' }));
     if (fresh) {
       const P = this.P;
       // where it came from: an arrow's flight, or the attacker
