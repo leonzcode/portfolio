@@ -138,8 +138,9 @@ vec4 fluidTexture(bool top, float flowLayer) {
 }
 vec4 waterTexture(bool top) { return fluidTexture(top, uFlowLayers.x); }
 #ifndef LDR
-// the full chain's eye (render/post.js), for lava to come out of it as its own colour
+// the full chain's eye (render/post.js), for lava to come out of it as its own colour; and the dimension
 uniform sampler2D uExpoTex;
+uniform float uDim;
 #endif
 #if SSR_STEPS > 0
 // screen-space reflection: march, then home in
@@ -188,6 +189,9 @@ void main() {
   if (lava) {
     // lava as the game draws it (see the top): its texture at full light, which is its own colour on the screen
     vec3 l = fluidTexture(vNormal == 2 || vNormal == 3, uFlowLayers.y).rgb;
+    // and the game's shade by side (render/vanilla.js faceShade; the Nether's top and bottom both 0.9)
+    float ca = abs(uDim - 1.0) < 0.5 ? 1.0 : 0.0;
+    l *= vNormal == 2 ? mix(1.0, 0.9, ca) : vNormal == 3 ? mix(0.5, 0.9, ca) : vNormal >= 4 ? 0.8 : 0.6;
 #ifdef LDR
     // straight to the screen in its own colours, the fog laid over it in the screen's colours too
     float keep = sat(dot(vKeep, vec3(1.0 / 3.0)) / max(uExpo, 1e-4));
