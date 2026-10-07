@@ -21,6 +21,7 @@
 --------------------------------------------------------------------------- */
 import { displayName, drawStack, GLINT, COOLING } from './inventory.js?v=24';
 import { drawBossBar } from '../dim/bossbar.js?v=24';
+import { BLOCKS, B } from '../blocks.js?v=24';
 
 const TICK = 50;
 
@@ -55,7 +56,8 @@ export class Hud {
   setStats(s) {
     const o = this.stats;
     if (s && o && s.health === o.health && s.food === o.food && s.air === o.air && s.xp === o.xp && s.level === o.level && s.armor === o.armor && s.absorption === o.absorption
-      && s.poison === o.poison && s.wither === o.wither && s.hungerEffect === o.hungerEffect && s.regen === o.regen && (s.saturation > 0) === (o.saturation > 0)) return;
+      && s.poison === o.poison && s.wither === o.wither && s.hungerEffect === o.hungerEffect && s.regen === o.regen && (s.saturation > 0) === (o.saturation > 0)
+      && s.fire === o.fire) return;
     if (s && this._lastHealth >= 0 && s.health < this._lastHealth) {
       // hurt: the hearts blink for a second, the lost ones shown white
       this._blinkUntil = performance.now() + 1000;
@@ -88,6 +90,9 @@ export class Hud {
     this._hook(g);
     const W = g.width, H = g.height, cx = Math.floor(W / 2);
     const inv = this.inv, survival = inv.mode === 'survival';
+
+    // burning, in first person: the game's flames up the lower part of the view, under the HUD
+    if (this.stats && this.stats.fire && this.crosshair) this._fire(g, now);
 
     // the axes in place of the crosshair while F3 is up and the camera is known
     if (this.debug && this.camera) this._axes(g, cx, Math.floor(H / 2));
@@ -227,6 +232,54 @@ export class Hud {
       const full = Math.ceil((air - 2) * 10 / maxAir), popping = Math.ceil(air * 10 / maxAir) - full;
       for (let k = 0; k < full + popping; k++) g.blit('icons', k < full ? 16 : 25, 18, 9, 9, right - k * 8 - 9, top - 10);
     }
+  }
+
+  /* ---- on fire ----
+     The game's screen flames: the fire picture on two squares a block
+     across, half a block in front of the eye and 0.3 below it, 0.24 out to
+     each side and turned 10 degrees in, seen through the hand's 70 degree
+     view at nine tenths opacity. Drawn here a picture column at a time, each
+     column stretched to where those squares put it, and again whenever the
+     fire's frame changes. */
+  _fire(g, now) {
+    const d = BLOCKS[B.fire], px = this.icons.px;
+    if (!d || !d.faces || !px) return;
+    const frames = d.anim ? d.anim.frames : 1, ft = d.anim ? d.anim.frametime : 2;
+    const step = Math.floor(now / (TICK * ft));
+    this._wakeAt((step + 1) * TICK * ft);
+    // the second fire picture the game uses is our same flames half a cycle on
+    const layer = d.faces[0] + (step + (frames >> 1)) % frames;
+    const pic = this._firePic || (this._firePic = new Map());
+    let c = pic.get(layer);
+    if (!c) {
+      c = document.createElement('canvas'); c.width = c.height = 16;
+      const img = new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset + layer * 1024, 1024).slice(), 16, 16);
+      c.getContext('2d').putImageData(img, 0, 0);
+      pic.set(layer, c);
+    }
+    const ctx = g.ctx, Wp = ctx.canvas.width, Hp = ctx.canvas.height;
+    const ty = Math.tan(35 * Math.PI / 180), tx = ty * Wp / Hp;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = 0.9;
+    for (let i = 0; i < 2; i++) {
+      const sx = i ? -0.24 : 0.24, th = (i ? 10 : -10) * Math.PI / 180, cs = Math.cos(th), sn = Math.sin(th);
+      // a point of the square (x across it, y up it, both -0.5..0.5) on the screen, in canvas pixels
+      const at = (x, y) => {
+        const X = x * cs - 0.5 * sn + sx, Z = -x * sn - 0.5 * cs, Y = y - 0.3;
+        return [(X / -Z / tx + 1) / 2 * Wp, (1 - Y / -Z / ty) / 2 * Hp];
+      };
+      for (let u = 0; u < 16; u++) {
+        const x0 = -0.5 + u / 16, x1 = x0 + 1 / 16;
+        const a = at(x0, 0), b = at(x1, 0), top = at(x0 + 0.5 / 16, 0.5), bot = at(x0 + 0.5 / 16, -0.5);
+        const L = Math.floor(Math.min(a[0], b[0])), R = Math.ceil(Math.max(a[0], b[0]));
+        if (R < 0 || L > Wp) continue;
+        // the picture is laid mirrored on the square, as the game lays it
+        ctx.drawImage(c, 15 - u, 0, 1, 16, L, top[1], R - L, bot[1] - top[1]);
+      }
+    }
+    ctx.restore();
   }
 
   /* ---- F3 ---- */
