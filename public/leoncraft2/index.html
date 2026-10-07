@@ -8,17 +8,17 @@
 <!-- asked for at once rather than one after another: the game's code beside three.js, and the
      textures while the code loads (main.js asks for the same addresses, stamps and all) -->
 <link rel="modulepreload" href="../legacy/vendor/three-0.163.0.module.js">
-<link rel="modulepreload" href="js/main.js?v=21">
-<link rel="preload" href="textures/manifest.json?v=21" as="fetch" crossorigin>
-<link rel="preload" href="textures/terrain_albedo.png?v=21" as="fetch" crossorigin>
-<link rel="preload" href="textures/items.png?v=21" as="fetch" crossorigin>
-<link rel="preload" href="textures/colormap_grass.png?v=21" as="fetch" crossorigin>
-<link rel="preload" href="textures/colormap_foliage.png?v=21" as="fetch" crossorigin>
+<link rel="modulepreload" href="js/main.js?v=22">
+<link rel="preload" href="textures/manifest.json?v=22" as="fetch" crossorigin>
+<link rel="preload" href="textures/terrain_albedo.png?v=22" as="fetch" crossorigin>
+<link rel="preload" href="textures/items.png?v=22" as="fetch" crossorigin>
+<link rel="preload" href="textures/colormap_grass.png?v=22" as="fetch" crossorigin>
+<link rel="preload" href="textures/colormap_foliage.png?v=22" as="fetch" crossorigin>
 <script>
   // the workers that make the world, started at once so their code loads beside the page's (world.js startWorkers takes them)
   try {
     const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1)) + 1;
-    window.__lc2Workers = Array.from({ length: n }, () => new Worker('js/worker.js?v=21', { type: 'module' }));
+    window.__lc2Workers = Array.from({ length: n }, () => new Worker('js/worker.js?v=22', { type: 'module' }));
   } catch (e) { /* world.js starts them */ }
 </script>
 <script>
@@ -27,7 +27,7 @@
     const o = JSON.parse(localStorage.getItem('lc2_options') || 'null') || {}, q = new URLSearchParams(location.search).get('q') || o.quality;
     if (q !== 'fast' && q !== 'potato') {
       const l = document.createElement('link');
-      l.rel = 'preload'; l.as = 'fetch'; l.crossOrigin = 'anonymous'; l.href = 'textures/terrain_spec.png?v=21';
+      l.rel = 'preload'; l.as = 'fetch'; l.crossOrigin = 'anonymous'; l.href = 'textures/terrain_spec.png?v=22';
       document.head.appendChild(l);
     }
   } catch (e) { /* main.js asks for it in any case */ }
@@ -53,7 +53,7 @@
 <script type="module">
   import * as THREE from '../legacy/vendor/three-0.163.0.module.js';
   window.THREE = THREE;
-  await import('./js/main.js?v=21');
+  await import('./js/main.js?v=22');
 </script>
 </body>
 </html>

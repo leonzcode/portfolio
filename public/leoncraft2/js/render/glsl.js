@@ -457,7 +457,28 @@ export const TONE_CURVES = { agx: 0, aces: 1, reinhard: 2 };
    uExposure, the same at any time of day. The Nether and the End have no
    sky, and uExposure is their whole exposure. Needs uDim, uExposure and
    uAmbient declared by the host. */
-export const EXPOSURE = /* glsl */`
+/* The void (renderer.js sets uVoid each frame; x and y both 0 leave
+   everything as it was, so a shader without it is unchanged): x, the eye
+   below sea level, the game's dark disc under the horizon; y, the eye near or
+   below the bottom of the world, the fog going to black. The game's sky is a
+   plane 16 blocks up and the disc one 4 blocks down, both 512 across, and
+   both are fogged out to the render distance (z, in blocks): so overhead the
+   sky stays blue to the very bottom of the void, and only towards the
+   horizon does it go to the fog's black, and the disc is black straight down
+   and the fog's colour at its rim, a line at the horizon. */
+export const VOID = /* glsl */`
+uniform vec3 uVoid;
+float voidFog(vec3 rd, float h) {
+  float r = h / max(abs(rd.y), 1e-4) * length(rd.xz);
+  return clamp((h + min(r, 512.0) * (1.0 - h / 512.0)) / uVoid.z, 0.0, 1.0);    // (in a straight line, as the game's fog.glsl)
+}
+vec3 voidSky(vec3 col, vec3 rd) {
+  float disc = rd.y < 0.0 && 4.0 / max(-rd.y, 1e-4) * length(rd.xz) < 512.0 ? 1.0 - voidFog(rd, 4.0) : 0.0;
+  float fog = rd.y > 0.0313 ? voidFog(rd, 16.0) : 1.0;
+  return col * (1.0 - uVoid.x * disc) * (1.0 - uVoid.y * fog);
+}
+`;
+export const EXPOSURE = VOID + /* glsl */`
 uniform float uCave;
 float exposureNow() {
   if (uDim > 0.5) return uExposure;
@@ -499,11 +520,11 @@ vec3 finishLDR(vec3 col, vec3 world) {
   } else {
     float h0 = cameraPosition.y - 63.0, k = 1.0 / 60.0, dy = rd.y * dist;
     float od = 0.0019 * uFogMul * exp(-h0 * k) * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
-    vec3 fogC = skyDir(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)));
+    vec3 fogC = skyDir(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z))) * (1.0 - uVoid.y);
     float T = exp(-od);
     col = col * T + fogC * (1.0 - T) * uSkyAtEye;
     float hd = length((world - cameraPosition).xz);
-    col = mix(col, skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), smoothstep(uRender * 0.72, uRender, hd));
+    col = mix(col, skyDir(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))) * (1.0 - uVoid.y), smoothstep(uRender * 0.72, uRender, hd));
   }
   return toSRGB(agx(col * exposureNow()));
 }
@@ -539,7 +560,7 @@ void fogTerms(vec3 world, out vec3 keep, out vec3 add) {
     float T = exp(-od);
     float fade = smoothstep(uRender * 0.72, uRender, length(rd.xz) * dist);
     keep = vec3(T * (1.0 - fade) * E);
-    add = fogColour(rd) * ((1.0 - T) * uSkyAtEye * (1.0 - fade) + fade) * E;
+    add = fogColour(rd) * ((1.0 - T) * uSkyAtEye * (1.0 - fade) + fade) * (1.0 - uVoid.y) * E;
   }
 }
 `;

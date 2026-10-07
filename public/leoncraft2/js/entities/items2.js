@@ -27,15 +27,15 @@
    useExtra(manager, itemName, target, take, build) is the manager's last
    try at a right click (entities/manager.js useHeld).
 --------------------------------------------------------------------------- */
-import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=21';
-import { Projectile } from './projectiles.js?v=21';
-import { register, TYPES } from './mobs.js?v=21';
-import { model } from './mobs2.js?v=21';
-import { addArt } from './mobart.js?v=21';
-import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=21';
-import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS } from '../items.js?v=21';
-import { fireworkColour } from '../crafting.js?v=21';
-import { rayBox } from './terrain.js?v=21';
+import { Entity, Living, DEG, yawTo, r3 } from './entity.js?v=22';
+import { Projectile } from './projectiles.js?v=22';
+import { register, TYPES } from './mobs.js?v=22';
+import { model } from './mobs2.js?v=22';
+import { addArt } from './mobart.js?v=22';
+import { B, BLOCKS, FLUID, SOLID } from '../blocks.js?v=22';
+import { ITEMS, I, armorOf, addCooldown, onCooldown, PAINTING_VARIANTS } from '../items.js?v=22';
+import { fireworkColour } from '../crafting.js?v=22';
+import { rayBox } from './terrain.js?v=22';
 const THREE = window.THREE;
 
 const PI = Math.PI;

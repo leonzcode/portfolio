@@ -28,23 +28,23 @@
    wear on mobs (wearHeld), worn-out tools break into pieces, and Mending
    takes collected experience first (mend).
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=21';
-import { setLodestoneCheck } from './dials.js?v=21';
-import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=21';
-import { breakTicks, wearFor } from './mining.js?v=21';
-import { blockDrops } from './loot.js?v=21';
-import { containerKind, spill } from './containers.js?v=21';
-import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=21';
-import { isPotion, drinkPotion } from './brewing.js?v=21';
-import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=21';
-import { MerchantScreen } from './ui/merchant.js?v=21';
-import { LoomScreen } from './ui/loom.js?v=21';
-import { CartographyScreen } from './ui/cartography.js?v=21';
-import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=21';
-import { countShelves } from './enchanting.js?v=21';
-import { wear } from './ui/inventory.js?v=21';
-import { BookScreen } from './ui/book.js?v=21';
-import { breaksInCreative } from './modes.js?v=21';
+import { B, BLOCKS, FLUID, OPAQUE } from './blocks.js?v=22';
+import { setLodestoneCheck } from './dials.js?v=22';
+import { I, ITEMS, blockOf, foodOf, armorOf, withCount, stackToJSON, stackFromJSON, stewEffect, addCooldown, onCooldown, isBundle, bundleTake } from './items.js?v=22';
+import { breakTicks, wearFor } from './mining.js?v=22';
+import { blockDrops } from './loot.js?v=22';
+import { containerKind, spill } from './containers.js?v=22';
+import { CraftingScreen, ChestScreen, ShulkerScreen, DispenserScreen, CrafterScreen, FurnaceScreen, HopperScreen, BrewingScreen } from './ui/containers.js?v=22';
+import { isPotion, drinkPotion } from './brewing.js?v=22';
+import { EnchantScreen, AnvilScreen, GrindstoneScreen, SmithingScreen, StonecutterScreen } from './ui/workstations.js?v=22';
+import { MerchantScreen } from './ui/merchant.js?v=22';
+import { LoomScreen } from './ui/loom.js?v=22';
+import { CartographyScreen } from './ui/cartography.js?v=22';
+import { MAPS, isFilledMap, drawHeldMaps } from './maps.js?v=22';
+import { countShelves } from './enchanting.js?v=22';
+import { wear } from './ui/inventory.js?v=22';
+import { BookScreen } from './ui/book.js?v=22';
+import { breaksInCreative } from './modes.js?v=22';
 
 const BUCKETS = { water: 'water_bucket', lava: 'lava_bucket' };
 // two slot arrays seen as one (a large chest): reads and writes go straight to the halves

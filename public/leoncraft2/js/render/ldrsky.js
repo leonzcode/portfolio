@@ -8,8 +8,8 @@
    End a dark speckled box. Exposure and tone mapping happen here too, so
    nothing runs after it.
 --------------------------------------------------------------------------- */
-import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=21';
-import { rawMat } from './sky.js?v=21';
+import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=22';
+import { rawMat } from './sky.js?v=22';
 const THREE = window.THREE;
 
 const FS = COMMON + TONEMAP + /* glsl */`
@@ -67,6 +67,7 @@ void main() {
       col += toLinear(m.rgb) * m.a * 2.2 * smoothstep(-0.05, 0.08, md.y);
     }
     col += stars(rd) * (1.0 - smoothstep(-0.12, 0.02, uSunDir.y)) * sat(rd.y * 4.0);
+    col = voidSky(col, rd);
   }
   o = vec4(toneLDR(col * exposureNow()), 1.0);
 }`;

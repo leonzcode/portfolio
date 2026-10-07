@@ -44,16 +44,16 @@
    own, and what a mob does to the world (a creeper's hole, a farmer's crops,
    what it drops) is shared like anything else.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS } from '../blocks.js?v=21';
-import { idx, H } from '../world-const.js?v=21';
-import { DIMS, DIM_IDS } from '../dims.js?v=21';
-import { Save } from '../save.js?v=21';
-import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=21';
-import { glints } from '../render/armor.js?v=21';
-import { containerKind } from '../containers.js?v=21';
-import { getSkinSettings } from '../render/avatar.js?v=21';
-import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=21';
-import { register, commandDef } from '../commands.js?v=21';
+import { B, BLOCKS } from '../blocks.js?v=22';
+import { idx, H } from '../world-const.js?v=22';
+import { DIMS, DIM_IDS } from '../dims.js?v=22';
+import { Save } from '../save.js?v=22';
+import { itemName, stackToJSON, stackFromJSON } from '../items.js?v=22';
+import { glints } from '../render/armor.js?v=22';
+import { containerKind } from '../containers.js?v=22';
+import { getSkinSettings } from '../render/avatar.js?v=22';
+import { RemotePlayers, PlayerList, F, USE_KINDS } from './players.js?v=22';
+import { register, commandDef } from '../commands.js?v=22';
 
 /* ---- who you are, and where the server is ---- */
 export function deviceId() {

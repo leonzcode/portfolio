@@ -18,53 +18,53 @@
    middle click pick block, F1 hide the HUD, F3 details, [ and ] the clock,
    F7 render scale, F8 quality.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=21';
-import { BIOMES, biomeColours } from './biomes.js?v=21';
-import { searchSpawn } from './spawn.js?v=21';
-import { parseSeed } from './gen/random.js?v=21';
-import { World, startWorkers, practise } from './world.js?v=21';
-import { Fluids } from './fluids.js?v=21';
-import { Player } from './player.js?v=21';
-import { Renderer } from './render/renderer.js?v=21';
-import { Overlay } from './render/overlay.js?v=21';
-import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=21';
-import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=21';
-import { SEA, Y0 } from './world-const.js?v=21';
-import { Gui, Options } from './ui/gui.js?v=21';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt, seedFrom } from './ui/menus.js?v=21';
-import { ItemIcons } from './ui/icons.js?v=21';
-import { Inventory, inventoryScreen } from './ui/inventory.js?v=21';
-import { Hud } from './ui/hud.js?v=21';
-import { Interactor } from './interact.js?v=21';
-import { enchantDebug } from './enchanting.js?v=21';
-import { MAPS, isFilledMap } from './maps.js?v=21';
-import { Survival } from './survival.js?v=21';
-import { survivalHooks, respawnPlayer } from './life.js?v=21';
-import { Save } from './save.js?v=21';
-import { Chat, ChatScreen } from './ui/chat.js?v=21';
-import { displayName, setItemNames, register, gameRule, execute } from './commands.js?v=21';
-import { applyModeRules, ModeKeys } from './modes.js?v=21';
-import { Particles } from './render/particles.js?v=21';
-import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=21';
-import { loadItemStrip, addItemPieces } from './itemtex.js?v=21';
-import { Drops, dropItem, giveXp } from './drops.js?v=21';
-import { Containers } from './containers.js?v=21';
-import { Hands } from './hands.js?v=21';
-import { setLayerPixels } from './render/blockmesh.js?v=21';
-import { Entities } from './entities/manager.js?v=21';
-import { EntityStore } from './entities/store.js?v=21';
-import { paintSome, primeAtlas } from './entities/mobart.js?v=21';
-import { Sim } from './sim/sim.js?v=21';
-import { DIMS } from './dims.js?v=21';
-import { Realms } from './dim/realms.js?v=21';
-import { addDimArt, endSkyTexture } from './dim/art.js?v=21';
-import { structuresApi } from './struct/spawners.js?v=21';
-import { Details, isSign } from './details.js?v=21';
-import { SignEditScreen } from './ui/sign.js?v=21';
-import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=21';
-import { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=21';
-import { VideoSettings } from './settings.js?v=21';
-import { pickBiome } from './worldgen.js?v=21';
+import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=22';
+import { BIOMES, biomeColours } from './biomes.js?v=22';
+import { searchSpawn } from './spawn.js?v=22';
+import { parseSeed } from './gen/random.js?v=22';
+import { World, startWorkers, practise } from './world.js?v=22';
+import { Fluids } from './fluids.js?v=22';
+import { Player } from './player.js?v=22';
+import { Renderer } from './render/renderer.js?v=22';
+import { Overlay } from './render/overlay.js?v=22';
+import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=22';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps } from './ui/pack.js?v=22';
+import { SEA, Y0 } from './world-const.js?v=22';
+import { Gui, Options } from './ui/gui.js?v=22';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt, seedFrom } from './ui/menus.js?v=22';
+import { ItemIcons } from './ui/icons.js?v=22';
+import { Inventory, inventoryScreen } from './ui/inventory.js?v=22';
+import { Hud } from './ui/hud.js?v=22';
+import { Interactor } from './interact.js?v=22';
+import { enchantDebug } from './enchanting.js?v=22';
+import { MAPS, isFilledMap } from './maps.js?v=22';
+import { Survival } from './survival.js?v=22';
+import { survivalHooks, respawnPlayer } from './life.js?v=22';
+import { Save } from './save.js?v=22';
+import { Chat, ChatScreen } from './ui/chat.js?v=22';
+import { displayName, setItemNames, register, gameRule, execute } from './commands.js?v=22';
+import { applyModeRules, ModeKeys } from './modes.js?v=22';
+import { Particles } from './render/particles.js?v=22';
+import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=22';
+import { loadItemStrip, addItemPieces } from './itemtex.js?v=22';
+import { Drops, dropItem, giveXp } from './drops.js?v=22';
+import { Containers } from './containers.js?v=22';
+import { Hands } from './hands.js?v=22';
+import { setLayerPixels } from './render/blockmesh.js?v=22';
+import { Entities } from './entities/manager.js?v=22';
+import { EntityStore } from './entities/store.js?v=22';
+import { paintSome, primeAtlas } from './entities/mobart.js?v=22';
+import { Sim } from './sim/sim.js?v=22';
+import { DIMS } from './dims.js?v=22';
+import { Realms } from './dim/realms.js?v=22';
+import { addDimArt, endSkyTexture } from './dim/art.js?v=22';
+import { structuresApi } from './struct/spawners.js?v=22';
+import { Details, isSign } from './details.js?v=22';
+import { SignEditScreen } from './ui/sign.js?v=22';
+import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=22';
+import { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=22';
+import { VideoSettings } from './settings.js?v=22';
+import { pickBiome } from './worldgen.js?v=22';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -279,7 +279,7 @@ async function boot() {
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
-  const TEX_V = '?v=21';
+  const TEX_V = '?v=22';
   /* Everything is asked for at once. The title's world needs only the
      texture list and the two colour maps, so it starts being made as soon
      as those are in (makeMenu), while the big textures, the renderer and the
@@ -567,7 +567,8 @@ async function boot() {
     else { world.edits = edits; await world.ready; }
     MK('sgWorldReady');
     menu = null;
-    world.renderDist = RD;
+    // (the render distance as it is now: RD is what it was when the page opened, before any change in Video Settings)
+    world.renderDist = renderer.opts.renderDist || RD;
     // (a new world's spawn was usually found ahead, while the Create World screen was open)
     const spawn = st && st.spawn ? st.spawn : (entry.spawn || (dim === 'overworld' ? world.spawnAhead || await findSpawn(world) : { x: 0, z: 0 }));
     // where you last died in this world, for the recovery compass (js/dials.js)
@@ -1187,7 +1188,7 @@ async function boot() {
     if (k === 'difficulty' && game && v && game.entry.difficulty !== v) { game.entry.difficulty = v; Worlds.update(game.entry.id, { difficulty: v }); }
     if (k === 'clouds') renderer.opts.clouds = v;
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
-    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=21', import.meta.url).href : v);
+    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=22', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
   });
 
@@ -1453,7 +1454,7 @@ async function boot() {
     renderer, gui, options, B, BLOCKS, video,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
-    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=21').then(m => m.execute(line, ctx)); },
+    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=22').then(m => m.execute(line, ctx)); },
     get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
     get survival() { return game && game.survival; },
     get enchanting() { return game && enchantDebug(game); },
