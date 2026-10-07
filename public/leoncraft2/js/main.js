@@ -567,7 +567,8 @@ async function boot() {
     else { world.edits = edits; await world.ready; }
     MK('sgWorldReady');
     menu = null;
-    world.renderDist = RD;
+    // (the render distance as it is now: RD is what it was when the page opened, before any change in Video Settings)
+    world.renderDist = renderer.opts.renderDist || RD;
     // (a new world's spawn was usually found ahead, while the Create World screen was open)
     const spawn = st && st.spawn ? st.spawn : (entry.spawn || (dim === 'overworld' ? world.spawnAhead || await findSpawn(world) : { x: 0, z: 0 }));
     // where you last died in this world, for the recovery compass (js/dials.js)
