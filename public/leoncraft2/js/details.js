@@ -421,6 +421,23 @@ export class Details {
       if (h.creative) h.inv.placeBack(water); else this.swap(h, water);
       return true;
     }
+    /* washing in water (the game's cauldron interactions): dyed leather loses its colour, a banner its last
+       pattern, a dyed shulker box its dye (keeping what it holds); each takes a level of water */
+    if (d.name === 'water_cauldron' && lv > 0) {
+      let done = false;
+      if (s.color !== undefined && /^leather_|^leather_horse_armor$|^wolf_armor$/.test(n)) { delete s.color; done = true; }
+      else if (/_banner$/.test(n) && Array.isArray(s.patterns) && s.patterns.length) { s.patterns = s.patterns.slice(0, -1); if (!s.patterns.length) delete s.patterns; done = true; }
+      else if (/_shulker_box$/.test(n) && I.shulker_box !== undefined) {
+        const plain = Object.assign({}, s, { id: I.shulker_box, count: 1 });
+        if (h.creative) h.inv.placeBack(plain); else this.swap(h, plain);
+        done = true;
+      }
+      if (done) {
+        if (lv <= 1) set('cauldron', 0); else set('water_cauldron', lv - 1);
+        h.inv.changed();
+        return true;
+      }
+    }
     if (n === 'potion' && s.potion === 'water' && (d.name === 'cauldron' || (d.name === 'water_cauldron' && lv < 3))) {
       set('water_cauldron', lv + 1);
       this.swap(h, { id: I.glass_bottle, count: 1 });
