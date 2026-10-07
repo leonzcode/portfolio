@@ -30,6 +30,7 @@ import {
 import { Packs } from './pack.js?v=22';
 import { LanScreen } from './lan.js?v=22';
 import { parseSeed } from '../gen/random.js?v=22';
+import { SOUND_CREDITS } from '../sound/credits.js?v=22';
 
 const PI = Math.PI;
 
@@ -813,23 +814,62 @@ export class SkinCustomizationScreen extends OptionsListScreen {
   }
 }
 
+/* Music & Sounds, as the game's: Master Volume across the top, the ten
+   category sliders in pairs (OFF at 0%), the output device, Closed Captions
+   and Directional Audio, Music Frequency and Music Toast; and Leoncraft's
+   one addition, which sounds to play: Leoncraft's own (openly licensed
+   recordings) or the player's own Minecraft's, read from their computer
+   (js/sound/packs.js). */
+const SOUND_SLIDERS = [['music', 'Music'], ['record', 'Jukebox/Note Blocks'], ['weather', 'Weather'], ['block', 'Blocks'],
+  ['hostile', 'Hostile Mobs'], ['neutral', 'Friendly Mobs'], ['player', 'Players'], ['ambient', 'Ambient/Environment'], ['voice', 'Voice/Speech'], ['ui', 'UI']];
 export class MusicSoundsScreen extends OptionsListScreen {
   constructor() { super('Music & Sound Options'); }
   rows(list) {
-    const tip = 'No sound in this preview';
-    const s = label => off(new Slider(0, 0, 150, 20, { min: 0, max: 1, value: 1, label: v => label + ': ' + pct(v) }), tip);
-    const master = s('Master Volume'); master.wide = true;
-    list.entries = [
-      new WidgetRow(master),
-      new WidgetRow(s('Music'), s('Jukebox/Note Blocks')),
-      new WidgetRow(s('Weather'), s('Blocks')),
-      new WidgetRow(s('Hostile Creatures'), s('Friendly Creatures')),
-      new WidgetRow(s('Players'), s('Ambient/Environment')),
-      new WidgetRow(s('Voice/Speech')),
-      new WidgetRow(off(new CycleButton(0, 0, 150, 20, 'Show Subtitles', { values: [false], value: false, format: onOff }), tip),
-        off(new CycleButton(0, 0, 150, 20, 'Directional Audio', { values: [false], value: false, format: onOff }), tip)),
-    ];
-    list.entries[5].children[0].wide = false;
+    const o = this.options;
+    const vol = k => { const v = o.get('soundVolumes') || {}; return typeof v[k] === 'number' ? v[k] : 1; };
+    const s = (k, label) => new Slider(0, 0, 150, 20, { min: 0, max: 1, step: 0.01, value: vol(k), label: v => label + ': ' + (v <= 0 ? 'OFF' : pct(v)),
+      onChange: v => o.set('soundVolumes', Object.assign({}, o.get('soundVolumes') || {}, { [k]: v })) });
+    const rows = [new WidgetRow(s('master', 'Master Volume'))];
+    for (let i = 0; i < SOUND_SLIDERS.length; i += 2) rows.push(new WidgetRow(s(...SOUND_SLIDERS[i]), s(...SOUND_SLIDERS[i + 1])));
+    rows.push(new WidgetRow(off(new Button(0, 0, 310, 20, 'Device: System Default', null), 'The browser plays through the system\'s own device.')));
+    rows.push(new WidgetRow(optToggle(o, 'subtitles', 'Closed Captions', 'Shows a line of text for every sound you hear.'),
+      optToggle(o, 'directionalAudio', 'Directional Audio', 'Head-related (HRTF) sound, which places sounds around you. Best with headphones.')));
+    const freq = new CycleButton(0, 0, 150, 20, 'Music Frequency', { values: ['default', 'frequent', 'constant'], value: o.get('musicFrequency') || 'default',
+      format: v => v === 'frequent' ? 'Frequent' : v === 'constant' ? 'Constant' : 'Default', onChange: v => o.set('musicFrequency', v),
+      tooltip: v => v === 'constant' ? 'Music plays one track after another.' : v === 'frequent' ? 'Music plays every 5 to 10 minutes.' : 'Music plays every 10 to 20 minutes.' });
+    const toast = new CycleButton(0, 0, 150, 20, 'Music Toast', { values: ['never', 'pause', 'toast'], value: o.get('musicToast') || 'never',
+      format: v => v === 'pause' ? 'Pause Menu' : v === 'toast' ? 'Pause Menu and Toast' : 'Never', onChange: v => o.set('musicToast', v),
+      tooltip: () => 'Shows the name of the music playing.' });
+    rows.push(new WidgetRow(freq, toast));
+    rows.push(new WidgetRow(this.packButton()));
+    list.entries = rows;
+  }
+  // which sounds play: Leoncraft's, or your own Minecraft's (picked from your computer, kept in this browser)
+  packButton() {
+    const P = this.gui.soundPacks;
+    const state = P ? P.state : 'leoncraft';
+    const label = state === 'minecraft' ? 'Sounds: Your Minecraft' + (P.mc && P.mc.version ? ' (' + P.mc.version + ')' : '')
+      : state === 'waiting' ? 'Sounds: Your Minecraft (click anywhere to allow)' : 'Use My Minecraft Sounds...';
+    const b = new Button(0, 0, 310, 20, label, () => this.pickPack());
+    b.tooltip = state === 'minecraft' ? 'Playing the sounds and music of your own Minecraft, read from your computer. Click to go back to Leoncraft\'s own sounds.'
+      : 'Pick your .minecraft folder, and Leoncraft plays your own game\'s exact sounds and music. Nothing is uploaded; only this browser remembers the folder.';
+    if (!P || !P.supported) { b.active = false; b.tooltip = 'This browser cannot read a folder from your computer.'; }
+    return b;
+  }
+  pickPack() {
+    const P = this.gui.soundPacks, g = this.gui;
+    if (!P) return;
+    if (P.state === 'minecraft') { P.forget().then(() => g._initScreen(this)); return; }
+    P.choose(err => {
+      if (err) g.open(new NoticeScreen('Sounds not changed', err));
+      else g._initScreen(this);
+    });
+  }
+  render(g, mx, my, dt) {
+    // the button follows the packs (the folder opening after a click elsewhere)
+    const P = this.gui.soundPacks;
+    if (P && this._state !== P.state) { const first = this._state === undefined; this._state = P.state; if (!first) { this.gui._initScreen(this); return; } }
+    super.render(g, mx, my, dt);
   }
 }
 
@@ -852,7 +892,7 @@ export class AccessibilitySettingsScreen extends OptionsListScreen {
     tilt.tooltip = 'The amount of camera shake caused by being hurt.';
     list.entries = [
       new WidgetRow(off(new CycleButton(0, 0, 150, 20, 'Narrator', { values: [false], value: false, format: onOff }), na),
-        off(new CycleButton(0, 0, 150, 20, 'Show Subtitles', { values: [false], value: false, format: onOff }), na)),
+        optToggle(o, 'subtitles', 'Closed Captions', 'Shows a line of text for every sound you hear.')),
       new WidgetRow(text, off(new CycleButton(0, 0, 150, 20, 'High Contrast', { values: [false], value: false, format: onOff }), na)),
       new WidgetRow(optToggle(o, 'autoJump', 'Auto-Jump'), optToggle(o, 'bobbing', 'View Bobbing')),
       new WidgetRow(fe, tilt),
@@ -915,6 +955,7 @@ const CREDITS = [
   ['creativecommons.org/licenses/by-sa/4.0', 0, 'https://creativecommons.org/licenses/by-sa/4.0/'],
   ['Leoncraft packs, recolours and extends them, and shares'], ['those changes under the same licence.'],
   ['The title logo is drawn from the pack\'s stone texture.'], [''],
+  ['@sounds'],
   ['Code', 0xFFFF55],
   ['three.js, MIT License'],
   ['threejs.org', 0, 'https://threejs.org/'],
@@ -928,12 +969,28 @@ const CREDITS = [
   ['Not approved by or associated with Mojang or Microsoft.', 0xA0A0A0],
 ];
 
+// the recordings Leoncraft's own sounds and music are made from (js/sound/credits.js, written by tools/leoncraft2/build_sounds.py)
+function soundCredits() {
+  const out = [['Sounds and Music', 0xFFFF55], ['Made from these openly licensed recordings (cut, pitched and levelled for the game):']];
+  for (const [title, by, lic, page] of SOUND_CREDITS) {
+    out.push(['"' + title + '" by ' + by + ', ' + lic]);
+    out.push([page.replace(/^https?:\/\//, '').replace(/%E2%80%93/g, '-').slice(0, 60), 0, page]);
+  }
+  out.push(['CC0: creativecommons.org/publicdomain/zero/1.0', 0, 'https://creativecommons.org/publicdomain/zero/1.0/']);
+  out.push(['CC BY 3.0: creativecommons.org/licenses/by/3.0', 0, 'https://creativecommons.org/licenses/by/3.0/']);
+  out.push(['The note block\'s instruments are made by Leoncraft\'s own sound script.']);
+  out.push(['With "Use My Minecraft Sounds" your own game\'s sounds play, read from your computer.']);
+  out.push(['']);
+  return out;
+}
+
 export class CreditsScreen extends OptionsListScreen {
   constructor() { super('Credits & Attribution'); this.itemHeight = 12; this.rowWidth = 300; }
   rows(list) {
     list.entries = [];
     const g = this.gui;
     for (const [t, c, url] of CREDITS) {
+      if (t === '@sounds') { for (const r of soundCredits()) for (const line of r[2] ? [r[0]] : g.font.wrap(r[0], Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, r[1] || WHITE, r[2] || null)); continue; }
       for (const line of url ? [t] : g.font.wrap(t, Math.min(300, this.width - 20))) list.entries.push(new TextRow(line, c || WHITE, url || null));
     }
   }
