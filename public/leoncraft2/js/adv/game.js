@@ -53,6 +53,13 @@ const CODE = { task: '§a', goal: '§a', challenge: '§5' };
 export function advInit(deps) {
   D = deps;
   if (deps.gui) deps.gui.overlays.push(AdvToast.overlay(deps.gui, deps.icons));
+  // a line about someone's advancement (yours or another player's, from the server) carries the name's hover
+  const chat = deps.chat;
+  if (chat && chat.add && !chat.__adv) {
+    chat.__adv = true;
+    const add = chat.add.bind(chat);
+    chat.add = (text, colour, extra) => add(text, colour, extra || hoverLine(text));
+  }
   // for tests and the curious: the record, the list, a trigger by hand, one tick's checks (for timing)
   window.__lc2adv = { get progress() { return P; }, ADV, TABS, fire, env: () => makeEnv(), toast: AdvToast, open: () => openAdvancements(), tick: () => G && advTick(G) };
 }
@@ -107,15 +114,27 @@ function made(a, how) {
   if (!G) return;
   if (!a.noToast) AdvToast.add(a);
   if (!a.noChat && gameRule(G, 'announceAdvancements') !== false && D && D.chat) {
-    const who = D.name ? D.name() : 'Player';
-    D.chat.add(`${who} ${MADE_TEXT[a.frame] || MADE_TEXT.task} ${CODE[a.frame] || '§a'}[${a.title}]`, 0xFFFFFF, { hover: hoverOf(a) });
-    if (G.net && G.net.advancementMade) G.net.advancementMade(a, who);
+    const who = D.name ? D.name() : 'Player', line = `${who} ${MADE_TEXT[a.frame] || MADE_TEXT.task} ${CODE[a.frame] || '§a'}[${a.title}]`;
+    /* on a server everyone reads it, as the game's server tells them all: it goes out by the server's
+       line for news about one player (the one death messages take, which reaches everyone, you too, and
+       must start with your name), and comes back into your chat with the others' */
+    if (G.net && G.net.send && G.net.ws && G.net.ws.readyState === 1) G.net.send({ t: 'death', text: line });
+    else D.chat.add(line, 0xFFFFFF, { hover: hoverOf(a) });
   }
   if (a.xp && G.survival) G.survival.addXp(a.xp);
   void how;
 }
 // the chat line's hover: the name in its colour, then what it asks
 export function hoverOf(a) { return { text: '[' + a.title + ']', lines: [(CODE[a.frame] || '§a') + a.title, ...a.desc.split('\n').map(l => '§f' + l)], colour: TYPE_COLOUR[a.frame] }; }
+const LINE = /^\S+ (has made the advancement|has reached the goal|has completed the challenge) §[a5]\[(.+)\]$/;
+const FRAME_OF = { 'has made the advancement': 'task', 'has reached the goal': 'goal', 'has completed the challenge': 'challenge' };
+function hoverLine(text) {
+  if (typeof text !== 'string' || text.indexOf(' has ') < 0) return undefined;
+  const m = LINE.exec(text);
+  if (!m) return undefined;
+  for (const a of ADV.values()) if (a.title === m[2] && a.frame === FRAME_OF[m[1]]) return { hover: hoverOf(a) };
+  return undefined;
+}
 
 /* ======================================================= events ===== */
 // something happened: the criteria of that trigger are tried (nothing is built while none is wanted)
@@ -283,16 +302,13 @@ function wrapGame(g) {
   }
   // the player's death by a mob (entity_killed_player) and the totem (used_totem)
   if (sv && sv.hooks && !sv.hooks.__adv) {
-    const h = sv.hooks, oDeath = h.onDeath, oTotem = h.onTotem;
+    const h = sv.hooks;
     h.__adv = true;
-    h.onDeath = (m, src) => {
-      try {
-        const k = sv.attacker && sv.age - sv.attackerAge <= 100 ? sv.attacker : null;
-        if (k && !k.isPlayer) fire('entity_killed_player', () => ({ entity: entityView(k), killingBlow: damageOf(src) }));
-      } catch (e) { console.warn(e); }
-      if (oDeath) return oDeath(m, src);
-    };
-    h.onTotem = () => { fire('used_totem', { item: { name: 'totem_of_undying', count: 1 } }); if (oTotem) return oTotem(); };
+    hookBefore(h, 'onDeath', (m, src) => {
+      const k = sv.attacker && sv.age - sv.attackerAge <= 100 ? sv.attacker : null;
+      if (k && !k.isPlayer) fire('entity_killed_player', () => ({ entity: entityView(k), killingBlow: damageOf(src) }));
+    });
+    hookBefore(h, 'onTotem', () => fire('used_totem', { item: { name: 'totem_of_undying', count: 1 } }));
   }
   // a right click on a block with something in the hand: item_used_on_block (both before and after, as the game
   // checks some uses before the block changes and some after); placing a block is not a use
@@ -331,6 +347,13 @@ function wrapGame(g) {
       return r;
     };
   }
+}
+/* Our look first, then whatever hook is set there, now or later: a server sets its own death hook
+   once you join (net/net.js), which would otherwise take the place of this one. */
+function hookBefore(obj, name, before) {
+  let inner = obj[name];
+  const outer = function (...a) { try { before(...a); } catch (e) { console.warn(e); } return inner ? inner.apply(this, a) : undefined; };
+  Object.defineProperty(obj, name, { configurable: true, enumerable: true, get: () => outer, set: v => { if (v !== outer) inner = v; } });
 }
 const SWINGS = /(_door|_trapdoor|_fence_gate|^lever|_button|_pressure_plate|^note_block|^repeater|^comparator|^daylight_detector)$/;
 function useSig(g, H, h) {
@@ -503,10 +526,10 @@ function killed(e, src) {
     for (let dy = -8; dy <= 8 && !found; dy++) for (let dz = -8; dz <= 8 && !found; dz++) for (let dx = -8; dx <= 8; dx++) if (w.get(x + dx, y + dy, z + dz) === B.sculk_catalyst) { found = true; break; }
     if (found) fire('kill_mob_near_sculk_catalyst', { entity: entityView(e) });
   }
-  // an axolotl fighting it: Regeneration for you, and Mining Fatigue gone (the game's supporting effects)
-  const E = G.entities;
+  // an axolotl fighting it, with you within 20 blocks of it: Regeneration for you, and Mining Fatigue gone (the game's supporting effects)
+  const E = G.entities, pp = G.player.pos;
   if (E && E.list) {
-    const ax = E.list.find(o => o.type === 'axolotl' && !o.dead && o.target === e);
+    const ax = E.list.find(o => o.type === 'axolotl' && !o.dead && o.target === e && Math.abs(o.pos.x - pp.x) <= 20.3 && Math.abs(o.pos.y - pp.y) <= 21 && Math.abs(o.pos.z - pp.z) <= 20.3);
     if (ax && G.survival) {
       const sv = G.survival, cur = sv.effects.regeneration;
       if (!cur || (cur.ticks >= 0 && cur.ticks <= 2399)) sv.addEffect('regeneration', 1, Math.min(2400, 100 + (cur && cur.ticks > 0 ? cur.ticks : 0)));
@@ -744,8 +767,10 @@ function effectsTick(g) {
     fire('levitation', { start: S.lev, end: { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z }, duration: S.t - S.lev.t });
   } else S.lev = null;
 }
-/* Falls: from where you began to fall to where it ended, if you live (fall_from_height); a wind
-   charge's launch measured while you fly (fall_after_explosion) */
+/* Falls: from where you began to fall to where it ended, if you live (fall_from_height). A wind
+   charge's launch counts as the game counts it (fall_after_explosion): once, the moment you start
+   to fall after it, from where it hit you to where the fall begins, and only when that is no lower
+   than where it hit you (a charge that knocks you off a ledge is not a launch) */
 function fallTick(g, p) {
   const sv = g.survival;
   // a teleport (a command, a portal, an ender pearl's long throw) starts every fall afresh
@@ -753,29 +778,35 @@ function fallTick(g, p) {
   if (lp && Math.abs(p.pos.x - lp[0]) + Math.abs(p.pos.y - lp[1]) + Math.abs(p.pos.z - lp[2]) > 12) S.fall = S.launch = null;
   S.lastPos = [p.pos.x, p.pos.y, p.pos.z];
   const settled = p.onGround || p.inWater || p.climbing || p.flying || (g.entities && g.entities.riding);
+  const L = S.launch;
   if (!settled) {
-    if (!S.fall && p.vel.y < 0) S.fall = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
+    if (!S.fall && p.vel.y < 0) {
+      S.fall = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
+      if (L && L.start.y <= S.fall.y) fire('fall_after_explosion', { start: L.start, end: S.fall, cause: L.cause });
+    }
   } else if (S.fall) {
     if (!(sv && sv.dead)) fire('fall_from_height', { start: S.fall, end: { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z } });
     S.fall = null;
   }
-  const L = S.launch;
-  if (L) {
-    const at = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
-    if (!settled || S.t - L.t < 3) fire('fall_after_explosion', { start: L.start, end: at, cause: L.cause });
-    if (settled && S.t - L.t >= 3) S.launch = null;
-  }
+  // (the launch is forgotten once you are down again, after the few ticks the push takes to lift you)
+  if (L && settled && S.t - L.t >= 3) S.launch = null;
 }
-// a wind charge's burst that moves you: remembered until you land
+// a wind charge's burst that moves you: where it hit you, until you land (a fall under way starts again from the top)
 export function launched(cause) {
   if (!S || !G) return;
   const p = G.player;
   S.launch = { start: { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z }, cause: { type: cause, equipment: {} }, t: S.t };
+  S.fall = null;
 }
-// riding: started_riding, a strider in the Overworld's lava (ride_entity_in_lava), the fungus on a stick (item_durability_changed)
+/* riding: started_riding as you get on, and as anything else gets on what you ride (a goat into
+   your boat); a strider in the Overworld's lava (ride_entity_in_lava); the fungus on a stick
+   (item_durability_changed) */
 function rideTick(g, p) {
   const E = g.entities, r = E && E.riding;
+  const crew = r && r.passengers ? r.passengers.length : 0;
   if (r !== S.riding) { S.riding = r; S.lava = null; if (r) fire('started_riding', {}); }
+  else if (r && crew > S.crew) fire('started_riding', {});
+  S.crew = crew;
   if (r && r.type === 'strider' && r.inLava) {
     if (!S.lava) S.lava = { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z };
     fire('ride_entity_in_lava', { start: S.lava, end: { x: p.pos.x, y: p.pos.y + Y0, z: p.pos.z } });
