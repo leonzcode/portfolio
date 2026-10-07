@@ -29,8 +29,8 @@
    method or hook of objects at hand (looked at each tick, so a new
    dimension's mobs and drops are joined as soon as they exist).
 --------------------------------------------------------------------------- */
-import { BLOCKS } from './blocks.js?v=26';
-import { ITEMS, itemId, maxDamage } from './items.js?v=26';
+import { BLOCKS } from './blocks.js?v=27';
+import { ITEMS, itemId, maxDamage } from './items.js?v=27';
 
 const nameOf = id => (ITEMS[id] ? ITEMS[id].name : BLOCKS[id] ? BLOCKS[id].name : '');
 const lc2 = () => (typeof window !== 'undefined' ? window.__lc2 : null);
@@ -54,7 +54,7 @@ export class Stats {
     const s = saved || {};
     this.custom = Object.assign({}, s.custom);
     for (const k of ['mined', 'crafted', 'used', 'broken', 'picked_up', 'dropped', 'killed', 'killed_by']) this[k] = Object.assign({}, s[k]);
-    this.t = { last: null, landed: undefined, dead: false, sleeping: false };
+    this.t = { last: null, dead: false, sleeping: false };
   }
   toJSON() {
     const o = { custom: this.custom };
@@ -103,11 +103,6 @@ export class Stats {
       else if (P.gliding) this.add('aviate_one_cm', d3);
       else if (h > 25) this.add('fly_one_cm', h);
     }
-    // a landing after a fall of 2 blocks or more (not where you could fly)
-    if (P.landed !== t.landed) {
-      if (t.landed !== undefined && P.landed && P.landed.dist >= 2 && !P.canFly) this.add('fall_one_cm', Math.round(P.landed.dist * 100));
-      t.landed = P.landed;
-    }
   }
 }
 
@@ -134,6 +129,16 @@ function hook(g, S) {
     P.__statsJump = true;
     let j = !!P.jumped;
     Object.defineProperty(P, 'jumped', { configurable: true, get: () => j, set: v => { if (v && !j && ONE) ONE.add('jump'); j = !!v; } });
+  }
+  // a landing: counted as player.js records it (survival.js spends it for the fall damage before this tick runs),
+  // after a fall of 2 blocks or more, and not where you could fly
+  if (P && !P.__statsLand) {
+    P.__statsLand = true;
+    let l = P.landed;
+    Object.defineProperty(P, 'landed', { configurable: true, get: () => l, set: v => {
+      if (v && v !== l && v.dist >= 2 && !P.canFly && ONE) ONE.add('fall_one_cm', Math.round(v.dist * 100));
+      l = v;
+    } });
   }
   if (E) {
     // a kill: mob kills (or player kills) and the mob's own count
@@ -241,6 +246,6 @@ export function statsQuit() { if (ONE) ONE.add('leave_game'); }
 export function statsLeave() { ONE = null; }
 export function openStatistics(gui, icons) {
   if (!ONE || !gui) return false;
-  import('./ui/stats.js?v=26').then(m => gui.open(new m.StatisticsScreen(ONE, icons))).catch(e => console.warn('statistics', e));
+  import('./ui/stats.js?v=27').then(m => gui.open(new m.StatisticsScreen(ONE, icons))).catch(e => console.warn('statistics', e));
   return true;
 }
