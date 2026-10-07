@@ -84,13 +84,14 @@ export class Stats {
       if (k && !k.isPlayer && k.type) this.of('killed_by', k.type);
     }
     t.dead = !!(sv && sv.dead);
-    // how you moved since the last tick
+    // how you moved this tick: your own step (player.js keeps where it started, so a teleport is no distance),
+    // or, riding, how far what you ride carried you since the last tick
     const l = t.last || (t.last = { x: P.pos.x, y: P.pos.y, z: P.pos.z });
-    const dx = P.pos.x - l.x, dy = P.pos.y - l.y, dz = P.pos.z - l.z;
+    const rv = E && E.riding, from = rv ? l : P.prev;
+    const dx = P.pos.x - from.x, dy = P.pos.y - from.y, dz = P.pos.z - from.z;
     l.x = P.pos.x; l.y = P.pos.y; l.z = P.pos.z;
     if (alive && Math.abs(dx) + Math.abs(dy) + Math.abs(dz) < 10) {
       const h = Math.round(Math.hypot(dx, dz) * 100), d3 = Math.round(Math.hypot(dx, dy, dz) * 100);
-      const rv = E && E.riding;
       if (rv) {
         const r = RIDE.find(([re]) => re.test(rv.type || ''));
         if (r) this.add(r[1], d3);
