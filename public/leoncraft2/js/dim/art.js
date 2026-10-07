@@ -57,6 +57,10 @@ function portalFrames() {
   return out;
 }
 
+// the same swirl for the screen while you stand in a portal (dim/realms.js), made once
+let swirl = null;
+export function portalSwirl() { return swirl || (swirl = portalFrames()); }
+
 /* The eye in a frame: rows 0-3 the eye's band seen from the side, rows 4-11
    (columns 4-11) the eye from above, a dark slit across a green iris. */
 function frameEye() {
