@@ -112,7 +112,8 @@ def distance(a, t):
     d = 0.0
     d += 1.2 * abs(np.log((a['dur'] + 0.02) / (t['dur'] + 0.02)))
     d += 0.6 * abs(np.log((a['decay'] + 0.02) / (t['decay'] + 0.02)))
-    d += 0.3 * abs(a['attack'] - t['attack']) / 0.05
+    # how soon it peaks, as a share of how long it lasts (50 ms matters in a click, not in a 7 second rumble)
+    d += 0.3 * abs(a['attack'] - t['attack']) / max(0.05, 0.25 * t['dur'])
     d += 1.5 * abs(np.log((a['centroid'] + 50) / (t['centroid'] + 50)))
     d += 0.04 * float(np.mean(np.abs(np.array(a['bands']) - np.array(t['bands']))))
     d += 2.0 * abs(np.sqrt(a['flat']) - np.sqrt(t['flat']))
