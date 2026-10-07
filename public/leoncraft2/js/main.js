@@ -35,6 +35,7 @@ import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoAr
 import { ItemIcons } from './ui/icons.js?v=24';
 import { Inventory, inventoryScreen } from './ui/inventory.js?v=24';
 import { Hud } from './ui/hud.js?v=24';
+import { debugLines } from './ui/debug.js?v=24';
 import { Interactor } from './interact.js?v=24';
 import { enchantDebug } from './enchanting.js?v=24';
 import { MAPS, isFilledMap } from './maps.js?v=24';
@@ -1114,6 +1115,12 @@ async function boot() {
       chat.add('§e§l[Debug]:§r Advanced tooltips: ' + (v ? 'shown' : 'hidden'));
       e.preventDefault(); return;
     }
+    // F3 + Q: the list of F3 keys, in the chat as the game prints it
+    if (f3Held && e.code === 'KeyQ') {
+      f3Combo = true;
+      if (!e.repeat) for (const l of ['§e§l[Debug]:§r Key bindings:', 'F3 + H = Advanced tooltips', 'F3 + N = Cycle previous gamemode <-> spectator', 'F3 + F4 = Open game mode switcher', 'F3 + Q = Show this list']) chat.add(l);
+      e.preventDefault(); return;
+    }
     // F3 + N: spectator and back; F3 + F4: the game mode switcher (modes.js)
     if (f3Held && (e.code === 'KeyN' || e.code === 'F4')) {
       f3Combo = true;
@@ -1404,29 +1411,9 @@ async function boot() {
     }
     if (showDebug) {
       hud.camera = { yaw: player.yaw, pitch: player.pitch };
-      const p = player.pos;
-      const bn = BIOMES[world.biomeAt(Math.floor(p.x), Math.floor(p.z))];
-      const t = inter.target;
-      hud.setDebug([
-        'Leoncraft 2 (' + QNAME() + ')',
-        fps + ' fps',
-        '',
-        'XYZ: ' + p.x.toFixed(3) + ' / ' + (p.y + Y0).toFixed(5) + ' / ' + p.z.toFixed(3),
-        'Block: ' + Math.floor(p.x) + ' ' + Math.floor(p.y + Y0) + ' ' + Math.floor(p.z),
-        'Chunk: ' + Math.floor(p.x / 16) + ' ' + Math.floor(p.z / 16) + ' (loaded ' + world.chunks.size + ', meshes ' + renderer.columns.size + ')',
-        'Facing: ' + ['north', 'west', 'south', 'east'][((Math.round(player.yaw / (Math.PI / 2)) % 4) + 4) % 4],
-        'Biome: ' + (bn ? bn.name : '?') + ' (' + g.dim + ')',
-        'Day ' + Math.floor(g.time / 24000) + ', time ' + (g.time % 24000) + (timeRuns ? '' : ' (stopped)'),
-        g.mode !== 'creative' ? 'Food ' + survival.food + ', saturation ' + survival.saturation.toFixed(1) + ', exhaustion ' + survival.exhaustion.toFixed(3) : '',
-      ], [
-        'Render ' + renderer.rw + 'x' + renderer.rh + ' (F7 scale)',
-        'Distance ' + world.renderDist + ', ' + QNAME(),
-        'Seed ' + worldSeed(g.entry) + (g.world.generator === 'vanilla' ? '' : ' (classic)'),
-        'Fluids pending ' + fluids.pending.size,
-        '',
-        t ? 'Targeted Block: ' + t.x + ', ' + (t.y + Y0) + ', ' + t.z : '',
-        t ? BLOCKS[t.b].name : '',
-      ]);
+      // the game's F3 lines (ui/debug.js)
+      const [dl, dr] = debugLines({ fps, g, player, world, renderer, inter, options, level: video.level(), Y0, timeRuns });
+      hud.setDebug(dl, dr);
     }
   }
   function tiltState(t) { TILT.roll = t.roll; TILT.tiltPitch = t.pitch; return TILT; }

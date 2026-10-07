@@ -612,8 +612,9 @@ export class Gui {
     const blur = this._blurPx();
     if (k === 'world') {
       this._setBlur(blur ? 'blur(' + (blur * 1.2).toFixed(1) + 'px)' : '');
-      // the in-game darkening; lighter when the blur already hides the detail
-      if (blur) this.gradient(0, 0, W, H, 0x70101010, 0x80101010);
+      /* the in-game darkening: over the blur, the game's in-world menu
+         background, black at a quarter (it was half, which hid the world) */
+      if (blur) this.fill(0, 0, W, H, 0x40000000);
       else this.gradient(0, 0, W, H, 0xC0101010, 0xD0101010);
     } else if (k === 'blurred') {
       this._setBlur(blur ? 'blur(' + (blur * 1.2).toFixed(1) + 'px)' : '');
