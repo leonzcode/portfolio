@@ -43,6 +43,7 @@ import { I, ITEMS, fuelTicks, maxStack, sameItem, withCount, stackToJSON, stackF
 import { brewingTick, isPotion, isIngredient, brewResult } from './brewing.js?v=22';
 import { cookingRecipe, remainderOf } from './crafting.js?v=22';
 import { fire } from './dispense.js?v=22';
+import { MAPS } from './maps.js?v=22';
 
 export const SIZES = { chest: 27, trapped_chest: 27, copper_chest: 27, barrel: 27, shulker_box: 27, furnace: 3, smoker: 3, blast_furnace: 3,
   dispenser: 9, dropper: 9, crafter: 9, hopper: 5, brewing_stand: 5 };
@@ -172,6 +173,15 @@ export class Containers {
       const out = [];
       if (!list || !list.length) return out;
       for (const e of list) {
+        // an explorer map: made once the structure it leads to is found (the ask goes to the generator)
+        if (e.map) {
+          explorerMap(e, c.x, c.z).then(st => {
+            if (!st) return;
+            if (asStacks) spill(this.drops, c.x, c.y, c.z, [st]);
+            else if (e.slot >= 0 && e.slot < c.slots.length && !c.slots[e.slot]) { c.slots[e.slot] = st; this.changed(c); if (L.gui && L.gui.markDirty) L.gui.markDirty(); }
+          });
+          continue;
+        }
         const st = lootStack(e);
         if (!st) continue;
         if (asStacks) out.push(st);
@@ -553,6 +563,27 @@ export class Containers {
 }
 
 // a structure loot entry as a stack: its count, wear, potion
+/* An exploration map from a loot table (the game's exploration_map): a filled
+   map at the table's zoom (2 unless it says), centred on the nearest
+   structure of its kind from the chest, that place marked. When none is
+   found the map is thrown away, as the game's tables say (resolves null). */
+const MAP_KIND = {
+  on_treasure_maps: 'buried_treasure', on_ocean_explorer_maps: 'monument', on_woodland_explorer_maps: 'mansion', on_woodland_mansion_maps: 'mansion',
+  on_ancient_city_maps: 'ancient_city', on_trial_chambers_maps: 'trial_chambers', on_buried_trial_chambers_maps: 'trial_chambers', on_mineshaft_maps: 'mineshaft',
+  on_desert_pyramid_maps: 'desert_pyramid', on_jungle_pyramid_maps: 'jungle_pyramid', on_jungle_explorer_maps: 'jungle_pyramid', on_swamp_explorer_maps: 'swamp_hut',
+  on_ocean_ruin_warm_maps: 'ocean_ruin_warm', on_ocean_ruin_cold_maps: 'ocean_ruin_cold',
+};
+export function explorerMap(e, x, z) {
+  const L = typeof window !== 'undefined' ? window.__lc2 : null, S = L && L.structures;
+  const kind = MAP_KIND[e.map] || (/^on_abandoned_camp_/.test(e.map) ? e.map.replace(/^on_/, '') : null);
+  if (!S || !S.locate || !kind || I.filled_map === undefined) return Promise.resolve(null);
+  return S.locate(kind, x, z).then(f => {
+    if (!f || f.x === undefined) return null;
+    const w = L.world, m = MAPS.create(f.x, f.z, e.zoom !== undefined ? e.zoom : 2, (w && w.dim) || 'overworld');
+    m.marks = [{ x: f.x, z: f.z, type: e.deco || 'red_x' }];
+    return { id: I.filled_map, count: 1, map: m.id };
+  }, () => null);
+}
 export function lootStack(e) {
   const id = I[e.item];
   if (id === undefined || !(e.count > 0)) return null;
