@@ -11,7 +11,10 @@ sheet the HUD code cuts them from (js/ui/hud.js):
 
   crosshair    0, 0, 15 x 15         a plus, 9 across, one pixel thick
   hearts       row y 0: 16 empty, 25 empty flashing, 52 / 61 full / half,
-               70 / 79 flashing, 88.. poisoned, 124.. withered, 160 / 169 gold
+               70 / 79 flashing, 88.. poisoned, 124.. withered, 160 / 169 gold,
+               178 / 187 frozen (fully frozen in powder snow)
+  hardcore     row y 45: the same hearts again in their hardcore look (a
+               spiked top to the empty heart, two dark brows on the full ones)
   air          row y 18: 16 a bubble, 25 a bubble bursting
   hunger       row y 27: 16 empty, 52 / 61 full / half, 88 / 97 with the
                hunger effect, 133 empty with it
@@ -89,26 +92,69 @@ HEART_KINDS = {
     'poison': ((140, 120, 26), (102, 82, 10), (196, 178, 96)),
     'wither': ((54, 38, 38), (40, 16, 16), (200, 200, 200)),
     'gold': ((214, 174, 44), (206, 150, 6), (244, 220, 136)),
+    'frozen': ((150, 210, 244), (84, 148, 212), (248, 252, 255)),
 }
+# a frozen heart: ice with two little white crystals in it
+FROZEN = [
+    '.........',
+    '.hR...RR.',
+    '.hRw.RwR.',
+    '.RRRwRRs.',
+    '.RwRRRRs.',
+    '..RRwRs..',
+    '...RRs...',
+    '....s....',
+    '.........',
+]
+# hardcore: the empty heart with a spike between its lobes, the full ones with two dark brows
+HEART_BOX_HC = [
+    '.KK.K.KK.',
+    'KddKdKddK',
+    'KdddddddK',
+    'KdddddddK',
+    'KdddddddK',
+    '.KdddddK.',
+    '..KdddK..',
+    '...KdK...',
+    '....K....',
+]
+BROWS = {(2, 3), (3, 4), (6, 3), (5, 4)}
 
 
-def hearts(px):
-    clear(px, 16, 0, 162, 9)
+def with_brows(rows):
+    out = []
+    for y, row in enumerate(rows):
+        out.append(''.join('e' if (x, y) in BROWS and ch != '.' else ch for x, ch in enumerate(row)))
+    return out
+
+
+def heart_row(px, y0, hardcore):
+    box = HEART_BOX_HC if hardcore else HEART_BOX
+    shape = with_brows(HEART) if hardcore else HEART
+    frozen = with_brows(FROZEN) if hardcore else FROZEN
+    clear(px, 16, y0, 180, 9)
     # the empty heart behind each one, and its white flash
-    paint(px, 16, 0, HEART_BOX, {'K': (0, 0, 0), 'd': (30, 30, 30)})
-    paint(px, 25, 0, HEART_BOX, {'K': (250, 250, 250), 'd': (40, 40, 40)})
-    for x0, kind in ((52, 'red'), (88, 'poison'), (124, 'wither'), (160, 'gold')):
+    paint(px, 16, y0, box, {'K': (0, 0, 0), 'd': (30, 30, 30)})
+    paint(px, 25, y0, box, {'K': (250, 250, 250), 'd': (40, 40, 40)})
+    for x0, kind in ((52, 'red'), (88, 'poison'), (124, 'wither'), (160, 'gold'), (178, 'frozen')):
         m, s, h = HEART_KINDS[kind]
-        pal = {'R': m, 's': s, 'h': h}
-        paint(px, x0, 0, HEART, pal)
-        paint(px, x0 + 9, 0, HEART, pal, keep=lambda x, y: x <= 4)
-        if kind == 'gold':
+        # the brows: the heart's own shade, darkened
+        pal = {'R': m, 's': s, 'h': h, 'w': (255, 255, 255), 'e': tuple(int(c * 0.45) for c in s)}
+        pic = frozen if kind == 'frozen' else shape
+        paint(px, x0, y0, pic, pal)
+        paint(px, x0 + 9, y0, pic, pal, keep=lambda x, y: x <= 4)
+        if kind in ('gold', 'frozen'):
             continue
         # the flashing pair after each (lost health shows white for a moment)
         fm, fs, fh = HEART_KINDS['flash']
-        fpal = {'R': fm, 's': fs, 'h': fh}
-        paint(px, x0 + 18, 0, HEART, fpal)
-        paint(px, x0 + 27, 0, HEART, fpal, keep=lambda x, y: x <= 4)
+        fpal = {'R': fm, 's': fs, 'h': fh, 'e': tuple(int(c * 0.6) for c in fs)}
+        paint(px, x0 + 18, y0, shape, fpal)
+        paint(px, x0 + 27, y0, shape, fpal, keep=lambda x, y: x <= 4)
+
+
+def hearts(px):
+    heart_row(px, 0, False)
+    heart_row(px, 45, True)
 
 
 # ---- air ----
