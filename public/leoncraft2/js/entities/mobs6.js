@@ -844,7 +844,7 @@ export class Axolotl extends Animal {
     if (held === 'tropical_fish_bucket') {
       const r = this.feed();
       // the fish is eaten; the bucket goes back with water in it
-      if (r && this.m.mode !== 'creative') this.m.fillHeld('water_bucket');
+      if (r) this.m.turnHeld('water_bucket');
       return r ? 'swing' : false;
     }
     return false;
@@ -972,7 +972,7 @@ export class Nautilus extends Swimmer {
       else if (this.tamed && !this.constructor.UNDEAD && this.ageT === 0 && !this.inLove) this.inLove = 600;
       else return false;
       // a bucket of fish leaves the bucket of water
-      if (bucket) { this.m.fillHeld('water_bucket'); return 'swing'; }
+      if (bucket) { this.m.turnHeld('water_bucket'); return 'swing'; }
       return 'consume';
     }
     if (!this.tamed) return false;

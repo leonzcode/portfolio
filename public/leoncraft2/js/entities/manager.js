@@ -552,6 +552,21 @@ export class Entities {
     else { inv.takeSelected(1); if (inv.add(id, 1) > 0) this.dropItemAt(this.P.pos.x, this.P.pos.y + 1, this.P.pos.z, name, 1); }
     return true;
   }
+  /* One of the held stack given for another, whatever it was (a bucket of
+     fish fed to an axolotl or a nautilus leaves a bucket of water). Not a
+     bucket filled, so it goes straight to the inventory and is not counted
+     as one. In creative the held item stays, and the other is added if
+     there is none, as the game's filled result does. */
+  turnHeld(name) {
+    const inv = this.inv, id = I[name];
+    if (!inv || id === undefined) return false;
+    if (this.mode === 'creative') { if (!inv.count(id)) inv.add(id, 1); return true; }
+    const s = inv.slots[inv.selected];
+    if (!s) return false;
+    if (s.count <= 1) { inv.slots[inv.selected] = { id, count: 1 }; inv.changed(); }
+    else { inv.takeSelected(1); if (inv.add(id, 1) > 0) this.dropItemAt(this.P.pos.x, this.P.pos.y + 1, this.P.pos.z, name, 1); }
+    return true;
+  }
   // how charged the next hit is (0..1): ticks since the last swing over 20 / attack speed
   cooldown() { return this.combat.cooldown(); }
   // a click in the air (or a block broken) starts the cooldown again, as the game does
