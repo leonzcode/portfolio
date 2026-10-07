@@ -57,6 +57,7 @@ export const EFFECTS = {
   weaving: E(0x78695A, 'bad', 'Weaving'),
   oozing: E(0x99FFA3, 'bad', 'Oozing'),
   infested: E(0x8C9B8C, 'bad', 'Infested'),
+  breath_of_the_nautilus: E(0x00FFFF, 'good', 'Breath of the Nautilus'),
 };
 // where each effect's picture is in the classic sheet (container/inventory, 18 x 18 from 0, 198, eight to a row)
 export const EFFECT_ICON = {

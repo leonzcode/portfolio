@@ -94,6 +94,8 @@ bio('end_highlands', 0.5, 0.5, { fog: 0xa080a0, sky: 0x000000, dim: 'the_end' })
 bio('end_midlands', 0.5, 0.5, { fog: 0xa080a0, sky: 0x000000, dim: 'the_end' });
 bio('small_end_islands', 0.5, 0.5, { fog: 0xa080a0, sky: 0x000000, dim: 'the_end' });
 bio('end_barrens', 0.5, 0.5, { fog: 0xa080a0, sky: 0x000000, dim: 'the_end' });
+// the Superflat preset The Void's one biome (gen/flat.js): nothing spawns in it
+bio('the_void', 0.5, 0.5);
 
 export const SPRUCE_LEAF = 0x619961, BIRCH_LEAF = 0x80a755;
 

@@ -179,6 +179,8 @@ export function blockDrops(world, x, y, z, b, meta, ctx) {
     case 'sweet_berry_bush': { const age = meta & 3; if (age >= 2) add(out, 'sweet_berries', uniformBonus(age === 3 ? between(2, 3) : between(1, 2), fortune, 1)); return out; }
     case 'melon_stem': case 'pumpkin_stem': case 'attached_melon_stem': case 'attached_pumpkin_stem': add(out, n.indexOf('melon') >= 0 ? 'melon_seeds' : 'pumpkin_seeds', 0); return out;
     case 'sculk': out.xp = 1; break;
+    // a creaking heart: 1 to 3 resin clumps (Fortune adds), experience only from one the trees grew (meta 3 and up)
+    case 'creaking_heart': add(out, 'resin_clump', uniformBonus(between(1, 3), fortune, 1)); if (meta >= 3) out.xp = between(20, 24); return out;
     case 'sculk_catalyst': case 'sculk_shrieker': case 'sculk_sensor': case 'calibrated_sculk_sensor': out.xp = 5; break;
   }
   // flower pots give the pot and the plant

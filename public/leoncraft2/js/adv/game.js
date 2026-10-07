@@ -89,6 +89,12 @@ function wrapWorldwide() {
       return findAt(x, y, z);
     };
   }
+  // a raid beaten by those who fought in it: hero_of_the_village (entities/raids.js)
+  const R = St && St.spawners && St.spawners.raids;
+  if (R && R.victory) {
+    const victory = R.victory.bind(R);
+    R.victory = (...a) => { const heroes = !!(R.raid && R.raid.heroes); const r = victory(...a); if (heroes) fire('hero_of_the_village', {}); return r; };
+  }
   // a crafter's craft is heard by everyone within 17 blocks (Crafters Crafting Crafters)
   const obs = L.onBlockSound;
   L.onBlockSound = (kind, x, y, z, made) => {

@@ -9,9 +9,12 @@
                    spaces either side of its foot empty; the arms run east
                    and west or north and south
      copper golem  a carved pumpkin on a copper block (any age, waxed or
-                   not): the golem as old as the block
+                   not): the golem as old as the block, which becomes a
+                   copper chest of the same age
      wither        three wither skeleton skulls on a T of four soul sand or
-                   soul soil, the two spaces either side of its foot empty
+                   soul soil, the two spaces either side of its foot empty;
+                   not in Peaceful. It comes in charging, unhurt for 11
+                   seconds while its health fills, then bursts out
 
    The blocks go (with their breaking pieces) and the mob stands where the
    foot of the build was. An iron golem made this way is the player's and
@@ -67,18 +70,20 @@ export function summonAt(g, x, y, z) {
       if (e) { e.playerMade = true; e.persistent = true; }
       return e;
     }
-    // a copper golem
+    // a copper golem: the copper block becomes a copper chest as old as it (waxed if it was), the golem on top
     const cs = copperStage(name(w, x, y - 1, z));
     if (cs && B.copper_block !== undefined) {
-      clear(w, [[x, y, z], [x, y - 1, z]], parts);
-      const e = E.spawn('copper_golem', x + 0.5, y - 1, z + 0.5, { natural: false });
-      if (e) { e.stage = cs[0]; e.waxed = cs[1]; }
+      clear(w, [[x, y, z]], parts);
+      const chest = (cs[1] ? 'waxed_' : '') + ['', 'exposed_', 'weathered_', 'oxidized_'][cs[0]] + 'copper_chest';
+      if (B[chest] !== undefined) w.set(x, y - 1, z, B[chest], 2); else clear(w, [[x, y - 1, z]], parts);
+      const e = E.spawn('copper_golem', x + 0.5, B[chest] !== undefined ? y : y - 1, z + 0.5, { natural: false });
+      if (e) { e.stage = cs[0]; e.waxed = cs[1]; e.persistent = true; }
       return e;
     }
     return null;
   }
-  if (SKULL(here)) {
-    // the wither: this skull any of the three on top, the T either way
+  if (SKULL(here) && E.difficulty !== 'peaceful') {
+    // the wither (never in Peaceful): this skull any of the three on top, the T either way
     for (const [dx, dz] of [[1, 0], [0, 1]]) for (let k = -1; k <= 1; k++) {
       const cx = x - dx * k, cz = z - dz * k;
       if (!tee(w, cx, y, cz, dx, dz, n => SKULL(n), SOUL)) continue;
@@ -86,7 +91,12 @@ export function summonAt(g, x, y, z) {
       for (let i = -1; i <= 1; i++) { cells.push([cx + dx * i, y, cz + dz * i]); cells.push([cx + dx * i, y - 1, cz + dz * i]); }
       cells.push([cx, y - 2, cz]);
       clear(w, cells, parts);
-      return E.spawn('wither', cx + 0.5, y - 2, cz + 0.5, { natural: false });
+      const e = E.spawn('wither', cx + 0.5, y - 2, cz + 0.5, { natural: false });
+      // it comes in charging: a third of its health, unhurt and still for 11 seconds while the rest fills, then it
+      // bursts out (mobs7.js Wither, summonT)
+      if (e) { e.summonT = 220; e.health = Math.max(1, Math.floor(e.maxHealth / 3)); }
+      if (g.sim && g.sim.onSound) g.sim.onSound('entity.wither.spawn', cx, y - 1, cz, 1, 1);
+      return e;
     }
   }
   return null;

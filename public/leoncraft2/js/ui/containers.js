@@ -17,7 +17,8 @@
    Layouts and sheets are the game's (176 wide, 18-pixel slots); the art is
    Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { ContainerScreen, slot, range, TO_PLAYER, TO_PLAYER_REVERSED } from './inventory.js?v=25';
+import { ContainerScreen, SearchField, press, slot, range, TO_PLAYER, TO_PLAYER_REVERSED } from './inventory.js?v=25';
+import { RecipeBook } from './recipebook.js?v=25';
 import { I, ITEMS, fuelTicks } from '../items.js?v=25';
 import { isShulkerBox, smeltResult } from '../containers.js?v=25';
 import { cookingRecipe, matchGrid } from '../crafting.js?v=25';
@@ -42,6 +43,16 @@ export class CraftingScreen extends ContainerScreen {
     this.title = 'Crafting';
     this.grid = new Array(9).fill(null); this.gridW = 3;
   }
+  // the recipe book (ui/recipebook.js); its button sits at the game's place
+  init() {
+    super.init();
+    if (!this.book) this.book = new RecipeBook(this, SearchField, (L, T, H) => [L + 5, Math.floor(H / 2) - 49]);
+    this.book.layout();
+  }
+  extraClick(mx, my, button) { return this.book ? this.book.mouse(mx, my, button, press.shift) : false; }
+  slotShown() { return !(this.book && this.book.covers()); }
+  keyPressed(e) { const k = this.book ? this.book.key(e) : null; return k === null ? super.keyPressed(e) : k; }
+  onClose() { if (this.book) this.book.close(); super.onClose(); }
   makeSlots() {
     const L = this.left, T = this.top, out = [];
     out.push(slot(L + 124, T + 35, 'result'));
@@ -59,10 +70,15 @@ export class CraftingScreen extends ContainerScreen {
   render(g, mx, my) {
     this.drawBackdrop(g);
     const L = this.left, T = this.top;
+    const book = this.book;
+    if (book.covers()) { book.render(g, mx, my); book.drawButton(g, mx, my); this.drawCarried(g, mx, my, null); return; }
+    book.render(g, mx, my);
     g.blit('container/crafting_table', 0, 0, 176, 166, L, T);
+    book.drawButton(g, mx, my);
     g.text(this.title, L + 29, T + 6, LABEL_GREY, false);
     g.text('Inventory', L + 8, T + 72, LABEL_GREY, false);
     const prev = this.drawSlots(g, mx, my);
+    book.drawGhost(g);
     this.drawCarried(g, mx, my, prev);
   }
 }
@@ -138,7 +154,7 @@ export class MountScreen extends ContainerScreen {
     if (s.kind !== 'box' || !st) return super.mayPlace(s, st);
     const n = ITEMS[st.id] ? ITEMS[st.id].name : '', k = this.kinds[s.i];
     if (k === 'saddle') return n === 'saddle';
-    if (k === 'armor') return /_horse_armor$/.test(n);
+    if (k === 'armor') return (this.mob.armorKind || /_horse_armor$/).test(n);
     if (k === 'carpet') return /_carpet$/.test(n);
     return true;
   }

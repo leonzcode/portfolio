@@ -67,6 +67,12 @@ import { potWobbled } from './sim/lids.js?v=25';
 import { BookScreen } from './ui/book.js?v=25';
 import { wantBook } from './entities/tablebook.js?v=25';
 import { cookingRecipe } from './crafting.js?v=25';
+import { hiveUse } from './entities/hives.js?v=25';
+
+/* Other modules keep state of their own with a dimension's block entities (struct/trials.js: a trial
+   spawner's cooldown): registerExtra(k, { save(details) -> entries with that k, load(details, entry), reset(details) }). */
+const EXTRA = new Map();
+export function registerExtra(k, x) { EXTRA.set(k, x); }
 const THREE = window.THREE;
 
 /* ---- the composter's chances, by item (Minecraft Wiki, Composter) ---- */
@@ -153,6 +159,7 @@ export class Details {
     if (d.name === 'jukebox') return this.jukebox(h, hit, s, n);
     if (d.name === 'vault') return this.vault(h, hit, s, n);
     if (d.name === 'decorated_pot') return this.decoratedPot(h, hit, s);
+    if (d.name === 'beehive' || d.name === 'bee_nest') return hiveUse(this, h, hit, d, s, n);
     if (d.name === 'chiseled_bookshelf') return this.shelf(h, hit, s, n);
     if (d.name === 'lectern') return this.lectern(h, hit, s, n);
     return false;
@@ -413,6 +420,23 @@ export class Details {
       const water = { id: I.potion, count: 1, potion: 'water' };
       if (h.creative) h.inv.placeBack(water); else this.swap(h, water);
       return true;
+    }
+    /* washing in water (the game's cauldron interactions): dyed leather loses its colour, a banner its last
+       pattern, a dyed shulker box its dye (keeping what it holds); each takes a level of water */
+    if (d.name === 'water_cauldron' && lv > 0) {
+      let done = false;
+      if (s.color !== undefined && /^leather_|^leather_horse_armor$|^wolf_armor$/.test(n)) { delete s.color; done = true; }
+      else if (/_banner$/.test(n) && Array.isArray(s.patterns) && s.patterns.length) { s.patterns = s.patterns.slice(0, -1); if (!s.patterns.length) delete s.patterns; done = true; }
+      else if (/_shulker_box$/.test(n) && I.shulker_box !== undefined) {
+        const plain = Object.assign({}, s, { id: I.shulker_box, count: 1 });
+        if (h.creative) h.inv.placeBack(plain); else this.swap(h, plain);
+        done = true;
+      }
+      if (done) {
+        if (lv <= 1) set('cauldron', 0); else set('water_cauldron', lv - 1);
+        h.inv.changed();
+        return true;
+      }
     }
     if (n === 'potion' && s.potion === 'water' && (d.name === 'cauldron' || (d.name === 'water_cauldron' && lv < 3))) {
       set('water_cauldron', lv + 1);
@@ -785,11 +809,13 @@ export class Details {
       else if (e.k === 'lectern') { if (e.book) out.push({ k: 'le', p: [e.x, e.y, e.z], i: stackToJSON(e.book), g: e.page }); }
       else if (e.items.some(Boolean)) out.push({ k: 'c', p: [e.x, e.y, e.z], i: e.items.map(s => (s ? stackToJSON(s) : null)), t: e.t, n: e.total });
     }
+    for (const x of EXTRA.values()) for (const o of x.save(this) || []) out.push(o);
     return out;
   }
   fromJSON(list) {
     for (const e of this.map.values()) this._unshow(e);
     this.map.clear();
+    for (const x of EXTRA.values()) if (x.reset) x.reset(this);
     if (!Array.isArray(list)) return;
     for (const o of list) {
       const [x, y, z] = o.p || [0, 0, 0];
@@ -815,6 +841,8 @@ export class Details {
       } else if (o.k === 'j') {
         const e = this.entry(x, y, z, 'jukebox');
         e.disc = o.i ? stackFromJSON(o.i) : null; e.t = o.t | 0;
+      } else if (EXTRA.has(o.k)) {
+        EXTRA.get(o.k).load(this, o);
       } else if (o.k === 'c') {
         const e = this.entry(x, y, z, 'campfire');
         e.items = (o.i || []).concat([null, null, null, null]).slice(0, 4).map(a => (a ? stackFromJSON(a) : null));

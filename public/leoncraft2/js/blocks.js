@@ -171,6 +171,19 @@ for (const [n, display] of [['lc2_item_frame', 'Item Frame'], ['lc2_glow_item_fr
 // a conduit put into water stays in the water (the game's waterlogged state): a block of its own, drawn with the water
 // round it, that is the conduit to everything else and leaves the water when it is broken
 def('lc2_wet_conduit', { display: 'Conduit', shape: 'head', pass: 'cutout', tex: 'conduit', light: 15, opacity: 1, hardness: 3.0, item: false, tab: null, itemOf: 'conduit', waterlogged: true });
+// corals, coral fans and sea pickles under water the same way (the reefs are made of them, and one put into water keeps it):
+// a wet copy of each, its item, picture and shape the dry one's (place.js and gen/features.js swap them in)
+for (const c of ['tube', 'brain', 'bubble', 'fire', 'horn']) for (const n of [c + '_coral', c + '_coral_fan', c + '_coral_wall_fan']) {
+  if (B[n] === undefined) continue;
+  const o = Object.assign({}, BLOCKS[B[n]]);
+  delete o.id; delete o.name; delete o.order;
+  def('lc2_wet_' + n, Object.assign(o, { item: false, tab: null, itemOf: n.replace('_wall_fan', '_fan'), waterlogged: true }));
+}
+if (B.sea_pickle !== undefined) {
+  const o = Object.assign({}, BLOCKS[B.sea_pickle]);
+  delete o.id; delete o.name; delete o.order;
+  def('lc2_wet_sea_pickle', Object.assign(o, { item: false, tab: null, itemOf: 'sea_pickle', waterlogged: true }));
+}
 for (const d of BLOCKS) {
   if (!d) continue;
   if (d.display === undefined) d.display = d.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
