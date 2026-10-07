@@ -13,7 +13,7 @@
    material maker (the colour and fog are theirs: render/vanilla.js for Fast,
    renderer.js for Detailed); the geometry has a position and a face shade.
 --------------------------------------------------------------------------- */
-import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=21';
+import { COMMON, TONEMAP, EXPOSURE } from './glsl.js?v=22';
 const THREE = window.THREE;
 export const CLOUD_H = 192, CLOUD_S = 12;
 
@@ -44,7 +44,8 @@ void main() {
   vec3 rel = w.xyz - cameraPosition;
   float f = smoothstep(uCloudFade.x, uCloudFade.y, length(rel.xz));
   vec3 rd = normalize(rel);
-  c = mix(c, skyDir(vec3(rd.x, max(rd.y, 0.0), rd.z)), f);
+  // (into the fog's colour: near the bottom of the world that goes to black, glsl.js VOID)
+  c = mix(c, skyDir(vec3(rd.x, max(rd.y, 0.0), rd.z)) * (1.0 - uVoid.y), f);
   float a = 0.8 * (1.0 - f * f);
 #ifdef HDR
   // the full chain: light as it is, weighed by how much cloud there is, and what shows through it in

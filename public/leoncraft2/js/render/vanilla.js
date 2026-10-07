@@ -25,9 +25,9 @@
    No shadow map, no post-processing, drawn straight to the screen at full
    resolution with nearest-neighbour textures.
 --------------------------------------------------------------------------- */
-import { COMMON, FILTER } from './glsl.js?v=21';
-import { FullScreen, VS_FULL } from './sky.js?v=21';
-import { BlockClouds } from './clouds.js?v=21';
+import { COMMON, FILTER } from './glsl.js?v=22';
+import { FullScreen, VS_FULL } from './sky.js?v=22';
+import { BlockClouds } from './clouds.js?v=22';
 const THREE = window.THREE;
 
 // the game's rain and thunder colour shift: towards a grey of the colour's own brightness times k
@@ -234,7 +234,7 @@ uniform mat4 uInvViewProj;
 uniform vec3 uCamPos, uSkyColor, uFogColor, uVSun;
 uniform vec4 uSunrise;          // colour and strength of the sunrise fan
 uniform vec3 uSky;              // fog end for the sky, star brightness, under a fluid
-uniform float uMoonPhase, uRain, uSkyMode;
+uniform float uMoonPhase, uRain, uSkyMode, uVoidDisc;
 uniform sampler2D uSunTex, uMoon, uEndSky;
 in vec2 vUv; out vec4 o;
 void main() {
@@ -249,11 +249,12 @@ void main() {
     o = vec4(texture(uEndSky, (q * 0.5 + 0.5) * 16.0).rgb * (40.0 / 255.0), 1.0);
     return;
   }
-  // the sky plane 16 blocks up, fogged at its corners (the game fogs it per corner of a 512 block fan)
+  // the sky plane 16 blocks up, fogged at its corners (the game fogs it per corner of a 512 block fan,
+  // in a straight line from none at the eye to all of it at the render distance, its fog.glsl)
   if (rd.y > 0.0313) {
     float r = 16.0 / max(rd.y, 1e-4) * length(rd.xz);
     float d = 16.0 + min(r, 512.0) * (496.0 / 512.0);
-    col = mix(uSkyColor, uFogColor, smoothstep(0.0, uSky.x, d));
+    col = mix(uSkyColor, uFogColor, sat(d / uSky.x));
   }
   // the sunrise fan, low on the horizon on the sun's side
   if (uSunrise.a > 0.0) {
@@ -295,6 +296,14 @@ void main() {
       vec3 dd = g - c; dd -= dot(dd, sd) * sd;
       if (max(abs(dd.x), max(abs(dd.y), abs(dd.z))) < sz) col += vec3(uSky.y);
     }
+  }
+  /* The eye below sea level: the game's dark disc under the horizon, 4 blocks
+     below the eye and 512 across, black, fogged at its rim like the plane
+     above, and drawn last, over the sun and the stars. So the horizon is a
+     line of fog colour with the dark below it, as in a ravine or the void. */
+  if (uVoidDisc > 0.5 && rd.y < 0.0) {
+    float r = 4.0 / max(-rd.y, 1e-4) * length(rd.xz);
+    if (r < 512.0) col = mix(vec3(0.0), uFogColor, sat((4.0 + r * (508.0 / 512.0)) / uSky.x));
   }
   o = vec4(col, 1.0);
 }`;
@@ -366,7 +375,7 @@ export class Vanilla {
       uSunTex: { value: textures.sun || null }, uCloudColor: { value: new THREE.Vector3(1, 1, 1) }, uCloudFog: { value: new THREE.Vector2(128, 256) },
       uFlowLayers: { value: new THREE.Vector2(man.water_flow ? man.water_flow.layer : 0, man.lava_flow ? man.lava_flow.layer : 0) },
       uLightLv: renderer.uHandLight || (renderer.uHandLight = { value: new THREE.Vector2(1, 0) }),
-      uConstAmb: { value: 0 }, uSkyMode: { value: 0 }, uEndSky: { value: textures.endSky || null },
+      uConstAmb: { value: 0 }, uSkyMode: { value: 0 }, uEndSky: { value: textures.endSky || null }, uVoidDisc: { value: 0 },
     });
     this.skyFS = new FullScreen(new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3, vertexShader: 'precision highp float;\n' + VS_FULL, fragmentShader: 'precision highp float; precision highp int;\n' + SKY_FS,
@@ -469,9 +478,14 @@ export class Vanilla {
       this.waterTime = 0; this.waterFogSet = false;
       U.uFog.value.set(R - Math.max(4, Math.min(64, R / 10)), R, 1);
     }
-    // near the bottom of the world the fog fades to black (the other dimensions: within 32 blocks of their floor)
-    const above = other ? (state.eye.y - 64 - D.minY) / 32 : (state.eye.y + 64 - 0) / 32;
-    if (above < 1) fog.multiplyScalar(Math.max(0, above) * Math.max(0, above));
+    /* Near the bottom of the world the fog fades to black: over the last 32
+       blocks above the dimension's floor, squared, and black below it (the
+       Overworld from y -32 to -64; heights here are y + 64). Not in the End,
+       whose dark sky goes on below its islands as it is. */
+    const above = (state.eye.y - 64 - (D ? D.minY : -64)) / 32;
+    if (above < 1 && !(D && D.sky === 'end')) fog.multiplyScalar(Math.max(0, above) * Math.max(0, above));
+    // the eye below sea level (y 63): the dark disc under the horizon (SKY_FS)
+    U.uVoidDisc.value = U.uSkyMode.value === 0 && state.eye.y < 127 ? 1 : 0;
     // clouds: white by day, grey at night
     U.uCloudColor.value.set(daylight * 0.9 + 0.1, daylight * 0.9 + 0.1, daylight * 0.85 + 0.15);
     greyTowards(U.uCloudColor.value, rain * 0.95, 0.6); greyTowards(U.uCloudColor.value, thunder * 0.95, 0.2);

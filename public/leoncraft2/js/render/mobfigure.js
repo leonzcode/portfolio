@@ -16,9 +16,9 @@
    drawOne), into a small texture of matrices of its own, and drawn into the
    figure's picture (figure.js) in its place.
 --------------------------------------------------------------------------- */
-import { MODELS, POSE, restPose } from '../entities/mobmodels.js?v=21';
-import { SLOTS } from '../entities/mobart.js?v=21';
-import { ATLAS, modelGeometry } from './entitymesh.js?v=21';
+import { MODELS, POSE, restPose } from '../entities/mobmodels.js?v=22';
+import { SLOTS } from '../entities/mobart.js?v=22';
+import { ATLAS, modelGeometry } from './entitymesh.js?v=22';
 const THREE = window.THREE;
 const DEG = Math.PI / 180;
 const MAX_PARTS = 64;

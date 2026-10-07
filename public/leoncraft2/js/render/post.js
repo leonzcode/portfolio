@@ -16,8 +16,8 @@
      exposure    the scene's average brightness, adapted to over a second
      final       AgX tone mapping, a little vignette, sRGB, then FXAA
 --------------------------------------------------------------------------- */
-import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS, TONE_CURVES } from './glsl.js?v=21';
-import { FullScreen, rawMat, floatTarget } from './sky.js?v=21';
+import { COMMON, SHADOW, TONEMAP, ATMOS, LIGHTS, TONE_CURVES, VOID } from './glsl.js?v=22';
+import { FullScreen, rawMat, floatTarget } from './sky.js?v=22';
 const THREE = window.THREE;
 const HEAD = `precision highp float; precision highp int; precision highp sampler2DShadow; precision highp sampler3D;\n`;
 const mat = (fs, u, extra) => {
@@ -193,7 +193,7 @@ void main() {
 }`;
 
 /* ---- composite ---- */
-const FS_COMP = COMMON + RECON + SKYFN + /* glsl */`
+const FS_COMP = COMMON + RECON + SKYFN + VOID + /* glsl */`
 uniform sampler2D uColor, uDepth, uVL, uClouds, uAmbient, uMoon;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uTime, uEyeInWater, uRender, uMoonPhase, uSkyAtEye;
@@ -261,6 +261,7 @@ void main() {
     }
     float night = 1.0 - smoothstep(-0.12, 0.02, uSunDir.y);
     col += stars(rd) * night * sat(rd.y * 4.0);
+    col = voidSky(col, rd);
     if (cloud) col = col * base.a + base.rgb;
   }
   // clouds, in front of the sky and anything beyond them
@@ -279,13 +280,13 @@ void main() {
     float k = 1.0 / 60.0;
     float dy = rd.y * dist;
     float od = 0.0019 * uFogMul * exp(-h0 * k) * (abs(dy) > 0.01 ? (1.0 - exp(-dy * k)) / (dy * k) : 1.0) * dist;
-    vec3 fogC = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z)));
+    vec3 fogC = skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.02), rd.z))) * (1.0 - uVoid.y);
     float T = exp(-od);
     col = col * T + fogC * (1.0 - T) * uSkyAtEye;
     // the edge of the loaded world melts into the horizon
     float hd = length((wp - uCamPos).xz);
     float edge = smoothstep(uRender * 0.72, uRender, hd);
-    col = mix(col, skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))), edge);
+    col = mix(col, skyRadiance(normalize(vec3(rd.x, max(rd.y, 0.0), rd.z))) * (1.0 - uVoid.y), edge);
   }
   col += texture(uVL, vUv).rgb;
   o = vec4(col, 1.0);

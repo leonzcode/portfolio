@@ -34,10 +34,10 @@
      hand.useOn(hit)         right click on a block (chests, tables); true if it did something
      hand.useItem(hit)       right click with the item (eat, armour, buckets); true if it did
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=21';
-import { selectionBoxes } from './models.js?v=21';
-import { placement, use, breakAt } from './place.js?v=21';
-import { breakTime, dropOf } from './survival.js?v=21';
+import { B, BLOCKS, FLUID } from './blocks.js?v=22';
+import { selectionBoxes } from './models.js?v=22';
+import { placement, use, breakAt } from './place.js?v=22';
+import { breakTime, dropOf } from './survival.js?v=22';
 
 export class Interactor {
   constructor(o) {

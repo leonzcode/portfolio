@@ -23,8 +23,8 @@
    asks it before every frame whether to draw one (hold) and calls frame()
    once a frame with the game.
 --------------------------------------------------------------------------- */
-import { shaderSettings, lookOf, setFiltering, loadNormalMaps } from './render/looks.js?v=21';
-import { particleSetting } from './render/particles.js?v=21';
+import { shaderSettings, lookOf, setFiltering, loadNormalMaps } from './render/looks.js?v=22';
+import { particleSetting } from './render/particles.js?v=22';
 
 export class VideoSettings {
   constructor(options, guessShaders) {

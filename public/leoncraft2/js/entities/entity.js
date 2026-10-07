@@ -20,7 +20,7 @@
    Yaw here is the player's: 0 faces -z, and the way ahead is
    (-sin yaw, -cos yaw).
 --------------------------------------------------------------------------- */
-import { BLOCKS, FLUID, B } from '../blocks.js?v=21';
+import { BLOCKS, FLUID, B } from '../blocks.js?v=22';
 const THREE = window.THREE;
 
 export const DEG = Math.PI / 180;
@@ -62,6 +62,9 @@ export class Entity {
   dist2(x, y, z) { const dx = this.pos.x - x, dy = this.pos.y - y, dz = this.pos.z - z; return dx * dx + dy * dy + dz * dz; }
   distTo(e) { return Math.sqrt(this.dist2(e.pos.x, e.pos.y, e.pos.z)); }
   remove() { this.removed = true; }
+  /* 64 below the dimension's floor (manager.js checks every entity each tick):
+     anything but a living thing is simply gone, as in the game */
+  belowWorld() { this.remove(); }
   // the start of every tick: where it was, and what it is standing in
   baseTick() {
     this.prev.copy(this.pos); this.prevYaw = this.yaw; this.prevPitch = this.pitch;
@@ -80,7 +83,6 @@ export class Entity {
     if (this.inWater) { this.fallDist = 0; if (this.fire > 0) this.fire = 0; }
     if (this.inLava) { this.fallDist *= 0.5; this.lavaHurt(); }
     if (this.fire > 0) this.burnTick();
-    if (p.y < -64) this.hurt(4, { type: 'void' });
     if (this.age % 2 === 0) this.touchBlocks();
   }
   // any water, lava or waterlogged block at the corners of the box, from the feet to the head? (a cheap test first)
@@ -170,6 +172,8 @@ export class Living extends Entity {
     this.armor = 0;                   // armour points, for mobs wearing some
     this.helmet = false;
   }
+  // the living take the void's 4, through the hurt window: 4 every half second until they die
+  belowWorld() { this.hurt(4, { type: 'void' }); }
   baseTick() {
     this.prevBodyYaw = this.bodyYaw; this.prevHeadYaw = this.headYaw;
     super.baseTick();

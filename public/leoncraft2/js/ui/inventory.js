@@ -34,15 +34,15 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=21';
-import { Screen, TextField, WHITE } from './gui.js?v=21';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=21';
-import { matchGrid, consumeGrid } from '../crafting.js?v=21';
-import { enchName, ENCH } from '../enchanting.js?v=21';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=21';
-import { patternLines, drawBannerIcon } from '../banners.js?v=21';
-import { mapLines } from '../maps.js?v=21';
-import { dialPicture, usePicture } from '../dials.js?v=21';
+import { BLOCKS, B } from '../blocks.js?v=22';
+import { Screen, TextField, WHITE } from './gui.js?v=22';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=22';
+import { matchGrid, consumeGrid } from '../crafting.js?v=22';
+import { enchName, ENCH } from '../enchanting.js?v=22';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=22';
+import { patternLines, drawBannerIcon } from '../banners.js?v=22';
+import { mapLines } from '../maps.js?v=22';
+import { dialPicture, usePicture } from '../dials.js?v=22';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles

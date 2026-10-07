@@ -13,8 +13,9 @@
                the bottom 32 too (the floor); 0.64 times; solid where above
                zero. Height 0..127.
      sea       lava up to y 31
-     bedrock   y 0 always, thinning out to y 4; the roof at y 127, thinning
-               down to y 123; netherrack just under the roof
+     bedrock   the game's own, block for block: y 0 always, thinning out to
+               y 4; the roof at y 127, thinning down to y 123 (bedrockAt);
+               netherrack just under the roof
      biomes    the game's own from the seed (its old-random temperature and
                vegetation noises, see legacyNetherNoise), the nearest of the
                five points (wastes 0,0; soul sand valley 0,-0.5; crimson
@@ -35,18 +36,44 @@
    Features are kept inside their own chunk (fungi and blobs start far
    enough from its edge), so a chunk never needs its neighbours.
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=21';
-import { CH, H, Y0, VOL, idx } from '../world-const.js?v=21';
-import { BIO } from '../biomes.js?v=21';
-import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=21';
-import { yGradient, BlendedNoise, squeeze } from './blended.js?v=21';
-import { Perlin, Blended } from './noise.js?v=21';
-import { LegacyRandom, seedLong } from './random.js?v=21';
-import { NetherCarvers } from './carvers.js?v=21';
+import { B } from '../blocks.js?v=22';
+import { CH, H, Y0, VOL, idx } from '../world-const.js?v=22';
+import { BIO } from '../biomes.js?v=22';
+import { NormalNoise, rng, mix32, hash3 } from '../noise.js?v=22';
+import { yGradient, BlendedNoise, squeeze } from './blended.js?v=22';
+import { Perlin, Blended } from './noise.js?v=22';
+import { LegacyRandom, seedLong, posSeed, R as PR } from './random.js?v=22';
+import { NetherCarvers } from './carvers.js?v=22';
 
 const I = y => y - Y0;                 // world y -> index
 const lerp = (a, b, t) => a + (b - a) * t;
 const LAVA_TOP = 31, ROOF = 127;
+
+/* The bedrock floor and roof as the game's surface rules make them: bedrock at
+   y 0, and at y 1 to 4 where the random drawn for that block falls under
+   (5 - y) / 5 (the rule "bedrock_floor"); the roof at y 127, and at y 123 to
+   126 where it does not fall under (127 - y) / 5 (the "not" of the gradient
+   "bedrock_roof" from 122 to 127). The Nether's settings keep the old random
+   source, so a block's random is java.util.Random seeded with its position's
+   hash (Mth.getSeed) xor a seed made for the rule's name: the world's random
+   forked for positions (its first long), hashed with the name, forked again. */
+function bedrockRule(s64, name) {
+  const top = new LegacyRandom(s64).nextLong();
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
+  const f = BigInt.asUintN(64, new LegacyRandom(BigInt.asIntN(64, BigInt(h) ^ top)).nextLong());
+  return { h: Number(f >> 32n) >>> 0, l: Number(f & 0xffffffffn) >>> 0 };
+}
+const BR = new LegacyRandom(0);
+// the first nextFloat of the rule's random at a block (java.util.Random's setSeed done on the two halves, no BigInt per block)
+function ruleFloat(f, x, y, z) {
+  posSeed(x, y, z);
+  const hi = (PR.h ^ f.h ^ 0x5) >>> 0, lo = (PR.l ^ f.l ^ 0xdeece66d) >>> 0;
+  BR.sl = lo & 0xffffff; BR.sh = ((hi & 0xffff) << 8) | (lo >>> 24);
+  return BR.next(24) / 16777216;
+}
+// Mth.map(y, a, b, 1, 0)
+const fade = (y, a, b) => 1 + (y - a) / (b - a) * -1;
 
 // the five biomes' points: [temperature, humidity, offset], as the game keeps them (times 10000, whole)
 const POINTS = [
@@ -88,6 +115,8 @@ export class NetherGen {
     // the land's noise, the game's own: its old blended noise on java.util.Random from the seed
     this.base = new Blended(new LegacyRandom(s64), 0.25, 0.375, 80, 60, 8);
     this.carvers = new NetherCarvers(s64, { bedrock: B.bedrock, lava: B.lava });
+    this.floorRule = bedrockRule(s64, 'minecraft:bedrock_floor');
+    this.roofRule = bedrockRule(s64, 'minecraft:bedrock_roof');
     this.nTemp = legacyNetherNoise(s64);
     this.nHum = legacyNetherNoise(BigInt.asIntN(64, s64 + 1n));
     this.nState = new NormalNoise(S, 'nether_state_selector', -4, [1]);
@@ -176,9 +205,9 @@ export class NetherGen {
         const v = lerp(v0, v1, fy);
         const wx = x0 + x, wz = z0 + z;
         let blk = 0;
-        if (y === 0 || (y <= 4 && hash3(S, wx, y, wz) < (5 - y) / 5)) blk = B.bedrock;
-        else if (y === ROOF || (y >= ROOF - 4 && hash3(S ^ 0x7007, wx, y, wz) < (y - (ROOF - 5)) / 5)) blk = B.bedrock;
-        else if (v > 0) blk = B.netherrack;
+        // (the rules turn netherrack to bedrock, as the game's do; the floor and the roof are always solid)
+        if (y === 0 || y === ROOF) blk = B.bedrock;
+        else if (v > 0) blk = this.bedrockAt(wx, y, wz) ? B.bedrock : B.netherrack;
         else if (y <= LAVA_TOP) blk = B.lava;
         blocks[idx(x, I(y), z)] = blk;
       }
@@ -192,6 +221,14 @@ export class NetherGen {
     let top = 0;
     for (let i = VOL - 1; i >= 0; i--) if (blocks[i]) { top = i >> 8; break; }
     return { blocks, meta, biome, top };
+  }
+
+  // whether the bedrock rules make (x, y, z) bedrock (the game's surface rules, see bedrockRule)
+  bedrockAt(x, y, z) {
+    if (y <= 0 || y >= ROOF) return true;
+    if (y < 5) return ruleFloat(this.floorRule, x, y, z) < fade(y, 0, 5);
+    if (y > ROOF - 5) return !(ruleFloat(this.roofRule, x, y, z) < fade(y, ROOF - 5, ROOF));
+    return false;
   }
 
   /* ---- surfaces: floors (solid with air or lava over them) and ceilings ---- */

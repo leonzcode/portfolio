@@ -7,9 +7,9 @@
    out of range, and takes edits: a changed block remeshes its column, and
    the neighbouring one too when it sits on an edge.
 --------------------------------------------------------------------------- */
-import { CH, H, idx } from './world-const.js?v=21';
-import { BLOCKS, FLUID } from './blocks.js?v=21';
-import { searchSpawn } from './spawn.js?v=21';
+import { CH, H, idx } from './world-const.js?v=22';
+import { BLOCKS, FLUID } from './blocks.js?v=22';
+import { searchSpawn } from './spawn.js?v=22';
 
 /* ---- the workers, kept for the whole visit ----
    A new worker is slow for its first seconds: its code is fetched, compiled
@@ -20,7 +20,7 @@ import { searchSpawn } from './spawn.js?v=21';
 const GEN_N = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 const POOL = [];
 function newWorker() {
-  const w = new Worker(new URL('./worker.js?v=21', import.meta.url), { type: 'module' });
+  const w = new Worker(new URL('./worker.js?v=22', import.meta.url), { type: 'module' });
   w.onerror = e => console.error('worker', e.message || e);
   return w;
 }
@@ -51,6 +51,8 @@ function noteKept(key) {
 }
 let worlds = 0;                    // each World's number, on everything read back for it (see lookup)
 const numKey = (cx, cz) => cx * 4194304 + cz;       // a chunk as one number (|cz| < 2 million)
+// the eight chunks round one by lightEdges' bits: west, east, north, south, then the corners
+const EDGE_DX = [-1, 1, 0, 0, -1, 1, -1, 1], EDGE_DZ = [0, 0, -1, 1, -1, -1, 1, 1];
 /* Practice in the menus: every worker the title's world has makes the world
    likely to be opened next (spec: seed, generator, dim, manifest, colours,
    and at: { x, z } where you will stand, or null for a new world). For a new
@@ -240,6 +242,7 @@ export class World {
     this.protos = new Map();           // chunk number -> its terrain { cx, cz, blocks, meta, grid }
     this.writesOf = new Map();         // chunk number -> its features' writes { cx, cz, w: [[0..8, Int32Array], ...] }
     this.stageIn = new Set();          // chunk numbers * 4 + stage (1 terrain, 2 features) asked of a worker
+    this.thrown = new Map();           // the same, -> times a piece came in too far away to keep since you last crossed a chunk (onStage)
     const name = this.dim + '|' + this.generator + '|' + this.seed;
     // where this world's chunks are kept (opts.cache false: never)
     this.cacheKey = opts.cache === false ? null : CACHE + '|' + name;
@@ -249,7 +252,7 @@ export class World {
     this.fresh = !!opts.fresh || (!!this.cacheKey && !keptKeys().includes(this.cacheKey));
     this.noted = false;
     this.tag = ++worlds;
-    this.lookingUp = new Set();       // "cx,cz" being read back from the kept chunks
+    this.lookingUp = new Map();       // "cx,cz" being read back from the kept chunks -> when it was asked
     this.missing = new Map();         // "cx,cz" -> [cx, cz]: not kept, to be made
     /* What practice made for this very world is taken (and where it starts
        you, for a new one); pieces still being made for it are not asked for
@@ -267,11 +270,19 @@ export class World {
        job goes to one before it has (idlest). */
     let first;
     this.ready = new Promise(res => { first = res; });
+    this.initMsg = { type: 'init', seed: this.seed, generator: this.generator, dim: this.dim, manifest: opts.manifest, colours: opts.colours, cache: this.cacheKey, tag: this.tag };
+    /* Every job out, with when it went and to which worker ('g' and 'm' + "cx,cz"
+       for a chunk and a mesh, 't' and 'd' + its number for a terrain and its
+       features): one never answered is asked again (audit). */
+    this.sentAt = new Map();
+    this.fails = new Map();            // a job that went wrong in a worker: how many times, and when
+    // the pieces practice is still making for this world, by no worker of ours (-1): given up on in time like the rest
+    for (const p of this.stageIn) { const st = ((p % 4) + 4) % 4; this.sentAt.set((st === 1 ? 't' : 'd') + (p - st) / 4, [performance.now(), -1]); }
     for (let i = 0; i <= n; i++) {
       const w = POOL.shift() || newWorker();
       this.live.push(false);
       w.onmessage = e => this.onMessage(i, e.data, () => { if (i < n) first(); });
-      w.postMessage({ type: 'init', seed: this.seed, generator: this.generator, dim: this.dim, manifest: opts.manifest, colours: opts.colours, cache: this.cacheKey, tag: this.tag });
+      w.postMessage(this.initMsg);
       // once a visit, the edit worker tidies the kept chunks (old versions out)
       // (a while after the page opens: it holds the store, and the first worlds' reads would wait behind it)
       if (i === n && !swept) { swept = true; setTimeout(() => w.postMessage({ type: 'sweep', prefix: CACHE + '|', limit: 40000 }), 15000); }
@@ -329,10 +340,12 @@ export class World {
     /* Chunks are read back from the kept ones in the background, so a worker
        can still be sending those of the world it served before: not ours. */
     if ((m.cached || m.type === 'looked') && m.tag !== this.tag) return;
-    if (!m.cached) this.busy[i]--;
+    // (never below nothing: a job given up on as lost can still answer late)
+    if (!m.cached && this.busy[i] > 0) this.busy[i]--;
     if (m.back) this.giveBack(m.back);
     this.sched = true;                 // a worker is free: see what is next (schedule)
-    if (m.type === 'terrain' || m.type === 'decorate') { this.onStage(m); return; }
+    if (m.type === 'failed') { this.onFailed(m); return; }
+    if (m.type === 'terrain' || m.type === 'decorate') { this.sentAt.delete((m.type === 'terrain' ? 't' : 'd') + numKey(m.cx, m.cz)); this.onStage(m); return; }
     if (m.type === 'looked') {
       for (const [x, z] of m.missing) { const k = this.key(x, z); this.lookingUp.delete(k); this.missing.set(k, [x, z]); }
       return;
@@ -340,11 +353,16 @@ export class World {
     if (m.type === 'gen') {
       const k = this.key(m.cx, m.cz);
       this.inFlight.delete('g' + k);
+      if (!m.cached) this.sentAt.delete('g' + k);
       this.lookingUp.delete(k);
       if (!m.cached) this.missing.delete(k);
       // its chunks are being kept from now on: the next visit reads them back
       if (!m.cached && this.cacheKey && !this.noted) { this.noted = true; noteKept(this.cacheKey); }
       if (!this.wanted(m.cx, m.cz)) return;
+      /* already here (read back from the kept chunks and made too, after a read
+         that came late; or asked again after a worker went quiet): the one here
+         stays, with its mesh and whatever lives in it */
+      if (this.chunks.has(k)) return;
       const c = { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, biome: m.biome, top: m.top, meshed: false, structs: m.structs || null };
       // put back whatever was changed here before
       const ed = this.edits.get(k);
@@ -358,6 +376,7 @@ export class World {
     if (m.type === 'mesh') {
       const k = this.key(m.cx, m.cz);
       this.inFlight.delete('m' + k);
+      this.sentAt.delete('m' + k + '#' + m.version);
       const c = this.chunks.get(k);
       if (!c) return;
       /* Any mesh newer than the one on screen is shown. (Waiting for the very
@@ -367,7 +386,11 @@ export class World {
       if (m.version <= (shown.get(k) || 0)) return;
       shown.set(k, m.version);
       c.meshed = true;
-      if (m.mesh.light) { c.light = m.mesh.light; c.lightH = m.mesh.lightH; }    // for mobs (js/entities)
+      if (m.mesh.light) {
+        // light that changed along the column's edges: the columns beside it were drawn with the old (lightEdges)
+        if (c.light) this.lightEdges(m.cx, m.cz, c.light, c.lightH, m.mesh.light, m.mesh.lightH);
+        c.light = m.mesh.light; c.lightH = m.mesh.lightH;    // (also for mobs: js/entities)
+      }
       this.stats.mesh++;
       this.onMesh(m.cx, m.cz, m.mesh, m.urgent);
       // the columns round you keep their mesh (with the region's light), so an edit there remakes only its sections
@@ -401,6 +424,27 @@ export class World {
     return b < 0 ? 0 : b;
   }
 
+  /* The chunks to make, (dx, dz) from yours: every one next to a column within
+     render distance, as a column is meshed only once all eight round it are
+     here. (A circle one chunk wider missed sixteen of them, so twelve columns
+     at the very edge, the one straight ahead among them, were never drawn.)
+     With k = 2 it is every chunk whose features one of those needs, and with
+     k = 3 every chunk whose terrain they need (a chunk's features are placed
+     on the terrain of the nine round it). */
+  inReach(dx, dz, k = 1) {
+    const a = Math.max(Math.abs(dx) - k, 0), b = Math.max(Math.abs(dz) - k, 0), rd = this.renderDist;
+    return a * a + b * b <= rd * rd;
+  }
+  /* A piece (terrain or features) too far from you to keep: past the circle
+     kept for when you walk on, and not needed by any chunk still to make.
+     (The circle alone, render distance + 4, left out the terrain the corner
+     chunks need at 3, 5, 8, 9, 10 and most distances past 12: it came in, was
+     thrown away and was asked for again, for ever, with every worker busy and
+     the columns there never drawn.) */
+  farPiece(cx, cz, terrain) {
+    const dx = cx - this.pcx, dz = cz - this.pcz, R = this.renderDist + 4;
+    return dx * dx + dz * dz > R * R && !this.inReach(dx, dz, terrain ? 3 : 2);
+  }
   wanted(cx, cz) {
     const dx = cx - this.pcx, dz = cz - this.pcz;
     return dx * dx + dz * dz <= (this.renderDist + 2) * (this.renderDist + 2);
@@ -421,15 +465,21 @@ export class World {
   update(px, pz) {
     if (this.dead) return;            // left behind (the title's world while the next one loads)
     const pcx = Math.floor(px / CH), pcz = Math.floor(pz / CH);
-    const moved = pcx !== this.pcx || pcz !== this.pcz;
+    /* what to load is planned again when you cross into another chunk, when the
+       render distance changes (a longer one asked for nothing new until you
+       walked on; a shorter one let go of nothing), and when the check below
+       (audit) finds a chunk nobody is making */
+    const moved = pcx !== this.pcx || pcz !== this.pcz || this.renderDist !== this.planDist || this.replan;
+    this.planDist = this.renderDist; this.replan = false;
     this.pcx = pcx; this.pcz = pcz;
     const R = this.renderDist + 1;
     if (moved) {
+      this.thrown.clear();
       // forget what is too far, and line up what is missing, nearest first
       for (const [k, c] of this.chunks) if (!this.wanted(c.cx, c.cz)) { this.fresh = false; this.chunks.delete(k); this.byNum.delete(((c.cx & 0x7fff) << 15) | (c.cz & 0x7fff)); this.meshCache.delete(k); this.rowLog.delete(k); this.cgen = (this.cgen || 0) + 1; this.onDrop(c.cx, c.cz); }
       this.genList = [];
       for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
-        if (dx * dx + dz * dz > R * R) continue;
+        if (!this.inReach(dx, dz)) continue;
         if (!this.chunkXZ(pcx + dx, pcz + dz)) this.genList.push([dx * dx + dz * dz, pcx + dx, pcz + dz]);
       }
       this.genList.sort((a, b) => a[0] - b[0]);
@@ -442,6 +492,8 @@ export class World {
       }
     }
     this.lookupStuck();
+    const now = performance.now();
+    if (moved || now - (this.auditAt || 0) > 1000) this.audit(now);
     const cap = this.workers.length * 2;
     // meshes first (they are what you see), nearest first; a few a frame, so packing them never stalls one
     /* (the nearest picked out of the line each time, rather than the whole line
@@ -458,9 +510,13 @@ export class World {
         if (d < bd) { bd = d; best = k; bx = c.cx; bz = c.cz; }
       }
       if (best === null) break;
+      /* The nearest is past what is drawn, so the rest are too: they wait in the
+         line for you to come closer. (Taken out of it, a column that came in
+         while you flew away was never meshed when you turned back, as nothing
+         round it arrived again to put it back: a hole in the world.) */
+      if (bd > this.renderDist * this.renderDist) break;
       sends++;
       this.meshQueue.delete(best);
-      if (bd > this.renderDist * this.renderDist) continue;
       // a neighbour gone since it was queued: it is queued again when that one is back
       if (!this.around(bx, bz)) continue;
       this.sendMesh(bx, bz);
@@ -486,8 +542,7 @@ export class World {
       // still being read back from the kept chunks, no worker free, or a loading screen waiting on nearer ones (focus): later
       if (this.lookingUp.has(k) || this.inFlightCount() >= gcap || (this.focus >= 0 && Math.max(Math.abs(x - this.pcx), Math.abs(z - this.pcz)) > this.focus)) { L[j++] = e; continue; }
       this.inFlight.add('g' + k);
-      const i = this.idlest(); this.busy[i]++;
-      this.workers[i].postMessage({ type: 'gen', cx: x, cz: z });
+      this.job(this.idlest(), 'g' + k, { type: 'gen', cx: x, cz: z });
     }
     L.length = j;
   }
@@ -500,25 +555,122 @@ export class World {
     for (const e of this.genList) {
       const k = this.key(e[1], e[2]);
       if (this.chunks.has(k) || this.missing.has(k) || this.lookingUp.has(k) || this.inFlight.has('g' + k)) continue;
-      this.lookingUp.add(k); list.push([e[1], e[2]]);
+      if (!this.lookingUp.size) this.lookOldest = performance.now();
+      this.lookingUp.set(k, performance.now()); list.push([e[1], e[2]]);
     }
     if (!list.length) return;
     // a whole area (a world opening) is shared by every worker, nearest ones first in each; a few by the least busy
     const n = list.length > 16 ? this.genN : 1, parts = Array.from({ length: n }, () => []);
     list.forEach((e, j) => parts[j % n].push(e));
     for (const part of parts) { const i = this.idlest(); this.busy[i]++; this.workers[i].postMessage({ type: 'lookup', list: part }); }
-    this.lookedAt = performance.now();
   }
   /* A read that never comes back (storage stuck or gone) must not hold the
      world up: after a few seconds whatever is still being read is made. */
   lookupStuck() {
-    if (!this.lookingUp.size || performance.now() - this.lookedAt < 4000) return;
-    console.warn('kept chunks not read back in time; making', this.lookingUp.size);
-    for (const k of this.lookingUp) this.missing.set(k, k.split(',').map(Number));
-    this.lookingUp.clear();
-    this.sched = true;
+    if (!this.lookingUp.size) return;
+    // (each read's own clock: while you fly on, new reads kept a stuck one waiting for ever)
+    const now = performance.now();
+    if (now - this.lookOldest < 4000) return;
+    let n = 0, oldest = Infinity;
+    for (const [k, t] of this.lookingUp) {
+      if (now - t < 4000) { if (t < oldest) oldest = t; continue; }
+      this.lookingUp.delete(k); this.missing.set(k, k.split(',').map(Number)); n++;
+    }
+    this.lookOldest = oldest;
+    if (n) { console.warn('kept chunks not read back in time; making', n); this.sched = true; }
   }
   inFlightCount() { return this.inFlight.size + this.stageIn.size; }
+  // a job for worker i, remembered (sentAt) under what it makes
+  job(i, key, msg, transfer) {
+    this.busy[i]++;
+    this.sentAt.set(key, [performance.now(), i]);
+    if (transfer) this.workers[i].postMessage(msg, transfer); else this.workers[i].postMessage(msg);
+  }
+
+  /* ---- the check that nothing is forgotten, once a second and whenever you
+     cross into another chunk: every column within render distance is drawn,
+     or on its way. ----
+     A column whose chunk and eight neighbours are here, with no mesh and none
+     being made, goes back in the line. A chunk within reach that nobody is
+     making plans the loading again. A job a worker never answered (it went
+     wrong there, or the worker stopped) is asked again, of a fresh worker. */
+  audit(now) {
+    this.auditAt = now;
+    const rd = this.renderDist, rd2 = rd * rd;
+    for (const c of this.chunks.values()) {
+      if (c.meshed) continue;
+      const dx = c.cx - this.pcx, dz = c.cz - this.pcz;
+      if (dx * dx + dz * dz > rd2) continue;
+      const k = this.key(c.cx, c.cz);
+      if (this.meshQueue.has(k) || this.inFlight.has('m' + k) || !this.around(c.cx, c.cz)) continue;
+      const f = this.fails.get('m' + k);
+      if (f && (f[0] >= 3 || now - f[1] < 2000)) continue;
+      this.meshQueue.add(k);
+      this.stats.rescued = (this.stats.rescued || 0) + 1;
+    }
+    // a chunk within reach, not here and not asked for, that the plan has lost
+    if (this.genList && !this.replan) {
+      const R = rd + 1;
+      let lost = null;
+      for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
+        if (!this.inReach(dx, dz)) continue;
+        const x = this.pcx + dx, z = this.pcz + dz;
+        if (this.chunkXZ(x, z)) continue;
+        const k = this.key(x, z);
+        if (this.inFlight.has('g' + k) || this.lookingUp.has(k)) continue;
+        (lost || (lost = [])).push(numKey(x, z));
+      }
+      if (lost) {
+        const listed = new Set();
+        for (const e of this.genList) listed.add(numKey(e[1], e[2]));
+        if (lost.some(f => !listed.has(f))) { this.replan = true; this.stats.replans = (this.stats.replans || 0) + 1; }
+      }
+    }
+    // a job not answered in half a minute is lost: its worker is started afresh and all it had is asked again
+    // (a piece practice was making is simply asked again)
+    let stuck = -1;
+    for (const [key, [t, i]] of this.sentAt) {
+      if (now - t <= 30000) continue;
+      if (i < 0) { this.sentAt.delete(key); this.forget(key); this.sched = true; } else if (stuck < 0) stuck = i;
+    }
+    if (stuck >= 0) this.replaceWorker(stuck);
+  }
+  replaceWorker(i) {
+    console.warn('a chunk worker stopped answering; starting it again');
+    const old = this.workers[i];
+    old.onmessage = null;
+    old.terminate();
+    const w = newWorker();
+    this.live[i] = false; this.busy[i] = 0;
+    w.onmessage = e => this.onMessage(i, e.data, () => {});
+    w.postMessage(this.initMsg);
+    this.workers[i] = w;
+    for (const [key, [, j]] of this.sentAt) if (j === i) { this.sentAt.delete(key); this.forget(key); }
+    if (i === this.editW) this.warmed = false;
+    this.replan = true; this.sched = true;
+    this.stats.restarts = (this.stats.restarts || 0) + 1;
+  }
+  // a job's marks taken off, so it is asked for again
+  forget(key) {
+    const kind = key[0], rest = key.slice(1);
+    if (kind === 'g') this.inFlight.delete(key);
+    else if (kind === 'm') { const k = rest.split('#')[0]; this.inFlight.delete('m' + k); this.meshCache.delete(k); const [x, z] = k.split(',').map(Number); this.queueMesh(x, z); }
+    else if (kind === 't') this.stageIn.delete(+rest * 4 + 1);
+    else if (kind === 'd') this.stageIn.delete(+rest * 4 + 2);
+  }
+  /* A job that went wrong in the worker (worker.js answers 'failed' rather than
+     never answering): asked again a little later, three times at most. */
+  onFailed(m) {
+    const key = m.job === 'mesh' ? 'm' + this.key(m.cx, m.cz) : m.job === 'gen' ? 'g' + this.key(m.cx, m.cz) : (m.job === 'terrain' ? 't' : 'd') + numKey(m.cx, m.cz);
+    this.sentAt.delete(m.job === 'mesh' ? key + '#' + m.version : key);
+    const f = this.fails.get(key) || [0, 0];
+    f[0]++; f[1] = performance.now();
+    this.fails.set(key, f);
+    if (f[0] === 3) console.warn('giving up on', m.job, m.cx, m.cz);
+    if (m.job === 'mesh') { this.inFlight.delete(key); return; }      // (audit puts it back in the line)
+    if (f[0] >= 3) return;                                           // (its marks stay: never asked again)
+    this.forget(key);
+  }
 
   /* ---- Minecraft's own worlds, in stages ----
      A chunk is put together (gen) from its own terrain and the features of
@@ -566,8 +718,7 @@ export class World {
     const t = numKey(x, z);
     if (this.protos.has(t) || this.stageIn.has(t * 4 + 1)) return;
     this.stageIn.add(t * 4 + 1);
-    const i = this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'terrain', cx: x, cz: z });
+    this.job(this.idlest(), 't' + t, { type: 'terrain', cx: x, cz: z });
   }
   /* a chunk's terrain as a worker takes it: copied, for the original stays here for the other jobs that
      need it; into buffers the worker hands back when the job is done (see pool). Fresh ones each time, nine
@@ -593,8 +744,7 @@ export class World {
       if (p && p.grid) grids.push([x + dx, z + dz, p.grid]);
     }
     this.stageIn.add(f * 4 + 2);
-    const i = this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'decorate', cx: x, cz: z, protos, grids }, transfer);
+    this.job(this.idlest(), 'd' + f, { type: 'decorate', cx: x, cz: z, protos, grids }, transfer);
   }
   sendGen(x, z) {
     const k = this.key(x, z);
@@ -602,18 +752,28 @@ export class World {
     const writes = [];
     if (this.features) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) writes.push([x + dx, z + dz, this.writesOf.get(numKey(x + dx, z + dz)).w]);
     this.inFlight.add('g' + k);
-    const i = this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'gen', cx: x, cz: z, proto, writes }, [proto.blocks.buffer, proto.meta.buffer]);
+    this.job(this.idlest(), 'g' + k, { type: 'gen', cx: x, cz: z, proto, writes }, [proto.blocks.buffer, proto.meta.buffer]);
   }
   onStage(m) {
-    const f = numKey(m.cx, m.cz), dx = m.cx - this.pcx, dz = m.cz - this.pcz, R = this.renderDist + 4;
-    this.stageIn.delete(f * 4 + (m.type === 'terrain' ? 1 : 2));
-    if (dx * dx + dz * dz > R * R) return;          // you have gone on: not worth keeping
+    const f = numKey(m.cx, m.cz);
+    const st = f * 4 + (m.type === 'terrain' ? 1 : 2);
+    this.stageIn.delete(st);
+    if (this.farPiece(m.cx, m.cz, m.type === 'terrain')) {
+      /* you have gone on: not worth keeping. But a piece thrown away twice
+         without you crossing into another chunk is one something here still
+         asks for, so the third time it is kept (else it is made again and
+         again for ever, the workers never idle and a column never drawn). */
+      const n = (this.thrown.get(st) || 0) + 1;
+      this.thrown.set(st, n);
+      if (n < 3) return;
+      if (n === 3) console.warn('a piece thrown away and asked for again; kept', m.type, m.cx - this.pcx, m.cz - this.pcz);
+    }
     if (m.type === 'terrain') this.protos.set(f, { cx: m.cx, cz: m.cz, blocks: m.blocks, meta: m.meta, grid: m.grid });
     else this.writesOf.set(f, { cx: m.cx, cz: m.cz, w: m.writes });
   }
   takePractice(m) {
     takeOut(this.protos, this.writesOf, m, this.stageIn);
+    if (m.did) this.sentAt.delete((m.did[0] === 't' ? 't' : 'd') + numKey(m.did[1], m.did[2]));
     this.sched = true;
   }
   /* How far along a chunk is, as the loading screen's squares show it (the
@@ -647,17 +807,16 @@ export class World {
      behind you. What sits at the edge of what is loaded is kept, for when
      you walk on. */
   prune() {
-    const R = this.renderDist + 4, made = (x, z) => this.chunkXZ(x, z) !== undefined;
-    const far = p => (p.cx - this.pcx) ** 2 + (p.cz - this.pcz) ** 2 > R * R;
+    const made = (x, z) => this.chunkXZ(x, z) !== undefined;
     for (const [f, p] of this.protos) {
       let all = true;
       for (let dz = -2; dz <= 2 && all; dz++) for (let dx = -2; dx <= 2; dx++) if (!made(p.cx + dx, p.cz + dz)) { all = false; break; }
-      if (all || far(p)) this.protos.delete(f);
+      if (all || this.farPiece(p.cx, p.cz, true)) this.protos.delete(f);
     }
     for (const [f, p] of this.writesOf) {
       let all = true;
       for (let dz = -1; dz <= 1 && all; dz++) for (let dx = -1; dx <= 1; dx++) if (!made(p.cx + dx, p.cz + dz)) { all = false; break; }
-      if (all || far(p)) this.writesOf.delete(f);
+      if (all || this.farPiece(p.cx, p.cz, false)) this.writesOf.delete(f);
     }
   }
   sendMesh(cx, cz, urgent, edit) {
@@ -711,8 +870,8 @@ export class World {
        busy; but a small remesh next to you (the world changing by itself)
        goes to the edit worker too when it has nothing to do, so its code is
        always warm (cold, it took several times as long over your blocks). */
-    const i = urgent || (base && !this.busy[this.editW]) ? this.editW : this.idlest(); this.busy[i]++;
-    this.workers[i].postMessage({ type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky, urgent: !!urgent,
+    const i = urgent || (base && !this.busy[this.editW]) ? this.editW : this.idlest();
+    this.job(i, 'm' + k + '#' + v, { type: 'mesh', cx, cz, chunks, tops, version: v, seed: this.seed, prev: new Int32Array(prev), fast: !!this.fastLeaves, noSky: this.noSky, urgent: !!urgent,
       blend: this.blend, flat: this.flatLight,
       keep: this.near(cx, cz), base, rows: base ? rows : null }, transfer);
   }
@@ -800,21 +959,59 @@ export class World {
     const urgent = this.builder === 'threaded' ? false : this.urgent || (this.builder === 'full' && this.near(cx, cz));
     const D = urgent ? (this.urgentDirty || (this.urgentDirty = new Set())) : this.dirty;
     const lo = y === undefined ? 0 : y, hi = y === undefined ? H - 1 : y;
-    const add = k => {
-      D.add(k);
-      // the rows changed, against the newest mesh sent (see rowLog)
-      const v = this.meshVersion.get(k) || 0;
-      let log = this.rowLog.get(k);
-      if (!log) this.rowLog.set(k, log = []);
-      const e = log.length ? log[log.length - 1] : null;
-      if (e && e[0] === v) { if (lo < e[1]) e[1] = lo; if (hi > e[2]) e[2] = hi; }
-      else log.push([v, lo, hi]);
-    };
+    const add = k => this.markRows(D, k, lo, hi);
     add(this.key(cx, cz));
     if (lx === 0) add(this.key(cx - 1, cz));
     if (lx === 15) add(this.key(cx + 1, cz));
     if (lz === 0) add(this.key(cx, cz - 1));
     if (lz === 15) add(this.key(cx, cz + 1));
+  }
+  // a column to mesh again (in the line D), with the rows changed, against the newest mesh sent (see rowLog)
+  markRows(D, k, lo, hi) {
+    D.add(k);
+    const v = this.meshVersion.get(k) || 0;
+    let log = this.rowLog.get(k);
+    if (!log) this.rowLog.set(k, log = []);
+    const e = log.length ? log[log.length - 1] : null;
+    if (e && e[0] === v) { if (lo < e[1]) e[1] = lo; if (hi > e[2]) e[2] = hi; }
+    else log.push([v, lo, hi]);
+  }
+  /* A torch near a chunk's edge lights the chunk beside it too, and that one
+     was drawn with the light as it was (it was meshed again only when a block
+     on the edge itself changed): a sharp dark line along the border, or a glow
+     left behind when the torch was taken away. So when a column's new mesh has
+     different light in a cell along its edge, the column on that side (and
+     the one across a corner, whose corner faces take light from it) is made
+     again, in turn, over the rows that changed. Its new light is looked at the
+     same way, so a change goes on as far as it reaches and no further; the
+     column that set it off is not made again for its own change (lightCause). */
+  lightEdges(cx, cz, ol, oh, nl, nh) {
+    const top = Math.max(oh || 0, nh), air = this.noSky ? 0 : 0xf0;
+    let mask = 0, lo = H, hi = -1;
+    for (let y = 0; y < top; y++) {
+      const o = y < oh ? y << 8 : -1, n = y < nh ? y << 8 : -1;
+      let row = 0;
+      for (let t = 0; t < 16; t++) {
+        // west (x 0), east (x 15), north (z 0), south (z 15); a corner cell also the chunk across that corner
+        const w = t << 4, e = w | 15, nn = t, so = 240 | t;
+        if ((o < 0 ? air : ol[o + w]) !== (n < 0 ? air : nl[n + w])) row |= 1 | (t === 0 ? 16 : t === 15 ? 64 : 0);
+        if ((o < 0 ? air : ol[o + e]) !== (n < 0 ? air : nl[n + e])) row |= 2 | (t === 0 ? 32 : t === 15 ? 128 : 0);
+        if ((o < 0 ? air : ol[o + nn]) !== (n < 0 ? air : nl[n + nn])) row |= 4;
+        if ((o < 0 ? air : ol[o + so]) !== (n < 0 ? air : nl[n + so])) row |= 8;
+      }
+      if (row) { mask |= row; if (y < lo) lo = y; hi = y; }
+    }
+    if (!mask) return;
+    const k = this.key(cx, cz), cause = this.lightCause && this.lightCause.get(k);
+    if (cause) this.lightCause.delete(k);
+    const D = this.dirty || (this.dirty = new Set()), C = this.lightCause || (this.lightCause = new Map());
+    for (let b = 0; b < 8; b++) {
+      if (!(mask & (1 << b))) continue;
+      const dx = EDGE_DX[b], dz = EDGE_DZ[b], nk = this.key(cx + dx, cz + dz), c = this.chunks.get(nk);
+      if (!c || !c.meshed || nk === cause) continue;
+      C.set(nk, k);
+      this.markRows(D, nk, Math.max(0, lo - 1), Math.min(H - 1, hi + 1));
+    }
   }
   // your own edits go out the moment they are made (interact.js), not at the next frame
   flushUrgent() {

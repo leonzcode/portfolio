@@ -16,15 +16,15 @@
    more than half of a worker's code, so they are loaded only when a world
    first needs them: the title screen's world (the first generator) starts
    without waiting for them. */
-import { Gen } from './worldgen.js?v=21';
-import { meshColumn, setColours } from './mesher.js?v=21';
-import { resolveTextures } from './blocks.js?v=21';
-import { worldStructures, structureMessage } from './struct/hook.js?v=21';
-import { keepChunk, readChunks, sweepChunks, keptCount } from './chunkcache.js?v=21';
+import { Gen } from './worldgen.js?v=22';
+import { meshColumn, setColours } from './mesher.js?v=22';
+import { resolveTextures } from './blocks.js?v=22';
+import { worldStructures, structureMessage } from './struct/hook.js?v=22';
+import { keepChunk, readChunks, sweepChunks, keptCount } from './chunkcache.js?v=22';
 
 let G = null;                 // { VanillaGen, NetherGen, EndGen } once loaded
 let loadingG = null;
-const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=21'), import('./gen/nether.js?v=21'), import('./gen/end.js?v=21')])
+const loadGens = () => loadingG || (loadingG = Promise.all([import('./gen/vanillagen.js?v=22'), import('./gen/nether.js?v=22'), import('./gen/end.js?v=22')])
   .then(([v, n, e]) => { G = { VanillaGen: v.VanillaGen, NetherGen: n.NetherGen, EndGen: e.EndGen }; }));
 // whether a world (init or practice) needs one of Minecraft's generators
 const needsG = m => m.dim === 'the_nether' || m.dim === 'the_end' || m.generator === 'vanilla';
@@ -71,7 +71,18 @@ self.onmessage = e => {
   if (held) { held.push(e.data); return; }
   handle(e.data);
 };
+/* A job that goes wrong says so ('failed'), so the world asks again instead
+   of waiting for ever on an answer that never comes: a chunk that never
+   loaded left a hole in the world, and its eight neighbours never drawn. */
+const JOBS = { terrain: 1, decorate: 1, gen: 1, mesh: 1 };
 function handle(m) {
+  try { work(m); } catch (e) {
+    console.error('worker ' + m.type + ' ' + m.cx + ',' + m.cz, e);
+    if (gen) { if (gen.protoCache) gen.protoCache.clear(); if (gen.writeCache) gen.writeCache.clear(); }
+    if (JOBS[m.type] && !m.warm) self.postMessage({ type: 'failed', job: m.type, cx: m.cx, cz: m.cz, version: m.version });
+  }
+}
+function work(m) {
   if ((m.type === 'init' || m.type === 'practice') && !G && needsG(m)) {
     held = [m];
     loadGens().then(() => { const q = held; held = null; for (const x of q) handle(x); },
@@ -164,7 +175,10 @@ function handle(m) {
     for (const p of m.protos) gen.protoCache.set(ck(p.cx, p.cz), p);
     // the biomes of the terrains round those, for the lake plans of the chunks next to this one
     if (m.grids && gen.decorator.keepGrid) for (const [x, z, g] of m.grids) gen.decorator.keepGrid(x, z, g);
-    const w = writesOf(gen, m.cx, m.cz);
+    /* (a chunk whose features cannot be placed comes without them, rather
+       than holding up the chunks round it for good) */
+    let w;
+    try { w = writesOf(gen, m.cx, m.cz); } catch (e) { console.error('features of ' + m.cx + ',' + m.cz, e); w = []; }
     gen.protoCache.clear(); gen.writeCache.clear();
     // the terrains' buffers go back with the answer, to be used for the next job (world.js pool)
     const back = [];
@@ -180,7 +194,9 @@ function handle(m) {
     }
     const c = gen.generate(m.cx, m.cz);
     if (m.proto) { gen.protoCache.clear(); gen.writeCache.clear(); }
-    const extra = structs ? structs.build(c, m.cx, m.cz) : null;      // the structures reaching into this chunk
+    // the structures reaching into this chunk (one that cannot be built is left out, not the chunk)
+    let extra = null;
+    try { extra = structs ? structs.build(c, m.cx, m.cz) : null; } catch (e) { console.error('structures in ' + m.cx + ',' + m.cz, e); }
     if (cacheKey) keepChunk(cacheKey, m.cx, m.cz, c, extra);
     // (the terrain it was made from goes back to be used again, as a decoration's do; the chunk is a copy of it)
     const back = m.proto && m.proto.blocks.buffer !== c.blocks.buffer && m.proto.meta.buffer !== c.meta.buffer ? [m.proto.blocks.buffer, m.proto.meta.buffer] : [];
