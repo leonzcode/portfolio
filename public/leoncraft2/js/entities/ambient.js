@@ -15,6 +15,9 @@
                     rising 0.07 a tick for 280 to 330 ticks (a signal fire,
                     over a hay bale, higher), and now and then a spark
 
+   leaves         (26.x) now and then a leaf falling from under one, tinted
+                  as the leaves are, gone when it reaches the ground
+
    And while it rains, the splashes where it lands (rainSplashes); and the
    pieces of ground your feet kick up sprinting or landing hard (feet).
 
@@ -34,6 +37,15 @@ set('copper_torch', TORCH); set('copper_wall_torch', WALL_TORCH);
 set('redstone_torch', RS_TORCH); set('redstone_wall_torch', RS_WALL_TORCH);
 set('fire', FIRE); set('soul_fire', FIRE); set('lava', LAVA); set('nether_portal', PORTAL);
 for (const d of BLOCKS) if (d && d.shape === 'campfire') KIND[d.id] = CAMPFIRE;
+/* leaves (26.x): each time one is picked, a chance it lets a leaf fall if nothing solid is under it,
+   one in a hundred (cherry one in ten, its pink petals falling faster; pale oak one in fifty) */
+const LEAVES = 11, LEAF = [];
+for (const d of BLOCKS) if (d && (d.leaves || /_leaves$/.test(d.name))) {
+  KIND[d.id] = LEAVES;
+  LEAF[d.id] = d.name === 'cherry_leaves' ? { p: 0.1, g: 0.00075, v: 0, col: [0.98, 0.72, 0.8] }
+    : d.name === 'pale_oak_leaves' ? { p: 0.02, g: 0.00021, v: 0.021, col: [0.66, 0.69, 0.62] }
+    : { p: 0.01, g: 0.00021, v: 0.021, tint: d.tint || null, col: /azalea/.test(d.name) ? [0.36, 0.5, 0.2] : [0.45, 0.65, 0.25] };
+}
 
 /* where a wall torch's flame is, by the wall it hangs on: models.js wall_torch leans a 14 pixel
    picture out at 22.5 degrees from 2.5 up and 1.2 out on the north wall, and the flame is 10 of the
@@ -169,6 +181,26 @@ export class Ambient {
           this.puff('portal', x + R(), y + R(), z + R(), (R() - 0.5) * 0.5 * 0.5, (R() - 0.5) * 0.5 * 0.5, (R() - 0.5) * 0.5 * 0.5 * s);
         }
         break;
+      case LEAVES: {
+        const L = LEAF[b];
+        if (!L || R() >= L.p) break;
+        const u = T.get(x, y - 1, z);
+        if (u && BLOCKS[u].solid) break;
+        // how far it falls before it lands: its life is the time that takes (the game takes it off the ground)
+        let d = 1;
+        while (d < 48) { const g = T.get(x, y - d, z); if (g && (BLOCKS[g].solid || BLOCKS[g].shape === 'fluid' || KIND[g] === LEAVES)) break; d++; }
+        const fall = d - 0.95, t = L.v ? (-L.v + Math.sqrt(L.v * L.v + 2 * L.g * fall)) / L.g : Math.sqrt(2 * fall / L.g);
+        let col = L.col;
+        if (L.tint) {
+          const c = this.m.R && this.m.R.colours, bi = this.m.world.biomeAt(x, z);
+          const v = L.tint === 'spruce' ? 0x619961 : L.tint === 'birch' ? 0x80a755 : c ? c.leaf[bi] : 0x48b518;
+          col = [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+        }
+        const Q = this.m.particlesP, i = Q.n;
+        this.puff('leaf', x + R(), y - 0.05, z + R(), (R() - 0.5) * 0.01, -L.v, (R() - 0.5) * 0.01, col, OUTDOORS);
+        if (Q.n > i) { Q.life[i * 2 + 1] = Math.min(300, Math.max(1, Math.round(t))); Q.info[i * 6 + 3] = L.g; Q.spin[i] = R() * 6.28; }
+        break;
+      }
       case CAMPFIRE: {
         if (T.meta(x, y, z) & 4) break;     // put out
         this.fires.set(x + ',' + y + ',' + z, [x, y, z]);
