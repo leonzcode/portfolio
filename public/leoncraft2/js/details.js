@@ -67,6 +67,7 @@ import { potWobbled } from './sim/lids.js?v=24';
 import { BookScreen } from './ui/book.js?v=24';
 import { wantBook } from './entities/tablebook.js?v=24';
 import { cookingRecipe } from './crafting.js?v=24';
+import { hiveUse } from './entities/hives.js?v=24';
 
 /* Other modules keep state of their own with a dimension's block entities (struct/trials.js: a trial
    spawner's cooldown): registerExtra(k, { save(details) -> entries with that k, load(details, entry), reset(details) }). */
@@ -158,6 +159,7 @@ export class Details {
     if (d.name === 'jukebox') return this.jukebox(h, hit, s, n);
     if (d.name === 'vault') return this.vault(h, hit, s, n);
     if (d.name === 'decorated_pot') return this.decoratedPot(h, hit, s);
+    if (d.name === 'beehive' || d.name === 'bee_nest') return hiveUse(this, h, hit, d, s, n);
     if (d.name === 'chiseled_bookshelf') return this.shelf(h, hit, s, n);
     if (d.name === 'lectern') return this.lectern(h, hit, s, n);
     return false;
