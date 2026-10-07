@@ -42,6 +42,16 @@ Changes made for Leoncraft 2:
 - beacon_beam.png, the beacon's beam, is Pixel Perfection CE's own
   (textures/entity/beacon_beam.png in that pack); checked pixel by pixel
   against the game's beam (October 2026), it shares none of its pixels;
+  end_gateway_beam.png is that pack's end gateway beam, checked the same way;
+- conduit/ (an active conduit's cage, its shell and its eye) is Pixel
+  Perfection Legacy's own entity art for the conduit, checked pixel by pixel
+  against the game's (October 2026): none of its pixels. (Pixel Perfection
+  CE's conduit pictures are copies of the game's and are not used.) The
+  conduit's current is drawn by Leoncraft's own code;
+- the chiseled bookshelf's front, empty and full, is Pixel Perfection
+  Legacy's chiseled bookshelf side with its six panels opened (empty) or
+  filled with the books of Pixel Perfection CE's bookshelf (the packs' own
+  fronts follow the game's too closely to use);
 - copper chests are the wooden chest recoloured to each copper stage; signs
   for mangrove, cherry, pale oak, poplar and bamboo are the oak sign
   recoloured to their planks; pointed dripstone is Legacy's sulfur spike
