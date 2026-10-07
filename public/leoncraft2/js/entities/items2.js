@@ -222,10 +222,186 @@ const SCENES = [
   { sky: [0x1a1a3a, 0x3a3a6a], far: 0x2a3a4a, near: 0x1e2a36, ground: 0x141c24, sun: 0xe8e8f0 },
   { sky: [0xe8dcc0, 0xd8c8a0], far: 0xa84a3a, near: 0x3a5a8a, ground: 0x2a2a2a, sun: 0xf0b030 },
 ];
+/* The newer paintings Pixel Perfection CE has no picture of: each a scene of our own on its name's subject,
+   drawn with a few shapes at sixteen pixels a block. */
+function kit(p, W, H, rnd) {
+  const hex = c => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+  const K = {
+    W, H, rnd,
+    mix: (a, b, t) => { const A = hex(a), Bc = hex(b); return (Math.round(A[0] + (Bc[0] - A[0]) * t) << 16) | (Math.round(A[1] + (Bc[1] - A[1]) * t) << 8) | Math.round(A[2] + (Bc[2] - A[2]) * t); },
+    px: (x, y, c, g = 0.05) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) p.px(x, y, g ? p.shade(c, 1 + (rnd() - 0.5) * 2 * g) : c); },
+    rect: (x, y, w, h, c, g) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) K.px(x + i, y + j, c, g); },
+    oval: (cx, cy, rx, ry, c, g) => { for (let y = Math.floor(cy - ry); y <= cy + ry; y++) for (let x = Math.floor(cx - rx); x <= cx + rx; x++) if (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1) K.px(x, y, c, g); },
+    disc: (cx, cy, r, c, g) => K.oval(cx, cy, r, r, c, g),
+    // bands of colour from a (at y0) to b (at y1)
+    sky: (y0, y1, a, b, bands = 4) => { for (let y = y0; y < y1; y++) { const t = Math.floor((y - y0) / Math.max(1, y1 - y0) * bands) / Math.max(1, bands - 1); K.rect(0, y, W, 1, K.mix(a, b, Math.min(1, t)), 0.02); } },
+    line: (x0, y0, x1, y1, c, g) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1); for (let i = 0; i <= n; i++) K.px(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, c, g); },
+    // a hill line: the ground from y(x) down, in colour c
+    hills: (fy, c, g) => { for (let x = 0; x < W; x++) for (let y = Math.max(0, Math.floor(fy(x))); y < H; y++) K.px(x, y, c, g); },
+  };
+  return K;
+}
+const THEMED = {
+  meditative: K => {
+    K.sky(0, 16, 0xf0a060, 0x8a4a6a);
+    K.disc(8, 6, 3, 0xf8d878, 0);
+    K.hills(x => 12 + Math.sin(x / 3) * 0.6, 0x3a2a3a);
+    K.oval(8, 11, 3, 2.5, 0x1e1620); K.disc(8, 7, 1.6, 0x1e1620);
+  },
+  prairie_ride: K => {
+    K.sky(0, 22, 0x88b8e8, 0xf0dca0);
+    K.hills(x => 14 - (x > 9 ? 5 : x > 6 ? 3 : 0), 0xb06a48);
+    K.hills(x => 22 + Math.sin(x / 2) * 0.5, 0xc8b060);
+    K.rect(4, 19, 7, 3, 0x5a3a24); K.rect(4, 22, 1, 3, 0x4a2e1c); K.rect(9, 22, 1, 3, 0x4a2e1c); K.rect(10, 18, 2, 2, 0x5a3a24);
+    K.rect(6, 16, 2, 3, 0x7a2a2a); K.disc(7, 15, 1, 0xd8a878, 0); K.rect(5, 14, 4, 1, 0x3a2a1a, 0);
+  },
+  baroque: K => {
+    K.rect(0, 0, 32, 32, 0x2a1a14, 0.04);
+    K.oval(16, 16, 13, 14, 0xb08a3a, 0.08); K.oval(16, 16, 11, 12, 0x3a2418, 0.05);
+    K.rect(12, 20, 8, 7, 0x6a8ab8); K.rect(13, 18, 6, 2, 0x5a7aa8);
+    for (const [x, y, c] of [[11, 12, 0xd84040], [16, 9, 0xf0e8d0], [21, 12, 0xe8b830], [14, 14, 0xc85090], [19, 15, 0xd84040]]) K.disc(x, y, 2.4, c);
+    for (let i = 0; i < 6; i++) K.line(16, 18, 10 + i * 2.4, 13, 0x3a6a2a, 0);
+  },
+  humble: K => {
+    K.sky(0, 22, 0x7ab0e0, 0xc8e0f0);
+    K.hills(x => 22 + Math.sin(x / 5) * 1.5, 0x5a9a3a);
+    K.rect(9, 15, 14, 9, 0xd8c8a0); K.rect(15, 19, 3, 5, 0x6a4a2a); K.rect(11, 17, 3, 3, 0x88b8d8); K.rect(19, 17, 3, 3, 0x88b8d8);
+    for (let i = 0; i < 6; i++) K.rect(8 + i, 15 - i, 16 - 2 * i, 1, 0xa83a2a);
+    K.rect(20, 7, 2, 5, 0x6a6a6a); K.disc(22, 5, 1.5, 0xd8d8d8, 0); K.disc(24, 3, 1.2, 0xe0e0e0, 0);
+  },
+  bouquet: K => {
+    K.rect(0, 0, 48, 48, 0xd8c8a8, 0.04); K.rect(0, 36, 48, 12, 0x8a5a3a, 0.06);
+    K.oval(24, 32, 7, 9, 0x3a5a9a); K.rect(20, 22, 8, 3, 0x2e4a84);
+    for (let i = 0; i < 9; i++) K.line(24, 24, 12 + i * 3, 10 + (i % 3) * 3, 0x3a7a2a, 0);
+    const C = [0xd83040, 0xf0e070, 0xe890c0, 0xf8f8f0, 0x8a48c0, 0xe87830];
+    for (let i = 0; i < 14; i++) K.disc(10 + K.rnd() * 28, 6 + K.rnd() * 16, 2 + K.rnd() * 1.5, C[i % C.length]);
+  },
+  cavebird: K => {
+    K.rect(0, 0, 48, 48, 0x2a2622, 0.08);
+    K.oval(24, 30, 15, 20, 0x9ac0d8, 0.02); K.oval(24, 34, 15, 12, 0x6a9a5a, 0.04);
+    K.hills(x => 40 + Math.abs(x - 24) * 0.3, 0x3a3430);
+    const bx = 24, by = 22;
+    K.rect(bx - 1, by, 3, 2, 0x1a1a1a, 0); K.line(bx - 6, by - 3, bx, by, 0x1a1a1a, 0); K.line(bx + 7, by - 3, bx + 1, by, 0x1a1a1a, 0);
+    for (let i = 0; i < 20; i++) K.px(K.rnd() * 48, K.rnd() * 10, 0x4a4440);
+  },
+  cotan: K => {
+    K.rect(0, 0, 48, 48, 0xece0c8, 0.03);
+    K.disc(16, 16, 9, 0xd84a2a); K.disc(16, 16, 5, 0x2a3a8a); K.disc(34, 30, 7, 0xf0c030); K.disc(34, 30, 3, 0x1a1a1a);
+    K.rect(6, 34, 20, 4, 0x2a8a6a); K.line(4, 44, 44, 4, 0x1a1a1a, 0); K.line(10, 46, 46, 22, 0x1a1a1a, 0);
+    K.rect(30, 8, 3, 14, 0x8a2a8a);
+  },
+  endboss: K => {
+    K.sky(0, 48, 0x4a3478, 0x8a6aa8);
+    for (let i = 0; i < 30; i++) K.px(K.rnd() * 48, K.rnd() * 30, 0xe0d8f0, 0);
+    K.hills(x => 38 + Math.abs(x - 24) * 0.25, 0xd8d8a0);
+    K.oval(24, 16, 6, 3, 0x141018); K.line(18, 15, 4, 8, 0x141018, 0); K.line(30, 15, 44, 8, 0x141018, 0);
+    K.line(18, 16, 6, 12, 0x141018, 0); K.line(30, 16, 42, 12, 0x141018, 0); K.rect(29, 13, 6, 3, 0x141018); K.px(33, 14, 0xc060f0, 0);
+    K.rect(11, 27, 2, 11, 0x2a2a3a); K.rect(36, 25, 2, 13, 0x2a2a3a);
+  },
+  fern: K => {
+    K.rect(0, 0, 48, 48, 0xc8d4b8, 0.04);
+    for (let a = -1.2; a <= 1.21; a += 0.4) {
+      const ex = 24 + Math.sin(a) * 22, ey = 44 - Math.cos(a) * 34;
+      K.line(24, 46, ex, ey, 0x3a6a2a, 0);
+      for (let t = 0.2; t < 1; t += 0.12) { const x = 24 + (ex - 24) * t, y = 46 + (ey - 46) * t; K.line(x, y, x - 4 * (1 - t), y - 3 * (1 - t) - 1, 0x4a8a3a, 0); K.line(x, y, x + 4 * (1 - t), y - 3 * (1 - t) - 1, 0x5a9a44, 0); }
+    }
+  },
+  owlemons: K => {
+    K.rect(0, 0, 48, 48, 0x6a8a9a, 0.04); K.rect(0, 30, 48, 3, 0x5a3a24); K.line(0, 32, 48, 28, 0x4a2e1c, 0);
+    K.oval(24, 20, 9, 11, 0x8a6a4a); K.oval(24, 23, 6, 7, 0xc8b090);
+    K.disc(20, 16, 3, 0xf0e8d0, 0); K.disc(28, 16, 3, 0xf0e8d0, 0); K.disc(20, 16, 1.4, 0xf0b020, 0); K.disc(28, 16, 1.4, 0xf0b020, 0); K.px(20, 16, 0x101010, 0); K.px(28, 16, 0x101010, 0);
+    K.rect(23, 19, 2, 2, 0xd8a030, 0); K.rect(16, 7, 3, 3, 0x8a6a4a); K.rect(29, 7, 3, 3, 0x8a6a4a);
+    K.oval(9, 38, 4, 3, 0xf0d830); K.oval(38, 39, 4, 3, 0xf0d830); K.rect(9, 35, 1, 1, 0x3a7a2a, 0);
+  },
+  sunflowers: K => {
+    K.sky(0, 32, 0x5a98e0, 0xb0d8f0);
+    K.hills(x => 36 + Math.sin(x / 6) * 2, 0x5a8a2a);
+    for (const [x, y] of [[12, 14], [25, 9], [37, 16]]) {
+      K.rect(x, y, 1, 48 - y, 0x3a6a1a, 0); K.oval(x + 3, y + 12, 3, 1.5, 0x4a8a2a);
+      for (let a = 0; a < 6.28; a += 0.5) K.disc(x + Math.cos(a) * 5, y + Math.sin(a) * 5, 2, 0xf0c020);
+      K.disc(x, y, 3.5, 0x5a3a1a);
+    }
+  },
+  tides: K => {
+    K.sky(0, 20, 0x1a2a4a, 0x4a6a9a); K.disc(36, 8, 4, 0xf0f0e0, 0);
+    for (let r = 0; r < 6; r++) {
+      const y0 = 20 + r * 5, c = K.mix(0x2a5a9a, 0x0a2a5a, r / 5);
+      K.hills(x => y0 + Math.sin(x / 4 + r * 1.7) * 2, c);
+      for (let x = 0; x < 48; x++) if (Math.sin(x / 4 + r * 1.7) > 0.8) K.px(x, y0 + Math.sin(x / 4 + r * 1.7) * 2 - 1, 0xe8f0f8, 0);
+    }
+  },
+  dennis: K => {
+    K.rect(0, 0, 48, 48, 0x5a6a5a, 0.05);
+    K.oval(24, 46, 16, 14, 0x2a2a3a); K.rect(21, 28, 6, 6, 0xd8a888);
+    K.oval(24, 20, 8, 10, 0xe0b090); K.oval(24, 12, 9, 5, 0x3a2a1a);
+    K.rect(20, 19, 2, 1, 0x2a2a2a, 0); K.rect(26, 19, 2, 1, 0x2a2a2a, 0); K.rect(23, 22, 2, 2, 0xc89070, 0); K.rect(21, 26, 6, 1, 0x8a4a3a, 0);
+    K.rect(22, 34, 4, 8, 0xe8e8e8); K.rect(23, 35, 2, 7, 0x8a2a2a);
+  },
+  backyard: K => {
+    K.sky(0, 30, 0x88c0f0, 0xd8ecf8);
+    K.hills(x => 40, 0x5aa03a);
+    K.rect(30, 14, 18, 26, 0xc8a878); for (let i = 0; i < 8; i++) K.rect(28 + i, 14 - i, 20, 1, 0x8a3a2a);
+    K.rect(36, 30, 4, 10, 0x5a3a24); K.rect(41, 20, 4, 4, 0x9ac8e8);
+    for (let x = 0; x < 30; x += 4) { K.rect(x, 34, 2, 10, 0xe8e0d0); } K.rect(0, 36, 30, 1, 0xe8e0d0); K.rect(0, 40, 30, 1, 0xe8e0d0);
+    K.rect(10, 22, 3, 18, 0x5a3a24); K.disc(11, 18, 8, 0x3a7a2a); K.disc(7, 22, 5, 0x4a8a34);
+    for (let y = 44; y < 64; y++) K.rect(22 - (y - 44) * 0.4, y, 6 + (y - 44) * 0.8, 1, 0xb8a888);
+  },
+  pond: K => {
+    K.rect(0, 0, 48, 64, 0x5a9a3a, 0.08); K.sky(0, 14, 0x9ac8e8, 0xd8e8f0);
+    K.oval(24, 38, 19, 14, 0x3a6aa8); K.oval(22, 36, 15, 10, 0x4a7ab8);
+    for (const [x, y] of [[14, 36], [28, 42], [32, 32], [20, 46]]) { K.disc(x, y, 3, 0x3a8a2a); K.px(x + 1, y - 1, 0xe8a0c0, 0); }
+    for (let i = 0; i < 9; i++) { const x = 3 + i * 5 + (i > 4 ? 0 : 0); K.line(x, 60, x + 1, 50 - (i % 3) * 3, 0x6a8a2a, 0); K.rect(x, 48 - (i % 3) * 3, 1, 3, 0x6a4a2a, 0); }
+  },
+  changing: K => {
+    const S = [[0x8ac8f0, 0x7ac04a, 0xf0b0d0], [0x5aa8f0, 0x4a9a2a, 0x2a7a1a], [0xd8b888, 0xc8902a, 0xd85a1a], [0xb8c8d8, 0xf0f0f8, 0xe8f0f8]];
+    S.forEach(([sky, gr, leaf], i) => {
+      K.rect(i * 16, 0, 16, 20, sky); K.rect(i * 16, 20, 16, 12, gr);
+      K.rect(i * 16 + 7, 12, 2, 10, 0x5a3a24); K.disc(i * 16 + 8, 10, 5, leaf);
+    });
+  },
+  finding: K => {
+    K.sky(0, 14, 0x7ab8f0, 0xb8dcf8); K.rect(0, 14, 64, 6, 0x3a7ab8); K.hills(x => 20 + Math.sin(x / 7) * 0.8, 0xe8d8a0);
+    K.rect(26, 21, 12, 7, 0x8a5a2a); K.rect(26, 19, 12, 3, 0x6a4422); K.rect(31, 23, 2, 2, 0xd8b830, 0);
+    K.disc(28, 19, 1.4, 0xf0d040, 0); K.disc(33, 18, 1.4, 0xf0d040, 0);
+    K.line(52, 30, 50, 8, 0x8a6a3a, 0); for (const [dx, dy] of [[-8, 3], [8, 2], [-6, -2], [6, -3]]) K.line(50, 8, 50 + dx, 8 + dy, 0x3a8a2a, 0);
+  },
+  lowmist: K => {
+    K.sky(0, 32, 0xc8d0d8, 0xe8ecf0);
+    [[10, 0x8a96a0], [15, 0x6a7a86], [20, 0x4a5a66], [25, 0x2e3a44]].forEach(([y, c], i) => K.hills(x => y + Math.sin(x / (6 + i * 2) + i) * 3 + Math.sin(x / 2.5 + i) * 0.6, c));
+    for (let i = 0; i < 40; i++) K.px(K.rnd() * 64, 14 + K.rnd() * 10, 0xe0e4e8, 0);
+  },
+  passage: K => {
+    K.rect(0, 0, 64, 32, 0x5a5650, 0.08);
+    for (let i = 0; i < 6; i++) K.rect(18 + i * 2, 4 + i * 2, 28 - i * 4, 28 - i * 2, K.mix(0x3a3632, 0x9a9488, i / 5), 0.05);
+    K.oval(32, 18, 4, 8, 0xf0e8c8, 0.02); K.rect(28, 18, 8, 14, 0xf0e8c8, 0.02);
+    for (let y = 0; y < 32; y += 4) { K.rect(0, y, 64, 1, 0x4a4640, 0); }
+    K.line(0, 32, 28, 26, 0x6a665e, 0); K.line(64, 32, 36, 26, 0x6a665e, 0);
+  },
+  orb: K => {
+    K.sky(0, 64, 0x0a0a1a, 0x2a1a3a);
+    K.hills(x => 50 + Math.sin(x / 9) * 3, 0x1a1a24);
+    for (let r = 18; r > 0; r--) K.disc(32, 26, r, K.mix(0x2a1a4a, 0xf8f0ff, (18 - r) / 18), 0);
+    for (let a = 0; a < 6.28; a += 0.52) K.line(32 + Math.cos(a) * 20, 26 + Math.sin(a) * 20, 32 + Math.cos(a) * 28, 26 + Math.sin(a) * 28, 0x8a6ac8, 0);
+  },
+  unpacked: K => {
+    K.rect(0, 0, 64, 64, 0xc8a878, 0.05); K.rect(0, 46, 64, 18, 0x8a6a4a, 0.06);
+    const crate = (x, y, w, h) => { K.rect(x, y, w, h, 0xb88a4a); K.rect(x, y, w, 1, 0x6a4a2a, 0); K.rect(x, y + h - 1, w, 1, 0x6a4a2a, 0); K.rect(x, y, 1, h, 0x6a4a2a, 0); K.rect(x + w - 1, y, 1, h, 0x6a4a2a, 0); K.line(x, y, x + w - 1, y + h - 1, 0x8a6a3a, 0); };
+    crate(6, 30, 18, 18); crate(10, 14, 14, 16); crate(40, 32, 18, 16);
+    K.rect(40, 26, 18, 6, 0x9a7240); K.rect(38, 24, 4, 8, 0xa8803a);
+    for (const [x, y, c] of [[45, 28, 0xd84040], [50, 27, 0x40a0d8], [54, 28, 0xf0d040]]) K.disc(x, y, 2, c);
+  },
+};
+
 function paintPicture(p, name, w, h) {
   const W = w * 16, H = h * 16;
   let seed = 7; for (const c of name) seed = (seed * 31 + c.charCodeAt(0)) >>> 0;
   const rnd = () => { seed ^= seed << 13; seed >>>= 0; seed ^= seed >>> 17; seed ^= seed << 5; seed >>>= 0; return seed / 4294967296; };
+  if (THEMED[name]) {
+    THEMED[name](kit(p, W, H, rnd));
+    for (let x = 0; x < W; x++) { p.px(x, 0, 0x5a3a20); p.px(x, H - 1, 0x4a2e18); }
+    for (let y = 0; y < H; y++) { p.px(0, y, 0x5a3a20); p.px(W - 1, y, 0x4a2e18); }
+    return;
+  }
   const k0 = rnd(), kind = k0 < 0.4 ? 0 : k0 < 0.65 ? 1 : k0 < 0.85 ? 2 : 3, S = SCENES[kind];
   const grain = (c, x, y) => p.shade(c, ((x * 7 + y * 13 + seed) % 5) === 0 ? 0.94 : 1);
   const mix = (a, b, t) => { const A = [(a >> 16) & 255, (a >> 8) & 255, a & 255], Bc = [(b >> 16) & 255, (b >> 8) & 255, b & 255]; return A.map((v, i) => Math.round(v + (Bc[i] - v) * t)); };
