@@ -30,6 +30,13 @@ const KINDS = {
   // the runes that drift from bookshelves into an enchanting table (their path is set where they are made)
   enchant: { f0: 24, f1: 25, size: 0.09, life: [30, 40], g: 0.0015, drag: 1, col: [0.86, 0.86, 1], spread: 0, glow: true },
   note: { f0: 20, f1: 20, size: 0.2, life: [10, 14], g: -0.02, drag: 0.8, col: [0.3, 1, 0.3], spread: 0, glow: true },
+  // the blocks round you (entities/ambient.js): soul torches' flames, fire's big smoke, lava's sparks,
+  // and campfire smoke, rising a long way and fading over its last three seconds
+  soul_flame: { f0: 26, f1: 26, size: 0.12, life: [8, 20], g: -0.002, drag: 0.96, col: [1, 1, 1], spread: 0.01, glow: true },
+  large_smoke: { f0: 7, f1: 0, size: 0.3, life: [16, 40], g: -0.003, drag: 0.96, col: [0.3, 0.3, 0.3], spread: 0 },
+  lava: { f0: 22, f1: 22, size: 0.12, life: [16, 40], g: 0.03, drag: 0.999, col: [1, 0.55, 0.15], spread: 0, glow: true },
+  campfire: { f0: 2, f1: 2, size: 0.5, life: [280, 330], g: -0.000003, drag: 1, col: [0.85, 0.85, 0.85], spread: 0 },
+  campfire_signal: { f0: 1, f1: 1, size: 0.5, life: [400, 460], g: -0.000003, drag: 1, col: [0.85, 0.85, 0.85], spread: 0 },
 };
 
 export class Particles {
@@ -92,7 +99,9 @@ export class Particles {
       const f0 = this.info[I], f1 = this.info[I + 1];
       const frame = Math.round(f0 + (f1 - f0) * Math.min(1, t));
       const x = this.prev[o] + (this.pos[o] - this.prev[o]) * a, y = this.prev[o + 1] + (this.pos[o + 1] - this.prev[o + 1]) * a, z = this.prev[o + 2] + (this.pos[o + 2] - this.prev[o + 2]) * a;
-      const alpha = f0 === 15 ? 1 - t * 0.5 : 1;
+      // the explosion puff thins as it grows; anything long-lived (campfire smoke) fades over its last 60 ticks
+      const left = this.life[i * 2 + 1] - this.life[i * 2] - a;
+      const alpha = f0 === 15 ? 1 - t * 0.5 : this.life[i * 2 + 1] > 200 && left < 60 ? Math.max(0, left / 60) : 1;
       meshes.particle(x, y, z, this.info[I + 2] * (f0 === 15 ? 0.6 + t : 1), this.col[i * 4], this.col[i * 4 + 1], this.col[i * 4 + 2], alpha, frame, this.info[I + 5], this.spin[i]);
     }
   }

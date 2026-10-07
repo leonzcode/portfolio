@@ -22,6 +22,7 @@
 import { Terrain } from './terrain.js?v=24';
 import { PathFinder, Navigation } from './path.js?v=24';
 import { Particles } from './particles.js?v=24';
+import { Ambient } from './ambient.js?v=24';
 import { Living, Mob, wrap, DEG } from './entity.js?v=24';
 import { TYPES } from './mobs.js?v=24';
 import './projectiles.js?v=24';
@@ -74,6 +75,7 @@ export class Entities {
     this.displays = [];             // mobs shown inside spawners (makeDisplay)
     this.grid = new Map();
     this.particlesP = new Particles();
+    this.ambient = new Ambient(this);      // torches smoking, campfires, lava sparks (ambient.js)
     this.age = 0;
     this.stored = new Map();        // "cx,cz" -> saved entities of chunks not loaded
     this.populated = new Set();     // chunks that have had their animals
@@ -316,6 +318,7 @@ export class Entities {
     this.list.length = j;
     this.rebuildGrid();
     if (this.age % 20 === 0) this.chunks();
+    this.ambient.tick();
     this.particlesP.tick();
     this.combat.lateTick();
   }
