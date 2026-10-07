@@ -27,6 +27,7 @@ import { Y0, CH } from '../world-const.js?v=24';
 import { trialSpawners } from './trials.js?v=24';
 import { Hearts } from '../entities/hearts.js?v=24';
 import { Raids } from '../entities/raids.js?v=24';
+import { progress } from '../advancements.js?v=24';
 
 // what a spawner can hold, by its meta (1 up): append only, saves keep the numbers
 export const SPAWNABLE = ['zombie', 'skeleton', 'spider', 'cave_spider', 'blaze', 'creeper', 'husk', 'stray', 'drowned', 'magma_cube', 'silverfish', 'endermite',
@@ -89,6 +90,8 @@ export class Spawners {
     this.hearts.tick(world, player);
     // illager patrols, Bad Omen in a village and the raid it brings (entities/raids.js)
     this.raids.tick(world, player);
+    // advancements and statistics (js/advancements.js)
+    progress().tick();
     // the ones out of sight or gone lose their turning mob
     for (const [k, e] of this.shown) if (!seen.has(k)) this.unshow(k, e);
   }

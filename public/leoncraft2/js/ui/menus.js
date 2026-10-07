@@ -1202,7 +1202,9 @@ export class PauseScreen extends Screen {
         if (!fn) off(btn, 'Not in Leoncraft 2 yet');
       }
     };
-    row(top + 74, ['Advancements', null], ['Statistics', null]);
+    // (ui/advancements.js, from js/advancements.js)
+    row(top + 74, ['Advancements', () => import('./advancements.js?v=24').then(m => g.open(new m.AdvancementsScreen()))],
+      ['Statistics', () => import('./advancements.js?v=24').then(m => g.open(new m.StatisticsScreen()))]);
     row(top + 98, ['Send Feedback', null], ['Report Bugs', null]);
     // Open to LAN (ui/lan.js): greyed out once the world is open; on a server the game has Player Reporting there
     const lan = this.hooks.lan && this.hooks.lan();
