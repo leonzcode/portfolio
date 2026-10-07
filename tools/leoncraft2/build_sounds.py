@@ -1486,6 +1486,11 @@ def main():
                      ('block.conduit.ambient.short', 'conduit_pulse'), ('block.conduit.attack.target', 'zap')):
         if ev not in EVENTS:
             B('items' if not ev.startswith('ui.') else 'ui', ev, pool, maxn=2, cut=pool not in ('beacon_on', 'beacon_off', 'beacon_hum', 'conduit_on', 'conduit_off'))
+    for ev in ('item.bucket.fill_fish', 'item.bucket.fill_axolotl', 'item.bucket.fill_tadpole', 'item.bucket.empty_fish', 'item.bucket.empty_axolotl', 'item.bucket.empty_tadpole'):
+        if ev not in EVENTS:
+            like(ev, 'item.bucket.' + ('fill' if '.fill' in ev else 'empty'))
+    if 'entity.boat.paddle_land' not in EVENTS:
+        B('items', 'entity.boat.paddle_land', 'gravel_step', maxn=2)
     if 'item.trident.thunder' not in EVENTS and 'entity.lightning_bolt.thunder' in EVENTS:
         like('item.trident.thunder', 'entity.lightning_bolt.thunder')
     # gliding: the wind as it rushes past, a held loop (game.js sets how loud by speed)
