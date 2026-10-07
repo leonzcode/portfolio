@@ -18,7 +18,8 @@ unpack it from a server jar yourself, or let this script read the jar:
 --only <folder,...> keeps every table already in lootdata.js and takes from
 the source only the tables under those folders (the archaeology tables, what
 suspicious sand and gravel hold, were added this way from 26.1.2, the newest
-jar to hand; their names keep the folder: "archaeology/desert_pyramid").
+jar to hand; their names keep the folder: "archaeology/desert_pyramid"; the
+trial spawners' rewards the same way: --only spawners).
 Older jars write a table's functions as "functions" with a "function" key;
 both spellings are read.
 
@@ -261,7 +262,7 @@ def build_table(doc, name):
 
 def read_dir(root):
     docs = {}
-    for sub in ('chests', 'dispensers', 'archaeology'):
+    for sub in ('chests', 'dispensers', 'archaeology', 'spawners'):
         base = os.path.join(root, sub)
         if not os.path.isdir(base):
             continue
@@ -281,7 +282,7 @@ def read_jar(path):
         z = zipfile.ZipFile(io.BytesIO(z.read(inner[0])))
     docs = {}
     for nm in z.namelist():
-        m = re.match(r'data/minecraft/loot_table/((?:chests|dispensers|archaeology)/.+)\.json$', nm)
+        m = re.match(r'data/minecraft/loot_table/((?:chests|dispensers|archaeology|spawners)/.+)\.json$', nm)
         if m:
             docs[m.group(1)] = json.loads(z.read(nm).decode('utf-8'))
     return docs
@@ -340,7 +341,8 @@ def main():
         lines.append('%s:%s' % (js(name), js(tables[name])))
     head = (
         '/* GENERATED from the game\'s loot table data by tools/leoncraft2/build_loot.py - do not edit by hand.\n'
-        '   %d chest, dispenser and archaeology tables of Minecraft 26.3 (the archaeology ones from 26.1.2):\n'
+        '   %d chest, dispenser, archaeology and trial spawner tables of Minecraft 26.3 (the archaeology and\n'
+        '   spawner ones from 26.1.2):\n'
         '   pools, rolls, weighted entries, count ranges and the flags that change a stack. See the header of\n'
         '   tools/leoncraft2/build_loot.py for the shape of every field. */\n'
     ) % len(tables)

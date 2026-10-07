@@ -21,9 +21,14 @@
    each spawner near the player turns slowly inside its cage, small (drawn
    by the mobs' renderer from its displays list, never ticked or hit).
 --------------------------------------------------------------------------- */
-import { B } from '../blocks.js?v=25';
-import { BIOMES } from '../biomes.js?v=25';
-import { Y0, CH } from '../world-const.js?v=25';
+import { B } from '../blocks.js?v=26';
+import { BIOMES } from '../biomes.js?v=26';
+import { Y0, CH } from '../world-const.js?v=26';
+import { trialSpawners } from './trials.js?v=26';
+import { Hearts } from '../entities/hearts.js?v=26';
+import { Raids } from '../entities/raids.js?v=26';
+import { hives } from '../entities/hives.js?v=26';
+import { Catalysts } from '../entities/catalyst.js?v=26';
 
 // what a spawner can hold, by its meta (1 up): append only, saves keep the numbers
 export const SPAWNABLE = ['zombie', 'skeleton', 'spider', 'cave_spider', 'blaze', 'creeper', 'husk', 'stray', 'drowned', 'magma_cube', 'silverfish', 'endermite',
@@ -48,7 +53,7 @@ export function setSpawnerMob(world, x, y, z, type) {
 const RANGE = 16, SPAWN_RANGE = 4, COUNT = 4, MAX_NEAR = 6, MIN_DELAY = 200, MAX_DELAY = 800;
 
 export class Spawners {
-  constructor() { this.state = new Map(); this.edited = new Map(); this.shown = new Map(); this.n = 0; }     // state: "x,y,z" -> ticks left
+  constructor() { this.state = new Map(); this.edited = new Map(); this.shown = new Map(); this.n = 0; this.trials = trialSpawners(spawnerMob); this.hearts = new Hearts(); this.raids = new Raids(); }     // state: "x,y,z" -> ticks left
   tick(world, player) {
     if (!world || !player) return;
     const px = player.pos.x, py = player.pos.y + Y0, pz = player.pos.z;
@@ -80,6 +85,16 @@ export class Spawners {
         this.one(world, s, px, py, pz); this.show(world, s, px, py, pz, seen);
       }
     }
+    // trial spawners (struct/trials.js), their mobs turning inside them too
+    this.trials.tick(world, player, s => this.show(world, s, px, py, pz, seen));
+    // creaking hearts bringing out their creakings at night (entities/hearts.js)
+    this.hearts.tick(world, player);
+    // illager patrols, Bad Omen in a village and the raid it brings (entities/raids.js)
+    this.raids.tick(world, player);
+    // bees going home to their hives, honey (entities/hives.js)
+    hives().tick(world, player);
+    // sculk catalysts blooming on the deaths round them (entities/catalyst.js)
+    (this.catalysts || (this.catalysts = new Catalysts())).tick(world, player);
     // the ones out of sight or gone lose their turning mob
     for (const [k, e] of this.shown) if (!seen.has(k)) this.unshow(k, e);
   }
@@ -88,7 +103,8 @@ export class Spawners {
     const E = typeof window !== 'undefined' && window.__lc2 && window.__lc2.entities;
     if (!E || !E.makeDisplay) return;
     const k = s.x + ',' + s.y + ',' + s.z;
-    if (world.get(s.x, s.y - Y0, s.z) !== B.spawner) return;
+    const here = world.get(s.x, s.y - Y0, s.z);
+    if (here !== B.spawner && here !== B.trial_spawner) return;
     const ddx = s.x + 0.5 - px, ddy = s.y + 0.5 - py, ddz = s.z + 0.5 - pz, d2 = ddx * ddx + ddy * ddy + ddz * ddz;
     if (d2 > 48 * 48) return;
     seen.add(k);
@@ -143,7 +159,7 @@ function nearby(E, s) {
 /* window.__lc2.structures: ask the workers (they hold the generator). */
 let roll = null, LOOT = null;
 // the loot rolling (struct/loot.js), fetched once; after that a chest is filled the moment it opens
-const loadLoot = () => roll || (roll = import('./loot.js?v=25').then(m => { LOOT = m; return m.rollLoot; }).catch(() => { roll = null; return null; }));
+const loadLoot = () => roll || (roll = import('./loot.js?v=26').then(m => { LOOT = m; return m.rollLoot; }).catch(() => { roll = null; return null; }));
 export function structuresApi(getWorld, getPlayer) {
   // fetched while the game starts, so the first chest opened is not left empty for a moment
   setTimeout(loadLoot, 4000);

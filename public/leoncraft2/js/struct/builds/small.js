@@ -34,9 +34,9 @@
    Abandoned camps (26.x): a wool tent in the biome's colour, its wood for
    the logs and benches, a campfire, a bedroll, and a chest or barrel.
 --------------------------------------------------------------------------- */
-import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=25';
-import { footprint, surfacePrint, door, bed, torch, make, rng, weather, DX, DZ } from './util.js?v=25';
-import { blockPosLong } from '../rand.js?v=25';
+import { Build, NORTH, EAST, SOUTH, WEST } from '../build.js?v=26';
+import { footprint, surfacePrint, door, bed, torch, make, rng, weather, DX, DZ } from './util.js?v=26';
+import { blockPosLong } from '../rand.js?v=26';
 
 export const PLANS = {};
 
@@ -56,6 +56,8 @@ function find(g, x, y, z, block, table) {
   g.wr.chest(X, Y, Z, table, blockPosLong(X, Y, Z));
 }
 // the corner and turn for a w x d design at the start chunk's corner, turned at random
+// the top of the sea: 62, or a Superflat world's far lower one (struct/starts.js ctx.sea)
+const sea1 = ctx => (ctx.sea !== undefined ? ctx.sea : 63) - 1;
 function atCorner(ctx, w, d) {
   const rot = ctx.r.nextInt(4);
   const W = rot & 1 ? d : w, D = rot & 1 ? w : d;
@@ -69,7 +71,7 @@ function lowestCorner(ctx, x, z, W, D) {
 /* ==================================================== desert pyramid == */
 PLANS.desert_pyramid = ctx => {
   const { rot, x, z, W, D } = atCorner(ctx, 21, 21);
-  const y = Math.max(lowestCorner(ctx, x, z, W, D), 62);
+  const y = Math.max(lowestCorner(ctx, x, z, W, D), sea1(ctx));
   // the box runs from 16 under the floor (the hidden room and its TNT) to the tower tops
   return [new Build('desert_pyramid', x, y - 16, z, 21, 30, 21, rot, drawPyramid, { b: 16 })];
 };
@@ -150,7 +152,7 @@ function drawPyramid(g, o) {
 PLANS.jungle_pyramid = ctx => {
   const { rot, x, z, W, D } = atCorner(ctx, 12, 15);
   const fp = footprint(ctx, x, z, W, D, 2);
-  const y = Math.max(fp.min, 62);
+  const y = Math.max(fp.min, sea1(ctx));
   return [new Build('jungle_pyramid', x, y - 5, z, 12, 16, 15, rot, drawJungle, { b: 5, seed: x * 31 + z })];
 };
 function drawJungle(g, o) {
@@ -201,16 +203,18 @@ function drawJungle(g, o) {
   g.air(1, b - 3, 1, 2, b - 1, 13);
   g.air(3, b - 3, 12, 8, b - 1, 13);
   g.air(3, b - 3, 2, 4, b - 1, 3);
-  // the corridor trap: a tripwire across the way, the dispenser at the far end firing back up it
+  // the corridor trap: a string across the way between two hooks in the walls, and in the wall over the
+  // west hook's block a dispenser that fires across at head height when the string is tripped (sim/tripwire.js)
   g.set(1, b - 3, 10, 'tripwire_hook', { f: EAST });
   g.set(2, b - 3, 10, 'tripwire');
-  g.set(1, b - 2, 10, cob());
-  container(g, 1, b - 3, 1, 'dispenser', { f: SOUTH }, 'jungle_temple_dispenser');
+  g.set(3, b - 3, 10, 'tripwire_hook', { f: WEST });
+  container(g, 0, b - 2, 10, 'dispenser', { f: EAST }, 'jungle_temple_dispenser');
   g.set(2, b - 3, 2, 'vine');
-  // the second trap at the foot of the stair
+  // the second trap at the foot of the stair, the same way round
   g.set(8, b - 3, 9, 'tripwire_hook', { f: EAST });
-  g.set(9, b - 3, 9, 'tripwire'); g.set(10, b - 3, 9, 'tripwire');
-  container(g, 10, b - 2, 2, 'dispenser', { f: SOUTH }, 'jungle_temple_dispenser');
+  g.set(9, b - 3, 9, 'tripwire');
+  g.set(10, b - 3, 9, 'tripwire_hook', { f: WEST });
+  container(g, 7, b - 2, 9, 'dispenser', { f: EAST }, 'jungle_temple_dispenser');
   // the lever puzzle on the back wall: three levers, a sticky piston and its wire
   g.fill(3, b - 3, 14, 8, b - 1, 14, 'cobblestone');
   for (const lx of [4, 5, 6]) g.set(lx, b - 2, 13, 'lever', { f: NORTH });
@@ -274,7 +278,7 @@ PLANS.igloo = ctx => {
   const W = rot & 1 ? 11 : 9, D = rot & 1 ? 9 : 11;
   const x = ctx.x0 + 3, z = ctx.z0 + 3;
   const fp = footprint(ctx, x + 1, z + 3, W - 2, D - 4);
-  const y = Math.max(fp.med, 62);
+  const y = Math.max(fp.med, sea1(ctx));
   const lab = basement ? 8 : 0;
   return [new Build('igloo', x, y - depth - lab, z, 9, depth + lab + 8, 11, rot, drawIgloo, { b: depth + lab, depth, basement })];
 };
@@ -348,7 +352,7 @@ PLANS.pillager_outpost = ctx => {
   const T = 11;                                            // the tower's footprint
   const tx = p.x - (T >> 1), tz = p.z - (T >> 1);
   const tfp = footprint(ctx, tx, tz, T, T, 2);
-  const ty = Math.max(tfp.med, 62);
+  const ty = Math.max(tfp.med, sea1(ctx));
   out.push(new Build('pillager_outpost', tx, ty - 1, tz, T, 26, T, rot, drawOutpost, { b: 1 }));
   // the bits round it: a cage with a golem, a target dummy, a tent, log piles
   const extras = ['cage', 'dummy', 'tent', 'logs', 'dummy', 'tent'];
@@ -366,7 +370,7 @@ PLANS.pillager_outpost = ctx => {
       const q = [ex - (W >> 1), ez - (D >> 1), ex - (W >> 1) + W - 1, ez - (D >> 1) + D - 1];
       if (taken.some(t2 => q[0] <= t2[2] + 1 && q[2] >= t2[0] - 1 && q[1] <= t2[3] + 1 && q[3] >= t2[1] - 1)) continue;
       const fp = footprint(ctx, q[0], q[1], W, D);
-      if (fp.min < 62 || fp.max - fp.min > 3) continue;
+      if (fp.min < sea1(ctx) || fp.max - fp.min > 3) continue;
       taken.push(q);
       out.push(new Build('pillager_outpost', q[0], fp.med, q[1], w, 8, d, er, EXTRA[kind], {}));
       break;
@@ -498,7 +502,7 @@ PLANS.abandoned_camp = ctx => {
   const W = rot & 1 ? d : w, D = rot & 1 ? w : d;
   const x = ctx.point.x - (W >> 1), z = ctx.point.z - (D >> 1);
   const fp = footprint(ctx, x, z, W, D, 2);
-  const y = Math.max(fp.med, 62);
+  const y = Math.max(fp.med, sea1(ctx));
   const o = {
     wood, wool, loot, barrel: r.nextBoolean(), lantern: r.nextBoolean(), snow: biome === 'snowy_taiga',
     sand: biome === 'wooded_badlands' ? 'red_sand' : null,

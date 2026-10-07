@@ -34,16 +34,17 @@
    Slot positions and sheet coordinates are the game's (176 x 166 survival,
    195 x 136 creative, 18-pixel slots); the art is Pixel Perfection CE's.
 --------------------------------------------------------------------------- */
-import { BLOCKS, B } from '../blocks.js?v=25';
-import { Screen, TextField, WHITE } from './gui.js?v=25';
-import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=25';
-import { matchGrid, consumeGrid } from '../crafting.js?v=25';
-import { enchName, ENCH } from '../enchanting.js?v=25';
-import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=25';
-import { patternLines, drawBannerIcon } from '../banners.js?v=25';
-import { mapLines } from '../maps.js?v=25';
-import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=25';
-import { dialPicture, usePicture } from '../dials.js?v=25';
+import { BLOCKS, B } from '../blocks.js?v=26';
+import { Screen, TextField, WHITE } from './gui.js?v=26';
+import { ITEMS, I, ITEM_BASE, displayName, maxStack, maxDamage, sameItem, withCount, stackToJSON, stackFromJSON, armorOf, cooldownLeft, STEW_EFFECTS, PAINTING_VARIANTS, SONGS, stewEffect, isBundle, bundleWeight, bundleInsert, bundleTake } from '../items.js?v=26';
+import { matchGrid, consumeGrid } from '../crafting.js?v=26';
+import { enchName, ENCH } from '../enchanting.js?v=26';
+import { isPotion, isTipped, potionName, potionLines, effectLines, POTIONS } from '../brewing.js?v=26';
+import { patternLines, drawBannerIcon } from '../banners.js?v=26';
+import { mapLines } from '../maps.js?v=26';
+import { EFFECTS, EFFECT_ICON, EFFECT_SHEET, effectName, effectTime } from '../effects.js?v=26';
+import { dialPicture, usePicture } from '../dials.js?v=26';
+import { RecipeBook } from './recipebook.js?v=26';
 export { displayName, maxStack };
 
 const LABEL_GREY = 0x404040;          // the dark grey of container titles
@@ -465,7 +466,7 @@ function hsv(h, s, v) {
 // stew's effect (only there: in survival you cannot tell what flower went in)
 export function stackTooltip(st, advanced, creative) {
   const it = ITEMS[st.id];
-  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : st.lodestone ? 'Lodestone Compass' : displayName(st.id))];
+  const lines = [(st.ench ? '§b' : '') + (st.name ? '§o' + st.name : isPotion(st) || (isTipped(st) && st.potion) ? potionName(st) : st.lodestone ? 'Lodestone Compass' : st.title && st.map !== undefined ? st.title : displayName(st.id))];
   if (isPotion(st) || (st.potion && isTipped(st))) lines.push(...potionLines(st));
   if (creative && st.stew) { const sw = stewEffect(st); if (sw) lines.push(...effectLines([[sw[0], 1, sw[1]]])); }
   const title = n => n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -994,6 +995,16 @@ export class ContainerScreen extends Screen {
 
 export class InventoryScreen extends ContainerScreen {
   constructor(inv, icons) { super(inv, icons, 176, 166); this.title = 'Crafting'; this.grid = inv.craft; this.gridW = 2; }
+  // the recipe book (ui/recipebook.js); its button sits at the game's place
+  init() {
+    super.init();
+    if (!this.book) this.book = new RecipeBook(this, SearchField, (L, T, H) => [L + 104, Math.floor(H / 2) - 22]);
+    this.book.layout();
+  }
+  extraClick(mx, my, button) { return this.book ? this.book.mouse(mx, my, button, press.shift) : false; }
+  slotShown() { return !(this.book && this.book.covers()); }
+  keyPressed(e) { const k = this.book ? this.book.key(e) : null; return k === null ? super.keyPressed(e) : k; }
+  onClose() { if (this.book) this.book.close(); super.onClose(); }
   makeSlots() {
     const L = this.left, T = this.top, out = [];
     out.push(slot(L + 154, T + 28, 'result'));
@@ -1007,15 +1018,17 @@ export class InventoryScreen extends ContainerScreen {
   render(g, mx, my) {
     this.drawBackdrop(g);
     const L = this.left, T = this.top;
+    const book = this.book;
+    // a screen too narrow for both: the book alone
+    if (book.covers()) { book.render(g, mx, my); book.drawButton(g, mx, my); this.drawCarried(g, mx, my, null); return; }
+    book.render(g, mx, my);
     g.blit('container/inventory', 0, 0, 176, 166, L, T);
-    // the recipe book button (the book itself is not in this preview)
-    const bx = L + 104, by = Math.floor(this.height / 2) - 22;
-    const overBook = mx >= bx && my >= by && mx < bx + 20 && my < by + 18;
-    g.blit('container/inventory', 178, overBook ? 19 : 0, 20, 18, bx, by);
+    book.drawButton(g, mx, my);
     if (this.inv.drawPlayer) this.inv.drawPlayer(g, L + 26, T + 8, 49, 70, mx, my);
     g.text(this.title, L + 97, T + 8, LABEL_GREY, false);
     this.drawEffects(g, mx, my);
     const prev = this.drawSlots(g, mx, my);
+    book.drawGhost(g);
     this.drawCarried(g, mx, my, prev);
   }
   /* The effects on you, down the right of the panel as the game lists them:
@@ -1063,6 +1076,7 @@ export class InventoryScreen extends ContainerScreen {
 /* ------------------------------ creative inventory ------------------------------ */
 
 // the creative search box: no frame of its own (the sheet has one), white text
+export { press };
 export class SearchField extends TextField {
   draw(g) {
     const { x, y, w } = this;

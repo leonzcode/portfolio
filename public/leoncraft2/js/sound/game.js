@@ -17,19 +17,19 @@
    Everything is played with the game's own volumes and pitches (see the
    notes at each, from the Minecraft Wiki and the game's sounds.json).
 --------------------------------------------------------------------------- */
-import { Sound } from './sound.js?v=25';
-import { SoundPacks, MinecraftPack } from './packs.js?v=25';
-import { blockSound, doorSound, voice, spread } from './sfx.js?v=25';
-import { COVERS, INSIDE } from './blocksounds.js?v=25';
-import { Music, situation } from './music.js?v=25';
-import { Ambience } from './ambient.js?v=25';
-import { MobSounds } from './mobsounds.js?v=25';
-import { Captions } from './captions.js?v=25';
-import { MusicToast } from './toast.js?v=25';
-import { B, BLOCKS, FLUID } from '../blocks.js?v=25';
-import { ITEMS } from '../items.js?v=25';
-import { BIOMES } from '../biomes.js?v=25';
-import { setUiSound } from '../ui/gui.js?v=25';
+import { Sound } from './sound.js?v=26';
+import { SoundPacks, MinecraftPack } from './packs.js?v=26';
+import { blockSound, doorSound, voice, spread } from './sfx.js?v=26';
+import { COVERS, INSIDE } from './blocksounds.js?v=26';
+import { Music, situation } from './music.js?v=26';
+import { Ambience } from './ambient.js?v=26';
+import { MobSounds } from './mobsounds.js?v=26';
+import { Captions } from './captions.js?v=26';
+import { MusicToast } from './toast.js?v=26';
+import { B, BLOCKS, FLUID } from '../blocks.js?v=26';
+import { ITEMS } from '../items.js?v=26';
+import { BIOMES } from '../biomes.js?v=26';
+import { setUiSound } from '../ui/gui.js?v=26';
 
 const R = Math.random;
 const amb = new Ambience();
@@ -267,6 +267,8 @@ export function soundParts(g) {
     hook(sim, 'onPiston', (x, y, z, out) => Sound.play(out ? 'block.piston.extend' : 'block.piston.contract', x + 0.5, y + 0.5, z + 0.5, 0.5, R() * (out ? 0.25 : 0.15) + 0.6, 'block'));
     // a note: 2^((note - 12) / 12), loud (3: heard 48 blocks away), on the Jukebox/Note Blocks slider
     hook(sim, 'onNote', (x, y, z, inst, note) => Sound.play('block.note_block.' + inst, x + 0.5, y + 0.5, z + 0.5, 3, Math.pow(2, (note - 12) / 12), 'record'));
+    // any other block's sound by its event (conduits, sculk sensors and shriekers, trial spawners...)
+    hook(sim, 'onSound', (ev, x, y, z, v = 1, p = 1) => Sound.play(ev, x + 0.5, y + 0.5, z + 0.5, v, p, 'block'));
     hook(sim, 'onBell', (x, y, z) => Sound.play('block.bell.use', x + 0.5, y + 0.5, z + 0.5, 2, 1, 'block'));
     hook(sim, 'onDispense', (x, y, z, ok) => Sound.play(ok ? 'block.dispenser.dispense' : 'block.dispenser.fail', x + 0.5, y + 0.5, z + 0.5, 1, ok ? 1 : 1.2, 'block'));
     hook(sim, 'onBurnout', (x, y, z) => Sound.play('block.redstone_torch.burnout', x + 0.5, y + 0.5, z + 0.5, 0.5, 2.6 + spread() * 0.8, 'block'));
@@ -450,6 +452,37 @@ function wrapCombat(g, E, atP) {
 const THROWN = { snowball: 'entity.snowball.throw', egg: 'entity.egg.throw', ender_pearl: 'entity.ender_pearl.throw', splash_potion: 'entity.splash_potion.throw', lingering_potion: 'entity.lingering_potion.throw', experience_bottle: 'entity.experience_bottle.throw', ender_eye: 'entity.ender_eye.launch' };
 
 /* ---- once a game tick ---- */
+/* Minecarts rolling (the game's minecart sound): a held loop on each cart that moves, louder and higher the
+   faster it goes (from nothing at rest to 0.7 and pitch 0.7 to 1.2 at half a block a tick and over); riding,
+   the sound from inside it (entity.minecart.inside, under water .inside.underwater, when the sounds have them). */
+const CART_RANGE = 24;
+function carts(E, st, eye) {
+  const list = st.carts || (st.carts = new Map());
+  const seen = new Set();
+  for (const e of E.list) {
+    if (!/minecart$/.test(e.type) || e.removed || e.dead) continue;
+    if (eye && (e.pos.x - eye.x) ** 2 + (e.pos.y - eye.y) ** 2 + (e.pos.z - eye.z) ** 2 > CART_RANGE * CART_RANGE) continue;
+    seen.add(e);
+    const sp = Math.min(0.5, Math.hypot(e.vel.x, e.vel.z)), k = sp >= 0.01 ? sp / 0.5 : 0;
+    const inside = E.riding === e;
+    const want = inside ? (e.inWater && Sound.has('entity.minecart.inside.underwater') ? 'entity.minecart.inside.underwater'
+      : Sound.has('entity.minecart.inside') ? 'entity.minecart.inside' : 'entity.minecart.riding') : 'entity.minecart.riding';
+    let c = list.get(e);
+    if (c && (c.ev !== want || c.h.stopped)) { c.h.stop(); c = null; list.delete(e); }
+    if (!c) {
+      if (k <= 0) continue;
+      const h = Sound.loop(want, 'neutral', { at: inside ? null : [e.pos.x, e.pos.y, e.pos.z], volume: 0.01 });
+      if (!h) continue;
+      c = { h, ev: want };
+      list.set(e, c);
+    }
+    c.h.setVolume(0.7 * k, 0.1);
+    c.h.pitch(0.7 + 0.5 * k);
+    if (!inside) c.h.pos(e.pos.x, e.pos.y, e.pos.z);
+  }
+  for (const [e, c] of list) if (!seen.has(e)) { c.h.stop(); list.delete(e); }
+}
+
 export function soundTick(g) {
   const st = g._sound;
   if (!st || !g.player) return;
@@ -482,6 +515,7 @@ export function soundTick(g) {
   const eye = Sound.listener;
   amb.tick(g, eye);
   if (g.entities) mobs.tick(g.entities, eye);
+  if (g.entities) carts(g.entities, st, eye);
   // the music for where you are
   const bm = BIOMES[w.biomeAt(Math.floor(P.pos.x), Math.floor(P.pos.z))];
   Music.tick(situation({

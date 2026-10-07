@@ -9,7 +9,7 @@
    pixels go in once the arrays are on the GPU (upload), and the icon strip
    gets the same layers (extendStrip).
 --------------------------------------------------------------------------- */
-import { litFronts } from '../render/litfront.js?v=25';
+import { litFronts } from '../render/litfront.js?v=26';
 const THREE = window.THREE;
 
 // a small seeded hash for the art (the same picture every time)

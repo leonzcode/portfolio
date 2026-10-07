@@ -18,59 +18,61 @@
    middle click pick block, F1 hide the HUD, F3 details, [ and ] the clock,
    F7 render scale, F8 quality.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=25';
-import { BIOMES, biomeColours } from './biomes.js?v=25';
-import { searchSpawn } from './spawn.js?v=25';
-import { parseSeed } from './gen/random.js?v=25';
-import { World, startWorkers, practise } from './world.js?v=25';
-import { Fluids } from './fluids.js?v=25';
-import { Player } from './player.js?v=25';
-import { Renderer } from './render/renderer.js?v=25';
-import { Overlay } from './render/overlay.js?v=25';
-import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=25';
-import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps, composedTextures, itemStripFrom } from './ui/pack.js?v=25';
-import { SEA, Y0 } from './world-const.js?v=25';
-import { Gui, Options } from './ui/gui.js?v=25';
-import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt, seedFrom } from './ui/menus.js?v=25';
-import { ItemIcons } from './ui/icons.js?v=25';
-import { Inventory, inventoryScreen } from './ui/inventory.js?v=25';
-import { Hud } from './ui/hud.js?v=25';
-import { Interactor } from './interact.js?v=25';
-import { enchantDebug } from './enchanting.js?v=25';
-import { MAPS, isFilledMap } from './maps.js?v=25';
-import { Survival } from './survival.js?v=25';
-import { survivalHooks, respawnPlayer } from './life.js?v=25';
-import { Save } from './save.js?v=25';
-import { Chat, ChatScreen } from './ui/chat.js?v=25';
-import { displayName, setItemNames, register, gameRule, execute } from './commands.js?v=25';
-import { applyModeRules, ModeKeys } from './modes.js?v=25';
-import { Particles } from './render/particles.js?v=25';
-import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=25';
-import { loadItemStrip, addItemPieces } from './itemtex.js?v=25';
-import { Drops, dropItem, giveXp } from './drops.js?v=25';
-import { Containers } from './containers.js?v=25';
-import { Hands } from './hands.js?v=25';
-import { setLayerPixels } from './render/blockmesh.js?v=25';
-import { Entities } from './entities/manager.js?v=25';
-import { EntityStore } from './entities/store.js?v=25';
-import { paintSome, primeAtlas } from './entities/mobart.js?v=25';
-import { Sim } from './sim/sim.js?v=25';
-import { DIMS } from './dims.js?v=25';
-import { Realms } from './dim/realms.js?v=25';
-import { addDimArt, endSkyTexture } from './dim/art.js?v=25';
-import { structuresApi } from './struct/spawners.js?v=25';
-import { Details, isSign } from './details.js?v=25';
-import { SignEditScreen } from './ui/sign.js?v=25';
-import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=25';
-import { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=25';
-import { VideoSettings } from './settings.js?v=25';
-import { pickBiome } from './worldgen.js?v=25';
-import { initSound, soundWorld, soundParts, soundTick, soundFrame, soundLeave } from './sound/game.js?v=25';
-import { advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements } from './adv/game.js?v=25';
-import { loadEntityArt } from './entities/packart.js?v=25';
-import { ITEM_TEX } from './itemdata.js?v=25';
-import { debugLines, F3_HELP } from './ui/debug.js?v=25';
-import { Spin } from './render/screenfx.js?v=25';
+import { B, BLOCKS, resolveTextures, FLUID } from './blocks.js?v=26';
+import { BIOMES, biomeColours } from './biomes.js?v=26';
+import { searchSpawn } from './spawn.js?v=26';
+import { parseSeed } from './gen/random.js?v=26';
+import { World, startWorkers, practise } from './world.js?v=26';
+import { Fluids } from './fluids.js?v=26';
+import { Player } from './player.js?v=26';
+import { Renderer } from './render/renderer.js?v=26';
+import { Overlay } from './render/overlay.js?v=26';
+import { setSkin, setSkinPart, useDefaultSkin } from './render/avatar.js?v=26';
+import { Packs, resolver, blockTextures, guiSheets, logoArt, skinUrl, colormaps, composedTextures, itemStripFrom } from './ui/pack.js?v=26';
+import { SEA, Y0 } from './world-const.js?v=26';
+import { Gui, Options } from './ui/gui.js?v=26';
+import { TitleScreen, PauseScreen, LoadingScreen, DeathScreen, Worlds, setLogoArt, seedFrom } from './ui/menus.js?v=26';
+import { ItemIcons } from './ui/icons.js?v=26';
+import { Inventory, inventoryScreen } from './ui/inventory.js?v=26';
+import { Hud } from './ui/hud.js?v=26';
+import { Interactor } from './interact.js?v=26';
+import { enchantDebug } from './enchanting.js?v=26';
+import { MAPS, isFilledMap } from './maps.js?v=26';
+import { Survival } from './survival.js?v=26';
+import { survivalHooks, respawnPlayer } from './life.js?v=26';
+import { Save } from './save.js?v=26';
+import { Chat, ChatScreen } from './ui/chat.js?v=26';
+import { displayName, setItemNames, register, gameRule, execute } from './commands.js?v=26';
+import { applyModeRules, ModeKeys } from './modes.js?v=26';
+import { Particles } from './render/particles.js?v=26';
+import { DRAW, setItemLayers, ITEMS, itemId, displayName as itemDisplay, itemName } from './items.js?v=26';
+import { loadItemStrip, addItemPieces } from './itemtex.js?v=26';
+import { Drops, dropItem, giveXp } from './drops.js?v=26';
+import { Containers } from './containers.js?v=26';
+import { Hands } from './hands.js?v=26';
+import { setLayerPixels } from './render/blockmesh.js?v=26';
+import { Entities } from './entities/manager.js?v=26';
+import { EntityStore } from './entities/store.js?v=26';
+import { paintSome, primeAtlas } from './entities/mobart.js?v=26';
+import { Sim } from './sim/sim.js?v=26';
+import { DIMS } from './dims.js?v=26';
+import { Realms } from './dim/realms.js?v=26';
+import { addDimArt, endSkyTexture } from './dim/art.js?v=26';
+import { structuresApi } from './struct/spawners.js?v=26';
+import { Details, isSign } from './details.js?v=26';
+import { SignEditScreen } from './ui/sign.js?v=26';
+import { tickDials, dialInHotbar, setUse, deathPoint, setDeathPoint } from './dials.js?v=26';
+import { MultiplayerScreen, DisconnectedScreen, rejoin } from './ui/multiplayer.js?v=26';
+import { VideoSettings } from './settings.js?v=26';
+import { pickBiome } from './worldgen.js?v=26';
+import { initSound, soundWorld, soundParts, soundTick, soundFrame, soundLeave } from './sound/game.js?v=26';
+import { advInit, advWorld, advParts, advTick, advState, advLeave, openAdvancements } from './adv/game.js?v=26';
+import { statsWorld, statsTick, statsState, statsQuit, statsLeave, openStatistics } from './stats.js?v=26';
+import { recipesWorld, recipesTick, recipesState, recipesLeave } from './recipes.js?v=26';
+import { loadEntityArt } from './entities/packart.js?v=26';
+import { ITEM_TEX } from './itemdata.js?v=26';
+import { debugLines, F3_HELP } from './ui/debug.js?v=26';
+import { Spin } from './render/screenfx.js?v=26';
 const THREE = window.THREE;
 
 const $ = s => document.querySelector(s);
@@ -83,6 +85,8 @@ const MENU_SEED = 20261002;
 // a dimension's mobs are kept under the world's id, with the dimension added for the Nether and the End
 const entityKey = (entry, dim) => entry.id + (!dim || dim === 'overworld' ? '' : '~' + dim);
 const worldSeed = entry => (entry.generator === 'vanilla' ? String(entry.seed) : entry.seed | 0);
+// the generator a world is made by: 'vanilla', a Superflat world's own 'flat:...' (gen/flat.js), else the first one
+const genOf = entry => (entry.generator === 'vanilla' || /^flat:/.test(entry.generator || '') ? entry.generator : 'classic');
 /* How the game looks is in Options: Video Settings (the game's own) and Shader
    Packs (Shaders ON, with the Shader Options, or OFF: the game as Minecraft
    itself draws it, render/vanilla.js). settings.js puts every change into
@@ -284,7 +288,7 @@ async function boot() {
   status('Loading textures…', 0.05);
   const base = new URL('../textures/', import.meta.url).href;
   // stamped like the code, so a rebuilt texture set always reaches the browser
-  const TEX_V = '?v=25';
+  const TEX_V = '?v=26';
   /* Everything is asked for at once. The title's world needs only the
      texture list and the two colour maps, so it starts being made as soon
      as those are in (makeMenu), while the big textures, the renderer and the
@@ -404,8 +408,9 @@ async function boot() {
     online: () => !!(game && game.net),
     // the last screen closed in the game: take the mouse back
     closed: () => { if (game && !game.survival.dead) lock(); },
-    // the game menu's Advancements button (js/adv)
+    // the game menu's Advancements button (js/adv) and Statistics (js/stats.js)
     advancements: () => openAdvancements(),
+    statistics: () => openStatistics(gui, icons),
   };
   const gui = new Gui($('#gui'), { base: base + 'gui/', options, hooks, version: TEX_V });
   await gui.load();
@@ -515,7 +520,7 @@ async function boot() {
       const last = Worlds.list().sort((a, b) => (b.lastPlayed || b.created || 0) - (a.lastPlayed || a.created || 0))[0];
       const st = last ? new Save(last.id).readState() : null;
       const at = st && st.player ? st.player : last && last.spawn;
-      if (at) spec = { seed: worldSeed(last), generator: last.generator === 'vanilla' ? 'vanilla' : 'classic', dim: st && DIMS[st.dimension] ? st.dimension : 'overworld', at, manifest, colours };
+      if (at) spec = { seed: worldSeed(last), generator: genOf(last), dim: st && DIMS[st.dimension] ? st.dimension : 'overworld', at, manifest, colours };
     } catch (e) { /* the world list unreadable: practise on a new world */ }
     practise(spec, menu && menu.world, spec === fresh ? null : fresh);
   }
@@ -564,7 +569,7 @@ async function boot() {
     const saves = { overworld: save, the_nether: mkSave(entry.id + DIMS.the_nether.suffix), the_end: mkSave(entry.id + DIMS.the_end.suffix) };
     await saves.the_nether.init(); await saves.the_end.init();
     let world;
-    const generator = entry.generator === 'vanilla' ? 'vanilla' : 'classic';
+    const generator = genOf(entry);
     const seed = worldSeed(entry);
     // the title screen's world is this one: keep what is already made
     const reuse = menu && menu.seed === seed && menu.generator === generator && (menu.world.dim || 'overworld') === dim;
@@ -739,6 +744,7 @@ async function boot() {
     inter.onBroken = (x, y, z, b) => game.realms.broken(x, y, z, b);
     soundWorld(game); soundParts(game);
     advWorld(game, st && st.advancements);
+    statsWorld(game, st && st.stats); recipesWorld(game, st && st.recipes);
     hud = new Hud(inv, icons);
     gui.hud = hud;
     applyModeRules(game, mode, hud);
@@ -751,6 +757,8 @@ async function boot() {
     // and a mount in its own screen (render/mobfigure.js)
     inv.drawMob = (g, x, y, w, h, mx, my, mob, size, drop) => renderer.figure.draw(g, x, y, w, h, mx, my, mob, size, drop);
     held();
+    // a new world made with Bonus Chest on (bonus.js)
+    if (isNew && entry.bonusChest && dim === 'overworld') import('./bonus.js?v=26').then(m => m.bonusChest(game, Math.floor(spawn.x), Math.floor(spawn.z))).catch(e => console.warn('bonus chest', e));
     Worlds.update(entry.id, { lastPlayed: Date.now(), spawn });
     loading = null;
     gui.panorama = false; gui.inGame = true;
@@ -856,7 +864,7 @@ async function boot() {
         const save = g.saves[dim];
         // made first, so the workers set up its generator while what changed there is read
         world = new World({
-          seed: worldSeed(g.entry), generator: g.entry.generator === 'vanilla' ? 'vanilla' : 'classic', dim,
+          seed: worldSeed(g.entry), generator: genOf(g.entry), dim,
           renderDist: renderer.opts.renderDist || RD, manifest, colours, ...video.worldOpts(), edits: new Map(), save,
           onMesh: (cx, cz, mesh, urgent) => renderer.setColumn(cx, cz, mesh, urgent),
           onDrop: (cx, cz) => renderer.dropColumn(cx, cz),
@@ -898,7 +906,7 @@ async function boot() {
     return { player: { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, pitch: p.pitch, flying: p.flying }, time: g.time,
       inventory: g.inv.toJSON ? g.inv.toJSON() : null, survival: g.survival.toJSON(), spawn: g.spawn, mode: g.mode,
       drops: g.drops.toJSON(), hands: g.hands.toJSON(), sim: g.sim ? g.sim.toJSON() : null, dimension: g.dim, realms: g.realms ? g.realms.toJSON() : null,
-      lastDeath: deathPoint(), advancements: advState() };
+      lastDeath: deathPoint(), advancements: advState(), stats: statsState(), recipes: recipesState() };
   }
   async function saveGame() {
     if (!game) return;
@@ -916,6 +924,7 @@ async function boot() {
   async function quitToTitle() {
     if (!game) return;
     const g = game;
+    statsQuit();
     await saveGame();
     if (g.net) { g.net.close(); g.net = null; }
     g.drops.dispose();
@@ -923,7 +932,7 @@ async function boot() {
     scope(false);
     game = null;
     soundLeave();
-    advLeave();
+    advLeave(); statsLeave(); recipesLeave();
     if (g.entities) g.entities.dispose();
     if (g.sim) g.sim.dispose();
     if (g.realms) g.realms.dispose();
@@ -1234,7 +1243,7 @@ async function boot() {
     if (k === 'difficulty' && game && v && game.entry.difficulty !== v) { game.entry.difficulty = v; Worlds.update(game.entry.id, { difficulty: v }); }
     if (k === 'clouds') renderer.opts.clouds = v;
     if (k === 'renderScale') { autoScale = v === 'auto'; if (v !== 'auto') { renderer.opts.scale = +v; fit(); } }
-    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=25', import.meta.url).href : v);
+    if (k === 'skin') setSkin(v === 'default' ? new URL('../textures/skin/default.png?v=26', import.meta.url).href : v);
     if (k === 'skinParts' && v) for (const p in v) setSkinPart(p, v[p]);
   });
 
@@ -1364,6 +1373,7 @@ async function boot() {
       structures.spawners.tick(world, player);
       soundTick(g);
       advTick(g);
+      statsTick(g); recipesTick(g);
       // on a server: where you are, and what came in from the others (net/net.js)
       if (g.net) g.net.tick(now - acc * 1000);
       // every ten seconds, what changed goes into the browser's storage
@@ -1404,7 +1414,7 @@ async function boot() {
         // hurt: the camera tilts and the model flashes red (combat/combat.js)
         tilt: g.entities && (g.mode === 'survival' || g.mode === 'adventure') ? g.entities.combat.tilt(alpha, video.tilt()) : null, hurt: !!(g.entities && g.entities.combat.hurtFlash()),
         biome: BIOMES[world.biomeAt(Math.floor(v.eye.x), Math.floor(v.eye.z))], eyeInLava: FLUID[eyeBlock] === 2, eyeInSnow: eyeBlock === B.powder_snow,
-        dim: D, bossFog: g.realms.bossFog, spin: g.spin ? g.spin.at(alpha) : null,
+        dim: D, bossFog: g.realms.bossFog, horizon: /^flat:/.test(world.generator || '') ? 0 : 127, spin: g.spin ? g.spin.at(alpha) : null,
         // the screen tips when hurt and rolls a little in death (survival.js)
         ...(g.mode === 'survival' || g.mode === 'adventure' ? tiltState(survival.viewTilt(alpha, video.tilt())) : NO_TILT),
       }, Math.min(0.25, drawDt));
@@ -1481,7 +1491,7 @@ async function boot() {
     renderer, gui, options, B, BLOCKS, video,
     get game() { return game; }, get world() { return game ? game.world : menu && menu.world; }, get player() { return game && game.player; },
     get fluids() { return game && game.fluids; }, get inv() { return game && game.inv; }, hud, chat, cheats: false,
-    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=25').then(m => m.execute(line, ctx)); },
+    command: line => { if (!game) return false; const ctx = chatCtx(); ctx.cheats = true; return import('./commands.js?v=26').then(m => m.execute(line, ctx)); },
     get drops() { return game && game.drops; }, get containers() { return game && game.containers; }, get hands() { return game && game.hands; },
     get survival() { return game && game.survival; },
     get enchanting() { return game && enchantDebug(game); },
