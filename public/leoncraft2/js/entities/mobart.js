@@ -458,7 +458,8 @@ export function buildAtlas() {
    0-7 the smoke puff, big to small; 8 crit; 9 magic crit; 10 heart;
    11 angry cloud; 12 flame; 13 bubble; 14 splash drop; 15 the explosion
    puff; 16-19 the explosion frames; 20 note; 21 sparkle; 22 dust;
-   24-25 runes (an enchanting table's); 26 soul flame; 27 a falling leaf. */
+   24-25 runes (an enchanting table's); 26 soul flame; 27 a falling leaf;
+   28-31 water drops. */
 export function buildSheet() {
   const S = 16, c = document.createElement('canvas');
   c.width = c.height = S * 8;
@@ -530,6 +531,11 @@ export function buildSheet() {
   // runes: two little marks of our own galactic alphabet
   const runes = [['.##....##.', '..#....#..', '..######..', '..#....#..', '.##....##.'], ['####..', '...#..', '..###.', '...#..', '####..']];
   runes.forEach((rows, k) => rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === '#') { put(24 + k, x + 3, y * 2 + 3, [255, 255, 255]); put(24 + k, x + 3, y * 2 + 4, [255, 255, 255]); } })));
+  /* 28-31 water drops (rain landing, a splash): two or three fat pixels of
+     deep blue low in the frame, as small as the game's drops look */
+  const drops = [[[2, 6, 0], [4, 6, 1], [3, 7, 2]], [[3, 6, 0], [5, 7, 1]], [[2, 7, 1], [4, 6, 2]], [[3, 6, 2], [4, 7, 0], [2, 7, 1]]];
+  const blue = [[74, 110, 208], [28, 78, 204], [8, 58, 196]];
+  drops.forEach((list, k) => list.forEach(([x, y, c]) => { for (let q = 0; q < 4; q++) put(28 + k, x * 2 + (q & 1), y * 2 + (q >> 1), blue[c]); }));
   g.putImageData(img, 0, 0);
   return c;
 }

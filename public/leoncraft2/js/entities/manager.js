@@ -75,6 +75,7 @@ export class Entities {
     this.displays = [];             // mobs shown inside spawners (makeDisplay)
     this.grid = new Map();
     this.particlesP = new Particles();
+    this.particlesP.t = this.t;       // (water drops land, bubbles burst out of water)
     this.ambient = new Ambient(this);      // torches smoking, campfires, lava sparks (ambient.js)
     this.age = 0;
     this.stored = new Map();        // "cx,cz" -> saved entities of chunks not loaded
