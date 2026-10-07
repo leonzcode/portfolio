@@ -26,6 +26,8 @@ CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ (credit required; change
     https://opengameart.org/content/zombies-sound-pack
 "Underwater Theme II" by Cleyton Kauffman, CC0 1.0
     https://opengameart.org/content/underwater-theme-ii
+"SkeletonSFXShortPack" by Colodical, CC0 1.0
+    https://opengameart.org/content/skeletonsfxshortpack
 "Bones rattle" by congusbongus, CC0 1.0
     https://opengameart.org/content/bones-rattle
 "42 Snow and Gravel Footsteps" by Corsica_S, published by qubodup, CC0 1.0
@@ -70,6 +72,8 @@ CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ (credit required; change
     https://opengameart.org/content/dripping-water-loop
 "Sci-Fi Aliens and Cows Pack" by qubodup, CC0 1.0
     https://opengameart.org/content/sci-fi-aliens-and-cows-pack
+"Synthesized explosion" by qubodup, CC0 1.0
+    https://opengameart.org/content/synthesized-explosion
 "100 CC0 SFX" by rubberduck, CC0 1.0
     https://opengameart.org/content/100-cc0-sfx
 "100 CC0 SFX #2" by rubberduck, CC0 1.0
@@ -84,10 +88,10 @@ CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ (credit required; change
     https://opengameart.org/content/80-cc0-creature-sfx
 "7 Eating Crunches" by StarNinjas, CC0 1.0
     https://opengameart.org/content/7-eating-crunches
+"Cave In" by StarNinjas, CC0 1.0
+    https://opengameart.org/content/cave-in
 "grunts of male death and pain" by thebardofblasphemy, CC0 1.0
     https://opengameart.org/content/grunts-male-death-and-pain
-"Simple Fuse Sound" by themightyglider, CC0 1.0
-    https://opengameart.org/content/simple-fuse-sound
 "Different steps on wood, stone, leaves, gravel and mud" by TinyWorlds, CC0 1.0
     https://opengameart.org/content/different-steps-on-wood-stone-leaves-gravel-and-mud
 "Rain + Long Thunder" by WuxiaScrub, CC0 1.0

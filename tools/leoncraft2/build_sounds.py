@@ -341,9 +341,32 @@ def synth_fizz(dur=0.6):
     return fades((hp(noise(dur), 2500) * (np.minimum(1, t / 0.01) * np.exp(-t * 5))).astype(np.float32), 0.002, 0.1)
 
 
-def synth_portal(dur, rise=False):
+def synth_fuse(dur=2.6):
+    """a lit fuse: bright hiss that sputters"""
     t = t_(dur)
-    n = lp(noise(dur), 900)
+    sputter = 0.6 + 0.4 * np.abs(lp(noise(dur), 30) * 6).clip(0, 1)
+    env = np.minimum(1, t / 0.25) * np.minimum(1, (dur - t) / 0.6)
+    return fades((hp(noise(dur), 4000) * sputter * env).astype(np.float32), 0.01, 0.2)
+
+
+def synth_levelup():
+    """three bright bell notes rising quickly, ringing together"""
+    out = np.zeros(int(1.3 * SR), np.float32)
+    for i, f in enumerate((1046.5, 1318.5, 1568.0)):
+        n = tone([(f, 1, 3), (f * 2, 0.35, 5), (f * 3, 0.12, 8)], 1.1, 2.6)
+        a = int(i * 0.06 * SR)
+        out[a:a + len(n)] += n[:len(out) - a]
+    return out
+
+
+def synth_hiss(dur=1.2):
+    t = t_(dur)
+    return fades((hp(noise(dur), 2500) * np.minimum(1, t / 0.05) * np.exp(-t * 2.2)).astype(np.float32), 0.005, 0.2)
+
+
+def synth_portal(dur, rise=False, cutoff=900):
+    t = t_(dur)
+    n = lp(noise(dur), cutoff)
     wob = 0.5 + 0.5 * np.sin(2 * np.pi * (0.7 + 0.5 * t) * t)
     env = (t / dur) if rise else np.sin(np.pi * t / dur)
     return fades((n * (0.4 + 0.6 * wob) * env).astype(np.float32), 0.2, 0.4)
@@ -535,7 +558,7 @@ def pools():
     P['eat'] = lambda: pieces('crunch', '*', 0.06, 0.6, -30, 0.05) + pieces('applebite', '*', 0.06, 0.6, -30, 0.05) + files('rdcreature', 'eat_*')
     P['drink'] = lambda: files('rdwater', 'bubble_*') + files('rdwater', 'slime_*', lambda x: lp(x, 3000)) + pieces('peludo3', '*', 0.2, 2.0) + windows('rdwater', 'loop_bubbles*', 1.2, 4)
     P['burp'] = lambda: files('rdcreature', 'burp_*') + files('rdcreature', 'burble_*')
-    P['levelup'] = lambda: files('jingles', '*steel*') + files('jingles', '*pizzi*') + files('jingles', '*hit*') + KU('confirmation_*') + KU('maximize_*')
+    P['levelup'] = lambda: [('synth:levelup', 'synth', synth_levelup())] + files('jingles', '*steel*') + files('jingles', '*pizzi*') + files('jingles', '*hit*') + KU('confirmation_*') + KU('maximize_*')
     P['orb'] = lambda: KU('glass_*') + KU('bong_*') + [('synth:ding%d' % f, 'synth', synth_ding(f)) for f in (1400, 1700, 2100, 2600, 3100)]
     P['pop'] = lambda: files('rd100', 'plop_*') + KU('drop_*') + KU('pluck_*') + [('synth:pop', 'synth', synth_pop())]
     P['itembreak'] = lambda: K('impactWood_light_*') + K('impactPlate_light_*') + files('rd100', 'hit_*') + K('impactGlass_light_*') + files('rd100', 'tools_*')
@@ -554,28 +577,30 @@ def pools():
     P['plate'] = lambda: KU('tick_*') + KU('click_*') + KU('toggle_*') + K('impactWood_light_*')
     P['piston'] = lambda: files('rd100', 'machine_*') + files('rd100', 'slam_*') + [('mix:piston%d' % i, 'impact', mixdown((S('impact', 'impactPlank_medium_00%d.ogg' % i), 0, 1.0), (S('impact', 'impactMetal_light_00%d.ogg' % i), 0.02, 0.5))) for i in range(5)] + files('rd100b', '*misc_*')
     P['explode'] = lambda: files('synthboom') + files('rd100', 'explosion*') + files('muffled') + files('rdbang', 'bang_*') + files('rdbang', 'cannon_*')
-    P['fuse'] = lambda: files('fuse') + [('synth:fizz1', 'synth', synth_fizz(1.2))]
-    P['fire'] = lambda: windows('fire', '*', 1.6, 10) + windows('fire', '*', 0.8, 6)
+    P['fuse'] = lambda: files('fuse') + [('synth:fuse%d' % i, 'synth', synth_fuse(2.6)) for i in range(3)]
+    P['fire'] = lambda: windows('fire', '*', 1.8, 10) + windows('fire', '*', 2.8, 6) + windows('fire', '*', 2.2, 6)
     P['fizz'] = lambda: [('synth:fizz%d' % i, 'synth', synth_fizz(0.3 + 0.15 * i)) for i in range(5)] + files('rd100b', '*air_*') + files('rdloops', 'noise_*', lambda x: x[:int(0.8 * SR)])
     P['ignite'] = lambda: [('mix:flint%d' % i, 'rpg', mixdown((S('rpg', 'metalClick.ogg'), 0, 1.0), (synth_fizz(0.35), 0.03, 0.4))) for i in range(3)] + KR('metalClick*') + files('rd100', 'key_open*') + KR('drawKnife*')
     P['lava_pop'] = lambda: files('rdwater', 'bubble_*', lambda x: lp(x, 3000)) + files('rd100', 'plop_*', lambda x: lp(x, 2500)) + files('rdwater', 'slime_*', lambda x: lp(x, 2000))
-    P['lava'] = lambda: windows('rdloops', 'water_boiling*', 1.6, 6, fn=lambda x: lp(x, 1500)) + windows('rdloops', 'water_boiling*', 0.8, 4, fn=lambda x: lp(x, 2000))
+    P['lava'] = lambda: windows('rdloops', 'water_boiling*', 6.8, 4, fn=lambda x: lp(resample(x, 0.8), 700)) + windows('rdloops', 'water_boiling*', 1.6, 6, fn=lambda x: lp(x, 1500)) + windows('rdloops', 'water_boiling*', 0.8, 4, fn=lambda x: lp(x, 2000))
     P['water'] = lambda: windows('rdwater', 'loop_water_0*', 1.8, 6) + windows('rdloops', 'water_flowing*', 1.8, 4)
     P['rain'] = lambda: windows('rain', '*', 2.2, 12) + windows('rdloops', 'rain*', 2.2, 4) + windows('rdwater', 'loop_rain*', 2.2, 4)
     P['thunder'] = lambda: [('thunder:long@%d' % t, 'thunder', fades(S('thunder')[int(t * SR):int((t + 9) * SR)], 0.05, 3.0)) for t in (18.5, 40, 61)] + files('rd100b', '*thunder*') + files('muffled')
     P['cave'] = lambda: windows('dungeon', '*', 6.0, 10) + windows('basement', '*', 5.0, 4) + files('cavein') + windows('rdloops', 'ambient_*', 6.0, 2) + windows('rdloops', 'weird_*', 5.0, 2) + windows('rd100b', '*loop_ambient*', 5.0, 2)
     P['underwater_loop'] = lambda: windows('rd100b', '*loop_water_0*', 8, 2, fn=lambda x: lp(resample(x, 0.7), 600)) + windows('rdwater', 'loop_bubbles*', 8, 2, fn=lambda x: lp(x, 700))
-    P['underwater_add'] = lambda: files('rdwater', 'bubble_*', lambda x: lp(x, 1200)) + files('rdwater', 'slime_*', lambda x: lp(x, 900)) + pieces('peludo3', '*', 0.3, 2.5, fn=lambda x: lp(x, 1000))
+    P['underwater_add'] = lambda: (files('rdwater', 'bubble_*', lambda x: lp(x, 1200)) + files('rdwater', 'slime_*', lambda x: lp(x, 900)) + pieces('peludo3', '*', 0.3, 2.5, fn=lambda x: lp(x, 1000))
+                                    + windows('rdwater', 'loop_bubbles*', 3.0, 3, fn=lambda x: lp(resample(x, 0.7), 700)) + windows('rdwater', 'loop_bubbles*', 9.0, 2, fn=lambda x: lp(resample(x, 0.5), 400))
+                                    + windows('rd100b', '*loop_water_0*', 9.0, 2, fn=lambda x: lp(resample(x, 0.5), 300)))
     P['underwater_move'] = lambda: files('rdwater', 'splash_*', lambda x: lp(x, 800)) + files('peludo1', '*', lambda x: lp(x, 800)) + files('peludo2', '*', lambda x: lp(x, 800))
     P['nether_loop'] = lambda: windows('dungeon', '*', 10, 1, fn=lambda x: lp(resample(x, 0.8), 900))
-    P['portal'] = lambda: [('synth:portal%d' % i, 'synth', synth_portal(3 + i)) for i in range(4)] + windows('rdloops', 'weird_*', 4, 3)
-    P['portal_trigger'] = lambda: [('synth:trigger%d' % i, 'synth', synth_portal(4 + i, True)) for i in range(3)] + windows('rdloops', 'weird_*', 4, 2)
+    P['portal'] = lambda: [('synth:portal%d' % i, 'synth', synth_portal(3.5 + i, False, c)) for i, c in enumerate((350, 500, 700))] + windows('rdloops', 'weird_*', 4.5, 3)
+    P['portal_trigger'] = lambda: [('synth:trigger%d' % i, 'synth', synth_portal(d, True, c)) for i, (d, c) in enumerate(((3.1, 900), (4.2, 1200), (8.5, 1400)))] + windows('rdloops', 'weird_*', 4, 2)
     P['bucket'] = lambda: files('rdwater', 'splash_*') + files('rdwater', 'slime_*') + files('peludo1') + files('peludo2')
     P['bucket_lava'] = lambda: files('rdwater', 'slime_*', lambda x: lp(resample(x, 0.8), 2000)) + files('rdwater', 'splash_*', lambda x: lp(resample(x, 0.75), 1500))
     P['bell'] = lambda: files('rd100', 'bell_*') + files('rd100', 'gong_*') + K('impactBell_heavy_*')
-    P['anvil'] = lambda: K('impactMetal_heavy_*') + files('rd100', 'metal_*') + K('impactBell_heavy_*') + K('impactPlate_heavy_*')
+    P['anvil'] = lambda: [('mix:clang%d' % i, 'impact', mixdown((S('impact', 'impactMetal_heavy_00%d.ogg' % i), 0, 1.0), (S('impact', 'impactBell_heavy_00%d.ogg' % i), 0.0, 0.6), (S('impact', 'impactMetal_medium_00%d.ogg' % ((i + 1) % 5)), 0.75, 0.8))) for i in range(5)] + K('impactMetal_heavy_*') + files('rd100', 'metal_*') + K('impactBell_heavy_*') + K('impactPlate_heavy_*')
     P['dispense'] = lambda: KU('click_*') + KR('metalClick*') + KU('switch_*') + KU('tick_*')
-    P['totem'] = lambda: files('jingles', '*hit*') + files('jingles', '*steel*') + KU('maximize_*')
+    P['totem'] = lambda: [('synth:totem%d' % i, 'synth', mixdown((synth_portal(3.2, False, 700 + 300 * i), 0, 1.0), (synth_levelup(), 0.4, 0.25))) for i in range(3)] + files('jingles', '*hit*') + files('jingles', '*steel*') + KU('maximize_*')
     P['bow'] = lambda: files('rd100', 'spring_*') + KR('drawKnife*') + files('rd100b', '*air_*')
     P['arrow_hit'] = lambda: K('impactWood_light_*') + files('rd100', 'hit_*') + K('impactPlank_medium_*') + files('rd100b', '*wood_hit*')
     P['equip'] = lambda: KR('cloth*') + KR('beltHandle*') + KR('clothBelt*') + KR('metalClick*') + KR('metalLatch*') + KR('handleSmallLeather*')
@@ -593,7 +618,7 @@ def pools():
     P['bones'] = lambda: files('bones') + [('mix:rattle%d' % k, 'bones', np.concatenate([fades(S('bones', '%d.ogg' % i)[:int(0.16 * SR)], 0.001, 0.04) for i in rng.permutation(10)[:4]])) for k in range(5)]
     P['skeleton_death'] = lambda: files('skeleton1') + files('skeleton') + [('mix:collapse%d' % k, 'bones', np.concatenate([fades(S('bones', '%d.ogg' % i)[:int(0.2 * SR)], 0.001, 0.05) for i in rng.permutation(10)[:6]])) for k in range(3)]
     P['creeper'] = lambda: files('rdcreature', 'hurt_*') + files('rdcreature', 'grunt_*') + files('rdcreature', 'monster_*') + files('rdcreature', 'breath*')
-    P['spider'] = lambda: files('rdcreature', 'bug_*') + files('rdcreature', 'misc_*') + files('rdcreature', 'spit_*') + files('rdcreature', 'weird_*')
+    P['spider'] = lambda: [('synth:hiss%d' % i, 'synth', synth_hiss(1.0 + 0.2 * i)) for i in range(3)] + files('rdcreature', 'bug_*') + files('rdcreature', 'misc_*') + files('rdcreature', 'spit_*') + files('rdcreature', 'weird_*')
     P['spider_step'] = lambda: files('bones', '*', lambda x: resample(x, 1.5)) + KU('tick_*') + KU('scratch_*')
     P['cow'] = lambda: files('cow', 'moo*') + [('cow:moo-r%d' % i, 'cow', resample(S('cow', 'moo-notification.wav'), r)) for i, r in enumerate((0.9, 1.1, 0.95))] + files('yak') + [('yak:r', 'yak', resample(S('yak'), 0.9))]
     P['cow_hurt'] = lambda: files('yak') + [('yak:r%d' % i, 'yak', resample(S('yak'), r)) for i, r in enumerate((0.85, 1.1))] + files('cow', 'moo*')
@@ -853,7 +878,7 @@ def main():
     B('player', 'item.totem.use', 'totem', cut=False)
     B('player', 'entity.arrow.shoot', 'bow')
     B('player', 'entity.arrow.hit', 'arrow_hit')
-    B('player', 'entity.arrow.hit_player', 'pop')
+    B('player', 'entity.arrow.hit_player', 'orb', maxn=1)
     B('player', 'entity.snowball.throw', 'whoosh')
     B('player', 'entity.egg.throw', 'whoosh')
     B('player', 'entity.ender_pearl.throw', 'whoosh')
@@ -917,7 +942,7 @@ def main():
     B('world', 'item.flintandsteel.use', 'ignite')
     B('world', 'item.firecharge.use', 'ignite')
     B('world', 'block.lava.pop', 'lava_pop')
-    B('ambient', 'block.lava.ambient', 'lava', maxn=3)
+    B('ambient', 'block.lava.ambient', 'lava', n=1)
     B('world', 'block.lava.extinguish', 'fizz')
     B('ambient', 'block.water.ambient', 'water', maxn=3)
     B('ambient', 'weather.rain', 'rain', maxn=6)
@@ -928,11 +953,11 @@ def main():
     B('ambient', 'ambient.underwater.enter', 'underwater_move')
     B('ambient', 'ambient.underwater.exit', 'underwater_move')
     B('ambient', 'ambient.underwater.loop.additions', 'underwater_add', maxn=4)
-    B('ambient', 'ambient.underwater.loop.additions.rare', 'underwater_add', maxn=3)
-    B('ambient', 'ambient.underwater.loop.additions.ultra_rare', 'underwater_add', maxn=2)
-    B('ambient', 'block.portal.ambient', 'portal', maxn=1)
-    B('ambient', 'block.portal.trigger', 'portal_trigger', maxn=1)
-    B('ambient', 'block.portal.travel', 'portal_trigger', maxn=1)
+    B('ambient', 'ambient.underwater.loop.additions.rare', 'underwater_add', maxn=2)
+    B('ambient', 'ambient.underwater.loop.additions.ultra_rare', 'underwater_add', n=1)
+    B('ambient', 'block.portal.ambient', 'portal', n=1)
+    B('ambient', 'block.portal.trigger', 'portal_trigger', n=1)
+    B('ambient', 'block.portal.travel', 'portal_trigger', n=1)
     B('world', 'item.bucket.fill', 'bucket', maxn=2)
     B('world', 'item.bucket.empty', 'bucket', maxn=2)
     B('world', 'item.bucket.fill_lava', 'bucket_lava', maxn=2)
@@ -953,7 +978,7 @@ def main():
     B('world', 'block.composter.fill', 'plant', maxn=2)
     B('world', 'block.composter.fill_success', 'plant')
     B('world', 'block.end_portal_frame.fill', 'anvil', maxn=2)
-    B('world', 'block.respawn_anchor.charge', 'portal_trigger', maxn=1)
+    B('world', 'block.respawn_anchor.charge', 'portal_trigger', n=1)
     B('world', 'block.enchantment_table.use', 'levelup', maxn=1)
     B('world', 'block.brewing_stand.brew', 'lava_pop')
     B('world', 'block.grindstone.use', 'strip')
