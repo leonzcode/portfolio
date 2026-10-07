@@ -37,7 +37,9 @@
    an ominous one, meta bit 8) is taken and the vault rolls its reward
    table (chests/trial_chambers/reward, or reward_ominous), then throws the
    stacks up out of its top one at a time, a second apart, after a moment
-   unlocking. Each vault rewards you once; after that it takes no key.
+   unlocking. Each vault rewards you once; after that it takes no key. It
+   lights up while you are within 4 blocks of one that has not rewarded you,
+   and opens its front while it unlocks and gives (meta bits 4-5).
 
    Decorated pots hold one stack of one kind of thing: a click with an item
    puts one in, and breaking the pot spills it (sim/lids.js wobbles the pot).
@@ -240,7 +242,7 @@ export class Details {
     if (n !== (ominous ? 'ominous_trial_key' : 'trial_key')) return false;
     const e = this.entry(x, y, z, 'vault');
     if (e.rewarded || e.queue.length) return false;
-    e.rewarded = true; e.at = this.ticks + 14;
+    e.rewarded = true; e.at = this.ticks + 14; e.unlockUntil = e.at;
     if (!h.creative) h.inv.takeSelected(1);
     import('./struct/loot.js?v=22').then(L => import('./containers.js?v=22').then(C => {
       const table = 'trial_chambers/' + (ominous ? 'reward_ominous' : 'reward');
@@ -539,10 +541,27 @@ export class Details {
     }
   }
 
+  /* The look of the vaults near the player (every half second): lit up while one that has not rewarded you is
+     within 4 blocks, unlocking for the moment after a key goes in, then throwing out the reward. */
+  vaultLooks() {
+    const w = this.world, E = this.entities && this.entities(), P = E && E.player;
+    if (!P || B.vault === undefined) return;
+    const px = Math.floor(P.pos.x), py = Math.floor(P.pos.y), pz = Math.floor(P.pos.z), ey = P.pos.y + 1.62;
+    for (let y = py - 4; y <= py + 6; y++) for (let z = pz - 5; z <= pz + 5; z++) for (let x = px - 5; x <= px + 5; x++) {
+      if (w.get(x, y, z) !== B.vault) continue;
+      const e = this.map.get(key(x, y, z)), m = w.meta(x, y, z);
+      const near = (P.pos.x - x - 0.5) ** 2 + (ey - y - 0.5) ** 2 + (P.pos.z - z - 0.5) ** 2 <= 16;
+      const unlocking = e && e.k === 'vault' && this.ticks < (e.unlockUntil || 0), giving = e && e.k === 'vault' && e.queue.length > 0;
+      const st = unlocking ? 2 : giving ? 3 : near && !(e && e.k === 'vault' && e.rewarded) ? 1 : 0;
+      if (((m >> 4) & 3) !== st) w.set(x, y, z, B.vault, (m & ~48) | (st << 4));
+    }
+  }
+
   /* ---- 20 times a second ---- */
   tick() {
     this.ticks++;
     const w = this.world;
+    if (this.ticks % 10 === 0) this.vaultLooks();
     // composters at 7 turn ready after a second
     if (this.ripen.length) {
       this.ripen = this.ripen.filter(r => {

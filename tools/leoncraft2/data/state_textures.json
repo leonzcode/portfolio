@@ -8,4 +8,5 @@
  "dispenser_front_vertical", "dropper_front_vertical", "barrel_top_open", "cake_inner", "stonecutter_saw",
  "lectern_base", "composter_compost", "composter_ready", "sculk_sensor_tendril_inactive", "decorated_pot_base",
  "chiseled_bookshelf_occupied", "sculk_sensor_tendril_active", "sculk_shrieker_inner_top",
- "sculk_shrieker_can_summon_inner_top", "calibrated_sculk_sensor_input_side", "calibrated_sculk_sensor_amethyst"]
+ "sculk_shrieker_can_summon_inner_top", "calibrated_sculk_sensor_input_side", "calibrated_sculk_sensor_amethyst",
+ "vault_front_on", "vault_side_on", "vault_front_ejecting", "vault_top_ejecting"]
