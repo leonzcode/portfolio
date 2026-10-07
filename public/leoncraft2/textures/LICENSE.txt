@@ -20,7 +20,8 @@ spread (six numbers per texture, colour statistics only, no pixels).
 
 Both are licensed under Creative Commons Attribution-ShareAlike 4.0
 International (CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
-Only the block textures of Pixel Perfection Legacy are used.
+Only the block textures and the status effect pictures (below, GUI art) of
+Pixel Perfection Legacy are used.
 
 Changes made for Leoncraft 2:
 - the textures are packed into vertical strips of 16x16 layers (one layer per
@@ -112,9 +113,21 @@ button, and all of accessibility.png, are our own grey drawings
 (tools/leoncraft2/build_gui.py), not the pack's gold ones.
 
 In icons.png the crosshair, the hearts (empty, flashing, red, poisoned,
-withered and gold), the air bubbles, the hunger shanks and the experience bar
-are our own drawings (tools/leoncraft2/build_hud.py) over the pack's; the rest
-of that sheet (armour, the signal bars and the other rows) is the pack's.
+withered, gold and frozen, and the same again in their hardcore look), the air
+bubbles, the hunger shanks and the experience bar are our own drawings
+(tools/leoncraft2/build_hud.py) over the pack's; the rest of that sheet
+(armour, the signal bars and the other rows) is the pack's. The frost over the
+screen while freezing is drawn by the game's own code (js/ui/hud.js).
+
+gui/mob_effect.png, the status effect pictures, is made by
+tools/leoncraft2/build_effects.py from the mob_effect pictures of "Pixel
+Perfection Legacy", by Nova_Wostra
+(https://github.com/NovaWostra/Pixel-Perfection-Chorus-Eddit), CC BY-SA 4.0:
+each sign is cut out of its coloured tile, filled with the effect's colour,
+shaded and outlined. Those pictures were compared pixel by pixel with the
+game's own (October 2026) and share none of their pixels or fine detail.
+(Pixel Perfection CE's effect pictures include copies of the game's and are
+not used.)
 
 The LEONCRAFT title and its BROWSER EDITION plate are drawn by the game at load
 (js/ui/menus.js) from our own letter shapes, the stone texture above and the
