@@ -41,6 +41,7 @@ export class MobSounds {
       if (!s) s = e._snd = { amb: -80 + ((R() * 80) | 0), hurt: e.hurtTime | 0, dead: !!e.dead, md: 0, next: 1, stuck: !!e.stuck, new: true };
       const dx = e.pos.x - at.x, dy = e.pos.y - at.y, dz = e.pos.z - at.z, d2 = dx * dx + dy * dy + dz * dz;
       if (e.type === 'arrow' || e.type === 'spectral_arrow') { this.arrow(e, s); continue; }
+      if (e.paddle && e.rowing) { if (d2 < 40 * 40) this.paddles(e); continue; }
       if (typeof e.health !== 'number' || !e.maxHealth) { s.new = false; continue; }
       const type = e.type, C = e.constructor, cat = C.HOSTILE ? 'hostile' : 'neutral';
       const vol = type === 'ghast' ? 5 : (type === 'slime' || type === 'magma_cube') ? 0.4 * (e.size || 1) : 1;
@@ -78,6 +79,23 @@ export class MobSounds {
           const b = w ? w.get(Math.floor(e.pos.x), Math.floor(e.pos.y - 0.2), Math.floor(e.pos.z)) : 0;
           if (b) blockSound('step', b, e.pos.x, e.pos.y, e.pos.z);
         }
+      }
+    }
+  }
+  /* A boat's paddles: each dips with a splash (or a scrape on land) as it
+     comes round past an eighth of a turn, on the side it is on, as the game
+     plays it (volume 1, pitch 0.8-1.2). */
+  paddles(e) {
+    const TAU = Math.PI * 2, step = Math.PI / 8;
+    for (let i = 0; i < 2; i++) {
+      if (!e.rowing[i]) continue;
+      const now = e.paddle[i], was = now - step;
+      if (((was % TAU) + TAU) % TAU <= Math.PI / 4 && (((now % TAU) + TAU) % TAU) >= Math.PI / 4) {
+        const ev = e.status === 3 ? 'entity.boat.paddle_land' : e.status === 0 ? 'entity.boat.paddle_water' : null;
+        if (!ev) continue;
+        const fx = -Math.sin(e.yaw), fz = -Math.cos(e.yaw);
+        const ox = i === 1 ? -fz : fz, oz = i === 1 ? fx : -fx;
+        Sound.play(ev, e.pos.x + ox, e.pos.y, e.pos.z + oz, 1, 0.8 + 0.4 * R(), 'neutral');
       }
     }
   }
