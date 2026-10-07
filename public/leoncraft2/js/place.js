@@ -20,6 +20,26 @@ export function lookFacing(yaw) {
 const faceOf = n => (n[0] === 1 ? 0 : n[0] === -1 ? 1 : n[1] === 1 ? 2 : n[1] === -1 ? 3 : n[2] === 1 ? 4 : 5);
 const HANGS = /^(weeping_vines|spore_blossom|hanging_roots|pale_hanging_moss|cave_vines)$/;
 const horizOf = n => (n[2] === -1 ? 0 : n[0] === 1 ? 1 : n[2] === 1 ? 2 : 3);
+
+/* The game's face support (isFaceSturdy / canSupportCenter): whether the
+   block at (x, y, z) holds things up on its face f (0 +x, 1 -x, 2 +y, 3 -y,
+   4 +z, 5 -z), from its collision boxes, at these points of the face: its
+   middle (a torch on top), or all of it (a torch on a wall). */
+const MIDDLE = [[7.5 / 16, 7.5 / 16], [8.5 / 16, 8.5 / 16], [7.5 / 16, 8.5 / 16], [8.5 / 16, 7.5 / 16]];
+const WHOLE = [];
+for (const u of [1, 3, 5, 7]) for (const v of [1, 3, 5, 7]) WHOLE.push([u / 8, v / 8]);
+function holds(world, x, y, z, f, pts) {
+  const b = world.get(x, y, z);
+  if (!b) return false;
+  const nb = (dx, dy, dz) => { const k = world.get(x + dx, y + dy, z + dz); return k ? { d: BLOCKS[k], m: world.meta(x + dx, y + dy, z + dz) } : null; };
+  let boxes;
+  // (snow holds things by its layers, not by what you stand on: eight layers are a whole block)
+  if (BLOCKS[b].shape === 'snow') boxes = [[0, 0, 0, 1, ((world.meta(x, y, z) & 7) + 1) / 8, 1]];
+  else try { boxes = collisionBoxes(BLOCKS[b], world.meta(x, y, z), nb); } catch (e) { return !!BLOCKS[b].solid; }
+  if (!boxes) return false;
+  const axis = f >> 1, plus = (f & 1) === 0, a = axis === 0 ? 1 : 0, c = axis === 2 ? 1 : 2;
+  return pts.every(([u, v]) => boxes.some(bx => (plus ? bx[axis + 3] >= 1 - 1e-6 : bx[axis] <= 1e-6) && bx[a] <= u && bx[a + 3] >= u && bx[c] <= v && bx[c + 3] >= v));
+}
 // the wall-hung version of a block (torch -> wall_torch, oak_sign -> oak_wall_sign...)
 function wallVariant(name) {
   const tries = [name.replace(/torch$/, 'wall_torch'), name.replace(/_sign$/, '_wall_sign'), name.replace(/_hanging_sign$/, '_wall_hanging_sign'),
@@ -116,8 +136,12 @@ export function placement(world, hit, id, player) {
       if (n[1] === 0) {
         const wv = wallVariant(d.name);
         if (wv === undefined) { if (d.shape === 'head') { m = 8 | horizOf(n); break; } return out; }
+        // a torch goes on a wall only where the face it hangs from is whole (not a fence's side, nor a slab's)
+        if (d.shape === 'torch' && !holds(world, x - n[0], y, z - n[2], faceOf(n), WHOLE)) return out;
         return [[x, y, z, wv, support]];
       }
+      // a torch stands on the middle of a face (a fence post or a wall holds one; a bottom slab, farmland or a path does not)
+      if (d.shape === 'torch' && !holds(world, x, y - 1, z, 2, MIDDLE)) return out;
       if (!solidBelow && !(d.shape === 'sign' && d.hanging)) return out;
       // a hanging sign needs something above to hang from
       if (d.shape === 'sign' && d.hanging) { const ab = world.get(x, y + 1, z); if (!ab || !BLOCKS[ab].solid) return out; }
