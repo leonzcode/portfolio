@@ -19,9 +19,13 @@
 import { Gen, pickBiome } from './worldgen.js?v=28';
 import { FlatGen } from './gen/flat.js?v=28';
 import { meshColumn, setColours } from './mesher.js?v=28';
-import { resolveTextures } from './blocks.js?v=28';
+import { resolveTextures, BLOCKS } from './blocks.js?v=28';
+import { forgetLooks } from './models.js?v=28';
+import { forgetStates } from './sim/states.js?v=28';
+import { biomeColours } from './biomes.js?v=28';
+import { CH } from './world-const.js?v=28';
 import { worldStructures, structureMessage } from './struct/hook.js?v=28';
-import { keepChunk, readChunks, sweepChunks, keptCount } from './chunkcache.js?v=28';
+import { keepChunk, readChunks, sweepChunks, keptCount, keepMesh, readMeshes } from './chunkcache.js?v=28';
 
 let G = null;                 // { VanillaGen, NetherGen, EndGen } once loaded
 let loadingG = null;
@@ -46,6 +50,7 @@ function spareFor(m) {
   return s;
 }
 let resolved = null;
+let coloured = false;
 const nameOf = m => m.dim + '|' + m.generator + '|' + m.seed;
 function make(m) {
   // each dimension has its own generator (js/dims.js); the Overworld is Minecraft's own for worlds
@@ -57,9 +62,216 @@ function make(m) {
   const s = worldStructures(m.generator === 'vanilla' ? String(m.seed) : m.seed | 0, g, m.dim || 'overworld');
   return { gen: g, structs: s, name: nameOf(m) };
 }
+let shown = null;             // the page's texture list the blocks were last worked out from
 function prepare(m) {
-  if (m.manifest && resolved !== m.manifest.layers) { resolveTextures(m.manifest); resolved = m.manifest.layers; }
-  if (m.colours) setColours(m.colours);
+  if (m.manifest && resolved !== m.manifest.layers) {
+    resolveTextures(m.manifest); resolved = m.manifest.layers; shown = m.manifest;
+    // what the mesher kept from a list worked out before (the title's world made ahead, startPre) goes
+    forgetLooks(); forgetStates();
+  }
+  if (m.colours) { setColours(m.colours); coloured = m.colours; }
+}
+// a short print of the biome colours, kept with each mesh (a resource pack's colours give another)
+function colourPrint(c) {
+  let h = 2166136261;
+  for (const k of ['grass', 'leaf', 'water']) for (const v of c[k]) h = Math.imul(h ^ v, 16777619);
+  return h >>> 0;
+}
+// the same biome colours (grass, leaves, water)
+function sameColours(a, b) {
+  if (!a || !b) return false;
+  for (const k of ['grass', 'leaf', 'water']) {
+    if (!a[k] || !b[k] || a[k].length !== b[k].length) return false;
+    for (let i = 0; i < a[k].length; i++) if (a[k][i] !== b[k][i]) return false;
+  }
+  return true;
+}
+
+/* ---- the title screen's world, started on before it is asked for ----
+   index.html sends each worker its share the moment the page opens, while
+   the page's own code and textures are still loading and the workers would
+   only wait. The thirteen columns the title waits for are shared out, each
+   worker taking a few next to each other: it makes the chunks round them
+   and meshes them, exactly as the world would ask, then makes its share of
+   the rest of the ground the title opens on. Its first columns, cold, take
+   several times as long as later ones (and with every worker at it the
+   browser's compiler gets to them late), so this is also when its code
+   becomes fast. The meshes are kept with the chunks (chunkcache.js), and on
+   a later visit (warm: the title's chunks are kept too, and the world reads
+   those back itself) they are read back instead, and nothing is made: the
+   page is busy starting then, and a worker working beside it slows it.
+   The title's world, when it starts, is told in the answer to its init what
+   this worker holds (world.js asks this worker for those, and has them at
+   once). The meshes are given only if the page's own texture list and
+   colours, which come with the init, give the same blocks as the ones they
+   were made with. Anything else that comes first (a world opened straight
+   from a reload, say) ends it and they are let go. One chunk or one column
+   a step, so a message waits at most that long. */
+let pre = null;               // the work under way: { name, gen, structs, seed, centre, steps, made, meshes, look, opts }
+let preMade = null;           // the chunks made ahead for the world being served, until asked for: "cx,cz" -> { c, extra }
+let preMeshes = null;         // and its columns' meshes: "cx,cz" -> { out, keep, seed, opts, ids }
+// (kept under world.js's own prefix for this version and block table, so they go when it is tidied)
+const KEPT_AS = 'c' + (new URL(import.meta.url).searchParams.get('v') || '0') + '.' + BLOCKS.length;
+const meshKey = (p, x, z) => KEPT_AS + '|title|' + p.name + '|' + ck(x, z) + '|' + (p.opts.fast ? 'f' : 'c') + (p.opts.flat ? 'f' : 's') + p.opts.blend;
+function startPre(m) {
+  const s = spareFor(m);
+  const cx = Math.floor(m.at[0] / CH), cz = Math.floor(m.at[1] / CH);
+  // (the Video Settings the columns are meshed with come with the message, read by index.html as settings.js worldOpts gives them)
+  const o = m.opts || {}, opts = { fast: !!o.fast, blend: o.blend === undefined ? 2 : o.blend | 0, flat: !!o.flat };
+  const plan = prePlan(cx, cz, m.r, m.i, m.n);
+  title = { name: s.name, centre: [cx, cz], seed: m.seed | 0, opts };
+  const p = pre = { name: s.name, gen: s.gen, structs: s.structs, seed: m.seed, centre: [cx, cz], steps: m.warm ? [] : plan, made: new Map(), meshes: new Map(), look: null, opts };
+  if (m.warm) {
+    const cols = plan.filter(e => e[0] === 'm');
+    p.reading = true;
+    readMeshes(cols.map(([, x, z]) => meshKey(p, x, z))).then(found => {
+      p.reading = false;
+      cols.forEach(([, x, z], j) => { const r = found[j]; if (r && r.out && r.ids) p.meshes.set(ck(x, z), { out: r.out, keep: r.keep, seed: p.seed | 0, opts, ids: r.ids, cf: r.cf }); });
+      if (p.late) lateMeshes(p);
+    });
+  }
+  // the texture list and the biome colours, for the mesher (the page asked for all three already: they come from the browser's cache)
+  const tex = f => new URL('../textures/' + f + '?v=28', import.meta.url);
+  const pixels = f => fetch(tex(f)).then(r => r.blob()).then(b => createImageBitmap(b)).then(img => {
+    const c = new OffscreenCanvas(img.width, img.height), g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0);
+    return g.getImageData(0, 0, img.width, img.height).data;
+  });
+  Promise.all([fetch(tex('manifest.json')).then(r => r.json()), pixels('colormap_grass.png'), pixels('colormap_foliage.png')]).then(([man, grass, foliage]) => {
+    const colours = biomeColours(grass, foliage);
+    // the faces this list gives every block, for the check; (it lacks the art the page adds to it, so its warning is not one)
+    const warn = console.warn;
+    console.warn = () => {};
+    try { resolveTextures(man); } finally { console.warn = warn; }
+    ownFaces = BLOCKS.map(faceSig);
+    if (resolved === null) {
+      resolved = -1;
+      setColours(colours);
+    } else {
+      // (the page's own list came first: put back as it was)
+      resolveTextures(shown); forgetLooks(); forgetStates();
+    }
+    p.look = { colours };
+    if (pre === p) preNext(p);
+    else if (p.late) lateMeshes(p);
+  }).catch(e => { console.warn('title world ahead', e); });
+  preNext(p);
+}
+/* Who makes what: the columns nearest first, each to the worker it adds the
+   least work to; then the chunks of the ground no column needed, each to the
+   worker with least to do. Every worker works the same plan out and takes
+   its own part: ['c', x, z] a chunk, ['m', x, z] a column. */
+function prePlan(cx, cz, r, me, n) {
+  const cols = [];
+  for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dz * dz <= 4) cols.push([dx * dx + dz * dz, Math.atan2(dz, dx), cx + dx, cz + dz]);
+  cols.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  // (a worker's load: its chunks, and a column as three, about what meshing one takes against making a chunk)
+  const mine = Array.from({ length: n }, () => ({ load: 0, has: new Set() }));
+  const plans = Array.from({ length: n }, () => []);
+  for (const [, , x, z] of cols) {
+    let best = -1, bestLoad = 0;
+    for (let w = 0; w < n; w++) {
+      let load = mine[w].load + 3;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!mine[w].has.has(ck(x + dx, z + dz))) load++;
+      if (best < 0 || load < bestLoad) { best = w; bestLoad = load; }
+    }
+    const w = mine[best];
+    w.load = bestLoad;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const k = ck(x + dx, z + dz);
+      if (!w.has.has(k)) { w.has.add(k); plans[best].push(['c', x + dx, z + dz]); }
+    }
+    plans[best].push(['m', x, z]);
+  }
+  const anyone = new Set();
+  for (const w of mine) for (const k of w.has) anyone.add(k);
+  const rest = [];
+  for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) if (!anyone.has(ck(cx + dx, cz + dz))) rest.push([dx * dx + dz * dz, cx + dx, cz + dz]);
+  rest.sort((a, b) => a[0] - b[0]);
+  for (const e of rest) {
+    let best = 0;
+    for (let w = 1; w < n; w++) if (mine[w].load < mine[best].load) best = w;
+    mine[best].load++;
+    plans[best].push(['c', e[1], e[2]]);
+  }
+  return plans[me];
+}
+// the next step, unless one is already waiting or there is nothing that can be done yet
+function preNext(p) {
+  if (p.queued || !p.steps.some(s => s[0] === 'c' || p.look)) return;
+  p.queued = true;
+  setTimeout(() => { p.queued = false; if (pre === p) preStep(p); }, 0);
+}
+function preStep(p) {
+  // the next step that can be done: a column waits for the textures and colours (the chunks after it do not)
+  const j = p.steps.findIndex(s => s[0] === 'c' || p.look);
+  if (j < 0) return;
+  const [kind, x, z] = p.steps.splice(j, 1)[0];
+  try {
+    if (kind === 'c') {
+      const c = p.gen.generate(x, z);
+      let extra = null;
+      try { extra = p.structs ? p.structs.build(c, x, z) : null; } catch (e) { console.error('structures in ' + x + ',' + z, e); }
+      p.made.set(ck(x, z), { c, extra });
+    } else {
+      // the column as world.js sendMesh asks for it (its chunks are only read), and the blocks in them
+      const chunks = [], tops = [], ids = new Set();
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const e = p.made.get(ck(x + dx, z + dz));
+        if (!e) throw new Error('a chunk missing');
+        const c = e.c;
+        chunks.push({ blocks: c.blocks, meta: c.meta, biome: c.biome }); tops.push(c.top);
+        for (let i = 0, n = Math.min(c.blocks.length, (c.top + 1) * 256); i < n; i++) ids.add(c.blocks[i]);
+      }
+      const keep = Math.abs(x - p.centre[0]) <= 1 && Math.abs(z - p.centre[1]) <= 1;
+      const out = meshColumn({ type: 'mesh', cx: x, cz: z, chunks, tops, version: 0, seed: p.seed | 0, prev: new Int32Array(0), fast: p.opts.fast, noSky: false,
+        urgent: false, blend: p.opts.blend, flat: p.opts.flat, moving: [], keep, base: null, rows: null });
+      const rec = { out, keep, seed: p.seed | 0, opts: p.opts, ids: Uint16Array.from(ids), cf: colourPrint(p.look.colours) };
+      p.meshes.set(ck(x, z), rec);
+      // kept for the next visit (copied into the store now, before the buffers go to the page)
+      keepMesh(meshKey(p, x, z), { out, keep, ids: rec.ids, cf: rec.cf });
+    }
+  } catch (e) { /* made when asked for instead */ }
+  preNext(p);
+}
+/* The title's world (as startPre was told it) and the world this worker
+   serves now: a column the title waits for that the world had meshed here
+   the usual way (the head start did not get to it) is kept as well, so the
+   next visit has every one of them; with the print of the colours it was
+   made with, so one made with a resource pack's is never given without it. */
+let title = null, serving = null;
+function keepTitleMesh(m, out) {
+  const dx = m.cx - title.centre[0], dz = m.cz - title.centre[1], o = title.opts;
+  // (only with the colours the head start uses: a resource pack's would be kept as if they were the game's own)
+  if (dx * dx + dz * dz > 4 || !coloured || !!m.keep !== (Math.abs(dx) <= 1 && Math.abs(dz) <= 1) || (m.seed | 0) !== title.seed || m.noSky
+    || !!m.fast !== o.fast || (m.blend === undefined ? 2 : m.blend) !== o.blend || !!m.flat !== o.flat || (m.prev && m.prev.length) || (m.moving && m.moving.length)) return;
+  const ids = new Set();
+  for (const ch of m.chunks) if (ch) for (let i = 0; i < ch.blocks.length; i++) ids.add(ch.blocks[i]);
+  keepMesh(meshKey(title, m.cx, m.cz), { out, keep: !!m.keep, ids: Uint16Array.from(ids), cf: colourPrint(coloured) });
+}
+/* At the title's init: the meshes made ahead are given only if the page's
+   own texture list (worked out here now) gives every block in them the same
+   faces, and its colours are the same, as the ones they were made with. */
+const faceSig = d => (d ? JSON.stringify([d.faces, d.L, d.facesUpper, d.front, d.back, d.overlay, d.snowy, d.variantLayers, d.topVariantLayers, d.iconLayer, d.anim]) : '');
+let ownFaces = null;          // every block's faces as this worker's own list gave them (faceSig), kept for the check
+function preCheck(p) {
+  if (!p.meshes.size || !p.look || !ownFaces || resolved === -1 || !sameColours(p.look.colours, coloured)) return false;
+  const print = colourPrint(p.look.colours);
+  for (const r of p.meshes.values()) {
+    if (r.cf !== print) return false;
+    for (const id of r.ids) if (faceSig(BLOCKS[id]) !== ownFaces[id]) return false;
+  }
+  return true;
+}
+/* Meshes read back (a warm visit) after the title's init had already been
+   answered: given now, if they pass, for the columns not yet asked for. */
+function lateMeshes(p) {
+  if (p.reading || !p.look) return;          // (the other half still to come)
+  p.late = false;
+  if (serving !== p.name || !preCheck(p)) return;
+  preMeshes = preMeshes || new Map();
+  for (const [k, r] of p.meshes) preMeshes.set(k, r);
+  self.postMessage({ type: 'premesh', list: [...p.meshes.keys()].map(k => k.split(',').map(Number)) });
 }
 // a generator made in stages (Minecraft's own Overworld): terrain, then features, then the chunk
 const staged = g => !!(g && g.protoCache && g.writeCache && g.decorator);
@@ -84,6 +296,10 @@ function handle(m) {
   }
 }
 function work(m) {
+  if (m.type === 'pregen') { startPre(m); return; }
+  // the title's world made ahead (startPre): its own init takes what was made, anything else ends it
+  let ahead = null;
+  if (pre) { if (m.type === 'init' && nameOf(m) === pre.name) ahead = pre; pre = null; }
   if ((m.type === 'init' || m.type === 'practice') && !G && needsG(m)) {
     held = [m];
     loadGens().then(() => { const q = held; held = null; for (const x of q) handle(x); },
@@ -91,12 +307,20 @@ function work(m) {
     return;
   }
   if (m.type === 'init') {
+    // (the meshes made ahead are kept only if they come out the same with the page's own textures and colours)
     prepare(m);
+    const meshesOk = ahead ? preCheck(ahead) : false;
+    // (a warm visit's meshes still being read back, or the check's own list not in yet, are given when they come: lateMeshes)
+    if (ahead && !meshesOk && (ahead.reading || !ahead.look)) ahead.late = true;
     const s = spares.get(nameOf(m)) || make(m);
     gen = s.gen; structs = s.structs;
     spares.clear();
-    cacheKey = m.cache || null; tag = m.tag || 0;
-    self.postMessage({ type: 'ready', staged: staged(gen), features: staged(gen) && !!gen.decorator.features });
+    cacheKey = m.cache || null; tag = m.tag || 0; serving = nameOf(m);
+    // the chunks made ahead for this very world, named in the answer so they are asked of this worker
+    preMade = ahead && ahead.made.size ? ahead.made : null;
+    preMeshes = meshesOk && ahead.meshes.size ? ahead.meshes : null;
+    const coords = map => (map ? [...map.keys()].map(k => k.split(',').map(Number)) : null);
+    self.postMessage({ type: 'ready', staged: staged(gen), features: staged(gen) && !!gen.decorator.features, pre: coords(preMade), preMesh: coords(preMeshes) });
     return;
   }
   if (m.type === 'idle') {
@@ -188,16 +412,19 @@ function work(m) {
     return;
   }
   if (m.type === 'gen') {
+    // made ahead (the title's world, startPre): sent as it is
+    const made = !m.proto && preMade ? preMade.get(ck(m.cx, m.cz)) : null;
+    if (made) { preMade.delete(ck(m.cx, m.cz)); if (!preMade.size) preMade = null; }
     // staged: the chunk put together from the pieces handed in (its terrain, the features round it)
     if (m.proto) {
       gen.protoCache.set(ck(m.cx, m.cz), m.proto);
       for (const [x, z, list] of m.writes) gen.writeCache.set(ck(x, z), new Map(list));
     }
-    const c = gen.generate(m.cx, m.cz);
+    const c = made ? made.c : gen.generate(m.cx, m.cz);
     if (m.proto) { gen.protoCache.clear(); gen.writeCache.clear(); }
     // the structures reaching into this chunk (one that cannot be built is left out, not the chunk)
-    let extra = null;
-    try { extra = structs ? structs.build(c, m.cx, m.cz) : null; } catch (e) { console.error('structures in ' + m.cx + ',' + m.cz, e); }
+    let extra = made ? made.extra : null;
+    if (!made) try { extra = structs ? structs.build(c, m.cx, m.cz) : null; } catch (e) { console.error('structures in ' + m.cx + ',' + m.cz, e); }
     if (cacheKey) keepChunk(cacheKey, m.cx, m.cz, c, extra);
     // (the terrain it was made from goes back to be used again, as a decoration's do; the chunk is a copy of it)
     const back = m.proto && m.proto.blocks.buffer !== c.blocks.buffer && m.proto.meta.buffer !== c.meta.buffer ? [m.proto.blocks.buffer, m.proto.meta.buffer] : [];
@@ -206,7 +433,14 @@ function work(m) {
     return;
   }
   if (m.type === 'mesh') {
-    const out = meshColumn(m);
+    // a column meshed ahead (the title's world, startPre), if asked for with what it was made with
+    const k = ck(m.cx, m.cz), ready = preMeshes && !m.base && !m.warm ? preMeshes.get(k) : null;
+    if (ready) { preMeshes.delete(k); if (!preMeshes.size) preMeshes = null; }
+    const same = ready && !!m.fast === ready.opts.fast && (m.blend === undefined ? 2 : m.blend) === ready.opts.blend && !!m.flat === ready.opts.flat
+      && !!m.keep === ready.keep && !m.noSky && (m.seed | 0) === ready.seed && !(m.prev && m.prev.length) && !(m.moving && m.moving.length);
+    const out = same ? ready.out : meshColumn(m);
+    // one of the title's columns meshed here as the world asked, as the head start makes them: kept for the next visit too
+    if (!same && !m.warm && !m.base && title && serving === title.name) keepTitleMesh(m, out);
     // the chunks' buffers go back with the answer, to be used for the next job (world.js pool)
     const back = [];
     for (const ch of m.chunks) if (ch) back.push(ch.blocks.buffer, ch.meta.buffer);

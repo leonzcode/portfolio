@@ -105,6 +105,33 @@ export function readChunks(world, list, found, absent) {
     } catch (e) { if (!read) { read = true; queue.length = 0; absent(list); } finish(); }
   }));
 }
+/* The title screen's columns, meshed (worker.js startPre), kept beside the
+   chunks under keys of their own (the same version prefix, so the same
+   tidying): the title then opens on a later visit without meshing them
+   again. Put as they are, at once, before their buffers go to the page. */
+let opened = null;
+db().then(d => { opened = d; });
+export function keepMesh(key, rec) {
+  if (!opened) return;              // (the store not open yet: kept another time)
+  try { opened.transaction(STORE, 'readwrite').objectStore(STORE).put(rec, key); } catch (e) { /* not kept */ }
+}
+// those of a list of keys that are kept, in its order (null for one that is not)
+export async function readMeshes(keys) {
+  const d = await db();
+  if (!d || !keys.length) return keys.map(() => null);
+  return new Promise(res => {
+    const out = keys.map(() => null);
+    let left = keys.length;
+    try {
+      const st = d.transaction(STORE, 'readonly').objectStore(STORE);
+      keys.forEach((k, j) => {
+        const q = st.get(k);
+        q.onsuccess = () => { out[j] = q.result || null; if (--left === 0) res(out); };
+        q.onerror = () => { if (--left === 0) res(out); };
+      });
+    } catch (e) { res(out); }
+  });
+}
 // how many chunks of a list are kept (practice in the menus asks, before making what would only be read back)
 export async function keptCount(world, list) {
   const d = await db();
