@@ -1173,6 +1173,8 @@ async function boot() {
       return;
     }
     g.inter.down(e.button);
+    // a click that opened a screen (a sign to write on) leaves the typing with it: the canvas does not take the focus back
+    if (gui.isOpen()) e.preventDefault();
   });
   document.addEventListener('mouseup', e => { if (game) game.inter.up(e.button); });
 

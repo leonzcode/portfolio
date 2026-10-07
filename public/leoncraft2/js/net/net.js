@@ -717,7 +717,8 @@ export class Net {
         let n = 1, asleep = 1, long = true;
         for (const r of this.players.list.values()) {
           const s = r.st;
-          if (!s || s.d !== 0 || (s.f & F.DEAD)) continue;
+          // (spectators do not count; someone on the death screen does, and is awake: the game's SleepStatus)
+          if (!s || s.d !== 0 || (s.f & F.SPEC)) continue;
           n++;
           if (s.f & F.SLEEP) { asleep++; if (!(s.f & F.SLEPT)) long = false; }
         }
