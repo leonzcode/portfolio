@@ -8,8 +8,8 @@
    the click. The same rules are here, writing the state into the meta byte
    the way js/models.js reads it.
 --------------------------------------------------------------------------- */
-import { B, BLOCKS, FLUID } from './blocks.js?v=26';
-import { collisionBoxes } from './models.js?v=26';
+import { B, BLOCKS, FLUID } from './blocks.js?v=27';
+import { collisionBoxes } from './models.js?v=27';
 
 const DIRS = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];     // north, east, south, west
 // the horizontal way you look: 0 north, 1 east, 2 south, 3 west
