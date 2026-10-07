@@ -219,8 +219,10 @@ void main() {
   float a;
   if (lava) { c = t.rgb; a = 1.0; }
   else {
-    // the water texture's grain, in this biome's water colour
-    c = vec3(dot(t.rgb, vec3(0.299, 0.587, 0.114)) * 1.9) * vCol;
+    /* the water texture's grain, in this biome's water colour: the texture is
+       grey at the game's own mean (177 of 255), so it is multiplied as it is
+       (it was 1.9 times brighter, from when the pack's water was darker) */
+    c = vec3(dot(t.rgb, vec3(0.299, 0.587, 0.114))) * vCol;
     a = t.a;
   }
   c *= vLight;
