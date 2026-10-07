@@ -1387,6 +1387,7 @@ async function boot() {
       drawDt = 0; drawn(); frames++;
     }
     if (g.mode === 'survival' || g.mode === 'adventure') hud.setStats(survival.stats());
+    hud.setEffects(survival.effects);
     // no crosshair in third person, or with the HUD hidden
     // (a spectator has one only over a mob)
     const cross = renderer.avatar.view === 0 && !gui.hideHud && (g.mode !== 'spectator' || !!inter.entityTarget);
