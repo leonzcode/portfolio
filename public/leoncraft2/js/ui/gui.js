@@ -121,6 +121,13 @@ export const DEFAULT_OPTIONS = {
   skinModel: 'classic',    // classic slim
   skinParts: { hat: true, jacket: true, leftSleeve: true, rightSleeve: true, leftPants: true, rightPants: true },
   keys: DEFAULT_KEYS,
+  // Music & Sounds (js/sound): each category's slider (0-1, 1 where unset), Closed Captions, Directional Audio (HRTF),
+  // Music Frequency (default frequent constant), Music Toast (never pause toast)
+  soundVolumes: {},
+  subtitles: false,
+  directionalAudio: false,
+  musicFrequency: 'default',
+  musicToast: 'never',
 };
 
 const clone = v => (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) : v;
@@ -755,6 +762,10 @@ export class Gui {
 
 /* ------------------------------ widgets ------------------------------ */
 
+// the button click (sound/game.js sets it): a widget's press, as the game's playDownSound; a slider's on letting go
+let uiSound = null;
+export function setUiSound(fn) { uiSound = fn; }
+
 export class Widget {
   constructor(x, y, w, h, message) {
     this.x = x; this.y = y; this.w = w; this.h = h;
@@ -774,6 +785,7 @@ export class Widget {
   mouseClicked(mx, my, button) {
     if (!this.active || !this.visible || button !== 0 || !this.isMouseOver(mx, my)) return false;
     this.onClick(mx, my);
+    if (uiSound && !(this instanceof Slider) && !(this instanceof TextField)) uiSound();
     return true;
   }
   onClick() {}
@@ -850,7 +862,7 @@ export class Slider extends Widget {
   }
   onClick(mx) { this.dragging = true; this.setFromMouse(mx); }
   mouseDragged(mx) { if (this.dragging) this.setFromMouse(mx); }
-  mouseReleased() { if (this.dragging) { this.dragging = false; if (this.o.onRelease) this.o.onRelease(this.value); } }
+  mouseReleased() { if (this.dragging) { this.dragging = false; if (this.o.onRelease) this.o.onRelease(this.value); if (uiSound) uiSound(); } }
 }
 
 /* 'Label: Value' that steps through values on click (Shift+click or the

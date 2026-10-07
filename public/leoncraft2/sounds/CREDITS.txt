@@ -1,0 +1,112 @@
+Leoncraft 2 - sound and music credits
+
+Every sound and track Leoncraft plays by default is one of these openly
+licensed recordings (cut, pitched, filtered and levelled for the game by
+tools/leoncraft2/build_sounds.py), or made by that script itself (the
+note block instruments and a few small tones). None is Mojang's.
+
+CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+CC BY 3.0: https://creativecommons.org/licenses/by/3.0/ (credit required; changed for the game)
+
+"Sheep Sound Bleats (Yo Frankie!)" by Blender Foundation (Yo Frankie!), published by Lamoot, CC BY 3.0
+    https://opengameart.org/content/sheep-sound-bleats-yo-frankie
+"Chicken Sound Effect" by IMadeIt, CC BY 3.0
+    https://opengameart.org/content/chicken-sound-effect
+"Pig SFX Pack" by Vinrax, CC BY 3.0
+    https://opengameart.org/content/pig-sfx-pack
+"Fire Crackling" by AntumDeluge, CC0 1.0
+    https://opengameart.org/content/fire-crackling
+"Sheep Baa" by AntumDeluge, CC0 1.0
+    https://opengameart.org/content/sheep-baa
+"Yak Imitation" by AntumDeluge, CC0 1.0
+    https://opengameart.org/content/yak-imitation
+"Zombie / Skeleton / Monster Voice Effects" by ArcadeParty, CC0 1.0
+    https://opengameart.org/content/zombie-skeleton-monster-voice-effects
+"Zombies Sound Pack" by artisticdude, CC0 1.0
+    https://opengameart.org/content/zombies-sound-pack
+"Underwater Theme II" by Cleyton Kauffman, CC0 1.0
+    https://opengameart.org/content/underwater-theme-ii
+"SkeletonSFXShortPack" by Colodical, CC0 1.0
+    https://opengameart.org/content/skeletonsfxshortpack
+"Bones rattle" by congusbongus, CC0 1.0
+    https://opengameart.org/content/bones-rattle
+"42 Snow and Gravel Footsteps" by Corsica_S, published by qubodup, CC0 1.0
+    https://opengameart.org/content/42-snow-and-gravel-footsteps
+"Another August" by cynicmusic (The Cynic Project), CC0 1.0
+    https://opengameart.org/content/another-august
+"Crystal Cave" by cynicmusic (The Cynic Project), CC0 1.0
+    https://opengameart.org/content/crystal-cave-song18
+"Happy Lullaby" by cynicmusic (The Cynic Project), CC0 1.0
+    https://opengameart.org/content/happy-lullaby-song17
+"Mysterious Ambience" by cynicmusic (The Cynic Project), CC0 1.0
+    https://opengameart.org/content/mysterious-ambience-song21
+"November Snow" by cynicmusic (The Cynic Project), CC0 1.0
+    https://opengameart.org/content/november-snow
+"Zombie moans" by Darsycho, CC0 1.0
+    https://opengameart.org/content/zombie-moans
+"Meadow Thoughts" by Ecrivain, CC0 1.0
+    https://opengameart.org/content/meadow-thoughts
+"Fantozzi's Footsteps (Grass/Sand & Stone)" by Fantozzi, published by qubodup, CC0 1.0
+    https://opengameart.org/content/fantozzis-footsteps-grasssand-stone
+"Underwater Ambient Pad" by isaiah658, CC0 1.0
+    https://opengameart.org/content/underwater-ambient-pad
+"Loopable Dungeon Ambience" by JaggedStone, CC0 1.0
+    https://opengameart.org/content/loopable-dungeon-ambience
+"Impact Sounds" by Kenney, CC0 1.0
+    https://kenney.nl/assets/impact-sounds
+"Interface Sounds" by Kenney, CC0 1.0
+    https://kenney.nl/assets/interface-sounds
+"Music Jingles" by Kenney, CC0 1.0
+    https://kenney.nl/assets/music-jingles
+"RPG Audio" by Kenney, CC0 1.0
+    https://kenney.nl/assets/rpg-audio
+"Snowfall" by Kistol, CC0 1.0
+    https://opengameart.org/content/snowfall
+"Muffled Distant Explosion" by NenadSimic, CC0 1.0
+    https://opengameart.org/content/muffled-distant-explosion
+"Dark Intro" by Nikke, CC0 1.0
+    https://opengameart.org/content/dark-intro
+"Water Splash and sand footsteps" by Peludo, CC0 1.0
+    https://opengameart.org/content/water-splash-and-sand-footsteps
+"Dripping water loop" by qubodup, CC0 1.0
+    https://opengameart.org/content/dripping-water-loop
+"Sci-Fi Aliens and Cows Pack" by qubodup, CC0 1.0
+    https://opengameart.org/content/sci-fi-aliens-and-cows-pack
+"Synthesized explosion" by qubodup, CC0 1.0
+    https://opengameart.org/content/synthesized-explosion
+"100 CC0 SFX" by rubberduck, CC0 1.0
+    https://opengameart.org/content/100-cc0-sfx
+"100 CC0 SFX #2" by rubberduck, CC0 1.0
+    https://opengameart.org/content/100-cc0-sfx-2
+"25 CC0 bang / firework SFX" by rubberduck, CC0 1.0
+    https://opengameart.org/content/25-cc0-bang-firework-sfx
+"30 CC0 SFX loops" by rubberduck, CC0 1.0
+    https://opengameart.org/content/30-cc0-sfx-loops
+"40 CC0 water / splash / slime SFX" by rubberduck, CC0 1.0
+    https://opengameart.org/content/40-cc0-water-splash-slime-sfx
+"80 CC0 creature SFX" by rubberduck, CC0 1.0
+    https://opengameart.org/content/80-cc0-creature-sfx
+"7 Eating Crunches" by StarNinjas, CC0 1.0
+    https://opengameart.org/content/7-eating-crunches
+"Cave In" by StarNinjas, CC0 1.0
+    https://opengameart.org/content/cave-in
+"grunts of male death and pain" by thebardofblasphemy, CC0 1.0
+    https://opengameart.org/content/grunts-male-death-and-pain
+"Different steps on wood, stone, leaves, gravel and mud" by TinyWorlds, CC0 1.0
+    https://opengameart.org/content/different-steps-on-wood-stone-leaves-gravel-and-mud
+"Rain + Long Thunder" by WuxiaScrub, CC0 1.0
+    https://opengameart.org/content/rain-long-thunder
+"Another space background track (Observing The Star)" by yd, CC0 1.0
+    https://opengameart.org/content/another-space-background-track
+"Dungeon Ambience" by yd, CC0 1.0
+    https://opengameart.org/content/dungeon-ambience
+"Galactic Temple" by yd, CC0 1.0
+    https://opengameart.org/content/galactic-temple
+"Rain (loopable)" by Ylmir, CC0 1.0
+    https://opengameart.org/content/rain-loopable
+"First Light Particles" by Yoiyami, CC0 1.0
+    https://opengameart.org/content/first-light-particles-%E2%80%93-cc0-atmospheric-pianoambient-track
+"The Budding of Consciousness" by Yoiyami, CC0 1.0
+    https://opengameart.org/content/the-budding-of-consciousness-%E2%80%93-cc0-ambient-minimalist-theme-yoiyami-blue-series-%E2%80%93-no4
+"Yoiyami Core Theme" by Yoiyami, CC0 1.0
+    https://opengameart.org/content/yoiyami-core-theme-%E2%80%93-deep-blue-ambient-piano
