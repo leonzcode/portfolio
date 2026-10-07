@@ -487,10 +487,14 @@ export function buildSheet() {
       for (let k = 0; k < 4; k++) put(f, x * 2 + (k & 1), y * 2 + (k >> 1), [v, v, v]);
     }
   }
-  // crit: a four-pointed star
-  for (let i = -6; i <= 6; i++) { const a = 255 - Math.abs(i) * 18; put(8, 7 + i, 7, [255, 255, 255], a); put(8, 7, 7 + i, [255, 255, 255], a); put(8, 8 + i, 8, [255, 255, 255], a); put(8, 8, 8 + i, [255, 255, 255], a); }
-  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) if (Math.abs(i) + Math.abs(j) <= 2) put(8, 7 + i, 7 + j, [255, 255, 255]);
-  for (let i = -5; i <= 5; i++) { put(9, 7 + i, 7 + i, [255, 255, 255], 220); put(9, 7 + i, 7 - i, [255, 255, 255], 220); }
+  /* crit and magic crit: a little X-shaped spark in fat pixels, as small and
+     sharp as the game's (ours: a white two-by-two middle, three steps out
+     along each diagonal, greying to the tips); tinted where they are used */
+  const spark = ['#......#', '.+....+.', '..*..*..', '...oo...', '...oo...', '..*..*..', '.+....+.', '#......#'];
+  const shade = { o: [255, 255, 255], '*': [240, 240, 240], '+': [214, 214, 214], '#': [178, 178, 178] };
+  for (const f of [8, 9]) spark.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (ch !== '.') for (let q = 0; q < 4; q++) put(f, x * 2 + (q & 1), y * 2 + (q >> 1), shade[ch]);
+  }));
   // heart
   const heart = ['..XX..XX..', '.XXXXXXXX.', 'XXXXXXXXXX', 'XXXXXXXXXX', '.XXXXXXXX.', '..XXXXXX..', '...XXXX...', '....XX....'];
   heart.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'X') put(10, x + 3, y + 4, y < 2 && x > 2 && x < 5 ? [255, 120, 120] : [220, 30, 40]); }));
@@ -533,10 +537,10 @@ export function buildSheet() {
   runes.forEach((rows, k) => rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === '#') { put(24 + k, x + 3, y * 2 + 3, [255, 255, 255]); put(24 + k, x + 3, y * 2 + 4, [255, 255, 255]); } })));
   /* 28-31 water drops (rain landing, a splash), our own: one little drop a
      frame, two or three fat pixels just right of the middle (a pale
-     highlight on top, the plain water blue 3f76e4 under it, a darker side),
+     highlight on top, a deep water blue under it, a darker side),
      tipped a different way in each frame. As small as the game's drops look. */
   const drops = [[[5, 4, 0], [5, 5, 1], [6, 5, 2]], [[5, 5, 0], [5, 6, 1]], [[6, 4, 0], [6, 5, 1], [5, 5, 2]], [[5, 5, 1], [6, 5, 2]]];
-  const blue = [[156, 192, 244], [63, 118, 228], [36, 80, 176]];
+  const blue = [[126, 166, 240], [44, 96, 216], [20, 64, 172]];
   drops.forEach((list, k) => list.forEach(([x, y, c]) => { for (let q = 0; q < 4; q++) put(28 + k, x * 2 + (q & 1), y * 2 + (q >> 1), blue[c]); }));
   g.putImageData(img, 0, 0);
   return c;
