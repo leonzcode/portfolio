@@ -28,6 +28,8 @@ import { B, BLOCKS } from '../blocks.js?v=25';
 
 const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];      // north east south west, as the bed's facing bits
 export const bedsWork = dim => !dim || dim === 'overworld';
+// hostile, but not the game's monsters, so they let you sleep
+const NOT_MONSTERS = new Set(['slime', 'magma_cube', 'ghast', 'happy_ghast', 'phantom', 'shulker', 'hoglin']);
 export const anchorsWork = dim => dim === 'nether' || dim === 'the_nether';
 
 /* The player's respawn point (one for the whole game, kept by survival.js):
@@ -57,8 +59,17 @@ export function installBeds(sim) {
     if (!L || !L.entities) return false;
     const E = L.entities;
     if (typeof E.monstersNear === 'function') return !!E.monstersNear(x, y, z, 8, 5);
-    if (typeof E.inBox === 'function') return (E.inBox(x - 8, y - 5, z - 8, x + 9, y + 6, z + 9) || []).some(e => e.hostile || e.monster);
-    return false;
+    if (typeof E.forNear !== 'function') return false;
+    // (a monster whose box reaches within 8 across and 5 up or down of the bed's foot; a zombified piglin only when it is cross with you)
+    const cx = x + 0.5, cz = z + 0.5;
+    let found = false;
+    E.forNear(cx, cz, 10, e => {
+      if (found || e.removed || e.dead || e.constructor.CATEGORY !== 'monster' || NOT_MONSTERS.has(e.type)) return;
+      if (e.type === 'zombified_piglin' && !(e.angerT > 0 && e.angryAt && e.angryAt.isPlayer)) return;
+      const hw = e.hw || 0.3, h = e.h || 1.8;
+      if (e.pos.x + hw > cx - 8 && e.pos.x - hw < cx + 8 && e.pos.z + hw > cz - 8 && e.pos.z - hw < cz + 8 && e.pos.y + h > y - 5 && e.pos.y < y + 5) found = true;
+    });
+    return found;
   };
   const suffocating = b => b && BLOCKS[b].solid && BLOCKS[b].shape === 'cube';
   const inReach = (x, y, z) => {

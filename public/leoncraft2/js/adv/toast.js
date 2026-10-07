@@ -112,23 +112,26 @@ export const AdvToast = {
     if (!this.shown.length || !g.font) return;
     const now = performance.now();
     for (const s of this.shown) {
-      let v = Math.min(1, (now - s.t0) / SLIDE);
-      if (s.out) v = 1 - Math.min(1, (now - s.out) / SLIDE);
-      v *= v;
+      // (in and out alike: the share of the slide's time gone, squared, as the game eases it)
+      const k = Math.min(1, (now - (s.out || s.t0)) / SLIDE), v = s.out ? 1 - k * k : k * k;
       const x = Math.round(g.width - W * v), y = s.slot * H;
-      drawToast(g, icons, s.a, x, y, now - s.t0);
+      // the toast's own clock starts once it is in
+      drawToast(g, icons, s.a, x, y, Math.max(0, now - s.t0 - SLIDE));
     }
   },
 };
 
+/* black edge, a 2 px grey border and the dark inside; the corners are cut in steps, two at the top
+   left and bottom right and three at the other two, as the game's toast is */
 function box(g, x, y) {
-  // black edge with cut corners, a 2 px grey border, the dark inside
-  g.fill(x + 2, y, x + W - 2, y + 1, 0xFF000000); g.fill(x + 2, y + H - 1, x + W - 2, y + H, 0xFF000000);
-  g.fill(x, y + 2, x + 1, y + H - 2, 0xFF000000); g.fill(x + W - 1, y + 2, x + W, y + H - 2, 0xFF000000);
-  g.fill(x + 1, y + 1, x + 2, y + 2, 0xFF000000); g.fill(x + W - 2, y + 1, x + W - 1, y + 2, 0xFF000000);
-  g.fill(x + 1, y + H - 2, x + 2, y + H - 1, 0xFF000000); g.fill(x + W - 2, y + H - 2, x + W - 1, y + H - 1, 0xFF000000);
-  g.fill(x + 2, y + 1, x + W - 2, y + H - 1, 0xFF555555); g.fill(x + 1, y + 2, x + W - 1, y + H - 2, 0xFF555555);
-  g.fill(x + 4, y + 3, x + W - 4, y + H - 3, 0xFF212121); g.fill(x + 3, y + 4, x + W - 3, y + H - 4, 0xFF212121);
+  const K = 0xFF000000, E = 0xFF555555, F = 0xFF212121;
+  g.fill(x + 2, y, x + W - 3, y + 1, K); g.fill(x + 3, y + H - 1, x + W - 2, y + H, K);
+  g.fill(x, y + 2, x + 1, y + H - 3, K); g.fill(x + W - 1, y + 3, x + W, y + H - 2, K);
+  g.fill(x + 1, y + 1, x + 2, y + 2, K); g.fill(x + W - 3, y + 1, x + W - 2, y + 2, K); g.fill(x + W - 2, y + 2, x + W - 1, y + 3, K);
+  g.fill(x + 1, y + H - 3, x + 2, y + H - 2, K); g.fill(x + 2, y + H - 2, x + 3, y + H - 1, K); g.fill(x + W - 2, y + H - 2, x + W - 1, y + H - 1, K);
+  g.fill(x + 2, y + 1, x + W - 3, y + 2, E); g.fill(x + 1, y + 2, x + W - 2, y + 3, E); g.fill(x + 1, y + 3, x + W - 1, y + H - 3, E);
+  g.fill(x + 2, y + H - 3, x + W - 1, y + H - 2, E); g.fill(x + 3, y + H - 2, x + W - 2, y + H - 1, E);
+  g.fill(x + 4, y + 3, x + W - 4, y + H - 3, F); g.fill(x + 3, y + 4, x + W - 3, y + H - 4, F);
 }
 function drawToast(g, icons, a, x, y, age) {
   box(g, x, y);
