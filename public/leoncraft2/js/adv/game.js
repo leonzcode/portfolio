@@ -28,6 +28,9 @@ import { Y0 } from '../world-const.js?v=24';
 import { register, gameRule } from '../commands.js?v=24';
 import { Living } from '../entities/entity.js?v=24';
 import { TYPES } from '../entities/mobs.js?v=24';
+import { AbstractHorse } from '../entities/mobs4.js?v=24';
+import { Allay } from '../entities/mobs6.js?v=24';
+import { WindCharge } from '../entities/mobs7.js?v=24';
 import { Merchant, WanderingTrader, CurableZombieVillager } from '../entities/merchant.js?v=24';
 import { FishingBobber } from '../entities/items2.js?v=24';
 import { EnderDragon } from '../dim/dragon.js?v=24';
@@ -67,7 +70,32 @@ export function advWorld(g, saved) {
     lev: null, lava: null, riding: null, tamed: new WeakMap(), beacons: new Set(), sneak: 0, sneakAt: null, gate: false, slide: 0 };
   P.onMade(made);
   wrapGame(g);
+  wrapWorldwide();
   advParts(g);
+}
+// what the page shares between worlds: the structures (a suspicious block brushed), a crafter's craft
+function wrapWorldwide() {
+  const L = window.__lc2;
+  if (!L || L.__adv) return;
+  L.__adv = true;
+  const St = L.structures;
+  if (St && St.findAt) {
+    const findAt = St.findAt.bind(St);
+    St.findAt = (x, y, z) => {
+      const e = St.chestAt ? St.chestAt(x, y, z) : null;
+      if (e && e.table) fire('player_generates_container_loot', { table: e.table });
+      return findAt(x, y, z);
+    };
+  }
+  // a crafter's craft is heard by everyone within 17 blocks (Crafters Crafting Crafters)
+  const obs = L.onBlockSound;
+  L.onBlockSound = (kind, x, y, z, made) => {
+    if (obs) obs(kind, x, y, z, made);
+    if (kind === 'craft' && made && G && G.player) {
+      const p = G.player.pos;
+      if (Math.abs(p.x - x - 0.5) <= 17.5 && Math.abs(p.y - y - 0.5) <= 17.5 && Math.abs(p.z - z - 0.5) <= 17.5) fire('crafter_recipe_crafted', { recipe: itemName(made.id), ingredients: [] });
+    }
+  };
 }
 export function advState() { return P ? P.toJSON() : undefined; }
 export function advLeave() { G = null; P = null; S = null; AdvToast.clear(); }
@@ -278,12 +306,12 @@ function wrapGame(g) {
       S.wet = new Map();
       for (const [x, y, z] of [[h.x, h.y, h.z], [h.x + h.face[0], h.y + h.face[1], h.z + h.face[2]]]) S.wet.set(x + ',' + y + ',' + z, FLUID[G.world.get(x, y, z)] === 1);
       S.placedNow = false;
-      const sig = H && H.held ? JSON.stringify(H.held) : '';
+      const sig = useSig(g, H, h);
       const r = useWith();
       // the item had to do something: the block became another, or changed (a door or a lever only swinging aside),
-      // or the stack in the hand changed (used up, filled, linked)
+      // or what the block keeps changed (a disc, a sign's glow), or the stack in the hand or the inventory did (used up, filled, linked)
       const after = blockView(h.x, h.y + Y0, h.z);
-      const moved = after.name !== before.name || (after.meta !== before.meta && !SWINGS.test(after.name)) || (H && H.held ? JSON.stringify(H.held) : '') !== sig;
+      const moved = after.name !== before.name || (after.meta !== before.meta && !SWINGS.test(after.name)) || useSig(g, H, h) !== sig;
       if (r === true && !S.placedNow && tool && moved) {
         const ev = { x: h.x, y: h.y + Y0, z: h.z, tool };
         const env = makeEnv();
@@ -297,6 +325,17 @@ function wrapGame(g) {
   }
 }
 const SWINGS = /(_door|_trapdoor|_fence_gate|^lever|_button|_pressure_plate|^note_block|^repeater|^comparator|^daylight_detector)$/;
+function useSig(g, H, h) {
+  const det = g.details && g.details.map ? g.details.map.get(h.x + ',' + h.y + ',' + h.z) : null;
+  // (its plain fields only: what it holds and how it is written, not the meshes that draw it)
+  let d = '';
+  if (det) for (const k of Object.keys(det)) {
+    const v = det[k];
+    if (v === null || typeof v !== 'object') d += k + '=' + v + ';';
+    else if (!v.isObject3D && (k === 'disc' || k === 'front' || k === 'back' || k === 'item' || k === 'book')) { try { d += k + '=' + JSON.stringify(v) + ';'; } catch (e) { /* not plain */ } }
+  }
+  return (H && H.held ? JSON.stringify(H.held) : '') + '|' + invSig(g.inv) + '|' + d;
+}
 function placedBlock(list, tool) {
   if (!S) return;
   S.placedNow = true;
@@ -341,10 +380,12 @@ export function advParts(g) {
     E.interact = e => {
       if (!e || e.removed || e.dead) return interact(e);
       const held = g.inv && g.inv.slots[g.inv.selected] ? stackView(g.inv.slots[g.inv.selected]) : null;
-      const type = e.type, body = e.body ? Object.assign({}, e.body) : null;
+      const type = e.type, body = e.body ? Object.assign({}, e.body) : null, wild = !e.tamed;
       const r = interact(e);
       if (r) {
         try {
+          // tamed by hand (a wolf's bone, a cat's fish, a parrot's seeds)
+          if (wild && e.tamed) tamed(e);
           if (held && held.name === 'water_bucket' && /^(cod|salmon|tropical_fish|pufferfish|axolotl|tadpole)$/.test(type)) fire('filled_bucket', { item: { name: type + '_bucket', count: 1 } });
           if (held && held.name === 'shears' && body && !e.body && type === 'wolf') fire('player_sheared_equipment', { entity: entityView(e), item: stackView(body) });
           fire('player_interacted_with_entity', () => ({ entity: entityView(e), item: held }));
@@ -369,6 +410,20 @@ export function advParts(g) {
   if (sim && !sim.__adv) {
     sim.__adv = true;
     if (sim.sleep) { const sleep = sim.sleep; sim.sleep = (...a) => { const r = sleep(...a); fire('slept_in_bed', {}); return r; }; }
+    // a target struck by your arrow or trident: target_hit, with its signal and how far away you stood
+    const RS = sim.redstone;
+    if (RS && RS.targetHit && !RS.__adv) {
+      RS.__adv = true;
+      const th = RS.targetHit;
+      RS.targetHit = (x, y, z, hx, hy, hz, f, isArrow) => {
+        const pw = th(x, y, z, hx, hy, hz, f, isArrow);
+        if (pw > 0 && E && E.list) {
+          const mine = E.list.find(e => (e.type === 'arrow' || e.type === 'spectral_arrow' || e.type === 'trident' || e.type === 'snowball' || e.type === 'egg') && e.owner && e.owner.isPlayer && Math.abs(e.pos.x - hx) < 2 && Math.abs(e.pos.y - hy) < 2 && Math.abs(e.pos.z - hz) < 2);
+          if (mine) fire('target_hit', { signal_strength: pw, projectile: { type: mine.type, x: hx, y: hy + Y0, z: hz, equipment: {} } });
+        }
+        return pw;
+      };
+    }
     const W = sim.weather;
     if (W && W.strike && !W.__adv) {
       W.__adv = true;
@@ -417,8 +472,17 @@ function wrapCombat(g, E) {
     }
     return r;
   };
-  // a spear's charge: how many it hit at once (spear_mobs)
-  if (C.charge && C.chargeHits === undefined && typeof C.spearCharge === 'function') { /* no charge counting here */ }
+  // a spear's charge: how many it has hit in this one charge (spear_mobs), counted up one at a time
+  if (C.chargeTick) {
+    const ct = C.chargeTick.bind(C);
+    C.chargeTick = (s, u) => {
+      const n0 = u && u.hits ? u.hits.size : 0;
+      const r = ct(s, u);
+      const n1 = u && u.hits ? u.hits.size : 0;
+      for (let k = n0 + 1; k <= n1; k++) fire('spear_mobs', { count: k });
+      return r;
+    };
+  }
 }
 function killed(e, src) {
   const dmg = damageOf(src);
@@ -490,6 +554,30 @@ wrapProto(Living, 'hurt', function (orig, a) {
     const e = this;
     fire('player_hurt_entity', () => ({ entity: entityView(e), damage: { type: damageOf(src), dealt: amount, taken: Math.max(0, hp - Math.max(0, e.health)) } }));
   }
+  return r;
+});
+// a wind charge's burst that throws you: remembered until you land (fall_after_explosion)
+wrapProto(WindCharge, 'burst', function (orig, a) {
+  const P = this.m && this.m.P, v0 = P ? [P.vel.x, P.vel.y, P.vel.z] : null, type = this.type;
+  const r = orig.apply(this, a);
+  if (P && G && G.player === P && (P.vel.x !== v0[0] || P.vel.y !== v0[1] || P.vel.z !== v0[2])) launched(type);
+  return r;
+});
+// an allay bringing what it collected to your feet: thrown_item_picked_up_by_player
+wrapProto(Allay, 'aiStep', function (orig, a) {
+  const n = this.carry | 0, item = this.equip && this.equip.mainhand;
+  const r = orig.apply(this, a);
+  if (n > 0 && !(this.carry | 0) && G) {
+    const v = this;
+    fire('thrown_item_picked_up_by_player', () => ({ entity: entityView(v), item: { name: typeof item === 'string' ? item : itemName(item && item.id), count: n } }));
+  }
+  return r;
+});
+// a horse, donkey, mule or llama giving in to its rider: tame_animal
+wrapProto(AbstractHorse, 'tameHorse', function (orig, a) {
+  const wild = !this.tamed;
+  const r = orig.apply(this, a);
+  if (wild && this.tamed) tamed(this);
   return r;
 });
 // a trade made: villager_trade
@@ -694,7 +782,14 @@ function rideTick(g, p) {
     S.stick = d;
   } else S.stick = undefined;
 }
-// a pet tamed: tame_animal (a mob first seen untamed that is tamed now)
+/* A pet tamed: tame_animal. Taming by hand is seen as it happens (the right click), a horse's or a
+   llama's as it gives in (tameHorse); anything else tamed is noticed here (a mob first seen
+   untamed that is tamed now). */
+function tamed(e) {
+  if (!S || S.tamed.get(e) === true) return;
+  S.tamed.set(e, true);
+  fire('tame_animal', { entity: entityView(e) });
+}
 function tameTick(g) {
   const E = g.entities;
   if (!E || !E.list || !P.wants('tame_animal')) return;
@@ -702,7 +797,7 @@ function tameTick(g) {
     if (e.tamed === undefined || e.dead || e.removed) continue;
     const was = S.tamed.get(e);
     if (was === undefined) { S.tamed.set(e, !!e.tamed); continue; }
-    if (!was && e.tamed) { S.tamed.set(e, true); fire('tame_animal', { entity: entityView(e) }); }
+    if (!was && e.tamed) tamed(e);
     else if (was && !e.tamed) S.tamed.set(e, false);
   }
 }
