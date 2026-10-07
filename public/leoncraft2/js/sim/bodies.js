@@ -9,17 +9,140 @@
    blast lights it) explodes with power 4, a sixteenth of a block above its
    feet. Pushed about by other explosions.
 
-   Falling blocks (sand, gravel, concrete powder, anvils...): a block with
-   nothing under it is looked at 2 ticks later and, still unsupported, falls
-   the same way, landing as the block again (or dropping as an item where it
-   cannot stand).
+   Falling blocks: when one starts to fall, on the game's scheduled ticks
+   (installFalling below); the falling itself is an entity
+   (entities/fallingblock.js), as in the game. Only a world with no mobs, or
+   an old save's falling block, falls as one of these bodies.
+     sand, red sand, gravel, concrete powder, anvils, suspicious sand and
+     gravel: placed, or a neighbour changing, ticks them 2 ticks later (the
+     dragon egg 5); then with nothing under them (air, fire, a fluid,
+     anything replaceable) they fall
+     concrete powder sets as concrete the moment it is placed in or beside
+     water, or water comes next to it (not water under it alone)
+     the dragon egg teleports when clicked (right click, or a left click in
+     survival): up to 1000 tries at a spot up to 15 across and 7 up or down,
+     the first one that is air
+     pointed dripstone: hanging (pointing down) with nothing to hang from, it
+     falls 2 ticks later with every piece under it, the tip hurting what it
+     lands on (the column's length a block of fall, at least 6); standing
+     (pointing up) on nothing, it breaks a tick later
+     scaffolding: its distance is how many blocks sideways it is from a
+     column standing on something solid (straight up a column keeps the
+     column's), worked out a tick after it or a neighbour changes; at 7 it
+     breaks, or falls if it was already at 7 (as a piece placed out of reach does)
 
    Drawn with the block's own model and the held-block material, so they take
    the same light and fog as the world.
 --------------------------------------------------------------------------- */
 import { B, BLOCKS, FLUID } from '../blocks.js?v=22';
 import { blockGeometry } from '../render/blockmesh.js?v=22';
+import { FALLS, free as fallsInto, touchesWater, concreteOf } from '../entities/fallingblock.js?v=22';
+import { H } from '../world-const.js?v=22';
 const THREE = window.THREE;
+
+/* ---- when blocks fall (the game's FallingBlock, PointedDripstoneBlock, ScaffoldingBlock, DragonEggBlock) ---- */
+const sturdy = b => !!b && !!BLOCKS[b] && BLOCKS[b].solid && BLOCKS[b].shape === 'cube';
+function installFalling(sim, bodies) {
+  const E = () => sim.game && sim.game.entities;
+  // a block leaving its cell to fall: the mobs' falling block, or one of ours where there are no mobs
+  const fall = (x, y, z, b, m) => { const e = E(); if (e && e.fallBlock) return e.fallBlock(x, y, z, b, m); return bodies.fall(x, y, z, b, m); };
+  sim.fallBlock = fall;
+  const EGG = B.dragon_egg;
+  for (let id = 1; id < FALLS.length; id++) {
+    if (!FALLS[id] || !BLOCKS[id]) continue;
+    const delay = id === EGG ? 5 : 2, concrete = concreteOf(id);
+    sim.on(id, {
+      onPlace(s, x, y, z) {
+        if (concrete && touchesWater(s.w, x, y, z)) { s.set(x, y, z, concrete, 0); return; }
+        s.schedule(x, y, z, delay);
+      },
+      neighbor(s, x, y, z) {
+        if (concrete && touchesWater(s.w, x, y, z)) { s.set(x, y, z, concrete, 0); return; }
+        s.schedule(x, y, z, delay);
+      },
+      tick(s, x, y, z, m) { if (y > 0 && fallsInto(s.get(x, y - 1, z))) fall(x, y, z, id, m); },
+    });
+  }
+
+  // the dragon egg: a click sends it somewhere near
+  const teleport = (s, x, y, z) => {
+    const b = s.get(x, y, z), m = s.meta(x, y, z), r = n => Math.floor(Math.random() * n);
+    for (let i = 0; i < 1000; i++) {
+      const nx = x + r(16) - r(16), ny = y + r(8) - r(8), nz = z + r(16) - r(16);
+      if (ny < 0 || ny >= H || s.get(nx, ny, nz) || !s.w.loaded(nx, nz)) continue;
+      // the portal's purple specks along the way
+      const P = s.renderer && s.renderer.particles;
+      if (P && P.spawn) for (let k = 0; k < 128; k++) {
+        const t = k / 127, j = () => (Math.random() - 0.5);
+        P.spawn(x + (nx - x) * t + 0.5 + j(), y + (ny - y) * t + j() + 0.5, z + (nz - z) * t + 0.5 + j(), j() * 0.4, j() * 0.4, j() * 0.4,
+          { colour: 0xb040e0, size: 0.08, life: 20 + r(20), gravity: 0, physics: false });
+      }
+      s.set(nx, ny, nz, b, m);
+      s.set(x, y, z, 0, 0);
+      return true;
+    }
+    return false;
+  };
+  if (EGG !== undefined) sim.on(EGG, { use(s, x, y, z) { teleport(s, x, y, z); return true; } });
+  // a left click on a block in survival: the dragon egg teleports instead of being mined (interact.js)
+  sim.attacked = hit => (hit && hit.b === EGG && EGG !== undefined ? (teleport(sim, hit.x, hit.y, hit.z), true) : false);
+
+  // pointed dripstone (meta 5 points down, 4 up): held from behind its point, or by more dripstone pointing the same way
+  const DRIP = B.pointed_dripstone;
+  if (DRIP !== undefined) {
+    const down = m => (m & 7) === 5;
+    const held = (s, x, y, z, m) => {
+      const by = down(m) ? y + 1 : y - 1, b = s.get(x, by, z);
+      return sturdy(b) || (b === DRIP && down(s.meta(x, by, z)) === down(m));
+    };
+    const check = (s, x, y, z, m) => { if (!held(s, x, y, z, m)) s.schedule(x, y, z, down(m) ? 2 : 1); };
+    sim.on(DRIP, {
+      onPlace: check,
+      neighbor: check,
+      tick(s, x, y, z, m) {
+        if (held(s, x, y, z, m)) return;
+        if (!down(m)) { s.destroy(x, y, z); return; }
+        // the whole hanging column falls; the lowest piece is its tip, which hurts
+        let n = 0;
+        for (let yy = y; yy > 0 && s.get(x, yy, z) === DRIP && down(s.meta(x, yy, z)); yy--) n++;
+        for (let k = 0; k < n; k++) {
+          const yy = y - k, e = fall(x, yy, z, DRIP, s.meta(x, yy, z));
+          if (e && k === n - 1 && e.hurtsEntities !== undefined) { e.hurtsEntities = true; e.perBlock = Math.max(1 + k, 6); e.maxDamage = 40; e.damageType = 'falling_stalactite'; }
+        }
+      },
+    });
+  }
+
+  // scaffolding: meta 0-7 its distance, 8 the bottom piece (a frame round its foot)
+  const SC = B.scaffolding;
+  if (SC !== undefined) {
+    const distance = (s, x, y, z) => {
+      const below = s.get(x, y - 1, z);
+      let i = 7;
+      if (below === SC) i = s.meta(x, y - 1, z) & 7;
+      else if (sturdy(below)) return 0;
+      for (const [dx, dz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        if (s.get(x + dx, y, z + dz) !== SC) continue;
+        i = Math.min(i, (s.meta(x + dx, y, z + dz) & 7) + 1);
+        if (i === 1) break;
+      }
+      return i;
+    };
+    const state = (s, x, y, z) => { const d = distance(s, x, y, z); return d | (d !== 0 && s.get(x, y - 1, z) !== SC ? 8 : 0); };
+    sim.scaffoldDistance = (x, y, z) => distance(sim, x, y, z);
+    // placed: its distance from the start (one placed out of reach is already at 7, and falls)
+    (sim.placers || (sim.placers = [])).push(list => list.map(e => (e[3] === SC ? [e[0], e[1], e[2], SC, state(sim, e[0], e[1], e[2])] : e)));
+    sim.on(SC, {
+      onPlace(s, x, y, z) { s.schedule(x, y, z, 1); },
+      neighbor(s, x, y, z) { s.schedule(x, y, z, 1); },
+      tick(s, x, y, z, m) {
+        const n = state(s, x, y, z);
+        if ((n & 7) === 7) { if ((m & 7) === 7) fall(x, y, z, SC, n); else s.destroy(x, y, z); }
+        else if (n !== m) s.set(x, y, z, SC, n);
+      },
+    });
+  }
+}
 
 const W = 0.98, HT = 0.98;
 export class Bodies {
@@ -32,15 +155,7 @@ export class Bodies {
     this.geo = new Map();
     this.white = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, depthWrite: false });
     sim.primeTnt = (x, y, z, by, fuse) => this.prime(x, y, z, by, fuse);
-    // things that fall
-    const self = this;
-    for (const d of BLOCKS) if (d && (d.falls || /_concrete_powder$/.test(d.name) || /anvil$/.test(d.name) || d.name === 'dragon_egg')) {
-      sim.on(d.id, {
-        onPlace(s, x, y, z) { s.schedule(x, y, z, 2); },
-        neighbor(s, x, y, z) { s.schedule(x, y, z, 2); },
-        tick(s, x, y, z, m) { if (y > 0 && self.free(x, y - 1, z)) self.fall(x, y, z, d.id, m); },
-      });
-    }
+    installFalling(sim, this);
     // drawn between ticks, on the screen's own clock
     this.lastTick = performance.now();
     const frame = () => {

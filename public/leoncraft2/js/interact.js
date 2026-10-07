@@ -136,6 +136,8 @@ export class Interactor {
   startMining() {
     const h = this.target;
     if (!h || (this.locked && this.locked(h.x, h.y, h.z))) { this.mining = null; return; }
+    // a block that answers a punch (the dragon egg teleports away: sim/bodies.js)
+    if (this.sim && this.sim.attacked && this.sim.attacked(h)) { this.mining = null; this.target = null; return; }
     // with the hand's rules, t runs from 0 to 1 by the tool's progress a tick; without, seconds by hand
     const total = this.hand.progress ? 1 : breakTime(BLOCKS[h.b]);
     this.mining = { x: h.x, y: h.y, z: h.z, b: h.b, t: 0, total, ticks: 0, key: this.hand.key ? this.hand.key() : '' };
