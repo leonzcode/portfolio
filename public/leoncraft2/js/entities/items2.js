@@ -387,7 +387,7 @@ export class FishingBobber extends Projectile {
     return wear;
   }
   gone() { this.remove(); if (this.line) { if (this.line.parent) this.line.parent.remove(this.line); this.line.geometry.dispose(); this.line = null; } if (this.m.bobber === this) this.m.bobber = null; }
-  // the line: from the rod's tip (in front of the player's right hand) to the bobber
+  // the line: from the rod's tip (in front of the hand that holds it: the right, or the left with the rod in the off hand) to the bobber
   lineTick() {
     const m = this.m, P = m.P;
     if (!this.line) {
@@ -397,10 +397,12 @@ export class FishingBobber extends Projectile {
       this.line.frustumCulled = false;
       if (m.group) m.group.add(this.line);
     }
-    // too far, or the rod put away: in it comes
-    if (P && (this.dist2(P.pos.x, P.pos.y, P.pos.z) > 32 * 32 || m.heldName() !== 'fishing_rod')) { this.gone(); return; }
-    const a = this.line.geometry.attributes.position.array, s = Math.sin(P.yaw), c = Math.cos(P.yaw);
-    const hx = P.pos.x - c * 0.35 - s * 0.8, hy = P.pos.y + 1.62 + 0.25, hz = P.pos.z + s * 0.35 - c * 0.8;
+    // too far, or no rod left in either hand: in it comes (the game's shouldStopFishing looks at both hands)
+    const inMain = m.heldName() === 'fishing_rod';
+    if (P && (this.dist2(P.pos.x, P.pos.y, P.pos.z) > 32 * 32 || !(inMain || m.offhandName() === 'fishing_rod'))) { this.gone(); return; }
+    const a = this.line.geometry.attributes.position.array, s = Math.sin(P.yaw), c = Math.cos(P.yaw), side = inMain ? 1 : -1;
+    // (the view's right is (cos yaw, -sin yaw))
+    const hx = P.pos.x + c * 0.35 * side - s * 0.8, hy = P.pos.y + 1.62 + 0.25, hz = P.pos.z - s * 0.35 * side - c * 0.8;
     for (let i = 0; i < 9; i++) {
       const t = i / 8, sag = Math.sin(t * PI) * 0.3;
       a[i * 3] = hx + (this.pos.x - hx) * t; a[i * 3 + 1] = hy + (this.pos.y + 0.1 - hy) * t - sag; a[i * 3 + 2] = hz + (this.pos.z - hz) * t;
