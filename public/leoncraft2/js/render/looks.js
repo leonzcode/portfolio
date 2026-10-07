@@ -99,7 +99,8 @@ const SHADOW_SLICES = { low: 8, medium: 6, high: 3, ultra: 1 };
 const SHADOW_TAPS = { low: 4, medium: 4, high: 8, ultra: 16 };
 const WAVE = { off: 0, low: 0.5, high: 1 };
 // how many new shader programs are built at once while a look is coming (applyLook)
-const COMPILE_AT_ONCE = (navigator.hardwareConcurrency || 4) >= 12 ? 2 : 1;
+// (each takes a core or two in the browser while it is built; the game's own workers want theirs)
+const COMPILE_AT_ONCE = (n => n >= 16 ? 3 : n >= 8 ? 2 : 1)(navigator.hardwareConcurrency || 4);
 const SUN_TINT = { warm: [1.12, 0.97, 0.78], natural: [1.06, 1.0, 0.88], cool: [0.98, 1.0, 1.04] };
 
 // Shaders OFF: the game's own look
@@ -200,18 +201,18 @@ export function applyLook(R, look, first) {
     R.lookPending = null;
     finishLook(R, pending.look, false, prep);
   };
-  /* Handed to the graphics card one at a time (two on a machine with a dozen
-     cores or more), the next only when one of those is built. The browser
-     compiles each new program on a core of its own, and the first time a
-     look is chosen on a machine none of them are in its cache yet: the
-     forty-odd of a look handed over at once (three a frame) took every core
-     for half a second and more, the browser's own drawing starved with
+  /* Handed to the graphics card one or two at a time (COMPILE_AT_ONCE, by
+     the machine's cores), the next only when one of those is built. The
+     browser compiles each new program on a core of its own, and the first
+     time a look is chosen on a machine none of them are in its cache yet:
+     the forty-odd of a look handed over at once (three a frame) took every
+     core for half a second and more, the browser's own drawing starved with
      them, and the game stopped for that long, from a third of a second to
-     two and a half with the machine busy. One at a time the new look takes
-     a little longer to come (the old one is drawn meanwhile) and the frames
-     keep coming. A program that is in the cache already (an earlier look's,
-     or the browser's own copy from another day) is ready at once and holds
-     no place in the line. */
+     two and a half with the machine busy. A few at a time the new look takes
+     a little longer to come the first time (one to two seconds; the old one
+     is drawn meanwhile) and the frames keep coming. A program that is in the
+     cache already (an earlier look's, or the browser's own copy from another
+     day) is ready at once and holds no place in the line. */
   /* Each frame, the programs being built are asked whether they are done:
      every such question waits for the graphics process to catch up, which is
      why there are only ever one or two to ask (three.js's own compileAsync
