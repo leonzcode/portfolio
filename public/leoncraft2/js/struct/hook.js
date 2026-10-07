@@ -186,6 +186,8 @@ export function structureMessage(structs, m) {
       }
       case 'in': return { list: S.structuresIn(m.cx, m.cz, m.dim).map(s => ({ type: s.type, cx: s.cx, cz: s.cz, x: s.x, y: s.y, z: s.z })) };
       case 'strongholds': return { list: S.strongholds(m.n || 3) };
+      // the biome at a block (y in the game's terms), caves included, as the generator has it (the advancements' biome checks)
+      case 'biome': return { biome: S.src && S.src.biome ? S.src.biome(m.x, m.y, m.z) || null : null };
       case 'pieces': {
         const s = S.startFor(m.set, m.cx, m.cz);
         return { list: s ? S.pieces(s).map(p => ({ type: p.type, box: p.box.toArray(), dir: p.dir })) : [] };

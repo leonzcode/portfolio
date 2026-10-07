@@ -180,6 +180,15 @@ export function setItemLayers(first) {
     it.faces = [L, L, L, L, L, L];
     it.icon = 'item_' + it.name;
   }
+  // an item with no picture in the strip whose picture a block shows as its icon (the water and lava buckets): that one
+  for (const d of BLOCKS) {
+    const n = d && typeof d.icon === 'string' && d.icon.startsWith('item_') && d.iconLayer !== undefined && d.iconLayer >= 0 ? d.icon.slice(5) : null;
+    const it = n && I[n] !== undefined ? ITEMS[I[n]] : null;
+    if (!it || it.block || it.iconLayer !== undefined) continue;
+    it.iconLayer = d.iconLayer;
+    it.faces = [d.iconLayer, d.iconLayer, d.iconLayer, d.iconLayer, d.iconLayer, d.iconLayer];
+    it.icon = d.icon;
+  }
 }
 
 // the texture layer of a picture in the item strip by name ('xp_orb_3'), or -1 before the textures land

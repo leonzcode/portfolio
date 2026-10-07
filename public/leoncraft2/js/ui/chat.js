@@ -20,8 +20,9 @@ export class Chat {
     this.dirty = true;
     this.under = true;      // part of the HUD: a screen (the inventory, a chest) covers it, as in the game
   }
-  add(text, colour = 0xFFFFFF) {
-    for (const part of String(text).split('\n')) this.lines.push({ text: part, colour, at: performance.now() });
+  // extra.hover: { text, lines } a part of the line with a tooltip under the mouse while chat is open (an advancement's name)
+  add(text, colour = 0xFFFFFF, extra) {
+    for (const part of String(text).split('\n')) this.lines.push({ text: part, colour, at: performance.now(), hover: extra && extra.hover || null });
     if (this.lines.length > KEEP) this.lines.splice(0, this.lines.length - KEEP);
     this.dirty = true;
   }
@@ -33,8 +34,28 @@ export class Chat {
     if (this.dirty) { this.dirty = false; return true; }
     return false;
   }
+  // with chat open: the tooltip of the part of a line under the mouse, if it has one
+  hoverAt(g, mx, my) {
+    const f = g.font;
+    let y = g.height - 16, n = 0;
+    for (let i = this.lines.length - 1; i >= 0 && n < 20; i--) {
+      const l = this.lines[i], parts = f.wrap(l.text, WIDTH);
+      for (let k = parts.length - 1; k >= 0 && n < 20; k--, n++, y -= LINE) {
+        if (!l.hover || my < y - LINE || my >= y) continue;
+        const at = parts[k].indexOf(l.hover.text);
+        if (at < 0) continue;
+        const x0 = 2 + f.width(parts[k].slice(0, at)), x1 = x0 + f.width(l.hover.text);
+        // (wrapped as the game wraps hover text: half the screen, or 200 at least; each line keeps its colour)
+        if (mx >= x0 && mx < x1) return l.hover.lines.flatMap(s => { const c = /^§./.test(s) ? s.slice(0, 2) : ''; return f.wrap(s, Math.max(g.width / 2, 200)).map((p, j) => (j && c && !p.startsWith('§') ? c + p : p)); });
+      }
+    }
+    return null;
+  }
   draw(g) {
     if (!this.lines.length || (g.hideHud && !this.open)) return;
+    // under a menu that darkens and blurs the world (the game menu, the advancements) the chat is part of what it hides
+    const s = g.screen;
+    if (s && !this.open && g.inGame && g.backgroundKind && g.backgroundKind(s.background) === 'world') return;
     const f = g.font, now = performance.now();
     // 40 above the bottom, open or not (the game's lines stay put; the line you type covers the hotbar's foot)
     const bottom = g.height - 40;
@@ -60,6 +81,8 @@ export class Chat {
       y -= LINE;
     }
     ctx.globalAlpha = 1;
+    // the hover of the part under the mouse, over the lines (ChatScreen finds it)
+    if (this.open && this.tip) g.tooltip(this.tip.lines, this.tip.x, this.tip.y);
   }
 }
 
@@ -124,10 +147,12 @@ export class ChatScreen extends Screen {
     else if (ctx.sendChat) ctx.sendChat(v);
     else chat.add(`<${ctx.playerName}> ${v}`);
   }
-  onClose() { this.chat.open = false; this.chat.dirty = true; this.gui._blurText && this.gui._blurText(); }
+  onClose() { this.chat.open = false; this.chat.tip = null; this.chat.dirty = true; this.gui._blurText && this.gui._blurText(); }
   render(g, mx, my, dt) {
     const W = this.width, H = this.height, f = g.font;
     g.fill(2, H - 14, W - 2, H - 2, 0x80000000);
+    const tip = this.chat.hoverAt && this.chat.hoverAt(g, mx, my);
+    this.chat.tip = tip ? { lines: tip, x: mx, y: my } : null;
     const shown = f.trim(this.value, W - 12, true);
     const x = g.text(shown, 4, H - 12, 0xFFFFFF);
     if ((((g.now - this.field.focusTime) / 300) | 0) % 2 === 0) g.text('_', x, H - 12, 0xFFFFFF);

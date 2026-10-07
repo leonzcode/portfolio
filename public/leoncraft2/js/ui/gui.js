@@ -63,7 +63,7 @@ export const DEFAULT_KEYS = {
   inventory: 'KeyE', drop: 'KeyQ', perspective: 'F5', swapOffhand: 'KeyF',
   hotbar1: 'Digit1', hotbar2: 'Digit2', hotbar3: 'Digit3', hotbar4: 'Digit4', hotbar5: 'Digit5',
   hotbar6: 'Digit6', hotbar7: 'Digit7', hotbar8: 'Digit8', hotbar9: 'Digit9',
-  hideGui: 'F1', debug: 'F3',
+  hideGui: 'F1', debug: 'F3', advancements: 'KeyL',
 };
 
 export const DEFAULT_OPTIONS = {
