@@ -883,9 +883,12 @@ async function boot() {
     MAPS.save();
     if (game.containers.dirty) { game.containers.dirty = false; game.saves[game.dim].writeExtra('containers', game.containers.toJSON()); }
     if (game.details && game.details.dirty) { game.details.dirty = false; game.saves[game.dim].writeExtra('details', game.details.toJSON()); }
-    if (game.entities) EntityStore.save(entityKey(game.entry, game.dim), game.entities.toJSON());
+    // (waited for as well: a page reloaded straight after, as Done on the resource packs does, could cut the write off
+    // and lose what moved since the last save, a falling block among them)
+    const ents = game.entities ? EntityStore.save(entityKey(game.entry, game.dim), game.entities.toJSON()) : null;
     // the world's changes go to its own dimension's save
     await game.saves[game.dim].flush(game.world.edits);
+    if (ents) await ents;
   }
   async function quitToTitle() {
     if (!game) return;
