@@ -4,7 +4,7 @@ Leoncraft 2 - measure the game's own sounds, as numbers only.
 Reads the vanilla sounds from your own Minecraft installation (the hashed
 files under .minecraft/assets/objects, found through the newest asset index)
 and writes, for every sound event that plays short recordings, what those
-recordings are like: how long they sound, how fast they rise and fall, how
+recordings are like as it plays them (at each one's own pitch): how long they sound, how fast they rise and fall, how
 loud they are, where their energy sits in pitch and the shape of their
 spectrum (soundlib.features), averaged over the event's recordings with the
 volume sounds.json plays each at. Also each event's attenuation distance,
@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from soundlib import decode, features
+from soundlib import decode, features, resample
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'sound_targets.json')
@@ -62,11 +62,17 @@ def main():
             plan[ev] = out
     print('index', index, ':', len(plan), 'events,', len(files), 'recordings')
 
+    # each recording as sounds.json plays it: at its own pitch (a file can be listed at several)
+    pitches = {}
+    for entries in plan.values():
+        for s in entries:
+            pitches.setdefault(s['name'], set()).add(round(float(s.get('pitch', 1.0)), 3))
     feats = {}
 
     def one(n):
         try:
-            return n, features(decode(files[n]))
+            x = decode(files[n])
+            return n, {p: features(resample(x, p) if abs(p - 1) > 1e-3 else x) for p in pitches[n]}
         except Exception as ex:
             return n, None
 
@@ -78,7 +84,7 @@ def main():
 
     out = {'index': index, 'events': {}}
     for ev, entries in plan.items():
-        fs = [(feats[s['name']], s) for s in entries if feats.get(s['name'])]
+        fs = [(feats[s['name']][round(float(s.get('pitch', 1.0)), 3)], s) for s in entries if feats.get(s['name'])]
         if not fs:
             continue
         med = lambda k: float(np.median([f[k] for f, s in fs]))
