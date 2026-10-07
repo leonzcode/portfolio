@@ -242,13 +242,15 @@ function heartState(x, y, z, m) {
   const t = (((G.time | 0) % 24000) + 24000) % 24000;
   return t >= 13000 && t < 23000 ? 'awake' : 'dormant';
 }
-// smoke under a hive: a lit campfire within five blocks below
+/* smoke under a hive, as the game looks for it: down five blocks, a lit campfire (bit 4 is a campfire
+   put out); the first block in the way ends the search, and counts only with a lit campfire under it */
 function smokey(at) {
   const w = G.world, x = Math.floor(at.x), y = Math.floor(at.y) - Y0, z = Math.floor(at.z);
+  const lit = yy => { const d = BLOCKS[w.get(x, yy, z)]; return !!(d && /campfire$/.test(d.name) && !(w.meta(x, yy, z) & 4)); };
   for (let k = 1; k <= 5; k++) {
+    if (lit(y - k)) return true;
     const d = BLOCKS[w.get(x, y - k, z)];
-    if (d && /campfire$/.test(d.name)) return !(w.meta(x, y - k, z) & 8);
-    if (d && d.solid && !/campfire$/.test(d.name) && d.name !== 'hay_block') return false;
+    if (d && d.solid) return lit(y - k - 1);
   }
   return false;
 }
