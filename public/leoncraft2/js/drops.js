@@ -318,7 +318,9 @@ export class Drops {
       // join a stack of the same item close by: every 2 ticks of its age when it crossed into another block, else every 40
       const f = Math.floor;
       const crossed = f(e.pos.x) !== f(e.prev.x) || f(e.pos.y) !== f(e.prev.y) || f(e.pos.z) !== f(e.prev.z);
-      if (e.age % (crossed ? 2 : 40) === 0) this._merge(e);
+      // (a stack can take in several before it in the list at once: the loop carries on below where it is now,
+      // not past the end of the shortened list)
+      if (e.age % (crossed ? 2 : 40) === 0) i -= this._merge(e, i);
       if (e.gone) continue;
       // picked up
       if (P && collector && collector.alive && e.delay <= 0) {
@@ -382,9 +384,12 @@ export class Drops {
       }
     }
   }
-  _merge(e) {
+  // e takes in (or goes into) stacks of the same item close by; at: e's place in the list.
+  // Returns how many stacks before that place went, so a loop over the list can keep its place.
+  _merge(e, at = -1) {
     const max = maxStack(e.stack.id);
-    if (e.stack.count >= max) return;
+    let before = 0;
+    if (e.stack.count >= max) return before;
     for (const o of this.items) {
       if (o === e || o.gone || o.fly > 0 || !sameItem(o.stack, e.stack)) continue;
       if (Math.abs(o.pos.x - e.pos.x) > 0.5 + 2 * ITEM_W || Math.abs(o.pos.z - e.pos.z) > 0.5 + 2 * ITEM_W || Math.abs(o.pos.y - e.pos.y) > ITEM_H) continue;
@@ -395,9 +400,11 @@ export class Drops {
       big.delay = Math.max(big.delay, small.delay);
       big.age = Math.min(big.age, small.age);
       const k = this.items.indexOf(small);
+      if (small !== e && k >= 0 && k < at - before) before++;
       this._remove(small, k);
-      if (small === e) return;
+      if (small === e) return before;
     }
+    return before;
   }
   _remove(e, i) {
     e.gone = true;

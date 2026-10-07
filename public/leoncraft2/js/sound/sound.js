@@ -51,7 +51,7 @@ let packs = [];                   // the packs, the first that has an event wins
 const listenerPos = { x: 0, y: 0, z: 0 };
 const fwd = { x: 0, y: 0, z: -1 }, upv = { x: 0, y: 1, z: 0 };
 const unlockers = [];
-let subtitleSink = null;          // (key, x, y, z, relative) for the subtitles (subtitles.js)
+let subtitleSink = null;          // (key, x, y, z, relative) for the subtitles (captions.js)
 let onLoad = [];
 
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -268,6 +268,12 @@ export const Sound = {
   onGesture(fn) { unlockers.push(fn); },
   whenReady(fn) { if (ctx) fn(ctx); else onLoad.push(fn); },
   setPacks(list) { packs = list.filter(Boolean); },
+  /* Fetch what an event plays ahead of time, playing nothing (a bank of mob
+     voices as the first of those mobs comes near, so its first word is not lost). */
+  prefetch(event) {
+    const r = pick(event);
+    if (r && !r.stream && r.pack && r.pack.load && !r.pack.get(r.name)) r.pack.load(r.name);
+  },
   volume(cat) { return vol[cat] ?? 1; },
   has(event) { return !!lookup(event)[0]; },
   subtitleOf(event) { const [e] = lookup(event); return e ? e.subtitle || null : null; },

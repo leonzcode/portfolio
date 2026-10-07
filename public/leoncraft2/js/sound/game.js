@@ -88,15 +88,15 @@ export function soundWorld(g) {
   const H = g.hands;
   if (H && !H.__snd) {
     H.__snd = true;
-    H.onEat = id => {
+    hook(H, 'onEat', id => {
       const it = ITEMS[id], food = it && it.food;
       const ev = food && food.drink ? (it.name === 'honey_bottle' ? 'item.honey_bottle.drink' : 'entity.generic.drink') : 'entity.generic.eat';
       // the game's: 0.5 or 1 loud, pitch 1 +- 0.2
       atP(ev, 0.5 + 0.5 * ((R() * 2) | 0), spread() * 0.2 + 1);
-    };
-    H.onBurp = id => { const it = ITEMS[id]; if (it && it.food && !it.food.drink) atP('entity.player.burp', 0.5, R() * 0.1 + 0.9); };
-    H.onToolBreak = s => { const it = ITEMS[s.id]; atP(it && it.name === 'shield' ? 'item.shield.break' : 'entity.item.break', 0.8, 0.8 + R() * 0.4); };
-    H.onHorn = s => atP('item.goat_horn.sound.' + ((s && s.instrument | 0) || 0), 16, 1, 'record');
+    });
+    hook(H, 'onBurp', id => { const it = ITEMS[id]; if (it && it.food && !it.food.drink) atP('entity.player.burp', 0.5, R() * 0.1 + 0.9); });
+    hook(H, 'onToolBreak', s => { const it = ITEMS[s.id]; atP(it && it.name === 'shield' ? 'item.shield.break' : 'entity.item.break', 0.8, 0.8 + R() * 0.4); });
+    hook(H, 'onHorn', s => atP('item.goat_horn.sound.' + ((s && s.instrument | 0) || 0), 16, 1, 'record'));
     wrapHands(g, H, atP);
   }
 }
@@ -141,11 +141,13 @@ function wrapHands(g, H, atP) {
   const useOn = H.useOn.bind(H);
   H.useOn = hit => {
     const w = H.world, before = hit ? w.get(hit.x, hit.y, hit.z) : 0, held = H.held ? ITEMS[H.held.id] : null;
+    const bm = hit ? w.meta(hit.x, hit.y, hit.z) : 0;
     H.__lastUse = hit ? { x: hit.x, y: hit.y, z: hit.z, b: before } : null;
     const r = useOn(hit);
     try {
       if (r && hit) {
         const after = w.get(hit.x, hit.y, hit.z), name = held ? held.name : '';
+        blockUsed(hit, before, bm, after, w.meta(hit.x, hit.y, hit.z), name, at);
         if (after !== before && held) {
           const an = BLOCKS[after] ? BLOCKS[after].name : '', bn = BLOCKS[before] ? BLOCKS[before].name : '';
           if (/_hoe$/.test(name) && /farmland|dirt$/.test(an)) at('item.hoe.till', hit.x, hit.y, hit.z, 1, 1);
@@ -197,6 +199,27 @@ function wrapHands(g, H, atP) {
     return r;
   };
 }
+/* A right click that changed a block in a way with its own sound (the game's,
+   at its volumes and pitches): a composter filling or emptied, a candle on a
+   cake, a respawn anchor setting your spawn, dye or ink on a sign, a pumpkin
+   carved, berries picked. (Changes with any cause, a charge or a candle put
+   out, are heard through the world's onSet below.) */
+function blockUsed(hit, b0, m0, b1, m1, held, at) {
+  const n0 = BLOCKS[b0] ? BLOCKS[b0].name : '', n1 = BLOCKS[b1] ? BLOCKS[b1].name : '';
+  const x = hit.x, y = hit.y, z = hit.z;
+  if (n0 === 'composter' && n1 === 'composter') {
+    const l0 = m0 & 15, l1 = m1 & 15;
+    if (l1 > l0) at('block.composter.fill_success', x, y, z, 1, 1);
+    else if (l0 === 8 && l1 === 0) at('block.composter.empty', x, y, z, 1, 1);
+    else if (l0 < 7 && held) at('block.composter.fill', x, y, z, 0.3, 0.8);
+  } else if (n0 === 'cake' && /candle_cake$/.test(n1)) at('block.cake.add_candle', x, y, z, 1, 1);
+  else if (n0 === 'respawn_anchor' && n1 === 'respawn_anchor' && (m0 & 7) === (m1 & 7) && (m1 & 7) > 0) at('block.respawn_anchor.set_spawn', x, y, z, 1, 1);
+  else if (/_sign$/.test(n0) && /_dye$|^ink_sac$|^glow_ink_sac$/.test(held)) at(held === 'ink_sac' ? 'item.ink_sac.use' : held === 'glow_ink_sac' ? 'item.glow_ink_sac.use' : 'item.dye.use', x, y, z, 1, 1);
+  else if (n0 === 'pumpkin' && n1 === 'carved_pumpkin') at('block.pumpkin.carve', x, y, z, 1, 1);
+  else if ((n0 === 'sweet_berry_bush' && b1 === b0 && (m1 & 3) < (m0 & 3)) || (/^cave_vines/.test(n0) && /^cave_vines/.test(n1) && m1 !== m0 && held !== 'bone_meal'))
+    at(n0 === 'sweet_berry_bush' ? 'block.sweet_berry_bush.pick_berries' : 'block.cave_vines.pick_berries', x, y, z, 1, 0.8 + R() * 0.4);
+}
+
 function equipSound(atP, it) {
   if (!it) return;
   const n = it.name, m = (it.armor && it.armor.material) || '';
@@ -212,8 +235,8 @@ export function soundParts(g) {
   const atP = (e, v = 1, p = 1, cat = 'player') => Sound.play(e, P.pos.x, P.pos.y, P.pos.z, v, p, cat);
   // picking things up (drops.js): an item's pop, an orb's ding
   if (D) {
-    D.onPickup = () => atP('entity.item.pickup', 0.2, Math.min(2, spread() * 1.4 + 2));
-    D.onXp = () => atP('entity.experience_orb.pickup', 0.1, spread() * 0.35 + 0.9);
+    hook(D, 'onPickup', () => atP('entity.item.pickup', 0.2, Math.min(2, spread() * 1.4 + 2)));
+    hook(D, 'onXp', () => atP('entity.experience_orb.pickup', 0.1, spread() * 0.35 + 0.9));
   }
   // blocks breaking (the game's level event 2001: the pieces and the sound, for every cause)
   const R3 = g.renderer || (g.inter && g.inter.renderer) || (g.hands && g.hands.renderer);
@@ -236,24 +259,24 @@ export function soundParts(g) {
   }
   if (sim) {
     // levers, buttons and pressure plates (sim/rsparts.js)
-    sim.onClick = (x, y, z, kind, on) => {
+    hook(sim, 'onClick', (x, y, z, kind, on) => {
       const n = BLOCKS[w.get(x, y, z)] ? BLOCKS[w.get(x, y, z)].name : '';
       if (kind === 'lever') Sound.play('block.lever.click', x + 0.5, y + 0.5, z + 0.5, 0.3, on ? 0.6 : 0.5, 'block');
       else Sound.play(clickEvent(n, kind, on), x + 0.5, y + 0.5, z + 0.5, 1, 1, 'block');
-    };
-    sim.onPiston = (x, y, z, out) => Sound.play(out ? 'block.piston.extend' : 'block.piston.contract', x + 0.5, y + 0.5, z + 0.5, 0.5, R() * (out ? 0.25 : 0.15) + 0.6, 'block');
+    });
+    hook(sim, 'onPiston', (x, y, z, out) => Sound.play(out ? 'block.piston.extend' : 'block.piston.contract', x + 0.5, y + 0.5, z + 0.5, 0.5, R() * (out ? 0.25 : 0.15) + 0.6, 'block'));
     // a note: 2^((note - 12) / 12), loud (3: heard 48 blocks away), on the Jukebox/Note Blocks slider
-    sim.onNote = (x, y, z, inst, note) => Sound.play('block.note_block.' + inst, x + 0.5, y + 0.5, z + 0.5, 3, Math.pow(2, (note - 12) / 12), 'record');
-    sim.onBell = (x, y, z) => Sound.play('block.bell.use', x + 0.5, y + 0.5, z + 0.5, 2, 1, 'block');
-    // any other block's sound by its event (conduits, sculk sensors and shriekers...)
-    sim.onSound = (e, x, y, z, v = 1, p = 1) => Sound.play(e, x + 0.5, y + 0.5, z + 0.5, v, p, 'block');
-    sim.onDispense = (x, y, z, ok) => Sound.play(ok ? 'block.dispenser.dispense' : 'block.dispenser.fail', x + 0.5, y + 0.5, z + 0.5, 1, ok ? 1 : 1.2, 'block');
-    sim.onBurnout = (x, y, z) => Sound.play('block.redstone_torch.burnout', x + 0.5, y + 0.5, z + 0.5, 0.5, 2.6 + spread() * 0.8, 'block');
+    hook(sim, 'onNote', (x, y, z, inst, note) => Sound.play('block.note_block.' + inst, x + 0.5, y + 0.5, z + 0.5, 3, Math.pow(2, (note - 12) / 12), 'record'));
+    // any other block's sound by its event (conduits, sculk sensors and shriekers, trial spawners...)
+    hook(sim, 'onSound', (ev, x, y, z, v = 1, p = 1) => Sound.play(ev, x + 0.5, y + 0.5, z + 0.5, v, p, 'block'));
+    hook(sim, 'onBell', (x, y, z) => Sound.play('block.bell.use', x + 0.5, y + 0.5, z + 0.5, 2, 1, 'block'));
+    hook(sim, 'onDispense', (x, y, z, ok) => Sound.play(ok ? 'block.dispenser.dispense' : 'block.dispenser.fail', x + 0.5, y + 0.5, z + 0.5, 1, ok ? 1 : 1.2, 'block'));
+    hook(sim, 'onBurnout', (x, y, z) => Sound.play('block.redstone_torch.burnout', x + 0.5, y + 0.5, z + 0.5, 0.5, 2.6 + spread() * 0.8, 'block'));
     // lightning: the thunder heard everywhere (volume 10000), the strike near it
-    sim.onLightning = (x, y, z) => {
+    hook(sim, 'onLightning', (x, y, z) => {
       Sound.play('entity.lightning_bolt.thunder', x + 0.5, y, z + 0.5, 10000, 0.8 + R() * 0.2, 'weather');
       Sound.play('entity.lightning_bolt.impact', x + 0.5, y, z + 0.5, 2, 0.5 + R() * 0.2, 'weather');
-    };
+    });
     if (sim.primeTnt && !sim.primeTnt.__snd) {
       const pt = sim.primeTnt;
       sim.primeTnt = (x, y, z, by, fuse) => { Sound.play('entity.tnt.primed', x + 0.5, y, z + 0.5, 1, 1, 'block'); return pt(x, y, z, by, fuse); };
@@ -285,6 +308,7 @@ export function soundParts(g) {
     const f = function (x, y, z, ob, om, nb, nm) {
       if (os) os.call(this, x, y, z, ob, om, nb, nm);
       if (ob === nb && SWING[nb] && ((om ^ nm) & 4) && !(SWING[nb] === 1 && (nm & 8))) doorSound(nb, !!(nm & 4), x, y, z);
+      else if (WATCH[ob] || WATCH[nb]) changed(x, y, z, ob, om, nb, nm);
     };
     f.__snd = true;
     w.onSet = f;
@@ -292,9 +316,17 @@ export function soundParts(g) {
   if (E && !E.__snd) {
     E.__snd = true;
     // creepers: the hiss as they swell
-    E.fuseSound = e => Sound.play('entity.creeper.primed', e.pos.x, e.pos.y + 1, e.pos.z, 1, 0.5, 'hostile');
-    const oe = E.onExplode;
-    E.onExplode = (x, y, z, power) => { explodeSound(x, y, z); if (oe) oe(x, y, z, power); };
+    hook(E, 'fuseSound', e => Sound.play('entity.creeper.primed', e.pos.x, e.pos.y + 1, e.pos.z, 1, 0.5, 'hostile'));
+    hook(E, 'onExplode', (x, y, z) => explodeSound(x, y, z));
+    if (E.interact) {
+      const ia = E.interact.bind(E);
+      E.interact = e => {
+        const held = E.heldName ? E.heldName() : '', type = e && e.type;
+        const r = ia(e);
+        try { if (r && type) interactSound(e, type, held); } catch (err) { console.warn(err); }
+        return r;
+      };
+    }
     wrapCombat(g, E, atP);
   }
   const RL = g.realms;
@@ -313,9 +345,39 @@ export function soundParts(g) {
   // the world's loops belong to the dimension they were in
   amb.stopLoops();
 }
+/* Adds fn to one of the hooks the game offers (drops.onPickup, sim.onClick...),
+   keeping whatever another part of the game set there: both run, the game's
+   own first, and the sound's failure never stops it. Once per object and hook,
+   however often the parts are joined up again. */
+function hook(o, k, fn) {
+  const done = o.__sndHooks || (o.__sndHooks = {});
+  if (done[k]) return;
+  done[k] = true;
+  const prev = o[k];
+  o[k] = function (...a) {
+    const r = prev ? prev.apply(this, a) : undefined;
+    try { fn.apply(this, a); } catch (e) { console.warn(e); }
+    return r;
+  };
+}
 // redstone doors/trapdoors/gates (1: a door, whose upper half is left out)
 const SWING = new Uint8Array(4096);
 for (const d of BLOCKS) if (d) SWING[d.id] = d.shape === 'door' ? 1 : (d.shape === 'trapdoor' || d.shape === 'gate') ? 2 : 0;
+
+// blocks whose changes make a sound whatever made them: 1 sponge, 2 wet sponge, 3 composter, 4 respawn anchor, 5 a candle or candle cake, 6 end gateway
+const WATCH = new Uint8Array(4096);
+for (const d of BLOCKS) if (d) WATCH[d.id] = d.name === 'sponge' ? 1 : d.name === 'wet_sponge' ? 2 : d.name === 'composter' ? 3 : d.name === 'respawn_anchor' ? 4
+  : (d.shape === 'candle' || /candle_cake$/.test(d.name)) ? 5 : d.name === 'end_gateway' ? 6 : 0;
+function changed(x, y, z, ob, om, nb, nm) {
+  const a = (e, v = 1, p = 1) => Sound.play(e, x + 0.5, y + 0.5, z + 0.5, v, p, 'block');
+  const wo = WATCH[ob], wn = WATCH[nb];
+  if (wo === 1 && wn === 2) a('block.sponge.absorb', 0.8, 1);
+  else if (wo === 2 && wn === 1) a('block.wet_sponge.dries', 1, 0.7 + R() * 0.14);
+  else if (wo === 3 && wn === 3 && (nm & 15) === 8 && (om & 15) === 7) a('block.composter.ready', 1, 1);
+  else if (wo === 4 && wn === 4 && (nm & 7) !== (om & 7)) a((nm & 7) > (om & 7) ? 'block.respawn_anchor.charge' : 'block.respawn_anchor.deplete', 1, 1);
+  else if (wo === 5 && wn === 5 && ob === nb && (om & 4) && !(nm & 4)) a('block.candle.extinguish', 1, 1);
+  else if (wn === 6 && wo !== 6) a('block.end_gateway.spawn', 1, 0.5 + R() * 0.4);
+}
 
 function clickEvent(n, kind, on) {
   const set = /^(stone|polished_blackstone)_/.test(n) ? 'stone' : /weighted/.test(n) ? 'metal' : /^cherry_/.test(n) ? 'cherry_wood' : /^bamboo_/.test(n) ? 'bamboo_wood'
@@ -325,6 +387,15 @@ function clickEvent(n, kind, on) {
 }
 // the game's explosion: volume 4 (heard 64 blocks away), pitch 0.56-0.84
 function explodeSound(x, y, z) { Sound.play('entity.generic.explode', x, y, z, 4, (1 + spread() * 0.2) * 0.7, 'block'); }
+
+// a right click on a mob that did something with a sound of its own (the game's, volume 1)
+function interactSound(e, type, held) {
+  const at = ev => Sound.play(ev, e.pos.x, e.pos.y + e.h * 0.5, e.pos.z, 1, 1, 'player');
+  if (held === 'shears' && /^(sheep|mooshroom|snow_golem|bogged)$/.test(type)) at('entity.' + type + '.shear');
+  else if (held === 'bucket' && (type === 'cow' || type === 'mooshroom' || type === 'goat')) at(type === 'goat' ? 'entity.goat.milk' : 'entity.cow.milk');
+  else if (held === 'water_bucket' && /^(cod|salmon|tropical_fish|pufferfish|axolotl|tadpole)$/.test(type)) at(type === 'axolotl' ? 'item.bucket.fill_axolotl' : type === 'tadpole' ? 'item.bucket.fill_tadpole' : 'item.bucket.fill_fish');
+  else if (/_dye$/.test(held) && type === 'sheep') at('item.dye.use');
+}
 
 // the player's swings, bows, crossbows, tridents and shield (combat/combat.js)
 function wrapCombat(g, E, atP) {
@@ -354,7 +425,18 @@ function wrapCombat(g, E, atP) {
   }
   if (C.fireCrossbow) { const fc = C.fireCrossbow.bind(C); C.fireCrossbow = s => { const r = fc(s); atP('item.crossbow.shoot', 1, 1 / (R() * 0.5 + 1.8) + 0.63); return r; }; }
   if (C.loadCrossbow) { const lc = C.loadCrossbow.bind(C); C.loadCrossbow = s => { const r = lc(s); atP('item.crossbow.loading_end', 1, 1 / (R() * 0.5 + 1) + 0.2); return r; }; }
-  if (C.throwTrident) { const tt = C.throwTrident.bind(C); C.throwTrident = s => { const r = tt(s); atP('item.trident.throw', 1, 1); return r; }; }
+  if (C.throwTrident) {
+    const tt = C.throwTrident.bind(C);
+    C.throwTrident = s => {
+      const spin = C.spin;
+      const r = tt(s);
+      // riptide: the level's own whoosh (III and up share the third), where it did fling you
+      const lvl = s && s.ench ? (s.ench.riptide | 0) : 0;
+      if (lvl > 0) { if (C.spin === 20 && C.spin !== spin) atP('item.trident.riptide_' + Math.min(3, lvl), 1, 1); }
+      else atP('item.trident.throw', 1, 1);
+      return r;
+    };
+  }
   if (C.blocked) { const bl = C.blocked.bind(C); C.blocked = (amount, src) => { const r = bl(amount, src); atP('item.shield.block', 1, 0.8 + R() * 0.4); return r; }; }
   // thrown things: snowballs, eggs, pearls (the game: 0.5, 0.4 / (0.8-1.2))
   if (E.useHeld) {
@@ -377,6 +459,7 @@ export function soundTick(g) {
   const P = g.player, w = g.world;
   const playing = g.mode !== 'spectator';
   if (playing) playerSteps(g, st, P, w);
+  try { playerThings(g, st, P); } catch (e) { console.warn(e); }
   // the level up: every fifth level, at most once in 5 seconds, louder up to level 30
   const sv = g.survival;
   if (sv) {
@@ -408,6 +491,47 @@ export function soundTick(g) {
     eyeInWater: !!P.eyeInWater, waterBiome: !!(bm && /ocean|river/.test(bm.name)),
     dragonAlive: !!(RL && RL.boss),
   }));
+}
+
+/* What the player is doing that sounds while it lasts: the breath meter's
+   bubbles popping, the wind of gliding, a spyglass going up and down, a
+   crossbow being wound, a bundle tipped out. */
+function playerThings(g, st, P) {
+  const sv = g.survival, H = g.hands, C = g.entities && g.entities.combat;
+  // the breath meter: a pop for each bubble that goes, 0.5 loud for the first three then 0.1 more a bubble, pitch 1 for five then 0.1 higher a bubble
+  if (sv && typeof sv.air === 'number') {
+    const left = Math.max(0, Math.ceil(sv.air / 30)), was = st.bubbles ?? left;
+    if (left < was && !sv.dead && g.mode !== 'creative') {
+      const k = 10 - left;
+      Sound.near('ui.hud.bubble_pop', 0.5 + 0.1 * Math.max(0, k - 3), 1 + 0.1 * Math.max(0, k - 5), 'player');
+    }
+    st.bubbles = left;
+  }
+  // gliding: the wind, louder the faster (by the speed squared, as the game does), coming in over the first two seconds
+  if (P.gliding) {
+    st.glideT = (st.glideT || 0) + 1;
+    if (!st.glide || st.glide.stopped) st.glide = Sound.loop('item.elytra.flying', 'player', { volume: 0.01 });
+    const v2 = P.vel.x * P.vel.x + P.vel.y * P.vel.y + P.vel.z * P.vel.z;
+    let vol = v2 >= 1e-7 ? Math.min(1, v2 / 4) : 0;
+    if (st.glideT < 20) vol = 0; else if (st.glideT < 40) vol *= (st.glideT - 20) / 20;
+    if (st.glide) { st.glide.setVolume(Math.max(0.0001, vol), 0.05); st.glide.pitch(vol > 0.8 ? 1 + (vol - 0.8) : 1); }
+  } else if (st.glide) { st.glide.stop(); st.glide = null; st.glideT = 0; }
+  // a spyglass up to the eye and down again
+  const scoped = !!(H && H.inter && H.inter.useHeld && H.spyglassSide && H.spyglassSide() >= 0);
+  if (scoped !== !!st.scoped) Sound.play(scoped ? 'item.spyglass.use' : 'item.spyglass.stop_using', P.pos.x, P.pos.y, P.pos.z, 1, 1, 'player');
+  st.scoped = scoped;
+  // a crossbow winding: the start a fifth of the way (Quick Charge's own sound for one with it), the middle at half, 0.5 loud
+  const u = C && C.use;
+  if (u && u.kind === 'crossbow') {
+    const s = g.inv && g.inv.slots[u.slot], total = s && C.crossbowTicks ? C.crossbowTicks(s) : 25;
+    const f0 = (u.t - 1) / Math.max(1, total), f1 = u.t / Math.max(1, total), q = Math.round((25 - total) / 5);
+    if (f0 < 0.2 && f1 >= 0.2) Sound.play(q > 0 ? 'item.crossbow.quick_charge_' + Math.min(3, q) : 'item.crossbow.loading_start', P.pos.x, P.pos.y, P.pos.z, 0.5, 1, 'player');
+    if (f0 < 0.5 && f1 >= 0.5) Sound.play('item.crossbow.loading_middle', P.pos.x, P.pos.y, P.pos.z, 0.5, 1, 'player');
+  }
+  // a bundle tipped out: the first throw of what is in it
+  const bu = H && H.using && H.using.bundle;
+  if (bu && !st.bundle) Sound.play('item.bundle.drop_contents', P.pos.x, P.pos.y, P.pos.z, 0.8, 0.8 + R() * 0.4, 'player');
+  st.bundle = !!bu;
 }
 
 /* The player's footsteps and swimming (the game's Entity.move): every
@@ -474,6 +598,7 @@ function jukeboxes(D) {
 
 /* ---- leaving a world ---- */
 export function soundLeave() {
+  mobs.reset();
   for (const r of records.values()) Sound.stop(r.voice);
   records.clear();
   amb.reset();
